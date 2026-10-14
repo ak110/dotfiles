@@ -12,7 +12,7 @@
 
 前ラウンドの指摘は解決状態と証拠とともに表へ残す。
 複数計画の反復では、計画ごとの最後のレビューHEAD・round・表・証拠・返却入力配列を保持する。別計画の認可は`review-contract --generate`で現在OIDへ再生成し、変更後の再レビュー対象は`review-impact`で判定する（`exec-review.parent.md`の入力契約）。
-受領確認は`exec-review-evidence-check --batch`へ各組をそのまま渡せる。読者別探索の申告は各組の`reader_fit_review`へ保持し、同書の起動条件と省略根拠を確かめる。CLIの成功だけで収束とせず、同書の意味判定と未解決0件を確かめる。
+受領確認では`exec-review-evidence-check --batch`へ各組をそのまま渡せる。読者別探索の申告は各組の`reader_fit_review`へ保持し、同書の起動条件と省略根拠を確かめる。CLIの成功だけで収束とせず、同書の意味判定と未解決0件を確かめる。
 各組には返却された今回の`review_start`と、2回目以降の`previous_review_start`・`previous_review_head`も保持する。rebaseで今回の開始時点が変わっても前回値を置き換えず、両差分の同一性とファイル別申告を同じ受領確認へ渡す。
 
 ## ラウンド番号の保持先

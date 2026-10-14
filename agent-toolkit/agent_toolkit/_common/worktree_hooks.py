@@ -126,7 +126,7 @@ def create(
     *,
     diagnostics_directory: pathlib.Path,
 ) -> pathlib.Path:
-    """公式WorktreeCreateの返却先を解決する。失敗時にGit作成へ切り替えない。"""
+    """WorktreeCreate hookが返した作成先を解決する。hookが失敗してもGitによる作成へ切り替えない。"""
     values = _execute(repo, "WorktreeCreate", session_id, timeout, diagnostics_directory, name=name)
     if not values or not values[-1]:
         raise ValueError("WorktreeCreate hookが作成先を返さなかった")
@@ -154,7 +154,7 @@ def remove(
     *,
     diagnostics_directory: pathlib.Path,
 ) -> None:
-    """公式の撤去完了を確認する。非0でも資源不在なら成功とし、診断は保存する。"""
+    """WorktreeRemove hookによる撤去の完了を確認する。hookが非0で終了しても作成先が無ければ成功とし、診断は保存する。"""
     if not path.exists():
         return
     try:

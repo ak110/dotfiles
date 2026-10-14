@@ -193,7 +193,7 @@ def record_activity(
     directory = activity_directory(state_root)
     directory.mkdir(parents=True, exist_ok=True)
     path = directory / f"{session_id}.json"
-    # 会話JSONの交換・削除と並行する子hookは同じロックを使う。空ロックは固定1件だけ保持する。
+    # 会話JSONの交換・削除と並行する子hookは同じロックを使う。内容を持たないロックファイルは`activity.lock`の1件だけを保持する。
     with (directory / "activity.lock").open("a+", encoding="utf-8") as lock:
         acquire_lock(lock)
         try:
@@ -309,7 +309,7 @@ def _sources(records: Mapping[str, Mapping[str, Any]]) -> list[session_parents.P
 
 
 def _native_sessions(process: HostProcess) -> tuple[dict[str, dict[str, Any]], str | None]:
-    """hook未登録ホストの会話IDと状態を読む。ホスト固有形式はこの境界へ閉じる。"""
+    """hook未登録ホストの会話IDと状態を読む。ホスト固有の記録形式は本関数の中だけで解釈する。"""
     found: dict[str, dict[str, Any]] = {}
     try:
         if process.engine == "claude":

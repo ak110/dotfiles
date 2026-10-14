@@ -120,7 +120,7 @@ class ManagerRegistry(responses.ManagerResponses):
         """所有者のいない`running`の登録簿記録を、turnの終端を確かめられる場合だけ終端として公開する。
 
         登録簿が終端を示さない記録は、別のプロセスがturnを実行している可能性を排除できないため再開しない。
-        ただし所有側が終端を公開せずに終了した記録は、その保護のままでは恒久的に回収できない。
+        ただし所有側が終端を公開せずに終了した記録は、この拒否を続ける限り回収できない。
         そこで次のいずれかの場合に終端を公開し、後続の`show`と`send_message`が通常の復元へ進めるようにする。
         1つはengineを問わず、記録された所有プロセスと実行プロセスが全て存在せず、`resolve`が`interrupted`の
         終端と解決した場合である。もう1つは`ORPHAN_TAKEOVER`のengine（Codex）で、`thread/read`が元turn

@@ -36,7 +36,7 @@ def test_decode_entry_text_normalizes_crlf_and_cr() -> None:
 
 @pytest.mark.parametrize("newline", ["\n", "\r\n"])
 def test_bom_input_keeps_body_and_entry_operations(tmp_path: pathlib.Path, newline: str) -> None:
-    """BOMを構造だけから分離し、本文中の文字と指定名取得・保存の原文を保持する。"""
+    """先頭のBOMはfrontmatterの解析でだけ除き、本文中のBOM文字と、名前を指定した読取・保存で扱う原文は保持する。"""
     plain = "---\ntype: awi\ntarget_repo: github.com/example/repo\n---\n\ufeff本文\n途中\ufeffの文字\n"
     decoded = frontmatter.decode_entry_text(("\ufeff" + plain).replace("\n", newline).encode("utf-8"))
     assert frontmatter.parse_frontmatter(decoded) == frontmatter.parse_frontmatter(plain)

@@ -238,7 +238,7 @@ class TestRemoveAllConfirmation:
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
     ) -> None:
-        """任意状態ディレクトリが不在でも全状態をgit addできる状態へ戻す。"""
+        """状態ディレクトリの一部が不在でも、commit前に再作成して全状態ディレクトリをgit addできるようにする。"""
         notes = _setup_notes(tmp_path)
         (notes / "hold").rmdir()
         _write_awi_file(notes, "awi.md")

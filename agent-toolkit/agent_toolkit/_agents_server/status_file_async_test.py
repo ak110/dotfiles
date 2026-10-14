@@ -86,7 +86,7 @@ def _block_named_replace(monkeypatch: pytest.MonkeyPatch, name: str) -> tuple[as
 async def test_replace_retry_runs_outside_loop(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, winerror: int, route: str
 ) -> None:
-    """実保存の共有違反待機がloopを止めず、同じtmpで6試行・5待機を終える。"""
+    """実際の保存で共有違反の解消を待つ間もloopを止めず、同じ一時ファイルで6回試行し5回待機して終える。"""
     monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
     sessions: dict[str, state.SessionState] = {}
     writer = status_file.StatusFileWriter(

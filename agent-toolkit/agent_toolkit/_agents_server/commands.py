@@ -1,4 +1,4 @@
-"""`atk agents`の委譲session観測・通知操作。"""
+"""`atk agents`の、委譲sessionを観測する操作と委譲元へ通知を送る操作。"""
 
 from __future__ import annotations
 
@@ -360,7 +360,7 @@ def dispatch(args: argparse.Namespace, *, environment: Mapping[str, str] | None 
 
 
 def _public_session(session: Mapping[str, Any], *, detailed: bool = False) -> dict[str, Any]:
-    """稼働状況と復旧の用途を分け、内部追加が公開へ混入しないよう射影する。"""
+    """一覧向けの稼働状況の項目と`detailed`で加える復旧用の項目を分け、内部で追加した項目が公開の出力へ混入しないよう、列挙した項目だけを取り出す。"""
     fields = (
         "session_id",
         "status",
@@ -717,7 +717,7 @@ def _status_payload_is_current(payload: Any) -> bool:
 
 
 def _add_output_activity(session: dict[str, Any]) -> None:
-    """活動とテキスト出力からの経過秒、および停滞印を公開射影へ加える。"""
+    """活動とテキスト出力からの経過秒、および停滞の印を公開する項目へ加える。"""
     updated_at = session.get("updated_at")
     output_updated_at = session.get("output_updated_at")
     started_at = session.get("started_at")

@@ -64,7 +64,7 @@ def build_command(
         command += ["--effort", effort]
     if conversation_id is not None:
         command += ["--conversation", conversation_id]
-    # 非対話モードは対話確認を持たず、原稿の書き換えまでを任せる用途のためツール実行を事前承認する。
+    # 非対話モードは実行中に承認を求められないため、ファイルの書き換えを含む作業を委譲できるようツール実行を事前承認する。
     command.append("--dangerously-skip-permissions")
     return command
 
@@ -552,7 +552,7 @@ def _record_failure(session: SessionState, error: BaseException, stderr_text: st
 
 
 async def _read_stderr(process: asyncio.subprocess.Process) -> str:
-    """標準エラーを有界で読み取る。"""
+    """標準エラーを先頭から`_STDERR_LIMIT_CHARS`バイトまで読み取る。"""
     if process.stderr is None:
         return ""
     with contextlib.suppress(Exception):

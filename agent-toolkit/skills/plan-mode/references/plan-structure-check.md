@@ -22,7 +22,7 @@
 atk run-script plan-check -- --reject-migration-warnings /absolute/path/to/plan.md
 ```
 
-- `--reject-migration-warnings`は新規作成・改訂で旧形式からの移行警告をエラーにする。保存済み計画を読むだけの検証では省く。旧形式（単一9節、二ファイル）は[legacy-plan-file-standards.md](legacy-plan-file-standards.md)の読み取り互換で受理され、移行を警告される
+- `--reject-migration-warnings`は新規作成・改訂で旧形式からの移行警告をエラーにする。保存済み計画を読むだけの検証では省く。旧形式（単一9節、二ファイル）は[legacy-plan-file-standards.md](legacy-plan-file-standards.md)の読み取り互換で受理され、移行の警告が出る
 - `--work-dir`が解決するGitルートが計画メタ情報の`対象リポジトリ`と一致するかを確かめる。対象リポジトリがセッションの作業ディレクトリと異なる場合と専用worktreeで作業する場合は、そのパスを`--work-dir`へ渡すかそこを作業ディレクトリにする（複製元の作業ツリーから実行すると拒否される）
 - `agent-toolkit:process-wi`のレーンでは`--selection-file <選定工程の`選定結果の出力先ファイル`の絶対パス> --lane <レーン識別子>`を加える。そのレーンの`再開位置`を持たないWI集合が`関連WI`と一致し、人間由来の実施行に`根拠`があるかを確かめる。`再開位置`を持つWIは既存計画で続けるため、`関連WI`へ含めると余剰として失敗する
 - 凍結済み計画の後に同じレーンへAWIを追加した場合は、先行計画を全件`--prior-plan <先行計画の絶対パス>`で反復指定する。各計画の`関連WI`の重複を拒否し、和集合を同じWI集合と比べる（先行計画の構造は検証し直さない）

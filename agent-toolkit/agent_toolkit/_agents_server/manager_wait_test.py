@@ -40,7 +40,7 @@ pytestmark = pytest.mark.usefixtures("agents_server_isolation")
 
 @pytest.mark.asyncio
 async def test_wait_does_not_redeliver_only_terminal_result_at_timeout(tmp_path: pathlib.Path) -> None:
-    """配送済み終端結果だけが残る上限応答は本文なしのrunningを返す。"""
+    """配送済みの終端結果だけが残る状態で待機上限に達した応答は、本文を含まない`running`を返す。"""
     manager, _ = _manager_with_fake("codex")
     session = state.SessionState("thread-1", str(tmp_path), engine="codex")
     _complete(session, message="最終結果", error={"message": "補足"})

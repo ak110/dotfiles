@@ -72,7 +72,7 @@ class ManagerWait(manager_resume.ManagerResume):
         保持中のsessionの最終活動時刻と停滞の印は`show`が返す。待機せずに現状態を確認する場合は`show`を発行する。
         完了通知で同じセッションへ再開できる待機は、goalの有無や対象の種類・件数によらず、
         `atk agents wait`をホストのバックグラウンドタスクとして起動する。
-        通知による再開が無い環境は公開待機手段で終端を確定する。
+        通知による再開が無い環境では、委譲元は公開された待機手段で終端を確定する。
         起動と回収はdelegationの`references/waiting-and-monitoring.md`「待機区間の構成」に従う。
         委譲先がバックグラウンドタスクを残してturnを終えた場合は、同じsessionを一度だけ自動的に再開し、再開したturnの終端まで待つ。
         委譲元はバックグラウンドタスクの完了後に`send_message`で再開を指示しない。
@@ -80,7 +80,7 @@ class ManagerWait(manager_resume.ManagerResume):
         終端結果は委譲元が最初の呼び出しで受領するまで保持し、経過時間では解放しない。
         受領した終端結果のsessionを破棄する場合は`stop`を発行する。
         終端結果を残さずにsessionが失われた場合だけ、`status`が`expired`の応答を返す。
-        委譲先が実行中に`atk agents-notify`で送った通知が未回収である場合は、終端前でもその通知を`notices`へ載せて復帰する。
+        委譲先が実行中に`atk agents notify`で送った通知が未回収である場合は、終端前でもその通知を`notices`へ載せて復帰する。
         再待機の要否は`notices`の有無ではなく`status`で判定する。
         `status`が`completed`、`failed`、`interrupted`のいずれかである応答は終端であり、`notices`を含む場合も結果本文とともに受領して本ツールを再発行しない。
         応答へ載せた通知は回収済みとして再び返さない。

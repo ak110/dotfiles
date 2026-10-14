@@ -99,7 +99,7 @@ def _claude_target(tmp_path: pathlib.Path) -> agents_exit_session.Target:
 def test_exit_requested_with_current_marker(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], tmp_path: pathlib.Path
 ) -> None:
-    """読込済みのClaude Codeでは停止シグナルを送らずターン後の終了を要求する。"""
+    """Function hooksの読込目印が現在のセッションにあるClaude Codeでは、停止シグナルを送らずターン後の終了を要求する。"""
     target = _claude_target(tmp_path)
     directory = tmp_path / "agent-toolkit-function-hooks"
     directory.mkdir()

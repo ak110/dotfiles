@@ -6,7 +6,7 @@ import json
 import os
 import pathlib
 
-# 関数の実行時までだけ使う依存を、使用時まで読み込まない。
+# 関数の実行時にだけ使う依存は、使用時まで読み込まない。
 lazy import datetime
 lazy import re
 lazy import tempfile
@@ -110,7 +110,8 @@ def _handle_language_check(payload: dict, session_id: str) -> str | None:
 # 日本語の応答指示を再注入するツール呼び出しの間隔。
 # 2026-09-22以降のClaude Codeメイン記録で、セッション開始または会話圧縮から最初の`response_language_check`の通知までの
 # ツール呼び出し回数は55件で中央値20回、下位20%が7回、下位30%が11回だった。
-# 10回ごとの注入は最初の英語化の約7割より前に日本語の指示を文脈の近くへ置き、注入は1行のため文脈の消費は小さい。
+# 10回ごとに注入すると、最初の英語の応答が現れた事例の約7割で、それより前に日本語の指示が文脈の近くへ入る。
+# 注入は1行のため文脈の消費は小さい。
 LANGUAGE_REINJECTION_INTERVAL = 10
 
 
@@ -199,7 +200,7 @@ def _check_task_stop(session_id: str, tool_input: dict) -> str | None:
         "この手順の完了条件は`agent-toolkit:delegation`の"
         f"{_plugin_resources.skill_reference('delegation', 'references/waiting-and-monitoring.md')}"
         "「停滞の検知と巻き取り」節が定める。"
-        "進行が遅いことや非効率に確認できることだけでは停止の指示にならない。"
+        "進行が遅いことや、確認に手間がかかることだけでは停止の根拠にならない。"
         "意図の解釈が複数残る場合は、停止の前にAskUserQuestionで確認する。"
         "ユーザーの介入があった場合の扱いは`agent-toolkit:delegation`「継続と新規起動」が定める。",
         fix=(
@@ -271,7 +272,7 @@ def _record_iss_sidechain_probe(
 def _check_agents_server_continuation_input(session_id: str, tool_input: dict, tool_name: str) -> Decision:
     """`send_message`・`kill`の入力と保存済みcwdから操作の可否を判定する。
 
-    必須値の欠落はツール自身が拒否する可逆な入力不成立として警告する。
+    必須値の欠落はツール自身が入力を拒否し、入力を直せば再実行できるため警告で返す。
     停止対象のcwd記録の欠落は所有を確認できないため遮断する。
     """
     display_name = tool_name.rsplit("__", 1)[-1]

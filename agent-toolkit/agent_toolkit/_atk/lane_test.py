@@ -470,7 +470,7 @@ def test_exit_entrypoint_cleans_resources_even_when_interactive_host_is_unidenti
 def test_process_loop_child_exit_cleans_before_normal_or_abnormal_classification(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, engine: str, exit_code: int
 ) -> None:
-    """両engineの子終了境界で同じ回収を実行し、異常終了後も判定より前に資源を保全する。"""
+    """Claude・Codexのどちらでもprocess-loopの子セッションの終了時に同じ回収を実行し、異常終了でも終了の判定より前にレーン資源を回収して、対象リポジトリと選定ファイルは残す。"""
     repo = git_repository.init_repository(tmp_path / "repo", initial_branch="main", commit_message="初期状態")
     selected = tmp_path / "selection.yaml"
     snapshot = tmp_path / "created.json"
@@ -816,7 +816,7 @@ def test_hook_owned_resource(
 def test_hook_cannot_adopt_preexisting_worktree(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], returned: str
 ) -> None:
-    """新規hookの既存作業先を拒否し、主作業ツリーと別所有の成果・branchを変えない。"""
+    """新規作成でhookが既存の作業先を返した場合は拒否し、主作業ツリーと別所有の成果・branchを変えない。"""
     repo = git_repository.init_repository(tmp_path / "repo", initial_branch="main", commit_message="基準")
     (repo / "user.txt").write_text("保存済み", encoding="utf-8")
     other = tmp_path / "other"

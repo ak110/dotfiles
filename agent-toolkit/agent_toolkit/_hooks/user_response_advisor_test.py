@@ -127,7 +127,7 @@ def test_stop_does_not_treat_machine_input_as_human(
 def test_stop_accepts_scheduled_turn_after_machine_input(
     entry: dict, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """AWI 20261009-093808-001のClaude Code 2.1.250～2.1.295の記録形を使う。"""
+    """Claude Code 2.1.250～2.1.295のtranscriptで観測した記録形を使う。"""
     scheduled = {"type": "user", "isMeta": True, "scheduledTaskId": "scheduled-case", "message": {"content": "再確認"}}
     output = _stop([entry, scheduled, _assistant("…")], tmp_path, capsys)
     assert 'source="user_response_advisor"' not in output.get("reason", "")

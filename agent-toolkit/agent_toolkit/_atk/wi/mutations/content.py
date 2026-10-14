@@ -324,13 +324,13 @@ def _reject_agent_processing_edit(path: pathlib.Path) -> None:
 
     拒否はprocessingの項目だけに限る。holdの項目は保留前の状態によらずinboxと同じ条件で編集を許す。
     holdは自動処理からの除外だけを意味し、状態による編集の制限を増やすと、保留、本文置換、解除の順で
-    投入済み項目を更新する手順が操作不能になるためである。
+    投入済み項目を更新する手順を実行できなくなるためである。
     """
     if not is_agent_environment() or path.parent.name != WI_STATE_PROCESSING:
         return
     _outcome.report_failure(
         f"processingの項目はエージェント環境から編集できない: {path.name}。"
-        "処理中の要求を書き換えると、その要求をこのセッションで処理するかどうかが変わる",
+        "処理中の要求を書き換えると、処理しているセッションが扱う要求の内容が途中で変わる",
         next_action="書き換えたい内容はatk wi addで新しい項目として投入し、この項目へはatk wi edit --appendで追記する",
     )
     sys.exit(2)

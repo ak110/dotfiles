@@ -1855,7 +1855,7 @@ _TTL_CASES = [
 
 
 def _set_ttl_environment(monkeypatch: pytest.MonkeyPatch, environment: dict[str, str]) -> None:
-    """保持期間とホストの判定入力を指定の条件だけへ固定し、上限の導出を実装へ戻す。"""
+    """保持期間とホストの判定入力を指定の条件だけへ固定し、差し替えた上限の導出を実装の`get_wait_timeout`へ戻す。"""
     for name in ("CLAUDECODE", "FORCE_PROMPT_CACHING_5M", "ENABLE_PROMPT_CACHING_1H", "CLAUDE_CODE_SUBPROCESS_ENV_SCRUB"):
         monkeypatch.delenv(name, raising=False)
     for name, value in environment.items():

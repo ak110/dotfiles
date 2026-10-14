@@ -79,7 +79,8 @@ _HOOK_NOTICE_MARKER = re.compile(
 
 
 # 本文の可変部（語頭から始まるパス、session識別子などのUUID、UWI識別子・行番号・トークン数などの数値）。
-# 種別キーの分裂を防ぐため置換する。UUIDは英字を含み数値の置換だけでは1件ごとに別の種別へ分かれるため、数値より先に置換する。
+# 同じ種別が複数の種別キーへ分かれないよう置換する。
+# UUIDは英字を含み数値の置換だけでは1件ごとに別の種別へ分かれるため、数値より先に置換する。
 # パスは語頭に限定するが、数値列は語頭・語中を問わず置換するため、`github.com/ak110/dotfiles`のような
 # 固定の識別子も数値部分が置換される。
 _CANDIDATE_VARIABLE = re.compile(
@@ -95,7 +96,7 @@ _HOOK_FAILURE_PREFIX = re.compile(r"^[^\r\n]*?\bhook error:\s*\[[^\r\n]*?\]:\s*"
 
 _FALLBACK_TEXT = (
     "記録は読み込めたが形式を判定できないため抽出証拠を生成できない。"
-    "継承した会話履歴を評価し、取得できない範囲を未検証と明記すること。"
+    "自身のコンテキストにある会話履歴から評価し、記録から取得できない範囲を未検証と明記すること。"
 )
 
 
@@ -663,7 +664,7 @@ def _claude_entry_events(
                     for call_id, options in _claude_question_options(message.get("content")).items()
                 }
             )
-            # ユーザーへ届いた本文として、`text`ブロックに加えて`send_to_user`の呼び出しの`message`も出来事にする。
+            # ユーザーへ届いた本文として、`text`ブロックに加えて`send_to_user`の呼び出しの`message`もイベントにする。
             content = message.get("content")
             blocks = [{"type": "text", "text": content}] if isinstance(content, str) else content
             for block_index, block in enumerate(blocks if isinstance(blocks, list) else []):
@@ -1017,7 +1018,7 @@ def _turn_finished(entry: dict[str, Any], runtime: _Runtime) -> bool:
 
 
 def _detect_runtime(entries: list[dict[str, Any]]) -> _Runtime | None:
-    """transcriptのエントリ形式から手動構文を解釈する実行系を返す。"""
+    """transcriptのエントリ形式から、記録を書いた実行系を判定して返す。"""
     if entries and all(entry.get("event") in _AGY_EVENT_TYPES for entry in entries):
         return "agy"
     entry_types = {entry.get("type") for entry in entries}
@@ -1195,7 +1196,7 @@ def _referenced_provenance_events(collected: list[_CollectedRecord], events: lis
     """照会結果が参照する記録と、その`source_record`を根までたどった起動元の記録の`record-provenance`だけを返す。
 
     参照は、イベントの`record`欄と、イベントが持つ配列（`locators`・`samples`など）の要素の`record`欄とする。
-    全収集記録の由来を前置すると、委譲先の多い記録では行数が結果を大きく上回り、結果が由来の行に埋もれるためである。
+    全収集記録の由来を前置すると、委譲先の多い記録では由来の行数が結果を大きく上回り、由来の行の中から結果を探しにくくなるためである。
     全記録の由来は通常表示と`--bundle`が書くファイルが保つ。
     """
     referenced: set[str] = set()

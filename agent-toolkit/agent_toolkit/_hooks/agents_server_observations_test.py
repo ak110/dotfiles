@@ -34,7 +34,7 @@ class _RegisteredBackend(agents_server_support.FakeBackend):
 
 
 def _refuse_replace_into(monkeypatch: pytest.MonkeyPatch, destination: pathlib.Path) -> Callable[..., None]:
-    """指定先への置換だけを、Windowsの継続するアクセス拒否として共通保存の置換段階で失敗させ、元の置換を返す。"""
+    """`atomic_file`が指定先へ置換するときだけ、Windowsで続くアクセス拒否と同じ例外で失敗させ、差し替え前の`os.replace`を返す。"""
     original = os.replace
 
     def replace(source: Any, target: Any) -> None:

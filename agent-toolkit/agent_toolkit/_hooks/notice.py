@@ -1,6 +1,6 @@
 """Hook識別子を固定したLLM通知整形関数を生成する。"""
 
-# 関数の実行時までだけ使う依存を、使用時まで読み込まない。
+# 関数の実行時にだけ使う依存は、使用時まで読み込まない。
 lazy import inspect
 lazy from collections.abc import Callable
 
@@ -21,7 +21,7 @@ def set_warning_session_id(session_id: str) -> None:
 
 
 def consume_warning_blocks() -> list[str]:
-    """反復した除去可能warnから生成したblock通知を取り出す。"""
+    """除去可能な原因のwarnが反復して生成されたblock通知を取り出す。"""
     blocks = _warning_context.get("blocks")
     _warning_context["blocks"] = []
     return list(blocks) if isinstance(blocks, list) else []

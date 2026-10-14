@@ -535,7 +535,7 @@ async def test_agy_init_failure_reports_reason_when_candidates_exhausted(
 async def test_agy_exhaustion_does_not_return_abandoned_session(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
 ) -> None:
-    """失敗終端の後にinit前例外が続いた場合は、放棄済みsessionを返さない。"""
+    """失敗による終端の後にinit前の例外が続いた場合は、放棄済みのsessionを返さない。"""
     manager = server_manager.AgentsServerManager()
     agy = UnavailableStartBackend(manager.sessions, "agy", {"message": "first failed"})
     original_start = agy.start
@@ -561,7 +561,7 @@ async def test_abandoned_candidate_is_released(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> None:
-    """候補切替の前に放棄sessionの保持・結果・backend資源を除く。"""
+    """候補切替の前に、放棄したsessionの保持情報・結果・backend資源を除く。"""
     candidates = [("codex", "first", "high"), ("claude", "second", "medium")]
     monkeypatch.setattr(_atk_config, "parse_unresolved_model_candidates", lambda _model_type, **_kwargs: candidates)
     writer = status_file.StatusFileWriter(
@@ -807,7 +807,7 @@ async def test_carried_over_candidate_is_dropped_when_no_candidate_remains(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> None:
-    """持ち越し除外だけで候補が尽きる場合は除外を破棄して全候補を使う。"""
+    """前回から持ち越した除外だけで候補が尽きる場合は、除外を破棄して全候補を使う。"""
     candidates = [("codex", "only", "high")]
     manager, available = await _carry_over_late_unavailability(monkeypatch, tmp_path, candidates)
 
@@ -824,7 +824,7 @@ async def test_shell_launch_carries_over_candidate_within_shell_launch_kind(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> None:
-    """shell起動の持ち越し除外を同じ起動区分だけへ適用する。"""
+    """shell起動で記録した除外の持ち越しは、同じ起動区分だけへ適用する。"""
     candidates = [("codex", "first", "high"), ("codex", "second", "medium")]
     monkeypatch.setattr(_atk_config, "parse_unresolved_model_candidates", lambda _model_type, **_kwargs: candidates)
     monkeypatch.setattr(server_manager, "START_AVAILABILITY_TIMEOUT", 0.001)
@@ -1436,7 +1436,7 @@ async def test_send_message_timeout_covers_turn_control_lock(tmp_path: pathlib.P
 async def test_kill_timeout_after_delivery_distinguishes_terminal_wait(
     tmp_path: pathlib.Path,
 ) -> None:
-    """中断要求配送後の終端待ち超過を未配送と区別する。"""
+    """中断要求の配送後に終端待ちが上限を超えた場合を、未配送と区別する。"""
     manager, backend = _manager_with_fake("codex")
     session = state.SessionState("thread-1", str(tmp_path), engine="codex", turn_id="turn-1")
     manager.sessions[session.session_id] = session
@@ -1458,7 +1458,7 @@ async def test_kill_restores_state_when_delivery_budget_expires_before_backend(
     kill_deadline_clock: SimpleNamespace,
     timeout: float,
 ) -> None:
-    """配送前処理で予算が尽きた入力はbackend未到達と状態復旧を検証する。"""
+    """配送前の処理で待機時間の上限を使い切った入力は、backendへ到達せず、状態が元へ戻ることを検証する。"""
     monkeypatch.setattr(server_manager, "DEFAULT_SEND_MESSAGE_TIMEOUT", 0.01)
     manager, backend = _manager_with_fake("codex")
     session = state.SessionState("thread-1", str(tmp_path), engine="codex", turn_id="turn-1")
@@ -1482,7 +1482,7 @@ async def test_kill_restores_state_when_delivery_budget_expires_before_backend(
 
 @pytest.mark.asyncio
 async def test_kill_timeout_before_codex_turn_id_reports_not_delivered(tmp_path: pathlib.Path) -> None:
-    """Codexのturn_id待ち超過を中断要求未配送として報告する。"""
+    """Codexのturn_idの待機が上限を超えた場合は、中断要求を未配送として報告する。"""
     manager, backend = _manager_with_fake("codex")
     session = state.SessionState("thread-1", str(tmp_path), engine="codex")
     manager.sessions[session.session_id] = session
@@ -1702,7 +1702,7 @@ async def test_reply_resets_progress_only_after_delivery_is_accepted(
     expected_progress: str,
     tmp_path: pathlib.Path,
 ) -> None:
-    """reply失敗時は直前の進捗を保持し、開始済みまたは曖昧時だけ破棄する。"""
+    """reply失敗時は直前の進捗を保持し、replyが開始済みか開始の成否が曖昧な場合だけ破棄する。"""
     manager, _ = _manager_with_fake(engine, delivery)
     session = state.SessionState("thread-1", str(tmp_path), engine=engine)
     session.set_progress("直前の進捗")
@@ -1755,7 +1755,7 @@ async def test_send_message_timeout_reports_undetermined_delivery(
 
 @pytest.mark.asyncio
 async def test_kill_stop_discards_only_after_terminal_result(tmp_path: pathlib.Path) -> None:
-    """killのrunning応答は保持し、終端済み応答後だけ破棄する。"""
+    """stop=trueのkillがrunningを返す間はsessionを保持し、終端済みの応答を返した後だけ破棄する。"""
     manager, backend = _manager_with_fake("codex")
     session = state.SessionState("kill-stop", str(tmp_path), engine="codex")
     session.turn_id = "turn"
@@ -1860,7 +1860,7 @@ async def test_expired_session_kill_returns_success_response(
 
 
 def test_initialization_failure_resolves_before_host_moves_call_to_background() -> None:
-    """初期化の失敗がホストがバックグラウンドタスクへ移す閾値より前に確定する。
+    """初期化の失敗は、ホストが呼び出しをバックグラウンドタスクへ移す閾値より前に確定する。
 
     この関係が成立しなくなると、委譲元は`start`の失敗を受け取らないまま待機へ進む。
     上限値を0などへ置換せずに、現行の定数どうしの関係だけを判定する。

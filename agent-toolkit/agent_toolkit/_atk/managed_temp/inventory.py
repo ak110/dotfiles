@@ -51,7 +51,7 @@ from agent_toolkit._atk.managed_temp.validation import (
 )
 from agent_toolkit._common import file_lock
 
-# 他の処理では不要な依存を、使用時まで遅延する。
+# 他の処理で使わない依存は、使用時まで読み込まない。
 lazy from agent_toolkit._atk.managed_temp.windows_security import (
     _WINDOWS_FILE_ATTRIBUTE_DIRECTORY,
     _WINDOWS_REPARSE_POINT,
@@ -255,7 +255,7 @@ def _unregistered_candidates(prefix: str | None) -> list[pathlib.Path]:
 
     本関数は`atk`の`managed-temp`以外の全サブコマンドの前段から呼ばれ、対話シェルの起動ごとに
     発火する場合がある。一時ディレクトリ直下の項目ごとに外部状態ディレクトリを解決すると、
-    その項目数に比例した待ち時間が対話シェルの起動へ生じる。判定を追加する場合も、
+    対話シェルの起動がその項目数に比例して遅れる。判定を追加する場合も、
     項目の種別とマーカーの有無で候補を限定した後に外部状態を解決する評価順序を維持する。
     """
     root = _temp_root()
@@ -493,7 +493,7 @@ def _is_registered_git_worktree(git_path: pathlib.Path) -> bool:
     try:
         first_line = git_path.read_text(encoding="utf-8").splitlines()[0]
     except OSError, UnicodeDecodeError, IndexError:
-        # 内容を読めない場合は使用中かを判定できないため、削除せず残す側へ倒す。
+        # 内容を読めない場合は使用中かを判定できないため、使用中と扱って削除せず残す。
         return True
     prefix = "gitdir:"
     if not first_line.startswith(prefix):
@@ -947,7 +947,7 @@ def _unlink_windows_reparse_points(root: pathlib.Path, expected_tree: dict[str, 
 
 
 def _remove_windows_quarantine(root: pathlib.Path, expected_tree: dict[str, _TreeEntry]) -> None:
-    """隔離内で検証済みの通常ファイルだけ、Readonlyによる削除拒否を再試行する。"""
+    """隔離先を削除する。Readonly属性で削除を拒否された通常ファイルは、隔離内で検証済みのものに限り属性を解除して削除を再試行する。"""
     root_identity = _path_identity(root)
 
     def retry_readonly_file(function: typing.Callable[..., typing.Any], raw_path: str, error: BaseException) -> None:
@@ -1255,7 +1255,7 @@ def _cleanup_managed_temp_locked(
             f"欠落した登録をマーカーから復元した: {validated.registry_path}", next_action="対応不要（処理は継続した）"
         )
     if os.name == "nt":
-        # 利用中に追加された受理済みACEを除去し、隔離以降を実行中のOSアカウントだけのDACLで実行する。
+        # 利用中に追加された受理済みACEを除去し、隔離以降の処理は実行中のOSアカウントだけを許可するDACLの下で行う。
         _windows_secure_path(
             path,
             directory=True,
@@ -1408,7 +1408,7 @@ def cleanup_managed_temp(
 ) -> None:
     """通常の後始末を行い、明示指定時だけ検証失敗後の強制回収を試みる。
 
-    `force_reason`は強制回収を報告する警告で、回収を指示した操作として示す語である。
+    `force_reason`は、強制回収を報告する警告に、回収を指示した操作として表示する語である。
     """
     if path_arg is not None and session_id is not None:
         raise ManagedTempError("pathとsession_idは同時に指定できない")

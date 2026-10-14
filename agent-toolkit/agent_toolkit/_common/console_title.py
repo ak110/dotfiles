@@ -19,7 +19,7 @@ import contextlib
 import sys
 import typing
 
-# 配布物独立性を保つため同等機能を独立実装する。
+# 配布物独立性（`agent-toolkit/`配下から`pytools/`を参照しない）を保つため、同等の機能を本モジュールで実装する。
 
 
 @contextlib.contextmanager

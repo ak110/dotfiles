@@ -1,4 +1,4 @@
-"""MCPの配送名は、呼出元が渡した名前だけを加え環境値を取り込まない。"""
+"""MCPサーバーへ引き継ぐ環境変数名の一覧は、呼出元が渡した名前だけを加え、環境変数の値を取り込まない。"""
 
 import pytest
 
@@ -6,7 +6,7 @@ from agent_toolkit._common import mcp_environment, proxy_environment
 
 
 def test_environment_names_preserve_supplied_names_and_proxy_identity() -> None:
-    """将来の設定名も呼出元の列から配送し、重複した許可名を含めない。"""
+    """将来の設定名も呼出元が渡した列から許可リストへ加え、重複した名前を含めない。"""
     setting_names = ("AGENT_TOOLKIT_CONFIG_BASE_ENGINE", "http_proxy", "AGENT_TOOLKIT_CONFIG_NEW_SETTING")
     names = mcp_environment.environment_variable_names(setting_names)
     assert set(setting_names) <= set(names)
@@ -30,7 +30,7 @@ def test_environment_names_do_not_capture_values(monkeypatch: pytest.MonkeyPatch
 
 @pytest.mark.parametrize("explicit_override", [False, True])
 def test_mise_directory_names_preserve_resolver_locations(monkeypatch: pytest.MonkeyPatch, explicit_override: bool) -> None:
-    """名前空間を配送しても、設定・信頼状態・導入先・cacheの明示した所在を失わない。"""
+    """miseの設定・信頼状態・導入先・cacheのディレクトリを指す変数名を許可リストへ含め、明示した所在を子へ引き継ぐ。"""
     directories = ("MISE_STATE_DIR", "MISE_CACHE_DIR", "MISE_DATA_DIR", "MISE_CONFIG_DIR")
     values = {}
     for index, name in enumerate(directories):

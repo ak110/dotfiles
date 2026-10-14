@@ -13,7 +13,7 @@ def is_existing_dir(path: pathlib.Path) -> bool:
     """パスが実在ディレクトリかどうかを判定する（OSレベルの`OSError`はFalse扱い）。
 
     自由記述のMESSAGE文字列をパス候補として`is_dir()`へ渡す呼び出し元があり、
-    長大な文字列は`OSError: File name too long`を送出しうるため、ここで吸収する。
+    長大な文字列は`OSError: File name too long`を送出しうるため、本関数で捕捉してFalseを返す。
     """
     try:
         return path.is_dir()
@@ -39,8 +39,8 @@ def resolve_repo_path_override(
     """旧REPO_PATH位置引数形式の呼び出しを解決する（`atk.py`の`_extract_legacy_repo_path`の後段）。
 
     `pre_parse_override`（サブコマンド名直後のトークンをargparse解析前に抽出した結果）が
-    設定済みならそれを優先する。未設定の場合、argparseが単一のcontiguousな位置引数群として
-    解決できたケース（REPO_PATHがオプションの後ろに置かれた呼び出し等）を対象に、
+    設定済みならそれを優先する。未設定の場合、argparseが位置引数を1つの連続した並びとして
+    解決できた呼び出し（REPO_PATHがオプションの後ろに置かれた呼び出し等）を対象に、
     messages先頭が実在ディレクトリなら追加でREPO_PATHとして抽出する。
     """
     messages = list(args_messages)
@@ -48,7 +48,7 @@ def resolve_repo_path_override(
         return messages, pre_parse_override
     if not messages or not messages[0]:
         # 空文字列は`Path("").expanduser()`がカレントディレクトリ（常に実在）へ解決され、
-        # 本文としての空メッセージ（UWIの空質問等）を誤ってREPO_PATHと誤認するため除外する。
+        # 本文としての空メッセージ（UWIの空質問等）をREPO_PATHと誤認するため除外する。
         return messages, None
     candidate = pathlib.Path(messages[0]).expanduser()
     if not is_existing_dir(candidate):

@@ -1,4 +1,4 @@
-"""`alerts`モジュールのテスト。公開API経由でDI（依存性注入）駆動する。"""
+"""`alerts`モジュールのテスト。公開APIへ外部コマンドの代用を注入して検証する。"""
 
 import argparse
 import contextlib
@@ -22,7 +22,7 @@ from agent_toolkit._common import json_command as _json_command  # noqa: E402  #
 
 
 def test_collect_github_ci_failures_latest_completed_only() -> None:
-    """ワークフローごとに直近の完了runのみを確認し、失敗中のみアラート化する。"""
+    """ワークフローごとに直近の完了runだけを確認し、失敗している場合だけアラート候補を返す。"""
     runs = [
         {"workflowName": "CI", "status": "completed", "conclusion": "failure", "databaseId": 2},
         {"workflowName": "CI", "status": "completed", "conclusion": "success", "databaseId": 1},
@@ -43,7 +43,7 @@ def test_collect_github_ci_failures_skips_in_progress_latest() -> None:
 
 
 def test_collect_github_ci_failures_keeps_schedule_failure_after_push_success() -> None:
-    """同じワークフローの`push`の成功が後にあっても、`schedule`の直近完了runの失敗をアラート化する。
+    """同じワークフローの`push`の成功が後にあっても、`schedule`の直近完了runの失敗をアラート候補として返す。
 
     `event`は`alerts._run_gh_run_list`が`gh run list --json`で取得する公開フィールドである。
     """
@@ -88,7 +88,7 @@ def _gitlab_schedule_api(endpoints: list[str]) -> alerts.GlabApiFn:
 
 
 def test_collect_new_alerts_reports_schedule_failure_hidden_by_later_pipeline(tmp_path: pathlib.Path) -> None:
-    """後に起動したpushのパイプラインが実行中でも、有効なスケジュールの失敗したパイプラインを1件アラート化する。
+    """後に起動したpushのパイプラインが実行中でも、有効なスケジュールの失敗したパイプラインを1件のアラート候補として返す。
 
     無効なスケジュールは照会しない。ブランチの直近1件だけを確かめると、失敗が後の実行に隠れてAWIへ入らない。
     """
@@ -130,7 +130,7 @@ def test_check_and_submit_alerts_submits_one_awi_per_pipeline(monkeypatch: pytes
 
 
 def test_collect_gitlab_ci_failures_only_when_latest_failed() -> None:
-    """最新パイプラインが失敗した場合のみアラート化する。"""
+    """最新パイプラインが失敗した場合だけアラート候補を返す。"""
     success = [{"id": 1, "status": "success"}]
     assert not alerts.collect_gitlab_ci_failures("owner/repo", "master", ci_list_fn=lambda _r, _b: success)
     failed = [{"id": 2, "status": "failed", "web_url": "u", "sha": "abc12345"}]
@@ -139,7 +139,7 @@ def test_collect_gitlab_ci_failures_only_when_latest_failed() -> None:
 
 
 def test_resolve_target_branch_paths() -> None:
-    """追跡先を優先し、失敗時は`origin/HEAD`が指すbranchへ退避する。"""
+    """追跡先を優先し、追跡先が無ければ`origin/HEAD`が指すbranchを使い、どちらも無ければNoneを返す。"""
 
     def upstream_git(_path: pathlib.Path, args: list[str]) -> str | None:
         if args[0] == "rev-parse":
@@ -271,7 +271,7 @@ def test_check_and_submit_alerts_invokes_add_entries(monkeypatch: pytest.MonkeyP
 def test_check_and_submit_alerts_writes_kind_specific_completion(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
 ) -> None:
-    """公開された収集コマンドがアラート種別ごとの外部可視の完成条件を保存する。"""
+    """公開された収集コマンドがアラート種別ごとに外部から観測できる完成条件を保存する。"""
     notes = tmp_path / "private-notes"
     _prepare_alert_submission(monkeypatch, notes)
 
@@ -548,7 +548,7 @@ def test_check_alerts_cli_matches_loop_by_forge(monkeypatch: pytest.MonkeyPatch,
     assert _invoke_loop_alerts(repo, notes, forge) == (0 if case == "gitlab-disabled" else 1)
     loop = _saved_awis_by_heading(notes)
 
-    # 保存日時は呼び出しごとに異なるが、要求本文・source・keysは同じ生成主体が持つ。
+    # 保存日時は呼び出しごとに異なるため除いて比べ、要求本文・source・keysが単発と常駐で一致することを確かめる。
     def normalize(text):
         return "\n".join(line for line in text.splitlines() if not line.startswith("created_at:"))
 

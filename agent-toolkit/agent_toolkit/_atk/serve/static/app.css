@@ -1339,7 +1339,7 @@ main > .toolbar {
 #screen-plans .short-label {
   display: none;
 }
-/* デスクトップで表示する場合はハンバーガーとモバイル専用メタを隠す。 */
+/* デスクトップで表示する場合は、ハンバーガーとモバイル幅だけで使うメタ情報欄を隠す。 */
 #screen-plans #plans-menu-btn {
   display: none;
 }

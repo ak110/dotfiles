@@ -355,7 +355,7 @@ class FailedResumeBackend(FakeBackend):
 
 
 class ConcurrentOwnerGoneBackend(FakeBackend):
-    """2件の継続要求へ同時に所有主体終了を返す偽バックエンド。"""
+    """2件の継続要求の両方が配送を始めた時点で、両方へ所有主体の終了（`SessionOwnerGoneError`）を送出する偽バックエンド。"""
 
     def __init__(self, sessions: dict[str, state.SessionState], engine: str) -> None:
         super().__init__(sessions, engine)

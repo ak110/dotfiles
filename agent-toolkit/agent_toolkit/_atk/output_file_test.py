@@ -1,4 +1,4 @@
-"""生成側の両出力保存と、保存不能なwaitが回収を始めないことを検証する。"""
+"""atkが標準出力と標準エラーを分けて保存することと、保存先を用意できないwaitが結果の回収を始めないことを検証する。"""
 
 from __future__ import annotations
 
@@ -14,7 +14,7 @@ from agent_toolkit._atk import output_file
 
 
 def test_saved_streams_lead_to_read_file(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
-    """両ストリームの案内を起点に、保存した全文へ公開操作だけで到達する。"""
+    """標準出力と標準エラーの保存先の案内から、公開されたコマンドだけで保存した全文を取得できる。"""
     bodies = ("標準出力\r\n" * 3000, "標準エラー\n" * 3000)
     with output_file.auto_save(lambda: tmp_path):
         sys.stdout.write(bodies[0])
@@ -60,7 +60,7 @@ def test_each_stream_preserves_boundary_and_entire_output(
 def test_forced_save_is_open_before_result_and_keeps_exception(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """小さいwaitでも回収前に開き、例外時の結果をファイルへ保持する。"""
+    """出力が小さいwaitでも結果の回収前に保存先を開き、例外で終わるまでの結果をファイルへ保持する。"""
     observed = []
     with (
         pytest.raises(SystemExit) as raised,
@@ -203,7 +203,7 @@ def test_forced_save_without_result_discards_only_failed_call(
 def test_help_and_early_returns_use_same_capture(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], argv: list[str]
 ) -> None:
-    """有限終了のヘルプと、結果を表示して終わるサブコマンドの実出力も、小さい境界で同じく保存する。"""
+    """有限で終了するヘルプ表示と、結果を表示して終わるサブコマンドの実出力も、小さい境界で同じく保存する。"""
     monkeypatch.setenv("CLAUDECODE", "1")
     monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
     monkeypatch.setattr(output_file, "AUTO_SAVE_THRESHOLD_BYTES", 32)

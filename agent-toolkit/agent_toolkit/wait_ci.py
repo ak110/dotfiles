@@ -1261,7 +1261,11 @@ def main(argv: list[str] | None = None) -> int:
             "ホストを含まない場合は作業ディレクトリのGit remoteから判定する。"
         ),
     )
-    parser.add_argument("--follow-cancelled", action="store_true", help="全run cancelled時にsource refの後続run成功を追跡")
+    parser.add_argument(
+        "--follow-cancelled",
+        action="store_true",
+        help="全runがcancelledの場合に、source refの後続commitで実行されたrunの成功を追跡する",
+    )
     args = parser.parse_args(argv)
     if args.wait_sha is not None and args.sha is not None:
         parser.error("--wait-shaと--shaは同時に指定できません")

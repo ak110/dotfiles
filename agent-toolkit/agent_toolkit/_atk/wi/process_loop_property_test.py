@@ -181,7 +181,7 @@ def test_session_preparation_matches_reference_model(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> None:
-    """resumeとworktree所有権から、準備成功前に子の実行先を返さない。"""
+    """resumeの有無と対象・worktree指定の組合せによらず、worktreeの準備に成功するまで子の実行先を返さない。"""
     prepared = tmp_path / "prepared"
     calls: list[str] = []
 
@@ -494,7 +494,7 @@ def test_start_conditions_release_together(
     target_included: bool,
     tmp_path: pathlib.Path,
 ) -> None:
-    """A/Bの抑止集合の和で開始を判定し、期限を順次加算しない。"""
+    """活動による抑止と未回答UWIによる抑止のどちらかが成立する間は開始せず、期限は残り時間の長い方とし、順次加算しない。"""
     case = pathlib.Path(tempfile.mkdtemp(dir=tmp_path))
     inbox = case / "inbox"
     inbox.mkdir()

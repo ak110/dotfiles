@@ -96,7 +96,7 @@ toolの公開、呼び出し結果、完了通知の配送はprovider、Claude C
 - `start`の結果の後に装着の通知が無く、`CronList`に後述の標識を1行目に持つtaskも無い場合（modが読み込まれない環境など）
 - `Agent`ツールの委譲先かバックグラウンドタスクを、そのセッションで最初に起動する直前
 
-自ら装着する場合は`atk wait-schedule --request-bucket main --format json`を1回実行し、出力の`cron`と`prompt`を変更せず`CronCreate`へ渡して`recurring: true`で1件だけ作成する（`prompt`はmodと同じ共通本文）。promptの1行目は`<atk-auto source="periodic-recheck" kind="periodic-recheck">`だけの行であり、UserPromptSubmitフックが機械注入ターンを判定する入力であり、resume後の所有taskの確認もこの標識の完全一致で行う。
+自ら装着する場合は`atk wait-schedule --request-bucket main --format json`を1回実行し、出力の`cron`と`prompt`を変更せず`CronCreate`へ渡して`recurring: true`で1件だけ作成する（`prompt`はmodと同じ共通本文）。promptの1行目は`<atk-auto source="periodic-recheck" kind="periodic-recheck">`だけの行である。UserPromptSubmitフックはこの行で機械注入ターンを判定し、resume後の所有taskの確認もこの標識の完全一致で行う。
 監査記録は`docs/development/audit-records.md`の「agent-toolkit/skills/delegation/references/claude-code-runtime.md：待機中の定期再確認と背景転換：2026年10月4日」にある。
 
 - 定期promptが持つのは、待機対象を記録側から列挙する手段、対象ごとの成果物を決める方法、動的に解決したパスを渡すコマンド形（`atk watch --worktree "$worktree_path"`か`atk watch --file "$artifact_path"`）だけとする。待機対象ID、成果物の絶対パス、コミット識別子、残工程と完了済み工程は発火の各回に記録側から読み直させる（可変状態の写しは工程が進むと事実と一致しなくなる）

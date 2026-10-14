@@ -197,7 +197,7 @@ async def all_entries(context: PlansContext) -> list[FileEntry]:
 
 
 def listed_plan_path(rel: str) -> str:
-    """付属ファイルの検索一致を一覧で選択できる計画ファイル（メイン）へ接続する。"""
+    """付属ファイルの相対パスを、一覧で選択できるメインの計画ファイルの相対パスへ置き換えて返す。付属ファイル以外はそのまま返す。"""
     path = pathlib.PurePosixPath(rel)
     main_name = _bundle_kinds.main_name_of(path.name)
     return rel if main_name is None else str(path.with_name(main_name))
@@ -372,7 +372,7 @@ async def _plan_exists(context: PlansContext, host: str, source_id: str, plan_re
     try:
         await fetch_remote_file(host, plan_rel, context.runner, watcher, source_id=source_id)
     except Exception as error:  # noqa: BLE001
-        # 取得共通処理が不在を障害から分類する。存在確認では未作成をdebugに留め、リンクを省く。
+        # 取得の共通処理は不在と障害を区別する。存在確認では未作成をdebugログに留め、リンクを省く。
         logger.debug("付属計画の取得不可 host=%s path=%s: %s", host, plan_rel, error)
         return False
     return True

@@ -1,8 +1,8 @@
 """agent-toolkit/agent_toolkit/_hooks/posttooluse.py のテスト。
 
 subprocessで起動しexit code・状態ファイルの内容を検証する。
-plan fileの書式と定義元との一致の確認・codex-review.md読み込み追跡は`posttooluse_plan_format_test.py`、
-`session_edited_files`の蓄積も本ファイルが検証する。
+plan fileの書式と定義元との一致の確認とcodex-review.md読み込みの追跡は`posttooluse_plan_format_test.py`が検証し、
+`session_edited_files`の蓄積は本ファイルが検証する。
 """
 
 # pylint: disable=protected-access
@@ -1188,7 +1188,7 @@ class TestDetailCurrentPlanPathTracking:
     """詳細計画の編集が既存の現在計画パス契約を変えないことを検証する。"""
 
     def test_detail_file_write_does_not_record_current_plan_file_path(self, tmp_path: pathlib.Path):
-        """計画ファイル（詳細）は計画ファイル（メイン）述語で偽のため現在値を記録しない。"""
+        """計画ファイル（詳細）は計画ファイル（メイン）を判定する述語が偽を返すため、現在値を記録しない。"""
         home = tmp_path / "home"
         plans_dir = home / ".claude" / "plans"
         plans_dir.mkdir(parents=True)
@@ -1536,7 +1536,7 @@ class TestAgentsServerSessionState:
         tool_input: dict[str, object],
         response: dict[str, object],
     ) -> None:
-        """8ツールの削減後成功応答を欠落として報告しない。"""
+        """8ツールが項目を減らした成功応答を返しても、欠落として報告しない。"""
         qualified_name = f"mcp__plugin_agent-toolkit_agents_server__{tool_name}"
         payload = {"tool_input": tool_input}
         assert not _agents_server_observations._agents_server_missing_response_fields(  # pylint: disable=protected-access

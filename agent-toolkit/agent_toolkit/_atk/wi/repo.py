@@ -212,7 +212,7 @@ def edit_entry(
     `mutations.edit_entry_content`が呼び出す。
     編集後の本文frontmatterの`type`が編集前から変更・欠落していないかも検証する
     （`verify_target_repo_content`と同じくexit 2で拒否する。種別は平坦化後の唯一の
-    分類情報であり、編集で書き換わると一覧・集計から静かに脱落するため）。
+    分類情報であり、編集で書き換わると警告なしに一覧・集計から外れるため）。
     `finalized_content`を渡した場合は、変換後の確定本文を`content`キーへ格納する。
     呼び出し元が保存本文との一致判定へ用いる。
     """

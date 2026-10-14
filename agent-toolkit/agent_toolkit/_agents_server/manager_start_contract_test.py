@@ -58,7 +58,7 @@ class UnavailableProbeBackend(agents_server_support.FakeBackend):
 async def test_start_advances_only_for_confirmed_explore_sandbox_failure(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """公開startは型付きの事前判定だけを次候補へ渡し、別managerも除外記録を使う。"""
+    """公開startは型付きの事前判定で不成立と確定した候補だけを除いて次の候補を起動し、別のmanagerもその除外記録を使う。"""
     monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
     first = manager.AgentsServerManager(None)
     probe = UnavailableProbeBackend(first.sessions, "codex")

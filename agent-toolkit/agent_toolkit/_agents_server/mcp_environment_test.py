@@ -1,4 +1,4 @@
-"""公開設定CLIとMCP配送名の接続を、両方を消費できるMCP側の層で検証する。"""
+"""`atk config`が公開する設定キーとMCPサーバーへ渡す環境変数名の対応を、両方を参照できるMCP側の層で検証する。"""
 
 import pytest
 
@@ -10,7 +10,7 @@ from agent_toolkit._common import mcp_environment, proxy_environment
 def test_mcp_setting_names_follow_public_config_keys(
     capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """公開showの可変設定全件を配送し、保存先の導出値を設定override名へ混ぜない。"""
+    """`atk config show`が表示する可変設定は全て環境変数名へ含め、保存先から導出する値は上書き用の環境変数名へ含めない。"""
     with pytest.raises(SystemExit) as exited:
         atk.main(["config", "show"])
     assert exited.value.code == 0
@@ -37,7 +37,7 @@ def test_mcp_setting_names_follow_public_config_keys(
 
 
 def test_environment_names_do_not_capture_values(monkeypatch: pytest.MonkeyPatch) -> None:
-    """列挙は環境値と無関係で、prefixだけが一致する未公開名や認証名を許可しない。"""
+    """環境変数名の列挙は環境変数の値に左右されず、接頭辞だけが一致する未公開の名前や認証用の名前を含めない。"""
     names = mcp_environment.environment_variable_names(config.config_environment_variable_names())
     monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_UNPUBLISHED", "diagnostic-value")
     monkeypatch.setenv("DIAGNOSTIC_TOKEN", "diagnostic-secret")

@@ -66,7 +66,7 @@ _LAUNCH_ALLOWED_TOOLS: dict[str, list[str]] = {
 _DeliveryResult = tuple[str, dict[str, Any] | None]
 _Command = tuple[Literal["prompt", "interrupt"], str, asyncio.Future[_DeliveryResult]]
 _INITIALIZATION_STDERR_LIMIT_CHARS = 4000
-# 初期化の停止位置を特定するため、受信したメッセージを識別できる要約を有界で保持する。
+# 初期化の停止位置を特定するため、受信したメッセージを識別できる要約を件数と長さの上限内で保持する。
 _INITIALIZATION_MESSAGE_LIMIT = 20
 _INITIALIZATION_MESSAGE_SUMMARY_LIMIT_CHARS = 200
 # 委譲先CLIの診断ログを置く場所と、自動削除の対象を決める保持世代数。
@@ -75,7 +75,7 @@ _DEBUG_LOG_RETENTION = 20
 
 
 class _InitializationDiagnostic:
-    """Claude SDK初期化の到達点と有界な観測値を保持する。"""
+    """Claude SDK初期化の到達段階と、件数と長さに上限を設けた観測値を保持する。"""
 
     def __init__(self) -> None:
         self.stage = "created"
@@ -121,7 +121,7 @@ class _InitializationDiagnostic:
 
 
 def _message_summary(message: Any) -> str:
-    """受信メッセージを識別できる有界な要約を返す。"""
+    """受信メッセージを識別できる要約を、長さの上限内で返す。"""
     for attribute in ("subtype", "hook_event_name", "event", "name"):
         value = getattr(message, attribute, None)
         if isinstance(value, str) and value:
@@ -245,7 +245,7 @@ class _CommandChannel:
 
 
 class _ContextUsageObserver:
-    """表示用の照会を受信列から分離し、更新中の古い応答を次の観測へ置換する。"""
+    """表示用のコンテキスト使用量の照会を受信ループと別のtaskで行い、照会中に新しい要求が届いた場合は古い応答を捨てて照会し直す。"""
 
     def __init__(self, client: Any) -> None:
         self._client = client
@@ -303,7 +303,7 @@ def _build_options(
     共有状態を所有するManagerから受け取ったrootを委譲先へ渡す。
     親の`--settings`層へ同じenvを合成し、ユーザー・project設定のenvより優先させる。
     親を取得・解析できない場合はenvだけのsettingsを使う。
-    ファイル由来の設定はargvへ内容を展開せず、起動が所有する限定読取のファイルを渡す。
+    親の設定がファイルの場合は内容をargvへ展開せず、起動ごとに作成した所有者だけが読めるファイルを渡す。
     軽量起動はSkillを明示除外し、基準の参照にはReadを使う。
 
     起動区分によらず権限モードをbypass系にしない。Claude Codeのセッション間メッセージの受信方針は、
@@ -742,7 +742,8 @@ class ClaudeServerManager:
         # 直接確定した場合と同じく`auto_resume_consumed`へ反映する。
         held_from_task_notification = False
         # `SystemMessage(init)`より前に届いたturn状態の報告。CLIはコマンドループの先頭で最初のturnの`running`を
-        # 発行するため、initより先に届き得る。捨てると最初のturnが従来判定へ戻るため、sessionの作成時に引き継ぐ。
+        # 発行するため、initより先に届き得る。捨てると最初のturnの判定が追跡集合だけの方法へ戻るため、
+        # sessionの作成時に引き継ぐ。
         early_cli_turn_state: str | None = None
         try:
             diagnostic.stage = "creating_client"
@@ -1164,7 +1165,7 @@ class ClaudeServerManager:
         """CLIのturn状態の報告を受けないまま結果を判定したことを、sessionごとに1回だけ警告する。
 
         報告が無い場合は追跡集合だけで判定する従来の方法へ戻り、`ResultMessage`より前に終わったバックグラウンドタスクの
-        再開turnを判別できない。CLIが報告をやめても判定の弱まりを検出できるようにログへ残す。
+        再開turnを判別できない。CLIが報告をやめて判定の精度が下がったことを検出できるようにログへ残す。
         """
         if session.cli_turn_state is not None or session.cli_turn_state_fallback_logged:
             return

@@ -17,7 +17,7 @@ from agent_toolkit._agents_server import launch_prompts, shared_layout, shared_r
 from agent_toolkit._agents_server import state as _agents_server_state
 from agent_toolkit._agents_server import tool_names as _agents_server_tool_names
 
-# 関数の実行時までだけ使う依存を、使用時まで読み込まない。
+# 関数の実行時にだけ使う依存は、使用時まで読み込まない。
 lazy from agent_toolkit._atk.wi import process_loop_log as _process_loop_log
 lazy from agent_toolkit._common import delegated_session as _delegated_session
 lazy from agent_toolkit._common.file_lock import acquire_lock, release_lock

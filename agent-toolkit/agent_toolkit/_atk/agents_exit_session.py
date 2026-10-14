@@ -13,7 +13,7 @@ import time
 from collections.abc import Callable
 from dataclasses import dataclass
 
-# ヘルプや他の処理では不要な依存を、使用時まで遅延する。
+# ヘルプや他の処理で使わない依存は、使用時まで読み込まない。
 lazy import psutil
 
 from agent_toolkit._atk import lane as _lane

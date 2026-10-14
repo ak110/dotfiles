@@ -86,7 +86,7 @@ TRANSITION_EXPLICIT_STATES = {
 }
 """操作ごとに明示`state`として受理する遷移元の状態。
 
-ファイル名指定の暗黙解決は各操作で指定を省いた場合の動作として別に扱い、本表は明示指定だけを統治する。
+ファイル名指定の暗黙解決は各操作で指定を省いた場合の動作として別に扱い、本表は明示指定で受理する状態だけを定める。
 暗黙解決は多くの操作で`inbox`・`processing`を探索し、`adopt`・`reject`は`BULK_SOURCE_STATES`から導いた`inbox`・`processing`・`hold`を探索する。
 `hold`は自動処理からの除外だけを意味し、保留操作以外の操作を妨げないため各操作の遷移元へ含める。
 `remove`は終端状態（`adopted`・`rejected`）も受理し、状態を戻さずに削除できる。
@@ -180,7 +180,7 @@ QUESTION_TYPE_YES_NO = "yes-no"
 QUESTION_TYPE_FREE_FORM = "free-form"
 """保存済みのUWIだけが持つ自由記述の回答形式。
 
-AskUserQuestionが選択肢を必須とし自由記述を「Other」で受ける形にそろえ、新規作成では受理しない。
+新規作成では、AskUserQuestionが選択肢を必須とし自由記述を「Other」で受ける形にそろえるため、この形式を受理しない。
 選択肢に無い回答は、選択肢形式のUWIの回答欄へ書き足して受ける。
 保存済みの項目の表示、回答と本文編集のためだけに読む。
 """

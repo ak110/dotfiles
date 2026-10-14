@@ -579,7 +579,7 @@ class TestExampleInvestigationNotice:
     def test_investigation_word_stems_cover_inflections(
         self, tmp_path: pathlib.Path, host_fields: dict, word_form: str
     ) -> None:
-        """原WIが指定した部分文字列は活用形でも注記を返す。"""
+        """調査を求める語の部分文字列は、活用形の発話にも注記を返す。"""
         result = _run(
             {"session_id": "example-inflections", "prompt": f"例えば通信経路を{word_form}", **host_fields},
             state_dir=tmp_path,

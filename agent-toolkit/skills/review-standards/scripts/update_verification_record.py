@@ -185,7 +185,11 @@ def _head(repository: pathlib.Path | None) -> str:
 
 
 def _generation_repository(plans: list[tuple[str, str]]) -> pathlib.Path:
-    """計画の対象を優先し、指定の不成立をcwdの別キューで隠さない。"""
+    """生成に使うリポジトリを計画の`対象リポジトリ`から解決して返す。
+
+    計画が指定した対象を解決できない場合は、cwdのworktreeへ切り替えずに失敗させる。
+    どの計画も対象を指定しない場合だけcwdのworktreeを返す。
+    """
     roots = set()
     for filename, content in plans:
         metadata, errors = parsing.parse_plan_metadata(content)

@@ -2,13 +2,13 @@
 
 import sys
 
-# 関数の実行時までだけ使う依存を、使用時まで読み込まない。
+# 関数の実行時にだけ使う依存は、使用時まで読み込まない。
 lazy from agent_toolkit._hooks import termination_evidence
 lazy from agent_toolkit._hooks.pretooluse import dispatch as _dispatch
 
 
 def main(payload_text: str) -> int:
-    """元の操作の判定を保ち、呼び出しの開始位置を終了工程の供給先へ渡す。"""
+    """ツール呼び出しの開始を終了工程の証拠へ記録してから、元の判定（`dispatch.main`）をそのまま実行する。"""
     try:
         termination_evidence.observe_tool(payload_text, after=False)
     except (OSError, ValueError, TypeError, KeyError) as error:

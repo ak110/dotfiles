@@ -27,7 +27,7 @@
 - 状態変更コマンドが変更後の状態を自ら判定して成功を報告する公開仕様を持つ場合は、委譲先が返した終了コード、成功の報告が挙げる対象の完全識別子、警告の有無で検収を済ませてよい。警告がある、項目が欠ける、識別子が起動時の値と異なる、公開仕様を持たない場合は直接観測する
 - 完了報告の事実の主張（実装、件数、原因など）は、後続の判断が入力とする成果物（AWI・UWIの本文、計画ファイル、レビュー指摘管理表など）へ書く前に、実装、実行結果または公式一次資料で確かめ、確認の手段と観測値も書く。確かめていない主張を事実と同じ文で書くと後続の判断が誤った前提で進む
 - 担当外ファイルの差分は、`<役割名>.subagent.md`が`## 出力`で返却形式を定める委譲では委譲元が終端後に`git -C <対象作業ツリーの絶対パス> status --porcelain=v1`で取得し、定めない委譲では完了報告から受け取る。差分の変化を観測しても工程を続け、続行可否は`agent-toolkit/rules/02-agent-operations.md`「作業中に観測したリポジトリ状態変化の扱い」で判定する
-- 複数worktreeで並行作業する場合、`refs/stash`は全worktreeで共有される。承認済みの退避はworktree横断排他ヘルパーだけで行い、`git stash push`・`pop`・`drop`を直接実行しない（private-notesは`agent-toolkit:wi-standards`の`references/repository-scope.md`が定める）
+- 複数worktreeで並行作業する場合、`refs/stash`は全worktreeで共有される。承認済みの退避は全worktreeの間で排他する`atk worktree-stash`だけで行う。`git stash push`・`pop`・`drop`を直接実行する代わりにこのコマンドを使う（private-notesは`agent-toolkit:wi-standards`の`references/repository-scope.md`が定める）
 - レビュー担当と調査担当は対象成果物を読み取り専用とし、起動した委譲元が起動前後の`git status --porcelain=v1`と対象commitを比べて担保する。書込みがあれば結果を採用せず自身の委譲元へ報告し、実害があれば復旧する。依存の解決で再生成される実行前提（仮想環境、ロックファイル、ビルド生成物、キャッシュ）が対象成果物でない場合は比較から除く。再現証跡が要る場合はmanaged-tempだけを書込可能にする
 
 ## 委譲元への返却

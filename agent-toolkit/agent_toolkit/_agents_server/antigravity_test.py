@@ -354,7 +354,7 @@ def test_model_output_step_is_observed_and_notified(tmp_path: pathlib.Path, monk
         manager = antigravity.AntigravityManager(condition=condition, log_directory=log_directory)
         session = await manager.start("調査して", str(tmp_path))
         log_file = log_directory / "conv-1.jsonl"
-        # 記録の追記とその行の処理は同じ同期区間で行われるため、4行目の出現は3件の`step_update`の処理済みを示す。
+        # 記録の追記とその行の処理は同じ同期区間で行われるため、4行目の出現は3件の`step_update`を処理し終えたことを示す。
         while not log_file.exists() or len(log_file.read_text(encoding="utf-8").splitlines()) < 4:
             await asyncio.sleep(0.01)
         before_output = session.model_output_observed

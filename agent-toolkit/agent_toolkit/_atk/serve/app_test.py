@@ -79,7 +79,7 @@ def test_assets_size_dialogs_with_small_viewport_height_unit() -> None:
 
 
 def test_assets_execute_error_paths_across_binding_and_initialization_code() -> None:
-    """末尾を含むJS全体で外部更新と初期化の失敗メッセージを表示する。"""
+    """外部変更の再読込と初期化のどちらで失敗しても、失敗メッセージを操作通知へ表示する。"""
     result = _run_node_ui(
         """
 fetchHandler = async url => {
@@ -242,7 +242,7 @@ process.stdout.write(JSON.stringify({remainingRow, emptyState: focused}));
 
 
 def test_assets_sse_keeps_edit_target_for_duplicate_filename() -> None:
-    """同名項目のSSE後も編集中の複合キーを保存先として維持する。"""
+    """同名の項目が別の状態にある一覧をSSEで受け取った後も、編集中の項目の状態とファイル名の組を保存先として維持する。"""
     result = _run_node_ui(
         """
 const processing = {
@@ -1012,7 +1012,7 @@ async def test_remove_api_returns_edit_conflict_before_target_repo_validation(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """対象リポジトリの一致を確かめる前に非UTF-8化を削除競合へ正規化する。"""
+    """取得後に非UTF-8へ書き換えられた削除対象は、対象リポジトリの一致を確かめる前に削除の競合として返す。"""
 
     _disable_wi_git(monkeypatch)
     inbox = tmp_path / "inbox"
@@ -1218,7 +1218,7 @@ async def test_sessions_detail_html_only_for_assistant(tmp_path: pathlib.Path) -
 
 @pytest.mark.asyncio
 async def test_entries_needs_verify_flag_conditions(tmp_path: pathlib.Path) -> None:
-    """`needs_verify`はメインの選定と同じ読み方で、最後の再開記録が観測だけが残る区分のinboxのawiだけを真とする。
+    """`needs_verify`はprocess-wiのメインエージェントの選定と同じ読み方で、最後の再開記録が観測だけが残る区分のinboxのawiだけを真とする。
 
     条件が広いと未着手や処理中の項目まで観測待ちとして示し、狭いと観測待ちの項目が未着手と区別できない。
     """

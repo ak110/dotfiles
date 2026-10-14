@@ -1192,7 +1192,7 @@ async def test_send_message_preserves_child_wait_until_completion(
     completion_order: str,
     tmp_path: pathlib.Path,
 ) -> None:
-    """Codexの公開追送を失敗・反復しても子を追跡し、保留結果の公開と同じ完了の二重配送を避ける。"""
+    """Codexへの`send_message`による追送が失敗しても反復しても子sessionの追跡を保ち、保留結果の公開と同じ完了を二重に配送しない。"""
     manager, backend, session, _writer = _codex_parent_with_child(tmp_path)
     child = "codex-send-child"
 

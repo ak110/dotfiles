@@ -55,7 +55,7 @@ STDERR_EXCERPT_MAX_CHARS = _atk_serve_remote.STDERR_EXCERPT_MAX_CHARS
 # `read`は記録1件の読み取りで、記録量に比例しない。
 OPERATION_TIMEOUT_SEC = {"list": 300.0, "read": 30.0}
 # RPCが上限を超えても単発SSHへ切り替えない操作。単発SSHは同じ走査を索引の無い新しいプロセスで
-# 最初からやり直すため、走査を続けている常駐ヘルパーより先に終わらず、そのCPUを奪い合う。
+# 最初からやり直すため、走査を続けている常駐ヘルパーより先に終わらず、常駐ヘルパーとCPUを奪い合う。
 _NO_FALLBACK_ON_RPC_TIMEOUT = frozenset({"list"})
 # 常駐SSH接続のstdout用StreamReader上限（バイト）。一覧・本文は1行JSONで届くため大きく取る。
 REMOTE_STREAM_LIMIT_BYTES = 128 * 1024 * 1024

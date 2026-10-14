@@ -35,9 +35,9 @@ def cmd_process_loop(args: argparse.Namespace, private_notes: pathlib.Path) -> N
     `--worktree[=NAME]`指定時は任意の対象リポジトリで、dotfiles対象時は無指定でも、
     `.claude/worktrees/<NAME>`のworktreeを上流へ追随させてからセッションを起動する。
     オーケストレーター・model・effortは`orchestrate_engine`のengine順とengine別のhigh段位モデル設定
-    （未指定なら`claude:opus[1m]/medium,codex:sol/medium`）からセッション起動反復ごとに候補列として解決する。本作業の前に副作用のない極小起動で候補を先頭から実際に試し、
-    最初に可用な候補をClaude CodeまたはCodexの新規起動とresumeの双方へ渡す。
-    全Claude子セッションでhook限定debug logを有効化し、子環境の`CLAUDE_CONFIG_DIR/debug/`、
+    （未指定なら`claude:opus[1m]/medium,codex:sol/medium`）からセッション起動反復ごとに候補列として解決する。セッション本体の前に副作用のない最小限の起動で候補を先頭から試し、
+    最初に起動できた候補をClaude CodeまたはCodexの新規起動とresumeの双方へ渡す。
+    Claudeの子セッションでは常にhookに限定したdebug logを有効にし、子環境の`CLAUDE_CONFIG_DIR/debug/`、
     未設定時はユーザーホーム配下`.claude/debug/`へ所有者限定の一意なログを保存する。
     Codexは対話CLIを使い、設定値のmodel・effortを起動引数へ渡す。
     Claude Codeは0・-15・15・143、POSIXのCodexは0・-15、WindowsのCodexは0を正常終了とする。
@@ -68,8 +68,8 @@ def cmd_process_loop(args: argparse.Namespace, private_notes: pathlib.Path) -> N
     （`AGENT_TOOLKIT_PROCESS_LOOP_SESSION=1`未設定時はno-op）。
     待機ループ復帰時に自己コード更新を検知して再起動した場合は`restart_on_wait_loop_update`を記録する。
     dotfilesを対象とし、更新を有効にした起動ではmiseのlatest指定ツールを起動時と24時間ごとに再評価する。
-    成功した`update-dotfiles`直後は再評価時刻を更新し、正常再起動先へ一回限りの内部指定を渡して重複を避ける。
-    更新成功による再起動先は、同じ上流状態への開始前更新を一回だけ抑止する。
+    成功した`update-dotfiles`の直後は再評価時刻を更新し、正常終了後に再起動するプロセスへ1回限りの内部指定を渡して同じ再評価を重ねない。
+    更新の成功で再起動したプロセスは、同じ上流状態に対する開始前の更新を1回だけ省く。
     """
     _pl_session.resolve_orchestrator_specs()
     local_path = resolve_local_worktree(args.target_repo)
@@ -102,7 +102,7 @@ def cmd_process_loop(args: argparse.Namespace, private_notes: pathlib.Path) -> N
     active_ownership: _pl_ownership.Ownership | None = None
 
     def finish_session_ownership(completed: bool) -> None:
-        """再起動より前に担当sessionを保持してoriginの所有を解放する。"""
+        """再起動より前に、担当sessionの識別子を所有記録へ書き込んでからoriginの所有を解放する。"""
         nonlocal active_ownership
         if active_ownership is None:
             return

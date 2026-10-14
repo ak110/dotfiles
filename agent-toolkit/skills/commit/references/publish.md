@@ -61,7 +61,7 @@ UWIには対象公開先・commit、確認済み工程、必要な操作と返�
 再開記録には公開先・commit・ref、成功済み工程、CI未判定、baseline・保存出力とUWIの所在、欠ける前提と再開位置を残す。
 回答後は`agent-toolkit:user-confirmation-and-report`の`references/answer-transitions.md`に従い、同じ担当sessionを保持していれば配送し、無ければ記録から未完了工程だけを再開する。
 process-wiの元項目の取り込みは`agent-toolkit:wi-standards`「回答済みUWIの取り込み」に従う。
-独立した有効な証拠で定義不在を確定できた場合は通常の不在受理へ戻り、全体検証の失敗は別の未完了として是正する。
+独立した有効な証拠でCI定義の不在を確定できた場合は「CI定義なし」を終端状態とする通常の工程へ戻り、全体検証の失敗は別の未完了として是正する。
 
 ## プロジェクト固有の公開後の操作とリリース
 

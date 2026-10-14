@@ -138,7 +138,7 @@ def session_environment(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path)
 def test_agents_list_returns_diagnostic_fields_without_prompt(
     capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """listは稼働と稼働時間に使う項目へ限定し、内部追加と詳細診断を返さない。"""
+    """listは稼働と稼働時間に使う項目へ限定し、内部で追加した項目と詳細診断を返さない。"""
     monkeypatch.setenv("AI_AGENT", "1")
     with pytest.raises(SystemExit, match="0"):
         atk.main(["agents", "list"])
@@ -841,7 +841,7 @@ def test_agents_list_reports_unconfirmed_conversation_root(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """対応未確認の空一覧は成功扱いせず、MCP一覧による復旧を案内する。"""
+    """rootとの対応を確認できない空一覧は成功として扱わず、MCP一覧による復旧を案内する。"""
     monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "current-session")
     monkeypatch.setenv("AI_AGENT", "1")
     monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)
@@ -1053,7 +1053,7 @@ def test_agents_logs_markdown_renders_codex_record(
 def test_agents_logs_reads_subagent_and_appends_it_to_parent_markdown(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """サブエージェントのIDと親からの双方で同じ保存記録へ到達する。"""
+    """サブエージェントのIDからも親の記録からも同じ保存記録へ到達する。"""
     parent = tmp_path / "projects" / "sample" / "parent.jsonl"
     _write_jsonl(parent, [{"type": "user", "timestamp": "2026-09-24T00:00:00Z", "message": {"content": "親の依頼"}}])
     child_id = "agent-a7157f79d55caab81"
@@ -1101,7 +1101,7 @@ def test_agents_logs_rejects_incompatible_scopes(argv: list[str], capsys: pytest
 def test_agents_logs_bulk_export_filters_projects_and_preserves_existing_files(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """ClaudeとCodexを全件変換し、同日時名の衝突と既存ファイルを安全に扱う。"""
+    """ClaudeとCodexを全件変換し、同じ日時から作るファイル名の衝突と既存ファイルを安全に扱う。"""
     project = tmp_path / "work" / "sample"
     encoded = str(project).replace("/", "-").replace(".", "-")
     claude_root = tmp_path / "claude" / "projects" / encoded

@@ -42,5 +42,5 @@ Claude Codeでは`atk run-script termination-evidence -- --context`からも現�
 `session_id`、`work_id`と直近のユーザー入力の`input_id`は遮断の通知から得る。
 判断は指定した作業だけへ作用し、ユーザーの割り込みと直接関係しない他の作業の起動不足は残る。
 生成されたStopの継続入力やhookの注記はユーザーの原入力として受理されず、完了の申告を記録する操作は無い。
-証拠を取得できない場合は遮断せず、判定できなかったことを記録する。
+証拠を取得できない場合、Stop hookは遮断せず、判定できなかったことを記録する。
 自律モードの報告用UWIの保存検収と`atk agents-exit-session`は、Stop hookの判定と別に同スキルの手順8・9が定める。

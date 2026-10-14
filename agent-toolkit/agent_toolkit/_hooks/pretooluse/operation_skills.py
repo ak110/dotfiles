@@ -33,7 +33,7 @@ import dataclasses
 import pathlib
 import re
 
-# 関数の実行時までだけ使う依存を、使用時まで読み込まない。
+# 関数の実行時にだけ使う依存は、使用時まで読み込まない。
 lazy from collections.abc import Callable, Sequence
 
 from agent_toolkit._hooks.notice import _WARN_TAG
@@ -250,10 +250,10 @@ def _copy_write_paths(name: str, arguments: tuple[str, ...]) -> list[str]:
 
 
 def _perl_write_paths(arguments: tuple[str, ...]) -> list[str]:
-    """perlのin-place対象を返し、オプション値とprogramfile以降を旗として読まない。
+    """perlのin-place編集の対象を返す。オプションの値とprogramfile以降の引数はオプションとして読まない。
 
-    必須値は連結部分または次の語を消費する。任意値は同じ語だけを使い、
-    -l/-0の数値部分の後に続く-piなどは旗として読む。
+    値を必須とするオプションは連結部分または次の語を値として消費し、値を任意とするオプションは同じ語だけを値とする。
+    -l/-0の数値部分の後に続く-piなどはオプションとして読む。
     """
     inplace = False
     inline = False
@@ -300,7 +300,7 @@ def _perl_write_paths(arguments: tuple[str, ...]) -> list[str]:
 
 
 def _static_write_path(path: str) -> str | None:
-    """最後の展開より後ろの絶対末尾だけを採用し、未知のbasenameを推定しない。"""
+    """未知の展開を含むパスは、最後の展開より後ろが`/`で始まる場合だけその末尾を返し、それ以外はbasenameを推定せず`None`を返す。"""
     if STATIC_UNKNOWN not in path:
         return path
     suffix = path.rsplit(STATIC_UNKNOWN, 1)[1]

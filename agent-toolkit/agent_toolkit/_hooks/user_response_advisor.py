@@ -22,7 +22,7 @@ import json
 from agent_toolkit._hooks import agent_id, notice
 from agent_toolkit._hooks import stop_session as _stop_session
 
-# 関数の実行時までだけ使う依存を、使用時まで読み込まない。
+# 関数の実行時にだけ使う依存は、使用時まで読み込まない。
 lazy from agent_toolkit._common import message_format as _message_format
 lazy from agent_toolkit._common import transcript
 lazy from agent_toolkit._hooks.host import is_codex_payload

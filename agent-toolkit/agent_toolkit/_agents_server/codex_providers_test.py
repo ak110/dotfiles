@@ -16,7 +16,7 @@ from agent_toolkit._testing.agents_server_support import FakeCodexClient, instal
 
 pytestmark = pytest.mark.usefixtures("agents_server_isolation")
 
-# 公開操作の結果と、RPC・永続再開情報の内部境界を比較する。
+# 公開操作の結果に加え、RPCと永続再開情報の内部状態も直接比較する。
 # pylint: disable=protected-access
 
 
@@ -108,7 +108,7 @@ class ProviderClient(FakeCodexClient):
 
 @pytest.fixture(name="provider_environment")
 def configure_provider_environment(monkeypatch):
-    """資格情報は架空のAPI値だけとし、開発機の設定を消費しない。"""
+    """資格情報は架空のAPI値だけとし、開発機の設定を使わない。"""
     monkeypatch.setenv(
         config._config_env_name("codex_model_providers"), "openai,missing,no-auth,shared-token,paid-a,paid-a,paid-b"
     )
@@ -158,7 +158,7 @@ def publish_api_session(tmp_path):
 
 
 async def fail_subscription(backend, tmp_path):
-    """開始済みサブスクturnの確定した上限拒否を配送する。"""
+    """サブスクリプションで開始済みのturnに、確定した利用上限の拒否を配送する。"""
     session = await backend.start("元の作業", str(tmp_path), None, None)
     await complete(backend, session, {"codexErrorInfo": "usageLimitExceeded"})
     return session
@@ -441,7 +441,7 @@ async def test_provider_failover_result_collection(monkeypatch, tmp_path, provid
 
 @pytest.mark.asyncio
 async def test_restored_api_provider_ignores_changed_configuration(monkeypatch, tmp_path, provider_environment):
-    """stop相当の解放と再起動後も公開追送が確定済み接続先を使う。"""
+    """stop相当の解放と再起動の後も、公開の追送は確定済みの接続先を使う。"""
     del provider_environment
     monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
     publish_api_session(tmp_path)
@@ -536,7 +536,7 @@ async def test_empty_provider_configuration_keeps_current_resume_settings(
 @pytest.mark.asyncio
 @pytest.mark.parametrize("subscription", [True, False])
 async def test_turn_start_failure_keeps_provider_details_private(monkeypatch, tmp_path, provider_environment, subscription):
-    """構造化失敗で有限継続を判定し、追加の接続先情報は公開結果へ入れない。"""
+    """構造化された失敗情報から有限回の継続を判定し、追加の接続先情報は公開結果へ入れない。"""
     del provider_environment
     client = ProviderClient()
     client.allowed = subscription
@@ -573,7 +573,7 @@ async def test_turn_start_failure_keeps_provider_details_private(monkeypatch, tm
 
 @pytest.mark.asyncio
 async def test_provider_order_overrides_codex_default(monkeypatch, tmp_path, provider_environment):
-    """Codexの通常接続がAPIでも明示列の先頭でサブスクを開始する。"""
+    """Codexの通常接続がAPIでも、明示した接続先列の先頭にあるサブスクリプションで開始する。"""
     del provider_environment
     client = ProviderClient()
     client.primary = "paid-b"
@@ -594,7 +594,7 @@ async def test_provider_order_overrides_codex_default(monkeypatch, tmp_path, pro
 @pytest.mark.asyncio
 @pytest.mark.parametrize("next_order", ["paid-a,openai,paid-b", "paid-b,paid-a"])
 async def test_api_primary_uses_ordered_api_candidates(monkeypatch, tmp_path, provider_environment, next_order):
-    """API先頭の確定失敗は後続APIへ進み、ChatGPTへ戻らない。"""
+    """先頭のAPI接続先で失敗が確定した場合は後続のAPIへ進み、ChatGPTへ戻らない。"""
     del provider_environment
     monkeypatch.setenv(config._config_env_name("codex_model_providers"), "paid-a,openai,paid-b")
     client = ProviderClient()
@@ -616,7 +616,7 @@ async def test_api_primary_uses_ordered_api_candidates(monkeypatch, tmp_path, pr
 @pytest.mark.asyncio
 @pytest.mark.parametrize("order", ["paid-a", "missing,paid-a,paid-b"])
 async def test_api_primary_start_rejection_is_finite(monkeypatch, tmp_path, provider_environment, order):
-    """無効候補と開始拒否から指定順だけを試し、通常接続へ戻らない。"""
+    """無効な候補と開始を拒否した候補があっても指定順の候補だけを試し、通常接続へ戻らない。"""
     del provider_environment
     monkeypatch.setenv(config._config_env_name("codex_model_providers"), order)
     client = ProviderClient()
@@ -639,7 +639,7 @@ async def test_api_primary_start_rejection_is_finite(monkeypatch, tmp_path, prov
 @pytest.mark.asyncio
 @pytest.mark.parametrize("reason", ["stopped", "retention_expired"])
 async def test_api_primary_registry_restores_after_release(monkeypatch, tmp_path, reason):
-    """サブスク履歴のない主APIも解放後の公開追送で同じ接続先を維持する。"""
+    """サブスクリプションの利用履歴が無い主APIの接続先も、解放後の公開の追送で同じ接続先を維持する。"""
     monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
     session_registry.publish(
         "provider-thread", terminal=True, engine="codex", cwd=str(tmp_path), codex_model_provider="paid-b", status="completed"

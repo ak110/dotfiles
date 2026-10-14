@@ -1,5 +1,5 @@
 #!/usr/bin/env -S uv run --no-config --no-project --python 3.15 python
-"""配布内では自身のroot、個人のbinへ複製した旧呼出し用では導入済みrootからhookを起動する。"""
+"""配布物内からの呼出しでは自身のroot、個人のbinへ複製した旧来の呼出し用では導入済みのrootからhookを起動する。"""
 
 import json
 import os

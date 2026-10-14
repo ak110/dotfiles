@@ -437,7 +437,7 @@ class TestWaitLoopAutoRestart:
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
     ) -> None:
-        """変更検知だけでは待機中更新を行わず、次のready処理開始境界へ委ねること。"""
+        """変更を検知しただけでは待機中に更新せず、次にready項目の処理を始める時点へ更新を委ねること。"""
         subprocess_calls, execv_calls = self._run_until_stop(
             monkeypatch,
             tmp_path,
@@ -759,7 +759,7 @@ def _process_loop_commands_isolated(monkeypatch: pytest.MonkeyPatch, tmp_path: p
 
 @pytest.mark.usefixtures("process_loop_commands_isolated")
 class TestProcessLoopUpdateAndRestart:
-    """1反復後のupdate-dotfiles実行と自身再起動の挙動を検証する。"""
+    """1反復後のupdate-dotfiles実行と自己再起動の挙動を検証する。"""
 
     def test_update_and_execv_called_by_default(
         self,

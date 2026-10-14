@@ -6,8 +6,8 @@ from __future__ import annotations
 class ManagedTempError(Exception):
     """ユーザーが入力または実行環境を修正できる検証エラー。
 
-    `str()`は理由だけを返し、`next_action`に次の操作を持つ。送出箇所が原因の分類に応じた次の操作を渡し、
-    渡さない送出箇所には状態の確認と報告先を示す次の操作を共通の案内として使う。
+    `str()`は理由だけを返し、`next_action`に次の操作を持つ。送出箇所は原因の分類に応じた次の操作を渡す。
+    次の操作を渡さない送出箇所では、状態の確認と報告先を示す共通の案内を使う。
     """
 
     DEFAULT_NEXT_ACTION = (

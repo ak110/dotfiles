@@ -1,4 +1,4 @@
-"""_managed_tempの管理対象一時ディレクトリ境界を検証する。"""
+"""managed-tempの作成、検証、列挙、掃引と後始末を実際のファイルで検証する。"""
 
 # pylint: disable=protected-access
 
@@ -1064,7 +1064,7 @@ class TestManagedTempPosix:
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
     ) -> None:
-        """公開引数の明示指定だけが確認済み登録不在からの復元を有効にする。"""
+        """登録が無い管理対象の復元は、公開引数を明示指定した場合だけ行う。"""
         monkeypatch.setattr(tempfile, "gettempdir", lambda: str(tmp_path))
         target = subject.create_managed_temp("registry-recovery-cli")
         registry = managed_temp_registry._registry_path(target)
@@ -1148,7 +1148,7 @@ class TestManagedTempPosix:
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
     ) -> None:
-        """実体不在でも消費途中状態を登録へ戻して管理記録を終端する。"""
+        """実体不在でも消費途中状態を登録へ戻し、登録と消費途中状態を削除して後始末を完了する。"""
         monkeypatch.setattr(tempfile, "gettempdir", lambda: str(tmp_path))
         target = subject.create_managed_temp("resume-missing")
         consuming, _ = _interrupt_cleanup(target)
@@ -1165,7 +1165,7 @@ class TestManagedTempPosix:
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """真正な隔離途中状態の内容を削除して登録を終端する。"""
+        """真正な隔離途中状態の内容を削除し、登録と消費途中状態も削除して後始末を完了する。"""
         monkeypatch.setattr(tempfile, "gettempdir", lambda: str(tmp_path))
         target = subject.create_managed_temp("resume-quarantine")
         (target / "content.txt").write_text("remove", encoding="utf-8")
@@ -1531,7 +1531,7 @@ class TestManagedTempPosix:
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
     ) -> None:
-        """marker削除後の失敗では二重管理情報を復元し、同じcleanupを再試行できる。"""
+        """marker削除後の失敗ではmarkerと登録の両方の管理情報を復元し、同じcleanupを再試行できる。"""
         monkeypatch.setattr(tempfile, "gettempdir", lambda: str(tmp_path))
         target = subject.create_managed_temp("retry-cleanup")
         registry = managed_temp_registry._registry_path(target)
@@ -1730,7 +1730,7 @@ class TestManagedTempPosix:
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
     ) -> None:
-        """検証中のroot権限変更を子操作へ進めない。"""
+        """検証中にrootの権限が変わった場合は、子の検証へ進まずに失敗する。"""
         root = tmp_path / "shared-root"
         root.mkdir()
         root.chmod(0o700)

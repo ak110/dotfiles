@@ -26,7 +26,7 @@ if typing.TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-# debounce窓。watchdogは1回の書き込みで複数イベントを発火するため、時間窓で畳み込む。
+# debounce窓。watchdogは1回の書き込みで複数イベントを発火するため、時間窓内のイベントを1回の通知にまとめる。
 _BROADCAST_DEBOUNCE_SEC = 0.3
 _SSE_REFRESH_PAYLOAD = json.dumps({"type": "refresh"}, ensure_ascii=False)
 
@@ -172,7 +172,7 @@ async def schedule_broadcast(state: BroadcastState) -> None:
     """debounce窓を使って`deliver_refresh`を遅延実行する。
 
     既にdebounceタスクが実行中の場合は何もしない。
-    タイマー中に追加イベントを無視することで時間窓で畳み込む動作となる。
+    待機中の追加イベントを無視するため、時間窓内のイベントは1回の配信にまとまる。
     """
     async with state.lock:
         if state.debounce_task is not None and not state.debounce_task.done():
@@ -190,7 +190,7 @@ async def deliver_refresh(state: BroadcastState) -> None:
     """全購読者へ`{"type":"refresh"}`を配信する。
 
     キューが既に満杯の場合は新規通知を破棄する（既に未配信の通知があるため、
-    クライアントは次に取り出した時点で最新化される）。
+    クライアントはその通知を取り出した時点で最新の状態を取得する）。
     """
     await _broadcast(state, _SSE_REFRESH_PAYLOAD)
 

@@ -495,7 +495,7 @@ async def test_long_unknown_metadata_key_wraps_at_narrow_viewport(
 
 @pytest.mark.asyncio
 async def test_accessible_workflows_filters_warnings_and_sse_status(browser_harness: _BrowserHarness) -> None:
-    """回答・削除フォーカス、条件依存、警告、エンドユーザー起点だけの件数通知を検証する。"""
+    """回答・削除の操作のフォーカス、条件に応じた表示、警告と、エンドユーザーの操作による更新だけに出す件数通知を検証する。"""
     harness = browser_harness
     page = harness.page
     await page.goto(harness.base_url + "/")
@@ -633,7 +633,7 @@ async def test_accessible_workflows_filters_warnings_and_sse_status(browser_harn
 async def test_post_approval_fixed_choices_show_saved_state(
     browser_harness: _BrowserHarness, choice: str, addition: str, saved_state: str
 ) -> None:
-    """専用二択の保存通知は実際の採用済み遷移を伝え、是正・追記は回答済みで残る。"""
+    """事後承認の二択への回答の保存通知は実際に採用済みへ移したことを伝え、是正や追記を含む回答は回答済みのinboxに残る。"""
     harness = browser_harness
     filename = "post-approval.md"
     (harness.root / "inbox" / filename).write_text(
@@ -1051,7 +1051,7 @@ Object.defineProperty(window, 'Notification', {configurable: true, value: TestNo
 
 @pytest.mark.asyncio
 async def test_pending_edit_and_closed_delete_route_results(browser_harness: _BrowserHarness) -> None:
-    """未解決更新の二重送信、入力固定、処理中閉鎖、完了結果の配送先を検証する。"""
+    """応答待ちの更新の二重送信の抑止、入力の無効化、処理中にダイアログを閉じた場合の完了結果の通知先を検証する。"""
     harness = browser_harness
     page = harness.page
     await page.goto(harness.base_url + "/")
@@ -1166,7 +1166,7 @@ async def test_sse_refreshes_open_detail_preserves_input_and_closes_missing_entr
 async def test_detail_focus_falls_back_after_answer_filter_and_delete(
     browser_harness: _BrowserHarness,
 ) -> None:
-    """回答後の詳細を閉じたときや削除・0件化後に操作可能な一覧要素へ戻る。"""
+    """回答後に詳細を閉じたときと削除・0件化の後は、フォーカスが操作できる一覧の要素へ戻る。"""
     harness = browser_harness
     page = harness.page
     harness.operations.enable_file_mutations()
@@ -1205,7 +1205,7 @@ async def test_detail_focus_falls_back_after_answer_filter_and_delete(
 async def test_sse_reconciliation_preserves_identity_and_owned_dialogs(
     browser_harness: _BrowserHarness,
 ) -> None:
-    """同名項目、状態移動、親子ダイアログ消失を実ブラウザーで調停する。"""
+    """同名の項目、状態の移動、詳細と削除確認のダイアログを開いている間の対象の消失を、実ブラウザーで正しく扱う。"""
     harness = browser_harness
     page = harness.page
     processing = harness.root / "processing"
@@ -1568,10 +1568,10 @@ async def test_cooldown_resyncs_after_changes_and_visibility(browser_harness: _B
 async def test_delete_and_sse_completion_orders_close_owned_dialogs_once(
     browser_harness: _BrowserHarness,
 ) -> None:
-    """削除応答とSSEの到着順にかかわらず、親子を閉じて一覧へ戻す。
+    """削除応答とSSEの到着順にかかわらず、詳細と削除確認のダイアログを閉じて一覧へ戻す。
 
     応答より先に届いた更新通知は自分の削除によるものを含むため、応答まで詳細の再読込を保留し、
-    応答の後に親子を閉じて削除の成功を通知する。
+    応答の後に両方のダイアログを閉じて削除の成功を通知する。
     """
     harness = browser_harness
     page = harness.page
@@ -1614,7 +1614,7 @@ async def test_delete_and_sse_completion_orders_close_owned_dialogs_once(
 async def test_user_filter_announcement_survives_same_state_sse_repo_request(
     browser_harness: _BrowserHarness,
 ) -> None:
-    """同一状態の後発SSE候補要求後も、エンドユーザーの件数通知を完了する。"""
+    """同じ状態の対象リポジトリ候補の要求がSSEで後から発行されても、エンドユーザーの操作による件数通知を完了する。"""
     harness = browser_harness
     page = harness.page
     await page.goto(harness.base_url + "/")
@@ -1831,7 +1831,7 @@ async def test_answer_rebase_in_progress_shows_recovery(
 async def test_delete_confirmation_closes_on_detail_failure_and_content_conflict(
     browser_harness: _BrowserHarness,
 ) -> None:
-    """一覧後の詳細失敗と確認後の内容競合では、古い削除確認を閉じる。"""
+    """一覧の更新後に詳細の再取得が失敗した場合と、削除確認の後に内容が競合した場合は、古い削除確認を閉じる。"""
     harness = browser_harness
     page = harness.page
     harness.operations.enable_file_mutations()
@@ -2076,7 +2076,7 @@ async def test_create_dialog_show_text_after_preface_stays_single_entry(browser_
 async def test_invalid_input_focus_keeps_whole_error_in_dialog_body(
     browser_harness: _BrowserHarness, width: int, height: int, input_height: int | None
 ) -> None:
-    """不正入力へ戻った直後に対応エラー全文を読め、本文をスクロールしても操作領域は固定される。"""
+    """不正な入力欄へフォーカスが戻った直後に対応するエラーの全文が見え、本文をスクロールしてもヘッダーとフッターの位置は変わらない。"""
     harness = browser_harness
     page = harness.page
     (harness.root / "inbox" / "long-entry.md").write_text(

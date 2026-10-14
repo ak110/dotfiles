@@ -23,7 +23,7 @@ forkの監査記録は`docs/development/audit-records.md`の「agent-toolkit/ski
 
 ## 工程別モデル設定
 
-次の工程では、表の用途のengine順に従ってengineごとの段位のモデル設定を並べた候補を使う。表の「起動直前に解決するエージェント」が指すメインは、`agent-toolkit:process-wi`のメインか`agent-toolkit:plan-mode`を起動したエージェントとする。
+次の工程では、表の用途が定めるengine順に、各engineで表の段位に設定したモデルを並べて候補とする。表の「起動直前に解決するエージェント」が指すメインは、`agent-toolkit:process-wi`のメインか`agent-toolkit:plan-mode`を起動したエージェントとする。
 
 | 対応工程（呼び出し・役割） | 用途 | 段位 | 起動直前に解決するエージェント | 起動手段 |
 | --- | --- | --- | --- | --- |

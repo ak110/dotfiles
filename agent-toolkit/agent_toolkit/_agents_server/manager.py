@@ -75,7 +75,7 @@ REPLY_DELIVERIES = frozenset({"reply_started", "reply_failed", "reply_ambiguous"
 # `turn/completed`で失敗した（2026-09-02、`explore_fast`候補`gpt-5.6-terra/medium`で3回測定）。
 # 再検証は同じ失敗状態で`AppServerManager.start`を呼び、応答から終端までの経過を測る。
 # 可用性失敗は最初のモデル出力より前に生じるため、正常起動ではモデル出力の観測で上限を待たずに打ち切る。
-# Claudeでは、失敗した要求が始めないAPIの応答開始（`message_start`）をモデル出力の観測として扱う。
+# Claudeでは、失敗した要求では始まらないAPIの応答開始（`message_start`）をモデル出力の観測として扱う。
 START_AVAILABILITY_TIMEOUT = 15.0
 
 
@@ -317,7 +317,7 @@ class AgentsServerManager(manager_wait.ManagerWait):
         )
 
     async def _save_started_session(self, session: SessionState) -> list[dict[str, str]]:
-        """開始済みの情報を公開し、補助保存の失敗をsession不在へ変換しない。"""
+        """開始済みの情報を公開し、共有状態などの補助的な保存に失敗してもsessionが存在しないとは扱わない。"""
         warnings: list[dict[str, str]] = []
         try:
             session.touch()
@@ -430,7 +430,7 @@ class AgentsServerManager(manager_wait.ManagerWait):
         ) from last_timeout
 
     async def _abandon_unavailable_session(self, session: SessionState) -> None:
-        """次候補へ進む前に可用性失敗sessionの全資源を解放する。"""
+        """次候補へ進む前に、可用性の失敗で終端したsessionの全資源を解放する。"""
         await self._backend(session.engine).release_session(session)
         await session.drain_registration()
         self._cancel_retention_timer(session.session_id)
@@ -631,7 +631,7 @@ class AgentsServerManager(manager_wait.ManagerWait):
             ) from exc
 
     async def _kill_result_response_async(self, session: SessionState, *, kill_requested: bool) -> dict[str, Any]:
-        """回収をloopで確定し、競合する保存の終端と結果削除を待ってからkillの本文を返す。"""
+        """結果の回収をイベントループ上で確定し、競合する保存処理の終了と結果ファイルの削除を待ってから、killの応答本文を返す。"""
         response = self._kill_result_response(session, kill_requested=kill_requested)
         if "agent_message" in response and self._status_writer is not None:
             await self._status_writer.delete_result_async(session.session_id, collector="kill")

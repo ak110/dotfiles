@@ -6,7 +6,7 @@
 
 起動したスキルが許す成果物の種類の扱いは`agent-toolkit:user-confirmation-and-report`の`SKILL.md`「成果物の制限」に従う。
 
-ユーザーの割り込みが扱う話題は会話で返し、無関係な工程は自律モードを保つ。
+ユーザーの割り込みが扱う話題には会話で応答し、割り込みと無関係な工程は自律モードのまま進める。
 
 委譲先の返却をユーザー確認へ渡す前に、`agent-toolkit:user-confirmation-and-report`「確認要否の判定」を適用し、不足は同じ委譲先へ返す。技術判断（実装順序・分割・配置など）は自ら行い、問う場合は実装の具体値や手段ではなくそれを導く方針を問う。
 
@@ -20,7 +20,7 @@
 
 目的に比べて不自然・非効率・反復的な作業（回避策・手作業の反復・過剰な手順など）に気付いたら、その時点の発話へ`気付いた改善点: <観測した事象と、その対象のツール・手順・条文>`の1行を添えて作業を続ける。
 
-この行の原因分析と是正・AWI化の判断は`agent-toolkit:session-review`へ委ね、その場では`agent-toolkit:bugfix`を起動せずAWIも登録しない。準備後や最終報告の送達後に生じた行も、同スキルの工程6から分析と報告更新へ含めて終了する。これは`agent-toolkit/rules/01-agent.md`「完遂と先送り」の独立した既存不良の即時是正に代わる。続行を妨げる欠陥は同節のとおりその場で直す。改善点がQに影響する問題を含む場合は、`agent-toolkit:bugfix`の`references/root-cause-analysis.md`「QとC・Dの区別」に従い、その部分を問題として扱う。
+この行の原因分析と是正・AWI化の判断は`agent-toolkit:session-review`へ委ね、その場では`agent-toolkit:bugfix`を起動せずAWIも登録しない。同スキル工程1の準備より後や最終報告の送達後に生じた行も、同スキルの工程6に従って分析と報告の更新へ含めてから終了する。これは`agent-toolkit/rules/01-agent.md`「完遂と先送り」の独立した既存不良の即時是正に代わる。続行を妨げる欠陥は同節のとおりその場で直す。改善点がQに影響する問題を含む場合は、`agent-toolkit:bugfix`の`references/root-cause-analysis.md`「QとC・Dの区別」に従い、その部分を問題として扱う。
 
 委譲先の返却が同じ行を持つ場合は、モードによらず次のユーザーへの発話へ`agent-toolkit:delegation`の`references/receiving.md`「受領後の扱い」に従って転記する。
 

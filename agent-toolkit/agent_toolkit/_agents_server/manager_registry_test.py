@@ -921,9 +921,9 @@ async def test_unrecoverable_registry_record_reports_next_action(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> None:
-    """再開できない登録簿の状態は、符号に加えて取るべき操作を次の操作で示す。
+    """再開できない登録簿の状態は、`error.recovery`の値に加えて、取るべき操作を次の操作の行で示す。
 
-    符号だけを返すと、委譲元は別の主体が実行中のsessionを新しいstartでやり直し得る。
+    `error.recovery`の値だけを返すと、委譲元は別の主体が実行中のsessionを新しいstartでやり直し得る。
     """
     monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
     session_id = "0ba2f3f4-3e6c-4a1a-9a35-9f5e30b9f9b1"

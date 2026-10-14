@@ -33,7 +33,7 @@ _BACKGROUND_OUTPUT_NOTICE = (
 
 @pytest.fixture(autouse=True)
 def _isolate_failure_ledger(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
-    """失敗署名の発生記録をテストごとの状態ディレクトリへ閉じる。"""
+    """失敗署名の発生記録の保存先をテストごとの状態ディレクトリへ限定する。"""
     monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path / "state")  # pylint: disable=protected-access
 
 
@@ -407,7 +407,7 @@ def test_failure_variable_values_share_signature(
 
 
 def test_prepare_recomputes_legacy_failure_ledger(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
-    """旧集約の4セッションを保存した理由で1・2・1へ分け、再準備で重ねず時刻を保つ。"""
+    """旧形式の署名で集約された4セッションの記録を、保存済みの代表診断の理由で1・2・1件の署名へ分け直し、再準備でも記録を重複させず観測時刻を保つ。"""
     ledger = tmp_path / "state" / "session-review" / "failure-signatures.jsonl"
     ledger.parent.mkdir(parents=True)
     diagnostics = [

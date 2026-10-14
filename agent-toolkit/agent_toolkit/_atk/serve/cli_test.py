@@ -210,7 +210,7 @@ process.stdout.write(JSON.stringify({
 
 
 def test_assets_sse_reconciles_owned_delete_dialog() -> None:
-    """SSE移動時は削除確認を閉じ、消失時は親子を閉じて一覧へ戻す。"""
+    """SSEで対象の移動を受けた場合は削除確認を閉じ、消失を受けた場合は詳細と削除確認を閉じて一覧へ戻す。"""
     result = _run_node_ui(
         """
 const inbox = {
@@ -281,7 +281,7 @@ process.stdout.write(JSON.stringify({
 
 
 def test_assets_close_delete_confirmation_before_detail_refresh_failure() -> None:
-    """一覧反映後に詳細取得が失敗しても、古い削除確認を閉じて親へ復旧手順を示す。"""
+    """一覧の反映後に詳細の取得が失敗しても、古い削除確認を閉じて詳細のダイアログへ復旧手順を示す。"""
     result = _run_node_ui(
         """
 async function exercise(updatedEntries, warnings) {

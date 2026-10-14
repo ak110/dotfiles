@@ -215,7 +215,7 @@ def _add_note_args(parser: argparse.ArgumentParser, *, help_text: str) -> None:
 
 
 def _add_mq_read_sync_args(parser: argparse.ArgumentParser) -> None:
-    """読み取り専用`mq`サブコマンドの同期制御オプションを登録する。"""
+    """`atk wi`の読み取り専用サブコマンドへ同期制御オプションを登録する。"""
     sync = parser.add_mutually_exclusive_group()
     sync.add_argument(
         "--skip-pull",
@@ -451,7 +451,7 @@ def _add_mq_read_parsers(sub: Any) -> None:
         help=(
             "状態フォルダで表示範囲を限定する。省略時はactiveを対象とする。--all指定時のみ有効。"
             "`active`は`inbox`・`processing`・`hold`、`processable`は`inbox`・`processing`を指す。"
-            "FILENAME指定時は本オプションを迂回し全状態フォルダを探索する。"
+            "FILENAME指定時は本オプションを適用せず全状態フォルダを探索する。"
         ),
     )
     show.add_argument(
@@ -881,7 +881,7 @@ def _add_mq_process_loop_parser(sub: Any) -> None:
     loop.add_argument(
         "--no-update",
         action="store_true",
-        help="セッション完了後と待機中のどちらの場合もupdate-dotfiles実行と自身再起動を抑止する。",
+        help="セッション完了後と待機中のどちらの場合もupdate-dotfilesの実行とprocess-loop自身の再起動を行わない。",
     )
     loop.add_argument(
         "--internal-mise-refreshed",
@@ -946,7 +946,7 @@ def _add_mq_process_loop_parser(sub: Any) -> None:
 
 
 def build_parser(mq: argparse.ArgumentParser) -> None:
-    """`mq`サブパーサ配下にメッセージキュー操作を登録する。"""
+    """`atk wi`のサブパーサ配下にキュー操作のサブコマンドを登録する。"""
     sub = _atk_help.add_subcommands(
         mq,
         dest="wi_subcommand",

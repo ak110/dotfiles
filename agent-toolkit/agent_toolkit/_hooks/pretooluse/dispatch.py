@@ -65,7 +65,7 @@ Write / Edit / MultiEdit / apply_patch:
 ホスト差の扱い:
 
 - 編集入力は`_hook_tool_input`が共通の操作記録へ正規化し、各判定処理はホストを区別しない
-- 非空文字列の`turn_id`からCodexかどうかを判定し、payload読込直後に一度だけ判定する
+- 空でない文字列の`turn_id`を持つ入力をCodexと判定し、この判定はpayloadの読込直後に一度だけ行う
 - 大量読取の遮断はCodexだけへ適用し、PowerShellの改行を確かめる処理はClaudeの`Write`へ限定する
 - 警告は1つの`hookSpecificOutput.additionalContext`へ結合し、遮断は最初の違反をexit 2とstderrで返す
 """
@@ -77,7 +77,7 @@ import os
 import pathlib
 import sys
 
-# 関数の実行時までだけ使う依存を、使用時まで読み込まない。
+# 関数の実行時にだけ使う依存は、使用時まで読み込まない。
 lazy import dataclasses
 
 lazy from agent_toolkit._common import host_homes as _host_homes

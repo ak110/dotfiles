@@ -170,7 +170,7 @@ def update_creation_time_index(
     rootの走査結果ではない単一ファイルの更新通知は`prune=False`で反映する。
     `migrate_legacy=True`の場合だけ、旧形式から`host`と相対パスが今回の走査と一致するものを取り込み、
     インデックスの書き込みに成功した場合に限り取り込んだファイルを削除する。
-    ロックを取得できない場合はインデックスの更新を諦め、観測値をそのまま返す。
+    ロックを取得できない場合はインデックスを更新せず、観測値をそのまま返す。
     """
     root_key = _root_key(root)
     resolved: dict[str, float] = {}

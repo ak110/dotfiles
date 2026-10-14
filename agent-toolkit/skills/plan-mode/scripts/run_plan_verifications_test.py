@@ -1,4 +1,4 @@
-"""計画からの公開検証操作が順番・失敗後の続行・保存と起動前拒否を満たすことを確かめる。"""
+"""`plan-verify`が計画の検証を順番に実行し、失敗後も続行して結果を保存し、不正な入力を起動前に拒否することを確かめる。"""
 
 from __future__ import annotations
 
@@ -32,7 +32,7 @@ def _plan(path: pathlib.Path, cell: str) -> pathlib.Path:
 def test_public_plan_executes_all_commands_and_unwraps_recording(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """列挙は子未起動、非0とtimeoutの後にも子を実行し、保存版とargvを保持する。"""
+    """`--list`では子を起動せず、実行では非0終了とtimeoutの後も残りの子を実行し、保存した版とargvを保持する。"""
     repo = tmp_path / "repo"
     repo.mkdir()
     git_repository.init_repository(repo)

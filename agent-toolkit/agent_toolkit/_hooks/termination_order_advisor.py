@@ -1,8 +1,8 @@
 r"""成果作業で`agent-toolkit:completion-report`の起動を忘れた終了をStopフックで検出する。
 
 成果作業（成功した`agent-toolkit:process-wi`・`agent-toolkit:add-awi-by-user`の開始、リポジトリへの自編集、
-計画の保存、WIの保存、commit・pushの実行）を行った作業に、同じ作業の開始以後の起動証拠が無ければ、
-有効なプロジェクト規範による省略が無ければ、初回Stopから起動と残工程への続行を案内して遮断する。
+計画の保存、WIの保存、commit・pushの実行）を行った作業で、同じ作業の開始以後の起動証拠が無く、
+有効なプロジェクト規範による省略も無い場合は、初回のStopから遮断し、起動と残工程への続行を案内する。
 起動証拠はClaude Codeでは成功したSkill呼び出し、Codexでは実際の入力と結果が示す`SKILL.md`の読取とし、
 `termination_evidence`が観測した記録だけを使う。報告本文の見出し・区切り・区分・候補IDは判定に使わない。
 起動後の工程の完遂と報告の内容はcompletion-reportの規範が扱い、本フックは確かめない。
@@ -21,7 +21,7 @@ import pathlib
 
 from agent_toolkit._hooks.notice import block_formatter as _block_notice_formatter
 
-# 関数の実行時までだけ使う依存を、使用時まで読み込まない。
+# 関数の実行時にだけ使う依存は、使用時まで読み込まない。
 lazy from agent_toolkit._atk import run_script as _run_script
 lazy from agent_toolkit._hooks import termination_evidence
 lazy from agent_toolkit._hooks.agent_id import is_main_agent_context

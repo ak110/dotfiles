@@ -36,13 +36,13 @@ SSE_STALL_SEC = SSE_HEARTBEAT_SEC * 3
 
 
 class BoundedWorkers:
-    """要求キャンセル後も同期処理完了まで同時実行枠を保持する。"""
+    """要求がキャンセルされた後も、同期処理が完了するまで同時実行枠を保持する。"""
 
     def __init__(self, limit: int) -> None:
         self._semaphore = asyncio.Semaphore(limit)
 
     async def run[**P, R](self, function: typing.Callable[P, R], *args: P.args, **kwargs: P.kwargs) -> R:
-        """同期関数を有界ワーカーで実行する。"""
+        """同期関数を、同時実行数を制限したスレッドで実行する。"""
 
         def invoke() -> R:
             # SystemExitがasyncioのタスクへ届く前に、同期関数を呼ぶスレッドで要求の失敗へ変える。

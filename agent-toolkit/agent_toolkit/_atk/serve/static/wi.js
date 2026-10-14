@@ -178,7 +178,7 @@ function deliverOperationMessage(message, isError = false) {
     showToast(message, isError);
     return;
   }
-  // モーダルはtop layerへ描画され、ページ固定の通知は`::backdrop`の下へ入り、暗転して操作も受け付けない。
+  // モーダルはtop layerへ描画されるため、ページに固定した通知は`::backdrop`の下に隠れ、暗く表示されて操作も受け付けない。
   // 開いているダイアログがあるときは、そのダイアログ内の結果表示領域へ配送する。
   const name = dialog.id.replace(/-dialog$/, '');
   setTextMessage(`${name}-${isError ? 'alert' : 'status'}`, message);
@@ -222,7 +222,7 @@ function firstInvalid(inputs) {
     invalid.focus();
     const error = (invalid.getAttribute('aria-describedby') || '').split(/\s+/)
       .map(byId).find(element => element && !element.hidden);
-    // 入力欄だけのfocusでは直後のエラーが本文領域の下へ隠れるため、対応エラーを余裕のある位置へ置く。
+    // 入力欄へfocusするだけでは直後のエラー表示が本文領域の下に隠れるため、対応するエラーを表示領域の中央までスクロールする。
     if (error) error.scrollIntoView({block: 'center', behavior: 'instant'});
   }
   return invalid;

@@ -1,4 +1,4 @@
-"""計画で確定した公開名から同じ実装commit対応を取得する。"""
+"""公開コマンド`plan-commits`が`plan-progress`と同じ実装commit対応を取得することを検証する。"""
 
 import argparse
 import json
@@ -37,7 +37,7 @@ def test_public_commit_diagnostics_distinguish_input_record_and_git(
     handoff: bool,
     case: str,
 ) -> None:
-    """原因別の案内を確認し、入力または保存記録を補った同じ入口で回復する。"""
+    """原因別の案内を確かめ、入力または保存記録を補った後は同じコマンドで取得に成功する。"""
     previous_head = _prepare_two_commits(tmp_path)
     wi = "20261004-044311-001.md"
     record = tmp_path / "record.md"
@@ -81,7 +81,7 @@ def test_public_commit_diagnostics_distinguish_input_record_and_git(
 
 
 def test_public_plan_commits_reads_existing_handoff(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
-    """引き継ぎ記録と同じstemの対応記録ファイルを公開登録から取得し、取得時点で一意な長さの短縮OIDを返す。"""
+    """引き継ぎ記録と同じstemの対応記録ファイルを公開コマンド`plan-commits`で読み、取得時点で一意な長さの短縮OIDを返す。"""
     previous_head = _prepare_two_commits(tmp_path)
     wi = "20261004-044311-001.md"
     event = commit_mapping.commit_event(tmp_path, "HEAD", previous_head, [wi], {wi})
@@ -100,7 +100,7 @@ def test_public_plan_commits_reads_existing_handoff(tmp_path: pathlib.Path, caps
 def test_public_plan_commits_reads_saved_plan_by_old_working_path(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """保存後も公開別名から旧作業パスで、保存済み計画と同じstemの対応記録ファイルを読んで対応commitを取得できる。"""
+    """保存後も`plan-commits`へ旧作業パスを渡すと、保存済み計画と同じstemの対応記録ファイルを読んで対応commitを取得できる。"""
     monkeypatch.setenv("HOME", str(tmp_path))
     monkeypatch.setenv("AGENT_TOOLKIT_PRIVATE_NOTES", str(tmp_path / "private-notes"))
     previous_head = _prepare_two_commits(tmp_path)

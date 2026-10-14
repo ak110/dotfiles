@@ -78,7 +78,7 @@ def _dump_payload(subcommand: str, payload_bytes: bytes) -> None:
 
 
 def _record_activity(payload: object, *, output: str = "", returncode: int = 0) -> None:
-    """既存hookの応答を変えず活動記録を相乗りさせる。記録失敗はhook本体から隔離する。"""
+    """既存hookの応答を変えずに、同じ呼び出しで活動を記録する。記録の失敗はhook本体の処理へ影響させない。"""
     if not isinstance(payload, dict) or not payload.get("hook_event_name") or not payload.get("session_id"):
         return
     with contextlib.suppress(Exception):

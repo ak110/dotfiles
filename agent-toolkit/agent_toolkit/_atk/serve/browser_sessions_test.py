@@ -990,7 +990,7 @@ async def test_session_without_user_message_appears_after_first_message(
 @pytest.mark.asyncio
 @pytest.mark.parametrize("failure", ["list", "detail", "disappeared"])
 async def test_session_failures_preserve_host_engine_and_record(screen_harness: _ScreenHarness, failure: str) -> None:
-    """一覧失敗と選択記録の失敗・消失を、実ブラウザーの公開操作から識別する。"""
+    """一覧の取得失敗と、選択した記録の取得失敗・消失を、実ブラウザーの画面操作で起こし、区別できる表示を確かめる。"""
     harness = screen_harness
     page = harness.page
     if failure == "list":

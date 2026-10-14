@@ -1,4 +1,4 @@
-"""公開選定統合の保存結果と、失敗時の原本保持を検証する。"""
+"""公開された選定の統合操作が保存する結果と、失敗時に原本を保持することを検証する。"""
 
 import argparse
 import json
@@ -239,7 +239,7 @@ def test_public_merge_combines_costs_and_both_definitions_once(
     inputs: tuple[pathlib.Path, pathlib.Path, pathlib.Path],
     tmp_path: pathlib.Path,
 ) -> None:
-    """返却前・受領時は一時全体、最終割当後は原本へ同じ公開操作で保存できる。"""
+    """同じ公開操作で、返却前や受領時は一時ファイルへ全体を保存し、最終割当後は原本へ保存できる。一時ファイルへの保存では原本を変えない。"""
     repo, existing, added = inputs
     original = existing.read_bytes()
     mapping = tmp_path / "map.json"
@@ -341,7 +341,7 @@ def test_public_merge_accepts_completion_marker_and_reuses_result(
     marker_side: str,
     new_lanes: bool,
 ) -> None:
-    """完了書式を両側と合流/新規追加で受理し、保存結果を次の既存入力へ渡す。"""
+    """完了の書式をどちらの側に置いても既存レーンへの合流では受理し、新しい最終レーンへの追加では原本を変えずに拒否する。合流の保存結果は次の既存入力へ渡す。"""
     repo, existing, added = inputs
     for side, path in (("existing", existing), ("added", added)):
         if marker_side in (side, "both", "empty"):

@@ -126,7 +126,7 @@ def test_build_options_inherits_parent_settings(
     settings_kind: str,
     launch_kind: claude.LaunchKind,
 ) -> None:
-    """全起動で親の他項目を保ち、SDKへ付与する全envをsettingsへも優先して渡す。"""
+    """全起動区分で親のsettingsのenv以外の項目を保ち、SDKへ付与する全envを親のenvより優先する値としてsettingsにも書く。"""
     captured: dict[str, object] = {}
 
     class Options:
@@ -546,7 +546,7 @@ async def test_claude_command_classification_uses_state_when_dequeued(tmp_path: 
 @pytest.mark.usefixtures("agents_server_isolation")
 @pytest.mark.asyncio
 async def test_claude_message_stream_failure_resolves_retrieved_command(tmp_path: pathlib.Path) -> None:
-    """message stream例外と同じ待機バッチの継続要求を所有タスク終了で解決する。"""
+    """message streamの例外と同じ待機バッチに入った継続要求を、所有タスクの終了として解決する。"""
     client = SynchronizedFailingClaudeClient()
     manager = claude.ClaudeServerManager(client_factory=lambda _options: client)
     try:
@@ -565,7 +565,7 @@ async def test_claude_message_stream_failure_resolves_retrieved_command(tmp_path
 @pytest.mark.usefixtures("agents_server_isolation")
 @pytest.mark.asyncio
 async def test_claude_owner_cancellation_resolves_active_command(tmp_path: pathlib.Path) -> None:
-    """所有タスク取り消し時に処理中の継続要求を所有タスク終了で解決する。"""
+    """所有タスクを取り消したときに処理中の継続要求を、所有タスクの終了として解決する。"""
     client = BlockingContinuationClaudeClient()
     manager = claude.ClaudeServerManager(client_factory=lambda _options: client)
     session = await manager.start("調査", str(tmp_path))
@@ -857,7 +857,7 @@ async def test_claude_start_records_owner_and_cli_processes(monkeypatch: pytest.
 @pytest.mark.usefixtures("agents_server_isolation")
 @pytest.mark.asyncio
 async def test_claude_start_result_wait_and_reply(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
-    """Claude init・結果受信・終端後replyを1長命タスクで処理する。"""
+    """Claudeのinit、結果の受信、終端後のreplyを1つの長命タスクで処理する。"""
     client = FakeClaudeClient(
         [
             [SystemMessage("claude-session"), AssistantMessage("途中経過"), ResultMessage("Claude結果")],
@@ -1029,7 +1029,7 @@ async def test_claude_task_exception_disconnects_and_retains_failure(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> None:
-    """message task例外時に切断し、failed結果を共有sessionへ保持する。"""
+    """message taskの例外時に切断し、failedの結果を共有sessionへ保持する。"""
     client = FailingClaudeClient([])
     sessions: dict[str, state.SessionState] = {}
     manager = claude.ClaudeServerManager(sessions, client_factory=lambda _options: client)
@@ -1151,7 +1151,7 @@ async def test_claude_server_close_disconnects_and_retains_result(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> None:
-    """サーバー終了時にSDKを切断し、取得済み結果recordは保持する。"""
+    """サーバー終了時にSDKを切断し、取得済みの結果recordは保持する。"""
     client = FakeClaudeClient([[SystemMessage("claude-close"), ResultMessage("完了")]])
     sessions: dict[str, state.SessionState] = {}
     backend = claude.ClaudeServerManager(sessions, client_factory=lambda _options: client)
@@ -1221,7 +1221,7 @@ async def test_claude_finished_task_send_message_omits_previous_result_after_wai
 async def test_claude_reply_drains_old_events_before_new_query(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, old_events: str, prompt: str
 ) -> None:
-    """共通SDK受信列の旧イベントを新指示の完了へ誤帰属させない。"""
+    """共通のSDK受信列に残った旧イベントを、新しい指示の完了として扱わない。"""
     client = QueueClaudeClient(
         [
             [SystemMessage("claude-queue"), AssistantMessage("初回"), ResultMessage("初回完了")],

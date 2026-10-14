@@ -13,7 +13,7 @@ import sys
 import typing
 import unicodedata
 
-# ヘルプや他の処理では不要な依存を、使用時まで遅延する。
+# ヘルプや他の処理で使わない依存は、使用時まで読み込まない。
 lazy import platformdirs
 
 from agent_toolkit._atk.managed_temp.errors import ManagedTempError

@@ -13,7 +13,7 @@ PostToolUseがその応答と呼出主体を`agents_server_sessions`へ記録し
 第4に、直前の応答が`待機中: <session識別子>`の形でそのsessionを待機対象として指す場合は、
 自動再開がそのsessionの結果を受け取る仕組みが成立しているため解消する。
 本フックはそのsessionの記録を解消済みとして保存し、自動再開で結果を受け取った後のturnの終了でも警告しない。
-この4項は、`agent-toolkit/share/rules-subagent.md`「委譲時の厳守事項」が正しい終端として許容する形を被覆する契約を持つ。
+この4項は、`agent-toolkit/share/rules-subagent.md`「委譲時の厳守事項」が正しい終端として許容する形を全て覆う。
 この規範が許容する終端の形を変える改訂では、同じ変更単位で本列挙と`evaluate`の除外条件を追随させる。
 実行環境が待機・中断をバックグラウンドタスクへ移し、
 構造化応答を伴わない移行通知だけを返した場合も解消契機に含める。
@@ -32,7 +32,7 @@ import re
 from agent_toolkit._hooks.notice import _WARN_TAG, set_warning_session_id
 from agent_toolkit._hooks.notice import formatter as _notice_formatter
 
-# 関数の実行時までだけ使う依存を、使用時まで読み込まない。
+# 関数の実行時にだけ使う依存は、使用時まで読み込まない。
 lazy from agent_toolkit._common.session_state import read_state
 lazy from agent_toolkit._hooks import agents_server_observations as _observations
 lazy from agent_toolkit._hooks.agent_id import resolve_hook_agent_id

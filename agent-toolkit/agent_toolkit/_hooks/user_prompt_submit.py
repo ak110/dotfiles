@@ -1,7 +1,7 @@
-"""Claude Code・Codex plugin agent-toolkit: UserPromptSubmitセッション状態記録と応答契約注入。
+"""Claude Code・Codex plugin agent-toolkit: UserPromptSubmitでセッション状態を記録し、応答の契約を注入する。
 
 ホスト別コマンド形式（Claude Codeは`/agent-toolkit:<name>`・`/<name>`、
-Codexは`$agent-toolkit:<name>`・`$<name>`）での実際に可能な手動スキル起動を検出し、
+Codexは`$agent-toolkit:<name>`・`$<name>`）で発話した手動のスキル起動を検出し、
 対応するセッション状態フラグを立てる。
 既存のPostToolUse(Skill)経由の記録では捕捉できない手動起動を補完する。
 
@@ -19,14 +19,14 @@ process-wi手動起動セッションでは`process-wi`の固定値を優先す�
 
 セッション開始後と会話圧縮後で`agent-toolkit:user-confirmation-and-report`がまだ起動されていない間は、
 実ユーザー発話へ同スキルの起動を促す注記を返す（Codexでは文脈1つにつき1回）。
-通常発話へ返す発話の内容を現物で確かめる手順を示す注記は、直前の通常発話からの経過時間が閾値以上の場合に返す。
+通常発話へ返す、発話の内容を現物で確かめる手順を示す注記は、直前の通常発話からの経過時間が閾値以上の場合に返す。
 全角の連続した感嘆符を含む実ユーザー発話では、経過時間によらず`agent-toolkit:user-confirmation-and-report`の「認識合わせ」を促す。
 例示の語（「例えば」「たとえば」「例として」）と調査を求める語（「確認」「調査」「見直」など）を併せ持つ
 実ユーザー発話では、経過時間と状態によらず、`agent-toolkit:user-confirmation-and-report`の
 `SKILL.md`「原文の保持と取り込み」の範囲語か開放列挙と例示を併せた調査依頼の項と、
 `agent-toolkit:delegation`の`references/routing.md`の所在を示す。判定はコードブロック、インラインコードおよび
-引用行を除いた本文の部分文字列の一致だけで行い、範囲語の有無は判定に含めない（「など」「とか」のような
-一般的な語に頼り、条件に加えても発火がほとんど減らないため）。発話がその項に当たるかの判断は受領側に残し、
+引用行を除いた本文の部分文字列の一致だけで行い、範囲語の有無は判定に含めない（範囲語は「など」「とか」のような
+一般的な語で表され、条件に加えても発火がほとんど減らないため）。発話がその項に当たるかの判断は受領側に残し、
 本フックは発話の意味を判断しない。
 成立した注記を1つの`additionalContext`へまとめる。
 
@@ -52,7 +52,7 @@ import pathlib
 import re
 import sys
 
-# 関数の実行時までだけ使う依存を、使用時まで読み込まない。
+# 関数の実行時にだけ使う依存は、使用時まで読み込まない。
 lazy import time
 
 # pylint: disable-next=wrong-import-position,import-error

@@ -4,7 +4,7 @@
 起動対象: session-termination.subagent.md
 ```
 
-`agent-toolkit:process-wi`の公開工程で、メインが終端担当の起動、入力の受け渡しおよび返却値の検収へ適用する。
+`agent-toolkit:process-wi`の公開工程で、メインが終端担当を起動し、入力を渡し、返却値を検収するときに本書を適用する。
 委譲先の作業手順は`${CLAUDE_PLUGIN_ROOT}/share/session-termination.subagent.md`が定める。
 
 ## 起動前の前提
@@ -41,7 +41,7 @@ CIの検収も済んでいて新しいcommitが無い場合は、再び起動し
 ## 受領と検収
 
 最初に`続行できない理由:`の有無を判別する。
-CI照会不能の返却は、対象forge・repository・commit、失敗操作と診断、確認済み工程、残工程、引き継ぎ記録を受領する。
+CI照会不能の返却からは、対象forge・repository・commit、失敗操作と診断、確認済み工程、残工程、引き継ぎ記録を受け取る。
 確認済みpushと公開状態の4項目を現在の対象ref・Git状態で検収し、CI未判定は別に保持する。
 正常完了形式への差し戻しは行わず、`${CLAUDE_PLUGIN_ROOT}/skills/process-wi/references/finish-session.md`「CI照会不能の回復と再開」へ渡す。
 必要な対象や記録が不足する場合は、その不足だけを同じ担当へ求める。

@@ -7,7 +7,7 @@ import pathlib
 import signal
 import subprocess
 
-# ヘルプや他の処理では不要な依存を、使用時まで遅延する。
+# ヘルプや他の処理で使わない依存は、使用時まで読み込まない。
 lazy import hypercorn.asyncio
 lazy import hypercorn.config
 
@@ -103,7 +103,7 @@ def build_console_title() -> str:
 
 def run(*, host: str | None = None, port: int | None = None, home: pathlib.Path | None = None) -> None:
     """設定と環境を解決してWebサーバーを起動する。"""
-    # format: 日時・ロガー名・レベルを付与して運用診断性を向上させる。
+    # format: 日時・ロガー名・レベルを付与し、運用中の診断で発生時刻と出力元を特定できるようにする。
     # force=True: 既存のログハンドラーが設定済みの場合も本ツールの書式を適用するため。
     logging.basicConfig(
         level=logging.INFO,

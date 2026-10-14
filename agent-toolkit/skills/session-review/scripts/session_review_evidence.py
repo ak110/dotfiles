@@ -85,7 +85,7 @@ from agent_toolkit._agents_server import record_paths as _record_paths
 from agent_toolkit._common import host_homes as _host_homes
 from agent_toolkit._common import state_paths as _state_paths
 
-_CLAUDE_ONLY_NOTE = "集計の母集団はClaude Code形式の記録に限られ、Codex形式の記録からは件数が上がらない。"
+_CLAUDE_ONLY_NOTE = "集計の母集団はClaude Code形式の記録に限られ、Codex形式の記録は数えない。"
 
 
 _LOCAL_TIME_NOTE = "タイムゾーン（`Z`や`+09:00`など）を省いた値は実行ホストのローカルタイムゾーンの時刻として扱う。"

@@ -5,7 +5,7 @@ from __future__ import annotations
 import pathlib
 import re
 
-# 関数の実行時までだけ使う依存を、使用時まで読み込まない。
+# 関数の実行時にだけ使う依存は、使用時まで読み込まない。
 lazy from agent_toolkit._hooks import (
     tool_input as _hook_tool_input,
 )
@@ -27,7 +27,7 @@ def _materialize_cached(
     index: int,
     images: dict[int, _hook_tool_input.MaterializedEdit | None],
 ) -> _hook_tool_input.MaterializedEdit | None:
-    """操作単位の変更前後像を必要になった時点で1回だけ具体化する。"""
+    """編集操作ごとの変更前後の本文を、必要になった時点で1回だけ組み立てる。"""
     if index not in images:
         images[index] = _hook_tool_input.materialize(operation)
     return images[index]

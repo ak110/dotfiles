@@ -443,7 +443,7 @@ def _index_rows(lines: list[str]) -> list[dict[str, typing.Any]]:
 
 
 def _assert_index_before_bodies(lines: list[str], data: dict[str, list[dict[str, str]]], sections: list[str]) -> None:
-    """一覧が全行表示より前に全行を1回ずつ根拠なしで並べ、行番号・原文が全行表示と一致し、全行表示が従来どおりであることを確かめる。"""
+    """一覧が全行表示より前に全行を1回ずつ根拠なしで並べ、行番号・原文が全行表示と一致し、全行表示が同一根拠を先行表示への参照に置き換えて並べることを確かめる。"""
     index_positions = [number for number, line in enumerate(lines) if line.startswith("証拠の行一覧: ")]
     body_positions = [number for number, line in enumerate(lines) if line.startswith("証拠の全行: ")]
     assert index_positions and body_positions and max(index_positions) < min(body_positions)
@@ -563,7 +563,7 @@ def _listed(path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> list[str]
 
 
 def test_public_list_returns_selected_rows_in_full(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
-    """`--row`の反復で選んだ各行の根拠を同一根拠も参照にせず1回で返し、単一指定の出力は従来どおりに保つ。"""
+    """`--row`の反復で選んだ各行の根拠を同一根拠も参照にせず1回で返し、1行だけの指定でもその行の全文を返す。"""
     path = tmp_path / "evidence.json"
     shared = "test_save_settings 成功"
     conditions = [
@@ -659,7 +659,7 @@ def test_return_result_accepts_unanswered_issue_targeting_implementation(
     round_value: str,
     answered: bool,
 ) -> None:
-    """実装成果物を指す未応答指摘、過去round、応答済みの行は従来どおり未解決件数を持つcompletedへ進める。"""
+    """実装成果物を指す未応答指摘、過去round、応答済みの行は通常どおり未解決件数に数え、completedの返却へ進める。"""
     path, table = _insufficient_evidence(tmp_path, monkeypatch)
     review_table.add(table, round_value, "exec-review", location.format(path=path), "保存の観測を補う", "仕様")
     review_table.add(table, "2", "exec-review", "agent-toolkit/impl.py:9", "再読込の観測を補う", "仕様")
@@ -2360,7 +2360,7 @@ def test_unclosed_fence_keeps_following_requirements(tmp_path: pathlib.Path, mon
 def test_periods_inside_words_do_not_split_requirements(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], route: str
 ) -> None:
-    """語の内部のピリオドと文末の閉じ括弧では分割せず、空白が続くASCIIの文末では従来どおり分割する。"""
+    """語の内部のピリオドと文末の閉じ括弧では分割せず、空白が続くASCIIの文末では分割する。"""
     requirements = [
         "docs.python.orgとpyproject.tomlの記載をv0.24.2に合わせて。",
         "`a. b`の表記は変えない（~/.sshは対象外。）",
@@ -2693,7 +2693,7 @@ def test_non_git_cwd_guides_same_arguments_to_target_worktree(
         (".env を読む設定で確認", 0),
         (".env.local の値で確認", 0),
         (".gitignore:1 の除外を確認", 0),
-        # 所在を添えた名前と、区切りと拡張子を持つパスの見出しは従来どおり確かめる。
+        # 所在を添えた名前と、区切りと拡張子を持つパスの見出しは所在として確かめる。
         ("scripts/.env:1 で確認", 1),
         (".env:3 で確認", 1),
         (".gitignore:9 で確認", 1),
@@ -3103,7 +3103,7 @@ def test_reference_resolved_by_unique_path_suffix_is_accepted(
 ) -> None:
     """ファイル名だけ、テスト識別子付き、サブプロジェクト起点の参照は、対象commitで1件に決まれば受理する。
 
-    行位置と見出しの誤りは、解決したファイルの内容で従来どおり報告する。
+    行位置と見出しの誤りは、解決したファイルの内容に照らして報告する。
     """
     repository, _, evidence = reference_repository
     head = _commit_files(repository, _SUFFIX_FILES)
@@ -3545,7 +3545,7 @@ def test_background_rows_from_template_are_accepted_while_request_stays_judged(
 ) -> None:
     """雛形は観測文も原文行として残し、分類の記録が中略付きで覆う観測文を背景として受理する。
 
-    要求の行は通常の判定に残り、証拠不足なら未解決0件の返却は従来どおり拒否される。
+    要求の行は通常の判定に残り、証拠不足なら未解決0件の返却は拒否される。
     """
     _mock_wi(monkeypatch, tmp_path, {FIRST_WI: _background_awi(_ELIDED_RECORD)})
     path = tmp_path / "evidence.json"

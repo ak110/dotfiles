@@ -23,7 +23,7 @@ def _isolate_process_loop_commands(monkeypatch: pytest.MonkeyPatch, tmp_path: pa
 
 
 class TestAlertMonitoring:
-    """process-loop常駐ループへのアラート自動検出統合。"""
+    """process-loopの常駐ループがアラートを自動で確認する処理のテスト。"""
 
     def test_alert_check_invoked_when_pending_zero(self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """件数0の反復でアラート確認が呼ばれ、投入0件なら待機へ進む。"""

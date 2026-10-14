@@ -88,7 +88,7 @@ _MANAGED_TEMP_CHECK_NEXT_ACTION = "本来の操作は継続した。`atk managed
 
 
 def _claim_unregistered_temp_warning(candidates: tuple[pathlib.Path, ...]) -> bool:
-    """候補集合が現行セッションで未報告の場合だけ警告権を取得する。"""
+    """候補集合を現行セッションでまだ報告していない場合だけ、報告済みとして記録して真を返す。"""
     session_id = _owner_records.resolve_owner_session_id()
     if session_id is None:
         return bool(candidates)
@@ -350,7 +350,7 @@ class _Invocation:
 
 
 def _dispatch_managed_temp(invocation: _Invocation) -> int:
-    """`atk managed-temp`を実行する。同じ起動の掃引が削除済みの対象の後始末は成功として扱う。"""
+    """`atk managed-temp`を実行する。同じ起動の掃引で削除済みになった対象の後始末は成功として扱う。"""
     args = invocation.args
     if (
         args.managed_temp_subcommand == "cleanup"

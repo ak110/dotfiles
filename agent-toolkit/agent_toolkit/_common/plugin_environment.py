@@ -81,7 +81,7 @@ def launch_command(root: Path, target: Path) -> list[str]:
 
 
 def cli_environment(root: Path, environment: Mapping[str, str]) -> dict[str, str]:
-    """委譲先が保持済みrootのCLIを名前で呼べるPATHとdataを渡す。"""
+    """委譲先が保持したrootのCLIを名前で呼べるよう、PATHとデータ領域の環境変数を加えた環境を返す。"""
     result = dict(environment)
     scripts = str(root.resolve() / "scripts")
     path = result.get("PATH", "")

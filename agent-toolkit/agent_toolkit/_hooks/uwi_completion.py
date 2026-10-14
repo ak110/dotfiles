@@ -8,7 +8,7 @@ PostToolUseフックから毎回呼ばれる。セッション状態へ対象リ
 private-notesは複数のセッションが共有するため、回答済みUWIの通知は投入元のセッションへ限る。
 frontmatterの`submitter_session`がフック入力の`session_id`と一致するUWIと、キーを持たないUWIだけを通知する。
 キーを持たないUWIは本機能の導入前の投入分と、Codexのメインのように投入元を解決できない方法での投入分であり、
-通知しないと回答の反映契機を失うため通知側へ倒す。
+通知しないと回答の反映契機を失うため通知する。
 他のセッションが投入したUWIも回答済みファイル名の基準値へ記録し、後の観測で通知しない。
 
 `git pull`は実行しない。同一ホストのWeb UIおよびCLIからの回答はローカルファイルを
@@ -16,7 +16,7 @@ frontmatterの`submitter_session`がフック入力の`session_id`と一致す�
 実行されるまで観測できない。
 """
 
-# 関数の実行時までだけ使う依存を、使用時まで読み込まない。
+# 関数の実行時にだけ使う依存は、使用時まで読み込まない。
 lazy import subprocess
 
 from agent_toolkit._hooks.agent_id import MAIN_AGENT_ID

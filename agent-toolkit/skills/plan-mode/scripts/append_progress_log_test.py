@@ -102,7 +102,7 @@ def test_rejects_invalid_structure_without_changes(tmp_path: pathlib.Path, conte
 def test_public_cli_records_and_reads_commit_mapping(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], handoff: bool
 ) -> None:
-    """同じ公開CLIで計画と引継ぎの生成・取得を確認し、既存本文を保持する。"""
+    """計画と引き継ぎ記録のそれぞれで、同じ公開CLIによるcommit対応の記録と取得を確かめ、既存本文を保持する。"""
     repo = tmp_path / "repo"
     repo.mkdir()
     for args in [
@@ -487,7 +487,7 @@ def test_help_describes_range_and_merge_rejection(capsys: pytest.CaptureFixture[
 def test_public_progress_split_preserves_assignment_and_rejects_loss(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], handoff: bool
 ) -> None:
-    """分割表を進捗公開操作へ渡し、欠落時の無書込とWI別の継承を確認する。"""
+    """旧commitを複数commitへ分けた対応表を`plan-progress`へ渡し、AWIの割当が欠けた表では何も書き込まず、全AWIを割り当てた表ではWI別に対応を継承することを確かめる。"""
     repo = tmp_path / "repo"
     repo.mkdir()
     git_repository.init_repository(repo)

@@ -29,7 +29,7 @@ _FIXED_TIMESTAMP = _FIXED_DT.strftime("%Y%m%d-%H%M%S")
 
 
 def _setup_notes(tmp_path: pathlib.Path, name: str = "private-notes") -> pathlib.Path:
-    """4状態フォルダを持つ管理repoの一時ディレクトリを作成する。"""
+    """全ての状態フォルダを持つ管理repoの一時ディレクトリを作成する。"""
     notes = tmp_path / name
     for state in WI_STATES:
         (notes / state).mkdir(parents=True)
@@ -268,7 +268,7 @@ def test_import_renumbers_only_colliding_names(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """4状態フォルダと同名のエントリだけを再採番し、他は元名を維持する。"""
+    """状態フォルダの既存項目と同名のエントリだけを再採番し、他は元名を維持する。"""
     notes = _setup_notes(tmp_path)
     _patch_repo_operations(monkeypatch)
     (notes / "adopted" / "clash.md").write_text("既存\n", encoding="utf-8")
@@ -285,7 +285,7 @@ def test_import_avoids_renumbering_onto_kept_original_name(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """再採番候補がバッチ内の維持対象元名と一致する場合は次の連番へ回避する。"""
+    """再採番候補がバッチ内で維持する元名と一致する場合は次の連番を割り当てる。"""
     notes = _setup_notes(tmp_path)
     _patch_repo_operations(monkeypatch)
     kept = f"{_FIXED_TIMESTAMP}-001.md"

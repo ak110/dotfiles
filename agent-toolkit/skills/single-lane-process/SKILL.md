@@ -9,7 +9,7 @@ disable-model-invocation: true
 
 メインがAWIを取得し、計画、実装、実行レビュー、終端を同じ実行の中で行う。レーンへ委譲して並列化する場合は`../process-wi/SKILL.md`を使う。実行中は自律モードとし、WIの共通契約は`../wi-standards/SKILL.md`、工程の責務と受渡しは`${CLAUDE_PLUGIN_ROOT}/share/workflow-phases.md`に従う。
 
-まとめ処理は、キューと対象worktreeを読み書きするファイル操作、Gitと`atk`のCLI、独立したレビュー担当の起動・受領と参照資料がそろう環境で行う。操作機能が無い場合は、提示されたWIの実施内容と計画の原稿を整理し、未実施の実装・レビュー・公開を明示する。実際の終端はClaude CodeまたはCodexへ渡し、原稿の文には[文章の品質基準](references/quality-standards.md)を使う。
+本スキルの処理は、キューと対象worktreeを読み書きするファイル操作、Gitと`atk`のCLI、独立したレビュー担当の起動・受領と参照資料がそろう環境で行う。操作機能が無い場合は、提示されたWIの実施内容と計画の原稿を整理し、未実施の実装・レビュー・公開を明示する。実際の終端はClaude CodeまたはCodexへ渡し、原稿の文には[文章の品質基準](references/quality-standards.md)を使う。
 
 ## 読込表
 
@@ -49,7 +49,7 @@ disable-model-invocation: true
 ## 見つけた既存不良の扱い
 
 同じ実行で直すかは`agent-toolkit:process-wi`の`SKILL.md`「即時対応」の判定基準の段落で判定する。同節の手順はレーンを前提とするため、本スキルでは調査だけを委譲し、修正はメインが行う。扱った問題と根本原因を同じくする不良の範囲と完了は`agent-toolkit:bugfix`の`references/root-cause-analysis.md`「類似見直し」「類似見直しと再発防止の完了」に従う。
-公開の開始前は、本作業で導入した不良と残工程への具体的作用を先に判定する。即時対応に当たる不良を、工程が止まらないことや不良の種類だけで次回へ回さない。
+公開の開始前は、不良が本作業で導入したものか、残る工程へ具体的に作用するかを先に判定する。即時対応に当たる不良を、工程が止まらないことや不良の種類だけで次回へ回さない。
 
 - 公開（実行順8）の開始前に見つけた不良は`agent-toolkit:bugfix`で初動判定する。
   拡張原因分析、類似見直しまたは再発防止策を要し即時対応に当たるものは、不良ごとに調査とAWIの起草・投入を`${CLAUDE_PLUGIN_ROOT}/share/add-wi.parent.md`に従って委譲する。
@@ -75,7 +75,7 @@ disable-model-invocation: true
 5. 対象worktreeごとに1件の実行レビューを起動する。計画対象があれば計画ファイルの絶対パス、直接実装対象があればWIの記録を同じ委譲プロンプトへ渡し、計画対象が無ければそのworktreeの`開始時のHEAD`を渡す。`cwd`、`開始時のHEAD`、レビュー指摘管理表、レビュー基準には同じworktreeの値だけを使う。
 6. worktreeごとに`${CLAUDE_PLUGIN_ROOT}/share/review-loop-coordination.md`に従って指摘を収束させる。修正はメインが行い、同じ`開始時のHEAD`とレビュー指摘管理表を継続する。
 7. 各計画について`atk run-script plan-progress --`で完了判定を`## 進捗ログ`へ記録し、計画構造の自動チェックの成功を確認してから計画バンドルを保存する。
-8. 各WIを`adopt`か`reject`し（`adopt`は`agent-toolkit:wi-standards`「状態と依存」のcommit対応付けを使う）、worktreeごとに`references/publish.md`に従って公開する。複数の対象リポジトリでは成果依存を保ち、独立した対象のpushを先に全て終えてからCI監視を並行して始め、全識別子の終端を待って結果を個別に回収する。CI成功を入力にする公開後の操作はその対象の成功後に行い、成功を入力とせず書込資源を占有しない操作は待機中に進めてよい。
+8. 各WIを`adopt`か`reject`し（`adopt`は`agent-toolkit:wi-standards`「状態と依存」のcommit対応付けを使う）、worktreeごとに`references/publish.md`に従って公開する。複数の対象リポジトリでは成果の依存順を保ち、独立した対象のpushを先に全て終えてからCI監視を並行して始め、全識別子の終端を待って結果を個別に回収する。CI成功を入力にする公開後の操作はその対象の成功後に行い、成功を入力とせず書込資源を占有しない操作は待機中に進めてよい。
    開発マシン上の常時稼働サーバーへの反映は、`agent-toolkit:completion-report`の`SKILL.md`「工程」の常時稼働サーバーへの反映の段落の条件を満たす場合にCI待機と並行して始め、反映したHEADの完全OID、反映コマンドの終了状態、稼働確認の結果を完了報告へ渡す。
    Claude Codeでは、独立したpush群の監視と並行するサーバー反映などを開始してから、CI待機で会話圧縮を予約する。予約前にセッションのmanaged-temp直下の`parent-handoff.md`へ再開状態を保存する。固定したWIと対象worktree・開始HEADの対応表、計画集合と保存状態、WIと実装commitの対応と採否の到達点を含める。対象repo・forge・ref・source ref・完全OID・baselineと監視識別子・出力先の対応、未回収集合、並行反映のHEADと到達点、CI後の操作と依存順も含める。予約と通知後の復元は`agent-toolkit:delegation`の`references/waiting-and-monitoring.md`「長時間待機前の会話圧縮」に従う。起動済みのwait_ci.pyのバックグラウンドタスクを保ち、Monitorで前景を占有せずにターンを終え、通知後は同じ入力と保存出力からCI結果を回収する。CI定義の無い対象にはこの圧縮境界を設けず、Codexと圧縮ツールが無い環境では既存の待機契約を使う。
 9. 一時的なレビュー指摘管理表を正式な保存または回収契約に従って処理し、`agent-toolkit:completion-report`で報告する。

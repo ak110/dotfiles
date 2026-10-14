@@ -1201,7 +1201,7 @@ def _no_user_corpus(root: pathlib.Path) -> dict[str, pathlib.Path]:
 
 
 def _helper_list(root: pathlib.Path) -> list[dict[str, typing.Any]]:
-    """リモート補助の一覧を、`root`を家ディレクトリとして取得する。"""
+    """リモート補助の一覧を、`root`をホームディレクトリとして取得する。"""
     environment = os.environ.copy()
     environment.update({"HOME": str(root), "CODEX_HOME": str(root / "codex-home")})
     result = subprocess.run(

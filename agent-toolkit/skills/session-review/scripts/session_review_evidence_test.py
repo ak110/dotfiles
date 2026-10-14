@@ -86,7 +86,7 @@ def test_output_file_option_is_removed(capsys: pytest.CaptureFixture[str]) -> No
 
 
 def test_send_to_user_message_is_assistant_event(tmp_path: pathlib.Path) -> None:
-    """send_to_userの`message`はユーザーへ届いた本文として、assistantの出来事にする。"""
+    """send_to_userの`message`はユーザーへ届いた本文として、assistantのイベントにする。"""
     call = {"type": "tool_use", "id": "toolu_1", "name": "mcp__agent-toolkit__send_to_user", "input": {"message": "途中の報告"}}
     transcript = _write_transcript(
         tmp_path,
@@ -1472,7 +1472,7 @@ def test_unsupported_nonempty_jsonl_returns_fallback(tmp_path: pathlib.Path) -> 
             "kind": "fallback",
             "text": (
                 "記録は読み込めたが形式を判定できないため抽出証拠を生成できない。"
-                "継承した会話履歴を評価し、取得できない範囲を未検証と明記すること。"
+                "自身のコンテキストにある会話履歴から評価し、記録から取得できない範囲を未検証と明記すること。"
             ),
         }
     ]
@@ -1874,7 +1874,7 @@ def test_extractor_runtimes_match_supported_engines() -> None:
 
 
 def test_candidates_bound_hook_notice_variants_and_keep_each_emitter() -> None:
-    """block/warn通知は発生源ごとに上位5変種の代表位置へ限定し、発生総数を保持する。"""
+    """block/warn通知は発生源ごとに上位5種類の代表位置へ限定し、発生総数を保持する。"""
     notices: list[dict] = []
     line = 1
     for variant, count in enumerate(range(7, 0, -1)):

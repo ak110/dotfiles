@@ -1,4 +1,4 @@
-"""_managed_tempの管理対象一時ディレクトリ境界を検証する。"""
+"""managed-tempの保存先の解決、登録の検証と終了コードを検証する。"""
 
 # pylint: disable=protected-access
 

@@ -18,7 +18,7 @@ from agent_toolkit._testing import git_repository
 
 
 def test_project_hook_lifecycle(tmp_path: pathlib.Path) -> None:
-    """公式command hookへ対象cwd・名前・所有を渡し、返却先を撤去入力へ引き継ぐ。"""
+    """公式仕様の入力どおりにcommand hookへ対象のcwd、名前、所有sessionを渡し、作成時の返却先を撤去の入力へ引き継ぐ。"""
     # Claude Code hooks referenceのWorktreeCreate/Remove input/output（2026-10-13取得）。
     repo = git_repository.init_repository(tmp_path / "repo", initial_branch="main", commit_message="基準")
     destination = tmp_path / "hook-worktree"
@@ -63,7 +63,7 @@ def test_project_hook_lifecycle(tmp_path: pathlib.Path) -> None:
 
 
 def test_hook_failure_preserves_diagnostic_and_partial_resource(tmp_path: pathlib.Path) -> None:
-    """作成途中に失敗したhookをGit作成へ後退させず、作成済みの実体を残す。"""
+    """作成途中でhookが失敗してもGitによる作成へ切り替えず、作成済みの実体を残す。"""
     repo = tmp_path / "repo"
     settings = repo / ".claude/settings.local.json"
     settings.parent.mkdir(parents=True)
@@ -133,7 +133,7 @@ def test_http_project_hook_lifecycle(tmp_path: pathlib.Path) -> None:
 def test_remove_nonzero_uses_resource_presence_and_preserves_diagnostic(
     tmp_path: pathlib.Path, removes_on_failure: bool
 ) -> None:
-    """初回不在を省き、非0後の資源有無で公式の成否を判定し、残存時だけ同じhookから再開する。"""
+    """作成先が無ければhookを呼ばず、hookの非0終了後は作成先の有無で成否を判定し、作成先が残った場合だけ次の撤去で同じhookを再び呼ぶ。"""
     repo = tmp_path / "repo"
     settings = repo / ".claude/settings.local.json"
     settings.parent.mkdir(parents=True)

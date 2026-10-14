@@ -412,7 +412,7 @@ async def test_writer_keeps_collected_parent_while_grandchild_runs(tmp_path: pat
 
 @pytest.mark.asyncio
 async def test_writer_returns_uncollected_parent_to_normal_rules_after_grandchild_ends(tmp_path: pathlib.Path) -> None:
-    """結果を回収する対照: 未回収かつ表示期限内の親は孫の終端後も従来どおり残る。"""
+    """結果を回収した場合の対照として、未回収かつ表示期限内の親は孫の終端後も従来どおり表示に残る。"""
     parent = _terminal_parent(tmp_path, "completed")
     parent.retention_deadline = asyncio.get_running_loop().time() + 60
     writer = subject.StatusFileWriter(

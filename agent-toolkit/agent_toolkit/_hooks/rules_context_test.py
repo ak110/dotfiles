@@ -369,7 +369,7 @@ def test_session_start_context_fits_cap_with_maximum_instruction(
 def test_direct_hooks_deliver_cli_when_bash_environment_file_is_unavailable(
     host: str, event: str, windows: bool, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """Bashの環境保存なしでも、直接hookから実在CLIとPOSIX・PowerShellの呼び方へ届く。"""
+    """Bashの環境ファイルが無くても、hookの出力が実在するCLIの絶対パスとPOSIX・PowerShellでの呼び方を届ける。"""
     monkeypatch.delenv("CLAUDE_ENV_FILE", raising=False)
     monkeypatch.delenv("AGENT_TOOLKIT_DELEGATED_SESSION", raising=False)
     monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)

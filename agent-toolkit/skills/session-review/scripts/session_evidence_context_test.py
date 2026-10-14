@@ -20,7 +20,7 @@ def test_record_schema_reports_paths_and_types_without_values(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """複数locatorのobject・arrayを再帰し、値を出力しない。"""
+    """複数locatorのobject・arrayを再帰的にたどり、値を出力しない。"""
     transcript = _write_transcript(
         tmp_path,
         [

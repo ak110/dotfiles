@@ -16,7 +16,7 @@ import json
 import os
 import pathlib
 
-# 関数の実行時までだけ使う依存を、使用時まで読み込まない。
+# 関数の実行時にだけ使う依存は、使用時まで読み込まない。
 lazy import urllib.parse
 lazy from typing import Any
 
@@ -63,8 +63,8 @@ def compose_session_start(source: str, *, delegated: bool, host: str) -> str | N
     """SessionStartへ追加する本文を構成する。
 
     使用言語の規定は`rules-main.md`「ユーザー向け発話ルール」が定めるが、この条文は本文の末尾寄りに
-    位置するため、最初の応答を生成する時点では冒頭の記述より参照されにくい。同じ規定を冒頭の1文へ
-    置き、応答の生成より前に判断入力へ入る位置を確保する。委譲先はこの規定の対象外のため追加しない。
+    位置するため、最初の応答を生成する時点では冒頭の記述より参照されにくい。同じ規定を本文の冒頭の1文にも
+    置き、最初の応答を生成する前に読まれるようにする。委譲先はこの規定の対象外のため追加しない。
 
     process-loopが渡した追加指示も、メインだけが受け取る入力として先頭へ置く。委譲先は元の作業の一部を
     担うに過ぎず、この指示の宛先ではない。
@@ -112,7 +112,8 @@ _CONTEXT_LOSING_SOURCES = frozenset({"startup", "clear", "compact"})
 OPERATION_SKILL_READY_KEY = "operation_skill_ready_agents"
 """操作を起動の契機とするスキルの名前から、起動済みの呼び出し主体の一覧への対応を持つセッション状態のキー。
 
-Claude Codeでは、PreToolUseの`pretooluse/operation_skills.py`が警告を返した時点とPostToolUse(Skill)が記録し、同じ判定が読む。
+Claude Codeでは、PreToolUseの`pretooluse/operation_skills.py`が警告を返した時点と、
+PostToolUse(Skill)がスキルの起動を受けた時点で記録し、同モジュールの判定が記録を読む。
 Codexは起動済みを観測できず同モジュールが警告しないため、記録しない。
 """
 _OPERATION_SKILL_RESET_SOURCES = frozenset({"clear", "compact"})

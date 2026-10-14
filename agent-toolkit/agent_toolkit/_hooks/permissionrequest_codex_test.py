@@ -28,7 +28,7 @@ _HELPER = pathlib.Path(__file__).resolve().parents[1] / "_managed_temp.py"
 
 @pytest.fixture(autouse=True)
 def isolated_state_root(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
-    """外部真正性状態を各テストの専用領域へ分離する。"""
+    """所有検証が参照する外部の状態ディレクトリを、テストごとの専用領域へ置き換える。"""
     setattr_in_managed_temp_modules(monkeypatch, "_state_root_path", lambda: tmp_path / "external-state")
 
 

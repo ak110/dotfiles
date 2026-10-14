@@ -177,7 +177,7 @@ def _validate_existing_worktree(local_path: pathlib.Path, worktree_path: pathlib
 def _sync_worktree_with_upstream(local_path: pathlib.Path, worktree_name: str) -> pathlib.Path | None:
     """worktreeを準備して対象リポジトリの上流最新へ追随させる。
 
-    上流は現在ブランチの追跡先を優先し、利用不能な場合だけ`refs/remotes/origin/HEAD`へ後退する。
+    上流は現在ブランチの追跡先を優先し、利用不能な場合だけ`refs/remotes/origin/HEAD`を使う。
     解決結果はworktreeのfetch・作成・rebaseだけに用い、公開先を最初のプロンプトへ暗黙に設定しない。
 
     worktree名は反復間で固定のため、前回反復のworktreeがそのまま再利用される。

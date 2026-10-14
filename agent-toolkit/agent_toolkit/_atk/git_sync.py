@@ -33,7 +33,7 @@ from agent_toolkit._common import state_paths as _state_paths
 from agent_toolkit._git import command as _git_command
 
 PUSH_DEFERRED_MESSAGE = "commitは完了したが、別の未コミット差分があるため分岐の自動解消とpushを保留した"
-"""履歴分岐時に無関係な差分がある場合の確定通知。"""
+"""履歴が分岐し、無関係な差分もある場合に、commitの完了とpushの保留を伝える文言。"""
 
 PUSH_DEFERRED_NEXT_ACTION = (
     "`git -C {private_notes} status`で無関係な差分を確認し、commitするか取り除いてcleanにしてから"
@@ -45,7 +45,7 @@ _REPORTED_ATTRIBUTE = "_atk_sync_failure_reported"
 """失敗の原因と次の操作を本モジュールが出力済みであることを例外へ記録する属性名。"""
 
 _DivergenceRecovery = Callable[[pathlib.Path], bool]
-"""呼び出し元の意味論でローカル側commitの冗長性を証明する判定関数。"""
+"""ローカル側のcommitが冗長であることを呼び出し元の基準で判定する関数。"""
 
 
 class _GitRunner(Protocol):
@@ -61,7 +61,7 @@ class _GitResultRunner(Protocol):
 
 
 class RebaseInProgressError(RuntimeError):
-    """rebase中の作業コピーへ新しいmutationを開始しようとした。
+    """rebase中の作業コピーで新しい更新を開始しようとした。
 
     `str()`は理由だけを返す。次の操作は原因が1つに決まるため`next_action`へ固定する。
     """
@@ -260,7 +260,7 @@ def is_rebase_in_progress(
 
 
 def ensure_not_rebasing(private_notes: pathlib.Path) -> None:
-    """新しいmutationを受け付けられる状態か検証する。"""
+    """新しい更新を受け付けられる状態か検証する。"""
     if is_rebase_in_progress(private_notes):
         raise RebaseInProgressError("rebase中のため新しい更新を開始できない")
 
@@ -706,7 +706,7 @@ def _usable_pathspecs(
     *,
     result_runner: _GitResultRunner,
 ) -> list[str]:
-    """実在または追跡済み削除対象に限定したpathspecを返す。"""
+    """実在するパスか、追跡済みで削除されたパスに限定したpathspecを返す。"""
     if not (private_notes / ".git").exists():
         return paths
     usable: list[str] = []

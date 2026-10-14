@@ -6,8 +6,8 @@
 
 判定が`notify_user`を返した本文はエンドユーザー向けの`systemMessage`へ集約し、遮断の有無によらず同じ応答へ添える。
 
-連続blockの上限は7回とし、Claude Codeが8回の連続blockでフックを上書きして
-ターンを終える仕様の内側で、打ち切りの事実を記録して終了を許可する。
+連続blockの上限は7回とする。Claude Codeは8回の連続blockでフックを上書きしてターンを終えるため、
+その手前の7回で打ち切りの事実を記録して終了を許可する。
 
 委譲先での実行可否: 各判定モジュールが個別に適用可否を判断するため、エントリーポイント自体は除外せず実行できる。
 未配送通知を次ターンへ返す実機観測と再検証は、`docs/development/audit-records.md`の
@@ -18,7 +18,7 @@ import importlib
 import json
 import sys
 
-# 関数の実行時までだけ使う依存を、使用時まで読み込まない。
+# 関数の実行時にだけ使う依存は、使用時まで読み込まない。
 lazy from agent_toolkit._common.session_state import read_state, update_state  # noqa: E402  # pylint: disable=wrong-import-position
 lazy from agent_toolkit._hooks.host import is_codex_payload
 lazy from agent_toolkit._hooks.stop_session import append_stop_log

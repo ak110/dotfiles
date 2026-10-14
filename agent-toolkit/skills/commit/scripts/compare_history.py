@@ -1,6 +1,6 @@
 """履歴操作の検収と完全OID対応表の生成。検収しない対応は保存しない。
 
-履歴は読み取りのみで、認可・公開済みの確認・操作の実行は呼出側が所有する。
+本スクリプトは履歴を読み取るだけで、認可・公開済みの確認・操作の実行は呼出側が所有する。
 rebaseは変更内容の一意な全1対1対応、autosquashはtree・件数・制御件名・非対象patchの不変を検収する。
 """
 
@@ -61,7 +61,7 @@ def _autosquash(work_dir: pathlib.Path, old: list[str], new: list[str]) -> dict[
     subjects = {oid: _git(work_dir, "show", "-s", "--format=%s", oid).strip() for oid in old}
     originals = [oid for oid in old if not subjects[oid].startswith(_CONTROL)]
     if len(originals) != len(new):
-        raise ValueError(f"旧件数からfixup件数を引いた新件数ではありません: {len(originals)} != {len(new)}")
+        raise ValueError(f"旧件数から制御件名のcommit数を引いた値と新件数が一致しません: {len(originals)} != {len(new)}")
     if _git(work_dir, "rev-parse", f"{old[-1]}^{{tree}}") != _git(work_dir, "rev-parse", f"{new[-1]}^{{tree}}"):
         raise ValueError("操作前後のHEADのtreeが一致しません")
     if any(_git(work_dir, "show", "-s", "--format=%s", oid).strip().startswith(_CONTROL) for oid in new):
@@ -102,11 +102,13 @@ def main(argv: list[str] | None = None) -> int:
     """操作別の履歴不変条件を検収し、完全OID対応を原子的に保存する。"""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--operation", choices=("rebase", "autosquash"), required=True, help="検収する履歴操作")
-    parser.add_argument("--work-dir", type=pathlib.Path, metavar="DIR", required=True, help="Git比較を実行する絶対worktree")
+    parser.add_argument(
+        "--work-dir", type=pathlib.Path, metavar="DIR", required=True, help="Git比較を実行するworktreeの絶対パス"
+    )
     for endpoint in ("old-base", "old-head", "new-base", "new-head"):
         parser.add_argument(f"--{endpoint}", required=True, help="baseを除くheadまでの系列の端点commit")
     parser.add_argument(
-        "--output", type=pathlib.Path, metavar="PATH", required=True, help="検収済み完全OID対応JSONの絶対保存先"
+        "--output", type=pathlib.Path, metavar="PATH", required=True, help="検収済みの完全OID対応を保存するJSONの絶対パス"
     )
     args = parser.parse_args(argv)
     try:
@@ -122,7 +124,8 @@ def main(argv: list[str] | None = None) -> int:
         atomic_write(args.output, json.dumps(mapping, ensure_ascii=False, indent=2) + "\n")
     except (OSError, UnicodeError, ValueError, subprocess.TimeoutExpired) as error:
         outcome.report_failure(
-            str(error), next_action="示した対象と端点を補完する。内容が変わった履歴は検収せず、履歴操作を中止して委譲元へ返す"
+            str(error),
+            next_action="エラーが示した対象と端点の指定を補って再実行する。内容が変わった履歴は検収せず、履歴操作を中止して委譲元へ返す",
         )
         return 1
     outcome.report_success(f"{args.operation}の履歴を検収し、{len(mapping)}件の完全OID対応を保存した: {args.output}")

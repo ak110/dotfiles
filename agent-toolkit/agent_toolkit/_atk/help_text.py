@@ -21,7 +21,7 @@ from agent_toolkit._atk import outcome as _outcome
 
 ROOT_DESCRIPTION = "目的: agent-toolkitのWIキュー、計画ファイル、レビュー指摘管理表、managed-tempと委譲支援を1つのコマンドから操作する。\n利用場面: ユーザーとエージェントが、AWIの投入から計画、実装、保存までの一連の作業を進めるとき。\n対象と出力: サブコマンドを指定しない場合はコマンド一覧を標準出力へ書き、何も変更しない。実際の読み書きは各サブコマンドが行う。`AI_AGENT`・`CODEX_CI`・`CLAUDECODE`・`CURSOR_AGENT`のいずれかが設定されたエージェント環境では、標準出力と標準エラーを分けて保持する。UTF-8で16384バイトを超える出力は生成側が新規managed-tempへ保存し、標準出力には`保存先: <絶対パス>`・`行数: <N>`、標準エラーには`標準エラー保存先: <絶対パス>`・`標準エラー行数: <N>`を返す。結果をファイルとして受け取る呼び出し（`atk agents wait`、FILENAMEを2件以上指定するか`--all`を指定した`atk wi show`、`atk run-script session-review-evidence`の`--user-events`）は短い標準出力も保存する。保存後は、`atk agents wait`が通知・終端の内訳と本文を、`--user-events`が`kind`が`user`の行ごとに`発話: record=<record> line=<line> <本文の冒頭>`を続けて書く。それ以外の16384バイト以下の出力は直接表示する。`--help`の表示と、`atk info`のように結果を表示して終わるサブコマンドも同じ量で判定する。引数の誤りは標準エラーへ直接書き、終了コード2で終わる。WI本文の表記診断の詳細も`標準エラー保存先:`の保存先へ書く。`atk serve`、`atk wi process-loop`の常駐および`atk agents logs --follow`は対象外とし、エージェント環境でない場合は出力を変えない。保存先は最終更新から7日で自動削除される。\n前提: private-notesを扱うサブコマンドは`atk config get private_notes`が返すリポジトリを使う。\n復元・後始末: 本コマンド自身は状態を残さない。各サブコマンドの後始末はそのコマンドの`--help`に示す。"
 ROOT_EPILOG = "各コマンドの詳細は`atk <コマンド> --help`で表示する。階層コマンドではさらに`atk <コマンド> <サブコマンド> --help`を使う。\n\n実行例:\n\n  atk wi list\n  atk config show"
-ROOT_EPILOG += "\n\n保存結果は両ストリームの最初のatk read-fileコマンドを示す。返却JSONのtextを連結し、nextを--startへ渡してeof: trueまで読む。"
+ROOT_EPILOG += "\n\n保存後の表示は、標準出力と標準エラーのそれぞれを読む最初のatk read-fileコマンドを示す。返却JSONのtextを連結し、nextを--startへ渡してeof: trueまで読む。"
 
 CI_REVIEW_TABLE_NAME_FORMAT = "ci-<修正系列の開始時のHEADの7文字以上の一意な短縮OID>.exec-review.tsv"
 """CI対応レビュー指摘管理表の名前の書式。保存済みの表は`ci/`を前置する。
@@ -33,7 +33,7 @@ HELP: dict[str, dict[str, str]] = {
     "atk wi process-loop all-repos": {
         "summary": "登録した全リポジトリの担当を起動する",
         "epilog": '実行例:\n\n  atk config set process_loop_repositories \'["/absolute/repository-one","/absolute/repository-two"]\'\n  atk wi list --configured-repos --with-staleness\n  atk wi process-loop all-repos\n  atk wi process-loop --no-update all-repos',
-        "description": "目的: process_loop_repositoriesで登録した対象を一括取得し、各対象cwdの通常delegateがprocess-wiの全工程を担う。\n利用場面: ホームから登録集合の処理を常駐で受け付けるとき。\n対象と出力: 対象ごとの候補・処理上限・所有session・終端記録を保持する。オーケストレーターは対象の選定・実装・Git操作を直接行わない。\n前提: `atk config set process_loop_repositories <JSON文字列配列>`で絶対パスを登録する。空配列は待機し、同originは登録順の先頭へまとめる。不正登録は修正操作を示して停止する。共通オプションはall-reposの前へ指定する。\n復元・後始末: Ctrl+Cまたはabortで終了する。失敗した担当の成果を保持し、all-repos担当だけを再開する。status・instructなどの制御はOSアカウント共通で、追加指示は次の1起動集合で1回受領し、各担当が自分の対象に関する内容を適用する。",
+        "description": "目的: process_loop_repositoriesで登録した対象を一括取得し、各対象cwdの通常delegateがprocess-wiの全工程を担う。\n利用場面: ホームから登録集合の処理を常駐で受け付けるとき。\n対象と出力: 対象ごとの候補・処理上限・所有session・終端記録を保持する。オーケストレーターは対象の選定・実装・Git操作を直接行わない。\n前提: `atk config set process_loop_repositories <JSON文字列配列>`で絶対パスを登録する。空配列の場合は待機し、同じoriginの登録は登録順の先頭へまとめる。不正登録は修正操作を示して停止する。共通オプションはall-reposの前へ指定する。\n復元・後始末: Ctrl+Cまたはabortで終了する。失敗した担当の成果を保持し、all-repos担当だけを再開する。status・instructなどの制御はOSアカウント共通で、追加指示は次の1起動集合で1回受領し、各担当が自分の対象に関する内容を適用する。",
     },
     "atk lane integrate": {
         "summary": "レビュー済みレーンを統合し最終化する",
@@ -323,7 +323,7 @@ HELP: dict[str, dict[str, str]] = {
     },
     "atk lane": {
         "summary": "レーン資源の作成と終了時回収を管理する",
-        "description": "目的: 専用worktree・branchと所有sessionを同じ操作で登録し、session終了時に安全な資源を回収する。\n利用場面: process-wiのレーンを準備するとき、終了後の残存資源を再回収するとき。\n対象と出力: createは準備済み資源とrecord_path、deleteはremoved・retainedとresult_pathをJSONで返す。所有登録と回収結果への参照は状態ディレクトリのlanes/<session_id>/へ置く。回収結果は専用資源の外のmanaged-tempへ保存し、既存の7日保持へ委ねる。delete --listは全sessionの登録と前回結果を読み、削除しない。\n前提: 所有sessionは環境から解決し、解決できない場合は--session-idを指定する。\n復元・後始末: 統合後も資源を保持し、agents-exit-sessionとprocess-loopの子終了後がdeleteと同じ回収を行う。保持した対象は結果の理由を解消してdeleteを再実行する。",
+        "description": "目的: 専用worktree・branchと所有sessionを同じ操作で登録し、session終了時に安全な資源を回収する。\n利用場面: process-wiのレーンを準備するとき、終了後の残存資源を再回収するとき。\n対象と出力: createは準備済み資源とrecord_path、deleteはremoved・retainedとresult_pathをJSONで返す。所有登録と回収結果への参照は状態ディレクトリのlanes/<session_id>/へ置く。回収結果は専用資源の外のmanaged-tempへ保存し、既存の7日保持へ委ねる。delete --listは全sessionの登録と前回結果を読み、削除しない。\n前提: 所有sessionは環境から解決し、解決できない場合は--session-idを指定する。\n復元・後始末: 統合後も資源を保持し、agents-exit-sessionと、process-loopの子セッションの終了後の処理が、deleteと同じ回収を行う。保持した対象は結果の理由を解消してdeleteを再実行する。",
         "epilog": "実行例:\n\n  atk lane create --repo /absolute/repo --base-branch develop --lane lane-01 --selection-file /absolute/pick-wi.yaml\n  atk lane delete",
     },
     "atk lane create": {

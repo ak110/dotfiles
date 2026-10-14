@@ -70,7 +70,7 @@ def _live(record: dict[str, Any]) -> bool:
 
 
 def _unfinished_record(record: dict[str, Any]) -> dict[str, Any]:
-    """同じ担当の取得し直しを畳み、別担当が残した未完了の連鎖を保つ。"""
+    """同じ担当が取得し直した記録は前の記録へまとめ、別担当が残した未完了の記録の連鎖を保つ。"""
     previous = record.get("previous")
     if isinstance(previous, dict) and (
         record.get("session_id") is None or record.get("session_id") == previous.get("session_id")

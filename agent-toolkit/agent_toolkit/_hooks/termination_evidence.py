@@ -12,7 +12,7 @@ import json
 import os
 import pathlib
 
-# 関数の実行時までだけ使う依存を、使用時まで読み込まない。
+# 関数の実行時にだけ使う依存は、使用時まで読み込まない。
 lazy import argparse
 lazy import shlex
 lazy import subprocess
@@ -420,7 +420,7 @@ def _response_text(response: object) -> str | None:
 
 
 def _returned_text(text: str) -> str:
-    # atk自身の全量保存を消費し、欠落したpreviewを読取結果の代用にしない。
+    # atkが出力を保存先へ書いた場合は保存先の全量を読み、欠落したpreviewを読取結果の代わりにしない。
     paths = [line.removeprefix("保存先: ").strip() for line in text.splitlines() if line.startswith("保存先: ")]
     if len(paths) == 1:
         path = pathlib.Path(paths[0])
@@ -707,7 +707,7 @@ def record_decision(document: dict[str, Any]) -> str:
                 or reference.get("human") is not True
                 or reference.get("text") != document.get("quote")
             ):
-                raise ValueError("原入力のinput_idと全文のquoteを渡す。生成入力は判断の人間の根拠にできない")
+                raise ValueError("原入力のinput_idと全文のquoteを渡す。生成入力は人間の判断の根拠にできない")
             evidence["input_id"] = document["input_id"]
         if action == "publish-scope":
             if document.get("scope") not in {

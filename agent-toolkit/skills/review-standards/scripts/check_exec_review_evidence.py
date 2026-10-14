@@ -98,7 +98,7 @@ JAPANESE_ASCII_PATH_BOUNDARY = re.compile(r"(?<=[\u3040-\u30ff\u3400-\u9fff])(?=
 # 文末の句点として置いた`.`は続きに含めず、`原因はdocs/a.md.`をパス全体で終える。
 # 行位置などの所在は`:`に続くASCIIの並びとし、最初の非ASCII文字（日本語の助詞・述語、`・`など）で終える。
 # ASCIIの並びは切り詰めずに行位置の書式の判定へ渡し、`:1-2,5-7`や`:1-`を正しい範囲として受理しない。
-# 見出しは日本語を含むため、文字種で終わりを決められず、従来どおり区切り記号までを見出しとする。
+# 見出しは日本語を含むため、文字種で終わりを決められず、区切り記号の手前までを見出しとする。
 PLAIN_REFERENCE = re.compile(
     r"(?P<plain>[^\s`\[\]（）「」、。:#]*?\.[A-Za-z][A-Za-z0-9_-]*(?![A-Za-z0-9_/\\-]|\.[A-Za-z0-9_])"
     r"(?::[!-~]+|#[^\s`\[\]（）「」、。]+)?)"
@@ -401,7 +401,7 @@ def _is_explicit_reference(match: re.Match[str], evidence: str, repository: path
     # 拡張子は名前の本体を持つファイル名の`.<英字>…`とし、`.env`のように先頭がピリオドで本体の無い名前は拡張子を持たない。
     # 見出し位置はファイルの節を指すため、拡張子を持つ名前に添えた場合だけ所在とする。
     # `pytest-dev/pytest#14635`のようなIssueの参照は区切りと`#`を持つが、ファイルを指さない。
-    # 行位置を添えた名前（`.gitignore:9`、`scripts/.env:1`）は、根拠の所在を示すため従来どおり確かめる。
+    # 行位置を添えた名前（`.gitignore:9`、`scripts/.env:1`）は、根拠の所在を示すため候補として確かめる。
     has_separator = "/" in candidate or "\\" in candidate
     has_extension = NAMED_EXTENSION.fullmatch(re.split(r"[/\\]", candidate)[-1]) is not None
     if location.startswith("#"):

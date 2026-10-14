@@ -107,7 +107,7 @@ def export_logs(
 
 
 def _bulk_targets(project_dir: pathlib.Path | None) -> list[RecordTarget]:
-    """Claude Code親とCodexの全記録を件数制限なしに列挙する。"""
+    """Claude Codeの親セッションとCodexの全記録を件数制限なしに列挙する。"""
     targets: list[RecordTarget] = []
     project = os.path.abspath(os.fspath(project_dir)) if project_dir is not None else None
     claude_projects = host_homes.claude_config_dir() / "projects"
@@ -178,7 +178,7 @@ def _timestamp(value: str | None) -> datetime.datetime:
 
 
 def _destinations(output_dir: pathlib.Path, targets: list[RecordTarget]) -> list[pathlib.Path]:
-    """日時名の衝突を識別子で解消し、既存ファイルを上書きしない。"""
+    """日時から作るファイル名の衝突を識別子で解消し、既存ファイルを上書きしない。"""
     destinations: list[pathlib.Path] = []
     chosen: set[pathlib.Path] = set()
     for target in targets:
@@ -195,7 +195,7 @@ def _destinations(output_dir: pathlib.Path, targets: list[RecordTarget]) -> list
 
 
 def _safe_stem(value: str) -> str:
-    """記録識別子を出力先ディレクトリ内のファイル名に限定する。"""
+    """記録識別子を、出力先ディレクトリの外を指さないファイル名の文字へ置き換える。"""
     return re.sub(r"[^0-9A-Za-z_-]", "-", value) or "session"
 
 

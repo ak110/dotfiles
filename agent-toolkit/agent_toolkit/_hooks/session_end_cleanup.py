@@ -24,7 +24,7 @@ from __future__ import annotations
 import json
 import sys
 
-# 関数の実行時までだけ使う依存を、使用時まで読み込まない。
+# 関数の実行時にだけ使う依存は、使用時まで読み込まない。
 lazy from agent_toolkit._agents_server import shared_roots, shared_sweep
 lazy from agent_toolkit._atk.agents_exit_session import sweep_function_hook_files
 lazy from agent_toolkit._common.session_state import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error

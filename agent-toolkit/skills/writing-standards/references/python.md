@@ -8,7 +8,7 @@
 
 - importは可能な限り`import xxx`形式で、トップレベルに書く。`import xxx as yyy`の別名は読みやすさか実行上の必要性（定着した略称`np`、名前衝突の回避、互換APIの差し替えなど）がある場合に使う
 - 循環参照は関数内importやTYPE_CHECKINGガードの恒常化ではなく、共通依存を別モジュールへ切り出して解消する
-- 公開境界と非自明な型を型ヒントで明確にする。`@typing.final`のメソッドはサブクラスの都合で外さず、抽象メソッド側への委譲などで吸収する
+- 公開境界と非自明な型を型ヒントで明確にする。`@typing.final`のメソッドはサブクラスの都合で外さず、サブクラスごとの差は抽象メソッドへの委譲などで扱う
 - docstringはGoogle Styleとし、自明なArgs, Returns, Raisesは省略する。`ruff`のD規則が有効なプロジェクトでは自明でも公開関数・モジュール・クラスのdocstring省略がlintエラーになるため、1行サマリーに留めるか`_`接頭辞でprivate化する
 
 ### 標準ライブラリとログ
@@ -46,7 +46,7 @@
 ## 静的解析の誤検出と抑制
 
 - lint指摘への対応は`implementation-time.md`「lintと機械チェック」に従う。Pythonでは複数のチェッカーが同じ箇所を重複検出しやすいため、`assert`や`del`などの通常の構文で解消できる場合はそちらを選ぶ
-- `subprocess.run(..., capture_output=True)`の`proc.stdout`は`bytes | None`寄りに推論される（`text=True`でも`None`が残る）。使う前に`assert isinstance(proc.stdout, bytes)`などで限定する
+- `subprocess.run(..., capture_output=True)`の`proc.stdout`は`None`を含む型（`bytes | None`など）に推論される（`text=True`でも`None`が残る）。使う前に`assert isinstance(proc.stdout, bytes)`などで限定する
 - 動的な`sys.path.insert()`の後のimportでは、pylintが`wrong-import-position`と`import-error`の両方を誤発火するため`# pylint: disable=wrong-import-position,import-error`と併記する
 - 意図的な関数内importでは`# noqa: PLC0415  # pylint: disable=import-outside-toplevel`と併記する
 - `ty`と`mypy`の両方が有効な場合、型不一致の抑制は`# type: ignore[<mypy-code>]  # ty: ignore[<ty-rule>]`と同一行に併記する
@@ -79,7 +79,7 @@
 
 ### ロギング出力の検証
 
-- `caplog`はroot loggerへ伝搬した記録のみ捕捉し、`propagate=False`のloggerは捕捉できない。`capsys`もfixtureで追加した`StreamHandler(sys.stdout)`とは参照がずれやすい。検証対象loggerへ記録蓄積用の`logging.Handler`を直接追加し、fixture終了時に取り除く形が安定する
+- `caplog`はroot loggerへ伝搬した記録のみ捕捉し、`propagate=False`のloggerは捕捉できない。`capsys`が差し替えた`sys.stdout`と、fixtureで追加した`StreamHandler(sys.stdout)`が保持するストリームは一致しないことがある。検証対象loggerへ記録蓄積用の`logging.Handler`を直接追加し、fixture終了時に取り除くと、捕捉の有無がこれらの条件に左右されない
 
 ## Python新構文と導入バージョン
 

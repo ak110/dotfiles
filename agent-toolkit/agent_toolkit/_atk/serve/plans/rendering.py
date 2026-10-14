@@ -14,7 +14,7 @@ import markdown_it.utils
 import pygments
 from pygments.util import ClassNotFound
 
-# 他の処理では不要な依存を、使用時まで遅延する。
+# 他の処理で使わない依存は、使用時まで読み込まない。
 lazy from pygments.lexers import get_lexer_by_name
 
 # --------------------------------------------------------------------------------------
@@ -134,7 +134,7 @@ class MarkdownCache:
         if existing is not None:
             self._total_bytes -= len(existing.encode("utf-8"))
         size = len(html.encode("utf-8"))
-        # 単一エントリが上限を超える場合は保持せずに諦める（次回はミスのまま再レンダリング）。
+        # 単一エントリが上限を超える場合は保持しない（次回もキャッシュに無いため再レンダリングする）。
         if size > self._max_bytes:
             return
         self._entries[key] = html

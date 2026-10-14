@@ -20,7 +20,7 @@ from __future__ import annotations
 import dataclasses
 import pathlib
 
-# Codexの編集ツール名。matcher上は`Edit`・`Write`の別名に一致するが、payloadの`tool_name`は本名で届く。
+# Codexの編集ツール名。matcher上は`Edit`・`Write`の別名に一致するが、payloadの`tool_name`は`apply_patch`のまま届く。
 CODEX_APPLY_PATCH_TOOL = "apply_patch"
 
 # Claude Codeの編集ツール名。

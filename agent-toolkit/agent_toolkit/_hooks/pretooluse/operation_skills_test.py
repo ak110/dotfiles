@@ -299,7 +299,7 @@ _WRITE_FORMS = [
 @pytest.mark.parametrize("form", _WRITE_FORMS)
 @pytest.mark.parametrize("prefix", ["", "/repo/", "~/", "$HOME/", '"$HOME/', "${HOME}/"])
 def test_bash_static_document_suffix_warns_once(tmp_path: pathlib.Path, form: str, prefix: str) -> None:
-    """展開される先頭と操作形式を組み合わせ、公開hookの初回警告と反復0回を検証する。"""
+    """展開される先頭と操作形式を組み合わせ、公開hookが初回だけ警告し、2回目には警告しないことを検証する。"""
     closing_quote = '"' if prefix.startswith('"') else ""
     path = prefix + ".claude/rules/AGENTS.md" + closing_quote
     directory = prefix + ".claude/rules/" + closing_quote
@@ -414,7 +414,7 @@ def test_bash_document_write_negative_boundaries(tmp_path: pathlib.Path, command
     ],
 )
 def test_perl_document_write_option_and_program_boundaries(tmp_path: pathlib.Path, options: str, writes: bool) -> None:
-    """公開hookで値中のiとprogramfile後の旗を除き、有効なin-place編集だけを警告する。"""
+    """公開hookは、オプションの値に含まれる`i`とprogramfile以降のオプションを除き、有効なin-place編集だけを警告する。"""
     payload = _bash(f"perl {options} ~/.claude/rules/x.md", "perl-options")
     env = _plan_file_state_env(tmp_path)
     warning = _search_warning(payload, env)

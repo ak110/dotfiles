@@ -1,4 +1,4 @@
-"""最新モデル文脈の使用量を検証し、表示用の数値と書式を共有する。"""
+"""モデルの最新のコンテキスト使用量を検証し、表示用の数値と書式を共有する。"""
 
 from __future__ import annotations
 
@@ -24,7 +24,7 @@ def fields(tokens: object, context_window: object) -> dict[str, int | float]:
 
 
 def record_context_usage(session: state.SessionState, tokens: object, context_window: object) -> None:
-    """観測を置換して表示へ通知し、モデル活動の時刻は維持する。"""
+    """観測値を置き換えて表示へ通知し、モデル活動の時刻は進めない。"""
     session.context_tokens = valid_number(tokens)
     session.context_window = valid_number(context_window)
     state.notify_touch_listeners()

@@ -38,7 +38,7 @@ import json
 import re
 import sys
 
-# 関数の実行時までだけ使う依存を、使用時まで読み込まない。
+# 関数の実行時にだけ使う依存は、使用時まで読み込まない。
 lazy import shlex
 
 from agent_toolkit._hooks.notice import _WARN_TAG, set_warning_session_id
@@ -103,7 +103,7 @@ VERIFICATION_NOTICE_BODY = (
 importするため、循環importを避けて本モジュールに置く。
 比べて確かめる対象は発話ごとに異なるため、対象の列挙と、真偽が行動を変えない事実の裏付けを省く判断を受領側の手順として本文に持たせる。
 その列挙をフック側の判定で代替しない。フックの入力は発話本文だけであり、
-規則による分類の誤りは、現物との比較を最も要する発話で注記を無音のまま欠落させるためである。
+規則で分類を誤ると、現物との比較を最も要する発話で注記が返らず、欠落にも気付けないためである。
 """
 
 _ASK_USER_QUESTION_TOOL = "AskUserQuestion"
@@ -131,7 +131,7 @@ _AUTONOMOUS_EXIT_STATE_KEY = "autonomous_exit_invoked"
 def _set_process_wi_invoked(state: dict) -> dict | None:
     """process-wiスキル起動フラグを常時Trueへ上書きする。
 
-    新規process-wiラン開始時に前ランの残置フラグを無視して確実にTrueへ強制上書きするため冪等スキップを廃止する。
+    新しいprocess-wiの実行の開始時に、前回の実行が残したフラグの値によらずTrueへ上書きするため、既に真でも書き込む。
     フラグのリセットは`_reset_process_wi_invoked`（exit-session起動検知）が担い、本関数と対で使う。
     """
     state["process_wi_skill_invoked"] = True
@@ -445,7 +445,7 @@ def _observe_bash_tool(payload: dict, session_id: str, tool_input: dict) -> None
 
 
 def _completion_report_notice(payload: dict, tool_input: dict) -> str | None:
-    """メインの成功した前景Git操作の近傍へ、完了報告の起動条件を届ける。"""
+    """メインが前景で成功させたGit操作の直後に、completion-reportの起動条件を通知する。"""
     response = payload.get("tool_response")
     if (
         not is_main_agent_context(payload)

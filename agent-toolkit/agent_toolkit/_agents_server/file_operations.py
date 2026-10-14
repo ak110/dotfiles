@@ -1,4 +1,4 @@
-"""loopの状態を渡さず、ファイル操作の終了をキャンセル時にも回収する。"""
+"""イベントループの状態をworkerへ渡さず、キャンセルされた場合もファイル操作の終了を待って結果を回収する。"""
 
 from __future__ import annotations
 
@@ -19,7 +19,7 @@ async def run_file_operation[T](
 
 
 async def finish_task[T](task: asyncio.Task[T], *, on_success: Callable[[T], None] | None = None) -> T:
-    """taskの終了と成功反映を完了してから、呼出元のキャンセルを伝える。"""
+    """taskの終了と成功時の`on_success`の反映を済ませてから、呼出元へキャンセルを伝える。"""
     cancelled = False
     try:
         while not task.done():

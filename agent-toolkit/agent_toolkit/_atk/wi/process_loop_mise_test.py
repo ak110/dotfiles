@@ -24,7 +24,7 @@ def _isolate_process_loop_commands(monkeypatch: pytest.MonkeyPatch, tmp_path: pa
 
 
 class TestMiseLatestRefresh:
-    """dotfiles向けprocess-loopが所有するmise latest再評価を検証する。"""
+    """dotfilesを対象とするprocess-loopが行う、miseのlatest指定の再評価を検証する。"""
 
     @staticmethod
     def _run_idle_loop(
@@ -171,7 +171,7 @@ class TestMiseLatestRefresh:
         tmp_path: pathlib.Path,
         update_returncode: int,
     ) -> None:
-        """セッション終了後の再起動では、子セッション後更新の結果を扱わない。"""
+        """セッション終了後の再起動では、子セッション終了後の更新の結果を扱わない。"""
         _setup_notes(tmp_path)
         target = tmp_path / "dotfiles-target"
         target.mkdir()

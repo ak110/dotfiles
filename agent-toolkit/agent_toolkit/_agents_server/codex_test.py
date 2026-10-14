@@ -151,7 +151,7 @@ async def test_start_and_resume_record_owner_and_app_server_processes(
 async def test_config_changes_apply_to_new_reply_and_restored_turns(
     initial: bool, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """公開configの変更が3RPCへ明示され、実際に送った最新turnの速度を保持する。"""
+    """公開configの変更を3種類のRPCの要求へ明示し、実際に送った最新turnの速度を保持する。"""
     monkeypatch.setattr(subject._atk_config, "_config_dir", lambda: tmp_path / "config")
     monkeypatch.delenv("AGENT_TOOLKIT_CONFIG_CODEX_FAST_MODE", raising=False)
 
@@ -530,7 +530,7 @@ async def test_thread_start_overrides_agents_server_with_owner_and_writer_env(
 async def test_mcp_mise_namespace_names_and_explicit_owner_are_separate(
     operation: str, configured: bool, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
 ) -> None:
-    """新規・再開のMCPは公開mise所在の名前を配送し、所有者・書込主体・plugin dataを明示する。"""
+    """新規起動と再開の内側MCPには公開されたmiseの所在を示す環境変数名だけを配送し、所有者・書込主体・plugin dataを明示する。"""
     runtime_data = tmp_path / "plugin data"
     monkeypatch.setenv(plugin_environment.RUNTIME_DATA_ENV, str(runtime_data))
     names = ("MISE_STATE_DIR", "MISE_CACHE_DIR", "MISE_DATA_DIR", "MISE_CONFIG_DIR")
@@ -741,7 +741,7 @@ def test_agents_server_config_uses_the_stable_plugin_root() -> None:
 async def test_start_and_resume_pass_the_same_stable_plugin_root_to_all_launch_kinds(
     launch_kind: state.LaunchKind, windows: bool, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
 ) -> None:
-    """開始と再開の全役割へ、同じ実在plugin rootと再解決を禁じる契約を渡す。"""
+    """開始と再開の全役割へ、実在する同じplugin rootと、plugin rootの再解決を禁じる指示を渡す。"""
     source = _make_plugin_root(tmp_path / "cache", "2.125.0", versioned=True, root_is_version=True)
     (source / "skills" / "sample").mkdir(parents=True)
     (source / "skills" / "sample" / "SKILL.md").write_text("# 手順\n", encoding="utf-8")
@@ -1193,7 +1193,7 @@ async def test_codex_turn_start_response_loss_remains_running_until_completion(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> None:
-    """初回turn/start応答喪失後もsessionを保持し、完了通知で結果取得可能にする。"""
+    """初回のturn/startの応答が失われた後もsessionを保持し、完了通知から結果を取得できるようにする。"""
     manager = subject.AppServerManager()
     client = LostTurnStartClient()
 
@@ -1417,7 +1417,7 @@ async def test_stop_releases_codex_descendants_and_preserves_resume(
 async def test_resume_waits_for_thread_close_after_unsubscribe(
     monkeypatch: pytest.MonkeyPatch, notification_first: bool
 ) -> None:
-    """閉鎖中の再開拒否は対象threadの閉鎖通知で解消し、通知先着でも取りこぼさない。"""
+    """閉鎖中の再開拒否は対象threadの閉鎖通知で解消し、閉鎖通知が先に届いても取りこぼさない。"""
     backend = subject.AppServerManager()
     client = FakeCodexClient()
     closed_notice = {"method": "thread/closed", "params": {"threadId": "thread-1"}}
@@ -1567,7 +1567,7 @@ async def test_codex_json_rpc_request_marks_sent_before_response(
 @pytest.mark.usefixtures("agents_server_isolation")
 @pytest.mark.asyncio
 async def test_codex_backend_send_supports_terminal_reply_without_result_flag(tmp_path: pathlib.Path) -> None:
-    """Codexの終端後replyが結果回収フラグなしで開始できる。"""
+    """Codexの終端後のreplyは結果回収フラグなしで開始できる。"""
     manager = subject.AppServerManager()
     client = FakeCodexClient()
     manager.client = cast(Any, client)
@@ -1719,7 +1719,7 @@ async def test_codex_resume_timeout_drops_prompt_without_duplicate_resume(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> None:
-    """Codex再開のtimeout後に旧promptを配送せず、後続入力で再開を重複しない。"""
+    """Codex再開のtimeout後に旧promptを配送せず、後続入力で再開を重複させない。"""
     manager = server_manager.AgentsServerManager()
     backend = subject.AppServerManager(manager.sessions, manager._condition)
     client = BlockingResumeCodexClient()
@@ -1817,7 +1817,7 @@ async def test_codex_kill_reports_no_request_when_pending_turn_completes_natural
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> None:
-    """保留resumeの取消中に自然終了したturnへ中断要求済みと報告しない。"""
+    """保留中のresumeを取り消す間に自然に終了したturnを、中断要求済みと報告しない。"""
     manager, backend, client = _pending_codex_manager(monkeypatch, NaturallyCompletingTurnStartClient)
     manager.expired_sessions[session_id] = state.SessionResumeState(
         session_id=session_id,
@@ -1855,7 +1855,7 @@ async def test_codex_kill_reports_no_request_when_pending_turn_completes_natural
 async def test_explore_sandbox_probe_distinguishes_failure_kinds(
     failure: str, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """公開起動が確定した名前空間拒否だけを候補不成立へ渡し、probeを先に回収する。"""
+    """公開の起動では確定した名前空間の作成拒否だけを候補不成立として扱い、probeの接続をthread開始より先に回収する。"""
     probe = _SandboxProbeClient()
     if failure in {"namespace", "wrong-code"}:
         probe.response = {
@@ -1909,7 +1909,7 @@ async def test_explore_sandbox_probe_distinguishes_failure_kinds(
 
 @pytest.mark.asyncio
 async def test_context_usage_notification_is_session_scoped(tmp_path: pathlib.Path) -> None:
-    """0.162.1通知のlastだけを同じthread・turnへ配送し、累計と活動を混ぜない。"""
+    """0.162.1の通知が持つ`last`だけを同じthread・turnへ配送し、累計と活動を混ぜない。"""
     # codex-cli 0.162.1 generate-json-schemaのThreadTokenUsageUpdatedNotification。
     session = state.SessionState("usage-thread", str(tmp_path), engine="codex", turn_id="usage-turn")
     other = state.SessionState("other-thread", str(tmp_path), engine="codex", turn_id="other-turn")

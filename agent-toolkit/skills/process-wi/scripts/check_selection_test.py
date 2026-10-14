@@ -702,7 +702,7 @@ def test_public_check_overlap_uses_integration_state(
     state: str | None,
     expected: int,
 ) -> None:
-    """同段階で同定義を書く対照は、統合済みの履歴だけを競合待ちから除く。"""
+    """同段階の2レーンが同じ定義を書く選定は、片方が統合済みの場合だけ競合として拒否しない。"""
     repo, notes = env
     for name in ("a.md", "b.md"):
         _awi(notes, name, "`README.md`を変える。")
@@ -1662,7 +1662,7 @@ def test_range_description_needs_no_coverage_but_inner_paths_do(
 def test_directory_range_without_inner_path_still_needs_coverage(
     tmp_path: pathlib.Path, env: tuple[pathlib.Path, pathlib.Path], capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """配下に抽出結果を持たないディレクトリ範囲は範囲説明に当たらず、従来どおり被覆を求める。"""
+    """配下に抽出結果を持たないディレクトリ範囲は範囲説明に当たらず、通常の反映先と同じく被覆を求める。"""
     repo, notes = env
     _awi(notes, "only-range.md", "`pytools/`配下のテストを変える。")
     selection = _write_selection(tmp_path / "selection.yaml", [{"WI": "only-range.md", "レーン": "lane-01", "書込対象": []}])

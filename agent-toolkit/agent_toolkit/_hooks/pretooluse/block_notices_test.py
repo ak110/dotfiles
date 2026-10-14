@@ -1,4 +1,4 @@
-"""PreToolUseの全遮断が、呼び出し全体の未実行を同じ要素内で伝える。
+"""PreToolUseの全ての遮断が、呼び出し全体を実行していないことを遮断の通知本文の中で伝える。
 
 入力は既存dispatchテストと同じClaude Code・Codexのhook payload形式を用いる。
 Stopの遮断はツールの実行前ではないため、この文を含めない。
@@ -111,7 +111,7 @@ def test_escalated_warning_has_result_but_stop_block_does_not(capsys: pytest.Cap
 
 
 def test_pretooluse_block_formatter_is_owned_by_notices() -> None:
-    """新しい独立整形が共通の結果文を省く逸脱を検出する。"""
+    """遮断の通知本文を整形する処理が`notices.py`以外へ加わり、共通の結果文を省く状態を検出する。"""
     root = pathlib.Path(dispatch.__file__).parent
     owners = []
     for path in root.glob("*.py"):

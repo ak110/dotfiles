@@ -57,7 +57,7 @@ def cmd_process_loop_instruct(body: str) -> None:
             )
             _outcome.report_failure(f"追加指示を保持しなかった: {summary}", next_action=next_action)
             raise SystemExit(1)
-        _outcome.report_success(f"追加指示は{summary}ため、変更は無い")
+        _outcome.report_success(f"{summary}ため、追加指示の変更は無い")
         return
     _outcome.report_success(f"次のセッションへ渡す追加指示を保持した。{summary}")
 

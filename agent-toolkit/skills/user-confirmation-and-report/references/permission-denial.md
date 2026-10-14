@@ -7,7 +7,7 @@ auto modeのカスタムルールを追加・編集する手順は`agent-toolkit
 
 拒否を観測したら、別の手段で迂回する前に有効な設定ファイルを`Read`して許可・拒否のルールを確認する。対象は`/etc/claude-code/managed-settings.json`、`~/.claude/settings.json`、リポジトリ直下の`.claude/settings.json`と`.claude/settings.local.json`である。拒否本文が同じ結果の追求を禁じている場合は、設定ファイルの読み取りも拒否され得るため、読み取りを省いて「偽陽性と判断できる拒否への対応」へ進む。
 
-拒否された操作を、有効な`autoMode.allow`の各規則と、対象操作、適用条件および信頼境界の包含関係で照らす。対応するallow規則があれば、拒否本文の分類名との意味上の一致によらず偽陽性の可能性が高い。`hard_deny`に属する操作は偽陽性フローの対象から外す。
+拒否された操作を、有効な`autoMode.allow`の各規則と、対象操作、適用条件および信頼境界の包含関係で照らす。対応するallow規則があれば、拒否本文の分類名との意味上の一致によらず、その拒否は偽陽性の可能性が高い。`hard_deny`に属する操作は偽陽性フローの対象から外す。
 
 権限評価はpermissionsルール（deny→ask→allowの順で最初の一致が確定）、作業ディレクトリ内編集等の自動承認、auto mode classifierの順に進む。PreToolUseフックの`permissionDecision: "allow"`より前にpermissions評価が確定する。このため拒否ルールに該当する対象は、許可の追加ではなく拒否ルール自体の見直しで解消する。permissions設定による確認ダイアログは本書の範囲外とし、`agent-toolkit:writing-standards`の`references/claude-hooks-output.md`の「PermissionRequest」に従う。
 

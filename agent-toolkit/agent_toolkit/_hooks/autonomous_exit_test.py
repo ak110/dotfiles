@@ -113,7 +113,7 @@ class TestApproveConditions:
         assert decision.get("decision") == "block"
 
     def test_delegated_session_approves(self, tmp_path: pathlib.Path) -> None:
-        """process-loop環境を継承した委譲先では終了工程を再促しない。"""
+        """process-loop環境を継承した委譲先では終了工程の実行を再び促さない。"""
         transcript = _write_transcript(tmp_path, [_user_entry(), _assistant_text_only()])
         result = _run(
             {"session_id": "delegated", "transcript_path": str(transcript)},
@@ -150,7 +150,7 @@ class TestApproveConditions:
         assert "decision" not in decision
 
     def test_queued_notification_approves_with_empty_background_tasks(self, tmp_path: pathlib.Path) -> None:
-        """背景taskの終了後も通知の配送前なら終了再促を保留する。"""
+        """背景taskの終了後も通知の配送前なら、終了工程を促す遮断を保留する。"""
         transcript = _write_transcript(
             tmp_path,
             [
@@ -170,7 +170,7 @@ class TestApproveConditions:
         assert "decision" not in _parse_decision(result)
 
     def test_pending_agents_server_observation_approves(self, tmp_path: pathlib.Path):
-        """終端済みでも未回収のagents_server結果があれば終了再促を保留する。"""
+        """終端済みでも未回収のagents_server結果があれば、終了工程を促す遮断を保留する。"""
         transcript = _write_transcript(tmp_path, [_user_entry(), _assistant_text_only()])
         _write_state(
             tmp_path,
@@ -185,7 +185,7 @@ class TestApproveConditions:
         assert "decision" not in _parse_decision(result)
 
     def test_observed_agents_server_result_preserves_block_path(self, tmp_path: pathlib.Path):
-        """回収済みのagents_server結果だけなら現行の終了工程再促へ戻る。"""
+        """回収済みのagents_server結果だけなら、終了工程を促す遮断へ戻る。"""
         transcript = _write_transcript(tmp_path, [_user_entry(), _assistant_text_only()])
         _write_state(
             tmp_path,
@@ -200,7 +200,7 @@ class TestApproveConditions:
         assert _parse_decision(result).get("decision") == "block"
 
     def test_empty_background_tasks_preserve_block_path(self, tmp_path: pathlib.Path):
-        """空のStop payloadでは現行の終了工程再促へ戻る。"""
+        """空のStop payloadでは、終了工程を促す遮断へ戻る。"""
         transcript = _write_transcript(tmp_path, [_user_entry(), _assistant_text_only()])
         result = _run(
             {

@@ -48,10 +48,10 @@ pytestmark = pytest.mark.usefixtures("agents_server_isolation")
 
 
 class TaskManager(_SimpleNamespace):
-    """起動入力を記録する代役にも、taskが読む直接親の取得契約を持たせる。"""
+    """起動入力を記録するテスト用の代替にも、taskが読む直接の委譲元の情報を返す`launcher_record_context`を持たせる。"""
 
     def launcher_record_context(self) -> dict[str, str]:
-        """起動入力を比較する試験では、記録未解決の状態を明示する。"""
+        """起動入力を比較するテストでは、委譲元の記録が未解決であることを明示する。"""
         return {"status": "unresolved"}
 
 

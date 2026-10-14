@@ -493,7 +493,7 @@ def test_candidate_events_excludes_delegate_returns_that_only_report_success() -
     """正常な完了だけを示す返却を除外し、想定外事象、未解決の指摘、不適合の判定および自由記述を持つ返却は残す。
 
     前置きの文に続けて`status: completed`を返す形も、1回の配送で終えた委譲先では正常な完了として除く。
-    この形は振り返りの候補の大半を占めた雑音である。
+    この形は恒久対策を要しないまま振り返りの候補の大半を占めていた。
     再開された委譲先の前置き付きの返却は、受け取り済みの報告を返し直した異常を前置きで述べた実例があるため残す。
     """
     excluded_texts = [
@@ -1056,7 +1056,7 @@ def test_candidate_events_treats_quoted_operator_shaped_search_terms_as_data() -
 
 
 def test_public_bundle_excludes_claude_wait_continuations(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
-    """Bashの記録を公開bundleで処理し、包装と出力形式が違う継続を同じ区分へ集計する。"""
+    """Bashの記録を公開bundleで処理し、包装の有無と出力形式が異なる待機継続を同じ区分へ集計する。"""
     entries = []
     cases = [
         ("atk agents wait", 3),

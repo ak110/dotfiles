@@ -233,7 +233,7 @@ def _check_structure(
     private_notes: pathlib.Path | str | None,
     home: pathlib.Path | str | None,
 ) -> None:
-    """確定した計画ファイル群を構造が基準を満たすか判定する関数へ渡す。"""
+    """確定した計画ファイル群を、構造が基準を満たすかを判定する関数へ渡す。"""
     import check_plan_file  # noqa: PLC0415  # pylint: disable=import-outside-toplevel
 
     errors, _warnings = check_plan_file.check(
@@ -356,7 +356,7 @@ def create_plan_files(
         sources.append(pathlib.Path(bug_source))
     resolved_sources = [source.expanduser().resolve() for source in sources]
     if len(set(resolved_sources)) != len(resolved_sources):
-        raise ValueError("メインとbugに同じ入力ファイルを指定できません")
+        raise ValueError("計画ファイルと計画ファイル（バグ）に同じ入力ファイルを指定できません")
 
     metadata, metadata_errors = _plan_format.parse_plan_metadata(main_content.decode("utf-8"))
     if metadata_errors:

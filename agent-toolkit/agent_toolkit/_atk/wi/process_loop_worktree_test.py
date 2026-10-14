@@ -43,7 +43,7 @@ from agent_toolkit.atk_test import _setup_notes  # noqa: E402  # pylint: disable
 def test_project_hook(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], fails: bool, name: str | None, detached: bool
 ) -> None:
-    """常駐の公開準備がhook返却先を再利用し、hook失敗ではGit作成へ後退しない。"""
+    """公開されたworktree準備処理がWorktreeCreate hookの返したパスを再利用し、hookが失敗してもGitによる作成へ切り替えない。"""
     local = _make_remote_repository(tmp_path, "hook-target")
     destination = tmp_path / "project-worktree"
     count = tmp_path / "calls"
@@ -290,7 +290,7 @@ class TestSyncWorktreeWithUpstream:
             if args == ["remote"]:
                 return "origin"
             if args == ["symbolic-ref", "--short", "refs/remotes/origin/HEAD"]:
-                raise AssertionError("追跡先が解決できた場合はorigin/HEADへ後退しないこと")
+                raise AssertionError("追跡先が解決できた場合はorigin/HEADを使わないこと")
             return None
 
         monkeypatch.setattr(_pl_worktree, "_git_output", fake_git_output)
@@ -994,7 +994,7 @@ class TestProcessLoopWorktreeOption:
         worktree_argv: list[str],
         expected_name: str,
     ) -> None:
-        """非dotfiles対象でもworktree指定が同期先・cwd・公開先文へ反映されること。"""
+        """非dotfiles対象でもworktree指定が同期先とcwdへ反映され、公開先の指示文を目的文へ加えないこと。"""
         _setup_notes(tmp_path)
         myrepo = tmp_path / "myrepo"
         myrepo.mkdir()

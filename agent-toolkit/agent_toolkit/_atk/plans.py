@@ -690,7 +690,7 @@ def _checkout_conflict_differences(
     saved: dict[str, bytes],
     remote: dict[str, bytes],
 ) -> str:
-    """取得時点・作業側の双方と異なる保存元を、相違の別とともに返す。"""
+    """取得時点・作業側の双方と異なる保存元を、相違の種類とともに返す。"""
     differences: list[str] = []
     for name in sorted(recorded.keys() | working.keys() | saved.keys() | remote.keys()):
         if saved.get(name) not in (recorded.get(name), working.get(name)):

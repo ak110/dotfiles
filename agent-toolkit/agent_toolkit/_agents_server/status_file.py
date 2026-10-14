@@ -150,7 +150,7 @@ class StatusFileWriter:
         self.flush()
 
     def schedule(self) -> None:
-        """実行中loopで集約時間後の全置換を予約する。"""
+        """実行中のloopで、集約時間の経過後に状態ファイル全体を置き換える保存を予約する。"""
         if not self._active or self._flush_handle is not None:
             return
         loop = asyncio.get_running_loop()
@@ -177,7 +177,7 @@ class StatusFileWriter:
             )
 
     def flush(self) -> None:
-        """表示対象sessionをJSONへ射影して原子的に全置換する。"""
+        """表示対象sessionをJSONへ射影し、状態ファイル全体を原子的に置き換える。"""
         if not self._active:
             return
         self._flush_handle = None
@@ -229,7 +229,7 @@ class StatusFileWriter:
             self._schedule_retention(visible, now)
 
     async def drain(self, *, cancel_scheduled: bool = False) -> None:
-        """予約保存と通知からの登録公開を回収する。"""
+        """予約した保存と、通知から開始した登録公開のtaskを回収する。"""
         await finish_task(asyncio.create_task(self._drain(cancel_scheduled=cancel_scheduled)))
 
     async def _drain(self, *, cancel_scheduled: bool) -> None:

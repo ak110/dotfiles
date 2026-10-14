@@ -62,7 +62,7 @@ USAGE_LIMIT_ERROR_TYPE = "usage_limit"
 
 @dataclasses.dataclass(frozen=True)
 class HeldTurn:
-    """追送が拒否された場合に戻す保留結果。待機対象は現物を維持して完了観測を巻き戻さない。"""
+    """追送が拒否された場合に戻す保留結果。待機対象は現在の集合を維持し、観測済みの完了を取り消さない。"""
 
     result: dict[str, Any]
     deadline: float | None
@@ -187,7 +187,7 @@ def begin_overload_resume_wait(session: SessionState, result: dict[str, Any]) ->
     """過負荷で終端したturnの結果を保留し、待機後の継続を予定する。
 
     上限に達していれば保留せずに連鎖を終えて偽を返し、呼び出し元は結果をそのまま公開する。
-    待機中は既存の`api_error`へ種別`serverOverloaded`とHTTP状態の不明を記録して状態の読者へ公開する。
+    待機中は既存の`api_error`へ種別`serverOverloaded`とHTTP状態が不明であることを記録して状態の読者へ公開する。
     """
     count = session.overload_resume_count
     if count >= len(OVERLOAD_RESUME_DELAYS_SECONDS):

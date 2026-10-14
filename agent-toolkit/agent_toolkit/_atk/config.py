@@ -13,7 +13,7 @@ import re
 import sys
 from typing import Any, cast
 
-# ヘルプや他の処理では不要な依存を、使用時まで遅延する。
+# ヘルプや他の処理で使わない依存は、使用時まで読み込まない。
 lazy import platformdirs
 
 from agent_toolkit._atk import help_text as _atk_help
@@ -142,7 +142,7 @@ def _config_file_path() -> pathlib.Path:
 
 
 def process_loop_configuration_path() -> pathlib.Path:
-    """常駐が登録変更を監視する設定ファイルのパスを返す。"""
+    """常駐プロセスが登録先の変更を監視する設定ファイルのパスを返す。"""
     return _config_file_path()
 
 
@@ -222,7 +222,7 @@ def _validate_mutable_setting(key: str, value: str) -> None:
 
 @dataclasses.dataclass(frozen=True)
 class ConfiguredRepository:
-    """登録順でoriginを一意にした対象と実worktree・Git共通ディレクトリ。"""
+    """同じoriginの登録先から登録順で最初の1件を残した対象と、その作業ツリー・Git共通ディレクトリ。"""
 
     repo_id: str
     worktree: pathlib.Path
@@ -241,7 +241,7 @@ def parse_process_loop_repositories(value: str) -> tuple[str, ...]:
 
 
 def resolve_configured_repositories() -> tuple[ConfiguredRepository, ...]:
-    """登録を厳密に読み、全件のGit実体を検収してoriginの先頭だけを返す。"""
+    """登録先を厳密に読み、全件のGit作業ツリーとoriginを確かめ、同じoriginは登録順で最初の1件だけを返す。"""
     key = "process_loop_repositories"
     env_value = os.environ.get(_config_env_name(key))
     try:

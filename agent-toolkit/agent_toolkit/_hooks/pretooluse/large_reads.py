@@ -14,7 +14,7 @@ import os
 import pathlib
 from dataclasses import dataclass
 
-# 関数の実行時までだけ使う依存を、使用時まで読み込まない。
+# 関数の実行時にだけ使う依存は、使用時まで読み込まない。
 lazy import ast
 lazy import re
 lazy import stat
@@ -146,7 +146,7 @@ def _display_operands(name: str, tokens: Sequence[str]) -> tuple[str, ...]:
 
 
 def _read_operands(tokens: Sequence[str], *, include_partial: bool) -> tuple[str, ...]:
-    """全文取得と、配送だけが対象とする範囲取得のファイル引数を返す。"""
+    """全文取得のファイル引数を返す。`include_partial`が真なら、帰属行の配送だけが対象とする範囲取得のファイル引数も含める。"""
     if not tokens:
         return ()
     name = pathlib.PurePath(tokens[0]).name
@@ -272,7 +272,7 @@ def _content_operands(tokens: Sequence[str], *, pattern: bool) -> tuple[str, ...
 
 
 def python_file_paths(code: str, *, writing: bool = False) -> list[str]:
-    """直列のリテラル・単純代入を解析し、読取と書込の静的ファイル対象を共用する。"""
+    """直列に並ぶリテラルと単純代入を解析し、Pythonコードが読み書きする静的なファイルパスを返す。読取と書込の判定がこの解析を共用する。"""
     try:
         module = ast.parse(code)
     except SyntaxError:

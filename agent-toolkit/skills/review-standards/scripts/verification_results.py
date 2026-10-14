@@ -204,7 +204,7 @@ def _junit(spec: object) -> dict[str, dict[str, Any]]:
 
 
 def load_results(path: pathlib.Path | None, *, specification: dict[str, Any] | None = None) -> dict[str, Any]:
-    """保存試験と診断を所有するモジュールで読み、差を付ける。"""
+    """保存した試験結果と診断を読み、基準版の指定があれば差を求めて返す。診断の読込と比較はverification_diagnosticsが行う。"""
     if path is None and not specification:
         return {"tests": {}, "test_changes": [], "diagnostics": {}}
     spec = load_json(path) if path is not None else specification

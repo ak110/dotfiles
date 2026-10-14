@@ -221,7 +221,7 @@ def _remove_wait_stash(run_path: pathlib.Path) -> None:
     except FileNotFoundError:
         pass
     except OSError as exc:
-        _LOG.warning("wait退避物を回収できませんでした: path=%s error=%s", run_path.with_suffix(""), exc)
+        _LOG.warning("待機の退避物を回収できませんでした: path=%s error=%s", run_path.with_suffix(""), exc)
 
 
 def _consume_wait_result(run_path: pathlib.Path) -> int:
@@ -334,7 +334,7 @@ def wait_for_result(
     双方とする。後者を含めるのは、保持期限で一覧から外れたsessionの結果本文も回収するためである。
     対象集合は最初の待機の発行時点で登録簿へ保存し、再発行時も同じ集合を引き継ぐ。
     待機中に開始または再稼働したsessionも、巡回ごとに取得して対象へ追加する。
-    状態ファイルは投影であり、対象の不在から権威あるsessionの喪失を判定できない。
+    状態ファイルはsession状態の投影であり、そこに対象が無いことからsessionの喪失を判定できない。
     終端結果と通知が無い場合は、投影が消失しても待機上限まで非終端として扱う。
     待機対象の登録も、`starting`を含む保持中sessionも0件の場合は、待機しても回収対象が生じないため、
     両方の不在を理由として標準エラーへ書き、即座に非0で終わる。
@@ -473,7 +473,7 @@ def wait_for_result(
                 message, code, next_action = target_error
                 return _publish_wait_result(run_path, with_next_action(message, next_action), code, stream="stderr")
             # 待機中の対象不在は、全対象の登録簿が終端を示す場合だけ確定する。
-            # 状態投影の消失と登録簿の不在は待機開始後の喪失の根拠にしないため、その場合は待機上限まで待つ。
+            # 状態投影の消失と登録簿の不在は待機開始後にsessionを喪失した根拠にならないため、その場合は待機上限まで待つ。
             if (
                 ordered_ids
                 and not current_origins

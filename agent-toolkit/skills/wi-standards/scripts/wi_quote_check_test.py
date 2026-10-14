@@ -68,7 +68,7 @@ def _spec(tmp_path: pathlib.Path, *selections: dict[str, object]) -> pathlib.Pat
 
 
 def test_public_import_uses_saved_source_and_checks_result(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
-    """生成側の保存出所から公開取り込みを通し、原稿と一致・単位の位置を同時に得る。"""
+    """生成側が保存した出所を`--import-spec`で取り込み、原稿の更新、一致判定と単位の位置を同じ実行で得る。"""
     events = _user_events(tmp_path, capsys, _UTTERANCE)
     event = json.loads(events.read_text(encoding="utf-8").splitlines()[0])
     body = tmp_path / "body.md"

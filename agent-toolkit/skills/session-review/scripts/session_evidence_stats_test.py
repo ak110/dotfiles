@@ -161,7 +161,7 @@ def test_stats_deduplicates_claude_usage_and_reports_tool_breakdown(tmp_path: pa
 
 
 def test_stats_reports_gap_repeat_and_token_peak_union(tmp_path: pathlib.Path, capsys) -> None:
-    """空白区間、同一入力の反復、単一順位では除外されるトークン極値を出力する。"""
+    """空白区間、同一入力の反復と、全成分合計の順位だけでは上位に入らないトークン消費の極値を出力する。"""
     entries: list[dict] = [
         {"type": "user", "timestamp": "2026-08-19T00:00:00Z", "message": {"role": "user", "content": "依頼"}},
     ]
@@ -174,8 +174,8 @@ def test_stats_reports_gap_repeat_and_token_peak_union(tmp_path: pathlib.Path, c
                 "message": {
                     "role": "assistant",
                     "id": f"message-{index}",
-                    # 先行10件はキャッシュ読取が支配し全成分合計が大きい。
-                    # 末尾1件は生成が支配し、全成分合計では11位となる。
+                    # 先行10件はキャッシュ読取が大半を占め、全成分合計が大きい。
+                    # 末尾1件は出力とキャッシュ作成が大半を占め、全成分合計では11位となる。
                     "usage": {
                         "input_tokens": 0,
                         "output_tokens": 1 if index < 10 else 100,
@@ -1192,7 +1192,7 @@ def _write_rollout(codex_home: pathlib.Path, thread_id: str, usages: list[tuple[
     """`CODEX_HOME`配下へthreadIdに対応するrolloutを書き込む。
 
     `usages`の各要素はそのリクエストの実消費（`last_token_usage`）とし、
-    `total_token_usage`にはそこまでの走行合計を与える。
+    `total_token_usage`にはそこまでの累積合計を与える。
     """
     rollout_dir = codex_home / "sessions" / "2026" / "08" / "19"
     rollout_dir.mkdir(parents=True, exist_ok=True)

@@ -59,7 +59,7 @@ def test_configured_scope(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatc
 def test_configured_repo_snapshot(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """キュー1回取得でrepo別依存・候補上限・登録外除外を一覧へ渡す。"""
+    """キューを1回だけ取得し、リポジトリ別の依存・候補上限・登録外の除外を反映した一覧を渡す。"""
     repositories = _repositories(tmp_path, monkeypatch)
     notes = tmp_path / "notes"
     one, two, _empty = (repository.repo_id for repository in repositories)
@@ -104,7 +104,7 @@ def test_configured_repo_snapshot(
 
 
 def test_processing_candidates_and_lane_limit(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """外部依存中のprocessingを保ち、通常除外後のNでレーン上限を算出する。"""
+    """外部依存を待つprocessingの項目を候補に保ち、通常の除外を適用した後の件数からレーン上限を算出する。"""
     repositories = _repositories(tmp_path, monkeypatch)
     notes = tmp_path / "notes"
     one = repositories[0]
@@ -258,7 +258,7 @@ def _loop_args(*, no_update: bool) -> argparse.Namespace:
 
 
 def test_start_conditions_compose(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """登録集合全体を開始Gateへ渡し、抑止の解除前は担当を一件も生成しない。"""
+    """登録集合全体を`StartGate`へ渡し、抑止の解除前は担当を一件も生成しない。"""
     repositories = _repositories(tmp_path, monkeypatch)
     notes = tmp_path / "notes"
     _write(notes, "one.md", repositories[0].repo_id)
@@ -316,7 +316,7 @@ def test_control_and_updates(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyP
 
 
 def test_registration_changes_before_start_public_cli(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """公開CLIの開始待機で登録解除・追加を反映し、新集合へGateを再適用する。"""
+    """公開CLIの開始待機で登録解除・追加を反映し、新しい登録集合へ`StartGate`の判定を再び適用する。"""
     _setup_notes(tmp_path)
     notes = pathlib.Path(os.environ["AGENT_TOOLKIT_PRIVATE_NOTES"])
     repositories = _repositories(tmp_path, monkeypatch)

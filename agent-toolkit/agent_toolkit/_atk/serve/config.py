@@ -18,8 +18,9 @@ from agent_toolkit._common import next_action as _next_action
 logger = logging.getLogger(__name__)
 
 DEFAULT_HOST = "127.0.0.1"
-# IDEのリモート開発拡張はLinux側の待受ポートをWindows側へ自動転送するため、
-# Windowsでローカル実行すると、未指定時の値が衝突する。Windowsのみ別値へずらして回避する。
+# IDEのリモート開発拡張はLinux側の待受ポートをWindows側へ自動転送するため、Windowsでも同じ番号を
+# 未指定時の値にすると、Windowsでローカル実行したatk serveの待受ポートが転送先と衝突する。
+# Windowsだけ別の番号にして衝突を避ける。
 LINUX_DEFAULT_PORT = 28766
 WINDOWS_DEFAULT_PORT = 28876
 
@@ -32,7 +33,7 @@ _SESSIONS_KEYS = ("claude_home", "codex_home", "remote_hosts")
 class PlansConfig:
     """計画ファイル画面の参照元。"""
 
-    # 未指定時はprivate-notes配下のplansと`~/.claude/plans`の2rootを用いる。
+    # 未指定時はprivate-notes配下のplansと`~/.claude/plans`の2つのrootを用いる。
     root: str | None = None
     remote_hosts: tuple[str, ...] = ()
 

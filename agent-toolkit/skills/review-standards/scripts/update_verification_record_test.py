@@ -202,7 +202,7 @@ def test_public_regeneration_adds_missing_row_and_keeps_existing_evidence(
 def test_public_reference_updates_and_inheritance_reach_final_check(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """両配列へ単一・配列更新した新参照が未判定根拠の継承を経て最終確認まで到達する。"""
+    """単一行の更新と更新配列の両方で両配列へ記録した新しい参照が、未判定根拠の継承を経て証拠の確認まで到達する。"""
     _wi(monkeypatch, tmp_path)
     repository = git_repository.init_repository(tmp_path / "repo", files={"base.txt": "基準\n"}, commit_message="基準")
     monkeypatch.chdir(repository)
@@ -481,7 +481,7 @@ def test_public_generation_rejects_ambiguous_repository_without_write(tmp_path: 
 def test_public_missing_record_guides_generation(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], operation: str
 ) -> None:
-    """失敗診断の生成入力付き操作を実行すると、保存行から根拠更新へ進める。"""
+    """失敗診断が示す生成入力付きの操作を実行すると、保存した行から根拠の更新へ進める。"""
     record = tmp_path / "pending output.json"
     explanation = tmp_path / "evidence.txt"
     explanation.write_text("観測した保存結果", encoding="utf-8")
@@ -1095,7 +1095,7 @@ def test_public_import_uses_junit_states_and_updates_selected_rows(
 def test_public_import_roundtrip_reaches_return_result(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """実pytestの根拠を未判定取込み、同一証拠へのレビュー更新、返却生成まで通す。"""
+    """実pytestの根拠を未判定記録へ取り込み、同じ証拠へのレビュー更新と返却生成まで通す。"""
     _wi(monkeypatch, tmp_path)
     monkeypatch.chdir(tmp_path)
     text = "def test_save_and_reload():\n    assert {'saved': 1}.get('saved') == 1\n"

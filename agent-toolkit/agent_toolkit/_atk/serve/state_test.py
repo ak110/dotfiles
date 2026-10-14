@@ -140,7 +140,7 @@ process.stdout.write(JSON.stringify({shown, cleared, redisplayed, failures}));
 
 
 def test_assets_restore_focus_on_escape_and_focus_delete_close_first() -> None:
-    """Escapeで起点へ戻り、破壊確認では非破壊の閉じる操作へ初期フォーカスを置く。"""
+    """Escapeでフォーカスを操作の起点へ戻し、破壊的な操作の確認では取り消しの「閉じる」へ初期フォーカスを置く。"""
     result = _run_node_ui(
         """
 const origin = new Element('create-origin', 'BUTTON');

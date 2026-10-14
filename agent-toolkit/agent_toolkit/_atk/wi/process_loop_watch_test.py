@@ -205,7 +205,7 @@ class TestWaitForChanges:
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
     ) -> None:
-        """デバウンス窓内の追加イベントが`clear`→`wait(timeout=_DEBOUNCE_SEC)`ループで畳み込まれること。"""
+        """デバウンス窓内の追加イベントが`clear`→`wait(timeout=_DEBOUNCE_SEC)`ループで1回の変更にまとめられること。"""
         private_notes = self._make_private_notes(tmp_path)
         inbox = private_notes / "inbox"
         entry1 = inbox / "entry1.md"

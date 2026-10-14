@@ -79,7 +79,7 @@ APP_SERVER_COMMAND = ("codex", "app-server", "--stdio")
 # plugin更新で消失すると生存中のApp Serverが設定を読み込めないため継承しない。
 APP_SERVER_WORKING_DIRECTORY = str(Path.home())
 DEFAULT_WAIT_TIMEOUT = 300.0
-# App Serverのstdio用StreamReader buffer上限兼、stdoutを1回に読み取るchunk長（バイト）。
+# App Serverのstdio用StreamReaderのbuffer上限と、stdoutを1回に読み取るchunk長を兼ねる値（バイト）。
 # JSON-RPC recordの最大値には使わず、この長さを超える行もchunkを結合して復元する。
 APP_SERVER_STREAM_LIMIT_BYTES = 8 * 1024 * 1024
 APP_SERVER_STDERR_LIMIT_CHARS = 4000
@@ -103,7 +103,7 @@ def _embedded_rule_paths() -> set[str]:
     """Codexが読む全体指示ファイルが`atk-auto`要素で埋め込む規範の`path`属性の集合を返す。
 
     全体指示ファイルは`CODEX_HOME`が設定済みなら`$CODEX_HOME/AGENTS.md`、未設定なら`~/.codex/AGENTS.md`とする。
-    ファイルが無いか読めない場合は空集合を返し、`~/.claude/rules/`配下の全ファイルを渡す側へ倒す。
+    ファイルが無いか読めない場合は空集合を返し、呼び出し側は`~/.claude/rules/`配下の全ファイルを委譲先へ渡す。
     """
     agents_md = _host_homes.codex_home() / "AGENTS.md"
     try:
@@ -150,7 +150,7 @@ def _user_rules_instructions() -> str:
 
 
 def _developer_instructions(launch_kind: LaunchKind) -> str:
-    """委譲先の役割、このprocessで安定化した配布物root、ユーザーが置いた規範ファイルの本文を一体で返す。"""
+    """委譲先の役割、このprocessが起動時に確定した配布物root、ユーザーが置いた規範ファイルの本文を1つの指示として返す。"""
     plugin_root = plugin_roots.SERVER_PLUGIN_ROOT
     runtime = f"\n{python_runtime_instructions()}" if launch_kind in LIGHTWEIGHT_LAUNCH_KINDS else ""
     return (
@@ -167,7 +167,7 @@ class AppServerError(session_errors.DelegateBackendError):
 
 
 class StartCandidateUnavailable(AppServerError):
-    """モデル開始前に確定し、資源を回収済みの候補不成立。"""
+    """モデルの実行開始前に候補の不成立が確定し、資源も回収済みであることを表す。"""
 
     def __init__(self, reason: str) -> None:
         super().__init__(reason)
@@ -254,7 +254,7 @@ class JsonRpcProcess:
         self._received_message_types: dict[str, int] = {}
 
     def initialization_diagnostic(self) -> dict[str, Any]:
-        """初期化の到達段階と子プロセスの有界な診断値を返す。"""
+        """初期化の到達段階と、長さに上限を設けた子プロセスの診断値を返す。"""
         process = self.process
         return {
             "stage": self._initialization_stage,
@@ -479,7 +479,7 @@ class JsonRpcProcess:
             _LOG.debug("Codex App Server stderrの読取を終了しました: %s", exc)
 
     async def _stdout_closed_error(self) -> AppServerError:
-        """子プロセス終了時の診断情報を有界に収集する。"""
+        """子プロセス終了時の診断情報を、待ち時間と長さに上限を設けて収集する。"""
         assert self.process is not None
         with contextlib.suppress(asyncio.TimeoutError):
             await asyncio.wait_for(
@@ -775,7 +775,7 @@ class AppServerManager:
                             thread_response = await client.request("thread/start", {**params, "modelProvider": candidate})
                         except JsonRpcResponseError:
                             _LOG.info("Codex接続先の開始が拒否されました: provider=%s", candidate)
-                            # 通常サブスクの一般的なRPC拒否をAPI課金へ変換しない。
+                            # サブスクリプションの主候補が一般的なRPC拒否を返した場合は、API課金の候補へ切り替えない。
                             if candidate == selection.primary and selection.subscription:
                                 raise
                             continue
@@ -1089,7 +1089,7 @@ class AppServerManager:
         switched = False
         try:
             if switch_needed:
-                # cold resumeも追送の排他区間。kill/stopへ終端結果として渡さない。
+                # cold resumeも追送の排他区間に含まれるため、kill/stopへ終端結果として渡さない。
                 session.status = "starting"
                 session.touch()
             client = await self._ensure_client()
@@ -1145,7 +1145,7 @@ class AppServerManager:
 
     @staticmethod
     def _provider_failure(session: SessionState, error: Any = None) -> bool:
-        """終端した利用上限と、移行済みAPIの不受理だけを代替試行へ接続する。"""
+        """利用上限で終端した失敗と、移行済みAPIが受け付けなかった失敗だけを、代替の接続先での試行の対象と判定する。"""
         if not session.codex_model_provider or not session.turn_completed or session.turn_start_ambiguous:
             return False
         if session.codex_provider_resume_pending:
@@ -1336,7 +1336,7 @@ class AppServerManager:
         *,
         retryable: bool,
     ) -> None:
-        """要求開始の失敗を終端状態へ反映し、待機者を起床する。
+        """要求開始の失敗を終端状態へ反映し、待機者を起こす。
 
         `retryable`が真の場合だけ、同じreplyを再試行できる内部状態にする。
         """
@@ -1366,7 +1366,7 @@ class AppServerManager:
         await self._notify_waiters()
 
     async def _mark_turn_start_ambiguous(self, session: SessionState, error: BaseException) -> None:
-        """turn/start応答喪失を非終端状態へ反映する。"""
+        """turn/startの応答が失われたことを非終端状態へ反映する。"""
         if session.terminal:
             return
         session.status = "running"

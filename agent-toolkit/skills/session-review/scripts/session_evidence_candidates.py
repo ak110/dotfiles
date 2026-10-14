@@ -341,7 +341,7 @@ def _wi_candidate_events(collected: list[_CollectedRecord], session_id: str) -> 
 def _adhoc_processing_events(collected: list[_CollectedRecord]) -> list[dict[str, Any]]:
     """メイン記録と全ての委譲先の記録から、その場のコードによる加工に当たるシェル呼び出しを返す。
 
-    会話の流れはメイン記録だけを対象とするため、委譲先の成功した呼び出しは候補の側でしか振り返りの入力に届かない。
+    会話の流れはメイン記録だけを対象とするため、委譲先の成功した呼び出しは候補を通してだけ振り返りの入力に含まれる。
     代表入力は会話の流れと同じく空白を詰めた1行を`_BUNDLE_BODY_LENGTH`字までとする。
     """
     events: list[dict[str, Any]] = []
@@ -658,7 +658,7 @@ def _candidate_evidence_events(
     warnings: list[dict[str, Any]],
     hook_notices: list[dict[str, Any]],
 ) -> list[dict[str, Any]]:
-    """候補ごとに完全分析へ必要な位置付き証拠を有界な本文で束ねる。"""
+    """候補ごとに完全分析へ必要な位置付き証拠を、上限で切り詰めた本文とともにまとめる。"""
     raw_entries = {(record.record_id, entry.line): entry.entry for record in collected for entry in record.records}
     indexed: dict[tuple[str, int], list[dict[str, Any]]] = {}
     for event in (*timeline, *warnings, *hook_notices):
@@ -829,7 +829,7 @@ def _hook_notice_candidate_exclusion(tag: Any) -> str | None:
 
     この判定は、是正を求める通知が`block`または`warn`の区分を必ず持つという前提へ依存する。
     残す区分を列挙するのは、規範の注入や配送の種別のように是正の要否と無関係な値を`kind`へ持つ出力が
-    今後追加されても、既知値の列挙に含まれず是正要求として扱われないことを防ぐためである。
+    今後追加されても、それを是正要求として扱わないためである。除く区分を列挙すると、列挙に無い新しい値が是正要求として残る。
     区分を持たない通知は、区分を示す必要が無い通知として発行されるため情報提示と同じ扱いとする。
     """
     if tag in _HOOK_NOTICE_CANDIDATE_TAGS:
@@ -1634,7 +1634,7 @@ def _same_hook_event(candidate_kind: str, event: dict[str, Any], notice: dict[st
 
 
 def _is_bounded_hook_group(key: tuple[str, ...]) -> bool:
-    """発生源ごとの上位種への限定を適用する候補キーかを返す。
+    """発生源ごとに件数上位の種類だけへ限る処理を適用する候補キーかを返す。
 
     対象はblockまたはwarnのhook通知とする。他の種別のキーは軸の数が異なるため、
     タグの位置を参照する前に種別と軸の数を確認する。

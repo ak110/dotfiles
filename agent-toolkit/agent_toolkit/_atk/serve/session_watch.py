@@ -223,7 +223,7 @@ def has_user_message(path: pathlib.Path, engine: str) -> bool | None:
 
 
 _TRUSTED_AGE_NS = 2_000_000_000
-"""解析結果を信用するために必要な、解析の開始時刻と更新時刻の差。秒単位とFATの2秒の時刻精度を覆う。"""
+"""解析結果を信用するために必要な、解析の開始時刻と更新時刻の差。更新時刻の精度が1秒または2秒（FAT）のファイルシステムでも書き換えを区別できる値とする。"""
 
 
 @dataclasses.dataclass(frozen=True)
@@ -233,7 +233,7 @@ class _IndexedRecord:
     mtime_ns: int
     size: int
     trusted: bool
-    """更新時刻の精度の範囲外で解析したため、無効化キーの一致だけで再利用できるか。"""
+    """更新から2秒以上後に解析しており、無効化キーの一致だけで再利用できるか。"""
     fields: SummaryFields
     delegated_ids: frozenset[str]
     """子セッションIDの集合。`fields`と同じ走査で求める。"""

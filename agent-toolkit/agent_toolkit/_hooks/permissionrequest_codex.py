@@ -1,6 +1,6 @@
 """Codexのmanaged-tempのcleanupだけを承認するPermissionRequest hook。
 
-登録済みpathの親rootを含む共通検証へ対象を渡し、現在の一時rootに依存しない。
+対象を、登録済みpathの親rootも検証する共通処理へ渡し、現在の一時rootに依存しない。
 """
 
 from __future__ import annotations
@@ -9,7 +9,7 @@ import json
 import os
 import pathlib
 
-# 関数の実行時までだけ使う依存を、使用時まで読み込まない。
+# 関数の実行時にだけ使う依存は、使用時まで読み込まない。
 lazy import ctypes
 lazy import shlex
 lazy import shutil
@@ -50,7 +50,7 @@ def _tokens(command: str) -> list[str]:
         kernel32.LocalFree.restype = ctypes.c_void_p
         arguments = command_line_to_argv(command, ctypes.byref(argument_count))
         if not arguments:
-            raise ValueError("Windows commandを解析できない")
+            raise ValueError("Windowsのコマンド行を解析できない")
         try:
             return [arguments[index] for index in range(argument_count.value)]
         finally:

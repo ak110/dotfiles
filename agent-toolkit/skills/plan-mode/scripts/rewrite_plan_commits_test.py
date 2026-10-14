@@ -22,7 +22,7 @@ WI_S = "20261007-040310-004.md"
 def test_public_split_assigns_each_awi_and_rejects_loss_before_writing(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], missing: bool
 ) -> None:
-    """実Gitの分割を公開rewriteから取得し、AWI欠落なら全記録のバイト列を保つ。"""
+    """実Gitで1件のcommitを2件へ分けた対応表を`plan-rewrite`へ渡し、AWIの割当が欠ければ全記録のバイト列を保ち、欠けなければ`plan-commits`がAWIごとの新commitを返す。"""
     monkeypatch.setenv("AGENT_TOOLKIT_PRIVATE_NOTES", str(tmp_path / "private-notes"))
     repo = tmp_path / "repo"
     repo.mkdir()

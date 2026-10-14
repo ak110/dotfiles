@@ -11,7 +11,7 @@ from agent_toolkit._atk import outcome as _outcome
 from agent_toolkit._atk.wi.constants import WI_STATES
 from agent_toolkit._common import private_notes as _private_notes
 
-# 補完器の登録だけでは本文を解析しない。
+# 補完器を登録するだけの起動では本文を解析しないため、parse_typeを使用時に読み込む。
 lazy from agent_toolkit._atk.wi.formatters import parse_type
 
 

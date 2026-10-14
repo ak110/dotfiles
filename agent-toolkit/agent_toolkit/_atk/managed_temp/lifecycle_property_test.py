@@ -1,4 +1,4 @@
-"""managed-tempの実体と真正性状態の生存期を独立モデルと比較する。"""
+"""managed-tempの実体と真正性状態の変化を、実装と独立したモデルの予測と比較する。"""
 
 # pylint: disable=protected-access,unused-import
 

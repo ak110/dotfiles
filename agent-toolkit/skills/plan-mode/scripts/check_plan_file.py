@@ -317,9 +317,9 @@ def _check_bug_file_reference(
     private_notes: pathlib.Path | str | None = None,
     home: pathlib.Path | str | None = None,
 ) -> tuple[list[str], list[_ClassifiedWarning]]:
-    """`計画ファイル（バグ）`行を持つバグ対応計画の分離先の実在、stemの一致、構造が基準を満たすかを確かめる。
+    """`計画ファイル（バグ）`行を持つバグ対応計画について、参照先の計画ファイル（バグ）の実在、stemの一致、構造が基準を満たすかを確かめる。
 
-    同行を持たない計画は関連WIの`## 原因分析`に従うため、分離先の参照を判定しない。
+    同行を持たない計画は関連WIの`## 原因分析`に従うため、計画ファイル（バグ）の参照を判定しない。
     同行の要否は計画構造の自動チェックが計画メタ情報の`関連WI`から判定する。
 
     新しい参照値は接頭辞を展開せず計画ファイルのディレクトリを基準に解決し、
@@ -538,7 +538,8 @@ def _check_new_format(
         home=home,
     )
     errors.extend(main_errors)
-    # 実施内容表の移行を促す指摘とし、環境要因の省略は現行形式でも成立する助言とする。
+    # 由来の注記は実施内容表の移行を促すmigration警告とし、環境が原因で由来と原文の突き合わせを省いた通知は
+    # 現行形式のままでも計画が成立するためadvisory警告とする。
     warnings.extend(("migration", notice) for notice in origin_notices)
     warnings.extend(("advisory", skip) for skip in origin_skips)
 

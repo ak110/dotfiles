@@ -130,7 +130,7 @@ process.stdout.write(JSON.stringify({active, filtered, recent, all}));
 
 
 def test_assets_offer_hold_and_rejected_actions_and_preserve_implicit_resolution() -> None:
-    """保留・不採用の操作表示と、採否APIの明示状態送信境界を検証する。"""
+    """保留・不採用の操作の表示と、採否APIへ明示した状態を送る条件を検証する。"""
     result = _run_node_ui(
         """
 const base = {
@@ -252,7 +252,7 @@ process.stdout.write(JSON.stringify({view, modes, sent}));
 
 
 def test_assets_sse_detail_prefers_exact_identity_and_only_tracks_unique_move() -> None:
-    """SSE詳細は複合キーを優先し、404後の一意な移動だけを追跡する。"""
+    """SSEを受けた詳細の再取得は状態とファイル名の組を優先し、404の後は移動先が一意な場合だけ追跡する。"""
     result = _run_node_ui(
         """
 const processing = {
@@ -864,7 +864,7 @@ async def test_invalid_json_returns_json_error(tmp_path: pathlib.Path) -> None:
 
 @pytest.mark.asyncio
 async def test_lock_timeout_returns_conflict(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """mutationの有限待機ロック競合をJSON 409応答へ変換する。"""
+    """変更操作が上限まで待ってもロックを取得できない競合を、JSON 409応答へ変換する。"""
 
     def edit(
         _state: str,
@@ -993,7 +993,7 @@ async def test_background_sync_task_starts_and_stops(tmp_path: pathlib.Path, mon
 
 
 def test_assets_ignore_out_of_order_repo_candidates_for_state_changes() -> None:
-    """状態変更の旧候補応答を破棄し、旧処理から一覧要求を開始しない。"""
+    """状態の変更より前に発行した候補要求の応答を破棄し、その古い処理から一覧要求を開始しない。"""
     result = _run_node_ui(
         """
 let resolveAdopted;

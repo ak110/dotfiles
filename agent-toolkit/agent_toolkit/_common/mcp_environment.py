@@ -1,4 +1,4 @@
-"""Codexのstdio MCPへ配送する保存先・公開設定・通信環境の名前。"""
+"""Codexのstdio MCPサーバーへ値を引き継ぐ環境変数（保存先、公開設定、通信環境）の名前。"""
 
 from collections.abc import Iterable
 

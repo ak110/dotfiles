@@ -183,7 +183,7 @@ process.stdout.write(JSON.stringify({items, heading: elements['detail-state'].te
 
 
 def test_assets_sse_detail_tracks_state_and_discards_stale_response() -> None:
-    """SSE詳細は状態移動を追跡し、別項目選択後の古い応答を破棄する。"""
+    """SSEを受けた詳細の再取得は状態の移動を追跡し、別の項目を選んだ後に届いた古い応答を破棄する。"""
     result = _run_node_ui(
         """
 const inbox = {
@@ -680,7 +680,7 @@ async def test_answer_api_returns_edit_conflict_for_unreadable_expected_content(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """回答対象の非UTF-8化を409競合へ正規化し、元のバイト列を保つ。"""
+    """回答対象が非UTF-8へ書き換えられた場合は409の競合として返し、元のバイト列を保つ。"""
 
     @contextlib.contextmanager
     def lock(_path: pathlib.Path, **_kwargs: object) -> typing.Generator[None]:
@@ -1031,7 +1031,7 @@ process.stdout.write(JSON.stringify({
 
 
 def test_assets_keep_latest_repo_selection_when_stale_sse_candidates_finish() -> None:
-    """SSEの旧候補応答後も最新の対象リポジトリと一覧条件を維持する。"""
+    """SSEを契機とした古い候補の応答が後から届いても、最新の対象リポジトリの選択と一覧条件を維持する。"""
     result = _run_node_ui(
         """
 let resolveActive;

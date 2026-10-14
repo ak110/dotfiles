@@ -20,7 +20,7 @@ class TestResolveHookAgentId:
         assert _hook_agent_id.resolve_hook_agent_id(payload) == "main"
 
     def test_invalid_agent_id_returns_main(self):
-        """空文字列・非文字列の`agent_id`は`main`へ倒す。"""
+        """空文字列・非文字列の`agent_id`は`main`として扱う。"""
         assert _hook_agent_id.resolve_hook_agent_id({"agent_id": ""}) == "main"
         assert _hook_agent_id.resolve_hook_agent_id({"agent_id": 123}) == "main"
 

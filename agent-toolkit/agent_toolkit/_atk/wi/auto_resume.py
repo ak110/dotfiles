@@ -45,7 +45,7 @@ def _collect_candidates(target_repo_id: str) -> list[tuple[pathlib.Path, str, st
 
 
 def _print_candidate(rank: int, total: int, path: pathlib.Path, engine: str, session_id: str) -> None:
-    """確定文面（候補情報の書式）に従い候補を1件表示する。"""
+    """候補1件の情報（順位、engine、session_id、最終更新、exit-session到達の有無、最初のユーザー入力、最後のエージェント発言）を表示する。"""
     exit_session_label = _EXIT_SESSION_LABELS[_session_records.exit_session_reached(path, engine)]
     print(f"候補 {rank}/{total}: engine={engine} session_id={session_id}")
     print(f"  最終更新: {_session_records.format_modified_at(path)}")

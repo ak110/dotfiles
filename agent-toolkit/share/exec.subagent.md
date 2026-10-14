@@ -44,7 +44,7 @@
 - 既存ファイルの全体上書きと文字列置換の直前: 対象の現行本文を取得する（自ら書いたファイルも含む）
 - 編集の直前: プロジェクト規範が定める、編集対象のパスに対応する必須スキルを起動する
 - 変更範囲の検証の直前: 計画の`## 検証`の`変更範囲の検証`行（計画なしでは引き継ぎ記録の検証コマンド）から取得する
-- 受入シナリオか完成条件を手動で観測する直前: 受入シナリオ検証（`agent-toolkit:check-execution`の`references/acceptance-scenarios.md`）の起動条件で対象を起動する。MCPで記録を取得できない有限終了のコマンドは、対象worktreeで`atk run-command [--cwd DIR] [--timeout SECONDS] -- COMMAND [ARG...]`で実行する。返却の`record_path`はcwd・argv・`git_head`・`git_status`・終了状態・両出力パスを保持するため、その絶対パスと出力の保存先を検証結果と未判定検証記録の`evidence`へ渡す。保存失敗の非0を確かめ、記録の無い観測は保存する形でやり直す（実行レビュー担当は未保存の観測を補えない）。PATH上のコマンドなどインストール済みの別実体を実行した観測は、その実体の版を記録する
+- 受入シナリオか完成条件を手動で観測する直前: 受入シナリオ検証（`agent-toolkit:check-execution`の`references/acceptance-scenarios.md`）の起動条件で対象を起動する。MCPで記録を取得できない有限終了のコマンドは、対象worktreeで`atk run-command [--cwd DIR] [--timeout SECONDS] -- COMMAND [ARG...]`で実行する。返却の`record_path`はcwd・argv・`git_head`・`git_status`・終了状態・両出力パスを保持するため、その絶対パスと出力の保存先を検証結果と未判定検証記録の`evidence`へ渡す。保存失敗を示す非0の終了が無いことを確かめ、記録の無い観測は保存する形でやり直す（実行レビュー担当は未保存の観測を補えない）。PATH上のコマンドなどインストール済みの別実体を実行した観測は、その実体の版を記録する
 
 ## 操作区分
 
@@ -57,7 +57,7 @@
 この許可は委譲プロンプトや追送を受けた後もそのまま保つ。レビュー修正の`autosquash`と`lane-integration.subagent.md`「マージありの統合」の統合先HEADへのrebaseは別の操作であり、一方への禁止はその操作だけに適用する。担当種別に必須の操作を委譲プロンプトか追送が禁止する場合は着手せず、制限の文面と必須の操作を続行できない理由として返す。
 `レビュー修正担当`として起動された担当が統合指示を受領した場合は、`レーン担当`へ戻って統合を実施する。
 
-統合指示の受領後は`lane-integration.subagent.md`「公開統合操作」の`atk lane integrate`へ所有登録、レビュー対象HEAD、今回の全計画・WIと検収済み採否を渡す。資源、Git統合、最終化と選定状態の定型操作は同じCLIへ集約し、担当は独立文脈レビューの受理、完成条件判定、診断と延期の判断を持つ。失敗後は保存済み進行と同じ入力で再開する。
+統合指示の受領後は`lane-integration.subagent.md`「公開統合操作」の`atk lane integrate`へ所有登録、レビュー対象HEAD、今回の全計画・WIと検収済み採否を渡す。資源、Git統合、最終化と選定状態の定型操作は同じCLIへ集約し、担当は独立文脈レビューの受理、完成条件判定、診断と延期の判断を担う。失敗後は保存済み進行と同じ入力で再開する。
 
 同じ専用worktreeで書込を分担する場合は、`agent-toolkit:delegation`の`references/mandatory-rules.md`「作業ツリーの保護」に従う。書込先が交わらない担当を並列に、または1つの担当を直列に置き、commitと作業ツリー全体へ作用する操作はレーン担当が全担当の終端後に行う。担当種別の切替は同じthreadの継続であり、書込の所有者は変わらない。
 担当ごとのcommitや書き換えを伴う検証が要る場合と、書込先を事前に確定できない場合は、別branch・別worktreeの一時的な内部群を使う。レーン担当がファイルの所有表を確定し、レーンbranchの確定済みcommitから群ごとの別branch・別worktreeを作成する（各worktreeの書込担当は1つ）。群の粒度と同時起動数は固定の分割数や上限を置かず`agent-toolkit:delegation`の`references/routing.md`「委譲単位の確定」で選び、契約で結び付く出力元とテスト期待値は同じ群へ置く。レーン担当は各担当の終端、clean状態、群のcommit・差分・検証（実行した版とともに）を確かめ、レーンbranchへ順に統合し、取り込みごとに前後のHEADを`agent-toolkit:commit`の`SKILL.md`「WI実装commitの対応」の手段で記録する。統合後に対象語の残存、生成物と直接影響範囲の同期、変更範囲を検証してから一時worktreeとbranchを回収する。群の検証記録はOIDが変わっただけでは破棄せず、統合で結果が変わり得る行と統合で初めて成立する観測だけを取り直す。内部群は別レーンや別要求の担当にせず、計画、検収、commitの対応記録、統合とメインへの返却はレーン担当が所有する。
@@ -110,7 +110,7 @@
 - 根拠の記入: `--output <同じパス> --select-row <配列:N> --evidence-file <根拠のUTF-8ファイルの絶対パス> --mode append`（置換は`--mode replace`）
 - 構造化結果の取得: 試験は`atk run-command -- ... pytest -v -o junit_family=xunit1 --junitxml=<XMLの絶対パス> <対象...>`で実行時にXML・実行記録・両出力を保存する。診断はpyfltrのrunのJSON Lines全体（header・command・summaryを事前に除く必要はない）、`show-run --commands <対象> --output-format=jsonl`かMCPの構造化結果を保存する。取得版・対象範囲・オプション・依存版・並列度・実行環境と必要な保存時本文を対応付ける
 - 保存出力の読取: 本文表示、構造化診断、試験結果の関連付けは、`agent-toolkit:check-execution`の「保存した実行出力の取得」で用途に合う公開指定を選ぶ。保存済みログの本文は`pyfltr show-run <run_id> --commands <コマンド名> --output --output-format=text`で読み、生成元に形式・対象の指定があれば保存前に選ぶ。構造化診断のJSONLと結果ファイルの関連付けは前後の取得・記入手順を使う
-- 構造化結果からの記入: 入力形式は`atk run-script verification-record -- --help`で取得する。試験は`--junit-xml <保存XML> --junit-record <実行記録>`で直接指定する。診断は`--diagnostics-file <保存JSONL> --diagnostics-record <実行記録> --diagnostics-conditions <取得時の条件JSON>`と必要な`--diagnostics-source <相対ファイル> <保存時本文>`の反復で直接指定する。基準比較は同じ組の`--baseline-junit-*`・`--baseline-diagnostics-*`へ保存物を指定する。`--output <初回記録の絶対パス> --list-results --results-summary`で状態・基準版との差、診断のまとまり・重複数・全識別子から必要な結果を選ぶ。続けて`--results-summary`を`--result-test <完全テスト名>`か`--result-diagnostic <診断識別子>`の反復へ替え、詳細・取得版・所在を読む（表示の追加指定を省けば全詳細）。代表1件を全件の意味判断へ代用せず、比較不能は不足として補う。記入では`--list-results`を外し、`--select-row <配列:N>`の反復と各要求を直接満たす完全テスト名・診断識別子を渡す。必要なら`--evidence-file`と`--mode append|replace`も渡し、同じ保存物から更新する（sourceは処理側が現行行から取得する）。不正な行が1件でもあれば全保存が拒否される。既存のJSON入力の契約も保持され、未選択行は変わらない
+- 構造化結果からの記入: 入力形式は`atk run-script verification-record -- --help`で取得する。試験は`--junit-xml <保存XML> --junit-record <実行記録>`で直接指定する。診断は`--diagnostics-file <保存JSONL> --diagnostics-record <実行記録> --diagnostics-conditions <取得時の条件JSON>`と必要な`--diagnostics-source <相対ファイル> <保存時本文>`の反復で直接指定する。基準比較は同じ組の`--baseline-junit-*`・`--baseline-diagnostics-*`へ保存物を指定する。`--output <初回記録の絶対パス> --list-results --results-summary`で状態・基準版との差、診断のまとまり・重複数・全識別子から必要な結果を選ぶ。続けて`--results-summary`を`--result-test <完全テスト名>`か`--result-diagnostic <診断識別子>`の反復へ替え、詳細・取得版・所在を読む（表示の追加指定を省けば全詳細）。代表の1件で全件の意味を判断せず、比較不能は不足として補う。記入では`--list-results`を外し、`--select-row <配列:N>`の反復と各要求を直接満たす完全テスト名・診断識別子を渡す。必要なら`--evidence-file`と`--mode append|replace`も渡し、同じ保存物から更新する（sourceは処理側が現行行から取得する）。不正な行が1件でもあれば全保存が拒否される。既存のJSON入力の契約も保持され、未選択行は変わらない
 
 各`evidence`にはテスト完全名と成功結果の所在、または保存済み観測の入力・操作・期待結果・観測結果の箇所を書く。pytestのテスト名は、同じ版の保存済み出力（`-v`付き）にその名前と結果の行があることを確かめる。点表示と総数は個別の合否の根拠にならない。後続工程や不採用・割当の行には、検証済みの範囲と採否・後続工程を記録した箇所（計画の`## 実施内容`、計画なしでは引き継ぎ記録）を書く。`outcome`と`reviewed_head`は空欄を保つ（判定は実行レビュー担当だけが書く）。
 不足する根拠は自身の操作の範囲で補い、入力・権限・外部状態を要する不足は続行できない理由で返す。記録の絶対パスは初回生成時に進捗ログ（計画なしでは引き継ぎ記録）へ残し、`検証結果`にも記す。

@@ -57,8 +57,8 @@ class AlertCollectError(RuntimeError):
 class Alert:
     """収集した1件のアラート候補。
 
-    `keys`は重複除外に使う安定識別子の集合。`completion`は種別固有の外部可視の終了状態と、
-    消費主体へ要求する操作の要否を保持する。
+    `keys`は重複除外に使う安定識別子の集合。`completion`はAWIの`## 完成条件`へ書く文であり、
+    アラートの種別ごとに、外部から観測できる解消後の状態と、AWIの処理主体に追加の変更を求めるかを示す。
     """
 
     keys: tuple[str, ...]
@@ -145,7 +145,7 @@ def _run_gh_run_list(repo: str, branch: str) -> list[dict]:
 
 
 def collect_github_ci_failures(repo: str, branch: str, *, run_list_fn: GhRunListFn = _run_gh_run_list) -> list[Alert]:
-    """ワークフローとイベントの組ごとの直近完了runが失敗している場合のみアラート化する。
+    """ワークフローとイベントの組ごとに、直近に完了したrunが失敗している場合だけアラート候補を返す。
 
     同じワークフローを`push`と`schedule`の両方で起動する場合も、後の`push`の成功に関係なく`schedule`の直近の失敗を返す。
     """
@@ -191,7 +191,7 @@ def _run_glab_ci_list(repo: str, ref: str) -> list[dict]:
 
 
 def collect_gitlab_ci_failures(repo: str, branch: str, *, ci_list_fn: GlabCiListFn = _run_glab_ci_list) -> list[Alert]:
-    """対象ブランチの最新パイプラインが失敗している場合のみアラート化する。"""
+    """対象ブランチの最新パイプラインが失敗している場合だけアラート候補を返す。"""
     pipelines = ci_list_fn(repo, branch)
     if not pipelines or pipelines[0].get("status") != "failed" or pipelines[0].get("id") is None:
         return []
@@ -232,7 +232,7 @@ def _run_glab_api(host: str, endpoint: str) -> Any:
 
 
 def collect_gitlab_schedule_failures(host: str, repo: str, *, api_fn: GlabApiFn = _run_glab_api) -> list[Alert]:
-    """有効なPipeline Scheduleごとの直近パイプラインが失敗している場合にアラート化する。
+    """有効なPipeline Scheduleごとに、直近のパイプラインが失敗している場合にアラート候補を返す。
 
     スケジュールの一覧は`last_pipeline`を持たないため、有効なスケジュールごとに個別の取得で直近のパイプラインを得る。
     スケジュールの`ref`は対象ブランチに限らない。

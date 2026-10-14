@@ -38,7 +38,7 @@ function messageOf(input: unknown): string | undefined {
 // `register.ts`の`session.start`が`$.tool.register`へ渡すツールの定義。
 export const SEND_TO_USER_TOOL = { name: TOOL_NAME, description: DESCRIPTION, inputSchema: INPUT_SCHEMA, isDeferred: false };
 
-// 委譲先からの呼び出しへ`register.ts`が返す拒否の本文。表示済みとの応答を終端返却の代わりにさせない。
+// 委譲先からの呼び出しへ`register.ts`が返す拒否の本文。表示済みと応答すると委譲先が終端の返却を省くため、未表示であることと返却先を示す。
 export const SEND_TO_USER_DELEGATED_DENY =
   "委譲先・サブエージェントからの呼び出しではユーザーの画面へ表示していない。結果本文は委譲元へ返す必要があるため、" +
   "このツールを使わず、報告する本文を全て最終応答（終端の返却）へ書く。";

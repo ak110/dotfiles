@@ -36,7 +36,7 @@ def _read_static_text(filename: str) -> str:
     return (_STATIC_DIR / filename).read_text(encoding="utf-8")
 
 
-# 旧埋め込み定数の末尾改行契約を保つ。HTML/CSSの三重引用符は改行を含まなかった。
+# 以前の埋め込み定数と同じく、末尾に改行を含めない。三重引用符で埋め込んでいたHTML/CSSは末尾に改行を含まなかった。
 HTML = _read_static_text("index.html").removesuffix("\n")
 CSS = _read_static_text("app.css").removesuffix("\n")
 

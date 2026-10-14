@@ -56,7 +56,7 @@ def test_agents_server_missing_required_input_warns(
 
 
 class TestAgentNameParameterAccepted:
-    """`name`引数を伴うAgent/Task起動が委譲の可否判定で拒否されないことを保証する（`name`禁止規程撤回の受理契約）。"""
+    """`name`引数を伴うAgent/Task起動が委譲の可否判定で拒否されないことを保証する（`name`の指定を禁じた規程を撤回した後の受理契約）。"""
 
     @pytest.mark.parametrize("tool_name", ["Agent", "Task"])
     @pytest.mark.parametrize("name_value", ["impl-1", "", None])

@@ -28,7 +28,7 @@ Stopの戻り値は`approve`とし、ターンの継続は強制しない。
 
 import os
 
-# 関数の実行時までだけ使う依存を、使用時まで読み込まない。
+# 関数の実行時にだけ使う依存は、使用時まで読み込まない。
 lazy from agent_toolkit._atk import agents_exit_session as _agents_exit_session
 lazy from agent_toolkit._atk.wi import process_loop_log as _process_loop_log
 lazy from agent_toolkit._common.process_loop_session import is_process_loop_session

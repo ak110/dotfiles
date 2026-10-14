@@ -15,7 +15,7 @@ import sys
 import typing
 from collections.abc import Generator
 
-# ヘルプや他の処理では不要な依存を、使用時まで遅延する。
+# ヘルプや他の処理で使わない依存は、使用時まで読み込まない。
 lazy import psutil
 lazy import yaml
 
@@ -675,7 +675,7 @@ def integrate(args: argparse.Namespace, session_id: str) -> dict[str, typing.Any
         for tree in (worktree, target):
             activity = _session_activity(tree, allowed)
             if activity:
-                raise ValueError(f"現書込所有に含まれない担当が稼働中: {activity}")
+                raise ValueError(f"現在の書込所有に含まれない担当が稼働中: {activity}")
         manifest = _integration_input(args, record)
         if not re.fullmatch(r"[0-9a-fA-F]{7,64}", args.reviewed_head):
             raise ValueError("reviewed-headは7文字以上の一意なcommit OIDで指定する")
@@ -851,7 +851,7 @@ def build_parser(parser: argparse.ArgumentParser) -> None:
     create_parser.add_argument("--selection-file", type=pathlib.Path, required=True, help="統合状態を読む選定YAML。")
     create_parser.add_argument("--branch", help="専用branch名。省略するとsessionとlaneから決める。")
     create_parser.add_argument(
-        "--worktree", type=pathlib.Path, help="任意の絶対作成先。省略すると主作業ツリーの固定作成先を使う。"
+        "--worktree", type=pathlib.Path, help="作成先の絶対パス。省略すると主作業ツリーの固定作成先を使う。"
     )
     create_parser.add_argument("--commands-file", type=pathlib.Path, help="create・prepare・deleteのargvを持つJSON。")
     create_parser.add_argument("--reuse-record", type=pathlib.Path, help="終端済みの担当が使っていた資源のrecord_path。")
@@ -877,15 +877,15 @@ def build_parser(parser: argparse.ArgumentParser) -> None:
         ),
     )
     integrate_parser.add_argument("--no-merge", action="store_true", help="Gitを変更せず計画保存・WI終端だけ行う。")
-    integrate_parser.add_argument("--accept-rebased-head", help="対応表と再検証診断を受理した完全HEAD。")
+    integrate_parser.add_argument("--accept-rebased-head", help="対応表と再検証の診断を受理したHEADの完全なOID。")
     integrate_parser.add_argument(
         "--restart-review", action="store_true", help="Git統合前の是正を再レビューした現在HEADから再開する。"
     )
     integrate_parser.add_argument("--session-id", help="現在の書込所有session。")
     integrate_parser.add_argument(
-        "--amend-finalization", action="store_true", help="同じ全計画・WI集合の未完了最終化argvを補完する。"
+        "--amend-finalization", action="store_true", help="全計画・WIの集合を変えずに、未完了の最終化操作のargvを補完する。"
     )
-    integrate_parser.add_argument("--writer-session", action="append", help="統合に合意した現担当session。複数指定可能。")
+    integrate_parser.add_argument("--writer-session", action="append", help="統合に合意した現在の担当のsession。複数指定可能。")
 
 
 def dispatch(args: argparse.Namespace) -> int:

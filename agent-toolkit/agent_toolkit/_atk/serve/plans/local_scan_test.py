@@ -83,7 +83,7 @@ async def test_review_table_is_reachable_from_the_main_plan(tmp_path: pathlib.Pa
 
 
 def test_review_table_match_is_connected_to_the_main_plan() -> None:
-    """付属ファイルの一致は、一覧で選択できるメイン計画へ接続する。"""
+    """付属ファイルの検索一致は、一覧で選択できるメイン計画のパスへ置き換える。"""
     assert plans_views.listed_plan_path("p.exec-review.tsv") == "p.md"
     assert plans_views.listed_plan_path("p.detail.md") == "p.md"
     assert plans_views.listed_plan_path("p.md") == "p.md"

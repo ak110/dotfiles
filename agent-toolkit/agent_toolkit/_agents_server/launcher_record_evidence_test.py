@@ -1,4 +1,4 @@
-"""taskの生成本文から公開証拠抽出までの記録受渡しを検証する。
+"""taskの生成本文から、公開された証拠の抽出までの記録の受け渡しを検証する。
 
 明示出所の選択は試験入力として固定する。文書を読む担当の意味判断は自動化しない。
 fixtureの形式はsession_evidence_user_events_test.pyの実記録由来の形に従う。
@@ -103,7 +103,7 @@ async def _start_task(directory: pathlib.Path, request: str) -> dict[str, Any]:
 async def test_task_record_reaches_public_evidence(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], engine: str, source: str
 ) -> None:
-    """入れ子の直接親を配送し、固定した各出所から原文と元のrecord・lineを取得できる。"""
+    """入れ子の委譲で直接の委譲元を配送し、固定した各出所から原文と元のrecord・lineを取得できる。"""
     monkeypatch.setenv("CLAUDECODE", "1")
     monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path / "state")
     records = {name: _write_record(tmp_path, engine, name) for name in ("direct-parent", "ancestor", "other", "self")}
@@ -302,7 +302,7 @@ async def test_task_record_reaches_public_observation_evidence(
 async def test_task_starts_with_record_shortage_without_substitute(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, engine: str, availability: str
 ) -> None:
-    """不足を起動本文へ残し、記録不要のtaskも開始し、祖先や別の記録をパスへ補わない。"""
+    """不足した情報を起動本文へ残し、記録を要しないtaskも開始し、祖先や別の記録のパスで補わない。"""
     monkeypatch.delenv("CODEX_THREAD_ID", raising=False)
     current = manager.AgentsServerManager(None)
     backend = _ObservedBackend(current.sessions, "claude")

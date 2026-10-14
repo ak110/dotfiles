@@ -1,4 +1,4 @@
-"""登録集合の開始判定と対象cwdの通常delegateへの橋渡し。"""
+"""登録集合の処理を開始するかの判定と、各対象cwdで起動する通常delegateへの処理の受け渡し。"""
 
 import argparse
 import asyncio
@@ -58,7 +58,7 @@ type RepositoryManagerFactory = Callable[[], RepositoryDelegateManager]
 
 
 def _wait_for_changes(private_notes: pathlib.Path, *, owner_wait: bool = False) -> None:
-    """登録変更・所有の解放・中断をキュー変更と同じ監視へ渡す。"""
+    """登録の変更・所有の解放・中断の要求を、キューの変更と同じ待機処理で監視する。"""
     _watch.wait_for_changes(
         private_notes,
         None,

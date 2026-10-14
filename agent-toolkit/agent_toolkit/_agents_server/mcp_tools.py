@@ -220,7 +220,7 @@ async def kill(
             description=parameter_description(
                 "中断要求後に終端を待つ上限秒数。"
                 "固有のtimeout要件がなければ引数を省略して待機上限を270秒とする。"
-                "0は中断要求配送後の現状態を返す。"
+                "0を指定すると、中断要求を配送した直後の状態を返す。"
             )
         ),
     ] = DEFAULT_KILL_TIMEOUT,
@@ -235,7 +235,7 @@ async def kill(
     そちらで意図を満たせる場合は、停止によって失われる作業と再起動の費用の方が大きい。
     本ツールを選ぶ前に、`send_message`による訂正では足りないことと、その作業の継続自体が不要であることを確認する。
     引数を省略すると270秒を待機上限とする。固有のtimeout要件がなければ引数を省略する。
-    `timeout=0`は中断要求配送後の現状態を返す。
+    `timeout=0`を指定すると、中断要求を配送した直後の状態を返す。
     timeoutに達した場合もsessionとbackend processは破棄しないため、`atk agents wait`で状態を確認してから次の操作を選ぶ。
     終端結果の保持期限を過ぎたsessionでは中断する実行中turnが無いため、`status`へ`expired`、`kill_requested`へ`false`を設定した応答を返す。
     `show`の`result_held`が真のsessionでは、保留中の結果をそのまま終端結果として返し、以後の`send_message`を受け付ける。

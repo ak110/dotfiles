@@ -522,7 +522,7 @@ class TestShowRequiresFilenameOrAll:
 
 
 class TestShowTypeFilter:
-    """showサブコマンド: --typeでFILENAME探索対象種別を限定する（探索範囲は4状態フォルダ全体）。"""
+    """showサブコマンド: --typeでFILENAME探索対象種別を限定する（探索範囲は5状態フォルダ全体）。"""
 
     def test_type_uwi_finds_uwi_entry(
         self,
@@ -843,7 +843,7 @@ class TestShowProcessedStates:
 
         省略時に使う`--status=active`をFILENAME単発指定分岐へ適用すると、`atk wi show <FILENAME>`
         でadopted・rejected状態のエントリを一切参照できなくなるため、単発指定は`--status`を
-        迂回する契約になっている（指摘2の修正と対で成立する）。
+        迂回する契約になっている。
         """
         notes = _setup_notes(tmp_path)
         _write_awi_state_file(notes, "adopted", "fb-adopted.md", body="adopted本文")

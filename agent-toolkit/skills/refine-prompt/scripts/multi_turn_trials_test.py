@@ -57,7 +57,7 @@ def _grade(tmp_path: pathlib.Path, case: str, example: dict) -> tuple[subprocess
 
 @pytest.mark.parametrize("case", CASES)
 def test_prepare_copies_only_public_material_and_refuses_overwrite(tmp_path: pathlib.Path, case: str) -> None:
-    """正解や採点素材が配送される違反と、提出物の上書きを検出する。"""
+    """準備が公開素材だけを複製し、既存の提出物を上書きしないことを確かめる。"""
     output = tmp_path / "public"
     process = _run("prepare", "--case", case, "--output", str(output))
     assert process.returncode == 0, process.stderr
@@ -71,7 +71,7 @@ def test_prepare_copies_only_public_material_and_refuses_overwrite(tmp_path: pat
 
 @pytest.mark.parametrize("case", CASES)
 def test_saved_success_and_failure_are_graded_from_artifacts(tmp_path: pathlib.Path, case: str) -> None:
-    """完了の自己申告にかかわらずAPI・公開統合・一括処理・表示を判定する。"""
+    """保存した成功例と失敗例を、完了の自己申告ではなく成果物の機能テストで判定する。"""
     trial = json.loads((FIXTURES / case.replace("-", "_") / "private" / "trial.json").read_text(encoding="utf-8"))
     for number, example in enumerate(trial["examples"]):
         directory = tmp_path / str(number)
@@ -120,7 +120,7 @@ def test_disclosure_and_execution_failures_are_not_candidate_failures(tmp_path: 
 
 
 def test_no_followup_disclosure_is_invalid_even_with_correct_artifact(tmp_path: pathlib.Path) -> None:
-    """回答不能条件での開示を機能成功へ混ぜない。"""
+    """追加回答を返さない条件で開示した対話は、成果物が正しくても試行不成立とする。"""
     trial = json.loads((FIXTURES / "display_spaces" / "private" / "trial.json").read_text(encoding="utf-8"))
     example = trial["examples"][2]
     example["condition"] = "no-followup"
@@ -171,7 +171,7 @@ def test_syntax_error_is_unmet_and_hang_is_inconclusive(tmp_path: pathlib.Path) 
 
 
 def test_public_list_and_finite_termination(tmp_path: pathlib.Path) -> None:
-    """課題の公開一覧と有限終了で残った未達の判定を検証する。"""
+    """課題の公開一覧と、往復数の上限で終えた対話に残った未達の判定を検証する。"""
     process = _run("--list")
     assert process.returncode == 0, process.stderr
     rows = json.loads(process.stdout)

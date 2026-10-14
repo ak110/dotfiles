@@ -1,4 +1,4 @@
-"""文脈使用量のbackend観測から共有状態と公開CLIまでの契約を検証する。"""
+"""コンテキスト使用量をbackendが観測してから共有状態と公開CLIへ届くまでの契約を検証する。"""
 
 from __future__ import annotations
 
@@ -117,7 +117,7 @@ async def test_public_cli_connects_shared_fixture_parent_ids_and_formats_usage(
 
 
 def test_shared_usage_examples_match_python_format() -> None:
-    """Rustも読む独立した数値例で丸め、0、未知、不正な分母と分子をそろえる。"""
+    """Rust側も読む共通の数値例で、丸め、0、未知の値、不正な分母と分子の書式がPythonと一致することを確かめる。"""
     contract = json.loads(_CONTRACT.read_text(encoding="utf-8"))
     for case in contract["context_usage_cases"]:
         assert context_usage.format_tokens(case["tokens"], case["window"]) == case["formatted"]
@@ -127,7 +127,7 @@ def test_shared_usage_examples_match_python_format() -> None:
 async def test_antigravity_uses_latest_response_step_and_retains_terminal_usage(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, host_environ: Callable[[], dict[str, str]]
 ) -> None:
-    """公式headlessのstep形を実プロセスから渡し、checkpoint・会話累計を分子へ混ぜない。"""
+    """公式資料のheadless出力のstep形式を実プロセスから渡し、checkpointと会話の累計を分子へ混ぜない。"""
     # 2026-10-13取得のhttps://antigravity.google/docs/cli/headless/のstream-json形。
     events: list[dict[str, Any]] = [
         {"event": "init", "conversation_id": "agy-context", "init": {}},
@@ -201,7 +201,7 @@ async def test_antigravity_uses_latest_response_step_and_retains_terminal_usage(
 async def test_context_usage_reaches_public_cli_without_activity(
     tokens: object, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """数値の未知・0と不正値を公開list/showで区別し、表示更新が活動を進めない。"""
+    """数値が未知の場合、0の場合と不正値を公開のlist/showで区別し、表示の更新では活動時刻を進めない。"""
     monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
     monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "root-session")
     monkeypatch.setenv("AI_AGENT", "1")
@@ -251,7 +251,7 @@ async def test_context_usage_reaches_public_cli_without_activity(
 
 @pytest.mark.asyncio
 async def test_claude_context_usage_updates_init_response_compaction_and_terminal(tmp_path: pathlib.Path) -> None:
-    """SDK 0.2.165の文脈応答を使い、各更新の直近値とrawMaxTokensを分子と分母にする。"""
+    """SDK 0.2.165のコンテキスト使用量の応答を使い、各更新の直近値とrawMaxTokensを分子と分母にする。"""
 
     class Client(QueueClaudeClient):
         usage: object = {"totalTokens": 53500, "rawMaxTokens": 1000000, "maxTokens": 800000}

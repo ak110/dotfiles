@@ -1,4 +1,4 @@
-"""共通保存の置換失敗時に旧本文と耐久書込の契約が保持されることを確かめる。"""
+"""共通の保存処理で置換が失敗したときに、旧本文が残ることと、`fsync`を指定した書込の契約が保たれることを確かめる。"""
 
 import errno
 import os
@@ -12,7 +12,7 @@ from agent_toolkit._common import atomic_file
 
 
 class ReplaceFailure(PermissionError):
-    """Windowsの置換診断を、実行ホストによらず再現する。"""
+    """Windowsが置換を拒否したときの`winerror`付きの例外を、実行ホストによらず再現する。"""
 
     def __init__(self, winerror: int | None, message: str) -> None:
         super().__init__(errno.EACCES, message)

@@ -12,11 +12,11 @@ from agent_toolkit._atk import outcome
 
 RESPONSE_BYTES = 4096
 MAX_RESPONSE_BYTES = 16 * 1024
-"""返却自体が通常出力の自動保存へ回らない範囲の最大予算。"""
+"""返却全体が通常出力の自動保存の対象にならない最大の予算。"""
 
 
 def first_read_command(path: pathlib.Path) -> str:
-    """保存表示とhookが共用する最初の読取コマンド。"""
+    """保存先の表示とhookの案内が共に示す、最初の読取コマンドを返す。"""
     return f"atk read-file -- {shlex.quote(str(path))}"
 
 

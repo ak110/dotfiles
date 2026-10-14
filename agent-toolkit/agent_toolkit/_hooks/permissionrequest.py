@@ -18,7 +18,7 @@ import contextlib
 import json
 import os
 
-# 関数の実行時までだけ使う依存を、使用時まで読み込まない。
+# 関数の実行時にだけ使う依存は、使用時まで読み込まない。
 lazy import datetime
 
 lazy from agent_toolkit._common import state_paths as _state_paths

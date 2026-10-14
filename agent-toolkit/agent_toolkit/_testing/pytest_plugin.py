@@ -127,7 +127,7 @@ def _fixed_terminal_size(request: pytest.FixtureRequest, monkeypatch: pytest.Mon
     `_atk/wi/listing.py`は`shutil.get_terminal_size()`から表示幅を算出し、
     `atk wi list`の出力を切り詰める。`shutil`モジュール自体を差し替えることで、
     このディレクトリ配下の全テストファイルへ一括で適用する
-    （個別テストファイルごとの重複フィクスチャ定義を避けるSSOT化）。
+    （テストファイルごとに同じフィクスチャを定義しないため）。
     """
     if not request.path.is_relative_to(_PACKAGE_ROOT):
         return

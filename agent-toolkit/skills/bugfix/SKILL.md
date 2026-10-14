@@ -33,7 +33,7 @@ description: >
 | 実装担当の委譲先を確定する前 | `agent-toolkit:delegation`を起動し、同スキルの`references/runtime-routing.md` |
 | `agent-toolkit:writing-standards`の`references/testing.md`「分岐条件の効果の裏付け」による検証へ入る前 | 同スキルを起動し、`references/testing.md` |
 
-対策の深さは2つの判断で決まる。1つは不在を原因へ採る前に上位規範や目的と常識から導けるかを確かめること（`references/root-cause-analysis.md`「原因分析の品質確認」）である。もう1つは条文の追加より除去・緩和・一般化を先に評価すること（`references/root-cause-analysis.md`「再発防止策」）である。
+対策の深さは2つの判断で決まる。1つは規範・仕様・設計文書の不在を原因へ採る前に、その事項を上位規範や目的と常識から導けるかを確かめること（`references/root-cause-analysis.md`「原因分析の品質確認」）である。もう1つは条文の追加より除去・緩和・一般化を先に評価すること（`references/root-cause-analysis.md`「再発防止策」）である。
 
 ## 問題を見つけたときの対処
 
@@ -93,7 +93,7 @@ description: >
 ## テストの原因調査
 
 テストの失敗も共通の初動から扱い、対象機能側とテスト設計・実行条件側を分けて原因を確定する。
-非決定的な失敗は、待機の前提への未到達と、共有外部環境へ同時にアクセスする主体の干渉を現物で区別してから是正を選ぶ。
+非決定的な失敗は、待機が前提とする状態へ到達していない場合と、共有外部環境へ同時にアクセスする主体が干渉する場合を現物で区別してから是正を選ぶ。
 同期・隔離・決定論的な入力・時間上限とtrace採取の技術基準は`agent-toolkit:writing-standards`の`references/testing.md`と対象技術の資料による。
 
 ## 所要の原因調査

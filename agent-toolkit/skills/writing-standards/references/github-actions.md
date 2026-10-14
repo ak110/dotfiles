@@ -10,7 +10,7 @@
 ## 権限と秘密情報
 
 - `permissions:`をワークフローまたはジョブ単位で最小権限にする（`contents: read`を基本とし、書き込みが必要なジョブだけ`contents: write`）
-- secretは`${{ secrets.NAME }}`で参照し、`run`にベタ書きしない
+- secretは`${{ secrets.NAME }}`で参照し、値を`run`へ直接書かない
 - 信頼できないPRで`pull_request_target`を使わない（レビュー前の任意コード実行を許すため）
 
 ## 並行制御と冪等性

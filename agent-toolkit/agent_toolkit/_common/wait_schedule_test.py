@@ -208,7 +208,7 @@ def test_common_one_hour_override_applies_to_both_buckets(monkeypatch: pytest.Mo
 
 @pytest.mark.parametrize("bucket", ["main", "subagent"])
 def test_environment_scrub_uses_five_minute_schedule(monkeypatch: pytest.MonkeyPatch, bucket: str) -> None:
-    """subprocess環境のscrub指定は5分系へ分類する。"""
+    """`CLAUDE_CODE_SUBPROCESS_ENV_SCRUB`の指定は5分系へ分類する。"""
     monkeypatch.setenv("CLAUDE_CODE_SUBPROCESS_ENV_SCRUB", "1")
     monkeypatch.setattr(_wait_schedule.subprocess, "run", _fail_if_auth_status_is_called)
 
@@ -319,7 +319,7 @@ def test_non_subscription_status_uses_five_minute_schedule(
     monkeypatch: pytest.MonkeyPatch,
     status: dict[str, object],
 ) -> None:
-    """third-party・未知provider・ログアウト・必須field欠損を5分系へ分類する。"""
+    """third-partyのprovider、未知のprovider、ログアウト状態、必須項目の欠けた応答を5分系へ分類する。"""
 
     def fake_run(cmd: list[str], *args: object, **kwargs: object) -> subprocess.CompletedProcess[Any]:
         del args

@@ -620,9 +620,9 @@ class TestAddViaEditor:
     """addサブコマンド: messages省略時に$EDITOR経由で本文を収集する。
 
     `_editor_fake_run`でエディター呼び出しを差し替え、subprocess.run全呼び出しを
-    捕捉する。エラー時の動作を確かめるテストでは`pull`等のgit呼び出しもfake_runへ吸収されるが、
-    検証焦点は`collect_message_via_editor`の早期None返却にあり、gitが呼び出されたかどうかは
-    AWIディレクトリへのファイル生成有無によって間接的に確認する。
+    捕捉する。エラー時の動作を確かめるテストでは`pull`等のgit呼び出しもfake_runが受けるが、
+    検証の対象は`collect_message_via_editor`が早期にNoneを返すことであり、gitが呼び出されたかどうかは
+    AWIディレクトリにファイルが生成されたかどうかで間接的に確認する。
     """
 
     def test_editor_path_generates_file_with_content(
@@ -734,7 +734,7 @@ class TestAddViaEditor:
 
 
 class TestAddTargetRepoOption:
-    """`mq add --target-repo`のfallback指定・frontmatter優先順位を検証する。"""
+    """`atk wi add --target-repo`のfallback指定・frontmatter優先順位を検証する。"""
 
     def test_target_repo_option_used_as_fallback(
         self,
@@ -775,7 +775,7 @@ class TestAddTargetRepoOption:
 
 
 class TestUwiAddTargetRepoOption:
-    """`mq add --type=uwi --target-repo`のfallback指定・レガシー位置引数との優先順位を検証する。"""
+    """`atk wi add --type=uwi --target-repo`のfallback指定・レガシー位置引数との優先順位を検証する。"""
 
     def test_target_repo_option_used_as_fallback(
         self,

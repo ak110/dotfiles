@@ -42,7 +42,7 @@ class RepositorySnapshot:
 
     @property
     def candidates(self) -> tuple[_wi_entries.EntryRecord, ...]:
-        """通常除外後のprocessing全件とready・内部依存待ちのinboxを返す。"""
+        """processing全件と、readyまたは内部依存待ちのinboxを返す。未回答のUWIと`run-skill`由来のUWIは除く。"""
         names = {*self.readiness.ready, *self.readiness.internal_dependency_waits}
         return tuple(
             entry
@@ -57,7 +57,7 @@ class RepositorySnapshot:
 
     @property
     def has_work(self) -> bool:
-        """通常候補または修復診断が担当の起動を必要とするか返す。"""
+        """候補か対処を要する診断があり、担当の起動が必要かを返す。"""
         return bool(self.candidates or self.readiness.actionable_count)
 
     @property
@@ -290,7 +290,7 @@ def cmd_list(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
     `--state`指定で表示範囲を限定する（省略時はactive）。
     `active`は`inbox`・`processing`・`hold`、`processable`は`inbox`・`processing`を出力する。
     個別状態は`inbox`・`processing`・`hold`・`adopted`・`rejected`を解釈し、`all`は5状態すべてを出力する。
-    `uwi`側は`answered`・`unanswered`で回答状況を限定する。
+    `--answered`（`all`・`yes`・`no`）でUWIの回答状況を限定し、`yes`・`no`指定時はAWIを除外する。
     `--source`指定時はAWI・`uwi`双方をfrontmatterの`source`一致（`!`接頭で否定、無指定エントリも対象に含む）へ限定する。
     `--target-repo`指定時は、正規化リモートURLへ変換した値とfrontmatterの`target_repo`が
     完全一致するエントリのみを出力する。

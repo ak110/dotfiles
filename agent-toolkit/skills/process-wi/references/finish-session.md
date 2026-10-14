@@ -87,7 +87,7 @@ Claude Codeのメインは終端担当を起動するたびに、前掲の並行
 
 `session-termination.parent.md`からCI照会不能を受領した場合は、公開状態の4項目が成立していても本節へ進む。
 確認済みpush、全体検証、版数・生成物・公開後の操作とWI終端の到達点を保持し、残るCI判定を公開工程の未完了として扱う。
-回復・確認・個別UWIの保存と回答依存の未終端項目の保留は、`agent-toolkit:commit`の`references/publish.md`「CI照会不能からの再開」に従う。
+回復・確認・個別UWIの保存と、回答に依存する未終端項目の保留は、`agent-toolkit:commit`の`references/publish.md`「CI照会不能からの再開」に従う。
 全体検証の失敗がある場合は`references/termination-ci-failure.md`へ渡し、CI未判定の解消だけで全体成功にしない。
 
 再開位置と証拠は終端担当の引き継ぎ記録を使い、関係する計画があれば`atk plans checkout`後に`atk run-script plan-progress --`で記録して`atk plans commit`で保存する。

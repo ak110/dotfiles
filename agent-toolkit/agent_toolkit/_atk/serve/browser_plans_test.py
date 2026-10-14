@@ -54,7 +54,7 @@ async def _multi_root_harness_fixture(
     monkeypatch: pytest.MonkeyPatch,
     browser: playwright.async_api.Browser,
 ) -> AsyncGenerator[_MultiRootHarness]:
-    """同じ相対パスのファイルを持つ2rootを登録したアプリを用意する。"""
+    """同じ相対パスのファイルを持つ2つのrootを登録したアプリを用意する。"""
     _isolate_creation_time_index(tmp_path, monkeypatch)
     _write_entries(tmp_path)
     new_root = tmp_path / "new"
@@ -206,7 +206,7 @@ async def test_deleted_plan_status_remains_visible_while_choosing_next_on_mobile
 
 @pytest.mark.asyncio
 async def test_mobile_plan_drawer_keeps_user_open_during_initial_fetch(screen_harness: _ScreenHarness) -> None:
-    """初期取得中に開いた一覧を維持し、選択後と未操作での閉状態も確認する。"""
+    """狭い画面で一覧の初期取得中に開いた一覧を取得後も開いたまま保ち、項目の選択後と操作しない再読み込み後は閉じていることも確かめる。"""
     page = screen_harness.page
     await page.set_viewport_size({"width": 320, "height": 720})
     started = asyncio.Event()
@@ -328,7 +328,7 @@ async def test_multiple_roots_keep_selection_search_update_and_copy_portable_pat
 
 @pytest.mark.asyncio
 async def test_plan_copy_buttons_restore_labels_after_repeated_clicks(screen_harness: _ScreenHarness) -> None:
-    """結果表示中に再度コピーしても両ボタンの幅別操作名を復元する。"""
+    """コピー結果の表示中に再度コピーしても、両ボタンの画面幅ごとの操作名を元に戻す。"""
     page = screen_harness.page
     await page.goto(screen_harness.base_url + "/plans")
     await page.locator("#preview h1").wait_for(state="visible")
@@ -749,7 +749,7 @@ async def test_root_warnings_distinguish_hosts_and_sources(multi_root_harness: _
 @pytest.mark.asyncio
 @pytest.mark.parametrize("failure", ["body", "clipboard", "svg"])
 async def test_plan_failures_keep_selected_source_and_browser_owner(screen_harness: _ScreenHarness, failure: str) -> None:
-    """選択した計画の取得とブラウザー処理の失敗を、本文を保ちながら識別する。"""
+    """選択した計画の取得の失敗とブラウザー側の処理の失敗を区別して表示し、表示中の本文を保つ。"""
     harness = screen_harness
     page = harness.page
     if failure == "body":
@@ -777,7 +777,7 @@ async def test_plan_failures_keep_selected_source_and_browser_owner(screen_harne
 @pytest.mark.asyncio
 @pytest.mark.parametrize("failure", ["list", "search"])
 async def test_plan_collection_failures_show_operation(screen_harness: _ScreenHarness, failure: str) -> None:
-    """集約取得にはserveホストと操作を示し、検索条件を失わせない。"""
+    """計画ファイルの一覧と検索の取得に失敗した場合は、エラー表示にserveのホストと、失敗した操作または検索条件を示す。"""
     harness = screen_harness
     page = harness.page
     route = "**/api/plans/files" if failure == "list" else "**/api/plans/search?*"

@@ -55,8 +55,8 @@ EXPLORE_CAPABILITIES = (
     "atkでしか得られない資料は委譲元が保存したファイルで渡す。"
     "読取・検索はcat/rg、UTF-8文字分割は配送済みPython標準ライブラリを使う。"
     "資料で確定できなければ未確認事項を委譲元へ返す。環境作成・権限拡大・再委譲は禁止。"
-    "Git等はmodel_typeのCodex候補、確定操作はshell、自由な判断はdelegateへ。"
-    "後2者は書込拒否外、対象・許可操作は委譲元が定める。"
+    "Git等はmodel_typeでCodex候補を指定し、確定した操作はshell、自由な判断はdelegateへ渡す。"
+    "shellとdelegateは書込を拒否せず、対象と許可する操作は委譲元が定める。"
 )
 """起動前の説明とexplore委譲先へ配送する、エンジン別の能力と調査の選び方。"""
 
@@ -242,7 +242,7 @@ START_DESCRIPTION = "\n".join(
         "",
         "応答は`session_id`・`status`・担当名の`label`と、保持時の`root_session_id`。"
         "起動不能候補を除外して次を試す。切替時だけ除外候補と根拠、採用した`engine`・`model`・`effort`を加える。"
-        "全候補が可用性かagyのturn失敗で終端すれば最後の終端応答を返す。"
+        "全候補が可用性の失敗かagyのturn失敗で終端すれば最後の終端応答を返す。"
         "最後のagy候補のbackend開始例外は除外理由付きの例外で返す。起動条件の詳細は`show`で取得する。"
         "開始後の登録・保存が失敗した場合は`persistence_warnings`と、同じ`session_id`で続ける`next_action`を加える。",
     )

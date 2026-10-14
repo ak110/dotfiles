@@ -28,7 +28,7 @@ import re
 
 import markdown_it
 
-# 関数の実行時までだけ使う依存を、使用時まで読み込まない。
+# 関数の実行時にだけ使う依存は、使用時まで読み込まない。
 lazy from markdown_it.token import Token
 
 from agent_toolkit._agents_server import task_documents

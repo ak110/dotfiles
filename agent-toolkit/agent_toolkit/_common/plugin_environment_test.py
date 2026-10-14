@@ -34,7 +34,7 @@ def _user_data(directory: Path) -> dict[str, str]:
 
 
 def test_dependency_environments_separate_roots_locks_and_versions(tmp_path: Path) -> None:
-    """同じ版のworktreeと、更新前後の依存・配布版が環境を取り違えない。"""
+    """同じrootと版では同じ環境を返し、rootの違い、lockfileの更新、配布版の更新ではそれぞれ別の環境を返す。"""
     root = _root(tmp_path / "first")
     other = _root(tmp_path / "second")
     environment = {subject.RUNTIME_DATA_ENV: str(tmp_path / "data")}
@@ -51,7 +51,7 @@ def test_dependency_environments_separate_roots_locks_and_versions(tmp_path: Pat
 
 
 def test_launch_preserves_callers_environment_and_cli_preserves_path(tmp_path: Path) -> None:
-    """呼出元の環境を変更せず、uv子へ専用の保存先を渡し、CLIのPATHには既存の要素を保つ。"""
+    """呼出元の環境を変更せず、uvの子プロセスへ専用の保存先を渡し、CLIのPATHには既存の要素を保つ。"""
     root = _root(tmp_path / "plugin")
     incoming = {
         **_user_data(tmp_path / "user-data"),
@@ -134,7 +134,7 @@ def test_session_start_persists_before_uv_and_keeps_other_hooks_and_user_path(
 def test_bootstrap_executes_from_readonly_root_and_preserves_process_contract(
     tmp_path: Path, host_environ: Callable[[], dict[str, str]]
 ) -> None:
-    """実uvから起動し、root外の環境・argv・cwd・stdin・両出力・子終了7を確認する。"""
+    """実際のuvから起動し、root外の環境、argv、cwd、stdin、標準出力と標準エラー、子プロセスの終了コード7が保たれることを確認する。"""
     root = _root(tmp_path / "readonly-plugin")
     environment = host_environ()
     uv = shutil.which("uv", path=environment["PATH"])

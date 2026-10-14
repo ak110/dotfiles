@@ -18,7 +18,7 @@ from agent_toolkit._testing.isolation import restore_host_environment
 def test_public_multi_turn_trials_prepares_and_grades_saved_artifacts(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """登録されたatkから公開準備と採点へ到達し、終了コードを透過する。"""
+    """`atk run-script multi-turn-trials`で公開素材の準備と採点を実行し、採点の終了コードを透過する。"""
     restore_host_environment(monkeypatch)
     trial = json.loads(
         (run_script.PLUGIN_ROOT / "skills/refine-prompt/fixtures/multi-turn/weekday_queries/private/trial.json").read_text(
@@ -127,7 +127,7 @@ def test_removed_session_review_entries_are_rejected(script_name: str, capsys: p
 
 
 def test_dispatch_forwards_termination_decision_file(monkeypatch: pytest.MonkeyPatch) -> None:
-    """既存の終了判断記録へファイル引数を同じ順序で渡す。"""
+    """`termination-evidence`へ終了判断記録のファイル引数を同じ順序で渡す。"""
     observed: list[str] = []
 
     def capture_argv(_target: str, *, run_name: str) -> None:

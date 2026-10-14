@@ -84,7 +84,8 @@ CLAUDE_CODE_SUBAGENT_RULES = _read_share("rules-subagent.claude-code.md")
 
 
 # 委譲先の実行主体は、両backendが用意する指示ではユーザーと直接対話する主体として起動される。
-# 起動方法の違いを実行主体が観測できないため、規範が主体別に定める条文を適用できる状態を明示の指示で成立させる。
+# 実行主体は起動方法の違いを観測できないため、委譲先であることを明示の指示で伝え、
+# 規範が主体別に定める条文を適用できるようにする。
 # Codexの`developerInstructions`はdeveloper roleメッセージとして注入され、ホストが用意する指示を置換しない。
 DELEGATE_NOTICE = _read_prompt("agents-server-delegate-notice.md")
 

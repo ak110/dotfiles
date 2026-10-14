@@ -73,7 +73,7 @@ async def _stdio_client(tmp_path: pathlib.Path) -> AsyncGenerator[ClientSession]
 
 @pytest.mark.asyncio
 async def test_stdio_initializes_and_lists_tools(tmp_path: pathlib.Path) -> None:
-    """公開stdioで登録schemaを取得でき、終了時の診断とManager.closeが残る。"""
+    """公開stdioで登録schemaを取得でき、終了時の診断とManager.closeの完了がログへ残る。"""
     async with _stdio_client(tmp_path) as client:
         tools = {tool.name: tool for tool in (await client.list_tools()).tools}
         assert set(tools) == {"start", "send_message", "kill", "stop", "list", "show"}
@@ -90,7 +90,7 @@ async def test_stdio_initializes_and_lists_tools(tmp_path: pathlib.Path) -> None
 
 @pytest.mark.asyncio
 async def test_stdio_tool_results(tmp_path: pathlib.Path) -> None:
-    """SDK接続が構造化成功結果と、修正可能な不成立入力のエラーを区別する。"""
+    """SDK経由の接続で、成功時は構造化された結果を返し、呼び出し側が修正できる入力の不備はエラーとして返す。"""
     async with _stdio_client(tmp_path) as client:
         result = await client.call_tool("list", {})
         assert not result.is_error
@@ -105,7 +105,7 @@ async def test_stdio_tool_results(tmp_path: pathlib.Path) -> None:
 
 @pytest.mark.asyncio
 async def test_stdio_processing_exception(monkeypatch: pytest.MonkeyPatch) -> None:
-    """処理例外も公開transportで理由と次の操作を持つエラーへ変わる。"""
+    """ツール処理で起きた例外も、公開transportでは理由と次の操作を持つエラーとして返る。"""
 
     def fail_list(**_kwargs: Any) -> dict[str, Any]:
         raise RuntimeError("injected processing failure")
@@ -134,7 +134,7 @@ async def test_stdio_processing_exception(monkeypatch: pytest.MonkeyPatch) -> No
 
 
 def test_main_persists_mcp_initialize_diagnostics(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
-    """stdio起動でinitializeの受信、応答完了および失敗を永続化する。"""
+    """stdio起動でinitializeの受信、応答完了および失敗を永続ログへ記録する。"""
     monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
 
     # SDK 2.3.0のJSON-RPC型から、受信と送信の公式構造を生成する。

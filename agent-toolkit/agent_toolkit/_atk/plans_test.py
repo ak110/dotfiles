@@ -220,7 +220,7 @@ def test_checkout_syncs_remote_before_reading_saved_bundle(tmp_path: pathlib.Pat
 
 
 def test_checkout_rejection_reports_recovery_commands(tmp_path: pathlib.Path) -> None:
-    """取得済み拒否は記録回収と再取得のコマンドを示す。"""
+    """取得済みのため拒否する場合は、取得記録の回収と再取得のコマンドを示す。"""
     home = tmp_path / "home"
     notes = tmp_path / "private-notes"
     _init_local_notes(notes)
@@ -431,7 +431,7 @@ def test_checkout_rejects_conflicting_working_file_and_existing_record(
     tmp_path: pathlib.Path,
     conflict: str,
 ) -> None:
-    """作業側衝突、取得済み、メイン欠落は保存側と作業側を変えず拒否する。"""
+    """作業側の同名ファイル、取得済み、メイン計画の欠落のいずれでも、保存側と作業側を変えずに拒否する。"""
     home = tmp_path / "home"
     notes = tmp_path / "private-notes"
     _init_local_notes(notes)
@@ -462,7 +462,7 @@ def test_commit_rejects_checked_out_plan_when_saved_bundle_changed(
     tmp_path: pathlib.Path,
     saved_change: str,
 ) -> None:
-    """取得後の保存側の変更とファイル追加を競合として双方無変更で拒否する。"""
+    """取得後の保存側の変更とファイル追加を競合として扱い、双方を変更せずに拒否する。"""
     home = tmp_path / "home"
     notes = tmp_path / "private-notes"
     _init_local_notes(notes)
@@ -500,7 +500,7 @@ def test_commit_rejects_remote_saved_bundle_change_after_checkout(
     tmp_path: pathlib.Path,
     remote_change: str,
 ) -> None:
-    """取得後にremoteで更新された同一ファイルと付属追加を同期して拒否する。"""
+    """取得後にremoteで更新された同一ファイルと付属ファイルの追加を同期してから拒否する。"""
     home = tmp_path / "home"
     notes = tmp_path / "private-notes"
     remote = tmp_path / "origin.git"
