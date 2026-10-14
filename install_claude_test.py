@@ -77,8 +77,8 @@ def test_agents_server_warmup_closes_standard_input() -> None:
 
     assert '"$script_path" --check-dependencies </dev/null >/dev/null' in shell_source
     assert (
-        "$null | & uv run --project $projectRoot --locked --no-default-groups $scriptPath --check-dependencies *> $null"
-        in powershell_source
+        "$null | & uv run --no-config --no-project --python 3.15 python (Join-Path $projectRoot 'scripts/launch.py') "
+        "$scriptPath --check-dependencies *> $null" in powershell_source
     )
 
 
@@ -91,7 +91,11 @@ def test_warms_claude_and_codex_plugin_scripts(kind: str, tmp_path: pathlib.Path
 
     run_installer(kind, home, rules_url, stub_bin=stub_bin, stub_log=stub_log)
 
-    warmups = [line for line in read_log_lines(stub_log) if line.startswith("uv run --project ")]
+    warmups = [
+        line
+        for line in read_log_lines(stub_log)
+        if line.startswith("uv run --no-config --no-project --python 3.15 python ") and "scripts/launch.py" in line
+    ]
     assert len(warmups) == 2
     assert any(str(home / "claude-plugin" / "agent_toolkit" / "agents_server_mcp.py") in line for line in warmups)
     assert any(

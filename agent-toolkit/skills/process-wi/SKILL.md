@@ -10,6 +10,8 @@ description: >
 AWIとUWIの共通契約は`../wi-standards/SKILL.md`、確認要否と確認手順は`agent-toolkit:user-confirmation-and-report`に従う。本スキルの実行中は自律モードとする。
 all-reposの中継として起動した場合は`references/all-repos-orchestration.md`へ進み、以下の実行順は各対象cwdのリポジトリ担当へ渡す。
 
+レーン処理には、キュー・対象リポジトリ・プラグイン全体の参照資料、Gitと`atk`を実行するCLI、担当の起動・終端受領の手段が必要である。これらが不足する環境では、提示されたWIから要求と依存・確認事項を整理した下書きを返す。キューの状態変更、実装、検証、統合と公開は、必要機能がそろうClaude CodeまたはCodexで実行する。下書きには[文章の品質基準](references/quality-standards.md)を使う。
+
 ## 読込表
 
 次の時点または条件が成立したら、その操作の前に同じ行の資料を全文読む。

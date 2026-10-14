@@ -34,7 +34,7 @@ description: >
 - miseの信頼登録は設定ファイルの絶対パスへ紐づき、状態ディレクトリ配下に保持される。そのため複製元と異なる絶対パスで`mise.toml`を解決する作業場所や、`XDG_STATE_HOME`などで状態ディレクトリを差し替える作業場所は、作成したエージェントが検証の起動前に`mise trust`を済ませる
   - linked worktreeは複製元の信頼を共有するため、複製元リポジトリルートの`mise.toml`へ1回実行すれば十分である。検証用の複製は複製先の`mise.toml`の絶対パスを指定し、状態ディレクトリを差し替えた環境は自動チェックと同じ環境変数を与えて実行する
   - `MISE_TRUSTED_CONFIG_PATHS`は既存の信頼登録を置換して複製元を未信頼にするため使わない
-- 専用worktreeの変更を`atk`で動かす場合（`atk serve`を含む）は、起動時のcwdで動く版が決まる。PATH上の`atk`（複製元の`bin/atk`）は、cwdが同じリポジトリのworktree配下ならそのworktreeの`agent-toolkit/bin/atk`へ委譲し、Git外や別リポジトリなら複製元の版を動かす。`uv run atk`も同じ選択になる。worktreeの外から改修版を動かすときは`<worktreeの絶対パス>/agent-toolkit/bin/atk`を起動する。`uv run`の中では`VIRTUAL_ENV=... does not match the project environment path <パス>/agent-toolkit/.venv`の警告が出るが無害で、`<パス>`が実際に動く版の位置を示す
+- 専用worktreeの変更を`atk`で動かす場合（`atk serve`を含む）は、起動時のcwdで動く版が決まる。PATH上の`atk`（複製元の`bin/atk`）は、cwdが同じリポジトリのworktree配下ならそのworktreeの`agent-toolkit/scripts/atk`へ委譲し、Git外や別リポジトリなら複製元の版を動かす。`uv run atk`も同じ選択になる。worktreeの外から改修版を動かすときは`<worktreeの絶対パス>/agent-toolkit/scripts/atk`を起動する。scripts/launch.pyが配布rootと依存宣言・lockfile・版数から専用環境を選び、書き込み可能なデータ領域へ置く。実行するrootは`atk info`で確かめる
 
 ### 自動チェックと依存更新
 

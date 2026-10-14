@@ -25,7 +25,7 @@ import update_dotfiles  # noqa: E402  # pylint: disable=wrong-import-position
 
 _REAL_UPDATE_GIT_WITH_RECOVERY = update_dotfiles._update_git_with_recovery  # pylint: disable=protected-access
 _REAL_STREAM_MERGED_OUTPUT = update_dotfiles._stream_merged_output  # pylint: disable=protected-access
-_REPOSITORY_ATK_BIN = pathlib.Path(__file__).resolve().parents[1] / "agent-toolkit" / "bin"
+_REPOSITORY_ATK_BIN = pathlib.Path(__file__).resolve().parents[1] / "agent-toolkit" / "scripts"
 
 
 @pytest.fixture(autouse=True)

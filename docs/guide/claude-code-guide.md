@@ -102,6 +102,52 @@ agent-toolkitプラグイン、共有`agents_server` MCP、`atk`ラッパーが�
 2. `Marketplaces`タブで`ak110-dotfiles`を選択
 3. `Enable auto-update`を選択
 
+## Claudeの各環境への導入
+
+使う環境に応じて、次の導入方法を選ぶ。
+
+| 環境 | 導入操作と使える機能 |
+| --- | --- |
+| claude.aiのChat・DesktopのChat | アカウントの`Customize > Plugins`からマーケットプレイスを追加するか、プラグインのZIPをアップロードする。スキル内の品質基準を読む。CLI・hook・local MCPを使う操作は、それらを提供する環境で行う |
+| DesktopのCowork | Coworkタブを開き、同じアカウントの`Customize > Plugins`から追加する。hook・local MCPはホストの対応、uvとネットワークの提供、組織の許可条件を確かめて使う |
+| DesktopのCode・ローカルClaude Code | 前述の単体インストーラーを実行し、Codeセッションで`/plugin`から導入状態を確認する。CLI・hook・MCPを使う |
+| Claude Codeクラウド | 環境のセットアップスクリプトで配布物と依存を用意し、環境変数の`CLAUDE_CODE_PLUGIN_DIRS`へ絶対パスを設定する |
+
+Chat・CoworkでGitマーケットプレイスを追加する場合は、`Customize > Plugins > Add > Add marketplace`で`Add from a repository`を選び、`ak110/dotfiles`を入力する。登録された`agent-toolkit`を選んで`Add`を実行する。ZIPで導入する場合は同じPlugins画面のカスタムプラグインのアップロードを使う。アカウント側に追加したプラグインの同期範囲と組織による制限は、[Claudeのプラグイン利用手順](https://support.claude.com/en/articles/13837440-use-plugins-in-claude)を参照。
+
+### アップロード用ZIP
+
+dotfilesのリポジトリで、公開済みcommitのプラグインだけをZIPへ入れる。
+
+```bash
+git archive --format=zip --output=agent-toolkit.zip HEAD:agent-toolkit
+```
+
+ZIPの直下には`.claude-plugin/plugin.json`と`skills/`が置かれ、`bin/`は含まれない。Gitの追跡対象だけを収めるため、ローカルの`.venv`やキャッシュは含まれない。アップロード前に、展開後の容量200 MB・5,000ファイル以内、参照先の存在、シンボリックリンクと入れ子のZIPが無いことを確認する。受付条件は[公式のプラグインアップロード要件](https://platform.claude.com/docs/en/manage-claude/plugins-api#upload-requirements)を参照。
+
+### Claude Codeクラウドの環境設定
+
+Claude Code 2.1.280以上を使い、クラウドの環境設定で次の変数を保存する。ディレクトリはセットアップとセッションの両方から読める同じ絶対パスにする。[CLAUDE_CODE_PLUGIN_DIRSの仕様](https://code.claude.com/docs/en/env-vars)は、相対パスを読み込まないことと必要なCLI版を定める。
+
+```dotenv
+CLAUDE_CODE_PLUGIN_DIRS=/opt/agent-toolkit-src/agent-toolkit
+AGENT_TOOLKIT_RUNTIME_DATA=/opt/agent-toolkit-data
+```
+
+セットアップスクリプトには次を設定する。`git`と`uv`、Python 3.15の取得、およびGitHubとPythonパッケージ配布先へのネットワークが必要である。
+
+```bash
+#!/bin/bash
+set -eu
+git clone --depth 1 --branch master https://github.com/ak110/dotfiles.git /opt/agent-toolkit-src
+AGENT_TOOLKIT_RUNTIME_DATA=/opt/agent-toolkit-data \
+  uv run --no-config --no-project --python 3.15 python \
+  /opt/agent-toolkit-src/agent-toolkit/scripts/launch.py \
+  agent_toolkit/agents_server_mcp.py --check-dependencies
+```
+
+環境変数は環境設定の欄へ保存する。セットアップ内だけの`export`を後続セッションの設定として使わない。リポジトリの`enabledPlugins`だけではクラウドがプラグインを導入しない。セットアップの終了0、依存検査の成功、新しいセッションのスキル一覧・CLI案内・MCPの接続を順に確認する。setupの制限時間とネットワーク設定は[クラウド環境の設定](https://code.claude.com/docs/en/cloud-environments)を参照。
+
 ## 処理順序
 
 インストーラーは次の順で設定する。途中で必須処理が失敗した場合は非0で終了する。
@@ -474,16 +520,18 @@ atk wi answer <UWIファイル名> '<回答本文>'
 
 ## atkコマンドのPATH設定
 
-`agent-toolkit`プラグインは`atk`ラッパースクリプトを`agent-toolkit/bin/atk`に配置する。
+`agent-toolkit`プラグインは`atk`ラッパースクリプトを`agent-toolkit/scripts/atk`に配置する。
 Claude Codeがマーケットプレイス経由でインストールした実体は
-`~/.claude/plugins/cache/<marketplace-name>/agent-toolkit/<version>/bin/atk`にある。
+`~/.claude/plugins/cache/<marketplace-name>/agent-toolkit/<version>/scripts/atk`にある。
 バージョン部は更新ごとに変わる。追随処理は`install-claude.sh`（Linux/macOS）または`install-claude.ps1`（Windows）で自動化する。
 
 - Linux/macOS: `~/.local/bin/atk`に最新バージョンを動的解決するラッパーを配置する
 - Windows: `~/.local/bin/atk.cmd`に同等のバッチラッパーを配置する
 - いずれも`~/.local/bin`がPATHに含まれていない環境では警告を表示する
 
-dotfilesユーザーは`chezmoi apply`で`~/dotfiles/agent-toolkit/bin`がPATHへ自動配置されるため、上記スクリプトの実行は不要。
+dotfilesユーザーは`chezmoi apply`で`~/dotfiles/agent-toolkit/scripts`がPATHへ自動配置されるため、上記スクリプトの実行は不要。
+
+Claude CodeのSessionStartは、`CLAUDE_ENV_FILE`が提供される場合に、CLIのPATHとデータ領域を後続のBashへ渡す。別hookの設定と既存PATHは保持する。このファイルが提供されない場合も、開始時のコンテキストにCLIの絶対パスを表示する。WindowsのPowerShellでは、案内された`.cmd`の絶対パスを`& '絶対パス'`の形で呼び出す。MCPと`agents_server`の委譲先には起動設定で同じ配布物のCLIとデータ領域を渡す。
 
 ## 構成と機能
 

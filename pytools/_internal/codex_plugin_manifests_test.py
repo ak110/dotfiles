@@ -25,6 +25,9 @@ from pytools._internal import common
 _CODEX_HOME = Path(os.environ.get("CODEX_HOME", str(Path.home() / ".codex"))).expanduser()
 _CODEX_PLUGIN_VALIDATOR = _CODEX_HOME / "skills/.system/plugin-creator/scripts/validate_plugin.py"
 _CODEX_PLUGIN_VALIDATOR_AVAILABLE = shutil.which("codex") is not None and _CODEX_PLUGIN_VALIDATOR.is_file()
+_CODEX_HOOK_PREFIX = (
+    'uv run --no-config --no-project --python 3.15 python "${PLUGIN_ROOT}/scripts/launch.py" agent_toolkit/hook.py '
+)
 
 
 def _plugin_data() -> dict[str, Any]:
@@ -71,7 +74,7 @@ def manifest_root_fixture(tmp_path: Path) -> Path:
             subject.HOOKS_SOURCE,
             {
                 "hooks": {
-                    "SessionStart": [{"hooks": [{"type": "command", "command": subject.CODEX_RULES_CONTEXT_COMMAND}]}],
+                    "SessionStart": [{"hooks": [{"type": "command", "command": subject.CODEX_SESSION_START_COMMAND}]}],
                     "SubagentStart": [{"hooks": [{"type": "command", "command": subject.CODEX_RULES_CONTEXT_COMMAND}]}],
                     "PreToolUse": [
                         {
@@ -102,8 +105,8 @@ def manifest_root_fixture(tmp_path: Path) -> Path:
                             "hooks": [
                                 {
                                     "type": "command",
-                                    "command": 'uv run --project "${CLAUDE_PLUGIN_ROOT}" --locked --no-default-groups '
-                                    '"${CLAUDE_PLUGIN_ROOT}"/agent_toolkit/hook.py permissionrequest',
+                                    "command": "uv run --no-config --no-project --python 3.15 python "
+                                    '"${CLAUDE_PLUGIN_ROOT}/scripts/launch.py" agent_toolkit/hook.py permissionrequest',
                                 }
                             ],
                         },
@@ -129,6 +132,87 @@ def manifest_root_fixture(tmp_path: Path) -> Path:
     cache.write_text("ignored", encoding="utf-8")
     subprocess.run(["git", "init", "--quiet"], cwd=tmp_path, check=True)
     return tmp_path
+
+
+@pytest.fixture(name="quality_root")
+def _quality_root(manifest_root: Path) -> Path:
+    """品質原本と、単独配布する2スキルを持つ最小の配布元を用意する。"""
+    for name in ("alpha", "beta", "writing-standards"):
+        path = manifest_root / "agent-toolkit/skills" / name / "SKILL.md"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        reference = "writing.md" if name == "writing-standards" else "quality-standards.md"
+        path.write_text(f"# {name}\n\n[品質基準](references/{reference})\n", encoding="utf-8")
+    source = manifest_root / "agent-toolkit/skills/writing-standards/references/writing.md"
+    source.parent.mkdir()
+    source.write_text(
+        "# 原本\n\n配布の説明。\n\n<!-- portable-quality:start -->\n\n"
+        "## 日本語の書き方\n\n主体と対象を明示する。\n\n"
+        "<!-- portable-quality:end -->\n\n別の設計資料へ接続する。\n",
+        encoding="utf-8",
+    )
+    return manifest_root
+
+
+def test_skill_quality_resources_follow_one_source_and_work_in_single_skill_copy(quality_root: Path) -> None:
+    """共通原本の生成がCodex投影へ届き、スキル単独のコピーでも基準を読める。"""
+    expected_body = "# 日本語の書き方\n\n主体と対象を明示する。\n"
+    expected_paths = {
+        Path(distribution) / "skills" / name / "references/quality-standards.md"
+        for distribution in ("agent-toolkit", "agent-toolkit-codex")
+        for name in ("alpha", "beta")
+    }
+
+    assert subject.sync(quality_root) is True
+
+    observed = {path.relative_to(quality_root) for path in quality_root.glob("*/skills/*/references/quality-standards.md")}
+    assert observed == expected_paths
+    before = {path: (quality_root / path).read_bytes() for path in expected_paths}
+    assert all(content.decode("utf-8").split("\n\n", maxsplit=1)[1] == expected_body for content in before.values())
+    assert subject.sync(quality_root) is False
+    assert {path: (quality_root / path).read_bytes() for path in expected_paths} == before
+    copied = quality_root / "single-skill"
+    original_skill = Path("agent-toolkit/skills") / "alpha"
+    shutil.copytree(quality_root / original_skill, copied)
+    assert (copied / "references/quality-standards.md").read_bytes() == before[
+        original_skill / "references/quality-standards.md"
+    ]
+    assert not (copied / "writing-standards").exists()
+    assert subject.check(quality_root) is True
+
+    source = quality_root / "agent-toolkit/skills/writing-standards/references/writing.md"
+    source.write_text(
+        source.read_text(encoding="utf-8").replace("主体と対象を明示する。", "条件と結果を対応付ける。"), encoding="utf-8"
+    )
+    assert subject.check(quality_root) is False
+    assert subject.sync(quality_root) is True
+    for path in expected_paths:
+        assert (quality_root / path).read_text(encoding="utf-8").split("\n\n", maxsplit=1)[1] == (
+            "# 日本語の書き方\n\n条件と結果を対応付ける。\n"
+        )
+
+
+@pytest.mark.parametrize("distribution", ["agent-toolkit", "agent-toolkit-codex"])
+@pytest.mark.parametrize("kind", ["欠落", "内容差", "余剰"])
+def test_skill_quality_check_reports_every_difference_and_sync_repairs_it(
+    quality_root: Path, distribution: str, kind: str
+) -> None:
+    """原本側と投影側の欠け・内容差・余分を報告し、同期で同じ集合へ戻す。"""
+    subject.sync(quality_root)
+    name = "extra" if kind == "余剰" else "alpha"
+    target = quality_root / distribution / "skills" / name / "references/quality-standards.md"
+    if kind == "欠落":
+        target.unlink()
+    else:
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text("別の本文\n", encoding="utf-8")
+    before = target.read_bytes() if target.exists() else None
+
+    assert f"{target.relative_to(quality_root)}: {kind}" in subject.check_diagnostics(quality_root)
+    assert (target.read_bytes() if target.exists() else None) == before
+    assert subject.sync(quality_root) is True
+    assert subject.check(quality_root) is True
+    if kind == "余剰":
+        assert not target.exists()
 
 
 def test_sync_is_deterministic(manifest_root: Path) -> None:
@@ -193,10 +277,12 @@ def test_sync_is_deterministic(manifest_root: Path) -> None:
                 "command": "uv",
                 "args": [
                     "run",
-                    "--project",
-                    ".",
-                    "--locked",
-                    "--no-default-groups",
+                    "--no-config",
+                    "--no-project",
+                    "--python",
+                    "3.15",
+                    "python",
+                    "scripts/launch.py",
                     "agent_toolkit/agents_server_mcp.py",
                 ],
                 "cwd": "./",
@@ -216,38 +302,38 @@ def test_sync_is_deterministic(manifest_root: Path) -> None:
             "PreToolUse": [
                 {
                     "matcher": subject.CODEX_HOOK_ALLOWLIST["PreToolUse"].matcher,
-                    "hooks": [{"type": "command", "command": "atk-hook pretooluse"}],
+                    "hooks": [{"type": "command", "command": _CODEX_HOOK_PREFIX + "pretooluse"}],
                 }
             ],
             "PostToolUse": [
                 {
                     "matcher": subject.CODEX_HOOK_ALLOWLIST["PostToolUse"].matcher,
-                    "hooks": [{"type": "command", "command": "atk-hook posttooluse"}],
+                    "hooks": [{"type": "command", "command": _CODEX_HOOK_PREFIX + "posttooluse"}],
                 }
             ],
             "PermissionRequest": [
                 {
                     "matcher": "Bash",
-                    "hooks": [{"type": "command", "command": "atk-hook permissionrequest_codex"}],
+                    "hooks": [{"type": "command", "command": _CODEX_HOOK_PREFIX + "permissionrequest_codex"}],
                 }
             ],
             "UserPromptSubmit": [
                 {
-                    "hooks": [{"type": "command", "command": "atk-hook user_prompt_submit"}],
+                    "hooks": [{"type": "command", "command": _CODEX_HOOK_PREFIX + "user_prompt_submit"}],
                 }
             ],
             "SubagentStop": [
                 {
-                    "hooks": [{"type": "command", "command": "atk-hook subagent_stop_advisor"}],
+                    "hooks": [{"type": "command", "command": _CODEX_HOOK_PREFIX + "subagent_stop_advisor"}],
                 }
             ],
-            "Stop": [{"hooks": [{"type": "command", "command": "atk-hook stop"}]}],
+            "Stop": [{"hooks": [{"type": "command", "command": _CODEX_HOOK_PREFIX + "stop"}]}],
             "SessionEnd": [
                 {
                     "hooks": [
                         {
                             "type": "command",
-                            "command": "atk-hook session_end_cleanup",
+                            "command": _CODEX_HOOK_PREFIX + "session_end_cleanup",
                             "timeout": subject.CODEX_SESSION_END_TIMEOUT_SECONDS,
                         }
                     ],
@@ -258,7 +344,7 @@ def test_sync_is_deterministic(manifest_root: Path) -> None:
                     "hooks": [
                         {
                             "type": "command",
-                            "command": "atk-hook rules_context_codex",
+                            "command": _CODEX_HOOK_PREFIX + "rules_context_codex",
                             "additionalContextLimit": 0,
                         }
                     ],
@@ -269,17 +355,17 @@ def test_sync_is_deterministic(manifest_root: Path) -> None:
                     "hooks": [
                         {
                             "type": "command",
-                            "command": "atk-hook rules_context_codex",
+                            "command": _CODEX_HOOK_PREFIX + "rules_context_codex",
                             "additionalContextLimit": 0,
                         }
                     ]
                 }
             ],
-            "Interrupt": [{"hooks": [{"type": "command", "command": "atk-hook session_activity"}]}],
+            "Interrupt": [{"hooks": [{"type": "command", "command": _CODEX_HOOK_PREFIX + "session_activity"}]}],
         }
     }
     assert len(generated_hooks["hooks"]) == 10
-    assert generated_hooks["hooks"]["SubagentStart"][0]["hooks"][0]["command"] == "atk-hook rules_context_codex"
+    assert generated_hooks["hooks"]["SubagentStart"][0]["hooks"][0]["command"] == _CODEX_HOOK_PREFIX + "rules_context_codex"
     assert (manifest_root / subject.PLUGIN_TARGET).read_text(encoding="utf-8").endswith("\n")
 
 
@@ -455,7 +541,7 @@ def test_codex_projection_limits_matchers_and_timeout(manifest_root: Path) -> No
     assert generated["PostToolUse"][0]["matcher"] == subject.CODEX_HOOK_ALLOWLIST["PostToolUse"].matcher
     assert generated["SessionEnd"][0]["hooks"][0]["timeout"] <= 3
     assert "matcher" not in generated["SubagentStop"][0]
-    assert generated["Stop"] == [{"hooks": [{"type": "command", "command": "atk-hook stop"}]}]
+    assert generated["Stop"] == [{"hooks": [{"type": "command", "command": _CODEX_HOOK_PREFIX + "stop"}]}]
     assert "Bash" in generated["PostToolUse"][0]["matcher"].split("|")
     assert all("timeout" not in handler for handler in generated["PreToolUse"][0]["hooks"])
 

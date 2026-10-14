@@ -196,17 +196,24 @@ def warmup(
     arguments: Sequence[str] = (),
 ) -> bool:
     """Plugin rootのuvプロジェクトで入口を1回起動し、依存環境を構築する。構築できた場合は真を返す。"""
-    return run_command(
-        [
+    root = path.parents[1]
+    launcher = root / "scripts" / "launch.py"
+    command = (
+        [str(uv), "run", "--no-config", "--no-project", "--python", "3.15", "python", str(launcher), str(path), *arguments]
+        if launcher.is_file()
+        else [
             str(uv),
             "run",
             "--project",
-            str(path.parents[1]),
+            str(root),
             "--locked",
             "--no-default-groups",
             str(path),
             *arguments,
-        ],
+        ]
+    )
+    return run_command(
+        command,
         target=log_format.home_short(path),
         tag=tag,
     )

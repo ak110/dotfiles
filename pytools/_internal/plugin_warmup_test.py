@@ -26,7 +26,38 @@ def _target(tmp_path: pathlib.Path) -> pathlib.Path:
     entry = tmp_path / "plugin-root" / "package" / "entry.py"
     entry.parent.mkdir(parents=True)
     entry.write_text("", encoding="utf-8")
+    launcher = entry.parents[1] / "scripts" / "launch.py"
+    launcher.parent.mkdir()
+    launcher.write_text("", encoding="utf-8")
     return entry
+
+
+@pytest.mark.parametrize("new_distribution", [False, True])
+def test_warmup_selects_the_installed_distribution_bootstrap(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, new_distribution: bool
+) -> None:
+    """新版は同じrootの共通起動スクリプト、導入済み旧版は従来の実体で構築する。"""
+    path = _target(tmp_path)
+    launcher = path.parents[1] / "scripts/launch.py"
+    if not new_distribution:
+        launcher.unlink()
+    calls = []
+
+    def run(args: list[str], **kwargs: object) -> _FakeResult:
+        calls.append((args, kwargs))
+        return _FakeResult(returncode=0)
+
+    monkeypatch.setattr(_common, "run_subprocess", run)
+    assert _plugin_warmup.warmup(path, pathlib.Path("/host/uv"), tag="warmup", arguments=("--check-dependencies",))
+    args, options = calls[0]
+    assert len(calls) == 1
+    assert options["timeout"] == 600.0
+    assert args[-2:] == [str(path), "--check-dependencies"]
+    if new_distribution:
+        assert args[:7] == ["/host/uv", "run", "--no-config", "--no-project", "--python", "3.15", "python"]
+        assert args[7] == str(launcher)
+    else:
+        assert args[:6] == ["/host/uv", "run", "--project", str(path.parents[1]), "--locked", "--no-default-groups"]
 
 
 def test_nonzero_exit_reports_captured_output(

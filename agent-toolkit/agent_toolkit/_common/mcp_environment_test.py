@@ -13,6 +13,8 @@ def test_environment_names_preserve_supplied_names_and_proxy_identity() -> None:
     assert names.count("http_proxy") == 1
     assert names.index("AGENT_TOOLKIT_CONFIG_BASE_ENGINE") < names.index("AGENT_TOOLKIT_CONFIG_NEW_SETTING")
     assert proxy_environment.PROXY_ENVIRONMENT_VARIABLES is mcp_environment.PROXY_ENVIRONMENT_VARIABLES
+    assert {"CLAUDE_PLUGIN_DATA", "PLUGIN_DATA", "AGENT_TOOLKIT_RUNTIME_DATA"} <= set(names)
+    assert "UV_PROJECT_ENVIRONMENT" not in names
 
 
 def test_environment_names_do_not_capture_values(monkeypatch: pytest.MonkeyPatch) -> None:

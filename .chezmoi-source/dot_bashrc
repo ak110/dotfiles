@@ -36,7 +36,7 @@ path_prepend "$HOME/.cargo/bin"
 path_prepend "$HOME/.local/bin"
 path_prepend "$HOME/bin"
 path_append "$HOME/dotfiles/bin"
-path_append "$HOME/dotfiles/agent-toolkit/bin"
+path_append "$HOME/dotfiles/agent-toolkit/scripts"
 
 test -f /etc/ssl/certs/ca-certificates.crt && export NODE_EXTRA_CA_CERTS=/etc/ssl/certs/ca-certificates.crt
 export ENV=$HOME/.bashrc

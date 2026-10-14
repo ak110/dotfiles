@@ -5,7 +5,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "atk-hook rules_context_codex",
+            "command": "uv run --no-config --no-project --python 3.15 python \"${PLUGIN_ROOT}/scripts/launch.py\" agent_toolkit/hook.py rules_context_codex",
             "additionalContextLimit": 0
           }
         ]
@@ -16,7 +16,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "atk-hook rules_context_codex",
+            "command": "uv run --no-config --no-project --python 3.15 python \"${PLUGIN_ROOT}/scripts/launch.py\" agent_toolkit/hook.py rules_context_codex",
             "additionalContextLimit": 0
           }
         ]
@@ -28,7 +28,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "atk-hook pretooluse"
+            "command": "uv run --no-config --no-project --python 3.15 python \"${PLUGIN_ROOT}/scripts/launch.py\" agent_toolkit/hook.py pretooluse"
           }
         ]
       }
@@ -39,7 +39,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "atk-hook posttooluse"
+            "command": "uv run --no-config --no-project --python 3.15 python \"${PLUGIN_ROOT}/scripts/launch.py\" agent_toolkit/hook.py posttooluse"
           }
         ]
       }
@@ -49,7 +49,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "atk-hook stop"
+            "command": "uv run --no-config --no-project --python 3.15 python \"${PLUGIN_ROOT}/scripts/launch.py\" agent_toolkit/hook.py stop"
           }
         ]
       }
@@ -60,7 +60,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "atk-hook permissionrequest_codex"
+            "command": "uv run --no-config --no-project --python 3.15 python \"${PLUGIN_ROOT}/scripts/launch.py\" agent_toolkit/hook.py permissionrequest_codex"
           }
         ]
       }
@@ -70,7 +70,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "atk-hook user_prompt_submit"
+            "command": "uv run --no-config --no-project --python 3.15 python \"${PLUGIN_ROOT}/scripts/launch.py\" agent_toolkit/hook.py user_prompt_submit"
           }
         ]
       }
@@ -80,7 +80,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "atk-hook subagent_stop_advisor"
+            "command": "uv run --no-config --no-project --python 3.15 python \"${PLUGIN_ROOT}/scripts/launch.py\" agent_toolkit/hook.py subagent_stop_advisor"
           }
         ]
       }
@@ -90,7 +90,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "atk-hook session_end_cleanup",
+            "command": "uv run --no-config --no-project --python 3.15 python \"${PLUGIN_ROOT}/scripts/launch.py\" agent_toolkit/hook.py session_end_cleanup",
             "timeout": 3
           }
         ]
@@ -101,7 +101,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "atk-hook session_activity"
+            "command": "uv run --no-config --no-project --python 3.15 python \"${PLUGIN_ROOT}/scripts/launch.py\" agent_toolkit/hook.py session_activity"
           }
         ]
       }

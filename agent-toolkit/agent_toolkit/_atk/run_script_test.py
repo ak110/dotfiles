@@ -319,7 +319,7 @@ def test_registered_plan_create_runs_outside_repository_without_pythonpath(tmp_p
     outside = tmp_path / "outside"
     outside.mkdir()
     isolated_home = tmp_path / "home"
-    executable = run_script.PLUGIN_ROOT / "bin/atk"
+    executable = run_script.PLUGIN_ROOT / "scripts/atk"
     assert executable.is_file()
     environment = dict(os.environ)
     environment.pop("PYTHONPATH", None)
@@ -361,7 +361,7 @@ def test_public_plan_progress_entry_rejects_removed_start_head(tmp_path: pathlib
     エンドユーザーが呼び出す`atk run-script`のスクリプト選択と引数の受け渡しを経ても、
     撤去したオプションが受理されないことを確かめる。
     """
-    executable = run_script.PLUGIN_ROOT / "bin/atk"
+    executable = run_script.PLUGIN_ROOT / "scripts/atk"
     environment = dict(os.environ)
     environment.pop("PYTHONPATH", None)
     environment.pop("VIRTUAL_ENV", None)

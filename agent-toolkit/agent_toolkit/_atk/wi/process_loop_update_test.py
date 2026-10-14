@@ -94,7 +94,7 @@ if spec and len(calls) == 1:
         env["FAKE_UV_RETURN_CODE"] = str(return_code)
     if omit_spec:
         env["FAKE_UV_OMIT_SPEC"] = "1"
-    launcher = pathlib.Path(atk.__file__).resolve().parents[1] / "bin" / "atk"
+    launcher = pathlib.Path(atk.__file__).resolve().parents[1] / "scripts" / "atk"
     result = subprocess.run(
         [str(launcher), top_level, subcommand],
         env=env,
@@ -135,7 +135,7 @@ def test_posix_launcher_restarts_only_process_loop_aliases(
 
 def test_windows_launcher_routes_same_process_loop_aliases() -> None:
     """WindowsランチャーもPOSIX版と同じ2つのトップレベル名を受理する。"""
-    launcher = pathlib.Path(atk.__file__).resolve().parents[1] / "bin" / "atk.cmd"
+    launcher = pathlib.Path(atk.__file__).resolve().parents[1] / "scripts" / "atk.cmd"
     data = launcher.read_bytes()
     text = data.decode("cp932")
 

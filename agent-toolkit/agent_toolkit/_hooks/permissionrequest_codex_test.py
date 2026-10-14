@@ -186,14 +186,14 @@ def test_malformed_payload_and_validation_error_return_no_decision(
     assert not capsys.readouterr().out
 
 
-@pytest.mark.parametrize("launcher_source", ["home", "plugin"])
+@pytest.mark.parametrize("launcher_source", ["home", "plugin", "absolute"])
 def test_allows_trusted_atk_launcher_command(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
     launcher_source: str,
 ) -> None:
-    """ホーム側ラッパーと現行プラグイン側ランチャーを許可する。"""
+    """信頼済みの名前付きCLIと、PATHを使わない配布内の絶対CLIを所有検証後に許可する。"""
     plugin_root = pathlib.Path(__file__).resolve().parents[2]
     temp_root = tmp_path / "temp"
     temp_root.mkdir()
@@ -202,15 +202,20 @@ def test_allows_trusted_atk_launcher_command(
     home_launcher = home / ".local" / "bin" / launcher_name
     home_launcher.parent.mkdir(parents=True)
     home_launcher.write_text("launcher\n", encoding="utf-8")
-    launcher = home_launcher if launcher_source == "home" else plugin_root / "bin" / launcher_name
+    launcher = home_launcher if launcher_source == "home" else plugin_root / "scripts" / launcher_name
     monkeypatch.setenv("HOME", str(home))
     monkeypatch.setenv("USERPROFILE", str(home))
     monkeypatch.setenv("PLUGIN_ROOT", str(plugin_root))
-    monkeypatch.setattr(shutil, "which", lambda name: str(launcher) if name == "atk" else None)
+    resolved_launcher = None if launcher_source == "absolute" else str(launcher)
+    monkeypatch.setattr(shutil, "which", lambda name: resolved_launcher if name == "atk" else None)
     monkeypatch.setattr(tempfile, "gettempdir", lambda: str(temp_root))
     target = _managed_temp.create_managed_temp("hook-test")
 
-    assert subject.main(_payload(_atk_command(target))) == 0
+    command = _atk_command(target)
+    if launcher_source == "absolute":
+        tokens = [str(launcher), "managed-temp", "cleanup", "--path", str(target)]
+        command = subprocess.list2cmdline(tokens) if os.name == "nt" else shlex.join(tokens)
+    assert subject.main(_payload(command)) == 0
     output = json.loads(capsys.readouterr().out)
     assert output["hookSpecificOutput"]["decision"] == {"behavior": "allow"}
 
@@ -256,14 +261,17 @@ def test_rejects_untrusted_or_noncanonical_atk_command(
     monkeypatch.setattr(shutil, "which", lambda name: str(other_launcher) if name == "atk" else None)
     assert subject.main(_payload(command)) == 0
 
-    plugin_launcher = plugin_root / "bin" / ("atk.cmd" if os.name == "nt" else "atk")
+    plugin_launcher = plugin_root / "scripts" / ("atk.cmd" if os.name == "nt" else "atk")
     monkeypatch.setattr(shutil, "which", lambda name: str(plugin_launcher) if name == "atk" else None)
+    other_tokens = [str(other_launcher), "managed-temp", "cleanup", "--path", str(target)]
+    other_command = subprocess.list2cmdline(other_tokens) if os.name == "nt" else shlex.join(other_tokens)
     for rejected in (
         f"{command} extra",
         f"{command} && true",
         f"env X=1 {command}",
         _atk_command(pathlib.Path("relative")),
         _atk_command(temp_root / "unmanaged"),
+        other_command,
     ):
         assert subject.main(_payload(rejected)) == 0
     assert not capsys.readouterr().out

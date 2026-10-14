@@ -29,7 +29,7 @@ import urllib.parse
 from typing import Any
 
 from agent_toolkit._atk import managed_temp
-from agent_toolkit._common import message_format
+from agent_toolkit._common import message_format, plugin_environment
 from agent_toolkit._common.delegated_session import is_delegated
 from agent_toolkit._common.session_state import update_state
 from agent_toolkit._hooks.agent_id import MAIN_AGENT_ID
@@ -109,6 +109,7 @@ def compose_session_start(source: str, *, delegated: bool, host: str) -> str | N
             normative_parts.append(MAIN_RULES_CODEX_PATH.read_text(encoding="utf-8").rstrip("\n"))
     if normative_parts:
         parts.append(_normative_context("\n\n".join(normative_parts), kind=NORMATIVE_KIND_MAIN))
+    parts.append(_llm_notice(plugin_environment.cli_instructions(SHARE_DIR.parent)))
     return "\n\n".join(parts) or None
 
 
@@ -255,7 +256,11 @@ def compose_subagent_start(*, host: str) -> str:
     parts = [SUBAGENT_RULES_PATH.read_text(encoding="utf-8").rstrip("\n")]
     if host == "claude":
         parts.append(SUBAGENT_RULES_CLAUDE_CODE_PATH.read_text(encoding="utf-8").rstrip("\n"))
-    return _normative_context("\n\n".join(parts), kind=NORMATIVE_KIND_SUBAGENT)
+    return (
+        _normative_context("\n\n".join(parts), kind=NORMATIVE_KIND_SUBAGENT)
+        + "\n\n"
+        + _llm_notice(plugin_environment.cli_instructions(SHARE_DIR.parent))
+    )
 
 
 def _parse_payload(payload_text: str) -> dict[str, Any]:

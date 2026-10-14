@@ -20,11 +20,11 @@ for /f "delims=" %%I in ('git rev-parse --git-common-dir 2^>nul') do for %%J in 
 if /i not "%INSTALL_COMMON%"=="%CWD_COMMON%" goto dispatch
 for /f "delims=" %%I in ('git rev-parse --show-toplevel') do set "TARGET_ROOT=%%I"
 :dispatch
-set "ATK_ENTRY=%TARGET_ROOT%\agent-toolkit\bin\atk.cmd"
+set "ATK_ENTRY=%TARGET_ROOT%\agent-toolkit\scripts\atk.cmd"
 if not exist "%ATK_ENTRY%" (
     set "ATK_ERROR_B64=YXRr44Gu6LW35YuV5YWI44GM44GC44KK44G+44Gb44KTOiA="
     set "ATK_ERROR_SUFFIX=%ATK_ENTRY%"
-    set "ATK_NEXT_B64=5qyh44Gu5pON5L2cOiDlr77osaF3b3JrdHJlZeOBrmFnZW50LXRvb2xraXRcYmluXGF0ay5jbWTjgpLlvqnlhYPjgZfjgabjgYvjgonlho3lrp/ooYzjgZnjgovjgII="
+    set "ATK_NEXT_B64=5qyh44Gu5pON5L2cOiDlr77osaF3b3JrdHJlZeOBrmFnZW50LXRvb2xraXRcc2NyaXB0c1xhdGsuY21k44KS5b6p5YWD44GX44Gm44GL44KJ5YaN5a6f6KGM44GZ44KL44CC"
     call :write_error
     exit /b 127
 )

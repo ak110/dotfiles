@@ -21,15 +21,24 @@ dotfilesの`bin/atk`と`bin/atk.cmd`は同一リポジトリ内からの通常�
 専用worktreeの`plan-check`などを改修しても、PATHのコマンドが複製元の版を起動すると、改修版の欠陥が検証を通過する。
 
 スクリプト自身の配置からdotfilesのrootを求め、cwdのGit共通ディレクトリと比較する。
-同じ場合はcwdのworktreeにある`agent-toolkit/bin/atk`へ委譲し、Git外と別リポジトリでは配置先の従来版を使う。
+同じ場合はcwdのworktreeにある`agent-toolkit/scripts/atk`へ委譲し、Git外と別リポジトリでは配置先の従来版を使う。
 子へ引数、cwd、標準出力、標準エラーと終了コードを渡し、子の失敗で別版へ戻さない。
-対象worktreeの`agent-toolkit/bin/atk`が無い場合は、不足と復元の操作を返す。
+対象worktreeの`agent-toolkit/scripts/atk`が無い場合は、不足と復元の操作を返す。
 Windowsは`call`による引数の再展開を避け、選択したバッチへ処理を移す。
 
-配布物の`agent-toolkit/bin/atk`は自身の配置から依存と実装を選び、常駐時の再起動を担う。
+配布物の`agent-toolkit/scripts/atk`は自身の配置から依存と実装を選び、常駐時の再起動を担う。
 dotfilesの`bin/atk`はworktreeの選択だけを担い、配布物の実装、PATH登録、hookとMCPの起動先を保つ。
 各工程へ絶対パスの選択を複製する案は、通常起動の取り違えを残すため採らない。
 プラグイン側で実装を自動で切り替える案は、dotfilesを使わない環境の実装選択まで変えるため採らない。
+
+プラグインのCLIは、Chat・Coworkがインストールを拒否する直下の`bin/`を避けて`scripts/`へ同梱する。
+`scripts/launch.py`は標準ライブラリだけで配布rootと書き込み可能なデータ領域を解決し、その後にlockfileを使うuvの依存導入を起動する。
+CLI・hook・MCPはこの入口を共用し、登録済みスキルスクリプトはCLIと同じ環境内で実行する。
+配布rootと依存宣言・lockfile・版数から環境の保存先を分け、更新前後や別worktreeの環境を取り違えない。
+データ領域は`AGENT_TOOLKIT_RUNTIME_DATA`の明示指定を優先し、次にOSのユーザーデータ領域を使う。
+ホストが渡す`CLAUDE_PLUGIN_DATA`・`PLUGIN_DATA`は、ユーザーデータ領域へ書き込めない場合だけ使う。
+ホストごとのplugin dataを優先すると、導入後のウォームアップ・端末の`atk`・Claude Code・Codexが同じ版の環境を別々に構築し、ウォームアップが初回のhookへ効かないためである。
+root・data・環境の導出は`agent_toolkit/_common/plugin_environment.py`が所有し、各SDKへ同じ判断を複写しない。
 
 ## 有限終了コマンドの出力と終了状態の保持
 

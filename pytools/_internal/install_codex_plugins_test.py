@@ -3,6 +3,7 @@
 import dataclasses
 import json
 import logging
+import os
 import runpy
 import shutil
 import subprocess
@@ -86,9 +87,9 @@ def plugin_env_fixture(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     (root / "agent-toolkit/agent_toolkit/hook.py").write_text("source", encoding="utf-8")
     (root / "agent-toolkit/skills").mkdir()
     (root / "agent-toolkit/plugin-note.txt").write_text("source-file", encoding="utf-8")
-    (root / "agent-toolkit/bin").mkdir()
-    (root / "agent-toolkit/bin/atk-hook").write_text("hook wrapper", encoding="utf-8")
-    (root / "agent-toolkit/bin/atk-hook.cmd").write_text("hook wrapper cmd", encoding="utf-8")
+    (root / "agent-toolkit/scripts").mkdir()
+    (root / "agent-toolkit/scripts/atk-hook").write_text("hook wrapper", encoding="utf-8")
+    (root / "agent-toolkit/scripts/atk-hook.cmd").write_text("hook wrapper cmd", encoding="utf-8")
     current_hook = tmp_path / ".codex/plugins/cache/ak110-dotfiles/agent-toolkit/1.2.3/agent_toolkit/hook.py"
     current_hook.parent.mkdir(parents=True)
     current_hook.write_text("hook", encoding="utf-8")
@@ -481,10 +482,20 @@ def test_post_apply_deferral_continues_with_installed_warmup_version(
     assert "atk serve 自動起動セットアップ (Linux)" in reached
 
 
-def test_hook_wrapper_forwards_event_and_exit(plugin_env: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """入口は現行版を解決してイベントと子hookの終了状態を渡す。"""
+@pytest.mark.parametrize("placement", ["bundled", "installed-new", "installed-legacy"])
+def test_hook_wrapper_forwards_event_and_exit(plugin_env: Path, monkeypatch: pytest.MonkeyPatch, placement: str) -> None:
+    """配布内は自身の版、外側の旧呼出しは導入版を使い、イベントと終了状態を渡す。"""
     del plugin_env
-    wrapper = Path(__file__).resolve().parents[2] / "agent-toolkit/bin/atk-hook"
+    source = Path(__file__).resolve().parents[2] / "agent-toolkit/scripts/atk-hook"
+    root = source.parent.parent
+    wrapper = source
+    if placement != "bundled":
+        wrapper = install_codex_plugins._hook_bin() / "atk-hook"  # pylint: disable=protected-access
+        shutil.copyfile(source, wrapper)
+        root = install_codex_plugins.CODEX_HOME / "plugins/cache/ak110-dotfiles/agent-toolkit/1.2.3"
+        if placement == "installed-new":
+            (root / "scripts").mkdir()
+            (root / "scripts/launch.py").write_text("# launcher\n", encoding="utf-8")
     calls: list[list[str]] = []
     monkeypatch.setenv("CODEX_HOME", str(install_codex_plugins.CODEX_HOME))
     monkeypatch.setattr(sys, "argv", [str(wrapper), "pretooluse"])
@@ -514,15 +525,35 @@ def test_hook_wrapper_forwards_event_and_exit(plugin_env: Path, monkeypatch: pyt
         calls.append(args)
         return 7
 
+    def execute(_executable: str, args: list[str]) -> None:
+        calls.append(args)
+        raise SystemExit(7)
+
     monkeypatch.setattr(subprocess, "run", run)
     monkeypatch.setattr(subprocess, "call", call)
+    monkeypatch.setattr(os, "execv", execute)
 
     with pytest.raises(SystemExit, match="7"):
         runpy.run_path(str(wrapper), run_name="__main__")
 
-    assert calls[0] == ["codex", "plugin", "list", "--json"]
-    assert calls[1][-1] == "pretooluse"
-    assert calls[1][-2].endswith("/agent_toolkit/hook.py")
+    if placement == "bundled":
+        assert len(calls) == 1
+    else:
+        assert calls[0] == ["codex", "plugin", "list", "--json"]
+        assert len(calls) == 2
+    if placement == "installed-legacy":
+        assert calls[-1] == [
+            "uv",
+            "run",
+            "--project",
+            str(root),
+            "--locked",
+            "--no-default-groups",
+            str(root / "agent_toolkit/hook.py"),
+            "pretooluse",
+        ]
+    else:
+        assert calls[-1] == [sys.executable, str(root / "scripts/launch.py"), "agent_toolkit/hook.py", "pretooluse"]
 
 
 @pytest.mark.parametrize(

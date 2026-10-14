@@ -15,6 +15,8 @@ description: >
 発話が新規要求や提案の形でも、行う作業が本スキルの対象ならその前に本スキルを適用する（単純な改善提案まで一律に不具合と扱う趣旨とは異なる）。
 実装方式、計画形式、レビュー一般、pushとCI監視はそれぞれ`agent-toolkit:writing-standards`、`agent-toolkit:plan-mode`、`agent-toolkit:review-standards`、`agent-toolkit:commit`へ委ねる。
 
+原因の確定には契約・実装・記録を読む手段、再現と是正には対象を実行・編集できる機能が必要である。提示された資料だけを読める環境では、裏付けられる原因と未確認の候補を分け、調査条件と是正案の下書きを返す。追加の取得・再現・修正は、それらの機能を提供するClaude CodeまたはCodexで行う。下書きは[文章の品質基準](references/quality-standards.md)で確かめる。
+
 ## 読込表
 
 次の時点または条件が成立したら、その操作の前に同じ行の資料を全文読む。

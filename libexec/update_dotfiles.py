@@ -478,7 +478,7 @@ def _run_git_change(*arguments: str) -> bool:
 
 def _run_worktree_stash(*arguments: str) -> subprocess.CompletedProcess[str] | None:
     """同じcheckoutの公開退避CLIを実行し、失敗時の診断を維持する。"""
-    launcher = _SOURCE_ROOT / "agent-toolkit" / "bin" / ("atk.cmd" if os.name == "nt" else "atk")
+    launcher = _SOURCE_ROOT / "agent-toolkit" / "scripts" / ("atk.cmd" if os.name == "nt" else "atk")
     try:
         result = subprocess.run(
             [str(launcher), "worktree-stash", *arguments],

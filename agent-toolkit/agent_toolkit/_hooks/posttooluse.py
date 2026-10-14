@@ -37,6 +37,7 @@ Codexから届く正規化済みの入力も同じ操作記録を使う。
 # 関数の実行時までだけ使う依存を、Python 3.15では使用時まで読み込まない。旧Pythonでは通常のimportとなる。
 __lazy_modules__ = {
     "agent_toolkit._atk",
+    "agent_toolkit._common",
     "agent_toolkit._common.session_state",
     "agent_toolkit._common.shell_segments",
     "agent_toolkit._common.shell_tokens",
@@ -56,6 +57,7 @@ import shlex
 import sys
 
 from agent_toolkit._atk import run_script as _run_script
+from agent_toolkit._common import plugin_environment
 from agent_toolkit._common.session_state import read_state, update_state
 from agent_toolkit._common.shell_segments import ExecutionSegment, extract_execution_segments
 from agent_toolkit._common.shell_tokens import is_agents_exit_session_command
@@ -432,8 +434,7 @@ def _plan_file_check_notice(file_path: str, cwd: str) -> str:
     work_dir_option = f" --work-dir {shlex.quote(cwd)}" if cwd else ""
     return _llm_notice(
         f"計画ファイル{file_path}へ書き込んだ。書き込み後に計画の構造を確かめる:"
-        f" `uv run --project {shlex.quote(str(project_root))} --locked --no-default-groups"
-        f" {shlex.quote(str(check_script))}{work_dir_option}"
+        f" `{shlex.join(plugin_environment.launch_command(project_root, check_script))}{work_dir_option}"
         f" {shlex.quote(file_path)}`."
         "計画の対象リポジトリがこのセッションの作業ディレクトリと異なる場合は、"
         "`--work-dir`を対象リポジトリへ置き換える。",

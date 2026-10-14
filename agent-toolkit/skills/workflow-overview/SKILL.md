@@ -11,6 +11,8 @@ user-invocable: false
 複数のセッションとユーザーの操作にまたがるWI処理の全体像を示す。
 個々の工程の実行契約は`${CLAUDE_PLUGIN_ROOT}/share/workflow-phases.md`と各工程のスキル（`agent-toolkit:plan-mode`、`agent-toolkit:process-wi`など）が定める。
 
+運用の説明は提示された資料の範囲でも行える。キュー・process-loop・レーンの現物の照会と操作には、参照資料、対象へのアクセスとCLIが必要であり、機能が無い環境では説明と実際の設定・状態変更を区別する。運用操作は機能のあるClaude CodeまたはCodexで行い、説明の文には[文章の品質基準](references/quality-standards.md)を使う。
+
 ## 読込表
 
 次の時点または条件が成立したら、その操作の前に同じ行の資料を全文読む。

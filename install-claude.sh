@@ -225,7 +225,7 @@ _install_codex_plugin() {
     fi
     mkdir -p "$HOME/.local/bin"
     hook_stage=$(mktemp "$HOME/.local/bin/atk-hook.XXXXXX")
-    if ! curl -fsSL "${BASE_URL%/agent-toolkit/rules}/agent-toolkit/bin/atk-hook" -o "$hook_stage"; then
+    if ! curl -fsSL "${BASE_URL%/agent-toolkit/rules}/agent-toolkit/scripts/atk-hook" -o "$hook_stage"; then
         rm -f "$hook_stage"
         return 1
     fi
@@ -299,7 +299,7 @@ _warm_agents_server_path() {
         return 0
     fi
     project_root="$(dirname "$(dirname "$script_path")")"
-    if ! uv run --project "$project_root" --locked --no-default-groups "$script_path" --check-dependencies </dev/null >/dev/null; then
+    if ! uv run --no-config --no-project --python 3.15 python "$project_root/scripts/launch.py" "$script_path" --check-dependencies </dev/null >/dev/null; then
         echo "agents_serverのuv環境ウォームアップに失敗しました: $script_path" >&2
     fi
     return 0
@@ -412,7 +412,7 @@ _migrate_legacy_codex_mcp() {
 
 # ~/.local/bin/atk へラッパーを配置する。
 # インストール済み agent-toolkit プラグインの最新バージョンを動的解決するため、
-# 参照先パス（cache/<marketplace>/agent-toolkit/<version>/bin/atk）を実行時に決定する形とする。
+# 参照先パス（cache/<marketplace>/agent-toolkit/<version>/scripts/atk）を実行時に決定する形とする。
 # 直接シンボリックリンクを作成するとバージョン更新のたびに追随が必要となるため、実行時解決のラッパーを採用する。
 _install_atk_wrapper() {
     local bin_dir="$HOME/.local/bin"
@@ -424,18 +424,19 @@ _install_atk_wrapper() {
 # install-claude.sh が生成する。更新したい場合は同スクリプトを再実行する。
 # バージョン名の辞書順ではなく自然順で最新実体を選択する。
 set -euo pipefail
-plugin_bin=$(
-    for candidate in "$HOME"/.claude/plugins/cache/*/agent-toolkit/*/bin; do
+plugin_cli_dir=$(
+    # プラグイン外のランチャーだけは、導入済み旧版の配置も起動対象に含める。
+    for candidate in "$HOME"/.claude/plugins/cache/*/agent-toolkit/*/scripts "$HOME"/.claude/plugins/cache/*/agent-toolkit/*/bin; do
         [ -x "$candidate/atk" ] || continue
-        version_dir=${candidate%/bin}
+        version_dir=${candidate%/*}
         printf '%s\t%s\n' "${version_dir##*/}" "$candidate"
     done | sort -t "$(printf '\t')" -k1,1V | tail -1 | cut -f2-
 )
-if [ -z "$plugin_bin" ] || [ ! -x "$plugin_bin/atk" ]; then
+if [ -z "$plugin_cli_dir" ] || [ ! -x "$plugin_cli_dir/atk" ]; then
     echo "atk: agent-toolkit プラグインが見つかりません。install-claude.sh を再実行してください。" >&2
     exit 1
 fi
-exec "$plugin_bin/atk" "$@"
+exec "$plugin_cli_dir/atk" "$@"
 EOF
     chmod +x "$wrapper"
     echo "配置: $wrapper"

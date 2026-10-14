@@ -11,7 +11,7 @@ from ._test_helpers import FakeEnvironmentRegistry
 
 _PREVIOUS_ENTRIES = [
     r"%USERPROFILE%\dotfiles\bin",
-    r"%USERPROFILE%\dotfiles\agent-toolkit\bin",
+    r"%USERPROFILE%\dotfiles\agent-toolkit\scripts",
     r"%USERPROFILE%\.local\bin",
 ]
 
@@ -39,7 +39,7 @@ def test_entries_outside_home_use_absolute_root() -> None:
     entries = setup_bin_path._bin_entries(Path("/srv/dotfiles"), Path("/home/user"))  # pylint: disable=protected-access
     assert entries[2] == r"%USERPROFILE%\.local\bin"
     assert entries[0].endswith("dotfiles\\bin")
-    assert entries[1].endswith("dotfiles\\agent-toolkit\\bin")
+    assert entries[1].endswith("dotfiles\\agent-toolkit\\scripts")
     assert "%USERPROFILE%" not in entries[0]
 
 

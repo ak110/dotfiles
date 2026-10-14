@@ -1,4 +1,4 @@
-"""Claude Code向けmanifestからAgent Plugins・Codex向けJSONを生成し、生成物との差を検査する。
+"""Claude向け品質資源とAgent Plugins・Codex向け配布物を生成し、生成物との差を検査する。
 
 生成器の入口`scripts/sync_codex_plugin_manifests.py`と、post-applyの「Codex plugin snapshot の生成」工程が使う。
 """
@@ -26,6 +26,11 @@ PLUGIN_TARGET = Path("agent-toolkit/.codex-plugin/plugin.json")
 MARKETPLACE_TARGET = Path(".agents/plugins/marketplace.json")
 HOOKS_TARGET = Path("agent-toolkit/hooks/hooks.codex.json")
 CODEX_PLUGIN_ROOT_TARGET = Path("agent-toolkit-codex")
+QUALITY_SOURCE = Path("agent-toolkit/skills/writing-standards/references/writing.md")
+QUALITY_START = "<!-- portable-quality:start -->"
+QUALITY_END = "<!-- portable-quality:end -->"
+QUALITY_FILENAME = "references/quality-standards.md"
+QUALITY_NOTICE = "<!-- writing-standards/references/writing.mdから自動生成。原本を編集して再生成する。 -->\n\n"
 OPTIONAL_TARGETS = frozenset((MCP_CODEX_TARGET, AGENT_MCP_TARGET, HOOKS_TARGET))
 CODEX_ROOT_EXCLUDED = frozenset((Path("plugin.json"), Path("mcp.json")))
 CODEX_ROOT_NOTICE = (
@@ -36,15 +41,23 @@ CODEX_ROOT_NOTICE = (
 SHARED_MCP_SERVER_NAMES = frozenset({"pyfltr", "agents_server"})
 
 
-def _hook_command(name: str) -> str:
+# 依存導入前の起動入口scripts/launch.pyを、プロジェクト設定を読まずに起動するuvの引数。
+_UV_LAUNCH_ARGS = ("run", "--no-config", "--no-project", "--python", "3.15", "python")
+
+
+def _hook_command(name: str, *, persist_environment: bool = False) -> str:
+    persist = "--persist-claude-env " if persist_environment else ""
     return (
-        'uv run --project "${CLAUDE_PLUGIN_ROOT}" --locked --no-default-groups '
-        f'"${{CLAUDE_PLUGIN_ROOT}}"/agent_toolkit/hook.py {name}'
+        'uv run --no-config --no-project --python 3.15 python "${CLAUDE_PLUGIN_ROOT}/scripts/launch.py" '
+        f"{persist}agent_toolkit/hook.py {name}"
     )
 
 
 def _codex_hook_command(name: str) -> str:
-    return f"atk-hook {name}"
+    return (
+        'uv run --no-config --no-project --python 3.15 python "${PLUGIN_ROOT}/scripts/launch.py" '
+        f"agent_toolkit/hook.py {name}"
+    )
 
 
 CODEX_PERMISSION_REQUEST_COMMAND = _hook_command("permissionrequest_codex")
@@ -55,6 +68,7 @@ CODEX_STOP_COMMAND = _hook_command("stop")
 CODEX_SUBAGENT_STOP_COMMAND = _hook_command("subagent_stop_advisor")
 CODEX_SESSION_END_COMMAND = _hook_command("session_end_cleanup")
 CODEX_RULES_CONTEXT_COMMAND = _hook_command("rules_context")
+CODEX_SESSION_START_COMMAND = _hook_command("rules_context", persist_environment=True)
 
 # CodexのSessionEndは同期実行のため上限が短い。投影時に明示して超過を避ける。
 CODEX_SESSION_END_TIMEOUT_SECONDS = 3
@@ -101,7 +115,7 @@ class CodexHookProjection(NamedTuple):
 
 CODEX_HOOK_ALLOWLIST: dict[str, CodexHookProjection] = {
     "SessionStart": CodexHookProjection(
-        (CODEX_RULES_CONTEXT_COMMAND,),
+        (CODEX_SESSION_START_COMMAND,),
         output_command=_codex_hook_command("rules_context_codex"),
         additional_context_limit=0,
     ),
@@ -250,14 +264,7 @@ def _codex_mcp(source: dict[str, Any]) -> dict[str, Any]:
             {
                 "type": "stdio",
                 "command": "uv",
-                "args": [
-                    "run",
-                    "--project",
-                    ".",
-                    "--locked",
-                    "--no-default-groups",
-                    "agent_toolkit/agents_server_mcp.py",
-                ],
+                "args": [*_UV_LAUNCH_ARGS, "scripts/launch.py", "agent_toolkit/agents_server_mcp.py"],
                 "cwd": "./",
             }
         )
@@ -266,6 +273,27 @@ def _codex_mcp(source: dict[str, Any]) -> dict[str, Any]:
             mcp_environment.environment_variable_names(toolkit_config.config_environment_variable_names())
         )
     return projected
+
+
+def _quality_outputs(root: Path) -> dict[Path, str]:
+    """スキルフォルダーだけを配布するホストへ、同じ原本の品質基準を届ける。"""
+    skills = tuple(sorted((root / "agent-toolkit/skills").glob("*/SKILL.md")))
+    if not skills:
+        return {}
+    source = (root / QUALITY_SOURCE).read_text(encoding="utf-8")
+    if source.count(QUALITY_START) != 1 or source.count(QUALITY_END) != 1:
+        raise ValueError("品質基準の生成範囲は開始と終了の標識を各1件持つ必要がある")
+    _before, _start, after = source.partition(QUALITY_START)
+    body, end, _after = after.partition(QUALITY_END)
+    body = body.strip()
+    if not end or not body.startswith("## "):
+        raise ValueError("品質基準の生成範囲はH2から始まり、終了の標識へ続く必要がある")
+    content = QUALITY_NOTICE + body.removeprefix("#") + "\n"
+    return {
+        skill.parent.relative_to(root) / QUALITY_FILENAME: content
+        for skill in skills
+        if skill.parent.name != "writing-standards"
+    }
 
 
 def _outputs(root: Path) -> dict[Path, str]:
@@ -352,12 +380,16 @@ def _outputs(root: Path) -> dict[Path, str]:
         result[AGENT_MCP_TARGET] = json.dumps(_agent_mcp(shared_source), ensure_ascii=False, indent=2) + "\n"
     if selected:
         result[HOOKS_TARGET] = json.dumps({"hooks": selected}, ensure_ascii=False, indent=2) + "\n"
+    result.update(_quality_outputs(root))
     return result
 
 
 def _existing_outputs(root: Path, expected: dict[Path, str]) -> dict[Path, str]:
     """既知の派生JSONのうち、現存する内容を返す。"""
-    paths = set(expected) | OPTIONAL_TARGETS
+    quality_paths = {
+        path.relative_to(root) for path in (root / "agent-toolkit/skills").glob("*/references/quality-standards.md")
+    }
+    paths = set(expected) | OPTIONAL_TARGETS | quality_paths
     return {path: (root / path).read_text(encoding="utf-8") for path in paths if (root / path).exists()}
 
 
@@ -481,11 +513,12 @@ def repo_root() -> Path:
 def sync(root: Path) -> bool:
     """派生JSONを同期し、差分があった場合は`True`を返す。"""
     expected = _outputs(root)
-    stale = _differences(expected, _existing_outputs(root, expected))
+    existing = _existing_outputs(root, expected)
+    stale = _differences(expected, existing)
     for path, content in expected.items():
         if path in stale and not common.atomic_write_text(root / path, content, tag="plugin manifests"):
             raise OSError(f"派生JSONの書き込みに失敗: {path}")
-    for path in OPTIONAL_TARGETS - set(expected):
+    for path in set(existing) - set(expected):
         (root / path).unlink(missing_ok=True)
     codex_changed = _sync_codex_root(root, _codex_root_outputs(root, expected))
     return bool(stale) or codex_changed

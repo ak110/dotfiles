@@ -8,7 +8,9 @@ import asyncio
 # テストでは共有状態とバックエンドの内部境界も直接検証する。
 # pylint: disable=protected-access
 import json
+import os
 import pathlib
+import shlex
 import shutil
 from types import SimpleNamespace
 from typing import Any, cast
@@ -31,7 +33,7 @@ from agent_toolkit._agents_server import (
 )
 from agent_toolkit._agents_server.notify import send_notification
 from agent_toolkit._atk import config as _atk_config
-from agent_toolkit._common import session_registry, state_paths
+from agent_toolkit._common import plugin_environment, session_registry, state_paths
 from agent_toolkit._testing.agents_server_support import (
     BlockingResumeCodexClient,
     CompletingInterruptClient,
@@ -424,7 +426,18 @@ async def test_completed_turn_after_consumed_auto_resume_publishes_unobserved_ch
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    "delivery", ("stdout", "output-file", "shell-stdout", "shell-output-file", "shell-unrelated", "failure", "unrelated")
+    "delivery",
+    (
+        "stdout",
+        "output-file",
+        "shell-stdout",
+        "shell-output-file",
+        "absolute-stdout",
+        "absolute-shell",
+        "shell-unrelated",
+        "failure",
+        "unrelated",
+    ),
 )
 async def test_cli_wait_updates_observed_child_sessions(tmp_path: pathlib.Path, delivery: str) -> None:
     """CLI待機が回収した子だけを観測済みにし、失敗時は未観測として残す。"""
@@ -449,6 +462,10 @@ async def test_cli_wait_updates_observed_child_sessions(tmp_path: pathlib.Path, 
         command = '/bin/sh -c "timeout 300 atk agents wait"'
     if delivery == "shell-unrelated":
         command = '/bin/bash -lc "printf unrelated"'
+    if delivery in {"absolute-stdout", "absolute-shell"}:
+        command = shlex.quote(str(plugin_roots.SERVER_PLUGIN_ROOT / "scripts" / "atk")) + " agents wait"
+        if delivery == "absolute-shell":
+            command = "/bin/sh -c " + shlex.quote(command)
     item = {
         "type": "commandExecution",
         "id": "wait-command",
@@ -477,6 +494,8 @@ async def test_thread_start_overrides_agents_server_with_owner_and_writer_env(
 ) -> None:
     """内側MCPサーバーへルートと書込主体を完全な定義で配送する。"""
     client = _ThreadStartClient()
+    runtime_data = tmp_path / "plugin data"
+    monkeypatch.setenv(plugin_environment.RUNTIME_DATA_ENV, str(runtime_data))
     manager = subject.AppServerManager(root_session_id="root-session")
     monkeypatch.setattr(manager, "_ensure_client", lambda: _return(client))
     monkeypatch.setattr(shared_roots, "write_host_alias", lambda root, writer, thread: aliases.append((root, writer, thread)))
@@ -489,7 +508,12 @@ async def test_thread_start_overrides_agents_server_with_owner_and_writer_env(
     server = client.params["config"]["mcp_servers"]["agents_server"]
     assert server["command"] == "uv"
     assert server["args"][-1].endswith("agent_toolkit/agents_server_mcp.py")
-    assert set(server["env"]) == {"AGENT_TOOLKIT_OWNER_SESSION", "AGENT_TOOLKIT_STATUS_HOST_SESSION"}
+    assert set(server["env"]) == {
+        "AGENT_TOOLKIT_OWNER_SESSION",
+        "AGENT_TOOLKIT_STATUS_HOST_SESSION",
+        plugin_environment.RUNTIME_DATA_ENV,
+    }
+    assert server["env"][plugin_environment.RUNTIME_DATA_ENV] == str(runtime_data)
     assert server["env"]["AGENT_TOOLKIT_OWNER_SESSION"] == "root-session"
     assert server["default_tools_approval_mode"] == "approve"
     assert server["env_vars"] == list(
@@ -506,7 +530,9 @@ async def test_thread_start_overrides_agents_server_with_owner_and_writer_env(
 async def test_mcp_mise_namespace_names_and_explicit_owner_are_separate(
     operation: str, configured: bool, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
 ) -> None:
-    """新規・再開のMCPは公開mise所在の名前を配送し、root・hostだけを明示値で上書きする。"""
+    """新規・再開のMCPは公開mise所在の名前を配送し、所有者・書込主体・plugin dataを明示する。"""
+    runtime_data = tmp_path / "plugin data"
+    monkeypatch.setenv(plugin_environment.RUNTIME_DATA_ENV, str(runtime_data))
     names = ("MISE_STATE_DIR", "MISE_CACHE_DIR", "MISE_DATA_DIR", "MISE_CONFIG_DIR")
     values = {name: str(tmp_path / name.lower()) for name in names}
     for name, value in values.items():
@@ -532,7 +558,14 @@ async def test_mcp_mise_namespace_names_and_explicit_owner_are_separate(
         server = params["config"]["mcp_servers"]["agents_server"]
         assert set(names) <= set(server["env_vars"])
         assert len(server["env_vars"]) == len(set(server["env_vars"]))
-        assert set(server["env"]) == {"AGENT_TOOLKIT_OWNER_SESSION", "AGENT_TOOLKIT_STATUS_HOST_SESSION"}
+        assert set(server["env"]) == {
+            "AGENT_TOOLKIT_OWNER_SESSION",
+            "AGENT_TOOLKIT_STATUS_HOST_SESSION",
+            plugin_environment.RUNTIME_DATA_ENV,
+        }
+        assert server["env"][plugin_environment.RUNTIME_DATA_ENV] == str(runtime_data)
+        assert {"CLAUDE_PLUGIN_DATA", "PLUGIN_DATA", plugin_environment.RUNTIME_DATA_ENV} <= set(server["env_vars"])
+        assert "UV_PROJECT_ENVIRONMENT" not in server["env_vars"]
         assert server["env"]["AGENT_TOOLKIT_OWNER_SESSION"] == "chosen-root"
         writer = server["env"]["AGENT_TOOLKIT_STATUS_HOST_SESSION"]
         assert writer and writer != "ambient-host"
@@ -621,6 +654,9 @@ def _make_plugin_root(base: pathlib.Path, version: str, *, versioned: bool, root
     (root / ".claude-plugin" / "plugin.json").write_text(f'{{"version": "{version}"}}\n', encoding="utf-8")
     (root / "agent_toolkit").mkdir()
     (root / "agent_toolkit" / "agents_server_mcp.py").write_text("# entry\n", encoding="utf-8")
+    (root / "scripts").mkdir()
+    for name in ("launch.py", "atk", "atk.cmd"):
+        (root / "scripts" / name).write_text("# entry\n", encoding="utf-8")
     (root / ".venv").mkdir()
     (root / ".venv" / "pyvenv.cfg").write_text("home = /usr\n", encoding="utf-8")
     return root
@@ -685,16 +721,25 @@ def test_agents_server_config_uses_the_stable_plugin_root() -> None:
 
     args = config["mcp_servers"]["agents_server"]["args"]
     expected_root = plugin_roots.resolve_stable_plugin_root()
-    assert args[1] == "--project"
-    assert args[2] == str(expected_root)
-    assert args[-1] == str(expected_root / "agent_toolkit" / "agents_server_mcp.py")
-    assert pathlib.Path(args[-1]).is_file()
+    assert args == [
+        "run",
+        "--no-config",
+        "--no-project",
+        "--python",
+        "3.15",
+        "python",
+        str(expected_root / "scripts" / "launch.py"),
+        "agent_toolkit/agents_server_mcp.py",
+    ]
+    assert pathlib.Path(args[-2]).is_file()
+    assert (expected_root / args[-1]).is_file()
 
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("launch_kind", ["delegate", "explore", "shell", "write"])
+@pytest.mark.parametrize("windows", [False, True])
 async def test_start_and_resume_pass_the_same_stable_plugin_root_to_all_launch_kinds(
-    launch_kind: state.LaunchKind, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+    launch_kind: state.LaunchKind, windows: bool, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
 ) -> None:
     """開始と再開の全役割へ、同じ実在plugin rootと再解決を禁じる契約を渡す。"""
     source = _make_plugin_root(tmp_path / "cache", "2.125.0", versioned=True, root_is_version=True)
@@ -703,6 +748,8 @@ async def test_start_and_resume_pass_the_same_stable_plugin_root_to_all_launch_k
     plugin_root = plugin_roots.resolve_stable_plugin_root(source)
     shutil.rmtree(source)
     monkeypatch.setattr(plugin_roots, "SERVER_PLUGIN_ROOT", plugin_root)
+    cli_instructions = plugin_environment.cli_instructions
+    monkeypatch.setattr(plugin_environment, "cli_instructions", lambda root: cli_instructions(root, windows=windows))
     client = _TierClient()
     manager = subject.AppServerManager(root_session_id="owner")
     monkeypatch.setattr(manager, "_ensure_client", AsyncMock(return_value=client))
@@ -717,13 +764,21 @@ async def test_start_and_resume_pass_the_same_stable_plugin_root_to_all_launch_k
     for params in (start_params, resume_params):
         instructions = params["developerInstructions"]
         assert str(plugin_root) in instructions
+        command = next(line.removeprefix("起動部分: ") for line in instructions.splitlines() if line.startswith("起動部分: "))
+        entry = plugin_root / "scripts" / ("atk.cmd" if windows else "atk")
+        assert entry.is_file()
+        if windows:
+            assert command == "& '" + str(entry).replace("'", "''") + "'"
+        else:
+            assert shlex.split(command) == [str(entry)]
         assert (subject.python_runtime_instructions() in instructions) is (launch_kind != "delegate")
         if launch_kind == "explore":
             assert params["config"]["mcp_servers"]["agents_server"] == {"enabled": False}
         else:
             args = params["config"]["mcp_servers"]["agents_server"]["args"]
-            assert pathlib.Path(args[-1]).is_file()
-            assert pathlib.Path(args[2]) == plugin_root
+            assert pathlib.Path(args[-2]) == plugin_root / "scripts" / "launch.py"
+            assert pathlib.Path(args[-2]).is_file()
+            assert (plugin_root / args[-1]).is_file()
         assert (plugin_root / "skills" / "sample" / "SKILL.md").is_file()
         assert "別hostのcache版数から別のplugin rootを組み立てない" in instructions
     assert start_params["developerInstructions"] == resume_params["developerInstructions"]
@@ -1434,9 +1489,22 @@ async def test_codex_interrupt_response_error_is_recorded_on_target_turn(tmp_pat
 
 @pytest.mark.usefixtures("agents_server_isolation")
 @pytest.mark.asyncio
-async def test_codex_json_rpc_process_passes_stable_cwd(monkeypatch: pytest.MonkeyPatch) -> None:
-    """App Server subprocessへ安定した作業ディレクトリとstream limitを渡す。"""
+@pytest.mark.parametrize("user_project_environment", [False, True])
+async def test_codex_json_rpc_process_passes_stable_cwd(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, user_project_environment: bool
+) -> None:
+    """App ServerへCLIとdataを渡し、plugin依存環境だけを除き、呼び出し元の設定と所有者を保つ。"""
     observed: dict[str, Any] = {}
+    plugin_venv = tmp_path / "plugin venv"
+    user_bin = tmp_path / "user-bin"
+    runtime_data = tmp_path / "plugin data"
+    original_path = os.pathsep.join((str(plugin_venv / "bin"), str(user_bin), ""))
+    monkeypatch.setenv("PATH", original_path)
+    monkeypatch.setenv("VIRTUAL_ENV", str(plugin_venv))
+    monkeypatch.setenv(plugin_environment.RUNTIME_ENVIRONMENT_ENV, str(plugin_venv))
+    project_environment = str(tmp_path / "user-project-env") if user_project_environment else str(plugin_venv)
+    monkeypatch.setenv("UV_PROJECT_ENVIRONMENT", project_environment)
+    monkeypatch.setenv(plugin_environment.RUNTIME_DATA_ENV, str(runtime_data))
 
     async def create_subprocess(*_args: Any, **kwargs: Any) -> Any:
         observed.update(kwargs)
@@ -1459,6 +1527,15 @@ async def test_codex_json_rpc_process_passes_stable_cwd(monkeypatch: pytest.Monk
     }
     assert environment["AGENT_TOOLKIT_OWNER_SESSION"] == "owner-session"
     assert "AGENT_TOOLKIT_DELEGATED_SESSION" not in environment
+    assert environment["PATH"].split(os.pathsep) == [str(plugin_roots.SERVER_PLUGIN_ROOT / "scripts"), str(user_bin), ""]
+    assert environment[plugin_environment.RUNTIME_DATA_ENV] == str(runtime_data)
+    assert "VIRTUAL_ENV" not in environment
+    assert plugin_environment.RUNTIME_ENVIRONMENT_ENV not in environment
+    if user_project_environment:
+        assert environment["UV_PROJECT_ENVIRONMENT"] == project_environment
+    else:
+        assert "UV_PROJECT_ENVIRONMENT" not in environment
+    assert os.environ["PATH"] == original_path
     assert observed["limit"] > 64 * 1024
 
 

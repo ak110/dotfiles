@@ -10,7 +10,7 @@ import sys
 
 from agent_toolkit._agents_server.state import LaunchKind
 from agent_toolkit._agents_server.tool_descriptions import EXPLORE_CAPABILITIES
-from agent_toolkit._common import message_format
+from agent_toolkit._common import message_format, plugin_environment
 
 TASK_MODEL_TYPES = {
     "add-wi.subagent.md": "high_tier",
@@ -142,6 +142,14 @@ def python_runtime_instructions() -> str:
         "専用コマンドを先に選ぶ。Pythonを使う場合はこの起動部分に引数を続け、コードもシェルに合わせて引用する。\n"
         "この情報は実行権限を追加しない。プロジェクト依存を使う処理や固有の実行指定は、プロジェクト規範・依頼に従う。",
         kind="python-runtime",
+    )
+
+
+def cli_runtime_instructions(plugin_root: pathlib.Path) -> str:
+    """保持済み配布物のCLIへ、通常・軽量・再開の委譲から同じ呼び方で到達させる。"""
+    return _normative(
+        plugin_environment.cli_instructions(plugin_root),
+        kind="cli-runtime",
     )
 
 

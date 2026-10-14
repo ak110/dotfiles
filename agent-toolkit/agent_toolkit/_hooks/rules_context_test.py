@@ -4,14 +4,16 @@ from __future__ import annotations
 
 import datetime
 import json
+import os
 import pathlib
+import shlex
 from collections.abc import Callable
 
 import pytest
 
 from agent_toolkit._atk import managed_temp
 from agent_toolkit._atk.wi import process_loop_log
-from agent_toolkit._common import session_state
+from agent_toolkit._common import plugin_environment, session_state
 from agent_toolkit._hooks import posttooluse, pretooluse, rules_context, rules_context_codex
 from agent_toolkit._testing.managed_temp_support import setattr_in_managed_temp_modules
 
@@ -125,7 +127,12 @@ def test_session_start_delegated_omits_main_rules(
     monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)
     monkeypatch.setenv(name, value)
     rules_context.main(json.dumps({"hook_event_name": "SessionStart", "source": "startup"}))
-    assert capsys.readouterr().out == ""
+    output = _output(capsys)
+    assert rules_context.MAIN_RULES_PATH.read_text(encoding="utf-8").rstrip() not in output
+    assert rules_context.MAIN_RULES_CLAUDE_CODE_PATH.read_text(encoding="utf-8").rstrip() not in output
+    assert rules_context.SUBAGENT_RULES_PATH.read_text(encoding="utf-8").rstrip() not in output
+    assert rules_context.RESPONSE_LANGUAGE_NOTICE not in output
+    assert str(rules_context.SHARE_DIR.parent / "scripts" / ("atk.cmd" if os.name == "nt" else "atk")) in output
 
 
 def test_session_start_compact_prepends_quality_notice(
@@ -204,7 +211,9 @@ def test_codex_main_receives_codex_main_rules(capsys: pytest.CaptureFixture[str]
 
     monkeypatch.setenv("AGENT_TOOLKIT_DELEGATED_SESSION", "1")
     rules_context_codex.main(json.dumps({"hook_event_name": "SessionStart", "source": "startup"}))
-    assert capsys.readouterr().out == ""
+    delegated_output = _output(capsys)
+    assert main_rules not in delegated_output
+    assert codex_main_rules not in delegated_output
     rules_context_codex.main(json.dumps({"hook_event_name": "SubagentStart", "agent_type": "explorer"}))
     assert codex_main_rules not in _output(capsys)
 
@@ -331,20 +340,54 @@ def test_rejects_unknown_event_and_missing_source(payload: dict[str, str]) -> No
         rules_context.main(json.dumps(payload))
 
 
+@pytest.mark.parametrize("windows", [False, True])
 def test_session_start_context_fits_cap_with_maximum_instruction(
-    capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+    capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, windows: bool
 ) -> None:
     """追加指示が上限まで載った場合も、固定分との合計がhook上限へ収まる。"""
     monkeypatch.delenv("AGENT_TOOLKIT_DELEGATED_SESSION", raising=False)
     monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)
     monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
     monkeypatch.setenv(rules_context.PROCESS_LOOP_INSTRUCTION_ENV, "あ" * process_loop_log.INSTRUCTION_MAX_CHARS)
+    cli_instructions = plugin_environment.cli_instructions
+    monkeypatch.setattr(plugin_environment, "cli_instructions", lambda root: cli_instructions(root, windows=windows))
     setattr_in_managed_temp_modules(monkeypatch, "_state_root_path", lambda: tmp_path / "external-state")
 
     rules_context.main(json.dumps({"hook_event_name": "SessionStart", "source": "compact", "session_id": "session-1"}))
 
     output = _output(capsys)
     assert len(output) <= rules_context.CLAUDE_CODE_OUTPUT_LIMIT, _session_start_length_report(output)
+    assert "あ" * process_loop_log.INSTRUCTION_MAX_CHARS in output
+    assert rules_context.MAIN_RULES_PATH.read_text(encoding="utf-8").rstrip() in output
+    assert rules_context.MAIN_RULES_CLAUDE_CODE_PATH.read_text(encoding="utf-8").rstrip() in output
+    assert "このセッションのmanaged-temp:" in output
+
+
+@pytest.mark.parametrize("host", ["claude", "codex"])
+@pytest.mark.parametrize("event", ["SessionStart", "SubagentStart"])
+@pytest.mark.parametrize("windows", [False, True])
+def test_direct_hooks_deliver_cli_when_bash_environment_file_is_unavailable(
+    host: str, event: str, windows: bool, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Bashの環境保存なしでも、直接hookから実在CLIとPOSIX・PowerShellの呼び方へ届く。"""
+    monkeypatch.delenv("CLAUDE_ENV_FILE", raising=False)
+    monkeypatch.delenv("AGENT_TOOLKIT_DELEGATED_SESSION", raising=False)
+    monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)
+    monkeypatch.setenv("PATH", "/user/tools")
+    cli_instructions = plugin_environment.cli_instructions
+    monkeypatch.setattr(plugin_environment, "cli_instructions", lambda root: cli_instructions(root, windows=windows))
+    assert rules_context.main(json.dumps({"hook_event_name": event, "source": "startup"}), host=host) == 0
+    output = _output(capsys)
+    entry = rules_context.SHARE_DIR.parent / "scripts" / ("atk.cmd" if windows else "atk")
+    assert entry.is_file()
+    command = next(line.removeprefix("起動部分: ") for line in output.splitlines() if line.startswith("起動部分: "))
+    if windows:
+        assert command == "& '" + str(entry).replace("'", "''") + "'"
+    else:
+        assert shlex.split(command) == [str(entry)]
+    assert len(output) <= rules_context.CLAUDE_CODE_OUTPUT_LIMIT
+    assert os.environ["PATH"] == "/user/tools"
+    assert "CLAUDE_ENV_FILE" not in os.environ
 
 
 def test_session_start_injects_process_loop_instruction(

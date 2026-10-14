@@ -1,6 +1,6 @@
 r"""ユーザーPATHへの`bin`ディレクトリ群の登録（Windowsのみ）。
 
-dotfilesの作業ツリーの`bin`・`agent-toolkit\bin`と、`uv tool install`が実行ファイルを置く
+dotfilesの作業ツリーの`bin`・`agent-toolkit\scripts`と、`uv tool install`が実行ファイルを置く
 `%USERPROFILE%\.local\bin`を登録する。
 Linuxでは`~/.bashrc`が同じディレクトリをPATHへ追加する。
 Windowsには対応する自動投入経路がないため、`chezmoi apply`後処理で
@@ -19,7 +19,9 @@ _USERPROFILE = "%USERPROFILE%"
 
 
 def _bin_entries(dotfiles_root: Path | None, home: Path) -> tuple[str, ...]:
-    r"""登録するPATHの値を、Linux側`.chezmoi-source/dot_bashrc`の追加順序（dotfiles/bin → dotfiles/agent-toolkit/bin）で返す。
+    r"""登録するPATHの値を、Linux側`.chezmoi-source/dot_bashrc`と同じ追加順序で返す。
+
+    順序はdotfiles/bin、dotfiles/agent-toolkit/scriptsである。
 
     作業ツリーの位置は`find_dotfiles_root()`から求める。ホーム配下の値は`%USERPROFILE%`を残した相対表記で登録する。
     REG_EXPAND_SZなら展開されてプロファイルパスの変更にも追従でき、`cleanup_user_path`がPATH整理で置換する形とも一致する。
@@ -32,7 +34,7 @@ def _bin_entries(dotfiles_root: Path | None, home: Path) -> tuple[str, ...]:
             base = "\\".join((_USERPROFILE, *dotfiles_root.relative_to(home).parts))
         except ValueError:
             base = str(PureWindowsPath(dotfiles_root))
-        entries.extend((f"{base}\\bin", f"{base}\\agent-toolkit\\bin"))
+        entries.extend((f"{base}\\bin", f"{base}\\agent-toolkit\\scripts"))
     entries.append(f"{_USERPROFILE}\\.local\\bin")
     return tuple(entries)
 

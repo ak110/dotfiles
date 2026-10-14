@@ -9,6 +9,8 @@ disable-model-invocation: true
 
 メインがAWIを取得し、計画、実装、実行レビュー、終端を同じ実行の中で行う。レーンへ委譲して並列化する場合は`../process-wi/SKILL.md`を使う。実行中は自律モードとし、WIの共通契約は`../wi-standards/SKILL.md`、工程の責務と受渡しは`${CLAUDE_PLUGIN_ROOT}/share/workflow-phases.md`に従う。
 
+まとめ処理は、キューと対象worktreeを読み書きするファイル操作、Gitと`atk`のCLI、独立したレビュー担当の起動・受領と参照資料がそろう環境で行う。操作機能が無い場合は、提示されたWIの実施内容と計画の原稿を整理し、未実施の実装・レビュー・公開を明示する。実際の終端はClaude CodeまたはCodexへ渡し、原稿の文には[文章の品質基準](references/quality-standards.md)を使う。
+
 ## 読込表
 
 次の時点または条件が成立したら、その操作の前に同じ行の資料を全文読む。

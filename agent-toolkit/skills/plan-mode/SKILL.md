@@ -13,6 +13,8 @@ description: >
 工程の責務は`${CLAUDE_PLUGIN_ROOT}/share/workflow-phases.md`、計画ファイルの成果物契約は`references/plan-file-standards.md`が定める。WI本文の要求と由来は`agent-toolkit:wi-standards`、実装と実行レビューの内部手順は`${CLAUDE_PLUGIN_ROOT}/share/`配下の`<役割名>.subagent.md`が定める。
 計画は要件・外部仕様の水準で書き、起草者が続けて実装する。レビューは実装後の実行レビューだけで行う。
 
+計画バンドルの作成・検証・保存と実装への移行には、対象リポジトリ、プラグイン全体の参照資料、ファイル操作とCLIが必要である。機能が不足する環境では、提示された要件と資料から計画の原稿を返し、未確認の実装・検証・保存を明示する。正式な保存と実装は機能のあるClaude CodeまたはCodexで続け、原稿の文には[文章の品質基準](references/quality-standards.md)を使う。
+
 ## 読込表
 
 次の時点または条件が成立したら、その操作の前に同じ行の資料を全文読む。

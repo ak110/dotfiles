@@ -2,7 +2,7 @@
 
 from collections.abc import Iterable
 
-from agent_toolkit._common import host_homes, private_notes
+from agent_toolkit._common import host_homes, plugin_environment, private_notes
 
 PROXY_ENVIRONMENT_VARIABLES = (
     "http_proxy",
@@ -34,6 +34,9 @@ NAMESPACE_ENVIRONMENT_VARIABLES = (
     private_notes.PRIVATE_NOTES_ENV,
     host_homes.CLAUDE_CONFIG_DIR_ENV,
     host_homes.CODEX_HOME_ENV,
+    "CLAUDE_PLUGIN_DATA",
+    "PLUGIN_DATA",
+    plugin_environment.RUNTIME_DATA_ENV,
 )
 
 

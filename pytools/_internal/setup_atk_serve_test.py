@@ -233,13 +233,13 @@ class TestRunLauncherDeployment:
         prepared: pathlib.Path,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """ランチャーがdotfiles作業ツリーをprojectとして直接起動すること。"""
+        """常駐ランチャーは対象worktreeのscripts/launch.pyを経てserveを起動する。"""
         monkeypatch.setattr(systemd_user_unit, "setup", lambda **kwargs: True)
         assert setup_atk_serve.run().changed
 
         content = (prepared / ".local" / "bin" / "atk-serve").read_text(encoding="utf-8")
-        assert f'run --project "{prepared}/agent-toolkit" --locked --no-default-groups' in content
-        assert f'"{prepared}/agent-toolkit/agent_toolkit/atk.py" serve "$@"' in content
+        assert "run --no-config --no-project --python 3.15 python" in content
+        assert f'"{prepared}/agent-toolkit/scripts/launch.py" agent_toolkit/atk.py serve "$@"' in content
         assert "plugins/cache" not in content
         assert "--script" not in content
         assert "find " not in content

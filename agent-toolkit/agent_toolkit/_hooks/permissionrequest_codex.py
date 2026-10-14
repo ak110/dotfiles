@@ -75,7 +75,7 @@ def _is_trusted_atk_launcher(plugin_root: pathlib.Path) -> bool:
     launcher_name = "atk.cmd" if os.name == "nt" else "atk"
     candidates = (
         pathlib.Path.home() / ".local" / "bin" / launcher_name,
-        plugin_root / "bin" / launcher_name,
+        plugin_root / "scripts" / launcher_name,
     )
     resolved = pathlib.Path(executable).resolve(strict=True)
     for candidate in candidates:
@@ -94,8 +94,15 @@ def _cleanup_target(
     helper: pathlib.Path,
 ) -> pathlib.Path | None:
     """許可対象の新旧cleanupコマンドから対象パスを返す。"""
-    if tokens[:4] == ["atk", "managed-temp", "cleanup", "--path"] and len(tokens) == 5:
-        return pathlib.Path(tokens[4]) if _is_trusted_atk_launcher(plugin_root) else None
+    if len(tokens) == 5 and tokens[1:4] == ["managed-temp", "cleanup", "--path"]:
+        if tokens[0] == "atk":
+            return pathlib.Path(tokens[4]) if _is_trusted_atk_launcher(plugin_root) else None
+        executable = pathlib.Path(tokens[0])
+        launcher_name = "atk.cmd" if os.name == "nt" else "atk"
+        trusted = plugin_root / "scripts" / launcher_name
+        if executable.is_absolute() and executable.resolve(strict=True) == trusted.resolve(strict=True):
+            return pathlib.Path(tokens[4])
+        return None
     if len(tokens) != 8:
         return None
     if tokens[:5] != ["uv", "run", "--no-project", "--script", str(helper)]:

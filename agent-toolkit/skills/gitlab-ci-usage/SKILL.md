@@ -8,6 +8,8 @@ description: >
 
 # GitLab CIの使い方
 
+設定の検討には対象版の公式資料とYAMLの読取、最終確認には対象GitLabのlintへ到達する手段が必要である。GitLabやCLIへ到達できない環境では、提示された設定の検討結果と本体lintへ渡す入力を返し、通過判定はGitLabへ接続できるClaude CodeまたはCodexで確かめる。読み手へ伝える説明には[文章の品質基準](references/quality-standards.md)を使う。
+
 ## 読込表
 
 次の時点または条件が成立したら、その操作の前に同じ行の資料を全文読む。

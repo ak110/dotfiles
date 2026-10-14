@@ -193,7 +193,7 @@ extend-exclude = [
     ".chezmoi-source/dot_gemini/antigravity-cli/skills/japanese-tech-writing/SKILL.md",
 ]
 # chezmoi命名規則（dot_*・executable_*）のshellスクリプトと、拡張子を持たないbash製CLIラッパー
-# （agent-toolkit/bin/atk）をshfmtの対象に追加する
+# （agent-toolkit/scripts/atk）をshfmtの対象に追加する
 shfmt-extend-targets = ["*.sh.tmpl", "dot_bashrc", "dot_bash_profile", "executable_*", "atk"]
 # 上記shfmt対象と同じファイル群をshellcheckでも検査する
 shellcheck-extend-targets = ["dot_bashrc", "dot_bash_profile", "executable_*", "atk"]
@@ -239,7 +239,7 @@ targets = [
     "agent-toolkit/rules/*.md",
     "agent-toolkit/scripts/**/*.py",
     "agent-toolkit/agent_toolkit/**/*.py",
-    "agent-toolkit/bin/*",
+    "agent-toolkit/scripts/*",
     "agent-toolkit/completions/atk.bash",
     "completions/_pytools.bash",
     "install-claude.sh",
@@ -330,7 +330,7 @@ targets = [
     "agent-toolkit/agent_toolkit/*/*/*/*/*/*.py",
     "agent-toolkit/skills/*/scripts/*.py",
     "agent-toolkit/scripts/*.py",
-    "agent-toolkit/bin/*",
+    "agent-toolkit/scripts/*",
     "agent-toolkit/agent_toolkit/_atk/serve/static/*.css",
     "agent-toolkit/agent_toolkit/_atk/serve/static/*.js",
     "agent-toolkit/*.toml",

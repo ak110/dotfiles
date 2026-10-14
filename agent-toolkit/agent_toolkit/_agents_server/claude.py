@@ -30,12 +30,14 @@ from agent_toolkit._agents_server import (
     session_errors,
     wait_output_tracking,
 )
+from agent_toolkit._agents_server import plugin_root as plugin_roots
 from agent_toolkit._agents_server import state as shared_state
 from agent_toolkit._agents_server.launch_prompts import (
     AUTO_RESUME_NOTICE,
     CLAUDE_DELEGATE_SYSTEM_PROMPT,
     LAUNCH_SYSTEM_PROMPTS,
     LIGHTWEIGHT_LAUNCH_KINDS,
+    cli_runtime_instructions,
     python_runtime_instructions,
 )
 from agent_toolkit._agents_server.session_errors import SessionInitializationTimeoutError, SessionOwnerGoneError
@@ -47,7 +49,7 @@ from agent_toolkit._agents_server.state import (
     append_bounded,
     begin_reply,
 )
-from agent_toolkit._common import claude_usage_limit, process_tree
+from agent_toolkit._common import claude_usage_limit, plugin_environment, process_tree
 from agent_toolkit._common import delegated_session as _delegated_session
 from agent_toolkit._common import state_paths as _state_paths
 from agent_toolkit._common.next_action import ActionableError
@@ -311,7 +313,14 @@ def _build_options(
     """
     from claude_agent_sdk import ClaudeAgentOptions
 
-    env = {_delegated_session.DELEGATED_SESSION_ENV: "1"}
+    plugin_root = plugin_roots.SERVER_PLUGIN_ROOT
+    cli_env = plugin_environment.cli_environment(plugin_root, os.environ)
+    env = {
+        _delegated_session.DELEGATED_SESSION_ENV: "1",
+        "PATH": cli_env["PATH"],
+        plugin_environment.RUNTIME_DATA_ENV: cli_env[plugin_environment.RUNTIME_DATA_ENV],
+    }
+    cli_instructions = cli_runtime_instructions(plugin_root)
     # CLIのturn状態の報告（`SystemMessage`のsubtype `session_state_changed`）を受け取る。
     # Claude Agent SDKはこの変数が無い場合だけ報告を自身の判定用に要求し、呼び出し側のストリームから除く。
     # 結果の公開の判定に`idle`を使うため、全起動区分で有効にする（`_run`の`ResultMessage`の分岐を参照）。
@@ -338,15 +347,16 @@ def _build_options(
         # 起動直後の可用性待機をAPIの応答開始（`message_start`）で打ち切るため、部分出力のイベントを受け取る。
         "include_partial_messages": True,
         "env": env,
+        "plugins": [{"type": "local", "path": str(plugin_root)}],
         "max_buffer_size": _MAX_BUFFER_SIZE,
         "setting_sources": ["user"] if lightweight else ["user", "project"],
         "system_prompt": (
-            f"{LAUNCH_SYSTEM_PROMPTS[launch_kind]}\n{AUTO_RESUME_NOTICE}\n{python_runtime_instructions()}"
+            f"{LAUNCH_SYSTEM_PROMPTS[launch_kind]}\n{AUTO_RESUME_NOTICE}\n{python_runtime_instructions()}\n{cli_instructions}"
             if lightweight
             else {
                 "type": "preset",
                 "preset": "claude_code",
-                "append": f"{CLAUDE_DELEGATE_SYSTEM_PROMPT}\n{AUTO_RESUME_NOTICE}",
+                "append": f"{CLAUDE_DELEGATE_SYSTEM_PROMPT}\n{AUTO_RESUME_NOTICE}\n{cli_instructions}",
             }
         ),
     }

@@ -44,6 +44,7 @@ from agent_toolkit._agents_server.launch_prompts import (
     AUTO_RESUME_NOTICE,
     LAUNCH_SYSTEM_PROMPTS,
     LIGHTWEIGHT_LAUNCH_KINDS,
+    cli_runtime_instructions,
     python_runtime_instructions,
 )
 from agent_toolkit._agents_server.session_errors import SessionInitializationTimeoutError
@@ -61,7 +62,9 @@ from agent_toolkit._agents_server.wait_output_tracking import consume_agents_ser
 from agent_toolkit._atk import config as _atk_config
 from agent_toolkit._common import (
     codex_models,
+    inherited_venv,
     mcp_environment,
+    plugin_environment,
     process_tree,  # pylint: disable=wrong-import-position
 )
 from agent_toolkit._common import delegated_session as _delegated_session
@@ -151,7 +154,7 @@ def _developer_instructions(launch_kind: LaunchKind) -> str:
     plugin_root = plugin_roots.SERVER_PLUGIN_ROOT
     runtime = f"\n{python_runtime_instructions()}" if launch_kind in LIGHTWEIGHT_LAUNCH_KINDS else ""
     return (
-        f"{LAUNCH_SYSTEM_PROMPTS[launch_kind]}\n{AUTO_RESUME_NOTICE}{runtime}\n\n"
+        f"{LAUNCH_SYSTEM_PROMPTS[launch_kind]}\n{AUTO_RESUME_NOTICE}{runtime}\n{cli_runtime_instructions(plugin_root)}\n\n"
         f"agent-toolkit plugin root: {plugin_root}\n"
         "agent-toolkitのskillとplugin内部資源は、この実在する絶対パスを起点に読む。"
         "`<役割名>.subagent.md`や別hostのcache版数から別のplugin rootを組み立てない。"
@@ -266,7 +269,8 @@ class JsonRpcProcess:
             return
         self._initialization_stage = "starting_process"
         try:
-            environment = os.environ.copy()
+            environment = plugin_environment.cli_environment(plugin_roots.SERVER_PLUGIN_ROOT, os.environ)
+            inherited_venv.strip_inherited_venv(environment)
             environment.pop(_delegated_session.DELEGATED_SESSION_ENV, None)
             owner_session_id = self._root_session_id
             if owner_session_id is not None:
@@ -601,15 +605,18 @@ class AppServerManager:
                     "command": "uv",
                     "args": [
                         "run",
-                        "--project",
-                        str(plugin_root),
-                        "--locked",
-                        "--no-default-groups",
-                        str(plugin_root / "agent_toolkit" / "agents_server_mcp.py"),
+                        "--no-config",
+                        "--no-project",
+                        "--python",
+                        "3.15",
+                        "python",
+                        str(plugin_root / "scripts" / "launch.py"),
+                        "agent_toolkit/agents_server_mcp.py",
                     ],
                     "env": {
                         _delegated_session.OWNER_SESSION_ENV: owner_session_id,
                         "AGENT_TOOLKIT_STATUS_HOST_SESSION": writer_session_id,
+                        plugin_environment.RUNTIME_DATA_ENV: str(plugin_environment.runtime_data(os.environ)),
                     },
                     "env_vars": list(
                         mcp_environment.environment_variable_names(_atk_config.config_environment_variable_names())

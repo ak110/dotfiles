@@ -171,8 +171,8 @@ function Install-CodexPlugin {
     $hookWrapper = Join-Path $binDir 'atk-hook.cmd'
     $firstHookTransition = -not (Test-Path -LiteralPath $hookWrapper -PathType Leaf)
     $downloadRoot = $baseUrl -replace '/agent-toolkit/rules/?$', ''
-    Invoke-Download "$downloadRoot/agent-toolkit/bin/atk-hook" (Join-Path $binDir 'atk-hook')
-    Invoke-Download "$downloadRoot/agent-toolkit/bin/atk-hook.cmd" $hookWrapper
+    Invoke-Download "$downloadRoot/agent-toolkit/scripts/atk-hook" (Join-Path $binDir 'atk-hook')
+    Invoke-Download "$downloadRoot/agent-toolkit/scripts/atk-hook.cmd" $hookWrapper
     $oldCache = $null
     $savedCache = $null
     if ($firstHookTransition -and $beforeState.Present -and $beforeState.Version) {
@@ -241,7 +241,7 @@ function Initialize-AgentsServer {
             continue
         }
         $projectRoot = Split-Path (Split-Path $scriptPath -Parent) -Parent
-        $null | & uv run --project $projectRoot --locked --no-default-groups $scriptPath --check-dependencies *> $null
+        $null | & uv run --no-config --no-project --python 3.15 python (Join-Path $projectRoot 'scripts/launch.py') $scriptPath --check-dependencies *> $null
         if ($LASTEXITCODE -ne 0) {
             Write-Warning "agents_serverのuv環境ウォームアップに失敗しました: $scriptPath"
         }
@@ -326,7 +326,7 @@ function Move-LegacyCodexMcp {
 
 # ~/.local/bin/atk.cmd へラッパーを配置する。
 # インストール済み agent-toolkit プラグインの最新バージョンを動的解決するため、
-# 参照先パス（cache/<marketplace>/agent-toolkit/<version>/bin/atk.cmd）を実行時に決定する形とする。
+# 参照先パス（cache/<marketplace>/agent-toolkit/<version>/scripts/atk.cmd）を実行時に決定する形とする。
 # 直接コピーするとバージョン更新のたびに追随が必要となるため、実行時解決のラッパーを採用する。
 function Install-AtkWrapper {
     $binDir = Join-Path $HOME '.local/bin'
@@ -337,7 +337,7 @@ function Install-AtkWrapper {
 setlocal enabledelayedexpansion
 set "LATEST="
 rem ディレクトリ名の辞書順ではなく、[version]型の自然順で最新実体を選択する。
-for /f "usebackq delims=" %%A in (`powershell.exe -NoProfile -NonInteractive -Command "$root = Join-Path $env:USERPROFILE '.claude\plugins\cache'; Get-ChildItem -LiteralPath $root -Directory -ErrorAction SilentlyContinue | ForEach-Object { $plugin = Join-Path $_.FullName 'agent-toolkit'; if (Test-Path -LiteralPath $plugin -PathType Container) { Get-ChildItem -LiteralPath $plugin -Directory | ForEach-Object { $candidate = Join-Path $_.FullName 'bin\atk.cmd'; if (Test-Path -LiteralPath $candidate -PathType Leaf) { [PSCustomObject]@{ Version = [version]$_.Name; Path = $candidate } } } } } | Sort-Object Version -Descending | Select-Object -First 1 -ExpandProperty Path"`) do (
+for /f "usebackq delims=" %%A in (`powershell.exe -NoProfile -NonInteractive -Command "$root = Join-Path $env:USERPROFILE '.claude\plugins\cache'; Get-ChildItem -LiteralPath $root -Directory -ErrorAction SilentlyContinue | ForEach-Object { $plugin = Join-Path $_.FullName 'agent-toolkit'; if (Test-Path -LiteralPath $plugin -PathType Container) { Get-ChildItem -LiteralPath $plugin -Directory | ForEach-Object { $candidate = Join-Path $_.FullName 'scripts\atk.cmd'; if (-not (Test-Path -LiteralPath $candidate -PathType Leaf)) { $candidate = Join-Path $_.FullName 'bin\atk.cmd' }; if (Test-Path -LiteralPath $candidate -PathType Leaf) { [PSCustomObject]@{ Version = [version]$_.Name; Path = $candidate } } } } } | Sort-Object Version -Descending | Select-Object -First 1 -ExpandProperty Path"`) do (
     if not defined LATEST set "LATEST=%%A"
 )
 if not defined LATEST goto :not_found

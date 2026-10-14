@@ -25,7 +25,7 @@ Gitリポジトリの作成とGitコマンドの実行は`_testing/git_repositor
 サブパッケージは、所属と依存の向きの双方をディレクトリ階層で表す。
 
 これらのスクリプトだけを直下へ残すのは、ファイルパスが配布物の外部契約であるためである。
-`agent-toolkit/hooks/hooks.json`・`agent-toolkit/mcp.json`・`agent-toolkit/bin/atk`と2つのインストーラーは各ファイルのパスを直接指す。
+`agent-toolkit/hooks/hooks.json`・`agent-toolkit/mcp.json`・`agent-toolkit/scripts/atk`と2つのインストーラーは、共通の`scripts/launch.py`へ起動対象のパスを渡す。
 リモートホスト側のヘルパーは、リモートホスト上の固定パスから本文を読み込んで実行する。
 直下のスクリプトを含む全てのモジュールをサブパッケージへ移す案は、これらの外部契約を同時に変えるため採らない。
 

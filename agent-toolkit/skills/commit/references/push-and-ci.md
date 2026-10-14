@@ -51,7 +51,7 @@ CIを判定する場合は、push前に次のとおりbaselineを作成する。
 3. 読み込んだ本文書の絶対パスからplugin rootを確定する。`(destination ref, source ref)`ごとに次を実行する（`wait_ci.py`の所在は`<plugin-root>/agent_toolkit/`であり、`<plugin-root>/skills/commit/scripts/`とは別）
 
    ```text
-   uv run --project <plugin-root> --locked --no-default-groups <plugin-root>/agent_toolkit/wait_ci.py --write-baseline <手順1の領域>/<更新refごとに一意なファイル名>.json
+   uv run --no-config --no-project --python 3.15 python <plugin-root>/scripts/launch.py agent_toolkit/wait_ci.py --write-baseline <手順1の領域>/<更新refごとに一意なファイル名>.json
    ```
 
 baseline作成と監視では`--repo`（`owner/repo`かホストを含むURL。ローカルパスではない）、`--forge <github|gitlab>`、`--ref`、`--source-ref`をすべて指定する。その他の引数は`--help`で確かめる。複数refでは組ごとにbaselineを作成し、1件が失敗しても他を続ける。

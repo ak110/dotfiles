@@ -223,8 +223,8 @@ def _check_task_stop(session_id: str, tool_input: dict) -> str | None:
             f"{_plugin_resources.skill_reference('delegation', 'references/waiting-and-monitoring.md')}"
             "「停滞の検知と巻き取り」節に従い、"
             "対象別の停滞検知完了記録を作成してからTaskStopを実行する。"
-            '記録は`uv run --project "${CLAUDE_PLUGIN_ROOT}" --locked --no-default-groups '
-            '"${CLAUDE_PLUGIN_ROOT}/skills/delegation/scripts/record_stall_detection.py" '
+            "記録は`uv run --no-config --no-project --python 3.15 python "
+            '"${CLAUDE_PLUGIN_ROOT}/scripts/launch.py" skills/delegation/scripts/record_stall_detection.py '
             "--session-id <現在のCLAUDE_CODE_SESSION_ID> --task-id <停止対象の完全なタスクID>`で作成し、"
             "終了コード0を返した対象だけを5分以内に停止する。"
         ),

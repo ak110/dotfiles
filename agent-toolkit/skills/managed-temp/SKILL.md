@@ -10,6 +10,8 @@ description: >
 
 一時ファイルの置き場所と、managed-tempの中へ個別のディレクトリを作成する例外用途を定める。
 
+領域の作成と回収には、対象のファイルを操作できるホストと`atk`が必要である。これらが無い環境では、保存する内容と保存先に求める条件を整理した原稿を返し、実際の保存と回収はClaude CodeまたはCodexで行う。[文章の品質基準](references/quality-standards.md)はこのスキルフォルダー内で読める。
+
 ## セッションのmanaged-temp
 
 SessionStartはセッションごとにmanaged-tempの中へ専用のディレクトリ（セッションのmanaged-temp）を作成し、その絶対パスを文脈へ通知する。

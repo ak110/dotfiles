@@ -7,7 +7,7 @@
 
 `pyproject.toml`の`[project.scripts]`に登録された`pytools`系コマンドと、
 `agent-toolkit/agent_toolkit/*.py`のうち`# PYTHON_ARGCOMPLETE_OK`マーカーを持ち
-対応するbashラッパーが`agent-toolkit/bin/`配下に存在するコマンドを補完対象とする。
+対応するbashラッパーが`agent-toolkit/scripts/`配下に存在するコマンドを補完対象とする。
 出力先ファイルは手編集禁止（prekフックで再生成される）。
 
 使い方:
@@ -29,7 +29,7 @@ _PYPROJECT = _REPO_ROOT / "pyproject.toml"
 _PYTOOLS_OUTPUT = _REPO_ROOT / "completions" / "_pytools.bash"
 _ATK_OUTPUT = _REPO_ROOT / "agent-toolkit" / "completions" / "atk.bash"
 _AGENT_TOOLKIT_PACKAGE = _REPO_ROOT / "agent-toolkit" / "agent_toolkit"
-_AGENT_TOOLKIT_BIN = _REPO_ROOT / "agent-toolkit" / "bin"
+_AGENT_TOOLKIT_SCRIPTS = _REPO_ROOT / "agent-toolkit" / "scripts"
 
 _MARKER = "# PYTHON_ARGCOMPLETE_OK"
 
@@ -126,7 +126,7 @@ def _collect_agent_toolkit_commands() -> list[str]:
             continue
         if not _has_marker(script_path):
             continue
-        wrapper = _AGENT_TOOLKIT_BIN / script_path.stem
+        wrapper = _AGENT_TOOLKIT_SCRIPTS / script_path.stem
         if not wrapper.is_file():
             continue
         result.append(script_path.stem)

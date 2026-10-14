@@ -23,7 +23,7 @@ class _Env:
     pytools_output: pathlib.Path
     atk_output: pathlib.Path
     package_dir: pathlib.Path
-    bin_dir: pathlib.Path
+    scripts_dir: pathlib.Path
 
 
 @pytest.fixture
@@ -34,9 +34,9 @@ def _env(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> _Env:
     pytools_output = tmp_path / "completions" / "_pytools.bash"
     atk_output = tmp_path / "agent-toolkit" / "completions" / "atk.bash"
     package_dir = tmp_path / "agent-toolkit" / "agent_toolkit"
-    bin_dir = tmp_path / "agent-toolkit" / "bin"
+    scripts_dir = tmp_path / "agent-toolkit" / "scripts"
     package_dir.mkdir(parents=True)
-    bin_dir.mkdir(parents=True)
+    scripts_dir.mkdir(parents=True)
     pytools_output.parent.mkdir()
     atk_output.parent.mkdir()
     pyproject.write_text('[project]\nname = "x"\n', encoding="utf-8")
@@ -45,7 +45,7 @@ def _env(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> _Env:
     monkeypatch.setattr(module, "_PYTOOLS_OUTPUT", pytools_output)
     monkeypatch.setattr(module, "_ATK_OUTPUT", atk_output)
     monkeypatch.setattr(module, "_AGENT_TOOLKIT_PACKAGE", package_dir)
-    monkeypatch.setattr(module, "_AGENT_TOOLKIT_BIN", bin_dir)
+    monkeypatch.setattr(module, "_AGENT_TOOLKIT_SCRIPTS", scripts_dir)
     return _Env(
         module=module,
         repo_root=tmp_path,
@@ -53,7 +53,7 @@ def _env(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> _Env:
         pytools_output=pytools_output,
         atk_output=atk_output,
         package_dir=package_dir,
-        bin_dir=bin_dir,
+        scripts_dir=scripts_dir,
     )
 
 
@@ -63,7 +63,7 @@ class TestMainFileScanConditions:
     def test_marker_and_wrapper_present_is_included(self, _env: _Env) -> None:
         """argcompleteマーカーを持ちbashラッパーが存在するスクリプトは補完対象へ含まれる。"""
         (_env.package_dir / "foo.py").write_text("# PYTHON_ARGCOMPLETE_OK\n", encoding="utf-8")
-        (_env.bin_dir / "foo").write_text("#!/bin/sh\n", encoding="utf-8")
+        (_env.scripts_dir / "foo").write_text("#!/bin/sh\n", encoding="utf-8")
         assert _env.module.main([]) == 0
         content = _env.atk_output.read_text(encoding="utf-8")
         assert "complete -o nospace -o default -o bashdefault -F _python_argcomplete foo" in content
@@ -71,7 +71,7 @@ class TestMainFileScanConditions:
     def test_underscore_prefixed_script_is_excluded(self, _env: _Env) -> None:
         """アンダースコア始まりのスクリプトはマーカー・ラッパーを持っていても走査対象から除外される。"""
         (_env.package_dir / "_internal.py").write_text("# PYTHON_ARGCOMPLETE_OK\n", encoding="utf-8")
-        (_env.bin_dir / "_internal").write_text("#!/bin/sh\n", encoding="utf-8")
+        (_env.scripts_dir / "_internal").write_text("#!/bin/sh\n", encoding="utf-8")
         _env.module.main([])
         content = _env.atk_output.read_text(encoding="utf-8")
         assert "_internal" not in content
@@ -79,13 +79,13 @@ class TestMainFileScanConditions:
     def test_script_without_marker_is_excluded(self, _env: _Env) -> None:
         """argcompleteマーカーを持たないスクリプトは補完対象から除外される。"""
         (_env.package_dir / "bar.py").write_text("print('no marker')\n", encoding="utf-8")
-        (_env.bin_dir / "bar").write_text("#!/bin/sh\n", encoding="utf-8")
+        (_env.scripts_dir / "bar").write_text("#!/bin/sh\n", encoding="utf-8")
         _env.module.main([])
         content = _env.atk_output.read_text(encoding="utf-8")
         assert "bar" not in content
 
     def test_script_without_wrapper_is_excluded(self, _env: _Env) -> None:
-        """対応するbashラッパーが`agent-toolkit/bin/`配下に存在しないスクリプトは補完対象から除外される。"""
+        """対応するbashラッパーが`agent-toolkit/scripts/`配下に存在しないスクリプトは補完対象から除外される。"""
         (_env.package_dir / "baz.py").write_text("# PYTHON_ARGCOMPLETE_OK\n", encoding="utf-8")
         _env.module.main([])
         content = _env.atk_output.read_text(encoding="utf-8")
@@ -105,7 +105,7 @@ class TestMainOutputRouting:
         pkg.mkdir()
         (pkg / "mytool.py").write_text("# PYTHON_ARGCOMPLETE_OK\n", encoding="utf-8")
         (_env.package_dir / "atktool.py").write_text("# PYTHON_ARGCOMPLETE_OK\n", encoding="utf-8")
-        (_env.bin_dir / "atktool").write_text("#!/bin/sh\n", encoding="utf-8")
+        (_env.scripts_dir / "atktool").write_text("#!/bin/sh\n", encoding="utf-8")
 
         assert _env.module.main([]) == 0
 
