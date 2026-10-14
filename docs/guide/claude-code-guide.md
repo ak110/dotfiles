@@ -127,7 +127,7 @@ ZIPの直下には`.claude-plugin/plugin.json`と`skills/`が置かれ、`bin/`�
 
 ### Claude Codeクラウドの環境設定
 
-Claude Code 2.1.280以上を使い、クラウドの環境設定で次の変数を保存する。ディレクトリはセットアップとセッションの両方から読める同じ絶対パスにする。[CLAUDE_CODE_PLUGIN_DIRSの仕様](https://code.claude.com/docs/en/env-vars)は、相対パスを読み込まないことと必要なCLI版を定める。
+Claude Code 2.1.280以上を使い、クラウドの環境設定で次の変数を保存する。ディレクトリはセットアップとセッションの両方から読める同じ絶対パスにする。[CLAUDE_CODE_PLUGIN_DIRSの仕様](https://code.claude.com/docs/en/env-vars)は相対パスを読み込まないことと必要なCLI版を定める。
 
 ```dotenv
 CLAUDE_CODE_PLUGIN_DIRS=/opt/agent-toolkit-src/agent-toolkit
@@ -146,7 +146,7 @@ AGENT_TOOLKIT_RUNTIME_DATA=/opt/agent-toolkit-data \
   agent_toolkit/agents_server_mcp.py --check-dependencies
 ```
 
-環境変数は環境設定の欄へ保存する。セットアップ内だけの`export`を後続セッションの設定として使わない。リポジトリの`enabledPlugins`だけではクラウドがプラグインを導入しない。セットアップの終了0、依存検査の成功、新しいセッションのスキル一覧・CLI案内・MCPの接続を順に確認する。setupの制限時間とネットワーク設定は[クラウド環境の設定](https://code.claude.com/docs/en/cloud-environments)を参照。
+環境変数は環境設定の欄へ保存する。セットアップ内だけの`export`を後続セッションの設定として使わない。リポジトリの`enabledPlugins`だけではクラウドがプラグインを導入しない。セットアップの終了0、依存の確認（`--check-dependencies`）の成功、新しいセッションのスキル一覧・CLI案内・MCPの接続を順に確認する。setupの制限時間とネットワーク設定は[クラウド環境の設定](https://code.claude.com/docs/en/cloud-environments)を参照。
 
 ## 処理順序
 

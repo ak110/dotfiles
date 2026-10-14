@@ -213,7 +213,7 @@ def test_runtime_data_is_shared_by_hosts_and_falls_back_to_host_data(tmp_path: P
     terminal = subject.runtime_data(shared)
     assert claude == codex == terminal == (tmp_path / "user-data" / "agent-toolkit").resolve()
     blocked = tmp_path / "blocked"
-    blocked.write_text("ディレクトリを作れない位置", encoding="utf-8")
+    blocked.write_text("ディレクトリを作成できない位置", encoding="utf-8")
     fallback = subject.runtime_data({**_user_data(blocked), "CLAUDE_PLUGIN_DATA": str(tmp_path / "claude-data")})
     assert fallback == (tmp_path / "claude-data").resolve()
     explicit = subject.runtime_data({**shared, subject.RUNTIME_DATA_ENV: str(tmp_path / "explicit")})

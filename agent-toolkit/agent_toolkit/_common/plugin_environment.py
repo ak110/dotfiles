@@ -74,7 +74,7 @@ def launch_environment(root: Path, environment: Mapping[str, str]) -> dict[str, 
 def launch_command(root: Path, target: Path) -> list[str]:
     """配布root内のスクリプトを、配布root外の依存環境で起動するargvを返す。
 
-    `uv run --project <root>`を直接案内すると配布rootへ仮想環境を作るため、案内文もこの形を使う。
+    `uv run --project <root>`を直接案内すると配布rootへ仮想環境が作成されるため、案内文もこの形を使う。
     """
     launcher = root.resolve() / "scripts" / "launch.py"
     return ["uv", "run", "--no-config", "--no-project", "--python", "3.15", "python", str(launcher), str(target)]

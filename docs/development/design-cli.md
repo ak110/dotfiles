@@ -33,11 +33,11 @@ dotfilesの`bin/atk`はworktreeの選択だけを担い、配布物の実装、P
 
 プラグインのCLIは、Chat・Coworkがインストールを拒否する直下の`bin/`を避けて`scripts/`へ同梱する。
 `scripts/launch.py`は標準ライブラリだけで配布rootと書き込み可能なデータ領域を解決し、その後にlockfileを使うuvの依存導入を起動する。
-CLI・hook・MCPはこの入口を共用し、登録済みスキルスクリプトはCLIと同じ環境内で実行する。
+CLI・hook・MCPはこのスクリプトから起動し、登録済みスキルスクリプトはCLIと同じ環境内で実行する。
 配布rootと依存宣言・lockfile・版数から環境の保存先を分け、更新前後や別worktreeの環境を取り違えない。
 データ領域は`AGENT_TOOLKIT_RUNTIME_DATA`の明示指定を優先し、次にOSのユーザーデータ領域を使う。
-ホストが渡す`CLAUDE_PLUGIN_DATA`・`PLUGIN_DATA`は、ユーザーデータ領域へ書き込めない場合だけ使う。
-ホストごとのplugin dataを優先すると、導入後のウォームアップ・端末の`atk`・Claude Code・Codexが同じ版の環境を別々に構築し、ウォームアップが初回のhookへ効かないためである。
+ホストが渡す`CLAUDE_PLUGIN_DATA`と`PLUGIN_DATA`はユーザーデータ領域へ書き込めない場合だけ使う。
+ホストごとのplugin dataを優先すると、導入後のウォームアップ・端末の`atk`・Claude Code・Codexが同じ版の環境を別々に構築し、初回のhookがウォームアップ済みの環境を使えないためである。
 root・data・環境の導出は`agent_toolkit/_common/plugin_environment.py`が所有し、各SDKへ同じ判断を複写しない。
 
 ## 有限終了コマンドの出力と終了状態の保持

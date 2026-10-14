@@ -41,7 +41,7 @@ def main() -> int:
         root = source.parent.parent if bundled else _installed_root()
         launcher = root / "scripts" / "launch.py"
         # プラグイン外の旧呼出し用shimは、更新失敗・延期中の導入済み旧版も起動する。
-        # 新しい配布内の直接呼出しは、この互換経路を使わず自身のlaunch.pyを必須とする。
+        # 新しい配布内の直接呼出しは、この互換の起動方法を使わず自身のlaunch.pyを必須とする。
         if not bundled and not launcher.is_file() and (root / "agent_toolkit/hook.py").is_file():
             return subprocess.call([
                 "uv", "run", "--project", str(root), "--locked", "--no-default-groups",
