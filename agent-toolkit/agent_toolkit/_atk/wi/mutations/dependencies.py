@@ -44,8 +44,8 @@ def set_entry_dependencies(
 ) -> dict[str, object | None]:
     """既存AWIの明示依存だけを更新し、保存済みメタデータを返す。
 
-    対象は未終端の`inbox`、`processing`および`hold`とする。`hold`を含めるのは、投入済み項目の修正手順が
-    投入済み項目を修正する際は、`hold`中に本文と依存を確定する。そのため、この状態でも依存を更新できる必要がある。
+    対象は未終端の`inbox`、`processing`および`hold`とする。`hold`を含めるのは、投入済み項目を修正する手順が
+    `hold`中に本文と依存を確定するためであり、この状態でも依存を更新できる必要がある。
     依存の更新は保存状態を変えないため、`hold`の項目は更新後も`hold`のまま残る。
     """
     inbox_dir = private_notes / WI_STATE_INBOX

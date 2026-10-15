@@ -48,12 +48,151 @@ def _user_events(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], *te
     return output
 
 
-def _run(body_path: pathlib.Path, *sources: pathlib.Path) -> int:
+def _run(body_path: pathlib.Path, *sources: pathlib.Path, import_spec: pathlib.Path | None = None) -> int:
     args = argparse.Namespace(
         script_name="wi-quote-check",
-        script_args=["--", str(body_path), *(item for source in sources for item in ("--source", str(source)))],
+        script_args=[
+            "--",
+            str(body_path),
+            *(item for source in sources for item in ("--source", str(source))),
+            *(["--import-spec", str(import_spec)] if import_spec is not None else []),
+        ],
     )
     return run_script.dispatch(args)
+
+
+def _spec(tmp_path: pathlib.Path, *selections: dict[str, object]) -> pathlib.Path:
+    path = tmp_path / "selection.json"
+    path.write_text(json.dumps(selections, ensure_ascii=False), encoding="utf-8")
+    return path
+
+
+def test_public_import_uses_saved_source_and_checks_result(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
+    """生成側が保存した出所を`--import-spec`で取り込み、原稿の更新、一致判定と単位の位置を同じ実行で得る。"""
+    events = _user_events(tmp_path, capsys, _UTTERANCE)
+    event = json.loads(events.read_text(encoding="utf-8").splitlines()[0])
+    body = tmp_path / "body.md"
+    before = _body("旧引用") + "\n## 次の節\n\n残す本文。\n"
+    body.write_text(before, encoding="utf-8")
+    spec = _spec(tmp_path, {"source": str(events), "record": event["record"], "line": event["line"]})
+
+    assert _run(body, import_spec=spec) == 0
+    output = capsys.readouterr().out
+    after = body.read_text(encoding="utf-8")
+    assert after.partition("## ユーザー指摘の逐語引用")[0] == before.partition("## ユーザー指摘の逐語引用")[0]
+    assert after.partition("## 次の節")[2] == before.partition("## 次の節")[2]
+    assert f"record={event['record']} line={event['line']}" in after
+    assert f"```text\n{_UTTERANCE}\n```" in after
+    assert [unit for _, _, _, unit in _positions(output)] == [
+        "検索画面の表示を直して。",
+        "最近の記録も調べて。",
+        "手順を簡潔にして。",
+    ]
+    assert _run(body, events) == 0
+
+
+def test_import_preserves_source_modes_and_answer_context(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
+    """複数出所・同位置の選択を配列順で取り込み、確認の文脈とユーザー値を保つ。"""
+    events = _user_events(tmp_path, capsys, "前置き。指定部分。後置き。", "全体を残して。\n```text\n## 内側の見出し\n```")
+    user = [json.loads(line) for line in events.read_text(encoding="utf-8").splitlines() if line.strip()]
+    extra = tmp_path / "answers.jsonl"
+    answer = {
+        **_ANSWER_EVENT,
+        "assistant_context": [
+            {
+                "question": "一時障害をどう扱いますか。",
+                "options": [
+                    {"label": "失敗扱い", "description": "失敗にします。"},
+                    {"label": "確認を省く", "description": "確認しません。"},
+                    {"label": "維持", "description": "現状を保ちます。"},
+                ],
+            }
+        ],
+    }
+    command = {
+        "kind": "user",
+        "record": answer["record"],
+        "line": 557,
+        "sequence": 4,
+        "text": "<command-name>/指示</command-name>\n<command-args>引数だけを残して。\n二行目。</command-args>",
+    }
+    extra.write_text(
+        json.dumps(answer, ensure_ascii=False) + "\n" + json.dumps(command, ensure_ascii=False) + "\n", encoding="utf-8"
+    )
+    body = tmp_path / "body.md"
+    body.write_text(_body("旧引用") + "\n## 次の節\n残す。\n", encoding="utf-8")
+    spec = _spec(
+        tmp_path,
+        {"source": str(extra), "record": answer["record"], "line": 557, "sequence": 4, "mode": "command-args"},
+        {"source": str(events), "record": user[0]["record"], "line": user[0]["line"], "mode": "range", "start": 5, "end": 9},
+        {"source": str(extra), "record": answer["record"], "line": 557, "sequence": 3, "mode": "answer"},
+        {"source": str(events), "record": user[1]["record"], "line": user[1]["line"]},
+    )
+    assert _run(body, import_spec=spec) == 0
+    after = body.read_text(encoding="utf-8")
+    order = [after.index(text) for text in ("引数だけを残して。", "指定部分。", "質問: 一時障害", "全体を残して。")]
+    assert order == sorted(order)
+    assert "選択肢: 維持: 現状を保ちます。" in after
+    assert "回答: 失敗扱い\n確認を省く\n自由記述: 夜間だけ止めて。" in after
+    assert "````text\n全体を残して。\n```text\n## 内側の見出し\n```\n````" in after
+    positions = _positions(capsys.readouterr().out)
+    assert any(number == 3 and unit == "夜間だけ止めて。" for number, _, _, unit in positions)
+    assert not any("一時障害" in unit or "現状を保ちます" in unit for _, _, _, unit in positions)
+    assert _run(body, extra, events) == 0
+
+
+@pytest.mark.parametrize("failure", ["missing", "ambiguous", "range", "invalid-json", "invalid-answer", "invalid-sequence"])
+def test_import_failure_keeps_draft_unchanged(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], failure: str) -> None:
+    """後続の選択が不成立でも先行分を書かず、非0と入力の修正案内を返す。"""
+    events = tmp_path / "events.jsonl"
+    event = {"kind": "user", "text": "残す原文。", "record": "claude:example", "line": 9, "sequence": 1}
+    records = [event, {**event, "sequence": 2}]
+    if failure == "invalid-answer":
+        records[1] = {**records[1], "assistant_context": [], "user_response": []}
+    events.write_text("".join(json.dumps(value, ensure_ascii=False) + "\n" for value in records), encoding="utf-8")
+    body = tmp_path / "body.md"
+    before = (_body("旧引用") + "\n## 次の節\n残す。\n").replace("\n", "\r\n").encode("utf-8")
+    body.write_bytes(before)
+    first: dict[str, object] = {"source": str(events), "record": "claude:example", "line": 9, "sequence": 1}
+    second = {**first, "sequence": 2}
+    if failure == "missing":
+        second["line"] = 10
+    elif failure == "ambiguous":
+        del second["sequence"]
+    elif failure == "range":
+        second.update(mode="range", start=2, end=999)
+    elif failure == "invalid-answer":
+        second["mode"] = "answer"
+    elif failure == "invalid-sequence":
+        second["sequence"] = True
+    spec = _spec(tmp_path, first, second)
+    if failure == "invalid-json":
+        spec.write_text("[", encoding="utf-8")
+    assert _run(body, import_spec=spec) == 2
+    assert body.read_bytes() == before
+    assert "次の操作:" in capsys.readouterr().err
+
+
+def test_import_preserves_verbatim_line_endings_and_draft_bytes(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """CRLFの原稿の節外をバイト列で保ち、原文の改行を原稿への取り込みと原文の比較で維持する。"""
+    content = "一行目を残して。\r\n二行目も残して。\n"
+    # 保存済みJSONLを入力にする。抽出前のtranscriptでは抽出側が末尾改行を除くため、末尾の保全を検証できない。
+    event = {"kind": "user", "text": content, "record": "claude:example", "line": 9}
+    events = tmp_path / "events.jsonl"
+    events.write_text(json.dumps(event, ensure_ascii=False) + "\n", encoding="utf-8")
+    body = tmp_path / "body.md"
+    prefix = b"\xef\xbb\xbf" + "# 題\r\n\r\n## ユーザー指摘の逐語引用\r\n".encode()
+    suffix = "## 次の節\r\n保持する。\r\n".encode()
+    body.write_bytes(prefix + "\r\n旧引用\r\n\r\n".encode() + suffix)
+    spec = _spec(tmp_path, {"source": str(events), "record": event["record"], "line": event["line"]})
+    assert _run(body, import_spec=spec) == 0
+    after = body.read_bytes()
+    assert after.startswith(prefix) and after.endswith(suffix)
+    assert ("```text\n" + content + "\n```").encode("utf-8") in after
+    assert "文字11-18" in capsys.readouterr().out
+    assert _run(body, events) == 0
 
 
 def _positions(output: str) -> list[tuple[int, int, int, str]]:

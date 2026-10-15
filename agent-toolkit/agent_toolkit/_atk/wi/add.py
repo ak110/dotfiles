@@ -37,7 +37,7 @@ def _saved_mismatch_next_action(filename: str) -> str:
 
 
 def _target_repo_error(value: object, error: WebInputError) -> WebInputError:
-    """target_repoの解決失敗を、投入の失敗行1本へ包む。"""
+    """target_repoの解決失敗を、投入を拒否する1件の`WebInputError`へ変換する。"""
     return WebInputError(f"target_repoを解決できません: {value}（{error.reason}）", next_action=error.next_action)
 
 
@@ -239,7 +239,21 @@ _UNDETERMINED_CAUSE_RE = re.compile(r"(?:未確定|不明|未特定|調査中|�
 値の冒頭の語が単独で置かれるか、直後に句読点・空白・括弧・Markdown装飾の閉じ記号などの区切りが続く場合だけを宣言とみなす。
 確定した原因の説明に現れる同じ語（「不明だった設定を特定した」「旧値の残存。不明だった由来を特定した」など）は拒否しない。
 """
-_TABLE_CELL_DECORATION = "*_`~ \t"
+_TABLE_CELL_DECORATION = "*_`~"
+
+
+def _strip_table_cell(cell: str) -> str:
+    """表のセル値から前後の空白とMarkdown装飾を除く。
+
+    空白はUnicodeの空白（全角空白を含む）として扱い、装飾と空白が交互に並ぶ場合も除き切る。
+    """
+    while True:
+        stripped = cell.strip().strip(_TABLE_CELL_DECORATION)
+        if stripped == cell:
+            return cell
+        cell = stripped
+
+
 _MARKDOWN = markdown_it.MarkdownIt("gfm-like", {"html": False, "linkify": False})
 UNDETERMINED_CAUSE_NEXT_ACTION = (
     "直接的原因を現物の観測で確定してから本文を書き直して再実行する。"
@@ -259,7 +273,7 @@ def undetermined_cause_rows(body: str) -> list[str]:
         if token.type != "table_open" or token.map is None:
             continue
         for line in lines[token.map[0] : token.map[1]]:
-            cells = [cell.strip(_TABLE_CELL_DECORATION) for cell in line.strip().strip("|").split("|")]
+            cells = [_strip_table_cell(cell) for cell in line.strip().strip("|").split("|")]
             if len(cells) >= 2 and cells[0] == _DIRECT_CAUSE_LABEL and _UNDETERMINED_CAUSE_RE.match(cells[1]):
                 rows.append(line.strip())
     return rows
@@ -284,8 +298,8 @@ def require_confirmed_cause(body: str) -> None:
 def _require_agent_source(frontmatter: dict[str, object], source: str | None) -> None:
     """CLIのエージェント投入でsourceが確定していることを検証する。
 
-    環境変数では呼出元を区別できないため、ユーザーの手動投入を受領する
-    この確認はWeb UI等の共有保存関数には適用しない。
+    Web UI等が使う共有保存関数はユーザーの手動投入も受け付け、環境変数では呼出元を区別できないため、
+    この確認は共有保存関数には適用しない。
     """
     raw_source = frontmatter.get("source", source)
     item_source = raw_source if isinstance(raw_source, str) else source
@@ -363,7 +377,7 @@ def _resolve_submitter_session() -> str | None:
 
     委譲先は委譲元のセッションを返すため、委譲先が投入したUWIも委譲元のセッションへ通知される。
     解決できない場合と、会話へ対応しないプロセス専用の識別子だった場合は`None`を返す。
-    計画の所有会話と同じ判定を使う。
+    計画ファイルを所有する会話の判定と同じ処理を使う。
     """
     return _owner_records.resolve_conversation_session_id()
 
@@ -475,7 +489,7 @@ def add_entries(
     skip_remote_sync: bool = False,
     submitter_session: str | None = None,
 ) -> list[str]:
-    """平引数でメッセージキューのエントリを追加し、生成ファイル名を返す。
+    """個別の引数を受け取ってキューへエントリを追加し、生成ファイル名を返す。
 
     frontmatterの予約キー（`_RESERVED_FRONTMATTER_KEYS`）以外のキーは入力順で出力frontmatterへ引き継ぐ。
     UWI種別では、本文がツール側で自動付与する見出し・回答欄マーカーを含む場合に
@@ -639,14 +653,14 @@ def cmd_add(
 ) -> None:
     """addサブコマンド: メッセージをinboxへ投入してcommit・push。
 
-    対象リポジトリは常にカレントディレクトリから解決する。ただし`mq add`直後のトークンが実在
+    対象リポジトリは常にカレントディレクトリから解決する。ただし`atk wi add`直後のトークンが実在
     ディレクトリの場合は旧REPO_PATH位置引数形式の呼び出しとみなし、`atk.py`側の事前抽出で
     その引数をREPO_PATHとして扱う（互換維持、抽出結果は`args.repo_path_override`で受け取る）。
     各メッセージ先頭がYAML frontmatter形式の場合は`target_repo`・`source`をCLIオプションより優先する。
     `--target-repo`指定時は、レガシーREPO_PATH位置引数が無くfrontmatterにも`target_repo`が
     無い場合のfallback値として使う。
     エディター経由の本文確定後に対象worktreeのHEADを取得してから`_wi_sync.pull`を実行する順序とし、
-    エディター起動前のブロッキング待ち（他端末の投入分を反映するremote同期）を無くしてUXを改善する。
+    エディターの起動前に、他端末の投入分を反映するremote同期の完了を投入者が待たずに済むようにする。
     remote同期失敗時はエディターで確定済みの本文をstderrへ再表示してから終了し、入力内容の消失を防ぐ。
     各メッセージの本文が実質空（`body_is_effectively_empty`）の場合は`_wi_sync.repo_lock`取得前に拒否する。
     `--body-file`を指定した場合はそのファイルの内容を本文として扱う。

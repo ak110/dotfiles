@@ -1,16 +1,22 @@
 """pytools._internal.codex_plugin_manifests のテスト。"""
 
+import asyncio
+import http.server
 import json
 import os
 import shlex
 import shutil
 import subprocess
 import sys
+import threading
+from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 
 import pytest
 from agent_toolkit._agents_server import codex as codex_backend
+from agent_toolkit._atk import config as toolkit_config
+from agent_toolkit._common import mcp_environment, proxy_environment
 from agent_toolkit._testing import isolation
 
 from pytools._internal import codex_plugin_manifests as subject
@@ -19,6 +25,9 @@ from pytools._internal import common
 _CODEX_HOME = Path(os.environ.get("CODEX_HOME", str(Path.home() / ".codex"))).expanduser()
 _CODEX_PLUGIN_VALIDATOR = _CODEX_HOME / "skills/.system/plugin-creator/scripts/validate_plugin.py"
 _CODEX_PLUGIN_VALIDATOR_AVAILABLE = shutil.which("codex") is not None and _CODEX_PLUGIN_VALIDATOR.is_file()
+_CODEX_HOOK_PREFIX = (
+    'uv run --no-config --no-project --python 3.15 python "${PLUGIN_ROOT}/scripts/launch.py" agent_toolkit/hook.py '
+)
 
 
 def _plugin_data() -> dict[str, Any]:
@@ -65,7 +74,7 @@ def manifest_root_fixture(tmp_path: Path) -> Path:
             subject.HOOKS_SOURCE,
             {
                 "hooks": {
-                    "SessionStart": [{"hooks": [{"type": "command", "command": subject.CODEX_RULES_CONTEXT_COMMAND}]}],
+                    "SessionStart": [{"hooks": [{"type": "command", "command": subject.CODEX_SESSION_START_COMMAND}]}],
                     "SubagentStart": [{"hooks": [{"type": "command", "command": subject.CODEX_RULES_CONTEXT_COMMAND}]}],
                     "PreToolUse": [
                         {
@@ -96,8 +105,8 @@ def manifest_root_fixture(tmp_path: Path) -> Path:
                             "hooks": [
                                 {
                                     "type": "command",
-                                    "command": 'uv run --project "${CLAUDE_PLUGIN_ROOT}" --locked --no-default-groups '
-                                    '"${CLAUDE_PLUGIN_ROOT}"/agent_toolkit/hook.py permissionrequest',
+                                    "command": "uv run --no-config --no-project --python 3.15 python "
+                                    '"${CLAUDE_PLUGIN_ROOT}/scripts/launch.py" agent_toolkit/hook.py permissionrequest',
                                 }
                             ],
                         },
@@ -123,6 +132,87 @@ def manifest_root_fixture(tmp_path: Path) -> Path:
     cache.write_text("ignored", encoding="utf-8")
     subprocess.run(["git", "init", "--quiet"], cwd=tmp_path, check=True)
     return tmp_path
+
+
+@pytest.fixture(name="quality_root")
+def _quality_root(manifest_root: Path) -> Path:
+    """品質原本と、単独配布する2スキルを持つ最小の配布元を用意する。"""
+    for name in ("alpha", "beta", "writing-standards"):
+        path = manifest_root / "agent-toolkit/skills" / name / "SKILL.md"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        reference = "writing.md" if name == "writing-standards" else "quality-standards.md"
+        path.write_text(f"# {name}\n\n[品質基準](references/{reference})\n", encoding="utf-8")
+    source = manifest_root / "agent-toolkit/skills/writing-standards/references/writing.md"
+    source.parent.mkdir()
+    source.write_text(
+        "# 原本\n\n配布の説明。\n\n<!-- portable-quality:start -->\n\n"
+        "## 日本語の書き方\n\n主体と対象を明示する。\n\n"
+        "<!-- portable-quality:end -->\n\n別の設計資料へ接続する。\n",
+        encoding="utf-8",
+    )
+    return manifest_root
+
+
+def test_skill_quality_resources_follow_one_source_and_work_in_single_skill_copy(quality_root: Path) -> None:
+    """共通原本の生成がCodex投影へ届き、スキル単独のコピーでも基準を読める。"""
+    expected_body = "# 日本語の書き方\n\n主体と対象を明示する。\n"
+    expected_paths = {
+        Path(distribution) / "skills" / name / "references/quality-standards.md"
+        for distribution in ("agent-toolkit", "agent-toolkit-codex")
+        for name in ("alpha", "beta")
+    }
+
+    assert subject.sync(quality_root) is True
+
+    observed = {path.relative_to(quality_root) for path in quality_root.glob("*/skills/*/references/quality-standards.md")}
+    assert observed == expected_paths
+    before = {path: (quality_root / path).read_bytes() for path in expected_paths}
+    assert all(content.decode("utf-8").split("\n\n", maxsplit=1)[1] == expected_body for content in before.values())
+    assert subject.sync(quality_root) is False
+    assert {path: (quality_root / path).read_bytes() for path in expected_paths} == before
+    copied = quality_root / "single-skill"
+    original_skill = Path("agent-toolkit/skills") / "alpha"
+    shutil.copytree(quality_root / original_skill, copied)
+    assert (copied / "references/quality-standards.md").read_bytes() == before[
+        original_skill / "references/quality-standards.md"
+    ]
+    assert not (copied / "writing-standards").exists()
+    assert subject.check(quality_root) is True
+
+    source = quality_root / "agent-toolkit/skills/writing-standards/references/writing.md"
+    source.write_text(
+        source.read_text(encoding="utf-8").replace("主体と対象を明示する。", "条件と結果を対応付ける。"), encoding="utf-8"
+    )
+    assert subject.check(quality_root) is False
+    assert subject.sync(quality_root) is True
+    for path in expected_paths:
+        assert (quality_root / path).read_text(encoding="utf-8").split("\n\n", maxsplit=1)[1] == (
+            "# 日本語の書き方\n\n条件と結果を対応付ける。\n"
+        )
+
+
+@pytest.mark.parametrize("distribution", ["agent-toolkit", "agent-toolkit-codex"])
+@pytest.mark.parametrize("kind", ["欠落", "内容差", "余剰"])
+def test_skill_quality_check_reports_every_difference_and_sync_repairs_it(
+    quality_root: Path, distribution: str, kind: str
+) -> None:
+    """原本側と投影側の欠け・内容差・余分を報告し、同期で同じ集合へ戻す。"""
+    subject.sync(quality_root)
+    name = "extra" if kind == "余剰" else "alpha"
+    target = quality_root / distribution / "skills" / name / "references/quality-standards.md"
+    if kind == "欠落":
+        target.unlink()
+    else:
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text("別の本文\n", encoding="utf-8")
+    before = target.read_bytes() if target.exists() else None
+
+    assert f"{target.relative_to(quality_root)}: {kind}" in subject.check_diagnostics(quality_root)
+    assert (target.read_bytes() if target.exists() else None) == before
+    assert subject.sync(quality_root) is True
+    assert subject.check(quality_root) is True
+    if kind == "余剰":
+        assert not target.exists()
 
 
 def test_sync_is_deterministic(manifest_root: Path) -> None:
@@ -176,19 +266,29 @@ def test_sync_is_deterministic(manifest_root: Path) -> None:
     expected_codex_mcp = {
         **expected_mcp,
         "mcpServers": {
-            "pyfltr": expected_mcp["mcpServers"]["pyfltr"],
+            "pyfltr": {
+                **expected_mcp["mcpServers"]["pyfltr"],
+                "env_vars": list(
+                    mcp_environment.environment_variable_names(toolkit_config.config_environment_variable_names())
+                ),
+            },
             "agents_server": {
                 "type": "stdio",
                 "command": "uv",
                 "args": [
                     "run",
-                    "--project",
-                    ".",
-                    "--locked",
-                    "--no-default-groups",
+                    "--no-config",
+                    "--no-project",
+                    "--python",
+                    "3.15",
+                    "python",
+                    "scripts/launch.py",
                     "agent_toolkit/agents_server_mcp.py",
                 ],
                 "cwd": "./",
+                "env_vars": list(
+                    mcp_environment.environment_variable_names(toolkit_config.config_environment_variable_names())
+                ),
             },
         },
     }
@@ -202,38 +302,38 @@ def test_sync_is_deterministic(manifest_root: Path) -> None:
             "PreToolUse": [
                 {
                     "matcher": subject.CODEX_HOOK_ALLOWLIST["PreToolUse"].matcher,
-                    "hooks": [{"type": "command", "command": "atk-hook pretooluse"}],
+                    "hooks": [{"type": "command", "command": _CODEX_HOOK_PREFIX + "pretooluse"}],
                 }
             ],
             "PostToolUse": [
                 {
                     "matcher": subject.CODEX_HOOK_ALLOWLIST["PostToolUse"].matcher,
-                    "hooks": [{"type": "command", "command": "atk-hook posttooluse"}],
+                    "hooks": [{"type": "command", "command": _CODEX_HOOK_PREFIX + "posttooluse"}],
                 }
             ],
             "PermissionRequest": [
                 {
                     "matcher": "Bash",
-                    "hooks": [{"type": "command", "command": "atk-hook permissionrequest_codex"}],
+                    "hooks": [{"type": "command", "command": _CODEX_HOOK_PREFIX + "permissionrequest_codex"}],
                 }
             ],
             "UserPromptSubmit": [
                 {
-                    "hooks": [{"type": "command", "command": "atk-hook user_prompt_submit"}],
+                    "hooks": [{"type": "command", "command": _CODEX_HOOK_PREFIX + "user_prompt_submit"}],
                 }
             ],
             "SubagentStop": [
                 {
-                    "hooks": [{"type": "command", "command": "atk-hook subagent_stop_advisor"}],
+                    "hooks": [{"type": "command", "command": _CODEX_HOOK_PREFIX + "subagent_stop_advisor"}],
                 }
             ],
-            "Stop": [{"hooks": [{"type": "command", "command": "atk-hook stop"}]}],
+            "Stop": [{"hooks": [{"type": "command", "command": _CODEX_HOOK_PREFIX + "stop"}]}],
             "SessionEnd": [
                 {
                     "hooks": [
                         {
                             "type": "command",
-                            "command": "atk-hook session_end_cleanup",
+                            "command": _CODEX_HOOK_PREFIX + "session_end_cleanup",
                             "timeout": subject.CODEX_SESSION_END_TIMEOUT_SECONDS,
                         }
                     ],
@@ -244,7 +344,7 @@ def test_sync_is_deterministic(manifest_root: Path) -> None:
                     "hooks": [
                         {
                             "type": "command",
-                            "command": "atk-hook rules_context_codex",
+                            "command": _CODEX_HOOK_PREFIX + "rules_context_codex",
                             "additionalContextLimit": 0,
                         }
                     ],
@@ -255,16 +355,17 @@ def test_sync_is_deterministic(manifest_root: Path) -> None:
                     "hooks": [
                         {
                             "type": "command",
-                            "command": "atk-hook rules_context_codex",
+                            "command": _CODEX_HOOK_PREFIX + "rules_context_codex",
                             "additionalContextLimit": 0,
                         }
                     ]
                 }
             ],
+            "Interrupt": [{"hooks": [{"type": "command", "command": _CODEX_HOOK_PREFIX + "session_activity"}]}],
         }
     }
-    assert len(generated_hooks["hooks"]) == 9
-    assert generated_hooks["hooks"]["SubagentStart"][0]["hooks"][0]["command"] == "atk-hook rules_context_codex"
+    assert len(generated_hooks["hooks"]) == 10
+    assert generated_hooks["hooks"]["SubagentStart"][0]["hooks"][0]["command"] == _CODEX_HOOK_PREFIX + "rules_context_codex"
     assert (manifest_root / subject.PLUGIN_TARGET).read_text(encoding="utf-8").endswith("\n")
 
 
@@ -322,7 +423,7 @@ async def test_codex_0154_registers_all_hooks_independent_of_project_trust(
     if version != "codex-cli 0.154.0":
         pytest.skip(f"Codex 0.154.0専用のテスト: {version}")
 
-    expected = {event[0].lower() + event[1:] for event in subject.CODEX_HOOK_ALLOWLIST}
+    expected = {event[0].lower() + event[1:] for event in (*subject.CODEX_HOOK_ALLOWLIST, *subject.CODEX_ONLY_HOOKS)}
     observed: list[set[str]] = []
     for trust in (False, True):
         codex_home = tmp_path / ("trusted" if trust else "default")
@@ -440,7 +541,7 @@ def test_codex_projection_limits_matchers_and_timeout(manifest_root: Path) -> No
     assert generated["PostToolUse"][0]["matcher"] == subject.CODEX_HOOK_ALLOWLIST["PostToolUse"].matcher
     assert generated["SessionEnd"][0]["hooks"][0]["timeout"] <= 3
     assert "matcher" not in generated["SubagentStop"][0]
-    assert generated["Stop"] == [{"hooks": [{"type": "command", "command": "atk-hook stop"}]}]
+    assert generated["Stop"] == [{"hooks": [{"type": "command", "command": _CODEX_HOOK_PREFIX + "stop"}]}]
     assert "Bash" in generated["PostToolUse"][0]["matcher"].split("|")
     assert all("timeout" not in handler for handler in generated["PreToolUse"][0]["hooks"])
 
@@ -471,7 +572,7 @@ def test_codex_projection_omits_events_without_allowlisted_handler(manifest_root
 
     generated = json.loads((manifest_root / subject.HOOKS_TARGET).read_text(encoding="utf-8"))["hooks"]
     assert "PreCompact" not in generated
-    assert set(generated) == set(subject.CODEX_HOOK_ALLOWLIST)
+    assert set(generated) == set(subject.CODEX_HOOK_ALLOWLIST) | set(subject.CODEX_ONLY_HOOKS)
 
 
 def test_codex_projection_sets_additional_context_limit() -> None:
@@ -705,3 +806,198 @@ def test_atomic_write_failure_is_reported(manifest_root: Path, monkeypatch: pyte
     monkeypatch.setattr(common, "atomic_write_text", lambda *args, **kwargs: False)
     with pytest.raises(OSError, match="書き込みに失敗"):
         subject.sync(manifest_root)
+
+
+def test_proxy_contract_is_shared_with_codex_backend(manifest_root: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """共通名の追加が全Codex生成経路へ届き、共通入力とAgent Pluginsへ混入しない。"""
+    names = (*mcp_environment.PROXY_ENVIRONMENT_VARIABLES, "TEST_PROXY")
+    monkeypatch.setattr(mcp_environment, "PROXY_ENVIRONMENT_VARIABLES", names)
+    monkeypatch.setitem(toolkit_config._MUTABLE_KEY_DEFAULTS, "future_engine", "codex")  # pylint: disable=protected-access
+    expected_names = list(mcp_environment.environment_variable_names(toolkit_config.config_environment_variable_names()))
+    assert "AGENT_TOOLKIT_CONFIG_FUTURE_ENGINE" in expected_names
+    source_before = (manifest_root / subject.MCP_SOURCE).read_bytes()
+    subject.sync(manifest_root)
+    codex = json.loads((manifest_root / subject.MCP_CODEX_TARGET).read_text(encoding="utf-8"))
+    portable = json.loads((manifest_root / subject.AGENT_MCP_TARGET).read_text(encoding="utf-8"))
+    for name in ("agents_server", "pyfltr"):
+        assert codex["mcpServers"][name]["env_vars"] == expected_names
+        assert "env_vars" not in portable["mcpServers"][name]
+    backend = codex_backend.AppServerManager._agents_server_config("owner", "writer")  # pylint: disable=protected-access
+    assert backend["mcp_servers"]["agents_server"]["env_vars"] == expected_names
+    assert (manifest_root / subject.MCP_SOURCE).read_bytes() == source_before
+
+
+@pytest.fixture(name="proxy_endpoint")
+def _proxy_endpoint() -> Iterator[tuple[str, list[str]]]:
+    """loopbackの専用proxyを試験全体で保持し、失敗時も回収する。"""
+    requests: list[str] = []
+
+    class ProxyHandler(http.server.BaseHTTPRequestHandler):
+        def do_GET(self) -> None:  # noqa: N802
+            requests.append(self.path)
+            body = b"proxy-observed"
+            self.send_response(200)
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+        def log_message(self, format: str, *args: Any) -> None:  # noqa: A002  # pylint: disable=redefined-builtin
+            del format, args  # noqa
+
+    proxy = http.server.ThreadingHTTPServer(("127.0.0.1", 0), ProxyHandler)
+    proxy_thread = threading.Thread(target=proxy.serve_forever, daemon=True)
+    proxy_thread.start()
+    try:
+        yield f"http://127.0.0.1:{proxy.server_port}", requests
+    finally:
+        proxy.shutdown()
+        proxy.server_close()
+        proxy_thread.join(timeout=5)
+    assert not proxy_thread.is_alive()
+
+
+@pytest.mark.asyncio
+@pytest.mark.skipif(shutil.which("codex") is None, reason="Codex CLIが存在しない")
+async def test_codex_stdio_inherits_proxy_environment(
+    manifest_root: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, proxy_endpoint: tuple[str, list[str]]
+) -> None:
+    """実Codexの起動・再開で保存先と公開overrideを保持し、専用proxyへ要求が届く。"""
+    isolation.restore_host_environment(monkeypatch)
+    proxy_url, requests = proxy_endpoint
+    inherited = {
+        "http_proxy": proxy_url,
+        "https_proxy": proxy_url,
+        "HTTP_PROXY": proxy_url,
+        "no_proxy": "localhost,127.0.0.1",
+        "GLOBAL_AGENT_HTTP_PROXY": proxy_url,
+    }
+    for name in proxy_environment.PROXY_ENVIRONMENT_VARIABLES:
+        monkeypatch.delenv(name, raising=False)
+    for name, value in inherited.items():
+        monkeypatch.setenv(name, value)
+    codex_home = tmp_path / "codex-home"
+    codex_home.mkdir()
+    monkeypatch.setenv("CODEX_HOME", str(codex_home))
+    namespace = {
+        "XDG_STATE_HOME": str(tmp_path / "state"),
+        "XDG_CONFIG_HOME": str(tmp_path / "config"),
+        "XDG_DATA_HOME": str(tmp_path / "data"),
+        "XDG_CACHE_HOME": str(tmp_path / "cache"),
+        "AGENT_TOOLKIT_PRIVATE_NOTES": str(tmp_path / "notes"),
+        "CLAUDE_CONFIG_DIR": str(tmp_path / "claude"),
+        "CODEX_HOME": str(codex_home),
+        "AGENT_TOOLKIT_CONFIG_BASE_ENGINE": "codex",
+    }
+    for name, value in namespace.items():
+        monkeypatch.setenv(name, value)
+    monkeypatch.setattr(codex_backend, "APP_SERVER_WORKING_DIRECTORY", str(tmp_path))
+    child = tmp_path / "proxy-child.py"
+    child.write_text(
+        "import json, os, urllib.request\n"
+        "from pathlib import Path\n"
+        "response = urllib.request.urlopen('http://proxy-probe.invalid/resource', timeout=5).read().decode()\n"
+        "Path(os.environ['OBS_PATH']).write_text(json.dumps({'env': {name: os.environ[name] for name in "
+        f"{list(proxy_environment.PROXY_ENVIRONMENT_VARIABLES)!r} if name in os.environ}}, "
+        f"'namespace': {{name: os.environ.get(name) for name in {list(namespace)!r}}}, "
+        "'response': response}), encoding='utf-8')\n",
+        encoding="utf-8",
+    )
+    launcher = tmp_path / "proxy-mcp.py"
+    launcher.write_text(
+        "import os, subprocess, sys\nfrom pathlib import Path\n"
+        "sys.stderr = open(os.environ['OBS_PATH'] + '.stderr', 'w', encoding='utf-8')\n"
+        "from mcp.server.mcpserver import MCPServer\n"
+        f"subprocess.run([sys.executable, {str(child)!r}], check=True, timeout=10)\n"
+        "server = MCPServer('proxy-probe')\n"
+        "@server.tool()\ndef observed() -> str:\n    return 'ready'\n"
+        "server.run(transport='stdio')\n",
+        encoding="utf-8",
+    )
+    subject.sync(manifest_root)
+    plugin_servers = json.loads((manifest_root / subject.MCP_CODEX_TARGET).read_text(encoding="utf-8"))["mcpServers"]
+    backend = codex_backend.AppServerManager._agents_server_config("owner", "writer")["mcp_servers"]["agents_server"]  # pylint: disable=protected-access
+    configurations = [plugin_servers["agents_server"], plugin_servers["pyfltr"], backend]
+    client = _ProxyCodexClient(_ignore_proxy_notification, _ignore_proxy_notification)
+    processes: list[asyncio.subprocess.Process] = []
+    try:
+        async with asyncio.timeout(60):
+            await client.start()
+            assert client.process is not None
+            processes.append(client.process)
+            for index, configuration in enumerate(configurations):
+                output = tmp_path / f"child-{index}.json"
+                server = {
+                    **configuration,
+                    "command": sys.executable,
+                    "args": [str(launcher)],
+                    "cwd": str(tmp_path),
+                    "env": {**configuration.get("env", {}), "OBS_PATH": str(output)},
+                }
+                server.pop("type", None)
+                response = await client.request(
+                    "thread/start",
+                    {
+                        "cwd": str(tmp_path),
+                        "approvalPolicy": "never",
+                        "sandbox": "danger-full-access",
+                        "config": {"mcp_servers": {"probe": server}, "features": {"plugins": False, "apps": False}},
+                    },
+                )
+                thread_id = response["thread"]["id"]
+                inventory = await client.request("mcpServerStatus/list", {"threadId": thread_id, "serverName": "probe"})
+                assert inventory["data"], inventory
+                diagnostic = Path(str(output) + ".stderr")
+                assert inventory["data"][0]["runtimeStatus"] == "connected", json.dumps(inventory) + (
+                    diagnostic.read_text(encoding="utf-8") if diagnostic.exists() else ""
+                )
+                observation = json.loads(output.read_text(encoding="utf-8"))
+                assert observation == {"env": inherited, "namespace": namespace, "response": "proxy-observed"}
+                # モデルを呼ばず履歴を保存する0.162.1の公開実験APIで、cold resumeの入力を準備する。
+                await client.request(
+                    "thread/inject_items",
+                    {
+                        "threadId": thread_id,
+                        "items": [{"type": "message", "role": "user", "content": [{"type": "input_text", "text": "fixture"}]}],
+                    },
+                )
+                await client.close()
+                output.unlink()
+                client = _ProxyCodexClient(_ignore_proxy_notification, _ignore_proxy_notification)
+                await client.start()
+                assert client.process is not None
+                processes.append(client.process)
+                await client.request(
+                    "thread/resume",
+                    {
+                        "threadId": thread_id,
+                        "cwd": str(tmp_path),
+                        "approvalPolicy": "never",
+                        "sandbox": "danger-full-access",
+                        "config": {"mcp_servers": {"probe": server}},
+                    },
+                )
+                inventory = await client.request("mcpServerStatus/list", {"threadId": thread_id, "serverName": "probe"})
+                assert inventory["data"][0]["runtimeStatus"] == "connected", json.dumps(inventory)
+                assert json.loads(output.read_text(encoding="utf-8")) == {
+                    "env": inherited,
+                    "namespace": namespace,
+                    "response": "proxy-observed",
+                }
+                await client.request("thread/unsubscribe", {"threadId": thread_id})
+    finally:
+        await client.close()
+    assert processes and all(process.returncode is not None for process in processes)
+    assert requests.count("http://proxy-probe.invalid/resource") == len(configurations) * 2
+
+
+async def _ignore_proxy_notification(_message: dict[str, Any]) -> None:
+    return None
+
+
+class _ProxyCodexClient(codex_backend.JsonRpcProcess):
+    """試験用履歴の注入だけに実験APIを有効化する。"""
+
+    async def request(self, method: str, params: dict[str, Any] | None = None, *, on_sent: Any = None) -> dict[str, Any]:
+        if method == "initialize":
+            params = {**(params or {}), "capabilities": {"experimentalApi": True}}
+        return await super().request(method, params, on_sent=on_sent)

@@ -28,6 +28,20 @@ Claude Codeは並列ツール呼び出しでhookを同時発火するため、�
 - ロックファイルは削除しない空ファイルとし、一時ディレクトリの通常の回収に委ねる
 - 並行書き込みの回帰テストを維持する
 
+## セッションの活動記録
+
+`_common/session_activity.py`はOSアカウントの状態ディレクトリ配下の`session-activity/{session_id}.json`へ会話ごとの最新状態を保存する。
+状態ディレクトリの解決元は`agent-toolkit/agent_toolkit/_common/state_paths.py`の`state_dir()`である。
+`hook.py`が受け取る既存イベントの処理に活動記録を加え、`scan_activity`がprocess-loopの開始前判定へ活動と未判定の根拠を渡す。
+
+- 保存する項目は版数、会話ID、実行系、PIDと起動時刻、会話内の各エージェントの活動状態、親会話ID、セッション記録のパス、バックグラウンドタスクの有無および更新時刻とする。
+- SessionStart・UserPromptSubmit・ツールイベント・SubagentStartで活動を記録し、Stop・SubagentStopでは実際のhook応答が続行を求めるかを反映する。
+- 応答待ちの除外には、セッション記録のターン終了またはホスト登録のidle状態と、稼働する子がないことを使う。
+- SessionEndは活動JSONを削除し、記録されたPIDと起動時刻が生存プロセスに一致しない場合は取得側で失効させる。
+- 更新と削除は固定の`activity.lock`の排他下で行い、会話ごとの履歴や終了した子の項目を残さない。
+- 未登録の生存ホストと読取不能は活動候補として返し、猶予期限の判定を開始側へ残す。
+- 除外する会話とその子孫は`_common/session_parents.py`の親子解決を使い、process-loopの共通環境印だけで別ループの会話を除外しない。
+
 ## managed-tempの登録情報
 
 managed-tempのマーカーファイル（`.agent-toolkit-managed-temp.json`）とOSアカウント専用の登録簿は、同じ版数付きの登録情報を保持する。
@@ -57,12 +71,12 @@ process-loopが起動した会話の最上位のStopでは、終了要求が`req
 ## 応答言語系
 
 - `english_warning_count`: `agent-toolkit/agent_toolkit/_hooks/pretooluse/agent_checks.py`が、アシスタント応答の地の文を英語主体と判定した累計回数を記録し、強い通知への切り替えに読む。日本語判定と判定対象外の応答では維持する。セッション終了まで保持する
-- `english_warning_msg_id`: 同フックが直前に通知した応答のmessage IDを記録し、同じ応答への重複通知と二重加算の抑止に読む。セッション終了まで保持し、リセット処理は設けない
+- `english_warning_msg_id`: 同フックが直前に通知した応答のmessage IDを記録し、同じ応答への重複通知と二重加算の抑止に読む。セッション終了まで保持し、リセットは処理対象外とする
 - `language_reinjection_count`: 同フックが、Claude Codeのメインセッションで直前に日本語の応答指示を注入してからのツール呼び出し回数を記録し、再注入の間隔の判定に読む。間隔に達した呼び出しで途中注入用の指示を添えて0へ戻し、`agent-toolkit/agent_toolkit/_hooks/rules_context.py`もSessionStartで開始用の指示を注入した時点で0へ戻す。記録はClaude Codeのメインセッションに限り、セッション終了まで保持する
 
 ## plan系
 
-- `working_plan_save_notified`: `~/.claude/plans`に残る計画バンドルの保存確認を促した事実。`agent-toolkit/agent_toolkit/_hooks/plan_save_advisor.py`が記録し、再通知の抑止に読む。セッション終了まで保持し、リセットしない
+- `working_plan_save_notified`: `~/.claude/plans`に残る計画バンドルの保存確認を促した事実。`agent-toolkit/agent_toolkit/_hooks/plan_save_advisor.py`が記録し、再通知の抑止に読む。セッション終了まで保持し、リセットは処理対象外とする
 - `plan_mode_skill_invoked`: plan-mode起動を記録し、計画構造の自動チェックの適用判定に使う
 - `current_plan_file_path`: PostToolUseが計画ファイルの編集時と公開された計画ファイル作成コマンドの出力からパスを記録し、PreToolUse(Skill)がplan-mode起動時に消去する。UserPromptSubmitが計画名の`sessionTitle`出力に読む
 - `last_hook_session_title`: Claude CodeのUserPromptSubmitが計画ファイルのstemを`sessionTitle`へ実際に出力した値。出力は値が存在しない間の1回に限り、通常状態JSONへ複製せず、専用の排他ロック下で再出力抑止記録へ先に保存できた呼び出しだけが出力する。期限回収と通常のSessionEndでは保持し、`clear`の場合だけ削除する
@@ -106,15 +120,17 @@ process-loopが起動した会話の最上位のStopでは、終了要求が`req
   寿命と継承はセッション状態ファイルと同じとし、別会話から継承した値は`session_id`の一致を確かめてから使う
   - 成果作業と起動証拠: 成功した対象スキルの開始、リポジトリへの自編集、計画の保存、WIの保存、commit・pushを`deliverables`へ記録する。成功したcompletion-reportのSkill起動（Claude Code）と、結果が本文を返した`SKILL.md`の読取（Codex）は`completion_report`へ記録する。起動証拠を得た作業へ新しい人間の入力の後に成果作業が届いた場合は新しい作業を始める
   - 待機の許可: 成果作業が待つ非同期対象の生存中にStopが待機を許可する条件は`claude-hooks-stop.md`「終了工程の証拠」が定める。本キーは作業の開始位置（UserPromptSubmitが記録したtranscriptの大きさ）を保持し、Stopがその判定に読む
+  - 成果作業の対象: 観測したリポジトリのrootを`repositories`へ保持する。直接実行のGit操作は`-C`などの指定を含めて対象を取得し、シェルの移動や前置代入で対象を取得できない操作は`null`を保持する。対象が単一リポジトリと確定できる作業だけ、プロジェクト規範による省略を受理する
   - 委譲先へのwait判断: `async_targets`と所有者を確認し、観測義務とは別に有効なCLI待機所有権・対象登録を共通の読取処理で確認する。`pending_observation`が偽でも待機が有効なら保持し、両方が終わると不足判定へ戻る
   - 自編集: 成功したEdit・Write・`apply_patch`と、既存の抽出で静的に確定したBash書込先を、作業ごとの`edits`へリポジトリと相対パスで記録する。Claude Codeの協調モードのメインでは、Stopがその集合だけを終了時のGit状態と比べて公開範囲が未確定の編集を遮断の通知へ添え、他主体の差分を取り込まない
   - 公開範囲: メインが原入力または適用済み認可から判断した範囲を`publish_scope`へ記録する。記録手順は`agent-toolkit:user-confirmation-and-report`の`references/publish-scope.md`が定める
+  - プロジェクト規範による省略: メインが`omit-completion`で記録した規範の絶対パス・全文、対象リポジトリと人間入力の識別子を、作業ごとの`omit_completion`へ保持する。記録時は観測した成果作業の単一リポジトリ、規範の所在と全文、現在のメイン・会話・入力の対応を確かめ、Stopでも規範の実体と入力の対応を確かめる。有効な省略を持つ作業だけ起動不足を免除する。次の判断で除き、新しい人間入力後の成果作業は新しい作業として省略を引き継がない。規範の変更・消失は免除を無効にする。手順は`agent-toolkit:completion-report`の`references/termination-evidence.md`が定める
   - 原入力と再入: `last_human_input`は最後の人間入力を保持し、自動通知で再開しても元の依頼への帰属を保つ。`--context`は現在の会話のその入力と作業の識別子だけを返す。寿命と継承は本キーと同じで、公開範囲・起動証拠と現在のGit状態から不要な判定を除く
 
 ## 通知反復系
 
 - `unregistered_managed_temp_fingerprint`: `atk`の共通エントリポイントが、登録を持たない管理対象の絶対パス集合を安定順で正規化した指紋。同じ集合を報告済みなら警告を省き、集合が変われば再度警告する。寿命はセッション状態ファイルと同じとする
-- `warn_notice_counts`: `warn`区分の通知の、`<hook_id>|<原因識別子>`ごとの累積件数。通知の整形処理が記録し、2件目以降の通知へ反復していることと件数を載せるために読む。診断処理が要旨を渡した通知では2件目以降の本文を要旨と件数へ短縮する。セッション終了まで保持し、リセットしない
+- `warn_notice_counts`: `warn`区分の通知の、`<hook_id>|<原因識別子>`ごとの累積件数。通知の整形処理が記録し、2件目以降の通知へ反復していることと件数を載せるために読む。診断処理が要旨を渡した通知では2件目以降の本文を要旨と件数へ短縮する。セッション終了まで保持し、リセットは処理対象外とする
 
 ## agents_server連携系
 
@@ -124,14 +140,14 @@ process-loopが起動した会話の最上位のStopでは、終了要求が`req
   - `model_type`の解決: 起動入力の`model_type`を優先し、省略時は`start`の`task`では`<役割名>.subagent.md`のファイル名、他の`mode`では`mode`ごとの省略時の種別とする。統合前の旧名で記録された開始は対応する`mode`として扱う
   - 生成と更新: `start`の成功応答で生成し、`send_message`・`kill`・`wait`の応答境界と、Bash経由の`atk agents wait`実行時に更新する
   - `pending_observation`を真にする契機: 各開始操作の成功応答と、`delivery`が`reply_started`または`reply_ambiguous`の`send_message`の応答。`steered`は実行中のturnへ追加指示を配送するだけで`turn_seq`を変えないため対象外とする。呼出主体をhook payloadの`agent_id`（無いメイン会話は`main`）から`owner_agent_id`へ記録する。`transcript_path`で呼出主体を判別しない（`claude-hooks.md`「hookスクリプトの基本プロトコル」）
-  - `pending_observation`を偽にする契機: `kill`の成功応答、Bash経由の`atk agents wait`完了時、Stop時に直前の応答の`待機中:`表明がそのsessionを指す場合。CLIの`atk agents wait`は入力sessionを取らず、呼出主体が所有する既存の記録を持つ全sessionを観測済みにする。偽は観測の履歴ではないため、新しい作業を配送すれば再び真になる。`owner_agent_id`は次の作業発生まで保持する
+  - `pending_observation`を偽にする契機: `kill`の成功応答、Bash経由の`atk agents wait`完了時、Stop時に直前の応答の`待機中:`表明がそのsessionを指す場合。CLIの`atk agents wait`は入力sessionを取らず、呼出主体が所有する既存の記録を持つ全sessionを観測済みにする。偽は現時点で未観測の作業が無いことを示すため、新しい作業を配送すれば再び真になる。`owner_agent_id`は次の作業発生まで保持する
   - 利用先: Stop判定で、`pending_observation`が真で`owner_agent_id`がStopの呼出主体と一致する記録だけを警告へ使う。CLI待機中はルートセッションが所有する待機所有権の生存をStopフックが確認し、未観測警告の対象から除く。終了工程の委譲先wait判断も同じ読取を使い、観測義務と有効な待機を区別する。`status`が`running`の記録の件数は待機の遮断の入力にしない
   - 除去: `stop`の成功応答でその`session_id`のエントリーを除く。`stop`は実行中turnを持つsessionと非終端のsessionを拒否するため、未終端のsessionの記録は失われない
   - 持たない状態: 結果を回収済みであることを示す状態と、thread IDをハッシュ化した状態ファイル
 
 ## バックグラウンドタスク系
 
-- `background_task_ids`: PostToolUseが、自セッションのツール呼び出しの応答から得たタスクIDを重複なく記録する。この記録をバックグラウンドタスクの所有記録と呼ぶ。バックグラウンドタスクは、BashやAgentを背景で動かした非同期の処理を指す。記録の契機は次の4つで、所有の根拠は呼び出しの成否ではなく自身の呼び出しが識別子を返したことである。
+- `background_task_ids`: PostToolUseが、自セッションのツール呼び出しの応答から得たタスクIDを重複なく記録する。この記録をバックグラウンドタスクの所有記録と呼ぶ。バックグラウンドタスクは、BashやAgentを背景で動かした非同期の処理を指す。記録の契機は次の4つで、所有の根拠は自身の呼び出しが識別子を返したことである。
   1. Bashの`run_in_background`指定の応答（成功・失敗とも）
   2. 実行上限またはユーザーの操作で背景へ移ったBashの応答が返す構造化`backgroundTaskId`
   3. MCPツールの呼び出しが背景へ移ったときのホストの移行通知。テキストの先頭から始まる`MCP tool "<ツール名>" is still running after <秒数>s. It was moved to the background as task <ID>`の形だけを記録し、前景の出力本文の途中に現れる同じ文言は除く

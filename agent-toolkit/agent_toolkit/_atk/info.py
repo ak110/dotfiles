@@ -21,7 +21,7 @@ def dispatch(args: argparse.Namespace) -> None:
     manifest = plugin_root / "plugin.json"
     try:
         version = json.loads(manifest.read_text(encoding="utf-8"))["version"]
-    except (OSError, ValueError, KeyError, TypeError):
+    except OSError, ValueError, KeyError, TypeError:
         version = "不明"
     config_file = _config_cmd._config_file_path()  # pylint: disable=protected-access
     print(f"作業ディレクトリ: {pathlib.Path.cwd()}")

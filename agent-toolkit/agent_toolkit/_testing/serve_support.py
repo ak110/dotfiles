@@ -3,6 +3,7 @@
 # pylint: disable=protected-access
 
 import contextlib
+import html.parser
 import json
 import os
 import pathlib
@@ -40,6 +41,52 @@ def _module_body(source: str) -> str:
     return _MODULE_EXPORT_RE.sub("", body)
 
 
+class _HtmlDom(html.parser.HTMLParser):
+    """本番HTMLの要素、属性、親子関係をNodeの擬似DOMへ渡す。"""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.nodes: list[dict[str, typing.Any]] = []
+        self._stack: list[int] = []
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        index = len(self.nodes)
+        self.nodes.append({"tag": tag, "attrs": dict(attrs), "children": [], "text": ""})
+        if self._stack:
+            self.nodes[self._stack[-1]]["children"].append(index)
+        if tag not in {
+            "area",
+            "base",
+            "br",
+            "col",
+            "embed",
+            "hr",
+            "img",
+            "input",
+            "link",
+            "meta",
+            "param",
+            "source",
+            "track",
+            "wbr",
+        }:
+            self._stack.append(index)
+
+    def handle_endtag(self, tag: str) -> None:
+        for position in range(len(self._stack) - 1, -1, -1):
+            if self.nodes[self._stack[position]]["tag"] == tag:
+                del self._stack[position:]
+                break
+
+    def handle_startendtag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        self.handle_starttag(tag, attrs)
+        self.handle_endtag(tag)
+
+    def handle_data(self, data: str) -> None:
+        if self._stack and self.nodes[self._stack[-1]]["tag"] == "option":
+            self.nodes[self._stack[-1]]["text"] += data
+
+
 def _run_node_ui(scenario: str) -> dict[str, typing.Any]:
     """WI画面のUI関数を最小DOM上で実行し、シナリオのJSON結果を返す。
 
@@ -58,6 +105,8 @@ def _run_node_ui(scenario: str) -> dict[str, typing.Any]:
         + "\n})().catch(error => { process.stderr.write(String(error.stack || error)); process.exitCode = 1; });\n"
         + "})();\n"
     )
+    dom = _HtmlDom()
+    dom.feed(assets.HTML)
     script = f"""
 class Element {{
   constructor(id = '', tagName = 'DIV') {{
@@ -144,7 +193,12 @@ class Element {{
   getAttribute(name) {{ return this.attributes[name] ?? null; }}
   removeAttribute(name) {{ delete this.attributes[name]; }}
   addEventListener(name, handler) {{ this.listeners[name] = handler; }}
-  querySelectorAll() {{ return globalThis.controlGroups[this.id] || []; }}
+  querySelectorAll(selector) {{
+    const tags = new Set(selector.split(',').map(value => value.trim().toUpperCase()));
+    return this.children.flatMap(child => [
+      ...(tags.has(child.tagName) ? [child] : []), ...child.querySelectorAll(selector)
+    ]);
+  }}
   showModal() {{ this.open = true; }}
   close() {{ this.open = false; }}
   focus() {{
@@ -154,68 +208,35 @@ class Element {{
     document.listeners.focusin?.({{target: this}});
   }}
 }}
-const ids = [
-  'connection-status', 'sync-result', 'refresh-button', 'notification-button', 'create-button',
-  'clear-filters-button', 'search-input', 'kind-filter', 'state-filter', 'period-filter', 'answer-filter',
-  'target-filter', 'source-filter', 'entry-count',
-  'result-status', 'list-warning', 'list-fallback-notice', 'loading-indicator', 'entry-list', 'empty-state',
-  'empty-state-message', 'empty-clear-button', 'empty-all-states-button', 'empty-all-periods-button',
-  'empty-create-button', 'entry-period',
-  'detail-dialog', 'detail-shell', 'detail-dialog-body', 'detail-close-button', 'detail-alert',
-  'detail-status', 'detail-view', 'detail-filename', 'detail-state', 'detail-metadata',
-  'detail-content', 'readonly-notice', 'edit-button', 'answer-button', 'delete-button',
-  'decision-panel', 'decision-heading', 'decision-note', 'confirm-adopt-button', 'confirm-reject-button',
-  'adopt-button', 'reject-button', 'hold-button', 'unhold-button',
-  'return-to-inbox-button',
-  'edit-panel', 'edit-content', 'edit-content-error', 'save-entry-button', 'answer-panel',
-  'answer-choices', 'answer-input', 'answer-input-error', 'save-answer-button', 'user-comment-button',
-  'user-comment-panel', 'user-comment-input', 'user-comment-input-error', 'save-user-comment-button',
-  'create-dialog', 'create-form', 'create-close-button', 'create-alert', 'create-status',
-  'create-kind', 'create-content', 'create-content-label', 'create-mode-hint', 'create-content-error',
-  'create-repo-fields', 'create-target',
-  'create-target-error', 'uwi-fields', 'create-scope',
-  'create-question-type', 'choice-fields', 'create-choices', 'create-choices-error',
-  'create-submit-button', 'delete-dialog', 'delete-form', 'delete-close-button',
-  'delete-alert', 'delete-status', 'delete-target', 'delete-state', 'delete-target-repo',
-  'delete-summary', 'force-delete-row', 'force-delete-confirmation', 'delete-error',
-  'delete-submit-button', 'repo-options', 'pagination', 'previous-page-button',
-  'pagination-status', 'next-page-button', 'operation-notice', 'operation-notice-message',
-  'operation-notice-close-button'
-];
-const elements = Object.fromEntries(ids.map(id => [id, new Element(id)]));
+const structure = {json.dumps(dom.nodes)};
+const nodes = structure.map(node => {{
+  const element = new Element(node.attrs.id || '', node.tag.toUpperCase());
+  Object.entries(node.attrs).forEach(([name, value]) => element.setAttribute(name, value ?? ''));
+  element.className = node.attrs.class || '';
+  element.type = node.attrs.type || '';
+  element.value = node.attrs.value || '';
+  element.hidden = Object.hasOwn(node.attrs, 'hidden');
+  element.disabled = Object.hasOwn(node.attrs, 'disabled');
+  element.checked = Object.hasOwn(node.attrs, 'checked');
+  element.ownText = node.text;
+  Object.entries(node.attrs).filter(([name]) => name.startsWith('data-')).forEach(([name, value]) => {{
+    element.dataset[name.slice(5).replace(/-([a-z])/g, (_, letter) => letter.toUpperCase())] = value ?? '';
+  }});
+  return element;
+}});
+structure.forEach((node, index) => nodes[index].append(...node.children.map(child => nodes[child])));
+nodes.filter(node => node.tagName === 'SELECT').forEach(select => {{
+  const options = select.querySelectorAll('option');
+  const chosen = options.find(option => option.getAttribute('selected') !== null) || options[0];
+  select.value = chosen ? chosen.getAttribute('value') ?? chosen.textContent : '';
+}});
+const elements = Object.fromEntries(nodes.filter(node => node.id).map(node => [node.id, node]));
 elements['toast'] = elements['operation-notice-message'];
-elements['operation-notice'].append(elements['operation-notice-message'], elements['operation-notice-close-button']);
-elements['operation-notice-close-button'].setAttribute('aria-label', '操作通知を閉じる');
-elements['kind-filter'].value = 'all';
-elements['state-filter'].value = 'active';
-elements['period-filter'].value = '2w';
-elements['answer-filter'].value = 'all';
-elements['create-kind'].value = 'awi';
-elements['create-question-type'].value = 'yes-no';
-globalThis.controlGroups = {{
-  'detail-shell': [
-    elements['detail-close-button'], elements['edit-button'], elements['answer-button'],
-    elements['user-comment-button'], elements['delete-button'], elements['adopt-button'], elements['reject-button'],
-    elements['hold-button'], elements['unhold-button'], elements['return-to-inbox-button'], elements['decision-note'],
-    elements['edit-content'], elements['save-entry-button'],
-    elements['answer-input'], elements['save-answer-button'], elements['user-comment-input'],
-    elements['save-user-comment-button'], elements['confirm-adopt-button'], elements['confirm-reject-button']
-  ],
-  'create-form': [
-    elements['create-close-button'], elements['create-kind'], elements['create-content'],
-    elements['create-target'], elements['create-scope'],
-    elements['create-question-type'], elements['create-choices'], elements['create-submit-button']
-  ],
-  'delete-form': [
-    elements['delete-close-button'], elements['force-delete-confirmation'], elements['delete-submit-button']
-  ],
-  'app-header': [elements['refresh-button'], elements['create-button']]
-}};
-elements['detail-close-button'].className = 'dialog-close';
-elements['create-close-button'].className = 'dialog-close';
-elements['delete-close-button'].className = 'dialog-close';
-const appHeader = new Element('app-header');
-globalThis.controlGroups['app-header'] = [elements['refresh-button'], elements['create-button']];
+const appHeader = nodes.find(node => node.classList.contains('app-header'));
+globalThis.controlGroups = Object.fromEntries(
+  Object.entries(elements).map(([id, element]) => [id, element.querySelectorAll('input, select, textarea, button')])
+);
+globalThis.controlGroups['app-header'] = appHeader.querySelectorAll('input, select, textarea, button');
 globalThis.document = {{
   activeElement: null,
   listeners: {{}},
@@ -229,7 +250,6 @@ globalThis.document = {{
     return elements['entry-list'].children.flatMap(item => item.children);
   }}
 }};
-globalThis.controlGroups['app-header'] = [elements['refresh-button'], elements['create-button']];
 elements['serve-bootstrap'] = new Element('serve-bootstrap', 'SCRIPT');
 elements['serve-bootstrap'].textContent = JSON.stringify({{
   base_path: '/atk', stall_ms: 45000, host_name: 'node-test', wi_root: '/notes'
@@ -426,7 +446,7 @@ def _patch_batch_repo_operations(monkeypatch: pytest.MonkeyPatch) -> None:
     """一括取り込みで使うロック・remote同期・commitを無効化する。"""
 
     @contextlib.contextmanager
-    def lock(_path: pathlib.Path, **_kwargs: object) -> typing.Generator[None, None, None]:
+    def lock(_path: pathlib.Path, **_kwargs: object) -> typing.Generator[None]:
         yield
 
     monkeypatch.setattr(_wi_sync, "repo_lock", lock)
@@ -449,7 +469,7 @@ def _patch_comment_edit_dependencies(monkeypatch: pytest.MonkeyPatch) -> None:
     """ユーザーコメントAPIテストでGit同期だけを無効化する。"""
 
     @contextlib.contextmanager
-    def lock(_path: pathlib.Path, **_kwargs: object) -> typing.Generator[None, None, None]:
+    def lock(_path: pathlib.Path, **_kwargs: object) -> typing.Generator[None]:
         yield
 
     monkeypatch.setattr(_wi_sync, "repo_lock", lock)
@@ -462,7 +482,7 @@ def _disable_wi_git(monkeypatch: pytest.MonkeyPatch) -> None:
     """WI画面の操作がprivate-notesで行うロック・pull・commit・pushを、何もしない処理へ差し替える。"""
 
     @contextlib.contextmanager
-    def lock(_path: pathlib.Path, **_kwargs: object) -> typing.Generator[None, None, None]:
+    def lock(_path: pathlib.Path, **_kwargs: object) -> typing.Generator[None]:
         yield
 
     monkeypatch.setattr(_wi_sync, "repo_lock", lock)

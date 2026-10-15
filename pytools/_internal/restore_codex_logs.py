@@ -39,8 +39,10 @@ def _restore(*, home_dir: pathlib.Path | None, shm_root: pathlib.Path) -> bool:
         logger.warning(
             log_format.format_status(
                 "codex-logs",
-                f"Codexが稼働中のため通常ストレージへの復元を延期: {codex_processes.format_running_processes(running)}",
-            )
+                "Codexが稼働中のため通常ストレージへの復元を延期: "
+                f"{codex_processes.format_running_processes(running)}。"
+                "Codexを終了して`update-dotfiles`を再実行する",
+            ),
         )
         return False
 
@@ -55,8 +57,10 @@ def _restore(*, home_dir: pathlib.Path | None, shm_root: pathlib.Path) -> bool:
         logger.warning(
             log_format.format_status(
                 "codex-logs",
-                "管理対象外のpathがあるため全体を変更せず復元を延期: " + reasons,
-            )
+                "管理対象外のpathがあるため全体を変更せず復元を延期: "
+                + reasons
+                + "。Codexを終了し、表示されたpathの内容を確認して別の場所へ退避した後に`update-dotfiles`を再実行する",
+            ),
         )
         return False
 
@@ -75,7 +79,9 @@ def _restore(*, home_dir: pathlib.Path | None, shm_root: pathlib.Path) -> bool:
         if targets:
             for target_path in targets:
                 target_path.unlink()
-            logger.info(log_format.format_status("codex-logs", f"復元済みの共有メモリー側DBを回収: {len(targets)}件"))
+            logger.info(
+                log_format.format_status("codex-logs", f"復元済みの共有メモリー側DBを回収: {len(targets)}件"),
+            )
             return True
         return False
 
@@ -101,8 +107,8 @@ def _restore(*, home_dir: pathlib.Path | None, shm_root: pathlib.Path) -> bool:
             log_format.format_status(
                 "codex-logs",
                 f"通常ストレージの空き容量不足により復元を延期: {codex_dir} "
-                f"（空き{available_bytes}バイト・必要{required_bytes}バイト）",
-            )
+                f"（空き{available_bytes}バイト・必要{required_bytes}バイト）。このストレージの空き容量を確保して`update-dotfiles`を再実行する",
+            ),
         )
         return changed
 
@@ -114,8 +120,8 @@ def _restore(*, home_dir: pathlib.Path | None, shm_root: pathlib.Path) -> bool:
                 log_format.format_status(
                     "codex-logs",
                     "コピー中にCodexの起動を検知したため通常ストレージへの置換を延期: "
-                    f"{codex_processes.format_running_processes(running)}",
-                )
+                    f"{codex_processes.format_running_processes(running)}。Codexを終了して`update-dotfiles`を再実行する",
+                ),
             )
             return changed
         for home_path, _ in restore_pairs:
@@ -299,5 +305,5 @@ def _warn_conflict(
             "Codexを停止したまま`~/.codex/`、`/dev/shm/codex-<UID>-*`、競合スナップショットの3集合を比べ、SQLiteのDB・WAL・SHMを一組としてホームディレクトリへ復旧する。"
             "復旧後に内容を検証し、共有メモリー側targetと競合snapshotを手動で回収する。"
             f"home directory={codex_dir}",
-        )
+        ),
     )

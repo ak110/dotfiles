@@ -238,7 +238,7 @@ class TestRemoveAllConfirmation:
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
     ) -> None:
-        """任意状態ディレクトリが不在でも全状態をgit addできる状態へ戻す。"""
+        """状態ディレクトリの一部が不在でも、commit前に再作成して全状態ディレクトリをgit addできるようにする。"""
         notes = _setup_notes(tmp_path)
         (notes / "hold").rmdir()
         _write_awi_file(notes, "awi.md")
@@ -561,7 +561,7 @@ class TestRemoveAllScope:
         assert _run_main(["wi", "rm", "--all", "--target-repo", "github.com/example/foo"], tmp_path) == 0
 
         assert not commits
-        # 対象0件は接頭辞の無い行ではなく成功行で報告する。
+        # 対象0件は成功行で報告する。
         assert "成功: 対象0件のため削除しなかった（変更は無い）: github.com/example/foo" in capsys.readouterr().out
 
     def test_removes_same_filename_from_both_active_states(

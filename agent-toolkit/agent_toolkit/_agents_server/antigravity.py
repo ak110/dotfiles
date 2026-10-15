@@ -19,7 +19,7 @@ import pathlib
 import typing
 from typing import Any
 
-from agent_toolkit._agents_server import engine_availability, result_projection, session_errors, shared_layout
+from agent_toolkit._agents_server import context_usage, engine_availability, result_projection, session_errors, shared_layout
 from agent_toolkit._agents_server import state as shared_state
 from agent_toolkit._agents_server.input_validation import validate_prompt
 from agent_toolkit._agents_server.launch_prompts import LAUNCH_SYSTEM_PROMPTS
@@ -64,7 +64,7 @@ def build_command(
         command += ["--effort", effort]
     if conversation_id is not None:
         command += ["--conversation", conversation_id]
-    # 非対話モードは対話確認を持たず、原稿の書き換えまでを任せる用途のためツール実行を事前承認する。
+    # 非対話モードは実行中に承認を求められないため、ファイルの書き換えを含む作業を委譲できるようツール実行を事前承認する。
     command.append("--dangerously-skip-permissions")
     return command
 
@@ -229,6 +229,7 @@ class AntigravityManager:
     async def release_session(self, session: SessionState) -> None:
         """対象のsessionを所有するタスクとプロセスを終了する。"""
         await self._stop_owned_task(session.session_id)
+        await session.drain_registration()
 
     async def close(self) -> None:
         """所有中の全turnを終了する。"""
@@ -238,6 +239,9 @@ class AntigravityManager:
                 task.cancel()
         if tasks:
             await asyncio.gather(*tasks, return_exceptions=True)
+        for session in tuple(self.sessions.values()):
+            if session.engine == "agy":
+                await session.drain_registration()
 
     async def _stop_owned_task(self, session_id: str) -> None:
         task = next((item for item in self._tasks if self._task_sessions.get(item) == session_id), None)
@@ -293,7 +297,9 @@ class AntigravityManager:
         self._tasks.add(task)
         task.add_done_callback(self._forget_task)
         try:
-            return await asyncio.wait_for(initialized, timeout=shared_state.SESSION_INITIALIZATION_TIMEOUT)
+            initialized_session = await asyncio.wait_for(initialized, timeout=shared_state.SESSION_INITIALIZATION_TIMEOUT)
+            await initialized_session.drain_registration()
+            return initialized_session
         except TimeoutError as exc:
             await self._release_unstarted_task(task)
             raise SessionInitializationTimeoutError(
@@ -374,6 +380,14 @@ class AntigravityManager:
                 if session is not None:
                     self._append_event(session.session_id, payload)
                 if kind == "step_update" and session is not None:
+                    if event_body.get("step_type") == "agent_response":
+                        usage = event_body.get("usage")
+                        usage = usage if isinstance(usage, dict) else {}
+                        total = context_usage.valid_number(usage.get("total_tokens"))
+                        cached = context_usage.valid_number(usage.get("cache_read_tokens"))
+                        context_usage.record_context_usage(
+                            session, total + cached if total is not None and cached is not None else None, None
+                        )
                     text = _event_text(event_body)
                     if text:
                         session.set_progress(text)
@@ -408,6 +422,7 @@ class AntigravityManager:
             if process is not None:
                 await _terminate(process)
             if session is not None:
+                await session.drain_registration()
                 self._processes.pop(session.session_id, None)
 
     def _append_event(self, session_id: str, payload: dict[str, Any]) -> None:
@@ -537,7 +552,7 @@ def _record_failure(session: SessionState, error: BaseException, stderr_text: st
 
 
 async def _read_stderr(process: asyncio.subprocess.Process) -> str:
-    """標準エラーを有界で読み取る。"""
+    """標準エラーを先頭から`_STDERR_LIMIT_CHARS`バイトまで読み取る。"""
     if process.stderr is None:
         return ""
     with contextlib.suppress(Exception):

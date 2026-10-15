@@ -9,7 +9,9 @@ description: >
 
 同じユーザー介入、レビュー反復、手戻りまたは無駄が再発しないよう、対象セッションの問題を見つけ、原因と対策を確定した通常AWIを投入する。
 原因と対策の最終判断と統合は、元の記録を持つメインが同じセッション内で行う。事実の収集は`agent-toolkit:bugfix`の`references/investigation-delegation.md`「事象単位の並列調査委譲」の条件で独立した担当へ委譲でき、メインは取得できる証拠を渡す。
-`atk run-script session-review-prepare`はツール実行結果と自動挿入本文を除いたセッション全体の流れ（会話の流れ）と、機械的に雑音を除いた問題候補（`candidates.md`）を書く。候補だけを読むとどの観点にも当たらない問題が分析の入力に現れないため、会話の流れの全範囲から先に問題を探し、`candidates.md`はそこで得られない事象の補完に使う。
+`atk run-script session-review-prepare`はツール実行結果と自動挿入本文を除いたセッション全体の流れ（会話の流れ）と、除外区分に当たる結果を機械的に除いた問題候補（`candidates.md`）を書く。候補だけを読むとどの観点にも当たらない問題が分析の入力に現れないため、会話の流れの全範囲から先に問題を探し、`candidates.md`はそこで得られない事象の補完に使う。
+
+全記録の抽出とWI投入には、元の記録・参照資料・キューへ到達するファイル操作とCLIが必要である。これらが無い環境では、提示された会話の範囲で問題候補と確認に要る証拠を整理し、対象全体の振り返りと区別する。全記録の検収と正式な投入は、最上位のメインがそれらの機能を使えるClaude CodeまたはCodexで行う。候補の説明は[文章の品質基準](references/quality-standards.md)で確かめる。
 
 ## 読込表
 
@@ -30,7 +32,7 @@ description: >
 
 ## 工程
 
-1. セッションのmanaged-temp（`agent-toolkit:managed-temp`）の中へ実行ごとに異なる名前（`session-review-<時刻>`など）の作業ディレクトリを作成し、次のいずれかの形で1回実行する。Claude Codeでは現在のtranscriptの絶対パスを、Codexでは`CODEX_THREAD_ID`を渡す。`--target-repo`は対象リポジトリを確定できた場合だけ渡す。
+1. セッションのmanaged-temp（`agent-toolkit:managed-temp`）の中へ実行ごとに異なる名前（`session-review-<時刻>`など）の作業ディレクトリを作成し、次のいずれかの形で1回実行する。Claude Codeでは現在のtranscriptの絶対パス（`rules-main.claude-code.md`「自身の会話の記録」の取得元の値）を、Codexでは`CODEX_THREAD_ID`を渡す。`--target-repo`は対象リポジトリを確定できた場合だけ渡す。
 
    ```text
    atk run-script session-review-prepare -- --transcript <transcriptの絶対パス> --work-dir <作業ディレクトリの絶対パス> --target-repo <対象リポジトリの絶対パス>

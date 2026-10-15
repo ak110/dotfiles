@@ -31,7 +31,14 @@ def run() -> post_apply_outcome.PostApplyOutcome:
     """
     uvx = common.resolve_executable("uvx", preferred_directories=(Path.home() / ".local" / "bin",))
     if uvx is None:
-        logger.warning(log_format.format_status(_TAG, "uvx CLI が見つからず環境構築を開始できない"))
+        logger.warning(
+            log_format.format_status(
+                _TAG,
+                "uvx CLI が見つからず環境構築を開始できない。"
+                "https://docs.astral.sh/uv/getting-started/installation/ "
+                "の手順でuvを導入して`update-dotfiles`を再実行する",
+            ),
+        )
         return post_apply_outcome.PostApplyOutcome()
     definitions = plugin_warmup.agent_toolkit_targets(
         _INSTALLED_PLUGINS_PATH,
@@ -40,7 +47,12 @@ def run() -> post_apply_outcome.PostApplyOutcome:
         tag=_TAG,
     )
     if not definitions:
-        logger.warning(log_format.format_status(_TAG, "MCP定義が見つからず環境構築を開始できない"))
+        logger.warning(
+            log_format.format_status(
+                _TAG,
+                "MCP定義が見つからず環境構築を開始できない。`update-dotfiles`を再実行してagent-toolkitを導入する",
+            ),
+        )
         return post_apply_outcome.PostApplyOutcome()
     # 同じ起動形は同じツール環境を使うため、定義ファイルをまとめて1回だけ起動する。
     launches: dict[tuple[str, ...], list[Path]] = {}
@@ -48,7 +60,14 @@ def run() -> post_apply_outcome.PostApplyOutcome:
         try:
             arguments = _warmup_arguments(definition)
         except ValueError as exc:
-            logger.warning(log_format.format_status(_TAG, f"環境構築を開始できない: {exc}"))
+            logger.warning(
+                log_format.format_status(
+                    _TAG,
+                    f"環境構築を開始できない: {exc}。"
+                    f"{definition}のmcpServers.pyfltrのcommandとargsを`uvx "
+                    "... mcp`の起動形へ修正して`update-dotfiles`を再実行する",
+                ),
+            )
             continue
         launches.setdefault(arguments, []).append(definition)
     for arguments, sources in launches.items():

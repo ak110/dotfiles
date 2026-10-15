@@ -78,7 +78,15 @@ def delete_homonym(
             current_size = file.stat().st_size
             if existing_size != current_size:
                 if hash_only:
-                    logger.warning("ハッシュ衝突の可能性: %s <> %s", existing, file)
+                    logger.warning(
+                        (
+                            "ハッシュ衝突の可能性: %s <> %s。"
+                            "両方を保持して続行します。"
+                            "両ファイルを開いて内容を比較し、不要な方だけ手動で削除してください。"
+                        ),
+                        existing,
+                        file,
+                    )
                 continue
             existing_mtime = existing.stat().st_mtime
             current_mtime = file.stat().st_mtime

@@ -28,8 +28,8 @@ _LEGACY_UNIT_PATH_RELATIVE = pathlib.PurePath(".config") / "systemd" / "user" / 
 # dotfiles ホストでは post_apply の旧配布物削除が ~/.local/bin/atk を除去する。
 _LAUNCHER_TEMPLATE = """#!/bin/sh
 set -eu
-exec "{uv}" run --project "{dotfiles}/agent-toolkit" --locked --no-default-groups \\
-  "{dotfiles}/agent-toolkit/agent_toolkit/atk.py" serve "$@"
+exec "{uv}" run --no-config --no-project --python 3.15 python \\
+  "{dotfiles}/agent-toolkit/scripts/launch.py" agent_toolkit/atk.py serve "$@"
 """
 
 # unit ファイル本文。ExecStart は systemd specifier %h を使い、
@@ -68,11 +68,23 @@ def run() -> post_apply_outcome.PostApplyOutcome:
 
     uv = common.resolve_uv_path()
     if uv is None:
-        logger.info(log_format.format_status("atk-serve", "uvが見つからないため設定を見送る"))
+        logger.info(
+            log_format.format_status(
+                "atk-serve",
+                "uvが見つからないため設定を見送る。"
+                "https://docs.astral.sh/uv/getting-started/installation/ の手順でuvを導入し、"
+                "`update-dotfiles`を再実行する",
+            ),
+        )
         return post_apply_outcome.PostApplyOutcome()
     dotfiles = common.find_dotfiles_root()
     if dotfiles is None:
-        logger.info(log_format.format_status("atk-serve", "dotfilesルートが見つからないため設定を見送る"))
+        logger.info(
+            log_format.format_status(
+                "atk-serve",
+                "dotfilesルートが見つからないため設定を見送る。`update-dotfiles`を再実行して導入と設定をやり直す",
+            ),
+        )
         return post_apply_outcome.PostApplyOutcome()
 
     legacy_failure = _remove_legacy_unit()
@@ -97,7 +109,13 @@ def run() -> post_apply_outcome.PostApplyOutcome:
         restart_needed=launcher_changed,
         journal_identifier="atk-serve-setup",
     )
-    return post_apply_outcome.PostApplyOutcome(changed=changed, failure=legacy_failure)
+    return post_apply_outcome.PostApplyOutcome(
+        changed=changed,
+        failure=legacy_failure,
+        next_action=(
+            "`update-dotfiles`を再実行して旧unitの撤去とサービス設定をやり直す。" if legacy_failure is not None else None
+        ),
+    )
 
 
 def _remove_legacy_unit() -> str | None:
@@ -106,7 +124,7 @@ def _remove_legacy_unit() -> str | None:
     停止、無効化または削除に失敗した場合はunitファイルを残し、後続の配置を続ける。
     失敗は撤去の失敗として工程の失敗に数えるが、主目的であるサービス設定の配置は止めない。
     削除より先にunitファイルを除去すると、稼働中のサービスを停止も無効化もできないまま残すため、
-    `post_apply`の一括削除ではなく本工程で扱う。
+    停止と無効化を済ませてから削除する本工程で扱い、`post_apply`の一括削除の対象に含めない。
     """
     unit_path = _legacy_unit_path()
     if not unit_path.exists():

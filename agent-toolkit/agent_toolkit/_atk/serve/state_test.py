@@ -140,7 +140,7 @@ process.stdout.write(JSON.stringify({shown, cleared, redisplayed, failures}));
 
 
 def test_assets_restore_focus_on_escape_and_focus_delete_close_first() -> None:
-    """Escapeで起点へ戻り、破壊確認では非破壊の閉じる操作へ初期フォーカスを置く。"""
+    """Escapeでフォーカスを操作の起点へ戻し、破壊的な操作の確認では取り消しの「閉じる」へ初期フォーカスを置く。"""
     result = _run_node_ui(
         """
 const origin = new Element('create-origin', 'BUTTON');
@@ -620,7 +620,7 @@ async def test_edit_and_answer_apis_detect_external_changes(
     """取得後の外部更新を409で保護し、最新値と従来形式の更新を許可する。"""
 
     @contextlib.contextmanager
-    def lock(_path: pathlib.Path, **_kwargs: object) -> typing.Generator[None, None, None]:
+    def lock(_path: pathlib.Path, **_kwargs: object) -> typing.Generator[None]:
         yield
 
     monkeypatch.setattr(_wi_sync, "repo_lock", lock)
@@ -882,7 +882,7 @@ def test_sync_ignores_rate_limit(tmp_path: pathlib.Path, monkeypatch: pytest.Mon
     calls: list[str] = []
 
     @contextlib.contextmanager
-    def lock(_path: pathlib.Path, **_kwargs: object) -> typing.Generator[None, None, None]:
+    def lock(_path: pathlib.Path, **_kwargs: object) -> typing.Generator[None]:
         yield
 
     monkeypatch.setattr(_wi_sync, "repo_lock", lock)
@@ -1050,7 +1050,7 @@ async def test_add_api_accepts_omitted_target_repo_with_frontmatter(
     """本文frontmatterにtarget_repoがあれば対象リポジトリ指定を省略できる。"""
 
     @contextlib.contextmanager
-    def lock(_path: pathlib.Path, **_kwargs: object) -> typing.Generator[None, None, None]:
+    def lock(_path: pathlib.Path, **_kwargs: object) -> typing.Generator[None]:
         yield
 
     monkeypatch.setattr(_wi_sync, "repo_lock", lock)

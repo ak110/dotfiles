@@ -50,7 +50,13 @@ def _role_hostnames(role: str) -> frozenset[str]:
     try:
         data = tomllib.loads(path.read_text(encoding="utf-8"))
     except (OSError, tomllib.TOMLDecodeError) as error:
-        logger.warning(log_format.format_status("host roles", f"{path} を読めないため役割なしとして扱う: {error}"))
+        logger.warning(
+            log_format.format_status(
+                "host roles",
+                f"{path} を読めないため役割なしとして扱う: {error}。"
+                "役割に応じた設定が必要なら、このファイルの読み取り権限とTOMLの書式を修正して`update-dotfiles`を再実行する",
+            ),
+        )
         return frozenset()
     roles = data.get("host_roles")
     names = roles.get(role) if isinstance(roles, dict) else None

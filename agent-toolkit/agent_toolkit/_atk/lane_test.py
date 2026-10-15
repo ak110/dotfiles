@@ -6,6 +6,7 @@ import argparse
 import json
 import os
 import pathlib
+import shlex
 import subprocess
 import sys
 from typing import Any
@@ -469,7 +470,7 @@ def test_exit_entrypoint_cleans_resources_even_when_interactive_host_is_unidenti
 def test_process_loop_child_exit_cleans_before_normal_or_abnormal_classification(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, engine: str, exit_code: int
 ) -> None:
-    """両engineの子終了境界で同じ回収を実行し、異常終了後も判定より前に資源を保全する。"""
+    """Claude・Codexのどちらでもprocess-loopの子セッションの終了時に同じ回収を実行し、異常終了でも終了の判定より前にレーン資源を回収して、対象リポジトリと選定ファイルは残す。"""
     repo = git_repository.init_repository(tmp_path / "repo", initial_branch="main", commit_message="初期状態")
     selected = tmp_path / "selection.yaml"
     snapshot = tmp_path / "created.json"
@@ -519,3 +520,507 @@ def test_process_loop_child_exit_cleans_before_normal_or_abnormal_classification
     created = json.loads(snapshot.read_text(encoding="utf-8"))
     assert not pathlib.Path(created["worktree"]).exists() and not pathlib.Path(created["record_path"]).exists()
     assert repo.is_dir() and selected.is_file()
+
+
+def _integration_args(record: dict[str, Any], repo: pathlib.Path, manifest: pathlib.Path, head: str) -> tuple[str, ...]:
+    return (
+        "integrate",
+        "--record",
+        record["record_path"],
+        "--reviewed-head",
+        head,
+        "--target-worktree",
+        str(repo),
+        "--target-branch",
+        "main",
+        "--manifest",
+        str(manifest),
+    )
+
+
+def _integration_selection(path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    notes = path.parent / "notes"
+    (notes / "processing").mkdir(parents=True, exist_ok=True)
+    (notes / "processing/awi.md").write_text(
+        "---\ntype: awi\nsource: test\ntarget_repo: github.com/test/repo\n---\n\n# 観測\n\n"
+        "## 反映内容と反映先\n\n観測を保存する。\n\n## 完成条件\n\n観測を完了する。\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("AGENT_TOOLKIT_PRIVATE_NOTES", str(notes))
+    document = {
+        "選定": [{"WI": "awi.md", "レーン": "lane-01", "書込対象": [], "鮮度": {"status": "current", "later_commit_count": 0}}],
+        "レーンの所要時間": [
+            {"レーン": "lane-01", "統合状態": "未統合", "実装秒数": 60, "統合秒数": 60, "根拠": "隔離した観測試験"}
+        ],
+        "初回配分": {
+            "候補WI": ["awi.md"],
+            "レーン割当": {"awi.md": "lane-01"},
+            "不可分成分": [{"WI": ["awi.md"], "結合条件": []}],
+        },
+    }
+    path.write_text(yaml.safe_dump(document, allow_unicode=True), encoding="utf-8")
+
+
+@pytest.mark.parametrize("planned", [False, True])
+def test_integrate_public_lifecycle(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], planned: bool
+) -> None:
+    """レビュー済み成果を公開操作で統合し、計画あり・なしの最終化後だけ回収できる。"""
+    repo, selected, record = _create(tmp_path, monkeypatch, capsys)
+    _integration_selection(selected, monkeypatch)
+    worktree = pathlib.Path(record["worktree"])
+    (worktree / "feature.txt").write_text("成果", encoding="utf-8")
+    git_repository.commit_all(worktree, "成果")
+    head = git_repository.git_output(worktree, "rev-parse", "HEAD")
+    handoff = tmp_path / "handoff.md"
+    handoff.write_text("検収済み採否と完成条件", encoding="utf-8")
+    manifest = tmp_path / "integration.json"
+    saved = tmp_path / "saved-plan"
+    argv = [sys.executable, "-c", "import pathlib,sys;pathlib.Path(sys.argv[1]).touch()", str(saved)]
+    manifest.write_text(
+        json.dumps(
+            {
+                "plans": [{"name": "plan.md", "commands": [argv]}] if planned else [],
+                "wis": [{"name": "awi.md", "commands": []}],
+                "verification": [],
+                "handoff": str(handoff),
+            }
+        ),
+        encoding="utf-8",
+    )
+    args = _integration_args(record, repo, manifest, head)
+    code, result, stderr = _invoke(capsys, *args)
+    assert code == 0, stderr
+    assert result["phase"] == "finalized" and result["integrated_head"] == head
+    assert git_repository.git_output(repo, "rev-parse", "HEAD") == head
+    assert (repo / "feature.txt").read_text(encoding="utf-8") == "成果"
+    assert saved.exists() is planned
+    code, repeated, stderr = _invoke(capsys, *args)
+    assert code == 0 and repeated["completed"] == result["completed"], stderr
+    code, deleted, stderr = _invoke(capsys, "delete")
+    assert code == 0 and deleted["removed"] == ["lane-01"], stderr
+
+
+def test_integrate_resume_and_preservation(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """最終化の途中失敗はGit統合と成功済み保存を繰り返さず、未完了のWI終端から再開する。"""
+    repo, selected, record = _create(tmp_path, monkeypatch, capsys)
+    _integration_selection(selected, monkeypatch)
+    worktree = pathlib.Path(record["worktree"])
+    git_repository.commit_all(worktree, "成果")
+    head = git_repository.git_output(worktree, "rev-parse", "HEAD")
+    manifest = tmp_path / "integration.json"
+    calls, permit = tmp_path / "calls", tmp_path / "permit"
+    save = [
+        sys.executable,
+        "-c",
+        "import pathlib,sys;p=pathlib.Path(sys.argv[1]);p.write_text(p.read_text()+'s' if p.exists() else 's')",
+        str(calls),
+    ]
+    terminal = [
+        sys.executable,
+        "-c",
+        "import pathlib,sys;sys.exit(0 if pathlib.Path(sys.argv[1]).exists() else 4)",
+        str(permit),
+    ]
+    manifest.write_text(
+        json.dumps(
+            {
+                "plans": [{"name": "plan.md", "commands": [save]}],
+                "wis": [{"name": "awi.md", "commands": [terminal]}],
+                "verification": [],
+            }
+        ),
+        encoding="utf-8",
+    )
+    args = _integration_args(record, repo, manifest, head)
+    code, _result, stderr = _invoke(capsys, *args)
+    assert code == 2 and "終了4" in stderr
+    stored = json.loads(pathlib.Path(record["record_path"]).read_text(encoding="utf-8"))
+    assert stored["integration"]["phase"] == "git-integrated"
+    assert git_repository.git_output(repo, "rev-parse", "HEAD") == head
+    assert "統合済み" not in selected.read_text(encoding="utf-8")
+    permit.touch()
+    code, result, stderr = _invoke(capsys, *args)
+    assert code == 0 and result["phase"] == "finalized", stderr
+    assert calls.read_text(encoding="utf-8") == "s"
+
+
+@pytest.mark.parametrize("condition", ["dirty", "review-head", "foreign-owner", "active-session"])
+def test_integrate_rejects_unreviewed_or_unowned_work(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], condition: str
+) -> None:
+    """検収不能な作業を統合せず、成果と所有記録を保持する。"""
+    repo, selected, record = _create(tmp_path, monkeypatch, capsys)
+    _selection(selected, integrated=False)
+    worktree = pathlib.Path(record["worktree"])
+    old_head = git_repository.git_output(worktree, "rev-parse", "HEAD")
+    git_repository.commit_all(worktree, "成果")
+    head = git_repository.git_output(worktree, "rev-parse", "HEAD")
+    handoff = tmp_path / "handoff.md"
+    handoff.touch()
+    manifest = tmp_path / "integration.json"
+    manifest.write_text(json.dumps({"plans": [], "wis": [], "verification": [], "handoff": str(handoff)}), encoding="utf-8")
+    if condition == "dirty":
+        (worktree / "unfinished").touch()
+    elif condition == "review-head":
+        head = old_head
+    elif condition == "foreign-owner":
+        monkeypatch.setenv(lane.SESSION_ENV, "foreign")
+    else:
+        session_registry.publish("child", terminal=False, cwd=str(worktree))
+    code, _result, _stderr = _invoke(capsys, *_integration_args(record, repo, manifest, head))
+    assert code == 2
+    assert git_repository.git_output(repo, "rev-parse", "HEAD") == old_head
+    assert worktree.exists() and pathlib.Path(record["record_path"]).exists()
+
+
+def test_integrate_rebase_returns_mapping_and_requires_diagnostic_acceptance(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """分岐した未push成果は内容比較と再検証を保存し、受理後だけffと最終化へ進む。"""
+    repo, selected, record = _create(tmp_path, monkeypatch, capsys)
+    _integration_selection(selected, monkeypatch)
+    worktree = pathlib.Path(record["worktree"])
+    (worktree / "feature").write_text("成果", encoding="utf-8")
+    head = git_repository.commit_all(worktree, "成果")
+    (repo / "upstream").write_text("先行統合", encoding="utf-8")
+    before = git_repository.commit_all(repo, "先行統合")
+    handoff = tmp_path / "handoff.md"
+    handoff.touch()
+    manifest = tmp_path / "integration.json"
+    terminal = [
+        sys.executable,
+        "-c",
+        "import subprocess,sys;assert subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip()==sys.argv[1]",
+        head,
+    ]
+    manifest.write_text(
+        json.dumps(
+            {
+                "plans": [],
+                "wis": [{"name": "awi.md", "commands": [terminal]}],
+                "handoff": str(handoff),
+                "verification": [
+                    [
+                        sys.executable,
+                        "-c",
+                        "import pathlib;assert pathlib.Path('feature').read_text()=='成果';"
+                        "assert pathlib.Path('upstream').exists()",
+                    ]
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    args = _integration_args(record, repo, manifest, head)
+    code, pending, stderr = _invoke(capsys, *args)
+    assert code == 1, stderr
+    assert pending["phase"] == "awaiting-validation"
+    mapping = pathlib.Path(pending["rewrite_map"])
+    assert mapping.is_file()
+    assert (mapping.parent / ".agent-toolkit-managed-temp.json").is_file()
+    assert git_repository.git_output(repo, "rev-parse", "HEAD") == before
+    value = json.loads(manifest.read_text(encoding="utf-8"))
+    value["wis"][0]["commands"][0][-1] = pending["new_head"]
+    manifest.write_text(json.dumps(value), encoding="utf-8")
+    code, _result, stderr = _invoke(capsys, *args, "--accept-rebased-head", pending["new_head"])
+    assert code == 2 and "--amend-finalization" in stderr
+    code, final, stderr = _invoke(capsys, *args, "--accept-rebased-head", pending["new_head"], "--amend-finalization")
+    assert code == 0 and final["phase"] == "finalized", stderr
+    assert git_repository.git_output(repo, "rev-parse", "HEAD") == pending["new_head"]
+    code, deleted, stderr = _invoke(capsys, "delete")
+    assert code == 0 and deleted["removed"] == ["lane-01"], stderr
+    assert mapping.is_file()
+
+
+@pytest.mark.parametrize("remove_exit_code", [0, 7])
+@pytest.mark.parametrize("detached", [False, True])
+def test_hook_owned_resource(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    remove_exit_code: int,
+    detached: bool,
+) -> None:
+    """hookの返却先をlane所有へ接続し、再利用と終了時Removeを同じ資源へ適用する。"""
+    repo = git_repository.init_repository(tmp_path / "repo", initial_branch="main", commit_message="基準")
+    destination = tmp_path / "hook-created"
+    script = tmp_path / "hook.py"
+    script.write_text(
+        "import json,pathlib,subprocess,sys\n"
+        "p=json.load(sys.stdin)\n"
+        "if p['hook_event_name']=='WorktreeCreate':\n"
+        " assert p['name']=='process-wi-lane-01'\n"
+        " mode=['--detach'] if sys.argv[3]=='True' else ['-b',p['name']]\n"
+        " subprocess.run(['git','worktree','add',*mode,sys.argv[1]],check=True,stdout=sys.stderr)\n"
+        " pathlib.Path(sys.argv[1],'hook-result').write_text('hookの成果',encoding='utf-8')\n"
+        " print(sys.argv[1])\n"
+        "else:\n"
+        " assert p['worktree_path']==sys.argv[1]\n"
+        " subprocess.run(['git','worktree','remove',sys.argv[1]],check=True)\n"
+        " raise SystemExit(int(sys.argv[2]))\n",
+        encoding="utf-8",
+    )
+    argv = [sys.executable, str(script), str(destination), str(remove_exit_code), str(detached)]
+    command = subprocess.list2cmdline(argv) if os.name == "nt" else shlex.join(argv)
+    settings = repo / ".claude/settings.local.json"
+    settings.parent.mkdir()
+    settings.write_text(
+        json.dumps(
+            {
+                "hooks": {
+                    event: [{"hooks": [{"type": "command", "command": command}]}]
+                    for event in ("WorktreeCreate", "WorktreeRemove")
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    git_repository.commit_all(repo, "hook設定を保存")
+    selected = tmp_path / "selection.yaml"
+    _selection(selected)
+    code, record, stderr = _create_in(capsys, monkeypatch, "hook-owner", repo, selected)
+    assert code == 0 and record["worktree"] == str(destination), stderr
+    diagnostics = pathlib.Path(record["hook_diagnostics"]["WorktreeCreate"])
+    assert (diagnostics / ".agent-toolkit-managed-temp.json").is_file()
+    observed = json.loads((diagnostics / "WorktreeCreate-0.json").read_text(encoding="utf-8"))
+    assert observed["exit_code"] == 0 and observed["input"]["session_id"] == "hook-owner"
+    assert git_repository.git_output(destination, "symbolic-ref", "--short", "HEAD") == record["branch"]
+    assert git_repository.git_output(destination, "rev-parse", "HEAD") == record["initial_head"]
+    assert (destination / "hook-result").read_text(encoding="utf-8") == "hookの成果"
+    code, reused, stderr = _create_in(capsys, monkeypatch, "hook-owner", repo, selected)
+    assert code == 0 and reused["reused"] and reused["worktree"] == str(destination), stderr
+    assert reused["ready"] and reused["branch"] == record["branch"]
+    _integration_selection(selected, monkeypatch)
+    head = git_repository.commit_all(destination, "hookの成果を保存")
+    handoff = tmp_path / "handoff.md"
+    handoff.write_text("検収済みhook成果", encoding="utf-8")
+    manifest = tmp_path / "integration.json"
+    manifest.write_text(
+        json.dumps({"plans": [], "wis": [{"name": "awi.md", "commands": []}], "verification": [], "handoff": str(handoff)}),
+        encoding="utf-8",
+    )
+    code, integrated, stderr = _invoke(capsys, *_integration_args(record, repo, manifest, head))
+    assert code == 0 and integrated["phase"] == "finalized", stderr
+    assert git_repository.git_output(repo, "rev-parse", "HEAD") == head
+    assert (repo / "hook-result").read_text(encoding="utf-8") == "hookの成果"
+    code, deleted, stderr = _invoke(capsys, "delete")
+    assert code == 0 and deleted["removed"] == ["lane-01"], stderr
+    assert not destination.exists() and not pathlib.Path(record["record_path"]).exists()
+    assert (diagnostics / "WorktreeCreate-0.json").is_file()
+
+
+@pytest.mark.parametrize("returned", ["main", "other", "other-detached"])
+def test_hook_cannot_adopt_preexisting_worktree(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], returned: str
+) -> None:
+    """新規作成でhookが既存の作業先を返した場合は拒否し、主作業ツリーと別所有の成果・branchを変えない。"""
+    repo = git_repository.init_repository(tmp_path / "repo", initial_branch="main", commit_message="基準")
+    (repo / "user.txt").write_text("保存済み", encoding="utf-8")
+    other = tmp_path / "other"
+    settings = repo / ".claude/settings.local.json"
+    settings.parent.mkdir()
+    destination = repo if returned == "main" else other
+    argv = [sys.executable, "-c", "import sys;print(sys.argv[1])", str(destination)]
+    command = subprocess.list2cmdline(argv) if os.name == "nt" else shlex.join(argv)
+    settings.write_text(
+        json.dumps({"hooks": {"WorktreeCreate": [{"hooks": [{"type": "command", "command": command}]}]}}),
+        encoding="utf-8",
+    )
+    git_repository.commit_all(repo, "ユーザーの開始版とhook設定")
+    mode = ("--detach",) if returned == "other-detached" else ("-b", "other-owner")
+    git_repository.run_git(repo, "worktree", "add", *mode, str(other))
+    for tree in (repo, other):
+        (tree / "user.txt").write_text("未commitのユーザー成果", encoding="utf-8")
+        (tree / "untracked.txt").write_text("未追跡のユーザー成果", encoding="utf-8")
+    process = session_registry.owner_process()
+    assert process is not None
+    session_registry.publish("other-writer", terminal=False, cwd=str(other), processes=(process,))
+
+    def snapshot() -> list[tuple[str, str, str, bytes, bytes]]:
+        return [
+            (
+                git_repository.git_output(tree, "branch", "--show-current"),
+                git_repository.git_output(tree, "rev-parse", "HEAD"),
+                git_repository.git_output(tree, "diff", "--binary"),
+                (tree / "user.txt").read_bytes(),
+                (tree / "untracked.txt").read_bytes(),
+            )
+            for tree in (repo, other)
+        ]
+
+    before = snapshot()
+    selected = tmp_path / "selection.yaml"
+    _selection(selected)
+    code, _result, _stderr = _create_in(capsys, monkeypatch, "new-hook-owner", repo, selected)
+    assert snapshot() == before
+    assert code == 2
+    code, listed, stderr = _invoke(capsys, "delete", "--list")
+    assert code == 0, stderr
+    record = listed["records"][0]["record"]
+    assert not record["ready"] and record["worktree"] == str(_fixed(repo, "lane-01"))
+    assert pathlib.Path(record["record_path"]).is_file()
+
+
+def test_integrate_observation_and_saved_plan(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """観測のみの再開はGitを変更せず、保存済み計画と延期WIを検収して最終化する。"""
+    repo, selected, record = _create(tmp_path, monkeypatch, capsys)
+    _integration_selection(selected, monkeypatch)
+    saved = tmp_path / "plan.md"
+    saved.write_text("保存済み計画", encoding="utf-8")
+    manifest = tmp_path / "integration.json"
+    manifest.write_text(
+        json.dumps(
+            {
+                "plans": [{"name": "plan.md", "commands": [], "saved": str(saved)}],
+                "wis": [{"name": "awi.md", "commands": []}],
+                "verification": [],
+            }
+        ),
+        encoding="utf-8",
+    )
+    before = git_repository.git_output(repo, "rev-parse", "HEAD")
+    code, result, stderr = _invoke(capsys, *_integration_args(record, repo, manifest, before), "--no-merge")
+    assert code == 0 and result["phase"] == "finalized", stderr
+    assert git_repository.git_output(repo, "rev-parse", "HEAD") == before
+    assert saved.read_text(encoding="utf-8") == "保存済み計画"
+
+
+def test_integrate_additional_wi_uses_current_review_and_collection(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """同じ資源への追加WIは今回のレビューHEADと全WI集合で再統合する。"""
+    repo, selected, record = _create(tmp_path, monkeypatch, capsys)
+    _integration_selection(selected, monkeypatch)
+    worktree = pathlib.Path(record["worktree"])
+    handoff = tmp_path / "handoff.md"
+    handoff.touch()
+    manifest = tmp_path / "integration.json"
+    wis = [{"name": "awi.md", "commands": []}]
+    for index in range(2):
+        (worktree / f"feature-{index}").write_text("成果", encoding="utf-8")
+        head = git_repository.commit_all(worktree, "成果")
+        if index:
+            document = yaml.safe_load(selected.read_text(encoding="utf-8"))
+            document["選定"].append(dict(document["選定"][0], WI="additional.md"))
+            document["追加WI"] = ["additional.md"]
+            document["レーンの所要時間"][0]["統合状態"] = "未統合"
+            selected.write_text(yaml.safe_dump(document, allow_unicode=True), encoding="utf-8")
+            notes = tmp_path / "notes/processing"
+            (notes / "additional.md").write_bytes((notes / "awi.md").read_bytes())
+            wis.append({"name": "additional.md", "commands": []})
+        manifest.write_text(
+            json.dumps({"plans": [], "wis": wis, "verification": [], "handoff": str(handoff)}), encoding="utf-8"
+        )
+        code, result, stderr = _invoke(capsys, *_integration_args(record, repo, manifest, head))
+        assert code == 0 and result["phase"] == "finalized", stderr
+        assert git_repository.git_output(repo, "rev-parse", "HEAD") == head
+    assert (repo / "feature-0").exists() and (repo / "feature-1").exists()
+
+
+def test_integrate_refreshes_publication_before_rewriting(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """古いremote追跡refが無くても、公開済みcommitをfetchして書換えを拒否する。"""
+    repo, selected, record = _create(tmp_path, monkeypatch, capsys)
+    _integration_selection(selected, monkeypatch)
+    remote = git_repository.init_bare_repository(tmp_path / "origin.git")
+    git_repository.run_git(repo, "remote", "add", "origin", str(remote))
+    worktree = pathlib.Path(record["worktree"])
+    (worktree / "published").write_text("公開済み", encoding="utf-8")
+    head = git_repository.commit_all(worktree, "公開済み")
+    git_repository.run_git(worktree, "push", "origin", record["branch"])
+    git_repository.run_git(repo, "update-ref", "-d", f"refs/remotes/origin/{record['branch']}")
+    (repo / "upstream").write_text("先行統合", encoding="utf-8")
+    before = git_repository.commit_all(repo, "先行統合")
+    handoff = tmp_path / "handoff.md"
+    handoff.touch()
+    manifest = tmp_path / "integration.json"
+    manifest.write_text(
+        json.dumps(
+            {
+                "plans": [],
+                "wis": [{"name": "awi.md", "commands": []}],
+                "handoff": str(handoff),
+                "verification": [[sys.executable, "-c", "pass"]],
+            }
+        ),
+        encoding="utf-8",
+    )
+    code, _result, stderr = _invoke(capsys, *_integration_args(record, repo, manifest, head))
+    assert code == 2 and "push済みcommit" in stderr
+    assert git_repository.git_output(worktree, "rev-parse", "HEAD") == head
+    assert git_repository.git_output(repo, "rev-parse", "HEAD") == before
+
+
+def test_integrate_restarts_after_reviewed_correction(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Git統合前の検証失敗は記録を残し、是正後の独立文脈レビュー入力で公開操作から再開する。"""
+    repo, selected, record = _create(tmp_path, monkeypatch, capsys)
+    _integration_selection(selected, monkeypatch)
+    worktree = pathlib.Path(record["worktree"])
+    (worktree / "feature").write_text("成果", encoding="utf-8")
+    reviewed = git_repository.commit_all(worktree, "成果")
+    (repo / "upstream").write_text("先行統合", encoding="utf-8")
+    git_repository.commit_all(repo, "先行統合")
+    handoff = tmp_path / "handoff.md"
+    handoff.touch()
+    manifest = tmp_path / "integration.json"
+    value = {
+        "plans": [],
+        "wis": [{"name": "awi.md", "commands": []}],
+        "handoff": str(handoff),
+        "verification": [[sys.executable, "-c", "raise SystemExit(3)"]],
+    }
+    manifest.write_text(json.dumps(value), encoding="utf-8")
+    code, _result, stderr = _invoke(capsys, *_integration_args(record, repo, manifest, reviewed))
+    assert code == 2 and "verification-0" in stderr
+    (worktree / "feature").write_text("是正済み", encoding="utf-8")
+    reviewed = git_repository.commit_all(worktree, "是正")
+    value["verification"] = [[sys.executable, "-c", "pass"]]
+    manifest.write_text(json.dumps(value), encoding="utf-8")
+    args = _integration_args(record, repo, manifest, reviewed)
+    code, _result, stderr = _invoke(capsys, *args)
+    assert code == 2 and "--restart-review" in stderr
+    code, result, stderr = _invoke(capsys, *args, "--restart-review")
+    assert code == 0 and result["phase"] == "finalized", stderr
+    stored = json.loads(pathlib.Path(record["record_path"]).read_text(encoding="utf-8"))
+    assert stored["previous_integration"]["phase"] == "rebased"
+    assert "verification-0" in result["completed"]
+    assert (repo / "feature").read_text(encoding="utf-8") == "是正済み"
+
+
+def test_integrate_uses_reviewed_oid_when_branch_advances_before_merge(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """最後の検収後にbranchが進んでも、未レビューcommitをffへ混入しない。"""
+    repo, selected, record = _create(tmp_path, monkeypatch, capsys)
+    _integration_selection(selected, monkeypatch)
+    worktree = pathlib.Path(record["worktree"])
+    (worktree / "reviewed").write_text("受理済み", encoding="utf-8")
+    head = git_repository.commit_all(worktree, "レビュー済み")
+    handoff = tmp_path / "handoff.md"
+    handoff.touch()
+    manifest = tmp_path / "integration.json"
+    manifest.write_text(
+        json.dumps({"plans": [], "wis": [{"name": "awi.md", "commands": []}], "handoff": str(handoff), "verification": []}),
+        encoding="utf-8",
+    )
+    real_run = lane.git_command.run
+
+    def advancing_run(argv: list[str], cwd: pathlib.Path, *extra: Any, **kwargs: Any) -> Any:
+        if argv[:1] == ["merge"] and cwd == repo:
+            (worktree / "unreviewed").write_text("追加の未レビュー成果", encoding="utf-8")
+            git_repository.commit_all(worktree, "未レビュー")
+        return real_run(argv, cwd, *extra, **kwargs)
+
+    monkeypatch.setattr(lane.git_command, "run", advancing_run)
+    code, result, stderr = _invoke(capsys, *_integration_args(record, repo, manifest, head))
+    assert code == 0 and result["integrated_head"] == head, stderr
+    assert not (repo / "unreviewed").exists()
+    assert (worktree / "unreviewed").exists()

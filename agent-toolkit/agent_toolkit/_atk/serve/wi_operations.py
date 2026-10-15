@@ -19,7 +19,6 @@ from agent_toolkit._atk.serve import entry_index
 from agent_toolkit._atk.wi import add as awi_add
 from agent_toolkit._atk.wi import batch as awi_batch
 from agent_toolkit._atk.wi import constants as wi_constants
-from agent_toolkit._atk.wi import entries as wi_entries
 from agent_toolkit._atk.wi import filters as wi_filters
 from agent_toolkit._atk.wi import frontmatter
 from agent_toolkit._atk.wi import headings as wi_headings
@@ -192,7 +191,8 @@ def _needs_verify(kind: str, state: str, text: str) -> bool:
     """反映後の観測だけが残るため`inbox`へ戻されたawiかを返す。
 
     process-wiは観測できる時刻より前の項目を`inbox`へ戻すため、保存状態だけでは未着手の項目と区別できない。
-    メインと同じく、フェンス外のトップレベルH2の最後の再開記録の節が観測だけが残る区分を持つかで判定する。
+    process-wiのメインエージェントと同じく、コードフェンス外のトップレベルH2のうち最後の再開記録の節が、
+    観測だけが残る再開区分を持つかで判定する。
     `processing`と`hold`は状態バッジが別の意味を示すため対象から外す。
     """
     if kind != wi_constants.WI_TYPE_AWI or state != wi_constants.WI_STATE_INBOX:
@@ -458,7 +458,7 @@ class Operations:
             text = path.read_text(encoding="utf-8")
             parsed = frontmatter.parse_frontmatter(text)
             metadata = parsed[0] if parsed is not None else {}
-            kind = wi_entries.entry_type_from_metadata(path, metadata) if parsed is not None else None
+            kind = wi_constants.normalized_wi_type(metadata.get("type"))
             question_type, choices = _question_metadata(metadata, kind or "unknown")
             detail_entry = _entry(path, kind or "unknown", state, text, metadata)
             display_text = text

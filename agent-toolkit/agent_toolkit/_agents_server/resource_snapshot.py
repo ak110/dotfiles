@@ -85,7 +85,8 @@ def _session_counts(
             previous = by_id.get(session_id)
             if previous is None or str(previous[1].get("updated_at", "")) <= str(entry.get("updated_at", "")):
                 by_id[session_id] = (root, entry)
-    # 集約書込の前に起きた遷移も反映する。自身が所有するsessionの現物は共有ファイルより新しい。
+    # 共有ファイルへ集約して書き込む前に起きた遷移も数えるため、このmanagerが所有するsessionはメモリ上の状態を使う。
+    # メモリ上の状態は共有ファイルの内容より新しい。
     for session in sessions.values():
         by_id[session.session_id] = (own_root, {"status": session.status})
     counts: dict[str, int] = dict.fromkeys([*roots, own_root], 0)

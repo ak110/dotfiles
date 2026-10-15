@@ -1,4 +1,4 @@
-"""`atk agents`の委譲session観測・通知操作。"""
+"""`atk agents`の、委譲sessionを観測する操作と委譲元へ通知を送る操作。"""
 
 from __future__ import annotations
 
@@ -16,6 +16,7 @@ from typing import Any
 
 from agent_toolkit._agents_server import (
     agents_wait,
+    context_usage,
     logs_export,
     record_paths,
     result_projection,
@@ -204,7 +205,7 @@ def _terminal_body(result: Mapping[str, Any]) -> tuple[str, str] | None:
     try:
         with pathlib.Path(body_path).open(encoding="utf-8", newline="") as stream:
             return session_id, stream.read()
-    except (OSError, UnicodeError):
+    except OSError, UnicodeError:
         return None
 
 
@@ -359,7 +360,7 @@ def dispatch(args: argparse.Namespace, *, environment: Mapping[str, str] | None 
 
 
 def _public_session(session: Mapping[str, Any], *, detailed: bool = False) -> dict[str, Any]:
-    """稼働状況と復旧の用途を分け、内部追加が公開へ混入しないよう射影する。"""
+    """一覧向けの稼働状況の項目と`detailed`で加える復旧用の項目を分け、内部で追加した項目が公開の出力へ混入しないよう、列挙した項目だけを取り出す。"""
     fields = (
         "session_id",
         "status",
@@ -374,6 +375,7 @@ def _public_session(session: Mapping[str, Any], *, detailed: bool = False) -> di
     if detailed:
         fields += ("cwd", "engine", "model", "effort", "model_type", "launch_kind", "prompt", "progress", "agent_message")
     result = {key: session[key] for key in fields if key in session}
+    result.update(context_usage.fields(session.get("context_tokens"), session.get("context_window")))
     if detailed:
         result.update(state.fast_mode_fields(session.get("engine"), session.get("fast_mode")))
     if isinstance(result.get("api_error"), dict):
@@ -428,16 +430,20 @@ def _human_tree(groups: list[tuple[str, list[dict[str, Any]]]], *, columns: int,
         if not sessions:
             continue
         rows.append(f"root {root_id}")
-        children: dict[str, list[dict[str, Any]]] = {}
+        children: dict[str | None, list[dict[str, Any]]] = {}
         attached: set[str] = set()
         for session in sessions:
-            owner = str(session.get("owner_status_file", "root.json")).removesuffix(".json")
+            owner = session.get("host_session_id")
             children.setdefault(owner, []).append(session)
 
-        _append_children(children, "root", "", set(), attached, rows)
+        _append_children(children, None, "", set(), attached, rows)
+        identifiers = {session["session_id"] for session in sessions}
+        for owner in children:
+            if owner is not None and owner not in identifiers:
+                _append_children(children, owner, "", set(), attached, rows)
         for session in sessions:
             if session["session_id"] not in attached:
-                rows.append((f"  {session['session_id']}", session))
+                _append_children({**children, None: [session]}, None, "", set(), attached, rows)
     if not rows:
         return "sessionはありません"
     session_rows = [row for row in rows if isinstance(row, tuple)]
@@ -470,8 +476,8 @@ def _human_tree(groups: list[tuple[str, list[dict[str, Any]]]], *, columns: int,
 
 
 def _append_children(
-    children: dict[str, list[dict[str, Any]]],
-    owner: str,
+    children: dict[str | None, list[dict[str, Any]]],
+    owner: str | None,
     prefix: str,
     visited: set[str],
     attached: set[str],
@@ -518,6 +524,7 @@ def _status_parts(session: Mapping[str, Any], now: datetime.datetime) -> tuple[s
     status = str(session.get("status") or "")
     raw_error = session.get("api_error") if status == "running" else None
     api_error = raw_error if isinstance(raw_error, dict) and raw_error.get("type") else None
+    tokens = context_usage.format_tokens(session.get("context_tokens"), session.get("context_window"))
     right: list[str] = []
     if api_error is not None and api_error.get("type") == resume_waits.USAGE_LIMIT_ERROR_TYPE:
         description = f"利用上限の解除待ち {api_error.get('limit_type') or '?'}"
@@ -535,8 +542,12 @@ def _status_parts(session: Mapping[str, Any], now: datetime.datetime) -> tuple[s
         elapsed = _elapsed(session.get("started_at"), now)
         if elapsed is not None:
             right.append(elapsed)
+        if tokens is not None:
+            right.append(tokens)
         if status:
             right.append(status)
+    if api_error is not None and tokens is not None:
+        right.append(tokens)
     return " ".join(description.split()), _RIGHT_SEPARATOR.join(right)
 
 
@@ -706,7 +717,7 @@ def _status_payload_is_current(payload: Any) -> bool:
 
 
 def _add_output_activity(session: dict[str, Any]) -> None:
-    """活動とテキスト出力からの経過秒、および停滞印を公開射影へ加える。"""
+    """活動とテキスト出力からの経過秒、および停滞の印を公開する項目へ加える。"""
     updated_at = session.get("updated_at")
     output_updated_at = session.get("output_updated_at")
     started_at = session.get("started_at")

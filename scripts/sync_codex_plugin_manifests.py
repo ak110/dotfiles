@@ -19,7 +19,10 @@ def main(argv: list[str] | None = None) -> int:
     if args.check:
         diagnostics = codex_plugin_manifests.check_diagnostics(codex_plugin_manifests.repo_root())
         for diagnostic in diagnostics:
-            print(diagnostic, file=sys.stderr)
+            print(
+                diagnostic + "。次の操作: uv run --frozen python scripts/sync_codex_plugin_manifests.pyで同期してください。",
+                file=sys.stderr,
+            )
         return 1 if diagnostics else 0
     codex_plugin_manifests.sync(codex_plugin_manifests.repo_root())
     return 0

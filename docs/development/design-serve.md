@@ -27,6 +27,12 @@ WI一覧のコピー操作は通常・完了・復帰と再描画の間で同じ
 
 `atk serve`のサーバー側は`agent-toolkit/agent_toolkit/_atk/serve/`配下の責務ごとのモジュールへ分ける。WI画面のドメイン処理（一覧・詳細・変更をprivate-notesの同期ファイル操作として提供する`Operations`）は`wi_operations.py`、WI画面のAPIのルートの登録と要求の検証は`wi_routes.py`が持つ。画面の配信、共通の例外応答、計画ファイル画面とセッション画面のルートの登録は`shell_routes.py`が持つ。同期処理の並列数の制限、停止要求中の応答、定期同期、起動と停止の手続きは`runtime.py`が持つ。`app.py`の`create_app`はこれらを組み立てるだけを持つ。以前は1つのファイルがドメイン処理とルーティングを同居させ、画面の機能を加える計画ごとに同じファイルへ追記していた。ドメイン処理をルートの登録から分けると、`Operations`の振る舞いをHTTPを介さずに確かめられる。
 
+ワーカーで実行する同期処理の`SystemExit`はスレッドで同期関数を呼ぶ際に要求のエラーへ変換する。
+CLI向けの終了通知を常駐サーバー全体へ波及させず、同じプロセスで後続の要求へ応答するためである。
+一覧と詳細は終了しない種別判定を使い、欠落・不正なtypeの項目もunknownとして表示する。
+呼出し箇所ごとの`except SystemExit`は新たな操作の追加で包み忘れが生じるため共通境界の代わりにはしない。
+CLIライブラリ全体から`sys.exit`を除く案は単発CLIの終了コードと案内も変えるため採らない。
+
 ### リモートヘルパーの起動コード
 
 リモートホスト側ヘルパーの起動コードは`agent-toolkit/agent_toolkit/_atk/serve/remote.py`の`remote_bootstrap`へ集約する。
@@ -49,7 +55,8 @@ WI一覧のコピー操作は通常・完了・復帰と再描画の間で同じ
 知識境界として、計画バンドルの種別と接尾辞、種別ごとの一覧の扱いは`agent-toolkit/agent_toolkit/_plan/bundle_kinds.py`が持つ。
 計画rootの定義、表示と一覧の対象判定、走査、全文検索は`_plan/viewer_files.py`が、作成日時インデックスは`_plan/creation_times.py`が持ち、ローカル側（`_atk/serve/plans/`）とSSH先のヘルパーが同じモジュールを通る。
 SSH先のヘルパー（`agent-toolkit/scripts/atk_serve_plans_remote_helper.py`）は同じcheckoutの`agent-toolkit`を`sys.path`へ加え、これらの共有モジュールをimportする。
-ヘルパーは`uv run --no-project --with watchdog --with platformdirs`で起動するため、importできるのは標準ライブラリ、`platformdirs`、`watchdog`と、それらだけに依存する`agent_toolkit`のモジュールに限る。
+両ヘルパーは共通の`remote_command_argv`から`uv run --no-project --python 3.15 --with watchdog --with platformdirs`で起動する。
+importできるのは標準ライブラリ、`platformdirs`、`watchdog`と、それらだけに依存する`agent_toolkit`のモジュールに限る。
 Markdownの描画（`markdown_it`・`pygments`）など、リモートの実行環境に無い依存を持つ処理は`_atk/serve/plans/`に置き、共有モジュールからimportしない。
 この依存の条件は`agent-toolkit/scripts/atk_serve_plans_remote_helper_test.py`がリモートの実行環境と同じ依存集合でヘルパーを起動して確かめる。
 同じ判定をヘルパーへ複写して同期テストで一致を確かめる案は採らない。同期テストは比べる組の外の定義の不一致を検出できず、接尾辞の集合が箇所ごとに一致しなくなったためである。
@@ -115,7 +122,7 @@ WI画面の詳細ダイアログの変更操作は、回答、本文の保存、
 
 発話の有無の判定と一覧の識別項目の取得は、`agent-toolkit/agent_toolkit/_atk/serve/session_watch.py`へ集約し、サーバー側とリモートヘルパーの双方が読み込む。セッション用のヘルパーはリモートホストのdotfilesからagent-toolkitのパッケージを読み込めるため、計画一覧の対象判定と同じく、同じ判定を2か所へ保持しない。同モジュールは標準ライブラリだけをimportし、watchdogは監視の開始時に読み込む。リモートホストのPythonで一覧と読み取りだけを実行する場合にwatchdogを要求しないためである。判定材料を返さない旧版のヘルパーから得た項目は、サーバー側で除外しない。
 
-発話を含む記録が1件も無いときの一覧の空状態は、記録そのものが無いのではなく発話を含む記録が無いことと、発話が保存されれば自動で一覧へ加わることを示す。記録が無いと表示すると、起動しただけで入力していないエンドユーザーは、rootの設定を誤ったか機能が動いていないと考えてしまう。
+発話を含む記録が1件も無いときの一覧の空状態は、発話を含む記録が無いことと、発話が保存されれば自動で一覧へ加わることを示す。記録が無いと表示すると、起動しただけで入力していないエンドユーザーは、rootの設定を誤ったか機能が動いていないと考えてしまう。
 
 ### 親子判定
 

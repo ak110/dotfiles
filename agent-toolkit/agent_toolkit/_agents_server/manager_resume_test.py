@@ -117,7 +117,7 @@ async def test_expired_multi_turn_session_resumes_and_agents_wait_observes_resul
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """両engineの複数turn後の期限切れ再開を番号指定の背景待機で観測する。"""
+    """両engineで、複数turn後に保持期限が切れたsessionを再開し、その結果を`atk agents wait`の待機で観測する。"""
     writer = status_file.StatusFileWriter(
         {},
         shared_roots.StatusFileIdentity("root-session", "root.json", None),
@@ -220,6 +220,8 @@ async def test_resumed_session_keeps_every_launch_info_item(
         "launched-session", str(tmp_path), engine="claude", turn_seq=2, publish_registry=True, **_LAUNCH_VALUES
     )
     _complete(session, message="前のturn")
+    # 再起動を模す前に、旧所有者が作成する登録の保存を完了する。
+    await session.drain_registration()
     prepare_resume(manager, session)
 
     assert _without_root(await manager.send_message(session.session_id, "続行")) == {
@@ -382,7 +384,7 @@ async def test_concurrent_owner_gone_send_messages_resume_once(tmp_path: pathlib
 async def test_each_manager_delivers_its_root_to_claude_start_and_resume(
     root: str, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
 ) -> None:
-    """別の環境ownerがあっても、SDKの新規と再開は各Managerのrootに属する。"""
+    """`AGENT_TOOLKIT_OWNER_SESSION`が別のrootを指していても、SDKで新規に開始するsessionと再開するsessionへ各Managerのrootを渡す。"""
     monkeypatch.setenv("AGENT_TOOLKIT_OWNER_SESSION", "other-environment-root")
     writer = status_file.StatusFileWriter({}, shared_roots.StatusFileIdentity(root, "root.json", None), state_root=tmp_path)
     manager = server_manager.AgentsServerManager(writer)

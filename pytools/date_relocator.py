@@ -26,7 +26,10 @@ def main() -> None:
     setup_logging()
     for target in args.targets:
         if not target.is_dir():
-            logger.warning("%s はディレクトリではありません", target)
+            logger.warning(
+                ("%s はディレクトリではありません。スキップして続行します。存在するディレクトリを指定して再実行してください。"),
+                target,
+            )
             continue
         relocate(target, dry_run=args.dry_run)
     sys.exit(0)

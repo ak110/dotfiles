@@ -104,10 +104,10 @@ async def select(
     if subscription:
         try:
             usage = await request("account/rateLimits/read", {})
-        except (RuntimeError, OSError, TimeoutError):
+        except RuntimeError, OSError, TimeoutError:
             usage = {}
-        # ordinaryUsageAllowedはactive accountへの検証済み欄。accountIdが明示される場合は
-        # account/readのworkspaceRoutingと同じIDの結果だけを使い、疎通知を補完に使わない。
+        # ordinaryUsageAllowedはactive accountについて検証済みの欄である。accountIdが明示される場合は
+        # account/readのworkspaceRoutingと同じIDの結果だけを使い、IDが一致しない結果で補完しない。
         routing = auth.get("workspaceRouting")
         active_id = routing.get("chatgptAccountId") if isinstance(routing, dict) else None
         snapshot_id = usage.get("accountId")
@@ -118,7 +118,7 @@ async def select(
 
 
 def fallback_failure(error: Any, *, subscription: bool) -> bool:
-    """通常サブスクでは利用上限だけ、移行済みAPIでは候補の不受理も次候補へ接続する。"""
+    """サブスクリプションの接続先では利用上限の失敗だけを、移行済みAPIの接続先では候補が受け付けなかった失敗も、次の候補へ進む失敗と判定する。"""
     if not isinstance(error, dict):
         return False
     if subscription:

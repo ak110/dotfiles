@@ -443,7 +443,7 @@ def _index_rows(lines: list[str]) -> list[dict[str, typing.Any]]:
 
 
 def _assert_index_before_bodies(lines: list[str], data: dict[str, list[dict[str, str]]], sections: list[str]) -> None:
-    """一覧が全行表示より前に全行を1回ずつ根拠なしで並べ、行番号・原文が全行表示と一致し、全行表示が従来どおりであることを確かめる。"""
+    """一覧が全行表示より前に全行を1回ずつ根拠なしで並べ、行番号・原文が全行表示と一致し、全行表示が同一根拠を先行表示への参照に置き換えて並べることを確かめる。"""
     index_positions = [number for number, line in enumerate(lines) if line.startswith("証拠の行一覧: ")]
     body_positions = [number for number, line in enumerate(lines) if line.startswith("証拠の全行: ")]
     assert index_positions and body_positions and max(index_positions) < min(body_positions)
@@ -563,7 +563,7 @@ def _listed(path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> list[str]
 
 
 def test_public_list_returns_selected_rows_in_full(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
-    """`--row`の反復で選んだ各行の根拠を同一根拠も参照にせず1回で返し、単一指定の出力は従来どおりに保つ。"""
+    """`--row`の反復で選んだ各行の根拠を同一根拠も参照にせず1回で返し、1行だけの指定でもその行の全文を返す。"""
     path = tmp_path / "evidence.json"
     shared = "test_save_settings 成功"
     conditions = [
@@ -659,7 +659,7 @@ def test_return_result_accepts_unanswered_issue_targeting_implementation(
     round_value: str,
     answered: bool,
 ) -> None:
-    """実装成果物を指す未応答指摘、過去round、応答済みの行は従来どおり未解決件数を持つcompletedへ進める。"""
+    """実装成果物を指す未応答指摘、過去round、応答済みの行は通常どおり未解決件数に数え、completedの返却へ進める。"""
     path, table = _insufficient_evidence(tmp_path, monkeypatch)
     review_table.add(table, round_value, "exec-review", location.format(path=path), "保存の観測を補う", "仕様")
     review_table.add(table, "2", "exec-review", "agent-toolkit/impl.py:9", "再読込の観測を補う", "仕様")
@@ -2360,7 +2360,7 @@ def test_unclosed_fence_keeps_following_requirements(tmp_path: pathlib.Path, mon
 def test_periods_inside_words_do_not_split_requirements(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], route: str
 ) -> None:
-    """語の内部のピリオドと文末の閉じ括弧では分割せず、空白が続くASCIIの文末では従来どおり分割する。"""
+    """語の内部のピリオドと文末の閉じ括弧では分割せず、空白が続くASCIIの文末では分割する。"""
     requirements = [
         "docs.python.orgとpyproject.tomlの記載をv0.24.2に合わせて。",
         "`a. b`の表記は変えない（~/.sshは対象外。）",
@@ -2693,7 +2693,7 @@ def test_non_git_cwd_guides_same_arguments_to_target_worktree(
         (".env を読む設定で確認", 0),
         (".env.local の値で確認", 0),
         (".gitignore:1 の除外を確認", 0),
-        # 所在を添えた名前と、区切りと拡張子を持つパスの見出しは従来どおり確かめる。
+        # 所在を添えた名前と、区切りと拡張子を持つパスの見出しは所在として確かめる。
         ("scripts/.env:1 で確認", 1),
         (".env:3 で確認", 1),
         (".gitignore:9 で確認", 1),
@@ -3103,7 +3103,7 @@ def test_reference_resolved_by_unique_path_suffix_is_accepted(
 ) -> None:
     """ファイル名だけ、テスト識別子付き、サブプロジェクト起点の参照は、対象commitで1件に決まれば受理する。
 
-    行位置と見出しの誤りは、解決したファイルの内容で従来どおり報告する。
+    行位置と見出しの誤りは、解決したファイルの内容に照らして報告する。
     """
     repository, _, evidence = reference_repository
     head = _commit_files(repository, _SUFFIX_FILES)
@@ -3545,7 +3545,7 @@ def test_background_rows_from_template_are_accepted_while_request_stays_judged(
 ) -> None:
     """雛形は観測文も原文行として残し、分類の記録が中略付きで覆う観測文を背景として受理する。
 
-    要求の行は通常の判定に残り、証拠不足なら未解決0件の返却は従来どおり拒否される。
+    要求の行は通常の判定に残り、証拠不足なら未解決0件の返却は拒否される。
     """
     _mock_wi(monkeypatch, tmp_path, {FIRST_WI: _background_awi(_ELIDED_RECORD)})
     path = tmp_path / "evidence.json"
@@ -3948,3 +3948,108 @@ def test_list_empty_arrays_without_wi_or_completed_judgment(
     assert run_script.dispatch(args) == 0
     assert capsys.readouterr().out == ""
     assert path.read_bytes() == before
+
+
+@pytest.mark.parametrize(
+    ("section", "outcome"),
+    [
+        ("wi_conditions", "失効"),
+        ("user_requirements", "失効"),
+        ("user_requirements", "割当外"),
+        ("user_requirements", "背景"),
+    ],
+)
+def test_public_json_source_change_uses_current_source_and_preserves_other_values(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], section: str, outcome: str
+) -> None:
+    """一覧から選んで出所変更し、旧出所での再更新を拒否して新出所で根拠を訂正できる。"""
+    path = tmp_path / "review.json"
+    _write_evidence(path, [_condition(FIRST_WI, "保存する。")], [_requirement(FIRST_WI, "再読込する。")])
+    original = json.loads(path.read_text(encoding="utf-8"))
+    args = argparse.Namespace(script_name="exec-review-evidence-check", script_args=[str(path), "--list"])
+    assert run_script.dispatch(args) == 0
+    selected = next(row for row in _full_rows(capsys.readouterr().out) if row["配列"] == section)
+    explanation = tmp_path / "reason.txt"
+    explanation.write_text("判定根拠の記録を確認した。", encoding="utf-8")
+    update = {
+        "section": selected["配列"],
+        "row": selected["行番号"],
+        "source": selected["source"],
+        "new_source": "判断根拠の所在",
+        "outcome": outcome,
+        "reviewed_head": REVIEWED_HEAD,
+        "evidence_file": str(explanation),
+        "mode": "replace",
+    }
+    updates = tmp_path / "updates.json"
+    updates.write_text(json.dumps([update]), encoding="utf-8")
+    args.script_args = [str(path), "--updates-file", str(updates), "--output", str(path)]
+    assert run_script.dispatch(args) == 0, capsys.readouterr().err
+    expected = json.loads(json.dumps(original))
+    expected[section][0].update(
+        source="判断根拠の所在", outcome=outcome, reviewed_head=REVIEWED_HEAD, evidence="判定根拠の記録を確認した。"
+    )
+    assert json.loads(path.read_text(encoding="utf-8")) == expected
+    before = path.read_bytes()
+    assert run_script.dispatch(args) == 1
+    assert path.read_bytes() == before
+    assert "出所" in capsys.readouterr().err
+    update["source"] = "判断根拠の所在"
+    update.pop("new_source")
+    explanation.write_text("根拠を訂正して再レビューした。", encoding="utf-8")
+    updates.write_text(json.dumps([update]), encoding="utf-8")
+    assert run_script.dispatch(args) == 0, capsys.readouterr().err
+    expected[section][0]["evidence"] = "根拠を訂正して再レビューした。"
+    assert json.loads(path.read_text(encoding="utf-8")) == expected
+
+
+@pytest.mark.parametrize(
+    "invalid",
+    [
+        {"outcome": "達成", "new_source": "新出所"},
+        {"outcome": "未達", "new_source": "新出所"},
+        {"outcome": "証拠不足", "new_source": "新出所"},
+        {"outcome": "割当外", "new_source": "新出所"},
+        {"outcome": "背景", "new_source": "新出所"},
+        {"new_source": " "},
+        {"new_source": 1},
+        {"source": "別の現行出所"},
+        {"row": 0},
+        {"row": True},
+        {"row": 3},
+        {"condition": "原文の書換え"},
+    ],
+)
+@pytest.mark.parametrize("in_place", [True, False])
+def test_public_json_invalid_source_change_never_saves_partial_updates(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], invalid: dict[str, typing.Any], in_place: bool
+) -> None:
+    """先頭が有効でも後続の不正行を含む配列は、入力と既存出力の両方を保持する。"""
+    path = tmp_path / "review.json"
+    _write_evidence(path, [_condition(FIRST_WI, "保存する。"), _condition(FIRST_WI, "再読込する。")])
+    rows = json.loads(path.read_text(encoding="utf-8"))["wi_conditions"]
+    explanation = tmp_path / "reason.txt"
+    explanation.write_text("判定理由を確認した。", encoding="utf-8")
+    updates = tmp_path / "updates.json"
+    valid = {
+        "section": "wi_conditions",
+        "row": 1,
+        "source": rows[0]["source"],
+        "outcome": "未達",
+        "reviewed_head": REVIEWED_HEAD,
+        "evidence_file": str(explanation),
+        "mode": "replace",
+    }
+    bad = {**valid, "row": 2, "source": rows[1]["source"], "outcome": "失効", "new_source": "新出所", **invalid}
+    updates.write_text(json.dumps([valid, bad]), encoding="utf-8")
+    output = path if in_place else tmp_path / "output.json"
+    if not in_place:
+        output.write_text("既存出力を保持\n", encoding="utf-8")
+    before = path.read_bytes(), output.read_bytes()
+    args = argparse.Namespace(
+        script_name="exec-review-evidence-check",
+        script_args=[str(path), "--updates-file", str(updates), "--output", str(output)],
+    )
+    assert run_script.dispatch(args) == 1
+    assert (path.read_bytes(), output.read_bytes()) == before
+    assert capsys.readouterr().err

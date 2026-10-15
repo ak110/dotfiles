@@ -46,6 +46,40 @@ from session_evidence_tool_calls import (
 
 from agent_toolkit._agents_server import record_paths as _record_paths
 
+CATALOG_PARENT_FIELDS = (
+    "runtime",
+    "session_id",
+    "role_document",
+    "started_at",
+    "finished_at",
+    "cwd",
+    "branch",
+    "workflow",
+    "workflow_locator",
+    "tokens",
+    "descendant_count",
+    "successful_wi_operations",
+    "successful_wi_operation_count",
+)
+"""親セッションの表示で選択できる項目。kindはイベントの識別のため常に残す。"""
+
+
+class _CatalogSelection(NamedTuple):
+    """親セッションの行条件と表示項目。走査条件と要約には作用しない。"""
+
+    workflow: str | None = None
+    known_workflow: bool = False
+    cwd_contains: str | None = None
+    fields: tuple[str, ...] | None = None
+
+    def matches(self, event: dict[str, Any]) -> bool:
+        """指定した行条件の全てに一致するか返す。"""
+        return (
+            (self.workflow is None or event["workflow"] == self.workflow)
+            and (not self.known_workflow or event["workflow"] != "unknown")
+            and (self.cwd_contains is None or self.cwd_contains in event["cwd"])
+        )
+
 
 def _catalog_session_id(path: Path, records: list[_Record], runtime: _Runtime) -> str:
     """カタログ内記録のセッション識別子を返す。"""
@@ -81,14 +115,47 @@ def _wi_command(tokens: list[str]) -> str | None:
     while index < len(tokens) and _ENV_ASSIGNMENT.match(tokens[index]):
         index += 1
     words = tokens[index:]
+    if words and words[0] == "exec":
+        return _wi_command(words[1:])
+    if words and _basename(words[0]) in {"sh", "bash", "zsh", "dash"}:
+        if len(words) == 3 and words[1].startswith("-") and "c" in words[1]:
+            return _wi_command(_shell_tokens(words[2]))
+        return None
+    if any(word in {";", "&&", "||", "|"} for word in words):
+        return None
     if len(words) < 3 or _basename(words[0]) != "atk" or words[1] != "wi":
         return None
     return words[2]
 
 
+def _terminal_result(output: Any) -> tuple[bool, str | None]:
+    """明示された終了0と継続識別子を区別し、不明な応答は成功に数えない。"""
+    result = output if isinstance(output, dict) else _json_object(output)
+    if isinstance(result, dict):
+        session = result.get("session_id", result.get("backgroundTaskId"))
+        if session is not None:
+            return False, str(session)
+        if result.get("status") in {"running", "in_progress", "pending"}:
+            return False, None
+        exit_code = result.get("exit_code")
+        return isinstance(exit_code, int) and not isinstance(exit_code, bool) and exit_code == 0, None
+    if isinstance(output, str):
+        session_match = re.search(
+            r"(?:Process running with session ID|Script running with cell ID|Command running in background with ID:)\s+(\S+)",
+            output,
+        )
+        if session_match:
+            return False, session_match[1]
+        match = re.search(r"(?:Process exited with code|exit_code[\"']?\s*:)\s*(-?\d+)", output)
+        if match:
+            return int(match[1]) == 0, None
+    return False, None
+
+
 def _successful_wi_operations(item: _CollectedRecord) -> list[dict[str, Any]]:
     """成功結果まで記録された直接の`atk wi`操作を返す。"""
     pending: dict[str, tuple[int, str]] = {}
+    sessions: dict[str, tuple[int, str]] = {}
     operations: list[dict[str, Any]] = []
     for record in item.records:
         entry = record.entry
@@ -106,7 +173,14 @@ def _successful_wi_operations(item: _CollectedRecord) -> list[dict[str, Any]]:
                         pending[block["id"]] = (record.line, operation)
                 if block.get("type") == "tool_result" and isinstance(block.get("tool_use_id"), str):
                     call = pending.pop(block["tool_use_id"], None)
-                    if call is not None and block.get("is_error") is not True:
+                    result = entry.get("toolUseResult")
+                    succeeded, session = _terminal_result(result if isinstance(result, dict) else block.get("content"))
+                    if (
+                        call is not None
+                        and block.get("is_error") is not True
+                        and session is None
+                        and (succeeded or (block.get("is_error") is False and not isinstance(result, dict)))
+                    ):
                         line, operation = call
                         operations.append({"operation": operation, "locator": {"record": item.record_id, "line": line}})
 
@@ -118,20 +192,30 @@ def _successful_wi_operations(item: _CollectedRecord) -> list[dict[str, Any]]:
             operation = _wi_command(_payload_command_tokens(payload))
             if operation is not None:
                 pending[payload["call_id"]] = (record.line, operation)
+            else:
+                arguments = _json_object(payload.get("arguments")) or {}
+                for key in ("session_id", "cell_id"):
+                    call = sessions.get(str(arguments.get(key)))
+                    if call is not None:
+                        pending[payload["call_id"]] = call
         elif payload_type in {"function_call_output", "custom_tool_call_output"} and isinstance(payload.get("call_id"), str):
             call = pending.pop(payload["call_id"], None)
             output = payload.get("output")
-            output_object = output if isinstance(output, dict) else _json_object(output)
-            failed = isinstance(output_object, dict) and output_object.get("exit_code") not in (None, 0)
-            if call is not None and not failed:
+            succeeded, session = _terminal_result(output)
+            if call is not None and session is not None:
+                sessions[session] = call
+            if call is not None and succeeded:
                 line, operation = call
-                operations.append({"operation": operation, "locator": {"record": item.record_id, "line": line}})
+                completed = {"operation": operation, "locator": {"record": item.record_id, "line": line}}
+                if completed not in operations:
+                    operations.append(completed)
         elif entry.get("type") == "event_msg" and payload_type == "item_completed":
             command_item = payload.get("item")
             if not isinstance(command_item, dict) or command_item.get("type") != "CommandExecution":
                 continue
             operation = _wi_command(_payload_command_tokens(payload))
-            if operation is not None and command_item.get("status") in {"completed", "success", "succeeded"}:
+            succeeded, _session = _terminal_result(command_item)
+            if operation is not None and succeeded and command_item.get("status") in {"completed", "success", "succeeded"}:
                 operations.append({"operation": operation, "locator": {"record": item.record_id, "line": record.line}})
     return operations
 
@@ -304,6 +388,7 @@ def _catalog_events(
     runtime: _Runtime,
     since: datetime.datetime,
     boundary: datetime.datetime,
+    selection: _CatalogSelection | None = None,
 ) -> tuple[list[dict[str, Any]], int]:
     """指定root内だけから比較用の親セッションカタログを生成する。"""
     scan = _catalog_scan(root, runtime, since, boundary)
@@ -332,18 +417,21 @@ def _catalog_events(
             }
         )
     events.sort(key=lambda event: (str(event["started_at"]), str(event["session_id"])))
-    events.append(
-        {
-            "kind": "catalog-summary",
-            "scan_root": str(scan.root),
-            "runtime": runtime,
-            "since": since.isoformat(),
-            "observation_boundary": boundary.isoformat(),
-            "parent_record_count": len(events),
-            "unresolved_record_count": scan.unresolved_count,
-        }
-    )
-    return events, 0
+    summary: dict[str, Any] = {
+        "kind": "catalog-summary",
+        "scan_root": str(scan.root),
+        "runtime": runtime,
+        "since": since.isoformat(),
+        "observation_boundary": boundary.isoformat(),
+        "parent_record_count": len(events),
+        "unresolved_record_count": scan.unresolved_count,
+    }
+    if selection is not None:
+        events = [event for event in events if selection.matches(event)]
+        summary["selected_parent_count"] = len(events)
+        if selection.fields is not None:
+            events = [{"kind": event["kind"], **{field: event[field] for field in selection.fields}} for event in events]
+    return [*events, summary], 0
 
 
 def _catalog_tool_call_events(

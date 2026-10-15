@@ -4,6 +4,8 @@
   "state_directory": ["agent-toolkit", "agents-server", "<root_session_id>"],
   "state_file_keys": ["heartbeat_at", "host_session_id", "sessions", "updated_at", "version"],
   "session_keys": [
+    "context_tokens",
+    "context_window",
     "created_at",
     "cwd",
     "effort",
@@ -30,6 +32,8 @@
     "sessions": [
       {
         "session_id": "session-1",
+        "context_tokens": 53500,
+        "context_window": 1000000,
         "cwd": "/work",
         "engine": "codex",
         "model": "gpt-5.5",
@@ -48,5 +52,28 @@
         "last_action": "Read"
       }
     ]
-  }
+  },
+  "context_usage_cases": [
+    {"tokens": 53500, "window": 1000000, "formatted": "53.5k/5%"},
+    {"tokens": 0, "window": 1000000, "formatted": "0.0k/0%"},
+    {"tokens": 1250, "window": null, "formatted": "1.2k"},
+    {"tokens": 2500, "window": 100000, "formatted": "2.5k/2%"},
+    {"tokens": 53500, "window": 0, "formatted": "53.5k"},
+    {"tokens": 53500, "window": -1, "formatted": "53.5k"},
+    {"tokens": 53500, "window": "unknown", "formatted": "53.5k"},
+    {"tokens": 53500, "window": true, "formatted": "53.5k"},
+    {"tokens": null, "window": 1000000, "formatted": null},
+    {"tokens": -1, "window": 1000000, "formatted": null},
+    {"tokens": true, "window": 1000000, "formatted": null},
+    {"tokens": "53500", "window": 1000000, "formatted": null}
+  ],
+  "tree_files": [
+    {"file_name": "root.json", "host_session_id": null, "session_ids": ["parent"]},
+    {"file_name": "writer-child.json", "host_session_id": "parent", "session_ids": ["child"]},
+    {"file_name": "writer-deep.json", "host_session_id": "child", "session_ids": ["deep"]},
+    {"file_name": "writer-orphan.json", "host_session_id": "missing", "session_ids": ["orphan", "orphan-parent"]},
+    {"file_name": "writer-orphan-deep.json", "host_session_id": "orphan-parent", "session_ids": ["orphan-deep"]}
+  ],
+  "tree_order": ["parent", "child", "deep", "orphan", "orphan-parent", "orphan-deep"],
+  "tree_depths": [0, 1, 2, 1, 1, 2]
 }

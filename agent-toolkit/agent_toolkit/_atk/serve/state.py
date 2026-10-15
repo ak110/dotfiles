@@ -24,7 +24,7 @@ class ServeState(watchdog.events.FileSystemEventHandler):
     実時間の経過に依存せず発火時刻の決定を確認できる。
     """
 
-    # 末尾発行の先送りが無限に続くことを防ぐ最大待機時間の倍率。
+    # 変更が続く間に保留通知の発行を際限なく先送りしないよう、最大待機時間を決める倍率。
     # 閾値未満の間隔で変更が到着し続ける場合でも、最初の保留から
     # `debounce_seconds * _MAX_DEBOUNCE_FACTOR`が経過した時点で1回発行する。
     _MAX_DEBOUNCE_FACTOR = 5
@@ -134,7 +134,7 @@ class ServeState(watchdog.events.FileSystemEventHandler):
                 self._pending_started_at = None
                 publish_at_deadline = True
             else:
-                # 期限を上界として保証するため、静穏期間と期限までの残り時間の短い方を待つ。
+                # 発行が期限より遅れないよう、静穏期間と期限までの残り時間の短い方を待つ。
                 interval = min(self.debounce_seconds, deadline - now)
                 self._pending_notification = self._timer_factory(
                     interval,
@@ -173,7 +173,7 @@ class ServeState(watchdog.events.FileSystemEventHandler):
     async def events(self, *, heartbeat: float = 15.0):
         """SSE形式の変更イベントとheartbeatを生成する。
 
-        heartbeatはコメント行ではなく名前付きイベントで送る。ブラウザーの`EventSource`はコメント行を
+        heartbeatは名前付きイベントで送る。ブラウザーの`EventSource`はコメント行を
         スクリプトへ渡さないため、名前付きイベントにしないとクライアントが無通信を判定できない。
         """
         queue: asyncio.Queue[str] = asyncio.Queue(maxsize=2)

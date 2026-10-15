@@ -21,13 +21,57 @@ CLI引数の`--orchestrator`・`--model`を設定と併存させる案は、設�
 
 Codexの`astra`・`sol`・`terra`・`luna`は設定へ系列名として保存する。完全IDへの解決は`resolve_orchestrator_specs()`内の`resolve_model_candidates("orchestrate")`が子セッションの起動前ごとに行い、App Serverの`model/list`を最終ページまで取得して表示対象の同系列の最新版へ解決する。委譲起動は保持中のApp Server接続を使い、設定CLIは短命の接続を所有する。選んだ完全IDが指定effortを受理しない場合は理由を返し、別系列または旧版へ暗黙に置換しない。明示された完全IDは固定し、engine側の可用性判定が返す診断を候補とともに示す。Claude候補の可用性判定は構造化出力（`stream-json`）で起動し、Weekly limitか5時間の利用上限による拒否を出力の利用枠情報から判定する。この拒否では次の候補へ進まず、解除予定時刻（不明なら300秒後）まで待って同じ候補を判定し直し、待機の種類と解除予定時刻を端末とprocess-loopのログ（`usage_limit_wait`）へ出力する（ユーザー指示）。本作業のセッションが利用上限で終わった場合も、次の反復の可用性判定が同じ待機へ入る。モデルを試行起動して系列の最新版を推測する案は、実行費用を生み、利用可能なモデル一覧との対応も保証できないため採用しない。複数の起動処理が同じ判断を持たないよう、一覧取得と系列解決の知識境界を`agent-toolkit/agent_toolkit/_common/codex_models.py`に置く。
 
-工程別モデル設定のCodexの中位（`codex_medium_tier_model`）で値を保存していない場合に使うモデルと、以前のプリセットの「軽量」「探索上位」は`terra/medium`を選び、「上位」と「探索軽量」は各用途の指定を維持する。`luna/xhigh`を前二者へ残す案は、ユーザーが速度と精度の釣り合いを見直したため採用しない。これらのモデル名は運用中に変わる設定値であり、テストは値の複製ではなく、用途別engine順と段位モデルからの候補の合成、保存と実行時解決の接続を確認する。
+工程別モデル設定のCodexの中位（`codex_medium_tier_model`）で値を保存していない場合に使うモデルと、以前のプリセットの「軽量」「探索上位」は`terra/medium`を選び、「上位」と「探索軽量」は各用途の指定を維持する。`luna/xhigh`を前二者へ残す案は、ユーザーが速度と精度の釣り合いを見直したため採用しない。これらのモデル名は運用中に変わる設定値であり、テストは用途別engine順と段位モデルからの候補の合成、保存と実行時解決の接続を確認する。
 
 ## process-loopのモジュール構成
 
 `atk wi process-loop`の工程は`agent-toolkit/agent_toolkit/_atk/wi/`配下の責務ごとのモジュールが持つ。作業ツリーの準備と上流との同期は`process_loop_worktree.py`、自己更新の確認と再起動は`process_loop_update.py`、miseの更新は`process_loop_mise.py`が持つ。変更の監視とprivate-notesの同期は`process_loop_watch.py`、プロンプトとオーケストレーターの選択とセッションの起動は`process_loop_session.py`、アラートの確認は`process_loop_alerts.py`が持つ。中断要求と追加指示の状態ファイルは`process_loop_control.py`、子プロセスの環境と実行ファイルの解決は`process_loop_env.py`が持つ。`process_loop.py`の`cmd_process_loop`はこれらを順に呼ぶ制御だけを持つ。以前は1つのファイルが全ての責務を持ち、工程を加える計画ごとに同じファイルへ追記していた。モジュール間の呼び出しは定義元のモジュールの属性として行い、テストは定義元を差し替える。テストも同じ単位で`process_loop_<責務>_test.py`へ分ける。
 
 CI失敗の収集・キー重複除外・本文生成・AWI保存は`alerts.py`が持ち、単発の`atk wi check-alerts`と常駐側が同じ本体を呼ぶ。単発は対象作業ツリーの解決と取得・投入結果を報告して終了し、process-wiの1回の実行やDependabot監査を起動しない。`process_loop_alerts.py`は監視間隔とDependabot監査の起動要否を持ち、収集失敗では従来どおり待機を続ける。単発用に収集処理を複製する案は、本文・キー・取得範囲の一致を別々に保守するため採らない。呼び出す時機は各環境が選び、ガイド「推奨ワークフロー」はその境界を示す。
+
+## 開始前の活動猶予とUWI回答待ち
+
+開始可否は常駐側が持ち、`process_loop_watch.py`の変更・期限・中断待機へ接続する。
+別セッションの活動猶予と未回答UWIの抑止は同時に評価し、待ち時間を順に足さない。
+活動猶予は処理可能WIの検出時刻、新規到着の延長は検出時刻、UWIの期限は保存済みファイルのmtimeを使う。
+更新の意味が異なるため、全ての時刻を反復の開始時刻へ置き換える案は採らない。
+活動がなくなるか10分の期限が来れば活動条件を解除し、新規AWI・UWIの到着ごとに10分へ延長する。
+編集・状態移動は同じWI名として扱い、新規到着へ数えない。
+UWIは対象集合のinbox・processing・holdの未回答を判定し、最終更新には回答後のadoptedも含める。
+holdとrun-skillを抑止へ含めることと処理候補へ含めることは分ける。
+全回答か最終更新から600秒でUWI条件を解除し、開始直前に処理可能集合を再評価する。
+
+活動の生成は既存hook、取得と親子解決は共通層、開始判定は常駐側に置く。
+PIDと起動時刻、実際のターン終了、子の稼働、登録簿を合わせ、当該ループの子孫だけを除く。
+別cwdや別ループも調べ、終了済みと子なし応答待ちを除外する。
+未登録・読取不能は期限付きの活動候補として扱う。
+最新状態を更新する有限の記録を使い、全履歴の毎回解析と新しい監視サービスは採らない。
+端末と既存ログに理由・期限・延長・開始を残し、子セッションへ待機判断を移さない。
+
+## 登録集合の一括取得とall-repos
+
+`process_loop_repositories`はローカルworktreeの絶対パスを持つJSON配列で、`atk wi process-loop all-repos`だけが登録集合を対象にする。
+通常のcwd単一対象起動と、登録外へのWI投入を保つことで、投入可能な対象とこのホストで処理する対象を分ける。
+空登録は待機し、設定不正や解決不能では対象と修正操作を示して開始を止める。
+同じoriginは先頭へまとめ、実worktreeとGit共通ディレクトリを対応付ける。
+登録変更は次の取得へ反映する。
+
+`listing.configured_repo_snapshot`がキューを一括取得し、listingとreadinessへ共通入力を渡す。
+`atk wi list --configured-repos`も同じ登録集合を使う。
+長い対象引数と対象数分のキュー取得を繰り返す案は、少数WIの対象が多数ある運用で費用を増やすため採らない。
+候補と監査の開始条件が無い対象は担当を起動しない。
+開始前の活動・UWI条件は登録集合全体へ作用し、開始前更新・自己再起動は全体で1回だけ行う。
+
+`process_loop_all_repos.py`は取得済み候補・readiness・対象別上限・所有記録を各対象cwdの通常delegateへ渡す。
+その担当がプロジェクト規範とprepare、選定・監査・実装・Git・CI・公開を担い、ホームのオーケストレーターは中継を担う。
+ホームの規範だけで全対象を直接編集する案は、対象規範とworktree設定が届かないため採らない。
+通常起動と同じoriginの所有を共有し、短い排他の後は担当sessionと登録記録で処理を保持する。
+回答待ちや長い処理の間にロックを保持する案は、別担当の進行を妨げるため採らない。
+開始後の失敗・所有待ち・監査・CI・再開は対象別に保持し、別所有者の終端後は候補を取り直す。
+異常終了の未統合成果は既存の再開へ渡し、all-repos担当と通常会話のresumeを区別する。
+制御はOSアカウント単位を保ち、instructは単一起動では次の処理会話へ1回だけ渡す。
+all-reposでは次の起動集合で1回受領した本文を各担当へ中継し、各担当は自分の対象に関する部分を適用する。
+実行契約は[all-repos-orchestration.md](../../agent-toolkit/skills/process-wi/references/all-repos-orchestration.md)が持つ。
 
 ## process-loopのworktree隔離
 
@@ -54,7 +98,12 @@ worktreeの作成前と再利用前に、`.claude/worktrees/`がGitの無視対�
 正常な旧固有refは`atk worktree-stash protect <ref>`で識別子を変えず保護できる。`update-dotfiles`はpull前に現在worktreeの旧`update-dotfiles-*`退避を全て保護し、欠損や保護失敗ではpullへ進まない。今回退避は`stash apply --index`の成功後だけ`drop <ref>`で回収する。pull失敗後の復元成功も回収し、復元競合とrebase競合では保持する。回収失敗は復元失敗と分け、復元済み内容をresetせず再試行を案内する。dropは固定ロック内で読取OIDを条件として固有ref、共有保護refの順に削除し、片側だけ残っても同じ識別子で再試行できる。他worktreeの同label退避と既存共有stashは回収しない。
 
 Claude Codeの`--worktree`へ置き換える案は、worktree隔離ガードがシェル構文を拒否するため採用しない。
-`atk`側でGit worktreeを準備し、セッションのcwdを準備済みworktreeへ設定する。
+`atk`側でworktreeを準備し、セッションのcwdを準備済みworktreeへ設定する。
+対象にWorktreeCreate/Removeがあれば共通のhook呼出しを使い、対象設定・cwd・イベント入力・環境を渡す。
+返却先とGit登録・branch・共通ディレクトリ・資源所有を一致させ、設定済みhookの失敗では途中資源と診断を保持する。
+通常Git作成への暗黙の切替は、対象が指定した準備・撤去の対応を失うため採らない。
+hookが無い対象は固定配置と対象固有のprepareを使い、hook指定先も反復ごとに別名へ回避しない。
+all-reposでは対象cwdの担当が準備し、ホーム側へ対象固有の手順を複製しない。
 
 ## process-loopの会話IDによる識別
 
@@ -78,15 +127,16 @@ ready項目がなくなると、`agent-toolkit:completion-report`が選定工程
 Linuxでremote-controlを使わない直接CLIを終了対象として確認できた場合は、Codexが自律終了して親の監視ループへ戻る。
 終了対象を確認できない環境では対話UIに終了案内を表示し、ユーザーが`/exit`を入力すると親の監視ループへ戻る。
 
-## process-loopへの1セッション限定の追加指示
+## process-loopの次の起動への追加指示
 
-`atk wi process-loop instruct <本文>`はprocess-loopが次に起動する1セッションだけへ渡す本文を、
+`atk wi process-loop instruct <本文>`はprocess-loopの次の起動へ渡す本文を、
 中断要求と同じOSアカウントの状態ディレクトリの`process-wi-instructions`へ追記する。
 `instruct-cancel`は保持中の全件を破棄し、`status`は中断要求の有無とあわせて保持中の件数と本文を表示する。
 完全一致する本文の再投入は誤操作とみなして追記せず、保持中の合計が2,000文字を超える投入は拒否する。
 
 process-loopはセッションを実際に起動する直前に状態ファイルを読み取って削除し、
-得た本文を`AGENT_TOOLKIT_PROCESS_LOOP_INSTRUCTION`として子セッションの環境へ載せる。
+単一起動では得た本文を`AGENT_TOOLKIT_PROCESS_LOOP_INSTRUCTION`として次の処理会話の環境へ載せる。
+all-reposでは同じ起動集合の各担当へのプロンプトへ本文を加え、各担当は自分の対象に関する部分を適用する。
 AWIが0件で変更検知を待つ反復は起動へ到達しないため、本文は保持したまま次の起動へ残る。
 `rules_context`のSessionStartは、`AGENT_TOOLKIT_PROCESS_LOOP_INSTRUCTION`に値がある場合に前置きを添えて`additionalContext`へ加え、
 委譲先のセッションへは加えない。この本文がユーザーの入力であり、人間由来の明示的な指示であると前置きに明記する。

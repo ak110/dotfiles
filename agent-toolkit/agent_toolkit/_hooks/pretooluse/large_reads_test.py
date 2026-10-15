@@ -30,7 +30,7 @@ _THRESHOLD = 48 * 1024
     ],
 )
 def test_partial_delivery_keeps_large_read_trigger_unchanged(tmp_path: pathlib.Path, command: str) -> None:
-    """配送の追加読取形は同じパスを得るが、既存の大量読取遮断を増やさない。"""
+    """帰属行の配送のために範囲取得も含めた解析は同じパスを返すが、大量読取の遮断を新たに発生させない。"""
     target = _sized_file(tmp_path / "nested", _THRESHOLD + 1)
     command = f"cd {target.parent} && {command}"
     assert list(bash_read_paths(command, str(tmp_path), include_partial=True)) == [(target,)]
@@ -115,7 +115,7 @@ def test_non_read_options_are_not_inferred_as_full_reads(tmp_path: pathlib.Path,
 
 @pytest.mark.parametrize("command", ["cat -n --", "cat --number --", "less -x 4 --", "more -d --", "sed -n '1,2p'"])
 def test_commit_rule_delivery_uses_shared_option_parsing(tmp_path: pathlib.Path, command: str) -> None:
-    """通常オプションと範囲読取の実在する帰属資料を、配送する判定まで渡す。"""
+    """通常のオプションや範囲指定を伴う読取でも、実在する帰属資料を読む呼び出しを配送の判定が検出する。"""
     directory = tmp_path / "plugin/skills/commit/references"
     directory.mkdir(parents=True)
     target = directory / "message.md"
@@ -131,7 +131,7 @@ def test_commit_rule_delivery_uses_shared_option_parsing(tmp_path: pathlib.Path,
 def test_unavailable_content_does_not_create_a_block(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, operation: str
 ) -> None:
-    """メタデータまたは本文を取得できない対象は、既存の判定不能の境界を保つ。"""
+    """メタデータまたは本文を取得できない対象は判定不能として扱い、遮断しない。"""
     target = _sized_file(tmp_path, _THRESHOLD + 1)
     original = getattr(pathlib.Path, operation)
 

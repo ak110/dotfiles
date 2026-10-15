@@ -44,7 +44,7 @@ toolの公開、呼び出し結果、完了通知の配送はprovider、Claude C
 
 ## 検証コマンドの実行形態
 
-委譲先が実行する検証コマンドの前景実行と分割、遠隔ホストの長時間コマンドの起動形は`references/waiting-and-monitoring.md`「背景ジョブの起動形（Claude Code）」に従う。背景へ移ったコマンドの終了状態を確定してから終端報告を返す規定は`agent-toolkit/share/agents-server-delegate-notice.md`と`agent-toolkit/rules/02-agent-operations.md`「ツール・コマンド運用」が定める。
+待機の起動と回収は`references/waiting-and-monitoring.md`「待機区間の構成」、待機以外の検証・ビルドと遠隔ホストの長時間コマンドは同書「背景ジョブの起動形（Claude Code）」に従う。背景へ移ったコマンドの終了状態を確定してから終端報告を返す規定は`agent-toolkit/share/agents-server-delegate-notice.md`と`agent-toolkit/rules/02-agent-operations.md`「ツール・コマンド運用」が定める。
 背景で動くBashコマンド（`run_in_background=true`か、実行環境の判断で背景へ移ったもの）を止める場合は、起動結果か移行通知が返したタスクIDだけを`TaskStop`へ渡す（遅延提示される環境ではスキーマを取得してから呼ぶ）。
 
 ## 一時領域と成果物の観測
@@ -96,7 +96,7 @@ toolの公開、呼び出し結果、完了通知の配送はprovider、Claude C
 - `start`の結果の後に装着の通知が無く、`CronList`に後述の標識を1行目に持つtaskも無い場合（modが読み込まれない環境など）
 - `Agent`ツールの委譲先かバックグラウンドタスクを、そのセッションで最初に起動する直前
 
-自ら装着する場合は`atk wait-schedule --request-bucket main --format json`を1回実行し、出力の`cron`と`prompt`を変更せず`CronCreate`へ渡して`recurring: true`で1件だけ作成する（`prompt`はmodと同じ共通本文）。promptの1行目は`<atk-auto source="periodic-recheck" kind="periodic-recheck">`だけの行であり、UserPromptSubmitフックが機械注入ターンを判定する入力であり、resume後の所有taskの確認もこの標識の完全一致で行う。
+自ら装着する場合は`atk wait-schedule --request-bucket main --format json`を1回実行し、出力の`cron`と`prompt`を変更せず`CronCreate`へ渡して`recurring: true`で1件だけ作成する（`prompt`はmodと同じ共通本文）。promptの1行目は`<atk-auto source="periodic-recheck" kind="periodic-recheck">`だけの行である。UserPromptSubmitフックはこの行で機械注入ターンを判定し、resume後の所有taskの確認もこの標識の完全一致で行う。
 監査記録は`docs/development/audit-records.md`の「agent-toolkit/skills/delegation/references/claude-code-runtime.md：待機中の定期再確認と背景転換：2026年10月4日」にある。
 
 - 定期promptが持つのは、待機対象を記録側から列挙する手段、対象ごとの成果物を決める方法、動的に解決したパスを渡すコマンド形（`atk watch --worktree "$worktree_path"`か`atk watch --file "$artifact_path"`）だけとする。待機対象ID、成果物の絶対パス、コミット識別子、残工程と完了済み工程は発火の各回に記録側から読み直させる（可変状態の写しは工程が進むと事実と一致しなくなる）
@@ -110,7 +110,7 @@ toolの公開、呼び出し結果、完了通知の配送はprovider、Claude C
 `run_in_background`を指定しないBashコマンドが実行環境の判断で背景へ転換された場合も定期再確認の対象とする。転換時の起動結果が返す出力ファイルの絶対パスに対し、完了時に同じパスを含む完了通知が届く。
 
 - コマンドの結果はその出力ファイルを`Read`で読む。サブエージェントの出力ファイルはセッション記録の全文であり、読むとコンテキストを圧迫するため、結果は起動形態の終端応答から得る
-- 同一ターン内で回収する場合は、パスを変数へ保持し、回数上限付きのループで`tail -n 1 "$F" | grep -q '"stop_reason":"end_turn"'`のように末尾行の終端標識だけを照会する。標識は記録されない場合があるため、無いことは判定の保留にとどめ、上限に達したら打ち切って`ListAgents`か代替稼働観測で確かめる。稼働状態を確定できなければ書込所有権を移さず続行できない理由として返す
+- 通知で同じセッションを再開できる待機は「待機区間の構成」の背景起動と通知後の回収へ統一する。通知を持たず同一ターン内の回収が必要な場合は、保持したパスの末尾の終端標識を回数上限付きで照会し、標識が得られなければListAgentsか代替稼働観測で確かめる。稼働状態を確定できなければ書込所有権を移さず続行できない理由として返す
 - `sleep`の直接実行、条件が初回から成立するループ、専用の待機機構の新設で待機を代替しない
 
 ## 計画ファイル作成のplan mode下委譲

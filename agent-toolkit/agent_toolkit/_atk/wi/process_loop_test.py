@@ -1,5 +1,6 @@
 """`atk wi process-loop`の常駐ループの制御（処理対象の件数、対象リポジトリの解決、URL形式の入力）のテスト。"""
 
+import os
 import pathlib
 import subprocess
 from typing import Any, NoReturn
@@ -13,6 +14,8 @@ from agent_toolkit._atk.wi import process_loop_watch as _pl_watch
 from agent_toolkit._atk.wi import process_loop_worktree as _pl_worktree
 from agent_toolkit._atk.wi import readiness as _wi_readiness
 from agent_toolkit._atk.wi import repo as _repo
+from agent_toolkit._atk.wi import sync as _wi_sync
+from agent_toolkit._atk.wi import uwi as _uwi
 from agent_toolkit._testing.process_loop_support import fake_run_with_remote_url, hook_debug_log, isolate_process_loop_commands
 from agent_toolkit.atk_test import _setup_notes
 
@@ -335,7 +338,7 @@ class TestProcessLoopUrlInput:
         myrepo = tmp_path / "myrepo"
         myrepo.mkdir()
         claude_calls: list[dict[str, Any]] = []
-        counts = iter([1, 0])
+        counts = iter([1, 1, 0])
 
         def fake_run(cmd: list[str], *_args: object, **kwargs: object) -> subprocess.CompletedProcess[Any]:
             if cmd[:1] == ["claude"] and "-p" in cmd:
@@ -378,3 +381,216 @@ class TestProcessLoopUrlInput:
         assert claude_calls[0]["cwd"] == expected_cwd
         expected_sync_calls = [(myrepo, "process-loop")] if "ak110/dotfiles" in remote_url else []
         assert sync_calls == expected_sync_calls
+
+
+def _start_entry(
+    notes: pathlib.Path,
+    name: str,
+    *,
+    state: str = "inbox",
+    repo: str = "github.com/example/myrepo",
+    answer: str | None = None,
+    timestamp: float = 1000.0,
+    kind: str = "uwi",
+) -> pathlib.Path:
+    path = notes / state / name
+    path.parent.mkdir(parents=True, exist_ok=True)
+    body = "\n## 回答\n<!-- ユーザーはこの行以降に回答を追記する -->\n" + (answer or "") + "\n" if kind == "uwi" else ""
+    path.write_text(f"---\ntype: {kind}\ntarget_repo: {repo}\n---\n\n質問\n{body}", encoding="utf-8")
+    os.utime(path, (timestamp, timestamp))
+    return path
+
+
+@pytest.mark.parametrize("state", ["inbox", "processing", "hold"])
+@pytest.mark.parametrize("release", ["deadline", "all-answered", "abort", "candidate-removed"])
+def test_uwi_start_deadline(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+    state: str,
+    release: str,
+) -> None:
+    """公開CLIは期限前の未回答を待ち、全回答・期限・中断を再評価する。"""
+    notes = _setup_notes(tmp_path)
+    ready = _start_entry(notes, "ready.md", kind="awi")
+    question = _start_entry(notes, "question.md", state=state)
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    clock = [1599.0]
+    monkeypatch.setattr(_pl_watch.time, "time", lambda: clock[0])
+    monkeypatch.setattr(_uwi, "is_agent_environment", lambda: False)
+    monkeypatch.setattr(_wi_sync, "commit_and_push", lambda *_a, **_kw: None)
+    children: list[dict[str, Any]] = []
+    fake_run = fake_run_with_remote_url(repo, children, 0)
+
+    def run(cmd: list[str], *args: Any, **kwargs: Any) -> subprocess.CompletedProcess[Any]:
+        result = fake_run(cmd, *args, **kwargs)
+        if children:
+            raise KeyboardInterrupt
+        return result
+
+    monkeypatch.setattr(subprocess, "run", run)
+    waited = False
+
+    def wait(*_args: Any, **_kwargs: Any) -> bool:
+        nonlocal waited
+        assert not children
+        if waited:
+            raise KeyboardInterrupt
+        waited = True
+        if release == "deadline":
+            clock[0] = 1600.0
+        elif release == "all-answered":
+            with pytest.raises(SystemExit) as answer_exit:
+                atk.main(["wi", "answer", question.name, "承認"], home=tmp_path)
+            assert answer_exit.value.code == 0
+        elif release == "candidate-removed":
+            ready.unlink()
+            question.unlink()
+        else:
+            raise KeyboardInterrupt
+        return True
+
+    monkeypatch.setattr(_pl_watch, "wait_for_changes", wait)
+    with pytest.raises(SystemExit) as exc:
+        atk.main(["wi", "process-loop", "--target-repo", str(repo), "--no-update", "--no-alerts"], home=tmp_path)
+    assert exc.value.code == 0
+    assert waited
+    assert len(children) == int(release in {"deadline", "all-answered"})
+
+
+def test_uwi_updates_across_states(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
+    """一部回答とadopted移動後の更新を期限へ含め、再起動でmtimeを更新しない。"""
+    notes = _setup_notes(tmp_path)
+    monkeypatch.setattr(_uwi, "is_agent_environment", lambda: False)
+    monkeypatch.setattr(_wi_sync, "pull", lambda *_a, **_kw: None)
+    monkeypatch.setattr(_wi_sync, "commit_and_push", lambda *_a, **_kw: None)
+    monkeypatch.setattr(subprocess, "run", fake_run_with_remote_url(tmp_path, [], 0))
+    _start_entry(notes, "remaining.md", state="hold")
+    answered = _start_entry(notes, "answered.md", state="hold")
+    with pytest.raises(SystemExit) as answer_exit:
+        atk.main(["wi", "answer", answered.name, "承認"], home=tmp_path)
+    assert answer_exit.value.code == 0
+    os.utime(answered, (1100, 1100))
+    gate = _pl_watch.StartGate(notes)
+    decision = gate.evaluate({"github.com/example/myrepo"}, activity=False, now=1600)
+    assert decision.deadline == 1700
+    adopted = notes / "adopted" / answered.name
+    adopted.parent.mkdir(exist_ok=True)
+    answered.write_text(
+        answered.read_text(encoding="utf-8").replace("type: uwi", "type: uwi\nquestion_type: post-approval"),
+        encoding="utf-8",
+    )
+    with pytest.raises(SystemExit) as adopted_exit:
+        atk.main(["wi", "answer", answered.name, "その対応で問題無い"], home=tmp_path)
+    assert adopted_exit.value.code == 0
+    assert not answered.exists()
+    os.utime(adopted, (1200, 1200))
+    assert gate.evaluate({"github.com/example/myrepo"}, activity=False, now=1700).deadline == 1800
+    restarted = _pl_watch.StartGate(notes)
+    assert restarted.evaluate({"github.com/example/myrepo"}, activity=False, now=1799).deadline == 1800
+    assert not restarted.evaluate({"github.com/example/myrepo"}, activity=False, now=1800).reasons
+    assert adopted.stat().st_mtime == 1200
+
+
+def test_activity_grace_extends_on_new_wi(tmp_path: pathlib.Path) -> None:
+    """対象外を含む新規到着ごとに検出から猶予を延長し、累計上限を置かない。"""
+    notes = _setup_notes(tmp_path)
+    gate = _pl_watch.StartGate(notes)
+    assert gate.evaluate({"github.com/example/myrepo"}, activity=True, now=1000).deadline == 1600
+    for index, now in enumerate([1599, 2198, 2797]):
+        _start_entry(notes, f"arrival-{index}.md", repo="github.com/other/repo", timestamp=now, kind="awi")
+        decision = gate.evaluate({"github.com/example/myrepo"}, activity=True, now=now)
+        assert decision.extended
+        assert decision.deadline == now + 600
+    assert not gate.evaluate({"github.com/example/myrepo"}, activity=True, now=3397).reasons
+    gate.started()
+    assert gate.evaluate({"github.com/example/myrepo"}, activity=True, now=3400).deadline == 4000
+
+
+def test_grace_ignores_edits_and_recounts(tmp_path: pathlib.Path) -> None:
+    """編集・状態移動・同名の再出現は到着と数えず、無活動なら早期解除する。"""
+    notes = _setup_notes(tmp_path)
+    entry = _start_entry(notes, "existing.md", kind="awi")
+    gate = _pl_watch.StartGate(notes)
+    gate.evaluate({"github.com/example/myrepo"}, activity=True, now=1000)
+    entry.write_text(entry.read_text(encoding="utf-8") + "編集\n", encoding="utf-8")
+    moved = notes / "processing" / entry.name
+    moved.parent.mkdir(exist_ok=True)
+    entry.rename(moved)
+    decision = gate.evaluate({"github.com/example/myrepo"}, activity=True, now=1500)
+    assert not decision.extended
+    assert decision.deadline == 1600
+    moved.unlink()
+    gate.evaluate({"github.com/example/myrepo"}, activity=True, now=1510)
+    _start_entry(notes, "existing.md", kind="awi")
+    assert not gate.evaluate({"github.com/example/myrepo"}, activity=True, now=1520).extended
+    assert not gate.evaluate({"github.com/example/myrepo"}, activity=False, now=1520).reasons
+
+
+def test_start_scope_excludes_foreign_uwi(tmp_path: pathlib.Path) -> None:
+    """登録集合の外の未回答UWIは抑止せず、対象内run-skillは抑止する。"""
+    notes = _setup_notes(tmp_path)
+    _start_entry(notes, "foreign.md", repo="github.com/other/repo")
+    gate = _pl_watch.StartGate(notes)
+    assert not gate.evaluate({"github.com/example/myrepo"}, activity=False, now=1000).reasons
+    skill = _start_entry(notes, "skill.md", state="hold")
+    skill.write_text(skill.read_text(encoding="utf-8").replace("type: uwi", "type: uwi\nsource: run-skill"), encoding="utf-8")
+    os.utime(skill, (1000, 1000))
+    decision = gate.evaluate({"github.com/example/myrepo"}, activity=False, now=1000)
+    assert decision.reasons
+    assert decision.deadline == 1600
+
+
+@pytest.mark.parametrize("abort", [False, True])
+def test_grace_abort_and_output(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+    abort: bool,
+) -> None:
+    """公開CLIで到着延長を表示し、中断なら子を起動せず期限なら開始する。"""
+    notes = _setup_notes(tmp_path)
+    _start_entry(notes, "ready.md", kind="awi")
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    clock = [1000.0]
+    monkeypatch.setattr(_pl_watch.time, "time", lambda: clock[0])
+    monkeypatch.setattr(_pl_watch, "_other_sessions_active", lambda: True)
+    children: list[dict[str, Any]] = []
+    fake_run = fake_run_with_remote_url(repo, children, 0)
+
+    def run(cmd: list[str], *args: Any, **kwargs: Any) -> subprocess.CompletedProcess[Any]:
+        result = fake_run(cmd, *args, **kwargs)
+        if children:
+            raise KeyboardInterrupt
+        return result
+
+    monkeypatch.setattr(subprocess, "run", run)
+    waits = 0
+
+    def wait(*_args: Any, **_kwargs: Any) -> bool:
+        nonlocal waits
+        assert not children
+        waits += 1
+        assert waits <= 2
+        if waits == 1:
+            clock[0] = 1599
+            _start_entry(notes, "new.md", kind="awi", timestamp=1599)
+        elif abort:
+            with pytest.raises(SystemExit) as abort_exit:
+                atk.main(["wi", "process-loop", "abort"], home=tmp_path)
+            assert abort_exit.value.code == 0
+        else:
+            clock[0] = 2199
+        return True
+
+    monkeypatch.setattr(_pl_watch, "wait_for_changes", wait)
+    with pytest.raises(SystemExit) as exc:
+        atk.main(["wi", "process-loop", "--target-repo", str(repo), "--no-update", "--no-alerts"], home=tmp_path)
+    assert exc.value.code == 0
+    assert waits == 2
+    assert len(children) == int(not abort)
+    output = capsys.readouterr().out
+    assert "活動" in output and "期限" in output and "延長" in output
+    if not abort:
+        assert "委譲" in output

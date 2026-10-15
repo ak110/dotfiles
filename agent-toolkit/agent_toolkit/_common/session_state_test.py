@@ -234,7 +234,7 @@ class TestClaimSessionTitle:
 
 
 class TestDeleteState:
-    """状態JSON削除の入力・寿命境界。"""
+    """状態JSONを削除する処理の入力と結果の境界。"""
 
     def test_existing_state_is_deleted_but_lock_is_kept(self) -> None:
         update_state("sid", lambda current: {**current, "a": 1})

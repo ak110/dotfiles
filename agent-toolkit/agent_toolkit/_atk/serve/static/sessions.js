@@ -512,7 +512,8 @@ async function refreshSelectedDetail() {
 }
 
 // `trail`は開こうとする記録の委譲元を古い順に並べる。左ペインから選んだ記録には委譲元が無いため、省略した場合は空とする。
-async function openSession(host, engine, path, trail = [], updateUrl = true) {
+async function openSession(host, engine, path, trail = [], updateUrl = true, closeDrawer = true) {
+  if (closeDrawer) setDrawerOpen("sessions", false);
   selected = { host, engine, path };
   if (updateUrl && location.pathname.endsWith("/sessions")) {
     const url = new URL(location.href);
@@ -546,7 +547,6 @@ async function openSession(host, engine, path, trail = [], updateUrl = true) {
     alert.append(retry);
     detailEl.append(alert);
   }
-  setDrawerOpen("sessions", false);
 }
 
 // 通知は2種類ある。`refresh`は一覧の再取得を促し、選択中の記録も取り直す。
@@ -581,6 +581,7 @@ const resyncFromServer = coalesced(async () => {
 });
 
 async function init() {
+  setDrawerOpen("sessions", false);
   listEl = document.getElementById("sessions");
   warningsEl = document.getElementById("warnings");
   detailEl = document.getElementById("detail");
@@ -632,11 +633,10 @@ async function init() {
   const fromUrl = sessions.find(item => item.host === params.get("host") && item.engine === params.get("engine") && item.path === params.get("path"));
   const mobile = window.matchMedia("(max-width: 768px)").matches;
   if (fromUrl) {
-    await openSession(fromUrl.host, fromUrl.engine, fromUrl.path, [], false);
+    await openSession(fromUrl.host, fromUrl.engine, fromUrl.path, [], false, false);
   } else if (!selected && sessions.length > 0 && !mobile) {
-    await openSession(sessions[0].host, sessions[0].engine, sessions[0].path, [], false);
+    await openSession(sessions[0].host, sessions[0].engine, sessions[0].path, [], false, false);
   }
-  setDrawerOpen("sessions", false);
   subscribeEvents();
   resyncWhenVisible(resyncFromServer, {focus: false});
 }

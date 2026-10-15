@@ -31,43 +31,34 @@ SubagentStop判定ではsidechainを含める。
 フォールバック解決を行う。両者で解決できない通知のうち、対応するassistant側`tool_use`の
 `name`が`"Monitor"`と突合できたもの（`_collect_monitor_task_ids`）は追跡対象外の既知通知として
 ログへ記録せず無視する。それ以外で解決できない通知は`task_notification_unresolved`として常時ログへ明示出力し、
-通知形式変動による幽霊pendingの発生を検出可能にする。
+通知形式が変わって完了を解決できず、起動済みのタスクが未完了として残り続ける事象を検出できるようにする。
 
 本モジュールへ判定不能時に終了を拒否する関数を追加する場合は次の2点を守る。
 完了の判定には複数キーによるフォールバック解決を使い、どのキーでも解決できない通知または停止結果は
 永続ログへ明示出力して未解決状態を可視化する（起動時に記録した全background taskが
 完了通知または停止成功結果のいずれかで完了集合へ解決できることを不変条件として維持する）。
-判定は起動集合の非空ではなく`launched - completed`のremainder非空で行う
-（起動集合の非空判定では完了通知の消化後も真を返し続け、以後の素の状態表明がすべてbypassされる）。
+判定は`launched - completed`の残りが空でないことで行う
+（起動集合だけで判定すると完了通知を受け取った後も真を返し続け、以後のターンが状態を述べただけで終わっても全て判定を通過する）。
 
 判定根拠の常時ログは`stop_session.append_stop_log`へ書き、詳細stderr出力（`_emit_debug`）は
 環境変数`AGENT_TOOLKIT_STOP_GATE_DEBUG`が真値の場合のみ発火するDEBUG相当
 （last_tool・launched・pending・pending_ids・payload task件数・判定源）で、原因を特定する用途に限定する。
 """
 
-# 関数の実行時までだけ使う依存を、Python 3.15では使用時まで読み込まない。旧Pythonでは通常のimportとなる。
-__lazy_modules__ = {
-    "agent_toolkit._common",
-    "agent_toolkit._hooks",
-    "agent_toolkit._hooks.stop_session",
-    "agent_toolkit._hooks.transcript_scan",
-    "collections",
-    "collections.abc",
-}
-
-import collections.abc
+# 関数の実行時にだけ使う依存は、使用時まで読み込まない。
 import contextlib
 import json
 import os
 import pathlib
 import re
 import sys
-from collections import deque
+lazy import collections.abc
+lazy from collections import deque
 
-from agent_toolkit._common import transcript as _transcript
-from agent_toolkit._hooks import agents_server_observations as _agents_server_observations
-from agent_toolkit._hooks.stop_session import append_stop_log
-from agent_toolkit._hooks.transcript_scan import (
+lazy from agent_toolkit._common import transcript as _transcript
+lazy from agent_toolkit._hooks import agents_server_observations as _agents_server_observations
+lazy from agent_toolkit._hooks.stop_session import append_stop_log
+lazy from agent_toolkit._hooks.transcript_scan import (
     entry_in_scan_scope,
     extract_tool_result_id,
     iter_assistant_blocks,
@@ -164,11 +155,11 @@ def _pending_cache_key(
         transcript_state = None
     try:
         background_state = json.dumps(background_tasks, ensure_ascii=False, sort_keys=True)
-    except (TypeError, ValueError):
+    except TypeError, ValueError:
         background_state = repr(background_tasks)
     try:
         stored_state = json.dumps(session_state, ensure_ascii=False, sort_keys=True)
-    except (TypeError, ValueError):
+    except TypeError, ValueError:
         stored_state = repr(session_state)
     return transcript_path, session_id, background_state, stored_state, transcript_state
 
@@ -385,7 +376,7 @@ def async_launch_offsets(transcript_path: str) -> dict[str, int]:
         position += len(raw)
         try:
             entry = json.loads(raw)
-        except (json.JSONDecodeError, UnicodeDecodeError):
+        except json.JSONDecodeError, UnicodeDecodeError:
             continue
         if not isinstance(entry, dict) or not entry_in_scan_scope(entry, include_sidechain=False):
             continue
@@ -451,7 +442,7 @@ def _read_child_transcript_entries(transcript_path: str) -> list[dict] | None:
     for line in lines:
         try:
             entry = json.loads(line)
-        except (json.JSONDecodeError, ValueError):
+        except json.JSONDecodeError, ValueError:
             return None
         if not isinstance(entry, dict):
             return None
@@ -852,7 +843,7 @@ def _collect_nested_agent_launches(
         metadata_path = child_path.with_name(f"{child_path.stem}.meta.json")
         try:
             metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
-        except (OSError, ValueError):
+        except OSError, ValueError:
             continue
         if not _is_direct_subagent_metadata(metadata):
             continue
@@ -1070,8 +1061,8 @@ def collect_background_task_id_tool_use_ids(
 def _collect_monitor_task_ids(entries: list[dict], *, include_sidechain: bool = False) -> set[str]:
     """transcript全行から、Monitorツール起動に一意に対応する`taskId`の集合を返す。
 
-    `toolUseResult.taskId`キーはMonitor専用ではなく、他のツール
-    （`success`・`updatedFields`・`statusChange`キーを伴う形で観測）も同じキー名を使う
+    `toolUseResult.taskId`キーは、Monitorに加えて他のツール
+    （`success`・`updatedFields`・`statusChange`キーを伴う形で観測）も同じキー名で使う
     （実transcript調査で確認済み）。そのため`taskId`キーの存在だけでMonitor由来と判定せず、
     対応する`tool_use_id`（`extract_tool_result_id`で解決）がassistant側`tool_use`ブロックの
     `name == "Monitor"`と一致する場合に限りMonitor由来として収集する。

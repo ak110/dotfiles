@@ -35,6 +35,31 @@ pytestmark = [
 _SAVE_RELEASE_DELAY_SEC = 1.0
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize("width", [320, 1280])
+async def test_narrow_work_items_keep_unique_identifiers_visible(browser_harness: _BrowserHarness, width: int) -> None:
+    """同じ長い要約を持つ項目でも、カード内のファイル名と対象を省略せず読んで選択できる。"""
+    page = browser_harness.page
+    names = [f"same-prefix-unique-00{index}.md" for index in (1, 2)]
+    for index, name in enumerate(names):
+        (browser_harness.root / "inbox" / name).write_text(
+            f"---\ntype: awi\ntarget_repo: example/repo-{index}\n---\n\n" + "同じ要約の接頭辞" * 30 + "\n",
+            encoding="utf-8",
+        )
+    await page.set_viewport_size({"width": width, "height": 800})
+    await page.goto(browser_harness.base_url + "/")
+    for name in names:
+        row = page.locator(".entry-select").filter(has=page.locator(".filename-cell", has_text=name))
+        for selector in (".filename-cell", ".target-repo-cell"):
+            cell = row.locator(selector)
+            await playwright.async_api.expect(cell).to_be_visible()
+            assert await cell.evaluate("element => element.scrollWidth <= element.clientWidth")
+        await row.click()
+        await playwright.async_api.expect(page.locator("#detail-filename")).to_have_text(name)
+        await page.locator("#detail-close-button").click()
+    assert await page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
+
+
 def _assert_list_request_without_fallback(request_urls: list[str], base_url: str, expected_path: str) -> None:
     """期待した条件の一覧要求が送られ、補助検索の要求が送られていないことを判定する。
 
@@ -303,8 +328,8 @@ async def test_responsive_layout_dialog_scroll_and_markdown(browser_harness: _Br
 
 
 @pytest.mark.asyncio
-async def test_mobile_wi_list_starts_with_compact_two_row_entries(browser_harness: _BrowserHarness) -> None:
-    """390px幅では一覧を先に示し、各項目を2段で描画する。"""
+async def test_mobile_wi_list_starts_with_identifiable_entries(browser_harness: _BrowserHarness) -> None:
+    """390px幅では一覧を先に示し、要約・状態・識別情報を順に読める。"""
     page = browser_harness.page
     await page.set_viewport_size({"width": 390, "height": 844})
     await page.goto(browser_harness.base_url + "/")
@@ -320,12 +345,15 @@ async def test_mobile_wi_list_starts_with_compact_two_row_entries(browser_harnes
     assert pseudo_display == ["none"] * await cells.count()
     summary_box = await row.locator(".summary-cell").bounding_box()
     status_box = await row.locator(".status-cell").bounding_box()
+    filename_box = await row.locator(".filename-cell").bounding_box()
+    target_box = await row.locator(".target-repo-cell").bounding_box()
     row_box = await row.bounding_box()
     assert summary_box is not None
     assert status_box is not None
+    assert filename_box is not None
+    assert target_box is not None
     assert row_box is not None
-    assert summary_box["y"] < status_box["y"]
-    assert row_box["height"] <= 96
+    assert summary_box["y"] < status_box["y"] < filename_box["y"] < target_box["y"]
     assert row_box["y"] >= 0
     assert row_box["y"] + row_box["height"] <= 844
 
@@ -495,7 +523,7 @@ async def test_long_unknown_metadata_key_wraps_at_narrow_viewport(
 
 @pytest.mark.asyncio
 async def test_accessible_workflows_filters_warnings_and_sse_status(browser_harness: _BrowserHarness) -> None:
-    """回答・削除フォーカス、条件依存、警告、エンドユーザー起点だけの件数通知を検証する。"""
+    """回答・削除の操作のフォーカス、条件に応じた表示、警告と、エンドユーザーの操作による更新だけに出す件数通知を検証する。"""
     harness = browser_harness
     page = harness.page
     await page.goto(harness.base_url + "/")
@@ -633,7 +661,7 @@ async def test_accessible_workflows_filters_warnings_and_sse_status(browser_harn
 async def test_post_approval_fixed_choices_show_saved_state(
     browser_harness: _BrowserHarness, choice: str, addition: str, saved_state: str
 ) -> None:
-    """専用二択の保存通知は実際の採用済み遷移を伝え、是正・追記は回答済みで残る。"""
+    """事後承認の二択への回答の保存通知は実際に採用済みへ移したことを伝え、是正や追記を含む回答は回答済みのinboxに残る。"""
     harness = browser_harness
     filename = "post-approval.md"
     (harness.root / "inbox" / filename).write_text(
@@ -844,7 +872,8 @@ async def test_period_filter_limits_work_items_to_recent_by_default(browser_harn
 
 
 @pytest.mark.asyncio
-async def test_empty_list_limited_by_period_offers_all_periods(browser_harness: _BrowserHarness) -> None:
+@pytest.mark.parametrize("state", ["active", "processable", "all", "inbox", "processing", "hold", "adopted", "rejected"])
+async def test_empty_list_limited_by_period_offers_all_periods(browser_harness: _BrowserHarness, state: str) -> None:
     """期間の内側に対応中の項目が無い空状態から、全期間の一覧へ1操作で進め、狭い幅でも期間の限定を確認できる。
 
     空状態に期間を広げる操作が無いと、古い対応中の項目を探すエンドユーザーがフィルター欄を探して開く必要がある。
@@ -853,7 +882,9 @@ async def test_empty_list_limited_by_period_offers_all_periods(browser_harness: 
     page = harness.page
     await page.set_viewport_size({"width": 320, "height": 800})
     old_name = f"{datetime.datetime.now() - datetime.timedelta(days=40):%Y%m%d-%H%M%S}-001.md"
-    (harness.root / "inbox" / old_name).write_text(
+    stored_state = "inbox" if state in {"active", "processable", "all"} else state
+    (harness.root / stored_state).mkdir(exist_ok=True)
+    (harness.root / stored_state / old_name).write_text(
         "---\ntype: awi\ntarget_repo: example/repo\nsource: browser\n---\n\n古い対応中の項目\n", encoding="utf-8"
     )
 
@@ -864,15 +895,16 @@ async def test_empty_list_limited_by_period_offers_all_periods(browser_harness: 
 
     await page.route("**/api/entries?*period=2w*", empty_recent)
     await page.goto(harness.base_url + "/")
-    await playwright.async_api.expect(page.locator("#empty-state-message")).to_have_text(
-        "直近2週間に作成された対応中の項目はありません。"
-    )
+    await _open_filters(page)
+    await page.locator("#state-filter").select_option(state)
+    await playwright.async_api.expect(page.locator("#empty-state")).to_be_visible()
     await playwright.async_api.expect(page.locator("#entry-period")).to_be_visible()
     await playwright.async_api.expect(page.locator("#entry-period")).to_have_text("直近2週間に作成")
     await page.get_by_role("button", name="全期間を表示").click()
 
     await playwright.async_api.expect(page.locator("#entry-list .entry-select").filter(has_text=old_name)).to_have_count(1)
     await playwright.async_api.expect(page.locator("#period-filter")).to_have_value("all")
+    await playwright.async_api.expect(page.locator("#state-filter")).to_have_value(state)
     await playwright.async_api.expect(page.locator("#entry-period")).to_be_hidden()
 
 
@@ -1051,7 +1083,7 @@ Object.defineProperty(window, 'Notification', {configurable: true, value: TestNo
 
 @pytest.mark.asyncio
 async def test_pending_edit_and_closed_delete_route_results(browser_harness: _BrowserHarness) -> None:
-    """未解決更新の二重送信、入力固定、処理中閉鎖、完了結果の配送先を検証する。"""
+    """応答待ちの更新の二重送信の抑止、入力の無効化、処理中にダイアログを閉じた場合の完了結果の通知先を検証する。"""
     harness = browser_harness
     page = harness.page
     await page.goto(harness.base_url + "/")
@@ -1166,7 +1198,7 @@ async def test_sse_refreshes_open_detail_preserves_input_and_closes_missing_entr
 async def test_detail_focus_falls_back_after_answer_filter_and_delete(
     browser_harness: _BrowserHarness,
 ) -> None:
-    """回答後の詳細を閉じたときや削除・0件化後に操作可能な一覧要素へ戻る。"""
+    """回答後に詳細を閉じたときと削除・0件化の後は、フォーカスが操作できる一覧の要素へ戻る。"""
     harness = browser_harness
     page = harness.page
     harness.operations.enable_file_mutations()
@@ -1205,7 +1237,7 @@ async def test_detail_focus_falls_back_after_answer_filter_and_delete(
 async def test_sse_reconciliation_preserves_identity_and_owned_dialogs(
     browser_harness: _BrowserHarness,
 ) -> None:
-    """同名項目、状態移動、親子ダイアログ消失を実ブラウザーで調停する。"""
+    """同名の項目、状態の移動、詳細と削除確認のダイアログを開いている間の対象の消失を、実ブラウザーで正しく扱う。"""
     harness = browser_harness
     page = harness.page
     processing = harness.root / "processing"
@@ -1568,10 +1600,10 @@ async def test_cooldown_resyncs_after_changes_and_visibility(browser_harness: _B
 async def test_delete_and_sse_completion_orders_close_owned_dialogs_once(
     browser_harness: _BrowserHarness,
 ) -> None:
-    """削除応答とSSEの到着順にかかわらず、親子を閉じて一覧へ戻す。
+    """削除応答とSSEの到着順にかかわらず、詳細と削除確認のダイアログを閉じて一覧へ戻す。
 
     応答より先に届いた更新通知は自分の削除によるものを含むため、応答まで詳細の再読込を保留し、
-    応答の後に親子を閉じて削除の成功を通知する。
+    応答の後に両方のダイアログを閉じて削除の成功を通知する。
     """
     harness = browser_harness
     page = harness.page
@@ -1614,7 +1646,7 @@ async def test_delete_and_sse_completion_orders_close_owned_dialogs_once(
 async def test_user_filter_announcement_survives_same_state_sse_repo_request(
     browser_harness: _BrowserHarness,
 ) -> None:
-    """同一状態の後発SSE候補要求後も、エンドユーザーの件数通知を完了する。"""
+    """同じ状態の対象リポジトリ候補の要求がSSEで後から発行されても、エンドユーザーの操作による件数通知を完了する。"""
     harness = browser_harness
     page = harness.page
     await page.goto(harness.base_url + "/")
@@ -1831,7 +1863,7 @@ async def test_answer_rebase_in_progress_shows_recovery(
 async def test_delete_confirmation_closes_on_detail_failure_and_content_conflict(
     browser_harness: _BrowserHarness,
 ) -> None:
-    """一覧後の詳細失敗と確認後の内容競合では、古い削除確認を閉じる。"""
+    """一覧の更新後に詳細の再取得が失敗した場合と、削除確認の後に内容が競合した場合は、古い削除確認を閉じる。"""
     harness = browser_harness
     page = harness.page
     harness.operations.enable_file_mutations()
@@ -2076,7 +2108,7 @@ async def test_create_dialog_show_text_after_preface_stays_single_entry(browser_
 async def test_invalid_input_focus_keeps_whole_error_in_dialog_body(
     browser_harness: _BrowserHarness, width: int, height: int, input_height: int | None
 ) -> None:
-    """不正入力へ戻った直後に対応エラー全文を読め、本文をスクロールしても操作領域は固定される。"""
+    """不正な入力欄へフォーカスが戻った直後に対応するエラーの全文が見え、本文をスクロールしてもヘッダーとフッターの位置は変わらない。"""
     harness = browser_harness
     page = harness.page
     (harness.root / "inbox" / "long-entry.md").write_text(

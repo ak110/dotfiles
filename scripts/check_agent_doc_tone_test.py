@@ -7,8 +7,11 @@ import pathlib
 import subprocess
 import sys
 import tomllib
+from collections.abc import Callable
 
 import check_agent_doc_tone
+import pyfltr.command.targets
+import pyfltr.config.config
 import pytest
 
 
@@ -17,6 +20,78 @@ def _write(tmp_path: pathlib.Path, body: str, *, name: str = "doc.md") -> pathli
     path = tmp_path / name
     path.write_text(body, encoding="utf-8")
     return path
+
+
+def test_project_checks_keep_external_norm_links(tmp_path: pathlib.Path) -> None:
+    """外部規範の表記を保持する設定でも、リンクの確認へは到達する。"""
+    repository = pathlib.Path(__file__).resolve().parents[1]
+    config = pyfltr.config.config.load_config(repository, global_config_path=tmp_path / "absent.toml")
+    external = pathlib.Path(".chezmoi-source/dot_gemini/antigravity-cli/skills/japanese-tech-writing/SKILL.md")
+    assert pyfltr.command.targets.excluded(external, config) is None
+    assert pyfltr.command.targets.matches_exclude_patterns(external, config["lychee-exclude"]) is None
+    for command in ("textlint", "colloquial-check"):
+        assert pyfltr.command.targets.matches_exclude_patterns(external, config[f"{command}-exclude"])
+
+
+def test_project_checks_include_extensionless_shell_targets(tmp_path: pathlib.Path) -> None:
+    """binのbashを現在と将来の名前によらず対象にし、他の言語は区別する。"""
+    repository = pathlib.Path(__file__).resolve().parents[1]
+    config = pyfltr.config.config.load_config(repository, global_config_path=tmp_path / "absent.toml")
+    bash_paths = [path.relative_to(repository) for path in (repository / "bin").iterdir() if not path.suffix]
+    assert bash_paths
+    for command in ("shellcheck", "shfmt"):
+        candidates = [*bash_paths, pathlib.Path("bin/new-cli"), pathlib.Path("bin/script.py"), pathlib.Path("bin/cli.cmd")]
+        globs = [config[f"{command}-targets"], *config[f"{command}-extend-targets"]]
+        selected = pyfltr.command.targets.filter_by_globs(candidates, globs)
+        selected = [
+            path
+            for path in selected
+            if pyfltr.command.targets.matches_exclude_patterns(path, config[f"{command}-exclude"]) is None
+        ]
+        assert set(selected) == {*bash_paths, pathlib.Path("bin/new-cli")}
+
+
+def test_project_textlint_runs_current_rules(tmp_path: pathlib.Path) -> None:
+    """ルールの実装が更新された場合も、現在の実装で本文を確認する設定を保つ。"""
+    repository = pathlib.Path(__file__).resolve().parents[1]
+    config = pyfltr.config.config.load_config(repository, global_config_path=tmp_path / "absent.toml")
+    assert "--cache" not in config["textlint-args"]
+
+
+@pytest.mark.parametrize("config_path", ["pyproject.toml", "agent-toolkit/pyproject.toml"])
+def test_project_pytest_reports_skip_reasons(
+    tmp_path: pathlib.Path, host_environ: Callable[[], dict[str, str]], config_path: str
+) -> None:
+    """通常のpytest設定を通した未実行のテストは、要約に理由を残す。"""
+    repository = pathlib.Path(__file__).resolve().parents[1]
+    sample = _write(
+        tmp_path,
+        'import pytest\n\ndef test_sample():\n    pytest.skip("G6 skip evidence")\n',
+        name="sample_test.py",
+    )
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "pytest",
+            "-q",
+            "-c",
+            str(repository / config_path),
+            "--noconftest",
+            "-n",
+            "0",
+            str(sample),
+        ],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        env=host_environ(),
+        timeout=30,
+        check=False,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "SKIPPED [1]" in result.stdout
+    assert "G6 skip evidence" in result.stdout
 
 
 def test_split_sentences_excludes_non_prose_blocks() -> None:
@@ -47,6 +122,65 @@ def test_split_sentences_excludes_non_prose_blocks() -> None:
     assert sentences == ["本文の1文目である。", "本文の2文目である。", "箇条書きの文である。"]
 
 
+@pytest.mark.parametrize(
+    ("body", "expected", "lines", "negative"),
+    [
+        ("- 値は変えない\n- 値を記録する\n", ["値は変えない", "値を記録する"], [1, 2], 1),
+        ("値は変えない\n\n次の段落を読む\n", ["値は変えない", "次の段落を読む"], [1, 3], 1),
+        ("段落の文が\n折り返して続く。\n", ["段落の文が折り返して続く。"], [2], 0),
+        ("- 値は変え\n  ない\n- 結果を記録する\n", ["値は変えない", "結果を記録する"], [2, 3], 1),
+        ("> 値は変えない\n>\n> 結果を読む\n", ["値は変えない", "結果を読む"], [1, 3], 1),
+        ("値は変えない\n---\n\n本文を読む\n", ["本文を読む"], [4], 0),
+        ("    値は変えない\n\n次の段落を読む\n", ["次の段落を読む"], [3], 0),
+        (
+            "- 値は変えない\n  - 子の値を読む\n\n次の段落を読む\n",
+            ["値は変えない", "子の値を読む", "次の段落を読む"],
+            [1, 2, 4],
+            1,
+        ),
+    ],
+    ids=[
+        "items",
+        "paragraphs",
+        "wrapped-paragraph",
+        "wrapped-item",
+        "quote",
+        "setext-heading",
+        "indented-code",
+        "nested-items",
+    ],
+)
+def test_report_counts_markdown_blocks_and_preserves_physical_positions(
+    tmp_path: pathlib.Path,
+    host_environ: Callable[[], dict[str, str]],
+    body: str,
+    expected: list[str],
+    lines: list[int],
+    negative: int,
+) -> None:
+    """公開reportの文数と否定形終端にブロック末を含め、折返しの文末は物理行を指す。"""
+    path = _write(tmp_path, body, name="AGENTS.md")
+    arguments = ["uv", "run", "--frozen", "python", str(pathlib.Path(check_agent_doc_tone.__file__)), "--report", str(path)]
+
+    result = subprocess.run(
+        arguments, capture_output=True, text=True, encoding="utf-8", timeout=30, env=host_environ(), check=False
+    )
+
+    print(
+        json.dumps(
+            {"argv": arguments, "exit": result.returncode, "stdout": result.stdout, "stderr": result.stderr}, ensure_ascii=False
+        )
+    )
+    assert result.returncode == 0, result.stderr
+    assert not result.stderr
+    assert result.stdout.splitlines()[0].split("\t") == ["文数", "否定形終端", "当該", "ファイル"]
+    assert result.stdout.splitlines()[1].split("\t") == [str(len(expected)), str(negative), "0", str(path)]
+    sentences = check_agent_doc_tone.sentences_with_positions(body)
+    assert [sentence.text for sentence in sentences] == expected
+    assert [sentence.line for sentence in sentences] == lines
+    assert all(sentence.excerpt in body.splitlines()[sentence.line - 1] for sentence in sentences)
+
+
 def test_metrics_count_each_indicator(tmp_path: pathlib.Path) -> None:
     """否定形終端と「当該」をそれぞれ数える。"""
     text = "当該対象は変更しない。当該値を根拠にしない。当該条件だけを判定しない。肯定形の文である。\n"
@@ -56,6 +190,66 @@ def test_metrics_count_each_indicator(tmp_path: pathlib.Path) -> None:
     assert metrics.sentences == 4
     assert metrics.negative_endings == 3
     assert metrics.subject_words == 3
+
+
+@pytest.mark.parametrize(
+    "data",
+    [
+        "```text\n当該の検出データ。\n```\n",
+        "    当該のコードは変更しない。\n",
+        "<!-- 当該のコメントは変更しない。 -->\n",
+        "# 当該の見出し\n",
+        "| 値 |\n| --- |\n| 当該の表 |\n",
+        "---\ntitle: 当該の属性\n---\n",
+    ],
+    ids=["fence", "indented-code", "comment", "heading", "table", "frontmatter"],
+)
+def test_density_keeps_detection_data_out_of_rewrite_candidates(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], data: str
+) -> None:
+    """本文以外の対象語だけを変えても密度と診断は変わらず、本文の出現だけを編集候補にする。"""
+    prose = "本文を読む。\n" * 20
+    for prefix in (data, data.replace("当該", "別の")):
+        body = prefix + "\n" + prose
+        path = _write(tmp_path, body)
+        assert check_agent_doc_tone.main([str(path)]) == 0
+        assert capsys.readouterr().err == ""
+        metrics = check_agent_doc_tone.Metrics(path, body)
+        assert metrics.sentences == 20
+        assert metrics.subject_words == 0
+        assert metrics.negative_endings == 0
+
+    body = data + "\n" + "当該の対象を読む。当該の値を読む。\n" + prose
+    path = _write(tmp_path, body)
+    assert check_agent_doc_tone.main([str(path)]) == 1
+    diagnostics = _diagnostic_lines(capsys.readouterr().err, path)
+    counted = [(line, message) for line, message in diagnostics if "数えた「当該」: " in message]
+    prose_line = len(data.splitlines()) + 2
+    assert [line for line, _ in counted] == [prose_line, prose_line]
+    assert all("読む" in message for _, message in counted)
+
+
+def test_density_preserves_inline_code_data(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
+    """本文のインラインコード内の検出データを密度に含めない。"""
+    body = "`当該`を記録する。\n" * 20
+    assert check_agent_doc_tone.main([str(_write(tmp_path, body))]) == 0
+    assert capsys.readouterr().err == ""
+
+
+def test_density_counts_quote_paragraphs_in_every_indicator(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
+    """引用内の本文を文数・否定形終端・対象語の全てへ含め、保存データを除く。"""
+    body = "> 当該の値は変更しない\n>\n> 結果を読む\n\n" + "本文を読む。\n" * 18
+    body += "\n```text\n当該のデータは変更しない。\n```\n"
+    path = _write(tmp_path, body)
+    assert check_agent_doc_tone.main(["--report", str(path)]) == 0
+    report = capsys.readouterr()
+    assert not report.err
+    assert report.out.splitlines()[1].split("\t") == ["20", "1", "1", str(path)]
+    assert check_agent_doc_tone.main([str(path)]) == 1
+    counted = _diagnostic_lines(capsys.readouterr().err, path)
+    assert [(line, message) for line, message in counted if "数えた「当該」" in message] == [
+        (1, "「当該」の出現率の超過で数えた「当該」: 「当該の値は変更しない」。指す対象を直接書く平易な語へ書き換える候補。")
+    ]
 
 
 def test_short_document_skips_ratio_thresholds(tmp_path: pathlib.Path) -> None:
@@ -185,14 +379,15 @@ def test_report_mode_prints_metrics_without_judging(tmp_path: pathlib.Path, caps
     assert lines[1].split("\t") == ["1", "1", "0", str(path)]
 
 
-def test_excluded_paths_are_skipped(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
-    """意図的な違反例を収録するファイルは密度の判定から外す。"""
-    excluded = tmp_path / "agent-toolkit/skills/writing-standards/references/tone-examples.md"
-    excluded.parent.mkdir(parents=True)
-    excluded.write_text("その値を根拠にしない。\n", encoding="utf-8")
+@pytest.mark.parametrize("name", ["tone-examples.md", "tone-examples-llm-tone.md", "textlint-violations.md"])
+def test_norm_example_paths_are_checked(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], name: str) -> None:
+    """例を置く各ファイルも密度の判定へ到達し、超過した指標を報告する。"""
+    example = tmp_path / "agent-toolkit/skills/writing-standards/references" / name
+    example.parent.mkdir(parents=True)
+    example.write_text("その値を根拠にしない。\n" * 20, encoding="utf-8")
 
-    assert check_agent_doc_tone.main([str(excluded)]) == 0
-    assert capsys.readouterr().out == ""
+    assert check_agent_doc_tone.main([str(example)]) == 1
+    assert "否定形終端率" in capsys.readouterr().err
 
 
 @pytest.mark.parametrize(
@@ -204,6 +399,10 @@ def test_excluded_paths_are_skipped(tmp_path: pathlib.Path, capsys: pytest.Captu
         ("doc.md", "| 対象 |\n| --- |\n| 照合する値 |\n", "照合", 3),
         ("doc.md", "`正本`を参照する。\n", "正本", 1),
         ("doc.md", "```text\n既定の値を使う。\n```\n", "既定", 2),
+        ("doc.md", "```text\n悪い例: 正本を読む。\n```\n", "正本", 2),
+        ("doc.md", "```text\n冗長な例: 正本を読む。\n```\n", "正本", 2),
+        ("doc.md", "```text\n対象語: 正本\n```\n", "正本", 2),
+        ("doc.md", "```text\n解説: 「正本」を使う。\n```\n", "正本", 2),
         ("doc.md", "```python\nprint('照合する値')\n```\n", "照合", 2),
         ("doc.md", "<!-- 正本を参照する。 -->\n", "正本", 1),
         ("app.py", "# 既定の値を使う。\n", "既定", 1),
@@ -248,6 +447,10 @@ def test_cli_rejects_terms_in_explanations(
         ("焼き込んだ。\n", "焼く"),
         ("崩した。\n", "崩す"),
         ("疑った。\n", "疑う"),
+        ("文字列ではなく整数を指定する。\n", "ではなく"),
+        ("速度よりむしろ精度を優先する。\n", "むしろ"),
+        ("単なる保存先の変更ではない。\n", "単なる"),
+        ("整理というより改訂に近い。\n", "というより"),
     ],
 )
 def test_cli_warns_caution_terms_without_failing(
@@ -261,6 +464,26 @@ def test_cli_warns_caution_terms_without_failing(
     output = capsys.readouterr()
     assert f"{path}:1: warning: 警告: 「{term}」" in output.err
     assert "（終了コードには影響しない）" in output.err
+
+
+@pytest.mark.parametrize(
+    ("name", "body", "warns"),
+    [
+        ("doc.md", "「文字列ではなく整数を指定する」と説明する。\n", True),
+        ("doc.md", "```text\n例文: 文字列ではなく整数を指定する。\n説明: 入力を示す。\n```\n", True),
+        ("doc.md", "```text\n逐語引用: 文字列ではなく整数を指定する。\n```\n", False),
+        ("config.py", 'labels = {"ではなく": 1}\n', False),
+        ("sample_test.py", 'import pytest\n\nbody = "文字列ではなく整数を指定する。"\n', False),
+        ("doc.md", "```text\n例文: 入力には整数を指定する。\n説明: 入力を直接示す。\n```\n", False),
+    ],
+    ids=["quoted-prose", "authored-example", "verbatim", "identifier", "detector-input", "positive-example"],
+)
+def test_cli_contrast_distinguishes_prose_from_preserved_data(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], name: str, body: str, warns: bool
+) -> None:
+    """自作の本文と例を警告し、原文・識別子・検出入力を保持する。"""
+    assert check_agent_doc_tone.main([str(_write(tmp_path, body, name=name))]) == 0
+    assert ("警告: 「ではなく」" in capsys.readouterr().err) is warns
 
 
 @pytest.mark.parametrize(
@@ -291,6 +514,7 @@ def test_cli_explains_every_caution_term(
     assert category in {  # pylint: disable=protected-access
         check_agent_doc_tone._METAPHORICAL,  # pylint: disable=protected-access
         check_agent_doc_tone._ABSTRACT,  # pylint: disable=protected-access
+        check_agent_doc_tone._CONTRAST,  # pylint: disable=protected-access
     }
     assert reason in warning
     assert direction in warning
@@ -331,17 +555,11 @@ def test_cli_fails_on_denied_term_beside_caution_term(tmp_path: pathlib.Path, ca
         ("config.toml", '"正本" = "是正本文"\n'),
         ("doc.md", "> 他者が記した正本・既定・照合の説明。\n"),
         ("doc.md", "```text\n逐語引用: 正本を読む。\n既定の値を照合する。\n```\n"),
-        (
-            "doc.md",
-            "```text\n悪い例: 正本を照合する。\n"
-            "書き換え: 記録した値が入力と一致するか確かめる。\n"
-            "解説: 「正本」「照合」は語そのものを示す。\n```\n",
-        ),
         ("app_test.py", 'def test_fixture():\n    assert "正本" == "正本"\n'),
     ],
 )
 def test_cli_preserves_data_and_structural_names(tmp_path: pathlib.Path, name: str, body: str) -> None:
-    """文章ではない一致、他者の引用と意図的な違反入力を変更させない。"""
+    """文章ではない一致、他者の引用と検出用の入力を変更させない。"""
     path = _write(tmp_path, body, name=name)
 
     assert check_agent_doc_tone.main([str(path)]) == 0
@@ -375,7 +593,7 @@ def test_cli_checks_good_examples_and_test_comments(tmp_path: pathlib.Path) -> N
     """例のファイルとテストのファイルでも、説明文への再使用を検出する。"""
     example = tmp_path / "agent-toolkit/skills/writing-standards/references/tone-examples.md"
     example.parent.mkdir(parents=True)
-    example.write_text("```text\n悪い例: 正本を読む。\n書き換え: 正本を読む。\n```\n", encoding="utf-8")
+    example.write_text("```text\n例文: 正本を読む。\n説明: 「照合」を用いる。\n```\n", encoding="utf-8")
     test_file = _write(tmp_path, '# 正本を参照する。\nvalue = "照合"\n', name="app_test.py")
 
     assert check_agent_doc_tone.main([str(example)]) == 1
@@ -480,7 +698,7 @@ def test_path_inputs_are_preserved_but_explanations_are_checked(
     ),
     [
         (
-            "```text\n悪い例: 正本を読む。\n書き換え: 正本を読む。\n```\n",
+            "```text\n例文: 正本を読む。\n```\n",
             '# 既定の値を使う。\nprint("照合する値")\n',
             'raise RuntimeError("既定の値を照合できない")\n',
             "",
@@ -491,7 +709,7 @@ def test_path_inputs_are_preserved_but_explanations_are_checked(
             [],
         ),
         (
-            "```text\n悪い例: 正本を読む。\n書き換え: 記録した値を読む。\n```\n",
+            "```text\n例文: 記録した値を読む。\n```\n",
             'from pathlib import Path\npath = Path("照合.md")\nprint("是正本文")\n',
             "",
             "",
@@ -502,7 +720,7 @@ def test_path_inputs_are_preserved_but_explanations_are_checked(
             [],
         ),
         (
-            "```text\n悪い例: 正本を読む。\n書き換え: 記録した値を読む。\n```\n",
+            "```text\n例文: 記録した値を読む。\n```\n",
             "# 入力を検査する。\nprint(1)\n",
             "",
             "",
@@ -513,7 +731,7 @@ def test_path_inputs_are_preserved_but_explanations_are_checked(
             [],
         ),
         (
-            "```text\n悪い例: 正本を読む。\n書き換え: 記録した値を読む。\n```\n",
+            "```text\n例文: 記録した値を読む。\n```\n",
             'print("是正本文")\n',
             "",
             "入口を確認しない。" * 20,
@@ -524,7 +742,7 @@ def test_path_inputs_are_preserved_but_explanations_are_checked(
             [1] * 20,
         ),
         (
-            "```text\n悪い例: 正本を読む。\n書き換え: 記録した値を読む。\n```\n",
+            "```text\n例文: 記録した値を読む。\n```\n",
             'print("是正本文")\n',
             "",
             "",
@@ -535,7 +753,7 @@ def test_path_inputs_are_preserved_but_explanations_are_checked(
             [],
         ),
         (
-            "```text\n悪い例: 正本を読む。\n書き換え: 記録した値を読む。\n```\n",
+            "```text\n例文: 記録した値を読む。\n```\n",
             'print("是正本文")\n',
             "",
             "",
@@ -546,7 +764,7 @@ def test_path_inputs_are_preserved_but_explanations_are_checked(
             [],
         ),
         (
-            "```text\n悪い例: 正本を読む。\n書き換え: 記録した値を読む。\n```\n",
+            "```text\n例文: 記録した値を読む。\n```\n",
             'print("是正本文")\n',
             "",
             _DENSITY_BODY,

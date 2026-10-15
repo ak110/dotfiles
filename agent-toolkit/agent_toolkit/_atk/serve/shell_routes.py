@@ -24,16 +24,16 @@ from agent_toolkit._atk.serve import wi_operations as _wi_operations
 from agent_toolkit._atk.wi import web_input as wi_web_input
 
 # base_pathが安全な形式に一致するかを確認するパターン。先頭スラッシュ必須、英数字と`._~/-`のみ許可し、
-# 連続スラッシュ（スキーム相対URL扱いになり外部オリジン誘導の口になる）は別途禁止する。
-# 配布物独立性の制約（agent-toolkit配下は他ディレクトリの実装を参照しない）により、
+# 連続スラッシュ（スキーム相対URLとして解釈され、外部オリジンへの誘導に使われ得る）は別途禁止する。
+# agent-toolkit配下は他ディレクトリの実装を参照しないという配布物の制約により、
 # 同種の検証を行う実装は本ファイル内で完結させる。
 _BASE_PATH_ALLOWED_RE = re.compile(r"^/[A-Za-z0-9._~-][A-Za-z0-9._~/-]*$")
 
 
 def safe_base_path(raw: str) -> str:
-    """`request.root_path`を信頼境界として正規化する。
+    """外部から渡る`request.root_path`を検証し、URLの接頭辞として安全な形へ正規化する。
 
-    不正値・空値は空文字列として返す。呼び出し元はそのままURL前置として扱える。
+    不正値・空値は空文字列として返す。呼び出し元は戻り値をそのままURLの接頭辞として使える。
     """
     if not raw:
         return ""
@@ -309,14 +309,14 @@ def _subscription_stream(
 
     通知はクライアントの`onmessage`が受け取るよう、event名を付けずdataのみで配信する。
     heartbeatは`event: heartbeat`とし、`onmessage`へ届かないため再取得を起こさない。
-    `pytilpack.sse.generator`のコメント行のkeep-aliveは、内側が間隔内に送るため発生しない。
+    `pytilpack.sse.generator`のコメント行のkeep-aliveは、内側の生成処理が間隔内にheartbeatを送るため発生しない。
     """
     # 停止要求は生成処理の外で取得する。生成処理はリクエストの文脈の外で実行されるため`current_app`を参照できない。
     current_state: serve_state.ServeState = quart.current_app.config["SERVE_STATE"]
     shutdown = current_state.shutdown_requested
 
     @pytilpack.sse.generator()
-    async def generate() -> typing.AsyncGenerator[pytilpack.sse.SSE, None]:
+    async def generate() -> typing.AsyncGenerator[pytilpack.sse.SSE]:
         queue = await subscribe()
         try:
             while True:

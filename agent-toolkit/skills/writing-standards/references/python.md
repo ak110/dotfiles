@@ -7,8 +7,8 @@
 ### import・型・docstring
 
 - importは可能な限り`import xxx`形式で、トップレベルに書く。`import xxx as yyy`の別名は読みやすさか実行上の必要性（定着した略称`np`、名前衝突の回避、互換APIの差し替えなど）がある場合に使う
-- 循環参照は関数内importやTYPE_CHECKINGガードの恒常化ではなく、共通依存を別モジュールへ切り出して解消する
-- 公開境界と非自明な型を型ヒントで明確にする。`@typing.final`のメソッドはサブクラスの都合で外さず、抽象メソッド側への委譲などで吸収する
+- 循環参照は共通依存を別モジュールへ切り出して解消する
+- 公開境界と非自明な型を型ヒントで明確にする。`@typing.final`のメソッドはサブクラスの都合で外さず、サブクラスごとの差は抽象メソッドへの委譲などで扱う
 - docstringはGoogle Styleとし、自明なArgs, Returns, Raisesは省略する。`ruff`のD規則が有効なプロジェクトでは自明でも公開関数・モジュール・クラスのdocstring省略がlintエラーになるため、1行サマリーに留めるか`_`接頭辞でprivate化する
 
 ### 標準ライブラリとログ
@@ -22,7 +22,7 @@
 ### 入力検証とセキュリティ
 
 - API境界や外部入力は型駆動でバリデーションする（`pydantic` v2など）
-- セキュリティの一般作法は`implementation-time.md`の「セキュリティ・ロギング・エラー処理」が定める。Pythonでは評価系（`eval()`・`exec()`）、安全でない復元（`pickle`・`yaml.load()`）、`shell=True`、文字列で組み立てたSQL、予測可能な一時ファイルパス、セキュリティ用途での`random`を避ける
+- セキュリティの一般作法は`implementation-time.md`の「セキュリティ・ロギング・エラー処理」が定める。Pythonでは評価系の`eval`・`exec`、安全でない復元の`pickle`・`yaml.load`、shellによる実行、文字列で組み立てたSQL、予測可能な一時ファイルパスとセキュリティ用途の`random`の使用を避ける。外部入力は引数、SQLはパラメーターで渡し、一時ファイルは安全な生成API、セキュリティ用途の乱数はCSPRNGを使う
 - PEP 750テンプレート文字列（`t"..."`、Python 3.14+）の安全性は後段のレンダラに依存するため、SQL・HTML生成では対応するレンダラと組み合わせる
 
 ### 実行環境
@@ -46,7 +46,7 @@
 ## 静的解析の誤検出と抑制
 
 - lint指摘への対応は`implementation-time.md`「lintと機械チェック」に従う。Pythonでは複数のチェッカーが同じ箇所を重複検出しやすいため、`assert`や`del`などの通常の構文で解消できる場合はそちらを選ぶ
-- `subprocess.run(..., capture_output=True)`の`proc.stdout`は`bytes | None`寄りに推論される（`text=True`でも`None`が残る）。使う前に`assert isinstance(proc.stdout, bytes)`などで限定する
+- `subprocess.run(..., capture_output=True)`の`proc.stdout`は`None`を含む型（`bytes | None`など）に推論される（`text=True`でも`None`が残る）。使う前に`assert isinstance(proc.stdout, bytes)`などで限定する
 - 動的な`sys.path.insert()`の後のimportでは、pylintが`wrong-import-position`と`import-error`の両方を誤発火するため`# pylint: disable=wrong-import-position,import-error`と併記する
 - 意図的な関数内importでは`# noqa: PLC0415  # pylint: disable=import-outside-toplevel`と併記する
 - `ty`と`mypy`の両方が有効な場合、型不一致の抑制は`# type: ignore[<mypy-code>]  # ty: ignore[<ty-rule>]`と同一行に併記する
@@ -56,8 +56,8 @@
 - テストファイルの配置はプロジェクト方針に従う。方針が無い場合は、同居方式（`<name>.py`と同じディレクトリの`<name>_test.py`。配布除外の設定が要る）と集約方式（`tests/<module>_test.py`）から規模と配布形態で選ぶ
 - テストフレームワークは対象プロジェクトの採用へそろえ、新規に選ぶ場合は`pytest`を使う
 - 同じ操作の入力差には`parametrize`、副作用だけを使うfixtureには`usefixtures`を選ぶ。デコレーター順序は外側から`parametrize` → `asyncio` → `usefixtures`とする
-- 空コレクションの比較は`assert not x`と書く（`assert x == []`はpylintの`use-implicit-booleaness-not-comparison`で警告される）
-- 大規模テストスイートでは`pyfltr`の`command-timeout`を延伸する。具体値は本ファイルではなく、計測結果に基づいて各プロジェクトの`pyproject.toml`の`[tool.pyfltr]`節へ記録する。省略時の値と挙動は<https://ak110.github.io/pyfltr/llms.txt>から現行版を確認する
+- 空コレクションの比較は`assert not x`と書く。pylintの`use-implicit-booleaness-not-comparison`は空のリストとの等値比較より真偽値による判定を求める
+- 大規模テストスイートでは`pyfltr`の`command-timeout`を延伸する。具体値は計測結果に基づいて各プロジェクトの`pyproject.toml`の`[tool.pyfltr]`節へ記録する。省略時の値と挙動は<https://ak110.github.io/pyfltr/llms.txt>から現行版を確認する
 
 ### Fixtureのコーディングルール
 
@@ -79,7 +79,7 @@
 
 ### ロギング出力の検証
 
-- `caplog`はroot loggerへ伝搬した記録のみ捕捉し、`propagate=False`のloggerは捕捉できない。`capsys`もfixtureで追加した`StreamHandler(sys.stdout)`とは参照がずれやすい。検証対象loggerへ記録蓄積用の`logging.Handler`を直接追加し、fixture終了時に取り除く形が安定する
+- `caplog`はroot loggerへ伝搬した記録のみ捕捉し、`propagate=False`のloggerは捕捉できない。`capsys`が差し替えた`sys.stdout`と、fixtureで追加した`StreamHandler(sys.stdout)`が保持するストリームは一致しないことがある。検証対象loggerへ記録蓄積用の`logging.Handler`を直接追加し、fixture終了時に取り除くと、捕捉の有無がこれらの条件に左右されない
 
 ## Python新構文と導入バージョン
 

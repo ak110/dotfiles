@@ -12,6 +12,8 @@ description: >
 
 # コミット運用とコミットメッセージ
 
+履歴の変更と公開にはGit、対象リポジトリおよび必要な公開先を操作できるCLIが必要である。Gitを操作できない環境では、提示された差分からメッセージ案と確認する条件を返し、commit・push・CI監視は機能を提供するClaude CodeまたはCodexで行う。メッセージ案には[文章の品質基準](references/quality-standards.md)を使う。
+
 git commitの運用とコミットメッセージの規約を定める。最初に`references/git-identifier.md`を全文読む。
 
 ## 読込表

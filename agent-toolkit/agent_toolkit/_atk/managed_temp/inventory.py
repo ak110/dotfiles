@@ -5,9 +5,6 @@
 
 from __future__ import annotations
 
-# 他の処理では不要な依存を、使用時まで遅延する。旧Pythonでは通常のimportとなる。
-__lazy_modules__ = {"agent_toolkit._atk.managed_temp.windows_security"}
-
 import contextlib
 import datetime
 import enum
@@ -52,7 +49,10 @@ from agent_toolkit._atk.managed_temp.validation import (
     _validate_windows,
     validate_managed_temp,
 )
-from agent_toolkit._atk.managed_temp.windows_security import (
+from agent_toolkit._common import file_lock
+
+# 他の処理で使わない依存は、使用時まで読み込まない。
+lazy from agent_toolkit._atk.managed_temp.windows_security import (
     _WINDOWS_FILE_ATTRIBUTE_DIRECTORY,
     _WINDOWS_REPARSE_POINT,
     _windows_current_sid,
@@ -63,7 +63,6 @@ from agent_toolkit._atk.managed_temp.windows_security import (
     _windows_security_descriptor,
     _windows_sid_bytes,
 )
-from agent_toolkit._common import file_lock
 
 
 def is_missing_registered_temp(path_arg: pathlib.Path | str) -> bool:
@@ -78,14 +77,14 @@ def is_missing_registered_temp(path_arg: pathlib.Path | str) -> bool:
     try:
         _, path = _validate_path_shape(pathlib.Path(path_arg))
         registry = _load_private_json(_registry_path(path))
-    except (OSError, ValueError, ManagedTempError):
+    except OSError, ValueError, ManagedTempError:
         return False
     if registry.get("path") != str(path) or os.path.lexists(path):
         return False
     if path.parent.exists():
         try:
             _validate_root(path.parent)
-        except (OSError, ValueError, ManagedTempError):
+        except OSError, ValueError, ManagedTempError:
             return False
     return True
 
@@ -117,7 +116,7 @@ def _entity_absence_is_confirmed(record: dict[str, typing.Any], path: pathlib.Pa
     try:
         root = _validate_root(path.parent)
         absent = _lstat_or_none(path) is None
-    except (OSError, ValueError, ManagedTempError):
+    except OSError, ValueError, ManagedTempError:
         return False
     return root.device == identity[0] and absent
 
@@ -256,7 +255,7 @@ def _unregistered_candidates(prefix: str | None) -> list[pathlib.Path]:
 
     本関数は`atk`の`managed-temp`以外の全サブコマンドの前段から呼ばれ、対話シェルの起動ごとに
     発火する場合がある。一時ディレクトリ直下の項目ごとに外部状態ディレクトリを解決すると、
-    その項目数に比例した待ち時間が対話シェルの起動へ生じる。判定を追加する場合も、
+    対話シェルの起動がその項目数に比例して遅れる。判定を追加する場合も、
     項目の種別とマーカーの有無で候補を限定した後に外部状態を解決する評価順序を維持する。
     """
     root = _temp_root()
@@ -302,7 +301,7 @@ def _marker_recovery_is_accepted(path_arg: pathlib.Path | str) -> bool:
                 os.close(directory_descriptor)
         else:
             marker = _load_private_json(path / _MARKER_NAME)
-    except (OSError, ManagedTempError):
+    except OSError, ManagedTempError:
         return False
     return _records_match(path, marker, marker, identity=identity)
 
@@ -464,7 +463,7 @@ def _cutoff_ns(now: datetime.datetime, max_age_days: int) -> int:
 def _latest_update_and_git_paths(path: pathlib.Path) -> tuple[int, list[pathlib.Path]]:
     """領域自身と配下の最終更新時刻（ナノ秒）と、配下にある`.git`のパスを返す。
 
-    作成時刻ではなく配下を含む最終更新を使うのは、中断後に再開した領域を古いと誤判定しないためである。
+    配下を含む最終更新を使うのは、中断後に再開した領域を古いと誤判定しないためである。
     """
     latest_mtime_ns = path.stat().st_mtime_ns
     git_paths: list[pathlib.Path] = []
@@ -493,8 +492,8 @@ def _is_registered_git_worktree(git_path: pathlib.Path) -> bool:
         return False
     try:
         first_line = git_path.read_text(encoding="utf-8").splitlines()[0]
-    except (OSError, UnicodeDecodeError, IndexError):
-        # 内容を読めない場合は使用中かを判定できないため、削除せず残す側へ倒す。
+    except OSError, UnicodeDecodeError, IndexError:
+        # 内容を読めない場合は使用中かを判定できないため、使用中と扱って削除せず残す。
         return True
     prefix = "gitdir:"
     if not first_line.startswith(prefix):
@@ -633,7 +632,7 @@ def _save_sweep_schedule(
     try:
         _write_private_json(temporary, value)
         os.replace(temporary, path)
-    except (OSError, ManagedTempError):
+    except OSError, ManagedTempError:
         with contextlib.suppress(OSError):
             temporary.unlink(missing_ok=True)
 
@@ -901,7 +900,7 @@ def _windows_reparse_entry(
         stored_target = os.readlink(path)
         target = _windows_stored_path(stored_target)
         root = _windows_stored_path(str(managed_root))
-    except (OSError, ValueError):
+    except OSError, ValueError:
         raise ManagedTempError(f"Windows reparse pointは後始末できない: {path}") from None
     if not target.is_absolute() or not target.is_relative_to(root):
         raise ManagedTempError(f"Windows reparse pointは後始末できない: {path}")
@@ -948,7 +947,7 @@ def _unlink_windows_reparse_points(root: pathlib.Path, expected_tree: dict[str, 
 
 
 def _remove_windows_quarantine(root: pathlib.Path, expected_tree: dict[str, _TreeEntry]) -> None:
-    """隔離内で検証済みの通常ファイルだけ、Readonlyによる削除拒否を再試行する。"""
+    """隔離先を削除する。Readonly属性で削除を拒否された通常ファイルは、隔離内で検証済みのものに限り属性を解除して削除を再試行する。"""
     root_identity = _path_identity(root)
 
     def retry_readonly_file(function: typing.Callable[..., typing.Any], raw_path: str, error: BaseException) -> None:
@@ -982,12 +981,7 @@ def _remove_windows_quarantine(root: pathlib.Path, expected_tree: dict[str, _Tre
                 ) from error
         if not attributes & stat.FILE_ATTRIBUTE_READONLY:
             raise error
-        # WindowsのPython 3.12の`os.chmod`は`follow_symlinks`を受け付けない。
-        # 対応版ではリンクを辿らず、非対応版では直前の通常ファイルとreparse pointの検証に委ねる。
-        if os.chmod in os.supports_follow_symlinks:
-            os.chmod(path, stat.S_IWRITE, follow_symlinks=False)
-        else:
-            os.chmod(path, stat.S_IWRITE)
+        os.chmod(path, stat.S_IWRITE, follow_symlinks=False)
         function(raw_path)
 
     shutil.rmtree(root, onexc=retry_readonly_file)
@@ -1261,7 +1255,7 @@ def _cleanup_managed_temp_locked(
             f"欠落した登録をマーカーから復元した: {validated.registry_path}", next_action="対応不要（処理は継続した）"
         )
     if os.name == "nt":
-        # 利用中に追加された受理済みACEを除去し、隔離以降を実行中のOSアカウントだけのDACLで実行する。
+        # 利用中に追加された受理済みACEを除去し、隔離以降の処理は実行中のOSアカウントだけを許可するDACLの下で行う。
         _windows_secure_path(
             path,
             directory=True,
@@ -1414,7 +1408,7 @@ def cleanup_managed_temp(
 ) -> None:
     """通常の後始末を行い、明示指定時だけ検証失敗後の強制回収を試みる。
 
-    `force_reason`は強制回収を報告する警告で、回収を指示した操作として示す語である。
+    `force_reason`は、強制回収を報告する警告に、回収を指示した操作として表示する語である。
     """
     if path_arg is not None and session_id is not None:
         raise ManagedTempError("pathとsession_idは同時に指定できない")

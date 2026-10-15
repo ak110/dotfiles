@@ -1080,7 +1080,7 @@ def test_accepts_legacy_verification_without_acceptance_scenario(repo: tuple[pat
 def test_public_plan_check_rejects_ambiguous_verification_cell(
     repo: tuple[pathlib.Path, str], capsys: pytest.CaptureFixture[str], cell: str, expected: int
 ) -> None:
-    """構造確認の公開操作も現行セルの説明・shell構文・空欄を拒否する。"""
+    """CLIの`main`も、現行書式の検証表のセルに付いた説明・shell構文と空欄を拒否する。"""
     work_dir, _base = repo
     content = _plan_fixture.current_plan(repo=work_dir.resolve()).replace(
         "| 変更範囲の検証 | `pytest` |", f"| 変更範囲の検証 | {cell} |", 1
@@ -1090,7 +1090,7 @@ def test_public_plan_check_rejects_ambiguous_verification_cell(
     assert check_plan_file.main(["--work-dir", str(work_dir), str(path)]) == expected
     if expected:
         assert "次の操作:" in capsys.readouterr().err
-    # 進行中の旧書式は実行時の確認と分け、従来どおり構造の読取を保持する。
+    # 旧名「近接検証」の行を持つ進行中の計画はセルの説明とshell構文を拒否せず、従来どおり空欄だけを構造の違反とする。
     legacy = content.replace("| 変更範囲の検証 |", "| 近接検証 |", 1)
     path.write_text(legacy, encoding="utf-8")
     assert check_plan_file.main(["--work-dir", str(work_dir), str(path)]) == (1 if not cell else 0)
@@ -1506,7 +1506,7 @@ def test_new_format_rejects_bug_section_placed_in_main(repo: tuple[pathlib.Path,
 
 
 def test_new_format_rejects_missing_bug_sidecar(repo: tuple[pathlib.Path, str]) -> None:
-    """バグ対応の計画ファイル（詳細）に記載した分離先ファイルが無い場合を拒否する。"""
+    """バグ対応の計画ファイル（詳細）が参照する計画ファイル（バグ）が無い場合を拒否する。"""
     work_dir, base = repo
     main_content, detail_content = _new_format_plan(work_dir, base, bug=True)
     errors, _warnings = _check_new(work_dir, main_content, detail_content, create_bug_file=False)
@@ -1676,7 +1676,7 @@ def test_new_format_warns_for_legacy_adjunct_reference_notation(repo: tuple[path
 def test_new_format_accepts_portable_bug_file_reference(
     repo: tuple[pathlib.Path, str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """固定portable参照から新rootのバグ調査ファイルの構造を確かめられる。"""
+    """可搬表記の参照から、新しい保存先にある計画ファイル（バグ）の構造を確かめられる。"""
     work_dir, base = repo
     private_notes = work_dir / "private-notes"
     stem = "30-計画保存先移行-d4f9"

@@ -3,6 +3,9 @@
 import json
 import logging
 import os
+import shlex
+import subprocess
+import sys
 import time
 from collections.abc import Callable, Sequence
 from pathlib import Path
@@ -33,7 +36,9 @@ def codex_plugin_script(*, plugin_id: str, plugin_name: str, relative_path: Path
     """Codexが参照する有効版pluginキャッシュ内の入口を返す。"""
     codex = common.resolve_executable("codex")
     if codex is None:
-        logger.info(log_format.format_status(tag, "codex CLI が見つからないためCodex分を除外"))
+        logger.info(
+            log_format.format_status(tag, "codex CLI が見つからないためCodex分を除外。未導入のため対応不要"),
+        )
         return None
     result = common.run_subprocess(
         [str(codex), "plugin", "list", "--json"],
@@ -41,17 +46,29 @@ def codex_plugin_script(*, plugin_id: str, plugin_name: str, relative_path: Path
         tag="codex",
     )
     if result is None or result.returncode != 0:
-        logger.warning(log_format.format_status(tag, "Codex plugin一覧を取得できないためCodex分を除外"))
+        logger.warning(
+            log_format.format_status(
+                tag,
+                "Codex plugin一覧を取得できないためCodex分を除外。`update-dotfiles`を再実行する",
+            ),
+        )
         return None
     try:
         data = json.loads(result.stdout)
     except json.JSONDecodeError:
-        logger.warning(log_format.format_status(tag, "Codex plugin一覧のJSONが不正なためCodex分を除外"))
+        logger.warning(
+            log_format.format_status(
+                tag,
+                "Codex plugin一覧のJSONが不正なためCodex分を除外。`update-dotfiles`を再実行する",
+            ),
+        )
         return None
     installed = data.get("installed") if isinstance(data, dict) else None
     version = enabled_version(installed if isinstance(installed, list) else [], plugin_id)
     if version is None:
-        logger.info(log_format.format_status(tag, "Codex plugin の有効版が無いためCodex分を除外"))
+        logger.info(
+            log_format.format_status(tag, "Codex plugin の有効版が無いためCodex分を除外。未導入のため対応不要"),
+        )
         return None
     codex_home = Path(os.environ.get("CODEX_HOME", install_codex_plugins.CODEX_HOME))
     cache_root = codex_home / "plugins" / "cache" / claude_common.MARKETPLACE_NAME / plugin_name
@@ -71,11 +88,23 @@ def run(
     """
     uv = common.resolve_executable("uv", preferred_directories=(Path.home() / ".local" / "bin",))
     if uv is None:
-        logger.warning(log_format.format_status(tag, "uv CLI が見つからず環境構築を開始できない"))
+        logger.warning(
+            log_format.format_status(
+                tag,
+                "uv CLI が見つからず環境構築を開始できない。"
+                "https://docs.astral.sh/uv/getting-started/installation/ "
+                "の手順でuvを導入して`update-dotfiles`を再実行する",
+            ),
+        )
         return post_apply_outcome.PostApplyOutcome()
     resolved = targets()
     if not resolved:
-        logger.warning(log_format.format_status(tag, "対象スクリプトが見つからず環境構築を開始できない"))
+        logger.warning(
+            log_format.format_status(
+                tag,
+                "対象スクリプトが見つからず環境構築を開始できない。`update-dotfiles`を再実行する",
+            ),
+        )
         return post_apply_outcome.PostApplyOutcome()
     for target in resolved:
         warmup(target, uv, tag=tag, arguments=arguments)
@@ -89,7 +118,12 @@ def existing_targets(candidates: Sequence[Path | None], *, tag: str) -> list[Pat
         if candidate is None or candidate in targets:
             continue
         if not candidate.is_file():
-            logger.info(log_format.format_status(tag, f"対象が存在しないため除外: {log_format.home_short(candidate)}"))
+            logger.info(
+                log_format.format_status(
+                    tag,
+                    f"対象が存在しないため除外: {log_format.home_short(candidate)}。`update-dotfiles`を再実行する",
+                ),
+            )
             continue
         targets.append(candidate)
     return targets
@@ -129,15 +163,22 @@ def claude_plugin_scripts(
     try:
         data = json.loads(installed_plugins_path.read_text(encoding="utf-8"))
     except FileNotFoundError:
-        logger.info(log_format.format_status(tag, "Claude Code plugin一覧が存在しないため除外"))
+        logger.info(
+            log_format.format_status(tag, "Claude Code plugin一覧が存在しないため除外。未導入のため対応不要"),
+        )
         return []
     except (OSError, json.JSONDecodeError) as exc:
-        logger.warning(log_format.format_status(tag, f"Claude Code plugin一覧を取得できないため除外: {exc}"))
+        logger.warning(
+            log_format.format_status(
+                tag,
+                f"Claude Code plugin一覧を取得できないため除外: {exc}。`update-dotfiles`を再実行する",
+            ),
+        )
         return []
     plugins = data.get("plugins") if isinstance(data, dict) else None
     entries = plugins.get(plugin_id) if isinstance(plugins, dict) else None
     if not isinstance(entries, list):
-        logger.info(log_format.format_status(tag, "Claude Code plugin が未導入のため除外"))
+        logger.info(log_format.format_status(tag, "Claude Code plugin が未導入のため除外。未導入のため対応不要"))
         return []
     return [
         Path(install_path) / relative_path
@@ -155,17 +196,24 @@ def warmup(
     arguments: Sequence[str] = (),
 ) -> bool:
     """Plugin rootのuvプロジェクトで入口を1回起動し、依存環境を構築する。構築できた場合は真を返す。"""
-    return run_command(
-        [
+    root = path.parents[1]
+    launcher = root / "scripts" / "launch.py"
+    command = (
+        [str(uv), "run", "--no-config", "--no-project", "--python", "3.15", "python", str(launcher), str(path), *arguments]
+        if launcher.is_file()
+        else [
             str(uv),
             "run",
             "--project",
-            str(path.parents[1]),
+            str(root),
             "--locked",
             "--no-default-groups",
             str(path),
             *arguments,
-        ],
+        ]
+    )
+    return run_command(
+        command,
         target=log_format.home_short(path),
         tag=tag,
     )
@@ -189,6 +237,7 @@ def run_command(cmd: Sequence[str], *, target: str, tag: str) -> bool:
         summary = f"環境構築に失敗 (exit codeなし、{elapsed:.1f}秒): {target}"
     else:
         summary = f"環境構築が異常終了 (exit {result.returncode}、{elapsed:.1f}秒): {target}"
-    message = f"{summary} / {common.format_cli_error(result)}"
+    command = subprocess.list2cmdline(cmd) if sys.platform == "win32" else shlex.join(cmd)
+    message = f"{summary} / {common.format_cli_error(result)}。手動で`{command}`を実行する"
     logger.warning(log_format.format_status(tag, message))
     return False

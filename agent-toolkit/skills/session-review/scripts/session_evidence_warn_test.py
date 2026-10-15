@@ -820,7 +820,7 @@ def test_query_modes_search_hook_notice_stored_under_attachment(
 ) -> None:
     """hook通知のようにattachment配下へ格納された警告行を`--warn`・`--grep`の双方で照会する。
 
-    走査対象は既知フィールドの列挙ではなくエントリ内の全本文であり、
+    走査対象はエントリ内の全本文であり、
     hook通知の格納先（実行結果のJSON・追加コンテキストの配列）を問わず一致する。
     """
     notice = "[auto-generated: agent-toolkit/pretooluse][warn] 検証コマンドの出力を切り詰めている"
@@ -1325,7 +1325,7 @@ def test_replaced_persisted_output_is_read_from_saved_file(
     assert evidence.main([str(transcript), "--fixed-string", "tail-only-marker"]) == 0
     assert read_jsonl(capsys)[0]["count"] == 1
     assert evidence.main([str(transcript), "--detail", "2"]) == 0
-    # 詳細は出力量の上限で末尾を省くため、通知ではなく保存先の内容を返したことを先頭で確かめる。
+    # 詳細は出力量の上限で末尾を省くため、保存先の内容を返したことを先頭で確かめる。
     assert read_jsonl(capsys)[0]["text"].startswith("先頭の行")
     assert evidence.main([str(transcript), "--warn"]) == 0
     assert "tail-only-marker" in capsys.readouterr().out

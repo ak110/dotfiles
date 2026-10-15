@@ -13,7 +13,7 @@ def test_configure_logging_reuses_handlers_and_rotation(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> None:
-    """反復設定でも同じ保存先とhandlerを再利用する。"""
+    """設定を繰り返しても同じ保存先とhandlerを再利用する。"""
     logger = logging.getLogger("agent-toolkit.agents-server")
     original_handlers = tuple(logger.handlers)
     original_level = logger.level

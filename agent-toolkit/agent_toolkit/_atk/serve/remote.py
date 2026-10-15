@@ -58,7 +58,7 @@ async def run_helper(cmd: list[str], timeout: float) -> str:
     return stdout.decode("utf-8")
 
 
-class ServeStopping(Exception):  # noqa: N818  # 失敗ではなく停止要求による打ち切りを表すため`Error`を付けない
+class ServeStopping(Exception):  # noqa: N818  # 停止要求による打ち切りを表すため`Error`を付けない
     """サーバーの停止要求を受けて読み取り専用の走査を打ち切ったことを示す。"""
 
 
@@ -105,7 +105,7 @@ async def _terminate(proc: asyncio.subprocess.Process) -> None:
         proc.terminate()
     try:
         await asyncio.shield(asyncio.wait_for(proc.wait(), timeout=_SSH_TERMINATE_TIMEOUT_SEC))
-    except (TimeoutError, asyncio.CancelledError):
+    except TimeoutError, asyncio.CancelledError:
         with contextlib.suppress(ProcessLookupError):
             proc.kill()
         with contextlib.suppress(asyncio.CancelledError):
@@ -155,6 +155,8 @@ def remote_command_argv(bootstrap: str, op: str, args: list[str]) -> list[str]:
         "uv",
         "run",
         "--no-project",
+        "--python",
+        "3.15",
         "--with",
         '"watchdog>=6.0.0"',
         "--with",
@@ -253,7 +255,7 @@ async def stop_resident_helper(
     """常駐接続の標準エラー出力の転写タスクを終え、子プロセスを段階的に終了させる。
 
     常駐ヘルパーは標準入力のEOFを受け取ると停止するため、まず標準入力を閉じて穏当な終了を試み、
-    応答がなければ`terminate`、それでも応答がなければ`kill`へ降下する。
+    応答がなければ`terminate`、それでも応答がなければ`kill`で終了させる。
     切断とキャンセルの後始末で呼ぶため、待機中のキャンセルは吸収して段階的な終了を完了させる。
     吸収した後に再接続の反復へ戻る呼び出し側は、`raise_if_cancelling`でキャンセル要求を確かめる。
     """

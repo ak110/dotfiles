@@ -10,7 +10,7 @@ bucketごとに定められた順に評価し、最初に一致した指定を�
 （いずれも2026年9月2日取得）とする。再検証は同資料の該当節を再取得して順序と受理値が現在の実装と一致するか確かめる。
 
 Claude Agent SDKで開始したセッションのターンは、main conversationのrequest bucketとして扱われる。
-設定読込元を空にした起動でも、subagentのbucketではなくmainのbucketで値を指定しない場合のTTLが適用される。
+設定読込元を空にした起動でも、mainのbucketで値を指定しない場合のTTLが適用される。
 典拠は同じ公式資料の「Which TTL each request gets」節（2026年9月3日取得）とし、再検証は同節のbucketの区分を読み直す。
 本モジュールは呼び出し元プロセスの環境変数と設定を読むため、別のセッションへ渡した環境変数は本モジュールの判定へ影響しない。
 
@@ -22,14 +22,12 @@ Claude Agent SDKで開始したセッションのターンは、main conversatio
 収めるため、上限を指定しない場合は待機を240秒までとする。上限には2割の余裕を取り、実行環境の版ごとの変動を吸収する。
 """
 
-# ヘルプや他の処理では不要な依存を、使用時まで遅延する。旧Pythonでは通常のimportとなる。
-__lazy_modules__ = {"pytilpack.jsonc"}
-
 import json
 import os
 import subprocess
 
-import pytilpack.jsonc
+# ヘルプや他の処理で使わない依存は、使用時まで読み込まない。
+lazy import pytilpack.jsonc
 
 from agent_toolkit._common import host_homes as _host_homes
 from agent_toolkit._common.delegated_session import is_delegated
@@ -79,7 +77,7 @@ def _user_settings_ttl(request_bucket: str) -> str | None:
     path = _host_homes.claude_config_dir() / "settings.json"
     try:
         settings = pytilpack.jsonc.loads(path.read_text(encoding="utf-8"))
-    except (OSError, UnicodeError, ValueError):
+    except OSError, UnicodeError, ValueError:
         return None
     if not isinstance(settings, dict):
         return None
@@ -102,7 +100,7 @@ def _has_valid_subscription_status() -> bool:
             errors="replace",
             timeout=5,
         )
-    except (OSError, UnicodeError, subprocess.TimeoutExpired):
+    except OSError, UnicodeError, subprocess.TimeoutExpired:
         return False
     if result.returncode != 0 or not isinstance(result.stdout, str):
         return False

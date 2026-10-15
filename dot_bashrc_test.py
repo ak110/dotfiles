@@ -157,7 +157,7 @@ def test_fixed_paths_are_ordered_and_idempotent(tmp_path: pathlib.Path) -> None:
         home / ".local" / "bin",
         home / "bin",
         home / "dotfiles" / "bin",
-        home / "dotfiles" / "agent-toolkit" / "bin",
+        home / "dotfiles" / "agent-toolkit" / "scripts",
         home / ".poetry" / "bin",
     ]
     for path in fixed_home_paths:
@@ -193,7 +193,7 @@ def test_fixed_paths_are_ordered_and_idempotent(tmp_path: pathlib.Path) -> None:
     expected_parts.extend(
         [
             str(home / "dotfiles" / "bin"),
-            str(home / "dotfiles" / "agent-toolkit" / "bin"),
+            str(home / "dotfiles" / "agent-toolkit" / "scripts"),
         ]
     )
     expected = ":".join(expected_parts)

@@ -22,14 +22,14 @@ class SettingsFile(str):
 def merge_settings(parent: str | None, env: dict[str, str], root: str | None) -> str:
     """親のJSONの意味を保ち、委譲先のenvを最後に適用する。
 
-    ファイル由来は所有者だけが読める起動別ファイルにする。
-    不読・不正・非objectの親は継承せず、envだけを渡す。
+    親の設定がファイルで渡された場合は、合成結果を所有者だけが読める起動ごとのファイルへ書き、そのパスを返す。
+    親の設定を読めない場合、JSONとして不正な場合およびobjectでない場合は継承せず、envだけを渡す。
     """
     from_file = parent is not None and not parent.lstrip().startswith("{")
     try:
         raw = pathlib.Path(parent).read_text(encoding="utf-8") if from_file and parent is not None else parent or "{}"
         value = json.loads(raw)
-    except (OSError, ValueError, UnicodeError):
+    except OSError, ValueError, UnicodeError:
         value = {}
     settings = value if isinstance(value, dict) else {}
     inherited = settings.get("env")

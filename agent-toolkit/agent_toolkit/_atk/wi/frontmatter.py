@@ -22,7 +22,7 @@ class _LiteralScalarLoader(_SafeLoaderBase):  # pylint: disable=too-many-ancesto
     """暗黙の型推論を行わず、スカラーノードの字面をそのまま`str`として構築するローダー。
 
     bool・int・float・null・timestampの各タグで標準的に使うコンストラクターを、
-    型変換済みのPythonオブジェクトではなく`construct_scalar`が返すノード文字列
+    `construct_scalar`が返すノード文字列
     （引用符解決後の生のYAML字面）へ差し替える。マッピング・シーケンスの構築は
     選択した安全な基底ローダーの標準動作を維持するため、入れ子構造そのものは保持される。
     """
@@ -84,6 +84,7 @@ def parse_frontmatter(text: str) -> tuple[dict[str, typing.Any], str] | None:
     本文は区切り直後から末尾までを一切加工せず（先頭改行の除去も末尾改行の追加もせず）返す
     （本文が変化しないことは、`serialize_frontmatter`との往復後の本文文字列を直接比較して確認する）。
     """
+    text = text.removeprefix("\ufeff")
     if not text.startswith("---\n"):
         return None
     try:

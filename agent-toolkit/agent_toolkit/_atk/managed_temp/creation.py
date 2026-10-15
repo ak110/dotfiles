@@ -2,9 +2,6 @@
 
 from __future__ import annotations
 
-# 他の処理では不要な依存を、使用時まで遅延する。旧Pythonでは通常のimportとなる。
-__lazy_modules__ = {"agent_toolkit._atk.managed_temp.windows_security"}
-
 import contextlib
 import datetime
 import os
@@ -29,12 +26,14 @@ from agent_toolkit._atk.managed_temp.registry import (
     is_valid_prefix,
 )
 from agent_toolkit._atk.managed_temp.validation import _validate_posix, _validate_windows, validate_managed_temp
-from agent_toolkit._atk.managed_temp.windows_security import _windows_identity, _windows_secure_path
+
+# 他の処理で使わない依存は、使用時まで読み込まない。
+lazy from agent_toolkit._atk.managed_temp.windows_security import _windows_identity, _windows_secure_path
 
 SESSION_TEMP_PREFIX = "session"
 """SessionStartが会話ごとに作成するセッションのmanaged-tempの接頭辞。
 
-フックとagents_serverの双方が同じ領域を解決するため、両者より前の層のこのモジュールが持つ。
+フックとagents_serverの双方が同じ領域を求めるため、両者が読み込む下位の層にあるこのモジュールで定義する。
 """
 
 
@@ -45,7 +44,7 @@ def _remove_created_target(
     target_descriptor: int | None,
     created_identity: tuple[int, int] | None,
 ) -> None:
-    """作成処理が所有する空の対象だけを、保持したroot境界から除去する。"""
+    """作成処理が作成した空の対象だけを、保持したrootのファイル記述子を基準に除去する。"""
     if target_descriptor is not None:
         try:
             target_metadata = os.fstat(target_descriptor)
@@ -76,7 +75,7 @@ def _remove_created_target(
     try:
         if _path_identity(path) != created_identity:
             return
-    except (OSError, ManagedTempError):
+    except OSError, ManagedTempError:
         return
     with contextlib.suppress(OSError):
         path.rmdir()

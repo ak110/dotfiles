@@ -12,14 +12,11 @@ import pytest
 from agent_toolkit import atk
 from agent_toolkit._atk import commit
 from agent_toolkit._common import claude_usage_limit
+from agent_toolkit._testing import git_repository
 
 
 def _repo(tmp_path: Path) -> Path:
-    repository = tmp_path / "repo"
-    repository.mkdir()
-    subprocess.run(["git", "-C", str(repository), "init", "-q"], check=True)
-    subprocess.run(["git", "-C", str(repository), "config", "user.name", "Test"], check=True)
-    subprocess.run(["git", "-C", str(repository), "config", "user.email", "test@example.invalid"], check=True)
+    repository = git_repository.init_repository(tmp_path / "repo")
     (repository / "change.txt").write_text("変更\n", encoding="utf-8")
     return repository
 

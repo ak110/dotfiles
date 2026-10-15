@@ -10,7 +10,7 @@ PYTEST_RUN = uv run pytest -v -o addopts='' -p no:cacheprovider
 # `ci-deps-check`がこの値でCIの依存導入を再現し、ci_workflow_test.pyがci.yamlとの一致を確かめる。
 CI_CONTAINER_IMAGE := ghcr.io/ak110/pyfltr:latest
 CI_NATIVE_PACKAGES := poppler-utils libarchive13 zstd
-CI_PYTHON_VERSIONS := 3.13 3.14 3.15
+CI_PYTHON_VERSIONS := 3.15
 
 help:
 	@cat Makefile
@@ -46,14 +46,14 @@ update-mise-locks:
 
 # GitHub Actionsのアクションをハッシュピンで最新化（mise未導入時はスキップ）
 update-actions:
-	@command -v mise >/dev/null 2>&1 || { echo "mise未検出、スキップ"; exit 0; }; \
+	@command -v mise >/dev/null 2>&1 || { echo "mise未検出、スキップ。Actionsの更新が不要なら対応不要です。Linux/macOSは 'curl -fsSL https://mise.run | sh'、Windowsは 'winget install jdx.mise' で導入し、miseをPATHへ加えてmake update-actionsを再実行してください。"; exit 0; }; \
 	GITHUB_TOKEN=$$(gh auth token) mise exec -- pinact run --update --min-age=1
 
 # 開発環境のセットアップ
 setup:
 	mise run bootstrap
 	@command -v pwsh >/dev/null 2>&1 || echo "警告: pwsh が未導入。PowerShell スクリプトの検証がスキップされる。Ubuntu/Debian なら 'make setup-pwsh' で一括導入可能"
-	@command -v chezmoi >/dev/null 2>&1 || echo "警告: chezmoi が未導入。template 検証がスキップされる可能性あり"
+	@command -v chezmoi >/dev/null 2>&1 || echo "警告: chezmoi が未導入。template 検証がスキップされる可能性あり。mise install chezmoiで導入してください。"
 
 # ChromiumとLinuxのシステム依存を初期環境へ導入
 # ルートとagent-toolkitは別々のuv.lockを持ちplaywrightの版が異なり得るため、両方の環境の版に対応するChromiumを導入する

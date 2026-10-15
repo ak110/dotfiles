@@ -40,7 +40,7 @@ pytestmark = pytest.mark.usefixtures("agents_server_isolation")
 
 @pytest.mark.asyncio
 async def test_wait_does_not_redeliver_only_terminal_result_at_timeout(tmp_path: pathlib.Path) -> None:
-    """配送済み終端結果だけが残る上限応答は本文なしのrunningを返す。"""
+    """配送済みの終端結果だけが残る状態で待機上限に達した応答は、本文を含まない`running`を返す。"""
     manager, _ = _manager_with_fake("codex")
     session = state.SessionState("thread-1", str(tmp_path), engine="codex")
     _complete(session, message="最終結果", error={"message": "補足"})
@@ -337,6 +337,39 @@ async def test_mcp_wait_skips_result_already_collected_by_cli(tmp_path: pathlib.
     assert "agent_message" not in response
     assert collected.result_delivered is True
     await manager.close()
+
+
+@pytest.mark.asyncio
+@pytest.mark.timeout(5)
+async def test_mcp_wait_drains_finished_flush_before_its_done_callback(tmp_path: pathlib.Path) -> None:
+    """保存taskの終了callbackが未反映でも、CLI回収済み結果の待機とcloseを完了する。"""
+    manager, writer = _writer_backed_manager(tmp_path)
+    collected = state.SessionState("terminal", str(tmp_path), engine="codex")
+    running = state.SessionState("running", str(tmp_path), engine="codex")
+    _complete(collected, message="回収済み本文")
+    manager.sessions.update({collected.session_id: collected, running.session_id: running})
+    writer._flush_scheduled()
+    tasks = tuple(writer._flush_tasks)
+    assert tasks
+    # worker完了と集合更新callbackの間を確定し、drain自身による終端回収を検証する。
+    for task in tasks:
+        assert task.remove_done_callback(writer._flush_tasks.discard) == 1
+    await asyncio.gather(*tasks)
+    claimed, error = retained_results.take_result(
+        "root-session", collected.session_id, "root.json", collector="atk-agents-wait", state_root=tmp_path
+    )
+    assert error is None and claimed is not None
+    try:
+        response = await manager.wait()
+        assert response["session_id"] == running.session_id
+        assert "agent_message" not in response
+        assert collected.result_delivered
+        assert not writer._flush_tasks
+    finally:
+        writer._flush_tasks.difference_update(tasks)
+        await manager.close()
+    assert all(task.done() for task in tasks)
+    assert not writer.path.exists()
 
 
 @pytest.mark.asyncio

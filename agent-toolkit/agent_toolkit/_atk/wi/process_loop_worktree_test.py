@@ -1,8 +1,11 @@
 """`atk wi process-loop`のセッションを起動する作業ツリーの準備と上流との同期のテスト。"""
 
 import contextlib
+import json
 import os
 import pathlib
+import re
+import shlex
 import shutil
 import subprocess
 import sys
@@ -21,6 +24,7 @@ from agent_toolkit._atk.wi import process_loop_watch as _pl_watch
 from agent_toolkit._atk.wi import process_loop_worktree as _pl_worktree
 from agent_toolkit._atk.wi import readiness as _wi_readiness
 from agent_toolkit._atk.wi import sync as _wi_sync
+from agent_toolkit._common import codex_models, state_paths
 from agent_toolkit._testing import git_repository
 from agent_toolkit._testing.managed_temp_support import setattr_in_managed_temp_modules
 from agent_toolkit._testing.process_loop_support import (
@@ -33,12 +37,120 @@ from agent_toolkit._testing.process_loop_support import (
 from agent_toolkit.atk_test import _setup_notes  # noqa: E402  # pylint: disable=wrong-import-position
 
 
+@pytest.mark.parametrize("fails", [False, True])
+@pytest.mark.parametrize("name", ["fixed", None])
+@pytest.mark.parametrize("detached", [False, True])
+def test_project_hook(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], fails: bool, name: str | None, detached: bool
+) -> None:
+    """公開されたworktree準備処理がWorktreeCreate hookの返したパスを再利用し、hookが失敗してもGitによる作成へ切り替えない。"""
+    local = _make_remote_repository(tmp_path, "hook-target")
+    destination = tmp_path / "project-worktree"
+    count = tmp_path / "calls"
+    script = tmp_path / "create-hook.py"
+    script.write_text(
+        "import json,pathlib,subprocess,sys\n"
+        "p=json.load(sys.stdin)\n"
+        "assert p['name']==sys.argv[5] and p['cwd']==sys.argv[1]\n"
+        "pathlib.Path(sys.argv[3]).write_text('called')\n"
+        "if sys.argv[4]=='fail': raise SystemExit(3)\n"
+        "mode=['--detach'] if sys.argv[6]=='detached' else ['-b','project-created']\n"
+        "subprocess.run(['git','worktree','add',*mode,sys.argv[2]],check=True,stdout=sys.stderr)\n"
+        "print(sys.argv[2])\n",
+        encoding="utf-8",
+    )
+    argv = [
+        sys.executable,
+        str(script),
+        str(local),
+        str(destination),
+        str(count),
+        "fail" if fails else "success",
+        name or "process-loop",
+        "detached" if detached else "branch",
+    ]
+    command = subprocess.list2cmdline(argv) if os.name == "nt" else shlex.join(argv)
+    settings = local / ".claude/settings.local.json"
+    settings.parent.mkdir()
+    settings.write_text(
+        json.dumps({"hooks": {"WorktreeCreate": [{"hooks": [{"type": "command", "command": command}]}]}}), encoding="utf-8"
+    )
+    first = _pl_worktree.prepare_session_target(local, "example/repo", "input", worktree_name=name, resume_pending=False)
+    assert count.is_file()
+    if fails:
+        assert first is None and not destination.exists()
+        assert not (local / ".claude/worktrees/fixed").exists()
+        match = re.search(r"途中資源を保持した: (.+?\.json):", capsys.readouterr().err)
+        assert match is not None
+        evidence = pathlib.Path(match[1])
+        assert (evidence.parent / ".agent-toolkit-managed-temp.json").is_file()
+        observed = json.loads(evidence.read_text(encoding="utf-8"))
+        assert observed["exit_code"] == 3 and observed["input"]["name"] == (name or "process-loop")
+    else:
+        assert first is not None and first[0] == destination
+        stored_paths = list((state_paths.state_dir() / "process-loop-worktrees").glob("*.json"))
+        assert len(stored_paths) == 1
+        stored = json.loads(stored_paths[0].read_text(encoding="utf-8"))
+        diagnostics = pathlib.Path(stored["hook_diagnostics"])
+        assert (diagnostics / ".agent-toolkit-managed-temp.json").is_file()
+        observed = json.loads((diagnostics / "WorktreeCreate-0.json").read_text(encoding="utf-8"))
+        assert observed["exit_code"] == 0 and observed["input"]["cwd"] == str(local)
+        count.unlink()
+        second = _pl_worktree.prepare_session_target(local, "example/repo", "input", worktree_name=name, resume_pending=False)
+        assert second is not None and second[0] == destination
+        assert not count.exists()
+
+
+@pytest.mark.parametrize("destination_kind", ["main", "branch", "detached"])
+@pytest.mark.parametrize("dirty", [False, True])
+def test_project_hook_rejects_preexisting_worktree(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], destination_kind: str, dirty: bool
+) -> None:
+    """新規hookの返却だけで既存資源を転用せず、branch・HEAD・ユーザー差分を保つ。"""
+    local = _make_remote_repository(tmp_path, "hook-existing")
+    destination = local if destination_kind == "main" else tmp_path / "other worktree"
+    if destination_kind != "main":
+        mode = ["--detach"] if destination_kind == "detached" else ["-b", "user-branch"]
+        git_repository.run_git(local, "worktree", "add", *mode, str(destination))
+    if dirty:
+        (destination / "state.txt").write_text("user tracked change\n", encoding="utf-8")
+        (destination / "user.txt").write_text("user untracked change\n", encoding="utf-8")
+    script = tmp_path / "return-existing.py"
+    script.write_text("import sys\nprint(sys.argv[1])\n", encoding="utf-8")
+    argv = [sys.executable, str(script), str(destination)]
+    command = subprocess.list2cmdline(argv) if os.name == "nt" else shlex.join(argv)
+    settings = local / ".claude/settings.local.json"
+    settings.parent.mkdir()
+    settings.write_text(
+        json.dumps({"hooks": {"WorktreeCreate": [{"hooks": [{"type": "command", "command": command}]}]}}),
+        encoding="utf-8",
+    )
+
+    def snapshot() -> tuple[str, str, str, str, str, str | None]:
+        return (
+            git_repository.run_git(destination, "symbolic-ref", "--quiet", "HEAD", check=False).stdout,
+            git_repository.run_git(destination, "rev-parse", "HEAD").stdout,
+            git_repository.run_git(destination, "status", "--porcelain=v1", "--untracked-files=all").stdout,
+            git_repository.run_git(local, "for-each-ref", "refs/heads", "--format=%(refname) %(objectname)").stdout,
+            (destination / "state.txt").read_text(encoding="utf-8"),
+            (destination / "user.txt").read_text(encoding="utf-8") if dirty else None,
+        )
+
+    before = snapshot()
+    result = _pl_worktree.prepare_session_target(local, "example/repo", "input", worktree_name="fixed", resume_pending=False)
+    assert snapshot() == before
+    assert result is None
+    assert not list((state_paths.state_dir() / "process-loop-worktrees").glob("*.json"))
+    assert "既存の作業ツリー" in capsys.readouterr().err
+
+
 @pytest.fixture(autouse=True)
 def _prepare_process_loop_environment(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
     """公開CLIテストの外部コマンド解決・private-notes同期・managed-tempの登録簿を隔離する。"""
     setattr_in_managed_temp_modules(monkeypatch, "_state_root_path", lambda: tmp_path / "managed-temp-state")
     monkeypatch.setattr(shutil, "which", lambda command: f"/resolved/{command}")
     monkeypatch.setattr(_pl_watch, "pull_private_notes", lambda _path: True)
+    monkeypatch.setattr(_pl_watch, "_other_sessions_active", lambda: False)
     monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(tmp_path / ".claude"))
     monkeypatch.setenv("GIT_CONFIG_NOSYSTEM", "1")
     monkeypatch.setenv("GIT_CONFIG_GLOBAL", str(tmp_path / "gitconfig"))
@@ -103,7 +215,7 @@ def _run_public_process_loop(
         "select_available_orchestrator",
         lambda candidates, _env, _cwd: candidates[0],
     )
-    counts = iter((1, 0))
+    counts = iter((1, 1, 0))
     monkeypatch.setattr(_wi_readiness, "count_pending_entries", lambda *_args, **_kwargs: next(counts))
 
     def stop_wait(*_args: object, **_kwargs: object) -> None:
@@ -178,7 +290,7 @@ class TestSyncWorktreeWithUpstream:
             if args == ["remote"]:
                 return "origin"
             if args == ["symbolic-ref", "--short", "refs/remotes/origin/HEAD"]:
-                raise AssertionError("追跡先が解決できた場合はorigin/HEADへ後退しないこと")
+                raise AssertionError("追跡先が解決できた場合はorigin/HEADを使わないこと")
             return None
 
         monkeypatch.setattr(_pl_worktree, "_git_output", fake_git_output)
@@ -310,8 +422,26 @@ class TestSyncWorktreeWithUpstream:
         assert f"`git -C {local_path} branch -u <remote>/<branch>`" in stderr.split("\n次の操作: ", 1)[1]
 
 
+@pytest.mark.usefixtures("process_loop_commands_isolated")
 class TestPublicWorktreePreparation:
     """公開CLIからのworktree準備と失敗時の停止条件を検証する。"""
+
+    def test_codex_family_resolution_does_not_start_app_server(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+    ) -> None:
+        """系列モデルを指定しても、起動前のモデル一覧は共通fixtureが隔離する。"""
+
+        async def forbidden_catalog() -> list[dict[str, Any]]:
+            pytest.fail("公開worktree試験から実Codex App Serverを起動しないこと")
+
+        monkeypatch.setattr(codex_models, "list_models_from_app_server", forbidden_catalog)
+        _setup_notes(tmp_path)
+        set_orchestrate_model(tmp_path, "codex:sol/medium")
+        local = _make_remote_repository(tmp_path, "target")
+        sessions, _git_calls = _run_public_process_loop(monkeypatch, tmp_path, local, ["--worktree=custom"])
+        assert len(sessions) == 1
+        assert sessions[0]["cmd"][0] == "codex"
+        assert sessions[0]["cwd"] == local / ".claude/worktrees/custom"
 
     def test_unignored_path_is_added_to_info_exclude_and_worktree_created(
         self,
@@ -548,7 +678,7 @@ class TestPublicWorktreePreparation:
         monkeypatch.setattr(_pl_watch, "wait_for_changes", lambda *_a, **_kw: (_ for _ in ()).throw(KeyboardInterrupt))
 
         def run_once() -> None:
-            counts = iter((1,))
+            counts = iter((1, 1))
             monkeypatch.setattr(_wi_readiness, "count_pending_entries", lambda *_a, **_kw: next(counts))
             with pytest.raises(SystemExit) as exc_info:
                 atk.main(
@@ -702,7 +832,7 @@ class TestProcessLoopSessionPreparation:
         myrepo = tmp_path / "repo"
         myrepo.mkdir()
         events: list[str] = []
-        counts = iter((1, 1))
+        counts = iter((1, 1, 1))
 
         def fake_pull(_path: pathlib.Path) -> bool:
             events.append("pull")
@@ -740,7 +870,7 @@ class TestProcessLoopSessionPreparation:
             )
 
         assert exc_info.value.code == 7
-        assert events == ["pull", "count", "update", "repull", "count", "session"]
+        assert events == ["pull", "count", "update", "repull", "count", "count", "session"]
 
     def test_successful_ready_update_restart_skips_duplicate_update(
         self,
@@ -882,13 +1012,13 @@ class TestProcessLoopWorktreeOption:
         worktree_argv: list[str],
         expected_name: str,
     ) -> None:
-        """非dotfiles対象でもworktree指定が同期先・cwd・公開先文へ反映されること。"""
+        """非dotfiles対象でもworktree指定が同期先とcwdへ反映され、公開先の指示文を目的文へ加えないこと。"""
         _setup_notes(tmp_path)
         myrepo = tmp_path / "myrepo"
         myrepo.mkdir()
         claude_calls: list[dict[str, Any]] = []
         monkeypatch.setattr(subprocess, "run", fake_run_with_remote_url(myrepo, claude_calls, 0))
-        counts = iter((1, 0))
+        counts = iter((1, 1, 0))
         monkeypatch.setattr(_wi_readiness, "count_pending_entries", lambda *_a, **_kw: next(counts))
 
         def stop_wait(*_args: object, **_kwargs: object) -> NoReturn:
@@ -940,7 +1070,7 @@ class TestProcessLoopWorktreeOption:
             return base_fake_run(cmd, *_args, **kwargs)
 
         monkeypatch.setattr(subprocess, "run", fake_run)
-        counts = iter((1, 0))
+        counts = iter((1, 1, 0))
         monkeypatch.setattr(_wi_readiness, "count_pending_entries", lambda *_a, **_kw: next(counts))
         monkeypatch.setattr(_pl_watch, "wait_for_changes", lambda *_a, **_kw: (_ for _ in ()).throw(KeyboardInterrupt))
         worktree_path = myrepo / ".claude" / "worktrees" / "custom"

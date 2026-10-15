@@ -1,4 +1,4 @@
-"""既存成果物と、生成・登録される契約との整合を検証する。"""
+"""Stop・SubagentStopへ登録した判定モジュールが、docstringに委譲先での実行可否を記載していることを検証する。"""
 
 import importlib
 import json

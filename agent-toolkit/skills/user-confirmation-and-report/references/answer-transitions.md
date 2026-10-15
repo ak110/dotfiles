@@ -6,7 +6,7 @@
 
 回答の到達は、投入済みで未回答のUWIを保持している間、`agent-toolkit:delegation`の`references/waiting-and-monitoring.md`が定める経過時間起動の各回で`atk wi`により確認する。
 
-`agent-toolkit:process-wi`の起動中は`agent-toolkit:wi-standards`「状態と依存」の手順を適用する。回答済みUWIは`${CLAUDE_PLUGIN_ROOT}/skills/process-wi/references/selection-procedure.md`「処理対象WIの追加」へ渡す。それ以外で回答済みUWIの通知を受け取ったエージェントは、自セッション（委譲先を含む）が投入したUWIだけを扱う。他のセッションが投入したUWIは、ユーザーが働きかけていない自動の通知では読まずに無視する。投入したprocess-wiの実行かその次の実行の選定工程が扱い、無関係なセッションが処置を検討するとユーザーへの往復が生じるためである。ユーザーが現在のセッションへ回答を告げたUWIは明示指示として扱う。WIの投入前と着手前に回答済みUWIとの両立を確かめる工程は`agent-toolkit:wi-standards`「投入と取得」に従う。
+`agent-toolkit:process-wi`の起動中は`agent-toolkit:wi-standards`「状態と依存」の手順を適用する。回答済みUWIは`${CLAUDE_PLUGIN_ROOT}/skills/process-wi/references/selection-procedure.md`「処理対象WIの追加」へ渡す。それ以外で回答済みUWIの通知を受け取ったエージェントは、自セッション（委譲先を含む）が投入したUWIだけを扱う。他のセッションが投入したUWIは、ユーザーが働きかけていない自動の通知では読まずに無視する。そのUWIは投入したprocess-wiの実行かその次の実行の選定工程が扱い、無関係なセッションが処置を検討するとユーザーへの往復が生じるためである。ユーザーが現在のセッションへ回答を告げたUWIは明示指示として扱う。WIの投入前と着手前に回答済みUWIとの両立を確かめる工程は`agent-toolkit:wi-standards`「投入と取得」に従う。
 
 標準2択の事後承認型UWIへの肯定回答後の遷移は`agent-toolkit:wi-standards`「状態と依存」に従い、同じUWIへの再度の`adopt`や是正処理をしない。問題を示す回答と事前承認型UWIは、次を同じ作業の連続した工程として完了する。
 

@@ -24,7 +24,7 @@ def unavailable_candidates_path(state_root: pathlib.Path | None = None) -> pathl
     """可用性を理由に除外した候補の記録ファイルを返す。
 
     `list_root_session_ids`は`agents-server`直下のディレクトリをルートsession識別子として列挙するため、
-    この階層へはディレクトリではなく単一のファイルとして置く。
+    この階層へは単一のファイルとして置く。
     """
     root = _state_paths.state_dir() if state_root is None else state_root
     return root / "agents-server" / "unavailable-candidates.json"
@@ -34,7 +34,7 @@ def _read_unavailable_entries(path: pathlib.Path) -> list[dict[str, Any]]:
     """記録ファイルのうち、書式に適合する項目だけを返す。"""
     try:
         payload = json.loads(path.read_text(encoding="utf-8"))
-    except (FileNotFoundError, OSError, UnicodeError, json.JSONDecodeError):
+    except FileNotFoundError, OSError, UnicodeError, json.JSONDecodeError:
         return []
     if not isinstance(payload, dict) or payload.get("version") != 1:
         return []
@@ -48,7 +48,7 @@ def _unavailable_entry_is_live(entry: dict[str, Any], now: datetime.datetime) ->
     """最終除外時刻から保持期間内の項目かを返す。"""
     try:
         excluded_at = datetime.datetime.fromisoformat(str(entry.get("excluded_at")))
-    except (TypeError, ValueError):
+    except TypeError, ValueError:
         return False
     if excluded_at.tzinfo is None:
         return False

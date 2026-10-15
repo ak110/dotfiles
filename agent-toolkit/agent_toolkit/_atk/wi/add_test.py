@@ -51,7 +51,7 @@ from agent_toolkit.atk_test import _FIXED_DT, _setup_notes  # noqa: E402  # pyli
 
 @pytest.fixture(autouse=True)
 def _isolate_managed_temp(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
-    """共通起動のmanaged-tempをテストごとのrootへ隔離する。"""
+    """CLIの起動処理が作成するmanaged-tempと状態ディレクトリを、テストごとの一時ディレクトリへ隔離する。"""
     monkeypatch.setattr(tempfile, "gettempdir", lambda: str(tmp_path / "temp"))
     (tmp_path / "temp").mkdir()
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
@@ -777,6 +777,9 @@ def _with_direct_cause(body: str, value: str) -> str:
         ("未確認 原因候補は2件", False),
         ("**調査中**: 再現条件を確認している", False),
         ("`不明`: ログが残っていない", False),
+        ("\u3000未確定", False),
+        ("\u3000**未確定**（再現待ち）", False),
+        ("** \u3000調査中**", False),
     ],
 )
 def test_add_rejects_undetermined_direct_cause(
@@ -835,6 +838,7 @@ def test_add_rejects_undetermined_direct_cause_in_uwi(
     [
         _with_direct_cause(_AGENT_AWI_BODY, "旧値の残存。`git log -S`で、それまで不明だった設定値の由来を特定した"),
         _with_direct_cause(_AGENT_AWI_BODY, "不明だった設定を特定した"),
+        _with_direct_cause(_AGENT_AWI_BODY, "\u3000不明だった設定を特定した"),
         _with_direct_cause(_AGENT_AWI_BODY, "調査中の設定変更が旧値を残していたと特定した"),
         _AGENT_AWI_BODY.replace(
             "## 適用範囲\n",
@@ -877,7 +881,7 @@ def test_add_accepts_undetermined_cause_from_human(
 
 
 def test_flat_add_operation_is_public(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """平引数操作が生成名を返し、frontmatter付きファイルを書き込む。"""
+    """公開の`add_entries`が生成したファイル名を返し、frontmatter付きファイルを書き込む。"""
     notes = tmp_path / "private-notes"
     (notes / "inbox").mkdir(parents=True)
     monkeypatch.setattr(_wi_sync, "repo_lock", lambda *_args, **_kwargs: contextlib.nullcontext())
@@ -1126,7 +1130,7 @@ def test_flat_add_operation_preserves_nonreserved_frontmatter_for_cross_reposito
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """移管先へ前処理した本文の非予約frontmatterを保持する。"""
+    """別リポジトリへ移管する本文が持つ非予約frontmatter（`source`・`alert_keys`）を保存時に保持する。"""
     notes = tmp_path / "private-notes"
     (notes / "inbox").mkdir(parents=True)
     monkeypatch.setattr(_wi_sync, "repo_lock", lambda *_args, **_kwargs: contextlib.nullcontext())
@@ -1236,7 +1240,7 @@ def test_add_operation_does_not_infer_plan_file_from_body(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """本文が実在する計画ファイルへ言及しても未指定時は分類しない。"""
+    """本文が実在する計画ファイルへ言及しても、`plan_file`と`queue_schedule`を自動で付けない。"""
     notes = tmp_path / "private-notes"
     (notes / "inbox").mkdir(parents=True)
     plan = tmp_path / "plan.md"
@@ -1575,11 +1579,15 @@ class TestAddOrderEditorFirst:
             atk.main(["wi", "add", str(myrepo), "--body-file", str(body_path)], home=tmp_path, now=_FIXED_DT)
 
         assert exc_info.value.code == 0
-        assert git_cmds[:2] == [["git", "fetch"], ["git", "merge", "--ff-only", "@{u}"]]
+        upstream_query = ["git", "rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"]
+        assert upstream_query in git_cmds
+        synchronization_and_save = [cmd for cmd in git_cmds if cmd != upstream_query]
+        assert synchronization_and_save[:2] == [["git", "fetch"], ["git", "merge", "--ff-only", "@{u}"]]
+        assert synchronization_and_save[2][:2] == ["git", "add"]
 
 
 class TestAddRepoPathOverrideCli:
-    """`mq add`のREPO_PATH位置引数廃止に伴うCLI事前変換層の検証。"""
+    """`atk wi add`のREPO_PATH位置引数廃止に伴うCLI事前変換層の検証。"""
 
     def test_repo_path_omitted_resolves_from_cwd(
         self,
@@ -1864,7 +1872,7 @@ def test_editor_body_is_preserved_when_head_resolution_fails(
 
 
 class TestAddEmptyBodyRejection:
-    """`mq add`の実質空本文投入拒否を検証する。"""
+    """`atk wi add`が実質空の本文の投入を拒否することを検証する。"""
 
     def test_empty_string_body_rejected(
         self,
@@ -2073,7 +2081,7 @@ def _invoke_add_body_file(
 
 
 class TestAddBodyFile:
-    """`mq add --body-file`でシェル引用符を経由せずに本文を渡せることを検証する。"""
+    """`atk wi add --body-file`でシェル引用符を経由せずに本文を渡せることを検証する。"""
 
     def test_body_file_content_becomes_message(
         self,

@@ -12,7 +12,7 @@
 
 前ラウンドの指摘は解決状態と証拠とともに表へ残す。
 複数計画の反復では、計画ごとの最後のレビューHEAD・round・表・証拠・返却入力配列を保持する。別計画の認可は`review-contract --generate`で現在OIDへ再生成し、変更後の再レビュー対象は`review-impact`で判定する（`exec-review.parent.md`の入力契約）。
-受領確認は`exec-review-evidence-check --batch`へ各組をそのまま渡せる。読者別探索の申告は各組の`reader_fit_review`へ保持し、同書の起動条件と省略根拠を確かめる。CLIの成功だけで収束とせず、同書の意味判定と未解決0件を確かめる。
+受領確認では`exec-review-evidence-check --batch`へ各組をそのまま渡せる。読者別探索の申告は各組の`reader_fit_review`へ保持し、同書の起動条件と省略根拠を確かめる。CLIの成功だけで収束とせず、同書の意味判定と未解決0件を確かめる。
 各組には返却された今回の`review_start`と、2回目以降の`previous_review_start`・`previous_review_head`も保持する。rebaseで今回の開始時点が変わっても前回値を置き換えず、両差分の同一性とファイル別申告を同じ受領確認へ渡す。
 
 ## ラウンド番号の保持先
@@ -21,7 +21,7 @@
 
 ## 応答済みの判定
 
-レビューイーは`agent-toolkit:review-standards`の`references/reviewee.md`「実行レビュー反復での記録」に従って全指摘への応答を記録する。委譲元は`atk review-table show <表の絶対パス> --format=summary --round <対応したround>`の`unanswered_count`が0件の場合だけ再レビューへ進む。返却文の「対応済み」ではなく、この件数で判定する。
+レビューイーは`agent-toolkit:review-standards`の`references/reviewee.md`「実行レビュー反復での記録」に従って全指摘への応答を記録する。委譲元は`atk review-table show <表の絶対パス> --format=summary --round <対応したround>`の`unanswered_count`が0件の場合だけ再レビューへ進む。
 
 ## 反復原因の判定
 
@@ -51,13 +51,13 @@
 
 frontmatterに`source`を持つエージェント由来のWIの完成条件のうち、次の全てを満たすものはメインの技術判断で外せる。満たさない条件はユーザー判断の記録を探し、無ければユーザー確認する。
 
-- `agent-toolkit:wi-standards`「由来と承認」の明示由来（逐語引用、ユーザーコメント、UWI回答、出所付き対話回答）の要求単位に対応しない
-- 外すことが`agent-toolkit/rules/01-agent.md`「協調と自律」のユーザーが確定した判断の変更に当たらない
+- 完成条件が対応する要求単位は、全て`agent-toolkit:wi-standards`「由来と承認」の明示由来（逐語引用、ユーザーコメント、UWI回答、出所付き対話回答）以外である
+- 外すことが`agent-toolkit/rules/01-agent.md`「協調と自律」のユーザーが確定した判断の変更の対象外である
 - `agent-toolkit:user-confirmation-and-report`「確認要否の判定」の3のユーザーだけが持つ値（選好、認可、外部の状態、手元に無い資料）に依存しない
 - Qに影響する問題の類似見直しと再発防止に必須の処置（`agent-toolkit:bugfix`の`references/root-cause-analysis.md`「QとC・Dの区別」「類似見直しと再発防止の完了」）を判定する条件ではない。費用や所要だけを理由に外さない
 
 判定は条件の意味の判断であり、判断要請を受けたメインと、統合時の完成条件判定で記録を読むメインが行う。外す理由には、エージェント由来であることに加えて上記の全条件の充足を要する。
 
 記録先は判断時点で選ぶ。計画確定前は対象AWIの実施内容の根拠欄へ対象AWI・対象条件・`メインの技術判断`・外す根拠を記録し、初回レビューと統合はその記録をそのまま受理する。実装着手後は計画凍結を保ち、レビュー指摘管理表へ記録する。
-会話中の判断は、対象発話の逐語内容とメイン自身のセッションIDまたはthread ID、反復を区別する時点・文脈を、その証拠を使う担当へ渡す。メインは出所の抽出を待たずに回答し、担当が証拠を使う時に`session-review-evidence --user-events`で元の出所を確定する。取得済みの出所ファイルとrecord・lineも渡してよく、担当はそれを再利用する。
-保存済みの指定組は`atk run-script session-review-evidence -- --user-events-file <元の出力の絶対パス> --user-event-at <record>:<line>`で読む。根拠には照会出力の物理行番号ではなく、元ファイルと元のrecord・lineを使う。失効の根拠の書式とユーザー由来の受理条件は`agent-toolkit:review-standards`の`references/exec-review-recording.md`「失効の根拠」に従う。
+会話中の判断は、対象発話の逐語内容とメイン自身のセッションIDまたはthread ID（Claude Codeでは`rules-main.claude-code.md`「自身の会話の記録」の取得元の値）、反復を区別する時点・文脈を、その証拠を使う担当へ渡す。メインは出所の抽出を待たずに回答し、担当が証拠を使う時に`session-review-evidence --user-events`で元の出所を確定する。取得済みの出所ファイルとrecord・lineも渡してよく、担当はそれを再利用する。
+保存済みの指定組は`atk run-script session-review-evidence -- --user-events-file <元の出力の絶対パス> --user-event-at <record>:<line>`で読む。根拠には元ファイルと元のrecord・lineを使う。失効の根拠の書式とユーザー由来の受理条件は`agent-toolkit:review-standards`の`references/exec-review-recording.md`「失効の根拠」に従う。

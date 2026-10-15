@@ -8,7 +8,9 @@ import asyncio
 # テストでは共有状態とバックエンドの内部境界も直接検証する。
 # pylint: disable=protected-access
 import json
+import os
 import pathlib
+import shlex
 import shutil
 from types import SimpleNamespace
 from typing import Any, cast
@@ -31,7 +33,7 @@ from agent_toolkit._agents_server import (
 )
 from agent_toolkit._agents_server.notify import send_notification
 from agent_toolkit._atk import config as _atk_config
-from agent_toolkit._common import session_registry, state_paths
+from agent_toolkit._common import plugin_environment, session_registry, state_paths
 from agent_toolkit._testing.agents_server_support import (
     BlockingResumeCodexClient,
     CompletingInterruptClient,
@@ -95,6 +97,30 @@ class _ProcessTierClient(_TierClient):
         self.process = SimpleNamespace(pid=pid)
 
 
+class _SandboxProbeClient:
+    """公開command/exec応答を模し、接続の回収を観測する。"""
+
+    def __init__(self, *_args: Any, **_kwargs: Any) -> None:
+        self.process = None
+        self.closed = False
+        self.requests: list[tuple[str, dict[str, Any]]] = []
+        self.response: dict[str, Any] = {"exitCode": 0, "stderr": "", "stdout": ""}
+        self.error: BaseException | None = None
+
+    async def start(self) -> None:
+        return None
+
+    async def request(self, method: str, params: dict[str, Any], **_kwargs: Any) -> dict[str, Any]:
+        assert method == "command/exec"
+        self.requests.append((method, params))
+        if self.error is not None:
+            raise self.error
+        return self.response
+
+    async def close(self) -> None:
+        self.closed = True
+
+
 @pytest.mark.asyncio
 async def test_start_and_resume_record_owner_and_app_server_processes(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
@@ -125,7 +151,7 @@ async def test_start_and_resume_record_owner_and_app_server_processes(
 async def test_config_changes_apply_to_new_reply_and_restored_turns(
     initial: bool, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """公開configの変更が3RPCへ明示され、実際に送った最新turnの速度を保持する。"""
+    """公開configの変更を3種類のRPCの要求へ明示し、実際に送った最新turnの速度を保持する。"""
     monkeypatch.setattr(subject._atk_config, "_config_dir", lambda: tmp_path / "config")
     monkeypatch.delenv("AGENT_TOOLKIT_CONFIG_CODEX_FAST_MODE", raising=False)
 
@@ -400,7 +426,18 @@ async def test_completed_turn_after_consumed_auto_resume_publishes_unobserved_ch
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    "delivery", ("stdout", "output-file", "shell-stdout", "shell-output-file", "shell-unrelated", "failure", "unrelated")
+    "delivery",
+    (
+        "stdout",
+        "output-file",
+        "shell-stdout",
+        "shell-output-file",
+        "absolute-stdout",
+        "absolute-shell",
+        "shell-unrelated",
+        "failure",
+        "unrelated",
+    ),
 )
 async def test_cli_wait_updates_observed_child_sessions(tmp_path: pathlib.Path, delivery: str) -> None:
     """CLI待機が回収した子だけを観測済みにし、失敗時は未観測として残す。"""
@@ -425,6 +462,10 @@ async def test_cli_wait_updates_observed_child_sessions(tmp_path: pathlib.Path, 
         command = '/bin/sh -c "timeout 300 atk agents wait"'
     if delivery == "shell-unrelated":
         command = '/bin/bash -lc "printf unrelated"'
+    if delivery in {"absolute-stdout", "absolute-shell"}:
+        command = shlex.quote(str(plugin_roots.SERVER_PLUGIN_ROOT / "scripts" / "atk")) + " agents wait"
+        if delivery == "absolute-shell":
+            command = "/bin/sh -c " + shlex.quote(command)
     item = {
         "type": "commandExecution",
         "id": "wait-command",
@@ -453,6 +494,8 @@ async def test_thread_start_overrides_agents_server_with_owner_and_writer_env(
 ) -> None:
     """内側MCPサーバーへルートと書込主体を完全な定義で配送する。"""
     client = _ThreadStartClient()
+    runtime_data = tmp_path / "plugin data"
+    monkeypatch.setenv(plugin_environment.RUNTIME_DATA_ENV, str(runtime_data))
     manager = subject.AppServerManager(root_session_id="root-session")
     monkeypatch.setattr(manager, "_ensure_client", lambda: _return(client))
     monkeypatch.setattr(shared_roots, "write_host_alias", lambda root, writer, thread: aliases.append((root, writer, thread)))
@@ -465,11 +508,80 @@ async def test_thread_start_overrides_agents_server_with_owner_and_writer_env(
     server = client.params["config"]["mcp_servers"]["agents_server"]
     assert server["command"] == "uv"
     assert server["args"][-1].endswith("agent_toolkit/agents_server_mcp.py")
-    assert set(server["env"]) == {"AGENT_TOOLKIT_OWNER_SESSION", "AGENT_TOOLKIT_STATUS_HOST_SESSION"}
+    assert set(server["env"]) == {
+        "AGENT_TOOLKIT_OWNER_SESSION",
+        "AGENT_TOOLKIT_STATUS_HOST_SESSION",
+        plugin_environment.RUNTIME_DATA_ENV,
+    }
+    assert server["env"][plugin_environment.RUNTIME_DATA_ENV] == str(runtime_data)
     assert server["env"]["AGENT_TOOLKIT_OWNER_SESSION"] == "root-session"
     assert server["default_tools_approval_mode"] == "approve"
+    assert server["env_vars"] == list(
+        subject.mcp_environment.environment_variable_names(_atk_config.config_environment_variable_names())
+    )
     assert "AGENT_TOOLKIT_DELEGATED_SESSION" not in server["env"]
     assert aliases == [("root-session", server["env"]["AGENT_TOOLKIT_STATUS_HOST_SESSION"], "inner-thread")]
+
+
+@pytest.mark.usefixtures("agents_server_isolation")
+@pytest.mark.asyncio
+@pytest.mark.parametrize("operation", ["start", "resume"])
+@pytest.mark.parametrize("configured", [False, True])
+async def test_mcp_mise_namespace_names_and_explicit_owner_are_separate(
+    operation: str, configured: bool, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+) -> None:
+    """新規起動と再開の内側MCPには公開されたmiseの所在を示す環境変数名だけを配送し、所有者・書込主体・plugin dataを明示する。"""
+    runtime_data = tmp_path / "plugin data"
+    monkeypatch.setenv(plugin_environment.RUNTIME_DATA_ENV, str(runtime_data))
+    names = ("MISE_STATE_DIR", "MISE_CACHE_DIR", "MISE_DATA_DIR", "MISE_CONFIG_DIR")
+    values = {name: str(tmp_path / name.lower()) for name in names}
+    for name, value in values.items():
+        if configured:
+            monkeypatch.setenv(name, value)
+        else:
+            monkeypatch.delenv(name, raising=False)
+    monkeypatch.setenv("MISE_UNPUBLISHED_DIR", "unpublished-location")
+    monkeypatch.setenv("DIAGNOSTIC_TOKEN", "synthetic-credential")
+    monkeypatch.setenv("AGENT_TOOLKIT_OWNER_SESSION", "ambient-root")
+    monkeypatch.setenv("AGENT_TOOLKIT_STATUS_HOST_SESSION", "ambient-host")
+    client = _TierClient()
+    manager = subject.AppServerManager(root_session_id="chosen-root")
+    monkeypatch.setattr(manager, "_ensure_client", AsyncMock(return_value=client))
+    aliases: list[tuple[str, str, str]] = []
+    monkeypatch.setattr(shared_roots, "write_host_alias", lambda root, writer, thread: aliases.append((root, writer, thread)))
+    try:
+        if operation == "start":
+            session = await manager.start("開始", str(tmp_path))
+        else:
+            session = await manager.resume("saved-thread", state.ResumePrompt("再開"), str(tmp_path))
+        params = next(params for method, params in client.requests if method == f"thread/{operation}")
+        server = params["config"]["mcp_servers"]["agents_server"]
+        assert set(names) <= set(server["env_vars"])
+        assert len(server["env_vars"]) == len(set(server["env_vars"]))
+        assert set(server["env"]) == {
+            "AGENT_TOOLKIT_OWNER_SESSION",
+            "AGENT_TOOLKIT_STATUS_HOST_SESSION",
+            plugin_environment.RUNTIME_DATA_ENV,
+        }
+        assert server["env"][plugin_environment.RUNTIME_DATA_ENV] == str(runtime_data)
+        assert {"CLAUDE_PLUGIN_DATA", "PLUGIN_DATA", plugin_environment.RUNTIME_DATA_ENV} <= set(server["env_vars"])
+        assert "UV_PROJECT_ENVIRONMENT" not in server["env_vars"]
+        assert server["env"]["AGENT_TOOLKIT_OWNER_SESSION"] == "chosen-root"
+        writer = server["env"]["AGENT_TOOLKIT_STATUS_HOST_SESSION"]
+        assert writer and writer != "ambient-host"
+        assert aliases == [("chosen-root", writer, session.session_id)]
+        assert not {
+            "MISE_UNPUBLISHED_DIR",
+            "DIAGNOSTIC_TOKEN",
+            "AGENT_TOOLKIT_OWNER_SESSION",
+            "AGENT_TOOLKIT_STATUS_HOST_SESSION",
+            "AGENT_TOOLKIT_DELEGATED_SESSION",
+        } & set(server["env_vars"])
+        encoded = json.dumps(server)
+        assert not any(value in encoded for value in (*values.values(), "unpublished-location", "synthetic-credential"))
+        assert "ambient-root" not in encoded and "ambient-host" not in encoded
+    finally:
+        await manager.close()
 
 
 @pytest.mark.asyncio
@@ -542,6 +654,9 @@ def _make_plugin_root(base: pathlib.Path, version: str, *, versioned: bool, root
     (root / ".claude-plugin" / "plugin.json").write_text(f'{{"version": "{version}"}}\n', encoding="utf-8")
     (root / "agent_toolkit").mkdir()
     (root / "agent_toolkit" / "agents_server_mcp.py").write_text("# entry\n", encoding="utf-8")
+    (root / "scripts").mkdir()
+    for name in ("launch.py", "atk", "atk.cmd"):
+        (root / "scripts" / name).write_text("# entry\n", encoding="utf-8")
     (root / ".venv").mkdir()
     (root / ".venv" / "pyvenv.cfg").write_text("home = /usr\n", encoding="utf-8")
     return root
@@ -606,27 +721,39 @@ def test_agents_server_config_uses_the_stable_plugin_root() -> None:
 
     args = config["mcp_servers"]["agents_server"]["args"]
     expected_root = plugin_roots.resolve_stable_plugin_root()
-    assert args[1] == "--project"
-    assert args[2] == str(expected_root)
-    assert args[-1] == str(expected_root / "agent_toolkit" / "agents_server_mcp.py")
-    assert pathlib.Path(args[-1]).is_file()
+    assert args == [
+        "run",
+        "--no-config",
+        "--no-project",
+        "--python",
+        "3.15",
+        "python",
+        str(expected_root / "scripts" / "launch.py"),
+        "agent_toolkit/agents_server_mcp.py",
+    ]
+    assert pathlib.Path(args[-2]).is_file()
+    assert (expected_root / args[-1]).is_file()
 
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("launch_kind", ["delegate", "explore", "shell", "write"])
+@pytest.mark.parametrize("windows", [False, True])
 async def test_start_and_resume_pass_the_same_stable_plugin_root_to_all_launch_kinds(
-    launch_kind: state.LaunchKind, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+    launch_kind: state.LaunchKind, windows: bool, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
 ) -> None:
-    """開始と再開の全役割へ、同じ実在plugin rootと再解決を禁じる契約を渡す。"""
+    """開始と再開の全役割へ、実在する同じplugin rootと、plugin rootの再解決を禁じる指示を渡す。"""
     source = _make_plugin_root(tmp_path / "cache", "2.125.0", versioned=True, root_is_version=True)
     (source / "skills" / "sample").mkdir(parents=True)
     (source / "skills" / "sample" / "SKILL.md").write_text("# 手順\n", encoding="utf-8")
     plugin_root = plugin_roots.resolve_stable_plugin_root(source)
     shutil.rmtree(source)
     monkeypatch.setattr(plugin_roots, "SERVER_PLUGIN_ROOT", plugin_root)
+    cli_instructions = plugin_environment.cli_instructions
+    monkeypatch.setattr(plugin_environment, "cli_instructions", lambda root: cli_instructions(root, windows=windows))
     client = _TierClient()
     manager = subject.AppServerManager(root_session_id="owner")
     monkeypatch.setattr(manager, "_ensure_client", AsyncMock(return_value=client))
+    monkeypatch.setattr(subject, "JsonRpcProcess", _SandboxProbeClient)
 
     await manager.start("開始", str(tmp_path), launch_kind=launch_kind)
     start_params = next(params for method, params in client.requests if method == "thread/start")
@@ -637,13 +764,21 @@ async def test_start_and_resume_pass_the_same_stable_plugin_root_to_all_launch_k
     for params in (start_params, resume_params):
         instructions = params["developerInstructions"]
         assert str(plugin_root) in instructions
+        command = next(line.removeprefix("起動部分: ") for line in instructions.splitlines() if line.startswith("起動部分: "))
+        entry = plugin_root / "scripts" / ("atk.cmd" if windows else "atk")
+        assert entry.is_file()
+        if windows:
+            assert command == "& '" + str(entry).replace("'", "''") + "'"
+        else:
+            assert shlex.split(command) == [str(entry)]
         assert (subject.python_runtime_instructions() in instructions) is (launch_kind != "delegate")
         if launch_kind == "explore":
             assert params["config"]["mcp_servers"]["agents_server"] == {"enabled": False}
         else:
             args = params["config"]["mcp_servers"]["agents_server"]["args"]
-            assert pathlib.Path(args[-1]).is_file()
-            assert pathlib.Path(args[2]) == plugin_root
+            assert pathlib.Path(args[-2]) == plugin_root / "scripts" / "launch.py"
+            assert pathlib.Path(args[-2]).is_file()
+            assert (plugin_root / args[-1]).is_file()
         assert (plugin_root / "skills" / "sample" / "SKILL.md").is_file()
         assert "別hostのcache版数から別のplugin rootを組み立てない" in instructions
     assert start_params["developerInstructions"] == resume_params["developerInstructions"]
@@ -887,6 +1022,9 @@ async def test_manager_root_connects_codex_start_resume_and_notification(
         assert len(configs) == 2
         for config in configs:
             assert config["mcp_servers"]["agents_server"]["env"]["AGENT_TOOLKIT_OWNER_SESSION"] == root
+            assert config["mcp_servers"]["agents_server"]["env_vars"] == list(
+                subject.mcp_environment.environment_variable_names(_atk_config.config_environment_variable_names())
+            )
         environment = {**configs[0]["mcp_servers"]["agents_server"]["env"], "CODEX_THREAD_ID": session.session_id}
         assert send_notification("途中の観測", environment=environment, state_root=tmp_path) == 0
         response = await manager.wait()
@@ -978,6 +1116,7 @@ async def test_codex_explore_limits_start_resume_and_followup(
         return explore_client
 
     monkeypatch.setattr(explore_manager, "_ensure_client", ensure_explore_client)
+    monkeypatch.setattr(subject, "JsonRpcProcess", _SandboxProbeClient)
     session = await explore_manager.start("調査", str(tmp_path), "model", "high", launch_kind="explore")
     await explore_manager._start_turn(session, "追送", cast(subject.JsonRpcProcess, explore_client))
     await explore_manager._resume_thread(session, explore_client)
@@ -1054,7 +1193,7 @@ async def test_codex_turn_start_response_loss_remains_running_until_completion(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> None:
-    """初回turn/start応答喪失後もsessionを保持し、完了通知で結果取得可能にする。"""
+    """初回のturn/startの応答が失われた後もsessionを保持し、完了通知から結果を取得できるようにする。"""
     manager = subject.AppServerManager()
     client = LostTurnStartClient()
 
@@ -1278,7 +1417,7 @@ async def test_stop_releases_codex_descendants_and_preserves_resume(
 async def test_resume_waits_for_thread_close_after_unsubscribe(
     monkeypatch: pytest.MonkeyPatch, notification_first: bool
 ) -> None:
-    """閉鎖中の再開拒否は対象threadの閉鎖通知で解消し、通知先着でも取りこぼさない。"""
+    """閉鎖中の再開拒否は対象threadの閉鎖通知で解消し、閉鎖通知が先に届いても取りこぼさない。"""
     backend = subject.AppServerManager()
     client = FakeCodexClient()
     closed_notice = {"method": "thread/closed", "params": {"threadId": "thread-1"}}
@@ -1350,9 +1489,22 @@ async def test_codex_interrupt_response_error_is_recorded_on_target_turn(tmp_pat
 
 @pytest.mark.usefixtures("agents_server_isolation")
 @pytest.mark.asyncio
-async def test_codex_json_rpc_process_passes_stable_cwd(monkeypatch: pytest.MonkeyPatch) -> None:
-    """App Server subprocessへ安定した作業ディレクトリとstream limitを渡す。"""
+@pytest.mark.parametrize("user_project_environment", [False, True])
+async def test_codex_json_rpc_process_passes_stable_cwd(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, user_project_environment: bool
+) -> None:
+    """App ServerへCLIとdataを渡し、plugin依存環境だけを除き、呼び出し元の設定と所有者を保つ。"""
     observed: dict[str, Any] = {}
+    plugin_venv = tmp_path / "plugin venv"
+    user_bin = tmp_path / "user-bin"
+    runtime_data = tmp_path / "plugin data"
+    original_path = os.pathsep.join((str(plugin_venv / "bin"), str(user_bin), ""))
+    monkeypatch.setenv("PATH", original_path)
+    monkeypatch.setenv("VIRTUAL_ENV", str(plugin_venv))
+    monkeypatch.setenv(plugin_environment.RUNTIME_ENVIRONMENT_ENV, str(plugin_venv))
+    project_environment = str(tmp_path / "user-project-env") if user_project_environment else str(plugin_venv)
+    monkeypatch.setenv("UV_PROJECT_ENVIRONMENT", project_environment)
+    monkeypatch.setenv(plugin_environment.RUNTIME_DATA_ENV, str(runtime_data))
 
     async def create_subprocess(*_args: Any, **kwargs: Any) -> Any:
         observed.update(kwargs)
@@ -1375,6 +1527,15 @@ async def test_codex_json_rpc_process_passes_stable_cwd(monkeypatch: pytest.Monk
     }
     assert environment["AGENT_TOOLKIT_OWNER_SESSION"] == "owner-session"
     assert "AGENT_TOOLKIT_DELEGATED_SESSION" not in environment
+    assert environment["PATH"].split(os.pathsep) == [str(plugin_roots.SERVER_PLUGIN_ROOT / "scripts"), str(user_bin), ""]
+    assert environment[plugin_environment.RUNTIME_DATA_ENV] == str(runtime_data)
+    assert "VIRTUAL_ENV" not in environment
+    assert plugin_environment.RUNTIME_ENVIRONMENT_ENV not in environment
+    if user_project_environment:
+        assert environment["UV_PROJECT_ENVIRONMENT"] == project_environment
+    else:
+        assert "UV_PROJECT_ENVIRONMENT" not in environment
+    assert os.environ["PATH"] == original_path
     assert observed["limit"] > 64 * 1024
 
 
@@ -1406,7 +1567,7 @@ async def test_codex_json_rpc_request_marks_sent_before_response(
 @pytest.mark.usefixtures("agents_server_isolation")
 @pytest.mark.asyncio
 async def test_codex_backend_send_supports_terminal_reply_without_result_flag(tmp_path: pathlib.Path) -> None:
-    """Codexの終端後replyが結果回収フラグなしで開始できる。"""
+    """Codexの終端後のreplyは結果回収フラグなしで開始できる。"""
     manager = subject.AppServerManager()
     client = FakeCodexClient()
     manager.client = cast(Any, client)
@@ -1558,7 +1719,7 @@ async def test_codex_resume_timeout_drops_prompt_without_duplicate_resume(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> None:
-    """Codex再開のtimeout後に旧promptを配送せず、後続入力で再開を重複しない。"""
+    """Codex再開のtimeout後に旧promptを配送せず、後続入力で再開を重複させない。"""
     manager = server_manager.AgentsServerManager()
     backend = subject.AppServerManager(manager.sessions, manager._condition)
     client = BlockingResumeCodexClient()
@@ -1656,7 +1817,7 @@ async def test_codex_kill_reports_no_request_when_pending_turn_completes_natural
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> None:
-    """保留resumeの取消中に自然終了したturnへ中断要求済みと報告しない。"""
+    """保留中のresumeを取り消す間に自然に終了したturnを、中断要求済みと報告しない。"""
     manager, backend, client = _pending_codex_manager(monkeypatch, NaturallyCompletingTurnStartClient)
     manager.expired_sessions[session_id] = state.SessionResumeState(
         session_id=session_id,
@@ -1687,3 +1848,101 @@ async def test_codex_kill_reports_no_request_when_pending_turn_completes_natural
         assert not backend._background_tasks
     finally:
         await manager.close()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("failure", ["success", "namespace", "other", "rpc", "timeout", "invalid", "wrong-code"])
+async def test_explore_sandbox_probe_distinguishes_failure_kinds(
+    failure: str, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """公開の起動では確定した名前空間の作成拒否だけを候補不成立として扱い、probeの接続をthread開始より先に回収する。"""
+    probe = _SandboxProbeClient()
+    if failure in {"namespace", "wrong-code"}:
+        probe.response = {
+            "exitCode": 1 if failure == "namespace" else 124,
+            "stderr": "bwrap: No permissions to create a new namespace",
+            "stdout": "",
+        }
+    elif failure == "other":
+        probe.response = {"exitCode": 1, "stderr": "permission denied", "stdout": ""}
+    elif failure == "invalid":
+        probe.response = {"exitCode": True, "stderr": "", "stdout": ""}
+    elif failure == "rpc":
+        probe.error = subject.JsonRpcResponseError("command/exec", -32600, "request rejected")
+    elif failure == "timeout":
+        probe.error = TimeoutError("probe deadline")
+    monkeypatch.setattr(subject, "JsonRpcProcess", lambda *_args, **_kwargs: probe)
+    manager = subject.AppServerManager()
+    client = _TierClient()
+
+    async def ensure_client() -> _TierClient:
+        assert probe.closed
+        return client
+
+    monkeypatch.setattr(manager, "_ensure_client", ensure_client)
+    if failure == "success":
+        session = await manager.start("調査", str(tmp_path), launch_kind="explore")
+        assert session.session_id == "tier-thread"
+        assert [method for method, _params in client.requests] == ["thread/start", "turn/start"]
+    else:
+        error_type = (
+            subject.StartCandidateUnavailable
+            if failure == "namespace"
+            else (TimeoutError if failure == "timeout" else subject.AppServerError)
+        )
+        with pytest.raises(error_type) as raised:
+            await manager.start("調査", str(tmp_path), launch_kind="explore")
+        if failure == "namespace":
+            assert isinstance(raised.value, subject.StartCandidateUnavailable)
+            assert raised.value.reason == "exploreSandboxNamespaceDenied"
+        else:
+            assert not isinstance(raised.value, subject.StartCandidateUnavailable)
+        assert not manager.sessions and not client.requests
+    assert probe.closed
+    params = probe.requests[0][1]
+    assert params["cwd"] == str(tmp_path)
+    assert params["sandboxPolicy"] == {"type": "readOnly"}
+    assert params["disableOutputCap"] is True
+    assert params["timeoutMs"] > 0
+    await manager.close()
+
+
+@pytest.mark.asyncio
+async def test_context_usage_notification_is_session_scoped(tmp_path: pathlib.Path) -> None:
+    """0.162.1の通知が持つ`last`だけを同じthread・turnへ配送し、累計と活動を混ぜない。"""
+    # codex-cli 0.162.1 generate-json-schemaのThreadTokenUsageUpdatedNotification。
+    session = state.SessionState("usage-thread", str(tmp_path), engine="codex", turn_id="usage-turn")
+    other = state.SessionState("other-thread", str(tmp_path), engine="codex", turn_id="other-turn")
+    manager = _InspectableAppServerManager({session.session_id: session, other.session_id: other})
+    initial_activity = session.updated_at
+
+    async def notify(thread: str, turn: str, tokens: Any, window: Any = 1000000) -> None:
+        await manager.handle_notification(
+            {
+                "method": "thread/tokenUsage/updated",
+                "params": {
+                    "threadId": thread,
+                    "turnId": turn,
+                    "tokenUsage": {
+                        "last": {"totalTokens": tokens},
+                        "total": {"totalTokens": 999999},
+                        "modelContextWindow": window,
+                    },
+                },
+            }
+        )
+
+    await notify(session.session_id, session.turn_id, 53500)
+    assert session.context_tokens == 53500 and session.context_window == 1000000
+    await notify("missing-thread", session.turn_id, 1)
+    await notify(other.session_id, session.turn_id, 2)
+    await notify(session.session_id, "old-turn", 3)
+    assert session.context_tokens == 53500 and other.context_tokens is None
+    await notify(session.session_id, session.turn_id, 1000)
+    assert session.context_tokens == 1000
+    await notify(session.session_id, session.turn_id, 0, None)
+    assert session.context_tokens == 0 and session.context_window is None
+    assert session.updated_at == initial_activity
+    await notify(session.session_id, session.turn_id, True)
+    assert session.context_tokens is None
+    await manager.close()

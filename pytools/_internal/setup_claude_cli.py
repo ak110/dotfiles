@@ -1,14 +1,12 @@
 """Claude Code公式ネイティブバイナリを導入または更新する。"""
 
-# 他の処理では不要な依存を、使用時まで遅延する。旧Pythonでは通常のimportとなる。
-__lazy_modules__ = {"httpx"}
-
 import logging
 import subprocess
 import sys
 from pathlib import Path
 
-import httpx
+# 他の処理で使わない依存は、使用時まで読み込まない。
+lazy import httpx
 
 from pytools._internal import common, log_format, post_apply_outcome, setup_cli_common
 
@@ -26,26 +24,43 @@ def run(client: httpx.Client | None = None) -> post_apply_outcome.PostApplyOutco
     """
     launcher = Path.home() / ".local" / "bin" / ("claude.exe" if sys.platform == "win32" else "claude")
     if setup_cli_common.is_windows_cli_running("claude", _PACKAGE, [launcher]):
-        logger.info(log_format.format_status("claude", "実行中のため導入と移行を次回へ延期"))
+        logger.info(
+            log_format.format_status(
+                "claude",
+                "実行中のため導入と移行を次回へ延期。Claude Codeを終了して`update-dotfiles`を再実行する",
+            ),
+        )
         return post_apply_outcome.PostApplyOutcome()
     if launcher.is_file():
         result = common.run_subprocess([str(launcher), "update"], timeout=_COMMAND_TIMEOUT, tag="claude")
     else:
         result = _install_native(client)
     if result is None or result.returncode != 0:
-        logger.warning(log_format.format_status("claude", f"導入または更新に失敗: {common.format_cli_error(result)}"))
+        logger.warning(
+            log_format.format_status(
+                "claude",
+                f"導入または更新に失敗: {common.format_cli_error(result)}。`update-dotfiles`を再実行する",
+            ),
+        )
         return post_apply_outcome.PostApplyOutcome()
     verification = common.run_subprocess([str(launcher), "--version"], timeout=30, tag="claude")
     if verification is None or verification.returncode != 0:
         logger.warning(
-            log_format.format_status("claude", f"正規版を確認できないため旧版を保持: {common.format_cli_error(verification)}")
+            log_format.format_status(
+                "claude",
+                f"正規版を確認できないため旧版を保持: {common.format_cli_error(verification)}。`update-dotfiles`を再実行する",
+            ),
         )
         return post_apply_outcome.PostApplyOutcome()
     setup_cli_common.prepend_path(launcher.parent)
     try:
         setup_cli_common.migrate_npm_launchers("claude", _PACKAGE, launcher, launcher.parent.parent)
     except RuntimeError as error:
-        return post_apply_outcome.PostApplyOutcome(changed=True, failure=str(error))
+        return post_apply_outcome.PostApplyOutcome(
+            changed=True,
+            failure=str(error),
+            next_action="問題を解消した後に`update-dotfiles`を再実行する。",
+        )
     return post_apply_outcome.PostApplyOutcome(changed=True)
 
 
@@ -59,6 +74,6 @@ def _install_native(client: httpx.Client | None) -> subprocess.CompletedProcess[
         http_timeout=_HTTP_TIMEOUT,
     )
     if reason:
-        logger.warning(log_format.format_status("claude", reason))
+        logger.warning(log_format.format_status("claude", f"{reason}。`update-dotfiles`を再実行する"))
         return None
     return result

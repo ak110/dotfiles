@@ -16,7 +16,7 @@ LOG_BACKUP_COUNT = 3
 class _StderrHandler(logging.StreamHandler):  # type: ignore[type-arg]
     """agents_serverが追加した標準エラー向けhandler。
 
-    同じloggerへ二重に追加しないための識別を、動的属性ではなく型で表す。
+    同じloggerへ二重に追加しないための識別を型で表す。
     """
 
 

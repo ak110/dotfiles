@@ -6,7 +6,7 @@
 TypeScriptの定数に置くと、モデルはplugin rootを解決してファイルの文字列を組み立てる必要がある。
 
 1行目の標識`PERIODIC_RECHECK_MARKER`も本モジュールが定め、UserPromptSubmitフックはこの標識で発火を機械注入と判定する。
-`atk`とフックの双方が読むため、`_hooks`ではなく`_common`に置く。
+`atk`とフックの双方が読むため、`_common`に置く。
 待機対象ID、成果物の絶対パス、コミット識別子、残工程と完了済み工程は、工程が進むと事実と一致しなくなるため本文へ含めない。
 セッション固有の経過時間起動の義務は、taskを持つ主体が測定コマンドと判定閾値を同じ要素の終了タグの前へ加えてtaskを作成し直す
 （`agent-toolkit:delegation`の`references/claude-code-runtime.md`「待機中の定期再確認と背景転換」）。

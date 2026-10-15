@@ -185,7 +185,7 @@ def test_subagent_transcript_path_does_not_identify_the_caller(tmp_path: pathlib
     """サブエージェント名を含む`transcript_path`だけでは呼出主体を分けない。
 
     Claude Codeはサブエージェント内で発火したフックでも`transcript_path`へ
-    セッション本体の記録を渡すため、判別に使うと全ての記録がメインへ倒れる。
+    セッション本体の記録を渡すため、判別に使うと全ての記録をメインのものと判定する。
     """
     local_session_id = "transcript-not-owner"
     _record_operation(

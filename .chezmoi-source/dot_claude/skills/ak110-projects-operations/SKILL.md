@@ -262,6 +262,7 @@ default branchで実行しているかと未コミット変更の有無を確認
 統一対象外として扱う。
 
 - `textlint-rule-prh`（dotfilesのみ）: Claude Codeのコンテキスト汚染を防ぐためtextlint系を特に厳しくする方針
+- Python対応・CI版集合（dotfilesと同梱agent-toolkit）: ユーザーが過去のPython版をサポートしないと決めたため、対応する版を1つ（現在は3.15）に限り、CIも同じ版で実行する。他プロジェクトのPython版matrixへそろえず、版宣言は将来版を許容する下限で表す
 - pytilpackの`docs.yaml`に`paths:`なし（pytilpackのみ）: mkdocstringsがPythonソースから
   ドキュメントを生成するため、ソース変更でもdocs workflowが起動する必要がある
 - Dependabot alertsの有効・無効（dotfiles・GLATasksは有効、pytilpackは無効）:

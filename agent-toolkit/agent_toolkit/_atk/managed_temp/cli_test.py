@@ -1,4 +1,4 @@
-"""_managed_tempの管理対象一時ディレクトリ境界を検証する。"""
+"""`atk managed-temp`のCLIの引数、結果行と終了コードを検証する。"""
 
 # pylint: disable=protected-access
 

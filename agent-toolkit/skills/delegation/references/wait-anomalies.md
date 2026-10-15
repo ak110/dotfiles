@@ -9,7 +9,7 @@
 - 終了コード10: 委譲元の状態に待機対象が登録されていないことを示し、委譲先の失敗とは別の事象である。起動応答と`atk agents list`でsessionの存在を確かめ、ホストの組み込み委譲で起動した対象はそのホストの委譲一覧と指定成果物で終端を観測する。監査記録は`docs/development/audit-records.md`の「agent-toolkit/skills/delegation/references/wait-anomalies.md：終了コードと呼び出しの失敗：2026年9月20日」にある
 - 待機対象の登録と`starting`を含む保持中sessionがともに0件で非0終了した場合は、回収対象が無いため再発行せず起動応答を確かめる。保持中sessionがあれば通常の待機上限まで待つ
 - ホストの上限で`atk agents wait`の呼び出し自体が失敗しても、sessionは実行を続けている。`atk agents list`で`status`を確かめてCLIを再実行し、停滞・中断・再起動の判定もこの`status`で行う
-- 委譲先か自身のツール呼び出しが終端statusを返さずに終わった場合（アイドル上限によるアボート、待機上限の超過、無応答のままの中断）は、実行基盤の欠陥として扱う。`agent-toolkit:bugfix`を起動して`agent-toolkit/skills/bugfix/SKILL.md`「問題を見つけたときの対処」へ送る。待機の継続判定もそれとは別に行う（続行判断だけで消費すると同じ欠陥が別のセッションで繰り返す）
+- 委譲先か自身のツール呼び出しが終端statusを返さずに終わった場合（アイドル上限によるアボート、待機上限の超過、無応答のままの中断）は、実行基盤の欠陥として扱う。`agent-toolkit:bugfix`を起動して`agent-toolkit/skills/bugfix/SKILL.md`「問題を見つけたときの対処」へ送る。待機の継続判定もそれとは別に行う（続行の判断だけで済ませると、同じ欠陥が別のセッションで繰り返し起きる）
 
 ## MCPサーバーの再起動後
 

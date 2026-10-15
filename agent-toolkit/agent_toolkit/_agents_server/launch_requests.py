@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import os
 import pathlib
@@ -213,6 +214,13 @@ def wrap_delivery_body(body: str) -> str:
     return auto_message(body, source="agents-server", kind="delivery")
 
 
+def with_launcher_record(body: str, context: Mapping[str, Any]) -> str:
+    """taskの起動本文へ、サーバーが解決した直接の委譲元情報を添える。"""
+    notice = auto_message(json.dumps(dict(context), ensure_ascii=False), source="agents-server", kind="launcher-record")
+    source_line, separator, remainder = body.partition("\n")
+    return source_line + "\n\n" + notice + separator + remainder
+
+
 def _validate_required_prompt_inputs(
     task_document: pathlib.Path,
     extra_params: Mapping[str, str],
@@ -283,7 +291,7 @@ def _default_handoff_path() -> pathlib.Path | None:
     if session_id is not None:
         try:
             entries = _managed_temp.list_managed_temp(_managed_temp.SESSION_TEMP_PREFIX, session_id=session_id)
-        except (_managed_temp.ManagedTempError, OSError):
+        except _managed_temp.ManagedTempError, OSError:
             entries = []
         recorded = entries[-1].get("path") if entries else None
         if isinstance(recorded, str) and pathlib.Path(recorded).is_dir():
@@ -291,7 +299,7 @@ def _default_handoff_path() -> pathlib.Path | None:
     if directory is None:
         try:
             directory = _managed_temp.create_managed_temp(_HANDOFF_TEMP_PREFIX)
-        except (_managed_temp.ManagedTempError, OSError):
+        except _managed_temp.ManagedTempError, OSError:
             _LOG.warning("省略された引き継ぎ記録先の代わりの記録先を用意できません", exc_info=True)
             return None
     while True:

@@ -241,7 +241,7 @@ class TestFailureHandling:
     """構築の失敗はスキップと数え、残る対象の構築を続ける。"""
 
     def test_continues_after_nonzero_exit(self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
-        """非0終了でも残る対象を実行し、失敗ではなくスキップを返す。"""
+        """非0終了でも残る対象を実行し、スキップを返す。"""
         calls = _setup(monkeypatch, tmp_path, warmup_returncode=1)
         _write_script(_codex_script(tmp_path / "codex", "1.0.0"))
 

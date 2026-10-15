@@ -1,5 +1,5 @@
 // 3画面（ワークアイテム・計画ファイル・セッション）が共有するナビゲーション。
-// 全画面は同じ文書に常駐し、画面登録契約は初期化処理`init`だけとする。
+// 全画面は同じ文書に常駐し、各画面が登録する処理は初期化処理`init`だけとする。
 import {setDrawerOpen} from "./common.js";
 
 const DRAWER_SCREENS = ["plans", "sessions"];

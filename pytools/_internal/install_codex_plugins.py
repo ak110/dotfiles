@@ -203,7 +203,7 @@ def _target(root: Path) -> tuple[str, str, str] | None:
         if not isinstance(entry, dict) or entry.get("name") != plugin_name or not _valid_version_name(version):
             return None
         return marketplace_name, plugin_name, version
-    except (OSError, json.JSONDecodeError, KeyError, IndexError, StopIteration, TypeError):
+    except OSError, json.JSONDecodeError, KeyError, IndexError, StopIteration, TypeError:
         return None
 
 
@@ -232,7 +232,7 @@ def _plugin_source(root: Path, marketplace_name: str, plugin_name: str) -> Path 
         candidate = (root / source["path"]).resolve()
         candidate.relative_to(root.resolve())
         return candidate
-    except (OSError, json.JSONDecodeError, KeyError, IndexError, StopIteration, TypeError, ValueError):
+    except OSError, json.JSONDecodeError, KeyError, IndexError, StopIteration, TypeError, ValueError:
         return None
 
 
@@ -293,7 +293,8 @@ def _restart_daemon_after_plugin_update(notices: list[post_apply_outcome.PostApp
     logger.warning(
         log_format.format_status(
             "codex plugins",
-            f"app-server daemonの自動再起動に失敗 (exit {exit_code if exit_code is not None else 'codeなし'})",
+            f"app-server daemonの自動再起動に失敗 (exit {exit_code if exit_code is not None else 'codeなし'})。"
+            "実行中のCodexセッションを終了し、codex app-server daemon restartを実行してください。",
         )
     )
     notices.append(_CODEX_PLUGIN_RESTART_NOTICE)
@@ -314,8 +315,7 @@ def _path_exists(path: Path) -> bool:
 def _is_link(path: Path) -> bool:
     if path.is_symlink():
         return True
-    is_junction = getattr(path, "is_junction", None)
-    return bool(is_junction is not None and is_junction())
+    return path.is_junction()
 
 
 def _unlink(path: Path) -> None:
@@ -345,7 +345,7 @@ def _install_hook_wrapper(root: Path) -> bool:
     """plugin有効化前に安定したhook入口をPATH上へ配置する。"""
     changed = False
     for name in ("atk-hook", "atk-hook.cmd") if os.name == "nt" else ("atk-hook",):
-        source = root / "agent-toolkit" / "bin" / name
+        source = root / "agent-toolkit" / "scripts" / name
         destination = _hook_bin() / name
         data = source.read_bytes()
         if destination.is_file() and destination.read_bytes() == data:
@@ -446,16 +446,33 @@ def _remove_unused_plugins() -> post_apply_outcome.PostApplyOutcome:
     for plugin_id in _UNUSED_PLUGINS:
         installed_data = _codex_json(["plugin", "list", "--json"])
         if installed_data is None:
-            logger.warning(log_format.format_status(plugin_id, "plugin一覧の取得に失敗したためスキップ"))
+            logger.warning(
+                log_format.format_status(
+                    plugin_id,
+                    "plugin一覧の取得に失敗したためスキップ。導入済みpluginを保持して処理は継続します。"
+                    "codex plugin list --jsonで原因を確認し、解消後にupdate-dotfilesを再実行してください。",
+                )
+            )
             continue
         state_known, installed = _installed(installed_data, plugin_id)
         if not state_known:
-            logger.warning(log_format.format_status(plugin_id, "plugin一覧の構造が不正なためスキップ"))
+            logger.warning(
+                log_format.format_status(
+                    plugin_id,
+                    "plugin一覧の構造が不正なためスキップ。導入済みpluginを保持して処理は継続します。"
+                    "codex plugin list --jsonの出力とCodexの版を添えてdotfilesの作者へ報告してください。",
+                )
+            )
             continue
         if installed is None:
             continue
         if not _command(["plugin", "remove", plugin_id]):
-            logger.warning(log_format.format_status(plugin_id, "plugin除去に失敗したため続行"))
+            logger.warning(
+                log_format.format_status(
+                    plugin_id,
+                    f"plugin除去に失敗したため続行。使用しない場合はcodex plugin remove {plugin_id}を実行してください。",
+                )
+            )
             continue
         changed = True
         _append_restart_notice_if_daemon_running(notices)
@@ -474,7 +491,7 @@ def _remove_legacy_links(root: Path) -> bool:
         try:
             target = path.resolve(strict=False)
             target.relative_to(source_root)
-        except (OSError, ValueError):
+        except OSError, ValueError:
             continue
         _unlink(path)
         changed = True
@@ -500,7 +517,11 @@ def run() -> post_apply_outcome.PostApplyOutcome:
     """
     codex = common.resolve_executable("codex")
     if codex is None:
-        logger.info(log_format.format_status("codex plugins", "codex CLIが見つからずスキップ"))
+        logger.info(
+            log_format.format_status(
+                "codex plugins", "codex CLIが見つからずスキップ。Codexを使わない場合は対応不要です（処理は継続した）。"
+            )
+        )
         return _outcome(False, [])
 
     token = _CODEX_EXECUTABLE.set(codex)
@@ -516,11 +537,24 @@ def run() -> post_apply_outcome.PostApplyOutcome:
         # （`install-claude.sh`・`install-claude.ps1`）は作業ツリーを前提にできないため、GitHubのmarketplaceを使う。
         target = _target(root)
         if target is None:
-            logger.warning(log_format.format_status("codex plugins", "Codex plugin manifestが不正なためスキップ"))
+            logger.warning(
+                log_format.format_status(
+                    "codex plugins",
+                    "Codex plugin manifestが不正なためスキップ。update-dotfilesを再実行し、解消しない場合は"
+                    f"{root / '.agents/plugins/marketplace.json'}と同ファイルのsourceが指すplugin.jsonの内容を"
+                    "dotfilesの作者へ報告してください。",
+                )
+            )
             return _outcome(changed, notices)
         marketplace_name, plugin_name, version = target
         if _plugin_source(root, marketplace_name, plugin_name) is None:
-            logger.warning(log_format.format_status("codex plugins", "Codex pluginのlocal sourceが不正なためスキップ"))
+            logger.warning(
+                log_format.format_status(
+                    "codex plugins",
+                    f"Codex pluginのlocal sourceが不正なためスキップ。{root / '.agents/plugins/marketplace.json'}の"
+                    "sourceが作業ツリー内の実在するディレクトリを指すか確認し、update-dotfilesを再実行してください。",
+                )
+            )
             return _outcome(changed, notices)
         marketplace_data = _codex_json(["plugin", "marketplace", "list", "--json"])
         if marketplace_data is None:
@@ -531,23 +565,48 @@ def run() -> post_apply_outcome.PostApplyOutcome:
                 return _outcome(changed, notices)
             changed = True
         elif registered_root != root.resolve():
-            logger.error(log_format.format_status("codex plugins", f"marketplace登録先が異なる: {registered_root}"))
+            logger.error(
+                log_format.format_status(
+                    "codex plugins",
+                    f"marketplace登録先が異なる: {registered_root}。登録先をこの作業ツリーへ変更する場合は"
+                    f'codex plugin marketplace remove "{marketplace_name}"を実行し、'
+                    f'codex plugin marketplace add "{root}"で登録してupdate-dotfilesを再実行してください。',
+                )
+            )
             return _outcome(changed, notices)
 
         plugin_id = f"{plugin_name}@{marketplace_name}"
         before = _codex_json(["plugin", "list", "--json"])
         if before is None:
-            logger.error(log_format.format_status("codex plugins", "更新前のplugin状態を取得できないため中止"))
+            logger.error(
+                log_format.format_status(
+                    "codex plugins",
+                    "更新前のplugin状態を取得できないため中止。codex plugin list --jsonで状態を確認し、"
+                    "取得できる状態にしてからupdate-dotfilesを再実行してください。",
+                )
+            )
             return _outcome(changed, notices)
         state_known, current = _installed(before, plugin_id)
         if not state_known:
-            logger.error(log_format.format_status("codex plugins", "更新前のplugin状態を取得できないため中止"))
+            logger.error(
+                log_format.format_status(
+                    "codex plugins",
+                    "更新前のplugin状態を取得できないため中止。codex plugin list --jsonで状態を確認し、"
+                    "取得できる状態にしてからupdate-dotfilesを再実行してください。",
+                )
+            )
             return _outcome(changed, notices)
         local_changed = _sync_local_plugin(root, marketplace_name, plugin_name, version, current, notices)
         return _outcome(changed or local_changed, notices)
     except RuntimeError as error:
         # 導入・更新とその後の状態確認の失敗。設定ファイルとランチャーの書き込みの失敗（OSError）は失敗として送出する。
-        logger.warning(log_format.format_status("codex plugins", f"導入または更新に失敗: {error}"))
+        logger.warning(
+            log_format.format_status(
+                "codex plugins",
+                f"導入または更新に失敗: {error}。codex plugin list --jsonで状態を確認し、"
+                "表示された原因を解消してからupdate-dotfilesを再実行してください。",
+            )
+        )
         return _outcome(False, notices)
     except Exception as error:
         _append_notices_to_exception(error, notices)

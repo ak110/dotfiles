@@ -178,7 +178,7 @@ function deliverOperationMessage(message, isError = false) {
     showToast(message, isError);
     return;
   }
-  // モーダルはtop layerへ描画され、ページ固定の通知は`::backdrop`の下へ入り、暗転して操作も受け付けない。
+  // モーダルはtop layerへ描画されるため、ページに固定した通知は`::backdrop`の下に隠れ、暗く表示されて操作も受け付けない。
   // 開いているダイアログがあるときは、そのダイアログ内の結果表示領域へ配送する。
   const name = dialog.id.replace(/-dialog$/, '');
   setTextMessage(`${name}-${isError ? 'alert' : 'status'}`, message);
@@ -222,7 +222,7 @@ function firstInvalid(inputs) {
     invalid.focus();
     const error = (invalid.getAttribute('aria-describedby') || '').split(/\s+/)
       .map(byId).find(element => element && !element.hidden);
-    // 入力欄だけのfocusでは直後のエラーが本文領域の下へ隠れるため、対応エラーを余裕のある位置へ置く。
+    // 入力欄へfocusするだけでは直後のエラー表示が本文領域の下に隠れるため、対応するエラーを表示領域の中央までスクロールする。
     if (error) error.scrollIntoView({block: 'center', behavior: 'instant'});
   }
   return invalid;
@@ -351,7 +351,7 @@ function entrySelectionFromUrl() {
   return state && filename ? {state, filename} : null;
 }
 
-// 一覧は再読込のたびに全行を再生成するため、コピー直後の表示は行の要素ではなく項目の識別子に対応付けて保持する。
+// 一覧は再読込のたびに全行を再生成するため、コピー直後の表示は項目の識別子に対応付けて保持する。
 const COPIED_LABEL_MS = 2000;
 const copiedLabelDeadlines = new Map();
 
@@ -461,16 +461,15 @@ function renderEmptyState() {
   create.hidden = true;
   if (entries.length) return;
   const periodLabel = PERIOD_LABELS[byId('period-filter').value];
+  allPeriods.hidden = !periodLabel;
   if (hasNonStateFilters() || !['active', 'all'].includes(byId('state-filter').value)) {
     message.textContent = '条件に一致する項目はありません。';
     clear.hidden = false;
   } else if (byId('state-filter').value === 'active') {
     message.textContent = periodLabel ? `${periodLabel}に作成された対応中の項目はありません。` : '対応中の項目はありません。';
     allStates.hidden = false;
-    allPeriods.hidden = !periodLabel;
   } else if (periodLabel) {
     message.textContent = `${periodLabel}に作成された項目はありません。`;
-    allPeriods.hidden = false;
   } else {
     message.textContent = '項目はまだありません。';
     create.hidden = false;

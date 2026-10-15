@@ -126,7 +126,7 @@ def _relative_to(path: pathlib.Path, root: pathlib.Path) -> pathlib.PurePath | N
     """pathがroot配下ならroot相対値を返す。"""
     try:
         return _resolve(path).relative_to(_resolve(root))
-    except (OSError, ValueError):
+    except OSError, ValueError:
         return None
 
 
@@ -255,7 +255,7 @@ def _creation_epoch(path: pathlib.Path) -> float | None:
 def _birth_epoch(path: pathlib.Path) -> float:
     """保存先の年月を決める日時を返す。
 
-    作成日時を取得できない環境では更新日時へ後退する。
+    作成日時を取得できない環境では更新日時を使う。
     保存先の年月は更新日時からも決まるため、取得不能を停止条件にしない。
     """
     creation = _creation_epoch(path)

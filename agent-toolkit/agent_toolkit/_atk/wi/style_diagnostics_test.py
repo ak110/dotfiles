@@ -11,7 +11,7 @@ from agent_toolkit._atk.wi import style_diagnostics
 def test_report_preserves_every_warning_and_distinguishes_stderr(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], agent: bool
 ) -> None:
-    """短い2警告も全量を保持し、判断済みの題材以外の警告を読める。"""
+    """短い2件の警告も全量を保持し、エージェント環境では保存先のファイルから、それ以外では標準エラーから全ての警告を読める。"""
     monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
     if agent:
         monkeypatch.setenv("CLAUDECODE", "1")

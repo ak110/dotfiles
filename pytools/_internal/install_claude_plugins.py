@@ -64,10 +64,17 @@ def run() -> post_apply_outcome.PostApplyOutcome:
     try:
         changed, recommendations, disable_failed_count = _install_plugins()
     except RuntimeError as error:
-        logger.warning(log_format.format_status("plugins", f"導入または更新に失敗: {error}"))
+        logger.warning(
+            log_format.format_status("plugins", f"導入または更新に失敗: {error}。`update-dotfiles`を再実行する"),
+        )
         return post_apply_outcome.PostApplyOutcome()
     failure = f"外部plugin {disable_failed_count} 件の自動無効化に失敗" if disable_failed_count else None
-    return post_apply_outcome.PostApplyOutcome(changed=changed, recommendations=tuple(recommendations), failure=failure)
+    return post_apply_outcome.PostApplyOutcome(
+        changed=changed,
+        recommendations=tuple(recommendations),
+        failure=failure,
+        next_action="`update-dotfiles`を再実行して外部pluginの無効化をやり直す。" if failure is not None else None,
+    )
 
 
 def _install_plugins() -> tuple[bool, list[str], int]:
@@ -83,13 +90,23 @@ def _install_plugins() -> tuple[bool, list[str], int]:
 
     dotfiles_root = common.find_dotfiles_root()
     if dotfiles_root is None:
-        logger.info(log_format.format_status("plugins", "dotfiles ルート (marketplace.json) が見つからずスキップ"))
+        logger.info(
+            log_format.format_status(
+                "plugins",
+                "dotfiles ルート (marketplace.json) が見つからずスキップ。`update-dotfiles`を再実行する",
+            ),
+        )
         return external_changed, [], 0
 
     # 対象プラグインは marketplace.json の plugins[] 全件から動的に決める。
     target_versions, deprecated_names = _read_target_info(dotfiles_root)
     if not target_versions and not deprecated_names:
-        logger.info(log_format.format_status("plugins", "marketplace.json に対象 plugin が無いためスキップ"))
+        logger.info(
+            log_format.format_status(
+                "plugins",
+                "marketplace.json に対象 plugin が無いためスキップ。導入対象が無いため対応不要",
+            ),
+        )
         return external_changed, [], 0
 
     if not claude_marketplace.ensure_marketplace():
@@ -101,7 +118,12 @@ def _install_plugins() -> tuple[bool, list[str], int]:
     if raw_data is None:
         raw_data = _get_installed_plugins_raw()
         if raw_data is None:
-            logger.info(log_format.format_status("plugins", "インストール済み plugin 一覧の取得に失敗したためスキップ"))
+            logger.info(
+                log_format.format_status(
+                    "plugins",
+                    "インストール済み plugin 一覧の取得に失敗したためスキップ。`update-dotfiles`を再実行する",
+                ),
+            )
             return external_changed, [], 0
 
     any_change = False
@@ -158,7 +180,9 @@ def _install_plugins() -> tuple[bool, list[str], int]:
         elif is_directory_type:
             # directory 型登録が健全かつ version 一致の場合、dotfiles 側の編集を反映するため
             # `plugin install` を再実行してキャッシュを最新化する。
-            logger.info(log_format.format_status(name, f"最新 ({current or '不明'}) のため directory 型キャッシュを再同期"))
+            logger.info(
+                log_format.format_status(name, f"最新 ({current or '不明'}) のため directory 型キャッシュを再同期"),
+            )
             if _install_plugin(name):
                 any_change = True
                 resynced_count += 1
@@ -192,7 +216,7 @@ def _install_plugins() -> tuple[bool, list[str], int]:
             + (f" / 再同期 {resynced_count} 件" if resynced_count else "")
             + (f" / 自動無効化 {disabled_count} 件" if disabled_count else "")
             + (f" / 失敗 {failed_count} 件" if failed_count else ""),
-        )
+        ),
     )
     # CLIの終了コードだけでなく、Claude Codeが次回起動時に読む実体を完了条件とする。
     _verify_target_plugins(target_versions, failed_operations)
@@ -205,7 +229,12 @@ def _install_external_marketplaces() -> bool:
     for marketplace_name, source, plugin_id in _EXTERNAL_MARKETPLACES:
         marketplace_data = _get_marketplaces_raw()
         if marketplace_data is None:
-            logger.warning(log_format.format_status(plugin_id, "marketplace一覧の取得に失敗したためスキップ"))
+            logger.warning(
+                log_format.format_status(
+                    plugin_id,
+                    "marketplace一覧の取得に失敗したためスキップ。`update-dotfiles`を再実行する",
+                ),
+            )
             continue
         marketplace = _marketplace_entry(marketplace_data, marketplace_name)
         if marketplace is None:
@@ -217,8 +246,9 @@ def _install_external_marketplaces() -> bool:
                 logger.warning(
                     log_format.format_status(
                         plugin_id,
-                        f"marketplace登録に失敗したためスキップ: {common.format_cli_error(result)}",
-                    )
+                        f"marketplace登録に失敗したためスキップ: {common.format_cli_error(result)}。"
+                        f"`claude plugin marketplace add {source} --scope=user`を実行する",
+                    ),
                 )
                 continue
             changed = True
@@ -228,14 +258,22 @@ def _install_external_marketplaces() -> bool:
             logger.error(
                 log_format.format_status(
                     plugin_id,
-                    f"marketplace取得元が一致しないためスキップ: 期待値 {source}",
-                )
+                    "marketplace取得元が一致しないためスキップ: 期待値 "
+                    f"{source}。"
+                    f"`claude plugin marketplace remove {marketplace_name}`の後に`claude "
+                    f"plugin marketplace add {source} --scope=user`を実行する",
+                ),
             )
             continue
 
         installed_data = _get_installed_plugins_raw()
         if installed_data is None:
-            logger.warning(log_format.format_status(plugin_id, "plugin一覧の取得に失敗したためスキップ"))
+            logger.warning(
+                log_format.format_status(
+                    plugin_id,
+                    "plugin一覧の取得に失敗したためスキップ。`update-dotfiles`を再実行する",
+                ),
+            )
             continue
         if plugin_id in _user_scope_plugin_ids(installed_data):
             continue
@@ -247,8 +285,10 @@ def _install_external_marketplaces() -> bool:
             logger.warning(
                 log_format.format_status(
                     plugin_id,
-                    f"installに失敗したため続行: {common.format_cli_error(result)}",
-                )
+                    f"installに失敗したため続行: {common.format_cli_error(result)}。"
+                    f"`claude plugin install {plugin_id} --scope=user "
+                    "-y`を実行する",
+                ),
             )
             continue
         changed = True
@@ -383,7 +423,7 @@ def _read_installed_plugins_from_file() -> list[dict[str, object]] | None:
     """
     try:
         data = json.loads(claude_common.INSTALLED_PLUGINS_PATH.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
+    except OSError, json.JSONDecodeError:
         return None
     if not isinstance(data, dict):
         return None
@@ -408,10 +448,22 @@ def _read_installed_plugins_from_file() -> list[dict[str, object]] | None:
 def _prerequisites_ok() -> bool:
     """前提条件 (claude と uv の両方が PATH にあるか) を確認する。"""
     if common.resolve_executable("claude", preferred_directories=(Path.home() / ".local" / "bin",)) is None:
-        logger.info(log_format.format_status("plugins", "claude CLI 未検出のためスキップ"))
+        logger.info(
+            log_format.format_status(
+                "plugins",
+                "claude CLI 未検出のためスキップ。`update-dotfiles`を再実行してClaude Codeを導入する",
+            ),
+        )
         return False
     if common.resolve_executable("uv", preferred_directories=(Path.home() / ".local" / "bin",)) is None:
-        logger.info(log_format.format_status("plugins", "uv CLI 未検出のためスキップ (plugin hook はuvプロジェクトを使う)"))
+        logger.info(
+            log_format.format_status(
+                "plugins",
+                "uv CLI 未検出のためスキップ (plugin hook はuvプロジェクトを使う)。"
+                "https://docs.astral.sh/uv/getting-started/installation/ "
+                "の手順でuvを導入して`update-dotfiles`を再実行する",
+            ),
+        )
         return False
     return True
 
@@ -424,7 +476,13 @@ def _get_installed_plugins_raw() -> object | None:
     try:
         return json.loads(result.stdout)
     except json.JSONDecodeError:
-        logger.info(log_format.format_status("plugins", "`claude plugin list --json` の出力 JSON を解析できませんでした"))
+        logger.info(
+            log_format.format_status(
+                "plugins",
+                "`claude plugin list --json` の出力 JSON を解析できませんでした。"
+                "`claude plugin list --json`の出力を確認して`update-dotfiles`を再実行する",
+            ),
+        )
         return None
 
 
@@ -496,7 +554,13 @@ def _read_target_info(dotfiles_root: Path) -> tuple[dict[str, str], set[str]]:
     try:
         data = json.loads(manifest.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as e:
-        logger.info(log_format.format_status("plugins", f"marketplace.json の読み込みに失敗: {e}"))
+        logger.info(
+            log_format.format_status(
+                "plugins",
+                f"marketplace.json の読み込みに失敗: {e}。"
+                f"{manifest}の読み取り権限とJSONの書式を修正して`update-dotfiles`を再実行する",
+            ),
+        )
         return {}, set()
     plugins = data.get("plugins") if isinstance(data, dict) else None
     if not isinstance(plugins, list):
@@ -547,7 +611,14 @@ def _project_scope_paths(name: str, raw_data: object) -> list[Path]:
             continue
         project_path = entry.get("projectPath")
         if not isinstance(project_path, str) or not project_path:
-            logger.info(log_format.format_status(name, "project scope エントリに projectPath が無いためスキップ"))
+            logger.info(
+                log_format.format_status(
+                    name,
+                    "project scope エントリに projectPath が無いためスキップ。"
+                    "~/.claude/plugins/installed_plugins.jsonでこのpluginの不要なproject "
+                    "scopeエントリを手動削除する",
+                ),
+            )
             continue
         paths.append(Path(project_path))
     return paths
@@ -561,7 +632,13 @@ def _uninstall_deprecated(name: str, raw_data: object) -> bool:
     if result is not None and result.returncode == 0:
         logger.info(log_format.format_status(name, "deprecated のためアンインストールしました"))
         return True
-    logger.info(log_format.format_status(name, f"アンインストールに失敗: {common.format_cli_error(result)}"))
+    logger.info(
+        log_format.format_status(
+            name,
+            f"アンインストールに失敗: {common.format_cli_error(result)}。"
+            f"`claude plugin uninstall {name}@{claude_common.MARKETPLACE_NAME}`を実行する",
+        ),
+    )
     return False
 
 
@@ -578,7 +655,7 @@ def _cleanup_old_project_scope(name: str, raw_data: object) -> None:
                     name,
                     f"project scope の除去対象 {project_path} が存在しないためスキップ "
                     "(必要に応じて ~/.claude/plugins/installed_plugins.json から手動で削除)",
-                )
+                ),
             )
             continue
         result = claude_common.run_claude(
@@ -588,7 +665,14 @@ def _cleanup_old_project_scope(name: str, raw_data: object) -> None:
         if result is not None and result.returncode == 0:
             logger.info(log_format.format_status(name, f"project scope を除去しました ({project_path})"))
         else:
-            logger.info(log_format.format_status(name, f"project scope の除去に失敗 (続行): {common.format_cli_error(result)}"))
+            logger.info(
+                log_format.format_status(
+                    name,
+                    f"project scope の除去に失敗 (続行): {common.format_cli_error(result)}。"
+                    f"{project_path}へ移動して`claude plugin uninstall "
+                    f"{name}@{claude_common.MARKETPLACE_NAME} --scope=project`を実行する",
+                ),
+            )
 
 
 def _install_plugin(name: str) -> bool:
@@ -598,7 +682,14 @@ def _install_plugin(name: str) -> bool:
         timeout=claude_common.PLUGIN_OPERATION_TIMEOUT,
     )
     if result is None or result.returncode != 0:
-        logger.info(log_format.format_status(name, f"install に失敗: {common.format_cli_error(result)}"))
+        logger.info(
+            log_format.format_status(
+                name,
+                f"install に失敗: {common.format_cli_error(result)}。"
+                f"`claude plugin install {name}@{claude_common.MARKETPLACE_NAME} "
+                "--scope=user`を実行する",
+            ),
+        )
         return False
     logger.info(log_format.format_status(name, "インストールしました"))
     return True
@@ -611,7 +702,14 @@ def _update_plugin(name: str) -> bool:
         timeout=claude_common.PLUGIN_OPERATION_TIMEOUT,
     )
     if result is None or result.returncode != 0:
-        logger.info(log_format.format_status(name, f"update に失敗: {common.format_cli_error(result)}"))
+        logger.info(
+            log_format.format_status(
+                name,
+                f"update に失敗: {common.format_cli_error(result)}。"
+                f"`claude plugin update {name}@{claude_common.MARKETPLACE_NAME} "
+                "--scope=user`を実行する",
+            ),
+        )
         return False
     logger.info(log_format.format_status(name, "更新しました"))
     return True
@@ -624,7 +722,13 @@ def _disable_plugin(plugin_id: str) -> bool:
     """
     result = claude_common.run_claude(["plugin", "disable", plugin_id, "--scope=user"])
     if result is None or result.returncode != 0:
-        logger.info(log_format.format_status(plugin_id, f"disable に失敗: {common.format_cli_error(result)}"))
+        logger.info(
+            log_format.format_status(
+                plugin_id,
+                f"disable に失敗: {common.format_cli_error(result)}。"
+                f"`claude plugin disable {plugin_id} --scope=user`を実行する",
+            ),
+        )
         return False
     logger.info(log_format.format_status(plugin_id, "推奨設定に従って無効化しました"))
     return True
@@ -654,7 +758,7 @@ def _plugin_cache_directory(name: str) -> Path | None:
     """`installed_plugins.json` が保持する user scope の導入先ディレクトリを返す。"""
     try:
         data = json.loads(claude_common.INSTALLED_PLUGINS_PATH.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
+    except OSError, json.JSONDecodeError:
         return None
     plugins = data.get("plugins") if isinstance(data, dict) else None
     entries = plugins.get(f"{name}@{claude_common.MARKETPLACE_NAME}") if isinstance(plugins, dict) else None
@@ -690,12 +794,23 @@ def _ensure_plugin_cache_complete(name: str) -> bool:
     cache_dir = _plugin_cache_directory(name)
     if cache_dir is None:
         source = log_format.home_short(claude_common.INSTALLED_PLUGINS_PATH)
-        logger.warning(log_format.format_status(name, f"plugin cache の導入先を {source} から解決できず検査を省略"))
+        logger.warning(
+            log_format.format_status(
+                name,
+                f"plugin cache の導入先を {source} から解決できず検査を省略。"
+                "`claude plugin list --json`でこのpluginの導入状態を確認して`update-dotfiles`を再実行する",
+            ),
+        )
         return False
     if not cache_dir.is_relative_to(cache_root):
         # 削除の対象は plugin cache の内側だけとし、想定外の位置にある導入先は削除しない。
         short = log_format.home_short(cache_dir)
-        logger.warning(log_format.format_status(name, f"plugin cache の外にある導入先のため検査を省略: {short}"))
+        logger.warning(
+            log_format.format_status(
+                name,
+                f"plugin cache の外にある導入先のため検査を省略: {short}。配置を保持したため対応不要（処理は継続した）",
+            ),
+        )
         return False
     missing = _missing_plugin_cache_files(cache_dir)
     if not missing:
@@ -703,8 +818,10 @@ def _ensure_plugin_cache_complete(name: str) -> bool:
     logger.warning(
         log_format.format_status(
             name,
-            f"plugin cache に {', '.join(missing)} が無いため削除して再インストールします: {log_format.home_short(cache_dir)}",
-        )
+            f"plugin cache に {', '.join(missing)} が無いため削除して再インストールします: "
+            f"{log_format.home_short(cache_dir)}。"
+            "対応不要（処理は継続した）",
+        ),
     )
     shutil.rmtree(cache_dir, ignore_errors=True)
     if not _install_plugin(name):

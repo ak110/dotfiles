@@ -25,7 +25,10 @@ def run() -> post_apply_outcome.PostApplyOutcome:
     try:
         current, _reg_type = winutils.read_user_env_var(_MSYS_VAR_NAME)
     except OSError as e:
-        return post_apply_outcome.PostApplyOutcome(failure=f"{_MSYS_VAR_NAME} の読み取りに失敗: {e}")
+        return post_apply_outcome.PostApplyOutcome(
+            failure=f"{_MSYS_VAR_NAME} の読み取りに失敗: {e}",
+            next_action="問題を解消した後に`update-dotfiles`を再実行する。",
+        )
 
     if current == _MSYS_VAR_VALUE:
         return post_apply_outcome.PostApplyOutcome()
@@ -34,7 +37,10 @@ def run() -> post_apply_outcome.PostApplyOutcome:
     try:
         winutils.write_user_env_var(_MSYS_VAR_NAME, _MSYS_VAR_VALUE, wr.REG_SZ)
     except OSError as e:
-        return post_apply_outcome.PostApplyOutcome(failure=f"{_MSYS_VAR_NAME} の書き込みに失敗: {e}")
+        return post_apply_outcome.PostApplyOutcome(
+            failure=f"{_MSYS_VAR_NAME} の書き込みに失敗: {e}",
+            next_action="問題を解消した後に`update-dotfiles`を再実行する。",
+        )
     winutils.broadcast_environment_change()
     logger.info(log_format.format_status("MSYS env", f"{_MSYS_VAR_NAME}={_MSYS_VAR_VALUE} を設定"))
     return post_apply_outcome.PostApplyOutcome(changed=True)

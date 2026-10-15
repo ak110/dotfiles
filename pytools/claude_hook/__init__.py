@@ -49,7 +49,7 @@ def main(argv: list[str] | None = None) -> int:
     arguments = sys.argv[1:] if argv is None else argv
     if not arguments or arguments[0] not in _SUBCOMMANDS:
         print(
-            f"[dotfiles-claude-hook] usage: dotfiles-claude-hook <{'|'.join(sorted(_SUBCOMMANDS))}>",
+            (f"[dotfiles-claude-hook] usage: dotfiles-claude-hook <{'|'.join(sorted(_SUBCOMMANDS))}>"),
             file=sys.stderr,
         )
         return 0
@@ -58,13 +58,24 @@ def main(argv: list[str] | None = None) -> int:
         payload_text = sys.stdin.buffer.read().decode("utf-8", errors="strict")
     except UnicodeDecodeError as exc:
         print(
-            f"[claude_hook] stdinのUTF-8デコードに失敗したためフック処理を通過させる: {exc}",
+            (
+                f"[claude_hook] stdinのUTF-8デコードに失敗したためフック処理を通過させる: "
+                f"{exc}。"
+                f"今回の操作は続行できます。"
+                f"再発する場合はフックへの入力をUTF-8にそろえてください。"
+            ),
             file=sys.stderr,
         )
         return 0
     try:
         module = importlib.import_module(_MODULE_NAMES[arguments[0]])
     except Exception:  # noqa: BLE001 -- 読込失敗でフック全体を停止させないため広範に捕捉
+        print(
+            "[claude_hook] モジュールの読み込みに失敗したためフック処理を通過させました。"
+            "update-dotfilesを再実行してください。開発環境ではdotfilesルートでmake syncを実行してください。"
+            "再発する場合は以下のtracebackをdotfilesのIssueへ報告してください。",
+            file=sys.stderr,
+        )
         traceback.print_exc()
         return 0
     try:
@@ -74,7 +85,12 @@ def main(argv: list[str] | None = None) -> int:
         frame = tb[-1] if tb else None
         location = f" ({pathlib.Path(frame.filename).name}:{frame.lineno})" if frame is not None else ""
         label = arguments[0]
-        print(f"[{label}] 想定外エラー: {type(exc).__name__}: {exc}{location}", file=sys.stderr)
+        print(
+            f"[{label}] 想定外エラー: {type(exc).__name__}: {exc}{location}。"
+            "フック処理を通過させます。今回の操作は続行できます。"
+            "再発する場合は以下のtracebackをdotfilesのIssueへ報告してください。",
+            file=sys.stderr,
+        )
         traceback.print_exc()
         if arguments[0] in _APPROVE_FALLBACK_SUBCOMMANDS:
             approve = getattr(module, "_approve", None)

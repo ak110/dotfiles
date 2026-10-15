@@ -45,7 +45,7 @@ def _absolute_directory(value: str) -> pathlib.Path:
 
 def build_parser(parser: argparse.ArgumentParser) -> None:
     """`atk run-command`の引数を登録する。"""
-    parser.add_argument("--cwd", type=_absolute_directory, metavar="DIR", help="子プロセスの絶対作業ディレクトリ。")
+    parser.add_argument("--cwd", type=_absolute_directory, metavar="DIR", help="子プロセスの作業ディレクトリの絶対パス。")
     parser.add_argument("--timeout", type=_positive_seconds, metavar="SECONDS", help="正の実行上限秒数。")
     parser.add_argument(
         "--record",
@@ -99,7 +99,7 @@ def _git_state(cwd: pathlib.Path) -> tuple[str | None, list[str] | None]:
             text=True,
             timeout=_GIT_STATE_TIMEOUT_SECONDS,
         )
-    except (OSError, subprocess.SubprocessError):
+    except OSError, subprocess.SubprocessError:
         status = None
     status_lines = status.stdout.splitlines() if status is not None and status.returncode == 0 else None
     if head is None or status_lines is None:
@@ -150,7 +150,7 @@ def _metadata(
 
 
 def execute(argv: list[str], cwd: pathlib.Path, timeout: float | None) -> tuple[dict[str, Any], int, str | None]:
-    """有限の子実行と記録保存を行い、表示から独立した結果・終了コード・保存失敗を返す。"""
+    """終了する子プロセスを実行して記録を保存し、表示とは別に結果・終了コード・保存の失敗を返す。"""
     child_env = dict(os.environ)
     strip_inherited_venv(child_env)
     git_head, git_status = _git_state(cwd)

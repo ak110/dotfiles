@@ -11,12 +11,14 @@ from typing import Any
 
 from agent_toolkit._agents_server import (
     backends,
+    record_paths,
     resource_snapshot,
     shared_layout,
     shared_roots,
     status_file,
     unavailable_candidates,
 )
+from agent_toolkit._agents_server.file_operations import finish_task, run_file_operation
 from agent_toolkit._agents_server.resume_waits import record_unobserved_sessions
 from agent_toolkit._agents_server.state import (
     ResumePrompt,
@@ -80,6 +82,7 @@ class ManagerBase:
         self._auto_resume_task: asyncio.Task[None] | None = None
         self._retention_timers: dict[str, asyncio.TimerHandle] = {}
         self._resource_release_tasks: dict[str, asyncio.Task[None]] = {}
+        self._candidate_tasks: set[asyncio.Task[None]] = set()
         self._status_writer: status_file.StatusFileWriter | None
         if status_writer is _DEFAULT_STATUS_WRITER:
             identity = shared_roots.resolve_status_file_identity(os.environ)
@@ -127,19 +130,21 @@ class ManagerBase:
         self._expire_session(session.session_id)
 
     def _finish_resource_release(self, session_id: str, task: asyncio.Task[None]) -> None:
-        """終了した解放taskを保持せず、失敗した場合も診断を失わない。"""
-        if self._resource_release_tasks.get(session_id) is task:
-            del self._resource_release_tasks[session_id]
+        """解放taskの失敗を記録し、成功済みのtaskを保持しない。"""
         if not task.cancelled() and (error := task.exception()) is not None:
             _LOG.error("保持期限に到達したsessionの資源解放に失敗しました: %s", error, exc_info=error)
+        elif self._resource_release_tasks.get(session_id) is task:
+            del self._resource_release_tasks[session_id]
 
     async def _wait_for_resource_release(self, session_id: str) -> None:
         """期限解放が進行中なら完了を待ち、再開したthreadを遅れて解放する競合を防ぐ。"""
         task = self._resource_release_tasks.get(session_id)
         if task is not None:
-            await asyncio.shield(task)
-            if self._resource_release_tasks.get(session_id) is task:
-                del self._resource_release_tasks[session_id]
+            try:
+                await finish_task(task)
+            finally:
+                if task.done() and self._resource_release_tasks.get(session_id) is task:
+                    del self._resource_release_tasks[session_id]
 
     def _record_resources(self, session: SessionState, event: str) -> None:
         """自身が所有するsessionの遷移だけを共有状態とホスト資源へ対応付ける。"""
@@ -158,7 +163,14 @@ class ManagerBase:
         assert self._status_writer is not None
         while True:
             await asyncio.sleep(status_file.HEARTBEAT_INTERVAL_SECONDS)
-            self._status_writer.flush()
+            try:
+                await self._status_writer.flush_async()
+            except OSError:
+                _LOG.exception(
+                    "heartbeatの保存に失敗しました。次回の更新で再試行します: writer=%s sessions=%s",
+                    self._status_writer.path,
+                    sorted(self.sessions),
+                )
 
     def _backend(self, engine: str) -> backends.Backend:
         """engineのbackendを返す。初めて使うengineではbackendを生成して保持する。"""
@@ -187,16 +199,23 @@ class ManagerBase:
         self._cancel_retention_timer(session_id)
         session = self.sessions.pop(session_id, None)
         if session is not None:
-            task = asyncio.create_task(self._backend(session.engine).release_session(session))
+            resume_state = SessionResumeState.from_session(session)
+            task = asyncio.create_task(self._release_expired_session(session, resume_state))
             self._resource_release_tasks[session_id] = task
             task.add_done_callback(lambda completed: self._finish_resource_release(session_id, completed))
-            if session.publish_registry:
-                session_registry.release(session_id, reason="retention_expired")
-            resume_state = SessionResumeState.from_session(session)
             self.expired_sessions[session_id] = resume_state
             if self._status_writer is not None:
-                self._status_writer.retain_result(resume_state)
                 self._status_writer.schedule()
+
+    async def _release_expired_session(self, session: SessionState, resume_state: SessionResumeState) -> None:
+        try:
+            await session.drain_registration()
+            if session.publish_registry:
+                await run_file_operation(session_registry.release, session.session_id, reason="retention_expired")
+            if self._status_writer is not None:
+                await self._status_writer.retain_result_async(resume_state)
+        finally:
+            await self._backend(session.engine).release_session(session)
 
     def _launcher_session_id(self) -> str | None:
         """作成するsessionの委譲元sessionの識別子を返す。
@@ -210,6 +229,24 @@ class ManagerBase:
                 return launcher
         codex_thread_id = os.environ.get("CODEX_THREAD_ID")
         return codex_thread_id if codex_thread_id and shared_layout.valid_session_id(codex_thread_id) else None
+
+    def launcher_record_context(self) -> dict[str, Any]:
+        """直接の委譲元と、一意に解決した記録ファイルをtask本文へ渡す。"""
+        launcher = self._launcher_session_id()
+        if launcher is None:
+            return {"status": "unresolved"}
+        context: dict[str, Any] = {"launcher_session_id": launcher}
+        try:
+            record = record_paths.find_session_record(launcher)
+        except OSError as error:
+            _LOG.warning("委譲元の記録を取得できません: session_id=%s", launcher, exc_info=True)
+            return {**context, "status": "unreadable", "reason": str(error)}
+        if record is None or not record.paths:
+            return {**context, "status": "missing"}
+        context["record_engine"] = record.engine
+        if len(record.paths) != 1:
+            return {**context, "status": "ambiguous", "record_candidates": [str(p.resolve()) for p in record.paths]}
+        return {**context, "status": "resolved", "record_path": str(record.paths[0].resolve())}
 
     def _carry_over_unavailable_candidate(self, session: SessionState) -> None:
         """可用性を理由に終端した候補を、同じ起動条件の次回へ引き継ぐ。
@@ -225,13 +262,36 @@ class ManagerBase:
         reason = self._unavailable_reason(session)
         if reason is None or candidate is None or session.model_type is None:
             return
-        unavailable_candidates.record_unavailable_candidate(
-            session.model_type,
-            session.launch_kind,
-            candidate,
-            reason,
-            now=datetime.datetime.now(datetime.UTC),
+        task = asyncio.create_task(
+            run_file_operation(
+                unavailable_candidates.record_unavailable_candidate,
+                session.model_type,
+                session.launch_kind,
+                candidate,
+                reason,
+                now=datetime.datetime.now(datetime.UTC),
+            )
         )
+        self._candidate_tasks.add(task)
+        task.add_done_callback(self._finish_candidate_record)
+
+    def _finish_candidate_record(self, task: asyncio.Task[None]) -> None:
+        if not task.cancelled() and (error := task.exception()) is not None:
+            _LOG.error("候補除外記録の保存に失敗しました", exc_info=error)
+        else:
+            self._candidate_tasks.discard(task)
+
+    async def _drain_candidate_records(self) -> None:
+        """保存失敗も呼出元へ渡し、観測済みのtaskを保持し続けない。"""
+        tasks = tuple(self._candidate_tasks)
+        try:
+            if tasks:
+                results = await asyncio.gather(*tasks, return_exceptions=True)
+                for result in results:
+                    if isinstance(result, BaseException):
+                        raise result
+        finally:
+            self._candidate_tasks.difference_update(task for task in tasks if task.done())
 
     def _record_pending_unobserved_child_sessions(self, session: SessionState) -> None:
         """自動再開をまたいで保持した未観測の孫sessionを終端結果へ併合する。"""

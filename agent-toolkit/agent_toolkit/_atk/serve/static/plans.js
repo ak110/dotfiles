@@ -28,7 +28,7 @@ let hostStatus = {};
 let rootStatus = {};
 // renderFilesが最後に描画したエントリ列（フィルタ適用後の全件）。
 // ↑↓ナビゲーションは選択中項目の前後インデックスをこの列から算出する。
-// DOM化対象は先頭から`visibleLimit`件のみで、超過分は番兵IntersectionObserverで段階拡張する。
+// DOM化対象は先頭から`visibleLimit`件のみで、残りは末尾の番兵をIntersectionObserverで検出して段階的に描画する。
 let visibleFiles = [];
 let mermaidLoadPromise = null;
 const MERMAID_CDN_URL = "https://cdn.jsdelivr.net/npm/mermaid@12.0.0/dist/mermaid.min.js";
@@ -50,8 +50,8 @@ const SEARCH_SUPERSEDED_RETRIES = 3;
 const SEARCH_SUPERSEDED_RETRY_MS = 200;
 
 // 一覧描画件数の初期上限と拡張ステップ。
-// `~/.claude/plans/`が数百件規模に達するとフィルタ入力・スクロール・差分更新の比例コストが顕在化するため、
-// 初期はフィルタ後の先頭100件のみDOM化し、末尾の番兵が可視化されるたびに100件ずつ拡張する。
+// `~/.claude/plans/`が数百件規模に達するとフィルタ入力・スクロール・差分更新の件数に比例した処理時間が目立つため、
+// 初期はフィルタ後の先頭100件のみDOM化し、末尾の番兵が可視範囲に入るたびに100件ずつ拡張する。
 const VISIBLE_FILES_INITIAL = 100;
 const VISIBLE_FILES_STEP = 100;
 let visibleLimit = VISIBLE_FILES_INITIAL;
@@ -224,7 +224,7 @@ function updateFileItem(item, file) {
 }
 
 function renderFiles() {
-  // ファイル一覧を差分更新する。innerHTMLの全消去ではなく既存ノードを再利用することで、
+  // ファイル一覧を差分更新する。既存ノードを再利用することで、
   // ファイル数が多い環境でのフィルタ入力遅延・スクロール位置のジャンプを抑える。
   // DOM化対象はフィルタ後の先頭`visibleLimit`件のみ。未描画分は末尾の番兵を`IntersectionObserver`で
   // 検出して段階拡張する（数百件規模の差分更新コストを抑えるため）。
@@ -278,7 +278,7 @@ function renderRootWarnings() {
 
 function setupSentinelObserver() {
   // 末尾の番兵が可視範囲に入ったら表示上限を1ステップ拡張する。
-  // `root`をaside（一覧をスクロールするコンテナー）に指定して、ビューポートではなく
+  // `root`をaside（一覧をスクロールするコンテナー）に指定して、
   // スクロールコンテナー内での可視性を判定する。
   // `rootMargin`で末尾到達前に先読みし、スクロール停止前に拡張が完了するようにする。
   const sentinel = document.getElementById("files-sentinel");
@@ -365,8 +365,8 @@ async function refreshHostStatus() {
   }
 }
 
-// fetch中に届いたSSE更新の検出時、単発の見送りだとその更新が別ホスト由来でも
-// スナップショット全体を破棄してしまい、取りこぼし救済がその1回で終わらない場合に収束が
+// fetch中に届いたSSE更新を検出したときに適用を1回見送るだけだと、その更新が別ホストのものでも
+// スナップショット全体を捨てることになり、取りこぼしの補正が1回で終わらない場合に表示が最新になるまで
 // 遅れる。カウンタが安定するまで最大でこの回数だけfetchを繰り返す。
 const HOST_INFO_REFRESH_MAX_ATTEMPTS = 3;
 
@@ -603,7 +603,7 @@ async function updatePreview() {
   }
 }
 
-async function openFile(host, path, source) {
+async function openFile(host, path, source, closeDrawer = true) {
   // ファイル一覧はSSE経由で常時同期されているため、選択操作のたびに/api/filesを再取得する必要はない。
   // 余分な往復を省いてプレビュー描画までのレイテンシーを下げる。
   selectedHost = host;
@@ -620,11 +620,11 @@ async function openFile(host, path, source) {
     history.replaceState({atkPlan: true}, "", filePageUrl(host, path, selectedSource));
   }
   document.getElementById("copy-btn").disabled = false;
-  // 選択rootの情報未取得（リモート接続確立前）はdisabled維持する。
+  // 選択したrootの情報が未取得の間（リモート接続の確立前）はdisabledのまま保つ。
   updateCopyPathButton(host, selectedSource);
   renderFiles();
   // モバイル時のドロワーを自動で閉じる（ファイル選択操作の延長として）。
-  if (isMobileViewport()) setDrawerOpen("plans", false);
+  if (closeDrawer && isMobileViewport()) setDrawerOpen("plans", false);
   const main = document.querySelector("#screen-plans main");
   const generation = ++previewGeneration;
   beginPreviewLoading(generation);
@@ -776,7 +776,7 @@ async function forceResync() {
 function bindScreenEvents() {
   document.getElementById("plans-filter").addEventListener("input", () => {
     // フィルタ条件が変わったら表示上限を初期値へ戻し、先頭から100件のみ再描画する。
-    // 段階展開によって伸びた上限を引きずると、フィルタ後の少数結果に対しても無駄な走査が残るため。
+    // 段階展開で伸びた上限を保ったままにすると、フィルタ後の結果が少なくても無駄な走査が残るため。
     scheduleFullTextSearch();
   });
   document.getElementById("copy-btn").addEventListener("click", copySelectedRaw);
@@ -798,7 +798,7 @@ function bindScreenEvents() {
   });
   document.getElementById("preview").addEventListener("click", (event) => {
     // 付属計画は計画一覧に載らないため、サーバーが本文へ付与したリンクだけから選択できる。
-    // 本文は表示のたびに差し替わるので、個別ノードではなく親要素への委譲で受け取る。
+    // 本文は表示のたびに差し替わるので、親要素への委譲で受け取る。
     const link = event.target.closest("a[data-plan-path]");
     if (!link || !isPlainPrimaryClick(event) || link.target) return;
     event.preventDefault();
@@ -807,7 +807,7 @@ function bindScreenEvents() {
   });
 }
 
-async function restoreFileFromUrl() {
+async function restoreFileFromUrl(closeDrawer = true) {
   if (location.pathname !== `${BASE_PATH}/plans`) return;
   const selection = fileSelectionFromUrl();
   const target = selection && files.find(file =>
@@ -815,9 +815,9 @@ async function restoreFileFromUrl() {
     (!selection.source || fileSource(file) === selection.source)
   );
   if (target) {
-    await openFile(target.host, target.path, fileSource(target));
+    await openFile(target.host, target.path, fileSource(target), closeDrawer);
   } else if (files.length > 0 && !isMobileViewport()) {
-    await openFile(files[0].host, files[0].path, fileSource(files[0]));
+    await openFile(files[0].host, files[0].path, fileSource(files[0]), closeDrawer);
   }
 }
 
@@ -826,7 +826,7 @@ async function init() {
   ROOT_DIRS = bootstrap.root_dirs;
   bindScreenEvents();
   // バックグラウンドthrottling対策。Chromium系のバックグラウンドタブはタイマー・SSEコールバックを
-  // 抑制するため、通知のみに依存するとタブ復帰時に蓄積イベントの処理が体感数秒ずれ込む。
+  // 抑制するため、通知のみに依存するとタブ復帰時に溜まったイベントの処理が数秒遅れる。
   resyncWhenVisible(forceResync);
   globalThis.addEventListener?.("popstate", () => { void restoreFileFromUrl(); });
   setDrawerOpen("plans", false);
@@ -837,7 +837,7 @@ async function init() {
   await (refreshFiles());
   subscribeEvents();
   if (location.pathname === `${BASE_PATH}/plans`) {
-    await restoreFileFromUrl();
+    await restoreFileFromUrl(false);
   } else if (files.length > 0 && !isMobileViewport()) {
     await openFile(files[0].host, files[0].path, fileSource(files[0]));
   }

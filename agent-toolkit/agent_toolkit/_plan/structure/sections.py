@@ -649,7 +649,7 @@ def _check_action_section(
     """`## 実施内容`の固定表と新旧の除外・保持表が基準を満たすか確かめる。
 
     `origin_notices`と`origin_skips`を渡した場合だけ、WI由来行をWI本文と比べて確かめる。
-    WI本文との比較結果はエラーではなく呼び出し元の警告として扱うため、戻り値の違反一覧へ混ぜない。
+    WI本文との比較結果は呼び出し元の警告として扱うため、戻り値の違反一覧へ混ぜない。
     """
     if action_index is None:
         return []
@@ -996,7 +996,7 @@ def _check_human_review_root(root: str, expected_round: str, decision: str) -> l
             for line in review_path.read_text(encoding="utf-8").splitlines()
             if line.strip()
         )
-    except (OSError, UnicodeDecodeError):
+    except OSError, UnicodeDecodeError:
         has_round = False
     if not has_round:
         return [f"`## {PLAN_H2_ACTION}`の計画レビュー表に同じroundが無い: {review_path} round {expected_round}"]

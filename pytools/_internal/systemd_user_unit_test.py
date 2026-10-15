@@ -259,41 +259,71 @@ def test_setup_raises_for_systemctl_failures(
 
 
 @pytest.mark.parametrize(
-    ("loginctl_result", "expected"),
+    ("loginctl_result", "expected", "next_command"),
     [
-        (None, "linger状態を確認できません"),
-        (subprocess.CompletedProcess(["loginctl"], 1, "", ""), "linger確認: 失敗"),
-        (subprocess.CompletedProcess(["loginctl"], 0, "Linger=no", ""), "linger 無効"),
+        (None, "linger状態を確認できません", "loginctl show-user test-user --property=Linger"),
+        (
+            subprocess.CompletedProcess(["loginctl"], 1, "", ""),
+            "linger確認: 失敗",
+            "loginctl show-user test-user --property=Linger",
+        ),
+        (subprocess.CompletedProcess(["loginctl"], 0, "Linger=no", ""), "linger 無効", "sudo loginctl enable-linger test-user"),
+        (subprocess.CompletedProcess(["loginctl"], 0, "Linger=yes", ""), None, None),
     ],
+    ids=["unavailable", "failed", "disabled", "enabled"],
 )
-def test_setup_reports_linger_states(
+@pytest.mark.parametrize("setup_kind", ["service", "timer"])
+def test_setup_and_timer_reports_linger_states(
     tmp_path: pathlib.Path,
     monkeypatch: typing.Any,
     caplog: pytest.LogCaptureFixture,
     loginctl_result: subprocess.CompletedProcess[str] | None,
-    expected: str,
+    expected: str | None,
+    next_command: str | None,
+    setup_kind: str,
 ) -> None:
-    """loginctl不在・失敗・linger無効を識別して通知する。"""
+    """両設定はlingerの失敗でも続行し、同じ照会先と手動操作を案内する。"""
     executable = tmp_path / "tool"
     executable.write_text("", encoding="utf-8")
+    loginctl_commands: list[list[str]] = []
 
     def run(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[str] | None:
         del kwargs
         if command[0] == "loginctl":
+            loginctl_commands.append(command)
             return loginctl_result
         if "show" in command and "--property=ActiveState" in command:
             return subprocess.CompletedProcess(command, 0, _ACTIVE_SHOW, "")
         return subprocess.CompletedProcess(command, 0, "", "")
 
     monkeypatch.setattr(common, "run_subprocess", run)
-    assert systemd_user_unit.setup(
-        unit_path=tmp_path / "tool.service",
-        executable_path=executable,
-        unit_content="unit\n",
-        log_tag="test",
-        service_name="tool.service",
-    )
-    assert expected in caplog.text
+    monkeypatch.setattr(systemd_user_unit.getpass, "getuser", lambda: "test-user")
+    with caplog.at_level("INFO"):
+        if setup_kind == "service":
+            result = systemd_user_unit.setup(
+                unit_path=tmp_path / "tool.service",
+                executable_path=executable,
+                unit_content="unit\n",
+                log_tag="test",
+                service_name="tool.service",
+            )
+        else:
+            result = systemd_user_unit.setup_timer(
+                service_unit_path=tmp_path / "tool.service",
+                timer_unit_path=tmp_path / "tool.timer",
+                executable_path=executable,
+                service_unit_content="service\n",
+                timer_unit_content="timer\n",
+                log_tag="test",
+                timer_name="tool.timer",
+            )
+    assert result is True
+    assert loginctl_commands == [["loginctl", "show-user", "test-user", "--property=Linger"]]
+    if expected is None:
+        assert "linger" not in caplog.text.lower()
+    else:
+        assert expected in caplog.text
+        assert next_command is not None and next_command in caplog.text
 
 
 def test_setup_raises_when_service_never_activates(
@@ -382,7 +412,7 @@ def test_setup_timer_writes_units_and_enables_only_timer(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """2 unitを配置し、oneshot serviceではなくtimerだけを有効化する。"""
+    """2 unitを配置し、timerだけを有効化する。"""
     executable = tmp_path / "uv"
     executable.write_text("", encoding="utf-8")
     service_unit = tmp_path / "tool.service"

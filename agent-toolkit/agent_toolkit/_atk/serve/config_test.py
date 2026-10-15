@@ -22,7 +22,6 @@ from agent_toolkit._atk.serve import cli as serve
 from agent_toolkit._atk.serve import plans as serve_plans
 from agent_toolkit._atk.serve import runtime as serve_runtime
 from agent_toolkit._atk.wi import constants as _wi_constants
-from agent_toolkit._atk.wi import entries as _wi_entries
 from agent_toolkit._atk.wi import frontmatter as wi_frontmatter
 from agent_toolkit._atk.wi import sync as _wi_sync
 from agent_toolkit._atk.wi import user_comment
@@ -131,7 +130,7 @@ process.stdout.write(JSON.stringify({active, filtered, recent, all}));
 
 
 def test_assets_offer_hold_and_rejected_actions_and_preserve_implicit_resolution() -> None:
-    """保留・不採用の操作表示と、採否APIの明示状態送信境界を検証する。"""
+    """保留・不採用の操作の表示と、採否APIへ明示した状態を送る条件を検証する。"""
     result = _run_node_ui(
         """
 const base = {
@@ -253,7 +252,7 @@ process.stdout.write(JSON.stringify({view, modes, sent}));
 
 
 def test_assets_sse_detail_prefers_exact_identity_and_only_tracks_unique_move() -> None:
-    """SSE詳細は複合キーを優先し、404後の一意な移動だけを追跡する。"""
+    """SSEを受けた詳細の再取得は状態とファイル名の組を優先し、404の後は移動先が一意な場合だけ追跡する。"""
     result = _run_node_ui(
         """
 const processing = {
@@ -528,23 +527,26 @@ async def test_read_routes_remain_available_during_entry_move(
     adopted.mkdir()
     entry = inbox / "entry.md"
     entry.write_text("---\ntype: awi\ntarget_repo: example/repo\n---\n\n本文\n", encoding="utf-8")
-    original_entry_type_from_metadata = _wi_entries.entry_type_from_metadata
+    original_normalized_wi_type = _wi_constants.normalized_wi_type
 
     async def race_request(path: str) -> typing.Any:
         started = threading.Event()
         release = threading.Event()
 
-        def entry_type_from_metadata(entry_path: pathlib.Path, metadata: typing.Mapping[str, object]) -> str:
+        def normalized_wi_type(value: object) -> str | None:
             started.set()
-            release.wait()
-            return original_entry_type_from_metadata(entry_path, metadata)
+            assert release.wait(timeout=5), "状態移動後の解放がありません"
+            return original_normalized_wi_type(value)
 
-        monkeypatch.setattr(_wi_entries, "entry_type_from_metadata", entry_type_from_metadata)
+        monkeypatch.setattr(_wi_constants, "normalized_wi_type", normalized_wi_type)
         request = asyncio.create_task(app.test_client().get(path))
-        await asyncio.to_thread(started.wait)
-        entry.rename(adopted / entry.name)
-        release.set()
-        return await request
+        try:
+            assert await asyncio.to_thread(started.wait, 5), "種別判定へ到達しません"
+            entry.rename(adopted / entry.name)
+        finally:
+            release.set()
+            response = await asyncio.wait_for(request, timeout=5)
+        return response
 
     app = serve_app.create_app(
         tmp_path,
@@ -862,7 +864,7 @@ async def test_invalid_json_returns_json_error(tmp_path: pathlib.Path) -> None:
 
 @pytest.mark.asyncio
 async def test_lock_timeout_returns_conflict(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """mutationの有限待機ロック競合をJSON 409応答へ変換する。"""
+    """変更操作が上限まで待ってもロックを取得できない競合を、JSON 409応答へ変換する。"""
 
     def edit(
         _state: str,
@@ -977,7 +979,7 @@ async def test_background_sync_task_starts_and_stops(tmp_path: pathlib.Path, mon
         operations=_Operations(tmp_path),
     )
     async with app.test_app():  # ty: ignore[invalid-context-manager]
-        # 実時間の経過ではなく初回呼び出しの成立を待ち、起動を確認する。
+        # 初回呼び出しの成立を待ち、起動を確認する。
         await asyncio.wait_for(called.wait(), timeout=5)
 
     # 停止の成立は、`after_serving`の完了後に呼び出し回数が増えないことで確認する。
@@ -991,7 +993,7 @@ async def test_background_sync_task_starts_and_stops(tmp_path: pathlib.Path, mon
 
 
 def test_assets_ignore_out_of_order_repo_candidates_for_state_changes() -> None:
-    """状態変更の旧候補応答を破棄し、旧処理から一覧要求を開始しない。"""
+    """状態の変更より前に発行した候補要求の応答を破棄し、その古い処理から一覧要求を開始しない。"""
     result = _run_node_ui(
         """
 let resolveAdopted;

@@ -2,19 +2,17 @@
 
 Claude CodeのBashとPowerShellは、出力が上限を超えると全量を保存先へ書き、モデルへ渡すツール結果を
 `<persisted-output>`と出力の先頭約2KBの抜粋へ置き換える。抜粋は取得結果の全体と同じ位置と形で届くため、
-実行主体が保存先を読まずに抜粋を全体として扱う誤りを、受け取った本文が防がない。
+抜粋だけを受け取った実行主体は、保存先を読まずに抜粋を全体として扱う誤りを本文から避けられない。
 PostToolUseの`updatedToolOutput`で`stdout`を通知の本文へ置き換えると、ホストはその本文を`Preview`として示し、
 受け取る本文から元の出力の先頭が消える。保存先のファイルは元の全量を保持する。
 
 退避の有無はホストが`tool_response`へ付ける`persistedOutputPath`で判定し、上限値をhook側で再実装しない。
-CodexのPostToolUseは`persistedOutputPath`を持たない（出力は退避ではなく切り詰めで返る）ため発動しない。
+CodexのPostToolUseは`persistedOutputPath`を持たない（出力は切り詰めて返る）ため発動しない。
 """
 
-# 関数の実行時までだけ使う依存を、Python 3.15では使用時まで読み込まない。旧Pythonでは通常のimportとなる。
-__lazy_modules__ = {"agent_toolkit._common", "agent_toolkit._hooks"}
-
-from agent_toolkit._common import next_action as _next_action
-from agent_toolkit._hooks import message_format as _message_format
+# 関数の実行時にだけ使う依存は、使用時まで読み込まない。
+lazy from agent_toolkit._common import next_action as _next_action
+lazy from agent_toolkit._hooks import message_format as _message_format
 
 _SHELL_TOOLS = frozenset({"Bash", "PowerShell"})
 _HOOK_ID = "posttooluse"

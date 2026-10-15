@@ -8,11 +8,13 @@
       "command": "uv",
       "args": [
         "run",
-        "--project",
-        "${CLAUDE_PLUGIN_ROOT}",
-        "--locked",
-        "--no-default-groups",
-        "${CLAUDE_PLUGIN_ROOT}/agent_toolkit/agents_server_mcp.py"
+        "--no-config",
+        "--no-project",
+        "--python",
+        "3.15",
+        "python",
+        "${CLAUDE_PLUGIN_ROOT}/scripts/launch.py",
+        "agent_toolkit/agents_server_mcp.py"
       ]
     }
   }

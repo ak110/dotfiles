@@ -23,7 +23,7 @@ def _load_user_codex() -> dict[str, Any] | None:
     """User scope設定のcodex定義を読み取る。"""
     try:
         data = json.loads(_CLAUDE_CONFIG_PATH.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
+    except OSError, json.JSONDecodeError:
         return None
     if not isinstance(data, dict):
         return None
@@ -62,19 +62,24 @@ def run() -> post_apply_outcome.PostApplyOutcome:
     判定できない設定で失敗させる単体インストーラー（fail-closed）とは扱いを分ける。
     """
     if common.resolve_executable("claude", preferred_directories=(Path.home() / ".local" / "bin",)) is None:
-        logger.info(log_format.format_status("legacy-codex-mcp", "claude CLI 未検出のためスキップ"))
+        logger.info(
+            log_format.format_status("legacy-codex-mcp", "claude CLI 未検出のためスキップ。未導入のため対応不要"),
+        )
         return post_apply_outcome.PostApplyOutcome()
     current = _load_user_codex()
     if not is_legacy_definition(current):
         if current is not None:
             logger.warning(
                 "User scopeのcodex MCP定義は旧installerの完全一致ではないため保持します。"
-                " 必要なら `claude mcp remove --scope user codex` を手動実行してください。"
+                " 必要なら `claude mcp remove --scope user codex` を手動実行してください。",
             )
         return post_apply_outcome.PostApplyOutcome()
     result = claude_common.run_claude(["mcp", "remove", "--scope", "user", _CODEX_NAME])
     if result is None or result.returncode != 0:
         detail = common.format_cli_error(result)
-        return post_apply_outcome.PostApplyOutcome(failure=f"旧User scope登録の削除に失敗: {detail}")
+        return post_apply_outcome.PostApplyOutcome(
+            failure=f"旧User scope登録の削除に失敗: {detail}",
+            next_action="`claude mcp remove --scope user codex`を実行する。",
+        )
     logger.info(log_format.format_status("legacy-codex-mcp", "旧User scope登録を削除しました"))
     return post_apply_outcome.PostApplyOutcome(changed=True)

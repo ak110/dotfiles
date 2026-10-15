@@ -23,20 +23,19 @@ hook定義でも同じ処理が実行される。配布先の定義を追随さ�
 標準エラー出力で不整合を観測できるようにする。
 """
 
-# 正常な呼出しで使わない診断とdump用の依存を、Python 3.15では必要になるまで読み込まない。
-__lazy_modules__ = {"datetime", "traceback", "agent_toolkit._hooks.notice"}
-
 import contextlib
-import datetime
 import importlib
 import io
 import json
 import os
 import pathlib
 import sys
-import traceback
 
-from agent_toolkit._hooks.notice import formatter as _notice_formatter
+# 正常な呼出しで使わない診断とdump用の依存を、必要になるまで読み込まない。
+lazy import datetime
+lazy import traceback
+
+lazy from agent_toolkit._hooks.notice import formatter as _notice_formatter
 
 _SUBCOMMANDS: frozenset[str] = frozenset(
     {
@@ -51,6 +50,7 @@ _SUBCOMMANDS: frozenset[str] = frozenset(
         "rules_context",
         "rules_context_codex",
         "user_prompt_submit",
+        "session_activity",
     }
 )
 
@@ -75,6 +75,15 @@ def _dump_payload(subcommand: str, payload_bytes: bytes) -> None:
     dump_path = pathlib.Path(dump_directory) / f"{subcommand}-{timestamp}-{os.getpid()}.json"
     with contextlib.suppress(OSError):
         dump_path.write_bytes(payload_bytes)
+
+
+def _record_activity(payload: object, *, output: str = "", returncode: int = 0) -> None:
+    """既存hookの応答を変えずに、同じ呼び出しで活動を記録する。記録の失敗はhook本体の処理へ影響させない。"""
+    if not isinstance(payload, dict) or not payload.get("hook_event_name") or not payload.get("session_id"):
+        return
+    with contextlib.suppress(Exception):
+        activity = importlib.import_module("agent_toolkit._common.session_activity")
+        activity.record_activity(payload, output=output, returncode=returncode)
 
 
 def main(argv: list[str]) -> int:
@@ -122,6 +131,7 @@ def main(argv: list[str]) -> int:
             file=sys.stderr,
         )
         return 0
+    payload: object = None
     with contextlib.suppress(Exception):
         payload = json.loads(payload_text)
         if isinstance(payload, dict):
@@ -130,12 +140,25 @@ def main(argv: list[str]) -> int:
             if isinstance(session_id, str) and isinstance(transcript_path, str):
                 session_state = importlib.import_module("agent_toolkit._common.session_state")
                 session_state.inherit_state_from_transcript(session_id, transcript_path)
+    # Stopの処理中も活動中として扱い、正常な応答が決まった後だけ終了候補へ進める。
+    if argv[0] != "session_activity":
+        _record_activity(payload, returncode=2 if argv[0] in {"stop", "subagent_stop_advisor"} else 0)
     try:
         module = importlib.import_module(f"agent_toolkit._hooks.{argv[0]}")
     except Exception:  # noqa: BLE001 -- 読込失敗でフック全体を停止させないため広範に捕捉
         traceback.print_exc()
         return 0
     try:
+        if argv[0] in {"stop", "subagent_stop_advisor"}:
+            output = io.StringIO()
+            try:
+                with contextlib.redirect_stdout(output):
+                    result = module.main(payload_text)
+            finally:
+                sys.stdout.write(output.getvalue())
+            response = output.getvalue()
+            _record_activity(payload, output=response, returncode=result)
+            return result
         return module.main(payload_text)
     except Exception as exc:  # noqa: BLE001 -- フックの破損によって編集できなくならないよう広範に捕捉
         tb = traceback.extract_tb(exc.__traceback__)

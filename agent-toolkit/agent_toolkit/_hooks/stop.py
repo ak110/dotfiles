@@ -6,25 +6,23 @@
 
 判定が`notify_user`を返した本文はエンドユーザー向けの`systemMessage`へ集約し、遮断の有無によらず同じ応答へ添える。
 
-連続blockの上限は7回とし、Claude Codeが8回の連続blockでフックを上書きして
-ターンを終える仕様の内側で、打ち切りの事実を記録して終了を許可する。
+連続blockの上限は7回とする。Claude Codeは8回の連続blockでフックを上書きしてターンを終えるため、
+その手前の7回で打ち切りの事実を記録して終了を許可する。
 
 委譲先での実行可否: 各判定モジュールが個別に適用可否を判断するため、エントリーポイント自体は除外せず実行できる。
 未配送通知を次ターンへ返す実機観測と再検証は、`docs/development/audit-records.md`の
 「agent-toolkit/agent_toolkit/_hooks/stop.py：未配送通知を次ターンへ返す：2026年10月10日」にある。
 """
 
-# 関数の実行時までだけ使う依存を、Python 3.15では使用時まで読み込まない。旧Pythonでは通常のimportとなる。
-__lazy_modules__ = {"agent_toolkit._common.session_state", "agent_toolkit._hooks.host", "agent_toolkit._hooks.stop_session"}
-
 import importlib
 import json
 import sys
 
-from agent_toolkit._common.session_state import read_state, update_state  # noqa: E402  # pylint: disable=wrong-import-position
-from agent_toolkit._hooks.host import is_codex_payload
-from agent_toolkit._hooks.stop_session import append_stop_log
-from agent_toolkit._hooks.stop_session import parse_stop_session as _parse_stop_session
+# 関数の実行時にだけ使う依存は、使用時まで読み込まない。
+lazy from agent_toolkit._common.session_state import read_state, update_state  # noqa: E402  # pylint: disable=wrong-import-position
+lazy from agent_toolkit._hooks.host import is_codex_payload
+lazy from agent_toolkit._hooks.stop_session import append_stop_log
+lazy from agent_toolkit._hooks.stop_session import parse_stop_session as _parse_stop_session
 
 CHECK_MODULE_NAMES = (
     "busy_loop_guard",
@@ -37,8 +35,8 @@ CHECK_MODULE_NAMES = (
     "queued_notification_advisor",
 )
 
-# CodexのStopはcompletion-reportの起動証拠だけを判定する。他の判定はClaude Codeの記録形式と通知手段を前提とするため適用しない。
-CODEX_CHECK_MODULE_NAMES = ("termination_order_advisor",)
+# Codexではホスト共通の完了本文と起動証拠を判定する。Claude Codeのtranscriptに依存する判定は適用しない。
+CODEX_CHECK_MODULE_NAMES = ("response_language_advisor", "termination_order_advisor")
 
 _CONSECUTIVE_BLOCK_LIMIT = 7
 _CONSECUTIVE_BLOCK_STATE_KEY = "stop_consecutive_block_count"

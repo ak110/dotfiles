@@ -83,6 +83,22 @@ def _saved(tmp_path: pathlib.Path) -> dict[str, str]:
     return json.loads(_config_file(tmp_path).read_text(encoding="utf-8"))
 
 
+def test_show_line_can_be_copied_to_set(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
+    """showのキーを加工せずsetへ渡し、コロンを含む値をgetできる。"""
+    value = "claude:opus/high,codex:sol/medium"
+    assert _main(tmp_path, "config", "set", "write_model", value) == 0
+    capsys.readouterr()
+    for argv in (("config", "show"), ("config",)):
+        assert _main(tmp_path, *argv) == 0
+        lines = capsys.readouterr().out.splitlines()
+        assert all(" " in line and not line.partition(" ")[0].endswith(":") for line in lines)
+        key, copied = next(line for line in lines if line.startswith("write_model ")).split(" ", 1)
+        assert _main(tmp_path, "config", "set", key, copied) == 0
+        capsys.readouterr()
+        assert _main(tmp_path, "config", "get", key) == 0
+        assert capsys.readouterr().out.rstrip("\n") == value
+
+
 class TestConfigShow:
     """`atk config`（サブコマンド省略時はshow扱い）・`atk config show`の一覧表示を検証する。"""
 
@@ -91,10 +107,10 @@ class TestConfigShow:
         assert _main(tmp_path, "config", "show") == 0
 
         out = capsys.readouterr().out
-        assert f"config_dir: {tmp_path / 'config'}" in out
-        assert f"state_dir: {tmp_path / 'state'}" in out
-        assert f"data_dir: {tmp_path / 'data'}" in out
-        keys = [line.partition(": ")[0] for line in out.splitlines()]
+        assert f"config_dir {tmp_path / 'config'}" in out
+        assert f"state_dir {tmp_path / 'state'}" in out
+        assert f"data_dir {tmp_path / 'data'}" in out
+        keys = [line.partition(" ")[0] for line in out.splitlines()]
         assert keys == [
             "config_dir",
             "state_dir",
@@ -104,9 +120,10 @@ class TestConfigShow:
             "write_model",
             "codex_fast_mode",
             "codex_model_providers",
+            "process_loop_repositories",
         ]
         for key in config_module._MUTABLE_KEY_DEFAULTS:  # pylint: disable=protected-access  # noqa: SLF001
-            assert f"{key}: {config_module.resolve_mutable_setting(key)}" in out
+            assert f"{key} {config_module.resolve_mutable_setting(key)}" in out
         for legacy in _LEGACY_KEYS:
             assert f"\n{legacy}:" not in f"\n{out}"
 
@@ -139,7 +156,7 @@ class TestConfigShow:
 
         assert _main(tmp_path, "config", "show") == 0
         captured = capsys.readouterr()
-        assert "codex_high_tier_model: unknown-model/ultra" in captured.out
+        assert "codex_high_tier_model unknown-model/ultra" in captured.out
         assert "設定キー`codex_high_tier_model`の候補`unknown-model/ultra`" in captured.err
         assert "設定キー`claude_high_tier_model`の候補`another-unknown/medium`" in captured.err
         assert "モデル名`unknown-model`は主に使うモデルの一覧" in captured.err
@@ -155,7 +172,7 @@ class TestConfigShow:
         """全候補が参考一覧内なら標準エラーへ何も書かない。"""
         assert _main(tmp_path, "config", "show") == 0
         captured = capsys.readouterr()
-        assert "claude_high_tier_model:" in captured.out
+        assert "claude_high_tier_model " in captured.out
         assert not captured.err
 
     def test_show_silently_ignores_removed_model_keys(
@@ -264,7 +281,7 @@ class TestCodexFastMode:
         with pytest.raises(SystemExit, match="0"):
             atk.main(["config", "show"], home=tmp_path)
         shown = capsys.readouterr()
-        assert f"codex_fast_mode: {value}\n" in shown.out
+        assert f"codex_fast_mode {value}\n" in shown.out
         assert not shown.err
 
     @pytest.mark.parametrize("value", ["TRUE", "False", "1", "0", "yes", "", "codex:gpt-6-sol/medium"])
@@ -458,7 +475,7 @@ class TestConfigGet:
         assert _main(tmp_path, "config", "get", "claude_high_tier_model", "base_engine") == 0
         assert capsys.readouterr().out == "sonnet/low\nclaude\n"
         assert _main(tmp_path, "config", "show") == 0
-        assert "claude_high_tier_model: sonnet/low" in capsys.readouterr().out
+        assert "claude_high_tier_model sonnet/low" in capsys.readouterr().out
         assert config_module.resolve_model_candidates("high_tier") == [("claude", "sonnet", "low")]
         assert _saved(tmp_path) == {"claude_high_tier_model": "opus/high"}
 

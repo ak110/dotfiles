@@ -60,5 +60,5 @@ description: >
 由来の調べ方:
 
 - 初出は`git log --follow -S '<部分文字列>' -- <ファイル>`かパスを限定しない`git log -S`で調べる。`git blame`（最後に触れたcommit）とパス限定の`git log -S`（改名前を含まない）だけでは判定しない
-- 導入commitか復元commitに`Co-Authored-By`か`Claude-Session` trailerが無い場合は、`atk wi grep --summary-only --state all -F`で終端済みキュー項目を特徴的な語や反映先パスの固定文字列で探す。候補の本文は`atk wi show`で確かめる。候補の`adopt`記録または計画の`<計画のstem>.wi-commits.jsonl`（旧形式は進捗ログ）のOIDが導入commitの完全OIDの先頭と一致するか確かめ、計画を根拠にする場合は`関連WI`に候補があることも確かめる。`agent-toolkit:wi-standards`「由来と承認」でエージェント由来と確定したら、根拠を進捗ログ（無ければ引き継ぎ記録かユーザーへの報告）へ記録する。commit本文にはキュー項目の内部識別子を書かない
+- 導入commitか復元commitに`Co-Authored-By`か`Claude-Session` trailerが無い場合は、`atk wi grep --summary-only --state all -F`で終端済みキュー項目を特徴的な語や反映先パスの固定文字列で探す。候補の本文は`atk wi show`で確かめる。候補の`adopt`記録または計画の`<計画のstem>.wi-commits.jsonl`（旧形式は進捗ログ）のOIDが導入commitの完全OIDの先頭と一致するか確かめ、計画を根拠にする場合は`関連WI`に候補があることも確かめる。`agent-toolkit:wi-standards`「由来と承認」でエージェント由来と確定したら、根拠を進捗ログ（無ければ引き継ぎ記録かユーザーへの報告）へ記録する。キュー項目の内部識別子はcommit本文から除く
 - trailerの有無だけで作者を確定しないため、trailerの無いcommitをユーザーのcommitと結論づけない

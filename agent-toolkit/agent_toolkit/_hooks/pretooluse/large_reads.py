@@ -10,35 +10,23 @@ Claude Codeはホストが上限超過を`PARTIAL view`または退避ファイ�
 
 from __future__ import annotations
 
-# 関数の実行時までだけ使う依存を、Python 3.15では使用時まで読み込まない。旧Pythonでは通常のimportとなる。
-__lazy_modules__ = {
-    "agent_toolkit._atk",
-    "agent_toolkit._common",
-    "agent_toolkit._common.bash_invocations",
-    "agent_toolkit._common.uv_arguments",
-    "agent_toolkit._hooks",
-    "agent_toolkit._hooks.pretooluse.notices",
-    "ast",
-    "collections.abc",
-    "re",
-    "stat",
-}
-
-import ast
 import os
 import pathlib
-import re
-import stat
-from collections.abc import Iterator, Sequence
 from dataclasses import dataclass
 
-from agent_toolkit._atk import read_file
-from agent_toolkit._common import host_homes, shell_cwd, shell_segments
-from agent_toolkit._common.bash_invocations import extract_bash_invocations
-from agent_toolkit._common.uv_arguments import is_python_token
-from agent_toolkit._hooks import plugin_resources
+# 関数の実行時にだけ使う依存は、使用時まで読み込まない。
+lazy import ast
+lazy import re
+lazy import stat
+lazy from collections.abc import Iterator, Sequence
+
 from agent_toolkit._hooks.notice import formatter
-from agent_toolkit._hooks.pretooluse.notices import _block_notice
+lazy from agent_toolkit._atk import read_file
+lazy from agent_toolkit._common import host_homes, shell_cwd, shell_segments
+lazy from agent_toolkit._common.bash_invocations import extract_bash_invocations
+lazy from agent_toolkit._common.uv_arguments import is_python_token
+lazy from agent_toolkit._hooks import plugin_resources
+lazy from agent_toolkit._hooks.pretooluse.notices import _block_notice
 
 # Codexの配布設定の出力上限`tool_output_token_limit = 20000`（トークン）と、
 # agent-toolkitのMarkdownで測った1トークンあたりバイト数の最小値3.10の積は約62,000バイトである。
@@ -158,7 +146,7 @@ def _display_operands(name: str, tokens: Sequence[str]) -> tuple[str, ...]:
 
 
 def _read_operands(tokens: Sequence[str], *, include_partial: bool) -> tuple[str, ...]:
-    """全文取得と、配送だけが対象とする範囲取得のファイル引数を返す。"""
+    """全文取得のファイル引数を返す。`include_partial`が真なら、帰属行の配送だけが対象とする範囲取得のファイル引数も含める。"""
     if not tokens:
         return ()
     name = pathlib.PurePath(tokens[0]).name
@@ -284,7 +272,7 @@ def _content_operands(tokens: Sequence[str], *, pattern: bool) -> tuple[str, ...
 
 
 def python_file_paths(code: str, *, writing: bool = False) -> list[str]:
-    """直列のリテラル・単純代入を解析し、読取と書込の静的ファイル対象を共用する。"""
+    """直列に並ぶリテラルと単純代入を解析し、Pythonコードが読み書きする静的なファイルパスを返す。読取と書込の判定がこの解析を共用する。"""
     try:
         module = ast.parse(code)
     except SyntaxError:

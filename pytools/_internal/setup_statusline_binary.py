@@ -5,16 +5,14 @@
 Rustバイナリ直接起動へ置き換える。
 """
 
-# ヘルプや他の処理では不要な依存を、使用時まで遅延する。旧Pythonでは通常のimportとなる。
-__lazy_modules__ = {"httpx"}
-
 import logging
 import os
 import pathlib
 import subprocess
 import sys
 
-import httpx
+# ヘルプや他の処理で使わない依存は、使用時まで読み込まない。
+lazy import httpx
 
 from pytools._internal import common, log_format, post_apply_outcome, setup_mise
 
@@ -59,7 +57,15 @@ def run(client: httpx.Client | None = None) -> post_apply_outcome.PostApplyOutco
             working_tree, mise_bin = development_tree
             return post_apply_outcome.PostApplyOutcome(changed=_install_development_binary(working_tree, mise_bin))
     except (RuntimeError, OSError) as error:
-        logger.warning(log_format.format_status("statusline", f"開発版の導入に失敗（既存のバイナリを使う）: {error}"))
+        logger.warning(
+            log_format.format_status(
+                "statusline",
+                f"開発版の導入に失敗（既存のバイナリを使う）: {error}。"
+                "chezmoiの作業ツリーで`mise exec -- cargo build --release "
+                "--locked --manifest-path rust/claude-statusline/Cargo.toml`を実行した後、"
+                "`update-dotfiles`を再実行する",
+            ),
+        )
         return post_apply_outcome.PostApplyOutcome()
     return post_apply_outcome.PostApplyOutcome(changed=_download_release(client))
 
@@ -101,7 +107,10 @@ def _find_development_tree() -> tuple[pathlib.Path, pathlib.Path] | None:
     mise_bin = setup_mise.find_mise_binary()
     if mise_bin is None:
         logger.info(
-            log_format.format_status("statusline", "開発版のビルドに必要なmiseが見つからないため、リリース版を取得します")
+            log_format.format_status(
+                "statusline",
+                "開発版のビルドに必要なmiseが見つからないため、リリース版を取得します。対応不要（処理は継続した）",
+            ),
         )
         return None
     return working_tree, mise_bin
@@ -190,7 +199,12 @@ def _download_release(client: httpx.Client | None = None) -> bool:
         logger.info(log_format.format_status("statusline", f"インストール完了: {_INSTALL_PATH}"))
         return True
     except Exception as e:  # noqa: BLE001
-        logger.warning(log_format.format_status("statusline", f"バイナリ取得に失敗（statusLineは空表示になる）: {e}"))
+        logger.warning(
+            log_format.format_status(
+                "statusline",
+                f"バイナリ取得に失敗（statusLineは空表示になる）: {e}。`update-dotfiles`を再実行する",
+            ),
+        )
         return False
     finally:
         if owns_client:

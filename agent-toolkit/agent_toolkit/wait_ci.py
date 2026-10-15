@@ -1130,7 +1130,7 @@ def _resolve_sha(revision: str, subprocess_timeout: float) -> str | None:
             check=False,
             timeout=subprocess_timeout,
         )
-    except (FileNotFoundError, subprocess.TimeoutExpired):
+    except FileNotFoundError, subprocess.TimeoutExpired:
         return None
     if result.returncode != 0:
         return None
@@ -1176,7 +1176,7 @@ def _install_signal_handlers() -> None:
     `subprocess.run`側の`timeout`（`--subprocess-timeout`）到達による自然終了に委ねる。
     厳密なプロセスグループ制御は、複雑化に見合う利得が無いため実装しない。
 
-    終了メッセージは`print`ではなく`os.write`で書く。`print`は`sys.stderr`の
+    終了メッセージは`os.write`で書く。`print`は`sys.stderr`の
     `BufferedWriter`を経由するため、メインフローが同じバッファへ書き込んでいる最中に
     シグナルが到達すると再入となり`RuntimeError: reentrant call inside <_io.BufferedWriter>`で
     異常終了する。`os.write`はバッファを介さないため再入が成立しない。
@@ -1261,7 +1261,11 @@ def main(argv: list[str] | None = None) -> int:
             "ホストを含まない場合は作業ディレクトリのGit remoteから判定する。"
         ),
     )
-    parser.add_argument("--follow-cancelled", action="store_true", help="全run cancelled時にsource refの後続run成功を追跡")
+    parser.add_argument(
+        "--follow-cancelled",
+        action="store_true",
+        help="全runがcancelledの場合に、source refの後続commitで実行されたrunの成功を追跡する",
+    )
     args = parser.parse_args(argv)
     if args.wait_sha is not None and args.sha is not None:
         parser.error("--wait-shaと--shaは同時に指定できません")

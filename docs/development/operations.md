@@ -95,7 +95,7 @@ Windowsはtmux運用外のため対象外とする。
 ## 質問・ダイアログのタイムアウトの配布
 
 Claude Codeの`askUserQuestionTimeout`と`dialogExpiry`は`share/claude_settings_json_managed.json`でいずれも`never`を配布する。
-`askUserQuestionTimeout`の対象は`AskUserQuestion`の選択質問だけであり、権限確認や計画承認を自動継続させる設定ではない。
+`askUserQuestionTimeout`の対象は`AskUserQuestion`の選択質問だけである。権限確認や計画承認は自動継続しない。
 `askUserQuestionTimeout`による自動継続は、Remote Controlのbridgeが接続したセッションではarmedされない。
 bridgeが接続すると、ダイアログの内部表現が持つ`hasExternalRacer`は真になる。
 自動継続のarmed条件には、この値が偽であることが含まれるためである。
@@ -147,7 +147,7 @@ Claude起動分岐では`CLAUDE_CODE_RETRY_WATCHDOG=1`だけを子プロセス�
 How many characters of a successful Bash or PowerShell command's output Claude receives inline (default 30000; values clamp to 4000-128000)
 ```
 
-指定しない場合は50,000バイト（19,774文字）のファイルも退避されるため、比較は文字数ではなくバイト数で行われる。
+指定しない場合は50,000バイト（19,774文字）のファイルも退避されるため、比較はバイト数で行われる。
 観測は2026年10月7日にClaude Code 2.1.291で行った。`claude -p --settings share/claude_settings_json_managed.json --model haiku --output-format stream-json --verbose`へファイルを`cat`させた。
 61,500バイトのファイルは`persistedOutputPath`を持たず全文で返った。63,000バイトのファイルは`<persisted-output>`で返り、`persistedOutputSize`は63000だった。
 
@@ -357,7 +357,7 @@ atk run-script session-review-evidence -- --stats <選んだ記録の絶対パ�
   そのうえで`git ls-remote`から得た`origin/develop`のcommit IDをローカル`HEAD`と比較し、自動更新専用の未完了状態も確認する
   - commit IDが一致し未完了状態も無ければ、`update-dotfiles`を起動せず正常終了する
   - 上流に変更がある場合と前回の自動更新が未完了の場合は、未完了状態を保存してから`bin/update-dotfiles`を絶対パスかつ引数なしで起動する。終了コード0を観測した場合だけ未完了状態を解除し、それ以外では次回のタイマー起動まで保持する
-    - euryaleではユーザーが配布先を直接編集しないため、差分を表示したうえで確認入力を待たずに反映する。`--force`はランチャーの引数ではなく、内部の`libexec/update_dotfiles.py`が`chezmoi apply`へ渡す
+    - euryaleではユーザーが配布先を直接編集しないため、差分を表示したうえで確認入力を待たずに反映する。`--force`は内部の`libexec/update_dotfiles.py`が`chezmoi apply`へ渡す
   - 自動更新の判定から未完了状態の解除までを専用ロックで直列化する。作業ツリーのstash、resetおよびcleanは行わない。手動実行との重複は`update-dotfiles`の既存ロックへ委ねる
 - systemdユーザーマネージャーのPATHには`~/.local/bin`とmiseのshimsが含まれないため、unitの`ExecStart`には
   導入時に解決した`uv`の絶対パスとスクリプトの絶対パスを埋め込む。あわせて`Environment=PATH`を指定する
@@ -410,7 +410,7 @@ Claude Codeは`plugin install`と`plugin update`で`~/.claude/plugins/cache/<mar
   - 起動中のClaude Codeセッションは起動時に解決した版ディレクトリを`hooks.json`と`.mcp.json`から参照し続けるため、即時に削除するとそのセッションのhookとMCPが失敗する。7日はその参照が残る期間を見込んだ猶予である
 - 導入時刻には各版の`.claude-plugin/plugin.json`のmtimeを用いる
   - 版ディレクトリ自体のmtimeは`uv run`が`.venv`などを作成するたびに更新され、版の順序と一致しない（74版中74件が不一致）。`plugin.json`のmtimeは版の順序と一致する
-  - `claude-plugins-official`配下はcommit hashなど自然順に並ばない版名を持つため、版名ではなく導入時刻で後継を決める
+  - `claude-plugins-official`配下はcommit hashなど自然順に並ばない版名を持つため、導入時刻で後継を決める
   - `plugin.json`を欠く不完全な版は版ディレクトリのmtimeで代替する
 - `installPath`の更新後に判定するため、工程は「Claude Code pluginのインストール」の直後に置く
 - `~/.codex/plugins/cache`は導入処理が1版だけを保持するため対象外とする。シンボリックリンクとディレクトリジャンクションは辿らず削除しない

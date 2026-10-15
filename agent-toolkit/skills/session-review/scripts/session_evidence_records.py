@@ -240,7 +240,7 @@ def _subagent_records(source: _CollectedRecord) -> list[_CollectedRecord]:
         meta_path = path.with_name(f"{path.stem}.meta.json")
         try:
             raw_meta = json.loads(meta_path.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError, ValueError):
+        except OSError, json.JSONDecodeError, ValueError:
             raw_meta = {}
         agent_type = raw_meta.get("agentType") if isinstance(raw_meta, dict) else None
         record_id = f"{source.record_id}/{path.stem}"
@@ -358,7 +358,7 @@ def _codex_thread_id_from_records(records: list[_Record]) -> str | None:
 
 
 def _physical_record_id(path: Path, records: list[_Record], runtime: _Runtime | None) -> str:
-    """収集元の指定ではなく物理記録のmetadataから正規record IDを返す。"""
+    """物理記録のmetadataから正規record IDを返す。"""
     if runtime == "codex":
         return f"codex:{_codex_thread_id_from_records(records) or path.stem.removeprefix('rollout-')}"
     if runtime == "claude":

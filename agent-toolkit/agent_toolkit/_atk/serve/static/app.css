@@ -893,7 +893,7 @@ main > .toolbar {
   #screen-wi .entry-select {
     grid-column: 1;
     grid-template-columns: 1fr;
-    grid-template-rows: auto auto;
+    grid-template-rows: repeat(4, auto);
     gap: var(--space-1);
     padding: var(--space-3);
   }
@@ -902,7 +902,16 @@ main > .toolbar {
   }
   #screen-wi .filename-cell,
   #screen-wi .target-repo-cell {
-    display: none;
+    overflow: visible;
+    white-space: normal;
+    font-size: var(--font-size-secondary);
+    color: var(--color-secondary-text);
+  }
+  #screen-wi .filename-cell {
+    grid-row: 3;
+  }
+  #screen-wi .target-repo-cell {
+    grid-row: 4;
   }
   #screen-wi .summary-cell {
     grid-row: 1;
@@ -1333,13 +1342,25 @@ main > .toolbar {
 #screen-plans main .toolbar button {
   white-space: nowrap;
 }
+/* 結果文言を同じ領域へ重ね、コピー後も隣の操作を同じ位置へ保つ。 */
+#screen-plans main .toolbar .copy-feedback {
+  display: inline-grid;
+}
+#screen-plans .copy-feedback > span,
+#screen-plans .copy-feedback::after {
+  grid-area: 1 / 1;
+}
+#screen-plans .copy-feedback::after {
+  content: attr(data-reserve-wide);
+  visibility: hidden;
+}
 #screen-plans main .toolbar .nav-btn {
   min-width: 36px;
 }
 #screen-plans .short-label {
   display: none;
 }
-/* デスクトップで表示する場合はハンバーガーとモバイル専用メタを隠す。 */
+/* デスクトップで表示する場合は、ハンバーガーとモバイル幅だけで使うメタ情報欄を隠す。 */
 #screen-plans #plans-menu-btn {
   display: none;
 }
@@ -1446,6 +1467,9 @@ main > .toolbar {
   }
   #screen-plans .short-label {
     display: inline;
+  }
+  #screen-plans .copy-feedback::after {
+    content: attr(data-reserve-short);
   }
   #screen-plans #meta-mobile {
     display: block;

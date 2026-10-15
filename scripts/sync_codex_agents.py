@@ -1,6 +1,6 @@
 #!/usr/bin/env -S uv run --script
 # /// script
-# requires-python = ">=3.12"
+# requires-python = ">=3.15"
 # dependencies = ["pytilpack[quart]>=1.47.0"]
 # ///
 """Codex向けAGENTS.mdをベース記述とagent-toolkit rulesから生成する。"""
@@ -30,7 +30,7 @@ CODEX_CONFIG = Path("share/codex_config.toml")
 GENERATED_MARKER = (
     "<!-- dotfilesリポジトリの.chezmoi-source/dot_codex/AGENTS.mdから~/.codex/AGENTS.mdへ配布する自動生成ファイル。"
     "dotfilesリポジトリのscripts/sync_generated_files.pyで再生成し、手動編集しない。"
-    "本文は全リポジトリ共通のCodex向け規範であり、対象リポジトリのAGENTS.mdの記述ではない。 -->"
+    "本文は全リポジトリ共通のCodex向け規範である。 -->"
 )
 # 常時読み込まれる規範の配布物へ付ける境界。
 NORMATIVE_ELEMENT = "atk-auto"
@@ -110,7 +110,10 @@ def sync(root: Path = REPO_ROOT) -> bool:
     if target.exists() and target.read_text(encoding="utf-8") == content:
         return False
     if not common.atomic_write_text(target, content, tag="codex agents"):
-        raise OSError(f"Codex AGENTS.mdの書き込みに失敗: {TARGET}")
+        raise OSError(
+            f"Codex AGENTS.mdの書き込みに失敗: {TARGET}。保存先の書込権限と空き容量を確認して、"
+            "uv run --frozen python scripts/sync_codex_agents.pyを再実行してください。"
+        )
     return True
 
 

@@ -14,16 +14,15 @@ Claude Codeの確認ダイアログを無条件に許可する。
 deny規則またはask規則に一致する要求の確認は、本フックでは抑止できない。
 """
 
-# 関数の実行時までだけ使う依存を、Python 3.15では使用時まで読み込まない。旧Pythonでは通常のimportとなる。
-__lazy_modules__ = {"agent_toolkit._common", "agent_toolkit._plan", "datetime"}
-
 import contextlib
-import datetime
 import json
 import os
 
-from agent_toolkit._common import state_paths as _state_paths
-from agent_toolkit._plan import owner_records as _owner_records
+# 関数の実行時にだけ使う依存は、使用時まで読み込まない。
+lazy import datetime
+
+lazy from agent_toolkit._common import state_paths as _state_paths
+lazy from agent_toolkit._plan import owner_records as _owner_records
 
 # 記録ファイル名と、退避先の1世代分のファイル名。
 _LOG_NAME = "permissionrequest.log"
@@ -69,7 +68,7 @@ def _build_record(payload_text: str) -> dict[str, object]:
     """
     try:
         payload = json.loads(payload_text)
-    except (json.JSONDecodeError, ValueError):
+    except json.JSONDecodeError, ValueError:
         payload = None
     if not isinstance(payload, dict):
         payload = {}

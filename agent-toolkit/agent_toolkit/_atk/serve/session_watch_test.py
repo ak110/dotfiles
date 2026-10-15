@@ -31,9 +31,10 @@ class _Collector:
     def wait(self, predicate: typing.Callable[[], bool], timeout: float = 5.0) -> bool:
         deadline = time.monotonic() + timeout
         while time.monotonic() < deadline:
+            self.event.clear()
             if predicate():
                 return True
-            time.sleep(0.02)
+            self.event.wait(max(0, deadline - time.monotonic()))
         return predicate()
 
     @property
@@ -279,7 +280,8 @@ def test_removal_requests_refresh_only_for_records_that_may_be_listed(tmp_path: 
     tracker.prime(str(listed), True)
 
     tracker.record_removed(excluded)
-    time.sleep(0.1)
+    # 保留中の通知があれば、debounceを待たずにこの場で送らせる。
+    tracker.flush()
     assert not collector.flushes
     tracker.record_removed(listed)
 
@@ -295,7 +297,7 @@ def test_paths_outside_the_record_roots_are_ignored(tmp_path: pathlib.Path) -> N
 
     tracker.record_changed(outside)
     tracker.record_changed(not_rollout)
-    time.sleep(0.1)
+    tracker.flush()
 
     assert not collector.flushes
 
@@ -337,8 +339,8 @@ def test_record_watch_stops_refreshing_on_unrelated_directories_after_root_creat
     try:
         (tmp_path / "claude" / "projects").mkdir()
         assert collector.wait(lambda: collector.refreshed)
-        # debounce中に保留した通知の送出を待ってから消去する。
-        time.sleep(0.2)
+        # debounce中に保留した通知があれば、この場で送らせてから消去する。
+        tracker.flush()
         collector.flushes.clear()
 
         (tmp_path / "claude" / "unrelated").mkdir()
@@ -361,7 +363,7 @@ def test_record_watch_keeps_shared_ancestor_while_another_root_is_missing(tmp_pa
         collector.flushes.clear()
         (tmp_path / "claude" / "projects").mkdir()
         assert collector.wait(lambda: collector.refreshed)
-        time.sleep(0.2)
+        tracker.flush()
         collector.flushes.clear()
 
         (tmp_path / "codex").mkdir()

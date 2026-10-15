@@ -65,58 +65,39 @@ Write / Edit / MultiEdit / apply_patch:
 ホスト差の扱い:
 
 - 編集入力は`_hook_tool_input`が共通の操作記録へ正規化し、各判定処理はホストを区別しない
-- 非空文字列の`turn_id`からCodexかどうかを判定し、payload読込直後に一度だけ判定する
+- 空でない文字列の`turn_id`を持つ入力をCodexと判定し、この判定はpayloadの読込直後に一度だけ行う
 - 大量読取の遮断はCodexだけへ適用し、PowerShellの改行を確かめる処理はClaudeの`Write`へ限定する
 - 警告は1つの`hookSpecificOutput.additionalContext`へ結合し、遮断は最初の違反をexit 2とstderrで返す
 """
 
 from __future__ import annotations
 
-# 関数の実行時までだけ使う依存を、Python 3.15では使用時まで読み込まない。旧Pythonでは通常のimportとなる。
-__lazy_modules__ = {
-    "agent_toolkit._common",
-    "agent_toolkit._common.runtime_identity",
-    "agent_toolkit._common.session_state",
-    "agent_toolkit._hooks",
-    "agent_toolkit._hooks.host",
-    "agent_toolkit._hooks.notice",
-    "agent_toolkit._hooks.pretooluse.agent_checks",
-    "agent_toolkit._hooks.pretooluse.confirmation_reads",
-    "agent_toolkit._hooks.pretooluse.content_checks",
-    "agent_toolkit._hooks.pretooluse.decision",
-    "agent_toolkit._hooks.pretooluse.large_reads",
-    "agent_toolkit._hooks.pretooluse.notices",
-    "agent_toolkit._hooks.pretooluse.operation_skills",
-    "agent_toolkit._hooks.pretooluse.shell_checks",
-    "agent_toolkit._hooks.pretooluse.task_document_launch",
-    "agent_toolkit._hooks.pretooluse.warning_context",
-    "dataclasses",
-}
-
-import dataclasses
 import json
 import os
 import pathlib
 import sys
 
-from agent_toolkit._common import host_homes as _host_homes
-from agent_toolkit._common import response_language_check as _response_language_check
-from agent_toolkit._common import transcript as _transcript
-from agent_toolkit._common.runtime_identity import RuntimeIdentity, co_author_trailer, identity_observations
-from agent_toolkit._common.session_state import read_state
-from agent_toolkit._hooks import (
+# 関数の実行時にだけ使う依存は、使用時まで読み込まない。
+lazy import dataclasses
+
+lazy from agent_toolkit._common import host_homes as _host_homes
+lazy from agent_toolkit._common import response_language_check as _response_language_check
+lazy from agent_toolkit._common import transcript as _transcript
+lazy from agent_toolkit._common.runtime_identity import RuntimeIdentity, co_author_trailer, identity_observations
+lazy from agent_toolkit._common.session_state import read_state
+lazy from agent_toolkit._hooks import (
     background_task_outputs as _background_task_outputs,
 )
-from agent_toolkit._hooks import (
+lazy from agent_toolkit._hooks import (
     message_format as _message_format,
 )
-from agent_toolkit._hooks import rules_context as _rules_context
-from agent_toolkit._hooks import (
+lazy from agent_toolkit._hooks import rules_context as _rules_context
+lazy from agent_toolkit._hooks import (
     tool_input as _hook_tool_input,
 )
-from agent_toolkit._hooks.host import is_codex_payload
-from agent_toolkit._hooks.notice import _WARN_TAG, consume_warning_blocks, set_warning_session_id
-from agent_toolkit._hooks.pretooluse.agent_checks import (
+lazy from agent_toolkit._hooks.host import is_codex_payload
+lazy from agent_toolkit._hooks.notice import _WARN_TAG, consume_warning_blocks, set_warning_session_id
+lazy from agent_toolkit._hooks.pretooluse.agent_checks import (
     _AGENTS_SERVER_KILL_TOOLS,
     _AGENTS_SERVER_SEND_TOOLS,
     _AGENTS_SERVER_TOOL_NAMES,
@@ -128,13 +109,17 @@ from agent_toolkit._hooks.pretooluse.agent_checks import (
     _handle_language_check,
     _record_iss_sidechain_probe,
 )
-from agent_toolkit._hooks.pretooluse.confirmation_reads import unread_reference_warning
-from agent_toolkit._hooks.pretooluse.content_checks import _collect_edit_operation_warnings, _warn_mojibake
-from agent_toolkit._hooks.pretooluse.decision import Decision
-from agent_toolkit._hooks.pretooluse.large_reads import bash_read_paths, check_large_bash_read, session_record_reference_warning
-from agent_toolkit._hooks.pretooluse.notices import _HOOK_ID, _llm_notice
-from agent_toolkit._hooks.pretooluse.operation_skills import operation_skill_warnings
-from agent_toolkit._hooks.pretooluse.shell_checks import (
+lazy from agent_toolkit._hooks.pretooluse.confirmation_reads import unread_reference_warning
+lazy from agent_toolkit._hooks.pretooluse.content_checks import _collect_edit_operation_warnings, _warn_mojibake
+lazy from agent_toolkit._hooks.pretooluse.decision import Decision
+lazy from agent_toolkit._hooks.pretooluse.large_reads import (
+    bash_read_paths,
+    check_large_bash_read,
+    session_record_reference_warning,
+)
+lazy from agent_toolkit._hooks.pretooluse.notices import _HOOK_ID, _llm_notice
+lazy from agent_toolkit._hooks.pretooluse.operation_skills import operation_skill_warnings
+lazy from agent_toolkit._hooks.pretooluse.shell_checks import (
     _check_bash_atk_output_loss,
     _check_bash_option_after_terminator,
     _check_bash_process_kill_by_pattern,
@@ -145,8 +130,8 @@ from agent_toolkit._hooks.pretooluse.shell_checks import (
     _warn_git_rev_parse_short_multiple,
     _warn_windows_drive_letter_path,
 )
-from agent_toolkit._hooks.pretooluse.task_document_launch import AGENT_TOOL_NAMES, check_task_document_launch
-from agent_toolkit._hooks.pretooluse.warning_context import (
+lazy from agent_toolkit._hooks.pretooluse.task_document_launch import AGENT_TOOL_NAMES, check_task_document_launch
+lazy from agent_toolkit._hooks.pretooluse.warning_context import (
     format_warning_context,
 )
 
@@ -155,7 +140,7 @@ def _settings_commit_attribution(path: pathlib.Path) -> tuple[bool, str | None]:
     """設定ファイルが`attribution.commit`を文字列として定義するかと、その値を返す。"""
     try:
         settings = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, UnicodeError, json.JSONDecodeError, ValueError):
+    except OSError, UnicodeError, json.JSONDecodeError, ValueError:
         return False, None
     if not isinstance(settings, dict):
         return False, None
@@ -200,7 +185,7 @@ def main(payload_text: str) -> int:
     """
     try:
         payload = json.loads(payload_text)
-    except (json.JSONDecodeError, ValueError):
+    except json.JSONDecodeError, ValueError:
         # 想定外入力ではフックを無効化（実処理の破損を避ける安全側の判定）
         return 0
 

@@ -68,7 +68,13 @@ def ensure_marketplace() -> bool:
 
     dotfiles_root = common.find_dotfiles_root()
     if dotfiles_root is None:
-        logger.info(log_format.format_status("marketplace", "dotfiles ルートが見つからず登録をスキップ"))
+        logger.info(
+            log_format.format_status(
+                "marketplace",
+                "dotfiles ルートが見つからず登録をスキップ。"
+                "chezmoiの作業ツリーに`.claude-plugin/marketplace.json`を復元して`update-dotfiles`を再実行する",
+            ),
+        )
         return False
     add_result = claude_common.run_claude(
         ["plugin", "marketplace", "add", str(dotfiles_root), "--scope=user"],
@@ -76,7 +82,14 @@ def ensure_marketplace() -> bool:
     )
     if add_result is None or add_result.returncode != 0:
         stderr = add_result.stderr.strip() if add_result else ""
-        logger.info(log_format.format_status("marketplace", f"登録に失敗したためスキップ: {stderr}"))
+        logger.info(
+            log_format.format_status(
+                "marketplace",
+                f"登録に失敗したためスキップ: {stderr}。"
+                f'`claude plugin marketplace add "{dotfiles_root}" '
+                "--scope=user`を実行する",
+            ),
+        )
         return False
     logger.info(log_format.format_status("marketplace", f"{claude_common.MARKETPLACE_NAME} を登録しました"))
     return True
@@ -105,7 +118,13 @@ def repair_marketplace() -> bool:
     """
     dotfiles_root = common.find_dotfiles_root()
     if dotfiles_root is None:
-        logger.info(log_format.format_status("marketplace", "dotfiles ルートが見つからず修復をスキップ"))
+        logger.info(
+            log_format.format_status(
+                "marketplace",
+                "dotfiles ルートが見つからず修復をスキップ。"
+                "chezmoiの作業ツリーに`.claude-plugin/marketplace.json`を復元して`update-dotfiles`を再実行する",
+            ),
+        )
         return False
 
     claude_common.run_claude(["plugin", "marketplace", "remove", claude_common.MARKETPLACE_NAME])
@@ -117,14 +136,23 @@ def repair_marketplace() -> bool:
 
     recheck = _check_marketplace_from_file()
     if recheck is True:
-        logger.info(log_format.format_status("marketplace", f"{claude_common.MARKETPLACE_NAME} を再登録しました"))
+        logger.info(
+            log_format.format_status("marketplace", f"{claude_common.MARKETPLACE_NAME} を再登録しました"),
+        )
         return True
     # ファイル検査で判定不能 (両ファイル不在) でも CLI add が成功していれば登録済みとみなす
     if recheck is None and add_ok:
-        logger.info(log_format.format_status("marketplace", f"{claude_common.MARKETPLACE_NAME} を再登録しました"))
+        logger.info(
+            log_format.format_status("marketplace", f"{claude_common.MARKETPLACE_NAME} を再登録しました"),
+        )
         return True
 
-    logger.info(log_format.format_status("marketplace", "CLI では修復できないため JSON を直接書き換えます"))
+    logger.info(
+        log_format.format_status(
+            "marketplace",
+            "CLI では修復できないため JSON を直接書き換えます。対応不要（処理は継続した）",
+        ),
+    )
     known_ok = _rewrite_known_marketplaces_entry(dotfiles_root)
     extra_ok = _rewrite_settings_extra_known_entry(dotfiles_root)
     if known_ok and extra_ok:
@@ -133,7 +161,14 @@ def repair_marketplace() -> bool:
         refresh_marketplace()
         logger.info(log_format.format_status("marketplace", "JSON 直接書き換えで修復しました"))
         return True
-    logger.info(log_format.format_status("marketplace", "修復に失敗しました"))
+    logger.info(
+        log_format.format_status(
+            "marketplace",
+            "修復に失敗しました。"
+            f"`claude plugin marketplace remove {claude_common.MARKETPLACE_NAME}`の後に`claude "
+            f'plugin marketplace add "{dotfiles_root}" --scope=user`を実行する',
+        ),
+    )
     return False
 
 
@@ -154,8 +189,10 @@ def refresh_marketplace() -> bool:
         logger.info(
             log_format.format_status(
                 "marketplace",
-                f"{claude_common.MARKETPLACE_NAME} の refresh に失敗 (続行): {common.format_cli_error(result)}",
-            )
+                f"{claude_common.MARKETPLACE_NAME} の refresh に失敗 "
+                f"(続行): {common.format_cli_error(result)}。"
+                f"手動で`claude plugin marketplace update {claude_common.MARKETPLACE_NAME}`を実行する",
+            ),
         )
         return False
     return True

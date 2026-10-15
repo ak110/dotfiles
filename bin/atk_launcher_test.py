@@ -24,7 +24,7 @@ def _git(cwd: pathlib.Path, *arguments: str) -> None:
 
 
 def _write_child(root: pathlib.Path, name: str, status: int) -> None:
-    directory = root / "agent-toolkit" / "bin"
+    directory = root / "agent-toolkit" / "scripts"
     directory.mkdir(parents=True, exist_ok=True)
     script = directory / "child.py"
     script.write_text(
@@ -123,7 +123,7 @@ def test_main_and_unrelated_cwd_use_installed_entry(repositories: dict[str, path
 def test_missing_worktree_entry_fails_without_using_installed_success(repositories: dict[str, pathlib.Path]) -> None:
     """同一リポジトリの入口不足を、別版の成功で隠さず対処とともに返す。"""
     worktree = repositories["worktree"]
-    (worktree / "agent-toolkit" / "bin" / ("atk.cmd" if os.name == "nt" else "atk")).unlink()
+    (worktree / "agent-toolkit" / "scripts" / ("atk.cmd" if os.name == "nt" else "atk")).unlink()
     result = _run(repositories["main"], worktree, ["agents", "list"])
     assert result.returncode == 127
     assert not result.stdout
@@ -139,11 +139,11 @@ def test_windows_entry_preserves_batch_encoding() -> None:
 
 
 def test_path_lookup_reaches_worktree_version_before_plugin_entry(repositories: dict[str, pathlib.Path]) -> None:
-    """dotfilesの登録順（`bin`の後に`agent-toolkit/bin`）のPATHで、名前だけで起動した`atk`も改修版へ到達する。"""
+    """dotfilesの登録順（`bin`の後に`agent-toolkit/scripts`）のPATHで、名前だけで起動した`atk`も改修版へ到達する。"""
     main = repositories["main"]
     worktree = repositories["worktree"]
     environment = dict(os.environ)
-    environment["PATH"] = os.pathsep.join([str(main / "bin"), str(main / "agent-toolkit" / "bin"), environment["PATH"]])
+    environment["PATH"] = os.pathsep.join([str(main / "bin"), str(main / "agent-toolkit" / "scripts"), environment["PATH"]])
     command = 'cmd.exe /d /s /c "atk review-table show"' if os.name == "nt" else ["atk", "review-table", "show"]
     completed = subprocess.run(
         command,

@@ -11,6 +11,7 @@ from collections.abc import Callable, Coroutine
 from typing import Any
 
 from agent_toolkit._agents_server import task_documents
+from agent_toolkit._agents_server.file_operations import finish_task, run_file_operation
 from agent_toolkit._agents_server.input_validation import validate_prompt
 from agent_toolkit._agents_server.result_projection import (
     action_detail,
@@ -25,7 +26,7 @@ _LOG = logging.getLogger("agent-toolkit.agents-server.state")
 RESULT_RETENTION_SECONDS = 1800.0
 # 委譲先の最終活動時刻からの経過が本値を超えた待機の応答へ、停滞の可能性を示す項目を加える。
 # 値はユーザーの提案に基づく300秒とする。長時間のコマンドの実行待ちでも超過し得るため、
-# 超過は停滞の確定ではなく委譲元が状況を調べる契機として扱う。
+# 超過は委譲元が状況を調べる契機として扱う。
 STALL_NOTICE_SECONDS = 300.0
 # ホストが応答しないMCPツール呼び出しをバックグラウンドタスクへ移すまでの秒数。
 # 以降の上限はこの閾値を制約として導出する。単独の値として決めない。
@@ -299,6 +300,9 @@ class SessionState:
     updated_at: str = dataclasses.field(default_factory=utc_now)
     output_updated_at: str | None = None
     api_error: dict[str, Any] | None = None
+    # 最新モデル文脈の観測値。未知は0で補完しない。
+    context_tokens: int | float | None = None
+    context_window: int | float | None = None
     # backend資源の解放期限。未回収の終端結果はこの期限を過ぎても保持する。
     retention_deadline: float | None = None
     turn_control_lock: asyncio.Lock = dataclasses.field(default_factory=asyncio.Lock, repr=False)
@@ -322,6 +326,8 @@ class SessionState:
     _published_registry_executor: session_registry.ProcessIdentity | None = dataclasses.field(default=None, repr=False)
     _terminal_notified: bool = dataclasses.field(default=False, repr=False)
     _lifecycle_running: bool = dataclasses.field(default=False, repr=False)
+    _registration_task: asyncio.Task[str | None] | None = dataclasses.field(default=None, repr=False)
+    _registration_lock: asyncio.Lock = dataclasses.field(default_factory=asyncio.Lock, repr=False)
 
     @property
     def terminal(self) -> bool:
@@ -446,51 +452,14 @@ class SessionState:
         if event is not None:
             for lifecycle_listener in tuple(_LIFECYCLE_LISTENERS):
                 lifecycle_listener(self, event)
-        # 再開ではbackendが再生成したsessionを公開した後に起動情報を写すため、起動情報の変化でも公開し直す。
-        launch_info = session_registry.LaunchInfo.of(self)
-        if (
-            self.publish_registry
-            and not self.result_delivered
-            and (
-                registry_terminal != self._published_registry_terminal
-                or self.turn_seq != self._published_registry_turn_seq
-                or self.status != self._published_registry_status
-                or self.launcher_session_id != self._published_registry_launcher
-                or self.fast_mode != self._published_registry_fast_mode
-                or launch_info != self._published_registry_launch_info
-                or self.executor_process != self._published_registry_executor
-            )
-        ):
-            session_registry.publish(
-                self.session_id,
-                terminal=registry_terminal,
-                engine=self.engine,
-                cwd=self.cwd,
-                model=self.model,
-                effort=self.effort,
-                fast_mode=self.fast_mode,
-                codex_model_provider=self.codex_model_provider,
-                codex_subscription_provider=self.codex_subscription_provider,
-                model_type=self.model_type,
-                launch_kind=self.launch_kind,
-                turn_seq=self.turn_seq,
-                launch_info=launch_info,
-                started_at=self.started_at,
-                session_updated_at=self.updated_at,
-                turn_id=self.turn_id or None,
-                processes=tuple(
-                    process for process in (session_registry.owner_process(), self.executor_process) if process is not None
-                ),
-                status=typing.cast(typing.Literal["starting", "running", "completed", "failed", "interrupted"], self.status),
-                launcher_session_id=self.launcher_session_id,
-            )
-            self._published_registry_launcher = self.launcher_session_id
-            self._published_registry_terminal = registry_terminal
-            self._published_registry_turn_seq = self.turn_seq
-            self._published_registry_status = self.status
-            self._published_registry_fast_mode = self.fast_mode
-            self._published_registry_launch_info = launch_info
-            self._published_registry_executor = self.executor_process
+        if self.publish_registry:
+            try:
+                loop = asyncio.get_running_loop()
+            except RuntimeError:
+                self.publish_registration()
+            else:
+                if self._registration_task is None or self._registration_task.done():
+                    self._registration_task = loop.create_task(self._publish_registration_until_current())
         if not registry_terminal:
             self._terminal_notified = False
         elif not self._terminal_notified:
@@ -505,6 +474,112 @@ class SessionState:
                 terminal_listener(self)
         for listener in tuple(_TOUCH_LISTENERS):
             listener()
+
+    async def _publish_registration_until_current(self) -> str | None:
+        while self._registration_parameters() is not None:
+            error = await self.publish_registration_async()
+            if error is not None:
+                return error
+        return None
+
+    async def drain_registration(self) -> None:
+        """通知から開始した登録公開を完了させる。"""
+        task = self._registration_task
+        if task is not None:
+            await finish_task(task)
+
+    @property
+    def registration_pending(self) -> bool:
+        """通知からの登録公開が進行中かを返す。"""
+        return self._registration_task is not None and not self._registration_task.done()
+
+    async def publish_registration_async(self) -> str | None:
+        """確定した登録情報だけをworkerへ渡し、成功したsnapshotをloopで覚える。"""
+        async with self._registration_lock:
+            return await self._publish_registration_async()
+
+    async def _publish_registration_async(self) -> str | None:
+        parameters = self._registration_parameters()
+        if parameters is None:
+            return None
+        executor = self.executor_process
+
+        def remember(_result: None) -> None:
+            self._remember_registration(parameters, executor)
+
+        try:
+            await run_file_operation(session_registry.publish, self.session_id, on_success=remember, **parameters)
+        except OSError as error:
+            _LOG.exception("session登録の保存に失敗しました: session_id=%s cwd=%s", self.session_id, self.cwd)
+            return str(error)
+        return None
+
+    def publish_registration(self) -> str | None:
+        """登録簿を更新し、保存不成立でも開始済みのsessionと通知を失わせない。
+
+        成功した値だけを公開済みとして覚えるため、次の状態更新・flushでも保存を再試行できる。
+        この操作だけでは活動時刻を進めない。
+        """
+        parameters = self._registration_parameters()
+        if parameters is None:
+            return None
+        try:
+            session_registry.publish(self.session_id, **parameters)
+        except OSError as error:
+            _LOG.exception("session登録の保存に失敗しました: session_id=%s cwd=%s", self.session_id, self.cwd)
+            return str(error)
+        self._remember_registration(parameters, self.executor_process)
+        return None
+
+    def _registration_parameters(self) -> dict[str, Any] | None:
+        registry_terminal = self.result_available
+        # 再開ではbackendの初回公開の後に起動情報を写すため、その変化でも更新する。
+        launch_info = session_registry.LaunchInfo.of(self)
+        if not (
+            self.publish_registry
+            and not self.result_delivered
+            and (
+                registry_terminal != self._published_registry_terminal
+                or self.turn_seq != self._published_registry_turn_seq
+                or self.status != self._published_registry_status
+                or self.launcher_session_id != self._published_registry_launcher
+                or self.fast_mode != self._published_registry_fast_mode
+                or launch_info != self._published_registry_launch_info
+                or self.executor_process != self._published_registry_executor
+            )
+        ):
+            return None
+        return {
+            "terminal": registry_terminal,
+            "engine": self.engine,
+            "cwd": self.cwd,
+            "model": self.model,
+            "effort": self.effort,
+            "fast_mode": self.fast_mode,
+            "codex_model_provider": self.codex_model_provider,
+            "codex_subscription_provider": self.codex_subscription_provider,
+            "model_type": self.model_type,
+            "launch_kind": self.launch_kind,
+            "turn_seq": self.turn_seq,
+            "launch_info": launch_info,
+            "started_at": self.started_at,
+            "session_updated_at": self.updated_at,
+            "turn_id": self.turn_id or None,
+            "processes": tuple(
+                process for process in (session_registry.owner_process(), self.executor_process) if process is not None
+            ),
+            "status": typing.cast(typing.Literal["starting", "running", "completed", "failed", "interrupted"], self.status),
+            "launcher_session_id": self.launcher_session_id,
+        }
+
+    def _remember_registration(self, parameters: dict[str, Any], executor: session_registry.ProcessIdentity | None) -> None:
+        self._published_registry_launcher = parameters["launcher_session_id"]
+        self._published_registry_terminal = parameters["terminal"]
+        self._published_registry_turn_seq = parameters["turn_seq"]
+        self._published_registry_status = parameters["status"]
+        self._published_registry_fast_mode = parameters["fast_mode"]
+        self._published_registry_launch_info = parameters["launch_info"]
+        self._published_registry_executor = executor
 
     def public_status(self, *, include_result: bool = False) -> dict[str, Any]:
         """waitとkillが消費する状態を公開契約へ射影する。"""
@@ -553,6 +628,8 @@ class SessionResumeState:
     started_at: str | None = dataclasses.field(default_factory=utc_now)
     updated_at: str | None = dataclasses.field(default_factory=utc_now)
     output_updated_at: str | None = None
+    context_tokens: int | float | None = None
+    context_window: int | float | None = None
     turn_seq: int = 0
     excluded_candidates: frozenset[ModelCandidate] = dataclasses.field(default_factory=frozenset)
     status: str = ""
@@ -574,6 +651,8 @@ class SessionResumeState:
             started_at=session.started_at,
             updated_at=session.updated_at,
             output_updated_at=session.output_updated_at,
+            context_tokens=session.context_tokens,
+            context_window=session.context_window,
             turn_seq=session.turn_seq,
             excluded_candidates=session.excluded_candidates,
             model=session.model,

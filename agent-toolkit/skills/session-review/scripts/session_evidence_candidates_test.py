@@ -493,7 +493,7 @@ def test_candidate_events_excludes_delegate_returns_that_only_report_success() -
     """正常な完了だけを示す返却を除外し、想定外事象、未解決の指摘、不適合の判定および自由記述を持つ返却は残す。
 
     前置きの文に続けて`status: completed`を返す形も、1回の配送で終えた委譲先では正常な完了として除く。
-    この形は振り返りの候補の大半を占めた雑音である。
+    この形は恒久対策を要しないまま振り返りの候補の大半を占めていた。
     再開された委譲先の前置き付きの返却は、受け取り済みの報告を返し直した異常を前置きで述べた実例があるため残す。
     """
     excluded_texts = [
@@ -572,11 +572,19 @@ def test_candidate_events_excludes_successful_shell_delegation_returns() -> None
     assert candidates[-1]["excluded"]["normal-delegate-return"] == 2
 
 
-def test_codex_project_instructions_do_not_change_delegation_kind_or_resume() -> None:
+@pytest.mark.parametrize(
+    "inserted",
+    [
+        "# AGENTS.md instructions for /repo\n\n<INSTRUCTIONS>",
+        "<environment_context>設定</environment_context>",
+        "<atk-auto source='rules_context'>規範</atk-auto>",
+    ],
+)
+def test_codex_project_instructions_do_not_change_delegation_kind_or_resume(inserted: str) -> None:
     """Codexの先頭注入を除いた配送本文からshell委譲と再開を判定する。"""
     record = "codex-shell"
     timeline = [
-        {"kind": "user", "record": record, "line": 1, "text": "# AGENTS.md instructions for /repo\n\n<INSTRUCTIONS>"},
+        {"kind": "user", "record": record, "line": 1, "text": inserted, "runtime_inserted": True},
         {
             "kind": "user",
             "record": record,
@@ -593,6 +601,8 @@ def test_codex_project_instructions_do_not_change_delegation_kind_or_resume() ->
     assert not resumed_records
     assert candidates[-1]["excluded"]["normal-delegate-return"] == 1
     assert all(candidate["candidate_kind"] != "delegate-return" for candidate in candidates[:-1])
+    timeline.append({"kind": "user", "record": record, "line": 4, "text": "再開して確認する"})
+    assert evidence_candidates._delegation_record_kinds(timeline) == ({record}, {record})  # pylint: disable=protected-access
 
 
 def test_shell_delegation_marker_matches_agents_server_prompt() -> None:
@@ -1056,7 +1066,7 @@ def test_candidate_events_treats_quoted_operator_shaped_search_terms_as_data() -
 
 
 def test_public_bundle_excludes_claude_wait_continuations(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
-    """Bashの記録を公開bundleで処理し、包装と出力形式が違う継続を同じ区分へ集計する。"""
+    """Bashの記録を公開bundleで処理し、包装の有無と出力形式が異なる待機継続を同じ区分へ集計する。"""
     entries = []
     cases = [
         ("atk agents wait", 3),

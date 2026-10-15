@@ -1,8 +1,8 @@
 r"""成果作業で`agent-toolkit:completion-report`の起動を忘れた終了をStopフックで検出する。
 
 成果作業（成功した`agent-toolkit:process-wi`・`agent-toolkit:add-awi-by-user`の開始、リポジトリへの自編集、
-計画の保存、WIの保存、commit・pushの実行）を行った作業に、同じ作業の開始以後の起動証拠が無ければ、
-初回Stopからcompletion-reportの起動と残工程への続行を案内して遮断する。
+計画の保存、WIの保存、commit・pushの実行）を行った作業で、同じ作業の開始以後の起動証拠が無く、
+有効なプロジェクト規範による省略も無い場合は、初回のStopから遮断し、起動と残工程への続行を案内する。
 起動証拠はClaude Codeでは成功したSkill呼び出し、Codexでは実際の入力と結果が示す`SKILL.md`の読取とし、
 `termination_evidence`が観測した記録だけを使う。報告本文の見出し・区切り・区分・候補IDは判定に使わない。
 起動後の工程の完遂と報告の内容はcompletion-reportの規範が扱い、本フックは確かめない。
@@ -10,37 +10,93 @@ r"""成果作業で`agent-toolkit:completion-report`の起動を忘れた終了�
 中止・置換・技術的不成立と記録した作業と、確認の回答や委譲先の結果を待つ作業は遮断しない。
 成果作業が待つ非同期対象が生存している場合も遮断しない。待機対象は作業が起動したagents_serverのsessionと、
 作業の開始以後に起動した背景Bash・背景Agent・MCPのバックグラウンドタスク・未配送の完了通知とする。
-背景Bashは終了すると完了通知でターンが再開し、その時点で改めて判定する。
+有限の背景Bashは終了すると完了通知でターンが再開し、その時点で改めて判定する。
+既知のサーバー・watchの常駐起動は、完了通知を待てないため待機対象から外す。
 作業の開始より前から動く無関係なタスクは待機として扱わない。
 証拠やセッション記録（transcript）を読み取れない場合は遮断せず、Stop判定ログへ確かめられないことを記録する。
 
 委譲先での実行可否: 委譲先はcompletion-reportの適用対象ではないため、hook入力と環境印で除外する。
 """
 
-# 関数の実行時までだけ使う依存を、Python 3.15では使用時まで読み込まない。旧Pythonでは通常のimportとなる。
-__lazy_modules__ = {
-    "agent_toolkit._atk",
-    "agent_toolkit._hooks",
-    "agent_toolkit._hooks.agent_id",
-    "agent_toolkit._hooks.background_tasks",
-    "agent_toolkit._hooks.host",
-    "agent_toolkit._hooks.stop_session",
-}
-
+import json
 import pathlib
 
-from agent_toolkit._atk import run_script as _run_script
-from agent_toolkit._hooks import termination_evidence
-from agent_toolkit._hooks.agent_id import is_main_agent_context
-from agent_toolkit._hooks.background_tasks import async_launch_offsets, pending_async_task_ids
-from agent_toolkit._hooks.host import is_codex_payload
 from agent_toolkit._hooks.notice import block_formatter as _block_notice_formatter
-from agent_toolkit._hooks.stop_session import append_stop_log
-from agent_toolkit._hooks.stop_session import parse_stop_session as _parse_stop_session
+
+# 関数の実行時にだけ使う依存は、使用時まで読み込まない。
+lazy from agent_toolkit._atk import run_script as _run_script
+lazy from agent_toolkit._common import transcript
+lazy from agent_toolkit._common.shell_segments import extract_execution_segments
+lazy from agent_toolkit._hooks import termination_evidence
+lazy from agent_toolkit._hooks.agent_id import is_main_agent_context
+lazy from agent_toolkit._hooks.background_tasks import async_launch_offsets, pending_async_task_ids
+lazy from agent_toolkit._hooks.host import is_codex_payload
+lazy from agent_toolkit._hooks.stop_session import append_stop_log
+lazy from agent_toolkit._hooks.stop_session import parse_stop_session as _parse_stop_session
 
 _HOOK_ID = "termination_order_advisor"
 
 _block_notice = _block_notice_formatter(_HOOK_ID)
+
+
+def _resident_bash_ids(transcript_path: str) -> set[str]:
+    """終了通知を待てないサーバー・watchの起動IDと、その応答のタスクIDを返す。"""
+    identifiers: set[str] = set()
+    for line in transcript.read_transcript_lines(transcript_path) or []:
+        try:
+            entry = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if not isinstance(entry, dict) or entry.get("isSidechain"):
+            continue
+        message = entry.get("message")
+        content = message.get("content") if isinstance(message, dict) else None
+        for block in content if isinstance(content, list) else []:
+            if not isinstance(block, dict):
+                continue
+            if block.get("type") == "tool_use" and block.get("name") == "Bash":
+                tool_input = block.get("input")
+                command = tool_input.get("command") if isinstance(tool_input, dict) else None
+                identifier = block.get("id")
+                if isinstance(identifier, str) and isinstance(command, str) and _is_resident_command(command):
+                    identifiers.add(identifier)
+            elif block.get("type") == "tool_result" and block.get("tool_use_id") in identifiers:
+                response = entry.get("toolUseResult")
+                task_id = response.get("backgroundTaskId") if isinstance(response, dict) else None
+                if isinstance(task_id, str):
+                    identifiers.add(task_id)
+    return identifiers
+
+
+def _is_resident_command(command: str) -> bool:
+    """実行位置にある既知の常駐コマンドを判別し、引用や有限のtimeoutを除く。"""
+    for segment in extract_execution_segments(command):
+        if not segment.resolved or not segment.tokens:
+            continue
+        tokens = segment.tokens
+        name = pathlib.PurePath(tokens[0]).name
+        if pathlib.PurePath(segment.raw_tokens[0]).name == "timeout":
+            continue
+        if name in {"uv", "uvx"} and "run" in tokens:
+            tokens = tokens[tokens.index("run") + 1 :]
+            if not tokens:
+                continue
+            name = pathlib.PurePath(tokens[0]).name
+        if any(arg in {"--help", "--version"} for arg in tokens[1:]):
+            continue
+        script = tokens[2:3] if tokens[1:2] == ("run",) else tokens[1:2]
+        if (
+            name in {"uvicorn", "gunicorn", "watch", "nodemon", "http.server", "vite"}
+            or name in {"atk", "atk.py"}
+            and tokens[1:2] == ("serve",)
+            or name in {"npm", "pnpm", "yarn", "bun"}
+            and bool(script)
+            and script[0] in {"watch", "dev", "start"}
+            or name in {"node", "tsc", "webpack", "esbuild", "cargo", "dotnet", "deno"}
+            and "--watch" in tokens[1:]
+        ):
+            return True
+    return False
 
 
 def _work_order(work_id: str, work: dict) -> tuple[int, int]:
@@ -71,6 +127,7 @@ def _waiting_work_ids(payload: dict, session_id: str, transcript_path: str, work
     if not live:
         return waiting
     offsets = async_launch_offsets(transcript_path)
+    live -= _resident_bash_ids(transcript_path)
     ordered = sorted(works, key=lambda item: _work_order(*item))
     for identifier in live:
         launched_at = offsets.get(identifier)
@@ -132,7 +189,10 @@ def evaluate(payload_text: str) -> tuple[str, str]:
         + "\n"
         + termination_evidence.decision_hint(payload),
         fix=(
-            f"作業を完了して終える場合は{operation}、同スキルの工程の残り（作業完了報告、振り返り、最終報告、"
+            "適用するプロジェクト規範で起動を省く場合は、"
+            f"`{_run_script.PLUGIN_ROOT / 'skills/completion-report/references/termination-evidence.md'}`を直接読み、"
+            "`omit-completion`を記録して通常の報告を届ける。"
+            f"起動が必要な作業を完了して終える場合は{operation}、同スキルの工程の残り（作業完了報告、振り返り、最終報告、"
             "呼び出し元が定める終端工程）へ進む。"
             "ユーザーの中止・置換、確認の回答や委譲先の結果の待機、技術的不成立で終える場合は、"
             "原証拠と対象の`work_id`を`atk run-script termination-evidence -- --decision-file <判断JSONの絶対パス>`へ渡す。"

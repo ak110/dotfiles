@@ -23,7 +23,7 @@ def _isolate_process_loop_commands(monkeypatch: pytest.MonkeyPatch, tmp_path: pa
 
 
 class TestAlertMonitoring:
-    """process-loop常駐ループへのアラート自動検出統合。"""
+    """process-loopの常駐ループがアラートを自動で確認する処理のテスト。"""
 
     def test_alert_check_invoked_when_pending_zero(self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """件数0の反復でアラート確認が呼ばれ、投入0件なら待機へ進む。"""
@@ -86,7 +86,7 @@ class TestAlertMonitoring:
         _setup_notes(tmp_path)
         myrepo = tmp_path / "myrepo"
         myrepo.mkdir()
-        counts = iter([0, 1])
+        counts = iter([0, 1, 1])
         claude_calls: list[dict[str, Any]] = []
         monkeypatch.setattr(subprocess, "run", fake_run_with_remote_url(myrepo, claude_calls, 2))
         monkeypatch.setattr(_wi_readiness, "count_pending_entries", lambda *_a, **_k: next(counts))
@@ -159,7 +159,7 @@ class TestAlertMonitoring:
         monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
         claude_calls: list[dict[str, Any]] = []
         monkeypatch.setattr(subprocess, "run", fake_run_with_remote_url(myrepo, claude_calls, 2))
-        counts = iter([1, 2])
+        counts = iter([1, 2, 2])
         monkeypatch.setattr(_wi_readiness, "count_pending_entries", lambda *_a, **_k: next(counts))
         calls: list[str] = []
 
@@ -202,7 +202,7 @@ class TestAlertMonitoring:
         myrepo.mkdir()
         claude_calls: list[dict[str, Any]] = []
         monkeypatch.setattr(subprocess, "run", fake_run_with_remote_url(myrepo, claude_calls, 2))
-        counts = iter([0, 1])
+        counts = iter([0, 1, 1])
         monkeypatch.setattr(_wi_readiness, "count_pending_entries", lambda *_a, **_k: next(counts))
         monkeypatch.setattr(time, "monotonic", lambda: 1000.0)
         calls: list[str] = []

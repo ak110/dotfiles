@@ -1,8 +1,7 @@
 """セッション記録の一覧判定と変更監視を、サーバーとリモートヘルパーで共有する。
 
 サーバー側`sessions.py`と、SSH先で単独実行する`atk_serve_sessions_remote_helper.py`の双方が読み込む。
-ヘルパーはリモートホストのPython 3.10以上で標準ライブラリだけを前提に動くため、本モジュールは
-標準ライブラリだけをimportし、watchdogは監視の開始時に遅延importする。
+watchdogは監視の開始時に遅延importする。
 
 一覧に載せる記録は、ユーザー発話の記録行を1件以上持つものに限る。
 発話を持たない記録（Codexを起動しただけで入力しなかった記録など）は、選んでも本文がほぼ空になるためである。
@@ -224,7 +223,7 @@ def has_user_message(path: pathlib.Path, engine: str) -> bool | None:
 
 
 _TRUSTED_AGE_NS = 2_000_000_000
-"""解析結果を信用するために必要な、解析の開始時刻と更新時刻の差。秒単位とFATの2秒の時刻精度を覆う。"""
+"""解析結果を信用するために必要な、解析の開始時刻と更新時刻の差。更新時刻の精度が1秒または2秒（FAT）のファイルシステムでも書き換えを区別できる値とする。"""
 
 
 @dataclasses.dataclass(frozen=True)
@@ -234,7 +233,7 @@ class _IndexedRecord:
     mtime_ns: int
     size: int
     trusted: bool
-    """更新時刻の精度の範囲外で解析したため、無効化キーの一致だけで再利用できるか。"""
+    """更新から2秒以上後に解析しており、無効化キーの一致だけで再利用できるか。"""
     fields: SummaryFields
     delegated_ids: frozenset[str]
     """子セッションIDの集合。`fields`と同じ走査で求める。"""
@@ -461,7 +460,7 @@ class RecordWatch:
         class Handler(watchdog.events.FileSystemEventHandler):
             """watchdogのイベントを記録の変更へ変換する。"""
 
-            # リモートホストのPython 3.10でも読み込むため、3.12で導入された`typing.override`は付けない。
+            @typing.override
             def on_any_event(self, event: typing.Any) -> None:
                 watch.handle(event)
 

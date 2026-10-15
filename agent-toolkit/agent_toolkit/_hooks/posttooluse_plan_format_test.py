@@ -96,7 +96,7 @@ class TestPlanPostWrite:
     """計画ファイルへの書き込み後処理を検証する。"""
 
     def test_write_emits_check_notice_and_records_current_path(self, tmp_path: pathlib.Path) -> None:
-        """Write後にstandalone checker案内と現在パスを記録する。"""
+        """Write後に計画の構造を確かめるコマンドを案内し、現在の計画パスを記録する。"""
         home = tmp_path / "home"
         state_dir = tmp_path / "state"
         plan = _prepare_plan_home(home) / "sample.md"
@@ -235,7 +235,7 @@ class TestPlanPostWrite:
         assert QUALITY_CHECKPOINT_NOTICE not in result.stdout
 
     def test_codex_sidecar_is_silent(self, tmp_path: pathlib.Path) -> None:
-        """計画の副次ファイルはペア完成の対象外とする。"""
+        """計画の副次ファイルは、計画ファイル（メイン）と計画ファイル（詳細）の組の判定に含めず、通知を出力しない。"""
         home = tmp_path / "home"
         plans = _prepare_plan_home(home)
         main = plans / "sample.md"

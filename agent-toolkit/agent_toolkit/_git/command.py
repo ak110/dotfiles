@@ -119,7 +119,7 @@ def optional_stdout(args: Sequence[str], cwd: _Cwd = None, *, timeout: float | N
     """git標準出力を加工せずに返し、起動の失敗・時間切れ・非0終了では`None`を返す。"""
     try:
         result = run(args, cwd, capture_output=True, text=True, timeout=timeout)
-    except (OSError, subprocess.TimeoutExpired):
+    except OSError, subprocess.TimeoutExpired:
         return None
     if result.returncode != 0:
         return None
@@ -141,7 +141,7 @@ def lines(args: Sequence[str], cwd: _Cwd = None) -> list[str] | None:
     """git標準出力を行配列で返し、実行不能または非0終了時は`None`を返す。"""
     try:
         result = run(args, cwd, capture_output=True, text=True)
-    except (OSError, subprocess.SubprocessError):
+    except OSError, subprocess.SubprocessError:
         return None
     if result.returncode != 0:
         return None

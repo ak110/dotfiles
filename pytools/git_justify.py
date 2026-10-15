@@ -1,9 +1,6 @@
 # PYTHON_ARGCOMPLETE_OK
 """Gitの履歴改変スクリプト。"""
 
-# 営業時間を使わない呼出しでは、休日と営業時間の依存を読み込まない。
-__lazy_modules__ = {"businesstimedelta", "holidays"}
-
 import argparse
 import datetime
 import os
@@ -11,8 +8,9 @@ import random
 import subprocess
 import sys
 
-import businesstimedelta
-import holidays
+# 営業時間を使わない呼出しでは、休日と営業時間の依存を読み込まない。
+lazy import businesstimedelta
+lazy import holidays
 
 from pytools._internal.cli import enable_completion
 

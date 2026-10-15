@@ -1,4 +1,4 @@
-"""_managed_tempの管理対象一時ディレクトリ境界を検証する。"""
+"""managed-tempの保存先の解決、登録の検証と終了コードを検証する。"""
 
 # pylint: disable=protected-access
 
@@ -68,7 +68,7 @@ def test_state_root_path_ignores_relative_xdg_state_home(
 
 
 def test_list_managed_temp_returns_validated_jsonl_record(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
-    """`list`は登録簿ではなく真正性検証済みの領域だけを返す。"""
+    """`list`は真正性検証済みの領域だけを返す。"""
     monkeypatch.setattr(tempfile, "gettempdir", lambda: str(tmp_path))
     target = subject.create_managed_temp("publish-group")
 

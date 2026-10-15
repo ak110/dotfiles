@@ -309,7 +309,7 @@ def test_user_events_rejects_misused_since(
 def test_saved_user_events_preserves_original_positions_and_all_fields(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """保存済み出力の物理行ではなく元の組を選び、重複と確認回答を入力順・全情報で返す。"""
+    """元記録の組（recordとline）で選び、重複と確認回答を入力順・全情報で返す。"""
     # 保存形式は同モジュールの--user-events出力。質問と選択肢の欄も照会では再解釈しない。
     first = {"kind": "user", "record": "codex:parent:child", "line": 91, "text": "長い原文\n" * 2000}
     answer = {

@@ -1,0 +1,226 @@
+{
+  "case": "attachment-paths",
+  "source": {
+    "url": "https://arxiv.org/html/2610.11559v1",
+    "section": "C.2.1 A1",
+    "adaptation": "失敗機構を小規模な自己完結コードへ具体化。第三者テスターと回答制約は追加要求による。"
+  },
+  "conditions": [
+    "questions-only"
+  ],
+  "max_rounds": 6,
+  "termination": [
+    "submitted",
+    "turn-limit"
+  ],
+  "requirements": [
+    {
+      "id": "paths",
+      "answer": "パスは添付の保存ディレクトリからの完全な参照パスであり、参照・関連付けの返却と削除の内部キーをそろえる。",
+      "question_condition": "パスの意味、root、関連付け・削除で同じ添付を指す方法を質問したとき",
+      "disclose_in": [
+        "questions-only"
+      ],
+      "source": "requirements",
+      "tests": [
+        "reference",
+        "associate",
+        "delete"
+      ]
+    },
+    {
+      "id": "legacy",
+      "answer": "Attachments(root)、reference(name)、associate(name, owner)、delete(name)の従来APIを維持する。",
+      "question_condition": "既存APIや呼び出し元への互換性を質問したとき",
+      "disclose_in": [
+        "questions-only"
+      ],
+      "source": "requirements",
+      "tests": [
+        "legacy"
+      ]
+    }
+  ],
+  "behavior_criteria": [
+    {
+      "id": "ambiguity",
+      "description": "パスの意味と既存APIの必要性を質問から回復したか"
+    }
+  ],
+  "examples": [
+    {
+      "name": "success",
+      "condition": "questions-only",
+      "candidate": "\"\"\"添付の保存と公開操作を扱う課題。\"\"\"\n\nimport pathlib\n\n\nclass Attachments:\n    \"\"\"添付名と保存パスを管理する。\"\"\"\n\n    def __init__(self, root: str) -> None:\n        self.root = pathlib.PurePosixPath(root)\n        self.links: dict[str, str] = {}\n\n    def reference(self, name: str) -> str:\n        \"\"\"参照パスを返す。\"\"\"\n        return str(self.root / name)\n\n    def associate(self, name: str, owner: str) -> str:\n        \"\"\"添付を対象へ関連付ける。\"\"\"\n        self.links[self.reference(name)] = owner\n        return self.reference(name)\n\n    def delete(self, name: str) -> bool:\n        \"\"\"添付の関連付けを削除する。\"\"\"\n        return self.links.pop(self.reference(name), None) is not None\n",
+      "dialogue": {
+        "case": "attachment-paths",
+        "condition": "questions-only",
+        "document_version": "保存例v2",
+        "model": "固定保存例（モデル試行ではない）",
+        "settings": {
+          "fixture": true
+        },
+        "sessions": {
+          "candidate": "fixture-candidate",
+          "user": "fixture-user"
+        },
+        "termination": "submitted",
+        "turns": [
+          {
+            "role": "user",
+            "text": "添付ファイルのパスの扱いを統一してください。添付を参照する画面から関連付けと削除まで使えるようにしたいです。"
+          },
+          {
+            "role": "candidate",
+            "text": "パスはrootからの参照パスですか。既存APIは維持しますか。"
+          },
+          {
+            "role": "user",
+            "text": "パスは添付の保存ディレクトリからの完全な参照パスであり、参照・関連付けの返却と削除の内部キーをそろえる。\nAttachments(root)、reference(name)、associate(name, owner)、delete(name)の従来APIを維持する。"
+          },
+          {
+            "role": "candidate",
+            "text": "成果物を提出します。公開操作を検証しました。"
+          }
+        ],
+        "execution_errors": [],
+        "disclosures": [
+          {
+            "requirement": "paths",
+            "question": {
+              "turn": 2,
+              "quote": "パスはrootからの参照パスですか。既存APIは維持しますか。"
+            },
+            "answer": {
+              "turn": 3,
+              "quote": "パスは添付の保存ディレクトリからの完全な参照パスであり、参照・関連付けの返却と削除の内部キーをそろえる。"
+            },
+            "matched": true,
+            "source": "requirements"
+          },
+          {
+            "requirement": "legacy",
+            "question": {
+              "turn": 2,
+              "quote": "パスはrootからの参照パスですか。既存APIは維持しますか。"
+            },
+            "answer": {
+              "turn": 3,
+              "quote": "Attachments(root)、reference(name)、associate(name, owner)、delete(name)の従来APIを維持する。"
+            },
+            "matched": true,
+            "source": "requirements"
+          }
+        ],
+        "disclosure_audit": {
+          "reviewed_user_turns": [
+            1,
+            3
+          ],
+          "violations": []
+        },
+        "behavior": [
+          {
+            "criterion": "ambiguity",
+            "verdict": "適合",
+            "reason": "保存された対話と成果物を使う契約の保存例。実モデルの効果は判定しない。",
+            "evidence": [
+              {
+                "role": "candidate",
+                "turn": 2,
+                "quote": "パスはrootからの参照パスですか。既存APIは維持しますか。"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "failure",
+      "condition": "questions-only",
+      "candidate": "\"\"\"添付の保存と公開操作を扱う課題。\"\"\"\n\nimport pathlib\n\n\nclass Attachments:\n    \"\"\"添付名と保存パスを管理する。\"\"\"\n\n    def __init__(self, root: str) -> None:\n        self.root = pathlib.PurePosixPath(root)\n        self.links: dict[str, str] = {}\n\n    def reference(self, name: str) -> str:\n        \"\"\"参照パスを返す。\"\"\"\n        return str(self.root / name)\n\n    def associate(self, name: str, owner: str) -> str:\n        \"\"\"添付を対象へ関連付ける。\"\"\"\n        self.links[name] = owner\n        return name\n\n    def delete(self, name: str) -> bool:\n        \"\"\"添付の関連付けを削除する。\"\"\"\n        return self.links.pop(name, None) is not None\n\n# 失敗例: 旧APIを撤去する。\ndel Attachments.delete\n",
+      "dialogue": {
+        "case": "attachment-paths",
+        "condition": "questions-only",
+        "document_version": "保存例v2",
+        "model": "固定保存例（モデル試行ではない）",
+        "settings": {
+          "fixture": true
+        },
+        "sessions": {
+          "candidate": "fixture-candidate",
+          "user": "fixture-user"
+        },
+        "termination": "submitted",
+        "turns": [
+          {
+            "role": "user",
+            "text": "添付ファイルのパスの扱いを統一してください。添付を参照する画面から関連付けと削除まで使えるようにしたいです。"
+          },
+          {
+            "role": "candidate",
+            "text": "パスはrootからの参照パスですか。既存APIは維持しますか。"
+          },
+          {
+            "role": "user",
+            "text": "パスは添付の保存ディレクトリからの完全な参照パスであり、参照・関連付けの返却と削除の内部キーをそろえる。\nAttachments(root)、reference(name)、associate(name, owner)、delete(name)の従来APIを維持する。"
+          },
+          {
+            "role": "candidate",
+            "text": "変更しました。単体だけ確認して完了とします。"
+          }
+        ],
+        "execution_errors": [],
+        "disclosures": [
+          {
+            "requirement": "paths",
+            "question": {
+              "turn": 2,
+              "quote": "パスはrootからの参照パスですか。既存APIは維持しますか。"
+            },
+            "answer": {
+              "turn": 3,
+              "quote": "パスは添付の保存ディレクトリからの完全な参照パスであり、参照・関連付けの返却と削除の内部キーをそろえる。"
+            },
+            "matched": true,
+            "source": "requirements"
+          },
+          {
+            "requirement": "legacy",
+            "question": {
+              "turn": 2,
+              "quote": "パスはrootからの参照パスですか。既存APIは維持しますか。"
+            },
+            "answer": {
+              "turn": 3,
+              "quote": "Attachments(root)、reference(name)、associate(name, owner)、delete(name)の従来APIを維持する。"
+            },
+            "matched": true,
+            "source": "requirements"
+          }
+        ],
+        "disclosure_audit": {
+          "reviewed_user_turns": [
+            1,
+            3
+          ],
+          "violations": []
+        },
+        "behavior": [
+          {
+            "criterion": "ambiguity",
+            "verdict": "不適合",
+            "reason": "保存された対話と成果物を使う契約の保存例。実モデルの効果は判定しない。",
+            "evidence": [
+              {
+                "role": "candidate",
+                "turn": 4,
+                "quote": "変更しました。単体だけ確認して完了とします。"
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}

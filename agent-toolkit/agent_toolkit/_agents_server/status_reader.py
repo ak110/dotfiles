@@ -85,11 +85,15 @@ def load_root(
             snapshot.failures.append(f"{root_session_id}/{path.name}: invalid sessions")
             continue
         for raw in raw_sessions:
-            if not isinstance(raw, dict) or not isinstance(raw.get("session_id"), str):
+            session_id = raw.get("session_id") if isinstance(raw, dict) else None
+            if not isinstance(raw, dict) or not isinstance(session_id, str):
                 snapshot.failures.append(f"{root_session_id}/{path.name}: invalid session")
                 continue
-            session = dict(raw, owner_status_file=path.name)
-            previous = snapshot.sessions.get(session["session_id"])
+            host = payload.get("host_session_id")
+            session: dict[str, Any] = dict(
+                raw, owner_status_file=path.name, host_session_id=host if isinstance(host, str) else None
+            )
+            previous = snapshot.sessions.get(session_id)
             if previous is None or str(previous.get("updated_at", "")) <= str(session.get("updated_at", "")):
-                snapshot.sessions[session["session_id"]] = session
+                snapshot.sessions[session_id] = session
     return snapshot

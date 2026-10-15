@@ -27,7 +27,7 @@ def contains(prompt: str) -> bool:
     """受領した入力が機械生成の本文を含むかを返す。
 
     スラッシュコマンドはホストが1行目の先頭でだけ解釈するため、包装は引数の位置へ置く。
-    このため判定は先頭一致ではなく1行目に開始タグが現れるかで行う。
+    このため判定は1行目に開始タグが現れるかで行う。
     """
     first_line = prompt.split("\n", 1)[0]
     return any(tag in first_line for tag in _OPENING_TAGS)

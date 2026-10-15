@@ -6,19 +6,6 @@
 一元管理する。
 """
 
-# 設定モデルの定義は即時に保ち、展開・画像処理などの依存は使うまで遅延する。
-__lazy_modules__ = {
-    "natsort",
-    "pytilpack.pathlib",
-    "pytilpack.zipfile",
-    "send2trash",
-    "tqdm",
-    "yaml",
-    "pdf2image",
-    "pdf2image.exceptions",
-    "pytools",
-}
-
 import argparse
 import fnmatch
 import functools
@@ -32,19 +19,21 @@ import tempfile
 import typing
 import zipfile
 
-import natsort
 import pydantic
-import pytilpack.pathlib
-import pytilpack.zipfile
-import send2trash
-import tqdm
-import yaml
-from pdf2image import convert_from_path
-from pdf2image.exceptions import PDFInfoNotInstalledError
 
-from pytools import imageconverter, rename
+# 設定モデルの定義は即時に保ち、展開・画像処理などの依存は使うまで遅延する。
+lazy import natsort
+lazy import pytilpack.pathlib
+lazy import pytilpack.zipfile
+lazy import send2trash
+lazy import tqdm
+lazy import yaml
+lazy from pdf2image import convert_from_path
+lazy from pdf2image.exceptions import PDFInfoNotInstalledError
+
 from pytools._internal import repack_archive_args
 from pytools._internal.cli import setup_logging
+lazy from pytools import imageconverter, rename
 
 logger = logging.getLogger(__name__)
 
@@ -164,7 +153,14 @@ def main(args: argparse.Namespace | None = None) -> None:
                 dry_run=args.dry_run,
             )
         except Exception as e:  # noqa: BLE001
-            logger.exception("%s: 処理失敗", target)
+            logger.exception(
+                (
+                    "%s: 処理失敗。"
+                    "後続ターゲットは続行します。"
+                    "原本とバックアップの所在・以下の原因を確認し、修正後にこのターゲットだけでrepack-archiveを再実行してください。"
+                ),
+                target,
+            )
             failed_targets.append((target, str(e)))
             continue
         for entry_path, severity, error in entry_failures:
@@ -173,15 +169,37 @@ def main(args: argparse.Namespace | None = None) -> None:
     error_entries = [e for e in failed_entries if e[2] == "error"]
     warning_entries = [e for e in failed_entries if e[2] == "warning"]
     if failed_targets:
-        logger.warning("\n失敗したターゲット (%d件):", len(failed_targets))
+        logger.warning(
+            (
+                "\n失敗したターゲット (%d件)。"
+                "原本とバックアップを保持し、以下の原因を解消して対象だけをrepack-archiveで再実行してください:"
+            ),
+            len(failed_targets),
+        )
         for path, err in failed_targets:
             logger.warning("  %s: %s", path, err)
     if error_entries:
-        logger.warning("\n失敗したエントリ (%d件):", len(error_entries))
+        logger.warning(
+            (
+                "\n失敗したエントリ (%d件)。"
+                "バックアップを保持しています。"
+                "欠落した内容を原本と比較し、再取得・権限修正後にバックアップを入力としてrepack-archive "
+                "-b <別のバックアップ先>で再実行してください:"
+            ),
+            len(error_entries),
+        )
         for tp, ep, _sv, err in error_entries:
             logger.warning("  %s :: %s: %s", tp, ep, err)
     if warning_entries:
-        logger.warning("\n警告のエントリ (%d件):", len(warning_entries))
+        logger.warning(
+            (
+                "\n警告のエントリ (%d件)。"
+                "バックアップを保持しています。"
+                "出力ZIPを開いて原本と比較し、問題がなければバックアップを手動で削除できます。"
+                "欠損があれば原本を再取得してrepack-archive -b <別のバックアップ先>で再実行してください:"
+            ),
+            len(warning_entries),
+        )
         for tp, ep, _sv, err in warning_entries:
             logger.warning("  %s :: %s: %s", tp, ep, err)
     if failed_targets or error_entries:
@@ -245,7 +263,9 @@ def _preflight_check(targets: list[pathlib.Path], *, compiled: _CompiledRules, b
     seen_stems: dict[pathlib.Path, pathlib.Path] = {}
     for target in targets:
         if not target.exists():
-            raise FileNotFoundError(f"TARGET が存在しません: {target}")
+            raise FileNotFoundError(
+                f"TARGET が存在しません: {target}。存在するアーカイブ・PDF・ディレクトリを指定してください。"
+            )
         stem = _output_stem(target, rename_rules=compiled.rename_rules)
         output_path = target.parent / f"{stem}.zip"
         # TARGET 群のいずれでもないパスの出力 ZIP が既存の場合、無関係なファイルを
@@ -253,23 +273,36 @@ def _preflight_check(targets: list[pathlib.Path], *, compiled: _CompiledRules, b
         # 別ファイルになり得る。TARGET 自身 (アーカイブ入力など) はバックアップ退避後に
         # 出力するため対象外。
         if output_path not in target_set and output_path.exists():
-            raise FileExistsError(f"出力 ZIP が既存ファイルと衝突します: {output_path}")
+            raise FileExistsError(
+                f"出力 ZIP が既存ファイルと衝突します: {output_path}。"
+                f"既存ZIPを別の場所へ退避するか、rename_rulesで別の出力名を指定してください。"
+            )
         prior_out = seen_outputs.get(output_path)
         if prior_out is not None and prior_out != target:
-            raise ValueError(f"出力 ZIP が衝突します: {prior_out} と {target} は同じ {output_path} を生成しようとしています")
+            raise ValueError(
+                f"出力 ZIP が衝突します: {prior_out} と {target} は同じ {output_path} "
+                f"を生成しようとしています。"
+                f"入力を別のディレクトリへ分けるか、rename_rulesで別の出力名を指定してください。"
+            )
         seen_outputs[output_path] = target
 
         stem_path = target.parent / stem
         prior_stem = seen_stems.get(stem_path)
         if prior_stem is not None and prior_stem != target:
-            raise ValueError(f"作業ディレクトリ用の stem が衝突します: {prior_stem} と {target}")
+            raise ValueError(
+                f"作業ディレクトリ用の stem が衝突します: {prior_stem} と {target}。"
+                f"入力を別のディレクトリへ分けるか、rename_rulesで別の名前を指定してください。"
+            )
         seen_stems[stem_path] = target
 
         # バックアップ先の既存チェック (元の名前のままバックアップする)
         bk_root = backup_dir if backup_dir is not None else target.parent / _BACKUP_DIR_NAME
         bk_entry = bk_root / target.name
         if bk_entry.exists():
-            raise FileExistsError(f"バックアップ先が既に存在します: {bk_entry}")
+            raise FileExistsError(
+                f"バックアップ先が既に存在します: {bk_entry}。"
+                f"既存バックアップを退避するか、-bで衝突しない別のバックアップディレクトリを指定してください。"
+            )
 
 
 def _output_stem(target: pathlib.Path, *, rename_rules: list[rename.RenameRule] | None = None) -> str:
@@ -413,7 +446,10 @@ def _process_target(
     if not dry_run and not no_trash:
         if entry_failures:
             logger.warning(
-                "エントリ警告/失敗が %d 件あったためバックアップを保持する: %s",
+                (
+                    "エントリ警告/失敗が %d 件あったためバックアップを保持する: %s。"
+                    "出力ZIPと原本を比較し、欠損がなければこのバックアップを手動で削除できます。"
+                ),
                 len(entry_failures),
                 bk_entry,
             )
@@ -422,7 +458,11 @@ def _process_target(
                 send2trash.send2trash(str(bk_entry))
                 logger.info("trash: %s", bk_entry)
             except OSError as e:
-                logger.warning("ゴミ箱送り失敗: %s (%s)", bk_entry, e)
+                logger.warning(
+                    ("ゴミ箱送り失敗: %s (%s)。出力ZIPの内容を確認し、不要ならこのバックアップを手動で削除してください。"),
+                    bk_entry,
+                    e,
+                )
 
     # 9. bk/ が空なら削除
     if not dry_run and not no_trash and bk_root.exists():
@@ -556,6 +596,58 @@ def _extract_archive(archive: pathlib.Path, dest: pathlib.Path, compiled: _Compi
     return _extract_with_libarchive(archive, dest, compiled)
 
 
+def _prepare_archive_entry(
+    archive: pathlib.Path,
+    entry_path: str,
+    *,
+    is_dir: bool,
+    compiled: _CompiledRules,
+    failures: list[EntryFailure],
+) -> str | None:
+    """両展開器でパスの安全性と除外を判定し、展開する相対パスを返す。"""
+    # ディレクトリ末尾の区切りを除き、同じ判定をファイルとディレクトリへ適用する。
+    normalized = entry_path.rstrip("/") if is_dir else entry_path
+    if not pytilpack.zipfile.is_safe_relative_path(normalized):
+        failures.append(
+            (
+                entry_path,
+                "error",
+                "不正なパスのためスキップ。バックアップを保持します。安全な相対パスを持つ原本を再取得して再実行してください。",
+            )
+        )
+        logger.warning(
+            "%s: 不正なパスのためスキップ: %r。バックアップを保持します。"
+            "安全な相対パスを持つ原本を再取得して再実行してください。",
+            archive.name,
+            entry_path,
+        )
+        return None
+    ignore_path = normalized + "/" if is_dir else normalized
+    return None if compiled.should_ignore_entry(ignore_path) else normalized
+
+
+def _record_extraction_failure(archive: pathlib.Path, entry_path: str, error: OSError, failures: list[EntryFailure]) -> None:
+    """継続する展開失敗を集計し、バックアップを使う復旧操作を表示する。"""
+    failures.append((entry_path, "error", str(error)))
+    logger.warning(
+        "%s: エントリ展開失敗: %s (%s)。後続エントリは続行します。"
+        "バックアップを保持し、原本の破損と展開先の権限・空き容量を確認して再実行してください。",
+        archive.name,
+        entry_path,
+        error,
+    )
+
+
+def _create_extraction_path(dest: pathlib.Path, normalized: str, *, is_dir: bool) -> pathlib.Path | None:
+    """展開先のディレクトリを作成し、ファイルの場合だけ書込先を返す。"""
+    out_path = dest / normalized
+    if is_dir:
+        out_path.mkdir(parents=True, exist_ok=True)
+        return None
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    return out_path
+
+
 def _extract_zip(archive: pathlib.Path, dest: pathlib.Path, compiled: _CompiledRules) -> list[EntryFailure]:
     r"""``zipfile`` でストリーミング展開する。無視対象エントリはディスクに書かない。
 
@@ -585,27 +677,18 @@ def _extract_zip(archive: pathlib.Path, dest: pathlib.Path, compiled: _CompiledR
                 if not entry_path:
                     continue
                 is_dir = info.is_dir() or entry_path.endswith("/")
-                # 末尾 "/" 付きディレクトリ名は検証から除いておく (空要素検査に引っかかるため)
-                normalized = entry_path.rstrip("/") if is_dir else entry_path
-                if not pytilpack.zipfile.is_safe_relative_path(normalized):
-                    failures.append((entry_path, "error", "不正なパスのためスキップ"))
-                    logger.warning("%s: 不正なパスのためスキップ: %r", archive.name, entry_path)
-                    continue
-                ignore_path = normalized + "/" if is_dir else normalized
-                if compiled.should_ignore_entry(ignore_path):
+                normalized = _prepare_archive_entry(archive, entry_path, is_dir=is_dir, compiled=compiled, failures=failures)
+                if normalized is None:
                     continue
                 target_count += 1
                 try:
-                    out_path = dest / normalized
-                    if is_dir:
-                        out_path.mkdir(parents=True, exist_ok=True)
+                    out_path = _create_extraction_path(dest, normalized, is_dir=is_dir)
+                    if out_path is None:
                         continue
-                    out_path.parent.mkdir(parents=True, exist_ok=True)
                     with zf.open(info) as src, out_path.open("wb") as fp:
                         shutil.copyfileobj(src, fp)
                 except OSError as e:
-                    failures.append((entry_path, "error", str(e)))
-                    logger.warning("%s: エントリ展開失敗: %s (%s)", archive.name, entry_path, e)
+                    _record_extraction_failure(archive, entry_path, e, failures)
     if target_count == 0:
         raise ValueError("対象ファイルが0件のためスキップします")
     return failures
@@ -642,27 +725,19 @@ def _extract_with_libarchive(archive: pathlib.Path, dest: pathlib.Path, compiled
             if not entry_path:
                 continue
             is_dir = entry.isdir
-            normalized = entry_path.rstrip("/") if is_dir else entry_path
-            if not pytilpack.zipfile.is_safe_relative_path(normalized):
-                failures.append((entry_path, "error", "不正なパスのためスキップ"))
-                logger.warning("%s: 不正なパスのためスキップ: %r", archive.name, entry_path)
-                continue
-            ignore_path = normalized + "/" if is_dir else normalized
-            if compiled.should_ignore_entry(ignore_path):
+            normalized = _prepare_archive_entry(archive, entry_path, is_dir=is_dir, compiled=compiled, failures=failures)
+            if normalized is None:
                 continue
             target_count += 1
             try:
-                out_path = dest / normalized
-                if is_dir:
-                    out_path.mkdir(parents=True, exist_ok=True)
+                out_path = _create_extraction_path(dest, normalized, is_dir=is_dir)
+                if out_path is None:
                     continue
-                out_path.parent.mkdir(parents=True, exist_ok=True)
                 with out_path.open("wb") as fp:
                     for block in entry.get_blocks():
                         fp.write(block)
             except OSError as e:
-                failures.append((entry_path, "error", str(e)))
-                logger.warning("%s: エントリ展開失敗: %s (%s)", archive.name, entry_path, e)
+                _record_extraction_failure(archive, entry_path, e, failures)
     if target_count == 0:
         raise ValueError("対象ファイルが0件のためスキップします")
     return failures
@@ -693,7 +768,16 @@ def _copy_filtered(src: pathlib.Path, dest: pathlib.Path, compiled: _CompiledRul
                 shutil.copy2(item, target)
         except OSError as e:
             failures.append((rel.as_posix(), "error", str(e)))
-            logger.warning("%s: エントリコピー失敗: %s (%s)", src.name, rel, e)
+            logger.warning(
+                (
+                    "%s: エントリコピー失敗: %s (%s)。"
+                    "後続エントリは続行します。"
+                    "バックアップを保持し、コピー元とコピー先の権限・空き容量を確認して再実行してください。"
+                ),
+                src.name,
+                rel,
+                e,
+            )
     if target_count == 0:
         raise ValueError("対象ファイルが0件のためスキップします")
     return failures

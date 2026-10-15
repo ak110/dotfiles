@@ -154,7 +154,7 @@ def test_japanese_notice_judgment(text: str, expected: bool) -> None:
 
 
 def test_hook_source_notice_texts_are_japanese() -> None:
-    """hookのソースが持つ通知の本文と解消手段が通知言語契約を満たすことを検証する。"""
+    """hookのソースが持つ通知の本文と解消手段が、自然言語部分を日本語だけで書く契約を満たすことを検証する。"""
     texts = _collect_notice_texts()
     # 抽出が機能しない変更（呼び出し名の改名など）で対象の文面が空になり、無条件に合格することを防ぐ。
     assert len(texts) >= 40

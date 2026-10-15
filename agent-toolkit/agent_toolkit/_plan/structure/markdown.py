@@ -77,7 +77,7 @@ _HEADING_PATTERN = re.compile(r"^(#{1,6}) +(.*?)\s*$")
 
 def markdown_body_start_index(content: str) -> int:
     """先頭フロントマターの直後にあるMarkdown本文の0始まり行番号を返す。"""
-    lines = content.splitlines()
+    lines = content.removeprefix("\ufeff").splitlines()
     if not lines or lines[0].rstrip() != "---":
         return 0
     for index, line in enumerate(lines[1:], start=1):
@@ -199,6 +199,7 @@ def iter_markdown_body_lines(content: str) -> Iterator[tuple[int, str]]:
     H2見出し・H3見出し・箇条書き行を含む全ての非除外行を生成する。
     見出し抽出や本文収集など、上記領域を共通除外する各種スキャン処理の基盤として使う。
     """
+    content = content.removeprefix("\ufeff")
     lines = content.splitlines()
     body_start = markdown_body_start_index(content)
     body = "\n".join(lines[body_start:])

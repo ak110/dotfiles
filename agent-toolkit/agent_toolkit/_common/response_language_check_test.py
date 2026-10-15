@@ -64,6 +64,40 @@ def _make_mixed(japanese_count: int, english_word_count: int) -> str:
 class TestCheckText:
     """check_text()の文字列入力に対する判定契約を検証する。"""
 
+    @pytest.mark.parametrize("fenced", [False, True])
+    def test_review_return_explanation_is_not_hidden_by_json(self, fenced: bool):
+        """原記録363/364のretain欄を、JSON/フェンス越しにも判定する。"""
+        text = json.dumps(
+            [
+                {
+                    "retain": (
+                        "reviewer/reviewee 기준의 소유 위치, review-table 8열 TSV, "
+                        "file経由の入出力、対象成果物作成規範の読込順。"
+                    )
+                }
+            ],
+            ensure_ascii=False,
+        )
+        if fenced:
+            text = "```json\n" + text + "\n```"
+        assert check_text(text)[0] is CheckOutcome.WARN
+        corrected = text.replace("기준의 소유 위치", "基準の所有位置").replace("8열", "8列")
+        assert check_text(corrected)[0] is not CheckOutcome.WARN
+
+    @pytest.mark.parametrize(
+        "text",
+        [
+            "引用:「기준의 소유 위치」を日本語へ翻訳する。",
+            "> 기준의 소유 위치\n入力を確認した。",
+            "```text\n기준의 소유 위치\n```\n原文を保存した。",
+            '{"input":"기준의 소유 위치", "analysis":"内部資料"}',
+            "`기준의`は原文の識別子である。",
+        ],
+    )
+    def test_foreign_material_is_preserved(self, text: str):
+        """原文・引用・素材・内部analysisを外部説明と混同しない。"""
+        assert check_text(text)[0] is not CheckOutcome.WARN
+
     def test_warns_for_english_only_text(self):
         """日本語文字を含まない英単語2語以上の文字列はWARNを返す。"""
         outcome, body = check_text("Done here.")

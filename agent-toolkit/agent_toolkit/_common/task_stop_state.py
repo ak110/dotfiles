@@ -1,4 +1,4 @@
-"""TaskStopの停滞検知完了記録をタスク単位で管理する。"""
+"""TaskStopの前に停滞検知を完了したことを示す記録を、タスクごとに管理する。"""
 
 from __future__ import annotations
 
@@ -12,7 +12,7 @@ READY_WINDOW_SECONDS = 300
 
 
 def target_ids(tool_input: dict) -> set[str]:
-    """TaskStop入力から現行と互換の停止対象識別子を返す。"""
+    """TaskStopの入力から、現行の`task_id`と互換の`shell_id`にある停止対象の識別子を返す。"""
     return {value for key in ("task_id", "shell_id") if isinstance((value := tool_input.get(key)), str) and value}
 
 
@@ -36,7 +36,7 @@ def has_recent_completion(
     *,
     now: float | None = None,
 ) -> bool:
-    """入力IDに一致する有効な停滞検知完了記録がある場合に真を返す。
+    """入力IDに一致し、期限内にある停滞検知の完了記録があれば真を返す。
 
     期限切れ要素は同じ排他更新内で除去する。記録はTaskStop成功後まで保持し、
     PreToolUseの失敗または許可後のツール失敗で停止根拠を失わないようにする。
@@ -71,7 +71,7 @@ def has_recent_completion(
 
 
 def consume_completion(session_id: str, task_ids: Iterable[str]) -> bool:
-    """TaskStopに成功した入力IDの停滞検知完了記録を削除する。"""
+    """TaskStopに成功した入力IDについて、停滞検知の完了記録を削除する。"""
     targets = set(task_ids)
 
     def _consume(state: dict) -> dict | None:

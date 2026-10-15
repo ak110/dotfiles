@@ -1,6 +1,6 @@
 #!/usr/bin/env -S uv run --script
 # /// script
-# requires-python = ">=3.12"
+# requires-python = ">=3.15"
 # dependencies = ["filelock>=3.30", "platformdirs>=4.0", "psutil"]
 # ///
 r"""dotfilesリポジトリを最新化するPEP 723スクリプト。
@@ -40,7 +40,8 @@ git pull工程は`UPDATE_DOTFILES_GIT_TIMEOUT_SEC`秒で打ち切る。未設定
 実行の開始時と終了時に、同期結果を`pytools/_internal/sync_report.py`が定める構造化ファイルへ記録する。
 次に起動するコーディングエージェントが、失敗した段と標準エラーの末尾からAWIの処理を
 完遂できるかを判定するための記録であり、失敗の内容を人間の目視に頼らず残す。
-`chezmoi init`と`chezmoi apply`の段は、子の標準出力と標準エラーを受け取った順に表示し、その末尾を記録へ残す。
+`chezmoi init`と`chezmoi apply`の段は、子が標準出力と標準エラーを継承する。
+この2段の同期結果には終了コードを残し、post-applyの詳細はpost-apply自身の記録と永続ログで確認する。
 
 Linuxでは`chezmoi apply`の直前に、Codexの管理daemonだけが稼働し、利用セッションが無い場合に限り、
 公開CLI`codex app-server daemon stop`で管理daemonを一時停止する。
@@ -53,8 +54,6 @@ post-applyのplugin更新と診断ログ復元が、利用セッションの無�
 # pylint: disable=global-statement
 
 import argparse
-import codecs
-import collections
 import contextlib
 import dataclasses
 import io
@@ -89,9 +88,6 @@ _GIT_OUTPUT_RECOVERY_TIMEOUT_SEC = 30
 _PROCESS_TREE_WAIT_TIMEOUT_SEC = 5
 _GIT_TIMEOUT_ENV = "UPDATE_DOTFILES_GIT_TIMEOUT_SEC"
 _LOG_STAGE_TOTAL = 5
-_STREAM_READ_SIZE = 65536
-# 合流した出力のうち段の記録用に保持する末尾の文字数。記録の上限（`sync_report.STDERR_TAIL_MAX_CHARS`）以上を保つ。
-_STREAM_TAIL_MAX_CHARS = 64 * 1024
 _CODEX_AUTO_RESTART_ENV = "DOTFILES_CODEX_DAEMON_AUTO_RESTART"
 # 公式READMEが定める停止猶予`shutdownGraceSeconds`の上限300秒に、強制終了と応答の余裕を加える。
 _CODEX_DAEMON_STOP_TIMEOUT_SEC = 360
@@ -107,7 +103,7 @@ _last_stderr_tail: str | None = None
 
 
 def _configure_persistent_log(run_id: str) -> logging.Handler | None:
-    """更新診断用のサイズ制限付きログを構成し、構成不能でも更新処理は継続する。"""
+    """更新診断用のサイズ制限付きログを構成し、構成不能ならNoneを返す。"""
     global _persistent_log_ready  # noqa: PLW0603
     try:
         _LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
@@ -118,7 +114,11 @@ def _configure_persistent_log(run_id: str) -> logging.Handler | None:
             encoding="utf-8",
         )
     except OSError as error:
-        print(f"永続ログを開始できませんでした: {_LOG_PATH}: {error}", file=sys.stderr)
+        print(
+            f"永続ログを開始できませんでした: {_LOG_PATH}: {error}。"
+            f"{_LOG_PATH.parent}の書込権限と空き容量を確認してupdate-dotfilesを再実行してください。",
+            file=sys.stderr,
+        )
         _persistent_log_ready = False
         return None
     handler.setFormatter(logging.Formatter(f"%(asctime)s run={run_id} %(levelname)s %(message)s"))
@@ -188,11 +188,7 @@ def _run_step(
 ) -> tuple[int, str]:
     """1段を実行し、画面と診断ログへそれぞれの段番号を記録する。
 
-    `capture=False`の段は、子の標準出力と標準エラーを1本のパイプへ合流して受け取り、
-    受け取った順に改行を待たず`update-dotfiles`の標準出力へ書く。
-    標準出力と標準エラーを別のパイプで取ると、子が書いた順序を親の側で復元できず、
-    段の途中の出力（後処理の工程ごとの出力と、その工程が呼ぶツールの警告など）が段の終了後にまとめて並ぶためである。
-    受け取った出力の末尾は、失敗した段の記録（`sync-report.json`の`stderr_tail`）へ残す。
+    `capture=False`の段は、子へ両ストリームを継承し、書き込み順と出力先を保つ。
     `capture=True`時は標準出力を文字列で返し、標準エラーは段の終了後に親の標準エラーへ転送する。
     """
     global _current_stage_title, _last_stderr_tail  # noqa: PLW0603
@@ -220,11 +216,16 @@ def _run_step(
             if result.stderr:
                 sys.stderr.write(result.stderr)
         else:
-            returncode, output_tail = _stream_merged_output(argv)
+            result = subprocess.run(argv, cwd=_DOTFILES_ROOT, check=False, env=_child_env())
+            returncode, output_tail = result.returncode, ""
             stdout = ""
     except OSError as error:
         logger.exception("stage起動失敗: %d/%d %s", log_step_no, _LOG_STAGE_TOTAL, title)
-        print(f"{title}を開始できませんでした: {error}", file=sys.stderr)
+        print(
+            f"{title}を開始できませんでした: {error}。"
+            "chezmoiとGitがPATH上で起動できることを確認してupdate-dotfilesを再実行してください。",
+            file=sys.stderr,
+        )
         _last_stderr_tail = sync_report.truncate_tail(str(error))
         return 1, ""
     logger.info(
@@ -238,39 +239,6 @@ def _run_step(
     if output_tail:
         _last_stderr_tail = sync_report.truncate_tail(output_tail)
     return returncode, stdout
-
-
-def _stream_merged_output(argv: list[str]) -> tuple[int, str]:
-    """子の標準出力と標準エラーを合流して受け取り順に標準出力へ書き、終了コードと出力の末尾を返す。"""
-    decoder = codecs.getincrementaldecoder("utf-8")(errors="replace")
-    tail: collections.deque[str] = collections.deque()
-    tail_chars = 0
-    with subprocess.Popen(
-        argv,
-        cwd=_DOTFILES_ROOT,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
-        env=_child_env(),
-    ) as process:
-        assert process.stdout is not None
-        while chunk := os.read(process.stdout.fileno(), _STREAM_READ_SIZE):
-            text = decoder.decode(chunk)
-            if not text:
-                continue
-            sys.stdout.write(text)
-            sys.stdout.flush()
-            tail.append(text)
-            tail_chars += len(text)
-            # 記録へ残すのは末尾だけのため、上限を超えた先頭の断片を捨てて保持量を抑える。
-            while tail_chars - len(tail[0]) >= _STREAM_TAIL_MAX_CHARS:
-                tail_chars -= len(tail.popleft())
-        rest = decoder.decode(b"", final=True)
-        if rest:
-            sys.stdout.write(rest)
-            sys.stdout.flush()
-            tail.append(rest)
-        returncode = process.wait()
-    return returncode, "".join(tail)
 
 
 def _git_timeout() -> int | None:
@@ -349,7 +317,11 @@ def _run_git_pull(step_no: int, total: int, *, timeout: int | None = _GIT_TIMEOU
         )
     except OSError as error:
         logger.exception("stage起動失敗: %d/%d git pull", step_no, _LOG_STAGE_TOTAL)
-        print(f"git pullを開始できませんでした: {error}", file=sys.stderr)
+        print(
+            f"git pullを開始できませんでした: {error}。"
+            "chezmoi --versionとgit --versionの実行に成功する状態にしてupdate-dotfilesを再実行してください。",
+            file=sys.stderr,
+        )
         _last_stderr_tail = sync_report.truncate_tail(str(error))
         return 1
     try:
@@ -367,7 +339,8 @@ def _run_git_pull(step_no: int, total: int, *, timeout: int | None = _GIT_TIMEOU
                 sys.stderr.write(stderr)
             timeout_message = (
                 f"git pullが{timeout}秒以内に完了しなかったため、子孫プロセスを終了しました。"
-                f"未完了です。必要に応じて{_GIT_TIMEOUT_ENV}を調整してください。"
+                f"未完了です。通信とSSH認証の問題を解消してupdate-dotfilesを再実行してください。"
+                f"待機上限を延ばす場合は{_GIT_TIMEOUT_ENV}へ1200（秒）を設定して再実行してください。"
             )
             print(timeout_message, file=sys.stderr)
             _last_stderr_tail = sync_report.truncate_tail(f"{stderr}\n{timeout_message}")
@@ -465,7 +438,7 @@ def _run_git_change(*arguments: str) -> bool:
 
 def _run_worktree_stash(*arguments: str) -> subprocess.CompletedProcess[str] | None:
     """同じcheckoutの公開退避CLIを実行し、失敗時の診断を維持する。"""
-    launcher = _SOURCE_ROOT / "agent-toolkit" / "bin" / ("atk.cmd" if os.name == "nt" else "atk")
+    launcher = _SOURCE_ROOT / "agent-toolkit" / "scripts" / ("atk.cmd" if os.name == "nt" else "atk")
     try:
         result = subprocess.run(
             [str(launcher), "worktree-stash", *arguments],
@@ -478,7 +451,11 @@ def _run_worktree_stash(*arguments: str) -> subprocess.CompletedProcess[str] | N
         )
     except OSError as error:
         logger.exception("worktree-stashの起動に失敗: worktree=%s launcher=%s", _DOTFILES_ROOT, launcher)
-        print(f"未コミット内容の退避操作を開始できませんでした ({_DOTFILES_ROOT}): {error}", file=sys.stderr)
+        print(
+            f"未コミット内容の退避操作を開始できませんでした ({_DOTFILES_ROOT}): {error}。"
+            f"{launcher}の実在と起動権限を確認し、update-dotfilesを再実行してください。",
+            file=sys.stderr,
+        )
         return None
     if result.returncode != 0:
         if result.stderr:
@@ -494,7 +471,11 @@ def _save_worktree(label: str) -> str | None:
         return None
     ref = result.stdout.strip().splitlines()[-1] if result.stdout.strip() else ""
     if not ref.startswith("refs/worktree/"):
-        print("未コミット内容の退避先refを取得できませんでした。", file=sys.stderr)
+        print(
+            "未コミット内容の退避先refを取得できませんでした。atk worktree-stash listで退避状態を確認し、"
+            "未コミット内容が保護されていることを確かめてからupdate-dotfilesを再実行してください。",
+            file=sys.stderr,
+        )
         return None
     print(f"未コミット内容を{ref}へ退避しました。")
     return ref
@@ -525,11 +506,20 @@ def _protect_old_worktree_stashes() -> bool:
     """現在worktreeの旧update-dotfiles退避を、pullに先立って共有GCから保護する。"""
     result = _git_capture("for-each-ref", "--format=%(refname)", "refs/worktree/")
     if result.returncode != 0 or result.stderr:
-        print(f"旧退避refを列挙できませんでした: {result.stderr.strip()}", file=sys.stderr)
+        print(
+            f"旧退避refを列挙できませんでした: {result.stderr.strip()}。"
+            "git statusとatk worktree-stash listでリポジトリの状態を確認し、"
+            "表示された原因を解消してupdate-dotfilesを再実行してください。",
+            file=sys.stderr,
+        )
         return False
     for ref in result.stdout.splitlines():
         if ref.startswith("refs/worktree/update-dotfiles-") and _run_worktree_stash("protect", ref) is None:
-            print(f"旧退避を保護できなかったためpullを中止します: {ref}", file=sys.stderr)
+            print(
+                f"旧退避を保護できなかったためpullを中止します: {ref}。"
+                f"atk worktree-stash protect {ref}で保護してからupdate-dotfilesを再実行してください。",
+                file=sys.stderr,
+            )
             return False
     return True
 
@@ -550,18 +540,33 @@ def _discard_mise_lock_changes() -> bool:
 def _update_git_with_recovery(step_no: int, total: int, *, timeout: int | None) -> int:
     """Git更新を実行し、競合時は復旧参照を保持して上流へ合わせる。"""
     if _git_operation_in_progress():
-        print("既存のmergeまたはrebaseが進行中のため、更新を開始しません。", file=sys.stderr)
+        print(
+            "既存のmergeまたはrebaseが進行中のため、更新を開始しません。git statusで進行中の操作を確認し、"
+            "git merge --continueまたはgit rebase --continueで完了するか、同じ操作の--abortで中止してから"
+            "update-dotfilesを再実行してください。",
+            file=sys.stderr,
+        )
         return 1
     if not _protect_old_worktree_stashes():
         return 1
     if not _discard_mise_lock_changes():
-        print("mise.lockの差分を破棄できなかったため、更新を中止します。", file=sys.stderr)
+        print(
+            "mise.lockの差分を破棄できなかったため、更新を中止します。"
+            "git status --short -- mise.lockで状態を確認し、Gitのエラーと書込権限の問題を解消して"
+            "update-dotfilesを再実行してください。",
+            file=sys.stderr,
+        )
         return 1
     branch = _git_value("symbolic-ref", "--quiet", "--short", "HEAD")
     upstream = _git_value("rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{upstream}")
     original_head = _git_value("rev-parse", "HEAD")
     if not branch or not upstream or not original_head:
-        print("現在branch、設定済み上流またはHEADを解決できません。", file=sys.stderr)
+        print(
+            "現在branch、設定済み上流またはHEADを解決できません。git statusとgit branch -vvで状態を確認し、"
+            "branchを選びgit branch --set-upstream-to=<remote>/<branch>で上流を設定して"
+            "update-dotfilesを再実行してください。",
+            file=sys.stderr,
+        )
         return 1
     status = _git_value("status", "--porcelain=v1", "--untracked-files=all")
     if status is None:
@@ -582,14 +587,23 @@ def _update_git_with_recovery(step_no: int, total: int, *, timeout: int | None) 
             if _restore_worktree(stash_ref):
                 _drop_restored_worktree(stash_ref)
             else:
-                print(f"未コミット内容は{stash_ref}から復旧できます。", file=sys.stderr)
+                print(
+                    f"未コミット内容は{stash_ref}から復旧できます。git statusで競合を確認し、"
+                    f"競合を解消した作業ツリーでgit stash apply --index {stash_ref}を実行してください。",
+                    file=sys.stderr,
+                )
         return pull_code
     if pull_code == 0 and (stash_ref is None or _restore_worktree(stash_ref)):
         return 0 if stash_ref is None or _drop_restored_worktree(stash_ref) else 1
 
     recovery_branch = f"update-dotfiles-recovery-{suffix}"
     if not _run_git_change("branch", recovery_branch, original_head):
-        print("復旧用branchを保存できなかったため、自動回復を中止します。", file=sys.stderr)
+        print(
+            "復旧用branchを保存できなかったため、自動回復を中止します。"
+            f"git branch {recovery_branch} {original_head}で元HEADを保存し、git statusで競合を確認してください。"
+            "解消できない場合は、このログをdotfilesの作者へ報告してください。",
+            file=sys.stderr,
+        )
         return 1
     if rebase_in_progress and not _run_git_change("rebase", "--abort"):
         return 1
@@ -600,6 +614,9 @@ def _update_git_with_recovery(step_no: int, total: int, *, timeout: int | None) 
     print(
         f"競合から回復し、{branch}を{upstream}へ合わせました。"
         f"元のcommitは{recovery_branch}、未コミット内容は{stash_ref or 'なし'}から復旧できます。"
+        "更新後の内容を使う場合は対応不要です。元のcommitへ戻す場合は"
+        f"git switch {recovery_branch}を実行してください。"
+        + (f"未コミット内容を戻す場合はgit stash apply --index {stash_ref}を実行してください。" if stash_ref else "")
     )
     return 0
 
@@ -729,7 +746,9 @@ def _show_logs() -> int:
             continue
         except (OSError, UnicodeError) as error:
             print(
-                f"保存ログを読み取れませんでした: {path}: {error}。読み取り権限とファイルの内容を確認してください。",
+                f"保存ログを読み取れませんでした: {path}: {error}。"
+                "このファイルの読取権限を付与し、文字コードの問題があれば元ファイルを退避してUTF-8で保存し直してから"
+                "update-dotfiles logsを再実行してください。",
                 file=sys.stderr,
             )
             return 1

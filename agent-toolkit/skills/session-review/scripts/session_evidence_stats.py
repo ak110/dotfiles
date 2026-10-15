@@ -419,7 +419,7 @@ def _stats_token_peaks(records: list[_Record], runtime: _Runtime) -> list[dict[s
         for record, raw in _codex_token_usages(records):
             # `cached_input_tokens`が`input_tokens`へ内包される関係は`last_token_usage`でも同じであり、
             # 変換しないとキャッシュ済み入力が非キャッシュ入力の欄へ混入し、
-            # 同じ走行の`stats-total`（変換済み）と数値が矛盾する。
+            # 同じ実行の`stats-total`（変換済み）と数値が矛盾する。
             normalized = _codex_normalized_tokens(raw)
             candidates.append(
                 {
@@ -488,13 +488,13 @@ def _compaction_durations(directory: Path, thread_id: str) -> list[float]:
     """threadの有効な計測記録から所要秒数を記録順で返す。"""
     try:
         lines = (directory / f"{thread_id}.jsonl").read_text(encoding="utf-8").splitlines()
-    except (OSError, UnicodeError):
+    except OSError, UnicodeError:
         return []
     durations: list[float] = []
     for line in lines:
         try:
             record = json.loads(line)
-        except (json.JSONDecodeError, ValueError):
+        except json.JSONDecodeError, ValueError:
             continue
         if not isinstance(record, dict) or record.get("version") != 1 or record.get("thread_id") != thread_id:
             continue

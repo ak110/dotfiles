@@ -58,9 +58,7 @@ def _is_link_like(path: Path) -> bool:
     """シンボリックリンクまたはWindowsのディレクトリジャンクションかを返す。"""
     if path.is_symlink():
         return True
-    # Path.is_junction()はPython 3.12で追加されたため、対応版以外でもimport可能に保つ。
-    is_junction = getattr(path, "is_junction", None)
-    return bool(is_junction is not None and is_junction())
+    return path.is_junction()
 
 
 def _remove_link_like(path: Path) -> None:
@@ -68,7 +66,7 @@ def _remove_link_like(path: Path) -> None:
     if path.is_symlink():
         path.unlink()
     else:
-        # Windowsのディレクトリジャンクションはunlinkではなくrmdirで除去する。
+        # Windowsのディレクトリジャンクションはrmdirで除去する。
         path.rmdir()
 
 
@@ -98,7 +96,9 @@ def cleanup_paths(base_dir: Path, relative_paths: Iterable[Path], *, failures: l
             else:
                 target.resolve().relative_to(base_resolved)
         except ValueError:
-            logger.warning("%s は %s 配下ではないためスキップします", target, base_dir)
+            logger.warning(
+                "%s は %s 配下ではないためスキップします。リンク先を確認し、残す場合は対応不要です", target, base_dir
+            )
             continue
         except OSError as error:
             _report_failure(failures, f"{target} の検査または削除に失敗: {error}")
@@ -142,7 +142,9 @@ def cleanup_empty_dirs(base_dir: Path, relative_dirs: Iterable[Path], *, failure
                 continue
             target.resolve().relative_to(base_resolved)
         except ValueError:
-            logger.warning("%s は %s 配下ではないためスキップします", target, base_dir)
+            logger.warning(
+                "%s は %s 配下ではないためスキップします。リンク先を確認し、残す場合は対応不要です", target, base_dir
+            )
             continue
         except OSError as error:
             _report_failure(failures, f"{target} の検査に失敗: {error}")
@@ -188,14 +190,16 @@ def cleanup_paths_if_content_matches(
                 continue
             target.resolve().relative_to(base_resolved)
         except ValueError:
-            logger.warning("%s は %s 配下ではないためスキップします", target, base_dir)
+            logger.warning(
+                "%s は %s 配下ではないためスキップします。リンク先を確認し、残す場合は対応不要です", target, base_dir
+            )
             continue
         except OSError as error:
             _report_failure(failures, f"{target} の検査または削除に失敗: {error}")
             continue
         try:
             if not target.is_file() or target.is_symlink():
-                logger.warning("%s は通常ファイルではないためスキップします", target)
+                logger.warning("%s は通常ファイルではないためスキップします。保護対象として保持したため対応不要です", target)
                 continue
             actual_bytes = target.read_bytes()
         except OSError as error:
@@ -203,7 +207,8 @@ def cleanup_paths_if_content_matches(
             continue
         if not _content_matches(actual_bytes, expected_content):
             logger.warning(
-                "%s はユーザーによる編集の可能性があるためスキップします",
+                "%s はユーザーによる編集の可能性があるためスキップします。"
+                "不要であることを確認した場合だけ、このパスを手動で削除してください",
                 log_format.home_short(target),
             )
             continue

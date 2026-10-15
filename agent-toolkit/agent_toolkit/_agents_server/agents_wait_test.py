@@ -974,6 +974,41 @@ def test_wait_recovers_abandoned_run(tmp_path: pathlib.Path, capsys: pytest.Capt
     assert json.loads(run_path.read_text(encoding="utf-8"))["status"] == "foreground-delivered"
 
 
+@pytest.mark.parametrize("record", ["current", "run"])
+@pytest.mark.parametrize("failure", ["json", "unicode", "permission", "shape"])
+def test_wait_preserves_unreadable_recovery_record(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    record: str,
+    failure: str,
+) -> None:
+    """回復用記録の異常では既存runを保持し、読取回復後に同じ保存結果を受け取る。"""
+    _write_own_status(shared_layout.results_directory("root-session", tmp_path), [{"session_id": "session-1"}])
+    directory, run_path = _write_current_wait_run(tmp_path, target="session-1", status="published")
+    target = directory / "current.json" if record == "current" else run_path
+    original = target.read_bytes()
+
+    def fail_open(path: pathlib.Path, *args: Any, **kwargs: Any) -> Any:
+        if path == target:
+            raise PermissionError("読取拒否")
+        return open(path, *args, **kwargs)
+
+    with monkeypatch.context() as patch:
+        if failure == "permission":
+            patch.setattr(pathlib.Path, "open", fail_open)
+        else:
+            target.write_bytes({"json": b"{", "unicode": b"\xff", "shape": b"[]"}[failure])
+        assert agents_wait.wait_for_result(environment={"CLAUDE_CODE_SESSION_ID": "root-session"}, state_root=tmp_path) == 6
+        captured = capsys.readouterr()
+        assert not captured.out
+        assert str(target) in captured.err
+        assert set(directory.glob("*.json")) == {directory / "current.json", run_path}
+    target.write_bytes(original)
+    assert agents_wait.wait_for_result(environment={"CLAUDE_CODE_SESSION_ID": "root-session"}, state_root=tmp_path) == 0
+    assert json.loads(capsys.readouterr().out) == {"session_id": "session-1", "status": "completed"}
+
+
 @pytest.mark.parametrize("original_exists", [False, True])
 def test_wait_recovers_claimed_result_once(
     tmp_path: pathlib.Path,
@@ -1161,7 +1196,7 @@ def test_later_wait_starts_new_run_for_changed_targets(
     capsys: pytest.CaptureFixture[str],
     status: str,
 ) -> None:
-    """対象が変わった後続waitは先行runではなく新規runを開始する。"""
+    """対象が変わった後続waitは新規runを開始する。"""
     _write_own_status(shared_layout.results_directory("root-session", tmp_path), [{"session_id": "session-2"}])
     run_directory, _ = _write_current_wait_run(tmp_path, target="session-1", status=status)
 
@@ -1855,7 +1890,7 @@ _TTL_CASES = [
 
 
 def _set_ttl_environment(monkeypatch: pytest.MonkeyPatch, environment: dict[str, str]) -> None:
-    """保持期間とホストの判定入力を指定の条件だけへ固定し、上限の導出を実装へ戻す。"""
+    """保持期間とホストの判定入力を指定の条件だけへ固定し、差し替えた上限の導出を実装の`get_wait_timeout`へ戻す。"""
     for name in ("CLAUDECODE", "FORCE_PROMPT_CACHING_5M", "ENABLE_PROMPT_CACHING_1H", "CLAUDE_CODE_SUBPROCESS_ENV_SCRUB"):
         monkeypatch.delenv(name, raising=False)
     for name, value in environment.items():

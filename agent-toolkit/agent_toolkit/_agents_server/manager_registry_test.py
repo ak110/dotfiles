@@ -812,17 +812,17 @@ async def test_stop_republishes_result_after_retain_failure(
     session = state.SessionState("retain-retry", str(tmp_path), engine="codex", turn_seq=4)
     _complete(session, message="保持する結果")
     manager.sessions[session.session_id] = session
-    original_retain = writer.retain_result
+    original_retain = writer.retain_result_async
     retain_calls = 0
 
-    def fail_once(resume_state: state.SessionResumeState) -> None:
+    async def fail_once(resume_state: state.SessionResumeState) -> None:
         nonlocal retain_calls
         retain_calls += 1
         if retain_calls == 1:
             raise OSError("retain failed once")
-        original_retain(resume_state)
+        await original_retain(resume_state)
 
-    monkeypatch.setattr(writer, "retain_result", fail_once)
+    monkeypatch.setattr(writer, "retain_result_async", fail_once)
 
     with pytest.raises(
         RuntimeError,
@@ -905,6 +905,46 @@ async def test_stop_discards_expired_session(tmp_path: pathlib.Path) -> None:
     assert not backend.release_calls
 
 
+@pytest.mark.parametrize("with_writer", [False, True])
+@pytest.mark.asyncio
+async def test_stop_reports_registry_failure_after_releasing_resources(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, with_writer: bool
+) -> None:
+    """登録簿の保存失敗でも解放済みを明示し、再発行は状態の同期だけを行う。"""
+    writer = (
+        status_file.StatusFileWriter(
+            {}, shared_roots.StatusFileIdentity("root-session", "root.json", None), state_root=tmp_path
+        )
+        if with_writer
+        else None
+    )
+    manager = server_manager.AgentsServerManager(writer)
+    backend = FakeBackend(manager.sessions, "codex")
+    install_backend(manager, "codex", backend)
+    session = state.SessionState("registry-retry", str(tmp_path), engine="codex")
+    _complete(session)
+    manager.sessions[session.session_id] = session
+    release = session_registry.release
+    calls = 0
+
+    def fail_once(*args: Any, **kwargs: Any) -> None:
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            raise OSError("registry failed once")
+        release(*args, **kwargs)
+
+    monkeypatch.setattr(session_registry, "release", fail_once)
+    with pytest.raises(RuntimeError, match="backend resources released; state synchronization incomplete") as caught:
+        await manager.stop(session.session_id)
+    assert "`stop`" in _actionable_message(caught.value)
+    assert isinstance(caught.value.__cause__, OSError)
+    await manager.stop(session.session_id)
+    assert calls == 2
+    assert backend.release_calls == [session.session_id]
+    await manager.close()
+
+
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     ("registry_content", "code", "operation"),
@@ -921,9 +961,9 @@ async def test_unrecoverable_registry_record_reports_next_action(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> None:
-    """再開できない登録簿の状態は、符号に加えて取るべき操作を次の操作で示す。
+    """再開できない登録簿の状態は、`error.recovery`の値に加えて、取るべき操作を次の操作の行で示す。
 
-    符号だけを返すと、委譲元は別の主体が実行中のsessionを新しいstartでやり直し得る。
+    `error.recovery`の値だけを返すと、委譲元は別の主体が実行中のsessionを新しいstartでやり直し得る。
     """
     monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
     session_id = "0ba2f3f4-3e6c-4a1a-9a35-9f5e30b9f9b1"
@@ -992,7 +1032,7 @@ async def test_show_reports_another_writer_for_running_registry_record(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> None:
-    """登録簿が実行中として保持する識別子は、喪失ではなく別主体の実行中として案内する。"""
+    """登録簿が実行中として保持する識別子は、別主体の実行中として案内する。"""
     manager, _ = _manager_with_fake("codex")
     session_id = "0ba2f3f4-3e6c-4a1a-9a35-9f5e30b9f9b1"
     monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
@@ -1055,6 +1095,7 @@ async def test_other_manager_shows_saved_activity_and_lists_unknown_legacy_time(
     session.turn_completed = True
     session.touch()
     owner.sessions[session.session_id] = session
+    await owner.close()
     session_registry.publish("legacy-activity", terminal=True, cwd=str(tmp_path))
     observer, _ = _manager_with_fake("codex")
 
@@ -1154,6 +1195,7 @@ async def test_session_released_by_another_server_is_reported_as_released(
     owner.sessions[session_id] = session
     if release == "expire":
         owner._expire_session(session_id)
+        await owner.close()
     else:
         await owner.stop(session_id)
     observer, _ = _manager_with_fake("codex")
@@ -1236,6 +1278,7 @@ async def test_close_publishes_running_session_as_interrupted_for_restart(
     running.announced = True
     manager.sessions[session_id] = running
     running.touch()
+    await running.drain_registration()
     assert session_registry.resolve(session_id).state is session_registry.Resolution.RUNNING
 
     await manager.close()
@@ -1320,7 +1363,7 @@ async def test_record_whose_owner_and_executor_exited_is_interrupted_on_every_pa
 ) -> None:
     """所有プロセスと委譲先CLIがともに終了した`running`の記録は、次の照会のいずれでも`interrupted`の終端として扱う。
 
-    `atk agents show`は`unknown session`ではなく中断を返し、自動再開は終端した子として扱う。
+    `atk agents show`は中断を返し、自動再開は終端した子として扱う。
     MCPの`show`は終了の理由を`error`で返し、`send_message`は拒否せず通常の復元へ進む。
     """
     _publish_record_with_processes(monkeypatch, tmp_path, engine, (exited_process_identity(), exited_process_identity()))

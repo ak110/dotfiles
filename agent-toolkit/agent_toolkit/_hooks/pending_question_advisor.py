@@ -2,8 +2,8 @@
 
 直前のアシスタント応答の地の文へ、ユーザーへ判断を求める文が含まれ、同じ応答が
 `AskUserQuestion`の呼び出しを持たない場合にターンの終了を遮断する。
-判断を求める場面で`AskUserQuestion`を使う規定は規範が定めるが、自身の応答が
-その場面に当てはまるかの分類は誤りやすいため、機械的な検出を置く。
+判断を求める場面で`AskUserQuestion`を使う規定は規範が定めるが、エージェントは自身の応答が
+その場面に当てはまるかを誤って分類しやすいため、機械的な検出を置く。
 判定は疑問符で終わる文と、判断を促す定型表現を含む文の2条件とする。
 定型表現より前に条件節（`〜場合は`など）を持つ文は、条件が成立したときの手順の案内であり
 判断を求めていないため、定型表現の条件から外す。
@@ -17,24 +17,17 @@
 委譲先での実行可否: 委譲先は`AskUserQuestion`を実行できないため、hook入力と環境印で除外する。
 """
 
-# 関数の実行時までだけ使う依存を、Python 3.15では使用時まで読み込まない。旧Pythonでは通常のimportとなる。
-__lazy_modules__ = {
-    "agent_toolkit._common",
-    "agent_toolkit._hooks.agent_id",
-    "agent_toolkit._hooks.stop_session",
-    "agent_toolkit._hooks.transcript_scan",
-    "collections.abc",
-}
-
 import re
-from collections.abc import Iterator
 
-from agent_toolkit._common import transcript as _transcript
-from agent_toolkit._hooks.agent_id import is_main_agent_context
+# 関数の実行時にだけ使う依存は、使用時まで読み込まない。
+lazy from collections.abc import Iterator
+
 from agent_toolkit._hooks.notice import block_formatter as _block_notice_formatter
-from agent_toolkit._hooks.stop_session import append_stop_log
-from agent_toolkit._hooks.stop_session import parse_stop_session as _parse_stop_session
-from agent_toolkit._hooks.transcript_scan import read_transcript_entries_cached
+lazy from agent_toolkit._common import transcript as _transcript
+lazy from agent_toolkit._hooks.agent_id import is_main_agent_context
+lazy from agent_toolkit._hooks.stop_session import append_stop_log
+lazy from agent_toolkit._hooks.stop_session import parse_stop_session as _parse_stop_session
+lazy from agent_toolkit._hooks.transcript_scan import read_transcript_entries_cached
 
 _HOOK_ID = "pending_question_advisor"
 _block_notice = _block_notice_formatter(_HOOK_ID)
@@ -115,10 +108,10 @@ def _is_unconditional_request(sentence: str, expression: str) -> bool:
 
 
 def _latest_response(transcript_path: str) -> tuple[str, bool]:
-    """最後の本文を返し、人間の応答・作業ツール・APIエラー以前の問いを除く。
+    """最後の本文と`AskUserQuestion`の使用有無を返す。人間の入力・作業ツールの呼び出し・APIエラーより前の問いは除く。
 
-    送信のtool resultを本文の境界から除くため、そのIDだけを透過させる。
-    空の最終応答でも送信済み本文を保持し、本文を持つ別応答へ進めば判定対象を更新する。
+    送信ツールの成功したtool resultは本文の境界として扱わず読み飛ばすため、送信ツールの呼び出しIDを保持する。
+    最終応答が空でも送信済みの本文を保持し、本文を持つ別の応答が現れれば判定対象をその応答へ更新する。
     """
     texts: list[str] = []
     used_ask_user_question = False

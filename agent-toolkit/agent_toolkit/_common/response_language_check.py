@@ -1,16 +1,18 @@
 """Claude Code agent-toolkit: 文字列の記述言語を判定する。
 
 文字列からコードブロック・インラインコード・URL・機械可読な返却行を除いた地の文を判定する。
-テキストブロックを持つ直近のメインエージェント応答はtranscriptから文字列を取得して同じ判定へ渡す。
+テキストブロックを持つ直近のメインエージェント応答については、transcriptから文字列を取得して同じ判定へ渡す。
 判定条件は、日本語文字を含まない英語だけの地の文、地の文の先頭に置かれた英語の談話標識、
-語数比が閾値未満であることの3種とする。
+語数比が閾値未満であることと、説明中の他文字体系の語を対象とする。
 語数比は日本語文字数を、日本語文字数と英単語数（連続英字列）の和で割った値とする。
 いずれかの条件へ該当すると警告メッセージを返し、PreToolUseのadditionalContext経由で
 コーディングエージェントへ通知する。
 """
 
 import enum
+import json
 import re
+import unicodedata
 
 from agent_toolkit._common.transcript import iter_latest_assistant_text_messages, visible_text_blocks
 
@@ -28,6 +30,10 @@ _MIN_JAPANESE_WORD_RATIO = 0.3
 
 # フェンス付きコードブロック（言語指定の有無を問わない、複数行対応）。
 _FENCED_CODE_PATTERN = re.compile(r"```[\s\S]*?```")
+
+# レビュー返却の説明欄だけを読む。素材・入力・analysisなど任意のJSON値は対象にしない。
+_EXPLANATION_FIELDS = frozenset({"group", "excess", "retain", "basis"})
+_QUOTED_MATERIAL_PATTERN = re.compile(r"「[^」]*」|『[^』]*』|^[ \t]*>[^\n]*", re.MULTILINE)
 
 # インラインコード（バッククォート間、改行を含まない）。
 _INLINE_CODE_PATTERN = re.compile(r"`[^`\n]*`")
@@ -122,6 +128,11 @@ def check_text(text: str) -> tuple[CheckOutcome, str | None]:
         SKIPまたはPASSの場合、警告本文はNoneを返す。
     """
     plain_text = _plain_text(text)
+    if _has_foreign_word(plain_text):
+        return (
+            CheckOutcome.WARN,
+            "直前のアシスタント応答の説明に日本語以外の文字列が混入している。引用・素材を保ち、説明を日本語で書く。",
+        )
     japanese_count = len(_JAPANESE_CHAR_PATTERN.findall(plain_text))
     english_word_count = len(_ENGLISH_WORD_PATTERN.findall(plain_text))
     if _is_english_only(japanese_count, english_word_count):
@@ -135,9 +146,57 @@ def check_text(text: str) -> tuple[CheckOutcome, str | None]:
     return (CheckOutcome.PASS, None)
 
 
+def _has_foreign_word(text: str) -> bool:
+    """日本語・Latin以外の連続文字を読む。単独の数式文字は語と扱わない。
+
+    語彙の禁止リストは持たず、引用・素材・識別子を除いた説明へ適用する。
+    漢字を共有する言語の識別や、原文であるかの意味判定は、本文を読む担当に委ねる。
+    """
+    run = 0
+    for char in text:
+        name = unicodedata.name(char, "")
+        foreign = char.isalpha() and not (
+            _JAPANESE_CHAR_PATTERN.fullmatch(char) or name.startswith(("LATIN", "CJK", "HIRAGANA", "KATAKANA"))
+        )
+        run = run + 1 if foreign else 0
+        if run >= 2:
+            return True
+    return False
+
+
 def _plain_text(text: str) -> str:
     """言語判定と警告引用に共通する地の文を返す。"""
-    plain_text = _FENCED_CODE_PATTERN.sub(" ", text)
+
+    def explanations(value: object) -> list[str]:
+        if isinstance(value, list):
+            return [part for item in value for part in explanations(item)]
+        if isinstance(value, dict):
+            return [item for key, item in value.items() if key in _EXPLANATION_FIELDS and isinstance(item, str)]
+        return []
+
+    def structured_prose(raw: str) -> str:
+        try:
+            return "\n".join(explanations(json.loads(raw)))
+        except ValueError, TypeError:
+            return " "
+
+    stripped = text.strip()
+    if stripped.startswith(("{", "[")):
+        try:
+            plain_text = "\n".join(explanations(json.loads(stripped)))
+        except ValueError:
+            plain_text = text
+    else:
+        plain_text = text
+    plain_text = _FENCED_CODE_PATTERN.sub(
+        lambda match: (
+            structured_prose(match.group().removeprefix("```json").removesuffix("```"))
+            if match.group().startswith("```json\n")
+            else " "
+        ),
+        plain_text,
+    )
+    plain_text = _QUOTED_MATERIAL_PATTERN.sub(" ", plain_text)
     plain_text = _INLINE_CODE_PATTERN.sub(" ", plain_text)
     plain_text = _URL_PATTERN.sub(" ", plain_text)
     plain_text = _MACHINE_READABLE_LINE_PATTERN.sub(" ", plain_text)

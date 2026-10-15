@@ -1,5 +1,5 @@
 # /// script
-# requires-python = ">=3.10"
+# requires-python = ">=3.15"
 # dependencies = ["platformdirs>=4.0", "watchdog>=6.0.0"]
 # ///
 """`atk serve`の計画ファイル画面が使うリモートホスト側ヘルパー。
@@ -311,7 +311,7 @@ def _watch_files() -> int:
            "host_info":{"root":..., "home":..., "os_type":..., "os_name":...}}
         - {"type":"upsert","path":..., "name":..., "mtime_epoch":..., "ctime_epoch":...}
         - {"type":"deleted","path":...}
-        - {"type":"ping"}  ※30秒間隔。SSH切断時のSIGPIPE誘発で生存確認とする
+        - {"type":"ping"}  ※30秒間隔。SSHの切断後は書込みがSIGPIPEを起こすため、生存確認に使う
     """
     stop_event = threading.Event()
     observer = _start_observer(stop_event)

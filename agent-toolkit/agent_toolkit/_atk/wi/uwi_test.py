@@ -379,7 +379,7 @@ class TestUwiAddEditorBeforePull:
 
 
 class TestUwiAddRepoPathOverrideCli:
-    """`mq add --type=uwi`のREPO_PATH位置引数廃止に伴うCLI事前変換層の検証。"""
+    """`atk wi add --type=uwi`（旧`mq add`）でREPO_PATH位置引数を廃止したことに伴うCLI事前変換層の検証。"""
 
     def test_repo_path_omitted_resolves_from_cwd(
         self,
@@ -491,7 +491,7 @@ class TestUwiMutationTargetRepoVerification:
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
     ) -> None:
-        """mq edit: `--target-repo`不一致時にexit 2でエディターは起動されない。"""
+        """edit: `--target-repo`不一致時にexit 2でエディターは起動されない。"""
         notes = _setup_notes(tmp_path)
         _write_uwi_file(notes, f"{_FIXED_TIMESTAMP}-001.md", question="q")
         monkeypatch.setenv("EDITOR", "fake-editor")
@@ -518,7 +518,7 @@ class TestUwiMutationTargetRepoVerification:
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
     ) -> None:
-        """mq adopt: `--target-repo`不一致時にexit 2でファイルは移動されない。"""
+        """adopt: `--target-repo`不一致時にexit 2でファイルは移動されない。"""
         notes = _setup_notes(tmp_path)
         _write_uwi_file(notes, f"{_FIXED_TIMESTAMP}-001.md", question="q", answer="はい")
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
@@ -538,7 +538,7 @@ class TestUwiMutationTargetRepoVerification:
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
     ) -> None:
-        """mq adopt: `--target-repo`一致時は通常通りadopted/へ移動する。"""
+        """adopt: `--target-repo`一致時は通常通りadopted/へ移動する。"""
         notes = _setup_notes(tmp_path)
         _write_uwi_file(notes, f"{_FIXED_TIMESTAMP}-001.md", question="q", answer="はい")
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
@@ -557,7 +557,7 @@ class TestUwiMutationTargetRepoVerification:
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
     ) -> None:
-        """mq rm: `--target-repo`不一致時にexit 2でファイルは削除されない。"""
+        """rm: `--target-repo`不一致時にexit 2でファイルは削除されない。"""
         notes = _setup_notes(tmp_path)
         _write_uwi_file(notes, f"{_FIXED_TIMESTAMP}-001.md")
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
@@ -872,7 +872,7 @@ class TestUwiAdopt:
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
     ) -> None:
-        """1件のtb adopt実行でinboxから移動されadopted/に置かれコミットメッセージが正しいこと。"""
+        """1件の`atk wi adopt`実行でinboxから移動されadopted/に置かれコミットメッセージが正しいこと。"""
         notes = _setup_notes(tmp_path)
         _write_uwi_file(notes, f"{_FIXED_TIMESTAMP}-001.md", question="q", answer="はい")
         git_calls: list[_GitCall] = []
@@ -984,7 +984,7 @@ class TestUwiAdopt:
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
     ) -> None:
-        """3件のtb adoptで全件がadopted/へ移動し単一コミットが行われること。"""
+        """3件の`atk wi adopt`で全件がadopted/へ移動し単一コミットが行われること。"""
         notes = _setup_notes(tmp_path)
         _write_uwi_file(notes, f"{_FIXED_TIMESTAMP}-001.md", question="q1", answer="a1")
         _write_uwi_file(notes, f"{_FIXED_TIMESTAMP}-002.md", question="q2", answer="a2")
@@ -1093,7 +1093,7 @@ class TestUwiAdopt:
         """同一ファイル名を重複指定した場合、重複除去のうえ警告を出力して1回のみ移動されること。
 
         重複除去前は`src.rename(dst)`が1回目の成功後に2回目で対象不在となり
-        `FileNotFoundError`のTracebackが露出していた（FB7類似見直し対象）。
+        `FileNotFoundError`のTracebackが露出していた。
         """
         notes = _setup_notes(tmp_path)
         _write_uwi_file(notes, f"{_FIXED_TIMESTAMP}-001.md", question="q", answer="はい")
@@ -1124,7 +1124,7 @@ class TestUwiRm:
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
     ) -> None:
-        """1件のtb rm実行でinbox配下ファイルが削除されコミットメッセージが正しいこと。"""
+        """1件の`atk wi rm`実行でinbox配下ファイルが削除されコミットメッセージが正しいこと。"""
         notes = _setup_notes(tmp_path)
         _write_uwi_file(notes, f"{_FIXED_TIMESTAMP}-001.md")
         git_calls: list[_GitCall] = []
@@ -1231,7 +1231,7 @@ class TestUwiRm:
         """同一ファイル名を重複指定した場合、重複除去のうえ警告を出力して1回のみ削除されること。
 
         重複除去前は`p.unlink()`が1回目の成功後に2回目で対象不在となり
-        `FileNotFoundError`のTracebackが露出していた（FB7類似見直し対象）。
+        `FileNotFoundError`のTracebackが露出していた。
         """
         notes = _setup_notes(tmp_path)
         _write_uwi_file(notes, f"{_FIXED_TIMESTAMP}-001.md")
@@ -1333,7 +1333,7 @@ def test_answer_without_diff_reports_success_line(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """保存済みと同じ回答は、接頭辞の無い行ではなく変更の無い成功行で報告する。"""
+    """保存済みと同じ回答は、変更の無い成功行で報告する。"""
     notes = _setup_notes(tmp_path)
     filename = f"{_FIXED_TIMESTAMP}-001.md"
     _write_uwi_file(notes, filename, question="q?", answer=f"{uwi_module.ANSWER_MARKER}\n採用する\n")

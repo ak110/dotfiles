@@ -7,18 +7,16 @@
 ログはセッション横断の追記式JSONLで、一時ディレクトリ規則に従う固定パスへ出力する。
 """
 
-# 関数の実行時までだけ使う依存を、Python 3.15では使用時まで読み込まない。旧Pythonでは通常のimportとなる。
-__lazy_modules__ = {"agent_toolkit._common.file_lock", "agent_toolkit._common.transcript", "datetime", "tempfile"}
-
-import datetime
+# 関数の実行時にだけ使う依存は、使用時まで読み込まない。
 import json
 import pathlib
-import tempfile
+lazy import datetime
+lazy import tempfile
 
-from agent_toolkit._common.file_lock import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+lazy from agent_toolkit._common.file_lock import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
     locked_rotate_and_append as _locked_rotate_and_append,
 )
-from agent_toolkit._common.transcript import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+lazy from agent_toolkit._common.transcript import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
     assistant_text,
     latest_main_assistant_entry,
 )
@@ -63,7 +61,7 @@ def main(payload_text: str) -> int:
     """StopFailure hookのエントリポイント。発火内容をログへ追記する。"""
     try:
         payload = json.loads(payload_text)
-    except (json.JSONDecodeError, ValueError):
+    except json.JSONDecodeError, ValueError:
         return 0
     if not isinstance(payload, dict):
         return 0

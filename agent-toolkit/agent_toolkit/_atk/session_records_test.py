@@ -100,7 +100,7 @@ class TestInvokedProcessWi:
         assert session_records.invoked_process_wi(path, "claude") is True
 
     def test_codex_prompt_contained_in_larger_text_is_detected(self, tmp_path: pathlib.Path) -> None:
-        """Codexの起動判定は完全一致ではなく包含で行う。
+        """Codexの起動判定は包含で行う。
 
         確定した現象: 最初のプロンプトの完全一致条件は、実記録2169件へ適用しても0件だった
         （2026年9月10日に実物を確認。監査記録にある同じ事象の記録を参照）。
@@ -129,7 +129,7 @@ class TestInvokedProcessWi:
 
         確定した現象: 最初のuser役レコードの本文は実行環境が挿入する前置きであり、
         最初のプロンプト本文を含まない（2026年9月10日に実物を確認）。
-        期待する契約: 判定はレコードの位置ではなく本文の包含だけで行う。
+        期待する契約: 判定は本文の包含だけで行う。
         直接的原因: 包含判定へ改めても、前置き文字列自体には最初のプロンプト本文が
         現れないため、位置に依存せず誤って真とはならない。
         """

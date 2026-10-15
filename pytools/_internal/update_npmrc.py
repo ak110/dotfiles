@@ -39,7 +39,11 @@ def run(npmrc_path: Path | None = None) -> post_apply_outcome.PostApplyOutcome:
     try:
         pnpm_changed = _update_pnpm_global()
     except _PnpmConfigError as error:
-        return post_apply_outcome.PostApplyOutcome(changed=npmrc_changed, failure=str(error))
+        return post_apply_outcome.PostApplyOutcome(
+            changed=npmrc_changed,
+            failure=str(error),
+            next_action="問題を解消した後に`update-dotfiles`を再実行する。",
+        )
     return post_apply_outcome.PostApplyOutcome(changed=npmrc_changed or pnpm_changed)
 
 
@@ -78,7 +82,9 @@ def _update_pnpm_global() -> bool:
     """
     pnpm = shutil.which("pnpm")
     if pnpm is None:
-        logger.info(log_format.format_status("pnpm", "未検出のため公開待機の設定を省略しました"))
+        logger.info(
+            log_format.format_status("pnpm", "未検出のため公開待機の設定を省略しました。pnpm未導入のため対応不要"),
+        )
         return False
     current = common.run_subprocess(
         [pnpm, "config", "get", "--location", "global", _PNPM_KEY], timeout=_PNPM_TIMEOUT, tag="pnpm"
@@ -97,5 +103,7 @@ def _update_pnpm_global() -> bool:
     if result is None or result.returncode != 0:
         detail = "" if result is None else f": {result.stderr.strip()}"
         raise _PnpmConfigError(f"pnpmの{_PNPM_KEY} の設定に失敗しました{detail}")
-    logger.info(log_format.format_status("pnpm", f"グローバル設定へ {_PNPM_KEY}={_PNPM_VALUE} を設定しました"))
+    logger.info(
+        log_format.format_status("pnpm", f"グローバル設定へ {_PNPM_KEY}={_PNPM_VALUE} を設定しました"),
+    )
     return True

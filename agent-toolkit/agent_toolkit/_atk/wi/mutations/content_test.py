@@ -984,7 +984,7 @@ class TestEditBodyFile:
         """processingから保留した項目も、inboxと同じくエージェント環境から本文を置換できる。
 
         holdの項目の編集はinboxと同じ条件で許すため、保留前の状態で置換を拒否すると
-        処理中だった項目の更新だけが操作不能になる。エージェント環境で処理中の項目を保留するには
+        処理中だった項目だけを更新できなくなる。エージェント環境で処理中の項目を保留するには
         `--state=processing`を要するため、保留はその形で行う。
         """
         notes = _setup_notes(tmp_path)
@@ -1593,7 +1593,7 @@ def test_editor_failure_keeps_entry_and_names_retry_command(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """エディターが非0で終わった場合は、tracebackではなく失敗行と再実行の手段を示す。"""
+    """エディターが非0で終わった場合は、失敗行と再実行の手段を示す。"""
     notes = _setup_notes(tmp_path)
     path = _write_awi_file(notes, "fb-001.md")
     original = path.read_text(encoding="utf-8")

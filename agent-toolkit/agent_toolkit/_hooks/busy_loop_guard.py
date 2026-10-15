@@ -26,29 +26,18 @@ Stopの戻り値は`approve`とし、ターンの継続は強制しない。
 委譲先での実行可否: hook入力と委譲先の環境印で判定し、委譲先では何もしない。
 """
 
-# 関数の実行時までだけ使う依存を、Python 3.15では使用時まで読み込まない。旧Pythonでは通常のimportとなる。
-__lazy_modules__ = {
-    "agent_toolkit._atk",
-    "agent_toolkit._atk.wi",
-    "agent_toolkit._common.process_loop_session",
-    "agent_toolkit._common.session_state",
-    "agent_toolkit._hooks.agent_id",
-    "agent_toolkit._hooks.background_tasks",
-    "agent_toolkit._hooks.stop_session",
-    "agent_toolkit._hooks.transcript_scan",
-}
-
 import os
 
-from agent_toolkit._atk import agents_exit_session as _agents_exit_session
-from agent_toolkit._atk.wi import process_loop_log as _process_loop_log
-from agent_toolkit._common.process_loop_session import is_process_loop_session
-from agent_toolkit._common.session_state import read_state, update_state
-from agent_toolkit._hooks.agent_id import is_main_agent_context
-from agent_toolkit._hooks.background_tasks import is_pending_async_work
-from agent_toolkit._hooks.stop_session import append_stop_log
-from agent_toolkit._hooks.stop_session import parse_stop_session as _parse_stop_session
-from agent_toolkit._hooks.transcript_scan import has_tool_use_block, read_transcript_entries_cached
+# 関数の実行時にだけ使う依存は、使用時まで読み込まない。
+lazy from agent_toolkit._atk import agents_exit_session as _agents_exit_session
+lazy from agent_toolkit._atk.wi import process_loop_log as _process_loop_log
+lazy from agent_toolkit._common.process_loop_session import is_process_loop_session
+lazy from agent_toolkit._common.session_state import read_state, update_state
+lazy from agent_toolkit._hooks.agent_id import is_main_agent_context
+lazy from agent_toolkit._hooks.background_tasks import is_pending_async_work
+lazy from agent_toolkit._hooks.stop_session import append_stop_log
+lazy from agent_toolkit._hooks.stop_session import parse_stop_session as _parse_stop_session
+lazy from agent_toolkit._hooks.transcript_scan import has_tool_use_block, read_transcript_entries_cached
 
 # 停止工程へ進む連続無進捗ターン数。
 _THRESHOLD = 3

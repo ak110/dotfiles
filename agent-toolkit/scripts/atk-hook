@@ -1,0 +1,63 @@
+#!/usr/bin/env -S uv run --no-config --no-project --python 3.15 python
+"""配布物内からの呼出しでは自身のroot、個人のbinへ複製した旧来の呼出し用では導入済みのrootからhookを起動する。"""
+
+import json
+import os
+import subprocess
+import sys
+from pathlib import Path
+
+_PLUGIN_ID = "agent-toolkit@ak110-dotfiles"
+
+
+def _installed_root() -> Path:
+    """既存の名前だけのhook定義に対し、導入済みのCodex pluginを解決する。"""
+    result = subprocess.run(
+        ["codex", "plugin", "list", "--json"], capture_output=True, text=True,
+        encoding="utf-8", errors="replace", check=False,
+    )
+    if result.returncode != 0:
+        raise ValueError(result.stderr or "Codex plugin一覧を取得できません")
+    installed = json.loads(result.stdout)["installed"]
+    matches = [item for item in installed if item.get("pluginId") == _PLUGIN_ID]
+    if len(matches) != 1 or matches[0].get("enabled") is not True:
+        raise ValueError("agent-toolkitが有効ではありません")
+    item = matches[0]
+    return (
+        Path(os.environ.get("CODEX_HOME") or Path.home() / ".codex")
+        / "plugins" / "cache" / item["marketplaceName"] / item["name"] / item["version"]
+    )
+
+
+def main() -> int:
+    """配布内の直接呼出しと、プラグイン外へ複製した互換呼出しの配置を区別する。"""
+    if len(sys.argv) != 2:
+        print("usage: atk-hook EVENT", file=sys.stderr)
+        print("次の操作: hook定義の起動コマンドへイベント名を1つだけ渡す", file=sys.stderr)
+        return 2
+    source = Path(__file__).resolve()
+    try:
+        bundled = source.parent.name == "scripts"
+        root = source.parent.parent if bundled else _installed_root()
+        launcher = root / "scripts" / "launch.py"
+        # プラグイン外の旧呼出し用shimは、更新失敗・延期中の導入済み旧版も起動する。
+        # 新しい配布内の直接呼出しは、この互換の起動方法を使わず自身のlaunch.pyを必須とする。
+        if not bundled and not launcher.is_file() and (root / "agent_toolkit/hook.py").is_file():
+            return subprocess.call([
+                "uv", "run", "--project", str(root), "--locked", "--no-default-groups",
+                str(root / "agent_toolkit/hook.py"), sys.argv[1],
+            ])
+        if not launcher.is_file():
+            raise ValueError(f"hookの起動スクリプトがありません: {launcher}")
+        os.execv(
+            sys.executable, [sys.executable, str(launcher), "agent_toolkit/hook.py", sys.argv[1]]
+        )
+    except (OSError, KeyError, TypeError, ValueError, AttributeError) as error:
+        print(f"Codex hookを起動できません: {error}", file=sys.stderr)
+        print("次の操作: Codexのplugin一覧と配布物の導入状態を確かめ、agent-toolkitを再導入してからCodexを再起動する", file=sys.stderr)
+        return 1
+    return 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

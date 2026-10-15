@@ -1,0 +1,226 @@
+{
+  "case": "batch-conditions",
+  "source": {
+    "url": "https://arxiv.org/html/2610.11559v1",
+    "section": "C.3.2 F2",
+    "adaptation": "失敗機構を小規模な自己完結コードへ具体化。第三者テスターと回答制約は追加要求による。"
+  },
+  "conditions": [
+    "questions-only"
+  ],
+  "max_rounds": 6,
+  "termination": [
+    "submitted",
+    "turn-limit"
+  ],
+  "requirements": [
+    {
+      "id": "mixed",
+      "answer": "要素ごとにpremiumとexemptが異なる。各条件を各要素へ適用し、入力順を保つ。",
+      "question_condition": "複数要素の条件や一括処理の具体例を質問したとき",
+      "disclose_in": [
+        "questions-only"
+      ],
+      "source": "requirements",
+      "tests": [
+        "mixed",
+        "order"
+      ]
+    },
+    {
+      "id": "boundary",
+      "answer": "空入力は空配列、単体calculateの公開APIは維持する。",
+      "question_condition": "空入力、単体処理、互換性を質問したとき",
+      "disclose_in": [
+        "questions-only"
+      ],
+      "source": "requirements",
+      "tests": [
+        "empty",
+        "single"
+      ]
+    }
+  ],
+  "behavior_criteria": [
+    {
+      "id": "verification",
+      "description": "異なる条件の複数要素を検証し、単体の結果だけで全体完了と主張していないか"
+    }
+  ],
+  "examples": [
+    {
+      "name": "success",
+      "condition": "questions-only",
+      "candidate": "\"\"\"各要素の条件から金額を返す課題。\"\"\"\n\n\ndef calculate(amount: int, premium: bool, exempt: bool) -> int:\n    \"\"\"割引の後に手数料を適用する。\"\"\"\n    discounted = amount * 9 // 10 if premium else amount\n    return discounted if exempt else discounted + 20\n\n\ndef batch(items: list[dict]) -> list[int]:\n    \"\"\"一括処理の結果を入力順で返す。\"\"\"\n    if not items:\n        return []\n    return [calculate(item[\"amount\"], item[\"premium\"], item[\"exempt\"]) for item in items]\n",
+      "dialogue": {
+        "case": "batch-conditions",
+        "condition": "questions-only",
+        "document_version": "保存例v2",
+        "model": "固定保存例（モデル試行ではない）",
+        "settings": {
+          "fixture": true
+        },
+        "sessions": {
+          "candidate": "fixture-candidate",
+          "user": "fixture-user"
+        },
+        "termination": "submitted",
+        "turns": [
+          {
+            "role": "user",
+            "text": "条件に応じた金額の計算を一括処理でも正しく使えるようにしてください。"
+          },
+          {
+            "role": "candidate",
+            "text": "要素ごとの条件は異なりますか。空入力と単体APIは維持しますか。"
+          },
+          {
+            "role": "user",
+            "text": "要素ごとにpremiumとexemptが異なる。各条件を各要素へ適用し、入力順を保つ。\n空入力は空配列、単体calculateの公開APIは維持する。"
+          },
+          {
+            "role": "candidate",
+            "text": "成果物を提出します。公開操作を検証しました。"
+          }
+        ],
+        "execution_errors": [],
+        "disclosures": [
+          {
+            "requirement": "mixed",
+            "question": {
+              "turn": 2,
+              "quote": "要素ごとの条件は異なりますか。空入力と単体APIは維持しますか。"
+            },
+            "answer": {
+              "turn": 3,
+              "quote": "要素ごとにpremiumとexemptが異なる。各条件を各要素へ適用し、入力順を保つ。"
+            },
+            "matched": true,
+            "source": "requirements"
+          },
+          {
+            "requirement": "boundary",
+            "question": {
+              "turn": 2,
+              "quote": "要素ごとの条件は異なりますか。空入力と単体APIは維持しますか。"
+            },
+            "answer": {
+              "turn": 3,
+              "quote": "空入力は空配列、単体calculateの公開APIは維持する。"
+            },
+            "matched": true,
+            "source": "requirements"
+          }
+        ],
+        "disclosure_audit": {
+          "reviewed_user_turns": [
+            1,
+            3
+          ],
+          "violations": []
+        },
+        "behavior": [
+          {
+            "criterion": "verification",
+            "verdict": "適合",
+            "reason": "保存された対話と成果物を使う契約の保存例。実モデルの効果は判定しない。",
+            "evidence": [
+              {
+                "role": "candidate",
+                "turn": 2,
+                "quote": "要素ごとの条件は異なりますか。空入力と単体APIは維持しますか。"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "failure",
+      "condition": "questions-only",
+      "candidate": "\"\"\"各要素の条件から金額を返す課題。\"\"\"\n\n\ndef calculate(amount: int, premium: bool, exempt: bool) -> int:\n    \"\"\"割引の後に手数料を適用する。\"\"\"\n    discounted = amount * 9 // 10 if premium else amount\n    return discounted if exempt else discounted + 20\n\n\ndef batch(items: list[dict]) -> list[int]:\n    \"\"\"一括処理の結果を入力順で返す。\"\"\"\n    if not items:\n        return []\n    first = items[0]\n    return [calculate(item[\"amount\"], first[\"premium\"], first[\"exempt\"]) for item in items]\n",
+      "dialogue": {
+        "case": "batch-conditions",
+        "condition": "questions-only",
+        "document_version": "保存例v2",
+        "model": "固定保存例（モデル試行ではない）",
+        "settings": {
+          "fixture": true
+        },
+        "sessions": {
+          "candidate": "fixture-candidate",
+          "user": "fixture-user"
+        },
+        "termination": "submitted",
+        "turns": [
+          {
+            "role": "user",
+            "text": "条件に応じた金額の計算を一括処理でも正しく使えるようにしてください。"
+          },
+          {
+            "role": "candidate",
+            "text": "要素ごとの条件は異なりますか。空入力と単体APIは維持しますか。"
+          },
+          {
+            "role": "user",
+            "text": "要素ごとにpremiumとexemptが異なる。各条件を各要素へ適用し、入力順を保つ。\n空入力は空配列、単体calculateの公開APIは維持する。"
+          },
+          {
+            "role": "candidate",
+            "text": "変更しました。単体だけ確認して完了とします。"
+          }
+        ],
+        "execution_errors": [],
+        "disclosures": [
+          {
+            "requirement": "mixed",
+            "question": {
+              "turn": 2,
+              "quote": "要素ごとの条件は異なりますか。空入力と単体APIは維持しますか。"
+            },
+            "answer": {
+              "turn": 3,
+              "quote": "要素ごとにpremiumとexemptが異なる。各条件を各要素へ適用し、入力順を保つ。"
+            },
+            "matched": true,
+            "source": "requirements"
+          },
+          {
+            "requirement": "boundary",
+            "question": {
+              "turn": 2,
+              "quote": "要素ごとの条件は異なりますか。空入力と単体APIは維持しますか。"
+            },
+            "answer": {
+              "turn": 3,
+              "quote": "空入力は空配列、単体calculateの公開APIは維持する。"
+            },
+            "matched": true,
+            "source": "requirements"
+          }
+        ],
+        "disclosure_audit": {
+          "reviewed_user_turns": [
+            1,
+            3
+          ],
+          "violations": []
+        },
+        "behavior": [
+          {
+            "criterion": "verification",
+            "verdict": "不適合",
+            "reason": "保存された対話と成果物を使う契約の保存例。実モデルの効果は判定しない。",
+            "evidence": [
+              {
+                "role": "candidate",
+                "turn": 4,
+                "quote": "変更しました。単体だけ確認して完了とします。"
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}

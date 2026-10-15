@@ -12,6 +12,67 @@ import pytest
 from agent_toolkit._atk import run_script
 from agent_toolkit._common import next_action
 from agent_toolkit._testing import git_repository
+from agent_toolkit._testing.isolation import restore_host_environment
+
+
+def test_public_multi_turn_trials_prepares_and_grades_saved_artifacts(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`atk run-script multi-turn-trials`で公開素材の準備と採点を実行し、採点の終了コードを透過する。"""
+    restore_host_environment(monkeypatch)
+    trial = json.loads(
+        (run_script.PLUGIN_ROOT / "skills/refine-prompt/fixtures/multi-turn/weekday_queries/private/trial.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    command = [sys.executable, "-m", "agent_toolkit.atk", "run-script", "multi-turn-trials", "--"]
+    public = tmp_path / "public"
+    environment = dict(os.environ)
+    prepared = subprocess.run(
+        [*command, "prepare", "--case", "weekday-queries", "--output", str(public)],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        env=environment,
+        timeout=30,
+        check=False,
+    )
+    assert prepared.returncode == 0, prepared.stderr
+    assert {path.name for path in public.iterdir()} == {"task.py", "request.md"}
+    for example in trial["examples"]:
+        candidate = public / "task.py"
+        candidate.write_text(example["candidate"], encoding="utf-8")
+        dialogue = tmp_path / "dialogue.json"
+        dialogue.write_text(json.dumps(example["dialogue"], ensure_ascii=False), encoding="utf-8")
+        result = tmp_path / "result.json"
+        graded = subprocess.run(
+            [
+                *command,
+                "grade",
+                "--case",
+                "weekday-queries",
+                "--candidate",
+                str(candidate),
+                "--dialogue",
+                str(dialogue),
+                "--output",
+                str(result),
+            ],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            env=environment,
+            timeout=30,
+            check=False,
+        )
+        assert graded.returncode == (0 if example["name"] == "success" else 1), graded.stderr
+        saved = json.loads(result.read_text(encoding="utf-8"))
+        assert saved["status"] == "成立"
+        assert (
+            any(row["status"] == "達成" for row in saved["requirements"])
+            if example["name"] == "success"
+            else any(row["status"] == "未達" for row in saved["requirements"])
+        )
 
 
 def test_dispatch_forwards_help_and_exit_code(capsys: pytest.CaptureFixture[str]) -> None:
@@ -66,7 +127,7 @@ def test_removed_session_review_entries_are_rejected(script_name: str, capsys: p
 
 
 def test_dispatch_forwards_termination_decision_file(monkeypatch: pytest.MonkeyPatch) -> None:
-    """既存の終了判断記録へファイル引数を同じ順序で渡す。"""
+    """`termination-evidence`へ終了判断記録のファイル引数を同じ順序で渡す。"""
     observed: list[str] = []
 
     def capture_argv(_target: str, *, run_name: str) -> None:
@@ -258,7 +319,7 @@ def test_registered_plan_create_runs_outside_repository_without_pythonpath(tmp_p
     outside = tmp_path / "outside"
     outside.mkdir()
     isolated_home = tmp_path / "home"
-    executable = run_script.PLUGIN_ROOT / "bin/atk"
+    executable = run_script.PLUGIN_ROOT / "scripts/atk"
     assert executable.is_file()
     environment = dict(os.environ)
     environment.pop("PYTHONPATH", None)
@@ -300,7 +361,7 @@ def test_public_plan_progress_entry_rejects_removed_start_head(tmp_path: pathlib
     エンドユーザーが呼び出す`atk run-script`のスクリプト選択と引数の受け渡しを経ても、
     撤去したオプションが受理されないことを確かめる。
     """
-    executable = run_script.PLUGIN_ROOT / "bin/atk"
+    executable = run_script.PLUGIN_ROOT / "scripts/atk"
     environment = dict(os.environ)
     environment.pop("PYTHONPATH", None)
     environment.pop("VIRTUAL_ENV", None)

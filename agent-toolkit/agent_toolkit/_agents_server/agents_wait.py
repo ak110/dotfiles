@@ -50,6 +50,10 @@ _READ_FAILURE_NEXT_ACTION = (
     "MCPの`show`で対象sessionの状態を確かめ、読めない状態が続く場合はagents_serverの不具合としてユーザーへ報告する"
 )
 _ABSENT_TARGETS_NEXT_ACTION = "委譲先を起動してから`atk agents wait`を実行する"
+_SAVED_RESULT_NEXT_ACTION = (
+    "保存runの`run_path`を`atk read-file --`へ1引数として渡し、`output`の終端結果本文を読む。"
+    "`agent_message_paths`にある実在する本文も読める。新しい結果の待機が必要な場合だけ`atk agents wait`を実行する"
+)
 _IDENTITY_NEXT_ACTION = "同じsessionで`atk agents list`と`atk agents wait`を実行する"
 _FAILED_RESULT_NEXT_ACTION = (
     "`agent_message`と`error`で失敗の種類を確かめる。作業を続けられる失敗なら同じsessionへ`send_message`で継続し、"
@@ -95,11 +99,68 @@ def _write_json(path: pathlib.Path, value: Mapping[str, Any]) -> None:
 
 
 def _read_json(path: pathlib.Path) -> dict[str, Any] | None:
+    value, error = _read_result(path)
+    if error is not None:
+        raise _WaitStateReadError(f"待機の回復用記録を読めません: {path}: {error}")
+    return value
+
+
+class _WaitStateReadError(ValueError):
+    """不在として扱うと回復用runを上書きする読取異常。"""
+
+
+def _saved_wait_recovery(run_path: pathlib.Path | None) -> dict[str, Any]:
+    """同じ所有者の配送済みrunから、再配送せずに本文へ戻る情報を得る。"""
+    if run_path is None:
+        return {"status": "missing"}
+    value, error = _read_result(run_path)
+    base: dict[str, Any] = {"run_path": str(run_path.resolve())}
+    if error is not None:
+        return {**base, "status": "unreadable", "reason": error}
+    if value is None:
+        return {**base, "status": "missing"}
+    if value.get("status") not in {"foreground-delivered", "consumed"}:
+        return {**base, "status": "not-delivered"}
+    output = value.get("output")
+    if not isinstance(output, str) or value.get("stream", "stdout") != "stdout":
+        return {**base, "status": "no-results"}
     try:
-        value = json.loads(path.read_text(encoding="utf-8"))
-    except (FileNotFoundError, OSError, UnicodeError, json.JSONDecodeError):
-        return None
-    return value if isinstance(value, dict) else None
+        rows = [json.loads(line) for line in output.splitlines() if line.strip()]
+    except json.JSONDecodeError as exc:
+        return {**base, "status": "unreadable", "reason": str(exc)}
+    results = [
+        row
+        for row in rows
+        if isinstance(row, dict)
+        and row.get("status") in {"completed", "failed", "interrupted"}
+        and isinstance(row.get("session_id"), str)
+        and shared_layout.valid_session_id(row["session_id"])
+        and isinstance(row.get("agent_message"), str)
+    ]
+    if not results:
+        return {**base, "status": "no-results"}
+    paths = []
+    for row in results:
+        path = row.get("agent_message_path")
+        if isinstance(path, str) and pathlib.Path(path).is_file():
+            paths.append(path)
+    return {
+        **base,
+        "status": "available",
+        "session_ids": [row["session_id"] for row in results],
+        "agent_message_paths": paths,
+    }
+
+
+def _absent_wait_result(owner: str, current_run_path: pathlib.Path | None) -> int:
+    recovery = _saved_wait_recovery(current_run_path)
+    message = _absent_targets_message(owner)
+    if current_run_path is not None:
+        message += "; 先行waitの保存結果: " + json.dumps(recovery, ensure_ascii=False)
+    next_action = _SAVED_RESULT_NEXT_ACTION if recovery["status"] == "available" else _ABSENT_TARGETS_NEXT_ACTION
+    if recovery["status"] == "unreadable":
+        next_action = "保存runの読取失敗の原因を解消し、同じ`run_path`を読む。必要な結果を不在と扱わない"
+    return _fail(message, 10, next_action=next_action)
 
 
 def _matching_current_wait_run(run_directory: pathlib.Path, targets: list[str]) -> pathlib.Path | None:
@@ -163,7 +224,7 @@ def _remove_wait_stash(run_path: pathlib.Path) -> None:
     except FileNotFoundError:
         pass
     except OSError as exc:
-        _LOG.warning("wait退避物を回収できませんでした: path=%s error=%s", run_path.with_suffix(""), exc)
+        _LOG.warning("待機の退避物を回収できませんでした: path=%s error=%s", run_path.with_suffix(""), exc)
 
 
 def _consume_wait_result(run_path: pathlib.Path) -> int:
@@ -172,6 +233,10 @@ def _consume_wait_result(run_path: pathlib.Path) -> int:
         return _fail(f"先行する待機の結果記録を読めません: {run_path}", 8, next_action=_PRECEDING_WAIT_NEXT_ACTION)
     if value.get("status") == "consumed":
         consumed = {"status": "consumed", "run_id": value.get("run_id"), "next_action": _CONSUMED_NEXT_ACTION}
+        recovery = _saved_wait_recovery(run_path)
+        if recovery["status"] == "available":
+            consumed["recovery"] = recovery
+            consumed["next_action"] = _SAVED_RESULT_NEXT_ACTION
         print(json.dumps(consumed, ensure_ascii=False, separators=(",", ":")))
         return 8
     output = value.get("output")
@@ -260,6 +325,23 @@ def wait_for_result(
     state_root: pathlib.Path | None = None,
     root_session_id: str | None = None,
 ) -> int:
+    """回復用記録の異常は診断を返し、既存runと退避済みの結果を保持する。"""
+    try:
+        return _wait_for_result(environment=environment, state_root=state_root, root_session_id=root_session_id)
+    except _WaitStateReadError as error:
+        return _fail(
+            str(error),
+            6,
+            next_action="回復用記録の読取失敗を解消してから`atk agents wait`を再実行する。既存runを削除しない",
+        )
+
+
+def _wait_for_result(
+    *,
+    environment: Mapping[str, str] | None = None,
+    state_root: pathlib.Path | None = None,
+    root_session_id: str | None = None,
+) -> int:
     """自身が保持するsessionから、1回の巡回で回収できた終端結果と通知を全件返す。
 
     回収できたものは1件1行のJSON Linesで標準出力へ書く。1件ずつ返す形では、未回収の終端結果が
@@ -272,7 +354,7 @@ def wait_for_result(
     双方とする。後者を含めるのは、保持期限で一覧から外れたsessionの結果本文も回収するためである。
     対象集合は最初の待機の発行時点で登録簿へ保存し、再発行時も同じ集合を引き継ぐ。
     待機中に開始または再稼働したsessionも、巡回ごとに取得して対象へ追加する。
-    状態ファイルは投影であり、対象の不在から権威あるsessionの喪失を判定できない。
+    状態ファイルはsession状態の投影であり、そこに対象が無いことからsessionの喪失を判定できない。
     終端結果と通知が無い場合は、投影が消失しても待機上限まで非終端として扱う。
     待機対象の登録も、`starting`を含む保持中sessionも0件の場合は、待機しても回収対象が生じないため、
     両方の不在を理由として標準エラーへ書き、即座に非0で終わる。
@@ -307,8 +389,18 @@ def wait_for_result(
         return _fail(message, code, next_action=next_action)
     current = _read_json(run_directory / "current.json")
     current_id = current.get("run_id") if current is not None else None
-    current_run_path = run_directory / f"{current_id}.json" if isinstance(current_id, str) else None
-    current_run = _read_json(current_run_path) if current_run_path is not None else None
+    current_run_path = (
+        run_directory / f"{current_id}.json"
+        if isinstance(current_id, str) and shared_layout.valid_session_id(current_id)
+        else None
+    )
+    current_run_error: _WaitStateReadError | None = None
+    try:
+        current_run = _read_json(current_run_path) if current_run_path is not None else None
+    except _WaitStateReadError as error:
+        # 対象0件の診断は保存runのunreadableを添えて終了するため、対象集合の確定まで異常を保持する。
+        current_run = None
+        current_run_error = error
     if current_run is not None and current_run.get("status") in {"running", "published"}:
         recorded_targets = current_run.get("targets")
         if (
@@ -328,7 +420,9 @@ def wait_for_result(
         if root_resolution is not None and not root_resolution.mapping_confirmed:
             reason, next_action = shared_roots.unconfirmed_root_recovery(root_resolution, "atk agents wait")
             return _fail(reason, 4, next_action=next_action)
-        return _fail(_absent_targets_message(identity.file_name), 10, next_action=_ABSENT_TARGETS_NEXT_ACTION)
+        return _absent_wait_result(identity.file_name, current_run_path)
+    if current_run_error is not None:
+        raise current_run_error
     _LOG.info(
         "wait_start targets=%s origins=%s",
         ",".join(ordered_ids) or "none",
@@ -407,7 +501,7 @@ def wait_for_result(
                 message, code, next_action = target_error
                 return _publish_wait_result(run_path, with_next_action(message, next_action), code, stream="stderr")
             # 待機中の対象不在は、全対象の登録簿が終端を示す場合だけ確定する。
-            # 状態投影の消失と登録簿の不在は待機開始後の喪失の根拠にしないため、その場合は待機上限まで待つ。
+            # 状態投影の消失と登録簿の不在は待機開始後にsessionを喪失した根拠にならないため、その場合は待機上限まで待つ。
             if (
                 ordered_ids
                 and not current_origins
@@ -606,7 +700,7 @@ def _read_sessions(path: pathlib.Path) -> list[dict[str, Any]] | None:
     """状態ファイルを解釈し、session一覧または`None`を返す。"""
     try:
         value = json.loads(path.read_text(encoding="utf-8"))
-    except (FileNotFoundError, OSError, UnicodeError, json.JSONDecodeError):
+    except FileNotFoundError, OSError, UnicodeError, json.JSONDecodeError:
         return None
     sessions = value.get("sessions") if isinstance(value, dict) and value.get("version") == 1 else None
     if not isinstance(sessions, list):

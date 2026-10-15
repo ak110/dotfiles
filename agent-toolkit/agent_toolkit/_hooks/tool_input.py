@@ -20,7 +20,7 @@ from __future__ import annotations
 import dataclasses
 import pathlib
 
-# Codexの編集ツール名。matcher上は`Edit`・`Write`の別名に一致するが、payloadの`tool_name`は本名で届く。
+# Codexの編集ツール名。matcher上は`Edit`・`Write`の別名に一致するが、payloadの`tool_name`は`apply_patch`のまま届く。
 CODEX_APPLY_PATCH_TOOL = "apply_patch"
 
 # Claude Codeの編集ツール名。
@@ -33,7 +33,7 @@ KIND_UPDATE = "update"
 KIND_DELETE = "delete"
 KIND_MOVE = "move"
 
-# 全文を書き込む操作種別。判定する条件によっては、断片ごとではなく変更後全文を使う。
+# 全文を書き込む操作種別。判定する条件によっては変更後全文を使う。
 _WHOLE_WRITE_KINDS: frozenset[str] = frozenset({KIND_WRITE, KIND_ADD})
 
 _PATCH_BEGIN = "*** Begin Patch"
@@ -162,7 +162,7 @@ def _read_text(path: str | None) -> str | None:
         return None
     try:
         return pathlib.Path(path).read_text(encoding="utf-8")
-    except (OSError, UnicodeDecodeError, ValueError):
+    except OSError, UnicodeDecodeError, ValueError:
         return None
 
 
@@ -181,7 +181,7 @@ def _read_text_for_overwrite(path: str | None) -> tuple[str | None, bool]:
         return pathlib.Path(path).read_text(encoding="utf-8"), False
     except FileNotFoundError:
         return None, True
-    except (OSError, UnicodeDecodeError, ValueError):
+    except OSError, UnicodeDecodeError, ValueError:
         return None, False
 
 

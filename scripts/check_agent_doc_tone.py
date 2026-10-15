@@ -1,6 +1,6 @@
 #!/usr/bin/env -S uv run --script
 # /// script
-# requires-python = ">=3.12"
+# requires-python = ">=3.15"
 # dependencies = ["markdown-it-py>=4"]
 # ///
 r"""文体の密度と、説明に使用しない語の再使用を確認する。
@@ -19,10 +19,10 @@ r"""文体の密度と、説明に使用しない語の再使用を確認する�
 閾値は、Codexを使う前のClaude由来commitが追加した文の水準に置く。
 否定形終端率は8%、「当該」の出現率（出現数÷文数）は3%とし、文数が20以上のファイルへ適用する。
 
-説明文の語は文数によらず判定する。`notation-rules.md`が説明に使わないと定める語は、
-未対応なら要求を満たしていないため終了コード1を返す。文脈によって対象と動作が伝わりにくい語は
+説明文の語は文数によらず判定する。既存の失敗対象は`_DENIED_PATTERNS`が保持し、
+説明文へ再使用された場合は要求を満たしていないため終了コード1を返す。文脈によって対象と動作が伝わりにくい語は
 位置付きの警告として報告し、その語だけでは終了コードを変えない。
-密度の判定はMarkdownだけに適用する。引用・悪い例・検出データと構造名は文章と区別する。
+密度の判定はMarkdownだけに適用する。原文の引用・検出データと構造名は文章と区別する。
 """
 
 from __future__ import annotations
@@ -43,11 +43,7 @@ from collections.abc import Iterator
 import markdown_it
 
 _FRONTMATTER_DELIMITER = "---"
-_FENCE_PATTERN = re.compile(r"^\s*(`{3,}|~{3,})")
-_HEADING_PATTERN = re.compile(r"^\s{0,3}#{1,6}\s")
-_TABLE_ROW_PATTERN = re.compile(r"^\s*\|")
 _HTML_COMMENT_PATTERN = re.compile(r"<!--.*?-->", re.DOTALL)
-_LIST_MARKER_PATTERN = re.compile(r"^\s*(?:[-*+]|[0-9]+\.)\s+")
 _INLINE_CODE_PATTERN = re.compile(r"`[^`]*`")
 _INLINE_CODE_PLACEHOLDER = "コード"
 
@@ -60,15 +56,8 @@ _MAX_SUBJECT_WORD_RATIO = 0.03
 _MAX_EXCERPT_LENGTH = 40
 _SUBJECT_WORD_CONTEXT = 10
 
-EXCLUDED_PATHS = (
-    "agent-toolkit/skills/writing-standards/references/tone-examples.md",
-    "agent-toolkit/skills/writing-standards/references/tone-examples-llm-tone.md",
-    "agent-toolkit/skills/writing-standards/references/textlint-violations.md",
-)
-"""意図的な違反例を収録するため密度の判定から除くファイル。"""
-
 # 語そのものを扱う判定用データ。説明文の同義語をここでは定めない。
-# 失敗させる語は`notation-rules.md`「日本語の表記ルール」が説明に使わないと定める語に限る。
+# 失敗対象の集合は、説明に戻った語を検出する既存の契約を保持する。
 _DENIED_PATTERNS = {
     "正本": r"(?<!是)正本|正本(?!文)",
     "既定": r"既定",
@@ -77,6 +66,7 @@ _DENIED_PATTERNS = {
 # 文脈によって対象と動作が伝わりにくい語。正確な専門語や承認済みの呼称として使う場合もあるため警告に留める。
 _METAPHORICAL = "metaphorical"
 _ABSTRACT = "abstract"
+_CONTRAST = "contrast"
 _CAUTION_PATTERNS = {
     "経路": (r"経路", _ABSTRACT),
     "入口": (r"入口", _METAPHORICAL),
@@ -98,8 +88,16 @@ _CAUTION_PATTERNS = {
     "線引き": (r"線引き", _METAPHORICAL),
     "破綻": (r"破綻", _ABSTRACT),
     "ゲート": (r"ゲート", _METAPHORICAL),
+    "ではなく": (r"ではなく", _CONTRAST),
+    "むしろ": (r"むしろ", _CONTRAST),
+    "単なる": (r"単なる", _CONTRAST),
+    "というより": (r"というより", _CONTRAST),
 }
 _CAUTION_MESSAGES = {
+    _CONTRAST: (
+        "否定する側を並べる対比は、読み手に不要な解釈を求める。"
+        "伝える内容を肯定文で書き、そこから読み取れない必要な制約だけを独立した文で示す"
+    ),
     _METAPHORICAL: (
         "比喩や擬人化として使うと、実際の対象、状態または動作が曖昧になる。"
         "字義どおりの用法または定義済みの名称でなければ、別の比喩へ置き換えず、"
@@ -126,7 +124,6 @@ _STRUCTURAL_LABELS = (
     "選択肢と帰結",
     "前提を疑う観点",
 )
-_QUOTED_DATA_PATTERN = re.compile(r"「[^」]*」|`[^`]*`")
 # 選定結果の欄`プロジェクト固有の公開後の操作の順序`（旧欄名`terminal_order`）の値`既定`は保存形式の値として扱う。
 _TERMINAL_ORDER_VALUE_PATTERN = re.compile(
     r'((?:プロジェクト固有の公開後の操作の順序|terminal_order)[^\n]*?)(?:`既定`|「既定」|"既定")'
@@ -141,27 +138,28 @@ def _without_structural_labels(text: str) -> str:
 
 
 def _example_lines(text: str, start: int) -> Iterator[tuple[int, str]]:
-    """例の役割に応じて良い例と解説を返し、原文を示す行を保つ。"""
-    role = ""
+    """自作の例と説明を返し、明示された逐語引用を保持する。"""
+    quoted = False
     for offset, line in enumerate(text.splitlines()):
         stripped = line.strip()
-        if stripped.startswith(("悪い例:", "冗長な例:", "対象語:", "逐語引用:")):
-            role = "data"
-        elif stripped.startswith(("書き換え:", "良い例:", "例文:")):
-            role = "example"
-        elif stripped.startswith("解説:"):
-            role = "explanation"
-        if role == "data":
+        if stripped.startswith("逐語引用:"):
+            quoted = True
+        elif stripped.startswith(("書き換え:", "良い例:", "例文:", "解説:", "説明:")):
+            quoted = False
+        if quoted:
             continue
-        if role == "explanation":
-            line = _QUOTED_DATA_PATTERN.sub(lambda match: " " * len(match.group()), line)
         yield start + offset, line
+
+
+def _markdown_parser() -> markdown_it.MarkdownIt:
+    """語と文の判定で共用するMarkdownの構文解析器を返す。"""
+    return markdown_it.MarkdownIt("commonmark").enable("table")
 
 
 def _markdown_fragments(text: str) -> Iterator[tuple[int, str]]:
     """Markdownの構造から本文・見出し・表・自作の文を行番号付きで返す。"""
     quote_depth = 0
-    for token in markdown_it.MarkdownIt("commonmark").enable("table").parse(text):
+    for token in _markdown_parser().parse(text):
         if token.type == "blockquote_open":
             quote_depth += 1
         elif token.type == "blockquote_close":
@@ -175,7 +173,7 @@ def _markdown_fragments(text: str) -> Iterator[tuple[int, str]]:
             if token.info.strip() == "python":
                 try:
                     fragments = list(_python_fragments(token.content))
-                except (SyntaxError, tokenize.TokenError):
+                except SyntaxError, tokenize.TokenError:
                     # 部分的なコード例は単独のPythonとして成立しないため、記載された文を確認する。
                     fragments = list(_example_lines(token.content, 1))
                 yield from ((start + line - 1, fragment) for line, fragment in fragments)
@@ -457,36 +455,28 @@ def _prose_line(line: int, source: str) -> _ProseLine:
     return _ProseLine(line, "".join(text), source, tuple(spans))
 
 
-def _prose_lines(text: str) -> list[_ProseLine]:
-    """本文として数える行だけを、入力ファイルの物理行の行番号とともに返す。
+def _prose_blocks(text: str) -> Iterator[list[_ProseLine]]:
+    """段落と箇条の本文を、物理行の位置を持つブロックとして返す。
 
-    フェンス付きコードブロック、見出し行、表の行およびHTMLコメントを除き、
-    箇条書きの記号と番号を取ってからインラインコードを固定の置換語へ置き換える。
-    HTMLコメントは含んでいた改行だけを残して除き、後続の行番号を保つ。
+    構文解析が返す段落のinline本文とHTMLブロックを数える。
+    frontmatterとHTMLコメントは含んでいた改行を残して除き、後続の物理行を保つ。
+    引用内の段落も数え、見出し・表・コードの本文を除き、同じブロックの折返しを保持する。
     """
     without_comments = _HTML_COMMENT_PATTERN.sub(lambda match: "\n" * match.group().count("\n"), text)
     lines = without_comments.splitlines()
-    prose: list[_ProseLine] = []
-    fence: str | None = None
-    for index in range(_frontmatter_end(lines), len(lines)):
-        line = lines[index]
-        fence_match = _FENCE_PATTERN.match(line)
-        if fence_match is not None:
-            marker = fence_match.group(1)[0]
-            if fence is None:
-                fence = marker
-            elif fence == marker:
-                fence = None
-            continue
-        if fence is not None:
-            continue
-        if _HEADING_PATTERN.match(line) or _TABLE_ROW_PATTERN.match(line):
-            continue
-        stripped = _LIST_MARKER_PATTERN.sub("", line).strip()
-        if not stripped:
-            continue
-        prose.append(_prose_line(index + 1, stripped))
-    return prose
+    frontmatter_end = _frontmatter_end(lines)
+    body = "\n" * frontmatter_end + "\n".join(lines[frontmatter_end:])
+    previous_type = ""
+    for token in _markdown_parser().parse(body):
+        if token.map is not None and (
+            token.type == "inline" and previous_type == "paragraph_open" or token.type == "html_block"
+        ):
+            yield [
+                _prose_line(token.map[0] + offset + 1, source.strip())
+                for offset, source in enumerate(token.content.splitlines())
+                if source.strip()
+            ]
+        previous_type = token.type
 
 
 @dataclasses.dataclass(frozen=True)
@@ -507,11 +497,15 @@ def _excerpt(source: str, start: int, end: int) -> str:
 
 
 def sentences_with_positions(text: str) -> list[Sentence]:
-    """本文を「。」で分割し、各文が終わる物理行と文末の抜粋を付けて返す。
+    """句点とMarkdownのブロック末で文を区切り、物理行と文末の抜粋を付けて返す。
 
-    句点の無い行は次の行と1文に結合されるため、文の終わる行は最後の文字を含む行とする。
+    同じブロックの折返し行は連結し、文の終わる行は最後の文字を含む物理行とする。
     """
-    prose = _prose_lines(text)
+    return [sentence for block in _prose_blocks(text) for sentence in _block_sentences(block)]
+
+
+def _block_sentences(prose: list[_ProseLine]) -> list[Sentence]:
+    """1ブロックの折返しを連結し、各文末の文字の由来から位置と抜粋を返す。"""
     joined = "".join(item.text for item in prose)
     # 連結した本文の各文字が由来する行の添字と、その行の中の位置。
     origins = [(row, column) for row, item in enumerate(prose) for column in range(len(item.text))]
@@ -535,7 +529,7 @@ def sentences_with_positions(text: str) -> list[Sentence]:
 
 
 def split_sentences(text: str) -> list[str]:
-    """本文を「。」で分割した文の一覧を返す。"""
+    """本文を句点とMarkdownのブロック末で分割した文の一覧を返す。"""
     return [sentence.text for sentence in sentences_with_positions(text)]
 
 
@@ -603,16 +597,15 @@ class DensityMetric:
         ]
 
 
-def _subject_word_occurrences(text: str) -> tuple[Occurrence, ...]:
-    """入力全体の「当該」の出現を、物理行と行の中の前後の抜粋とともに返す。"""
+def _subject_word_occurrences(blocks: list[list[_ProseLine]]) -> tuple[Occurrence, ...]:
+    """文数と同じ本文内の対象語を、物理行と前後の抜粋とともに返す。"""
     occurrences: list[Occurrence] = []
-    for match in re.finditer(re.escape(_SUBJECT_WORD), text):
-        line_start = text.rfind("\n", 0, match.start()) + 1
-        line_end = text.find("\n", match.end())
-        line_end = len(text) if line_end == -1 else line_end
-        start = max(line_start, match.start() - _SUBJECT_WORD_CONTEXT)
-        end = min(line_end, match.end() + _SUBJECT_WORD_CONTEXT)
-        occurrences.append(Occurrence(text.count("\n", 0, match.start()) + 1, text[start:end].strip()))
+    for block in blocks:
+        for item in block:
+            for match in re.finditer(re.escape(_SUBJECT_WORD), item.text):
+                start = max(0, item.spans[match.start()][0] - _SUBJECT_WORD_CONTEXT)
+                end = min(len(item.source), item.spans[match.end() - 1][1] + _SUBJECT_WORD_CONTEXT)
+                occurrences.append(Occurrence(item.line, item.source[start:end].strip()))
     return tuple(occurrences)
 
 
@@ -620,7 +613,8 @@ class Metrics:
     """1ファイルの文体指標。"""
 
     def __init__(self, path: pathlib.Path, text: str) -> None:
-        sentences = sentences_with_positions(text)
+        blocks = list(_prose_blocks(text))
+        sentences = [sentence for block in blocks for sentence in _block_sentences(block)]
         self.path = path
         self.sentences = len(sentences)
         self.negative_ending = DensityMetric(
@@ -642,7 +636,7 @@ class Metrics:
             limit=_MAX_SUBJECT_WORD_RATIO,
             action="指す対象を直接書く平易な語へ書き換える",
             element_label="「当該」",
-            occurrences=_subject_word_occurrences(text),
+            occurrences=_subject_word_occurrences(blocks),
             sentences=self.sentences,
         )
 
@@ -678,12 +672,6 @@ class Metrics:
     def violations(self) -> list[str]:
         """閾値を満たさない指標の要約を返す。"""
         return [metric.summary() for metric in self.exceeded_metrics()]
-
-
-def _is_excluded(path: pathlib.Path) -> bool:
-    """密度の判定から除く固定のファイルかを返す。"""
-    posix = path.as_posix()
-    return any(posix.endswith(excluded) for excluded in EXCLUDED_PATHS)
 
 
 def _print_report(metrics: list[Metrics]) -> None:
@@ -748,9 +736,15 @@ def main(argv: list[str] | None = None) -> int:
         try:
             contents.append((path, path.read_text(encoding="utf-8")))
         except (OSError, UnicodeError) as error:
-            diagnostics.emit(path, 1, Severity.ERROR, f"入力を読み取れない: {error}。指定したファイルと文字コードを確認する。")
+            diagnostics.emit(
+                path,
+                1,
+                Severity.ERROR,
+                f"入力を読み取れない: {error}。指定したファイルの読取権限を確かめ、"
+                "文字コードの問題ならUTF-8で保存し直して同じコマンドを再実行する。",
+            )
             return 2
-    metrics = [Metrics(path, text) for path, text in contents if path.suffix == ".md" and not _is_excluded(path)]
+    metrics = [Metrics(path, text) for path, text in contents if path.suffix == ".md"]
     if args.report:
         _print_report(metrics)
         return 0

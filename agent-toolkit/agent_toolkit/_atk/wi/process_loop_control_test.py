@@ -108,8 +108,8 @@ def test_instruction_is_consumed_only_when_a_session_launches(
     def fake_count_pending_entries(private_notes: pathlib.Path, target_repo: str | None = None) -> int:
         del private_notes, target_repo
         count_calls.append(len(count_calls))
-        # 1回目は0件で待機へ入り、2回目で1件を返してセッションを起動する。
-        return 1 if len(count_calls) == 2 else 0
+        # 最初は0件で待機し、次の取得と起動直前の再取得で1件を保つ。
+        return 1 if len(count_calls) in {2, 3} else 0
 
     held_during_wait: list[list[str]] = []
 

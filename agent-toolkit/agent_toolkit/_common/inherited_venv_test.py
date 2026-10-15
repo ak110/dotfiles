@@ -44,3 +44,19 @@ class TestStripInheritedVenv:
         env: dict[str, str] = {"VIRTUAL_ENV": "/tmp/launcher-venv"}
         _inherited_venv.strip_inherited_venv(env)
         assert not env
+
+    @pytest.mark.parametrize("project_environment", ["/plugin/environment", "/user/environment"])
+    def test_removes_only_the_plugin_project_override(self, project_environment: str) -> None:
+        """対象リポジトリのuvにはplugin専用の保存先を引き継がず、呼び出し元が別に指定した値は保つ。"""
+        env = {
+            "AGENT_TOOLKIT_RUNTIME_ENVIRONMENT": "/plugin/environment",
+            "UV_PROJECT_ENVIRONMENT": project_environment,
+            "PATH": "user-path",
+        }
+        _inherited_venv.strip_inherited_venv(env)
+        assert "AGENT_TOOLKIT_RUNTIME_ENVIRONMENT" not in env
+        assert env["PATH"] == "user-path"
+        if project_environment == "/plugin/environment":
+            assert "UV_PROJECT_ENVIRONMENT" not in env
+        else:
+            assert env["UV_PROJECT_ENVIRONMENT"] == project_environment

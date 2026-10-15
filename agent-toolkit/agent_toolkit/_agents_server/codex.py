@@ -26,6 +26,7 @@ from typing import Any
 from agent_toolkit._agents_server import (
     codex_providers,
     compaction_metrics,  # pylint: disable=wrong-import-position
+    context_usage,
     engine_availability,
     result_projection,
     resume_waits,
@@ -37,11 +38,13 @@ from agent_toolkit._agents_server import (
     plugin_root as plugin_roots,
 )
 from agent_toolkit._agents_server import state as shared_state  # pylint: disable=wrong-import-position
+from agent_toolkit._agents_server.file_operations import run_file_operation
 from agent_toolkit._agents_server.input_validation import validate_cwd, validate_model_effort, validate_prompt
 from agent_toolkit._agents_server.launch_prompts import (
     AUTO_RESUME_NOTICE,
     LAUNCH_SYSTEM_PROMPTS,
     LIGHTWEIGHT_LAUNCH_KINDS,
+    cli_runtime_instructions,
     python_runtime_instructions,
 )
 from agent_toolkit._agents_server.session_errors import SessionInitializationTimeoutError
@@ -59,6 +62,9 @@ from agent_toolkit._agents_server.wait_output_tracking import consume_agents_ser
 from agent_toolkit._atk import config as _atk_config
 from agent_toolkit._common import (
     codex_models,
+    inherited_venv,
+    mcp_environment,
+    plugin_environment,
     process_tree,  # pylint: disable=wrong-import-position
 )
 from agent_toolkit._common import delegated_session as _delegated_session
@@ -73,7 +79,7 @@ APP_SERVER_COMMAND = ("codex", "app-server", "--stdio")
 # plugin更新で消失すると生存中のApp Serverが設定を読み込めないため継承しない。
 APP_SERVER_WORKING_DIRECTORY = str(Path.home())
 DEFAULT_WAIT_TIMEOUT = 300.0
-# App Serverのstdio用StreamReader buffer上限兼、stdoutを1回に読み取るchunk長（バイト）。
+# App Serverのstdio用StreamReaderのbuffer上限と、stdoutを1回に読み取るchunk長を兼ねる値（バイト）。
 # JSON-RPC recordの最大値には使わず、この長さを超える行もchunkを結合して復元する。
 APP_SERVER_STREAM_LIMIT_BYTES = 8 * 1024 * 1024
 APP_SERVER_STDERR_LIMIT_CHARS = 4000
@@ -97,12 +103,12 @@ def _embedded_rule_paths() -> set[str]:
     """Codexが読む全体指示ファイルが`atk-auto`要素で埋め込む規範の`path`属性の集合を返す。
 
     全体指示ファイルは`CODEX_HOME`が設定済みなら`$CODEX_HOME/AGENTS.md`、未設定なら`~/.codex/AGENTS.md`とする。
-    ファイルが無いか読めない場合は空集合を返し、`~/.claude/rules/`配下の全ファイルを渡す側へ倒す。
+    ファイルが無いか読めない場合は空集合を返し、呼び出し側は`~/.claude/rules/`配下の全ファイルを委譲先へ渡す。
     """
     agents_md = _host_homes.codex_home() / "AGENTS.md"
     try:
         text = agents_md.read_text(encoding="utf-8")
-    except (OSError, UnicodeError):
+    except OSError, UnicodeError:
         return set()
     return set(_BOUNDARY_PATH_PATTERN.findall(text))
 
@@ -144,11 +150,11 @@ def _user_rules_instructions() -> str:
 
 
 def _developer_instructions(launch_kind: LaunchKind) -> str:
-    """委譲先の役割、このprocessで安定化した配布物root、ユーザーが置いた規範ファイルの本文を一体で返す。"""
+    """委譲先の役割、このprocessが起動時に確定した配布物root、ユーザーが置いた規範ファイルの本文を1つの指示として返す。"""
     plugin_root = plugin_roots.SERVER_PLUGIN_ROOT
     runtime = f"\n{python_runtime_instructions()}" if launch_kind in LIGHTWEIGHT_LAUNCH_KINDS else ""
     return (
-        f"{LAUNCH_SYSTEM_PROMPTS[launch_kind]}\n{AUTO_RESUME_NOTICE}{runtime}\n\n"
+        f"{LAUNCH_SYSTEM_PROMPTS[launch_kind]}\n{AUTO_RESUME_NOTICE}{runtime}\n{cli_runtime_instructions(plugin_root)}\n\n"
         f"agent-toolkit plugin root: {plugin_root}\n"
         "agent-toolkitのskillとplugin内部資源は、この実在する絶対パスを起点に読む。"
         "`<役割名>.subagent.md`や別hostのcache版数から別のplugin rootを組み立てない。"
@@ -158,6 +164,14 @@ def _developer_instructions(launch_kind: LaunchKind) -> str:
 
 class AppServerError(session_errors.DelegateBackendError):
     """App Serverとの通信または要求検証に失敗した。"""
+
+
+class StartCandidateUnavailable(AppServerError):
+    """モデルの実行開始前に候補の不成立が確定し、資源も回収済みであることを表す。"""
+
+    def __init__(self, reason: str) -> None:
+        super().__init__(reason)
+        self.reason = reason
 
 
 class JsonRpcResponseError(AppServerError):
@@ -240,7 +254,7 @@ class JsonRpcProcess:
         self._received_message_types: dict[str, int] = {}
 
     def initialization_diagnostic(self) -> dict[str, Any]:
-        """初期化の到達段階と子プロセスの有界な診断値を返す。"""
+        """初期化の到達段階と、長さに上限を設けた子プロセスの診断値を返す。"""
         process = self.process
         return {
             "stage": self._initialization_stage,
@@ -255,7 +269,8 @@ class JsonRpcProcess:
             return
         self._initialization_stage = "starting_process"
         try:
-            environment = os.environ.copy()
+            environment = plugin_environment.cli_environment(plugin_roots.SERVER_PLUGIN_ROOT, os.environ)
+            inherited_venv.strip_inherited_venv(environment)
             environment.pop(_delegated_session.DELEGATED_SESSION_ENV, None)
             owner_session_id = self._root_session_id
             if owner_session_id is not None:
@@ -464,7 +479,7 @@ class JsonRpcProcess:
             _LOG.debug("Codex App Server stderrの読取を終了しました: %s", exc)
 
     async def _stdout_closed_error(self) -> AppServerError:
-        """子プロセス終了時の診断情報を有界に収集する。"""
+        """子プロセス終了時の診断情報を、待ち時間と長さに上限を設けて収集する。"""
         assert self.process is not None
         with contextlib.suppress(asyncio.TimeoutError):
             await asyncio.wait_for(
@@ -590,16 +605,22 @@ class AppServerManager:
                     "command": "uv",
                     "args": [
                         "run",
-                        "--project",
-                        str(plugin_root),
-                        "--locked",
-                        "--no-default-groups",
-                        str(plugin_root / "agent_toolkit" / "agents_server_mcp.py"),
+                        "--no-config",
+                        "--no-project",
+                        "--python",
+                        "3.15",
+                        "python",
+                        str(plugin_root / "scripts" / "launch.py"),
+                        "agent_toolkit/agents_server_mcp.py",
                     ],
                     "env": {
                         _delegated_session.OWNER_SESSION_ENV: owner_session_id,
                         "AGENT_TOOLKIT_STATUS_HOST_SESSION": writer_session_id,
+                        plugin_environment.RUNTIME_DATA_ENV: str(plugin_environment.runtime_data(os.environ)),
                     },
+                    "env_vars": list(
+                        mcp_environment.environment_variable_names(_atk_config.config_environment_variable_names())
+                    ),
                     "default_tools_approval_mode": "approve",
                 }
             }
@@ -718,6 +739,8 @@ class AppServerManager:
         validate_prompt(prompt)
         validate_cwd(cwd)
         validate_model_effort(model, effort)
+        if launch_kind == "explore":
+            await self._probe_explore_sandbox(cwd)
         client = await self._ensure_client()
         selection = None
         if codex_providers.has_provider_configuration():
@@ -752,7 +775,7 @@ class AppServerManager:
                             thread_response = await client.request("thread/start", {**params, "modelProvider": candidate})
                         except JsonRpcResponseError:
                             _LOG.info("Codex接続先の開始が拒否されました: provider=%s", candidate)
-                            # 通常サブスクの一般的なRPC拒否をAPI課金へ変換しない。
+                            # サブスクリプションの主候補が一般的なRPC拒否を返した場合は、API課金の候補へ切り替えない。
                             if candidate == selection.primary and selection.subscription:
                                 raise
                             continue
@@ -780,7 +803,7 @@ class AppServerManager:
             raise AppServerError("thread/start returned no thread.id")
         session_id = thread["id"]
         if owner_session_id is not None and writer_session_id is not None:
-            shared_roots.write_host_alias(owner_session_id, writer_session_id, session_id)
+            await run_file_operation(shared_roots.write_host_alias, owner_session_id, writer_session_id, session_id)
             self._writer_session_ids[session_id] = writer_session_id
         session = SessionState(
             session_id=session_id,
@@ -809,8 +832,54 @@ class AppServerManager:
                 await self._mark_turn_start_ambiguous(session, exc)
             else:
                 await self._mark_failed(session, exc, retryable=False)
+            await session.drain_registration()
             return session
+        await session.drain_registration()
         return session
+
+    async def _probe_explore_sandbox(self, cwd: str) -> None:
+        """専用接続で読取専用コマンドを実行し、モデル開始前に接続を回収する。"""
+
+        async def ignore(_message: dict[str, Any]) -> None:
+            return None
+
+        client = JsonRpcProcess(ignore, ignore, root_session_id=self._root_session_id)
+        try:
+            async with asyncio.timeout(shared_state.SESSION_INITIALIZATION_TIMEOUT):
+                await client.start()
+                response = await client.request(
+                    "command/exec",
+                    {
+                        "command": [sys.executable, "-c", "pass"],
+                        "cwd": cwd,
+                        "sandboxPolicy": {"type": "readOnly"},
+                        "timeoutMs": 5000,
+                        "disableOutputCap": True,
+                    },
+                )
+        finally:
+            process = client.process
+            await client.close()
+            if process is not None and process.returncode is None:
+                raise AppServerError("explore sandbox probeのApp Server終了を確認できません")
+        exit_code = response.get("exitCode")
+        stderr = response.get("stderr")
+        stdout = response.get("stdout")
+        if (
+            isinstance(exit_code, bool)
+            or not isinstance(exit_code, int)
+            or not isinstance(stderr, str)
+            or not isinstance(stdout, str)
+        ):
+            raise AppServerError(f"command/exec returned an invalid sandbox probe response: {response}")
+        if exit_code == 0:
+            return
+        # 0.162.0で観測した単独実行の診断だけを分類し、モデルの自由本文は入力にしない。
+        if exit_code == 1 and any(
+            line.startswith("bwrap: No permissions to create a new namespace") for line in stderr.splitlines()
+        ):
+            raise StartCandidateUnavailable("exploreSandboxNamespaceDenied")
+        raise AppServerError(f"explore sandbox probe failed: exitCode={exit_code}; stderr={stderr}; stdout={stdout}")
 
     async def resume(
         self,
@@ -866,6 +935,7 @@ class AppServerManager:
                 await self._mark_turn_start_ambiguous(session, exc)
             else:
                 await self._mark_failed(session, exc, retryable=False)
+        await session.drain_registration()
         return session
 
     async def _cancel_resume(self, session: SessionState) -> None:
@@ -1019,7 +1089,7 @@ class AppServerManager:
         switched = False
         try:
             if switch_needed:
-                # cold resumeも追送の排他区間。kill/stopへ終端結果として渡さない。
+                # cold resumeも追送の排他区間に含まれるため、kill/stopへ終端結果として渡さない。
                 session.status = "starting"
                 session.touch()
             client = await self._ensure_client()
@@ -1075,7 +1145,7 @@ class AppServerManager:
 
     @staticmethod
     def _provider_failure(session: SessionState, error: Any = None) -> bool:
-        """終端した利用上限と、移行済みAPIの不受理だけを代替試行へ接続する。"""
+        """利用上限で終端した失敗と、移行済みAPIが受け付けなかった失敗だけを、代替の接続先での試行の対象と判定する。"""
         if not session.codex_model_provider or not session.turn_completed or session.turn_start_ambiguous:
             return False
         if session.codex_provider_resume_pending:
@@ -1114,7 +1184,7 @@ class AppServerManager:
                 session.codex_model_provider = original
                 _LOG.info("Codex接続先の再開が拒否されました: session_id=%s provider=%s", session.session_id, candidate)
                 continue
-            except (AppServerError, TimeoutError, OSError):
+            except AppServerError, TimeoutError, OSError:
                 session.codex_model_provider = original
                 _LOG.info("Codex接続先の再開を確定できません: session_id=%s provider=%s", session.session_id, candidate)
                 return False
@@ -1183,7 +1253,7 @@ class AppServerManager:
         if session.codex_model_provider is not None and resume_response.get("modelProvider") != session.codex_model_provider:
             raise AppServerError("thread/resume did not confirm the requested connection")
         if owner_session_id is not None and writer_session_id is not None:
-            shared_roots.write_host_alias(owner_session_id, writer_session_id, session.session_id)
+            await run_file_operation(shared_roots.write_host_alias, owner_session_id, writer_session_id, session.session_id)
         return writer_session_id
 
     async def _request_thread_resume(self, client: Any, params: dict[str, Any]) -> dict[str, Any]:
@@ -1266,7 +1336,7 @@ class AppServerManager:
         *,
         retryable: bool,
     ) -> None:
-        """要求開始の失敗を終端状態へ反映し、待機者を起床する。
+        """要求開始の失敗を終端状態へ反映し、待機者を起こす。
 
         `retryable`が真の場合だけ、同じreplyを再試行できる内部状態にする。
         """
@@ -1296,7 +1366,7 @@ class AppServerManager:
         await self._notify_waiters()
 
     async def _mark_turn_start_ambiguous(self, session: SessionState, error: BaseException) -> None:
-        """turn/start応答喪失を非終端状態へ反映する。"""
+        """turn/startの応答が失われたことを非終端状態へ反映する。"""
         if session.terminal:
             return
         session.status = "running"
@@ -1389,6 +1459,18 @@ class AppServerManager:
         method = message.get("method")
         params = message.get("params")
         if not isinstance(method, str) or not isinstance(params, dict):
+            return
+        if method == "thread/tokenUsage/updated":
+            thread_id = params.get("threadId")
+            session = self.sessions.get(thread_id) if isinstance(thread_id, str) else None
+            if session is None or session.engine != "codex" or not session.turn_id or params.get("turnId") != session.turn_id:
+                return
+            usage = params.get("tokenUsage")
+            if not isinstance(usage, dict):
+                return
+            last = usage.get("last")
+            if isinstance(last, dict):
+                context_usage.record_context_usage(session, last.get("totalTokens"), usage.get("modelContextWindow"))
             return
         if method == "thread/closed":
             close_event = self._resume_close_events.get(_thread_id_from(params) or "")
@@ -1767,6 +1849,8 @@ class AppServerManager:
         client, self.client = self.client, None
         if client is not None:
             await client.close()
+        for session in self._codex_sessions():
+            await session.drain_registration()
 
 
 def _public_turn_status(status: Any) -> str:

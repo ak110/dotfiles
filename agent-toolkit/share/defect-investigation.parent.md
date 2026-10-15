@@ -21,7 +21,7 @@ AWIとして投入する用途（`agent-toolkit:process-wi`の即時対応、次
 
 ## 渡す入力
 
-- `対象の不良`: `agent-toolkit:bugfix`の`references/investigation-delegation.md`「事象単位の並列調査委譲」の7項目（事象、期待する契約、実際の結果、症状を観測した所在を含む発生条件、ログと資料の絶対パス、対象commit、再現手順）。見つけたエージェントの仮説、原因の候補、修正案は同節に従い渡さない
+- `対象の不良`: `agent-toolkit:bugfix`の`references/investigation-delegation.md`「事象単位の並列調査委譲」の7項目（事象、期待する契約、実際の結果、症状を観測した所在を含む発生条件、ログと資料の絶対パス、対象commit、再現手順）。見つけたエージェントの仮説、原因の候補、修正案は同節に従い入力から除く
 - `引き継ぎ記録先`: 省略と継続の扱いは`agent-toolkit:delegation`の`references/base-contract.md`「引き継ぎ記録先」に従う
 
 ## 受領と検収

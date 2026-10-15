@@ -198,7 +198,7 @@ def claude_subagents(record_path: pathlib.Path) -> list[dict[str, typing.Any]] |
     for meta_path in sorted(directory.glob("*.meta.json")):
         try:
             metadata = json.loads(meta_path.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError):
+        except OSError, json.JSONDecodeError:
             continue
         if not isinstance(metadata, dict):
             continue

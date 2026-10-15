@@ -13,6 +13,6 @@ _ROOT_CAUSE_ANALYSIS = pathlib.Path(__file__).resolve().with_name("analysis-reco
 def test_root_cause_analysis_states_every_bug_table_row(row_name: str) -> None:
     """調査表の固定行名を`agent-toolkit:bugfix`の`references/analysis-records.md`の集約表が明記する。
 
-    行名を構造定数で定めるため、集約表に更新されていない行名があれば検出する。
+    行名を構造定数で定めるため、構造定数の行名のうち集約表へ反映されていないものがあれば検出する。
     """
     assert f"| {row_name} | " in _ROOT_CAUSE_ANALYSIS.read_text(encoding="utf-8")

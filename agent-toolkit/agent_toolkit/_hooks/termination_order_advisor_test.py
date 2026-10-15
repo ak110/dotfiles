@@ -11,8 +11,13 @@ import pathlib
 
 import pytest
 
+from agent_toolkit._hooks import (
+    autonomous_exit,
+    termination_evidence,
+    termination_order_advisor,
+    user_prompt_submit,
+)
 from agent_toolkit._hooks import background_tasks as _background_tasks
-from agent_toolkit._hooks import termination_evidence, termination_order_advisor, user_prompt_submit
 from agent_toolkit._hooks import transcript_scan as _transcript_scan
 from agent_toolkit._hooks.termination_evidence_test import isolated_session  # noqa: F401  # pylint: disable=unused-import
 from agent_toolkit._testing import git_repository
@@ -198,7 +203,30 @@ def test_background_wait_of_work_allows_turn_end_until_collected(tmp_path: pathl
     assert decision == "block" and "commit" in reason
 
 
-@pytest.mark.parametrize("command", ["make test", "atk run-script plan-verify -- --plan /p.md --worktree /repo --timeout 600"])
+@pytest.mark.parametrize("command", ["atk serve", "npm run watch", "python3 -m http.server 8080", "uv run uvicorn app:app"])
+def test_resident_background_command_does_not_exempt_completion(tmp_path: pathlib.Path, command: str) -> None:
+    """終了通知を待てない常駐コマンドは、成果作業の起動不足を免除しない。"""
+    trace = tmp_path / "trace.jsonl"
+    trace.touch()
+    _human_input("resident-owned", trace, "request", "常駐サーバーを起動する")
+    _commit("resident-owned", trace)
+    _append_entries(trace, _background_bash_entries("toolu_server", "resident", command))
+    payload = _payload("resident-owned", str(trace), background_tasks=[{"id": "resident", "type": "shell"}])
+    assert termination_order_advisor.evaluate(payload)[0] == "block"
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "make test",
+        "atk run-script plan-verify -- --plan /p.md --worktree /repo --timeout 600",
+        "timeout 10 atk serve",
+        "echo serve",
+        "echo --watch",
+        "npm view watch",
+        "atk serve --help",
+    ],
+)
 def test_background_command_of_work_allows_turn_end_until_notified(tmp_path: pathlib.Path, command: str) -> None:
     """作業内で背景起動した有限のコマンドの実行中は終了を許し、完了通知の後は起動不足を示す。"""
     trace = tmp_path / "trace.jsonl"
@@ -484,3 +512,232 @@ def test_windows_edit_paths_match_git_status_paths(monkeypatch: pytest.MonkeyPat
     assert invocations == [
         {"kind": "deliverable", "labels": ["リポジトリの編集"], "repository": str(repository), "paths": ["nested/note.md"]}
     ]
+
+
+def _omit_self_edit(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, *, codex: bool = False, deliverable: str = "edit"
+) -> tuple[dict, pathlib.Path, str]:
+    """成果作業とその規範を用意し、公開CLIから省略を記録する。"""
+    payload, repository = _self_edit_setup(tmp_path)
+    if codex:
+        payload["turn_id"] = "codex-turn"
+    monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "self-edit")
+    monkeypatch.delenv("CODEX_THREAD_ID", raising=False)
+    if codex:
+        monkeypatch.setenv("CODEX_THREAD_ID", "self-edit")
+        monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "parent-conversation")
+    policy = repository / "CLAUDE.md"
+    quote = "ユーザーの指示まで作業完了報告と振り返りを実施しない。\n"
+    policy.write_text(quote, encoding="utf-8")
+    if deliverable == "edit":
+        _record_self_edit(payload, repository / "README.md")
+    else:
+        termination_evidence.observe_tool(
+            json.dumps(
+                {
+                    **payload,
+                    "tool_name": "Bash",
+                    "tool_use_id": "commit",
+                    "tool_input": {"command": "git commit -m 変更"},
+                    "tool_response": {"exit_code": 0},
+                }
+            ),
+            after=True,
+        )
+    work_id = termination_evidence.session_works(payload)[-1][0]
+    document = {
+        "session_id": "self-edit",
+        "action": "omit-completion",
+        "work_id": work_id,
+        "input_id": "request",
+        "reason": "適用するプロジェクト規範を優先する",
+        "policy_file": str(policy),
+        "quote": quote,
+        "target_repo": str(repository),
+    }
+    source = tmp_path / "omit.json"
+    source.write_text(json.dumps(document, ensure_ascii=False), encoding="utf-8")
+    with contextlib.redirect_stdout(io.StringIO()):
+        assert termination_evidence.main(["--decision-file", str(source)]) == 0
+    return payload, policy, work_id
+
+
+@pytest.mark.parametrize("codex", [False, True])
+@pytest.mark.parametrize("deliverable", ["edit", "commit"])
+def test_project_policy_omission_allows_completion_without_skill(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, deliverable: str, *, codex: bool
+) -> None:
+    """両ホストで規範に基づく省略はスキルを起動せず成果を届けて終了できる。"""
+    payload, _policy, _work_id = _omit_self_edit(tmp_path, monkeypatch, codex=codex, deliverable=deliverable)
+    assert termination_order_advisor.evaluate(json.dumps(payload)) == ("approve", "")
+
+
+@pytest.mark.parametrize("changed", ["modified", "removed"])
+def test_changed_omission_policy_restores_missing_completion(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, changed: str
+) -> None:
+    """保存後の規範全文の変更と消失は、終了時に省略を無効にする。"""
+    payload, policy, work_id = _omit_self_edit(tmp_path, monkeypatch)
+    if changed == "modified":
+        policy.write_text("作業完了報告を実施する。\n", encoding="utf-8")
+    else:
+        policy.unlink()
+    decision, body = termination_order_advisor.evaluate(json.dumps(payload))
+    assert decision == "block" and f"作業 {work_id}:" in body
+
+
+@pytest.mark.parametrize("switch", ["input", "start"])
+def test_omission_does_not_exempt_later_work(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, switch: str) -> None:
+    """新入力の後の成果作業と明示した開始では、以前の省略を流用しない。"""
+    payload, _policy, work_id = _omit_self_edit(tmp_path, monkeypatch)
+    termination_evidence.observe_user(json.dumps({**payload, "prompt_id": "next", "prompt": "次の成果を作成する"}))
+    if switch == "start":
+        termination_evidence.record_decision(
+            {
+                "session_id": "self-edit",
+                "action": "start",
+                "input_id": "next",
+                "quote": "次の成果を作成する",
+                "reason": "次の作業",
+            }
+        )
+    _commit("self-edit", pathlib.Path(payload["transcript_path"]), "next-commit")
+    decision, body = termination_order_advisor.evaluate(json.dumps(payload))
+    works = termination_evidence.session_works(payload)
+    assert len(works) == 2
+    assert decision == "block" and f"作業 {works[-1][0]}:" in body and f"作業 {work_id}:" not in body
+
+
+@pytest.mark.parametrize("action", ["resume", "cancel", "replace", "publish-scope"])
+def test_next_decision_replaces_omission_without_changing_action_scope(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, action: str
+) -> None:
+    """次の判断で省略を取り下げ、既存の中止・置換・再開・公開範囲の作用を維持する。"""
+    payload, _policy, work_id = _omit_self_edit(tmp_path, monkeypatch)
+    document = {
+        "session_id": "self-edit",
+        "action": action,
+        "work_id": work_id,
+        "input_id": "request",
+        "quote": "READMEを編集する",
+        "reason": "次の判断",
+    }
+    if action == "publish-scope":
+        document.update(scope="commitしない", origin="instruction")
+    termination_evidence.record_decision(document)
+    decision, _body = termination_order_advisor.evaluate(json.dumps(payload))
+    assert decision == ("approve" if action in {"cancel", "replace"} else "block")
+
+
+def test_omission_exempts_only_selected_work(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """省略した作業と、別の起動不足が共存する場合は別作業だけを遮断する。"""
+    payload, repository = _self_edit_setup(tmp_path)
+    _record_self_edit(payload, repository / "README.md")
+    first = termination_evidence.session_works(payload)[0][0]
+    termination_evidence.record_decision(
+        {
+            "session_id": "self-edit",
+            "action": "start",
+            "input_id": "request",
+            "quote": "READMEを編集する",
+            "reason": "別作業を始める",
+        }
+    )
+    monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "self-edit")
+    monkeypatch.delenv("CODEX_THREAD_ID", raising=False)
+    policy = repository / "CLAUDE.md"
+    policy.write_text("作業完了報告を省く。\n", encoding="utf-8")
+    termination_evidence.observe_tool(
+        json.dumps(
+            {
+                **payload,
+                "tool_name": "Edit",
+                "tool_use_id": "second-edit",
+                "tool_input": {"file_path": str(repository / "README.md")},
+                "tool_response": {"exit_code": 0},
+            }
+        ),
+        after=True,
+    )
+    second = termination_evidence.session_works(payload)[-1][0]
+    source = tmp_path / "omit-second.json"
+    source.write_text(
+        json.dumps(
+            {
+                "session_id": "self-edit",
+                "action": "omit-completion",
+                "work_id": second,
+                "input_id": "request",
+                "reason": "別作業の適用規範",
+                "target_repo": str(repository),
+                "policy_file": str(policy),
+                "quote": policy.read_text(encoding="utf-8"),
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    with contextlib.redirect_stdout(io.StringIO()):
+        assert termination_evidence.main(["--decision-file", str(source)]) == 0
+    decision, body = termination_order_advisor.evaluate(json.dumps(payload))
+    assert decision == "block" and f"作業 {first}:" in body and f"作業 {second}:" not in body
+
+
+@pytest.mark.parametrize("action", ["wait", "blocked"])
+def test_omission_does_not_survive_wait_or_failure_resolution(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, action: str
+) -> None:
+    """実在する待機・失敗を記録した後の続行は、古い省略を流用しない。"""
+    payload, _policy, work_id = _omit_self_edit(tmp_path, monkeypatch)
+    document = {"session_id": "self-edit", "work_id": work_id, "action": action, "reason": "実際の待機または失敗"}
+    question: pathlib.Path | None = None
+    if action == "wait":
+        queue = tmp_path / "private-notes"
+        inbox = queue / "inbox"
+        inbox.mkdir(parents=True)
+        monkeypatch.setenv("AGENT_TOOLKIT_PRIVATE_NOTES", str(queue))
+        question = inbox / "20261013-000000-001.md"
+        text = "---\ntype: uwi\nsubmitter_session: self-edit\n---\n\n## 確認\n\n選択してください。\n\n## 回答\n"
+        question.write_text(text, encoding="utf-8")
+        document.update(uwi_file=str(question), quote=text)
+    else:
+        response = {"exit_code": 1, "stderr": "処理できない"}
+        termination_evidence.observe_tool(
+            json.dumps(
+                {
+                    **payload,
+                    "tool_name": "Bash",
+                    "tool_use_id": "failed-call",
+                    "tool_input": {"command": "false"},
+                    "tool_response": response,
+                }
+            ),
+            after=True,
+        )
+        document.update(call_id="failed-call", quote=json.dumps(response, ensure_ascii=False, sort_keys=True))
+    termination_evidence.record_decision(document)
+    assert termination_order_advisor.evaluate(json.dumps(payload)) == ("approve", "")
+    if action == "wait":
+        assert question is not None
+        question.write_text(question.read_text(encoding="utf-8") + "回答済み。\n", encoding="utf-8")
+    else:
+        termination_evidence.record_decision(
+            {
+                "session_id": "self-edit",
+                "work_id": work_id,
+                "action": "resume",
+                "input_id": "request",
+                "quote": "READMEを編集する",
+                "reason": "失敗後に再開",
+            }
+        )
+    assert termination_order_advisor.evaluate(json.dumps(payload))[0] == "block"
+
+
+def test_omission_keeps_autonomous_exit_obligation(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """起動を省略した成果作業でも、process-loopの終了コマンドの義務は残る。"""
+    payload, _policy, _work_id = _omit_self_edit(tmp_path, monkeypatch)
+    monkeypatch.setenv("AGENT_TOOLKIT_PROCESS_LOOP_SESSION", "1")
+    monkeypatch.setenv("AGENT_TOOLKIT_PROCESS_LOOP_SESSION_ID", "self-edit")
+    assert termination_order_advisor.evaluate(json.dumps(payload)) == ("approve", "")
+    assert autonomous_exit.evaluate(json.dumps(payload))[0] == "block"

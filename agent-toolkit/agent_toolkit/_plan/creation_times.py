@@ -90,7 +90,7 @@ def _load_index() -> dict[str, typing.Any]:
     """インデックスを読み込む。不在・読み取り失敗・形式不正はいずれも空として扱う。"""
     try:
         payload = json.loads(_CREATION_TIME_INDEX_PATH.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
+    except OSError, json.JSONDecodeError:
         return {}
     if not isinstance(payload, dict):
         return {}
@@ -110,7 +110,7 @@ def _load_legacy_entries() -> dict[tuple[str, str], tuple[float, pathlib.Path]]:
     for candidate in candidates:
         try:
             payload = json.loads(candidate.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError):
+        except OSError, json.JSONDecodeError:
             continue
         if not isinstance(payload, dict):
             continue
@@ -170,7 +170,7 @@ def update_creation_time_index(
     rootの走査結果ではない単一ファイルの更新通知は`prune=False`で反映する。
     `migrate_legacy=True`の場合だけ、旧形式から`host`と相対パスが今回の走査と一致するものを取り込み、
     インデックスの書き込みに成功した場合に限り取り込んだファイルを削除する。
-    ロックを取得できない場合はインデックスの更新を諦め、観測値をそのまま返す。
+    ロックを取得できない場合はインデックスを更新せず、観測値をそのまま返す。
     """
     root_key = _root_key(root)
     resolved: dict[str, float] = {}

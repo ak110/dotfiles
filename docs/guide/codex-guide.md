@@ -17,13 +17,51 @@ atk config set orchestrate_engine codex,claude
 atk wi process-loop
 ```
 
-開始時点の項目に加え、処理中に追加されたready項目も同じセッションで順次処理する。
+開始時点の候補を固定し、明示追加と即時対応で確定した差分を同じセッションへ加える。
+告げられていない新着と振り返りAWIは次のセッションへ残す。
 ready項目がなくなると、完了報告の後にセッションを自動で終了し、親の監視ループへ戻る。
 自動で終了できない環境では対話UIに終了案内が表示されるため、`/exit`を入力して親の監視ループへ戻す。
 
 初回と0件待機からの処理再開時は、private-notesを同期し、ready項目があれば
 `update-dotfiles`とprivate-notesの再同期を終えてからCodexを起動する。
 同期に失敗した場合はCodexを起動せず、変更検知を待って再試行する。
+
+開始前は別セッションの活動に応じて10分を猶予し、新規WIの到着を検出するたびに検出時点から10分へ延長する。
+対象は共有private-notesの新規AWIとUWIで、既存項目の編集・状態移動は延長に数えない。
+延長の回数・累計時間に上限はなく、活動がなくなれば期限前でも開始判定へ戻る。
+当該ループと子孫、終了済み、稼働中の子がないユーザー応答待ちは除き、別ループや別cwdの活動も調べる。
+対象集合に未回答UWIがある場合は、保存済みUWIの最終更新から10分か全回答まで抑止する。
+保留中（`hold`）の確認項目と、スキルの単発実行（`atk run-skill`）が登録した確認項目も判定に含める。
+回答を終えて採用済み（`adopted`）へ移った確認項目も、保存済みの最終更新を判定に使う。
+両条件を同時に評価し、解除後に候補を再確認する。
+待機理由・期限・延長・開始は端末とログで確認できる。
+
+ホームから登録した複数リポジトリを処理する場合は、次のように起動する。
+
+```bash
+atk config set process_loop_repositories '["/home/user/project-a", "/home/user/project-b"]'
+atk wi list --configured-repos
+atk wi process-loop all-repos
+```
+
+共通オプションは`atk wi process-loop --no-update all-repos`のように`all-repos`の前へ置く。
+空登録は待機し、登録外へのWI投入はできる。
+登録先の解決失敗は診断に従って設定を直し、同じoriginの重複は先頭の登録を使う。
+取得済み候補を各対象cwdの通常delegateへ渡し、対象の選定・規範・prepare・実装・Git・公開は各担当が行う。
+オーケストレーターは担当とユーザーの間を中継し、候補数とレーン上限、通常起動との処理所有は対象別に扱う。
+開始猶予は登録対象全体へ作用し、開始後の1担当の失敗・所有待ちは別担当の進行を止めない。
+登録変更は次の取得へ反映し、進行中の処理対象WIは維持する。
+`abort`・`status`・`instruct`はOSアカウント単位で使う。
+稼働状態は`atk wi process-loop status`、停止は`atk wi process-loop abort`で操作する。
+次の処理への指示は`atk wi process-loop instruct '適用する指示'`で渡す。
+`instruct`は単一起動では次の処理会話へ1回だけ渡る。
+all-reposでは次の起動集合で1回受領し、各担当へ中継して、その担当の対象に関する部分を適用する。
+all-reposの`--resume`は保持した担当session IDを指定する。
+
+1レーンでも専用worktreeと独立文脈レビューを保ち、`atk lane create`・`integrate`・`delete`で準備・統合・回収を扱う。
+対象のWorktreeCreate/Removeを資源操作へ接続し、設定済みhookの失敗では途中資源を保持する。
+統合と計画保存・WI終端・統合済み記録を同じ操作で行い、失敗後は同じ入力で残工程から再開する。
+共通の運用は[推奨ワークフロー](claude-code-guide.md#推奨ワークフロー)、担当への受渡しは[all-repos-orchestration.md](../../agent-toolkit/skills/process-wi/references/all-repos-orchestration.md)を参照。
 
 process-loopはCodexの承認方針とsandbox設定を上書きせず、ユーザーのCodex設定を継承する。
 WindowsではCodexを親の監視ループと別のプロセスグループで起動するため、

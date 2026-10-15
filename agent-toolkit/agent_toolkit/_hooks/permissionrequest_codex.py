@@ -1,24 +1,23 @@
 """Codexのmanaged-tempのcleanupだけを承認するPermissionRequest hook。
 
-登録済みpathの親rootを含む共通検証へ対象を渡し、現在の一時rootに依存しない。
+対象を、登録済みpathの親rootも検証する共通処理へ渡し、現在の一時rootに依存しない。
 """
 
 from __future__ import annotations
 
-# 関数の実行時までだけ使う依存を、Python 3.15では使用時まで読み込まない。旧Pythonでは通常のimportとなる。
-__lazy_modules__ = {"agent_toolkit._atk", "ctypes", "shlex", "shutil", "subprocess", "typing"}
-
-import ctypes
 import json
 import os
 import pathlib
-import shlex
-import shutil
-import subprocess
-import typing
-from ctypes import wintypes
 
-from agent_toolkit._atk import managed_temp as _managed_temp
+# 関数の実行時にだけ使う依存は、使用時まで読み込まない。
+lazy import ctypes
+lazy import shlex
+lazy import shutil
+lazy import subprocess
+lazy import typing
+lazy from ctypes import wintypes
+
+lazy from agent_toolkit._atk import managed_temp as _managed_temp
 
 
 def _windows_dll(name: str) -> typing.Any:
@@ -51,7 +50,7 @@ def _tokens(command: str) -> list[str]:
         kernel32.LocalFree.restype = ctypes.c_void_p
         arguments = command_line_to_argv(command, ctypes.byref(argument_count))
         if not arguments:
-            raise ValueError("Windows commandを解析できない")
+            raise ValueError("Windowsのコマンド行を解析できない")
         try:
             return [arguments[index] for index in range(argument_count.value)]
         finally:
@@ -62,7 +61,7 @@ def _tokens(command: str) -> list[str]:
 def _payload_object(payload_text: str) -> dict[str, typing.Any] | None:
     try:
         value = json.loads(payload_text)
-    except (json.JSONDecodeError, TypeError):
+    except json.JSONDecodeError, TypeError:
         return None
     return value if isinstance(value, dict) else None
 
@@ -75,7 +74,7 @@ def _is_trusted_atk_launcher(plugin_root: pathlib.Path) -> bool:
     launcher_name = "atk.cmd" if os.name == "nt" else "atk"
     candidates = (
         pathlib.Path.home() / ".local" / "bin" / launcher_name,
-        plugin_root / "bin" / launcher_name,
+        plugin_root / "scripts" / launcher_name,
     )
     resolved = pathlib.Path(executable).resolve(strict=True)
     for candidate in candidates:
@@ -94,8 +93,15 @@ def _cleanup_target(
     helper: pathlib.Path,
 ) -> pathlib.Path | None:
     """許可対象の新旧cleanupコマンドから対象パスを返す。"""
-    if tokens[:4] == ["atk", "managed-temp", "cleanup", "--path"] and len(tokens) == 5:
-        return pathlib.Path(tokens[4]) if _is_trusted_atk_launcher(plugin_root) else None
+    if len(tokens) == 5 and tokens[1:4] == ["managed-temp", "cleanup", "--path"]:
+        if tokens[0] == "atk":
+            return pathlib.Path(tokens[4]) if _is_trusted_atk_launcher(plugin_root) else None
+        executable = pathlib.Path(tokens[0])
+        launcher_name = "atk.cmd" if os.name == "nt" else "atk"
+        trusted = plugin_root / "scripts" / launcher_name
+        if executable.is_absolute() and executable.resolve(strict=True) == trusted.resolve(strict=True):
+            return pathlib.Path(tokens[4])
+        return None
     if len(tokens) != 8:
         return None
     if tokens[:5] != ["uv", "run", "--no-project", "--script", str(helper)]:
@@ -131,7 +137,7 @@ def main(payload_text: str) -> int:
         if not target.is_absolute():
             return 0
         _managed_temp.validate_managed_temp(target)
-    except (OSError, ValueError, _managed_temp.ManagedTempError):
+    except OSError, ValueError, _managed_temp.ManagedTempError:
         return 0
     _allow()
     return 0

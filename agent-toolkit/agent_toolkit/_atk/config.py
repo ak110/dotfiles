@@ -4,10 +4,8 @@ XDG関連パス（設定・状態・データ各ディレクトリ、private-not
 モデル設定（engine別・段位別のモデルと用途別のengine順）の確認・変更を提供する。
 """
 
-# ヘルプや他の処理では不要な依存を、使用時まで遅延する。旧Pythonでは通常のimportとなる。
-__lazy_modules__ = {"platformdirs"}
-
 import argparse
+import dataclasses
 import json
 import os
 import pathlib
@@ -15,7 +13,8 @@ import re
 import sys
 from typing import Any, cast
 
-import platformdirs
+# ヘルプや他の処理で使わない依存は、使用時まで読み込まない。
+lazy import platformdirs
 
 from agent_toolkit._atk import help_text as _atk_help
 from agent_toolkit._atk import outcome as _outcome
@@ -24,6 +23,8 @@ from agent_toolkit._common import next_action as _next_action
 from agent_toolkit._common import private_notes as _private_notes
 from agent_toolkit._common import state_paths as _state_paths
 from agent_toolkit._common.atomic_file import atomic_write
+from agent_toolkit._git import command as _git_command
+from agent_toolkit._git import remote as _git_remote
 
 _CONFIG_FILENAME = "config.json"
 
@@ -96,6 +97,7 @@ _MUTABLE_KEY_DEFAULTS = {
     "write_model": "agy:gemini-3.8-flash/medium,claude:claude-opus-5-5/medium",
     "codex_fast_mode": "false",
     "codex_model_providers": "",
+    "process_loop_repositories": "[]",
 }
 
 # 旧キーは段位とengine順を1つの候補列で持っていた。保存値は移行先へ一括で移し、新しいget・setの対象から除く。
@@ -139,6 +141,11 @@ def _config_file_path() -> pathlib.Path:
     return _config_dir() / _CONFIG_FILENAME
 
 
+def process_loop_configuration_path() -> pathlib.Path:
+    """常駐プロセスが登録先の変更を監視する設定ファイルのパスを返す。"""
+    return _config_file_path()
+
+
 def _load_config() -> dict[str, str]:
     """永続化済みの変更可能設定を読み込む。ファイル不在・破損時は空辞書を返す。"""
     path = _config_file_path()
@@ -146,7 +153,7 @@ def _load_config() -> dict[str, str]:
         return {}
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
-    except (json.JSONDecodeError, OSError):
+    except json.JSONDecodeError, OSError:
         return {}
     if not isinstance(data, dict):
         return {}
@@ -163,6 +170,11 @@ def _save_config(config: dict[str, str]) -> None:
 def _config_env_name(key: str) -> str:
     """変更可能設定キーに対応する環境変数名を返す。"""
     return f"{_CONFIG_ENV_PREFIX}{key.upper()}"
+
+
+def config_environment_variable_names() -> tuple[str, ...]:
+    """現行設定と、置換案内の対象である旧設定の環境変数名を返す。"""
+    return tuple(_config_env_name(key) for key in (*_MUTABLE_KEY_DEFAULTS, *_LEGACY_MODEL_KEYS))
 
 
 def tier_model_key(engine: str, tier: str) -> str:
@@ -193,7 +205,9 @@ def parse_engine_order(value: str) -> tuple[str, ...]:
 
 def _validate_mutable_setting(key: str, value: str) -> None:
     """速度、接続先列、段位モデル、engine順、モデル候補をそれぞれの受理形式で確かめる。"""
-    if key == "codex_fast_mode":
+    if key == "process_loop_repositories":
+        parse_process_loop_repositories(value)
+    elif key == "codex_fast_mode":
         if value not in {"true", "false"}:
             raise ValueError("受理可能値: true, false")
     elif key == "codex_model_providers":
@@ -204,6 +218,74 @@ def _validate_mutable_setting(key: str, value: str) -> None:
         parse_engine_order(value)
     else:
         _validate_stage_model_candidates(value)
+
+
+@dataclasses.dataclass(frozen=True)
+class ConfiguredRepository:
+    """同じoriginの登録先から登録順で最初の1件を残した対象と、その作業ツリー・Git共通ディレクトリ。"""
+
+    repo_id: str
+    worktree: pathlib.Path
+    common_dir: pathlib.Path
+
+
+def parse_process_loop_repositories(value: str) -> tuple[str, ...]:
+    """登録先をJSON文字列配列として解釈する。空配列は待機を表す。"""
+    try:
+        paths = json.loads(value)
+    except json.JSONDecodeError as error:
+        raise ValueError("process_loop_repositoriesはローカルworktreeのJSON文字列配列で指定する") from error
+    if not isinstance(paths, list) or any(not isinstance(path, str) or not path.strip() for path in paths):
+        raise ValueError("process_loop_repositoriesは空でないパスのJSON文字列配列で指定する（空配列も可）")
+    return tuple(paths)
+
+
+def resolve_configured_repositories() -> tuple[ConfiguredRepository, ...]:
+    """登録先を厳密に読み、全件のGit作業ツリーとoriginを確かめ、同じoriginは登録順で最初の1件だけを返す。"""
+    key = "process_loop_repositories"
+    env_value = os.environ.get(_config_env_name(key))
+    try:
+        if env_value is not None:
+            value = env_value
+        else:
+            path = _config_file_path()
+            try:
+                data = json.loads(path.read_text(encoding="utf-8"))
+            except FileNotFoundError:
+                data = {}
+            if not isinstance(data, dict):
+                raise ValueError(f"設定JSONがobjectではない: {path}")
+            value = data.get(key, "[]")
+            if not isinstance(value, str):
+                raise ValueError(f"設定キー{key}が文字列ではない: {path}")
+        repositories: dict[str, ConfiguredRepository] = {}
+        for raw_path in parse_process_loop_repositories(value):
+            candidate = pathlib.Path(raw_path).expanduser()
+            if not candidate.is_absolute():
+                raise ValueError(f"登録先は絶対パスで指定する: {raw_path}")
+            result = _git_command.run(
+                ["-C", str(candidate), "rev-parse", "--show-toplevel", "--path-format=absolute", "--git-common-dir"],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            if result.returncode != 0:
+                raise ValueError(f"登録先のGit作業ツリーを解決できない: {candidate}: {result.stderr.strip()}")
+            lines = result.stdout.splitlines()
+            if len(lines) != 2:
+                raise ValueError(f"登録先のGit実体が不正: {candidate}")
+            worktree, common_dir = (pathlib.Path(line).resolve() for line in lines)
+            origin = _git_remote.origin_url(worktree)
+            if origin is None:
+                raise ValueError(f"登録先のoriginを取得できない: {worktree}")
+            repo_id = _git_remote.normalize_remote_url(origin)
+            repositories.setdefault(repo_id, ConfiguredRepository(repo_id, worktree, common_dir))
+        return tuple(repositories.values())
+    except (OSError, UnicodeError, ValueError) as error:
+        raise _next_action.ActionableError(
+            str(error),
+            next_action=f"`atk config set {key} <JSON配列>`で登録先を直して再実行する",
+        ) from error
 
 
 def parse_codex_provider_candidates(value: str) -> tuple[str, ...]:
@@ -382,7 +464,7 @@ def _cmd_config_show(home: pathlib.Path) -> None:
     settings = _resolved_settings(home)
     warnings: list[str] = []
     for key, value in settings.items():
-        print(f"{key}: {value}")
+        print(f"{key} {value}")
         if key in _MUTABLE_KEY_DEFAULTS:
             warnings.extend(_stage_model_candidate_warnings(key, value))
     _report_candidate_warnings(warnings)

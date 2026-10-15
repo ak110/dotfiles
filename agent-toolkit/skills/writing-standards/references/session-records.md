@@ -15,7 +15,7 @@ Codexでは`type`が`compacted`のレコードに、所要時間を除いた情�
 ## Claude Codeの記録
 
 - 記録階層は深さ2（`<project>/<session-uuid>.jsonl`、メイン記録）と深さ4（`<session-uuid>/subagents/agent-<agentId>.jsonl`、サブエージェント記録）だけであり、孫エージェントの記録も祖先セッション直下へフラットに置かれる
-- `<project>`の名前はセッションを開始した作業ディレクトリの絶対パスの英数字以外を`-`へ置き換えた形であり、worktreeなどで開始したセッションは複製元と別の`<project>`に置かれる。セッションIDから探す場合は`find ~/.claude/projects -maxdepth 2 -name '<session-uuid>.jsonl'`で所在を1件に確定し、得たパスを引用して渡す（引用しないグロブ展開が複数語へ分かれると後続のコマンドが標準入力を待ち続ける）
+- `<project>`の名前はセッションを開始した作業ディレクトリの絶対パスの英数字以外を`-`へ置き換えた形であり、worktreeなどで開始したセッションは複製元と別の`<project>`に置かれる。Claude Codeのメインが自身の記録を使う場合は、SessionStartの通知が示すtranscriptの絶対パスをそのまま使い、更新時刻順やcwdから推測しない（`rules-main.claude-code.md`「自身の会話の記録」）。特定済みのセッションIDから別の記録を読む場合は`atk run-script session-review-evidence -- --claude-session-id <ID>`へIDを渡す。所在のパスが要る場合は`find ~/.claude/projects -maxdepth 2 -name '<session-uuid>.jsonl'`で1件に確定する。得たパスは引用して渡す（引用しないグロブ展開が複数語へ分かれると後続のコマンドが標準入力を待ち続ける）
 - 同一事象が親と子の記録へ重複して現れるため、重複を除いてから件数を確定する。深さ2に限るとサブエージェント内部のイベント（ツール呼び出し等）を取りこぼすため、限る場合は適用条件を明示する
 - サブエージェントの起動を数える典拠は`subagents/*.meta.json`の`agentType`・`description`・`toolUseId`・`spawnDepth`・`parentAgentId`とする。`parentAgentId`は`spawnDepth`が2以上の記録にだけ現れるため、階層の復元には`spawnDepth`を併用する
 - 特定の性質を持つ行を抽出する処理では、値がツール自身の出力か、ツールが読み取った外部の内容かを記録の構造から区別する（読み取ったファイルの本文は実行結果と同じ領域に入るため、書式の一致だけで判定すると本文中の例示まで実行時の事象と数える）
@@ -48,6 +48,13 @@ Codexでは、`type`が`response_item`、`payload.type`が`message`、`payload.r
 - 同じファイルを行範囲に分けて取得した回数は1回の読了と数える
 
 ## 複数セッションの比較結果
+
+カタログの親セッション行は`--catalog-workflow`の完全一致、`--catalog-known-workflow`のunknown以外、`--catalog-cwd-contains`の部分文字列で選べる。
+併記した行条件は全て満たす行を返す。
+`--catalog-fields`へ項目名をASCIIカンマで並べると、その順で項目を返し、指定を省くと全項目を返す。
+`kind`は行の種類を示すため常に残る。
+選択後も`catalog-summary`は走査範囲を保持し、走査した親セッションの記録数の`parent_record_count`と選択した行数の`selected_parent_count`を区別する。
+これらの指定はClaudeとCodexの親セッション一覧に共通し、`--tool-calls`による呼出し照会とは分けて使う。
 
 「最新」「該当なし」「全件」といった全称または終端を表す結論は、走査root、runtime、開始境界、観測境界および未解決記録数を同じ本文へ書き、その被覆範囲だけを対象とする。指定root外の記録、観測境界より後の記録および未解決記録は未確認範囲へ記録する。
 

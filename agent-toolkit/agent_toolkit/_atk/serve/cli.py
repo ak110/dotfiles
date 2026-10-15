@@ -1,8 +1,5 @@
 """`atk serve`の起動処理。"""
 
-# ヘルプや他の処理では不要な依存を、使用時まで遅延する。旧Pythonでは通常のimportとなる。
-__lazy_modules__ = {"hypercorn.asyncio", "hypercorn.config", "agent_toolkit._atk.serve", "agent_toolkit._atk.wi"}
-
 import asyncio
 import contextlib
 import logging
@@ -10,15 +7,16 @@ import pathlib
 import signal
 import subprocess
 
-import hypercorn.asyncio
-import hypercorn.config
+# ヘルプや他の処理で使わない依存は、使用時まで読み込まない。
+lazy import hypercorn.asyncio
+lazy import hypercorn.config
 
-from agent_toolkit._atk.serve import app as _atk_serve_app
-from agent_toolkit._atk.serve import config as _atk_serve_config
-from agent_toolkit._atk.serve import state as _atk_serve_state
-from agent_toolkit._atk.wi import sync as _wi_sync
 from agent_toolkit._common import console_title as _console_title
 from agent_toolkit._common import next_action as _next_action
+lazy from agent_toolkit._atk.serve import app as _atk_serve_app
+lazy from agent_toolkit._atk.serve import config as _atk_serve_config
+lazy from agent_toolkit._atk.serve import state as _atk_serve_state
+lazy from agent_toolkit._atk.wi import sync as _wi_sync
 
 logger = logging.getLogger(__name__)
 
@@ -105,7 +103,7 @@ def build_console_title() -> str:
 
 def run(*, host: str | None = None, port: int | None = None, home: pathlib.Path | None = None) -> None:
     """設定と環境を解決してWebサーバーを起動する。"""
-    # format: 日時・ロガー名・レベルを付与して運用診断性を向上させる。
+    # format: 日時・ロガー名・レベルを付与し、運用中の診断で発生時刻と出力元を特定できるようにする。
     # force=True: 既存のログハンドラーが設定済みの場合も本ツールの書式を適用するため。
     logging.basicConfig(
         level=logging.INFO,

@@ -251,7 +251,7 @@ def _windows_path_handle(
 def _windows_security_update_handle(
     path: pathlib.Path,
 ) -> typing.Generator[tuple[int, _ByHandleFileInformation, bool]]:
-    """所有者更新可否を判定した単一のセキュリティ更新用ハンドルを返す。"""
+    """所有者を更新できるかを判定済みの、セキュリティ更新用のハンドルを1つ返す。"""
     full_access = _WINDOWS_READ_CONTROL | _WINDOWS_WRITE_DAC | _WINDOWS_WRITE_OWNER
     minimal_access = _WINDOWS_READ_CONTROL | _WINDOWS_WRITE_DAC
     with contextlib.ExitStack() as stack:
@@ -328,7 +328,7 @@ def _windows_secure_path(
     directory: bool,
     expected_identity: tuple[int, int] | None = None,
 ) -> None:
-    """OwnerとDACLを現在user SIDだけの保護ACLへ完全置換する。"""
+    """Ownerを現在のuser SIDへ、DACLをそのSIDだけを許可する保護ACLへ完全に置き換える。"""
     current_sid = _windows_sid_bytes(_windows_current_sid())
     flags = _WINDOWS_OBJECT_INHERIT_ACE | _WINDOWS_CONTAINER_INHERIT_ACE if directory else 0
     ace = _WindowsAce(_WINDOWS_ACCESS_ALLOWED_ACE_TYPE, flags, _WINDOWS_FILE_ALL_ACCESS, current_sid)
@@ -568,7 +568,7 @@ def _windows_current_user_ace_is_valid(ace: _WindowsAce, current_sid: bytes, exp
 
 
 def _windows_external_writer_ace_is_valid(ace: _WindowsAce, current_sid: bytes, expected_flags: int) -> bool:
-    """ACEが管理対象rootで実際に確認した外部書込主体の権限形に一致するか返す。"""
+    """ACEが、管理対象rootで実際に確認した外部の書込主体のACE（種別、継承フラグ、アクセスマスク）に一致するか返す。"""
     return (
         ace.ace_type == _WINDOWS_ACCESS_ALLOWED_ACE_TYPE
         and ace.flags == expected_flags
@@ -579,7 +579,7 @@ def _windows_external_writer_ace_is_valid(ace: _WindowsAce, current_sid: bytes, 
 
 
 def _validate_windows_security(path: pathlib.Path) -> None:
-    """内部真正性状態に実行中のOSアカウントだけの厳格なACLを要求する。"""
+    """真正性検証の対象のパスに、実行中のOSアカウントだけを許可する厳格なACLを要求する。"""
     current_sid = _windows_sid_bytes(_windows_current_sid())
     security = _windows_security_descriptor(path)
     expected_flags = _WINDOWS_OBJECT_INHERIT_ACE | _WINDOWS_CONTAINER_INHERIT_ACE if security.directory else 0

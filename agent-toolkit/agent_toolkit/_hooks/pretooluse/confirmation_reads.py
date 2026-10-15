@@ -13,19 +13,18 @@
 
 from __future__ import annotations
 
-# 関数の実行時までだけ使う依存を、Python 3.15では使用時まで読み込まない。旧Pythonでは通常のimportとなる。
-__lazy_modules__ = {"agent_toolkit._common", "agent_toolkit._hooks", "agent_toolkit._hooks.pretooluse.large_reads"}
-
 import json
 import pathlib
 
-from agent_toolkit._common import transcript as _transcript
-from agent_toolkit._hooks import agent_id as _agent_id
-from agent_toolkit._hooks import plugin_resources as _plugin_resources
-from agent_toolkit._hooks import transcript_scan as _transcript_scan
 from agent_toolkit._hooks.notice import _WARN_TAG
 from agent_toolkit._hooks.notice import formatter as _notice_formatter
-from agent_toolkit._hooks.pretooluse.large_reads import bash_read_paths
+
+# 関数の実行時にだけ使う依存は、使用時まで読み込まない。
+lazy from agent_toolkit._common import transcript as _transcript
+lazy from agent_toolkit._hooks import agent_id as _agent_id
+lazy from agent_toolkit._hooks import plugin_resources as _plugin_resources
+lazy from agent_toolkit._hooks import transcript_scan as _transcript_scan
+lazy from agent_toolkit._hooks.pretooluse.large_reads import bash_read_paths
 
 _llm_notice = _notice_formatter("pretooluse")
 
@@ -44,7 +43,7 @@ def _read_references(lines: list[str], *, cwd: str = "") -> set[str]:
     for line in lines:
         try:
             entry = json.loads(line)
-        except (json.JSONDecodeError, ValueError):
+        except json.JSONDecodeError, ValueError:
             continue
         if not isinstance(entry, dict) or not _transcript_scan.entry_in_scan_scope(entry, include_sidechain=False):
             continue

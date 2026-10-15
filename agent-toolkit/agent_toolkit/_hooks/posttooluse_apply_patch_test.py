@@ -1,6 +1,6 @@
 """agent-toolkit/agent_toolkit/_hooks/posttooluse.pyがCodexの`apply_patch`を計画ファイルの編集として扱う挙動のテスト。"""
 
-# 独立したフックシナリオ間で状態ディレクトリ初期化を同形に保つ。
+# フックを起動する各テストで、状態ディレクトリを一時領域の環境変数で指定する方法をそろえる。
 
 import json
 import os

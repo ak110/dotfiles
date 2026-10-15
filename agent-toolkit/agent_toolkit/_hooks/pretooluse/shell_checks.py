@@ -2,35 +2,24 @@ r"""PreToolUse統合フックのうち、Bashコマンドを遮断する条件�
 
 from __future__ import annotations
 
-# 関数の実行時までだけ使う依存を、Python 3.15では使用時まで読み込まない。旧Pythonでは通常のimportとなる。
-__lazy_modules__ = {
-    "agent_toolkit._common.bash_invocations",
-    "agent_toolkit._common.heredocs",
-    "agent_toolkit._common.runtime_identity",
-    "agent_toolkit._common.shell_segments",
-    "agent_toolkit._common.shell_tokens",
-    "agent_toolkit._hooks.notice",
-    "agent_toolkit._hooks.pretooluse.notices",
-    "collections.abc",
-    "shlex",
-}
-
 import pathlib
 import re
-import shlex
 import sys
-from collections.abc import (
+
+# 関数の実行時にだけ使う依存は、使用時まで読み込まない。
+lazy import shlex
+lazy from collections.abc import (
     Iterable,
     Sequence,
 )
 
-from agent_toolkit._common.bash_invocations import BashInvocation, extract_bash_invocations, heredoc_command_substitutions
-from agent_toolkit._common.heredocs import mask_heredoc_bodies
-from agent_toolkit._common.runtime_identity import RuntimeIdentity, co_author_trailer
-from agent_toolkit._common.shell_segments import ExecutionSegment, extract_execution_segments, split_bash_segments
-from agent_toolkit._common.shell_tokens import strip_redirections
-from agent_toolkit._hooks.notice import _WARN_TAG
-from agent_toolkit._hooks.pretooluse.notices import _block_notice, _llm_notice
+lazy from agent_toolkit._common.bash_invocations import BashInvocation, extract_bash_invocations, heredoc_command_substitutions
+lazy from agent_toolkit._common.heredocs import mask_heredoc_bodies
+lazy from agent_toolkit._common.runtime_identity import RuntimeIdentity, co_author_trailer
+lazy from agent_toolkit._common.shell_segments import ExecutionSegment, extract_execution_segments, split_bash_segments
+lazy from agent_toolkit._common.shell_tokens import strip_redirections
+lazy from agent_toolkit._hooks.notice import _WARN_TAG
+lazy from agent_toolkit._hooks.pretooluse.notices import _block_notice, _llm_notice
 
 _GLOBAL_OPTIONS_WITH_VALUE: frozenset[str] = frozenset(
     {
@@ -254,7 +243,7 @@ def _check_bash_process_kill_by_pattern(command: str) -> str | None:
 
     対象の所有権を確認できないパターン一致の一括終了は他者のプロセスを停止する危険があるため禁止する。
     自身が起動して識別子（PID）を確認したプロセスに対する`kill <PID>`形式は対象外とする。
-    ヒアドキュメント本文をマスクした文字列を解析し、禁止語が実行位置ではなく、安全な引数位置の
+    ヒアドキュメント本文をマスクした文字列を解析し、禁止語が安全な引数位置の
     リテラルだと確定できる区間だけを許可する。
     """
     matching_segments = [segment for segment in split_bash_segments(command) if "pkill" in segment or "killall" in segment]
@@ -448,7 +437,7 @@ def _read_commit_message_file(
         path = base / path
     try:
         return path.read_text(encoding="utf-8") if path.is_file() else None
-    except (OSError, UnicodeError):
+    except OSError, UnicodeError:
         return None
 
 
@@ -605,7 +594,7 @@ def _check_bash_option_after_terminator(command: str) -> str | None:
             continue
         return _block_notice(
             f"blocked: `{label}`のオプション終端`--`の後ろにオプション（{'、'.join(found)}）がある。"
-            "`--`の後ろは全てデータとして扱われるため、これらはオプションではなくパスとして解釈され、"
+            "`--`の後ろは全てデータとして扱われるため、これらはパスとして解釈され、"
             "存在しないパスとして失敗するか、エラーを出力せずに結果を限定する。",
             fix=(
                 "そのコマンド自身のオプションを`--`より前へ移し、`--`の後ろには検索パターンとパスだけを置いて再実行する。"

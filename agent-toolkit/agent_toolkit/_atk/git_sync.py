@@ -32,11 +32,8 @@ from agent_toolkit._common import next_action as _next_action
 from agent_toolkit._common import state_paths as _state_paths
 from agent_toolkit._git import command as _git_command
 
-LOCAL_ONLY_MARKER = ".agent-toolkit-local-only"
-"""自動生成されたremoteなしリポジトリを示すマーカー。"""
-
 PUSH_DEFERRED_MESSAGE = "commitは完了したが、別の未コミット差分があるため分岐の自動解消とpushを保留した"
-"""履歴分岐時に無関係な差分がある場合の確定通知。"""
+"""履歴が分岐し、無関係な差分もある場合に、commitの完了とpushの保留を伝える文言。"""
 
 PUSH_DEFERRED_NEXT_ACTION = (
     "`git -C {private_notes} status`で無関係な差分を確認し、commitするか取り除いてcleanにしてから"
@@ -48,7 +45,7 @@ _REPORTED_ATTRIBUTE = "_atk_sync_failure_reported"
 """失敗の原因と次の操作を本モジュールが出力済みであることを例外へ記録する属性名。"""
 
 _DivergenceRecovery = Callable[[pathlib.Path], bool]
-"""呼び出し元の意味論でローカル側commitの冗長性を証明する判定関数。"""
+"""ローカル側のcommitが冗長であることを呼び出し元の基準で判定する関数。"""
 
 
 class _GitRunner(Protocol):
@@ -64,7 +61,7 @@ class _GitResultRunner(Protocol):
 
 
 class RebaseInProgressError(RuntimeError):
-    """rebase中の作業コピーへ新しいmutationを開始しようとした。
+    """rebase中の作業コピーで新しい更新を開始しようとした。
 
     `str()`は理由だけを返す。次の操作は原因が1つに決まるため`next_action`へ固定する。
     """
@@ -137,7 +134,7 @@ def git_common_dir(repo_path: pathlib.Path) -> pathlib.Path:
         return repo_path
     try:
         result = _run_git_result(["rev-parse", "--git-common-dir"], repo_path)
-    except (OSError, subprocess.SubprocessError):
+    except OSError, subprocess.SubprocessError:
         return repo_path
     if result.returncode != 0 or not result.stdout.strip():
         return repo_path
@@ -211,8 +208,21 @@ def assert_repo_lock_held(repo_path: pathlib.Path) -> None:
 
 
 def has_remote(private_notes: pathlib.Path) -> bool:
-    """remote同期を行う通常リポジトリか判定する。"""
-    return not (private_notes / LOCAL_ONLY_MARKER).exists()
+    """現在のbranchのupstreamを解決でき、remote同期を行えるか判定する。"""
+    return _run_git_result(["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"], private_notes).returncode == 0
+
+
+def _report_missing_upstream(private_notes: pathlib.Path) -> None:
+    """remoteだけを設定した構成で、ローカル操作の後に同期を有効にする方法を示す。"""
+    remotes = _run_git_result(["remote"], private_notes)
+    if remotes.returncode == 0 and remotes.stdout.strip():
+        _next_action.report(
+            "注記: private-notesのupstreamが無いため、remoteと同期していない。ローカルの操作は継続する。",
+            next_action=(
+                f"`git -C {private_notes} branch --set-upstream-to=<remote>/<branch>`でupstreamを設定するか、"
+                f"`git -C {private_notes} push -u <remote> <branch>`でbranchを送信してから同期する"
+            ),
+        )
 
 
 def push_was_deferred(private_notes: pathlib.Path) -> bool:
@@ -242,7 +252,7 @@ def is_rebase_in_progress(
     for name in ("rebase-merge", "rebase-apply"):
         try:
             path = _git_path(private_notes, name, result_runner=result_runner)
-        except (OSError, subprocess.SubprocessError):
+        except OSError, subprocess.SubprocessError:
             path = None
         if path is not None and path.exists():
             return True
@@ -250,7 +260,7 @@ def is_rebase_in_progress(
 
 
 def ensure_not_rebasing(private_notes: pathlib.Path) -> None:
-    """新しいmutationを受け付けられる状態か検証する。"""
+    """新しい更新を受け付けられる状態か検証する。"""
     if is_rebase_in_progress(private_notes):
         raise RebaseInProgressError("rebase中のため新しい更新を開始できない")
 
@@ -288,6 +298,7 @@ def _pull_impl(
     assert_repo_lock_held(private_notes)
     ensure_not_rebasing(private_notes)
     if not has_remote(private_notes):
+        _report_missing_upstream(private_notes)
         return
     run_git(["fetch"], private_notes)
     try:
@@ -431,7 +442,7 @@ def _divergence_details(
             fields = counts.stdout.split()
             if len(fields) == 2:
                 count_text = f"ローカルのみ{fields[0]}件、upstreamのみ{fields[1]}件"
-    except (OSError, subprocess.SubprocessError):
+    except OSError, subprocess.SubprocessError:
         pass
     reason_lines = [
         f"Git履歴が分岐している（{count_text}）: {private_notes}。"
@@ -442,7 +453,7 @@ def _divergence_details(
         if differences.returncode == 0 and differences.stdout.strip():
             reason_lines.append("内容差のあるファイル:")
             reason_lines.append(differences.stdout.rstrip())
-    except (OSError, subprocess.SubprocessError):
+    except OSError, subprocess.SubprocessError:
         pass
     return "\n".join(reason_lines)
 
@@ -480,7 +491,7 @@ def _report_rebase_failure(private_notes: pathlib.Path, *, result_runner: _GitRe
             private_notes,
         )
         names = [line for line in conflicts.stdout.splitlines() if line]
-    except (OSError, subprocess.SubprocessError):
+    except OSError, subprocess.SubprocessError:
         names = []
     _outcome.report_failure(
         "rebaseに失敗したため、rebase状態を保持した。自動abortは行っていない\n"
@@ -592,6 +603,7 @@ def _push_pending_commits_impl(
     assert_repo_lock_held(private_notes)
     ensure_not_rebasing(private_notes)
     if not has_remote(private_notes):
+        _report_missing_upstream(private_notes)
         return 0
     original_error: subprocess.CalledProcessError
     count = pending_commit_count(private_notes, result_runner=result_runner)
@@ -672,7 +684,7 @@ def _target_has_staged_changes(
         return None
     try:
         result = result_runner(["diff", "--cached", "--quiet", "--", *paths], private_notes)
-    except (OSError, subprocess.SubprocessError):
+    except OSError, subprocess.SubprocessError:
         return None
     if result.returncode == 0:
         return False
@@ -694,7 +706,7 @@ def _usable_pathspecs(
     *,
     result_runner: _GitResultRunner,
 ) -> list[str]:
-    """実在または追跡済み削除対象に限定したpathspecを返す。"""
+    """実在するパスか、追跡済みで削除されたパスに限定したpathspecを返す。"""
     if not (private_notes / ".git").exists():
         return paths
     usable: list[str] = []

@@ -345,7 +345,7 @@ def test_public_check_component_evidence_matches_source(
 ) -> None:
     """結合の構造だけを整えた偽の根拠は、元入力との対照で拒否する。書込重複は選定の現在値で判定する。"""
     repo, notes = env
-    # 書込重複の不一致は、根拠ではなく現在の`書込対象`が重ならない入力で表す。
+    # 書込重複の不一致は、現在の`書込対象`が重ならない入力で表す。
     targets = {"a.md": "README.md", "b.md": "src/model.py" if kind == "書込重複" and not matches else "README.md"}
     for name, target in targets.items():
         _awi(notes, name, f"`{target}`を変える。", dependencies=["a.md"] if name == "b.md" else [])
@@ -702,7 +702,7 @@ def test_public_check_overlap_uses_integration_state(
     state: str | None,
     expected: int,
 ) -> None:
-    """同段階で同定義を書く対照は、統合済みの履歴だけを競合待ちから除く。"""
+    """同段階の2レーンが同じ定義を書く選定は、片方が統合済みの場合だけ競合として拒否しない。"""
     repo, notes = env
     for name in ("a.md", "b.md"):
         _awi(notes, name, "`README.md`を変える。")
@@ -1662,7 +1662,7 @@ def test_range_description_needs_no_coverage_but_inner_paths_do(
 def test_directory_range_without_inner_path_still_needs_coverage(
     tmp_path: pathlib.Path, env: tuple[pathlib.Path, pathlib.Path], capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """配下に抽出結果を持たないディレクトリ範囲は範囲説明に当たらず、従来どおり被覆を求める。"""
+    """配下に抽出結果を持たないディレクトリ範囲は範囲説明に当たらず、通常の反映先と同じく被覆を求める。"""
     repo, notes = env
     _awi(notes, "only-range.md", "`pytools/`配下のテストを変える。")
     selection = _write_selection(tmp_path / "selection.yaml", [{"WI": "only-range.md", "レーン": "lane-01", "書込対象": []}])
@@ -1701,7 +1701,7 @@ def test_detects_observed_selection_defects(
 def test_reports_missing_body_as_violation(
     tmp_path: pathlib.Path, env: tuple[pathlib.Path, pathlib.Path], capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """private-notesに本文が無い項目は、入力の解決失敗ではなく項目の違反として返す。"""
+    """private-notesに本文が無い項目は、項目の違反として返す。"""
     repo, _notes = env
 
     assert _run(tmp_path, repo, [{"awi": "absent.md", "lane": "lane-01", "write_files": []}]) == 1
@@ -1810,7 +1810,7 @@ def test_content_errors_guide_selection_fix(
     env: tuple[pathlib.Path, pathlib.Path],
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """引数が正しく選定結果の内容が誤る場合は、終了コード2と、引数ではなく選定結果を直す次の操作を返す。"""
+    """引数が正しく選定結果の内容が誤る場合は、終了コード2と、選定結果を直す次の操作を返す。"""
     repo, notes = env
     _awi(notes, "a.md", "`src/model.py`を変える。")
     selection = tmp_path / "selection.yaml"

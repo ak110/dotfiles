@@ -25,7 +25,7 @@ from agent_toolkit._atk import session_record_format
 from agent_toolkit._atk.serve import remote as _atk_serve_remote
 from agent_toolkit._atk.serve import session_parents, session_watch
 from agent_toolkit._common import host_homes as _host_homes
-from agent_toolkit._common import session_launchers
+from agent_toolkit._common import session_launchers, stream_lines
 from agent_toolkit._common import state_paths as _state_paths
 
 logger = logging.getLogger(__name__)
@@ -55,9 +55,9 @@ STDERR_EXCERPT_MAX_CHARS = _atk_serve_remote.STDERR_EXCERPT_MAX_CHARS
 # `read`は記録1件の読み取りで、記録量に比例しない。
 OPERATION_TIMEOUT_SEC = {"list": 300.0, "read": 30.0}
 # RPCが上限を超えても単発SSHへ切り替えない操作。単発SSHは同じ走査を索引の無い新しいプロセスで
-# 最初からやり直すため、走査を続けている常駐ヘルパーより先に終わらず、そのCPUを奪い合う。
+# 最初からやり直すため、走査を続けている常駐ヘルパーより先に終わらず、常駐ヘルパーとCPUを奪い合う。
 _NO_FALLBACK_ON_RPC_TIMEOUT = frozenset({"list"})
-# 常駐SSH接続のstdout用StreamReader上限（バイト）。一覧・本文は1行JSONで届くため大きく取る。
+# 常駐SSH接続のstdout用bufferのフロー制御閾値（バイト）。JSONの行長はchunkからの復元で扱う。
 REMOTE_STREAM_LIMIT_BYTES = 128 * 1024 * 1024
 # 再接続のバックオフ。
 BACKOFF_INITIAL_SEC = 1.0
@@ -173,7 +173,7 @@ class SessionsContext:
     codex_home: pathlib.Path
     remote_hosts: tuple[str, ...]
     runner: SshRunner
-    state: "SessionsState"
+    state: SessionsState
     # agents_serverのsession登録簿を置く状態ディレクトリ。登録簿の委譲元を一覧の親子付けに使う。
     state_dir: pathlib.Path | None = None
 
@@ -186,7 +186,7 @@ class SessionsState:
     lock: asyncio.Lock = dataclasses.field(default_factory=asyncio.Lock)
     # ホスト名 -> "connected"|"connecting"|"disconnected"。
     host_status: dict[str, str] = dataclasses.field(default_factory=dict)
-    clients: dict[str, "RemoteSessionClient"] = dataclasses.field(default_factory=dict)
+    clients: dict[str, RemoteSessionClient] = dataclasses.field(default_factory=dict)
     tasks: list[asyncio.Task[None]] = dataclasses.field(default_factory=list)
     # ローカルの記録rootの変更監視。`start_local_watch`が生成する。
     record_watch: session_watch.RecordWatch | None = None
@@ -195,7 +195,7 @@ class SessionsState:
     # ローカルの記録単位の解析結果。要求ごとの走査で変更のない記録を読み直さないために保持する。
     record_index: session_watch.RecordSummaryIndex = dataclasses.field(default_factory=session_watch.RecordSummaryIndex)
     # 進行中の一覧の取得（ローカルの走査とリモートの取得）。同時に届いた一覧の要求はこの1回の結果を共有する。
-    list_task: "asyncio.Future[tuple[list[SessionSummary], list[dict[str, str]]]] | None" = None
+    list_task: asyncio.Future[tuple[list[SessionSummary], list[dict[str, str]]]] | None = None
 
 
 def create_context(
@@ -322,7 +322,7 @@ def is_local_record_path(context: SessionsContext, raw: str) -> bool:
     for root in (context.claude_home / "projects", context.codex_home / "sessions"):
         try:
             target.relative_to(root.resolve())
-        except (ValueError, OSError):
+        except ValueError, OSError:
             continue
         return True
     return False
@@ -478,14 +478,7 @@ class RemoteSessionClient:
 
     async def _process_stream(self, stream: asyncio.StreamReader) -> None:
         """行ストリームを読み、`ready`で接続確立、`response`でRPCを解決し、変更通知をSSEへ中継する。"""
-        while True:
-            try:
-                chunk = await stream.readline()
-            except ValueError as error:
-                logger.warning("セッション記録の応答行が上限を超過 host=%s: %s", self.host, error)
-                return
-            if not chunk:
-                return
+        async for chunk in stream_lines.iter_lines(stream):
             line = chunk.decode("utf-8", errors="replace").strip()
             if not line:
                 continue
@@ -599,7 +592,7 @@ async def _remote_sessions(context: SessionsContext, host: str) -> tuple[list[Se
     return entries, None
 
 
-def _retrieve_exception(task: "asyncio.Future[typing.Any]") -> None:
+def _retrieve_exception(task: asyncio.Future[typing.Any]) -> None:
     """待つ要求が残らずに終わった取得の例外を回収し、未回収の例外としてログへ出力しない。"""
     if not task.cancelled():
         task.exception()

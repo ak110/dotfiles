@@ -17,15 +17,13 @@ post-applyテンプレートがpytoolsの再導入のために停止した場合
 ハングの原因は未特定である。`launch.vbs`と実行ファイルのパスは本モジュールだけが持つ。
 """
 
-# 他の処理では不要な依存を、使用時まで遅延する。旧Pythonでは通常のimportとなる。
-__lazy_modules__ = {"psutil"}
-
 import logging
 import os
 import pathlib
 import subprocess
 
-import psutil
+# 他の処理で使わない依存は、使用時まで読み込まない。
+lazy import psutil
 
 from pytools._internal import common, host_roles, log_format, post_apply_outcome
 
@@ -48,7 +46,12 @@ def run() -> post_apply_outcome.PostApplyOutcome:
     """
     startup_dir = _startup_dir()
     if not startup_dir.is_dir():
-        logger.info(log_format.format_status("media-remote", f"スタートアップ未存在: {startup_dir}"))
+        logger.info(
+            log_format.format_status(
+                "media-remote",
+                f"スタートアップ未存在: {startup_dir}。このWindowsフォルダーが無い環境では対応不要",
+            ),
+        )
         return post_apply_outcome.PostApplyOutcome()
     lnk = startup_dir / LNK_NAME
     vbs = _vbs_path()
@@ -59,13 +62,21 @@ def run() -> post_apply_outcome.PostApplyOutcome:
 
         exe = _find_media_remote_exe()
         if exe is None:
-            logger.info(log_format.format_status("media-remote", "dotfiles-media-remote.exeが見つからないためスキップ"))
+            logger.info(
+                log_format.format_status(
+                    "media-remote",
+                    "dotfiles-media-remote.exeが見つからないためスキップ。`update-dotfiles`を再実行してpytoolsを導入する",
+                ),
+            )
             return post_apply_outcome.PostApplyOutcome()
         vbs_changed = _ensure_vbs(vbs, exe)
         lnk_changed = _ensure_shortcut(lnk, vbs)
         _restart(vbs, exe)
     except OSError as error:
-        return post_apply_outcome.PostApplyOutcome(failure=str(error))
+        return post_apply_outcome.PostApplyOutcome(
+            failure=str(error),
+            next_action="問題を解消した後に`update-dotfiles`を再実行する。",
+        )
     return post_apply_outcome.PostApplyOutcome(changed=vbs_changed or lnk_changed)
 
 

@@ -56,7 +56,7 @@ def _is_queue_repository(worktree: pathlib.Path, private_notes: pathlib.Path | N
                 return False
             value = pathlib.Path(result.stdout.strip())
             common_dirs.append(value.resolve() if value.is_absolute() else (repository / value).resolve())
-        except (OSError, RuntimeError):
+        except OSError, RuntimeError:
             return False
     return common_dirs[0] == common_dirs[1]
 
@@ -92,7 +92,7 @@ def _protection_ref(ref: str, cwd: pathlib.Path, common_dir: pathlib.Path) -> st
 
 
 def _protect_ref(ref: str, shared_ref: str, oid: str, cwd: pathlib.Path) -> int:
-    """既存保護を上書きせず、旧値条件付きで共有保護を成立させる。呼出元が固定ロックを保持する。"""
+    """既存の共有保護を上書きしないよう、旧値を条件にして共有保護のrefを記録する。呼出元が固定ロックを保持する。"""
     object_check = _run_git(["cat-file", "-e", f"{oid}^{{commit}}"], cwd)
     if object_check.returncode != 0:
         _outcome.report_failure(
@@ -266,7 +266,7 @@ def protect(
     cwd: pathlib.Path | None = None,
     private_notes: pathlib.Path | None = None,
 ) -> int:
-    """正常な旧worktree固有refを、復元識別子を変えず共有GCから保護する。"""
+    """共有保護を持たない正常な旧worktree固有refを、復元に使う識別子を変えずに全worktreeのGCから保護する。"""
     worktree = (cwd or pathlib.Path.cwd()).resolve()
     if _is_queue_repository(worktree, private_notes):
         _outcome.report_failure(_QUEUE_REPOSITORY_ERROR, next_action=_QUEUE_REPOSITORY_NEXT_ACTION)

@@ -1,8 +1,5 @@
 """コマンドライン引数解析とエントリーポイント。"""
 
-# ヘルプや他の処理では不要な依存を、使用時まで遅延する。旧Pythonでは通常のimportとなる。
-__lazy_modules__ = {"pytools.markdown_viewer"}
-
 import argparse
 import hashlib
 import logging
@@ -12,7 +9,9 @@ import tempfile
 import webbrowser
 
 from pytools._internal.cli import enable_completion, setup_logging
-from pytools.markdown_viewer import _render
+
+# ヘルプや他の処理で使わない依存は、使用時まで読み込まない。
+lazy from pytools.markdown_viewer import _render
 
 logger = logging.getLogger(__name__)
 
@@ -50,7 +49,10 @@ def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
     source: pathlib.Path = args.file
     if not source.is_file():
-        print(f"ファイルが見つかりません: {source}", file=sys.stderr)
+        print(
+            (f"ファイルが見つかりません: {source}。存在するMarkdownファイルを指定してmarkdown-viewerを再実行してください。"),
+            file=sys.stderr,
+        )
         return 1
 
     source_abs = source.resolve()
@@ -76,11 +78,11 @@ def main(argv: list[str] | None = None) -> int:
         opened = webbrowser.open(output.as_uri())
     except webbrowser.Error as e:
         print(f"ブラウザ起動エラー: {e}", file=sys.stderr)
-        print(f"HTMLパス: {output}", file=sys.stderr)
+        print(f"HTMLパス: {output}。このファイルをブラウザで手動で開いてください。", file=sys.stderr)
         return 1
     if not opened:
         print("ブラウザを起動できませんでした。", file=sys.stderr)
-        print(f"HTMLパス: {output}", file=sys.stderr)
+        print(f"HTMLパス: {output}。このファイルをブラウザで手動で開いてください。", file=sys.stderr)
         return 1
 
     logger.info("Opened %s -> %s", source_abs, output)

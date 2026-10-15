@@ -9,7 +9,7 @@ SCRIPT="${SCRIPT_DIR}/agent_toolkit/atk.py"
 # 空であるかオプションである場合だけ監督ループへ入る。
 if [ "${2:-}" != "process-loop" ] || { [ "${1:-}" != "wi" ] && [ "${1:-}" != "mq" ]; } ||
     { [ -n "${3:-}" ] && [ "${3#-}" = "${3}" ]; }; then
-    exec uv run --project "${SCRIPT_DIR}" --locked --no-default-groups "${SCRIPT}" "$@"
+    exec uv run --no-config --no-project --python 3.15 python "${SCRIPT_DIR}/scripts/launch.py" "${SCRIPT}" "$@"
 fi
 
 # 常駐サブコマンドは自己更新のたびに再起動する。実体側で`uv`へ置き換えると
@@ -22,7 +22,7 @@ fi
 # 受け渡しファイルを削除し、実体は監督者を失ったまま動作を継続する。
 SPEC="$(mktemp)"
 trap 'rm -f "${SPEC}"' EXIT
-LOG="$(uv run --project "${SCRIPT_DIR}" --locked --no-default-groups "${SCRIPT_DIR}/agent_toolkit/_atk/wi/process_loop_log.py")"
+LOG="$(uv run --no-config --no-project --python 3.15 python "${SCRIPT_DIR}/scripts/launch.py" "${SCRIPT_DIR}/agent_toolkit/_atk/wi/process_loop_log.py")"
 mkdir -p "$(dirname "${LOG}")"
 received_signal="none"
 log_launcher() {
@@ -48,7 +48,7 @@ while :; do
     : >"${SPEC}"
     status=0
     SCRIPT_DIR="$(cd "$(dirname "${SCRIPT}")/.." && pwd)"
-    uv run --project "${SCRIPT_DIR}" --locked --no-default-groups "${SCRIPT}" "${args[@]}" || status=$?
+    uv run --no-config --no-project --python 3.15 python "${SCRIPT_DIR}/scripts/launch.py" "${SCRIPT}" "${args[@]}" || status=$?
     log_launcher child_end "${status}"
     if [ "${status}" -ne 75 ]; then
         exit "${status}"

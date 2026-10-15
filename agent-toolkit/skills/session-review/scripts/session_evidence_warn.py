@@ -120,7 +120,7 @@ def _structured_warning_value_texts(value: Any) -> list[str]:
     if isinstance(value, str):
         try:
             parsed = json.loads(value)
-        except (json.JSONDecodeError, TypeError, ValueError):
+        except json.JSONDecodeError, TypeError, ValueError:
             return [value] if value.strip() else []
         if isinstance(parsed, (dict, list)):
             return _structured_warning_value_texts(parsed)
@@ -272,7 +272,7 @@ def _warning_texts(entry: dict[str, Any], tool_names: dict[str, str] | None = No
         if isinstance(value, str):
             try:
                 parsed = json.loads(value)
-            except (json.JSONDecodeError, TypeError, ValueError):
+            except json.JSONDecodeError, TypeError, ValueError:
                 bodies.append((value, True, from_hook_record))
                 return
             if isinstance(parsed, (dict, list)):
@@ -293,7 +293,7 @@ def _warning_texts(entry: dict[str, Any], tool_names: dict[str, str] | None = No
         if isinstance(value, str):
             try:
                 parsed = json.loads(value)
-            except (json.JSONDecodeError, TypeError, ValueError):
+            except json.JSONDecodeError, TypeError, ValueError:
                 return
             if isinstance(parsed, (dict, list)):
                 collect_structured(parsed, from_hook_record)

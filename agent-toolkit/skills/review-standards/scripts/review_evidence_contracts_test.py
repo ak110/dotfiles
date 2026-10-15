@@ -129,7 +129,7 @@ def test_public_shared_evidence_keeps_git_reference_forms(
 def test_public_shared_evidence_still_rejects_integer_only_difference(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """参照の外の入力値の数字だけを替えた汎用根拠は従来どおり拒否する。"""
+    """参照の外の入力値の数字だけを替えた汎用根拠は共用として拒否する。"""
     head, inputs, evidence = _inputs(tmp_path, monkeypatch, ["入力値1を観測", "入力値2を観測"])
     assert check.main([str(evidence), "--input-record", str(inputs), "--expected-head", head]) == 1
     assert "共用" in capsys.readouterr().err

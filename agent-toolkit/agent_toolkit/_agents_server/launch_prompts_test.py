@@ -60,7 +60,7 @@ def _shared_document_body(name: str) -> str:
 def test_launch_prompts_load_shared_documents() -> None:
     """起動区分ごとに対応する共有文書を読み、委譲先通知と組み合わせて実行時のシステム指示を組み立てる。
 
-    共有文書の文面そのものは`state`モジュールの契約ではなくその文書側の内容であるため、判定対象にしない。
+    共有文書の文面そのものはその文書側が定める内容であるため、判定対象にしない。
     文面をテストへ書き写すと、実装の契約が変わらない改訂でもこのテストが失敗する。
     """
     notice = _shared_document_body("agents-server-delegate-notice.md")
@@ -85,7 +85,7 @@ def test_launch_prompts_carry_normative_boundaries() -> None:
 def test_explore_capabilities_are_shared_with_public_schema() -> None:
     """公開schemaと実際の委譲プロンプトへ同じ能力定義を配送する。"""
     capabilities = tool_descriptions.EXPLORE_CAPABILITIES
-    assert capabilities in tool_descriptions.START_DESCRIPTION[:2048]
+    assert capabilities in tool_descriptions.START_DESCRIPTION[:4096]
     assert capabilities in tool_descriptions.MODE_DESCRIPTION
     assert capabilities in launch_prompts.LAUNCH_SYSTEM_PROMPTS["explore"]
     for kind in ("delegate", "shell", "write"):

@@ -4,12 +4,34 @@ pushするエージェントがpush先、更新ref、基準情報、CI監視、�
 
 ## 公開状態の4項目
 
-ベースbranchの公開を確かめる次の4項目を「公開状態の4項目」と呼ぶ。判定の時点で現在のGit状態から取得し、全て成立した場合だけ公開済みとする。取得には前記のコマンドを使い、`.git`内部のパス探索と、複数のrefを1回へ渡す`git rev-parse --short`を避ける。
+ベースbranchの公開を確かめる次の4項目を「公開状態の4項目」と呼ぶ。判定の時点で現在のGit状態から取得し、全て成立した場合だけ公開済みとする。取得には各項目のコマンドを使い、`.git`内部のパス探索と、複数のrefを1回へ渡す`git rev-parse --short`を避ける。
 
 1. `git -C <対象リポジトリの絶対パス> status --porcelain=v2 --branch`の`# branch.head`がベースbranch名と一致する
 2. 同じ出力で`#`で始まらない行が0件である
 3. 同じ出力の`# branch.ab`のahead値が`+0`である（追跡refが無く取得できなければ不成立）
 4. `git -C <対象リポジトリの絶対パス> status`にrebase・merge・cherry-pickの進行中の表示が無い
+
+## 公開先に対応するCI定義の判定
+
+承認済みpush先のforge、repository（ホストを含む）と対象commitを入力とし、その公開先で実行されるCI定義を判定する。
+判定を記録する側と受理する側は本節を共通に使い、候補を公開先のforgeに属する定義へ限定する。
+複数の公開先や更新refでは組ごとに判定し、対象commitのtreeを証拠に使う。
+
+| 公開先 | 判定する定義と不在の根拠 |
+| --- | --- |
+| GitHub | 対象commitの`.github/workflows`直下にある、拡張子が`.yml`か`.yaml`のblobを候補とする。`git ls-tree -r <対象commit> -- .github/workflows`のtypeとパスを判定し、終了コード0で候補0件なら不在とする。README、入れ子のYAML、treeは数えない |
+| GitLab | 対象projectの有効設定が選ぶCI設定とAuto DevOpsを判定する。標準の`.gitlab-ci.yml`、独自の`ci_config_path`が指す同一project・別project・外部URLの設定、継承を含むAuto DevOpsの有効状態を確認する。対象commitと設定の参照先を対応付け、有効な定義が無くAuto DevOpsも無効と確定した場合だけ不在とする |
+
+GitLabの設定は[Projects API](https://docs.gitlab.com/api/projects/)と[独自CI設定の仕様](https://docs.gitlab.com/ci/pipelines/settings/#specify-a-custom-cicd-configuration-file)を使う。
+設定応答の権限による項目欠落と、継承する[Auto DevOps](https://docs.gitlab.com/topics/autodevops/)の有効状態を確かめる。
+GitLab CIの不在には、標準ファイルの不在と有効設定の確認を合わせた証拠を要する。
+独自設定が指定されているのに参照先を取得できない場合は未判定とする。
+
+取得失敗、権限不足、切り詰め、設定項目の不足で集合を確定できない場合は未判定とし、CI成功や不在へ読み替えない。
+定義があってトリガーが発火しない場合はrun未登録であり、定義不在と分ける。
+判定の記録には公開先、対象commit、取得したtree・有効設定と参照先、実行コマンド、終了コードと診断を残す。
+不在を確定した場合はbaselineと監視を省き、ローカル全体検証の成功と組み合わせて終端状態を「CI定義なし」とする。
+未判定は「CI照会不能の受渡し」へ渡し、定義の判定か同じ対象commitのCI照会を回復する。
 
 ## push前
 
@@ -19,7 +41,7 @@ pushするエージェントがpush先、更新ref、基準情報、CI監視、�
   承認済みdestinationへ届くと確定すれば引数なしの`git push --dry-run --porcelain`を使う。届かないか判定できなければ`<remote> <source>:refs/heads/<destination>`を明示したdry-runを使う（引数なしpushの失敗が設定から確定する構成では引数なしのdry-runを省く）。
   成功したdry-runの全status lineが承認済みremote・destinationへのrefspecを示す場合だけ、その方式でpushする。拒否・失敗予定のrefや承認外のremote・destinationがあればpushを中止する
 
-CI定義の有無は、pushするcommitのtreeで`git -C <対象リポジトリの絶対パス> ls-tree -r --name-only <pushするcommit> -- .gitlab-ci.yml .github/workflows`により判定する（forgeによらない）。終了コード0で出力0行ならCI定義なしとし、baselineと監視を省いて終端状態を「CI定義なし」とする。終了コードが0以外なら原因を確かめて判定し直す。
+CI定義の有無は「公開先に対応するCI定義の判定」で確定する。
 委譲元がCI通過をこのセッションで判定しないと明示した場合も、baselineと監視を省く。
 
 CIを判定する場合は、push前に次のとおりbaselineを作成する。
@@ -29,7 +51,7 @@ CIを判定する場合は、push前に次のとおりbaselineを作成する。
 3. 読み込んだ本文書の絶対パスからplugin rootを確定する。`(destination ref, source ref)`ごとに次を実行する（`wait_ci.py`の所在は`<plugin-root>/agent_toolkit/`であり、`<plugin-root>/skills/commit/scripts/`とは別）
 
    ```text
-   uv run --project <plugin-root> --locked --no-default-groups <plugin-root>/agent_toolkit/wait_ci.py --write-baseline <手順1の領域>/<更新refごとに一意なファイル名>.json
+   uv run --no-config --no-project --python 3.15 python <plugin-root>/scripts/launch.py agent_toolkit/wait_ci.py --write-baseline <手順1の領域>/<更新refごとに一意なファイル名>.json
    ```
 
 baseline作成と監視では`--repo`（`owner/repo`かホストを含むURL。ローカルパスではない）、`--forge <github|gitlab>`、`--ref`、`--source-ref`をすべて指定する。その他の引数は`--help`で確かめる。複数refでは組ごとにbaselineを作成し、1件が失敗しても他を続ける。
@@ -38,6 +60,7 @@ baseline作成と監視では`--repo`（`owner/repo`かホストを含むURL。�
 
 1. 引数なし方式では`git push`を単独で実行し、明示方式では成功したdry-runから`--dry-run --porcelain`だけを除いた同じ引数でpushする
 2. push成功後、各baselineに対して`wait_ci.py --baseline`を実行する（CI通過をこのセッションで判定しない場合は実行せず後始末へ進む）
+   - 起動と結果回収は`agent-toolkit:delegation`の`references/waiting-and-monitoring.md`「待機区間の構成」に従う。完了通知で同じセッションへ再開する監視は背景で起動し、別の独立待機より先に届いた通知を処理する。同じbaselineの起動済み監視を回収し、重複起動しない
    - 総待機時間は、GitHub Actionsでは対象workflowの直近の成功runの`updatedAt - startedAt`へ登録猶予と変動分の余裕を加えて決め、取得・算出できなければ270秒とする。`gh`の入出力形式は実行直前のヘルプで確かめる
    - 終了コード6と2では同じ引数で呼び直し、それ以外を待機の終端とする
    - 背景実行では、ホストがコマンドを時間で停止する上限を総待機時間より長くする。先に止められるとスクリプトは判定結果を返せなくなる。実行ハンドルのyield・再開がある場合は60秒未満の間隔で同一processへ再接続し、processを短い`--timeout`へ分割したりplugin root更新を契機に置き換えたりしない
@@ -76,5 +99,19 @@ baseline作成と監視では`--repo`（`owner/repo`かホストを含むURL。�
 ## 後始末
 
 CI成功、CI定義なし、CI判定の委譲、バグ対応完了、push失敗、監視不能、run未登録、forge CLI失敗、中断を終端状態とする。
-`agent-toolkit:process-wi`の終端担当は、これらの終端状態の名前を返却の`CIの結果`の値に使う。
+監視の終端と公開工程の成功は分けて扱う。
+`agent-toolkit:process-wi`の終端担当は、検収できた`CI成功`か`CI定義なし`を正常完了の`CIの結果`へ返す。
+それ以外の未完了は既存の`続行できない理由:`で返し、CI照会不能では次節の情報も含める。
 追加push（原因commitへ取り込んだ修正のforce pushを含む）では新しいディレクトリとbaselineを作成する。
+
+## CI照会不能の受渡し
+
+定義判定、baseline作成またはpush後の監視を完了できない場合は、同じ対象の確認済み工程と残る工程を分けて引き継ぐ。
+対象forge・repository・commit・ref、失敗操作と診断、pushの成否、公開状態の4項目の観測を記録する。
+全体検証の成否、版数・生成物・公開後の操作・延期adoptの到達点も記録し、CIが未判定であることを明示する。
+baselineと保存出力、引き継ぎ記録の絶対パス、欠ける前提と再開工程を渡す。
+push前に止まった場合はpush未実行、push後なら確認済みpushを保持する。
+公開状態の4項目やローカル全体検証の成功だけでCI成功にはしない。
+
+回復とユーザー確認は`references/publish.md`「CI照会不能からの再開」に従う。
+回復後は保存済みbaselineか「pushと監視」の`--wait-sha`で同じcommitの未完了工程を再開し、成功済みの版数更新・push・公開後の操作を繰り返さない。

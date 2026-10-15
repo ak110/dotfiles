@@ -43,17 +43,34 @@ def run() -> post_apply_outcome.PostApplyOutcome:
 
     root = common.find_dotfiles_root()
     if root is None:
-        logger.info(log_format.format_status("dotfiles-autoupdate", "dotfilesルートを解決できないため設定を見送る"))
+        logger.info(
+            log_format.format_status(
+                "dotfiles-autoupdate",
+                "dotfilesルートを解決できないため設定を見送る。`update-dotfiles`を再実行して導入と設定をやり直す",
+            ),
+        )
         return post_apply_outcome.PostApplyOutcome()
 
     script = root / _SCRIPT_RELATIVE
     if not script.is_file():
-        logger.info(log_format.format_status("dotfiles-autoupdate", f"上流差分確認スクリプトが未配置: {script}"))
+        logger.info(
+            log_format.format_status(
+                "dotfiles-autoupdate",
+                f"上流差分確認スクリプトが未配置: {script}。`update-dotfiles`を再実行して導入と設定をやり直す",
+            ),
+        )
         return post_apply_outcome.PostApplyOutcome()
 
     uv = common.resolve_uv_path()
     if uv is None:
-        logger.info(log_format.format_status("dotfiles-autoupdate", "uvが見つからないため設定を見送る"))
+        logger.info(
+            log_format.format_status(
+                "dotfiles-autoupdate",
+                "uvが見つからないため設定を見送る。"
+                "https://docs.astral.sh/uv/getting-started/installation/ の手順でuvを導入し、"
+                "`update-dotfiles`を再実行する",
+            ),
+        )
         return post_apply_outcome.PostApplyOutcome()
 
     unit_dir = pathlib.Path.home() / _UNIT_DIR_RELATIVE

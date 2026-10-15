@@ -753,7 +753,7 @@ def test_show_jsonl_filters_decoded_rows_by_track(
 
 
 def test_locked_update_does_not_create_sidecar_lock(tmp_path: pathlib.Path) -> None:
-    """行追加の排他は、表と同じディレクトリではなくロック格納先へロックを置く。"""
+    """行追加の排他は、ロック格納先へロックを置く。"""
     path = tmp_path / "review.tsv"
     table.init(path)
     table.add(path, "1", _TRACK, "module.py:10", "修正が必要")

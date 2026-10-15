@@ -16,32 +16,22 @@ r"""`~/.claude/plans`に残る計画バンドルの保存確認Stopフック。
 委譲先での実行可否: 委譲先は委譲元が所有する計画バンドルを保存できないため、hook入力と環境印で除外する。
 """
 
-# 関数の実行時までだけ使う依存を、Python 3.15では使用時まで読み込まない。旧Pythonでは通常のimportとなる。
-__lazy_modules__ = {
-    "agent_toolkit._common.process_loop_session",
-    "agent_toolkit._common.session_state",
-    "agent_toolkit._hooks.agent_id",
-    "agent_toolkit._hooks.background_tasks",
-    "agent_toolkit._hooks.stop_session",
-    "agent_toolkit._plan.locations",
-    "agent_toolkit._plan.owner_records",
-    "agent_toolkit._plan.path_kinds",
-}
-
 import os
 import pathlib
 
-from agent_toolkit._common.process_loop_session import is_process_loop_session
-from agent_toolkit._common.session_state import read_state, update_state
-from agent_toolkit._hooks.agent_id import is_main_agent_context
-from agent_toolkit._hooks.background_tasks import is_pending_async_work
 from agent_toolkit._hooks.notice import _WARN_TAG, set_warning_session_id
 from agent_toolkit._hooks.notice import formatter as _notice_formatter
-from agent_toolkit._hooks.stop_session import append_stop_log
-from agent_toolkit._hooks.stop_session import parse_stop_session as _parse_stop_session
-from agent_toolkit._plan.locations import working_plans_root
-from agent_toolkit._plan.owner_records import read_owner_session_id
-from agent_toolkit._plan.path_kinds import is_plan_main_file
+
+# 関数の実行時にだけ使う依存は、使用時まで読み込まない。
+lazy from agent_toolkit._common.process_loop_session import is_process_loop_session
+lazy from agent_toolkit._common.session_state import read_state, update_state
+lazy from agent_toolkit._hooks.agent_id import is_main_agent_context
+lazy from agent_toolkit._hooks.background_tasks import is_pending_async_work
+lazy from agent_toolkit._hooks.stop_session import append_stop_log
+lazy from agent_toolkit._hooks.stop_session import parse_stop_session as _parse_stop_session
+lazy from agent_toolkit._plan.locations import working_plans_root
+lazy from agent_toolkit._plan.owner_records import read_owner_session_id
+lazy from agent_toolkit._plan.path_kinds import is_plan_main_file
 
 _HOOK_ID = "plan_save_advisor"
 _NOTIFIED_STATE_KEY = "working_plan_save_notified"

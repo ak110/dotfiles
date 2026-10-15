@@ -855,7 +855,7 @@ class TestManifestCheck:
         assert result.returncode == 0
         assert "pyproject.toml" in _additional_context(result)
         assert "uv add" in _additional_context(result)
-        # 編集警告はstderrではなくadditionalContextへ集約する。
+        # 編集警告はadditionalContextへ集約し、stderrは空のままとする。
         assert result.stderr == ""
 
     def test_pyproject_toml_tool_section_edit_is_silent(self):
@@ -1046,7 +1046,7 @@ class TestPlanModeSkillCallSites:
 
 
 class TestPlanFileDoesNotRequireTextlintRead:
-    """計画編集前の文章lint資料読了条件が撤去済みであることを検証する。
+    """計画を編集する前に文章lintの資料を読み終えることを求めた条件が撤去済みであることを検証する。
 
     `permission_mode`の値に依らず、新旧計画root配下の`*.md`に対する
     Write/Edit/MultiEditのみが警告対象となる。plan file以外の操作は
@@ -1296,7 +1296,7 @@ class TestResponseLanguageCheck:
 
 
 class TestWarnJsonAndLanguageWarningComposition:
-    """warn系checkのJSONへ言語警告が末尾合成される契約を検証する。"""
+    """言語警告をwarn系checkのJSONの`additionalContext`の末尾へ結合する契約を検証する。"""
 
     def test_language_warning_appended_to_warn_json(self, tmp_path: pathlib.Path) -> None:
         transcript = tmp_path / "transcript.jsonl"

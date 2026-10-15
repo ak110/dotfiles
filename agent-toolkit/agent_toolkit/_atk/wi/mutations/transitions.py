@@ -235,7 +235,7 @@ def _validate_transition_targets(
         ]
         if non_awi:
             raise WebInputError(
-                f"--`cooldown-days`はAWI専用です: {', '.join(non_awi)}",
+                f"`--cooldown-days`はAWI専用です: {', '.join(non_awi)}",
                 next_action="--cooldown-daysの対象からAWI以外の項目を外して再実行する",
             )
     if action == "remove" and not force:
@@ -363,7 +363,7 @@ def transition_entries(
 
     `action="remove"`では`actor_is_agent`が真の場合にinboxとholdだけを対象とする。
     `action="hold"`では`actor_is_agent`が真で`state`を省いた場合、processingの項目を保留せず`WebInputError`を送出する。
-    偽の場合は全状態を対象とし、`force=False`の場合（省略時もFalse）、processing状態のファイルが
+    `actor_is_agent`が偽の場合は全状態を対象とし、`force=False`の場合（省略時もFalse）、processing状態のファイルが
     対象に含まれるとexit 2で拒否する（`atk wi rm`で--forceを省略した場合の保護。処理中ファイルの
     意図しない削除を防ぐ。解除するには`force=True`を渡す）。
     """

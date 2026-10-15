@@ -1,4 +1,4 @@
-"""公開本文読取で文字と改行を失わず、応答予算と継続位置を保つ。"""
+"""公開CLIの本文読取が文字と改行を失わず、応答の予算と継続位置を保つことを検証する。"""
 
 import json
 import pathlib
@@ -73,7 +73,7 @@ def test_larger_budget_reduces_cli_invocations_without_losing_text(
 def test_budget_must_fit_a_complete_progressing_response(
     text: str, budget: int, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """位置だけの停滞応答と自動保存への循環を、公開境界で拒否する。"""
+    """本文を進められず位置だけを返す予算と、返却が自動保存の対象になる予算を、公開CLIで拒否する。"""
     path = tmp_path / "input.txt"
     path.write_bytes(text.encode("utf-8"))
     with pytest.raises(SystemExit, match="2"):

@@ -1,5 +1,5 @@
 # /// script
-# requires-python = ">=3.10"
+# requires-python = ">=3.15"
 # dependencies = []
 # ///
 """`atk serve`のセッション画面が使うリモートホスト側ヘルパー。
@@ -166,7 +166,7 @@ def _is_safe_record_path(raw: str) -> bool:
     for root in (host_homes.claude_config_dir() / "projects", host_homes.codex_home() / "sessions"):
         try:
             target.relative_to(root.resolve())
-        except (ValueError, OSError):
+        except ValueError, OSError:
             continue
         return True
     return False

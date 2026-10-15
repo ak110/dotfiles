@@ -10,6 +10,8 @@ description: >
 
 一時ファイルの置き場所と、managed-tempの中へ個別のディレクトリを作成する例外用途を定める。
 
+領域の作成と回収には、対象のファイルを操作できるホストと`atk`が必要である。これらが無い環境では、保存する内容と保存先に求める条件を整理した原稿を返し、実際の保存と回収はClaude CodeまたはCodexで行う。[文章の品質基準](references/quality-standards.md)はこのスキルフォルダー内で読める。
+
 ## セッションのmanaged-temp
 
 SessionStartはセッションごとにmanaged-tempの中へ専用のディレクトリ（セッションのmanaged-temp）を作成し、その絶対パスを文脈へ通知する。
@@ -30,11 +32,11 @@ Git worktreeなど`.git`を含む領域を置く場合: 作成する。
 </例>
 
 7日の自動削除は`.git`を含む領域を削除しないため、作成した工程が不要になった時点で`atk managed-temp cleanup --path <絶対パス>`で回収する。
-process-wiのレーンworktreeはmanaged-tempではなく対象リポジトリの主作業ツリーの`.claude/worktrees/process-wi-<レーン識別子>`へ`atk lane create`が作成し、worktree・branch・所有sessionと対応付けて登録する。統合後も追加に備えて保持し、全工程と外部プロセスの終了後に`atk lane delete`（通常終了とprocess-loopの子終了後も同じく回収する）が固有撤去・worktree・branch・旧配置の登録が持つ個別領域の順で回収する。メインは所有資源を手書きで再登録しない。未統合・dirty・稼働中・不明・部分失敗の資源は登録と成果を保持する。登録と回収結果への参照は専用資源の外へ置き、回収結果は通常の7日保持へ委ねる。次回開始時は`atk lane delete --list`で残存理由と再開する操作を読む。
+process-wiのレーンworktreeは対象リポジトリの主作業ツリーの`.claude/worktrees/process-wi-<レーン識別子>`へ`atk lane create`が作成し、worktree・branch・所有sessionと対応付けて登録する。統合後も追加に備えて保持し、全工程と外部プロセスの終了後に`atk lane delete`が回収する。回収の順序は、対象リポジトリが`atk lane create --commands-file`へ渡したdeleteのコマンド、worktree、branch、以前の配置でworktreeを収めていた個別managed-tempである。通常終了の`atk agents-exit-session`と、process-loopが子セッションの終了後に行う処理が同じ回収を呼び出す。メインは所有資源を手書きで再登録しない。未統合・dirty・稼働中・不明・部分失敗の資源は登録と成果を保持する。登録と回収結果への参照は、回収対象のworktree・branch・個別managed-tempとは別の状態ディレクトリへ置き、回収結果は通常の7日保持へ委ねる。次回開始時は`atk lane delete --list`で残存理由と再開する操作を読む。
 `.git`を含む領域へ置くのは作業ツリーとそれとともに捨ててよいものに限る。完成条件証拠、検証記録、引き継ぎ記録または完了報告が参照する保存物（検証の出力、手動観測の記録など）と、委譲先へ指定する保存先は、委譲元か委譲先のセッションのmanaged-tempにする。こうしておけば回収時に中身を確かめずに捨てられる。
 個別の領域には対応するAWIを`--awi <ファイル名>`で記録できる。
 
 ## 設定領域を変更する前の一時バックアップ
 
-版管理または自動同期が有効な設定領域（etckeeperが管理する`/etc`など）を変更する場合は、変更前の版をその領域のローカル履歴から取り出せるならそれをバックアップに使う。別の複製が要る場合は領域の内側ではなくmanaged-tempへ置く。
+版管理または自動同期が有効な設定領域（etckeeperが管理する`/etc`など）を変更する場合は、変更前の版をその領域のローカル履歴から取り出せるならそれをバックアップに使う。別の複製が要る場合はmanaged-tempへ置く。
 領域内へ置いたファイルは自動commitで履歴へ入り、後で削除してもローカル履歴と送出済みの外部履歴に残る。ローカルの自動commitと外部への送出をそれぞれ確かめ、変更後は両方に作業用ファイルが含まれていないことを確かめる。

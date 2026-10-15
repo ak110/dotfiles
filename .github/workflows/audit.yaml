@@ -47,7 +47,7 @@ jobs:
         # この定期ジョブだけで有効化するため、一時グローバル設定をPYFLTR_GLOBAL_CONFIGで読ませる。
         # load_configはproject未指定キーにglobal値を残すため、uv-auditがtrueになる。
         # severity未指定（error）で、脆弱性検出時はexit 1を返す。
-        # 本リポはPython専用でpackage.jsonを持たないため、auditグループ全体ではなくuv-audit単独を指定する。
+        # 本リポはPython専用でpackage.jsonを持たないため、auditグループのうちuv-audit単独を指定する。
         # SARIF出力をファイルへ保存し、後続ステップでCode Scanningへアップロードする。
         run: |
           set -euo pipefail
@@ -62,6 +62,7 @@ jobs:
           if ! jq -e '.runs[] | select(.tool.driver.name == "uv-audit")' \
                "${RUNNER_TEMP}/audit.sarif" > /dev/null 2>&1; then
             echo "::error::uv-audit が実行されませんでした（SARIFにuv-auditのrunが含まれていません）。"
+            echo "次の操作: このステップのエラーと監査設定を確認し、修正後にAuditワークフローを再実行してください。"
             exit 1
           fi
           # pyfltrは全失敗をexit 1に正規化するため、終了コードだけでは脆弱性検出と
@@ -72,10 +73,12 @@ jobs:
               # 脆弱性検出: SARIFをアップロードしCode Scanningに委ねる（次ステップ）。
               # ワークフローは成功扱いとする（Code Scanning側でアラートを管理するため）。
               echo "脆弱性が検出されました。Code Scanningへアップロードします。"
+              echo "次の操作: repositoryのSecurity > Code scanningで依存のアラートを確認し、修正版への更新を検討してください。"
             else
               # ツール異常: 空のSARIFをアップロードすると既存アラートが誤クローズされるため、
               # アップロードせずワークフローを失敗させる。
               echo "::error::uv-audit の実行に失敗しました（SARIFに検出結果がありません）。"
+              echo "次の操作: このステップのエラーとネットワーク接続を確認し、解消後にAuditワークフローを再実行してください。"
               exit 1
             fi
           fi

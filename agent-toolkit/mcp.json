@@ -18,11 +18,13 @@
       "command": "uv",
       "args": [
         "run",
-        "--project",
-        "${PLUGIN_ROOT}",
-        "--locked",
-        "--no-default-groups",
-        "${PLUGIN_ROOT}/agent_toolkit/agents_server_mcp.py"
+        "--no-config",
+        "--no-project",
+        "--python",
+        "3.15",
+        "python",
+        "${PLUGIN_ROOT}/scripts/launch.py",
+        "agent_toolkit/agents_server_mcp.py"
       ]
     }
   }

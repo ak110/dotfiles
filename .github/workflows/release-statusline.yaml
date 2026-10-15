@@ -47,6 +47,7 @@ jobs:
           } >> "$GITHUB_OUTPUT"
           if [ "$eligible" != "true" ]; then
             echo "対象repositoryのmasterへの成功したpush以外のため、リリースを省略する。"
+            echo "対応不要: リリース対象の条件を満たす次のCI成功時に検査する。"
           fi
 
   prepare:
@@ -63,11 +64,12 @@ jobs:
           ref: ${{ needs.gate.outputs.head_sha }}
           fetch-depth: 0
       - uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca # v5.1.1
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
       - name: statusline差分と版数を検査
         id: inspect
         env:
           CURRENT_SHA: ${{ needs.gate.outputs.head_sha }}
-        run: python3 scripts/check_statusline_version.py --release-prepare --github-output "$GITHUB_OUTPUT"
+        run: uv run --no-project --python 3.15 --script scripts/check_statusline_version.py --release-prepare --github-output "$GITHUB_OUTPUT"
 
   build:
     needs: [gate, prepare]
@@ -125,11 +127,12 @@ jobs:
         with:
           path: assets
           merge-multiple: true
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
       - name: 既存タグを検査
         id: tag-state
         env:
           CURRENT_SHA: ${{ needs.gate.outputs.head_sha }}
-        run: python3 scripts/check_statusline_version.py --release-tag-state --github-output "$GITHUB_OUTPUT"
+        run: uv run --no-project --python 3.15 --script scripts/check_statusline_version.py --release-tag-state --github-output "$GITHUB_OUTPUT"
       - name: タグとGitHub Releaseを公開
         env:
           TAG_EXISTS: ${{ steps.tag-state.outputs.tag_exists }}

@@ -28,12 +28,20 @@ def run() -> post_apply_outcome.PostApplyOutcome:
     """`agent-toolkit/rules/`をClaude CodeとCodexの配布先へ同期する。配布先の書き込みの失敗は失敗と数える。"""
     dotfiles_root = common.find_dotfiles_root()
     if dotfiles_root is None:
-        logger.info(log_format.format_status("agent-toolkit rules", "dotfiles ルートが見つからずスキップ"))
+        logger.info(
+            log_format.format_status(
+                "agent-toolkit rules",
+                "dotfiles ルートが見つからずスキップ。配布元が無いため対応不要",
+            ),
+        )
         return post_apply_outcome.PostApplyOutcome()
 
     src = dotfiles_root / RULES_RELATIVE
     if not src.is_dir():
-        return post_apply_outcome.PostApplyOutcome(failure=f"コピー元が存在しません: {src}")
+        return post_apply_outcome.PostApplyOutcome(
+            failure=f"コピー元が存在しません: {src}",
+            next_action="問題を解消した後に`update-dotfiles`を再実行する。",
+        )
 
     destinations = (
         claude_common.CLAUDE_HOME / "rules" / "agent-toolkit",

@@ -7,10 +7,12 @@ import json
 # pylint: disable=protected-access
 import os
 import pathlib
+import shlex
+import shutil
 import subprocess
 import sys
 import types
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable
 from types import SimpleNamespace
 from typing import Any
 
@@ -26,7 +28,7 @@ from agent_toolkit._agents_server import (
 )
 from agent_toolkit._agents_server import manager as server_manager
 from agent_toolkit._atk import config as _atk_config
-from agent_toolkit._common import session_registry, state_paths
+from agent_toolkit._common import plugin_environment, session_registry, state_paths
 from agent_toolkit._testing.agents_server_support import (
     AssistantMessage,
     BlockingContinuationClaudeClient,
@@ -124,7 +126,7 @@ def test_build_options_inherits_parent_settings(
     settings_kind: str,
     launch_kind: claude.LaunchKind,
 ) -> None:
-    """全起動で親の他項目を保ち、SDKへ付与する全envをsettingsへも優先して渡す。"""
+    """全起動区分で親のsettingsのenv以外の項目を保ち、SDKへ付与する全envを親のenvより優先する値としてsettingsにも書く。"""
     captured: dict[str, object] = {}
 
     class Options:
@@ -407,7 +409,7 @@ def test_only_assistant_messages_without_api_error_count_as_model_output() -> No
 
 
 def test_api_error_does_not_advance_activity() -> None:
-    """API失敗の再試行はモデル活動でなく、正常メッセージで失敗記録が消える。"""
+    """API失敗の再試行はモデル活動に数えず、正常メッセージで失敗記録が消える。"""
     session = state.SessionState("session-1", "/tmp")
     session.updated_at = "2000-01-01T00:00:00+00:00"
     failure = types.SimpleNamespace(
@@ -436,7 +438,7 @@ def test_api_error_does_not_advance_activity() -> None:
 
 
 def test_initialization_diagnostic_identifies_received_messages() -> None:
-    """初期化診断は受信メッセージを種別だけでなく内容で識別できる形で保持する。"""
+    """初期化診断は受信メッセージを種別と内容で識別できる形で保持する。"""
     diagnostic = claude._InitializationDiagnostic()  # pylint: disable=protected-access
 
     diagnostic.record_message(types.SimpleNamespace(subtype="SessionStart"))
@@ -544,7 +546,7 @@ async def test_claude_command_classification_uses_state_when_dequeued(tmp_path: 
 @pytest.mark.usefixtures("agents_server_isolation")
 @pytest.mark.asyncio
 async def test_claude_message_stream_failure_resolves_retrieved_command(tmp_path: pathlib.Path) -> None:
-    """message stream例外と同じ待機バッチの継続要求を所有タスク終了で解決する。"""
+    """message streamの例外と同じ待機バッチに入った継続要求を、所有タスクの終了として解決する。"""
     client = SynchronizedFailingClaudeClient()
     manager = claude.ClaudeServerManager(client_factory=lambda _options: client)
     try:
@@ -563,7 +565,7 @@ async def test_claude_message_stream_failure_resolves_retrieved_command(tmp_path
 @pytest.mark.usefixtures("agents_server_isolation")
 @pytest.mark.asyncio
 async def test_claude_owner_cancellation_resolves_active_command(tmp_path: pathlib.Path) -> None:
-    """所有タスク取り消し時に処理中の継続要求を所有タスク終了で解決する。"""
+    """所有タスクを取り消したときに処理中の継続要求を、所有タスクの終了として解決する。"""
     client = BlockingContinuationClaudeClient()
     manager = claude.ClaudeServerManager(client_factory=lambda _options: client)
     session = await manager.start("調査", str(tmp_path))
@@ -608,12 +610,17 @@ async def test_claude_options_use_claude_code_preset(tmp_path: pathlib.Path, mon
     assert options.system_prompt == {
         "type": "preset",
         "preset": "claude_code",
-        "append": f"{launch_prompts.CLAUDE_DELEGATE_SYSTEM_PROMPT}\n{launch_prompts.AUTO_RESUME_NOTICE}",
+        "append": (
+            f"{launch_prompts.CLAUDE_DELEGATE_SYSTEM_PROMPT}\n{launch_prompts.AUTO_RESUME_NOTICE}\n"
+            f"{launch_prompts.cli_runtime_instructions(claude.plugin_roots.SERVER_PLUGIN_ROOT)}"
+        ),
     }
     assert options.setting_sources == ["user", "project"]
     assert options.permission_mode == "auto"
     assert options.env == {
         "AGENT_TOOLKIT_DELEGATED_SESSION": "1",
+        "PATH": str(claude.plugin_roots.SERVER_PLUGIN_ROOT / "scripts") + os.pathsep + os.environ["PATH"],
+        plugin_environment.RUNTIME_DATA_ENV: str(plugin_environment.runtime_data(os.environ)),
         "CLAUDE_CODE_EMIT_SESSION_STATE_EVENTS": "1",
         "AGENT_TOOLKIT_OWNER_SESSION": "owner-session",
         "CLAUDE_CODE_SUBAGENT_PROMPT_CACHE_TTL": "1h",
@@ -625,6 +632,104 @@ def test_claude_options_accept_saved_session_id(tmp_path: pathlib.Path) -> None:
     """Claude SDK optionsへ保存済みsession IDをresumeとして渡す。"""
     options = claude._build_options(str(tmp_path), "model", "high", "claude-saved")
     assert options.resume == "claude-saved"
+
+
+@pytest.mark.parametrize("launch_kind", ["delegate", "explore", "shell", "write"])
+@pytest.mark.skipif(os.name == "nt", reason="POSIXの実ラッパー起動はPOSIXホストで検証する")
+@pytest.mark.asyncio
+@pytest.mark.usefixtures("agents_server_isolation")
+async def test_sdk_start_and_resume_deliver_executable_cli_without_old_path(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    launch_kind: state.LaunchKind,
+    host_environ: Callable[[], dict[str, str]],
+) -> None:
+    """SDKへ届くCLI案内とPATHが同じ配布物を選び、呼び出し元の環境と所有者を保つ。
+
+    SDKの外部モデルは代替し、実ラッパーとscripts/launch.pyを経たuvで引数・環境と終了コードを観測する。
+    依存導入とWindowsラッパーの実行は、この試験の観測範囲に含めない。
+    """
+    bash = shutil.which("bash", path=host_environ()["PATH"])
+    assert bash is not None
+    tools = tmp_path / "user tools"
+    tools.mkdir()
+    uv = tools / "uv"
+    uv.write_text(
+        f"#!{sys.executable}\n"
+        "import json, os, sys\n"
+        "if sys.argv[1:4] == ['run', '--no-config', '--no-project']:\n"
+        "    os.execv(sys.executable, [sys.executable, '-B', *sys.argv[7:]])\n"
+        "print(json.dumps({'args': sys.argv[1:], 'path': os.environ['PATH'], "
+        "'data': os.environ['AGENT_TOOLKIT_RUNTIME_DATA'], "
+        "'environment': os.environ['UV_PROJECT_ENVIRONMENT'], "
+        "'runtime': os.environ['AGENT_TOOLKIT_RUNTIME_ENVIRONMENT']}))\n"
+        "print('uv-observed', file=sys.stderr)\n"
+        "sys.exit(7)\n",
+        encoding="utf-8",
+    )
+    uv.chmod(0o755)
+    original_path = os.pathsep.join((str(tools), str(pathlib.Path(bash).parent), "/usr/bin", "/bin"))
+    data = tmp_path / "plugin data"
+    monkeypatch.setenv("PATH", original_path)
+    monkeypatch.setenv(plugin_environment.RUNTIME_DATA_ENV, str(data))
+    monkeypatch.setattr(claude, "_parent_settings", lambda: None)
+    options_seen: list[Any] = []
+
+    def factory(options: Any) -> FakeClaudeClient:
+        options_seen.append(options)
+        return FakeClaudeClient([[SystemMessage("cli-session"), ResultMessage("完了")]])
+
+    manager = claude.ClaudeServerManager(client_factory=factory, root_session_id="explicit-owner")
+    try:
+        await manager.start("開始", str(tmp_path), launch_kind=launch_kind)
+        await manager.resume("cli-session", state.ResumePrompt("再開"), str(tmp_path), launch_kind=launch_kind)
+    finally:
+        await manager.close()
+    assert len(options_seen) == 2
+    root = claude.plugin_roots.SERVER_PLUGIN_ROOT
+    for options in options_seen:
+        assert options.resume in {None, "cli-session"}
+        assert options.plugins == [{"type": "local", "path": str(root)}]
+        assert options.env["AGENT_TOOLKIT_OWNER_SESSION"] == "explicit-owner"
+        assert options.env["AGENT_TOOLKIT_DELEGATED_SESSION"] == "1"
+        assert options.env["PATH"].split(os.pathsep) == [str(root / "scripts"), *original_path.split(os.pathsep)]
+        assert options.env[plugin_environment.RUNTIME_DATA_ENV] == str(data)
+        assert options.permission_mode == "auto"
+        prompt = options.system_prompt if isinstance(options.system_prompt, str) else options.system_prompt["append"]
+        command = next(line.removeprefix("起動部分: ") for line in prompt.splitlines() if line.startswith("起動部分: "))
+        assert shlex.split(command) == [str(root / "scripts" / "atk")]
+        environment = {**host_environ(), **options.env}
+        assert shutil.which("atk", path=environment["PATH"]) == str(root / "scripts" / "atk")
+        result = subprocess.run(
+            [bash, "-c", command + " --help"],
+            env=environment,
+            cwd=tmp_path,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            timeout=10,
+            check=False,
+        )
+        assert result.returncode == 7, result.stderr
+        observed = json.loads(result.stdout)
+        assert observed["args"] == [
+            "run",
+            "--project",
+            str(root),
+            "--locked",
+            "--no-default-groups",
+            str(root / "agent_toolkit" / "atk.py"),
+            "--help",
+        ]
+        assert observed["data"] == str(data)
+        selected_environment = pathlib.Path(observed["environment"])
+        assert selected_environment.parent == data / "environments"
+        assert not selected_environment.is_relative_to(root)
+        assert observed["runtime"] == str(selected_environment)
+        assert not selected_environment.exists()
+        assert observed["path"] == environment["PATH"]
+        assert result.stderr == "uv-observed\n"
+    assert os.environ["PATH"] == original_path
 
 
 @pytest.mark.parametrize("session_id", [None, "saved-session"])
@@ -641,6 +746,18 @@ def test_explore_options_keep_read_tools_and_no_inherited_mcp_on_resume(tmp_path
     assert launch_prompts.python_runtime_instructions() in options.system_prompt
 
 
+def _lightweight_environment() -> dict[str, str]:
+    """軽量起動の委譲先へ渡す、保持済みrootのCLIとデータ領域を含む環境を返す。"""
+    return {
+        "AGENT_TOOLKIT_DELEGATED_SESSION": "1",
+        "PATH": str(claude.plugin_roots.SERVER_PLUGIN_ROOT / "scripts") + os.pathsep + os.environ["PATH"],
+        plugin_environment.RUNTIME_DATA_ENV: str(plugin_environment.runtime_data(os.environ)),
+        "CLAUDE_CODE_EMIT_SESSION_STATE_EVENTS": "1",
+        "CLAUDE_CODE_DISABLE_AUTO_MEMORY": "1",
+        "CLAUDE_CODE_PROMPT_CACHE_TTL": "5m",
+    }
+
+
 @pytest.mark.usefixtures("agents_server_isolation")
 @pytest.mark.usefixtures("_owner_session_environment")
 def test_claude_explore_options_reduce_instruction_sources_and_keep_tools(tmp_path: pathlib.Path) -> None:
@@ -651,15 +768,11 @@ def test_claude_explore_options_reduce_instruction_sources_and_keep_tools(tmp_pa
     options = claude._build_options(str(tmp_path), "model", "high", launch_kind="explore")
     assert options.setting_sources == ["user"]
     assert options.skills == []
-    assert options.env == {
-        "AGENT_TOOLKIT_DELEGATED_SESSION": "1",
-        "CLAUDE_CODE_EMIT_SESSION_STATE_EVENTS": "1",
-        "CLAUDE_CODE_DISABLE_AUTO_MEMORY": "1",
-        "CLAUDE_CODE_PROMPT_CACHE_TTL": "5m",
-    }
+    assert options.env == _lightweight_environment()
     assert options.system_prompt == (
         f"{launch_prompts.EXPLORE_SYSTEM_PROMPT}\n{launch_prompts.AUTO_RESUME_NOTICE}\n"
-        f"{launch_prompts.python_runtime_instructions()}"
+        f"{launch_prompts.python_runtime_instructions()}\n"
+        f"{launch_prompts.cli_runtime_instructions(claude.plugin_roots.SERVER_PLUGIN_ROOT)}"
     )
     assert options.tools == ["Read", "Glob", "Grep"]
     assert set(options.allowed_tools) == {"Read", "Glob", "Grep"}
@@ -676,7 +789,8 @@ def test_claude_write_options_limit_lightweight_session_to_file_edits(tmp_path: 
     assert options.skills == []
     assert options.system_prompt == (
         f"{launch_prompts.WRITE_SYSTEM_PROMPT}\n{launch_prompts.AUTO_RESUME_NOTICE}\n"
-        f"{launch_prompts.python_runtime_instructions()}"
+        f"{launch_prompts.python_runtime_instructions()}\n"
+        f"{launch_prompts.cli_runtime_instructions(claude.plugin_roots.SERVER_PLUGIN_ROOT)}"
     )
     assert set(options.allowed_tools) == {"Read", "Glob", "Grep", "Write", "Edit"}
 
@@ -688,15 +802,11 @@ def test_claude_shell_options_share_lightweight_launch_with_command_tools(tmp_pa
     options = claude._build_options(str(tmp_path), "model", "high", launch_kind="shell")
     assert options.setting_sources == ["user"]
     assert options.skills == []
-    assert options.env == {
-        "AGENT_TOOLKIT_DELEGATED_SESSION": "1",
-        "CLAUDE_CODE_EMIT_SESSION_STATE_EVENTS": "1",
-        "CLAUDE_CODE_DISABLE_AUTO_MEMORY": "1",
-        "CLAUDE_CODE_PROMPT_CACHE_TTL": "5m",
-    }
+    assert options.env == _lightweight_environment()
     assert options.system_prompt == (
         f"{launch_prompts.SHELL_SYSTEM_PROMPT}\n{launch_prompts.AUTO_RESUME_NOTICE}\n"
-        f"{launch_prompts.python_runtime_instructions()}"
+        f"{launch_prompts.python_runtime_instructions()}\n"
+        f"{launch_prompts.cli_runtime_instructions(claude.plugin_roots.SERVER_PLUGIN_ROOT)}"
     )
     assert set(options.allowed_tools) == {"Bash", "Read"}
 
@@ -747,7 +857,7 @@ async def test_claude_start_records_owner_and_cli_processes(monkeypatch: pytest.
 @pytest.mark.usefixtures("agents_server_isolation")
 @pytest.mark.asyncio
 async def test_claude_start_result_wait_and_reply(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
-    """Claude init・結果受信・終端後replyを1長命タスクで処理する。"""
+    """Claudeのinit、結果の受信、終端後のreplyを1つの長命タスクで処理する。"""
     client = FakeClaudeClient(
         [
             [SystemMessage("claude-session"), AssistantMessage("途中経過"), ResultMessage("Claude結果")],
@@ -919,7 +1029,7 @@ async def test_claude_task_exception_disconnects_and_retains_failure(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> None:
-    """message task例外時に切断し、failed結果を共有sessionへ保持する。"""
+    """message taskの例外時に切断し、failedの結果を共有sessionへ保持する。"""
     client = FailingClaudeClient([])
     sessions: dict[str, state.SessionState] = {}
     manager = claude.ClaudeServerManager(sessions, client_factory=lambda _options: client)
@@ -1041,7 +1151,7 @@ async def test_claude_server_close_disconnects_and_retains_result(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> None:
-    """サーバー終了時にSDKを切断し、取得済み結果recordは保持する。"""
+    """サーバー終了時にSDKを切断し、取得済みの結果recordは保持する。"""
     client = FakeClaudeClient([[SystemMessage("claude-close"), ResultMessage("完了")]])
     sessions: dict[str, state.SessionState] = {}
     backend = claude.ClaudeServerManager(sessions, client_factory=lambda _options: client)
@@ -1111,7 +1221,7 @@ async def test_claude_finished_task_send_message_omits_previous_result_after_wai
 async def test_claude_reply_drains_old_events_before_new_query(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, old_events: str, prompt: str
 ) -> None:
-    """共通SDK受信列の旧イベントを新指示の完了へ誤帰属させない。"""
+    """共通のSDK受信列に残った旧イベントを、新しい指示の完了として扱わない。"""
     client = QueueClaudeClient(
         [
             [SystemMessage("claude-queue"), AssistantMessage("初回"), ResultMessage("初回完了")],

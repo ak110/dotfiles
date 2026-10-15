@@ -1,20 +1,12 @@
 """Hook識別子を固定したLLM通知整形関数を生成する。"""
 
-# 関数の実行時までだけ使う依存を、Python 3.15では使用時まで読み込まない。旧Pythonでは通常のimportとなる。
-__lazy_modules__ = {
-    "agent_toolkit._common",
-    "agent_toolkit._common.session_state",
-    "agent_toolkit._hooks",
-    "collections.abc",
-    "inspect",
-}
+# 関数の実行時にだけ使う依存は、使用時まで読み込まない。
+lazy import inspect
+lazy from collections.abc import Callable
 
-import inspect
-from collections.abc import Callable
-
-from agent_toolkit._common import next_action as _next_action
-from agent_toolkit._common.session_state import increment_warn_notice_count as _increment_warn_notice_count
-from agent_toolkit._hooks import message_format as _message_format
+lazy from agent_toolkit._common import next_action as _next_action
+lazy from agent_toolkit._common.session_state import increment_warn_notice_count as _increment_warn_notice_count
+lazy from agent_toolkit._hooks import message_format as _message_format
 
 _WARN_REPEAT_THRESHOLD = 2
 _WARN_TAG = "warn"
@@ -29,7 +21,7 @@ def set_warning_session_id(session_id: str) -> None:
 
 
 def consume_warning_blocks() -> list[str]:
-    """反復した除去可能warnから生成したblock通知を取り出す。"""
+    """除去可能な原因のwarnが反復して生成されたblock通知を取り出す。"""
     blocks = _warning_context.get("blocks")
     _warning_context["blocks"] = []
     return list(blocks) if isinstance(blocks, list) else []

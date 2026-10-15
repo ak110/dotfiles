@@ -6,9 +6,6 @@ Linux Remote SSHではMachine scope（`~/.vscode-server/data/Machine/settings.js
 マージする。
 """
 
-# 他の処理では不要な依存を、使用時まで遅延する。旧Pythonでは通常のimportとなる。
-__lazy_modules__ = {"pytilpack.jsonc"}
-
 import collections.abc
 import copy
 import hashlib
@@ -18,7 +15,8 @@ import platform
 import socket
 from pathlib import Path
 
-import pytilpack.jsonc
+# 他の処理で使わない依存は、使用時まで読み込まない。
+lazy import pytilpack.jsonc
 
 from pytools._internal import common, log_format, post_apply_outcome
 
@@ -59,7 +57,7 @@ def run(
     win = _IS_WINDOWS if is_windows is None else is_windows
     settings_path = _settings_path(is_windows=win, home=home, environ=environ)
     if settings_path is None:
-        logger.info(log_format.format_status("vscode", "VSCode未検出のためスキップ"))
+        logger.info(log_format.format_status("vscode", "VSCode未検出のためスキップ。未導入のため対応不要"))
         return post_apply_outcome.PostApplyOutcome()
     # Windows は User scope、Linux は Machine scope という使い分けを前提に、
     # scope ごとに managed の内容と削除対象のレガシーキーを切り替える。
@@ -67,7 +65,10 @@ def run(
     legacy_keys: tuple[str, ...] = () if win else _LEGACY_KEYS_FOR_MACHINE_SCOPE
     changed = _apply(managed, settings_path, legacy_keys=legacy_keys)
     if changed is None:
-        return post_apply_outcome.PostApplyOutcome(failure=f"{log_format.home_short(settings_path)} の書き込みに失敗")
+        return post_apply_outcome.PostApplyOutcome(
+            failure=f"{log_format.home_short(settings_path)} の書き込みに失敗",
+            next_action="問題を解消した後に`update-dotfiles`を再実行する。",
+        )
     return post_apply_outcome.PostApplyOutcome(changed=changed)
 
 

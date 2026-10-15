@@ -86,7 +86,11 @@ def test_existing_tag_for_new_version_fails(repo: pathlib.Path) -> None:
     _git(repo, "push", "origin", "statusline-v0.1.1")
     _write(repo, "rust/claude-statusline/Cargo.toml", _MANIFEST_TEMPLATE.format(version="0.1.1"))
 
-    assert _check(repo) == "statuslineの版数に対応する既存タグがある: statusline-v0.1.1"
+    assert _check(repo) == (
+        "statuslineの版数に対応する既存タグがある: statusline-v0.1.1。"
+        "rust/claude-statusline/Cargo.tomlのversionを未公開の版へ上げ、"
+        "同ディレクトリでcargo checkを実行してCargo.lockを更新してから再検査してください。"
+    )
 
 
 def test_cargo_metadata_failure_is_not_treated_as_success(repo: pathlib.Path) -> None:
@@ -140,7 +144,12 @@ def test_release_prepare_compares_with_first_parent(repo: pathlib.Path, change: 
     ("tag_on_head", "expected_failure"),
     [
         pytest.param(True, None, id="same-commit"),
-        pytest.param(False, "既存タグが別のcommitを指している: statusline-v0.1.1", id="other-commit"),
+        pytest.param(
+            False,
+            "既存タグが別のcommitを指している: statusline-v0.1.1。タグを上書きせず、"
+            "git ls-remote originと公開対象commitの情報を添えてリリース担当者へ報告してください。",
+            id="other-commit",
+        ),
     ],
 )
 def test_release_modes_accept_only_tag_on_current_commit(
@@ -165,6 +174,40 @@ def test_release_tag_state_reports_missing_tag(repo: pathlib.Path) -> None:
     head = subprocess.run(["git", "rev-parse", "HEAD"], cwd=repo, check=True, capture_output=True, text=True).stdout.strip()
 
     assert check_statusline_version.release_tag_state(repo, head) == (None, {"tag_exists": "false"})
+
+
+def test_release_tag_on_non_commit_object_is_a_precondition_failure(
+    repo: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """commit以外を指すタグを不在として通さず、両方のリリース入口と`main`の終了2へ伝える。"""
+    _write(repo, "rust/claude-statusline/Cargo.toml", _MANIFEST_TEMPLATE.format(version="0.1.1"))
+    head = _commit(repo, "bump")
+    tree = subprocess.run(["git", "write-tree"], cwd=repo, check=True, capture_output=True, text=True).stdout.strip()
+    _push_tag(repo, "statusline-v0.1.1", tree)
+
+    with pytest.raises(check_statusline_version.CheckError, match="タグstatusline-v0.1.1の照会"):
+        check_statusline_version.release_prepare(repo, head, metadata_command=["true"])
+    with pytest.raises(check_statusline_version.CheckError, match="タグstatusline-v0.1.1の照会"):
+        check_statusline_version.release_tag_state(repo, head)
+    monkeypatch.chdir(repo)
+    monkeypatch.setenv("CURRENT_SHA", head)
+    assert check_statusline_version.main(["--release-tag-state", "--github-output", str(repo.parent / "out")]) == 2
+    assert "タグstatusline-v0.1.1の照会" in capsys.readouterr().err
+
+
+def test_release_tag_lookup_failure_is_not_treated_as_missing_tag(repo: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """タグ照会がGitの障害で失敗した場合は、タグ不在として扱わず前提の失敗とする。"""
+    head = subprocess.run(["git", "rev-parse", "HEAD"], cwd=repo, check=True, capture_output=True, text=True).stdout.strip()
+    original = check_statusline_version._git  # pylint: disable=protected-access
+
+    def _failing_lookup(repo_root: pathlib.Path, *args: str) -> subprocess.CompletedProcess[str]:
+        if args[:3] == ("rev-parse", "--verify", "--quiet"):
+            return subprocess.CompletedProcess(["git", *args], 128, "", "fatal: couldn't read .git/packed-refs")
+        return original(repo_root, *args)
+
+    monkeypatch.setattr(check_statusline_version, "_git", _failing_lookup)
+    with pytest.raises(check_statusline_version.CheckError, match="終了コード128"):
+        check_statusline_version.release_tag_state(repo, head)
 
 
 def test_release_main_appends_outputs_and_requires_current_sha(

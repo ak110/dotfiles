@@ -31,8 +31,10 @@ from session_evidence_bundle import (
     _bundle_events,
 )
 from session_evidence_catalog import (
+    CATALOG_PARENT_FIELDS,
     _catalog_events,
     _catalog_tool_call_events,
+    _CatalogSelection,
 )
 from session_evidence_context import (
     _context_at_events,
@@ -83,7 +85,7 @@ from agent_toolkit._agents_server import record_paths as _record_paths
 from agent_toolkit._common import host_homes as _host_homes
 from agent_toolkit._common import state_paths as _state_paths
 
-_CLAUDE_ONLY_NOTE = "集計の母集団はClaude Code形式の記録に限られ、Codex形式の記録からは件数が上がらない。"
+_CLAUDE_ONLY_NOTE = "集計の母集団はClaude Code形式の記録に限られ、Codex形式の記録は数えない。"
 
 
 _LOCAL_TIME_NOTE = "タイムゾーン（`Z`や`+09:00`など）を省いた値は実行ホストのローカルタイムゾーンの時刻として扱う。"
@@ -177,6 +179,18 @@ def _build_parser() -> argparse.ArgumentParser:
         metavar="DIR",
         help="指定したCodex履歴ディレクトリ内だけを走査し、比較用の親セッションカタログを返す。"
         "`--since`と`--observation-boundary`が必須。",
+    )
+    parser.add_argument("--catalog-workflow", metavar="NAME", help="カタログの親行をworkflowの完全一致で選ぶ。")
+    parser.add_argument(
+        "--catalog-known-workflow", action="store_true", help="カタログの親行をworkflowがunknownでないものに限る。"
+    )
+    parser.add_argument("--catalog-cwd-contains", metavar="TEXT", help="カタログの親行をcwdの部分文字列で選ぶ。")
+    parser.add_argument(
+        "--catalog-fields",
+        metavar="FIELD,FIELD",
+        help="カタログの親行の表示項目をASCIIカンマ区切りの指定順で返す。省略時は全項目。kindと走査要約は常に返す。"
+        "選択時の要約はselected_parent_countと走査したparent_record_countを区別する。選択できる項目: "
+        + ",".join(CATALOG_PARENT_FIELDS),
     )
     parser.add_argument(
         "--compaction-record-dir",
@@ -291,7 +305,7 @@ def _build_parser() -> argparse.ArgumentParser:
         "--user-event-at",
         metavar="RECORD:LINE",
         help="保存済み出力のrecord欄とline欄の値の組。末尾のコロンで区切り、record内のコロンは保持する。"
-        "一致する全イベントを入力順・全文で返す。lineは元記録の正の整数位置で、出力の物理行番号ではない。",
+        "一致する全イベントを入力順・全文で返す。lineは元記録の正の整数位置を指す。出力の物理行番号とは別の値である。",
     )
     parser.add_argument(
         "--since",
@@ -396,6 +410,27 @@ def main(argv: list[str] | None = None) -> int:
     catalog_runtime: _Runtime | None = (
         "claude" if args.catalog_claude_project else "codex" if args.catalog_codex_history else None
     )
+    catalog_selection = None
+    if (
+        args.catalog_workflow is not None
+        or args.catalog_known_workflow
+        or args.catalog_cwd_contains is not None
+        or args.catalog_fields is not None
+    ):
+        selection_next_action = (
+            "親行の選択は`--catalog-claude-project`か`--catalog-codex-history`と併用し、`--tool-calls`を外す。"
+            "`--catalog-fields`には重複なしの項目名を指定して再実行する: " + ",".join(CATALOG_PARENT_FIELDS)
+        )
+        if catalog_root is None or args.tool_calls:
+            return _print_error("親行の選択はカタログの親セッション一覧だけで使える", next_action=selection_next_action)
+        fields = tuple(args.catalog_fields.split(",")) if args.catalog_fields is not None else None
+        if fields is not None and (
+            len(set(fields)) != len(fields) or any(field not in CATALOG_PARENT_FIELDS for field in fields)
+        ):
+            return _print_error("--catalog-fieldsに未知、空または重複した項目がある", next_action=selection_next_action)
+        catalog_selection = _CatalogSelection(
+            args.catalog_workflow, args.catalog_known_workflow, args.catalog_cwd_contains, fields
+        )
     if catalog_root is not None and any(query_modes) and not args.tool_calls:
         return _print_error(
             "カタログ走査は`--tool-calls`以外の単一transcriptの照会モードと併用できない",
@@ -474,7 +509,7 @@ def main(argv: list[str] | None = None) -> int:
                 Path(catalog_root), catalog_runtime, since, catalog_boundary, args.tool, input_pattern
             )
         else:
-            events, exit_code = _catalog_events(Path(catalog_root), catalog_runtime, since, catalog_boundary)
+            events, exit_code = _catalog_events(Path(catalog_root), catalog_runtime, since, catalog_boundary, catalog_selection)
         _print_events(events)
         return exit_code
     if args.claude_session_id is not None:

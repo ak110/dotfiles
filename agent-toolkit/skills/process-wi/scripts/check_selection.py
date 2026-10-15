@@ -11,7 +11,7 @@
 - 未被覆: 反映先パスが`書込対象`の同じパスにも、`書込対象`のディレクトリ範囲の配下にも、`書き込まない反映先`にも無い。
   ただし同じ抽出結果に配下の別のパスを持つディレクトリ範囲（範囲説明）は、変更範囲を説明する記述として被覆を求めない。
   範囲説明を覆える区分は`書込対象`だけであり、被覆を求めると全レーンの`書込対象`が広い範囲で包含関係になり、
-  レーン間の重なりの判定が働かなくなるためである。範囲説明の配下の個別パスは従来どおり被覆を求める
+  レーン間の重なりの判定が働かなくなるためである。範囲説明の配下の個別パスには被覆を求める
 - 広すぎる範囲: `書込対象`のディレクトリ範囲の配下に反映先パスがあるのに、反映先がその範囲自身もそれを含む範囲も挙げていない
 - `書き込まない反映先`の不正: 反映先パスに無いパスを`書き込まない反映先`が含む
 - 区分間の重複: 3区分のうち複数が同じパスまたは包含関係にある範囲を持つ。
@@ -699,7 +699,7 @@ def _write_path_failure(
 
 
 def _check_public_write_rationales(items: list[dict[str, object]], costs: list[dict[str, object]]) -> list[Violation]:
-    """公開工程所有の各pathを、対象リポジトリ規範の節へ対応付けた根拠だけに限定する。"""
+    """公開工程所有の各pathについて、レーンの根拠がそのpathと対象リポジトリの規範・節を記していなければ違反として返す。"""
     rationales = {
         row[_selection.LANE_KEY]: row.get(_selection.RATIONALE_KEY, "")
         for row in costs
@@ -1136,7 +1136,7 @@ def _check_lane_overlaps(
 
 
 def _reachable(lane: str, target: str, dependencies: dict[str, set[str]]) -> bool:
-    """先行関係の直接・推移依存を循環しても停止する探索で判定する。"""
+    """`lane`から先行関係を直接または推移的にたどって`target`へ到達するかを返す。循環があっても探索は停止する。"""
     pending = list(dependencies.get(lane, ()))
     seen: set[str] = set()
     while pending:

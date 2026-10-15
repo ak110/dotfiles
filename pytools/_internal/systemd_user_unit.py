@@ -65,7 +65,12 @@ def setup(
             またはrestart後にサービスが常駐状態へ至らない場合に送出する。
     """
     if not executable_path.is_file():
-        logger.info(log_format.format_status(log_tag, f"実行ファイルが未配置: {executable_path}"))
+        logger.info(
+            log_format.format_status(
+                log_tag,
+                f"実行ファイルが未配置: {executable_path}。`update-dotfiles`を再実行して実行ファイルを配置する",
+            ),
+        )
         return False
     changed = _ensure_unit_content(unit_path, unit_content, log_tag)
     commands: list[tuple[list[str], float, str]] = []
@@ -105,10 +110,20 @@ def setup(
                     check=False,
                 )
             except (OSError, subprocess.SubprocessError) as error:
-                logger.warning(log_format.format_status(log_tag, f"再起動理由をjournalへ記録できません: {error}"))
+                logger.warning(
+                    log_format.format_status(
+                        log_tag,
+                        f"再起動理由をjournalへ記録できません: {error}。対応不要（再起動処理は継続した）",
+                    ),
+                )
             else:
                 if journal_result.returncode != 0:
-                    logger.warning(log_format.format_status(log_tag, "再起動理由をjournalへ記録できません"))
+                    logger.warning(
+                        log_format.format_status(
+                            log_tag,
+                            "再起動理由をjournalへ記録できません。対応不要（再起動処理は継続した）",
+                        ),
+                    )
         commands.append((["systemctl", "--user", "restart", service_name], 30.0, "restart"))
     # systemctlの失敗は後続の常駐確認を無意味にする（旧プロセスがactiveのまま残ると
     # NRestartsも変化せず成功と誤判定するため）。失敗した時点で例外を送出して打ち切る。
@@ -119,19 +134,7 @@ def setup(
             raise SetupError(f"{service_name}の{label}に失敗しました (exit {return_code})")
     if needs_restart:
         _wait_until_running(service_name=service_name, log_tag=log_tag)
-    user = getpass.getuser()
-    result = common.run_subprocess(["loginctl", "show-user", user, "--property=Linger"], timeout=15.0, tag=log_tag)
-    if result is None:
-        logger.warning(log_format.format_status(log_tag, "loginctlを実行できないためlinger状態を確認できません"))
-    elif result.returncode != 0:
-        logger.warning(log_format.format_status(log_tag, f"linger確認: 失敗 (exit {result.returncode})"))
-    elif "Linger=no" in result.stdout:
-        logger.info(
-            log_format.format_status(
-                log_tag,
-                f"linger 無効: ログアウト中も常駐させるには `sudo loginctl enable-linger {user}` を手動実行する",
-            )
-        )
+    _report_linger_status(log_tag)
     return True
 
 
@@ -157,7 +160,12 @@ def setup_timer(
         SetupError: systemctl呼び出しが失敗した場合、またはtimerがactiveでない場合に送出する。
     """
     if not executable_path.is_file():
-        logger.info(log_format.format_status(log_tag, f"実行ファイルが未配置: {executable_path}"))
+        logger.info(
+            log_format.format_status(
+                log_tag,
+                f"実行ファイルが未配置: {executable_path}。`update-dotfiles`を再実行して実行ファイルを配置する",
+            ),
+        )
         return False
 
     changed = False
@@ -199,21 +207,36 @@ def setup_timer(
     if active_state != "active":
         raise SetupError(f"{timer_name}が起動しません: ActiveState={active_state}")
     logger.info(log_format.format_status(log_tag, f"稼働確認: {timer_name}"))
+    _report_linger_status(log_tag)
+    return True
 
+
+def _report_linger_status(log_tag: str) -> None:
+    """lingerを照会し、確認できない場合と無効の場合の手動操作を案内する。"""
     user = getpass.getuser()
     result = common.run_subprocess(["loginctl", "show-user", user, "--property=Linger"], timeout=15.0, tag=log_tag)
     if result is None:
-        logger.warning(log_format.format_status(log_tag, "loginctlを実行できないためlinger状態を確認できません"))
+        logger.warning(
+            log_format.format_status(
+                log_tag,
+                "loginctlを実行できないためlinger状態を確認できません。"
+                f"`loginctl show-user {user} --property=Linger`を手動実行する",
+            ),
+        )
     elif result.returncode != 0:
-        logger.warning(log_format.format_status(log_tag, f"linger確認: 失敗 (exit {result.returncode})"))
+        logger.warning(
+            log_format.format_status(
+                log_tag,
+                f"linger確認: 失敗 (exit {result.returncode})。`loginctl show-user {user} --property=Linger`を手動実行する",
+            ),
+        )
     elif "Linger=no" in result.stdout:
         logger.info(
             log_format.format_status(
                 log_tag,
                 f"linger 無効: ログアウト中も常駐させるには `sudo loginctl enable-linger {user}` を手動実行する",
-            )
+            ),
         )
-    return True
 
 
 def _query_service(service_name: str, log_tag: str) -> tuple[str, str]:

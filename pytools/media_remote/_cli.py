@@ -1,8 +1,5 @@
 """コマンドライン引数解析とエントリポイント。"""
 
-# ヘルプや他の処理では不要な依存を、使用時まで遅延する。旧Pythonでは通常のimportとなる。
-__lazy_modules__ = {"hypercorn.asyncio", "hypercorn.config", "qrcode", "pytools.media_remote"}
-
 import argparse
 import asyncio
 import contextlib
@@ -14,13 +11,14 @@ import socket
 import sys
 from urllib.parse import quote
 
-import hypercorn.asyncio
-import hypercorn.config
-import qrcode
+# ヘルプや他の処理で使わない依存は、使用時まで読み込まない。
+lazy import hypercorn.asyncio
+lazy import hypercorn.config
+lazy import qrcode
 
 from pytools._internal import common
 from pytools._internal.cli import enable_completion
-from pytools.media_remote import _app, _token, _window_move
+lazy from pytools.media_remote import _app, _token, _window_move
 
 logger = logging.getLogger(__name__)
 
@@ -118,7 +116,13 @@ async def _serve(app: object, host: str, port: int) -> None:
 
 def _serve_command(args: argparse.Namespace) -> int:
     if sys.platform != "win32":
-        logger.error("serveサブコマンドはWindows専用です（現在: %s）", sys.platform)
+        logger.error(
+            (
+                "serveサブコマンドはWindows専用です（現在: %s）。"
+                "操作対象のWindowsでdotfiles-media-remote serveを実行してください。"
+            ),
+            sys.platform,
+        )
         return 1
     token_path = args.token_file if args.token_file is not None else _token.default_token_path()
     token = _token.load_or_create_token(token_path)
@@ -175,7 +179,9 @@ def _doctor_process() -> str:
     """PIDファイル経由でプロセス情報を取得するセクションを描画する。"""
     pid_path = default_pid_path()
     if not pid_path.is_file():
-        return f"{_section('process')}\nPIDファイル未存在: {pid_path}\n"
+        return (
+            f"{_section('process')}\nPIDファイル未存在: {pid_path}。Windowsでdotfiles-media-remote serveを起動してください。\n"
+        )
     pid_text = pid_path.read_text(encoding="utf-8").strip()
     script = (
         f'$p = Get-CimInstance Win32_Process -Filter "ProcessId={pid_text}" -ErrorAction SilentlyContinue; '
@@ -186,7 +192,7 @@ def _doctor_process() -> str:
     stdout, _ = _ps(script)
     body = stdout.strip()
     if not body or body == "NONE":
-        body = f"PID={pid_text} のプロセスが見つからない（未稼働）"
+        body = f"PID={pid_text} のプロセスが見つからない（未稼働）。Windowsでdotfiles-media-remote serveを起動してください。"
     return f"{_section('process')}\n{body}\n"
 
 
@@ -196,7 +202,7 @@ def _doctor_profile() -> tuple[str, bool]:
         'Get-NetConnectionProfile | ForEach-Object { [Console]::Out.WriteLine("$($_.InterfaceAlias): $($_.NetworkCategory)") }'
     )
     stdout, _ = _ps(script)
-    body = stdout.strip() or "（取得不可）"
+    body = stdout.strip() or ("（取得不可）。PowerShellでGet-NetConnectionProfileを実行してプロファイルを確認してください。")
     has_public = "Public" in body
     return f"{_section('profile')}\n{body}\n", has_public
 
@@ -252,7 +258,13 @@ def _doctor_recommendations(listening: bool, has_rule: bool, has_public: bool) -
 
 def _doctor_command(args: argparse.Namespace) -> int:
     if sys.platform != "win32":
-        logger.error("doctorサブコマンドはWindows専用です（現在: %s）", sys.platform)
+        logger.error(
+            (
+                "doctorサブコマンドはWindows専用です（現在: %s）。"
+                "操作対象のWindowsでdotfiles-media-remote doctorを実行してください。"
+            ),
+            sys.platform,
+        )
         return 1
     sections: list[str] = []
     listen_text, listening = _doctor_listen()

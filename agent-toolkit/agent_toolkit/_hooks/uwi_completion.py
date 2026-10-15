@@ -8,7 +8,7 @@ PostToolUseフックから毎回呼ばれる。セッション状態へ対象リ
 private-notesは複数のセッションが共有するため、回答済みUWIの通知は投入元のセッションへ限る。
 frontmatterの`submitter_session`がフック入力の`session_id`と一致するUWIと、キーを持たないUWIだけを通知する。
 キーを持たないUWIは本機能の導入前の投入分と、Codexのメインのように投入元を解決できない方法での投入分であり、
-通知しないと回答の反映契機を失うため通知側へ倒す。
+通知しないと回答の反映契機を失うため通知する。
 他のセッションが投入したUWIも回答済みファイル名の基準値へ記録し、後の観測で通知しない。
 
 `git pull`は実行しない。同一ホストのWeb UIおよびCLIからの回答はローカルファイルを
@@ -16,15 +16,13 @@ frontmatterの`submitter_session`がフック入力の`session_id`と一致す�
 実行されるまで観測できない。
 """
 
-# 関数の実行時までだけ使う依存を、Python 3.15では使用時まで読み込まない。旧Pythonでは通常のimportとなる。
-__lazy_modules__ = {"agent_toolkit._atk.wi", "agent_toolkit._common.session_state", "agent_toolkit._git", "subprocess"}
+# 関数の実行時にだけ使う依存は、使用時まで読み込まない。
+lazy import subprocess
 
-import subprocess
-
-from agent_toolkit._atk.wi import uwi_scan as _uwi_scan
-from agent_toolkit._common.session_state import update_state
-from agent_toolkit._git import remote as _git_remote
 from agent_toolkit._hooks.agent_id import MAIN_AGENT_ID
+lazy from agent_toolkit._atk.wi import uwi_scan as _uwi_scan
+lazy from agent_toolkit._common.session_state import update_state
+lazy from agent_toolkit._git import remote as _git_remote
 
 STATE_KEY_ANSWERED = "uwi_answered_by_repo"
 """エージェント別・対象リポジトリID別の回答済みUWIファイル名を保持する状態キー。
@@ -68,7 +66,7 @@ def resolve_target_repo(cwd: str) -> str | None:
     """
     try:
         url = _git_remote.origin_url(cwd, timeout=_GIT_TIMEOUT_SEC)
-    except (OSError, subprocess.SubprocessError):
+    except OSError, subprocess.SubprocessError:
         return None
     if url is None:
         return None
@@ -169,7 +167,7 @@ def build_notice(session_id: str, cwd: str, agent_id: str = MAIN_AGENT_ID) -> st
         f"リポジトリ{target_repo}に新たに回答されたUWIがある: {filenames}。"
         "反映の対象はこのセッション（委譲先を含む）が投入したUWIに限る。"
         "この通知に含まれる、このセッションが投入していないUWIは読まずに無視し、投入したprocess-wiの実行か次の実行の選定工程に任せる。"
-        "ユーザーがこのセッションへ回答を告げたUWIは通知ではなく明示指示であり、この限定の対象外とする。"
+        "ユーザーがこのセッションへ回答を告げたUWIは明示指示として扱い、この限定の対象外とする。"
         "`agent-toolkit:process-wi`の実行中でないセッションでは、セッションを終える前に"
         "`agent-toolkit:user-confirmation-and-report`を起動し、回答の反映から依存作業の再開までを完了する。"
         "`agent-toolkit:process-wi`の実行中は、処理中の主題を保留していたUWIの回答だけを同じセッションで反映し、"

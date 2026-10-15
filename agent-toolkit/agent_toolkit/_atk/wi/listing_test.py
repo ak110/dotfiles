@@ -194,7 +194,7 @@ class TestListSingle:
 
 
 class TestLegacyReservationMigration:
-    """通常読取前の旧予約移行と軽量読取での延期を検証する。"""
+    """通常の読取の前に旧予約を移行し、軽量な読取では移行を後の通常の読取へ回すことを検証する。"""
 
     @staticmethod
     def _write_legacy_main(
@@ -446,7 +446,7 @@ class TestLegacyReservationMigration:
 
 
 class TestListPlanImplementationClassification:
-    """独立キーを持つ`plan`区分の項目を未分類として分類委譲へ混入させない。"""
+    """トップレベルの`plan_file`を持つ項目を`plan`区分と表示し、未分類（`unclassified`）として表示しない。"""
 
     def test_missing_schedule_metadata_is_labeled_plan_implementation(
         self,
@@ -557,7 +557,7 @@ class TestListMalformedFrontmatter:
             assert not captured.err
         else:
             assert not captured.out
-            # 終了コード2で打ち切るため、警告ではなく失敗行と次の操作で返す。
+            # 終了コード2で打ち切るため、失敗行と次の操作で返す。
             assert "失敗: frontmatterのtypeが不正または欠落" in captured.err
             assert "atk wi edit" in captured.err.split("\n次の操作: ", 1)[1]
 
@@ -1536,7 +1536,7 @@ class TestMultipleFiltersCombinedAsAnd:
     """target-repo・source・type・status・answeredの同時指定がAND条件で対象を限定する。
 
     `--answered`はAWIを無条件除外する仕様（`_answered_matches`が`entry_type != WI_TYPE_UWI`時に
-    `False`を返す）のため、`--answered=no`とtype不一致（awi）を1回の呼び出しへ同居させると
+    `False`を返す）のため、`--answered=no`とtype不一致（awi）を1回の呼び出しで同時に指定すると
     type条件の除外効果がanswered条件の除外効果と区別できなくなる。
     target-repo・source・type・statusの4条件は`--answered=all`（無効化）の下で検証し、
     answered条件は同一の4条件（uwiのみ）を満たすエントリ同士の回答有無差分で別途検証する。

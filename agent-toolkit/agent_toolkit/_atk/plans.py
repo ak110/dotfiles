@@ -332,7 +332,7 @@ def _read_checkout_record(relative_main: pathlib.Path) -> tuple[pathlib.Path, di
     root = _checkout_record_root(relative_main)
     if not root.exists():
         return None
-    # 取得記録は取得時点の内容を持つだけで、作業バンドルそのものではない。壊れた記録を削除しても作業側は失われない。
+    # 取得記録は取得時点の内容を持つ写しであり、壊れた記録を削除しても作業側は失われない。
     next_action = (
         f"`~/.claude/plans`直下の該当計画バンドルを`~/.claude/plans`の外へ退避してから取得記録{root}を削除し、"
         "`atk plans checkout <private-notes/plans/相対パス>`で再取得する"
@@ -653,7 +653,7 @@ def _finalize_plan_file(source: pathlib.Path, destination: pathlib.Path, content
     確認から読取までの間に作業ファイルが書き換わった場合は、作業ファイルを移さずに失敗させる。
 
     `atk serve`の計画ファイル画面は作成日時を計画の並び順へ使う。Linuxには作成日時を設定するAPIが
-    無いため、新規ファイルによる確定ではなく移し元のinodeを`os.replace`で移す。
+    無いため、移し元のinodeを`os.replace`で移して作成日時を保つ。
     """
     if source.read_bytes() != content:
         raise _wi_web_input.WebInputError(
@@ -690,7 +690,7 @@ def _checkout_conflict_differences(
     saved: dict[str, bytes],
     remote: dict[str, bytes],
 ) -> str:
-    """取得時点・作業側の双方と異なる保存元を、相違の別とともに返す。"""
+    """取得時点・作業側の双方と異なる保存元を、相違の種類とともに返す。"""
     differences: list[str] = []
     for name in sorted(recorded.keys() | working.keys() | saved.keys() | remote.keys()):
         if saved.get(name) not in (recorded.get(name), working.get(name)):
@@ -1094,7 +1094,7 @@ def _restore_files(snapshot: dict[pathlib.Path, bytes | None]) -> None:
             path.write_bytes(content)
 
 
-# 計画のファイル名は空白を含み得るため、参照の終端は空白ではなく付属ファイルの拡張子で判定する。
+# 計画のファイル名は空白を含み得るため、参照の終端は付属ファイルの拡張子で判定する。
 _PORTABLE_REFERENCE_RE = re.compile(
     re.escape(_plan_file.PORTABLE_PLAN_PREFIX) + r"plans/\d{4}/\d{2}/[^\n`<>\"'|]+?\.(?:md|tsv)"
 )
@@ -1115,7 +1115,7 @@ def _saved_plan_texts(private_notes: pathlib.Path) -> dict[pathlib.Path, str]:
             continue
         try:
             texts[path] = path.read_text(encoding="utf-8")
-        except (OSError, UnicodeDecodeError):
+        except OSError, UnicodeDecodeError:
             continue
     return texts
 
@@ -1162,7 +1162,7 @@ def rewrite_plan_references(private_notes: pathlib.Path, *, lock_timeout: float 
             _atk_git_sync.ensure_not_rebasing(private_notes)
             if not _atk_git_sync.has_remote(private_notes):
                 raise _wi_web_input.WebInputError(
-                    "remoteなしのprivate-notesでは参照表記の書き換えを実行できません",
+                    "remoteかupstreamが無いprivate-notesでは参照表記の書き換えを実行できません",
                     next_action=_no_remote_next_action(private_notes),
                 )
             if _atk_git_sync.is_worktree_dirty(private_notes):
@@ -1205,7 +1205,7 @@ def rewrite_plan_references(private_notes: pathlib.Path, *, lock_timeout: float 
                 raise _wi_web_input.WebInputError(
                     "書き換えcommitがremote branchへ到達したことを確認できません", next_action=_UNPUSHED_NEXT_ACTION
                 )
-        except (OSError, subprocess.SubprocessError, _wi_web_input.WebInputError):
+        except OSError, subprocess.SubprocessError, _wi_web_input.WebInputError:
             if start_head == _git_head(private_notes):
                 _restore_files(snapshot)
             raise

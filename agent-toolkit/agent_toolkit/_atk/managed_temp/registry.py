@@ -2,9 +2,6 @@
 
 from __future__ import annotations
 
-# ヘルプや他の処理では不要な依存を、使用時まで遅延する。旧Pythonでは通常のimportとなる。
-__lazy_modules__ = {"agent_toolkit._atk.managed_temp.windows_security", "platformdirs"}
-
 import datetime
 import hashlib
 import json
@@ -16,10 +13,12 @@ import sys
 import typing
 import unicodedata
 
-import platformdirs
+# ヘルプや他の処理で使わない依存は、使用時まで読み込まない。
+lazy import platformdirs
 
 from agent_toolkit._atk.managed_temp.errors import ManagedTempError
-from agent_toolkit._atk.managed_temp.windows_security import (
+from agent_toolkit._common import state_paths as _state_paths
+lazy from agent_toolkit._atk.managed_temp.windows_security import (
     _WINDOWS_REPARSE_POINT,
     _validate_windows_security,
     _windows_current_sid,
@@ -29,7 +28,6 @@ from agent_toolkit._atk.managed_temp.windows_security import (
     _windows_security_descriptor,
     _windows_sid_bytes,
 )
-from agent_toolkit._common import state_paths as _state_paths
 
 
 def prefix_violation(prefix: str) -> str | None:
@@ -404,7 +402,7 @@ def _records_match(
     if identity is not None:
         try:
             current_identity = _path_identity(path)
-        except (OSError, ManagedTempError):
+        except OSError, ManagedTempError:
             return False
         if os.name == "posix":
             if current_identity[1] != identity[1]:

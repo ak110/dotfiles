@@ -32,7 +32,7 @@ jobs:
         if: steps.owner.outputs.owns == 'false'
         shell: bash
         working-directory: ${{ github.workspace }}
-        run: echo "developからmasterへのrelease pull requestではdevelop pushが共通CIを所有する。"
+        run: echo "developからmasterへのrelease pull requestではdevelop pushが共通CIを所有する。対応不要です。develop pushのCI結果を確認してください。"
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         if: steps.owner.outputs.owns == 'true'
         with:
@@ -47,7 +47,7 @@ jobs:
         run: |
           mv dotfiles ~/dotfiles
           echo "DOTFILES_DIR=$HOME/dotfiles" >> "$GITHUB_ENV"
-      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
         if: steps.owner.outputs.owns == 'true'
         with:
           working-directory: ${{ env.DOTFILES_DIR }}
@@ -65,12 +65,17 @@ jobs:
         if: steps.owner.outputs.owns == 'true'
         run: |
           set -euo pipefail
-          test -f ~/.bashrc
-          test -f ~/.vimrc
-          test -f ~/.claude/rules/agent-toolkit/01-agent.md
-          test -f ~/.ssh/config
-          # shellcheck disable=SC2016 # .bashrc内に格納される$HOMEをシェル変数ではなく文字列リテラルとして検索する
-          grep -qF '$HOME/dotfiles/bin' ~/.bashrc
+          for required in "$HOME/.bashrc" "$HOME/.vimrc" "$HOME/.claude/rules/agent-toolkit/01-agent.md" "$HOME/.ssh/config"; do
+            if [ ! -f "$required" ]; then
+              printf '::error::必須ファイルがありません: %s。install.shとchezmoi適用のログで原因を確認し、修正後にRe-run failed jobsで再実行してください。\n' "$required"
+              exit 1
+            fi
+          done
+          # shellcheck disable=SC2016 # .bashrc内に格納される$HOMEを展開せず文字列リテラルとして検索する
+          grep -qF '$HOME/dotfiles/bin' ~/.bashrc || {
+            echo '::error::.bashrcに$HOME/dotfiles/binのPATH設定がありません。配布元dot_bashrcとchezmoi適用ログを確認し、修正後にRe-run failed jobsで再実行してください。'
+            exit 1
+          }
 
   update-dotfiles-upgrade-windows:
     name: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.head_ref == 'develop' && github.base_ref == 'master' && 'update-dotfiles-upgrade (windows) (non-owner)' || 'update-dotfiles-upgrade (windows)' }}
@@ -90,7 +95,7 @@ jobs:
         if: steps.owner.outputs.owns == 'false'
         shell: pwsh
         working-directory: ${{ github.workspace }}
-        run: Write-Output "developからmasterへのrelease pull requestではdevelop pushが共通CIを所有する。"
+        run: Write-Output "developからmasterへのrelease pull requestではdevelop pushが共通CIを所有する。対応不要です。develop pushのCI結果を確認してください。"
       - name: Mozilla予約タスクの停止
         if: steps.owner.outputs.owns == 'true'
         # ランナーイメージのFirefox Default Browser Agentなどの予約タスクは、runneradminとしてジョブと無関係な時刻に
@@ -109,7 +114,9 @@ jobs:
             }
             $disabled = Disable-ScheduledTask -TaskPath $task.TaskPath -TaskName $task.TaskName
             Write-Output "TaskPath=$($disabled.TaskPath) TaskName=$($disabled.TaskName) State=$($disabled.State)"
-            if ("$($disabled.State)" -ne 'Disabled') { throw "予約タスクを無効化できなかった: $($task.TaskPath)$($task.TaskName)" }
+            if ("$($disabled.State)" -ne 'Disabled') {
+              throw "予約タスクを無効化できなかった: $($task.TaskPath)$($task.TaskName)。Get-ScheduledTaskの状態と権限を確認し、runnerの問題としてGitHub Actionsの管理者へ報告してください。"
+            }
           }
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         if: steps.owner.outputs.owns == 'true'
@@ -130,11 +137,14 @@ jobs:
           $dst = "$env:USERPROFILE\dotfiles"
           robocopy $src $dst /E /SL /COPY:DAT /NFL /NDL /NJH /NJS
           $rc = $LASTEXITCODE
-          if ($rc -ge 8) { exit $rc }
+          if ($rc -ge 8) {
+            Write-Output "::error::robocopyによる配置に失敗: exit $rc、$src -> $dst。コピーのエラーと配置先の権限・空き容量を確認し、修正後にRe-run failed jobsで再実行してください。"
+            exit $rc
+          }
           Remove-Item -Recurse -Force $src
           "DOTFILES_DIR=$dst" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
           exit 0
-      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
         if: steps.owner.outputs.owns == 'true'
         with:
           working-directory: ${{ env.DOTFILES_DIR }}
@@ -164,7 +174,7 @@ jobs:
         if: steps.owner.outputs.owns == 'false'
         shell: pwsh
         working-directory: ${{ github.workspace }}
-        run: Write-Output "developからmasterへのrelease pull requestではdevelop pushが共通CIを所有する。"
+        run: Write-Output "developからmasterへのrelease pull requestではdevelop pushが共通CIを所有する。対応不要です。develop pushのCI結果を確認してください。"
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         if: steps.owner.outputs.owns == 'true'
         with:
@@ -187,11 +197,14 @@ jobs:
           $dst = "$env:USERPROFILE\dotfiles"
           robocopy $src $dst /E /SL /COPY:DAT /NFL /NDL /NJH /NJS
           $rc = $LASTEXITCODE
-          if ($rc -ge 8) { exit $rc }
+          if ($rc -ge 8) {
+            Write-Output "::error::robocopyによる配置に失敗: exit $rc、$src -> $dst。コピーのエラーと配置先の権限・空き容量を確認し、修正後にRe-run failed jobsで再実行してください。"
+            exit $rc
+          }
           Remove-Item -Recurse -Force $src
           "DOTFILES_DIR=$dst" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
           exit 0
-      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
         if: steps.owner.outputs.owns == 'true'
         with:
           working-directory: ${{ env.DOTFILES_DIR }}
@@ -229,18 +242,33 @@ jobs:
         if: steps.owner.outputs.owns == 'true'
         shell: pwsh
         run: |
-          if (-not (Test-Path "$env:USERPROFILE\.claude\rules\agent-toolkit\01-agent.md")) { exit 1 }
-          if (-not (Test-Path "$env:USERPROFILE\.ssh\authorized_keys")) { exit 1 }
+          if (-not (Test-Path "$env:USERPROFILE\.claude\rules\agent-toolkit\01-agent.md")) {
+            Write-Output "::error::agent-toolkit/01-agent.mdがありません。chezmoi適用とpost-applyのログを確認し、修正後にRe-run failed jobsで再実行してください。"
+            exit 1
+          }
+          if (-not (Test-Path "$env:USERPROFILE\.ssh\authorized_keys")) {
+            Write-Output "::error::.ssh/authorized_keysがありません。chezmoi適用ログと配布元を確認し、修正後にRe-run failed jobsで再実行してください。"
+            exit 1
+          }
           $envKey = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey('Environment')
-          if ($null -eq $envKey) { exit 1 }
+          if ($null -eq $envKey) {
+            Write-Output "::error::ユーザーのEnvironmentレジストリキーがありません。post-applyの環境変数設定ログを確認し、修正後にRe-run failed jobsで再実行してください。"
+            exit 1
+          }
           try {
             $pathValue = $envKey.GetValue('Path', $null, [Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames)
             $pathKind = $envKey.GetValueKind('Path')
           } finally {
             $envKey.Close()
           }
-          if ($pathValue -notlike '*%USERPROFILE%\dotfiles\bin*') { exit 1 }
-          if ($pathKind -ne [Microsoft.Win32.RegistryValueKind]::ExpandString) { exit 1 }
+          if ($pathValue -notlike '*%USERPROFILE%\dotfiles\bin*') {
+            Write-Output "::error::ユーザーのPathに%USERPROFILE%\dotfiles\binがありません。post-applyのPATH設定ログを確認し、修正後にRe-run failed jobsで再実行してください。"
+            exit 1
+          }
+          if ($pathKind -ne [Microsoft.Win32.RegistryValueKind]::ExpandString) {
+            Write-Output "::error::ユーザーのPathがExpandString型ではありません。post-applyのPATH設定ログを確認し、修正後にRe-run failed jobsで再実行してください。"
+            exit 1
+          }
 
   python-lint:
     name: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.head_ref == 'develop' && github.base_ref == 'master' && format('{0} (non-owner)', matrix.check-name) || matrix.check-name }}
@@ -254,16 +282,10 @@ jobs:
       run:
         shell: bash
     strategy:
-      # 1つの版が失敗しても他の版の結果を取得し、失敗が版固有かを切り分けられるようにする
+      # 一方の検査が失敗しても、lintとpytestの両方の結果を取得する
       fail-fast: false
       matrix:
         include:
-          - python-version: "3.13"
-            check: pytest
-            check-name: python-lint (3.13)
-          - python-version: "3.14"
-            check: pytest
-            check-name: pytest (3.14)
           - python-version: "3.15"
             check: lint
             check-name: python-lint (3.15)
@@ -294,7 +316,7 @@ jobs:
         if: steps.owner.outputs.owns == 'false'
         shell: bash
         working-directory: ${{ github.workspace }}
-        run: echo "developからmasterへのrelease pull requestではdevelop pushが共通CIを所有する。"
+        run: echo "developからmasterへのrelease pull requestではdevelop pushが共通CIを所有する。対応不要です。develop pushのCI結果を確認してください。"
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         if: steps.owner.outputs.owns == 'true'
       - name: ユーザー設定から隔離したlockfile検証
@@ -343,10 +365,6 @@ jobs:
         if: steps.owner.outputs.owns == 'true'
         run: uv sync --all-groups --all-extras
 
-      - name: Python 3.13 pytest
-        if: steps.owner.outputs.owns == 'true' && matrix.python-version == '3.13' && matrix.check == 'pytest'
-        run: pyfltr ci --commands=pytest
-
       - name: Python 3.15 pytest以外の検査
         if: steps.owner.outputs.owns == 'true' && matrix.python-version == '3.15' && matrix.check == 'lint'
         env:
@@ -358,10 +376,6 @@ jobs:
         # statusline-versionは浅いcheckoutではmasterとの共通祖先を解決できず、同じ判定を
         # statusline-version jobが所有するため無効化する。
         run: pyfltr ci --disable=pytest,claude-plugin-validate,statusline-version
-
-      - name: Python 3.14 pytest
-        if: steps.owner.outputs.owns == 'true' && matrix.python-version == '3.14' && matrix.check == 'pytest'
-        run: pyfltr ci --commands=pytest
 
       - name: Python 3.15 pytest
         if: steps.owner.outputs.owns == 'true' && matrix.python-version == '3.15' && matrix.check == 'pytest'
@@ -404,7 +418,7 @@ jobs:
         if: steps.owner.outputs.owns == 'false'
         shell: bash
         working-directory: ${{ github.workspace }}
-        run: echo "developからmasterへのrelease pull requestではdevelop pushが共通CIを所有する。"
+        run: echo "developからmasterへのrelease pull requestではdevelop pushが共通CIを所有する。対応不要です。develop pushのCI結果を確認してください。"
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         if: steps.owner.outputs.owns == 'true'
       - name: safe.directory の設定
@@ -453,7 +467,7 @@ jobs:
         if: steps.owner.outputs.owns == 'false'
         shell: bash
         working-directory: ${{ github.workspace }}
-        run: echo "developからmasterへのrelease pull requestではdevelop pushが共通CIを所有する。"
+        run: echo "developからmasterへのrelease pull requestではdevelop pushが共通CIを所有する。対応不要です。develop pushのCI結果を確認してください。"
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         if: steps.owner.outputs.owns == 'true'
         with:

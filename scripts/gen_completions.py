@@ -1,13 +1,13 @@
 #!/usr/bin/env -S uv run --script
 # /// script
-# requires-python = ">=3.12"
+# requires-python = ">=3.15"
 # dependencies = ["pytilpack[quart]>=1.47.0"]
 # ///
 """bash補完ファイル（`completions/_pytools.bash`・`agent-toolkit/completions/atk.bash`）を生成する。
 
 `pyproject.toml`の`[project.scripts]`に登録された`pytools`系コマンドと、
 `agent-toolkit/agent_toolkit/*.py`のうち`# PYTHON_ARGCOMPLETE_OK`マーカーを持ち
-対応するbashラッパーが`agent-toolkit/bin/`配下に存在するコマンドを補完対象とする。
+対応するbashラッパーが`agent-toolkit/scripts/`配下に存在するコマンドを補完対象とする。
 出力先ファイルは手編集禁止（prekフックで再生成される）。
 
 使い方:
@@ -29,7 +29,7 @@ _PYPROJECT = _REPO_ROOT / "pyproject.toml"
 _PYTOOLS_OUTPUT = _REPO_ROOT / "completions" / "_pytools.bash"
 _ATK_OUTPUT = _REPO_ROOT / "agent-toolkit" / "completions" / "atk.bash"
 _AGENT_TOOLKIT_PACKAGE = _REPO_ROOT / "agent-toolkit" / "agent_toolkit"
-_AGENT_TOOLKIT_BIN = _REPO_ROOT / "agent-toolkit" / "bin"
+_AGENT_TOOLKIT_SCRIPTS = _REPO_ROOT / "agent-toolkit" / "scripts"
 
 _MARKER = "# PYTHON_ARGCOMPLETE_OK"
 
@@ -51,9 +51,23 @@ _HEADER_ATK = """\
 # argcomplete側で候補生成と出力を行う。
 """
 
-# argcomplete公式の生成物（`register-python-argcomplete bash`相当）と同じ実装を
-# リポジトリで持ち回るため直接埋め込む。互換性維持のため安易に書き換えない。
+# argcompleteの公開プロトコルを使う。POSIXはfd、WindowsのGit Bash/Cygwinは
+# ネイティブプロセスにも渡せる出力ファイルで候補を受け取る。
 _DISPATCHER = r"""
+_python_argcomplete_run() {
+    if [[ "$OSTYPE" == msys* || "$OSTYPE" == cygwin* ]]; then
+        local tmpfile output_path code
+        tmpfile=$(mktemp) || return
+        output_path=$(cygpath -w "$tmpfile") || { rm -f "$tmpfile"; return 1; }
+        _ARGCOMPLETE_STDOUT_FILENAME="$output_path" "$@" 1>/dev/null 2>/dev/null
+        code=$?
+        cat "$tmpfile"
+        rm -f "$tmpfile"
+        return "$code"
+    fi
+    "$@" 8>&1 9>&2 1>/dev/null 2>/dev/null
+}
+
 _python_argcomplete() {
     local IFS=$'\013'
     local SUPPRESS_SPACE=0
@@ -67,7 +81,7 @@ _python_argcomplete() {
                   _ARGCOMPLETE_COMP_WORDBREAKS="$COMP_WORDBREAKS" \
                   _ARGCOMPLETE=1 \
                   _ARGCOMPLETE_SUPPRESS_SPACE=$SUPPRESS_SPACE \
-                  "$1" 8>&1 9>&2 1>/dev/null 2>/dev/null) )
+                  _python_argcomplete_run "$1") )
     if [[ $? != 0 ]]; then
         unset COMPREPLY
     elif [[ $SUPPRESS_SPACE == 1 ]] && [[ "${COMPREPLY-}" =~ [=/:]$ ]]; then
@@ -93,7 +107,11 @@ def _write_if_changed(output: pathlib.Path, content: str, count: int) -> None:
     if output.exists() and output.read_text(encoding="utf-8") == content:
         return
     if not common.atomic_write_text(output, content, tag="bash completions"):
-        raise OSError(f"bash補完ファイルの書き込みに失敗: {output}")
+        raise OSError(
+            f"bash補完ファイルの書き込みに失敗: {output}。"
+            "保存先ディレクトリの書込権限と空き容量を確認して、"
+            "uv run --frozen python scripts/gen_completions.pyを再実行してください。"
+        )
     print(f"生成: {output.relative_to(_REPO_ROOT)} ({count}コマンド)")
 
 
@@ -122,7 +140,7 @@ def _collect_agent_toolkit_commands() -> list[str]:
             continue
         if not _has_marker(script_path):
             continue
-        wrapper = _AGENT_TOOLKIT_BIN / script_path.stem
+        wrapper = _AGENT_TOOLKIT_SCRIPTS / script_path.stem
         if not wrapper.is_file():
             continue
         result.append(script_path.stem)

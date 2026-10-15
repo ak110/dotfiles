@@ -694,7 +694,7 @@ class TestFilenameEncoding:
         """bit 11 未設定の CP932 日本語エントリと bit 11 付き UTF-8 日本語エントリの混在で双方破損しない。
 
         CP932 の 2 バイト目に ``0x5C`` を含む文字 (ソ) を CP932 側に格納して、
-        ``info.filename`` 経由ではなく ``info.orig_filename`` 経由でデコードできていることを担保する。
+        ``info.orig_filename`` 経由でデコードできていることを担保する。
         """
         archive = tmp_path / "mixed.zip"
         with zipfile.ZipFile(archive, "w", compression=zipfile.ZIP_STORED) as zf:

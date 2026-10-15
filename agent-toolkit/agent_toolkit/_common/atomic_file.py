@@ -7,9 +7,30 @@
 from __future__ import annotations
 
 import contextlib
+import logging
 import os
 import tempfile
+import time
 from pathlib import Path
+
+_LOGGER = logging.getLogger(__name__)
+# 短命な読取ハンドルとの競合だけを待つ。保存やbackendの起動は繰り返さない。
+# 表示更新を長く止めないため、待つ時間の合計は1秒未満に収める。
+_REPLACE_RETRY_DELAYS = (0.01, 0.02, 0.04, 0.08, 0.16)
+
+
+def _replace(source: str, destination: Path) -> None:
+    for attempt in range(len(_REPLACE_RETRY_DELAYS) + 1):
+        try:
+            os.replace(source, destination)
+            return
+        except OSError as error:
+            if getattr(error, "winerror", None) not in (5, 32) or attempt == len(_REPLACE_RETRY_DELAYS):
+                # 呼出側の既存診断ログにも、一時ファイルを回収する前の置換元・先を残す。
+                error.add_note(f"atomic replace source={source} destination={destination}")
+                _LOGGER.exception("原子的な置換に失敗: source=%s destination=%s", source, destination)
+                raise
+            time.sleep(_REPLACE_RETRY_DELAYS[attempt])
 
 
 def atomic_write(path: Path, content: str, *, fsync: bool = False) -> None:
@@ -28,7 +49,7 @@ def atomic_write(path: Path, content: str, *, fsync: bool = False) -> None:
             if fsync:
                 handle.flush()
                 os.fsync(handle.fileno())
-        os.replace(tmp_name, path)
+        _replace(tmp_name, path)
     except Exception:
         with contextlib.suppress(OSError):
             os.unlink(tmp_name)

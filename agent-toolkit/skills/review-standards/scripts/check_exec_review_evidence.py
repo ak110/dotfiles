@@ -98,7 +98,7 @@ JAPANESE_ASCII_PATH_BOUNDARY = re.compile(r"(?<=[\u3040-\u30ff\u3400-\u9fff])(?=
 # 文末の句点として置いた`.`は続きに含めず、`原因はdocs/a.md.`をパス全体で終える。
 # 行位置などの所在は`:`に続くASCIIの並びとし、最初の非ASCII文字（日本語の助詞・述語、`・`など）で終える。
 # ASCIIの並びは切り詰めずに行位置の書式の判定へ渡し、`:1-2,5-7`や`:1-`を正しい範囲として受理しない。
-# 見出しは日本語を含むため、文字種で終わりを決められず、従来どおり区切り記号までを見出しとする。
+# 見出しは日本語を含むため、文字種で終わりを決められず、区切り記号の手前までを見出しとする。
 PLAIN_REFERENCE = re.compile(
     r"(?P<plain>[^\s`\[\]（）「」、。:#]*?\.[A-Za-z][A-Za-z0-9_-]*(?![A-Za-z0-9_/\\-]|\.[A-Za-z0-9_])"
     r"(?::[!-~]+|#[^\s`\[\]（）「」、。]+)?)"
@@ -232,7 +232,7 @@ def _validate_schema(data: object) -> tuple[dict[str, typing.Any], list[str]]:
             label = _row_label(row, section, index)
             outcome = row["outcome"]
             if not outcome.strip():
-                # 雛形の判定欄を埋めずに返した行を、未知の値ではなく未記入として示す。
+                # 雛形の判定欄を埋めずに返した行を、未記入として示す。
                 errors.append(f"{label}.outcome: 判定が未記入です。その行を判定して{accepted}のいずれかを記入する")
             elif outcome not in SECTION_OUTCOMES[section]:
                 errors.append(f"{label}.outcome: 未知の判定です: {outcome}（受理する値: {accepted}）")
@@ -401,7 +401,7 @@ def _is_explicit_reference(match: re.Match[str], evidence: str, repository: path
     # 拡張子は名前の本体を持つファイル名の`.<英字>…`とし、`.env`のように先頭がピリオドで本体の無い名前は拡張子を持たない。
     # 見出し位置はファイルの節を指すため、拡張子を持つ名前に添えた場合だけ所在とする。
     # `pytest-dev/pytest#14635`のようなIssueの参照は区切りと`#`を持つが、ファイルを指さない。
-    # 行位置を添えた名前（`.gitignore:9`、`scripts/.env:1`）は、根拠の所在を示すため従来どおり確かめる。
+    # 行位置を添えた名前（`.gitignore:9`、`scripts/.env:1`）は、根拠の所在を示すため候補として確かめる。
     has_separator = "/" in candidate or "\\" in candidate
     has_extension = NAMED_EXTENSION.fullmatch(re.split(r"[/\\]", candidate)[-1]) is not None
     if location.startswith("#"):
@@ -1259,13 +1259,13 @@ def _original_text(row: dict[str, str], repository: pathlib.Path, wi_outputs: di
     if row["awi"]:
         try:
             _, body = _load_wi(row["awi"], repository, wi_outputs)
-        except (OSError, subprocess.TimeoutExpired, ValueError):
+        except OSError, subprocess.TimeoutExpired, ValueError:
             return None
         return "\n".join(body)
     for plan in _plan_files(row["origin"]):
         try:
             return plan.read_text(encoding="utf-8")
-        except (OSError, UnicodeError):
+        except OSError, UnicodeError:
             continue
     return None
 
@@ -1273,7 +1273,7 @@ def _original_text(row: dict[str, str], repository: pathlib.Path, wi_outputs: di
 def _quote_spans(quote: str, original: str) -> list[tuple[int, int]]:
     """中略を含み得る引用が原文上で覆い得る範囲を全て返す。
 
-    記録自身も原文と同じ本文に含まれ得るため、最初の出現だけでなく全ての出現から範囲を求める。
+    記録自身も原文と同じ本文に含まれ得るため、全ての出現から範囲を求める。
     """
     pieces = [piece for piece in (_compact(part) for part in ELLIPSIS.split(quote)) if piece]
     spans: list[tuple[int, int]] = []
@@ -1687,7 +1687,7 @@ def _names_path(text: str, target: pathlib.Path, repository: pathlib.Path) -> bo
             try:
                 if pathlib.Path(os.path.abspath(path)).resolve() == resolved:
                     return True
-            except (OSError, ValueError):
+            except OSError, ValueError:
                 continue
     return False
 
@@ -1699,7 +1699,7 @@ def _circular_issue_errors(
 
     完成条件証拠の判定と根拠は実行レビュー担当が記入する出力であり、実装担当が直す対象ではない。
     この行を未解決の指摘として数えると、証拠の非達成行と未解決0件の整合確認を、担当自身の未完了を
-    指摘へ置き換えるだけで通過できるため拒否する。指摘本文の語句ではなく`location`の構造で判定する。
+    指摘へ置き換えるだけで通過できるため拒否する。`location`の構造で判定する。
     """
     errors: list[str] = []
     for row_id, row in enumerate(review_table.read_rows(table_path), start=1):

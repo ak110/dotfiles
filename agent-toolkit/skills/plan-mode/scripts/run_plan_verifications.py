@@ -1,4 +1,4 @@
-"""計画の変更範囲の検証を順番に実行し、失敗後も残る結果を記録する。"""
+"""計画の変更範囲の検証を順番に実行し、失敗した後も残りのコマンドを実行して全件の結果を記録する。"""
 
 from __future__ import annotations
 
@@ -10,6 +10,8 @@ from typing import TypedDict
 from agent_toolkit._atk import managed_temp, run_command
 from agent_toolkit._common import next_action
 from agent_toolkit._common.atomic_file import atomic_write
+from agent_toolkit._common.shell_segments import resolve_execution_segment
+from agent_toolkit._common.uv_arguments import executable_name
 from agent_toolkit._plan.structure.verification import plan_commands
 
 
@@ -23,10 +25,66 @@ class PlannedCommand(TypedDict):
     timeout: float
 
 
+def _pyfltr_completion_failure(command: PlannedCommand, record: dict) -> str | None:
+    """pyfltrの検証では、終了コードと別に公開summaryの完了区分を検収する。"""
+    invocation = resolve_execution_segment(command["argv"], runtime_options=True)
+    if not invocation.resolved:
+        return "実行位置を確定できません。起動オプションを確認して検証条件を書き直す"
+    if not invocation.tokens or invocation.invocation_kind in {"terminal", "code"}:
+        return None
+    program, *argv = invocation.tokens
+    name = program if invocation.invocation_kind == "module" else executable_name(program)
+    if name != "pyfltr" or argv[:1] not in (["run"], ["run-for-agent"], ["fast"], ["ci"]):
+        return None
+    cwd = pathlib.Path(command["cwd"])
+    for directory in invocation.directories:
+        cwd = cwd / directory
+    output = record.get("stdout_path")
+    for index, word in enumerate(argv):
+        if word == "--":
+            break
+        if word.startswith("--output-file="):
+            output = word.partition("=")[2]
+        elif word == "--output-file" and index + 1 < len(argv):
+            output = argv[index + 1]
+    try:
+        path = pathlib.Path(output) if output else None
+        if path is not None and not path.is_absolute():
+            path = cwd / path
+        summaries = []
+        for line in path.read_text(encoding="utf-8").splitlines() if path is not None else []:
+            try:
+                value = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if isinstance(value, dict) and value.get("kind") == "summary":
+                summaries.append(value)
+    except (OSError, UnicodeError) as error:
+        return f"pyfltrの完了結果を読めません: {error}。保存した両出力を確認して検証を再実行する"
+    if len(summaries) != 1:
+        return "pyfltrの完了結果を一意に取得できません。--output-format=jsonlを付けて検証を再実行する"
+    summary = summaries[0]
+    if (
+        summary.get("completion") != "completed"
+        or not isinstance(summary.get("files_reached"), int)
+        or summary["files_reached"] < 1
+        or not summary.get("completed_commands")
+        or any(summary.get(key) for key in ("missing_targets", "incomplete_commands", "fully_excluded_files"))
+    ):
+        return "pyfltrの検証が対象へ到達して完了していません。summaryの未到達対象と未完了コマンドを解消して再実行する"
+    return None
+
+
 def main(argv: list[str] | None = None) -> int:
     """全入力を起動前に確かめ、列挙か保存付きの実行結果を返す。"""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--plan", type=pathlib.Path, metavar="PATH", required=True, help="計画ファイルの絶対パス")
+    parser.add_argument(
+        "--verification-plan",
+        type=pathlib.Path,
+        metavar="PATH",
+        help="訂正後の検証表を持つファイルの絶対パス。指定時は凍結した--planの検証表に優先する",
+    )
     parser.add_argument("--worktree", type=pathlib.Path, metavar="DIR", required=True, help="検証するGit worktreeの絶対パス")
     parser.add_argument("--timeout", type=float, required=True, help="各検証の正の有限上限秒数")
     parser.add_argument("--list", action="store_true", help="子を起動せずコマンドとargvを列挙する")
@@ -42,12 +100,17 @@ def main(argv: list[str] | None = None) -> int:
             raise ValueError("--planと--worktreeは実在する対象の絶対パスで指定する")
         if args.records_output is not None and not args.records_output.is_absolute():
             raise ValueError("--records-outputは絶対パスで指定する")
+        if args.verification_plan is not None and not args.verification_plan.is_absolute():
+            raise ValueError("--verification-planは絶対パスで指定する")
         command_parser = argparse.ArgumentParser(exit_on_error=False)
         run_command.build_parser(command_parser)
         # run-commandと同じ入力契約でtimeout・cwd・wrapper内のargvを確かめる。
         default = command_parser.parse_args(["--cwd", str(args.worktree), "--timeout", str(args.timeout), "--", "true"])
         planned: list[PlannedCommand] = []
-        for order, (command, child_argv) in enumerate(plan_commands(args.plan.read_text(encoding="utf-8")), 1):
+        current_content = args.verification_plan.read_text(encoding="utf-8") if args.verification_plan else None
+        for order, (command, child_argv) in enumerate(
+            plan_commands(args.plan.read_text(encoding="utf-8"), current_content=current_content), 1
+        ):
             cwd, timeout = default.cwd, default.timeout
             if pathlib.Path(child_argv[0]).name in {"atk", "atk.cmd"} and child_argv[1:2] == ["run-command"]:
                 wrapped = command_parser.parse_args(child_argv[2:])
@@ -74,6 +137,9 @@ def main(argv: list[str] | None = None) -> int:
             planned_command["argv"], pathlib.Path(planned_command["cwd"]), planned_command["timeout"]
         )
         state = "timeout" if record["timed_out"] else "failure" if exit_code else "success"
+        completion_failure = _pyfltr_completion_failure(planned_command, record) if state == "success" else None
+        if completion_failure:
+            state, failure = "failure", completion_failure
         results.append(
             {
                 **planned_command,
@@ -84,11 +150,13 @@ def main(argv: list[str] | None = None) -> int:
                 "record": record,
             }
         )
-        failed = failed or exit_code != 0
+        failed = failed or state != "success"
     try:
         output = args.records_output or managed_temp.create_managed_temp("plan-verify-results") / "results.json"
         payload = {
             "version": 1,
+            "plan_path": str(args.plan),
+            "verification_plan_path": str(args.verification_plan or args.plan),
             "results": results,
             "records": [result["record_path"] for result in results if result["record_path"] is not None],
             "unrecorded": [result["order"] for result in results if result["record_path"] is None],

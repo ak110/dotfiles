@@ -70,17 +70,18 @@ class ManagerWait(manager_resume.ManagerResume):
         待機上限はプロンプトキャッシュの保持期間から導出した値とし、委譲先として起動されたセッションでは240秒を上限とする。
         この上限へ達した応答は`status`と`elapsed_seconds`を返す。
         保持中のsessionの最終活動時刻と停滞の印は`show`が返す。待機せずに現状態を確認する場合は`show`を発行する。
-        以下の`/goal`の条件に該当しない場合は、本ツールを前景で発行する。
-        委譲元のセッションに`/goal`が設定され、未完了のバックグラウンドタスクが本ツールの呼び出しを移したものだけになる場合は、
-        公開MCP toolではなく、`atk agents wait`を実行ホストの前景またはバックグラウンドタスクとして起動する。
+        完了通知で同じセッションへ再開できる待機は、goalの有無や対象の種類・件数によらず、
+        `atk agents wait`をホストのバックグラウンドタスクとして起動する。
+        通知による再開が無い環境では、委譲元は公開された待機手段で終端を確定する。
+        起動と回収はdelegationの`references/waiting-and-monitoring.md`「待機区間の構成」に従う。
         委譲先がバックグラウンドタスクを残してturnを終えた場合は、同じsessionを一度だけ自動的に再開し、再開したturnの終端まで待つ。
         委譲元はバックグラウンドタスクの完了後に`send_message`で再開を指示しない。
         終端前に`status: running`が返った場合は、本ツールを再発行して待機を継続する。
         終端結果は委譲元が最初の呼び出しで受領するまで保持し、経過時間では解放しない。
         受領した終端結果のsessionを破棄する場合は`stop`を発行する。
         終端結果を残さずにsessionが失われた場合だけ、`status`が`expired`の応答を返す。
-        委譲先が実行中に`atk agents-notify`で送った通知が未回収である場合は、終端前でもその通知を`notices`へ載せて復帰する。
-        再待機の要否は`notices`の有無ではなく`status`で判定する。
+        委譲先が実行中に`atk agents notify`で送った通知が未回収である場合は、終端前でもその通知を`notices`へ載せて復帰する。
+        再待機の要否は`status`で判定する。
         `status`が`completed`、`failed`、`interrupted`のいずれかである応答は終端であり、`notices`を含む場合も結果本文とともに受領して本ツールを再発行しない。
         応答へ載せた通知は回収済みとして再び返さない。
         """
@@ -94,6 +95,12 @@ class ManagerWait(manager_resume.ManagerResume):
         advance_pending = True
 
         while True:
+            await self._drain_candidate_records()
+            for session_id in ordered_ids:
+                self._resolve_expired_session(session_id)
+                await self._wait_for_resource_release(session_id)
+            if self._status_writer is not None:
+                await self._status_writer.drain()
             for session_id in ordered_ids:
                 retained_response = self._retained_result_response(session_id, collector="mcp-wait")
                 if retained_response is not None:
@@ -102,7 +109,14 @@ class ManagerWait(manager_resume.ManagerResume):
                 if session is not None and advance_pending:
                     await self._advance_child_session_wait(session)
             advance_pending = False
+            for session in tuple(self.sessions.values()):
+                await session.drain_registration()
+            await self._drain_candidate_records()
+            if self._status_writer is not None:
+                await self._status_writer.drain()
             async with self._condition:
+                if self._candidate_tasks or any(session.registration_pending for session in self.sessions.values()):
+                    continue
                 terminal: list[SessionState] = []
                 for session_id in ordered_ids:
                     candidate = self.sessions.get(session_id)

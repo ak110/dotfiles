@@ -160,7 +160,7 @@ def _is_legacy_token_hash(value: object) -> bool:
 
 
 def _legacy_reservation_companion(data: dict[str, object]) -> dict[str, str] | None:
-    """2.34.0が生成した内部companion metadataを返す。"""
+    """2.34.0が生成した内部用の`reservation_companion`を検証して返す。不正な場合は`None`を返す。"""
     raw = data.get("reservation_companion")
     if (
         data.get("target_repo") != _LEGACY_RESERVATION_INTERNAL_REPO
@@ -192,7 +192,7 @@ def _is_legacy_reservation(
     state: str,
     companions: tuple[tuple[str, dict[str, str]], ...],
 ) -> bool:
-    """対応する内部companionを持つ2.34.0形式の予約かを返す。"""
+    """対応する`reservation_companion`を持つ2.34.0形式の予約かを返す。"""
     raw = data.get("reservation")
     target_repo = data.get("target_repo")
     if state != WI_STATE_PROCESSING or data.get("type") not in _LEGACY_RESERVATION_TYPES or raw is None:

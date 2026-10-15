@@ -4,12 +4,12 @@
 // 要求ごとに変わる値はHTMLへ埋め込んだJSONブロックから読む。資産ファイルは要求ごとに変わらないためである。
 const bootstrap = readBootstrap();
 
-// X-Forwarded-Prefix未設定または不正値時は空文字列で、すべてのfetch/EventSourceに前置する。
+// X-Forwarded-Prefixの値。未設定または不正な値の場合は空文字列とする。全てのfetchとEventSourceのURLの先頭へ付ける。
 export const BASE_PATH = typeof bootstrap.base_path === "string" ? bootstrap.base_path : "";
 export const SERVE_HOST = bootstrap.host_name || location.hostname;
 export const WI_ROOT = bootstrap.wi_root || "WI保存元";
 
-// 画面は対象の表示名を渡し、理由を変えずに発生元と対象を添える。
+// 理由の文言は変えずに、先頭へ画面・ホスト・対象を添える。呼び出す画面は対象の表示名を渡す。
 export function diagnostic(screen, host, target, reason) {
   return `［${screen} / ${host} / ${target}］${reason}`;
 }

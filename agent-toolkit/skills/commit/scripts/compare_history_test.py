@@ -1,4 +1,4 @@
-"""公開履歴比較を隔離したGit履歴で検証する。"""
+"""公開コマンド`history-compare`の履歴比較を、隔離したGit履歴で検証する。"""
 
 import json
 import os
@@ -83,7 +83,7 @@ def test_rebase_cli_accepts_only_equal_complete_series(
 
 
 def test_rebase_accepts_changed_context_and_hunk_position(repo: pathlib.Path, tmp_path: pathlib.Path) -> None:
-    """上流による周辺行と位置の変化を、同じ変更行から区別する。"""
+    """上流が周辺行と位置を変えても、変更行が同じなら対応として受理する。"""
     base = _commit(repo, "content.txt", "前\n対象\n後\n", "準備")
     old_head = _commit(repo, "content.txt", "前\n修正\n後\n", "修正")
     _git(repo, "checkout", "-b", "context", base)
@@ -98,7 +98,7 @@ def test_rebase_accepts_changed_context_and_hunk_position(repo: pathlib.Path, tm
 def test_rebase_rejects_content_and_ambiguous_correspondence(
     repo: pathlib.Path, tmp_path: pathlib.Path, violation: str
 ) -> None:
-    """表示上の類似で変更内容の差や曖昧なcommit対応を受理しない。"""
+    """表示が似ていても、変更内容の差や曖昧なcommit対応を受理しない。"""
     base = _git(repo, "rev-parse", "HEAD")
     old_head = _commit(repo, "content.txt", "value\n", "元")
     if violation == "ambiguous":
@@ -167,7 +167,7 @@ def test_autosquash_rejects_each_independent_violation(
 
 @pytest.mark.parametrize("changed", [False, True])
 def test_rebase_compares_binary_payload(repo: pathlib.Path, tmp_path: pathlib.Path, changed: bool) -> None:
-    """バイナリー同士の比較でも同じ内容だけを受理し、対応表の保存を分ける。"""
+    """バイナリー同士の比較でも同じ内容だけを受理し、内容が異なれば対応表を保存しない。"""
     base = _git(repo, "rev-parse", "HEAD")
     path = repo / "image.bin"
     path.write_bytes(b"original\x00payload")
@@ -197,7 +197,7 @@ def test_generated_mapping_is_consumed_by_public_record_commands(
     capsys: pytest.CaptureFixture[str],
     operation: str,
 ) -> None:
-    """公開比較の一対一・多対1対応表を加工せず、計画のWI対応と証拠参照へ渡せる。"""
+    """`history-compare`が保存した一対一・多対1の対応表を、加工せずに計画のWI対応と証拠参照へ渡せる。"""
     monkeypatch.setenv("AGENT_TOOLKIT_PRIVATE_NOTES", str(tmp_path / "private-notes"))
     wi = "20261009-043608-001.md"
     plan = tmp_path / "09-history-1a2b.md"

@@ -8,9 +8,48 @@ from __future__ import annotations
 import pytest
 
 from agent_toolkit._common.heredocs import mask_heredoc_bodies
-from agent_toolkit._common.shell_segments import ExecutionSegment, extract_execution_segments, split_bash_segments
+from agent_toolkit._common.shell_segments import (
+    ExecutionSegment,
+    extract_execution_segments,
+    resolve_execution_segment,
+    split_bash_segments,
+)
 
 _TOOLKIT_PREFIX = "agent-" + "toolkit"
+
+
+@pytest.mark.parametrize(
+    ("argv", "kind", "tokens", "directories"),
+    [
+        (["uvx", "--from", "pyfltr", "pyfltr", "run"], "command", ("pyfltr", "run"), ()),
+        (["uv", "run", "-qm", "pyfltr", "run"], "module", ("pyfltr", "run"), ()),
+        (
+            ["uv", "--directory", "outer", "tool", "run", "--from=pyfltr", "python", "-I", "-mpyfltr", "run"],
+            "module",
+            ("pyfltr", "run"),
+            ("outer",),
+        ),
+        (["python", "-X", "pyfltr", "-m", "other", "pyfltr", "run"], "module", ("other", "pyfltr", "run"), ()),
+        (["uv", "run", "printf", "%s", "pyfltr", "run"], "command", ("printf", "%s", "pyfltr", "run"), ()),
+        (["python", "--", "-m", "pyfltr", "run"], "script", ("-m", "pyfltr", "run"), ()),
+    ],
+)
+def test_runtime_resolution_preserves_mode_and_argument_boundaries(
+    argv: list[str], kind: str, tokens: tuple[str, ...], directories: tuple[str, ...]
+) -> None:
+    """値・モジュール・通常引数を混ぜず、起動方式とcwdの指定を消費側へ渡す。"""
+    result = resolve_execution_segment(argv, runtime_options=True)
+    assert result.resolved and result.tokens == tokens
+    assert result.invocation_kind == kind and result.directories == directories
+
+
+def test_runtime_resolution_keeps_advice_unknown_policy() -> None:
+    """助言側の未確定扱いを保ち、明示した消費側だけが起動オプションを解析する。"""
+    argv = ["uvx", "--from", "pyfltr", "pyfltr", "run"]
+    assert resolve_execution_segment(argv) == ExecutionSegment((), False)
+    assert resolve_execution_segment(argv, runtime_options=True).tokens == ("pyfltr", "run")
+    for runtime_options in (False, True):
+        assert not resolve_execution_segment(["uvx", "--unknown", "pyfltr", "run"], runtime_options=runtime_options).resolved
 
 
 class TestExtractExecutionSegments:

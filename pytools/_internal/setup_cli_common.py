@@ -1,8 +1,5 @@
 """公式インストーラーを利用するCLI導入処理の共通機能。"""
 
-# ヘルプや他の処理では不要な依存を、使用時まで遅延する。旧Pythonでは通常のimportとなる。
-__lazy_modules__ = {"httpx", "psutil"}
-
 import contextlib
 import json
 import locale
@@ -18,8 +15,9 @@ import threading
 from collections.abc import Iterable
 from pathlib import Path
 
-import httpx
-import psutil
+# ヘルプや他の処理で使わない依存は、使用時まで読み込まない。
+lazy import httpx
+lazy import psutil
 
 from pytools._internal import common, log_format
 
@@ -130,7 +128,12 @@ def migrate_npm_launchers(
     ):
         npm = _adjacent_npm(launcher.parent)
         if npm is None:
-            logger.warning(log_format.format_status(cli_name, f"同じディレクトリにnpmがないため保持: {launcher}"))
+            logger.warning(
+                log_format.format_status(
+                    cli_name,
+                    f"同じディレクトリにnpmがないため保持: {launcher}。このランチャーが不要と確認できた場合だけ手動削除する",
+                ),
+            )
             continue
         unresolved: list[str] = []
         package_dir = _npm_package_dir(npm, package_name, unresolved)
@@ -150,7 +153,9 @@ def migrate_npm_launchers(
         if result is not None and result.returncode == 0:
             changed = True
         else:
-            message = f"旧npm版の削除に失敗: {common.format_cli_error(result)}"
+            message = (
+                f'旧npm版の削除に失敗: {common.format_cli_error(result)}。`"{npm}" uninstall --global {package_name}`を実行する'
+            )
             logger.warning(log_format.format_status(cli_name, message))
             raise RuntimeError(message)
     return changed
@@ -167,7 +172,7 @@ def is_windows_cli_running(cli_name: str, package_name: str, launchers: Iterable
             name = (process.name() or "").lower()
             exe = (process.exe() or "").lower()
             cmdline = [part.lower() for part in (process.cmdline() or [])]
-        except (psutil.NoSuchProcess, psutil.ZombieProcess):
+        except psutil.NoSuchProcess, psutil.ZombieProcess:
             continue
         except psutil.AccessDenied:
             try:
@@ -181,7 +186,7 @@ def is_windows_cli_running(cli_name: str, package_name: str, launchers: Iterable
                     "mise.exe",
                 }:
                     return True
-            except (psutil.AccessDenied, psutil.NoSuchProcess, psutil.ZombieProcess):
+            except psutil.AccessDenied, psutil.NoSuchProcess, psutil.ZombieProcess:
                 continue
             continue
         haystacks = [name, exe, *cmdline]
@@ -192,7 +197,14 @@ def is_windows_cli_running(cli_name: str, package_name: str, launchers: Iterable
 
 def _warn_unconfirmed_launcher(cli_name: str, launcher: Path, reason: str) -> None:
     """帰属を確認できず保持した対象と、確認が成立しなかった理由を警告する。"""
-    logger.warning(log_format.format_status(cli_name, f"npm packageへの帰属を確認できないため保持: {launcher}（{reason}）"))
+    logger.warning(
+        log_format.format_status(
+            cli_name,
+            f"npm packageへの帰属を確認できないため保持: {launcher}（{reason}）。"
+            "保持したため対応不要。"
+            "手動削除する場合はこのランチャーの参照先とpackage.jsonのbinを確認する",
+        ),
+    )
 
 
 def _launcher_kind(launcher: Path) -> str:
@@ -362,7 +374,7 @@ def _cmd_referenced_paths(content: str, launcher_dir: Path) -> Iterable[Path]:
 def _package_bin_entrypoint(package_dir: Path, cli_name: str) -> Path | None:
     try:
         metadata = json.loads((package_dir / "package.json").read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
+    except OSError, json.JSONDecodeError:
         return None
     if not isinstance(metadata, dict):
         return None

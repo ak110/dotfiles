@@ -51,7 +51,7 @@ def codex_processes() -> tuple[CodexProcess, ...]:
     `_is_codex_process_value`で判定する。command line第2要素以降はファイルパスやプロンプト文字列など
     任意の値を含むため、実行体の識別規則を適用しない。node系実行体の場合だけ、
     パッケージのentry pointに当たるcommand line第2要素を`_is_codex_argument_value`で判定する。
-    役割は実行体名ではなく、管理daemonと更新ループの公開された起動形との一致で判定する。
+    役割は、管理daemonと更新ループの公開された起動形との一致で判定する。
     管理daemonの子プロセスは、daemonの停止とともに終了する補助実行体として`managed-daemon`へ含める。
     """
     uid = os.getuid()
@@ -59,7 +59,7 @@ def codex_processes() -> tuple[CodexProcess, ...]:
     for process in psutil.process_iter(["name", "exe", "cmdline", "uids", "status", "ppid"], ad_value=_ACCESS_DENIED):
         try:
             info = process.info
-        except (psutil.NoSuchProcess, psutil.ZombieProcess):
+        except psutil.NoSuchProcess, psutil.ZombieProcess:
             continue
         if getattr(info.get("uids"), "real", None) != uid or info.get("status") in _TERMINATED_STATUSES:
             continue

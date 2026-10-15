@@ -62,7 +62,7 @@ if [ "$needs_reinstall" = 1 ]; then
     else
         DOTFILES_PYTOOLS_INSTALL_STATE="failed"
         DOTFILES_PYTOOLS_INSTALL_DETAIL="uv tool install または期待シム検査が失敗しました"
-        echo "  [pytools] インストールに失敗しました (後続処理は継続)"
+        echo "  [pytools] インストールに失敗しました (後続処理は継続)。次の操作: 失敗理由を確認し、update-dotfilesを再実行してください。"
     fi
 else
     echo "  [pytools] 変更なし (ハッシュキャッシュヒット)"
@@ -76,5 +76,5 @@ if [ -x "$post_apply_bin" ]; then
     # post-applyの案内を更新処理全体の最終出力にするため、後続処理を置かずexecする。
     exec "$post_apply_bin"
 else
-    echo "  [pytools] $post_apply_bin が見つからないため後処理スキップ"
+    echo "  [pytools] $post_apply_bin が見つからないため後処理スキップ。次の操作: uv tool install --editable \"{{ .chezmoi.workingTree }}\" --with-editable \"{{ joinPath .chezmoi.workingTree "agent-toolkit" }}\"を実行し、update-dotfilesを再実行してください。"
 fi

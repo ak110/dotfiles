@@ -57,6 +57,7 @@ def _prepare_root(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> pa
     monkeypatch.setenv("LOCALAPPDATA", str(tmp_path / "local-appdata"))
     monkeypatch.setenv("APPDATA", str(tmp_path / "appdata"))
     monkeypatch.setenv("USERPROFILE", str(tmp_path / "profile"))
+    monkeypatch.setenv("WIN_PD_OVERRIDE_LOCAL_APPDATA", str(tmp_path / "state"))
     return update_dotfiles
 
 
@@ -64,14 +65,50 @@ def test_matching_commit_skips_update(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> None:
-    """commit ID一致時は正常終了しupdate-dotfilesを起動しない。"""
+    """反映成功の記録も一致するとupdate-dotfilesを起動しない。"""
     update_dotfiles = _prepare_root(monkeypatch, tmp_path)
     calls: list[list[str]] = []
     commit = "a" * 40
     monkeypatch.setattr(subprocess, "run", _fake_run(calls, remote_commit=commit, local_commit=commit))
 
     assert upstream_update.main([]) == 0
+    assert calls.count([str(update_dotfiles)]) == 1
+    calls.clear()
+    assert upstream_update.main([]) == 0
     assert [str(update_dotfiles)] not in calls
+
+
+def test_external_head_advance_requires_apply(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
+    """別主体がHEADを上流へ進めても、前の反映記録を根拠に省略しない。"""
+    update_dotfiles = _prepare_root(monkeypatch, tmp_path)
+    calls: list[list[str]] = []
+    monkeypatch.setattr(subprocess, "run", _fake_run(calls, remote_commit="a" * 40, local_commit="a" * 40))
+    assert upstream_update.main([]) == 0
+    monkeypatch.setattr(subprocess, "run", _fake_run(calls, remote_commit="b" * 40, local_commit="b" * 40))
+    assert upstream_update.main([]) == 0
+    assert calls.count([str(update_dotfiles)]) == 2
+
+
+def test_applied_record_failure_retries_then_skips(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
+    """反映記録の保存失敗は再試行し、成功後の同一commitは省略する。"""
+    update_dotfiles = _prepare_root(monkeypatch, tmp_path)
+    calls: list[list[str]] = []
+    monkeypatch.setattr(subprocess, "run", _fake_run(calls, remote_commit="a" * 40, local_commit="a" * 40))
+    original_write = pathlib.Path.write_text
+
+    def fail_record(path: pathlib.Path, data: str, **kwargs: typing.Any) -> int:
+        if path.suffix == ".applied":
+            raise OSError("反映記録を保存できない")
+        return original_write(path, data, **kwargs)
+
+    with monkeypatch.context() as scoped:
+        scoped.setattr(pathlib.Path, "write_text", fail_record)
+        assert upstream_update.main([]) == 1
+    assert calls.count([str(update_dotfiles)]) == 1
+    assert upstream_update.main([]) == 0
+    assert calls.count([str(update_dotfiles)]) == 2
+    assert upstream_update.main([]) == 0
+    assert calls.count([str(update_dotfiles)]) == 2
 
 
 def test_changed_commit_runs_update_once(

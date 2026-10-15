@@ -127,7 +127,7 @@ def test_stop_does_not_treat_machine_input_as_human(
 def test_stop_accepts_scheduled_turn_after_machine_input(
     entry: dict, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """AWI 20261009-093808-001のClaude Code 2.1.250～2.1.295の記録形を使う。"""
+    """Claude Code 2.1.250～2.1.295のtranscriptで観測した記録形を使う。"""
     scheduled = {"type": "user", "isMeta": True, "scheduledTaskId": "scheduled-case", "message": {"content": "再確認"}}
     output = _stop([entry, scheduled, _assistant("…")], tmp_path, capsys)
     assert 'source="user_response_advisor"' not in output.get("reason", "")
@@ -148,3 +148,17 @@ def test_new_human_input_requires_a_new_visible_response(tmp_path: pathlib.Path,
     """前の人間の発話への回答を、途中配送された次の発話の回答へ流用しない。"""
     output = _stop([_HUMAN, _assistant("前の発話への回答"), _QUEUED, _assistant("…")], tmp_path, capsys)
     assert output["decision"] == "block"
+
+
+@pytest.mark.parametrize("queued", [False, True])
+@pytest.mark.parametrize("prompt", ["<task-notification>を説明して", "通知の例は<task-notification>です"])
+def test_human_notification_quote_still_requires_response(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], *, queued: bool, prompt: str
+) -> None:
+    """通知タグを引用した人間入力も、由来の印に従って応答を要求する。"""
+    entry = (
+        {"type": "attachment", "attachment": {"type": "queued_command", "origin": {"kind": "human"}, "prompt": prompt}}
+        if queued
+        else {**_HUMAN, "message": {"content": prompt}}
+    )
+    assert _stop([entry, _assistant("…")], tmp_path, capsys)["decision"] == "block"

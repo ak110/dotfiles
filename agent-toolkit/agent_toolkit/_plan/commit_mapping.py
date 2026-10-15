@@ -259,7 +259,10 @@ def commit_event(
 
 
 def rewrite_destinations(value: object) -> list[tuple[str, set[str] | None]]:
-    """scalarの全継承と、分割時の明示したAWI割当を同じ消費形式へ変換する。"""
+    """履歴変更の対応値を(新OID, AWI集合)の列へ変換する。
+
+    文字列の値は全AWIを引き継ぐ1件の新OID（AWI集合は`None`）とし、分割の列は各要素のcommitと明示したAWI集合の組とする。
+    """
     if isinstance(value, str) and _OID_VALUE.fullmatch(value):
         return [(value, None)]
     if not isinstance(value, list) or not value:
@@ -355,7 +358,7 @@ def rewrite_event(worktree: pathlib.Path, source: pathlib.Path, mapping: dict[st
 
 _FIX_RANGE_MAP = (
     "rebase/autosquashの対応表は`atk run-script history-compare`で範囲を検収して再生成する。"
-    "amendはcommitのhistory-rewrite.mdに従って1対1の対応を検収・保存し、同じ引数で再実行する"
+    "amendは`agent-toolkit:commit`の`references/history-rewrite.md`に従って1対1の対応を検収・保存し、同じ引数で再実行する"
 )
 
 

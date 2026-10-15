@@ -32,7 +32,10 @@ def test_linux_post_apply_is_final_operation() -> None:
     assert final_block.splitlines()[-4:] == [
         '    exec "$post_apply_bin"',
         "else",
-        '    echo "  [pytools] $post_apply_bin が見つからないため後処理スキップ"',
+        '    echo "  [pytools] $post_apply_bin が見つからないため後処理スキップ。次の操作: '
+        'uv tool install --editable \\"{{ .chezmoi.workingTree }}\\" '
+        '--with-editable \\"{{ joinPath .chezmoi.workingTree "agent-toolkit" }}\\"を実行し、'
+        'update-dotfilesを再実行してください。"',
         "fi",
     ]
 
@@ -55,7 +58,10 @@ def test_windows_post_apply_final_condition_has_branch_local_order() -> None:
         "    & $postApplyBin",
         "    exit $LASTEXITCODE",
         "} else {",
-        '    Write-Host "  [pytools] $postApplyBin が見つからないため後処理スキップ"',
+        '    Write-Host "  [pytools] $postApplyBin が見つからないため後処理スキップ。次の操作: '
+        'uv tool install --editable `"{{ .chezmoi.workingTree }}`" '
+        '--with-editable `"{{ joinPath .chezmoi.workingTree "agent-toolkit" }}`"を実行し、'
+        'update-dotfilesを再実行してください。"',
         "}",
     ]
 

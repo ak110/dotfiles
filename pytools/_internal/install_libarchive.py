@@ -4,13 +4,13 @@
 MSYS2リポジトリからlibarchiveと動的依存パッケージのDLLを取得・配置する。
 """
 
+import compression.zstd
 import ctypes
 import ctypes.util
 import io
 import logging
 import pathlib
 import re
-import sys
 import tarfile
 
 from pytools._internal import log_format, post_apply_outcome, winutils
@@ -59,21 +59,37 @@ def run() -> post_apply_outcome.PostApplyOutcome:
         try:
             installed = _download_dlls()
         except Exception as e:  # noqa: BLE001 -- 取得と展開のどの段の失敗も導入の失敗として扱う
-            logger.warning(log_format.format_status("libarchive", f"自動インストールに失敗 (手動インストール推奨): {e}"))
+            logger.warning(
+                log_format.format_status(
+                    "libarchive",
+                    f"自動インストールに失敗: {e}。{_MSYS2_REPO}から{', '.join(_REQUIRED_PACKAGES)}の"
+                    f"pkg.tar.zstを取得し、mingw64/bin内のDLLを{_INSTALL_DIR}へ配置してupdate-dotfilesを再実行してください。",
+                )
+            )
             return post_apply_outcome.PostApplyOutcome()
         if not installed:
             return post_apply_outcome.PostApplyOutcome()
         try:
             winutils.append_user_path(str(_INSTALL_DIR))
         except OSError as e:
-            return post_apply_outcome.PostApplyOutcome(failure=f"ユーザー PATH への登録に失敗: {e}")
+            return post_apply_outcome.PostApplyOutcome(
+                failure=f"ユーザー PATH への登録に失敗: {e}",
+                next_action=f"Windowsのユーザー環境変数のPathへ{_INSTALL_DIR}を追加して、update-dotfilesを再実行してください。",
+            )
         logger.info(log_format.format_status("libarchive", f"インストール完了: {_INSTALL_DIR}"))
         changed = True
     try:
         if _persist_libarchive_env_var():
             changed = True
     except OSError as e:
-        return post_apply_outcome.PostApplyOutcome(changed=changed, failure=f"LIBARCHIVE 環境変数の設定に失敗: {e}")
+        return post_apply_outcome.PostApplyOutcome(
+            changed=changed,
+            failure=f"LIBARCHIVE 環境変数の設定に失敗: {e}",
+            next_action=(
+                f"Windowsのユーザー環境変数LIBARCHIVEを{_INSTALL_DIR / 'libarchive-13.dll'}へ設定して、"
+                "update-dotfilesを再実行してください。"
+            ),
+        )
     return post_apply_outcome.PostApplyOutcome(changed=changed)
 
 
@@ -89,7 +105,11 @@ def _download_dlls() -> bool:
             filename = _pick_latest(index_html, prefix)
             if filename is None:
                 logger.warning(
-                    log_format.format_status("libarchive", f"{prefix} の最新版を MSYS2 リポジトリから検出できませんでした")
+                    log_format.format_status(
+                        "libarchive",
+                        f"{prefix} の最新版を MSYS2 リポジトリから検出できませんでした。"
+                        f"{_MSYS2_REPO}で{prefix}のpkg.tar.zstの公開状況を確認し、公開後にupdate-dotfilesを再実行してください。",
+                    )
                 )
                 return False
             logger.info(log_format.format_status("libarchive", f"downloading {filename}"))
@@ -121,23 +141,12 @@ def _pick_latest(index_html: str, prefix: str) -> str | None:
 
 
 def _decompress_zst(data: bytes) -> bytes:
-    """zstd圧縮された単一フレームを上限付きで展開する。
-
-    Python 3.14以降は標準ライブラリの`compression.zstd`を使う。
-    サードパーティーの`zstandard`は新しいPythonのwheelを遅れて提供し、
-    wheelが無い版ではCコンパイラーを要するsdistビルドになるため、3.13だけで使う。
-    """
-    if sys.version_info >= (3, 14):
-        from compression import zstd  # pylint: disable=import-outside-toplevel
-
-        decompressor = zstd.ZstdDecompressor()
-        raw = decompressor.decompress(data, max_length=_MAX_DECOMPRESSED_SIZE)
-        if not decompressor.eof:
-            raise ValueError(f"展開後のサイズが上限 {_MAX_DECOMPRESSED_SIZE} バイトを超えるか、zstdフレームが不完全")
-        return raw
-    import zstandard  # pylint: disable=import-outside-toplevel,import-error
-
-    return zstandard.ZstdDecompressor().decompress(data, max_output_size=_MAX_DECOMPRESSED_SIZE)
+    """zstd圧縮された単一フレームを標準ライブラリで上限付きで展開する。"""
+    decompressor = compression.zstd.ZstdDecompressor()
+    raw = decompressor.decompress(data, max_length=_MAX_DECOMPRESSED_SIZE)
+    if not decompressor.eof:
+        raise ValueError(f"展開後のサイズが上限 {_MAX_DECOMPRESSED_SIZE} バイトを超えるか、zstdフレームが不完全")
+    return raw
 
 
 def _extract_dlls(pkg_data: bytes) -> None:

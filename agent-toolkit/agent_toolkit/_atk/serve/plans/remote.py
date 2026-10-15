@@ -41,6 +41,7 @@ from agent_toolkit._atk.serve.plans.roots import (
     logger,
     make_file_entry,
 )
+from agent_toolkit._common import stream_lines
 from agent_toolkit._plan import bundle_kinds as _bundle_kinds
 
 # 単発SSHの失敗の表現と標準エラー出力の整形はセッション画面と共通の契約とする。
@@ -91,7 +92,7 @@ async def fetch_remote_file(
             if response.get("error_type") == "not_found":
                 raise FileNotFoundError(rel)
             error_msg = response.get("error", "(no error message)")
-            # `ok=False`は権限不足・パス不正など恒久的な失敗を含むため、fallbackで救済する。
+            # `ok=False`は権限不足・パス不正など恒久的な失敗を含むため、fallbackで取得し直す。
             logger.warning("リモートRPCエラー host=%s path=%s: %s（fallbackへ）", host, rel, error_msg)
     args = [rel_b64]
     if source_id:
@@ -123,7 +124,7 @@ class _PendingSearch:
 
 
 class RemoteSearchCoordinator:
-    """SSHによる代替の検索をホスト単位で直列化し、全ホスト合計でも有界化する。
+    """SSHによる代替の検索をホスト単位で直列化し、全ホスト合計の同時実行数にも上限を設ける。
 
     検索はエンドユーザーの入力ごとに発行されるため、素朴に実行するとSSHとリモートPythonの組が
     入力継続中に積み上がる。ホストごとに実行中1件・待機中1件へ制限し、
@@ -246,7 +247,7 @@ async def search_remote_files(
 
 
 def _decode_root_info(raw: typing.Any) -> dict[str, dict[str, typing.Any]]:
-    """snapshotの新旧root情報をsource ID keyed形式へ正規化する。"""
+    """snapshotの新旧形式のroot情報を、source IDをキーとする辞書へ正規化する。"""
     if isinstance(raw, dict):
         if "root" in raw or "portable_root" in raw or "source_id" in raw:
             return {str(raw.get("source_id", "")): dict(raw)}
@@ -257,7 +258,7 @@ def _decode_root_info(raw: typing.Any) -> dict[str, dict[str, typing.Any]]:
 
 
 def _decode_root_status(raw: typing.Any) -> dict[str, dict[str, str]]:
-    """snapshotのroot状態をsource ID keyed形式へ正規化する。"""
+    """snapshotのroot状態を、source IDをキーとする辞書へ正規化する。"""
     if not isinstance(raw, dict):
         return {}
     if "status" in raw:
@@ -272,7 +273,7 @@ def _is_listed_remote_path(path: str) -> bool:
 
 
 class RemoteWatcher:
-    """1ホスト分のwatch+RPC接続ライフサイクルを担うクラス。
+    """1ホスト分のwatchとRPCの常駐接続を、接続から切断後の再接続まで管理するクラス。
 
     リモート監視はwatchdogによるpush方式を採用する。
     ポーリング方式は対象ファイル数が増えた場合や低リソースホストでのコストが懸念されるため、
@@ -517,21 +518,8 @@ class RemoteWatcher:
 
 
 async def _iter_stream_lines(stream: asyncio.StreamReader) -> typing.AsyncIterator[str]:
-    """`StreamReader`から1行ずつ取り出す非同期イテレータ。
-
-    `readline()`はEOFで空bytesを返すため、その時点で打ち切る。
-    snapshot行が`REMOTE_STREAM_LIMIT_BYTES`を超過した場合、`readline`は`ValueError`を送出する。
-    明示捕捉してwarningを残して打ち切らないと`run`の広範な`except Exception`で見過ごされ、
-    原因不明のリコネクトが続く。
-    """
-    while True:
-        try:
-            chunk = await stream.readline()
-        except ValueError as error:
-            logger.warning("リモートwatch snapshot行がlimit超過 limit=%d: %s", REMOTE_STREAM_LIMIT_BYTES, error)
-            return
-        if not chunk:
-            return
+    """transportの上限に依存せず復元した各行をUTF-8でデコードする。"""
+    async for chunk in stream_lines.iter_lines(stream):
         yield chunk.decode("utf-8", errors="replace")
 
 

@@ -19,6 +19,8 @@ description: >
 本スキルはドキュメント、コード（hookとセッション状態ファイルの設計を含む）およびエージェント向け文書を書くエージェントへ品質基準を提供する。
 レビューの判断基準は`agent-toolkit:review-standards`、計画ファイルの成果物契約は`agent-toolkit:plan-mode`が定める。
 
+提示された文章やコードの品質は、参照できる資料から判断する。スキルフォルダーだけを読む環境でも[日本語の書き方](references/writing.md#日本語の書き方)へ到達できる。ファイルの変更やformatter・linter・testerの実行を伴う手順は、それらの機能を提供するホストで適用し、機能が無い場合は原稿と未実行のチェックを返す。実行と保存はそれらの機能を使えるClaude CodeまたはCodexで続ける。
+
 以下の読込表は、行の条件が成立したら（作業の途中で成立した場合も）、その操作の前に同じ行の資料を全文読んで適用することを示す。
 
 ## 成果物種別ごとの必読資料
@@ -30,7 +32,7 @@ description: >
 | Xの投稿本文・日時・添付写真を資料として読む前 | `references/x-posts.md` |
 | ホスト機能の可否・入出力契約を調べる時 | `references/host-official-references.md` |
 | セッション記録の集計・分析 | `references/session-records.md` |
-| 計画の起草、実現方式の確定、実装の完了前と実行レビューで、変更後の設計品質を評価する時（エージェント向け文書だけの変更を含む） | `references/design-heuristics.md` |
+| 計画の起草、実現方式の確定、実装の完了前と実行レビューで、変更後の設計品質を評価する時（エージェント向け文書だけの変更を含む）と、外部資料（論文、ベンチマーク、他プロジェクトの事例など）に基づく改善案を提案・評価する時 | `references/design-heuristics.md` |
 | 人間が読む文章（ドキュメント、コメント、AWI・UWIの本文など）を書く時 | `references/writing.md` |
 | コード・テストコードを書く時 | 「コードの編集時に読む資料」の各行 |
 | エージェント向け文書を書く時 | 「エージェント向け文書の編集時に読む資料」の各行 |
@@ -43,7 +45,7 @@ description: >
 | 文章を書く時と表記をチェックする時（他の行より先に読む） | `references/notation-rules.md` |
 | 恒久的な成果物の文面案を執筆する前と、textlintの指摘へ対応する時 | `references/textlint-violations.md` |
 | lint設定の緩和・無効化・除外指定を追加する時 | `references/lint-relax-criteria.md` |
-| 文の口調を書き換える処置を選ぶ時（口語表現の警告、textlintのAI文体の指摘を含む） | `references/tone-examples.md`、`references/tone-examples-llm-tone.md` |
+| 文の口調を書き換える処置を選ぶ時（口語表現の警告、textlintのAI文体の指摘を含む）。正しい例と説明から、元の意味と条件を保つ書き方を選ぶ | `references/tone-examples.md`、`references/tone-examples-llm-tone.md` |
 | 人間向け文書の役割と残す内容を選ぶ時 | `references/document-types.md` |
 | 新しい概念名または識別子を導入する時 | `references/referent-table.md` |
 | 既存の対象を名前で指す時と新しい名前を付ける時 | `references/defined-names.md` |

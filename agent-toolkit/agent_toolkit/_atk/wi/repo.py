@@ -1,27 +1,23 @@
 """`atk wi`の対象リポジトリの識別子の解決と、ローカル作業ツリーとの対応。"""
 
-# parserの定数参照と、実際のキュー操作の依存を分ける。
-__lazy_modules__ = {
-    "agent_toolkit._atk.wi",
-    "agent_toolkit._atk.wi.formatters",
-    "agent_toolkit._atk.wi.web_input",
-}
-
 import pathlib
 import re
 import sys
 import typing
 
 from agent_toolkit._atk import outcome as _outcome
-from agent_toolkit._atk.wi import entries as _wi_entries
-from agent_toolkit._atk.wi import filenames as _wi_filenames
-from agent_toolkit._atk.wi import frontmatter as _frontmatter
-from agent_toolkit._atk.wi import sync as _wi_sync
-from agent_toolkit._atk.wi import web_input as _wi_web_input
-from agent_toolkit._atk.wi.formatters import parse_target_repo, parse_type
-from agent_toolkit._atk.wi.web_input import WebInputError
+from agent_toolkit._atk.wi.constants import unrepairable_entry_next_action
 from agent_toolkit._git import command as _git_command
 from agent_toolkit._git import remote as _git_remote
+
+# parserの定数参照と、実際のキュー操作の依存を分ける。
+lazy from agent_toolkit._atk.wi import entries as _wi_entries
+lazy from agent_toolkit._atk.wi import filenames as _wi_filenames
+lazy from agent_toolkit._atk.wi import frontmatter as _frontmatter
+lazy from agent_toolkit._atk.wi import sync as _wi_sync
+lazy from agent_toolkit._atk.wi import web_input as _wi_web_input
+lazy from agent_toolkit._atk.wi.formatters import parse_target_repo, parse_type
+lazy from agent_toolkit._atk.wi.web_input import WebInputError
 
 TARGET_REPO_ALL = "all"
 """`--target-repo`へ指定すると対象リポジトリを限定しない値。"""
@@ -39,9 +35,7 @@ def resolve_local_worktree(value: str | None) -> pathlib.Path:
     if value is not None:
         local_path = pathlib.Path(value).expanduser()
         if not local_path.exists():
-            _outcome.report_failure(
-                f"ローカルパスとして存在しない: {value}", next_action="URLではなく実在するローカルパスを指定する"
-            )
+            _outcome.report_failure(f"ローカルパスとして存在しない: {value}", next_action="実在するローカルパスを指定する")
             sys.exit(2)
         return local_path.resolve()
 
@@ -184,7 +178,7 @@ def verify_target_repo_content(path: pathlib.Path, content: str, normalized_expe
     if actual == "(unknown)":
         _outcome.report_failure(
             f"frontmatterにtarget_repoが無い: {path}",
-            next_action=f"`atk wi edit {path.name}`でtarget_repoを追記する。直せない場合はユーザーへ報告する",
+            next_action=unrepairable_entry_next_action(path.name),
         )
         sys.exit(2)
     normalized_actual = _git_remote.resolve_repo_identifier(actual)
@@ -216,7 +210,7 @@ def edit_entry(
     `mutations.edit_entry_content`が呼び出す。
     編集後の本文frontmatterの`type`が編集前から変更・欠落していないかも検証する
     （`verify_target_repo_content`と同じくexit 2で拒否する。種別は平坦化後の唯一の
-    分類情報であり、編集で書き換わると一覧・集計から静かに脱落するため）。
+    分類情報であり、編集で書き換わると警告なしに一覧・集計から外れるため）。
     `finalized_content`を渡した場合は、変換後の確定本文を`content`キーへ格納する。
     呼び出し元が保存本文との一致判定へ用いる。
     """

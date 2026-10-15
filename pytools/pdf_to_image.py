@@ -1,15 +1,13 @@
 # PYTHON_ARGCOMPLETE_OK
 """PDFを画像に変換する。システムにPoppler (pdftoppm) のインストールが必要。"""
 
-# 変換経路だけで必要な依存を遅延し、下限版でも解釈できる構文を保つ。
-__lazy_modules__ = {"tqdm.contrib", "pdf2image"}
-
 import argparse
 import pathlib
 import sys
 
-import tqdm.contrib
-from pdf2image import convert_from_path
+# 変換経路だけで必要な依存を遅延する。
+lazy import tqdm.contrib
+lazy from pdf2image import convert_from_path
 
 from pytools._internal.cli import enable_completion
 

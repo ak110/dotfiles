@@ -5,6 +5,6 @@ from agent_toolkit._testing.pretooluse_support import _EXECUTE_REVIEW_TASK_NAMES
 
 class TestExecuteReviewAlternateRouteAllowed:
     def test_guarded_task_references_exist(self) -> None:
-        """回帰テストが与える役割名の実在を確認し、改名による空振りを検出する。"""
+        """回帰テストが与える役割名の文書が実在することを確かめ、改名で文書が無くなりテストが何も検証しなくなる状態を検出する。"""
         for task_name in _EXECUTE_REVIEW_TASK_NAMES:
             assert (_SHARE_DIR / task_name).is_file()

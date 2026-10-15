@@ -1,7 +1,7 @@
 """セッション振り返りの入力を抽出し、会話・比較材料・候補・統計を作業ディレクトリへ書く。
 
 1回の実行で証拠bundleを抽出し、会話の流れ・比較材料・問題候補・統計を書いて、所在と読取範囲を1行のJSONで返す。
-会話の流れはメイン記録の発話、ツール呼び出しおよび失敗の標識を時系列で並べ、メインが最初に全範囲を通読する。
+会話の流れはメイン記録の発話、ツール呼び出しおよび失敗の標識を時系列で並べた文書であり、メインが最初に全範囲を通読する。
 原因と対策の確定、AWIの起草と投入はメインが自身のコンテキストで行うため、本スクリプトはキューを変更しない。
 `candidates.md`は1候補を1行の要約と、記録の由来（役割文書、起動mode、起動元）を添えた記録位置で示す。全文が要る候補だけを、
 メインが`atk run-script session-review-evidence`の`--detail`で照会する。
@@ -45,11 +45,11 @@ STATS_FILENAME = "stats.md"
 COMPARISON_FILENAME = "comparison-materials.md"
 
 _CONVERSATION_RANGE_BYTES = 32_000
-"""1回の読取の包装を含めてもホストの返却予算へ収まる本文量。
+"""1回の読取でホストが加える行番号とJSONの引用符を含めても、ホストが1回に返す量の上限へ収まる本文量。
 
 2026年10月10日のCodex CLI 0.162.1は40,000バイト相当の10,000推定トークンで切り詰めた。
 Claude Code 2.1.296のReadは25,000トークンで拒否し、行番号を含む高密度の記録は
-1トークンあたり2.06バイトだった。JSONの引用符と包装に余裕を残す量を選んでいる。
+1トークンあたり2.06バイトだった。行番号とJSONの引用符の分に余裕を残す量を選んでいる。
 """
 
 _UTTERANCE_FULL_LIMIT = 1000
@@ -561,7 +561,7 @@ def _past_wi_sections() -> list[tuple[str, str, str, list[set[str]]]]:
         for path in sorted(directory.glob("*.md")):
             try:
                 text = path.read_text(encoding="utf-8")
-            except (OSError, UnicodeError):
+            except OSError, UnicodeError:
                 continue
             sections = _wi_sections.h2_sections(text)
             grams = [_ngrams(_normalize_for_similarity(sections[name])) for name in _SIMILAR_SECTIONS if sections.get(name)]
@@ -635,7 +635,7 @@ def _candidates_document(
 
 
 def _failure_ledger(candidates: list[dict[str, Any]], session_id: str, now: datetime.datetime) -> tuple[dict[str, int], int]:
-    """排他下で過去30日の失敗署名を更新し、署名ごとの最上位セッション数を返す。
+    """ロックを取得した状態で過去30日の失敗署名を更新し、署名ごとの最上位セッション数を返す。
 
     判定に使うイベントの欄（`failure_event`）を持つ記録は、読込のたびに抽出と同じ除外判定と署名計算で判定し直し、
     現在の判定が除く記録を数えず書き戻しからも除く。欄を持たない旧形式の記録は保存済みの代表診断から署名だけを再計算する。
@@ -654,7 +654,7 @@ def _failure_ledger(candidates: list[dict[str, Any]], session_id: str, now: date
                     lines = path.read_text(encoding="utf-8").splitlines()
                 except FileNotFoundError:
                     lines = []
-                except (OSError, UnicodeError):
+                except OSError, UnicodeError:
                     lines = []
                     skipped += 1
                 for line in lines:
@@ -675,7 +675,7 @@ def _failure_ledger(candidates: list[dict[str, Any]], session_id: str, now: date
                         timestamp = datetime.datetime.fromisoformat(observed_at.replace("Z", "+00:00"))
                         if timestamp.tzinfo is None:
                             raise ValueError("時刻のtimezoneが無い")
-                    except (KeyError, ValueError, TypeError, json.JSONDecodeError):
+                    except KeyError, ValueError, TypeError, json.JSONDecodeError:
                         skipped += 1
                         continue
                     if timestamp >= cutoff:
@@ -848,7 +848,7 @@ def _thread_breakdown_lines(
 ) -> list[str]:
     """律速threadの内部の工程、待機および反復の内訳の節を組み立てる。
 
-    委譲先の返却本文の説明ではなく記録から得た内訳を、振り返りが追加の照会なしで読めるようにする。
+    記録から得た内訳を、振り返りが追加の照会なしで読めるようにする。
     件数の上限はメイン記録の集計と同じであり、記録位置は`--detail`へそのまま渡せる。
     """
     owner = segment.get("owner")

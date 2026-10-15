@@ -2,9 +2,6 @@
 
 from __future__ import annotations
 
-# 他の処理では不要な依存を、使用時まで遅延する。旧Pythonでは通常のimportとなる。
-__lazy_modules__ = {"agent_toolkit._atk.managed_temp.windows_security"}
-
 import os
 import pathlib
 import stat
@@ -23,7 +20,9 @@ from agent_toolkit._atk.managed_temp.registry import (
     _ValidatedRoot,
     _ValidatedTemp,
 )
-from agent_toolkit._atk.managed_temp.windows_security import (
+
+# 他の処理で使わない依存は、使用時まで読み込まない。
+lazy from agent_toolkit._atk.managed_temp.windows_security import (
     _WINDOWS_REPARSE_POINT,
     _validate_windows_managed_root_security,
     _windows_identity,
@@ -41,7 +40,8 @@ def _validate_path_shape(path_arg: pathlib.Path) -> tuple[pathlib.Path, pathlib.
 def _validate_posix(path_arg: pathlib.Path | str, *, registry_fallback: bool = False) -> _ValidatedTemp:
     if os.name != "posix":
         raise ManagedTempError(
-            "Windowsの所有者・ACL検証はWindows実機で確定する必要がある", next_action=ManagedTempError.UNSUPPORTED_NEXT_ACTION
+            "POSIXの所有者・権限の検証はWindowsでは実行できない。Windowsの所有者・ACLはWindows用の検証で確かめる",
+            next_action=ManagedTempError.UNSUPPORTED_NEXT_ACTION,
         )
     root, path = _validate_path_shape(pathlib.Path(path_arg))
     root_state = _validate_root(root)

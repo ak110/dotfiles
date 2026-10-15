@@ -43,7 +43,7 @@ block・warn・noticeの本文の整形（整形関数、`fix`の要否、種別
 組み込みのdeny / askルールはhookの戻り値に関わらず評価される。`.claude/`配下への書き込み確認等の組み込みaskルールはPreToolUseの`allow`では上書きできず、PermissionRequestの`decision.behavior: "allow"`でダイアログを抑制できる。組み込みdenyルールは`allow`を返しても適用される。
 `updatedInput`は入力値を変えるだけで確認ダイアログは残るため、ダイアログを伴う値を拒否するにはブロックで扱う。
 
-`Read(*.key)`のようにディレクトリを含まないdeny規則は、gitignore構文に従って任意の深さで一致するため、ディレクトリを走査する読み取りコマンドを一律に確認ダイアログの対象へ変える。
+`Read`のdeny規則でディレクトリ指定を欠くglobは、gitignore構文に従って任意の深さで一致するため、ディレクトリを走査する読み取りコマンドを一律に確認ダイアログの対象へ変える。
 このダイアログは本イベントの`allow`でも抑止できないため、保護する対象はそのファイルを持つリポジトリの設定へ、走査対象を巻き込まない具体的なパスで書く。
 
 `matcher`はツール名で評価する（`Bash` / `Edit|Write`等）。入力payloadは`tool_name` / `tool_input`に加え`permission_suggestions`配列を持つ。

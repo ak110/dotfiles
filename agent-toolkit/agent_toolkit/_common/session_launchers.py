@@ -33,7 +33,7 @@ def read_launcher(path: pathlib.Path) -> str | None:
     """登録簿のレコード1件が持つ委譲元sessionの識別子を返す。読めない場合と項目を持たない場合は`None`を返す。"""
     try:
         payload: typing.Any = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, UnicodeError, json.JSONDecodeError):
+    except OSError, UnicodeError, json.JSONDecodeError:
         return None
     return valid_launcher(payload.get(LAUNCHER_KEY)) if isinstance(payload, dict) else None
 
@@ -48,7 +48,9 @@ def launcher_reader(state_root: pathlib.Path | None) -> typing.Callable[[str], s
         return lambda _session_id: None
     directory = registry_directory(state_root)
     try:
-        names = {entry.name for entry in os.scandir(directory)}
+        # 列挙の途中で失敗しても、ディレクトリのハンドルをその場で閉じる。
+        with os.scandir(directory) as entries:
+            names = {entry.name for entry in entries}
     except OSError:
         return lambda _session_id: None
 

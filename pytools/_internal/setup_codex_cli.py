@@ -1,8 +1,5 @@
 """Codex CLI公式スタンドアローン版を導入または更新する。"""
 
-# 他の処理では不要な依存を、使用時まで遅延する。旧Pythonでは通常のimportとなる。
-__lazy_modules__ = {"httpx"}
-
 import contextlib
 import json
 import logging
@@ -15,7 +12,8 @@ import tempfile
 import time
 from pathlib import Path
 
-import httpx
+# 他の処理で使わない依存は、使用時まで読み込まない。
+lazy import httpx
 
 from pytools._internal import common, log_format, post_apply_outcome, setup_cli_common
 
@@ -35,21 +33,36 @@ def run(client: httpx.Client | None = None) -> post_apply_outcome.PostApplyOutco
     取得・導入・更新と確認の失敗は警告を出力してスキップと数え、旧版の撤去と中継の再生成の失敗は失敗と数える。
     """
     if setup_cli_common.is_windows_cli_running("codex", _PACKAGE):
-        logger.info(log_format.format_status("codex", "実行中のため導入と移行を次回へ延期"))
+        logger.info(
+            log_format.format_status(
+                "codex",
+                "実行中のため導入と移行を次回へ延期。Codexを終了して`update-dotfiles`を再実行する",
+            ),
+        )
         return post_apply_outcome.PostApplyOutcome()
     result = _run_installer(client)
     if result is None or result.returncode != 0:
-        logger.warning(log_format.format_status("codex", f"導入または更新に失敗: {common.format_cli_error(result)}"))
+        logger.warning(
+            log_format.format_status(
+                "codex",
+                f"導入または更新に失敗: {common.format_cli_error(result)}。`update-dotfiles`を再実行する",
+            ),
+        )
         return post_apply_outcome.PostApplyOutcome()
     launcher = _find_standalone_launcher()
     if launcher is None:
-        message = f"管理対象のCodexが見つからないため旧版を保持: {_standalone_root() / 'current'}"
+        message = (
+            f"管理対象のCodexが見つからないため旧版を保持: {_standalone_root() / 'current'}。`update-dotfiles`を再実行する"
+        )
         logger.warning(log_format.format_status("codex", message))
         return post_apply_outcome.PostApplyOutcome()
     verification = common.run_subprocess([str(launcher), "--version"], timeout=30, tag="codex")
     if verification is None or verification.returncode != 0:
         logger.warning(
-            log_format.format_status("codex", f"正規版を確認できないため旧版を保持: {common.format_cli_error(verification)}")
+            log_format.format_status(
+                "codex",
+                f"正規版を確認できないため旧版を保持: {common.format_cli_error(verification)}。`update-dotfiles`を再実行する",
+            ),
         )
         return post_apply_outcome.PostApplyOutcome()
     setup_cli_common.prepend_path(_visible_bin_dir())
@@ -76,9 +89,20 @@ def run(client: httpx.Client | None = None) -> post_apply_outcome.PostApplyOutco
         if not reshim_failures:
             for shim in orphaned_shims:
                 if shim.is_file():
-                    logger.warning(log_format.format_status("codex", f"mise管理外の中継を保持: {shim}"))
+                    logger.warning(
+                        log_format.format_status(
+                            "codex",
+                            f"mise管理外の中継を保持: {shim}。"
+                            "mise管理外のため自動削除しない。"
+                            "不要な中継と確認できた場合だけ、このファイルを手動削除する",
+                        ),
+                    )
     if failures:
-        return post_apply_outcome.PostApplyOutcome(changed=True, failure=" / ".join(failures))
+        return post_apply_outcome.PostApplyOutcome(
+            changed=True,
+            failure=" / ".join(failures),
+            next_action="問題を解消した後に`update-dotfiles`を再実行する。",
+        )
     return post_apply_outcome.PostApplyOutcome(changed=True)
 
 
@@ -120,7 +144,12 @@ def _run_installer(client: httpx.Client | None) -> subprocess.CompletedProcess[s
             env_overrides=env_overrides,
         )
     except (httpx.HTTPError, OSError) as error:
-        logger.warning(log_format.format_status("codex", f"公式インストーラーの取得に失敗: {error}"))
+        logger.warning(
+            log_format.format_status(
+                "codex",
+                f"公式インストーラーの取得に失敗: {error}。`update-dotfiles`を再実行する",
+            ),
+        )
         return None
     finally:
         if temp_path is not None:

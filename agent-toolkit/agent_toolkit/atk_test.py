@@ -203,7 +203,12 @@ def test_cli_exits_quietly_when_stdout_pipe_is_closed_early(
     env = _isolated_cli_environ(host_environ, tmp_path)
     env["AGENT_TOOLKIT_PRIVATE_NOTES"] = str(notes)
     # `config show`がCodexの系列名を解決するために`codex` CLIを起動しないよう、系列名を含まない値を与える。
-    values = {"codex_fast_mode": "false", "write_model": "claude:opus/medium", "codex_model_providers": ""}
+    values = {
+        "codex_fast_mode": "false",
+        "write_model": "claude:opus/medium",
+        "codex_model_providers": "",
+        "process_loop_repositories": "[]",
+    }
     for key in _config._MUTABLE_KEY_DEFAULTS:  # pylint: disable=protected-access  # noqa: SLF001
         default = "claude" if key.endswith("_engine") else "opus/medium"
         env[f"AGENT_TOOLKIT_CONFIG_{key.upper()}"] = values.get(key, default)
@@ -908,6 +913,8 @@ class TestWaitScheduleParser:
 
 def _make_subprocess_fake(
     calls: list[_GitCall],
+    *,
+    has_upstream: bool = True,
 ) -> Callable[..., subprocess.CompletedProcess[Any]]:
     """subprocess.runのfakeを返す。呼び出し引数をcallsへ記録する。
 
@@ -918,7 +925,8 @@ def _make_subprocess_fake(
         del args
         calls.append({"cmd": list(cmd), "kwargs": dict(kwargs)})
         empty: Any = "" if kwargs.get("text") else b""
-        return subprocess.CompletedProcess(cmd, returncode=0, stdout=empty, stderr=empty)
+        no_upstream = not has_upstream and cmd[-4:] == ["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"]
+        return subprocess.CompletedProcess(cmd, returncode=128 if no_upstream else 0, stdout=empty, stderr=empty)
 
     return fake
 
@@ -1285,7 +1293,7 @@ def test_wi_pull_uses_lock_and_suppresses_entry_notification(
 
     assert exc_info.value.code == 0
     assert events == ["lock-enter", "pull", "lock-exit"]
-    assert capsys.readouterr().out == f"成功: private-notesをremoteと同期した: {notes.resolve()}\n"
+    assert capsys.readouterr().out == f"成功: private-notesをremoteかupstreamが無いため同期していない: {notes.resolve()}\n"
 
 
 @pytest.mark.parametrize(
@@ -2427,7 +2435,6 @@ class TestMainFailureNextAction:
     ) -> None:
         """rebaseの中間状態が残るWI保存リポジトリでは、`atk wi edit`が本文を変える前に拒否し、解消操作を示す。"""
         notes = make_clean_repo(tmp_path, "notes")
-        (notes / ".agent-toolkit-local-only").touch()
         original = "---\ntype: awi\ntarget_repo: github.com/example/repo\n---\n\n本文\n"
         entry = notes / "inbox" / "entry.md"
         entry.parent.mkdir()

@@ -106,7 +106,7 @@ def _hook_notice_candidate_events(collected: list[_CollectedRecord]) -> list[dic
 def _hook_records(entry: dict[str, Any]) -> list[dict[str, Any]]:
     """エントリを再帰的にたどり、hook実行の記録を出現順に集める。
 
-    記録の格納先は`attachment`配下などruntimeの版で変わるため、位置ではなく`type`で判定する。
+    記録の格納先は`attachment`配下などruntimeの版で変わるため、`type`で判定する。
     """
     found: list[dict[str, Any]] = []
     _collect_hook_records(entry, found)
@@ -200,7 +200,7 @@ def _hook_notice_kind_text(text: str) -> str:
 
     種類本文は反復注記の除去、可変部の置換および切り詰めを経た損失のある値であり、通知の事象は元の本文を保持しない。
     通知の種類本文の生成と、警告行などの別の本文を通知と比べる全ての箇所がこの関数を通すことで、
-    正規化を変えても比較の両側へ同時に届く。片側だけ別の正規化で比べると、同じ通知を別の事象として数える。
+    正規化の変更が比較の両側へ同時に反映される。片側だけ別の正規化で比べると、同じ通知を別の事象として数える。
     """
     return _normalize_candidate_kind_text(_HOOK_REPEAT_ANNOTATION.sub("", text))
 

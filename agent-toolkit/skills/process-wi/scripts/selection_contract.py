@@ -306,7 +306,7 @@ def structure_errors(selection: object) -> tuple[list[str], list[str]]:
 
 
 def _allocation_structure_errors(value: object) -> list[str]:
-    """初回配分は追加後も検査できる集合・割当・成分を保持する。"""
+    """初回配分が、書込対象の追加後も選定の確認に使う集合・割当・成分の3欄を所定の型で持つか確かめ、誤りを返す。"""
     if not isinstance(value, dict) or set(value) != {"候補WI", "レーン割当", "不可分成分"}:
         return ["初回配分には候補WI・レーン割当・不可分成分の3欄を指定する"]
     errors: list[str] = []

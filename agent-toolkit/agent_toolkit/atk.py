@@ -36,16 +36,6 @@ AWIとUWIを平坦なメッセージキューとして扱い、種別はfrontmat
 managed-tempの掃引）と、サブコマンドの登録表・実行の登録表だけを持つ。
 """
 
-# Python 3.15では使うサブコマンドだけを読み込み、下限版では従来どおりのimportを使う。
-__lazy_modules__ = {
-    "agent_toolkit._agents_server",
-    "agent_toolkit._atk",
-    "agent_toolkit._atk.serve",
-    "agent_toolkit._atk.wi",
-    "agent_toolkit._common",
-    "agent_toolkit._plan",
-}
-
 import argparse
 import dataclasses
 import datetime
@@ -55,38 +45,41 @@ import pathlib
 import sys
 from collections.abc import Callable
 
-# pylint: disable=wrong-import-position,protected-access
-from agent_toolkit._agents_server import commands as _agents  # noqa: E402
-from agent_toolkit._atk import agents_exit_session as _agents_exit_session  # noqa: E402
-from agent_toolkit._atk import cli_support as _cli_support
-from agent_toolkit._atk import commit as _commit_cmd  # noqa: E402
-from agent_toolkit._atk import config as _config_cmd  # noqa: E402
-from agent_toolkit._atk import help_text as _atk_help  # noqa: E402
-from agent_toolkit._atk import info as _info
-from agent_toolkit._atk import lane as _lane
-from agent_toolkit._atk import managed_temp as _managed_temp  # noqa: E402  # pylint: disable=ungrouped-imports
-from agent_toolkit._atk import outcome as _outcome  # noqa: E402
-from agent_toolkit._atk import output_file as _output_file  # noqa: E402
-from agent_toolkit._atk import plans as _plans  # noqa: E402
-from agent_toolkit._atk import read_file as _read_file
-from agent_toolkit._atk import review_audit as _review_audit  # noqa: E402
-from agent_toolkit._atk import review_table as _review_table  # noqa: E402
-from agent_toolkit._atk import run_command as _run_command  # noqa: E402
-from agent_toolkit._atk import run_script as _run_script  # noqa: E402
-from agent_toolkit._atk import run_skill as _run_skill  # noqa: E402
-from agent_toolkit._atk import setup_project as _setup_project  # noqa: E402
-from agent_toolkit._atk import user_events_summary as _user_events_summary  # noqa: E402
-from agent_toolkit._atk import wait_schedule as _wait_schedule_cmd
-from agent_toolkit._atk import watch as _watch  # noqa: E402
-from agent_toolkit._atk import worktree_stash as _worktree_stash  # noqa: E402
 from agent_toolkit._atk.environment import is_agent_environment  # noqa: E402
-from agent_toolkit._atk.serve import command as _serve_command
-from agent_toolkit._atk.wi import cli as _wi_cli
-from agent_toolkit._atk.wi import cli_input as _wi_cli_input
-from agent_toolkit._common import delegated_session as _delegated_session  # noqa: E402
-from agent_toolkit._common import private_notes as _private_notes  # noqa: E402
-from agent_toolkit._common import session_state as _session_state  # noqa: E402
-from agent_toolkit._plan import owner_records as _owner_records  # noqa: E402
+
+# pylint: disable=wrong-import-position,protected-access
+# 使うサブコマンドだけを読み込む。
+lazy from agent_toolkit._agents_server import commands as _agents  # noqa: E402
+lazy from agent_toolkit._agents_server import manager as _agents_manager
+lazy from agent_toolkit._atk import agents_exit_session as _agents_exit_session  # noqa: E402
+lazy from agent_toolkit._atk import cli_support as _cli_support
+lazy from agent_toolkit._atk import commit as _commit_cmd  # noqa: E402
+lazy from agent_toolkit._atk import config as _config_cmd  # noqa: E402
+lazy from agent_toolkit._atk import help_text as _atk_help  # noqa: E402
+lazy from agent_toolkit._atk import info as _info
+lazy from agent_toolkit._atk import lane as _lane
+lazy from agent_toolkit._atk import managed_temp as _managed_temp  # noqa: E402  # pylint: disable=ungrouped-imports
+lazy from agent_toolkit._atk import outcome as _outcome  # noqa: E402
+lazy from agent_toolkit._atk import output_file as _output_file  # noqa: E402
+lazy from agent_toolkit._atk import plans as _plans  # noqa: E402
+lazy from agent_toolkit._atk import read_file as _read_file
+lazy from agent_toolkit._atk import review_audit as _review_audit  # noqa: E402
+lazy from agent_toolkit._atk import review_table as _review_table  # noqa: E402
+lazy from agent_toolkit._atk import run_command as _run_command  # noqa: E402
+lazy from agent_toolkit._atk import run_script as _run_script  # noqa: E402
+lazy from agent_toolkit._atk import run_skill as _run_skill  # noqa: E402
+lazy from agent_toolkit._atk import setup_project as _setup_project  # noqa: E402
+lazy from agent_toolkit._atk import user_events_summary as _user_events_summary  # noqa: E402
+lazy from agent_toolkit._atk import wait_schedule as _wait_schedule_cmd
+lazy from agent_toolkit._atk import watch as _watch  # noqa: E402
+lazy from agent_toolkit._atk import worktree_stash as _worktree_stash  # noqa: E402
+lazy from agent_toolkit._atk.serve import command as _serve_command
+lazy from agent_toolkit._atk.wi import cli as _wi_cli
+lazy from agent_toolkit._atk.wi import cli_input as _wi_cli_input
+lazy from agent_toolkit._common import delegated_session as _delegated_session  # noqa: E402
+lazy from agent_toolkit._common import private_notes as _private_notes  # noqa: E402
+lazy from agent_toolkit._common import session_state as _session_state  # noqa: E402
+lazy from agent_toolkit._plan import owner_records as _owner_records  # noqa: E402
 
 _UNREGISTERED_TEMP_FINGERPRINT_KEY = "unregistered_managed_temp_fingerprint"
 
@@ -95,7 +88,7 @@ _MANAGED_TEMP_CHECK_NEXT_ACTION = "本来の操作は継続した。`atk managed
 
 
 def _claim_unregistered_temp_warning(candidates: tuple[pathlib.Path, ...]) -> bool:
-    """候補集合が現行セッションで未報告の場合だけ警告権を取得する。"""
+    """候補集合を現行セッションでまだ報告していない場合だけ、報告済みとして記録して真を返す。"""
     session_id = _owner_records.resolve_owner_session_id()
     if session_id is None:
         return bool(candidates)
@@ -171,7 +164,7 @@ def _extract_legacy_repo_path(argv: list[str]) -> tuple[list[str], str | None]:
     return new_argv, str(candidate_path)
 
 
-# 関数の参照もlazy importを解決するため、登録時ではなく呼び出し時に属性へ触れる。
+# 関数の参照もlazy importを解決するため、属性へは呼び出し時に触れる。
 # pylint: disable=unnecessary-lambda
 _PARSER_REGISTRATIONS: tuple[tuple[str, Callable[[argparse.ArgumentParser], None]], ...] = (
     ("info", lambda parser: _info.build_parser(parser)),
@@ -287,7 +280,11 @@ def _auto_saves_output(args: argparse.Namespace) -> bool:
         return False
     if args.command == "serve":
         return False
-    if args.command == "wi" and args.wi_subcommand == "process-loop" and getattr(args, "process_loop_subcommand", None) is None:
+    if (
+        args.command == "wi"
+        and args.wi_subcommand == "process-loop"
+        and getattr(args, "process_loop_subcommand", None) in (None, "all-repos")
+    ):
         return False
     return not (args.command == "agents" and args.agents_subcommand == "logs" and getattr(args, "follow", False))
 
@@ -353,7 +350,7 @@ class _Invocation:
 
 
 def _dispatch_managed_temp(invocation: _Invocation) -> int:
-    """`atk managed-temp`を実行する。同じ起動の掃引が削除済みの対象の後始末は成功として扱う。"""
+    """`atk managed-temp`を実行する。同じ起動の掃引で削除済みになった対象の後始末は成功として扱う。"""
     args = invocation.args
     if (
         args.managed_temp_subcommand == "cleanup"
@@ -396,7 +393,14 @@ _COMMANDS: dict[str, Callable[[_Invocation], int]] = {
     "plans": lambda invocation: _plans.dispatch_command(invocation.args, home=invocation.home),
     "review-table": lambda invocation: _cli_support.run_rejecting_value_error(invocation.args, _review_table.dispatch),
     "review-audit": lambda invocation: _cli_support.run_rejecting_value_error(invocation.args, _review_audit.dispatch),
-    "wi": lambda invocation: _wi_cli.dispatch(invocation.args, home=invocation.home, now=invocation.now),
+    "wi": lambda invocation: _wi_cli.dispatch(
+        invocation.args,
+        home=invocation.home,
+        now=invocation.now,
+        # 他のwi操作ではagents_server依存を読み込まない。
+        # pylint: disable=unnecessary-lambda
+        repository_manager_factory=lambda: _agents_manager.AgentsServerManager(),
+    ),
 }
 """共通の前処理の後に実行するサブコマンドと実行関数の対応。"""
 

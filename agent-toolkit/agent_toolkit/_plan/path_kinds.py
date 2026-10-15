@@ -26,7 +26,7 @@ def _legacy_direct_name(file_path: str) -> str | None:
         path = _resolve(pathlib.Path(file_path))
         plans_dir = _resolve(_locations.legacy_plans_root())
         relative = path.relative_to(plans_dir)
-    except (OSError, ValueError):
+    except OSError, ValueError:
         return None
     if len(relative.parts) != 1:
         return None
@@ -51,7 +51,7 @@ def _new_plan_kind(file_path: str | os.PathLike[str]) -> _bundle_kinds.BundleKin
                 _locations.validate_plan_relative_path(candidate_rel)
             except ValueError:
                 _locations.validate_migrated_plan_relative_path(candidate_rel)
-    except (OSError, StopIteration, ValueError):
+    except OSError, StopIteration, ValueError:
         return None
     return _bundle_kinds.kind_of_name(path.name)
 
@@ -63,7 +63,7 @@ def _kind_of_file(file_path: str) -> _bundle_kinds.BundleKind | None:
         return _bundle_kinds.kind_of_name(name)
     try:
         path = _locations.resolve_plan_file(file_path)
-    except (OSError, ValueError):
+    except OSError, ValueError:
         return None
     return _new_plan_kind(path)
 

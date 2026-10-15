@@ -76,6 +76,7 @@ def test_backend_imports_survive_plugin_path_removal(tmp_path: pathlib.Path) -> 
         "_common/process_tree.py",
         "_agents_server/state.py",
         "_agents_server/status_file.py",
+        "_agents_server/file_operations.py",
         "_common/session_registry.py",
         "_common/atomic_file.py",
         "_atk/config.py",
@@ -162,7 +163,7 @@ def test_public_start_schema_delivers_explore_capabilities() -> None:
     """登録済みの公開schemaが起動前に共通の能力説明を届ける。"""
     start_tool = _start_tool()
     capabilities = tool_descriptions.EXPLORE_CAPABILITIES
-    assert capabilities in start_tool.description[:2048]
+    assert capabilities in start_tool.description[:4096]
     assert capabilities in start_tool.parameters["properties"]["mode"]["description"]
 
 
@@ -566,7 +567,7 @@ async def test_mcp_lifespan_persists_activate_and_close_milestones(
     """managerのactivate前後とclose前後を永続化する。"""
     monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
     mcp_tools._configure_logging()
-    monkeypatch.setattr(mcp_tools._MANAGER, "activate", lambda: None)
+    monkeypatch.setattr(mcp_tools._MANAGER, "activate_async", AsyncMock())
     monkeypatch.setattr(mcp_tools._MANAGER, "close", AsyncMock())
 
     async with mcp_tools._mcp_lifespan(mcp_tools.mcp):
@@ -588,10 +589,10 @@ async def test_mcp_lifespan_persists_activate_failure(
     monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
     mcp_tools._configure_logging()
 
-    def fail_activate() -> None:
+    async def fail_activate() -> None:
         raise RuntimeError("activate failed")
 
-    monkeypatch.setattr(mcp_tools._MANAGER, "activate", fail_activate)
+    monkeypatch.setattr(mcp_tools._MANAGER, "activate_async", fail_activate)
 
     with pytest.raises(RuntimeError, match="activate failed"):
         async with mcp_tools._mcp_lifespan(mcp_tools.mcp):

@@ -72,7 +72,7 @@ class ProcessIdentity:
         try:
             process = psutil.Process(self.pid)
             return process.create_time() == self.create_time and process.status() != psutil.STATUS_ZOMBIE
-        except (psutil.NoSuchProcess, psutil.ZombieProcess):
+        except psutil.NoSuchProcess, psutil.ZombieProcess:
             return False
         except psutil.Error:
             return True
@@ -268,7 +268,7 @@ def resolve(session_id: str, *, state_root: pathlib.Path | None = None) -> Sessi
         payload: Any = json.loads(path.read_text(encoding="utf-8"))
     except FileNotFoundError:
         return SessionResolution(Resolution.MISSING)
-    except (OSError, UnicodeError, json.JSONDecodeError):
+    except OSError, UnicodeError, json.JSONDecodeError:
         return SessionResolution(Resolution.UNREADABLE)
     if (
         not isinstance(payload, dict)
@@ -354,7 +354,7 @@ def release(session_id: str, *, reason: ReleaseReason, state_root: pathlib.Path 
     ):
         try:
             prior = json.loads(path.read_text(encoding="utf-8"))
-        except (OSError, UnicodeError, json.JSONDecodeError):
+        except OSError, UnicodeError, json.JSONDecodeError:
             prior = {}
         # 初回解放のv2と、既に解放したv3の両方で同じ内部再開条件を引き継ぐ。
         payload["codex_resume_info"] = prior.get("codex_resume_info", prior)

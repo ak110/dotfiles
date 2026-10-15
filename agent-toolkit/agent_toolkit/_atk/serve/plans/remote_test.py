@@ -22,6 +22,26 @@ from agent_toolkit._plan import viewer_files as plan_viewer_files
 from agent_toolkit._testing.serve_plans_support import _context, _plan, _read_payload, _runner_returning
 
 
+@pytest.mark.asyncio
+async def test_watch_restores_long_snapshot_and_rpc_response(tmp_path: pathlib.Path) -> None:
+    """長いsnapshotと後続RPCをtransportの上限で分断せず、EOFの応答まで処理する。"""
+    context = _context(tmp_path, remote_hosts=["remote-host"])
+    watcher = plans_remote.RemoteWatcher("remote-host", context.state)
+    response = {"type": "response", "id": 1, "ok": True, "data": "あ" * 50000}
+    snapshot = {"type": "snapshot", "entries": [], "host_info": {"description": "い" * 50000}}
+    stream = asyncio.StreamReader(limit=64)
+    stream.feed_data((json.dumps(snapshot, ensure_ascii=False) + "\n" + json.dumps(response, ensure_ascii=False)).encode())
+    stream.feed_eof()
+    future = asyncio.get_running_loop().create_future()
+    watcher._pending[1] = future
+
+    await watcher._process_stream(plans_remote._iter_stream_lines(stream))
+
+    assert context.state.host_status["remote-host"] == "connected"
+    assert context.state.host_info["remote-host"] == snapshot["host_info"]
+    assert future.result() == response
+
+
 def test_absent_entries_are_pruned_and_other_roots_are_kept(tmp_path: pathlib.Path, index_path: pathlib.Path) -> None:
     """走査結果に現れないキーを回収し、別のrootに属するキーは維持する。"""
     first_root = tmp_path / "first"
@@ -193,8 +213,8 @@ async def test_rpc_timeout_error_names_operation_and_limit(tmp_path: pathlib.Pat
 async def test_single_shot_ssh_launches_plans_helper_and_reports_failure(monkeypatch: pytest.MonkeyPatch) -> None:
     """計画ファイル画面の単発SSHは、計画ファイル画面のヘルパーを従来の起動形で起動し、失敗を標準エラー付きで示す。
 
-    起動形をセッション画面と共通の関数へ移したため、計画ファイル画面のbootstrap・op・argsが渡らないか、
-    `watchdog`・`platformdirs`が欠けると、リモートの計画ファイル一覧と本文を取得できなくなる。
+    計画ファイル画面のbootstrap・op・argsを共通の起動へ渡すことを確かめる。
+    共通argvのPython版と依存は、serve/remote_test.pyが独立した期待値で検証する。
     """
     sent: list[tuple[list[str], float]] = []
 
@@ -215,18 +235,7 @@ async def test_single_shot_ssh_launches_plans_helper_and_reports_failure(monkeyp
                 "-o",
                 "BatchMode=yes",
                 "remote-host",
-                "uv",
-                "run",
-                "--no-project",
-                "--with",
-                '"watchdog>=6.0.0"',
-                "--with",
-                '"platformdirs>=4.0"',
-                "python",
-                "-c",
-                f'"{plans.REMOTE_BOOTSTRAP}"',
-                "read",
-                "cGF0aA==",
+                *_atk_serve_remote.remote_command_argv(plans.REMOTE_BOOTSTRAP, "read", ["cGF0aA=="]),
             ],
             plans_roots.SSH_TIMEOUT_SEC,
         )

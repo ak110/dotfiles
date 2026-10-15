@@ -189,7 +189,8 @@ def read_named_entries(
             if not path.exists():
                 continue
             text = path.read_text(encoding="utf-8")
-            kind = entry_type_of(path, text)
+            parsed = parse_frontmatter(text)
+            kind = normalized_wi_type(parsed[0].get("type")) if parsed is not None else None
             if "all" not in kinds and kind not in kinds:
                 continue
             repo = parse_target_repo(text)

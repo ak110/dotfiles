@@ -35,8 +35,10 @@ def commands_from_cell(cell: str) -> list[tuple[str, list[str]]]:
     return commands
 
 
-def plan_commands(content: str) -> list[tuple[str, list[str]]]:
-    """現行・読取互換の検証節から変更範囲の検証を1件だけ取り出す。"""
+def plan_commands(content: str, *, current_content: str | None = None) -> list[tuple[str, list[str]]]:
+    """現在の条件が別に確定していれば、凍結した本文に優先して検証行を取り出す。"""
+    if current_content is not None:
+        content = current_content
     headings = markdown.extract_headings(content)
     sections = [
         index

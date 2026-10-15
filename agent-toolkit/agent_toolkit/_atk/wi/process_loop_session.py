@@ -1,18 +1,23 @@
 """`atk wi process-loop`のプロンプトとオーケストレーターの選択と、1回のセッションの起動。"""
 
 import argparse
+import dataclasses
+import json
 import os
 import pathlib
 import subprocess
 import sys
 import time
 import uuid
+from collections.abc import Callable
 
 from agent_toolkit._atk import lane as _lane
 from agent_toolkit._atk import orchestrator as _orchestrator
+from agent_toolkit._atk.wi import listing as _listing
 from agent_toolkit._atk.wi import process_loop_control as _pl_control
 from agent_toolkit._atk.wi import process_loop_env as _pl_env
 from agent_toolkit._atk.wi import process_loop_log as _process_loop_log
+from agent_toolkit._atk.wi import process_loop_ownership as _ownership
 from agent_toolkit._atk.wi import process_loop_update as _pl_update
 from agent_toolkit._atk.wi.constants import PROCESS_WI_GOAL_BODY
 from agent_toolkit._common import automated_prompt as _automated_prompt
@@ -27,6 +32,53 @@ _AVAILABILITY_PROBE_PROMPT = _automated_prompt.wrap(
     source=_automated_prompt.SOURCE_PROCESS_LOOP,
     kind=_automated_prompt.KIND_AVAILABILITY_PROBE,
 )
+
+
+def build_repository_delegate_prompt(
+    snapshot: _listing.RepositorySnapshot,
+    ownership: _ownership.Ownership,
+    *,
+    instruction: str = "",
+    worktree_name: str | None = None,
+) -> str:
+    """対象cwdの通常delegateへ、取得済み候補と所有・処理上限を渡す。"""
+    data = {
+        "target_repo": snapshot.repository.repo_id,
+        "worktree": str(snapshot.repository.worktree),
+        "common_dir": str(snapshot.repository.common_dir),
+        "ownership_record": str(ownership.path),
+        "ownership_token": ownership.token,
+        "lane_session_id": ownership.lane_session_id,
+        "lane_limit": snapshot.lane_limit,
+        "candidates": snapshot.candidate_records(),
+        "readiness": dataclasses.asdict(snapshot.readiness),
+        "previous": ownership.previous,
+        "worktree_name": worktree_name,
+    }
+    body = (
+        "対象cwdでagent-toolkit:process-wiの選定から計画・実装・独立した実行レビュー・統合・公開・WI終端・回収まで完遂する。"
+        "初回取得済み候補は次のJSONを使い、初期一覧を再取得しない。"
+        "対象プロジェクトの規範・CI・監査とworktree準備は担当が対象cwdで判断・実施する。"
+        "worktree_nameの指定がある場合は、対象リポジトリのworktree作成hookを含む既存の作成手順でworktreeを用意する。"
+        "処理所有は親のprocess-loopが取得済みのため、同じoriginの所有を別に取得しない。"
+        "レーン作成・再開・終了時回収の全操作にはlane_session_idを--session-idへ明示して使う。"
+        "追加指示は同じ起動集合で一度だけ受領して各対象へ中継した本文である。"
+        "この担当の対象に関する部分だけを対象cwdで適用する。別対象宛の部分は該当担当へ配送済みである。"
+        "previousがある場合は保持した未統合成果を既存の再開手順へ渡す。"
+        "結果には正常完了か続行できない理由、確認済み工程・残工程・再開先を返す。\n"
+        + json.dumps(data, ensure_ascii=False)
+        + ("\n追加指示:\n" + instruction if instruction else "")
+    )
+    return _automated_prompt.wrap(body, source=_automated_prompt.SOURCE_PROCESS_LOOP, kind="repository-delegate")
+
+
+def all_repos_resume_session(ownership: _ownership.Ownership, requested: str | None) -> str | None:
+    """all-repos担当の再開だけを認め、通常会話との混同を拒否する。"""
+    previous = ownership.previous
+    recorded = previous.get("session_id") if previous is not None and previous.get("mode") == "all-repos" else None
+    if requested is not None and (not requested or requested != recorded):
+        raise ValueError("all-reposの--resumeには保持したall-repos担当のsession IDを指定する")
+    return recorded if isinstance(recorded, str) else None
 
 
 def build_process_loop_prompt() -> str:
@@ -151,7 +203,7 @@ def _exit_abnormal_session(orchestrator: str, returncode: int, detail: str = "")
     sys.exit(returncode)
 
 
-def run_process_session(
+def _run_process_session(
     args: argparse.Namespace,
     session_path: pathlib.Path,
     session_prompt: str,
@@ -162,6 +214,7 @@ def run_process_session(
     effort: str,
     resume_pending: bool,
     dotfiles_root: pathlib.Path | None,
+    on_session_finished: Callable[[bool], None],
 ) -> bool:
     """子セッションを1回実行し、process-loopを終了すべきかを返す。
 
@@ -185,6 +238,7 @@ def run_process_session(
     # AWIが0件で変更検知を待つ反復はここへ到達しないため、保持したまま次の起動へ残る。
     launch_env = _pl_env.session_env(env, orchestrator)
     lane_session_id = str(uuid.uuid4())
+    env[_lane.SESSION_ENV] = lane_session_id
     launch_env[_lane.SESSION_ENV] = lane_session_id
     instruction = _process_loop_log.consume_instructions()
     if instruction:
@@ -216,6 +270,7 @@ def run_process_session(
     )
     normal_exit = _is_normal_session_exit(orchestrator, result.returncode, platform=os.name)
     _process_loop_log.append("session_classified", normal=normal_exit, returncode=result.returncode)
+    on_session_finished(normal_exit)
     if not normal_exit:
         _exit_abnormal_session(orchestrator, result.returncode)
     if _pl_control.consume_process_loop_abort():
@@ -233,3 +288,44 @@ def run_process_session(
         dotfiles_updated=False,
     )
     return False
+
+
+def run_process_session(
+    args: argparse.Namespace,
+    session_path: pathlib.Path,
+    session_prompt: str,
+    env: dict[str, str],
+    *,
+    orchestrator: str,
+    model: str,
+    effort: str,
+    resume_pending: bool,
+    dotfiles_root: pathlib.Path | None,
+    on_session_finished: Callable[[bool], None] | None = None,
+) -> bool:
+    """子終端後・自己再起動前に所有を解放し、例外時も一度だけ通知する。"""
+    notified = False
+
+    def finished(completed: bool) -> None:
+        nonlocal notified
+        if notified:
+            return
+        notified = True
+        if on_session_finished is not None:
+            on_session_finished(completed)
+
+    try:
+        return _run_process_session(
+            args,
+            session_path,
+            session_prompt,
+            env,
+            orchestrator=orchestrator,
+            model=model,
+            effort=effort,
+            resume_pending=resume_pending,
+            dotfiles_root=dotfiles_root,
+            on_session_finished=finished,
+        )
+    finally:
+        finished(False)

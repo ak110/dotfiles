@@ -94,7 +94,7 @@ if spec and len(calls) == 1:
         env["FAKE_UV_RETURN_CODE"] = str(return_code)
     if omit_spec:
         env["FAKE_UV_OMIT_SPEC"] = "1"
-    launcher = pathlib.Path(atk.__file__).resolve().parents[1] / "bin" / "atk"
+    launcher = pathlib.Path(atk.__file__).resolve().parents[1] / "scripts" / "atk"
     result = subprocess.run(
         [str(launcher), top_level, subcommand],
         env=env,
@@ -135,7 +135,7 @@ def test_posix_launcher_restarts_only_process_loop_aliases(
 
 def test_windows_launcher_routes_same_process_loop_aliases() -> None:
     """WindowsランチャーもPOSIX版と同じ2つのトップレベル名を受理する。"""
-    launcher = pathlib.Path(atk.__file__).resolve().parents[1] / "bin" / "atk.cmd"
+    launcher = pathlib.Path(atk.__file__).resolve().parents[1] / "scripts" / "atk.cmd"
     data = launcher.read_bytes()
     text = data.decode("cp932")
 
@@ -181,6 +181,7 @@ def _resolve_process_loop_commands(monkeypatch: pytest.MonkeyPatch, tmp_path: pa
     monkeypatch.setattr(_config.platformdirs, "user_config_dir", lambda _name, **_kwargs: str(tmp_path / "config"))
     setattr_in_managed_temp_modules(monkeypatch, "_state_root_path", lambda: tmp_path / "managed-temp-state")
     monkeypatch.setattr(shutil, "which", lambda command: f"/resolved/{command}")
+    monkeypatch.setattr(_pl_watch, "_other_sessions_active", lambda: False)
     monkeypatch.delenv(_RESTART_SPEC_ENV, raising=False)
     monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(tmp_path / ".claude"))
 
@@ -436,7 +437,7 @@ class TestWaitLoopAutoRestart:
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
     ) -> None:
-        """変更検知だけでは待機中更新を行わず、次のready処理開始境界へ委ねること。"""
+        """変更を検知しただけでは待機中に更新せず、次にready項目の処理を始める時点へ更新を委ねること。"""
         subprocess_calls, execv_calls = self._run_until_stop(
             monkeypatch,
             tmp_path,
@@ -549,7 +550,7 @@ class TestWaitLoopAutoRestart:
             pending_count=1,
         )
 
-        # `claude auth status`は待機間隔をキャッシュTTLで決めるための事前照会であり、委譲セッションの起動ではない。
+        # `claude auth status`は待機間隔をキャッシュTTLで決めるための事前照会のため、委譲セッションの起動から除く。
         claude_command = next(
             call for call in subprocess_calls if call[:1] == ["claude"] and call[:3] != ["claude", "auth", "status"]
         )
@@ -758,7 +759,7 @@ def _process_loop_commands_isolated(monkeypatch: pytest.MonkeyPatch, tmp_path: p
 
 @pytest.mark.usefixtures("process_loop_commands_isolated")
 class TestProcessLoopUpdateAndRestart:
-    """1反復後のupdate-dotfiles実行と自身再起動の挙動を検証する。"""
+    """1反復後のupdate-dotfiles実行と自己再起動の挙動を検証する。"""
 
     def test_update_and_execv_called_by_default(
         self,
@@ -959,7 +960,7 @@ class TestProcessLoopUpdateAndRestart:
         myrepo = tmp_path / "repo"
         myrepo.mkdir()
         _setup_notes(tmp_path)
-        counts = iter([1, 1, 0])
+        counts = iter([1, 1, 1, 0])
         monkeypatch.setattr(subprocess, "run", fake_run_with_remote_url(myrepo, [], 0))
         monkeypatch.setattr(_wi_readiness, "count_pending_entries", lambda *_a, **_kw: next(counts))
         monkeypatch.setattr(

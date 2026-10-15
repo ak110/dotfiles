@@ -8,6 +8,9 @@ description: >
 
 選定時に固定したAWIをレーンへ分け、各レーンの同じ担当threadが計画（要る場合）から統合までを担う。メインは選定、判断が要る計画境界の確認、実行レビューの調整、公開工程およびセッション終端を担う。
 AWIとUWIの共通契約は`../wi-standards/SKILL.md`、確認要否と確認手順は`agent-toolkit:user-confirmation-and-report`に従う。本スキルの実行中は自律モードとする。
+all-reposの中継として起動した場合は`references/all-repos-orchestration.md`へ進み、以下の実行順は各対象cwdのリポジトリ担当へ渡す。
+
+レーン処理には、キュー・対象リポジトリ・プラグイン全体の参照資料、Gitと`atk`を実行するCLI、担当の起動・終端受領の手段が必要である。これらが不足する環境では、提示されたWIから要求と依存・確認事項を整理した下書きを返す。キューの状態変更、実装、検証、統合と公開は、必要機能がそろうClaude CodeまたはCodexで実行する。下書きには[文章の品質基準](references/quality-standards.md)を使う。
 
 ## 読込表
 
@@ -15,6 +18,7 @@ AWIとUWIの共通契約は`../wi-standards/SKILL.md`、確認要否と確認手
 
 | 時点または条件 | 全文読む資料 |
 | --- | --- |
+| `all-repos`の中継、またはそのリポジトリ担当として取得済み候補を受領した時 | `references/all-repos-orchestration.md` |
 | メインが対象選定を開始する前（実行順2）と、処理対象WIを追加する前 | `references/selection-procedure.md` |
 | 選定YAMLを生成または消費する前 | `references/selection-format.md` |
 | 専用worktreeとレーンを作成する前（実行順3） | `references/run-lanes.md` |
@@ -50,11 +54,11 @@ WI作成、計画、実行および実行レビューの責務と受渡しは`${
 ## 実行順
 
 1. `## 直前の同期結果の検分`に従い、このセッションでAWIの処理を完遂できるかを判定する。
-2. `references/selection-procedure.md`に従い、メイン自身が対象選定と集合確定直後の処理開始を行う。意味判断と取得済み候補をpick-wi-checkへ渡し、定型欄の生成・確認・保存を1回で行う。選定を別の担当へ委譲しない。あわせて`## 自動コードレビュー監査`を行う。
-3. `references/run-lanes.md`に従い、選定結果の段階と先行レーンから`atk lane create`へ対象を渡し、準備済み資源を受領してレーン担当を起動する。後段は先行レーンの統合と書込主体の解放を受領してから現行HEADを基点に作成する。Claude Codeでは各段階の全初回起動後に共通の圧縮予約手順へ進む。
+2. `references/selection-procedure.md`に従い、対象cwdのメイン自身が対象選定と集合確定直後の処理開始を行う。all-reposのリポジトリ担当は受領した初回候補を使う。意味判断と取得済み候補をpick-wi-checkへ渡し、定型欄の生成・確認・保存を1回で行う。選定を別の担当へ委譲しない。あわせて`## 自動コードレビュー監査`を行う。
+3. `references/run-lanes.md`に従い、選定結果の`段階`と`先行レーン`に従って`atk lane create`へ作成対象を渡し、準備済み資源を受領してレーン担当を起動する。後段は先行レーンの統合と書込主体の解放を受領してから現行HEADを基点に作成する。Claude Codeでは各段階の全初回起動後に共通の圧縮予約手順へ進む。
 4. 各レーンの計画または計画なしの準備結果を`${CLAUDE_PLUGIN_ROOT}/share/exec.parent.md`「計画準備の受領」に従って受け取り、判断を要する場合だけ`実装開始`または`実装なし`を返す。
 5. `実装完了`と検証結果を受領したレーンごとに、`${CLAUDE_PLUGIN_ROOT}/share/exec-review.parent.md`と`${CLAUDE_PLUGIN_ROOT}/share/review-loop-coordination.md`に従って実行レビューを収束させる。
-6. 追加した処理対象WIも`references/run-lanes.md`に従って割り当てて収束させる。同じレーン担当threadへ`${CLAUDE_PLUGIN_ROOT}/share/exec.parent.md`「統合の指示と受領」に従って統合を指示し、計画最終化とAWI終端までを完了させる。
+6. 追加した処理対象WIも`references/run-lanes.md`に従って割り当てて収束させる。同じレーン担当threadへ`${CLAUDE_PLUGIN_ROOT}/share/exec.parent.md`「統合の指示と受領」に従って統合を指示する。1レーンの場合も`atk lane integrate`で統合から計画最終化・AWI終端・選定の統合済み記録までを完了させる。
 7. 全レーンの終端と起動した監査の処置確定の後、`references/finish-session.md`に従って公開とセッション終端を完遂する。
 
 ## 直前の同期結果の検分

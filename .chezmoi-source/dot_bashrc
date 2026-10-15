@@ -36,7 +36,7 @@ path_prepend "$HOME/.cargo/bin"
 path_prepend "$HOME/.local/bin"
 path_prepend "$HOME/bin"
 path_append "$HOME/dotfiles/bin"
-path_append "$HOME/dotfiles/agent-toolkit/bin"
+path_append "$HOME/dotfiles/agent-toolkit/scripts"
 
 test -f /etc/ssl/certs/ca-certificates.crt && export NODE_EXTRA_CA_CERTS=/etc/ssl/certs/ca-certificates.crt
 export ENV=$HOME/.bashrc
@@ -276,6 +276,7 @@ function r() {
     # exec $SHELLはシェルを置き換えるため、残存ジョブ（停止中を含む）は失われる
     if [ -n "$(jobs -p)" ]; then
         echo "バックグラウンドジョブが残っているためシェルの再起動は行いません。" >&2
+        echo "次の操作: jobsで番号を確認し、fg %番号でジョブを終了するか、不要なジョブをkill %番号で停止してからrを再実行してください。" >&2
         jobs
         return 1
     fi
@@ -312,7 +313,7 @@ PROMPT_COMMAND="history -a;_show_status;${PROMPT_COMMAND}"
 # ペイン単位ユーザーオプション @cmd_running へ通知する。表示側は ~/.tmux.conf が
 # 同じウィンドウ内の全ペインを集約して判定する。
 # ウィンドウ単位に持たせると、先に終了したペインの解除により実行継続中の他ペインの表示も削除される。
-# ターゲットを省略した tmux は呼び出し元ペインではなく現在のアクティブペインを指すため、
+# ターゲットを省略した tmux は現在のアクティブペインを指し、呼び出し元ペインと一致しない場合があるため、
 # $TMUX_PANE を明示する。
 # DEBUGトラップはコマンド開始時に発火し、PROMPT_COMMANDの末尾要素がプロンプト復帰時に解除する。
 # PROMPT_COMMAND自身の実行によるDEBUGトラップの発火は、解除時に設定するフラグで抑止する。
@@ -484,7 +485,7 @@ if [ -e ~/.localbashrc ]; then
 fi
 
 # カレントディレクトリが git 作業ツリーなら git status を自動実行する。
-# `.git` はディレクトリだけでなく worktree の場合はファイルになるので `-e` で判定する。
+# `.git` はディレクトリか、worktree の場合はファイルになるので `-e` で判定する。
 if [ -e .git ]; then
     git status
 fi

@@ -2,16 +2,15 @@
 
 from __future__ import annotations
 
-# 関数の実行時までだけ使う依存を、Python 3.15では使用時まで読み込まない。旧Pythonでは通常のimportとなる。
-__lazy_modules__ = {"agent_toolkit._common", "agent_toolkit._common.shell_segments", "agent_toolkit._hooks", "shlex"}
-
 import pathlib
-import shlex
 
-from agent_toolkit._common import background_output
-from agent_toolkit._common.shell_segments import split_bash_segments
-from agent_toolkit._hooks import background_tasks as _background_tasks
-from agent_toolkit._hooks import transcript_scan as _transcript_scan
+# 関数の実行時にだけ使う依存は、使用時まで読み込まない。
+lazy import shlex
+
+lazy from agent_toolkit._common import background_output
+lazy from agent_toolkit._common.shell_segments import split_bash_segments
+lazy from agent_toolkit._hooks import background_tasks as _background_tasks
+lazy from agent_toolkit._hooks import transcript_scan as _transcript_scan
 
 _READ_COMMANDS = frozenset({"cat", "head", "less", "more", "sed", "tail", "wc", "grep", "rg"})
 

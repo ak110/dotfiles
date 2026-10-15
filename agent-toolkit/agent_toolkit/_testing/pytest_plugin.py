@@ -17,7 +17,7 @@ from pyfltr.colloquial import check as _colloquial_check
 
 from agent_toolkit._agents_server import launch_requests, state
 from agent_toolkit._agents_server import manager as server_manager
-from agent_toolkit._common import codex_models
+from agent_toolkit._common import codex_models, plugin_environment
 from agent_toolkit._common import wait_schedule as _wait_schedule
 from agent_toolkit._hooks import notice
 from agent_toolkit._hooks import transcript_scan as _transcript_scan
@@ -49,6 +49,16 @@ _WAIT_SCHEDULE_ENVIRONMENT_NAMES = (
     "CLAUDE_CODE_USE_FOUNDRY",
     "CLAUDE_CODE_USE_ANTHROPIC_AWS",
 )
+
+
+def pytest_configure(config: pytest.Config) -> None:
+    """配布物のCLIを起動するテストが、隔離したHOMEでも同じ依存環境を再利用するよう保存先を固定する。
+
+    HOMEやキャッシュを一時ディレクトリへ向けたテストから起動すると、未指定ではテストごとに環境を構築し直す。
+    保存先そのものを検証するテストは、明示した環境の辞書か`delenv`で上書きする。
+    """
+    del config
+    os.environ.setdefault(plugin_environment.RUNTIME_DATA_ENV, str(plugin_environment.runtime_data(os.environ)))
 
 
 @pytest.fixture(autouse=True)
@@ -117,7 +127,7 @@ def _fixed_terminal_size(request: pytest.FixtureRequest, monkeypatch: pytest.Mon
     `_atk/wi/listing.py`は`shutil.get_terminal_size()`から表示幅を算出し、
     `atk wi list`の出力を切り詰める。`shutil`モジュール自体を差し替えることで、
     このディレクトリ配下の全テストファイルへ一括で適用する
-    （個別テストファイルごとの重複フィクスチャ定義を避けるSSOT化）。
+    （テストファイルごとに同じフィクスチャを定義しないため）。
     """
     if not request.path.is_relative_to(_PACKAGE_ROOT):
         return

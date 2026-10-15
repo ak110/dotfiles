@@ -33,6 +33,8 @@ from agent_toolkit.atk_test import (  # noqa: E402  # pylint: disable=wrong-impo
     _write_uwi_file,
 )
 
+_UPSTREAM_QUERY = ["git", "rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"]
+
 
 def _add_with_target_repo(home: pathlib.Path, body_file: pathlib.Path) -> None:
     """共通の`--target-repo`指定で本文ファイルを投入する。"""
@@ -131,7 +133,7 @@ class TestListPullsBeforeRead:
             atk.main(["wi", "list", "--target-repo=all"], home=tmp_path)
 
         assert exc_info.value.code == 0
-        git_cmds = [c["cmd"] for c in calls if c["cmd"][:1] == ["git"]]
+        git_cmds = [c["cmd"] for c in calls if c["cmd"][:1] == ["git"] and c["cmd"] != _UPSTREAM_QUERY]
         assert git_cmds[:2] == [["git", "fetch"], ["git", "merge", "--ff-only", "@{u}"]]
 
 
@@ -152,7 +154,7 @@ class TestShowAllPullsBeforeRead:
             atk.main(["wi", "show", "--all", "--target-repo=all"], home=tmp_path)
 
         assert exc_info.value.code == 0
-        git_cmds = [c["cmd"] for c in calls if c["cmd"][:1] == ["git"]]
+        git_cmds = [c["cmd"] for c in calls if c["cmd"][:1] == ["git"] and c["cmd"] != _UPSTREAM_QUERY]
         assert git_cmds[:2] == [["git", "fetch"], ["git", "merge", "--ff-only", "@{u}"]]
 
 
@@ -189,7 +191,7 @@ class TestCommitSubcommand:
             atk.main(["wi", "commit"], home=tmp_path)
 
         assert exc_info.value.code == 0
-        git_cmds = [c["cmd"] for c in calls if c["cmd"][:2] != ["git", "rev-list"]]
+        git_cmds = [c["cmd"] for c in calls if c["cmd"][:2] != ["git", "rev-list"] and c["cmd"] != _UPSTREAM_QUERY]
         assert git_cmds[:3] == [
             ["git", "push"],
             ["git", "fetch"],
@@ -220,7 +222,7 @@ class TestCommitSubcommand:
             atk.main(["wi", "commit"], home=tmp_path)
 
         assert exc_info.value.code == 0
-        git_cmds = [c["cmd"] for c in calls if c["cmd"][:2] != ["git", "rev-list"]]
+        git_cmds = [c["cmd"] for c in calls if c["cmd"][:2] != ["git", "rev-list"] and c["cmd"] != _UPSTREAM_QUERY]
         assert git_cmds[:3] == [
             ["git", "push"],
             ["git", "fetch"],
@@ -291,25 +293,25 @@ def test_local_only_commit_and_pull_report_skipped_remote_operations(
 ) -> None:
     """remoteなしの初回・外部編集・同期で、行っていないpushや同期を完了と書かない。"""
     notes = make_clean_repo(tmp_path, "private-notes")
-    marker = notes / ".agent-toolkit-local-only"
-    marker.touch()
-    subprocess.run(["git", "-C", str(notes), "add", marker.name], check=True, capture_output=True)
+    setup = notes / "setup.txt"
+    setup.write_text("初期状態\n", encoding="utf-8")
+    subprocess.run(["git", "-C", str(notes), "add", setup.name], check=True, capture_output=True)
     subprocess.run(["git", "-C", str(notes), "commit", "-m", "local setup"], check=True, capture_output=True)
     with pytest.raises(SystemExit, match="0"):
         atk.main(["wi", "commit"], home=tmp_path)
     clean = capsys.readouterr().out
     assert "外部編集の差分は無い" in clean
-    assert "remoteが無いためpushしていない" in clean
+    assert "remoteかupstreamが無いためpushしていない" in clean
     (notes / "external.txt").write_text("外部編集\n", encoding="utf-8")
     with pytest.raises(SystemExit, match="0"):
         atk.main(["wi", "commit"], home=tmp_path)
     edited = capsys.readouterr().out
     assert "外部編集分をcommitした" in edited
-    assert "remoteが無いためpushしていない" in edited
+    assert "remoteかupstreamが無いためpushしていない" in edited
     with pytest.raises(SystemExit, match="0"):
         atk.main(["wi", "pull"], home=tmp_path)
     synced = capsys.readouterr().out
-    assert "remoteが無いため同期していない" in synced
+    assert "remoteかupstreamが無いため同期していない" in synced
     assert "pushした" not in clean + edited
     assert "remoteと同期した" not in synced
 
@@ -618,9 +620,9 @@ class TestAddViaEditor:
     """addサブコマンド: messages省略時に$EDITOR経由で本文を収集する。
 
     `_editor_fake_run`でエディター呼び出しを差し替え、subprocess.run全呼び出しを
-    捕捉する。エラー時の動作を確かめるテストでは`pull`等のgit呼び出しもfake_runへ吸収されるが、
-    検証焦点は`collect_message_via_editor`の早期None返却にあり、gitが呼び出されたかどうかは
-    AWIディレクトリへのファイル生成有無によって間接的に確認する。
+    捕捉する。エラー時の動作を確かめるテストでは`pull`等のgit呼び出しもfake_runが受けるが、
+    検証の対象は`collect_message_via_editor`が早期にNoneを返すことであり、gitが呼び出されたかどうかは
+    AWIディレクトリにファイルが生成されたかどうかで間接的に確認する。
     """
 
     def test_editor_path_generates_file_with_content(
@@ -732,7 +734,7 @@ class TestAddViaEditor:
 
 
 class TestAddTargetRepoOption:
-    """`mq add --target-repo`のfallback指定・frontmatter優先順位を検証する。"""
+    """`atk wi add --target-repo`のfallback指定・frontmatter優先順位を検証する。"""
 
     def test_target_repo_option_used_as_fallback(
         self,
@@ -773,7 +775,7 @@ class TestAddTargetRepoOption:
 
 
 class TestUwiAddTargetRepoOption:
-    """`mq add --type=uwi --target-repo`のfallback指定・レガシー位置引数との優先順位を検証する。"""
+    """`atk wi add --type=uwi --target-repo`のfallback指定・レガシー位置引数との優先順位を検証する。"""
 
     def test_target_repo_option_used_as_fallback(
         self,

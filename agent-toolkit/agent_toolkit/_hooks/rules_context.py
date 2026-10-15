@@ -12,29 +12,21 @@ Claude Codeはhook 1件の出力を10,000文字で切り詰める。条文の欠
 
 from __future__ import annotations
 
-# 関数の実行時までだけ使う依存を、Python 3.15では使用時まで読み込まない。旧Pythonでは通常のimportとなる。
-__lazy_modules__ = {
-    "agent_toolkit._common.delegated_session",
-    "agent_toolkit._common.session_state",
-    "agent_toolkit._hooks.agent_id",
-    "agent_toolkit._hooks.message_format",
-    "typing",
-    "urllib.parse",
-}
-
 import json
 import os
 import pathlib
-import urllib.parse
-from typing import Any
+
+# 関数の実行時にだけ使う依存は、使用時まで読み込まない。
+lazy import urllib.parse
+lazy from typing import Any
 
 from agent_toolkit._atk import managed_temp
-from agent_toolkit._common import message_format
-from agent_toolkit._common.delegated_session import is_delegated
-from agent_toolkit._common.session_state import update_state
-from agent_toolkit._hooks.agent_id import MAIN_AGENT_ID
-from agent_toolkit._hooks.message_format import xml_message
+from agent_toolkit._common import message_format, plugin_environment
 from agent_toolkit._hooks.notice import formatter as _notice_formatter
+lazy from agent_toolkit._common.delegated_session import is_delegated
+lazy from agent_toolkit._common.session_state import update_state
+lazy from agent_toolkit._hooks.agent_id import MAIN_AGENT_ID
+lazy from agent_toolkit._hooks.message_format import xml_message
 
 _HOOK_ID = "rules_context"
 _llm_notice = _notice_formatter(_HOOK_ID)
@@ -71,8 +63,8 @@ def compose_session_start(source: str, *, delegated: bool, host: str) -> str | N
     """SessionStartへ追加する本文を構成する。
 
     使用言語の規定は`rules-main.md`「ユーザー向け発話ルール」が定めるが、この条文は本文の末尾寄りに
-    位置するため、最初の応答を生成する時点では冒頭の記述より参照されにくい。同じ規定を冒頭の1文へ
-    置き、応答の生成より前に判断入力へ入る位置を確保する。委譲先はこの規定の対象外のため追加しない。
+    位置するため、最初の応答を生成する時点では冒頭の記述より参照されにくい。同じ規定を本文の冒頭の1文にも
+    置き、最初の応答を生成する前に読まれるようにする。委譲先はこの規定の対象外のため追加しない。
 
     process-loopが渡した追加指示も、メインだけが受け取る入力として先頭へ置く。委譲先は元の作業の一部を
     担うに過ぎず、この指示の宛先ではない。
@@ -109,6 +101,7 @@ def compose_session_start(source: str, *, delegated: bool, host: str) -> str | N
             normative_parts.append(MAIN_RULES_CODEX_PATH.read_text(encoding="utf-8").rstrip("\n"))
     if normative_parts:
         parts.append(_normative_context("\n\n".join(normative_parts), kind=NORMATIVE_KIND_MAIN))
+    parts.append(_llm_notice(plugin_environment.cli_instructions(SHARE_DIR.parent)))
     return "\n\n".join(parts) or None
 
 
@@ -119,7 +112,8 @@ _CONTEXT_LOSING_SOURCES = frozenset({"startup", "clear", "compact"})
 OPERATION_SKILL_READY_KEY = "operation_skill_ready_agents"
 """操作を起動の契機とするスキルの名前から、起動済みの呼び出し主体の一覧への対応を持つセッション状態のキー。
 
-Claude Codeでは、PreToolUseの`pretooluse/operation_skills.py`が警告を返した時点とPostToolUse(Skill)が記録し、同じ判定が読む。
+Claude Codeでは、PreToolUseの`pretooluse/operation_skills.py`が警告を返した時点と、
+PostToolUse(Skill)がスキルの起動を受けた時点で記録し、同モジュールの判定が記録を読む。
 Codexは起動済みを観測できず同モジュールが警告しないため、記録しない。
 """
 _OPERATION_SKILL_RESET_SOURCES = frozenset({"clear", "compact"})
@@ -190,12 +184,31 @@ def session_temp_notice(session_temp: pathlib.Path | str) -> str:
     """
     return (
         f"このセッションのmanaged-temp: {session_temp}\n"
-        "一時ファイルは`/tmp`ではなくこの領域の直下へ置く。"
+        "一時ファイルはこの領域の直下へ置く。`/tmp`は使わない。"
         "委譲時は、委譲先自身のmanaged-tempまたは専用一時領域の通知があればそちらの直下、"
         "通知が無い場合だけこの絶対パスの直下へ置くよう伝える。"
         "通知の有無が親から分からない場合は、委譲先が受信した通知から選ぶ条件付きの案内にする。"
         "入力や出力の個別ファイルを指定した場合は、そのファイルの読み書きを行ってよい。"
     )
+
+
+def _conversation_identity_notice(session_id: object, transcript_path: object) -> str:
+    """Claudeメイン自身の会話の所在を、SessionStartの入力値から通知する。"""
+    lines = [
+        f"この会話のセッションID: {session_id}"
+        if isinstance(session_id, str) and session_id
+        else "この会話のセッションID: 入力から取得できません。シェルのCLAUDE_CODE_SESSION_IDを使える場合はその値を使う。"
+    ]
+    if isinstance(transcript_path, str) and (
+        pathlib.PurePosixPath(transcript_path).is_absolute() or pathlib.PureWindowsPath(transcript_path).is_absolute()
+    ):
+        lines.append(f"この会話のtranscript: {transcript_path}")
+    else:
+        lines.append(
+            "この会話のtranscript: 絶対パスを入力から取得できません。特定済みIDをsession-review-evidenceの"
+            "--claude-session-idへ渡して記録を取得する。"
+        )
+    return "\n".join(lines)
 
 
 def _existing_session_temp(session_id: object) -> str | None:
@@ -208,7 +221,7 @@ def _existing_session_temp(session_id: object) -> str | None:
         return None
     try:
         entries = managed_temp.list_managed_temp(SESSION_TEMP_PREFIX, session_id=session_id)
-    except (managed_temp.ManagedTempError, OSError):
+    except managed_temp.ManagedTempError, OSError:
         return None
     if not entries:
         return None
@@ -225,7 +238,7 @@ def _subagent_temp_notice(session_temp: str, agent_id: object) -> str:
     child.mkdir(exist_ok=True)
     return (
         f"このサブエージェント専用の一時領域: {child}\n"
-        "一時ファイルは`/tmp`ではなくこの領域の直下へ置く。"
+        "一時ファイルはこの領域の直下へ置く。`/tmp`は使わない。"
         f"親のセッションのmanaged-temp: {session_temp}\n"
         "親の領域は、委譲元が個別に指定した入力や出力のファイルの読み書きに使ってよい。"
     )
@@ -236,7 +249,11 @@ def compose_subagent_start(*, host: str) -> str:
     parts = [SUBAGENT_RULES_PATH.read_text(encoding="utf-8").rstrip("\n")]
     if host == "claude":
         parts.append(SUBAGENT_RULES_CLAUDE_CODE_PATH.read_text(encoding="utf-8").rstrip("\n"))
-    return _normative_context("\n\n".join(parts), kind=NORMATIVE_KIND_SUBAGENT)
+    return (
+        _normative_context("\n\n".join(parts), kind=NORMATIVE_KIND_SUBAGENT)
+        + "\n\n"
+        + _llm_notice(plugin_environment.cli_instructions(SHARE_DIR.parent))
+    )
 
 
 def _parse_payload(payload_text: str) -> dict[str, Any]:
@@ -260,6 +277,9 @@ def main(payload_text: str, *, host: str = "claude") -> int:
         delegated = is_delegated(os.environ)
         content = compose_session_start(source, delegated=delegated, host=host)
         session_id = payload.get("session_id")
+        if not delegated and host == "claude":
+            identity_context = _llm_notice(_conversation_identity_notice(session_id, payload.get("transcript_path")))
+            content = f"{content}\n\n{identity_context}" if content else identity_context
         if isinstance(session_id, str) and session_id:
             if source in _OPERATION_SKILL_RESET_SOURCES:
                 reset_main_operation_skill_ready(session_id)
@@ -272,7 +292,7 @@ def main(payload_text: str, *, host: str = "claude") -> int:
                     SESSION_TEMP_PREFIX,
                     session_id=session_id,
                 )
-            except (managed_temp.ManagedTempError, OSError):
+            except managed_temp.ManagedTempError, OSError:
                 pass
             else:
                 temp_context = _llm_notice(session_temp_notice(session_temp))

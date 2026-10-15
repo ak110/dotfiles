@@ -2,7 +2,7 @@
 
 スキルの起動の契機（descriptionと常時規範の参照文）はセッション開始時に配送されるが、
 その操作を実行する時点には未起動であることを示す手掛かりが無く、起動されないまま本文の規定が適用されない。
-本判定は操作の時点で未起動を示し、スキルを起動して今回の操作を確かめ直させる。
+本判定は操作の時点で起動記録の不在を示し、未適用の場合に基準の適用を求める。
 
 判定の結論は警告とする。根拠は`agent-toolkit:writing-standards`の`references/claude-hooks-block-warn.md`
 「遮断と警告の選択」にある。判定の入力はツール名、コマンド文字列およびSkill起動の記録だけで
@@ -18,7 +18,8 @@ PostToolUse(Skill)の起動の観測時点で書く。
 警告の次の操作は、`Skill`での起動と、自分のツール一覧に`Skill`が無い主体が`SKILL.md`を`Read`で全文読む操作を併記する。
 `agents_server`のClaudeの軽量起動（`explore`・`write`・`shell`）は`disallowed_tools`で`Skill`を除き、スキルの一覧も届かないため、
 警告が基準の本文へ到達する唯一の手掛かりになる。hookの入力は通常の委譲先と軽量起動を区別できないため、
-主体ごとに本文を書き分けず、両方の手段を同じ本文に示す。
+主体ごとに本文を書き分けず、両方の手段を同じ本文に示す。Readによる適用済みを観測できないため、
+起動記録が無い場合も、適用済みなら続行できる本文とする。
 
 Codexでは警告も記録もしない。Codexはスキルを`SKILL.md`の読取で適用し、hookはその読取を起動として観測できないため、
 記録の不在からは未起動と読了済みを区別できず、読了済みの操作にも警告する。Codexにはスキルの一覧と本文が配送される。
@@ -29,40 +30,28 @@ Codexでは警告も記録もしない。Codexはスキルを`SKILL.md`の読取
 
 from __future__ import annotations
 
-# 関数の実行時までだけ使う依存を、Python 3.15では使用時まで読み込まない。旧Pythonでは通常のimportとなる。
-__lazy_modules__ = {
-    "agent_toolkit._common",
-    "agent_toolkit._common.bash_invocations",
-    "agent_toolkit._common.heredocs",
-    "agent_toolkit._common.session_state",
-    "agent_toolkit._common.uv_arguments",
-    "agent_toolkit._hooks",
-    "agent_toolkit._hooks.pretooluse",
-    "agent_toolkit._hooks.pretooluse.large_reads",
-    "agent_toolkit._plan.structure",
-    "collections.abc",
-}
-
 import dataclasses
 import pathlib
 import re
-from collections.abc import Callable, Sequence
 
-from agent_toolkit._common import shell_cwd
-from agent_toolkit._common import shell_segments as _shell_segments
-from agent_toolkit._common.bash_invocations import STATIC_UNKNOWN, extract_bash_invocations
-from agent_toolkit._common.heredocs import heredoc_bodies
-from agent_toolkit._common.session_state import read_state, update_state
-from agent_toolkit._common.uv_arguments import is_python_token
-from agent_toolkit._hooks import agent_id as _agent_id
-from agent_toolkit._hooks import plugin_resources as _plugin_resources
-from agent_toolkit._hooks import rules_context as _rules_context
-from agent_toolkit._hooks import tool_input as _tool_input
+# 関数の実行時にだけ使う依存は、使用時まで読み込まない。
+lazy from collections.abc import Callable, Sequence
+
 from agent_toolkit._hooks.notice import _WARN_TAG
 from agent_toolkit._hooks.notice import formatter as _notice_formatter
-from agent_toolkit._hooks.pretooluse import shell_checks as _shell_checks
-from agent_toolkit._hooks.pretooluse.large_reads import python_file_paths
-from agent_toolkit._plan.structure import is_agent_doc_target_file
+lazy from agent_toolkit._common import shell_cwd
+lazy from agent_toolkit._common import shell_segments as _shell_segments
+lazy from agent_toolkit._common.bash_invocations import STATIC_UNKNOWN, extract_bash_invocations
+lazy from agent_toolkit._common.heredocs import heredoc_bodies
+lazy from agent_toolkit._common.session_state import read_state, update_state
+lazy from agent_toolkit._common.uv_arguments import is_python_token
+lazy from agent_toolkit._hooks import agent_id as _agent_id
+lazy from agent_toolkit._hooks import plugin_resources as _plugin_resources
+lazy from agent_toolkit._hooks import rules_context as _rules_context
+lazy from agent_toolkit._hooks import tool_input as _tool_input
+lazy from agent_toolkit._hooks.pretooluse import shell_checks as _shell_checks
+lazy from agent_toolkit._hooks.pretooluse.large_reads import python_file_paths
+lazy from agent_toolkit._plan.structure import is_agent_doc_target_file
 
 _llm_notice = _notice_formatter("pretooluse")
 
@@ -185,34 +174,43 @@ def _python_write_paths(code: str) -> list[str]:
 
 def _sed_write_paths(arguments: tuple[str, ...]) -> list[str]:
     """in-place編集のsedから、スクリプトとオプションの値を除いたファイル引数を返す。"""
-    if "--help" in arguments or "--version" in arguments:
-        return []
-    if not any(arg == "--in-place" or arg.startswith(("-i", "--in-place=")) for arg in arguments):
-        return []
     paths: list[str] = []
     has_script = False
+    inplace = False
     index = 0
     while index < len(arguments):
         arg = arguments[index]
+        if arg in {"--help", "--version"}:
+            return []
         if arg in {"-e", "--expression", "-f", "--file"}:
             has_script = True
             index += 2
             continue
         if arg.startswith(("-e", "-f", "--expression=", "--file=")):
             has_script = True
+        elif arg == "--in-place" or arg.startswith(("-i", "--in-place=")):
+            inplace = True
+        elif arg.startswith("-") and not arg.startswith("--"):
+            for position, char in enumerate(arg[1:], 1):
+                if char == "i":
+                    inplace = True
+                    break
+                if char in "ef":
+                    has_script = True
+                    if position == len(arg) - 1:
+                        index += 1
+                    break
         elif arg == "--":
             paths.extend(arguments[index + 1 :])
             break
         elif not arg.startswith("-"):
             paths.append(arg)
         index += 1
-    return paths if has_script else paths[1:]
+    return (paths if has_script else paths[1:]) if inplace else []
 
 
 def _copy_write_paths(name: str, arguments: tuple[str, ...]) -> list[str]:
     """転送先が明示されたコピー・移動・導入の書込先を返す。"""
-    if any(arg in {"--help", "--version"} for arg in arguments) or name == "install" and "-d" in arguments:
-        return []
     operands: list[str] = []
     directory: str | None = None
     no_directory = False
@@ -223,6 +221,8 @@ def _copy_write_paths(name: str, arguments: tuple[str, ...]) -> list[str]:
         if arg == "--":
             operands.extend(arguments[index:])
             break
+        if arg in {"--help", "--version"} or name == "install" and arg == "--directory":
+            return []
         if arg.startswith("--target-directory="):
             directory = arg.split("=", 1)[1]
         elif arg in {"--target-directory", "-t"}:
@@ -262,10 +262,10 @@ def _copy_write_paths(name: str, arguments: tuple[str, ...]) -> list[str]:
 
 
 def _perl_write_paths(arguments: tuple[str, ...]) -> list[str]:
-    """perlのin-place対象を返し、オプション値とprogramfile以降を旗として読まない。
+    """perlのin-place編集の対象を返す。オプションの値とprogramfile以降の引数はオプションとして読まない。
 
-    必須値は連結部分または次の語を消費する。任意値は同じ語だけを使い、
-    -l/-0の数値部分の後に続く-piなどは旗として読む。
+    値を必須とするオプションは連結部分または次の語を値として消費し、値を任意とするオプションは同じ語だけを値とする。
+    -l/-0の数値部分の後に続く-piなどはオプションとして読む。
     """
     inplace = False
     inline = False
@@ -312,18 +312,63 @@ def _perl_write_paths(arguments: tuple[str, ...]) -> list[str]:
 
 
 def _static_write_path(path: str) -> str | None:
-    """最後の展開より後ろの絶対末尾だけを採用し、未知のbasenameを推定しない。"""
+    """未知の展開を含むパスは、最後の展開より後ろが`/`で始まる場合だけその末尾を返し、それ以外はbasenameを推定せず`None`を返す。"""
     if STATIC_UNKNOWN not in path:
         return path
     suffix = path.rsplit(STATIC_UNKNOWN, 1)[1]
     return suffix if suffix.startswith("/") else None
 
 
+def _gawk_write_paths(arguments: tuple[str, ...]) -> list[str]:
+    """inplaceライブラリを指定したgawkの入力ファイルを返す。"""
+    inplace = False
+    has_program = False
+    operands: list[str] = []
+    index = 0
+    while index < len(arguments):
+        arg = arguments[index]
+        index += 1
+        if arg == "--":
+            operands.extend(arguments[index:])
+            break
+        if arg in {"--help", "--version", "-h", "-V"}:
+            return []
+        if arg in {"-i", "--include", "-f", "--file", "-e", "--source", "-v", "--assign", "-F", "--field-separator"}:
+            value = arguments[index] if index < len(arguments) else ""
+            index += 1
+            inplace |= arg in {"-i", "--include"} and value == "inplace"
+            has_program |= arg in {"-f", "--file", "-e", "--source"}
+        elif arg.startswith(("--include=", "-i")):
+            inplace |= (arg.split("=", 1)[1] if arg.startswith("--") else arg[2:]) == "inplace"
+        elif arg.startswith(("--file=", "--source=", "-f", "-e")):
+            has_program = True
+        elif arg.startswith(("--assign=", "--field-separator=", "-v", "-F")):
+            continue
+        elif not arg.startswith("-"):
+            operands.append(arg)
+    files = operands if has_program else operands[1:]
+    return [path for path in files if path != "-" and not re.match(r"^[A-Za-z_][A-Za-z0-9_]*=", path)] if inplace else []
+
+
+def _stream_write_paths(arguments: tuple[str, ...]) -> list[str]:
+    """tee・spongeのオプション領域と書込先を区別する。"""
+    paths: list[str] = []
+    for index, arg in enumerate(arguments):
+        if arg == "--":
+            paths.extend(arguments[index + 1 :])
+            break
+        if arg in {"--help", "--version"}:
+            return []
+        if not arg.startswith("-"):
+            paths.append(arg)
+    return paths
+
+
 def _bash_write_paths(command: str, cwd: str | None = None) -> list[str]:
-    """実行位置のリダイレクト・tee・sed・cp・mv・install・rsync・perl・dd・Pythonの書込先を返す。
+    """実行位置のリダイレクト・tee・sponge・gawk・sed・cp・mv・install・rsync・perl・dd・Pythonの書込先を返す。
 
     静的な末尾だけを使い、本文と環境変数を実行して解決しない。
-    touch・ln・mkdir・truncate・gawk・spongeは本文の編集とは限らず、
+    gawkのinplaceとspongeも内容の書込先として扱う。touch・ln・mkdir・truncateは本文の編集とは限らず、
     書込先の指定にも別の解釈を要するため対象へ含めない。
     """
     paths: list[str] = []
@@ -350,10 +395,10 @@ def _bash_write_paths(command: str, cwd: str | None = None) -> list[str]:
         found = [target for target in invocation.static_outputs if isinstance(target, str)]
         tokens = invocation.static_tokens
         name = pathlib.PurePath(tokens[0]).name
-        if name == "tee":
-            options = tokens[1 : tokens.index("--")] if "--" in tokens else tokens[1:]
-            if not any(arg in {"--help", "--version"} for arg in options):
-                found.extend(arg for arg in tokens[1:] if not arg.startswith("-"))
+        if name in {"tee", "sponge"}:
+            found.extend(path for path in _stream_write_paths(tokens[1:]) if name != "tee" or path != "-")
+        elif name == "gawk":
+            found.extend(_gawk_write_paths(tokens[1:]))
         elif name == "sed":
             found.extend(_sed_write_paths(tokens[1:]))
         elif name in {"cp", "mv", "install", "rsync"}:
@@ -455,10 +500,11 @@ def record_skill_ready(session_id: str, skill_name: object, agent: str) -> None:
 def _warning(entry: OperationSkill) -> str:
     skill_md = _plugin_resources.skill_reference(entry.short_name, "SKILL.md")
     return _llm_notice(
-        f"`{entry.skill_name}`を起動しないまま{entry.operation}を実行した。",
+        f"{entry.operation}の呼び出しで、`{entry.skill_name}`の起動記録を確認できない。",
         tag=_WARN_TAG,
         fix=(
-            f"ツール`Skill`で`{entry.skill_name}`を起動し、同スキルの基準で今回の{entry.operation}の手段と範囲を確かめ直す。"
+            f"既に本文を読み基準を適用している場合は、そのまま続ける。"
+            f"未適用の場合は、ツール`Skill`で`{entry.skill_name}`を起動し、同スキルの基準で今回の{entry.operation}の手段と範囲を確かめ直す。"
             f"ツール一覧に`Skill`が無い主体は、"
             f"{skill_md}を`Read`で全文読んで同じ基準を適用する。"
             f"基準に合わない{entry.operation}の結果は使わず、基準に合う{entry.operation}でやり直す。"

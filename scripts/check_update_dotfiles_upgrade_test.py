@@ -412,7 +412,7 @@ def test_profile_leak_fails_check(
     assert str(leaked) in message
     assert "_isolated_env" in message
     assert "予約タスク" in message
-    assert "test-windows" in message
+    assert "update-dotfiles-upgrade-windows" in message
 
 
 def test_profile_unchanged_passes(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:

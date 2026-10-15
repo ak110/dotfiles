@@ -42,7 +42,12 @@ def run_claude(
     """
     claude = common.resolve_executable("claude", preferred_directories=(Path.home() / ".local" / "bin",))
     if claude is None:
-        logger.warning(log_format.format_status("claude", "claudeコマンドが見つからないためスキップ"))
+        logger.warning(
+            log_format.format_status(
+                "claude",
+                "claudeコマンドが見つからないためスキップ。Claude Codeの導入後に`update-dotfiles`を再実行する",
+            ),
+        )
         return None
     logger.info(
         log_format.format_status(

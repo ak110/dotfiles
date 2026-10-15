@@ -248,7 +248,7 @@ Claude Code 2.1.291の本体では、出力の項目`narration_block_indexes`の
 判別では`display: "updates"`を要求している記録で、文面を持つ`thinking`ブロックをprogress updateの要約（ナレーション要約）として数える方法とした。
 `showThinkingSummaries`が`true`の環境と前掲の環境変数で無効にした環境は、この判別の前提を満たさない。
 
-集計の母集団は、2026年9月1日以降に更新されたClaude Codeのメイン記録のうち2026年10月6日19時13分6秒（日本時間）以前に始まった1466件で、同時刻以前の`isSidechain`でない応答のブロック列を数えた。数えた層はAPIの応答を保存したtranscriptであり、画面の表示ではない。
+集計の母集団は、2026年9月1日以降に更新されたClaude Codeのメイン記録のうち2026年10月6日19時13分6秒（日本時間）以前に始まった1466件で、同時刻以前の`isSidechain`でない応答のブロック列を数えた。数えた層はAPIの応答を保存したtranscriptである。
 
 | モデル | 文面を持つ`thinking` | 後続にツール呼び出しがある`text` | 後続にツール呼び出しが無い`text` |
 | --- | --- | --- | --- |
@@ -259,7 +259,7 @@ Claude Code 2.1.291の本体では、出力の項目`narration_block_indexes`の
 
 ツール呼び出しより前の地の文の多くは`text`のまま届いており、順番は要約への置換の必要条件だが十分条件ではない。
 文面を持つ`thinking`のうち後続にツール呼び出しが無い4件は、いずれも直後にユーザーの中断があった。
-画面の表示は2026年8月31日と2026年10月3日の節が持ち、いずれも原文ではなく要約が表示された点で一致する。
+画面の表示は2026年8月31日と2026年10月3日の節が持ち、いずれも要約が表示された点で一致する。
 
 既知の報告としてIssue `anthropics/claude-code#95764`（2026年9月21日作成）が同じ事象を報告し、2026年10月7日時点でOPENで、Anthropicの回答は無かった。
 
@@ -343,22 +343,38 @@ uv 0.13.0で、`UV_PROJECT_ENVIRONMENT`で隔離した仮想環境を使い、do
 `agent-toolkit/`をPython 3.14で構築した環境は、`--python`を付けない`uv sync`と`uv run`の後も3.14のままで、`uv sync --python 3.15`の後は3.15になった。
 `agent-toolkit/`は`.python-version`を持たないため、`--python`を渡さない同期は既存の仮想環境をリポジトリ直下の基準版で構築し直さない。
 
-再検証の手順を次に示す。`<作業ツリー>`はdotfilesの作業ツリーの絶対パスとする。`ROOT_ENV`と`AT_ENV`には作業ツリーの外に用意した一時ディレクトリの中の、まだ存在しないパスを設定する。`UV_FROZEN=1`を設定したシェルで、コードブロックの行を順に実行する。
-`ROOT_ENV`はリポジトリ直下のプロジェクト、`AT_ENV`は`agent-toolkit/`のプロジェクトの仮想環境で、各`uv`の呼び出しへ`UV_PROJECT_ENVIRONMENT`で渡す。
+その後`agent-toolkit/pyproject.toml`の`requires-python`が`>=3.15`となり、`agent-toolkit/`を3.14で同期する手順は解決の不一致で終了コード2となって成立しなくなった。
+2026年10月15日、uv 0.13.1で同じ観測を取り直した。
+余分なパッケージの残存と除去はリポジトリ直下で上記と同じ結果になった。
+版の保持と再構築は、`requires-python`が`>=3.14`で依存を持たない一時プロジェクトを`.python-version`（`3.15`）を置いたディレクトリの直下に作成し、`agent-toolkit/`と同じ配置で再現した。
+3.14で構築した環境は`--python`を付けない`uv sync`と`uv run`の後も`(3, 14)`のままで、`uv sync --python 3.15`の後に`(3, 15)`となった。
+
+再検証の手順を次に示す。
+`WORKTREE`にはdotfilesの作業ツリーの絶対パスを設定する。
+`TMP_DIR`には作業ツリーの外に用意した空の一時ディレクトリの絶対パスを設定する。
+`UV_FROZEN=1`を設定したシェルで、コードブロックの行を順に実行する。
+`ROOT_ENV`はリポジトリ直下のプロジェクト、`SUB_ENV`は一時プロジェクトの仮想環境で、各`uv`の呼び出しへ`UV_PROJECT_ENVIRONMENT`で渡す。
 `uv run`で実行した`import toolz`が`toolz present`を出力し、続く`uv sync`の後に`$ROOT_ENV/bin/python`で実行した`import toolz`が`ModuleNotFoundError`で失敗すれば、余分なパッケージの残存と除去を再現できている。
-`agent-toolkit/`の版が`--python`を付けない同期と`uv run`の後に`(3, 14)`のままで、`--python 3.15`の同期の後に`(3, 15)`となれば、版の保持と再構築を再現できている。
+一時プロジェクトの版が`--python`を付けない同期と`uv run`の後に`(3, 14)`のままで、`--python 3.15`の同期の後に`(3, 15)`となれば、版の保持と再構築を再現できている。
 
 ```sh
-UV_PROJECT_ENVIRONMENT="$ROOT_ENV" uv sync --project <作業ツリー> --all-groups --all-extras --python 3.15
+ROOT_ENV="$TMP_DIR/root-env"
+SUB_ENV="$TMP_DIR/sub-env"
+SUB_PROJECT="$TMP_DIR/parent/sub"
+UV_PROJECT_ENVIRONMENT="$ROOT_ENV" uv sync --project "$WORKTREE" --all-groups --all-extras --python 3.15
 uv pip install --python "$ROOT_ENV/bin/python" toolz
-UV_PROJECT_ENVIRONMENT="$ROOT_ENV" uv run --project <作業ツリー> python -c 'import toolz; print("toolz present")'
-UV_PROJECT_ENVIRONMENT="$ROOT_ENV" uv sync --project <作業ツリー> --all-groups --all-extras --python 3.15
+UV_PROJECT_ENVIRONMENT="$ROOT_ENV" uv run --project "$WORKTREE" python -c 'import toolz; print("toolz present")'
+UV_PROJECT_ENVIRONMENT="$ROOT_ENV" uv sync --project "$WORKTREE" --all-groups --all-extras --python 3.15
 "$ROOT_ENV/bin/python" -c 'import toolz'
-UV_PROJECT_ENVIRONMENT="$AT_ENV" uv sync --project <作業ツリー>/agent-toolkit --all-groups --all-extras --python 3.14
-UV_PROJECT_ENVIRONMENT="$AT_ENV" uv sync --project <作業ツリー>/agent-toolkit --all-groups --all-extras
-UV_PROJECT_ENVIRONMENT="$AT_ENV" uv run --project <作業ツリー>/agent-toolkit python -c 'import sys; print(sys.version_info[:2])'
-UV_PROJECT_ENVIRONMENT="$AT_ENV" uv sync --project <作業ツリー>/agent-toolkit --all-groups --all-extras --python 3.15
-"$AT_ENV/bin/python" -c 'import sys; print(sys.version_info[:2])'
+mkdir -p "$SUB_PROJECT"
+printf '3.15\n' > "$TMP_DIR/parent/.python-version"
+printf '[project]\nname = "sub"\nversion = "0.1.0"\nrequires-python = ">=3.14"\ndependencies = []\n' > "$SUB_PROJECT/pyproject.toml"
+UV_FROZEN=0 uv lock --project "$SUB_PROJECT"
+UV_PROJECT_ENVIRONMENT="$SUB_ENV" uv sync --project "$SUB_PROJECT" --python 3.14
+UV_PROJECT_ENVIRONMENT="$SUB_ENV" uv sync --project "$SUB_PROJECT"
+UV_PROJECT_ENVIRONMENT="$SUB_ENV" uv run --project "$SUB_PROJECT" python -c 'import sys; print(sys.version_info[:2])'
+UV_PROJECT_ENVIRONMENT="$SUB_ENV" uv sync --project "$SUB_PROJECT" --python 3.15
+"$SUB_ENV/bin/python" -c 'import sys; print(sys.version_info[:2])'
 ```
 
 ## agent-toolkit/skills/delegation/references/base-contract.md：基本委譲契約：2026年9月27日
@@ -454,9 +470,9 @@ Cronの発火や委譲sessionの終端はこの観測の対象へ含めず、状
 
 Claude Code公式資料「Keep Claude working toward a goal」の「Background work defers evaluation」（<https://code.claude.com/docs/en/goal>、2026年10月10日取得）を読解した。背景のエージェントやシェルが稼働している間は評価を保留し、進捗を確認する通知と、完了結果による新しいターンを区別する仕様である。本改訂時にGoalを実機で起動した観測ではない。
 
-実機の出所はAWI `20261009-221751-001.md`が保持する2026年10月9日、Claude Code 2.1.295の記録である。session `642ea185-4e6b-48f2-bd00-2b7fe528b9ce`の1728行にGoal check-in、1733行に未完了の`atk agents wait`出力の`cat`、1735・1737行に2回目のblockと終了コード2がある。1734行の`list`は同じ応答で発行され、1745行に活動情報が返った。遮断後に新しく照会した因果にはしない。
+2026年10月9日、Claude Code 2.1.295のセッションで次の順序を観測した。一次記録はリポジトリ外のセッション記録にある。Goal check-inの後、未完了の`atk agents wait`出力を`cat`で読み、同じ出力の2回目の読取がblockされて終了コード2となった。同じ応答で発行した`agents_server`の`list`は遮断の後に活動情報を返した。遮断後に新しく照会した因果にはしない。
 
-再検証は同じ公式節と、WIが指定する記録の行を取得する。hookの判定は`background_task_outputs_test.py`で、明示背景化・実行上限・手動移行の未完了出力を同一sessionで2回読む入力、完了通知を加えた入力、別パスを読む入力を比較する。2回とも警告でblockが空、完了後は警告も空であることを確認する。Goalの自然発生を待たず、進捗の照会を終端結果へ代用しない。
+再検証は同じ公式節を取得する。hookの判定は`background_task_outputs_test.py`で、明示背景化・実行上限・手動移行の未完了出力を同一sessionで2回読む入力、完了通知を加えた入力、別パスを読む入力を比較する。2回とも警告でblockが空、完了後は警告も空であることを確認する。Goalの自然発生を待たず、進捗の照会を終端結果へ代用しない。
 
 ## agent-toolkit/skills/process-wi/references/run-lanes.md「統合とAWI終端」：所有資源の回収：2026年9月3日
 
@@ -516,6 +532,10 @@ A/B実験では、`agent-toolkit/rules/01-agent.md`の「判断指針」と「�
 
 再検証は`uv run --frozen python scripts/check_agent_doc_tone.py --report <対象ファイル>`で現行本文の指標を取得し、上記の値と比べる。
 再検証の契機は、規範文書の一括改訂と、文体の閾値の見直しとする。
+
+2026年10月14日、`scripts/check_agent_doc_tone.py`の文境界を、句点とMarkdown構文解析が返す本文ブロックの末尾へ変更した。同じブロックの折返しは連結し、文末の物理行と抜粋を保持する。frontmatter、HTMLコメント、フェンス付きコード、見出しと表の除外、インラインコードの置換語、8%・3%・20文の判定条件は維持した。字下げコードも保存データとして分子・分母の共通対象から除外し、引用内の本文段落は引き続き数える。
+入力WIの基準期間の再測定は、最初のCodex由来commit `4cef410f8`より前のClaude由来787commitのMarkdown追加行をhunkごとに数えたものである。同じ集合で、句点だけの数え方は1400/16182文（8.65%）、ブロック末も数える方法は1879/22925文（8.20%）だった。この再測定値は入力WIの観測に由来し、2026年9月16日の区分ごとの記録と集計単位が異なるため、数え方による差だけを閾値維持の根拠とする。
+再検証では前掲の`--report`を使い、段落、句点の無い箇条の項目、引用内の段落を個別に数え、同じブロックの折返しを1文として数えることを確かめる。規範の一括改訂後は`uv run --frozen pyfltr run-for-agent --commands=agent-doc-tone`をパス指定なしで実行し、全対象への到達と密度超過の診断の不在を確認する。上記の旧値と比べる場合は数え方と集計単位をそろえる。
 
 ## agent-toolkit/skills/writing-standards/references/agent-documents-basics.md：責務と構成：2026年10月6日
 
@@ -637,6 +657,31 @@ pyfltr（`/home/aki/pyfltr/pyfltr/cli/mcp_server.py`、commit `c5aa7e2`、MCP Py
 - 任意の改善候補: 公開される説明は`description=`の文字列だけで、引数の意味、組合せ条件、省略時の動作はクライアントへ届かないdocstringにある（例: `grep`の`max_count`の0の意味、`replace`の`within`と文脈行数の組合せ、`config`の`action`ごとの必須引数）。全ツールの引数に説明が無い。`run`の`mode`、`replace_history`と`config`の`action`は文字列型で列挙値がスキーマに無い。`show_run_output`は出力ログの全文、`show_run_diagnostics`は指定コマンドの診断の全件を返し、範囲・件数の指定と省略の通知を持たない。annotationsは全ツールで未設定で、書込を伴う`replace_undo`と`config`の説明は書き換えを明示しない。説明の言語が日本語と英語で混在する。instructionsは未設定である
 - 仕様上の是正: 確定した該当なし。未確定として、workerプロセスからの結果JSONの読取に例外処理が無く、外部ツールがファイル記述子1へ直接書いた場合は汎用のエラー本文になる可能性がある（プロトコル違反ではない）。子プロセスの標準出力が常に取り込まれるかは確認していない
 
+## agent-toolkit/skills/writing-standards/references/mcp-server-design.md：ホスト固有の条件：2026年10月13日
+
+2026年10月13日、Claude Codeの公式リリースノートを`gh release view <タグ> -R anthropics/claude-code`で取得した。2つの版の変更項目は次のとおりである。
+
+```text
+v2.1.295: Changed MCP tool descriptions the model loads through tool search to be cut at 16,384 characters instead of 2,048
+v2.1.296: Changed the default limit on MCP tool descriptions sent up front and on MCP server instructions from 2,048 to 4,096 characters
+```
+
+取得元は[v2.1.295](https://github.com/anthropics/claude-code/releases/tag/v2.1.295)と[v2.1.296](https://github.com/anthropics/claude-code/releases/tag/v2.1.296)である。
+前掲の2026年10月2日の記録にある2,048文字は、Claude Code 2.1.286の時点の公式資料の観測であり、本記録はその値を置き換えずに新版の仕様を記録する。2026年10月11日の時点の公式MCPガイドには2,048文字の記述が残っていたため、版を特定したリリースノートを根拠とする。上限を変える`CLAUDE_CODE_MAX_MCP_DESCRIPTION_LENGTH`は2026年10月2日の公式資料の記述であり、新版での名称は再確認していない。引数の説明への適用は両リリースノートとも記していない。
+
+agents_serverは全説明とinstructionsを初期送信の4,096文字以内に保つ。検索後の16,384文字も同時に満たすため、検索の有無で説明を変えない。
+説明長とinstructions長は`agent-toolkit/agent_toolkit/_agents_server/tool_descriptions_test.py`の次の2件が確かめる。
+
+- `test_tool_descriptions_fit_claude_code_truncation_and_describe_every_argument`
+- `test_lightweight_selection_reaches_instructions_and_mode_schema`
+
+説明の先頭4,096文字に`EXPLORE_CAPABILITIES`が届くことは次の2件が確かめる。
+
+- `launch_prompts_test.py::test_explore_capabilities_are_shared_with_public_schema`
+- `mcp_tools_test.py::test_public_start_schema_delivers_explore_capabilities`
+
+再検証は同じコマンドで後続版のリリースノートからMCPの説明とinstructionsの上限の変更項目を探し、公式MCPガイドの「For MCP server authors」と比べる。値が変わった場合は同書の「ホスト固有の条件」、`tool_descriptions.py`の`START_DESCRIPTION`直前のコメントと前記のテストを改める。
+
 ## agent-toolkit/skills/writing-standards/references/notation-rules.md：逐語引用の検出範囲：2026年9月5日
 
 本表は2026年9月5日に実際に動かして確かめた結果である。次の1文を地の文、引用ブロック、フェンス付きコードブロックへ置いた3つのサンプルファイルを作成し、pyfltr 3.17.8の`textlint`・`colloquial-check`にかけた。
@@ -711,11 +756,18 @@ pyfltr（`/home/aki/pyfltr/pyfltr/cli/mcp_server.py`、commit `c5aa7e2`、MCP Py
 
 2026年10月10日、FxEmbedの公開原本を読解した。API版とURLは[API introduction](https://github.com/FxEmbed/FxEmbed/blob/main/docs/src/content/docs/api/introduction.mdx)、v1の経路は[src/realms/api/router.ts](https://github.com/FxEmbed/FxEmbed/blob/main/src/realms/api/router.ts)、応答の`code`・`message`・`tweet`は[src/embed/status.ts](https://github.com/FxEmbed/FxEmbed/blob/main/src/embed/status.ts)、本文・日時・写真の属性は[api-status.ts](https://github.com/FxEmbed/FxEmbed/blob/main/packages/atmosphere/src/types/api-status.ts)と[api-schemas.ts](https://github.com/FxEmbed/FxEmbed/blob/main/packages/atmosphere/src/types/api-schemas.ts)へ対応付けた。v1は`/:handle/status/:id`、v2は`/2/`付きであり、資料のv1手順をv2の応答構造へ読み替えない。
 
-元ホストの取得条件はAWI `20261009-145842-001.md`が保持する資料に由来する。X直接取得のHTTP 402、APIのHTTP 307、pbs画像の取得成功とWindows curlの失効確認エラーはその環境の記録であり、本改訂時に同じ通信を再現した結果でも全ホスト共通の仕様でもない。
+元ホストの取得条件はリポジトリ外の作業記録に由来する。X直接取得のHTTP 402、APIのHTTP 307、pbs画像の取得成功とWindows curlの失効確認エラーはその環境の記録であり、本改訂時に同じ通信を再現した結果でも全ホスト共通の仕様でもない。
 
-同日の追加読解では、API introductionのResponse FormatがHTTP状態とは別に`code`を確認する必要を説明し、v1の応答実装が数値の`code`、200の`OK`、401・404・503・500の失敗を分岐し、API応答のHTTP状態にも`code`を設定することを確認した。最終HTTP 200かつ数値のcode 200という採用条件を手順へ明示した。これは公式実装の読解であり、通信失敗や写真なしの実通信を新たに再現した記録ではない。
+同日の追加読解では、API introductionのResponse FormatがHTTP状態とは別に`code`を確認する必要を説明し、v1の応答実装が数値の`code`、200の`OK`、401・404・503・500の失敗を分岐し、API応答のHTTP状態にも`code`を設定することを確認した。最終HTTP 200かつ数値のcode 200という採用条件を手順へ明示した。これは公式実装の読解の記録である。通信失敗や写真なしの実通信は新たに再現していない。
 
 再検証では前記原本のv1経路と応答生成を取得し、属性と版を比較する。通信を試す場合は公開投稿のURL・最終URL・HTTP状態・応答本文を保存し、最終HTTP 200と数値の`code` 200の両方、必要な`tweet`の属性の成立を確認してから画像URLをmanaged-tempへ取得する。HTTPだけの成功、codeの不一致・欠落・型の違い、通信とJSONの失敗、必要属性の欠落を未取得として区別する。成功応答で写真の一覧が空か写真媒体がない場合の「写真なし」と、写真の取得失敗も区別する。画像を実際に読んだホストと保存先を記録し、通信失敗の本文を画像や投稿の内容として扱わない。
+
+## docs/development/design-hooks.md：通知の整形と反復検出：2026年10月13日
+
+2026年10月13日、Claude Code 2.1.296の環境で公式の[Hooks reference](https://code.claude.com/docs/en/hooks)を取得した。「Common input fields」は`session_id`を現在のセッション識別子、`transcript_path`を会話のJSONへのパスとし、transcriptは非同期に書かれるため現在のturnの最新メッセージを含まない場合があると記す。「SessionStart」はmatcherを`startup`・`resume`（`--resume`、`--continue`、`/resume`）・`clear`・`compact`・`fork`とし、v2.1.214より前はforkしたセッションが`resume`を報告したと記す。
+`rules_context`はこの入力の`session_id`と`transcript_path`をClaude Codeのメインへの通知に使う。`agent-toolkit/agent_toolkit/_hooks/rules_context_test.py`が、会話ごと・切替ごとの入力と出力の対応と、managed-tempの作成失敗時の通知を確かめる。
+
+再検証は同じ資料の2節を取得して項目名とmatcherの値を比べ、制御したSessionStart入力をhook handlerへ渡して`additionalContext`の値を確かめる。項目名か値が変わった場合は`rules_context.py`の通知、`agent-toolkit/share/rules-main.claude-code.md`「自身の会話の記録」と同テストを改める。
 
 ## docs/development/design-hosts.md：Claude CodeとCodexの規範配置：2026年9月13日
 
@@ -754,18 +806,18 @@ ClaudeではJSの設定説明、Codexではfork_turnsのヘルプ文を含む全
 
 ## completion-report：最終報告送達後のターン終端：2026年10月9日
 
-出所はAWI `20261009-114045-001.md`の保存済み対照であり、本記録の作成時にモデルを再実行した結果ではない。Claude Codeメインがモデル`claude-opus-5-5`へ、同じ短い最終報告の送達入力と、送達後の地の文を省略記号だけで閉じる指示を加えた入力を各3回渡した。起動形は`claude -p --model claude-opus-5-5 --allowedTools mcp__agent-toolkit__send_to_user --output-format json`で、各JSONの`result`（送達後の最終地の文）を比較した。
+出所はリポジトリ外に保存した対照の記録である。本記録の作成時にモデルは再実行していない。Claude Codeメインがモデル`claude-opus-5-5`へ、同じ短い最終報告の送達入力と、送達後の地の文を省略記号だけで閉じる指示を加えた入力を各3回渡した。起動形は`claude -p --model claude-opus-5-5 --allowedTools mcp__agent-toolkit__send_to_user --output-format json`で、各JSONの`result`（送達後の最終地の文）を比較した。
 
 | 入力 | 追加説明 | 省略記号 | 終了状態 |
 | --- | --- | --- | --- |
 | 終端の具体化なし、3回 | 1回 | 2回 | 全件success、num_turns=2 |
 | 終端の具体化あり、3回 | 0回 | 3回 | 全件success、num_turns=2 |
 
-再検証は同じ報告本文を固定し、後段の終端指示の有無だけを変えて上記起動形で各群を実行し、JSONのresult・success・num_turnsを保存する。モデルとホスト版も取得時に記録する。これは具体化が作用した限定条件の観測であり、元の長い文脈の内的判断、一般発生率、将来の出力保証を示さない。元事象は記録`claude:ec92266f-e100-4186-b242-db41e17aca38`の426行が固定文付き送達、427行が表示成功、429行が追加要約であり、工程10の追加作業限定条文は336行に存在した。条文の不在を原因とはしない。
+再検証は同じ報告本文を固定し、後段の終端指示の有無だけを変えて上記起動形で各群を実行し、JSONのresult・success・num_turnsを保存する。モデルとホスト版も取得時に記録する。これは具体化が作用した限定条件の観測であり、元の長い文脈の内的判断、一般発生率、将来の出力保証を示さない。元事象のセッション記録（リポジトリ外）では、固定文付きの送達、表示の成功、追加の要約がこの順に並び、工程10の追加作業を限定する条文は同じ記録の送達より前に読み込まれていた。条文の不在を原因とはしない。
 
 ## dotfiles-development：Git動作テストの状態準備：2026年10月9日
 
-出所はAWI `20261009-151649-001.md`の対照結果と、導入commit `b20e6f20514a381648c730bbf828e2f8ac9e3522`、修正commit `f071d6348670a39e797e9dc54f6276e1e9dad8f6`の実装である。対象は`agent-toolkit/agent_toolkit/_hooks/pretooluse/shell_checks_test.py`の`TestBashGitRevParseShortMultiple.test_individual_revision_fix_succeeds`。入力は`git rev-parse`のoption `--short`、`--short=12`、`--verify`、`--verify --quiet`とrevision `HEAD`、`HEAD~1`の8組である。
+出所はリポジトリ外に保存した対照結果と、導入commit `b20e6f20514a381648c730bbf828e2f8ac9e3522`、修正commit `f071d6348670a39e797e9dc54f6276e1e9dad8f6`の実装である。対象は`agent-toolkit/agent_toolkit/_hooks/pretooluse/shell_checks_test.py`の`TestBashGitRevParseShortMultiple.test_individual_revision_fix_succeeds`。入力は`git rev-parse`のoption `--short`、`--short=12`、`--verify`、`--verify --quiet`とrevision `HEAD`、`HEAD~1`の8組である。
 
 | 履歴条件 | HEADの4入力 | HEAD~1の4入力 |
 | --- | --- | --- |
@@ -773,7 +825,7 @@ ClaudeではJSの設定説明、Codexではfork_turnsのヘルプ文を含む全
 | HEADを浅い境界とする深さ1相当 | 全件終了0 | optionの上記順に128・128・128・1 |
 
 再検証は一時repoに2commitを作成し、通常履歴と同じHEADを浅い境界とするrepoで上記8入力をそれぞれ実行する。対象repoを明示し、入力・履歴条件・終了コード・両出力を保存する。修正後のテストは`init_repository`と`commit_all`で必要な2commitを用意し、必須repo引数を`git -C`へ渡す`run_git`で検証する。`_testing/isolation.py:isolate_development_state`は設定と環境を隔離するが、cwdの変更やcommit生成は行わない。この違いを設定隔離の成功だけから履歴準備の成立へ読み替えない。
-CI run `37887505483`の失敗と`37889681072`の成功はAWIが参照する終端担当の確認記録に由来し、本記録の作成時のCI再照会ではない。
+CI run `37887505483`の失敗と`37889681072`の成功はリポジトリ外の確認記録に由来し、本記録の作成時にCIは再照会していない。
 
 ## プロジェクト指示のAGENTS.md対応：2026年9月20日
 

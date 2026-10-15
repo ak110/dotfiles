@@ -2,10 +2,8 @@
 name = "pytools"
 version = "0.1.0"
 description = "Personal command-line tools"
-requires-python = ">=3.13,<4.0"
+requires-python = ">=3.15,<4.0"
 classifiers = [
-    "Programming Language :: Python :: 3.13",
-    "Programming Language :: Python :: 3.14",
     "Programming Language :: Python :: 3.15",
 ]
 dependencies = [
@@ -34,7 +32,6 @@ dependencies = [
     "send2trash",
     "tqdm",
     "wand>=0.7.0",
-    "zstandard; python_version < '3.14'",
 ]
 
 [project.scripts]
@@ -121,11 +118,21 @@ require-text = ["docs/development/concepts.md", "docs/development/incidents.md",
 [tool.pyfltr]
 preset = "latest"
 python = true
-# Python 3.14はテストsuiteの実行時間が3.12/3.13に比べ25%程度長く、`command-timeout`を指定しない場合の600秒では境界を超えるためCIタイムアウトを延伸する
+# Python 3.15のCIテストは約437秒を要し、省略時の600秒では余裕が小さいためCIタイムアウトを延伸する。
 command-timeout = 900
 ty = true
-# scripts/・libexec/とagent-toolkit/skills/plan-mode/scripts/のモジュールを解決するため追加する
-ty-args = ["check", "--output-format", "concise", "--error-on-warning", "--extra-search-path", "scripts", "--extra-search-path", "libexec", "--extra-search-path", "agent-toolkit/skills/plan-mode/scripts"]
+# linked worktreeの祖先にある複製元のprojectが選ばれても、対象版と先頭の探索先をこのcwdへそろえる。
+# CLIスクリプトと、同じスキルのscripts内で共有するモジュールも解決する。
+ty-args = [
+    "check", "--python-version", "3.15", "--extra-search-path", ".",
+    "--output-format", "concise", "--error-on-warning",
+    "--extra-search-path", "scripts",
+    "--extra-search-path", "libexec",
+    "--extra-search-path", "agent-toolkit/skills/plan-mode/scripts",
+    "--extra-search-path", "agent-toolkit/skills/process-wi/scripts",
+    "--extra-search-path", "agent-toolkit/skills/review-standards/scripts",
+    "--extra-search-path", "agent-toolkit/skills/session-review/scripts",
+]
 # pyfltrの設定を変えない場合は`ruff-format`が整形前に`ruff check --fix --unsafe-fixes`を実行する。
 # formatter段は`--no-fix`でも`pyfltr ci`でも対象ファイルを書き換えるため、`--no-fix`だけでは
 # lintの自動修正を止められない。検査だけを行う`make test`が担当範囲外のファイルを
@@ -136,7 +143,7 @@ ruff-format-by-check = false
 # 対応版の公開後に並列実行へ戻す。
 # リポジトリ直下、agent-toolkit/およびagent-toolkit/agent_toolkit/の`conftest.py`は、いずれもトップレベルの
 # モジュール`conftest`へ解決されるため、mypyが"Duplicate module named"を報告して検査全体を中断する。
-# 除外指定はパスではなくファイル名で一致するため、3件の`conftest.py`をまとめてmypyの対象から外す。
+# 除外指定はファイル名で一致するため、3件の`conftest.py`をまとめてmypyの対象から外す。
 # 3件ともruff・pylint・pyright・tyが引き続き検査する。
 mypy-exclude = ["conftest.py"]
 shellcheck = true
@@ -166,53 +173,46 @@ statusline-version = false
 markdownlint-exclude = [
     ".chezmoi-source/dot_codex/AGENTS.md",
     ".chezmoi-source/dot_claude/rules/myprojects-common.md",
-    "agent-toolkit/skills/writing-standards/references/tone-examples.md",
-    "agent-toolkit/skills/writing-standards/references/tone-examples-llm-tone.md",
 ]
 textlint-exclude = [
     ".chezmoi-source/dot_codex/AGENTS.md",
-    "agent-toolkit/skills/writing-standards/references/tone-examples.md",
-    "agent-toolkit/skills/writing-standards/references/tone-examples-llm-tone.md",
+    # Antigravity CLIへ配る外部由来の規範。検査を通すための書き換えは出所の正確さを損なうため、
+    # 日本語の表記検査（textlint・colloquial-check）だけを外し、リンク検証などの他の検査は続ける。
+    ".chezmoi-source/dot_gemini/antigravity-cli/skills/japanese-tech-writing/SKILL.md",
 ]
 colloquial-check-exclude = [
-    "agent-toolkit/skills/writing-standards/references/tone-examples.md",
-    "agent-toolkit/skills/writing-standards/references/tone-examples-llm-tone.md",
+    # textlint-excludeと同じ外部由来の規範。
+    ".chezmoi-source/dot_gemini/antigravity-cli/skills/japanese-tech-writing/SKILL.md",
     # 規範の再構築の判定台帳。基準commitの条文の逐語抜粋を記録として保持するため対象から外す。
     "docs/development/norm-restructure/*.tsv",
 ]
 typos-exclude = [
-    "agent-toolkit/skills/writing-standards/references/tone-examples.md",
-    "agent-toolkit/skills/writing-standards/references/tone-examples-llm-tone.md",
     # 規範の再構築の判定台帳。条文の先頭40字の抜粋と検索語が語の途中で終わるため対象から外す。
     "docs/development/norm-restructure/*.tsv",
 ]
-prek-exclude = [
-    "agent-toolkit/skills/writing-standards/references/tone-examples.md",
-    "agent-toolkit/skills/writing-standards/references/tone-examples-llm-tone.md",
-]
-textlint-args = ["--cache"]
+# textlintのキャッシュはルール実装の更新を識別しないため、毎回現在のルールで検査する。
+textlint-args = []
 lychee-exclude = [
     ".chezmoi-source/dot_codex/AGENTS.md",
-    "agent-toolkit/skills/writing-standards/references/tone-examples.md",
-    "agent-toolkit/skills/writing-standards/references/tone-examples-llm-tone.md",
     # ベースパスを実行時に埋めるプレースホルダーを含むため、静的なリンク解決の対象にしない。
     "agent-toolkit/agent_toolkit/_atk/serve/static/index.html",
 ]
 # profile_ipy/はIPython自動生成プロファイルとして対象外とする。
-# 対比集の除外は各コマンドで保ち、agent-doc-toneは悪い例と説明文を区別して読む。
+# 自作の例と説明は通常の検査へ渡し、原文の引用と検出用データは役割を区別して読む。
 extend-exclude = [
     "*/profile_ipy/*",
     # agent-toolkit-codex/はGit追跡の有無を問わずagent-toolkit/から生成するため、生成元と重複検査しない。
     "agent-toolkit-codex/**",
-    # Antigravity CLIへ配る外部由来の規範。検査を通すための書き換えは出所の正確さを損なうため、
-    # 本リポジトリの表記検査の対象から外す。
-    ".chezmoi-source/dot_gemini/antigravity-cli/skills/japanese-tech-writing/SKILL.md",
 ]
-# chezmoi命名規則（dot_*・executable_*）のshellスクリプトと、拡張子を持たないbash製CLIラッパー
-# （agent-toolkit/bin/atk）をshfmtの対象に追加する
-shfmt-extend-targets = ["*.sh.tmpl", "dot_bashrc", "dot_bash_profile", "executable_*", "atk"]
+# chezmoi命名規則（dot_*・executable_*）のshellスクリプトと、拡張子を持たないbash製CLI
+# （agent-toolkit/scripts/atkとbin/配下）をshfmtの対象に追加する。
+# bin/配下は拡張子を持たないファイルが全てbash製のため、ファイル名を列挙せずに`bin/*`で対象にし、
+# 同じ場所に置くcmdとPythonだけを除外する。新しいCLIを列挙へ書き足さなくても検査対象になる。
+shfmt-extend-targets = ["*.sh.tmpl", "dot_bashrc", "dot_bash_profile", "executable_*", "atk", "bin/*"]
+shfmt-exclude = ["bin/*.cmd", "bin/*.py"]
 # 上記shfmt対象と同じファイル群をshellcheckでも検査する
-shellcheck-extend-targets = ["dot_bashrc", "dot_bash_profile", "executable_*", "atk"]
+shellcheck-extend-targets = ["dot_bashrc", "dot_bash_profile", "executable_*", "atk", "bin/*"]
+shellcheck-exclude = ["bin/*.cmd", "bin/*.py"]
 textlint-packages = [
     "textlint-rule-preset-ja-technical-writing",
     "textlint-rule-preset-jtf-style",
@@ -248,12 +248,14 @@ targets = [
     "agent-toolkit/hooks/*.py",
     "agent-toolkit/skills/*/*",
     "agent-toolkit/skills/*/*/*",
+    "agent-toolkit/skills/refine-prompt/fixtures/multi-turn/*/*/*",
+    "agent-toolkit/skills/refine-prompt/fixtures/multi-turn/*/__init__.py",
     "agent-toolkit/share/*",
     "agent-toolkit/hooks/*.json",
     "agent-toolkit/rules/*.md",
     "agent-toolkit/scripts/**/*.py",
     "agent-toolkit/agent_toolkit/**/*.py",
-    "agent-toolkit/bin/*",
+    "agent-toolkit/scripts/*",
     "agent-toolkit/completions/atk.bash",
     "completions/_pytools.bash",
     "install-claude.sh",
@@ -344,7 +346,7 @@ targets = [
     "agent-toolkit/agent_toolkit/*/*/*/*/*/*.py",
     "agent-toolkit/skills/*/scripts/*.py",
     "agent-toolkit/scripts/*.py",
-    "agent-toolkit/bin/*",
+    "agent-toolkit/scripts/*",
     "agent-toolkit/agent_toolkit/_atk/serve/static/*.css",
     "agent-toolkit/agent_toolkit/_atk/serve/static/*.js",
     "agent-toolkit/*.toml",
@@ -418,6 +420,11 @@ ignore = ["D107", "D415"]
 [tool.ruff.lint.pydocstyle]
 convention = "google"
 
+[tool.ruff.lint.flake8-import-conventions]
+# 標準ライブラリはモジュール名で参照するため、datetimeも省略名へ置き換えない。
+# ICN001の判定は保ち、Ruffの省略名の初期値へプロジェクトの名前を対応付ける。
+extend-aliases = { datetime = "datetime" }
+
 [tool.ruff.lint.per-file-ignores]
 "**_test.py" = ["D"]
 "**/__init__.py" = ["D104"]
@@ -437,12 +444,6 @@ warn_no_return = true
 warn_redundant_casts = true
 warn_unused_configs = true
 show_error_codes = true
-
-[tool.ty.analysis]
-# zstandardはPython 3.14未満だけへ導入する依存であり、3.15で行う静的検査の環境には存在しない。
-# tyは解析する版をrequires-pythonの下限（3.13）とするため、3.13向けの分岐のimportを解決しようとする。
-# 行内の`ty: ignore`はzstandardを導入済みの環境で未使用の抑制として警告されるため、ここで許可する。
-allowed-unresolved-imports = ["zstandard"]
 
 [tool.typos.default.extend-words]
 # gitエイリアス名（ba = branch --all）・CSSクラス名（.pl-ba）
@@ -467,6 +468,8 @@ addopts = [
     "--maxfail=5",
     "--durations=30",
     "--durations-min=0.5",
+    # 失敗・エラーに加えてskipの理由を要約へ出し、検証報告で未実行の範囲と理由を示せるようにする。
+    "-rfEs",
     "--timeout=60",
     # コア数追従（-n auto等）を採用せず固定値とする（CI環境での逆効果とメモリ消費増を避けるため）
     "-n", "4",

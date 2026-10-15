@@ -5,9 +5,6 @@
 C#版のサブコマンド名・引数・出力を維持し、`EcoUtilities`コマンドの差し替えで流用できるようにする。
 """
 
-# ヘルプや他の処理では不要な依存を、使用時まで遅延する。旧Pythonでは通常のimportとなる。
-__lazy_modules__ = {"httpx"}
-
 import argparse
 import datetime
 import errno
@@ -22,8 +19,10 @@ import urllib.parse
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
-import httpx
 import pydantic
+
+# ヘルプや他の処理で使わない依存は、使用時まで読み込まない。
+lazy import httpx
 
 from pytools._internal import ecoutilities_args
 
@@ -40,7 +39,7 @@ def main(args: argparse.Namespace | None = None) -> None:
         args = ecoutilities_args.parse_args()
 
     if args.mode is None:
-        print("Usage: EcoUtilities mode ...")
+        print("Usage: EcoUtilities mode ...。EcoUtilities --helpで有効なmodeと引数を確認してください。")
         sys.exit(1)
 
     if args.mode == "YearMonthFolder256":
@@ -109,7 +108,12 @@ def fix_gvb_by_file_name(gvb_dir: str, data_dir: str) -> None:
     gvb_base = Path(gvb_dir)
     data_base = Path(data_dir)
     if not (gvb_base.is_dir() and data_base.is_dir()):
-        print("Usage: EcoUtilities.exe FixGVBByFileName gvbファイルフォルダ データフォルダ")
+        print(
+            f"Usage: EcoUtilities FixGVBByFileName gvbファイルフォルダ "
+            f"データフォルダ。"
+            f"ディレクトリ指定が不正です: gvb={gvb_dir}, data={data_dir}。"
+            f"存在するディレクトリを指定して再実行してください。"
+        )
         return
 
     name_to_path: dict[str, str] = {}
@@ -181,7 +185,11 @@ def run_download_custom(sites_file: str) -> None:
     path = Path(sites_file)
     if not path.exists():
         _write_sample_sites(path)
-        print("Sites.xmlを出力しました。")
+        print(
+            f"Sites.xmlを出力しました: {path}。"
+            f"保存先とURL・リンクパターンを編集し、同じ設定ファイルを指定してEcoUtilities "
+            f"DownloadCustomを再実行してください。"
+        )
         return
     sites = load_sites(path)
     with httpx.Client(timeout=_HTTP_TIMEOUT) as client:
@@ -235,7 +243,15 @@ def _download_by_pattern(
                 else:
                     _download_by_pattern(site, client, download_uri, patterns[1:], exclude_patterns, visited)
     except Exception as e:  # noqa: BLE001  # クロール継続のため個別URLの失敗を捕捉する（C#のcatch相当）。
-        print("ダウンロードに失敗: " + url)
+        print(
+            "ダウンロードに失敗: "
+            + url
+            + (
+                "。"
+                "他のURLの処理は続行します。"
+                "URLと接続状態を確認し、同じ設定ファイルでEcoUtilities DownloadCustomを再実行してください。"
+            )
+        )
         print(e)
 
 
@@ -269,7 +285,16 @@ def _download_data(
             response.raise_for_status()
             download_path.write_bytes(response.content)
     except Exception as e:  # noqa: BLE001  # クロール継続のため個別URLの失敗を捕捉する（C#のcatch相当）。
-        print("データのダウンロードに失敗: " + download_uri)
+        print(
+            "データのダウンロードに失敗: "
+            + download_uri
+            + (
+                "。"
+                "他のURLの処理は続行します。"
+                "URL・接続状態・保存先の書き込み権限を確認し、同じ設定ファイルでEcoUtilities "
+                "DownloadCustomを再実行してください。"
+            )
+        )
         print(e)
 
 

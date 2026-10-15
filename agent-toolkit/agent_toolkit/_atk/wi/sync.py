@@ -32,23 +32,9 @@ from agent_toolkit._common import file_lock as _file_lock
 from agent_toolkit._common import private_notes as _private_notes
 from agent_toolkit._git import command as _git_command
 
-LOCAL_ONLY_MARKER = _atk_git_sync.LOCAL_ONLY_MARKER
-"""`init_local_private_notes_repo`生成のローカル限定リポジトリ直下に置くマーカーファイル名。
-
-remote未設定であることを`git remote`の実行結果に頼らずファイル存在のみで判定するための目印。
-通常運用（既存クローン済みリポジトリ・テストの一時ディレクトリ）にはこのファイルが存在しないため、
-既存のgitを呼び出す処理（`subprocess.run`のフェイク差し替え等）に影響を与えない。
-"""
-
 
 def has_remote(private_notes: pathlib.Path) -> bool:
-    """`private_notes`がremote設定済みの通常リポジトリか判定する。
-
-    `LOCAL_ONLY_MARKER`が存在する場合のみFalse（`init_local_private_notes_repo`が
-    生成したremote未設定のローカル管理リポジトリ）とみなし、`pull`・`commit_and_push`は
-    この判定でremote同期・push操作をスキップする。マーカー不在時は`git remote`実行結果を問わず
-    Trueとして扱う（通常運用のリポジトリを対象とする既存の呼び出し方を変えないため）。
-    """
+    """現在branchのupstreamを解決できるか、共有Git同期層で判定する。"""
     return _atk_git_sync.has_remote(private_notes)
 
 
@@ -57,16 +43,10 @@ def init_local_private_notes_repo(root: pathlib.Path) -> None:
 
     `AGENT_TOOLKIT_PRIVATE_NOTES`が未設定で、未指定時に使う`~/private-notes/`も存在しない場合に、
     `root`（`platformdirs.user_data_dir("agent-toolkit")`配下）へ生成する。
-    remoteは設定せず`LOCAL_ONLY_MARKER`を配置する（`has_remote`がFalseを返し、
-    以後の`pull`・`commit_and_push`はremote同期・pushをスキップしてローカルコミットのみで完結する）。
+    remoteとupstreamは設定せず、以後の同期はローカルcommitだけで完了する。
     """
     root.mkdir(parents=True, exist_ok=True)
     run_git(["init"], cwd=root)
-    (root / LOCAL_ONLY_MARKER).write_text(
-        "このファイルはprivate-notesリポジトリがローカル限定自動生成であることを示すマーカーである。\n"
-        "削除するとremote同期とpushの自動スキップが解除され、remote未設定のままgit操作が失敗しうる。\n",
-        encoding="utf-8",
-    )
     for name in WI_STATES:
         state_dir = root / name
         state_dir.mkdir(parents=True, exist_ok=True)
@@ -243,7 +223,7 @@ def _redundant_terminal_divergence(private_notes: pathlib.Path) -> bool:
         if not commits:
             return False
         return all(_terminal_commit_is_redundant(private_notes, commit) for commit in commits)
-    except (OSError, subprocess.SubprocessError, UnicodeError):
+    except OSError, subprocess.SubprocessError, UnicodeError:
         return False
 
 
@@ -417,7 +397,7 @@ def pulled_recently(private_notes: pathlib.Path) -> bool:
     """直近の成功済み同期を再利用できる状態かを返す。
 
     `.git`がファイルの場合（worktree形式）は`stat`が失敗し偽を返すため、
-    レート制限が無効化されてremote同期を実行する側へ倒れる。
+    同期結果を再利用せずremote同期を実行する。
     WI保存リポジトリは通常のクローンであり該当しない。
     ローカル管理リポジトリは再利用対象外とする。
 

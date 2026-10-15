@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import pathlib
+from typing import Any
 
 import pytest
 import session_review_evidence as evidence
@@ -21,6 +22,208 @@ from agent_toolkit._testing.session_evidence_support import (
     write_agy_log,
     write_jsonl,
 )
+
+
+def _operation_catalog(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], entries: list[dict[str, Any]], *, runtime: str = "codex"
+) -> list[dict[str, Any]]:
+    """ホスト記録を公開カタログCLIへ渡し、エンドユーザーが受け取る成功操作を返す。"""
+    root = tmp_path / "records"
+    timestamp = "2026-09-10T00:00:00Z"
+    if runtime == "codex":
+        records = [{"type": "session_meta", "timestamp": timestamp, "payload": {"id": "operation"}}]
+        records.extend({"type": "response_item", "timestamp": timestamp, **entry} for entry in entries)
+        path = root / "rollout-operation.jsonl"
+    else:
+        records = [
+            {"type": "assistant" if index == 0 else "user", "timestamp": timestamp, **entry}
+            for index, entry in enumerate(entries)
+        ]
+        path = root / "operation.jsonl"
+    write_jsonl(path, records)
+    option = "--catalog-codex-history" if runtime == "codex" else "--catalog-claude-project"
+    assert (
+        evidence.main([option, str(root), "--since", "2026-09-09T00:00:00Z", "--observation-boundary", "2026-09-11T00:00:00Z"])
+        == 0
+    )
+    parent, _summary = read_jsonl(capsys, raw=True)
+    return parent["successful_wi_operations"]
+
+
+@pytest.mark.parametrize(
+    "output",
+    [{}, {"exit_code": 7}, {"exit_code": False}, {"exit_code": True}, {"exit_code": 0.0}, {"session_id": 12}, "未解析の結果"],
+)
+def test_wi_operation_requires_terminal_success(
+    output: object, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """終了0を欠く応答を成功操作へ含めない。"""
+    entries: list[dict[str, Any]] = [
+        {"payload": {"type": "function_call", "call_id": "a", "arguments": json.dumps({"cmd": "atk wi get"})}},
+        {"payload": {"type": "function_call_output", "call_id": "a", "output": output}},
+    ]
+    assert not _operation_catalog(tmp_path, capsys, entries)
+
+
+def test_wi_operation_tracks_shell_wrapped_command_until_poll_completion(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """shell・exec包みの実行中応答を保持し、後続pollの終了0を元の操作へ対応させる。"""
+    entries: list[dict[str, Any]] = [
+        {
+            "payload": {
+                "type": "function_call",
+                "call_id": "a",
+                "arguments": json.dumps({"cmd": "/bin/bash -lc 'exec atk wi get'"}),
+            }
+        },
+        {"payload": {"type": "function_call_output", "call_id": "a", "output": {"session_id": 12}}},
+        {"payload": {"type": "function_call", "call_id": "b", "arguments": json.dumps({"session_id": 12})}},
+        {"payload": {"type": "function_call_output", "call_id": "b", "output": {"session_id": 12}}},
+        {"payload": {"type": "function_call", "call_id": "c", "arguments": json.dumps({"session_id": 12})}},
+        {"payload": {"type": "function_call_output", "call_id": "c", "output": "Process exited with code 0"}},
+    ]
+    assert _operation_catalog(tmp_path, capsys, entries) == [
+        {"operation": "get", "locator": {"record": "operation", "line": 2}}
+    ]
+
+
+@pytest.mark.parametrize(
+    ("result", "expected"),
+    [({"exit_code": 0}, 1), ({}, 0), ({"exit_code": 3}, 0), ({"exit_code": 0, "status": "running"}, 0)],
+)
+def test_completed_item_requires_exit_zero(
+    result: dict, expected: int, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """完了というstatusだけで成功とせず、終了状態も検収する。"""
+    entry = {
+        "type": "event_msg",
+        "payload": {
+            "type": "item_completed",
+            "item": {
+                "type": "CommandExecution",
+                "command": ["atk", "wi", "list"],
+                "status": "completed",
+                **result,
+            },
+        },
+    }
+    assert len(_operation_catalog(tmp_path, capsys, [entry])) == expected
+
+
+@pytest.mark.parametrize(
+    ("output", "flag", "expected"),
+    [
+        ("ok", None, 0),
+        ("ok", False, 1),
+        ("Command running in background with ID: job1", False, 0),
+        ("Process exited with code 0", True, 0),
+    ],
+)
+def test_claude_success_is_explicit_and_terminal(
+    output: str, flag: bool | None, expected: int, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Claudeも不明な結果と背景実行を成功へ数えず、明示失敗を優先する。"""
+    entries: list[dict[str, Any]] = [
+        {"message": {"content": [{"type": "tool_use", "id": "a", "input": {"command": "atk wi get"}}]}},
+        {"message": {"content": [{"type": "tool_result", "tool_use_id": "a", "content": output, "is_error": flag}]}},
+    ]
+    assert len(_operation_catalog(tmp_path, capsys, entries, runtime="claude")) == expected
+
+
+def _catalog_fixture(tmp_path: pathlib.Path, runtime: str) -> list[str]:
+    """既存のClaude・Codexテストコードと同じ記録形で、時刻順と条件が異なる3つの親セッションを作成する。"""
+    root = tmp_path / "catalog"
+    for prefix, second, workflow, cwd in (
+        ("a", 2, True, "/repo/selected"),
+        ("b", 1, True, "/repo/other"),
+        ("c", 1, False, "/repo/selected"),
+    ):
+        session_id = f"{prefix * 8}-{prefix * 4}-4{prefix * 3}-8{prefix * 3}-{prefix * 12}"
+        timestamp = f"2026-09-10T00:00:0{second}Z"
+        text = "agent-toolkit:process-wiを実行する" if workflow else "通常の依頼"
+        if runtime == "claude":
+            records = [{"type": "user", "timestamp": timestamp, "cwd": cwd, "message": {"role": "user", "content": text}}]
+            path = root / f"{session_id}.jsonl"
+        else:
+            records = [
+                {"type": "session_meta", "timestamp": timestamp, "payload": {"id": session_id, "cwd": cwd}},
+                {
+                    "type": "response_item",
+                    "timestamp": timestamp,
+                    "payload": {"type": "message", "role": "user", "content": [{"type": "input_text", "text": text}]},
+                },
+            ]
+            path = root / f"rollout-test-{session_id}.jsonl"
+        write_jsonl(path, records)
+    option = "--catalog-claude-project" if runtime == "claude" else "--catalog-codex-history"
+    return [option, str(root), "--since", "2026-09-09T00:00:00Z", "--observation-boundary", "2026-09-11T00:00:00Z"]
+
+
+@pytest.mark.parametrize("runtime", ["claude", "codex"])
+def test_catalog_selects_rows_and_fields(
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+    runtime: str,
+) -> None:
+    """公開指定だけで5項目・6項目・全項目と、workflow・cwdの積集合を取得する。"""
+    argv = _catalog_fixture(tmp_path, runtime)
+    fields = ["session_id", "workflow", "workflow_locator", "started_at", "tokens"]
+    assert evidence.main([*argv, "--catalog-known-workflow", "--catalog-fields", ",".join(fields)]) == 0
+    *parents, summary = read_jsonl(capsys, raw=True)
+    assert len(parents) == 2
+    assert all(list(parent) == ["kind", *fields] for parent in parents)
+    assert parents[0]["session_id"].startswith("b") and parents[1]["session_id"].startswith("a")
+    assert summary["parent_record_count"] == 3 and summary["selected_parent_count"] == 2
+    for selected in ([*fields, "cwd"], None):
+        options = ["--catalog-fields", ",".join(selected)] if selected else []
+        assert evidence.main([*argv, "--catalog-workflow", "process-wi", "--catalog-cwd-contains", "selected", *options]) == 0
+        parent, summary = read_jsonl(capsys, raw=True)
+        assert parent["session_id"].startswith("a") and parent["cwd"] == "/repo/selected"
+        if selected:
+            assert list(parent) == ["kind", *selected]
+        else:
+            assert "successful_wi_operations" in parent and "branch" in parent
+        assert summary["selected_parent_count"] == 1 and summary["parent_record_count"] == 3
+
+
+@pytest.mark.parametrize("runtime", ["claude", "codex"])
+def test_catalog_empty_selection_preserves_scan_summary(
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+    runtime: str,
+) -> None:
+    """親行0件でも、選択件数と走査・期間・未解決件数を区別できる。"""
+    argv = _catalog_fixture(tmp_path, runtime)
+    assert evidence.main([*argv, "--catalog-workflow", "absent", "--catalog-fields", "tokens,session_id"]) == 0
+    (summary,) = read_jsonl(capsys, raw=True)
+    assert summary["kind"] == "catalog-summary" and summary["runtime"] == runtime
+    assert summary["scan_root"] == str((tmp_path / "catalog").resolve())
+    assert summary["since"] == "2026-09-09T00:00:00+00:00"
+    assert summary["observation_boundary"] == "2026-09-11T00:00:00+00:00"
+    assert summary["parent_record_count"] == 3 and summary["selected_parent_count"] == 0
+    assert summary["unresolved_record_count"] == 0
+
+
+@pytest.mark.parametrize("runtime", ["claude", "codex"])
+def test_catalog_selection_validation_and_defaults(
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+    runtime: str,
+) -> None:
+    """無指定の全項目とunknownを保持し、不正な項目・非catalog・tool照会との併用を拒否する。"""
+    argv = _catalog_fixture(tmp_path, runtime)
+    assert evidence.main(argv) == 0
+    *parents, summary = read_jsonl(capsys, raw=True)
+    assert len(parents) == 3 and "selected_parent_count" not in summary
+    assert any(parent["workflow"] == "unknown" for parent in parents)
+    for value in ("no-such-field", "", "session_id,", "cwd,cwd"):
+        assert evidence.main([*argv, "--catalog-fields", value]) == 2
+        (error,) = read_jsonl(capsys, raw=True)
+        assert error["kind"] == "error" and error["next_action"]
+    for invalid in (["missing.jsonl", "--catalog-workflow", "process-wi"], [*argv, "--tool-calls", "--catalog-known-workflow"]):
+        assert evidence.main(invalid) == 2
+        assert read_jsonl(capsys, raw=True)[0]["next_action"]
 
 
 @pytest.mark.usefixtures("local_time_jst")
@@ -109,7 +312,10 @@ def test_catalog_claude_project_aggregates_traceable_descendants_without_leaving
             {
                 "type": "user",
                 "timestamp": "2026-09-10T00:00:02Z",
-                "message": {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "wi", "content": "ok"}]},
+                "message": {
+                    "role": "user",
+                    "content": [{"type": "tool_result", "tool_use_id": "wi", "content": "ok", "is_error": False}],
+                },
             },
         ],
     )
@@ -213,7 +419,12 @@ def test_catalog_codex_history_reports_unknown_fields_and_successful_wi_operatio
                 "timestamp": "2026-09-10T00:00:01Z",
                 "payload": {
                     "type": "item_completed",
-                    "item": {"type": "CommandExecution", "status": "completed", "command": ["atk", "wi", "list"]},
+                    "item": {
+                        "type": "CommandExecution",
+                        "status": "completed",
+                        "exit_code": 0,
+                        "command": ["atk", "wi", "list"],
+                    },
                 },
             },
         ],

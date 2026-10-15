@@ -113,7 +113,10 @@ class TestWarnOrphanDotfilesHookCommands:
         with caplog.at_level(logging.INFO, logger="pytools._internal.update_claude_settings"):
             update_claude_settings(managed_path, target_path)
 
-        assert f"配布原本に存在しないフックコマンド（settings.json）: {orphan_command}" in caplog.messages
+        assert (
+            f"配布原本に存在しないフックコマンド（settings.json）: {orphan_command}。"
+            "~/.claude/settings.jsonのhooksでこのコマンドの参照先を確認し、不要なら該当フックを削除する"
+        ) in caplog.messages
 
     def test_does_not_warn_for_commands_present_in_either_platform_source(
         self, tmp_path: Path, caplog: pytest.LogCaptureFixture

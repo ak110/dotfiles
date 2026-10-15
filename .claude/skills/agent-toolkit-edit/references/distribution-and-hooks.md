@@ -50,9 +50,9 @@ PreToolUseなどのフックは、dotfiles固有の運用前提（配布先構�
 
 - `pytools/claude_hook/pretooluse.py`（個人フック）: chezmoi経由で自分の`~/.claude/settings.json`にだけマージされる。新しいツール名を扱う場合は`share/claude_settings_json_managed.posix.json`と`.win32.json`の`matcher`を確認する
 - `agent-toolkit/`（プラグイン）: `.claude-plugin/marketplace.json`経由で他者にも配布されるため、`SKILL.md`「バージョン更新」に従う
-- agent-toolkitの公開スクリプトは`uv run --project <plugin root> --locked --no-default-groups <対象>`形式で呼び出す。対象は`hooks.json`、MCP manifest、`agent-toolkit/bin/atk`、`skills/*/scripts/`である。SSH先の`atk_serve_*_remote_helper.py`だけは独立したPEP 723スクリプトとして起動し、PEP 723宣言を維持する
+- agent-toolkitのCLI・hook・MCPは、`uv run --no-config --no-project --python 3.15 python <plugin root>/scripts/launch.py <対象>`から起動する。launch.pyは標準ライブラリだけでrootとdataを解決してから、`uv run --project <plugin root> --locked --no-default-groups`で依存を配布root外へ置く。登録済みの`skills/*/scripts/`は`atk run-script`で同じ環境内から実行する。SSH先の`atk_serve_*_remote_helper.py`だけは独立したPEP 723スクリプトとして起動し、PEP 723宣言を維持する
 - `agent-toolkit/pyproject.toml`の`dependencies`を変えたら同projectの`uv.lock`も更新する
-- `hooks.json`と`share/claude_settings_json_managed.*.json`が参照するスクリプトを改名・移動・削除する場合は、互換スクリプトを残してバージョン管理へ含める。稼働中のセッションは旧パスを参照し続けるためである（規約は`agent-toolkit:writing-standards`のhook実装の規約）。撤去は新しいエントリーポイントを含む版を配布した後の版数更新以降で、旧定義を読み込んだセッションの全終了を確認できた場合だけとする
+- `hooks.json`と`share/claude_settings_json_managed.*.json`が参照するスクリプトを改名・移動・削除する場合は、互換スクリプトを残してバージョン管理へ含める。稼働中のセッションは旧パスを参照し続けるためである（規約は`agent-toolkit:writing-standards`のhook実装の規約）。撤去は新しいエントリーポイントを含む版を配布した後の版数更新以降で、旧定義を読み込んだセッションの全終了を確認できた場合だけとする。配布先がインストールを拒否する配置は新配布物へ残さず、旧版の実体保持と更新時の移行で旧呼出しを保つ
 - 同じイベントへフックを追加する場合は、既存のエントリーポイントへの相乗りを推奨する（登録を並べるとツール呼び出しごとの起動が増える）。入力契約の違いで相乗りできない場合は理由を残して並べてよく、matcherが互いに素な登録はこの方針を満たすとみなす
 
 agent-toolkit配下の編集では、`pytools/claude_hook/pretooluse.py`がdotfiles固有名の混入を警告する。個人プロジェクト名の固定リストは同スクリプト内にあり、OSS公開プロジェクト名はwarningに留める。スキル名・pytoolsコマンド名・`pytools/_internal/`の複合名モジュール・`scripts/`と`libexec/`のスクリプト名は実行時にディレクトリから動的に取得する。外部CLI参照は`_EXTERNAL_CLI_ALLOWED`の登録識別子に限り、`command -v`等の存在確認を経て許容する。

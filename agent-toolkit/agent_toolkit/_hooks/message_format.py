@@ -4,7 +4,7 @@ LLMに行動を促すメッセージは用途に応じて出力先を使い分�
 次のユーザー入力ターンまで待ってよい誘導は`hookSpecificOutput.additionalContext`へ優先して出力する。
 Stop/SubagentStopでそのターンの継続を強制する誘導（振り返りスキル起動等、次のユーザー入力を待たず即時起動が必要な場面）は
 `decision: "block"`＋`reason`を採用する。
-PostToolUseで`decision: "block"`を返す場合の`reason`はblock理由として直前のツール結果に添えて返す。
+PostToolUseで`decision: "block"`を返す場合、ホストは`reason`をblock理由として直前のツール結果に添えてLLMへ渡す。
 `systemMessage`はユーザー向け情報通知専用でLLMに届かない。
 
 LLM宛て出力は生成主体、種別および配送単位を属性に持つXML要素で囲む。

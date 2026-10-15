@@ -400,9 +400,8 @@ class TestSkipPush:
         """remote未設定の管理リポジトリでは--skip-pushの注記を出力しない。"""
         notes = _setup_notes(tmp_path)
         _write_awi_file(notes, "fb-001.md")
-        (notes / _wi_sync.LOCAL_ONLY_MARKER).touch()  # pylint: disable=protected-access  # noqa: SLF001
         git_calls: list[_GitCall] = []
-        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake(git_calls))
+        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake(git_calls, has_upstream=False))
 
         with pytest.raises(SystemExit) as exc_info:
             atk.main(["wi", "adopt", "fb-001.md", "--skip-push"], home=tmp_path)
@@ -495,6 +494,8 @@ class TestStartProcessingFailureBoundaries:
         push_calls: list[pathlib.Path] = []
 
         def fake_status(cmd: list[str], *_args: object, **_kwargs: object) -> subprocess.CompletedProcess[str]:
+            if cmd == ["git", "rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"]:
+                return subprocess.CompletedProcess(cmd, 0, "origin/main\n", "")
             assert cmd[:3] == ["git", "status", "--porcelain"]
             return subprocess.CompletedProcess(cmd, 0, status_outputs.pop(0), "")
 
@@ -560,7 +561,7 @@ def test_git_head_rejects_non_oid_with_status_guidance(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """管理repoのHEADがOIDでない場合はtracebackではなく、状態を確認するコマンドを持つ入力エラーにする。"""
+    """管理repoのHEADがOIDでない場合は、状態を確認するコマンドを持つ入力エラーにする。"""
     monkeypatch.setattr(
         subprocess,
         "run",

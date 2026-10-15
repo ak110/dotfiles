@@ -42,7 +42,7 @@ class PlansEventHandler(watchdog.events.FileSystemEventHandler):
     """watchdogのイベントを受信してSSE購読者へ通知するハンドラ。
 
     watchdogコールバックはwatchdog側のスレッドで実行されるため、
-    asyncioループへ`run_coroutine_threadsafe`でブリッジする。
+    `run_coroutine_threadsafe`でasyncioループへ処理を渡す。
     """
 
     def __init__(
@@ -128,7 +128,7 @@ def read_pygments_css() -> str:
     pygmentsの基本ルール（`.codehilite { background: ...; color: ... }`）は除外し、
     トークン別カラールール（`.codehilite .k`等）のみを返す。
     背景と、トークンごとに指定しない文字色はapp.css側の`pre code`ルールで定め、
-    `<pre>`の背景上に異色矩形が出現する事象を防ぐ。
+    `<pre>`の背景の上に別の色の矩形が表示されることを防ぐ。
     """
     raw = _PYGMENTS_FORMATTER.get_style_defs(f".{_PYGMENTS_CSS_CLASS}")
     base_selector = f".{_PYGMENTS_CSS_CLASS}"

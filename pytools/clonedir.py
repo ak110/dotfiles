@@ -59,7 +59,9 @@ def clone(
     src = src.resolve()
     dst = dst.resolve()
     if not src.is_dir():
-        raise FileNotFoundError(f"転送元ディレクトリが存在しません: {src}")
+        raise FileNotFoundError(
+            f"転送元ディレクトリが存在しません: {src}。存在するディレクトリをsrcに指定して再実行してください。"
+        )
     if not dst.exists():
         logger.info("mkdir: %s", dst)
         if not dry_run:

@@ -132,7 +132,7 @@ def _check_file(path: pathlib.Path) -> list[str]:
     """1ファイルに禁止されたダッシュ文字があるか判定し、違反行のメッセージ一覧を返す。読み込み失敗時は空リストを返す。"""
     try:
         text = path.read_text(encoding="utf-8")
-    except (OSError, UnicodeDecodeError):
+    except OSError, UnicodeDecodeError:
         return []
 
     violations: list[str] = []

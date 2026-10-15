@@ -1,6 +1,6 @@
 #!/usr/bin/env -S uv run --script
 # /// script
-# requires-python = ">=3.12"
+# requires-python = ">=3.15"
 # dependencies = []
 # ///
 """bin/配下のLinux/Windowsラッパースクリプトペアを生成するジェネレーター。
@@ -47,7 +47,10 @@ def main(argv: list[str] | None = None) -> int:
 def _generate_bash(name: str, command: str) -> None:
     path = _BIN_DIR / name
     if path.exists():
-        print(f"スキップ（既存）: {path.relative_to(_REPO_ROOT)}")
+        print(
+            f"スキップ（既存）: {path.relative_to(_REPO_ROOT)}。既存内容を保持したため対応不要です。"
+            "変更する場合はこのファイルを編集してください。"
+        )
         return
     content = f'#!/usr/bin/env bash\n# NOTE: 対応する Windows 版 → bin/{name}.cmd\nexec {command} "$@"\n'
     path.write_text(content, encoding="utf-8")
@@ -58,7 +61,10 @@ def _generate_bash(name: str, command: str) -> None:
 def _generate_cmd(name: str, command: str) -> None:
     path = _BIN_DIR / f"{name}.cmd"
     if path.exists():
-        print(f"スキップ（既存）: {path.relative_to(_REPO_ROOT)}")
+        print(
+            f"スキップ（既存）: {path.relative_to(_REPO_ROOT)}。既存内容を保持したため対応不要です。"
+            "変更する場合はこのファイルを編集してください。"
+        )
         return
     content = f"@echo off\r\nrem NOTE: 対応する Linux 版 → bin/{name}\r\n{command} %*\r\n"
     # CP932 エンコード + CRLF で直接書き込む（iconv 不要）

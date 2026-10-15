@@ -306,7 +306,7 @@ async def test_plan_and_session_toolbars_have_matching_heights(screen_harness: _
 
 @pytest.mark.asyncio
 async def test_three_screens_scroll_below_the_fixed_header(screen_harness: _ScreenHarness) -> None:
-    """3画面ともビューポートではなくヘッダー下の本文要素をスクロールする。"""
+    """3画面ともヘッダー下の本文要素をスクロールする。"""
     screen_harness.plan_path.write_text(
         "# 長い計画\n\n" + "\n\n".join(f"計画の段落{index}" for index in range(60)) + "\n",
         encoding="utf-8",
@@ -553,7 +553,7 @@ async def test_slow_work_item_filter_and_plan_preview_show_loading(
 async def test_plan_and_session_sidebars_match_and_session_opens_first_detail(
     screen_harness: _ScreenHarness,
 ) -> None:
-    """二画面の左幅をそろえ、セッションの先頭詳細をデスクトップで自動表示する。"""
+    """計画ファイル画面とセッション画面の左ペインの幅をそろえ、デスクトップの幅ではセッションの先頭の詳細を自動で表示する。"""
     page = screen_harness.page
     await page.set_viewport_size({"width": 1280, "height": 800})
     await page.goto(screen_harness.base_url + "/plans")
@@ -922,7 +922,7 @@ async def test_attached_plan_navigation_is_symmetric(screen_harness: _ScreenHarn
 
 @pytest.mark.asyncio
 async def test_mobile_drawers_labels_titles_and_reduced_motion(screen_harness: _ScreenHarness) -> None:
-    """狭幅の一覧は閉じた状態でTab対象から外れ、開閉と画面切替の焦点を保つ。"""
+    """狭い画面の一覧は閉じた状態でTab移動の対象から外れ、開閉と画面切替の前後でフォーカスを保つ。"""
     page = screen_harness.page
     await page.set_viewport_size({"width": 320, "height": 720})
     await page.emulate_media(reduced_motion="reduce")

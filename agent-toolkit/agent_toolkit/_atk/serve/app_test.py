@@ -67,19 +67,19 @@ def test_unknown_config_key_logs_warning(
 
 
 def test_assets_size_dialogs_with_small_viewport_height_unit() -> None:
-    """高さを決めるビューポート単位を無印`vh`ではなく`svh`で書く。
+    """高さを決めるビューポート単位を`svh`で書く。
 
     無印`vh`は大ビューポート基準のため、モバイルのブラウザーUI展開時に
     ダイアログの外枠が可視領域を超え、ヘッダーとフッターが隠れる。
-    `dvh`ではなく`svh`を採用するのは、スクロールに伴うブラウザーUIの伸縮で
-    枠の高さが再レイアウトされることを避け、常に可視な下限側へ収めるためである。
+    `dvh`はスクロールに伴うブラウザーUIの伸縮で枠の高さを再レイアウトするため、
+    常に可視な下限側へ収める`svh`を採用する。
     """
     assert not re.findall(r"\dvh\b", assets.CSS)
     assert "100svh" in assets.CSS
 
 
 def test_assets_execute_error_paths_across_binding_and_initialization_code() -> None:
-    """末尾を含むJS全体で外部更新と初期化の失敗メッセージを表示する。"""
+    """外部変更の再読込と初期化のどちらで失敗しても、失敗メッセージを操作通知へ表示する。"""
     result = _run_node_ui(
         """
 fetchHandler = async url => {
@@ -242,7 +242,7 @@ process.stdout.write(JSON.stringify({remainingRow, emptyState: focused}));
 
 
 def test_assets_sse_keeps_edit_target_for_duplicate_filename() -> None:
-    """同名項目のSSE後も編集中の複合キーを保存先として維持する。"""
+    """同名の項目が別の状態にある一覧をSSEで受け取った後も、編集中の項目の状態とファイル名の組を保存先として維持する。"""
     result = _run_node_ui(
         """
 const processing = {
@@ -505,7 +505,6 @@ _REBASE_AGENT_AWI = "---\ntype: awi\ntarget_repo: github.com/example/repo\nsourc
 def _rebasing_notes(tmp_path: pathlib.Path, make_clean_repo: typing.Callable[..., pathlib.Path]) -> pathlib.Path:
     """各状態の項目をcommitし、rebaseの中間状態が残るWI保存リポジトリを作成する。"""
     notes = make_clean_repo(tmp_path, "notes")
-    (notes / ".agent-toolkit-local-only").touch()
     for state_name, filename, text in (
         ("inbox", "entry.md", _REBASE_AWI),
         ("inbox", "question.md", _REBASE_UWI),
@@ -645,9 +644,9 @@ async def test_commit_api_keeps_changed_boolean(
 ) -> None:
     """commit結果が詳細を持っても、Web APIは外部編集をcommitした真偽だけを返す。"""
     notes = make_clean_repo(tmp_path, "notes")
-    marker = notes / ".agent-toolkit-local-only"
-    marker.touch()
-    subprocess.run(["git", "-C", str(notes), "add", marker.name], check=True, capture_output=True)
+    setup = notes / "setup.txt"
+    setup.write_text("初期状態\n", encoding="utf-8")
+    subprocess.run(["git", "-C", str(notes), "add", setup.name], check=True, capture_output=True)
     subprocess.run(["git", "-C", str(notes), "commit", "-m", "local setup"], check=True, capture_output=True)
     client = _serve_app(notes).test_client()
     empty = await client.post("/api/entries/commit", json={})
@@ -883,7 +882,7 @@ async def test_answer_api_returns_saved_post_approval_state(
     """回答APIは肯定だけを採用し、是正・追記を残した実際の保存先を返す。"""
 
     @contextlib.contextmanager
-    def lock(_path: pathlib.Path, **_kwargs: object) -> typing.Generator[None, None, None]:
+    def lock(_path: pathlib.Path, **_kwargs: object) -> typing.Generator[None]:
         yield
 
     monkeypatch.setattr(_wi_sync, "repo_lock", lock)
@@ -1013,7 +1012,7 @@ async def test_remove_api_returns_edit_conflict_before_target_repo_validation(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """対象リポジトリの一致を確かめる前に非UTF-8化を削除競合へ正規化する。"""
+    """取得後に非UTF-8へ書き換えられた削除対象は、対象リポジトリの一致を確かめる前に削除の競合として返す。"""
 
     _disable_wi_git(monkeypatch)
     inbox = tmp_path / "inbox"
@@ -1055,7 +1054,7 @@ async def test_answer_and_remove_apis_return_edit_conflict_when_concurrent_chang
     """別主体が移動した回答・削除対象を409競合として保全する。"""
 
     @contextlib.contextmanager
-    def lock(_path: pathlib.Path, **_kwargs: object) -> typing.Generator[None, None, None]:
+    def lock(_path: pathlib.Path, **_kwargs: object) -> typing.Generator[None]:
         if answer_inbox.exists():
             answer_inbox.rename(processing / answer_inbox.name)
         elif remove_inbox.exists():
@@ -1139,7 +1138,7 @@ async def test_add_choice_requires_two_options(tmp_path: pathlib.Path, monkeypat
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("state_name", ["inbox", "hold"])
-@pytest.mark.parametrize("kind", ["awi", "uwi"])
+@pytest.mark.parametrize("kind", ["awi", "uwi", None])
 @pytest.mark.parametrize(
     "deadline,awi_expected",
     [
@@ -1154,17 +1153,20 @@ async def test_add_choice_requires_two_options(tmp_path: pathlib.Path, monkeypat
 async def test_entries_cooldown_conditions(
     tmp_path: pathlib.Path,
     state_name: str,
-    kind: str,
+    kind: str | None,
     deadline: str | None,
     awi_expected: str | None,
 ) -> None:
     """一覧と詳細APIは冷却期限をAWIの有効な日時だけで返し、保存値と保存状態は詳細から読める。
 
-    UWIへ有効な日時を返すと、着手可否判定が不正期限とする項目を画面が冷却中と示す。
+    UWIや種別不明（`type`欠落）の項目へ有効な日時を返すと、着手可否判定が不正期限とする項目を画面が冷却中と示す。
     """
     (tmp_path / state_name).mkdir()
+    type_line = f"type: {kind}\n" if kind is not None else ""
     cooldown_line = f"cooldown_until: '{deadline}'\n" if deadline is not None else ""
-    (tmp_path / state_name / "cool.md").write_text(f"---\ntype: {kind}\n{cooldown_line}---\n\n# 冷却\n", encoding="utf-8")
+    original = f"---\n{type_line}{cooldown_line}---\n\n# 冷却\n"
+    path = tmp_path / state_name / "cool.md"
+    path.write_text(original, encoding="utf-8")
     client = _serve_app(tmp_path).test_client()
     listed = await (await client.get(f"/api/entries?status={state_name}&period=all")).get_json()
     expected = awi_expected if kind == "awi" else None
@@ -1175,6 +1177,8 @@ async def test_entries_cooldown_conditions(
     assert detail["entry"]["state"] == state_name
     stored = {item["key"]["value"]: item["value"] for item in detail["entry"]["frontmatter_entries"]}
     assert stored.get("cooldown_until") == deadline
+    assert detail["entry"]["content"] == original
+    assert path.read_text(encoding="utf-8") == original
 
 
 @pytest.mark.asyncio
@@ -1219,7 +1223,7 @@ async def test_sessions_detail_html_only_for_assistant(tmp_path: pathlib.Path) -
 
 @pytest.mark.asyncio
 async def test_entries_needs_verify_flag_conditions(tmp_path: pathlib.Path) -> None:
-    """`needs_verify`はメインの選定と同じ読み方で、最後の再開記録が観測だけが残る区分のinboxのawiだけを真とする。
+    """`needs_verify`はprocess-wiのメインエージェントの選定と同じ読み方で、最後の再開記録が観測だけが残る区分のinboxのawiだけを真とする。
 
     条件が広いと未着手や処理中の項目まで観測待ちとして示し、狭いと観測待ちの項目が未着手と区別できない。
     """
@@ -1451,7 +1455,7 @@ async def test_add_api_resolves_target_repo_into_frontmatter(
         raise AssertionError(value)
 
     @contextlib.contextmanager
-    def lock(_path: pathlib.Path, **_kwargs: object) -> typing.Generator[None, None, None]:
+    def lock(_path: pathlib.Path, **_kwargs: object) -> typing.Generator[None]:
         yield
 
     monkeypatch.setattr(awi_repo, "resolve_repo_id", resolve)
@@ -1535,15 +1539,17 @@ fetchHandler = async () => {
   throw new Error('通信失敗');
 };
 byId('target-filter').value = 'github.com/x/alpha';
+    const before = byId('target-filter').children.map(option => option.value);
 await loadTargetRepos();
 process.stdout.write(JSON.stringify({
+      before,
   selected: byId('target-filter').value,
   values: byId('target-filter').children.map(option => option.value),
 }));
 """
     )
     assert result["selected"] == "github.com/x/alpha"
-    assert result["values"] == []
+    assert result["values"] == result["before"]
 
 
 def test_assets_keep_latest_list_when_entry_requests_finish_out_of_order() -> None:
@@ -1828,7 +1834,7 @@ def _patch_single_add_operations(monkeypatch: pytest.MonkeyPatch) -> None:
     """単件登録と一括取り込みのどちらの処理でもロック・remote同期・commitを無効化する。"""
 
     @contextlib.contextmanager
-    def lock(_path: pathlib.Path, **_kwargs: object) -> typing.Generator[None, None, None]:
+    def lock(_path: pathlib.Path, **_kwargs: object) -> typing.Generator[None]:
         yield
 
     monkeypatch.setattr(_wi_sync, "repo_lock", lock)
@@ -1841,6 +1847,101 @@ def _patch_single_add_operations(monkeypatch: pytest.MonkeyPatch) -> None:
 def _serve_app(root: pathlib.Path) -> typing.Any:
     """指定したキュー管理ディレクトリを使う`atk serve`のアプリを返す。"""
     return serve_app.create_app(root, config.ServeConfig("127.0.0.1", 28766), state.ServeState(root))
+
+
+@pytest.mark.parametrize("entry_type", ["", "type: foo\n", "type: [awi]\n"])
+@pytest.mark.asyncio
+async def test_typeless_entries_keep_server_running(tmp_path: pathlib.Path, entry_type: str) -> None:
+    """不正typeの一覧・詳細・回答を処理した後も、同じアプリの正常要求が成立する。"""
+    inbox = tmp_path / "inbox"
+    inbox.mkdir()
+    broken = f"---\ntarget_repo: example/repo\n{entry_type}---\n\n欠落の本文\n"
+    (inbox / "broken.md").write_text(broken, encoding="utf-8")
+    (inbox / "normal.md").write_text(AWI_TEXT, encoding="utf-8")
+    client = _serve_app(tmp_path).test_client()
+    listed = await client.get("/api/entries?status=inbox&period=all")
+    assert listed.status_code == 200
+    items = (await listed.get_json())["entries"]
+    assert {item["filename"]: item["kind"] for item in items} == {"normal.md": "awi", "broken.md": "unknown"}
+    repos = await client.get("/api/repos")
+    assert repos.status_code == 200
+    detail = await client.get("/api/entries/inbox/broken.md")
+    assert detail.status_code == 200
+    assert (await detail.get_json())["entry"]["kind"] == "unknown"
+    assert (await detail.get_json())["entry"]["content"] == broken
+    answered = await client.post("/api/entries/answer", json={"filename": "broken.md", "answer": "回答", "state": "inbox"})
+    assert 400 <= answered.status_code < 600
+    error = (await answered.get_json())["error"]
+    assert "処理に失敗" in error and "標準エラー" in error and "atk serve logs" in error
+    assert (await client.get("/")).status_code == 200
+    assert (await client.get("/api/entries/inbox/normal.md")).status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_worker_exit_is_request_failure(tmp_path: pathlib.Path) -> None:
+    """管理情報と無関係な操作のSystemExitも共通ワーカーで変換する。"""
+
+    class ExitingOperations(wi_operations.Operations):
+        def target_repos(self, status: str = "active", *, now: datetime.datetime | None = None) -> list[str]:
+            raise SystemExit(2)
+
+    current = state.ServeState(tmp_path)
+    app = serve_app.create_app(
+        tmp_path, config.ServeConfig("127.0.0.1", 28766), current, operations=ExitingOperations(tmp_path)
+    )
+    client = app.test_client()
+    for _attempt in range(2):
+        response = await client.get("/api/repos")
+        assert 400 <= response.status_code < 600
+        assert "標準エラー" in (await response.get_json())["error"]
+        assert (await client.get("/")).status_code == 200
+
+
+def test_node_dom_matches_html_structure() -> None:
+    """本番HTMLのIDと、通知・フォーム・ヘッダーの構造が擬似DOMでも一致する。"""
+    result = _run_node_ui("""
+process.stdout.write(JSON.stringify({
+  ids: Object.keys(elements).filter(id => id !== 'toast').sort(),
+  header: controlGroups['app-header'].map(node => node.id),
+  notification: elements['operation-notice'].children.map(node => node.id),
+  closeClass: elements['detail-close-button'].className,
+  aria: elements['operation-notice-close-button'].getAttribute('aria-label'),
+  selected: ['kind-filter', 'state-filter', 'period-filter', 'answer-filter', 'create-kind', 'create-question-type']
+    .map(id => elements[id].value)
+}));
+""")
+    assert result["ids"] == sorted(re.findall(r'\bid="([^"]+)"', assets.HTML))
+    assert "notification-button" in result["header"]
+    assert result["notification"] == ["operation-notice-message", "operation-notice-close-button"]
+    assert result["closeClass"] == "dialog-close"
+    assert result["aria"] == "操作通知を閉じる"
+    assert result["selected"] == ["all", "active", "2w", "all", "awi", "yes-no"]
+
+
+def test_node_dom_uses_new_html_element(monkeypatch: pytest.MonkeyPatch) -> None:
+    """新しい入れ子のフォーム要素と属性を加えても、helperへの追記なしで取得できる。"""
+    added = (
+        '<form id="probe-form"><span><input id="probe-input" class="probe" aria-label="追随" /></span>'
+        '<select id="probe-select"><option value="first">先頭</option><option value="chosen" selected>選択</option></select>'
+        '<button id="probe-button" hidden disabled>実行</button></form>'
+    )
+    monkeypatch.setattr(assets, "HTML", assets.HTML + added)
+    result = _run_node_ui("""
+process.stdout.write(JSON.stringify({
+  controls: elements['probe-form'].querySelectorAll('input, select, textarea, button').map(node => node.id),
+  value: elements['probe-select'].value, className: elements['probe-input'].className,
+  aria: elements['probe-input'].getAttribute('aria-label'), hidden: elements['probe-button'].hidden,
+  disabled: elements['probe-button'].disabled
+}));
+""")
+    assert result == {
+        "controls": ["probe-input", "probe-select", "probe-button"],
+        "value": "chosen",
+        "className": "probe",
+        "aria": "追随",
+        "hidden": True,
+        "disabled": True,
+    }
 
 
 def _saved_files(root: pathlib.Path) -> dict[str, str]:

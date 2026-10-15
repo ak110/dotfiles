@@ -5,7 +5,7 @@
 ## gv / lc（Windows用プロジェクト）の特殊事情
 
 - Linuxでの検証はlint系（textlint / markdownlint / prettier）のみ確認可能
-- Makefileではなく`mise.toml`のタスクを使用する。prekフレームワークは`uvx prek`で呼び出す
+- `mise.toml`のタスクを使用する。prekフレームワークは`uvx prek`で呼び出す
 - cargo-denyの導入は`taiki-e/install-action@v2`と`with: tool: cargo-deny`を用い、
   actionをpinactのハッシュピン対象にする。
   `taiki-e/install-action@cargo-deny`のshort-handを維持する場合だけ、そのactionを`.pinact.yaml`の

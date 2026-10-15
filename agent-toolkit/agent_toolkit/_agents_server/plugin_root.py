@@ -1,4 +1,4 @@
-"""長命な委譲サーバーが起動時の配布物を保持し、全起動入力へ同じ版を提供する。"""
+"""長時間稼働する委譲サーバーが起動時の版の配布物を保持し、委譲先の起動に使う役割文書・開始指示・内側MCPへ同じ版を渡す。"""
 
 from __future__ import annotations
 
@@ -26,7 +26,7 @@ def _plugin_root_is_versioned(plugin_root: Path) -> bool:
     manifest = plugin_root / ".claude-plugin" / "plugin.json"
     try:
         version = json.loads(manifest.read_text(encoding="utf-8")).get("version")
-    except (OSError, UnicodeDecodeError, json.JSONDecodeError, AttributeError):
+    except OSError, UnicodeDecodeError, json.JSONDecodeError, AttributeError:
         return False
     if not isinstance(version, str) or not version:
         return False

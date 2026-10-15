@@ -11,6 +11,7 @@ argparseは追加設定が無ければ前者だけを設定でき、各コマン
 from __future__ import annotations
 
 import argparse
+import sys
 import textwrap
 import typing
 from collections.abc import Sequence
@@ -20,7 +21,7 @@ from agent_toolkit._atk import outcome as _outcome
 
 ROOT_DESCRIPTION = "目的: agent-toolkitのWIキュー、計画ファイル、レビュー指摘管理表、managed-tempと委譲支援を1つのコマンドから操作する。\n利用場面: ユーザーとエージェントが、AWIの投入から計画、実装、保存までの一連の作業を進めるとき。\n対象と出力: サブコマンドを指定しない場合はコマンド一覧を標準出力へ書き、何も変更しない。実際の読み書きは各サブコマンドが行う。`AI_AGENT`・`CODEX_CI`・`CLAUDECODE`・`CURSOR_AGENT`のいずれかが設定されたエージェント環境では、標準出力と標準エラーを分けて保持する。UTF-8で16384バイトを超える出力は生成側が新規managed-tempへ保存し、標準出力には`保存先: <絶対パス>`・`行数: <N>`、標準エラーには`標準エラー保存先: <絶対パス>`・`標準エラー行数: <N>`を返す。結果をファイルとして受け取る呼び出し（`atk agents wait`、FILENAMEを2件以上指定するか`--all`を指定した`atk wi show`、`atk run-script session-review-evidence`の`--user-events`）は短い標準出力も保存する。保存後は、`atk agents wait`が通知・終端の内訳と本文を、`--user-events`が`kind`が`user`の行ごとに`発話: record=<record> line=<line> <本文の冒頭>`を続けて書く。それ以外の16384バイト以下の出力は直接表示する。`--help`の表示と、`atk info`のように結果を表示して終わるサブコマンドも同じ量で判定する。引数の誤りは標準エラーへ直接書き、終了コード2で終わる。WI本文の表記診断の詳細も`標準エラー保存先:`の保存先へ書く。`atk serve`、`atk wi process-loop`の常駐および`atk agents logs --follow`は対象外とし、エージェント環境でない場合は出力を変えない。保存先は最終更新から7日で自動削除される。\n前提: private-notesを扱うサブコマンドは`atk config get private_notes`が返すリポジトリを使う。\n復元・後始末: 本コマンド自身は状態を残さない。各サブコマンドの後始末はそのコマンドの`--help`に示す。"
 ROOT_EPILOG = "各コマンドの詳細は`atk <コマンド> --help`で表示する。階層コマンドではさらに`atk <コマンド> <サブコマンド> --help`を使う。\n\n実行例:\n\n  atk wi list\n  atk config show"
-ROOT_EPILOG += "\n\n保存結果は両ストリームの最初のatk read-fileコマンドを示す。返却JSONのtextを連結し、nextを--startへ渡してeof: trueまで読む。"
+ROOT_EPILOG += "\n\n保存後の表示は、標準出力と標準エラーのそれぞれを読む最初のatk read-fileコマンドを示す。返却JSONのtextを連結し、nextを--startへ渡してeof: trueまで読む。"
 
 CI_REVIEW_TABLE_NAME_FORMAT = "ci-<修正系列の開始時のHEADの7文字以上の一意な短縮OID>.exec-review.tsv"
 """CI対応レビュー指摘管理表の名前の書式。保存済みの表は`ci/`を前置する。
@@ -29,6 +30,16 @@ CI_REVIEW_TABLE_NAME_FORMAT = "ci-<修正系列の開始時のHEADの7文字以�
 """
 
 HELP: dict[str, dict[str, str]] = {
+    "atk wi process-loop all-repos": {
+        "summary": "登録した全リポジトリの担当を起動する",
+        "epilog": '実行例:\n\n  atk config set process_loop_repositories \'["/absolute/repository-one","/absolute/repository-two"]\'\n  atk wi list --configured-repos --with-staleness\n  atk wi process-loop all-repos\n  atk wi process-loop --no-update all-repos',
+        "description": "目的: process_loop_repositoriesで登録した対象を一括取得し、各対象cwdの通常delegateがprocess-wiの全工程を担う。\n利用場面: ホームから登録集合の処理を常駐で受け付けるとき。\n対象と出力: 対象ごとの候補・処理上限・所有session・終端記録を保持する。オーケストレーターは対象の選定・実装・Git操作を直接行わない。\n前提: `atk config set process_loop_repositories <JSON文字列配列>`で絶対パスを登録する。空配列の場合は待機し、同じoriginの登録は登録順の先頭へまとめる。不正登録は修正操作を示して停止する。共通オプションはall-reposの前へ指定する。\n復元・後始末: Ctrl+Cまたはabortで終了する。失敗した担当の成果を保持し、all-repos担当だけを再開する。status・instructなどの制御はOSアカウント共通で、追加指示は次の1起動集合で1回受領し、各担当が自分の対象に関する内容を適用する。",
+    },
+    "atk lane integrate": {
+        "summary": "レビュー済みレーンを統合し最終化する",
+        "epilog": "実行例:\n\n  atk lane integrate --record /absolute/lane-record.json --reviewed-head 0123456789abcdef --target-worktree /absolute/repository --target-branch develop --manifest /absolute/finalization.json --session-id lane-owner",
+        "description": "目的: レビュー済みレーンのGit統合と計画保存・WI終端・選定状態の最終化を再開可能な工程として実施する。\n利用場面: レーンの独立した実行レビューと検証が完了したとき。\n対象と出力: --record ABS --reviewed-head OID --target-worktree ABS --target-branch BRANCH --manifest ABS --session-id IDを指定する。manifestのplansは計画名と最終化argv、wisはWI名と終端argv、verificationはrebase後検証argv、handoffは計画なし時の引継ぎ絶対パスを保持する。工程・HEAD・記録JSONを返す。\n前提: 所有登録、cleanな同一Git登録、レビュー対象HEADとの一致。\n復元・後始末: 失敗時は記録と資源を保持し、原因を解消して同じ入力で再開する。Git統合済みなら未完了の最終化から進める。",
+    },
     "atk read-file": {
         "summary": "UTF-8本文を上限内で連続取得する",
         "description": (
@@ -199,7 +210,7 @@ HELP: dict[str, dict[str, str]] = {
     },
     "atk plans": {
         "summary": "計画ファイルの取得・保存・一覧と参照の書き換え",
-        "description": "目的: 保存済み計画を`~/.claude/plans`へ取得し、計画ファイルまたはCI対応レビュー指摘管理表をprivate-notesへ保存する。`~/.claude/plans`の計画の一覧と、保存済み計画の参照の書き換えも提供する。\n利用場面: 保存済み計画の再編集、計画バンドルの保存、CI対応レビュー指摘管理表の保存、作業中の計画の確認、保存済み計画の参照を現行の表記へ書き換えるとき。保存の契機は、計画バンドルでは`agent-toolkit:plan-mode`の`plan-file-storage.md`、CI対応レビュー指摘管理表では`agent-toolkit:bugfix`の`ci-failure-handling.md`が定める。\n対象と出力: `~/.claude/plans`配下とprivate-notesのplans配下を読み書きする。サブコマンドを指定しない場合はサブコマンド一覧を標準出力へ書き、何も変更しない。\n前提: private-notesにremoteが設定されていること。\n復元・後始末: `commit`と`rewrite-references`はcommitとpushまで行う。取り消しはprivate-notesのGit履歴から行う。",
+        "description": "目的: 保存済み計画を`~/.claude/plans`へ取得し、計画ファイルまたはCI対応レビュー指摘管理表をprivate-notesへ保存する。`~/.claude/plans`の計画の一覧と、保存済み計画の参照の書き換えも提供する。\n利用場面: 保存済み計画の再編集、計画バンドルの保存、CI対応レビュー指摘管理表の保存、作業中の計画の確認、保存済み計画の参照を現行の表記へ書き換えるとき。保存の契機は、計画バンドルでは`agent-toolkit:plan-mode`の`plan-file-storage.md`、CI対応レビュー指摘管理表では`agent-toolkit:bugfix`の`ci-failure-handling.md`が定める。\n対象と出力: `~/.claude/plans`配下とprivate-notesのplans配下を読み書きする。サブコマンドを指定しない場合はサブコマンド一覧を標準出力へ書き、何も変更しない。\n前提: rewrite-referencesだけはprivate-notesのremoteとupstreamを要する。その他の操作は同期相手が無ければローカルだけで完了する。\n復元・後始末: `commit`と`rewrite-references`はcommitとpushまで行う。取り消しはprivate-notesのGit履歴から行う。",
         "epilog": "実行例:\n\n  atk plans commit 01-example-1a2b.md",
     },
     "atk plans checkout": {
@@ -221,7 +232,7 @@ HELP: dict[str, dict[str, str]] = {
     },
     "atk plans rewrite-references": {
         "summary": "保存済み計画の付属ファイル参照を`plan-file-storage.md`の表記へそろえる",
-        "description": "目的: private-notesのplans配下に保存済みの計画本文へ残る可搬表記の付属ファイル参照を、`plan-file-storage.md`が定める`~/.claude/plans/`とファイル名の表記へ書き換える。\n利用場面: 参照表記の改訂後に、保存済みの計画を現行の表記へそろえるとき。\n対象と出力: 保存済みの計画ファイル（メイン）と計画ファイル（詳細）の本文だけを読み書きし、ファイル名がその計画のstemで始まる参照だけを書き換える。書き換えた計画の件数と参照の件数を標準出力へ書き、そのファイルだけを対象にcommitして`--skip-push`を指定しなければpushする。stemが一致しない参照とキュー項目の本文は書き換えない。\n前提: private-notesにremoteが設定され、indexと作業ツリーがcleanであること。\n復元・後始末: 書き換え対象が無い場合は何も変更せず0件を出力して終わる。commitへ到達する前に失敗した場合は変更前の状態へ戻す。書き換えた後の内容はprivate-notesのGit履歴から追跡できる。",
+        "description": "目的: private-notesのplans配下に保存済みの計画本文へ残る可搬表記の付属ファイル参照を、`plan-file-storage.md`が定める`~/.claude/plans/`とファイル名の表記へ書き換える。\n利用場面: 参照表記の改訂後に、保存済みの計画を現行の表記へそろえるとき。\n対象と出力: 保存済みの計画ファイル（メイン）と計画ファイル（詳細）の本文だけを読み書きし、ファイル名がその計画のstemで始まる参照だけを書き換える。書き換えた計画の件数と参照の件数を標準出力へ書き、そのファイルだけを対象にcommitして`--skip-push`を指定しなければpushする。stemが一致しない参照とキュー項目の本文は書き換えない。\n前提: private-notesにremoteとupstreamが設定され、indexと作業ツリーがcleanであること。\n復元・後始末: 書き換え対象が無い場合は何も変更せず0件を出力して終わる。commitへ到達する前に失敗した場合は変更前の状態へ戻す。書き換えた後の内容はprivate-notesのGit履歴から追跡できる。",
         "epilog": "実行例:\n\n  atk plans rewrite-references",
     },
     "atk serve": {
@@ -266,7 +277,7 @@ HELP: dict[str, dict[str, str]] = {
     },
     "atk agents wait": {
         "summary": "委譲先sessionの終端結果と実行中通知を待って回収できた全件を出力する",
-        "description": "目的: `agents_server`が出力する終端結果または実行中通知を待ち、1回の巡回で回収できた全件を標準出力へ書く。\n利用場面: 委譲先の完了を前景またはバックグラウンドタスクで待ち、結果または実行中通知を受領するとき。\n対象と出力: 自身の書込主体が所有する結果ファイルと通知ファイルを読み、回収できたものを1件1行のJSON Linesで書く。通知は送信時刻順に本文を返す。行は待機対象の識別子の昇順に並び、各行は`session_id`と、起動時に`label`を指定した委譲先では同じ値の`label`を持つ。終端行は`agent_message`に加えて、同じ本文をエスケープを含まないUTF-8のMarkdownとして呼び出しごとのmanaged-tempへ書いたファイルの絶対パスを`agent_message_path`に持ち、そのファイルを読めば結果本文を得られる。最初の待機で起動中sessionと未回収結果を登録簿へ固定し、再発行でも終端結果の回収まで対象ごとの待機所有権を保持する。前景へ返した本文は同じ呼び出しで受領済みとし、次の逐次待機へ再配送しない。先行待機のlockへ競合した後発プロセスだけが、先行runの本文を1回回収できる。終端結果が無く通知だけを回収した場合は`status: running`を返す。`status: running`の行、待機上限で終わった行、別の待機が受領済みの結果を示す`status: consumed`の行、失敗または中断で終端した行は、次に行う操作を`next_action`項目に持つ。エージェント環境では出力するJSON Linesを生成側の保存先へ全量で保存し、標準出力へ保存先パスと保存した行数を書き、通知を含む場合は通知件数と送信元session IDを、終端を含む場合は終端件数と、終端行ごとに`終端行:`で始まる1行を続けて書く。この行は`session_id`、`label`、`status`、`agent_message_path`の順で始まり、終端行が持つ残りの項目（`error`と`next_action`を含み、`agent_message`と`notices`を除く）を`<項目>=<値>`で続ける。空白を含む値と文字列以外の値は改行を含まないJSONで書く。通知の行の後には通知の本文を、各終端行の直後には`agent_message_path`の本文を、`本文開始: session_id=<識別子>`と`本文終了: session_id=<識別子>`の行で囲んで続ける。本文を加えた標準出力全体（保存先と行数の行を含む）が16384バイトを超える本文と、読めない本文ファイルは表示せず、終端行の`agent_message_path`から読む。保存先を開かずに、どの依頼が終端したか、本文、失敗の原因と次の操作まで得られる。回収した本文はその保存先に残るため、後続の工程と後続のセッションの判断の入力にできる。\n前提: 待機するsessionを起動した`agents_server`と同じルートセッションで実行する。環境と別名索引からルートを解決できない入れ子MCP起動では、起動応答の`root_session_id`を`--root-session-id`へ渡す。明示値は形式、状態ディレクトリの実在および確認済みのルートsessionとの一致を検証する。待機の成立は、応答のいずれかの行が待機対象の`session_id`を持ち終端statusであることで判定する。待機対象の行が現れない応答は、その対象が未終端であることを示す。`status: running`では同じターン内に同じコマンドを再発行し、終端statusまで待機を継続する。待機対象登録が破損している場合は、その登録を解放して理由を標準エラーへ書き、非0で終了する。ルートsessionとの対応を確認できず一覧が空の場合は、CLIが解決したrootを標準エラーへ書き、MCPの`list`を1回呼び出してから同じコマンドを再実行するよう案内する。対応を確認済みで、待機対象の登録が0件かつ`starting`を含む保持中sessionも0件の場合は、理由を標準エラーへ書き、待機せず非0で終了する。保持中sessionが1件以上ある場合は待機開始から上限秒数まで待ち、上限に達しても終端を回収できなければ終了コード3で終わる。上限はMCPの`wait`と同じくプロンプトキャッシュの保持期間から導出し、保持期間`1h`で1740秒、`5m`で270秒、Claude Codeを確認できないホストで270秒、委譲先セッションで240秒とする。終了コード3では同じコマンドを再発行して待機を続ける。対象不在の終了では標準出力へ何も書かず、同じコマンドを再発行せずに委譲元の応答を確認する。結果本文のファイルを書けない場合は回収途中の結果を退避したまま理由を標準エラーへ書いて終了コード11で終わり、原因を解消して再発行すると同じ結果を受け取れる。本コマンドは自身の待機上限を持つため、`timeout`、パイプ、他のコマンドとの連結を付けず単独で発行する。回収は結果ファイルの削除を伴い、続行は終了コードで判定するため、パイプや連結は終了コードを覆い隠す。エージェント環境では量によらず回収結果を保存し、保存先を開いてから回収する。保存先・行数と通知・終端の内訳から全量を読む。何も回収せずに非0で終わった場合は開いた保存先を片付け、保存先と行数を書かない。\n復元・後始末: 回収した結果ファイルと通知ファイルは削除される。結果を保持しない`stop`とsession登録簿での喪失確定も待機対象登録を解放する。登録簿が終端を示し、未回収の結果も保持中の状態も無い対象も同様に解放し、待機中に全対象がこの状態になった場合は対象不在として同じく非0で終了する。終端statusでは追加の結果受領操作は不要である。",
+        "description": "目的: `agents_server`が出力する終端結果または実行中通知を待ち、1回の巡回で回収できた全件を標準出力へ書く。\n利用場面: 委譲先の完了を待ち、結果または実行中通知を受領するとき。完了通知で同じセッションへ再開できる待機は、goalの有無や対象の種類・件数によらずホストのバックグラウンドタスクで起動する。通知による再開が無い環境とCodexの公開回収は、delegationのreferences/waiting-and-monitoring.md「待機区間の構成」に従う。\n対象と出力: 自身の書込主体が所有する結果ファイルと通知ファイルを読み、回収できたものを1件1行のJSON Linesで書く。通知は送信時刻順に本文を返す。行は待機対象の識別子の昇順に並び、各行は`session_id`と、起動時に`label`を指定した委譲先では同じ値の`label`を持つ。終端行は`agent_message`に加えて、同じ本文をエスケープを含まないUTF-8のMarkdownとして呼び出しごとのmanaged-tempへ書いたファイルの絶対パスを`agent_message_path`に持ち、そのファイルを読めば結果本文を得られる。最初の待機で起動中sessionと未回収結果を登録簿へ固定し、再発行でも終端結果の回収まで対象ごとの待機所有権を保持する。前景へ返した本文は同じ呼び出しで受領済みとし、次の逐次待機へ再配送しない。先行待機のlockへ競合した後発プロセスだけが、先行runの本文を1回回収できる。終端結果が無く通知だけを回収した場合は`status: running`を返す。`status: running`の行、待機上限で終わった行、別の待機が受領済みの結果を示す`status: consumed`の行（終了コード8。保存runから結果本文を読める場合は`recovery`に同じ所在を持つ）、失敗または中断で終端した行は、次に行う操作を`next_action`項目に持つ。エージェント環境では出力するJSON Linesを生成側の保存先へ全量で保存し、標準出力へ保存先パスと保存した行数を書き、通知を含む場合は通知件数と送信元session IDを、終端を含む場合は終端件数と、終端行ごとに`終端行:`で始まる1行を続けて書く。この行は`session_id`、`label`、`status`、`agent_message_path`の順で始まり、終端行が持つ残りの項目（`error`と`next_action`を含み、`agent_message`と`notices`を除く）を`<項目>=<値>`で続ける。空白を含む値と文字列以外の値は改行を含まないJSONで書く。通知の行の後には通知の本文を、各終端行の直後には`agent_message_path`の本文を、`本文開始: session_id=<識別子>`と`本文終了: session_id=<識別子>`の行で囲んで続ける。本文を加えた標準出力全体（保存先と行数の行を含む）が16384バイトを超える本文と、読めない本文ファイルは表示せず、終端行の`agent_message_path`から読む。保存先を開かずに、どの依頼が終端したか、本文、失敗の原因と次の操作まで得られる。回収した本文はその保存先に残るため、後続の工程と後続のセッションの判断の入力にできる。\n前提: 待機するsessionを起動した`agents_server`と同じルートセッションで実行する。環境と別名索引からルートを解決できない入れ子MCP起動では、起動応答の`root_session_id`を`--root-session-id`へ渡す。明示値は形式、状態ディレクトリの実在および確認済みのルートsessionとの一致を検証する。待機の成立は、応答のいずれかの行が待機対象の`session_id`を持ち終端statusであることで判定する。待機対象の行が現れない応答は、その対象が未終端であることを示す。`status: running`では同じターン内に同じコマンドを再発行し、終端statusまで待機を継続する。待機対象登録が破損している場合は、その登録を解放して理由を標準エラーへ書き、非0で終了する。ルートsessionとの対応を確認できず一覧が空の場合は、CLIが解決したrootを標準エラーへ書き、MCPの`list`を1回呼び出してから同じコマンドを再実行するよう案内する。対応を確認済みで、待機対象の登録が0件かつ`starting`を含む保持中sessionも0件の場合は、理由を標準エラーへ書き、待機せず非0で終了する。保持中sessionが1件以上ある場合は待機開始から上限秒数まで待ち、上限に達しても終端を回収できなければ終了コード3で終わる。上限はMCPの`wait`と同じくプロンプトキャッシュの保持期間から導出し、保持期間`1h`で1740秒、`5m`で270秒、Claude Codeを確認できないホストで270秒、委譲先セッションで240秒とする。終了コード3では同じコマンドを再発行して待機を続ける。対象不在の終了（終了コード10）では標準出力へ何も書かず、同じコマンドを再発行せずに委譲元の応答を確認する。同じ書込主体の先行waitが結果を配送済みの場合は、標準エラーの`先行waitの保存結果:`が保存runの`run_path`、対象の`session_ids`、実在する`agent_message_paths`を示す。`run_path`を`atk read-file --`へ渡せば`output`にある終端結果本文を読め、本文ファイルが消えていても読める。保存runの`status`が`missing`・`unreadable`・`no-results`の場合はその区別を示し、別の書込主体のrunは示さない。配送済みはエージェントが読んだことを意味せず、結果は再配送しない。結果本文のファイルを書けない場合は回収途中の結果を退避したまま理由を標準エラーへ書いて終了コード11で終わり、原因を解消して再発行すると同じ結果を受け取れる。本コマンドは自身の待機上限を持つため、`timeout`、パイプ、他のコマンドとの連結を付けず単独で発行する。回収は結果ファイルの削除を伴い、続行は終了コードで判定するため、パイプや連結は終了コードを覆い隠す。エージェント環境では量によらず回収結果を保存し、保存先を開いてから回収する。保存先・行数と通知・終端の内訳から全量を読む。何も回収せずに非0で終わった場合は開いた保存先を片付け、保存先と行数を書かない。\n復元・後始末: 回収した結果ファイルと通知ファイルは削除される。結果を保持しない`stop`とsession登録簿での喪失確定も待機対象登録を解放する。登録簿が終端を示し、未回収の結果も保持中の状態も無い対象も同様に解放し、待機中に全対象がこの状態になった場合は対象不在として同じく非0で終了する。終端statusでは追加の結果受領操作は不要である。",
         "epilog": "実行例:\n\n  atk agents wait\n  atk agents wait --root-session-id <起動応答のroot_session_id>",
     },
     "atk agents notify": {
@@ -276,12 +287,12 @@ HELP: dict[str, dict[str, str]] = {
     },
     "atk agents list": {
         "summary": "保持中の委譲sessionを識別・活動情報とともに一覧表示する",
-        "description": "目的: 委譲sessionの識別子、名前、モデル、状態と親子関係を一覧表示する。\n利用場面: 識別子を失ったsessionの回復または残作業の調査をするとき。\n対象と出力: 共有状態ファイルを読む。人の端末では、表示するsessionを持つrootだけをClaude Code・Codex識別子の見出しにしたツリーを表示し、各session IDの右側へラベルと`engine:model/effort`、直近の行動または進捗（利用上限の解除待ちとAPI再試行はその状態）、経過時間と状態を並べる。端末幅が狭い場合はsession IDを省略せず右側の説明を短くする。`--watch`は人の端末で約2秒ごとに一覧を描き替え、Ctrl-Cで終了する。エージェント環境と端末以外への出力では`--watch`を拒否する。エージェント環境では同じroot配下のsessionを1行のJSONで返す。エージェント向け一覧は識別子、状態、ラベル、直近操作、結果保留、初回とturnの開始時刻、活動の経過とAPI失敗の診断を返す。実行条件と委譲プロンプトは`atk agents show`が返す。\n前提: オプション省略時は未回収結果を持たない終端済みsessionを除く。エージェント環境でルートsessionとの対応を確認できず一覧が空の場合は、MCPの`list`を1回呼び出してから再実行する。\n復元・後始末: 読み取りだけを行うため不要。",
+        "description": "目的: 委譲sessionの識別子、名前、モデル、状態と親子関係を一覧表示する。\n利用場面: 識別子を失ったsessionの回復または残作業の調査をするとき。\n対象と出力: 共有状態ファイルを読む。人の端末では、表示するsessionを持つrootだけをClaude Code・Codex識別子の見出しにしたツリーを表示し、各session IDの右側へラベルと`engine:model/effort`、直近の行動または進捗（利用上限の解除待ちとAPI再試行はその状態）、経過時間、文脈使用量と状態を並べる。文脈使用量は委譲先の直近のモデル文脈のトークン数（累計課金量ではない）で、`53.5k/5%`のように小数1桁の`k`と、上限が分かる場合は整数の使用率で示す。上限が不明なら使用量だけ、使用量が不明なら使用量を省く。端末幅が狭い場合はsession IDを省略せず右側の説明を短くする。`--watch`は人の端末で約2秒ごとに一覧を描き替え、Ctrl-Cで終了する。エージェント環境と端末以外への出力では`--watch`を拒否する。エージェント環境では同じroot配下のsessionを1行のJSONで返す。エージェント向け一覧は識別子、状態、ラベル、直近操作、結果保留、初回とturnの開始時刻、活動の経過とAPI失敗の診断を返し、観測済みの文脈使用量を`context_tokens`、上限を`context_window`の数値で返す（不明な値の項目は省く）。実行条件と委譲プロンプトは`atk agents show`が返す。\n前提: オプション省略時は未回収結果を持たない終端済みsessionを除く。エージェント環境でルートsessionとの対応を確認できず一覧が空の場合は、MCPの`list`を1回呼び出してから再実行する。\n復元・後始末: 読み取りだけを行うため不要。",
         "epilog": "実行例:\n\n  atk agents list\n  atk agents list --include-terminated\n  atk agents list --watch",
     },
     "atk agents show": {
         "summary": "指定した委譲sessionの詳しい状態を表示する",
-        "description": "目的: 1件の委譲sessionの起動条件と現在状態を診断できる形で表示する。\n利用場面: 起動本文、作業場所、モデルまたは停滞状況を調査するとき。\n対象と出力: 共有状態ファイルから指定sessionを読み、単一のJSON文書として標準出力へ書く。`AI_AGENT`・`CODEX_CI`・`CLAUDECODE`・`CURSOR_AGENT`のいずれかが設定されたエージェント環境では空白を含めない1行で書き、それ以外の環境では字下げして書く。いずれの環境でも値は同じである。活動は`seconds_since_activity`、API失敗は種別、HTTP状態、経過時間を返す。\n前提: 対象と同じルートセッションで実行し、完全なsession識別子を指定する。\n復元・後始末: 読み取りだけを行うため不要。",
+        "description": "目的: 1件の委譲sessionの起動条件と現在状態を診断できる形で表示する。\n利用場面: 起動本文、作業場所、モデルまたは停滞状況を調査するとき。\n対象と出力: 共有状態ファイルから指定sessionを読み、単一のJSON文書として標準出力へ書く。`AI_AGENT`・`CODEX_CI`・`CLAUDECODE`・`CURSOR_AGENT`のいずれかが設定されたエージェント環境では空白を含めない1行で書き、それ以外の環境では字下げして書く。いずれの環境でも値は同じである。活動は`seconds_since_activity`、API失敗は種別、HTTP状態、経過時間を返す。観測済みの文脈使用量と上限は`context_tokens`と`context_window`で返し、不明な値の項目は省く。\n前提: 対象と同じルートセッションで実行し、完全なsession識別子を指定する。\n復元・後始末: 読み取りだけを行うため不要。",
         "epilog": "実行例:\n\n  atk agents show <session_id>",
     },
     "atk agents logs": {
@@ -312,7 +323,7 @@ HELP: dict[str, dict[str, str]] = {
     },
     "atk lane": {
         "summary": "レーン資源の作成と終了時回収を管理する",
-        "description": "目的: 専用worktree・branchと所有sessionを同じ操作で登録し、session終了時に安全な資源を回収する。\n利用場面: process-wiのレーンを準備するとき、終了後の残存資源を再回収するとき。\n対象と出力: createは準備済み資源とrecord_path、deleteはremoved・retainedとresult_pathをJSONで返す。所有登録と回収結果への参照は状態ディレクトリのlanes/<session_id>/へ置く。回収結果は専用資源の外のmanaged-tempへ保存し、既存の7日保持へ委ねる。delete --listは全sessionの登録と前回結果を読み、削除しない。\n前提: 所有sessionは環境から解決し、解決できない場合は--session-idを指定する。\n復元・後始末: 統合後も資源を保持し、agents-exit-sessionとprocess-loopの子終了後がdeleteと同じ回収を行う。保持した対象は結果の理由を解消してdeleteを再実行する。",
+        "description": "目的: 専用worktree・branchと所有sessionを同じ操作で登録し、session終了時に安全な資源を回収する。\n利用場面: process-wiのレーンを準備するとき、終了後の残存資源を再回収するとき。\n対象と出力: createは準備済み資源とrecord_path、deleteはremoved・retainedとresult_pathをJSONで返す。所有登録と回収結果への参照は状態ディレクトリのlanes/<session_id>/へ置く。回収結果は専用資源の外のmanaged-tempへ保存し、既存の7日保持へ委ねる。delete --listは全sessionの登録と前回結果を読み、削除しない。\n前提: 所有sessionは環境から解決し、解決できない場合は--session-idを指定する。\n復元・後始末: 統合後も資源を保持し、agents-exit-sessionと、process-loopの子セッションの終了後の処理が、deleteと同じ回収を行う。保持した対象は結果の理由を解消してdeleteを再実行する。",
         "epilog": "実行例:\n\n  atk lane create --repo /absolute/repo --base-branch develop --lane lane-01 --selection-file /absolute/pick-wi.yaml\n  atk lane delete",
     },
     "atk lane create": {
@@ -462,6 +473,8 @@ HELP["atk worktree-stash"]["description"] += (
     "今回の退避だけ復元成功後に回収する。"
 )
 HELP["atk run-script"]["description"] += (
+    "\n多ターン試行はmulti-turn-trialsの--listで固定課題を選び、prepareで公開素材だけを複製し、"
+    "gradeで保存対話と提出物を採点する。機能合否、隠した要件の達成、対話判定を別々に結果JSONへ保存する。"
     "\n履歴の検収はhistory-compareでrebaseとautosquashを分け、検収済み完全OID対応表をplan-rewriteと証拠の--rewrite-mapへ渡す。"
     "verification-recordとexec-review-evidence-checkは--results-fileでJUnit・実行記録・構造化診断を読み、"
     "--list-resultsで選択して--updates-fileで複数の要求行へ根拠を保存する。各scriptの--helpが入力JSONの形式を示す。"
@@ -558,9 +571,20 @@ class GuidedSubcommandParser(argparse.ArgumentParser):
         args: Sequence[str] | None = None,
         namespace: argparse.Namespace | None = None,
     ) -> tuple[argparse.Namespace, list[str]]:
-        parsed, remaining = super().parse_known_args(args, namespace)
+        supplied = list(sys.argv[1:] if args is None else args)
+        parsed, remaining = super().parse_known_args(supplied, namespace)
         assert parsed is not None
         if remaining:
+            if "--" in supplied:
+                after_separator = supplied[supplied.index("--") + 1 :]
+                rejected = next((value for value in remaining if value != "--"), "--")
+                action = self._option_string_actions.get(rejected.partition("=")[0])
+                if action is not None and rejected in after_separator:
+                    with_value = "（値を取る場合はその値も一緒に）" if action.nargs != 0 else ""
+                    self.error(
+                        f"オプション{rejected}の位置が誤っています。"
+                        f"次の操作: {rejected}{with_value}を区切り記号`--`の前へ移して、同じコマンドを再実行する"
+                    )
             self.error(f"解釈できない引数: {remaining[0]}。{self._accepted_form()}")
         return parsed, remaining
 

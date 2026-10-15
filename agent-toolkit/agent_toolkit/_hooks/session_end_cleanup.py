@@ -21,19 +21,13 @@ SessionStartが作成するセッションのmanaged-tempも、同じ理由でSe
 
 from __future__ import annotations
 
-# 関数の実行時までだけ使う依存を、Python 3.15では使用時まで読み込まない。旧Pythonでは通常のimportとなる。
-__lazy_modules__ = {
-    "agent_toolkit._agents_server",
-    "agent_toolkit._atk.agents_exit_session",
-    "agent_toolkit._common.session_state",
-}
-
 import json
 import sys
 
-from agent_toolkit._agents_server import shared_roots, shared_sweep
-from agent_toolkit._atk.agents_exit_session import sweep_function_hook_files
-from agent_toolkit._common.session_state import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+# 関数の実行時にだけ使う依存は、使用時まで読み込まない。
+lazy from agent_toolkit._agents_server import shared_roots, shared_sweep
+lazy from agent_toolkit._atk.agents_exit_session import sweep_function_hook_files
+lazy from agent_toolkit._common.session_state import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
     clear_session_state,
     sweep_stale_states,
 )
@@ -48,7 +42,7 @@ def main(payload_text: str) -> int:
     """
     try:
         payload = json.loads(payload_text or "{}")
-    except (json.JSONDecodeError, ValueError):
+    except json.JSONDecodeError, ValueError:
         return 0
     if not isinstance(payload, dict) or payload.get("hook_event_name") != "SessionEnd":
         return 0

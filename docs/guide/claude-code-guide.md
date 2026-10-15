@@ -102,6 +102,52 @@ agent-toolkitプラグイン、共有`agents_server` MCP、`atk`ラッパーが�
 2. `Marketplaces`タブで`ak110-dotfiles`を選択
 3. `Enable auto-update`を選択
 
+## Claudeの各環境への導入
+
+使う環境に応じて、次の導入方法を選ぶ。
+
+| 環境 | 導入操作と使える機能 |
+| --- | --- |
+| claude.aiのChat・DesktopのChat | アカウントの`Customize > Plugins`からマーケットプレイスを追加するか、プラグインのZIPをアップロードする。スキル内の品質基準を読む。CLI・hook・local MCPを使う操作は、それらを提供する環境で行う |
+| DesktopのCowork | Coworkタブを開き、同じアカウントの`Customize > Plugins`から追加する。hook・local MCPはホストの対応、uvとネットワークの提供、組織の許可条件を確かめて使う |
+| DesktopのCode・ローカルClaude Code | 前述の単体インストーラーを実行し、Codeセッションで`/plugin`から導入状態を確認する。CLI・hook・MCPを使う |
+| Claude Codeクラウド | 環境のセットアップスクリプトで配布物と依存を用意し、環境変数の`CLAUDE_CODE_PLUGIN_DIRS`へ絶対パスを設定する |
+
+Chat・CoworkでGitマーケットプレイスを追加する場合は、`Customize > Plugins > Add > Add marketplace`で`Add from a repository`を選び、`ak110/dotfiles`を入力する。登録された`agent-toolkit`を選んで`Add`を実行する。ZIPで導入する場合は同じPlugins画面のカスタムプラグインのアップロードを使う。アカウント側に追加したプラグインの同期範囲と組織による制限は、[Claudeのプラグイン利用手順](https://support.claude.com/en/articles/13837440-use-plugins-in-claude)を参照。
+
+### アップロード用ZIP
+
+dotfilesのリポジトリで、公開済みcommitのプラグインだけをZIPへ入れる。
+
+```bash
+git archive --format=zip --output=agent-toolkit.zip HEAD:agent-toolkit
+```
+
+ZIPの直下には`.claude-plugin/plugin.json`と`skills/`が置かれ、`bin/`は含まれない。Gitの追跡対象だけを収めるため、ローカルの`.venv`やキャッシュは含まれない。アップロード前に、展開後の容量200 MB・5,000ファイル以内、参照先の存在、シンボリックリンクと入れ子のZIPが無いことを確認する。受付条件は[公式のプラグインアップロード要件](https://platform.claude.com/docs/en/manage-claude/plugins-api#upload-requirements)を参照。
+
+### Claude Codeクラウドの環境設定
+
+Claude Code 2.1.280以上を使い、クラウドの環境設定で次の変数を保存する。ディレクトリはセットアップとセッションの両方から読める同じ絶対パスにする。[CLAUDE_CODE_PLUGIN_DIRSの仕様](https://code.claude.com/docs/en/env-vars)は相対パスを読み込まないことと必要なCLI版を定める。
+
+```dotenv
+CLAUDE_CODE_PLUGIN_DIRS=/opt/agent-toolkit-src/agent-toolkit
+AGENT_TOOLKIT_RUNTIME_DATA=/opt/agent-toolkit-data
+```
+
+セットアップスクリプトには次を設定する。`git`と`uv`、Python 3.15の取得、およびGitHubとPythonパッケージ配布先へのネットワークが必要である。
+
+```bash
+#!/bin/bash
+set -eu
+git clone --depth 1 --branch master https://github.com/ak110/dotfiles.git /opt/agent-toolkit-src
+AGENT_TOOLKIT_RUNTIME_DATA=/opt/agent-toolkit-data \
+  uv run --no-config --no-project --python 3.15 python \
+  /opt/agent-toolkit-src/agent-toolkit/scripts/launch.py \
+  agent_toolkit/agents_server_mcp.py --check-dependencies
+```
+
+環境変数は環境設定の欄へ保存する。セットアップ内だけの`export`を後続セッションの設定として使わない。リポジトリの`enabledPlugins`だけではクラウドがプラグインを導入しない。セットアップの終了0、依存の確認（`--check-dependencies`）の成功、新しいセッションのスキル一覧・CLI案内・MCPの接続を順に確認する。setupの制限時間とネットワーク設定は[クラウド環境の設定](https://code.claude.com/docs/en/cloud-environments)を参照。
+
 ## 処理順序
 
 インストーラーは次の順で設定する。途中で必須処理が失敗した場合は非0で終了する。
@@ -141,6 +187,19 @@ Claude CodeまたはCodex pluginから読み込まれるため、`codex plugin l
 Bashの静的な検出は、for・算術for・select・while・until・if/elif/else・caseの条件と本体、入れ子、文全体のパイプ・リダイレクト・背景化にも及ぶ。未引用の予約語前置`time`・`time -p`・`!`・`coproc`を共通解析で扱い、coprocの暗黙の出力パイプと背景実行を保持する。引用やheredoc本文、算術式のデータ、未実行の関数定義と未確定の動的コマンドは実行位置とみなさない。未完了の背景出力の読取は進捗確認として警告にとどめ、反復しても遮断しない。終端結果は完了後に同じ保存先の全量を読み直して確認する。
 
 Claude CodeのprojectsとCodexのsessionsにある原セッション記録の本文をRead・Grep・静的に判定できるBashで参照すると、PreToolUseが`atk run-script session-review-evidence`を案内する。本文検索は`--grep`、位置の詳細は`--detail`、ツール入力は`--tool-calls`、期間からの探索はカタログで選べる。属性確認やパスの言及、正式な抽出と派生証拠の処理は対象外である。大容量の原記録も同じ専用照会へ案内する。原記録以外の保存本文は、Claude Codeでは`Read`に`allow_large: true`を指定して全文を読み、Codexでは`atk read-file`で終端まで読む。
+
+カタログの親セッション一覧は`--catalog-workflow process-wi`の完全一致、`--catalog-known-workflow`のunknown以外、`--catalog-cwd-contains <文字列>`の条件で選べる。
+`--catalog-fields session_id,workflow,workflow_locator,started_at,tokens`を付けると行の種類を表す`kind`に続いて指定順の項目を返す。
+項目の指定を省くと全項目を返す。
+条件を併記すると全てに一致する行を返し、末尾の走査要約では走査した親セッションの記録数と選択した行数を区別できる。
+これらの指定は両runtimeに共通する。
+走査対象はClaude Codeでは`--catalog-claude-project`へprojectディレクトリ（`~/.claude/projects/<project>`）、Codexでは`--catalog-codex-history`へ履歴ディレクトリを渡して選ぶ。
+カタログの走査では走査期間の開始の`--since`と終了の`--observation-boundary`が必須であり、ISO 8601の時刻を渡す。
+次の例はClaude Codeのprojectから、`process-wi`の親セッションを5項目で一覧する。
+
+```sh
+atk run-script session-review-evidence -- --catalog-claude-project ~/.claude/projects/<project> --since 2026-10-01T00:00:00+09:00 --observation-boundary 2026-10-08T00:00:00+09:00 --catalog-workflow process-wi --catalog-fields session_id,workflow,workflow_locator,started_at,tokens
+```
 
 振り返りの準備後や最終報告後に届いた新しい`気付いた改善点:`の行は、`agent-toolkit:completion-report`の工程に従って振り返りへ取り込み、結果報告を更新してから終了する。
 Stopはこの行の有無と報告本文を判定しない。
@@ -270,11 +329,25 @@ claude-plugins-officialのプラグインは次の方針で扱う。
 
 AWI処理の常駐実行（`atk wi process-loop`）を起動し、依頼したい内容を要求として登録する。
 登録した要求は、調査・計画・実装・レビュー・公開まで順に自動で処理される。
+開始前は別セッションが活動中なら処理可能WIの検出から10分を猶予する。
+WIキューを保存する共有リポジトリ（private-notes）へ新しいAWIかUWIが届くたびに、検出時点から10分へ延長する。
+延長の回数・累計時間に上限はなく、活動がなくなれば期限前でも開始判定へ戻る。
+終了済みのセッションと、稼働中の子エージェントがないユーザー応答待ちは猶予の理由にしない。
+当該ループ自身と子孫は除き、別ループや別リポジトリの活動も調べる。
+既存WIの編集・状態移動は新規到着として数えない。
+
+対象リポジトリに未回答UWIがあれば、保存済みUWIの最終更新から10分が経過するか全回答になるまで開始を待つ。
+holdとrun-skill由来もこの判定へ含め、回答後にadoptedへ移ったUWIの更新も反映する。
+活動猶予とUWI待機は同時に評価し、両方の解除後に処理可能集合を確認する。
+待機理由・期限・延長・開始は端末とprocess-loopのログで確認でき、待機中も`abort`で中断できる。
 選定はClaude CodeとCodexのどちらもメインが直接行い、別の選定担当は起動しない。候補本文から分類・割当・モデル・配置根拠を判断し、取得済み候補と意味判断をpick-wi-checkへ渡して定型欄の生成・確認・保存を1回で行う。意味判断と要求の被覆、レーン数上限、同じ担当thread、単一writer、実行レビューと直列統合は維持する。
 圧縮ツールが提供されるClaude Codeでは、各段階の全初期通常レーンの初回起動後と、終端担当の起動後の長時間待機前に会話圧縮を予約する。独立した工程を先に開始し、セッションのmanaged-temp直下のparent-handoff.mdへ再開状態を保存する。引数なしで予約し、背景待機を始めてターンを終える。受付は圧縮完了と区別し、通知後に保存記録から同じ工程へ戻る。ツールが無い環境では、その旨を記録して通常の待機へ進む。Codex、通常0件、処理中の追加レーン起動と実行レビュー待機は予約の対象外とする。
 
 レーン資源は`atk lane create`が専用worktree・branchと所有session、準備・撤去手順を登録し、準備後に担当を起動する。process-wiは対象リポジトリごとに1つだけ起動する前提で、専用worktreeは対象リポジトリの`.claude/worktrees/process-wi-lane-NN`に固定され、実行を繰り返してもパスは増えない。統合後も追加に備えて同じ資源を保持する。通常終了の`atk agents-exit-session`とprocess-loopの子終了後が`atk lane delete`と同じ安全条件で回収する。未統合・dirty・稼働中・不明・途中失敗の資源は保持し、次回の開始時に`atk lane delete --list`から理由と残る操作を読む。セッションのmanaged-tempと検証の証拠は専用資源とともに削除しない。
 要件を本文だけで説明できる作業に向く。
+1レーンの場合も隔離と独立文脈レビューを保ち、`atk lane integrate`が統合・計画保存・WI終端・統合済み記録をまとめて行う。
+途中失敗は進行記録と成果を残し、同じ入力で未完了の工程から再開する。
+操作の詳細は[run-lanes.md](../../agent-toolkit/skills/process-wi/references/run-lanes.md)を参照。
 要求を登録するときは、先行する要求の成果が無いと安全に実施できないか完成を判定できない場合だけ、その先行する要求への依存を設定する。
 
 自律型でも対話型と同じ基準で確認の要否を判定し、技術と既存認可で確定する事項はエージェントが実施して報告する。
@@ -300,6 +373,31 @@ atk wi process-loop
 
 dotfiles以外のリポジトリでworktree隔離を使う場合は、`atk wi process-loop --worktree[=NAME]`を指定する。
 `NAME`を省略すると`process-loop`を使い、dotfilesリポジトリではオプションを指定しなくても自動的にworktreeを使う。
+
+複数リポジトリのWIを`atk wi process-loop`で継続して処理する場合は、ローカルworktreeの絶対パスをJSON配列で登録し、ホームから起動する。
+
+```bash
+atk config set process_loop_repositories '["/home/user/project-a", "/home/user/project-b"]'
+atk wi list --configured-repos
+atk wi process-loop all-repos
+```
+
+共通オプションは`atk wi process-loop --no-update all-repos`のように`all-repos`の前へ指定する。
+通常の`atk wi process-loop`は現在のリポジトリだけを処理する。
+登録が空配列なら待機し、登録外のリポジトリへのWI投入はできる。
+登録先を解決できない場合は表示された対象を直して再実行する。
+同じoriginの登録は先頭へまとめ、登録変更は次の取得へ反映する。
+
+all-reposは一括取得した候補を各対象cwdの通常delegateへ渡し、担当とユーザーの間を中継する。
+対象の規範・準備・監査・実装・Git・公開は各担当が扱い、レーン上限もリポジトリごとの候補数から求める。
+開始前の猶予は登録対象全体に作用し、開始後は1担当の失敗や所有待ちで別担当を止めない。
+通常起動と同じoriginの処理所有を共有し、対象のWorktreeCreate/Removeがあれば作成先と撤去へ反映する。
+設定済みhookが失敗した場合は診断と途中資源を保持する。
+`abort`・`status`・`instruct`は同じOSアカウントの制御である。
+`instruct`は単一起動では次の処理会話へ1回だけ渡る。
+all-reposでは次の起動集合で1回受領し、各担当へ中継して、その担当の対象に関する部分を適用する。
+再開は記録されたall-repos担当のsession IDを`--resume`へ指定する。
+詳細は[all-repos-orchestration.md](../../agent-toolkit/skills/process-wi/references/all-repos-orchestration.md)を参照。
 
 CI失敗だけを1回確認してAWIへ投入する場合は、エージェントが次のコマンドを呼べる。対象を省略すると現在の作業ツリーを使う。
 
@@ -384,6 +482,23 @@ show形式の構造とは、直後にfrontmatterが続く`### <ファイル名>.
 - macOS: `~/Library/Application Support/agent-toolkit/serve.toml`。環境変数`XDG_CONFIG_HOME`に絶対パスを設定した場合は`$XDG_CONFIG_HOME/agent-toolkit/serve.toml`
 - Windows: `%LOCALAPPDATA%\agent-toolkit\serve.toml`
 
+設定例を次に示す。`host`と参照元のパスは文字列、`port`は整数、`remote_hosts`はSSH接続先名の文字列配列とする。
+各キーは省略でき、省略した参照元は後述の場所を使う。パスとSSH接続先名は利用する環境へ置き換える。
+
+```toml
+host = "127.0.0.1"
+port = 28767
+
+[plans]
+root = "/home/user/private-notes/plans"
+remote_hosts = ["remote-host"]
+
+[sessions]
+claude_home = "/home/user/.claude"
+codex_home = "/home/user/.codex"
+remote_hosts = ["remote-host"]
+```
+
 `atk serve`は同じナビゲーションから「WI」「計画ファイル」「セッション」の3画面を提供する。WI画面はキューの登録・編集・状態遷移を扱い、計画ファイル画面はローカルと設定済みリモートホストの計画ファイルを一覧・全文検索してMarkdownを表示する。セッション画面はClaude CodeとCodexの保存済みセッションを作業ディレクトリと開始時刻で一覧し、最初のユーザー発話を検索対象に使う。右ペインには発話・思考・ツール呼び出しを時系列に表示する。アシスタントの発言は見出し・箇条書き・表・コードをMarkdownとして整形して表示し、それ以外の本文は記号を残した等幅で表示する。実行環境が挿入した本文は「自動挿入」として折りたたみ、一覧の検索対象となる最初の発話からも除く。計画ファイルとセッションの参照元は、前述の設定ファイル`serve.toml`の`[plans]`・`[sessions]`で指定する。未指定の場合、計画ファイル画面はprivate-notesの`plans`と`~/.claude/plans`の両方を参照し、セッション画面は`~/.claude`と、`CODEX_HOME`が空のときは`~/.codex`を参照する。
 
 WI画面で状態が`needs-verify`と表示される項目は、反映後の観測だけが残っているため、観測できる時刻まで`inbox`へ戻されたAWIである。保存状態は`inbox`のままで、状態フィルターの`inbox`にも含まれ、次の`agent-toolkit:process-wi`が観測から再開する。
@@ -422,16 +537,20 @@ atk wi answer <UWIファイル名> '<回答本文>'
 
 ## atkコマンドのPATH設定
 
-`agent-toolkit`プラグインは`atk`ラッパースクリプトを`agent-toolkit/bin/atk`に配置する。
+`agent-toolkit`プラグインは`atk`ラッパースクリプトを`agent-toolkit/scripts/atk`に配置する。
 Claude Codeがマーケットプレイス経由でインストールした実体は
-`~/.claude/plugins/cache/<marketplace-name>/agent-toolkit/<version>/bin/atk`にある。
+`~/.claude/plugins/cache/<marketplace-name>/agent-toolkit/<version>/scripts/atk`にある。
 バージョン部は更新ごとに変わる。追随処理は`install-claude.sh`（Linux/macOS）または`install-claude.ps1`（Windows）で自動化する。
 
 - Linux/macOS: `~/.local/bin/atk`に最新バージョンを動的解決するラッパーを配置する
 - Windows: `~/.local/bin/atk.cmd`に同等のバッチラッパーを配置する
 - いずれも`~/.local/bin`がPATHに含まれていない環境では警告を表示する
 
-dotfilesユーザーは`chezmoi apply`で`~/dotfiles/agent-toolkit/bin`がPATHへ自動配置されるため、上記スクリプトの実行は不要。
+dotfilesユーザーは`chezmoi apply`で`~/dotfiles/agent-toolkit/scripts`がPATHへ自動配置されるため、上記スクリプトの実行は不要。
+
+Claude CodeのSessionStartは、`CLAUDE_ENV_FILE`が提供される場合に、CLIのPATHとデータ領域を後続のBashへ渡す。別hookの設定と既存PATHは保持する。このファイルが提供されない場合も、開始時のコンテキストにCLIの絶対パスを表示する。WindowsのPowerShellでは、案内された`.cmd`の絶対パスを`& '絶対パス'`の形で呼び出す。MCPと`agents_server`の委譲先には起動設定で同じ配布物のCLIとデータ領域を渡す。
+
+CLI移設前に起動した`update-dotfiles`は、pullと未コミット内容の復元後、旧`agent-toolkit/bin/atk`の不在により退避の回収で終了1となる場合がある。「復元は成功しましたが退避の回収は未完了です」と表示された場合は、更新したリポジトリで作業内容とindexが復元済みであることを保存refの内容と比べて確かめる。その実行が表示した完全なrefだけを`./agent-toolkit/scripts/atk worktree-stash drop <ref>`で回収し、`./bin/update-dotfiles`を再実行する。Windowsではそれぞれ`agent-toolkit\scripts\atk.cmd`と`bin\update-dotfiles.cmd`を使う。復元を確認できない場合はrefを保持して原因を調べる。これは開始済みの旧プロセスからの移行操作であり、再実行後の終了状態まで確認する。
 
 ## 構成と機能
 
@@ -462,7 +581,7 @@ Codex欄の「対応」「部分対応」「非対応」は、Codex 0.154.0の�
 | plugin `SubagentStart/rules_context` | サブエージェントの起動時に、サブエージェントと委譲先だけに適用する条文を文脈へ追加する | 対応 | 対応 |
 | plugin `SubagentStop/subagent_stop_advisor` | 空の完了報告での終了をブロックする | 対応 | 対応 |
 | plugin `SessionEnd/session_end_cleanup` | 期限を過ぎたセッション状態を回収する | 対応 | 対応 |
-| plugin `Stop/stop` | 成果作業（WI処理・AWI登録の開始、リポジトリの編集、計画・WIの保存、commit・push）の後に`agent-toolkit:completion-report`を起動しないまま終えようとすると、起動と残りの工程への続行を案内して同じターンを続けさせる。報告本文は判定しない。作業内で起動した委譲先や背景のコマンドを待つ間は終了を許すため、終了しない常駐コマンド（開発サーバーなど）の実行中は起動忘れを検出しない | 対応 | 対応 |
+| plugin `Stop/stop` | 成果作業（WI処理・AWI登録の開始、リポジトリの編集、計画・WIの保存、commit・push）の後に`agent-toolkit:completion-report`の起動も有効な省略判断も無いまま終えようとすると、起動と残りの工程への続行を案内して同じターンを続けさせる。適用するプロジェクト規範が起動を不要と定める場合は、`atk run-script termination-evidence -- --decision-file <判断JSONの絶対パス>`へ省略の根拠を記録する。報告本文は判定しない。作業内で起動した委譲先や背景のコマンドを待つ間は終了を許すため、終了しない常駐コマンド（開発サーバーなど）の実行中は起動忘れを検出しない | 対応 | 対応 |
 | plugin `UserPromptSubmit/user_prompt_submit` | 発話の内容を現物で確かめる手順や、発話に応じて適用する規範の所在を示す注記を返す | 対応 | 対応 |
 | plugin `PermissionRequest/permissionrequest_codex` | 厳密な入力一致と所有者確認が成立したmanaged-tempのcleanupだけを限定的に許可する | 非対応 | 対応 |
 | plugin `PermissionRequest/permissionrequest` | 全ツールの確認ダイアログを自動許可し、許可した要求をログへ記録する | 対応 | 非対応 |
@@ -562,7 +681,7 @@ pushを行わずローカルcommitまでで止める場合は`--skip-push`を指
   （本体を一意に識別できない実行環境では停止せず、終了理由と対話CLIの終了案内を最終応答としてターンを完了する）
 - `compact_conversation`: Function hooks moduleを読み込んだClaude Codeのメインが会話圧縮を予約するツール。完全名は`mcp__agent-toolkit__compact_conversation`で、引数は取らず追加指示なしでcompactを予約する。必要な再開状態はセッションのmanaged-temp直下のparent-handoff.mdへ保存し、圧縮後の領域通知からその記録を読む。対話UIと非対話の`claude -p`に対応し、Codexと委譲先では使わない。受付応答は圧縮完了を示さない。予約後は現在のターンを終え、ホストの圧縮成功表示を確認する。未完了の予約を重ねても実行は増えず、成功・失敗後は再予約できる。失敗は同じ会話へ原因と再予約可能である旨が通知される。バックグラウンドタスクを待つ場合は予約後に背景待機を開始してターンを終え、通知後に同じ担当と保存結果から継続する
 - `send_to_user`: 管理設定の`CLAUDE_CODE_ENABLE_FUNCTION_HOOKS=1`が有効でagent-toolkitのFunction hooks moduleを読み込んだClaude Codeで、メインが使えるツール。途中報告と最後の回答を運び、画面へMarkdownとして表示する。完全名は`mcp__agent-toolkit__send_to_user`で、初回から読み込む定義を登録する。遅延一覧にだけ現れる場合は`ToolSearch`の`select:mcp__agent-toolkit__send_to_user`で読み込む。ツール呼び出しより前の地の文は要約に置き換わることがあるため、このツールで送る。確認質問には既存の質問手段を使う。moduleを読み込まないClaude CodeとCodexでは、ターンを終える本文へ書く
-- `agent-toolkit:completion-report`: メインの作業完了時に、成果と振り返り結果を固定形式で報告する。対策のAWIを投入する場合は`## 振り返り結果の予告`で予告し、投入後にAWI投入結果を報告する。投入が無い場合は振り返り結果を報告する。最後の報告だけを「以上で、このセッションの作業は全て終わりました」で結ぶ。成果作業の後に本スキルを起動しないまま終える停止はStopフックが遮断して起動を促す。起動後の工程の完遂と報告の内容は本スキルの規範に従ってエージェントが確かめ、Stopフックは報告本文を判定しない。ユーザーの中止・置換の指示は、その指示が作用する作業だけを止める
+- `agent-toolkit:completion-report`: メインの作業完了時に、成果と振り返り結果を固定形式で報告する。対策のAWIを投入する場合は`## 振り返り結果の予告`で予告し、投入後にAWI投入結果を報告する。投入が無い場合は振り返り結果を報告する。最後の報告だけを「以上で、このセッションの作業は全て終わりました」で結ぶ。適用するプロジェクト規範が本スキルを不要と定める場合は、スキルを起動せず`references/termination-evidence.md`を読む。`atk run-script termination-evidence -- --decision-file <判断JSONの絶対パス>`へ`omit-completion`の根拠を記録する。省略は指定した作業だけへ作用し、別作業の起動不足と、process-loopの会話が終了時に`atk agents-exit-session`を実行する義務は保つ。有効な省略も起動証拠も無い成果作業の停止はStopフックが遮断して起動を促す。起動後の工程の完遂と報告の内容は本スキルの規範に従ってエージェントが確かめ、Stopフックは報告本文を判定しない。ユーザーの中止・置換の指示は、その指示が作用する作業だけを止める
 - `agent-toolkit:export-session`: `atk agents logs`でClaude CodeとCodexの記録をmarkdownへ出力し、一括変換も行う
 - `agent-toolkit:session-review`: セッションで交わされた会話の流れと問題候補を調べ、原因と恒久対策を確定して、対策を作業依頼（AWI）として投入する。手動または`agent-toolkit:completion-report`から起動し、メインが同じセッション内で分析する
 
@@ -572,7 +691,7 @@ pushを行わずローカルcommitまでで止める場合は`--skip-push`を指
 
 「ツールキットのインストール」のワンライナーを再実行すると更新される。
 dotfiles（chezmoi）管理下のマシンでは`chezmoi apply`を実行しても更新できる。
-いずれの単体インストーラーも初回導入専用ではない。`agents_server`はClaude CodeまたはCodex pluginが
+いずれの単体インストーラーも初回導入と更新の両方に使える。`agents_server`はClaude CodeまたはCodex pluginが
 セッション単位でstdioプロセスとして所有するため、共有daemonの再起動は行わない。
 Codex plugin本体の更新で既存セッションへ反映できない場合は、Codex pluginの案内に従い、
 進行中の作業を回収してから新しいセッションを開始する。

@@ -26,7 +26,7 @@ def save_text(text: str, create_directory: Callable[[], pathlib.Path], *, filena
 def saved_report_text(path: pathlib.Path, *, stderr: bool = False) -> str:
     """保存先・行数と最初の読取コマンドを返す。両ストリームは別の標識で示す。
 
-    保存後の表示が直接表示の上限の内訳へ案内を含めるため、表示と同じ文字列をここだけで組み立てる。
+    保存先と行数の行を直接表示の上限から差し引く呼び出し元があるため、表示と同じ文字列をここだけで組み立てる。
     """
     with path.open(encoding="utf-8", newline="") as stream:
         lines = sum(1 for _line in stream)
@@ -82,7 +82,7 @@ def auto_save(
     force_stdout: bool = False,
     discard_directory: Callable[[pathlib.Path], None] | None = None,
 ) -> Generator[None]:
-    """有限終了の両出力を保持し、ファイル消費のあるstdoutは実行前に保存先を開く。
+    """有限で終了する呼び出しの標準出力と標準エラーを保持し、量によらず標準出力を保存する呼び出しでは実行前に保存先を開く。
 
     waitの結果を消費する前に保存を準備し、保存不能なら本体を開始しない。
     例外とSystemExitでもそれまでの出力と元の終了状態を保持する。

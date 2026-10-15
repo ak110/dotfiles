@@ -29,6 +29,7 @@ from agent_toolkit._atk import agents_exit_session as _agents_exit_session
 from agent_toolkit._atk import config as _config
 from agent_toolkit._atk.wi import process_loop_watch as _pl_watch
 from agent_toolkit._atk.wi import readiness as _wi_readiness
+from agent_toolkit._common import session_activity, session_registry, state_paths
 from agent_toolkit._common import wait_schedule as _wait_schedule
 from agent_toolkit._testing.helpers import auto_message_opening_attributes
 from agent_toolkit._testing.managed_temp_support import setattr_in_managed_temp_modules
@@ -58,7 +59,9 @@ def _copy_entrypoint(tmp_path: pathlib.Path) -> pathlib.Path:
     """依存する通知モジュールと共通entrypointを検証用ディレクトリへ複製する。"""
     entrypoint = tmp_path / "hook.py"
     entrypoint.write_text(
-        _SCRIPT.read_text(encoding="utf-8").replace("agent_toolkit._hooks", "_hooks"),
+        _SCRIPT.read_text(encoding="utf-8")
+        .replace("agent_toolkit._hooks", "_hooks")
+        .replace("agent_toolkit._common.session_activity", "_hooks.session_activity"),
         encoding="utf-8",
     )
     hooks = tmp_path / "_hooks"
@@ -384,6 +387,7 @@ def test_native_subagent_stop_keeps_next_process_loop_session_running(
     tmp_path: pathlib.Path,
 ) -> None:
     """公開hookで子のStopを処理した後も、公開CLIが次のセッションを起動する。"""
+    monkeypatch.setattr(session_activity, "scan_activity", lambda **_kwargs: session_activity.ActivitySnapshot())
     _setup_notes(tmp_path)
     myrepo = tmp_path / "myrepo"
     myrepo.mkdir()
@@ -520,7 +524,6 @@ def _run_with_module_record(
     return result, set(record.read_text(encoding="utf-8").splitlines())
 
 
-@pytest.mark.skipif(sys.version_info < (3, 15), reason="遅延読み込みはPython 3.15以上だけが行う")
 class TestLazyDependencyLoading:
     """公開hookが処理分岐で使わない依存を読み込まず、遅延を無効化した場合と同じ応答を返すことを検証する。"""
 
@@ -626,5 +629,50 @@ def test_repeated_calls_in_one_process_follow_input_and_session_state(
         return cast(dict[str, Any], json.loads(output))
 
     assert stop(queued) == {"continue": False}
+
     assert stop(empty_transcript) == {}
     assert stop(queued) == {"continue": False}
+
+
+def test_activity_lifecycle(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
+    """公開hookの通常応答を保持しつつ、Stop継続とターン終了を活動取得へ渡す。"""
+    identity = session_registry.ProcessIdentity.of(os.getpid())
+    assert identity is not None
+    host = session_activity.HostProcess("codex", identity)
+    monkeypatch.setattr(session_activity, "host_process", lambda: host)
+    monkeypatch.setattr(session_activity, "host_processes", lambda: ())
+    monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path / "state")
+    monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)
+    transcript = tmp_path / "activity.jsonl"
+    transcript.write_text(
+        json.dumps({"type": "event_msg", "payload": {"type": "task_complete"}}) + "\n",
+        encoding="utf-8",
+    )
+    payload: dict[str, object] = {"session_id": "activity-integration", "transcript_path": str(transcript), "turn_id": "t1"}
+    response: dict[str, object] = {"decision": "block", "reason": "継続"}
+    stop_module = _hook.importlib.import_module("agent_toolkit._hooks.stop")
+
+    def emit_stop(_payload: str) -> int:
+        print(json.dumps(response))
+        return 0
+
+    monkeypatch.setattr(stop_module, "main", emit_stop)
+
+    def call(event: str, command: str = "session_activity", **extra: object) -> str:
+        return _call_hook_in_process(monkeypatch, command, {**payload, "hook_event_name": event, **extra})
+
+    assert not call("UserPromptSubmit")
+    assert session_activity.scan_activity().has_activity
+    assert json.loads(call("Stop", "stop")) == response
+    assert session_activity.scan_activity().has_activity
+    response.clear()
+    assert json.loads(call("Stop", "stop")) == {}
+    assert not session_activity.scan_activity().has_activity
+    call("SubagentStart", agent_id="native-child")
+    assert session_activity.scan_activity().has_activity
+    call("SubagentStop", agent_id="native-child")
+    assert not session_activity.scan_activity().has_activity
+    call("UserPromptSubmit")
+    assert session_activity.scan_activity().has_activity
+    call("SessionEnd")
+    assert not session_activity.scan_activity().has_activity

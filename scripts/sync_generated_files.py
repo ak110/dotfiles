@@ -34,7 +34,11 @@ def main(argv: list[str] | None = None) -> int:
         if run_generator(generator) != 0:
             failures.append(generator)
     if failures:
-        print("生成に失敗: " + ", ".join(failures), file=sys.stderr)
+        print(
+            "生成に失敗: " + ", ".join(failures) + "。次の操作: 上記の生成器の失敗理由を修正し、"
+            "uv run --frozen python scripts/sync_generated_files.pyを再実行してください。",
+            file=sys.stderr,
+        )
         return 1
     return 0
 

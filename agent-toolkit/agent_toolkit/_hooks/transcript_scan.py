@@ -4,14 +4,12 @@
 Stop時の書き込み完了の待機、走査範囲（sidechainの扱い）とtool_use・tool_resultの取り出しを担う。
 """
 
-# 関数の実行時までだけ使う依存を、Python 3.15では使用時まで読み込まない。旧Pythonでは通常のimportとなる。
-__lazy_modules__ = {"agent_toolkit._common", "collections.abc", "time"}
-
-import collections.abc
+# 関数の実行時にだけ使う依存は、使用時まで読み込まない。
 import json
-import time
+lazy import collections.abc
+lazy import time
 
-from agent_toolkit._common import transcript as _transcript
+lazy from agent_toolkit._common import transcript as _transcript
 
 # 同一hookプロセスで複数判定モジュールが同じtranscriptの解析済みエントリを再利用するためのキャッシュ。
 # 1エントリー限定（`background_tasks._PENDING_ASYNC_WORK_CACHE`と同じ方式）。`transcript_path`のみをキーとし、
@@ -54,7 +52,7 @@ def wait_for_end_turn(transcript_path: str, *, timeout: float = 0.3) -> None:
         for line in reversed(lines):
             try:
                 entry = json.loads(line)
-            except (json.JSONDecodeError, ValueError):
+            except json.JSONDecodeError, ValueError:
                 continue
             if entry.get("type") != "assistant" or entry.get("isSidechain"):
                 continue

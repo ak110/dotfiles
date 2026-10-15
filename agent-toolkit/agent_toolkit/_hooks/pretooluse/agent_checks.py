@@ -2,54 +2,39 @@ r"""PreToolUse統合フックのうち、応答言語、TaskStop、agents_server
 
 from __future__ import annotations
 
-# 関数の実行時までだけ使う依存を、Python 3.15では使用時まで読み込まない。旧Pythonでは通常のimportとなる。
-__lazy_modules__ = {
-    "agent_toolkit._common",
-    "agent_toolkit._common.delegated_session",
-    "agent_toolkit._common.file_lock",
-    "agent_toolkit._common.session_state",
-    "agent_toolkit._common.task_stop_state",
-    "agent_toolkit._hooks",
-    "agent_toolkit._hooks.notice",
-    "agent_toolkit._hooks.pretooluse.decision",
-    "agent_toolkit._hooks.pretooluse.notices",
-    "datetime",
-    "re",
-    "tempfile",
-    "time",
-}
-
-import datetime
 import json
 import os
 import pathlib
-import re
-import tempfile
-import time
+
+# 関数の実行時にだけ使う依存は、使用時まで読み込まない。
+lazy import datetime
+lazy import re
+lazy import tempfile
+lazy import time
 
 from agent_toolkit._agents_server import (
     tool_names as _agents_server_tool_names,
 )
-from agent_toolkit._common import response_language_check as _response_language_check
-from agent_toolkit._common.delegated_session import is_delegated
-from agent_toolkit._common.file_lock import (
+lazy from agent_toolkit._common import response_language_check as _response_language_check
+lazy from agent_toolkit._common.delegated_session import is_delegated
+lazy from agent_toolkit._common.file_lock import (
     locked_rotate_and_append as _locked_rotate_and_append,
 )
-from agent_toolkit._common.session_state import (
+lazy from agent_toolkit._common.session_state import (
     read_state,
     update_state,
 )
-from agent_toolkit._common.task_stop_state import has_recent_completion, target_ids
-from agent_toolkit._hooks import agents_server_observations as _agents_server_observations
-from agent_toolkit._hooks import (
+lazy from agent_toolkit._common.task_stop_state import has_recent_completion, target_ids
+lazy from agent_toolkit._hooks import agents_server_observations as _agents_server_observations
+lazy from agent_toolkit._hooks import (
     plugin_resources as _plugin_resources,
 )
-from agent_toolkit._hooks import (
+lazy from agent_toolkit._hooks import (
     rules_context as _rules_context,
 )
-from agent_toolkit._hooks.notice import _WARN_TAG
-from agent_toolkit._hooks.pretooluse.decision import Decision
-from agent_toolkit._hooks.pretooluse.notices import _block_notice, _llm_notice
+lazy from agent_toolkit._hooks.notice import _WARN_TAG
+lazy from agent_toolkit._hooks.pretooluse.decision import Decision
+lazy from agent_toolkit._hooks.pretooluse.notices import _block_notice, _llm_notice
 
 
 def _handle_language_check(payload: dict, session_id: str) -> str | None:
@@ -125,7 +110,8 @@ def _handle_language_check(payload: dict, session_id: str) -> str | None:
 # 日本語の応答指示を再注入するツール呼び出しの間隔。
 # 2026-09-22以降のClaude Codeメイン記録で、セッション開始または会話圧縮から最初の`response_language_check`の通知までの
 # ツール呼び出し回数は55件で中央値20回、下位20%が7回、下位30%が11回だった。
-# 10回ごとの注入は最初の英語化の約7割より前に日本語の指示を文脈の近くへ置き、注入は1行のため文脈の消費は小さい。
+# 10回ごとに注入すると、最初の英語の応答が現れた事例の約7割で、それより前に日本語の指示が文脈の近くへ入る。
+# 注入は1行のため文脈の消費は小さい。
 LANGUAGE_REINJECTION_INTERVAL = 10
 
 
@@ -214,7 +200,7 @@ def _check_task_stop(session_id: str, tool_input: dict) -> str | None:
         "この手順の完了条件は`agent-toolkit:delegation`の"
         f"{_plugin_resources.skill_reference('delegation', 'references/waiting-and-monitoring.md')}"
         "「停滞の検知と巻き取り」節が定める。"
-        "進行が遅いことや非効率に確認できることだけでは停止の指示にならない。"
+        "進行が遅いことや、確認に手間がかかることだけでは停止の根拠にならない。"
         "意図の解釈が複数残る場合は、停止の前にAskUserQuestionで確認する。"
         "ユーザーの介入があった場合の扱いは`agent-toolkit:delegation`「継続と新規起動」が定める。",
         fix=(
@@ -223,8 +209,8 @@ def _check_task_stop(session_id: str, tool_input: dict) -> str | None:
             f"{_plugin_resources.skill_reference('delegation', 'references/waiting-and-monitoring.md')}"
             "「停滞の検知と巻き取り」節に従い、"
             "対象別の停滞検知完了記録を作成してからTaskStopを実行する。"
-            '記録は`uv run --project "${CLAUDE_PLUGIN_ROOT}" --locked --no-default-groups '
-            '"${CLAUDE_PLUGIN_ROOT}/skills/delegation/scripts/record_stall_detection.py" '
+            "記録は`uv run --no-config --no-project --python 3.15 python "
+            '"${CLAUDE_PLUGIN_ROOT}/scripts/launch.py" skills/delegation/scripts/record_stall_detection.py '
             "--session-id <現在のCLAUDE_CODE_SESSION_ID> --task-id <停止対象の完全なタスクID>`で作成し、"
             "終了コード0を返した対象だけを5分以内に停止する。"
         ),
@@ -286,7 +272,7 @@ def _record_iss_sidechain_probe(
 def _check_agents_server_continuation_input(session_id: str, tool_input: dict, tool_name: str) -> Decision:
     """`send_message`・`kill`の入力と保存済みcwdから操作の可否を判定する。
 
-    必須値の欠落はツール自身が拒否する可逆な入力不成立として警告する。
+    必須値の欠落はツール自身が入力を拒否し、入力を直せば再実行できるため警告で返す。
     停止対象のcwd記録の欠落は所有を確認できないため遮断する。
     """
     display_name = tool_name.rsplit("__", 1)[-1]

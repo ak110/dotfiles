@@ -24,7 +24,7 @@ def _isolate_process_loop_commands(monkeypatch: pytest.MonkeyPatch, tmp_path: pa
 
 
 class TestMiseLatestRefresh:
-    """dotfiles向けprocess-loopが所有するmise latest再評価を検証する。"""
+    """dotfilesを対象とするprocess-loopが行う、miseのlatest指定の再評価を検証する。"""
 
     @staticmethod
     def _run_idle_loop(
@@ -131,7 +131,7 @@ class TestMiseLatestRefresh:
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
     ) -> None:
-        """update-dotfiles成功後は起動時刻ではなく成功後から次の24時間を数える。"""
+        """update-dotfiles成功後は成功時点から次の24時間を数える。"""
         refresh_calls = self._run_idle_loop(
             monkeypatch,
             tmp_path,
@@ -171,7 +171,7 @@ class TestMiseLatestRefresh:
         tmp_path: pathlib.Path,
         update_returncode: int,
     ) -> None:
-        """セッション終了後の再起動では、子セッション後更新の結果を扱わない。"""
+        """セッション終了後の再起動では、子セッション終了後の更新の結果を扱わない。"""
         _setup_notes(tmp_path)
         target = tmp_path / "dotfiles-target"
         target.mkdir()
@@ -187,7 +187,7 @@ class TestMiseLatestRefresh:
         monkeypatch.setattr(_process_loop.time, "monotonic", lambda: 0.0)
 
         def fake_run(command: list[str], **_kwargs: object) -> subprocess.CompletedProcess[str]:
-            returncode = 0 if command[0] == "claude" else update_returncode
+            returncode = update_returncode if pathlib.Path(command[0]).stem.lower() == "update-dotfiles" else 0
             return subprocess.CompletedProcess(command, returncode, "", "")
 
         monkeypatch.setattr(subprocess, "run", fake_run)

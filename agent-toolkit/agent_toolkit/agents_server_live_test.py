@@ -293,7 +293,7 @@ class _PseudoResponsesApi:
         with self._lock:
             return [body for name, body in self.requests if name == provider]
 
-    def __enter__(self) -> "_PseudoResponsesApi":
+    def __enter__(self) -> _PseudoResponsesApi:
         self._thread.start()
         return self
 

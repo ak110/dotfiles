@@ -4,6 +4,9 @@ from __future__ import annotations
 
 import re
 from collections.abc import Sequence
+from dataclasses import dataclass
+from pathlib import PurePath
+from typing import Literal
 
 _PYTHON_TOKEN_PATTERN = re.compile(r"^python[0-9.]*(?:\.exe)?$", re.IGNORECASE)
 
@@ -158,6 +161,213 @@ _UV_RUN_OPTIONS_WITHOUT_VALUE: frozenset[str] = frozenset(
 """`uv run --help`の出力から機械抽出した、値を取らない`run`オプション。取得元は`_UV_GLOBAL_OPTIONS_WITH_VALUE`参照。"""
 
 
+# uv 0.13.1の`uvx --help`。globalの定義を共有し、tool runの引数の個数を保持する。
+_UV_TOOL_OPTIONS_WITH_VALUE = _UV_GLOBAL_OPTIONS_WITH_VALUE | {
+    "--from",
+    "--with",
+    "-w",
+    "--with-editable",
+    "--with-requirements",
+    "--constraints",
+    "-c",
+    "--build-constraints",
+    "-b",
+    "--overrides",
+    "--env-file",
+    "--python-platform",
+    "--torch-backend",
+    "--index",
+    "--default-index",
+    "--index-url",
+    "-i",
+    "--extra-index-url",
+    "--find-links",
+    "-f",
+    "--index-strategy",
+    "--keyring-provider",
+    "--upgrade-package",
+    "-P",
+    "--upgrade-group",
+    "--resolution",
+    "--prerelease",
+    "--prerelease-package",
+    "--fork-strategy",
+    "--exclude-newer",
+    "--exclude-newer-package",
+    "--no-sources-package",
+    "--reinstall-package",
+    "--link-mode",
+    "--config-setting",
+    "-C",
+    "--config-settings-package",
+    "--no-build-isolation-package",
+    "--no-build-package",
+    "--no-binary-package",
+    "--refresh-package",
+    "--python",
+    "-p",
+}
+_UV_TOOL_OPTIONS_WITHOUT_VALUE = _UV_GLOBAL_OPTIONS_WITHOUT_VALUE | {
+    "--isolated",
+    "--no-env-file",
+    "--lfs",
+    "--no-index",
+    "--upgrade",
+    "-U",
+    "--no-sources",
+    "--reinstall",
+    "--compile-bytecode",
+    "--no-build-isolation",
+    "--no-build",
+    "--no-binary",
+    "--require-build-hashes",
+    "--no-require-build-hashes",
+    "--refresh",
+}
+
+
+@dataclass(frozen=True)
+class RuntimeInvocation:
+    """argvから確定した実行位置・起動方式と、uvによるcwd変更。"""
+
+    tokens: tuple[str, ...]
+    kind: Literal["command", "module", "script", "code", "terminal", "unresolved"] = "command"
+    directories: tuple[str, ...] = ()
+
+
+def executable_name(token: str) -> str:
+    """実行位置の名前から、実行ファイル用の拡張子だけを除く。"""
+    return PurePath(token).name.removesuffix(".exe").removesuffix(".cmd")
+
+
+def _python_invocation(tokens: list[str], directories: tuple[str, ...]) -> RuntimeInvocation:
+    """Pythonのオプション値を消費し、module・script・非実行を区別する。"""
+    index = 1
+    while index < len(tokens):
+        word = tokens[index]
+        if word in {"--help", "--version", "--help-env", "--help-xoptions", "--help-all"}:
+            return RuntimeInvocation((), "terminal", directories)
+        if word == "--":
+            return RuntimeInvocation(tuple(tokens[index + 1 :]), "script", directories)
+        if word == "-" or not word.startswith("-"):
+            return RuntimeInvocation(tuple(tokens[index:]), "script", directories)
+        if word.startswith("--check-hash-based-pycs="):
+            index += 1
+            continue
+        if word == "--check-hash-based-pycs":
+            if index + 1 >= len(tokens):
+                return RuntimeInvocation((), "unresolved", directories)
+            index += 2
+            continue
+        if word.startswith("--"):
+            return RuntimeInvocation((), "unresolved", directories)
+        for offset, option in enumerate(word[1:], 2):
+            if option in "h?V":
+                return RuntimeInvocation((), "terminal", directories)
+            if option == "c":
+                return RuntimeInvocation(tuple(tokens[index:]), "code", directories)
+            if option in "mWX":
+                attached = word[offset:]
+                value = attached or (tokens[index + 1] if index + 1 < len(tokens) else None)
+                if value is None:
+                    return RuntimeInvocation((), "unresolved", directories)
+                following = index + (1 if attached else 2)
+                if option == "m":
+                    return RuntimeInvocation((value, *tokens[following:]), "module", directories)
+                index = following - 1
+                break
+            if option not in "bBdEiIOPqsSuvx":
+                return RuntimeInvocation((), "unresolved", directories)
+        index += 1
+    return RuntimeInvocation(("-",), "script", directories)
+
+
+def _uv_option_values(tokens: list[str], start: int, end: int, values: frozenset[str]) -> list[tuple[str, str | None]]:
+    """検証済みのオプション区間から、値と結合短縮形を区別して返す。"""
+    options: list[tuple[str, str | None]] = []
+    index = start
+    while index < end:
+        word = tokens[index]
+        if word == "--":
+            break
+        name, equal, value = word.partition("=")
+        if name in values:
+            if not equal:
+                index += 1
+                value = tokens[index]
+            options.append((name, value))
+        elif word.startswith("-") and not word.startswith("--"):
+            for offset, letter in enumerate(word[1:], 2):
+                option = "-" + letter
+                if option in values:
+                    attached = word[offset:]
+                    if not attached:
+                        index += 1
+                    options.append((option, attached or tokens[index]))
+                    break
+                options.append((option, None))
+        else:
+            options.append((name, None))
+        index += 1
+    return options
+
+
+def resolve_runtime_invocation(tokens: Sequence[str]) -> RuntimeInvocation:
+    """shellへ再評価せず、uv・uvx・Pythonを通した実行位置と起動方式を返す。
+
+    値付きオプションは実行名にせず、未知構文はunresolved、非対象の起動はその実行名で返す。
+    従来の助言用解析とは別に、起動方式の確定を要する消費側が明示して使う。
+    """
+    argv = list(tokens)
+    directories: tuple[str, ...] = ()
+    while argv:
+        name = executable_name(argv[0])
+        if is_python_token(name):
+            return _python_invocation(argv, directories)
+        if name not in {"uv", "uvx"}:
+            return RuntimeInvocation(tuple(argv), "command", directories)
+        tool_mode = name == "uvx"
+        if tool_mode:
+            start = 1
+        else:
+            subcommand, state = _scan_uv_options(
+                argv, 1, _UV_GLOBAL_OPTIONS_WITH_VALUE, _UV_GLOBAL_OPTIONS_WITHOUT_VALUE, expanded=True
+            )
+            if state == "terminal":
+                return RuntimeInvocation((), "terminal", directories)
+            if state != "reached":
+                return RuntimeInvocation((), "unresolved", directories)
+            tool_mode = argv[subcommand : subcommand + 2] == ["tool", "run"]
+            if not tool_mode and argv[subcommand] != "run":
+                return RuntimeInvocation(tuple(argv), "command", directories)
+            start = subcommand + (2 if tool_mode else 1)
+        values = _UV_TOOL_OPTIONS_WITH_VALUE if tool_mode else _UV_RUN_OPTIONS_WITH_VALUE
+        flags = (
+            _UV_TOOL_OPTIONS_WITHOUT_VALUE
+            if tool_mode
+            else _UV_RUN_OPTIONS_WITHOUT_VALUE | {"--require-build-hashes", "--no-require-build-hashes"}
+        )
+        index, state = _scan_uv_options(argv, start, values, flags, expanded=True)
+        if state == "terminal":
+            return RuntimeInvocation((), "terminal", directories)
+        if state != "reached":
+            return RuntimeInvocation((), "unresolved", directories)
+        directories += tuple(
+            value
+            for name, value in _uv_option_values(argv, 1, index, values | _UV_GLOBAL_OPTIONS_WITH_VALUE)
+            if name == "--directory" and value is not None
+        )
+        options = {name for name, _value in _uv_option_values(argv, start, index, values)}
+        argv = argv[index:]
+        if not tool_mode and options.intersection({"-m", "--module"}):
+            return RuntimeInvocation(tuple(argv), "module", directories)
+        if not tool_mode and options.intersection({"-s", "--script", "--gui-script"}):
+            return RuntimeInvocation(tuple(argv), "script", directories)
+        if tool_mode and "@" in argv[0]:
+            argv[0] = argv[0].partition("@")[0]
+    return RuntimeInvocation((), "unresolved", directories)
+
+
 def is_python_token(token: str) -> bool:
     """`python`・`python3`・`python3.12`などの実行ファイル名なら真を返す。"""
     return _PYTHON_TOKEN_PATTERN.match(token) is not None
@@ -234,6 +444,8 @@ def _scan_uv_options(
     start: int,
     with_value: frozenset[str],
     without_value: frozenset[str],
+    *,
+    expanded: bool = False,
 ) -> tuple[int, str]:
     """`uv`のオプション列を走査し、到達位置と走査結果の状態を返す。
 
@@ -256,6 +468,10 @@ def _scan_uv_options(
     index = start
     while index < len(tokens):
         token = tokens[index]
+        if expanded and token == "-":
+            return index, "reached"
+        if expanded and token == "--":
+            return (index + 1, "reached") if index + 1 < len(tokens) else (index, "unresolved")
         if has_uv_terminal_option((token,)):
             return index, "terminal"
         if token in with_value:
@@ -267,6 +483,19 @@ def _scan_uv_options(
             continue
         if token in without_value:
             index += 1
+            continue
+        if expanded and token.startswith("-") and not token.startswith("--"):
+            consumed = 1
+            for offset, letter in enumerate(token[1:], 2):
+                option = "-" + letter
+                if option in _UV_TERMINAL_OPTIONS:
+                    return index, "terminal"
+                if option in with_value:
+                    consumed = 1 if token[offset:] else 2
+                    break
+                if option not in without_value:
+                    return index, "unresolved"
+            index += consumed
             continue
         if not token.startswith("-"):
             return index, "reached"

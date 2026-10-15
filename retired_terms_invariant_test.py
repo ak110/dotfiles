@@ -151,7 +151,10 @@ _RETIRED_TERMS = (
             # 旧列名を構造の名前として扱う文体検査
             _AllowedLocation("scripts/check_agent_doc_tone.py", "利用者と入口"),
             # 呼称の使用停止を定める規定と、その方針記録
-            _AllowedLocation("agent-toolkit/skills/writing-standards/references/notation-rules.md", "新しい説明文に使わない"),
+            _AllowedLocation(
+                "agent-toolkit/skills/writing-standards/references/notation-rules.md",
+                "成果物を使う人自身が読むガイドの見出しや案内では「利用者向け」も使える。",
+            ),
             _AllowedLocation("docs/development/concepts-principles.md", "新しい説明文に使わず"),
             _AllowedLocation(
                 "README.md",
@@ -512,7 +515,7 @@ _RETIRED_TERMS = (
 
 
 # 規範の再構築の判定台帳は、基準commitの条文の先頭を逐語で抜粋した記録であり、撤去前の名称を含む。
-# 撤去語ごとの許容箇所ではなく、全ての撤去語に共通する許容箇所として扱う。
+# 全ての撤去語に共通する許容箇所として扱う。
 _VERBATIM_RECORD_LOCATIONS = (_AllowedLocation("docs/development/norm-restructure/*.tsv"),)
 
 
@@ -629,6 +632,16 @@ def test_retired_term_in_allowed_locations_is_accepted(tmp_path: pathlib.Path) -
         ("docs/development/design-cli.md", "標識「証拠行」を読む。\n", True),
         ("docs/development/design.md", "標識「証拠行」を読む。\n", True),
         ("docs/development/design.md", "振り返り担当の経緯。\n", True),
+        (
+            "agent-toolkit/skills/writing-standards/references/notation-rules.md",
+            "成果物を使う人自身が読むガイドの見出しや案内では「利用者向け」も使える。\n",
+            False,
+        ),
+        (
+            "agent-toolkit/skills/writing-standards/references/notation-rules.md",
+            "利用者が実装する。\n",
+            True,
+        ),
     ],
 )
 def test_moved_design_records_preserve_allowed_line_scope(

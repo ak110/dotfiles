@@ -36,7 +36,11 @@ def run() -> post_apply_outcome.PostApplyOutcome:
     """~/.ssh/config と authorized_keys を生成/更新する。書き込みの失敗は例外として送出する。"""
     ssh_dir = Path.home() / ".ssh"
     if not (ssh_dir / "conf.d").exists():
-        logger.info(log_format.format_status(log_format.home_short(ssh_dir / "conf.d"), "存在しないためスキップ"))
+        logger.info(
+            log_format.format_status(
+                log_format.home_short(ssh_dir / "conf.d"), ("存在しないためスキップ。管理対象のSSH設定がないため対応不要。")
+            )
+        )
         return post_apply_outcome.PostApplyOutcome()
     changed_config = _generate_ssh_config(ssh_dir)
     changed_keys = _generate_authorized_keys(ssh_dir)

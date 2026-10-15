@@ -91,6 +91,50 @@ class TestUpdateClaudeSettings:
         result = _run(tmp_path, managed, {"dialogExpiry": "5m"})
         assert result["dialogExpiry"] == "never"
 
+    @pytest.mark.parametrize("platform", ["linux", "win32"])
+    @pytest.mark.parametrize("existing", [False, True], ids=["new", "existing"])
+    def test_run_disables_host_instructions_and_preserves_unmanaged_settings(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        platform: str,
+        existing: bool,
+    ) -> None:
+        """通常の更新でホストの追加指示を無効にし、既存値の保持と再適用を両OSで確認する。"""
+        managed = json.loads(_PROD_MANAGED_SETTINGS.read_text(encoding="utf-8"))
+        managed_config = json.loads(_PROD_MANAGED_CONFIG.read_text(encoding="utf-8"))
+        settings_path = _setup_run_paths(tmp_path, monkeypatch, managed, managed_config)
+        for suffix in ("posix", "win32"):
+            shutil.copyfile(
+                _PROD_MANAGED_SETTINGS.with_suffix(f".{suffix}.json"),
+                tmp_path / "dotfiles-root" / "share" / f"claude_settings_json_managed.{suffix}.json",
+            )
+        monkeypatch.setattr(mod.sys, "platform", platform)
+        unmanaged = {"model": "custom-model", "mcpServers": {"custom": {"command": "custom-mcp"}}}
+        config_path = tmp_path / "claude.json"
+        if existing:
+            settings_path.write_text(
+                json.dumps({"outputStyle": "Explanatory", "includeGitInstructions": True, **unmanaged}),
+                encoding="utf-8",
+            )
+            config_path.write_text(json.dumps({"customAuthentication": "preserved"}), encoding="utf-8")
+
+        first = mod.run()
+        settings = json.loads(settings_path.read_text(encoding="utf-8"))
+        config = json.loads(config_path.read_text(encoding="utf-8"))
+        assert first.failure is None
+        assert settings["outputStyle"] == "default"
+        assert settings["includeGitInstructions"] is False
+        if existing:
+            assert all(settings[key] == value for key, value in unmanaged.items())
+            assert config["customAuthentication"] == "preserved"
+
+        second = mod.run()
+        assert second.failure is None
+        assert not second.changed
+        assert json.loads(settings_path.read_text(encoding="utf-8")) == settings
+        assert json.loads(config_path.read_text(encoding="utf-8")) == config
+
     def test_managed_commit_attribution_uses_host_identity_without_enabling_other_attribution(self, tmp_path: Path):
         """commit帰属だけを配布し、session URLとPRの既定動作は変更しない。"""
         managed = json.loads(_PROD_MANAGED_SETTINGS.read_text(encoding="utf-8"))

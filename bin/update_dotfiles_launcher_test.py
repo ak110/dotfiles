@@ -5,6 +5,7 @@ import pathlib
 import shutil
 import subprocess
 import sys
+from collections.abc import Callable
 
 import platformdirs
 import pytest
@@ -15,6 +16,7 @@ _WINDOWS_LAUNCHER = _ROOT / "bin" / "update-dotfiles.cmd"
 _LINUX_ONLY = pytest.mark.skipif(sys.platform == "win32", reason="BashランチャーはLinuxで検証する")
 _UPDATE_WARNING = (
     "uvの自己更新に失敗しました。既存のuvでdotfiles更新を実行し、次回のupdate-dotfiles起動時に自己更新を再試行します。"
+    "対応不要（dotfilesの更新処理は継続しました）。"
 )
 
 # 実更新中にcmd.exeが読み直す位置を再現する、block化前の公開ランチャー。
@@ -33,6 +35,20 @@ if not "%AGENT_TOOLKIT_PROCESS_LOOP_SESSION%"=="1" (
 )
 "%UV%" run --no-project --script "%SCRIPT_DIR%\\libexec\\update_dotfiles.py" %*
 """
+_LOGS_WINDOWS_PREFIX = _LEGACY_WINDOWS_PREFIX.replace(
+    'if not "%AGENT_TOOLKIT_PROCESS_LOOP_SESSION%"',
+    'if not "%~1"=="logs" if not "%AGENT_TOOLKIT_PROCESS_LOOP_SESSION%"',
+)
+
+
+@pytest.mark.parametrize("prefix", [_LEGACY_WINDOWS_PREFIX, _LOGS_WINDOWS_PREFIX], ids=["legacy", "logs"])
+def test_windows_replacement_resumes_at_exit_capture(prefix: str) -> None:
+    """公開済みbatchの再開位置から更新を重複実行せず終了状態を取得する。"""
+    resume = len(prefix.replace("\n", "\r\n").encode("cp932"))
+    remainder = _WINDOWS_LAUNCHER.read_bytes()[resume:].decode("cp932")
+    commands = [line for line in remainder.splitlines() if line.strip() and not line.startswith("rem ")]
+
+    assert commands[0] == 'call set "UPDATE_DOTFILES_EXIT=%%ERRORLEVEL%%"'
 
 
 def _write_fake_uv(path: pathlib.Path, name: str) -> None:
@@ -258,9 +274,12 @@ def test_logs_public_launcher_reads_saved_log_without_writing_state(
         pytest.param("logs", marks=pytest.mark.skipif(os.name != "nt", reason="旧batchの読取位置はcmd.exeで検証する")),
     ],
 )
-def test_launcher_replacement_preserves_update_exit(tmp_path: pathlib.Path, version: str, run_exit: int) -> None:
+def test_launcher_replacement_preserves_update_exit(
+    tmp_path: pathlib.Path, version: str, run_exit: int, host_environ: Callable[[], dict[str, str]]
+) -> None:
     """更新中の自身の書換え後も、新旧ランチャーが更新処理の終了コードを返す。"""
-    native_path = os.pathsep.join(part for part in os.environ["PATH"].split(os.pathsep) if pathlib.Path(part).name != "shims")
+    environment = host_environ()
+    native_path = os.pathsep.join(part for part in environment["PATH"].split(os.pathsep) if pathlib.Path(part).name != "shims")
     uv = shutil.which("uv", path=native_path)
     assert uv is not None
     home = tmp_path / "home"
@@ -271,20 +290,20 @@ def test_launcher_replacement_preserves_update_exit(tmp_path: pathlib.Path, vers
     launcher.parent.mkdir()
     current = (_WINDOWS_LAUNCHER if os.name == "nt" else _LAUNCHER).read_bytes()
     legacy = (_LEGACY_WINDOWS_PREFIX + "exit /b %ERRORLEVEL%\n").replace("\n", "\r\n").encode("cp932")
-    logs = legacy.replace(
-        b'if not "%AGENT_TOOLKIT_PROCESS_LOOP_SESSION%"',
-        b'if not "%~1"=="logs" if not "%AGENT_TOOLKIT_PROCESS_LOOP_SESSION%"',
-    )
+    logs = (_LOGS_WINDOWS_PREFIX + "exit /b %ERRORLEVEL%\n").replace("\n", "\r\n").encode("cp932")
     launcher.write_bytes({"current": current, "legacy": legacy, "logs": logs}[version])
     launcher.chmod(0o755)
     replacement = current if version != "current" else b"@echo off\r\nexit /b 99\r\n"
     libexec = tmp_path / "libexec"
     libexec.mkdir()
+    calls = tmp_path / "update-calls"
     (libexec / "update_dotfiles.py").write_text(
-        f"import pathlib\npathlib.Path({str(launcher)!r}).write_bytes({replacement!r})\nraise SystemExit({run_exit})\n",
+        "import pathlib\n"
+        f"with pathlib.Path({str(calls)!r}).open('a', encoding='utf-8') as stream:\n"
+        "    stream.write('update\\n')\n"
+        f"pathlib.Path({str(launcher)!r}).write_bytes({replacement!r})\nraise SystemExit({run_exit})\n",
         encoding="utf-8",
     )
-    environment = os.environ.copy()
     environment.update(
         {"HOME": str(home), "USERPROFILE": str(home), "UV_PYTHON": sys.executable, "AGENT_TOOLKIT_PROCESS_LOOP_SESSION": "1"}
     )
@@ -294,6 +313,7 @@ def test_launcher_replacement_preserves_update_exit(tmp_path: pathlib.Path, vers
 
     assert launcher.read_bytes() == replacement
     assert result.returncode == run_exit, result.stdout + result.stderr
+    assert calls.read_text(encoding="utf-8").splitlines() == ["update"]
 
 
 @_LINUX_ONLY
@@ -303,7 +323,8 @@ def test_path_uv_is_not_used_when_native_uv_is_absent(tmp_path: pathlib.Path) ->
 
     assert result.returncode == 127
     assert not calls
-    assert "公式インストーラーでuvを導入してください" in result.stderr
+    assert "https://docs.astral.sh/uv/getting-started/installation/" in result.stderr
+    assert "update-dotfilesを再実行してください" in result.stderr
 
 
 @_LINUX_ONLY
@@ -313,7 +334,8 @@ def test_missing_uv_returns_127(tmp_path: pathlib.Path) -> None:
 
     assert result.returncode == 127
     assert not calls
-    assert "公式インストーラーでuvを導入してください" in result.stderr
+    assert "https://docs.astral.sh/uv/getting-started/installation/" in result.stderr
+    assert "update-dotfilesを再実行してください" in result.stderr
 
 
 def test_windows_launcher_preserves_encoding_and_uv_contract() -> None:
@@ -323,7 +345,7 @@ def test_windows_launcher_preserves_encoding_and_uv_contract() -> None:
     content = raw.decode("cp932")
 
     native = 'set "UV=%USERPROFILE%\\.local\\bin\\uv.exe"'
-    missing = 'if not exist "%UV%" ('
+    missing = 'if not exist "%UV%" goto missing_uv'
     update_state = 'set "UV_SELF_UPDATE_FAILED=0"'
     process_loop_guard = 'if not "%~1"=="logs" if not "%AGENT_TOOLKIT_PROCESS_LOOP_SESSION%"=="1" ('
     update = '"%UV%" self update'

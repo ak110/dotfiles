@@ -440,7 +440,7 @@ class TestEditNoArg:
         def fake_run(cmd: list[str], *_args: object, **kwargs: object) -> subprocess.CompletedProcess[bytes]:  # pylint: disable=unused-argument
             if cmd[0] == "fake-editor":
                 # 新設計ではエディターへ渡されるのは対象ファイルのスナップショットを
-                # 複製した一時ファイルのため、元ファイルではなくcmd[1]を書き換える。
+                # 複製した一時ファイルのため、cmd[1]を書き換える。
                 # 対象選択（最終追加分）の検証はcommit対象の相対パスで行う。
                 editor_path = pathlib.Path(cmd[1])
                 content = editor_path.read_text(encoding="utf-8")

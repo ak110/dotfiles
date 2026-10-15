@@ -141,7 +141,7 @@ def make_command_stubs(
             "#!/bin/sh\n"
             'printf \'uv %s\\n\' "$*" >> "$CLI_STUB_LOG"\n'
             'if [ "$#" -lt 8 ] || [ "$1" != run ] || [ "$2" != --no-config ] || '
-            '[ "$3" != --no-project ] || [ "$4" != --python ] || [ "$5" != 3 ] || '
+            '[ "$3" != --no-project ] || [ "$4" != --python ] || [ "$5" != 3.15 ] || '
             '[ "$6" != python ] || [ "$7" != - ]; then\n'
             "    exit 8\n"
             "fi\n"

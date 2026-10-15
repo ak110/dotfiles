@@ -1,7 +1,7 @@
-"""Claude Code・Codex plugin agent-toolkit: UserPromptSubmitセッション状態記録と応答契約注入。
+"""Claude Code・Codex plugin agent-toolkit: UserPromptSubmitでセッション状態を記録し、応答の契約を注入する。
 
 ホスト別コマンド形式（Claude Codeは`/agent-toolkit:<name>`・`/<name>`、
-Codexは`$agent-toolkit:<name>`・`$<name>`）での実際に可能な手動スキル起動を検出し、
+Codexは`$agent-toolkit:<name>`・`$<name>`）で発話した手動のスキル起動を検出し、
 対応するセッション状態フラグを立てる。
 既存のPostToolUse(Skill)経由の記録では捕捉できない手動起動を補完する。
 
@@ -19,14 +19,14 @@ process-wi手動起動セッションでは`process-wi`の固定値を優先す�
 
 セッション開始後と会話圧縮後で`agent-toolkit:user-confirmation-and-report`がまだ起動されていない間は、
 実ユーザー発話へ同スキルの起動を促す注記を返す（Codexでは文脈1つにつき1回）。
-通常発話へ返す発話の内容を現物で確かめる手順を示す注記は、直前の通常発話からの経過時間が閾値以上の場合に返す。
+通常発話へ返す、発話の内容を現物で確かめる手順を示す注記は、直前の通常発話からの経過時間が閾値以上の場合に返す。
 全角の連続した感嘆符を含む実ユーザー発話では、経過時間によらず`agent-toolkit:user-confirmation-and-report`の「認識合わせ」を促す。
 例示の語（「例えば」「たとえば」「例として」）と調査を求める語（「確認」「調査」「見直」など）を併せ持つ
 実ユーザー発話では、経過時間と状態によらず、`agent-toolkit:user-confirmation-and-report`の
 `SKILL.md`「原文の保持と取り込み」の範囲語か開放列挙と例示を併せた調査依頼の項と、
 `agent-toolkit:delegation`の`references/routing.md`の所在を示す。判定はコードブロック、インラインコードおよび
-引用行を除いた本文の部分文字列の一致だけで行い、範囲語の有無は判定に含めない（「など」「とか」のような
-一般的な語に頼り、条件に加えても発火がほとんど減らないため）。発話がその項に当たるかの判断は受領側に残し、
+引用行を除いた本文の部分文字列の一致だけで行い、範囲語の有無は判定に含めない（範囲語は「など」「とか」のような
+一般的な語で表され、条件に加えても発火がほとんど減らないため）。発話がその項に当たるかの判断は受領側に残し、
 本フックは発話の意味を判断しない。
 成立した注記を1つの`additionalContext`へまとめる。
 
@@ -46,47 +46,14 @@ process-wi手動起動セッションでは`process-wi`の固定値を優先す�
 
 from __future__ import annotations
 
-# 関数の実行時までだけ使う依存を、Python 3.15では使用時まで読み込まない。旧Pythonでは通常のimportとなる。
-__lazy_modules__ = {
-    "agent_toolkit._common",
-    "agent_toolkit._common.delegated_session",
-    "agent_toolkit._common.periodic_recheck",
-    "agent_toolkit._common.process_loop_session",
-    "agent_toolkit._common.session_state",
-    "agent_toolkit._hooks",
-    "agent_toolkit._hooks.host",
-    "agent_toolkit._plan.path_kinds",
-    "time",
-}
-
 import json
 import os
 import pathlib
 import re
 import sys
-import time
 
-from agent_toolkit._common import automated_prompt  # noqa: E402  # pylint: disable=wrong-import-position,import-error
-from agent_toolkit._common.delegated_session import (
-    is_delegated,  # noqa: E402  # pylint: disable=wrong-import-position,import-error
-)
-from agent_toolkit._common.periodic_recheck import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
-    LEGACY_PERIODIC_RECHECK_MARKER,
-    PERIODIC_RECHECK_MARKER,
-)
-from agent_toolkit._common.process_loop_session import (
-    is_process_loop_session,  # noqa: E402  # pylint: disable=wrong-import-position,import-error
-)
-from agent_toolkit._common.session_state import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
-    claim_session_title,
-    read_state,
-    update_state,
-)
-
-# pylint: disable-next=wrong-import-position,import-error
-from agent_toolkit._hooks import plugin_resources as _plugin_resources
-from agent_toolkit._hooks import termination_evidence
-from agent_toolkit._hooks.host import is_codex_payload  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+# 関数の実行時にだけ使う依存は、使用時まで読み込まない。
+lazy import time
 
 # pylint: disable-next=wrong-import-position,import-error
 from agent_toolkit._hooks.notice import formatter as _notice_formatter  # noqa: E402
@@ -97,8 +64,27 @@ from agent_toolkit._hooks.posttooluse import (  # noqa: E402  # pylint: disable=
     USER_CONFIRMATION_SKILL_NAMES,
     VERIFICATION_NOTICE_BODY,
     clear_user_confirmation_pending,
+    content_notices,
 )
-from agent_toolkit._plan.path_kinds import is_plan_main_file  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+lazy from agent_toolkit._common import automated_prompt  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+lazy from agent_toolkit._common.delegated_session import (
+    is_delegated,  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+)
+lazy from agent_toolkit._common.periodic_recheck import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+    LEGACY_PERIODIC_RECHECK_MARKER,
+    PERIODIC_RECHECK_MARKER,
+)
+lazy from agent_toolkit._common.process_loop_session import (
+    is_process_loop_session,  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+)
+lazy from agent_toolkit._common.session_state import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+    claim_session_title,
+    read_state,
+    update_state,
+)
+lazy from agent_toolkit._hooks import termination_evidence
+lazy from agent_toolkit._hooks.host import is_codex_payload  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+lazy from agent_toolkit._plan.path_kinds import is_plan_main_file  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 
 
 def _extend_with_short_names(names: frozenset[str]) -> frozenset[str]:
@@ -131,34 +117,6 @@ _USER_CONFIRMATION_NOTICE_BODY = (
     "この発話は、セッション開始後か会話圧縮後で、`agent-toolkit:user-confirmation-and-report`の内容が文脈に無い状態で届いた。"
 )
 _USER_CONFIRMATION_NOTICE_FIX = "応答と作業の着手より前に`agent-toolkit:user-confirmation-and-report`をスキル機能で起動する。"
-_REALIGN_NOTICE_BODY = (
-    "ユーザー発話に全角の連続した「！！」が含まれている。"
-    "次の操作: `agent-toolkit:user-confirmation-and-report`の「認識合わせ」に従い、目標と解決したい問題の理解を確かめる。"
-)
-_EXAMPLE_WORDS = ("例えば", "たとえば", "例として")
-_INVESTIGATION_WORDS = ("確認", "調査", "調べ", "見直", "点検", "洗い出", "探し", "チェック", "レビュー")
-# フェンス付きコードブロック、インラインコードおよび`>`で始まる引用行は、ユーザー自身の依頼文ではなく
-# 貼り付けた素材であるため、例示の語と調査を求める語の判定から外す。
-_QUOTED_MATERIAL_RE = re.compile(r"^[ \t]*(```|~~~)[\s\S]*?^[ \t]*\1[^\n]*$|`[^`\n]+`|^[ \t]*>[^\n]*$", re.MULTILINE)
-
-
-def _example_investigation_notice(prompt: str) -> str | None:
-    """例示の語と調査を求める語を併せ持つ発話へ、範囲語と例示を併せた依頼の項の所在を示す注記を返す。
-
-    該当する発話が範囲語か開放列挙を伴う調査の依頼かは受領側が判断し、本フックは字面の一致だけで返す。
-    """
-    text = _QUOTED_MATERIAL_RE.sub("", prompt)
-    if not any(word in text for word in _EXAMPLE_WORDS) or not any(word in text for word in _INVESTIGATION_WORDS):
-        return None
-    utterance = _plugin_resources.skill_reference("user-confirmation-and-report", "SKILL.md")
-    routing = _plugin_resources.skill_reference("delegation", "references/routing.md")
-    body = (
-        "この発話は例示の語と、調査・確認を求める語を含む。"
-        "範囲語か開放列挙を併せ持つ調査、見直し、点検の依頼である場合は、自ら調査へ着手する前に"
-        f"{utterance}「原文の保持と取り込み」の、範囲語か開放列挙と例示か理由を併せて示した依頼の項を適用する。"
-        f"例示を除いた独立した調査を委ねる手段は{routing}「コンテキスト消費が大きい調査の切り出し」に従う。"
-    )
-    return _llm_notice(body, tag="notice")
 
 
 def _is_harness_message(prompt: str) -> bool:
@@ -290,7 +248,7 @@ def main(payload_text: str) -> int:
     """エントリポイント。終了コードは常に0（fail-open原則）。"""
     try:
         payload = json.loads(payload_text)
-    except (json.JSONDecodeError, ValueError):
+    except json.JSONDecodeError, ValueError:
         return 0
 
     if not isinstance(payload, dict):
@@ -321,7 +279,7 @@ def main(payload_text: str) -> int:
     # スラッシュコマンドで始まる発話もユーザー自身の入力であり、注記の対象に含める。
     # 除外するのは機械が生成してユーザー入力欄へ入る本文だけとする。
     is_normal_prompt = not machine_injected
-    # 発火条件は受領側が除去できないため、いずれも是正を求める区分ではなく情報提示として配送する。
+    # 発火条件は受領側が除去できないため、いずれも情報提示の区分で配送する。
     notices: list[str] = []
     if is_normal_prompt and first_line.startswith(command_prefix):
         command = first_line[len(command_prefix) :].split(maxsplit=1)
@@ -332,10 +290,8 @@ def main(payload_text: str) -> int:
         notices.append(_user_confirmation_notice())
     if is_normal_prompt and _claim_verification_notice(session_id, time.time()):
         notices.append(_llm_notice(VERIFICATION_NOTICE_BODY, tag=_VERIFICATION_NOTICE_TAG))
-    if is_normal_prompt and "！！" in prompt:
-        notices.append(_llm_notice(_REALIGN_NOTICE_BODY, tag="notice"))
-    if is_normal_prompt and (example_notice := _example_investigation_notice(prompt)) is not None:
-        notices.append(example_notice)
+    if is_normal_prompt:
+        notices.extend(content_notices(prompt, "user_prompt_submit"))
     additional_context = "\n".join(notices) if notices else None
 
     if first_line.startswith(command_prefix):

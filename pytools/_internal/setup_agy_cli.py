@@ -4,15 +4,13 @@
 導入の失敗は`post_apply_outcome.PostApplyOutcome`の分類に従い、警告1行を出力してスキップと数える。
 """
 
-# ヘルプや他の処理では不要な依存を、使用時まで遅延する。旧Pythonでは通常のimportとなる。
-__lazy_modules__ = {"httpx"}
-
 import logging
 import os
 import sys
 from pathlib import Path
 
-import httpx
+# ヘルプや他の処理で使わない依存は、使用時まで読み込まない。
+lazy import httpx
 
 from pytools._internal import common, log_format, post_apply_outcome, setup_cli_common
 
@@ -37,7 +35,9 @@ def run(client: httpx.Client | None = None) -> post_apply_outcome.PostApplyOutco
     """未導入の場合だけ公式インストーラーでAntigravity CLIを導入する。"""
     launcher = _launcher_path()
     if launcher.is_file():
-        logger.info(log_format.format_status(_TAG, "導入済みのため実行しない（更新はAntigravity CLIが自動で行う）"))
+        logger.info(
+            log_format.format_status(_TAG, "導入済みのため実行しない（更新はAntigravity CLIが自動で行う）。対応不要"),
+        )
         return post_apply_outcome.PostApplyOutcome()
     result, reason = setup_cli_common.run_official_installer(
         client,
@@ -48,11 +48,16 @@ def run(client: httpx.Client | None = None) -> post_apply_outcome.PostApplyOutco
     )
     if result is None or result.returncode != 0:
         detail = reason or common.format_cli_error(result)
-        logger.warning(log_format.format_status(_TAG, f"導入に失敗: {detail}"))
+        logger.warning(log_format.format_status(_TAG, f"導入に失敗: {detail}。`update-dotfiles`を再実行する"))
         return post_apply_outcome.PostApplyOutcome()
     verification = common.run_subprocess([str(launcher), "--version"], timeout=30, tag=_TAG)
     if verification is None or verification.returncode != 0:
-        logger.warning(log_format.format_status(_TAG, f"導入後の確認に失敗: {common.format_cli_error(verification)}"))
+        logger.warning(
+            log_format.format_status(
+                _TAG,
+                f"導入後の確認に失敗: {common.format_cli_error(verification)}。`update-dotfiles`を再実行する",
+            ),
+        )
         return post_apply_outcome.PostApplyOutcome()
     setup_cli_common.prepend_path(launcher.parent)
     return post_apply_outcome.PostApplyOutcome(changed=True)

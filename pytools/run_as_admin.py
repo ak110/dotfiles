@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 def main() -> None:
     """コマンドを管理者権限で起動するエントリポイント。"""
     if sys.platform != "win32":
-        print("run-as-admin は Windows 専用です", file=sys.stderr)
+        print(("run-as-admin は Windows 専用です。WindowsでrunAsAdminを同じ引数で実行してください。"), file=sys.stderr)
         sys.exit(1)
     parser = argparse.ArgumentParser(description="コマンドを管理者権限で起動する")
     parser.add_argument("--wait", action="store_true", help="子プロセスの終了を待機する")
@@ -36,9 +36,17 @@ def run_elevated(command: str, args: list[str], *, wait: bool = False) -> None:
     shell32 = getattr(ctypes, "windll").shell32  # noqa: B009
     result = shell32.ShellExecuteW(None, "runas", command, params, None, SW_SHOWNORMAL)
     if int(result) <= 32:
-        raise OSError(f"ShellExecuteW failed: code={int(result)}")
+        raise OSError(
+            f"ShellExecuteW failed: code={int(result)}。"
+            f"実行ファイル{command}の存在と権限を確認し、UACの昇格を許可して再実行してください。"
+        )
     if wait:
-        logger.warning("--wait は未対応 (ShellExecuteW の HINSTANCE から HANDLE を取得できないため)")
+        logger.warning(
+            "--wait は未対応 (ShellExecuteW の HINSTANCE から HANDLE "
+            "を取得できないため)。"
+            "終了を待たずに戻ります。"
+            "起動したアプリ側で完了を確認してください。"
+        )
 
 
 if __name__ == "__main__":

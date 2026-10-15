@@ -7,6 +7,7 @@ from __future__ import annotations
 import argparse
 import contextlib
 import dataclasses
+import os
 import pathlib
 import subprocess
 import tempfile
@@ -180,7 +181,7 @@ def test_session_preparation_matches_reference_model(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> None:
-    """resumeとworktree所有権から、準備成功前に子の実行先を返さない。"""
+    """resumeの有無と対象・worktree指定の組合せによらず、worktreeの準備に成功するまで子の実行先を返さない。"""
     prepared = tmp_path / "prepared"
     calls: list[str] = []
 
@@ -259,6 +260,7 @@ def test_process_loop_event_sequences_match_reference_model(
     )
     monkeypatch.setattr(process_loop._process_loop_log, "append", lambda *_args, **_kwargs: None)
     monkeypatch.setattr(_pl_alerts, "check_process_loop_alerts", lambda *_args, **_kwargs: (None, 0, 0))
+    monkeypatch.setattr(_pl_watch, "_other_sessions_active", lambda: False)
 
     launches = 0
     updates = 0
@@ -310,6 +312,8 @@ def test_process_loop_event_sequences_match_reference_model(
 
     def consume_abort() -> bool:
         nonlocal current_event, current_index, phase, abort_consumptions
+        if phase == "body":
+            return False
         if phase == "after_child":
             should_abort = current_event == "child_abort"
             if should_abort:
@@ -377,6 +381,8 @@ def test_process_loop_event_sequences_match_reference_model(
 
     def run_child(_argv: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
         nonlocal launches, phase
+        if _argv[:1] == ["git"]:
+            return subprocess.CompletedProcess(_argv, 0, stdout=str(repo / ".git"), stderr="")
         assert current_event is not None
         env = kwargs["env"]
         assert isinstance(env, dict)
@@ -470,3 +476,47 @@ def test_restart_consumes_resume_and_one_shot_markers_once(tmp_path: pathlib.Pat
     assert "session" not in args
     assert args.count(_pl_update._INTERNAL_MISE_REFRESHED_ARG) == 1
     assert args.count(_pl_update._INTERNAL_DOTFILES_UPDATED_ARG) == 1
+
+
+@settings(max_examples=60, deadline=None, suppress_health_check=[HealthCheck.function_scoped_fixture])
+@given(
+    activity=st.booleans(),
+    uwi_age=st.integers(min_value=0, max_value=1200),
+    elapsed=st.integers(min_value=0, max_value=1200),
+    answered=st.booleans(),
+    target_included=st.booleans(),
+)
+def test_start_conditions_release_together(
+    activity: bool,
+    uwi_age: int,
+    elapsed: int,
+    answered: bool,
+    target_included: bool,
+    tmp_path: pathlib.Path,
+) -> None:
+    """活動による抑止と未回答UWIによる抑止のどちらかが成立する間は開始せず、期限は残り時間の長い方とし、順次加算しない。"""
+    case = pathlib.Path(tempfile.mkdtemp(dir=tmp_path))
+    inbox = case / "inbox"
+    inbox.mkdir()
+    question = inbox / "question.md"
+    text = "---\ntype: uwi\ntarget_repo: github.com/example/project\n---\n\n質問\n"
+    if answered:
+        text += "\n## 回答\n承認\n"
+    question.write_text(text, encoding="utf-8")
+    initial_time = 10000
+    os.utime(question, (initial_time - uwi_age, initial_time - uwi_age))
+    gate = _pl_watch.StartGate(case)
+    targets = {"github.com/example/project"} if target_included else {"github.com/other/project"}
+    gate.evaluate(targets, activity=activity, now=initial_time)
+    actual = gate.evaluate(targets, activity=activity, now=initial_time + elapsed)
+    # 独立モデルは経過時間だけを使い、実装の期限や理由を入力に使わない。
+    activity_blocked = activity and elapsed < 600
+    answers_blocked = target_included and not answered and uwi_age + elapsed < 600
+    assert bool(actual.reasons) == (activity_blocked or answers_blocked)
+    remaining: list[int] = []
+    if activity_blocked:
+        remaining.append(600 - elapsed)
+    if answers_blocked:
+        remaining.append(600 - uwi_age - elapsed)
+    expected_deadline = initial_time + elapsed + max(remaining) if remaining else None
+    assert actual.deadline == expected_deadline

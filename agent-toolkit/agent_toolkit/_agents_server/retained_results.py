@@ -23,7 +23,7 @@ def read_retained_result(
     path = results_directory(root_session_id, state_root) / f"{session_id}.json"
     try:
         payload: Any = json.loads(path.read_text(encoding="utf-8"))
-    except (FileNotFoundError, OSError, UnicodeError, json.JSONDecodeError):
+    except FileNotFoundError, OSError, UnicodeError, json.JSONDecodeError:
         return None
     if not isinstance(payload, dict) or payload.get("status") not in TERMINAL_STATUSES:
         return None
@@ -41,7 +41,7 @@ def take_result(
 ) -> tuple[dict[str, Any] | None, str | None]:
     """所有者が一致するか確かめ、CLI用の退避先があれば保存後に原本を回収する。
 
-    回収後の公開境界で返す項目を限定し、内部の所有者・保持状態・時刻を保存へ残す。
+    回収後に呼び出し元へ返す項目を公開する項目に限定し、内部の所有者・保持状態・時刻は退避先へ保存した記録だけに残す。
     起動時の`label`は、依頼と結果の対応に使う。
     呼び出し元が`session_id`から依頼名への対応表を持たずに、どの依頼の結果かを判別できるようにするためである。
     レビューを目的とするsessionの完了結果へは採否確定の次の操作を加える。
@@ -75,7 +75,7 @@ def take_result(
                 else:
                     try:
                         original = json.loads(path.read_text(encoding="utf-8"))
-                    except (OSError, UnicodeError, json.JSONDecodeError):
+                    except OSError, UnicodeError, json.JSONDecodeError:
                         original = None
                     if original == payload:
                         path.unlink()

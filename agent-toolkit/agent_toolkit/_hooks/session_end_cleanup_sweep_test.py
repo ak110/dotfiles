@@ -1,4 +1,4 @@
-"""SessionEndからのagents_server共有状態掃引を検証する。"""
+"""SessionEndがagents_serverの共有状態を掃引する処理を検証する。"""
 
 from __future__ import annotations
 

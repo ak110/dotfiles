@@ -25,11 +25,11 @@ import threading
 import time
 import typing
 
-from agent_toolkit._atk.wi import entries as _wi_entries
+from agent_toolkit._atk.wi import constants as wi_constants
 from agent_toolkit._atk.wi import frontmatter
 
 _TRUSTED_AGE_NS = 2_000_000_000
-"""解析結果を信用するために必要な、走査開始時刻と更新時刻の差。秒単位の精度とFATの2秒精度を覆う。"""
+"""解析結果を信用するために必要な、走査開始時刻と更新時刻の差。更新時刻の精度が1秒または2秒（FAT）のファイルシステムでも書き換えを区別できる値とする。"""
 
 
 @dataclasses.dataclass(frozen=True)
@@ -66,7 +66,7 @@ class _CacheEntry:
     size: int
     parsed: _ParsedFile
     trusted: bool
-    """更新時刻の精度の範囲外で解析したため、無効化キーの一致だけで再利用できるか。"""
+    """更新から2秒以上後に解析しており、無効化キーの一致だけで再利用できるか。"""
     updated_at: str
     """更新時刻のISO 8601表記。無効化キーが一致する間は同じ値になるため、解析結果とともに保持する。"""
 
@@ -138,7 +138,7 @@ class EntryIndex:
                         continue
                     parsed_frontmatter = frontmatter.parse_frontmatter(text)
                     metadata = parsed_frontmatter[0] if parsed_frontmatter is not None else {}
-                    kind = _wi_entries.entry_type_from_metadata(path, metadata) if parsed_frontmatter is not None else None
+                    kind = wi_constants.normalized_wi_type(metadata.get("type"))
                     parsed = _ParsedFile(text=text, text_folded=text.casefold(), metadata=metadata, kind=kind)
                     cached = _CacheEntry(
                         mtime_ns=file_stat.st_mtime_ns,

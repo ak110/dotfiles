@@ -1,8 +1,8 @@
 r"""agent-toolkit pluginの自律終了Stopフック。
 
 環境変数`AGENT_TOOLKIT_PROCESS_LOOP_SESSION=1`と、process-loopが渡したセッションIDに
-一致する会話を対象とする。本フックは対象セッションに限り、`atk agents-exit-session`の
-起動されていないことを検知してそのターンの継続をblockし再促する。
+一致する会話を対象とする。本フックは対象セッションに限り、`atk agents-exit-session`が
+起動されていないことを検知し、そのターンの継続をblockして起動を再び促す。
 
 `atk agents-exit-session`起動の記録はpluginのPostToolUse
 （`agent-toolkit/agent_toolkit/_hooks/posttooluse.py`）が担い、`autonomous_exit_invoked`フラグへ
@@ -16,12 +16,12 @@ r"""agent-toolkit pluginの自律終了Stopフック。
    `autonomous_exit_invoked`を偽へ戻してblockし、作業の終端を確かめてから終了工程をやり直すよう求める
 4. `is_pending_async_work`が真: 非同期処理または未回収の終端結果が残るためapprove
 5. `autonomous_exit_invoked`が真: 呼び出し済みのためapprove
-6. 上記いずれでもない: blockして順序制約の再促文を返す
+6. 上記いずれでもない: blockし、終了工程の実行を再び促す本文を返す
 
-3の取り下げは、バックグラウンドタスクが残ったまま同じターン完了のFunction hooksが`/exit`を実行し、
+3の取り下げは、バックグラウンドタスクが残ったまま同じターンの完了時に動くFunction hooksが`/exit`を実行し、
 無人のセッションが「Background work is running」の確認画面で止まることを防ぐ。
 バックグラウンドタスクは停止すると途中の結果を失うため自動では止めず、本hookは終了要求を取り下げるだけとする。
-Stopは同じターン完了の`turn.complete`より先に発火するため、取り下げた要求で`/exit`は実行されない。
+Stopは同じターンの`turn.complete`より先に発火するため、取り下げた要求で`/exit`は実行されない。
 次のStopでは要求が`consumed`のため4がバックグラウンドタスクの残存をapproveし、作業の終了後は5・6が再実行を促す。
 
 `stop.py`が各判定に共通する連続blockの上限を管理する。
@@ -35,26 +35,18 @@ LLM宛て出力は`_hook_notice`のblock専用整形関数経由で整形し、
 委譲先での実行可否: 委譲先は最上位セッションの終了工程を実行できないため、hook入力と環境印で除外する。
 """
 
-# 関数の実行時までだけ使う依存を、Python 3.15では使用時まで読み込まない。旧Pythonでは通常のimportとなる。
-__lazy_modules__ = {
-    "agent_toolkit._atk.agents_exit_session",
-    "agent_toolkit._common.process_loop_session",
-    "agent_toolkit._common.session_state",
-    "agent_toolkit._hooks.agent_id",
-    "agent_toolkit._hooks.background_tasks",
-    "agent_toolkit._hooks.stop_session",
-}
-
 import os
 
-from agent_toolkit._atk.agents_exit_session import function_hook_paths
-from agent_toolkit._common.process_loop_session import is_process_loop_session
-from agent_toolkit._common.session_state import read_state, update_state
-from agent_toolkit._hooks.agent_id import is_main_agent_context
-from agent_toolkit._hooks.background_tasks import active_non_teammate_tasks, is_pending_async_work
 from agent_toolkit._hooks.notice import block_formatter as _block_notice_formatter
-from agent_toolkit._hooks.stop_session import append_stop_log
-from agent_toolkit._hooks.stop_session import parse_stop_session as _parse_stop_session
+
+# 関数の実行時にだけ使う依存は、使用時まで読み込まない。
+lazy from agent_toolkit._atk.agents_exit_session import function_hook_paths
+lazy from agent_toolkit._common.process_loop_session import is_process_loop_session
+lazy from agent_toolkit._common.session_state import read_state, update_state
+lazy from agent_toolkit._hooks.agent_id import is_main_agent_context
+lazy from agent_toolkit._hooks.background_tasks import active_non_teammate_tasks, is_pending_async_work
+lazy from agent_toolkit._hooks.stop_session import append_stop_log
+lazy from agent_toolkit._hooks.stop_session import parse_stop_session as _parse_stop_session
 
 # このスクリプトのhook識別子。
 _HOOK_ID = "autonomous_exit"
@@ -63,7 +55,7 @@ _HOOK_ID = "autonomous_exit"
 # セッション状態へ記録するフラグ名。
 _STATE_KEY = "autonomous_exit_invoked"
 
-# 本hookが実際に判定した入力だけを述べる再促文。
+# 終了工程の実行を再び促す本文。本hookが実際に判定した入力だけを述べる。
 # 起動元のCLIや起動時のスキル名、個々の工程の完了状態は判定していないため本文へ書かない。
 _REASON_BODY = """\
 このセッションには常駐ループの終了保証が適用される。

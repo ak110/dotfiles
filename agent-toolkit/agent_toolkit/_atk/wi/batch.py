@@ -479,7 +479,7 @@ def cmd_add_batch(
     now: datetime.datetime,
     home: pathlib.Path,
 ) -> None:
-    """`mq add --batch`: `show`形式のテキストを一括でinboxへ取り込む。
+    """`atk wi add --batch`: `show`形式のテキストを一括でinboxへ取り込む。
 
     入力は`--body-file`群、$EDITORのいずれか一方だけから収集する。
     remote同期失敗時は確定済みの入力をstderrへ再表示し、内容の消失を防ぐ。
