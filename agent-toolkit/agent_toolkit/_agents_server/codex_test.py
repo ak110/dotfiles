@@ -4,6 +4,7 @@
 # pylint: disable=protected-access
 
 import asyncio
+import contextlib
 
 # テストでは共有状態とバックエンドの内部境界も直接検証する。
 # pylint: disable=protected-access
@@ -12,8 +13,9 @@ import os
 import pathlib
 import shlex
 import shutil
+import subprocess
 import sys
-from collections.abc import Callable
+from collections.abc import Callable, Generator
 from types import SimpleNamespace
 from typing import Any, cast
 from unittest.mock import AsyncMock
@@ -35,6 +37,7 @@ from agent_toolkit._agents_server import (
 )
 from agent_toolkit._agents_server.notify import send_notification
 from agent_toolkit._atk import config as _atk_config
+from agent_toolkit._atk import managed_temp
 from agent_toolkit._common import inherited_venv, plugin_environment, session_registry, state_paths
 from agent_toolkit._testing.agents_server_support import (
     BlockingResumeCodexClient,
@@ -863,6 +866,125 @@ def test_copy_failure_falls_back_to_the_resolved_root(monkeypatch: pytest.Monkey
     monkeypatch.setattr(plugin_roots._managed_temp, "create_managed_temp", _fail)
 
     assert plugin_roots.resolve_stable_plugin_root(source) == source
+
+
+def _lease_plugin_source(base: pathlib.Path, version: str = "1.0.0") -> pathlib.Path:
+    root = _make_plugin_root(base, version, versioned=True, root_is_version=True)
+    (root / "payload.txt").write_text("起動した版", encoding="utf-8")
+    return root
+
+
+@contextlib.contextmanager
+def _running_process(command: list[str], environment: dict[str, str]) -> Generator[subprocess.Popen[str]]:
+    with subprocess.Popen(
+        command,
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        encoding="utf-8",
+        env=environment,
+    ) as process:
+        try:
+            yield process
+        finally:
+            if process.poll() is None:
+                process.kill()
+            process.communicate(timeout=30)
+
+
+def test_stable_plugin_root_shared_across_processes(
+    tmp_path: pathlib.Path,
+    host_environ: Callable[[], dict[str, str]],
+) -> None:
+    """独立プロセスと保持先からの起動が同じ実体を使い、最後の終了後に回収できる。"""
+    source = _lease_plugin_source(tmp_path / "distribution")
+    environment = host_environ()
+    for name in ("HOME", "XDG_STATE_HOME", "XDG_CACHE_HOME", "LOCALAPPDATA", "USERPROFILE"):
+        environment[name] = str(tmp_path / name.lower())
+    environment["PYTHONPATH"] = str(pathlib.Path(__file__).resolve().parents[2])
+    code = (
+        "from pathlib import Path; import sys, os, threading; "
+        "timer=threading.Timer(30, lambda: os._exit(3)); timer.daemon=True; timer.start(); "
+        "from agent_toolkit._agents_server.plugin_root import resolve_stable_plugin_root; "
+        "print(resolve_stable_plugin_root(Path(sys.argv[1])), flush=True); sys.stdin.readline()"
+    )
+    processes: list[subprocess.Popen[str]] = []
+    with contextlib.ExitStack() as stack:
+        roots = []
+        for requested in (source, source):
+            process = stack.enter_context(_running_process([sys.executable, "-c", code, str(requested)], environment))
+            processes.append(process)
+            assert process.stdout is not None
+            roots.append(pathlib.Path(process.stdout.readline().strip()))
+        assert roots[0] == roots[1]
+        assert roots[0] != source
+        shutil.rmtree(source)
+        nested = stack.enter_context(_running_process([sys.executable, "-c", code, str(roots[0])], environment))
+        processes.append(nested)
+        assert nested.stdout is not None
+        assert pathlib.Path(nested.stdout.readline().strip()) == roots[0]
+        cleanup_code = (
+            "from pathlib import Path; import sys; "
+            "from agent_toolkit._atk.managed_temp.cli import main; "
+            "sys.exit(main(['cleanup', '--path', sys.argv[1], '--force-remove']))"
+        )
+        area = roots[0].parent
+        for target in (area, roots[0]):
+            protected = subprocess.run(
+                [sys.executable, "-c", cleanup_code, str(target)],
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                env=environment,
+                timeout=30,
+                check=False,
+            )
+            assert protected.returncode == 2, protected.stderr
+        assert (roots[0] / "payload.txt").read_text(encoding="utf-8") == "起動した版"
+        for process in processes:
+            _, error = process.communicate("終了\n", timeout=30)
+            assert process.returncode == 0, error
+        cleaned = subprocess.run(
+            [sys.executable, "-c", cleanup_code, str(area)],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            env=environment,
+            timeout=30,
+            check=False,
+        )
+        assert cleaned.returncode == 0, cleaned.stderr
+        assert not area.exists()
+
+
+def test_copy_failure_is_not_reused(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """コピー途中の失敗物を回収し、次の解決では完成した実体を使用する。"""
+    source = _lease_plugin_source(tmp_path / "broken")
+
+    def fail_copy(_src: pathlib.Path, dst: pathlib.Path, **_kwargs: object) -> None:
+        dst.mkdir()
+        (dst / "partial").touch()
+        raise OSError("copy interrupted")
+
+    with monkeypatch.context() as patch:
+        patch.setattr(shutil, "copytree", fail_copy)
+        assert plugin_roots.resolve_stable_plugin_root(source) == source
+    assert not managed_temp.list_managed_temp("agents-server-plugin-root")
+    resolved = plugin_roots.resolve_stable_plugin_root(source)
+    assert resolved != source
+    assert (resolved / "payload.txt").read_text(encoding="utf-8") == "起動した版"
+
+
+def test_distinct_sources_and_versions_have_separate_roots(tmp_path: pathlib.Path) -> None:
+    """配布元または版が異なる実体を、それぞれ独立に保持する。"""
+    roots = [
+        plugin_roots.resolve_stable_plugin_root(_lease_plugin_source(tmp_path / "first", "1.0.0")),
+        plugin_roots.resolve_stable_plugin_root(_lease_plugin_source(tmp_path / "second", "1.0.0")),
+        plugin_roots.resolve_stable_plugin_root(_lease_plugin_source(tmp_path / "first", "2.0.0")),
+    ]
+    assert len(set(roots)) == 3
+    assert all((root / "payload.txt").read_text(encoding="utf-8") == "起動した版" for root in roots)
 
 
 def test_agents_server_config_uses_the_stable_plugin_root() -> None:

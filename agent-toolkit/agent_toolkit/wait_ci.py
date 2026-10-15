@@ -19,7 +19,6 @@ import math
 import os
 import pathlib
 import re
-import shlex
 import signal
 import subprocess
 import sys
@@ -32,6 +31,7 @@ from agent_toolkit._atk import outcome as _outcome
 from agent_toolkit._common import json_command as _json_command
 from agent_toolkit._common import next_action as _next_action
 from agent_toolkit._git import command as _git_command
+from agent_toolkit._git import forge_cli as _forge_cli
 from agent_toolkit._git import remote as _git_remote
 
 # 以下の終了コードはCLIの公開インターフェース（ユーザーが`echo $?`等で参照する契約）であり、
@@ -87,21 +87,7 @@ def _finish(code: int, next_action: str) -> int:
 def _failure_next_action(record: RunRecord | JobRecord, record_type: str, repository: str, forge: str) -> str:
     """検出済みの対象と状態から、待機を追加せず成立するログ取得を案内する。"""
     identifier = str(record.get("databaseId", "?"))
-    if forge == "gitlab":
-        job_id = identifier if record_type == "job" else "<job id>"
-        return (
-            f"表示したURLで失敗jobを確かめ、`glab ci trace {job_id} --repo {shlex.quote(repository)}`"
-            "でログを取得して原因を調べる"
-        )
-    target = _parse_repository(repository)
-    if record_type == "job":
-        command = ["gh", "api", f"repos/{target.project_path}/actions/jobs/{identifier}/logs", "--allow-escape-sequences"]
-        if target.hostname is not None:
-            command.extend(["--hostname", target.hostname])
-        return f"`{shlex.join(command)}`で全jobログをmanaged-tempの中のファイルへ保存し、失敗箇所を読んで原因を調べる"
-    repo = f"{target.hostname}/{target.project_path}" if target.hostname else target.project_path
-    command = ["gh", "run", "view", identifier, "--repo", repo, "--log-failed"]
-    return f"`{shlex.join(command)}`で失敗ログを取得して原因を調べる"
+    return _forge_cli.failure_next_action(forge, repository, identifier, job=record_type == "job")
 
 
 class RunListError(RuntimeError):
@@ -278,7 +264,7 @@ def _glab_pipeline_list(repository: str, ref: str, sha: str, subprocess_timeout:
             "ci",
             "list",
             "--repo",
-            repository,
+            _forge_cli.glab_repository(repository),
             "--ref",
             _short_ref(ref),
             "--sha",
@@ -290,6 +276,7 @@ def _glab_pipeline_list(repository: str, ref: str, sha: str, subprocess_timeout:
         ],
         subprocess_timeout,
         "glab ci list",
+        env=_forge_cli.glab_environment(repository),
     )
     if not isinstance(payload, list) or not all(isinstance(item, dict) for item in payload):
         raise RunListError(f"glab ci list returned unexpected JSON shape: {payload!r}")
@@ -332,9 +319,9 @@ def _glab_downstream_pipelines(
             "--output",
             "json",
         ]
-        if target.hostname is not None:
-            command.extend(["--hostname", target.hostname])
-        bridges = _run_forge_json_command(command, subprocess_timeout, "glab api bridges")
+        bridges = _run_forge_json_command(
+            command, subprocess_timeout, "glab api bridges", env=_forge_cli.glab_environment(repository)
+        )
         if not isinstance(bridges, list) or not all(isinstance(item, dict) for item in bridges):
             raise RunListError(f"glab api bridges returned unexpected JSON shape: {bridges!r}")
         for bridge in bridges:
@@ -358,9 +345,9 @@ def _glab_downstream_pipelines(
                 "--output",
                 "json",
             ]
-            if target.hostname is not None:
-                child_command.extend(["--hostname", target.hostname])
-            child = _run_forge_json_command(child_command, subprocess_timeout, "glab api downstream pipeline")
+            child = _run_forge_json_command(
+                child_command, subprocess_timeout, "glab api downstream pipeline", env=_forge_cli.glab_environment(repository)
+            )
             if not isinstance(child, dict):
                 raise RunListError(f"glab api downstream pipeline returned unexpected JSON shape: {child!r}")
             children.append(child)
@@ -383,9 +370,7 @@ def _glab_job_list(repository: str, run: RunRecord, subprocess_timeout: float) -
         "--output",
         "json",
     ]
-    if target.hostname is not None:
-        command.extend(["--hostname", target.hostname])
-    payload = _run_forge_json_command(command, subprocess_timeout, "glab api jobs")
+    payload = _run_forge_json_command(command, subprocess_timeout, "glab api jobs", env=_forge_cli.glab_environment(repository))
     if not isinstance(payload, list) or not all(isinstance(item, dict) for item in payload):
         raise RunListError(f"glab api jobs returned unexpected JSON shape: {payload!r}")
     jobs: list[JobRecord] = []
@@ -412,7 +397,9 @@ def _glab_job_list(repository: str, run: RunRecord, subprocess_timeout: float) -
     return jobs
 
 
-def _run_forge_json_command(command: list[str], subprocess_timeout: float, description: str) -> Any:
+def _run_forge_json_command(
+    command: list[str], subprocess_timeout: float, description: str, *, env: dict[str, str] | None = None
+) -> Any:
     """外部CLIのJSON応答をUTF-8で厳格にデコードし、取得エラーを`RunListError`へ統合する。"""
 
     def error_factory(failure: _json_command.Failure) -> Exception:
@@ -426,7 +413,7 @@ def _run_forge_json_command(command: list[str], subprocess_timeout: float, descr
             return RunListError(f"{description} failed (exit={failure.returncode}): {failure.stderr.strip()}")
         return RunListError(f"{description} returned invalid JSON: {failure.detail}")
 
-    return _json_command.run(command, subprocess_timeout, error_factory=error_factory)
+    return _json_command.run(command, subprocess_timeout, error_factory=error_factory, env=env)
 
 
 def _github_ci_configured(repository: str, sha: str, subprocess_timeout: float) -> bool | None:
@@ -1230,7 +1217,14 @@ def main(argv: list[str] | None = None) -> int:
         type=pathlib.Path,
         help="--wait-shaの報告済み失敗を保存するJSON。同じ引数で終了コード6から待機を再開する",
     )
-    parser.add_argument("--repo", required=True, help="対象repository（owner/repoまたはホストを含むURL）")
+    parser.add_argument(
+        "--repo",
+        required=True,
+        help=(
+            "対象repository。SSHとAPIの接続先が異なるGitLabではAPI側のURL（ポート込み）を指定する。"
+            "baseline作成と待機は同じ値を使う。ホスト省略時はglabの公開環境指定と設定を使う"
+        ),
+    )
     parser.add_argument("--ref", required=True, help="対象destination ref（例: refs/heads/main）")
     parser.add_argument("--source-ref", required=True, help="push元のローカルsource ref（例: HEAD）")
     parser.add_argument(

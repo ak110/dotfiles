@@ -58,6 +58,65 @@ def _isolate_sync_report(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
 _FAKE_CODEX = "/fake/bin/codex"
 
 
+def test_plugin_pulls_precede_chezmoi(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
+    """本体pull後・init前にGitプラグインだけを名前順に更新する。"""
+    for name in ("20-last", "10-first", "plain"):
+        plugin = tmp_path / "plugins" / name
+        plugin.mkdir(parents=True)
+        if name != "plain":
+            (plugin / ".git").write_text("gitdir: fixture", encoding="utf-8")
+    calls: list[list[str]] = []
+    timeouts: list[int | None] = []
+    monkeypatch.setattr(update_dotfiles, "_DOTFILES_ROOT", tmp_path)
+    monkeypatch.setattr(update_dotfiles, "_LOCK_PATH", tmp_path / "update.lock")
+    monkeypatch.setenv("UPDATE_DOTFILES_GIT_TIMEOUT_SEC", "17")
+    monkeypatch.setattr(subprocess, "Popen", _fake_popen({}, calls, communicate_timeouts=timeouts))
+    monkeypatch.setattr(subprocess, "run", _fake_run({}, calls))
+
+    assert update_dotfiles.main() == 0
+    assert calls[0][:2] == ["chezmoi", "git"]
+    assert calls[1:3] == [
+        ["git", "-C", str(tmp_path / "plugins" / name), "-c", "submodule.recurse=false", "pull", "--rebase"]
+        for name in ("10-first", "20-last")
+    ]
+    assert calls[3][:2] == ["chezmoi", "init"]
+    assert timeouts == [17, 17, 17]
+
+
+@pytest.mark.parametrize("timeout", [False, True])
+def test_plugin_pull_failure_stops_update(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+    sync_report_path: pathlib.Path,
+    timeout: bool,
+) -> None:
+    """失敗とtimeoutを対象名・Git出力付きで記録し、次のpullとinitを停止する。"""
+    for name in ("10-fail", "20-next"):
+        (tmp_path / "plugins" / name / ".git").mkdir(parents=True)
+    monkeypatch.setattr(update_dotfiles, "_DOTFILES_ROOT", tmp_path)
+    monkeypatch.setattr(update_dotfiles, "_LOCK_PATH", tmp_path / "update.lock")
+    calls: list[list[str]] = []
+
+    def popen(argv: list[str], **kwargs: Any) -> _FakePopen:
+        if argv[0] == "chezmoi":
+            return _FakePopen(argv, calls, **kwargs)
+        if timeout:
+            return _TimeoutPopen(argv, calls, error_text="partial plugin error")
+        return _FakePopen(argv, calls, returncode=7, output_text="plugin stdout", error_text="plugin stderr", **kwargs)
+
+    monkeypatch.setattr(subprocess, "Popen", popen)
+    monkeypatch.setattr(subprocess, "run", _fake_run({}, calls))
+    monkeypatch.setattr(update_dotfiles, "_kill_process_tree", lambda _process: None)
+    assert update_dotfiles.main() == (1 if timeout else 7)
+    assert len(calls) == 2
+    report = json.loads(sync_report_path.read_text(encoding="utf-8"))
+    assert "10-fail" in report["failed_stage"]
+    assert "10-fail" in report["stderr_tail"]
+    assert ("partial plugin error" if timeout else "plugin stderr") in report["stderr_tail"]
+    if not timeout:
+        assert "plugin stdout" in report["stderr_tail"]
+
+
 def _fake_run(
     returncodes: dict[str, int],
     calls: list[list[str]],

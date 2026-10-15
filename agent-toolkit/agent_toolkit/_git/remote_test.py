@@ -56,18 +56,22 @@ def test_resolve_repo_identifier_returns_none_for_unresolvable_path(tmp_path: pa
 
 
 @pytest.mark.parametrize(
-    ("value", "hostname", "project_path"),
+    ("value", "hostname", "project_path", "port", "protocol"),
     [
-        ("https://github.com/ak110/dotfiles.git", "github.com", "ak110/dotfiles"),
-        ("git@gitlab.example.com:group/sub/repo.git", "gitlab.example.com", "group/sub/repo"),
-        ("ssh://git@github.com:22/ak110/dotfiles.git", "github.com", "ak110/dotfiles"),
-        ("gitlab.example.com/group/repo", "gitlab.example.com", "group/repo"),
-        ("ak110/dotfiles", None, "ak110/dotfiles"),
+        ("https://github.com/ak110/dotfiles.git", "github.com", "ak110/dotfiles", None, "https"),
+        ("git@gitlab.example.com:group/sub/repo.git", "gitlab.example.com", "group/sub/repo", None, None),
+        ("ssh://git@github.com:22/ak110/dotfiles.git", "github.com", "ak110/dotfiles", 22, "ssh"),
+        ("gitlab.example.com/group/repo", "gitlab.example.com", "group/repo", None, None),
+        ("ak110/dotfiles", None, "ak110/dotfiles", None, None),
+        ("http://10.230.22.47:40108/AIWG/aitools", "10.230.22.47", "AIWG/aitools", 40108, "http"),
+        ("gitlab.example.com:8443/group/sub/repo.git", "gitlab.example.com", "group/sub/repo", 8443, None),
     ],
 )
-def test_parse_remote_location(value: str, hostname: str | None, project_path: str) -> None:
+def test_parse_remote_location(
+    value: str, hostname: str | None, project_path: str, port: int | None, protocol: str | None
+) -> None:
     """URL・SCP形式・`[host/]owner/repository`からホスト名とプロジェクトのパスを取り出すこと。"""
-    assert _git_remote.parse_remote_location(value) == _git_remote.RemoteLocation(hostname, project_path)
+    assert _git_remote.parse_remote_location(value) == _git_remote.RemoteLocation(hostname, project_path, port, protocol)
 
 
 @pytest.mark.parametrize("value", ["", "dotfiles", "https://github.com/ak110"])

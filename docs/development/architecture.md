@@ -10,6 +10,7 @@
 - `.chezmoi-source/dot_gemini/`: Antigravity CLI用のユーザー設定（`GEMINI.md`と`antigravity-cli/skills/`）。`~/.gemini/`へデプロイする
 - `agent-toolkit/`: Agent Plugins、Claude Code、Codexが共有するagent-toolkitのプラグインルート（「agent-toolkitの3形式配布」を参照）
 - `agent-toolkit-codex/`: `agent-toolkit/`から生成するCodex向けプラグインルート。Gitで追跡せず、`update-dotfiles`のpost-applyが生成する
+- `plugins/`: dotfilesユーザーが置く拡張ディレクトリ（Git追跡対象外）。直下の各プラグインの`.chezmoi-source/`と`post_apply.py`を本体反映後に名前順で適用する
 - `bin/`: ユーザーのPATHへ追加して使うコマンド（「対象環境とスクリプトの配置」を参照）
 - `completions/`: 事前生成したbash補完スクリプト（「bash補完（`completions/`）」を参照）
 - `docs/`: エンドユーザー向けガイド（`docs/guide/`）と開発者向け文書（`docs/development/`）
@@ -143,6 +144,7 @@ chezmoiの`post_apply`を使うdotfiles導入がある。既存の外部参照�
 
 ### `post_apply.py`の工程の依存
 
+- dotfilesプラグインの適用は`pytools/_internal/apply_dotfiles_plugins.py`が担い、本体の後処理が終わってから実行する。プラグインごとのchezmoi永続状態を本体から分離し、本体と配布先が重なる場合は警告してプラグインの内容を上書きする。配置と失敗時の扱いは[operations.md](operations.md)の「dotfilesプラグインの適用と更新」を参照
 - `post_apply.py`は互いに依存しない工程を同時に実行し、工程間の順序を`_StepSpec`の先行工程の宣言で保つ。リンク同期、Claude Code plugin、Codex plugin、旧User scope MCPの移行の順序もこの宣言で保つ。先行工程を宣言する対象は、同じ資源を扱う工程の組と、先行工程が導入する実行ファイルを使う工程とする。
   資源は設定ファイルの読み書き、プロセスとユーザーのPATH、npmとmiseの管理領域、plugin cache、Claude Code pluginの複製元である`agent-toolkit/`、依存環境を保存するデータ領域、systemd、codexプロセスの稼働判定を指す。
   子プロセスやサービスの再起動を経由して間接的に書き換える資源も含める。例えば`atk serve`工程が再起動したサービスは`scripts/launch.py`を経てデータ領域の依存環境を同期する。工程を追加する場合も同じ基準で宣言する
@@ -158,6 +160,10 @@ chezmoiの`post_apply`を使うdotfiles導入がある。既存の外部参照�
 launch.pyはplugin rootを`uv run --project`へ指定し、lockfileを固定した依存環境を配布root外のデータ領域へ置く。
 生成器は共有許可リストのMCPをAgent PluginsとCodexのmanifestへ射影し、Codex側ではplugin root内の作業ディレクトリからlaunch.pyを起動する。
 MCPサーバーは`start`が解決した候補のengineに従ってCodex backendまたはClaude backendを選択する。
+
+版付き配布物から起動したサーバーは、同じ配布元・版に対応するmanaged-tempの保持実体を複数プロセスで共有する。
+起動側と回収側は`_common/plugin_root_leases.py`の共通契約で使用中の実体を保護する。
+文書解決と内側MCPの起動も同じ保持実体を使い、配布元の更新・削除後も起動時の版へ到達できる。
 
 公開ツール（`start`、`send_message`、`kill`、`list`、`show`、`stop`）と`atk agents wait`の入力、応答、待機上限および保持期限の契約は[design-agents-server.md](design-agents-server.md)の「公開ツールの契約」が記録する。
 MCP終了時は自身が起動した子プロセスをPID指定で終了し、共有daemonや永続registryを持たない。

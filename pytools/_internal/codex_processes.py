@@ -38,6 +38,8 @@ class CodexProcess:
     pid: int
     label: str
     role: CodexRole
+    executable: str | None = None
+    identified: bool = True
 
 
 def codex_processes() -> tuple[CodexProcess, ...]:
@@ -54,14 +56,17 @@ def codex_processes() -> tuple[CodexProcess, ...]:
     役割は、管理daemonと更新ループの公開された起動形との一致で判定する。
     管理daemonの子プロセスは、daemonの停止とともに終了する補助実行体として`managed-daemon`へ含める。
     """
-    uid = os.getuid()
-    candidates: list[tuple[int, typing.Any, str, CodexRole]] = []
-    for process in psutil.process_iter(["name", "exe", "cmdline", "uids", "status", "ppid"], ad_value=_ACCESS_DENIED):
+    windows = os.name == "nt"
+    owner = psutil.Process().username() if windows else os.getuid()
+    owner_attribute = "username" if windows else "uids"
+    candidates: list[tuple[int, typing.Any, str, CodexRole, str | None, bool]] = []
+    for process in psutil.process_iter(["name", "exe", "cmdline", owner_attribute, "status", "ppid"], ad_value=_ACCESS_DENIED):
         try:
             info = process.info
         except psutil.NoSuchProcess, psutil.ZombieProcess:
             continue
-        if getattr(info.get("uids"), "real", None) != uid or info.get("status") in _TERMINATED_STATUSES:
+        process_owner = info.get("username") if windows else getattr(info.get("uids"), "real", None)
+        if process_owner != owner or info.get("status") in _TERMINATED_STATUSES:
             continue
         cmdline, name_value, exe_value = info.get("cmdline"), info.get("name"), info.get("exe")
         cmdline_items = cmdline if isinstance(cmdline, (list, tuple)) else []
@@ -72,7 +77,7 @@ def codex_processes() -> tuple[CodexProcess, ...]:
         argument_values = [value for value in cmdline_values[1:] if value]
         entry_point = cmdline_values[1] if len(cmdline_values) >= 2 and _is_node_executable(name, exe) else ""
         if not executable_values and not argument_values:
-            candidates.append((process.pid, info.get("ppid"), f"pid {process.pid}", "session"))
+            candidates.append((process.pid, info.get("ppid"), f"pid {process.pid}", "session", None, False))
         elif any(_is_codex_process_value(value) for value in executable_values) or _is_codex_argument_value(entry_point):
             # node系起動ではentry pointの後ろからCodexの引数が始まる。
             arguments = cmdline_values[2:] if _is_codex_argument_value(entry_point) else cmdline_values[1:]
@@ -80,11 +85,11 @@ def codex_processes() -> tuple[CodexProcess, ...]:
             label = _process_label(name, exe, cmdline_values, process.pid)
             if role == "managed-daemon" and label.endswith(" app-server"):
                 label = f"{label} {_MANAGED_DAEMON_FLAG}"
-            candidates.append((process.pid, info.get("ppid"), label, role))
-    daemon_pids = {pid for pid, _, _, role in candidates if role == "managed-daemon"}
+            candidates.append((process.pid, info.get("ppid"), label, role, exe or None, True))
+    daemon_pids = {pid for pid, _, _, role, _, _ in candidates if role == "managed-daemon"}
     return tuple(
-        CodexProcess(pid, label, "managed-daemon" if role == "session" and ppid in daemon_pids else role)
-        for pid, ppid, label, role in candidates
+        CodexProcess(pid, label, "managed-daemon" if role == "session" and ppid in daemon_pids else role, exe, identified)
+        for pid, ppid, label, role, exe, identified in candidates
     )
 
 

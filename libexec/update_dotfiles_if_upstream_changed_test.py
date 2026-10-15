@@ -7,9 +7,14 @@ import typing
 
 import pytest
 
+from pytools import prune_codex_packages as prune_cli
+from pytools._internal import codex_processes
+from pytools.prune_codex_packages_test import _release
+
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 
-import update_dotfiles_if_upstream_changed as upstream_update  # noqa: E402  # pylint: disable=wrong-import-position
+# pylint: disable-next=wrong-import-position,wrong-import-order
+import update_dotfiles_if_upstream_changed as upstream_update  # noqa: E402
 
 
 def _fake_run(
@@ -52,6 +57,7 @@ def _prepare_root(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> pa
     update_dotfiles = root / "bin" / "update-dotfiles"
     update_dotfiles.parent.mkdir(parents=True)
     update_dotfiles.write_text("", encoding="utf-8")
+    (root / "bin" / "prune-codex-packages").write_text("", encoding="utf-8")
     monkeypatch.setattr(upstream_update, "_DOTFILES_ROOT", root)
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
     monkeypatch.setenv("LOCALAPPDATA", str(tmp_path / "local-appdata"))
@@ -76,6 +82,7 @@ def test_matching_commit_skips_update(
     calls.clear()
     assert upstream_update.main([]) == 0
     assert [str(update_dotfiles)] not in calls
+    assert [str(update_dotfiles.with_name("prune-codex-packages"))] in calls
 
 
 def test_external_head_advance_requires_apply(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
@@ -343,3 +350,39 @@ def test_unknown_argument_exits_2() -> None:
     with pytest.raises(SystemExit) as exc_info:
         upstream_update.main(["--unknown"])
     assert exc_info.value.code == 2
+
+
+@pytest.mark.parametrize("delete_error", [False, True])
+def test_unchanged_cycle_prunes_daemon_and_propagates_failure(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+    delete_error: bool,
+) -> None:
+    """上流不変周期の公開CLIがdaemonの旧版を回収し、削除失敗はserviceへ返る。"""
+    launcher = _prepare_root(monkeypatch, tmp_path).with_name("prune-codex-packages")
+    home = tmp_path / "custom-codex"
+    monkeypatch.setenv("CODEX_HOME", str(home))
+    current = _release(home, "app-server-daemon", "0.162.1")
+    old = _release(home, "app-server-daemon", "local-abcd")
+    # daemonは公式prepare_install.rsによるlocalコピー形式も整理する。
+    (current.parent.parent / "current").symlink_to(current, target_is_directory=True)
+    monkeypatch.setattr(codex_processes, "codex_processes", lambda: ())
+    original = _fake_run([], remote_commit="a" * 40, local_commit="a" * 40)
+
+    def run(command, **kwargs):
+        if command == [str(launcher)]:
+            return subprocess.CompletedProcess(command, prune_cli.main([]), "", "")
+        return original(command, **kwargs)
+
+    monkeypatch.setattr(subprocess, "run", run)
+    if delete_error:
+
+        def fail_remove(path, **kwargs):
+            del path, kwargs
+            raise PermissionError("denied")
+
+        monkeypatch.setattr(prune_cli.prune_codex_packages.shutil, "rmtree", fail_remove)
+    assert upstream_update.main([]) == 0
+    assert old.is_dir()
+    assert upstream_update.main([]) == (1 if delete_error else 0)
+    assert old.exists() == delete_error

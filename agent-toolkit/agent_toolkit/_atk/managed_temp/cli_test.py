@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+import datetime
 import json
 import os
 import pathlib
@@ -17,6 +18,8 @@ from agent_toolkit._atk.managed_temp import cli as cli_subject
 from agent_toolkit._atk.managed_temp import inventory as inventory_subject
 from agent_toolkit._atk.managed_temp import registry as managed_temp_registry
 from agent_toolkit._atk.managed_temp import windows_security as managed_temp_windows_security
+from agent_toolkit._common import plugin_root_leases as lease_subject
+from agent_toolkit._common import state_paths
 from agent_toolkit._testing.managed_temp_support import (
     _install_windows_security_doubles,
     _isolated_cli_environment,
@@ -182,6 +185,93 @@ def test_cleanup_rejects_path_outside_registered_temp(tmp_path: pathlib.Path, ca
     assert "失敗: " in capsys.readouterr().err
 
 
+def test_cleanup_working_copy_preserves_session_evidence(capsys: pytest.CaptureFixture[str]) -> None:
+    """作業用複製を回収しても、後続turnの証拠・引継ぎ・入力とsession登録を保持する。"""
+    parent = subject.create_managed_temp("session", session_id="keep-evidence")
+    for name in ("evidence.txt", "handoff.json", "resume.txt"):
+        (parent / name).write_text(name, encoding="utf-8")
+    assert subject.main(["create", "--prefix", "extract", "--session-root", str(parent)]) == 0
+    child = pathlib.Path(capsys.readouterr().out.splitlines()[-1])
+    (child / "copy").mkdir()
+    (child / "copy" / "source.txt").write_text("再生成可能", encoding="utf-8")
+
+    assert subject.main(["cleanup", "--path", str(child)]) == 0
+
+    assert not child.exists()
+    assert subject.list_managed_temp(session_id="keep-evidence")[0]["path"] == str(parent)
+    for name in ("evidence.txt", "handoff.json", "resume.txt"):
+        assert (parent / name).read_text(encoding="utf-8") == name
+
+
+def test_child_cleanup_resumes_after_isolation(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """子の隔離直後に失敗しても同じCLI操作で再開し、親の保存物を保持する。"""
+    parent = subject.create_managed_temp("session", session_id="child-resume")
+    (parent / "evidence").write_text("保持", encoding="utf-8")
+    assert subject.main(["create", "--prefix", "extract", "--session-root", str(parent)]) == 0
+    child = pathlib.Path(capsys.readouterr().out.splitlines()[-1])
+    (child / "payload").write_text("再生成可能", encoding="utf-8")
+
+    def interrupt(
+        _root: pathlib.Path,
+        validated: managed_temp_registry._ValidatedTemp,
+        quarantine: pathlib.Path,
+        _expected_tree: object,
+        **_kwargs: object,
+    ) -> None:
+        validated.path.rename(quarantine)
+        raise OSError("隔離直後の失敗")
+
+    with monkeypatch.context() as patch:
+        patch.setattr(inventory_subject, "_cleanup_posix" if os.name == "posix" else "_cleanup_windows", interrupt)
+        assert subject.main(["cleanup", "--path", str(child)]) == 2
+    assert not child.exists()
+    assert list(parent.glob(".agent-toolkit-cleanup-*"))
+
+    assert subject.main(["cleanup", "--path", str(child)]) == 0
+    assert not list(parent.glob(".agent-toolkit-cleanup-*"))
+    assert (parent / "evidence").read_text(encoding="utf-8") == "保持"
+
+
+def test_cleanup_nested_working_directory_preserves_siblings(capsys: pytest.CaptureFixture[str]) -> None:
+    """既存の孫ディレクトリ指定も、各親の検証を通して回収できる。"""
+    parent = subject.create_managed_temp("session", session_id="nested-child")
+    assert subject.main(["create", "--prefix", "extract", "--session-root", str(parent)]) == 0
+    child = pathlib.Path(capsys.readouterr().out.splitlines()[-1])
+    nested = child / "comparison"
+    nested.mkdir()
+    (nested / "regenerated").write_text("再生成可能", encoding="utf-8")
+    (child / "evidence").write_text("保持", encoding="utf-8")
+
+    assert subject.main(["cleanup", "--path", str(nested)]) == 0
+
+    assert not nested.exists()
+    assert (child / "evidence").read_text(encoding="utf-8") == "保持"
+
+
+@pytest.mark.skipif(os.name != "posix", reason="POSIX symlinkの非追跡検証")
+def test_child_cleanup_preserves_external_symlink_target(
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """子の配下のリンク先を追跡せず、子自体がリンクなら拒否する。"""
+    parent = subject.create_managed_temp("session", session_id="child-links")
+    external = tmp_path / "outside"
+    external.mkdir()
+    (external / "saved").write_text("保持", encoding="utf-8")
+    assert subject.main(["create", "--prefix", "extract", "--session-root", str(parent)]) == 0
+    child = pathlib.Path(capsys.readouterr().out.splitlines()[-1])
+    (child / "link").symlink_to(external, target_is_directory=True)
+    assert subject.main(["cleanup", "--path", str(child)]) == 0
+    assert (external / "saved").read_text(encoding="utf-8") == "保持"
+    linked_child = parent / "linked-child"
+    linked_child.symlink_to(external, target_is_directory=True)
+    assert subject.main(["cleanup", "--path", str(linked_child)]) == 2
+    assert (external / "saved").read_text(encoding="utf-8") == "保持"
+
+
 @pytest.mark.parametrize("conflict", ["--awi=20260913-221409-001.md", "--session-id=session-2"])
 def test_create_with_session_root_rejects_registration_options(conflict: str) -> None:
     """セッションのmanaged-temp直下の作業ディレクトリへ個別登録用の引数を併用しない。"""
@@ -309,3 +399,48 @@ def test_replacement_detected_during_cleanup_names_rerun_and_report(
     next_action = next(line for line in capsys.readouterr().err.splitlines() if line.startswith("次の操作: "))
     assert "再実行" in next_action
     assert "ユーザーへ報告" in next_action
+
+
+def test_live_plugin_root_survives_expired_sweep() -> None:
+    """保持期限を超えても生存プロセスが参照する配布物を自動掃引から保護する。"""
+    area = subject.create_managed_temp("agents-server-plugin-root")
+    (area / "payload").write_text("使用中", encoding="utf-8")
+    with lease_subject.plugin_root_lock(area):
+        lease_subject.register_plugin_root_use(area)
+
+    deleted = subject.sweep_expired_managed_temp(now=datetime.datetime.now(datetime.UTC) + datetime.timedelta(days=8))
+
+    assert area not in deleted
+    assert (area / "payload").read_text(encoding="utf-8") == "使用中"
+
+
+@pytest.mark.parametrize("invalid", ["broken-json", "pid-reused", "access-denied"])
+def test_lease_observation_preserves_unknown_and_reclaims_reused_pid(
+    monkeypatch: pytest.MonkeyPatch,
+    invalid: str,
+) -> None:
+    """取得不能な使用記録を保ち、PIDの再利用は作成時刻で使用終了と判定する。"""
+    area = subject.create_managed_temp("lease-check")
+    with lease_subject.plugin_root_lock(area):
+        lease_subject.register_plugin_root_use(area)
+    records = list((state_paths.state_dir() / "plugin-root-leases").glob("*.json"))
+    assert len(records) == 1
+    if invalid == "broken-json":
+        records[0].write_text("{", encoding="utf-8")
+    elif invalid == "pid-reused":
+        record = json.loads(records[0].read_text(encoding="utf-8"))
+        record["created_at"] = 0
+        records[0].write_text(json.dumps(record), encoding="utf-8")
+    else:
+
+        def denied(*_args: object, **_kwargs: object) -> object:
+            raise lease_subject.psutil.AccessDenied()
+
+        monkeypatch.setattr(lease_subject.psutil, "Process", denied)
+    if invalid == "pid-reused":
+        subject.cleanup_managed_temp(area)
+        assert not area.exists()
+    else:
+        with pytest.raises(subject.ManagedTempError, match="使用中"):
+            subject.cleanup_managed_temp(area, force_remove=True)
+        assert area.is_dir()

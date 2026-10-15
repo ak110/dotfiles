@@ -104,3 +104,18 @@ def test_run_propagates_setup_error(
     monkeypatch.setattr(systemd_user_unit, "setup_timer", fail)
     with pytest.raises(systemd_user_unit.SetupError, match="inactive"):
         setup_dotfiles_autoupdate.run()
+
+
+def test_timer_preserves_configured_codex_home(prepared, monkeypatch: pytest.MonkeyPatch) -> None:
+    """systemdで解釈される引用符・specifierを引用し、設定された保存先をtimerへ渡す。"""
+    del prepared
+    monkeypatch.setenv("CODEX_HOME", '/custom/codex home%u/"quoted"')
+    received: dict[str, typing.Any] = {}
+
+    def setup_timer(**kwargs: typing.Any) -> bool:
+        received.update(kwargs)
+        return True
+
+    monkeypatch.setattr(systemd_user_unit, "setup_timer", setup_timer)
+    setup_dotfiles_autoupdate.run()
+    assert 'Environment="CODEX_HOME=/custom/codex home%%u/\\"quoted\\""\n' in received["service_unit_content"]

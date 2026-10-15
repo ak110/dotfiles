@@ -65,7 +65,7 @@ Codex backendは、子sessionを起動した委譲先から`atk agents wait`に�
 | Antigravityの公開イベントログ | `<状態ディレクトリ>/<ルートsession識別子>/logs/<session_id>.jsonl` | `atk agents logs`、`atk run-script session-review-evidence`、セッションのイベント経過を調べる主体 | Antigravity backend（公開stream-jsonイベントの追記） |
 | engineの可用性を理由に除外した候補（解除待ちの対象のClaude利用上限は記録せず、旧版の理由`429`のClaude候補は読み込み時に除外の根拠から外す） | `<状態ディレクトリ>/unavailable-candidates.json` | 起動の候補列を解決するMCPサーバー | その状態ディレクトリを共有する各MCPサーバー（ファイルロック下の読み書き） |
 
-process-loopとレーン操作が共有する状態は、前表のagents-server領域と同じ`state_dir`の下で次のように保持する。
+process-loop、レーン操作と配布物保持が共有する状態は、前表のagents-server領域と同じ`state_dir`の下で次のように保持する。
 
 | 共有状態 | 基準となる保持先 | 読む主体 | 更新できる主体 |
 | --- | --- | --- | --- |
@@ -73,6 +73,9 @@ process-loopとレーン操作が共有する状態は、前表のagents-server�
 | origin単位の処理所有と未完了の再開情報 | `process-loop-ownership/<originのSHA-256>.json`と同名lock | 専用process-loopとall-repos | `_atk/wi/process_loop_ownership.py`。短い排他で所有tokenと生存を検収し、worktree・Git共通ディレクトリ・担当session・レーン所有sessionを更新する |
 | 対象別の担当返却 | `process-loop-ownership/<originのSHA-256>.result.json` | all-reposの中継と再開を担う処理 | `_atk/wi/process_loop_all_repos.py`。担当終端を観測した後に確認済み工程と残工程を保存する |
 | Git統合と計画保存・WI終端の進行 | `lanes/<所有session>/<lane>.json`のintegration | `atk lane integrate`と回収判定 | `_atk/lane.py`。Git統合と成功済みの最終化を保存し、失敗後は残工程だけを再開する。全最終化と選定集合・統合状態の整合確認の成功後に統合済みを記録する。rebase対応表はmanaged-tempに保存し、レーン回収後も同じ保持期限で参照できる |
+| 保持した配布物を使用するプロセス | `plugin-root-leases/<保持領域の識別子>-<pid>.json`と領域ごとの`.lock` | 配布物の起動側とmanaged-tempの回収・掃引 | `_common/plugin_root_leases.py`。起動側が領域path・PID・プロセス作成時刻を登録し、読む側は同じ領域の排他下で生存を検収する。終了済みの使用記録を除き、取得不能な記録と使用中の実体を保護する |
+| 同じ配布元・版から共有する完成済み配布物 | managed-tempの保持領域直下の`.agent-toolkit-plugin-root.json` | `_agents_server/plugin_root.py`の起動・再利用 | コピーする起動側が配布元・版・root名を保存する。内側MCPも同じ完成済み実体を使い、回収側は前行の使用記録を検収する |
+| セッション配下の作業用領域の回収再開情報 | `managed-temp/`配下の`.child-cleanup`ファイル | `atk managed-temp cleanup` | `_atk/managed_temp/inventory.py`。親の登録と対象identityを検収して回収し、途中失敗の情報を次回の同じ操作へ渡す。保存証拠を持つ親領域を保持する |
 
 `_common/session_parents.py`と`_common/session_activity.py`は前表のsession登録簿を読み、保存済みの委譲元とプロセス識別を活動判定に使う。
 MCPサーバーのSessionStateとsession登録簿の更新は、両モジュールの対象外である。

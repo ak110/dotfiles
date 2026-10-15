@@ -11,7 +11,8 @@ from pathlib import Path
 import httpx
 import pytest
 
-from pytools._internal import post_apply_outcome, setup_codex_cli
+from pytools._internal import post_apply_outcome, prune_codex_packages, setup_codex_cli
+from pytools.prune_codex_packages_test import _release
 
 _Call = tuple[list[str], dict[str, object]]
 _INSTALLED_LISTING = '[{"version": "0.1.0", "installed": true, "active": true}]'
@@ -23,6 +24,8 @@ def _isolate(monkeypatch, tmp_path: Path, platform: str) -> None:
     original_which = setup_codex_cli.shutil.which
     monkeypatch.setattr(Path, "home", lambda: tmp_path)
     monkeypatch.setattr(setup_codex_cli.sys, "platform", platform)
+    if platform == "win32" and os.name != "nt":
+        monkeypatch.setattr(prune_codex_packages, "_install_lock", lambda *args, **kwargs: contextlib.nullcontext())
     monkeypatch.setenv("PATH", str(tmp_path / "path"))
     monkeypatch.setenv("LOCALAPPDATA", str(tmp_path / "localappdata"))
     monkeypatch.setenv("USERPROFILE", str(tmp_path))
@@ -856,3 +859,43 @@ def test_run_skips_mise_removal_when_mise_is_absent(monkeypatch, tmp_path: Path)
         client.close()
 
     assert len(calls) == 2
+
+
+@pytest.mark.parametrize("configured_home", [False, True])
+def test_install_success_prunes_completed_old_packages(monkeypatch, tmp_path: Path, configured_home: bool) -> None:
+    """導入・起動確認後に同じCODEX_HOMEのdaemonとstandaloneの旧版を回収する。"""
+    _isolate(monkeypatch, tmp_path, "linux")
+    home = tmp_path / "custom" if configured_home else tmp_path / ".codex"
+    if configured_home:
+        monkeypatch.setenv("CODEX_HOME", str(home))
+    old = []
+    for package in ("standalone", "app-server-daemon"):
+        current = _release(home, package, "0.162.1")
+        old.append(_release(home, package, "0.150.0"))
+        (current.parent.parent / "current").symlink_to(current, target_is_directory=True)
+    calls: list[_Call] = []
+    monkeypatch.setattr(setup_codex_cli.setup_cli_common, "migrate_npm_launchers", lambda *args, **kwargs: False)
+    monkeypatch.setattr(setup_codex_cli.common, "run_subprocess", _make_fake_run(calls))
+    monkeypatch.setattr(prune_codex_packages.codex_processes, "codex_processes", lambda: ())
+    with _make_client() as client:
+        assert setup_codex_cli.run(client).failure is None
+    assert all(not path.exists() for path in old)
+
+
+def test_install_propagates_package_removal_failure(monkeypatch, tmp_path: Path) -> None:
+    """導入が成功しても整理失敗をpost_applyへ伝える。"""
+    _isolate(monkeypatch, tmp_path, "linux")
+    current = _release(tmp_path / ".codex", "standalone", "0.162.1")
+    _release(tmp_path / ".codex", "standalone", "0.150.0")
+    (current.parent.parent / "current").symlink_to(current, target_is_directory=True)
+    monkeypatch.setattr(setup_codex_cli.setup_cli_common, "migrate_npm_launchers", lambda *args, **kwargs: False)
+    monkeypatch.setattr(setup_codex_cli.common, "run_subprocess", _make_fake_run([]))
+    monkeypatch.setattr(prune_codex_packages.codex_processes, "codex_processes", lambda: ())
+
+    def fail_remove(path, **kwargs):
+        del path, kwargs
+        raise PermissionError("denied")
+
+    monkeypatch.setattr(prune_codex_packages.shutil, "rmtree", fail_remove)
+    with _make_client() as client:
+        assert setup_codex_cli.run(client).failure is not None

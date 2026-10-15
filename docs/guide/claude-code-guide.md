@@ -201,7 +201,7 @@ Claude CodeのprojectsとCodexのsessionsにある原セッション記録の本
 atk run-script session-review-evidence -- --catalog-claude-project ~/.claude/projects/<project> --since 2026-10-01T00:00:00+09:00 --observation-boundary 2026-10-08T00:00:00+09:00 --catalog-workflow process-wi --catalog-fields session_id,workflow,workflow_locator,started_at,tokens
 ```
 
-振り返りの準備後や最終報告後に届いた新しい`気付いた改善点:`の行は、`agent-toolkit:completion-report`の工程に従って振り返りへ取り込み、結果報告を更新してから終了する。
+振り返りの準備後や最終報告後に届いた新しい`気付いた改善点:`の行は`agent-toolkit:completion-report`の工程に従って振り返りへ取り込み、結果報告を更新してから終了する。
 Stopはこの行の有無と報告本文を判定しない。
 
 ## 工程別モデル設定
@@ -605,7 +605,7 @@ dotfilesユーザーは`chezmoi apply`で`~/dotfiles/agent-toolkit/scripts`がPA
 
 Claude CodeのSessionStartは、`CLAUDE_ENV_FILE`が提供される場合に、CLIのPATHとデータ領域を後続のBashへ渡す。別hookの設定と既存PATHは保持する。このファイルが提供されない場合も、開始時のコンテキストにCLIの絶対パスを表示する。WindowsのPowerShellでは、案内された`.cmd`の絶対パスを`& '絶対パス'`の形で呼び出す。MCPと`agents_server`の委譲先には起動設定で同じ配布物のCLIとデータ領域を渡す。
 
-CLI移設前に起動した`update-dotfiles`は、pullと未コミット内容の復元後、旧`agent-toolkit/bin/atk`の不在により退避の回収で終了1となる場合がある。「復元は成功しましたが退避の回収は未完了です」と表示された場合は、更新したリポジトリで作業内容とindexが復元済みであることを保存refの内容と比べて確かめる。その実行が表示した完全なrefだけを`./agent-toolkit/scripts/atk worktree-stash drop <ref>`で回収し、`./bin/update-dotfiles`を再実行する。Windowsではそれぞれ`agent-toolkit\scripts\atk.cmd`と`bin\update-dotfiles.cmd`を使う。復元を確認できない場合はrefを保持して原因を調べる。これは開始済みの旧プロセスからの移行操作であり、再実行後の終了状態まで確認する。
+CLI移設前に起動した`update-dotfiles`はpullと未コミット内容の復元後、旧`agent-toolkit/bin/atk`の不在により退避の回収で終了1となる場合がある。「復元は成功しましたが退避の回収は未完了です」と表示された場合は、更新したリポジトリで作業内容とindexが復元済みであることを保存refの内容と比べて確かめる。その実行が表示した完全なrefだけを`./agent-toolkit/scripts/atk worktree-stash drop <ref>`で回収し、`./bin/update-dotfiles`を再実行する。Windowsではそれぞれ`agent-toolkit\scripts\atk.cmd`と`bin\update-dotfiles.cmd`を使う。復元を確認できない場合はrefを保持して原因を調べる。これは開始済みの旧プロセスからの移行操作であり、再実行後の終了状態まで確認する。
 
 ## 構成と機能
 
@@ -675,6 +675,20 @@ pluginをインストールまたは更新した後は、Codexの`/hooks`で、�
 登録集合は`SessionStart`、`SubagentStart`、`PreToolUse`、`PostToolUse`、`PermissionRequest`、`UserPromptSubmit`、`Stop`、`SubagentStop`、`SessionEnd`である。
 登録が0件の場合は信頼操作へ進まず、`agent-toolkit-codex/`のmanifest選択を確認する。信頼前は登録済みHookがスキップされるため、条文の追加と圧縮後通知は発火しない。
 信頼後に新しいセッションを開始し、最初の応答の前に自動生成通知が現れることを確認する。
+
+### 一時成果物の配置と回収
+
+セッション開始時に通知されるmanaged-tempは、一時成果物を置く管理領域である。
+検証記録、引き継ぎ記録と再開入力はこの領域へ保存され、最終更新から7日を超えた後の`atk`実行時に回収される。
+turn終了時にも残るため、同じ会話の再開や委譲先の結果確認に使える。
+
+抽出した配布物、cloneとGit fixtureなどの再生成可能な作業用複製は、保存証拠と分けて置く。
+作成した工程が全消費工程と外部プロセスの終了後に回収し、後続turnで読む証拠と再開入力を残す。
+領域の確認には`atk managed-temp list`を使える。
+配置と回収の手順は`agent-toolkit:managed-temp`、寿命を分ける理由は[design-storage.md](../development/design-storage.md#managed-temp)を参照。
+
+版付きプラグインから起動する`agents_server`は同じ配布元・版の保持実体を複数プロセスで共有する。
+使用中の実体を保護するため、配布元の更新後も起動時のスキルと内部資源を参照できる。
 
 ### `~/.claude/plans`の計画ファイルと実行レビュー後の`private-notes/plans/`への保存
 

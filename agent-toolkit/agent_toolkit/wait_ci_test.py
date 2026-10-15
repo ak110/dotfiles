@@ -17,11 +17,14 @@ import signal
 import subprocess
 import sys
 import time
+from typing import Any
 from unittest import mock
 
 import pytest
 
 from agent_toolkit import wait_ci
+from agent_toolkit._common import json_command
+from agent_toolkit._git import forge_cli
 from agent_toolkit._testing import git_repository as _git_repository_support
 
 # 直接テスト対象のprivate helperはモジュール冒頭で別名束縛し、抑制コメントを1箇所へ集約する。
@@ -1958,12 +1961,14 @@ class TestRunJsonCommand:
             capture_output: bool,
             check: bool,
             timeout: float,
+            **kwargs: Any,
         ) -> subprocess.CompletedProcess[bytes]:
             return original_run(
                 command,
                 capture_output=capture_output,
                 check=check,
                 timeout=timeout,
+                **kwargs,
             )
 
         monkeypatch.setattr(wait_ci.subprocess, "run", run_binary)
@@ -2022,7 +2027,7 @@ class TestGlabPipelineList:
         """glab ci listへSHAとJSON出力指定を渡す。"""
         calls: list[tuple[list[str], float, str]] = []
 
-        def fake_run_json(command: list[str], timeout: float, description: str) -> list[dict[str, object]]:
+        def fake_run_json(command: list[str], timeout: float, description: str, **_kwargs: object) -> list[dict[str, object]]:
             calls.append((command, timeout, description))
             return [{"id": 1, "status": "success"}]
 
@@ -2192,3 +2197,79 @@ class TestGlabJobList:
         )
         with pytest.raises(wait_ci.RunListError):
             _glab_job_list("group/repository", _run(), 1.0)
+
+
+@pytest.mark.parametrize(
+    "repository", ["http://10.230.22.47:40108/AIWG/aitools", "https://gitlab.example.com:8443/group/sub/repo"]
+)
+def test_port_endpoint_baseline_wait_resume(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], repository: str
+) -> None:
+    """baselineから部分失敗・再開まで、一覧・bridge・downstream・jobが同じAPI接続先を使う。"""
+    # 応答はGitLabの公開スキーマ https://docs.gitlab.com/api/pipelines/ と
+    # https://docs.gitlab.com/api/jobs/ のid・project_id・downstream_pipeline・allow_failureを使う。
+    expected_host = "10.230.22.47:40108" if repository.startswith("http:") else "gitlab.example.com:8443"
+    expected_project = "AIWG%2Faitools" if repository.startswith("http:") else "group%2Fsub%2Frepo"
+    monkeypatch.setenv("GITLAB_HOST", "other.example.com:9443")
+    monkeypatch.setenv("GITLAB_API_HOST", "other-api.example.com:9443")
+    parent_environment = os.environ.copy()
+    phase = "baseline"
+    calls: list[list[str]] = []
+
+    def pipeline(identifier: int) -> dict[str, Any]:
+        return {
+            "id": identifier,
+            "project_id": 7,
+            "sha": "a" * 40,
+            "status": "running" if phase == "failure" and identifier == 2 else "failed" if phase == "failure" else "success",
+        }
+
+    def run(command: list[str], **kwargs: Any) -> subprocess.CompletedProcess[bytes]:
+        assert command[0] == "glab"
+        assert "--hostname" not in command
+        assert kwargs["env"]["GITLAB_HOST"] == expected_host
+        assert kwargs["env"]["GITLAB_API_HOST"] == expected_host
+        assert kwargs["env"]["GLAB_API_PROTOCOL"] == repository.split(":", 1)[0]
+        calls.append(command)
+        if command[1:3] == ["ci", "list"]:
+            assert command[command.index("--repo") + 1] == repository
+            payload: object = [pipeline(1 if phase == "baseline" else 2)]
+        else:
+            endpoint = command[2]
+            assert endpoint.startswith(f"projects/{expected_project}/pipelines/")
+            if "/bridges?" in endpoint:
+                payload = [{"downstream_pipeline": {"id": 3, "project_id": 7}}] if "/2/" in endpoint else []
+            elif "/jobs?" in endpoint:
+                payload = [
+                    {"id": 100, "name": "test", "allow_failure": False, "status": "failed" if phase == "failure" else "success"}
+                ]
+            else:
+                payload = pipeline(3)
+        return subprocess.CompletedProcess(command, 0, stdout=json.dumps(payload).encode(), stderr=b"")
+
+    monkeypatch.setattr(json_command.subprocess, "run", run)
+    monkeypatch.setattr(wait_ci, "_resolve_sha", lambda *_args: "a" * 40)
+    baseline = tmp_path / "baseline.json"
+    options = [
+        "--repo",
+        repository,
+        "--forge",
+        "gitlab",
+        "--ref",
+        "refs/heads/main",
+        "--source-ref",
+        "HEAD",
+        "--registration-grace",
+        "0",
+        "--poll-interval",
+        "0.01",
+    ]
+    assert wait_ci.main(["--write-baseline", str(baseline), *options]) == 0
+    phase = "failure"
+    assert wait_ci.main(["--baseline", str(baseline), *options]) == 6
+    assert forge_cli.failure_next_action("gitlab", repository, "100", job=True) in capsys.readouterr().err
+    phase = "success"
+    assert wait_ci.main(["--baseline", str(baseline), *options]) == 0
+    assert os.environ == parent_environment
+    assert any(command[2].endswith("/3") for command in calls if command[1] == "api")
+    assert any("/jobs?" in command[2] for command in calls if command[1] == "api")

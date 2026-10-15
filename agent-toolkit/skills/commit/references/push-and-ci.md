@@ -56,6 +56,10 @@ CIを判定する場合は、push前に次のとおりbaselineを作成する。
 
 baseline作成と監視では`--repo`（`owner/repo`かホストを含むURL。ローカルパスではない）、`--forge <github|gitlab>`、`--ref`、`--source-ref`をすべて指定する。その他の引数は`--help`で確かめる。複数refでは組ごとにbaselineを作成し、1件が失敗しても他を続ける。
 
+GitLabのSSH接続先とAPI接続先が異なる場合は、API側のURLをポート込みで`--repo`へ渡す。
+baseline作成と監視・再開では同じ指定を使う。
+ホストを省略した`group/project`では、glabの公開環境指定（`GITLAB_HOST`・`GITLAB_URI`・`GITLAB_URL`）と通常の設定解決を利用する。
+
 ## pushと監視
 
 1. 引数なし方式では`git push`を単独で実行し、明示方式では成功したdry-runから`--dry-run --porcelain`だけを除いた同じ引数でpushする

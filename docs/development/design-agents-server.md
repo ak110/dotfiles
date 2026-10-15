@@ -24,7 +24,16 @@ MCPサーバー自身の作業ディレクトリはホストの起動条件で�
 plugin更新で作業ディレクトリが消えると、子App Serverは生存したまま`thread/start`へ`failed to load configuration: No such file or directory`のJSON-RPC errorを返し続ける。
 子プロセスを再生成する案は、新しい子も同じ親の作業ディレクトリを継承するため採用しない。
 
-サーバーは共通の`_agents_server/plugin_root.py`の読込時に、自身を起点に解決したagent-toolkit plugin rootを確定する。root自身か祖先がmanifestの版番号を持つ場合、managed-tempへ1回複製してprocessの生存中に実在するstable rootを得る。checkoutは元の実体を使う。同じ保持版を役割名による文書解決、本文のplugin root変数の展開、内側のagents_server MCP起動設定と、`thread/start`・`thread/resume`の全launch kindの`developerInstructions`へ渡す。元の配布物の絶対パスを受け取った場合も、起動時に保持した対応から同じ文書へ解決する。委譲先はagent-toolkit skillとplugin内部資源をそのrootから読み、`<役割名>.subagent.md`や別hostのcache版数から別rootを組み立てない。
+サーバーは共通の`_agents_server/plugin_root.py`の読込時に、自身を起点に解決したagent-toolkit plugin rootを確定する。
+root自身か祖先がmanifestの版番号を持つ場合、同じ配布元・版に対応するmanaged-tempの保持実体を複数プロセスで共有する。
+checkoutは元の実体を使う。
+保持実体から再起動したサーバーも同じ実体を使い、異なる配布元・版と不完全な作成物を区別する。
+起動側と回収側の使用中判定は`_common/plugin_root_leases.py`が所有し、プロセスの識別とファイル排他で使用中の実体を保護する。
+全使用プロセスの終了後は既存のmanaged-temp回収へ渡せる状態にする。
+同じ保持版を役割名による文書解決、本文のplugin root変数の展開、内側のagents_server MCP起動設定へ渡す。
+`thread/start`・`thread/resume`の全launch kindの`developerInstructions`にも同じ版を渡す。
+元の配布物の絶対パスを受け取った場合も、起動時に保持した対応から同じ文書へ解決する。
+委譲先はagent-toolkit skillとplugin内部資源をそのrootから読み、`<役割名>.subagent.md`や別hostのcache版数から別rootを組み立てない。
 直接起動したCodexメインはこの受け渡しの対象外であり、そのplugin root解決は`rules-common.codex.md`「Codexのplugin root解決」が所有する。
 
 知識境界として、`<役割名>.subagent.md`内の`${CLAUDE_PLUGIN_ROOT}`を文書自身のrootへ展開する処理は`_agents_server/launch_requests.py::task_document_request`が所有する。委譲先が実行時にskillや内部資源を探す起点は、Codex backendのdeveloper instructionが所有する。

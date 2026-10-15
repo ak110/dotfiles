@@ -44,6 +44,7 @@ dirsize = "pytools.dirsize:main"
 dotfiles-media-remote = "pytools.media_remote:main"
 dotfiles-claude-hook = "pytools.claude_hook:main"
 dotfiles-post-apply = "pytools.post_apply:main"
+dotfiles-prune-codex-packages = "pytools.prune_codex_packages:main"
 EcoUtilities = "pytools._internal.ecoutilities_cli:main"
 fable = "pytools.agent_launcher:main_fable"
 git-justify = "pytools.git_justify:main"
@@ -468,7 +469,7 @@ addopts = [
     "--maxfail=5",
     "--durations=30",
     "--durations-min=0.5",
-    # 失敗・エラーに加えてskipの理由を要約へ出し、検証報告で未実行の範囲と理由を示せるようにする。
+    # 失敗・エラーとskipの理由を要約へ表示し、検証報告で未実行の範囲と理由を示せるようにする。
     "-rfEs",
     "--timeout=60",
     # コア数追従（-n auto等）を採用せず固定値とする（CI環境での逆効果とメモリ消費増を避けるため）

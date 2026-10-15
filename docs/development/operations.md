@@ -10,7 +10,8 @@
 引数なしで既存の4生成器を順に実行し、失敗を集約する。
 `--help`は使用方法を表示して終了コード0で終わる。
 `--check`、未知のオプションと位置引数は標準エラーへ入力の診断を出力し、非0で終わる。
-ヘルプと不正入力では生成器を起動しない。検査だけを行うモードは持たない。
+ヘルプと不正入力では生成器を起動しない。
+生成物を更新せずに同期の要否だけを確認するモードは持たない。
 
 - 同スクリプトは`sys.executable`で生成器を子プロセス起動するため、
   子が要求するプロジェクト依存（`pytilpack`等）を持つプロジェクト環境のPythonで起動する。
@@ -175,6 +176,27 @@ GitHub向けSSHのupload-pack通信が応答しない環境で、更新処理が
 子孫を終了させるのは、`git`と`ssh`が出力のハンドルを保持したまま停止すると、直接の子を終了させるだけでは待機が終わらないためである。
 `chezmoi apply`工程へは上限を設けない。
 
+## dotfilesプラグインの適用と更新
+
+dotfiles本体の`plugins/<プラグイン名>/`へ拡張を置く。
+`plugins/`は本体のGit追跡対象から外れ、各プラグインは独立したGitリポジトリとしても管理できる。
+導入時の配置例は[README.md](../../README.md)の設定の説明を参照する。
+
+`chezmoi apply`の本体後処理が完了した後、プラグインをディレクトリ名順に適用する。
+各プラグインでは`.chezmoi-source/`があればchezmoiで強制適用し、続いて`post_apply.py`があればuvで実行する。
+後処理の作業ディレクトリは各プラグインのルートとし、chezmoiの永続状態もプラグインごとに分離する。
+本体と配布先が重なる場合は警告を表示し、プラグインの内容で上書きする。
+`plugins/`が無い場合と空の場合は変更なしで終了する。
+
+プラグインのapplyに失敗した場合は、そのプラグインの`post_apply.py`を省略する。
+他のプラグインの適用は続け、applyと後処理の失敗を集約して更新結果へ返す。
+失敗したプラグインの配布物・スクリプトとコマンド出力を確認し、原因を解消して`update-dotfiles`を再実行する。
+
+`update-dotfiles`は本体のpull後、chezmoiの初期化・適用前に、Git管理されたプラグインを名前順でpullする。
+Git管理されていないプラグインはそのまま適用する。
+pullの失敗とタイムアウトでは以後の更新を停止し、プラグイン名と出力を更新ログへ残す。
+待ち時間の上限は本体と同じ`UPDATE_DOTFILES_GIT_TIMEOUT_SEC`を使う。
+
 ## miseの導入と再評価
 
 ### process-loopの非ログイン再評価
@@ -248,6 +270,16 @@ Gitの状態だけで開発ツリーと判定すると、ビルド手段を持�
 リリース取得のネットワーク失敗は従来どおり非致命として扱う。
 
 ## Codex CLI本体の旧版整理
+
+`prune-codex-packages`は実効`CODEX_HOME`の`packages/standalone/`と`packages/app-server-daemon/`にある完成済み旧パッケージを整理する。
+`CODEX_HOME`未設定時は`~/.codex`を使う。
+選択中の版と使用中の実行体に対応する版を保持し、使用が終わった旧版は次の実行で回収する。
+公式インストーラーと同じ`install.lock`で排他し、WindowsでCodexが実行中の場合は停止せず整理を延期する。
+選択先や使用中情報を取得できない場合は対象を保持して理由を返し、削除に失敗した場合は非0で終了する。
+案内された原因を解消した後、同じコマンドを再実行する。
+
+整理はCodex本体の導入成功後と、既存の自動更新タイマーの周期に実行する。
+手動操作と保持・延期の説明は[Codex利用ガイド](../guide/codex-guide.md#完成済みパッケージの整理)を参照する。
 
 `chezmoi apply`後の処理はCodexの公式インストーラーを非対話で実行した後、mise npmバックエンドとPATHから解決される非正規npm版のCodexを除去する（エンドユーザー向けの説明は`docs/guide/codex-guide.md`「Codex CLI本体」）。
 旧版の整理を`chezmoi apply`後の処理が担うのは、公式インストーラーが非対話実行時に競合するnpm版を残すためである。
@@ -355,7 +387,7 @@ atk run-script session-review-evidence -- --stats <選んだ記録の絶対パ�
 - serviceは`libexec/update_dotfiles_if_upstream_changed.py`を実行する。
   このスクリプトは現在branchが`develop`で、upstreamが`origin/develop`であることを検証する。
   そのうえで`git ls-remote`から得た`origin/develop`のcommit IDをローカル`HEAD`と比較し、自動更新専用の未完了状態も確認する
-  - commit IDが一致し未完了状態も無ければ、`update-dotfiles`を起動せず正常終了する
+  - commit IDが一致し未完了状態も無ければ、Codexの完成済み旧パッケージを整理し、`update-dotfiles`を起動せず終了する
   - 上流に変更がある場合と前回の自動更新が未完了の場合は、未完了状態を保存してから`bin/update-dotfiles`を絶対パスかつ引数なしで起動する。終了コード0を観測した場合だけ未完了状態を解除し、それ以外では次回のタイマー起動まで保持する
     - euryaleではユーザーが配布先を直接編集しないため、差分を表示したうえで確認入力を待たずに反映する。`--force`は内部の`libexec/update_dotfiles.py`が`chezmoi apply`へ渡す
   - 自動更新の判定から未完了状態の解除までを専用ロックで直列化する。作業ツリーのstash、resetおよびcleanは行わない。手動実行との重複は`update-dotfiles`の既存ロックへ委ねる
@@ -363,6 +395,7 @@ atk run-script session-review-evidence -- --stats <選んだ記録の絶対パ�
   導入時に解決した`uv`の絶対パスとスクリプトの絶対パスを埋め込む。あわせて`Environment=PATH`を指定する
   - `update-dotfiles`が実行ファイル名で起動する`chezmoi`は`~/.local/bin`にあり、PATH指定が無いと1段目で失敗する
   - 指定順は`~/.local/bin`、miseのshims、systemdが設定するPATHとし、実体を持つコマンドをshimより優先する
+- Codexパッケージの整理にも導入時の実効`CODEX_HOME`を渡す。上流変更が無い周期にも整理し、削除失敗はserviceの失敗としてjournalへ残す。延期した旧版は使用終了後の周期か`prune-codex-packages`の再実行で整理する
 - GitHubへの接続失敗、対象refの欠落、branchまたはupstreamの不一致、`update-dotfiles`の失敗は非ゼロ終了となり、
   systemdのjournalへ残る。次回のタイマー起動で再試行する
 - dotfilesの作業ツリーの未コミット差分は、`update-dotfiles`がpullの前に退避して後に復元する。ルート`mise.lock`の差分は保持せず破棄する。
