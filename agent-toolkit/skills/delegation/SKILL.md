@@ -29,7 +29,7 @@ user-invocable: false
 | 委譲先とモデルを選ぶ時点（explore・shellと、`<役割名>.parent.md`を持つ起動で`model_type`を指定しない場合を除く） | `references/runtime-routing.md` |
 | Claude Codeで`Agent`ツールの委譲先かバックグラウンドタスクを最初に起動する前、定期再確認を自ら装着する前（装着できなかった通知を受けた場合と、装着の通知も定期再確認のtaskも無い場合）、およびClaude Code固有の手順を確定する時（explore・shellの起動から受領までの操作は除き、本書の同名節に従う） | `references/claude-code-runtime.md` |
 | 完了通知および待機・停滞を確定する時 | `references/waiting-and-monitoring.md` |
-| `atk agents wait`が終了コード4・8・10または待機対象0件の非0で終わった時、待機の呼び出しがホストの上限で失敗した時、委譲先か自身のツール呼び出しが終端statusを返さずに終わった時、`agents_server`のMCPサーバーが再起動した後 | `references/wait-anomalies.md` |
+| `atk agents wait`が終了コード4・8・10または待機対象0件の非0で終わった時、待機の呼び出しがホストの上限で失敗した時、ホストから背景待機の停止通知を受けた時、委譲先か自身のツール呼び出しが終端statusを返さずに終わった時、`agents_server`のMCPサーバーが再起動した後 | `references/wait-anomalies.md` |
 | 稼働中の委譲先へ追送する前 | `references/base-contract.md` |
 | 同じworktreeへ後続または並列の書込担当を起動する前（shellを除く。shellは本書「explore・shellの起動」に従う） | `references/mandatory-rules.md` |
 | 委譲先の完了報告を受領して検収する前（explore・shellを除く） | `references/receiving.md`、`references/mandatory-rules.md` |
