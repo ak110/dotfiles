@@ -23,7 +23,7 @@ mcp__plugin_agent-toolkit_agents_server__start / send_message / kill / list:
 - `start`の自由本文のmode（`delegate`・`explore`・`write`）の本文が`share/<役割名>.subagent.md`を指す起動の遮断 (block)
 - `send_message`の`prompt`と`send_message`・`kill`の`session_id`の欠落はツール自身が拒否できるため警告 (warn)
 - 対象sessionの保存済み`cwd`の欠落は所有を確認できないため遮断 (block)
-- 全チェック通過時の強制承認 (auto-approve)
+- 全チェック通過時はClaude Codeで強制承認、Codexで通常の権限フローへ通過
 
 Agent / Task:
 
@@ -220,7 +220,7 @@ def main(payload_text: str) -> int:
     # Claude Codeのメインセッションでは一定間隔で日本語の応答指示を文脈の近くへ置き直す。
     if not is_codex and _advance_language_reinjection(payload, session_id):
         pending_notices.append(_message_format.llm_notice(_rules_context.RESPONSE_LANGUAGE_REINJECTION_NOTICE, _HOOK_ID))
-    return _emit(_decide(payload, tool_name, tool_input, session_id, is_codex=is_codex), pending_notices)
+    return _emit(_decide(payload, tool_name, tool_input, session_id, is_codex=is_codex), pending_notices, is_codex=is_codex)
 
 
 def _decide(payload: dict, tool_name: str, tool_input: dict, session_id: str, *, is_codex: bool) -> Decision:
@@ -251,21 +251,23 @@ def _decide(payload: dict, tool_name: str, tool_input: dict, session_id: str, *,
     return dataclasses.replace(_decide_edit_tool(tool_name, tool_input, cwd), notices=notices)
 
 
-def _emit(decision: Decision, pending_notices: list[str]) -> int:
+def _emit(decision: Decision, pending_notices: list[str], *, is_codex: bool) -> int:
     """判定の結果と保留の通知を標準出力・標準エラーへ書き、終了コードを返す。"""
     if decision.block is not None:
         print(decision.block, file=sys.stderr)
         return exit_with(2, pending_notices)
     pending_notices.extend(decision.notices)
     hook_output: dict[str, object] = {"hookEventName": "PreToolUse"}
-    if decision.allow:
+    # Codexは入力書換えを伴うallowだけを受理する。通常通過の権限判定はホストへ委ねる。
+    force_allow = decision.allow and not is_codex
+    if force_allow:
         hook_output["permissionDecision"] = "allow"
     contexts = [decision.context] if decision.context else []
     contexts.extend(pending_notices)
     pending_notices.clear()
     if contexts:
         hook_output["additionalContext"] = format_warning_context(contexts)
-    if decision.allow or contexts:
+    if force_allow or contexts:
         print(json.dumps({"hookSpecificOutput": hook_output}, ensure_ascii=False))
     return exit_with(0, pending_notices)
 

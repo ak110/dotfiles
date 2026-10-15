@@ -273,6 +273,7 @@ def _check_agents_server_continuation_input(session_id: str, tool_input: dict, t
     """`send_message`・`kill`の入力と保存済みcwdから操作の可否を判定する。
 
     必須値の欠落はツール自身が入力を拒否し、入力を直せば再実行できるため警告で返す。
+    通過時の`allow`は出力境界でClaude Codeの強制承認とCodexの通常通過へ変換される。
     停止対象のcwd記録の欠落は所有を確認できないため遮断する。
     """
     display_name = tool_name.rsplit("__", 1)[-1]

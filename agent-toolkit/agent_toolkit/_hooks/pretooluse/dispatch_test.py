@@ -18,6 +18,7 @@ from agent_toolkit._hooks.pretooluse import agent_checks
 from agent_toolkit._hooks.pretooluse import dispatch as pretooluse
 from agent_toolkit._hooks.pretooluse.decision import Decision
 from agent_toolkit._testing.helpers import auto_message_opening_attributes
+from agent_toolkit._testing.hook_output_contract import validate_hook_output
 from agent_toolkit._testing.pretooluse_support import (
     _VALID_H2_PLAN_CONTENT,
     _additional_context,
@@ -33,6 +34,62 @@ from agent_toolkit._testing.pretooluse_support import (
 
 _HOOKS_JSON_PATH = pathlib.Path(__file__).resolve().parents[3] / "hooks" / "hooks.json"
 _HOOKS_CODEX_JSON_PATH = pathlib.Path(__file__).resolve().parents[3] / "hooks" / "hooks.codex.json"
+
+
+@pytest.mark.parametrize("host", ["claude-code", "codex"])
+@pytest.mark.parametrize("tool_name", sorted(agent_checks.AGENTS_SERVER_HOOK_TOOL_NAMES))
+def test_agents_server_pass_uses_host_output_contract(tmp_path: pathlib.Path, host: str, tool_name: str) -> None:
+    """全agents_server通過の生成箇所が、ホスト別の公開hook契約へ到達する。"""
+    _write_session_state(tmp_path, "host-pass", {"agents_server_cwd_by_session": {"remote": str(tmp_path)}})
+    result = _run(
+        {
+            "tool_name": tool_name,
+            "tool_input": {"session_id": "remote", "prompt": "続行", "cwd": str(tmp_path)},
+            "session_id": "host-pass",
+            **({"turn_id": "codex-turn"} if host == "codex" else {}),
+        },
+        env_overrides=_plan_file_state_env(tmp_path),
+    )
+    assert result.returncode == 0, result.stderr
+    assert not result.stderr
+    output = json.loads(result.stdout) if result.stdout else {}
+    assert not validate_hook_output("PreToolUse", output, host=host)
+    if host == "codex":
+        assert not output
+    else:
+        assert output["hookSpecificOutput"]["permissionDecision"] == "allow"
+
+
+@pytest.mark.parametrize("host", ["claude-code", "codex"])
+@pytest.mark.parametrize(
+    "operation,tool_input,missing",
+    [
+        ("send_message", {"session_id": "remote"}, "prompt"),
+        ("send_message", {"prompt": "続行"}, "session_id"),
+        ("kill", {}, "session_id"),
+    ],
+)
+def test_continuation_warning_preserves_host_contract(
+    tmp_path: pathlib.Path, host: str, operation: str, tool_input: dict, missing: str
+) -> None:
+    """継続入力の各警告付き通過が追加文脈を保持する。"""
+    result = _run(
+        {
+            "tool_name": f"mcp__agents_server__{operation}",
+            "tool_input": tool_input,
+            "session_id": "host-warning",
+            **({"turn_id": "codex-turn"} if host == "codex" else {}),
+        },
+        env_overrides=_plan_file_state_env(tmp_path),
+    )
+    assert result.returncode == 0, result.stderr
+    assert not result.stderr
+    output = json.loads(result.stdout)
+    assert not validate_hook_output("PreToolUse", output, host=host)
+    specific = output["hookSpecificOutput"]
+    assert f"`{missing}`" in specific["additionalContext"]
+    assert "次の操作:" in specific["additionalContext"]
+    assert ("permissionDecision" in specific) is (host == "claude-code")
 
 
 def _original_record(tmp_path: pathlib.Path, root_kind: str, monkeypatch: pytest.MonkeyPatch) -> pathlib.Path:
