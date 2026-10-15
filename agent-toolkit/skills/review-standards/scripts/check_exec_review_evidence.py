@@ -32,7 +32,7 @@ import accepted_review_evidence
 import reader_fit_declaration
 import verification_results
 
-from agent_toolkit._atk import review_table
+from agent_toolkit._atk import managed_temp, review_table
 from agent_toolkit._atk.wi import entries as _wi_entries
 from agent_toolkit._atk.wi import repo as _wi_repo
 from agent_toolkit._atk.wi import sync as _wi_sync
@@ -2170,6 +2170,39 @@ def _batch_arguments(value: object) -> tuple[str, list[str]]:
     return value["plan"], args
 
 
+def _save_return_input(
+    args: argparse.Namespace,
+    filenames: list[str],
+    plans: list[pathlib.Path],
+    records: list[pathlib.Path],
+    *,
+    reviewed_head: str,
+    review_start: str,
+    previous_review_start: str | None,
+    previous_review_head: str | None,
+) -> pathlib.Path:
+    """検査に使った入力を一括検査の受理形式で保存し、受領側へ同じ組を渡す。"""
+    value = {
+        "plan": str(plans[0]) if plans else "なし",
+        "evidence": str(args.evidence),
+        "wi": filenames,
+        "reviewed_head": reviewed_head,
+        "review_table": str(args.review_table),
+        "round": args.round,
+        "plans": [str(path) for path in plans],
+        "input_records": [str(path) for path in records],
+        "reader_fit_review": args.reader_fit_review,
+        "review_start": review_start,
+        "previous_review_start": previous_review_start,
+        "previous_review_head": previous_review_head,
+    }
+    # 生成側も消費側と同じ変換で受理を確認し、形式の定義を一括検査へ保つ。
+    _batch_arguments(value)
+    path = managed_temp.create_managed_temp("exec-review-input") / "reviews.json"
+    _write_evidence_file(path, {"version": 1, "reviews": [value]})
+    return path
+
+
 def _check_batch(path: pathlib.Path, *, show_all_rows: bool = False) -> int:
     """組ごとの単一検査を完了させ、固定返却の全行と診断を計画に対応付けて返す。"""
     if not path.is_absolute():
@@ -2230,7 +2263,13 @@ def main(argv: list[str] | None = None) -> int:
         help="`完成条件証拠`（JSON）の絶対パス。証拠要求なしの返却生成では『なし』",
     )
     parser.add_argument("wi", nargs="*", help="対象WIのファイル名。計画だけのレビューでは省略する")
-    parser.add_argument("--batch", type=pathlib.Path, metavar="PATH", help="レビュー返却ごとの入力組を持つJSONの絶対パス")
+    parser.add_argument(
+        "--batch",
+        type=pathlib.Path,
+        action="append",
+        metavar="PATH",
+        help="レビュー返却ごとの入力組を持つJSONの絶対パス。複数の生成済み入力は反復指定する",
+    )
     parser.add_argument(
         "--review-table", type=pathlib.Path, metavar="PATH", help="返却の件数を取得するレビュー指摘管理表の絶対パス"
     )
@@ -2426,10 +2465,18 @@ def main(argv: list[str] | None = None) -> int:
             )
         ):
             parser.error("--batchは単一検査・雛形生成・参照更新の引数と同時に指定できません")
-        try:
-            return _check_batch(args.batch, show_all_rows=args.show_all_rows)
-        except (OSError, UnicodeError, ValueError) as error:
-            parser.error(str(error))
+        failed = False
+        for path in args.batch:
+            try:
+                result = _check_batch(path, show_all_rows=args.show_all_rows)
+            except (OSError, UnicodeError, ValueError) as error:
+                _next_action.report(
+                    f"一括検査の入力{path}: {error}",
+                    next_action="入力JSONのパスとversion・reviewsの形式を直し、--batchを再実行する",
+                )
+                result = 1
+            failed = failed or result != 0
+        return int(failed)
     if args.evidence is None:
         parser.error("完成条件証拠の絶対パスか--batchを指定してください")
     if args.rewrite_map is not None:
@@ -2489,10 +2536,12 @@ def main(argv: list[str] | None = None) -> int:
         )
     else:
         errors = check_evidence(args.evidence, filenames, expected_head=args.expected_head, plans=args.plan)
+    reviewed_head = args.expected_head
     review_start = previous_start = previous_head = None
     if args.return_result and not errors:
         try:
             repository = repository_root()
+            reviewed_head = _commit_oid(repository, args.expected_head)
             review_start = _commit_oid(repository, args.review_start)
             if args.previous_review_start is not None:
                 previous_start = _commit_oid(repository, args.previous_review_start)
@@ -2502,7 +2551,7 @@ def main(argv: list[str] | None = None) -> int:
                 typing.cast(str, args.reader_fit_review),
                 repository,
                 review_start,
-                _commit_oid(repository, args.expected_head),
+                reviewed_head,
                 typing.cast(int, args.round),
                 previous_start,
                 previous_head,
@@ -2519,22 +2568,37 @@ def main(argv: list[str] | None = None) -> int:
         return 1
     if args.return_result:
         assert isinstance(args.reader_fit_review, str)
-        print(
-            "\n".join(
-                return_lines(
-                    args.expected_head,
-                    unanswered,
-                    plan_paths,
-                    input_record_paths,
-                    None if no_evidence else args.evidence,
-                    reader_fit_review=args.reader_fit_review,
-                    show_all_rows=args.show_all_rows,
-                    review_start=review_start,
-                    previous_review_start=previous_start,
-                    previous_review_head=previous_head,
-                )
+        try:
+            lines = return_lines(
+                reviewed_head,
+                unanswered,
+                plan_paths,
+                input_record_paths,
+                None if no_evidence else args.evidence,
+                reader_fit_review=args.reader_fit_review,
+                show_all_rows=args.show_all_rows,
+                review_start=review_start,
+                previous_review_start=previous_start,
+                previous_review_head=previous_head,
             )
-        )
+            assert review_start is not None
+            input_path = _save_return_input(
+                args,
+                filenames,
+                plan_paths,
+                input_record_paths,
+                reviewed_head=reviewed_head,
+                review_start=review_start,
+                previous_review_start=previous_start,
+                previous_review_head=previous_head,
+            )
+        except (OSError, UnicodeError, ValueError, managed_temp.ManagedTempError) as error:
+            _next_action.report(
+                f"受領確認の入力を保存できません: {_diagnostic(error)}",
+                next_action="保存先の診断を確認し、同じ返却生成を再実行する。completedの返却は生成していない",
+            )
+            return 1
+        print("\n".join([*lines, f"受領確認入力のパス: {input_path}"]))
     else:
         print(f"成功: 完成条件の証拠が基準を満たすことを確認しました（WI {len(filenames)} 件）")
     return 0
