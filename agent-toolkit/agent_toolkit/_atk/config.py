@@ -97,6 +97,7 @@ _MUTABLE_KEY_DEFAULTS = {
     "write_model": "agy:gemini-3.8-flash/medium,claude:claude-opus-5-5/medium",
     "codex_fast_mode": "false",
     "codex_model_providers": "",
+    "claude_api_env_file": "",
     "process_loop_repositories": "[]",
 }
 
@@ -205,7 +206,10 @@ def parse_engine_order(value: str) -> tuple[str, ...]:
 
 def _validate_mutable_setting(key: str, value: str) -> None:
     """速度、接続先列、段位モデル、engine順、モデル候補をそれぞれの受理形式で確かめる。"""
-    if key == "process_loop_repositories":
+    if key == "claude_api_env_file":
+        if "\n" in value or "\r" in value or "\0" in value:
+            raise ValueError("envファイルのパス1つ、または空文字列で指定する")
+    elif key == "process_loop_repositories":
         parse_process_loop_repositories(value)
     elif key == "codex_fast_mode":
         if value not in {"true", "false"}:
@@ -328,6 +332,8 @@ def resolve_mutable_setting(key: str) -> str:
         raise _next_action.ActionableError(
             f"{source}の値が不正です（値: {value}）。{error}", next_action=next_action
         ) from error
+    if key == "claude_api_env_file":
+        return str(pathlib.Path(value).expanduser()) if value else ""
     return ",".join(parse_codex_provider_candidates(value)) if key == "codex_model_providers" else value
 
 

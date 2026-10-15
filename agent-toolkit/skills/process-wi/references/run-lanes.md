@@ -121,8 +121,23 @@ Git統合、全計画保存、WI終端と選定の統合状態は`atk lane integ
 終了コード0と`phase: finalized`、統合結果のOID、計画保存、AWI終端を検収し、`parent-handoff.md`へ記録する。`git-integrated`は最終化途中であり統合完了としない。失敗では同じmanifestとレビュー対象HEADで未完了工程から再開する。CLIは今回のWI集合と所有を検収し、全最終化操作が成立してから選定原本を原子的に統合済みへ更新する。担当が稼働中の統合には合意した現担当のsessionを指定し、回収では全担当と外部プロセスの終了を確認する。資源、完了レーンと所属WIは追加に備えて保持する。
 
 資源の回収は終了時の`atk lane delete`が行う。登録全体を先に判定し、全工程と外部プロセスの終了、選定の統合済み、clean、Git共通ディレクトリと専用branchの登録一致、統合先への到達を削除直前にも確かめる。確認後は`--commands-file`で指定した`delete`コマンドの実行、worktree、到達を再確認したbranchの`-D`、旧配置の登録が持つ個別managed-tempの順で回収する。未統合、dirty、稼働中、不明、途中失敗の対象は、理由と残る操作を回収対象の外へ保存し、再実行は残る処理から続ける。セッションのmanaged-tempと証拠は専用worktreeへ置かず、回収対象から外す。通常終了の`atk agents-exit-session`と、process-loopが子セッションの終了後に行う処理が同じ回収を呼び出し、turnごとのSessionEndでは回収しない。
+終端済みの委譲sessionが保持する資源は、回収処理が所有側の`agents_server`へ解放を要求し、未回収の結果を保って解放してから使用中判定をやり直す。
+実行中のsessionと解放できない資源は保持し、次節の手順で再回収する。
 
 到達確認を経た`-D`でbranchを削除するのは、`-d`がupstreamを基準に判定し、push前のローカル統合を未統合として拒否するためである。監査記録は`docs/development/audit-records.md`「agent-toolkit/skills/process-wi/references/run-lanes.md「統合とAWI終端」：所有資源の回収：2026年9月3日」にある。
+
+### 未回収レーンの再回収
+
+回収結果が示す未解放の委譲sessionについて、終端と`atk agents wait`による結果本文の回収を確認し、再開する予定が無ければ、公開MCPの`agents_server`の`stop`へ`session_id`としてそのIDを渡す。
+呼び出しは`stop(session_id="<回収結果にある委譲sessionのID>")`とする。
+公開`stop`は終端結果も破棄し、結果保持を指定する引数を受け取らない。
+回収処理が所有側へ要求する自動解放では、未回収の結果を保持する。
+実行中のsessionは終端を待ち、結果を回収する。
+
+停止が成功して保持理由を解消した後、対象リポジトリをcwdとして`atk lane delete --session-id <レーン資源を作成した所有sessionのID>`を再実行する。
+`--session-id`には元の回収操作と同じレーン資源の所有sessionを指定する。
+このIDは`atk lane delete --list`の所有登録から確認でき、`stop`へ渡す委譲sessionのIDとは役割が異なる。
+停止に失敗した場合や外部プロセスの使用が残る場合は、資源と回収結果を保持し、理由と残る操作を報告する。
 
 ## 中断レーンの再開
 

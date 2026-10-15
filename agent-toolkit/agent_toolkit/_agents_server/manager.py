@@ -7,6 +7,7 @@ import contextlib
 import datetime
 import json
 import logging
+from collections.abc import Mapping
 from typing import Any
 
 from agent_toolkit._agents_server import (
@@ -14,6 +15,7 @@ from agent_toolkit._agents_server import (
     launch_requests,
     manager_wait,
     result_projection,
+    session_handoff,
     state,
     status_file,
     tool_names,
@@ -54,7 +56,7 @@ from agent_toolkit._agents_server.state import (
 )
 from agent_toolkit._agents_server.tool_descriptions import shell_prompt
 from agent_toolkit._atk import config as _atk_config
-from agent_toolkit._common import codex_models
+from agent_toolkit._common import codex_models, session_release
 from agent_toolkit._common.next_action import ActionableError
 
 _LOG = logging.getLogger("agent-toolkit.agents-server.mcp")
@@ -98,6 +100,11 @@ class AgentsServerManager(manager_wait.ManagerWait):
     async def _monitor_auto_resume(self) -> None:
         """公開待機操作に依存せず、孫session終端後の自動再開を進める。"""
         while True:
+            await session_release.process_requests(
+                self.sessions,
+                self.stop,
+                state_root=None if self._status_writer is None else self._status_writer.state_root,
+            )
             awaiting = [session for session in self.sessions.values() if session.awaiting_auto_resume]
             for session in awaiting:
                 await self._advance_child_session_wait(session)
@@ -109,6 +116,7 @@ class AgentsServerManager(manager_wait.ManagerWait):
         *,
         launch_kind: LaunchKind,
         usage: str | None = None,
+        excluded_candidates: Mapping[ModelCandidate, str] | None = None,
     ) -> tuple[list[ModelCandidate], dict[ModelCandidate, str]]:
         """起動条件を検証し、除外後の候補列を設定順で返す。
 
@@ -132,6 +140,8 @@ class AgentsServerManager(manager_wait.ManagerWait):
             for candidate in candidates
             if launch_kind == "explore" and candidate[0] == "agy"
         }
+        forced = dict(excluded_candidates or {})
+        unsupported.update(forced)
         candidates = [candidate for candidate in candidates if candidate not in unsupported]
         if not candidates:
             raise ActionableError(
@@ -161,6 +171,7 @@ class AgentsServerManager(manager_wait.ManagerWait):
         launch_kind: LaunchKind = "delegate",
         label: str | None = None,
         usage: str | None = None,
+        excluded_candidates: Mapping[ModelCandidate, str] | None = None,
     ) -> dict[str, Any]:
         """モデル設定の候補を先頭から試し、起動できたturnを返す。
 
@@ -179,6 +190,7 @@ class AgentsServerManager(manager_wait.ManagerWait):
             model_type,
             launch_kind=launch_kind,
             usage=usage,
+            excluded_candidates=excluded_candidates,
         )
         unavailable_response: dict[str, Any] | None = None
         unavailable_session: SessionState | None = None
@@ -230,6 +242,7 @@ class AgentsServerManager(manager_wait.ManagerWait):
                 _LOG.warning("agy_start_failed model_type=%s model=%s reason=%s", model_type, model, reason)
                 continue
             session.engine = engine
+            session.usage = usage
             # テストや独自のMCPクライアントから起動して親のセッション記録に起動結果が残らない委譲先も、
             # `atk serve`の一覧が親の下へ置けるよう、作成時点の委譲元を登録簿へ記録する。
             session.launcher_session_id = self._launcher_session_id()
@@ -314,6 +327,31 @@ class AgentsServerManager(manager_wait.ManagerWait):
                 "除外した候補は`excluded`の理由（CLIの導入・認証・利用上限など）を解消すると再び使える"
             ),
         )
+
+    async def start_handoff(self, session_id: str) -> dict[str, Any]:
+        """終端した前任の起動条件と進捗を使い、明示操作1回で後任を開始する。"""
+        current = await self.resolve_handoff_predecessor(session_id)
+        predecessor = SessionResumeState.from_session(current) if isinstance(current, SessionState) else current
+        reason = session_handoff.availability_reason(
+            predecessor.engine,
+            predecessor.status,
+            session_handoff.predecessor_error(predecessor),
+        )
+        candidate = state.selected_candidate(predecessor)
+        excluded = {candidate: reason} if candidate is not None and reason is not None else {}
+        prompt = await run_file_operation(session_handoff.prepare_prompt, predecessor)
+        assert predecessor.model_type is not None
+        response = await self.start(
+            predecessor.model_type,
+            prompt,
+            predecessor.cwd,
+            launch_kind=predecessor.launch_kind,
+            label=predecessor.label,
+            usage=predecessor.usage,
+            excluded_candidates=excluded,
+        )
+        response["cwd"] = predecessor.cwd
+        return response
 
     async def _save_started_session(self, session: SessionState) -> list[dict[str, str]]:
         """開始済みの情報を公開し、共有状態などの補助的な保存に失敗してもsessionが存在しないとは扱わない。"""
@@ -535,6 +573,11 @@ class AgentsServerManager(manager_wait.ManagerWait):
         再起動した会話が既存sessionへの`send_message`から再開しても、PostToolUseがこの値で別名索引を書けるようにするためである。
         """
         response = await self._deliver_message(session_id, prompt, timeout)
+        session = self.sessions.get(session_id)
+        if session is not None and response["delivery"] != "reply_failed":
+            session.followup_prompts += (prompt,)
+            session.touch()
+            await session.drain_registration()
         if self._status_writer is not None:
             response = {**response, "root_session_id": self._status_writer.root_session_id}
         return response

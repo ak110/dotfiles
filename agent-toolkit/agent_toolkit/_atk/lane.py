@@ -12,6 +12,7 @@ import pathlib
 import re
 import subprocess
 import sys
+import time
 import typing
 from collections.abc import Generator
 
@@ -20,7 +21,8 @@ lazy import psutil
 lazy import yaml
 
 from agent_toolkit._atk import help_text, managed_temp, outcome, run_command
-from agent_toolkit._common import atomic_file, file_lock, session_launchers, state_paths, worktree_hooks
+from agent_toolkit._common import atomic_file, file_lock, session_launchers, session_release, state_paths, worktree_hooks
+from agent_toolkit._common.wait_schedule import get_wait_timeout
 from agent_toolkit._git import command as git_command
 from agent_toolkit._git import worktree_exclude
 from agent_toolkit._plan import selection
@@ -245,7 +247,7 @@ def _transfer(source: pathlib.Path, destination: pathlib.Path, args: argparse.Na
         raise ValueError("再利用するrepoまたは統合先が異なる。元の入力で再実行する")
     if _worktrees(repo).get(str(worktree)) != record["branch"]:
         raise ValueError("再利用するworktreeの登録が異なる。資源を確認する")
-    activity = _session_activity(worktree) or _process_activity(worktree)
+    activity = _worktree_activity(worktree)
     if activity:
         raise ValueError(f"再利用元はまだ使用中: {activity}。担当と外部プロセスの終端を待つ")
     record.update(session_id=session_id, record_path=str(destination), selection_file=str(args.selection_file.resolve()))
@@ -402,6 +404,45 @@ def _process_activity(worktree: pathlib.Path) -> str | None:
     return None
 
 
+def _worktree_activity(worktree: pathlib.Path) -> str | None:
+    """所有側へ終端資源の解放を要求してから、担当と外部プロセスの使用を再判定する。"""
+    directory = session_registry.registry_directory()
+    deadline: float | None = None
+    released: list[str] = []
+    for path in directory.glob("*.json"):
+        resolution = session_registry.resolve(path.stem)
+        info = resolution.resume_info
+        if info is None or not info.cwd or not pathlib.Path(info.cwd).resolve().is_relative_to(worktree):
+            continue
+        instruction = f"agents_serverのstopへsession_id={path.stem}を渡し、同じlane deleteを再実行する"
+        if resolution.state is session_registry.Resolution.RUNNING:
+            return (
+                f"担当の終了を確認できない: session_id={path.stem}。"
+                "自然終端を確認し、atk agents waitで結果を回収して再開する予定が無ければ、"
+                f"{instruction}"
+            )
+        if resolution.state is session_registry.Resolution.TERMINAL:
+            if deadline is None:
+                deadline = time.monotonic() + get_wait_timeout("main")
+            reason = session_release.request_release(path.stem, worktree, deadline=deadline)
+            if reason:
+                return f"session_id={path.stem}: {reason}。{instruction}"
+            released.append(path.stem)
+    while True:
+        activity = _session_activity(worktree) or _process_activity(worktree)
+        if not activity:
+            return None
+        if not released or deadline is None or time.monotonic() >= deadline:
+            if released:
+                identifiers = ",".join(released)
+                return (
+                    f"{activity}。session_id={identifiers}。agents_serverのstopへ各session_idを渡し、"
+                    "同じlane deleteを再実行する"
+                )
+            return activity
+        time.sleep(min(0.05, max(0.0, deadline - time.monotonic())))
+
+
 def _eligible(record: dict[str, typing.Any]) -> str | None:
     repo = pathlib.Path(record["repo"])
     worktree = pathlib.Path(record["worktree"])
@@ -412,7 +453,7 @@ def _eligible(record: dict[str, typing.Any]) -> str | None:
     document = yaml.safe_load(pathlib.Path(record["selection_file"]).read_text(encoding="utf-8"))
     if record["lane"] not in selection.integrated_lanes(document):
         return "選定の統合状態が未統合"
-    activity = _session_activity(worktree) or _process_activity(worktree)
+    activity = _worktree_activity(worktree)
     if activity:
         return activity
     trees = _worktrees(repo)

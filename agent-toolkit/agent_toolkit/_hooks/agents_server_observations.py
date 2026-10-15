@@ -117,9 +117,13 @@ def _agents_server_remote_session_id(tool_input: object, structured: dict, tool_
 
 
 def _agents_server_recorded_cwd(session_id: str, payload: dict, structured: dict, tool_name: str) -> object:
-    """startの入力cwdまたはsessionごとのcwd mapから応答のcwd候補を取得する。"""
+    """通常startの入力、引き継ぎ応答、継続先の記録からcwd候補を取得する。"""
     tool_input = payload.get("tool_input")
     if tool_name in _AGENTS_SERVER_START_TOOLS:
+        handoff_from = tool_input.get("handoff_from") if isinstance(tool_input, dict) else None
+        if isinstance(handoff_from, str) and handoff_from:
+            response_cwd = structured.get("cwd")
+            return response_cwd if _is_nonempty_absolute_cwd(response_cwd) else None
         input_cwd = tool_input.get("cwd") if isinstance(tool_input, dict) else None
         return input_cwd if _is_nonempty_absolute_cwd(input_cwd) else None
     state = read_state(session_id)
@@ -481,7 +485,11 @@ def observe_tool(
     fallback_status_host_session = session_id if tool_name.startswith("mcp__agents_server__") else None
     if tool_name in _AGENTS_SERVER_START_TOOLS:
         cwd_value = _agents_server_recorded_cwd(session_id, payload, structured, tool_name)
-        model_type = _agents_server_model_type(tool_input, operation)
+        if isinstance(tool_input.get("handoff_from"), str):
+            restored_type = structured.get("model_type")
+            model_type = restored_type if isinstance(restored_type, str) else None
+        else:
+            model_type = _agents_server_model_type(tool_input, operation)
         if model_type in _TRACKED_MODEL_TYPES:
             _process_loop_log.append("subagent_start", session_id=session_id, type=model_type)
         failure = _record_agents_server_session_state(

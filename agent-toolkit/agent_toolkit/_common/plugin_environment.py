@@ -64,6 +64,8 @@ def launch_environment(root: Path, environment: Mapping[str, str]) -> dict[str, 
     """uv子プロセスの環境を組み立て、呼出元の環境とPATHを保持する。"""
     result = dict(environment)
     inherited_venv.strip_inherited_venv(result)
+    if "UV_PROJECT_ENVIRONMENT" in result:
+        result[inherited_venv.CALLER_PROJECT_ENVIRONMENT_KEY] = result["UV_PROJECT_ENVIRONMENT"]
     selected = str(project_environment(root, environment))
     result[RUNTIME_DATA_ENV] = str(runtime_data(environment))
     result[RUNTIME_ENVIRONMENT_ENV] = selected

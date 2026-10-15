@@ -85,8 +85,13 @@ def test_consumed_wait_points_to_saved_result(
         encoding="utf-8",
     )
 
-    def lock(_handle: Any, *, blocking: bool) -> None:
-        if not blocking:
+    lock_contended = True
+
+    def lock(_handle: Any, **_options: Any) -> None:
+        nonlocal lock_contended
+        # 初回の競合後に先行waitが解放した状態を表す。
+        if lock_contended:
+            lock_contended = False
             raise BlockingIOError("先行waitが所有")
 
     monkeypatch.setattr(agents_wait, "acquire_lock", lock)

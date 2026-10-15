@@ -118,3 +118,6 @@ completion-reportが報告する前に、公開状態の4項目（`agent-toolkit
 自律モードのユーザーへの伝達は報告用UWIの保存の検収で完了する（Stop hookが可視発話に本文を求めるのは協調モードの報告に限る）。Stop hookは`agent-toolkit:completion-report`の起動の有無だけを判定するため、作業完了報告の後に振り返りの結果報告まで進むことは、メインが同スキルの工程に従って確かめる。
 
 通常終了の`atk agents-exit-session`が、所有sessionのレーン資源を`atk lane delete`と同じ条件で回収する。process-loopでは子sessionの終了後、正常・異常判定と再起動判断より前に同じ条件で回収する。返された回収結果の保存先と未回収対象を検収し、保持理由を解消できない対象は成果を保って報告へ残す。回収の失敗をホスト終了要求の成功で隠さず、次回開始時の`atk lane delete --list`へ引き継ぐ。
+対象worktreeを保持する終端済みの委譲sessionは、所有側の`agents_server`へ結果を保持した解放を要求し、その後に使用中かを判定する。
+実行中のsession、所有側が応答しないsession、解放後も外部プロセスが使うworktreeは保持する。
+未解放sessionのIDが返った場合は、`references/run-lanes.md`「未回収レーンの再回収」に従い、終端結果の回収後に公開MCPの`stop`へ渡し、同じ所有sessionの`atk lane delete`を再実行する。

@@ -214,12 +214,20 @@ async def test_resumed_session_keeps_every_launch_info_item(
     labelで自sessionを探す手順と、`-review`の完了結果に付く採否確定の案内が成立しなくなる。
     再開後の登録簿にも同じ値を書き、もう一度再起動しても保たれることを確かめる。
     """
-    assert set(_LAUNCH_VALUES) == {field.name for field in dataclasses.fields(session_registry.LaunchInfo)}
+    launch_values: dict[str, Any] = {
+        **_LAUNCH_VALUES,
+        "usage": "review",
+        "followup_prompts": ("先行追送",),
+        "final_responses": ((1, "先行応答"),),
+        "terminal_error": None,
+    }
+    assert set(launch_values) == {field.name for field in dataclasses.fields(session_registry.LaunchInfo)}
     manager, writer = _resume_test_manager(monkeypatch, tmp_path)
     session = state.SessionState(
-        "launched-session", str(tmp_path), engine="claude", turn_seq=2, publish_registry=True, **_LAUNCH_VALUES
+        "launched-session", str(tmp_path), engine="claude", turn_seq=2, publish_registry=True, **launch_values
     )
     _complete(session, message="前のturn")
+    expected_info = dataclasses.replace(session_registry.LaunchInfo.of(session), followup_prompts=("先行追送", "続行"))
     # 再起動を模す前に、旧所有者が作成する登録の保存を完了する。
     await session.drain_registration()
     prepare_resume(manager, session)
@@ -240,7 +248,8 @@ async def test_resumed_session_keeps_every_launch_info_item(
     assert (shown["label"], shown["prompt"]) == (_LAUNCH_VALUES["label"], _LAUNCH_VALUES["prompt"])
     resume_info = session_registry.resolve(session.session_id).resume_info
     assert resume_info is not None
-    assert resume_info.launch_info == session_registry.LaunchInfo(**_LAUNCH_VALUES)
+    assert session_registry.LaunchInfo.of(resumed) == expected_info
+    assert resume_info.launch_info == expected_info
 
     _complete(resumed, message="再開後のturn")
     writer.flush()

@@ -4,6 +4,8 @@ import asyncio
 import json
 import os
 import pathlib
+import subprocess
+import sys
 import threading
 from collections.abc import Callable
 from typing import Any
@@ -26,6 +28,7 @@ from agent_toolkit._atk import managed_temp
 from agent_toolkit._common import session_registry, state_paths, wait_schedule
 from agent_toolkit._common.file_lock import acquire_lock, release_lock
 from agent_toolkit._common.next_action import NEXT_ACTION_PREFIX
+from agent_toolkit._testing import isolation
 from agent_toolkit._testing.agents_server_support import exited_process_identity
 from agent_toolkit._testing.managed_temp_support import setattr_in_managed_temp_modules
 
@@ -96,7 +99,7 @@ def test_agents_wait_outputs_every_retained_result(
 ) -> None:
     """未回収の終端結果を識別子順のJSON Linesで全件返し、回収した結果ファイルを残さない。
 
-    失敗で終端した結果には、継続・別候補での再起動・巻き取りを選ぶ次の操作が付く。
+    作業の失敗で終端した結果には、同じsessionへの継続か巻き取りの次の操作が付く。
     欠けると委譲元は失敗の結果だけを受け取り、同じ候補での再起動を繰り返し得る。
     """
     wait_environment.mkdir(parents=True)
@@ -115,10 +118,52 @@ def test_agents_wait_outputs_every_retained_result(
     next_action = failed.pop("next_action")
     assert failed == second
     assert "`send_message`" in next_action
-    assert "`model_type`" in next_action
+    assert "作業を巻き取る" in next_action
+    assert "handoff_from" not in next_action
     assert not captured.err
     assert not (wait_environment / "session-1.json").exists()
     assert not (wait_environment / "session-2.json").exists()
+
+
+@pytest.mark.parametrize("turn_seq", [1, 2, 4], ids=["initial-turn", "followup-turn", "auto-resumed-turn"])
+@pytest.mark.parametrize(
+    ("engine", "error", "handoff"),
+    [
+        ("codex", {"codexErrorInfo": "usageLimitExceeded"}, True),
+        ("codex", {"codexErrorInfo": "serverOverloaded"}, True),
+        ("codex", {"codexErrorInfo": "rateLimitExceeded"}, True),
+        ("claude", {"apiErrorStatus": 429}, True),
+        ("claude", {"apiErrorStatus": 401}, True),
+        ("claude", {"apiErrorStatus": 403}, True),
+        ("claude", {"apiErrorStatus": 529}, True),
+        ("claude", {"apiErrorStatus": 429, "usageLimit": {"type": "five_hour"}}, False),
+        ("agy", {"stderr": "capacity exhausted"}, True),
+        ("codex", {"message": "作業の検証失敗"}, False),
+    ],
+)
+def test_agents_wait_handoff_guidance_matches_backend_availability(
+    wait_environment: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+    engine: str,
+    error: dict[str, object],
+    handoff: bool,
+    turn_seq: int,
+) -> None:
+    """全turnの可用性失敗で前任ID付きstartを案内し、作業失敗と解除待ちは継続・巻き取りを保つ。"""
+    wait_environment.mkdir(parents=True)
+    payload = {"status": "failed", "agent_message": "進捗全文", "engine": engine, "error": error, "turn_seq": turn_seq}
+    (wait_environment / "predecessor.json").write_text(json.dumps(payload), encoding="utf-8")
+    with pytest.raises(SystemExit, match="0"):
+        atk.main(["agents", "wait"])
+    result = json.loads(capsys.readouterr().out)
+    action = result["next_action"]
+    if handoff:
+        assert '{"handoff_from": "predecessor"}' in action
+        assert "send_message" not in action
+    else:
+        assert "send_message" in action
+        assert "handoff_from" not in action
+    assert result["agent_message"] == "進捗全文"
 
 
 def test_wait_result_preserves_started_model() -> None:
@@ -598,17 +643,16 @@ def _observe_waiters(monkeypatch: pytest.MonkeyPatch, expected_count: int) -> tu
     original_acquire = agents_wait.acquire_lock
     followers_waiting = threading.Event()
     count_lock = threading.Lock()
-    failed_nonblocking = 0
+    failed_threads: set[int] = set()
 
     def observe_acquire(lock_file, *, blocking: bool):
-        nonlocal failed_nonblocking
         try:
             return original_acquire(lock_file, blocking=blocking)
         except OSError:
             if not blocking:
                 with count_lock:
-                    failed_nonblocking += 1
-                    if failed_nonblocking == expected_count:
+                    failed_threads.add(threading.get_ident())
+                    if len(failed_threads) == expected_count:
                         followers_waiting.set()
             raise
 
@@ -622,6 +666,7 @@ def _run_contended_wait(
     prepare: Callable[[pathlib.Path, pathlib.Path], None] | None = None,
 ) -> int:
     """後発待機がlockに並んだ後、未公開runを残して所有権を渡す。"""
+    monkeypatch.setattr(agents_wait, "get_wait_timeout", lambda _bucket: 10.0)
     _write_own_status(shared_layout.results_directory("root-session", tmp_path), [{"session_id": "session-1"}])
     _, run_path = _write_current_wait_run(tmp_path, target="session-1", status="running")
     original_acquire, follower_waiting = _observe_waiters(monkeypatch, 1)
@@ -736,6 +781,7 @@ def test_followers_join_the_same_wait_run(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """同時に発行した2件の後発待機は先行runへ固定し、結果を1回だけ再演する。"""
+    monkeypatch.setattr(agents_wait, "get_wait_timeout", lambda _bucket: 10.0)
     _write_own_status(shared_layout.results_directory("root-session", tmp_path), [{"session_id": "session-1"}])
     lock_path = _wait_lock_path(tmp_path)
     lock_path.parent.mkdir(parents=True)
@@ -787,6 +833,216 @@ def test_followers_join_the_same_wait_run(
     assert consumed == {"status": "consumed", "run_id": "run-1"}
 
 
+@pytest.mark.parametrize("host_alias", [False, True], ids=["root", "codex-alias"])
+def test_agents_wait_contention_uses_derived_deadline_and_preserves_results(
+    monkeypatch: pytest.MonkeyPatch,
+    wait_environment: pathlib.Path,
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+    host_alias: bool,
+) -> None:
+    """長時間の競合は導出期限で診断を返し、固定runと原本・退避物を保持する。"""
+    _set_ttl_environment(monkeypatch, {})
+    if host_alias:
+        shared_roots.write_host_alias("root-session", "root", "codex-thread", tmp_path)
+        monkeypatch.setenv("AGENT_TOOLKIT_OWNER_SESSION", "root-session")
+        monkeypatch.setenv("CODEX_THREAD_ID", "codex-thread")
+        monkeypatch.delenv("CLAUDE_CODE_SESSION_ID")
+    _write_own_status(wait_environment, [{"session_id": "session-1"}])
+    directory, run_path = _write_current_wait_run(tmp_path, target="session-1", status="running")
+    _stash_result(tmp_path, run_path)
+    _leave_result_original(tmp_path, run_path)
+    _stash_notice(tmp_path, run_path)
+    preserved = {path: path.read_bytes() for path in tmp_path.rglob("*.json") if path.is_file()}
+    expected_limit = 240.0 if host_alias else 270.0
+    clock = [0.0]
+    sleeps: list[float] = []
+    original_acquire = agents_wait.acquire_lock
+
+    def nonblocking_only(lock_file, *, blocking: bool) -> None:
+        assert not blocking, "待機全体の期限をOSのblocking取得へ委ねている"
+        original_acquire(lock_file, blocking=False)
+
+    def advance(seconds: float) -> None:
+        sleeps.append(seconds)
+        clock[0] = expected_limit - 0.5 if len(sleeps) == 1 else clock[0] + seconds
+        # 競合開始後にcurrentが動いても、合流先は最初のrunへ固定する。
+        agents_wait._write_json(directory / "current.json", {"run_id": "later-run"})  # pylint: disable=protected-access
+
+    monkeypatch.setattr(agents_wait, "acquire_lock", nonblocking_only)
+    monkeypatch.setattr(agents_wait.time, "monotonic", lambda: clock[0])
+    monkeypatch.setattr(agents_wait.time, "sleep", advance)
+    lock_path = _wait_lock_path(tmp_path)
+    lock_path.parent.mkdir(parents=True)
+    with lock_path.open("a+b") as lock_file:
+        original_acquire(lock_file, blocking=False)
+        try:
+            with pytest.raises(SystemExit, match="8"):
+                atk.main(["agents", "wait"])
+        finally:
+            release_lock(lock_file)
+
+    captured = capsys.readouterr()
+    assert not captured.out
+    for fragment in ("owner=root.json", "run_id=run-1", "targets=session-1", f"run_path={run_path.resolve()}"):
+        assert fragment in captured.err
+    assert "Traceback" not in captured.err
+    assert NEXT_ACTION_PREFIX in captured.err
+    assert "保存出力" in captured.err
+    assert "atk read-file" in captured.err
+    assert sleeps == [1.0, 0.5]
+    assert clock[0] == expected_limit
+    for path, content in preserved.items():
+        if path != directory / "current.json":
+            assert path.read_bytes() == content
+    assert run_path.exists()
+
+
+@pytest.mark.parametrize("contended", [False, True], ids=["uncontended", "contended"])
+def test_agents_wait_shares_deadline_with_result_wait_and_added_target(
+    monkeypatch: pytest.MonkeyPatch,
+    wait_environment: pathlib.Path,
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+    contended: bool,
+) -> None:
+    """取得途中の解放と動的対象追加があっても、結果待ちまで一回の期限で終了する。"""
+    _set_ttl_environment(monkeypatch, {})
+    _write_own_status(wait_environment, [{"session_id": "session-1"}])
+    directory, run_path = _write_current_wait_run(tmp_path, target="session-1", status="running")
+    lock_path = _wait_lock_path(tmp_path)
+    lock_path.parent.mkdir(parents=True)
+    clock = [0.0]
+    sleeps: list[float] = []
+    original_acquire = agents_wait.acquire_lock
+
+    def nonblocking_only(lock_file, *, blocking: bool) -> None:
+        assert not blocking, "期限を持つ合流は非blocking取得を使う"
+        original_acquire(lock_file, blocking=False)
+
+    with lock_path.open("a+b") as lock_file:
+        if contended:
+            original_acquire(lock_file, blocking=False)
+
+        def advance(seconds: float) -> None:
+            sleeps.append(seconds)
+            if len(sleeps) == 1:
+                clock[0] = 120.0
+                _write_own_status(wait_environment, [{"session_id": "session-1"}, {"session_id": "session-2"}])
+                run = json.loads(run_path.read_text(encoding="utf-8"))
+                run["targets"] = ["session-1", "session-2"]
+                agents_wait._write_json(run_path, run)  # pylint: disable=protected-access
+                if contended:
+                    release_lock(lock_file)
+            elif len(sleeps) == 2:
+                clock[0] = 269.5
+            else:
+                clock[0] += seconds
+                assert len(sleeps) <= 3, "結果待ちが期限を開始し直している"
+
+        monkeypatch.setattr(agents_wait, "acquire_lock", nonblocking_only)
+        monkeypatch.setattr(agents_wait.time, "monotonic", lambda: clock[0])
+        monkeypatch.setattr(agents_wait.time, "sleep", advance)
+        try:
+            with pytest.raises(SystemExit, match="3"):
+                atk.main(["agents", "wait"])
+        finally:
+            if contended:
+                release_lock(lock_file)
+
+    captured = capsys.readouterr()
+    assert not captured.err
+    assert _running_body(json.loads(captured.out)) == {"session_id": "session-1", "status": "running"}
+    assert sleeps == [1.0, 1.0, 0.5]
+    assert clock[0] == 270.0
+    assert json.loads((directory / "current.json").read_text(encoding="utf-8"))["run_id"] == "run-1"
+    assert json.loads(run_path.read_text(encoding="utf-8"))["targets"] == ["session-1", "session-2"]
+
+
+def test_agents_wait_contention_diagnostic_recovers_collected_body(
+    wait_environment: pathlib.Path,
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+    host_environ: Callable[[], dict[str, str]],
+) -> None:
+    """期限時のrun記録からread-fileで回収済み本文を読める。"""
+    _write_own_status(wait_environment, [{"session_id": "session-1"}])
+    wait_environment.mkdir(parents=True, exist_ok=True)
+    original = wait_environment / "session-1.json"
+    original.write_text(json.dumps({"status": "completed", "agent_message": "## 回収済み本文\n結果"}), encoding="utf-8")
+    with pytest.raises(SystemExit, match="0"):
+        atk.main(["agents", "wait"])
+    delivered = json.loads(capsys.readouterr().out)
+    assert not original.exists()
+    directory = shared_layout.status_directory("root-session", tmp_path) / "wait-results" / "root.json"
+    run_id = json.loads((directory / "current.json").read_text(encoding="utf-8"))["run_id"]
+    run_path = directory / f"{run_id}.json"
+    saved = run_path.read_bytes()
+    probe = tmp_path / "wait_probe.py"
+    probe.write_text(
+        "import pathlib, sys\n"
+        "from agent_toolkit import atk\n"
+        "from agent_toolkit._agents_server import agents_wait\n"
+        "from agent_toolkit._common import state_paths\n"
+        "state_root = pathlib.Path(sys.argv[1])\n"
+        "state_paths.state_dir = lambda: state_root\n"
+        "clock = [0.0]\n"
+        "agents_wait.time.monotonic = lambda: clock[0]\n"
+        "def advance(seconds):\n"
+        "    clock[0] += 3600.0\n"
+        "agents_wait.time.sleep = advance\n"
+        "atk.main(['agents', 'wait'])\n",
+        encoding="utf-8",
+    )
+    environment = host_environ()
+    # ランタイムのPATHを引き継ぎ、CLIの掃引・設定はテスト専用領域へ閉じる。
+    for name in (*isolation.HOME_ENVIRONMENT_NAMES, *isolation.CONFIG_DIRECTORY_ENVIRONMENT_NAMES):
+        if name in os.environ:
+            environment[name] = os.environ[name]
+        else:
+            environment.pop(name, None)
+    environment["FORCE_PROMPT_CACHING_5M"] = "1"
+    lock_path = _wait_lock_path(tmp_path)
+    with lock_path.open("a+b") as lock_file:
+        acquire_lock(lock_file, blocking=False)
+        try:
+            completed = subprocess.run(
+                [sys.executable, str(probe), str(tmp_path)],
+                env=environment,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                timeout=15,
+                check=False,
+            )
+        finally:
+            release_lock(lock_file)
+    assert completed.returncode == 8, completed.stderr
+    assert not completed.stdout
+    diagnostic = completed.stderr
+    assert f"run_path={run_path}" in diagnostic
+    assert "agent_message_path" in diagnostic
+    assert run_path.read_bytes() == saved
+
+    def read_file(path: str) -> str:
+        read = subprocess.run(
+            [sys.executable, "-m", "agent_toolkit.atk", "read-file", "--", path],
+            env=environment,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            timeout=15,
+            check=False,
+        )
+        assert read.returncode == 0, read.stderr
+        return json.loads(read.stdout)["text"]
+
+    record = json.loads(read_file(str(run_path)))
+    terminal = json.loads(record["output"])
+    assert terminal == delivered
+    assert read_file(terminal["agent_message_path"]) == delivered["agent_message"]
+
+
 @pytest.mark.parametrize("stream", ["stdout", "stderr"])
 def test_wait_replays_follower_output_after_interrupt(
     tmp_path: pathlib.Path,
@@ -795,6 +1051,7 @@ def test_wait_replays_follower_output_after_interrupt(
     stream: str,
 ) -> None:
     """後続waitがflush後に停止しても、lock待ちの別waitが本文を回収する。"""
+    monkeypatch.setattr(agents_wait, "get_wait_timeout", lambda _bucket: 10.0)
     _write_own_status(shared_layout.results_directory("root-session", tmp_path), [{"session_id": "session-1"}])
     _, run_path = _write_current_wait_run(tmp_path, target="session-1", status="foreground-delivered")
     run = json.loads(run_path.read_text(encoding="utf-8"))

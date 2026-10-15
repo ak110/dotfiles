@@ -76,12 +76,20 @@ LIGHTWEIGHT_MODE_SELECTION = (
 # 各引数の説明は、委譲元がサーバーの`instructions`や外部のエージェント向け文書を読まずに、
 # 意味、書式、省略時の動作およびmodeごとの必須・禁止を判断できる内容にする。
 CWD_DESCRIPTION = parameter_description(
-    "全modeで必須。委譲先の作業ディレクトリで、shellではコマンドを実行するディレクトリとなる。既存ディレクトリの絶対パスを渡す。"
+    "通常起動の全modeで必須。handoff_from指定時は省略する。委譲先の作業ディレクトリで、shellではコマンドを実行するディレクトリとなる。既存ディレクトリの絶対パスを渡す。"
+)
+
+
+HANDOFF_FROM_DESCRIPTION = parameter_description(
+    "終端した前任のsession_id。指定時はこの引数だけを渡す。mode・model_type・用途・cwd・label・起動本文と進捗を復元して後任を起動する。"
+    "可用性失敗の前任候補は保持期限にかかわらず除外する。実行中の前任は終端を待つかkillしてから指定する。"
+    "応答のsession_idは後任であり、atk agents waitの待機対象になる。"
+    "復元したcwdとmodel_typeも応答へ返す。"
 )
 
 
 MODE_DESCRIPTION = parameter_description(
-    "入力の形と起動条件を選ぶ。省略時は`task`。"
+    "通常起動の入力の形と起動条件を選ぶ。省略時は`task`。handoff_from指定時は省略する。"
     "`task`は`<役割名>.subagent.md`の定型作業、`delegate`は自由本文の通常委譲、`explore`は読み取り専用の調査とレビュー、"
     "`write`は確定済みの文章起草と小規模な定型書込、`shell`はコマンドの実行と結果の要約に使う。"
     "modeごとの必須・禁止の入力は各引数の説明に従い、欠落と混在は委譲先を起動せずに拒否する。\n"
@@ -208,7 +216,8 @@ START_MODE_EXAMPLES = {
 # modeの選び方は`mode`の引数説明へ置く。
 START_DESCRIPTION = "\n".join(
     (
-        "委譲先sessionを開始し、`mode`で入力と起動条件を選ぶ。",
+        "委譲先sessionを開始し、`mode`で入力と起動条件を選ぶ。"
+        '引き継ぎ起動は`{"handoff_from": "<終端した前任session_id>"}`だけを渡す。通常起動の入力との混在は拒否する。',
         "返した`session_id`は同じ応答で`atk agents wait`を単独実行して観測し、不要なら`kill`で破棄する。"
         "waitは`session_id`を引数に取らず、登録済みの全sessionの終端を待つ。",
         "exploreは書込禁止。全量保存はshell、成果ファイル生成の調査はdelegateへ。返却は委譲元が保存する。",
@@ -242,6 +251,7 @@ START_DESCRIPTION = "\n".join(
         "",
         "応答は`session_id`・`status`・担当名の`label`と、保持時の`root_session_id`。"
         "起動不能候補を除外して次を試す。切替時だけ除外候補と根拠、採用した`engine`・`model`・`effort`を加える。"
+        "この自動切替は起動時だけに行う。起動後の可用性失敗は終端結果のnext_actionに従いhandoff_from付きで起動する。"
         "全候補が可用性の失敗かagyのturn失敗で終端すれば最後の終端応答を返す。"
         "最後のagy候補のbackend開始例外は除外理由付きの例外で返す。起動条件の詳細は`show`で取得する。"
         "開始後の登録・保存が失敗した場合は`persistence_warnings`と、同じ`session_id`で続ける`next_action`を加える。",

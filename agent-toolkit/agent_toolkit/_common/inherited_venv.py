@@ -19,6 +19,7 @@ from collections.abc import MutableMapping
 # `uv run`が設定する仮想環境の印。子プロセスへの引き継ぎを実際に観測したキーだけを除去対象とする。
 INHERITED_VENV_ENV_KEYS: tuple[str, ...] = ("VIRTUAL_ENV",)
 PLUGIN_RUNTIME_ENVIRONMENT_KEY = "AGENT_TOOLKIT_RUNTIME_ENVIRONMENT"
+CALLER_PROJECT_ENVIRONMENT_KEY = "AGENT_TOOLKIT_CALLER_UV_PROJECT_ENVIRONMENT"
 
 # 仮想環境のコマンド格納ディレクトリ名（POSIXは`bin`、Windowsは`Scripts`）。
 VENV_BIN_DIR_NAMES: tuple[str, ...] = ("bin", "Scripts")
@@ -32,8 +33,12 @@ def strip_inherited_venv(env: MutableMapping[str, str]) -> None:
     POSIXの`PATH`では空要素がカレントディレクトリを表すため、空要素は解決順序を保つよう残す。
     """
     runtime = env.pop(PLUGIN_RUNTIME_ENVIRONMENT_KEY, None)
+    caller_project = env.pop(CALLER_PROJECT_ENVIRONMENT_KEY, None)
     if runtime and env.get("UV_PROJECT_ENVIRONMENT") == runtime:
-        env.pop("UV_PROJECT_ENVIRONMENT", None)
+        if caller_project is None:
+            env.pop("UV_PROJECT_ENVIRONMENT", None)
+        else:
+            env["UV_PROJECT_ENVIRONMENT"] = caller_project
     venv_roots = [value for key in INHERITED_VENV_ENV_KEYS if (value := env.get(key))]
     for key in INHERITED_VENV_ENV_KEYS:
         env.pop(key, None)

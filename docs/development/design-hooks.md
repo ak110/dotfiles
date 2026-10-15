@@ -579,6 +579,27 @@ CodexのPostToolUseは`persistedOutputPath`を持たず（出力は切り詰め�
 圧縮の実装と成功結果はホスト、予約の入力と失敗処理はmodが持つ。各時点の保存対象はprocess-wiのrun-lanes.mdとfinish-session.md、共通の予約・背景待機・通知後の復元はdelegationのwaiting-and-monitoring.mdが持つ。再開情報はセッションのmanaged-temp直下のparent-handoff.mdへ保存し、圧縮後に再注入される領域通知から発見する。任意指示を保持する案は同じ保存情報の再掲と取り違えを残すため採らない。各段階の全初回レーン起動後、終端担当起動後とまとめ処理のCI待機では、独立工程を先に開始してから共通手順へ進む。tool.callの中で直接command.runを呼ぶ案はhook内のコマンド実行が拒否されるため採らない。turn.completeから同じ処理を呼ぶ案もその制約を残し、session.compactの直接呼出は利用可能な実行契約ではない。既存の終了要求へ混ぜる案は、再予約できる圧縮とセッションを終える操作の寿命が異なるため採らない。
 対話UIと非対話の結果、ホスト版と再検証手段はaudit-records.mdの会話圧縮予約の項に保持する。
 
+### 利用上限後のメインの再開予約
+
+観測と再検証手段は`docs/development/audit-records.md`の「docs/development/design-hooks.md：利用上限後のメインの再開予約：2026年10月14日」にある。
+
+メインの利用上限では、Function hooksが解除後に同じ会話へ再開promptを投入する。
+Remote Control接続ではホストの自動継続が自動で始まらないため、起動形態に対応した再開の契機を確保する。
+`classic.StopFailure`の`error: rate_limit`と、`turn.complete`時の`five_hour`・`seven_day`の使用率100%以上を契機とする。
+最大使用窓の`resetsAt`後へ、`$.clock.after`でsessionごと1件を予約する。
+予定時刻が無いか過ぎている場合は300秒後に再確認する。
+解除予定後に別turnが始まっていれば重複投入せず、予約中の`$.ui.status`は投入・取消時に除く。
+`isDelegated`が真のsessionと`agentId`を持つturnは対象から外す。
+1行目が`atk-auto`の開始タグであるpromptは、既存のUserPromptSubmitの機械注入判定へ接続する。
+promptは再開情報を読んで最初の未完了工程から続け、完了・続行済み・ユーザー中止では終了することを伝える。
+modが再開の契機、usage-limit手順が再開後の工程、agents_serverが委譲先の解除待ちを所有する。
+解除待ちの委譲先、背景waitと定期再確認のtaskは保持する。
+猶予通知の実行中サブエージェントの説明は同じ会話のAgentを指し、独立したagents_serverの解除待ちへ当てはめない。
+猶予時にモデルがcronを予約する案は、最初から拒否されたturnでは操作機会が無く、規範の想起にも依存するため採らない。
+Remote Controlを無効にする案はユーザーの遠隔操作を失わせるため採らない。
+予約はsession内のタイマーであり、module再読込で失われる。
+ホスト挙動の典拠と未観測範囲は[audit-records.md](audit-records.md)の利用上限後の再開の項にある。
+
 ### `start`の処理の中での定期再確認の装着
 
 2026年10月7日、`agents_server`の`start`での定期再確認の装着を、モデルが起動前に行う手順からClaude Codeのmod（`agent-toolkit/hooks/periodic_recheck.ts`）が`start`の処理の中で行う方式へ改めた。

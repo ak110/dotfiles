@@ -13,8 +13,10 @@ Stopの条件にするhookを有効にし、自ら最終応答で終わる非対
 from __future__ import annotations
 
 import argparse
+import dataclasses
 import datetime
 import hashlib
+import json
 import pathlib
 import re
 import subprocess
@@ -34,7 +36,9 @@ from agent_toolkit._atk.run_skill_progress import Progress
 from agent_toolkit._atk.wi.repo import resolve_local_worktree
 from agent_toolkit._common import automated_prompt as _automated_prompt
 from agent_toolkit._common import claude_usage_limit as _claude_usage_limit
+from agent_toolkit._common import codex_usage_limit as _codex_usage_limit
 from agent_toolkit._common import console_title as _console_title
+from agent_toolkit._common import host_homes as _host_homes
 from agent_toolkit._common import process_tree as _process_tree
 from agent_toolkit._common import state_paths as _state_paths
 from agent_toolkit._git import command as _git_command
@@ -64,6 +68,12 @@ OUTPUT_DRAIN_SECONDS = 5.0
 """
 
 _TITLE = "atk run-skill"
+_USAGE_LIMIT_RESUME_PROMPT = _automated_prompt.wrap(
+    "利用上限で中断したため解除まで待ちました。最初の未完了工程から作業を続けてください。"
+    "完了済みの操作はその結果を引き継いでください。",
+    source=_automated_prompt.SOURCE_RUN_SKILL,
+    kind="usage-limit-resume",
+)
 _LOG_DIRNAME = "run-skill"
 _PATH_ACTION = (
     "定期実行の環境変数`PATH`へ`atk`・`claude`・`codex`の実行ファイルの場所を加える（crontabでは`PATH=...`の行を置く）。"
@@ -165,7 +175,7 @@ def _run_locked(
         )
     )
 
-    def record_wait(candidate: str, usage_limit: _claude_usage_limit.UsageLimitState, delay: float) -> None:
+    def record_wait(candidate: str, usage_limit: _orchestrator.UsageLimitState, delay: float) -> None:
         _log_line(log, f"利用上限の解除待ち: {candidate} {usage_limit.describe()}（{int(delay)}秒）")
 
     def notify(message: str, next_action: str | None) -> None:
@@ -196,6 +206,7 @@ def _run_locked(
     goal = _automated_prompt.wrap(
         build_goal(args.skill, args.args), source=_automated_prompt.SOURCE_RUN_SKILL, kind=_automated_prompt.KIND_GOAL
     )
+    session_id: str | None = None
     if orchestrator == "claude":
         session_id = str(uuid.uuid4())
         progress.message(f"Claudeのセッション識別子: {session_id}")
@@ -214,46 +225,122 @@ def _run_locked(
             effort,
             f"/goal {goal}",
         ]
-        if progress.enabled:
-            argv[1:1] = ["--output-format", "stream-json", "--verbose"]
+        argv[-1:-1] = ["--output-format", "stream-json", "--verbose"]
     else:
         # Codexの非対話起動は`/goal`を目標として扱わず通常の入力として残すため、目的文だけを渡す。
         argv = ["codex", "exec", "--model", model, "-c", f"model_reasoning_effort={effort}", goal]
-        if progress.enabled:
-            argv.insert(2, "--json")
+        argv.insert(-1, "--json")
     log.flush()
-    try:
-        process = subprocess.Popen(  # pylint: disable=consider-using-with
-            argv,
-            cwd=repo_root,
-            env=_orchestrator.session_env(env, orchestrator),
-            stdin=subprocess.DEVNULL,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
+    remaining = float(args.timeout)
+    while True:
+        output = _SessionOutput()
+        started_at = time.monotonic()
+        try:
+            process = subprocess.Popen(  # pylint: disable=consider-using-with
+                argv,
+                cwd=repo_root,
+                env=_orchestrator.session_env(env, orchestrator),
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+            )
+        except OSError as error:
+            _log_line(log, f"終了状態: {orchestrator}を起動できなかった（{error}）")
+            _outcome.report_failure(f"{orchestrator}を起動できなかった: {error}（ログ: {log_path}）", next_action=_PATH_ACTION)
+            return 1
+        code = _wait_session(
+            process,
+            orchestrator=orchestrator,
+            timeout=remaining,
+            log=log,
+            log_path=log_path,
+            progress=progress,
+            output=output,
+            codex_home=_host_homes.codex_home(env),
         )
-    except OSError as error:
-        _log_line(log, f"終了状態: {orchestrator}を起動できなかった（{error}）")
-        _outcome.report_failure(f"{orchestrator}を起動できなかった: {error}（ログ: {log_path}）", next_action=_PATH_ACTION)
-        return 1
-    return _wait_session(
-        process, orchestrator=orchestrator, timeout=args.timeout, log=log, log_path=log_path, progress=progress
-    )
+        remaining = max(0.0, remaining - (time.monotonic() - started_at))
+        if code == TIMEOUT_EXIT_CODE or output.usage_limit is None:
+            return code
+        usage_limit = output.usage_limit
+        delay = usage_limit.delay_seconds(time.time())
+        record_wait(candidate, usage_limit, delay)
+        time.sleep(delay)
+        if orchestrator == "claude":
+            # 初回の明示IDを再開にも使い、同じ会話の履歴を引き継ぐ。
+            assert session_id is not None
+            argv = [
+                "claude",
+                "-p",
+                "--resume",
+                session_id,
+                "--permission-mode",
+                "auto",
+                "--permission-prompts",
+                "none",
+                "--model",
+                model,
+                "--effort",
+                effort,
+                "--output-format",
+                "stream-json",
+                "--verbose",
+                _USAGE_LIMIT_RESUME_PROMPT,
+            ]
+        else:
+            assert output.thread_id is not None
+            argv = [
+                "codex",
+                "exec",
+                "resume",
+                "--model",
+                model,
+                "-c",
+                f"model_reasoning_effort={effort}",
+                "--json",
+                output.thread_id,
+                _USAGE_LIMIT_RESUME_PROMPT,
+            ]
+
+
+@dataclasses.dataclass
+class _SessionOutput:
+    """表示設定から独立して、継続に要る構造化出力だけを保持する。"""
+
+    thread_id: str | None = None
+    usage_limit: _orchestrator.UsageLimitState | None = None
+
+    def receive(self, line: str) -> None:
+        """stdoutのイベントを取り込む。"""
+        thread_id = _codex_usage_limit.thread_id_from_stream_lines((line,))
+        if thread_id is not None:
+            self.thread_id = thread_id
+        try:
+            event = json.loads(line)
+        except ValueError:
+            return
+        state = _claude_usage_limit.from_event(event)
+        if state is not None:
+            self.usage_limit = state if state.is_wait_target else None
 
 
 def _wait_session(
     process: subprocess.Popen[bytes],
     *,
     orchestrator: str,
-    timeout: int,
+    timeout: float,
     log: typing.TextIO,
     log_path: pathlib.Path,
     progress: Progress,
+    output: _SessionOutput,
+    codex_home: pathlib.Path,
 ) -> int:
     """子セッションの終了か時間上限を待ち、結果行を出力して終了コードを返す。"""
     lock = threading.Lock()
     assert process.stdout is not None and process.stderr is not None
     readers = [
-        threading.Thread(target=_copy_stream, args=(process.stdout, "stdout", log, lock, progress, orchestrator), daemon=True),
+        threading.Thread(
+            target=_copy_stream, args=(process.stdout, "stdout", log, lock, progress, orchestrator, output), daemon=True
+        ),
         threading.Thread(target=_copy_stream, args=(process.stderr, "stderr", log, lock), daemon=True),
     ]
     for reader in readers:
@@ -271,17 +358,21 @@ def _wait_session(
         process.wait()
         _drain_output(readers, log, lock)
         with lock:
-            _log_line(log, f"終了状態: 時間上限（{timeout}秒）を超えたため終了させた")
+            _log_line(log, f"終了状態: 時間上限（{timeout:g}秒）を超えたため終了させた")
             if residual:
                 _log_line(log, f"終了させられなかったプロセス: {residual}")
         _outcome.report_failure(
-            f"セッションが時間上限（{timeout}秒）を超えたため終了させた（ログ: {log_path}）",
+            f"セッションが時間上限（{timeout:g}秒）を超えたため終了させた（ログ: {log_path}）",
             next_action="ログで進行状況を確かめ、必要なら`--timeout`を延ばして次回の定期実行を待つ",
         )
         return TIMEOUT_EXIT_CODE
     _drain_output(readers, log, lock)
     with lock:
         _log_line(log, f"終了状態: exit code {returncode}")
+        if orchestrator == "codex" and returncode != 0:
+            output.usage_limit = _codex_usage_limit.from_thread(output.thread_id, codex_home=codex_home)
+        if output.usage_limit is not None:
+            return returncode
     if _orchestrator.is_normal_session_exit(orchestrator, returncode):
         _outcome.report_success(f"スキルを実行した（ログ: {log_path}）")
         return 0
@@ -317,6 +408,7 @@ def _copy_stream(
     lock: threading.Lock,
     progress: Progress | None = None,
     orchestrator: str = "",
+    output: _SessionOutput | None = None,
 ) -> None:
     """子の出力を行ごとにログへ写し、読み取りを終えた側がstreamを閉じる。
 
@@ -331,6 +423,8 @@ def _copy_stream(
                     return
                 log.write(f"[{label}] {line}\n")
                 log.flush()
+                if output is not None:
+                    output.receive(line)
                 if progress is not None:
                     progress.receive(orchestrator, line)
 

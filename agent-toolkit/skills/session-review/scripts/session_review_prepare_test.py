@@ -1382,3 +1382,45 @@ def test_prepare_marks_candidate_locations_without_provenance(
     record = json.loads(capsys.readouterr().out)
     candidates = pathlib.Path(record["candidates_path"]).read_text(encoding="utf-8")
     assert f"  - 記録の由来: codex:{support.TOOL_CALL_THREAD}=由来を取得できなかった" in candidates
+
+
+@pytest.mark.parametrize("existing_ledger", [False, True])
+def test_prepare_conversation_only_preserves_failure_ledger(
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+    *,
+    existing_ledger: bool,
+) -> None:
+    """引き継ぎ用の会話生成は、候補文書・統計と共有の失敗署名を更新せず終わる。"""
+    transcript = _write_claude_transcript(tmp_path)
+    work = _work_dir(tmp_path)
+    ledger = tmp_path / "state" / "session-review" / "failure-signatures.jsonl"
+    original = "既存の失敗署名の記録\n"
+    if existing_ledger:
+        ledger.parent.mkdir(parents=True)
+        ledger.write_text(original, encoding="utf-8")
+
+    assert (
+        prepare.main(
+            [
+                "--transcript",
+                str(transcript),
+                "--work-dir",
+                str(work),
+                "--conversation-only",
+            ],
+            now=_FIXED_NOW,
+        )
+        == 0
+    )
+
+    record = json.loads(capsys.readouterr().out)
+    assert record["conversation_ranges"]
+    conversation = pathlib.Path(record["conversation_path"]).read_text(encoding="utf-8")
+    assert "初期要求" in conversation and "make lint" in conversation
+    assert not (work / "candidates.md").exists()
+    assert not (work / "stats.md").exists()
+    assert not (work / "comparison-materials.md").exists()
+    assert ledger.exists() is existing_ledger
+    if existing_ledger:
+        assert ledger.read_text(encoding="utf-8") == original

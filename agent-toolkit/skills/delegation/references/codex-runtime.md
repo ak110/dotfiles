@@ -26,7 +26,11 @@ forkを選ぶときは`spawn_agent`の`fork_turns`を省略するか`"all"`に�
 ## agents_serverの起動
 
 `agents_server`の`start`（全`mode`）はCodexネイティブ委譲とは別の仕組みで、`model_type`からengine、model、effortを解決する。通常起動（`task`の通常起動と`delegate`）には`_agents_server/launch_prompts.py`が`rules-subagent.md`をsystem promptへ加える。軽量な探索・書込・shell実行へ届く規範は`agent-toolkit:writing-standards`の`references/delivery-scope.md`の配送範囲表が示し、届かない制約は委譲プロンプトが持つ。
-可用性失敗時の候補切替はサーバーへ委ね、委譲元の起動は1回に限る。継続は`send_message`、中断は`kill`、破棄は`stop`、結果受領は`atk agents wait`を使う。出力量の大きいコマンドは`start`の`shell`、読取専用探索は`explore`を、agents_serverのserver instructionsが示す採算の目安に従って使う。
+起動時の可用性失敗による候補切替はサーバーへ委ね、委譲元は1回の起動応答を受け取る。
+起動後のturnで可用性失敗により終端した場合は、前任の終端と書込所有権の解放を確認し、結果の`next_action`に従って`start`へ`handoff_from`だけを指定して引き継ぎ起動する。
+サーバーが前任の起動条件と記録を後任へ渡し、応答の後任`session_id`を待機対象にする。
+引き継ぎ起動の定義と`Agent`の代替起動で渡す記録は`runtime-routing.md`が定める。
+継続は`send_message`、中断は`kill`、破棄は`stop`、結果受領は`atk agents wait`を使う。出力量の大きいコマンドは`start`の`shell`、読取専用探索は`explore`を、agents_serverのserver instructionsが示す採算の目安に従って使う。
 
 工程別モデル設定のキーを持つ工程は`runtime-routing.md`でengineを解決する。`engine=claude`をCodexの`spawn_agent`へ置き換えず、Claudeへは対応する`model_type`で`agents_server`を使う。指定engineの実行手段がなければ未完了として返すか、続行できない理由を返す。
 

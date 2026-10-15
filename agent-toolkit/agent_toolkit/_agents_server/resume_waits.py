@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import dataclasses
 import logging
+import pathlib
 import time
 from collections.abc import Iterable
 from typing import Any
@@ -12,6 +13,7 @@ from typing import Any
 from agent_toolkit._agents_server import state
 from agent_toolkit._agents_server.result_projection import nonempty_error
 from agent_toolkit._agents_server.state import SessionState, utc_now
+from agent_toolkit._atk import config
 
 # Claude CodeのBashツールが背景実行へ許す実行時間の上限（ミリ秒を秒へ換算）。Claude Code 2.1.291の
 # Bashツールの入力スキーマは背景実行の`timeout`を「default 1800000, max 7200000」と説明し、上限に達した
@@ -145,6 +147,7 @@ def finalize_pending_result(
     unfinished_tasks = set(session.live_tasks)
     unobserved = set(session.live_child_session_ids) | set(unobserved_sessions)
     session.overload_resume_at = None
+    session.claude_api_resume_pending = False
     session.usage_limit_resume_at = None
     if not keep_resume_chain:
         clear_overload_resume(session)
@@ -218,10 +221,11 @@ def clear_usage_limit_wait(session: SessionState) -> None:
 
 
 def begin_usage_limit_wait(session: SessionState, result: dict[str, Any]) -> bool:
-    """Weekly limitか5時間の利用上限で失敗したturnの結果を保留し、解除後の継続を予定する。
+    """対象の利用上限で失敗した結果を保留し、API移行または解除後の継続を予定する。
 
     最後に報告された利用枠が待機の対象でなければ保留せずに連鎖を終えて偽を返し、呼び出し元は従来どおり扱う。
-    保留した結果の`error.usageLimit`と`api_error`へ種類と解除予定時刻を記録し、状態の読者へ解除待ちを公開する。
+    API未移行の会話にenvファイルが設定されていれば、その絶対パスだけを保持して即時の再開を予定する。
+    解除待ちでは結果の`error.usageLimit`と`api_error`へ種類と解除予定時刻を記録し、状態の読者へ公開する。
     待機は`auto_resume_deadline`と`retention_deadline`の対象にせず、回数でも打ち切らない。
     """
     limit = session.usage_limit
@@ -229,6 +233,16 @@ def begin_usage_limit_wait(session: SessionState, result: dict[str, Any]) -> boo
         clear_usage_limit_wait(session)
         return False
     original_error = result.get("error")
+    if session.claude_api_env_file is None and (path := config.resolve_mutable_setting("claude_api_env_file")):
+        session.claude_api_env_file = str(pathlib.Path(path).absolute())
+        session.claude_api_resume_pending = True
+        session.pending_result = result
+        session.awaiting_auto_resume = True
+        session.auto_resume_deadline = None
+        session.api_error = None
+        _LOG.info("claude_api_switch session_id=%s limit_type=%s", session.session_id, limit.limit_type)
+        state.notify_touch_listeners()
+        return True
     error: dict[str, Any] = (
         dict(original_error)
         if isinstance(original_error, dict)

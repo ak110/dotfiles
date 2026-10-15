@@ -12,6 +12,7 @@ import re
 import subprocess
 import threading
 import time
+from collections.abc import Callable
 
 import pytest
 
@@ -200,6 +201,34 @@ class TestUserConfirmationSkillPrompt:
         """機械注入のターンには注記を返さず、その後の最初の実ユーザー発話には返す。"""
         self._session_start("startup", tmp_path)
         assert not self._has_notice(self._prompt(prompt, tmp_path))
+        assert self._has_notice(self._prompt("依頼", tmp_path))
+
+    def test_usage_limit_resume_prompt_is_machine_injected(
+        self, tmp_path: pathlib.Path, host_environ: Callable[[], dict[str, str]]
+    ) -> None:
+        """Function hooksの再開本文を実hookへ渡し、実ユーザー発話向けの注記と時刻を消費しない。"""
+        module = _SCRIPTS_DIR.parent / "hooks" / "usage_limit_resume.ts"
+        script = tmp_path / "usage-limit-prompt.mjs"
+        script.write_text(
+            "const {USAGE_LIMIT_RESUME_PROMPT} = await import(process.argv[2]);\n"
+            "process.stdout.write(USAGE_LIMIT_RESUME_PROMPT);\n",
+            encoding="utf-8",
+        )
+        generated = subprocess.run(
+            ["node", str(script), module.as_uri()],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            timeout=30,
+            env=host_environ(),
+            check=False,
+        )
+        assert generated.returncode == 0, generated.stderr
+        assert generated.stdout.startswith('<atk-auto source="usage-limit-resume" kind="notice">\n')
+        self._session_start("startup", tmp_path)
+        before = _read_state(tmp_path, "confirm")
+        assert not self._has_notice(self._prompt(generated.stdout, tmp_path))
+        assert _read_state(tmp_path, "confirm").get("last_user_prompt_at") == before.get("last_user_prompt_at")
         assert self._has_notice(self._prompt("依頼", tmp_path))
 
     def test_delegated_session_start_does_not_mark(self, tmp_path: pathlib.Path) -> None:

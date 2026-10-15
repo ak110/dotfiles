@@ -606,7 +606,7 @@ class FakeCodexClient:
     def __init__(self) -> None:
         self.requests: list[tuple[str, dict[str, Any]]] = []
         self.closed = False
-        self.reader_failure = None
+        self.reader_failure: BaseException | None = None
         self._turn_count = 0
 
     async def request(
@@ -628,6 +628,8 @@ class FakeCodexClient:
             return {"turn": {"id": f"turn-{self._turn_count}"}}
         if method == "turn/steer":
             return {"turnId": params["expectedTurnId"]}
+        if method == "thread/unsubscribe":
+            return {"status": "notLoaded"}
         return {}
 
     async def close(self) -> None:

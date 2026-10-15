@@ -2,7 +2,7 @@
 
 `atk wi process-loop`と`atk run-skill`はどちらも、`orchestrate_engine`のengine順と各engineの上位段位モデルから
 組んだ候補列で本作業のClaude CodeまたはCodexを選ぶ。
-候補の解決、副作用の無い可用性判定、Claudeの利用上限の解除待ちおよび正常終了の判定を本モジュールへ集め、両コマンドから同じ関数を呼ぶ。コマンドごとに異なるのは端末タイトル、可用性判定の
+候補の解決、副作用の無い可用性判定、利用上限の解除待ちおよび正常終了の判定を本モジュールへ集め、両コマンドから同じ関数を呼ぶ。コマンドごとに異なるのは端末タイトル、可用性判定の
 プロンプトの生成元、利用上限の待機の記録先と失敗時の案内の文言だけであり、呼び出し側が`ProbeContext`で渡す。
 """
 
@@ -18,8 +18,10 @@ from collections.abc import Callable, Iterable
 
 from agent_toolkit._atk import config as _config
 from agent_toolkit._common import claude_usage_limit as _claude_usage_limit
+from agent_toolkit._common import codex_usage_limit as _codex_usage_limit
 from agent_toolkit._common import console_title as _console_title
 from agent_toolkit._common import delegated_session as _delegated_session
+from agent_toolkit._common import host_homes as _host_homes
 from agent_toolkit._common import inherited_venv as _inherited_venv
 from agent_toolkit._common import next_action as _next_action
 
@@ -43,6 +45,8 @@ _CLAUDE_NORMAL_EXIT_CODES: frozenset[int] = frozenset({0, -15, 15, 143})
 _CODEX_NORMAL_EXIT_CODES_POSIX: frozenset[int] = frozenset({0, -15})
 _CODEX_NORMAL_EXIT_CODES_WINDOWS: frozenset[int] = frozenset({0})
 
+UsageLimitState = _claude_usage_limit.UsageLimitState | _codex_usage_limit.UsageLimitState
+
 
 @dataclasses.dataclass(frozen=True)
 class ProbeContext:
@@ -54,7 +58,7 @@ class ProbeContext:
     prompt: str
     """可用性判定の固定プロンプト。受領した側がユーザーの発話と区別できる`atk-auto`要素で囲む。"""
 
-    record_wait: Callable[[str, _claude_usage_limit.UsageLimitState, float], None] | None = None
+    record_wait: Callable[[str, UsageLimitState, float], None] | None = None
     """利用上限の解除待ちに入るたびに、候補、上限の状態と待機秒を記録する処理。"""
 
     notify: Callable[[str, str | None], None] | None = None
@@ -141,22 +145,33 @@ def select_available(
     """候補を先頭から事前に試し、最初に可用な3つ組を返す。
 
     ClaudeがWeekly limitか5時間の利用上限で拒否した場合は、次の候補へ切り替えず解除まで待って同じ候補を試し直す
-    （ユーザー指示）。待機の回数と総時間に上限を置かない。全候補が失敗した場合は`NoAvailableCandidateError`を送出する。
+    （ユーザー指示）。Codexの上限は次候補を先に試し、全候補失敗時に最も早い解除まで待って先頭から判定する。
+    待機の回数と総時間に上限を置かない。上限を含まない全候補の失敗は`NoAvailableCandidateError`を送出する。
     """
-    last_failure = (candidates[-1][0], 1, "")
-    for orchestrator, model, effort in candidates:
-        candidate = f"{orchestrator}:{model}/{effort}"
-        while True:
-            outcome = _probe_candidate(orchestrator, model, effort, env, cwd, candidate, context)
-            if outcome is None:
-                return orchestrator, model, effort
-            usage_limit, failure = outcome
-            if usage_limit is None:
-                break
-            _wait_for_usage_limit(candidate, usage_limit, context)
-        assert failure is not None
-        last_failure = failure
-    raise NoAvailableCandidateError(*last_failure)
+    while True:
+        last_failure = (candidates[-1][0], 1, "")
+        codex_limits: list[tuple[str, UsageLimitState]] = []
+        for orchestrator, model, effort in candidates:
+            candidate = f"{orchestrator}:{model}/{effort}"
+            while True:
+                outcome = _probe_candidate(orchestrator, model, effort, env, cwd, candidate, context)
+                if outcome is None:
+                    return orchestrator, model, effort
+                usage_limit, failure = outcome
+                if orchestrator == "codex" and usage_limit is not None:
+                    codex_limits.append((candidate, usage_limit))
+                    last_failure = (orchestrator, 1, usage_limit.describe())
+                    break
+                if usage_limit is None:
+                    assert failure is not None
+                    last_failure = failure
+                    break
+                _wait_for_usage_limit(candidate, usage_limit, context)
+        if not codex_limits:
+            raise NoAvailableCandidateError(*last_failure)
+        now = time.time()
+        candidate, usage_limit = min(codex_limits, key=lambda item: item[1].delay_seconds(now))
+        _wait_for_usage_limit(candidate, usage_limit, context)
 
 
 def is_normal_session_exit(orchestrator: str, returncode: int, *, platform: str = os.name) -> bool:
@@ -171,7 +186,7 @@ def is_normal_session_exit(orchestrator: str, returncode: int, *, platform: str 
 def _probe_argv(orchestrator: str, model: str, effort: str, prompt: str) -> list[str]:
     """候補3値を全て渡す副作用のない可用性判定用argvを返す。
 
-    Claudeは利用上限の種類と解除予定時刻を読み取れるよう、構造化出力（`stream-json`）で起動する。
+    Claudeは`stream-json`、Codexは`--json`から得るthread IDとrolloutで利用上限を判定する。
     """
     if orchestrator == "claude":
         return [
@@ -186,7 +201,7 @@ def _probe_argv(orchestrator: str, model: str, effort: str, prompt: str) -> list
             "--verbose",
             prompt,
         ]
-    return ["codex", "exec", "--model", model, "-c", f"model_reasoning_effort={effort}", prompt]
+    return ["codex", "exec", "--model", model, "-c", f"model_reasoning_effort={effort}", "--json", prompt]
 
 
 def _probe_env(env: dict[str, str], orchestrator: str) -> dict[str, str]:
@@ -205,16 +220,17 @@ def _claude_ignored_effort(stderr: str) -> bool:
 
 
 def _probe_usage_limit(
-    orchestrator: str, result: subprocess.CompletedProcess[str]
-) -> _claude_usage_limit.UsageLimitState | None:
-    """失敗した可用性判定がClaudeのWeekly limitか5時間の利用上限による拒否なら、その状態を返す。"""
-    if orchestrator != "claude":
-        return None
+    orchestrator: str, result: subprocess.CompletedProcess[str], env: dict[str, str]
+) -> UsageLimitState | None:
+    """失敗した可用性判定が各engineの解除待ち対象の上限なら、その状態を返す。"""
+    if orchestrator == "codex":
+        thread_id = _codex_usage_limit.thread_id_from_stream_lines((result.stdout or "").splitlines())
+        return _codex_usage_limit.from_thread(thread_id, codex_home=_host_homes.codex_home(env))
     usage_limit = _claude_usage_limit.from_stream_lines((result.stdout or "").splitlines())
     return usage_limit if usage_limit is not None and usage_limit.is_wait_target else None
 
 
-def _wait_for_usage_limit(candidate: str, usage_limit: _claude_usage_limit.UsageLimitState, context: ProbeContext) -> None:
+def _wait_for_usage_limit(candidate: str, usage_limit: UsageLimitState, context: ProbeContext) -> None:
     """利用上限の解除予定時刻まで待つ。待機の内容を端末と呼び出し側の記録先へ出力する。"""
     delay = usage_limit.delay_seconds(time.time())
     _notify(context, f"{usage_limit.describe()}。{int(delay)}秒後に同じ候補で可用性を確かめ直します: {candidate}")
@@ -232,10 +248,10 @@ def _probe_candidate(
     cwd: pathlib.Path,
     candidate: str,
     context: ProbeContext,
-) -> tuple[_claude_usage_limit.UsageLimitState | None, tuple[str, int, str] | None] | None:
+) -> tuple[UsageLimitState | None, tuple[str, int, str] | None] | None:
     """1候補の可用性を判定する。可用なら`None`、失敗なら解除待ちの対象と失敗の内容の組を返す。
 
-    解除待ちの対象を返す場合、呼び出し元は次の候補へ進まず同じ候補を試し直すため、失敗の案内を出力しない。
+    解除待ちと候補切替の順序は呼び出し元がengine別に選ぶ。上限を返す場合は通常の失敗案内を省く。
     """
     try:
         result = subprocess.run(
@@ -264,7 +280,7 @@ def _probe_candidate(
         _notify(context, f"本作業へ採用するモデル候補: {candidate}")
         return None
     if not ignored_effort:
-        usage_limit = _probe_usage_limit(orchestrator, result)
+        usage_limit = _probe_usage_limit(orchestrator, result, env)
         if usage_limit is not None:
             return usage_limit, None
     failure_code = result.returncode or 1

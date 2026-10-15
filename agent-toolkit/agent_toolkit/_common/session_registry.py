@@ -96,17 +96,21 @@ def interruption_error(reason: InterruptionReason) -> dict[str, str]:
 
 @dataclasses.dataclass(frozen=True)
 class LaunchInfo:
-    """`start`の時点で決まり、同じsessionを継続する間は再開と再起動をまたいでも変えない起動情報。
+    """同じsessionの再開と引き継ぎに使う起動情報、追送と各turnの終端応答。
 
     再開で`SessionState`を再生成する処理と、session登録簿の書込・復元は、この定義の項目を走査して値を写す。
     項目を個別に列挙すると、項目を足したときに一部の処理が値を写さなくなり、型やテストでは検出されないためである。
-    項目の値はいずれも文字列か`None`とし、`SessionState`と`SessionResumeState`は同名の属性を持つ。
+    `SessionState`と`SessionResumeState`は同名の属性を持つ。
     """
 
     label: str = ""
     prompt: str = ""
     # 項目を持たない旧形式の登録簿から復元したsessionでは開始時刻が不明なため`None`とする。
     created_at: str | None = None
+    usage: str | None = None
+    followup_prompts: tuple[str, ...] = ()
+    final_responses: tuple[tuple[int, str], ...] = ()
+    terminal_error: str | None = None
 
     @classmethod
     def of(cls, source: object) -> LaunchInfo:
@@ -115,9 +119,28 @@ class LaunchInfo:
 
     @classmethod
     def from_record(cls, payload: dict[str, Any]) -> LaunchInfo:
-        """登録簿のレコードから読み、文字列でない項目と無い項目はフィールドの初期値（空文字列か`None`）とする。"""
+        """登録簿の任意項目を型ごとに復元し、欠けた値はフィールドの初期値とする。"""
+        values = {
+            field.name: payload[field.name] for field in dataclasses.fields(cls) if isinstance(payload.get(field.name), str)
+        }
+        for name in ("followup_prompts", "final_responses"):
+            values.pop(name, None)
+        followups = payload.get("followup_prompts", [])
+        responses = payload.get("final_responses", [])
         return cls(
-            **{field.name: payload[field.name] for field in dataclasses.fields(cls) if isinstance(payload.get(field.name), str)}
+            **values,
+            followup_prompts=tuple(item for item in followups if isinstance(item, str)) if isinstance(followups, list) else (),
+            final_responses=tuple(
+                (item[0], item[1])
+                for item in responses
+                if isinstance(item, list)
+                and len(item) == 2
+                and isinstance(item[0], int)
+                and not isinstance(item[0], bool)
+                and isinstance(item[1], str)
+            )
+            if isinstance(responses, list)
+            else (),
         )
 
     def as_kwargs(self) -> dict[str, Any]:
@@ -153,6 +176,7 @@ class ResumeInfo:
     fast_mode: bool | None = None
     codex_model_provider: str | None = None
     codex_subscription_provider: str | None = None
+    claude_api_env_file: str | None = None
 
 
 @dataclasses.dataclass(frozen=True)
@@ -169,6 +193,7 @@ class SessionResolution:
     interruption: InterruptionReason | None = None
     # 記録上は`running`で、記録された全プロセスの不在から終端と解決した場合に真とする。登録簿へ未公開であることを示す。
     inferred_terminal: bool = False
+    handoff_info: ResumeInfo | None = None
 
 
 def registry_directory(state_root: pathlib.Path | None = None) -> pathlib.Path:
@@ -187,6 +212,7 @@ def publish(
     fast_mode: bool | None = None,
     codex_model_provider: str | None = None,
     codex_subscription_provider: str | None = None,
+    claude_api_env_file: str | None = None,
     model_type: str | None = None,
     launch_kind: Literal["delegate", "explore", "shell", "write"] = "delegate",
     turn_seq: int = 0,
@@ -246,6 +272,8 @@ def publish(
     if engine == "codex" and codex_model_provider:
         payload["codex_model_provider"] = codex_model_provider
         payload["codex_subscription_provider"] = codex_subscription_provider
+    if engine == "claude" and claude_api_env_file:
+        payload["claude_api_env_file"] = claude_api_env_file
     path = registry_directory(state_root) / f"{session_id}.json"
     launcher = launcher_session_id if launcher_session_id is not None else _recorded_launcher(path)
     if launcher is not None:
@@ -282,7 +310,17 @@ def resolve(session_id: str, *, state_root: pathlib.Path | None = None) -> Sessi
             return SessionResolution(Resolution.UNREADABLE)
         resume = payload.get("codex_resume_info")
         info = _resume_info(resume) if isinstance(resume, dict) and resume.get("engine") == "codex" else None
-        return SessionResolution(Resolution.RELEASED, info, released_reason=reason, released_at=payload["updated_at"])
+        if info is None:
+            resume = payload.get("claude_resume_info")
+            info = _resume_info(resume) if isinstance(resume, dict) and resume.get("engine") == "claude" else None
+        handoff = payload.get("handoff_info")
+        return SessionResolution(
+            Resolution.RELEASED,
+            info,
+            released_reason=reason,
+            released_at=payload["updated_at"],
+            handoff_info=_resume_info(handoff) if isinstance(handoff, dict) else None,
+        )
     if payload.get("version") == 1:
         if not isinstance(payload.get("terminal"), bool):
             return SessionResolution(Resolution.UNREADABLE)
@@ -329,7 +367,7 @@ def _recorded_processes(payload: dict[str, Any]) -> tuple[ProcessIdentity, ...]:
 
 
 def release(session_id: str, *, reason: ReleaseReason, state_root: pathlib.Path | None = None) -> None:
-    """所有側の解放を記録し、APIへ移行したCodexの内部再開条件だけを保つ。
+    """所有側の解放を記録し、APIを使う会話の内部再開条件を保つ。
 
     解放済みの公開区分は保持し、7日超の掃引で他のレコードと同じく回収する。
     """
@@ -345,7 +383,12 @@ def release(session_id: str, *, reason: ReleaseReason, state_root: pathlib.Path 
     }
     launcher = _recorded_launcher(path)
     resolution = resolve(session_id, state_root=state_root)
-    info = resolution.resume_info
+    info = resolution.resume_info or resolution.handoff_info
+    if info is not None and info.launch_info.prompt:
+        prior = json.loads(path.read_text(encoding="utf-8"))
+        payload["handoff_info"] = prior.get(
+            "handoff_info", prior.get("codex_resume_info", prior.get("claude_resume_info", prior))
+        )
     if (
         info is not None
         and info.engine == "codex"
@@ -358,6 +401,9 @@ def release(session_id: str, *, reason: ReleaseReason, state_root: pathlib.Path 
             prior = {}
         # 初回解放のv2と、既に解放したv3の両方で同じ内部再開条件を引き継ぐ。
         payload["codex_resume_info"] = prior.get("codex_resume_info", prior)
+    if info is not None and info.engine == "claude" and info.claude_api_env_file:
+        prior = json.loads(path.read_text(encoding="utf-8"))
+        payload["claude_resume_info"] = prior.get("claude_resume_info", prior)
     if launcher is not None:
         payload[LAUNCHER_KEY] = launcher
     atomic_write(path, json.dumps(payload, ensure_ascii=False) + "\n")
@@ -407,5 +453,8 @@ def _resume_info(payload: dict[str, Any]) -> ResumeInfo | None:
         else None,
         codex_subscription_provider=payload.get("codex_subscription_provider")
         if payload["engine"] == "codex" and isinstance(payload.get("codex_subscription_provider"), str)
+        else None,
+        claude_api_env_file=payload.get("claude_api_env_file")
+        if payload["engine"] == "claude" and isinstance(payload.get("claude_api_env_file"), str)
         else None,
     )

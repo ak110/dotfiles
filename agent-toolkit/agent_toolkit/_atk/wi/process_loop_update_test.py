@@ -247,6 +247,7 @@ class TestWaitLoopAutoRestart:
             return base_fake_run(cmd, *_args, **kwargs)
 
         monkeypatch.setattr(subprocess, "run", fake_run)
+        monkeypatch.setattr(_pl_session, "_run_codex_session", lambda argv, env, cwd: fake_run(argv, env=env, cwd=cwd))
         monkeypatch.setattr(_wi_readiness, "count_pending_entries", lambda *_a, **_kw: pending_count)
         monkeypatch.setattr(
             _pl_session,

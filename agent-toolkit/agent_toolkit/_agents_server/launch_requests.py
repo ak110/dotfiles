@@ -118,6 +118,24 @@ def _resolve_task_document_path(subagent_md_path: str) -> pathlib.Path:
     )
 
 
+def require_start_cwd() -> None:
+    """通常起動のcwdが欠けた場合に、受理する起動形を示す。"""
+    raise ActionableError(
+        "通常起動にはcwdが必要です。委譲先は起動していない。",
+        next_action="`cwd`へ既存ディレクトリの絶対パスを渡す。引き継ぎ起動では`handoff_from`だけを指定する",
+    )
+
+
+def validate_handoff_inputs(handoff_from: str, **inputs: Any) -> None:
+    """引き継ぎ起動と通常起動の入力を排他的に受理する。"""
+    mixed = sorted(name for name, value in inputs.items() if value is not None)
+    if not handoff_from.strip() or mixed:
+        raise ActionableError(
+            f"handoff_fromには前任IDだけを指定します。混在した入力: {', '.join(mixed) or 'なし'}。",
+            next_action='`start`へ`{"handoff_from": "<前任session_id>"}`だけを渡す',
+        )
+
+
 def validate_start_inputs(mode: str, **inputs: Any) -> None:
     """modeが必要とする入力の欠落と、modeが受理しない入力の混在を、委譲先の起動前に拒否する。"""
     if mode not in START_MODE_INPUTS:

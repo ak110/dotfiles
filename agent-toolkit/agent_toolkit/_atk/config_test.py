@@ -120,6 +120,7 @@ class TestConfigShow:
             "write_model",
             "codex_fast_mode",
             "codex_model_providers",
+            "claude_api_env_file",
             "process_loop_repositories",
         ]
         for key in config_module._MUTABLE_KEY_DEFAULTS:  # pylint: disable=protected-access  # noqa: SLF001
@@ -255,6 +256,31 @@ def test_codex_provider_setting_clear_preserves_other_settings(tmp_path, capsys)
     with pytest.raises(SystemExit, match="0"):
         atk.main(["config", "show"], home=tmp_path)
     assert not capsys.readouterr().err
+
+
+def test_claude_api_env_config_cli(
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """存在しないパスを保存・表示でき、環境上書きと解除を解釈する。"""
+    for arguments, expected in [
+        (["set", "claude_api_env_file", "~/missing.env"], ""),
+        (["get", "claude_api_env_file"], str(pathlib.Path.home() / "missing.env")),
+        (["show"], "claude_api_env_file"),
+        (["set", "claude_api_env_file", ""], ""),
+        (["get", "claude_api_env_file"], ""),
+    ]:
+        assert _main(tmp_path, "config", *arguments) == 0
+        output = capsys.readouterr()
+        if expected:
+            assert expected in output.out
+        elif arguments[0] == "get":
+            assert output.out == "\n"
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CLAUDE_API_ENV_FILE", "~/override.env")
+    assert config_module.resolve_mutable_setting("claude_api_env_file") == str(pathlib.Path.home() / "override.env")
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CLAUDE_API_ENV_FILE", "")
+    assert config_module.resolve_mutable_setting("claude_api_env_file") == ""
 
 
 class TestCodexFastMode:

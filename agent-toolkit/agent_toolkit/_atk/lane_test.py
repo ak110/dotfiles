@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import argparse
+import asyncio
 import json
 import os
 import pathlib
 import shlex
 import subprocess
 import sys
+from collections.abc import Callable
 from typing import Any
 
 import pytest
@@ -18,7 +20,8 @@ from agent_toolkit import atk
 from agent_toolkit._atk import agents_exit_session, lane, managed_temp
 from agent_toolkit._atk.wi import process_loop_session
 from agent_toolkit._common import session_registry
-from agent_toolkit._testing import git_repository
+from agent_toolkit._testing import git_repository, isolation
+from agent_toolkit._testing.session_release_support import retained_executor
 
 
 def _invoke(capsys: pytest.CaptureFixture[str], *args: str) -> tuple[int, dict[str, Any], str]:
@@ -215,6 +218,113 @@ def test_live_external_process_holds_worktree_until_it_ends(
     code, deleted, stderr = _invoke(capsys, "delete")
     assert code == 0, stderr
     assert deleted["removed"] == ["lane-01"]
+
+
+@pytest.mark.parametrize("entrypoint", ["delete", "cli", "exit", "reuse", "fixed", "residual"])
+@pytest.mark.asyncio
+@pytest.mark.usefixtures("agents_server_isolation")
+async def test_lane_releases_retained_executor_through_owner_monitor(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    entrypoint: str,
+    host_environ: Callable[[], dict[str, str]],
+) -> None:
+    """cwd保持中の終端資源を所有側が解放し、公開CLI・終了時回収・再利用・移管を通して未回収結果を取得できる。"""
+    repo, selected, record = _create(tmp_path, monkeypatch, capsys)
+    monkeypatch.setattr(lane, "get_wait_timeout", lambda _bucket: 5.0)
+    async with retained_executor(
+        pathlib.Path(record["worktree"]),
+        host_environ(),
+        monkeypatch,
+        keep_executor=entrypoint == "residual",
+    ) as retained:
+        if entrypoint == "cli":
+            environment = host_environ()
+            for name in (*isolation.HOME_ENVIRONMENT_NAMES, *isolation.CONFIG_DIRECTORY_ENVIRONMENT_NAMES):
+                environment[name] = os.environ[name]
+            command = await asyncio.to_thread(
+                subprocess.run,
+                [
+                    sys.executable,
+                    str(pathlib.Path(atk.__file__).resolve()),
+                    "lane",
+                    "delete",
+                    "--session-id",
+                    "lane-test-session",
+                ],
+                cwd=repo,
+                env=environment,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                check=False,
+                timeout=15,
+            )
+            code, result, stderr = command.returncode, json.loads(command.stdout), command.stderr
+        elif entrypoint == "exit":
+            monkeypatch.setattr(agents_exit_session, "request_termination", lambda **_kwargs: ("unsupported", None))
+
+            def exit_session() -> tuple[int, dict[str, Any], str]:
+                with pytest.raises(SystemExit) as ended:
+                    atk.main(["agents-exit-session"])
+                output = capsys.readouterr()
+                assert isinstance(ended.value.code, int)
+                return ended.value.code, json.loads(output.out)["lane_cleanup"], output.err
+
+            code, result, stderr = await asyncio.to_thread(exit_session)
+        elif entrypoint in {"reuse", "fixed"}:
+            monkeypatch.setenv(lane.SESSION_ENV, "next-session")
+            extra = ("--reuse-record", record["record_path"]) if entrypoint == "reuse" else ()
+            code, result, stderr = await asyncio.to_thread(_invoke, capsys, *_create_args(repo, selected), *extra)
+        else:
+            code, result, stderr = await asyncio.to_thread(_invoke, capsys, "delete")
+        if entrypoint == "residual":
+            assert code == 1 and retained.executor.poll() is None
+            assert retained.session_id in result["retained"][0]["reason"]
+            assert "stop" in result["retained"][0]["reason"]
+            assert pathlib.Path(record["worktree"]).is_dir()
+            assert session_registry.resolve(retained.session_id).state is session_registry.Resolution.RELEASED
+            return
+        assert code == 0, stderr
+        assert retained.executor.poll() == 0
+        assert retained.release_calls == [retained.session_id]
+        assert session_registry.resolve(retained.session_id).state is session_registry.Resolution.RELEASED
+        if entrypoint in {"delete", "cli", "exit"}:
+            assert result["removed"] == ["lane-01"]
+            assert not pathlib.Path(record["worktree"]).exists()
+            branches = git_repository.git_output(repo, "branch", "--format=%(refname:short)").splitlines()
+            assert record["branch"] not in branches
+        else:
+            assert result["session_id"] == "next-session"
+            assert result["worktree"] == record["worktree"]
+        assert not list(session_registry.registry_directory(retained.state_root).glob("*.release-*"))
+        assert retained.wait_result() == 0
+        assert json.loads(capsys.readouterr().out)["agent_message"] == "回収後も受領する結果"
+        resumed = await retained.resume("再開")
+        assert resumed["delivery"] == "reply_started"
+
+
+@pytest.mark.parametrize("terminal", [False, True])
+def test_lane_preserves_session_when_running_or_owner_unresponsive(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], terminal: bool
+) -> None:
+    """実行中は終端・結果回収後のstopを案内し、無応答の所有側も資源を保持して再回収へ接続する。"""
+    _repo, _selected, record = _create(tmp_path, monkeypatch, capsys)
+    owner = session_registry.owner_process()
+    assert owner is not None
+    session_registry.publish("held-session", terminal=terminal, cwd=record["worktree"], processes=(owner,))
+    monkeypatch.setattr(lane, "get_wait_timeout", lambda _bucket: 0.02)
+    code, held, _stderr = _invoke(capsys, "delete")
+    assert code == 1
+    reason = held["retained"][0]["reason"]
+    assert "held-session" in reason and "stop" in reason and "lane delete" in reason
+    if not terminal:
+        assert reason.index("自然終端") < reason.index("atk agents wait") < reason.index("stop") < reason.index("lane delete")
+        assert session_registry.resolve("held-session").state is session_registry.Resolution.RUNNING
+    assert pathlib.Path(record["worktree"]).is_dir()
+    assert not list(session_registry.registry_directory().glob("*.release-*"))
 
 
 def test_project_teardown_failure_preserves_record_and_retries_remaining_cleanup(

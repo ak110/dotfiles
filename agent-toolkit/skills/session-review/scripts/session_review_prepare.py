@@ -111,6 +111,11 @@ def _build_parser() -> argparse.ArgumentParser:
         metavar="PATH",
         help="振り返り対象のリポジトリ。対象リポジトリ固有の振り返り参照文書の解決に使う。",
     )
+    parser.add_argument(
+        "--conversation-only",
+        action="store_true",
+        help="引き継ぎ用の会話の流れと証拠bundleを生成して終了する。候補文書・統計・failure ledgerは更新しない。",
+    )
     return parser
 
 
@@ -943,6 +948,20 @@ def main(argv: list[str] | None = None, *, now: datetime.datetime | None = None)
     comparison_path = work_dir / COMPARISON_FILENAME
     conversation_text = _conversation_document(conversation, detail_command)
     conversation_path.write_text(conversation_text, encoding="utf-8")
+    if args.conversation_only:
+        print(
+            json.dumps(
+                {
+                    "work_dir": str(work_dir),
+                    "conversation_path": str(conversation_path),
+                    "conversation_ranges": _conversation_ranges(conversation_text, conversation),
+                    "unconfirmed_scope": unresolved,
+                },
+                ensure_ascii=False,
+                separators=(",", ":"),
+            )
+        )
+        return 0
     comparison_path.write_text(_comparison_document(comparison, detail_command), encoding="utf-8")
     current = now if now is not None else datetime.datetime.now(datetime.UTC)
     session_id = transcript_path.stem if transcript_path is not None else str(args.codex_thread_id)

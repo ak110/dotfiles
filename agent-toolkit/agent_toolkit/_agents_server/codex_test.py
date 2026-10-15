@@ -12,6 +12,8 @@ import os
 import pathlib
 import shlex
 import shutil
+import sys
+from collections.abc import Callable
 from types import SimpleNamespace
 from typing import Any, cast
 from unittest.mock import AsyncMock
@@ -33,7 +35,7 @@ from agent_toolkit._agents_server import (
 )
 from agent_toolkit._agents_server.notify import send_notification
 from agent_toolkit._atk import config as _atk_config
-from agent_toolkit._common import plugin_environment, session_registry, state_paths
+from agent_toolkit._common import inherited_venv, plugin_environment, session_registry, state_paths
 from agent_toolkit._testing.agents_server_support import (
     BlockingResumeCodexClient,
     CompletingInterruptClient,
@@ -76,6 +78,7 @@ class _TierClient:
 
     def __init__(self) -> None:
         self.requests: list[tuple[str, dict[str, Any]]] = []
+        self.parent_environment: dict[str, str] | None = None
 
     async def request(self, method: str, params: dict[str, Any], *, on_sent: Any = None) -> dict[str, Any]:
         if method == "config/read":
@@ -424,6 +427,62 @@ async def test_completed_turn_after_consumed_auto_resume_publishes_unobserved_ch
     await manager.close()
 
 
+@pytest.mark.usefixtures("agents_server_isolation")
+@pytest.mark.asyncio
+@pytest.mark.parametrize("turn_status", ["completed", "failed", "interrupted"])
+async def test_send_message_child_reactivation_holds_parent_until_child_terminates(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, turn_status: str
+) -> None:
+    """再開した子が残る親の完了・失敗・中断をshowで保留し、子の終端後の再開結果をwaitへ公開する。"""
+    monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
+    manager = server_manager.AgentsServerManager(None)
+    backend = subject.AppServerManager(manager.sessions, manager._condition)
+    install_backend(manager, "codex", backend)
+    client = FakeCodexClient()
+    backend.client = cast(Any, client)
+    monkeypatch.setattr(backend, "_ensure_client", AsyncMock(return_value=client))
+    session = await backend.start("親の作業", str(tmp_path))
+    session.terminal_child_session_ids.add("child")
+    session.auto_resume_consumed = True
+    session_registry.publish("child", terminal=False, cwd=str(tmp_path))
+    item = {
+        "type": "mcpToolCall",
+        "id": "reply-child",
+        "server": "agents_server",
+        "tool": "send_message",
+        "arguments": {"session_id": "child", "prompt": "残作業を続ける"},
+        "result": {"structuredContent": {"session_id": "child", "delivery": "reply_started", "status": "running"}},
+    }
+    try:
+        await backend._handle_notification(
+            {"method": "item/completed", "params": {"threadId": session.session_id, "item": item}}
+        )
+        completion = _completed_turn(session)
+        completion["params"]["turn"].update(
+            {
+                "status": turn_status,
+                "error": {"codexErrorInfo": "usageLimitExceeded"} if turn_status == "failed" else None,
+                # turn/completedが同じtool結果を再掲するApp Serverの形式も通す。
+                "items": [item],
+            }
+        )
+        await backend._handle_notification(completion)
+        shown = manager.show_session(session.session_id)
+        assert shown["status"] == "running" and shown["result_held"]
+        assert shown["live_child_sessions"] == [{"session_id": "child", "cwd": str(tmp_path)}]
+        assert not session.result_available
+        session_registry.publish("child", terminal=True, status="completed", cwd=str(tmp_path))
+        pending = await manager.wait()
+        assert pending["status"] in {"starting", "running"}
+        assert session.auto_resume_consumed
+        await backend._handle_notification(_completed_turn(session))
+        result = await manager.wait()
+        assert result["status"] == "completed"
+        assert not session.awaiting_auto_resume
+    finally:
+        await manager.close()
+
+
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     "delivery",
@@ -516,21 +575,21 @@ async def test_thread_start_overrides_agents_server_with_owner_and_writer_env(
     assert server["env"][plugin_environment.RUNTIME_DATA_ENV] == str(runtime_data)
     assert server["env"]["AGENT_TOOLKIT_OWNER_SESSION"] == "root-session"
     assert server["default_tools_approval_mode"] == "approve"
-    assert server["env_vars"] == list(
-        subject.mcp_environment.environment_variable_names(_atk_config.config_environment_variable_names())
-    )
+    parent_environment = dict(os.environ)
+    inherited_venv.strip_inherited_venv(parent_environment)
+    assert server["env_vars"] == list(subject.mcp_environment.runtime_environment_variable_names(parent_environment))
     assert "AGENT_TOOLKIT_DELEGATED_SESSION" not in server["env"]
     assert aliases == [("root-session", server["env"]["AGENT_TOOLKIT_STATUS_HOST_SESSION"], "inner-thread")]
 
 
 @pytest.mark.usefixtures("agents_server_isolation")
 @pytest.mark.asyncio
-@pytest.mark.parametrize("operation", ["start", "resume"])
+@pytest.mark.parametrize("operation", ["start", "resume", "reply"])
 @pytest.mark.parametrize("configured", [False, True])
 async def test_mcp_mise_namespace_names_and_explicit_owner_are_separate(
     operation: str, configured: bool, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
 ) -> None:
-    """新規起動と再開の内側MCPには公開されたmiseの所在を示す環境変数名だけを配送し、所有者・書込主体・plugin dataを明示する。"""
+    """開始・追送・保存会話の再開で親の任意名を配送し、起動contextは明示値を優先する。"""
     runtime_data = tmp_path / "plugin data"
     monkeypatch.setenv(plugin_environment.RUNTIME_DATA_ENV, str(runtime_data))
     names = ("MISE_STATE_DIR", "MISE_CACHE_DIR", "MISE_DATA_DIR", "MISE_CONFIG_DIR")
@@ -542,6 +601,8 @@ async def test_mcp_mise_namespace_names_and_explicit_owner_are_separate(
             monkeypatch.delenv(name, raising=False)
     monkeypatch.setenv("MISE_UNPUBLISHED_DIR", "unpublished-location")
     monkeypatch.setenv("DIAGNOSTIC_TOKEN", "synthetic-credential")
+    monkeypatch.setenv("UV_PROJECT_ENVIRONMENT", "caller-environment")
+    monkeypatch.setenv("CLAUDE_PLUGIN_DATA", "parent-plugin-data")
     monkeypatch.setenv("AGENT_TOOLKIT_OWNER_SESSION", "ambient-root")
     monkeypatch.setenv("AGENT_TOOLKIT_STATUS_HOST_SESSION", "ambient-host")
     client = _TierClient()
@@ -550,13 +611,20 @@ async def test_mcp_mise_namespace_names_and_explicit_owner_are_separate(
     aliases: list[tuple[str, str, str]] = []
     monkeypatch.setattr(shared_roots, "write_host_alias", lambda root, writer, thread: aliases.append((root, writer, thread)))
     try:
-        if operation == "start":
+        if operation in {"start", "reply"}:
             session = await manager.start("開始", str(tmp_path))
+            if operation == "reply":
+                _complete(session)
+                monkeypatch.delenv("MISE_UNPUBLISHED_DIR")
+                monkeypatch.setenv("NEW_REPLY_API_KEY", "reply-secret")
+                client.requests.clear()
+                await manager.send_message(session, "続行")
         else:
             session = await manager.resume("saved-thread", state.ResumePrompt("再開"), str(tmp_path))
-        params = next(params for method, params in client.requests if method == f"thread/{operation}")
+        method_name = "start" if operation == "start" else "resume"
+        params = next(params for method, params in client.requests if method == f"thread/{method_name}")
         server = params["config"]["mcp_servers"]["agents_server"]
-        assert set(names) <= set(server["env_vars"])
+        assert set(names) & set(server["env_vars"]) == (set(names) if configured else set())
         assert len(server["env_vars"]) == len(set(server["env_vars"]))
         assert set(server["env"]) == {
             "AGENT_TOOLKIT_OWNER_SESSION",
@@ -564,23 +632,105 @@ async def test_mcp_mise_namespace_names_and_explicit_owner_are_separate(
             plugin_environment.RUNTIME_DATA_ENV,
         }
         assert server["env"][plugin_environment.RUNTIME_DATA_ENV] == str(runtime_data)
-        assert {"CLAUDE_PLUGIN_DATA", "PLUGIN_DATA", plugin_environment.RUNTIME_DATA_ENV} <= set(server["env_vars"])
-        assert "UV_PROJECT_ENVIRONMENT" not in server["env_vars"]
+        assert "UV_PROJECT_ENVIRONMENT" in server["env_vars"]
+        assert "DIAGNOSTIC_TOKEN" in server["env_vars"]
+        assert ("MISE_UNPUBLISHED_DIR" in server["env_vars"]) is (operation != "reply")
+        assert ("NEW_REPLY_API_KEY" in server["env_vars"]) is (operation == "reply")
         assert server["env"]["AGENT_TOOLKIT_OWNER_SESSION"] == "chosen-root"
         writer = server["env"]["AGENT_TOOLKIT_STATUS_HOST_SESSION"]
         assert writer and writer != "ambient-host"
-        assert aliases == [("chosen-root", writer, session.session_id)]
+        assert aliases == [("chosen-root", writer, session.session_id)] * (2 if operation == "reply" else 1)
         assert not {
-            "MISE_UNPUBLISHED_DIR",
-            "DIAGNOSTIC_TOKEN",
+            "CLAUDE_PLUGIN_DATA",
+            "PLUGIN_DATA",
             "AGENT_TOOLKIT_OWNER_SESSION",
             "AGENT_TOOLKIT_STATUS_HOST_SESSION",
             "AGENT_TOOLKIT_DELEGATED_SESSION",
         } & set(server["env_vars"])
         encoded = json.dumps(server)
-        assert not any(value in encoded for value in (*values.values(), "unpublished-location", "synthetic-credential"))
+        assert not any(
+            value in encoded
+            for value in (
+                *values.values(),
+                "unpublished-location",
+                "synthetic-credential",
+                "reply-secret",
+                "caller-environment",
+                "parent-plugin-data",
+            )
+        )
         assert "ambient-root" not in encoded and "ambient-host" not in encoded
     finally:
+        await manager.close()
+
+
+@pytest.mark.usefixtures("_restore_session_listeners")
+@pytest.mark.asyncio
+@pytest.mark.parametrize("operation", ["start", "resume", "reply"])
+async def test_inner_mcp_uses_actual_app_server_parent_environment(
+    operation: str, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, host_environ: Callable[[], dict[str, str]]
+) -> None:
+    """内側MCPはApp Serverへ渡した環境の名前を使い、stdio子で値・空値・未設定を保持する。"""
+    supplied = {
+        "UNREGISTERED_VENDOR_API_KEY": "synthetic-api-value",
+        "LC_ALL": "C",
+        "DBUS_SESSION_BUS_ADDRESS": "synthetic-keyring-address",
+        "EMPTY_CUSTOM_SETTING": "",
+        "UV_PROJECT_ENVIRONMENT": "caller-env",
+        "CLAUDE_CODE_SESSION_ID": "parent-context",
+        "AGENT_TOOLKIT_OWNER_SESSION": "parent-owner",
+    }
+    client = _TierClient()
+    # App Serverの生成後に外側の環境が変わっても、実際の配送元は起動時のsnapshotである。
+    client.parent_environment = {**host_environ(), **supplied}
+    client.parent_environment.pop("MISSING_CUSTOM_SETTING", None)
+    monkeypatch.setenv("NOT_IN_APP_SERVER_ENV", "not-deliverable")
+    manager = subject.AppServerManager(root_session_id="chosen-owner")
+    manager.client = cast(Any, client)
+    monkeypatch.setattr(manager, "_ensure_client", AsyncMock(return_value=client))
+    monkeypatch.setattr(shared_roots, "write_host_alias", lambda *_args: None)
+    if operation == "resume":
+        session = await manager.resume("saved", state.ResumePrompt("再開"), str(tmp_path))
+    else:
+        session = await manager.start("開始", str(tmp_path))
+        if operation == "reply":
+            _complete(session)
+            client.requests.clear()
+            await manager.send_message(session, "続行")
+    params = next(params for method, params in client.requests if method.startswith("thread/"))
+    server = params["config"]["mcp_servers"]["agents_server"]
+    assert "NOT_IN_APP_SERVER_ENV" not in server["env_vars"]
+    assert "CLAUDE_CODE_SESSION_ID" not in server["env_vars"]
+    # Codexのenv_varsとenvの解決順をstdio子の環境へ射影する。実CodexのMCP起動は別の受入観測で検収する。
+    child_environment = {name: client.parent_environment[name] for name in server["env_vars"]}
+    child_environment.update(server["env"])
+    keys = [*supplied, "MISSING_CUSTOM_SETTING"]
+    process = await asyncio.create_subprocess_exec(
+        sys.executable,
+        "-c",
+        "import json, os, sys; print(json.dumps({key: os.environ.get(key) for key in sys.argv[1:]}))",
+        *keys,
+        env=child_environment,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    try:
+        stdout, stderr = await asyncio.wait_for(process.communicate(), 5)
+        assert process.returncode == 0 and not stderr
+        received = json.loads(stdout)
+        assert received == {
+            **supplied,
+            "CLAUDE_CODE_SESSION_ID": None,
+            "AGENT_TOOLKIT_OWNER_SESSION": "chosen-owner",
+            "MISSING_CUSTOM_SETTING": None,
+        }
+        encoded = json.dumps(server)
+        assert all(value not in encoded for value in supplied.values() if value and len(value) > 1)
+    finally:
+        if process.returncode is None:
+            process.kill()
+        await process.wait()
+        manager.client = None
         await manager.close()
 
 
@@ -717,7 +867,7 @@ def test_copy_failure_falls_back_to_the_resolved_root(monkeypatch: pytest.Monkey
 
 def test_agents_server_config_uses_the_stable_plugin_root() -> None:
     """内側MCPサーバーの起動コマンドは、安定した配布物rootの実体だけを指す。"""
-    config = subject.AppServerManager._agents_server_config("owner", "writer")
+    config = subject.AppServerManager()._agents_server_config("owner", "writer")
 
     args = config["mcp_servers"]["agents_server"]["args"]
     expected_root = plugin_roots.resolve_stable_plugin_root()
@@ -1020,10 +1170,12 @@ async def test_manager_root_connects_codex_start_resume_and_notification(
         await backend.resume("resumed-thread", state.ResumePrompt("続行"), str(tmp_path))
         configs = [params["config"] for method, params in client.requests if method in {"thread/start", "thread/resume"}]
         assert len(configs) == 2
+        parent_environment = dict(os.environ)
+        inherited_venv.strip_inherited_venv(parent_environment)
         for config in configs:
             assert config["mcp_servers"]["agents_server"]["env"]["AGENT_TOOLKIT_OWNER_SESSION"] == root
             assert config["mcp_servers"]["agents_server"]["env_vars"] == list(
-                subject.mcp_environment.environment_variable_names(_atk_config.config_environment_variable_names())
+                subject.mcp_environment.runtime_environment_variable_names(parent_environment)
             )
         environment = {**configs[0]["mcp_servers"]["agents_server"]["env"], "CODEX_THREAD_ID": session.session_id}
         assert send_notification("途中の観測", environment=environment, state_root=tmp_path) == 0
@@ -1328,7 +1480,7 @@ async def test_codex_connection_failure_preserves_other_engines(tmp_path: pathli
 
 @pytest.mark.usefixtures("agents_server_isolation")
 @pytest.mark.asyncio
-@pytest.mark.parametrize("release_result", ["unsubscribed", "notLoaded", "notSubscribed", "closed", "closes-during-request"])
+@pytest.mark.parametrize("release_result", ["unsubscribed", "notLoaded", "notSubscribed", "closed"])
 async def test_stop_releases_codex_descendants_and_preserves_resume(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, release_result: str
 ) -> None:
@@ -1344,9 +1496,9 @@ async def test_stop_releases_codex_descendants_and_preserves_resume(
     async def request(method: str, params: dict[str, Any] | None = None, **kwargs: Any) -> dict[str, Any]:
         response = await original_request(method, params, **kwargs)
         if method == "thread/unsubscribe":
-            if release_result == "closes-during-request":
-                client.closed = True
-                raise subject.AppServerError("connection closed")
+            assert params is not None
+            if release_result in {"unsubscribed", "notSubscribed"}:
+                await backend._handle_notification({"method": "thread/closed", "params": {"threadId": params["threadId"]}})
             return {"status": release_result}
         return response
 
@@ -1396,8 +1548,6 @@ async def test_stop_releases_codex_descendants_and_preserves_resume(
         unsubscribed = [params["threadId"] for method, params in client.requests if method == "thread/unsubscribe"]
         if release_result == "closed":
             assert not unsubscribed
-        elif release_result == "closes-during-request":
-            assert len(unsubscribed) == 1
         else:
             assert set(unsubscribed) == {session.session_id, "child", "grandchild", "great-grandchild"}
             assert client.closed is False
@@ -1408,6 +1558,106 @@ async def test_stop_releases_codex_descendants_and_preserves_resume(
         assert response["delivery"] == "reply_started"
         assert [method for method, _params in client.requests] == ["thread/resume", "turn/start"]
     finally:
+        await manager.close()
+
+
+@pytest.mark.usefixtures("agents_server_isolation")
+@pytest.mark.asyncio
+@pytest.mark.parametrize("notification_first", [False, True])
+async def test_release_waits_for_each_thread_closure_and_keeps_shared_client(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, notification_first: bool
+) -> None:
+    """公開stopは親子の閉鎖を待ち、別会話を共有接続で継続できる。"""
+    manager = server_manager.AgentsServerManager(None)
+    backend = subject.AppServerManager(manager.sessions, manager._condition)
+    install_backend(manager, "codex", backend)
+    client = FakeCodexClient()
+    backend.client = cast(Any, client)
+    monkeypatch.setattr(backend, "_ensure_client", AsyncMock(return_value=client))
+    requested: asyncio.Queue[str] = asyncio.Queue()
+    original = client.request
+
+    async def request(method: str, params: dict[str, Any] | None = None, **kwargs: Any) -> dict[str, Any]:
+        if method != "thread/unsubscribe":
+            return await original(method, params, **kwargs)
+        assert params is not None
+        thread_id = params["threadId"]
+        if notification_first:
+            await backend._handle_notification({"method": "thread/closed", "params": {"threadId": thread_id}})
+        requested.put_nowait(thread_id)
+        return {"status": "unsubscribed"}
+
+    monkeypatch.setattr(client, "request", request)
+    session = await backend.start("開始", str(tmp_path))
+    _complete(session)
+    session.codex_subagent_thread_ids.add("child")
+    other = await backend.resume("other-thread", state.ResumePrompt("独立会話"), str(tmp_path))
+    stop = asyncio.create_task(manager.stop(session.session_id))
+    try:
+        for expected in ("child", session.session_id):
+            assert await asyncio.wait_for(requested.get(), 1) == expected
+            if not notification_first:
+                assert not stop.done()
+                assert session.session_id not in manager.stopped_sessions
+                await backend._handle_notification({"method": "thread/closed", "params": {"threadId": "unrelated"}})
+                assert not stop.done()
+                await backend._handle_notification({"method": "thread/closed", "params": {"threadId": expected}})
+        assert await asyncio.wait_for(stop, 1) == {}
+        assert not client.closed
+        assert (await manager.send_message(other.session_id, "別会話を続ける"))["delivery"] == "steered"
+        assert (await manager.send_message(session.session_id, "保存会話を続ける"))["delivery"] == "reply_started"
+        assert not backend._resume_close_events
+    finally:
+        stop.cancel()
+        await asyncio.gather(stop, return_exceptions=True)
+        await manager.close()
+
+
+@pytest.mark.usefixtures("agents_server_isolation")
+@pytest.mark.asyncio
+@pytest.mark.parametrize("failure", ["timeout", "request", "connection", "reader", "invalid-status"])
+async def test_failed_thread_closure_keeps_stop_unreleased(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, failure: str
+) -> None:
+    """閉鎖を確認できないstopは失敗を返し、再試行の対象と追跡済み子を保持する。"""
+    manager = server_manager.AgentsServerManager(None)
+    backend = subject.AppServerManager(manager.sessions, manager._condition)
+    install_backend(manager, "codex", backend)
+    client = FakeCodexClient()
+    backend.client = cast(Any, client)
+    entered = asyncio.Event()
+
+    async def request(_method: str, _params: dict[str, Any]) -> dict[str, Any]:
+        entered.set()
+        if failure == "request":
+            raise subject.AppServerError("unsubscribe rejected")
+        if failure == "invalid-status":
+            return {}
+        return {"status": "unsubscribed"}
+
+    monkeypatch.setattr(client, "request", request)
+    monkeypatch.setattr(subject, "DEFAULT_WAIT_TIMEOUT", 0.05)
+    session = state.SessionState("thread", str(tmp_path), engine="codex", status="completed", turn_completed=True)
+    session.codex_subagent_thread_ids.add("child")
+    manager.sessions[session.session_id] = session
+    stop = asyncio.create_task(manager.stop(session.session_id))
+    try:
+        await asyncio.wait_for(entered.wait(), 1)
+        if failure in {"connection", "reader"}:
+            if failure == "connection":
+                client.closed = True
+            else:
+                client.reader_failure = RuntimeError("reader failed")
+            await backend._handle_client_failure(RuntimeError("connection lost"))
+        with pytest.raises(TimeoutError if failure == "timeout" else subject.AppServerError):
+            await stop
+        assert manager.sessions[session.session_id] is session
+        assert session.session_id not in manager.stopped_sessions
+        assert session.codex_subagent_thread_ids == {"child"}
+        assert not backend._resume_close_events
+    finally:
+        stop.cancel()
+        await asyncio.gather(stop, return_exceptions=True)
         await manager.close()
 
 

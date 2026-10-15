@@ -423,6 +423,7 @@ def test_process_loop_event_sequences_match_reference_model(
     monkeypatch.setattr(_pl_session, "_build_session_argv", build_session_argv)
     monkeypatch.setattr(process_loop._process_loop_log, "consume_instructions", consume_instructions)
     monkeypatch.setattr(subprocess, "run", run_child)
+    monkeypatch.setattr(_pl_session, "_run_codex_session", lambda argv, env, cwd: run_child(argv, env=env, cwd=cwd))
     monkeypatch.setattr(_pl_update, "restart_process_loop", restart_process_loop)
     monkeypatch.setattr(_pl_watch, "wait_for_changes", wait_for_changes)
     monkeypatch.setattr(_pl_session, "_exit_abnormal_session", exit_abnormal)

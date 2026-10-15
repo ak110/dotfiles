@@ -74,7 +74,7 @@ from agent_toolkit._common.next_action import ActionableError
 
 _LOG = logging.getLogger("agent-toolkit.agents-server.codex")
 
-APP_SERVER_COMMAND = ("codex", "app-server", "--stdio")
+APP_SERVER_COMMAND = ("codex", "app-server", "--stdio", "-c", "thread_unload_delay_secs=0")
 # Codexホストでは親の作業ディレクトリが版数付きplugin cacheとなり、
 # plugin更新で消失すると生存中のApp Serverが設定を読み込めないため継承しない。
 APP_SERVER_WORKING_DIRECTORY = str(Path.home())
@@ -242,6 +242,7 @@ class JsonRpcProcess:
         self._on_failure = on_failure
         self._root_session_id = root_session_id
         self.process: asyncio.subprocess.Process | None = None
+        self.parent_environment: Mapping[str, str] | None = None
         self._reader_task: asyncio.Task[None] | None = None
         self._stderr_task: asyncio.Task[None] | None = None
         self._pending: dict[int, asyncio.Future[dict[str, Any]]] = {}
@@ -275,6 +276,7 @@ class JsonRpcProcess:
             owner_session_id = self._root_session_id
             if owner_session_id is not None:
                 environment[_delegated_session.OWNER_SESSION_ENV] = owner_session_id
+            self.parent_environment = environment
             self.process = await asyncio.create_subprocess_exec(
                 *APP_SERVER_COMMAND,
                 stdin=asyncio.subprocess.PIPE,
@@ -595,10 +597,13 @@ class AppServerManager:
         self._writer_session_ids: dict[str, str] = {}
         self._resume_close_events: dict[str, asyncio.Event] = {}
 
-    @staticmethod
-    def _agents_server_config(owner_session_id: str, writer_session_id: str) -> dict[str, Any]:
+    def _agents_server_config(self, owner_session_id: str, writer_session_id: str) -> dict[str, Any]:
         """内側のMCPサーバーへ状態ファイルの書込主体を配送する設定を返す。"""
         plugin_root = plugin_roots.SERVER_PLUGIN_ROOT
+        parent_environment = getattr(self.client, "parent_environment", None)
+        if parent_environment is None:
+            parent_environment = dict(os.environ)
+            inherited_venv.strip_inherited_venv(parent_environment)
         return {
             "mcp_servers": {
                 "agents_server": {
@@ -618,9 +623,7 @@ class AppServerManager:
                         "AGENT_TOOLKIT_STATUS_HOST_SESSION": writer_session_id,
                         plugin_environment.RUNTIME_DATA_ENV: str(plugin_environment.runtime_data(os.environ)),
                     },
-                    "env_vars": list(
-                        mcp_environment.environment_variable_names(_atk_config.config_environment_variable_names())
-                    ),
+                    "env_vars": list(mcp_environment.runtime_environment_variable_names(parent_environment)),
                     "default_tools_approval_mode": "approve",
                 }
             }
@@ -1031,21 +1034,16 @@ class AppServerManager:
         """親と子孫threadの購読を外し、ロード状態とthreadごとのMCPサーバーを解放する。
 
         backendの共有App Serverは止めない。解放後のsend_messageは既存のthread/resumeで会話を復元する。
-        notLoaded・notSubscribedの応答と接続閉鎖は既に解放済みのため、そのまま成功とする。
+        notLoadedは既解放として扱う。通信喪失時は閉鎖を確認できないため失敗を返す。
         """
         client = self.client
-        if client is None or getattr(client, "closed", False) or getattr(client, "reader_failure", None) is not None:
+        if client is None or getattr(client, "closed", False) and getattr(client, "process", None) is None:
             session.codex_subagent_thread_ids.clear()
             return
-        for thread_id in (*sorted(session.codex_subagent_thread_ids), session.session_id):
-            try:
-                await client.request("thread/unsubscribe", {"threadId": thread_id})
-            except AppServerError:
-                if not getattr(client, "closed", False) and getattr(client, "reader_failure", None) is None:
-                    raise
-                session.codex_subagent_thread_ids.clear()
-                return
-            session.codex_subagent_thread_ids.discard(thread_id)
+        async with asyncio.timeout(DEFAULT_WAIT_TIMEOUT):
+            for thread_id in (*sorted(session.codex_subagent_thread_ids), session.session_id):
+                await self._close_thread(thread_id, client)
+                session.codex_subagent_thread_ids.discard(thread_id)
 
     async def interrupt(self, session: SessionState) -> None:
         """公開killから対象turnへ中断要求を送り、受理を待つ。
@@ -1197,26 +1195,35 @@ class AppServerManager:
 
     async def _close_for_provider_switch(self, session: SessionState, client: Any) -> None:
         """Loaded threadの接続先が再利用されないよう、unsubscribeの閉鎖完了を待つ。"""
+        async with asyncio.timeout(DEFAULT_WAIT_TIMEOUT):
+            await self._close_thread(session.session_id, client, session=session)
+
+    async def _close_thread(self, thread_id: str, client: Any, *, session: SessionState | None = None) -> None:
+        """解除応答と閉鎖通知を対応付け、対象threadの資源解放を確認する。"""
         closed = asyncio.Event()
-        self._resume_close_events[session.session_id] = closed
+        self._resume_close_events[thread_id] = closed
         try:
-            async with asyncio.timeout(DEFAULT_WAIT_TIMEOUT):
-                response = await client.request("thread/unsubscribe", {"threadId": session.session_id})
-                if response.get("status") != "unsubscribed":
-                    return
-                async with self._condition:
-                    await self._condition.wait_for(
-                        lambda: (
-                            closed.is_set()
-                            or session.interrupt_requested
-                            or getattr(client, "closed", False)
-                            or getattr(client, "reader_failure", None) is not None
-                        )
+            if getattr(client, "closed", False) or getattr(client, "reader_failure", None) is not None:
+                raise AppServerError("Codex App Server connection lost before thread closure")
+            response = await client.request("thread/unsubscribe", {"threadId": thread_id})
+            if response.get("status") == "notLoaded":
+                return
+            if response.get("status") not in {"unsubscribed", "notSubscribed"}:
+                raise AppServerError("thread/unsubscribe returned an unexpected status")
+            async with self._condition:
+                await self._condition.wait_for(
+                    lambda: (
+                        closed.is_set()
+                        or session is not None
+                        and session.interrupt_requested
+                        or getattr(client, "closed", False)
+                        or getattr(client, "reader_failure", None) is not None
                     )
-                if not closed.is_set() and not session.interrupt_requested:
-                    raise AppServerError("thread/unsubscribe did not complete the connection closure")
+                )
+            if not closed.is_set() and not (session is not None and session.interrupt_requested):
+                raise AppServerError("thread/unsubscribe did not complete the connection closure")
         finally:
-            self._resume_close_events.pop(session.session_id, None)
+            self._resume_close_events.pop(thread_id, None)
 
     async def _resume_thread(
         self,
@@ -1240,7 +1247,7 @@ class AppServerManager:
         owner_session_id = self._root_session_id
         if owner_session_id is not None:
             writer_session_id = writer_session_id or uuid.uuid4().hex
-            config.update(AppServerManager._agents_server_config(owner_session_id, writer_session_id))
+            config.update(self._agents_server_config(owner_session_id, writer_session_id))
         if session.launch_kind == "explore":
             await self._restrict_explore_config(client, config, session.cwd)
             owner_session_id = writer_session_id = None
@@ -1727,7 +1734,7 @@ class AppServerManager:
                 session.failure_pending_completion = False
                 session.touch()
                 changed = True
-        if changed:
+        if changed or self._resume_close_events:
             await self._notify_waiters()
 
     def _codex_sessions(self) -> list[SessionState]:
