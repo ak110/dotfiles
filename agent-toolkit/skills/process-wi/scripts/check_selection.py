@@ -50,6 +50,12 @@
 段階2以上では最上位の`単一段階案の完了見込み秒数`を必須とする。統合時は追加YAMLで全体配分の比較値を再確定する。
 本文に新設名を明示しない要求は、`導出した新設先`の範囲と両書込区分への対応を確かめる。要求と配置根拠の意味はメインが検収する。
 
+保存済みWIの書込対象の追加は`--extend-write-targets <追加YAML>`・`--output <保存先>`で行う。
+追加YAMLは最上位の`選定`に`WI`・追加の`書込対象`・必要な`導出した新設先`を持つ項目の列を置き、
+`レーン間の重なり`に必要な記録の列を置く。省略した列は空列として扱い、同じ値は重ねず入力順に追記する。
+記録だけの追記も同じ操作で受け取る。初回配分と他の欄を保持し、全本文の被覆と全体の関係を確かめて成功した場合だけ保存する。
+他の更新操作と`--body-wi`は併用できない。
+
 違反が無い場合（終了コード0）だけ、標準出力へ選定の要約を書く。要約はWI総数、通常レーン数、レーンごとのWI件数・段階・
 先行レーン・実装秒数・統合秒数・WIファイル名の一覧と、`レーン: なし`の項目の一覧を持つ。受領側がレーン構成を出力ファイルを
 開かずに把握できるようにするためであり、根拠と分類の意味の検収は選定結果の本文の読解で行う。
@@ -78,7 +84,7 @@ import unicodedata
 import markdown_it
 import selection_contract
 import yaml
-from selection_merge import merge_selection
+from selection_merge import extend_write_targets, merge_selection
 
 from agent_toolkit._atk.wi import frontmatter as _wi_frontmatter
 from agent_toolkit._common import markdown_headings as _markdown_headings
@@ -135,7 +141,8 @@ Violation = _next_action.ActionableError
 
 _NEXT_WRITE_PATH = (
     "`書込対象`・`公開工程の書込対象`の不正な要素を、実在ファイル、末尾/付き実在ディレクトリ、"
-    "本文明示の新設先または正当な`導出した新設先`の個別パスへ直す"
+    "本文明示の新設先または正当な`導出した新設先`の個別パスへ直す。本文に無い新設先は"
+    "`パス`・`反映範囲`・`要求`・`配置根拠`の4欄を`導出した新設先`へ記録する"
 )
 _NEXT_UNCOVERED = (
     "未被覆の反映先は、該当WIの元本文の変更要求と限定調査から`書込対象`・`公開工程の書込対象`・"
@@ -1218,8 +1225,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--work-dir", type=pathlib.Path, metavar="DIR", default=None, help="対象リポジトリの絶対パス")
     parser.add_argument("--body-wi", action="append", metavar="WI", help="本文検査するWIファイル名。反復指定可、省略時は全件")
     parser.add_argument("--merge", type=pathlib.Path, metavar="PATH", help="追加選定YAMLの絶対パス")
+    parser.add_argument(
+        "--extend-write-targets", type=pathlib.Path, metavar="PATH", help="保存済みWIの書込対象・新設先・重なりを追加するYAML"
+    )
     parser.add_argument("--lane-map", type=pathlib.Path, metavar="PATH", help="追加レーンから最終レーンへの対応JSON")
-    parser.add_argument("--output", type=pathlib.Path, metavar="PATH", help="全体チェックに成功した統合結果の保存先")
+    parser.add_argument("--output", type=pathlib.Path, metavar="PATH", help="全体チェックに成功した選定結果の保存先")
     parser.add_argument(
         "--candidate-file",
         type=pathlib.Path,
@@ -1233,12 +1243,28 @@ def main(argv: list[str] | None = None) -> int:
         "--lane-cost-updates", type=pathlib.Path, metavar="PATH", help="最終レーンの確定した秒数と根拠のJSON（統合時だけ）"
     )
     args = parser.parse_args(argv)
+    if args.extend_write_targets is not None and (
+        args.output is None
+        or any(
+            value is not None
+            for value in (
+                args.merge,
+                args.lane_map,
+                args.candidate_file,
+                args.mark_integrated,
+                args.lane_cost_updates,
+                args.body_wi,
+            )
+        )
+    ):
+        parser.error("--extend-write-targetsは--outputと組で指定し、他の更新操作・--body-wiと併用しない")
     if args.candidate_file is not None and (args.mark_integrated is not None or args.output is None):
         parser.error("--candidate-fileは--outputと組で指定し、--mark-integratedと併用しない")
     if args.mark_integrated is not None and (args.merge is not None or args.lane_map is not None or args.output is None):
         parser.error("--mark-integratedは--outputと組で指定し、--merge・--lane-mapと併用しない")
     if (
         args.mark_integrated is None
+        and args.extend_write_targets is None
         and not (args.candidate_file is not None and args.merge is None and args.lane_map is None)
         and any(value is not None for value in (args.merge, args.lane_map, args.output))
         and not all(value is not None for value in (args.merge, args.lane_map, args.output))
@@ -1250,6 +1276,19 @@ def main(argv: list[str] | None = None) -> int:
     try:
         work_dir = _resolve_work_dir(args.work_dir)
         selection = load_selection(args.selection_file, candidate_file=args.candidate_file if args.merge is None else None)
+        if args.extend_write_targets is not None:
+            try:
+                addition = yaml.safe_load(args.extend_write_targets.read_text(encoding="utf-8"))
+                selection = extend_write_targets(selection, addition)
+            except (OSError, UnicodeError, ValueError, yaml.YAMLError) as error:
+                raise InputError(
+                    str(error),
+                    next_action=(
+                        "--extend-write-targetsのYAMLを直して再実行する。`選定`の各項目へ`WI`と追加の`書込対象`、"
+                        "必要な`導出した新設先`の4欄（`パス`・`反映範囲`・`要求`・`配置根拠`）を置き、"
+                        "`レーン間の重なり`へ共通パス・双方の定義・判定を置く"
+                    ),
+                ) from error
         if args.mark_integrated is not None:
             rows = typing.cast(list[dict[str, object]], _selection.lane_costs(selection))
             unknown = set(args.mark_integrated) - {str(row[_selection.LANE_KEY]) for row in rows}
@@ -1294,6 +1333,8 @@ def main(argv: list[str] | None = None) -> int:
         try:
             if args.merge is not None and args.output.resolve() == args.merge.resolve():
                 raise OSError("追加YAMLを保存先に指定できない")
+            if args.extend_write_targets is not None and args.output.resolve() == args.extend_write_targets.resolve():
+                raise OSError("書込対象の追加入力YAMLを保存先に指定できない")
             atomic_write(args.output, yaml.safe_dump(selection, allow_unicode=True, sort_keys=False))
         except OSError as error:
             _next_action.report(str(error), next_action="保存先を確認して同じ統合操作を再実行する")
