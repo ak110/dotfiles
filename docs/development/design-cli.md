@@ -49,6 +49,12 @@ root・data・環境の導出は`agent_toolkit/_common/plugin_environment.py`が
 保存JSONは子のchild_exit_codeとは別にwrapper_exit_codeとfailureを持つ。自然終了、timeout、signal、起動失敗、保存不能を後続担当が同じ記録から区別するためであり、保存不能では返却値だけに125とfailureを保持して保存済みと主張しない。
 終了済み結果は同じrun-commandの`--record`の反復、またはplan-verifyが保存する`results_path`を`--records-file`へ渡して読む。子を再実行せず、各argv・cwd・取得版・Git状態・両終了状態・出力パスと全文を返す。旧記録に無い値はunrecordedとして扱い、欠損・破損と読取失敗はerrorsと非0で区別する。plan-verifyは実行順とコマンド・保存先の対応を1つの結果まとめへ原子的に保存する。読取のための検証再実行、独立した読取CLI、呼び出し側の手製解析は、取得版の取り違えと反復加工を残すため採らない。
 
+plan-verifyの`--summary-only`は、保存用の詳細と受領時の一覧表示を分ける。
+一覧は実行順・コマンド・状態・終了コード・記録参照・失敗を持ち、結果まとめと未記録集合の所在を返す。
+通常の受領ではこの一覧を使い、詳細は同じ保存物からrun-commandで読む。
+保存失敗では未保存の実行条件と終了状態・両出力を回復する情報を返すため、一覧化によって回復情報を失わない。
+指定なしの出力と保存形式は共通の詳細を保持し、表示だけのために呼出側がrecordを取り除く加工を不要にする。
+
 子の環境は親の環境を複製し、共通の`strip_inherited_venv`で起動元の`VIRTUAL_ENV`と対応するPATHのbin・Scripts要素を取り除く。
 親の環境、無関係の値、PATHの順序と空要素は保持する。別プロジェクトのuvや通常の子コマンドが、atkを起動したpluginの仮想環境へ誘導されることを防ぐためである。
 process-loopと委譲サーバーにも使う共通処理へ接続し、run-command専用の環境除去規則は持たない。

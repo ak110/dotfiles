@@ -45,6 +45,9 @@ manifestはJSON objectで、次の値を持つ。
 
 各argvは文字列配列とし、対象・OID・採否・完成条件証拠は受理済み入力から確定する。レビュー採否とWIごとのcommit対応はレーン担当が確定し、CLIへ渡す。計画の稼働時間、採否、証拠と進捗追記の値は以下の節で検収してからmanifestへ渡す。実行済み結果は所有登録の`integration.results`から読み、同じ操作は個別の再実行対象から除く。
 
+plan-verifyの実行argvには`--summary-only`を含め、順序と終了状態を一覧で受領する。
+各結果の詳細は保存された`results_path`を`atk run-command --records-file`へ渡して読み、取得版・子とwrapperの終了状態・両出力を検収する。
+
 ### マージありの統合
 
 公開統合操作は、作業ツリーがcleanであること、Git共通ディレクトリとbranch登録、レビュー対象HEADの一致、所有sessionを検収する。稼働中の合意した担当は`--writer-session <session_id>`を反復して指定する。登録された他担当の稼働とGit中断状態がある場合は成果を保持する。
