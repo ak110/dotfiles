@@ -81,7 +81,7 @@ class ManagerWait(manager_resume.ManagerResume):
         受領した終端結果のsessionを破棄する場合は`stop`を発行する。
         終端結果を残さずにsessionが失われた場合だけ、`status`が`expired`の応答を返す。
         委譲先が実行中に`atk agents notify`で送った通知が未回収である場合は、終端前でもその通知を`notices`へ載せて復帰する。
-        再待機の要否は`notices`の有無ではなく`status`で判定する。
+        再待機の要否は`status`で判定する。
         `status`が`completed`、`failed`、`interrupted`のいずれかである応答は終端であり、`notices`を含む場合も結果本文とともに受領して本ツールを再発行しない。
         応答へ載せた通知は回収済みとして再び返さない。
         """

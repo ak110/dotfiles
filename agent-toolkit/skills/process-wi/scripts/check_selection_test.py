@@ -345,7 +345,7 @@ def test_public_check_component_evidence_matches_source(
 ) -> None:
     """結合の構造だけを整えた偽の根拠は、元入力との対照で拒否する。書込重複は選定の現在値で判定する。"""
     repo, notes = env
-    # 書込重複の不一致は、根拠ではなく現在の`書込対象`が重ならない入力で表す。
+    # 書込重複の不一致は、現在の`書込対象`が重ならない入力で表す。
     targets = {"a.md": "README.md", "b.md": "src/model.py" if kind == "書込重複" and not matches else "README.md"}
     for name, target in targets.items():
         _awi(notes, name, f"`{target}`を変える。", dependencies=["a.md"] if name == "b.md" else [])
@@ -1701,7 +1701,7 @@ def test_detects_observed_selection_defects(
 def test_reports_missing_body_as_violation(
     tmp_path: pathlib.Path, env: tuple[pathlib.Path, pathlib.Path], capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """private-notesに本文が無い項目は、入力の解決失敗ではなく項目の違反として返す。"""
+    """private-notesに本文が無い項目は、項目の違反として返す。"""
     repo, _notes = env
 
     assert _run(tmp_path, repo, [{"awi": "absent.md", "lane": "lane-01", "write_files": []}]) == 1
@@ -1810,7 +1810,7 @@ def test_content_errors_guide_selection_fix(
     env: tuple[pathlib.Path, pathlib.Path],
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """引数が正しく選定結果の内容が誤る場合は、終了コード2と、引数ではなく選定結果を直す次の操作を返す。"""
+    """引数が正しく選定結果の内容が誤る場合は、終了コード2と、選定結果を直す次の操作を返す。"""
     repo, notes = env
     _awi(notes, "a.md", "`src/model.py`を変える。")
     selection = tmp_path / "selection.yaml"

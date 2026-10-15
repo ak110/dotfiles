@@ -905,6 +905,46 @@ async def test_stop_discards_expired_session(tmp_path: pathlib.Path) -> None:
     assert not backend.release_calls
 
 
+@pytest.mark.parametrize("with_writer", [False, True])
+@pytest.mark.asyncio
+async def test_stop_reports_registry_failure_after_releasing_resources(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, with_writer: bool
+) -> None:
+    """登録簿の保存失敗でも解放済みを明示し、再発行は状態の同期だけを行う。"""
+    writer = (
+        status_file.StatusFileWriter(
+            {}, shared_roots.StatusFileIdentity("root-session", "root.json", None), state_root=tmp_path
+        )
+        if with_writer
+        else None
+    )
+    manager = server_manager.AgentsServerManager(writer)
+    backend = FakeBackend(manager.sessions, "codex")
+    install_backend(manager, "codex", backend)
+    session = state.SessionState("registry-retry", str(tmp_path), engine="codex")
+    _complete(session)
+    manager.sessions[session.session_id] = session
+    release = session_registry.release
+    calls = 0
+
+    def fail_once(*args: Any, **kwargs: Any) -> None:
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            raise OSError("registry failed once")
+        release(*args, **kwargs)
+
+    monkeypatch.setattr(session_registry, "release", fail_once)
+    with pytest.raises(RuntimeError, match="backend resources released; state synchronization incomplete") as caught:
+        await manager.stop(session.session_id)
+    assert "`stop`" in _actionable_message(caught.value)
+    assert isinstance(caught.value.__cause__, OSError)
+    await manager.stop(session.session_id)
+    assert calls == 2
+    assert backend.release_calls == [session.session_id]
+    await manager.close()
+
+
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     ("registry_content", "code", "operation"),
@@ -992,7 +1032,7 @@ async def test_show_reports_another_writer_for_running_registry_record(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> None:
-    """登録簿が実行中として保持する識別子は、喪失ではなく別主体の実行中として案内する。"""
+    """登録簿が実行中として保持する識別子は、別主体の実行中として案内する。"""
     manager, _ = _manager_with_fake("codex")
     session_id = "0ba2f3f4-3e6c-4a1a-9a35-9f5e30b9f9b1"
     monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
@@ -1323,7 +1363,7 @@ async def test_record_whose_owner_and_executor_exited_is_interrupted_on_every_pa
 ) -> None:
     """所有プロセスと委譲先CLIがともに終了した`running`の記録は、次の照会のいずれでも`interrupted`の終端として扱う。
 
-    `atk agents show`は`unknown session`ではなく中断を返し、自動再開は終端した子として扱う。
+    `atk agents show`は中断を返し、自動再開は終端した子として扱う。
     MCPの`show`は終了の理由を`error`で返し、`send_message`は拒否せず通常の復元へ進む。
     """
     _publish_record_with_processes(monkeypatch, tmp_path, engine, (exited_process_identity(), exited_process_identity()))

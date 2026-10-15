@@ -127,7 +127,7 @@ def test_broken_entry_next_action_can_show_saved_content(
 def test_unparsable_frontmatter_guides_to_report_instead_of_edit(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """frontmatterを解析できない項目は、編集ではなく確認と報告を案内する。"""
+    """frontmatterを解析できない項目は、確認と報告を案内する。"""
     path = tmp_path / "20260930-000000-002.md"
     broken = "---\ntarget_repo: [\n---\n\n# 本文\n"
     path.write_text(broken, encoding="utf-8")

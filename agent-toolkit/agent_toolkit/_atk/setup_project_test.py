@@ -3,12 +3,12 @@
 from __future__ import annotations
 
 import os
-import subprocess
 from pathlib import Path
 
 import pytest
 
 from agent_toolkit import atk
+from agent_toolkit._testing import git_repository
 
 
 def _run(monkeypatch: pytest.MonkeyPatch, target: Path, *options: str) -> int:
@@ -32,9 +32,7 @@ def test_default_migrates_instructions_and_links_skills_without_rules(tmp_path: 
 
 
 def test_local_instructions_create_adapter_and_unique_git_exclude(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    target = tmp_path / "project"
-    target.mkdir()
-    subprocess.run(["git", "-C", str(target), "init", "-q"], check=True)
+    target = git_repository.init_repository(tmp_path / "project")
     (target / "CLAUDE.md").write_text("# 共有指示\n", encoding="utf-8")
     (target / "CLAUDE.local.md").write_text("# 個人指示\n", encoding="utf-8")
 

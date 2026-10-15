@@ -525,11 +525,11 @@ class ManagerRegistry(responses.ManagerResponses):
         self.sessions.pop(session_id, None)
         self.expired_sessions.pop(session_id, None)
         self.stopped_sessions[session_id] = resume_state
-        if session is not None:
-            await session.drain_registration()
-        await run_file_operation(session_registry.release, session_id, reason="stopped")
-        if self._status_writer is not None:
-            try:
+        try:
+            if session is not None:
+                await session.drain_registration()
+            await run_file_operation(session_registry.release, session_id, reason="stopped")
+            if self._status_writer is not None:
                 if not keep_result:
                     self._status_writer.delete_wait_target(session_id)
                 if keep_result and result_state == "unpublished" and not self._status_writer.result_exists(session_id):
@@ -537,14 +537,14 @@ class ManagerRegistry(responses.ManagerResponses):
                 elif not keep_result and (result_state == "published" or self._status_writer.result_exists(session_id)):
                     await self._status_writer.delete_result_async(session_id, collector="stop")
                 self._status_writer.schedule()
-            except Exception as exc:
-                raise ActionableRuntimeError(
-                    f"backend resources released; state synchronization incomplete for session {session_id}: {exc}",
-                    next_action=(
-                        "資源は解放済みのため、同じ`session_id`へ`stop`を再発行してよい（状態の同期だけを再試行する）。"
-                        "結果は`list`で確認する"
-                    ),
-                ) from exc
+        except Exception as exc:
+            raise ActionableRuntimeError(
+                f"backend resources released; state synchronization incomplete for session {session_id}: {exc}",
+                next_action=(
+                    "資源は解放済みのため、同じ`session_id`へ`stop`を再発行してよい（状態の同期だけを再試行する）。"
+                    "結果は`list`で確認する"
+                ),
+            ) from exc
         return {}
 
     async def _stop_after_terminal_response(

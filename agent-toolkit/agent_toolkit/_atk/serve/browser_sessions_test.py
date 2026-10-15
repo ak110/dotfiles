@@ -4,6 +4,7 @@ import asyncio
 import base64
 import contextlib
 import dataclasses
+import functools
 import json
 import re
 import shutil
@@ -21,6 +22,7 @@ from agent_toolkit._atk.serve import sessions as serve_sessions
 from agent_toolkit._atk.serve.browser_support_test import (  # noqa: F401  # pylint: disable=unused-import
     _browser_app,
     _browser_fixture,
+    _hold_route,
     _isolate_creation_time_index,
     _screen_harness_fixture,
     _ScreenHarness,
@@ -206,6 +208,38 @@ _DETAIL_DISTANCE_FROM_END_JS = (
     "() => { const main = document.querySelector('#screen-sessions main');"
     " return main.scrollHeight - main.scrollTop - main.clientHeight; }"
 )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("pending", ["list", "detail"])
+async def test_session_drawer_keeps_user_open_during_initial_fetch(screen_harness: _ScreenHarness, pending: str) -> None:
+    """一覧取得中とURLの詳細復元中の開閉操作を、初期化の完了後にも保つ。"""
+    page = screen_harness.page
+    await page.set_viewport_size({"width": 320, "height": 720})
+    await page.goto(screen_harness.base_url + "/sessions")
+    item = page.locator("#sessions .session-item").first
+    await item.wait_for(state="attached")
+    query = await item.evaluate("element => new URLSearchParams(element.dataset).toString()")
+    started = asyncio.Event()
+    release = asyncio.Event()
+    pattern = "**/api/sessions/list" if pending == "list" else "**/api/sessions/detail?*"
+    handler = functools.partial(_hold_route, started=started, release=release)
+    await page.route(pattern, handler)
+    try:
+        await page.goto(screen_harness.base_url + "/sessions?" + query, wait_until="domcontentloaded")
+        await asyncio.wait_for(started.wait(), timeout=10)
+        menu = page.locator("#sessions-menu-btn")
+        await menu.click()
+        await playwright.async_api.expect(menu).to_have_attribute("aria-expanded", "true")
+        # SSEの購読開始は一覧・詳細の復元と初期化末尾の後に行われる。
+        async with page.expect_request("**/api/sessions/events"):
+            release.set()
+            await page.locator("#detail .event").first.wait_for(state="visible")
+        await playwright.async_api.expect(menu).to_have_attribute("aria-expanded", "true")
+        assert not await page.locator("#sessions-app > aside").evaluate("element => element.inert")
+    finally:
+        release.set()
+        await page.unroute(pattern, handler)
 
 
 @pytest.mark.asyncio
@@ -949,7 +983,7 @@ async def test_session_empty_state_distinguishes_records_without_user_messages(
     screen_harness: _ScreenHarness,
     tmp_path: Path,
 ) -> None:
-    """発話を含む記録が1件も無いときは、記録の不在ではなく発話を含む記録が無いことと、自動で加わることを示す。"""
+    """発話を含む記録が1件も無いときは、発話を含む記録が無いことと、自動で加わることを示す。"""
     shutil.rmtree(tmp_path / "claude")
     shutil.rmtree(tmp_path / "codex")
     _append_jsonl(tmp_path / "claude" / "projects" / "-home-aki-silent" / "silent.jsonl", [{"type": "permission-mode"}])

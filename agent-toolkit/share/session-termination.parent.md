@@ -55,7 +55,7 @@ CI以外の続行不能は、失敗した工程の既存手順で回復し、確
   - `CI成功`: 対象リポジトリのCI照会手段が`CIで検証したcommit`について同じ結論を返す
   - `CI定義なし`: `全体検証`が`ローカル成功`であり、`agent-toolkit:commit`の`references/push-and-ci.md`「公開先に対応するCI定義の判定」で同じ公開先と`ベースbranchのHEAD`の不在を検収できる。`実行した終端工程`は対象forge・repository・commitと不在を確かめた取得・コマンド・終了状態・結果を挙げる
 - `CIで検証したcommit`と`ベースbranchのHEAD`が異なり、後者自体のCI成功を前項で検収していない場合は、間のcommit集合が`実行した終端工程`の挙げる生成commit（操作直前に解決したOID）と過不足なく一致することを確かめる。集合は`git -C <対象リポジトリ> rev-list <CIで検証したcommit>..<ベースbranchのHEAD>`で取り、`ベースbranchのHEAD`がマージcommitなら`--not <ベースbranchのHEAD>^1`を加えてベース側系列を除く（マージcommit本体は含める）。この確認はHEADのCI成功の判定を代替しない
-- `ベースbranchの状態`が`公開済み`であることを、終端担当の返却値ではなく`agent-toolkit:commit`の`references/push-and-ci.md`「公開状態の4項目」を現在のGit状態から再取得して判定する。差し戻しても`公開済み`にならない場合は`agent-toolkit/skills/process-wi/references/finish-session.md`「公開状態の検収と再起動」のUWI登録へ送る
+- `ベースbranchの状態`が`公開済み`であることを、`agent-toolkit:commit`の`references/push-and-ci.md`「公開状態の4項目」を現在のGit状態から再取得して判定する。差し戻しても`公開済み`にならない場合は`agent-toolkit/skills/process-wi/references/finish-session.md`「公開状態の検収と再起動」のUWI登録へ送る
 - `版数`が`bump不要`でなければ、対象リポジトリの版数規範が定める定義ファイルの版数と一致する
 - `実行した終端工程`が、終端担当の実行対象としたプロジェクト固有の公開後の操作を過不足なく挙げる。並行開始した工程は担当エージェントの返却から別に検収する
 - `延期後にadoptしたAWI`をJSON parserで文字列配列として検証し（不正JSON、配列以外、文字列以外の要素は返却契約の不成立）、起動時に渡した延期`adopt`対象の部分集合であることを確かめる。

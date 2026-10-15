@@ -572,11 +572,19 @@ def test_candidate_events_excludes_successful_shell_delegation_returns() -> None
     assert candidates[-1]["excluded"]["normal-delegate-return"] == 2
 
 
-def test_codex_project_instructions_do_not_change_delegation_kind_or_resume() -> None:
+@pytest.mark.parametrize(
+    "inserted",
+    [
+        "# AGENTS.md instructions for /repo\n\n<INSTRUCTIONS>",
+        "<environment_context>設定</environment_context>",
+        "<atk-auto source='rules_context'>規範</atk-auto>",
+    ],
+)
+def test_codex_project_instructions_do_not_change_delegation_kind_or_resume(inserted: str) -> None:
     """Codexの先頭注入を除いた配送本文からshell委譲と再開を判定する。"""
     record = "codex-shell"
     timeline = [
-        {"kind": "user", "record": record, "line": 1, "text": "# AGENTS.md instructions for /repo\n\n<INSTRUCTIONS>"},
+        {"kind": "user", "record": record, "line": 1, "text": inserted, "runtime_inserted": True},
         {
             "kind": "user",
             "record": record,
@@ -593,6 +601,8 @@ def test_codex_project_instructions_do_not_change_delegation_kind_or_resume() ->
     assert not resumed_records
     assert candidates[-1]["excluded"]["normal-delegate-return"] == 1
     assert all(candidate["candidate_kind"] != "delegate-return" for candidate in candidates[:-1])
+    timeline.append({"kind": "user", "record": record, "line": 4, "text": "再開して確認する"})
+    assert evidence_candidates._delegation_record_kinds(timeline) == ({record}, {record})  # pylint: disable=protected-access
 
 
 def test_shell_delegation_marker_matches_agents_server_prompt() -> None:

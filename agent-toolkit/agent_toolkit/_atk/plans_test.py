@@ -575,7 +575,7 @@ def test_commit_uses_recorded_relative_main_instead_of_birth_month(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """取得済み計画は作業側の作成月でなく記録した取得元へ戻す。"""
+    """取得済み計画は記録した取得元へ戻す。"""
     home = tmp_path / "home"
     notes = tmp_path / "private-notes"
     _init_local_notes(notes)

@@ -25,7 +25,7 @@ from agent_toolkit._atk import session_record_format
 from agent_toolkit._atk.serve import remote as _atk_serve_remote
 from agent_toolkit._atk.serve import session_parents, session_watch
 from agent_toolkit._common import host_homes as _host_homes
-from agent_toolkit._common import session_launchers
+from agent_toolkit._common import session_launchers, stream_lines
 from agent_toolkit._common import state_paths as _state_paths
 
 logger = logging.getLogger(__name__)
@@ -57,7 +57,7 @@ OPERATION_TIMEOUT_SEC = {"list": 300.0, "read": 30.0}
 # RPCが上限を超えても単発SSHへ切り替えない操作。単発SSHは同じ走査を索引の無い新しいプロセスで
 # 最初からやり直すため、走査を続けている常駐ヘルパーより先に終わらず、常駐ヘルパーとCPUを奪い合う。
 _NO_FALLBACK_ON_RPC_TIMEOUT = frozenset({"list"})
-# 常駐SSH接続のstdout用StreamReader上限（バイト）。一覧・本文は1行JSONで届くため大きく取る。
+# 常駐SSH接続のstdout用bufferのフロー制御閾値（バイト）。JSONの行長はchunkからの復元で扱う。
 REMOTE_STREAM_LIMIT_BYTES = 128 * 1024 * 1024
 # 再接続のバックオフ。
 BACKOFF_INITIAL_SEC = 1.0
@@ -478,14 +478,7 @@ class RemoteSessionClient:
 
     async def _process_stream(self, stream: asyncio.StreamReader) -> None:
         """行ストリームを読み、`ready`で接続確立、`response`でRPCを解決し、変更通知をSSEへ中継する。"""
-        while True:
-            try:
-                chunk = await stream.readline()
-            except ValueError as error:
-                logger.warning("セッション記録の応答行が上限を超過 host=%s: %s", self.host, error)
-                return
-            if not chunk:
-                return
+        async for chunk in stream_lines.iter_lines(stream):
             line = chunk.decode("utf-8", errors="replace").strip()
             if not line:
                 continue

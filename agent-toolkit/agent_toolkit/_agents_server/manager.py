@@ -7,7 +7,6 @@ import contextlib
 import datetime
 import json
 import logging
-import sys
 from typing import Any
 
 from agent_toolkit._agents_server import (
@@ -238,7 +237,7 @@ class AgentsServerManager(manager_wait.ManagerWait):
                 session.status = "running"
             await self._save_started_session(session)
             await self._await_start_outcome(session)
-            # 以後に過負荷で終端したturnは候補切替ではなく同じsessionの自動継続で扱う。
+            # 以後に過負荷で終端したturnは同じsessionの自動継続で扱う。
             session.availability_checked = True
             response: dict[str, Any] = {
                 "session_id": session.session_id,
@@ -825,28 +824,48 @@ class AgentsServerManager(manager_wait.ManagerWait):
                 task.cancel()
         if resume_tasks:
             await asyncio.gather(*resume_tasks, return_exceptions=True)
-        for backend in tuple(self._backends.values()):
-            await backend.close()
+        errors: list[Exception] = []
+        if release_error is not None:
+            errors.append(release_error)
         try:
+            # 1つのbackendの停止失敗で、他のbackendの停止と後段の結果公開・listener解除・writer停止を止めない。
+            for backend in tuple(self._backends.values()):
+                try:
+                    await backend.close()
+                except Exception as error:
+                    _LOG.exception("backendの停止に失敗しました。他のbackendの停止と後始末を続けます")
+                    errors.append(error)
             try:
                 await self._publish_closed_sessions()
             except status_file.ProjectionWriteError:
                 _LOG.exception("停止時の表示用状態保存に失敗しました。終端結果を保持して後始末を続けます")
-            if release_error is not None:
-                raise release_error
+            except Exception as error:
+                errors.append(error)
         finally:
             remove_terminal_listener(self._carry_over_unavailable_candidate)
             remove_terminal_listener(self._record_pending_unobserved_child_sessions)
             remove_lifecycle_listener(self._record_resources)
-            primary_error = sys.exception()
             try:
                 await self._drain_candidate_records()
-            except OSError as error:
-                if primary_error is None:
-                    raise
-                primary_error.add_note(f"候補除外記録の保存にも失敗しました: {error}")
+            except Exception as error:
+                if errors:
+                    errors[0].add_note(f"候補除外記録の保存にも失敗しました: {error}")
+                else:
+                    errors.append(error)
             finally:
                 if self._status_writer is not None:
                     remove_touch_listener(self._status_writer.schedule)
-                    await self._status_writer.drain(cancel_scheduled=True)
-                    self._status_writer.deactivate()
+                    try:
+                        await self._status_writer.drain(cancel_scheduled=True)
+                    except Exception as error:
+                        errors.append(error)
+                    finally:
+                        # 保存taskの回収に失敗しても予約を解除し、所有する状態ファイルを残さない。
+                        try:
+                            self._status_writer.deactivate()
+                        except Exception as error:
+                            errors.append(error)
+        if errors:
+            for error in errors[1:]:
+                errors[0].add_note(f"停止時の別の失敗: {error!r}")
+            raise errors[0]

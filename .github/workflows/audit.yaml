@@ -47,7 +47,7 @@ jobs:
         # この定期ジョブだけで有効化するため、一時グローバル設定をPYFLTR_GLOBAL_CONFIGで読ませる。
         # load_configはproject未指定キーにglobal値を残すため、uv-auditがtrueになる。
         # severity未指定（error）で、脆弱性検出時はexit 1を返す。
-        # 本リポはPython専用でpackage.jsonを持たないため、auditグループ全体ではなくuv-audit単独を指定する。
+        # 本リポはPython専用でpackage.jsonを持たないため、auditグループのうちuv-audit単独を指定する。
         # SARIF出力をファイルへ保存し、後続ステップでCode Scanningへアップロードする。
         run: |
           set -euo pipefail

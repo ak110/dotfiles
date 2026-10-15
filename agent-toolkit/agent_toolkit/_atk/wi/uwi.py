@@ -96,7 +96,7 @@ def reject_reserved_uwi_markup(body: str) -> None:
 
     確認する対象は回答欄マーカーと、行頭に現れる質問見出し・回答見出しとする。
     投入側が本文へ同じ要素を書くと`add_entries`が確認せず連結し二重生成となるため、
-    警告ではなく拒否とする（既存の非ブロッキング警告`warn_question_quality`は無視された実績がある）。
+    拒否とする。非ブロッキングの警告は無視された実績がある（既存の`warn_question_quality`）。
     CLIとWeb UIの双方が`add_entries`を経由するため、この1箇所で確認すれば両方を対象にできる。
     """
     violations: list[str] = []

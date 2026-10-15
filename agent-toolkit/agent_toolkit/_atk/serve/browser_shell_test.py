@@ -306,7 +306,7 @@ async def test_plan_and_session_toolbars_have_matching_heights(screen_harness: _
 
 @pytest.mark.asyncio
 async def test_three_screens_scroll_below_the_fixed_header(screen_harness: _ScreenHarness) -> None:
-    """3画面ともビューポートではなくヘッダー下の本文要素をスクロールする。"""
+    """3画面ともヘッダー下の本文要素をスクロールする。"""
     screen_harness.plan_path.write_text(
         "# 長い計画\n\n" + "\n\n".join(f"計画の段落{index}" for index in range(60)) + "\n",
         encoding="utf-8",

@@ -763,6 +763,24 @@ def test_answer_without_user_text_receives_no_notice(tmp_path: pathlib.Path, too
     assert result.stdout == ""
 
 
+@pytest.mark.parametrize("field", ["response", "answers", "annotations", "multi"])
+@pytest.mark.parametrize("text", ["違います！！", "例えば設定などを調査して", "例えば設定, 調査して", "`例えば調査`は引用です"])
+def test_free_text_content_notices_match_prompt(tmp_path: pathlib.Path, field: str, text: str) -> None:
+    """自由記述の配送欄によらず、通常発話と同じ内容注記が届く。"""
+    responses: dict[str, dict[str, object]] = {
+        "response": {"response": text},
+        "answers": {"answers": {_QUESTION: text}},
+        "annotations": {"annotations": {_QUESTION: {"notes": text}}},
+        "multi": {"answers": {_MULTI_QUESTION: f"{_LABELS[0]}, {text}"}},
+    }
+    response = responses[field]
+    result = _run(_ask_user_question_payload("content-notices", response), state_dir=tmp_path)
+    assert result.returncode == 0, result.stderr
+    context = json.loads(result.stdout)["hookSpecificOutput"]["additionalContext"]
+    assert ("認識合わせ" in context) == ("！！" in text)
+    assert ("範囲語か開放列挙" in context) == text.startswith("例えば")
+
+
 def _registered_posttooluse_names(event: str = "PostToolUse") -> set[str]:
     """現在の完全一致matcherが選択するツール集合を返す。"""
     hooks = json.loads(_HOOKS_JSON_PATH.read_text(encoding="utf-8"))["hooks"][event]

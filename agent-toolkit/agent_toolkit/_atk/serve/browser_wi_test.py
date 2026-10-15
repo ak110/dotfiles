@@ -35,6 +35,31 @@ pytestmark = [
 _SAVE_RELEASE_DELAY_SEC = 1.0
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize("width", [320, 1280])
+async def test_narrow_work_items_keep_unique_identifiers_visible(browser_harness: _BrowserHarness, width: int) -> None:
+    """同じ長い要約を持つ項目でも、カード内のファイル名と対象を省略せず読んで選択できる。"""
+    page = browser_harness.page
+    names = [f"same-prefix-unique-00{index}.md" for index in (1, 2)]
+    for index, name in enumerate(names):
+        (browser_harness.root / "inbox" / name).write_text(
+            f"---\ntype: awi\ntarget_repo: example/repo-{index}\n---\n\n" + "同じ要約の接頭辞" * 30 + "\n",
+            encoding="utf-8",
+        )
+    await page.set_viewport_size({"width": width, "height": 800})
+    await page.goto(browser_harness.base_url + "/")
+    for name in names:
+        row = page.locator(".entry-select").filter(has=page.locator(".filename-cell", has_text=name))
+        for selector in (".filename-cell", ".target-repo-cell"):
+            cell = row.locator(selector)
+            await playwright.async_api.expect(cell).to_be_visible()
+            assert await cell.evaluate("element => element.scrollWidth <= element.clientWidth")
+        await row.click()
+        await playwright.async_api.expect(page.locator("#detail-filename")).to_have_text(name)
+        await page.locator("#detail-close-button").click()
+    assert await page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
+
+
 def _assert_list_request_without_fallback(request_urls: list[str], base_url: str, expected_path: str) -> None:
     """期待した条件の一覧要求が送られ、補助検索の要求が送られていないことを判定する。
 
@@ -303,8 +328,8 @@ async def test_responsive_layout_dialog_scroll_and_markdown(browser_harness: _Br
 
 
 @pytest.mark.asyncio
-async def test_mobile_wi_list_starts_with_compact_two_row_entries(browser_harness: _BrowserHarness) -> None:
-    """390px幅では一覧を先に示し、各項目を2段で描画する。"""
+async def test_mobile_wi_list_starts_with_identifiable_entries(browser_harness: _BrowserHarness) -> None:
+    """390px幅では一覧を先に示し、要約・状態・識別情報を順に読める。"""
     page = browser_harness.page
     await page.set_viewport_size({"width": 390, "height": 844})
     await page.goto(browser_harness.base_url + "/")
@@ -320,12 +345,15 @@ async def test_mobile_wi_list_starts_with_compact_two_row_entries(browser_harnes
     assert pseudo_display == ["none"] * await cells.count()
     summary_box = await row.locator(".summary-cell").bounding_box()
     status_box = await row.locator(".status-cell").bounding_box()
+    filename_box = await row.locator(".filename-cell").bounding_box()
+    target_box = await row.locator(".target-repo-cell").bounding_box()
     row_box = await row.bounding_box()
     assert summary_box is not None
     assert status_box is not None
+    assert filename_box is not None
+    assert target_box is not None
     assert row_box is not None
-    assert summary_box["y"] < status_box["y"]
-    assert row_box["height"] <= 96
+    assert summary_box["y"] < status_box["y"] < filename_box["y"] < target_box["y"]
     assert row_box["y"] >= 0
     assert row_box["y"] + row_box["height"] <= 844
 
@@ -844,7 +872,8 @@ async def test_period_filter_limits_work_items_to_recent_by_default(browser_harn
 
 
 @pytest.mark.asyncio
-async def test_empty_list_limited_by_period_offers_all_periods(browser_harness: _BrowserHarness) -> None:
+@pytest.mark.parametrize("state", ["active", "processable", "all", "inbox", "processing", "hold", "adopted", "rejected"])
+async def test_empty_list_limited_by_period_offers_all_periods(browser_harness: _BrowserHarness, state: str) -> None:
     """期間の内側に対応中の項目が無い空状態から、全期間の一覧へ1操作で進め、狭い幅でも期間の限定を確認できる。
 
     空状態に期間を広げる操作が無いと、古い対応中の項目を探すエンドユーザーがフィルター欄を探して開く必要がある。
@@ -853,7 +882,9 @@ async def test_empty_list_limited_by_period_offers_all_periods(browser_harness: 
     page = harness.page
     await page.set_viewport_size({"width": 320, "height": 800})
     old_name = f"{datetime.datetime.now() - datetime.timedelta(days=40):%Y%m%d-%H%M%S}-001.md"
-    (harness.root / "inbox" / old_name).write_text(
+    stored_state = "inbox" if state in {"active", "processable", "all"} else state
+    (harness.root / stored_state).mkdir(exist_ok=True)
+    (harness.root / stored_state / old_name).write_text(
         "---\ntype: awi\ntarget_repo: example/repo\nsource: browser\n---\n\n古い対応中の項目\n", encoding="utf-8"
     )
 
@@ -864,15 +895,16 @@ async def test_empty_list_limited_by_period_offers_all_periods(browser_harness: 
 
     await page.route("**/api/entries?*period=2w*", empty_recent)
     await page.goto(harness.base_url + "/")
-    await playwright.async_api.expect(page.locator("#empty-state-message")).to_have_text(
-        "直近2週間に作成された対応中の項目はありません。"
-    )
+    await _open_filters(page)
+    await page.locator("#state-filter").select_option(state)
+    await playwright.async_api.expect(page.locator("#empty-state")).to_be_visible()
     await playwright.async_api.expect(page.locator("#entry-period")).to_be_visible()
     await playwright.async_api.expect(page.locator("#entry-period")).to_have_text("直近2週間に作成")
     await page.get_by_role("button", name="全期間を表示").click()
 
     await playwright.async_api.expect(page.locator("#entry-list .entry-select").filter(has_text=old_name)).to_have_count(1)
     await playwright.async_api.expect(page.locator("#period-filter")).to_have_value("all")
+    await playwright.async_api.expect(page.locator("#state-filter")).to_have_value(state)
     await playwright.async_api.expect(page.locator("#entry-period")).to_be_hidden()
 
 

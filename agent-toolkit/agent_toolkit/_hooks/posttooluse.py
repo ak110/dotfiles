@@ -28,7 +28,7 @@ Codexから届く正規化済みの入力も同じ操作記録を使う。
 9. 対象リポジトリで新たに回答されたUWIファイルの通知（全ツール共通）
 10. このセッションで作成または編集した計画ファイル（メイン）の絶対パス蓄積
     （編集ツールの操作記録と`create_plan_files.py`または`atk run-script plan-create`のBash標準出力）
-11. `AskUserQuestion`の自由記述の回答へ、UserPromptSubmitと同じ現物確認の注記を返す (AskUserQuestion)
+11. `AskUserQuestion`の自由記述の回答へ、UserPromptSubmitと同じ現物確認・内容別の注記を返す (AskUserQuestion)
 12. ホストの上限を超えて退避した出力の抜粋を、未読と保存先、次の操作を示す本文へ置き換える
     `updatedToolOutput` (Bash / PowerShell。`persisted_output`が判定する)
 13. メインが成功した前景Bashでcommit・pushを行った後に、completion-reportの起動条件を通知する
@@ -52,6 +52,7 @@ lazy from agent_toolkit._common.task_stop_state import consume_completion, targe
 lazy from agent_toolkit._hooks import agents_server_observations as _agents_server_observations
 lazy from agent_toolkit._hooks import background_tasks as _background_tasks
 lazy from agent_toolkit._hooks import persisted_output as _persisted_output
+lazy from agent_toolkit._hooks import plugin_resources as _plugin_resources
 lazy from agent_toolkit._hooks import termination_evidence
 lazy from agent_toolkit._hooks import tool_input as _hook_tool_input
 lazy from agent_toolkit._hooks import uwi_completion as _uwi_completion
@@ -105,6 +106,46 @@ importするため、循環importを避けて本モジュールに置く。
 その列挙をフック側の判定で代替しない。フックの入力は発話本文だけであり、
 規則で分類を誤ると、現物との比較を最も要する発話で注記が返らず、欠落にも気付けないためである。
 """
+
+_REALIGN_NOTICE_BODY = (
+    "ユーザー発話に全角の連続した「！！」が含まれている。"
+    "次の操作: `agent-toolkit:user-confirmation-and-report`の「認識合わせ」に従い、目標と解決したい問題の理解を確かめる。"
+)
+_EXAMPLE_WORDS = ("例えば", "たとえば", "例として")
+_INVESTIGATION_WORDS = ("確認", "調査", "調べ", "見直", "点検", "洗い出", "探し", "チェック", "レビュー")
+# フェンス付きコードブロック、インラインコードおよび`>`で始まる引用行は、貼り付けた素材として扱う。
+# 例示の語と調査を求める語は、引用を除いたユーザー自身の依頼文から探す。
+_QUOTED_MATERIAL_RE = re.compile(r"^[ \t]*(```|~~~)[\s\S]*?^[ \t]*\1[^\n]*$|`[^`\n]+`|^[ \t]*>[^\n]*$", re.MULTILINE)
+
+
+def _example_investigation_notice(prompt: str, source: str) -> str | None:
+    """例示の語と調査を求める語を併せ持つ発話へ、範囲語と例示を併せた依頼の項の所在を示す注記を返す。
+
+    該当する発話が範囲語か開放列挙を伴う調査の依頼かは受領側が判断し、本フックは字面の一致だけで返す。
+    """
+    text = _QUOTED_MATERIAL_RE.sub("", prompt)
+    if not any(word in text for word in _EXAMPLE_WORDS) or not any(word in text for word in _INVESTIGATION_WORDS):
+        return None
+    utterance = _plugin_resources.skill_reference("user-confirmation-and-report", "SKILL.md")
+    routing = _plugin_resources.skill_reference("delegation", "references/routing.md")
+    body = (
+        "この発話は例示の語と、調査・確認を求める語を含む。"
+        "範囲語か開放列挙を併せ持つ調査、見直し、点検の依頼である場合は、自ら調査へ着手する前に"
+        f"{utterance}「原文の保持と取り込み」の、範囲語か開放列挙と例示か理由を併せて示した依頼の項を適用する。"
+        f"例示を除いた独立した調査を委ねる手段は{routing}「コンテキスト消費が大きい調査の切り出し」に従う。"
+    )
+    return _notice_formatter(source)(body, tag="notice")
+
+
+def content_notices(prompt: str, source: str) -> list[str]:
+    """通常発話と質問への自由記述に共通の、内容に応じた注記を返す。"""
+    notices: list[str] = []
+    if "！！" in prompt:
+        notices.append(_notice_formatter(source)(_REALIGN_NOTICE_BODY, tag="notice"))
+    if (example := _example_investigation_notice(prompt, source)) is not None:
+        notices.append(example)
+    return notices
+
 
 _ASK_USER_QUESTION_TOOL = "AskUserQuestion"
 _FREE_TEXT_ANSWER_PROCEDURE = (
@@ -321,19 +362,14 @@ def _record_skill_use(session_id: str, skill_name: object) -> None:
         update_state(session_id, clear_user_confirmation_pending)
 
 
-def _has_free_text_answer(tool_response: object) -> bool:
-    """`AskUserQuestion`の回答が、提示した選択肢と一致しないユーザーの文を含むかを返す。
-
-    `answers`の値（複数選択では`, `で区切った各要素）がその質問のどの`label`とも一致しない場合、
-    `options`を持たない質問へ空でない回答がある場合、選択肢を選ばずに入力した`response`と
-    質問ごとの`annotations`の`notes`が空白以外の文字を持つ場合を自由記述とする。
-    ユーザーが応答せずに自動で閉じた結果（`afkTimeoutMs`を持つ）と、想定外の形の応答は対象外とする。
-    """
+def _free_text_answers(tool_response: object) -> list[str]:
+    """提示した選択肢と一致しない回答・追加の自由記述を配送欄ごとに集める。"""
     if not isinstance(tool_response, dict) or tool_response.get("afkTimeoutMs") is not None:
-        return False
+        return []
+    texts: list[str] = []
     response = tool_response.get("response")
     if isinstance(response, str) and response.strip():
-        return True
+        texts.append(response)
     labels_by_question: dict[str, tuple[set[str], bool]] = {}
     questions = tool_response.get("questions")
     for question in questions if isinstance(questions, list) else ():
@@ -351,17 +387,16 @@ def _has_free_text_answer(tool_response: object) -> bool:
         if not isinstance(answer, str) or not answer.strip() or answer == _NOTES_ONLY_ANSWER:
             continue
         labels, multi_select = labels_by_question.get(question_text, (set(), False))
-        if not labels:
-            return True
         parts = answer.split(_MULTI_SELECT_SEPARATOR) if multi_select else [answer]
-        if any(part not in labels for part in parts):
-            return True
+        free_parts = [part for part in parts if part not in labels and part.strip()]
+        if free_parts:
+            texts.append(_MULTI_SELECT_SEPARATOR.join(free_parts))
     annotations = tool_response.get("annotations")
     for annotation in (annotations if isinstance(annotations, dict) else {}).values():
         notes = annotation.get("notes") if isinstance(annotation, dict) else None
         if isinstance(notes, str) and notes.strip():
-            return True
-    return False
+            texts.append(notes)
+    return texts
 
 
 def clear_user_confirmation_pending(state: dict) -> dict | None:
@@ -498,8 +533,12 @@ def _observe_tool(payload: dict, session_id: str, tool_name: str, tool_input: di
     # AskUserQuestion: ユーザーが書いた文はUserPromptSubmitを経ずにツール結果として届くため、同じ注記をここで返す。
     # 1回の質問につき1回しか生じないため、UserPromptSubmitの経過時間の閾値は適用しない。
     if tool_name == _ASK_USER_QUESTION_TOOL:
-        if _has_free_text_answer(payload.get("tool_response")):
+        if answers := _free_text_answers(payload.get("tool_response")):
             notices.append(_llm_notice(f"{VERIFICATION_NOTICE_BODY}{_FREE_TEXT_ANSWER_PROCEDURE}", tag="notice"))
+            for answer in answers:
+                for content_notice in content_notices(answer, _HOOK_ID):
+                    if content_notice not in notices:
+                        notices.append(content_notice)
     elif tool_name == "Skill":
         # Skill: plan-modeスキル呼び出し検出とprocess-wi起動検出
         _record_skill_use(session_id, tool_input.get("skill"))

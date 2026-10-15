@@ -71,7 +71,7 @@ jobs:
               exit 1
             fi
           done
-          # shellcheck disable=SC2016 # .bashrc内に格納される$HOMEをシェル変数ではなく文字列リテラルとして検索する
+          # shellcheck disable=SC2016 # .bashrc内に格納される$HOMEを展開せず文字列リテラルとして検索する
           grep -qF '$HOME/dotfiles/bin' ~/.bashrc || {
             echo '::error::.bashrcに$HOME/dotfiles/binのPATH設定がありません。配布元dot_bashrcとchezmoi適用ログを確認し、修正後にRe-run failed jobsで再実行してください。'
             exit 1

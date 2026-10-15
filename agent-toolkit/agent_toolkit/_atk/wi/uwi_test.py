@@ -1333,7 +1333,7 @@ def test_answer_without_diff_reports_success_line(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """保存済みと同じ回答は、接頭辞の無い行ではなく変更の無い成功行で報告する。"""
+    """保存済みと同じ回答は、変更の無い成功行で報告する。"""
     notes = _setup_notes(tmp_path)
     filename = f"{_FIXED_TIMESTAMP}-001.md"
     _write_uwi_file(notes, filename, question="q?", answer=f"{uwi_module.ANSWER_MARKER}\n採用する\n")

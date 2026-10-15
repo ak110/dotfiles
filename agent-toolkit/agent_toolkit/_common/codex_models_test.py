@@ -1,5 +1,8 @@
 """Codex App Serverのモデル一覧と系列指定の契約テスト。"""
 
+import asyncio
+import json
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -81,3 +84,35 @@ def test_model_list_failure_names_login_check_and_candidate_change(monkeypatch: 
         _UNPATCHED_LIST_MODELS()
     assert "codex login status" in exc_info.value.next_action
     assert "atk config set" in exc_info.value.next_action
+
+
+@pytest.mark.asyncio
+async def test_model_catalog_reads_long_response_and_unterminated_eof(monkeypatch: pytest.MonkeyPatch) -> None:
+    """初期化とモデル一覧を同じbufferへ受信しても、長い最終応答を欠損なく解析する。"""
+    stream = asyncio.StreamReader(limit=64)
+    model = {**_model("gpt-6-sol", "medium"), "description": "あ" * 50000}
+    stream.feed_data(
+        (
+            json.dumps({"id": 1, "result": {}}) + "\n" + json.dumps({"id": 2, "result": {"data": [model]}}, ensure_ascii=False)
+        ).encode()
+    )
+    stream.feed_eof()
+
+    class Stdin:
+        def write(self, _data: bytes) -> None:
+            pass
+
+        async def drain(self) -> None:
+            pass
+
+        def close(self) -> None:
+            pass
+
+    async def wait() -> int:
+        return 0
+
+    async def start(*_args: Any, **_kwargs: Any) -> Any:
+        return SimpleNamespace(stdin=Stdin(), stdout=stream, returncode=0, wait=wait)
+
+    monkeypatch.setattr(asyncio, "create_subprocess_exec", start)
+    assert await codex_models.list_models_from_app_server() == [model]

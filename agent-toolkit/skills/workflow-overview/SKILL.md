@@ -24,7 +24,7 @@ user-invocable: false
 ## 利用形態と起動主体
 
 - 対話型: ユーザーがエージェントへ直接依頼する。計画の作成要否は`agent-toolkit:plan-mode`「計画ファイルの作成要否」、ユーザー確認の要否は`agent-toolkit:user-confirmation-and-report`「確認要否の判定」で決める。
-- 自律型: ユーザーが`atk wi process-loop`を起動する。process-loopが反復ごとに開始前更新と専用worktreeを準備し、子セッションで`agent-toolkit:process-wi`を起動する。子セッションへ渡すプロンプトはユーザーの発話ではなく、子セッションは`AGENT_TOOLKIT_PROCESS_LOOP_SESSION`で起動元を判別する。停止は`atk wi process-loop abort`、次の1セッションだけへの指示は`instruct`、状態は`status`で行う。
+- 自律型: ユーザーが`atk wi process-loop`を起動する。process-loopが反復ごとに開始前更新と専用worktreeを準備し、子セッションで`agent-toolkit:process-wi`を起動する。子セッションへ渡すプロンプトはユーザーの発話ではない。子セッションは`AGENT_TOOLKIT_PROCESS_LOOP_SESSION`で起動元を判別する。停止は`atk wi process-loop abort`、次の1セッションだけへの指示は`instruct`、状態は`status`で行う。
 - まとめ処理型: ユーザーが`agent-toolkit:single-lane-process`を手動起動し、たまったWIを1回の実行で扱う。
 - 定期実行型: ユーザーがcronなどへ`atk run-skill`を登録し、WIキューを経由せずにスキル1件を自律モードで1回ずつ実行する。結果は報告用UWI、判断が要る対応は事前承認型UWIで届く。これらのUWIは`source`が`run-skill`、`scope`がスキル名であり、process-wiの選定とprocess-loopの起動件数から除く。
 

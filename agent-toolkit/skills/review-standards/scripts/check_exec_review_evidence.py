@@ -232,7 +232,7 @@ def _validate_schema(data: object) -> tuple[dict[str, typing.Any], list[str]]:
             label = _row_label(row, section, index)
             outcome = row["outcome"]
             if not outcome.strip():
-                # 雛形の判定欄を埋めずに返した行を、未知の値ではなく未記入として示す。
+                # 雛形の判定欄を埋めずに返した行を、未記入として示す。
                 errors.append(f"{label}.outcome: 判定が未記入です。その行を判定して{accepted}のいずれかを記入する")
             elif outcome not in SECTION_OUTCOMES[section]:
                 errors.append(f"{label}.outcome: 未知の判定です: {outcome}（受理する値: {accepted}）")
@@ -1273,7 +1273,7 @@ def _original_text(row: dict[str, str], repository: pathlib.Path, wi_outputs: di
 def _quote_spans(quote: str, original: str) -> list[tuple[int, int]]:
     """中略を含み得る引用が原文上で覆い得る範囲を全て返す。
 
-    記録自身も原文と同じ本文に含まれ得るため、最初の出現だけでなく全ての出現から範囲を求める。
+    記録自身も原文と同じ本文に含まれ得るため、全ての出現から範囲を求める。
     """
     pieces = [piece for piece in (_compact(part) for part in ELLIPSIS.split(quote)) if piece]
     spans: list[tuple[int, int]] = []
@@ -1699,7 +1699,7 @@ def _circular_issue_errors(
 
     完成条件証拠の判定と根拠は実行レビュー担当が記入する出力であり、実装担当が直す対象ではない。
     この行を未解決の指摘として数えると、証拠の非達成行と未解決0件の整合確認を、担当自身の未完了を
-    指摘へ置き換えるだけで通過できるため拒否する。指摘本文の語句ではなく`location`の構造で判定する。
+    指摘へ置き換えるだけで通過できるため拒否する。`location`の構造で判定する。
     """
     errors: list[str] = []
     for row_id, row in enumerate(review_table.read_rows(table_path), start=1):

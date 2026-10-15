@@ -3,7 +3,7 @@
 # requires-python = ">=3.15"
 # dependencies = ["filelock>=3.30", "platformdirs>=4.0"]
 # ///
-"""origin/developの変化または前回の未完了時にupdate-dotfilesを起動する。"""
+"""上流commitの反映が未完了ならupdate-dotfilesを起動する。"""
 
 import argparse
 import hashlib
@@ -110,7 +110,12 @@ def _update_if_needed(pending_path: pathlib.Path) -> int:
         pending = False
     else:
         pending = True
-    if local_commit == upstream_commit and not pending:
+    applied_path = pending_path.with_suffix(".applied")
+    try:
+        applied_commit = applied_path.read_text(encoding="utf-8").strip()
+    except FileNotFoundError:
+        applied_commit = None
+    if local_commit == upstream_commit == applied_commit and not pending:
         print(f"{_UPSTREAM}に更新はありません: commit {local_commit}")
         return 0
 
@@ -124,8 +129,10 @@ def _update_if_needed(pending_path: pathlib.Path) -> int:
         return 1
     if local_commit != upstream_commit:
         print(f"{_UPSTREAM}が変化しました: local {local_commit}, upstream {upstream_commit}")
-    else:
+    elif pending:
         print(f"前回の自動更新が未完了のため再試行します: commit {local_commit}")
+    else:
+        print(f"反映済みの記録がないcommitを更新します: {local_commit}")
     try:
         pending_path.touch()
     except OSError as error:
@@ -138,6 +145,9 @@ def _update_if_needed(pending_path: pathlib.Path) -> int:
     result = _run([str(update_dotfiles)], capture_output=False)
     if result.returncode != 0:
         return result.returncode
+    # HEADを動かす主体は自動更新に限らない。成功した反映の対象を別に保存する。
+    # 照会後に上流が進んだ場合は古いIDを残し、次回に再確認する。
+    applied_path.write_text(upstream_commit + "\n", encoding="utf-8")
     try:
         pending_path.unlink()
     except OSError as error:

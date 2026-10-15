@@ -243,7 +243,7 @@ def _check_bash_process_kill_by_pattern(command: str) -> str | None:
 
     対象の所有権を確認できないパターン一致の一括終了は他者のプロセスを停止する危険があるため禁止する。
     自身が起動して識別子（PID）を確認したプロセスに対する`kill <PID>`形式は対象外とする。
-    ヒアドキュメント本文をマスクした文字列を解析し、禁止語が実行位置ではなく、安全な引数位置の
+    ヒアドキュメント本文をマスクした文字列を解析し、禁止語が安全な引数位置の
     リテラルだと確定できる区間だけを許可する。
     """
     matching_segments = [segment for segment in split_bash_segments(command) if "pkill" in segment or "killall" in segment]
@@ -594,7 +594,7 @@ def _check_bash_option_after_terminator(command: str) -> str | None:
             continue
         return _block_notice(
             f"blocked: `{label}`のオプション終端`--`の後ろにオプション（{'、'.join(found)}）がある。"
-            "`--`の後ろは全てデータとして扱われるため、これらはオプションではなくパスとして解釈され、"
+            "`--`の後ろは全てデータとして扱われるため、これらはパスとして解釈され、"
             "存在しないパスとして失敗するか、エラーを出力せずに結果を限定する。",
             fix=(
                 "そのコマンド自身のオプションを`--`より前へ移し、`--`の後ろには検索パターンとパスだけを置いて再実行する。"

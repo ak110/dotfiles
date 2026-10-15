@@ -38,7 +38,7 @@ def _fake_target_info(monkeypatch: pytest.MonkeyPatch) -> None:
     """marketplace.json の読み込み結果を固定値に差し替える。
 
     テストを実際の marketplace.json の内容から切り離すため。
-    対象プラグインはハードコードではなく marketplace.json 由来で決まるため、
+    対象プラグインは marketplace.json 由来で決まるため、
     複数プラグインが正しくループで処理されることを検証できるよう 2 件返す。
     """
     monkeypatch.setattr(

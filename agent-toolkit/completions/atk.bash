@@ -5,6 +5,20 @@
 # 補完起動時に`_ARGCOMPLETE=1`等の環境変数を渡してコマンド本体を再起動し、
 # argcomplete側で候補生成と出力を行う。
 
+_python_argcomplete_run() {
+    if [[ "$OSTYPE" == msys* || "$OSTYPE" == cygwin* ]]; then
+        local tmpfile output_path code
+        tmpfile=$(mktemp) || return
+        output_path=$(cygpath -w "$tmpfile") || { rm -f "$tmpfile"; return 1; }
+        _ARGCOMPLETE_STDOUT_FILENAME="$output_path" "$@" 1>/dev/null 2>/dev/null
+        code=$?
+        cat "$tmpfile"
+        rm -f "$tmpfile"
+        return "$code"
+    fi
+    "$@" 8>&1 9>&2 1>/dev/null 2>/dev/null
+}
+
 _python_argcomplete() {
     local IFS=$'\013'
     local SUPPRESS_SPACE=0
@@ -18,7 +32,7 @@ _python_argcomplete() {
                   _ARGCOMPLETE_COMP_WORDBREAKS="$COMP_WORDBREAKS" \
                   _ARGCOMPLETE=1 \
                   _ARGCOMPLETE_SUPPRESS_SPACE=$SUPPRESS_SPACE \
-                  "$1" 8>&1 9>&2 1>/dev/null 2>/dev/null) )
+                  _python_argcomplete_run "$1") )
     if [[ $? != 0 ]]; then
         unset COMPREPLY
     elif [[ $SUPPRESS_SPACE == 1 ]] && [[ "${COMPREPLY-}" =~ [=/:]$ ]]; then

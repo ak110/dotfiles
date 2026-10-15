@@ -412,7 +412,7 @@ def test_setup_timer_writes_units_and_enables_only_timer(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """2 unitを配置し、oneshot serviceではなくtimerだけを有効化する。"""
+    """2 unitを配置し、timerだけを有効化する。"""
     executable = tmp_path / "uv"
     executable.write_text("", encoding="utf-8")
     service_unit = tmp_path / "tool.service"

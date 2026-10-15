@@ -48,7 +48,9 @@ def launcher_reader(state_root: pathlib.Path | None) -> typing.Callable[[str], s
         return lambda _session_id: None
     directory = registry_directory(state_root)
     try:
-        names = {entry.name for entry in os.scandir(directory)}
+        # 列挙の途中で失敗しても、ディレクトリのハンドルをその場で閉じる。
+        with os.scandir(directory) as entries:
+            names = {entry.name for entry in entries}
     except OSError:
         return lambda _session_id: None
 

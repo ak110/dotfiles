@@ -10,31 +10,31 @@ remote_url="$(git remote get-url origin)"
 
 # ホスト部分を抽出する
 case "$remote_url" in
-    git@*:*)
-        # SSH形式: git@HOST:path → @ と : の間がホスト
-        host="${remote_url#git@}"
-        host="${host%%:*}"
-        ;;
-    https://*/*)
-        # HTTPS形式: https://HOST/path → :// と次の / の間がホスト
-        host="${remote_url#https://}"
-        host="${host%%/*}"
-        ;;
-    *)
-        echo "open-repo: 未対応のURL形式です。git@HOST:pathまたはhttps://HOST/pathをoriginへ指定してください。次の操作: git remote -vで登録を確認し、リポジトリのWebページをブラウザーで直接開いてください。" >&2
-        exit 1
-        ;;
+git@*:*)
+    # SSH形式: git@HOST:path → @ と : の間がホスト
+    host="${remote_url#git@}"
+    host="${host%%:*}"
+    ;;
+https://*/*)
+    # HTTPS形式: https://HOST/path → :// と次の / の間がホスト
+    host="${remote_url#https://}"
+    host="${host%%/*}"
+    ;;
+*)
+    echo "open-repo: 未対応のURL形式です。git@HOST:pathまたはhttps://HOST/pathをoriginへ指定してください。次の操作: git remote -vで登録を確認し、リポジトリのWebページをブラウザーで直接開いてください。" >&2
+    exit 1
+    ;;
 esac
 
 case "$host" in
-    github.com)
-        exec gh browse "$@"
-        ;;
-    gitlab.com)
-        exec glab repo view --web "$@"
-        ;;
-    *)
-        echo "open-repo: 未対応のホストです: ${host}。対応するホストはgithub.comとgitlab.comです。次の操作: git remote -vで登録を確認し、リポジトリのWebページをブラウザーで直接開いてください。" >&2
-        exit 1
-        ;;
+github.com)
+    exec gh browse "$@"
+    ;;
+gitlab.com)
+    exec glab repo view --web "$@"
+    ;;
+*)
+    echo "open-repo: 未対応のホストです: ${host}。対応するホストはgithub.comとgitlab.comです。次の操作: git remote -vで登録を確認し、リポジトリのWebページをブラウザーで直接開いてください。" >&2
+    exit 1
+    ;;
 esac

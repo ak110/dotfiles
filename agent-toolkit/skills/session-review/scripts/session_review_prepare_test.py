@@ -19,7 +19,7 @@ import session_evidence_candidates as evidence_candidates  # pylint: disable=imp
 import session_review_prepare as prepare  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 
 from agent_toolkit._common import response_language_check, state_paths
-from agent_toolkit._testing import delegated_threads
+from agent_toolkit._testing import delegated_threads, git_repository
 from agent_toolkit._testing import session_evidence_support as support
 from agent_toolkit._testing.failure_records import bash_failure_entries, failure_entries
 
@@ -530,16 +530,7 @@ def test_delegate_improvements_reach_prepare(
 
 
 def _git_repository(path: pathlib.Path) -> pathlib.Path:
-    path.mkdir()
-    subprocess.run(["git", "-C", str(path), "init"], check=True, capture_output=True)
-    (path / "tracked.txt").write_text("tracked\n", encoding="utf-8")
-    subprocess.run(["git", "-C", str(path), "add", "tracked.txt"], check=True, capture_output=True)
-    subprocess.run(
-        ["git", "-C", str(path), "-c", "user.name=Test", "-c", "user.email=test@example.invalid", "commit", "-m", "initial"],
-        check=True,
-        capture_output=True,
-    )
-    return path
+    return git_repository.init_repository(path, files={"tracked.txt": "tracked\n"}, commit_message="initial")
 
 
 def test_prepare_writes_conversation_candidates_and_stats_without_queue_changes(
@@ -606,7 +597,7 @@ def test_prepare_writes_conversation_candidates_and_stats_without_queue_changes(
 def test_prepare_lists_offered_answer_as_mandatory_confirmation(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """選択肢のlabelをそのまま選び自由記述の無い確認回答を、ユーザー介入ではなく確認の候補として載せる。
+    """選択肢のlabelをそのまま選び自由記述の無い確認回答を、確認の候補として載せる。
 
     介入として数えると是正を含まない回答まで介入として分析する。除外すると不要だった確認が件数だけになり、
     確認の要否を振り返る入力から消える。確認の候補は再発防止策が必須の候補として1行JSONにも示す。

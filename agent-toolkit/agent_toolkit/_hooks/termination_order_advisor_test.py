@@ -203,7 +203,30 @@ def test_background_wait_of_work_allows_turn_end_until_collected(tmp_path: pathl
     assert decision == "block" and "commit" in reason
 
 
-@pytest.mark.parametrize("command", ["make test", "atk run-script plan-verify -- --plan /p.md --worktree /repo --timeout 600"])
+@pytest.mark.parametrize("command", ["atk serve", "npm run watch", "python3 -m http.server 8080", "uv run uvicorn app:app"])
+def test_resident_background_command_does_not_exempt_completion(tmp_path: pathlib.Path, command: str) -> None:
+    """終了通知を待てない常駐コマンドは、成果作業の起動不足を免除しない。"""
+    trace = tmp_path / "trace.jsonl"
+    trace.touch()
+    _human_input("resident-owned", trace, "request", "常駐サーバーを起動する")
+    _commit("resident-owned", trace)
+    _append_entries(trace, _background_bash_entries("toolu_server", "resident", command))
+    payload = _payload("resident-owned", str(trace), background_tasks=[{"id": "resident", "type": "shell"}])
+    assert termination_order_advisor.evaluate(payload)[0] == "block"
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "make test",
+        "atk run-script plan-verify -- --plan /p.md --worktree /repo --timeout 600",
+        "timeout 10 atk serve",
+        "echo serve",
+        "echo --watch",
+        "npm view watch",
+        "atk serve --help",
+    ],
+)
 def test_background_command_of_work_allows_turn_end_until_notified(tmp_path: pathlib.Path, command: str) -> None:
     """作業内で背景起動した有限のコマンドの実行中は終了を許し、完了通知の後は起動不足を示す。"""
     trace = tmp_path / "trace.jsonl"

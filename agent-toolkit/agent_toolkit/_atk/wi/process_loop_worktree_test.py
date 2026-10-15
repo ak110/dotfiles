@@ -24,7 +24,7 @@ from agent_toolkit._atk.wi import process_loop_watch as _pl_watch
 from agent_toolkit._atk.wi import process_loop_worktree as _pl_worktree
 from agent_toolkit._atk.wi import readiness as _wi_readiness
 from agent_toolkit._atk.wi import sync as _wi_sync
-from agent_toolkit._common import state_paths
+from agent_toolkit._common import codex_models, state_paths
 from agent_toolkit._testing import git_repository
 from agent_toolkit._testing.managed_temp_support import setattr_in_managed_temp_modules
 from agent_toolkit._testing.process_loop_support import (
@@ -422,8 +422,26 @@ class TestSyncWorktreeWithUpstream:
         assert f"`git -C {local_path} branch -u <remote>/<branch>`" in stderr.split("\n次の操作: ", 1)[1]
 
 
+@pytest.mark.usefixtures("process_loop_commands_isolated")
 class TestPublicWorktreePreparation:
     """公開CLIからのworktree準備と失敗時の停止条件を検証する。"""
+
+    def test_codex_family_resolution_does_not_start_app_server(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+    ) -> None:
+        """系列モデルを指定しても、起動前のモデル一覧は共通fixtureが隔離する。"""
+
+        async def forbidden_catalog() -> list[dict[str, Any]]:
+            pytest.fail("公開worktree試験から実Codex App Serverを起動しないこと")
+
+        monkeypatch.setattr(codex_models, "list_models_from_app_server", forbidden_catalog)
+        _setup_notes(tmp_path)
+        set_orchestrate_model(tmp_path, "codex:sol/medium")
+        local = _make_remote_repository(tmp_path, "target")
+        sessions, _git_calls = _run_public_process_loop(monkeypatch, tmp_path, local, ["--worktree=custom"])
+        assert len(sessions) == 1
+        assert sessions[0]["cmd"][0] == "codex"
+        assert sessions[0]["cwd"] == local / ".claude/worktrees/custom"
 
     def test_unignored_path_is_added_to_info_exclude_and_worktree_created(
         self,

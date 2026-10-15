@@ -55,10 +55,10 @@ def evaluate(payload_text: str) -> tuple[str, str]:
             continue
         prompt = _input_text(entry)
         if prompt is not None:
-            if "<task-notification>" in prompt:
-                needs_response = False
-            elif _is_human_input(entry) and not entry.get("isMeta") and not _is_hook_input(prompt):
+            if _is_human_input(entry) and not entry.get("isMeta") and not _is_hook_input(prompt):
                 needs_response = True
+            elif not _is_human_input(entry) and prompt.lstrip().startswith("<task-notification>"):
+                needs_response = False
         elif entry.get("type") == "assistant":
             text = transcript.visible_assistant_text(entry.get("message"))
             if any(not char.isspace() and char != "…" for char in text):

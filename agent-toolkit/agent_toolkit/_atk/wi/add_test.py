@@ -777,6 +777,9 @@ def _with_direct_cause(body: str, value: str) -> str:
         ("未確認 原因候補は2件", False),
         ("**調査中**: 再現条件を確認している", False),
         ("`不明`: ログが残っていない", False),
+        ("\u3000未確定", False),
+        ("\u3000**未確定**（再現待ち）", False),
+        ("** \u3000調査中**", False),
     ],
 )
 def test_add_rejects_undetermined_direct_cause(
@@ -835,6 +838,7 @@ def test_add_rejects_undetermined_direct_cause_in_uwi(
     [
         _with_direct_cause(_AGENT_AWI_BODY, "旧値の残存。`git log -S`で、それまで不明だった設定値の由来を特定した"),
         _with_direct_cause(_AGENT_AWI_BODY, "不明だった設定を特定した"),
+        _with_direct_cause(_AGENT_AWI_BODY, "\u3000不明だった設定を特定した"),
         _with_direct_cause(_AGENT_AWI_BODY, "調査中の設定変更が旧値を残していたと特定した"),
         _AGENT_AWI_BODY.replace(
             "## 適用範囲\n",

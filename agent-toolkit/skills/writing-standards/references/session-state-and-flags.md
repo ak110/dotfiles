@@ -31,6 +31,7 @@ Claude Codeは並列ツール呼び出しでhookを同時発火するため、�
 ## セッションの活動記録
 
 `_common/session_activity.py`はOSアカウントの状態ディレクトリ配下の`session-activity/{session_id}.json`へ会話ごとの最新状態を保存する。
+状態ディレクトリの解決元は`agent-toolkit/agent_toolkit/_common/state_paths.py`の`state_dir()`である。
 `hook.py`が受け取る既存イベントの処理に活動記録を加え、`scan_activity`がprocess-loopの開始前判定へ活動と未判定の根拠を渡す。
 
 - 保存する項目は版数、会話ID、実行系、PIDと起動時刻、会話内の各エージェントの活動状態、親会話ID、セッション記録のパス、バックグラウンドタスクの有無および更新時刻とする。
@@ -139,14 +140,14 @@ process-loopが起動した会話の最上位のStopでは、終了要求が`req
   - `model_type`の解決: 起動入力の`model_type`を優先し、省略時は`start`の`task`では`<役割名>.subagent.md`のファイル名、他の`mode`では`mode`ごとの省略時の種別とする。統合前の旧名で記録された開始は対応する`mode`として扱う
   - 生成と更新: `start`の成功応答で生成し、`send_message`・`kill`・`wait`の応答境界と、Bash経由の`atk agents wait`実行時に更新する
   - `pending_observation`を真にする契機: 各開始操作の成功応答と、`delivery`が`reply_started`または`reply_ambiguous`の`send_message`の応答。`steered`は実行中のturnへ追加指示を配送するだけで`turn_seq`を変えないため対象外とする。呼出主体をhook payloadの`agent_id`（無いメイン会話は`main`）から`owner_agent_id`へ記録する。`transcript_path`で呼出主体を判別しない（`claude-hooks.md`「hookスクリプトの基本プロトコル」）
-  - `pending_observation`を偽にする契機: `kill`の成功応答、Bash経由の`atk agents wait`完了時、Stop時に直前の応答の`待機中:`表明がそのsessionを指す場合。CLIの`atk agents wait`は入力sessionを取らず、呼出主体が所有する既存の記録を持つ全sessionを観測済みにする。偽は観測の履歴ではないため、新しい作業を配送すれば再び真になる。`owner_agent_id`は次の作業発生まで保持する
+  - `pending_observation`を偽にする契機: `kill`の成功応答、Bash経由の`atk agents wait`完了時、Stop時に直前の応答の`待機中:`表明がそのsessionを指す場合。CLIの`atk agents wait`は入力sessionを取らず、呼出主体が所有する既存の記録を持つ全sessionを観測済みにする。偽は現時点で未観測の作業が無いことを示すため、新しい作業を配送すれば再び真になる。`owner_agent_id`は次の作業発生まで保持する
   - 利用先: Stop判定で、`pending_observation`が真で`owner_agent_id`がStopの呼出主体と一致する記録だけを警告へ使う。CLI待機中はルートセッションが所有する待機所有権の生存をStopフックが確認し、未観測警告の対象から除く。終了工程の委譲先wait判断も同じ読取を使い、観測義務と有効な待機を区別する。`status`が`running`の記録の件数は待機の遮断の入力にしない
   - 除去: `stop`の成功応答でその`session_id`のエントリーを除く。`stop`は実行中turnを持つsessionと非終端のsessionを拒否するため、未終端のsessionの記録は失われない
   - 持たない状態: 結果を回収済みであることを示す状態と、thread IDをハッシュ化した状態ファイル
 
 ## バックグラウンドタスク系
 
-- `background_task_ids`: PostToolUseが、自セッションのツール呼び出しの応答から得たタスクIDを重複なく記録する。この記録をバックグラウンドタスクの所有記録と呼ぶ。バックグラウンドタスクは、BashやAgentを背景で動かした非同期の処理を指す。記録の契機は次の4つで、所有の根拠は呼び出しの成否ではなく自身の呼び出しが識別子を返したことである。
+- `background_task_ids`: PostToolUseが、自セッションのツール呼び出しの応答から得たタスクIDを重複なく記録する。この記録をバックグラウンドタスクの所有記録と呼ぶ。バックグラウンドタスクは、BashやAgentを背景で動かした非同期の処理を指す。記録の契機は次の4つで、所有の根拠は自身の呼び出しが識別子を返したことである。
   1. Bashの`run_in_background`指定の応答（成功・失敗とも）
   2. 実行上限またはユーザーの操作で背景へ移ったBashの応答が返す構造化`backgroundTaskId`
   3. MCPツールの呼び出しが背景へ移ったときのホストの移行通知。テキストの先頭から始まる`MCP tool "<ツール名>" is still running after <秒数>s. It was moved to the background as task <ID>`の形だけを記録し、前景の出力本文の途中に現れる同じ文言は除く

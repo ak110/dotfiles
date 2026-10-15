@@ -358,7 +358,7 @@ def _codex_thread_id_from_records(records: list[_Record]) -> str | None:
 
 
 def _physical_record_id(path: Path, records: list[_Record], runtime: _Runtime | None) -> str:
-    """収集元の指定ではなく物理記録のmetadataから正規record IDを返す。"""
+    """物理記録のmetadataから正規record IDを返す。"""
     if runtime == "codex":
         return f"codex:{_codex_thread_id_from_records(records) or path.stem.removeprefix('rollout-')}"
     if runtime == "claude":

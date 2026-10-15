@@ -1,6 +1,6 @@
 """plan-modeが使う新規計画ファイルの内部作成処理。
 
-このスクリプトは公開CLIではなく、plan-modeがmanaged-tempの中へ準備した
+このスクリプトは、plan-modeがmanaged-tempの中へ準備した
 メイン本文と任意のバグ本文を`~/.claude/plans`へ確定するための内部APIを提供する。
 """
 

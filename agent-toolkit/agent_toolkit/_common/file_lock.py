@@ -45,7 +45,7 @@ def ensure_plan_lock_ignored(lock_path: Path) -> bool:
 
     Gitリポジトリ外または`plans/`外のロックは変更しない。
     変更した場合だけ真を返す。
-    版管理の対象である`.gitignore`ではなく`info/exclude`へ書くため、除外の保証が
+    版管理の対象外である`info/exclude`へ書くため、除外の保証が
     commitとpushを伴わない。既に`.gitignore`へ同じパターンを持つcloneでも、
     その行は除去せずそのまま残す。
     """

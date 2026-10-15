@@ -176,7 +176,7 @@ class WindowsAPI:
         if self.identity(hwnd) != identity:
             raise OSError("selected window no longer exists")
         if self.user32.IsIconic(hwnd) or self.user32.IsZoomed(hwnd):
-            # ShowWindowの戻り値は成功ではなく変更前の可視状態。
+            # ShowWindowの戻り値は変更前の可視状態を表す。成否の判定には使えない。
             self.user32.ShowWindow(hwnd, 9)  # SW_RESTORE
             if self.user32.IsIconic(hwnd) or self.user32.IsZoomed(hwnd):
                 raise OSError("selected window could not be restored")

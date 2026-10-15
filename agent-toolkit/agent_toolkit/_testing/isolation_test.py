@@ -1,13 +1,16 @@
 """`agent_toolkit/`配下のテストへ開発機の状態からの隔離が自動で適用されることを確かめる。"""
 
+import inspect
 import json
 import os
 import pathlib
 import shlex
 import subprocess
 import sys
+import typing
 
 import pytest
+from platformdirs import windows
 
 from agent_toolkit._testing import isolation
 
@@ -15,6 +18,25 @@ from agent_toolkit._testing import isolation
 def test_development_state_isolated_by_default(tmp_path: pathlib.Path) -> None:
     """この起動範囲のテストは、何も設定しなくても開発機の状態から隔離される。"""
     isolation.assert_development_state_isolated(tmp_path)
+
+
+def test_windows_known_folders_use_isolated_overrides(monkeypatch: pytest.MonkeyPatch) -> None:
+    """共通fixtureはWindowsの実リゾルバーへ公開overrideを渡し、KnownFolder APIへ到達させない。"""
+    root = pathlib.PureWindowsPath("C:/isolated-test")
+
+    def reject_host_folder(_name: str) -> str:
+        raise AssertionError("ホストのKnownFolder APIへ到達した")
+
+    monkeypatch.setattr(windows, "_resolve_win_folder", reject_host_folder)
+    with pytest.MonkeyPatch.context() as scoped:
+        apply_fixture = typing.cast(
+            typing.Callable[[pathlib.PurePath, pytest.MonkeyPatch, str], None],
+            inspect.unwrap(isolation.isolate_development_state),
+        )
+        apply_fixture(root, scoped, "")
+        directories = windows.Windows("probe", appauthor=False)
+        for name in ("user_config_dir", "user_data_dir", "user_state_dir", "user_cache_dir", "site_data_dir"):
+            assert pathlib.PureWindowsPath(getattr(directories, name)).is_relative_to(root), name
 
 
 def test_commit_hook_context_does_not_escape_nested_test_repository(tmp_path: pathlib.Path) -> None:
@@ -212,4 +234,24 @@ def test_shared_cache_child_keeps_development_state_isolated(tmp_path: pathlib.P
     assert pathlib.Path(observed["XDG_CONFIG_HOME"]).is_relative_to(tmp_path)
     assert pathlib.Path(observed["XDG_CACHE_HOME"]).is_relative_to(tmp_path)
     assert pathlib.Path(observed["AGENT_TOOLKIT_PRIVATE_NOTES"]).is_relative_to(tmp_path)
+    for name in ("WIN_PD_OVERRIDE_APPDATA", "WIN_PD_OVERRIDE_LOCAL_APPDATA", "WIN_PD_OVERRIDE_COMMON_APPDATA"):
+        assert pathlib.Path(observed[name]).is_relative_to(tmp_path)
     isolation.assert_development_state_isolated(tmp_path)
+
+
+def test_child_platformdirs_resolves_inside_isolation(tmp_path: pathlib.Path) -> None:
+    """子プロセスの実platformdirs解決先が、書込前から全て専用領域内にある。"""
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            "import json, platformdirs; d=platformdirs.PlatformDirs('probe', appauthor=False); "
+            "print(json.dumps([getattr(d, name) for name in "
+            "('user_config_dir','user_data_dir','user_state_dir','user_cache_dir')]))",
+        ],
+        capture_output=True,
+        text=True,
+        check=True,
+        timeout=30,
+    )
+    assert all(pathlib.Path(value).is_relative_to(tmp_path) for value in json.loads(result.stdout))

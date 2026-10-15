@@ -351,7 +351,7 @@ function entrySelectionFromUrl() {
   return state && filename ? {state, filename} : null;
 }
 
-// 一覧は再読込のたびに全行を再生成するため、コピー直後の表示は行の要素ではなく項目の識別子に対応付けて保持する。
+// 一覧は再読込のたびに全行を再生成するため、コピー直後の表示は項目の識別子に対応付けて保持する。
 const COPIED_LABEL_MS = 2000;
 const copiedLabelDeadlines = new Map();
 
@@ -461,16 +461,15 @@ function renderEmptyState() {
   create.hidden = true;
   if (entries.length) return;
   const periodLabel = PERIOD_LABELS[byId('period-filter').value];
+  allPeriods.hidden = !periodLabel;
   if (hasNonStateFilters() || !['active', 'all'].includes(byId('state-filter').value)) {
     message.textContent = '条件に一致する項目はありません。';
     clear.hidden = false;
   } else if (byId('state-filter').value === 'active') {
     message.textContent = periodLabel ? `${periodLabel}に作成された対応中の項目はありません。` : '対応中の項目はありません。';
     allStates.hidden = false;
-    allPeriods.hidden = !periodLabel;
   } else if (periodLabel) {
     message.textContent = `${periodLabel}に作成された項目はありません。`;
-    allPeriods.hidden = false;
   } else {
     message.textContent = '項目はまだありません。';
     create.hidden = false;

@@ -38,6 +38,33 @@ pytestmark = [
 _MERMAID_CDN_URL = "https://cdn.jsdelivr.net/npm/mermaid@12.0.0/dist/mermaid.min.js"
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize("width", [320, 1280])
+@pytest.mark.parametrize("failure", [False, True])
+async def test_plan_copy_feedback_preserves_toolbar_positions(
+    screen_harness: _ScreenHarness, width: int, failure: bool
+) -> None:
+    """本文・パスのコピー成功と失敗の表示で、ボタン幅と隣接操作の位置が変わらない。"""
+    page = screen_harness.page
+    await page.set_viewport_size({"width": width, "height": 800})
+    await page.goto(screen_harness.base_url + "/plans?host=browser-test&path=plan.md")
+    await page.locator("#preview h1").wait_for(state="visible")
+    if failure:
+        await page.evaluate(
+            "() => { navigator.clipboard.writeText = async () => { throw new Error('clipboard unavailable'); }; }"
+        )
+    buttons = page.locator("#screen-plans main > .toolbar button")
+    before = await buttons.evaluate_all("elements => elements.map(element => element.getBoundingClientRect().toJSON())")
+    for selector in ("#copy-btn", "#copy-path-btn"):
+        button = page.locator(selector)
+        await button.click()
+        await playwright.async_api.expect(button.locator(".short-label")).to_have_text("失敗" if failure else "完了")
+        after = await buttons.evaluate_all("elements => elements.map(element => element.getBoundingClientRect().toJSON())")
+        assert after == before
+        assert await button.evaluate("element => element.scrollWidth <= element.clientWidth")
+    assert await page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
+
+
 @dataclasses.dataclass
 class _MultiRootHarness:
     page: playwright.async_api.Page
@@ -205,16 +232,18 @@ async def test_deleted_plan_status_remains_visible_while_choosing_next_on_mobile
 
 
 @pytest.mark.asyncio
-async def test_mobile_plan_drawer_keeps_user_open_during_initial_fetch(screen_harness: _ScreenHarness) -> None:
+@pytest.mark.parametrize("pending", ["list", "detail"])
+async def test_mobile_plan_drawer_keeps_user_open_during_initial_fetch(screen_harness: _ScreenHarness, pending: str) -> None:
     """狭い画面で一覧の初期取得中に開いた一覧を取得後も開いたまま保ち、項目の選択後と操作しない再読み込み後は閉じていることも確かめる。"""
     page = screen_harness.page
     await page.set_viewport_size({"width": 320, "height": 720})
     started = asyncio.Event()
     release = asyncio.Event()
     route_handler = functools.partial(_hold_route, started=started, release=release)
-    await page.route("**/api/plans/files", route_handler)
+    pattern = "**/api/plans/files" if pending == "list" else "**/api/plans/file?*"
+    await page.route(pattern, route_handler)
     try:
-        await page.goto(screen_harness.base_url + "/plans", wait_until="domcontentloaded")
+        await page.goto(screen_harness.base_url + "/plans?host=browser-test&path=plan.md", wait_until="domcontentloaded")
         await asyncio.wait_for(started.wait(), timeout=10)
         screen = page.locator("#screen-plans")
         menu = page.locator("#plans-menu-btn")
@@ -227,7 +256,8 @@ async def test_mobile_plan_drawer_keeps_user_open_during_initial_fetch(screen_ha
         assert await screen.evaluate("element => element.classList.contains('drawer-open')")
         await playwright.async_api.expect(menu).to_have_attribute("aria-expanded", "true")
         assert not await sidebar.evaluate("element => element.inert")
-        release.set()
+        async with page.expect_response("**/api/plans/file?*"):
+            release.set()
         item = page.locator("#files .file").first
         await item.wait_for(state="visible")
         await page.evaluate("() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))")
@@ -239,7 +269,7 @@ async def test_mobile_plan_drawer_keeps_user_open_during_initial_fetch(screen_ha
         await playwright.async_api.expect(sidebar).to_have_attribute("inert", "")
     finally:
         release.set()
-        await page.unroute("**/api/plans/files", route_handler)
+        await page.unroute(pattern, route_handler)
 
     await page.reload()
     await page.locator("#files .file").first.wait_for(state="attached")

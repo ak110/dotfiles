@@ -1867,3 +1867,75 @@ def test_initialization_failure_resolves_before_host_moves_call_to_background() 
     """
     failure_path = state.SESSION_INITIALIZATION_TIMEOUT * state.SESSION_INITIALIZATION_ATTEMPTS
     assert failure_path + server_manager.START_AVAILABILITY_TIMEOUT < state.HOST_BACKGROUND_THRESHOLD_SECONDS
+
+
+@pytest.mark.parametrize("failing_step", ["backend_close", "writer_drain"])
+@pytest.mark.asyncio
+async def test_close_runs_required_cleanup_after_failure(
+    failing_step: str,
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """backendの停止かwriterの回収が失敗しても、listener解除とwriterの停止へ到達し、失敗を呼出元へ返す。"""
+    writer = status_file.StatusFileWriter(
+        {},
+        shared_roots.StatusFileIdentity("root-session", "root.json", None),
+        state_root=tmp_path,
+        aggregate_seconds=0,
+    )
+    manager = server_manager.AgentsServerManager(writer)
+    backend = FakeBackend(manager.sessions, "codex")
+    other_backend = FakeBackend(manager.sessions, "claude")
+    install_backend(manager, "codex", backend)
+    install_backend(manager, "claude", other_backend)
+    writer.activate()
+    other_closed = asyncio.Event()
+
+    async def fail(*_args: Any, **_kwargs: Any) -> None:
+        raise OSError("注入した失敗")
+
+    async def close_other() -> None:
+        other_closed.set()
+
+    if failing_step == "backend_close":
+        monkeypatch.setattr(backend, "close", fail)
+    else:
+        monkeypatch.setattr(writer, "drain", fail)
+    monkeypatch.setattr(other_backend, "close", close_other)
+
+    with pytest.raises(OSError, match="注入した失敗"):
+        await manager.close()
+
+    assert other_closed.is_set()
+    assert manager._carry_over_unavailable_candidate not in state._TERMINAL_LISTENERS
+    assert manager._record_pending_unobserved_child_sessions not in state._TERMINAL_LISTENERS
+    assert manager._record_resources not in state._LIFECYCLE_LISTENERS
+    assert writer.schedule not in state._TOUCH_LISTENERS
+    assert not writer._active
+
+
+@pytest.mark.asyncio
+async def test_close_preserves_backend_failure_when_cleanup_also_fails(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """後始末の失敗は最初の停止失敗へ注記し、writerを停止する。"""
+    writer = status_file.StatusFileWriter(
+        {}, shared_roots.StatusFileIdentity("root-session", "root.json", None), state_root=tmp_path, aggregate_seconds=0
+    )
+    manager = server_manager.AgentsServerManager(writer)
+    backend = FakeBackend(manager.sessions, "codex")
+    install_backend(manager, "codex", backend)
+    writer.activate()
+
+    async def fail_backend() -> None:
+        raise OSError("backend停止失敗")
+
+    async def fail_drain(**_kwargs: Any) -> None:
+        raise OSError("writer回収失敗")
+
+    monkeypatch.setattr(backend, "close", fail_backend)
+    monkeypatch.setattr(writer, "drain", fail_drain)
+    with pytest.raises(OSError, match="backend停止失敗") as caught:
+        await manager.close()
+    assert any("writer回収失敗" in note for note in caught.value.__notes__)
+    assert not writer._active

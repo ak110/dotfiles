@@ -224,7 +224,7 @@ function updateFileItem(item, file) {
 }
 
 function renderFiles() {
-  // ファイル一覧を差分更新する。innerHTMLの全消去ではなく既存ノードを再利用することで、
+  // ファイル一覧を差分更新する。既存ノードを再利用することで、
   // ファイル数が多い環境でのフィルタ入力遅延・スクロール位置のジャンプを抑える。
   // DOM化対象はフィルタ後の先頭`visibleLimit`件のみ。未描画分は末尾の番兵を`IntersectionObserver`で
   // 検出して段階拡張する（数百件規模の差分更新コストを抑えるため）。
@@ -278,7 +278,7 @@ function renderRootWarnings() {
 
 function setupSentinelObserver() {
   // 末尾の番兵が可視範囲に入ったら表示上限を1ステップ拡張する。
-  // `root`をaside（一覧をスクロールするコンテナー）に指定して、ビューポートではなく
+  // `root`をaside（一覧をスクロールするコンテナー）に指定して、
   // スクロールコンテナー内での可視性を判定する。
   // `rootMargin`で末尾到達前に先読みし、スクロール停止前に拡張が完了するようにする。
   const sentinel = document.getElementById("files-sentinel");
@@ -603,7 +603,7 @@ async function updatePreview() {
   }
 }
 
-async function openFile(host, path, source) {
+async function openFile(host, path, source, closeDrawer = true) {
   // ファイル一覧はSSE経由で常時同期されているため、選択操作のたびに/api/filesを再取得する必要はない。
   // 余分な往復を省いてプレビュー描画までのレイテンシーを下げる。
   selectedHost = host;
@@ -624,7 +624,7 @@ async function openFile(host, path, source) {
   updateCopyPathButton(host, selectedSource);
   renderFiles();
   // モバイル時のドロワーを自動で閉じる（ファイル選択操作の延長として）。
-  if (isMobileViewport()) setDrawerOpen("plans", false);
+  if (closeDrawer && isMobileViewport()) setDrawerOpen("plans", false);
   const main = document.querySelector("#screen-plans main");
   const generation = ++previewGeneration;
   beginPreviewLoading(generation);
@@ -798,7 +798,7 @@ function bindScreenEvents() {
   });
   document.getElementById("preview").addEventListener("click", (event) => {
     // 付属計画は計画一覧に載らないため、サーバーが本文へ付与したリンクだけから選択できる。
-    // 本文は表示のたびに差し替わるので、個別ノードではなく親要素への委譲で受け取る。
+    // 本文は表示のたびに差し替わるので、親要素への委譲で受け取る。
     const link = event.target.closest("a[data-plan-path]");
     if (!link || !isPlainPrimaryClick(event) || link.target) return;
     event.preventDefault();
@@ -807,7 +807,7 @@ function bindScreenEvents() {
   });
 }
 
-async function restoreFileFromUrl() {
+async function restoreFileFromUrl(closeDrawer = true) {
   if (location.pathname !== `${BASE_PATH}/plans`) return;
   const selection = fileSelectionFromUrl();
   const target = selection && files.find(file =>
@@ -815,9 +815,9 @@ async function restoreFileFromUrl() {
     (!selection.source || fileSource(file) === selection.source)
   );
   if (target) {
-    await openFile(target.host, target.path, fileSource(target));
+    await openFile(target.host, target.path, fileSource(target), closeDrawer);
   } else if (files.length > 0 && !isMobileViewport()) {
-    await openFile(files[0].host, files[0].path, fileSource(files[0]));
+    await openFile(files[0].host, files[0].path, fileSource(files[0]), closeDrawer);
   }
 }
 
@@ -837,7 +837,7 @@ async function init() {
   await (refreshFiles());
   subscribeEvents();
   if (location.pathname === `${BASE_PATH}/plans`) {
-    await restoreFileFromUrl();
+    await restoreFileFromUrl(false);
   } else if (files.length > 0 && !isMobileViewport()) {
     await openFile(files[0].host, files[0].path, fileSource(files[0]));
   }

@@ -148,10 +148,38 @@ def test_claude_warning_offers_skill_md_read_for_sessions_without_skill(
     warning = _search_warning({**payload, "session_id": f"light-{launch_kind}"}, env)
 
     assert warning.startswith(_WARN_OPENING)
+    assert "起動しないまま" not in warning
+    assert "未適用の場合" in warning
     assert f"ツール`Skill`で`{_SEARCH_SKILL}`を起動し" in warning
     assert "ツール一覧に`Skill`が無い主体" in warning
     assert f"`{_SEARCH_SKILL_MD}`）を`Read`で全文読んで" in warning
     assert _SEARCH_SKILL_MD.is_file()
+
+
+@pytest.mark.parametrize(
+    ("command", "expected"),
+    [
+        ("sed 's/x/y/' -- -i", []),
+        ("sed -i 's/x/y/' -- --help", ["--help"]),
+        ("sed -e --help -i note.md", ["note.md"]),
+        ("sed -i -- 's/x/y/' note.md", ["note.md"]),
+        ("cp -- source --help", ["--help"]),
+        ("install -- source -d", ["-d"]),
+        ("tee -- --help", ["--help"]),
+        ("tee -- -", []),
+        ("sponge -a -- note.md", ["note.md"]),
+        ("sponge --help", []),
+        ("gawk -i inplace '{print}' note.md", ["note.md"]),
+        ("gawk --include=inplace -v x=1 -f script.awk note.md", ["note.md"]),
+        ("gawk -i inplace -- '{print}' --help", ["--help"]),
+        ("gawk -i other '{print}' note.md", []),
+    ],
+)
+def test_write_paths_respect_option_roles(command: str, expected: list[str], tmp_path: pathlib.Path) -> None:
+    """オプションの値と終端以後のファイル名を、内容を書き込む対象と区別する。"""
+    assert operation_skills.written_paths("Bash", {"command": command}, str(tmp_path)) == [
+        str(tmp_path / path) for path in expected
+    ]
 
 
 @pytest.mark.parametrize(
@@ -427,7 +455,7 @@ _ROOT_CAUSE_BODY = "# 表題\n\n## 原因分析\n\n| 要因系統 | L1 現象 |\
 
 
 def _bugfix_warnings(context: str) -> int:
-    return context.count(f"`{_BUGFIX_SKILL}`を起動しないまま原因分析の記述を実行した")
+    return context.count(f"原因分析の記述の呼び出しで、`{_BUGFIX_SKILL}`の起動記録を確認できない")
 
 
 @pytest.mark.parametrize(
@@ -484,7 +512,7 @@ _MANAGED_TEMP_SKILL = "agent-toolkit:managed-temp"
 
 
 def _managed_temp_warnings(context: str) -> int:
-    return context.count(f"`{_MANAGED_TEMP_SKILL}`を起動しないまま")
+    return context.count(f"`{_MANAGED_TEMP_SKILL}`の起動記録を確認できない")
 
 
 @pytest.mark.parametrize(

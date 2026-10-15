@@ -35,8 +35,8 @@ CHECK_MODULE_NAMES = (
     "queued_notification_advisor",
 )
 
-# CodexのStopはcompletion-reportの起動証拠だけを判定する。他の判定はClaude Codeの記録形式と通知手段を前提とするため適用しない。
-CODEX_CHECK_MODULE_NAMES = ("termination_order_advisor",)
+# Codexではホスト共通の完了本文と起動証拠を判定する。Claude Codeのtranscriptに依存する判定は適用しない。
+CODEX_CHECK_MODULE_NAMES = ("response_language_advisor", "termination_order_advisor")
 
 _CONSECUTIVE_BLOCK_LIMIT = 7
 _CONSECUTIVE_BLOCK_STATE_KEY = "stop_consecutive_block_count"

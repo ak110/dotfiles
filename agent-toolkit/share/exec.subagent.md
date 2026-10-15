@@ -43,7 +43,7 @@
 
 - 既存ファイルの全体上書きと文字列置換の直前: 対象の現行本文を取得する（自ら書いたファイルも含む）
 - 編集の直前: プロジェクト規範が定める、編集対象のパスに対応する必須スキルを起動する
-- 変更範囲の検証の直前: 計画の`## 検証`の`変更範囲の検証`行（計画なしでは引き継ぎ記録の検証コマンド）から取得する
+- 変更範囲の検証の直前: 訂正済み検証表があればその検証行、なければ計画の`## 検証`の`変更範囲の検証`行から取得する。訂正済み検証表の保持と引き継ぎは`agent-toolkit:plan-mode`の`references/plan-file-standards.md`「検証と終端工程」に従う。計画なしでは引き継ぎ記録の検証コマンドを使う
 - 受入シナリオか完成条件を手動で観測する直前: 受入シナリオ検証（`agent-toolkit:check-execution`の`references/acceptance-scenarios.md`）の起動条件で対象を起動する。MCPで記録を取得できない有限終了のコマンドは、対象worktreeで`atk run-command [--cwd DIR] [--timeout SECONDS] -- COMMAND [ARG...]`で実行する。返却の`record_path`はcwd・argv・`git_head`・`git_status`・終了状態・両出力パスを保持するため、その絶対パスと出力の保存先を検証結果と未判定検証記録の`evidence`へ渡す。保存失敗を示す非0の終了が無いことを確かめ、記録の無い観測は保存する形でやり直す（実行レビュー担当は未保存の観測を補えない）。PATH上のコマンドなどインストール済みの別実体を実行した観測は、その実体の版を記録する
 
 ## 操作区分
@@ -93,7 +93,7 @@
 
   検索は語ごとに`atk run-command --cwd <対象worktreeの絶対パス> --timeout <有限秒数> -- git grep -n -F -e '<検索語>' -- .`（Git追跡外は子argvを`rg -n -F -- '<検索語>' <対象の絶対パス>`）で保存する。exit 1は不一致、起動失敗・timeout・保存失敗・その他の非0は検索失敗であり、不在の根拠にしない
 - ユーザーがAWIの`## ユーザーコメント`かUWIの`## 回答`へ処理側に宛てて直接記入した質問（AWI本文へ転記された質問は対象外）は、回答本文と根拠を下書きへ保存して絶対パスをメインへ通知し、`検証結果`にも記す。レビューの指摘は下書きへ反映する。メインが回答UWIを保存して返したファイル名を進捗ログ（計画なしでは引き継ぎ記録）へ追記する。回答完了の判定は保存後に限る
-- 計画の変更範囲の検証は`atk run-script plan-verify -- --plan <計画の絶対パス> --worktree <対象worktreeの絶対パス> --timeout <正の有限秒数>`で実行する。先に同じ入力へ`--list`を加えて順序とargvを確かめる。実行後は保存された結果まとめの`results_path`を`atk run-command --records-file <絶対パス>`へ渡し、全件の`record_path`・両出力と子・wrapperの終了状態から判定する。計画なしでは引き継ぎ記録で確定したコマンドを実行し、`--record <record_path>`の反復で保存済み結果を読む。読むのは保存済み結果だけとし、旧記録の未記録値と保存・読取失敗を成功と扱わない
+- 計画の変更範囲の検証は`atk run-script plan-verify -- --plan <計画の絶対パス> --worktree <対象worktreeの絶対パス> --timeout <正の有限秒数>`で実行する。訂正済み検証表があれば`--verification-plan <訂正済み検証表の絶対パス>`を加える。列挙・実行・結果の検収は`agent-toolkit:check-execution`「統合実行ツール経由の起動」に従う。実行後は保存された結果まとめの`results_path`を`atk run-command --records-file <絶対パス>`へ渡し、全件の`record_path`・両出力と子・wrapperの終了状態を読む。計画なしでは引き継ぎ記録で確定したコマンドを実行し、`--record <record_path>`の反復で保存済み結果を読む。読むのは保存済み結果だけとし、旧記録の未記録値と保存・読取失敗を成功と扱わない
 - commit直前に`agent-toolkit:commit`へ従う。計画を持つ場合は、そのcommitの実装単位に属する`### 恒久化`と`### リファクタリング`の行を差分と比べて不足を同じcommitへ含め、最後の実装commitの前には両表の全行がいずれかのcommitに対応することを確かめる。各commitの前後のHEADを`atk run-script plan-progress --`へ渡して進捗ログと同じstemの対応記録へ記録する（commit失敗時は記録しない。最初の記録では専用worktreeの絶対パスとbranch名を`--result`へ渡す）。実装・レビュー修正・CI修正の各commitで、`agent-toolkit:commit`の`SKILL.md`「WI実装commitの対応」の記録を残す
 
 ### 担当種別ごとの修正

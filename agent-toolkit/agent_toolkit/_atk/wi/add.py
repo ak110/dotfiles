@@ -239,7 +239,21 @@ _UNDETERMINED_CAUSE_RE = re.compile(r"(?:未確定|不明|未特定|調査中|�
 値の冒頭の語が単独で置かれるか、直後に句読点・空白・括弧・Markdown装飾の閉じ記号などの区切りが続く場合だけを宣言とみなす。
 確定した原因の説明に現れる同じ語（「不明だった設定を特定した」「旧値の残存。不明だった由来を特定した」など）は拒否しない。
 """
-_TABLE_CELL_DECORATION = "*_`~ \t"
+_TABLE_CELL_DECORATION = "*_`~"
+
+
+def _strip_table_cell(cell: str) -> str:
+    """表のセル値から前後の空白とMarkdown装飾を除く。
+
+    空白はUnicodeの空白（全角空白を含む）として扱い、装飾と空白が交互に並ぶ場合も除き切る。
+    """
+    while True:
+        stripped = cell.strip().strip(_TABLE_CELL_DECORATION)
+        if stripped == cell:
+            return cell
+        cell = stripped
+
+
 _MARKDOWN = markdown_it.MarkdownIt("gfm-like", {"html": False, "linkify": False})
 UNDETERMINED_CAUSE_NEXT_ACTION = (
     "直接的原因を現物の観測で確定してから本文を書き直して再実行する。"
@@ -259,7 +273,7 @@ def undetermined_cause_rows(body: str) -> list[str]:
         if token.type != "table_open" or token.map is None:
             continue
         for line in lines[token.map[0] : token.map[1]]:
-            cells = [cell.strip(_TABLE_CELL_DECORATION) for cell in line.strip().strip("|").split("|")]
+            cells = [_strip_table_cell(cell) for cell in line.strip().strip("|").split("|")]
             if len(cells) >= 2 and cells[0] == _DIRECT_CAUSE_LABEL and _UNDETERMINED_CAUSE_RE.match(cells[1]):
                 rows.append(line.strip())
     return rows
@@ -475,7 +489,7 @@ def add_entries(
     skip_remote_sync: bool = False,
     submitter_session: str | None = None,
 ) -> list[str]:
-    """CLIの引数解析結果ではなく個別の引数を受け取ってキューへエントリを追加し、生成ファイル名を返す。
+    """個別の引数を受け取ってキューへエントリを追加し、生成ファイル名を返す。
 
     frontmatterの予約キー（`_RESERVED_FRONTMATTER_KEYS`）以外のキーは入力順で出力frontmatterへ引き継ぐ。
     UWI種別では、本文がツール側で自動付与する見出し・回答欄マーカーを含む場合に

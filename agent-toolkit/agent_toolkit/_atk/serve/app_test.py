@@ -67,12 +67,12 @@ def test_unknown_config_key_logs_warning(
 
 
 def test_assets_size_dialogs_with_small_viewport_height_unit() -> None:
-    """高さを決めるビューポート単位を無印`vh`ではなく`svh`で書く。
+    """高さを決めるビューポート単位を`svh`で書く。
 
     無印`vh`は大ビューポート基準のため、モバイルのブラウザーUI展開時に
     ダイアログの外枠が可視領域を超え、ヘッダーとフッターが隠れる。
-    `dvh`ではなく`svh`を採用するのは、スクロールに伴うブラウザーUIの伸縮で
-    枠の高さが再レイアウトされることを避け、常に可視な下限側へ収めるためである。
+    `dvh`はスクロールに伴うブラウザーUIの伸縮で枠の高さを再レイアウトするため、
+    常に可視な下限側へ収める`svh`を採用する。
     """
     assert not re.findall(r"\dvh\b", assets.CSS)
     assert "100svh" in assets.CSS
@@ -1138,7 +1138,7 @@ async def test_add_choice_requires_two_options(tmp_path: pathlib.Path, monkeypat
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("state_name", ["inbox", "hold"])
-@pytest.mark.parametrize("kind", ["awi", "uwi"])
+@pytest.mark.parametrize("kind", ["awi", "uwi", None])
 @pytest.mark.parametrize(
     "deadline,awi_expected",
     [
@@ -1153,17 +1153,20 @@ async def test_add_choice_requires_two_options(tmp_path: pathlib.Path, monkeypat
 async def test_entries_cooldown_conditions(
     tmp_path: pathlib.Path,
     state_name: str,
-    kind: str,
+    kind: str | None,
     deadline: str | None,
     awi_expected: str | None,
 ) -> None:
     """一覧と詳細APIは冷却期限をAWIの有効な日時だけで返し、保存値と保存状態は詳細から読める。
 
-    UWIへ有効な日時を返すと、着手可否判定が不正期限とする項目を画面が冷却中と示す。
+    UWIや種別不明（`type`欠落）の項目へ有効な日時を返すと、着手可否判定が不正期限とする項目を画面が冷却中と示す。
     """
     (tmp_path / state_name).mkdir()
+    type_line = f"type: {kind}\n" if kind is not None else ""
     cooldown_line = f"cooldown_until: '{deadline}'\n" if deadline is not None else ""
-    (tmp_path / state_name / "cool.md").write_text(f"---\ntype: {kind}\n{cooldown_line}---\n\n# 冷却\n", encoding="utf-8")
+    original = f"---\n{type_line}{cooldown_line}---\n\n# 冷却\n"
+    path = tmp_path / state_name / "cool.md"
+    path.write_text(original, encoding="utf-8")
     client = _serve_app(tmp_path).test_client()
     listed = await (await client.get(f"/api/entries?status={state_name}&period=all")).get_json()
     expected = awi_expected if kind == "awi" else None
@@ -1174,6 +1177,8 @@ async def test_entries_cooldown_conditions(
     assert detail["entry"]["state"] == state_name
     stored = {item["key"]["value"]: item["value"] for item in detail["entry"]["frontmatter_entries"]}
     assert stored.get("cooldown_until") == deadline
+    assert detail["entry"]["content"] == original
+    assert path.read_text(encoding="utf-8") == original
 
 
 @pytest.mark.asyncio

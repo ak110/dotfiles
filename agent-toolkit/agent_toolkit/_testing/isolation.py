@@ -33,6 +33,7 @@ import sys
 import tempfile
 from collections.abc import Callable, Mapping
 
+import platformdirs
 import pytest
 
 AGENT_CLI_NAMES = ("codex", "claude", "agy")
@@ -45,6 +46,11 @@ CONFIG_DIRECTORY_ENVIRONMENT_NAMES = (
     "APPDATA",
     "LOCALAPPDATA",
     "PROGRAMDATA",
+    "ALLUSERSPROFILE",
+    "WIN_PD_OVERRIDE_APPDATA",
+    "WIN_PD_OVERRIDE_LOCAL_APPDATA",
+    "WIN_PD_OVERRIDE_COMMON_APPDATA",
+    "AGENT_TOOLKIT_RUNTIME_DATA",
 )
 DEVELOPMENT_SESSION_ENVIRONMENT_NAMES = (
     # エージェント環境の判定。継承されるとエージェント環境向けの分岐を確かめるテストの結果が実行環境で変わる。
@@ -286,6 +292,14 @@ def assert_development_state_isolated(tmp_path: pathlib.Path) -> None:
         assert os.environ[name] == str(home), name
     for name in CONFIG_DIRECTORY_ENVIRONMENT_NAMES:
         assert pathlib.Path(os.environ[name]).is_relative_to(tmp_path), name
+    # WindowsのKnownFolder APIは通常のAPPDATA指定より優先される。公開overrideを含め、
+    # 入力値だけでなくplatformdirsが実際に返す保存先を確かめる。
+    directories = platformdirs.PlatformDirs("isolation-probe", appauthor=False)
+    for name in ("user_config_dir", "user_data_dir", "user_state_dir", "user_cache_dir", "site_data_dir"):
+        # POSIXのsite_data_dirはシステム共通であり、ユーザー領域の環境変数では差し替わらない。
+        if name == "site_data_dir" and sys.platform != "win32":
+            continue
+        assert pathlib.Path(getattr(directories, name)).is_relative_to(tmp_path), name
     assert os.environ["AGENT_TOOLKIT_PRIVATE_NOTES"] == str(tmp_path / "private-notes")
     assert tempfile.gettempdir() == str(tmp_path)
     assert os.environ["GIT_CONFIG_GLOBAL"] == os.devnull

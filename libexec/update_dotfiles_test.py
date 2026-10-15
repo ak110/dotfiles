@@ -13,43 +13,19 @@ import pathlib
 import subprocess
 import sys
 import time
-from typing import Any, cast
+from typing import Any, Self, cast
 
 import platformdirs
 import psutil
 import pytest
+from agent_toolkit._testing.isolation import restore_host_environment
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 
 import update_dotfiles  # noqa: E402  # pylint: disable=wrong-import-position
 
 _REAL_UPDATE_GIT_WITH_RECOVERY = update_dotfiles._update_git_with_recovery  # pylint: disable=protected-access
-_REAL_STREAM_MERGED_OUTPUT = update_dotfiles._stream_merged_output  # pylint: disable=protected-access
 _REPOSITORY_ATK_BIN = pathlib.Path(__file__).resolve().parents[1] / "agent-toolkit" / "scripts"
-
-
-@pytest.fixture(autouse=True)
-def _merged_output_via_fake_run(monkeypatch: pytest.MonkeyPatch) -> None:
-    """段の子の起動を`subprocess.run`経由に置き換え、段の順序のテストが`subprocess.run`の偽装で子を模せるようにする。
-
-    合流と逐次表示そのものは、`_REAL_STREAM_MERGED_OUTPUT`を戻したテストが実際の子プロセスで確かめる。
-    """
-
-    def run_and_merge(argv: list[str]) -> tuple[int, str]:
-        result = subprocess.run(
-            argv,
-            cwd=update_dotfiles._DOTFILES_ROOT,  # pylint: disable=protected-access
-            check=False,
-            capture_output=True,
-            encoding="utf-8",
-            errors="replace",
-            env=update_dotfiles._child_env(),  # pylint: disable=protected-access
-        )
-        merged = (result.stdout or "") + (result.stderr or "")
-        sys.stdout.write(merged)
-        return result.returncode, merged
-
-    monkeypatch.setattr(update_dotfiles, "_stream_merged_output", run_and_merge)
 
 
 @pytest.fixture(autouse=True)
@@ -340,11 +316,11 @@ def test_git_timeout_kills_descendants_and_limits_output_recovery(
     killed: list[int] = []
 
     class Process:
-        def __init__(self, pid: int, children: list[Process] | None = None) -> None:
+        def __init__(self, pid: int, children: list[Self] | None = None) -> None:
             self.pid = pid
             self._children = children or []
 
-        def children(self, *, recursive: bool) -> list[Process]:
+        def children(self, *, recursive: bool) -> list[Self]:
             assert recursive
             return self._children
 
@@ -524,11 +500,8 @@ sys.exit(int(sys.argv[1]))
 
 
 @pytest.mark.parametrize("exit_code", [0, 4])
-def test_run_step_streams_interleaved_child_output_in_write_order(
-    monkeypatch: pytest.MonkeyPatch, capfd: pytest.CaptureFixture[str], exit_code: int
-) -> None:
-    """子が標準出力と標準エラーへ交互に書いた出力を、見出しの後へ書き込み順で並べ、失敗時は末尾を記録へ残す。"""
-    monkeypatch.setattr(update_dotfiles, "_stream_merged_output", _REAL_STREAM_MERGED_OUTPUT)
+def test_run_step_streams_interleaved_child_output_in_write_order(capfd: pytest.CaptureFixture[str], exit_code: int) -> None:
+    """子が交互に書いた出力のストリームを分離し、終了コードを保持する。"""
 
     returncode, output = update_dotfiles._run_step(  # pylint: disable=protected-access
         3, 5, "chezmoi apply", [sys.executable, "-c", _INTERLEAVED_CHILD_CODE, str(exit_code)]
@@ -537,49 +510,9 @@ def test_run_step_streams_interleaved_child_output_in_write_order(
     captured = capfd.readouterr()
     assert returncode == exit_code
     assert output == ""
-    assert captured.out.splitlines() == ["=== [3/5] chezmoi apply ===", "out1", "err1", "out2", "err2"]
-    assert not captured.err
-    tail = update_dotfiles._last_stderr_tail  # pylint: disable=protected-access
-    assert tail is not None
-    assert "err2" in tail
-
-
-class _SignalingWriter(io.StringIO):
-    """最初の行を受け取った時点で、子の終了を許す合図のファイルを作成する標準出力の代わり。"""
-
-    def __init__(self, signal_path: pathlib.Path) -> None:
-        super().__init__()
-        self._signal_path = signal_path
-
-    def write(self, text: str) -> int:
-        if "first" in text:
-            self._signal_path.write_text("", encoding="utf-8")
-        return super().write(text)
-
-
-def test_run_step_delivers_child_output_before_child_exits(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
-    """子が終了を待つ間に、それまでの出力が標準出力へ届く。届かなければ子は合図を待てず終了コード3で終わる。"""
-    monkeypatch.setattr(update_dotfiles, "_stream_merged_output", _REAL_STREAM_MERGED_OUTPUT)
-    signal_path = tmp_path / "received"
-    writer = _SignalingWriter(signal_path)
-    monkeypatch.setattr(sys, "stdout", writer)
-    code = (
-        "import pathlib, sys, time\n"
-        "sys.stderr.write('first\\n'); sys.stderr.flush()\n"
-        "deadline = time.monotonic() + 10\n"
-        "while not pathlib.Path(sys.argv[1]).exists():\n"
-        "    if time.monotonic() > deadline:\n"
-        "        sys.exit(3)\n"
-        "    time.sleep(0.05)\n"
-        "print('second')\n"
-    )
-
-    returncode, _output = update_dotfiles._run_step(  # pylint: disable=protected-access
-        3, 5, "chezmoi apply", [sys.executable, "-c", code, str(signal_path)], show_heading=False
-    )
-
-    assert returncode == 0
-    assert writer.getvalue().splitlines() == ["first", "second"]
+    assert captured.out.splitlines() == ["=== [3/5] chezmoi apply ===", "out1", "out2"]
+    assert captured.err.splitlines() == ["err1", "err2"]
+    assert update_dotfiles._last_stderr_tail is None
 
 
 def test_child_env_preserves_existing_environment(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -593,8 +526,29 @@ def test_child_env_preserves_existing_environment(monkeypatch: pytest.MonkeyPatc
     assert str(pathlib.Path.home() / ".local" / "bin") in environment["PATH"].split(os.pathsep)
 
 
+def test_inherited_streams_preserve_combined_write_order() -> None:
+    """端末と同じ出力先を使う場合、子の交互出力は見出しの後へ書込順で届く。"""
+    code = (
+        "import sys, update_dotfiles; "
+        f"rc, _ = update_dotfiles._run_step(3, 5, 'apply', [sys.executable, '-c', {_INTERLEAVED_CHILD_CODE!r}, '4']); "
+        "raise SystemExit(rc)"
+    )
+    result = subprocess.run(
+        [sys.executable, "-c", code],
+        cwd=pathlib.Path(__file__).resolve().parent,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        encoding="utf-8",
+        check=False,
+        timeout=30,
+    )
+    assert result.returncode == 4
+    assert result.stdout.splitlines() == ["=== [3/5] apply ===", "out1", "err1", "out2", "err2"]
+
+
 def test_save_worktree_uses_repository_launcher(monkeypatch: pytest.MonkeyPatch) -> None:
-    """worktree退避はPATH上の裸のatkではなく作業コピーのランチャーを使う。"""
+    """worktree退避は作業コピーのランチャーを使う。PATH上の裸のatkは使わない。"""
     calls: list[list[str]] = []
     monkeypatch.setattr(
         subprocess,
@@ -905,7 +859,7 @@ class TestSyncReport:
         tmp_path: pathlib.Path,
         sync_report_path: pathlib.Path,
     ) -> None:
-        """失敗した段の名前と標準エラーの末尾が、実行の記録から読み取れること。"""
+        """継承する段の失敗は、段の名前と終了コードから読み取れる。"""
         calls: list[list[str]] = []
         monkeypatch.setattr(subprocess, "Popen", _fake_popen({}, calls))
         monkeypatch.setattr(
@@ -921,7 +875,7 @@ class TestSyncReport:
         assert report["status"] == "failed"
         assert report["exit_code"] == 5
         assert "chezmoi apply" in report["failed_stage"]
-        assert "対象ツールの導入に失敗しました" in report["stderr_tail"]
+        assert report["stderr_tail"] is None
 
     @pytest.mark.parametrize(
         ("failed_command", "log_stage", "stage_title"),
@@ -1167,7 +1121,7 @@ def test_git_pull_preserves_terminal_interaction(
 ) -> None:
     """上限の有無にかかわらず、子が制御端末から入力を受け取る。
 
-    上限ありのテストは上限の到達ではなく端末入力の受け渡しを検査するため、
+    上限ありのテストは端末入力の受け渡しを検査するため、
     並行実行の負荷でも到達しない秒数を渡す。上限の到達側は
     `test_git_pull_timeout_terminates_stream_holding_descendant`が検査する。
     """
@@ -1294,6 +1248,15 @@ def _patch_real_pull(monkeypatch: pytest.MonkeyPatch, local: pathlib.Path) -> No
     monkeypatch.setattr(update_dotfiles, "_run_git_pull", _pull)
 
 
+@pytest.fixture(name="real_stash_runtime")
+def _real_stash_runtime(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, share_package_caches: None) -> None:
+    """実CLIのランタイム解決はホストへ戻し、CLI自身の保存先は一時領域へ限定する。"""
+    del share_package_caches
+    restore_host_environment(monkeypatch)
+    monkeypatch.setenv("AGENT_TOOLKIT_RUNTIME_DATA", str(tmp_path / "runtime"))
+
+
+@pytest.mark.usefixtures("real_stash_runtime")
 class TestGitConflictRecovery:
     """一時Git上流でcommit競合と未コミット復元競合からの回復を検証する。"""
 
@@ -1384,6 +1347,7 @@ def _track_mise_lock(local: pathlib.Path, seed: pathlib.Path) -> None:
     _git(seed, "push")
 
 
+@pytest.mark.usefixtures("real_stash_runtime")
 class TestStashLifecycle:
     """更新の公開入口で復元・回収・旧退避保護の寿命を確認する。"""
 
@@ -1456,6 +1420,7 @@ class TestStashLifecycle:
         assert (local / "tracked.txt").read_text(encoding="utf-8") == "legacy\n"
 
 
+@pytest.mark.usefixtures("real_stash_runtime")
 class TestMiseLockDiscard:
     """pull前に`mise.lock`の差分を破棄し、他の未コミット内容だけを退避・復元する。"""
 

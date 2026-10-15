@@ -54,7 +54,7 @@ Codexのsystem、developer、userの命令階層は、user側の`AGENTS.md`や�
 
 ツール前の短い`commentary`を求めるホストでは、ツール呼び出しの前に短い`commentary`を送る。コード評価を伴うコマンドでは処理、読取対象、確認目的を、承認対象では内容と影響範囲、復元方法を実行前に説明する。
 
-会話圧縮後は、一時対象、処理対象WI、保留、承認、当初目的、確定済み要件および残る完成条件を、対象リポジトリ、private-notesまたはホストの記録原本から再解決し、出所には内部要約ではなく記録原本の記述を用いる。
+会話圧縮後は、一時対象、処理対象WI、保留、承認、当初目的、確定済み要件および残る完成条件を、対象リポジトリ、private-notesまたはホストの記録原本から再解決し、出所には記録原本の記述を用いる。
 
 Codexの`list_agents`が対象を`running`と返す間の待機と、`interrupt_agent`による中断を許す条件は`agent-toolkit:delegation`の`references/codex-runtime.md`「後続操作の共通先行条件」に従う。
 

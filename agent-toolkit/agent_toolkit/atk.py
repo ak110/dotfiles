@@ -164,7 +164,7 @@ def _extract_legacy_repo_path(argv: list[str]) -> tuple[list[str], str | None]:
     return new_argv, str(candidate_path)
 
 
-# 関数の参照もlazy importを解決するため、登録時ではなく呼び出し時に属性へ触れる。
+# 関数の参照もlazy importを解決するため、属性へは呼び出し時に触れる。
 # pylint: disable=unnecessary-lambda
 _PARSER_REGISTRATIONS: tuple[tuple[str, Callable[[argparse.ArgumentParser], None]], ...] = (
     ("info", lambda parser: _info.build_parser(parser)),

@@ -22,6 +22,34 @@ from agent_toolkit._atk.serve import sessions
 from agent_toolkit._testing import session_tree
 
 
+@pytest.mark.asyncio
+async def test_session_stream_restores_long_rpc_response_and_notifications(tmp_path: pathlib.Path) -> None:
+    """長い応答の前後のreadyと更新通知も保持し、改行なしの最終応答を解決する。"""
+    context = _context(tmp_path, remote_hosts=["remote-host"])
+    client = sessions.RemoteSessionClient("remote-host", context.state)
+    queue = await sessions.subscribe(context.state)
+    future = asyncio.get_running_loop().create_future()
+    client._pending[1] = future
+    response = {"type": "response", "id": 1, "ok": True, "data": "あ" * 50000}
+    stream = asyncio.StreamReader(limit=64)
+    stream.feed_data(
+        (
+            json.dumps({"type": "ready"})
+            + "\n"
+            + json.dumps({"type": "refresh"})
+            + "\n"
+            + json.dumps(response, ensure_ascii=False)
+        ).encode()
+    )
+    stream.feed_eof()
+
+    await client._process_stream(stream)
+
+    assert context.state.host_status["remote-host"] == "connected"
+    assert json.loads(queue.get_nowait()) == {"type": "refresh"}
+    assert future.result() == response
+
+
 def _write(path: pathlib.Path, records: typing.Iterable[typing.Any]) -> pathlib.Path:
     """JSON Linesの記録を出力する。"""
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -546,7 +574,7 @@ def test_absent_fields_are_reported_as_unavailable(tmp_path: pathlib.Path) -> No
     assert summary.first_user_message is None
     assert detail["started_at"] is None
     assert detail["usage"] == {"input_tokens": None, "output_tokens": None}
-    # サブエージェント記録が無い場合は空配列ではなくnullとし、「0件」と区別する。
+    # サブエージェント記録が無い場合はnullとし、「0件」と区別する。
     assert detail["subagents"] is None
     # ローカルの記録は保存先を直接読むため、有無の判定自体は常に成立する。
     assert detail["subagents_unavailable"] is False

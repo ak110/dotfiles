@@ -99,11 +99,14 @@ def _write_json(path: pathlib.Path, value: Mapping[str, Any]) -> None:
 
 
 def _read_json(path: pathlib.Path) -> dict[str, Any] | None:
-    try:
-        value = json.loads(path.read_text(encoding="utf-8"))
-    except FileNotFoundError, OSError, UnicodeError, json.JSONDecodeError:
-        return None
-    return value if isinstance(value, dict) else None
+    value, error = _read_result(path)
+    if error is not None:
+        raise _WaitStateReadError(f"待機の回復用記録を読めません: {path}: {error}")
+    return value
+
+
+class _WaitStateReadError(ValueError):
+    """不在として扱うと回復用runを上書きする読取異常。"""
 
 
 def _saved_wait_recovery(run_path: pathlib.Path | None) -> dict[str, Any]:
@@ -322,6 +325,23 @@ def wait_for_result(
     state_root: pathlib.Path | None = None,
     root_session_id: str | None = None,
 ) -> int:
+    """回復用記録の異常は診断を返し、既存runと退避済みの結果を保持する。"""
+    try:
+        return _wait_for_result(environment=environment, state_root=state_root, root_session_id=root_session_id)
+    except _WaitStateReadError as error:
+        return _fail(
+            str(error),
+            6,
+            next_action="回復用記録の読取失敗を解消してから`atk agents wait`を再実行する。既存runを削除しない",
+        )
+
+
+def _wait_for_result(
+    *,
+    environment: Mapping[str, str] | None = None,
+    state_root: pathlib.Path | None = None,
+    root_session_id: str | None = None,
+) -> int:
     """自身が保持するsessionから、1回の巡回で回収できた終端結果と通知を全件返す。
 
     回収できたものは1件1行のJSON Linesで標準出力へ書く。1件ずつ返す形では、未回収の終端結果が
@@ -374,7 +394,13 @@ def wait_for_result(
         if isinstance(current_id, str) and shared_layout.valid_session_id(current_id)
         else None
     )
-    current_run = _read_json(current_run_path) if current_run_path is not None else None
+    current_run_error: _WaitStateReadError | None = None
+    try:
+        current_run = _read_json(current_run_path) if current_run_path is not None else None
+    except _WaitStateReadError as error:
+        # 対象0件の診断は保存runのunreadableを添えて終了するため、対象集合の確定まで異常を保持する。
+        current_run = None
+        current_run_error = error
     if current_run is not None and current_run.get("status") in {"running", "published"}:
         recorded_targets = current_run.get("targets")
         if (
@@ -395,6 +421,8 @@ def wait_for_result(
             reason, next_action = shared_roots.unconfirmed_root_recovery(root_resolution, "atk agents wait")
             return _fail(reason, 4, next_action=next_action)
         return _absent_wait_result(identity.file_name, current_run_path)
+    if current_run_error is not None:
+        raise current_run_error
     _LOG.info(
         "wait_start targets=%s origins=%s",
         ",".join(ordered_ids) or "none",

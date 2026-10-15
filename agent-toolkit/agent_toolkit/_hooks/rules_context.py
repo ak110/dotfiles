@@ -184,7 +184,7 @@ def session_temp_notice(session_temp: pathlib.Path | str) -> str:
     """
     return (
         f"このセッションのmanaged-temp: {session_temp}\n"
-        "一時ファイルは`/tmp`ではなくこの領域の直下へ置く。"
+        "一時ファイルはこの領域の直下へ置く。`/tmp`は使わない。"
         "委譲時は、委譲先自身のmanaged-tempまたは専用一時領域の通知があればそちらの直下、"
         "通知が無い場合だけこの絶対パスの直下へ置くよう伝える。"
         "通知の有無が親から分からない場合は、委譲先が受信した通知から選ぶ条件付きの案内にする。"
@@ -238,7 +238,7 @@ def _subagent_temp_notice(session_temp: str, agent_id: object) -> str:
     child.mkdir(exist_ok=True)
     return (
         f"このサブエージェント専用の一時領域: {child}\n"
-        "一時ファイルは`/tmp`ではなくこの領域の直下へ置く。"
+        "一時ファイルはこの領域の直下へ置く。`/tmp`は使わない。"
         f"親のセッションのmanaged-temp: {session_temp}\n"
         "親の領域は、委譲元が個別に指定した入力や出力のファイルの読み書きに使ってよい。"
     )

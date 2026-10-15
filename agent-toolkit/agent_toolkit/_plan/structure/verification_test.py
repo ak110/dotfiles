@@ -15,3 +15,11 @@ def test_plan_commands_ignores_fenced_table_and_preserves_quoted_arguments() -> 
     assert [argv for _text, argv in plan_commands(content)] == [["python", "tool.py", "with space", "$HOME"], ["pytest", "-v"]]
     with pytest.raises(ActionableError):
         plan_commands(content + "\n## 検証\n| 区分 | 検証コマンド |\n| --- | --- |\n| 変更範囲の検証 | `extra` |\n")
+
+
+def test_current_verification_replaces_frozen_commands_without_fallback() -> None:
+    """訂正後の表からコマンドを取得し、不正な訂正では旧argvを実行しない。"""
+    table = "## 検証\n| 区分 | 検証コマンド |\n| --- | --- |\n| 変更範囲の検証 | `{}` |\n"
+    assert plan_commands(table.format("old"), current_content=table.format("current")) == [("current", ["current"])]
+    with pytest.raises(ActionableError):
+        plan_commands(table.format("old"), current_content="訂正表の欠落")

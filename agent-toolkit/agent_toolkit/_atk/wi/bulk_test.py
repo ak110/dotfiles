@@ -561,7 +561,7 @@ class TestRemoveAllScope:
         assert _run_main(["wi", "rm", "--all", "--target-repo", "github.com/example/foo"], tmp_path) == 0
 
         assert not commits
-        # 対象0件は接頭辞の無い行ではなく成功行で報告する。
+        # 対象0件は成功行で報告する。
         assert "成功: 対象0件のため削除しなかった（変更は無い）: github.com/example/foo" in capsys.readouterr().out
 
     def test_removes_same_filename_from_both_active_states(

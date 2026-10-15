@@ -3,6 +3,7 @@
 import argparse
 import os
 import shutil
+import subprocess
 import sys
 from pathlib import Path
 
@@ -45,6 +46,9 @@ def main() -> int:
         )
         return 127
     arguments = [uv, "run", "--project", str(root), "--locked", "--no-default-groups", str(target), *options.arguments]
+    if os.name == "nt":
+        # Windowsのexecveは子の終了を待たず、呼出元へ終了状態を渡せない。
+        return subprocess.run(arguments, env=environment, check=False).returncode
     os.execve(uv, arguments, environment)
     return 1
 

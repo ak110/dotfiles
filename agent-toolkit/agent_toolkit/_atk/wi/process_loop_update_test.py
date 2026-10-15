@@ -550,7 +550,7 @@ class TestWaitLoopAutoRestart:
             pending_count=1,
         )
 
-        # `claude auth status`は待機間隔をキャッシュTTLで決めるための事前照会であり、委譲セッションの起動ではない。
+        # `claude auth status`は待機間隔をキャッシュTTLで決めるための事前照会のため、委譲セッションの起動から除く。
         claude_command = next(
             call for call in subprocess_calls if call[:1] == ["claude"] and call[:3] != ["claude", "auth", "status"]
         )

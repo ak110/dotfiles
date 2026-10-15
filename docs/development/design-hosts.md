@@ -34,7 +34,7 @@ Claude Code向けは`claude plugin validate --strict`を`pyfltr`のカスタムl
 Codex向けはCodex同梱の`plugin-creator/scripts/validate_plugin.py`を`pytools/_internal/codex_plugin_manifests_test.py`から実行し、指摘の集合が既知の2件と完全に一致することを確かめる。
 Codexの検証器を無条件の合格条件にしないのは、同梱資料が`hooks`をマニフェストの正規フィールドとして定義しながら、検証の節では未対応フィールドとして拒否すると述べ、同一資料内で矛盾しているためである。
 資料はローカル導入での受理を保証も否定もせず、現行manifestのままの導入状態は`installed: true`かつ`enabled: true`である。
-そこで検証器の指摘を削除するのではなく既知の逸脱の集合を固定し、集合が変化した時点で失敗させて再判断の契機とする。
+そこで既知の逸脱の集合を固定し、集合が変化した時点で失敗させて再判断の契機とする。
 知識境界として、期待する逸脱の集合と許容根拠はテスト側が持ち、マニフェストの生成規則は`pytools/_internal/codex_plugin_manifests.py`が持つ。
 却下した代替案は、`hooks`を除去し`mcpServers`を`.mcp.json`へ解決させて検証器を無条件に合格させる案である。Codexのプラグインフック機能を失い、`agent-toolkit/.mcp.json`との名前衝突を解消する追加設計を要する一方、得られるのは資料上の保証が無い体裁上の適合だけであるため採用しない。
 
@@ -49,7 +49,7 @@ CLI成功後は同コマンドで`codex plugin list --json`を取得し、版数
 自動再起動の成功と失敗は終了コードとともにupdate-dotfilesログへ記録し、失敗時はplugin導入を巻き戻さず手動案内へ戻す。
 無変更、marketplace登録だけの変更、daemon停止中および不要pluginの除去は自動再起動の対象に含めない。
 `atk config`へ設定を追加する案は、dotfiles更新処理だけが消費する真偽値のためにagent-toolkit pluginとpytoolsの設定契約を結合するので採用しない。
-公式資料の[Plugins](https://developers.openai.com/plugins/build/plugins)はローカルpluginを`~/.codex/plugins/cache/<marketplace>/<plugin>/<version>/`へ導入し、マーケットプレイス登録元ではなく導入先の実体をCodexが読み込むと定める。
+公式資料の[Plugins](https://developers.openai.com/plugins/build/plugins)はローカルpluginを`~/.codex/plugins/cache/<marketplace>/<plugin>/<version>/`へ導入し、導入先の実体をCodexが読み込むと定める。
 そのため、`install_codex_plugins.py`はcacheを直接編集せず、Codexが管理する現行versionだけを導入先として利用する。
 CLI導入後の検証が終わるまでlegacy skillリンクを除去せず、リンク除去に失敗した場合だけ変更前snapshotから復元する。
 `plugin add`後に失敗してもCodexの管理状態を自前で書き戻さない。

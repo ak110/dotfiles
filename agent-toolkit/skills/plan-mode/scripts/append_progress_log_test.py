@@ -183,7 +183,7 @@ def test_public_cli_records_and_reads_commit_mapping(
         repo, "-c", "user.name=Test", "-c", "user.email=test@example.invalid", "commit", "--amend", "--allow-empty", "-m", "new"
     )
     new_oid = git_repository.run_git(repo, "rev-parse", "HEAD").stdout.strip()
-    # JSON文字列そのもの、存在しないパス、JSONとして読めないファイルは、計画ファイルの失敗ではなく
+    # JSON文字列そのもの、存在しないパス、JSONとして読めないファイルは、
     # `--rewrite-map`の値の誤りとして返し、記録を変えない。
     malformed = tmp_path / "malformed.json"
     malformed.write_text("{", encoding="utf-8")

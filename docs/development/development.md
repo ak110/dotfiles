@@ -41,21 +41,27 @@ PowerShellスクリプトのローカル完全検証は`pwsh`と`PSScriptAnalyze
 ### CI環境のDocker再現検証
 
 CI固有の失敗（依存ライブラリ不足等）をローカルで調査する場合、CIワークフローが使用する
-コンテナーイメージをホストのリポジトリをマウントして起動し、コンテナー内でパッケージインストール・
-依存関係同期を試行する。
+コンテナーイメージを起動し、専用ボリュームへ複製したソースでパッケージインストール・依存関係同期を試行する。
+作業ツリーのルートから次を実行する。元の作業ツリーは読取専用で渡す。
 
 ```bash
-docker run --rm -it --user root -v "$PWD:/work" -w /work ghcr.io/ak110/pyfltr:latest bash
+docker run --rm -it --user root \
+  --mount "type=bind,src=$PWD,dst=/source,readonly" \
+  --mount type=volume,dst=/work \
+  -w /work --entrypoint bash ghcr.io/ak110/pyfltr:latest
 ```
 
-`--user root`かつボリュームマウント構成でコンテナー内から書き込みを行うと、
-ホスト側ファイル所有者がrootへ変わる。`.venv`配下等が汚染されるとホスト側のPython実行が
-`Permission denied`で失敗するため、検証後は所有権をホスト側ユーザーへ復旧する。
+コンテナー内で次を実行してから、`/work`で調査する。
+未コミットの内容を含めて複製し、Git管理情報とホストの仮想環境は持ち込まない。
+Git履歴を必要とする調査では、この複製に代えて`/work`へ対象リポジトリをcloneする。
 
 ```bash
-sudo chown -R "$(id -u):$(id -g)" .
-uv sync --reinstall  # .venvを再構築する場合
+tar -C /source --exclude=.git --exclude=.venv --exclude=.claude/worktrees -cf - . | tar -C /work -xf -
+uv sync --frozen
 ```
+
+パッケージの導入に必要なroot権限の作用先はコンテナーと専用ボリューム内に限られる。
+`exit`でコンテナーを終了すると、`--rm`によりコンテナーと匿名ボリュームを回収する。
 
 ## サプライチェーン攻撃対策
 

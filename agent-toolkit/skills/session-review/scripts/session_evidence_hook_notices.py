@@ -106,7 +106,7 @@ def _hook_notice_candidate_events(collected: list[_CollectedRecord]) -> list[dic
 def _hook_records(entry: dict[str, Any]) -> list[dict[str, Any]]:
     """エントリを再帰的にたどり、hook実行の記録を出現順に集める。
 
-    記録の格納先は`attachment`配下などruntimeの版で変わるため、位置ではなく`type`で判定する。
+    記録の格納先は`attachment`配下などruntimeの版で変わるため、`type`で判定する。
     """
     found: list[dict[str, Any]] = []
     _collect_hook_records(entry, found)

@@ -73,7 +73,7 @@ mcp = AgentsServerMCP(
     "agents_server",
     instructions=schema_text(
         "Codex、ClaudeまたはAntigravityへの非同期委譲。承認操作は公開しない。\n"
-        "Claude Codeからの委譲は`Agent`ツールではなく本サーバーを標準とする。"
+        "Claude Codeからの委譲は本サーバーを標準とする。"
         "`Agent`ツールを使う場合は`agent-toolkit:delegation`の`references/runtime-routing.md`「実行手段」が定める。\n"
         "`start`がsessionを開始し、`mode`で`<役割名>.subagent.md`の定型作業、自由本文の委譲、読み取り専用の探索、"
         "確定済みの書込、コマンド実行を選ぶ。入力とmodeごとの条件は`start`と各引数の説明が定める。\n"
@@ -174,7 +174,7 @@ async def send_message(
     """実行中turnへ追加指示を送り、終端済みなら同じsessionでreplyを開始する。
 
     引数を省略すると270秒を待機上限とする。固有のtimeout要件がなければ引数を省略する。
-    待つのは継続要求の配送結果が確定するまでであり、委譲先の応答生成の完了ではない。
+    待つのは継続要求の配送結果が確定するまでとする。委譲先の応答生成の完了は待たない。
     上限に達した場合は配送の成否が確定しないため、`atk agents wait`で状態を確認する。
     実行中turnにはsteerし、終端済みturnでは結果回収を前提にせず同じsessionのreplyを開始する。
     子session・背景taskの完了待ちの保留中には待機対象を引き継いで新しいturnを開始し、古い待機表明を結果として返さない。

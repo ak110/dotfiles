@@ -19,6 +19,7 @@ from agent_toolkit._atk.wi import (
 from agent_toolkit._atk.wi import sync as _wi_sync
 from agent_toolkit._atk.wi.constants import WI_STATES
 from agent_toolkit._common import json_command as _json_command  # noqa: E402  # pylint: disable=wrong-import-position
+from agent_toolkit._testing import git_repository
 
 
 def test_collect_github_ci_failures_latest_completed_only() -> None:
@@ -411,15 +412,10 @@ def _prepare_alert_cli(
     monkeypatch: pytest.MonkeyPatch, root: pathlib.Path, *, forge: str = "github", branch: bool = True
 ) -> tuple[pathlib.Path, pathlib.Path]:
     """実Git対象と保存領域を作成し、private-notesの外部同期だけを隔離する。"""
-    repo = root / "repo"
-    repo.mkdir(parents=True)
-    subprocess.run(["git", "init", "--quiet", str(repo)], check=True)
     host = "github.com" if forge == "github" else "gitlab.example.com"
-    subprocess.run(["git", "-C", str(repo), "remote", "add", "origin", f"https://{host}/owner/repo.git"], check=True)
+    repo = git_repository.init_repository(root / "repo", origin=f"https://{host}/owner/repo.git")
     if branch:
-        subprocess.run(
-            ["git", "-C", str(repo), "symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/main"], check=True
-        )
+        git_repository.run_git(repo, "symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/main")
     notes = root / "private-notes"
     _prepare_alert_submission(monkeypatch, notes)
     monkeypatch.setattr(_wi_sync, "ensure_environment", lambda _home: notes)

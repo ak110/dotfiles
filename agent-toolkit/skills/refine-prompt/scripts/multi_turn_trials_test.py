@@ -71,7 +71,7 @@ def test_prepare_copies_only_public_material_and_refuses_overwrite(tmp_path: pat
 
 @pytest.mark.parametrize("case", CASES)
 def test_saved_success_and_failure_are_graded_from_artifacts(tmp_path: pathlib.Path, case: str) -> None:
-    """保存した成功例と失敗例を、完了の自己申告ではなく成果物の機能テストで判定する。"""
+    """保存した成功例と失敗例を、成果物の機能テストで判定する。"""
     trial = json.loads((FIXTURES / case.replace("-", "_") / "private" / "trial.json").read_text(encoding="utf-8"))
     for number, example in enumerate(trial["examples"]):
         directory = tmp_path / str(number)

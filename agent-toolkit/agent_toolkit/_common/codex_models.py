@@ -8,6 +8,7 @@ from collections.abc import Awaitable, Callable
 from typing import Any
 
 from agent_toolkit._common import next_action as _next_action
+from agent_toolkit._common import stream_lines
 
 FAMILIES = frozenset({"astra", "sol", "terra", "luna"})
 _VERSIONED_MODEL = re.compile(r"^gpt-(\d+)(?:\.(\d+))?-(astra|sol|terra|luna)$")
@@ -99,6 +100,7 @@ async def list_models_from_app_server() -> list[dict[str, Any]]:
         stdin = process.stdin
         stdout = process.stdout
         assert stdin is not None and stdout is not None
+        lines = stream_lines.iter_lines(stdout)
         next_id = 0
 
         async def request(method: str, params: dict[str, Any]) -> dict[str, Any]:
@@ -110,7 +112,7 @@ async def list_models_from_app_server() -> list[dict[str, Any]]:
             await stdin.drain()
             while True:
                 try:
-                    line = await asyncio.wait_for(stdout.readline(), _MODEL_LIST_TIMEOUT_SECONDS)
+                    line = await asyncio.wait_for(anext(lines, b""), _MODEL_LIST_TIMEOUT_SECONDS)
                 except TimeoutError as error:
                     raise ValueError(f"Codex App Serverの{method}が時間内に応答しませんでした") from error
                 if not line:

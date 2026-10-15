@@ -7,7 +7,7 @@
 ### import・型・docstring
 
 - importは可能な限り`import xxx`形式で、トップレベルに書く。`import xxx as yyy`の別名は読みやすさか実行上の必要性（定着した略称`np`、名前衝突の回避、互換APIの差し替えなど）がある場合に使う
-- 循環参照は関数内importやTYPE_CHECKINGガードの恒常化ではなく、共通依存を別モジュールへ切り出して解消する
+- 循環参照は共通依存を別モジュールへ切り出して解消する
 - 公開境界と非自明な型を型ヒントで明確にする。`@typing.final`のメソッドはサブクラスの都合で外さず、サブクラスごとの差は抽象メソッドへの委譲などで扱う
 - docstringはGoogle Styleとし、自明なArgs, Returns, Raisesは省略する。`ruff`のD規則が有効なプロジェクトでは自明でも公開関数・モジュール・クラスのdocstring省略がlintエラーになるため、1行サマリーに留めるか`_`接頭辞でprivate化する
 
@@ -57,7 +57,7 @@
 - テストフレームワークは対象プロジェクトの採用へそろえ、新規に選ぶ場合は`pytest`を使う
 - 同じ操作の入力差には`parametrize`、副作用だけを使うfixtureには`usefixtures`を選ぶ。デコレーター順序は外側から`parametrize` → `asyncio` → `usefixtures`とする
 - 空コレクションの比較は`assert not x`と書く。pylintの`use-implicit-booleaness-not-comparison`は空のリストとの等値比較より真偽値による判定を求める
-- 大規模テストスイートでは`pyfltr`の`command-timeout`を延伸する。具体値は本ファイルではなく、計測結果に基づいて各プロジェクトの`pyproject.toml`の`[tool.pyfltr]`節へ記録する。省略時の値と挙動は<https://ak110.github.io/pyfltr/llms.txt>から現行版を確認する
+- 大規模テストスイートでは`pyfltr`の`command-timeout`を延伸する。具体値は計測結果に基づいて各プロジェクトの`pyproject.toml`の`[tool.pyfltr]`節へ記録する。省略時の値と挙動は<https://ak110.github.io/pyfltr/llms.txt>から現行版を確認する
 
 ### Fixtureのコーディングルール
 

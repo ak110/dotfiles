@@ -66,6 +66,7 @@ _DENIED_PATTERNS = {
 # 文脈によって対象と動作が伝わりにくい語。正確な専門語や承認済みの呼称として使う場合もあるため警告に留める。
 _METAPHORICAL = "metaphorical"
 _ABSTRACT = "abstract"
+_CONTRAST = "contrast"
 _CAUTION_PATTERNS = {
     "経路": (r"経路", _ABSTRACT),
     "入口": (r"入口", _METAPHORICAL),
@@ -87,8 +88,16 @@ _CAUTION_PATTERNS = {
     "線引き": (r"線引き", _METAPHORICAL),
     "破綻": (r"破綻", _ABSTRACT),
     "ゲート": (r"ゲート", _METAPHORICAL),
+    "ではなく": (r"ではなく", _CONTRAST),
+    "むしろ": (r"むしろ", _CONTRAST),
+    "単なる": (r"単なる", _CONTRAST),
+    "というより": (r"というより", _CONTRAST),
 }
 _CAUTION_MESSAGES = {
+    _CONTRAST: (
+        "否定する側を並べる対比は、読み手に不要な解釈を求める。"
+        "伝える内容を肯定文で書き、そこから読み取れない必要な制約だけを独立した文で示す"
+    ),
     _METAPHORICAL: (
         "比喩や擬人化として使うと、実際の対象、状態または動作が曖昧になる。"
         "字義どおりの用法または定義済みの名称でなければ、別の比喩へ置き換えず、"
@@ -447,12 +456,11 @@ def _prose_line(line: int, source: str) -> _ProseLine:
 
 
 def _prose_blocks(text: str) -> Iterator[list[_ProseLine]]:
-    """段落・箇条の項目・引用の本文を、物理行の位置を持つブロックとして返す。
+    """段落と箇条の本文を、物理行の位置を持つブロックとして返す。
 
     構文解析が返す段落のinline本文とHTMLブロックを数える。
-    従来の除外はフェンス付きコードに限るため、字下げコードの本文も数える。
     frontmatterとHTMLコメントは含んでいた改行を残して除き、後続の物理行を保つ。
-    見出し・表・フェンス付きコードの本文は除き、同じブロックの折返しを保持する。
+    引用内の段落も数え、見出し・表・コードの本文を除き、同じブロックの折返しを保持する。
     """
     without_comments = _HTML_COMMENT_PATTERN.sub(lambda match: "\n" * match.group().count("\n"), text)
     lines = without_comments.splitlines()
@@ -461,7 +469,7 @@ def _prose_blocks(text: str) -> Iterator[list[_ProseLine]]:
     previous_type = ""
     for token in _markdown_parser().parse(body):
         if token.map is not None and (
-            token.type == "inline" and previous_type == "paragraph_open" or token.type in {"html_block", "code_block"}
+            token.type == "inline" and previous_type == "paragraph_open" or token.type == "html_block"
         ):
             yield [
                 _prose_line(token.map[0] + offset + 1, source.strip())
@@ -589,16 +597,15 @@ class DensityMetric:
         ]
 
 
-def _subject_word_occurrences(text: str) -> tuple[Occurrence, ...]:
-    """入力全体の「当該」の出現を、物理行と行の中の前後の抜粋とともに返す。"""
+def _subject_word_occurrences(blocks: list[list[_ProseLine]]) -> tuple[Occurrence, ...]:
+    """文数と同じ本文内の対象語を、物理行と前後の抜粋とともに返す。"""
     occurrences: list[Occurrence] = []
-    for match in re.finditer(re.escape(_SUBJECT_WORD), text):
-        line_start = text.rfind("\n", 0, match.start()) + 1
-        line_end = text.find("\n", match.end())
-        line_end = len(text) if line_end == -1 else line_end
-        start = max(line_start, match.start() - _SUBJECT_WORD_CONTEXT)
-        end = min(line_end, match.end() + _SUBJECT_WORD_CONTEXT)
-        occurrences.append(Occurrence(text.count("\n", 0, match.start()) + 1, text[start:end].strip()))
+    for block in blocks:
+        for item in block:
+            for match in re.finditer(re.escape(_SUBJECT_WORD), item.text):
+                start = max(0, item.spans[match.start()][0] - _SUBJECT_WORD_CONTEXT)
+                end = min(len(item.source), item.spans[match.end() - 1][1] + _SUBJECT_WORD_CONTEXT)
+                occurrences.append(Occurrence(item.line, item.source[start:end].strip()))
     return tuple(occurrences)
 
 
@@ -606,7 +613,8 @@ class Metrics:
     """1ファイルの文体指標。"""
 
     def __init__(self, path: pathlib.Path, text: str) -> None:
-        sentences = sentences_with_positions(text)
+        blocks = list(_prose_blocks(text))
+        sentences = [sentence for block in blocks for sentence in _block_sentences(block)]
         self.path = path
         self.sentences = len(sentences)
         self.negative_ending = DensityMetric(
@@ -628,7 +636,7 @@ class Metrics:
             limit=_MAX_SUBJECT_WORD_RATIO,
             action="指す対象を直接書く平易な語へ書き換える",
             element_label="「当該」",
-            occurrences=_subject_word_occurrences(text),
+            occurrences=_subject_word_occurrences(blocks),
             sentences=self.sentences,
         )
 

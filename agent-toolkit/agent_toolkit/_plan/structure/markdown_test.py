@@ -242,7 +242,7 @@ def test_action_references_rejected_requirement_are_rejected() -> None:
 
 
 def test_non_adopted_action_requires_free_text_reason() -> None:
-    """非採用系の実施内容は要求IDでなく理由を根拠へ記載する。"""
+    """非採用系の実施内容は理由を根拠へ記載する。"""
     content = _VALID_CONTENT.replace(
         _plan_fixture.TWO_FILE_ACTION_ROW,
         "| 診断件数を2件から1件へ減らす | 不採用 | 非該当 |  |",

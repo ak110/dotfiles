@@ -902,7 +902,7 @@ def _user_candidate_exclusion(
     付けた標識で分類する。
     確認への回答は、生成側が付ける`user_response`の構造で判定し、表示用の本文の書式からは推定しない。
     本文の書式で判定すると、書式の変更で選択肢どおりの回答が候補に残り、同じ書式の通常の発話が回答として除外される。
-    回答のうち`answer_intervention`を持つものは、選択肢をそのまま選んだ回答ではなく
+    回答のうち`answer_intervention`を持つものは、
     従来の判断を是正した介入であるため、除外せず候補として残す。
     選択肢をそのまま選んだ回答へ返す`question-answer`はユーザー介入ではない区分であり、
     呼び出し元はその回答を除外せず、確認の要否を振り返る`confirmation-request`の候補とする。
@@ -1536,6 +1536,7 @@ def _delegation_record_kinds(timeline: list[dict[str, Any]], *, main_record_id: 
             and isinstance(record, str)
             and record != main_record_id
             and isinstance(text, str)
+            and not event.get("runtime_inserted")
             and not text.startswith("# AGENTS.md instructions")
         ):
             user_texts[record].append(text)

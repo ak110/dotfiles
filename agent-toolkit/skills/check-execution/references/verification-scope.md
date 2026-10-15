@@ -6,7 +6,7 @@
 
 ## 直接影響範囲の類型
 
-変更された契約を読む・呼び出す主体と、その契約を期待値に持つテストをリポジトリ全体から集める。参照名だけでなく共通の入力・出力・起動手段からも関係をたどり、固定文字列検索は所在の補助とする。
+変更された契約を読む・呼び出す主体と、その契約を期待値に持つテストをリポジトリ全体から集める。参照名に加えて共通の入力・出力・起動手段からも関係をたどり、固定文字列検索は所在の補助とする。
 想起の手掛かり: import・継承・共有関数、横断テスト、文字コード、コマンド・hook、通知・標準エラー・終了後処理、生成物・スナップショット、設定パーサー、実行中の再読込、親子で共有する時間上限。
 
 次の対象を変更した場合は、それを読むチェックとテスト全体が直接影響範囲になる。対象は共有設定、pytestの`conftest.py`の補助やfixture、テストツール・lint・型チェックの設定、チェックとテストを動かすインタープリターの版指定（`.python-version`、CIのmatrixのPython版など）である。読込先が増減しない実装変更も同じ扱いとする。読込範囲が全テストに一致する場合もローカルで実行し、CIだけへ委ねない。
@@ -21,7 +21,7 @@
 
 ## 実行のしかた
 
-- 計画で確定した検証行は本スキルの`SKILL.md`「統合実行ツール経由の起動」の`plan-verify`で実行する
+- 計画で確定した検証行は本スキルの`SKILL.md`「統合実行ツール経由の起動」の`plan-verify`で実行する。凍結後の訂正済み検証表を引き継いだ場合は、同節の`--verification-plan`を指定して訂正後の条件を実行する。訂正表の書式・保持・引き継ぎは`agent-toolkit:plan-mode`の`references/plan-file-standards.md`「検証と終端工程」に従う
 - 保存済みの結果は子を再実行せずに読む。plan-verifyの結果まとめは`results_path`を`atk run-command --records-file <絶対パス>`へ渡す。計画なしの保存済み実行は`--record <record_path>`の反復で渡す。どちらの方法でも順序・argv・cwd・取得版・Git状態・子とwrapperの終了状態・両出力へ到達する。旧記録の`unrecorded`は未記録として保持し、読取失敗・欠損・破損を成功と扱わない
 - 保存結果の試験・診断を完成条件へ対応付けるときは、`atk run-script`の`verification-record`か`exec-review-evidence-check`で、試験を`--junit-xml`と`--junit-record`から読む。診断は`--diagnostics-file`・`--diagnostics-record`・`--diagnostics-conditions`と必要な`--diagnostics-source`から読む。`--list-results --results-summary`と完全テスト名・診断識別子の詳細で意味を判定する。`--select-row <配列:N>`と`--result-test`・`--result-diagnostic`・`--evidence-file`・`--mode`で要求行へ保存する（原文・sourceの転記や手製のJSONは不要）。診断の比較条件と保存時本文は取得時の保存物を使う
 - ロックファイルかインタープリターの版指定を変えた後は、対象リポジトリの開発手順が定める環境同期を実行してから検証する（同期前の仮想環境はCIと異なる結果を返す）

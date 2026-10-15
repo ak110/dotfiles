@@ -41,6 +41,7 @@ from agent_toolkit._atk.serve.plans.roots import (
     logger,
     make_file_entry,
 )
+from agent_toolkit._common import stream_lines
 from agent_toolkit._plan import bundle_kinds as _bundle_kinds
 
 # 単発SSHの失敗の表現と標準エラー出力の整形はセッション画面と共通の契約とする。
@@ -517,21 +518,8 @@ class RemoteWatcher:
 
 
 async def _iter_stream_lines(stream: asyncio.StreamReader) -> typing.AsyncIterator[str]:
-    """`StreamReader`から1行ずつ取り出す非同期イテレータ。
-
-    `readline()`はEOFで空bytesを返すため、その時点で打ち切る。
-    snapshot行が`REMOTE_STREAM_LIMIT_BYTES`を超過した場合、`readline`は`ValueError`を送出する。
-    明示捕捉してwarningを残して打ち切らないと`run`の広範な`except Exception`で見過ごされ、
-    原因不明のリコネクトが続く。
-    """
-    while True:
-        try:
-            chunk = await stream.readline()
-        except ValueError as error:
-            logger.warning("リモートwatch snapshot行がlimit超過 limit=%d: %s", REMOTE_STREAM_LIMIT_BYTES, error)
-            return
-        if not chunk:
-            return
+    """transportの上限に依存せず復元した各行をUTF-8でデコードする。"""
+    async for chunk in stream_lines.iter_lines(stream):
         yield chunk.decode("utf-8", errors="replace")
 
 

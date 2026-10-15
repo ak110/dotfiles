@@ -26,7 +26,7 @@ _LOG = logging.getLogger("agent-toolkit.agents-server.state")
 RESULT_RETENTION_SECONDS = 1800.0
 # 委譲先の最終活動時刻からの経過が本値を超えた待機の応答へ、停滞の可能性を示す項目を加える。
 # 値はユーザーの提案に基づく300秒とする。長時間のコマンドの実行待ちでも超過し得るため、
-# 超過は停滞の確定ではなく委譲元が状況を調べる契機として扱う。
+# 超過は委譲元が状況を調べる契機として扱う。
 STALL_NOTICE_SECONDS = 300.0
 # ホストが応答しないMCPツール呼び出しをバックグラウンドタスクへ移すまでの秒数。
 # 以降の上限はこの閾値を制約として導出する。単独の値として決めない。
@@ -300,7 +300,7 @@ class SessionState:
     updated_at: str = dataclasses.field(default_factory=utc_now)
     output_updated_at: str | None = None
     api_error: dict[str, Any] | None = None
-    # 累計課金量ではなく最新モデル文脈の観測値。未知は0で補完しない。
+    # 最新モデル文脈の観測値。未知は0で補完しない。
     context_tokens: int | float | None = None
     context_window: int | float | None = None
     # backend資源の解放期限。未回収の終端結果はこの期限を過ぎても保持する。

@@ -64,6 +64,7 @@ from agent_toolkit._hooks.posttooluse import (  # noqa: E402  # pylint: disable=
     USER_CONFIRMATION_SKILL_NAMES,
     VERIFICATION_NOTICE_BODY,
     clear_user_confirmation_pending,
+    content_notices,
 )
 lazy from agent_toolkit._common import automated_prompt  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 lazy from agent_toolkit._common.delegated_session import (
@@ -81,9 +82,6 @@ lazy from agent_toolkit._common.session_state import (  # noqa: E402  # pylint: 
     read_state,
     update_state,
 )
-
-# pylint: disable-next=wrong-import-position,import-error
-lazy from agent_toolkit._hooks import plugin_resources as _plugin_resources
 lazy from agent_toolkit._hooks import termination_evidence
 lazy from agent_toolkit._hooks.host import is_codex_payload  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 lazy from agent_toolkit._plan.path_kinds import is_plan_main_file  # noqa: E402  # pylint: disable=wrong-import-position,import-error
@@ -119,34 +117,6 @@ _USER_CONFIRMATION_NOTICE_BODY = (
     "この発話は、セッション開始後か会話圧縮後で、`agent-toolkit:user-confirmation-and-report`の内容が文脈に無い状態で届いた。"
 )
 _USER_CONFIRMATION_NOTICE_FIX = "応答と作業の着手より前に`agent-toolkit:user-confirmation-and-report`をスキル機能で起動する。"
-_REALIGN_NOTICE_BODY = (
-    "ユーザー発話に全角の連続した「！！」が含まれている。"
-    "次の操作: `agent-toolkit:user-confirmation-and-report`の「認識合わせ」に従い、目標と解決したい問題の理解を確かめる。"
-)
-_EXAMPLE_WORDS = ("例えば", "たとえば", "例として")
-_INVESTIGATION_WORDS = ("確認", "調査", "調べ", "見直", "点検", "洗い出", "探し", "チェック", "レビュー")
-# フェンス付きコードブロック、インラインコードおよび`>`で始まる引用行は、ユーザー自身の依頼文ではなく
-# 貼り付けた素材であるため、例示の語と調査を求める語の判定から外す。
-_QUOTED_MATERIAL_RE = re.compile(r"^[ \t]*(```|~~~)[\s\S]*?^[ \t]*\1[^\n]*$|`[^`\n]+`|^[ \t]*>[^\n]*$", re.MULTILINE)
-
-
-def _example_investigation_notice(prompt: str) -> str | None:
-    """例示の語と調査を求める語を併せ持つ発話へ、範囲語と例示を併せた依頼の項の所在を示す注記を返す。
-
-    該当する発話が範囲語か開放列挙を伴う調査の依頼かは受領側が判断し、本フックは字面の一致だけで返す。
-    """
-    text = _QUOTED_MATERIAL_RE.sub("", prompt)
-    if not any(word in text for word in _EXAMPLE_WORDS) or not any(word in text for word in _INVESTIGATION_WORDS):
-        return None
-    utterance = _plugin_resources.skill_reference("user-confirmation-and-report", "SKILL.md")
-    routing = _plugin_resources.skill_reference("delegation", "references/routing.md")
-    body = (
-        "この発話は例示の語と、調査・確認を求める語を含む。"
-        "範囲語か開放列挙を併せ持つ調査、見直し、点検の依頼である場合は、自ら調査へ着手する前に"
-        f"{utterance}「原文の保持と取り込み」の、範囲語か開放列挙と例示か理由を併せて示した依頼の項を適用する。"
-        f"例示を除いた独立した調査を委ねる手段は{routing}「コンテキスト消費が大きい調査の切り出し」に従う。"
-    )
-    return _llm_notice(body, tag="notice")
 
 
 def _is_harness_message(prompt: str) -> bool:
@@ -309,7 +279,7 @@ def main(payload_text: str) -> int:
     # スラッシュコマンドで始まる発話もユーザー自身の入力であり、注記の対象に含める。
     # 除外するのは機械が生成してユーザー入力欄へ入る本文だけとする。
     is_normal_prompt = not machine_injected
-    # 発火条件は受領側が除去できないため、いずれも是正を求める区分ではなく情報提示として配送する。
+    # 発火条件は受領側が除去できないため、いずれも情報提示の区分で配送する。
     notices: list[str] = []
     if is_normal_prompt and first_line.startswith(command_prefix):
         command = first_line[len(command_prefix) :].split(maxsplit=1)
@@ -320,10 +290,8 @@ def main(payload_text: str) -> int:
         notices.append(_user_confirmation_notice())
     if is_normal_prompt and _claim_verification_notice(session_id, time.time()):
         notices.append(_llm_notice(VERIFICATION_NOTICE_BODY, tag=_VERIFICATION_NOTICE_TAG))
-    if is_normal_prompt and "！！" in prompt:
-        notices.append(_llm_notice(_REALIGN_NOTICE_BODY, tag="notice"))
-    if is_normal_prompt and (example_notice := _example_investigation_notice(prompt)) is not None:
-        notices.append(example_notice)
+    if is_normal_prompt:
+        notices.extend(content_notices(prompt, "user_prompt_submit"))
     additional_context = "\n".join(notices) if notices else None
 
     if first_line.startswith(command_prefix):

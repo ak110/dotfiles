@@ -12,7 +12,12 @@ import shlex
 from collections.abc import Sequence
 
 from agent_toolkit._common.heredocs import mask_heredoc_bodies
-from agent_toolkit._common.uv_arguments import is_agent_toolkit_script_invocation, is_python_token, resolve_uv_execution_index
+from agent_toolkit._common.uv_arguments import (
+    is_agent_toolkit_script_invocation,
+    is_python_token,
+    resolve_runtime_invocation,
+    resolve_uv_execution_index,
+)
 
 ENV_ASSIGN_PATTERN = re.compile(r"^[A-Za-z_]\w*=")
 
@@ -64,6 +69,8 @@ class ExecutionSegment:
     resolved: bool
     is_agent_toolkit_script: bool = False
     raw_tokens: tuple[str, ...] = ()
+    invocation_kind: str = "command"
+    directories: tuple[str, ...] = ()
 
 
 def _split_bash_pipelines(command: str) -> list[list[str]]:
@@ -198,13 +205,25 @@ def shell_c_argument(tokens: Sequence[str]) -> str | None:
     return None
 
 
-def resolve_execution_segment(tokens: list[str]) -> ExecutionSegment:
+def resolve_execution_segment(tokens: list[str], *, runtime_options: bool = False) -> ExecutionSegment:
     """トークン列の実行位置を求め、実行位置以降のトークン列と確定可否を返す。
 
     先頭の`KEY=VALUE`形式の環境変数代入の次の位置から、既知の実行前置語を順に走査対象から除く。
     除いた後の位置が存在しない場合、またはそのトークンが`-`で始まる場合は、
     前置語の引数境界を確定できていないため実行位置未確定とする。
+
+    生のargvの起動方式を確定する消費側はruntime_optionsを指定する。省略時は助言用の
+    既存の未確定扱いを保ち、指定時はuv・uvx・Pythonの解析結果とcwd変更を返す。
+    その他の実行ファイルのオプションは解釈しない。
     """
+    if runtime_options:
+        invocation = resolve_runtime_invocation(tokens)
+        return ExecutionSegment(
+            invocation.tokens,
+            invocation.kind != "unresolved",
+            invocation_kind=invocation.kind,
+            directories=invocation.directories,
+        )
     index = skip_env_assignments(tokens, 0)
     is_agent_toolkit_script = False
     while index < len(tokens):

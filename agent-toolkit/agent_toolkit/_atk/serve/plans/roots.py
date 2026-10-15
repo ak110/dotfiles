@@ -70,8 +70,8 @@ SSH_WATCH_OPTIONS = (
 REMOTE_BACKOFF_INITIAL_SEC = 1.0
 REMOTE_BACKOFF_MAX_SEC = 30.0
 REMOTE_BACKOFF_JITTER_RANGE = (0.8, 1.2)
-# リモートwatch subprocessのstdout用StreamReader上限（バイト）。
-# helperが1行JSONとして全エントリーを出力するsnapshot行は、asyncioが標準で使う64KiBを超えるため、上限を引き上げる。
+# リモートwatch subprocessのstdout用bufferのフロー制御閾値（バイト）。
+# JSONの行長はこの閾値と独立に扱い、chunkからLF区切りのrecordを復元する。
 REMOTE_STREAM_LIMIT_BYTES = 8 * 1024 * 1024
 
 # SSHランナーの抽象シグネチャ。テストではfake実装を注入し、本番は`default_ssh_runner`を使う。

@@ -134,7 +134,7 @@ ruff-format-by-check = false
 # 対応版の公開後に並列実行へ戻す。
 # リポジトリ直下、agent-toolkit/およびagent-toolkit/agent_toolkit/の`conftest.py`は、いずれもトップレベルの
 # モジュール`conftest`へ解決されるため、mypyが"Duplicate module named"を報告して検査全体を中断する。
-# 除外指定はパスではなくファイル名で一致するため、3件の`conftest.py`をまとめてmypyの対象から外す。
+# 除外指定はファイル名で一致するため、3件の`conftest.py`をまとめてmypyの対象から外す。
 # 3件ともruff・pylint・pyright・tyが引き続き検査する。
 mypy-exclude = ["conftest.py"]
 shellcheck = true
@@ -167,8 +167,13 @@ markdownlint-exclude = [
 ]
 textlint-exclude = [
     ".chezmoi-source/dot_codex/AGENTS.md",
+    # Antigravity CLIへ配る外部由来の規範。検査を通すための書き換えは出所の正確さを損なうため、
+    # 日本語の表記検査（textlint・colloquial-check）だけを外し、リンク検証などの他の検査は続ける。
+    ".chezmoi-source/dot_gemini/antigravity-cli/skills/japanese-tech-writing/SKILL.md",
 ]
 colloquial-check-exclude = [
+    # textlint-excludeと同じ外部由来の規範。
+    ".chezmoi-source/dot_gemini/antigravity-cli/skills/japanese-tech-writing/SKILL.md",
     # 規範の再構築の判定台帳。基準commitの条文の逐語抜粋を記録として保持するため対象から外す。
     "docs/development/norm-restructure/*.tsv",
 ]
@@ -176,7 +181,8 @@ typos-exclude = [
     # 規範の再構築の判定台帳。条文の先頭40字の抜粋と検索語が語の途中で終わるため対象から外す。
     "docs/development/norm-restructure/*.tsv",
 ]
-textlint-args = ["--cache"]
+# textlintのキャッシュはルール実装の更新を識別しないため、毎回現在のルールで検査する。
+textlint-args = []
 lychee-exclude = [
     ".chezmoi-source/dot_codex/AGENTS.md",
     # ベースパスを実行時に埋めるプレースホルダーを含むため、静的なリンク解決の対象にしない。
@@ -188,15 +194,16 @@ extend-exclude = [
     "*/profile_ipy/*",
     # agent-toolkit-codex/はGit追跡の有無を問わずagent-toolkit/から生成するため、生成元と重複検査しない。
     "agent-toolkit-codex/**",
-    # Antigravity CLIへ配る外部由来の規範。検査を通すための書き換えは出所の正確さを損なうため、
-    # 本リポジトリの表記検査の対象から外す。
-    ".chezmoi-source/dot_gemini/antigravity-cli/skills/japanese-tech-writing/SKILL.md",
 ]
-# chezmoi命名規則（dot_*・executable_*）のshellスクリプトと、拡張子を持たないbash製CLIラッパー
-# （agent-toolkit/scripts/atk）をshfmtの対象に追加する
-shfmt-extend-targets = ["*.sh.tmpl", "dot_bashrc", "dot_bash_profile", "executable_*", "atk"]
+# chezmoi命名規則（dot_*・executable_*）のshellスクリプトと、拡張子を持たないbash製CLI
+# （agent-toolkit/scripts/atkとbin/配下）をshfmtの対象に追加する。
+# bin/配下は拡張子を持たないファイルが全てbash製のため、ファイル名を列挙せずに`bin/*`で対象にし、
+# 同じ場所に置くcmdとPythonだけを除外する。新しいCLIを列挙へ書き足さなくても検査対象になる。
+shfmt-extend-targets = ["*.sh.tmpl", "dot_bashrc", "dot_bash_profile", "executable_*", "atk", "bin/*"]
+shfmt-exclude = ["bin/*.cmd", "bin/*.py"]
 # 上記shfmt対象と同じファイル群をshellcheckでも検査する
-shellcheck-extend-targets = ["dot_bashrc", "dot_bash_profile", "executable_*", "atk"]
+shellcheck-extend-targets = ["dot_bashrc", "dot_bash_profile", "executable_*", "atk", "bin/*"]
+shellcheck-exclude = ["bin/*.cmd", "bin/*.py"]
 textlint-packages = [
     "textlint-rule-preset-ja-technical-writing",
     "textlint-rule-preset-jtf-style",
@@ -452,6 +459,8 @@ addopts = [
     "--maxfail=5",
     "--durations=30",
     "--durations-min=0.5",
+    # 失敗・エラーに加えてskipの理由を要約へ出し、検証報告で未実行の範囲と理由を示せるようにする。
+    "-rfEs",
     "--timeout=60",
     # コア数追従（-n auto等）を採用せず固定値とする（CI環境での逆効果とメモリ消費増を避けるため）
     "-n", "4",

@@ -10,19 +10,23 @@ r"""成果作業で`agent-toolkit:completion-report`の起動を忘れた終了�
 中止・置換・技術的不成立と記録した作業と、確認の回答や委譲先の結果を待つ作業は遮断しない。
 成果作業が待つ非同期対象が生存している場合も遮断しない。待機対象は作業が起動したagents_serverのsessionと、
 作業の開始以後に起動した背景Bash・背景Agent・MCPのバックグラウンドタスク・未配送の完了通知とする。
-背景Bashは終了すると完了通知でターンが再開し、その時点で改めて判定する。
+有限の背景Bashは終了すると完了通知でターンが再開し、その時点で改めて判定する。
+既知のサーバー・watchの常駐起動は、完了通知を待てないため待機対象から外す。
 作業の開始より前から動く無関係なタスクは待機として扱わない。
 証拠やセッション記録（transcript）を読み取れない場合は遮断せず、Stop判定ログへ確かめられないことを記録する。
 
 委譲先での実行可否: 委譲先はcompletion-reportの適用対象ではないため、hook入力と環境印で除外する。
 """
 
+import json
 import pathlib
 
 from agent_toolkit._hooks.notice import block_formatter as _block_notice_formatter
 
 # 関数の実行時にだけ使う依存は、使用時まで読み込まない。
 lazy from agent_toolkit._atk import run_script as _run_script
+lazy from agent_toolkit._common import transcript
+lazy from agent_toolkit._common.shell_segments import extract_execution_segments
 lazy from agent_toolkit._hooks import termination_evidence
 lazy from agent_toolkit._hooks.agent_id import is_main_agent_context
 lazy from agent_toolkit._hooks.background_tasks import async_launch_offsets, pending_async_task_ids
@@ -33,6 +37,66 @@ lazy from agent_toolkit._hooks.stop_session import parse_stop_session as _parse_
 _HOOK_ID = "termination_order_advisor"
 
 _block_notice = _block_notice_formatter(_HOOK_ID)
+
+
+def _resident_bash_ids(transcript_path: str) -> set[str]:
+    """終了通知を待てないサーバー・watchの起動IDと、その応答のタスクIDを返す。"""
+    identifiers: set[str] = set()
+    for line in transcript.read_transcript_lines(transcript_path) or []:
+        try:
+            entry = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if not isinstance(entry, dict) or entry.get("isSidechain"):
+            continue
+        message = entry.get("message")
+        content = message.get("content") if isinstance(message, dict) else None
+        for block in content if isinstance(content, list) else []:
+            if not isinstance(block, dict):
+                continue
+            if block.get("type") == "tool_use" and block.get("name") == "Bash":
+                tool_input = block.get("input")
+                command = tool_input.get("command") if isinstance(tool_input, dict) else None
+                identifier = block.get("id")
+                if isinstance(identifier, str) and isinstance(command, str) and _is_resident_command(command):
+                    identifiers.add(identifier)
+            elif block.get("type") == "tool_result" and block.get("tool_use_id") in identifiers:
+                response = entry.get("toolUseResult")
+                task_id = response.get("backgroundTaskId") if isinstance(response, dict) else None
+                if isinstance(task_id, str):
+                    identifiers.add(task_id)
+    return identifiers
+
+
+def _is_resident_command(command: str) -> bool:
+    """実行位置にある既知の常駐コマンドを判別し、引用や有限のtimeoutを除く。"""
+    for segment in extract_execution_segments(command):
+        if not segment.resolved or not segment.tokens:
+            continue
+        tokens = segment.tokens
+        name = pathlib.PurePath(tokens[0]).name
+        if pathlib.PurePath(segment.raw_tokens[0]).name == "timeout":
+            continue
+        if name in {"uv", "uvx"} and "run" in tokens:
+            tokens = tokens[tokens.index("run") + 1 :]
+            if not tokens:
+                continue
+            name = pathlib.PurePath(tokens[0]).name
+        if any(arg in {"--help", "--version"} for arg in tokens[1:]):
+            continue
+        script = tokens[2:3] if tokens[1:2] == ("run",) else tokens[1:2]
+        if (
+            name in {"uvicorn", "gunicorn", "watch", "nodemon", "http.server", "vite"}
+            or name in {"atk", "atk.py"}
+            and tokens[1:2] == ("serve",)
+            or name in {"npm", "pnpm", "yarn", "bun"}
+            and bool(script)
+            and script[0] in {"watch", "dev", "start"}
+            or name in {"node", "tsc", "webpack", "esbuild", "cargo", "dotnet", "deno"}
+            and "--watch" in tokens[1:]
+        ):
+            return True
+    return False
 
 
 def _work_order(work_id: str, work: dict) -> tuple[int, int]:
@@ -63,6 +127,7 @@ def _waiting_work_ids(payload: dict, session_id: str, transcript_path: str, work
     if not live:
         return waiting
     offsets = async_launch_offsets(transcript_path)
+    live -= _resident_bash_ids(transcript_path)
     ordered = sorted(works, key=lambda item: _work_order(*item))
     for identifier in live:
         launched_at = offsets.get(identifier)

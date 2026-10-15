@@ -133,12 +133,32 @@ async def test_run_ssh_terminates_child_when_cancelled(tmp_path: pathlib.Path) -
 
 
 @pytest.mark.asyncio
-async def test_run_ssh_terminates_child_on_timeout(tmp_path: pathlib.Path) -> None:
-    """時間上限に達した単発SSHは子プロセスを終了させ、`subprocess.TimeoutExpired`を送出する。"""
+async def test_run_ssh_terminates_child_on_timeout(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """時間上限に達した単発SSHは子プロセスを終了させ、`subprocess.TimeoutExpired`を送出する。
+
+    時間上限の計測は子プロセスの生成後に始まる。子プロセスがPIDを書く前に上限へ達すると、
+    PIDを得られず終了を確かめられないため、PIDの書込を見届けてから生成を完了させる。
+    """
     pid_file = tmp_path / "pid"
     script = f"import os, pathlib, time; pathlib.Path({str(pid_file)!r}).write_text(str(os.getpid())); time.sleep(30)"
+    create_subprocess_exec = asyncio.create_subprocess_exec
+    pids: list[int] = []
+
+    async def create_after_pid_written(*args: typing.Any, **kwargs: typing.Any) -> asyncio.subprocess.Process:
+        proc = await create_subprocess_exec(*args, **kwargs)
+        try:
+            pids.append(await _wait_for_pid(pid_file))
+        except BaseException:
+            if proc.returncode is None:
+                proc.kill()
+            await proc.wait()
+            raise
+        return proc
+
+    monkeypatch.setattr(serve_remote.asyncio, "create_subprocess_exec", create_after_pid_written)
 
     with pytest.raises(subprocess.TimeoutExpired):
         await serve_remote.run_ssh([sys.executable, "-c", script], timeout=0.5)
 
-    assert not _process_exists(await _wait_for_pid(pid_file))
+    assert pids
+    assert not _process_exists(pids[0])

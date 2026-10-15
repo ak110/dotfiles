@@ -330,7 +330,7 @@ claude-plugins-officialのプラグインは次の方針で扱う。
 AWI処理の常駐実行（`atk wi process-loop`）を起動し、依頼したい内容を要求として登録する。
 登録した要求は、調査・計画・実装・レビュー・公開まで順に自動で処理される。
 開始前は別セッションが活動中なら処理可能WIの検出から10分を猶予する。
-共有private-notesへ新しいAWIかUWIが届くたびに、検出時点から10分へ延長する。
+WIキューを保存する共有リポジトリ（private-notes）へ新しいAWIかUWIが届くたびに、検出時点から10分へ延長する。
 延長の回数・累計時間に上限はなく、活動がなくなれば期限前でも開始判定へ戻る。
 終了済みのセッションと、稼働中の子エージェントがないユーザー応答待ちは猶予の理由にしない。
 当該ループ自身と子孫は除き、別ループや別リポジトリの活動も調べる。
@@ -482,6 +482,23 @@ show形式の構造とは、直後にfrontmatterが続く`### <ファイル名>.
 - macOS: `~/Library/Application Support/agent-toolkit/serve.toml`。環境変数`XDG_CONFIG_HOME`に絶対パスを設定した場合は`$XDG_CONFIG_HOME/agent-toolkit/serve.toml`
 - Windows: `%LOCALAPPDATA%\agent-toolkit\serve.toml`
 
+設定例を次に示す。`host`と参照元のパスは文字列、`port`は整数、`remote_hosts`はSSH接続先名の文字列配列とする。
+各キーは省略でき、省略した参照元は後述の場所を使う。パスとSSH接続先名は利用する環境へ置き換える。
+
+```toml
+host = "127.0.0.1"
+port = 28767
+
+[plans]
+root = "/home/user/private-notes/plans"
+remote_hosts = ["remote-host"]
+
+[sessions]
+claude_home = "/home/user/.claude"
+codex_home = "/home/user/.codex"
+remote_hosts = ["remote-host"]
+```
+
 `atk serve`は同じナビゲーションから「WI」「計画ファイル」「セッション」の3画面を提供する。WI画面はキューの登録・編集・状態遷移を扱い、計画ファイル画面はローカルと設定済みリモートホストの計画ファイルを一覧・全文検索してMarkdownを表示する。セッション画面はClaude CodeとCodexの保存済みセッションを作業ディレクトリと開始時刻で一覧し、最初のユーザー発話を検索対象に使う。右ペインには発話・思考・ツール呼び出しを時系列に表示する。アシスタントの発言は見出し・箇条書き・表・コードをMarkdownとして整形して表示し、それ以外の本文は記号を残した等幅で表示する。実行環境が挿入した本文は「自動挿入」として折りたたみ、一覧の検索対象となる最初の発話からも除く。計画ファイルとセッションの参照元は、前述の設定ファイル`serve.toml`の`[plans]`・`[sessions]`で指定する。未指定の場合、計画ファイル画面はprivate-notesの`plans`と`~/.claude/plans`の両方を参照し、セッション画面は`~/.claude`と、`CODEX_HOME`が空のときは`~/.codex`を参照する。
 
 WI画面で状態が`needs-verify`と表示される項目は、反映後の観測だけが残っているため、観測できる時刻まで`inbox`へ戻されたAWIである。保存状態は`inbox`のままで、状態フィルターの`inbox`にも含まれ、次の`agent-toolkit:process-wi`が観測から再開する。
@@ -532,6 +549,8 @@ Claude Codeがマーケットプレイス経由でインストールした実体
 dotfilesユーザーは`chezmoi apply`で`~/dotfiles/agent-toolkit/scripts`がPATHへ自動配置されるため、上記スクリプトの実行は不要。
 
 Claude CodeのSessionStartは、`CLAUDE_ENV_FILE`が提供される場合に、CLIのPATHとデータ領域を後続のBashへ渡す。別hookの設定と既存PATHは保持する。このファイルが提供されない場合も、開始時のコンテキストにCLIの絶対パスを表示する。WindowsのPowerShellでは、案内された`.cmd`の絶対パスを`& '絶対パス'`の形で呼び出す。MCPと`agents_server`の委譲先には起動設定で同じ配布物のCLIとデータ領域を渡す。
+
+CLI移設前に起動した`update-dotfiles`は、pullと未コミット内容の復元後、旧`agent-toolkit/bin/atk`の不在により退避の回収で終了1となる場合がある。「復元は成功しましたが退避の回収は未完了です」と表示された場合は、更新したリポジトリで作業内容とindexが復元済みであることを保存refの内容と比べて確かめる。その実行が表示した完全なrefだけを`./agent-toolkit/scripts/atk worktree-stash drop <ref>`で回収し、`./bin/update-dotfiles`を再実行する。Windowsではそれぞれ`agent-toolkit\scripts\atk.cmd`と`bin\update-dotfiles.cmd`を使う。復元を確認できない場合はrefを保持して原因を調べる。これは開始済みの旧プロセスからの移行操作であり、再実行後の終了状態まで確認する。
 
 ## 構成と機能
 
@@ -662,7 +681,7 @@ pushを行わずローカルcommitまでで止める場合は`--skip-push`を指
   （本体を一意に識別できない実行環境では停止せず、終了理由と対話CLIの終了案内を最終応答としてターンを完了する）
 - `compact_conversation`: Function hooks moduleを読み込んだClaude Codeのメインが会話圧縮を予約するツール。完全名は`mcp__agent-toolkit__compact_conversation`で、引数は取らず追加指示なしでcompactを予約する。必要な再開状態はセッションのmanaged-temp直下のparent-handoff.mdへ保存し、圧縮後の領域通知からその記録を読む。対話UIと非対話の`claude -p`に対応し、Codexと委譲先では使わない。受付応答は圧縮完了を示さない。予約後は現在のターンを終え、ホストの圧縮成功表示を確認する。未完了の予約を重ねても実行は増えず、成功・失敗後は再予約できる。失敗は同じ会話へ原因と再予約可能である旨が通知される。バックグラウンドタスクを待つ場合は予約後に背景待機を開始してターンを終え、通知後に同じ担当と保存結果から継続する
 - `send_to_user`: 管理設定の`CLAUDE_CODE_ENABLE_FUNCTION_HOOKS=1`が有効でagent-toolkitのFunction hooks moduleを読み込んだClaude Codeで、メインが使えるツール。途中報告と最後の回答を運び、画面へMarkdownとして表示する。完全名は`mcp__agent-toolkit__send_to_user`で、初回から読み込む定義を登録する。遅延一覧にだけ現れる場合は`ToolSearch`の`select:mcp__agent-toolkit__send_to_user`で読み込む。ツール呼び出しより前の地の文は要約に置き換わることがあるため、このツールで送る。確認質問には既存の質問手段を使う。moduleを読み込まないClaude CodeとCodexでは、ターンを終える本文へ書く
-- `agent-toolkit:completion-report`: メインの作業完了時に、成果と振り返り結果を固定形式で報告する。対策のAWIを投入する場合は`## 振り返り結果の予告`で予告し、投入後にAWI投入結果を報告する。投入が無い場合は振り返り結果を報告する。最後の報告だけを「以上で、このセッションの作業は全て終わりました」で結ぶ。適用するプロジェクト規範が本スキルを不要と定める場合は、スキルを起動せず`references/termination-evidence.md`を読む。`atk run-script termination-evidence -- --decision-file <判断JSONの絶対パス>`へ`omit-completion`の根拠を記録する。省略は指定した作業だけへ作用し、別作業と自律終了の義務は保つ。有効な省略も起動証拠も無い成果作業の停止はStopフックが遮断して起動を促す。起動後の工程の完遂と報告の内容は本スキルの規範に従ってエージェントが確かめ、Stopフックは報告本文を判定しない。ユーザーの中止・置換の指示は、その指示が作用する作業だけを止める
+- `agent-toolkit:completion-report`: メインの作業完了時に、成果と振り返り結果を固定形式で報告する。対策のAWIを投入する場合は`## 振り返り結果の予告`で予告し、投入後にAWI投入結果を報告する。投入が無い場合は振り返り結果を報告する。最後の報告だけを「以上で、このセッションの作業は全て終わりました」で結ぶ。適用するプロジェクト規範が本スキルを不要と定める場合は、スキルを起動せず`references/termination-evidence.md`を読む。`atk run-script termination-evidence -- --decision-file <判断JSONの絶対パス>`へ`omit-completion`の根拠を記録する。省略は指定した作業だけへ作用し、別作業の起動不足と、process-loopの会話が終了時に`atk agents-exit-session`を実行する義務は保つ。有効な省略も起動証拠も無い成果作業の停止はStopフックが遮断して起動を促す。起動後の工程の完遂と報告の内容は本スキルの規範に従ってエージェントが確かめ、Stopフックは報告本文を判定しない。ユーザーの中止・置換の指示は、その指示が作用する作業だけを止める
 - `agent-toolkit:export-session`: `atk agents logs`でClaude CodeとCodexの記録をmarkdownへ出力し、一括変換も行う
 - `agent-toolkit:session-review`: セッションで交わされた会話の流れと問題候補を調べ、原因と恒久対策を確定して、対策を作業依頼（AWI）として投入する。手動または`agent-toolkit:completion-report`から起動し、メインが同じセッション内で分析する
 
@@ -672,7 +691,7 @@ pushを行わずローカルcommitまでで止める場合は`--skip-push`を指
 
 「ツールキットのインストール」のワンライナーを再実行すると更新される。
 dotfiles（chezmoi）管理下のマシンでは`chezmoi apply`を実行しても更新できる。
-いずれの単体インストーラーも初回導入専用ではない。`agents_server`はClaude CodeまたはCodex pluginが
+いずれの単体インストーラーも初回導入と更新の両方に使える。`agents_server`はClaude CodeまたはCodex pluginが
 セッション単位でstdioプロセスとして所有するため、共有daemonの再起動は行わない。
 Codex plugin本体の更新で既存セッションへ反映できない場合は、Codex pluginの案内に従い、
 進行中の作業を回収してから新しいセッションを開始する。

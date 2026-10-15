@@ -110,3 +110,192 @@ def test_public_plan_rejects_all_input_before_any_child(
     assert _run(plan, tmp_path) == 2
     assert not marker.exists()
     assert "次の操作:" in capsys.readouterr().err
+
+
+def test_public_plan_uses_corrected_verification_for_list_and_execution(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """訂正表を明示すると列挙と実行のargvが一致し、凍結原文は保持する。"""
+    frozen = _plan(tmp_path / "frozen.md", "`obsolete-command`")
+    original = frozen.read_bytes()
+    current = _plan(tmp_path / "current.md", f"`{shlex.join([sys.executable, '-c', 'print(123)'])}`")
+    options = ["--verification-plan", str(current)]
+    assert _run(frozen, tmp_path, *options, "--list") == 0
+    listed = json.loads(capsys.readouterr().out)
+    assert _run(frozen, tmp_path, *options) == 0
+    result = json.loads(capsys.readouterr().out)
+    assert result["results"][0]["argv"] == listed[0]["argv"]
+    assert result["verification_plan_path"] == str(current)
+    assert frozen.read_bytes() == original
+
+
+@pytest.mark.parametrize(
+    ("summary", "expected"),
+    [
+        ({"completion": "completed", "missing_targets": []}, 0),
+        ({"completion": "incomplete", "missing_targets": ["absent.py"]}, 1),
+        ({"completion": "not_reached"}, 1),
+        ({"completion": "completed", "incomplete_commands": ["ruff-check"]}, 1),
+        ({"completion": "completed", "fully_excluded_files": ["excluded.py"]}, 1),
+        ({}, 1),
+    ],
+)
+def test_public_plan_checks_pyfltr_completion_separately_from_exit_code(
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+    summary: dict,
+    expected: int,
+) -> None:
+    """終了0でも未完了・未到達を失敗へ接続し、汎用コマンドはJSON解析の対象にしない。"""
+    output = tmp_path / "stdout.jsonl"
+    output.write_text(
+        json.dumps({"kind": "summary", "files_reached": 1, "completed_commands": ["ruff-check"], **summary}) + "\n",
+        encoding="utf-8",
+    )
+
+    def execute(*_args: object, **_kwargs: object) -> tuple[dict, int, None]:
+        return {"stdout_path": str(output), "record_path": None, "timed_out": False}, 0, None
+
+    monkeypatch.setattr(run_command, "execute", execute)
+    plan = _plan(tmp_path / "plan.md", "`uv run --frozen pyfltr run-for-agent --output-format=jsonl target.py`<br>`true`")
+    assert _run(plan, tmp_path) == expected
+    result = json.loads(capsys.readouterr().out)
+    assert result["results"][0]["state"] == ("success" if expected == 0 else "failure")
+    assert result["results"][1]["state"] == "success"
+
+
+# uv 0.13.1の`uvx --help`・`uv help tool run`・`uv run --help`とPython --helpの起動構文。
+# 依存取得は起動せず、外部コマンドの保存結果をplan-verifyが検収する境界を確かめる。
+@pytest.mark.parametrize("completed", [False, True])
+@pytest.mark.parametrize(
+    "launcher",
+    [
+        ["pyfltr"],
+        ["uvx", "pyfltr"],
+        ["uvx", "--from", "pyfltr", "pyfltr"],
+        ["uvx", "--from=pyfltr", "pyfltr"],
+        ["uvx", "--with", "pyfltr", "pyfltr"],
+        ["uvx", "-w", "pyfltr", "pyfltr"],
+        ["uvx", "pyfltr@1.0"],
+        ["uv", "tool", "run", "pyfltr"],
+        ["uv", "run", "--frozen", "pyfltr"],
+        ["uv", "run", "--with", "pyfltr", "pyfltr"],
+        ["uv", "run", "--with=pyfltr", "pyfltr"],
+        ["uv", "-q", "run", "pyfltr"],
+        ["uv", "run", "--module", "pyfltr"],
+        ["python", "-m", "pyfltr"],
+        ["python", "-I", "-m", "pyfltr"],
+        ["python", "-X", "pyfltr", "-m", "pyfltr"],
+        ["python", "-mpyfltr"],
+        ["uv", "run", "python", "-B", "-m", "pyfltr"],
+        ["uvx", "--from", "pyfltr", "python", "-m", "pyfltr"],
+    ],
+)
+def test_public_plan_checks_completion_across_runtime_boundaries(
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+    launcher: list[str],
+    completed: bool,
+) -> None:
+    """起動表記を変えても、同じ完了結果は同じ合否となる。"""
+    output = tmp_path / "stdout.jsonl"
+    output.write_text(
+        json.dumps(
+            {
+                "kind": "summary",
+                "completion": "completed" if completed else "incomplete",
+                "files_reached": 1 if completed else 0,
+                "completed_commands": ["pytest"] if completed else [],
+                "incomplete_commands": [] if completed else ["pytest"],
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    def execute(argv: list[str], *_args: object, **_kwargs: object) -> tuple[dict, int, None]:
+        assert argv == [*launcher, "run", "--output-format=jsonl", "target.py"]
+        return {"stdout_path": str(output), "record_path": None, "timed_out": False}, 0, None
+
+    monkeypatch.setattr(run_command, "execute", execute)
+    plan = _plan(tmp_path / "plan.md", f"`{shlex.join([*launcher, 'run', '--output-format=jsonl', 'target.py'])}`")
+    assert _run(plan, tmp_path) == (0 if completed else 1)
+    result = json.loads(capsys.readouterr().out)["results"][0]
+    assert result["state"] == ("success" if completed else "failure")
+
+
+@pytest.mark.parametrize(
+    "argv",
+    [
+        ["uv", "run", "printf", "%s", "pyfltr", "run"],
+        ["uvx", "python", "-c", "pass", "pyfltr", "run"],
+        ["python", "-c", "pass", "pyfltr", "run"],
+        ["uv", "run", "--help", "pyfltr", "run"],
+        ["uvx", "python", "-I"],
+        ["uv", "run", "-", "pyfltr", "run"],
+        ["pyfltr.txt", "run"],
+        ["env", "-i", "printf", "%s", "pyfltr", "run"],
+    ],
+)
+def test_public_plan_keeps_generic_and_nonexecution_commands_successful(
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+    argv: list[str],
+) -> None:
+    """通常引数のpyfltrという語を実行名にせず、JSONを出さない汎用コマンドも検証できる。"""
+    output = tmp_path / "stdout.txt"
+    output.write_text("通常のテキスト出力\n", encoding="utf-8")
+
+    def execute(*_args: object, **_kwargs: object) -> tuple[dict, int, None]:
+        return {"stdout_path": str(output), "record_path": None, "timed_out": False}, 0, None
+
+    monkeypatch.setattr(run_command, "execute", execute)
+    assert _run(_plan(tmp_path / "plan.md", f"`{shlex.join(argv)}`"), tmp_path) == 0
+    assert json.loads(capsys.readouterr().out)["results"][0]["state"] == "success"
+
+
+def test_public_plan_does_not_accept_unresolved_runtime_as_success(
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """起動位置が未確定なら、終了0を検収済み成功へ変えず次の操作を示す。"""
+
+    def execute(*_args: object, **_kwargs: object) -> tuple[dict, int, None]:
+        return {"stdout_path": None, "record_path": None, "timed_out": False}, 0, None
+
+    monkeypatch.setattr(run_command, "execute", execute)
+    assert _run(_plan(tmp_path / "plan.md", "`uvx --unknown tool`"), tmp_path) == 1
+    result = json.loads(capsys.readouterr().out)["results"][0]
+    assert result["state"] == "failure" and result["failure"]
+
+
+@pytest.mark.parametrize("output_option", [True, False])
+def test_public_plan_resolves_output_file_only_within_pyfltr_options(
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+    output_option: bool,
+) -> None:
+    """uvのcwd変更と、pyfltrのオプション終端以降の対象名を区別する。"""
+    directory = tmp_path / "work"
+    directory.mkdir()
+    (directory / "results.jsonl").write_text(
+        json.dumps({"kind": "summary", "completion": "completed", "files_reached": 1, "completed_commands": ["pytest"]}) + "\n",
+        encoding="utf-8",
+    )
+    stdout = tmp_path / "stdout.jsonl"
+    stdout.write_text(json.dumps({"kind": "summary", "completion": "incomplete"}) + "\n", encoding="utf-8")
+
+    def execute(*_args: object, **_kwargs: object) -> tuple[dict, int, None]:
+        return {"stdout_path": str(stdout), "record_path": None, "timed_out": False}, 0, None
+
+    monkeypatch.setattr(run_command, "execute", execute)
+    arguments = ["--output-file", "results.jsonl"] if output_option else ["--", f"--output-file={directory / 'results.jsonl'}"]
+    argv = ["uvx", "--directory", str(directory), "pyfltr", "run", *arguments]
+    assert _run(_plan(tmp_path / "plan.md", f"`{shlex.join(argv)}`"), tmp_path) == (0 if output_option else 1)
+    result = json.loads(capsys.readouterr().out)["results"][0]
+    assert result["state"] == ("success" if output_option else "failure")

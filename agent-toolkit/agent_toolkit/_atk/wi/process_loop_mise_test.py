@@ -131,7 +131,7 @@ class TestMiseLatestRefresh:
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
     ) -> None:
-        """update-dotfiles成功後は起動時刻ではなく成功後から次の24時間を数える。"""
+        """update-dotfiles成功後は成功時点から次の24時間を数える。"""
         refresh_calls = self._run_idle_loop(
             monkeypatch,
             tmp_path,

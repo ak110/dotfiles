@@ -1176,7 +1176,7 @@ def _install_signal_handlers() -> None:
     `subprocess.run`側の`timeout`（`--subprocess-timeout`）到達による自然終了に委ねる。
     厳密なプロセスグループ制御は、複雑化に見合う利得が無いため実装しない。
 
-    終了メッセージは`print`ではなく`os.write`で書く。`print`は`sys.stderr`の
+    終了メッセージは`os.write`で書く。`print`は`sys.stderr`の
     `BufferedWriter`を経由するため、メインフローが同じバッファへ書き込んでいる最中に
     シグナルが到達すると再入となり`RuntimeError: reentrant call inside <_io.BufferedWriter>`で
     異常終了する。`os.write`はバッファを介さないため再入が成立しない。
