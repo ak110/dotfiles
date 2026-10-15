@@ -15,12 +15,16 @@ import shlex
 import shutil
 import subprocess
 import sys
-from collections.abc import Callable, Generator
+from collections.abc import Callable
 from types import SimpleNamespace
 from typing import Any, cast
 from unittest.mock import AsyncMock
 
+import anyio
+import psutil
 import pytest
+from mcp import ClientSession
+from mcp.client.stdio import StdioServerParameters, stdio_client
 
 from agent_toolkit import atk
 from agent_toolkit._agents_server import codex as subject
@@ -58,6 +62,7 @@ from agent_toolkit._testing.agents_server_support import (
     install_backend,
 )
 from agent_toolkit._testing.helpers import delivery_payload
+from agent_toolkit._testing.isolation import CONFIG_DIRECTORY_ENVIRONMENT_NAMES, HOME_ENVIRONMENT_NAMES
 from agent_toolkit._testing.managed_temp_support import setattr_in_managed_temp_modules
 
 
@@ -874,88 +879,130 @@ def _lease_plugin_source(base: pathlib.Path, version: str = "1.0.0") -> pathlib.
     return root
 
 
-@contextlib.contextmanager
-def _running_process(command: list[str], environment: dict[str, str]) -> Generator[subprocess.Popen[str]]:
-    with subprocess.Popen(
-        command,
-        stdin=subprocess.PIPE,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        text=True,
-        encoding="utf-8",
-        env=environment,
-    ) as process:
-        try:
-            yield process
-        finally:
-            if process.poll() is None:
-                process.kill()
-            process.communicate(timeout=30)
-
-
-def test_stable_plugin_root_shared_across_processes(
+@pytest.mark.asyncio
+@pytest.mark.usefixtures("share_package_caches")
+async def test_stable_plugin_root_shared_across_processes(
     tmp_path: pathlib.Path,
     host_environ: Callable[[], dict[str, str]],
 ) -> None:
-    """独立プロセスと保持先からの起動が同じ実体を使い、最後の終了後に回収できる。"""
-    source = _lease_plugin_source(tmp_path / "distribution")
+    """外側2台と保持先起動の実MCPが配布物を共有し、元版の更新・削除後も応答して終了後に回収できる。"""
+    plugin = pathlib.Path(__file__).resolve().parents[2]
+    manifest = json.loads((plugin / ".claude-plugin" / "plugin.json").read_text(encoding="utf-8"))
+    version = manifest["version"]
+    source = tmp_path / "distribution" / version
+    shutil.copytree(plugin, source, ignore=shutil.ignore_patterns(".venv", "__pycache__", ".git", "node_modules"))
+    version_file = pathlib.Path("skills/managed-temp/SKILL.md")
+    original = (source / version_file).read_bytes()
     environment = host_environ()
-    for name in ("HOME", "XDG_STATE_HOME", "XDG_CACHE_HOME", "LOCALAPPDATA", "USERPROFILE"):
+    for name in HOME_ENVIRONMENT_NAMES:
+        environment[name] = str(tmp_path / "home")
+    for name in CONFIG_DIRECTORY_ENVIRONMENT_NAMES:
         environment[name] = str(tmp_path / name.lower())
-    environment["PYTHONPATH"] = str(pathlib.Path(__file__).resolve().parents[2])
-    code = (
-        "from pathlib import Path; import sys, os, threading; "
-        "timer=threading.Timer(30, lambda: os._exit(3)); timer.daemon=True; timer.start(); "
-        "from agent_toolkit._agents_server.plugin_root import resolve_stable_plugin_root; "
-        "print(resolve_stable_plugin_root(Path(sys.argv[1])), flush=True); sys.stdin.readline()"
+    state_base = tmp_path / "runtime-state"
+    environment.update(XDG_STATE_HOME=str(state_base), LOCALAPPDATA=str(state_base))
+    environment[plugin_environment.RUNTIME_DATA_ENV] = str(tmp_path / "runtime-data")
+    environment["PATH"] = os.pathsep.join(
+        directory for directory in os.get_exec_path(environment) if pathlib.Path(directory).name != "shims"
     )
-    processes: list[subprocess.Popen[str]] = []
-    with contextlib.ExitStack() as stack:
-        roots = []
-        for requested in (source, source):
-            process = stack.enter_context(_running_process([sys.executable, "-c", code, str(requested)], environment))
-            processes.append(process)
-            assert process.stdout is not None
-            roots.append(pathlib.Path(process.stdout.readline().strip()))
-        assert roots[0] == roots[1]
-        assert roots[0] != source
-        shutil.rmtree(source)
-        nested = stack.enter_context(_running_process([sys.executable, "-c", code, str(roots[0])], environment))
-        processes.append(nested)
-        assert nested.stdout is not None
-        assert pathlib.Path(nested.stdout.readline().strip()) == roots[0]
-        cleanup_code = (
-            "from pathlib import Path; import sys; "
-            "from agent_toolkit._atk.managed_temp.cli import main; "
-            "sys.exit(main(['cleanup', '--path', sys.argv[1], '--force-remove']))"
-        )
-        area = roots[0].parent
-        for target in (area, roots[0]):
-            protected = subprocess.run(
-                [sys.executable, "-c", cleanup_code, str(target)],
-                capture_output=True,
-                text=True,
-                encoding="utf-8",
-                env=environment,
-                timeout=30,
-                check=False,
-            )
-            assert protected.returncode == 2, protected.stderr
-        assert (roots[0] / "payload.txt").read_text(encoding="utf-8") == "起動した版"
-        for process in processes:
-            _, error = process.communicate("終了\n", timeout=30)
-            assert process.returncode == 0, error
-        cleaned = subprocess.run(
-            [sys.executable, "-c", cleanup_code, str(area)],
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            env=environment,
-            timeout=30,
-            check=False,
-        )
-        assert cleaned.returncode == 0, cleaned.stderr
-        assert not area.exists()
+    # 隔離HOMEでもテストを動かしているPythonを公開ランチャーから解決し、環境ごとの再取得を避ける。
+    python_directory = pathlib.Path(sys.base_prefix) / "bin" if os.name == "posix" else pathlib.Path(sys.base_prefix)
+    environment["PATH"] = str(python_directory) + os.pathsep + environment["PATH"]
+    environment.update(UV_NO_MANAGED_PYTHON="1", UV_PYTHON_DOWNLOADS="never", UV_LINK_MODE="copy")
+    for name in ("PYTHONPATH", "VIRTUAL_ENV", "UV_PROJECT_ENVIRONMENT"):
+        environment.pop(name, None)
+    uv = shutil.which("uv", path=environment["PATH"])
+    assert uv is not None
+    lease_directory = state_base / "agent-toolkit/plugin-root-leases"
+    clients: list[ClientSession] = []
+    owned: dict[int, psutil.Process] = {}
+    logs: list[pathlib.Path] = []
+    observed: list[dict[str, Any]] = []
+    area: pathlib.Path | None = None
+    try:
+        with contextlib.ExitStack() as files, anyio.fail_after(45):
+            async with contextlib.AsyncExitStack() as stack:
+                for index in range(3):
+                    root = source if index < 2 else area / version if area is not None else source
+                    command = plugin_environment.launch_command(root, pathlib.Path("agent_toolkit/agents_server_mcp.py"))
+                    log = tmp_path / f"mcp-{index}.stderr"
+                    logs.append(log)
+                    error_output = files.enter_context(log.open("w", encoding="utf-8"))
+                    streams = await stack.enter_async_context(
+                        stdio_client(StdioServerParameters(command=uv, args=command[1:], env=environment), errlog=error_output)
+                    )
+                    client = await stack.enter_async_context(ClientSession(*streams))
+                    initialized = await client.initialize()
+                    assert initialized.server_info.name == "agents_server"
+                    tools = {tool.name for tool in (await client.list_tools()).tools}
+                    assert tools == {"start", "send_message", "kill", "stop", "list", "show"}
+                    clients.append(client)
+                    leases = [json.loads(path.read_text(encoding="utf-8")) for path in lease_directory.glob("*.json")]
+                    assert len(leases) == index + 1
+                    areas = {pathlib.Path(record["path"]) for record in leases}
+                    assert len(areas) == 1
+                    area = areas.pop()
+                    held = area / version
+                    marker = json.loads((area / ".agent-toolkit-plugin-root.json").read_text(encoding="utf-8"))
+                    assert marker == {"source": str(source), "version": version, "root_name": version}
+                    assert list(area.parent.glob("agents-server-plugin-root-*")) == [area]
+                    assert (held / version_file).read_bytes() == original
+                    for record in leases:
+                        process = psutil.Process(record["pid"])
+                        assert process.create_time() == record["created_at"]
+                        ancestors = process.parents()
+                        parent_index = next(i for i, parent in enumerate(ancestors) if parent.pid == os.getpid())
+                        for member in (process, *ancestors[:parent_index]):
+                            owned[member.pid] = member
+                    observed.append({"server": index, "tools": sorted(tools), "leases": leases, "marker": marker})
+                    if index == 1:
+                        (source / version_file).write_text("更新された配布元", encoding="utf-8")
+                        assert (held / version_file).read_bytes() == original
+                        for client in clients:
+                            assert {tool.name for tool in (await client.list_tools()).tools} == tools
+                        shutil.rmtree(source)
+                        assert not source.exists()
+                        for target in (area, held):
+                            protected = subprocess.run(
+                                [
+                                    sys.executable,
+                                    str(plugin / "agent_toolkit/_managed_temp.py"),
+                                    "cleanup",
+                                    "--path",
+                                    str(target),
+                                    "--force-remove",
+                                ],
+                                capture_output=True,
+                                text=True,
+                                encoding="utf-8",
+                                env=environment,
+                                timeout=15,
+                                check=False,
+                            )
+                            assert protected.returncode == 2, protected.stderr
+                for client in clients:
+                    assert {tool.name for tool in (await client.list_tools()).tools} == tools
+                    listed = await client.call_tool("list", {})
+                    assert not listed.is_error
+                    assert listed.structured_content is not None and listed.structured_content["sessions"] == []
+                assert (held / version_file).read_bytes() == original
+    finally:
+        _, alive = psutil.wait_procs(list(owned.values()), timeout=3)
+        assert not alive, [process.pid for process in alive]
+        for log in logs:
+            print(f"S02 MCP診断 {log.name}:\n" + log.read_text(encoding="utf-8"))
+    assert area is not None
+    cleaned = subprocess.run(
+        [sys.executable, str(plugin / "agent_toolkit/_managed_temp.py"), "cleanup", "--path", str(area)],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        env=environment,
+        timeout=15,
+        check=False,
+    )
+    assert cleaned.returncode == 0, cleaned.stderr
+    assert not area.exists()
+    print("S02: " + json.dumps({"observed": observed, "terminated_processes": sorted(owned), "root_removed": str(area)}))
 
 
 def test_copy_failure_is_not_reused(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:

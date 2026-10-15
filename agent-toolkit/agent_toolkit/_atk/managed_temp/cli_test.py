@@ -10,6 +10,7 @@ import os
 import pathlib
 import subprocess
 import sys
+from collections.abc import Callable
 
 import pytest
 
@@ -20,6 +21,7 @@ from agent_toolkit._atk.managed_temp import registry as managed_temp_registry
 from agent_toolkit._atk.managed_temp import windows_security as managed_temp_windows_security
 from agent_toolkit._common import plugin_root_leases as lease_subject
 from agent_toolkit._common import state_paths
+from agent_toolkit._testing.git_repository import commit_all, git_output, run_git
 from agent_toolkit._testing.managed_temp_support import (
     _install_windows_security_doubles,
     _isolated_cli_environment,
@@ -185,22 +187,42 @@ def test_cleanup_rejects_path_outside_registered_temp(tmp_path: pathlib.Path, ca
     assert "失敗: " in capsys.readouterr().err
 
 
-def test_cleanup_working_copy_preserves_session_evidence(capsys: pytest.CaptureFixture[str]) -> None:
-    """作業用複製を回収しても、後続turnの証拠・引継ぎ・入力とsession登録を保持する。"""
-    parent = subject.create_managed_temp("session", session_id="keep-evidence")
+def test_cleanup_working_copy_preserves_session_evidence(
+    capsys: pytest.CaptureFixture[str],
+    host_environ: Callable[[], dict[str, str]],
+) -> None:
+    """実Git fixtureとcloneの個別登録を回収し、別session本体の証拠・引継ぎ・入力を保持する。"""
+    assert subject.main(["create", "--prefix", "session", "--session-id", "keep-evidence"]) == 0
+    parent = pathlib.Path(capsys.readouterr().out.splitlines()[-1])
+    work_roots = []
+    for prefix in ("git-fixture", "git-clone"):
+        assert subject.main(["create", "--prefix", prefix]) == 0
+        work_roots.append(pathlib.Path(capsys.readouterr().out.splitlines()[-1]))
+    environment = host_environ()
+    fixture = work_roots[0] / "fixture"
+    fixture.mkdir()
+    run_git(fixture, "init", "--quiet", env=environment)
+    (fixture / "source.txt").write_text("再生成可能なfixture", encoding="utf-8")
+    oid = commit_all(fixture, "検証用fixture", env=environment)
+    clone = work_roots[1] / "clone"
+    run_git(work_roots[1], "clone", "--no-local", str(fixture), str(clone), env=environment)
+    assert (fixture / ".git").is_dir() and (clone / ".git").is_dir()
+    assert git_output(clone, "rev-parse", "HEAD", env=environment) == oid
+    assert (clone / "source.txt").read_text(encoding="utf-8") == "再生成可能なfixture"
+    assert {entry["path"] for entry in subject.list_managed_temp()} == {str(parent), *map(str, work_roots)}
+    evidence = {"commit": oid, "fixture": str(fixture), "clone": str(clone), "git_processes_completed": True}
     for name in ("evidence.txt", "handoff.json", "resume.txt"):
-        (parent / name).write_text(name, encoding="utf-8")
-    assert subject.main(["create", "--prefix", "extract", "--session-root", str(parent)]) == 0
-    child = pathlib.Path(capsys.readouterr().out.splitlines()[-1])
-    (child / "copy").mkdir()
-    (child / "copy" / "source.txt").write_text("再生成可能", encoding="utf-8")
+        (parent / name).write_text(json.dumps(evidence), encoding="utf-8")
 
-    assert subject.main(["cleanup", "--path", str(child)]) == 0
-
-    assert not child.exists()
+    # 同期Git呼出しは全て終了済みであり、作業用登録の回収後も別sessionの保存物を読める。
+    for root in work_roots:
+        assert subject.main(["cleanup", "--path", str(root)]) == 0
+        assert not root.exists()
     assert subject.list_managed_temp(session_id="keep-evidence")[0]["path"] == str(parent)
     for name in ("evidence.txt", "handoff.json", "resume.txt"):
-        assert (parent / name).read_text(encoding="utf-8") == name
+        assert json.loads((parent / name).read_text(encoding="utf-8")) == evidence
+    with capsys.disabled():
+        print("S01: " + json.dumps({**evidence, "work_roots_removed": True, "session_preserved": str(parent)}))
 
 
 def test_child_cleanup_resumes_after_isolation(

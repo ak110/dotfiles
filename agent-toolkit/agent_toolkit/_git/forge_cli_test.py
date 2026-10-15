@@ -30,9 +30,21 @@ def test_failure_commands_are_explicit_and_noninteractive(forge: str, job: bool)
             ("env", "GITLAB_API_HOST=gitlab.example.com", "glab", "ci", "trace", "24", "--repo", f"https://{repository}"),
         )
     else:
-        assert commands[0][:5] == ("env", "GITLAB_API_HOST=gitlab.example.com", "glab", "ci", "get")
-        assert commands[0][commands[0].index("-p") + 1] == "24"
-        assert "--status=failed" in commands[0]
+        assert commands[0] == (
+            "env",
+            "GITLAB_API_HOST=gitlab.example.com",
+            "glab",
+            "ci",
+            "get",
+            "--repo",
+            "https://gitlab.example.com/group/repo",
+            "-p",
+            "24",
+            "-d",
+            "--status=failed",
+            "-F",
+            "json",
+        )
         assert commands[1] == (
             "env",
             "GITLAB_API_HOST=gitlab.example.com",
