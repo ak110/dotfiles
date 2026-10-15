@@ -58,10 +58,16 @@ python = true
 # Python 3.15のCIテストは約437秒を要し、省略時の600秒では余裕が小さいため、直下と同じ値を指定する。
 command-timeout = 900
 ty = true
-# 直下は`scripts`と`agent-toolkit/skills/plan-mode/scripts`を探索パスへ加える。
-# 本subprojectからは後者だけがsubproject相対で解決できるため、そのパスだけを加える。
+# 同じスキルのscripts内で共有するモジュールを、このsubprojectのcwd基準で探索する。
 # linked worktreeの祖先にある複製元のprojectより、このcwdの現物とPython 3.15を優先する。
-ty-args = ["check", "--python-version", "3.15", "--extra-search-path", ".", "--output-format", "concise", "--error-on-warning", "--extra-search-path", "skills/plan-mode/scripts"]
+ty-args = [
+    "check", "--python-version", "3.15", "--extra-search-path", ".",
+    "--output-format", "concise", "--error-on-warning",
+    "--extra-search-path", "skills/plan-mode/scripts",
+    "--extra-search-path", "skills/process-wi/scripts",
+    "--extra-search-path", "skills/review-standards/scripts",
+    "--extra-search-path", "skills/session-review/scripts",
+]
 # pyfltrは設定を省略した場合、`ruff-format`で整形する前に`ruff check --fix --unsafe-fixes`を実行する。
 # `make test`で担当範囲外のファイルを自動修正しないよう、直下と同じくlintの自動修正を無効にする。
 ruff-format-by-check = false

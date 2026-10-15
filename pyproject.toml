@@ -122,8 +122,17 @@ python = true
 command-timeout = 900
 ty = true
 # linked worktreeの祖先にある複製元のprojectが選ばれても、対象版と先頭の探索先をこのcwdへそろえる。
-# scripts/・libexec/とagent-toolkit/skills/plan-mode/scripts/のモジュールも解決する。
-ty-args = ["check", "--python-version", "3.15", "--extra-search-path", ".", "--output-format", "concise", "--error-on-warning", "--extra-search-path", "scripts", "--extra-search-path", "libexec", "--extra-search-path", "agent-toolkit/skills/plan-mode/scripts"]
+# CLIスクリプトと、同じスキルのscripts内で共有するモジュールも解決する。
+ty-args = [
+    "check", "--python-version", "3.15", "--extra-search-path", ".",
+    "--output-format", "concise", "--error-on-warning",
+    "--extra-search-path", "scripts",
+    "--extra-search-path", "libexec",
+    "--extra-search-path", "agent-toolkit/skills/plan-mode/scripts",
+    "--extra-search-path", "agent-toolkit/skills/process-wi/scripts",
+    "--extra-search-path", "agent-toolkit/skills/review-standards/scripts",
+    "--extra-search-path", "agent-toolkit/skills/session-review/scripts",
+]
 # pyfltrの設定を変えない場合は`ruff-format`が整形前に`ruff check --fix --unsafe-fixes`を実行する。
 # formatter段は`--no-fix`でも`pyfltr ci`でも対象ファイルを書き換えるため、`--no-fix`だけでは
 # lintの自動修正を止められない。検査だけを行う`make test`が担当範囲外のファイルを
