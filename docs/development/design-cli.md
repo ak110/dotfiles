@@ -202,6 +202,6 @@ WIの表記診断は詳細の全量を別ファイルへ保存し、件数・`�
 
 進捗の変換と表示は`run_skill_progress.py`が持つ。`atk agents logs`の`logs_export.py`が使う`session_record_format.SessionEvent`とClaudeの変換を再利用し、Codex exec固有のitemイベントだけを同じ型へ変換する。保存済みロールアウトを読むlogsと実行中のstdoutを読むrun-skillは入力形式と所有する資源が異なるため、ログファイルの追跡機構は共通化しない。
 
-2026年10月8日の起草記録では、類似見直し観点を「非対話の子セッションを待つコマンド」へ限定し、比較対象にorchestratorとcommitを挙げていた。既存のログ表示との共通化判断は記録になく、受信処理の修正だけで実現性を確定していた。実装では表示側のSessionEventまで比較し、既存変換を共有する構成にした。終了前のPTY観測を両候補・別スキル・正常と異常の終了で行い、表示対象と生診断の境界を検証する。この説明は起草記録を根拠とし、記録されていない思考の有無を含まない。
+子の終了前の表示と端末条件は、[run_skill_test.py](../../agent-toolkit/agent_toolkit/_atk/run_skill_test.py)の`test_tty_progress_arrives_before_child_exits`が、両候補・別スキル・正常終了・異常終了・timeoutを入力に検証する。
 
 却下した案は3つある。cronからAWIを定期投入し`atk wi process-loop`に処理させる案は、ユーザーが単発実行コマンドを選んだため採らない。対話型の`claude`をcronから起動する案は、端末が無いため採らない。Claude Codeのクラウド定期実行は社内のサーバーへ届かない見込みのため採らない（届くかは確かめていない）。
