@@ -148,7 +148,8 @@ def test_bootstrap_executes_from_readonly_root_and_preserves_process_contract(
     (root / "uv.lock").unlink()
     locked = subprocess.run(
         [uv, "lock", "--offline", "--project", str(root)],
-        env=environment,
+        # fixtureの新規生成だけ許可し、bootstrapには呼出元の凍結条件を保つ。
+        env={**environment, "UV_FROZEN": "0"},
         capture_output=True,
         text=True,
         encoding="utf-8",
