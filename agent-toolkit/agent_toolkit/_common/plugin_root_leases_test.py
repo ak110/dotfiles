@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import json
 import pathlib
+import types
+from typing import Any
 
 import pytest
 
@@ -42,3 +44,92 @@ def test_plugin_root_in_use_distinguishes_live_stale_and_unknown(
         in_use = subject.plugin_root_in_use(area)
     assert in_use is (observation != "pid-reused")
     assert records[0].exists() is in_use
+
+
+@pytest.mark.parametrize(
+    "observation",
+    [
+        "live",
+        "other-namespace",
+        "denied",
+        "vanished",
+        "other-user",
+        "zombie",
+        "missing-log",
+        "denied-files",
+        "wrong-log",
+        "starting-wrapper",
+        "non-mcp-account-denied",
+        "non-mcp-status-denied",
+        "foreign-cmdline-denied",
+        "account-and-cmdline-denied",
+        "foreign-cmdline-oserror",
+        "same-account-cmdline-oserror",
+    ],
+)
+@pytest.mark.parametrize("shared", [False, True])
+def test_legacy_plugin_root_cleanup_checks_unregistered_consumers(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    observation: str,
+    shared: bool,
+) -> None:
+    """leaseを持たない旧領域も共通の回収判定で保護し、不在を確定した後に解放する。"""
+    area = tmp_path / ("agents-server-plugin-root-shared-current" if shared else "agents-server-plugin-root-legacy")
+    area.mkdir()
+    (area / "old-version").mkdir()
+    real_process = subject.psutil.Process()
+    state = tmp_path / "other/agent-toolkit" if observation == "other-namespace" else state_paths.state_dir()
+    state.mkdir(parents=True, exist_ok=True)
+    log = state / "agents-server.log"
+    log.touch()
+
+    class LegacyServer:
+        """OSから得る起動引数と、参照不能・終了・別名前空間の境界を供給する。"""
+
+        def username(self) -> str:
+            if observation in {"non-mcp-account-denied", "account-and-cmdline-denied"}:
+                raise subject.psutil.AccessDenied()
+            return (
+                "other-user"
+                if observation in {"other-user", "foreign-cmdline-denied", "foreign-cmdline-oserror"}
+                else real_process.username()
+            )
+
+        def status(self) -> str:
+            if observation == "non-mcp-status-denied":
+                raise subject.psutil.AccessDenied()
+            return subject.psutil.STATUS_ZOMBIE if observation == "zombie" else subject.psutil.STATUS_RUNNING
+
+        def cmdline(self) -> list[str]:
+            if observation in {"foreign-cmdline-oserror", "same-account-cmdline-oserror"}:
+                raise OSError("synthetic process observation failure")
+            if observation in {"denied", "foreign-cmdline-denied", "account-and-cmdline-denied"}:
+                raise subject.psutil.AccessDenied()
+            if observation == "vanished":
+                raise subject.psutil.NoSuchProcess(123)
+            if observation == "starting-wrapper":
+                return ["uv", "run", "--project", str(area / "old-version"), "agent_toolkit/agents_server_mcp.py"]
+            if observation in {"non-mcp-account-denied", "non-mcp-status-denied"}:
+                return ["python", "/unrelated/helper.py"]
+            return ["python", "/removed/source/agent_toolkit/agents_server_mcp.py"]
+
+        def open_files(self) -> list[types.SimpleNamespace]:
+            if observation == "missing-log":
+                return []
+            if observation == "denied-files":
+                raise subject.psutil.AccessDenied()
+            if observation == "wrong-log":
+                return [types.SimpleNamespace(path=str(tmp_path / "arbitrary/agents-server.log"))]
+            return [types.SimpleNamespace(path=str(log))]
+
+    def processes(**_kwargs: Any) -> list[LegacyServer]:
+        return [LegacyServer()]
+
+    monkeypatch.setattr(subject.psutil, "process_iter", processes)
+    protected = (
+        observation in {"denied", "starting-wrapper", "account-and-cmdline-denied", "same-account-cmdline-oserror"}
+        or not shared
+        and observation in {"live", "missing-log", "denied-files", "wrong-log"}
+    )
+    assert subject.plugin_root_in_use(area) is protected

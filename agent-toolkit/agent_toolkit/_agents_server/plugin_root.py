@@ -75,7 +75,11 @@ def _resolve_shared_root(root: Path) -> Path:
     version = json.loads((root / ".claude-plugin" / "plugin.json").read_text(encoding="utf-8"))["version"]
     identity = {"source": str(root.resolve()), "version": version, "root_name": root.name}
     with plugin_root_leases.plugin_root_lock(root):
-        for entry in _managed_temp.list_managed_temp(STABLE_PLUGIN_ROOT_PREFIX):
+        entries = [
+            *_managed_temp.list_managed_temp(STABLE_PLUGIN_ROOT_PREFIX),
+            *_managed_temp.list_managed_temp(plugin_root_leases.SHARED_PLUGIN_ROOT_PREFIX),
+        ]
+        for entry in entries:
             area = Path(entry["path"])
             with plugin_root_leases.plugin_root_lock(area):
                 try:
@@ -86,7 +90,9 @@ def _resolve_shared_root(root: Path) -> Path:
                     continue
                 plugin_root_leases.register_plugin_root_use(area)
                 return area / root.name
-        area = _managed_temp.create_managed_temp(STABLE_PLUGIN_ROOT_PREFIX)
+        # 作成途中も旧形式と区分し、コピー失敗時は同namespaceのMCPが生存中でも回収する。
+        # 完成済みの意味はshared markerに置き、作成中の使用は領域のロックで保護する。
+        area = _managed_temp.create_managed_temp(plugin_root_leases.SHARED_PLUGIN_ROOT_PREFIX)
         destination = Path(area) / root.name
         try:
             with plugin_root_leases.plugin_root_lock(area):

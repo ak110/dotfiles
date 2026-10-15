@@ -1,5 +1,6 @@
 """公式パッケージ排他と安全な削除範囲の結合試験。"""
 
+import errno
 import os
 import pathlib
 import subprocess
@@ -63,13 +64,13 @@ def test_codex_home_alias_preserves_selected_release(monkeypatch: pytest.MonkeyP
     assert not old.exists()
 
 
-@pytest.mark.parametrize("available", [False, True])
+@pytest.mark.parametrize("error_code", [None, 32, 5])
 def test_windows_lock_uses_exclusive_open(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
-    available: bool,
+    error_code: int | None,
 ) -> None:
-    """Win32 APIへ公式と同じ共有不可オープンを渡し、競合時には削除を延期する。"""
+    """共有違反は正常延期し、アクセス拒否は旧版を保持して失敗として返す。"""
     current = _release(tmp_path, "standalone", "0.162.1")
     old = _release(tmp_path, "standalone", "0.150.0")
     (current.parent.parent / "current").symlink_to(current, target_is_directory=True)
@@ -79,7 +80,7 @@ def test_windows_lock_uses_exclusive_open(
 
     def create(*args):
         calls.append(args)
-        return 42 if available else prune_codex_packages.ctypes.c_void_p(-1).value
+        return 42 if error_code is None else prune_codex_packages.ctypes.c_void_p(-1).value
 
     def close(handle):
         closed.append(handle)
@@ -87,12 +88,39 @@ def test_windows_lock_uses_exclusive_open(
 
     kernel = types.SimpleNamespace(CreateFileW=create, CloseHandle=close)
     monkeypatch.setattr(prune_codex_packages.ctypes, "WinDLL", lambda *args, **kwargs: kernel, raising=False)
-    monkeypatch.setattr(prune_codex_packages.ctypes, "get_last_error", lambda: 32, raising=False)
+    monkeypatch.setattr(prune_codex_packages.ctypes, "get_last_error", lambda: error_code, raising=False)
     result = prune_codex_packages.prune(home=tmp_path, windows=True)
     assert calls[0][1:5] == (0xC0000000, 0, None, 4)
-    assert bool(result.deferred) != available
-    assert old.exists() != available
-    assert closed == ([42] if available else [])
+    assert bool(result.deferred) == (error_code == 32)
+    assert bool(result.failures) == (error_code == 5)
+    assert old.exists() == (error_code is not None)
+    assert closed == ([42] if error_code is None else [])
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIXの排他APIの失敗分類を検証する")
+@pytest.mark.parametrize("error_number", [errno.EACCES, errno.EAGAIN, errno.EIO])
+def test_posix_lock_failure_contract(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+    error_number: int,
+) -> None:
+    """非ブロック排他の競合だけを延期し、I/O失敗は保持と失敗を返す。"""
+    import fcntl  # noqa: PLC0415  # pylint: disable=import-outside-toplevel
+
+    current = _release(tmp_path, "standalone", "0.162.1")
+    old = _release(tmp_path, "standalone", "0.150.0")
+    (current.parent.parent / "current").symlink_to(current, target_is_directory=True)
+
+    def fail_lock(*args, **kwargs):
+        del args, kwargs
+        raise OSError(error_number, "lock failure")
+
+    monkeypatch.setattr(fcntl, "flock", fail_lock)
+    monkeypatch.setattr(fcntl, "lockf", fail_lock)
+    result = prune_codex_packages.prune(home=tmp_path)
+    assert old.is_dir()
+    assert bool(result.failures) == (error_number == errno.EIO)
+    assert bool(result.deferred) == (error_number != errno.EIO)
 
 
 @pytest.mark.skipif(os.name != "nt", reason="Windowsの共有不可オープンを実機で検証する")

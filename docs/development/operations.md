@@ -275,7 +275,8 @@ Gitの状態だけで開発ツリーと判定すると、ビルド手段を持�
 `CODEX_HOME`未設定時は`~/.codex`を使う。
 選択中の版と使用中の実行体に対応する版を保持し、使用が終わった旧版は次の実行で回収する。
 公式インストーラーと同じ`install.lock`で排他し、WindowsでCodexが実行中の場合は停止せず整理を延期する。
-選択先や使用中情報を取得できない場合は対象を保持して理由を返し、削除に失敗した場合は非0で終了する。
+Windowsでの実行中と通常の更新排他競合は正常な延期として0で終了する。
+選択先の不良、必要な使用中情報の取得失敗、配置の権限エラーでは対象を保持し、理由と次の操作を示して非0で終了する。削除失敗も非0で終了する。
 案内された原因を解消した後、同じコマンドを再実行する。
 
 整理はCodex本体の導入成功後と、既存の自動更新タイマーの周期に実行する。
@@ -395,7 +396,7 @@ atk run-script session-review-evidence -- --stats <選んだ記録の絶対パ�
   導入時に解決した`uv`の絶対パスとスクリプトの絶対パスを埋め込む。あわせて`Environment=PATH`を指定する
   - `update-dotfiles`が実行ファイル名で起動する`chezmoi`は`~/.local/bin`にあり、PATH指定が無いと1段目で失敗する
   - 指定順は`~/.local/bin`、miseのshims、systemdが設定するPATHとし、実体を持つコマンドをshimより優先する
-- Codexパッケージの整理にも導入時の実効`CODEX_HOME`を渡す。上流変更が無い周期にも整理し、削除失敗はserviceの失敗としてjournalへ残す。延期した旧版は使用終了後の周期か`prune-codex-packages`の再実行で整理する
+- Codexパッケージの整理にも導入時の実効`CODEX_HOME`を渡す。上流変更が無い周期にも整理し、選択先や必要情報の不良と削除失敗はserviceの失敗としてjournalへ残す。延期した旧版は使用終了後の周期か`prune-codex-packages`の再実行で整理する
 - GitHubへの接続失敗、対象refの欠落、branchまたはupstreamの不一致、`update-dotfiles`の失敗は非ゼロ終了となり、
   systemdのjournalへ残る。次回のタイマー起動で再試行する
 - dotfilesの作業ツリーの未コミット差分は、`update-dotfiles`がpullの前に退避して後に復元する。ルート`mise.lock`の差分は保持せず破棄する。

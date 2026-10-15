@@ -77,6 +77,8 @@ process-loop、レーン操作と配布物保持が共有する状態は、前�
 | 同じ配布元・版から共有する完成済み配布物 | managed-tempの保持領域直下の`.agent-toolkit-plugin-root.json` | `_agents_server/plugin_root.py`の起動・再利用 | コピーする起動側が配布元・版・root名を保存する。内側MCPも同じ完成済み実体を使い、回収側は前行の使用記録を検収する |
 | セッション配下の作業用領域の回収再開情報 | `managed-temp/`配下の`.child-cleanup`ファイル | `atk managed-temp cleanup` | `_atk/managed_temp/inventory.py`。親の登録と対象identityを検収して回収し、途中失敗の情報を次回の同じ操作へ渡す。保存証拠を持つ親領域を保持する |
 
+使用記録のない保持領域の回収では、`_common/plugin_root_leases.py`がOSの起動引数と開いている既存診断ログへの参照も読む。旧形式は同じOSアカウント・状態名前空間のMCPと帰属不明の候補を保持し、候補の不在を確認した後に回収へ進める。旧形式・新形式とも、lease登録前に保持先を直接参照する公開MCPランチャーを保護する。新規の作成には`agents-server-plugin-root-shared`のprefixを使い、旧形式の列挙互換と完成済みmarkerの契約を保つ。
+
 `_common/session_parents.py`と`_common/session_activity.py`は前表のsession登録簿を読み、保存済みの委譲元とプロセス識別を活動判定に使う。
 MCPサーバーのSessionStateとsession登録簿の更新は、両モジュールの対象外である。
 

@@ -4,6 +4,7 @@ import collections.abc
 import contextlib
 import ctypes
 import dataclasses
+import errno
 import json
 import logging
 import os
@@ -36,7 +37,7 @@ class PruneResult:
 
 
 class _DeferredError(RuntimeError):
-    """使用版の保護に必要な情報または排他を取得できない。"""
+    """更新との排他競合またはWindowsの実行中判定により次回へ延期する。"""
 
 
 def codex_home() -> pathlib.Path:
@@ -46,25 +47,29 @@ def codex_home() -> pathlib.Path:
 
 
 def prune(*, home: pathlib.Path | None = None, windows: bool | None = None, dry_run: bool = False) -> PruneResult:
-    """両パッケージを公式排他の内側で整理する。延期は再実行可能な成功、削除失敗はfailureとする。"""
+    """両パッケージを公式排他の内側で整理し、運用不良をfailureとして返す。"""
     result = PruneResult()
     packages = (home if home is not None else codex_home()).absolute() / "packages"
     windows = sys.platform == "win32" if windows is None else windows
     for name in _PACKAGES:
         root = packages / name
         try:
-            if not root.exists():
+            try:
+                root.stat()
+            except FileNotFoundError:
                 if root.is_symlink():
-                    raise _DeferredError("パッケージのリンク先が不在")
+                    raise ValueError("パッケージのリンク先が不在") from None
                 continue
             if any(path.is_symlink() or path.is_junction() for path in (packages, root, root / "releases")):
-                raise _DeferredError("パッケージ配置が外部へのリンク")
+                raise ValueError("パッケージ配置が外部へのリンク")
             # CODEX_HOME自体がリンクの場合も、列挙と選択先を同じ実体パスで比較する。
             root = root.resolve(strict=True)
             with _install_lock(root, windows=windows):
                 _prune_package(root, result, windows=windows, dry_run=dry_run)
-        except (_DeferredError, OSError, UnicodeError, psutil.Error) as error:
+        except _DeferredError as error:
             result.deferred.append(f"{root}: {error}。{_NEXT_ACTION}")
+        except (ValueError, OSError, psutil.Error) as error:
+            result.failures.append(f"{root}の整理に失敗: {type(error).__name__}: {error}")
     return result
 
 
@@ -92,7 +97,7 @@ def _prune_package(root: pathlib.Path, result: PruneResult, *, windows: bool, dr
         raise _DeferredError("Codex実行中。Codexを終了して次回に整理する")
     for process in identified:
         if not process.executable:
-            raise _DeferredError(f"Codexの実行パスを取得できない (pid {process.pid})")
+            raise ValueError(f"Codexの実行パスを取得できない (pid {process.pid})")
         # Linuxの/procは削除済み実行体に接尾辞を付ける。実際に動く旧版へ対応付ける。
         executable = pathlib.Path(process.executable.removesuffix(" (deleted)"))
         try:
@@ -128,13 +133,13 @@ def _selected_releases(root: pathlib.Path) -> dict[pathlib.Path, list[str]]:
             path.lstat()
         except FileNotFoundError:
             if name == "current":
-                raise _DeferredError("currentが不在。公式導入をupdate-dotfilesで修復する") from None
+                raise ValueError("currentが不在。公式導入をupdate-dotfilesで修復する") from None
             continue
         target = path.resolve(strict=True)
         if target.parent != releases or not target.is_dir():
-            raise _DeferredError(f"{name}の選択先がreleases直下のディレクトリではない")
+            raise ValueError(f"{name}の選択先がreleases直下のディレクトリではない")
         if not _complete_release(target, package=root.name):
-            raise _DeferredError(f"{name}の選択先が不完全。update-dotfilesで公式導入を修復する")
+            raise ValueError(f"{name}の選択先が不完全。update-dotfilesで公式導入を修復する")
         retained.setdefault(target, []).append(name)
     marker = root / "auto-update-version"
     try:
@@ -142,12 +147,12 @@ def _selected_releases(root: pathlib.Path) -> dict[pathlib.Path, list[str]]:
     except FileNotFoundError:
         return retained
     if not value or pathlib.PurePath(value).name != value or "\\" in value or value in {".", ".."}:
-        raise _DeferredError("auto-update-versionの選択先が不正")
+        raise ValueError("auto-update-versionの選択先が不正")
     target = releases / value
     if not target.is_dir() or target.is_symlink():
-        raise _DeferredError("auto-update-versionの選択先が不在またはリンク")
+        raise ValueError("auto-update-versionの選択先が不在またはリンク")
     if not _complete_release(target, package=root.name):
-        raise _DeferredError("auto-update-versionの選択先が不完全。update-dotfilesで公式導入を修復する")
+        raise ValueError("auto-update-versionの選択先が不完全。update-dotfilesで公式導入を修復する")
     retained.setdefault(target, []).append("auto-update-version")
     return retained
 
@@ -192,8 +197,11 @@ def _complete_release(release: pathlib.Path, *, package: str) -> bool:
 def _install_lock(root: pathlib.Path, *, windows: bool) -> collections.abc.Generator[None]:
     """公式install.lockを共有不可オープンまたはflockで保持する。"""
     path = root / "install.lock"
-    if path.is_symlink() or (root / "install.lock.d").exists():
-        raise _DeferredError("公式install.lockが使用中またはリンク")
+    directory_lock = root / "install.lock.d"
+    if any(candidate.is_symlink() or candidate.is_junction() for candidate in (path, directory_lock)):
+        raise ValueError("公式install.lockまたはinstall.lock.dがリンク")
+    if directory_lock.exists():
+        raise _DeferredError("公式install.lock.dが使用中")
     if windows:
         # 公式install.ps1のFileShare.Noneと同じ共有モードを指定する。
         # Linuxのctypes型情報にないWindows専用APIは、このOS分岐内で使用する。
@@ -216,7 +224,9 @@ def _install_lock(root: pathlib.Path, *, windows: bool) -> collections.abc.Gener
         if handle == ctypes.c_void_p(-1).value:
             # pylint: disable-next=no-member
             error = ctypes.get_last_error()  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
-            raise _DeferredError(f"公式install.lockを取得できない (Windows error {error})")
+            if error == 32:  # CreateFileWのERROR_SHARING_VIOLATION。
+                raise _DeferredError("公式install.lockが使用中")
+            raise OSError(f"公式install.lockを取得できない (Windows error {error})")
         close = kernel32.CloseHandle
         close.argtypes = [ctypes.c_void_p]
         close.restype = ctypes.c_int
@@ -229,5 +239,11 @@ def _install_lock(root: pathlib.Path, *, windows: bool) -> collections.abc.Gener
 
         with path.open("a+b") as lock:
             lock_operation = fcntl.lockf if sys.platform == "darwin" and shutil.which("lockf") else fcntl.flock
-            lock_operation(lock.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+            try:
+                lock_operation(lock.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except OSError as error:
+                # fcntlのLOCK_NBはOSに応じてEACCESまたはEAGAINで競合を返す。
+                if error.errno in {errno.EACCES, errno.EAGAIN}:
+                    raise _DeferredError("公式install.lockが使用中") from error
+                raise
             yield

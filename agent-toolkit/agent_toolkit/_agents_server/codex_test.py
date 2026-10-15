@@ -879,20 +879,8 @@ def _lease_plugin_source(base: pathlib.Path, version: str = "1.0.0") -> pathlib.
     return root
 
 
-@pytest.mark.asyncio
-@pytest.mark.usefixtures("share_package_caches")
-async def test_stable_plugin_root_shared_across_processes(
-    tmp_path: pathlib.Path,
-    host_environ: Callable[[], dict[str, str]],
-) -> None:
-    """外側2台と保持先起動の実MCPが配布物を共有し、元版の更新・削除後も応答して終了後に回収できる。"""
-    plugin = pathlib.Path(__file__).resolve().parents[2]
-    manifest = json.loads((plugin / ".claude-plugin" / "plugin.json").read_text(encoding="utf-8"))
-    version = manifest["version"]
-    source = tmp_path / "distribution" / version
-    shutil.copytree(plugin, source, ignore=shutil.ignore_patterns(".venv", "__pycache__", ".git", "node_modules"))
-    version_file = pathlib.Path("skills/managed-temp/SKILL.md")
-    original = (source / version_file).read_bytes()
+def _real_mcp_environment(tmp_path: pathlib.Path, host_environ: Callable[[], dict[str, str]]) -> dict[str, str]:
+    """公開ランチャー用のホーム・状態を隔離し、ホストのPythonと取得済みパッケージを使う。"""
     environment = host_environ()
     for name in HOME_ENVIRONMENT_NAMES:
         environment[name] = str(tmp_path / "home")
@@ -910,6 +898,45 @@ async def test_stable_plugin_root_shared_across_processes(
     environment.update(UV_NO_MANAGED_PYTHON="1", UV_PYTHON_DOWNLOADS="never", UV_LINK_MODE="copy")
     for name in ("PYTHONPATH", "VIRTUAL_ENV", "UV_PROJECT_ENVIRONMENT"):
         environment.pop(name, None)
+    return environment
+
+
+def _wait_mcp_processes(owned: dict[int, psutil.Process], *, timeout: float = 3) -> None:
+    """所有プロセスの終端を待ち、PID待機が失敗した場合は同じidentityの生存を再確認する。"""
+    try:
+        _, alive = psutil.wait_procs(list(owned.values()), timeout=timeout)
+    except OSError as error:
+        # pidfd_openが終了済みPIDでEINVALを返した実観測への対処。
+        # 生存と取得不能は失敗を保ち、終了を確認した場合だけ待機失敗から進める。
+        alive = []
+        for process in owned.values():
+            try:
+                if process.is_running() and process.status() != psutil.STATUS_ZOMBIE:
+                    alive.append(process)
+            except psutil.NoSuchProcess:
+                continue
+        if alive:
+            raise
+        print(f"MCP終了の再確認: wait_error={error}; 全所有identityの生存なし")
+    assert not alive, [process.pid for process in alive]
+
+
+@pytest.mark.asyncio
+@pytest.mark.usefixtures("share_package_caches")
+async def test_stable_plugin_root_shared_across_processes(
+    tmp_path: pathlib.Path,
+    host_environ: Callable[[], dict[str, str]],
+) -> None:
+    """外側2台と保持先起動の実MCPが配布物を共有し、元版の更新・削除後も応答して終了後に回収できる。"""
+    plugin = pathlib.Path(__file__).resolve().parents[2]
+    manifest = json.loads((plugin / ".claude-plugin" / "plugin.json").read_text(encoding="utf-8"))
+    version = manifest["version"]
+    source = tmp_path / "distribution" / version
+    shutil.copytree(plugin, source, ignore=shutil.ignore_patterns(".venv", "__pycache__", ".git", "node_modules"))
+    version_file = pathlib.Path("skills/managed-temp/SKILL.md")
+    original = (source / version_file).read_bytes()
+    environment = _real_mcp_environment(tmp_path, host_environ)
+    state_base = tmp_path / "runtime-state"
     uv = shutil.which("uv", path=environment["PATH"])
     assert uv is not None
     lease_directory = state_base / "agent-toolkit/plugin-root-leases"
@@ -918,6 +945,7 @@ async def test_stable_plugin_root_shared_across_processes(
     logs: list[pathlib.Path] = []
     observed: list[dict[str, Any]] = []
     area: pathlib.Path | None = None
+    expected_tools = {"start", "send_message", "kill", "stop", "list", "show"}
     try:
         with contextlib.ExitStack() as files, anyio.fail_after(45):
             async with contextlib.AsyncExitStack() as stack:
@@ -934,7 +962,7 @@ async def test_stable_plugin_root_shared_across_processes(
                     initialized = await client.initialize()
                     assert initialized.server_info.name == "agents_server"
                     tools = {tool.name for tool in (await client.list_tools()).tools}
-                    assert tools == {"start", "send_message", "kill", "stop", "list", "show"}
+                    assert tools == expected_tools
                     clients.append(client)
                     leases = [json.loads(path.read_text(encoding="utf-8")) for path in lease_directory.glob("*.json")]
                     assert len(leases) == index + 1
@@ -958,7 +986,7 @@ async def test_stable_plugin_root_shared_across_processes(
                         (source / version_file).write_text("更新された配布元", encoding="utf-8")
                         assert (held / version_file).read_bytes() == original
                         for client in clients:
-                            assert {tool.name for tool in (await client.list_tools()).tools} == tools
+                            assert {tool.name for tool in (await client.list_tools()).tools} == expected_tools
                         shutil.rmtree(source)
                         assert not source.exists()
                         for target in (area, held):
@@ -980,14 +1008,14 @@ async def test_stable_plugin_root_shared_across_processes(
                             )
                             assert protected.returncode == 2, protected.stderr
                 for client in clients:
-                    assert {tool.name for tool in (await client.list_tools()).tools} == tools
+                    assert {tool.name for tool in (await client.list_tools()).tools} == expected_tools
                     listed = await client.call_tool("list", {})
                     assert not listed.is_error
                     assert listed.structured_content is not None and listed.structured_content["sessions"] == []
-                assert (held / version_file).read_bytes() == original
+                assert area is not None
+                assert (area / version / version_file).read_bytes() == original
     finally:
-        _, alive = psutil.wait_procs(list(owned.values()), timeout=3)
-        assert not alive, [process.pid for process in alive]
+        _wait_mcp_processes(owned)
         for log in logs:
             print(f"S02 MCP診断 {log.name}:\n" + log.read_text(encoding="utf-8"))
     assert area is not None
@@ -1005,9 +1033,165 @@ async def test_stable_plugin_root_shared_across_processes(
     print("S02: " + json.dumps({"observed": observed, "terminated_processes": sorted(owned), "root_removed": str(area)}))
 
 
-def test_copy_failure_is_not_reused(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """コピー途中の失敗物を回収し、次の解決では完成した実体を使用する。"""
+# 90cad03ac601a24107d34758748f1d022ed5342cのplugin_root.pyにある、版別rootの
+# 正常系の保持生成を固定するfixture。旧版と同じprefix/copytree/除外/cacheを使い、
+# leaseと共有markerを生成しない。版判定と失敗時fallbackはこの試験の対象外。
+# MCP本体・公開launcher・managed-temp・診断ログは現行のpluginコピーを使う。
+_LEGACY_PLUGIN_ROOT_SOURCE = '''"""旧形式の正常系保持生成を実MCPへ提供する試験fixture。"""
+from pathlib import Path
+import shutil
+from agent_toolkit._atk import managed_temp
+
+STABLE_PLUGIN_ROOT_PREFIX = "agents-server-plugin-root"
+STABLE_PLUGIN_ROOT_EXCLUDED = (".venv", "__pycache__", ".git")
+_stable_plugin_roots = {}
+
+def resolve_stable_plugin_root(plugin_root=None):
+    root = Path(__file__).resolve().parents[2] if plugin_root is None else plugin_root
+    if root not in _stable_plugin_roots:
+        area = managed_temp.create_managed_temp(STABLE_PLUGIN_ROOT_PREFIX)
+        destination = Path(area) / root.name
+        shutil.copytree(
+            root, destination,
+            ignore=shutil.ignore_patterns(*STABLE_PLUGIN_ROOT_EXCLUDED), symlinks=True,
+        )
+        _stable_plugin_roots[root] = destination
+    return _stable_plugin_roots[root]
+
+SERVER_PLUGIN_ROOT = resolve_stable_plugin_root()
+'''
+
+
+@pytest.mark.asyncio
+@pytest.mark.usefixtures("share_package_caches")
+async def test_legacy_plugin_root_real_mcp_lifecycle(
+    tmp_path: pathlib.Path,
+    host_environ: Callable[[], dict[str, str]],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """旧形式の生成fixtureを使う実MCPをOS越しに保護し、全終了後の同じ公開cleanupで回収する。"""
+    plugin = pathlib.Path(__file__).resolve().parents[2]
+    version = json.loads((plugin / ".claude-plugin/plugin.json").read_text(encoding="utf-8"))["version"]
+    source = tmp_path / "legacy-distribution" / version
+    shutil.copytree(plugin, source, ignore=shutil.ignore_patterns(".venv", "__pycache__", ".git", "node_modules"))
+    (source / "agent_toolkit/_agents_server/plugin_root.py").write_text(_LEGACY_PLUGIN_ROOT_SOURCE, encoding="utf-8")
+    environment = _real_mcp_environment(tmp_path, host_environ)
+    uv = shutil.which("uv", path=environment["PATH"])
+    assert uv is not None
+    command = plugin_environment.launch_command(source, pathlib.Path("agent_toolkit/agents_server_mcp.py"))
+    log = tmp_path / "legacy-mcp.stderr"
+    owned: dict[int, psutil.Process] = {}
+    observation: dict[str, Any] = {}
+    area: pathlib.Path | None = None
+
+    def cleanup(target: pathlib.Path) -> subprocess.CompletedProcess[str]:
+        return subprocess.run(
+            [sys.executable, str(plugin / "agent_toolkit/_managed_temp.py"), "cleanup", "--path", str(target)],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            env=environment,
+            timeout=15,
+            check=False,
+        )
+
+    try:
+        with log.open("w", encoding="utf-8") as errors, anyio.fail_after(45):
+            async with contextlib.AsyncExitStack() as stack:
+                streams = await stack.enter_async_context(
+                    stdio_client(StdioServerParameters(command=uv, args=command[1:], env=environment), errlog=errors)
+                )
+                client = await stack.enter_async_context(ClientSession(*streams))
+                initialized = await client.initialize()
+                assert initialized.server_info.name == "agents_server"
+                tools = {tool.name for tool in (await client.list_tools()).tools}
+                assert "start" in tools
+                entrypoint = source / "agent_toolkit/agents_server_mcp.py"
+                servers = []
+                for process in psutil.Process().children(recursive=True):
+                    arguments = process.cmdline()
+                    if len(arguments) > 1 and pathlib.Path(arguments[1]) == entrypoint:
+                        servers.append(process)
+                        ancestors = process.parents()
+                        parent_index = next(i for i, parent in enumerate(ancestors) if parent.pid == os.getpid())
+                        for member in (process, *ancestors[:parent_index]):
+                            owned[member.pid] = member
+                assert len(servers) == 1
+                server = servers[0]
+                cache_base = "LOCALAPPDATA" if sys.platform == "win32" else "XDG_CACHE_HOME"
+                temp_root = pathlib.Path(environment[cache_base]) / "agent-toolkit/managed-temp"
+                areas = list(temp_root.glob("agents-server-plugin-root-*"))
+                assert len(areas) == 1
+                area = areas[0]
+                assert (area / version / "agent_toolkit/agents_server_mcp.py").is_file()
+                assert not (area / ".agent-toolkit-plugin-root.json").exists()
+                leases = tmp_path / "runtime-state/agent-toolkit/plugin-root-leases"
+                assert not list(leases.glob("*.json"))
+                arguments = server.cmdline()
+                assert pathlib.Path(arguments[1]).parts[-2:] == ("agent_toolkit", "agents_server_mcp.py")
+                assert not pathlib.Path(arguments[1]).is_relative_to(area)
+                assert server.username() == psutil.Process().username()
+                try:
+                    opened = [entry._asdict() for entry in server.open_files()]
+                    open_files_error = None
+                except psutil.Error as error:
+                    opened = []
+                    open_files_error = type(error).__name__
+                # 実MCPを1台に限定したOS観測でも共通判定へ届くことを確認する。
+                # インベントリーの対象だけを限定し、PID/argv/username/open_filesは実OSから得る。
+                with monkeypatch.context() as probe:
+                    probe.setattr(psutil, "process_iter", lambda: [server])
+                    probe.setattr(state_paths, "state_dir", lambda: leases.parent)
+                    with plugin_roots.plugin_root_leases.plugin_root_lock(area):
+                        assert plugin_roots.plugin_root_leases.plugin_root_in_use(area)
+                protected = cleanup(area)
+                assert protected.returncode == 2, protected.stderr
+                assert area.exists()
+                assert "使用中または使用状態を確認できない配布物を保持した" in protected.stderr
+                assert {tool.name for tool in (await client.list_tools()).tools} == tools
+                observation = {
+                    "fixture_origin": "90cad03:plugin_root.pyの版別root正常系保持生成",
+                    "runtime": "現行MCPと現行launcher。旧版全体の再実行には当たらない",
+                    "platform": sys.platform,
+                    "pid": server.pid,
+                    "created_at": server.create_time(),
+                    "cmdline": arguments,
+                    "open_files": opened,
+                    "open_files_error": open_files_error,
+                    "single_real_process_probe": True,
+                    "source": str(source),
+                    "area": str(area),
+                    "live_cleanup": {"exit_code": protected.returncode, "stdout": protected.stdout, "stderr": protected.stderr},
+                }
+    finally:
+        _wait_mcp_processes(owned, timeout=5)
+        print("旧形式MCP診断:\n" + log.read_text(encoding="utf-8"))
+    assert area is not None
+    cleaned = cleanup(area)
+    assert cleaned.returncode == 0, cleaned.stderr
+    assert not area.exists()
+    observation.update(
+        terminated_processes=sorted(owned),
+        stopped_cleanup={"exit_code": cleaned.returncode, "stdout": cleaned.stdout, "stderr": cleaned.stderr},
+        root_removed=True,
+    )
+    print("旧形式MCP観測: " + json.dumps(observation, ensure_ascii=False))
+
+
+@pytest.mark.parametrize("legacy_server_present", [False, True])
+def test_copy_failure_is_not_reused(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, legacy_server_present: bool
+) -> None:
+    """同namespaceの旧MCPが生存する場合も、失敗物を回収して次の解決で完成した実体を使用する。"""
     source = _lease_plugin_source(tmp_path / "broken")
+    if legacy_server_present:
+        process = psutil.Process()
+        log = state_paths.state_dir() / "agents-server.log"
+        log.parent.mkdir(parents=True, exist_ok=True)
+        log.touch()
+        monkeypatch.setattr(process, "cmdline", lambda: ["python", "/old/agent_toolkit/agents_server_mcp.py"])
+        monkeypatch.setattr(process, "open_files", lambda: [SimpleNamespace(path=str(log))])
+        monkeypatch.setattr(psutil, "process_iter", lambda: [process])
 
     def fail_copy(_src: pathlib.Path, dst: pathlib.Path, **_kwargs: object) -> None:
         dst.mkdir()
@@ -1017,7 +1201,7 @@ def test_copy_failure_is_not_reused(tmp_path: pathlib.Path, monkeypatch: pytest.
     with monkeypatch.context() as patch:
         patch.setattr(shutil, "copytree", fail_copy)
         assert plugin_roots.resolve_stable_plugin_root(source) == source
-    assert not managed_temp.list_managed_temp("agents-server-plugin-root")
+    assert not managed_temp.list_managed_temp()
     resolved = plugin_roots.resolve_stable_plugin_root(source)
     assert resolved != source
     assert (resolved / "payload.txt").read_text(encoding="utf-8") == "起動した版"

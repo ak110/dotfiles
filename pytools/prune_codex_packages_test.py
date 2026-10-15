@@ -91,7 +91,21 @@ def test_cli_retains_selected_and_live_releases(
 
 @pytest.mark.parametrize(
     "condition",
-    ["broken-selection", "incomplete-selection", "missing-exe", "scan-error", "delete-error", "lock", "unrelated-unknown"],
+    [
+        "broken-selection",
+        "missing-current",
+        "incomplete-selection",
+        "broken-migration",
+        "invalid-auto-version",
+        "unicode-auto-version",
+        "missing-exe",
+        "scan-error",
+        "delete-error",
+        "lock-link",
+        "lock-open-error",
+        "lock",
+        "unrelated-unknown",
+    ],
 )
 def test_cli_failure_and_deferral_contracts(
     monkeypatch: pytest.MonkeyPatch,
@@ -99,7 +113,7 @@ def test_cli_failure_and_deferral_contracts(
     capsys: pytest.CaptureFixture[str],
     condition: str,
 ) -> None:
-    """取得不能と排他競合では保持し、削除失敗だけを非0として再実行へ渡す。"""
+    """運用不良は保持してCLIと後処理へ失敗を渡し、更新競合は正常延期する。"""
     monkeypatch.setenv("CODEX_HOME", str(tmp_path))
     root = tmp_path / "packages" / "standalone"
     current = _release(tmp_path, "standalone", "0.162.1")
@@ -109,8 +123,16 @@ def test_cli_failure_and_deferral_contracts(
     if condition == "broken-selection":
         (root / "current").unlink()
         (root / "current").symlink_to(root / "missing", target_is_directory=True)
+    elif condition == "missing-current":
+        (root / "current").unlink()
     elif condition == "incomplete-selection":
         (current / "bin" / "codex").unlink()
+    elif condition == "broken-migration":
+        (root / ".migration-current").symlink_to(root / "missing", target_is_directory=True)
+    elif condition == "invalid-auto-version":
+        (root / "auto-update-version").write_text("../outside", encoding="utf-8")
+    elif condition == "unicode-auto-version":
+        (root / "auto-update-version").write_bytes(b"\xff")
     elif condition == "missing-exe":
         monkeypatch.setattr(codex_processes, "codex_processes", lambda: (codex_processes.CodexProcess(1, "codex", "session"),))
     elif condition == "scan-error":
@@ -128,15 +150,43 @@ def test_cli_failure_and_deferral_contracts(
         monkeypatch.setattr(prune_codex_packages.shutil, "rmtree", fail_remove)
     elif condition == "lock":
         (root / "install.lock.d").mkdir()
+    elif condition == "lock-link":
+        (root / "install.lock").symlink_to(root / "missing")
+    elif condition == "lock-open-error":
+        original_open = pathlib.Path.open
+
+        def fail_open(path, *args, **kwargs):
+            if path == root / "install.lock":
+                raise PermissionError(13, "denied", str(path))
+            return original_open(path, *args, **kwargs)
+
+        monkeypatch.setattr(pathlib.Path, "open", fail_open)
     else:
         monkeypatch.setattr(
             codex_processes, "codex_processes", lambda: (codex_processes.CodexProcess(1, "pid 1", "session", None, False),)
         )
-    assert cli.main([]) == (1 if condition == "delete-error" else 0)
+    failed = condition not in {"lock", "unrelated-unknown"}
+    assert cli.main([]) == int(failed)
     assert current.is_dir()
     assert old.exists() == (condition != "unrelated-unknown")
     if condition != "unrelated-unknown":
-        assert "prune-codex-packages" in capsys.readouterr().err
+        error = capsys.readouterr().err
+        assert str(root) in error
+        assert "prune-codex-packages" in error
+        assert ("整理を延期" in error) == (condition == "lock")
+    outcome = prune_codex_packages.run()
+    assert bool(outcome.failure) == failed
+    assert bool(outcome.next_action) == failed
+    if failed:
+        assert str(root) in (outcome.failure or "")
+        assert "prune-codex-packages" in (outcome.next_action or "")
+
+
+def test_absent_packages_succeed(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
+    """未導入の正常な空集合はCLIと後処理の成功として返す。"""
+    monkeypatch.setenv("CODEX_HOME", str(tmp_path))
+    assert cli.main([]) == 0
+    assert not prune_codex_packages.run().failure
 
 
 def test_help_preserves_packages(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:

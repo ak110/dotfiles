@@ -213,9 +213,13 @@ jobs:
         shell: pwsh
         working-directory: ${{ env.DOTFILES_DIR }}
         run: >-
-          uv run --python 3.15 pytest -q
+          uv run --python 3.15 pytest -v
           post_apply_template_test.py
+          pytools/_internal/prune_codex_packages_test.py
+          pytools/prune_codex_packages_test.py
           agent-toolkit/agent_toolkit/_atk/managed_temp
+          agent-toolkit/agent_toolkit/_common/plugin_root_leases_test.py
+          agent-toolkit/agent_toolkit/_agents_server/codex_test.py::test_legacy_plugin_root_real_mcp_lifecycle
           agent-toolkit/agent_toolkit/_hooks/permissionrequest_codex_test.py
           agent-toolkit/agent_toolkit/_plan/structure
           agent-toolkit/skills/review-standards/scripts/check_exec_review_evidence_test.py::test_public_command_reads_wi_in_process

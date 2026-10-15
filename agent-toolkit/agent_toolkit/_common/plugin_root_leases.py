@@ -13,6 +13,8 @@ import psutil
 
 from agent_toolkit._common import file_lock, state_paths
 
+SHARED_PLUGIN_ROOT_PREFIX = "agents-server-plugin-root-shared"
+
 
 def _key(path: Path) -> str:
     return hashlib.sha256(os.fsencode(os.path.normcase(os.path.abspath(path)))).hexdigest()
@@ -72,4 +74,67 @@ def plugin_root_in_use(area: Path) -> bool:
             path.unlink()
         except OSError, ValueError, psutil.Error:
             return True
+    # lease導入前のMCPは、コピー先と起動元の対応を永続化していない。
+    # 同じ状態名前空間のMCPが残る間、その帰属が曖昧な旧領域を保持する。
+    if not area.name.startswith("agents-server-plugin-root-"):
+        return False
+    allow_unattributed = (
+        not area.name.startswith(f"{SHARED_PLUGIN_ROOT_PREFIX}-") and not (area / ".agent-toolkit-plugin-root.json").exists()
+    )
+    return _server_may_use_root(area, allow_unattributed=allow_unattributed)
+
+
+def _server_namespace_may_match(process: psutil.Process) -> bool:
+    """実MCPが開いている既存診断ログから保存先を確認し、欠損時は保持する。"""
+    # logging_config.configure_loggingがstate_dir直下へ開く永続ログを使う。
+    # process.environは起動後の変更を反映しないOSがあるため判定に使わない。
+    logs = [
+        Path(record.path)
+        for record in process.open_files()
+        if Path(record.path).parts[-2:] == ("agent-toolkit", "agents-server.log")
+    ]
+    if len(logs) != 1 or not logs[0].is_file():
+        return True
+    return logs[0].parent.samefile(state_paths.state_dir())
+
+
+def _server_may_use_root(area: Path, *, allow_unattributed: bool) -> bool:
+    """同じOSアカウント・状態名前空間のMCPをOSの起動引数と参照から探す。"""
+    try:
+        username = psutil.Process().username()
+        for process in psutil.process_iter():
+            try:
+                try:
+                    arguments = process.cmdline()
+                except psutil.NoSuchProcess:
+                    continue
+                except OSError, ValueError, psutil.Error:
+                    arguments = None
+                if arguments is not None and not any(
+                    Path(argument).parts[-2:] == ("agent_toolkit", "agents_server_mcp.py") for argument in arguments
+                ):
+                    continue
+                if process.username() != username or process.status() == psutil.STATUS_ZOMBIE:
+                    continue
+                if arguments is None:
+                    return True
+                # 内側MCPのlease登録前も、公開launcherが直接参照する保持先を保護する。
+                # cleanupの--pathは、MCP targetを持たないためこの候補集合へ入らない。
+                if any(Path(argument).is_absolute() and Path(argument).is_relative_to(area) for argument in arguments):
+                    return True
+                # 公開launcherのuv親と、スクリプトを実行するPythonを区分する。
+                if (
+                    not allow_unattributed
+                    or len(arguments) < 2
+                    or Path(arguments[1]).parts[-2:] != ("agent_toolkit", "agents_server_mcp.py")
+                ):
+                    continue
+                if _server_namespace_may_match(process):
+                    return True
+            except psutil.NoSuchProcess:
+                continue
+            except psutil.Error:
+                return True
+    except OSError, ValueError, psutil.Error:
+        return True
     return False
