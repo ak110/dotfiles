@@ -75,6 +75,17 @@ def _pyfltr_completion_failure(command: PlannedCommand, record: dict) -> str | N
     return None
 
 
+def _summary(payload: dict) -> dict:
+    """保存した詳細の所在と、実行順の結果一覧を返す。"""
+    return {
+        **{key: value for key, value in payload.items() if key != "results"},
+        "results": [
+            {key: row[key] for key in ("order", "command", "state", "exit_code", "record_path", "failure")}
+            for row in payload["results"]
+        ],
+    }
+
+
 def main(argv: list[str] | None = None) -> int:
     """全入力を起動前に確かめ、列挙か保存付きの実行結果を返す。"""
     parser = argparse.ArgumentParser(description=__doc__)
@@ -88,6 +99,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--worktree", type=pathlib.Path, metavar="DIR", required=True, help="検証するGit worktreeの絶対パス")
     parser.add_argument("--timeout", type=float, required=True, help="各検証の正の有限上限秒数")
     parser.add_argument("--list", action="store_true", help="子を起動せずコマンドとargvを列挙する")
+    parser.add_argument("--summary-only", action="store_true", help="詳細を保存し、実行結果の一覧と保存先を表示する")
     parser.add_argument(
         "--records-output",
         type=pathlib.Path,
@@ -165,14 +177,18 @@ def main(argv: list[str] | None = None) -> int:
         atomic_write(output, json.dumps(payload, ensure_ascii=False) + "\n")
     except (OSError, managed_temp.ManagedTempError) as error:
         next_action.report(str(error), next_action="各実行の保存先を保持し、結果の保存先を直して記録を回復する")
-        print(
-            json.dumps(
-                {"results": results, "records": [row["record_path"] for row in results if row["record_path"]]},
-                ensure_ascii=False,
+        recovery: dict = {"results": results, "records": [row["record_path"] for row in results if row["record_path"]]}
+        if args.summary_only:
+            recovery = _summary(recovery)
+            recovery.update(
+                results_path=None,
+                unrecorded=[row["order"] for row in results if row["record_path"] is None],
+                # 個別記録も保存できなかった行は、実行条件と両出力の所在をこの返却から回復する。
+                recovery=[row for row in results if row["record_path"] is None],
             )
-        )
+        print(json.dumps(recovery, ensure_ascii=False))
         return 2
-    print(json.dumps(payload, ensure_ascii=False))
+    print(json.dumps(_summary(payload) if args.summary_only else payload, ensure_ascii=False))
     return int(failed)
 
 

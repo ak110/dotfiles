@@ -25,7 +25,7 @@ def test_gitlab_pipeline_list_includes_same_project_downstream(monkeypatch) -> N
     ]
     commands: list[list[str]] = []
 
-    def fake_run(command, _timeout, _description):
+    def fake_run(command, _timeout, _description, **_kwargs: object):
         commands.append(command)
         return responses.pop(0)
 

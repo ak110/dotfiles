@@ -49,7 +49,7 @@ from agent_toolkit._atk.managed_temp.validation import (
     _validate_windows,
     validate_managed_temp,
 )
-from agent_toolkit._common import file_lock
+from agent_toolkit._common import file_lock, plugin_root_leases
 
 # 他の処理で使わない依存は、使用時まで読み込まない。
 lazy from agent_toolkit._atk.managed_temp.windows_security import (
@@ -1213,7 +1213,9 @@ def _cleanup_managed_temp(
                 and _consuming_registry_path(registry_path) is None
             ):
                 return True
-            _cleanup_managed_temp_locked(root, path, registry_path, recover_registry=recover_registry)
+            with plugin_root_leases.plugin_root_lock(path):
+                _require_unused_plugin_root(path)
+                _cleanup_managed_temp_locked(root, path, registry_path, recover_registry=recover_registry)
         finally:
             file_lock.release_lock(lock_file)
     return True
@@ -1347,6 +1349,20 @@ def _force_remove_managed_temp(
     except (OSError, ValueError, ManagedTempError) as validation_error:
         raise original_error from validation_error
 
+    with plugin_root_leases.plugin_root_lock(path):
+        _require_unused_plugin_root(path)
+        _force_remove_validated_temp(path, reason=reason)
+
+
+def _require_unused_plugin_root(path: pathlib.Path) -> None:
+    if plugin_root_leases.plugin_root_in_use(path):
+        raise ManagedTempError(
+            f"使用中または使用状態を確認できない配布物を保持した: {path}",
+            next_action=f"利用プロセスの終了後に atk managed-temp cleanup --path {path} を再実行する",
+        )
+
+
+def _force_remove_validated_temp(path: pathlib.Path, *, reason: str) -> None:
     registry_path = _registry_path(path)
     try:
         shutil.rmtree(path)
@@ -1378,24 +1394,108 @@ def _registered_ancestor(path: pathlib.Path) -> pathlib.Path | None:
 
 
 def _cleanup_child_of_registered_temp(path_arg: pathlib.Path | str) -> bool:
-    """個別の管理情報を持たないmanaged-temp直下の作業ディレクトリを、登録済みのディレクトリの配下である場合に削除する。
-
-    `atk managed-temp create --session-root`は、個別登録を持たないmanaged-temp直下の作業ディレクトリを親の配下へ作成する。
-    この作業ディレクトリは管理情報を持たないため、通常の検証を通しても回収できない。
-    祖先に登録済みのmanaged-tempのディレクトリが実在する場合だけ、その作業ディレクトリを削除して回収を成立させる。
-    """
+    """登録済み領域の配下を、祖先の排他と既存の非追跡削除で回収する。"""
     path = pathlib.Path(path_arg)
-    if os.path.lexists(path / _MARKER_NAME) or not path.is_dir():
+    if not path.is_absolute() or ".." in path.parts or os.path.lexists(path / _MARKER_NAME):
+        return False
+    if not os.path.lexists(path) and not _registry_path(path).with_suffix(".child-cleanup").exists():
         return False
     ancestor = _registered_ancestor(path)
     if ancestor is None:
         return False
-    shutil.rmtree(path)
+    lock = _registry_path(ancestor).with_suffix(".json.cleanup.lock")
+    with lock.open("a+", encoding="utf-8") as handle:
+        file_lock.acquire_lock(handle)
+        try:
+            with plugin_root_leases.plugin_root_lock(ancestor):
+                _require_unused_plugin_root(ancestor)
+                parent = _validate_posix(ancestor) if os.name == "posix" else _validate_windows(ancestor)
+                _cleanup_session_child(path, parent)
+        finally:
+            file_lock.release_lock(handle)
     print(
         f"note: 登録済みのmanaged-tempのディレクトリ{ancestor}の配下にあるため、個別の管理情報を経ずに削除した: {path}",
         file=sys.stderr,
     )
     return True
+
+
+def _cleanup_session_child(path: pathlib.Path, parent: _ValidatedTemp) -> None:
+    """子のidentityと隔離名を外部へ残し、失敗・中断後も同じpathで再開する。"""
+    journal = _registry_path(path).with_suffix(".child-cleanup")
+    root = _validate_root(parent.path)
+    directory = parent.path
+    for part in path.parent.relative_to(parent.path).parts:
+        directory /= part
+        root = _validate_root(directory, explicit=True)
+    record: dict[str, typing.Any]
+    if journal.exists():
+        record = _load_private_json(journal)
+        nonce = record.get("nonce")
+        identity = record.get("identity")
+        if (
+            record.get("path") != str(path)
+            or record.get("parent_identity") != [parent.device, parent.inode]
+            or record.get("root_identity") != [root.device, root.inode]
+            or not isinstance(nonce, str)
+            or re.fullmatch(r"[0-9a-f]{64}", nonce) is None
+            or not isinstance(identity, list)
+            or len(identity) != 2
+            or not all(isinstance(value, int) and not isinstance(value, bool) for value in identity)
+        ):
+            raise ManagedTempError(f"managed-temp直下の作業ディレクトリの回収記録が一致しない: {path}")
+        quarantine = path.parent / f".agent-toolkit-cleanup-{nonce}"
+        if os.path.lexists(quarantine):
+            if os.path.lexists(path) or _path_identity(quarantine) != tuple(identity):
+                raise ManagedTempError(f"managed-temp直下の作業ディレクトリの隔離先が置換された: {path}")
+            _cleanup_quarantine(path.parent, quarantine, (identity[0], identity[1]))
+            journal.unlink()
+            return
+        if not os.path.lexists(path):
+            journal.unlink()
+            return
+        if _path_identity(path) != tuple(identity):
+            raise ManagedTempError(f"回収中のmanaged-temp直下の作業ディレクトリが置換された: {path}")
+    else:
+        child = _validate_root(path, explicit=True)
+        nonce = secrets.token_hex(32)
+        record = {
+            "path": str(path),
+            "identity": [child.device, child.inode],
+            "parent_identity": [parent.device, parent.inode],
+            "root_identity": [root.device, root.inode],
+            "nonce": nonce,
+        }
+        _write_private_json(journal, record)
+    validated = _ValidatedTemp(
+        path,
+        record["identity"][0],
+        record["identity"][1],
+        nonce,
+        journal,
+        record,
+        root.device,
+        root.inode,
+        root.owner,
+        root.mode,
+        root.security,
+    )
+    quarantine = path.parent / f".agent-toolkit-cleanup-{nonce}"
+    try:
+        before = _tree_snapshot(path)
+        if os.name == "posix":
+            if not shutil.rmtree.avoids_symlink_attacks:
+                raise ManagedTempError("symlink attack耐性を持つ後始末手段を利用できない")
+            _cleanup_posix(path.parent, validated, quarantine, before)
+        else:
+            _windows_secure_path(path, directory=True, expected_identity=(validated.device, validated.inode))
+            _cleanup_windows(path.parent, validated, quarantine, before)
+        journal.unlink()
+    except (OSError, ManagedTempError) as error:
+        raise ManagedTempError(
+            f"managed-temp直下の作業ディレクトリを回収できない: {path}: {error}。親と回収記録を保持した",
+            next_action=ManagedTempError.RETRYABLE_NEXT_ACTION,
+        ) from error
 
 
 def cleanup_managed_temp(

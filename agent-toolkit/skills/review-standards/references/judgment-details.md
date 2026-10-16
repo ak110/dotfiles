@@ -9,7 +9,7 @@
 
 ## 問題と手段の比例性
 
-指摘が示す問題の処置の要否は`agent-toolkit:bugfix`の`references/root-cause-analysis.md`「QとC・Dの区別」に従う。指摘の採否と求める処置の判定、および指摘への修正方針の確定では、Qを満たす手段どうしの選択とC・Dだけの問題へ`agent-toolkit:writing-standards`の`references/design-heuristics.md`「問題と手段の比例性」の比較を適用する。比較した案（何もしない案と既存操作だけの案を含む）、各案が目的を満たすかと採用の根拠を、指摘の本文かレビュー指摘管理表の応答へ記録する。
+指摘が示す問題の処置の要否は`agent-toolkit:bugfix`の`references/root-cause-analysis.md`「QとC・Dの区別」に従う。指摘の採否と求める処置の判定、および指摘への修正方針の確定では、同書の重大度別の判断を踏まえて`agent-toolkit:writing-standards`の`references/design-heuristics.md`「問題と手段の比例性」の比較を適用する。比較した案（何もしない案と既存操作だけの案を含む）、各案が目的を満たすかと採用の根拠を、指摘の本文かレビュー指摘管理表の応答へ記録する。
 
 ## 解決案の比較
 

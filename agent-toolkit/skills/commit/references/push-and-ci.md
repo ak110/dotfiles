@@ -56,11 +56,16 @@ CIを判定する場合は、push前に次のとおりbaselineを作成する。
 
 baseline作成と監視では`--repo`（`owner/repo`かホストを含むURL。ローカルパスではない）、`--forge <github|gitlab>`、`--ref`、`--source-ref`をすべて指定する。その他の引数は`--help`で確かめる。複数refでは組ごとにbaselineを作成し、1件が失敗しても他を続ける。
 
+GitLabのSSH接続先とAPI接続先が異なる場合は、API側のURLをポート込みで`--repo`へ渡す。
+baseline作成と監視・再開では同じ指定を使う。
+ホストを省略した`group/project`では、glabの公開環境指定（`GITLAB_HOST`・`GITLAB_URI`・`GITLAB_URL`）と通常の設定解決を利用する。
+
 ## pushと監視
 
 1. 引数なし方式では`git push`を単独で実行し、明示方式では成功したdry-runから`--dry-run --porcelain`だけを除いた同じ引数でpushする
 2. push成功後、各baselineに対して`wait_ci.py --baseline`を実行する（CI通過をこのセッションで判定しない場合は実行せず後始末へ進む）
    - 起動と結果回収は`agent-toolkit:delegation`の`references/waiting-and-monitoring.md`「待機区間の構成」に従う。完了通知で同じセッションへ再開する監視は背景で起動し、別の独立待機より先に届いた通知を処理する。同じbaselineの起動済み監視を回収し、重複起動しない
+   - ホストから背景監視の停止通知を受けた場合は、同スキルの`references/wait-anomalies.md`「ホストによる背景待機の停止後」に従う。元の監視プロセスと出力を回収し、観測の再開には同じSHAとbaselineまたは待機専用記録を使う。実ジョブの再起動は含めない
    - 総待機時間は、GitHub Actionsでは対象workflowの直近の成功runの`updatedAt - startedAt`へ登録猶予と変動分の余裕を加えて決め、取得・算出できなければ270秒とする。`gh`の入出力形式は実行直前のヘルプで確かめる
    - 終了コード6と2では同じ引数で呼び直し、それ以外を待機の終端とする
    - 背景実行では、ホストがコマンドを時間で停止する上限を総待機時間より長くする。先に止められるとスクリプトは判定結果を返せなくなる。実行ハンドルのyield・再開がある場合は60秒未満の間隔で同一processへ再接続し、processを短い`--timeout`へ分割したりplugin root更新を契機に置き換えたりしない

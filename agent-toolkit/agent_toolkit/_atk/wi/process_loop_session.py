@@ -21,8 +21,9 @@ from agent_toolkit._atk.wi import process_loop_ownership as _ownership
 from agent_toolkit._atk.wi import process_loop_update as _pl_update
 from agent_toolkit._atk.wi.constants import PROCESS_WI_GOAL_BODY
 from agent_toolkit._common import automated_prompt as _automated_prompt
-from agent_toolkit._common import claude_usage_limit as _claude_usage_limit
+from agent_toolkit._common import codex_usage_limit as _codex_usage_limit
 from agent_toolkit._common import console_title as _console_title
+from agent_toolkit._common import host_homes as _host_homes
 from agent_toolkit._common import next_action as _next_action
 
 # モデル可用性だけを確認し、作業の副作用を生じさせない事前起動の固定プロンプト。
@@ -115,7 +116,7 @@ def resolve_orchestrator_specs() -> list[tuple[str, str, str]]:
     return _orchestrator.resolve_specs(rerun_action="process-loopを再起動する")
 
 
-def _record_usage_limit_wait(candidate: str, usage_limit: _claude_usage_limit.UsageLimitState, delay: float) -> None:
+def _record_usage_limit_wait(candidate: str, usage_limit: _orchestrator.UsageLimitState, delay: float) -> None:
     """利用上限の解除待ちをprocess-loopのログへ記録する。"""
     _process_loop_log.append(
         "usage_limit_wait",
@@ -244,13 +245,16 @@ def _run_process_session(
     if instruction:
         launch_env[_pl_env.PROCESS_LOOP_INSTRUCTION_ENV] = instruction
     try:
-        result = subprocess.run(
-            session_argv,
-            check=False,
-            env=launch_env,
-            cwd=session_path,
-            creationflags=_pl_env.session_creation_flags(orchestrator),
-        )
+        if orchestrator == "codex":
+            result = _run_codex_session(session_argv, launch_env, session_path)
+        else:
+            result = subprocess.run(
+                session_argv,
+                check=False,
+                env=launch_env,
+                cwd=session_path,
+                creationflags=_pl_env.session_creation_flags(orchestrator),
+            )
     except OSError as error:
         _process_loop_log.append("session_launch_failed", error=type(error).__name__, detail=str(error))
         raise
@@ -288,6 +292,37 @@ def _run_process_session(
         dotfiles_updated=False,
     )
     return False
+
+
+def _run_codex_session(argv: list[str], env: dict[str, str], cwd: pathlib.Path) -> subprocess.CompletedProcess[bytes]:
+    """所有する子の上限停止を監視し、次の反復へ移れる終了状態を返す。"""
+    started_at = time.time()
+    rollout: pathlib.Path | None = None
+    with subprocess.Popen(argv, env=env, cwd=cwd, creationflags=_pl_env.session_creation_flags("codex")) as process:
+        try:
+            while True:
+                try:
+                    return subprocess.CompletedProcess(argv, process.wait(timeout=1))
+                except subprocess.TimeoutExpired:
+                    if rollout is None:
+                        rollout = _codex_usage_limit.find_session_rollout(
+                            cwd, started_at, codex_home=_host_homes.codex_home(env)
+                        )
+                    if rollout is None or _codex_usage_limit.from_rollout(rollout) is None:
+                        continue
+                    _process_loop_log.append("session_usage_limit", rollout_path=str(rollout))
+                    process.terminate()
+                    try:
+                        process.wait(timeout=5)
+                    except subprocess.TimeoutExpired:
+                        process.kill()
+                        process.wait()
+                    # WindowsのTerminateProcessの値も、この所有済み上限停止だけは次の反復へ進める。
+                    return subprocess.CompletedProcess(argv, 0)
+        except BaseException:
+            process.kill()
+            process.wait()
+            raise
 
 
 def run_process_session(

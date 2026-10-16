@@ -16,6 +16,7 @@ import pytest
 
 from pytools import post_apply
 from pytools._internal import (
+    apply_dotfiles_plugins,
     claude_common,
     cleanup_paths,
     cleanup_user_path,
@@ -335,6 +336,30 @@ def _user_path_write_fails(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> N
     monkeypatch.setattr(cleanup_user_path.os, "environ", {"USERPROFILE": str(tmp_path)})
 
 
+def _dotfiles_plugin_fails(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, *, operation: str) -> None:
+    root = tmp_path / "dotfiles"
+    plugin = root / "plugins" / "custom"
+    (plugin / ".chezmoi-source").mkdir(parents=True)
+    (plugin / "post_apply.py").write_text("", encoding="utf-8")
+    monkeypatch.setattr(common, "find_dotfiles_root", lambda: root)
+    monkeypatch.setattr(common, "resolve_uv_path", lambda: tmp_path / "uv")
+    monkeypatch.setattr(apply_dotfiles_plugins.shutil, "which", lambda _name: str(tmp_path / "chezmoi"))
+
+    def run(argv: list[str], **_kwargs: object) -> subprocess.CompletedProcess[str]:
+        failed = (operation == "apply" and "apply" in argv) or (operation == "post_apply.py" and "--script" in argv)
+        return _completed(7, stderr="permission denied") if failed else _completed(0)
+
+    monkeypatch.setattr(common, "run_subprocess", run)
+
+
+def _dotfiles_plugin_apply_fails(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    _dotfiles_plugin_fails(monkeypatch, tmp_path, operation="apply")
+
+
+def _dotfiles_plugin_post_apply_fails(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    _dotfiles_plugin_fails(monkeypatch, tmp_path, operation="post_apply.py")
+
+
 # 工程名ごとに、失敗を模す手段と期待する終了コードの組を並べる。
 # 1つの工程が取得と書き換えの両方を行う場合は、両方の組を並べる。
 _SIMULATIONS: dict[str, list[tuple[_Simulation, int]]] = {
@@ -371,6 +396,7 @@ _SIMULATIONS: dict[str, list[tuple[_Simulation, int]]] = {
     "Windowsレジストリ設定": [(_registry_write_fails, 1)],
     "SendTo ショートカット (Windows)": [(_sendto_shortcut_fails, 1)],
     "メディアリモコン自動起動 (Windows/media_remote)": [(_media_remote_removal_fails, 1)],
+    "dotfilesプラグインの反映": [(_dotfiles_plugin_apply_fails, 1), (_dotfiles_plugin_post_apply_fails, 1)],
     "ユーザー PATH 整理 (Windows)": [(_user_path_write_fails, 1)],
 }
 

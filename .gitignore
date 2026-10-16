@@ -20,6 +20,8 @@
 /.ssh/
 /.tmux/
 /.vim/
+# ユーザーが追加するdotfilesプラグイン
+/plugins/
 
 # <https://github.com/github/gitignore/blob/main/Python.gitignore>
 

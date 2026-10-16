@@ -15,7 +15,7 @@ from pathlib import Path
 # 他の処理で使わない依存は、使用時まで読み込まない。
 lazy import httpx
 
-from pytools._internal import common, log_format, post_apply_outcome, setup_cli_common
+from pytools._internal import common, log_format, post_apply_outcome, prune_codex_packages, setup_cli_common
 
 logger = logging.getLogger(__name__)
 
@@ -97,6 +97,9 @@ def run(client: httpx.Client | None = None) -> post_apply_outcome.PostApplyOutco
                             "不要な中継と確認できた場合だけ、このファイルを手動削除する",
                         ),
                     )
+    pruning = prune_codex_packages.run()
+    if pruning.failure:
+        failures.append(pruning.failure)
     if failures:
         return post_apply_outcome.PostApplyOutcome(
             changed=True,
@@ -194,8 +197,7 @@ def _get_installer(client: httpx.Client, url: str) -> httpx.Response:
 
 def _codex_home() -> Path:
     """公式インストーラーが使うCodexのホームディレクトリを返す。"""
-    value = os.environ.get("CODEX_HOME")
-    return Path(value) if value else Path.home() / ".codex"
+    return prune_codex_packages.codex_home()
 
 
 def _standalone_root() -> Path:

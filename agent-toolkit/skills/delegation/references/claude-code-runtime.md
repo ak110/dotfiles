@@ -62,6 +62,7 @@ toolの公開、呼び出し結果、完了通知の配送はprovider、Claude C
 ### 背景ジョブ完了通知と実プロセスの終了順
 
 バックグラウンドタスクの完了通知が届いた後も、同じ`atk agents wait`の実プロセスが残ることがある。後続の待機の扱いは`references/waiting-and-monitoring.md`「`atk agents wait`の応答の扱い」が定める。
+ホストの停止通知も外側のタスクと子プロセスの終了を分けて扱い、`references/wait-anomalies.md`「ホストによる背景待機の停止後」から元の出力の回収と観測の再開を判断する。
 監査記録は`docs/development/audit-records.md`の「agent-toolkit/skills/delegation/references/claude-code-runtime.md：背景ジョブ完了通知と実プロセスの終了順：2026年9月21日」にある。
 
 ### 完了通知と中継の実行順

@@ -5,7 +5,7 @@
 # ///
 r"""dotfilesリポジトリを最新化するPEP 723スクリプト。
 
-`chezmoi git pull --rebase` → `chezmoi init`（テンプレート再展開） →
+`chezmoi git pull --rebase` → Git管理のdotfilesプラグインを名前順にpull → `chezmoi init`（テンプレート再展開） →
 `chezmoi status`（apply予定ファイルの表示） → `chezmoi diff --no-pager` →
 `chezmoi apply --force`を、プロセス間排他ロック下で直列実行する。
 画面には4段の進捗を示し、diffの詳細は永続ログへ記録する。
@@ -274,7 +274,9 @@ def _kill_process_tree(process: subprocess.Popen[str]) -> None:
         process.kill()
 
 
-def _run_git_pull(step_no: int, total: int, *, timeout: int | None = _GIT_TIMEOUT_DEFAULT_SEC) -> int:
+def _run_git_pull(
+    step_no: int, total: int, *, timeout: int | None = _GIT_TIMEOUT_DEFAULT_SEC, plugin: pathlib.Path | None = None
+) -> int:
     """Git更新段を実行し、正常終了時の出力を標準出力へ正規化する。
 
     `submodule.recurse=false`は、dotfilesリポジトリがsubmoduleを持たないため不要な再帰を無効化する。
@@ -289,10 +291,11 @@ def _run_git_pull(step_no: int, total: int, *, timeout: int | None = _GIT_TIMEOU
     Windowsではcommunicateのreader threadが閉じるため、読み取りロックを待ち得る主スレッドのcloseは行わない。
     """
     global _current_stage_title, _last_stderr_tail  # noqa: PLW0603
-    _current_stage_title = "git pull"
+    title = "git pull" if plugin is None else f"dotfilesプラグイン {plugin.name}: git pull"
+    _current_stage_title = title
     _last_stderr_tail = None
-    print(f"=== [{step_no}/{total}] git pull ===", flush=True)
-    logger.info("stage開始: %d/%d git pull", step_no, _LOG_STAGE_TOTAL)
+    print(f"=== [{step_no}/{total}] {title} ===", flush=True)
+    logger.info("stage開始: %d/%d %s", step_no, _LOG_STAGE_TOTAL, title)
     started_at = time.monotonic()
     # 上限超過時に子孫を列挙してから直接子を回収するため、プロセスを明示的に保持する。
     try:
@@ -307,7 +310,9 @@ def _run_git_pull(step_no: int, total: int, *, timeout: int | None = _GIT_TIMEOU
                 "pull",
                 "--rebase",
                 "--quiet",
-            ],
+            ]
+            if plugin is None
+            else ["git", "-C", str(plugin), "-c", "submodule.recurse=false", "pull", "--rebase"],
             cwd=_DOTFILES_ROOT,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
@@ -316,13 +321,13 @@ def _run_git_pull(step_no: int, total: int, *, timeout: int | None = _GIT_TIMEOU
             env=_child_env(),
         )
     except OSError as error:
-        logger.exception("stage起動失敗: %d/%d git pull", step_no, _LOG_STAGE_TOTAL)
+        logger.exception("stage起動失敗: %d/%d %s", step_no, _LOG_STAGE_TOTAL, title)
         print(
-            f"git pullを開始できませんでした: {error}。"
+            f"{title}を開始できませんでした: {error}。"
             "chezmoi --versionとgit --versionの実行に成功する状態にしてupdate-dotfilesを再実行してください。",
             file=sys.stderr,
         )
-        _last_stderr_tail = sync_report.truncate_tail(str(error))
+        _last_stderr_tail = sync_report.truncate_tail(f"{title}: {error}")
         return 1
     try:
         try:
@@ -338,16 +343,17 @@ def _run_git_pull(step_no: int, total: int, *, timeout: int | None = _GIT_TIMEOU
             if stderr:
                 sys.stderr.write(stderr)
             timeout_message = (
-                f"git pullが{timeout}秒以内に完了しなかったため、子孫プロセスを終了しました。"
+                f"{title}が{timeout}秒以内に完了しなかったため、子孫プロセスを終了しました。"
                 f"未完了です。通信とSSH認証の問題を解消してupdate-dotfilesを再実行してください。"
                 f"待機上限を延ばす場合は{_GIT_TIMEOUT_ENV}へ1200（秒）を設定して再実行してください。"
             )
             print(timeout_message, file=sys.stderr)
-            _last_stderr_tail = sync_report.truncate_tail(f"{stderr}\n{timeout_message}")
+            _last_stderr_tail = sync_report.truncate_tail(f"{title}\n{stdout}\n{stderr}\n{timeout_message}")
             logger.error(
-                "stage終了: %d/%d git pull exit=1 timeout=%s duration=%.3f",
+                "stage終了: %d/%d %s exit=1 timeout=%s duration=%.3f",
                 step_no,
                 _LOG_STAGE_TOTAL,
+                title,
                 timeout,
                 time.monotonic() - started_at,
             )
@@ -358,10 +364,15 @@ def _run_git_pull(step_no: int, total: int, *, timeout: int | None = _GIT_TIMEOU
             stream = sys.stdout if process.returncode == 0 else sys.stderr
             stream.write(stderr)
             _last_stderr_tail = sync_report.truncate_tail(stderr)
+        if plugin is not None:
+            logger.info("%s stdout:\n%s\nstderr:\n%s", title, stdout, stderr)
+            if process.returncode != 0:
+                _last_stderr_tail = sync_report.truncate_tail(f"{stdout}\n{stderr}\n{title}: exit {process.returncode}")
         logger.info(
-            "stage終了: %d/%d git pull exit=%d duration=%.3f",
+            "stage終了: %d/%d %s exit=%d duration=%.3f",
             step_no,
             _LOG_STAGE_TOTAL,
+            title,
             process.returncode,
             time.monotonic() - started_at,
         )
@@ -795,6 +806,14 @@ def main(argv: list[str] | None = None) -> int:
                 returncode = _update_git_with_recovery(1, total, timeout=git_timeout)
                 if returncode != 0:
                     return _finish(returncode)
+
+                plugins_root = _DOTFILES_ROOT / "plugins"
+                plugins = sorted(plugins_root.iterdir(), key=lambda path: path.name) if plugins_root.exists() else []
+                for plugin in plugins:
+                    if plugin.is_dir() and (plugin / ".git").exists():
+                        returncode = _run_git_pull(1, total, timeout=git_timeout, plugin=plugin)
+                        if returncode != 0:
+                            return _finish(returncode)
 
                 returncode, _ = _run_step(
                     2,

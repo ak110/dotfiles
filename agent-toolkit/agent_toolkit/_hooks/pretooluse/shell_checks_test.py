@@ -31,6 +31,7 @@ class TestAgentsServerInputChecks:
     def _state_dir(self, tmp_path: pathlib.Path) -> dict[str, str]:
         return _plan_file_state_env(tmp_path)
 
+    @pytest.mark.parametrize("host", ["claude-code", "codex"])
     @pytest.mark.parametrize(
         ("tool_suffix", "tool_input", "remote_session_id"),
         [
@@ -51,6 +52,7 @@ class TestAgentsServerInputChecks:
         tool_suffix: str,
         tool_input: dict,
         remote_session_id: str | None,
+        host: str,
     ) -> None:
         """専用スキルの起動記録が無くても、起動記録とは独立した入力の妥当性の判定を通過すれば許可する。"""
         session_id = f"without-skill-{tool_suffix}"
@@ -65,12 +67,16 @@ class TestAgentsServerInputChecks:
                 "tool_name": f"mcp__plugin_agent-toolkit_agents_server__{tool_suffix}",
                 "tool_input": tool_input,
                 "session_id": session_id,
+                **({"turn_id": "codex-turn"} if host == "codex" else {}),
             },
             env_overrides=state_dir,
         )
         assert result.returncode == 0
-        out = json.loads(result.stdout)
-        assert out["hookSpecificOutput"]["permissionDecision"] == "allow"
+        if host == "codex":
+            assert not result.stdout
+        else:
+            out = json.loads(result.stdout)
+            assert out["hookSpecificOutput"]["permissionDecision"] == "allow"
 
     def test_allowed_when_sidechain_without_skill_record(self, state_dir: dict[str, str]) -> None:
         """サイドチェーンでは明示Skill起動記録を要求しない。"""

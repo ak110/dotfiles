@@ -24,7 +24,7 @@ import pytest
 import pytilpack.jsonc
 
 from pytools import post_apply
-from pytools._internal import claude_common, common, post_apply_outcome
+from pytools._internal import apply_dotfiles_plugins, claude_common, common, post_apply_outcome
 
 # `post_apply`は削除対象の表をimport時のホームで組み立てる。テストの実行中はホームが一時ディレクトリへ隔離されるため、
 # 表を引く鍵もimport時のホームから組み立てる。
@@ -1240,7 +1240,55 @@ class TestDefaultSteps:
         """ユーザーPATHの整理は他の全ステップの後に実行する。"""
         steps = post_apply._DEFAULT_STEPS  # noqa: SLF001
         assert steps[-1].name == "ユーザー PATH 整理 (Windows)"
-        assert [step.name for step in steps if step.after_all_preceding] == ["ユーザー PATH 整理 (Windows)"]
+        assert [step.name for step in steps if step.after_all_preceding] == [
+            "dotfilesプラグインの反映",
+            "ユーザー PATH 整理 (Windows)",
+        ]
+
+    @pytest.mark.parametrize("platform", ["linux", "win32"])
+    def test_dotfiles_plugins_follow_main_steps_and_precede_path_cleanup(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        platform: str,
+    ) -> None:
+        """通常の工程表で本体後処理を終えてからプラグインを反映し、最後にPATHを整理する。"""
+        registered = post_apply._DEFAULT_STEPS
+        plugin_steps = [step for step in registered if step.run is apply_dotfiles_plugins.run]
+        assert len(plugin_steps) == 1
+        plugin = plugin_steps[0]
+        assert plugin.name == "dotfilesプラグインの反映"
+        assert not plugin.platforms
+        plugin_index = registered.index(plugin)
+        expected_before = {step.name for step in registered[:plugin_index] if not step.platforms or platform in step.platforms}
+        calls: list[str] = []
+
+        def apply_plugins() -> post_apply_outcome.PostApplyOutcome:
+            assert set(calls) == expected_before
+            calls.append(plugin.name)
+            return post_apply_outcome.PostApplyOutcome(changed=True)
+
+        monkeypatch.setattr(post_apply, "sys", type("_Platform", (), {"platform": platform}))
+        monkeypatch.setattr(post_apply, "_home_is_substituted", lambda: False)
+        monkeypatch.setattr(
+            post_apply,
+            "_DEFAULT_STEPS",
+            [
+                dataclasses.replace(
+                    step,
+                    run=apply_plugins if step is plugin else _make_step(step.name, calls),
+                )
+                for step in registered
+            ],
+        )
+
+        results, _ = post_apply.run()
+
+        assert all(result.ok for result in results)
+        assert calls.count(plugin.name) == 1
+        if platform == "win32":
+            assert calls[-2:] == [plugin.name, "ユーザー PATH 整理 (Windows)"]
+        else:
+            assert calls[-1] == plugin.name
 
     def test_platform_declarations(self) -> None:
         """実行中のOSでは何もしないステップへ対象OSを宣言する。"""

@@ -221,3 +221,105 @@ def test_agents_server_model_type_matches_server_defaults(operation: str, tool_i
     """
     model_type = agents_server_observations._agents_server_model_type(tool_input, operation)  # pylint: disable=protected-access
     assert model_type == expected
+
+
+@pytest.mark.asyncio
+async def test_public_handoff_start_registers_successor_for_wait_and_followup(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """前任IDだけの公開start応答から後任のcwdと待機対象を登録し、後任への追送を通す。"""
+    for key in ("AGENT_TOOLKIT_DELEGATED_SESSION", "AGENT_TOOLKIT_OWNER_SESSION", "CODEX_THREAD_ID"):
+        monkeypatch.delenv(key, raising=False)
+    monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "handoff-root")
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(tmp_path / "claude"))
+    monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
+    writer = status_file.StatusFileWriter(
+        {},
+        status_file.StatusFileIdentity("handoff-root", "root.json", None),
+        state_root=tmp_path,
+        aggregate_seconds=0,
+    )
+    current = manager.AgentsServerManager(writer)
+    backend = _RegisteredBackend(current.sessions, "claude")
+    agents_server_support.install_backend(current, "claude", backend)
+    monkeypatch.setattr(mcp_tools, "_MANAGER", current)
+    writer.activate()
+    try:
+        started = await mcp_tools.start(
+            str(tmp_path),
+            mode="delegate",
+            model_type="claude:test/medium",
+            prompt="引き継ぐ作業",
+        )
+        predecessor = current.sessions[started["session_id"]]
+        agents_server_support._complete(predecessor, message="確定事項と残工程")  # pylint: disable=protected-access
+        record = tmp_path / "claude" / "projects" / "trial" / f"{predecessor.session_id}.jsonl"
+        record.parent.mkdir(parents=True)
+        record.write_text(json.dumps({"type": "user", "message": {"role": "user", "content": "元の依頼"}}), encoding="utf-8")
+        response = await mcp_tools.start(handoff_from=predecessor.session_id)
+        successor = response["session_id"]
+        assert successor != predecessor.session_id
+        payload: dict[str, Any] = {
+            "session_id": "handoff-root",
+            "tool_name": "mcp__plugin_agent-toolkit_agents_server__start",
+            "tool_input": {"handoff_from": predecessor.session_id},
+            "tool_response": {"structuredContent": response},
+        }
+        warnings = agents_server_observations.observe_tool(
+            payload,
+            "handoff-root",
+            payload["tool_name"],
+            payload["tool_input"],
+            moved_to_background=False,
+        )
+        assert not warnings
+        saved = session_state.read_state("handoff-root")
+        assert agents_server_observations.session_cwd(saved, successor) == str(tmp_path)
+        assert agents_server_observations.pending_session_ids(saved, "main") == [successor]
+        saved_session = agents_server_observations.session_record(saved, successor)
+        assert saved_session is not None and saved_session["model_type"] == "claude:test/medium"
+        marker = shared_layout.wait_targets_directory("handoff-root", "root.json", tmp_path) / f"{successor}.json"
+        assert marker.is_file()
+        send = {
+            **payload,
+            "tool_name": "mcp__plugin_agent-toolkit_agents_server__send_message",
+            "tool_input": {"session_id": successor, "prompt": "残工程を続ける"},
+        }
+        assert _hook(pretooluse.main, send) == 0
+        assert (await mcp_tools.send_message(successor, "残工程を続ける"))["delivery"] == "steered"
+        assert backend.send_calls == 1
+    finally:
+        await current.close()
+
+
+@pytest.mark.parametrize("handoff", [False, True])
+def test_response_cwd_is_accepted_only_for_handoff_start(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+    handoff: bool,
+) -> None:
+    """通常起動は入力cwdの欠落を診断し、引き継ぎ起動だけ応答cwdを検収する。"""
+    monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)
+    monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "observed-root")
+    monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
+    shared_layout.status_directory("observed-root", tmp_path).mkdir(parents=True)
+    tool = "mcp__plugin_agent-toolkit_agents_server__start"
+    inputs = {"handoff_from": "predecessor"} if handoff else {"mode": "delegate"}
+    payload = {
+        "tool_input": inputs,
+        "tool_response": {
+            "session_id": "successor",
+            "status": "running",
+            "root_session_id": "observed-root",
+            "cwd": str(tmp_path),
+        },
+    }
+    warnings = agents_server_observations.observe_tool(
+        payload,
+        "observed-root",
+        tool,
+        inputs,
+        moved_to_background=False,
+    )
+    assert any("cwd" in warning.body for warning in warnings) is not handoff

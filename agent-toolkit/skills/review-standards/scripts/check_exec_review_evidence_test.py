@@ -160,6 +160,22 @@ def _plan_return_args(path: pathlib.Path, table: pathlib.Path, plan: pathlib.Pat
     )
 
 
+def _return_input(output: str) -> pathlib.Path:
+    """公開返却が渡す再実行入力を、欄の再構成をせず取得する。"""
+    (value,) = [
+        line.removeprefix("受領確認入力のパス: ") for line in output.splitlines() if line.startswith("受領確認入力のパス: ")
+    ]
+    path = pathlib.Path(value)
+    assert path.is_absolute() and path.is_file()
+    return path
+
+
+def _without_return_input(output: str) -> str:
+    """保存先の実在を確かめ、既存の固定返却行を比較する。"""
+    path = _return_input(output)
+    return output.replace(f"受領確認入力のパス: {path}\n", "")
+
+
 def test_return_result_rejects_zero_issues_with_missing_evidence_and_recovers_after_registration(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -185,7 +201,7 @@ def test_return_result_rejects_zero_issues_with_missing_evidence_and_recovers_af
     review_table.add(table, "2", "exec-review", "保存操作", "保存の証拠を補う", "仕様")
     capsys.readouterr()
     assert run_script.dispatch(_return_args(path, table)) == 0
-    assert capsys.readouterr().out == (
+    assert _without_return_input(capsys.readouterr().out) == (
         f"状態: completed\nレビューしたHEAD: {REVIEWED_HEAD}\n未解決の指摘数: 1\n"
         "読者別探索: 文章成果物なし\n"
         f"レビュー開始時点: {REVIEWED_HEAD}\n前回確認版の開始時点: {REVIEWED_HEAD}\n前回確認版HEAD: {REVIEWED_HEAD}\n"
@@ -327,7 +343,7 @@ def test_return_result_without_evidence_generates_result_and_empty_input_arrays(
     review_table.add(table, "1", "exec-review", "旧指摘", "前回の指摘", "詳細")
     capsys.readouterr()
     assert run_script.dispatch(_no_evidence_return_args(table)) == 0
-    assert capsys.readouterr().out == (
+    assert _without_return_input(capsys.readouterr().out) == (
         f"状態: completed\nレビューしたHEAD: {REVIEWED_HEAD}\n未解決の指摘数: 0\n"
         "読者別探索: 文章成果物なし\n"
         f"レビュー開始時点: {REVIEWED_HEAD}\n前回確認版の開始時点: {REVIEWED_HEAD}\n前回確認版HEAD: {REVIEWED_HEAD}\n"
@@ -549,7 +565,9 @@ def test_public_show_all_rows_lists_rows_before_bodies(
     )
     assert check_exec_review_evidence.main(["--batch", str(batch), "--show-all-rows"]) == 0
     (result,) = [json.loads(line) for line in capsys.readouterr().out.splitlines()]
-    assert result["result"] == lines
+    actual = _without_return_input("\n".join(result["result"]) + "\n")
+    expected_lines = _without_return_input("\n".join(lines) + "\n")
+    assert actual.splitlines() == expected_lines.splitlines()
     _assert_index_before_bodies(evidence_list, data, ["wi_conditions", "user_requirements"])
     for section in ("wi_conditions", "user_requirements"):
         assert check_exec_review_evidence.main([str(path), "--list", "--section", section]) == 0
@@ -3468,7 +3486,7 @@ def test_input_record_saved_outside_repository_is_resolved_by_template_and_retur
     review_table.add(table, "2", "exec-review", "lint", "設定の誤りを直す", "実装")
     capsys.readouterr()
     assert run_script.dispatch(_no_evidence_return_args(table, "--input-record", str(record))) == 0
-    assert capsys.readouterr().out == (
+    assert _without_return_input(capsys.readouterr().out) == (
         f"状態: completed\nレビューしたHEAD: {REVIEWED_HEAD}\n未解決の指摘数: 1\n"
         "読者別探索: 文章成果物なし\n"
         f"レビュー開始時点: {REVIEWED_HEAD}\n前回確認版の開始時点: {REVIEWED_HEAD}\n前回確認版HEAD: {REVIEWED_HEAD}\n"
@@ -3657,6 +3675,192 @@ def test_background_record_in_plan_or_review_table_is_accepted(
     _write_evidence(path, [_condition(FIRST_WI, "過負荷の後に同じsessionで続く")], _background_rows(source))
     capsys.readouterr()
     assert _check(path, FIRST_WI) == 0, capsys.readouterr().err
+
+
+def _generated_review_setup(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> tuple[str, str, pathlib.Path]:
+    """実GitとWI読取を経由する返却生成の入力を隔離して用意する。"""
+    repository = git_repository.init_repository(tmp_path / "repo", files={"value.txt": "保存\n"}, commit_message="基準")
+    first = git_repository.git_output(repository, "rev-parse", "HEAD")
+    git_repository.git_output(repository, "remote", "add", "origin", "https://github.com/example/foo.git")
+    git_repository.git_output(
+        repository, "-c", "user.name=Test", "-c", "user.email=test@example.com", "commit", "--allow-empty", "-qm", "実装"
+    )
+    head = git_repository.git_output(repository, "rev-parse", "HEAD")
+    notes = tmp_path / "notes"
+    (notes / "processing").mkdir(parents=True)
+    (notes / "processing" / FIRST_WI).write_text(
+        "---\ntarget_repo: github.com/example/foo\ntype: awi\n---\n# 題\n\n## 完成条件\n- 保存\n", encoding="utf-8"
+    )
+    monkeypatch.setenv("AGENT_TOOLKIT_PRIVATE_NOTES", str(notes))
+    monkeypatch.chdir(repository)
+    evidence = tmp_path / "evidence.json"
+    _write_evidence(evidence, [{**_condition(FIRST_WI, "保存"), "reviewed_head": head, "evidence": "test_save 成功"}])
+    return first, head, evidence
+
+
+@pytest.mark.parametrize("round_value", [1, 2, 3], ids=["initial", "rereview", "handoff"])
+@pytest.mark.parametrize("plan_count", [0, 1, 2], ids=["no-plan", "single-plan", "multiple-plans"])
+def test_generated_return_input_rechecks_without_conversion(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    round_value: int,
+    plan_count: int,
+) -> None:
+    """返却で得た入力を公開受領操作へ直接渡し、全検査条件の保存と現物の再検査を確かめる。"""
+    first, head, evidence = _generated_review_setup(tmp_path, monkeypatch)
+    table = tmp_path / "review.tsv"
+    review_table.init(table)
+    plans = [tmp_path / f"plan{index}.md" for index in range(plan_count)]
+    records = [tmp_path / "record1.md", tmp_path / "record2.md"]
+    for path in [*plans, *records]:
+        path.write_text("# 入力\n", encoding="utf-8")
+    declaration = json.dumps({"files": {}, "external": "読者: session-example"}, ensure_ascii=False, separators=(",", ":"))
+    options = _review_options(head, table, round_value)
+    options[options.index("--review-start") + 1] = first
+    if round_value >= 2:
+        options[options.index("--previous-review-start") + 1] = first
+        options[options.index("--previous-review-head") + 1] = first
+    argv = [str(evidence), FIRST_WI, *options, "--return-result", "--reader-fit-review", declaration]
+    for option, paths in (("--plan", plans), ("--input-record", records)):
+        for path in paths:
+            argv.extend([option, str(path)])
+    before = evidence.read_bytes()
+    capsys.readouterr()
+    assert run_script.dispatch(argparse.Namespace(script_name="exec-review-evidence-check", script_args=argv)) == 0
+    generated = _return_input(capsys.readouterr().out)
+    data = json.loads(generated.read_text(encoding="utf-8"))
+    assert data == {
+        "version": 1,
+        "reviews": [
+            {
+                "plan": str(plans[0]) if plans else "なし",
+                "evidence": str(evidence),
+                "wi": [FIRST_WI],
+                "reviewed_head": head,
+                "review_table": str(table),
+                "round": round_value,
+                "plans": [str(path) for path in plans],
+                "input_records": [str(path) for path in records],
+                "reader_fit_review": declaration,
+                "review_start": first,
+                "previous_review_start": first if round_value >= 2 else None,
+                "previous_review_head": first if round_value >= 2 else None,
+            }
+        ],
+    }
+    received = argparse.Namespace(script_name="exec-review-evidence-check", script_args=["--batch", str(generated)])
+    assert run_script.dispatch(received) == 0
+    result = json.loads(capsys.readouterr().out)
+    assert result["exit_code"] == 0 and not result["diagnostics"]
+    assert f"レビューしたHEAD: {head}" in result["result"]
+    assert evidence.read_bytes() == before
+    # 保存入力だけで合格せず、受領時の証拠を改めて検査する。
+    evidence.write_text("{}", encoding="utf-8")
+    assert run_script.dispatch(received) == 1
+    assert json.loads(capsys.readouterr().out)["diagnostics"]
+
+
+def test_generated_return_input_freezes_resolved_commit_oids(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """16進名のbranchが動いても、生成入力の今回・前回の検査対象を完全OIDへ固定する。"""
+    first, head, _evidence = _generated_review_setup(tmp_path, monkeypatch)
+    repository = pathlib.Path.cwd()
+    git_repository.git_output(repository, "branch", "deadbee", head)
+    table = tmp_path / "review.tsv"
+    review_table.init(table)
+    options = _review_options("deadbee", table, 2)
+    argv = ["なし", *options, "--return-result", "--reader-fit-review", "文章成果物なし"]
+    capsys.readouterr()
+    assert run_script.dispatch(argparse.Namespace(script_name="exec-review-evidence-check", script_args=argv)) == 0
+    output = capsys.readouterr().out
+    generated = _return_input(output)
+    review = json.loads(generated.read_text(encoding="utf-8"))["reviews"][0]
+    fields = ("reviewed_head", "review_start", "previous_review_start", "previous_review_head")
+    assert {field: review[field] for field in fields} == dict.fromkeys(fields, head)
+    assert f"レビューしたHEAD: {head}" in output
+    git_repository.git_output(repository, "branch", "-f", "deadbee", first)
+    received = argparse.Namespace(script_name="exec-review-evidence-check", script_args=["--batch", str(generated)])
+    assert run_script.dispatch(received) == 0
+    result = json.loads(capsys.readouterr().out)
+    assert result["exit_code"] == 0 and not result["diagnostics"]
+    for label in ("レビューしたHEAD", "レビュー開始時点", "前回確認版の開始時点", "前回確認版HEAD"):
+        assert f"{label}: {head}" in result["result"]
+
+
+def test_batch_accepts_multiple_generated_inputs(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """証拠要求なしと異なるroundの生成入力を反復指定し、失敗した組の後も検査する。"""
+    first, head, evidence = _generated_review_setup(tmp_path, monkeypatch)
+    generated = []
+    for round_value in (1, 2):
+        table = tmp_path / f"review{round_value}.tsv"
+        review_table.init(table)
+        argv = [
+            str(evidence) if round_value == 2 else "なし",
+            *([FIRST_WI] if round_value == 2 else []),
+            *_review_options(head, table, round_value),
+            "--return-result",
+            "--reader-fit-review",
+            "文章成果物なし",
+        ]
+        capsys.readouterr()
+        assert run_script.dispatch(argparse.Namespace(script_name="exec-review-evidence-check", script_args=argv)) == 0
+        generated.append(_return_input(capsys.readouterr().out))
+    argv = ["--batch", str(generated[0]), "--batch", str(generated[1])]
+    received = argparse.Namespace(script_name="exec-review-evidence-check", script_args=argv)
+    assert run_script.dispatch(received) == 0
+    assert [json.loads(line)["exit_code"] for line in capsys.readouterr().out.splitlines()] == [0, 0]
+    # 先頭の生成入力だけを失効させ、後の正常な組を保持する。
+    first_input = json.loads(generated[0].read_text(encoding="utf-8"))
+    pathlib.Path(first_input["reviews"][0]["review_table"]).unlink()
+    assert run_script.dispatch(received) == 1
+    results = [json.loads(line) for line in capsys.readouterr().out.splitlines()]
+    assert [result["exit_code"] for result in results] == [1, 0]
+    assert results[0]["diagnostics"] and not results[1]["diagnostics"]
+    assert json.loads(generated[1].read_text(encoding="utf-8"))["reviews"][0]["reviewed_head"] == head
+    assert first != head
+
+
+@pytest.mark.parametrize("failure", ["create", "save"])
+def test_return_input_save_failure(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], failure: str
+) -> None:
+    """生成先作成と保存の失敗を非0で返し、失敗の診断と証拠を保持する。"""
+    _first, head, evidence = _generated_review_setup(tmp_path, monkeypatch)
+    table = tmp_path / "review.tsv"
+    review_table.init(table)
+    before = evidence.read_bytes()
+
+    def fail_create(*_args: object, **_kwargs: object) -> pathlib.Path:
+        raise check_exec_review_evidence.managed_temp.ManagedTempError("生成先の作成失敗")
+
+    original_replace = pathlib.Path.replace
+
+    def fail_save(path: pathlib.Path, target: pathlib.Path, **kwargs: typing.Any) -> pathlib.Path:
+        if target.name == "reviews.json":
+            raise OSError("入力の保存失敗")
+        return original_replace(path, target, **kwargs)
+
+    if failure == "create":
+        monkeypatch.setattr(check_exec_review_evidence.managed_temp, "create_managed_temp", fail_create)
+    else:
+        monkeypatch.setattr(pathlib.Path, "replace", fail_save)
+    argv = [
+        str(evidence),
+        FIRST_WI,
+        *_review_options(head, table, 1),
+        "--return-result",
+        "--reader-fit-review",
+        "文章成果物なし",
+    ]
+    capsys.readouterr()
+    assert run_script.dispatch(argparse.Namespace(script_name="exec-review-evidence-check", script_args=argv)) == 1
+    result = capsys.readouterr()
+    assert not result.out and "受領確認の入力を保存できません" in result.err
+    assert evidence.read_bytes() == before
 
 
 def test_batch_keeps_per_review_inputs_and_does_not_write_evidence(

@@ -4,7 +4,9 @@ import argparse
 import contextlib
 import datetime
 import json
+import os
 import pathlib
+import shlex
 import subprocess
 from collections.abc import Callable
 from typing import Any
@@ -19,7 +21,25 @@ from agent_toolkit._atk.wi import (
 from agent_toolkit._atk.wi import sync as _wi_sync
 from agent_toolkit._atk.wi.constants import WI_STATES
 from agent_toolkit._common import json_command as _json_command  # noqa: E402  # pylint: disable=wrong-import-position
+from agent_toolkit._git import forge_cli
 from agent_toolkit._testing import git_repository
+
+_github_head = alerts._github_head  # pylint: disable=protected-access
+_gitlab_head = alerts._gitlab_head  # pylint: disable=protected-access
+
+
+@pytest.fixture(name="api_branch_heads")
+def _api_branch_heads(monkeypatch: pytest.MonkeyPatch) -> None:
+    """API境界の結合試験では実際のHEAD取得処理を使う。"""
+    monkeypatch.setattr(alerts, "_github_head", _github_head)
+    monkeypatch.setattr(alerts, "_gitlab_head", _gitlab_head)
+
+
+@pytest.fixture(autouse=True)
+def _isolate_branch_head(monkeypatch: pytest.MonkeyPatch) -> None:
+    """一覧を注入する既存試験ではHEADの外部通信も隔離する。"""
+    monkeypatch.setattr(alerts, "_github_head", lambda _repo, _branch: "current-head")
+    monkeypatch.setattr(alerts, "_gitlab_head", lambda _repo, _branch: "current-head")
 
 
 def test_collect_github_ci_failures_latest_completed_only() -> None:
@@ -78,6 +98,7 @@ def _gitlab_schedule_api(endpoints: list[str]) -> alerts.GlabApiFn:
         ],
         f"{project}/494": {"id": 494, "last_pipeline": {"id": 437746, "status": "success", "ref": "develop", "web_url": "u1"}},
         f"{project}/523": {"id": 523, "last_pipeline": {"id": 437813, "status": "failed", "ref": "develop", "web_url": "u2"}},
+        "projects/group%2Fsub%2Frepo/repository/branches/develop": {"commit": {"id": "current-head"}},
     }
 
     def api(host: str, endpoint: str) -> object:
@@ -609,3 +630,181 @@ def test_check_alerts_cli_rejects_invalid_target(
     assert _invoke_alert_cli(pathlib.Path(target)) == 2
     assert "失敗:" in capsys.readouterr().err
     assert not _saved_awis_by_heading(notes)
+
+
+@pytest.mark.parametrize("collector", ["github", "gitlab", "schedule"])
+@pytest.mark.parametrize("head", ["new", "old", None])
+def test_collectors_report_stale_run_context(collector: str, head: str | None) -> None:
+    """3収集とも実行事実とHEAD比較を渡し、後続実行が無い場合も完成を判断できる。"""
+    # GitLab Pipelines API / GitHub branches APIの公開フィールドを使い、古い失敗実行だけが残る応答を検証する。
+    created = "2019-01-01T21:37:15+09:00"
+    pipeline = {"id": 24, "status": "failed", "ref": "topic/ref", "sha": "old", "created_at": created}
+
+    def head_fn(_repo: str, branch: str) -> str:
+        assert branch == "topic/ref"
+        if head is None:
+            raise alerts.AlertCollectError("branch APIへ到達不能")
+        return head
+
+    if collector == "github":
+        repository = "github.com/group/repo"
+        run = {
+            "databaseId": 24,
+            "workflowName": "CI",
+            "status": "completed",
+            "conclusion": "failure",
+            "headSha": "old",
+            "createdAt": created,
+        }
+        result = alerts.collect_github_ci_failures(repository, "topic/ref", run_list_fn=lambda *_args: [run], head_fn=head_fn)
+    elif collector == "gitlab":
+        repository = "gitlab.example.org/group/repo"
+        result = alerts.collect_gitlab_ci_failures(
+            repository, "topic/ref", ci_list_fn=lambda *_args: [pipeline], head_fn=head_fn
+        )
+    else:
+        repository = "gitlab.example.org/group/repo"
+
+        def api(_host: str, endpoint: str) -> object:
+            if "/repository/branches/" in endpoint:
+                assert endpoint.endswith("topic%2Fref")
+                return {"commit": {"id": head_fn(repository, "topic/ref")}}
+            if endpoint.endswith("?per_page=100"):
+                return [{"id": 5, "active": True, "ref": "different-default"}]
+            return {"last_pipeline": pipeline}
+
+        result = alerts.collect_gitlab_schedule_failures("gitlab.example.org", "group/repo", api_fn=api)
+    assert len(result) == 1
+    alert = result[0]
+    assert created in alert.body and "対象コミット: old" in alert.body
+    if head is None:
+        assert "取得不能（branch APIへ到達不能）" in alert.body
+        assert "判定不能" in alert.body
+    else:
+        assert f"ブランチHEAD: {head}" in alert.body
+        assert f"HEADとの比較: {'一致' if head == 'old' else '不一致'}" in alert.body
+    if head != "old":
+        assert "CI定義の有無と起動条件" in alert.body
+        assert "原因がブランチHEADに残るか" in alert.body
+        assert "追加の変更や後続の実行を要しない" in alert.completion
+    forge = "github" if collector == "github" else "gitlab"
+    commands = forge_cli.failure_log_commands(forge, repository, "24", prefer_environment=True)
+    assert all(shlex.join(command) in alert.body for command in commands)
+
+
+def test_successful_collection_does_not_fetch_head() -> None:
+    """失敗候補が無い通常の監視回はHEAD APIを呼ばない。"""
+
+    def unexpected_head(*_args: object) -> str:
+        pytest.fail("失敗候補の無い回にHEADを取得した")
+
+    assert not alerts.collect_github_ci_failures("group/repo", "main", run_list_fn=lambda *_args: [], head_fn=unexpected_head)
+    assert not alerts.collect_gitlab_ci_failures("group/repo", "main", ci_list_fn=lambda *_args: [], head_fn=unexpected_head)
+
+
+@pytest.mark.usefixtures("api_branch_heads")
+@pytest.mark.parametrize("variable", ["GITLAB_HOST", "GITLAB_URI", "GITLAB_URL"])
+def test_alerts_preserve_public_endpoint_override(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, variable: str
+) -> None:
+    """通知のブランチ・スケジュール・HEAD取得は公開環境指定を優先し、親環境を保つ。"""
+    for name in ("GITLAB_HOST", "GITLAB_URI", "GITLAB_URL"):
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setenv(variable, "api.example.net:9443")
+    parent_environment = os.environ.copy()
+    calls: list[list[str]] = []
+
+    def run(command: list[str], **kwargs: Any) -> subprocess.CompletedProcess[bytes]:
+        assert "--hostname" not in command
+        assert kwargs["env"]["GITLAB_HOST"] == "api.example.net:9443"
+        calls.append(command)
+        pipeline = {
+            "id": 24,
+            "status": "failed",
+            "ref": "release/topic",
+            "sha": "old",
+            "created_at": "2019-01-01T21:37:15+09:00",
+        }
+        if command[1:3] == ["ci", "list"]:
+            assert command[command.index("-R") + 1] == "https://api.example.net:9443/group/sub/repo"
+            payload: object = [pipeline]
+        elif "repository/branches/" in command[2]:
+            assert command[2].endswith("release%2Ftopic")
+            payload = {"commit": {"id": "new"}}
+        elif command[2].endswith("?per_page=100"):
+            payload = [{"id": 1, "active": True, "ref": "release/topic"}]
+        else:
+            payload = {"last_pipeline": pipeline}
+        return subprocess.CompletedProcess(command, 0, stdout=json.dumps(payload).encode(), stderr=b"")
+
+    monkeypatch.setattr(_json_command.subprocess, "run", run)
+    result = alerts.collect_new_alerts("git.example.org/group/sub/repo", "release/topic", tmp_path, forge="gitlab")
+    assert len(result) == 1
+    assert "api.example.net:9443/group/sub/repo" in result[0].body
+    assert "不一致" in result[0].body
+    assert len(calls) == 5
+    assert os.environ == parent_environment
+
+
+@pytest.mark.usefixtures("api_branch_heads")
+@pytest.mark.parametrize("forge", ["github", "gitlab-branch", "gitlab-schedule"])
+def test_collectors_report_branch_head_context(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, forge: str) -> None:
+    """公開収集関数collect_new_alertsが実行日時・SHA・リモートHEADを本文と完成条件へ反映する。"""
+    created = "2019-01-01T21:37:15+09:00"
+    pipeline = {"id": 24, "status": "failed", "ref": "main", "sha": "old", "created_at": created}
+    calls: list[list[str]] = []
+
+    def run(command: list[str], **_kwargs: Any) -> subprocess.CompletedProcess[bytes]:
+        calls.append(command)
+        if command[:3] == ["gh", "run", "list"]:
+            payload: object = [
+                {
+                    "databaseId": 24,
+                    "workflowName": "CI",
+                    "status": "completed",
+                    "conclusion": "failure",
+                    "headSha": "old",
+                    "createdAt": created,
+                }
+            ]
+        elif command[:3] == ["glab", "ci", "list"]:
+            payload = [pipeline] if forge == "gitlab-branch" else []
+        elif any("/branches/" in arg for arg in command):
+            payload = {"commit": {"id": "new", "sha": "new"}}
+        elif any("pipeline_schedules?" in arg for arg in command):
+            payload = [{"id": 1, "active": True, "ref": "main"}] if forge == "gitlab-schedule" else []
+        else:
+            payload = {"last_pipeline": pipeline}
+        return subprocess.CompletedProcess(command, 0, stdout=json.dumps(payload).encode(), stderr=b"")
+
+    monkeypatch.setattr(_json_command.subprocess, "run", run)
+    resolved = "github" if forge == "github" else "gitlab"
+    repository = f"{resolved}.example.org/group/repo"
+    result = alerts.collect_new_alerts(repository, "main", tmp_path, forge=resolved)
+    assert len(result) == 1
+    assert created in result[0].body
+    assert "対象コミット: old" in result[0].body
+    assert "ブランチHEAD: new" in result[0].body
+    assert "HEADとの比較: 不一致" in result[0].body
+    assert "追加の変更や後続の実行を要しない" in result[0].completion
+    assert sum(any("/branches/" in arg for arg in command) for command in calls) == 1
+
+
+@pytest.mark.usefixtures("api_branch_heads")
+@pytest.mark.parametrize("forge", ["github", "gitlab"])
+def test_alert_log_guidance_uses_shared_commands(monkeypatch: pytest.MonkeyPatch, forge: str) -> None:
+    """通知のログ案内はwait_ciと同じ生成元を通り、Git外で対象を一意に指定できる。"""
+    pipeline = {"id": 24, "status": "failed"}
+    run_record = {"databaseId": 24, "workflowName": "CI", "status": "completed", "conclusion": "failure"}
+
+    def run(command: list[str], **_kwargs: Any) -> subprocess.CompletedProcess[bytes]:
+        payload: object = (
+            {"commit": {"sha": "new", "id": "new"}} if command[1] == "api" else [run_record if forge == "github" else pipeline]
+        )
+        return subprocess.CompletedProcess(command, 0, stdout=json.dumps(payload).encode(), stderr=b"")
+
+    monkeypatch.setattr(_json_command.subprocess, "run", run)
+    repository = f"{forge}.example.org/group/repo"
+    collector = alerts.collect_github_ci_failures if forge == "github" else alerts.collect_gitlab_ci_failures
+    result = collector(repository, "main")
+    assert forge_cli.failure_next_action(forge, repository, "24", prefer_environment=True) in result[0].body

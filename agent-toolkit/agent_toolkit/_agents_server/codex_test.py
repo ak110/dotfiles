@@ -4,6 +4,7 @@
 # pylint: disable=protected-access
 
 import asyncio
+import contextlib
 
 # テストでは共有状態とバックエンドの内部境界も直接検証する。
 # pylint: disable=protected-access
@@ -12,11 +13,18 @@ import os
 import pathlib
 import shlex
 import shutil
+import subprocess
+import sys
+from collections.abc import Callable
 from types import SimpleNamespace
 from typing import Any, cast
 from unittest.mock import AsyncMock
 
+import anyio
+import psutil
 import pytest
+from mcp import ClientSession
+from mcp.client.stdio import StdioServerParameters, stdio_client
 
 from agent_toolkit import atk
 from agent_toolkit._agents_server import codex as subject
@@ -33,7 +41,8 @@ from agent_toolkit._agents_server import (
 )
 from agent_toolkit._agents_server.notify import send_notification
 from agent_toolkit._atk import config as _atk_config
-from agent_toolkit._common import plugin_environment, session_registry, state_paths
+from agent_toolkit._atk import managed_temp
+from agent_toolkit._common import inherited_venv, plugin_environment, session_registry, state_paths
 from agent_toolkit._testing.agents_server_support import (
     BlockingResumeCodexClient,
     CompletingInterruptClient,
@@ -53,6 +62,7 @@ from agent_toolkit._testing.agents_server_support import (
     install_backend,
 )
 from agent_toolkit._testing.helpers import delivery_payload
+from agent_toolkit._testing.isolation import CONFIG_DIRECTORY_ENVIRONMENT_NAMES, HOME_ENVIRONMENT_NAMES
 from agent_toolkit._testing.managed_temp_support import setattr_in_managed_temp_modules
 
 
@@ -76,6 +86,7 @@ class _TierClient:
 
     def __init__(self) -> None:
         self.requests: list[tuple[str, dict[str, Any]]] = []
+        self.parent_environment: dict[str, str] | None = None
 
     async def request(self, method: str, params: dict[str, Any], *, on_sent: Any = None) -> dict[str, Any]:
         if method == "config/read":
@@ -424,6 +435,62 @@ async def test_completed_turn_after_consumed_auto_resume_publishes_unobserved_ch
     await manager.close()
 
 
+@pytest.mark.usefixtures("agents_server_isolation")
+@pytest.mark.asyncio
+@pytest.mark.parametrize("turn_status", ["completed", "failed", "interrupted"])
+async def test_send_message_child_reactivation_holds_parent_until_child_terminates(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, turn_status: str
+) -> None:
+    """再開した子が残る親の完了・失敗・中断をshowで保留し、子の終端後の再開結果をwaitへ公開する。"""
+    monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
+    manager = server_manager.AgentsServerManager(None)
+    backend = subject.AppServerManager(manager.sessions, manager._condition)
+    install_backend(manager, "codex", backend)
+    client = FakeCodexClient()
+    backend.client = cast(Any, client)
+    monkeypatch.setattr(backend, "_ensure_client", AsyncMock(return_value=client))
+    session = await backend.start("親の作業", str(tmp_path))
+    session.terminal_child_session_ids.add("child")
+    session.auto_resume_consumed = True
+    session_registry.publish("child", terminal=False, cwd=str(tmp_path))
+    item = {
+        "type": "mcpToolCall",
+        "id": "reply-child",
+        "server": "agents_server",
+        "tool": "send_message",
+        "arguments": {"session_id": "child", "prompt": "残作業を続ける"},
+        "result": {"structuredContent": {"session_id": "child", "delivery": "reply_started", "status": "running"}},
+    }
+    try:
+        await backend._handle_notification(
+            {"method": "item/completed", "params": {"threadId": session.session_id, "item": item}}
+        )
+        completion = _completed_turn(session)
+        completion["params"]["turn"].update(
+            {
+                "status": turn_status,
+                "error": {"codexErrorInfo": "usageLimitExceeded"} if turn_status == "failed" else None,
+                # turn/completedが同じtool結果を再掲するApp Serverの形式も通す。
+                "items": [item],
+            }
+        )
+        await backend._handle_notification(completion)
+        shown = manager.show_session(session.session_id)
+        assert shown["status"] == "running" and shown["result_held"]
+        assert shown["live_child_sessions"] == [{"session_id": "child", "cwd": str(tmp_path)}]
+        assert not session.result_available
+        session_registry.publish("child", terminal=True, status="completed", cwd=str(tmp_path))
+        pending = await manager.wait()
+        assert pending["status"] in {"starting", "running"}
+        assert session.auto_resume_consumed
+        await backend._handle_notification(_completed_turn(session))
+        result = await manager.wait()
+        assert result["status"] == "completed"
+        assert not session.awaiting_auto_resume
+    finally:
+        await manager.close()
+
+
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     "delivery",
@@ -516,21 +583,21 @@ async def test_thread_start_overrides_agents_server_with_owner_and_writer_env(
     assert server["env"][plugin_environment.RUNTIME_DATA_ENV] == str(runtime_data)
     assert server["env"]["AGENT_TOOLKIT_OWNER_SESSION"] == "root-session"
     assert server["default_tools_approval_mode"] == "approve"
-    assert server["env_vars"] == list(
-        subject.mcp_environment.environment_variable_names(_atk_config.config_environment_variable_names())
-    )
+    parent_environment = dict(os.environ)
+    inherited_venv.strip_inherited_venv(parent_environment)
+    assert server["env_vars"] == list(subject.mcp_environment.runtime_environment_variable_names(parent_environment))
     assert "AGENT_TOOLKIT_DELEGATED_SESSION" not in server["env"]
     assert aliases == [("root-session", server["env"]["AGENT_TOOLKIT_STATUS_HOST_SESSION"], "inner-thread")]
 
 
 @pytest.mark.usefixtures("agents_server_isolation")
 @pytest.mark.asyncio
-@pytest.mark.parametrize("operation", ["start", "resume"])
+@pytest.mark.parametrize("operation", ["start", "resume", "reply"])
 @pytest.mark.parametrize("configured", [False, True])
 async def test_mcp_mise_namespace_names_and_explicit_owner_are_separate(
     operation: str, configured: bool, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
 ) -> None:
-    """新規起動と再開の内側MCPには公開されたmiseの所在を示す環境変数名だけを配送し、所有者・書込主体・plugin dataを明示する。"""
+    """開始・追送・保存会話の再開で親の任意名を配送し、起動contextは明示値を優先する。"""
     runtime_data = tmp_path / "plugin data"
     monkeypatch.setenv(plugin_environment.RUNTIME_DATA_ENV, str(runtime_data))
     names = ("MISE_STATE_DIR", "MISE_CACHE_DIR", "MISE_DATA_DIR", "MISE_CONFIG_DIR")
@@ -542,6 +609,8 @@ async def test_mcp_mise_namespace_names_and_explicit_owner_are_separate(
             monkeypatch.delenv(name, raising=False)
     monkeypatch.setenv("MISE_UNPUBLISHED_DIR", "unpublished-location")
     monkeypatch.setenv("DIAGNOSTIC_TOKEN", "synthetic-credential")
+    monkeypatch.setenv("UV_PROJECT_ENVIRONMENT", "caller-environment")
+    monkeypatch.setenv("CLAUDE_PLUGIN_DATA", "parent-plugin-data")
     monkeypatch.setenv("AGENT_TOOLKIT_OWNER_SESSION", "ambient-root")
     monkeypatch.setenv("AGENT_TOOLKIT_STATUS_HOST_SESSION", "ambient-host")
     client = _TierClient()
@@ -550,13 +619,20 @@ async def test_mcp_mise_namespace_names_and_explicit_owner_are_separate(
     aliases: list[tuple[str, str, str]] = []
     monkeypatch.setattr(shared_roots, "write_host_alias", lambda root, writer, thread: aliases.append((root, writer, thread)))
     try:
-        if operation == "start":
+        if operation in {"start", "reply"}:
             session = await manager.start("開始", str(tmp_path))
+            if operation == "reply":
+                _complete(session)
+                monkeypatch.delenv("MISE_UNPUBLISHED_DIR")
+                monkeypatch.setenv("NEW_REPLY_API_KEY", "reply-secret")
+                client.requests.clear()
+                await manager.send_message(session, "続行")
         else:
             session = await manager.resume("saved-thread", state.ResumePrompt("再開"), str(tmp_path))
-        params = next(params for method, params in client.requests if method == f"thread/{operation}")
+        method_name = "start" if operation == "start" else "resume"
+        params = next(params for method, params in client.requests if method == f"thread/{method_name}")
         server = params["config"]["mcp_servers"]["agents_server"]
-        assert set(names) <= set(server["env_vars"])
+        assert set(names) & set(server["env_vars"]) == (set(names) if configured else set())
         assert len(server["env_vars"]) == len(set(server["env_vars"]))
         assert set(server["env"]) == {
             "AGENT_TOOLKIT_OWNER_SESSION",
@@ -564,23 +640,105 @@ async def test_mcp_mise_namespace_names_and_explicit_owner_are_separate(
             plugin_environment.RUNTIME_DATA_ENV,
         }
         assert server["env"][plugin_environment.RUNTIME_DATA_ENV] == str(runtime_data)
-        assert {"CLAUDE_PLUGIN_DATA", "PLUGIN_DATA", plugin_environment.RUNTIME_DATA_ENV} <= set(server["env_vars"])
-        assert "UV_PROJECT_ENVIRONMENT" not in server["env_vars"]
+        assert "UV_PROJECT_ENVIRONMENT" in server["env_vars"]
+        assert "DIAGNOSTIC_TOKEN" in server["env_vars"]
+        assert ("MISE_UNPUBLISHED_DIR" in server["env_vars"]) is (operation != "reply")
+        assert ("NEW_REPLY_API_KEY" in server["env_vars"]) is (operation == "reply")
         assert server["env"]["AGENT_TOOLKIT_OWNER_SESSION"] == "chosen-root"
         writer = server["env"]["AGENT_TOOLKIT_STATUS_HOST_SESSION"]
         assert writer and writer != "ambient-host"
-        assert aliases == [("chosen-root", writer, session.session_id)]
+        assert aliases == [("chosen-root", writer, session.session_id)] * (2 if operation == "reply" else 1)
         assert not {
-            "MISE_UNPUBLISHED_DIR",
-            "DIAGNOSTIC_TOKEN",
+            "CLAUDE_PLUGIN_DATA",
+            "PLUGIN_DATA",
             "AGENT_TOOLKIT_OWNER_SESSION",
             "AGENT_TOOLKIT_STATUS_HOST_SESSION",
             "AGENT_TOOLKIT_DELEGATED_SESSION",
         } & set(server["env_vars"])
         encoded = json.dumps(server)
-        assert not any(value in encoded for value in (*values.values(), "unpublished-location", "synthetic-credential"))
+        assert not any(
+            value in encoded
+            for value in (
+                *values.values(),
+                "unpublished-location",
+                "synthetic-credential",
+                "reply-secret",
+                "caller-environment",
+                "parent-plugin-data",
+            )
+        )
         assert "ambient-root" not in encoded and "ambient-host" not in encoded
     finally:
+        await manager.close()
+
+
+@pytest.mark.usefixtures("_restore_session_listeners")
+@pytest.mark.asyncio
+@pytest.mark.parametrize("operation", ["start", "resume", "reply"])
+async def test_inner_mcp_uses_actual_app_server_parent_environment(
+    operation: str, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, host_environ: Callable[[], dict[str, str]]
+) -> None:
+    """内側MCPはApp Serverへ渡した環境の名前を使い、stdio子で値・空値・未設定を保持する。"""
+    supplied = {
+        "UNREGISTERED_VENDOR_API_KEY": "synthetic-api-value",
+        "LC_ALL": "C",
+        "DBUS_SESSION_BUS_ADDRESS": "synthetic-keyring-address",
+        "EMPTY_CUSTOM_SETTING": "",
+        "UV_PROJECT_ENVIRONMENT": "caller-env",
+        "CLAUDE_CODE_SESSION_ID": "parent-context",
+        "AGENT_TOOLKIT_OWNER_SESSION": "parent-owner",
+    }
+    client = _TierClient()
+    # App Serverの生成後に外側の環境が変わっても、実際の配送元は起動時のsnapshotである。
+    client.parent_environment = {**host_environ(), **supplied}
+    client.parent_environment.pop("MISSING_CUSTOM_SETTING", None)
+    monkeypatch.setenv("NOT_IN_APP_SERVER_ENV", "not-deliverable")
+    manager = subject.AppServerManager(root_session_id="chosen-owner")
+    manager.client = cast(Any, client)
+    monkeypatch.setattr(manager, "_ensure_client", AsyncMock(return_value=client))
+    monkeypatch.setattr(shared_roots, "write_host_alias", lambda *_args: None)
+    if operation == "resume":
+        session = await manager.resume("saved", state.ResumePrompt("再開"), str(tmp_path))
+    else:
+        session = await manager.start("開始", str(tmp_path))
+        if operation == "reply":
+            _complete(session)
+            client.requests.clear()
+            await manager.send_message(session, "続行")
+    params = next(params for method, params in client.requests if method.startswith("thread/"))
+    server = params["config"]["mcp_servers"]["agents_server"]
+    assert "NOT_IN_APP_SERVER_ENV" not in server["env_vars"]
+    assert "CLAUDE_CODE_SESSION_ID" not in server["env_vars"]
+    # Codexのenv_varsとenvの解決順をstdio子の環境へ射影する。実CodexのMCP起動は別の受入観測で検収する。
+    child_environment = {name: client.parent_environment[name] for name in server["env_vars"]}
+    child_environment.update(server["env"])
+    keys = [*supplied, "MISSING_CUSTOM_SETTING"]
+    process = await asyncio.create_subprocess_exec(
+        sys.executable,
+        "-c",
+        "import json, os, sys; print(json.dumps({key: os.environ.get(key) for key in sys.argv[1:]}))",
+        *keys,
+        env=child_environment,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    try:
+        stdout, stderr = await asyncio.wait_for(process.communicate(), 5)
+        assert process.returncode == 0 and not stderr
+        received = json.loads(stdout)
+        assert received == {
+            **supplied,
+            "CLAUDE_CODE_SESSION_ID": None,
+            "AGENT_TOOLKIT_OWNER_SESSION": "chosen-owner",
+            "MISSING_CUSTOM_SETTING": None,
+        }
+        encoded = json.dumps(server)
+        assert all(value not in encoded for value in supplied.values() if value and len(value) > 1)
+    finally:
+        if process.returncode is None:
+            process.kill()
+        await process.wait()
+        manager.client = None
         await manager.close()
 
 
@@ -715,9 +873,386 @@ def test_copy_failure_falls_back_to_the_resolved_root(monkeypatch: pytest.Monkey
     assert plugin_roots.resolve_stable_plugin_root(source) == source
 
 
+def _lease_plugin_source(base: pathlib.Path, version: str = "1.0.0") -> pathlib.Path:
+    root = _make_plugin_root(base, version, versioned=True, root_is_version=True)
+    (root / "payload.txt").write_text("起動した版", encoding="utf-8")
+    return root
+
+
+def _real_mcp_environment(
+    tmp_path: pathlib.Path,
+    tmp_path_factory: pytest.TempPathFactory,
+    host_environ: Callable[[], dict[str, str]],
+) -> dict[str, str]:
+    """公開ランチャー用のホーム・状態を隔離し、ホストのPythonと取得済みパッケージを使う。"""
+    environment = host_environ()
+    for name in HOME_ENVIRONMENT_NAMES:
+        environment[name] = str(tmp_path / "home")
+    for name in CONFIG_DIRECTORY_ENVIRONMENT_NAMES:
+        environment[name] = str(tmp_path / name.lower())
+    state_base = tmp_path / "runtime-state"
+    environment.update(XDG_STATE_HOME=str(state_base), LOCALAPPDATA=str(state_base))
+    # hash配下の拡張DLLをWindowsのパス長制限内で読み込めるよう、短いworker直下へ置く。
+    environment[plugin_environment.RUNTIME_DATA_ENV] = str(tmp_path_factory.mktemp("mcp"))
+    environment["PATH"] = os.pathsep.join(
+        directory for directory in os.get_exec_path(environment) if pathlib.Path(directory).name != "shims"
+    )
+    # 隔離HOMEでもテストを動かしているPythonを公開ランチャーから解決し、環境ごとの再取得を避ける。
+    python_directory = pathlib.Path(sys.base_prefix) / "bin" if os.name == "posix" else pathlib.Path(sys.base_prefix)
+    environment["PATH"] = str(python_directory) + os.pathsep + environment["PATH"]
+    # CIのuv管理Pythonも使用する。内側のuvには実行中のPythonを明示する。
+    environment.pop("UV_NO_MANAGED_PYTHON", None)
+    environment.update(UV_PYTHON=sys.executable, UV_PYTHON_DOWNLOADS="never", UV_LINK_MODE="copy")
+    for name in ("PYTHONPATH", "VIRTUAL_ENV", "UV_PROJECT_ENVIRONMENT"):
+        environment.pop(name, None)
+    return environment
+
+
+def _wait_mcp_processes(owned: dict[int, psutil.Process], *, timeout: float = 3) -> None:
+    """所有プロセスの終端を待ち、PID待機が失敗した場合は同じidentityの生存を再確認する。"""
+    try:
+        _, alive = psutil.wait_procs(list(owned.values()), timeout=timeout)
+    except OSError as error:
+        # pidfd_openが終了済みPIDでEINVALを返した実観測への対処。
+        # 生存と取得不能は失敗を保ち、終了を確認した場合だけ待機失敗から進める。
+        alive = []
+        for process in owned.values():
+            try:
+                if process.is_running() and process.status() != psutil.STATUS_ZOMBIE:
+                    alive.append(process)
+            except psutil.NoSuchProcess:
+                continue
+        if alive:
+            raise
+        print(f"MCP終了の再確認: wait_error={error}; 全所有identityの生存なし")
+    assert not alive, [process.pid for process in alive]
+
+
+# Windowsのcold依存導入、配布コピーと終了後の回収までを含む上限。
+@pytest.mark.timeout(180)
+@pytest.mark.asyncio
+@pytest.mark.usefixtures("share_package_caches")
+async def test_stable_plugin_root_shared_across_processes(
+    tmp_path: pathlib.Path,
+    tmp_path_factory: pytest.TempPathFactory,
+    host_environ: Callable[[], dict[str, str]],
+) -> None:
+    """外側2台と保持先起動の実MCPが配布物を共有し、元版の更新・削除後も応答して終了後に回収できる。"""
+    plugin = pathlib.Path(__file__).resolve().parents[2]
+    manifest = json.loads((plugin / ".claude-plugin" / "plugin.json").read_text(encoding="utf-8"))
+    version = manifest["version"]
+    source = tmp_path / "distribution" / version
+    shutil.copytree(plugin, source, ignore=shutil.ignore_patterns(".venv", "__pycache__", ".git", "node_modules"))
+    version_file = pathlib.Path("skills/managed-temp/SKILL.md")
+    original = (source / version_file).read_bytes()
+    environment = _real_mcp_environment(tmp_path, tmp_path_factory, host_environ)
+    state_base = tmp_path / "runtime-state"
+    uv = shutil.which("uv", path=environment["PATH"])
+    assert uv is not None
+    lease_directory = state_base / "agent-toolkit/plugin-root-leases"
+    clients: list[ClientSession] = []
+    owned: dict[int, psutil.Process] = {}
+    logs: list[pathlib.Path] = []
+    observed: list[dict[str, Any]] = []
+    area: pathlib.Path | None = None
+    expected_tools = {"start", "send_message", "kill", "stop", "list", "show"}
+    try:
+        # 配布元と保持先の2環境のcold導入に、実MCP操作の予算を加える。
+        with contextlib.ExitStack() as files, anyio.fail_after(135):
+            async with contextlib.AsyncExitStack() as stack:
+                for index in range(3):
+                    root = source if index < 2 else area / version if area is not None else source
+                    command = plugin_environment.launch_command(root, pathlib.Path("agent_toolkit/agents_server_mcp.py"))
+                    log = tmp_path / f"mcp-{index}.stderr"
+                    logs.append(log)
+                    error_output = files.enter_context(log.open("w", encoding="utf-8"))
+                    streams = await stack.enter_async_context(
+                        stdio_client(StdioServerParameters(command=uv, args=command[1:], env=environment), errlog=error_output)
+                    )
+                    client = await stack.enter_async_context(ClientSession(*streams))
+                    initialized = await client.initialize()
+                    assert initialized.server_info.name == "agents_server"
+                    tools = {tool.name for tool in (await client.list_tools()).tools}
+                    assert tools == expected_tools
+                    clients.append(client)
+                    leases = [json.loads(path.read_text(encoding="utf-8")) for path in lease_directory.glob("*.json")]
+                    assert len(leases) == index + 1
+                    areas = {pathlib.Path(record["path"]) for record in leases}
+                    assert len(areas) == 1
+                    area = areas.pop()
+                    held = area / version
+                    marker = json.loads((area / ".agent-toolkit-plugin-root.json").read_text(encoding="utf-8"))
+                    assert marker == {"source": str(source), "version": version, "root_name": version}
+                    assert list(area.parent.glob("agents-server-plugin-root-*")) == [area]
+                    assert (held / version_file).read_bytes() == original
+                    for record in leases:
+                        process = psutil.Process(record["pid"])
+                        assert process.create_time() == record["created_at"]
+                        ancestors = process.parents()
+                        parent_index = next(i for i, parent in enumerate(ancestors) if parent.pid == os.getpid())
+                        for member in (process, *ancestors[:parent_index]):
+                            owned[member.pid] = member
+                    observed.append({"server": index, "tools": sorted(tools), "leases": leases, "marker": marker})
+                    if index == 1:
+                        (source / version_file).write_text("更新された配布元", encoding="utf-8")
+                        assert (held / version_file).read_bytes() == original
+                        for client in clients:
+                            assert {tool.name for tool in (await client.list_tools()).tools} == expected_tools
+                        shutil.rmtree(source)
+                        assert not source.exists()
+                        for target in (area, held):
+                            protected = subprocess.run(
+                                [
+                                    sys.executable,
+                                    str(plugin / "agent_toolkit/_managed_temp.py"),
+                                    "cleanup",
+                                    "--path",
+                                    str(target),
+                                    "--force-remove",
+                                ],
+                                capture_output=True,
+                                text=True,
+                                encoding="utf-8",
+                                env=environment,
+                                timeout=15,
+                                check=False,
+                            )
+                            assert protected.returncode == 2, protected.stderr
+                for client in clients:
+                    assert {tool.name for tool in (await client.list_tools()).tools} == expected_tools
+                    listed = await client.call_tool("list", {})
+                    assert not listed.is_error
+                    assert listed.structured_content is not None and listed.structured_content["sessions"] == []
+                assert area is not None
+                assert (area / version / version_file).read_bytes() == original
+    finally:
+        _wait_mcp_processes(owned)
+        for log in logs:
+            print(f"S02 MCP診断 {log.name}:\n" + log.read_text(encoding="utf-8"))
+    assert area is not None
+    cleaned = subprocess.run(
+        [sys.executable, str(plugin / "agent_toolkit/_managed_temp.py"), "cleanup", "--path", str(area)],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        env=environment,
+        timeout=15,
+        check=False,
+    )
+    assert cleaned.returncode == 0, cleaned.stderr
+    assert not area.exists()
+    print("S02: " + json.dumps({"observed": observed, "terminated_processes": sorted(owned), "root_removed": str(area)}))
+
+
+# 90cad03ac601a24107d34758748f1d022ed5342cのplugin_root.pyにある、版別rootの
+# 正常系の保持生成を固定するfixture。旧版と同じprefix/copytree/除外/cacheを使い、
+# leaseと共有markerを生成しない。版判定と失敗時fallbackはこの試験の対象外。
+# MCP本体・公開launcher・managed-temp・診断ログは現行のpluginコピーを使う。
+_LEGACY_PLUGIN_ROOT_SOURCE = '''"""旧形式の正常系保持生成を実MCPへ提供する試験fixture。"""
+from pathlib import Path
+import shutil
+from agent_toolkit._atk import managed_temp
+
+STABLE_PLUGIN_ROOT_PREFIX = "agents-server-plugin-root"
+STABLE_PLUGIN_ROOT_EXCLUDED = (".venv", "__pycache__", ".git")
+_stable_plugin_roots = {}
+
+def resolve_stable_plugin_root(plugin_root=None):
+    root = Path(__file__).resolve().parents[2] if plugin_root is None else plugin_root
+    if root not in _stable_plugin_roots:
+        area = managed_temp.create_managed_temp(STABLE_PLUGIN_ROOT_PREFIX)
+        destination = Path(area) / root.name
+        shutil.copytree(
+            root, destination,
+            ignore=shutil.ignore_patterns(*STABLE_PLUGIN_ROOT_EXCLUDED), symlinks=True,
+        )
+        _stable_plugin_roots[root] = destination
+    return _stable_plugin_roots[root]
+
+SERVER_PLUGIN_ROOT = resolve_stable_plugin_root()
+'''
+
+
+# Windowsのcold依存導入、配布コピーと終了後の回収までを含む上限。
+@pytest.mark.timeout(120)
+@pytest.mark.asyncio
+@pytest.mark.usefixtures("share_package_caches")
+async def test_legacy_plugin_root_real_mcp_lifecycle(
+    tmp_path: pathlib.Path,
+    tmp_path_factory: pytest.TempPathFactory,
+    host_environ: Callable[[], dict[str, str]],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """旧形式の生成fixtureを使う実MCPをOS越しに保護し、全終了後の同じ公開cleanupで回収する。"""
+    plugin = pathlib.Path(__file__).resolve().parents[2]
+    version = json.loads((plugin / ".claude-plugin/plugin.json").read_text(encoding="utf-8"))["version"]
+    source = tmp_path / "legacy-distribution" / version
+    shutil.copytree(plugin, source, ignore=shutil.ignore_patterns(".venv", "__pycache__", ".git", "node_modules"))
+    (source / "agent_toolkit/_agents_server/plugin_root.py").write_text(_LEGACY_PLUGIN_ROOT_SOURCE, encoding="utf-8")
+    environment = _real_mcp_environment(tmp_path, tmp_path_factory, host_environ)
+    uv = shutil.which("uv", path=environment["PATH"])
+    assert uv is not None
+    command = plugin_environment.launch_command(source, pathlib.Path("agent_toolkit/agents_server_mcp.py"))
+    log = tmp_path / "legacy-mcp.stderr"
+    owned: dict[int, psutil.Process] = {}
+    observation: dict[str, Any] = {}
+    area: pathlib.Path | None = None
+
+    def cleanup(target: pathlib.Path) -> subprocess.CompletedProcess[str]:
+        return subprocess.run(
+            [sys.executable, str(plugin / "agent_toolkit/_managed_temp.py"), "cleanup", "--path", str(target)],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            env=environment,
+            timeout=15,
+            check=False,
+        )
+
+    try:
+        # Windowsで約40秒を要したcold導入と、実MCP操作の予算を確保する。
+        with log.open("w", encoding="utf-8") as errors, anyio.fail_after(90):
+            async with contextlib.AsyncExitStack() as stack:
+                streams = await stack.enter_async_context(
+                    stdio_client(StdioServerParameters(command=uv, args=command[1:], env=environment), errlog=errors)
+                )
+                client = await stack.enter_async_context(ClientSession(*streams))
+                initialized = await client.initialize()
+                assert initialized.server_info.name == "agents_server"
+                tools = {tool.name for tool in (await client.list_tools()).tools}
+                assert "start" in tools
+                entrypoint = source / "agent_toolkit/agents_server_mcp.py"
+                servers = []
+                ancestor_pids: set[int] = set()
+                for process in psutil.Process().children(recursive=True):
+                    arguments = process.cmdline()
+                    if len(arguments) > 1 and pathlib.Path(arguments[1]) == entrypoint:
+                        servers.append(process)
+                        ancestors = process.parents()
+                        ancestor_pids.update(parent.pid for parent in ancestors)
+                        parent_index = next(i for i, parent in enumerate(ancestors) if parent.pid == os.getpid())
+                        for member in (process, *ancestors[:parent_index]):
+                            owned[member.pid] = member
+                process_diagnostics = [
+                    {
+                        "pid": process.pid,
+                        "ppid": process.ppid(),
+                        "exe": process.exe(),
+                        "cmdline": process.cmdline(),
+                        "created_at": process.create_time(),
+                    }
+                    for process in owned.values()
+                ]
+                print("旧形式MCP起動プロセス: " + json.dumps(process_diagnostics, ensure_ascii=False))
+                # venv redirector等の祖先を所有したまま、単一系列の末端を実MCPの観測主体にする。
+                # 複数系列から同じscriptが起動した場合は末端が複数となり失敗する。
+                runtime_processes = [process for process in servers if process.pid not in ancestor_pids]
+                assert len(runtime_processes) == 1, process_diagnostics
+                server = runtime_processes[0]
+                cache_base = "LOCALAPPDATA" if sys.platform == "win32" else "XDG_CACHE_HOME"
+                temp_root = pathlib.Path(environment[cache_base]) / "agent-toolkit/managed-temp"
+                areas = list(temp_root.glob("agents-server-plugin-root-*"))
+                assert len(areas) == 1
+                area = areas[0]
+                assert (area / version / "agent_toolkit/agents_server_mcp.py").is_file()
+                assert not (area / ".agent-toolkit-plugin-root.json").exists()
+                leases = tmp_path / "runtime-state/agent-toolkit/plugin-root-leases"
+                assert not list(leases.glob("*.json"))
+                arguments = server.cmdline()
+                assert pathlib.Path(arguments[1]).parts[-2:] == ("agent_toolkit", "agents_server_mcp.py")
+                assert not pathlib.Path(arguments[1]).is_relative_to(area)
+                assert server.username() == psutil.Process().username()
+                try:
+                    opened = [entry._asdict() for entry in server.open_files()]
+                    open_files_error = None
+                except psutil.Error as error:
+                    opened = []
+                    open_files_error = type(error).__name__
+                # 実MCPを1台に限定したOS観測でも共通判定へ届くことを確認する。
+                # インベントリーの対象だけを限定し、PID/argv/username/open_filesは実OSから得る。
+                with monkeypatch.context() as probe:
+                    probe.setattr(psutil, "process_iter", lambda: [server])
+                    probe.setattr(state_paths, "state_dir", lambda: leases.parent)
+                    with plugin_roots.plugin_root_leases.plugin_root_lock(area):
+                        assert plugin_roots.plugin_root_leases.plugin_root_in_use(area)
+                protected = cleanup(area)
+                assert protected.returncode == 2, protected.stderr
+                assert area.exists()
+                assert "使用中または使用状態を確認できない配布物を保持した" in protected.stderr
+                assert {tool.name for tool in (await client.list_tools()).tools} == tools
+                observation = {
+                    "fixture_origin": "90cad03:plugin_root.pyの版別root正常系保持生成",
+                    "runtime": "現行MCPと現行launcher。旧版全体の再実行には当たらない",
+                    "platform": sys.platform,
+                    "launch_processes": process_diagnostics,
+                    "pid": server.pid,
+                    "created_at": server.create_time(),
+                    "cmdline": arguments,
+                    "open_files": opened,
+                    "open_files_error": open_files_error,
+                    "single_real_process_probe": True,
+                    "source": str(source),
+                    "area": str(area),
+                    "live_cleanup": {"exit_code": protected.returncode, "stdout": protected.stdout, "stderr": protected.stderr},
+                }
+    finally:
+        _wait_mcp_processes(owned, timeout=5)
+        print("旧形式MCP診断:\n" + log.read_text(encoding="utf-8"))
+    assert area is not None
+    cleaned = cleanup(area)
+    assert cleaned.returncode == 0, cleaned.stderr
+    assert not area.exists()
+    observation.update(
+        terminated_processes=sorted(owned),
+        stopped_cleanup={"exit_code": cleaned.returncode, "stdout": cleaned.stdout, "stderr": cleaned.stderr},
+        root_removed=True,
+    )
+    print("旧形式MCP観測: " + json.dumps(observation, ensure_ascii=False))
+
+
+@pytest.mark.parametrize("legacy_server_present", [False, True])
+def test_copy_failure_is_not_reused(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, legacy_server_present: bool
+) -> None:
+    """同namespaceの旧MCPが生存する場合も、失敗物を回収して次の解決で完成した実体を使用する。"""
+    source = _lease_plugin_source(tmp_path / "broken")
+    if legacy_server_present:
+        process = psutil.Process()
+        log = state_paths.state_dir() / "agents-server.log"
+        log.parent.mkdir(parents=True, exist_ok=True)
+        log.touch()
+        monkeypatch.setattr(process, "cmdline", lambda: ["python", "/old/agent_toolkit/agents_server_mcp.py"])
+        monkeypatch.setattr(process, "open_files", lambda: [SimpleNamespace(path=str(log))])
+        monkeypatch.setattr(psutil, "process_iter", lambda: [process])
+
+    def fail_copy(_src: pathlib.Path, dst: pathlib.Path, **_kwargs: object) -> None:
+        dst.mkdir()
+        (dst / "partial").touch()
+        raise OSError("copy interrupted")
+
+    with monkeypatch.context() as patch:
+        patch.setattr(shutil, "copytree", fail_copy)
+        assert plugin_roots.resolve_stable_plugin_root(source) == source
+    assert not managed_temp.list_managed_temp()
+    resolved = plugin_roots.resolve_stable_plugin_root(source)
+    assert resolved != source
+    assert (resolved / "payload.txt").read_text(encoding="utf-8") == "起動した版"
+
+
+def test_distinct_sources_and_versions_have_separate_roots(tmp_path: pathlib.Path) -> None:
+    """配布元または版が異なる実体を、それぞれ独立に保持する。"""
+    roots = [
+        plugin_roots.resolve_stable_plugin_root(_lease_plugin_source(tmp_path / "first", "1.0.0")),
+        plugin_roots.resolve_stable_plugin_root(_lease_plugin_source(tmp_path / "second", "1.0.0")),
+        plugin_roots.resolve_stable_plugin_root(_lease_plugin_source(tmp_path / "first", "2.0.0")),
+    ]
+    assert len(set(roots)) == 3
+    assert all((root / "payload.txt").read_text(encoding="utf-8") == "起動した版" for root in roots)
+
+
 def test_agents_server_config_uses_the_stable_plugin_root() -> None:
     """内側MCPサーバーの起動コマンドは、安定した配布物rootの実体だけを指す。"""
-    config = subject.AppServerManager._agents_server_config("owner", "writer")
+    config = subject.AppServerManager()._agents_server_config("owner", "writer")
 
     args = config["mcp_servers"]["agents_server"]["args"]
     expected_root = plugin_roots.resolve_stable_plugin_root()
@@ -1020,10 +1555,12 @@ async def test_manager_root_connects_codex_start_resume_and_notification(
         await backend.resume("resumed-thread", state.ResumePrompt("続行"), str(tmp_path))
         configs = [params["config"] for method, params in client.requests if method in {"thread/start", "thread/resume"}]
         assert len(configs) == 2
+        parent_environment = dict(os.environ)
+        inherited_venv.strip_inherited_venv(parent_environment)
         for config in configs:
             assert config["mcp_servers"]["agents_server"]["env"]["AGENT_TOOLKIT_OWNER_SESSION"] == root
             assert config["mcp_servers"]["agents_server"]["env_vars"] == list(
-                subject.mcp_environment.environment_variable_names(_atk_config.config_environment_variable_names())
+                subject.mcp_environment.runtime_environment_variable_names(parent_environment)
             )
         environment = {**configs[0]["mcp_servers"]["agents_server"]["env"], "CODEX_THREAD_ID": session.session_id}
         assert send_notification("途中の観測", environment=environment, state_root=tmp_path) == 0
@@ -1328,7 +1865,7 @@ async def test_codex_connection_failure_preserves_other_engines(tmp_path: pathli
 
 @pytest.mark.usefixtures("agents_server_isolation")
 @pytest.mark.asyncio
-@pytest.mark.parametrize("release_result", ["unsubscribed", "notLoaded", "notSubscribed", "closed", "closes-during-request"])
+@pytest.mark.parametrize("release_result", ["unsubscribed", "notLoaded", "notSubscribed", "closed"])
 async def test_stop_releases_codex_descendants_and_preserves_resume(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, release_result: str
 ) -> None:
@@ -1344,9 +1881,9 @@ async def test_stop_releases_codex_descendants_and_preserves_resume(
     async def request(method: str, params: dict[str, Any] | None = None, **kwargs: Any) -> dict[str, Any]:
         response = await original_request(method, params, **kwargs)
         if method == "thread/unsubscribe":
-            if release_result == "closes-during-request":
-                client.closed = True
-                raise subject.AppServerError("connection closed")
+            assert params is not None
+            if release_result in {"unsubscribed", "notSubscribed"}:
+                await backend._handle_notification({"method": "thread/closed", "params": {"threadId": params["threadId"]}})
             return {"status": release_result}
         return response
 
@@ -1396,8 +1933,6 @@ async def test_stop_releases_codex_descendants_and_preserves_resume(
         unsubscribed = [params["threadId"] for method, params in client.requests if method == "thread/unsubscribe"]
         if release_result == "closed":
             assert not unsubscribed
-        elif release_result == "closes-during-request":
-            assert len(unsubscribed) == 1
         else:
             assert set(unsubscribed) == {session.session_id, "child", "grandchild", "great-grandchild"}
             assert client.closed is False
@@ -1408,6 +1943,106 @@ async def test_stop_releases_codex_descendants_and_preserves_resume(
         assert response["delivery"] == "reply_started"
         assert [method for method, _params in client.requests] == ["thread/resume", "turn/start"]
     finally:
+        await manager.close()
+
+
+@pytest.mark.usefixtures("agents_server_isolation")
+@pytest.mark.asyncio
+@pytest.mark.parametrize("notification_first", [False, True])
+async def test_release_waits_for_each_thread_closure_and_keeps_shared_client(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, notification_first: bool
+) -> None:
+    """公開stopは親子の閉鎖を待ち、別会話を共有接続で継続できる。"""
+    manager = server_manager.AgentsServerManager(None)
+    backend = subject.AppServerManager(manager.sessions, manager._condition)
+    install_backend(manager, "codex", backend)
+    client = FakeCodexClient()
+    backend.client = cast(Any, client)
+    monkeypatch.setattr(backend, "_ensure_client", AsyncMock(return_value=client))
+    requested: asyncio.Queue[str] = asyncio.Queue()
+    original = client.request
+
+    async def request(method: str, params: dict[str, Any] | None = None, **kwargs: Any) -> dict[str, Any]:
+        if method != "thread/unsubscribe":
+            return await original(method, params, **kwargs)
+        assert params is not None
+        thread_id = params["threadId"]
+        if notification_first:
+            await backend._handle_notification({"method": "thread/closed", "params": {"threadId": thread_id}})
+        requested.put_nowait(thread_id)
+        return {"status": "unsubscribed"}
+
+    monkeypatch.setattr(client, "request", request)
+    session = await backend.start("開始", str(tmp_path))
+    _complete(session)
+    session.codex_subagent_thread_ids.add("child")
+    other = await backend.resume("other-thread", state.ResumePrompt("独立会話"), str(tmp_path))
+    stop = asyncio.create_task(manager.stop(session.session_id))
+    try:
+        for expected in ("child", session.session_id):
+            assert await asyncio.wait_for(requested.get(), 1) == expected
+            if not notification_first:
+                assert not stop.done()
+                assert session.session_id not in manager.stopped_sessions
+                await backend._handle_notification({"method": "thread/closed", "params": {"threadId": "unrelated"}})
+                assert not stop.done()
+                await backend._handle_notification({"method": "thread/closed", "params": {"threadId": expected}})
+        assert await asyncio.wait_for(stop, 1) == {}
+        assert not client.closed
+        assert (await manager.send_message(other.session_id, "別会話を続ける"))["delivery"] == "steered"
+        assert (await manager.send_message(session.session_id, "保存会話を続ける"))["delivery"] == "reply_started"
+        assert not backend._resume_close_events
+    finally:
+        stop.cancel()
+        await asyncio.gather(stop, return_exceptions=True)
+        await manager.close()
+
+
+@pytest.mark.usefixtures("agents_server_isolation")
+@pytest.mark.asyncio
+@pytest.mark.parametrize("failure", ["timeout", "request", "connection", "reader", "invalid-status"])
+async def test_failed_thread_closure_keeps_stop_unreleased(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, failure: str
+) -> None:
+    """閉鎖を確認できないstopは失敗を返し、再試行の対象と追跡済み子を保持する。"""
+    manager = server_manager.AgentsServerManager(None)
+    backend = subject.AppServerManager(manager.sessions, manager._condition)
+    install_backend(manager, "codex", backend)
+    client = FakeCodexClient()
+    backend.client = cast(Any, client)
+    entered = asyncio.Event()
+
+    async def request(_method: str, _params: dict[str, Any]) -> dict[str, Any]:
+        entered.set()
+        if failure == "request":
+            raise subject.AppServerError("unsubscribe rejected")
+        if failure == "invalid-status":
+            return {}
+        return {"status": "unsubscribed"}
+
+    monkeypatch.setattr(client, "request", request)
+    monkeypatch.setattr(subject, "DEFAULT_WAIT_TIMEOUT", 0.05)
+    session = state.SessionState("thread", str(tmp_path), engine="codex", status="completed", turn_completed=True)
+    session.codex_subagent_thread_ids.add("child")
+    manager.sessions[session.session_id] = session
+    stop = asyncio.create_task(manager.stop(session.session_id))
+    try:
+        await asyncio.wait_for(entered.wait(), 1)
+        if failure in {"connection", "reader"}:
+            if failure == "connection":
+                client.closed = True
+            else:
+                client.reader_failure = RuntimeError("reader failed")
+            await backend._handle_client_failure(RuntimeError("connection lost"))
+        with pytest.raises(TimeoutError if failure == "timeout" else subject.AppServerError):
+            await stop
+        assert manager.sessions[session.session_id] is session
+        assert session.session_id not in manager.stopped_sessions
+        assert session.codex_subagent_thread_ids == {"child"}
+        assert not backend._resume_close_events
+    finally:
+        stop.cancel()
+        await asyncio.gather(stop, return_exceptions=True)
         await manager.close()
 
 

@@ -28,6 +28,8 @@ from agent_toolkit._atk.wi.constants import WI_STATES, WI_TYPE_AWI
 from agent_toolkit._atk.wi.formatters import parse_alert_keys
 from agent_toolkit._common import json_command as _json_command
 from agent_toolkit._git import command as _git_command
+from agent_toolkit._git import forge_cli as _forge_cli
+from agent_toolkit._git import remote as _git_remote
 
 _GH_SUBPROCESS_TIMEOUT = 30.0
 _GLAB_SUBPROCESS_TIMEOUT = 30.0
@@ -41,6 +43,7 @@ GlabCiListFn = Callable[[str, str], list[dict]]
 GlabApiFn = Callable[[str, str], Any]
 """`glab api`をホスト名とエンドポイントで呼び、JSON応答を返す関数。"""
 GitCaptureFn = Callable[[pathlib.Path, list[str]], str | None]
+HeadFn = Callable[[str, str], str]
 
 
 ALERT_FAILURE_NEXT_ACTION = (
@@ -75,6 +78,73 @@ class AlertCheckResult:
     failures: tuple[str, ...]
 
 
+@dataclasses.dataclass(frozen=True)
+class RunContext:
+    """通知を組み立てるために必須となる実行とブランチHEADの観測。"""
+
+    created_at: str
+    sha: str
+    head_sha: str | None
+    head_error: str | None
+
+    def description(self) -> str:
+        """観測した実行情報と比較結果を本文へ渡す。"""
+        comparison = "一致" if self.sha == self.head_sha else "不一致"
+        head = self.head_sha or f"取得不能（{self.head_error}）"
+        if self.head_sha is None or not self.sha:
+            comparison = "判定不能"
+        return (
+            f"- 実行作成日時: {self.created_at or '応答に作成日時が無い'}\n"
+            f"- 対象コミット: {self.sha or '応答にSHAが無い'}\n"
+            f"- 収集時点のブランチHEAD: {head}\n"
+            f"- HEADとの比較: {comparison}\n"
+        )
+
+    def investigation(self) -> str:
+        """HEADとの差を踏まえて、後続実行の無い状態にも適用する調査条件を返す。"""
+        if self.head_sha is not None and self.sha == self.head_sha:
+            return ""
+        return (
+            "ブランチHEADで実行が作成されない理由（CI定義の有無と起動条件）を確認し、"
+            "失敗の原因がブランチHEADに残るか判定する。原因が残らない場合は確認結果を記録して完了とし、"
+            "追加の変更や後続の実行を要しない。"
+        )
+
+
+def _run_context(created_at: str, sha: str, repo: str, branch: str, head_fn: HeadFn) -> RunContext:
+    try:
+        return RunContext(created_at, sha, head_fn(repo, branch), None)
+    except AlertCollectError as exc:
+        return RunContext(created_at, sha, None, str(exc))
+
+
+def _branch_head(payload: Any, sha_field: str) -> str:
+    commit = payload.get("commit") if isinstance(payload, dict) else None
+    sha = commit.get(sha_field) if isinstance(commit, dict) else None
+    if not isinstance(sha, str) or not sha:
+        raise AlertCollectError("ブランチ応答にcommitのSHAが無い")
+    return sha
+
+
+def _github_head(repo: str, branch: str) -> str:
+    target = _git_remote.parse_remote_location(repo)
+    command = ["gh", "api", f"repos/{target.project_path}/branches/{urllib.parse.quote(branch, safe='')}"]
+    if target.hostname:
+        command.extend(("--hostname", target.hostname))
+    payload = _run_alert_json_command(
+        command, timeout=_GH_SUBPROCESS_TIMEOUT, operation="GitHubブランチHEAD", expected_type=dict
+    )
+    return _branch_head(payload, "sha")
+
+
+def _gitlab_head(repo: str, branch: str) -> str:
+    target = _git_remote.parse_remote_location(repo)
+    endpoint = (
+        f"projects/{urllib.parse.quote(target.project_path, safe='')}/repository/branches/{urllib.parse.quote(branch, safe='')}"
+    )
+    return _branch_head(_run_glab_api(repo, endpoint), "id")
+
+
 def _now_iso() -> str:
     """検知日時をローカルタイムゾーン付きISO8601秒精度で返す。"""
     return datetime.datetime.now().astimezone().isoformat(timespec="seconds")
@@ -102,7 +172,12 @@ def resolve_target_branch(local_path: pathlib.Path, *, git_fn: GitCaptureFn = _r
 
 
 def _run_alert_json_command(
-    command: list[str], *, timeout: float, operation: str, expected_type: type | tuple[type, ...] = list
+    command: list[str],
+    *,
+    timeout: float,
+    operation: str,
+    expected_type: type | tuple[type, ...] = list,
+    env: dict[str, str] | None = None,
 ) -> Any:
     """外部CLIを実行し、`expected_type`（省略時はJSON配列）の応答を返す。"""
 
@@ -117,7 +192,7 @@ def _run_alert_json_command(
             return AlertCollectError(f"{operation}が失敗しました（exit={failure.returncode}）: {failure.stderr.strip()}")
         return AlertCollectError(f"{operation}の応答をJSONとして解析できません: {failure.detail}")
 
-    payload = _json_command.run(command, timeout, error_factory=error_factory, strict_stderr=False)
+    payload = _json_command.run(command, timeout, error_factory=error_factory, strict_stderr=False, env=env)
     if not isinstance(payload, expected_type):
         raise AlertCollectError(f"{operation}の応答形状が不正です: {json.dumps(payload, ensure_ascii=False)[:200]!r}")
     return payload
@@ -144,7 +219,9 @@ def _run_gh_run_list(repo: str, branch: str) -> list[dict]:
     )
 
 
-def collect_github_ci_failures(repo: str, branch: str, *, run_list_fn: GhRunListFn = _run_gh_run_list) -> list[Alert]:
+def collect_github_ci_failures(
+    repo: str, branch: str, *, run_list_fn: GhRunListFn = _run_gh_run_list, head_fn: HeadFn | None = None
+) -> list[Alert]:
     """ワークフローとイベントの組ごとに、直近に完了したrunが失敗している場合だけアラート候補を返す。
 
     同じワークフローを`push`と`schedule`の両方で起動する場合も、後の`push`の成功に関係なく`schedule`の直近の失敗を返す。
@@ -159,23 +236,30 @@ def collect_github_ci_failures(repo: str, branch: str, *, run_list_fn: GhRunList
             continue
         latest_by_trigger[trigger] = run
     alerts: list[Alert] = []
+    context_by_branch: dict[str, RunContext] = {}
     for (name, _event), run in latest_by_trigger.items():
         if run.get("conclusion") not in _FAILURE_CONCLUSIONS:
             continue
         run_id = run.get("databaseId")
         if run_id is None:
             continue
+        if branch not in context_by_branch:
+            context_by_branch[branch] = _run_context("", "", repo, branch, head_fn or _github_head)
+        head = context_by_branch[branch]
+        context = dataclasses.replace(head, created_at=str(run.get("createdAt", "")), sha=str(run.get("headSha", "")))
         body = (
             f"ワークフロー`{name}`がブランチ`{branch}`で失敗している。\n\n"
             f"- 実行URL: {run.get('url', '')}\n"
-            f"- 対象コミット: {str(run.get('headSha', ''))[:8]}\n"
+            f"{context.description()}"
             f"- 検知日時: {_now_iso()}\n\n"
-            f"`gh run view {run_id} --log-failed`で失敗ログを取得し、根本原因を特定して修正する。\n"
+            f"{_forge_cli.failure_next_action('github', repo, str(run_id))}。\n"
+            f"{context.investigation()}\n"
             "既に後続の実行で解消済みの場合は、解消済みであることを記録して不採用とする。"
         )
         completion = (
             f"対象ワークフロー`{name}`の失敗が解消し、ブランチ`{branch}`でそのワークフローが成功する。"
             "後続の実行で既に成功している場合は、確認結果の記録だけでよく、追加の変更を要しない"
+            f"。{context.investigation()}"
         )
         alerts.append(Alert(keys=(f"github-run:{run_id}",), title=f"ワークフロー{name}失敗", body=body, completion=completion))
     return alerts
@@ -184,34 +268,55 @@ def collect_github_ci_failures(repo: str, branch: str, *, run_list_fn: GhRunList
 def _run_glab_ci_list(repo: str, ref: str) -> list[dict]:
     """`glab ci list`結果（created_at降順）を返す。"""
     return _run_alert_json_command(
-        ["glab", "ci", "list", "-R", repo, "--ref", ref, "-F", "json", "--per-page", "5"],
+        [
+            "glab",
+            "ci",
+            "list",
+            "-R",
+            _forge_cli.glab_repository(repo, prefer_environment=True),
+            "--ref",
+            ref,
+            "-F",
+            "json",
+            "--per-page",
+            "5",
+        ],
         timeout=_GLAB_SUBPROCESS_TIMEOUT,
         operation=f"glab ci list（{repo}）",
+        env=_forge_cli.glab_environment(repo, prefer_environment=True),
     )
 
 
-def collect_gitlab_ci_failures(repo: str, branch: str, *, ci_list_fn: GlabCiListFn = _run_glab_ci_list) -> list[Alert]:
+def collect_gitlab_ci_failures(
+    repo: str, branch: str, *, ci_list_fn: GlabCiListFn = _run_glab_ci_list, head_fn: HeadFn | None = None
+) -> list[Alert]:
     """対象ブランチの最新パイプラインが失敗している場合だけアラート候補を返す。"""
     pipelines = ci_list_fn(repo, branch)
     if not pipelines or pipelines[0].get("status") != "failed" or pipelines[0].get("id") is None:
         return []
-    return [_gitlab_pipeline_alert(pipelines[0], repo, branch)]
+    pipeline = pipelines[0]
+    context = _run_context(
+        str(pipeline.get("created_at", "")), str(pipeline.get("sha", "")), repo, branch, head_fn or _gitlab_head
+    )
+    return [_gitlab_pipeline_alert(pipeline, repo, branch, context=context)]
 
 
-def _gitlab_pipeline_alert(pipeline: dict, repo: str, ref: str, *, origin: str = "") -> Alert:
+def _gitlab_pipeline_alert(pipeline: dict, repo: str, ref: str, *, context: RunContext, origin: str = "") -> Alert:
     """失敗したGitLabパイプライン1件のアラートを組み立てる。`origin`は起動元の説明を本文の先頭へ加える。"""
     pipeline_id = pipeline["id"]
     body = (
         f"{origin}パイプライン`{pipeline_id}`がブランチ`{ref}`で失敗している。\n\n"
         f"- 実行URL: {pipeline.get('web_url', '')}\n"
-        f"- 対象コミット: {str(pipeline.get('sha', ''))[:8]}\n"
+        f"{context.description()}"
         f"- 検知日時: {_now_iso()}\n\n"
-        f"`glab ci view {pipeline_id} -R {repo}`で失敗ログを取得し、根本原因を特定して修正する。\n"
+        f"{_forge_cli.failure_next_action('gitlab', repo, str(pipeline_id), prefer_environment=True)}。\n"
+        f"{context.investigation()}\n"
         "既に後続の実行で解消済みの場合は、解消済みであることを記録して不採用とする。"
     )
     completion = (
         f"対象パイプライン`{pipeline_id}`の失敗が解消し、ブランチ`{ref}`で後続のパイプラインが成功する。"
         "後続の実行で既に成功している場合は、確認結果の記録だけでよく、追加の変更を要しない"
+        f"。{context.investigation()}"
     )
     return Alert(
         keys=(f"gitlab-pipeline:{pipeline_id}",),
@@ -223,11 +328,16 @@ def _gitlab_pipeline_alert(pipeline: dict, repo: str, ref: str, *, origin: str =
 
 def _run_glab_api(host: str, endpoint: str) -> Any:
     """`glab api`で対象ホストのREST APIを呼び、JSON応答（配列またはオブジェクト）を返す。"""
+    target: str | _git_remote.RemoteLocation = host
+    if "/" not in host:
+        parsed = urllib.parse.urlsplit(f"//{host}")
+        target = _git_remote.RemoteLocation(parsed.hostname, "", parsed.port)
     return _run_alert_json_command(
-        ["glab", "api", "--hostname", host, endpoint],
+        ["glab", "api", endpoint],
         timeout=_GLAB_SUBPROCESS_TIMEOUT,
         operation=f"glab api {endpoint}",
         expected_type=(list, dict),
+        env=_forge_cli.glab_environment(target, prefer_environment=True),
     )
 
 
@@ -244,6 +354,7 @@ def collect_gitlab_schedule_failures(host: str, repo: str, *, api_fn: GlabApiFn 
             f"Pipeline Scheduleの一覧の応答形状が不正です: {json.dumps(schedules, ensure_ascii=False)[:200]!r}"
         )
     alerts: list[Alert] = []
+    heads: dict[str, tuple[str | None, str | None]] = {}
     for schedule in schedules:
         if not isinstance(schedule, dict) or schedule.get("active") is not True or schedule.get("id") is None:
             continue
@@ -253,11 +364,20 @@ def collect_gitlab_schedule_failures(host: str, repo: str, *, api_fn: GlabApiFn 
             continue
         ref = str(pipeline.get("ref") or schedule.get("ref") or "")
         description = schedule.get("description") or schedule["id"]
+        if ref not in heads:
+            endpoint = f"projects/{urllib.parse.quote(repo, safe='')}/repository/branches/{urllib.parse.quote(ref, safe='')}"
+            try:
+                heads[ref] = (_branch_head(api_fn(host, endpoint), "id"), None)
+            except AlertCollectError as exc:
+                heads[ref] = (None, str(exc))
+        head_sha, head_error = heads[ref]
+        context = RunContext(str(pipeline.get("created_at", "")), str(pipeline.get("sha", "")), head_sha, head_error)
         alerts.append(
             _gitlab_pipeline_alert(
                 pipeline,
-                repo,
+                f"{host}/{repo}",
                 ref,
+                context=context,
                 origin=f"定期実行`{description}`（Pipeline Schedule {schedule['id']}）の",
             )
         )
@@ -320,13 +440,13 @@ def collect_new_alerts(
     if resolved_forge == "github":
         if branch is not None:
             try:
-                candidates.extend(collect_github_ci_failures(repo_path, branch, run_list_fn=run_list_fn))
+                candidates.extend(collect_github_ci_failures(repo_id, branch, run_list_fn=run_list_fn))
             except AlertCollectError as exc:
                 report_failure(f"GitHub CI状態の取得に失敗しました: {exc}")
     else:
         if branch is not None:
             try:
-                candidates.extend(collect_gitlab_ci_failures(repo_path, branch, ci_list_fn=ci_list_fn))
+                candidates.extend(collect_gitlab_ci_failures(repo_id, branch, ci_list_fn=ci_list_fn))
             except AlertCollectError as exc:
                 report_failure(f"GitLab CI状態の取得に失敗しました: {exc}")
         try:

@@ -74,7 +74,7 @@ hook・MCP定義などホスト別に明確に分離された資源は、各ホ�
 
 - Claude CodeのWeekly limitと5時間の利用上限で拒否された場合は、解除まで待って同じClaudeで作業を続け、Codexなど別の候補へ切り替えない
   （2026年10月4日、ユーザー指示。待てば確実に解除されるため、切替で作業の文脈を失う方が損失が大きい）。
-  対象は`agents_server`、`atk wi process-loop`の可用性判定と`atk commit`であり、`overage`、他の429、529、認証・権限の失敗は従来の切替のままとする。
+  対象は`agents_server`、メインのセッション、`atk wi process-loop`の可用性判定、`atk run-skill`の本作業と`atk commit`であり、`overage`、他の429、529、認証・権限の失敗は従来の切替のままとする。
   待機は回数と総時間で打ち切らない。実装契約は[design-agents-runtime.md](design-agents-runtime.md#api失敗過負荷利用上限の待機)の「API失敗・過負荷・利用上限の待機」にあり、委譲元の扱いは`agent-toolkit/skills/delegation/references/waiting-and-monitoring.md`「停滞の検知と巻き取り」が定める
 
 - `agents_server`のCodex接続先はatk configの`codex_model_providers`へ優先順で並べ、先頭を主接続先とする。未設定ならconfig.tomlに従い代替試行しない。接続先の定義と認証はCodexが持つ
@@ -85,6 +85,32 @@ hook・MCP定義などホスト別に明確に分離された資源は、各ホ�
   サブスクのみ、サブスク＋API、APIのみの3環境に対応し、API主接続とその認証選択は尊重する。
   対象は`agents_server`の全起動種別のCodexとその継続であり、直接起動とClaudeの解除待ちは対象外とする
   （2026年10月9日、ユーザー指示。既存API会話を維持する理由はキャッシュ効率、通知を増やさない理由は委譲先の混乱を避けるため）
+
+- `agents_server`のClaude委譲は、`claude_api_env_file`を設定した場合に利用上限で同じ会話をAPIへ移す（2026年10月14日、ユーザー回答）。
+  未設定では解除まで待つ。
+  APIへ移った会話は使用したenvファイルの絶対パスを保持し、設定変更・解除と解放後の再開でもそのパスを使う。
+  新規sessionは通常の接続で始め、envの値は切替・再開の起動ごとに読み直す。
+  値の複製、起動環境だけでの上書き、設定済みのファイル・認証・通信失敗への専用の補償処理は採らない。
+  メイン、run-skill、process-loopとcommitの接続先は本設定の対象外である
+- 利用上限後の再開は、次の起動形態ごとに扱う。
+  解除待ちのagents_serverの委譲先と背景wait・定期再確認は保持する。
+  Codexの候補判定は次候補を優先し、全候補失敗かつ上限失敗がある場合だけ解除を待つ
+
+| 起動形態 | 解除後の再開の適用と理由 |
+| --- | --- |
+| Claudeメイン、Remote Control接続 | Function hooksが解除後の再開を予約する |
+| Claudeメイン、Remote Control非接続 | ホストの自動継続を保ち、Function hooksも再開を予約する。解除後に既にturnが始まっていれば重複投入しない |
+| Claudeのprocess-loopの子 | Remote Controlを無効にした対話起動で既存のホストの自動継続とgoalの再開を保ち、次の反復の可用性判定も解除を待つ |
+| Claudeのrun-skill | スキル実行中の上限でも解除後に同じ会話をresumeする |
+| Claudeのcommit | 既存の解除待ちと同じ会話のresumeを保つ |
+| agents_serverのClaude委譲先 | 既存の解除待ちと再開を保ち、Function hooksによる再開予約からは除外する。待機中の委譲先を保持する停止判断と、前項のAPI移行設定を適用する |
+| Agentツールのサブエージェント | メインのセッションの一部であり、メインの再開で委譲元が続ける |
+| Codexのrun-skill | 解除後に`codex exec resume`で同じ会話を再開する |
+| Codexのprocess-loopの子 | 上限で止まった所有する子を終了し、次の反復の候補判定を経てレーンとWIから続ける |
+| 端末で`codex`を直接起動した対話画面 | 自動再開は未達として独立した実機観測・実装へ渡す。現行の操作は解除後の`/goal resume`か発話とする |
+| Codex TUIの子thread | 親threadの再開で親が続ける |
+| agents_serverのCodex委譲先 | run-skillとprocess-loopの再開の対象外。既存の接続先移行と、終端した前任からの引き継ぎ起動で扱う |
+| Codexのcommit | `--ephemeral`の単発操作であり、失敗を終了コードと次の操作として呼出元のエージェントへ返す |
 
 - Codexのサブエージェントのモデルと推論量は指定せず、指定がない場合にCodexが選ぶ値を使う
   （2026年8月、ユーザー指示。上書きするよりCodexの選ぶ値の方が動作が安定するとの実運用判断による）。

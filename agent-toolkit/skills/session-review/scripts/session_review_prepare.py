@@ -69,11 +69,11 @@ _SLOW_CALL_LIMIT = 10
 _FULL_TEXT_KINDS = frozenset({"user-intervention", "wi-user-response", "escalation"})
 """`candidates.md`へ本文の全文を載せる候補種別。ユーザーの是正と上位判断の要求は要約すると趣旨が変わるため全文を載せる。"""
 MANDATORY_KINDS = frozenset({"user-intervention", "confirmation-request", "wi-user-response"})
-"""再発防止策を必須とする候補種別。
+"""評価を必須とする候補種別。
 
 ユーザー介入、ユーザー確認（選択肢どおりの回答と投入したUWI）、WIの記入欄の是正は、
-`agent-toolkit:bugfix`の`references/root-cause-analysis.md`「ユーザー介入と確認の判定」の除外区分に当たる場合を除き、
-前例の有無によらず再発防止策を要する。再発防止策なしで終えられるのは同書「QとC・Dの区別」のC・Dだけの問題に限る。
+前例の有無によらず評価を要し、除外区分は`agent-toolkit:bugfix`の
+`references/root-cause-analysis.md`「ユーザー介入と確認の判定」で確かめる。探索の深さと再発防止策の要否・終了は同書「QとC・Dの区別」の重大度判断に従う。
 必須であることを参照資料の読込に依存させないよう候補一覧と1行JSONへ示し、
 振り返り結果報告は各候補の扱いを候補IDで示す（書式は`agent-toolkit:completion-report`の`references/report-formats.md`）。
 """
@@ -110,6 +110,11 @@ def _build_parser() -> argparse.ArgumentParser:
         "--target-repo",
         metavar="PATH",
         help="振り返り対象のリポジトリ。対象リポジトリ固有の振り返り参照文書の解決に使う。",
+    )
+    parser.add_argument(
+        "--conversation-only",
+        action="store_true",
+        help="引き継ぎ用の会話の流れと証拠bundleを生成して終了する。候補文書・統計・failure ledgerは更新しない。",
     )
     return parser
 
@@ -480,7 +485,7 @@ def _candidate_lines(
         readable = str(contexts[0].get("question", "")) or readable
     sessions = candidate.get("failure_session_count")
     session_count = f"、{sessions}セッション" if isinstance(sessions, int) else ""
-    mandatory = "、再発防止策が必須" if kind in MANDATORY_KINDS else ""
+    mandatory = "、評価が必須" if kind in MANDATORY_KINDS else ""
     heading = f"- {candidate['candidate_id']} {kind}（発生{occurrence}件{session_count}{mandatory}）: "
     lines = [heading + (_one_line(str(readable)) or "（本文なし）")]
     if isinstance(candidate.get("wi_file"), str):
@@ -610,7 +615,9 @@ def _candidates_document(
         f"- 候補: {len(candidates)}件（{count_text}）",
         f"- 候補から除いた件数: {excluded_text}",
         f"- 記録位置の全文は`{detail_command} --detail <記録位置>`で取得する",
-        f"- 再発防止策が必須の候補: {', '.join(mandatory) or 'なし'}",
+        "- 探索の深さと再発防止策の要否・終了はbugfixの重大度判断に従う。"
+        "軽微な問題は探索範囲・限界・許容する残存リスクを記録する",
+        f"- 評価が必須の候補: {', '.join(mandatory) or 'なし'}",
         "",
     ]
     if not candidates:
@@ -941,6 +948,20 @@ def main(argv: list[str] | None = None, *, now: datetime.datetime | None = None)
     comparison_path = work_dir / COMPARISON_FILENAME
     conversation_text = _conversation_document(conversation, detail_command)
     conversation_path.write_text(conversation_text, encoding="utf-8")
+    if args.conversation_only:
+        print(
+            json.dumps(
+                {
+                    "work_dir": str(work_dir),
+                    "conversation_path": str(conversation_path),
+                    "conversation_ranges": _conversation_ranges(conversation_text, conversation),
+                    "unconfirmed_scope": unresolved,
+                },
+                ensure_ascii=False,
+                separators=(",", ":"),
+            )
+        )
+        return 0
     comparison_path.write_text(_comparison_document(comparison, detail_command), encoding="utf-8")
     current = now if now is not None else datetime.datetime.now(datetime.UTC)
     session_id = transcript_path.stem if transcript_path is not None else str(args.codex_thread_id)

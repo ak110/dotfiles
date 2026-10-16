@@ -54,6 +54,48 @@ def _terminal_turn_status(
 class ManagerRegistry(responses.ManagerResponses):
     """保持するsessionと、保持期限切れ・停止済み・登録簿のsessionを解決し、一覧・表示・停止に応答する。"""
 
+    async def resolve_handoff_predecessor(self, session_id: str) -> SessionState | SessionResumeState:
+        """引き継ぎ元の終端を確認し、結果の回収状態を変えずに起動入力を返す。"""
+        if not shared_layout.valid_session_id(session_id):
+            raise ActionableError("前任session_idの形式が不正です", next_action=SESSION_ID_NEXT_ACTION)
+        await self.take_over_orphaned_session(session_id)
+        session = (
+            self.sessions.get(session_id) or self.expired_sessions.get(session_id) or self.stopped_sessions.get(session_id)
+        )
+        running_action = (
+            f"前任`{session_id}`の終端を`atk agents wait`で待つか、同じ前任へ`kill`で中断を要求して終端後に引き継ぐ"
+        )
+        if session_id in self._pending_resumes or (
+            session is not None
+            and (session.status not in TERMINAL_STATUSES or isinstance(session, SessionState) and not session.result_available)
+        ):
+            raise ActionableError(f"前任は実行中です: {session_id}", next_action=running_action)
+        if session is not None:
+            if isinstance(session, SessionState):
+                await session.drain_registration()
+            return session
+        resolution = session_registry.resolve(session_id)
+        if resolution.state is session_registry.Resolution.RUNNING:
+            raise ActionableError(f"前任は実行中です: {session_id}", next_action=running_action)
+        info = resolution.handoff_info or resolution.resume_info
+        if info is None or info.status not in TERMINAL_STATUSES:
+            raise ActionableError(
+                f"前任の引き継ぎ情報を復元できません: {session_id}; registry={resolution.state}",
+                next_action="前任の記録と起動入力を確かめ、確認した残工程を通常の`start`へ渡す",
+            )
+        return SessionResumeState(
+            session_id,
+            info.cwd,
+            info.model,
+            info.effort,
+            info.engine,
+            model_type=info.model_type,
+            launch_kind=info.launch_kind,
+            status=info.status,
+            turn_seq=info.turn_seq,
+            **info.launch_info.as_kwargs(),
+        )
+
     def _get_session(self, session_id: str) -> SessionState:
         """保持中のsessionを返し、未解決値は識別子体系と喪失に分けて診断する。"""
         if not isinstance(session_id, str) or not session_id:
@@ -166,6 +208,7 @@ class ManagerRegistry(responses.ManagerResponses):
             fast_mode=info.fast_mode,
             codex_model_provider=info.codex_model_provider,
             codex_subscription_provider=info.codex_subscription_provider,
+            claude_api_env_file=info.claude_api_env_file,
             cwd=info.cwd,
             model=info.model,
             effort=info.effort,
@@ -241,6 +284,7 @@ class ManagerRegistry(responses.ManagerResponses):
             fast_mode=info.fast_mode,
             codex_model_provider=info.codex_model_provider,
             codex_subscription_provider=info.codex_subscription_provider,
+            claude_api_env_file=info.claude_api_env_file,
             model_type=info.model_type,
             launch_kind=info.launch_kind,
             **info.launch_info.as_kwargs(),

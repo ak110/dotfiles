@@ -55,6 +55,42 @@ def _start_child(session: state.SessionState, tool_use_id: str, child_id: str) -
     )
 
 
+@pytest.mark.parametrize("namespace", ["mcp__plugin_agent-toolkit_agents_server__", "mcp__agents_server__", ""])
+@pytest.mark.parametrize("delivery", ["reply_started", "reply_ambiguous", "steered", "reply_failed"])
+def test_send_message_reactivates_terminal_child_until_observed(namespace: str, delivery: str) -> None:
+    """追送の配送結果で終端済みの子を再追跡し、曖昧な開始も終端観測まで保持する。"""
+    session = state.SessionState("parent-1", "/work")
+    session.terminal_child_session_ids.add("child-1")
+    session.auto_resume_consumed = True
+    wait_output_tracking.consume_claude_agents_server_message(
+        session,
+        {"content": [{"id": "reply", "name": f"{namespace}send_message", "input": {"session_id": "child-1"}}]},
+    )
+    result = {"session_id": "child-1", "delivery": delivery, "status": "running"}
+    wait_output_tracking.consume_claude_agents_server_message(
+        session, {"content": [{"tool_use_id": "reply", "content": {"structuredContent": result}}]}
+    )
+    if delivery == "reply_failed":
+        assert not session.live_child_session_ids
+        assert session.terminal_child_session_ids == {"child-1"}
+        assert session.auto_resume_consumed
+        return
+    assert session.live_child_session_ids == {"child-1"}
+    assert not session.terminal_child_session_ids
+    assert not session.auto_resume_consumed
+    # 同じ結果をturn/completedが再掲しても、既に消費した自動再開を再予約しない。
+    session.auto_resume_consumed = True
+    wait_output_tracking.consume_agents_server_tool_result(session, "send_message", {}, result)
+    assert session.auto_resume_consumed
+    wait_output_tracking.consume_agents_server_tool_result(
+        session, "kill", {"session_id": "child-1"}, {"status": "interrupted"}
+    )
+    assert not session.live_child_session_ids
+    assert session.terminal_child_session_ids == {"child-1"}
+    wait_output_tracking.consume_agents_wait_output(session, '{"session_id":"child-1","status":"interrupted"}')
+    assert not session.terminal_child_session_ids
+
+
 def test_child_session_collected_by_agents_wait_leaves_auto_resume_targets() -> None:
     """委譲先が`atk agents wait`で回収した孫sessionは、終端を理由とする自動再開の対象から外れる。"""
     session = state.SessionState("parent-1", "/tmp")

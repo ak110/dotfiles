@@ -26,7 +26,7 @@ description: >
 
 ## 統合実行ツール経由の起動
 
-- 確定した計画の変更範囲の検証は`atk run-script plan-verify -- --plan <絶対パス> --worktree <絶対パス> --timeout <正の有限秒数>`で実行する。訂正済み検証表があれば`--verification-plan <訂正済み検証表の絶対パス>`を加える。先に同じ入力の`--list`で全対象と順序が実差分を含むことを確かめる。失敗・timeout後も全件を実行するため、集約終了コードに加えて結果まとめの各行の`state`・`failure`、各record_pathと両出力を読んで判定する。検証行・訂正済み検証表の書式と引き継ぎ、pyfltrのJSONL指定と完了の検収は`agent-toolkit:plan-mode`の`references/plan-file-standards.md`「検証と終端工程」に従う
+- 確定した計画の変更範囲の検証は`atk run-script plan-verify -- --plan <絶対パス> --worktree <絶対パス> --timeout <正の有限秒数> --summary-only`で実行する。訂正済み検証表があれば`--verification-plan <訂正済み検証表の絶対パス>`を加える。先に同じ入力の`--list`で全対象と順序が実差分を含むことを確かめる。失敗・timeout後も全件を実行するため、集約終了コードに加えて結果まとめの各行の`state`・`failure`、各record_pathと両出力を読んで判定する。検証行・訂正済み検証表の書式と引き継ぎ、pyfltrのJSONL指定と完了の検収は`agent-toolkit:plan-mode`の`references/plan-file-standards.md`「検証と終端工程」に従う
 - プロジェクトが採用する統合実行ツール（`pyfltr`など）を使い、対象を限定する場合も同じツールへパスを渡す。個別ツールの直接起動はデバッグ・最小再現・原因特定などプロジェクト規範が認める用途に限る
 - チェック実行用MCPを優先し、pyfltrでは`run`を使う。MCPを使えない外部チェックや手動観測で両出力と終了状態を残す場合は、`atk run-command [--cwd DIR] [--timeout SECONDS] -- COMMAND [ARG...]`を使う。返却JSONの`record_path`（実行条件・子終了状態・両出力へ到達できる保存JSON）の絶対パスを検証記録へ渡す
 - 実際のrun_id・record_path、保存した手動観測は、完了報告の送達前確認へ渡す。報告する結果と保存物の対応は`agent-toolkit:completion-report`の`references/report-formats.md`「検証結果と実行記録」が定める

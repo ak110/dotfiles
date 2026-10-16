@@ -209,6 +209,7 @@ def _run_public_process_loop(
         return real_run(cmd, *args, **kwargs)  # pylint: disable=subprocess-run-check  # 実Git実行へそのまま委譲する
 
     monkeypatch.setattr(subprocess, "run", fake_run)
+    monkeypatch.setattr(_pl_session, "_run_codex_session", lambda argv, env, cwd: fake_run(argv, env=env, cwd=cwd))
     monkeypatch.setattr(_process_loop, "resolve_repo_id", lambda *_args, **_kwargs: "github.com/example/repo")
     monkeypatch.setattr(
         _pl_session,
@@ -857,6 +858,7 @@ class TestProcessLoopSessionPreparation:
             return base_fake_run(cmd, *_args, **kwargs)
 
         monkeypatch.setattr(subprocess, "run", fake_run)
+        monkeypatch.setattr(_pl_session, "_run_codex_session", lambda argv, env, cwd: fake_run(argv, env=env, cwd=cwd))
 
         with pytest.raises(SystemExit) as exc_info:
             atk.main(

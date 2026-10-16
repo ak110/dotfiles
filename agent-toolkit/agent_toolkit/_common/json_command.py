@@ -3,7 +3,7 @@
 import dataclasses
 import json
 import subprocess
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from typing import Any, Literal
 
 FailureKind = Literal["timeout", "not-found", "decode", "exit", "json"]
@@ -28,10 +28,11 @@ def run(
     *,
     error_factory: Callable[[Failure], Exception],
     strict_stderr: bool = True,
+    env: Mapping[str, str] | None = None,
 ) -> Any:
     """コマンドを実行してJSONを返し、失敗は呼び出し側指定の例外へ変換する。"""
     try:
-        result = subprocess.run(command, capture_output=True, check=False, timeout=timeout)
+        result = subprocess.run(command, capture_output=True, check=False, timeout=timeout, env=env)
     except subprocess.TimeoutExpired as exc:
         raise error_factory(Failure("timeout", tuple(command), timeout)) from exc
     except FileNotFoundError as exc:

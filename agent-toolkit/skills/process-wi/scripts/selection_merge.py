@@ -33,6 +33,49 @@ def _costs(data: dict[str, object]) -> _Rows:
     return rows
 
 
+def extend_write_targets(existing: dict[str, object], addition: object) -> dict[str, object]:
+    """指定WIの書込対象と関連記録を追記し、既存の配分と他の欄を保持する。"""
+    allowed = {_selection.DECISIONS_KEY, _selection.LANE_OVERLAPS_KEY}
+    if not isinstance(addition, dict) or set(addition) - allowed:
+        raise ValueError("追加入力の最上位は`選定`・`レーン間の重なり`だけを持つ写像とする")
+    updates = addition.get(_selection.DECISIONS_KEY, [])
+    overlaps = addition.get(_selection.LANE_OVERLAPS_KEY, [])
+    if not isinstance(updates, list) or not isinstance(overlaps, list):
+        raise ValueError("追加入力の`選定`・`レーン間の重なり`は列とする")
+    result = copy.deepcopy(existing)
+    # 保存済みの旧欄名と、更新しない項目の表記も保持する。
+    items = typing.cast(_Rows, result.get(_selection.DECISIONS_KEY, result.get("decisions")))
+    by_wi = {str(item.get(_selection.WI_KEY, item.get("awi"))): item for item in items}
+    fields = (_selection.WRITE_FILES_KEY, _selection.DERIVED_NEW_PATHS_KEY)
+    for update in updates:
+        if not isinstance(update, dict) or set(update) - {_selection.WI_KEY, *fields}:
+            raise ValueError("追加入力の`選定`の各項目は`WI`・`書込対象`・`導出した新設先`だけを持つ写像とする")
+        name = update.get(_selection.WI_KEY)
+        if not isinstance(name, str) or name not in by_wi:
+            raise ValueError(f"書込対象の追加先WIが保存済み選定に無い: {name}")
+        item = by_wi[name]
+        if item.get(_selection.LANE_KEY, item.get("lane")) == "なし":
+            raise ValueError(f"{name}: レーンが`なし`の項目へ書込対象を追加できない")
+        for field in fields:
+            if field not in update:
+                continue
+            values = update[field]
+            if not isinstance(values, list):
+                raise ValueError(f"{name}: 追加入力の`{field}`は列とする")
+            key = (
+                "write_files" if field == _selection.WRITE_FILES_KEY and "write_files" in item and field not in item else field
+            )
+            target = typing.cast(list[object], item.setdefault(key, []))
+            target.extend(copy.deepcopy(value) for value in values if value not in target)
+    if overlaps:
+        target = typing.cast(list[object], result.setdefault(_selection.LANE_OVERLAPS_KEY, []))
+        target.extend(copy.deepcopy(value) for value in overlaps if value not in target)
+    errors, models = selection_contract.structure_errors(result)
+    if errors or models:
+        raise ValueError("\n".join([*models, *errors]))
+    return result
+
+
 def merge_selection(
     existing: dict[str, object], added: dict[str, object], lane_map: object, cost_updates: object = None
 ) -> dict[str, object]:

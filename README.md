@@ -133,6 +133,34 @@ agy models
 statuslineをClaude Codeと同じ体裁で表示する場合は、Antigravity CLIのstatuslineコマンドへ
 `claude-statusline agy-statusline`を設定する。
 
+### dotfilesプラグイン
+
+リポジトリ直下の`plugins/<名前>/`に、自分用の配布物と後処理を追加できる。
+`plugins/`配下はGitの追跡対象から外れる。
+
+```text
+plugins/
+  my-settings/
+    .chezmoi-source/
+    post_apply.py
+    .git/
+```
+
+各ファイルとディレクトリは任意である。
+本体の適用と後処理を終えてから、プラグイン名の昇順に次を行う。
+
+1. `.chezmoi-source/`があれば、その配布物をホームへ適用する
+2. `post_apply.py`があれば、プラグインのディレクトリで`uv run --no-project --script`により実行する
+
+本体と配布先が重なるファイルはプラグインの内容で上書きし、プラグイン名と配布先を警告する。
+プラグイン同士では、名前順で後のものが優先する。
+プラグインのテンプレートから本体の`.chezmoidata.toml`のデータは参照できない。
+
+`update-dotfiles`は本体のpull後に、`.git`を持つプラグインも名前順にpullする。
+プラグインのpullが失敗すると更新を停止する。
+applyや`post_apply.py`の失敗は後処理の失敗として返し、他のプラグインの処理は継続する。
+applyが失敗したプラグインの`post_apply.py`は実行しない。
+
 ## 使い方
 
 ```bash

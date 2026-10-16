@@ -5,9 +5,10 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
-from typing import Any
+from typing import Any, cast
 
 from agent_toolkit._agents_server import (
+    claude,
     codex_providers,
     launch_requests,
     manager_registry,
@@ -49,6 +50,39 @@ class ManagerResume(manager_registry.ManagerRegistry):
     async def _advance_child_session_wait(self, session: SessionState) -> None:
         """保留中の結果を、孫sessionの終端・過負荷と利用上限の待機の経過または保持期限に応じて進める。"""
         if not session.awaiting_auto_resume or session.pending_result is None:
+            return
+        if session.claude_api_resume_pending:
+            pending = session.pending_result
+            session.claude_api_resume_pending = False
+            prompt = ResumePrompt(
+                wrap_delivery_body(
+                    "直前のturnは中断した。完了済みの操作と成果物を確認し、残る作業を続けて所定の返却形式を返せ。"
+                )
+            )
+            try:
+                await cast(claude.ClaudeServerManager, self._backend(session.engine)).resume(
+                    session.session_id,
+                    prompt,
+                    session.cwd,
+                    session.model,
+                    session.effort,
+                    model_type=session.model_type,
+                    launch_kind=session.launch_kind,
+                    excluded_candidates=session.excluded_candidates,
+                    turn_seq=session.turn_seq,
+                    api_env_file=session.claude_api_env_file,
+                    existing_session=session,
+                )
+            except Exception as exc:
+                session.awaiting_auto_resume = False
+                session.pending_result = None
+                session.status = pending["status"]
+                session.agent_message = pending["agent_message"]
+                session.error = {"message": f"{type(exc).__name__}: {exc}"}
+                session.turn_completed = True
+                session.touch()
+            finally:
+                prompt.close()
             return
         if session.codex_provider_resume_pending:
             pending = session.pending_result
@@ -226,6 +260,8 @@ class ManagerResume(manager_registry.ManagerRegistry):
         try:
             await launch_requests.check_plugin_commands(resume_state.cwd)
             provider_args: dict[str, Any] = {}
+            if resume_state.engine == "claude" and resume_state.claude_api_env_file is not None:
+                provider_args["api_env_file"] = resume_state.claude_api_env_file
             if resume_state.codex_model_provider is not None:
                 provider_args = {
                     "model_provider": resume_state.codex_model_provider,
@@ -330,6 +366,7 @@ class ManagerResume(manager_registry.ManagerRegistry):
                 model_type=resume_state.model_type,
                 codex_model_provider=resume_state.codex_model_provider,
                 codex_subscription_provider=resume_state.codex_subscription_provider,
+                claude_api_env_file=resume_state.claude_api_env_file,
                 launch_kind=resume_state.launch_kind,
                 excluded_candidates=resume_state.excluded_candidates,
                 announced=True,

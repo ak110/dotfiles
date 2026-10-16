@@ -4,9 +4,13 @@ import json
 import shutil
 import subprocess
 import sys
+import sysconfig
 from collections.abc import Callable
 from pathlib import Path
 
+import pytest
+
+from agent_toolkit._common import inherited_venv
 from agent_toolkit._common import plugin_environment as subject
 
 
@@ -219,3 +223,106 @@ def test_runtime_data_is_shared_by_hosts_and_falls_back_to_host_data(tmp_path: P
     assert fallback == (tmp_path / "claude-data").resolve()
     explicit = subject.runtime_data({**shared, subject.RUNTIME_DATA_ENV: str(tmp_path / "explicit")})
     assert explicit == (tmp_path / "explicit").resolve()
+
+
+@pytest.mark.parametrize("caller_setting", ["value", "empty", "unset"])
+def test_session_start_hook_separates_real_uv_and_restores_child_environment(
+    tmp_path: Path, host_environ: Callable[[], dict[str, str]], caller_setting: str
+) -> None:
+    """実uvのhook起動で専用環境と子への元設定の復元を両立し、分離を外した起動との差を観測する。"""
+    root = _root(tmp_path / "hook-plugin")
+    environment = host_environ()
+    uv = shutil.which("uv", path=environment["PATH"])
+    assert uv is not None
+    for key in (
+        "VIRTUAL_ENV",
+        "UV_PROJECT_ENVIRONMENT",
+        subject.RUNTIME_ENVIRONMENT_ENV,
+        inherited_venv.CALLER_PROJECT_ENVIRONMENT_KEY,
+    ):
+        environment.pop(key, None)
+    environment.update({"UV_PYTHON": sys.executable, subject.RUNTIME_DATA_ENV: str(tmp_path / "runtime-data")})
+    caller = tmp_path / "caller-environment"
+    created = subprocess.run(
+        [uv, "venv", "--python", sys.executable, str(caller)],
+        env=environment,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        timeout=15,
+        check=False,
+    )
+    assert created.returncode == 0, created.stderr
+    site_packages = Path(sysconfig.get_path("purelib", vars={"base": str(caller), "platbase": str(caller)}))
+    marker = site_packages / "caller_package-1.0.0.dist-info" / "METADATA"
+    marker.parent.mkdir(parents=True)
+    marker.write_text("Name: caller-package\nVersion: 1.0.0\n", encoding="utf-8")
+    module = site_packages / "caller_package.py"
+    module.write_text("VALUE = 'caller-package'\n", encoding="utf-8")
+    protected_paths = (caller / "pyvenv.cfg", marker, module)
+    protected = {str(path.relative_to(caller)): path.read_bytes() for path in protected_paths}
+    expected = None if caller_setting == "unset" else ("" if caller_setting == "empty" else str(caller))
+    if expected is not None:
+        environment["UV_PROJECT_ENVIRONMENT"] = expected
+    environment["CLAUDE_ENV_FILE"] = str(tmp_path / "session-start-env.sh")
+    (root / "uv.lock").unlink()
+    locked = subprocess.run(
+        [uv, "lock", "--offline", "--project", str(root)],
+        env={**environment, "UV_FROZEN": "0"},
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        timeout=15,
+        check=False,
+    )
+    assert locked.returncode == 0, locked.stderr
+    shutil.copyfile(Path(inherited_venv.__file__), root / "inherited_venv.py")
+    probe = root / "hook_probe.py"
+    probe.write_text(
+        "import json, os, subprocess, sys\nimport inherited_venv\n"
+        "child_environment = dict(os.environ)\n"
+        "inherited_venv.strip_inherited_venv(child_environment)\n"
+        "child = subprocess.run([sys.executable, '-c', "
+        "\"import json, os; print(json.dumps({'caller': os.environ.get('UV_PROJECT_ENVIRONMENT')}))\"], "
+        "env=child_environment, capture_output=True, text=True, check=True, timeout=5)\n"
+        "print(json.dumps({'prefix': sys.prefix, 'child': json.loads(child.stdout), 'input': sys.stdin.read()}))\n",
+        encoding="utf-8",
+    )
+    bootstrap = Path(subject.__file__).resolve().parents[2] / "scripts/launch.py"
+    launched = subprocess.run(
+        [sys.executable, str(bootstrap), "--project", str(root), "--persist-claude-env", probe.name],
+        cwd=tmp_path,
+        env=environment,
+        input='{"hook_event_name":"SessionStart"}',
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        timeout=30,
+        check=False,
+    )
+    assert launched.returncode == 0, launched.stderr
+    observed = json.loads(launched.stdout)
+    assert Path(observed["prefix"]).is_relative_to(tmp_path / "runtime-data" / "environments")
+    assert observed["child"] == {"caller": expected}
+    assert json.loads(observed["input"]) == {"hook_event_name": "SessionStart"}
+    assert {str(path.relative_to(caller)): path.read_bytes() for path in protected_paths} == protected
+    assert "UV_PROJECT_ENVIRONMENT" not in Path(environment["CLAUDE_ENV_FILE"]).read_text(encoding="utf-8")
+    control = None
+    if caller_setting == "value":
+        # 同じ実uvへ呼出元の指定をそのまま渡すと、ツールが呼出元の環境へ同期される。
+        result = subprocess.run(
+            [uv, "run", "--project", str(root), "--locked", "--no-default-groups", str(probe)],
+            cwd=tmp_path,
+            env=environment,
+            input="{}",
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            timeout=30,
+            check=False,
+        )
+        assert result.returncode == 0, result.stderr
+        control = json.loads(result.stdout)
+        assert Path(control["prefix"]) == caller
+        assert not Path(control["prefix"]).is_relative_to(tmp_path / "runtime-data")
+    print(json.dumps({"caller_setting": caller_setting, "hook": observed, "control": control}, ensure_ascii=False))

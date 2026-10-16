@@ -2,7 +2,8 @@
 
 本書はClaude Codeのメインに適用する。共通判断は`01-agent.md`と`02-agent-operations.md`に従う。
 
-利用上限の猶予通知を受けたときは、`agent-toolkit:user-confirmation-and-report`を起動し、同スキルが定める状況伝達・続行・再開の手順を適用する。
+Claude Codeのホストが挿入する`Usage limit reached; a short grace allowance remains`で始まる注記を、利用上限の猶予通知とする。
+この通知を受けたときは`agent-toolkit:user-confirmation-and-report`を起動し、同スキルが定める状況伝達・続行・再開の手順を適用する。
 
 ## ツールの入出力
 

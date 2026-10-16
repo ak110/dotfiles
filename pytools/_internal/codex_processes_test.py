@@ -7,6 +7,12 @@ import pytest
 from pytools._internal import codex_processes
 
 
+@pytest.fixture(autouse=True)
+def _posix_owner(monkeypatch: pytest.MonkeyPatch) -> None:
+    """既存のuids入力のテストを全OSで同じ所有者条件にそろえる。"""
+    monkeypatch.setattr(codex_processes, "os", SimpleNamespace(name="posix", getuid=lambda: 1000))
+
+
 def test_daemon_detection_excludes_other_users_and_prompt_arguments(monkeypatch: pytest.MonkeyPatch) -> None:
     """同じ所有者のdaemonを拾い、他ユーザーと引数中の検索語を稼働判定へ混ぜない。"""
     uid = 1000
@@ -92,13 +98,24 @@ def test_managed_daemon_and_update_loop_are_classified_by_launch_form(monkeypatc
         [
             _process(10, [_DAEMON_EXE, "app-server", "daemon", "pid-update-loop"]),
             _process(11, [_DAEMON_EXE, "app-server", "--listen", "unix://", "--managed-daemon"], ppid=10),
-            _process(12, [_DAEMON_EXE.replace("/codex", "/codex-code-mode-host")], ppid=11, name="codex-code-mode-host"),
+            _process(
+                12,
+                [_DAEMON_EXE.replace("/codex", "/codex-code-mode-host")],
+                ppid=11,
+                name="codex-code-mode-host",
+                exe=_DAEMON_EXE.replace("/codex", "/codex-code-mode-host"),
+            ),
         ],
     )
     assert [(process.pid, process.role) for process in codex_processes.codex_processes()] == [
         (10, "update-loop"),
         (11, "managed-daemon"),
         (12, "managed-daemon"),
+    ]
+    assert [process.executable for process in codex_processes.codex_processes()] == [
+        _DAEMON_EXE,
+        _DAEMON_EXE,
+        _DAEMON_EXE.replace("/codex", "/codex-code-mode-host"),
     ]
     assert codex_processes.running_codex_processes() == ("codex app-server --managed-daemon", "codex-code-mode-host")
 
@@ -151,3 +168,17 @@ def test_node_package_update_loop_is_recognized(monkeypatch: pytest.MonkeyPatch)
         [_process(30, ["node", entry, "app-server", "daemon", "pid-update-loop"], name="node", exe="/usr/bin/node")],
     )
     assert [process.role for process in codex_processes.codex_processes()] == ["update-loop"]
+
+
+def test_windows_process_owner_and_executable(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Windowsではusernameで自ユーザーを選び、使用版の実行パスを返す。"""
+    monkeypatch.setattr(codex_processes, "os", SimpleNamespace(name="nt"))
+    monkeypatch.setattr(codex_processes.psutil, "Process", lambda: SimpleNamespace(username=lambda: "host\\user"))
+    own = _process(20, ["codex.exe"], exe="C:/codex/releases/old/bin/codex.exe")
+    own.info["username"] = "host\\user"
+    other = _process(21, ["codex.exe"])
+    other.info["username"] = "host\\other"
+    monkeypatch.setattr(codex_processes.psutil, "process_iter", lambda *args, **kwargs: [own, other])
+    processes = codex_processes.codex_processes()
+    assert len(processes) == 1
+    assert processes[0].executable == "C:/codex/releases/old/bin/codex.exe"

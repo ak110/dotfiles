@@ -9,6 +9,8 @@ import shlex
 import subprocess
 import sys
 import time
+from collections.abc import Callable
+from typing import Any
 
 import pytest
 
@@ -29,17 +31,28 @@ def _plan(path: pathlib.Path, cell: str) -> pathlib.Path:
     return path
 
 
-def test_public_plan_executes_all_commands_and_unwraps_recording(
-    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+@pytest.mark.parametrize("summary_only", [False, True])
+def test_summary_only_lists_all_states_and_preserves_details(
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+    summary_only: bool,
+    host_environ: Callable[[], dict[str, str]],
 ) -> None:
     """`--list`では子を起動せず、実行では非0終了とtimeoutの後も残りの子を実行し、保存した版とargvを保持する。"""
     repo = tmp_path / "repo"
     repo.mkdir()
     git_repository.init_repository(repo)
+    # pyfltrの公開JSONL summaryに合わせた未完了の出力を、実際の子プロセスから渡す。
+    (repo / "pyfltr.py").write_text(
+        'print(\'{"kind": "summary", "completion": "incomplete", "files_reached": 0}\')\n', encoding="utf-8"
+    )
+    git_repository.git_output(repo, "add", "--", "pyfltr.py")
     git_repository.git_output(
         repo, "-c", "user.name=Test", "-c", "user.email=test@example.invalid", "commit", "--allow-empty", "-qm", "base"
     )
     head = git_repository.git_output(repo, "rev-parse", "HEAD")
+    monkeypatch.setattr(run_command.os, "environ", host_environ())
     script = tmp_path / "child.py"
     script.write_text(
         "import sys, time\nfrom pathlib import Path\np=Path(sys.argv[1])\n"
@@ -63,20 +76,30 @@ def test_public_plan_executes_all_commands_and_unwraps_recording(
     monkeypatch.setattr(run_command.subprocess, "Popen", _PopenAfterReady)
     commands = [shlex.join([sys.executable, str(script), str(log), value]) for value in ("with space", "fail", "wait", "last")]
     commands[2] = f"atk run-command --cwd {shlex.quote(str(repo))} --timeout 0.05 -- {commands[2]}"
+    commands.insert(3, shlex.join([sys.executable, "-B", "-m", "pyfltr", "run", "--output-format=jsonl"]))
     plan = _plan(tmp_path / "plan.md", "<br>".join(f"`{command}`" for command in commands))
     assert _run(plan, repo, "--list") == 0
-    assert len(json.loads(capsys.readouterr().out)) == 4
+    assert len(json.loads(capsys.readouterr().out)) == 5
     assert not log.exists()
-    assert _run(plan, repo) == 1
+    assert _run(plan, repo, *(["--summary-only"] if summary_only else [])) == 1
     saved = json.loads(capsys.readouterr().out)
     results = saved["results"]
-    assert [row["state"] for row in results] == ["success", "failure", "timeout", "success"]
-    assert [row["exit_code"] for row in results] == [0, 7, 124, 0]
+    assert [row["state"] for row in results] == ["success", "failure", "timeout", "failure", "success"]
+    assert [row["exit_code"] for row in results] == [0, 7, 124, 0, 0]
+    assert [row["order"] for row in results] == [1, 2, 3, 4, 5]
+    assert [row["command"] for row in results] == commands
+    assert results[3]["failure"]
     assert log.read_text(encoding="utf-8") == "with spacefailwaitlast"
-    for result in results:
+    details = json.loads(pathlib.Path(saved["results_path"]).read_text(encoding="utf-8"))
+    for result, detail in zip(results, details["results"], strict=True):
+        if summary_only:
+            assert set(result) == {"order", "command", "state", "exit_code", "record_path", "failure"}
+        else:
+            assert result == detail
         record = json.loads(pathlib.Path(result["record_path"]).read_text(encoding="utf-8"))
         assert record["git_head"] == head and record["git_status"] == []
-        assert record["argv"][0] == sys.executable and record["argv"] == result["argv"]
+        assert record["argv"][0] == sys.executable and record["argv"] == detail["argv"]
+        assert detail["record"] == record
         assert pathlib.Path(record["stdout_path"]).is_file() and pathlib.Path(record["stderr_path"]).is_file()
     assert pathlib.Path(saved["results_path"]).is_file()
     assert saved["records"] == [row["record_path"] for row in results] and not saved["unrecorded"]
@@ -89,9 +112,83 @@ def test_public_plan_executes_all_commands_and_unwraps_recording(
         == 0
     )
     read = json.loads(capsys.readouterr().out)
-    assert [row["wrapper_exit_code"] for row in read["records"]] == [0, 7, 124, 0]
+    assert [row["wrapper_exit_code"] for row in read["records"]] == [0, 7, 124, 0, 0]
     assert read["records"][2]["timed_out"]
+    assert [row["stdout"].strip() for row in read["records"][:3]] == ["with space", "fail", "wait"]
     assert log.read_text(encoding="utf-8") == "with spacefailwaitlast"
+
+
+@pytest.mark.parametrize("record_failure,bundle_failure", [(True, False), (False, True), (True, True)])
+@pytest.mark.parametrize("summary_only", [False, True])
+def test_summary_only_preserves_save_failure_recovery(
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+    record_failure: bool,
+    bundle_failure: bool,
+    summary_only: bool,
+    host_environ: Callable[[], dict[str, str]],
+) -> None:
+    """個別記録とまとめの保存失敗を非0とし、未保存の条件・終了状態・両出力を回復できる。"""
+    marker = tmp_path / "executions.txt"
+    child = tmp_path / "child.py"
+    child.write_text(
+        "import pathlib,sys\np = pathlib.Path(sys.argv[1])\n"
+        "p.write_text(p.read_text() + 'x' if p.exists() else 'x')\n"
+        "print('stdout value')\nprint('stderr value', file=sys.stderr)\n",
+        encoding="utf-8",
+    )
+    command = shlex.join([sys.executable, str(child), str(marker)])
+    plan = _plan(tmp_path / "plan.md", f"`{command}`")
+    bundle = tmp_path / "results.json"
+    if bundle_failure:
+        bundle.mkdir()
+    original_open = pathlib.Path.open
+
+    def open_record(path: pathlib.Path, *args: Any, **kwargs: Any) -> Any:
+        if record_failure and path.name == "record.json" and args[:1] == ("x",):
+            raise OSError("injected record save failure")
+        return original_open(path, *args, **kwargs)
+
+    monkeypatch.setattr(pathlib.Path, "open", open_record)
+    monkeypatch.setattr(run_command.os, "environ", host_environ())
+    options = ["--records-output", str(bundle), *(["--summary-only"] if summary_only else [])]
+    assert _run(plan, tmp_path, *options) == (2 if bundle_failure else 1)
+    captured = capsys.readouterr()
+    result = json.loads(captured.out)
+    assert result["results"][0]["state"] == ("failure" if record_failure else "success")
+    assert result["results"][0]["exit_code"] == (125 if record_failure else 0)
+    if bundle_failure:
+        assert captured.err
+        if summary_only:
+            assert result["results_path"] is None
+            assert result["unrecorded"] == ([1] if record_failure else [])
+            rows = result["recovery"] if record_failure else []
+        else:
+            rows = result["results"] if record_failure else []
+    else:
+        saved = json.loads(bundle.read_text(encoding="utf-8"))
+        assert saved["unrecorded"] == [1]
+        rows = saved["results"]
+    if record_failure:
+        record = rows[0]["record"]
+        assert record["argv"] == [sys.executable, str(child), str(marker)]
+        assert record["cwd"] == str(tmp_path)
+        assert record["child_exit_code"] == 0 and record["wrapper_exit_code"] == 125
+        assert pathlib.Path(record["stdout_path"]).read_text(encoding="utf-8") == "stdout value\n"
+        assert pathlib.Path(record["stderr_path"]).read_text(encoding="utf-8") == "stderr value\n"
+    else:
+        assert (
+            run_command.dispatch(
+                argparse.Namespace(
+                    record=[pathlib.Path(result["records"][0])], records_file=None, command_argv=[], cwd=None, timeout=None
+                )
+            )
+            == 0
+        )
+        recovered = json.loads(capsys.readouterr().out)["records"][0]
+        assert recovered["stdout"] == "stdout value\n" and recovered["stderr"] == "stderr value\n"
+    assert marker.read_text(encoding="utf-8") == "x"
 
 
 @pytest.mark.parametrize(
@@ -245,7 +342,7 @@ def test_public_plan_keeps_generic_and_nonexecution_commands_successful(
     monkeypatch: pytest.MonkeyPatch,
     argv: list[str],
 ) -> None:
-    """通常引数のpyfltrという語を実行名にせず、JSONを出さない汎用コマンドも検証できる。"""
+    """通常引数のpyfltrという語と実行名を区別し、通常のテキストを出力する汎用コマンドも検証できる。"""
     output = tmp_path / "stdout.txt"
     output.write_text("通常のテキスト出力\n", encoding="utf-8")
 

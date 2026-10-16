@@ -1,6 +1,7 @@
 """役割linux_serverのホスト向けdotfiles自動更新タイマーのセットアップ。"""
 
 import logging
+import os
 import pathlib
 
 from pytools._internal import common, host_roles, log_format, post_apply_outcome, systemd_user_unit
@@ -17,7 +18,7 @@ Description=Update dotfiles when origin/develop changed
 
 [Service]
 Type=oneshot
-{path_environment}ExecStart={uv} run --no-project --script {script}
+{path_environment}{codex_environment}ExecStart={uv} run --no-project --script {script}
 """
 
 _TIMER_UNIT_CONTENT = """[Unit]
@@ -80,6 +81,7 @@ def run() -> post_apply_outcome.PostApplyOutcome:
         executable_path=uv,
         service_unit_content=_SERVICE_UNIT_TEMPLATE.format(
             path_environment=systemd_user_unit.USER_UNIT_PATH_ENVIRONMENT,
+            codex_environment=_codex_environment(),
             uv=uv,
             script=script,
         ),
@@ -88,3 +90,12 @@ def run() -> post_apply_outcome.PostApplyOutcome:
         timer_name=_TIMER_NAME,
     )
     return post_apply_outcome.PostApplyOutcome(changed=changed)
+
+
+def _codex_environment() -> str:
+    """導入時のCODEX_HOMEをsystemdの引用とspecifier規則に合わせて渡す。"""
+    value = os.environ.get("CODEX_HOME")
+    if not value:
+        return ""
+    escaped = value.replace("\\", "\\\\").replace('"', '\\"').replace("%", "%%").replace("\n", "\\n").replace("\r", "\\r")
+    return f'Environment="CODEX_HOME={escaped}"\n'

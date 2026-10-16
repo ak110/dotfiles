@@ -12,7 +12,7 @@
 
 前ラウンドの指摘は解決状態と証拠とともに表へ残す。
 複数計画の反復では、計画ごとの最後のレビューHEAD・round・表・証拠・返却入力配列を保持する。別計画の認可は`review-contract --generate`で現在OIDへ再生成し、変更後の再レビュー対象は`review-impact`で判定する（`exec-review.parent.md`の入力契約）。
-受領確認では`exec-review-evidence-check --batch`へ各組をそのまま渡せる。読者別探索の申告は各組の`reader_fit_review`へ保持し、同書の起動条件と省略根拠を確かめる。CLIの成功だけで収束とせず、同書の意味判定と未解決0件を確かめる。
+受領確認では各返却の`受領確認入力のパス`を`exec-review-evidence-check --batch`へそのまま渡し、複数入力は`--batch`を反復する。process-wiのレーン、メイン自身による計画あり・計画なしの実装で同じ生成済み入力を使う。読者別探索の申告は各組の`reader_fit_review`に保存された値で、同書の起動条件と省略根拠を確かめる。CLIの成功だけで収束とせず、同書の意味判定と未解決0件を確かめる。
 各組には返却された今回の`review_start`と、2回目以降の`previous_review_start`・`previous_review_head`も保持する。rebaseで今回の開始時点が変わっても前回値を置き換えず、両差分の同一性とファイル別申告を同じ受領確認へ渡す。
 
 ## ラウンド番号の保持先
@@ -54,7 +54,7 @@ frontmatterに`source`を持つエージェント由来のWIの完成条件の�
 - 完成条件が対応する要求単位は、全て`agent-toolkit:wi-standards`「由来と承認」の明示由来（逐語引用、ユーザーコメント、UWI回答、出所付き対話回答）以外である
 - 外すことが`agent-toolkit/rules/01-agent.md`「協調と自律」のユーザーが確定した判断の変更の対象外である
 - `agent-toolkit:user-confirmation-and-report`「確認要否の判定」の3のユーザーだけが持つ値（選好、認可、外部の状態、手元に無い資料）に依存しない
-- Qに影響する問題の類似見直しと再発防止に必須の処置（`agent-toolkit:bugfix`の`references/root-cause-analysis.md`「QとC・Dの区別」「類似見直しと再発防止の完了」）を判定する条件ではない。費用や所要だけを理由に外さない
+- 重大度に応じた類似見直しと再発防止に必須の処置（`agent-toolkit:bugfix`の`references/root-cause-analysis.md`「QとC・Dの区別」「類似見直しと再発防止の完了」）を判定する条件ではない。軽微な問題の探索終了は同書で判断し、ユーザーが明示した完成条件は保持する
 
 判定は条件の意味の判断であり、判断要請を受けたメインと、統合時の完成条件判定で記録を読むメインが行う。外す理由には、エージェント由来であることに加えて上記の全条件の充足を要する。
 

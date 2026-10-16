@@ -66,6 +66,31 @@ if probe:
         sys.exit(1)
     print(json.dumps({{"type": "result", "is_error": False}}))
     sys.exit(0)
+if os.environ.get("FAKE_SESSION_LIMIT_COUNT"):
+    counter = record_dir / "session-count"
+    count = int(counter.read_text()) if counter.exists() else 0
+    counter.write_text(str(count + 1))
+    rejected = count < int(os.environ["FAKE_SESSION_LIMIT_COUNT"])
+    if name == "claude":
+        assert args[args.index("--output-format") + 1] == "stream-json" and "--verbose" in args
+        if rejected:
+            print(json.dumps({{"type": "rate_limit_event", "rate_limit_info": {{
+                "status": "rejected", "rateLimitType": os.environ["FAKE_LIMIT_TYPE"], "resetsAt": 1010
+            }}}}))
+    else:
+        assert "--json" in args
+        thread = "01234567-89ab-cdef-0123-456789abcdef"
+        print(json.dumps({{"type": "thread.started", "thread_id": thread}}))
+        directory = pathlib.Path(os.environ["CODEX_HOME"]) / "sessions/2026/10/16"
+        directory.mkdir(parents=True, exist_ok=True)
+        events = [{{"type": "event_msg", "payload": {{"type": "token_count", "rate_limits": {{
+            "primary": {{"used_percent": 100, "resets_at": 1010}}
+        }}}}}}, {{"type": "event_msg", "payload": {{"type": "task_complete", "error": {{
+            "codex_error_info": "usage_limit_exceeded" if rejected else "other"
+        }}}}}}]
+        (directory / ("rollout-test-" + thread + ".jsonl")).write_text(
+            "\\n".join(json.dumps(event) for event in events), encoding="utf-8")
+    sys.exit(1 if rejected else 0)
 print("session stdout line")
 print("session stderr line", file=sys.stderr)
 sys.stdout.flush()
@@ -555,3 +580,60 @@ def test_logs_older_than_retention_are_removed(engine_env: _Env, capsys: pytest.
     assert code == 0, err
     assert not old.exists()
     assert recent.exists()
+
+
+@pytest.mark.parametrize("engine,limit_type", [("claude", "five_hour"), ("claude", "seven_day"), ("codex", "")])
+@pytest.mark.parametrize("progress", [False, True])
+def test_usage_limit_resumes_work_conversation_outside_timeout(
+    engine_env: _Env,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    engine: str,
+    limit_type: str,
+    progress: bool,
+) -> None:
+    """公開CLIは表示設定によらず本作業の上限を待ち、同じ会話と実行時間予算を引き継ぐ。
+
+    CLIイベントとrolloutは20261014-210511-001/002の実現性で観測された形を使う。
+    """
+    set_orchestrate_environment(monkeypatch, f"{engine}:test-model/high")
+    monkeypatch.setenv("FAKE_SESSION_LIMIT_COUNT", "2")
+    monkeypatch.setenv("FAKE_LIMIT_TYPE", limit_type)
+    monkeypatch.setenv("CODEX_HOME", str(engine_env.state / "codex"))
+    monkeypatch.setattr(sys.stderr, "isatty", lambda: progress)
+    sleeps: list[float] = []
+    clock = [1000.0]
+    real_monotonic = time.monotonic
+
+    def sleep(delay: float) -> None:
+        sleeps.append(delay)
+        clock[0] += delay
+
+    monkeypatch.setattr(
+        run_skill,
+        "time",
+        types.SimpleNamespace(
+            time=lambda: clock[0],
+            monotonic=lambda: real_monotonic() + clock[0],
+            sleep=sleep,
+        ),
+    )
+    code, out, err = _run(["--target-repo", str(engine_env.repo), "--timeout", "2", "resume-skill"], capsys)
+    assert code == 0, err
+    assert out.startswith("成功: ") and len(out.splitlines()) == 1
+    assert sleeps == [10, 300]
+    sessions = _records(engine_env, "session")
+    assert len(sessions) == 3
+    first = sessions[0]["argv"]
+    for session in sessions[1:]:
+        argv = session["argv"]
+        if engine == "claude":
+            assert argv[argv.index("--resume") + 1] == first[first.index("--session-id") + 1]
+            assert "--session-id" not in argv
+        else:
+            assert argv[:3] == ["codex", "exec", "resume"]
+            assert argv[-2] == "01234567-89ab-cdef-0123-456789abcdef"
+        assert argv[-1].startswith('<atk-auto source="run-skill" kind="usage-limit-resume">')
+        assert argv[argv.index("--model") + 1] == "test-model"
+    log = _log_files(engine_env)[0].read_text(encoding="utf-8")
+    assert log.count("利用上限の解除待ち:") == 2

@@ -13,6 +13,16 @@ from agent_toolkit._agents_server import tool_names
 from agent_toolkit._agents_server.state import TERMINAL_STATUSES, SessionState
 from agent_toolkit._common import background_output
 
+# 子を稼働させる操作と、その終端・回収を観測する操作の対応。
+# CLI待機はBashとCodexのcommandExecutionの両方から同じ回収処理へ入る。
+_AGENTS_WAIT_TOOL_USE = "atk agents wait"
+_CHILD_SESSION_OPERATIONS = {
+    **dict.fromkeys(tool_names.RECORDED_START_OPERATIONS, "activate"),
+    "send_message": "resume",
+    "kill": "terminal",
+    _AGENTS_WAIT_TOOL_USE: "collect",
+}
+
 
 def consume_claude_agents_server_message(session: SessionState, message: Any) -> None:
     """Claude SDKのツール利用と結果から、孫sessionと未完了のツール呼び出しの状態を更新する。
@@ -42,7 +52,7 @@ def consume_claude_agents_server_message(session: SessionState, message: Any) ->
         tool_use = session.child_tool_uses.pop(tool_use_id, None)
         if tool_use is None:
             continue
-        if tool_use[0] == _AGENTS_WAIT_TOOL_USE:
+        if _CHILD_SESSION_OPERATIONS.get(tool_use[0]) == "collect":
             consume_agents_wait_output(session, _tool_result_text(_block_value(block, "content")))
             continue
         result = _structured_tool_result(_block_value(block, "content"))
@@ -58,15 +68,19 @@ def consume_agents_server_tool_result(
 ) -> None:
     """agents_serverツールの結果を孫session集合へ反映する。"""
     normalized = _agents_server_tool_name(tool_name)
-    if normalized in tool_names.RECORDED_START_OPERATIONS:
+    operation = _CHILD_SESSION_OPERATIONS.get(normalized or "")
+    if operation in {"activate", "resume"}:
+        if operation == "resume" and result.get("delivery") == "reply_failed":
+            return
         session_id = result.get("session_id")
         if isinstance(session_id, str) and session_id:
-            if session_id not in session.live_child_session_ids and session_id not in session.terminal_child_session_ids:
+            if session_id not in session.live_child_session_ids:
                 # 新しい委譲は前の完了通知と別の待機単位であり、その終端でも一度だけ再開できる。
                 session.auto_resume_consumed = False
             session.live_child_session_ids.add(session_id)
+            session.terminal_child_session_ids.discard(session_id)
         return
-    if normalized != "kill":
+    if operation != "terminal":
         return
     session_id = arguments.get("session_id")
     if not isinstance(session_id, str) or not session_id:
@@ -75,11 +89,6 @@ def consume_agents_server_tool_result(
         # このレコードは孫sessionを所有する別プロセスが持つため、観測側は削除しない。
         session.live_child_session_ids.discard(session_id)
         session.terminal_child_session_ids.add(session_id)
-
-
-# 委譲先がBashで実行した`atk agents wait`の呼び出しを`child_tool_uses`で識別する名前。
-# agents_serverのツール名と衝突しない値とする。
-_AGENTS_WAIT_TOOL_USE = "atk agents wait"
 
 
 # `atk agents wait`がエージェント環境の自動保存時に標準出力へ書く保存先の行。
@@ -96,7 +105,7 @@ WAIT_BODY_END_PREFIX = "本文終了: session_id="
 
 def _is_agents_wait_command(tool_input: Any) -> bool:
     command = tool_input.get("command") if isinstance(tool_input, Mapping) else None
-    return isinstance(command, str) and "atk agents wait" in command
+    return isinstance(command, str) and _AGENTS_WAIT_TOOL_USE in command
 
 
 def _tool_result_text(value: Any) -> str:
@@ -206,7 +215,7 @@ def _agents_server_tool_name(tool_name: str) -> str | None:
     for prefix in tool_names.MCP_NAMESPACES:
         if tool_name.startswith(prefix):
             return tool_name.removeprefix(prefix)
-    if tool_name in tool_names.RECORDED_START_OPERATIONS or tool_name == "kill":
+    if tool_name in _CHILD_SESSION_OPERATIONS:
         return tool_name
     return None
 

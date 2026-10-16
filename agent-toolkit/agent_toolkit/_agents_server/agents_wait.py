@@ -19,6 +19,7 @@ from agent_toolkit._agents_server import (
     notice_inbox,
     result_projection,
     retained_results,
+    session_handoff,
     shared_layout,
     shared_roots,
     wait_targets,
@@ -39,8 +40,9 @@ _CONSUMED_NEXT_ACTION = (
     "結果は別の`atk agents wait`が受領済みのため、その出力を参照する。後続の結果を待つ場合は`atk agents wait`を再実行する"
 )
 _PRECEDING_WAIT_NEXT_ACTION = (
-    "先行する`atk agents wait`の終了を待って再実行する。"
-    "先行する待機が応答しないまま残っている場合は、そのプロセスを停止してから再実行する"
+    "先行するバックグラウンドタスクの保存出力を読み、先行する`atk agents wait`の終了後に再実行する。"
+    "保存出力を受け取れず`run_path`が示されている場合は、"
+    "`atk read-file -- <run_path>`でrun記録の`output`を読み、その`agent_message_path`から本文を読む"
 )
 _BROKEN_STATE_NEXT_ACTION = (
     "agents_serverの状態が壊れているため、MCPの`list`で保持状態を確かめ、agents_serverの不具合としてユーザーへ報告する"
@@ -57,7 +59,7 @@ _SAVED_RESULT_NEXT_ACTION = (
 _IDENTITY_NEXT_ACTION = "同じsessionで`atk agents list`と`atk agents wait`を実行する"
 _FAILED_RESULT_NEXT_ACTION = (
     "`agent_message`と`error`で失敗の種類を確かめる。作業を続けられる失敗なら同じsessionへ`send_message`で継続し、"
-    "利用上限・認証・過負荷など候補の可用性による失敗なら別の`model_type`で起動し直し、いずれも成立しなければ作業を巻き取る"
+    "継続できなければ作業を巻き取る"
 )
 _INTERRUPTED_RESULT_NEXT_ACTION = "中断を要求していない場合は同じsessionへ`send_message`で継続するか、作業を巻き取る"
 _BODY_FILE_NEXT_ACTION = (
@@ -274,7 +276,10 @@ def _with_result_next_action(result: dict[str, Any]) -> dict[str, Any]:
     """委譲先が失敗または中断で終端した結果へ、受領した主体の次の操作を加える。"""
     status = result.get("status")
     if status == "failed":
-        result = result_projection.append_result_next_action(result, _FAILED_RESULT_NEXT_ACTION)
+        result = result_projection.append_result_next_action(
+            result,
+            session_handoff.result_next_action(result) or _FAILED_RESULT_NEXT_ACTION,
+        )
     elif status == "interrupted":
         result = result_projection.append_result_next_action(result, _INTERRUPTED_RESULT_NEXT_ACTION)
     return result
@@ -434,6 +439,8 @@ def _wait_for_result(
     lock_file = lock_path.open("a+b")
     owns_lock = False
     run_path: pathlib.Path | None = None
+    # 排他の取得と結果の回収は同じ一回の待機期限を消費する。
+    deadline = time.monotonic() + get_wait_timeout("main")
     try:
         try:
             acquire_lock(lock_file, blocking=False)
@@ -451,8 +458,22 @@ def _wait_for_result(
                     next_action=_PRECEDING_WAIT_NEXT_ACTION,
                 )
             run_path = run_directory / f"{run_id}.json"
-            acquire_lock(lock_file, blocking=True)
-            owns_lock = True
+            while not owns_lock:
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    return _fail(
+                        "先行する待機との競合が待機期限まで続いています: "
+                        f"owner={identity.file_name}, run_id={run_id}, "
+                        f"targets={','.join(ordered_ids) or 'none'}, run_path={run_path.resolve()}",
+                        8,
+                        next_action=_PRECEDING_WAIT_NEXT_ACTION,
+                    )
+                time.sleep(min(1.0, remaining))
+                try:
+                    acquire_lock(lock_file, blocking=False)
+                    owns_lock = True
+                except OSError:
+                    pass
         current_run_path = run_path if run_path is not None else _matching_current_wait_run(run_directory, ordered_ids)
         if current_run_path is not None:
             recorded = _read_json(current_run_path)
@@ -485,10 +506,7 @@ def _wait_for_result(
 
         # 上限はMCPの`wait`と同じくプロンプトキャッシュの保持期間から導出し、CLIとMCPで同じ値を使う。
         # 委譲元がメイン会話かサブエージェントかを判定できないため、MCPと同じくmainのbucketを用いる。
-        wait_timeout = get_wait_timeout("main")
         body_writer = _BodyFileWriter()
-        started_at = time.monotonic()
-        deadline = started_at + wait_timeout
         while True:
             current_origins, target_error = _target_origins(
                 own_status_path,

@@ -809,7 +809,7 @@ def test_atomic_write_failure_is_reported(manifest_root: Path, monkeypatch: pyte
 
 
 def test_proxy_contract_is_shared_with_codex_backend(manifest_root: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """共通名の追加が全Codex生成経路へ届き、共通入力とAgent Pluginsへ混入しない。"""
+    """静的な共通名の追加と動的な親環境の配送を分け、生成物の環境非依存を保つ。"""
     names = (*mcp_environment.PROXY_ENVIRONMENT_VARIABLES, "TEST_PROXY")
     monkeypatch.setattr(mcp_environment, "PROXY_ENVIRONMENT_VARIABLES", names)
     monkeypatch.setitem(toolkit_config._MUTABLE_KEY_DEFAULTS, "future_engine", "codex")  # pylint: disable=protected-access
@@ -822,8 +822,17 @@ def test_proxy_contract_is_shared_with_codex_backend(manifest_root: Path, monkey
     for name in ("agents_server", "pyfltr"):
         assert codex["mcpServers"][name]["env_vars"] == expected_names
         assert "env_vars" not in portable["mcpServers"][name]
-    backend = codex_backend.AppServerManager._agents_server_config("owner", "writer")  # pylint: disable=protected-access
-    assert backend["mcp_servers"]["agents_server"]["env_vars"] == expected_names
+    before = {path.relative_to(manifest_root): path.read_bytes() for path in manifest_root.rglob("*") if path.is_file()}
+    monkeypatch.setenv("TEST_PROXY", "synthetic-proxy")
+    monkeypatch.setenv("UNKNOWN_VENDOR_API_KEY", "synthetic-credential")
+    monkeypatch.setenv("ANTHROPIC_AUTH_TOKEN", "synthetic-token")
+    backend = codex_backend.AppServerManager()._agents_server_config("owner", "writer")  # pylint: disable=protected-access
+    runtime_names = backend["mcp_servers"]["agents_server"]["env_vars"]
+    assert {"TEST_PROXY", "UNKNOWN_VENDOR_API_KEY", "ANTHROPIC_AUTH_TOKEN"} <= set(runtime_names)
+    assert "UNKNOWN_VENDOR_API_KEY" not in expected_names
+    subject.sync(manifest_root)
+    after = {path.relative_to(manifest_root): path.read_bytes() for path in manifest_root.rglob("*") if path.is_file()}
+    assert after == before
     assert (manifest_root / subject.MCP_SOURCE).read_bytes() == source_before
 
 
@@ -887,9 +896,25 @@ async def test_codex_stdio_inherits_proxy_environment(
         "CLAUDE_CONFIG_DIR": str(tmp_path / "claude"),
         "CODEX_HOME": str(codex_home),
         "AGENT_TOOLKIT_CONFIG_BASE_ENGINE": "codex",
+        "ANTHROPIC_AUTH_TOKEN": "synthetic-auth-token",
+        "ANTHROPIC_AWS_BASE_URL": "https://synthetic.invalid",
+        "ANTHROPIC_AWS_WORKSPACE_ID": "synthetic-workspace",
+        "CLAUDE_CODE_USE_ANTHROPIC_AWS": "1",
+        "CLAUDE_CODE_SKIP_ANTHROPIC_AWS_AUTH": "1",
+        "ANTHROPIC_DEFAULT_OPUS_MODEL": "synthetic-opus",
+        "ANTHROPIC_DEFAULT_SONNET_MODEL": "synthetic-sonnet",
+        "ANTHROPIC_DEFAULT_HAIKU_MODEL": "synthetic-haiku",
+        "OPENAI_API_KEY": "synthetic-openai-key",
+        "GEMINI_API_KEY": "synthetic-gemini-key",
+        "DBUS_SESSION_BUS_ADDRESS": "synthetic-keyring-address",
+        "LC_ALL": "C",
     }
     for name, value in namespace.items():
         monkeypatch.setenv(name, value)
+    monkeypatch.setenv("UNKNOWN_VENDOR_API_KEY", "synthetic-unknown-key")
+    monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "parent-session")
+    monkeypatch.delenv("UNSET_VENDOR_SETTING", raising=False)
+    observed_names = [*namespace, "UNKNOWN_VENDOR_API_KEY", "UNSET_VENDOR_SETTING", "CLAUDE_CODE_SESSION_ID"]
     monkeypatch.setattr(codex_backend, "APP_SERVER_WORKING_DIRECTORY", str(tmp_path))
     child = tmp_path / "proxy-child.py"
     child.write_text(
@@ -898,7 +923,7 @@ async def test_codex_stdio_inherits_proxy_environment(
         "response = urllib.request.urlopen('http://proxy-probe.invalid/resource', timeout=5).read().decode()\n"
         "Path(os.environ['OBS_PATH']).write_text(json.dumps({'env': {name: os.environ[name] for name in "
         f"{list(proxy_environment.PROXY_ENVIRONMENT_VARIABLES)!r} if name in os.environ}}, "
-        f"'namespace': {{name: os.environ.get(name) for name in {list(namespace)!r}}}, "
+        f"'namespace': {{name: os.environ.get(name) for name in {observed_names!r}}}, "
         "'response': response}), encoding='utf-8')\n",
         encoding="utf-8",
     )
@@ -915,7 +940,7 @@ async def test_codex_stdio_inherits_proxy_environment(
     )
     subject.sync(manifest_root)
     plugin_servers = json.loads((manifest_root / subject.MCP_CODEX_TARGET).read_text(encoding="utf-8"))["mcpServers"]
-    backend = codex_backend.AppServerManager._agents_server_config("owner", "writer")["mcp_servers"]["agents_server"]  # pylint: disable=protected-access
+    backend = codex_backend.AppServerManager()._agents_server_config("owner", "writer")["mcp_servers"]["agents_server"]  # pylint: disable=protected-access
     configurations = [plugin_servers["agents_server"], plugin_servers["pyfltr"], backend]
     client = _ProxyCodexClient(_ignore_proxy_notification, _ignore_proxy_notification)
     processes: list[asyncio.subprocess.Process] = []
@@ -925,6 +950,12 @@ async def test_codex_stdio_inherits_proxy_environment(
             assert client.process is not None
             processes.append(client.process)
             for index, configuration in enumerate(configurations):
+                expected_namespace = {
+                    **namespace,
+                    "UNKNOWN_VENDOR_API_KEY": "synthetic-unknown-key" if index == 2 else None,
+                    "UNSET_VENDOR_SETTING": None,
+                    "CLAUDE_CODE_SESSION_ID": None,
+                }
                 output = tmp_path / f"child-{index}.json"
                 server = {
                     **configuration,
@@ -951,7 +982,7 @@ async def test_codex_stdio_inherits_proxy_environment(
                     diagnostic.read_text(encoding="utf-8") if diagnostic.exists() else ""
                 )
                 observation = json.loads(output.read_text(encoding="utf-8"))
-                assert observation == {"env": inherited, "namespace": namespace, "response": "proxy-observed"}
+                assert observation == {"env": inherited, "namespace": expected_namespace, "response": "proxy-observed"}
                 # モデルを呼ばず履歴を保存する0.162.1の公開実験APIで、cold resumeの入力を準備する。
                 await client.request(
                     "thread/inject_items",
@@ -980,7 +1011,7 @@ async def test_codex_stdio_inherits_proxy_environment(
                 assert inventory["data"][0]["runtimeStatus"] == "connected", json.dumps(inventory)
                 assert json.loads(output.read_text(encoding="utf-8")) == {
                     "env": inherited,
-                    "namespace": namespace,
+                    "namespace": expected_namespace,
                     "response": "proxy-observed",
                 }
                 await client.request("thread/unsubscribe", {"threadId": thread_id})

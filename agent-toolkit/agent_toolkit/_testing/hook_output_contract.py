@@ -1,4 +1,4 @@
-"""hook出力をイベントごとに検証し、Stopはホストの契約を区別する。"""
+"""hook出力をイベントごとに検証し、PreToolUseとStopはホストの契約を区別する。"""
 
 from __future__ import annotations
 
@@ -214,9 +214,42 @@ HOOK_OUTPUT_SCHEMAS: dict[str, dict[str, Any]] = {
 }
 
 
+_CODEX_PRETOOLUSE_SCHEMA = _event_schema(
+    "PreToolUse",
+    top_level={"continue": {"const": True}, "suppressOutput": {"const": False}, "stopReason": False},
+    hook_specific={
+        "permissionDecision": {"enum": ["allow", "deny"]},
+        "permissionDecisionReason": {"type": "string"},
+        "updatedInput": {"type": "object"},
+        "additionalContext": {"type": "string"},
+    },
+)
+# Codex rust-v0.162.1のhooks/src/engine/output_parser.rsが定める受理条件。
+_CODEX_PRETOOLUSE_SCHEMA["properties"]["hookSpecificOutput"]["allOf"] = [
+    {
+        "if": {"properties": {"permissionDecision": {"const": "allow"}}, "required": ["permissionDecision"]},
+        "then": {"required": ["updatedInput"]},
+    },
+    {
+        "if": {"required": ["updatedInput"]},
+        "then": {"properties": {"permissionDecision": {"const": "allow"}}, "required": ["permissionDecision"]},
+    },
+    {
+        "if": {"properties": {"permissionDecision": {"const": "deny"}}, "required": ["permissionDecision"]},
+        "then": {
+            "required": ["permissionDecisionReason"],
+            "properties": {"permissionDecisionReason": {"type": "string", "pattern": r"\S"}},
+        },
+    },
+    {"if": {"required": ["permissionDecisionReason"]}, "then": {"required": ["permissionDecision"]}},
+]
+
+
 def validate_hook_output(event_name: str, output: object, *, host: str = "claude-code") -> list[str]:
     """hook出力がイベントの契約を満たすか確かめ、違反内容を文字列で返す。"""
     schema = HOOK_OUTPUT_SCHEMAS.get(event_name)
+    if host == "codex" and event_name == "PreToolUse":
+        schema = _CODEX_PRETOOLUSE_SCHEMA
     if host == "codex" and event_name == "Stop":
         schema = {
             "oneOf": [

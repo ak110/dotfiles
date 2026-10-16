@@ -26,6 +26,7 @@ from agent_toolkit._agents_server.tool_descriptions import (
     COMMAND_DESCRIPTION,
     CWD_DESCRIPTION,
     EXTRA_PARAMS_DESCRIPTION,
+    HANDOFF_FROM_DESCRIPTION,
     KIND_MCP_INSTRUCTIONS,
     LABEL_DESCRIPTION,
     LIGHTWEIGHT_MODE_SELECTION,
@@ -97,8 +98,8 @@ mcp = AgentsServerMCP(
 
 @mcp.tool(name="start", description=START_DESCRIPTION, structured_output=True)
 async def start(  # noqa: PLR0913 -- 公開入力をmodeごとの平坦な引数として受け取る
-    cwd: Annotated[str, Field(description=CWD_DESCRIPTION)],
-    mode: Annotated[StartMode, Field(description=MODE_DESCRIPTION)] = "task",
+    cwd: Annotated[str | None, Field(description=CWD_DESCRIPTION)] = None,
+    mode: Annotated[StartMode | None, Field(description=MODE_DESCRIPTION)] = None,
     subagent_md_path: Annotated[str | None, Field(description=SUBAGENT_MD_PATH_DESCRIPTION)] = None,
     extra_params: Annotated[dict[str, str] | None, Field(description=EXTRA_PARAMS_DESCRIPTION)] = None,
     prompt: Annotated[str | None, Field(description=PROMPT_DESCRIPTION)] = None,
@@ -106,8 +107,31 @@ async def start(  # noqa: PLR0913 -- 公開入力をmodeごとの平坦な引数
     summary_policy: Annotated[str | None, Field(description=SUMMARY_POLICY_DESCRIPTION)] = None,
     label: Annotated[str | None, Field(description=LABEL_DESCRIPTION)] = None,
     model_type: Annotated[str | None, Field(description=MODEL_TYPE_DESCRIPTION)] = None,
+    handoff_from: Annotated[str | None, Field(description=HANDOFF_FROM_DESCRIPTION)] = None,
 ) -> dict[str, Any]:
     """`mode`ごとの入力を確かめ、同じ起動処理へ渡して委譲先turnを開始する。公開説明は`START_DESCRIPTION`が持つ。"""
+    if handoff_from is not None:
+        launch_requests.validate_handoff_inputs(
+            handoff_from,
+            cwd=cwd,
+            mode=mode,
+            subagent_md_path=subagent_md_path,
+            extra_params=extra_params,
+            prompt=prompt,
+            command=command,
+            summary_policy=summary_policy,
+            label=label,
+            model_type=model_type,
+        )
+        response = await _MANAGER.start_handoff(handoff_from)
+        public = public_start_response(response)
+        public["cwd"] = response["cwd"]
+        public["model_type"] = response["model_type"]
+        return public
+    mode = mode or "task"
+    if cwd is None:
+        launch_requests.require_start_cwd()
+    assert cwd is not None
     validate_start_inputs(
         mode,
         subagent_md_path=subagent_md_path,
@@ -234,6 +258,7 @@ async def kill(
     停止は最終手段とする。実行中の委譲先には`send_message`で訂正を配送できるため、
     そちらで意図を満たせる場合は、停止によって失われる作業と再起動の費用の方が大きい。
     本ツールを選ぶ前に、`send_message`による訂正では足りないことと、その作業の継続自体が不要であることを確認する。
+    利用上限の解除待ちのsessionは、解除後に同じsessionで自動的に続行する。上限への到達だけを停止の理由にしない。
     引数を省略すると270秒を待機上限とする。固有のtimeout要件がなければ引数を省略する。
     `timeout=0`を指定すると、中断要求を配送した直後の状態を返す。
     timeoutに達した場合もsessionとbackend processは破棄しないため、`atk agents wait`で状態を確認してから次の操作を選ぶ。

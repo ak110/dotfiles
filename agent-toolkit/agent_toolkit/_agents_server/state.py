@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import dataclasses
 import datetime
+import json
 import logging
 import typing
 from collections.abc import Callable, Coroutine
@@ -217,10 +218,16 @@ class SessionState:
     codex_subscription_provider: str | None = None
     codex_attempted_provider_ids: set[str] = dataclasses.field(default_factory=set, repr=False)
     codex_provider_resume_pending: bool = False
+    claude_api_env_file: str | None = None
+    claude_api_resume_pending: bool = False
     model_type: str | None = None
     launch_kind: LaunchKind = "delegate"
     label: str = ""
     prompt: str = ""
+    usage: str | None = None
+    followup_prompts: tuple[str, ...] = ()
+    final_responses: tuple[tuple[int, str], ...] = ()
+    terminal_error: str | None = None
     announced: bool = False
     # sessionを最初に開始した時刻。turnごとに更新する`started_at`とは別に保持し、再開後も引き継ぐ。
     # レーン稼働時間のようにsession全体の経過を測る呼び出し元が起点として読む。
@@ -434,7 +441,17 @@ class SessionState:
         turnを再開した後の終端では、同じ通知を改めて1回行う。
         """
         self.updated_at = utc_now()
+        message = (
+            self.agent_message
+            if self.result_available
+            else (self.pending_result.get("agent_message") if self.pending_result is not None else None)
+        )
+        if isinstance(message, str):
+            responses = dict(self.final_responses)
+            responses[self.turn_seq] = message
+            self.final_responses = tuple(responses.items())
         if self.result_available:
+            self.terminal_error = json.dumps(self.error, ensure_ascii=False) if self.error is not None else None
             if self.finalized_at is None:
                 self.finalized_at = utc_now()
             if self.retention_deadline is None:
@@ -558,6 +575,7 @@ class SessionState:
             "fast_mode": self.fast_mode,
             "codex_model_provider": self.codex_model_provider,
             "codex_subscription_provider": self.codex_subscription_provider,
+            "claude_api_env_file": self.claude_api_env_file,
             "model_type": self.model_type,
             "launch_kind": self.launch_kind,
             "turn_seq": self.turn_seq,
@@ -618,11 +636,16 @@ class SessionResumeState:
     fast_mode: bool | None = None
     codex_model_provider: str | None = None
     codex_subscription_provider: str | None = None
+    claude_api_env_file: str | None = None
     model_type: str | None = None
     launch_kind: LaunchKind = "delegate"
     # `label`・`prompt`・`created_at`は`session_registry.LaunchInfo`の項目であり、再開時はその定義から写す。
     label: str = ""
     prompt: str = ""
+    usage: str | None = None
+    followup_prompts: tuple[str, ...] = ()
+    final_responses: tuple[tuple[int, str], ...] = ()
+    terminal_error: str | None = None
     # 登録簿から復元した旧形式のsessionでは開始時刻が不明なため`None`とする。
     created_at: str | None = None
     started_at: str | None = dataclasses.field(default_factory=utc_now)
@@ -661,6 +684,7 @@ class SessionResumeState:
             fast_mode=session.fast_mode,
             codex_model_provider=session.codex_model_provider,
             codex_subscription_provider=session.codex_subscription_provider,
+            claude_api_env_file=session.claude_api_env_file,
             status=session.status,
             agent_message=session.agent_message,
             error=session.error,
@@ -732,6 +756,7 @@ def initialize_turn(session: SessionState, *, reset_progress: bool = True, prese
     session.turn_completed = False
     session.failure_pending_completion = False
     session.codex_provider_resume_pending = False
+    session.claude_api_resume_pending = False
     if not preserve_waits:
         session.live_child_session_ids.clear()
         session.terminal_child_session_ids.clear()

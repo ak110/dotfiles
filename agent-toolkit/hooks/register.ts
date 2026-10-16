@@ -4,6 +4,7 @@ import { COMPACT_CONVERSATION_DELEGATED_DENY, COMPACT_CONVERSATION_TOOL, registe
 import { register as registerPeriodicRecheck } from "./periodic_recheck.ts";
 import { register as registerSendToUser, SEND_TO_USER_DELEGATED_DENY, SEND_TO_USER_TOOL } from "./send_to_user.tsx";
 import { exitStatePath, register as registerSessionExit } from "./session_exit.ts";
+import { register as registerUsageLimitResume } from "./usage_limit_resume.ts";
 
 // hooks.jsonの`modules`は1つのプラグインにつき1つのhooks moduleだけを受け付け、照合条件の無い同じイベントのhookは
 // 1回しか登録できない。また`$`は別ファイルの関数へ渡せないため、各機能の`session.start`の処理をここへまとめる。
@@ -30,6 +31,7 @@ function mainOnlyDeny(plugin: string, tool: string): string | undefined {
 }
 
 export const register: Register = (on) => {
+  const usageLimitSession = { delegated: true };
   // ツール名のmatcherを別に列挙せず、登録一覧へ追加した全ツールに同じ判定を適用する。
   on("tool.check", { tool: /^mcp__/ }, async ($, e, next) => {
     const reason = mainOnlyDeny($.plugin.name, e.tool);
@@ -41,6 +43,7 @@ export const register: Register = (on) => {
     return reason !== undefined && (e.agentId !== undefined || (await isDelegated($))) ? { deny: reason } : next(e);
   }).catch(($, e, next) => next(e));
   on("session.start", async ($, e, next) => {
+    usageLimitSession.delegated = await isDelegated($);
     // ツールは最初の発話より前に一覧へ載るよう、`next`より前に登録する。
     // 登録一覧のツールはメイン用であり、委譲先には登録しない。
     if (!(await isDelegated($))) {
@@ -63,4 +66,5 @@ export const register: Register = (on) => {
   registerCompactConversation(on);
   registerSendToUser(on);
   registerPeriodicRecheck(on);
+  registerUsageLimitResume(on, usageLimitSession);
 };

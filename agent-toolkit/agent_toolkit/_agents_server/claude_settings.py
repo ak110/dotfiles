@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 import pathlib
+import re
 import tempfile
 import uuid
 
@@ -19,10 +20,31 @@ class SettingsFile(str):
         pathlib.Path(self).unlink(missing_ok=True)
 
 
-def merge_settings(parent: str | None, env: dict[str, str], root: str | None) -> str:
+def read_api_env_file(path: str) -> dict[str, str]:
+    """限定形式のenvファイルを毎起動読み、変数展開をせず値を返す。"""
+    values: dict[str, str] = {}
+    for line in pathlib.Path(path).read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        line = line.removeprefix("export ")
+        key, separator, value = line.partition("=")
+        key = key.strip()
+        if not separator or re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", key) is None:
+            raise ValueError("API envファイルは1行1つのKEY=VALUEで指定する")
+        value = value.strip()
+        if value.startswith(("'", '"')) and (len(value) < 2 or value[-1] != value[0]):
+            raise ValueError("API envファイルの値を囲む引用符を閉じる")
+        if len(value) >= 2 and value[0] in {"'", '"'} and value[-1] == value[0]:
+            value = value[1:-1]
+        values[key] = value
+    return values
+
+
+def merge_settings(parent: str | None, env: dict[str, str], root: str | None, *, force_file: bool = False) -> str:
     """親のJSONの意味を保ち、委譲先のenvを最後に適用する。
 
-    親の設定がファイルで渡された場合は、合成結果を所有者だけが読める起動ごとのファイルへ書き、そのパスを返す。
+    親の設定がファイルの場合と`force_file`の指定時は、所有者だけが読める起動ごとのファイルへ書き、そのパスを返す。
     親の設定を読めない場合、JSONとして不正な場合およびobjectでない場合は継承せず、envだけを渡す。
     """
     from_file = parent is not None and not parent.lstrip().startswith("{")
@@ -35,7 +57,7 @@ def merge_settings(parent: str | None, env: dict[str, str], root: str | None) ->
     inherited = settings.get("env")
     settings["env"] = {**(inherited if isinstance(inherited, dict) else {}), **env}
     content = json.dumps(settings, ensure_ascii=False)
-    if not from_file:
+    if not from_file and not force_file:
         return content
     directory = state_dir() / "agents-server" / (root or f"settings-{uuid.uuid4()}") / "claude-settings"
     directory.mkdir(parents=True, exist_ok=True)

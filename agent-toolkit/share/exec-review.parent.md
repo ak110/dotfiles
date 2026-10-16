@@ -116,11 +116,11 @@ Git管理外の変更元と変更前複製の対がある場合は、レーン�
 
 ## 完成条件証拠の受領確認
 
-実行レビュー担当が`atk run-script exec-review-evidence-check`の`--return-result`で生成した固定形式を受け取り、次を確かめる。統合指示の前にメインが同じ確認を再実行する場合（`exec.parent.md`「統合の指示と受領」）も同じ引数で組み立てる。
+実行レビュー担当が`atk run-script exec-review-evidence-check`の`--return-result`で生成した固定形式と`受領確認入力のパス`を受け取り、次を確かめる。統合指示の前の再確認（`exec.parent.md`「統合の指示と受領」）にも同じ生成済み入力を引き継ぐ。
 
 1. 返却の`レビューしたHEAD`、round、表と証拠のパス、`計画のパス`、`入力記録のパス`を同じレビューの入力として保持する。未解決件数は返却値をそのまま使い、`<配列>の判定内訳`と`達成以外の行`は非達成行の所在の一覧として使う
 2. `読者別探索`のファイル別JSON申告と`レビュー開始時点`、`前回確認版の開始時点`、`前回確認版HEAD`を同じレビューの値として保持する。対象Markdown集合と省略の可否は次の手順のコマンドが確かめ、不成立なら同じ担当へ不足ファイルの読者別探索と再判定を求める
-3. 同じコマンドを対象worktreeで単独実行する。同じ証拠・対象WIと`--review-table <表の絶対パス> --round <round> --return-result --show-all-rows --reader-fit-review '<返却された読者別探索の申告>'`を渡す。期待HEADは`--expected-head <レビューしたHEAD>`とし、再レビューを省いた修正の後でも最後に実際にレビューしたHEADを使う。`--review-start <レビュー開始時点>`を渡し、2回目以降は返却された`--previous-review-start <前回確認版の開始時点> --previous-review-head <前回確認版HEAD>`も渡す（rebase後も前回値を今回値で代用しない）。返却の各JSON配列を展開し、計画を`--plan`、入力記録を`--input-record`で反復指定する。渡すのは配列にある入力だけとする。証拠要求なしでは証拠の引数を`なし`とする。複数レビューは`--batch <入力JSONの絶対パス>`で一括確認できる。入力は`version: 1`と`reviews`配列とする。各組には次の値を組ごとに分けて渡す。基本の値は`plan`、`evidence`、`wi`配列、`reviewed_head`、`review_table`、`round`である。加えて`plans`配列、`input_records`配列、`reader_fit_review`、`review_start`（2回目以降は`previous_review_start`と`previous_review_head`も）を渡す。1組でも非0なら全体を非0とする
+3. 対象worktreeで`atk run-script exec-review-evidence-check -- --batch <受領確認入力のパス>`を単独実行する。複数の返却は`--batch <生成済み入力の絶対パス>`を反復し、入力の結合・再編集をせず渡す。生成側が保存した`version: 1`・`reviews`は組ごとのWI・証拠・表・round・計画と入力記録の配列・読者別探索・今回と前回の開始時点とHEADを保持する。再レビューや引き継ぎでも、その返却が生成した値を使い、再レビューを省いた修正やrebaseを理由に付け替えない。各組の診断を読み、1組でも非0なら全体を非0として扱う
 4. 未解決件数が0件で、達成必須の全行が達成していること。`--show-all-rows`が先に返す`証拠の行一覧`で全行の判定・原文・`source`を行番号で対応付けてから、達成行のsource・evidence・reviewed_headと参照先の入力・観測結果を読む。個別の行の読み直しは、出力を加工せずに`atk run-script exec-review-evidence-check -- <証拠の絶対パス> --list --section <配列> --row <N>`（複数行は`--row`を反復）で行う。長い出力は保存先から末尾まで読む。コマンドの成功だけで達成を受理しない
 5. 非0なら報告されたWI名と不足内容をレビュー担当へ返す
 

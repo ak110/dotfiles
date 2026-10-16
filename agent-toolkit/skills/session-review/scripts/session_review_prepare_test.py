@@ -600,7 +600,7 @@ def test_prepare_lists_offered_answer_as_mandatory_confirmation(
     """選択肢のlabelをそのまま選び自由記述の無い確認回答を、確認の候補として載せる。
 
     介入として数えると是正を含まない回答まで介入として分析する。除外すると不要だった確認が件数だけになり、
-    確認の要否を振り返る入力から消える。確認の候補は再発防止策が必須の候補として1行JSONにも示す。
+    確認の要否を振り返る入力から消える。確認の候補は評価が必須の候補として1行JSONにも示し、深さと再発防止策の要否は重大度判断へ渡す。
     """
     monkeypatch.setenv("PATH", str(tmp_path / "no-atk"))
     work_dir = _work_dir(tmp_path)
@@ -646,7 +646,9 @@ def test_prepare_lists_offered_answer_as_mandatory_confirmation(
     assert "question-answer" not in record["excluded_counts"]
     assert record["mandatory_candidates"] == ["c0001"]
     candidates = pathlib.Path(record["candidates_path"]).read_text(encoding="utf-8")
-    assert "- c0001 confirmation-request（発生1件、再発防止策が必須）: 方針" in candidates
+    assert "- c0001 confirmation-request（発生1件、評価が必須）: 方針" in candidates
+    assert "- 評価が必須の候補: c0001" in candidates
+    assert "探索の深さと再発防止策の要否・終了はbugfixの重大度判断に従う" in candidates
     assert "  - 選択肢: 既存機構へ統合 / 新機構を追加" in candidates
     assert "  - 回答: 既存機構へ統合" in candidates
 
@@ -750,12 +752,10 @@ def test_prepare_marks_wi_candidates_and_similar_past_records(
     ]
     assert record["candidate_counts"] == {"confirmation-request": 2, "user-intervention": 2, "wi-user-response": 3}
     assert sorted(record["mandatory_candidates"]) == sorted(
-        line.split()[1] for line in candidates.splitlines() if "再発防止策が必須）" in line
+        line.split()[1] for line in candidates.splitlines() if "評価が必須）" in line
     )
     assert len(record["mandatory_candidates"]) == 7
-    by_text = {
-        line.split()[1]: line for line in candidates.splitlines() if line.startswith("- c") and "再発防止策が必須" in line
-    }
+    by_text = {line.split()[1]: line for line in candidates.splitlines() if line.startswith("- c") and "評価が必須" in line}
     intervention_id = next(
         candidate_id for candidate_id, line in by_text.items() if "user-intervention" in line and "委ねないで" in line
     )
@@ -1382,3 +1382,45 @@ def test_prepare_marks_candidate_locations_without_provenance(
     record = json.loads(capsys.readouterr().out)
     candidates = pathlib.Path(record["candidates_path"]).read_text(encoding="utf-8")
     assert f"  - 記録の由来: codex:{support.TOOL_CALL_THREAD}=由来を取得できなかった" in candidates
+
+
+@pytest.mark.parametrize("existing_ledger", [False, True])
+def test_prepare_conversation_only_preserves_failure_ledger(
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+    *,
+    existing_ledger: bool,
+) -> None:
+    """引き継ぎ用の会話生成は、候補文書・統計と共有の失敗署名を更新せず終わる。"""
+    transcript = _write_claude_transcript(tmp_path)
+    work = _work_dir(tmp_path)
+    ledger = tmp_path / "state" / "session-review" / "failure-signatures.jsonl"
+    original = "既存の失敗署名の記録\n"
+    if existing_ledger:
+        ledger.parent.mkdir(parents=True)
+        ledger.write_text(original, encoding="utf-8")
+
+    assert (
+        prepare.main(
+            [
+                "--transcript",
+                str(transcript),
+                "--work-dir",
+                str(work),
+                "--conversation-only",
+            ],
+            now=_FIXED_NOW,
+        )
+        == 0
+    )
+
+    record = json.loads(capsys.readouterr().out)
+    assert record["conversation_ranges"]
+    conversation = pathlib.Path(record["conversation_path"]).read_text(encoding="utf-8")
+    assert "初期要求" in conversation and "make lint" in conversation
+    assert not (work / "candidates.md").exists()
+    assert not (work / "stats.md").exists()
+    assert not (work / "comparison-materials.md").exists()
+    assert ledger.exists() is existing_ledger
+    if existing_ledger:
+        assert ledger.read_text(encoding="utf-8") == original

@@ -23,11 +23,33 @@ Codexの`astra`・`sol`・`terra`・`luna`は設定へ系列名として保存�
 
 工程別モデル設定のCodexの中位（`codex_medium_tier_model`）で値を保存していない場合に使うモデルと、以前のプリセットの「軽量」「探索上位」は`terra/medium`を選び、「上位」と「探索軽量」は各用途の指定を維持する。`luna/xhigh`を前二者へ残す案は、ユーザーが速度と精度の釣り合いを見直したため採用しない。これらのモデル名は運用中に変わる設定値であり、テストは用途別engine順と段位モデルからの候補の合成、保存と実行時解決の接続を確認する。
 
+Codexの可用性判定で利用上限を観測した場合は、次の候補を先に試す。
+全候補が失敗し、そのうちに利用上限の失敗がある場合だけ最も早い解除予定まで待ち、先頭から判定し直す。
+解除予定が不明なら300秒後に再確認し、待機の回数と総時間を打ち切らない。
+上限判定は共通層がロールアウト記録から行い、選択と待機はorchestratorが持つ。
+
 ## process-loopのモジュール構成
 
 `atk wi process-loop`の工程は`agent-toolkit/agent_toolkit/_atk/wi/`配下の責務ごとのモジュールが持つ。作業ツリーの準備と上流との同期は`process_loop_worktree.py`、自己更新の確認と再起動は`process_loop_update.py`、miseの更新は`process_loop_mise.py`が持つ。変更の監視とprivate-notesの同期は`process_loop_watch.py`、プロンプトとオーケストレーターの選択とセッションの起動は`process_loop_session.py`、アラートの確認は`process_loop_alerts.py`が持つ。中断要求と追加指示の状態ファイルは`process_loop_control.py`、子プロセスの環境と実行ファイルの解決は`process_loop_env.py`が持つ。`process_loop.py`の`cmd_process_loop`はこれらを順に呼ぶ制御だけを持つ。以前は1つのファイルが全ての責務を持ち、工程を加える計画ごとに同じファイルへ追記していた。モジュール間の呼び出しは定義元のモジュールの属性として行い、テストは定義元を差し替える。テストも同じ単位で`process_loop_<責務>_test.py`へ分ける。
 
 CI失敗の収集・キー重複除外・本文生成・AWI保存は`alerts.py`が持ち、単発の`atk wi check-alerts`と常駐側が同じ本体を呼ぶ。単発は対象作業ツリーの解決と取得・投入結果を報告して終了し、process-wiの1回の実行やDependabot監査を起動しない。`process_loop_alerts.py`は監視間隔とDependabot監査の起動要否を持ち、収集失敗では従来どおり待機を続ける。単発用に収集処理を複製する案は、本文・キー・取得範囲の一致を別々に保守するため採らない。呼び出す時機は各環境が選び、ガイド「推奨ワークフロー」はその境界を示す。
+
+CI失敗の本文には実行日時、対象commitのSHA、現在のブランチHEADとその比較結果を含める。
+HEADを取得できない場合は理由を示す。
+古い失敗だけが残る場合は、HEADで実行が作成されない理由と、失敗原因が現行HEADにも残るかを調査する。
+原因が残らない場合は確認結果の記録で完了でき、追加変更や後続実行を求めない完成条件を渡す。
+GitHub、GitLabのブランチとScheduleの収集が同じ実行事実を渡す。
+
+`_git/forge_cli.py`は`wait_ci.py`と`alerts.py`が使う非対話のログ取得案内を所有する。
+案内するコマンドは対象リポジトリを明示し、Git作業ツリー外からも実行できるargvを引用して示す。
+GitLabでjobが未確定の場合は、job一覧の取得と対象jobのtrace取得を順に案内する。
+収集側と待機側で同じ案内を使い、CLIの対話画面へ依存する手順の分散を防ぐ。
+
+GitLabのリポジトリ識別子とAPI接続先は別に扱う。
+SSH接続先とAPI接続先のDNS名やポートが異なる場合、baseline作成・待機・再開へ同じAPI側のrepository指定を渡す。
+`_git/remote.py`が接続先を解析し、`_git/forge_cli.py`がglabの子環境へ渡す接続先指定を共通に所有する。
+呼び出しごとの子環境は`_common/json_command.py`が受け取り、親環境を保持する。
+この接続先を一覧、bridges、downstreamとjobの照会に使い、キュー識別子の正規化とbaselineの保存形式は維持する。
 
 ## 開始前の活動猶予とUWI回答待ち
 
@@ -126,6 +148,24 @@ ready項目がなくなると、`agent-toolkit:completion-report`が選定工程
 起動時の終了能力probeと、停止要求の直前に終了対象を新規識別する扱いは`design-workflow-boundaries.md`「セッションの終了」にある。
 Linuxでremote-controlを使わない直接CLIを終了対象として確認できた場合は、Codexが自律終了して親の監視ループへ戻る。
 終了対象を確認できない環境では対話UIに終了案内を表示し、ユーザーが`/exit`を入力すると親の監視ループへ戻る。
+
+親は自身が起動したCodexの子のcwd・開始時刻からロールアウト記録を対応付ける。
+上限による失敗の後に新turnが無い場合だけ、その所有する子へ終了を要求し、正常終了として次の反復へ進む。
+新turnがあれば子を保持する。
+次の反復は可用性判定で解除を待ち、新しい会話でprocess-wiを起動する。
+親の`process_loop_session.py`は子の終了後に`lane.cleanup_session`で回収を試み、未統合・dirty・稼働中などのレーンは所有登録と成果を保持する。
+レーンのbranch・worktree・選定原本・旧所有sessionは、`lane.py`が状態ディレクトリの`lanes/<旧所有session>/lane-*.json`へ保存する所有登録が持つ。
+状態ディレクトリの絶対パスは`atk config get state_dir`で取得する。
+WIの本文と`processing`の状態はprivate-notesのキュー、計画と進捗ログは`~/.claude/plans`が保持する。
+新しい会話のprocess-wiは[選定手順](../../agent-toolkit/skills/process-wi/references/selection-procedure.md)に従い、`atk lane delete --list`で残存登録と回収結果を読み、WIに対応する計画を`atk plans list`から解決する。
+再開する工程は計画の進捗ログから決め、[中断レーンの再開](../../agent-toolkit/skills/process-wi/references/run-lanes.md#中断レーンの再開)に従って新しいレーン担当へ計画と既存worktree・branch・現在HEADを渡す。
+資源を再利用するときは旧所有主体の終端を確認し、`atk lane create`の`--reuse-record <record_path>`へ所有登録のパスを渡して新しい所有sessionへ移す。
+この再開は保存した状態からの復元であり、親は中断した会話履歴を新しい会話へ複製しない。
+対応する計画や所有を一意に確定できない場合は、既存の再開手順が続行できない理由を返す。
+`codex resume`で同じ対話会話を起動する案は、`usage_limited`のgoalの再開確認で無人の子が停止するため採らない。
+共有daemonへの`codex queue`を使う案も、effortを指定する`-c`付きの起動がdaemonの対象外であるため採らない。
+ロールアウトの判定は共通層、子の終了は`process_loop_session.py`が所有する。
+最上位TUIの自動再開とは適用範囲を分ける。
 
 ## process-loopの次の起動への追加指示
 

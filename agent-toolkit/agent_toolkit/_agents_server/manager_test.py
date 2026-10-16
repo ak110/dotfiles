@@ -91,6 +91,55 @@ async def test_retention_expiry_releases_backend_once_without_tool_call(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("closure_failed", [False, True])
+async def test_expiry_registration_is_released_only_after_backend_closure(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, closure_failed: bool
+) -> None:
+    """保持期限の解放中・失敗時は登録簿の資源を保持し、閉鎖成功だけを解放済みとして公開する。"""
+    monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
+    manager, backend = _manager_with_fake("codex")
+    entered = asyncio.Event()
+    finish = asyncio.Event()
+
+    async def release(_session: state.SessionState) -> None:
+        entered.set()
+        await finish.wait()
+        if closure_failed:
+            raise RuntimeError("thread closure failed")
+
+    monkeypatch.setattr(backend, "release_session", release)
+    monkeypatch.setattr(state, "RESULT_RETENTION_SECONDS", 0.02)
+    session = await backend.start("調査", str(tmp_path), None, None)
+    session.publish_registry = True
+    _complete(session)
+    await session.drain_registration()
+    try:
+        await asyncio.wait_for(entered.wait(), 1)
+        assert session_registry.resolve(session.session_id).state is session_registry.Resolution.TERMINAL
+        task = manager._resource_release_tasks[session.session_id]
+        finish.set()
+        if closure_failed:
+            with pytest.raises(RuntimeError, match="thread closure failed"):
+                await task
+            assert session_registry.resolve(session.session_id).state is session_registry.Resolution.TERMINAL
+            assert manager.sessions[session.session_id] is session
+            assert session.session_id not in manager.expired_sessions
+            assert session.retention_deadline is None
+            # 保存された解放失敗を一度観測した後、公開stopから所有資源を再解放できる。
+            with pytest.raises(RuntimeError, match="thread closure failed"):
+                await manager.stop(session.session_id)
+            monkeypatch.setattr(backend, "release_session", AsyncMock())
+            assert await manager.stop(session.session_id) == {}
+            assert session_registry.resolve(session.session_id).state is session_registry.Resolution.RELEASED
+        else:
+            await task
+            assert session_registry.resolve(session.session_id).state is session_registry.Resolution.RELEASED
+    finally:
+        finish.set()
+        await manager.close()
+
+
+@pytest.mark.asyncio
 async def test_reply_cancels_old_retention_deadline(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """保持期限より前に再開したturnへ、旧turnの解放を遅れて適用しない。"""
     manager, backend = _manager_with_fake("codex")

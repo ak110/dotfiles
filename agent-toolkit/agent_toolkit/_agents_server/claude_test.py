@@ -17,6 +17,7 @@ from types import SimpleNamespace
 from typing import Any
 
 import pytest
+from claude_agent_sdk import ToolResultBlock, UserMessage
 
 from agent_toolkit._agents_server import (
     claude,
@@ -1135,6 +1136,7 @@ async def test_claude_retention_expiry_disconnects_and_retains_result_record(
             turn_seq=session.turn_seq,
             status="completed",
             agent_message="完了",
+            final_responses=((1, "完了"),),
             finalized_at=session.finalized_at,
             result_delivered=False,
             retention_deadline=session.retention_deadline,
@@ -1297,6 +1299,75 @@ async def test_usage_limit_idle_keeps_shared_stream_result_pending(
         assert client.messages.empty()
     finally:
         await backend.close()
+    assert client.disconnected and client.readers == 0
+
+
+@pytest.mark.usefixtures("agents_server_isolation")
+@pytest.mark.asyncio
+@pytest.mark.parametrize("failed", [False, True])
+async def test_send_message_reactivated_child_holds_claude_result_until_terminal(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, failed: bool
+) -> None:
+    """Claudeの親も追送で再開した子の終端まで結果を保留し、自動再開の最終結果を公開する。"""
+    monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
+    monkeypatch.setattr(
+        _atk_config, "parse_unresolved_model_candidates", lambda *_args, **_kwargs: [("claude", "model", "high")]
+    )
+    client = QueueClaudeClient(
+        [
+            [SystemMessage("claude-parent"), AssistantMessage("親の作業を開始した")],
+            [AssistantMessage("子の結果を確認した"), ResultMessage("子を確認した最終結果")],
+        ]
+    )
+    manager = server_manager.AgentsServerManager(None)
+    backend = claude.ClaudeServerManager(manager.sessions, manager._condition, client_factory=lambda _options: client)
+    monkeypatch.setattr(claude, "_build_options", lambda *_args, **_kwargs: SimpleNamespace())
+    install_backend(manager, "claude", backend)
+    session_registry.publish("child", terminal=False, cwd=str(tmp_path))
+    try:
+        started = await manager.start("high_tier", "親の作業", str(tmp_path))
+        session = manager.sessions[started["session_id"]]
+        session.terminal_child_session_ids.add("child")
+        session.auto_resume_consumed = True
+        tool_use = AssistantMessage("")
+        tool_use.content = [
+            SimpleNamespace(
+                id="reply-child",
+                name="mcp__agents_server__send_message",
+                input={"session_id": "child", "prompt": "残作業を続ける"},
+            )
+        ]
+        client.messages.put_nowait(tool_use)
+        # SDKのUserMessage/ToolResultBlockの実型を通して構造化応答のJSONを配送する。
+        client.messages.put_nowait(
+            UserMessage(
+                content=[
+                    ToolResultBlock(
+                        tool_use_id="reply-child",
+                        content=json.dumps({"session_id": "child", "delivery": "reply_started", "status": "running"}),
+                    )
+                ]
+            )
+        )
+        client.messages.put_nowait(ResultMessage("親のturnの結果", is_error=failed))
+        async with manager._condition:
+            await asyncio.wait_for(manager._condition.wait_for(lambda: session.awaiting_auto_resume), 2)
+        shown = manager.show_session(session.session_id)
+        assert shown["status"] == "running" and shown["result_held"]
+        assert shown["live_child_sessions"] == [{"session_id": "child", "cwd": str(tmp_path)}]
+        assert session.pending_result is not None
+        assert session.pending_result["status"] == ("failed" if failed else "completed")
+        session_registry.publish("child", terminal=True, status="completed", cwd=str(tmp_path))
+        result = await asyncio.wait_for(manager.wait(), 2)
+        if result["status"] == "running":
+            async with manager._condition:
+                await asyncio.wait_for(manager._condition.wait_for(lambda: session.result_available), 2)
+            result = await asyncio.wait_for(manager.wait(), 2)
+        assert result["status"] == "completed"
+        assert result["agent_message"] == "子を確認した最終結果"
+        assert session.auto_resume_consumed and len(client.queries) == 2
+    finally:
+        await manager.close()
     assert client.disconnected and client.readers == 0
 
 

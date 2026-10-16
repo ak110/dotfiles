@@ -9,6 +9,8 @@ import pathlib
 import shutil
 import stat
 import subprocess
+import sys
+import time
 import uuid
 from typing import Any, NoReturn, cast
 
@@ -40,6 +42,9 @@ from agent_toolkit._testing.process_loop_support import (
 )
 from agent_toolkit.atk_test import _setup_notes
 
+_ORIGINAL_RUN = subprocess.run
+_ORIGINAL_CODEX_SESSION = _pl_session._run_codex_session  # pylint: disable=protected-access  # noqa: SLF001
+
 
 def _run_two_sessions(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, extra_argv: list[str]) -> list[dict[str, Any]]:
     """処理対象が2回続く常駐ループを`--no-update`と`extra_argv`で動かし、起動したセッションの呼び出しを返す。"""
@@ -65,6 +70,14 @@ def _run_two_sessions(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, e
 def _isolate_process_loop_commands(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
     """外部コマンド・Claude設定・初期値のTTLをユーザー環境から分離する。"""
     isolate_process_loop_commands(monkeypatch, tmp_path)
+
+    def run_codex(argv: list[str], env: dict[str, str], cwd: pathlib.Path) -> subprocess.CompletedProcess[Any]:
+        # 従来の起動引数の試験は外部CLI全体をrunで代用する。実子試験は監視を含む本体へ到達する。
+        if subprocess.run is _ORIGINAL_RUN:
+            return _ORIGINAL_CODEX_SESSION(argv, env, cwd)
+        return subprocess.run(argv, check=False, env=env, cwd=cwd, creationflags=_pl_env.session_creation_flags("codex"))
+
+    monkeypatch.setattr(_pl_session, "_run_codex_session", run_codex)
 
 
 _PROCESS_LOOP_SESSION_ENV = "AGENT_TOOLKIT_PROCESS_LOOP_SESSION"
@@ -1754,3 +1767,63 @@ class TestConsoleTitleReset:
 
         assert result is False
         assert calls == ["session", "reset", "title"]
+
+
+@pytest.mark.parametrize("new_turn", [False, True])
+@pytest.mark.parametrize("resume", [False, True])
+def test_codex_usage_limit_child_continues_next_iteration(
+    tmp_path: pathlib.Path,
+    new_turn: bool,
+    resume: bool,
+) -> None:
+    """実子の上限停止だけを親が終了し、新turn開始後の子は自身の正常終了まで保持する。"""
+    binary = tmp_path / "codex"
+    marker = tmp_path / "completed"
+    binary.write_text(
+        f"#!{sys.executable}\n"
+        "import datetime, json, os, pathlib, time\n"
+        "directory = pathlib.Path(os.environ['CODEX_HOME']) / 'sessions/2026/10/16'\n"
+        "directory.mkdir(parents=True, exist_ok=True)\n"
+        "stamp = datetime.datetime.now(datetime.UTC).isoformat()\n"
+        "events = [\n"
+        " {'type': 'session_meta', 'payload': {'cwd': os.getcwd(),\n"
+        " 'timestamp': '2026-01-01T00:00:00Z' if os.environ['RESUME'] == '1' else stamp,\n"
+        " 'originator': 'codex-tui', 'source': 'cli'}},\n"
+        " {'type': 'event_msg', 'timestamp': stamp, 'payload': {'type': 'task_started'}},\n"
+        " {'type': 'event_msg', 'payload': {'type': 'task_complete', 'error': {'codex_error_info': 'usage_limit_exceeded'}}},\n"
+        "]\n"
+        "if os.environ['NEW_TURN'] == '1': events.append({'type': 'event_msg', 'payload': {'type': 'task_started'}})\n"
+        "(directory / 'rollout-child.jsonl').write_text('\\n'.join(json.dumps(e) for e in events))\n"
+        "time.sleep(2.5 if os.environ['NEW_TURN'] == '1' else 20)\n"
+        "pathlib.Path(os.environ['COMPLETED']).write_text('completed')\n",
+        encoding="utf-8",
+    )
+    binary.chmod(binary.stat().st_mode | stat.S_IXUSR)
+    env = {
+        **os.environ,
+        "PATH": str(tmp_path) + os.pathsep + os.environ["PATH"],
+        "CODEX_HOME": str(tmp_path / "codex-home"),
+        "NEW_TURN": "1" if new_turn else "0",
+        "RESUME": "1" if resume else "0",
+        "COMPLETED": str(marker),
+    }
+    finished: list[bool] = []
+    started = time.monotonic()
+    assert (
+        _pl_session.run_process_session(
+            argparse.Namespace(no_update=True, resume="child" if resume else None),
+            tmp_path,
+            "goal",
+            env,
+            orchestrator="codex",
+            model="test",
+            effort="high",
+            resume_pending=resume,
+            dotfiles_root=None,
+            on_session_finished=finished.append,
+        )
+        is False
+    )
+    assert finished == [True]
+    assert marker.exists() is new_turn
+    assert time.monotonic() - started < 15

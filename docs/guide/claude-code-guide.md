@@ -201,7 +201,7 @@ Claude CodeのprojectsとCodexのsessionsにある原セッション記録の本
 atk run-script session-review-evidence -- --catalog-claude-project ~/.claude/projects/<project> --since 2026-10-01T00:00:00+09:00 --observation-boundary 2026-10-08T00:00:00+09:00 --catalog-workflow process-wi --catalog-fields session_id,workflow,workflow_locator,started_at,tokens
 ```
 
-振り返りの準備後や最終報告後に届いた新しい`気付いた改善点:`の行は、`agent-toolkit:completion-report`の工程に従って振り返りへ取り込み、結果報告を更新してから終了する。
+振り返りの準備後や最終報告後に届いた新しい`気付いた改善点:`の行は`agent-toolkit:completion-report`の工程に従って振り返りへ取り込み、結果報告を更新してから終了する。
 Stopはこの行の有無と報告本文を判定しない。
 
 ## 工程別モデル設定
@@ -214,7 +214,20 @@ engineごとの段位のモデル（6キー）を変えると、そのengineと�
 用途ごとのengine順（4キー）を変えると、モデルを変えずにClaudeとCodexのどちらを先に使うかだけが変わる。
 起動時は用途のengine順に従って各engineの段位のモデルを並べ、先頭の候補から順に起動を試す。
 モデル実行環境の可用性に起因する失敗を観測した場合だけ次の候補へ進む。
-Claude CodeのWeekly limitと5時間の利用上限で拒否された場合は次の候補へ進まず、解除まで待って同じClaudeで作業を続ける。`agents_server`、`atk wi process-loop`、`atk run-skill`および`atk commit`のいずれも手動での再送は要らず、待機中は解除待ちの種類と解除予定時刻を`show`・`list`・statuslineまたは端末へ示す。待機を止める場合は`agents_server`では`kill`、CLIでは中断操作を使う。
+Claude CodeのWeekly limitと5時間の利用上限では、解除まで待って同じClaudeで作業を続ける。
+ユーザーが起動したClaude Codeのメインの会話では、agent-toolkitのFunction hooksが解除後の再開を予約する。
+Function hooksはClaude Code内で動くプラグインの処理であり、ターンの終了や利用枠の状態を受け取って再開の入力を送る。
+利用するにはagent-toolkitを有効にし、`~/.claude/settings.json`の`env`へ`"CLAUDE_CODE_ENABLE_FUNCTION_HOOKS": "1"`を設定してClaude Codeを起動する。
+dotfilesの管理設定ではこの値を設定済みである。
+利用上限による拒否か、ターン終了時の5時間枠・週次枠の100%以上の使用を検出すると、解除予定時刻の後に同じ会話へ継続指示を送る。
+解除予定が不明な場合は300秒ごとに再確認するため、待機中もClaude Codeを起動したままにする。
+解除予定時刻後に新しいターンが始まっていれば重複した継続指示を送らず、作業完了済み・ユーザーによる中止の場合は指示を受けても作業を再開しない。
+Remote Controlは、手元で動くClaude Codeの会話へブラウザーやClaudeアプリから接続する機能であり、その接続中もこの再開予約が働く。
+接続する場合は会話内で`/remote-control`を実行し、ログインと接続条件は[公式のRemote Control手順](https://code.claude.com/docs/en/remote-control)を参照。
+`agents_server`、`atk wi process-loop`、`atk run-skill`と`atk commit`も再送を要さず、解除待ちの種類と予定時刻を状態表示または端末へ示す。
+`atk run-skill`は指定スキルの実行中に上限へ達した場合も同じ会話を再開する。
+`agents_server`のClaude委譲は、後述の`claude_api_env_file`を設定した場合に同じ会話をAPIへ移す。
+解除待ちの委譲先と背景wait・定期再確認のtaskは保持し、作業の継続が不要になった場合だけ停止する。
 変更できるキーは次のとおりで、`atk config show`もこの順に表示する。
 
 | キー | 値と対応する起動 |
@@ -232,19 +245,20 @@ Claude CodeのWeekly limitと5時間の利用上限で拒否された場合は�
 | `write_model` | `start`の`write`。日本語の文章力で選ぶ候補列で、段位と配分に属さない |
 | `codex_fast_mode` | `agents_server`が起動するCodexの速度（`true`はfast mode、`false`は標準、未設定時は`false`） |
 | `codex_model_providers` | `agents_server`のCodex接続先を主接続先から優先順で並べるID列。空ならCodex通常設定・代替なし |
+| `claude_api_env_file` | `agents_server`のClaudeが利用上限で拒否されたときに使うAPI接続のenvファイルのパス。空文字列なら解除待ち |
 
 段位のモデルはengine名を付けない`<model>[/<effort>]`で1つだけ書き、effortを省略すると`medium`を使う。
 engine順は`codex`と`claude`の一方または両方を重複なしでASCIIカンマ区切りに並べる。
 `write_model`は`<engine>:<model>[/<effort>]`をASCIIカンマで区切った候補列で書く。
 段位は作業の部分ごとに選ぶ。判定基準を言語化して渡せる多数の対象の走査（所在・値・件数の確認、該当候補の抽出と非該当の判定）は、極力`explore`の指定省略時の軽量段位へ分け、対象が多ければ重複のない群へ分けて並列に委ねる。観点・評価軸・判定基準の選定、新しい候補の案出し、走査が返した候補の判定と結論の統合は、`mode`が`explore`でも`delegate`でも`model_type="high_tier"`を明示する（`base_engine`の上位を使う）。両者を含む依頼も全体を`high_tier`にせず、走査を分けてから上位段位で判定する。工程別の割当（実装などの上位、実行レビューの中位）は変えない。
 
-`atk config show`はパス4行、モデルと配分の10行、`write_model`、速度とAPI provider列を各1行で表示する。`atk config get`は指定したキーの値を指定した順に返し、provider列では前後空白と重複を除く。
+`atk config show`はパス4行、モデルと配分の10行、`write_model`、速度、API provider列とClaudeのAPI用envファイルのパスを各1行で表示する。`atk config get`は指定したキーの値を指定した順に返し、provider列では前後空白と重複を除く。
 `atk config set codex_fast_mode true`でfast modeを有効にし、`false`で標準速度へ戻す。設定は次のturnから反映され、MCPサーバーの再起動は不要である。Codexのモデル表示には`@fast`を付け、effortがあれば`codex:<model>/<effort>@fast`とする。
 Codex系列名は委譲の起動時にモデルIDへ解決され、採用値は`agents_server`の`show`で確認できる。
 `AGENT_TOOLKIT_CONFIG_<キー名の大文字>`の環境変数に空でない値を設定すると、`atk config show`と`atk config get`は環境変数の値を返す。
 委譲の起動にもこの値を使う。環境変数は保存済みの設定より優先し、変数を解除すると保存済みの設定へ戻る。
 `atk config set`は保存先だけを更新するため、同名の環境変数がある間は設定した値が実効値にならない。
-`atk config apply-preset <プリセット名>`は`base_engine`・`review_engine`・`chores_engine`・`orchestrate_engine`の4キーを1回の実行で一括保存する。段位のモデル、`write_model`・`codex_fast_mode`・`codex_model_providers`は変更しない。
+`atk config apply-preset <プリセット名>`は`base_engine`・`review_engine`・`chores_engine`・`orchestrate_engine`の4キーを1回の実行で一括保存する。段位のモデル、`write_model`・`codex_fast_mode`・`codex_model_providers`・`claude_api_env_file`は変更しない。
 
 | プリセット | `base_engine` | `review_engine` | `chores_engine` | `orchestrate_engine` |
 | --- | --- | --- | --- | --- |
@@ -268,6 +282,45 @@ balancedのプリセットでは、レビューを作業と別のengineで先に
 CodexのAPI移行先は工程別モデル候補とは別の設定である。サブスクのみ、サブスク＋API、APIのみの
 設定と解除、API認証と課金は[Codex利用ガイド](codex-guide.md#codexのサブスクとapi接続先)を参照する。
 この機能は`agents_server`のCodexだけに作用し、Claudeの解除待ちと直接起動の接続先を変えない。
+
+### Claude委譲のAPI接続
+
+`agents_server`のClaude委譲だけに適用する設定である。
+メインのClaude Code、`atk run-skill`、`atk wi process-loop`と`atk commit`の接続先は変更しない。
+API接続に使う環境変数をenvファイルへ保存し、パスを設定する。
+形式は1行1つの`KEY=VALUE`で、先頭の`export`と空白、値全体を囲む一対の引用符、空行と`#`で始まるコメント行も使える。
+AnthropicのAPIへ直接接続する場合は、[Claude ConsoleのAPI keys](https://platform.claude.com/settings/keys)で発行したAPIキーを`ANTHROPIC_API_KEY`へ記入する。
+APIの利用料金はサブスクと別であり、ConsoleでAPIの課金設定も用意する。
+たとえば`~/.config/claude-api.env`をエディターで作成し、次のプレースホルダーを取得した値へ置き換える。
+
+```dotenv
+ANTHROPIC_API_KEY=YOUR_API_KEY
+```
+
+別のAPI接続先を使う場合は、その提供元が指定するURLを`ANTHROPIC_BASE_URL`へ記入する。
+Bearer認証を指定された接続先では、提供元から取得したトークンを`ANTHROPIC_AUTH_TOKEN`へ記入する。
+`ANTHROPIC_AUTH_TOKEN`は`ANTHROPIC_API_KEY`より優先するため、直接接続用ファイルにはAPIキーだけを記入する。
+変数の役割と認証の優先順は[Claude Codeの認証仕様](https://code.claude.com/docs/en/authentication#authentication-precedence)、URLの設定は[環境変数の仕様](https://code.claude.com/docs/en/env-vars)を参照。
+ファイルはGit管理外へ置き、Linux・macOSでは`chmod 600 ~/.config/claude-api.env`で自分だけが読み書きできるようにする。
+Windowsではファイルのプロパティのセキュリティ設定で、使用するOSアカウントだけに読取権限を与える。
+ファイルを用意した後に次のコマンドでパスを設定する。
+
+```bash
+atk config set claude_api_env_file '~/.config/claude-api.env'
+atk config get claude_api_env_file
+# 解除する場合
+atk config set claude_api_env_file ''
+```
+
+setは先頭の`~`を展開してパスだけを保存する。
+ファイルの読取は切替と再開の起動時に行う。
+`AGENT_TOOLKIT_CONFIG_CLAUDE_API_ENV_FILE`の空でない値は保存値より優先するため、解除時はこの変数も外す。
+未設定では利用上限の解除を待つ。
+設定済みではWeekly limitか5時間の利用上限で拒否されたときに、同じ会話・model・effortでenvファイルのAPI接続へ移る。
+envファイルは切替と再開の起動ごとに読み直す。
+APIへ移った会話は設定変更・解除、stop・保持期限、サーバー再起動を跨ぐ再開でも保持したパスを使い、継続にもAPI料金が発生する。
+新規sessionは通常のサブスク接続から始める。
+ファイルの不備、API認証・通信失敗は運用で対処し、専用の解除待ちへの復帰や接続先切替は行わない。
 
 ## 選定結果の確認設定
 
@@ -426,6 +479,8 @@ Claude Codeではpush後のCI待機でも、独立した公開工程を先に開
 ログの点検のように、決まったスキルを数日に1回などの間隔で自律的に実行させたい場合は、cronなどの定期実行へ`atk run-skill`を登録する。
 `atk run-skill`はWIキューを経由せずに、指定した対象リポジトリで指定したスキルを自律モードのセッションとして1回実行し、終了コードを返す。
 モデルの選択、利用上限の解除待ち、同じスキルの多重起動の防止、時間上限（省略時6時間）とログの保存はコマンドが行う。
+ClaudeとCodexのどちらも指定スキルの実行中に利用上限へ達した場合は解除後に同じ会話を再開し、待機時間を`--timeout`へ含めない。
+Codexの候補判定では次の候補を先に試し、全候補が失敗して利用上限の失敗がある場合だけ、最も早い解除予定まで待って先頭から判定し直す。
 
 cronへ登録する例を次に示す。cronは端末のシェルと異なる`PATH`で起動するため、`atk`・`claude`・`codex`の実行ファイルの場所を`PATH`へ含める。
 標準出力を`/dev/null`へ捨てると、成功時は何も届かず、失敗時だけ標準エラーの失敗行がcronのメール通知で届く。
@@ -550,7 +605,7 @@ dotfilesユーザーは`chezmoi apply`で`~/dotfiles/agent-toolkit/scripts`がPA
 
 Claude CodeのSessionStartは、`CLAUDE_ENV_FILE`が提供される場合に、CLIのPATHとデータ領域を後続のBashへ渡す。別hookの設定と既存PATHは保持する。このファイルが提供されない場合も、開始時のコンテキストにCLIの絶対パスを表示する。WindowsのPowerShellでは、案内された`.cmd`の絶対パスを`& '絶対パス'`の形で呼び出す。MCPと`agents_server`の委譲先には起動設定で同じ配布物のCLIとデータ領域を渡す。
 
-CLI移設前に起動した`update-dotfiles`は、pullと未コミット内容の復元後、旧`agent-toolkit/bin/atk`の不在により退避の回収で終了1となる場合がある。「復元は成功しましたが退避の回収は未完了です」と表示された場合は、更新したリポジトリで作業内容とindexが復元済みであることを保存refの内容と比べて確かめる。その実行が表示した完全なrefだけを`./agent-toolkit/scripts/atk worktree-stash drop <ref>`で回収し、`./bin/update-dotfiles`を再実行する。Windowsではそれぞれ`agent-toolkit\scripts\atk.cmd`と`bin\update-dotfiles.cmd`を使う。復元を確認できない場合はrefを保持して原因を調べる。これは開始済みの旧プロセスからの移行操作であり、再実行後の終了状態まで確認する。
+CLI移設前に起動した`update-dotfiles`はpullと未コミット内容の復元後、旧`agent-toolkit/bin/atk`の不在により退避の回収で終了1となる場合がある。「復元は成功しましたが退避の回収は未完了です」と表示された場合は、更新したリポジトリで作業内容とindexが復元済みであることを保存refの内容と比べて確かめる。その実行が表示した完全なrefだけを`./agent-toolkit/scripts/atk worktree-stash drop <ref>`で回収し、`./bin/update-dotfiles`を再実行する。Windowsではそれぞれ`agent-toolkit\scripts\atk.cmd`と`bin\update-dotfiles.cmd`を使う。復元を確認できない場合はrefを保持して原因を調べる。これは開始済みの旧プロセスからの移行操作であり、再実行後の終了状態まで確認する。
 
 ## 構成と機能
 
@@ -620,6 +675,20 @@ pluginをインストールまたは更新した後は、Codexの`/hooks`で、�
 登録集合は`SessionStart`、`SubagentStart`、`PreToolUse`、`PostToolUse`、`PermissionRequest`、`UserPromptSubmit`、`Stop`、`SubagentStop`、`SessionEnd`である。
 登録が0件の場合は信頼操作へ進まず、`agent-toolkit-codex/`のmanifest選択を確認する。信頼前は登録済みHookがスキップされるため、条文の追加と圧縮後通知は発火しない。
 信頼後に新しいセッションを開始し、最初の応答の前に自動生成通知が現れることを確認する。
+
+### 一時成果物の配置と回収
+
+セッション開始時に通知されるmanaged-tempは、一時成果物を置く管理領域である。
+検証記録、引き継ぎ記録と再開入力はこの領域へ保存され、最終更新から7日を超えた後の`atk`実行時に回収される。
+turn終了時にも残るため、同じ会話の再開や委譲先の結果確認に使える。
+
+抽出した配布物、cloneとGit fixtureなどの再生成可能な作業用複製は、保存証拠と分けて置く。
+作成した工程が全消費工程と外部プロセスの終了後に回収し、後続turnで読む証拠と再開入力を残す。
+領域の確認には`atk managed-temp list`を使える。
+配置と回収の手順は`agent-toolkit:managed-temp`、寿命を分ける理由は[design-storage.md](../development/design-storage.md#managed-temp)を参照。
+
+版付きプラグインから起動する`agents_server`は同じ配布元・版の保持実体を複数プロセスで共有する。
+使用中の実体を保護するため、配布元の更新後も起動時のスキルと内部資源を参照できる。
 
 ### `~/.claude/plans`の計画ファイルと実行レビュー後の`private-notes/plans/`への保存
 

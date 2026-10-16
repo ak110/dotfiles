@@ -117,7 +117,7 @@ def _update_if_needed(pending_path: pathlib.Path) -> int:
         applied_commit = None
     if local_commit == upstream_commit == applied_commit and not pending:
         print(f"{_UPSTREAM}に更新はありません: commit {local_commit}")
-        return 0
+        return _prune_codex_packages()
 
     update_dotfiles = _DOTFILES_ROOT / "bin" / "update-dotfiles"
     if not update_dotfiles.is_file():
@@ -158,6 +158,18 @@ def _update_if_needed(pending_path: pathlib.Path) -> int:
         )
         return 1
     return 0
+
+
+def _prune_codex_packages() -> int:
+    """上流不変の周期も、プロジェクト依存を持たない公開ランチャーから整理する。"""
+    launcher = _DOTFILES_ROOT / "bin" / "prune-codex-packages"
+    if not launcher.is_file():
+        print(
+            f"Codex整理ランチャーが未配置です: {launcher}。update-dotfilesで導入して再実行してください。",
+            file=sys.stderr,
+        )
+        return 1
+    return _run([str(launcher)], capture_output=False).returncode
 
 
 def main(argv: list[str] | None = None) -> int:

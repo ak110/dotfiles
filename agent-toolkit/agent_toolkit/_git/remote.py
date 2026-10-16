@@ -115,6 +115,16 @@ class RemoteLocation:
 
     hostname: str | None
     project_path: str
+    port: int | None = None
+    protocol: str | None = None
+
+    @property
+    def authority(self) -> str | None:
+        """接続先のホストとポートを返す。"""
+        if self.hostname is None:
+            return None
+        host = f"[{self.hostname}]" if ":" in self.hostname else self.hostname
+        return f"{host}:{self.port}" if self.port is not None else host
 
 
 def parse_remote_location(value: str) -> RemoteLocation:
@@ -125,11 +135,19 @@ def parse_remote_location(value: str) -> RemoteLocation:
     """
     stripped = value.strip()
     hostname: str | None = None
+    port: int | None = None
+    protocol: str | None = None
     project_path = stripped
     if "://" in stripped:
         parsed = urllib.parse.urlparse(stripped)
         hostname = parsed.hostname
+        port = parsed.port
+        protocol = parsed.scheme
         project_path = parsed.path
+    elif match := re.fullmatch(r"([^/@:]+):(\d+)/(.+)", stripped):
+        hostname = match.group(1)
+        port = int(match.group(2))
+        project_path = match.group(3)
     elif match := re.match(r"^(?:[^@/]+@)?([^:/]+):(.+)$", stripped):
         hostname = match.group(1)
         project_path = match.group(2)
@@ -143,4 +161,4 @@ def parse_remote_location(value: str) -> RemoteLocation:
         project_path = project_path[:-4]
     if not project_path or "/" not in project_path:
         raise ValueError(f"リモートのプロジェクトのパスを取り出せない: {value!r}")
-    return RemoteLocation(hostname=hostname, project_path=project_path)
+    return RemoteLocation(hostname=hostname, project_path=project_path, port=port, protocol=protocol)
