@@ -277,7 +277,7 @@ HELP: dict[str, dict[str, str]] = {
     },
     "atk config apply-preset": {
         "summary": "用途別engine順をプリセットから一括保存する（`show`または省略で全プリセットの値を表示する）",
-        "description": "目的: base・review・chores・orchestrateの用途別engine順の4キーを1回の実行で一括保存する。engine別・段位別のモデル設定とwrite_modelは変更しない。`show`の指定時と引数の省略時は、保存せずに5プリセットの設定値を表示する。\n利用場面: 主に使うengineをcodexまたはclaudeへ切り替えるとき。切り替える前に各プリセットが保存する値を見比べるとき。\n対象と出力: プリセット名を指定した実行だけが設定ディレクトリの`config.json`へ用途別engine順を保存し、保存した各キーと値を標準出力へ表示する。`show`の指定時と引数の省略時は設定ファイルを読み書きせず、プリセットごとに`<プリセット名>:`の行と、保存対象の各キーの`<キー>: <値>`を半角空白2文字で字下げした行を標準出力へ書く。未知の名前は終了コード2で終わり、受理する値を標準エラーへ表示する。\n前提: 引数は`show`、または`codex-balanced`、`codex-near-primary`、`codex-primary`、`claude-balanced`、`claude-primary`のいずれかのプリセット名を指定するか、省略する。\n復元・後始末: 個別に元の値へ戻す場合は`atk config set`を使う。並行して稼働するセッションへも新しい値が波及する。`show`と省略時の表示は状態を残さない。",
+        "description": "目的: base・execute・review・chores・orchestrateの用途別engine順の5キーを1回の実行で一括保存する。engine別・段位別のモデル設定とwrite_modelは変更しない。`show`の指定時と引数の省略時は、保存せずに5プリセットの設定値を表示する。\n利用場面: 主に使うengineをcodexまたはclaudeへ切り替えるとき。切り替える前に各プリセットが保存する値を見比べるとき。\n対象と出力: プリセット名を指定した実行だけが設定ディレクトリの`config.json`へ用途別engine順を保存し、保存した各キーと値を標準出力へ表示する。`show`の指定時と引数の省略時は設定ファイルを読み書きせず、プリセットごとに`<プリセット名>:`の行と、保存対象の各キーの`<キー>: <値>`を半角空白2文字で字下げした行を標準出力へ書く。未知の名前は終了コード2で終わり、受理する値を標準エラーへ表示する。\n前提: 引数は`show`、または`codex-balanced`、`codex-near-primary`、`codex-primary`、`claude-balanced`、`claude-primary`のいずれかのプリセット名を指定するか、省略する。\n復元・後始末: 個別に元の値へ戻す場合は`atk config set`を使う。並行して稼働するセッションへも新しい値が波及する。`show`と省略時の表示は状態を残さない。",
         "epilog": "実行例:\n\n  atk config apply-preset show\n  atk config apply-preset codex-balanced",
     },
     "atk wait-schedule": {
@@ -490,7 +490,9 @@ HELP["atk worktree-stash"]["description"] += (
 HELP["atk run-script"]["description"] += (
     "\n多ターン試行はmulti-turn-trialsの--listで固定課題を選び、prepareで公開素材だけを複製し、"
     "gradeで保存対話と提出物を採点する。機能合否、隠した要件の達成、対話判定を別々に結果JSONへ保存する。"
-    "\n履歴の検収はhistory-compareでrebaseとautosquashを分け、検収済み完全OID対応表をplan-rewriteと証拠の--rewrite-mapへ渡す。"
+    "\n履歴の検収はhistory-compareでrebaseとautosquashを分け、検収済み完全OID対応表をplan-rewriteへ渡す。"
+    "未判定記録は`atk run-script verification-record -- --output <記録の絶対パス> --rewrite-map <対応表の絶対パス>`、"
+    "完成条件証拠は`atk run-script exec-review-evidence-check -- <証拠の絶対パス> --rewrite-map <対応表の絶対パス>`で参照を更新する。"
     "verification-recordとexec-review-evidence-checkは--results-fileでJUnit・実行記録・構造化診断を読み、"
     "--list-resultsで選択して--updates-fileで複数の要求行へ根拠を保存する。各scriptの--helpが入力JSONの形式を示す。"
     "未判定記録の判定欄は空に保ち、レビューでは行ごとの判定とHEADを明示して別ファイルへ保存する。"

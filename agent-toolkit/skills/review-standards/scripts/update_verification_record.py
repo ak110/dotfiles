@@ -24,7 +24,7 @@ from agent_toolkit._plan.structure import parsing
 
 
 def _parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description=__doc__)
+    parser = verification_results.ArgumentParser(description=__doc__)
     parser.add_argument("--output", type=pathlib.Path, metavar="PATH", required=True, help="未判定検証記録JSONの絶対パス")
     parser.add_argument("--wi", action="append", default=[], help="WIファイル名。反復できる")
     parser.add_argument(
@@ -36,8 +36,16 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--section", choices=("wi_conditions", "user_requirements"), help="更新する配列")
     parser.add_argument("--row", type=int, help="一覧の1始まりの行番号")
     parser.add_argument("--source", help="一覧で確認したsourceの完全一致文字列")
-    parser.add_argument("--evidence-file", type=pathlib.Path, metavar="PATH", help="根拠を持つUTF-8ファイルの絶対パス")
+    parser.add_argument(
+        "--evidence-file", type=pathlib.Path, metavar="PATH", help="全選択行へ共通に保存する根拠のUTF-8ファイルの絶対パス"
+    )
     parser.add_argument("--mode", choices=("append", "replace"), help="根拠の追記か置換")
+    parser.add_argument(
+        "--rewrite-map",
+        type=pathlib.Path,
+        metavar="PATH",
+        help="未判定検証記録のevidenceにあるcommit:参照だけを検収済み旧新OID対応表で更新する。ほかの操作と分けて実行する",
+    )
     verification_results.add_arguments(parser)
     return parser
 
@@ -58,6 +66,9 @@ def _load(path: pathlib.Path) -> dict[str, list[dict[str, str]]]:
 
 def run(args: argparse.Namespace) -> None:
     """全入力の検証と更新をメモリ上で済ませ、成立した場合だけ原子的に保存する。"""
+    if args.rewrite_map is not None:
+        _rewrite_references(args)
+        return
     paths = [args.output, *args.plan, *([args.evidence_file] if args.evidence_file else [])]
     if any(not path.is_absolute() for path in paths):
         raise ValueError("ファイルは絶対パスで指定する")
@@ -150,6 +161,30 @@ def run(args: argparse.Namespace) -> None:
                         {"section": section, "row": index, "original": row[field], "source": row["source"]}, ensure_ascii=False
                     )
                 )
+
+
+def _rewrite_references(args: argparse.Namespace) -> None:
+    """未判定の契約を確かめてから、共有するcommit参照の更新を実行する。"""
+    conflicting = [
+        "--" + name.replace("_", "-")
+        for name, value in vars(args).items()
+        if name not in {"output", "rewrite_map"}
+        and not name.startswith("_")
+        and value is not None
+        and value is not False
+        and value != []
+    ]
+    if conflicting:
+        raise ValueError("--rewrite-mapはほかの操作と分けて実行する: " + "、".join(conflicting))
+    if not args.output.is_absolute() or not args.rewrite_map.is_absolute():
+        raise ValueError("--outputと--rewrite-mapは絶対パスで指定する")
+    if not args.output.is_file():
+        raise ValueError("参照を更新する未判定検証記録がありません。--outputへ既存記録を指定する")
+    _load(args.output)
+    errors, updated, count = review.rewrite_references(args.output, args.rewrite_map)
+    if errors:
+        raise ValueError("。".join(errors))
+    print(f"成功: 未判定検証記録のcommit参照を更新しました（更新した行 {updated} 行、置換 {count} 件）: {args.output}")
 
 
 def _row_check(plan_paths: list[pathlib.Path]) -> typing.Callable[[str, int, dict[str, str]], list[str]]:

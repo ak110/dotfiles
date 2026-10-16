@@ -50,7 +50,9 @@ lazy from agent_toolkit._hooks import plugin_resources as _plugin_resources
 lazy from agent_toolkit._hooks import rules_context as _rules_context
 lazy from agent_toolkit._hooks import tool_input as _tool_input
 lazy from agent_toolkit._hooks.pretooluse import shell_checks as _shell_checks
+lazy from agent_toolkit._hooks.pretooluse.agent_checks import AGENTS_SERVER_HOOK_TOOL_NAMES
 lazy from agent_toolkit._hooks.pretooluse.large_reads import python_file_paths
+lazy from agent_toolkit._hooks.pretooluse.task_document_launch import AGENT_TOOL_NAMES
 lazy from agent_toolkit._plan.structure import is_agent_doc_target_file
 
 _llm_notice = _notice_formatter("pretooluse")
@@ -445,7 +447,13 @@ def _is_agent_document_writing(tool_name: str, tool_input: dict) -> bool:
     )
 
 
+def _is_delegation_operation(tool_name: str, _tool_input: dict) -> bool:
+    """既存の委譲ツール集合から、起動・追送・観測・巻取りの操作を判定する。"""
+    return tool_name in AGENT_TOOL_NAMES | AGENTS_SERVER_HOOK_TOOL_NAMES
+
+
 OPERATION_SKILLS: tuple[OperationSkill, ...] = (
+    OperationSkill("agent-toolkit:delegation", "delegation", "委譲操作", _is_delegation_operation),
     OperationSkill("agent-toolkit:search", "search", "検索", _is_search_operation),
     OperationSkill("agent-toolkit:bugfix", "bugfix", "原因分析の記述", _is_root_cause_writing),
     OperationSkill("agent-toolkit:managed-temp", "managed-temp", "個別のmanaged-temp領域の作成", _is_managed_temp_create),

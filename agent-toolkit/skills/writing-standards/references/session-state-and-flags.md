@@ -108,7 +108,7 @@ process-loopが起動した会話の最上位のStopでは、終了要求が`req
   PostToolUse(Skill)が同スキルの起動で、UserPromptSubmitがユーザーによる同スキルのスラッシュコマンド起動で偽へ戻す。Skillの起動を観測できないCodexでは、注記を返した時点で偽へ戻す。
   寿命はセッション状態ファイルと同じとする
 - `operation_skill_ready_agents`: 操作を起動の契機とするスキルの完全名から、起動済みの呼び出し主体の一覧への対応。
-  対象は`agent-toolkit:search`、`agent-toolkit:bugfix`、`agent-toolkit:managed-temp`、`agent-toolkit:writing-standards`である。writing-standardsはエージェント向け文書への編集と、書込先を確定できるBash操作を契機とする。
+  対象は`agent-toolkit:delegation`、`agent-toolkit:search`、`agent-toolkit:bugfix`、`agent-toolkit:managed-temp`、`agent-toolkit:writing-standards`である。delegationは`Agent`・`Task`と、既存のagents_server hook対象集合に属する起動・追送・観測・巻取りを契機とする。writing-standardsはエージェント向け文書への編集と、書込先を確定できるBash操作を契機とする。
   呼び出し主体はhook payloadの`agent_id`とし、持たないメイン会話は`main`とする。
   `agent-toolkit/agent_toolkit/_hooks/pretooluse/operation_skills.py`が未起動のまま操作した呼び出しへ警告を返した時点と、PostToolUse(Skill)が対象スキルの起動を観測した時点で主体を加え、同モジュールがPreToolUseで記録の無い主体の操作にだけ警告する。警告と記録は、Skillの起動を観測できるClaude Codeに限る。
   `agent-toolkit/agent_toolkit/_hooks/rules_context.py`がSessionStartの`source`が`clear`・`compact`のときと委譲先のセッションで`main`を除き、`resume`・`fork`とサブエージェントの記録は変えない。

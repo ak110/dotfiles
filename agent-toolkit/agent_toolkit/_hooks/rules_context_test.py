@@ -530,6 +530,13 @@ def test_session_start_resets_language_reinjection_count(
     ("source", "delegated", "main_warns"),
     [("clear", False, True), ("compact", False, True), ("compact", True, True), ("resume", False, False)],
 )
+@pytest.mark.parametrize(
+    ("skill_name", "operation"),
+    [
+        ("search", {"tool_name": "Bash", "tool_input": {"command": "rg x"}}),
+        ("delegation", {"tool_name": "Agent", "tool_input": {"prompt": "調査する"}}),
+    ],
+)
 def test_session_start_resets_operation_skill_ready_for_main(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
@@ -537,8 +544,10 @@ def test_session_start_resets_operation_skill_ready_for_main(
     source: str,
     delegated: bool,
     main_warns: bool,
+    skill_name: str,
+    operation: dict,
 ) -> None:
-    """`clear`・`compact`の後はメインの検索で再び警告し、サブエージェントの記録と`resume`の後の判定は変えない。"""
+    """`clear`・`compact`の後は検索・委譲で再び警告し、サブエージェントの記録と`resume`の後の判定を保つ。"""
     monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)
     if delegated:
         monkeypatch.setenv("AGENT_TOOLKIT_DELEGATED_SESSION", "1")
@@ -556,8 +565,8 @@ def test_session_start_resets_operation_skill_ready_for_main(
         out = capsys.readouterr().out
         return json.loads(out)["hookSpecificOutput"]["additionalContext"] if out else ""
 
-    def _search(agent_id: str | None) -> str:
-        payload = {"tool_name": "Bash", "tool_input": {"command": "rg x"}, "session_id": "reset-skill"}
+    def _operation_context(agent_id: str | None) -> str:
+        payload = {**operation, "session_id": "reset-skill"}
         if agent_id is not None:
             payload["agent_id"] = agent_id
         return _hook_context(pretooluse.main, payload)
@@ -566,7 +575,7 @@ def test_session_start_resets_operation_skill_ready_for_main(
         skill_payload: dict[str, object] = {
             "hook_event_name": "PostToolUse",
             "tool_name": "Skill",
-            "tool_input": {"skill": "agent-toolkit:search"},
+            "tool_input": {"skill": f"agent-toolkit:{skill_name}"},
             "session_id": "reset-skill",
         }
         if agent_id is not None:
@@ -575,5 +584,5 @@ def test_session_start_resets_operation_skill_ready_for_main(
 
     _hook_context(rules_context.main, {"hook_event_name": "SessionStart", "source": source, "session_id": "reset-skill"})
 
-    assert (_search(None) != "") is main_warns
-    assert _search("sub-1") == ""
+    assert (_operation_context(None) != "") is main_warns
+    assert _operation_context("sub-1") == ""

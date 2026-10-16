@@ -26,6 +26,7 @@ TASK_MODEL_TYPES = {
     "refine-prompt.subagent.md": "medium_tier",
     "session-termination.subagent.md": "high_tier",
     "usability-review.subagent.md": "medium_tier",
+    "wi-draft-review.subagent.md": "medium_tier",
 }
 """`<役割名>.subagent.md`の役割名とモデル段位の対応。"""
 
@@ -36,7 +37,7 @@ TASK_USAGES = {
     "copilot-review-audit.subagent.md": "base",
     "defect-investigation.subagent.md": "base",
     "exec-review.subagent.md": "review",
-    "exec.subagent.md": "base",
+    "exec.subagent.md": "execute",
     "external-write-review.subagent.md": "chores",
     "lane-integration.subagent.md": "base",
     "pick-wi-explain.subagent.md": "chores",
@@ -44,6 +45,7 @@ TASK_USAGES = {
     "refine-prompt.subagent.md": "base",
     "session-termination.subagent.md": "base",
     "usability-review.subagent.md": "review",
+    "wi-draft-review.subagent.md": "review",
 }
 """`<役割名>.subagent.md`の役割名と用途（engine順を選ぶ設定）の対応。段位を明示した起動でも用途は保つ。"""
 

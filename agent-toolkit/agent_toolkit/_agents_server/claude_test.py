@@ -606,6 +606,7 @@ async def test_claude_timed_out_queued_prompt_is_not_delivered(tmp_path: pathlib
 async def test_claude_options_use_claude_code_preset(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Claude Agent SDKへClaude Code presetと設定読込元、解決した所有セッションを渡す。"""
     monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "owner-session")
+    monkeypatch.setenv("PATH", os.defpath)
 
     options = claude._build_options(str(tmp_path), "model", "high", root_session_id="owner-session")
     assert options.system_prompt == {
@@ -761,11 +762,14 @@ def _lightweight_environment() -> dict[str, str]:
 
 @pytest.mark.usefixtures("agents_server_isolation")
 @pytest.mark.usefixtures("_owner_session_environment")
-def test_claude_explore_options_reduce_instruction_sources_and_keep_tools(tmp_path: pathlib.Path) -> None:
+def test_claude_explore_options_reduce_instruction_sources_and_keep_tools(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """Claude探索起動はユーザー設定のhookを読み、探索用toolと指示を明示する。
 
     所有セッションを解決できない環境ではそのキーを設定しない。
     """
+    monkeypatch.setenv("PATH", os.defpath)
     options = claude._build_options(str(tmp_path), "model", "high", launch_kind="explore")
     assert options.setting_sources == ["user"]
     assert options.skills == []
@@ -798,8 +802,11 @@ def test_claude_write_options_limit_lightweight_session_to_file_edits(tmp_path: 
 
 @pytest.mark.usefixtures("agents_server_isolation")
 @pytest.mark.usefixtures("_owner_session_environment")
-def test_claude_shell_options_share_lightweight_launch_with_command_tools(tmp_path: pathlib.Path) -> None:
+def test_claude_shell_options_share_lightweight_launch_with_command_tools(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """Claudeのシェル実行起動は探索と同じ軽量条件を共有し、実行用toolと指示を選ぶ。"""
+    monkeypatch.setenv("PATH", os.defpath)
     options = claude._build_options(str(tmp_path), "model", "high", launch_kind="shell")
     assert options.setting_sources == ["user"]
     assert options.skills == []

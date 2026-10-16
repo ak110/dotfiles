@@ -1889,6 +1889,9 @@ def _list_evidence(parser: argparse.ArgumentParser, args: argparse.Namespace) ->
             args.results_summary,
             args.result_test,
             args.result_diagnostic,
+            args.row_evidence_file,
+            args.row_result_test,
+            args.row_result_diagnostic,
             args.updates_file,
             args.verification_record,
             args.output,
@@ -2254,7 +2257,7 @@ def _check_batch(path: pathlib.Path, *, show_all_rows: bool = False) -> int:
 
 def main(argv: list[str] | None = None) -> int:
     """`完成条件証拠`と対象WI名を受け取り、基準を満たすか判定するか雛形を書き込んで結果を返す。"""
-    parser = argparse.ArgumentParser(description=__doc__)
+    parser = verification_results.ArgumentParser(description=__doc__)
     parser.add_argument(
         "evidence",
         nargs="?",
@@ -2383,6 +2386,9 @@ def main(argv: list[str] | None = None) -> int:
         or args.results_summary
         or args.result_test
         or args.result_diagnostic
+        or args.row_evidence_file
+        or args.row_result_test
+        or args.row_result_diagnostic
         or args.accepted_evidence
         or args.accepted_row
     ):

@@ -61,12 +61,23 @@ EXPLORE_CAPABILITIES = (
 """起動前の説明とexplore委譲先へ配送する、エンジン別の能力と調査の選び方。"""
 
 
+DELEGATION_INPUT_GUIDANCE = (
+    "入力は委譲先が他から得られない目的・要件・制約・完了条件、ユーザー発話の逐語と出所、確認済み事実と実行時の値に絞り、"
+    "参照できる記録は絶対パスと対象IDで示す。必須入力とユーザー指定の手段を保つ。"
+    "調査途中の仮説、自ら選んだ実装手順やcommit件名は足さない。"
+    "手段の指定はユーザー指定か、要件達成に必要と確定した根拠を伴う場合に限る。"
+    "軽量起動やAntigravityへ届かない規範のうち作業に必要な指示は補う。"
+    "判定の定義はdelegation/references/base-contract.md「入力の適格性と追送」に従う。"
+)
+"""開始と追送の公開説明で共有する入力の適格性の要約。"""
+
+
 LIGHTWEIGHT_MODE_SELECTION = (
-    "explore: 結論と所在だけで後続の判断が成立し、読む本文が合計4,000トークン"
-    "（英数字主体で約16,000バイト、300行程度）を超える見込みの調査は委譲する。"
-    "読む範囲が特定済みで1,000トークン未満に収まる読取と、編集や逐語の判定のために自身が全文を読む必要がある本文は自ら読む。\n"
-    "shell: 出力が4,000トークン（英数字主体で約16,000バイト、300行程度）を超える見込みのコマンドを委譲し、"
-    "1,000トークン未満に収まる見込みのコマンドは自ら実行する。\n"
+    "委譲の要否は独立した文脈の必要性、段位と役割契約、起動・自動配送と明示読取・"
+    "委譲元の受領レビュー・統合の総費用で選ぶ。本文量だけで分割しない。"
+    "同じ担当の連続した作業はまとめ、独立した要件と独立文脈レビューは分ける。"
+    "既存の担当が詳しい文脈を持つ調査と判断は、新しく本文を読む前にその担当へ戻す。"
+    "exploreは結論と所在で後続の判断が成立する調査、shellは終了状態と要約で足りる実行へ使う。\n"
     "段位: 上位段位で動く主体は、判定基準を渡せる多数の対象の走査を費用の差から軽量段位のexploreへ分け、"
     "自身は観点の選定と返った候補の判定に使う。"
 )
@@ -129,6 +140,7 @@ EXTRA_PARAMS_DESCRIPTION = parameter_description(
     "必須入力の欠落と宣言外の入力名を含む場合は委譲先を起動しない。"
     "ただし必須入力の`引き継ぎ記録先`を省略した場合は、サーバーが委譲元のセッションのmanaged-tempの直下に`（新規）`の記録先を用意し、"
     "その絶対パスを応答の`handoff_record_path`で返す。継続する担当へは、その値へ`（継続）`を付けて渡す。"
+    + DELEGATION_INPUT_GUIDANCE
 )
 
 
@@ -136,7 +148,7 @@ PROMPT_DESCRIPTION = parameter_description(
     "delegate・explore・writeで必須、taskとshellでは指定しない。委譲先へ渡す依頼本文。"
     "explore・writeの委譲先は委譲先向けの規範（`share/rules-subagent.md`）を受け取らず、"
     "ClaudeとCodexでは作業ディレクトリのプロジェクト規範も読まないため、作業に必要な指示を全て書く。"
-    "`<役割名>.subagent.md`を指す本文は渡さず、taskで起動する。"
+    "`<役割名>.subagent.md`を指す本文は渡さず、taskで起動する。" + DELEGATION_INPUT_GUIDANCE
 )
 
 
@@ -144,7 +156,7 @@ COMMAND_DESCRIPTION = parameter_description("shellで必須、他のmodeでは�
 
 
 SUMMARY_POLICY_DESCRIPTION = parameter_description(
-    "shellで必須、他のmodeでは指定しない。結果の要約方針。報告へ含める値と粒度を書く。"
+    "shellで必須、他のmodeでは指定しない。結果の要約方針。報告へ含める値と粒度を書く。" + DELEGATION_INPUT_GUIDANCE
 )
 
 
@@ -218,6 +230,7 @@ START_DESCRIPTION = "\n".join(
     (
         "委譲先sessionを開始し、`mode`で入力と起動条件を選ぶ。"
         '引き継ぎ起動は`{"handoff_from": "<終端した前任session_id>"}`だけを渡す。通常起動の入力との混在は拒否する。',
+        DELEGATION_INPUT_GUIDANCE,
         "返した`session_id`は同じ応答で`atk agents wait`を単独実行して観測し、不要なら`kill`で破棄する。"
         "waitは`session_id`を引数に取らず、登録済みの全sessionの終端を待つ。",
         "exploreは書込禁止。全量保存はshell、成果ファイル生成の調査はdelegateへ。返却は委譲元が保存する。",

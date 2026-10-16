@@ -24,18 +24,19 @@ _SETTING_KEYS = [
     "codex_medium_tier_model",
     "codex_low_tier_model",
     "base_engine",
+    "execute_engine",
     "review_engine",
     "chores_engine",
     "orchestrate_engine",
 ]
 _PRESETS = {
-    "codex-balanced": ("codex,claude", "claude,codex", "codex,claude", "claude,codex"),
-    "codex-near-primary": ("codex,claude", "codex,claude", "codex,claude", "claude,codex"),
-    "codex-primary": ("codex,claude", "codex,claude", "codex,claude", "codex,claude"),
-    "claude-balanced": ("claude,codex", "codex,claude", "codex,claude", "claude,codex"),
-    "claude-primary": ("claude,codex", "claude,codex", "claude,codex", "claude,codex"),
+    "codex-balanced": ("codex,claude", "claude,codex", "codex,claude", "codex,claude", "claude,codex"),
+    "codex-near-primary": ("codex,claude", "codex,claude", "codex,claude", "codex,claude", "claude,codex"),
+    "codex-primary": ("codex,claude", "codex,claude", "codex,claude", "codex,claude", "codex,claude"),
+    "claude-balanced": ("claude,codex", "claude,codex", "codex,claude", "codex,claude", "claude,codex"),
+    "claude-primary": ("claude,codex", "claude,codex", "claude,codex", "claude,codex", "claude,codex"),
 }
-_ENGINE_KEYS = ("base_engine", "review_engine", "chores_engine", "orchestrate_engine")
+_ENGINE_KEYS = ("base_engine", "execute_engine", "review_engine", "chores_engine", "orchestrate_engine")
 
 
 @pytest.fixture(autouse=True)
@@ -103,7 +104,7 @@ class TestConfigShow:
     """`atk config`（サブコマンド省略時はshow扱い）・`atk config show`の一覧表示を検証する。"""
 
     def test_show_lists_settings_in_table_order(self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
-        """パスの後に段位モデル6キー、用途別engine4キーを設定表の順に並べ、他のキーも保持する。"""
+        """パスの後に段位モデル6キー、用途別engine5キーを設定表の順に並べ、他のキーも保持する。"""
         assert _main(tmp_path, "config", "show") == 0
 
         out = capsys.readouterr().out
@@ -376,7 +377,7 @@ class TestConfigGet:
         assert capsys.readouterr().out == f"{expected}\n"
 
     def test_get_defaults_follow_settings_table(self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
-        """未設定の10キーは設定表の未設定時の値を、指定した入力順で返す。"""
+        """未設定のモデルとengine順は指定した入力順で返し、設定を保存しない。"""
         requested = list(reversed(_SETTING_KEYS))
         assert _main(tmp_path, "config", "get", *requested) == 0
         expected = {
@@ -387,7 +388,8 @@ class TestConfigGet:
             "codex_medium_tier_model": "terra/medium",
             "codex_low_tier_model": "luna/medium",
             "base_engine": "codex,claude",
-            "review_engine": "claude,codex",
+            "execute_engine": "claude,codex",
+            "review_engine": "codex,claude",
             "chores_engine": "codex,claude",
             "orchestrate_engine": "claude,codex",
         }
@@ -534,7 +536,7 @@ class TestConfigGet:
         """環境変数が空文字列なら未指定として扱い、設定の初期値を返す。"""
         monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_REVIEW_ENGINE", "")
         assert _main(tmp_path, "config", "get", "review_engine") == 0
-        assert capsys.readouterr().out == "claude,codex\n"
+        assert capsys.readouterr().out == "codex,claude\n"
 
     def test_immutable_environment_name_does_not_override_private_notes(
         self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
@@ -559,7 +561,7 @@ class TestConfigApplyPreset:
         capsys: pytest.CaptureFixture[str],
         preset: str,
     ) -> None:
-        """プリセット表のengine設定4件だけを保存し、段位モデル・write_model・他の保存値を保持する。"""
+        """プリセット表のengine設定5件だけを保存し、段位モデル・write_model・他の保存値を保持する。"""
         kept = {
             "other_setting": "keep",
             "write_model": "claude:claude-opus-5-5/medium",
@@ -573,7 +575,7 @@ class TestConfigApplyPreset:
         captured = capsys.readouterr()
         assert not captured.err
         assert captured.out.splitlines() == [
-            f"成功: 用途別engine設定をpreset「{preset}」で一括保存した: 4件",
+            f"成功: 用途別engine設定をpreset「{preset}」で一括保存した: 5件",
             *(f"{key}: {value}" for key, value in expected.items()),
         ]
         assert _saved(tmp_path) == {**kept, **expected}
@@ -643,7 +645,10 @@ class TestConfigSet:
 
         assert _main(tmp_path, "config", "get", key) == 0
         assert capsys.readouterr().out == f"{value}\n"
-        assert _saved(tmp_path) == {key: value}
+        expected = {key: value}
+        if key == "base_engine":
+            expected["execute_engine"] = value
+        assert _saved(tmp_path) == expected
 
     @pytest.mark.parametrize(
         "value",
@@ -790,11 +795,12 @@ class TestCandidateResolution:
         ("model_type", "usage", "expected"),
         [
             ("high_tier", None, [("codex", "gpt-6-sol", "medium"), ("claude", "opus[1m]", "medium")]),
-            ("medium_tier", None, [("claude", "sonnet[1m]", "medium"), ("codex", "gpt-5.6-terra", "medium")]),
+            ("medium_tier", None, [("codex", "gpt-5.6-terra", "medium"), ("claude", "sonnet[1m]", "medium")]),
             ("low_tier", None, [("codex", "gpt-6-luna", "medium"), ("claude", "haiku", "medium")]),
             ("medium_tier", "base", [("codex", "gpt-5.6-terra", "medium"), ("claude", "sonnet[1m]", "medium")]),
             ("high_tier", "chores", [("codex", "gpt-6-sol", "medium"), ("claude", "opus[1m]", "medium")]),
-            ("high_tier", "review", [("claude", "opus[1m]", "medium"), ("codex", "gpt-6-sol", "medium")]),
+            ("high_tier", "review", [("codex", "gpt-6-sol", "medium"), ("claude", "opus[1m]", "medium")]),
+            ("high_tier", "execute", [("claude", "opus[1m]", "medium"), ("codex", "gpt-6-sol", "medium")]),
             ("orchestrate", None, [("claude", "opus[1m]", "medium"), ("codex", "gpt-6-sol", "medium")]),
             ("orchestrate", "chores", [("claude", "opus[1m]", "medium"), ("codex", "gpt-6-sol", "medium")]),
             ("write", "base", [("agy", "gemini-3.8-flash", "medium"), ("claude", "claude-opus-5-5", "medium")]),
@@ -827,12 +833,12 @@ class TestCandidateResolution:
 
     @pytest.mark.parametrize("preset", ["codex-balanced", "claude-balanced"])
     def test_balanced_review_uses_other_engine_first(self, tmp_path: pathlib.Path, preset: str) -> None:
-        """balancedではレビュー用途の先頭engineがbaseと逆になり、外部書込レビューなどの小さい作業はchoresのengine順でCodexを先頭にする。"""
+        """balancedではレビュー用途の先頭engineがexecuteと逆になり、小さい作業はchoresのengine順でCodexを先頭にする。"""
         assert _main(tmp_path, "config", "apply-preset", preset) == 0
-        base = config_module.parse_unresolved_model_candidates("high_tier", usage="base")
+        execute = config_module.parse_unresolved_model_candidates("high_tier", usage="execute")
         review = config_module.parse_unresolved_model_candidates("medium_tier", usage="review")
         chores = config_module.parse_unresolved_model_candidates("low_tier", usage="chores")
-        assert review[0][0] != base[0][0]
+        assert review[0][0] != execute[0][0]
         assert chores[0][0] == "codex"
 
     def test_unknown_model_type_and_usage_are_rejected(self) -> None:
@@ -894,6 +900,7 @@ class TestLegacyMigration:
             "write_model": "claude:opus/high",
             "other_setting": "keep",
             "base_engine": "codex,claude",
+            "execute_engine": "codex,claude",
             "review_engine": "codex,claude",
             "chores_engine": "codex,claude",
             "orchestrate_engine": "claude,codex",
@@ -934,6 +941,7 @@ class TestLegacyMigration:
         assert config_module.parse_unresolved_model_candidates("high_tier") == [("codex", "sol", "high")]
         assert _saved(tmp_path) == {
             "base_engine": "codex",
+            "execute_engine": "codex",
             "claude_high_tier_model": "fable/medium",
             "codex_high_tier_model": "sol/high",
         }
@@ -1032,3 +1040,48 @@ class TestLegacyMigration:
         assert config_module.parse_unresolved_model_candidates("write")
         assert config_module.parse_unresolved_model_candidates("codex:gpt-6-sol/medium")
         assert not _config_file(tmp_path).exists()
+
+
+@pytest.mark.parametrize("explicit_execute", [None, "claude"])
+@pytest.mark.parametrize("environment", [None, "codex,claude"])
+def test_execute_inherits_saved_base_once_and_preserves_explicit_configuration(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    explicit_execute: str | None,
+    environment: str | None,
+) -> None:
+    """実行用途の旧保存値引継ぎ、明示値・環境値の優先と、後続base変更からの独立性を公開操作で確かめる。"""
+    kept = {
+        "claude_high_tier_model": "opus/high",
+        "claude_medium_tier_model": "sonnet/high",
+        "claude_low_tier_model": "haiku/low",
+        "codex_high_tier_model": "sol/high",
+        "codex_medium_tier_model": "terra/high",
+        "codex_low_tier_model": "luna/low",
+        "write_model": "claude:opus/medium",
+        "codex_model_providers": "paid-a",
+        "review_engine": "claude,codex",
+    }
+    original = {**kept, "base_engine": "codex"}
+    if explicit_execute is not None:
+        original["execute_engine"] = explicit_execute
+    path = _write_config(tmp_path, original)
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_BASE_ENGINE", "claude")
+    if environment is not None:
+        monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_EXECUTE_ENGINE", environment)
+    assert _main(tmp_path, "config", "get", "execute_engine") == 0
+    inherited = explicit_execute or "codex"
+    assert capsys.readouterr().out == (environment or inherited) + "\n"
+    assert _saved(tmp_path) == {**original, "execute_engine": inherited}
+    snapshot = path.read_bytes()
+    assert _main(tmp_path, "config", "get", "execute_engine") == 0
+    capsys.readouterr()
+    assert path.read_bytes() == snapshot
+    monkeypatch.delenv("AGENT_TOOLKIT_CONFIG_BASE_ENGINE")
+    assert _main(tmp_path, "config", "set", "base_engine", "claude") == 0
+    capsys.readouterr()
+    monkeypatch.delenv("AGENT_TOOLKIT_CONFIG_EXECUTE_ENGINE", raising=False)
+    assert _main(tmp_path, "config", "get", "execute_engine") == 0
+    assert capsys.readouterr().out == inherited + "\n"
+    assert _saved(tmp_path) == {**kept, "base_engine": "claude", "execute_engine": inherited}

@@ -206,12 +206,12 @@ Stopはこの行の有無と報告本文を判定しない。
 
 ## 工程別モデル設定
 
-計画作成・実装・レビューではCodexの利用を標準とする。Codexが一時的に利用できない場合だけ、
-Claude Codeのサブエージェントを代替として使用する。
+計画・実装・レビューの配分は、実効の用途別engine順と各engineの段位モデルで決まる。
+契約している実行系と利用枠・解除待ち、APIの従量料金と手戻りを合わせてプリセットを選ぶ。
 
 モデルの選定とClaude・Codexの配分は別々のキーで設定する。
 engineごとの段位のモデル（6キー）を変えると、そのengineと段位を使う起動のモデルだけが変わる。
-用途ごとのengine順（4キー）を変えると、モデルを変えずにClaudeとCodexのどちらを先に使うかだけが変わる。
+用途ごとのengine順（5キー）を変えると、モデルを変えずにClaudeとCodexのどちらを先に使うかだけが変わる。
 起動時は用途のengine順に従って各engineの段位のモデルを並べ、先頭の候補から順に起動を試す。
 モデル実行環境の可用性に起因する失敗を観測した場合だけ次の候補へ進む。
 Claude CodeのWeekly limitと5時間の利用上限では、解除まで待って同じClaudeで作業を続ける。
@@ -238,10 +238,11 @@ Remote Controlは、手元で動くClaude Codeの会話へブラウザーやClau
 | `codex_high_tier_model` | Codexの上位モデル（未設定時は`sol/medium`） |
 | `codex_medium_tier_model` | Codexの中位モデル（未設定時は`terra/medium`） |
 | `codex_low_tier_model` | Codexの軽量モデル（未設定時は`luna/medium`） |
-| `base_engine` | 計画・実装・修正・新しい候補や評価軸を導く調査と案出し・AWI投入・公開工程の終端・自動コードレビュー監査（上位）、プロンプト評価（中位）、`atk commit`（省略時は中位）のengine順 |
-| `review_engine` | 実行レビューとユーザビリティレビュー（中位）のengine順 |
+| `base_engine` | 一般の実装・修正・新しい候補や評価軸を導く調査と案出し・AWI投入・公開工程の終端・自動コードレビュー監査（上位）、プロンプト評価（中位）、`atk commit`（省略時は中位）のengine順 |
+| `execute_engine` | レーンの計画・実装・変更範囲検証と同じexecによる修正（上位）のengine順 |
+| `review_engine` | 実行レビュー・ユーザビリティレビューと専念型の投入前レビュー（中位）のengine順 |
 | `chores_engine` | 一括置換後レビュー・外部書込レビュー・読者適合レビュー・WI説明・`start`の`explore`と`shell`（省略時は軽量）のengine順 |
-| `orchestrate_engine` | `atk wi process-loop`・`atk run-skill`（上位）のengine順 |
+| `orchestrate_engine` | `atk wi process-loop`・`atk run-skill`とWI作成専用セッションの要求別担当（上位）のengine順 |
 | `write_model` | `start`の`write`。日本語の文章力で選ぶ候補列で、段位と配分に属さない |
 | `codex_fast_mode` | `agents_server`が起動するCodexの速度（`true`はfast mode、`false`は標準、未設定時は`false`） |
 | `codex_model_providers` | `agents_server`のCodex接続先を主接続先から優先順で並べるID列。空ならCodex通常設定・代替なし |
@@ -252,26 +253,32 @@ engine順は`codex`と`claude`の一方または両方を重複なしでASCIIカ
 `write_model`は`<engine>:<model>[/<effort>]`をASCIIカンマで区切った候補列で書く。
 段位は作業の部分ごとに選ぶ。判定基準を言語化して渡せる多数の対象の走査（所在・値・件数の確認、該当候補の抽出と非該当の判定）は、極力`explore`の指定省略時の軽量段位へ分け、対象が多ければ重複のない群へ分けて並列に委ねる。観点・評価軸・判定基準の選定、新しい候補の案出し、走査が返した候補の判定と結論の統合は、`mode`が`explore`でも`delegate`でも`model_type="high_tier"`を明示する（`base_engine`の上位を使う）。両者を含む依頼も全体を`high_tier`にせず、走査を分けてから上位段位で判定する。工程別の割当（実装などの上位、実行レビューの中位）は変えない。
 
-`atk config show`はパス4行、モデルと配分の10行、`write_model`、速度、API provider列とClaudeのAPI用envファイルのパスを各1行で表示する。`atk config get`は指定したキーの値を指定した順に返し、provider列では前後空白と重複を除く。
+`atk config show`はパス4行、モデルと配分の11行、`write_model`、速度、API provider列とClaudeのAPI用envファイルのパスを各1行で表示する。`atk config get`は指定したキーの値を指定した順に返し、provider列では前後空白と重複を除く。
 `atk config set codex_fast_mode true`でfast modeを有効にし、`false`で標準速度へ戻す。設定は次のturnから反映され、MCPサーバーの再起動は不要である。Codexのモデル表示には`@fast`を付け、effortがあれば`codex:<model>/<effort>@fast`とする。
 Codex系列名は委譲の起動時にモデルIDへ解決され、採用値は`agents_server`の`show`で確認できる。
 `AGENT_TOOLKIT_CONFIG_<キー名の大文字>`の環境変数に空でない値を設定すると、`atk config show`と`atk config get`は環境変数の値を返す。
 委譲の起動にもこの値を使う。環境変数は保存済みの設定より優先し、変数を解除すると保存済みの設定へ戻る。
 `atk config set`は保存先だけを更新するため、同名の環境変数がある間は設定した値が実効値にならない。
-`atk config apply-preset <プリセット名>`は`base_engine`・`review_engine`・`chores_engine`・`orchestrate_engine`の4キーを1回の実行で一括保存する。段位のモデル、`write_model`・`codex_fast_mode`・`codex_model_providers`・`claude_api_env_file`は変更しない。
+`atk config apply-preset <プリセット名>`は`base_engine`・`execute_engine`・`review_engine`・`chores_engine`・`orchestrate_engine`の5キーを1回の実行で一括保存する。段位のモデル、`write_model`・`codex_fast_mode`・`codex_model_providers`・`claude_api_env_file`は変更しない。
 
-| プリセット | `base_engine` | `review_engine` | `chores_engine` | `orchestrate_engine` |
-| --- | --- | --- | --- | --- |
-| `codex-balanced` | `codex,claude` | `claude,codex` | `codex,claude` | `claude,codex` |
-| `codex-near-primary` | `codex,claude` | `codex,claude` | `codex,claude` | `claude,codex` |
-| `codex-primary` | `codex,claude` | `codex,claude` | `codex,claude` | `codex,claude` |
-| `claude-balanced` | `claude,codex` | `codex,claude` | `codex,claude` | `claude,codex` |
-| `claude-primary` | `claude,codex` | `claude,codex` | `claude,codex` | `claude,codex` |
+| プリセット | `base_engine` | `execute_engine` | `review_engine` | `chores_engine` | `orchestrate_engine` |
+| --- | --- | --- | --- | --- | --- |
+| `codex-balanced` | `codex,claude` | `claude,codex` | `codex,claude` | `codex,claude` | `claude,codex` |
+| `codex-near-primary` | `codex,claude` | `codex,claude` | `codex,claude` | `codex,claude` | `claude,codex` |
+| `codex-primary` | `codex,claude` | `codex,claude` | `codex,claude` | `codex,claude` | `codex,claude` |
+| `claude-balanced` | `claude,codex` | `claude,codex` | `codex,claude` | `codex,claude` | `claude,codex` |
+| `claude-primary` | `claude,codex` | `claude,codex` | `claude,codex` | `claude,codex` | `claude,codex` |
 
-balancedのプリセットでは、レビューを作業と別のengineで先に試し、小さい作業はCodexを先に使う。
-`atk config apply-preset show`または引数を付けない`atk config apply-preset`を実行すると、設定ファイルを変更せずに5プリセットそれぞれが保存する4キーの値を表示する。設定を保存するのはプリセット名を指定した実行だけである。
+balanced系はレーン実行をClaude、レビューをCodexへ配分する。codex-balancedのbaseはCodex、claude-balancedのbaseはClaudeが先頭になる。
+codex-near-primaryはClaudeの利用上限が迫ったときに、orchestrateだけClaude優先にして極力Codexを使う。
+primary系は他方のengineを使えない場合に全用途で名前のengineを優先する。レビューと実行を逆系統にする基本と、near-primary・primaryの例外を表で選べる。
+
+`atk config apply-preset show`または引数を付けない`atk config apply-preset`を実行すると、設定ファイルを変更せずに5プリセットそれぞれが保存する5キーの値を表示する。設定を保存するのはプリセット名を指定した実行だけである。
 未知の名前を指定した実行は終了コード2で終わり、受理する値を表示する。
 設定を保存していない環境では`codex-balanced`と同じengine順を使う。
+
+execute_engineが無い旧設定では、明示保存したbase_engineをexecuteの初期値へ一度引き継ぐ。明示executeとモデル・provider列を保持し、保存値から以前のプリセットを推測してreviewを変更しない。
+`AGENT_TOOLKIT_CONFIG_EXECUTE_ENGINE`は他の設定と同じく保存値より優先し、保存設定へコピーしない。旧base用の環境指定をレーンへ使っていた場合はexecute用へ分ける。新しいプリセットの明示適用は5用途を表の配分へ更新する。
 
 以前の`high_tier_model`・`medium_tier_model`・`low_tier_model`・`orchestrate_model`は廃止した。
 保存済みの値は、`atk config show`・`atk config get`か委譲などでモデル候補を初めて取得したときに、モデルとengine順を新しいキーへまとめて移し、以前のキーを設定ファイルから除く。
@@ -519,6 +526,9 @@ PATH=/home/user/.local/bin:/usr/local/bin:/usr/bin:/bin
 show形式の構造とは、直後にfrontmatterが続く`### <ファイル名>.md`の行を持ち、その行より前が空行と`# awi`・`# uwi`・`## target_repo: ...`の見出しだけで構成される本文を指す。
 このときtarget-repo欄とUWI用の入力欄の値は使わない。
 
+AWI作成専用のadd-awi-by-userでは、独立要求1件はメイン、複数件は要求別の上位担当が調査から保存まで完結する。親の原稿検収を通らない経路は中位の独立投入前レビューを経る。他作業に付随する投入は独立したWI投入担当と親の意味の検収・保存開始の二段階を使う。
+委譲の粒度は起動・自動配送・明示読取・親の検収・統合と再試行の総費用で選ぶ。同じ要求の取得済み証拠を再利用し、独立要求と独立文脈レビューの文脈、単一writerは保つ。
+
 登録したAWIの計画、実装と実行レビューはエージェントが進める。登録者が行う操作は、UWIへの回答と、次に述べる登録済み項目の修正である。
 実行レビューの役割と証拠の扱いの設計は[design-review-evidence.md](../development/design-review-evidence.md)、実行時の手順は`agent-toolkit/share/exec-review.subagent.md`にある。
 
@@ -660,7 +670,7 @@ commitされていないことだけを理由にcommitを求めない。
 
 Claude CodeとCodexでは、`git rev-parse --short HEAD HEAD~1`のように、`--short`や`--verify`の後へリビジョンを複数並べると、PreToolUseが実行前に遮断する。通知に従い、同じオプションを付けたままリビジョンを1つずつ実行する。
 
-Claude CodeのPreToolUseは、エージェント向け文書の編集と、書込先を確定できるBash操作の前に、未起動のwriting-standardsを文脈ごとに1回案内する。親子の起動済み記録は分け、Codexはこの警告と記録の対象から外す。
+Claude CodeのPreToolUseは、委譲操作のdelegationと、エージェント向け文書の編集および書込先を確定できるBash操作の前に、未起動のwriting-standardsを文脈ごとに1回案内する。親子の起動済み記録は分け、Codexはこの警告と記録の対象から外す。
 commit・push後のPostToolUseの案内は、成果報告へ進むメインへcompletion-reportの適用条件を示す。Claude CodeではSkillの起動、Codexでは通知されたSKILL.mdの読取へ進む。失敗・背景・dry-run・help・委譲先は対象外で、後続の該当操作にも案内する。
 
 plugin `PreToolUse/pretooluse`がatkの呼び出しを遮断するのは、静的に分かるatkの実行位置と出力の接続先に限る。

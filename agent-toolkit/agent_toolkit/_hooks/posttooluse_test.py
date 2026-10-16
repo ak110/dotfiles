@@ -969,12 +969,12 @@ class TestPlanModeSkillInvocation:
         assert state.get("plan_mode_skill_invoked") is not True
 
 
-class TestDelegationStateRemoval:
-    """delegation起動が専用の状態を更新しないこと。"""
+class TestDelegationReadiness:
+    """delegation起動を共通の操作スキル記録へ保存すること。"""
 
     @pytest.mark.parametrize("skill_name", ["delegation", "agent-toolkit:delegation"])
     @pytest.mark.parametrize("is_sidechain", [False, True])
-    def test_skill_invocation_does_not_set_state(
+    def test_skill_invocation_records_shared_readiness(
         self,
         tmp_path: pathlib.Path,
         skill_name: str,
@@ -991,7 +991,8 @@ class TestDelegationStateRemoval:
             state_dir=tmp_path,
         )
         assert result.returncode == 0
-        assert not (tmp_path / SESSION_STATE_FILENAME_TEMPLATE.format(session_id=sid)).exists()
+        state = _read_state(tmp_path, sid)
+        assert state["operation_skill_ready_agents"] == {"agent-toolkit:delegation": ["main"]}
 
 
 class TestUwiCompletionNotice:

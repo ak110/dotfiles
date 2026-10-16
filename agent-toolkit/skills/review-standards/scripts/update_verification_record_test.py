@@ -8,6 +8,7 @@ import pathlib
 import shlex
 import subprocess
 import sys
+import typing
 import xml.etree.ElementTree as ET
 
 import pytest
@@ -21,6 +22,203 @@ WI = "20261008-043514-001.md"
 
 def _run(*args: str, name: str = "verification-record") -> int:
     return run_script.dispatch(argparse.Namespace(script_name=name, script_args=list(args)))
+
+
+@pytest.mark.parametrize("case", ["normal", "split", "invalid-map", "ambiguous", "outcome", "reviewed_head", "list"])
+def test_public_pending_commit_rewrite_preserves_observation_and_judgment(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], case: str
+) -> None:
+    """所有CLIで参照を更新し、不正対応と判定済み入力は全記録を保持して拒否する。"""
+    record = tmp_path / "pending.json"
+    assert _run("--output", str(record), "--plan", str(_plan(tmp_path, "plan-user"))) == 0
+    payload = json.loads(record.read_text(encoding="utf-8"))
+    old, new, other = "a" * 40, "b" * 40, "c" * 40
+    reference = "a" * 7 if case == "ambiguous" else old
+    for row in payload["user_requirements"]:
+        row["evidence"] = f"commit:{reference} を確認。取得版HEAD={old}、裸のOID={old}"
+    if case in {"outcome", "reviewed_head"}:
+        payload["user_requirements"][0][case] = "達成" if case == "outcome" else old
+    _json(record, payload)
+    mapping = {old: new}
+    if case == "split":
+        mapping = {old: [{"commit": new, "awi": [WI]}, {"commit": other, "awi": [WI]}]}
+    elif case == "ambiguous":
+        mapping["a" * 39 + "d"] = other
+    map_path = _json(tmp_path / "rewrite.json", [] if case == "invalid-map" else mapping)
+    before = record.read_bytes()
+    capsys.readouterr()
+    args = ["--output", str(record), "--rewrite-map", str(map_path)]
+    if case == "list":
+        args.append("--list")
+    successful = case in {"normal", "split"}
+    assert _run(*args) == (0 if successful else 1)
+    result = capsys.readouterr()
+    if not successful:
+        assert record.read_bytes() == before
+        assert "次の操作:" in result.err
+        return
+    updated = json.loads(record.read_text(encoding="utf-8"))
+    expected = f"commit:{new}" + (f"、commit:{other}" if case == "split" else "")
+    for original, row in zip(payload["user_requirements"], updated["user_requirements"], strict=True):
+        assert row == {**original, "evidence": original["evidence"].replace(f"commit:{old}", expected)}
+        assert not row["outcome"] and not row["reviewed_head"]
+    assert "未判定検証記録" in result.out and "--expected-head" not in result.out
+
+
+@pytest.mark.parametrize("name", ["verification-record", "exec-review-evidence-check"])
+@pytest.mark.parametrize("invalid", ["none", "duplicate", "outside", "missing", "common"])
+def test_public_row_evidence_is_unambiguous_and_atomic(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], name: str, invalid: str
+) -> None:
+    """両配列の異なる根拠を公開CLIで一度で保存し、対応不成立では全記録を保持する。"""
+    record = tmp_path / "pending.json"
+    assert _run("--output", str(record), "--plan", str(_plan(tmp_path, "plan-user"))) == 0
+    payload = json.loads(record.read_text(encoding="utf-8"))
+    # 同じ構造の要求を両配列に用意し、配列をまたぐ選択も公開CLIで検収する。
+    payload["wi_conditions"] = [
+        {
+            "awi": WI,
+            "condition": "保存する。",
+            "source": "試験の完成条件",
+            "outcome": "",
+            "reviewed_head": "",
+            "evidence": "",
+        }
+    ]
+    _json(record, payload)
+    files = [tmp_path / "first.txt", tmp_path / "second.txt"]
+    files[0].write_text("第一の保存結果を観測した。", encoding="utf-8")
+    files[1].write_text("第二の保存結果を観測した。", encoding="utf-8")
+    selectors = ["wi_conditions:1", "user_requirements:2"]
+    args = [str(record)] if name == "exec-review-evidence-check" else []
+    args += ["--output", str(record), "--mode", "replace"]
+    for selector, path in zip(selectors, files, strict=True):
+        args += ["--select-row", selector, "--row-evidence-file", selector, str(path)]
+        if name == "exec-review-evidence-check":
+            args += ["--row-outcome", selector, "達成"]
+    if name == "exec-review-evidence-check":
+        args += ["--reviewed-head", "a" * 40]
+    if invalid == "duplicate":
+        args += ["--row-evidence-file", selectors[0], str(files[0])]
+    elif invalid == "outside":
+        args += ["--row-evidence-file", "user_requirements:1", str(files[0])]
+    elif invalid == "missing":
+        files[1].unlink()
+    elif invalid == "common":
+        args += ["--evidence-file", str(files[0])]
+    before = record.read_bytes()
+    capsys.readouterr()
+    assert _run(*args, name=name) == (0 if invalid == "none" else 1)
+    if invalid != "none":
+        assert record.read_bytes() == before
+        assert "次の操作:" in capsys.readouterr().err
+        return
+    updated = json.loads(record.read_text(encoding="utf-8"))
+    assert updated["wi_conditions"][0]["evidence"] == files[0].read_text(encoding="utf-8")
+    assert updated["user_requirements"][1]["evidence"] == files[1].read_text(encoding="utf-8")
+    assert updated["user_requirements"][0] == payload["user_requirements"][0]
+    assert updated["wi_conditions"][0]["source"] == payload["wi_conditions"][0]["source"]
+
+
+@pytest.mark.parametrize("name", ["verification-record", "exec-review-evidence-check"])
+def test_public_all_single_value_options_reject_conflicting_repetition(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], name: str
+) -> None:
+    """公開CLIが登録する単一値を列挙し、先の値を失う入力を一括して検出する。"""
+    actions = []
+    parse_args = argparse.ArgumentParser.parse_args
+
+    def observe(parser: argparse.ArgumentParser, *args: typing.Any, **kwargs: typing.Any) -> argparse.Namespace:
+        # argparseが登録した全単一値入力を列挙するAPIを持たないため、登録表から被覆を確かめる。
+        actions.extend(parser._actions)  # pylint: disable=protected-access
+        return parse_args(parser, *args, **kwargs)
+
+    monkeypatch.setattr(argparse.ArgumentParser, "parse_args", observe)
+    assert _run("--help", name=name) == 0
+    monkeypatch.setattr(argparse.ArgumentParser, "parse_args", parse_args)
+    capsys.readouterr()
+    record = tmp_path / "record.json"
+    record.write_text("{}\n", encoding="utf-8")
+    selected = [
+        action for action in actions if action.option_strings and type(action).__name__ in {"_StoreAction", "_SingleValue"}
+    ]
+    assert selected
+    for action in selected:
+        option = action.option_strings[0]
+        if action.choices is not None:
+            first, second = list(action.choices)[:2]
+        elif action.type is int:
+            first, second = "1", "2"
+        elif option == "--output":
+            first, second = str(record), str(tmp_path / "other.json")
+        else:
+            first, second = str(tmp_path / "first"), str(tmp_path / "second")
+        assert _run("--output", str(record), option, str(first), option, str(second), name=name) == 2, option
+        assert record.read_bytes() == b"{}\n", option
+        diagnostic = capsys.readouterr().err
+        assert option in diagnostic and "呼び出しを分割" in diagnostic
+
+
+@pytest.mark.parametrize("name", ["verification-record", "exec-review-evidence-check"])
+@pytest.mark.parametrize("kind", ["test", "diagnostic"])
+def test_public_row_results_preserve_distinct_associations(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], name: str, kind: str
+) -> None:
+    """行別の完全試験名と診断識別子を保存し、重複・非選択行・未知の結果では部分保存しない。"""
+    text = "def test_first():\n    assert True\ndef test_second():\n    assert True\n"
+    trial = _saved_trial(tmp_path, text, "row-results")
+    monkeypatch.chdir(tmp_path)
+    diagnostics = _saved_diagnostics(
+        tmp_path,
+        [
+            {
+                "kind": "diagnostic",
+                "command": "lint",
+                "file": "trial_test.py",
+                "messages": [
+                    {"line": 2, "col": 1, "severity": "warning", "rule": "W001", "msg": "第一の観測"},
+                    {"line": 4, "col": 1, "severity": "warning", "rule": "W002", "msg": "第二の観測"},
+                ],
+            }
+        ],
+        {"trial_test.py": text},
+        "row-diagnostics",
+    )
+    results = _json(tmp_path / "results.json", {"junit": trial, "diagnostics": diagnostics})
+    record = tmp_path / "record.json"
+    assert _run("--output", str(record), "--plan", str(_plan(tmp_path, "plan-user"))) == 0
+    prefix = [str(record)] if name == "exec-review-evidence-check" else []
+    prefix += ["--output", str(record), "--results-file", str(results), "--mode", "replace"]
+    selections = ["user_requirements:1", "user_requirements:2"]
+    values = ["trial_test.py::test_first", "trial_test.py::test_second"]
+    if kind == "diagnostic":
+        capsys.readouterr()
+        listing = ["--output", str(record)] if name == "verification-record" else []
+        assert _run(*listing, "--results-file", str(results), "--list-results", name=name) == 0
+        displayed = json.loads(capsys.readouterr().out)["diagnostics"]
+        values = sorted(displayed, key=lambda identity: displayed[identity]["after"]["message_position"])
+        assert len(values) == 2
+    option = "--row-result-" + kind
+    args = list(prefix)
+    for selector, value in zip(selections, values, strict=True):
+        args += ["--select-row", selector, option, selector, value]
+        if name == "exec-review-evidence-check":
+            args += ["--row-outcome", selector, "達成"]
+    if name == "exec-review-evidence-check":
+        args += ["--reviewed-head", _git(tmp_path, "rev-parse", "HEAD")]
+    assert _run(*args, name=name) == 0, capsys.readouterr().err
+    rows = json.loads(record.read_text(encoding="utf-8"))["user_requirements"]
+    if kind == "test":
+        for index, row in enumerate(rows):
+            assert values[index] in row["evidence"] and values[1 - index] not in row["evidence"]
+    else:
+        for index, row in enumerate(rows, 1):
+            assert f"after.message_position: `{index}`" in row["evidence"]
+            assert f"after.message_position: `{3 - index}`" not in row["evidence"]
+    before = record.read_bytes()
+    for selector, value in [(selections[0], values[0]), ("user_requirements:99", values[0]), (selections[0], "unknown")]:
+        assert _run(*args, option, selector, value, name=name) == 1
+        assert record.read_bytes() == before
 
 
 @pytest.mark.parametrize("extra", [{"new_source": "別の出所"}, {"outcome": "失効"}, {"reviewed_head": "a" * 40}])

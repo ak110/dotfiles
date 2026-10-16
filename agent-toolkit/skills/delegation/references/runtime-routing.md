@@ -31,9 +31,10 @@ forkの監査記録は`docs/development/audit-records.md`の「agent-toolkit/ski
 
 | 対応工程（呼び出し・役割） | 用途 | 段位 | 起動直前に解決するエージェント | 起動手段 |
 | --- | --- | --- | --- | --- |
-| WIの選定とレーン分け、計画起草、実装、変更範囲の検証、レビュー修正、CI失敗修正、即時対応の修正、既存不良の調査、マージなしの統合、AWI投入、自動コードレビュー監査、公開工程の終端工程（`add-wi`・`copilot-review-audit`・`defect-investigation`・`exec`・`lane-integration`・`session-termination`の`task`、`delegate`の`high_tier`） | base | high | 各担当を委譲するメイン | `agents_server` MCP |
+| WIの選定とレーン分け、計画起草、実装、変更範囲の検証、レビュー修正、CI失敗修正、即時対応の修正、既存不良の調査、マージなしの統合、AWI投入、自動コードレビュー監査、公開工程の終端工程（`add-wi`・`copilot-review-audit`・`defect-investigation`・`lane-integration`・`session-termination`の`task`、`delegate`の`high_tier`） | base | high | 各担当を委譲するメイン | `agents_server` MCP |
+| レーンの計画・実装・変更範囲検証と同じexecによる修正（`exec`の`task`） | execute | high | 各担当を委譲するメイン | `agents_server` MCP |
 | 観点・判定基準の選定、新しい候補の案出し、走査が返した候補の判定と結論の統合（`explore`・`delegate`の`high_tier`） | base | high | 委譲するエージェント | `agents_server` MCP |
-| 実装後の実行レビュー、ユーザビリティレビュー（`exec-review`・`usability-review`の`task`、`delegate`の`medium_tier`） | review | medium | 各担当を委譲するメイン | `agents_server` MCP |
+| 実装後の実行レビュー、ユーザビリティレビュー、専念型の投入前レビュー（`exec-review`・`usability-review`・`wi-draft-review`の`task`、`delegate`の`medium_tier`） | review | medium | 各担当を委譲するメイン | `agents_server` MCP |
 | プロンプト評価（`refine-prompt`の`task`） | base | medium | 評価を委譲するエージェント | `agents_server` MCP |
 | 小規模なレビューと小さい作業、判定基準を渡した多数の対象の走査（`bulk-replace-review`・`external-write-review`・`reader-fit-review`・`pick-wi-explain`の`task`、`delegate`の`low_tier`、`explore`の省略時と`low_tier`・`medium_tier`指定、`shell`） | chores | 省略時はlow、明示時は指定した段位 | 調査、レビューまたはshellを委譲するエージェント | `agents_server` MCP |
 | `start`の`write`による文章起草（`model_type`の省略時と`write`） | - | `write_model`を直接使う | 文章を委譲するエージェント | `agents_server` MCP |
@@ -44,9 +45,9 @@ forkの監査記録は`docs/development/audit-records.md`の「agent-toolkit/ski
 設定は`atk config`のキーで持ち、各キーは独立に変えられる。
 
 - 段位のモデル: `claude_high_tier_model`・`claude_medium_tier_model`・`claude_low_tier_model`・`codex_high_tier_model`・`codex_medium_tier_model`・`codex_low_tier_model`。値はengine接頭辞を付けない単一の`<model>[/<effort>]`で、effort省略時は`medium`とする。1個を変えると、そのengineと段位を使う工程のモデルだけが変わる
-- 用途のengine順: `base_engine`・`review_engine`・`chores_engine`・`orchestrate_engine`。値は`codex`と`claude`の一方または両方を重複なしで並べたASCIIカンマ区切りで、先頭のengineから試す。ClaudeとCodexはモデル実行環境の可用性に起因する失敗で次のengineへ進む
+- 用途のengine順: `base_engine`・`execute_engine`・`review_engine`・`chores_engine`・`orchestrate_engine`。値は`codex`と`claude`の一方または両方を重複なしで並べたASCIIカンマ区切りで、先頭のengineから試す。ClaudeとCodexはモデル実行環境の可用性に起因する失敗で次のengineへ進む
 - `write_model`: 日本語文章の起草に使う候補列で、段位と用途に属さない。書式は`<engine>:<model>[/<effort>]`（`engine`は`claude`、`codex`、`agy`）のASCIIカンマ区切りで、agyは起動・turnの失敗で次の候補へ進む
-- `atk config apply-preset <プリセット名>`は用途のengine順の4キーだけを保存し、段位のモデルと`write_model`を保持する。プリセットは`codex-balanced`・`codex-near-primary`・`codex-primary`・`claude-balanced`・`claude-primary`で、balancedのレビュー用途はbaseと逆のengineを先頭にする。未設定時は`codex-balanced`のengine順を使う
+- `atk config apply-preset <プリセット名>`は用途のengine順の5キーだけを保存し、段位のモデルと`write_model`を保持する。プリセットは`codex-balanced`・`codex-near-primary`・`codex-primary`・`claude-balanced`・`claude-primary`で、balancedのexecute用途はClaude、review用途はCodexを先頭にする。near-primaryはorchestrateだけClaude優先、primary系は全用途で名前のengineを優先する。未設定時は`codex-balanced`のengine順を使う
 - `codex`の段位モデルの`astra`、`sol`、`terra`、`luna`は起動時にCodex App Serverの`model/list`から同系列の最新の完全IDへ解決する。`write_model`の`codex:<系列名>`も同じとする。指定effortを受理しない、系列が無い、一覧取得に失敗した場合は理由を示して停止する（推測したIDや旧版への置換は禁止）。バージョン付きのCodex完全IDは固定指定として扱い、Claudeとagyの候補の受理可否は各engineへ委ねる
 - `AGENT_TOOLKIT_CONFIG_<キー名の大文字>`の環境変数が空でない間は、保存済みの設定より優先し、その値は保存しない。`atk config set`は保存先だけを更新し、参考一覧に無い値も警告付きで受理する。`atk config show`は値が参考一覧に無い場合に標準エラーへ警告を書く
 - `model_type`へは`high_tier`・`medium_tier`・`low_tier`・`orchestrate`・`write`のほか、`write_model`と同じ書式の候補列を直接渡せる（`delegate`では必須、他の`mode`では省略可）。`task`で段位を明示した場合は役割の用途を保って段位だけを変える。候補列を直接渡すとサーバーは設定を読まずその候補列を使う。起動区分は各`mode`（`task`では`<役割名>.subagent.md`の`mode:`）のままとする。恒常的な変更は`atk config set`で行う
@@ -126,3 +127,5 @@ WI（選定結果の`担当モデル`）が担当とモデル・effortを指定�
 - レーン担当の起動前に、上流追随済みで、staged、unstaged、non-ignored untrackedが全て空であることを確かめる。新規レビュー修正担当を起動する場合は、レーン担当の終端確認後に修正の引き継ぎ記録と現行のdirty差分を比べて渡す
 - 実行レビュー担当は実装担当の終端後に起動し、同じ最終HEADへ1ラウンド1回だけ割り当てる
 - 作業用の複製で起動する委譲先には、着手前に`git fetch`後の分岐元との差分を双方向で確かめ、分岐元が進んでいれば先に追随するよう指示する（努力目標）
+
+execute_engineが無くbase_engineを明示保存していた旧設定は、保存baseをexecuteの初期値へ一度引き継ぐ。明示executeと環境変数の優先を保ち、保存値から引継ぎ値を決める。旧base用環境指定をレーンへ使っていた場合はAGENT_TOOLKIT_CONFIG_EXECUTE_ENGINEへ分ける。reviewの保存値は保持する。専念型の複数要求のadd-wiだけは起動時にorchestrateを明示し、一般のadd-wiのbase用途を保つ。

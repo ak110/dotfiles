@@ -54,9 +54,16 @@ commit時のGit hookやhook管理ツールのチェックを省略・迂回す�
 
 WIを入力に持つ実装commitとAWIの対応は、計画（計画なしでは引き継ぎ記録）と同じディレクトリ・同じstemの対応記録ファイル`<stem>.wi-commits.jsonl`だけへ構造化して残す。書くのは`atk run-script plan-progress`と`atk run-script plan-rewrite`、読むのは`atk run-script plan-commits`である。commitは一意な長さの短縮OIDで表し、入力には短縮OIDと完全OIDのどちらも渡せる。各工程の文書は操作の時点、使う記録とworktree、工程固有の入力だけを持ち、手順は本節を参照する。オプションの詳細は各コマンドの`--help`に従い、計画・引き継ぎ記録とworktreeは絶対パス、AWIはファイル名で渡す。
 
-記録: 実装commitの作成前に対応AWI集合と現在のHEADを取得し、`git commit`を単独で実行して成功した場合だけ、作成前HEAD、新HEAD、worktreeと全対応AWIを`atk run-script plan-progress`へ渡す。通常実装・レビュー修正・CI修正のcommitのいずれも記録する。cherry-pickやfast-forwardなど1回の操作で複数commitを加えた場合は操作前後のHEADで一括記録できる。範囲内のcommitが異なるAWI集合に対応するなら取り込みをAWI集合ごとに分ける。マージcommitを含む範囲は記録できないため、マージを使わずに取り込む。
+記録: 実装commitの作成前に対応AWI集合と現在のHEADを取得し、`git commit`を単独で実行して成功した場合だけ、作成前HEAD、新HEAD、worktreeと全対応AWIを`atk run-script plan-progress`へ渡す。引き継ぎ記録では`--handoff`と、その記録の対象AWI全件の`--allowed-awi`も渡す。通常実装・レビュー修正・CI修正のcommitのいずれも記録する。cherry-pickやfast-forwardなど1回の操作で複数commitを加えた場合は操作前後のHEADで一括記録できる。範囲内のcommitが異なるAWI集合に対応するなら取り込みをAWI集合ごとに分ける。マージcommitを含む範囲は記録できないため、マージを使わずに取り込む。
 
-取得: AWIを終端するエージェントは`atk run-script plan-commits`へ計画Markdown（計画なしでは引き継ぎ記録Markdown）を位置引数として渡し、出力のJSON Linesの`awi`・`commits`から現在のcommit集合を短縮OIDで取得する。同じstemのJSONLは保存先であり、位置引数には渡さない。保存で消えた作業中の計画パスも、同名の保存済み計画が一意なら使え、複数あれば保存済み計画の実在パスを指定する。取得した短縮OIDは単一の`atk wi adopt --commit`へ渡し、複数commitでは全対応を`--note-file`へ記録する。記録の欠落・対象外AWI・解決できないOIDは生成側が補完してから再取得し、説明文や件名から対応を推定しない。
+取得: AWIを終端するエージェントは次の形で呼び、出力のJSON Linesの`awi`・`commits`から現在のcommit集合を短縮OIDで取得する。
+
+```sh
+atk run-script plan-commits -- <計画Markdownの絶対パス> --worktree <対象worktreeの絶対パス>
+atk run-script plan-commits -- <引き継ぎ記録Markdownの絶対パス> --worktree <対象worktreeの絶対パス> --handoff --allowed-awi <記録の対象AWI全件を反復指定>
+```
+
+取得対象を絞る場合は`--awi <AWIファイル名>`を反復する。省略時は計画の関連WI全件（引き継ぎ記録では`--allowed-awi`全件）を取得する。同じstemのJSONLは保存先であり、位置引数には渡さない。保存で消えた作業中の計画パスも、同名の保存済み計画が一意なら使え、複数あれば保存済み計画の実在パスを指定する。取得した短縮OIDは単一の`atk wi adopt --commit`へ渡し、複数commitでは全対応を`--note-file`へ記録する。実装差分なしの項目に記録が無ければ、その項目を除いた対象を`--awi`で指定する。実装commitを持つ項目の記録の欠落・対象外AWI・解決できないOIDは生成側が補完してから再取得し、説明文や件名から対応を推定しない。
 
 履歴変更: WI実装commitのOIDが履歴書換えやcommit分割で変わった場合は、`references/history-rewrite.md`「WI実装commitの対応の継承」に従う。
 検収した対応表と書換え前のHEADを、書換え範囲にWI実装commitを持つ全ての計画と引き継ぎ記録とともに1回の`atk run-script plan-rewrite`へ渡す。不足があれば同コマンドはどの記録も変えずに失敗する。

@@ -220,7 +220,11 @@ def main(payload_text: str) -> int:
     # Claude Codeのメインセッションでは一定間隔で日本語の応答指示を文脈の近くへ置き直す。
     if not is_codex and _advance_language_reinjection(payload, session_id):
         pending_notices.append(_message_format.llm_notice(_rules_context.RESPONSE_LANGUAGE_REINJECTION_NOTICE, _HOOK_ID))
-    return _emit(_decide(payload, tool_name, tool_input, session_id, is_codex=is_codex), pending_notices, is_codex=is_codex)
+    decision = _decide(payload, tool_name, tool_input, session_id, is_codex=is_codex)
+    if decision.block is None:
+        notices = operation_skill_warnings(payload, tool_name, tool_input, session_id, is_codex=is_codex)
+        decision = dataclasses.replace(decision, notices=(*decision.notices, *notices))
+    return _emit(decision, pending_notices, is_codex=is_codex)
 
 
 def _decide(payload: dict, tool_name: str, tool_input: dict, session_id: str, *, is_codex: bool) -> Decision:
@@ -243,7 +247,7 @@ def _decide(payload: dict, tool_name: str, tool_input: dict, session_id: str, *,
         return Decision(block=_check_task_stop(session_id, tool_input))
     cwd_raw = payload.get("cwd", "")
     cwd = cwd_raw if isinstance(cwd_raw, str) else ""
-    notices = tuple(operation_skill_warnings(payload, tool_name, tool_input, session_id, is_codex=is_codex))
+    notices: tuple[str, ...] = ()
     if record_warning := session_record_reference_warning(tool_name, tool_input, cwd):
         notices += (record_warning,)
     if tool_name in _SEARCH_TOOL_NAMES:
@@ -336,7 +340,7 @@ def _decide_bash_tool(payload: dict, tool_input: dict, session_id: str, *, is_co
         attribution_error = _git_commit_attribution_error(messages, _hook_observed_identity(payload, is_codex=is_codex))
         if attribution_error is not None:
             return Decision(block=attribution_error)
-    warnings: list[str] = operation_skill_warnings(payload, "Bash", tool_input, session_id, is_codex=is_codex)
+    warnings: list[str] = []
     if record_warning := session_record_reference_warning("Bash", tool_input, cwd):
         warnings.append(record_warning)
     drive_letter_path_warning = _warn_windows_drive_letter_path(command, is_codex=is_codex)

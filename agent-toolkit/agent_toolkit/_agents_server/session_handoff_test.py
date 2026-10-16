@@ -153,7 +153,7 @@ async def test_task_handoff_keeps_delivered_role_prompt_and_continues_handoff_re
         document = launch_requests._SHARE_DIRECTORY / "exec.subagent.md"  # pylint: disable=protected-access
         assert str(document) in successor.prompt
         assert predecessor.prompt in successor.prompt
-        assert successor.usage == predecessor.usage == "base"
+        assert successor.usage == predecessor.usage == "execute"
         assert successor.launch_kind == predecessor.launch_kind
         assert successor.label == predecessor.label
         assert "（継続）" in successor.prompt

@@ -33,22 +33,70 @@ SCHEMA = (
     'レビュー更新だけはaccepted_source:{"path":"/絶対/受理済み.json","section":"wi_conditions","row":1}も受ける。'
     "同じ要求単位の判定済み行への参照とevidence_fileの説明だけをmode replaceで保存し、未判定継承・結果取込みとは分ける。"
     "選択結果の根拠は保存物の同じ組の参照をまとめ、各テスト名・状態・case、診断の差の種類・entry・message_positionを全件残す。"
+    "--evidence-file・--result-test・--result-diagnosticは全選択行で共通に使う値。"
+    "行別には--row-evidence-file SECTION:N PATH・--row-result-test SECTION:N NAME・"
+    "--row-result-diagnostic SECTION:N IDを反復する。"
+    "同じ種類の共通指定と行別指定は別々に使う。単一値オプションの異なる値での反復は拒否する。"
+    "モードや取得版が異なる更新は呼び出しを分割し、行別の詳細な入力は--updates-fileでも渡せる。"
 )
+
+
+class _SingleValue(argparse.Action):
+    """同じ単一値オプションが異なる入力を失う前に拒否する。"""
+
+    def __call__(
+        self, parser: argparse.ArgumentParser, namespace: argparse.Namespace, values: Any, option_string: str | None = None
+    ) -> None:
+        seen = getattr(namespace, "_single_values_seen", {})
+        if self.dest in seen and seen[self.dest] != values:
+            parser.error(
+                f"単一値の入力を異なる値で反復できません: {option_string}。"
+                "行別の根拠は--row-evidence-file、試験・診断は--row-result-test・--row-result-diagnosticを使う。"
+                "ほかの入力は呼び出しを分割し、複数行の更新は--updates-fileでも指定できる"
+            )
+        seen[self.dest] = values
+        namespace._single_values_seen = seen
+        setattr(namespace, self.dest, values)
+
+
+class ArgumentParser(argparse.ArgumentParser):
+    """両証拠操作の単一値入力を同じ条件で検証するparser。"""
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        super().__init__(*args, **kwargs)
+        self.register("action", None, _SingleValue)
+        self.register("action", "store", _SingleValue)
 
 
 def add_arguments(parser: argparse.ArgumentParser, *, reviewing: bool = False) -> None:
     """両公開操作へ同じ入力契約を登録する。"""
     parser.epilog = SCHEMA
+    parser.register("action", None, _SingleValue)
+    parser.register("action", "store", _SingleValue)
+    for option, value in (("evidence-file", "PATH"), ("result-test", "NAME"), ("result-diagnostic", "ID")):
+        parser.add_argument(
+            "--row-" + option,
+            action="append",
+            nargs=2,
+            metavar=("SECTION:N", value),
+            help="選択行と、その行だけへ関連付ける根拠・結果の対応。反復可。共通指定と分けて使う",
+        )
     parser.add_argument("--results-file", type=pathlib.Path, metavar="PATH", help="保存した結果の組を持つJSONの絶対パス")
     parser.add_argument("--list-results", action="store_true", help="テスト完全名・状態・版・所在と基準版との差を表示")
     parser.add_argument(
         "--results-summary", action="store_true", help="--list-resultsで状態・差・診断のまとまりと全識別子を表示"
     )
     parser.add_argument(
-        "--result-test", action="append", metavar="NAME", help="--list-resultsでこの完全テスト名の詳細だけを読む。反復可"
+        "--result-test",
+        action="append",
+        metavar="NAME",
+        help="一覧では完全テスト名の詳細を読む。更新では全選択行に共通の試験。反復可",
     )
     parser.add_argument(
-        "--result-diagnostic", action="append", metavar="ID", help="--list-resultsでこの診断識別子の詳細だけを読む。反復可"
+        "--result-diagnostic",
+        action="append",
+        metavar="ID",
+        help="一覧では診断識別子の詳細を読む。更新では全選択行に共通の診断。反復可",
     )
     parser.add_argument(
         "--updates-file", type=pathlib.Path, metavar="PATH", help="出所と選択した根拠を持つ更新配列JSONの絶対パス"
@@ -91,7 +139,9 @@ def add_arguments(parser: argparse.ArgumentParser, *, reviewing: bool = False) -
             help="相対ファイルと保存時本文の絶対パス。反復可",
         )
     if reviewing:
-        parser.add_argument("--evidence-file", type=pathlib.Path, metavar="PATH", help="選択行へ保存する説明のUTF-8ファイル")
+        parser.add_argument(
+            "--evidence-file", type=pathlib.Path, metavar="PATH", help="全選択行へ共通に保存する説明のUTF-8ファイル"
+        )
         parser.add_argument("--mode", choices=("append", "replace"), help="選択行の根拠の追記か置換")
         parser.add_argument(
             "--row-outcome",
@@ -303,6 +353,30 @@ def updates_for_arguments(
         raise ValueError("重複のない--select-rowと--modeを指定する")
     if args.updates_file is not None:
         raise ValueError("--select-rowと--updates-fileは別々に使う")
+    row_files: dict[str, str] = {}
+    row_tests: dict[str, list[str]] = collections.defaultdict(list)
+    row_diagnostics: dict[str, list[str]] = collections.defaultdict(list)
+    for option, common in (
+        ("row_evidence_file", args.evidence_file),
+        ("row_result_test", args.result_test),
+        ("row_result_diagnostic", args.result_diagnostic),
+    ):
+        pairs = getattr(args, option, None) or []
+        if pairs and common:
+            raise ValueError(f"--{option.replace('_', '-')}と全選択行への共通指定は別々に使う")
+        seen_pairs: set[tuple[str, str]] = set()
+        for selector, value in pairs:
+            if selector not in selectors or (selector, value) in seen_pairs:
+                raise ValueError(f"--{option.replace('_', '-')}は選択行へ重複なく指定する")
+            seen_pairs.add((selector, value))
+            if option == "row_evidence_file":
+                if selector in row_files:
+                    raise ValueError("--row-evidence-fileは各選択行へ一意に指定する")
+                row_files[selector] = value
+            elif option == "row_result_test":
+                row_tests[selector].append(value)
+            else:
+                row_diagnostics[selector].append(value)
     outcome_pairs = getattr(args, "row_outcome", None) or []
     inherited_pairs = getattr(args, "verification_row", None) or []
     source_pairs = getattr(args, "row_source", None) or []
@@ -316,7 +390,11 @@ def updates_for_arguments(
         raise ValueError("--accepted-rowは選択行へ重複なく指定する")
     if bool(accepted) != (accepted_path is not None):
         raise ValueError("--accepted-rowと--accepted-evidenceは組で指定する")
-    if accepted and (not reviewing or args.evidence_file is None or args.mode != "replace"):
+    if accepted and (
+        not reviewing
+        or args.mode != "replace"
+        or any(args.evidence_file is None and selector not in row_files for selector in accepted)
+    ):
         raise ValueError("受理済み判定の参照はレビュー更新で--evidence-fileと--mode replaceを指定する")
     if len(outcomes) != len(outcome_pairs) or len(inherited) != len(inherited_pairs) or len(sources) != len(source_pairs):
         raise ValueError("行の判定と未判定行への対応は重複なく指定する")
@@ -334,11 +412,13 @@ def updates_for_arguments(
             "row": number,
             "source": payload[section][number - 1]["source"],
             "mode": args.mode,
-            "tests": args.result_test or [],
-            "diagnostics": args.result_diagnostic or [],
+            "tests": row_tests.get(selector, args.result_test or []),
+            "diagnostics": row_diagnostics.get(selector, args.result_diagnostic or []),
         }
         if args.evidence_file is not None:
             update["evidence_file"] = str(args.evidence_file)
+        elif selector in row_files:
+            update["evidence_file"] = row_files[selector]
         if reviewing:
             update.update(outcome=outcomes[selector], reviewed_head=args.reviewed_head)
             if selector in sources:
@@ -363,6 +443,11 @@ def validate_display(args: argparse.Namespace) -> None:
     """表示の選択を更新へ混入させず、要約と詳細の用途を分ける。"""
     selecting = bool(args.result_test or args.result_diagnostic)
     direct = bool(getattr(args, "select_row", None))
+    if (
+        any(getattr(args, name, None) for name in ("row_evidence_file", "row_result_test", "row_result_diagnostic"))
+        and not direct
+    ):
+        raise ValueError("行別の根拠・結果は--select-rowで選んだ行へ指定する")
     if args.results_summary and not args.list_results or selecting and not (args.list_results or direct):
         raise ValueError("--results-summary・--result-test・--result-diagnosticは--list-resultsと指定する")
     if args.results_summary and selecting:

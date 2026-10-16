@@ -23,9 +23,58 @@ from agent_toolkit._testing.pretooluse_support import (
     _run_posttooluse,
 )
 
-_SEARCH_SKILL = operation_skills.OPERATION_SKILLS[0].skill_name
+_SEARCH_SKILL = "agent-toolkit:search"
 _SEARCH_SKILL_MD = pathlib.Path(__file__).resolve().parents[3] / "skills" / "search" / "SKILL.md"
 _WARN_OPENING = '<atk-auto source="pretooluse" kind="warn">'
+
+_DELEGATION_TOOLS = (
+    "Agent",
+    "Task",
+    "mcp__plugin_agent-toolkit_agents_server__start",
+    "mcp__plugin_agent-toolkit_agents_server__send_message",
+    "mcp__plugin_agent-toolkit_agents_server__kill",
+    "mcp__plugin_agent-toolkit_agents_server__list",
+)
+
+
+@pytest.mark.parametrize("tool", _DELEGATION_TOOLS)
+def test_delegation_warning_preserves_permission_and_context(tmp_path: pathlib.Path, tool: str) -> None:
+    """特殊分岐を通る委譲操作でも、未起動通知は主体ごとに1回で、既存の通過判定を保つ。"""
+    env = _plan_file_state_env(tmp_path)
+    # 継続入力の欠落は既存の警告判定を通し、未起動通知との結合も確かめる。
+    payload = {"tool_name": tool, "tool_input": {"prompt": "調査する"}, "session_id": "delegation"}
+    first = _run(payload, env)
+    assert first.returncode == 0
+    assert "agent-toolkit:delegation" in _additional_context(first)
+    if tool.startswith("mcp__"):
+        assert json.loads(first.stdout)["hookSpecificOutput"]["permissionDecision"] == "allow"
+    assert "agent-toolkit:delegation" not in _additional_context(_run(payload, env))
+    assert "agent-toolkit:delegation" in _additional_context(_run({**payload, "agent_id": "child"}, env))
+
+
+@pytest.mark.parametrize("tool", _DELEGATION_TOOLS)
+def test_delegation_ready_and_codex_exclusion(tmp_path: pathlib.Path, tool: str) -> None:
+    env = _plan_file_state_env(tmp_path)
+    _record_skill(env, "ready", "delegation")
+    payload = {"tool_name": tool, "tool_input": {"prompt": "調査する"}, "session_id": "ready"}
+    assert "agent-toolkit:delegation" not in _additional_context(_run(payload, env))
+    codex = {**payload, "session_id": "codex-delegation", "turn_id": "turn-1"}
+    assert "agent-toolkit:delegation" not in _additional_context(_run(codex, env))
+    state_file = tmp_path / SESSION_STATE_FILENAME_TEMPLATE.format(session_id="codex-delegation")
+    state = _read_session_state(tmp_path, "codex-delegation") if state_file.exists() else {}
+    assert rules_context.OPERATION_SKILL_READY_KEY not in state
+
+
+def test_blocked_delegation_does_not_consume_warning(tmp_path: pathlib.Path) -> None:
+    env = _plan_file_state_env(tmp_path)
+    blocked = {"tool_name": _DELEGATION_TOOLS[4], "tool_input": {"session_id": "unknown"}, "session_id": "blocked"}
+    result = _run(blocked, env)
+    assert result.returncode == 2
+    assert "agent-toolkit:delegation" not in result.stderr
+    state = _read_session_state(tmp_path, "blocked")
+    assert rules_context.OPERATION_SKILL_READY_KEY not in state
+    valid = {**blocked, "tool_name": _DELEGATION_TOOLS[5], "tool_input": {}}
+    assert "agent-toolkit:delegation" in _additional_context(_run(valid, env))
 
 
 def _bash(command: str, session_id: str, **extra: object) -> dict:
@@ -78,7 +127,7 @@ def test_search_without_skill_warns_once_per_context(tmp_path: pathlib.Path, pay
     assert _search_warning(payload, env) == ""
 
 
-@pytest.mark.parametrize("skill", [_SEARCH_SKILL, operation_skills.OPERATION_SKILLS[0].short_name])
+@pytest.mark.parametrize("skill", [_SEARCH_SKILL, "search"])
 def test_search_after_skill_use_does_not_warn(tmp_path: pathlib.Path, skill: str) -> None:
     env = _plan_file_state_env(tmp_path)
     _record_skill(env, "s", skill)

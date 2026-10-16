@@ -62,7 +62,10 @@ rebase対応表で確定したWI commitや、保存失敗の原因を直した�
 
 ff後は`phase: git-integrated`を保存し、plans、wisの各argvを順に実行して成功済み操作を記録する。途中で保存・終端が失敗した場合、同じmanifestとレビュー対象HEADで再実行するとGit統合と成功済み操作を省いて残る最終化へ戻る。全操作の成立後にpick-wi-checkで選定全体を確認して統合状態を更新し、`phase: finalized`と終了コード0を返す。追加WIの統合では現在のレビュー対象HEADと累積した全計画・WI集合の新しいmanifestを使い、進行中の入力は変更しない。
 
-rebaseした場合は、`history-compare`の対応表を`agent-toolkit:commit`の`SKILL.md`「WI実装commitの対応」の履歴変更の手段の`--rewrite-map`へそのまま渡し、rebase前のHEADと統合する全ての計画または引き継ぎ記録も同じ1回で渡す。完成条件証拠と未判定検証記録の参照更新にも同じ対応表を使い、更新するのは`evidence`の`commit:<OID>`だけとする（分割の各対応先も`commit:`標識を保つ）。裸の取得版OID・HEAD・git_head・比較元、観測ファイル、判定と`reviewed_head`、既存自由文の形式はそのまま保持する。結果に作用する内容・条件の差がある行だけを再観測し、根拠は、完成条件証拠と未判定検証記録の各CLIへ保存物を直接指定し、`--select-row`で行を選んで更新する。
+rebaseした場合は、`history-compare`の対応表を`agent-toolkit:commit`の`SKILL.md`「WI実装commitの対応」の履歴変更の手段の`--rewrite-map`へそのまま渡し、rebase前のHEADと統合する全ての計画または引き継ぎ記録も同じ1回で渡す。
+未判定検証記録は`atk run-script verification-record -- --output <未判定検証記録の絶対パス> --rewrite-map <対応表の絶対パス>`で更新する。
+完成条件証拠は同じ対応表を実行レビュー担当へ渡し、`atk run-script exec-review-evidence-check -- <完成条件証拠の絶対パス> --rewrite-map <対応表の絶対パス>`で更新する。
+更新するのは`evidence`の`commit:<OID>`だけとする（分割の各対応先も`commit:`標識を保つ）。裸の取得版OID・HEAD・git_head・比較元、観測ファイル、判定と`reviewed_head`、既存自由文の形式はそのまま保持する。結果に作用する内容・条件の差がある行だけを再観測し、根拠は、完成条件証拠と未判定検証記録の各CLIへ保存物を直接指定し、`--select-row`で行を選んで更新する。
 
 ### 検証結果の警告の判定
 
