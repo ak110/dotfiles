@@ -632,9 +632,10 @@ class FakeCodexClient:
             return {"status": "notLoaded"}
         return {}
 
-    async def close(self) -> None:
-        """実クライアントと同じ終了インターフェースを提供する。"""
+    async def close(self) -> list[str]:
+        """実クライアントと同じ終了インターフェースを提供する。終了を確認できない対象は持たない。"""
         self.closed = True
+        return []
 
 
 class BlockingResumeCodexClient(FakeCodexClient):
@@ -861,7 +862,6 @@ def _pending_codex_manager[PendingCodexClient: (HoldingTurnStartClient, Naturall
         return client
 
     monkeypatch.setattr(backend, "_ensure_client", ensure_client)
-    backend.client = cast(Any, client)
     install_backend(manager, "codex", backend)
     return manager, backend, client
 

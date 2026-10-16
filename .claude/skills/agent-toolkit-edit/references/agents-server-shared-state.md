@@ -30,6 +30,11 @@ Codex向けプラグイン設定の生成器（`pytools/_internal/codex_plugin_m
 外側の静的なMCP境界ですでに失われた未知名は内側から回復せず、親プロセスや認証ファイルの読直しで補わない。
 atk自身のuv同期先はlauncherが固定し、子へは呼出元の`UV_PROJECT_ENVIRONMENT`の値と未設定の別を戻す。
 MCPサーバーが起動するCodex App Server・Claude CLI・Antigravity CLIは親環境をコピーするため、この境界で渡した値を引き継ぐ。
+
+Codex App Serverの所有単位は委譲sessionである。Codex backendはsessionごとにApp Serverを起動し、そのsessionの開始・継続・再開・中断を所有する接続へ送る。サーバー要求への応答と接続障害の反映も、その接続を所有するsessionだけを対象にする。
+App Serverはthreadごとのstdio MCPサーバーを子孫として起動し、`thread/unsubscribe`の応答後も猶予の間は生存させる（2026年10月16日にCodex CLI 0.163.0で観測）。このため購読解除の応答は資源解放の完了を表さず、完了の判定にはApp Serverと子孫の終了を使う。
+sessionの資源解放（`stop`、保持期限の経過、起動候補の断念、MCPサーバーの停止）は、所有するApp Serverと起動前に列挙した子孫の終了をOS上で確認して完了とする。終了を確認できない対象が残れば、接続の所有を保ったまま再試行できる失敗を返し、登録簿は解放前の記録のまま残す。
+解放後の`send_message`は新しいApp Serverで`thread/resume`して同じ会話を再開する。モデル一覧と`thread/read`の照会は専用のApp Serverを起動し、応答の後に終了させる。
 配送するルートはManagerが持つ`StatusFileWriter.root_session_id`である。環境にownerが無くManagerが生成したルートも、Codex App Serverの子環境、threadの開始・再開のMCP環境とhost索引、Claude SDKの新規・再開環境、Antigravityの子環境へ同じ入力として渡す。backendはこの入力から通知先の所有者を決める。Antigravityではルート配送だけを保証し、固有の通知元識別子の解決と通知成功は別の課題として扱う。計画の所有記録とUWIの投入元の解決はこの配送と別の契約であり、Managerが生成したプロセス専用のroot（`mcp-`で始まる識別子）は会話を表さないため、所有会話と投入元の記録から除く。判定は`agent-toolkit/agent_toolkit/_plan/owner_records.py`の`resolve_conversation_session_id`が持つ。
 CodexのPostToolUseフックは、所有session識別子があり環境変数から書込主体を解決できない場合、入力JSONの検証済み現行session識別子を`AGENT_TOOLKIT_STATUS_HOST_SESSION`相当として補完する。PostToolUseフックと`atk agents wait`は`hosts`索引が存在する場合は委譲元のthreadから書込主体を逆引きし、状態ファイルと待機対象登録を同じ名前空間で扱う。索引が無い場合は補完した識別子をそのまま書込主体として使う。
 Codex backendは、子sessionを起動した委譲先から`atk agents wait`に成功した`commandExecution`を受け取る。
@@ -172,7 +177,7 @@ runが無い、読めない、結果を含まない場合は`status`の`missing`
 経過時間は結果削除の契機から外す。
 `notices`と`hosts`配下の共有ファイルは、各書込主体が保持期限の経過後に削除できる。
 `sessions`配下の登録簿を解放済みへ置換するのは、そのsessionを所有するMCPサーバーだけである。
-`stop`または保持期限の経過で資源解放を完了した後に、理由・時刻と内部再開情報を保持するレコードへ置き換える。
+`stop`または保持期限の経過で資源解放を完了した後に、理由・時刻と内部再開情報を保持するレコードへ置き換える。Codexの資源解放の完了は、所有するApp Serverと子孫の終了を確認した時点とする。
 APIへ移行した会話はCodexではprovider、Claudeでは`claude_resume_info`のenvファイルのパスを保持する。
 終端を観測した待機側は登録簿を保持する。
 解放済みレコードを残すことで、別のMCPサーバーは所有側による解放と記録の不在を区別できる。

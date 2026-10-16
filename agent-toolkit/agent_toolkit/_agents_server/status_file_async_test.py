@@ -411,7 +411,12 @@ async def test_auxiliary_save_retry_runs_outside_loop(
     install_backend(owner, "claude", _StartedBackend(owner.sessions, "claude"))
     await owner.activate_async()
     direct = codex.AppServerManager(root_session_id="root")
-    monkeypatch.setattr(direct, "client", FakeCodexClient())
+    fake_client = FakeCodexClient()
+
+    async def ensure_client() -> FakeCodexClient:
+        return fake_client
+
+    monkeypatch.setattr(direct, "_ensure_client", ensure_client)
     if route == "alias-resume":
         await direct.start("処理", str(tmp_path), "gpt-6-sol", "medium")
     if route == "release":
