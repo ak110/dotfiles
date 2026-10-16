@@ -85,6 +85,7 @@ _RUN_ID_ENV = "UPDATE_DOTFILES_RUN_ID"
 _LOCK_TIMEOUT_SEC = 600.0
 _GIT_TIMEOUT_DEFAULT_SEC = 600
 _GIT_OUTPUT_RECOVERY_TIMEOUT_SEC = 30
+_WORKTREE_STASH_TIMEOUT_SEC = 120
 _PROCESS_TREE_WAIT_TIMEOUT_SEC = 5
 _GIT_TIMEOUT_ENV = "UPDATE_DOTFILES_GIT_TIMEOUT_SEC"
 _LOG_STAGE_TOTAL = 5
@@ -448,14 +449,22 @@ def _run_git_change(*arguments: str) -> bool:
 
 
 def _run_worktree_stash(*arguments: str) -> subprocess.CompletedProcess[str] | None:
-    """同じcheckoutの公開退避CLIを実行し、失敗時の診断を維持する。"""
-    launcher = _SOURCE_ROOT / "agent-toolkit" / "scripts" / ("atk.cmd" if os.name == "nt" else "atk")
+    """同じcheckoutの退避CLIを有限時間で実行し、子孫と出力の回収にも上限を設ける。"""
+    global _current_stage_title, _last_stderr_tail  # noqa: PLW0603
+    launcher = _SOURCE_ROOT / "libexec" / "update_dotfiles_stash.py"
+    argv = [sys.executable, str(launcher), *arguments]
+    title = "worktree-stash " + " ".join(arguments)
+    _current_stage_title = title
+    _last_stderr_tail = None
+    print(f"{title}を実行します（待機上限: {_WORKTREE_STASH_TIMEOUT_SEC}秒）。", flush=True)
+    started_at = time.monotonic()
+    logger.info("退避操作開始: %s", title)
     try:
-        result = subprocess.run(
-            [str(launcher), "worktree-stash", *arguments],
+        process = subprocess.Popen(  # noqa: S603  # pylint: disable=consider-using-with
+            argv,
             cwd=_DOTFILES_ROOT,
-            check=False,
-            capture_output=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
             encoding="utf-8",
             errors="replace",
             env=_child_env(),
@@ -464,14 +473,63 @@ def _run_worktree_stash(*arguments: str) -> subprocess.CompletedProcess[str] | N
         logger.exception("worktree-stashの起動に失敗: worktree=%s launcher=%s", _DOTFILES_ROOT, launcher)
         print(
             f"未コミット内容の退避操作を開始できませんでした ({_DOTFILES_ROOT}): {error}。"
-            f"{launcher}の実在と起動権限を確認し、update-dotfilesを再実行してください。",
+            f"{launcher}の実在と読取権限を確認し、update-dotfilesを再実行してください。",
             file=sys.stderr,
         )
+        _last_stderr_tail = sync_report.truncate_tail(f"{title}: {error}")
         return None
+    try:
+        try:
+            stdout, stderr = process.communicate(timeout=_WORKTREE_STASH_TIMEOUT_SEC)
+        except subprocess.TimeoutExpired:
+            _kill_process_tree(process)
+            try:
+                stdout, stderr = process.communicate(timeout=_GIT_OUTPUT_RECOVERY_TIMEOUT_SEC)
+            except subprocess.TimeoutExpired:
+                stdout, stderr = "", ""
+            message = (
+                f"{title}が{_WORKTREE_STASH_TIMEOUT_SEC}秒以内に完了しなかったため、"
+                "子孫プロセスを終了して更新を中止しました。"
+                "git statusとgit stash listで未コミット内容と退避を確認し、"
+                "update-dotfiles logsで失敗した操作を確認してください。"
+            )
+            _last_stderr_tail = sync_report.truncate_tail(f"{stdout}\n{stderr}\n{message}")
+            logger.error(
+                "退避操作timeout: %s duration=%.3f stdout=%s stderr=%s", title, time.monotonic() - started_at, stdout, stderr
+            )
+            if stdout:
+                sys.stdout.write(stdout)
+            if stderr:
+                sys.stderr.write(stderr)
+            print(message, file=sys.stderr)
+            return None
+        except KeyboardInterrupt:
+            _kill_process_tree(process)
+            process.wait(timeout=_PROCESS_TREE_WAIT_TIMEOUT_SEC)
+            raise
+    finally:
+        # Windowsのreader threadがpipeを保持している場合、主スレッドのcloseも待機し得る。
+        if os.name != "nt":
+            assert process.stdout is not None and process.stderr is not None
+            process.stdout.close()
+            process.stderr.close()
+    result = subprocess.CompletedProcess(argv, process.returncode, stdout, stderr)
+    logger.info(
+        "退避操作終了: %s exit=%d duration=%.3f stdout=%s stderr=%s",
+        title,
+        result.returncode,
+        time.monotonic() - started_at,
+        stdout,
+        stderr,
+    )
     if result.returncode != 0:
+        _last_stderr_tail = sync_report.truncate_tail(f"{title}: exit {result.returncode}\n{stdout}\n{stderr}")
+        if result.stdout:
+            sys.stdout.write(result.stdout)
         if result.stderr:
             sys.stderr.write(result.stderr)
         return None
+    print(f"{title}が完了しました。", flush=True)
     return result
 
 
