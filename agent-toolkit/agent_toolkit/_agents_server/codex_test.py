@@ -895,7 +895,9 @@ def _real_mcp_environment(tmp_path: pathlib.Path, host_environ: Callable[[], dic
     # 隔離HOMEでもテストを動かしているPythonを公開ランチャーから解決し、環境ごとの再取得を避ける。
     python_directory = pathlib.Path(sys.base_prefix) / "bin" if os.name == "posix" else pathlib.Path(sys.base_prefix)
     environment["PATH"] = str(python_directory) + os.pathsep + environment["PATH"]
-    environment.update(UV_NO_MANAGED_PYTHON="1", UV_PYTHON_DOWNLOADS="never", UV_LINK_MODE="copy")
+    # CIのuv管理Pythonも使用する。内側のuvには実行中のPythonを明示する。
+    environment.pop("UV_NO_MANAGED_PYTHON", None)
+    environment.update(UV_PYTHON=sys.executable, UV_PYTHON_DOWNLOADS="never", UV_LINK_MODE="copy")
     for name in ("PYTHONPATH", "VIRTUAL_ENV", "UV_PROJECT_ENVIRONMENT"):
         environment.pop(name, None)
     return environment

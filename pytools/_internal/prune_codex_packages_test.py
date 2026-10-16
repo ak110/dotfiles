@@ -5,9 +5,9 @@ import os
 import pathlib
 import subprocess
 import types
+from collections.abc import Callable
 
 import pytest
-from agent_toolkit._testing import isolation
 
 from pytools._internal import codex_processes, prune_codex_packages
 from pytools.prune_codex_packages_test import _release
@@ -124,14 +124,18 @@ def test_posix_lock_failure_contract(
 
 
 @pytest.mark.skipif(os.name != "nt", reason="Windowsの共有不可オープンを実機で検証する")
-def test_windows_native_open_conflict(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
+def test_windows_native_open_conflict(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+    host_environ: Callable[[], dict[str, str]],
+) -> None:
     """公式のcurrent junctionと共有不可排他を実機で検証し、解放後の次回に回収する。"""
     current = _release(tmp_path, "standalone", "0.162.1")
     old = _release(tmp_path, "standalone", "0.150.0")
     root = current.parent.parent
     subprocess.run(
         ["cmd", "/d", "/c", "mklink", "/J", str(root / "current"), str(current)],
-        env=isolation.host_environ(),
+        env=host_environ(),
         check=True,
         capture_output=True,
         timeout=10,

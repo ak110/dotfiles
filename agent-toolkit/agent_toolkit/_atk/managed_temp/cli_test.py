@@ -263,7 +263,9 @@ def test_cleanup_nested_working_directory_preserves_siblings(capsys: pytest.Capt
     assert subject.main(["create", "--prefix", "extract", "--session-root", str(parent)]) == 0
     child = pathlib.Path(capsys.readouterr().out.splitlines()[-1])
     nested = child / "comparison"
-    nested.mkdir()
+    nested.mkdir(mode=0o700)
+    if os.name == "nt":
+        managed_temp_windows_security._windows_secure_path(nested, directory=True)
     (nested / "regenerated").write_text("再生成可能", encoding="utf-8")
     (child / "evidence").write_text("保持", encoding="utf-8")
 

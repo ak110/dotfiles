@@ -4,6 +4,7 @@ import contextlib
 import json
 import os
 import pathlib
+import types
 
 import psutil
 import pytest
@@ -153,19 +154,29 @@ def test_cli_failure_and_deferral_contracts(
     elif condition == "lock-link":
         (root / "install.lock").symlink_to(root / "missing")
     elif condition == "lock-open-error":
-        original_open = pathlib.Path.open
+        if os.name == "nt":
 
-        def fail_open(path, *args, **kwargs):
-            if path == root / "install.lock":
-                raise PermissionError(13, "denied", str(path))
-            return original_open(path, *args, **kwargs)
+            def fail_create(*_args, **_kwargs):
+                return prune_codex_packages.ctypes.c_void_p(-1).value
 
-        monkeypatch.setattr(pathlib.Path, "open", fail_open)
+            kernel = types.SimpleNamespace(CreateFileW=fail_create)
+            monkeypatch.setattr(prune_codex_packages.ctypes, "WinDLL", lambda *args, **kwargs: kernel)
+            monkeypatch.setattr(prune_codex_packages.ctypes, "get_last_error", lambda: 5)
+        else:
+            original_open = pathlib.Path.open
+
+            def fail_open(path, *args, **kwargs):
+                if path == root / "install.lock":
+                    raise PermissionError(13, "denied", str(path))
+                return original_open(path, *args, **kwargs)
+
+            monkeypatch.setattr(pathlib.Path, "open", fail_open)
     else:
         monkeypatch.setattr(
             codex_processes, "codex_processes", lambda: (codex_processes.CodexProcess(1, "pid 1", "session", None, False),)
         )
-    failed = condition not in {"lock", "unrelated-unknown"}
+    deferred = condition == "lock" or (condition == "missing-exe" and os.name == "nt")
+    failed = not deferred and condition != "unrelated-unknown"
     assert cli.main([]) == int(failed)
     assert current.is_dir()
     assert old.exists() == (condition != "unrelated-unknown")
@@ -173,13 +184,20 @@ def test_cli_failure_and_deferral_contracts(
         error = capsys.readouterr().err
         assert str(root) in error
         assert "prune-codex-packages" in error
-        assert ("整理を延期" in error) == (condition == "lock")
+        assert ("整理を延期" in error) == deferred
+        if condition == "missing-exe":
+            assert ("Codex実行中" if os.name == "nt" else "実行パスを取得できない") in error
     outcome = prune_codex_packages.run()
     assert bool(outcome.failure) == failed
     assert bool(outcome.next_action) == failed
     if failed:
         assert str(root) in (outcome.failure or "")
         assert "prune-codex-packages" in (outcome.next_action or "")
+    if condition == "missing-exe":
+        monkeypatch.setattr(codex_processes, "codex_processes", lambda: ())
+        assert cli.main([]) == 0
+        assert not old.exists()
+        assert current.is_dir()
 
 
 def test_absent_packages_succeed(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
