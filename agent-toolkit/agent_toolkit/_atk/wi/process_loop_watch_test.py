@@ -558,18 +558,28 @@ def test_start_wait_without_enter_and_no_carry_over(
 def test_enter_on_windows_console(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """対話コンソールの境界でEnterより後のキーを読まずに残し、案内・解除・ログ記録を行う。"""
+    """対話コンソールの境界で、案内の後のEnterだけで解除し、前後に溜まったキーを破棄してログへ残す。
+
+    監視の開始前に届いていたEnterでは解除せず、解除に使ったEnterの後に続くキーも次回の待機へ残さない。
+    """
     monkeypatch.setenv("AGENT_TOOLKIT_PROCESS_LOOP_SESSION", "1")
     monkeypatch.setattr(_pl_watch, "_submission_active", lambda _targets: True)
-    console = _Console("a\rx")
+    console = _Console("\r")
     _use_windows_console(monkeypatch, console)
     notes = _setup_notes(tmp_path)
-    started = time.monotonic()
+    waits: list[list[str]] = []
+
+    def wait(*_args: Any, interrupt: Callable[[], bool], **_kwargs: Any) -> bool:
+        waits.append(list(console.keys))
+        console.keys.extend("a\r\r")
+        return interrupt()
+
+    monkeypatch.setattr(_pl_watch, "wait_for_changes", wait)
     assert _pl_watch.wait_for_start_permission(notes, {"github.com/example/myrepo"}, _pl_watch.StartGate(notes))
-    assert time.monotonic() - started < 30
+    assert waits == [[]]
     output = capsys.readouterr().out
     assert "Enterで今回の待機を解除" in output and "Enterの入力により" in output
-    assert list(console.keys) == ["x"]
+    assert not console.keys
     assert any("event=start_wait_released trigger=enter" in line for line in _log_lines())
 
 
@@ -657,7 +667,7 @@ def test_abort_precedes_enter(
 _START_WAIT_SCRIPT = """
 import os, pathlib, subprocess, sys, time
 mode, notes, grace = sys.argv[1], pathlib.Path(sys.argv[2]), float(sys.argv[3])
-if mode in ("ctty", "background", "closed"):
+if mode in ("ctty", "background", "closed", "ctty-early", "ctty-twice"):
     # start_new_session後に端末を開き、前景のプロセスグループが持つ制御端末にする。
     os.close(os.open(os.ttyname(0), os.O_RDWR))
 if mode == "background":
@@ -671,9 +681,15 @@ if mode == "closed":
 from agent_toolkit._atk.wi import process_loop_watch as watch
 watch._START_GRACE_SEC = grace
 watch._submission_active = lambda _targets: True
-started = time.monotonic()
-result = watch.wait_for_start_permission(notes, {"github.com/example/myrepo"}, watch.StartGate(notes))
-print(f"result={result} elapsed={time.monotonic() - started:.1f}", flush=True)
+if mode == "ctty-early":
+    # 開始前待機の外で端末へ届いたEnterを、次の開始前待機の解除に使わないことを確かめる。
+    print("ready", flush=True)
+    time.sleep(2)
+rounds = 2 if mode == "ctty-twice" else 1
+for _ in range(rounds):
+    started = time.monotonic()
+    result = watch.wait_for_start_permission(notes, {"github.com/example/myrepo"}, watch.StartGate(notes))
+    print(f"result={result} elapsed={time.monotonic() - started:.1f}", flush=True)
 if mode == "closed":
     sys.stdin = stdin
 if mode != "plain":
@@ -733,6 +749,35 @@ def test_enter_on_posix_pty(tmp_path: pathlib.Path) -> None:
     output = buffer.decode(errors="replace")
     assert "Enterの入力により開始前の待機を解除しました" in output
     assert any("event=start_wait_released trigger=enter" in line for line in _log_lines())
+
+
+@pytest.mark.skipif(os.name != "posix", reason="POSIXの擬似端末で前景TTYを作成できる")
+@pytest.mark.parametrize("mode", ["early", "twice"])
+def test_enter_does_not_carry_over_to_next_start_wait(tmp_path: pathlib.Path, mode: str) -> None:
+    """待機の外で届いたEnterと、1回の待機中の重ね押しの2回目を、次の開始前待機の解除に使わない。"""
+    grace = 2.0
+    master, slave = pty.openpty()
+    try:
+        process = _start_wait_process(tmp_path, f"ctty-{mode}", grace, slave)
+        os.close(slave)
+        buffer = bytearray()
+        if mode == "early":
+            _read_until(master, "ready", buffer)
+            os.write(master, b"\n")
+        else:
+            _read_until(master, "Enterで今回の待機を解除", buffer)
+            os.write(master, b"\n\n")
+            _read_until(master, "result=True", buffer)
+        _read_until(master, "待機条件が解除されました", buffer)
+        os.write(master, b"child-input\n")
+        _read_until(master, "after:'child-input\\n'", buffer)
+        assert process.wait(timeout=60) == 0
+    finally:
+        os.close(master)
+    output = buffer.decode(errors="replace")
+    assert output.count("Enterの入力により") == (1 if mode == "twice" else 0)
+    elapsed = [float(part.split()[0]) for part in output.split("elapsed=")[1:]]
+    assert elapsed[-1] >= grace - 0.5
 
 
 @pytest.mark.skipif(os.name != "posix", reason="POSIXの擬似端末とプロセスグループで入力の境界を作成する")

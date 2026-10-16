@@ -71,6 +71,7 @@ class _StartWaitInput:
     """開始前待機の間だけ、同じ端末のEnterを待たずに読み取る。
 
     読取はOSの端末から行い、子CLIへ渡る入力を待機の外で消費しないよう`close`後は読まない。
+    監視の開始前に届いていた入力と、解除に使ったEnterの後に続けて届いた入力は破棄し、解除の効力を次回の待機へ持ち越さない。
     POSIXは前景の端末で行単位の入力を、Windowsは対話コンソールのキーを対象にする。
     """
 
@@ -90,6 +91,8 @@ class _StartWaitInput:
                     if self._console.getwch() in {"\r", "\n"}:
                         self.entered = True
                         break
+                if self.entered:
+                    self.discard_pending()
                 return self.entered
             assert self._fd is not None
             # バックグラウンドジョブが端末を読むとSIGTTINで停止するため、前景の間だけ読む。
@@ -107,7 +110,29 @@ class _StartWaitInput:
             self._closed = True
             return False
         self.entered = b"\n" in data or b"\r" in data
+        if self.entered:
+            self.discard_pending()
         return self.entered
+
+    def discard_pending(self) -> None:
+        """端末に届いて未読の入力を破棄する。
+
+        監視の開始前に届いた入力と、解除に使ったEnterの後に続けて届いた入力（重ね押しの2行目など）を
+        今回や次回の開始前待機の解除に使わないためである。
+        """
+        try:
+            if self._console is not None:
+                while self._console.kbhit():
+                    self._console.getwch()
+                return
+            assert self._fd is not None
+            # バックグラウンドジョブが端末を操作するとSIGTTOUで停止するため、前景の間だけ破棄する。
+            if os.tcgetpgrp(self._fd) != os.getpgrp():
+                return
+            termios = importlib.import_module("termios")
+            termios.tcflush(self._fd, termios.TCIFLUSH)
+        except AttributeError, ImportError, OSError, ValueError:
+            return
 
     def close(self) -> None:
         """以降の読取を止める。"""
@@ -131,6 +156,14 @@ def _open_start_wait_input() -> _StartWaitInput | None:
     return _StartWaitInput(fd, None)
 
 
+def _open_discarding_pending() -> _StartWaitInput | None:
+    """監視を開き、開始前に端末へ届いていた入力を破棄する。案内の表示後に入力されたEnterだけで解除するためである。"""
+    opened = _open_start_wait_input()
+    if opened is not None:
+        opened.discard_pending()
+    return opened
+
+
 @contextlib.contextmanager
 def _start_wait_input() -> Generator[Callable[[], _StartWaitInput | None]]:
     """最初の待機で監視を開き、期限・Enter・中断・例外のいずれでも監視を閉じてから抜ける。"""
@@ -138,7 +171,7 @@ def _start_wait_input() -> Generator[Callable[[], _StartWaitInput | None]]:
 
     def current() -> _StartWaitInput | None:
         if not opened:
-            opened.append(_open_start_wait_input())
+            opened.append(_open_discarding_pending())
         return opened[0]
 
     try:
