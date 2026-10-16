@@ -1,5 +1,6 @@
 """`atk wi process-loop`の待機中の変更の監視のテスト。"""
 
+import os
 import pathlib
 import subprocess
 import threading
@@ -17,8 +18,12 @@ from agent_toolkit._atk.wi import process_loop_log as _pl_log
 from agent_toolkit._atk.wi import process_loop_watch as _pl_watch
 from agent_toolkit._atk.wi import readiness as _wi_readiness
 from agent_toolkit._atk.wi import sync as _wi_sync
+from agent_toolkit._common import session_activity, session_registry
 from agent_toolkit._testing.process_loop_support import fake_run_with_remote_url, isolate_process_loop_commands
 from agent_toolkit.atk_test import _setup_notes
+
+_SUBMISSION_ACTIVE = _pl_watch._submission_active  # pylint: disable=protected-access  # noqa: SLF001
+"""共通の隔離が無活動へ差し替える前の、実際の活動取得。"""
 
 
 @pytest.fixture(autouse=True)
@@ -283,7 +288,7 @@ def test_start_wait_events(
     aborted = [False]
     records: list[tuple[str, dict[str, Any]]] = []
     monkeypatch.setattr(_pl_watch.time, "time", lambda: clock[0])
-    monkeypatch.setattr(_pl_watch, "_other_sessions_active", lambda: active[0])
+    monkeypatch.setattr(_pl_watch, "_submission_active", lambda _targets: active[0])
     monkeypatch.setattr(_pl_control, "consume_process_loop_abort", lambda: aborted[0])
 
     def log(name: str, **fields: Any) -> None:
@@ -314,3 +319,51 @@ def test_start_wait_events(
     output = capsys.readouterr().out
     assert "活動" in output and "期限" in output
     assert any(name == "start_wait_released" for name, _ in records) is (event != "abort")
+
+
+def _submission_cli(*arguments: str) -> None:
+    with pytest.raises(SystemExit) as exc:
+        atk.main(["wi", "submission", *arguments])
+    assert exc.value.code == 0
+
+
+@pytest.mark.parametrize(
+    "targets",
+    [{"github.com/example/myrepo"}, {"github.com/example/a", "github.com/example/myrepo"}],
+    ids=["single", "all-repos"],
+)
+def test_start_gate_waits_only_for_add_awi_by_user_to_target(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+    targets: set[str],
+) -> None:
+    """対象リポジトリ集合へ投入する実行中のadd-awi-by-userだけが猶予を生み、終了で解除する。"""
+    monkeypatch.setattr(_pl_watch, "_submission_active", _SUBMISSION_ACTIVE)
+    monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)
+    notes = _setup_notes(tmp_path)
+    # 自ループの子孫は活動から除くため、テストの外側で生存する親プロセスを会話のホストとする。
+    identity = session_registry.ProcessIdentity.of(os.getppid())
+    assert identity is not None
+    host = session_activity.HostProcess("claude", identity)
+    for session_id in ("submitter", "foreign", "collaboration"):
+        session_activity.record_activity({"session_id": session_id, "hook_event_name": "UserPromptSubmit"}, process=host)
+    _submission_cli("begin", "--session-id", "foreign", "--target-repo", "github.com/example/foreign")
+    unrelated = {"github.com/example/a"}
+    assert _pl_watch.wait_for_start_permission(notes, unrelated, _pl_watch.StartGate(notes))
+
+    _submission_cli("begin", "--session-id", "submitter", "--target-repo", "https://github.com/Example/myrepo.git")
+    waits: list[float] = []
+
+    def wait(_notes: pathlib.Path, _repo: str | None, *, timeout: float, **_kwargs: Any) -> bool:
+        waits.append(timeout)
+        _submission_cli("end", "--session-id", "submitter")
+        return True
+
+    monkeypatch.setattr(_pl_watch, "wait_for_changes", wait)
+    capsys.readouterr()
+    assert _pl_watch.wait_for_start_permission(notes, targets, _pl_watch.StartGate(notes))
+    assert len(waits) == 1
+    output = capsys.readouterr().out
+    assert "WI投入作業が活動中" in output
+    assert "待機条件が解除されました" in output

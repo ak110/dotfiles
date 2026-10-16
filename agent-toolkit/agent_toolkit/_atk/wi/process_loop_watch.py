@@ -80,7 +80,7 @@ class StartGate:
         reasons: list[str] = []
         deadlines: list[float] = []
         if activity and self._activity_deadline is not None and timestamp < self._activity_deadline:
-            reasons.append("別セッションが活動中")
+            reasons.append("対象リポジトリへのWI投入作業が活動中")
             deadlines.append(self._activity_deadline)
         unanswered, latest_update = _uwi_updates(self.private_notes, target_repo_ids)
         if unanswered and timestamp < latest_update + _START_GRACE_SEC:
@@ -119,7 +119,7 @@ def wait_for_start_permission(private_notes: pathlib.Path, target_repo_ids: set[
     while True:
         if _pl_control.consume_process_loop_abort():
             return False
-        activity = _other_sessions_active()
+        activity = _submission_active(target_repo_ids)
         now = time.time()
         decision = gate.evaluate(target_repo_ids, activity=activity, now=now)
         if not decision.reasons:
@@ -139,13 +139,26 @@ def wait_for_start_permission(private_notes: pathlib.Path, target_repo_ids: set[
             private_notes,
             None,
             timeout=min(_SESSION_RECHECK_SEC, decision.deadline - now),
-            state_directories=(_session_activity.activity_directory(), _pl_log.abort_path().parent),
+            state_directories=(
+                _session_activity.activity_directory(),
+                _session_activity.submission_directory(),
+                _pl_log.abort_path().parent,
+            ),
         )
 
 
-def _other_sessions_active() -> bool:
-    """ホスト共通の活動取得から自ループ以外の活動を得る。"""
-    return _session_activity.scan_activity(excluded_pids={os.getpid()}).has_activity
+def _submission_active(target_repo_ids: set[str]) -> bool:
+    """対象リポジトリ集合へ投入するadd-awi-by-userのうち、自ループ以外で活動中の作業があるかを返す。
+
+    同じoriginの別worktreeや別表記のURLを同一リポジトリとして扱うため、投入先の保存時と同じ正規化を通す。
+    """
+    canonical_cache: dict[str, str | None] = {}
+    targets = {
+        canonical for repo in target_repo_ids if (canonical := _git_remote.canonical_repo(repo, canonical_cache)) is not None
+    }
+    if not targets:
+        return False
+    return _session_activity.submission_activity(targets, excluded_pids={os.getpid()}).has_activity
 
 
 class _ChangeHandler(watchdog.events.FileSystemEventHandler):

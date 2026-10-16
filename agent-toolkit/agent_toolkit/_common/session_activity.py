@@ -1,7 +1,9 @@
-"""ホスト全体の活動をhook、実プロセス、セッション記録と登録簿から取得する。
+"""会話ごとの活動をhook、実プロセス、セッション記録と登録簿から取得する。
 
-開始猶予の期限は呼び出し元が持つ。ここでは未登録・読取不能を活動候補として返し、
+開始猶予の期限は呼び出し元が持つ。ここでは読取不能な活動記録を活動候補として返し、
 無活動へ読み替えない。hookの記録は会話ごとの最新状態だけを保持する。
+process-loopの開始猶予へ渡す活動は、WI投入作業の属性（作業種別と正規化した投入先）を
+持つ会話とその子孫に限る。属性は`record_submission`・`clear_submission`が会話別に保存する。
 """
 
 from __future__ import annotations
@@ -14,7 +16,7 @@ import math
 import os
 import pathlib
 import time
-from collections.abc import Mapping, Sequence
+from collections.abc import Collection, Mapping, Sequence
 from typing import Any
 
 import psutil
@@ -53,9 +55,78 @@ class ActivitySnapshot:
         return bool(self.active_session_ids or self.reasons or self.uncertain)
 
 
+SUBMISSION_KIND = "add-awi-by-user"
+"""開始猶予の理由になる作業種別。"""
+
+
 def activity_directory(state_root: pathlib.Path | None = None) -> pathlib.Path:
     """活動JSONを置く監視先を返す。"""
     return (state_paths.state_dir() if state_root is None else state_root) / "session-activity"
+
+
+def submission_directory(state_root: pathlib.Path | None = None) -> pathlib.Path:
+    """会話ごとのWI投入作業の属性を置く監視先を返す。
+
+    hookが会話の終了で削除する活動JSONと分け、会話の再開後も属性を保つ。
+    """
+    return activity_directory(state_root) / "submissions"
+
+
+def record_submission(session_id: str, targets: Collection[str], *, state_root: pathlib.Path | None = None) -> None:
+    """会話が実行中のWI投入作業と、その正規化済みの投入先を保存する。再度の保存は投入先を置き換える。"""
+    valid = session_launchers.valid_launcher(session_id)
+    if valid is None:
+        raise ValueError(f"会話IDとして使えない値です: {session_id!r}")
+    if not targets or not all(isinstance(target, str) and target for target in targets):
+        raise ValueError("投入先を1件以上指定してください")
+    directory = submission_directory(state_root)
+    directory.mkdir(parents=True, exist_ok=True)
+    record = {
+        "version": 1,
+        "session_id": valid,
+        "kind": SUBMISSION_KIND,
+        "targets": sorted(set(targets)),
+        "updated_at": time.time(),
+    }
+    atomic_write(directory / f"{valid}.json", json.dumps(record, ensure_ascii=False) + "\n")
+
+
+def clear_submission(session_id: str, *, state_root: pathlib.Path | None = None) -> bool:
+    """会話のWI投入作業の属性を削除する。削除した属性があれば真を返す。"""
+    valid = session_launchers.valid_launcher(session_id)
+    if valid is None:
+        raise ValueError(f"会話IDとして使えない値です: {session_id!r}")
+    path = submission_directory(state_root) / f"{valid}.json"
+    existed = path.exists()
+    path.unlink(missing_ok=True)
+    return existed
+
+
+def _submissions(root: pathlib.Path) -> dict[str, frozenset[str]]:
+    """作業種別と投入先を読み取れる属性だけを返す。読めない属性は開始猶予の根拠にしない。"""
+    found: dict[str, frozenset[str]] = {}
+    try:
+        paths = [entry for entry in submission_directory(root).iterdir() if entry.suffix == ".json"]
+    except OSError:
+        return found
+    for path in paths:
+        try:
+            record = _read(path)
+        except OSError, UnicodeError, ValueError:
+            continue
+        targets = record.get("targets")
+        if (
+            isinstance(record.get("version"), int)
+            and not isinstance(record.get("version"), bool)
+            and record.get("version") == 1
+            and record.get("kind") == SUBMISSION_KIND
+            and record.get("session_id") == path.stem
+            and isinstance(targets, list)
+            and targets
+            and all(isinstance(target, str) and target for target in targets)
+        ):
+            found[path.stem] = frozenset(targets)
+    return found
 
 
 def _engine(process: psutil.Process) -> str | None:
@@ -390,24 +461,29 @@ def _turn_state(record: Mapping[str, Any], *, since: float | None = None) -> str
     return None
 
 
-def scan_activity(
-    *,
-    excluded_session_ids: set[str] | None = None,
-    excluded_pids: set[int] | None = None,
-    state_root: pathlib.Path | None = None,
-    processes: Sequence[HostProcess] | None = None,
-) -> ActivitySnapshot:
-    """別会話の活動と未判定の根拠を返す。除外は指定した会話・PIDの子孫だけに作用する。
+@dataclasses.dataclass(frozen=True)
+class _Scan:
+    """会話ごとの活動判定と、親子の対応。"""
 
-    `state_root`と`processes`は隔離した記録と実プロセスを組み合わせる呼び出しにも使える。
-    読取は状態を変更せず、死亡・PID再利用の記録は活動から失効させる。
-    """
-    root = state_paths.state_dir() if state_root is None else state_root
-    reasons: list[str] = []
+    active: dict[str, str]
+    """活動中または活動候補の会話IDから理由への対応。"""
+    uncertain_ids: frozenset[str]
+    general_reasons: tuple[str, ...]
+    """会話へ対応付かない読取の失敗。"""
+    links: dict[str, str]
+
+
+def _scan(
+    *,
+    excluded_session_ids: set[str] | None,
+    excluded_pids: set[int] | None,
+    root: pathlib.Path,
+    processes: Sequence[HostProcess] | None,
+) -> _Scan:
+    general_reasons: list[str] = []
     records: dict[str, dict[str, Any]] = {}
     unresolved: set[str] = set()
-    known_pids: set[int] = set()
-    for path in _paths(activity_directory(root), reasons):
+    for path in _paths(activity_directory(root), general_reasons):
         try:
             record = _read(path)
             identity = _identity(record.get("process"))
@@ -415,15 +491,12 @@ def scan_activity(
                 continue
             if not _valid_activity_record(record, path.stem) or identity is None:
                 unresolved.add(path.stem)
-            else:
-                known_pids.add(identity.pid)
             records[path.stem] = record
         except (OSError, UnicodeError, ValueError) as error:
             records[path.stem] = {}
             unresolved.add(path.stem)
             records[path.stem]["read_error"] = str(error)
-    registry_paths = _paths(session_registry.registry_directory(root), reasons)
-    for path in registry_paths:
+    for path in _paths(session_registry.registry_directory(root), general_reasons):
         session_id = session_launchers.valid_launcher(path.stem)
         if session_id is None:
             continue
@@ -431,17 +504,11 @@ def scan_activity(
         if resolution.state in {session_registry.Resolution.TERMINAL, session_registry.Resolution.RELEASED}:
             records.pop(session_id, None)
             continue
-        try:
-            registered = _read(path)
-        except OSError, UnicodeError, ValueError:
-            registered = {}
-        identities = registered.get("processes", ())
-        if isinstance(identities, list):
-            known_pids.update(
-                identity.pid for item in identities if (identity := _identity(item)) is not None and identity.exists()
-            )
         if session_id not in records:
-            records[session_id] = registered
+            try:
+                records[session_id] = _read(path)
+            except OSError, UnicodeError, ValueError:
+                records[session_id] = {}
             if resolution.state == session_registry.Resolution.UNREADABLE:
                 unresolved.add(session_id)
             else:
@@ -449,13 +516,12 @@ def scan_activity(
         if (parent := session_launchers.read_launcher(path)) is not None:
             records[session_id].setdefault("parent_session_id", parent)
     excluded_processes = _excluded_processes(excluded_pids or set())
-    hosts = tuple(host_processes() if processes is None else processes)
-    native_by_pid: dict[int, set[str]] = {}
-    for host in hosts:
+    # hookを持たないホストの会話は、開いている記録から会話IDと状態を得る。
+    # 会話を解決できない実プロセスは、どの作業にも属さないため活動へ加えない。
+    for host in host_processes() if processes is None else processes:
         if host.identity.pid in excluded_processes or not host.identity.exists():
             continue
-        native, warning = _native_sessions(host)
-        native_by_pid[host.identity.pid] = set(native)
+        native, _warning = _native_sessions(host)
         for session_id, record in native.items():
             if session_id not in records:
                 records[session_id] = record
@@ -463,9 +529,6 @@ def scan_activity(
             elif "native_status" in record:
                 records[session_id]["native_status"] = record["native_status"]
                 records[session_id]["native_updated_at"] = record["native_updated_at"]
-        if warning and host.identity.pid not in known_pids and not native:
-            # 除外対象の解決後に、このPIDに対応する候補だけへ診断を載せる。
-            native_by_pid[host.identity.pid] = set()
     registry_launcher = session_launchers.launcher_reader(root)
     links = session_parents.resolve_parent_paths(
         _sources(records),
@@ -476,20 +539,18 @@ def scan_activity(
         ),
     )
     excluded = session_parents.descendants(excluded_session_ids or set(), links)
-    active: set[str] = set()
-    uncertain = bool(reasons)
+    active: dict[str, str] = {}
+    uncertain: set[str] = set()
     for session_id, record in records.items():
         identity = _identity(record.get("process"))
         if session_id in excluded or identity is not None and identity.pid in excluded_processes:
             continue
         actors = record.get("actors")
         if session_id in unresolved:
-            uncertain = True
-            active.add(session_id)
-            reasons.append(f"活動候補: {session_id}の活動記録を判定できません")
+            uncertain.add(session_id)
+            active[session_id] = f"活動候補: {session_id}の活動記録を判定できません"
         elif record.get("registry_active") or record.get("background_active"):
-            active.add(session_id)
-            reasons.append(f"活動中: {session_id}の委譲・バックグラウンドタスクが稼働しています")
+            active[session_id] = f"活動中: {session_id}の委譲・バックグラウンドタスクが稼働しています"
         elif isinstance(actors, dict) and any(value == "active" for value in actors.values()):
             updated = record.get("updated_at")
             main_only = not any(actor != "main" and state == "active" for actor, state in actors.items())
@@ -503,21 +564,70 @@ def scan_activity(
                 )
                 if native_idle or _turn_state(record, since=updated) == "waiting":
                     continue
-            active.add(session_id)
-            reasons.append(f"活動中: {session_id}のターンまたは子エージェントが稼働しています")
+            active[session_id] = f"活動中: {session_id}のターンまたは子エージェントが稼働しています"
         else:
             # Stop自身の発火を終了証拠にせず、実ターンかホストのidle状態を確かめる。
             state = record.get("native_status") or _turn_state(record)
             if state not in {"idle", "waiting"}:
-                uncertain |= state is None
-                active.add(session_id)
-                reasons.append(f"活動候補: {session_id}の応答待ちを確認できません")
-    for host in hosts:
-        pid = host.identity.pid
-        if pid in excluded_processes or pid in known_pids or not host.identity.exists():
-            continue
-        session_ids = native_by_pid.get(pid, set())
-        if not session_ids:
-            uncertain = True
-            reasons.append(f"活動候補: 未登録の{host.engine} PID {pid}が生存しています")
-    return ActivitySnapshot(frozenset(active), tuple(dict.fromkeys(reasons)), uncertain)
+                if state is None:
+                    uncertain.add(session_id)
+                active[session_id] = f"活動候補: {session_id}の応答待ちを確認できません"
+    return _Scan(active, frozenset(uncertain), tuple(general_reasons), links)
+
+
+def scan_activity(
+    *,
+    excluded_session_ids: set[str] | None = None,
+    excluded_pids: set[int] | None = None,
+    state_root: pathlib.Path | None = None,
+    processes: Sequence[HostProcess] | None = None,
+) -> ActivitySnapshot:
+    """作業種別を問わず、別会話の活動と未判定の根拠を返す。除外は指定した会話・PIDの子孫だけに作用する。
+
+    `state_root`と`processes`は隔離した記録と実プロセスを組み合わせる呼び出しにも使える。
+    読取は状態を変更せず、死亡・PID再利用の記録は活動から失効させる。
+    """
+    scan = _scan(
+        excluded_session_ids=excluded_session_ids,
+        excluded_pids=excluded_pids,
+        root=state_paths.state_dir() if state_root is None else state_root,
+        processes=processes,
+    )
+    return ActivitySnapshot(
+        frozenset(scan.active),
+        tuple(dict.fromkeys((*scan.general_reasons, *scan.active.values()))),
+        bool(scan.general_reasons or scan.uncertain_ids),
+    )
+
+
+def submission_activity(
+    target_repo_ids: Collection[str],
+    *,
+    excluded_session_ids: set[str] | None = None,
+    excluded_pids: set[int] | None = None,
+    state_root: pathlib.Path | None = None,
+    processes: Sequence[HostProcess] | None = None,
+) -> ActivitySnapshot:
+    """投入先が`target_repo_ids`と交わるWI投入作業の会話と、その子孫の活動だけを返す。
+
+    `target_repo_ids`と保存済みの投入先は、呼び出し元が同じ規則で正規化した値として比べる。
+    属性を持たない会話、属性を読めない会話、会話へ対応付かない実プロセスは理由にしない。
+    """
+    root = state_paths.state_dir() if state_root is None else state_root
+    targets = frozenset(target_repo_ids)
+    submissions = {session_id: owned & targets for session_id, owned in _submissions(root).items() if owned & targets}
+    if not submissions:
+        return ActivitySnapshot()
+    scan = _scan(
+        excluded_session_ids=excluded_session_ids,
+        excluded_pids=excluded_pids,
+        root=root,
+        processes=processes,
+    )
+    members = session_parents.descendants(set(submissions), scan.links)
+    active = {session_id: reason for session_id, reason in scan.active.items() if session_id in members}
+    return ActivitySnapshot(
+        frozenset(active),
+        tuple(dict.fromkeys(active.values())),
+        bool(scan.uncertain_ids & active.keys()),
+    )

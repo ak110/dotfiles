@@ -36,7 +36,9 @@ user-invocable: false
 レーン上限は対象リポジトリ別の候補数から求め、処理の所有は同じoriginを対象とする通常起動と共有する。
 詳細は`${CLAUDE_PLUGIN_ROOT}/skills/process-wi/references/all-repos-orchestration.md`が定める。
 
-process-loopは子セッションの開始前に、別セッションの活動による猶予と未回答UWIによる抑止を同時に評価する。
+process-loopは子セッションの開始前に、WI投入作業の活動による猶予と未回答UWIによる抑止を同時に評価する。
+活動猶予の理由は、`agent-toolkit:add-awi-by-user`が`atk wi submission begin`で記録した投入先が対象リポジトリ集合と交わる会話とその委譲先の活動に限る。
+同じoriginの別worktreeと別表記のURLは同じ投入先として扱い、同じリポジトリの別作業、別リポジトリへの投入、会話を持たないプロセスは理由にしない。
 活動猶予は処理可能WIの検出から10分で、共有private-notesへの新規WI到着の検出ごとに10分へ延長する。
 当該ループ自身とその子孫、終了済みのセッション、稼働中の子エージェントを持たずにユーザーの応答を待つセッションは、活動の理由から除く。
 活動猶予は活動がなくなった時点か期限の到来で解除し、既存WIの編集・状態移動は延長に数えない。

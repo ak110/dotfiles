@@ -29,6 +29,7 @@ lazy from agent_toolkit._atk.wi import process_loop_all_repos as _process_loop_a
 lazy from agent_toolkit._atk.wi import process_loop_control as _process_loop_control
 lazy from agent_toolkit._atk.wi import repo as _wi_repo
 lazy from agent_toolkit._atk.wi import show as _show
+lazy from agent_toolkit._atk.wi import submission as _submission
 lazy from agent_toolkit._atk.wi import sync as _wi_sync
 lazy from agent_toolkit._atk.wi import uwi as _uwi
 lazy from agent_toolkit._atk.wi.mutations import content as _mutation_content
@@ -945,6 +946,29 @@ def _add_mq_process_loop_parser(sub: Any) -> None:
     _atk_help.add_command(loop_sub, "instruct-cancel", **_atk_help.HELP["atk wi process-loop instruct-cancel"])
 
 
+def _add_mq_submission_parser(sub: Any) -> None:
+    """`atk wi submission`サブコマンドを登録する。"""
+    submission = _atk_help.add_command(sub, "submission", **_atk_help.HELP["atk wi submission"])
+    submission_sub = _atk_help.add_subcommands(submission, dest="submission_subcommand")
+    begin = _atk_help.add_command(submission_sub, "begin", **_atk_help.HELP["atk wi submission begin"])
+    begin.add_argument(
+        "--target-repo",
+        metavar="REPO",
+        action="append",
+        default=None,
+        required=True,
+        help="投入先のリポジトリ（ローカル作業ツリーのパスまたは正規化リモートURL）。複数の投入先は繰り返し指定する。",
+    )
+    end = _atk_help.add_command(submission_sub, "end", **_atk_help.HELP["atk wi submission end"])
+    for parser in (begin, end):
+        parser.add_argument(
+            "--session-id",
+            metavar="SESSION_ID",
+            default=None,
+            help="記録する会話のID。省略時は`CLAUDE_CODE_SESSION_ID`、`CODEX_THREAD_ID`の順に使う。",
+        )
+
+
 def build_parser(mq: argparse.ArgumentParser) -> None:
     """`atk wi`のサブパーサ配下にキュー操作のサブコマンドを登録する。"""
     sub = _atk_help.add_subcommands(
@@ -960,6 +984,7 @@ def build_parser(mq: argparse.ArgumentParser) -> None:
         _add_mq_edit_parsers,
         _add_mq_search_and_answer_parsers,
         _add_mq_process_loop_parser,
+        _add_mq_submission_parser,
     ):
         register(sub)
 
@@ -1166,6 +1191,9 @@ def dispatch(
         }
         process_loop_state_dispatch[process_loop_subcommand]()
         return 0
+    if sub == "submission":
+        # 会話別の状態ディレクトリだけを扱い、private-notesを必要としない。
+        return _submission.cmd_submission(args)
     private_notes = _wi_sync.ensure_environment(home)
     commands = {
         "add": lambda: (

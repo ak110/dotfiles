@@ -32,14 +32,16 @@ Claude Codeは並列ツール呼び出しでhookを同時発火するため、�
 
 `_common/session_activity.py`はOSアカウントの状態ディレクトリ配下の`session-activity/{session_id}.json`へ会話ごとの最新状態を保存する。
 状態ディレクトリの解決元は`agent-toolkit/agent_toolkit/_common/state_paths.py`の`state_dir()`である。
-`hook.py`が受け取る既存イベントの処理に活動記録を加え、`scan_activity`がprocess-loopの開始前判定へ活動と未判定の根拠を渡す。
+`hook.py`が受け取る既存イベントの処理に活動記録を加え、`submission_activity`がprocess-loopの開始前判定へ、対象リポジトリへ投入中のWI投入作業の活動を渡す。
 
 - 保存する項目は版数、会話ID、実行系、PIDと起動時刻、会話内の各エージェントの活動状態、親会話ID、セッション記録のパス、バックグラウンドタスクの有無および更新時刻とする。
 - SessionStart・UserPromptSubmit・ツールイベント・SubagentStartで活動を記録し、Stop・SubagentStopでは実際のhook応答が続行を求めるかを反映する。
 - 応答待ちの除外には、セッション記録のターン終了またはホスト登録のidle状態と、稼働する子がないことを使う。
 - SessionEndは活動JSONを削除し、記録されたPIDと起動時刻が生存プロセスに一致しない場合は取得側で失効させる。
 - 更新と削除は固定の`activity.lock`の排他下で行い、会話ごとの履歴や終了した子の項目を残さない。
-- 未登録の生存ホストと読取不能は活動候補として返し、猶予期限の判定を開始側へ残す。
+- 読取不能な活動記録は活動候補として返す。会話を解決できない生存プロセスは、どの作業にも属さないため活動に数えない。
+- WI投入作業の属性は`session-activity/submissions/{session_id}.json`へ会話ごとに保存する。項目は版数、会話ID、作業種別（`add-awi-by-user`）、正規化した投入先URLの一覧、更新時刻とする。`atk wi submission begin`が作成・置換し、`atk wi submission end`が削除する。hookのSessionEndは削除せず、再開した会話で属性を再び有効にする。
+- 開始前判定は、投入先がprocess-loopの対象リポジトリ集合と交わる属性を持つ会話とその子孫の活動だけを理由にし、属性を読めない会話と属性のない会話を除く。
 - 除外する会話とその子孫は`_common/session_parents.py`の親子解決を使い、process-loopの共通環境印だけで別ループの会話を除外しない。
 
 ## managed-tempの登録情報
