@@ -928,6 +928,8 @@ def _wait_mcp_processes(owned: dict[int, psutil.Process], *, timeout: float = 3)
     assert not alive, [process.pid for process in alive]
 
 
+# Windowsのcold依存導入、配布コピーと終了後の回収までを含む上限。
+@pytest.mark.timeout(180)
 @pytest.mark.asyncio
 @pytest.mark.usefixtures("share_package_caches")
 async def test_stable_plugin_root_shared_across_processes(
@@ -955,7 +957,8 @@ async def test_stable_plugin_root_shared_across_processes(
     area: pathlib.Path | None = None
     expected_tools = {"start", "send_message", "kill", "stop", "list", "show"}
     try:
-        with contextlib.ExitStack() as files, anyio.fail_after(45):
+        # 配布元と保持先の2環境のcold導入に、実MCP操作の予算を加える。
+        with contextlib.ExitStack() as files, anyio.fail_after(135):
             async with contextlib.AsyncExitStack() as stack:
                 for index in range(3):
                     root = source if index < 2 else area / version if area is not None else source
@@ -1070,6 +1073,8 @@ SERVER_PLUGIN_ROOT = resolve_stable_plugin_root()
 '''
 
 
+# Windowsのcold依存導入、配布コピーと終了後の回収までを含む上限。
+@pytest.mark.timeout(120)
 @pytest.mark.asyncio
 @pytest.mark.usefixtures("share_package_caches")
 async def test_legacy_plugin_root_real_mcp_lifecycle(
@@ -1105,7 +1110,8 @@ async def test_legacy_plugin_root_real_mcp_lifecycle(
         )
 
     try:
-        with log.open("w", encoding="utf-8") as errors, anyio.fail_after(45):
+        # Windowsで約40秒を要したcold導入と、実MCP操作の予算を確保する。
+        with log.open("w", encoding="utf-8") as errors, anyio.fail_after(90):
             async with contextlib.AsyncExitStack() as stack:
                 streams = await stack.enter_async_context(
                     stdio_client(StdioServerParameters(command=uv, args=command[1:], env=environment), errlog=errors)
