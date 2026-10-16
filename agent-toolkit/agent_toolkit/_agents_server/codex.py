@@ -1857,7 +1857,7 @@ class AppServerManager:
 
     @staticmethod
     def _track_subagent_thread(session: SessionState, item: Any) -> None:
-        """開始・再操作で購読したsubagentを記録し、親だけのunsubscribeで残る資源を追跡する。"""
+        """開始・再操作で観測したsubagentのthreadを記録し、そのthreadの通知を所有sessionへ対応付ける。"""
         if isinstance(item, dict) and item.get("type") == "subAgentActivity":
             thread_id = item.get("agentThreadId")
             if isinstance(thread_id, str) and thread_id and thread_id != session.session_id:
