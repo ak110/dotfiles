@@ -1492,6 +1492,11 @@ class TestRemovedChecksAreSilent:
             },
         ]
         for index, payload in enumerate(payloads):
+            _write_session_state(
+                tmp_path,
+                f"removed-tool-{index}",
+                {"operation_skill_ready_agents": {"agent-toolkit:delegation": ["main"]}},
+            )
             result = _run(
                 {**payload, "session_id": f"removed-tool-{index}", "cwd": str(tmp_path)},
                 env_overrides=_plan_file_state_env(tmp_path, home_dir=home),
