@@ -879,7 +879,11 @@ def _lease_plugin_source(base: pathlib.Path, version: str = "1.0.0") -> pathlib.
     return root
 
 
-def _real_mcp_environment(tmp_path: pathlib.Path, host_environ: Callable[[], dict[str, str]]) -> dict[str, str]:
+def _real_mcp_environment(
+    tmp_path: pathlib.Path,
+    tmp_path_factory: pytest.TempPathFactory,
+    host_environ: Callable[[], dict[str, str]],
+) -> dict[str, str]:
     """公開ランチャー用のホーム・状態を隔離し、ホストのPythonと取得済みパッケージを使う。"""
     environment = host_environ()
     for name in HOME_ENVIRONMENT_NAMES:
@@ -888,7 +892,8 @@ def _real_mcp_environment(tmp_path: pathlib.Path, host_environ: Callable[[], dic
         environment[name] = str(tmp_path / name.lower())
     state_base = tmp_path / "runtime-state"
     environment.update(XDG_STATE_HOME=str(state_base), LOCALAPPDATA=str(state_base))
-    environment[plugin_environment.RUNTIME_DATA_ENV] = str(tmp_path / "runtime-data")
+    # hash配下の拡張DLLをWindowsのパス長制限内で読み込めるよう、短いworker直下へ置く。
+    environment[plugin_environment.RUNTIME_DATA_ENV] = str(tmp_path_factory.mktemp("mcp"))
     environment["PATH"] = os.pathsep.join(
         directory for directory in os.get_exec_path(environment) if pathlib.Path(directory).name != "shims"
     )
@@ -927,6 +932,7 @@ def _wait_mcp_processes(owned: dict[int, psutil.Process], *, timeout: float = 3)
 @pytest.mark.usefixtures("share_package_caches")
 async def test_stable_plugin_root_shared_across_processes(
     tmp_path: pathlib.Path,
+    tmp_path_factory: pytest.TempPathFactory,
     host_environ: Callable[[], dict[str, str]],
 ) -> None:
     """外側2台と保持先起動の実MCPが配布物を共有し、元版の更新・削除後も応答して終了後に回収できる。"""
@@ -937,7 +943,7 @@ async def test_stable_plugin_root_shared_across_processes(
     shutil.copytree(plugin, source, ignore=shutil.ignore_patterns(".venv", "__pycache__", ".git", "node_modules"))
     version_file = pathlib.Path("skills/managed-temp/SKILL.md")
     original = (source / version_file).read_bytes()
-    environment = _real_mcp_environment(tmp_path, host_environ)
+    environment = _real_mcp_environment(tmp_path, tmp_path_factory, host_environ)
     state_base = tmp_path / "runtime-state"
     uv = shutil.which("uv", path=environment["PATH"])
     assert uv is not None
@@ -1068,6 +1074,7 @@ SERVER_PLUGIN_ROOT = resolve_stable_plugin_root()
 @pytest.mark.usefixtures("share_package_caches")
 async def test_legacy_plugin_root_real_mcp_lifecycle(
     tmp_path: pathlib.Path,
+    tmp_path_factory: pytest.TempPathFactory,
     host_environ: Callable[[], dict[str, str]],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -1077,7 +1084,7 @@ async def test_legacy_plugin_root_real_mcp_lifecycle(
     source = tmp_path / "legacy-distribution" / version
     shutil.copytree(plugin, source, ignore=shutil.ignore_patterns(".venv", "__pycache__", ".git", "node_modules"))
     (source / "agent_toolkit/_agents_server/plugin_root.py").write_text(_LEGACY_PLUGIN_ROOT_SOURCE, encoding="utf-8")
-    environment = _real_mcp_environment(tmp_path, host_environ)
+    environment = _real_mcp_environment(tmp_path, tmp_path_factory, host_environ)
     uv = shutil.which("uv", path=environment["PATH"])
     assert uv is not None
     command = plugin_environment.launch_command(source, pathlib.Path("agent_toolkit/agents_server_mcp.py"))
