@@ -1217,11 +1217,12 @@ async def test_send_message_preserves_child_wait_until_completion(
                 on_sent()
             return {"turn": {"id": f"turn-{self.turns + 1}"}}
 
-        async def close(self) -> None:
+        async def close(self) -> list[str]:
             self.closed = True
+            return []
 
     client = Client()
-    backend.client = cast(codex_backend.JsonRpcProcess, client)
+    backend._clients[session.session_id] = cast(codex_backend.JsonRpcProcess, client)
     session_registry.publish(child, terminal=False)
     try:
         await _complete_codex_turn_with_child(backend, session, child)

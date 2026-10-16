@@ -5,11 +5,18 @@ import dataclasses
 import json
 import os
 import pathlib
+import subprocess
+import sys
+from collections.abc import Iterator
 from typing import Any
 
 import pytest
 
-from agent_toolkit._common import session_activity, session_registry
+from agent_toolkit import atk
+from agent_toolkit._common import session_activity, session_registry, state_paths
+from agent_toolkit._testing.git_repository import init_repository, run_git
+
+_TARGET = "github.com/example/target"
 
 
 def _host(engine: str) -> session_activity.HostProcess:
@@ -93,11 +100,8 @@ def test_dead_and_reused_pid_records_expire(tmp_path: pathlib.Path) -> None:
     assert not session_activity.scan_activity(state_root=tmp_path, processes=()).has_activity
 
 
-def test_unknown_and_unreadable_are_activity_candidates(tmp_path: pathlib.Path) -> None:
-    """実在する未登録ホストと破損記録を、無活動へ変換しない。"""
-    unknown = session_activity.scan_activity(state_root=tmp_path, processes=[_host("codex")])
-    assert unknown.has_activity and unknown.uncertain
-    assert any("未登録" in reason for reason in unknown.reasons)
+def test_unreadable_record_is_activity_candidate(tmp_path: pathlib.Path) -> None:
+    """破損記録を無活動へ変換せず、除外した会話だけを外す。"""
     directory = session_activity.activity_directory(tmp_path)
     directory.mkdir()
     (directory / "broken.json").write_text("{", encoding="utf-8")
@@ -262,3 +266,142 @@ def test_open_codex_record_without_hook(tmp_path: pathlib.Path) -> None:
         transcript.write(json.dumps({"type": "event_msg", "payload": {"type": "task_started"}}) + "\n")
         transcript.flush()
         assert session_activity.scan_activity(state_root=tmp_path, processes=[host]).active_session_ids == {"native"}
+
+
+@pytest.fixture(name="daemons")
+def _daemons() -> Iterator[list[session_activity.HostProcess]]:
+    """会話を開かずに生存する2つの実プロセスを、ホストと同じ実行系名で渡す。"""
+    processes = [subprocess.Popen([sys.executable, "-c", "import time; time.sleep(120)"]) for _ in range(2)]  # pylint: disable=consider-using-with
+    try:
+        hosts = []
+        for process in processes:
+            identity = session_registry.ProcessIdentity.of(process.pid)
+            assert identity is not None
+            hosts.append(session_activity.HostProcess("codex", identity))
+        yield hosts
+    finally:
+        for process in processes:
+            process.kill()
+            process.wait(timeout=30)
+
+
+def _begin(*arguments: str) -> None:
+    with pytest.raises(SystemExit) as exc:
+        atk.main(["wi", "submission", "begin", *arguments])
+    assert exc.value.code == 0
+
+
+def _end(session_id: str) -> None:
+    with pytest.raises(SystemExit) as exc:
+        atk.main(["wi", "submission", "end", "--session-id", session_id])
+    assert exc.value.code == 0
+
+
+def _emit(session_id: str, event: str, *, host: session_activity.HostProcess | None = None, **extra: Any) -> None:
+    session_activity.record_activity(
+        {"session_id": session_id, "hook_event_name": event, **extra},
+        process=host or _host("claude"),
+    )
+
+
+def _submitting(*targets: str) -> frozenset[str]:
+    return session_activity.submission_activity(set(targets), processes=()).active_session_ids
+
+
+def test_unrelated_work_does_not_create_start_activity(
+    monkeypatch: pytest.MonkeyPatch,
+    daemons: list[session_activity.HostProcess],
+) -> None:
+    """管理daemon・更新ループ、別リポジトリへの投入、同じリポジトリの別作業、属性を読めない記録では理由を返さない。"""
+    monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)
+    for session_id in ("other-repo", "process-wi", "session-review", "collaboration", "broken-attribute"):
+        _emit(session_id, "UserPromptSubmit")
+    _begin("--session-id", "other-repo", "--target-repo", "https://github.com/example/other.git")
+    directory = session_activity.submission_directory()
+    (directory / "broken-attribute.json").write_text(
+        json.dumps({"version": 1, "session_id": "broken-attribute", "kind": "add-awi-by-user"}),
+        encoding="utf-8",
+    )
+    (directory / "process-wi.json").write_text(
+        json.dumps({"version": 1, "session_id": "process-wi", "kind": "process-wi", "targets": [_TARGET]}),
+        encoding="utf-8",
+    )
+    (session_activity.activity_directory() / "unreadable.json").write_text("{", encoding="utf-8")
+
+    snapshot = session_activity.submission_activity({_TARGET}, processes=daemons)
+    assert not snapshot.has_activity
+    assert not snapshot.reasons
+    # 作業種別を問わない取得では同じ会話を活動中と判定し、上の結果が稼働の判定に依らないことを確かめる。
+    overall = session_activity.scan_activity(processes=daemons)
+    assert overall.active_session_ids >= {"other-repo", "process-wi", "session-review", "collaboration"}
+    assert not any("PID" in reason for reason in overall.reasons)
+    assert session_activity.submission_activity({"github.com/example/other"}, processes=daemons).active_session_ids == {
+        "other-repo"
+    }
+
+
+def test_submission_target_follows_actual_destination(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """手動の親会話とWI投入担当の双方で、起動cwdでなく実際の投入先とoriginで判定する。"""
+    monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)
+    target = init_repository(tmp_path / "target", origin="git@github.com:Example/Target.git", commit_message="init")
+    worktree = tmp_path / "target-worktree"
+    run_git(target, "worktree", "add", "--quiet", "-b", "other-worktree", str(worktree))
+    elsewhere = init_repository(tmp_path / "elsewhere", origin="https://github.com/example/elsewhere.git")
+    monkeypatch.chdir(elsewhere)
+
+    # 手動の親会話だけ: cwdは別リポジトリで、投入先は同じoriginの別worktreeとして指定する。
+    monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "manual")
+    _emit("manual", "UserPromptSubmit")
+    _begin("--target-repo", str(worktree))
+    assert _submitting(_TARGET) == {"manual"}
+    assert not _submitting("github.com/example/elsewhere")
+
+    # WI投入担当を伴う場合: 親が応答待ちでも、親の投入先に属する担当の稼働を理由にする。
+    transcript = _transcript(tmp_path, "claude", "delegating")
+    _emit("delegating", "UserPromptSubmit", transcript_path=str(transcript))
+    _begin("--session-id", "delegating", "--target-repo", "https://github.com/example/target")
+    _emit("delegating", "Stop", transcript_path=str(transcript))
+    session_registry.publish("add-wi-worker", terminal=False, launcher_session_id="delegating")
+    session_registry.publish("unrelated-worker", terminal=False, launcher_session_id="someone-else")
+    _end("manual")
+    assert _submitting(_TARGET) == {"add-wi-worker"}
+    assert not _submitting("github.com/example/elsewhere")
+    session_registry.publish("add-wi-worker", terminal=True)
+    assert not _submitting(_TARGET)
+
+
+def test_submission_lifecycle_does_not_carry_over(monkeypatch: pytest.MonkeyPatch) -> None:
+    """終了・中止・対象変更・再開に追随し、後続の別作業と属性のない旧記録で待機を生じない。"""
+    monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)
+    _emit("legacy", "UserPromptSubmit")
+    assert not _submitting(_TARGET)
+
+    _emit("submitter", "UserPromptSubmit")
+    _begin("--session-id", "submitter", "--target-repo", _TARGET)
+    assert _submitting(_TARGET) == {"submitter"}
+    # 対象変更
+    _begin("--session-id", "submitter", "--target-repo", "github.com/example/changed")
+    assert not _submitting(_TARGET)
+    assert _submitting("github.com/example/changed") == {"submitter"}
+    # 中止
+    _emit("submitter", "Interrupt")
+    _end("submitter")
+    _emit("submitter", "UserPromptSubmit")
+    assert not _submitting(_TARGET, "github.com/example/changed")
+    # 再開: 会話の終了後に別プロセスで再開した会話は、残る属性で再び理由になる。
+    _begin("--session-id", "submitter", "--target-repo", _TARGET)
+    _emit("submitter", "SessionEnd")
+    assert not _submitting(_TARGET)
+    with subprocess.Popen([sys.executable, "-c", "import time; time.sleep(120)"]) as resumed:
+        try:
+            identity = session_registry.ProcessIdentity.of(resumed.pid)
+            assert identity is not None
+            _emit("submitter", "SessionStart", host=session_activity.HostProcess("claude", identity))
+            assert _submitting(_TARGET) == {"submitter"}
+            # 終了後の後続の別作業
+            _end("submitter")
+            _emit("submitter", "UserPromptSubmit", host=session_activity.HostProcess("claude", identity))
+            assert not _submitting(_TARGET)
+        finally:
+            resumed.kill()
+    assert not list(session_activity.submission_directory(state_paths.state_dir()).glob("*.json"))

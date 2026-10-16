@@ -555,7 +555,7 @@ def test_grace_abort_and_output(
     repo.mkdir()
     clock = [1000.0]
     monkeypatch.setattr(_pl_watch.time, "time", lambda: clock[0])
-    monkeypatch.setattr(_pl_watch, "_other_sessions_active", lambda: True)
+    monkeypatch.setattr(_pl_watch, "_submission_active", lambda _targets: True)
     children: list[dict[str, Any]] = []
     fake_run = fake_run_with_remote_url(repo, children, 0)
 

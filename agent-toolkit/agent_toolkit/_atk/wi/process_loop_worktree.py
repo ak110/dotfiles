@@ -13,6 +13,7 @@ from agent_toolkit._common import console_title as _console_title
 from agent_toolkit._common import next_action as _next_action
 from agent_toolkit._git import command as _git_command
 from agent_toolkit._git import worktree_exclude as _worktree_exclude
+from agent_toolkit._git import worktrees as _git_worktrees
 
 # `--worktree`指定時またはgithub.com/ak110/dotfiles編集時は、影響範囲の大きい作業ツリー直接編集を避けるため
 # git worktreeを作成してセッションのcwdにする。worktree名は反復ごとに固定値とし、常駐ループの再起動を経ても
@@ -255,9 +256,13 @@ def _sync_worktree_with_upstream(local_path: pathlib.Path, worktree_name: str) -
             _run_worktree_git(["show-ref", "--verify", "--quiet", f"refs/heads/{branch}"], local_path).returncode == 0
         )
         if branch_exists:
-            registered_worktrees = _run_worktree_git(["worktree", "list", "--porcelain"], local_path)
-            branch_line = f"branch refs/heads/{branch}"
-            if registered_worktrees.returncode != 0 or branch_line not in registered_worktrees.stdout.splitlines():
+            try:
+                registered_branches = {entry.branch for entry in _git_worktrees.list_worktrees(local_path)}
+            except _git_worktrees.WorktreeListError:
+                registered_branches = set()
+            finally:
+                _console_title.set_console_title("atk wi process-loop")
+            if branch not in registered_branches:
                 _warn_worktree_preparation_failure(
                     "既存ブランチのworktree登録を確認できない",
                     worktree_path,
@@ -285,14 +290,12 @@ def _sync_worktree_with_upstream(local_path: pathlib.Path, worktree_name: str) -
             command = ["worktree", "add", "-b", branch, str(worktree_path), upstream_branch]
         if project_hook:
             try:
-                registered = _run_worktree_git(["worktree", "list", "--porcelain", "-z"], local_path)
-                if registered.returncode != 0:
-                    raise ValueError(f"hook実行前のworktree登録を取得できない: {registered.stderr.strip()}")
-                existing_paths = {
-                    pathlib.Path(field.removeprefix("worktree ")).resolve()
-                    for field in registered.stdout.split("\0")
-                    if field.startswith("worktree ")
-                }
+                try:
+                    existing_paths = {entry.path.resolve() for entry in _git_worktrees.list_worktrees(local_path)}
+                except _git_worktrees.WorktreeListError as error:
+                    raise ValueError(f"hook実行前のworktree登録を取得できない: {error}") from error
+                finally:
+                    _console_title.set_console_title("atk wi process-loop")
                 if not existing_paths:
                     raise ValueError("hook実行前のworktree登録が空だった")
                 owner = os.environ.get("AGENT_TOOLKIT_PROCESS_LOOP_SESSION_ID", "process-loop")

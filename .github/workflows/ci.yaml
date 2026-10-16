@@ -385,6 +385,33 @@ jobs:
         if: steps.owner.outputs.owns == 'true' && matrix.python-version == '3.15' && matrix.check == 'pytest'
         run: pyfltr ci --commands=pytest
 
+      - name: Git 2.34.1の導入
+        id: minimum-git
+        if: steps.owner.outputs.owns == 'true' && matrix.python-version == '3.15' && matrix.check == 'pytest'
+        # agent-toolkitが対応する最低版のGit（README.mdの前提条件）。Ubuntu 22.04の公式パッケージを展開し、
+        # 開発用のGitを置き換えずに実Gitテストだけへ渡す。版を変える場合はREADME.mdの記載も同じ変更で更新する。
+        env:
+          GIT_DEB: git_2.34.1-1ubuntu1_amd64.deb
+          GIT_DEB_SHA256: 0a0bd5c85eafb688025d68e69f49919591b22abf8b7d608d7e64307714d361ca
+        run: |
+          set -euo pipefail
+          root="$RUNNER_TEMP/minimum-git"
+          mkdir -p "$root"
+          curl -sSfL -o "$root/$GIT_DEB" "http://archive.ubuntu.com/ubuntu/pool/main/g/git/$GIT_DEB"
+          echo "$GIT_DEB_SHA256  $root/$GIT_DEB" | sha256sum -c -
+          dpkg -x "$root/$GIT_DEB" "$root/extract"
+          printf '#!/bin/sh\nGIT_EXEC_PATH=%s/usr/lib/git-core exec %s/usr/bin/git "$@"\n' "$root/extract" "$root/extract" > "$root/git"
+          chmod +x "$root/git"
+          "$root/git" --version | grep -Fx "git version 2.34.1"
+          echo "git=$root/git" >> "$GITHUB_OUTPUT"
+
+      - name: Git 2.34.1での実Gitテスト
+        if: steps.owner.outputs.owns == 'true' && matrix.python-version == '3.15' && matrix.check == 'pytest'
+        # agent-toolkitの全テストを対象にし、Git呼び出しを新設した経路も個別の指定なしに最低版で検収する。
+        env:
+          AGENT_TOOLKIT_TEST_GIT: ${{ steps.minimum-git.outputs.git }}
+        run: uv run pytest agent-toolkit/
+
       - name: Prune uv cache for CI
         if: steps.owner.outputs.owns == 'true'
         run: uv cache prune --ci

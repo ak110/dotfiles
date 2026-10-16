@@ -1,11 +1,17 @@
 """`atk wi process-loop`の待機中の変更の監視と、private-notesの同期。"""
 
+import contextlib
 import dataclasses
+import importlib
 import os
 import pathlib
+import select
 import subprocess
+import sys
 import threading
 import time
+import typing
+from collections.abc import Callable, Generator
 
 import watchdog.events
 import watchdog.observers
@@ -41,6 +47,138 @@ _DEBOUNCE_SEC = 3.0
 
 _START_GRACE_SEC = 600.0
 _SESSION_RECHECK_SEC = 3.0
+
+# 開始前待機中にEnterの入力を確かめる間隔秒数。
+_INPUT_POLL_SEC = 0.2
+
+# 入力取得の境界を選ぶOS名（`os.name`の値）。
+_INPUT_PLATFORM = os.name
+
+
+class _ConsoleKeys(typing.Protocol):
+    """Windowsの対話コンソールからキーを取得する`msvcrt`の関数。"""
+
+    def kbhit(self) -> bool:
+        """読み取れるキーがあれば真を返す。"""
+        raise NotImplementedError
+
+    def getwch(self) -> str:
+        """キーを1文字読み取る。"""
+        raise NotImplementedError
+
+
+class _StartWaitInput:
+    """開始前待機の間だけ、同じ端末のEnterを待たずに読み取る。
+
+    読取はOSの端末から行い、子CLIへ渡る入力を待機の外で消費しないよう`close`後は読まない。
+    監視の開始前に届いていた入力と、解除に使ったEnterの後に続けて届いた入力は破棄し、解除の効力を次回の待機へ持ち越さない。
+    POSIXは前景の端末で行単位の入力を、Windowsは対話コンソールのキーを対象にする。
+    """
+
+    def __init__(self, fd: int | None, console: _ConsoleKeys | None) -> None:
+        self._fd = fd
+        self._console = console
+        self._closed = False
+        self.entered = False
+
+    def poll(self) -> bool:
+        """Enterを受け取っていれば真を返す。入力が無ければ待たずに偽を返す。"""
+        if self.entered or self._closed:
+            return self.entered
+        try:
+            if self._console is not None:
+                while self._console.kbhit():
+                    if self._console.getwch() in {"\r", "\n"}:
+                        self.entered = True
+                        break
+                if self.entered:
+                    self.discard_pending()
+                return self.entered
+            assert self._fd is not None
+            # バックグラウンドジョブが端末を読むとSIGTTINで停止するため、前景の間だけ読む。
+            if os.tcgetpgrp(self._fd) != os.getpgrp():
+                return False
+            readable, _, _ = select.select([self._fd], [], [], 0)
+            if not readable:
+                return False
+            data = os.read(self._fd, 4096)
+        except OSError:
+            self._closed = True
+            return False
+        if not data:
+            # EOFは入力の終わりであり、以降は従来の待機だけを続ける。
+            self._closed = True
+            return False
+        self.entered = b"\n" in data or b"\r" in data
+        if self.entered:
+            self.discard_pending()
+        return self.entered
+
+    def discard_pending(self) -> None:
+        """端末に届いて未読の入力を破棄する。
+
+        監視の開始前に届いた入力と、解除に使ったEnterの後に続けて届いた入力（重ね押しの2行目など）を
+        今回や次回の開始前待機の解除に使わないためである。
+        """
+        try:
+            if self._console is not None:
+                while self._console.kbhit():
+                    self._console.getwch()
+                return
+            assert self._fd is not None
+            # バックグラウンドジョブが端末を操作するとSIGTTOUで停止するため、前景の間だけ破棄する。
+            if os.tcgetpgrp(self._fd) != os.getpgrp():
+                return
+            termios = importlib.import_module("termios")
+            termios.tcflush(self._fd, termios.TCIFLUSH)
+        except AttributeError, ImportError, OSError, ValueError:
+            return
+
+    def close(self) -> None:
+        """以降の読取を止める。"""
+        self._closed = True
+
+
+def _open_start_wait_input() -> _StartWaitInput | None:
+    """入力可能な端末がある場合だけ監視を返す。非TTY、閉鎖済み、入力不能、POSIXのバックグラウンドジョブでは返さない。"""
+    stream = sys.stdin
+    try:
+        if stream is None or not stream.isatty():
+            return None
+        if _INPUT_PLATFORM == "nt":
+            return _StartWaitInput(None, typing.cast("_ConsoleKeys", importlib.import_module("msvcrt")))
+        fd = stream.fileno()
+        # 制御端末を持たない端末は前景・背景を判定できず、バックグラウンドジョブは端末を読めないため、どちらも監視しない。
+        if os.tcgetpgrp(fd) != os.getpgrp():
+            return None
+    except AttributeError, ImportError, OSError, ValueError:
+        return None
+    return _StartWaitInput(fd, None)
+
+
+def _open_discarding_pending() -> _StartWaitInput | None:
+    """監視を開き、開始前に端末へ届いていた入力を破棄する。案内の表示後に入力されたEnterだけで解除するためである。"""
+    opened = _open_start_wait_input()
+    if opened is not None:
+        opened.discard_pending()
+    return opened
+
+
+@contextlib.contextmanager
+def _start_wait_input() -> Generator[Callable[[], _StartWaitInput | None]]:
+    """最初の待機で監視を開き、期限・Enter・中断・例外のいずれでも監視を閉じてから抜ける。"""
+    opened: list[_StartWaitInput | None] = []
+
+    def current() -> _StartWaitInput | None:
+        if not opened:
+            opened.append(_open_discarding_pending())
+        return opened[0]
+
+    try:
+        yield current
+    finally:
+        if opened and opened[0] is not None:
+            opened[0].close()
 
 
 @dataclasses.dataclass(frozen=True)
@@ -80,7 +218,7 @@ class StartGate:
         reasons: list[str] = []
         deadlines: list[float] = []
         if activity and self._activity_deadline is not None and timestamp < self._activity_deadline:
-            reasons.append("別セッションが活動中")
+            reasons.append("対象リポジトリへのWI投入作業が活動中")
             deadlines.append(self._activity_deadline)
         unanswered, latest_update = _uwi_updates(self.private_notes, target_repo_ids)
         if unanswered and timestamp < latest_update + _START_GRACE_SEC:
@@ -114,38 +252,64 @@ def _uwi_updates(private_notes: pathlib.Path, target_repo_ids: set[str]) -> tupl
 
 
 def wait_for_start_permission(private_notes: pathlib.Path, target_repo_ids: set[str], gate: StartGate) -> bool:
-    """活動と回答の解除、WI更新、中断を開始前に再評価する。"""
+    """活動と回答の解除、WI更新、中断、Enterによる今回の待機の解除を開始前に再評価する。
+
+    Enterは活動猶予とUWI猶予を一括で解除し、効力はこの呼び出しの中だけに留まる。
+    中断要求はEnterより先に判定し、終了を優先する。
+    """
     previous: StartDecision | None = None
-    while True:
-        if _pl_control.consume_process_loop_abort():
-            return False
-        activity = _other_sessions_active()
-        now = time.time()
-        decision = gate.evaluate(target_repo_ids, activity=activity, now=now)
-        if not decision.reasons:
-            if previous is not None:
-                print("開始前の待機条件が解除されました。処理可能なWIを再評価します。")
-                _pl_log.append("start_wait_released")
-            return True
-        assert decision.deadline is not None
-        if previous is None or (decision.reasons, decision.deadline) != (previous.reasons, previous.deadline):
-            deadline = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(decision.deadline))
-            reason = "、".join(decision.reasons)
-            extension = "（新規WIの到着により延長）" if decision.extended else ""
-            print(f"開始前に待機します: {reason}。解除期限: {deadline}{extension}。")
-            _pl_log.append("start_wait", reasons=reason, deadline=decision.deadline, extended=decision.extended)
-            previous = decision
-        wait_for_changes(
-            private_notes,
-            None,
-            timeout=min(_SESSION_RECHECK_SEC, decision.deadline - now),
-            state_directories=(_session_activity.activity_directory(), _pl_log.abort_path().parent),
-        )
+    with _start_wait_input() as start_input:
+        while True:
+            if _pl_control.consume_process_loop_abort():
+                return False
+            entry = start_input() if previous is not None else None
+            if entry is not None and entry.entered:
+                print("Enterの入力により開始前の待機を解除しました。処理可能なWIを再評価します。", flush=True)
+                _pl_log.append("start_wait_released", trigger="enter")
+                return True
+            activity = _submission_active(target_repo_ids)
+            now = time.time()
+            decision = gate.evaluate(target_repo_ids, activity=activity, now=now)
+            if not decision.reasons:
+                if previous is not None:
+                    print("開始前の待機条件が解除されました。処理可能なWIを再評価します。", flush=True)
+                    _pl_log.append("start_wait_released")
+                return True
+            assert decision.deadline is not None
+            entry = start_input()
+            if previous is None or (decision.reasons, decision.deadline) != (previous.reasons, previous.deadline):
+                deadline = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(decision.deadline))
+                reason = "、".join(decision.reasons)
+                extension = "（新規WIの到着により延長）" if decision.extended else ""
+                guide = "Enterで今回の待機を解除して開始できます。" if entry is not None else ""
+                print(f"開始前に待機します: {reason}。解除期限: {deadline}{extension}。{guide}", flush=True)
+                _pl_log.append("start_wait", reasons=reason, deadline=decision.deadline, extended=decision.extended)
+                previous = decision
+            wait_for_changes(
+                private_notes,
+                None,
+                timeout=min(_SESSION_RECHECK_SEC, decision.deadline - now),
+                state_directories=(
+                    _session_activity.activity_directory(),
+                    _session_activity.submission_directory(),
+                    _pl_log.abort_path().parent,
+                ),
+                interrupt=entry.poll if entry is not None else None,
+            )
 
 
-def _other_sessions_active() -> bool:
-    """ホスト共通の活動取得から自ループ以外の活動を得る。"""
-    return _session_activity.scan_activity(excluded_pids={os.getpid()}).has_activity
+def _submission_active(target_repo_ids: set[str]) -> bool:
+    """対象リポジトリ集合へ投入するadd-awi-by-userのうち、自ループ以外で活動中の作業があるかを返す。
+
+    同じoriginの別worktreeや別表記のURLを同一リポジトリとして扱うため、投入先の保存時と同じ正規化を通す。
+    """
+    canonical_cache: dict[str, str | None] = {}
+    targets = {
+        canonical for repo in target_repo_ids if (canonical := _git_remote.canonical_repo(repo, canonical_cache)) is not None
+    }
+    if not targets:
+        return False
+    return _session_activity.submission_activity(targets, excluded_pids={os.getpid()}).has_activity
 
 
 class _ChangeHandler(watchdog.events.FileSystemEventHandler):
@@ -185,6 +349,7 @@ def wait_for_changes(
     *,
     timeout: float | None = None,
     state_directories: tuple[pathlib.Path, ...] = (),
+    interrupt: Callable[[], bool] | None = None,
 ) -> bool:
     """保存状態と追加の状態ディレクトリを監視し、変更または期限まで待機する。
 
@@ -194,6 +359,7 @@ def wait_for_changes(
     開始前の短い状態再評価へtimeoutを指定した場合は、そのたびにremote同期を繰り返さない。
     他プロセスとの一時的な競合・ネットワーク断等で`_wi_sync.pull`が失敗した場合は例外を捕捉して
     stderrへ警告出力し、常駐ループの待機動作を続ける。
+    `interrupt`を指定した場合は短い間隔で呼び、真を返した時点で変更検知と同じく復帰する。
     戻り値は`True`=変更検知で復帰、`False`=タイムアウトで復帰を表す。
     呼び出し元は`False`復帰時のみ常駐コードの更新チェック（`_pl_update.check_and_restart_on_update`）を行う。
     """
@@ -210,11 +376,12 @@ def wait_for_changes(
             observer.schedule(state_handler, str(directory), recursive=False)
     observer.start()
     try:
-        if change_event.wait(timeout=_POLL_INTERVAL_SEC if timeout is None else max(0.0, timeout)):
-            while True:
-                change_event.clear()
-                if not change_event.wait(timeout=_DEBOUNCE_SEC):
-                    break
+        if _wait_event(change_event, _POLL_INTERVAL_SEC if timeout is None else max(0.0, timeout), interrupt):
+            if change_event.is_set():
+                while True:
+                    change_event.clear()
+                    if not change_event.wait(timeout=_DEBOUNCE_SEC):
+                        break
             return True
         if timeout is not None:
             return False
@@ -230,6 +397,21 @@ def wait_for_changes(
     finally:
         observer.stop()
         observer.join()
+
+
+def _wait_event(event: threading.Event, timeout: float, interrupt: Callable[[], bool] | None) -> bool:
+    """`event`か`interrupt`の成立まで最長`timeout`秒待ち、成立したかを返す。"""
+    if interrupt is None:
+        return event.wait(timeout=timeout)
+    end = time.monotonic() + timeout
+    while True:
+        if interrupt():
+            return True
+        remaining = end - time.monotonic()
+        if remaining <= 0:
+            return False
+        if event.wait(timeout=min(_INPUT_POLL_SEC, remaining)):
+            return True
 
 
 def pull_private_notes(private_notes: pathlib.Path) -> bool:

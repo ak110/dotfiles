@@ -15,7 +15,7 @@ import shlex
 import shutil
 import subprocess
 import sys
-from collections.abc import Callable
+from collections.abc import AsyncGenerator, Callable
 from types import SimpleNamespace
 from typing import Any, cast
 from unittest.mock import AsyncMock
@@ -23,6 +23,7 @@ from unittest.mock import AsyncMock
 import anyio
 import psutil
 import pytest
+import yaml
 from mcp import ClientSession
 from mcp.client.stdio import StdioServerParameters, stdio_client
 
@@ -35,14 +36,17 @@ from agent_toolkit._agents_server import (
     session_errors,
     shared_roots,
     state,
+    status_file,
 )
 from agent_toolkit._agents_server import (
     plugin_root as plugin_roots,
 )
 from agent_toolkit._agents_server.notify import send_notification
 from agent_toolkit._atk import config as _atk_config
-from agent_toolkit._atk import managed_temp
-from agent_toolkit._common import inherited_venv, plugin_environment, session_registry, state_paths
+from agent_toolkit._atk import lane, managed_temp
+from agent_toolkit._common import inherited_venv, plugin_environment, process_tree, session_registry, state_paths
+from agent_toolkit._common.next_action import ActionableError
+from agent_toolkit._testing import codex_app_server_support, fake_codex_app_server, git_repository
 from agent_toolkit._testing.agents_server_support import (
     BlockingResumeCodexClient,
     CompletingInterruptClient,
@@ -98,6 +102,9 @@ class _TierClient:
             return {"thread": {"id": params.get("threadId", "tier-thread")}}
         assert method == "turn/start"
         return {"turn": {"id": f"turn-{len(self.requests)}"}}
+
+    async def close(self) -> list[str]:
+        return []
 
 
 class _ProcessTierClient(_TierClient):
@@ -211,10 +218,16 @@ async def test_config_changes_apply_to_new_reply_and_restored_turns(
 class _SilentClient:
     """要求を受理したまま応答を返さないApp Serverクライアントのスタブ。"""
 
+    closed = False
+
     async def request(self, method: str, params: dict[str, Any]) -> dict[str, Any]:
         del method, params  # noqa
         await asyncio.Event().wait()
         return {}  # pragma: no cover - 待機が解けないことを表す到達不能の分岐
+
+    async def close(self) -> list[str]:
+        self.closed = True
+        return []
 
 
 class _HangingStream:
@@ -447,7 +460,6 @@ async def test_send_message_child_reactivation_holds_parent_until_child_terminat
     backend = subject.AppServerManager(manager.sessions, manager._condition)
     install_backend(manager, "codex", backend)
     client = FakeCodexClient()
-    backend.client = cast(Any, client)
     monkeypatch.setattr(backend, "_ensure_client", AsyncMock(return_value=client))
     session = await backend.start("親の作業", str(tmp_path))
     session.terminal_child_session_ids.add("child")
@@ -694,7 +706,6 @@ async def test_inner_mcp_uses_actual_app_server_parent_environment(
     client.parent_environment.pop("MISSING_CUSTOM_SETTING", None)
     monkeypatch.setenv("NOT_IN_APP_SERVER_ENV", "not-deliverable")
     manager = subject.AppServerManager(root_session_id="chosen-owner")
-    manager.client = cast(Any, client)
     monkeypatch.setattr(manager, "_ensure_client", AsyncMock(return_value=client))
     monkeypatch.setattr(shared_roots, "write_host_alias", lambda *_args: None)
     if operation == "resume":
@@ -738,7 +749,6 @@ async def test_inner_mcp_uses_actual_app_server_parent_environment(
         if process.returncode is None:
             process.kill()
         await process.wait()
-        manager.client = None
         await manager.close()
 
 
@@ -791,15 +801,17 @@ async def test_client_logs_process_start_initialize_and_close(monkeypatch: pytes
 
 @pytest.mark.asyncio
 async def test_start_aborts_when_thread_start_never_returns(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
-    """thread/startの応答が返らない起動を上限で打ち切り、session状態を登録せずに例外で返す。"""
+    """thread/startの応答が返らない起動を上限で打ち切り、session状態を登録せず、起動したApp Serverを終了させて例外で返す。"""
     monkeypatch.setattr(state, "SESSION_INITIALIZATION_TIMEOUT", 0.05)
     manager = subject.AppServerManager()
-    monkeypatch.setattr(manager, "_ensure_client", lambda: _return(_SilentClient()))
+    client = _SilentClient()
+    monkeypatch.setattr(manager, "_ensure_client", lambda: _return(client))
 
     with pytest.raises(session_errors.SessionInitializationTimeoutError):
         await manager.start("実装する", str(tmp_path))
 
     assert not manager.sessions
+    assert client.closed and not manager._clients
     await manager.close()
 
 
@@ -1589,7 +1601,7 @@ async def test_concurrent_kills_preserve_shared_request_when_turn_completes_befo
     backend = subject.AppServerManager(manager.sessions, manager._condition)
     session = state.SessionState("thread-1", str(tmp_path), engine="codex", turn_id="turn-1")
     manager.sessions[session.session_id] = session
-    backend.client = cast(Any, CompletingInterruptClient(backend, session))
+    backend._clients[session.session_id] = cast(Any, CompletingInterruptClient(backend, session))
     install_backend(manager, "codex", backend)
 
     async with session.turn_control_lock:
@@ -1768,7 +1780,6 @@ async def test_codex_steer_rejection_waits_for_terminal_race_then_replies(
 
     monkeypatch.setattr(manager, "_ensure_client", ensure_client)
     session = await manager.start("調査", str(tmp_path))
-    manager.client = cast(Any, client)
     send_task = asyncio.create_task(manager.send_message(session, "続行"))
     await client.steer_called.wait()
     assert send_task.done() is False
@@ -1792,12 +1803,12 @@ async def test_codex_server_request_marks_target_failed_and_replies(tmp_path: pa
     """非対話server requestへerror応答し、対象sessionをfailedへ遷移する。"""
     manager = subject.AppServerManager()
     client = ServerRequestClient()
-    manager.client = cast(Any, client)
     session = state.SessionState("thread-1", str(tmp_path), engine="codex")
     manager.sessions[session.session_id] = session
+    manager._clients[session.session_id] = cast(Any, client)
 
     await manager._handle_server_request(
-        {"id": 7, "method": "item/tool/requestUserInput", "params": {"threadId": session.session_id}}
+        {"id": 7, "method": "item/tool/requestUserInput", "params": {"threadId": session.session_id}}, client
     )
 
     assert session.status == "failed"
@@ -1808,17 +1819,22 @@ async def test_codex_server_request_marks_target_failed_and_replies(tmp_path: pa
 
 @pytest.mark.usefixtures("agents_server_isolation")
 @pytest.mark.asyncio
-async def test_codex_reader_failure_marks_all_active_sessions_failed(tmp_path: pathlib.Path) -> None:
-    """reader異常は同じ接続上の全active sessionをfailedへ遷移する。"""
+async def test_codex_reader_failure_marks_only_owned_sessions_failed(tmp_path: pathlib.Path) -> None:
+    """reader異常は失敗した接続を所有するactive sessionだけをfailedへ遷移し、別の接続のsessionを変えない。"""
     manager = subject.AppServerManager()
-    for session_id in ("thread-1", "thread-2"):
+    failed_client, other_client = FakeCodexClient(), FakeCodexClient()
+    for session_id, client in (("thread-1", failed_client), ("thread-2", failed_client), ("thread-3", other_client)):
         manager.sessions[session_id] = state.SessionState(session_id, str(tmp_path), engine="codex")
+        manager._clients[session_id] = cast(Any, client)
 
-    await manager._handle_client_failure(RuntimeError("invalid JSON line"))
+    await manager._handle_client_failure(RuntimeError("invalid JSON line"), failed_client)
 
-    assert {session.status for session in manager.sessions.values()} == {"failed"}
-    assert all(session.result_available for session in manager.sessions.values())
-    assert all(session.retention_deadline is not None for session in manager.sessions.values())
+    owned = [manager.sessions["thread-1"], manager.sessions["thread-2"]]
+    assert {session.status for session in owned} == {"failed"}
+    assert all(session.result_available for session in owned)
+    assert all(session.retention_deadline is not None for session in owned)
+    other = manager.sessions["thread-3"]
+    assert other.status != "failed" and not other.result_available
 
 
 @pytest.mark.usefixtures("agents_server_isolation")
@@ -1840,16 +1856,19 @@ async def test_codex_connection_failure_preserves_other_engines(tmp_path: pathli
         ),
         state.SessionState("agy-active", str(tmp_path), engine="agy", turn_id="agy-turn"),
     ]
+    client = FakeCodexClient()
     for session in (active, completed, *others):
         manager.sessions[session.session_id] = session
+    for session in (active, completed):
+        manager._clients[session.session_id] = cast(Any, client)
     before = [
         (item.status, item.error, item.awaiting_auto_resume, item.result_available, item.pending_result, item.updated_at)
         for item in others
     ]
     if failure == "reader":
-        await manager._handle_client_failure(RuntimeError("invalid JSON line"))
+        await manager._handle_client_failure(RuntimeError("invalid JSON line"), client)
     else:
-        await manager._fail_for_request({}, "item/tool/requestUserInput")
+        await manager._fail_for_request({}, "item/tool/requestUserInput", client)
     assert active.status == "failed" and active.result_available
     assert completed.status == "completed"
     assert [
@@ -1863,187 +1882,211 @@ async def test_codex_connection_failure_preserves_other_engines(tmp_path: pathli
     assert manager._find_session({"threadId": active.session_id}) is active
 
 
+def _invoke_lane(capsys: pytest.CaptureFixture[str], *args: str) -> tuple[int, dict[str, Any], str]:
+    """公開の`atk lane`を同じプロセスで実行し、終了コード・JSON出力・標準エラーを返す。"""
+    with pytest.raises(SystemExit) as ended:
+        atk.main(["lane", *args])
+    output = capsys.readouterr()
+    assert isinstance(ended.value.code, int)
+    return ended.value.code, json.loads(output.out) if output.out.strip() else {}, output.err
+
+
+def _create_integrated_lane(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> pathlib.Path:
+    """統合済みとして選定したcleanなレーンを公開の`atk lane create`で作成し、専用worktreeを返す。"""
+    monkeypatch.setenv(lane.SESSION_ENV, "lane-test-session")
+    monkeypatch.setattr(lane, "get_wait_timeout", lambda _bucket: 5.0)
+    repo = git_repository.init_repository(tmp_path / "repo", initial_branch="main", commit_message="初期状態")
+    selected = tmp_path / "selection.yaml"
+    selected.write_text(
+        yaml.safe_dump({"レーンの所要時間": [{"レーン": "lane-01", "統合状態": "統合済み"}]}, allow_unicode=True),
+        encoding="utf-8",
+    )
+    code, record, stderr = _invoke_lane(
+        capsys,
+        "create",
+        *("--repo", str(repo), "--base-branch", "main", "--lane", "lane-01", "--selection-file", str(selected)),
+    )
+    assert code == 0, stderr
+    return pathlib.Path(record["worktree"])
+
+
+@contextlib.asynccontextmanager
+async def _fake_app_server_manager(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    candidates: list[tuple[str, str, str]] | None = None,
+) -> AsyncGenerator[
+    tuple[server_manager.AgentsServerManager, subject.AppServerManager, codex_app_server_support.FakeAppServer]
+]:
+    """模擬App Serverを実プロセスで起動する実Codex backendと、登録簿を公開する所有managerを用意する。"""
+    fake = codex_app_server_support.install(monkeypatch, tmp_path)
+    monkeypatch.setattr(
+        _atk_config,
+        "parse_unresolved_model_candidates",
+        lambda _model_type, **_kwargs: candidates or [("codex", "gpt-test", "high")],
+    )
+    writer = status_file.StatusFileWriter(
+        {},
+        shared_roots.StatusFileIdentity("release-root", "root.json", None),
+        state_root=state_paths.state_dir(),
+        aggregate_seconds=0,
+    )
+    manager = server_manager.AgentsServerManager(writer)
+    backend = subject.AppServerManager(
+        manager.sessions, manager._condition, publish_registry=True, root_session_id="release-root"
+    )
+    install_backend(manager, "codex", backend)
+    await manager.activate_async()
+    try:
+        yield manager, backend, fake
+    finally:
+        try:
+            await manager.close()
+        finally:
+            fake.terminate_recorded()
+
+
+async def _wait_terminal(manager: server_manager.AgentsServerManager, session_id: str) -> state.SessionState:
+    """模擬App Serverが通知したturnの終端を待つ。"""
+    async with asyncio.timeout(10):
+        while not ((session := manager.sessions.get(session_id)) is not None and session.terminal):
+            await asyncio.sleep(0.02)
+    return session
+
+
 @pytest.mark.usefixtures("agents_server_isolation")
 @pytest.mark.asyncio
-@pytest.mark.parametrize("release_result", ["unsubscribed", "notLoaded", "notSubscribed", "closed"])
-async def test_stop_releases_codex_descendants_and_preserves_resume(
-    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, release_result: str
+async def test_stop_terminates_owned_app_server_and_mcp(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """stopは親・子・孫の購読を解放し、既解放と接続閉鎖を許容し、同じ会話の再開を保つ。"""
-    manager = server_manager.AgentsServerManager(None)
-    backend = subject.AppServerManager(manager.sessions, manager._condition)
-    install_backend(manager, "codex", backend)
-    client = FakeCodexClient()
-    backend.client = cast(Any, client)
-    monkeypatch.setattr(backend, "_ensure_client", AsyncMock(return_value=client))
-    original_request = client.request
+    """終端したCodex委譲のstopは、成功時点で所有するApp ServerとthreadのMCPを終了させ、同じ回でレーンを回収できる。
 
-    async def request(method: str, params: dict[str, Any] | None = None, **kwargs: Any) -> dict[str, Any]:
-        response = await original_request(method, params, **kwargs)
-        if method == "thread/unsubscribe":
-            assert params is not None
-            if release_result in {"unsubscribed", "notSubscribed"}:
-                await backend._handle_notification({"method": "thread/closed", "params": {"threadId": params["threadId"]}})
-            return {"status": release_result}
-        return response
+    模擬App Serverは実Codexと同じく、購読解除の後もMCPサーバー役の子プロセスを生存させる。
+    """
+    worktree = _create_integrated_lane(tmp_path, monkeypatch, capsys)
+    async with _fake_app_server_manager(tmp_path, monkeypatch) as (manager, _backend, fake):
+        started = await manager.start("plan", "担当", str(worktree))
+        session_id = started["session_id"]
+        await _wait_terminal(manager, session_id)
+        server_pid = fake.server_pid(session_id)
+        mcp_pids = fake.mcp_pids(session_id)
+        assert mcp_pids and [record["cwd"] for record in fake.events("mcp")] == [str(worktree)]
+        assert fake.alive(server_pid) and all(fake.alive(pid) for pid in mcp_pids)
 
-    monkeypatch.setattr(client, "request", request)
-    try:
-        session = await backend.start("開始", str(tmp_path))
-        await backend._handle_notification(
-            {
-                "method": "turn/started",
-                "params": {"threadId": session.session_id, "turn": {"id": session.turn_id}},
-            }
-        )
-        for owner, child, kind in ((session.session_id, "child", "started"), ("child", "grandchild", "interacted")):
-            await backend._handle_notification(
-                {
-                    "method": "item/started",
-                    "params": {
-                        "threadId": owner,
-                        "item": {
-                            "id": f"spawn-{child}",
-                            "type": "subAgentActivity",
-                            "kind": kind,
-                            "agentThreadId": child,
-                        },
-                    },
-                }
-            )
-        await backend._handle_notification(
-            {
-                "method": "thread/started",
-                "params": {
-                    "thread": {
-                        "id": "great-grandchild",
-                        "parentThreadId": "grandchild",
-                    }
-                },
-            }
-        )
-        assert session.codex_subagent_thread_ids == {"child", "grandchild", "great-grandchild"}
-        assert session.status == "running"
-        _complete(session)
-        client.requests.clear()
-        if release_result == "closed":
-            client.closed = True
-        stopped = await manager.stop(session.session_id)
-        assert stopped == {}
-        unsubscribed = [params["threadId"] for method, params in client.requests if method == "thread/unsubscribe"]
-        if release_result == "closed":
-            assert not unsubscribed
+        assert await manager.stop(session_id) == {}
+
+        assert not fake.alive(server_pid)
+        assert not any(fake.alive(pid) for pid in mcp_pids)
+        assert session_registry.resolve(session_id).state is session_registry.Resolution.RELEASED
+        code, result, stderr = await asyncio.to_thread(_invoke_lane, capsys, "delete")
+        assert code == 0, (result, stderr)
+        assert result["removed"] == ["lane-01"]
+        assert not worktree.exists()
+
+
+@pytest.mark.usefixtures("agents_server_isolation")
+@pytest.mark.asyncio
+async def test_release_keeps_other_session_and_resumes(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """一方の委譲のstopは他方のApp Serverを残し、他方への追送と破棄した会話の再開がどちらも成功する。"""
+    async with _fake_app_server_manager(tmp_path, monkeypatch) as (manager, _backend, fake):
+        stopped_id = (await manager.start("plan", "破棄する担当", str(tmp_path)))["session_id"]
+        other_id = (await manager.start("plan", "継続する担当", str(tmp_path)))["session_id"]
+        await _wait_terminal(manager, stopped_id)
+        await _wait_terminal(manager, other_id)
+        stopped_server, other_server = fake.server_pid(stopped_id), fake.server_pid(other_id)
+        assert stopped_server != other_server
+
+        assert await manager.stop(stopped_id) == {}
+
+        assert not fake.alive(stopped_server) and not any(fake.alive(pid) for pid in fake.mcp_pids(stopped_id))
+        assert fake.alive(other_server) and all(fake.alive(pid) for pid in fake.mcp_pids(other_id))
+        assert (await manager.send_message(other_id, "追加指示"))["delivery"] == "reply_started"
+        other = await _wait_terminal(manager, other_id)
+        assert other.agent_message.startswith("完了: ") and "追加指示" in other.agent_message
+        assert fake.events("turn/start")[-1]["server"] == other_server
+
+        resumed_response = await manager.send_message(stopped_id, "再開指示")
+        assert resumed_response["delivery"] == "reply_started", (resumed_response, manager.sessions[stopped_id].error)
+        resumed = await _wait_terminal(manager, stopped_id)
+        assert resumed.agent_message.startswith("完了: ") and "再開指示" in resumed.agent_message
+        resume_events = [record for record in fake.events("thread/resume") if record["thread"] == stopped_id]
+        assert len(resume_events) == 1
+        assert resume_events[0]["server"] not in {stopped_server, other_server}
+        assert fake.alive(resume_events[0]["server"]) and fake.alive(other_server)
+
+
+@pytest.mark.usefixtures("agents_server_isolation")
+@pytest.mark.asyncio
+@pytest.mark.parametrize("path", ["retention", "candidate", "close"])
+async def test_other_release_paths_terminate_owned_resources(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, path: str
+) -> None:
+    """保持期限の失効、候補切替前の断念、managerの終了も、所有するApp ServerとMCPの終了まで確かめる。"""
+    candidates = [("codex", "gpt-test", "high")]
+    if path == "candidate":
+        candidates.insert(0, ("codex", fake_codex_app_server.UNAVAILABLE_MODEL, "high"))
+    async with _fake_app_server_manager(tmp_path, monkeypatch, candidates) as (manager, _backend, fake):
+        started = await manager.start("plan", "担当", str(tmp_path))
+        session_id = started["session_id"]
+        await _wait_terminal(manager, session_id)
+        threads = [record["thread"] for record in fake.events("thread/start")]
+        if path == "candidate":
+            # 可用性の失敗で断念した候補の資源は、次の候補の開始より前に解放済みである。
+            assert len(threads) == 2 and threads[1] == session_id
+            abandoned = threads[0]
+            assert not fake.alive(fake.server_pid(abandoned))
+            assert not any(fake.alive(pid) for pid in fake.mcp_pids(abandoned))
+            assert fake.alive(fake.server_pid(session_id))
+            return
+        assert threads == [session_id]
+        server_pid, mcp_pids = fake.server_pid(session_id), fake.mcp_pids(session_id)
+        assert fake.alive(server_pid) and all(fake.alive(pid) for pid in mcp_pids)
+        if path == "retention":
+            manager._expire_session(session_id)
+            await manager._resource_release_tasks[session_id]
+            assert session_id in manager.expired_sessions
+            assert session_registry.resolve(session_id).state is session_registry.Resolution.RELEASED
         else:
-            assert set(unsubscribed) == {session.session_id, "child", "grandchild", "great-grandchild"}
-            assert client.closed is False
-        assert not session.codex_subagent_thread_ids
-        client.closed = False
-        client.requests.clear()
-        response = await manager.send_message(session.session_id, "前の会話を続ける")
-        assert response["delivery"] == "reply_started"
-        assert [method for method, _params in client.requests] == ["thread/resume", "turn/start"]
-    finally:
-        await manager.close()
+            await manager.close()
+        assert not fake.alive(server_pid)
+        assert not any(fake.alive(pid) for pid in mcp_pids)
 
 
 @pytest.mark.usefixtures("agents_server_isolation")
 @pytest.mark.asyncio
-@pytest.mark.parametrize("notification_first", [False, True])
-async def test_release_waits_for_each_thread_closure_and_keeps_shared_client(
-    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, notification_first: bool
-) -> None:
-    """公開stopは親子の閉鎖を待ち、別会話を共有接続で継続できる。"""
-    manager = server_manager.AgentsServerManager(None)
-    backend = subject.AppServerManager(manager.sessions, manager._condition)
-    install_backend(manager, "codex", backend)
-    client = FakeCodexClient()
-    backend.client = cast(Any, client)
-    monkeypatch.setattr(backend, "_ensure_client", AsyncMock(return_value=client))
-    requested: asyncio.Queue[str] = asyncio.Queue()
-    original = client.request
+async def test_release_failure_is_retryable(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """子孫を回収できないstopは再試行の方法とともに失敗し、解放済みと記録せず、再発行で回収を完了する。"""
+    async with _fake_app_server_manager(tmp_path, monkeypatch) as (manager, _backend, fake):
+        session_id = (await manager.start("plan", "担当", str(tmp_path)))["session_id"]
+        session = await _wait_terminal(manager, session_id)
+        server_pid, mcp_pids = fake.server_pid(session_id), fake.mcp_pids(session_id)
+        reclaim = process_tree.reclaim_processes
+        attempts: list[int] = []
 
-    async def request(method: str, params: dict[str, Any] | None = None, **kwargs: Any) -> dict[str, Any]:
-        if method != "thread/unsubscribe":
-            return await original(method, params, **kwargs)
-        assert params is not None
-        thread_id = params["threadId"]
-        if notification_first:
-            await backend._handle_notification({"method": "thread/closed", "params": {"threadId": thread_id}})
-        requested.put_nowait(thread_id)
-        return {"status": "unsubscribed"}
+        def reclaim_after_first_attempt(targets: list[psutil.Process], **kwargs: Any) -> list[psutil.Process]:
+            attempts.append(len(targets))
+            # 1回目は子孫が終了要求にも強制終了にも応じなかった結果を返す。
+            return list(targets) if len(attempts) == 1 else reclaim(targets, **kwargs)
 
-    monkeypatch.setattr(client, "request", request)
-    session = await backend.start("開始", str(tmp_path))
-    _complete(session)
-    session.codex_subagent_thread_ids.add("child")
-    other = await backend.resume("other-thread", state.ResumePrompt("独立会話"), str(tmp_path))
-    stop = asyncio.create_task(manager.stop(session.session_id))
-    try:
-        for expected in ("child", session.session_id):
-            assert await asyncio.wait_for(requested.get(), 1) == expected
-            if not notification_first:
-                assert not stop.done()
-                assert session.session_id not in manager.stopped_sessions
-                await backend._handle_notification({"method": "thread/closed", "params": {"threadId": "unrelated"}})
-                assert not stop.done()
-                await backend._handle_notification({"method": "thread/closed", "params": {"threadId": expected}})
-        assert await asyncio.wait_for(stop, 1) == {}
-        assert not client.closed
-        assert (await manager.send_message(other.session_id, "別会話を続ける"))["delivery"] == "steered"
-        assert (await manager.send_message(session.session_id, "保存会話を続ける"))["delivery"] == "reply_started"
-        assert not backend._resume_close_events
-    finally:
-        stop.cancel()
-        await asyncio.gather(stop, return_exceptions=True)
-        await manager.close()
+        monkeypatch.setattr(process_tree, "reclaim_processes", reclaim_after_first_attempt)
+        with pytest.raises(ActionableError) as raised:
+            await manager.stop(session_id)
+        assert session_id in str(raised.value)
+        assert "`stop`を再発行" in raised.value.next_action
+        assert all(str(pid) in str(raised.value) for pid in mcp_pids)
+        assert manager.sessions[session_id] is session
+        assert session_id not in manager.stopped_sessions
+        assert session_registry.resolve(session_id).state is not session_registry.Resolution.RELEASED
+        assert not fake.alive(server_pid)
+        assert all(fake.alive(pid) for pid in mcp_pids)
 
+        assert await manager.stop(session_id) == {}
 
-@pytest.mark.usefixtures("agents_server_isolation")
-@pytest.mark.asyncio
-@pytest.mark.parametrize("failure", ["timeout", "request", "connection", "reader", "invalid-status"])
-async def test_failed_thread_closure_keeps_stop_unreleased(
-    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, failure: str
-) -> None:
-    """閉鎖を確認できないstopは失敗を返し、再試行の対象と追跡済み子を保持する。"""
-    manager = server_manager.AgentsServerManager(None)
-    backend = subject.AppServerManager(manager.sessions, manager._condition)
-    install_backend(manager, "codex", backend)
-    client = FakeCodexClient()
-    backend.client = cast(Any, client)
-    entered = asyncio.Event()
-
-    async def request(_method: str, _params: dict[str, Any]) -> dict[str, Any]:
-        entered.set()
-        if failure == "request":
-            raise subject.AppServerError("unsubscribe rejected")
-        if failure == "invalid-status":
-            return {}
-        return {"status": "unsubscribed"}
-
-    monkeypatch.setattr(client, "request", request)
-    monkeypatch.setattr(subject, "DEFAULT_WAIT_TIMEOUT", 0.05)
-    session = state.SessionState("thread", str(tmp_path), engine="codex", status="completed", turn_completed=True)
-    session.codex_subagent_thread_ids.add("child")
-    manager.sessions[session.session_id] = session
-    stop = asyncio.create_task(manager.stop(session.session_id))
-    try:
-        await asyncio.wait_for(entered.wait(), 1)
-        if failure in {"connection", "reader"}:
-            if failure == "connection":
-                client.closed = True
-            else:
-                client.reader_failure = RuntimeError("reader failed")
-            await backend._handle_client_failure(RuntimeError("connection lost"))
-        with pytest.raises(TimeoutError if failure == "timeout" else subject.AppServerError):
-            await stop
-        assert manager.sessions[session.session_id] is session
-        assert session.session_id not in manager.stopped_sessions
-        assert session.codex_subagent_thread_ids == {"child"}
-        assert not backend._resume_close_events
-    finally:
-        stop.cancel()
-        await asyncio.gather(stop, return_exceptions=True)
-        await manager.close()
+        assert attempts == [len(mcp_pids), len(mcp_pids)]
+        assert not any(fake.alive(pid) for pid in mcp_pids)
+        assert session_registry.resolve(session_id).state is session_registry.Resolution.RELEASED
 
 
 @pytest.mark.usefixtures("agents_server_isolation")
@@ -2112,11 +2155,12 @@ async def test_resume_close_wait_preserves_initialization_timeout(monkeypatch: p
 async def test_codex_interrupt_response_error_is_recorded_on_target_turn(tmp_path: pathlib.Path) -> None:
     """turn/interruptの応答エラーを対象turnの状態へ記録する。"""
     manager = subject.AppServerManager()
-    manager.client = cast(Any, InterruptErrorClient())
+    client = InterruptErrorClient()
     session = state.SessionState("thread-1", str(tmp_path), engine="codex", turn_id="turn-1")
     manager.sessions[session.session_id] = session
+    manager._clients[session.session_id] = cast(Any, client)
 
-    await manager._interrupt(session.session_id, session.turn_id)
+    await manager._interrupt(session.session_id, session.turn_id, client)
 
     assert session.error == {"message": "turn/interrupt: interrupt rejected"}
     assert session.protocol_warnings == ["turn/interrupt failed: turn/interrupt: interrupt rejected"]
@@ -2205,11 +2249,11 @@ async def test_codex_backend_send_supports_terminal_reply_without_result_flag(tm
     """Codexの終端後のreplyは結果回収フラグなしで開始できる。"""
     manager = subject.AppServerManager()
     client = FakeCodexClient()
-    manager.client = cast(Any, client)
     session = state.SessionState("thread-codex", str(tmp_path), engine="codex")
     session.turn_id = "turn-old"
     _complete(session, message="Codex結果")
     manager.sessions[session.session_id] = session
+    manager._clients[session.session_id] = cast(Any, client)
     response = await manager.send_message(session, "続行")
     assert response["delivery"] == "reply_started"
     assert response["status"] == "running"
@@ -2292,7 +2336,6 @@ async def test_shared_manager_integrates_codex_start_and_send_message(
         "fast_mode": False,
         "label": "調査",
     }
-    backend.client = cast(Any, client)
     steered = await manager.send_message("thread-codex", "追加指示")
     assert steered == {"delivery": "steered", "label": "調査"}
     assert manager.sessions["thread-codex"].turn_seq == 1
@@ -2363,7 +2406,6 @@ async def test_codex_resume_timeout_drops_prompt_without_duplicate_resume(
         return client
 
     monkeypatch.setattr(backend, "_ensure_client", ensure_client)
-    backend.client = cast(Any, client)
     install_backend(manager, "codex", backend)
     session_id = "thread-pending"
     manager.expired_sessions[session_id] = state.SessionResumeState(

@@ -7,8 +7,10 @@ rebaseは変更内容の一意な全1対1対応、autosquashはtree・件数・�
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import pathlib
+import re
 import subprocess
 
 from agent_toolkit._atk import outcome
@@ -39,16 +41,61 @@ def _series(work_dir: pathlib.Path, base: str, head: str) -> list[str]:
     return commits
 
 
-def _patch_id(work_dir: pathlib.Path, oid: str, *, verbatim: bool = False) -> str:
-    options = ("--unified=0",) if verbatim else ()
-    patch = _git(work_dir, "show", "--format=", "--binary", "--no-ext-diff", "--no-textconv", *options, oid)
-    output = _git(work_dir, "patch-id", "--verbatim" if verbatim else "--stable", data=patch).split()
+def _patch_id(work_dir: pathlib.Path, oid: str) -> str:
+    patch = _git(work_dir, "show", "--format=", "--binary", "--no-ext-diff", "--no-textconv", oid)
+    output = _git(work_dir, "patch-id", "--stable", data=patch).split()
     return output[0] if output else "empty"
 
 
+def _content_id(work_dir: pathlib.Path, oid: str) -> str:
+    """commitの変更内容を、周辺行・hunk位置・commitメッセージから切り離して識別する値を返す。
+
+    Git 2.34.1は`patch-id --verbatim`を受理せず、`--stable`は空白差を区別しない。そこで文脈0行の差分から
+    hunk見出し（位置）とblobの識別子を除き、変更行（空白を含む）、パス、種類、モードを残したバイト列を比べる。
+    バイナリーは差分本文を持たないため、変更前後のblobの完全な識別子で内容を区別する。
+    """
+    result = git_command.run(
+        [
+            "--no-pager",
+            "-C",
+            str(work_dir),
+            "show",
+            "--format=",
+            "--unified=0",
+            "--no-color",
+            "--no-renames",
+            "--no-ext-diff",
+            "--no-textconv",
+            "--full-index",
+            "--src-prefix=a/",
+            "--dst-prefix=b/",
+            oid,
+        ],
+        capture_output=True,
+        timeout=60,
+        check=False,
+    )
+    if result.returncode:
+        stderr = result.stderr.decode("utf-8", "replace").strip()
+        raise ValueError(f"Git操作showが終了コード{result.returncode}で失敗: {stderr}")
+    digest = hashlib.sha256()
+    for section in re.split(rb"(?m)^(?=diff --git )", result.stdout):
+        lines = section.split(b"\n")
+        header_end = next((index for index, line in enumerate(lines) if line.startswith(b"@@")), len(lines))
+        binary = any(line.startswith(b"Binary files ") for line in lines[:header_end])
+        for index, line in enumerate(lines):
+            if index >= header_end and line.startswith(b"@@"):
+                continue
+            if index < header_end and line.startswith(b"index ") and not binary:
+                # blobの識別子は周辺行の変化でも変わる。変更のないモードだけを残す。
+                line = b"index " + b" ".join(line.split(b" ")[2:])
+            digest.update(line + b"\n")
+    return digest.hexdigest()
+
+
 def _rebase(work_dir: pathlib.Path, old: list[str], new: list[str]) -> dict[str, str]:
-    old_ids = [_patch_id(work_dir, oid, verbatim=True) for oid in old]
-    new_ids = [_patch_id(work_dir, oid, verbatim=True) for oid in new]
+    old_ids = [_content_id(work_dir, oid) for oid in old]
+    new_ids = [_content_id(work_dir, oid) for oid in new]
     if len(set(old_ids)) != len(old) or len(set(new_ids)) != len(new):
         raise ValueError("変更内容が重複し、commitの対応が一意ではありません")
     if set(old_ids) != set(new_ids):

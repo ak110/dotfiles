@@ -55,16 +55,28 @@ def reclaim_descendants(descendants: list[psutil.Process], *, timeout: float = R
     """
     if not descendants:
         return []
-    descriptions = {process.pid: _describe(process) for process in descendants}
-    for process in descendants:
+    descriptions = {process.pid: describe(process) for process in descendants}
+    return [descriptions[process.pid] for process in reclaim_processes(descendants, timeout=timeout)]
+
+
+def reclaim_processes(targets: list[psutil.Process], *, timeout: float = RECLAIM_TIMEOUT_SECONDS) -> list[psutil.Process]:
+    """列挙済みのプロセスへ終了要求と強制終了を順に送り、資源を保持したまま残った対象を返す。
+
+    対象は呼び出し元が自ら起動したプロセスの子孫として列挙済みのものに限る。
+    `psutil.Process`は列挙時の起動時刻を保持し、PIDが別のプロセスへ再利用された場合はシグナルを送らない。
+    このため、残った対象をそのまま再度渡して回収を再試行できる。
+    同期的に待機するため、イベントループ上から呼ぶ場合は別スレッドへ退避させる。
+    """
+    if not targets:
+        return []
+    for process in targets:
         with contextlib.suppress(psutil.Error, OSError):
             process.terminate()
-    alive = _wait_until_released(descendants, timeout=timeout)
+    alive = _wait_until_released(targets, timeout=timeout)
     for process in alive:
         with contextlib.suppress(psutil.Error, OSError):
             process.kill()
-    alive = _wait_until_released(alive, timeout=timeout)
-    return [descriptions[process.pid] for process in alive]
+    return _wait_until_released(alive, timeout=timeout)
 
 
 def _wait_until_released(targets: list[psutil.Process], *, timeout: float) -> list[psutil.Process]:
@@ -87,12 +99,13 @@ def _holds_resources(process: psutil.Process) -> bool:
     起点プロセスの終了により親を失った子孫は、initが回収するまでの間だけこの状態になる。
     """
     try:
-        return process.status() != psutil.STATUS_ZOMBIE
+        # 列挙時と起動時刻が異なる同じPIDのプロセスは別の主体であり、対象の資源保持に数えない。
+        return process.is_running() and process.status() != psutil.STATUS_ZOMBIE
     except psutil.Error, OSError:
         return False
 
 
-def _describe(process: psutil.Process) -> str:
+def describe(process: psutil.Process) -> str:
     """PIDと起動コマンドで子孫プロセスを識別できる記述を返す。"""
     try:
         command = " ".join(process.cmdline())

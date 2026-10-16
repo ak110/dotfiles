@@ -21,6 +21,7 @@ AWIとUWIを平坦なメッセージキューとして扱い、種別はfrontmat
   待機中と各セッションの開始前は無効化しない限りCI失敗（定期実行の失敗を含む）を自動検出してAWI投入し、
   待機中に未判定のDependabotアラートがあればprocess-wiを1回実行させて監査させる（`--no-alerts`で無効化）
 - mq process-loop abort/abort-cancel/status/instruct/instruct-cancel: process-loopへの中断要求と追加指示を操作する
+- mq submission begin/end: add-awi-by-userの投入先と作業期間を、process-loopの開始前の活動猶予へ記録する
 - config show/get/set/apply-preset: XDG関連パス・モデル設定の確認・変更
 - plans commit/list: 現行計画またはCI対応レビュー指摘管理表の保存と作業中計画の一覧
 - managed-temp create/cleanup: managed-tempのディレクトリの作成・後始末

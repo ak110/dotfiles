@@ -30,6 +30,11 @@ Codex固有の詳細は[Codex利用ガイド](docs/guide/codex-guide.md)を参�
 
 Windows PowerShellでは、環境によって公式インストーラーが使用する`Get-FileHash`を解決できず、Codex CLIの導入に失敗する。
 
+agent-toolkitのGit呼び出しはGit 2.34.1以上に対応する。
+Git 2.34.1が受理しない引数（`git worktree list -z`など）を使わない。worktree登録の列挙は共通実装`agent-toolkit/agent_toolkit/_git/worktrees.py`がGitの保存形式から読む。
+CIの`pytest (3.15)`はagent-toolkitのテストをUbuntu公式パッケージのGit 2.34.1でも実行する。
+ローカルでは環境変数`AGENT_TOOLKIT_TEST_GIT`へGitの実行ファイルの絶対パスを指定して同じテストを実行できる。
+
 ### 例（Linux）
 
 ```bash

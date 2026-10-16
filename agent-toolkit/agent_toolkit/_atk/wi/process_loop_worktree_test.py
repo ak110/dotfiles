@@ -25,6 +25,7 @@ from agent_toolkit._atk.wi import process_loop_worktree as _pl_worktree
 from agent_toolkit._atk.wi import readiness as _wi_readiness
 from agent_toolkit._atk.wi import sync as _wi_sync
 from agent_toolkit._common import codex_models, state_paths
+from agent_toolkit._git import worktrees as _git_worktrees
 from agent_toolkit._testing import git_repository
 from agent_toolkit._testing.managed_temp_support import setattr_in_managed_temp_modules
 from agent_toolkit._testing.process_loop_support import (
@@ -150,7 +151,7 @@ def _prepare_process_loop_environment(monkeypatch: pytest.MonkeyPatch, tmp_path:
     setattr_in_managed_temp_modules(monkeypatch, "_state_root_path", lambda: tmp_path / "managed-temp-state")
     monkeypatch.setattr(shutil, "which", lambda command: f"/resolved/{command}")
     monkeypatch.setattr(_pl_watch, "pull_private_notes", lambda _path: True)
-    monkeypatch.setattr(_pl_watch, "_other_sessions_active", lambda: False)
+    monkeypatch.setattr(_pl_watch, "_submission_active", lambda _targets: False)
     monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(tmp_path / ".claude"))
     monkeypatch.setenv("GIT_CONFIG_NOSYSTEM", "1")
     monkeypatch.setenv("GIT_CONFIG_GLOBAL", str(tmp_path / "gitconfig"))
@@ -352,16 +353,20 @@ class TestSyncWorktreeWithUpstream:
 
         monkeypatch.setattr(_pl_worktree, "_git_output", fake_git_output)
         monkeypatch.setattr(_pl_worktree, "_worktree_is_clean", lambda path: path == worktree)
+        # 登録の列挙はGitの保存形式を読む共通処理の契約で置き換える。列挙の実Gitでの動作はworktrees_test.pyが確かめる。
+        registered = _git_worktrees.Worktree(
+            path=pathlib.Path("/existing/worktree"),
+            branch="worktree-process-loop",
+            head_ref="refs/heads/worktree-process-loop",
+            detached=False,
+            bare=False,
+            locked=False,
+            prunable=False,
+        )
+        monkeypatch.setattr(_git_worktrees, "list_worktrees", lambda repo, **_kwargs: [registered])
 
         def fake_run(cmd: list[str], *_args: object, **_kwargs: object) -> subprocess.CompletedProcess[Any]:
             calls.append(list(cmd))
-            if cmd[1:4] == ["worktree", "list", "--porcelain"]:
-                return subprocess.CompletedProcess(
-                    cmd,
-                    returncode=0,
-                    stdout="worktree /existing/worktree\nbranch refs/heads/worktree-process-loop\n",
-                    stderr="",
-                )
             if cmd[1:3] == ["worktree", "add"]:
                 worktree.mkdir(parents=True)
             return subprocess.CompletedProcess(cmd, returncode=0, stdout="", stderr="")
@@ -631,6 +636,7 @@ class TestPublicWorktreePreparation:
         self,
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
     ) -> None:
         """配置先不在ブランチの所有権を確認できない場合はOIDを変更せず停止する。"""
         local_path = _make_remote_repository(tmp_path, "target")
@@ -648,7 +654,7 @@ class TestPublicWorktreePreparation:
         assert not session_calls
         assert before == after
         assert not (local_path / ".claude").exists()
-        assert any(command[1:4] == ["worktree", "list", "--porcelain"] for command in git_calls)
+        assert "既存ブランチのworktree登録を確認できない" in capsys.readouterr().err
         assert not any(len(command) > 1 and command[1] in ("fetch", "rebase") for command in git_calls)
         assert not any(command[1:3] == ["worktree", "add"] for command in git_calls)
 

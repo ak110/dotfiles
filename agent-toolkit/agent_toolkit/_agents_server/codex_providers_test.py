@@ -119,7 +119,6 @@ def configure_provider_environment(monkeypatch):
 def backend_with_client(monkeypatch, client, root=None):
     """接続先のRPCと探索環境の事前実行を隔離し、実backendで接続先を選ぶ。"""
     backend = codex.AppServerManager(root.sessions if root else {}, root._condition if root else asyncio.Condition())
-    backend.client = client
     client.backend = backend
 
     async def ensure_client():

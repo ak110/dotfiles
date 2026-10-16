@@ -4,6 +4,7 @@
 自編集の公開範囲の各条件を検証する。
 """
 
+import argparse
 import contextlib
 import io
 import json
@@ -11,6 +12,8 @@ import pathlib
 
 import pytest
 
+from agent_toolkit._atk import run_script
+from agent_toolkit._common import automated_prompt
 from agent_toolkit._hooks import (
     autonomous_exit,
     termination_evidence,
@@ -434,6 +437,58 @@ def test_public_context_supplies_exact_input_for_scope_recording(
     _record_self_edit(payload, repository / "README.md")
     decision, body = termination_order_advisor.evaluate(json.dumps(payload))
     assert decision == "block" and "公開範囲が未確定" not in body
+
+
+def test_blocked_from_context_without_human_input(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """自動起動の会話で公開取得した識別子と実際の失敗証拠からblockedを記録し、Stopが技術的不成立として扱う。"""
+    session_id = "auto-run"
+    trace = _write_transcript(tmp_path, [])
+    monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", session_id)
+    monkeypatch.delenv("CODEX_THREAD_ID", raising=False)
+    goal = automated_prompt.wrap("WIを処理する", source=automated_prompt.SOURCE_PROCESS_LOOP, kind=automated_prompt.KIND_GOAL)
+    # 自動起動の生成入力も、人間入力と同じUserPromptSubmitのhookへ届く。
+    _human_input(session_id, trace, "goal", goal)
+    _commit(session_id, trace)
+    failure_response = {"stdout": "", "stderr": "接続できない", "exit_code": 1}
+    termination_evidence.observe_tool(
+        json.dumps(
+            {
+                "session_id": session_id,
+                "hook_event_name": "PostToolUseFailure",
+                "tool_name": "Bash",
+                "tool_use_id": "push",
+                "tool_input": {"command": "git push"},
+                "tool_response": failure_response,
+            }
+        ),
+        after=True,
+    )
+    assert termination_order_advisor.evaluate(_payload(session_id, str(trace)))[0] == "block"
+    _human_input(session_id, trace, "continuation", '<atk-auto source="stop" kind="continuation">判断を記録する</atk-auto>')
+
+    capsys.readouterr()
+    status = run_script.dispatch(argparse.Namespace(script_name="termination-evidence", script_args=["--", "--context"]))
+    context = json.loads(capsys.readouterr().out)
+    assert status == 0 and context["input_id"] is None and context["quote"] is None
+    document = {
+        "session_id": context["session_id"],
+        "work_id": context["work_id"],
+        "action": "blocked",
+        "call_id": "push",
+        "quote": json.dumps(failure_response, ensure_ascii=False, sort_keys=True),
+        "reason": "pushの接続が失敗した",
+    }
+    source = tmp_path / "blocked.json"
+    source.write_text(json.dumps(document, ensure_ascii=False), encoding="utf-8")
+    assert (
+        run_script.dispatch(
+            argparse.Namespace(script_name="termination-evidence", script_args=["--decision-file", str(source)])
+        )
+        == 0
+    )
+    assert termination_order_advisor.evaluate(_payload(session_id, str(trace))) == ("approve", "")
 
 
 def test_scope_metadata_keeps_cancelled_work_cancelled(tmp_path: pathlib.Path) -> None:

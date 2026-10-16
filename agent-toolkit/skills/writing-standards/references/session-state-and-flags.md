@@ -32,14 +32,16 @@ Claude Codeは並列ツール呼び出しでhookを同時発火するため、�
 
 `_common/session_activity.py`はOSアカウントの状態ディレクトリ配下の`session-activity/{session_id}.json`へ会話ごとの最新状態を保存する。
 状態ディレクトリの解決元は`agent-toolkit/agent_toolkit/_common/state_paths.py`の`state_dir()`である。
-`hook.py`が受け取る既存イベントの処理に活動記録を加え、`scan_activity`がprocess-loopの開始前判定へ活動と未判定の根拠を渡す。
+`hook.py`が受け取る既存イベントの処理に活動記録を加え、`submission_activity`がprocess-loopの開始前判定へ、対象リポジトリへ投入中のWI投入作業の活動を渡す。
 
 - 保存する項目は版数、会話ID、実行系、PIDと起動時刻、会話内の各エージェントの活動状態、親会話ID、セッション記録のパス、バックグラウンドタスクの有無および更新時刻とする。
 - SessionStart・UserPromptSubmit・ツールイベント・SubagentStartで活動を記録し、Stop・SubagentStopでは実際のhook応答が続行を求めるかを反映する。
 - 応答待ちの除外には、セッション記録のターン終了またはホスト登録のidle状態と、稼働する子がないことを使う。
 - SessionEndは活動JSONを削除し、記録されたPIDと起動時刻が生存プロセスに一致しない場合は取得側で失効させる。
 - 更新と削除は固定の`activity.lock`の排他下で行い、会話ごとの履歴や終了した子の項目を残さない。
-- 未登録の生存ホストと読取不能は活動候補として返し、猶予期限の判定を開始側へ残す。
+- 読取不能な活動記録は活動候補として返す。会話を解決できない生存プロセスは、どの作業にも属さないため活動に数えない。
+- WI投入作業の属性は`session-activity/submissions/{session_id}.json`へ会話ごとに保存する。項目は版数、会話ID、作業種別（`add-awi-by-user`）、正規化した投入先URLの一覧、更新時刻とする。`atk wi submission begin`が作成・置換し、`atk wi submission end`が削除する。hookのSessionEndは削除せず、再開した会話で属性を再び有効にする。
+- 開始前判定は、投入先がprocess-loopの対象リポジトリ集合と交わる属性を持つ会話とその子孫の活動だけを理由にし、属性を読めない会話と属性のない会話を除く。
 - 除外する会話とその子孫は`_common/session_parents.py`の親子解決を使い、process-loopの共通環境印だけで別ループの会話を除外しない。
 
 ## managed-tempの登録情報
@@ -125,7 +127,7 @@ process-loopが起動した会話の最上位のStopでは、終了要求が`req
   - 自編集: 成功したEdit・Write・`apply_patch`と、既存の抽出で静的に確定したBash書込先を、作業ごとの`edits`へリポジトリと相対パスで記録する。Claude Codeの協調モードのメインでは、Stopがその集合だけを終了時のGit状態と比べて公開範囲が未確定の編集を遮断の通知へ添え、他主体の差分を取り込まない
   - 公開範囲: メインが原入力または適用済み認可から判断した範囲を`publish_scope`へ記録する。記録手順は`agent-toolkit:user-confirmation-and-report`の`references/publish-scope.md`が定める
   - プロジェクト規範による省略: メインが`omit-completion`で記録した規範の絶対パス・全文、対象リポジトリと人間入力の識別子を、作業ごとの`omit_completion`へ保持する。記録時は観測した成果作業の単一リポジトリ、規範の所在と全文、現在のメイン・会話・入力の対応を確かめ、Stopでも規範の実体と入力の対応を確かめる。有効な省略を持つ作業だけ起動不足を免除する。次の判断で除き、新しい人間入力後の成果作業は新しい作業として省略を引き継がない。規範の変更・消失は免除を無効にする。手順は`agent-toolkit:completion-report`の`references/termination-evidence.md`が定める
-  - 原入力と再入: `last_human_input`は最後の人間入力を保持し、自動通知で再開しても元の依頼への帰属を保つ。`--context`は現在の会話のその入力と作業の識別子だけを返す。寿命と継承は本キーと同じで、公開範囲・起動証拠と現在のGit状態から不要な判定を除く
+  - 原入力と再入: `last_human_input`は最後の人間入力を保持し、自動通知で再開しても元の依頼への帰属を保つ。`--context`は現在の会話の`session_id`と作業の`work_id`を人間入力の有無によらず返し、その入力を観測した場合だけ`input_id`と`quote`を添え、観測していなければ両者を`null`とする。証拠が無いか別会話・旧版の値である場合、現在のメインとして解決できない場合と、作業も人間入力も無い場合は取得を拒否する。取得は判断の証拠条件を緩めず、人間の原入力・実際の失敗・所有する委譲先の待機の検証はactionごとの記録処理が行う。寿命と継承は本キーと同じで、公開範囲・起動証拠と現在のGit状態から不要な判定を除く
 
 ## 通知反復系
 

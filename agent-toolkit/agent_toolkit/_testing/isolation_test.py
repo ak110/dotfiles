@@ -255,3 +255,28 @@ def test_child_platformdirs_resolves_inside_isolation(tmp_path: pathlib.Path) ->
         timeout=30,
     )
     assert all(pathlib.Path(value).is_relative_to(tmp_path) for value in json.loads(result.stdout))
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="最低版Gitの差し替えはPOSIXのCIで使う")
+def test_test_git_directory_resolves_specified_executable(tmp_path: pathlib.Path) -> None:
+    """指定したGitの実行ファイルを`git`の名前で解決させ、起動できない指定はテストの開始前に拒否する。"""
+    fake = tmp_path / "bin" / "git-2.34.1"
+    fake.parent.mkdir()
+    fake.write_text('#!/bin/sh\necho "git version 2.34.1"\n', encoding="utf-8")
+    fake.chmod(0o755)
+    directory = isolation.build_test_git_directory(str(fake), tmp_path / "test-git")
+    result = subprocess.run(
+        ["git", "--version"],
+        capture_output=True,
+        text=True,
+        check=True,
+        env={**os.environ, "PATH": os.pathsep.join((str(directory), os.environ["PATH"]))},
+    )
+    assert result.stdout.strip() == "git version 2.34.1"
+
+    broken = tmp_path / "bin" / "broken"
+    broken.write_text("#!/bin/sh\nexit 3\n", encoding="utf-8")
+    broken.chmod(0o755)
+    for value in ("git", str(tmp_path / "missing"), str(broken)):
+        with pytest.raises(pytest.UsageError, match=isolation.TEST_GIT_ENVIRONMENT_NAME):
+            isolation.build_test_git_directory(value, tmp_path / f"rejected-{len(value)}")
