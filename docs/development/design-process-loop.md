@@ -138,7 +138,19 @@ worktreeの作成前と再利用前に、`.claude/worktrees/`がGitの無視対�
 
 並行worktreeの退避は`atk worktree-stash save --label <退避ラベル>`へ集約する。ヘルパーはGit共通ディレクトリ直下の固定`agent-toolkit-stash.lock`を`agent-toolkit/agent_toolkit/_common/file_lock.py`で排他する。ロック中にstashを生成し、`refs/worktree/<退避ラベル>`とworktree・label別の共有保護refを記録してから生成分だけのstashをdropする。固有refだけでは別worktreeのGCから到達できないため、共有する`refs/atk/worktree-stash/`配下へ同じOIDを保護する。既存の`refs/stash`先頭OIDは維持し、途中失敗時は復旧識別子と保護または共有stashを保持する。固定ロックファイルを削除しないのは、次回も同じinodeを排他対象として再利用するためである。未追跡ファイルを含む退避を実現できない`git stash create`方式は採用しない。
 
-正常な旧固有refは`atk worktree-stash protect <ref>`で識別子を変えず保護できる。`update-dotfiles`はpull前に現在worktreeの旧`update-dotfiles-*`退避を全て保護し、欠損や保護失敗ではpullへ進まない。今回退避は`stash apply --index`の成功後だけ`drop <ref>`で回収する。pull失敗後の復元成功も回収し、復元競合とrebase競合では保持する。回収失敗は復元失敗と分け、復元済み内容をresetせず再試行を案内する。dropは固定ロック内で読取OIDを条件として固有ref、共有保護refの順に削除し、片側だけ残っても同じ識別子で再試行できる。他worktreeの同label退避と既存共有stashは回収しない。
+正常な旧固有refは`atk worktree-stash protect <ref>`で識別子を変えず保護できる。
+`update-dotfiles`は同じPython環境で専用ヘルパーを1回起動し、旧退避の分類と保護をGitの一括処理へ渡す。
+保存した作業内容・index・未追跡内容がrootの`mise.lock`だけであり、退避元commitがbranch・remoteから到達できる旧退避は回収する。
+その他の退避と、ローカルcommitの唯一の参照になっている退避は保持し、共有保護が無いものだけ保護する。
+固定ロック内で読み取ったOIDを条件に、回収と保護を`git update-ref --stdin`のトランザクションで確定する。
+履歴を保持するbranch・remoteのOIDも同じトランザクションで検証し、到達性判定の後に参照が移動した場合は回収を中止する。
+保護済みの退避を1件ずつ再起動・再表示する処理と、移行済みを表す専用の永続フラグは置かない。
+画面は整理が発生した場合の件数要約と、失敗した場合の原因・次の操作を示す。個別の識別子と処理の詳細は永続ログが保持する。
+欠損や保護値の不整合ではデータを保持してpullへ進まない。
+
+今回退避は`stash apply --index`の成功後だけ`drop <ref>`で回収する。pull失敗後の復元成功も回収し、復元競合とrebase競合では保持する。回収失敗は復元失敗と分け、復元済み内容をresetせず再試行を案内する。dropは固定ロック内で読取OIDを条件として固有ref、共有保護refの順に削除し、片側だけ残っても同じ識別子で再試行できる。他worktreeの同label退避と既存共有stashは回収しない。
+`git pull --autostash`への単純置換は、未追跡内容・indexの保全と競合後の回復を満たさないため採用しない。
+退避の作成・復元・回収は既存のGit操作を使い、旧退避の整理のために新しい管理サービスや台帳は追加しない。
 
 Claude Codeの`--worktree`へ置き換える案は、worktree隔離ガードがシェル構文を拒否するため採用しない。
 `atk`側でworktreeを準備し、セッションのcwdを準備済みworktreeへ設定する。
