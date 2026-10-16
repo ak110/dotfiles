@@ -845,7 +845,9 @@ def main(argv: list[str] | None = None) -> int:
         help="判断記録のJSONオブジェクトを保存したファイルのパス（JSON文字列そのものは受け取らない）",
     )
     operation.add_argument(
-        "--context", action="store_true", help="現在のClaude Codeメインの人間入力と作業の識別子をJSONで取得する"
+        "--context",
+        action="store_true",
+        help="現在のClaude Codeメインの会話・作業の識別子と、観測済みなら人間入力をJSONで取得する",
     )
     args = parser.parse_args(argv)
     try:
@@ -861,10 +863,12 @@ def main(argv: list[str] | None = None) -> int:
                 or not isinstance(data.get("works"), dict)
             ):
                 raise ValueError("現在の会話の終了工程の証拠をまだ観測していない")
-            input_id = data.get("last_human_input", data.get("last_input")) if isinstance(data, dict) else None
-            entry = data.get("inputs", {}).get(input_id) if isinstance(data, dict) else None
-            if not isinstance(entry, dict) or entry.get("human") is not True:
-                raise ValueError("現在の作業の人間入力をまだ観測していない")
+            # 作業・会話の識別子と人間入力由来の項目を分けて返す。実行結果を根拠とする判断（blocked、委譲先のwait）は
+            # 人間入力を要さないため、自動起動の会話でも識別子の取得を止めない。人間の判断を要する記録の検証は
+            # record_decisionが担い、生成入力は人間入力として返さない。
+            input_id = data.get("last_human_input", data.get("last_input"))
+            entry = data.get("inputs", {}).get(input_id) if isinstance(data.get("inputs"), dict) else None
+            human = isinstance(entry, dict) and entry.get("human") is True
             current = _current_work(data)
             work_id = (
                 current[0]
@@ -873,9 +877,16 @@ def main(argv: list[str] | None = None) -> int:
                 and _last_decision(current[1]) not in {"cancel", "replace"}
                 else None
             )
+            if not human and work_id is None:
+                raise ValueError("現在の会話の作業と人間入力をまだ観測していない")
             print(
                 json.dumps(
-                    {"session_id": session_id, "input_id": input_id, "quote": entry["text"], "work_id": work_id},
+                    {
+                        "session_id": session_id,
+                        "input_id": input_id if human else None,
+                        "quote": entry["text"] if human and isinstance(entry, dict) else None,
+                        "work_id": work_id,
+                    },
                     ensure_ascii=False,
                 )
             )

@@ -13,7 +13,7 @@ import pytest
 from agent_toolkit._agents_server import agents_wait, manager, mcp_tools, shared_layout, status_file
 from agent_toolkit._agents_server import state as server_state
 from agent_toolkit._atk import run_script
-from agent_toolkit._common import atomic_file, session_state, state_paths
+from agent_toolkit._common import atomic_file, automated_prompt, session_state, state_paths
 from agent_toolkit._common.file_lock import acquire_lock, release_lock
 from agent_toolkit._hooks import (
     agents_server_observations,
@@ -26,6 +26,7 @@ from agent_toolkit._hooks import (
 from agent_toolkit._testing import agents_server_support
 
 WORK_COMPLETE = "## 作業完了報告\n\n完了した。\n\n### 成果\n\n- 変更した\n\n### 投入したWI\n\n- なし\n"
+CONTINUATION = '<atk-auto source="stop" kind="continuation">判断を記録する</atk-auto>'
 COMPLETION_SKILL_TEXT = "---\nname: completion-report\nuser-invocable: false\n---\n\n# 作業完了報告とセッションの完了処理\n"
 
 
@@ -438,6 +439,165 @@ def test_blocked_requires_actual_failure_of_same_work(tmp_path: pathlib.Path) ->
     quote = json.dumps(failure["tool_response"], ensure_ascii=False, sort_keys=True)
     termination_evidence.record_decision({**base, "call_id": "network", "quote": quote})
     assert termination_order_advisor.evaluate(stop_payload(tmp_path, "取得できない"))[0] == "approve"
+
+
+def automated_input(directory: pathlib.Path, prompt_id: str, prompt: str) -> None:
+    """process-loopなどの自動起動が入力欄へ渡す生成入力を、公開hookのUserPromptSubmitへ供給する。"""
+    with contextlib.redirect_stdout(io.StringIO()):
+        user_prompt_submit.main(
+            json.dumps(
+                {
+                    "session_id": "evidence-test",
+                    "prompt_id": prompt_id,
+                    "prompt": prompt,
+                    "transcript_path": str(directory / "transcript.jsonl"),
+                }
+            )
+        )
+
+
+def automated_session(directory: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """人間入力を持たない自動起動の会話で、成果作業とStopの継続入力までを観測させる。"""
+    monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "evidence-test")
+    monkeypatch.delenv("CODEX_THREAD_ID", raising=False)
+    automated_input(
+        directory,
+        "goal",
+        automated_prompt.wrap("WIを処理する", source=automated_prompt.SOURCE_PROCESS_LOOP, kind=automated_prompt.KIND_GOAL),
+    )
+    supply_commit(directory)
+    automated_input(directory, "continuation", CONTINUATION)
+
+
+def public_context(capsys: pytest.CaptureFixture[str]) -> tuple[int, dict[str, Any] | None]:
+    """公開コマンド`atk run-script termination-evidence -- --context`の終了コードと出力のJSONを返す。"""
+    capsys.readouterr()
+    status = run_script.dispatch(argparse.Namespace(script_name="termination-evidence", script_args=["--", "--context"]))
+    output = capsys.readouterr().out
+    return status, json.loads(output) if status == 0 else None
+
+
+def public_decision(directory: pathlib.Path, document: dict[str, Any]) -> tuple[int, str]:
+    """判断JSONをファイルへ保存し、公開コマンドの`--decision-file`で記録した終了コードと拒否理由の出力を返す。"""
+    source = directory / "decision.json"
+    source.write_text(json.dumps(document, ensure_ascii=False), encoding="utf-8")
+    stderr = io.StringIO()
+    with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(stderr):
+        status = run_script.dispatch(
+            argparse.Namespace(script_name="termination-evidence", script_args=["--decision-file", str(source)])
+        )
+    return status, stderr.getvalue()
+
+
+def test_context_without_human_input_returns_work_ids(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """自動起動の会話でも識別子を取得でき、生成入力を人間入力として返さない。"""
+    automated_session(tmp_path, monkeypatch)
+    status, context = public_context(capsys)
+    assert status == 0
+    assert context == {"session_id": "evidence-test", "input_id": None, "quote": None, "work_id": "work-1"}
+
+
+def test_context_with_human_input_keeps_quote(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """人間入力を持つ会話では、従来どおり原入力の識別子と全文を返す。"""
+    monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "evidence-test")
+    monkeypatch.delenv("CODEX_THREAD_ID", raising=False)
+    human_input(tmp_path, "human-1", "READMEを直してcommitする")
+    supply_commit(tmp_path)
+    automated_input(tmp_path, "continuation", CONTINUATION)
+    status, context = public_context(capsys)
+    assert status == 0
+    assert context == {
+        "session_id": "evidence-test",
+        "input_id": "human-1",
+        "quote": "READMEを直してcommitする",
+        "work_id": "work-1",
+    }
+
+
+def _register_child(owner: str) -> None:
+    def register(state: dict) -> dict:
+        state.setdefault("agents_server_sessions", {})["child-1"] = {"owner_agent_id": owner, "pending_observation": True}
+        return state
+
+    session_state.update_state("evidence-test", register)
+
+
+@pytest.mark.parametrize(
+    "case",
+    [
+        "wait",
+        "blocked-without-failure",
+        "unowned-wait",
+        "cancel",
+        "replace",
+        "start",
+        "resume",
+        "publish-scope",
+        "omit-completion",
+        "no-evidence",
+        "foreign-session",
+        "delegated",
+    ],
+)
+def test_context_without_human_input_keeps_rejections(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], case: str
+) -> None:
+    """人間入力の無い取得から委譲先待機は記録でき、証拠を欠く判断と無効な状態の拒否は維持される。"""
+    if case == "no-evidence":
+        monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "evidence-test")
+        assert public_context(capsys)[0] == 2
+        return
+    automated_session(tmp_path, monkeypatch)
+    if case == "foreign-session":
+        # 別会話から継承した証拠は現在の会話の識別子として返さない。
+        monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "another-session")
+        session_state.update_state("another-session", lambda _state: session_state.read_state("evidence-test"))
+        assert public_context(capsys)[0] == 2
+        return
+    if case == "delegated":
+        monkeypatch.setenv("AGENT_TOOLKIT_DELEGATED_SESSION", "1")
+        assert public_context(capsys)[0] == 2
+        return
+    if case in {"wait", "unowned-wait"}:
+        start = {
+            "session_id": "evidence-test",
+            "tool_name": "mcp__plugin_agent-toolkit_agents_server__start",
+            "tool_use_id": "start-1",
+            "transcript_path": str(tmp_path / "transcript.jsonl"),
+            "tool_input": {"prompt": "調査する"},
+        }
+        termination_evidence.observe_tool(json.dumps(start), after=False)
+        start["tool_response"] = {"structuredContent": {"session_id": "child-1"}}
+        termination_evidence.observe_tool(json.dumps(start), after=True)
+        _register_child("main" if case == "wait" else "another")
+    status, context = public_context(capsys)
+    assert status == 0 and context is not None and context["input_id"] is None
+    document: dict[str, Any] = {"session_id": context["session_id"], "work_id": context["work_id"], "reason": "判断する"}
+    if case in {"wait", "unowned-wait"}:
+        document.update(action="wait", target_session_id="child-1")
+    elif case == "blocked-without-failure":
+        document.update(action="blocked", call_id="commit", quote=json.dumps({"exit_code": 0}))
+    else:
+        # 人間の原入力を要する判断へ、取得できた唯一の入力である生成入力を渡す。
+        document.update(action=case, input_id="continuation", quote=CONTINUATION)
+        if case == "publish-scope":
+            document.update(scope="commitしない", origin="instruction")
+        elif case == "omit-completion":
+            document.update(policy_file=str(tmp_path / "CLAUDE.md"), target_repo=str(tmp_path))
+    status, reason = public_decision(tmp_path, document)
+    # 拒否理由は、actionごとの証拠条件（実際の失敗応答、所有する委譲先、人間の原入力）を示す。
+    expected_reason = {
+        "wait": "",
+        "blocked-without-failure": "失敗call_id",
+        "unowned-wait": "所有していません",
+    }.get(case, "人間入力" if case == "omit-completion" else "生成入力は人間の判断の根拠にできない")
+    assert (status, expected_reason in reason) == (0 if case == "wait" else 2, True)
+    pending = termination_evidence.pending_work(json.loads(stop_payload(tmp_path, "待機中")))
+    assert [work_id for work_id, _ in pending] == ([] if case == "wait" else ["work-1"])
 
 
 def test_decision_cli_rejects_completion_claim(tmp_path: pathlib.Path) -> None:

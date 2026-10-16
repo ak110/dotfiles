@@ -25,7 +25,8 @@ Stop hookが同スキルの起動不足を示して遮断した場合、起動�
 ```
 
 識別子はStopの通知から得る。
-Claude Codeでは`atk run-script termination-evidence -- --context`からも現在の識別子を取得できる。
+Claude Codeでは`atk run-script termination-evidence -- --context`からも現在の識別子を取得できる（取得結果の項目は次節）。
+省略は人間入力を根拠とするため、取得結果の`input_id`が値を持つ会話でだけ記録できる。
 `policy_file`は対象リポジトリ内の適用するプロジェクト規範の絶対パス、`target_repo`は観測した成果作業が属するGitリポジトリのrootの絶対パスとする。
 複数のリポジトリの成果作業を持つ場合は、作業をリポジトリごとに区切って判断する。
 記録処理は規範全文の一致と所在、観測済み成果作業の対象、現在のメインと会話・人間入力の対応を確かめる。
@@ -40,6 +41,10 @@ Claude Codeでは`atk run-script termination-evidence -- --context`からも現�
 判断JSONは`session_id`、`action`（`cancel`・`replace`・`start`・`resume`・`wait`・`blocked`）、対象の`work_id`と`reason`を持つ。
 中止・置換・開始・再開にはユーザーの原入力の`input_id`と全文の`quote`を、確認待ちには投入した未回答UWIの`uwi_file`と全文の`quote`を、委譲先の待機には`target_session_id`を、技術的不成立には失敗した呼び出しの`call_id`とその応答全体のJSONの`quote`を渡す。
 `session_id`、`work_id`と直近のユーザー入力の`input_id`は遮断の通知から得る。
+Claude Codeでは`atk run-script termination-evidence -- --context`からも取得できる。
+取得結果は`session_id`と現在の`work_id`を人間入力の有無によらず返し、`input_id`と原文の`quote`は人間入力を観測した場合だけ値を持ち、観測していなければ`null`とする。
+委譲先の待機と技術的不成立は実行結果を根拠とするため、人間入力の無い自動起動の会話でも取得した`session_id`と`work_id`で記録できる。
+中止・置換・開始・再開は人間の原入力を根拠とするため、`input_id`が値を持つ場合にだけ記録できる。
 判断は指定した作業だけへ作用し、ユーザーの割り込みと直接関係しない他の作業の起動不足は残る。
 生成されたStopの継続入力やhookの注記はユーザーの原入力として受理されず、完了の申告を記録する操作は無い。
 証拠を取得できない場合、Stop hookは遮断せず、判定できなかったことを記録する。
