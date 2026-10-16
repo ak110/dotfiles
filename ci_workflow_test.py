@@ -322,3 +322,31 @@ def test_ci_deps_check_matches_ci_container(workflow_data: dict[str, object]) ->
     include = [workflow_mapping(value) for value in typing.cast(list[object], matrix["include"])]
     versions = sorted({str(entry["python-version"]) for entry in include}, key=lambda value: tuple(map(int, value.split("."))))
     assert _makefile_variable("CI_PYTHON_VERSIONS").split() == versions
+
+
+def test_minimum_git_tests_run_with_readme_version(workflow_data: dict[str, object]) -> None:
+    """pytestのmatrix要素が、READMEの対応版と同じGitを導入し、その実行ファイルで実Gitテストを実行する。"""
+    job = workflow_mapping(workflow_jobs(workflow_data)["python-lint"])
+    steps = workflow_steps(job)
+    names = [step.get("name") for step in steps]
+    pytest_index = names.index("Python 3.15 pytest")
+    install_index = names.index("Git 2.34.1の導入")
+    test_index = names.index("Git 2.34.1での実Gitテスト")
+    assert pytest_index < install_index < test_index
+    install, test = steps[install_index], steps[test_index]
+    assert install["if"] == test["if"] == steps[pytest_index]["if"]
+
+    package = str(workflow_mapping(install["env"])["GIT_DEB"])
+    match = re.fullmatch(r"git_(\d+\.\d+\.\d+)-[0-9A-Za-z.]+_amd64\.deb", package)
+    assert match is not None, package
+    version = match.group(1)
+    readme = (REPO_ROOT / "README.md").read_text(encoding="utf-8")
+    assert f"agent-toolkitのGit呼び出しはGit {version}以上に対応する。" in readme
+    assert f'grep -Fx "git version {version}"' in str(install["run"])
+    assert "sha256sum -c" in str(install["run"])
+
+    environment = workflow_mapping(test["env"])
+    assert environment["AGENT_TOOLKIT_TEST_GIT"] == f"${{{{ steps.{install['id']}.outputs.git }}}}"
+    targets = direct_pytest_targets({"jobs": {"python-lint": {"steps": [test]}}})
+    # Git呼び出しを新設した経路も最低版の検収へ到達するよう、個別のテストではなくagent-toolkit全体を対象にする。
+    assert targets == ["agent-toolkit/"]

@@ -10,6 +10,9 @@ import pytest
 from agent_toolkit import atk
 from agent_toolkit._plan import commit_mapping
 
+# 手順書`history-rewrite.md`がautosquashに指示する、`<base>`を除くGitの引数。
+AUTOSQUASH_ARGUMENTS = ("-c", "rebase.updateRefs=false", "rebase", "-i", "--autosquash")
+
 
 def _git(repo: pathlib.Path, *argv: str) -> str:
     result = subprocess.run(
@@ -29,6 +32,19 @@ def _commit(repo: pathlib.Path, filename: str, text: str, subject: str) -> str:
     _git(repo, "add", "--", filename)
     _git(repo, "commit", "--no-verify", "-m", subject)
     return _git(repo, "rev-parse", "HEAD")
+
+
+def _autosquash(repo: pathlib.Path, base: str) -> None:
+    """手順書と同じ引数で、編集を素通しする`GIT_SEQUENCE_EDITOR`のautosquashを実行する。"""
+    subprocess.run(
+        ["git", "-C", str(repo), *AUTOSQUASH_ARGUMENTS, base],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        check=True,
+        env={**os.environ, "GIT_SEQUENCE_EDITOR": ":", "GIT_EDITOR": "true"},
+        timeout=30,
+    )
 
 
 @pytest.fixture(name="repo")
@@ -219,7 +235,7 @@ def test_generated_mapping_is_consumed_by_public_record_commands(
         _commit(repo, "first.txt", "追加\n前改訂\n一\n後改訂\n", "一つ目の説明を訂正")
         _commit(repo, "first.txt", "追加\n前改訂\n一修正\n後改訂\n", "修正の説明を訂正")
     else:
-        _git(repo, "rebase", "--autosquash", "--no-update-refs", base)
+        _autosquash(repo, base)
     new_head = _git(repo, "rev-parse", "HEAD")
     mapping = tmp_path / "mapping.json"
     assert _compare(repo, mapping, operation, (base, old_head, new_base, new_head)) == 0
@@ -283,7 +299,7 @@ def test_autosquash_cli_validates_invariants_and_many_to_one_mapping(
     old_head = _commit(repo, "second.txt", "二修正", "fixup! 二つ目")
     control = tmp_path / "control.json"
     assert _compare(repo, control, "autosquash", (base, old_head, base, old_head)) != 0
-    _git(repo, "rebase", "--autosquash", "--no-update-refs", base)
+    _autosquash(repo, base)
     series = _git(repo, "rev-list", "--reverse", f"{base}..HEAD").splitlines()
     output = tmp_path / "valid.json"
     assert _compare(repo, output, "autosquash", (base, old_head, base, series[-1])) == 0

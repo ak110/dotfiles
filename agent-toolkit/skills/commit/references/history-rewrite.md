@@ -56,7 +56,7 @@ autosquash成功後は`git rev-parse --short=7 HEAD`で書換え後HEADを取得
   次のいずれかに当たる場合はfixupを作成せずにautosquashを中止し、`## 失敗時の扱い`に従う。`amend:`・`reword:`の対象件名が一意でない場合、範囲内に件名先頭が制御語（`fixup!`・`squash!`・`amend!`）と半角空白1文字に完全一致する既存commitがある場合、範囲にmergeがある場合、これらの判定が失敗した場合である。
   autosquash直前にもTOCTOU対策として再判定する
 - fixup作成直後に`git log -1 --format=%s`で期待件名（`fixup! <統合先の件名>`、`fixup! <対象の完全OID>`または`amend! <統合先の件名>`）との完全一致を確かめ、一致した場合だけautosquashする
-- 統合は`GIT_SEQUENCE_EDITOR=: git rebase -i --autosquash --no-update-refs <base>`（`<base>`は対象コミットの親以前）で行い、直前に`## 履歴確認の起動形`の`git log`を単独で再実行する
+- 統合は`GIT_SEQUENCE_EDITOR=: git -c rebase.updateRefs=false rebase -i --autosquash <base>`（`<base>`は対象コミットの親以前）で行い、直前に`## 履歴確認の起動形`の`git log`を単独で再実行する。作業branch以外のlocal branch refの更新は設定で抑止する。`--no-update-refs`はGit 2.38で追加された引数で、agent-toolkitが対応するGit 2.34.1は受理しない（Git 2.38未満はref更新の機能自体を持たない）
 - `amend:`・`reword:`では統合先の既存の異なるtrailerを保持し、`Co-Authored-By:`を統合後に1回だけ残す
 
 ## 失敗時の扱い
@@ -64,7 +64,7 @@ autosquash成功後は`git rev-parse --short=7 HEAD`で書換え後HEADを取得
 本節の`pre_fixup`・`fixup`・`autosquash`・`amend`の各phase名と、続行できない理由を返す返却は`${CLAUDE_PLUGIN_ROOT}/share/exec.subagent.md`が定める実装担当の契約の値とする。この契約を受け取っていないエージェントは、同じ観測結果を委譲元へ報告する。
 
 これらのphaseのいずれかが失敗した場合は、後述の内容競合を除き、失敗の事実と観測結果を委譲元へ返して同じ指摘の履歴統合を終える。復旧操作と再試行は委譲元の判断を得てから行う。失敗時点の履歴とindexの状態は種別ごとに異なり、状態を確定しない復旧や再試行はcommitの消失を招く。
-`--no-update-refs`を付けずにrebaseしたことを観測した場合は、local branch refsを事前に保持したOIDと比べる。作業branch以外のrefが動いていたら、そのrefと変更前後のOIDと復旧に必要な許可を委譲元へ返し、復旧は委譲元の判断に委ねる。
+`rebase.updateRefs=false`を指定せずにrebaseしたことを観測した場合は、local branch refsを事前に保持したOIDと比べる。作業branch以外のrefが動いていたら、そのrefと変更前後のOIDと復旧に必要な許可を委譲元へ返し、復旧は委譲元の判断に委ねる。
 autosquashが内容競合で停止した場合は、競合箇所が採用済みの指摘への修正と統合先commitの変更だけから成り、解消後も中間commitの公開契約を保てる場合に限り、同じ実装担当が解消してよい。解消したパスだけをstageし、`## 履歴確認の起動形`の`git log`を単独で実行した直後に`git rebase --continue`する（同じrebaseの続行）。再停止のたびに同じ条件を判定する。担当外の変更を含む競合、帰属を確定できない修正、公開契約を保てない場合は、競合を残して委譲元へ返す。
 返す際は失敗した操作と終了コードと標準エラー出力に、失敗時点の`git status --short`と`git log --oneline -5`を添える。
 

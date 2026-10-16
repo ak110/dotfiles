@@ -25,6 +25,7 @@ from agent_toolkit._common import atomic_file, file_lock, session_launchers, ses
 from agent_toolkit._common.wait_schedule import get_wait_timeout
 from agent_toolkit._git import command as git_command
 from agent_toolkit._git import worktree_exclude
+from agent_toolkit._git import worktrees as git_worktrees
 from agent_toolkit._plan import selection
 lazy from agent_toolkit._common import session_registry
 
@@ -83,23 +84,16 @@ def _branches(repo: pathlib.Path) -> list[str]:
 
 
 def _worktrees(repo: pathlib.Path) -> dict[str, str]:
-    entries: dict[str, str] = {}
-    current: str | None = None
-    for line in _git(repo, "worktree", "list", "--porcelain", "-z").split("\0"):
-        if line.startswith("worktree "):
-            current = str(pathlib.Path(line[9:]).resolve())
-            entries[current] = ""
-        elif current and line.startswith("branch refs/heads/"):
-            entries[current] = line[18:]
-    return entries
+    """登録済みworktreeの解決済みパスからbranch名（branchを持たない登録は空文字）への対応を返す。"""
+    return {str(entry.path.resolve()): entry.branch or "" for entry in git_worktrees.list_worktrees(repo, timeout=_TIMEOUT)}
 
 
 def _main_worktree(repo: pathlib.Path) -> pathlib.Path:
     """Linked worktreeから呼んでも、同じGitリポジトリの主作業ツリーへ解決する。"""
-    block = _git(repo, "worktree", "list", "--porcelain").split("\n\n", 1)[0].splitlines()
-    if not block or not block[0].startswith("worktree ") or "bare" in block:
+    main = git_worktrees.list_worktrees(repo, timeout=_TIMEOUT)[0]
+    if main.bare:
         raise ValueError("repoが主作業ツリーを持たない。--worktreeで作成先を指定する")
-    return pathlib.Path(block[0][9:]).resolve()
+    return main.path.resolve()
 
 
 def _exclude_placement(main: pathlib.Path) -> None:

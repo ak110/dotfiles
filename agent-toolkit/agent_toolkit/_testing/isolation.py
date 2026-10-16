@@ -14,6 +14,10 @@
 - 開発セッションの環境変数（エージェント環境の判定、委譲先とprocess-loopの標識）
 - PATH上の開発機専用のエージェントCLI（`codex`・`claude`・`agy`）
 
+環境変数`AGENT_TOOLKIT_TEST_GIT`へGitの実行ファイルの絶対パスを指定すると、テストへ渡すPATHの先頭へ
+そのGitを`git`の名前で置く。実Gitを起動するテストを、開発用Gitと異なる版（agent-toolkitが対応する最低版など）で
+実行するために使う。
+
 パッケージを取得して起動するツール（uv、pnpmの`dlx`、corepackなど）を実際に動かすテストは、
 `share_package_caches`で取得物の保存先だけをホストと共有する。ホームと設定ディレクトリを隔離したままだと、
 テストのたびに空の保存先へ取得し直し、1件あたり数秒から十数秒かかる。
@@ -37,6 +41,8 @@ import platformdirs
 import pytest
 
 AGENT_CLI_NAMES = ("codex", "claude", "agy")
+# 実Gitを起動するテストが使うGitの実行ファイル。未設定ならPATH上のGitを使う。
+TEST_GIT_ENVIRONMENT_NAME = "AGENT_TOOLKIT_TEST_GIT"
 HOME_ENVIRONMENT_NAMES = ("HOME", "USERPROFILE")
 CONFIG_DIRECTORY_ENVIRONMENT_NAMES = (
     "XDG_CONFIG_HOME",
@@ -132,10 +138,32 @@ def build_isolated_path(path_value: str, link_root: pathlib.Path) -> str:
     return os.pathsep.join(entries)
 
 
+def build_test_git_directory(git: str, link_root: pathlib.Path) -> pathlib.Path:
+    """`git`が指す実行ファイルを`git`の名前で解決できるディレクトリを作成し、そのパスを返す。
+
+    指定先が実行できない場合は、開発用Gitで実行した結果を指定版の結果と取り違えないよう、テストを始めずに失敗させる。
+    """
+    executable = pathlib.Path(git)
+    if not executable.is_absolute() or not executable.is_file() or not os.access(executable, os.X_OK):
+        raise pytest.UsageError(f"{TEST_GIT_ENVIRONMENT_NAME}にはGitの実行ファイルの絶対パスを指定する: {git}")
+    link_root.mkdir(parents=True, exist_ok=True)
+    (link_root / "git").symlink_to(executable)
+    version = subprocess.run(
+        [str(link_root / "git"), "--version"], capture_output=True, text=True, encoding="utf-8", errors="replace", check=False
+    )
+    if version.returncode != 0 or not version.stdout.startswith("git version "):
+        raise pytest.UsageError(f"{TEST_GIT_ENVIRONMENT_NAME}のGitを起動できない（終了{version.returncode}）: {git}")
+    return link_root
+
+
 @pytest.fixture(name="_isolated_path_value", scope="session")
 def isolated_path_value(tmp_path_factory: pytest.TempPathFactory) -> str:
     """テストへ渡すPATHの値をセッションで1回だけ組み立てる。"""
-    return build_isolated_path(_HOST_ENVIRON.get("PATH", ""), tmp_path_factory.mktemp("isolated-path"))
+    path_value = build_isolated_path(_HOST_ENVIRON.get("PATH", ""), tmp_path_factory.mktemp("isolated-path"))
+    if git := os.environ.get(TEST_GIT_ENVIRONMENT_NAME):
+        directory = build_test_git_directory(git, tmp_path_factory.mktemp("test-git"))
+        path_value = os.pathsep.join((str(directory), path_value))
+    return path_value
 
 
 @pytest.fixture(name="_isolate_development_state", autouse=True)
