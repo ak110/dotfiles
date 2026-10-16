@@ -690,6 +690,8 @@ for _ in range(rounds):
     started = time.monotonic()
     result = watch.wait_for_start_permission(notes, {"github.com/example/myrepo"}, watch.StartGate(notes))
     print(f"result={result} elapsed={time.monotonic() - started:.1f}", flush=True)
+if mode in ("ctty-early", "ctty-twice"):
+    print("waits-done", flush=True)
 if mode == "closed":
     sys.stdin = stdin
 if mode != "plain":
@@ -769,6 +771,8 @@ def test_enter_does_not_carry_over_to_next_start_wait(tmp_path: pathlib.Path, mo
             os.write(master, b"\n\n")
             _read_until(master, "result=True", buffer)
         _read_until(master, "待機条件が解除されました", buffer)
+        # 全ての待機の結果行を出力し終えた印を読んでから後段の入力を書く。先に書くと端末のエコーが結果行へ混ざる。
+        _read_until(master, "waits-done", buffer)
         os.write(master, b"child-input\n")
         _read_until(master, "after:'child-input\\n'", buffer)
         assert process.wait(timeout=60) == 0
