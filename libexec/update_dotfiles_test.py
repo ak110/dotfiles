@@ -664,10 +664,10 @@ def test_old_stash_timeout_stops_update_and_records_diagnostics(
     assert timeouts == [120, 30]
     assert killed == [process.pid]
     report = json.loads(sync_report_path.read_text(encoding="utf-8"))
-    assert report["failed_stage"] == f"worktree-stash protect {ref}"
+    assert report["failed_stage"] == "worktree-stash protect-old"
     assert "120秒以内" in report["stderr_tail"]
     captured = capsys.readouterr()
-    assert "待機上限" in captured.out
+    assert "worktree-stash" not in captured.out
     assert "更新を中止" in captured.err
     log = update_dotfiles._LOG_PATH.read_text(encoding="utf-8")
     assert "退避操作開始" in log

@@ -454,9 +454,15 @@ def _run_worktree_stash(*arguments: str) -> subprocess.CompletedProcess[str] | N
     launcher = _SOURCE_ROOT / "libexec" / "update_dotfiles_stash.py"
     argv = [sys.executable, str(launcher), *arguments]
     title = "worktree-stash " + " ".join(arguments)
+    display_title = {
+        "save": "未コミット変更の一時保存",
+        "drop": "復元済みの一時保存データの回収",
+        "protect-old": "過去の退避データの整理",
+    }.get(arguments[0], "退避データの保護")
     _current_stage_title = title
     _last_stderr_tail = None
-    print(f"{title}を実行します（待機上限: {_WORKTREE_STASH_TIMEOUT_SEC}秒）。", flush=True)
+    if arguments[0] != "protect-old":
+        print(f"{display_title}を行っています。", flush=True)
     started_at = time.monotonic()
     logger.info("退避操作開始: %s", title)
     try:
@@ -488,10 +494,9 @@ def _run_worktree_stash(*arguments: str) -> subprocess.CompletedProcess[str] | N
             except subprocess.TimeoutExpired:
                 stdout, stderr = "", ""
             message = (
-                f"{title}が{_WORKTREE_STASH_TIMEOUT_SEC}秒以内に完了しなかったため、"
+                f"{display_title}が{_WORKTREE_STASH_TIMEOUT_SEC}秒以内に完了しなかったため、"
                 "子孫プロセスを終了して更新を中止しました。"
-                "git statusとgit stash listで未コミット内容と退避を確認し、"
-                "update-dotfiles logsで失敗した操作を確認してください。"
+                "update-dotfiles logsで停止した操作と退避先を確認してください。"
             )
             _last_stderr_tail = sync_report.truncate_tail(f"{stdout}\n{stderr}\n{message}")
             logger.error(
@@ -529,7 +534,6 @@ def _run_worktree_stash(*arguments: str) -> subprocess.CompletedProcess[str] | N
         if result.stderr:
             sys.stderr.write(result.stderr)
         return None
-    print(f"{title}が完了しました。", flush=True)
     return result
 
 
@@ -541,12 +545,13 @@ def _save_worktree(label: str) -> str | None:
     ref = result.stdout.strip().splitlines()[-1] if result.stdout.strip() else ""
     if not ref.startswith("refs/worktree/"):
         print(
-            "未コミット内容の退避先refを取得できませんでした。atk worktree-stash listで退避状態を確認し、"
+            "未コミット内容の退避先を取得できませんでした。git for-each-ref refs/worktree/で退避状態を確認し、"
             "未コミット内容が保護されていることを確かめてからupdate-dotfilesを再実行してください。",
             file=sys.stderr,
         )
         return None
-    print(f"未コミット内容を{ref}へ退避しました。")
+    logger.info("未コミット内容の退避先: %s", ref)
+    print("未コミット変更を一時保存しました。更新後に復元します。")
     return ref
 
 
@@ -554,7 +559,7 @@ def _restore_worktree(ref: str) -> bool:
     """worktree固有refからindexを含む未コミット内容を復元する。"""
     restored = _run_git_change("stash", "apply", "--index", ref)
     if restored:
-        print(f"未コミット内容を復元しました: {ref}")
+        print("一時保存していた未コミット変更を復元しました。")
     return restored
 
 
@@ -567,29 +572,18 @@ def _drop_restored_worktree(ref: str) -> bool:
             file=sys.stderr,
         )
         return False
-    print(f"復元済み退避を回収しました: {ref}")
+    print("復元済みの一時保存データを回収しました。")
     return True
 
 
 def _protect_old_worktree_stashes() -> bool:
-    """現在worktreeの旧update-dotfiles退避を、pullに先立って共有GCから保護する。"""
-    result = _git_capture("for-each-ref", "--format=%(refname)", "refs/worktree/")
-    if result.returncode != 0 or result.stderr:
-        print(
-            f"旧退避refを列挙できませんでした: {result.stderr.strip()}。"
-            "git statusとatk worktree-stash listでリポジトリの状態を確認し、"
-            "表示された原因を解消してupdate-dotfilesを再実行してください。",
-            file=sys.stderr,
-        )
+    """旧版の未保護退避を1回の子起動で移行し、保護済みの退避は再処理しない。"""
+    result = _run_worktree_stash("protect-old")
+    if result is None:
         return False
-    for ref in result.stdout.splitlines():
-        if ref.startswith("refs/worktree/update-dotfiles-") and _run_worktree_stash("protect", ref) is None:
-            print(
-                f"旧退避を保護できなかったためpullを中止します: {ref}。"
-                f"atk worktree-stash protect {ref}で保護してからupdate-dotfilesを再実行してください。",
-                file=sys.stderr,
-            )
-            return False
+    if result.stdout.strip():
+        # 個別refの成功行は永続ログに保持し、画面へは最後の移行結果だけを出力する。
+        print(result.stdout.strip().splitlines()[-1], flush=True)
     return True
 
 

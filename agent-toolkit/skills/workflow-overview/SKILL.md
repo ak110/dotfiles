@@ -59,7 +59,7 @@ process-wiでは、対象のメインが候補本文から分類と配分を判�
 
 要求はユーザーが`atk wi add`、`agent-toolkit:add-awi-by-user`、`atk serve`のWI画面から登録し、処理中のエージェントと`agent-toolkit:session-review`も投入する。本文、由来、状態と依存は`agent-toolkit:wi-standards`が定める。
 
-ターンやセッションを終えた後もユーザーに残る判断と行動は、モードによらず個別UWIとして保存し、報告はその所在を示す。会話中の確認で回答を得た事項はUWIに重ねず、回答を得ないまま終わった確認はUWIへ移す。保存の条件、自律モードの確認手段とUWIへの切替は`agent-toolkit:user-confirmation-and-report`「手段の選択」に従う。ユーザーは`atk wi answer`か`atk serve`で回答する。回答済みUWIは、`source`が`run-skill`なら同じ対象リポジトリと同じスキルの次回の`atk run-skill`が、それ以外はprocess-wiの次の実行のメインが元項目とともに取り込む。処理中のprocess-wiのセッションへユーザーが回答を告げた場合は同じ実行の処理対象へ加える（`${CLAUDE_PLUGIN_ROOT}/skills/process-wi/references/selection-procedure.md`「処理対象WIの追加」）。
+ユーザー対応を要する未完了事項は、モードによらず共通の確認基準で個別UWIの登録要否を判定し、報告は保存した所在を示す。自明な取得・再実行・実機確認の案内は通常の報告へ添える。手順が定める完了報告用UWIは保存し、ユーザーが確認する。会話中の確認で回答を得た事項はUWIに重ねず、回答を得ないまま終わった確認はUWIへ移す。保存の条件、自律モードの確認手段とUWIへの切替は`agent-toolkit:user-confirmation-and-report`「手段の選択」に従う。ユーザーは`atk wi answer`か`atk serve`で回答する。回答済みUWIは、`source`が`run-skill`なら同じ対象リポジトリと同じスキルの次回の`atk run-skill`が、それ以外はprocess-wiの次の実行のメインが元項目とともに取り込む。処理中のprocess-wiのセッションへユーザーが回答を告げた場合は同じ実行の処理対象へ加える（`${CLAUDE_PLUGIN_ROOT}/skills/process-wi/references/selection-procedure.md`「処理対象WIの追加」）。
 
 作業完了後は`agent-toolkit:completion-report`から`agent-toolkit:session-review`が起動し、振り返りが投入したAWIは次のprocess-loopセッションで処理される。
 

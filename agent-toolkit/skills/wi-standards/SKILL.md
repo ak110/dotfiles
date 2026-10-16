@@ -10,7 +10,8 @@ description: >
 
 # AWIとUWIの共通規範
 
-AWIはユーザーとエージェントが非同期に共有する未完了の作業要求、UWIはユーザーに残る判断と行動（再開に必須の判断に限らず、任意の対応の選択と操作結果の回答を含む）である。
+AWIはユーザーとエージェントが非同期に共有する未完了の作業要求、UWIはユーザー対応を要する未完了事項と手順が定める完了報告を扱う項目である。
+ユーザーの判断・資料・操作が次の作業に必要な場面などの登録要否は、`agent-toolkit:user-confirmation-and-report`「手段の選択」に従う。
 UWIには、回答まで元の作業を再開・確定できない事前承認型と、最善と判断した対応を実施したうえで可否を問う事後承認型がある。
 WI作成工程の入力、責務および出口は`${CLAUDE_PLUGIN_ROOT}/share/workflow-phases.md`に従う。
 自律モードのユーザーへの報告と回答はUWIへ記録し、その保存を伝達の完了とする（保存する条件と手段は`agent-toolkit:user-confirmation-and-report`「手段の選択」）。別項目の完了待ちと時間経過待ちはUWIにせず、依存と冷却時間で扱う。
@@ -62,7 +63,7 @@ WIの保存状態は`inbox`、`processing`、`hold`、`adopted`、`rejected`で�
 ## 事後承認型UWI
 
 事後承認の判定は`agent-toolkit:user-confirmation-and-report`の`references/approval-scope.md`に従う。事後承認型UWIは実施した対応の可否を問い、投入したエージェントは回答を待たずに元の作業を続ける。本文の書式は[references/uwi-format.md](references/uwi-format.md)が定める。
-是正を求める回答に応じた是正の適否もエージェントが観測できない場合は、そのUWIを終端して新しい事後承認型UWIを投入する。
+是正を求める回答に応じた対応も、`agent-toolkit:user-confirmation-and-report`「手段の選択」で新しいUWIの登録要否を判定する。環境制約による未確認範囲は、可能な確認の結果とともに報告する。
 
 ## 投入と取得
 
