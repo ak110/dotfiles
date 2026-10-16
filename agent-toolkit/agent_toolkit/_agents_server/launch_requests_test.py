@@ -32,6 +32,7 @@ from agent_toolkit._common import session_registry, state_paths
 from agent_toolkit._common.next_action import NEXT_ACTION_PREFIX, ActionableError
 from agent_toolkit._testing.agents_server_support import (
     _REAL_PLUGIN_PREFLIGHT,
+    FakeBackend,
     _actionable_message,
     _manager_with_fake,
     _observed_input_lines,
@@ -40,6 +41,7 @@ from agent_toolkit._testing.agents_server_support import (
     _use_real_plugin_preflight,
     _write_declared_task_document,
     _write_failing_uv,
+    install_backend,
 )
 from agent_toolkit._testing.helpers import delivery_payload
 from agent_toolkit._testing.managed_temp_support import setattr_in_managed_temp_modules
@@ -530,7 +532,7 @@ async def test_public_start_uses_high_tier_model(
 @pytest.mark.asyncio
 async def test_public_lane_resolves_high_tier_candidates(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """段位省略のレーン担当が保存設定の上位候補を解決し、backendへ渡す。"""
-    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_BASE_ENGINE", "claude")
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_EXECUTE_ENGINE", "claude")
     monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CLAUDE_HIGH_TIER_MODEL", "opus/high")
     monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CLAUDE_MEDIUM_TIER_MODEL", "sonnet/medium")
     manager, _backend = _manager_with_fake("claude")
@@ -547,6 +549,34 @@ async def test_public_lane_resolves_high_tier_candidates(tmp_path: pathlib.Path,
         assert session.model_type == "high_tier"
     finally:
         await manager.close()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("engine", ["claude", "codex"])
+async def test_dedicated_wi_owner_uses_orchestrate_candidates(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, engine: str
+) -> None:
+    """要求別担当の明示orchestrate指定は、役割のbase用途と独立した上位候補を両engineで使う。"""
+    other = "codex" if engine == "claude" else "claude"
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_BASE_ENGINE", other)
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_ORCHESTRATE_ENGINE", engine)
+    for candidate in (engine, other):
+        monkeypatch.setenv(f"AGENT_TOOLKIT_CONFIG_{candidate.upper()}_HIGH_TIER_MODEL", "orchestrator/high")
+    current, _backend = _manager_with_fake(engine)
+    install_backend(current, other, FakeBackend(current.sessions, other))
+    monkeypatch.setattr(mcp_tools, "_MANAGER", current)
+    task = launch_requests._SHARE_DIRECTORY / "add-wi.subagent.md"
+    params = {**_observed_input_params(task.name, tmp_path), "投入経路": "専念型"}
+    try:
+        response = await mcp_tools.start(
+            cwd=str(tmp_path), subagent_md_path=str(task), extra_params=params, model_type="orchestrate"
+        )
+        session = current.sessions[response["session_id"]]
+        assert (session.engine, session.model, session.effort) == (engine, "orchestrator", "high")
+        assert session.model_type == "orchestrate"
+        assert session.launch_kind == "delegate"
+    finally:
+        await current.close()
 
 
 def test_required_inputs_ignore_heading_inside_code_fence(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -841,14 +871,15 @@ def test_start_rejects_task_document_under_share_for_other_plugin_manifest(tmp_p
 
 
 @pytest.mark.asyncio
-async def test_start_rejects_removed_wi_draft_review(tmp_path: pathlib.Path) -> None:
-    """廃止した投入前レビューの`<役割名>.subagent.md`は配布物に無く、`start`は起動しない。"""
+async def test_start_accepts_independent_wi_draft_review(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """専念型の投入前レビューが宣言入力だけで中位・review用途として起動する。"""
     task_document = launch_requests._SHARE_DIRECTORY / "wi-draft-review.subagent.md"
-
-    with pytest.raises(ValueError, match="is not an existing .subagent.md file"):
-        await mcp_tools.start(str(tmp_path), subagent_md_path=str(task_document), extra_params={"レビュー対象": "draft.md"})
-
-    assert "wi-draft-review.subagent.md" not in launch_requests._TASK_MODEL_TYPES
+    manager = TaskManager(start=AsyncMock(return_value={"session_id": "review", "status": "running", "label": "review"}))
+    monkeypatch.setattr(mcp_tools, "_MANAGER", manager)
+    params = {key: str(tmp_path / f"{key}.md") for key in ("原稿", "要求と出所", "成立性の証拠", "引き継ぎ記録先")}
+    await mcp_tools.start(str(tmp_path), subagent_md_path=str(task_document), extra_params=params)
+    assert manager.start.await_args.args[0] == "medium_tier"
+    assert manager.start.await_args.kwargs["usage"] == "review"
 
 
 def test_every_task_role_has_usage() -> None:
@@ -857,7 +888,7 @@ def test_every_task_role_has_usage() -> None:
     用途の対応が欠けた役割は段位ごとの用途（上位はbase、中位はreview、軽量はchores）で起動し、役割表と異なるengine順を使う。
     """
     assert set(launch_requests._TASK_USAGES) == set(launch_requests._TASK_MODEL_TYPES)
-    assert set(launch_requests._TASK_USAGES.values()) <= {"base", "review", "chores"}
+    assert set(launch_requests._TASK_USAGES.values()) <= {"base", "execute", "review", "chores"}
 
 
 def test_preflight_covers_plugin_launch_commands() -> None:

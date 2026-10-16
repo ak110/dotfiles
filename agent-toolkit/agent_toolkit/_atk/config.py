@@ -34,7 +34,7 @@ ENGINES = ("claude", "codex")
 TIERS = ("high", "medium", "low")
 """段位。"""
 
-USAGES = ("base", "review", "chores", "orchestrate")
+USAGES = ("base", "execute", "review", "chores", "orchestrate")
 """用途。各用途はengine順を1つ持ち、そのengine順に段位のモデルを並べて候補列とする。"""
 
 TIER_MODEL_TYPES = {"high_tier": "high", "medium_tier": "medium", "low_tier": "low"}
@@ -56,30 +56,35 @@ _TIER_MODEL_DEFAULTS = {
 _PRESET_ENGINE_ORDERS = {
     "codex-balanced": {
         "base_engine": "codex,claude",
-        "review_engine": "claude,codex",
+        "execute_engine": "claude,codex",
+        "review_engine": "codex,claude",
         "chores_engine": "codex,claude",
         "orchestrate_engine": "claude,codex",
     },
     "codex-near-primary": {
         "base_engine": "codex,claude",
+        "execute_engine": "codex,claude",
         "review_engine": "codex,claude",
         "chores_engine": "codex,claude",
         "orchestrate_engine": "claude,codex",
     },
     "codex-primary": {
         "base_engine": "codex,claude",
+        "execute_engine": "codex,claude",
         "review_engine": "codex,claude",
         "chores_engine": "codex,claude",
         "orchestrate_engine": "codex,claude",
     },
     "claude-balanced": {
         "base_engine": "claude,codex",
+        "execute_engine": "claude,codex",
         "review_engine": "codex,claude",
         "chores_engine": "codex,claude",
         "orchestrate_engine": "claude,codex",
     },
     "claude-primary": {
         "base_engine": "claude,codex",
+        "execute_engine": "claude,codex",
         "review_engine": "claude,codex",
         "chores_engine": "claude,codex",
         "orchestrate_engine": "claude,codex",
@@ -391,13 +396,14 @@ def _plan_legacy_migration(config: dict[str, str]) -> tuple[dict[str, str], list
 
 
 def migrate_legacy_settings() -> None:
-    """保存済みの旧モデル設定を新キーへ一括移行し、同じ保存で旧キーを除く。
+    """旧モデル設定を一括移行し、execute未設定の保存済みbaseを実行用途へ引き継ぐ。
 
     環境変数の値は移行しない。新構成で表現できない旧値があれば何も保存せず、
     競合した旧キー・候補と修正する新キーを示す`ActionableError`を送出する。
     """
     config = _load_config()
-    if not any(key in config for key in _LEGACY_MODEL_KEYS):
+    needs_execute = "base_engine" in config and "execute_engine" not in config
+    if not any(key in config for key in _LEGACY_MODEL_KEYS) and not needs_execute:
         return
     updates, conflicts = _plan_legacy_migration(config)
     if conflicts:
@@ -410,6 +416,8 @@ def migrate_legacy_settings() -> None:
         )
     migrated = {key: value for key, value in config.items() if key not in _LEGACY_MODEL_KEYS}
     migrated.update(updates)
+    if "execute_engine" not in migrated and "base_engine" in migrated:
+        migrated["execute_engine"] = migrated["base_engine"]
     _save_config(migrated)
 
 
@@ -540,7 +548,7 @@ def _cmd_config_set(args: argparse.Namespace) -> None:
 
 
 def _cmd_config_apply_preset(args: argparse.Namespace) -> None:
-    """apply-presetサブコマンド: 用途別engine順の4設定を一括保存し、段位モデルとwrite_modelを保持する。
+    """apply-presetサブコマンド: 用途別engine順の5設定を一括保存し、段位モデルとwrite_modelを保持する。
 
     `show`の指定時とプリセット名の省略時は、設定ファイルを読み書きせずに全プリセットの値を表示する。
     """

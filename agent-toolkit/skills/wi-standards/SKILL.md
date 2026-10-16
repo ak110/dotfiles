@@ -27,6 +27,7 @@ WIの投入は、次回以降の`agent-toolkit:process-wi`が処理する要求�
 | 委譲先が`atk wi`でキュー項目の状態を変更する場合 | `references/subagent-queue-ops.md` |
 | 通常AWIを起草・読解・採否判定する前 | `references/awi-body.md` |
 | AWIまたはUWIを起草する場合（投入前に採否と実現方式を確定し、本文を読み直す時点） | `references/drafting-completion.md` |
+| WIの調査・起草・保存を担う前 | `references/drafting-workflow.md` |
 | UWIを起草する場合 | `references/uwi-format.md` |
 | WIを起草する時点と、WIの由来、承認、`source`の値、ユーザー専用の記入欄または逐語転記を判定する時点 | `references/origin-and-approval.md` |
 | WIの状態、状態遷移、依存、冷却時間、保留と終端を扱う前。既存WIの更新・修復・採否の見直しが必要と分かった時点と、既存WIへの具体的な懸念を受けた時点（調査や認識合わせより先） | `references/states-and-dependencies.md` |
@@ -70,7 +71,7 @@ WIの追跡先と本文形式を同じ工程に求めるリポジトリでは、
 依存を伴う要求は、`references/states-and-dependencies.md`の先行成果の必要性基準で確定した依存だけを後続本文と`depends_on`へ反映する。
 投入済みの項目へ着手するエージェントは、`## 反映内容と反映先`・`## 完成条件`と`## 適用範囲`の対象集合の一致を`references/drafting-completion.md`「投入前の読み直し」と同じ基準で確かめ、不一致は実装へ進まず原要求と現物から復元して本文を訂正する。
 
-1. エージェントが通常AWIを投入するとき、および投入済みAWIの本文を更新するときは、自ら起草せず、調査、起草、投入を`${CLAUDE_PLUGIN_ROOT}/share/add-wi.parent.md`に従ってWI投入担当へ委譲する。作業の文脈を多く抱えたエージェントが起草すると既存規定の適用を誤るためである。既存AWIの更新では対象の`ファイル名`を渡し、保留と解除は委譲元が行う。委譲先は確認を発行できないため、認識の違いで要件や結果が変わる未確定事項は回答を得てから渡す。
+1. 他作業の分析・実装の文脈を持つ主体が通常AWIを投入・更新するときは、`${CLAUDE_PLUGIN_ROOT}/share/add-wi.parent.md`の付随型として調査・起草を独立担当へ委譲し、親の意味の検収を経て同じ担当が保存する。WI作成専用の`add-awi-by-user`は同スキルの独立要求数で作成主体を決め、`references/drafting-workflow.md`の共通手順と中位の独立した投入前レビューを経て保存まで完結する。既存AWIの更新では対象の`ファイル名`と取得済み証拠・要件差分を使い、状態の保留と解除は状態契約に従う。ユーザーだけが決める値は確認できるメインへ戻す。
 2. 本文はファイルへ保存し、`atk wi add --body-file <path>`か`atk wi edit --body-file <path>`で渡す（本文をコマンドライン引数で渡す形式は無い。手元で短い本文を書く場合は`$EDITOR`を使う）。同じ対象リポジトリへ同時に確定した複数件は、`--body-file`を繰り返して1回の`atk wi add`へまとめる（努力目標。commitとpushが1回で済む）。依存する複数件は先行項目から投入し、返った正式ファイル名を後続の`depends_on`と本文へ記入する。
 3. 本文が確定した順に登録し、セッション終了時までためない。
 4. 登録するAWIの対象ファイルが現在のセッションの変更対象と重なる場合は、別の作業ツリーでの並行着手と着手の遅れを比べて登録の時機を選ぶ（努力目標）。

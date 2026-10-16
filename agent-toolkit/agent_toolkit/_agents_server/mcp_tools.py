@@ -25,6 +25,7 @@ from agent_toolkit._agents_server.responses import REPLY_NEXT_ACTIONS, public_st
 from agent_toolkit._agents_server.tool_descriptions import (
     COMMAND_DESCRIPTION,
     CWD_DESCRIPTION,
+    DELEGATION_INPUT_GUIDANCE,
     EXTRA_PARAMS_DESCRIPTION,
     HANDOFF_FROM_DESCRIPTION,
     KIND_MCP_INSTRUCTIONS,
@@ -181,6 +182,7 @@ async def send_message(
         Field(
             description=parameter_description(
                 "委譲先へ渡す追加指示または次のturnの依頼本文。実行中turnへは訂正として、終端済みsessionへは新しい依頼として届く。"
+                + DELEGATION_INPUT_GUIDANCE
             )
         ),
     ],
@@ -196,6 +198,10 @@ async def send_message(
     ] = DEFAULT_SEND_MESSAGE_TIMEOUT,
 ) -> dict[str, Any]:
     """実行中turnへ追加指示を送り、終端済みなら同じsessionでreplyを開始する。
+
+    入力は委譲先が他から得られない確定済み要件・事実と実行時の値に絞り、参照可能な記録は絶対パスと対象IDで示す。
+    必須入力とユーザー指定の手段を保つ。手段の指定はユーザー指定か要件達成に必要と確定した根拠を伴う場合に限る。
+    詳細はdelegation/references/base-contract.md「入力の適格性と追送」に従う。
 
     引数を省略すると270秒を待機上限とする。固有のtimeout要件がなければ引数を省略する。
     待つのは継続要求の配送結果が確定するまでとする。委譲先の応答生成の完了は待たない。

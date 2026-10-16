@@ -5,6 +5,7 @@ import json
 import os
 import pathlib
 import re
+import sys
 from typing import Any
 
 import pytest
@@ -52,6 +53,55 @@ class UnavailableProbeBackend(agents_server_support.FakeBackend):
         del args, kwargs
         self.probe_calls += 1
         raise backends.StartCandidateUnavailable("exploreSandboxNamespaceDenied")
+
+
+@pytest.mark.parametrize("engine", ["claude", "codex"])
+@pytest.mark.parametrize("mismatched_runtime", [False, True])
+@pytest.mark.asyncio
+async def test_public_start_classifies_dependency_import_failure(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, engine: str, mismatched_runtime: bool
+) -> None:
+    """Claude依存の読込失敗を次候補へ接続し、実行系の不一致を診断し、他engineの例外境界を保つ。"""
+    current = manager.AgentsServerManager(None)
+
+    class MissingDependency(agents_server_support.FakeBackend):
+        calls = 0
+
+        async def start(self, *_args: Any, **_kwargs: Any) -> state.SessionState:
+            self.calls += 1
+            raise ModuleNotFoundError("No module named 'claude_agent_sdk'", name="claude_agent_sdk")
+
+    next_engine = "codex" if engine == "claude" else "claude"
+    unavailable = MissingDependency(current.sessions, engine)
+    selected = ObservedBackend(current.sessions, next_engine)
+    agents_server_support.install_backend(current, engine, unavailable)
+    agents_server_support.install_backend(current, next_engine, selected)
+    monkeypatch.setattr(mcp_tools, "_MANAGER", current)
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_REVIEW_ENGINE", f"{engine},{next_engine}")
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CLAUDE_MEDIUM_TIER_MODEL", "test/medium")
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CODEX_MEDIUM_TIER_MODEL", "test/medium")
+    if mismatched_runtime:
+        environment = tmp_path / "recreated-venv"
+        environment.mkdir()
+        (environment / "pyvenv.cfg").write_text("version_info = 99.1.0\n", encoding="utf-8")
+        monkeypatch.setattr(sys, "prefix", str(environment))
+    try:
+        if engine == "codex":
+            with pytest.raises(ModuleNotFoundError):
+                await mcp_tools.start(mode="delegate", cwd=str(tmp_path), prompt="処理", model_type="medium_tier")
+            assert not selected.start_calls and not current.sessions
+        else:
+            response = await mcp_tools.start(mode="delegate", cwd=str(tmp_path), prompt="処理", model_type="medium_tier")
+            assert response["session_id"] == "codex-session"
+            assert len(selected.start_calls) == 1
+            assert "claude-session" not in current.sessions
+            reason = response["excluded_candidates"][0]["reason"]
+            assert "claude_agent_sdk" in reason and "ホストを再読み込み" in reason
+            if mismatched_runtime:
+                assert "仮想環境のPython=99.1.0" in reason and "一致しません" in reason
+        assert unavailable.calls == 1
+    finally:
+        await current.close()
 
 
 @pytest.mark.asyncio

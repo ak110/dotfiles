@@ -8,7 +8,10 @@ engine名とbackendのクラスの対応と、engineごとに異なる生成時�
 from __future__ import annotations
 
 import asyncio
+import configparser
 import pathlib
+import sys
+import sysconfig
 import typing
 from collections.abc import Callable
 from typing import Any
@@ -178,6 +181,31 @@ def excludes_with_recorded_reason(engine: str, reason: str) -> bool:
     """記録済みの除外理由が、engineの候補を除外する根拠になるかを返す。backendを持たないengineは常に除外する。"""
     backend_type = backend_class(engine)
     return backend_type is None or backend_type.excludes_with_recorded_reason(reason)
+
+
+def start_dependency_failure(engine: str, error: ImportError) -> str | None:
+    """Claudeの起動時の依存読込失敗を、実行環境の診断付きの候補不成立へ分類する。"""
+    if engine != "claude":
+        return None
+    running = f"{sys.version_info.major}.{sys.version_info.minor}"
+    configuration = pathlib.Path(sys.prefix) / "pyvenv.cfg"
+    details = [f"実行中Python={running}"]
+    try:
+        if configuration.is_file():
+            parser = configparser.ConfigParser()
+            parser.read_string("[venv]\n" + configuration.read_text(encoding="utf-8"))
+            section = parser["venv"]
+            configured = section.get("version_info", section.get("version", ""))
+            if configured and ".".join(configured.split(".")[:2]) != running:
+                details.append(f"仮想環境のPython={configured}で実行系と一致しません")
+        if not pathlib.Path(sysconfig.get_path("purelib")).is_dir():
+            details.append("実行系が参照するsite-packagesがありません")
+    except (OSError, UnicodeError, configparser.Error) as diagnostic_error:
+        details.append(f"実行環境の版を確認できません: {diagnostic_error}")
+    return (
+        f"Claudeの依存を読み込めません: {error}（{'。'.join(details)}）。"
+        "ホストを再読み込みするかセッションを再起動して、現在の仮想環境で再実行する"
+    )
 
 
 def interrupt_requires_turn_id(engine: str) -> bool:

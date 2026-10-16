@@ -179,7 +179,7 @@ class AgentsServerManager(manager_wait.ManagerWait):
         `usage`の省略時は段位ごとの用途（上位はbase、中位はreview、軽量はchores）を使う。
 
         起動直後にengineの可用性を理由として終端した候補とagyの失敗候補を
-        除外集合へ加えて次候補へ進む。agy以外のbackend起動例外では候補を進めない。
+        除外集合へ加えて次候補へ進む。Claudeの依存読込失敗も型付きの候補不成立として扱う。
         Claude/Codexで候補を変えても結果が変わらない失敗は、そのまま委譲元へ返す。
         候補を除外して後続の候補で成立した場合は、除外した候補と除外の根拠を応答へ加える。
         """
@@ -445,6 +445,11 @@ class AgentsServerManager(manager_wait.ManagerWait):
                     session.session_id,
                 )
                 return session
+            except ImportError as exc:
+                reason = backends.start_dependency_failure(engine, exc)
+                if reason is None:
+                    raise
+                raise backends.StartCandidateUnavailable(reason) from exc
             except SessionInitializationTimeoutError as exc:
                 last_timeout = exc
                 timeout_diagnostics.append(f"attempt={attempt}: {exc}")

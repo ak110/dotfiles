@@ -186,11 +186,21 @@ def _record_mapping(args: argparse.Namespace, parser: argparse.ArgumentParser) -
         if metadata is None or errors:
             raise ProgressLogError("計画の関連WIを確定できません", next_action=_CHECK_STRUCTURE)
         allowed = {wi for wi, _summary in metadata.related_wi}
+    targets = args.awi if args.awi is not None else sorted(allowed) if args.get_commits else []
     if args.get_commits or args.commit:
-        commit_mapping.validate_targets(args.awi or [], allowed)
+        commit_mapping.validate_targets(targets, allowed)
     events = commit_mapping.read_events(read_path, content)
     if args.get_commits:
-        result = commit_mapping.get_commits(args.worktree, events, args.awi or [], allowed)
+        try:
+            result = commit_mapping.get_commits(args.worktree, events, targets, allowed)
+        except commit_mapping.CommitMappingError as error:
+            if args.awi is not None or not error.reason.startswith("実装commitの記録がありません:"):
+                raise
+            raise ProgressLogError(
+                error.reason,
+                next_action="実装差分なしで終端するAWIを除いた対象を--awiで指定して再実行する。"
+                "実装commitを持つ項目は生成側が`atk run-script plan-progress --`で対応記録を補って再取得する",
+            ) from error
         for wi, commits in result.items():
             print(json.dumps({"awi": wi, "commits": commits}, ensure_ascii=False))
         return True
@@ -212,9 +222,41 @@ def _record_mapping(args: argparse.Namespace, parser: argparse.ArgumentParser) -
     return True
 
 
-def main(argv: list[str] | None = None, *, description: str | None = None) -> int:
+def _validate_required_inputs(args: argparse.Namespace, parser: argparse.ArgumentParser) -> None:
+    """操作に必要な入力をまとめて診断し、1回の修正で再実行できる形を示す。"""
+    required: list[str] = []
+    if not args.get_commits:
+        required.extend(("completed_step", "result"))
+    if args.get_commits or args.commit or args.rewrite_map or args.handoff:
+        required.append("worktree")
+    if args.commit:
+        required.extend(("previous_head", "awi"))
+    if args.handoff:
+        required.append("allowed_awi")
+    missing = ["--" + name.replace("_", "-") for name in required if not getattr(args, name)]
+    if args.worktree is not None and not args.worktree.is_absolute():
+        missing.append("--worktree（絶対パスが必要）")
+    if missing:
+        command = "plan-commits" if args.get_commits else "plan-progress"
+        example = f"atk run-script {command} -- <Markdownの絶対パス> --worktree <対象worktreeの絶対パス>"
+        if not args.get_commits:
+            example += " --completed-step <工程> --result <結果>"
+        if args.commit:
+            example += " --commit <新HEAD> --previous-head <作成前HEAD> --awi <対応AWI>"
+        elif args.rewrite_map:
+            example += " --rewrite-map <対応表の絶対パス>"
+        if args.handoff:
+            example += " --handoff --allowed-awi <記録の対象AWI>（全件を反復）"
+        parser.error("不足または不正な必須入力: " + ", ".join(missing) + "\n次の操作: " + example + " で再実行する")
+
+
+def main(argv: list[str] | None = None, *, description: str | None = None, retrieval: bool = False) -> int:
     """CLIから進捗ログの追記を開始する。`description`は別名の公開コマンドのヘルプ説明。"""
-    parser = argparse.ArgumentParser(description=description or __doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser = argparse.ArgumentParser(
+        description=description or __doc__,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        usage="%(prog)s PATH --worktree DIR [--awi WI ...] [--handoff --allowed-awi WI ...]" if retrieval else None,
+    )
     parser.add_argument(
         "plan_file",
         type=pathlib.Path,
@@ -222,6 +264,54 @@ def main(argv: list[str] | None = None, *, description: str | None = None) -> in
         help="入力の計画Markdownのパス。--handoffでは引き継ぎ記録Markdown。"
         "commit対応は同じstemのJSONLから読み、JSONL自体をこの位置引数には渡さない",
     )
+    if retrieval:
+        parser.set_defaults(
+            completed_step=None, result=None, commit=None, previous_head=None, rewrite_map=None, get_commits=True
+        )
+    else:
+        _add_record_arguments(parser)
+    parser.add_argument(
+        "--awi",
+        action="append",
+        help="対応するAWIファイル名。--commitでは必須。取得では省略時に許可集合の全件を対象とする。複数対象は反復指定",
+    )
+    parser.add_argument(
+        "--worktree",
+        type=pathlib.Path,
+        metavar="DIR",
+        help="commit対応の記録・履歴更新・取得で必須となる対象worktreeの絶対パス",
+    )
+    parser.add_argument(
+        "--handoff",
+        action="store_true",
+        help="計画なしの引き継ぎ記録についてcommit対応を記録・履歴更新・取得する。"
+        "--commit、--rewrite-mapまたは取得の操作と組で使う。進捗だけの追記は通常のファイル編集で行う",
+    )
+    parser.add_argument("--allowed-awi", action="append", help="引き継ぎ記録の対象AWI全件。--handoffでは反復指定が必須")
+    args = parser.parse_args(argv)
+    _validate_required_inputs(args, parser)
+    failure_title = "commit対応を取得できません" if args.get_commits else "進捗ログを更新できません"
+    try:
+        if _record_mapping(args, parser):
+            return 0
+        append_progress_log(args.plan_file, args.completed_step, args.result)
+    except _next_action.ActionableError as error:
+        # 保存済み計画の直接更新（`_plan.locations`）もこの型で次の操作を持って届く。
+        _next_action.report(f"{failure_title}: {error.reason}", next_action=error.next_action)
+        return 1
+    except (OSError, ValueError) as error:
+        _next_action.report(
+            f"{failure_title}: {error}",
+            next_action="計画または引き継ぎ記録のパスと読取権限を確かめ、同じ引数で再実行する"
+            if args.get_commits
+            else "計画または引き継ぎ記録のパスと読み書きの権限を確かめ、同じ引数で再実行する",
+        )
+        return 1
+    return 0
+
+
+def _add_record_arguments(parser: argparse.ArgumentParser) -> None:
+    """取得専用のparserへ記録操作の入力を公開しないよう、記録側の引数をまとめる。"""
     parser.add_argument("--completed-step", help="完了した工程（記録時は必須）")
     parser.add_argument("--result", help="結果・特記事項（記録時は必須）")
     operation = parser.add_mutually_exclusive_group()
@@ -244,43 +334,6 @@ def main(argv: list[str] | None = None, *, description: str | None = None) -> in
     operation.add_argument(
         "--get-commits", action="store_true", help="対象AWIの現在のcommit対応を短縮OIDのJSON Linesで取得する"
     )
-    parser.add_argument(
-        "--awi", action="append", help="対応する、または取得するAWIファイル名。--commitと取得では必須。複数対象は反復指定"
-    )
-    parser.add_argument(
-        "--worktree",
-        type=pathlib.Path,
-        metavar="DIR",
-        help="commit対応の記録・履歴更新・取得で必須となる対象worktreeの絶対パス",
-    )
-    parser.add_argument(
-        "--handoff",
-        action="store_true",
-        help="計画なしの引き継ぎ記録についてcommit対応を記録・履歴更新・取得する。"
-        "--commit、--rewrite-mapまたは取得の操作と組で使う。進捗だけの追記は通常のファイル編集で行う",
-    )
-    parser.add_argument("--allowed-awi", action="append", help="引き継ぎ記録の対象AWI全件。--handoffでは反復指定が必須")
-    args = parser.parse_args(argv)
-    failure_title = "commit対応を取得できません" if args.get_commits else "進捗ログを更新できません"
-    if not args.get_commits and (args.completed_step is None or args.result is None):
-        parser.error("記録には--completed-stepと--resultが必要です")
-    try:
-        if _record_mapping(args, parser):
-            return 0
-        append_progress_log(args.plan_file, args.completed_step, args.result)
-    except _next_action.ActionableError as error:
-        # 保存済み計画の直接更新（`_plan.locations`）もこの型で次の操作を持って届く。
-        _next_action.report(f"{failure_title}: {error.reason}", next_action=error.next_action)
-        return 1
-    except (OSError, ValueError) as error:
-        _next_action.report(
-            f"{failure_title}: {error}",
-            next_action="計画または引き継ぎ記録のパスと読取権限を確かめ、同じ引数で再実行する"
-            if args.get_commits
-            else "計画または引き継ぎ記録のパスと読み書きの権限を確かめ、同じ引数で再実行する",
-        )
-        return 1
-    return 0
 
 
 if __name__ == "__main__":

@@ -796,7 +796,7 @@ async def test_start_routes_each_mode_to_launch_kind_model_and_label(
         shown[mode] = manager.show_session(response["session_id"])
 
     assert requested == [
-        (launch_requests._TASK_MODEL_TYPES[task_document.name], "base"),
+        (launch_requests._TASK_MODEL_TYPES[task_document.name], "execute"),
         ("high_tier", None),
         ("low_tier", "chores"),
         ("write", "base"),
