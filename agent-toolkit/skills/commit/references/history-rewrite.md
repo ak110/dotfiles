@@ -49,7 +49,7 @@ autosquash成功後は`git rev-parse --short=7 HEAD`で書換え後HEADを取得
 
 - 通常の`--fixup=<sha>`は件名`fixup! <統合先の件名>`、`amend:`と`reword:`はどちらも件名`amend! <統合先の件名>`のコミットを作成する（`reword!`という目印は無い）。編集バッファの1行目の目印と件名を書き換えるとautosquashの対象から外れるため、差し替えるのは3行目以降に限る
 - `--fixup`と`-m`・`-F`の併用はエラーになる。非対話環境では`GIT_EDITOR`へ1行目を保持して以降を差し替える処理を指定し、`amend:`は`git commit --no-verbose --fixup=amend:<sha>`で実行する（`commit.verbose=true`の環境でも差分が本文へ混入しない形である）。対照観測は`docs/development/audit-records.md`の「agent-toolkit/skills/commit/references/history-rewrite.md：fixupの実行上の制約：2026年10月8日」にある
-- fixup作成前に、最古fixup対象と元HEADを短縮OIDで保持し、範囲`<最古fixup対象>^..<元HEAD>`について3点を確かめる。
+- fixup作成前に、最古fixup対象と元HEADを短縮OIDで保持し、`git for-each-ref --format='%(refname) %(objectname)' refs/heads`の出力も保持する（`## 失敗時の扱い`のlocal branch refsの比較元）。範囲`<最古fixup対象>^..<元HEAD>`について3点を確かめる。
   `git rev-list --first-parent --merges`でmerge commitが無いこと、`git rev-list --first-parent --reverse`で得た全OIDがプッシュ未了であることを確かめる。
   `git log --first-parent --format='%H%x00%s'`で各fixup対象の件名が範囲内で一意かを判定する。
   件名が一意でない対象への通常のfixupは`git commit -m 'fixup! <対象の完全OID>'`で作成する（autosquashは`fixup!`の後の語をハッシュとしても解決する）。
