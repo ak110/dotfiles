@@ -607,26 +607,74 @@ def test_inherited_streams_preserve_combined_write_order() -> None:
 
 
 def test_save_worktree_uses_repository_launcher(monkeypatch: pytest.MonkeyPatch) -> None:
-    """worktree退避は作業コピーのランチャーを使う。PATH上の裸のatkは使わない。"""
+    """worktree退避は同じPythonからcheckoutの共通実装を起動する。"""
     calls: list[list[str]] = []
     monkeypatch.setattr(
         subprocess,
-        "run",
-        _fake_run({}, calls, stdout_by_command={str(_REPOSITORY_ATK_BIN / "atk"): "refs/worktree/test\n"}),
+        "Popen",
+        _fake_popen({}, calls, stdout_by_command={sys.executable: "refs/worktree/test\n"}),
     )
 
     assert update_dotfiles._save_worktree("test") == "refs/worktree/test"  # pylint: disable=protected-access
-    assert pathlib.Path(calls[0][0]) == _REPOSITORY_ATK_BIN / "atk"
+    assert calls[0][0] == sys.executable
+    assert pathlib.Path(calls[0][1]) == pathlib.Path(update_dotfiles.__file__).with_name("update_dotfiles_stash.py")
+    assert calls[0][2:] == ["save", "--label=test"]
 
 
 def test_save_worktree_reports_launcher_failure(monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
     """ランチャー起動不能はtracebackを抑止して文脈付き失敗にする。"""
-    monkeypatch.setattr(subprocess, "run", lambda *_args, **_kwargs: (_ for _ in ()).throw(FileNotFoundError("missing")))
+    monkeypatch.setattr(subprocess, "Popen", lambda *_args, **_kwargs: (_ for _ in ()).throw(FileNotFoundError("missing")))
 
     assert update_dotfiles._save_worktree("test") is None  # pylint: disable=protected-access
     captured = capsys.readouterr()
     assert "未コミット内容の退避操作を開始できませんでした" in captured.err
     assert "Traceback" not in captured.err
+
+
+@pytest.mark.parametrize("always_timeout", [False, True])
+def test_old_stash_timeout_stops_update_and_records_diagnostics(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+    sync_report_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+    always_timeout: bool,
+) -> None:
+    """旧退避の保護が停止しても有限回の回収で戻り、pull前に失敗を記録する。"""
+    ref = "refs/worktree/update-dotfiles-old"
+    calls: list[list[str]] = []
+    timeouts: list[int | None] = []
+    process = _TimeoutPopen(
+        ["atk", "worktree-stash", "protect", ref],
+        calls,
+        output_text="partial stdout",
+        error_text="partial stderr",
+        communicate_timeouts=timeouts,
+        always_timeout=always_timeout,
+    )
+    monkeypatch.setattr(update_dotfiles, "_update_git_with_recovery", _REAL_UPDATE_GIT_WITH_RECOVERY)
+    monkeypatch.setattr(update_dotfiles, "_git_operation_in_progress", lambda: False)
+    monkeypatch.setattr(update_dotfiles, "_git_capture", lambda *_args: subprocess.CompletedProcess([], 0, ref + "\n", ""))
+    monkeypatch.setattr(update_dotfiles, "_LOCK_PATH", tmp_path / "update.lock")
+    monkeypatch.setattr(update_dotfiles, "_run_git_pull", lambda *_args, **_kwargs: pytest.fail("pullへ進んだ"))
+    monkeypatch.setattr(subprocess, "Popen", lambda *_args, **_kwargs: process)
+    killed: list[int] = []
+    monkeypatch.setattr(update_dotfiles, "_kill_process_tree", lambda child: killed.append(child.pid))
+
+    assert update_dotfiles.main() == 1
+    assert timeouts == [120, 30]
+    assert killed == [process.pid]
+    report = json.loads(sync_report_path.read_text(encoding="utf-8"))
+    assert report["failed_stage"] == f"worktree-stash protect {ref}"
+    assert "120秒以内" in report["stderr_tail"]
+    captured = capsys.readouterr()
+    assert "待機上限" in captured.out
+    assert "更新を中止" in captured.err
+    log = update_dotfiles._LOG_PATH.read_text(encoding="utf-8")
+    assert "退避操作開始" in log
+    assert "退避操作timeout" in log
+    if not always_timeout:
+        assert "partial stdout" in log
+        assert "partial stderr" in report["stderr_tail"]
 
 
 @pytest.fixture(name="logs_path")
