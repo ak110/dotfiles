@@ -147,8 +147,6 @@ _REMOVED_PATHS: dict[Path, list[cleanup_paths.RemovedPath]] = {
     Path.home() / ".claude": [
         # `references/`はスキル配下だけの名前としたため、旧配布先のディレクトリを削除する。
         cleanup_paths.RemovedPath(Path("references"), datetime.date(2026, 9, 18)),
-        # dotfiles ローカルの ak110-projects-operations skill がこの機能を担う (15ca58b)。
-        cleanup_paths.RemovedPath(Path("agents/cross-project-sync-checker.md"), datetime.date(2026, 4, 16)),
         # agent-basics → agent-toolkit のディレクトリ名リネームに伴い旧ディレクトリを削除する。
         # cleanup_paths.cleanup_paths は is_dir() の場合 shutil.rmtree を呼ぶため、
         # 配下の旧ルールファイル (python.md / claude-rules.md / markdown.md ほか) ごと一括で除去される。
