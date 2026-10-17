@@ -1039,8 +1039,8 @@ def test_candidate_events_excludes_empty_negative_search_results_of_claude_bash(
     candidates = evidence_candidates._candidate_events(timeline, [], [])  # pylint: disable=protected-access
 
     kept_lines = sorted(locator["line"] for candidate in candidates[:-1] for locator in candidate["locators"])
-    assert kept_lines == [4, 5, 6, 7, 8, 12, 13, 14]
-    assert candidates[-1]["excluded"] == {"normal-negative-result": 6}
+    assert kept_lines == [4, 6, 7, 8, 12, 13, 14]
+    assert candidates[-1]["excluded"] == {"normal-negative-result": 7}
 
 
 def test_candidate_events_treats_quoted_operator_shaped_search_terms_as_data() -> None:
@@ -1061,8 +1061,33 @@ def test_candidate_events_treats_quoted_operator_shaped_search_terms_as_data() -
     candidates = evidence_candidates._candidate_events(timeline, [], [])  # pylint: disable=protected-access
 
     kept_lines = sorted(locator["line"] for candidate in candidates[:-1] for locator in candidate["locators"])
-    assert kept_lines == [7, 8, 9, 10]
-    assert candidates[-1]["excluded"] == {"normal-negative-result": 6}
+    assert kept_lines == [7, 9, 10]
+    assert candidates[-1]["excluded"] == {"normal-negative-result": 7}
+
+
+@pytest.mark.parametrize("kind", ["command-failure", "tool-failure"])
+@pytest.mark.parametrize(
+    ("command", "code", "excluded"),
+    [
+        ("rg x 2>/dev/null", 1, True),
+        ("rg x 2>/dev/null", 2, False),
+        ("python3 script.py 2>/dev/null", 1, False),
+        ("rg x 2>/dev/null && echo ok", 1, False),
+        ("rg x 2>/dev/null | head", 1, False),
+    ],
+)
+def test_read_predicate_no_match_is_not_failure(kind, command, code, excluded):
+    """両ホストの空診断の否定結果を除き、異常と帰属不能な終了を保持する。"""
+    event = _bash_failure(1, command, f"Exit code {code}")
+    if kind == "command-failure":
+        event = {
+            "tool": "CommandExecution",
+            "exit_code": code,
+            "diagnostic": "",
+            "command": json.dumps(["bash", "-c", command]),
+        }
+    result = evidence_candidates.failure_candidate_exclusion(kind, event)
+    assert (result == "normal-negative-result") is excluded
 
 
 def test_public_bundle_excludes_claude_wait_continuations(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:

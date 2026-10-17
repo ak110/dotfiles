@@ -124,6 +124,7 @@ lazy from agent_toolkit._hooks.pretooluse.shell_checks import (
     _check_bash_option_after_terminator,
     _check_bash_process_kill_by_pattern,
     _check_bash_unquoted_heredoc_substitution,
+    _check_read_predicate_stderr_discard,
     _git_commit_attribution_error,
     _git_commit_message_format_error,
     _git_commit_messages,
@@ -327,6 +328,7 @@ def _decide_bash_tool(payload: dict, tool_input: dict, session_id: str, *, is_co
         lambda: _check_bash_process_kill_by_pattern(command),
         lambda: _check_bash_option_after_terminator(command),
         lambda: _check_bash_atk_output_loss(command),
+        lambda: _check_read_predicate_stderr_discard(command),
         lambda: _warn_git_rev_parse_short_multiple(command),
     ):
         message = block()

@@ -457,6 +457,7 @@ def test_failure_ledger_rejudges_records_with_current_exclusions(
     entries.extend(bash_failure_entries("atk wi grep 台帳", no_match, "single"))
     entries.extend(bash_failure_entries("cd /repo; atk wi grep 台帳", no_match, "cd-prefixed"))
     entries.extend(bash_failure_entries("atk agents wait", "Exit code 3\n待機中: 1件", "wait"))
+    entries.extend(bash_failure_entries("rg needle docs 2>/dev/null", "Exit code 1", "read-predicate"))
     excluded_session.write_text("".join(json.dumps(entry, ensure_ascii=False) + "\n" for entry in entries), encoding="utf-8")
     excluded_dir = tmp_path / "excluded-work"
     excluded_dir.mkdir()
@@ -466,7 +467,7 @@ def test_failure_ledger_rejudges_records_with_current_exclusions(
         json.loads(line) for line in (excluded_dir / "bundle" / "timeline.jsonl").read_text(encoding="utf-8").splitlines()
     ]
     failures = [event for event in timeline if event.get("kind") == "failed-tool"]
-    assert len(failures) == 3
+    assert len(failures) == 4
     ledger = tmp_path / "state" / "session-review" / "failure-signatures.jsonl"
     excluded_records = []
     for event in failures:
@@ -482,6 +483,8 @@ def test_failure_ledger_rejudges_records_with_current_exclusions(
                 "failure_event": failure_event,
             }
         )
+    negative = excluded_records[-1]
+    excluded_records.extend({**negative, "session_id": f"negative-{index}"} for index in range(17))
     ledger.write_text("".join(json.dumps(record, ensure_ascii=False) + "\n" for record in excluded_records), encoding="utf-8")
 
     chained = "atk wi grep 台帳; atk wi grep 失敗署名"

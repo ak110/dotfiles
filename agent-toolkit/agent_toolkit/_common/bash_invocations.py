@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import dataclasses
 import enum
+import pathlib
 import re
 import shlex
 from collections.abc import Sequence
@@ -32,6 +33,7 @@ class BashInvocation:
 
     展開を含む引数は`arguments_known`を偽にし、値を実行して求めない。
     出力の整数は囲むシェルから継承するファイル記述子を表す。
+    `cwd_scope`は同じ解析内の子環境を階層ごとに識別し、共通cwd解決が親からの継承と移動の局所性に使う。
     助言と実行記録が共有する`ExecutionSegment`の既存解析は変更しない。
     """
 
@@ -42,6 +44,7 @@ class BashInvocation:
     captured: bool = False
     static_tokens: tuple[str, ...] = ()
     static_outputs: tuple[_OutputTarget, _OutputTarget] = (1, 2)
+    cwd_scope: tuple[object, ...] = ()
 
     @property
     def output_pipe(self) -> bool:
@@ -76,6 +79,38 @@ _BASH_OPERATORS = ("&&", "||", "|&", ";;&", ";;", ";&", ";", "&", "|", "(", ")",
 
 _UNKNOWN_BASH_WORD = "\x00"
 STATIC_UNKNOWN = "\ue000"
+
+
+def is_read_predicate(args: Sequence[str]) -> bool:
+    """引数列が、正常な否定結果を終了1で返す読取述語かを返す。"""
+    if not args:
+        return False
+    executable = pathlib.Path(args[0]).name
+    if executable in {"rg", "grep", "git-grep"}:
+        return True
+    if executable in {"test", "["}:
+        return any(flag in args for flag in ("-e", "-f", "-d", "-L"))
+    if executable == "command":
+        return len(args) >= 3 and args[1] == "-v"
+    if executable == "cmp":
+        return "-s" in args or "--silent" in args
+    if executable != "git":
+        return False
+    git_args = args[1:]
+    while git_args:
+        if git_args[0] in {"-C", "-c", "--git-dir", "--work-tree"} and len(git_args) >= 2:
+            git_args = git_args[2:]
+        elif git_args[0] == "--no-pager":
+            git_args = git_args[1:]
+        else:
+            break
+    if not git_args:
+        return False
+    if git_args[0] == "grep":
+        return True
+    if git_args[0] == "config":
+        return any(option in git_args[1:] for option in ("--get", "--get-all", "--get-regexp"))
+    return git_args[0] == "merge-base" and "--is-ancestor" in git_args[1:]
 
 
 def extract_bash_invocations(command: str) -> list[BashInvocation]:
@@ -200,6 +235,9 @@ def _bash_word(command: str, start: int) -> tuple[_BashToken, int]:
     if len(values) != 1:
         raise ValueError("シェル語を確定できない")
     value = values[0]
+    if value == "[":
+        known = True
+        static_pieces = ["["]
     if not known:
         assignment = ENV_ASSIGN_PATTERN.match(value)
         value = (assignment.group() if assignment else "") + _UNKNOWN_BASH_WORD
@@ -277,8 +315,11 @@ def _bash_command_list(
             _, index = _bash_command_list(tokens, function_body + 1, ")" if tokens[function_body].value == "(" else "}")
             current, words = [], []
         elif grouped:
+            subshell = tokens[index].value == "("
             inner_closing = ")" if tokens[index].value == "(" else "}"
             current, index = _bash_command_list(tokens, index + 1, inner_closing)
+            if subshell:
+                current = _isolated_cwd_scope(current)
             words = []
         else:
             current = []
@@ -310,11 +351,15 @@ def _bash_command_list(
             coprocess=coprocess,
         )
         current = [_inherit_bash_outputs(item, outputs, static_outputs) for item in current]
+        if coprocess or separator in PIPE_SEPARATORS or pipeline_start < len(result):
+            current = _isolated_cwd_scope(current)
         if coprocess:
             current = [dataclasses.replace(item, background=True) for item in current]
         result.extend(current)
         if separator == "&":
-            result[pipeline_start:] = [dataclasses.replace(item, background=True) for item in result[pipeline_start:]]
+            result[pipeline_start:] = _isolated_cwd_scope(
+                [dataclasses.replace(item, background=True) for item in result[pipeline_start:]]
+            )
         if separator in {";", "\n", "&&", "||", "&"}:
             pipeline_start = len(result)
         if index < len(tokens) and _bash_closes(tokens[index], closing):
@@ -398,7 +443,9 @@ def _bash_compound(tokens: Sequence[_BashToken], start: int) -> tuple[list[BashI
         boundary = "in" if kind == "case" else "do"
         while index < len(tokens) and not _bash_closes(tokens[index], boundary):
             for body in tokens[index].nested:
-                result.extend(dataclasses.replace(item, captured=True) for item in extract_bash_invocations(body))
+                result.extend(
+                    _isolated_cwd_scope([dataclasses.replace(item, captured=True) for item in extract_bash_invocations(body)])
+                )
             index += 1
         if index == len(tokens):
             raise ValueError("閉じない複合文の前置部")
@@ -448,19 +495,35 @@ def _bash_word_invocations(words: Sequence[_BashToken]) -> list[BashInvocation]:
     # 引用された名前や`=`はシェルの前置代入にならず、その語自身が実行位置になる。
     quoted_assignment = prefix < len(words) and ENV_ASSIGN_PATTERN.match(values[prefix]) is not None
     segment = ExecutionSegment(tuple(values[prefix:]), True) if quoted_assignment else resolve_execution_segment(values)
+    for position in range(prefix, len(values) - 1):
+        if values[position : position + 2] == ["command", "-v"] and resolve_execution_segment(
+            [*values[:position], "true"]
+        ).tokens == ("true",):
+            segment = ExecutionSegment(tuple(values[position:]), True)
+            break
     known = not any(_UNKNOWN_BASH_WORD in token for token in segment.tokens)
     if segment.resolved and segment.tokens and _UNKNOWN_BASH_WORD not in segment.tokens[0]:
         shell = shell_c_argument(segment.tokens)
         if shell is not None and known:
-            result.extend(extract_bash_invocations(shell))
+            result.extend(_isolated_cwd_scope(extract_bash_invocations(shell)))
         else:
             result.append(
                 BashInvocation(segment, known, static_tokens=tuple(word.static_value for word in words[-len(segment.tokens) :]))
             )
+    substitutions: list[BashInvocation] = []
     for word in words:
         for body in word.nested:
-            result.extend(dataclasses.replace(item, captured=True) for item in extract_bash_invocations(body))
-    return result
+            substitutions.extend(
+                _isolated_cwd_scope([dataclasses.replace(item, captured=True) for item in extract_bash_invocations(body)])
+            )
+    # 引数の置換は外側のコマンドより先に実行され、移動前のcwdを継承する。
+    return [*substitutions, *result]
+
+
+def _isolated_cwd_scope(invocations: list[BashInvocation]) -> list[BashInvocation]:
+    """シェルの子環境へ一意な作用範囲を割り当てる。"""
+    scope = object()
+    return [dataclasses.replace(item, cwd_scope=(scope, *item.cwd_scope)) for item in invocations]
 
 
 def _bash_output_targets(

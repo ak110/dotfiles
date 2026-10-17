@@ -5,7 +5,9 @@ from __future__ import annotations
 import dataclasses
 import os
 import re
+from collections.abc import Iterator
 
+from agent_toolkit._common.bash_invocations import BashInvocation, extract_bash_invocations
 from agent_toolkit._common.shell_segments import skip_env_assignments
 
 _PUSHD_STACK_ROTATION_PATTERN = re.compile(r"^[+-]\d+$")
@@ -20,15 +22,39 @@ class CwdResolution:
     unresolved_expression: str | None = None
 
 
+def bash_invocation_cwds(command: str, cwd: str = "") -> Iterator[tuple[BashInvocation, CwdResolution]]:
+    """各呼び出しの実行位置を返す。未知の移動後は不明を保ち、絶対移動で解決を再開する。
+
+    子シェル・パイプ・背景実行・置換の移動は、その作用範囲内だけで追跡する。
+    波括弧と複合文の移動は後続へ渡す。環境依存の移動を元のcwdへ代用しない。
+    """
+    initial = CwdResolution(cwd, bool(cwd))
+    positions: dict[tuple[object, ...], CwdResolution] = {(): initial}
+    for invocation in extract_bash_invocations(command):
+        scope = invocation.cwd_scope
+        for length in range(1, len(scope) + 1):
+            positions.setdefault(scope[:length], positions[scope[: length - 1]])
+        current = positions[scope]
+        yield invocation, current
+        change = resolve_cwd_change(list(invocation.segment.tokens), current)
+        if change is not None:
+            positions[scope] = change
+
+
 def resolve_cwd_change(tokens: list[str], current_cwd: CwdResolution) -> CwdResolution | None:
     """cwdを変更するセグメントの解決結果を返す。"""
     start = skip_env_assignments(tokens, 0)
     if start >= len(tokens):
         return None
     if tokens[start] in ("cd", "pushd"):
-        return _apply_cd(tokens, start, current_cwd)
+        changed = _apply_cd(tokens, start, current_cwd)
+        return (
+            dataclasses.replace(changed, unresolved_expression=changed.unresolved_expression or tokens[start])
+            if not changed.resolved
+            else changed
+        )
     if tokens[start] == "popd":
-        return CwdResolution("", False)
+        return CwdResolution("", False, "popd")
     return None
 
 
@@ -69,7 +95,7 @@ def _apply_cd(tokens: list[str], start: int, current_cwd: CwdResolution) -> CwdR
 # メタ文字を含む対象は常に解決不能とし、安全側（過剰block/warn）で運用する。
 def _contains_shell_expansion(value: str) -> bool:
     """静的解析で解決できないシェル展開の記号を含むか判定する。"""
-    return any(marker in value for marker in ("$", "`", "~", "*", "?", "[", "{"))
+    return any(marker in value for marker in ("\x00", "$", "`", "~", "*", "?", "[", "{"))
 
 
 def _normalize_relative(target: str, current_cwd: CwdResolution) -> CwdResolution:

@@ -27,6 +27,7 @@ from agent_toolkit._hooks.notice import block_formatter as _block_notice_formatt
 lazy from agent_toolkit._atk import run_script as _run_script
 lazy from agent_toolkit._common import transcript
 lazy from agent_toolkit._common.shell_segments import extract_execution_segments
+lazy from agent_toolkit._common.shell_tokens import ATK_SHELL_TOOLS, is_atk_command
 lazy from agent_toolkit._hooks import termination_evidence
 lazy from agent_toolkit._hooks.agent_id import is_main_agent_context
 lazy from agent_toolkit._hooks.background_tasks import async_launch_offsets, pending_async_task_ids
@@ -54,7 +55,7 @@ def _resident_bash_ids(transcript_path: str) -> set[str]:
         for block in content if isinstance(content, list) else []:
             if not isinstance(block, dict):
                 continue
-            if block.get("type") == "tool_use" and block.get("name") == "Bash":
+            if block.get("type") == "tool_use" and block.get("name") in ATK_SHELL_TOOLS:
                 tool_input = block.get("input")
                 command = tool_input.get("command") if isinstance(tool_input, dict) else None
                 identifier = block.get("id")
@@ -87,7 +88,7 @@ def _is_resident_command(command: str) -> bool:
         script = tokens[2:3] if tokens[1:2] == ("run",) else tokens[1:2]
         if (
             name in {"uvicorn", "gunicorn", "watch", "nodemon", "http.server", "vite"}
-            or name in {"atk", "atk.py"}
+            or is_atk_command(tokens)
             and tokens[1:2] == ("serve",)
             or name in {"npm", "pnpm", "yarn", "bun"}
             and bool(script)

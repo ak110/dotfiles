@@ -7,11 +7,55 @@ import subprocess
 
 import pytest
 
+from agent_toolkit._hooks import stop
 from agent_toolkit._testing import fork_runner as _fork_runner
 from agent_toolkit._testing import stop_check_runner as _stop_check_runner
 from agent_toolkit._testing.helpers import _write_transcript
 
 _SCRIPT = pathlib.Path(_stop_check_runner.__file__)
+
+
+@pytest.mark.parametrize("text", ["### 機能が足りないのか？", "不明点があれば教えてください。"])
+def test_false_positive_notice_offers_ellipsis_exit(tmp_path, monkeypatch, capsys, text):
+    """Stop全判定を通し、誤検出から本文を保持した終了まで到達する。"""
+    monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)
+    monkeypatch.delenv("AGENT_TOOLKIT_DELEGATED_SESSION", raising=False)
+    transcript = _transcript_with_response(tmp_path, text)
+    payload: dict[str, object] = {"session_id": "false-positive", "transcript_path": str(transcript)}
+    assert stop.main(json.dumps(payload)) == 0
+    reason = json.loads(capsys.readouterr().out)["reason"]
+    for expected in (text, "判定基準", "ユーザーの回答を待つ", "AskUserQuestion", "本文を書き換えず", "…"):
+        assert expected in reason
+    with transcript.open("a", encoding="utf-8") as stream:
+        for entry in (
+            {"type": "user", "message": {"content": "Stop hook feedback: " + reason}},
+            {"type": "assistant", "message": {"id": "msg-2", "content": [{"type": "text", "text": "…"}]}},
+        ):
+            stream.write(json.dumps(entry, ensure_ascii=False) + "\n")
+    payload["stop_hook_active"] = True
+    updated = tmp_path / "after-feedback.jsonl"
+    updated.write_text(transcript.read_text(encoding="utf-8"), encoding="utf-8")
+    payload["transcript_path"] = str(updated)
+    assert stop.main(json.dumps(payload)) == 0
+    assert json.loads(capsys.readouterr().out).get("decision") != "block"
+
+
+@pytest.mark.parametrize(
+    ("text", "blocked"),
+    [
+        ("報告: 「3件だけ？ 他のはどうなの？」を確認した。", False),
+        ("報告: 『必要？\n本当？』を確認した。", False),
+        ("「記録位置」は必要ですか？", True),
+        ("対にならない「必要ですか？", True),
+    ],
+)
+def test_question_mark_inside_quotes_is_ignored(tmp_path, monkeypatch, capsys, text, blocked):
+    """対になる記録引用を除き、外側と閉じない引用の問いを検出する。"""
+    monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)
+    monkeypatch.delenv("AGENT_TOOLKIT_DELEGATED_SESSION", raising=False)
+    transcript = _transcript_with_response(tmp_path, text)
+    assert stop.main(json.dumps({"session_id": "quoted", "transcript_path": str(transcript)})) == 0
+    assert (json.loads(capsys.readouterr().out).get("decision") == "block") is blocked
 
 
 def _run(payload: dict, *, state_dir: pathlib.Path) -> subprocess.CompletedProcess[str]:

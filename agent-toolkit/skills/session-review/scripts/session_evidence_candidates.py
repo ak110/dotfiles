@@ -51,6 +51,7 @@ from agent_toolkit._atk.wi import uwi_scan as _uwi_scan
 from agent_toolkit._atk.wi.constants import PROCESS_WI_GOAL_BODY as _PROCESS_WI_GOAL_BODY
 from agent_toolkit._atk.wi.frontmatter import parse_frontmatter as _parse_wi_frontmatter
 from agent_toolkit._common import response_language_check as _response_language_check
+from agent_toolkit._common.bash_invocations import extract_bash_invocations, is_read_predicate
 from agent_toolkit._common.shell_quoting import QuotingScanner as _QuotingScanner
 from agent_toolkit._common.shell_segments import extract_execution_segments as _extract_execution_segments
 
@@ -1293,8 +1294,10 @@ def _is_normal_negative_result(event: dict[str, Any]) -> bool:
         if len(args) < 3 or args[1] not in {"-c", "-lc"}:
             return False
         tokens = _shell_command_tokens(args[2])
-        return tokens is not None and _is_negative_search_command(tokens, exit_code)
-    return exit_code == 1 and _is_negative_predicate(args)
+        return (
+            _single_read_predicate(args[2], exit_code) or tokens is not None and _is_negative_search_command(tokens, exit_code)
+        )
+    return exit_code == 1 and is_read_predicate(args)
 
 
 def _is_normal_atk_no_match(event: dict[str, Any]) -> bool:
@@ -1345,7 +1348,24 @@ def _is_normal_negative_tool_failure(event: dict[str, Any]) -> bool:
     if not isinstance(command, str):
         return False
     tokens = _shell_command_tokens(command)
-    return tokens is not None and _is_negative_search_command(tokens, int(matched.group(1)))
+    code = int(matched.group(1))
+    return _single_read_predicate(command, code) or tokens is not None and _is_negative_search_command(tokens, code)
+
+
+def _single_read_predicate(command: str, exit_code: int) -> bool:
+    """リダイレクト付きの単独述語へ終了1を帰属させる。制御演算子とパイプは既存分類へ委ねる。"""
+    tokens = _shell_command_tokens(command)
+    if (
+        exit_code != 1
+        or tokens is None
+        or any(
+            token.operator and any(char in token.value for char in ";|()\n") or token.operator and token.value in {"&&", "&"}
+            for token in tokens
+        )
+    ):
+        return False
+    invocations = extract_bash_invocations(command)
+    return len(invocations) == 1 and invocations[0].arguments_known and is_read_predicate(invocations[0].segment.tokens)
 
 
 class _ShellToken(NamedTuple):
@@ -1432,7 +1452,7 @@ def _is_negative_search_command(tokens: list[_ShellToken], exit_code: int) -> bo
                 return False
             else:
                 parts[-1].append(token.value)
-        return exit_code == 1 and all(part and _is_negative_predicate(part) for part in parts)
+        return exit_code == 1 and all(part and is_read_predicate(part) for part in parts)
     segments: list[list[str]] = [[]]
     for token in tokens:
         if token.operator:
@@ -1445,43 +1465,13 @@ def _is_negative_search_command(tokens: list[_ShellToken], exit_code: int) -> bo
         return False
     last = segments[-1]
     if exit_code == 1:
-        return _is_negative_predicate(last)
+        return is_read_predicate(last)
     if exit_code == 123 and Path(last[0]).name == "xargs":
         start = next(
             (index for index, token in enumerate(last[1:], start=1) if Path(token).name in {"rg", "grep", "git"}), None
         )
-        return start is not None and _is_negative_predicate(last[start:])
+        return start is not None and is_read_predicate(last[start:])
     return False
-
-
-def _is_negative_predicate(args: list[str]) -> bool:
-    """引数列が、偽の結果を終了コード1で返す読取専用の述語であるかを返す。"""
-    executable = Path(args[0]).name
-    if executable in {"rg", "grep", "git-grep"}:
-        return True
-    if executable in {"test", "["}:
-        return any(flag in args for flag in ("-e", "-f", "-d", "-L"))
-    if executable == "command":
-        return len(args) >= 3 and args[1] == "-v"
-    if executable == "cmp":
-        return "-s" in args or "--silent" in args
-    if executable != "git":
-        return False
-    git_args = args[1:]
-    while git_args:
-        if git_args[0] in {"-C", "-c", "--git-dir", "--work-tree"} and len(git_args) >= 2:
-            git_args = git_args[2:]
-        elif git_args[0] == "--no-pager":
-            git_args = git_args[1:]
-        else:
-            break
-    if not git_args:
-        return False
-    if git_args[0] == "grep":
-        return True
-    if git_args[0] == "config":
-        return any(option in git_args[1:] for option in ("--get", "--get-all", "--get-regexp"))
-    return git_args[0] == "merge-base" and "--is-ancestor" in git_args[1:]
 
 
 def _is_normal_delegate_return(event: dict[str, Any], *, shell: bool = False, resumed: bool = False) -> bool:

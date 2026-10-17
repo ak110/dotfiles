@@ -55,6 +55,17 @@ Bashの引数所属と出力接続は、`_common/bash_invocations.py`の`extract
 助言や実行記録が使う`extract_execution_pipelines`の既存契約は、用途が異なるため保持する。
 文書書込の判定には、引用を除き展開部分を未知印で保持した`static_tokens`と`static_outputs`を別に渡す。既存のtokens・arguments_known・outputsは変更しない。最後の未知印以降が`/`で始まる確定末尾だけを採用し、環境変数を評価せずに書込先を判定する。
 
+呼出しごとの作業ディレクトリは`_common/shell_cwd.py`の`bash_invocation_cwds`が所有する。
+Bash解析が保持する作用範囲を使い、サブシェル、パイプの要素、背景実行、コマンド置換の移動を子環境へ閉じ、波括弧と複合文の移動は後続へ渡す。
+未知の展開と`popd`の後は位置を不明として保持し、絶対パスへの移動で解決を再開する。
+読取・書込・commitのメッセージファイルと成果作業の帰属は同じ結果を使い、消費側ごとの移動追跡と元のcwdへの代用を避ける。
+
+読取述語の定義は`_common/bash_invocations.py`の`is_read_predicate`が所有し、PreToolUseとsession-reviewが共用する。
+`shell_checks.py`は同じBash解析の標準エラーの最終接続先がリテラルの`/dev/null`となる述語を、診断喪失による誤判断を防ぐため実行前に遮断する。
+リダイレクトを記述順に適用するため、`>/dev/null 2>&1`は遮断し、`2>&1 >/dev/null`と`2>errors.log`は診断を保持する形として通す。
+前置、`xargs`、シェル本文、グループ、複合文と置換にも同じ判定を適用し、実行名と接続先を静的に確定できない入力は推定しない。
+両ホストの入力と各接続の対照は`shell_checks_test.py::test_read_predicate_stderr_discard_is_blocked`が確かめる。
+
 原セッション記録の本文参照も、共通の呼出解析と静的な読取対象から判定する。`pretooluse/large_reads.py`は設定ホームからClaudeのprojectsとCodexのsessionsを解決し、Read・Grep・Bashの本文読取や検索へ既存の`session-review-evidence`の照会を案内する。Bashでは読取コマンドの入力パスと静的cwd、Pythonの直列に実行されるliteralの読取を扱う。Pythonの読取と文書書込は同じ`python_file_paths`で代入・実行位置を解析し、対象操作だけを分ける。未知のコードと外部スクリプトの内部へ解析を広げない。属性確認、パスの表示、正式な抽出・準備と派生証拠の処理は除く。大容量の原記録の遮断時にも専用CLIを案内し、一般本文の`atk read-file`案内を保つ。案内の目的は原記録を手で読み直す反復を減らすことであり、新しい証拠CLIと判定状態は加えず、反復による遮断へ昇格しない。
 
 heredocの区切り語は、bashと同じく引用を除いた語で終端行と比べる。区切り語のどこかに引用（`'`・`"`・`\`）があれば本文を展開しない区切り語として扱い、`\EOF`・`E"OF"`も`'EOF'`と同じ終端行`EOF`で閉じる。
@@ -262,6 +273,11 @@ LLMへの配送成功をHookの完了判定へ変換する案、SubagentStopへ�
 本機構が判定するのは、実際の準備結果と可視発話から機械的に確定する不足である。現行の判定基準は`claude-hooks-block-warn.md`「遮断・警告フックの成立条件」にあり、旧基準からの変更の経緯は「全件確認の経緯（2026年9月26日）」にある。
 
 判定と保持の責務は`agent-toolkit/agent_toolkit/_hooks/termination_evidence.py`へ集約する。PreToolUse・PostToolUse・UserPromptSubmitは既存のエントリーポイントから呼び出しと人間の入力を供給し、Stopの集約は既存の例外隔離と連続block上限を保つ。
+
+Bashの成果作業は共通の呼出しごとの実行位置とGitの位置指定からリポジトリへ帰属させ、編集は書込先ごとの所属を記録する。
+private-notesとGitリポジトリ外の書込は成果作業の編集へ含めない。
+編集ツールによる計画保存はhookのcwdへ帰属させる。
+省略の拒否は複数の所属と所属不明を区別し、不明の場合は成果作業の種類と、completion-reportへ進む操作、起動を禁じる規範がある場合の報告先を示す。
 
 2026年10月11日のユーザー指示で、Stopが可視発話の報告見出しと報告本文（区切り、区分、候補ID、予定を示す語）を判定する方式を撤去した。送達後の報告が区切りの差でも遮断され、全文の再出力を往復させたためである。報告の内容と書式は`agent-toolkit:completion-report`の`references/report-formats.md`と既存の完成形の例へ集約し、報告を書くメインが確かめる。同じ判断のユーザー指示で、Stopは`agent-toolkit:completion-report`の呼び忘れの検出へ限定した。
 `termination_order_advisor`は、成果作業（成功した`agent-toolkit:process-wi`・`agent-toolkit:add-awi-by-user`の開始、リポジトリへの自編集、計画の保存、WIの保存、commit・push）を行った作業を対象とする。同じ作業に起動証拠も有効な省略判断も無ければ初回Stopから遮断し、起動と残工程への続行を案内する。適用するプロジェクト規範が起動を不要と定める場合は、メインが意味と優先順位を判断して`termination-evidence --decision-file`へ`omit-completion`を記録する。機械は現在のメイン・会話・原入力と作業対象、規範の絶対パスと全文引用を照合する。有効な判断は対応する作業だけへ作用し、別作業の起動不足と、process-loopの会話が終了時に`atk agents-exit-session`を実行する義務は保つ。規範の変更、新しい人間入力後の作業、開始・再開後の次判断では適用を確かめ直し、古い省略を流用しない。省略の記録手順は、completion-reportを起動する前に読める`agent-toolkit/skills/completion-report/references/termination-evidence.md`が持つ。起動証拠はClaude Codeでは成功したSkill呼び出し、CodexではBashへ正規化された読取コマンドの入力が同スキルの`SKILL.md`を指し、結果が本文を返した読取である。Codexの`tool_response`は終了コードを含まないため、結果にfrontmatterの`name`が現れることを本文の取得とみなし、パスの文字列やPostToolUseの発火だけを起動証拠にしない。読了は工程の完了を示さず、起動後の工程の完遂は規範が扱う。
