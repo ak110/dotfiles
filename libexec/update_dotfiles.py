@@ -65,7 +65,9 @@ import re
 import shutil
 import subprocess
 import sys
+import tempfile
 import time
+from collections.abc import Generator
 
 import filelock
 import platformdirs
@@ -101,6 +103,7 @@ _current_run_id: str | None = None
 _persistent_log_ready = False
 _current_stage_title: str | None = None
 _last_stderr_tail: str | None = None
+_update_index: pathlib.Path | None = None
 
 
 def _configure_persistent_log(run_id: str) -> logging.Handler | None:
@@ -174,6 +177,14 @@ def _child_env() -> dict[str, str]:
     if user_bin not in path_entries:
         path_entries.append(user_bin)
     env["PATH"] = os.pathsep.join(path_entries)
+    return env
+
+
+def _git_env() -> dict[str, str]:
+    """更新区間のGitと退避子だけへ代替indexを渡す。"""
+    env = _child_env()
+    if _update_index is not None:
+        env["GIT_INDEX_FILE"] = str(_update_index)
     return env
 
 
@@ -319,7 +330,7 @@ def _run_git_pull(
             stderr=subprocess.PIPE,
             encoding="utf-8",
             errors="replace",
-            env=_child_env(),
+            env=_git_env() if plugin is None else _child_env(),
         )
     except OSError as error:
         logger.exception("stage起動失敗: %d/%d %s", step_no, _LOG_STAGE_TOTAL, title)
@@ -333,6 +344,10 @@ def _run_git_pull(
     try:
         try:
             stdout, stderr = process.communicate(timeout=timeout) if timeout is not None else process.communicate()
+        except KeyboardInterrupt:
+            _kill_process_tree(process)
+            process.wait(timeout=_PROCESS_TREE_WAIT_TIMEOUT_SEC)
+            raise
         except subprocess.TimeoutExpired:
             _kill_process_tree(process)
             try:
@@ -351,12 +366,14 @@ def _run_git_pull(
             print(timeout_message, file=sys.stderr)
             _last_stderr_tail = sync_report.truncate_tail(f"{title}\n{stdout}\n{stderr}\n{timeout_message}")
             logger.error(
-                "stage終了: %d/%d %s exit=1 timeout=%s duration=%.3f",
+                "stage終了: %d/%d %s exit=1 timeout=%s duration=%.3f stdout:\n%s\nstderr:\n%s",
                 step_no,
                 _LOG_STAGE_TOTAL,
                 title,
                 timeout,
                 time.monotonic() - started_at,
+                stdout,
+                stderr,
             )
             return 1
         if stdout:
@@ -365,10 +382,9 @@ def _run_git_pull(
             stream = sys.stdout if process.returncode == 0 else sys.stderr
             stream.write(stderr)
             _last_stderr_tail = sync_report.truncate_tail(stderr)
-        if plugin is not None:
-            logger.info("%s stdout:\n%s\nstderr:\n%s", title, stdout, stderr)
-            if process.returncode != 0:
-                _last_stderr_tail = sync_report.truncate_tail(f"{stdout}\n{stderr}\n{title}: exit {process.returncode}")
+        logger.info("%s stdout:\n%s\nstderr:\n%s", title, stdout, stderr)
+        if plugin is not None and process.returncode != 0:
+            _last_stderr_tail = sync_report.truncate_tail(f"{stdout}\n{stderr}\n{title}: exit {process.returncode}")
         logger.info(
             "stage終了: %d/%d %s exit=%d duration=%.3f",
             step_no,
@@ -389,14 +405,23 @@ def _run_git_pull(
 
 def _git_capture(*arguments: str) -> subprocess.CompletedProcess[str]:
     """dotfilesリポジトリでGitを実行し、標準出力と標準エラーを取得する。"""
-    return subprocess.run(
-        ["git", "-C", str(_DOTFILES_ROOT), *arguments],
-        check=False,
-        capture_output=True,
+    argv = ["git", "-C", str(_DOTFILES_ROOT), *arguments]
+    with subprocess.Popen(
+        argv,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
         encoding="utf-8",
         errors="replace",
-        env=_child_env(),
-    )
+        env=_git_env(),
+    ) as process:
+        try:
+            stdout, stderr = process.communicate()
+        except KeyboardInterrupt:
+            _kill_process_tree(process)
+            stdout, stderr = process.communicate(timeout=_GIT_OUTPUT_RECOVERY_TIMEOUT_SEC)
+            logger.warning("Git操作を中断: %s stdout:\n%s\nstderr:\n%s", argv, stdout, stderr)
+            raise
+    return subprocess.CompletedProcess(argv, process.returncode, stdout, stderr)
 
 
 # 更新処理が差分を保持せずHEADへ戻すlockfile（作業ツリーのルートからの相対パス）。
@@ -414,8 +439,8 @@ def _git_value(*arguments: str) -> str | None:
 
 
 def _git_operation_in_progress() -> bool:
-    """既存のmergeまたはrebaseが進行中の場合に真を返す。"""
-    for name in ("MERGE_HEAD", "rebase-merge", "rebase-apply"):
+    """対象worktreeの操作状態と、index準備後も存続するGitプロセスを調べる。"""
+    for name in ("MERGE_HEAD", "rebase-merge", "rebase-apply", "CHERRY_PICK_HEAD", "REVERT_HEAD", "sequencer"):
         path = _git_value("rev-parse", "--git-path", name)
         if path is None:
             return True
@@ -424,7 +449,102 @@ def _git_operation_in_progress() -> bool:
             candidate = _DOTFILES_ROOT / candidate
         if candidate.exists():
             return True
+    git_dir = _git_value("rev-parse", "--absolute-git-dir")
+    if git_dir is None:
+        return True
+    target = pathlib.Path(git_dir).resolve()
+    for process in psutil.process_iter(["name", "cmdline"]):
+        try:
+            command = process.info["cmdline"] or []
+            if not command or pathlib.Path(command[0]).name.lower() not in {"git", "git.exe"}:
+                continue
+            # -C、--git-dir等の解釈とlinked worktreeの対応はGit自身へ委ねる。
+            options: list[str] = []
+            position = 1
+            while position < len(command) and command[position].startswith("-"):
+                option = command[position]
+                options.append(option)
+                position += 1
+                if option in {"-C", "-c", "--git-dir", "--work-tree", "--namespace", "--config-env"}:
+                    options.append(command[position])
+                    position += 1
+            env = _child_env()
+            process_env = process.environ()
+            for name in ("GIT_DIR", "GIT_WORK_TREE", "GIT_COMMON_DIR"):
+                env.pop(name, None)
+                if name in process_env:
+                    env[name] = process_env[name]
+            env["GIT_OPTIONAL_LOCKS"] = "0"
+            result = subprocess.run(
+                ["git", *options, "rev-parse", "--absolute-git-dir"],
+                cwd=process.cwd(),
+                env=env,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                check=False,
+            )
+            if result.returncode == 0 and pathlib.Path(result.stdout.strip()).resolve() == target:
+                return True
+        except psutil.NoSuchProcess, psutil.ZombieProcess:
+            continue
+        except psutil.AccessDenied, OSError, IndexError:
+            # Gitを確認できない場合は内容変更を開始しない。
+            return True
     return False
+
+
+def _skip_git_update(reason: str) -> int:
+    """未完了の理由と再試行契機を全ての診断先へ残す。"""
+    global _current_stage_title, _last_stderr_tail  # noqa: PLW0603
+    _current_stage_title = "Git更新の所有確認"
+    message = (
+        f"{reason}のためGit更新は未完了です。進行中のGit操作が終了してからupdate-dotfilesを再実行してください。"
+        "自動更新は次回のタイマー起動で再試行します。"
+    )
+    _last_stderr_tail = sync_report.truncate_tail(message)
+    logger.warning(message)
+    print(message, file=sys.stderr)
+    return 1
+
+
+@contextlib.contextmanager
+def _locked_git_index(index: pathlib.Path) -> Generator[None]:
+    """標準ロックを保持し、終了状態の代替indexを公開して自身の一時物を回収する。"""
+    global _update_index  # noqa: PLW0603
+    lock = index.with_name(index.name + ".lock")
+    # 排他的作成に成功したロックだけをfinallyで扱う。
+    with lock.open("xb") as owned_lock:
+        identity = os.fstat(owned_lock.fileno())
+    alternate: pathlib.Path | None = None
+    prepared = False
+    try:
+        descriptor, name = tempfile.mkstemp(prefix="update-dotfiles-index-", dir=index.parent)
+        os.close(descriptor)
+        alternate = pathlib.Path(name)
+        if index.exists():
+            shutil.copyfile(index, alternate)
+        else:
+            alternate.unlink()
+        _update_index = alternate
+        prepared = True
+        yield
+    finally:
+        _update_index = None
+        # 更新子は全て回収してからここへ戻る。完了済みGit操作のindexは失敗・中断時も公開する。
+        if alternate is not None:
+            try:
+                current = lock.stat()
+                if (current.st_dev, current.st_ino) != (identity.st_dev, identity.st_ino):
+                    raise RuntimeError(f"Git更新のロック所有者が変わりました: {lock}")
+                if prepared and alternate.exists():
+                    os.replace(alternate, index)
+            finally:
+                alternate.unlink(missing_ok=True)
+                alternate.with_name(alternate.name + ".lock").unlink(missing_ok=True)
+        current = lock.stat()
+        if (current.st_dev, current.st_ino) == (identity.st_dev, identity.st_ino):
+            lock.unlink()
 
 
 def _git_path_exists(name: str) -> bool:
@@ -440,7 +560,11 @@ def _git_path_exists(name: str) -> bool:
 
 def _run_git_change(*arguments: str) -> bool:
     """単一のGit状態変更を実行し、失敗時の診断を転送する。"""
+    logger.info("Git状態変更開始: git %s", " ".join(arguments))
     result = _git_capture(*arguments)
+    logger.info(
+        "git %s: exit=%d stdout:\n%s\nstderr:\n%s", " ".join(arguments), result.returncode, result.stdout, result.stderr
+    )
     if result.stdout:
         sys.stdout.write(result.stdout)
     if result.stderr:
@@ -473,7 +597,7 @@ def _run_worktree_stash(*arguments: str) -> subprocess.CompletedProcess[str] | N
             stderr=subprocess.PIPE,
             encoding="utf-8",
             errors="replace",
-            env=_child_env(),
+            env=_git_env(),
         )
     except OSError as error:
         logger.exception("worktree-stashの起動に失敗: worktree=%s launcher=%s", _DOTFILES_ROOT, launcher)
@@ -601,15 +725,31 @@ def _discard_mise_lock_changes() -> bool:
 
 
 def _update_git_with_recovery(step_no: int, total: int, *, timeout: int | None) -> int:
-    """Git更新を実行し、競合時は復旧参照を保持して上流へ合わせる。"""
+    """最初の変更前に所有を確認し、Git更新区間を標準indexロックで保護する。"""
     if _git_operation_in_progress():
-        print(
-            "既存のmergeまたはrebaseが進行中のため、更新を開始しません。git statusで進行中の操作を確認し、"
-            "git merge --continueまたはgit rebase --continueで完了するか、同じ操作の--abortで中止してから"
-            "update-dotfilesを再実行してください。",
-            file=sys.stderr,
-        )
-        return 1
+        return _skip_git_update("既存のGit操作が進行中")
+    value = _git_value("rev-parse", "--git-path", "index")
+    if value is None:
+        return _skip_git_update("対象indexを解決できない")
+    index = pathlib.Path(value)
+    if not index.is_absolute():
+        index = _DOTFILES_ROOT / index
+    try:
+        with _locked_git_index(index):
+            if _git_operation_in_progress():
+                return _skip_git_update("ロック取得前に開始したGit操作が進行中")
+            return _update_owned_git(step_no, total, timeout=timeout)
+    except FileExistsError:
+        return _skip_git_update("対象indexの標準ロックが使用中")
+    except OSError as error:
+        logger.exception("Git更新のindex管理に失敗")
+        return _skip_git_update(f"対象indexの管理に失敗: {error}")
+
+
+def _update_owned_git(step_no: int, total: int, *, timeout: int | None) -> int:
+    """所有区間内で更新し、競合時は復旧参照を保持して上流へ合わせる。"""
+    if _update_index is None:
+        raise RuntimeError("Git更新にはindexの所有が必要です")
     if not _protect_old_worktree_stashes():
         return 1
     if not _discard_mise_lock_changes():
