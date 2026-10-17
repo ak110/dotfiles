@@ -294,3 +294,87 @@ def test_queued_notifications_yield_without_overriding_block(
         state = _read_state(tmp_path, "queued-stop")
         assert not state.get("queued_notification_notified_ids")
         assert not state.get("warn_notice_counts")
+
+
+def _run_busy_loop_turns(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, termination_status: str
+) -> tuple[dict[str, object], dict[str, int]]:
+    """常駐ループのセッションで無進捗ターンを閾値まで重ね、最後のStop応答と停止工程の呼出し回数を返す。
+
+    無進捗停止と自律終了判定は実物を使い、終了要求の送出だけを指定した状態の結果へ置き換える。
+    自律終了判定は`atk agents-exit-session`の起動記録が無いため、停止が無ければ継続を求める。
+    """
+    from agent_toolkit._atk import agents_exit_session  # pylint: disable=import-outside-toplevel
+    from agent_toolkit._atk.wi import process_loop_log  # pylint: disable=import-outside-toplevel
+
+    _set_state_directory(monkeypatch, tmp_path)
+    monkeypatch.setenv("AGENT_TOOLKIT_PROCESS_LOOP_SESSION", "1")
+    monkeypatch.delenv("AGENT_TOOLKIT_PROCESS_LOOP_SESSION_ID", raising=False)
+    monkeypatch.delenv("AGENT_TOOLKIT_DELEGATED_SESSION", raising=False)
+    monkeypatch.setattr(_background_tasks, "is_pending_async_work", lambda *args, **kwargs: False)
+    calls = {"abort": 0, "terminate": 0}
+
+    def abort() -> pathlib.Path:
+        calls["abort"] += 1
+        return tmp_path / "process-wi-abort"
+
+    def terminate(*, session_id: str) -> tuple[str, object]:
+        del session_id  # noqa
+        calls["terminate"] += 1
+        return termination_status, None
+
+    monkeypatch.setattr(process_loop_log, "request_abort", abort)
+    monkeypatch.setattr(agents_exit_session, "request_termination", terminate)
+    _replace_checks(
+        monkeypatch,
+        {
+            "plan_save_advisor": ("approve", ""),
+            "agents_server_session_advisor": ("approve", ""),
+            "pending_question_advisor": ("block", "問いかけ"),
+            "user_response_advisor": ("approve", ""),
+            "termination_order_advisor": ("approve", ""),
+            "queued_notification_advisor": ("approve", ""),
+        },
+    )
+    entries: list[dict] = []
+    result: dict[str, object] = {}
+    for index in range(3):
+        entries = [
+            *entries,
+            {"type": "assistant", "message": {"role": "assistant", "content": [{"type": "text", "text": "…"}]}},
+        ]
+        directory = tmp_path / f"turn-{index}"
+        directory.mkdir()
+        transcript = _write_transcript(directory, entries)
+        _transcript_scan._TRANSCRIPT_ENTRIES_CACHE.clear()  # pylint: disable=protected-access
+        result = stop.evaluate(json.dumps({"session_id": "busy-loop", "transcript_path": str(transcript)}))
+        if index < 2:
+            assert calls["terminate"] == 0
+    return result, calls
+
+
+@pytest.mark.parametrize("termination_status", ["exit_requested", "terminating"])
+def test_busy_loop_halt_suppresses_continuation_blocks(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, termination_status: str
+) -> None:
+    """無進捗停止が終了要求を成立させたStopは、自律終了判定や他の判定の継続要求を返さない。"""
+    result, calls = _run_busy_loop_turns(monkeypatch, tmp_path, termination_status)
+
+    assert calls == {"abort": 1, "terminate": 1}
+    assert "decision" not in result
+    assert "reason" not in result
+    assert "無進捗のターンが3回続いた" in str(result["systemMessage"])
+
+
+@pytest.mark.parametrize("termination_status", ["changed", "unsupported"])
+def test_busy_loop_halt_unissued_keeps_other_decisions(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, termination_status: str
+) -> None:
+    """終了要求を送れなかったStopは、他の判定の継続要求と未発行を述べる通知をそのまま返す。"""
+    result, calls = _run_busy_loop_turns(monkeypatch, tmp_path, termination_status)
+
+    assert calls == {"abort": 1, "terminate": 1}
+    assert result["decision"] == "block"
+    assert "atk agents-exit-session" in str(result["reason"])
+    assert "問いかけ" in str(result["reason"])
+    assert "セッションの終了要求は送っていない" in str(result["systemMessage"])

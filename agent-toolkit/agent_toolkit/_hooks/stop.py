@@ -6,6 +6,10 @@
 
 判定が`notify_user`を返した本文はエンドユーザー向けの`systemMessage`へ集約し、遮断の有無によらず同じ応答へ添える。
 
+判定が`halt`を返した場合は、全判定の後にその判定モジュールの`halt`で終了に関わる副作用を実行する。
+終了要求が成立した（`exit_requested`または`terminating`）入力では、他の判定の遮断・通知・配送への復帰を返さず、
+停止の事実だけを`systemMessage`で伝える。終了要求が成立しなかった入力では、他の判定の結果を通常どおり集約する。
+
 連続blockの上限は7回とする。Claude Codeは8回の連続blockでフックを上書きしてターンを終えるため、
 その手前の7回で打ち切りの事実を記録して終了を許可する。
 
@@ -38,6 +42,9 @@ CHECK_MODULE_NAMES = (
 # Codexではホスト共通の完了本文と起動証拠を判定する。Claude Codeのtranscriptに依存する判定は適用しない。
 CODEX_CHECK_MODULE_NAMES = ("response_language_advisor", "termination_order_advisor")
 
+# 終了要求が成立し、同じStopで継続を求めてはならない`halt`の状態。
+_TERMINATION_ISSUED = frozenset({"exit_requested", "terminating"})
+
 _CONSECUTIVE_BLOCK_LIMIT = 7
 _CONSECUTIVE_BLOCK_STATE_KEY = "stop_consecutive_block_count"
 
@@ -61,6 +68,7 @@ def evaluate(payload_text: str) -> dict[str, object]:
     notifications: list[str] = []
     user_messages: list[str] = []
     yield_for_delivery = False
+    halt_request: tuple[object, int] | None = None
     for module_name in CODEX_CHECK_MODULE_NAMES if is_codex_payload(payload) else CHECK_MODULE_NAMES:
         try:
             module = importlib.import_module(f"agent_toolkit._hooks.{module_name}")
@@ -84,6 +92,8 @@ def evaluate(payload_text: str) -> dict[str, object]:
             user_messages.append(body)
         elif decision == "yield":
             yield_for_delivery = True
+        elif decision == "halt":
+            halt_request = (module, int(body))
 
     def _finalize(result: dict[str, object]) -> dict[str, object]:
         """ユーザー宛ての本文がある場合に`systemMessage`を添えて返す。"""
@@ -93,6 +103,22 @@ def evaluate(payload_text: str) -> dict[str, object]:
             result["systemMessage"] = "\n\n".join(user_messages)
         return result
 
+    if halt_request is not None and session_id:
+        module, count = halt_request
+        try:
+            status, message = module.halt(session_id, count)  # type: ignore[attr-defined]
+        except Exception as exc:  # noqa: BLE001 -- 停止工程の故障で他の判定の結果を失わないため広範に捕捉
+            print(f"[stop/halt] 想定外エラー: {type(exc).__name__}: {exc}", file=sys.stderr)
+        else:
+            user_messages.append(message)
+            if status in _TERMINATION_ISSUED:
+                append_stop_log(
+                    session_id,
+                    "approve_halt_terminating",
+                    {"status": status, "suppressed_checks": ",".join(blocking_checks)},
+                )
+                update_state(session_id, lambda item: _set_consecutive_block_count(item, 0))
+                return _finalize({})
     if block_reasons:
         if session_id:
             state = read_state(session_id)

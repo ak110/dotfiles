@@ -87,7 +87,7 @@ def _turn(tmp_path: pathlib.Path, index: int, entries: list[dict]) -> tuple[str,
 
 
 def test_halts_after_threshold_no_tool_turns(tmp_path: pathlib.Path, calls: dict[str, int]) -> None:
-    """無進捗ターンが閾値回続くと中断要求と終了要求を実行する。"""
+    """無進捗ターンが閾値回続くと停止の意図を返し、`halt`が中断要求と終了要求を実行する。"""
     entries: list[dict] = []
     decisions = []
     for index in range(3):
@@ -95,12 +95,14 @@ def test_halts_after_threshold_no_tool_turns(tmp_path: pathlib.Path, calls: dict
         decisions.append(_turn(tmp_path, index, entries))
 
     assert [decision for decision, _ in decisions[:2]] == ["approve", "approve"]
+    assert decisions[2] == ("halt", "3")
+    assert calls == {"abort": 0, "terminate": 0}
+    assert read_state(_SESSION_ID)["stop_no_tool_turn_count"] == 0
+    status, body = busy_loop_guard.halt(_SESSION_ID, 3)
+    assert status == "terminating"
     assert calls == {"abort": 1, "terminate": 1}
-    decision, body = decisions[2]
-    assert decision == "notify_user"
     assert "無進捗のターンが3回続いた" in body
     assert "pid=4242" in body
-    assert read_state(_SESSION_ID)["stop_no_tool_turn_count"] == 0
 
 
 def test_halt_requests_function_hook_exit(
@@ -120,8 +122,10 @@ def test_halt_requests_function_hook_exit(
         entries = [*entries, _text_entry()]
         result = _turn(tmp_path, index, entries)
 
-    assert result[0] == "notify_user"
-    assert "ターン終了後に/exit" in result[1]
+    assert result == ("halt", "3")
+    status, body = busy_loop_guard.halt(_SESSION_ID, 3)
+    assert status == "exit_requested"
+    assert "ターン終了後に/exit" in body
     assert calls == {"abort": 1, "terminate": 1}
 
 
@@ -242,10 +246,7 @@ def test_native_subagent_question_does_not_block_parent_loop(tmp_path: pathlib.P
 
 
 def test_stop_entry_point_reports_system_message(tmp_path: pathlib.Path, calls: dict[str, int]) -> None:
-    """各Stop判定を集約する関数が停止の本文を`systemMessage`へ集約する。
-
-    同じターンで別の判定が遮断を返す場合も、エンドユーザー向けの本文を同じ応答へ添える。
-    """
+    """各Stop判定を集約する関数が停止の本文を`systemMessage`へ集約し、終了要求の成立後は継続を求めない。"""
     entries: list[dict] = []
     result: dict = {}
     for index in range(3):
@@ -255,4 +256,5 @@ def test_stop_entry_point_reports_system_message(tmp_path: pathlib.Path, calls: 
 
     assert calls["terminate"] == 1
     assert "無進捗のターンが3回続いた" in str(result["systemMessage"])
+    assert "decision" not in result
     assert validate_hook_output("Stop", result) == []
