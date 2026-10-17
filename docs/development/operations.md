@@ -403,12 +403,16 @@ atk run-script session-review-evidence -- --stats <選んだ記録の絶対パ�
   pullまたは復元が競合した場合は、元のcommitと未コミット内容を復旧用の参照へ保存して上流へ合わせる
   - 対象worktreeでGit操作が進行中の場合は、最初の変更前に更新を見送り、終了コード1と同期結果へ未完了を記録する。
     通常commitのpre-commit実行中・commitメッセージ編集中もプロセスから検出する。
+    merge・rebase・cherry-pick・revertの状態が残る場合は、`git status`で操作を確認し、
+    対応する操作の`--continue`で完了するか`--abort`で中止してから再実行する。
     理由と再試行の契機は標準エラーと永続ログへ残し、自動更新の未完了状態を保持して次回のタイマー起動で再試行する
   - Git更新区間は対象worktreeの標準`index.lock`を排他的に取得し、取得後にも既存Gitプロセスを確認する。
     `mise.lock`の差分破棄、旧退避の整理、退避、pull、復元と競合回復まで同じロックで保護する。
     更新のGit子プロセスには`GIT_INDEX_FILE`で代替indexを渡し、区間終了時に完了済み操作のindexを反映する。
+    SIGTERMと、対応するOSのSIGHUPによる中断も子プロセスの回収とindexの反映を通り、自身のロックと一時indexを回収する。
     後続のプラグイン更新とchezmoi処理は通常の環境で実行する
   - Git状態変更のコマンド、終了コード、標準出力と標準エラーは永続ログへ保存する。
+    復元失敗の理由、退避refと復旧手順、競合回復の結果も保存し、失敗終了時は同期結果の診断末尾にも残す。
     診断は`update-dotfiles logs`で確認できる
 
 ## Windowsの電源設定の最適化（optimize-power-settings）

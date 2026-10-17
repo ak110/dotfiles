@@ -63,11 +63,13 @@ import os
 import pathlib
 import re
 import shutil
+import signal
 import subprocess
 import sys
 import tempfile
 import time
 from collections.abc import Generator
+from types import FrameType
 
 import filelock
 import platformdirs
@@ -438,7 +440,7 @@ def _git_value(*arguments: str) -> str | None:
     return result.stdout.strip()
 
 
-def _git_operation_in_progress() -> bool:
+def _git_operation_in_progress() -> str | bool:
     """対象worktreeの操作状態と、index準備後も存続するGitプロセスを調べる。"""
     for name in ("MERGE_HEAD", "rebase-merge", "rebase-apply", "CHERRY_PICK_HEAD", "REVERT_HEAD", "sequencer"):
         path = _git_value("rev-parse", "--git-path", name)
@@ -448,7 +450,7 @@ def _git_operation_in_progress() -> bool:
         if not candidate.is_absolute():
             candidate = _DOTFILES_ROOT / candidate
         if candidate.exists():
-            return True
+            return name
     git_dir = _git_value("rev-parse", "--absolute-git-dir")
     if git_dir is None:
         return True
@@ -494,18 +496,55 @@ def _git_operation_in_progress() -> bool:
     return False
 
 
-def _skip_git_update(reason: str) -> int:
+def _skip_git_update(reason: str, operation: str | bool = False) -> int:
     """未完了の理由と再試行契機を全ての診断先へ残す。"""
     global _current_stage_title, _last_stderr_tail  # noqa: PLW0603
     _current_stage_title = "Git更新の所有確認"
-    message = (
-        f"{reason}のためGit更新は未完了です。進行中のGit操作が終了してからupdate-dotfilesを再実行してください。"
-        "自動更新は次回のタイマー起動で再試行します。"
-    )
+    commands = {
+        "MERGE_HEAD": "merge",
+        "rebase-merge": "rebase",
+        "rebase-apply": "rebase",
+        "CHERRY_PICK_HEAD": "cherry-pick",
+        "REVERT_HEAD": "revert",
+    }
+    command = commands.get(operation) if isinstance(operation, str) else None
+    if command:
+        action = (
+            f"git statusで進行中の操作を確認し、git {command} --continueで完了するか、"
+            f"git {command} --abortで中止してからupdate-dotfilesを再実行してください。"
+        )
+    elif operation == "sequencer":
+        action = (
+            "git statusで進行中の操作を確認し、git cherry-pickまたはgit revertの"
+            "--continueで完了するか、同じ操作の--abortで中止してからupdate-dotfilesを再実行してください。"
+        )
+    else:
+        action = "進行中のGit操作が終了してからupdate-dotfilesを再実行してください。"
+    message = f"{reason}のためGit更新は未完了です。{action}自動更新は次回のタイマー起動で再試行します。"
     _last_stderr_tail = sync_report.truncate_tail(message)
     logger.warning(message)
     print(message, file=sys.stderr)
     return 1
+
+
+@contextlib.contextmanager
+def _git_update_signals() -> Generator[None]:
+    """サービス停止と端末切断を、Git子とindexの回収を通る中断へ変換する。"""
+
+    def interrupt(signum: int, _frame: FrameType | None) -> None:
+        raise KeyboardInterrupt(f"Git更新をシグナル{signum}で中断しました")
+
+    signals = [signal.SIGTERM]
+    if hasattr(signal, "SIGHUP"):
+        signals.append(signal.SIGHUP)
+    previous = {number: signal.getsignal(number) for number in signals}
+    try:
+        for number in signals:
+            signal.signal(number, interrupt)
+        yield
+    finally:
+        for number, handler in previous.items():
+            signal.signal(number, handler)
 
 
 @contextlib.contextmanager
@@ -532,19 +571,25 @@ def _locked_git_index(index: pathlib.Path) -> Generator[None]:
     finally:
         _update_index = None
         # 更新子は全て回収してからここへ戻る。完了済みGit操作のindexは失敗・中断時も公開する。
-        if alternate is not None:
-            try:
+        try:
+            if alternate is not None:
                 current = lock.stat()
                 if (current.st_dev, current.st_ino) != (identity.st_dev, identity.st_ino):
                     raise RuntimeError(f"Git更新のロック所有者が変わりました: {lock}")
                 if prepared and alternate.exists():
                     os.replace(alternate, index)
+        finally:
+            try:
+                if alternate is not None:
+                    try:
+                        alternate.unlink(missing_ok=True)
+                    finally:
+                        alternate.with_name(alternate.name + ".lock").unlink(missing_ok=True)
             finally:
-                alternate.unlink(missing_ok=True)
-                alternate.with_name(alternate.name + ".lock").unlink(missing_ok=True)
-        current = lock.stat()
-        if (current.st_dev, current.st_ino) == (identity.st_dev, identity.st_ino):
-            lock.unlink()
+                with contextlib.suppress(FileNotFoundError):
+                    current = lock.stat()
+                    if (current.st_dev, current.st_ino) == (identity.st_dev, identity.st_ino):
+                        lock.unlink()
 
 
 def _git_path_exists(name: str) -> bool:
@@ -560,6 +605,7 @@ def _git_path_exists(name: str) -> bool:
 
 def _run_git_change(*arguments: str) -> bool:
     """単一のGit状態変更を実行し、失敗時の診断を転送する。"""
+    global _last_stderr_tail  # noqa: PLW0603
     logger.info("Git状態変更開始: git %s", " ".join(arguments))
     result = _git_capture(*arguments)
     logger.info(
@@ -569,6 +615,10 @@ def _run_git_change(*arguments: str) -> bool:
         sys.stdout.write(result.stdout)
     if result.stderr:
         (sys.stdout if result.returncode == 0 else sys.stderr).write(result.stderr)
+    if result.returncode != 0:
+        _last_stderr_tail = sync_report.truncate_tail(
+            f"git {' '.join(arguments)}: exit={result.returncode}\n{result.stdout}\n{result.stderr}"
+        )
     return result.returncode == 0
 
 
@@ -684,7 +734,21 @@ def _restore_worktree(ref: str) -> bool:
     restored = _run_git_change("stash", "apply", "--index", ref)
     if restored:
         print("一時保存していた未コミット変更を復元しました。")
+    else:
+        _record_git_recovery(
+            f"未コミット内容の復元に失敗しました。未コミット内容は{ref}から復旧できます。"
+            "git statusで競合を確認し、競合を解消した作業ツリーで"
+            f"git stash apply --index {ref}を実行してください。"
+        )
     return restored
+
+
+def _record_git_recovery(message: str) -> None:
+    """復元・回復の結果と次の操作を画面、永続ログ、同期結果へ残す。"""
+    global _last_stderr_tail  # noqa: PLW0603
+    logger.warning(message)
+    _last_stderr_tail = sync_report.truncate_tail(f"{_last_stderr_tail or ''}\n{message}".strip())
+    print(message, file=sys.stderr)
 
 
 def _drop_restored_worktree(ref: str) -> bool:
@@ -726,8 +790,9 @@ def _discard_mise_lock_changes() -> bool:
 
 def _update_git_with_recovery(step_no: int, total: int, *, timeout: int | None) -> int:
     """最初の変更前に所有を確認し、Git更新区間を標準indexロックで保護する。"""
-    if _git_operation_in_progress():
-        return _skip_git_update("既存のGit操作が進行中")
+    operation = _git_operation_in_progress()
+    if operation:
+        return _skip_git_update("既存のGit操作が進行中", operation)
     value = _git_value("rev-parse", "--git-path", "index")
     if value is None:
         return _skip_git_update("対象indexを解決できない")
@@ -735,9 +800,10 @@ def _update_git_with_recovery(step_no: int, total: int, *, timeout: int | None) 
     if not index.is_absolute():
         index = _DOTFILES_ROOT / index
     try:
-        with _locked_git_index(index):
-            if _git_operation_in_progress():
-                return _skip_git_update("ロック取得前に開始したGit操作が進行中")
+        with _git_update_signals(), _locked_git_index(index):
+            operation = _git_operation_in_progress()
+            if operation:
+                return _skip_git_update("ロック取得前に開始したGit操作が進行中", operation)
             return _update_owned_git(step_no, total, timeout=timeout)
     except FileExistsError:
         return _skip_git_update("対象indexの標準ロックが使用中")
@@ -786,26 +852,18 @@ def _update_owned_git(step_no: int, total: int, *, timeout: int | None) -> int:
     pull_code = _run_git_pull(step_no, total, timeout=timeout)
     rebase_in_progress = any(_git_path_exists(name) for name in ("rebase-merge", "rebase-apply"))
     if pull_code != 0 and not rebase_in_progress:
-        if stash_ref is not None:
-            if _restore_worktree(stash_ref):
-                _drop_restored_worktree(stash_ref)
-            else:
-                print(
-                    f"未コミット内容は{stash_ref}から復旧できます。git statusで競合を確認し、"
-                    f"競合を解消した作業ツリーでgit stash apply --index {stash_ref}を実行してください。",
-                    file=sys.stderr,
-                )
+        if stash_ref is not None and _restore_worktree(stash_ref):
+            _drop_restored_worktree(stash_ref)
         return pull_code
     if pull_code == 0 and (stash_ref is None or _restore_worktree(stash_ref)):
         return 0 if stash_ref is None or _drop_restored_worktree(stash_ref) else 1
 
     recovery_branch = f"update-dotfiles-recovery-{suffix}"
     if not _run_git_change("branch", recovery_branch, original_head):
-        print(
+        _record_git_recovery(
             "復旧用branchを保存できなかったため、自動回復を中止します。"
             f"git branch {recovery_branch} {original_head}で元HEADを保存し、git statusで競合を確認してください。"
             "解消できない場合は、このログをdotfilesの作者へ報告してください。",
-            file=sys.stderr,
         )
         return 1
     if rebase_in_progress and not _run_git_change("rebase", "--abort"):
@@ -814,7 +872,7 @@ def _update_owned_git(step_no: int, total: int, *, timeout: int | None) -> int:
         return 1
     if not _clean_saved_untracked(untracked):
         return 1
-    print(
+    _record_git_recovery(
         f"競合から回復し、{branch}を{upstream}へ合わせました。"
         f"元のcommitは{recovery_branch}、未コミット内容は{stash_ref or 'なし'}から復旧できます。"
         "更新後の内容を使う場合は対応不要です。元のcommitへ戻す場合は"

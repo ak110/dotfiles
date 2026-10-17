@@ -11,6 +11,7 @@ import json
 import os
 import pathlib
 import shlex
+import signal
 import subprocess
 import sys
 import time
@@ -1719,6 +1720,15 @@ def _prepare_dirty(local: pathlib.Path) -> None:
     (local / "untracked.txt").write_text("untracked\n", encoding="utf-8")
 
 
+def _wait_process_ready(process: subprocess.Popen[str], ready: pathlib.Path) -> None:
+    """起動したプロセスが有限時間で同期点へ到達したことを確かめる。"""
+    deadline = time.monotonic() + 15
+    while not ready.exists():
+        assert process.poll() is None
+        assert time.monotonic() < deadline
+        time.sleep(0.02)
+
+
 @pytest.mark.parametrize("phase", ["pre-commit", "editor", "commit-a"])
 @pytest.mark.parametrize("scope", ["same", "other-worktree", "unrelated"])
 def test_update_skips_while_git_commit_in_progress(
@@ -1786,11 +1796,7 @@ def test_update_skips_while_git_commit_in_progress(
         encoding="utf-8",
     ) as process:
         try:
-            deadline = time.monotonic() + 15
-            while not ready.exists():
-                assert process.poll() is None
-                assert time.monotonic() < deadline
-                time.sleep(0.02)
+            _wait_process_ready(process, ready)
             before = _dirty_snapshot(local)
             assert _REAL_UPDATE_GIT_WITH_RECOVERY(1, 4, timeout=5) == int(scope == "same")
             assert _dirty_snapshot(local) == before
@@ -1842,7 +1848,7 @@ def test_update_holds_index_lock_against_later_git_operation(
     assert "GIT_INDEX_FILE" not in update_dotfiles._child_env()
 
 
-@pytest.mark.parametrize("outcome", ["success", "failure", "interrupt"])
+@pytest.mark.parametrize("outcome", ["success", "failure", "interrupt", "publish-failure", "stat-failure"])
 def test_update_recovers_index_after_interrupted_git_change(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
@@ -1864,6 +1870,24 @@ def test_update_recovers_index_after_interrupted_git_change(
         assert update_dotfiles._run_git_change("add", "tracked.txt")
         if outcome == "interrupt":
             raise KeyboardInterrupt
+        if outcome == "publish-failure":
+
+            def fail_publish(*_args: object, **_kwargs: object) -> None:
+                raise OSError("index公開失敗")
+
+            monkeypatch.setattr(update_dotfiles.os, "replace", fail_publish)
+        if outcome == "stat-failure":
+            original_stat = pathlib.Path.stat
+            failed = False
+
+            def fail_stat(path: pathlib.Path, **kwargs: Any) -> os.stat_result:
+                nonlocal failed
+                if path == local / ".git" / "index.lock" and not failed:
+                    failed = True
+                    raise OSError("ロック確認失敗")
+                return original_stat(path, **kwargs)
+
+            monkeypatch.setattr(pathlib.Path, "stat", fail_stat)
         if outcome == "failure":
             assert not update_dotfiles._run_git_change("restore", "--", "missing-file")
             return 1
@@ -1875,8 +1899,10 @@ def test_update_recovers_index_after_interrupted_git_change(
             with pytest.raises(KeyboardInterrupt):
                 _REAL_UPDATE_GIT_WITH_RECOVERY(1, 4, timeout=5)
         else:
-            assert _REAL_UPDATE_GIT_WITH_RECOVERY(1, 4, timeout=5) == int(outcome == "failure")
-        assert "tracked.txt" in _git(local, "diff", "--cached", "--name-only")
+            assert _REAL_UPDATE_GIT_WITH_RECOVERY(1, 4, timeout=5) == int(outcome != "success")
+        assert ("tracked.txt" in _git(local, "diff", "--cached", "--name-only")) == (
+            outcome not in {"publish-failure", "stat-failure"}
+        )
         assert (local / "tracked.txt").read_text(encoding="utf-8") == "unstaged\n"
         assert other_lock.read_bytes() == b"other owner"
         assert _dirty_snapshot(other) == before_other
@@ -1929,6 +1955,124 @@ def test_update_preserves_index_when_ownership_is_not_ready(
         assert lock.read_bytes() == b"foreign"
     else:
         assert not lock.exists()
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIXの実SIGTERMによるプロセス中断を検証する")
+def test_update_recovers_index_after_sigterm(tmp_path: pathlib.Path, host_environ: Callable[[], dict[str, str]]) -> None:
+    """実プロセスへの停止通知後もGit作業を再開でき、完了済みstageを保持する。"""
+    local, _seed, _remote = _create_git_pair(tmp_path)
+    _prepare_dirty(local)
+    ready = tmp_path / "ready"
+    runner = tmp_path / "interrupt_update.py"
+    runner.write_text(
+        "import importlib.util, pathlib, sys, time\n"
+        f"sys.path.insert(0, {str(_REPOSITORY_ATK_BIN.parents[1])!r})\n"
+        f"spec = importlib.util.spec_from_file_location('update_dotfiles', {update_dotfiles.__file__!r})\n"
+        "module = importlib.util.module_from_spec(spec)\n"
+        "sys.modules[spec.name] = module\n"
+        "spec.loader.exec_module(module)\n"
+        f"module._DOTFILES_ROOT = pathlib.Path({str(local)!r})\n"
+        "def change(*args, **kwargs):\n"
+        "    assert module._run_git_change('add', 'tracked.txt')\n"
+        f"    pathlib.Path({str(ready)!r}).touch()\n"
+        "    time.sleep(30)\n"
+        "module._update_owned_git = change\n"
+        "module._update_git_with_recovery(1, 4, timeout=5)\n",
+        encoding="utf-8",
+    )
+    with subprocess.Popen(
+        [sys.executable, str(runner)],
+        env=host_environ(),
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        encoding="utf-8",
+    ) as process:
+        try:
+            _wait_process_ready(process, ready)
+            process.send_signal(signal.SIGTERM)
+            stdout, stderr = process.communicate(timeout=15)
+        finally:
+            if process.poll() is None:
+                process.kill()
+                process.communicate(timeout=5)
+    assert process.returncode != 0, (stdout, stderr)
+    assert not (local / ".git" / "index.lock").exists()
+    assert not list((local / ".git").glob("update-dotfiles-index-*"))
+    assert "tracked.txt" in _git(local, "diff", "--cached", "--name-only")
+    _git(local, "add", "untracked.txt")
+
+
+@pytest.mark.parametrize(
+    "state,command",
+    [
+        ("MERGE_HEAD", "merge"),
+        ("rebase-merge", "rebase"),
+        ("rebase-apply", "rebase"),
+        ("CHERRY_PICK_HEAD", "cherry-pick"),
+        ("REVERT_HEAD", "revert"),
+        ("sequencer", "cherry-pick"),
+    ],
+)
+def test_update_pending_operation_explains_completion_and_abort(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+    sync_report_path: pathlib.Path,
+    state: str,
+    command: str,
+) -> None:
+    """操作状態による見送りが作業を保持し、手動の完了・中止手順を保存する。"""
+    local, _seed, _remote = _create_git_pair(tmp_path)
+    _prepare_dirty(local)
+    before = _dirty_snapshot(local)
+    (local / ".git" / state).touch()
+    monkeypatch.setattr(update_dotfiles, "_DOTFILES_ROOT", local)
+    monkeypatch.setattr(update_dotfiles, "_LOCK_PATH", tmp_path / "update.lock")
+    monkeypatch.setattr(update_dotfiles, "_update_git_with_recovery", _REAL_UPDATE_GIT_WITH_RECOVERY)
+    assert update_dotfiles.main() == 1
+    assert _dirty_snapshot(local) == before
+    report = json.loads(sync_report_path.read_text(encoding="utf-8"))
+    for text in ("git status", f"git {command}", "--continue", "--abort"):
+        assert text in report["stderr_tail"]
+        assert text in update_dotfiles._LOG_PATH.read_text(encoding="utf-8")
+
+
+@pytest.mark.usefixtures("real_stash_runtime")
+@pytest.mark.parametrize("pull_code", [0, 7])
+def test_update_restore_overwrite_refusal_records_recovery(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+    sync_report_path: pathlib.Path,
+    pull_code: int,
+) -> None:
+    """実Gitの上書き拒否から、保存ログと失敗同期結果で診断・退避先へ到達できる。"""
+    local, _seed, _remote = _create_git_pair(tmp_path)
+    (local / "tracked.txt").write_text("保存対象\n", encoding="utf-8")
+    monkeypatch.setattr(update_dotfiles, "_DOTFILES_ROOT", local)
+    monkeypatch.setattr(update_dotfiles, "_LOCK_PATH", tmp_path / "update.lock")
+    monkeypatch.setattr(update_dotfiles, "_update_git_with_recovery", _REAL_UPDATE_GIT_WITH_RECOVERY)
+    monkeypatch.setattr(update_dotfiles, "_run_step", lambda *_args, **_kwargs: (0, ""))
+
+    def overwrite(*_args: object, **_kwargs: object) -> int:
+        (local / "tracked.txt").write_text("復元を拒否する変更\n", encoding="utf-8")
+        return pull_code
+
+    monkeypatch.setattr(update_dotfiles, "_run_git_pull", overwrite)
+    assert update_dotfiles.main() == pull_code
+    ref = _git(local, "for-each-ref", "--format=%(refname)", "refs/worktree").splitlines()[0]
+    log = update_dotfiles._LOG_PATH.read_text(encoding="utf-8")
+    assert f"git stash apply --index {ref}: exit=1" in log
+    assert "would be overwritten" in log
+    assert "復元に失敗" in log
+    assert f"git stash apply --index {ref}" in log
+    if pull_code:
+        report = json.loads(sync_report_path.read_text(encoding="utf-8"))
+        assert "would be overwritten" in report["stderr_tail"]
+        assert "復元に失敗" in report["stderr_tail"]
+        assert ref in report["stderr_tail"]
+    else:
+        assert "競合から回復" in log
+        assert "git switch update-dotfiles-recovery-" in log
 
 
 def test_skipped_update_keeps_pending_for_next_timer(
