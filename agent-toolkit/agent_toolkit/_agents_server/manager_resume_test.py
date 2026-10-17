@@ -72,6 +72,238 @@ from agent_toolkit._testing.helpers import delivery_payload
 pytestmark = pytest.mark.usefixtures("agents_server_isolation")
 
 
+@pytest.mark.parametrize("origin", ["stopped", "expired", "owner-gone"])
+@pytest.mark.parametrize("outcome", ["completed", "execution-failed", "start-failed", "ambiguous"])
+@pytest.mark.parametrize("finish_before_response", [True, False])
+@pytest.mark.asyncio
+async def test_reply_delivery_is_independent_of_turn_terminal(
+    origin: str,
+    outcome: str,
+    finish_before_response: bool,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """停止後・保持期限後・所有主体消失後の再開は、配送結果と前後の結果を応答順序によらず分離する。"""
+    manager, writer = _resume_test_manager(monkeypatch, tmp_path)
+    identifier = "reply-order-session"
+    previous = state.SessionState(identifier, str(tmp_path), engine="codex", publish_registry=True, turn_seq=1)
+    _complete(previous, message="前turnの結果")
+    await previous.drain_registration()
+    await writer.retain_result_async(previous)
+    saved = state.SessionResumeState.from_session(previous)
+    if origin == "stopped":
+        manager.stopped_sessions[identifier] = saved
+    elif origin == "expired":
+        manager.expired_sessions[identifier] = saved
+    backend = FakeBackend(manager.sessions, "codex")
+    install_backend(manager, "codex", backend)
+
+    def finish(session: state.SessionState) -> None:
+        _complete(session, message="新turnの結果", error={"message": "実行失敗"} if outcome == "execution-failed" else None)
+
+    async def resume(
+        session_id: str, prompt: state.ResumePrompt, cwd: str, model: str | None, effort: str | None, **_kwargs: Any
+    ) -> state.SessionState:
+        session = state.SessionState(session_id, cwd, model=model, effort=effort, engine="codex", turn_seq=2)
+        manager.sessions[session_id] = session
+        state.initialize_turn(session)
+        if outcome in {"start-failed", "ambiguous"}:
+            prompt.record_delivery("reply_failed" if outcome == "start-failed" else "reply_ambiguous")
+            if outcome == "start-failed":
+                _complete(session, message="", error={"message": "開始不能"})
+            else:
+                session.turn_start_ambiguous = True
+        else:
+
+            async def accept(_text: str) -> None:
+                if finish_before_response:
+                    finish(session)
+
+            await prompt.deliver(accept)
+        return session
+
+    monkeypatch.setattr(backend, "resume", resume)
+    try:
+        response = await manager.send_message(identifier, "再開要求")
+        expected = {"start-failed": "reply_failed", "ambiguous": "reply_ambiguous"}.get(outcome, "reply_started")
+        assert response["delivery"] == expected
+        assert response["previous_result"]["agent_message"] == "前turnの結果"
+        session = manager.sessions[identifier]
+        if outcome in {"completed", "execution-failed"}:
+            if not finish_before_response:
+                finish(session)
+            await writer.flush_async()
+            result = writer.read_result(identifier)
+            assert result is not None and result["agent_message"] == "新turnの結果"
+            assert result["status"] == ("failed" if outcome == "execution-failed" else "completed")
+            assert (
+                await asyncio.to_thread(
+                    agents_wait.wait_for_result,
+                    environment={"CLAUDE_CODE_SESSION_ID": writer.root_session_id},
+                    state_root=writer.state_root,
+                )
+                == 0
+            )
+            collected = json.loads(capsys.readouterr().out)
+            assert collected["agent_message"] == "新turnの結果"
+        assert bool(session.followup_prompts) is (expected != "reply_failed")
+    finally:
+        await manager.close()
+
+
+@pytest.mark.parametrize("mode,api_first", [("pay-as-you-go", False), ("api-credits", True)])
+@pytest.mark.parametrize("unavailable", [False, True])
+@pytest.mark.asyncio
+async def test_delegate_candidate_order_follows_mode(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    mode: str,
+    api_first: bool,
+    unavailable: bool,
+) -> None:
+    """新規起動と継続・冷再開でモード順と選択済み接続を維持する。"""
+    path = tmp_path / "api.env"
+    path.write_text("ANTHROPIC_API_KEY=test-api-key\n", encoding="utf-8")
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CLAUDE_API_ENV_FILE", str(path))
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CLAUDE_API_MODE", mode)
+    options_seen: list[Any] = []
+
+    def factory(options: Any) -> FakeClaudeClient:
+        options_seen.append(options)
+        if unavailable and len(options_seen) == 1:
+            raise ConnectionError("起動前認証を利用できない")
+        return FakeClaudeClient(
+            [
+                [SystemMessage(options.resume or "candidate-order"), AssistantMessage("応答"), ResultMessage("完了")],
+                [AssistantMessage("追送"), ResultMessage("継続完了")],
+            ]
+        )
+
+    manager = server_manager.AgentsServerManager()
+    backend = claude_backend.ClaudeServerManager(manager.sessions, client_factory=factory, publish_registry=True)
+    install_backend(manager, "claude", backend)
+    try:
+        started = await manager.start("claude:sonnet/high", "作業", str(tmp_path))
+        assert (await _wait_until_terminal(manager))["status"] == "completed"
+        assert bool(options_seen[0].env.get("ANTHROPIC_API_KEY")) is api_first
+        monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CLAUDE_API_MODE", "pay-as-you-go" if api_first else "api-credits")
+        await manager.send_message(started["session_id"], "継続")
+        assert (await _wait_until_terminal(manager))["status"] == "completed"
+        await manager.stop(started["session_id"])
+        await manager.send_message(started["session_id"], "再開")
+        assert (await _wait_until_terminal(manager))["status"] == "completed"
+        assert bool(options_seen[-1].env.get("ANTHROPIC_API_KEY")) is (not api_first if unavailable else api_first)
+        assert options_seen[-1].resume == started["session_id"]
+        assert options_seen[-1].model == "sonnet" and options_seen[-1].effort == "high"
+    finally:
+        await manager.close()
+
+
+@pytest.mark.parametrize("content", [None, "", "# 未記入\n"])
+@pytest.mark.asyncio
+async def test_invalid_env_file_warning_reaches_start_response(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    content: str | None,
+) -> None:
+    """無効なAPI環境ファイルでは委譲先がサブスクリプションで始まり、`start`応答の`warnings`へパスと修正操作を示す。"""
+    path = tmp_path / "invalid.env"
+    if content is not None:
+        path.write_text(content, encoding="utf-8")
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CLAUDE_API_ENV_FILE", str(path))
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CLAUDE_API_MODE", "api-credits")
+    options_seen: list[Any] = []
+
+    def factory(options: Any) -> FakeClaudeClient:
+        options_seen.append(options)
+        return FakeClaudeClient([[SystemMessage("invalid-env"), AssistantMessage("応答"), ResultMessage("完了")]])
+
+    manager = server_manager.AgentsServerManager()
+    backend = claude_backend.ClaudeServerManager(manager.sessions, client_factory=factory, publish_registry=True)
+    install_backend(manager, "claude", backend)
+    try:
+        started = await manager.start("claude:sonnet/high", "作業", str(tmp_path))
+        assert any(str(path) in item and "atk config set claude_api_env_file" in item for item in started["warnings"])
+        assert (await _wait_until_terminal(manager))["status"] == "completed"
+        assert not options_seen[0].env.get("ANTHROPIC_API_KEY")
+    finally:
+        await manager.close()
+
+
+@pytest.mark.asyncio
+async def test_single_api_connection_keeps_usage_limit_wait(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """API認証だけを持つ会話は残高不足の解除を待ち、接続先を変えない。"""
+    path = tmp_path / "api.env"
+    path.write_text("ANTHROPIC_API_KEY=test-api-key\n", encoding="utf-8")
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CLAUDE_API_ENV_FILE", str(path))
+    monkeypatch.delenv("CLAUDE_CODE_OAUTH_TOKEN", raising=False)
+    monkeypatch.setattr(server_manager, "START_AVAILABILITY_TIMEOUT", 0.01)
+    options_seen: list[Any] = []
+
+    def factory(options: Any) -> FakeClaudeClient:
+        options_seen.append(options)
+        return FakeClaudeClient([[SystemMessage("single-api"), ResultMessage("Credit balance is too low", is_error=True)]])
+
+    manager = server_manager.AgentsServerManager()
+    backend = claude_backend.ClaudeServerManager(manager.sessions, client_factory=factory)
+    install_backend(manager, "claude", backend)
+    try:
+        started = await manager.start("claude:sonnet/high", "作業", str(tmp_path))
+        assert started["status"] == "running"
+        shown = manager.show_session(started["session_id"])
+        assert shown["status"] == "running" and shown["result_held"]
+        assert len(options_seen) == 1 and options_seen[0].env["ANTHROPIC_API_KEY"] == "test-api-key"
+    finally:
+        await manager.close()
+
+
+@pytest.mark.asyncio
+async def test_api_credit_exhaustion_moves_to_subscription(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """API残高不足の同一会話をサブスクリプションで続け、停止後もその接続を保持する。"""
+    path = tmp_path / "api.env"
+    path.write_text("ANTHROPIC_API_KEY=test-api-key\n", encoding="utf-8")
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CLAUDE_API_ENV_FILE", str(path))
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CLAUDE_API_MODE", "api-credits")
+    monkeypatch.setattr(server_manager, "START_AVAILABILITY_TIMEOUT", 0.01)
+    options_seen: list[Any] = []
+
+    def factory(options: Any) -> FakeClaudeClient:
+        options_seen.append(options)
+        identifier = options.resume or f"credits-{len(options_seen)}"
+        if len(options_seen) == 1:
+            return FakeClaudeClient([[SystemMessage(identifier), ResultMessage("Credit balance is too low", is_error=True)]])
+        return FakeClaudeClient([[SystemMessage(identifier), AssistantMessage("再開"), ResultMessage("完了")]])
+
+    manager = server_manager.AgentsServerManager()
+    backend = claude_backend.ClaudeServerManager(manager.sessions, client_factory=factory, publish_registry=True)
+    install_backend(manager, "claude", backend)
+    try:
+        started = await manager.start("claude:sonnet/high", "作業", str(tmp_path))
+        assert (await _wait_until_terminal(manager))["status"] == "completed"
+        assert options_seen[0].env["ANTHROPIC_API_KEY"] == "test-api-key"
+        assert not options_seen[1].env.get("ANTHROPIC_API_KEY")
+        assert options_seen[1].resume == started["session_id"]
+        assert options_seen[1].model == "sonnet" and options_seen[1].effort == "high"
+        await manager.stop(started["session_id"])
+        await manager.send_message(started["session_id"], "残作業")
+        assert (await _wait_until_terminal(manager))["status"] == "completed"
+        assert not options_seen[-1].env.get("ANTHROPIC_API_KEY")
+        assert options_seen[-1].resume == started["session_id"]
+        fresh = await manager.start("claude:sonnet/high", "新規", str(tmp_path))
+        assert (await _wait_until_terminal(manager))["status"] == "completed"
+        assert fresh["session_id"] != started["session_id"]
+        assert options_seen[-1].env["ANTHROPIC_API_KEY"] == "test-api-key"
+    finally:
+        await manager.close()
+
+
 @pytest.mark.asyncio
 async def test_expired_explore_session_resumes_with_original_route_conditions(
     monkeypatch: pytest.MonkeyPatch,
@@ -117,7 +349,7 @@ async def test_expired_multi_turn_session_resumes_and_agents_wait_observes_resul
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """両engineで、複数turn後に保持期限が切れたsessionを再開し、その結果を`atk agents wait`の待機で観測する。"""
+    """両engineで、複数turn後に保持期限に達したsessionを再開し、その結果を`atk agents wait`の待機で観測する。"""
     writer = status_file.StatusFileWriter(
         {},
         shared_roots.StatusFileIdentity("root-session", "root.json", None),
@@ -135,8 +367,11 @@ async def test_expired_multi_turn_session_resumes_and_agents_wait_observes_resul
 
     response = await manager.send_message("saved-session", "続行")
 
-    assert _without_root(response) == {"delivery": "reply_started", "label": ""}
-    assert "previous_result" not in response
+    assert _without_root(response) == {
+        "delivery": "reply_started",
+        "label": "",
+        "previous_result": {"status": "completed", "agent_message": "期限切れ結果"},
+    }
     assert backend.resume_calls == ["saved-session"]
     assert "saved-session" not in manager.expired_sessions
 
@@ -182,7 +417,9 @@ async def test_resumed_session_keeps_created_at_in_status_file(tmp_path: pathlib
     session.retention_deadline = asyncio.get_running_loop().time() - 1
     manager.sessions[session.session_id] = session
 
-    assert _without_root(await manager.send_message("created-session", "続行")) == {"delivery": "reply_started", "label": ""}
+    response = await manager.send_message("created-session", "続行")
+    assert response["delivery"] == "reply_started"
+    assert response["previous_result"]["agent_message"] == "前のturn"
     writer.flush()
 
     resumed = manager.sessions["created-session"]
@@ -232,10 +469,13 @@ async def test_resumed_session_keeps_every_launch_info_item(
     await session.drain_registration()
     prepare_resume(manager, session)
 
-    assert _without_root(await manager.send_message(session.session_id, "続行")) == {
-        "delivery": "reply_started",
-        "label": _LAUNCH_VALUES["label"],
-    }
+    response = await manager.send_message(session.session_id, "続行")
+    assert response["delivery"] == "reply_started"
+    assert response["label"] == _LAUNCH_VALUES["label"]
+    if prepare_resume is _expire_launched_session:
+        assert response["previous_result"]["agent_message"] == "前のturn"
+    else:
+        assert "previous_result" not in response
     writer.flush()
 
     resumed = manager.sessions[session.session_id]

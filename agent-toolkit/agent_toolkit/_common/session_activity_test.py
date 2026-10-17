@@ -7,6 +7,7 @@ import os
 import pathlib
 import subprocess
 import sys
+import threading
 from collections.abc import Iterator
 from typing import Any
 
@@ -165,6 +166,59 @@ def test_parallel_child_hooks_keep_each_actor(tmp_path: pathlib.Path) -> None:
     record = json.loads((session_activity.activity_directory(tmp_path) / "parallel.json").read_text(encoding="utf-8"))
     assert len(record["actors"]) == 12
     assert len(list(session_activity.activity_directory(tmp_path).glob("*.json"))) == 1
+
+
+@pytest.mark.parametrize("event", ["PreToolUse", "Stop"])
+def test_other_session_records_while_host_probe_blocks(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, event: str
+) -> None:
+    """会話Aのホスト祖先探索が止まっている間も、同じ状態領域の会話Bの記録は共有ロックを待たずに完了する。"""
+    probing = threading.Event()
+    release = threading.Event()
+    host = _host("claude")
+
+    def blocking_probe() -> session_activity.HostProcess:
+        probing.set()
+        assert release.wait(10)
+        return host
+
+    monkeypatch.setattr(session_activity, "host_process", blocking_probe)
+    with concurrent.futures.ThreadPoolExecutor(max_workers=2) as pool:
+        first = pool.submit(
+            session_activity.record_activity,
+            {"session_id": "probing", "hook_event_name": "PreToolUse"},
+            state_root=tmp_path,
+        )
+        try:
+            assert probing.wait(10)
+            other = pool.submit(
+                session_activity.record_activity,
+                {"session_id": "other", "hook_event_name": event},
+                process=host,
+                state_root=tmp_path,
+            )
+            other.result(timeout=5)
+            assert not first.done()
+        finally:
+            release.set()
+        first.result(timeout=10)
+    directory = session_activity.activity_directory(tmp_path)
+    assert json.loads((directory / "other.json").read_text(encoding="utf-8"))["actors"]["main"] in {"active", "waiting"}
+    assert json.loads((directory / "probing.json").read_text(encoding="utf-8"))["actors"]["main"] == "active"
+
+
+def test_session_end_skips_host_probe(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """SessionEndは祖先探索を通らずに会話の記録を削除する。"""
+    session_activity.record_activity(
+        {"session_id": "ending", "hook_event_name": "PreToolUse"}, process=_host("claude"), state_root=tmp_path
+    )
+
+    def unexpected_probe() -> session_activity.HostProcess:
+        raise AssertionError("SessionEndで祖先を探索した")
+
+    monkeypatch.setattr(session_activity, "host_process", unexpected_probe)
+    session_activity.record_activity({"session_id": "ending", "hook_event_name": "SessionEnd"}, state_root=tmp_path)
+    assert not (session_activity.activity_directory(tmp_path) / "ending.json").exists()
 
 
 @pytest.mark.parametrize("replacement", [{"actors": {"main": []}}, {"engine": []}, {"version": True}])

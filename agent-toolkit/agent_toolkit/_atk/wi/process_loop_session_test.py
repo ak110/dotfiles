@@ -12,12 +12,14 @@ import subprocess
 import sys
 import time
 import uuid
+from collections.abc import Callable
 from typing import Any, NoReturn, cast
 
 import pytest
 
 from agent_toolkit import atk
 from agent_toolkit._atk import config as _config
+from agent_toolkit._atk import lane
 from agent_toolkit._atk import managed_temp as _managed_temp
 from agent_toolkit._atk.wi import process_loop as _process_loop
 from agent_toolkit._atk.wi import process_loop_env as _pl_env
@@ -31,6 +33,7 @@ from agent_toolkit._common import (
     claude_usage_limit as _claude_usage_limit,  # noqa: E402  # pylint: disable=wrong-import-position
 )
 from agent_toolkit._common import inherited_venv as _inherited_venv
+from agent_toolkit._common import session_registry
 from agent_toolkit._common import wait_schedule as _wait_schedule
 from agent_toolkit._testing.managed_temp_support import setattr_in_managed_temp_modules
 from agent_toolkit._testing.process_loop_support import (
@@ -44,6 +47,186 @@ from agent_toolkit.atk_test import _setup_notes
 
 _ORIGINAL_RUN = subprocess.run
 _ORIGINAL_CODEX_SESSION = _pl_session._run_codex_session  # pylint: disable=protected-access  # noqa: SLF001
+
+
+def _run_claude_session(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    launch: Callable[..., subprocess.CompletedProcess[bytes]],
+) -> None:
+    """Claudeのオーケストレーターを1回起動し、本起動の`subprocess.run`を`launch`で受ける。"""
+    monkeypatch.setattr(subprocess, "run", launch)
+    monkeypatch.setattr(lane, "cleanup_session", lambda _session: {"retained": False})
+    args = argparse.Namespace(resume=None, no_update=True, worktree="custom")
+    assert not _pl_session.run_process_session(
+        args,
+        tmp_path,
+        "作業する",
+        dict(os.environ),
+        orchestrator="claude",
+        model="sonnet",
+        effort="high",
+        resume_pending=False,
+        dotfiles_root=None,
+    )
+
+
+def _connection_launch(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    mode: str,
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    """本起動境界へ渡されたargv・環境と、起動時に読めるsettingsを取得する。"""
+    api = tmp_path / "api.env"
+    api.write_text("ANTHROPIC_API_KEY=selected-test-key\nANTHROPIC_BASE_URL=https://api.example.test\n", encoding="utf-8")
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CLAUDE_API_ENV_FILE", str(api))
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CLAUDE_API_MODE", mode)
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "parent-test-key")
+    monkeypatch.setenv("ANTHROPIC_AUTH_TOKEN", "parent-test-token")
+    observed: dict[str, Any] = {}
+    settings: dict[str, Any] = {}
+
+    def launch(argv: list[str], **kwargs: Any) -> subprocess.CompletedProcess[bytes]:
+        observed.update(argv=argv, env=kwargs["env"])
+        info = session_registry.resolve(kwargs["env"][_pl_env.PROCESS_LOOP_SESSION_ID_ENV]).resume_info
+        assert info is not None and info.cwd == str(tmp_path)
+        raw = argv[argv.index("--settings") + 1]
+        settings.update(json.loads(pathlib.Path(raw).read_text(encoding="utf-8") if not raw.startswith("{") else raw))
+        return subprocess.CompletedProcess(argv, 0)
+
+    _run_claude_session(tmp_path, monkeypatch, launch)
+    return observed, settings
+
+
+@pytest.mark.parametrize("resume", [None, "inherit", "legacy"])
+def test_unconfigured_process_session_preserves_parent_auth(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, resume: str | None
+) -> None:
+    """未設定時とその会話の再開では、親のAPIキーと設定による通常の認証解決を保つ。"""
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CLAUDE_API_ENV_FILE", "")
+    monkeypatch.delenv("CLAUDE_CODE_OAUTH_TOKEN", raising=False)
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "parent-test-key")
+    monkeypatch.setenv("CLAUDE_CODE_USE_BEDROCK", "1")
+    if resume:
+        session_registry.publish(
+            resume,
+            terminal=True,
+            engine="claude",
+            cwd=str(tmp_path),
+            claude_connection="inherit" if resume == "inherit" else None,
+        )
+        path = tmp_path / "later.env"
+        path.write_text("ANTHROPIC_API_KEY=later-key\n", encoding="utf-8")
+        monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CLAUDE_API_ENV_FILE", str(path))
+    observed: dict[str, Any] = {}
+
+    def launch(argv: list[str], **kwargs: Any) -> subprocess.CompletedProcess[bytes]:
+        observed.update(env=kwargs["env"], settings=json.loads(argv[argv.index("--settings") + 1]))
+        return subprocess.CompletedProcess(argv, 0)
+
+    monkeypatch.setattr(subprocess, "run", launch)
+    monkeypatch.setattr(lane, "cleanup_session", lambda _session: {"retained": False})
+    _pl_session.run_process_session(
+        argparse.Namespace(resume=resume, no_update=True),
+        tmp_path,
+        "作業",
+        dict(os.environ),
+        orchestrator="claude",
+        model="sonnet",
+        effort="high",
+        resume_pending=resume is not None,
+        dotfiles_root=None,
+    )
+    assert observed["env"]["ANTHROPIC_API_KEY"] == "parent-test-key"
+    assert observed["env"]["CLAUDE_CODE_USE_BEDROCK"] == "1"
+    assert "apiKeyHelper" not in observed["settings"]
+    assert "ANTHROPIC_API_KEY" not in observed["settings"]["env"]
+
+
+@pytest.mark.parametrize("content", [None, "", "# 未記入\n"])
+def test_invalid_env_file_warning_reaches_process_loop_stderr(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], content: str | None
+) -> None:
+    """無効なAPI環境ファイルでは、process-loopの起動がサブスクリプションで続き、標準エラーへパスと修正操作を示す。"""
+    path = tmp_path / "invalid.env"
+    if content is not None:
+        path.write_text(content, encoding="utf-8")
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CLAUDE_API_ENV_FILE", str(path))
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CLAUDE_API_MODE", "pay-as-you-go")
+    observed: dict[str, Any] = {}
+
+    def launch(argv: list[str], **kwargs: Any) -> subprocess.CompletedProcess[bytes]:
+        observed.update(env=kwargs["env"])
+        return subprocess.CompletedProcess(argv, 0)
+
+    _run_claude_session(tmp_path, monkeypatch, launch)
+    stderr = capsys.readouterr().err
+    assert str(path) in stderr
+    assert "atk config set claude_api_env_file" in stderr
+    assert observed["env"]["CLAUDE_CODE_OAUTH_TOKEN"]
+
+
+def test_pay_as_you_go_orchestrator_uses_api_only(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """APIを固定し、対話確認を避けるhelperへ鍵の所在だけを渡す。"""
+    observed, settings = _connection_launch(tmp_path, monkeypatch, "pay-as-you-go")
+    assert "ANTHROPIC_API_KEY" not in observed["env"]
+    assert not observed["env"].get("CLAUDE_CODE_OAUTH_TOKEN")
+    assert observed["env"]["ANTHROPIC_BASE_URL"] == "https://api.example.test"
+    assert str(tmp_path / "api.env") in settings["apiKeyHelper"]
+    assert "selected-test-key" not in str(observed["argv"])
+
+
+def test_api_credits_orchestrator_uses_subscription_only(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """API環境ファイルを適用せずサブスクリプションの認証を渡す。"""
+    observed, settings = _connection_launch(tmp_path, monkeypatch, "api-credits")
+    assert observed["env"]["CLAUDE_CODE_OAUTH_TOKEN"] == "test-subscription"
+    assert not settings["apiKeyHelper"]
+    assert "api.example.test" not in str(observed) + str(settings)
+
+
+def test_subscription_orchestrator_drops_inherited_api_auth(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """親のAPIキー・トークンを本起動の環境とsettingsへ流入させない。"""
+    observed, settings = _connection_launch(tmp_path, monkeypatch, "api-credits")
+    assert "ANTHROPIC_API_KEY" not in observed["env"]
+    assert "ANTHROPIC_AUTH_TOKEN" not in observed["env"]
+    assert not settings["env"]["ANTHROPIC_API_KEY"]
+    assert not settings["env"]["ANTHROPIC_AUTH_TOKEN"]
+
+
+def test_orchestrator_resume_probe_keeps_selected_connection(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """モード変更後も、明示再開するAPI会話の可用性を同じAPI接続で確認する。"""
+    path = tmp_path / "selected.env"
+    path.write_text("ANTHROPIC_API_KEY=selected-key\n", encoding="utf-8")
+    session_registry.publish(
+        "resume-api",
+        terminal=True,
+        engine="claude",
+        cwd=str(tmp_path),
+        claude_api_env_file=str(path),
+        claude_connection="api",
+        claude_role="orchestrator",
+    )
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CLAUDE_API_MODE", "api-credits")
+    observed: list[dict[str, Any]] = []
+
+    def probe(argv: list[str], **kwargs: Any) -> subprocess.CompletedProcess[str]:
+        observed.append(kwargs["env"])
+        return subprocess.CompletedProcess(argv, 0, "", "")
+
+    monkeypatch.setattr(subprocess, "run", probe)
+    candidate = ("claude", "sonnet", "high")
+    selected = _pl_session.select_available_orchestrator(
+        [candidate],
+        {**os.environ, _pl_env.PROCESS_LOOP_SESSION_ENV: "1"},
+        tmp_path,
+        resume_session_id="resume-api",
+    )
+    assert selected == candidate
+    assert observed[0]["ANTHROPIC_API_KEY"] == "selected-key"
+    assert not observed[0].get("CLAUDE_CODE_OAUTH_TOKEN")
 
 
 def _run_two_sessions(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, extra_argv: list[str]) -> list[dict[str, Any]]:
@@ -70,6 +253,7 @@ def _run_two_sessions(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, e
 def _isolate_process_loop_commands(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
     """外部コマンド・Claude設定・初期値のTTLをユーザー環境から分離する。"""
     isolate_process_loop_commands(monkeypatch, tmp_path)
+    monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", "test-subscription")
 
     def run_codex(argv: list[str], env: dict[str, str], cwd: pathlib.Path) -> subprocess.CompletedProcess[Any]:
         # 従来の起動引数の試験は外部CLI全体をrunで代用する。実子試験は監視を含む本体へ到達する。
@@ -175,9 +359,14 @@ class TestProcessLoopPromptAndEnv:
         assert debug_log.parent == tmp_path / ".claude" / "debug"
         if os.name != "nt":
             assert stat.S_IMODE(debug_log.stat().st_mode) == 0o600
-        assert command[4:6] + command[8:13] == [
+        settings = json.loads(command[5])
+        assert {key: settings[key] for key in ("askUserQuestionTimeout", "dialogExpiry", "remoteControlAtStartup")} == {
+            "askUserQuestionTimeout": "60s",
+            "dialogExpiry": "60s",
+            "remoteControlAtStartup": False,
+        }
+        assert command[4:5] + command[8:13] == [
             "--settings",
-            '{"askUserQuestionTimeout": "60s", "dialogExpiry": "60s", "remoteControlAtStartup": false}',
             "--permission-mode=auto",
             "--model",
             "opus[1m]",
@@ -587,9 +776,11 @@ class TestProcessLoopPromptAndEnv:
         assert probe_calls[0][2:6] == ["--model", expected_model, "--effort", expected_effort]
         command = claude_calls[0]["cmd"]
         hook_debug_log(command)
-        assert command[4:6] + command[8:13] == [
+        settings = json.loads(command[5])
+        assert settings["askUserQuestionTimeout"] == settings["dialogExpiry"] == "5m"
+        assert settings["remoteControlAtStartup"] is False
+        assert command[4:5] + command[8:13] == [
             "--settings",
-            '{"askUserQuestionTimeout": "5m", "dialogExpiry": "5m", "remoteControlAtStartup": false}',
             "--permission-mode=auto",
             "--model",
             expected_model,
@@ -1067,9 +1258,8 @@ class TestProcessLoopPromptAndEnv:
         first_debug_log = hook_debug_log(first_command)
         second_debug_log = hook_debug_log(second_command)
         assert first_debug_log != second_debug_log
-        assert first_command[4:] == [
+        assert first_command[4:5] + first_command[6:] == [
             "--settings",
-            '{"askUserQuestionTimeout": "5m", "dialogExpiry": "5m", "remoteControlAtStartup": false}',
             "--model",
             "opus[1m]",
             "--effort",
@@ -1077,9 +1267,8 @@ class TestProcessLoopPromptAndEnv:
             "--resume",
         ]
         assert _PROCESS_LOOP_SESSION_ID_ENV not in claude_calls[0]["env"]
-        assert second_command[4:6] + second_command[8:13] == [
+        assert second_command[4:5] + second_command[8:13] == [
             "--settings",
-            '{"askUserQuestionTimeout": "5m", "dialogExpiry": "5m", "remoteControlAtStartup": false}',
             "--permission-mode=auto",
             "--model",
             "opus[1m]",
@@ -1105,9 +1294,8 @@ class TestProcessLoopPromptAndEnv:
         first_command = claude_calls[0]["cmd"]
         second_command = claude_calls[1]["cmd"]
         assert hook_debug_log(first_command) != hook_debug_log(second_command)
-        assert first_command[4:] == [
+        assert first_command[4:5] + first_command[6:] == [
             "--settings",
-            '{"askUserQuestionTimeout": "5m", "dialogExpiry": "5m", "remoteControlAtStartup": false}',
             "--model",
             "opus[1m]",
             "--effort",
@@ -1115,9 +1303,8 @@ class TestProcessLoopPromptAndEnv:
             "--resume=session-id",
         ]
         assert claude_calls[0]["env"][_PROCESS_LOOP_SESSION_ID_ENV] == "session-id"
-        assert second_command[4:6] + second_command[8:13] == [
+        assert second_command[4:5] + second_command[8:13] == [
             "--settings",
-            '{"askUserQuestionTimeout": "5m", "dialogExpiry": "5m", "remoteControlAtStartup": false}',
             "--permission-mode=auto",
             "--model",
             "opus[1m]",
@@ -1180,9 +1367,8 @@ class TestProcessLoopPromptAndEnv:
             )
 
         assert hook_debug_log(claude_calls[0]["cmd"]) != hook_debug_log(claude_calls[1]["cmd"])
-        assert claude_calls[0]["cmd"][4:] == [
+        assert claude_calls[0]["cmd"][4:5] + claude_calls[0]["cmd"][6:] == [
             "--settings",
-            '{"askUserQuestionTimeout": "5m", "dialogExpiry": "5m", "remoteControlAtStartup": false}',
             "--model",
             "opus[1m]",
             "--effort",

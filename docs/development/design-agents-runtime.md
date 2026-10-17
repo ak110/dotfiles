@@ -110,8 +110,30 @@ Codexのturnが`start`の可用性確認を終えた後にサーバー側過負�
 対象を`serverOverloaded`へ限る。利用枠超過と流量制限は解除までの時間が応答から定まらず短い待機で解ける根拠が無く、Claudeの529は観測していないためである。可用性確認の間の過負荷は、会話の履歴を失わずに次の候補で起動し直せる既存の候補切替が扱う。未観測の孫sessionが残るturnは孫の待機を優先する。孫の終端後の再開本文が作業を再開させるためである。待機中の`kill`は新しいturnを始めずに最後の失敗で終端し、委譲元の`send_message`は保留を確定して自動継続を取り消す。
 
 Claude CodeのWeekly limit（`seven_day`、`seven_day_opus`、`seven_day_sonnet`）と5時間の利用上限（`five_hour`）を、解除まで待つ対象とする。`claude_api_env_file`が未設定のとき、これらで拒否されたturnは解除まで待って同じsessionで続ける（2026年10月4日、ユーザー指示）。待てば確実に解除されるため、候補を切り替えると作業の文脈を失うだけで得るものが無い。Claude backendはClaude Agent SDKの`RateLimitEvent`から利用枠の状態・種類・解除予定時刻をsessionへ保持し、`SystemMessage(init)`より前に届いた報告もsessionの作成時に引き継ぐ。turnが失敗で終わり、最後の報告が`rejected`かつ上記の種類である場合は、結果を既存の保留機構へ保留し、`api_error`へ種別`usage_limit`、HTTP状態、最初の拒否の時刻、回数、種類（`limit_type`）と解除予定時刻（`resets_at`）を記録する。MCP層の常駐監視は解除予定時刻に同じsessionへ継続の配送本文を送り、再び拒否されれば待機へ戻る。解除予定時刻が無いか過ぎている場合は300秒ごとに確かめ直す。回数と総時間の上限を置かず、`auto_resume_deadline`と保持期限でも確定しない。正常なモデル出力で利用枠の記録と`api_error`を削除する。起動直後の可用性確認の間に解除待ちへ入った場合も候補を切り替えず、`start`は`running`を返す。待機中の`kill`は保留した結果（`error.usageLimit`に種類と解除予定時刻）で終端し、委譲元の`send_message`は保留を確定してreplyとして配送する。解除待ちの拒否は除外記録へ残さず、旧版がClaudeの429へ記録した理由`429`は候補を除外する根拠にしない。待機の対象外である`overage`などのClaudeの429は、理由を`429:<種類>`として記録し、従来どおり次の候補へ切り替える。判定にHTTP状態の429を使わないのは、429が利用上限と流量制限を区別せず、種類はClaudeが出力する利用枠情報だけが示すためである。過負荷の自動継続と回数上限を共有しないのは、過負荷が短時間で解ける見込みの事象であるのに対し、利用上限は解除予定時刻まで確実に続くためである。
-Claudeの`claude_api_env_file`が設定済みなら、待機対象の上限で同じ会話をAPI接続へ移す。
-未設定時の解除待ちとAPI移行の判定は、起動直後の可用性確認にも適用する。
+Claudeの役割別接続候補は`_atk/claude_connection.py`へ集約し、`claude_api_env_file`を認証の所在、`claude_api_mode`を方針として分離する。
+`claude_api_env_file`が未設定なら`inherit`接続を選び、親環境とClaude Codeの通常の認証解決を維持する。
+認証検出による起動拒否、認証変数の除去、apiKeyHelperの上書き、役割別割当と接続切替を行わない。
+可用性プローブ・本起動・再開を同じ接続種別で扱う。
+未設定時に開始した会話と接続情報もAPIパスも持たない旧形式の会話は、後から設定しても通常の認証解決を使う。
+以下の役割別接続管理はenvファイルを設定した会話に適用する。
+既定の`pay-as-you-go`はオーケストレーターをAPIへ固定し、通常の委譲先をサブスクリプション、APIの順にする。
+`api-credits`はオーケストレーターをサブスクリプションへ固定し、通常の委譲先をAPI、サブスクリプションの順にする。
+通常のprocess-loopとall-reposのリポジトリ担当は同じ役割であり、起動手段がSDKでもオーケストレーターとして扱う。
+認証手段が一方だけの場合はその接続を使い、空・不在・読取不能・形式不正のAPI環境ファイルを候補から除く。
+直接起動のユーザー会話、Agentとfork、run-skill、commit、Codexの接続先はこの設定の対象外である。
+オーケストレーターは接続を固定し、通常の委譲先は同じsession ID・model・effortで次の接続へ移る。
+認証手段が一方だけの場合は既存の解除待ちを保ち、両認証を持つ全候補の失敗と認証なしを終端する。
+新規sessionは毎回先頭候補から評価し、再開する会話は登録簿に保持した接続を使う。
+
+Claude Code 2.1.302の対話起動は、環境変数の未承認APIキーで「Detected a custom API key in your environment」の確認画面を表示する。
+同版の本体は`customApiKeyResponses`による承認判定を持つ。
+無人起動するAPIオーケストレーターはキーを環境変数へ直接置かず、所有者限定のsettingsファイルに`apiKeyHelper`を指定して選択したenvファイルから取得する。
+キーの値をargvや登録簿へ保存せず、settingsファイルは子プロセス終端時に回収する。
+親のAPI認証は環境変数と合成settingsの両方で隔離する。
+
+サブスクリプション認証の検出は、`CLAUDE_CODE_OAUTH_TOKEN`、Linux・Windowsの設定ディレクトリにある`.credentials.json`のOAuth情報、macOSの`claude auth status`を使う。
+macOSのKeychainエントリと`CLAUDE_CONFIG_DIR`の対応はCLI自身に解決させ、資格情報の値をログへ出力しない。
+保存先は[認証の公式仕様](https://code.claude.com/docs/en/authentication#credential-management)、`authMethod`の判定値は[CLIの公式仕様](https://code.claude.com/docs/en/cli-reference#cli-commands)に従う。
 接続先の保持とenvファイルを読む時機は[design-agents-server.md](design-agents-server.md#起動候補と観測identity)にある。
 
 起動後の可用性失敗で、同じ会話の待機・接続先移行から回復できず終端した場合は、終端結果の`next_action`が前任IDを指定する引き継ぎ起動を案内する。

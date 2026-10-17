@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+import os
 import pathlib
 from typing import Any
 
@@ -19,6 +20,109 @@ from agent_toolkit._testing.agents_server_support import (
     _rejected_stream,
     install_backend,
 )
+
+
+@pytest.fixture(autouse=True)
+def _subscription_credentials(monkeypatch: pytest.MonkeyPatch) -> None:
+    """SDKダブルが持つサブスクリプション認証を起動環境にも明示する。"""
+    monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", "test-subscription")
+
+
+@pytest.mark.asyncio
+async def test_subscription_launch_drops_parent_api_auth(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """親環境・親settingsの両経路でAPI認証を遮断し、OAuth接続を保持する。"""
+    api = tmp_path / "api.env"
+    api.write_text("ANTHROPIC_API_KEY=configured-key\n", encoding="utf-8")
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CLAUDE_API_ENV_FILE", str(api))
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "parent-key")
+    monkeypatch.setenv("ANTHROPIC_AUTH_TOKEN", "parent-token")
+    monkeypatch.setattr(
+        claude,
+        "_parent_settings",
+        lambda: json.dumps(
+            {
+                "env": {"ANTHROPIC_API_KEY": "settings-key", "ANTHROPIC_AUTH_TOKEN": "settings-token", "CUSTOM": "kept"},
+                "apiKeyHelper": "parent-helper",
+            }
+        ),
+    )
+    seen: list[Any] = []
+
+    def factory(options: Any) -> FakeClaudeClient:
+        seen.append(options)
+        return FakeClaudeClient([[SystemMessage("isolated-auth"), AssistantMessage("応答"), ResultMessage("完了")]])
+
+    backend = claude.ClaudeServerManager(client_factory=factory)
+    try:
+        await backend.start("作業", str(tmp_path))
+        options = seen[0]
+        assert not options.env.get("ANTHROPIC_API_KEY") and not options.env.get("ANTHROPIC_AUTH_TOKEN")
+        settings = json.loads(options.settings)
+        assert not settings["env"]["ANTHROPIC_API_KEY"] and not settings["env"]["ANTHROPIC_AUTH_TOKEN"]
+        assert settings["env"]["CUSTOM"] == "kept"
+        assert not settings["apiKeyHelper"]
+    finally:
+        await backend.close()
+
+
+@pytest.mark.asyncio
+async def test_unconfigured_start_and_cold_resume_preserve_parent_auth(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """公開startと保存済み会話の再開で、APIキー・Bedrock・親settingsの認証を引き継ぐ。"""
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CLAUDE_API_ENV_FILE", "")
+    monkeypatch.delenv("CLAUDE_CODE_OAUTH_TOKEN", raising=False)
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "parent-key")
+    monkeypatch.setenv("CLAUDE_CODE_USE_BEDROCK", "1")
+    monkeypatch.setattr(
+        claude,
+        "_parent_settings",
+        lambda: json.dumps(
+            {
+                "apiKeyHelper": "parent-helper",
+                "env": {"ANTHROPIC_AUTH_TOKEN": "settings-token"},
+            }
+        ),
+    )
+    seen: list[Any] = []
+
+    def factory(options: Any) -> FakeClaudeClient:
+        seen.append(options)
+        effective = {**os.environ, **options.env}
+        assert effective["ANTHROPIC_API_KEY"] == "parent-key"
+        assert effective["CLAUDE_CODE_USE_BEDROCK"] == "1"
+        settings = json.loads(options.settings)
+        assert settings["apiKeyHelper"] == "parent-helper"
+        assert settings["env"]["ANTHROPIC_AUTH_TOKEN"] == "settings-token"
+        return FakeClaudeClient([[SystemMessage("inherited-auth"), AssistantMessage("応答"), ResultMessage("完了")]])
+
+    manager = server_manager.AgentsServerManager()
+    install_backend(
+        manager, "claude", claude.ClaudeServerManager(manager.sessions, client_factory=factory, publish_registry=True)
+    )
+    try:
+        started = await manager.start("claude:sonnet/high", "作業", str(tmp_path))
+        assert started["session_id"] == "inherited-auth"
+        await manager.stop("inherited-auth")
+        info = session_registry.resolve("inherited-auth").resume_info
+        assert info is not None and info.claude_connection == "inherit"
+    finally:
+        await manager.close()
+    api = tmp_path / "later.env"
+    api.write_text("ANTHROPIC_API_KEY=later-key\n", encoding="utf-8")
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CLAUDE_API_ENV_FILE", str(api))
+    manager = server_manager.AgentsServerManager()
+    install_backend(
+        manager, "claude", claude.ClaudeServerManager(manager.sessions, client_factory=factory, publish_registry=True)
+    )
+    try:
+        await manager.send_message("inherited-auth", "継続")
+        assert len(seen) == 2 and seen[-1].resume == "inherited-auth"
+    finally:
+        await manager.close()
 
 
 @pytest.mark.asyncio

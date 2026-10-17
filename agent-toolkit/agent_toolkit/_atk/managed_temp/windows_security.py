@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import contextlib
 import ctypes
+import ntpath
 import pathlib
 import typing
 from ctypes import wintypes
@@ -226,7 +227,7 @@ def _windows_path_handle(
     kernel32.CloseHandle.restype = wintypes.BOOL
     effective_access = access | _WINDOWS_READ_ATTRIBUTES | _WINDOWS_SYNCHRONIZE
     handle = create_file(
-        str(path),
+        _windows_extended_path(path),
         effective_access,
         _WINDOWS_FILE_SHARE_ALL,
         None,
@@ -245,6 +246,16 @@ def _windows_path_handle(
         yield handle, information
     finally:
         kernel32.CloseHandle(handle)
+
+
+def _windows_extended_path(path: pathlib.PurePath | str) -> str:
+    """OS呼出し境界で絶対パスをUnicode拡張パスへ変換する。"""
+    value = ntpath.abspath(str(path))
+    if value.startswith("\\\\?\\"):
+        return value
+    if value.startswith("\\\\"):
+        return "\\\\?\\UNC\\" + value[2:]
+    return "\\\\?\\" + value
 
 
 @contextlib.contextmanager

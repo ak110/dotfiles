@@ -22,7 +22,8 @@ from agent_toolkit._atk import managed_temp as subject
 from agent_toolkit._atk.managed_temp import inventory as managed_temp_inventory
 from agent_toolkit._atk.managed_temp import registry as managed_temp_registry
 from agent_toolkit._atk.managed_temp import windows_security as managed_temp_windows_security
-from agent_toolkit._common import file_lock
+from agent_toolkit._atk.managed_temp.long_tree_test_support import create_long_posix_tree
+from agent_toolkit._common import file_lock, plugin_root_leases
 from agent_toolkit._testing.managed_temp_support import (
     _assert_child_replacement_preserves_both_versions,
     _install_windows_security_doubles,
@@ -36,6 +37,110 @@ from agent_toolkit._testing.managed_temp_support import (
 
 _SCRIPT = pathlib.Path(__file__).resolve().parents[2] / "_managed_temp.py"
 _MARKER_NAME = ".agent-toolkit-managed-temp.json"
+
+
+@pytest.mark.skipif(os.name != "posix", reason="POSIX descriptor相対の長い木")
+@pytest.mark.parametrize(
+    "case",
+    [
+        "expired",
+        "unregistered",
+        "recent",
+        "git",
+        "unregistered-git",
+        "unregistered-stale-git",
+        "symlink",
+        "lease",
+        "mode",
+        "owner",
+        "replacement",
+        "root-replacement",
+        "child-replacement",
+    ],
+)
+def test_long_tree_sweep_and_rejections_keep_contracts(
+    case: str, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """長い木の深部を観測し、保持条件と外部の対照データを保つ。"""
+    target = subject.create_managed_temp("long-sweep")
+    relative = create_long_posix_tree(target, leaf=".git" if "git" in case else "payload")
+    registry = managed_temp_registry._registry_path(target)
+    now = datetime.datetime.now(datetime.UTC) + datetime.timedelta(days=8)
+    external = tmp_path / "outside"
+    external.mkdir()
+    (external / "saved").write_text("保持", encoding="utf-8")
+    descriptor = os.open(target, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+    try:
+        for part in pathlib.Path(relative).parts:
+            child = os.open(part, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=descriptor)
+            os.close(descriptor)
+            descriptor = child
+        if case == "recent":
+            recent_ns = int(now.timestamp() * 1_000_000_000)
+            os.utime("payload", dir_fd=descriptor, ns=(recent_ns, recent_ns))
+        if case == "symlink":
+            os.symlink(str(external), "link", dir_fd=descriptor)
+        if case in ("unregistered-git", "unregistered-stale-git"):
+            git_file = os.open(".git", os.O_WRONLY, dir_fd=descriptor)
+            try:
+                git_directory = external if case == "unregistered-git" else external / "missing"
+                os.write(git_file, f"gitdir: {git_directory}\n".encode())
+            finally:
+                os.close(git_file)
+    finally:
+        os.close(descriptor)
+    if case.startswith("unregistered"):
+        registry.unlink()
+    if case == "lease":
+        with plugin_root_leases.plugin_root_lock(target):
+            plugin_root_leases.register_plugin_root_use(target)
+    if case == "mode":
+        target.chmod(0o777)
+    if case == "owner":
+        original_stat = os.stat
+
+        def wrong_owner(path: typing.Any, **kwargs: typing.Any) -> os.stat_result:
+            metadata = original_stat(path, **kwargs)
+            if path == target.name and kwargs.get("dir_fd") is not None:
+                fields = list(metadata)
+                fields[4] = metadata.st_uid + 1
+                return os.stat_result(fields)
+            return metadata
+
+        monkeypatch.setattr(os, "stat", wrong_owner)
+    if case in ("replacement", "root-replacement", "child-replacement"):
+        original = managed_temp_inventory._consume_registry
+
+        def replace_after_consume(validated: managed_temp_registry._ValidatedTemp, **_kwargs: object) -> pathlib.Path:
+            consumed = original(validated)
+            if case == "root-replacement":
+                target.rename(target.with_name(target.name + "-original"))
+                target.mkdir(mode=0o700)
+            elif case == "child-replacement":
+                child = target / pathlib.Path(relative).parts[0]
+                child.rename(target / "original-child")
+                child.mkdir(mode=0o700)
+            else:
+                (target / "substitute").mkdir()
+            return consumed
+
+        monkeypatch.setattr(managed_temp_inventory, "_consume_registry", replace_after_consume)
+        assert subject.main(["cleanup", "--path", str(target)]) == 2
+        assert registry.is_file()
+    else:
+        deleted = subject.sweep_expired_managed_temp(now=now)
+        assert (target in deleted) is (case in ("expired", "unregistered", "unregistered-stale-git", "symlink"))
+        if case in ("git", "unregistered-git"):
+            # 期限判定記録から深部の保持根拠を再確認する次の掃引も保全する。
+            assert target not in subject.sweep_expired_managed_temp(now=now)
+    assert (external / "saved").read_text(encoding="utf-8") == "保持"
+    if case in ("expired", "unregistered", "unregistered-stale-git", "symlink"):
+        assert not target.exists()
+        assert not registry.exists()
+    else:
+        assert target.is_dir()
+        if not case.startswith("unregistered"):
+            assert registry.is_file()
 
 
 def _make_junction(link: pathlib.Path, target: pathlib.Path) -> None:
@@ -61,20 +166,31 @@ def test_cleanup_closes_scandir_after_snapshot_failure(monkeypatch: pytest.Monke
     iterators: list[typing.Any] = []
     original_scandir = os.scandir
     original_lstat = pathlib.Path.lstat
+    target_metadata = target.stat()
 
     def record_scandir(path: typing.Any, **kwargs: typing.Any) -> typing.Any:
         iterator = original_scandir(path, **kwargs)
-        if path == target:
+        # Windowsの拡張パスとPOSIXのdescriptorを、領域自身のidentityで対応付ける。
+        if os.path.samestat(os.stat(path), target_metadata):
             iterators.append(iterator)
         return iterator
 
     def reject_metadata(path: pathlib.Path, **kwargs: typing.Any) -> os.stat_result:
-        if reject and iterators and path.parent == target:
+        if reject and iterators and path.parent.samefile(target):
             raise OSError("走査中のmetadata取得拒否")
         return original_lstat(path, **kwargs)
 
+    original_walk = managed_temp_inventory._walk_posix
+
+    def reject_walk(descriptor: int, prefix: str = "", **_kwargs: object) -> typing.Iterator[tuple[str, os.stat_result]]:
+        for relative, metadata in original_walk(descriptor, prefix):
+            if reject:
+                raise OSError("走査中のmetadata取得拒否")
+            yield relative, metadata
+
     monkeypatch.setattr(os, "scandir", record_scandir)
     monkeypatch.setattr(pathlib.Path, "lstat", reject_metadata)
+    monkeypatch.setattr(managed_temp_inventory, "_walk_posix", reject_walk)
     try:
         if reject:
             with pytest.raises(OSError, match="metadata取得拒否"):

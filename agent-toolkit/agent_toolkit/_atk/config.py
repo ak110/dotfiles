@@ -103,6 +103,7 @@ _MUTABLE_KEY_DEFAULTS = {
     "codex_fast_mode": "false",
     "codex_model_providers": "",
     "claude_api_env_file": "",
+    "claude_api_mode": "pay-as-you-go",
     "process_loop_repositories": "[]",
 }
 
@@ -214,6 +215,9 @@ def _validate_mutable_setting(key: str, value: str) -> None:
     if key == "claude_api_env_file":
         if "\n" in value or "\r" in value or "\0" in value:
             raise ValueError("envファイルのパス1つ、または空文字列で指定する")
+    elif key == "claude_api_mode":
+        if value not in {"pay-as-you-go", "api-credits"}:
+            raise ValueError("受理可能値: pay-as-you-go, api-credits")
     elif key == "process_loop_repositories":
         parse_process_loop_repositories(value)
     elif key == "codex_fast_mode":

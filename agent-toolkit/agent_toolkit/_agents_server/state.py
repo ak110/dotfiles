@@ -50,6 +50,7 @@ TERMINAL_STATUSES = frozenset({"completed", "failed", "interrupted"})
 
 ModelCandidate = tuple[str, str, str]
 LaunchKind = task_documents.LaunchKind
+ResumeDelivery = typing.Literal["reply_started", "reply_failed", "reply_ambiguous"]
 _TOUCH_LISTENERS: set[Callable[[], None]] = set()
 _TERMINAL_LISTENERS: set[Callable[[SessionState], None]] = set()
 _LIFECYCLE_LISTENERS: set[Callable[[SessionState, str], None]] = set()
@@ -104,6 +105,18 @@ class ResumePrompt:
         )
         self._changed = asyncio.Event()
         self._closed = False
+        self._delivery: ResumeDelivery | None = None
+
+    @property
+    def delivery(self) -> ResumeDelivery:
+        """要求ごとに確定した配送結果を返す。未配送で終了した要求は開始失敗とする。"""
+        return self._delivery or "reply_failed"
+
+    def record_delivery(self, delivery: ResumeDelivery) -> None:
+        """backendが確定した配送結果を一度だけ保持する。"""
+        if self._delivery is not None and self._delivery != delivery:
+            raise RuntimeError("再開要求の配送結果は確定済みです")
+        self._delivery = delivery
 
     @property
     def initial_ticket(self) -> int:
@@ -168,6 +181,7 @@ class ResumePrompt:
                 cancellation_task.cancel()
                 await asyncio.gather(cancellation_task, return_exceptions=True)
                 await delivery_task
+                self.record_delivery("reply_started")
                 if self._current is not None and self._current[0] == ticket:
                     self._current = None
                 self._closed = True
@@ -219,7 +233,11 @@ class SessionState:
     codex_attempted_provider_ids: set[str] = dataclasses.field(default_factory=set, repr=False)
     codex_provider_resume_pending: bool = False
     claude_api_env_file: str | None = None
+    claude_connection: str | None = None
+    claude_role: str | None = None
     claude_api_resume_pending: bool = False
+    claude_connection_diagnostics: tuple[str, ...] = ()
+    claude_connection_failures: dict[str, str] = dataclasses.field(default_factory=dict, repr=False)
     model_type: str | None = None
     launch_kind: LaunchKind = "delegate"
     label: str = ""
@@ -576,6 +594,8 @@ class SessionState:
             "codex_model_provider": self.codex_model_provider,
             "codex_subscription_provider": self.codex_subscription_provider,
             "claude_api_env_file": self.claude_api_env_file,
+            "claude_connection": self.claude_connection,
+            "claude_role": self.claude_role,
             "model_type": self.model_type,
             "launch_kind": self.launch_kind,
             "turn_seq": self.turn_seq,
@@ -637,6 +657,8 @@ class SessionResumeState:
     codex_model_provider: str | None = None
     codex_subscription_provider: str | None = None
     claude_api_env_file: str | None = None
+    claude_connection: str | None = None
+    claude_role: str | None = None
     model_type: str | None = None
     launch_kind: LaunchKind = "delegate"
     # `label`・`prompt`・`created_at`は`session_registry.LaunchInfo`の項目であり、再開時はその定義から写す。
@@ -685,6 +707,8 @@ class SessionResumeState:
             codex_model_provider=session.codex_model_provider,
             codex_subscription_provider=session.codex_subscription_provider,
             claude_api_env_file=session.claude_api_env_file,
+            claude_connection=session.claude_connection,
+            claude_role=session.claude_role,
             status=session.status,
             agent_message=session.agent_message,
             error=session.error,

@@ -43,6 +43,7 @@ from agent_toolkit._agents_server.tool_descriptions import (
     schema_text,
 )
 from agent_toolkit._common import inherited_venv as _inherited_venv
+from agent_toolkit._common import mcp_environment
 
 _LOG = logging.getLogger("agent-toolkit.agents-server.mcp")
 
@@ -199,7 +200,7 @@ async def send_message(
 ) -> dict[str, Any]:
     """実行中turnへ追加指示を送り、終端済みなら同じsessionでreplyを開始する。
 
-    入力は委譲先が他から得られない確定済み要件・事実と実行時の値に絞り、参照可能な記録は絶対パスと対象IDで示す。
+    入力は委譲先が他から得られない確定済み要件・事実と実行時の値に限定し、参照可能な記録は絶対パスと対象IDで示す。
     必須入力とユーザー指定の手段を保つ。手段の指定はユーザー指定か要件達成に必要と確定した根拠を伴う場合に限る。
     詳細はdelegation/references/base-contract.md「入力の適格性と追送」に従う。
 
@@ -366,13 +367,15 @@ async def show_session(
 
 
 def _prepare_child_environment() -> None:
-    """起動元ツールのエフェメラル仮想環境を、以降に起動する委譲先から取り除く。
+    """起動元の仮想環境と会話contextを、以降に起動する委譲先から取り除く。
 
     Claude backendが渡す`ClaudeAgentOptions.env`は継承環境へ重なる仕様であり、
     キーの削除を表現できない。Codex backendのApp Server子プロセスも本プロセスの環境を継承する。
     このため両方の処理を起動する本プロセスの環境を、起動時に1回だけ整える。
     """
+    launch_requests.capture_handoff_session()
     _inherited_venv.strip_inherited_venv(os.environ)
+    mcp_environment.strip_conversation_context(os.environ)
 
 
 def _configure_logging() -> pathlib.Path:

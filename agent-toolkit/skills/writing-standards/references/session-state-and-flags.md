@@ -64,6 +64,8 @@ Claude CodeのFunction hooks moduleとPythonのCLI・Stop hookは、同じセッ
 `/exit`はセッション限りの作業が残ると確認画面を表示するため、`turn.complete`は`/exit`の直前に`durable`が真でないcron taskを削除する。一覧の取得と各削除は`$.tool.check`の判定が`allow`の場合だけ行い、失敗しても`/exit`は実行する。
 process-loopが起動した会話の最上位のStopでは、終了要求が`requested`かつStop入力の`background_tasks`に有効な非`teammate`の作業が残る場合を判定する。その場合は`agent-toolkit/agent_toolkit/_hooks/autonomous_exit.py`が終了要求を`consumed`へ戻してblockする。Stopは同じターンの`turn.complete`より先に発火するため、`/exit`は取り下げた要求では実行されずに済む。
 
+Stop hookの無進捗停止（`busy_loop_guard.py`）の終了要求は、Stopの全判定の後に共通ハンドラー（`stop.py`）が発行する。要求が`requested`か単一PIDへの終了要求として成立した場合、同じStopの応答は停止の通知だけになる。このため`autonomous_exit_invoked`が偽のままでも、無進捗停止による終了要求はそのまま`turn.complete`で消費される。`autonomous_exit_invoked`が記録するのは`atk agents-exit-session`の実行だけであり、Stop内で発行した終了要求はこのフラグとは別に終了要求のファイルが表す。
+
 通常のSessionEndでは現行セッションの2ファイルを保持して期限を過ぎた他セッションのファイルを回収し、`clear`では現行セッションの2ファイルも除く。保持期限と回収は`agents_exit_session.sweep_function_hook_files`が持つ。ファイルに保存するのは前掲の固定値だけとする。
 
 ## 状態の継承

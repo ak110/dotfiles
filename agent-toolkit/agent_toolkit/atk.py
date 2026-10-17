@@ -78,6 +78,8 @@ lazy from agent_toolkit._atk.serve import command as _serve_command
 lazy from agent_toolkit._atk.wi import cli as _wi_cli
 lazy from agent_toolkit._atk.wi import cli_input as _wi_cli_input
 lazy from agent_toolkit._common import delegated_session as _delegated_session  # noqa: E402
+lazy from agent_toolkit._common import inherited_venv as _inherited_venv
+lazy from agent_toolkit._common import mcp_environment as _mcp_environment
 lazy from agent_toolkit._common import private_notes as _private_notes  # noqa: E402
 lazy from agent_toolkit._common import session_state as _session_state  # noqa: E402
 lazy from agent_toolkit._plan import owner_records as _owner_records  # noqa: E402
@@ -373,6 +375,20 @@ _EARLY_COMMANDS: dict[str, Callable[[argparse.Namespace], int | None]] = {
 """managed-tempの掃引と`atk wi`の引数の確定より前に実行するサブコマンド。Noneを返すと終了コードを指定せず戻る。"""
 # pylint: enable=unnecessary-lambda
 
+
+def _repository_manager_factory() -> Callable[[], _agents_manager.AgentsServerManager]:
+    """全リポジトリのmanagerへ、会話context除去前の同じ書込主体を渡す。"""
+    launcher_environment = dict(os.environ)
+
+    def create() -> _agents_manager.AgentsServerManager:
+        manager = _agents_manager.AgentsServerManager(launcher_environment=launcher_environment)
+        _inherited_venv.strip_inherited_venv(os.environ)
+        _mcp_environment.strip_conversation_context(os.environ)
+        return manager
+
+    return create
+
+
 _COMMANDS: dict[str, Callable[[_Invocation], int]] = {
     "wait-schedule": lambda invocation: _wait_schedule_cmd.dispatch(invocation.args),
     "agents": lambda invocation: _agents.dispatch(invocation.args),
@@ -400,7 +416,7 @@ _COMMANDS: dict[str, Callable[[_Invocation], int]] = {
         now=invocation.now,
         # 他のwi操作ではagents_server依存を読み込まない。
         # pylint: disable=unnecessary-lambda
-        repository_manager_factory=lambda: _agents_manager.AgentsServerManager(),
+        repository_manager_factory=_repository_manager_factory(),
     ),
 }
 """共通の前処理の後に実行するサブコマンドと実行関数の対応。"""

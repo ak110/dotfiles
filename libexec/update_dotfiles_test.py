@@ -10,9 +10,12 @@ import io
 import json
 import os
 import pathlib
+import shlex
+import signal
 import subprocess
 import sys
 import time
+from collections.abc import Callable
 from typing import Any, Self, cast
 
 import platformdirs
@@ -193,6 +196,13 @@ class _FakePopen:
     def kill(self) -> None:
         """直接子へのkill呼び出しを記録する。"""
         self.kill_calls += 1
+
+    def __enter__(self) -> Self:
+        return self
+
+    def __exit__(self, *_args: object) -> None:
+        self.stdout.close()
+        self.stderr.close()
 
 
 class _TimeoutPopen(_FakePopen):
@@ -621,6 +631,27 @@ def test_save_worktree_uses_repository_launcher(monkeypatch: pytest.MonkeyPatch)
     assert calls[0][2:] == ["save", "--label=test"]
 
 
+def test_alternate_index_is_passed_only_to_update_git(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+) -> None:
+    """本体Gitと退避だけが代替indexを受け取り、pluginとchezmoiは通常環境を使う。"""
+    monkeypatch.delenv("GIT_INDEX_FILE", raising=False)
+    alternate = tmp_path / "alternate-index"
+    monkeypatch.setattr(update_dotfiles, "_update_index", alternate)
+    calls: list[list[str]] = []
+    environments: list[dict[str, str]] = []
+    monkeypatch.setattr(subprocess, "Popen", _fake_popen({}, calls, environments=environments))
+    monkeypatch.setattr(subprocess, "run", _fake_run({}, calls, environments=environments))
+    assert update_dotfiles._run_git_pull(1, 4) == 0
+    assert update_dotfiles._run_worktree_stash("protect-old") is not None
+    assert update_dotfiles._git_capture("status").returncode == 0
+    assert update_dotfiles._run_git_pull(1, 4, plugin=tmp_path / "plugin") == 0
+    assert update_dotfiles._run_step(2, 4, "init", ["chezmoi", "init"])[0] == 0
+    assert all(env["GIT_INDEX_FILE"] == str(alternate) for env in environments[:3])
+    assert all("GIT_INDEX_FILE" not in env for env in environments[3:])
+
+
 def test_save_worktree_reports_launcher_failure(monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
     """ランチャー起動不能はtracebackを抑止して文脈付き失敗にする。"""
     monkeypatch.setattr(subprocess, "Popen", lambda *_args, **_kwargs: (_ for _ in ()).throw(FileNotFoundError("missing")))
@@ -653,7 +684,11 @@ def test_old_stash_timeout_stops_update_and_records_diagnostics(
     )
     monkeypatch.setattr(update_dotfiles, "_update_git_with_recovery", _REAL_UPDATE_GIT_WITH_RECOVERY)
     monkeypatch.setattr(update_dotfiles, "_git_operation_in_progress", lambda: False)
-    monkeypatch.setattr(update_dotfiles, "_git_capture", lambda *_args: subprocess.CompletedProcess([], 0, ref + "\n", ""))
+    monkeypatch.setattr(
+        update_dotfiles,
+        "_git_capture",
+        lambda *args: subprocess.CompletedProcess([], 0, str(tmp_path / "index") if args[-1] == "index" else ref + "\n", ""),
+    )
     monkeypatch.setattr(update_dotfiles, "_LOCK_PATH", tmp_path / "update.lock")
     monkeypatch.setattr(update_dotfiles, "_run_git_pull", lambda *_args, **_kwargs: pytest.fail("pullへ進んだ"))
     monkeypatch.setattr(subprocess, "Popen", lambda *_args, **_kwargs: process)
@@ -1350,6 +1385,7 @@ def _patch_real_pull(monkeypatch: pytest.MonkeyPatch, local: pathlib.Path) -> No
         return subprocess.run(  # noqa: S603
             ["git", "-C", str(local), "pull", "--rebase", "--quiet"],
             check=False,
+            env=update_dotfiles._git_env(),
         ).returncode
 
     monkeypatch.setattr(update_dotfiles, "_run_git_pull", _pull)
@@ -1664,6 +1700,421 @@ _DAEMON = _codex(10, "codex app-server --managed-daemon", "managed-daemon")
 _DAEMON_HELPER = _codex(11, "codex-code-mode-host", "managed-daemon")
 _UPDATE_LOOP = _codex(12, "codex app-server", "update-loop")
 _STDIO_DELEGATION = _codex(13, "codex app-server", "session")
+
+
+def _dirty_snapshot(local: pathlib.Path) -> tuple[str, str, str, dict[str, bytes]]:
+    """HEAD・stage・未stage・未追跡を読取りだけで比較する。"""
+    return (
+        _git(local, "rev-parse", "HEAD"),
+        _git(local, "diff", "--cached", "--binary"),
+        _git(local, "diff", "--binary"),
+        {path.name: path.read_bytes() for path in local.glob("*.txt")},
+    )
+
+
+def _prepare_dirty(local: pathlib.Path) -> None:
+    """3種類の未コミット状態を用意する。"""
+    (local / "staged.txt").write_text("staged\n", encoding="utf-8")
+    _git(local, "add", "staged.txt")
+    (local / "tracked.txt").write_text("unstaged\n", encoding="utf-8")
+    (local / "untracked.txt").write_text("untracked\n", encoding="utf-8")
+
+
+def _wait_process_ready(process: subprocess.Popen[str], ready: pathlib.Path) -> None:
+    """起動したプロセスが有限時間で同期点へ到達したことを確かめる。"""
+    deadline = time.monotonic() + 15
+    while not ready.exists():
+        assert process.poll() is None
+        assert time.monotonic() < deadline
+        time.sleep(0.02)
+
+
+@pytest.mark.parametrize("phase", ["pre-commit", "editor", "commit-a"])
+@pytest.mark.parametrize("scope", ["same", "other-worktree", "unrelated"])
+def test_update_skips_while_git_commit_in_progress(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+    phase: str,
+    host_environ: Callable[[], dict[str, str]],
+    scope: str,
+) -> None:
+    """実commitのhook・編集区間を保持し、最初の変更前の見送りを検査する。"""
+    local, seed, _remote = _create_git_pair(tmp_path)
+    target = local
+    if scope == "other-worktree":
+        target = tmp_path / "other"
+        _git(local, "worktree", "add", "-b", "other", str(target))
+    elif scope == "unrelated":
+        target = seed
+    _prepare_dirty(local)
+    original = _dirty_snapshot(local)
+    ready, release = tmp_path / "ready", tmp_path / "release"
+    gate = tmp_path / "gate.py"
+    gate.write_text(
+        "import pathlib, sys, time\n"
+        "ready, release, tracked = map(pathlib.Path, sys.argv[1:4])\n"
+        "original = tracked.read_bytes()\n"
+        "if sys.argv[4] == 'pre-commit': tracked.write_bytes(b'base\\n')\n"
+        "ready.touch()\n"
+        "deadline = time.monotonic() + 30\n"
+        "while not release.exists() and time.monotonic() < deadline: time.sleep(0.02)\n"
+        "tracked.write_bytes(original)\n"
+        "raise SystemExit(1)\n",
+        encoding="utf-8",
+    )
+    command = " ".join(
+        shlex.quote(str(value).replace("\\", "/"))
+        for value in (
+            sys.executable,
+            gate,
+            ready,
+            release,
+            local / "tracked.txt",
+            phase,
+        )
+    )
+    env = host_environ()
+    if phase == "editor":
+        env["GIT_EDITOR"] = command
+        arguments = ["commit"]
+    else:
+        hook = local / ".git" / "hooks" / "pre-commit"
+        hook.write_text("#!/bin/sh\n" + command + "\n", encoding="utf-8", newline="\n")
+        hook.chmod(0o755)
+        arguments = ["commit", *(["-a"] if phase == "commit-a" else []), "-m", "同期点"]
+    monkeypatch.setattr(update_dotfiles, "_DOTFILES_ROOT", target)
+    monkeypatch.setattr(update_dotfiles, "_protect_old_worktree_stashes", lambda: pytest.fail("変更開始"))
+    if scope != "same":
+        monkeypatch.setattr(update_dotfiles, "_update_owned_git", lambda *_args, **_kwargs: 0)
+    with subprocess.Popen(
+        ["git", "-C", str(local), *arguments],
+        cwd=tmp_path,
+        env=env,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        encoding="utf-8",
+    ) as process:
+        try:
+            _wait_process_ready(process, ready)
+            before = _dirty_snapshot(local)
+            assert _REAL_UPDATE_GIT_WITH_RECOVERY(1, 4, timeout=5) == int(scope == "same")
+            assert _dirty_snapshot(local) == before
+        finally:
+            release.touch()
+            stdout, stderr = process.communicate(timeout=15)
+    assert process.returncode != 0, (stdout, stderr)
+    assert _dirty_snapshot(local) == original
+    assert not list((local / ".git").glob("update-dotfiles-index-*"))
+
+
+@pytest.mark.usefixtures("real_stash_runtime")
+@pytest.mark.parametrize("commit_all", [False, True])
+def test_update_holds_index_lock_against_later_git_operation(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+    commit_all: bool,
+    host_environ: Callable[[], dict[str, str]],
+) -> None:
+    """更新所有中の後発commitを実Gitが拒否し、別worktreeは独立して動く。"""
+    local, _seed, _remote = _create_git_pair(tmp_path)
+    _prepare_dirty(local)
+    before = _dirty_snapshot(local)
+    other = tmp_path / "other"
+    _git(local, "worktree", "add", "-b", "other", str(other))
+    monkeypatch.setattr(update_dotfiles, "_DOTFILES_ROOT", local)
+
+    def later_commit(*_args: object, **_kwargs: object) -> int:
+        result = subprocess.run(
+            ["git", "-C", str(local), "commit", *(["-a"] if commit_all else []), "-m", "後発"],
+            env=host_environ(),
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            check=False,
+        )
+        assert result.returncode != 0
+        assert "index.lock" in result.stderr
+        (other / "other.txt").write_text("other\n", encoding="utf-8")
+        _git(other, "add", "other.txt")
+        _git(other, "commit", "-m", "別worktree")
+        return 0
+
+    monkeypatch.setattr(update_dotfiles, "_run_git_pull", later_commit)
+    assert _REAL_UPDATE_GIT_WITH_RECOVERY(1, 4, timeout=5) == 0
+    assert _dirty_snapshot(local) == before
+    assert (other / "other.txt").read_text(encoding="utf-8") == "other\n"
+    assert not (local / ".git" / "index.lock").exists()
+    assert "GIT_INDEX_FILE" not in update_dotfiles._child_env()
+
+
+@pytest.mark.parametrize("outcome", ["success", "failure", "interrupt", "publish-failure", "stat-failure"])
+def test_update_recovers_index_after_interrupted_git_change(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+    outcome: str,
+) -> None:
+    """成功・失敗・中断のindexを公開し、自身の一時物とロックだけ回収する。"""
+    local, _seed, _remote = _create_git_pair(tmp_path)
+    _prepare_dirty(local)
+    other = tmp_path / "other"
+    _git(local, "worktree", "add", "-b", "other", str(other))
+    other_index = pathlib.Path(_git(other, "rev-parse", "--git-path", "index"))
+    other_lock = other_index.with_name("index.lock")
+    other_lock.write_bytes(b"other owner")
+    before_other = _dirty_snapshot(other)
+    monkeypatch.setattr(update_dotfiles, "_DOTFILES_ROOT", local)
+    handler = update_dotfiles._configure_persistent_log("test")
+
+    def change(*_args: object, **_kwargs: object) -> int:
+        assert update_dotfiles._run_git_change("add", "tracked.txt")
+        if outcome == "interrupt":
+            raise KeyboardInterrupt
+        if outcome == "publish-failure":
+
+            def fail_publish(*_args: object, **_kwargs: object) -> None:
+                raise OSError("index公開失敗")
+
+            monkeypatch.setattr(update_dotfiles.os, "replace", fail_publish)
+        if outcome == "stat-failure":
+            original_stat = pathlib.Path.stat
+            failed = False
+
+            def fail_stat(path: pathlib.Path, **kwargs: Any) -> os.stat_result:
+                nonlocal failed
+                if path == local / ".git" / "index.lock" and not failed:
+                    failed = True
+                    raise OSError("ロック確認失敗")
+                return original_stat(path, **kwargs)
+
+            monkeypatch.setattr(pathlib.Path, "stat", fail_stat)
+        if outcome == "failure":
+            assert not update_dotfiles._run_git_change("restore", "--", "missing-file")
+            return 1
+        return 0
+
+    monkeypatch.setattr(update_dotfiles, "_update_owned_git", change)
+    try:
+        if outcome == "interrupt":
+            with pytest.raises(KeyboardInterrupt):
+                _REAL_UPDATE_GIT_WITH_RECOVERY(1, 4, timeout=5)
+        else:
+            assert _REAL_UPDATE_GIT_WITH_RECOVERY(1, 4, timeout=5) == int(outcome != "success")
+        assert ("tracked.txt" in _git(local, "diff", "--cached", "--name-only")) == (
+            outcome not in {"publish-failure", "stat-failure"}
+        )
+        assert (local / "tracked.txt").read_text(encoding="utf-8") == "unstaged\n"
+        assert other_lock.read_bytes() == b"other owner"
+        assert _dirty_snapshot(other) == before_other
+        assert not (local / ".git" / "index.lock").exists()
+        assert not list((local / ".git").glob("update-dotfiles-index-*"))
+        if outcome == "failure":
+            log = update_dotfiles._LOG_PATH.read_text(encoding="utf-8")
+            assert "git restore -- missing-file: exit=1" in log
+            assert "pathspec" in log
+    finally:
+        if handler is not None:
+            update_dotfiles.logger.removeHandler(handler)
+            handler.close()
+
+
+@pytest.mark.parametrize("race", ["started-before-lock", "foreign-lock", "copy-interrupt"])
+def test_update_preserves_index_when_ownership_is_not_ready(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+    race: str,
+) -> None:
+    """ロック後の再確認と準備中断でも、既存indexと別主体のロックを保持する。"""
+    local, _seed, _remote = _create_git_pair(tmp_path)
+    _prepare_dirty(local)
+    before = _dirty_snapshot(local)
+    monkeypatch.setattr(update_dotfiles, "_DOTFILES_ROOT", local)
+    monkeypatch.setattr(update_dotfiles, "_update_owned_git", lambda *_args, **_kwargs: pytest.fail("変更開始"))
+    lock = local / ".git" / "index.lock"
+    if race == "started-before-lock":
+        checks = iter([False, True])
+        monkeypatch.setattr(update_dotfiles, "_git_operation_in_progress", lambda: next(checks))
+    elif race == "foreign-lock":
+        lock.write_bytes(b"foreign")
+    else:
+
+        def interrupt_copy(source: pathlib.Path, destination: pathlib.Path, **_kwargs: object) -> None:
+            del source
+            destination.write_bytes(b"partial index")
+            raise KeyboardInterrupt
+
+        monkeypatch.setattr(update_dotfiles.shutil, "copyfile", interrupt_copy)
+    if race == "copy-interrupt":
+        with pytest.raises(KeyboardInterrupt):
+            _REAL_UPDATE_GIT_WITH_RECOVERY(1, 4, timeout=5)
+    else:
+        assert _REAL_UPDATE_GIT_WITH_RECOVERY(1, 4, timeout=5) == 1
+    assert _dirty_snapshot(local) == before
+    assert not list((local / ".git").glob("update-dotfiles-index-*"))
+    if race == "foreign-lock":
+        assert lock.read_bytes() == b"foreign"
+    else:
+        assert not lock.exists()
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIXの実SIGTERMによるプロセス中断を検証する")
+def test_update_recovers_index_after_sigterm(tmp_path: pathlib.Path, host_environ: Callable[[], dict[str, str]]) -> None:
+    """実プロセスへの停止通知後もGit作業を再開でき、完了済みstageを保持する。"""
+    local, _seed, _remote = _create_git_pair(tmp_path)
+    _prepare_dirty(local)
+    ready = tmp_path / "ready"
+    runner = tmp_path / "interrupt_update.py"
+    runner.write_text(
+        "import importlib.util, pathlib, sys, time\n"
+        f"sys.path.insert(0, {str(_REPOSITORY_ATK_BIN.parents[1])!r})\n"
+        f"spec = importlib.util.spec_from_file_location('update_dotfiles', {update_dotfiles.__file__!r})\n"
+        "module = importlib.util.module_from_spec(spec)\n"
+        "sys.modules[spec.name] = module\n"
+        "spec.loader.exec_module(module)\n"
+        f"module._DOTFILES_ROOT = pathlib.Path({str(local)!r})\n"
+        "def change(*args, **kwargs):\n"
+        "    assert module._run_git_change('add', 'tracked.txt')\n"
+        f"    pathlib.Path({str(ready)!r}).touch()\n"
+        "    time.sleep(30)\n"
+        "module._update_owned_git = change\n"
+        "module._update_git_with_recovery(1, 4, timeout=5)\n",
+        encoding="utf-8",
+    )
+    with subprocess.Popen(
+        [sys.executable, str(runner)],
+        env=host_environ(),
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        encoding="utf-8",
+    ) as process:
+        try:
+            _wait_process_ready(process, ready)
+            process.send_signal(signal.SIGTERM)
+            stdout, stderr = process.communicate(timeout=15)
+        finally:
+            if process.poll() is None:
+                process.kill()
+                process.communicate(timeout=5)
+    assert process.returncode != 0, (stdout, stderr)
+    assert not (local / ".git" / "index.lock").exists()
+    assert not list((local / ".git").glob("update-dotfiles-index-*"))
+    assert "tracked.txt" in _git(local, "diff", "--cached", "--name-only")
+    _git(local, "add", "untracked.txt")
+
+
+@pytest.mark.parametrize(
+    "state,command",
+    [
+        ("MERGE_HEAD", "merge"),
+        ("rebase-merge", "rebase"),
+        ("rebase-apply", "rebase"),
+        ("CHERRY_PICK_HEAD", "cherry-pick"),
+        ("REVERT_HEAD", "revert"),
+        ("sequencer", "cherry-pick"),
+    ],
+)
+def test_update_pending_operation_explains_completion_and_abort(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+    sync_report_path: pathlib.Path,
+    state: str,
+    command: str,
+) -> None:
+    """操作状態による見送りが作業を保持し、手動の完了・中止手順を保存する。"""
+    local, _seed, _remote = _create_git_pair(tmp_path)
+    _prepare_dirty(local)
+    before = _dirty_snapshot(local)
+    (local / ".git" / state).touch()
+    monkeypatch.setattr(update_dotfiles, "_DOTFILES_ROOT", local)
+    monkeypatch.setattr(update_dotfiles, "_LOCK_PATH", tmp_path / "update.lock")
+    monkeypatch.setattr(update_dotfiles, "_update_git_with_recovery", _REAL_UPDATE_GIT_WITH_RECOVERY)
+    assert update_dotfiles.main() == 1
+    assert _dirty_snapshot(local) == before
+    report = json.loads(sync_report_path.read_text(encoding="utf-8"))
+    for text in ("git status", f"git {command}", "--continue", "--abort"):
+        assert text in report["stderr_tail"]
+        assert text in update_dotfiles._LOG_PATH.read_text(encoding="utf-8")
+
+
+@pytest.mark.usefixtures("real_stash_runtime")
+@pytest.mark.parametrize("pull_code", [0, 7])
+def test_update_restore_overwrite_refusal_records_recovery(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+    sync_report_path: pathlib.Path,
+    pull_code: int,
+) -> None:
+    """実Gitの上書き拒否から、保存ログと失敗同期結果で診断・退避先へ到達できる。"""
+    local, _seed, _remote = _create_git_pair(tmp_path)
+    (local / "tracked.txt").write_text("保存対象\n", encoding="utf-8")
+    monkeypatch.setattr(update_dotfiles, "_DOTFILES_ROOT", local)
+    monkeypatch.setattr(update_dotfiles, "_LOCK_PATH", tmp_path / "update.lock")
+    monkeypatch.setattr(update_dotfiles, "_update_git_with_recovery", _REAL_UPDATE_GIT_WITH_RECOVERY)
+    monkeypatch.setattr(update_dotfiles, "_run_step", lambda *_args, **_kwargs: (0, ""))
+
+    def overwrite(*_args: object, **_kwargs: object) -> int:
+        (local / "tracked.txt").write_text("復元を拒否する変更\n", encoding="utf-8")
+        return pull_code
+
+    monkeypatch.setattr(update_dotfiles, "_run_git_pull", overwrite)
+    assert update_dotfiles.main() == pull_code
+    ref = _git(local, "for-each-ref", "--format=%(refname)", "refs/worktree").splitlines()[0]
+    log = update_dotfiles._LOG_PATH.read_text(encoding="utf-8")
+    assert f"git stash apply --index {ref}: exit=1" in log
+    assert "would be overwritten" in log
+    assert "復元に失敗" in log
+    assert f"git stash apply --index {ref}" in log
+    if pull_code:
+        report = json.loads(sync_report_path.read_text(encoding="utf-8"))
+        assert "would be overwritten" in report["stderr_tail"]
+        assert "復元に失敗" in report["stderr_tail"]
+        assert ref in report["stderr_tail"]
+    else:
+        assert "競合から回復" in log
+        assert "git switch update-dotfiles-recovery-" in log
+
+
+def test_skipped_update_keeps_pending_for_next_timer(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+    sync_report_path: pathlib.Path,
+) -> None:
+    """自動更新入口が見送りを未完了として保持し、次の周期で再試行する。"""
+    import update_dotfiles_if_upstream_changed as timer  # noqa: PLC0415  # pylint: disable=import-outside-toplevel
+
+    local, _seed, _remote = _create_git_pair(tmp_path)
+    launcher = local / "bin" / "update-dotfiles"
+    launcher.parent.mkdir()
+    launcher.touch()
+    monkeypatch.setattr(timer, "_DOTFILES_ROOT", local)
+    monkeypatch.setattr(update_dotfiles, "_DOTFILES_ROOT", local)
+    monkeypatch.setattr(update_dotfiles, "_LOCK_PATH", tmp_path / "update.lock")
+    monkeypatch.setattr(update_dotfiles, "_update_git_with_recovery", _REAL_UPDATE_GIT_WITH_RECOVERY)
+    monkeypatch.setattr(update_dotfiles, "_git_operation_in_progress", lambda: True)
+    attempts: list[int] = []
+
+    def run(command: list[str], **_kwargs: object) -> subprocess.CompletedProcess[str]:
+        if command == [str(launcher)]:
+            code = update_dotfiles.main()
+            attempts.append(code)
+            return subprocess.CompletedProcess(command, code, "", "")
+        argument = command[-1]
+        text = {"HEAD": "develop", "@{upstream}": "origin/develop"}.get(argument, "upstream\trefs/heads/develop")
+        return subprocess.CompletedProcess(command, 0, text, "")
+
+    monkeypatch.setattr(timer, "_run", run)
+    pending = tmp_path / "test.pending"
+    for _ in range(2):
+        assert timer._update_if_needed(pending) == 1
+        assert pending.exists()
+        assert not pending.with_suffix(".applied").exists()
+    assert attempts == [1, 1]
+    report = json.loads(sync_report_path.read_text(encoding="utf-8"))
+    assert report["status"] == "failed"
+    assert report["exit_code"] == 1
+    assert "タイマー" in report["stderr_tail"]
+    assert "Git操作が進行中" in update_dotfiles._LOG_PATH.read_text(encoding="utf-8")
 
 
 class TestCodexDaemonPause:

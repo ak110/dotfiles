@@ -611,6 +611,9 @@ async def test_start_prepares_handoff_path_when_omitted(monkeypatch: pytest.Monk
         return {"session_id": "session", "status": "running", "label": "担当"}
 
     monkeypatch.setattr(mcp_tools, "_MANAGER", TaskManager(start=fake_start))
+    monkeypatch.setattr(launch_requests, "_HANDOFF_SESSION", None, raising=False)
+    mcp_tools._prepare_child_environment()
+    assert "CLAUDE_CODE_SESSION_ID" not in launch_requests.os.environ
 
     response = await mcp_tools.start(str(tmp_path), subagent_md_path=str(task_document), extra_params=extra_params)
 

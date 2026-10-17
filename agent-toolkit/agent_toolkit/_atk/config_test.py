@@ -39,6 +39,36 @@ _PRESETS = {
 _ENGINE_KEYS = ("base_engine", "execute_engine", "review_engine", "chores_engine", "orchestrate_engine")
 
 
+def test_claude_api_mode_accepts_two_values_and_env_override(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """show・get・setと環境上書きで接続方針の保存と不正値拒否を観測する。"""
+    assert _main(tmp_path, "config", "show") == 0
+    assert "claude_api_mode pay-as-you-go" in capsys.readouterr().out
+    for mode in ("api-credits", "pay-as-you-go"):
+        assert _main(tmp_path, "config", "set", "claude_api_mode", mode) == 0
+        capsys.readouterr()
+        assert _main(tmp_path, "config", "get", "claude_api_mode") == 0
+        assert capsys.readouterr().out.strip() == mode
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CLAUDE_API_MODE", "api-credits")
+    assert _main(tmp_path, "config", "get", "claude_api_mode") == 0
+    assert capsys.readouterr().out.strip() == "api-credits"
+    assert _main(tmp_path, "config", "set", "claude_api_mode", "invalid") == 2
+    error = capsys.readouterr().err
+    assert "pay-as-you-go" in error and "api-credits" in error
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CLAUDE_API_MODE", "invalid")
+    assert _main(tmp_path, "config", "get", "claude_api_mode") == 2
+
+
+def test_claude_api_env_file_accepts_missing_path(tmp_path: pathlib.Path) -> None:
+    """将来作成するファイルのパスを設定CLIから保存できる。"""
+    path = str(tmp_path / "future.env")
+    assert _main(tmp_path, "config", "set", "claude_api_env_file", path) == 0
+    assert config_module.resolve_mutable_setting("claude_api_env_file") == path
+
+
 @pytest.fixture(autouse=True)
 def _isolate_platformdirs(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """`platformdirs`の解決先を実環境から隔離する。"""
@@ -122,6 +152,7 @@ class TestConfigShow:
             "codex_fast_mode",
             "codex_model_providers",
             "claude_api_env_file",
+            "claude_api_mode",
             "process_loop_repositories",
         ]
         for key in config_module._MUTABLE_KEY_DEFAULTS:  # pylint: disable=protected-access  # noqa: SLF001

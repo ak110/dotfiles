@@ -19,7 +19,55 @@ from agent_toolkit._atk.wi import process_loop_session as session
 from agent_toolkit._atk.wi import process_loop_update as update_module
 from agent_toolkit._atk.wi import process_loop_watch as watch
 from agent_toolkit._testing import git_repository as git
+from agent_toolkit._testing.agents_server_support import (
+    AssistantMessage,
+    FakeClaudeClient,
+    ResultMessage,
+    SystemMessage,
+    install_backend,
+    server_manager,
+)
+from agent_toolkit._testing.agents_server_support import (
+    claude_backend as claude,
+)
 from agent_toolkit.atk_test import _setup_notes
+
+
+@pytest.mark.parametrize("mode,api", [("pay-as-you-go", True), ("api-credits", False)])
+@pytest.mark.asyncio
+@pytest.mark.usefixtures("agents_server_isolation")
+async def test_repository_orchestrator_follows_mode(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    mode: str,
+    api: bool,
+) -> None:
+    """all-reposの公開起動からSDKまで、リポジトリ担当をオーケストレーターとして扱う。"""
+    repositories = _repositories(tmp_path, monkeypatch)
+    notes = tmp_path / "notes"
+    _write(notes, "task.md", repositories[0].repo_id)
+    path = tmp_path / "api.env"
+    path.write_text("ANTHROPIC_API_KEY=selected-key\n", encoding="utf-8")
+    monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", "test-subscription")
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CLAUDE_API_ENV_FILE", str(path))
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CLAUDE_API_MODE", mode)
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_ORCHESTRATE_ENGINE", "claude")
+    options_seen: list[Any] = []
+
+    def factory(options: Any) -> FakeClaudeClient:
+        options_seen.append(options)
+        return FakeClaudeClient([[SystemMessage("repository-orchestrator"), AssistantMessage("作業"), ResultMessage("完了")]])
+
+    manager = server_manager.AgentsServerManager()
+    backend = claude.ClaudeServerManager(manager.sessions, client_factory=factory)
+    install_backend(manager, "claude", backend)
+    results = await all_repos.run_repository_delegates(
+        argparse.Namespace(worktree=None, resume=None),
+        listing.configured_repo_snapshot(notes, repositories),
+        manager=manager,
+    )
+    assert results[repositories[0].repo_id]["status"] == "completed"
+    assert bool(options_seen[0].env.get("ANTHROPIC_API_KEY")) is api
 
 
 def _write(notes: pathlib.Path, name: str, repo_id: str, *, extra: str = "", state: str = "inbox") -> pathlib.Path:
@@ -339,7 +387,7 @@ def test_registration_changes_before_start_public_cli(tmp_path: pathlib.Path, mo
     monkeypatch.setattr(watch, "wait_for_start_permission", gate)
     monkeypatch.setattr(watch, "wait_for_changes", stop)
     monkeypatch.setattr(update_module, "resolve_dotfiles_root", lambda: None)
-    monkeypatch.setattr("agent_toolkit.atk._agents_manager.AgentsServerManager", lambda: manager)
+    monkeypatch.setattr("agent_toolkit.atk._agents_manager.AgentsServerManager", lambda **_kwargs: manager)
     with pytest.raises(SystemExit, match="0"):
         atk.main(["wi", "process-loop", "--no-update", "--no-alerts", "all-repos"], home=tmp_path)
     assert [targets for targets, _gate in gates] == [{repositories[0].repo_id}, {repositories[1].repo_id}]

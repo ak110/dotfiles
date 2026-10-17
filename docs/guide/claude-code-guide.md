@@ -229,7 +229,7 @@ Remote Controlは、手元で動くClaude Codeの会話へブラウザーやClau
 接続する場合は会話内で`/remote-control`を実行し、ログインと接続条件は[公式のRemote Control手順](https://code.claude.com/docs/en/remote-control)を参照。
 `agents_server`、`atk wi process-loop`、`atk run-skill`と`atk commit`も再送を要さず、解除待ちの種類と予定時刻を状態表示または端末へ示す。
 `atk run-skill`は指定スキルの実行中に上限へ達した場合も同じ会話を再開する。
-`agents_server`のClaude委譲は、後述の`claude_api_env_file`を設定した場合に同じ会話をAPIへ移す。
+`agents_server`のClaude委譲は、後述の`claude_api_mode`が定める接続順で同じ会話を継続する。
 解除待ちの委譲先と背景wait・定期再確認のtaskは保持し、作業の継続が不要になった場合だけ停止する。
 変更できるキーは次のとおりで、`atk config show`もこの順に表示する。
 
@@ -249,7 +249,8 @@ Remote Controlは、手元で動くClaude Codeの会話へブラウザーやClau
 | `write_model` | `start`の`write`。日本語の文章力で選ぶ候補列で、段位と配分に属さない |
 | `codex_fast_mode` | `agents_server`が起動するCodexの速度（`true`はfast mode、`false`は標準、未設定時は`false`） |
 | `codex_model_providers` | `agents_server`のCodex接続先を主接続先から優先順で並べるID列。空ならCodex通常設定・代替なし |
-| `claude_api_env_file` | `agents_server`のClaudeが利用上限で拒否されたときに使うAPI接続のenvファイルのパス。空文字列なら解除待ち |
+| `claude_api_env_file` | ClaudeのAPI接続用envファイルのパス。空文字列で解除する |
+| `claude_api_mode` | 役割別の接続方針。`pay-as-you-go`（既定）または`api-credits` |
 
 段位のモデルはengine名を付けない`<model>[/<effort>]`で1つだけ書き、effortを省略すると`medium`を使う。
 engine順は`codex`と`claude`の一方または両方を重複なしでASCIIカンマ区切りに並べる。
@@ -293,10 +294,27 @@ CodexのAPI移行先は工程別モデル候補とは別の設定である。サ
 設定と解除、API認証と課金は[Codex利用ガイド](codex-guide.md#codexのサブスクとapi接続先)を参照する。
 この機能は`agents_server`のCodexだけに作用し、Claudeの解除待ちと直接起動の接続先を変えない。
 
-### Claude委譲のAPI接続
+### Claudeの役割別API接続
 
-`agents_server`のClaude委譲だけに適用する設定である。
-メインのClaude Code、`atk run-skill`、`atk wi process-loop`と`atk commit`の接続先は変更しない。
+`claude_api_env_file`が未設定（空文字列）の場合、process-loopとagents_serverは親の環境変数とClaude Codeの通常の認証解決を使う。
+APIキー、Claude Codeの設定、Bedrock・Vertexなどをそのまま利用できる。
+この場合は認証検出による起動拒否、認証環境の隔離、役割別の接続割当や切替を行わない。
+その会話の再開も通常の認証解決を維持し、後からenvファイルを設定しても既存会話には適用しない。
+接続情報もAPIパスも持たない旧形式の登録も同じ扱いとなる。
+
+envファイルを設定した場合は、以下の役割別接続管理を適用する。
+通常の`atk wi process-loop`のオーケストレーター、`all-repos`のリポジトリ担当、および`agents_server`のClaude委譲へ適用する。
+ユーザーが直接起動するClaude Code、組み込みAgentとfork、`atk run-skill`、`atk commit`、Codexの接続先は対象外である。
+`all-repos`のリポジトリ担当はオーケストレーターとして扱う。
+
+| `claude_api_mode` | オーケストレーター | 通常のClaude委譲先 |
+| --- | --- | --- |
+| `pay-as-you-go`（既定） | 従量課金APIに固定 | サブスクリプション、APIの順 |
+| `api-credits` | サブスクリプションに固定 | API、サブスクリプションの順 |
+
+認証手段が一方だけの環境では、その接続だけを使う。モードの追加設定は要らない。
+[APIクレジットの公式対象範囲](https://platform.claude.com/docs/en/about-claude/api-credits-for-subscribers)はClaude APIとClaude Agent SDKを含み、Claude Codeは対象外である。
+APIクレジットを委譲先で使う場合は`api-credits`を選び、オーケストレーターをサブスクリプションで動かす。
 API接続に使う環境変数をenvファイルへ保存し、パスを設定する。
 形式は1行1つの`KEY=VALUE`で、先頭の`export`と空白、値全体を囲む一対の引用符、空行と`#`で始まるコメント行も使える。
 AnthropicのAPIへ直接接続する場合は、[Claude ConsoleのAPI keys](https://platform.claude.com/settings/keys)で発行したAPIキーを`ANTHROPIC_API_KEY`へ記入する。
@@ -318,19 +336,25 @@ Windowsではファイルのプロパティのセキュリティ設定で、使�
 ```bash
 atk config set claude_api_env_file '~/.config/claude-api.env'
 atk config get claude_api_env_file
+atk config set claude_api_mode api-credits
+# 従量課金APIをオーケストレーターへ割り当てる場合
+atk config set claude_api_mode pay-as-you-go
 # 解除する場合
 atk config set claude_api_env_file ''
 ```
 
 setは先頭の`~`を展開してパスだけを保存する。
-ファイルの読取は切替と再開の起動時に行う。
+ファイルの読取は新規起動・切替・再開時に行う。setは将来作成するパスも受理する。
 `AGENT_TOOLKIT_CONFIG_CLAUDE_API_ENV_FILE`の空でない値は保存値より優先するため、解除時はこの変数も外す。
-未設定では利用上限の解除を待つ。
-設定済みではWeekly limitか5時間の利用上限で拒否されたときに、同じ会話・model・effortでenvファイルのAPI接続へ移る。
-envファイルは切替と再開の起動ごとに読み直す。
-APIへ移った会話は設定変更・解除、stop・保持期限、サーバー再起動を跨ぐ再開でも保持したパスを使い、継続にもAPI料金が発生する。
-新規sessionは通常のサブスク接続から始める。
-ファイルの不備、API認証・通信失敗は運用で対処し、専用の解除待ちへの復帰や接続先切替は行わない。
+空、存在しない、読み取れない、形式が不正なファイルではAPI候補を選ばない。
+非空の無効パスは起動時に対象パスと修正・解除操作を示す。
+`AGENT_TOOLKIT_CONFIG_CLAUDE_API_MODE`でモードも一時上書きできる。
+通常の委譲先は利用枠またはAPI残高の不足時に同じsession ID・model・effortで次の接続へ移る。
+認証手段が1つだけの場合はその接続の解除を待つ。両認証を持ち全候補が尽きた場合と、認証手段が無い場合は、理由と復旧操作を返して終了する。
+オーケストレーターは選択済み接続を固定し、解除待ち・次のengine候補・不成立理由の返却へ進む。
+接続済みの会話はstop・保持期限・サーバー再起動後も選択済みの接続を保持する。
+新規sessionは毎回モードの先頭候補から評価する。
+親環境と親settingsのAPI認証を隔離し、API会話には選択したenvファイルの値を渡す。
 
 ## 選定結果の確認設定
 

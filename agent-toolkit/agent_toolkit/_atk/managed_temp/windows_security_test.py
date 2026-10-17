@@ -11,6 +11,7 @@ import os
 import pathlib
 import shutil
 import stat
+import subprocess
 import tempfile
 import typing
 
@@ -19,6 +20,7 @@ import pytest
 from agent_toolkit._atk import managed_temp as subject
 from agent_toolkit._atk.managed_temp import inventory as inventory_subject
 from agent_toolkit._atk.managed_temp import registry as managed_temp_registry
+from agent_toolkit._atk.managed_temp import windows_security
 from agent_toolkit._testing.managed_temp_support import (
     _assert_child_replacement_preserves_both_versions,
     _interrupt_cleanup,
@@ -32,6 +34,105 @@ from agent_toolkit._testing.managed_temp_support import (
 
 _SCRIPT = pathlib.Path(__file__).resolve().parents[2] / "_managed_temp.py"
 _MARKER_NAME = ".agent-toolkit-managed-temp.json"
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Windows実機の長パス・reparse point・Readonly検証")
+@pytest.mark.parametrize(
+    "state", ["normal", "child", "child-resume", "retry", "consuming", "quarantine", "external", "invalid", "replacement"]
+)
+def test_windows_long_tree_cleanup(
+    state: str, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Windowsが受理する長い木の回収とreparse pointの保持を公開CLIで確かめる。"""
+    parent = subject.create_managed_temp("windows-long", session_id="windows-long")
+    target = parent
+    if state.startswith("child"):
+        assert subject.main(["create", "--prefix", "work", "--session-root", str(parent)]) == 0
+        target = pathlib.Path(capsys.readouterr().out.splitlines()[-1])
+    deep = target
+    for index in range(8):
+        deep /= f"{index}-" + "x" * 60
+        pathlib.Path(windows_security._windows_extended_path(deep)).mkdir()
+    deep = pathlib.Path(windows_security._windows_extended_path(deep))
+    payload = deep / "payload"
+    payload.write_text("回収", encoding="utf-8")
+    payload.chmod(stat.S_IREAD)
+    inside = target / "inside"
+    inside.mkdir()
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (outside / "saved").write_text("保持", encoding="utf-8")
+    link = deep / "link"
+
+    def junction(destination: pathlib.Path) -> None:
+        result = subprocess.run(
+            ["cmd", "/c", "mklink", "/J", str(link), str(destination)],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=20,
+        )
+        assert result.returncode == 0, result.stderr or result.stdout
+
+    junction(outside if state == "external" else inside)
+    registry = managed_temp_registry._registry_path(parent)
+    consuming = None
+    quarantine = None
+    if state in ("consuming", "quarantine"):
+        consuming, quarantine = _interrupt_cleanup(target, quarantine=state == "quarantine")
+    original_tag = inventory_subject._WINDOWS_MOUNT_POINT_REPARSE_TAG
+    original_consume = inventory_subject._consume_registry
+    if state == "invalid":
+        monkeypatch.setattr(inventory_subject, "_WINDOWS_MOUNT_POINT_REPARSE_TAG", 0)
+    if state == "replacement":
+        original = inventory_subject._consume_registry
+
+        def replace_link(validated: managed_temp_registry._ValidatedTemp, **_kwargs: object) -> pathlib.Path:
+            consumed = original(validated)
+            link.rmdir()
+            junction(outside)
+            return consumed
+
+        monkeypatch.setattr(inventory_subject, "_consume_registry", replace_link)
+    if state in ("child-resume", "retry"):
+
+        def interrupt(
+            _root: pathlib.Path,
+            validated: managed_temp_registry._ValidatedTemp,
+            quarantine_path: pathlib.Path,
+            _expected_tree: object,
+            **_kwargs: object,
+        ) -> None:
+            validated.path.rename(quarantine_path)
+            raise OSError("隔離直後の中断")
+
+        with monkeypatch.context() as patch:
+            patch.setattr(inventory_subject, "_cleanup_windows", interrupt)
+            assert subject.main(["cleanup", "--path", str(target)]) == 2
+        assert registry.is_file()
+    rejected = state in ("external", "invalid", "replacement")
+    assert subject.main(["cleanup", "--path", str(target)]) == (2 if rejected else 0)
+    assert target.exists() is rejected
+    if rejected:
+        assert registry.is_file()
+        assert payload.read_text(encoding="utf-8") == "回収"
+        # 後始末は通常ファイルの属性を戻し、検証用junction自体を解除してから親を回収する。
+        link.rmdir()
+        payload.chmod(stat.S_IWRITE)
+        monkeypatch.setattr(inventory_subject, "_WINDOWS_MOUNT_POINT_REPARSE_TAG", original_tag)
+        monkeypatch.setattr(inventory_subject, "_consume_registry", original_consume)
+        subject.cleanup_managed_temp(parent)
+    elif state.startswith("child"):
+        assert parent.is_dir()
+        assert not list(parent.glob(".agent-toolkit-cleanup-*"))
+        assert not managed_temp_registry._registry_path(target).with_suffix(".child-cleanup").exists()
+        subject.cleanup_managed_temp(parent)
+    elif state in ("consuming", "quarantine"):
+        assert consuming is not None and quarantine is not None
+        assert not consuming.exists()
+        assert not quarantine.exists()
+    assert not registry.exists()
+    assert (outside / "saved").read_text(encoding="utf-8") == "保持"
 
 
 @pytest.mark.parametrize(
@@ -548,9 +649,13 @@ class TestManagedTempPosix:
         elif race_point == "scandir":
             original_scandir = os.scandir
 
-            def concurrent_scandir(path: pathlib.Path | str) -> typing.Any:
-                if pathlib.Path(path) == target and not triggered:
-                    finish_elsewhere()
+            def concurrent_scandir(path: pathlib.Path | str | int) -> typing.Any:
+                if not triggered:
+                    matches = (
+                        os.fstat(path).st_ino == target.stat().st_ino if isinstance(path, int) else pathlib.Path(path) == target
+                    )
+                    if matches:
+                        finish_elsewhere()
                 return original_scandir(path)
 
             monkeypatch.setattr(os, "scandir", concurrent_scandir)

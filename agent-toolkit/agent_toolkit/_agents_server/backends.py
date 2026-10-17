@@ -20,6 +20,7 @@ from agent_toolkit._agents_server import antigravity as antigravity_backend
 from agent_toolkit._agents_server import claude as claude_backend
 from agent_toolkit._agents_server import codex as codex_backend
 from agent_toolkit._agents_server.launch_requests import MODEL_TYPE_NEXT_ACTION
+from agent_toolkit._agents_server.session_identity import IdentityValidator
 from agent_toolkit._agents_server.state import LaunchKind, ModelCandidate, ResumePrompt, SessionState
 from agent_toolkit._common.next_action import ActionableError
 
@@ -82,7 +83,12 @@ class Backend(typing.Protocol):
         turn_seq: int = 0,
         fast_mode: bool | None = None,
     ) -> SessionState:
-        """保存済みのsessionへ新しいturnを開始する。"""
+        """保存済みsessionへ新turnを開始し、要求の配送結果をpromptへ確定する。
+
+        成功した`prompt.deliver`が開始済みを保持する。backendが開始不能または開始不確定を
+        捕捉して状態を返す場合は`prompt.record_delivery`でその結果を保持する。
+        戻り値のsessionは応答前に終端へ進み得るため、配送の判定には使用しない。
+        """
         ...
 
     async def send_message(self, session: SessionState, prompt: str) -> dict[str, Any]:
@@ -146,6 +152,7 @@ def create_backend(
     expire_session: Callable[[str], None],
     root_session_id: str | None,
     log_directory: pathlib.Path | None,
+    validate_session_id: IdentityValidator | None = None,
 ) -> Backend:
     """engine名に対応するbackendを生成する。
 
@@ -157,6 +164,7 @@ def create_backend(
             condition,
             publish_registry=True,
             root_session_id=root_session_id,
+            validate_session_id=validate_session_id,
         )
     if engine == "claude":
         return claude_backend.ClaudeServerManager(
@@ -165,6 +173,7 @@ def create_backend(
             expire_session=expire_session,
             publish_registry=True,
             root_session_id=root_session_id,
+            validate_session_id=validate_session_id,
         )
     if engine == "agy":
         return antigravity_backend.AntigravityManager(
@@ -173,6 +182,7 @@ def create_backend(
             publish_registry=True,
             log_directory=log_directory,
             root_session_id=root_session_id,
+            validate_session_id=validate_session_id,
         )
     raise ActionableError(f"unsupported engine: {engine}", next_action=MODEL_TYPE_NEXT_ACTION)
 

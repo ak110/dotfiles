@@ -28,6 +28,7 @@ from agent_toolkit._agents_server import (
     result_projection,
     resume_waits,
     session_errors,
+    session_identity,
     wait_output_tracking,
 )
 from agent_toolkit._agents_server import plugin_root as plugin_roots
@@ -296,6 +297,7 @@ def _build_options(
     debug_file: pathlib.Path | None = None,
     root_session_id: str | None = None,
     api_env_file: str | None = None,
+    connection_kind: str = "inherit",
 ) -> Any:
     """Claude Codeが用意するシステム指示と委譲先の印を有効にしたSDKオプションを組む。
 
@@ -367,10 +369,18 @@ def _build_options(
         options["extra_args"] = {"debug-file": str(debug_file)}
     if (cli_path := shutil.which("claude")) is not None:
         options["cli_path"] = cli_path
-    if api_env_file is not None:
+    from agent_toolkit._atk import claude_connection
+
+    # SDKは親環境へoptions.envを重ねるため、親にある接続変数は空値で遮断する。
+    isolate_auth = connection_kind != "inherit" or api_env_file is not None
+    if isolate_auth:
+        env.update({key: "" for key in claude_connection.AUTH_ENV if key in os.environ})
+    if api_env_file:
         env.update(claude_settings.read_api_env_file(api_env_file))
+        env["CLAUDE_CODE_OAUTH_TOKEN"] = ""
+        env["CLAUDE_CODE_OAUTH_REFRESH_TOKEN"] = ""
     options["settings"] = claude_settings.merge_settings(
-        _parent_settings(), env, root_session_id, force_file=api_env_file is not None
+        _parent_settings(), env, root_session_id, force_file=api_env_file is not None, isolate_auth=isolate_auth
     )
     if lightweight:
         options.update(
@@ -486,6 +496,7 @@ class ClaudeServerManager:
         publish_registry: bool = False,
         *,
         root_session_id: str | None = None,
+        validate_session_id: session_identity.IdentityValidator | None = None,
     ) -> None:
         self.sessions = sessions if sessions is not None else {}
         self._condition = condition if condition is not None else asyncio.Condition()
@@ -493,6 +504,7 @@ class ClaudeServerManager:
         self._expire_session = expire_session or self._expire_local_session
         self._publish_registry = publish_registry
         self._root_session_id = root_session_id
+        self._validate_session_id = validate_session_id or session_identity.identity_validator(self.sessions, root_session_id)
         self._tasks: set[asyncio.Task[Any]] = set()
         self._task_sessions: dict[asyncio.Task[Any], str] = {}
         self._channels: dict[str, _CommandChannel] = {}
@@ -518,17 +530,35 @@ class ClaudeServerManager:
         launch_kind: LaunchKind = "delegate",
         excluded_candidates: frozenset[ModelCandidate] = frozenset(),
     ) -> SessionState:
-        return await self._start_owned_task(
-            prompt,
-            cwd,
-            model,
-            effort,
-            session_id=None,
-            model_type=model_type,
-            launch_kind=launch_kind,
-            excluded_candidates=excluded_candidates,
-            turn_seq=1,
-        )
+        from agent_toolkit._atk import claude_connection
+
+        role = "orchestrator" if model_type == "orchestrate" else "delegate"
+        choices = claude_connection.candidates(role)
+        failures = list(choices.diagnostics)
+        for connection in choices.connections:
+            try:
+                session = await self._start_owned_task(
+                    prompt,
+                    cwd,
+                    model,
+                    effort,
+                    session_id=None,
+                    model_type=model_type,
+                    launch_kind=launch_kind,
+                    excluded_candidates=excluded_candidates,
+                    turn_seq=1,
+                    api_env_file=connection.api_env_file,
+                    connection_kind=connection.kind,
+                )
+                session.claude_connection_diagnostics = choices.warnings
+                return session
+            except SessionInitializationTimeoutError, session_identity.DuplicateSessionIdentityError:
+                raise
+            except (OSError, ValueError, RuntimeError) as error:
+                if connection.kind == "inherit":
+                    raise
+                failures.append(f"{connection.kind}: {type(error).__name__}: {error}。認証と利用枠を確認する")
+        raise RuntimeError("Claude接続候補が全て不成立: " + "; ".join(failures))
 
     async def resume(
         self,
@@ -544,6 +574,7 @@ class ClaudeServerManager:
         turn_seq: int = 0,
         fast_mode: bool | None = None,
         api_env_file: str | None = None,
+        connection_kind: str = "inherit",
         existing_session: SessionState | None = None,
     ) -> SessionState:
         """保存済みClaude sessionを新しい所有タスクで再開する。
@@ -565,6 +596,7 @@ class ClaudeServerManager:
             excluded_candidates=excluded_candidates,
             turn_seq=turn_seq + 1,
             api_env_file=api_env_file,
+            connection_kind=existing_session.claude_connection or "inherit" if existing_session else connection_kind,
             existing_session=existing_session,
         )
 
@@ -595,6 +627,7 @@ class ClaudeServerManager:
         excluded_candidates: frozenset[ModelCandidate],
         turn_seq: int,
         api_env_file: str | None = None,
+        connection_kind: str = "inherit",
         existing_session: SessionState | None = None,
     ) -> SessionState:
         """新規または保存済みsessionを所有する長命タスクを開始する。"""
@@ -611,6 +644,7 @@ class ClaudeServerManager:
             debug_file=debug_file,
             root_session_id=self._root_session_id,
             api_env_file=api_env_file,
+            connection_kind=connection_kind,
         )
         loop = asyncio.get_running_loop()
         initialized: asyncio.Future[SessionState] = loop.create_future()
@@ -629,6 +663,7 @@ class ClaudeServerManager:
                 turn_seq=turn_seq,
                 diagnostic=diagnostic,
                 api_env_file=api_env_file,
+                connection_kind=connection_kind,
                 existing_session=existing_session,
             )
         )
@@ -741,6 +776,7 @@ class ClaudeServerManager:
         turn_seq: int,
         diagnostic: _InitializationDiagnostic,
         api_env_file: str | None = None,
+        connection_kind: str = "inherit",
         existing_session: SessionState | None = None,
     ) -> None:
         from claude_agent_sdk import TERMINAL_TASK_STATUSES
@@ -891,6 +927,7 @@ class ClaudeServerManager:
                             # 状態は同IDをinitからしか取得できないため、最初の有効なinitで生成し、
                             # turnごとにinitが再送されても再生成しない。
                             if session is None:
+                                self._validate_session_id(session_id, expected_session_id)
                                 diagnostic.stage = "initialized"
                                 _LOG.info("Claude session初期化完了: diagnostic=%s", diagnostic.public())
                                 session = existing_session or SessionState(
@@ -904,7 +941,9 @@ class ClaudeServerManager:
                                     engine="claude",
                                     turn_seq=turn_seq,
                                     publish_registry=self._publish_registry,
-                                    claude_api_env_file=api_env_file,
+                                    claude_api_env_file=api_env_file or None,
+                                    claude_connection="api" if api_env_file else connection_kind,
+                                    claude_role="orchestrator" if model_type == "orchestrate" else "delegate",
                                 )
                                 self.sessions[session_id] = session
                                 session.attach_executor(diagnostic.child_pid)

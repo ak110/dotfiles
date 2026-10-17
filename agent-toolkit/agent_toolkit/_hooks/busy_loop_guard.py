@@ -13,15 +13,17 @@
 本判定は、委譲先またはバックグラウンドタスクの完了を待つターンと無進捗ターンを`is_pending_async_work`で区別できることを
 前提とする。この前提が成立しない場合、正当な待機のセッションが本判定で停止する。
 
-停止工程の順序は次のとおりとする。
+本判定は閾値へ達すると停止の意図（`halt`）だけを返し、終了に関わる副作用は実行しない。
+Stopの共通ハンドラー（`stop.py`）が全判定を終えてから`halt`を呼び、終了要求の成否に合わせて他の判定の継続要求を扱う。
+判定の途中で終了要求を送ると、後続の判定が終了済みのセッションへ継続を求める応答と矛盾するためである。
+
+停止工程（`halt`）の順序は次のとおりとする。
 
 1. 判定根拠を常時ログへ記録する
 2. process-loopへの中断要求を作成し、現反復の終了後に次の反復へ進まない状態にする
-3. 停止の事実を`systemMessage`でユーザーへ伝える
-4. 現在の対話CLI本体を再識別する。Function hooksが読み込まれたClaude Codeではターン後の`/exit`を要求する。
+3. 現在の対話CLI本体を再識別する。Function hooksが読み込まれたClaude Codeではターン後の`/exit`を要求する。
    それ以外では一致した単一PIDへ終了要求を送る
-
-Stopの戻り値は`approve`とし、ターンの継続は強制しない。
+4. 停止の事実と終了要求の結果を`systemMessage`でユーザーへ伝える本文を返す
 
 委譲先での実行可否: hook入力と委譲先の環境印で判定し、委譲先では何もしない。
 """
@@ -73,8 +75,11 @@ def _is_target_session(session_id: str, payload: dict) -> bool:
     return is_process_loop_session(session_id, os.environ) and is_main_agent_context(payload)
 
 
-def _halt(session_id: str, count: int) -> str:
-    """中断要求の作成と終了要求の送出を行い、ユーザーへ伝える本文を返す。"""
+def halt(session_id: str, count: int) -> tuple[str, str]:
+    """中断要求の作成と終了要求の送出を行い、終了要求の状態とユーザーへ伝える本文を返す。
+
+    状態は`agents_exit_session.request_termination`の戻り値（`exit_requested`・`terminating`・`changed`・`unsupported`）とする。
+    """
     abort_path = _process_loop_log.request_abort()
     status, target = _agents_exit_session.request_termination(session_id=session_id)
     append_stop_log(
@@ -94,11 +99,11 @@ def _halt(session_id: str, count: int) -> str:
         lines.append("終了対象が識別後に変化したため、セッションの終了要求は送っていない。")
     else:
         lines.append("現在の対話CLI本体を一意に識別できないため、セッションの終了要求は送っていない。")
-    return "\n".join(lines)
+    return status, "\n".join(lines)
 
 
 def evaluate(payload_text: str) -> tuple[str, str]:
-    """無進捗ターンの連続を判定し、停止した場合はエンドユーザー向けの本文を返す。"""
+    """無進捗ターンの連続を判定し、閾値へ達した場合は`halt`と連続回数を返す。"""
     resolved = _parse_stop_session(payload_text, lambda: None)
     if resolved is None:
         return "approve", ""
@@ -137,4 +142,4 @@ def evaluate(payload_text: str) -> tuple[str, str]:
         return "approve", ""
 
     _store(session_id, 0, total)
-    return "notify_user", _halt(session_id, count)
+    return "halt", str(count)

@@ -19,7 +19,14 @@ import pathlib
 import typing
 from typing import Any
 
-from agent_toolkit._agents_server import context_usage, engine_availability, result_projection, session_errors, shared_layout
+from agent_toolkit._agents_server import (
+    context_usage,
+    engine_availability,
+    result_projection,
+    session_errors,
+    session_identity,
+    shared_layout,
+)
 from agent_toolkit._agents_server import state as shared_state
 from agent_toolkit._agents_server.input_validation import validate_prompt
 from agent_toolkit._agents_server.launch_prompts import LAUNCH_SYSTEM_PROMPTS
@@ -119,12 +126,14 @@ class AntigravityManager:
         log_directory: pathlib.Path | None = None,
         *,
         root_session_id: str | None = None,
+        validate_session_id: session_identity.IdentityValidator | None = None,
     ) -> None:
         self.sessions = sessions if sessions is not None else {}
         self._condition = condition if condition is not None else asyncio.Condition()
         self._publish_registry = publish_registry
         self._log_directory = log_directory
         self._root_session_id = root_session_id
+        self._validate_session_id = validate_session_id or session_identity.identity_validator(self.sessions, root_session_id)
         self._tasks: set[asyncio.Task[Any]] = set()
         self._task_sessions: dict[asyncio.Task[Any], str] = {}
         self._processes: dict[str, asyncio.subprocess.Process] = {}
@@ -468,6 +477,7 @@ class AntigravityManager:
             raise session_errors.DelegateBackendError("Antigravity init event did not contain conversation_id")
         if conversation_id is not None and session_id != conversation_id:
             raise session_errors.DelegateBackendError("Antigravity resume returned an unexpected conversation_id")
+        self._validate_session_id(session_id, conversation_id)
         return SessionState(
             session_id=session_id,
             cwd=cwd,

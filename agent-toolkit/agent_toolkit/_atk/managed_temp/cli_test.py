@@ -10,6 +10,7 @@ import os
 import pathlib
 import subprocess
 import sys
+import threading
 from collections.abc import Callable
 
 import pytest
@@ -19,6 +20,7 @@ from agent_toolkit._atk.managed_temp import cli as cli_subject
 from agent_toolkit._atk.managed_temp import inventory as inventory_subject
 from agent_toolkit._atk.managed_temp import registry as managed_temp_registry
 from agent_toolkit._atk.managed_temp import windows_security as managed_temp_windows_security
+from agent_toolkit._atk.managed_temp.long_tree_test_support import create_long_posix_tree
 from agent_toolkit._common import plugin_root_leases as lease_subject
 from agent_toolkit._common import state_paths
 from agent_toolkit._testing.git_repository import commit_all, git_output, run_git
@@ -30,6 +32,52 @@ from agent_toolkit._testing.managed_temp_support import (
 
 _SCRIPT = pathlib.Path(__file__).resolve().parents[2] / "_managed_temp.py"
 _MARKER_NAME = ".agent-toolkit-managed-temp.json"
+
+
+@pytest.mark.skipif(os.name != "posix", reason="POSIX descriptor相対の長い木")
+@pytest.mark.parametrize("state", ["normal", "recover", "consuming", "quarantine", "child", "child-resume", "retry"])
+def test_cleanup_removes_long_relative_tree(
+    state: str, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """長い木の通常・復元・中断再開を公開cleanupで終端する。"""
+    parent = subject.create_managed_temp("long-tree", session_id="long-tree")
+    target = parent
+    if state.startswith("child"):
+        assert subject.main(["create", "--prefix", "work", "--session-root", str(parent)]) == 0
+        target = pathlib.Path(capsys.readouterr().out.splitlines()[-1])
+    create_long_posix_tree(target)
+    registry = managed_temp_registry._registry_path(parent)
+    record = json.loads(registry.read_text(encoding="utf-8"))
+    consuming = registry.with_name(f"{registry.name}.consuming-{record['nonce']}")
+    quarantine = parent.parent / f".agent-toolkit-cleanup-{record['nonce']}"
+    if state == "recover":
+        registry.unlink()
+    elif state in ("consuming", "quarantine"):
+        registry.replace(consuming)
+        if state == "quarantine":
+            target.rename(quarantine)
+    elif state in ("child-resume", "retry"):
+
+        def interrupt(*_args: object, **_kwargs: object) -> None:
+            raise OSError("削除開始時の中断")
+
+        with monkeypatch.context() as patch:
+            patch.setattr(inventory_subject, "_clear_directory", interrupt)
+            assert subject.main(["cleanup", "--path", str(target)]) == 2
+        assert target.is_dir()
+        assert registry.is_file()
+    arguments = ["cleanup", "--path", str(target)]
+    if state == "recover":
+        arguments.append("--recover-registry")
+    assert subject.main(arguments) == 0, capsys.readouterr().err
+    assert not target.exists()
+    assert not consuming.exists()
+    assert not quarantine.exists()
+    if state.startswith("child"):
+        assert parent.is_dir()
+        assert not managed_temp_registry._registry_path(target).with_suffix(".child-cleanup").exists()
+        subject.cleanup_managed_temp(parent)
+    assert not registry.exists()
 
 
 @pytest.mark.parametrize(
@@ -468,3 +516,94 @@ def test_lease_observation_preserves_unknown_and_reclaims_reused_pid(
         with pytest.raises(subject.ManagedTempError, match="使用中"):
             subject.cleanup_managed_temp(area, force_remove=True)
         assert area.is_dir()
+
+
+_HOLD_LOCK_CODE = (
+    "import sys\n"
+    "from agent_toolkit._common import file_lock\n"
+    "with open(sys.argv[1], 'a+', encoding='utf-8') as handle:\n"
+    "    file_lock.acquire_lock(handle)\n"
+    "    print('locked', flush=True)\n"
+    "    sys.stdin.readline()\n"
+)
+
+
+def _lock_paths(area: pathlib.Path) -> dict[str, pathlib.Path]:
+    """自動掃引が期限切れ領域の回収で取る外側のcleanup lockと内側の配布物ロックのパスを返す。"""
+    registry_path = inventory_subject._registry_path(area)  # pylint: disable=protected-access
+    inner = lease_subject._directory() / f"{lease_subject._key(area)}.lock"  # pylint: disable=protected-access
+    return {"outer": registry_path.with_name(f"{registry_path.name}.cleanup.lock"), "inner": inner}
+
+
+def _hold_lock(path: pathlib.Path) -> subprocess.Popen[str]:
+    """別processにロックを保持させ、取得の完了を待ってから返す。"""
+    holder = subprocess.Popen(  # pylint: disable=consider-using-with
+        [sys.executable, "-c", _HOLD_LOCK_CODE, str(path)],
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        text=True,
+        encoding="utf-8",
+    )
+    assert holder.stdout is not None
+    assert holder.stdout.readline().strip() == "locked"
+    return holder
+
+
+def _release(holder: subprocess.Popen[str]) -> None:
+    holder.communicate("\n", timeout=10)
+    assert holder.returncode == 0
+
+
+def _run_atk_within(argv: list[str], now: datetime.datetime, timeout: float) -> int | None:
+    """`atk.main`を別threadで実行し、`timeout`秒以内に終われば`SystemExit`の終了コード（戻った場合は0）、終わらなければNoneを返す。"""
+    from agent_toolkit import atk  # pylint: disable=import-outside-toplevel
+
+    result: list[int] = []
+
+    def run() -> None:
+        try:
+            atk.main(argv, now=now)
+            result.append(0)
+        except SystemExit as error:
+            result.append(error.code if isinstance(error.code, int) else 1)
+
+    thread = threading.Thread(target=run, daemon=True)
+    thread.start()
+    thread.join(timeout)
+    return result[0] if result else None
+
+
+@pytest.mark.parametrize("held", ["outer", "inner"])
+def test_sweep_skips_inner_lock_conflict_without_waiting(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], held: str
+) -> None:
+    """期限切れ領域のロックを別processが保持していても、通常の操作は解放を待たずに本来の結果を返す。"""
+    area = subject.create_managed_temp("sweep-conflict")
+    (area / "payload").write_text("保持", encoding="utf-8")
+    target = tmp_path / "read-target.txt"
+    target.write_text("本文の行\n", encoding="utf-8")
+    now = datetime.datetime.now(datetime.UTC) + datetime.timedelta(days=8)
+    holder = _hold_lock(_lock_paths(area)[held])
+    try:
+        assert _run_atk_within(["read-file", "--", str(target)], now, timeout=20) == 0
+        assert "本文の行" in capsys.readouterr().out
+        assert _run_atk_within(["config", "show"], now, timeout=20) == 0
+        assert (area / "payload").read_text(encoding="utf-8") == "保持"
+        assert inventory_subject._registry_path(area).exists()  # pylint: disable=protected-access
+    finally:
+        _release(holder)
+
+
+def test_conflicted_area_is_retained_then_collected() -> None:
+    """内側ロックの競合中は掃引が領域を保持し、競合の解消後の掃引は既存の規則で回収する。"""
+    area = subject.create_managed_temp("sweep-retained")
+    (area / "payload").write_text("保持", encoding="utf-8")
+    now = datetime.datetime.now(datetime.UTC) + datetime.timedelta(days=8)
+    holder = _hold_lock(_lock_paths(area)["inner"])
+    try:
+        assert area not in subject.sweep_expired_managed_temp(now=now)
+        assert (area / "payload").is_file()
+    finally:
+        _release(holder)
+    assert area in subject.sweep_expired_managed_temp(now=now)
+    assert not area.exists()

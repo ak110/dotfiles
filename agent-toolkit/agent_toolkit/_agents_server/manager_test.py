@@ -9,7 +9,9 @@ import dataclasses
 import datetime
 import json
 import logging
+import os
 import pathlib
+import uuid
 from types import SimpleNamespace
 from typing import Any
 from unittest.mock import AsyncMock
@@ -18,6 +20,7 @@ import pytest
 
 from agent_toolkit._agents_server import (
     agents_wait,
+    mcp_tools,
     responses,
     result_projection,
     session_errors,
@@ -30,16 +33,20 @@ from agent_toolkit._agents_server import (
 from agent_toolkit._agents_server import claude as claude_backend
 from agent_toolkit._agents_server import manager as server_manager
 from agent_toolkit._atk import config as _atk_config
-from agent_toolkit._common import session_registry, state_paths
-from agent_toolkit._common.next_action import NEXT_ACTION_PREFIX
+from agent_toolkit._common import mcp_environment, session_registry, state_paths
+from agent_toolkit._common.next_action import NEXT_ACTION_PREFIX, ActionableError
 from agent_toolkit._testing.agents_server_support import (
     _LAUNCHER_ENVIRONMENT_NAMES,
+    AssistantMessage,
     BlockingContinuationClaudeClient,
     BlockingInterruptBackend,
     DelayedUnavailableBackend,
     FailedResumeBackend,
     FakeBackend,
+    FakeClaudeClient,
     OutputObservedBackend,
+    ResultMessage,
+    SystemMessage,
     UnavailableStartBackend,
     _actionable_message,
     _assert_no_forbidden_keys,
@@ -56,6 +63,110 @@ from agent_toolkit._testing.agents_server_support import (
 )
 
 pytestmark = pytest.mark.usefixtures("agents_server_isolation")
+
+
+@pytest.mark.asyncio
+async def test_parallel_claude_delegates_get_distinct_session_ids(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+) -> None:
+    """remote会話contextを与えたMCPの整備後、並行会話と回収結果が独立する。
+
+    CLI代用のID決定は2026年10月18日の実MCP観測で確認したremote IDの継承を模す。
+    """
+    parent = str(uuid.uuid4())
+    for name, value in {
+        "CLAUDE_CODE_SESSION_ID": parent,
+        "CLAUDE_CODE_REMOTE": "true",
+        "CLAUDE_CODE_REMOTE_SESSION_ID": "cse_test_parallel",
+        "CLAUDE_CODE_POST_FOR_SESSION_INGRESS_V2": "true",
+    }.items():
+        monkeypatch.setenv(name, value)
+    manager = server_manager.AgentsServerManager()
+    mcp_tools._prepare_child_environment()
+    assert manager._status_writer is not None
+    manager._status_writer.activate()
+    inherited: list[dict[str, str]] = []
+
+    def client_factory(options: Any) -> FakeClaudeClient:
+        environment = {**os.environ, **options.env}
+        inherited.append(environment)
+        identifier = parent if environment.get("CLAUDE_CODE_REMOTE_SESSION_ID") else str(uuid.uuid4())
+        return FakeClaudeClient([[SystemMessage(identifier), AssistantMessage(identifier), ResultMessage(identifier)]])
+
+    backend = claude_backend.ClaudeServerManager(
+        manager.sessions,
+        client_factory=client_factory,
+        publish_registry=True,
+        root_session_id=parent,
+    )
+    install_backend(manager, "claude", backend)
+    try:
+        started = await asyncio.gather(*[manager.start("claude:sonnet/high", "識別子確認", str(tmp_path)) for _ in range(2)])
+        identifiers = {response["session_id"] for response in started}
+        assert len(identifiers) == 2 and parent not in identifiers
+        assert {response["root_session_id"] for response in started} == {parent}
+        for environment in inherited:
+            forbidden = mcp_environment._NON_INHERITABLE_NAMES - {
+                "agent_toolkit_owner_session",
+                "agent_toolkit_delegated_session",
+            }
+            assert not forbidden.intersection(name.casefold() for name in environment)
+            assert environment["AGENT_TOOLKIT_OWNER_SESSION"] == parent
+            assert environment["AGENT_TOOLKIT_DELEGATED_SESSION"] == "1"
+        for identifier in identifiers:
+            session = manager.sessions[identifier]
+            await session.drain_registration()
+        assert all(manager.show_session(identifier)["result_available"] for identifier in identifiers)
+        assert manager._status_writer is not None
+        await manager._status_writer.flush_async()
+        for identifier in identifiers:
+            result = manager._status_writer.read_result(identifier)
+            assert result is not None and result["agent_message"] == identifier
+    finally:
+        await manager.close()
+
+
+@pytest.mark.parametrize("existing", ["running", "completed", "root", "stopped", "expired", "registry"])
+@pytest.mark.asyncio
+async def test_start_rejects_duplicate_session_id(existing: str, tmp_path: pathlib.Path) -> None:
+    """重複したbackend初期化は永続化前に失敗し、既存の登録と結果を保持する。"""
+    manager = server_manager.AgentsServerManager()
+    assert manager._status_writer is not None
+    manager._status_writer.activate()
+    identifier = manager._status_writer.root_session_id if existing == "root" else str(uuid.uuid4())
+    old = state.SessionState(identifier, str(tmp_path), engine="claude", publish_registry=True)
+    if existing == "completed":
+        _complete(old, message="保持すべき結果")
+    else:
+        old.touch()
+    await old.drain_registration()
+    if existing == "root":
+        pass
+    elif existing in {"running", "completed"}:
+        manager.sessions[identifier] = old
+    elif existing == "stopped":
+        manager.stopped_sessions[identifier] = state.SessionResumeState.from_session(old)
+    elif existing == "expired":
+        manager.expired_sessions[identifier] = state.SessionResumeState.from_session(old)
+    await manager._status_writer.flush_async()
+    before = {path: path.read_bytes() for path in state_paths.state_dir().rglob("*.json")}
+    backend = claude_backend.ClaudeServerManager(
+        manager.sessions,
+        client_factory=lambda _options: FakeClaudeClient([[SystemMessage(identifier)]]),
+        publish_registry=True,
+        root_session_id=manager._status_writer.root_session_id,
+    )
+    install_backend(manager, "claude", backend)
+    try:
+        with pytest.raises(ActionableError, match="duplicate session_id") as raised:
+            await manager.start("claude:sonnet/high", "重複確認", str(tmp_path))
+        assert raised.value.next_action
+        assert "existing=" in str(raised.value)
+        if existing in {"running", "completed"}:
+            assert manager.sessions[identifier] is old
+        assert {path: path.read_bytes() for path in before} == before
+    finally:
+        await manager.close()
 
 
 @pytest.mark.asyncio
@@ -1507,7 +1618,7 @@ async def test_kill_restores_state_when_delivery_budget_expires_before_backend(
     kill_deadline_clock: SimpleNamespace,
     timeout: float,
 ) -> None:
-    """配送前の処理で待機時間の上限を使い切った入力は、backendへ到達せず、状態が元へ戻ることを検証する。"""
+    """配送前の処理で待機時間の上限に達した入力は、backendへ到達せず、状態が元へ戻ることを検証する。"""
     monkeypatch.setattr(server_manager, "DEFAULT_SEND_MESSAGE_TIMEOUT", 0.01)
     manager, backend = _manager_with_fake("codex")
     session = state.SessionState("thread-1", str(tmp_path), engine="codex", turn_id="turn-1")
@@ -1718,8 +1829,8 @@ async def test_send_message_keeps_previous_result_after_wait_without_result(tmp_
 
 
 @pytest.mark.asyncio
-async def test_send_message_keeps_previous_result_after_reply_failed_response(tmp_path: pathlib.Path) -> None:
-    """send_messageのreply_failed応答だけでは結果本文を回収済みにしない。"""
+async def test_send_message_keeps_previous_result_after_started_turn_fails(tmp_path: pathlib.Path) -> None:
+    """配送後に実行失敗したturnの結果を、次の追送のprevious_resultから回収できる。"""
     manager = server_manager.AgentsServerManager()
     backend = FailedResumeBackend(manager.sessions, "codex")
     install_backend(manager, "codex", backend)
@@ -1733,7 +1844,7 @@ async def test_send_message_keeps_previous_result_after_reply_failed_response(tm
     )
 
     first = await manager.send_message(session_id, "1回目")
-    assert _without_root(first) == {"delivery": "reply_failed", "label": ""}
+    assert _without_root(first) == {"delivery": "reply_started", "label": ""}
 
     second = await manager.send_message(session_id, "2回目")
     assert second["previous_result"]["agent_message"] == "reply失敗結果"

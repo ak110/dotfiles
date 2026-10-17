@@ -53,6 +53,74 @@ from agent_toolkit._testing.agents_server_support import (
 pytestmark = pytest.mark.usefixtures("agents_server_isolation")
 
 
+@pytest.mark.parametrize("cache", ["stopped", "expired"])
+@pytest.mark.parametrize("terminal_status", ["completed", "failed"])
+@pytest.mark.asyncio
+async def test_show_does_not_report_stale_terminal_after_resume_elsewhere(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+    cache: str,
+    terminal_status: str,
+) -> None:
+    """所有側が次turnへ進んだ後の照会・停止・回収は共有登録の現在状態に従う。"""
+    session_id = "external-resume"
+    _publish_recovered_session(monkeypatch, tmp_path, session_id, "completed")
+    writer = status_file.StatusFileWriter(
+        {}, shared_roots.StatusFileIdentity("root-session", "observer.json", None), state_root=tmp_path
+    )
+    owner_writer = status_file.StatusFileWriter(
+        {}, shared_roots.StatusFileIdentity("root-session", "owner.json", None), state_root=tmp_path
+    )
+    owner = server_manager.AgentsServerManager(owner_writer)
+    observer = server_manager.AgentsServerManager(writer)
+    previous = state.SessionState(session_id, str(tmp_path), engine="codex", turn_seq=2)
+    _complete(previous, message="前turnの未回収結果")
+    owner_writer.retain_result(previous)
+    result_path = shared_layout.results_directory("root-session", tmp_path) / f"{session_id}.json"
+    previous_bytes = result_path.read_bytes()
+    try:
+        assert observer.show_session(session_id)["status"] == "completed"
+        if cache == "expired":
+            observer.expired_sessions[session_id] = observer.stopped_sessions.pop(session_id)
+
+        # 共有登録の生成側だけを進め、照会側の復元済みメモリーはそのまま残す。
+        current = state.SessionState(session_id, str(tmp_path), engine="codex", turn_seq=3)
+        owner.sessions[session_id] = current
+        session_registry.publish(session_id, terminal=False, cwd=str(tmp_path), turn_seq=3, status="running")
+        assert session_registry.resolve(session_id).state is session_registry.Resolution.RUNNING
+        with pytest.raises(ValueError, match="turn_unobserved"):
+            observer.show_session(session_id)
+        assert not observer.list_sessions(include_terminated=True)["sessions"]
+        for operation in (
+            observer.stop(session_id),
+            observer.kill(session_id, timeout=0),
+            observer.send_message(session_id, "続行"),
+            observer.resolve_handoff_predecessor(session_id),
+        ):
+            with pytest.raises(ValueError, match="turn_unobserved"):
+                await operation
+        assert result_path.read_bytes() == previous_bytes
+
+        session_registry.publish(session_id, terminal=True, cwd=str(tmp_path), turn_seq=3, status=cast(Any, terminal_status))
+        shown = observer.show_session(session_id, verbose=True)
+        assert shown["turn_seq"] == 3
+        assert shown["status"] == terminal_status
+        assert shown["result_available"] is False
+        assert result_path.read_bytes() == previous_bytes
+        assert observer.list_sessions(include_terminated=True)["sessions"][0]["status"] == terminal_status
+
+        _complete(current, message="現在turnの結果", error="失敗" if terminal_status == "failed" else None)
+        owner_writer.retain_result(current)
+        assert observer.show_session(session_id)["result_available"] is True
+        result = await observer.kill(session_id, timeout=0)
+        assert result["agent_message"] == "現在turnの結果"
+        assert result["status"] == terminal_status
+    finally:
+        owner.sessions.clear()
+        await observer.close()
+        await owner.close()
+
+
 @pytest.mark.asyncio
 async def test_list_sessions_projects_all_retention_states_in_start_order(tmp_path: pathlib.Path) -> None:
     """active、再開中および期限切れのsessionを同じ項目集合で開始順に返す。"""
@@ -491,7 +559,7 @@ async def test_recovered_session_restores_persisted_result_once(
         shared_roots.StatusFileIdentity("root-session", "root.json", None),
         state_root=tmp_path,
     )
-    persisted = state.SessionState(session_id, str(tmp_path), engine="codex")
+    persisted = state.SessionState(session_id, str(tmp_path), engine="codex", turn_seq=2)
     _complete(persisted, message="永続結果", error={"message": "失敗結果"})
     writer.retain_result(persisted)
     result_path = shared_layout.results_directory("root-session", tmp_path) / f"{session_id}.json"
@@ -542,7 +610,7 @@ async def test_recovered_session_marks_persisted_result_as_uncollected(
         shared_roots.StatusFileIdentity("root-session", "current.json", None),
         state_root=tmp_path,
     )
-    persisted = state.SessionState(session_id, str(tmp_path), engine="codex")
+    persisted = state.SessionState(session_id, str(tmp_path), engine="codex", turn_seq=2)
     _complete(persisted, message="永続結果")
     writer.retain_result(persisted)
     manager = server_manager.AgentsServerManager(writer)
@@ -590,7 +658,7 @@ async def test_recovered_session_stop_discards_previous_process_result(
         shared_roots.StatusFileIdentity("root-session", "previous.json", None),
         state_root=tmp_path,
     )
-    previous_session = state.SessionState(session_id, str(tmp_path), engine="codex")
+    previous_session = state.SessionState(session_id, str(tmp_path), engine="codex", turn_seq=2)
     _complete(previous_session, message="前プロセスの結果")
     previous_writer.retain_result(previous_session)
     result_path = shared_layout.results_directory("root-session", tmp_path) / f"{session_id}.json"
