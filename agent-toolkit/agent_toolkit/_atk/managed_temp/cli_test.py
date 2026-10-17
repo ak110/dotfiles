@@ -20,6 +20,7 @@ from agent_toolkit._atk.managed_temp import cli as cli_subject
 from agent_toolkit._atk.managed_temp import inventory as inventory_subject
 from agent_toolkit._atk.managed_temp import registry as managed_temp_registry
 from agent_toolkit._atk.managed_temp import windows_security as managed_temp_windows_security
+from agent_toolkit._atk.managed_temp.long_tree_test_support import create_long_posix_tree
 from agent_toolkit._common import plugin_root_leases as lease_subject
 from agent_toolkit._common import state_paths
 from agent_toolkit._testing.git_repository import commit_all, git_output, run_git
@@ -31,6 +32,52 @@ from agent_toolkit._testing.managed_temp_support import (
 
 _SCRIPT = pathlib.Path(__file__).resolve().parents[2] / "_managed_temp.py"
 _MARKER_NAME = ".agent-toolkit-managed-temp.json"
+
+
+@pytest.mark.skipif(os.name != "posix", reason="POSIX descriptor相対の長い木")
+@pytest.mark.parametrize("state", ["normal", "recover", "consuming", "quarantine", "child", "child-resume", "retry"])
+def test_cleanup_removes_long_relative_tree(
+    state: str, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """長い木の通常・復元・中断再開を公開cleanupで終端する。"""
+    parent = subject.create_managed_temp("long-tree", session_id="long-tree")
+    target = parent
+    if state.startswith("child"):
+        assert subject.main(["create", "--prefix", "work", "--session-root", str(parent)]) == 0
+        target = pathlib.Path(capsys.readouterr().out.splitlines()[-1])
+    create_long_posix_tree(target)
+    registry = managed_temp_registry._registry_path(parent)
+    record = json.loads(registry.read_text(encoding="utf-8"))
+    consuming = registry.with_name(f"{registry.name}.consuming-{record['nonce']}")
+    quarantine = parent.parent / f".agent-toolkit-cleanup-{record['nonce']}"
+    if state == "recover":
+        registry.unlink()
+    elif state in ("consuming", "quarantine"):
+        registry.replace(consuming)
+        if state == "quarantine":
+            target.rename(quarantine)
+    elif state in ("child-resume", "retry"):
+
+        def interrupt(*_args: object, **_kwargs: object) -> None:
+            raise OSError("削除開始時の中断")
+
+        with monkeypatch.context() as patch:
+            patch.setattr(inventory_subject, "_clear_directory", interrupt)
+            assert subject.main(["cleanup", "--path", str(target)]) == 2
+        assert target.is_dir()
+        assert registry.is_file()
+    arguments = ["cleanup", "--path", str(target)]
+    if state == "recover":
+        arguments.append("--recover-registry")
+    assert subject.main(arguments) == 0, capsys.readouterr().err
+    assert not target.exists()
+    assert not consuming.exists()
+    assert not quarantine.exists()
+    if state.startswith("child"):
+        assert parent.is_dir()
+        assert not managed_temp_registry._registry_path(target).with_suffix(".child-cleanup").exists()
+        subject.cleanup_managed_temp(parent)
+    assert not registry.exists()
 
 
 @pytest.mark.parametrize(

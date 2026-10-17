@@ -57,6 +57,7 @@ lazy from agent_toolkit._atk.managed_temp.windows_security import (
     _WINDOWS_REPARSE_POINT,
     _windows_current_sid,
     _windows_equal_sids,
+    _windows_extended_path,
     _windows_identity,
     _windows_reparse_identity,
     _windows_secure_path,
@@ -465,6 +466,21 @@ def _latest_update_and_git_paths(path: pathlib.Path) -> tuple[int, list[pathlib.
 
     配下を含む最終更新を使うのは、中断後に再開した領域を古いと誤判定しないためである。
     """
+    if os.name == "posix":
+        descriptor = os.open(path, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+        try:
+            latest = os.fstat(descriptor).st_mtime_ns
+            posix_git_paths = []
+            for relative, metadata in _walk_posix(descriptor):
+                latest = max(latest, metadata.st_mtime_ns)
+                if pathlib.PurePath(relative).name == ".git":
+                    posix_git_paths.append(path / relative)
+            return latest, posix_git_paths
+        finally:
+            os.close(descriptor)
+    original_path = path
+    path = pathlib.Path(_windows_extended_path(path))
+    extended_root = path
     latest_mtime_ns = path.stat().st_mtime_ns
     git_paths: list[pathlib.Path] = []
     pending = [path]
@@ -478,7 +494,7 @@ def _latest_update_and_git_paths(path: pathlib.Path) -> tuple[int, list[pathlib.
                     git_paths.append(pathlib.Path(child.path))
                 if stat.S_ISDIR(metadata.st_mode):
                     pending.append(pathlib.Path(child.path))
-    return latest_mtime_ns, git_paths
+    return latest_mtime_ns, [original_path / git_path.relative_to(extended_root) for git_path in git_paths]
 
 
 def _is_registered_git_worktree(git_path: pathlib.Path) -> bool:
@@ -488,10 +504,19 @@ def _is_registered_git_worktree(git_path: pathlib.Path) -> bool:
     元のリポジトリの`git worktree list`に登録が残っており、そのリポジトリの作業が使用中である。
     ディレクトリの`.git`（単独の複製）は他から参照されないため、ここでは使用中と扱わない。
     """
-    if not git_path.is_file() or git_path.is_symlink():
-        return False
     try:
-        first_line = git_path.read_text(encoding="utf-8").splitlines()[0]
+        with _open_tree_parent(git_path) as (parent, name):
+            metadata = os.stat(name, dir_fd=parent, follow_symlinks=False)
+            if not stat.S_ISREG(metadata.st_mode):
+                return False
+            if parent is None:
+                first_line = pathlib.Path(name).read_text(encoding="utf-8").splitlines()[0]
+            else:
+                descriptor = os.open(name, os.O_RDONLY | os.O_NOFOLLOW, dir_fd=parent)
+                with os.fdopen(descriptor, encoding="utf-8") as handle:
+                    first_line = handle.readline().rstrip("\r\n")
+    except FileNotFoundError, NotADirectoryError:
+        return False
     except OSError, UnicodeDecodeError, IndexError:
         # 内容を読めない場合は使用中かを判定できないため、使用中と扱って削除せず残す。
         return True
@@ -501,7 +526,28 @@ def _is_registered_git_worktree(git_path: pathlib.Path) -> bool:
     target = pathlib.Path(first_line[len(prefix) :].strip())
     if not target.is_absolute():
         target = git_path.parent / target
-    return target.is_dir()
+    try:
+        with _open_tree_parent(target) as (parent, name):
+            return stat.S_ISDIR(os.stat(name, dir_fd=parent).st_mode)
+    except FileNotFoundError, NotADirectoryError:
+        return False
+
+
+@contextlib.contextmanager
+def _open_tree_parent(path: pathlib.Path) -> typing.Generator[tuple[int | None, str]]:
+    """木の深部へ相対openで到達し、OS呼出し用の親と名前を返す。"""
+    if os.name != "posix":
+        yield None, _windows_extended_path(path)
+        return
+    descriptor = os.open(path.anchor, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+    try:
+        for part in path.parts[1:-1]:
+            child = os.open(part, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=descriptor)
+            os.close(descriptor)
+            descriptor = child
+        yield descriptor, path.name
+    finally:
+        os.close(descriptor)
 
 
 _SWEEP_SCHEDULE_NAME = ".sweep-schedule"
@@ -560,7 +606,17 @@ def _exclusion_basis(path: pathlib.Path, git_paths: typing.Iterable[pathlib.Path
 
 def _registered_exclusion_holds(path: pathlib.Path, basis: tuple[str, ...]) -> bool:
     """登録済み候補を残した理由の`.git`が1つでも残るかを返す。"""
-    return any(os.path.lexists(path / relative) for relative in basis)
+    for relative in basis:
+        try:
+            with _open_tree_parent(path / relative) as (parent, name):
+                os.stat(name, dir_fd=parent, follow_symlinks=False)
+            return True
+        except FileNotFoundError, NotADirectoryError:
+            continue
+        except OSError:
+            # 到達不能な根拠は保持し、次回も削除対象へ移さない。
+            return True
+    return False
 
 
 def _unregistered_exclusion_holds(path: pathlib.Path, basis: tuple[str, ...]) -> bool:
@@ -833,6 +889,33 @@ def sweep_managed_temp(
     return SweepResult(deleted, tuple(stale), None)
 
 
+@contextlib.contextmanager
+def _open_posix_child(descriptor: int, name: str, before: os.stat_result) -> typing.Generator[int]:
+    """非追跡openの前後で子のidentityが一致するか確かめる。"""
+    child = os.open(name, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=descriptor)
+    try:
+        opened = os.fstat(child)
+        if (before.st_dev, before.st_ino) != (opened.st_dev, opened.st_ino):
+            raise ManagedTempError(
+                f"管理対象の子ディレクトリが後始末中に置換された: {name}", next_action=ManagedTempError.REPLACED_NEXT_ACTION
+            )
+        yield child
+    finally:
+        os.close(child)
+
+
+def _walk_posix(descriptor: int, prefix: str = "") -> typing.Iterator[tuple[str, os.stat_result]]:
+    """snapshotと保持判定で共用する、記述子相対の非追跡走査。"""
+    with os.scandir(descriptor) as entries:
+        for entry in entries:
+            metadata = entry.stat(follow_symlinks=False)
+            relative = os.path.join(prefix, entry.name)
+            yield relative, metadata
+            if stat.S_ISDIR(metadata.st_mode):
+                with _open_posix_child(descriptor, entry.name, metadata) as child:
+                    yield from _walk_posix(child, relative)
+
+
 def _clear_directory(descriptor: int) -> None:
     """開いたディレクトリだけを起点に、リンク参照を避けて内容を除去する。"""
     for name in os.listdir(descriptor):
@@ -840,21 +923,9 @@ def _clear_directory(descriptor: int) -> None:
         if not stat.S_ISDIR(before.st_mode):
             os.unlink(name, dir_fd=descriptor)
             continue
-        child_descriptor = os.open(
-            name,
-            os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW,
-            dir_fd=descriptor,
-        )
-        try:
-            opened = os.fstat(child_descriptor)
-            if (before.st_dev, before.st_ino) != (opened.st_dev, opened.st_ino):
-                raise ManagedTempError(
-                    f"管理対象の子ディレクトリが後始末中に置換された: {name}", next_action=ManagedTempError.REPLACED_NEXT_ACTION
-                )
+        with _open_posix_child(descriptor, name, before) as child_descriptor:
             _clear_directory(child_descriptor)
             os.rmdir(name, dir_fd=descriptor)
-        finally:
-            os.close(child_descriptor)
 
 
 def _restore_posix_quarantine(
@@ -898,7 +969,7 @@ def _windows_reparse_entry(
     else:
         raise ManagedTempError(f"Windows reparse pointは後始末できない: {path}")
     try:
-        stored_target = os.readlink(path)
+        stored_target = os.readlink(_windows_extended_path(path))
         target = _windows_stored_path(stored_target)
         root = _windows_stored_path(str(managed_root))
     except OSError, ValueError:
@@ -909,9 +980,20 @@ def _windows_reparse_entry(
     return kind, device, inode, stored_target
 
 
-def _tree_snapshot(root: pathlib.Path) -> dict[str, _TreeEntry]:
+def _tree_snapshot(root: pathlib.Path | int) -> dict[str, _TreeEntry]:
     """cleanup開始前のtree identityを取得し、安全なreparse pointだけを記録する。"""
     snapshot: dict[str, _TreeEntry] = {}
+    if os.name == "posix":
+        descriptor = os.dup(root) if isinstance(root, int) else os.open(root, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+        try:
+            for relative, metadata in _walk_posix(descriptor):
+                kind = "dir" if stat.S_ISDIR(metadata.st_mode) else "leaf"
+                snapshot[relative] = (kind, metadata.st_dev, metadata.st_ino)
+        finally:
+            os.close(descriptor)
+        return snapshot
+    assert isinstance(root, pathlib.Path)
+    root = pathlib.Path(_windows_extended_path(root))
     pending = [root]
     while pending:
         parent = pending.pop()
@@ -935,7 +1017,7 @@ def _unlink_windows_reparse_points(root: pathlib.Path, expected_tree: dict[str, 
     """検証済みreparse pointを深い順に、リンク先を追跡せず解除する。"""
     links = [(relative, entry) for relative, entry in expected_tree.items() if len(entry) == 4]
     for relative, expected in sorted(links, key=lambda item: len(pathlib.PurePath(item[0]).parts), reverse=True):
-        path = root / relative
+        path = pathlib.Path(_windows_extended_path(root / relative))
         metadata = path.lstat()
         if _windows_reparse_entry(path, metadata, root.parent) != expected:
             raise ManagedTempError(
@@ -949,6 +1031,7 @@ def _unlink_windows_reparse_points(root: pathlib.Path, expected_tree: dict[str, 
 
 def _remove_windows_quarantine(root: pathlib.Path, expected_tree: dict[str, _TreeEntry]) -> None:
     """隔離先を削除する。Readonly属性で削除を拒否された通常ファイルは、隔離内で検証済みのものに限り属性を解除して削除を再試行する。"""
+    root = pathlib.Path(_windows_extended_path(root))
     root_identity = _path_identity(root)
 
     def retry_readonly_file(function: typing.Callable[..., typing.Any], raw_path: str, error: BaseException) -> None:
@@ -1115,7 +1198,7 @@ def _cleanup_posix(
             raise ManagedTempError(
                 f"管理対象が隔離時に置換された: {validated.path}", next_action=ManagedTempError.REPLACED_NEXT_ACTION
             )
-        if _tree_snapshot(quarantine) != expected_tree:
+        if _tree_snapshot(target_descriptor) != expected_tree:
             raise ManagedTempError(
                 f"管理対象の内容が隔離時に置換された: {validated.path}", next_action=ManagedTempError.REPLACED_NEXT_ACTION
             )
@@ -1387,7 +1470,7 @@ def _require_unused_plugin_root(path: pathlib.Path) -> None:
 def _force_remove_validated_temp(path: pathlib.Path, *, reason: str) -> None:
     registry_path = _registry_path(path)
     try:
-        shutil.rmtree(path)
+        shutil.rmtree(_windows_extended_path(path) if os.name == "nt" else path)
         registry_path.unlink(missing_ok=True)
         for consuming in registry_path.parent.glob(f"{registry_path.name}.consuming-*"):
             consuming.unlink(missing_ok=True)
