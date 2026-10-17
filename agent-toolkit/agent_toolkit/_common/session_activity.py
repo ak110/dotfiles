@@ -264,6 +264,8 @@ def record_activity(
     directory = activity_directory(state_root)
     directory.mkdir(parents=True, exist_ok=True)
     path = directory / f"{session_id}.json"
+    # ホスト祖先の探索は共有状態を読まないため、ロック取得前に済ませて別会話の記録を待たせない。
+    host = process if process is not None or event == "SessionEnd" else host_process()
     # 会話JSONの交換・削除と並行する子hookは同じロックを使う。内容を持たないロックファイルは`activity.lock`の1件だけを保持する。
     with (directory / "activity.lock").open("a+", encoding="utf-8") as lock:
         acquire_lock(lock)
@@ -275,7 +277,6 @@ def record_activity(
                 record = _read(path)
             except OSError, ValueError, UnicodeError:
                 record = {}
-            host = host_process() if process is None else process
             prior_identity = _identity(record.get("process"))
             if host is not None and prior_identity != host.identity:
                 record = {}
