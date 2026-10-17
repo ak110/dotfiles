@@ -10,6 +10,7 @@ import os
 import pathlib
 import subprocess
 import sys
+import threading
 from collections.abc import Callable
 
 import pytest
@@ -468,3 +469,94 @@ def test_lease_observation_preserves_unknown_and_reclaims_reused_pid(
         with pytest.raises(subject.ManagedTempError, match="使用中"):
             subject.cleanup_managed_temp(area, force_remove=True)
         assert area.is_dir()
+
+
+_HOLD_LOCK_CODE = (
+    "import sys\n"
+    "from agent_toolkit._common import file_lock\n"
+    "with open(sys.argv[1], 'a+', encoding='utf-8') as handle:\n"
+    "    file_lock.acquire_lock(handle)\n"
+    "    print('locked', flush=True)\n"
+    "    sys.stdin.readline()\n"
+)
+
+
+def _lock_paths(area: pathlib.Path) -> dict[str, pathlib.Path]:
+    """自動掃引が期限切れ領域の回収で取る外側のcleanup lockと内側の配布物ロックのパスを返す。"""
+    registry_path = inventory_subject._registry_path(area)  # pylint: disable=protected-access
+    inner = lease_subject._directory() / f"{lease_subject._key(area)}.lock"  # pylint: disable=protected-access
+    return {"outer": registry_path.with_name(f"{registry_path.name}.cleanup.lock"), "inner": inner}
+
+
+def _hold_lock(path: pathlib.Path) -> subprocess.Popen[str]:
+    """別processにロックを保持させ、取得の完了を待ってから返す。"""
+    holder = subprocess.Popen(  # pylint: disable=consider-using-with
+        [sys.executable, "-c", _HOLD_LOCK_CODE, str(path)],
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        text=True,
+        encoding="utf-8",
+    )
+    assert holder.stdout is not None
+    assert holder.stdout.readline().strip() == "locked"
+    return holder
+
+
+def _release(holder: subprocess.Popen[str]) -> None:
+    holder.communicate("\n", timeout=10)
+    assert holder.returncode == 0
+
+
+def _run_atk_within(argv: list[str], now: datetime.datetime, timeout: float) -> int | None:
+    """`atk.main`を別threadで実行し、`timeout`秒以内に終われば`SystemExit`の終了コード（戻った場合は0）、終わらなければNoneを返す。"""
+    from agent_toolkit import atk  # pylint: disable=import-outside-toplevel
+
+    result: list[int] = []
+
+    def run() -> None:
+        try:
+            atk.main(argv, now=now)
+            result.append(0)
+        except SystemExit as error:
+            result.append(error.code if isinstance(error.code, int) else 1)
+
+    thread = threading.Thread(target=run, daemon=True)
+    thread.start()
+    thread.join(timeout)
+    return result[0] if result else None
+
+
+@pytest.mark.parametrize("held", ["outer", "inner"])
+def test_sweep_skips_inner_lock_conflict_without_waiting(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], held: str
+) -> None:
+    """期限切れ領域のロックを別processが保持していても、通常の操作は解放を待たずに本来の結果を返す。"""
+    area = subject.create_managed_temp("sweep-conflict")
+    (area / "payload").write_text("保持", encoding="utf-8")
+    target = tmp_path / "read-target.txt"
+    target.write_text("本文の行\n", encoding="utf-8")
+    now = datetime.datetime.now(datetime.UTC) + datetime.timedelta(days=8)
+    holder = _hold_lock(_lock_paths(area)[held])
+    try:
+        assert _run_atk_within(["read-file", "--", str(target)], now, timeout=20) == 0
+        assert "本文の行" in capsys.readouterr().out
+        assert _run_atk_within(["config", "show"], now, timeout=20) == 0
+        assert (area / "payload").read_text(encoding="utf-8") == "保持"
+        assert inventory_subject._registry_path(area).exists()  # pylint: disable=protected-access
+    finally:
+        _release(holder)
+
+
+def test_conflicted_area_is_retained_then_collected() -> None:
+    """内側ロックの競合中は掃引が領域を保持し、競合の解消後の掃引は既存の規則で回収する。"""
+    area = subject.create_managed_temp("sweep-retained")
+    (area / "payload").write_text("保持", encoding="utf-8")
+    now = datetime.datetime.now(datetime.UTC) + datetime.timedelta(days=8)
+    holder = _hold_lock(_lock_paths(area)["inner"])
+    try:
+        assert area not in subject.sweep_expired_managed_temp(now=now)
+        assert (area / "payload").is_file()
+    finally:
+        _release(holder)
+    assert area in subject.sweep_expired_managed_temp(now=now)
+    assert not area.exists()

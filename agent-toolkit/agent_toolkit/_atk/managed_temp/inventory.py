@@ -813,7 +813,8 @@ def sweep_managed_temp(
                 if not _cleanup_managed_temp(path, recover_registry=True, blocking=False):
                     continue
             except ManagedTempError as error:
-                _force_remove_managed_temp(path, error, reason="自動削除")
+                if not _force_remove_managed_temp(path, error, reason="自動削除", blocking=False):
+                    continue
         except (ManagedTempError, OSError) as error:
             if name.startswith(_CLEANUP_QUARANTINE_PREFIX):
                 continue
@@ -1213,7 +1214,14 @@ def _cleanup_managed_temp(
                 and _consuming_registry_path(registry_path) is None
             ):
                 return True
-            with plugin_root_leases.plugin_root_lock(path):
+            with contextlib.ExitStack() as stack:
+                # 自動掃引は内側の配布物ロックも待たず、使用登録や明示回収と競合した対象を保持して次へ進む。
+                try:
+                    stack.enter_context(plugin_root_leases.plugin_root_lock(path, blocking=blocking))
+                except OSError:
+                    if not blocking:
+                        return False
+                    raise
                 _require_unused_plugin_root(path)
                 _cleanup_managed_temp_locked(root, path, registry_path, recover_registry=recover_registry)
         finally:
@@ -1317,9 +1325,16 @@ def _cleanup_managed_temp_locked(
 
 
 def _force_remove_managed_temp(
-    path_arg: pathlib.Path | str, original_error: ManagedTempError, *, reason: str = "--force-remove"
-) -> None:
-    """親root、通常ディレクトリおよび所有者だけを確認して実体と登録を回収する。"""
+    path_arg: pathlib.Path | str,
+    original_error: ManagedTempError,
+    *,
+    reason: str = "--force-remove",
+    blocking: bool = True,
+) -> bool:
+    """親root、通常ディレクトリおよび所有者だけを確認して実体と登録を回収する。
+
+    `blocking=False`で配布物ロックを即時取得できない場合は、対象を変えずに偽を返す。
+    """
     try:
         _, path = _validate_path_shape(pathlib.Path(path_arg))
         _validate_root(path.parent)
@@ -1349,9 +1364,16 @@ def _force_remove_managed_temp(
     except (OSError, ValueError, ManagedTempError) as validation_error:
         raise original_error from validation_error
 
-    with plugin_root_leases.plugin_root_lock(path):
+    with contextlib.ExitStack() as stack:
+        try:
+            stack.enter_context(plugin_root_leases.plugin_root_lock(path, blocking=blocking))
+        except OSError:
+            if not blocking:
+                return False
+            raise
         _require_unused_plugin_root(path)
         _force_remove_validated_temp(path, reason=reason)
+    return True
 
 
 def _require_unused_plugin_root(path: pathlib.Path) -> None:

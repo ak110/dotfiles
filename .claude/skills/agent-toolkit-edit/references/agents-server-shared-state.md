@@ -79,7 +79,7 @@ process-loop、レーン操作と配布物保持が共有する状態は、前�
 | origin単位の処理所有と未完了の再開情報 | `process-loop-ownership/<originのSHA-256>.json`と同名lock | 専用process-loopとall-repos | `_atk/wi/process_loop_ownership.py`。短い排他で所有tokenと生存を検収し、worktree・Git共通ディレクトリ・担当session・レーン所有sessionを更新する |
 | 対象別の担当返却 | `process-loop-ownership/<originのSHA-256>.result.json` | all-reposの中継と再開を担う処理 | `_atk/wi/process_loop_all_repos.py`。担当終端を観測した後に確認済み工程と残工程を保存する |
 | Git統合と計画保存・WI終端の進行 | `lanes/<所有session>/<lane>.json`のintegration | `atk lane integrate`と回収判定 | `_atk/lane.py`。Git統合と成功済みの最終化を保存し、失敗後は残工程だけを再開する。全最終化と選定集合・統合状態の整合確認の成功後に統合済みを記録する。rebase対応表はmanaged-tempに保存し、レーン回収後も同じ保持期限で参照できる |
-| 保持した配布物を使用するプロセス | `plugin-root-leases/<保持領域の識別子>-<pid>.json`と領域ごとの`.lock` | 配布物の起動側とmanaged-tempの回収・掃引 | `_common/plugin_root_leases.py`。起動側が領域path・PID・プロセス作成時刻を登録し、読む側は同じ領域の排他下で生存を検収する。終了済みの使用記録を除き、取得不能な記録と使用中の実体を保護する |
+| 保持した配布物を使用するプロセス | `plugin-root-leases/<保持領域の識別子>-<pid>.json`と領域ごとの`.lock` | 配布物の起動側とmanaged-tempの回収・掃引 | `_common/plugin_root_leases.py`。起動側が領域path・PID・プロセス作成時刻を登録し、読む側は同じ領域の排他下で生存を検収する。終了済みの使用記録を除き、取得不能な記録と使用中の実体を保護する。使用登録と回収が排他を共有するのは、検収と登録の間に実体を削除しないためであり、`atk`の自動掃引だけは排他を待たず、競合した領域を保持して次回へ回す |
 | 同じ配布元・版から共有する完成済み配布物 | managed-tempの保持領域直下の`.agent-toolkit-plugin-root.json` | `_agents_server/plugin_root.py`の起動・再利用 | コピーする起動側が配布元・版・root名を保存する。内側MCPも同じ完成済み実体を使い、回収側は前行の使用記録を検収する |
 | セッション配下の作業用領域の回収再開情報 | `managed-temp/`配下の`.child-cleanup`ファイル | `atk managed-temp cleanup` | `_atk/managed_temp/inventory.py`。親の登録と対象identityを検収して回収し、途中失敗の情報を次回の同じ操作へ渡す。保存証拠を持つ親領域を保持する |
 

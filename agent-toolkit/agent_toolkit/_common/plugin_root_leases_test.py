@@ -133,3 +133,13 @@ def test_legacy_plugin_root_cleanup_checks_unregistered_consumers(
         and observation in {"live", "missing-log", "denied-files", "wrong-log"}
     )
     assert subject.plugin_root_in_use(area) is protected
+
+
+def test_nonblocking_lock_reports_conflict(tmp_path: pathlib.Path) -> None:
+    """非待機の取得は保持中のロックを待たずに失敗を返し、解放後は非待機でも取得できる。"""
+    area = tmp_path / "plugin-root"
+    area.mkdir()
+    with subject.plugin_root_lock(area), pytest.raises(OSError), subject.plugin_root_lock(area, blocking=False):
+        pytest.fail("保持中のロックを非待機で取得した")
+    with subject.plugin_root_lock(area, blocking=False):
+        pass

@@ -27,10 +27,14 @@ def _directory() -> Path:
 
 
 @contextlib.contextmanager
-def plugin_root_lock(path: Path) -> Generator[None]:
-    """同じ保持領域の使用登録と回収を直列にする。ロック実体は回収後も残す。"""
+def plugin_root_lock(path: Path, *, blocking: bool = True) -> Generator[None]:
+    """同じ保持領域の使用登録と回収を直列にする。ロック実体は回収後も残す。
+
+    `blocking=False`では即時取得できない場合に`OSError`を送出する。任意保守の自動掃引が、
+    使用登録や明示回収の保持者を待たずに対象を保持して本来の操作へ進むために使う。
+    """
     with (_directory() / f"{_key(path)}.lock").open("a+", encoding="utf-8") as handle:
-        file_lock.acquire_lock(handle)
+        file_lock.acquire_lock(handle, blocking=blocking)
         try:
             yield
         finally:
