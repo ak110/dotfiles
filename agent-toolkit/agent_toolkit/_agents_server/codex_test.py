@@ -18,7 +18,7 @@ import sys
 from collections.abc import AsyncGenerator, Callable
 from types import SimpleNamespace
 from typing import Any, cast
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, Mock
 
 import anyio
 import psutil
@@ -31,6 +31,7 @@ from agent_toolkit import atk
 from agent_toolkit._agents_server import codex as subject
 from agent_toolkit._agents_server import manager as server_manager
 from agent_toolkit._agents_server import (
+    mcp_tools,
     notice_inbox,
     resume_waits,
     session_errors,
@@ -105,6 +106,90 @@ class _TierClient:
 
     async def close(self) -> list[str]:
         return []
+
+
+@pytest.mark.usefixtures("agents_server_isolation")
+@pytest.mark.parametrize("existing", ["root", "running", "completed"])
+@pytest.mark.asyncio
+async def test_start_rejects_existing_thread_before_alias_and_client_registration(
+    existing: str, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+) -> None:
+    """重複threadは既存接続と状態を維持し、新規接続だけを回収して索引作成前に失敗する。"""
+    backend = subject.AppServerManager(root_session_id="tier-thread" if existing == "root" else "owner")
+    old = state.SessionState("tier-thread", str(tmp_path), engine="codex")
+    if existing == "completed":
+        _complete(old)
+    if existing != "root":
+        backend.sessions[old.session_id] = old
+    client = _TierClient()
+    close = AsyncMock(return_value=[])
+    monkeypatch.setattr(client, "close", close)
+    monkeypatch.setattr(backend, "_ensure_client", AsyncMock(return_value=client))
+    alias = Mock()
+    monkeypatch.setattr(shared_roots, "write_host_alias", alias)
+    try:
+        with pytest.raises(ActionableError, match="duplicate session_id"):
+            await backend.start("重複確認", str(tmp_path))
+        if existing != "root":
+            assert backend.sessions[old.session_id] is old
+        assert not backend._clients
+        close.assert_awaited_once()
+        alias.assert_not_called()
+    finally:
+        await backend.close()
+
+
+@pytest.mark.usefixtures("agents_server_isolation")
+@pytest.mark.parametrize("outcome", ["completed", "execution-failed", "start-failed", "ambiguous"])
+@pytest.mark.parametrize("notification_first", [True, False])
+@pytest.mark.asyncio
+async def test_resume_retains_request_delivery(
+    outcome: str, notification_first: bool, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+) -> None:
+    """実backendの配送結果は、開始応答と終端通知の前後を通じて一定である。"""
+    backend = subject.AppServerManager()
+    client = _TierClient()
+    original = client.request
+    monkeypatch.setattr(backend, "_ensure_client", AsyncMock(return_value=client))
+
+    async def complete() -> None:
+        session = backend.sessions["resume-delivery"]
+        event = _completed_turn(session)
+        event["params"]["turn"]["id"] = "resume-turn"
+        if outcome == "execution-failed":
+            event["params"]["turn"].update(status="failed", error={"message": "execution failed"})
+        await backend._handle_notification(event)
+
+    async def request(method: str, params: dict[str, Any], **kwargs: Any) -> dict[str, Any]:
+        if method != "turn/start":
+            return await original(method, params, **kwargs)
+        if outcome == "start-failed":
+            raise subject.JsonRpcResponseError(method, -32600, "request rejected")
+        if outcome == "ambiguous":
+            raise TimeoutError("response lost")
+        response = await original(method, params, **kwargs)
+        response["turn"]["id"] = "resume-turn"
+        if notification_first:
+            await complete()
+        return response
+
+    monkeypatch.setattr(client, "request", request)
+    prompt = state.ResumePrompt("再開")
+    try:
+        session = await backend.resume("resume-delivery", prompt, str(tmp_path))
+        expected = {"start-failed": "reply_failed", "ambiguous": "reply_ambiguous"}.get(outcome, "reply_started")
+        assert prompt.delivery == expected
+        if outcome in {"completed", "execution-failed"}:
+            if not notification_first:
+                await complete()
+            assert session.status == ("failed" if outcome == "execution-failed" else "completed")
+            assert prompt.delivery == "reply_started"
+        elif outcome == "ambiguous":
+            assert session.turn_start_ambiguous
+        else:
+            assert session.status == "failed"
+    finally:
+        await backend.close()
 
 
 class _ProcessTierClient(_TierClient):
@@ -2216,6 +2301,28 @@ async def test_codex_json_rpc_process_passes_stable_cwd(
         assert "UV_PROJECT_ENVIRONMENT" not in environment
     assert os.environ["PATH"] == original_path
     assert observed["limit"] > 64 * 1024
+
+
+@pytest.mark.usefixtures("agents_server_isolation")
+@pytest.mark.asyncio
+async def test_app_server_inherits_prepared_conversation_environment(monkeypatch: pytest.MonkeyPatch) -> None:
+    """MCPの共通整備後に起動するApp Serverへ起動元contextが届かず、明示ownerだけが届く。"""
+    for name in subject.mcp_environment._NON_INHERITABLE_NAMES:
+        monkeypatch.setenv(name.upper(), "source-context")
+    mcp_tools._prepare_child_environment()
+    captured: dict[str, str] = {}
+
+    async def spawn(*_args: Any, **kwargs: Any) -> Any:
+        captured.update(kwargs["env"])
+        raise RuntimeError("環境観測完了")
+
+    monkeypatch.setattr(asyncio, "create_subprocess_exec", spawn)
+    client = subject.JsonRpcProcess(_ignore_message, _ignore_message, root_session_id="selected-owner")
+    with pytest.raises(RuntimeError, match="環境観測完了"):
+        await client.start()
+    forbidden = subject.mcp_environment._NON_INHERITABLE_NAMES - {"agent_toolkit_owner_session"}
+    assert not forbidden.intersection(name.casefold() for name in captured)
+    assert captured["AGENT_TOOLKIT_OWNER_SESSION"] == "selected-owner"
 
 
 @pytest.mark.usefixtures("agents_server_isolation")

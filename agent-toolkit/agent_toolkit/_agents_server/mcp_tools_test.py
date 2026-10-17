@@ -33,7 +33,7 @@ from agent_toolkit._agents_server import (
 from agent_toolkit._agents_server import manager as server_manager
 from agent_toolkit._atk import config as _atk_config
 from agent_toolkit._atk import managed_temp as _managed_temp
-from agent_toolkit._common import state_paths
+from agent_toolkit._common import mcp_environment, state_paths
 from agent_toolkit._common.next_action import NEXT_ACTION_PREFIX
 from agent_toolkit._testing.agents_server_support import (
     _MODE_INPUT_CASES,
@@ -51,6 +51,29 @@ from agent_toolkit._testing.agents_server_support import (
 from agent_toolkit._testing.managed_temp_support import setattr_in_managed_temp_modules
 
 pytestmark = pytest.mark.usefixtures("agents_server_isolation")
+
+
+@pytest.fixture(autouse=True)
+def _isolate_handoff_session(monkeypatch: pytest.MonkeyPatch) -> None:
+    """サーバー起動時のsnapshotを各テストの環境へ対応させる。"""
+    monkeypatch.setattr(launch_requests, "_HANDOFF_SESSION", None, raising=False)
+
+
+def test_main_strips_conversation_context_before_backend_start(monkeypatch: pytest.MonkeyPatch) -> None:
+    """MCP起動は全backendの継承元を整え、接続設定と引き継ぎ元snapshotを保持する。"""
+    for name in mcp_environment._NON_INHERITABLE_NAMES:
+        monkeypatch.setenv(name.upper(), "parent-session")
+    monkeypatch.setenv("ANTHROPIC_AUTH_TOKEN", "test-token")
+    observed: dict[str, str] = {}
+
+    def check_dependencies() -> None:
+        observed.update(os.environ)
+
+    monkeypatch.setattr(claude_backend, "check_dependencies", check_dependencies)
+    assert entry_script.main(["--check-dependencies"]) == 0
+    assert not {name.casefold() for name in observed} & mcp_environment._NON_INHERITABLE_NAMES
+    assert observed["ANTHROPIC_AUTH_TOKEN"] == "test-token"
+    assert launch_requests._HANDOFF_SESSION == ("parent-session",)
 
 
 def test_backend_imports_survive_plugin_path_removal(tmp_path: pathlib.Path) -> None:

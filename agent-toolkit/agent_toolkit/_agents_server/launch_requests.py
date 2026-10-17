@@ -296,6 +296,16 @@ _HANDOFF_TEMP_PREFIX = "handoff"
 """委譲元のセッションのmanaged-tempを解決できない場合に作成するmanaged-tempの接頭辞。"""
 
 
+_HANDOFF_SESSION: tuple[str | None] | None = None
+
+
+def capture_handoff_session() -> None:
+    """会話contextの除去前に、引き継ぎ記録を置く委譲元sessionを確定する。"""
+    global _HANDOFF_SESSION  # pylint: disable=global-statement
+    if _HANDOFF_SESSION is None:
+        _HANDOFF_SESSION = (shared_roots.resolve_root_session_id(os.environ),)
+
+
 def _default_handoff_path() -> pathlib.Path | None:
     """`（新規）`の引き継ぎ記録先として、委譲元のセッションのmanaged-temp直下の未使用のファイルパスを返す。
 
@@ -305,7 +315,7 @@ def _default_handoff_path() -> pathlib.Path | None:
     ファイル自体は作成しない。`（新規）`の記録先は委譲先が作成するためである。
     """
     directory: pathlib.Path | None = None
-    session_id = shared_roots.resolve_root_session_id(os.environ)
+    session_id = _HANDOFF_SESSION[0] if _HANDOFF_SESSION is not None else shared_roots.resolve_root_session_id(os.environ)
     if session_id is not None:
         try:
             entries = _managed_temp.list_managed_temp(_managed_temp.SESSION_TEMP_PREFIX, session_id=session_id)

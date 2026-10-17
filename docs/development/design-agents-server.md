@@ -78,7 +78,13 @@ backend固有のserver requestは共有公開toolを増やさず、非対話の�
 却下した代替案は、Codex専用とClaude専用の2サーバーを併存させる案である。公開tool、session状態、
 hookの配送境界および継続条件がbackendごとに分断され、同じ委譲契約を二重に維持する必要が生じるため採用しない。
 
-委譲先へ渡す実行環境は、委譲サーバープロセスの環境を起動時に1回整えることで両backendへ同時に適用する。
+委譲先へ渡す実行環境は、委譲サーバープロセスの環境を起動時に1回整えることで全backendへ同時に適用する。
+起動元の会話・端末・プロセスのcontextは、共有の`_common/mcp_environment.py`の`strip_conversation_context`で除去する。
+この関数は内側MCPの`env_vars`と同じ除外名の集合を使う。
+MCP起動時と`atk wi`のall-reposでのManager生成に適用し、各backendは整備後の環境を使う。
+process-loop・run-skillと可用性判定の最上位会話も、`_atk/orchestrator.py`の`child_env`から同じ関数を使う。
+サーバーのルート、書込主体、委譲元の記録情報と引き継ぎ記録先は除去前のsnapshotから確定する。
+各起動が明示するownerと委譲の印は除去後に設定し、Claudeの`inherit`接続も会話contextを除いた通常の認証・接続設定を使う。
 起動元ツールのエフェメラル仮想環境は`VIRTUAL_ENV`と`PATH`のコマンド格納ディレクトリの両方を取り除く。
 `VIRTUAL_ENV`だけでは委譲先の`python`・コンソールスクリプトが起動元ツールの環境へ解決されるためである。
 判断理由はClaude Agent SDKの`ClaudeAgentOptions.env`が継承環境へ重なる仕様でキーの削除を表現できず、
@@ -107,7 +113,9 @@ ownerと状態の書込主体は各起動が明示した値を優先する。
 子での別名前空間の全探索、親プロセスや認証ファイルの読直し、保存先のHOMEへの固定は採らない。
 miseの設定・信頼状態・導入先・キャッシュの所在は`MISE_CONFIG_DIR`・`MISE_STATE_DIR`・`MISE_DATA_DIR`・`MISE_CACHE_DIR`の公開名で引き継ぎ、XDGを変更しても呼出元が選んだmiseの所在と信頼設定を保つ。
 Claude向けとAgent Plugins向けのMCP定義へはCodex専用の`env_vars`を混ぜない。
-agents_serverが起動するCodex App Server・Claude CLI・Antigravity CLIは親環境をコピーするため、子側で値を復元する処理は持たない。
+agents_serverが起動するCodex App Server・Claude CLI・Antigravity CLIは会話contextを除いた環境を継承し、各backendは明示した起動別の値を加える。
+Claude Codeのstdio環境の配送とremote変数による識別子の重複は、[audit-records.md](audit-records.md)の次の節にある。
+参照先は「.claude/skills/agent-toolkit-edit/references/agents-server-shared-state.md：実行主体：2026年10月18日」で、実MCPでの除去前後の観測も記録する。
 却下した代替案は、chezmoiのCodexプラグイン方針へ置く案と、子プロセスがshell設定などから値を回復する案である。前者の設定型は通信設定を受理せず、後者はCodexの公開機能で同じ結果を得られる。
 
 atk自身のuv同期先は呼出元の`UV_PROJECT_ENVIRONMENT`から分離し、子へ渡す元の値と未設定の別を起動処理で保持する。
@@ -218,7 +226,25 @@ Claude backendの資源解放では、SDKクライアントの切断を所有タ
 
 `show`・`send_message`・`kill`および`stop`は受け取った識別子を先に保持中の状態へ解決する。いずれの状態にも解決できなかった値だけを対象に、UUID形式でなければ体系の相違を示すエラーを返す。登録済みの識別子は形式によらず解決するため、backendが発行済みの識別子の解決規則は変わらない。両backendのsession識別子はUUIDであり、他の委譲手段が返す識別子との取り違えを`unknown session`と区別できるようにする。保持しないUUIDへ返す`unknown session`の診断は登録簿の状態で分ける。登録簿が解放済みを示す場合は所有側による解放の理由と時刻を添え、レコードが無い場合はこのホストのどのagents_serverにも記録が無いこと（別のホストで起動したか、7日を超えて記録が回収された）を添える。登録簿のレコードは再起動では削除されないため、不在の原因として再起動を案内しない。2026年9月30日に、所有側が保持期限で解放した孫sessionへの照会が再起動の案内を返し、振り返りが原因を誤推定したことによる。
 
+新規sessionの識別子は`session_identity.identity_validator`が全backendの登録前に重複を確かめる。
+ルート、稼働中・保持中の別sessionと、共有登録簿で実行中・終端に解決されるsessionとの識別子の重複を拒否する。
+エラーは原因と次の操作を示す。
+この境界で止めることで、識別子をキーとする登録・状態・結果・待機対象とイベントログを保持する。
+同じ識別子を使う再開は`expected_session_id`の一致で区別する。
+
+外部所有の復元状態は`ManagerRegistry`の`_RegistryResumeState`として、自プロセスが更新する状態と区別する。
+`show`・`list`、停止済み・期限切れの解決と、それらを使う停止・結果取得は、共通の`_refresh_resume_state`で現在の共有登録を再解決する。
+後続turnの稼働・再終端・失敗は現在の登録から判断し、過去turnの未回収結果は結果ファイルで保持する。
+別プロセスの再開では照会側のメモリーを更新できないため、復元済みの終端状態を現在状態として再利用する案は採らない。
+
 ### `send_message`
+
+停止後・保持期限後・所有主体消失後の再開では、要求ごとの`ResumePrompt.delivery`へ配送結果を確定し、`PendingResume`が応答まで保持する。
+backendの開始成功は`reply_started`とし、開始不能と開始不確定はbackendが`record_delivery`でそれぞれ`reply_failed`と`reply_ambiguous`を記録する。
+共通応答はこの要求の配送結果を読み、新turnの`SessionState`の終端状態から配送成否を推定しない。
+このため応答前の正常完了と開始後の実行失敗も、開始済みの配送結果を保持する。
+再開前の未回収結果は`previous_result`で配送し、新turnの結果は既存の待機で別に回収する。
+追送履歴、観測待ち登録と子session追跡は同じ公開の`delivery`を消費し、既存の`steered`も含めた値の集合を保つ。
 
 `send_message(session_id, prompt, timeout=270)`は実行中turnへ追加指示を送り、終端済みturnでは結果回収を前提にせず同じsessionでreplyを開始する。`timeout`を省略すると270秒を使うため、固有のtimeout要件がなければ引数を省略する。timeoutは継続要求の配送結果が確定するまでの待機上限であり、`turn_control_lock`の取得を含む操作全体を覆う一方、委譲先の応答生成の完了は待たない。`0`以下を受理しないのは、この操作の戻り値が配送結果の確定だけで構成され、待たない場合に返せる情報が無いためである。上限到達時は配送の成否が確定せず、`atk agents wait`で状態を確認する。
 `codex_fast_mode`の実効値はCodexの新しいturnを開始するたびに読み、`thread/start`・`thread/resume`・`turn/start`へ`serviceTier`を明示する。`true`は`priority`、`false`は`default`とし、Codex側の`config.toml`のfast設定を`false`でも継承しない。値を省略すると設定と動作が一致しないためである。送信完了時に最新turnの値を`fast_mode`へ保持し、状態ファイル・登録簿・再開状態と詳細表示へ同じ値を渡す。実行中のturnは変更せず、次のturnから設定変更を反映する。

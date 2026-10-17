@@ -321,7 +321,7 @@ class ManagerResponses(manager_base.ManagerBase):
         except asyncio.CancelledError:
             pending.prompt.cancel(ticket)
             raise
-        delivery = "reply_failed" if session.result_available else "reply_started"
+        delivery = pending.delivery
         response: dict[str, Any] = {"delivery": delivery, "label": session.label}
         previous_result = pending.take_previous_result()
         if previous_result:

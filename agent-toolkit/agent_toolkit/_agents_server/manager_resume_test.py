@@ -72,6 +72,86 @@ from agent_toolkit._testing.helpers import delivery_payload
 pytestmark = pytest.mark.usefixtures("agents_server_isolation")
 
 
+@pytest.mark.parametrize("origin", ["stopped", "expired", "owner-gone"])
+@pytest.mark.parametrize("outcome", ["completed", "execution-failed", "start-failed", "ambiguous"])
+@pytest.mark.parametrize("finish_before_response", [True, False])
+@pytest.mark.asyncio
+async def test_reply_delivery_is_independent_of_turn_terminal(
+    origin: str,
+    outcome: str,
+    finish_before_response: bool,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """停止後・保持期限後・所有主体消失後の再開は、配送結果と前後の結果を応答順序によらず分離する。"""
+    manager, writer = _resume_test_manager(monkeypatch, tmp_path)
+    identifier = "reply-order-session"
+    previous = state.SessionState(identifier, str(tmp_path), engine="codex", publish_registry=True, turn_seq=1)
+    _complete(previous, message="前turnの結果")
+    await previous.drain_registration()
+    await writer.retain_result_async(previous)
+    saved = state.SessionResumeState.from_session(previous)
+    if origin == "stopped":
+        manager.stopped_sessions[identifier] = saved
+    elif origin == "expired":
+        manager.expired_sessions[identifier] = saved
+    backend = FakeBackend(manager.sessions, "codex")
+    install_backend(manager, "codex", backend)
+
+    def finish(session: state.SessionState) -> None:
+        _complete(session, message="新turnの結果", error={"message": "実行失敗"} if outcome == "execution-failed" else None)
+
+    async def resume(
+        session_id: str, prompt: state.ResumePrompt, cwd: str, model: str | None, effort: str | None, **_kwargs: Any
+    ) -> state.SessionState:
+        session = state.SessionState(session_id, cwd, model=model, effort=effort, engine="codex", turn_seq=2)
+        manager.sessions[session_id] = session
+        state.initialize_turn(session)
+        if outcome in {"start-failed", "ambiguous"}:
+            prompt.record_delivery("reply_failed" if outcome == "start-failed" else "reply_ambiguous")
+            if outcome == "start-failed":
+                _complete(session, message="", error={"message": "開始不能"})
+            else:
+                session.turn_start_ambiguous = True
+        else:
+
+            async def accept(_text: str) -> None:
+                if finish_before_response:
+                    finish(session)
+
+            await prompt.deliver(accept)
+        return session
+
+    monkeypatch.setattr(backend, "resume", resume)
+    try:
+        response = await manager.send_message(identifier, "再開要求")
+        expected = {"start-failed": "reply_failed", "ambiguous": "reply_ambiguous"}.get(outcome, "reply_started")
+        assert response["delivery"] == expected
+        assert response["previous_result"]["agent_message"] == "前turnの結果"
+        session = manager.sessions[identifier]
+        if outcome in {"completed", "execution-failed"}:
+            if not finish_before_response:
+                finish(session)
+            await writer.flush_async()
+            result = writer.read_result(identifier)
+            assert result is not None and result["agent_message"] == "新turnの結果"
+            assert result["status"] == ("failed" if outcome == "execution-failed" else "completed")
+            assert (
+                await asyncio.to_thread(
+                    agents_wait.wait_for_result,
+                    environment={"CLAUDE_CODE_SESSION_ID": writer.root_session_id},
+                    state_root=writer.state_root,
+                )
+                == 0
+            )
+            collected = json.loads(capsys.readouterr().out)
+            assert collected["agent_message"] == "新turnの結果"
+        assert bool(session.followup_prompts) is (expected != "reply_failed")
+    finally:
+        await manager.close()
+
+
 @pytest.mark.parametrize("mode,api_first", [("pay-as-you-go", False), ("api-credits", True)])
 @pytest.mark.parametrize("unavailable", [False, True])
 @pytest.mark.asyncio
@@ -269,7 +349,7 @@ async def test_expired_multi_turn_session_resumes_and_agents_wait_observes_resul
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """両engineで、複数turn後に保持期限が切れたsessionを再開し、その結果を`atk agents wait`の待機で観測する。"""
+    """両engineで、複数turn後に保持期限に達したsessionを再開し、その結果を`atk agents wait`の待機で観測する。"""
     writer = status_file.StatusFileWriter(
         {},
         shared_roots.StatusFileIdentity("root-session", "root.json", None),
@@ -287,8 +367,11 @@ async def test_expired_multi_turn_session_resumes_and_agents_wait_observes_resul
 
     response = await manager.send_message("saved-session", "続行")
 
-    assert _without_root(response) == {"delivery": "reply_started", "label": ""}
-    assert "previous_result" not in response
+    assert _without_root(response) == {
+        "delivery": "reply_started",
+        "label": "",
+        "previous_result": {"status": "completed", "agent_message": "期限切れ結果"},
+    }
     assert backend.resume_calls == ["saved-session"]
     assert "saved-session" not in manager.expired_sessions
 
@@ -334,7 +417,9 @@ async def test_resumed_session_keeps_created_at_in_status_file(tmp_path: pathlib
     session.retention_deadline = asyncio.get_running_loop().time() - 1
     manager.sessions[session.session_id] = session
 
-    assert _without_root(await manager.send_message("created-session", "続行")) == {"delivery": "reply_started", "label": ""}
+    response = await manager.send_message("created-session", "続行")
+    assert response["delivery"] == "reply_started"
+    assert response["previous_result"]["agent_message"] == "前のturn"
     writer.flush()
 
     resumed = manager.sessions["created-session"]
@@ -384,10 +469,13 @@ async def test_resumed_session_keeps_every_launch_info_item(
     await session.drain_registration()
     prepare_resume(manager, session)
 
-    assert _without_root(await manager.send_message(session.session_id, "続行")) == {
-        "delivery": "reply_started",
-        "label": _LAUNCH_VALUES["label"],
-    }
+    response = await manager.send_message(session.session_id, "続行")
+    assert response["delivery"] == "reply_started"
+    assert response["label"] == _LAUNCH_VALUES["label"]
+    if prepare_resume is _expire_launched_session:
+        assert response["previous_result"]["agent_message"] == "前のturn"
+    else:
+        assert "previous_result" not in response
     writer.flush()
 
     resumed = manager.sessions[session.session_id]

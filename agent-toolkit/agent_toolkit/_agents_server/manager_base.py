@@ -7,12 +7,14 @@ import dataclasses
 import datetime
 import logging
 import os
+from collections.abc import Mapping
 from typing import Any
 
 from agent_toolkit._agents_server import (
     backends,
     record_paths,
     resource_snapshot,
+    session_identity,
     shared_layout,
     shared_roots,
     status_file,
@@ -41,6 +43,11 @@ class PendingResume:
     prompt: ResumePrompt
     previous_result: dict[str, Any] | None = None
 
+    @property
+    def delivery(self) -> str:
+        """backendが要求単位で保持した配送結果を返す。"""
+        return self.prompt.delivery
+
     def discard_previous_result(self) -> None:
         """配送または明示的な破棄の後に退避済み結果本文を除く。"""
         self.previous_result = None
@@ -64,7 +71,11 @@ class ManagerBase:
     def __init__(
         self,
         status_writer: status_file.StatusFileWriter | None | object = _DEFAULT_STATUS_WRITER,
+        *,
+        launcher_environment: Mapping[str, str] | None = None,
     ) -> None:
+        environment = os.environ if launcher_environment is None else launcher_environment
+        self._launcher_codex_thread_id = environment.get("CODEX_THREAD_ID")
         self.sessions: dict[str, SessionState] = (
             status_writer.sessions if isinstance(status_writer, status_file.StatusFileWriter) else {}
         )
@@ -85,13 +96,19 @@ class ManagerBase:
         self._candidate_tasks: set[asyncio.Task[None]] = set()
         self._status_writer: status_file.StatusFileWriter | None
         if status_writer is _DEFAULT_STATUS_WRITER:
-            identity = shared_roots.resolve_status_file_identity(os.environ)
+            identity = shared_roots.resolve_status_file_identity(environment)
             if identity is None:
                 identity = shared_roots.create_process_root_identity()
             self._status_writer = status_file.StatusFileWriter(self.sessions, identity, expired_sessions=self.expired_sessions)
         else:
             assert status_writer is None or isinstance(status_writer, status_file.StatusFileWriter)
             self._status_writer = status_writer
+        self._validate_session_id = session_identity.identity_validator(
+            self.sessions,
+            None if self._status_writer is None else self._status_writer.root_session_id,
+            self.expired_sessions,
+            self.stopped_sessions,
+        )
         if self._status_writer is not None:
             add_touch_listener(self._status_writer.schedule)
         add_terminal_listener(self._carry_over_unavailable_candidate)
@@ -183,6 +200,7 @@ class ManagerBase:
                 expire_session=self._expire_session,
                 root_session_id=None if self._status_writer is None else self._status_writer.root_session_id,
                 log_directory=self._status_writer.path.parent / "logs" if self._status_writer is not None else None,
+                validate_session_id=self._validate_session_id,
             )
             self._backends[engine] = backend
         return backend
@@ -236,7 +254,7 @@ class ManagerBase:
             launcher = self._status_writer.launcher_session_id()
             if launcher is not None:
                 return launcher
-        codex_thread_id = os.environ.get("CODEX_THREAD_ID")
+        codex_thread_id = self._launcher_codex_thread_id
         return codex_thread_id if codex_thread_id and shared_layout.valid_session_id(codex_thread_id) else None
 
     def launcher_record_context(self) -> dict[str, Any]:

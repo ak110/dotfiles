@@ -1,6 +1,6 @@
-"""Codexのstdio MCPサーバーへ認証・設定・一般環境を引き継ぐ名前と起動contextの除外。"""
+"""新しい会話のcontext除外と、Codexのstdio MCPサーバーへ認証・設定・一般環境を引き継ぐ名前。"""
 
-from collections.abc import Iterable, Mapping
+from collections.abc import Iterable, Mapping, MutableMapping
 
 from agent_toolkit._common import host_homes, plugin_environment, private_notes
 
@@ -687,6 +687,7 @@ _NON_INHERITABLE_NAMES = frozenset(
         "CLAUDE_CODE_EXECPATH",
         "CLAUDE_CODE_MESSAGING_SOCKET",
         "CLAUDE_CODE_MESSAGING_TOKEN",
+        "CLAUDE_CODE_POST_FOR_SESSION_INGRESS_V2",
         "CLAUDE_CODE_PROVIDER_MANAGED_BY_HOST",
         "CLAUDE_CODE_REMOTE",
         "CLAUDE_CODE_REMOTE_SESSION_ID",
@@ -748,3 +749,10 @@ def environment_variable_names(setting_names: Iterable[str]) -> tuple[str, ...]:
 def runtime_environment_variable_names(parent_environment: Mapping[str, str]) -> tuple[str, ...]:
     """実行時の親環境から継承名を返す。値はCodexの環境配送に委ねる。"""
     return tuple(name for name in parent_environment if name.casefold() not in _NON_INHERITABLE_NAMES)
+
+
+def strip_conversation_context(environment: MutableMapping[str, str]) -> None:
+    """新しい会話の継承元から、起動元の会話・プロセス・端末contextを取り除く。"""
+    for name in tuple(environment):
+        if name.casefold() in _NON_INHERITABLE_NAMES:
+            del environment[name]

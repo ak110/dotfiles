@@ -50,6 +50,7 @@ TERMINAL_STATUSES = frozenset({"completed", "failed", "interrupted"})
 
 ModelCandidate = tuple[str, str, str]
 LaunchKind = task_documents.LaunchKind
+ResumeDelivery = typing.Literal["reply_started", "reply_failed", "reply_ambiguous"]
 _TOUCH_LISTENERS: set[Callable[[], None]] = set()
 _TERMINAL_LISTENERS: set[Callable[[SessionState], None]] = set()
 _LIFECYCLE_LISTENERS: set[Callable[[SessionState, str], None]] = set()
@@ -104,6 +105,18 @@ class ResumePrompt:
         )
         self._changed = asyncio.Event()
         self._closed = False
+        self._delivery: ResumeDelivery | None = None
+
+    @property
+    def delivery(self) -> ResumeDelivery:
+        """要求ごとに確定した配送結果を返す。未配送で終了した要求は開始失敗とする。"""
+        return self._delivery or "reply_failed"
+
+    def record_delivery(self, delivery: ResumeDelivery) -> None:
+        """backendが確定した配送結果を一度だけ保持する。"""
+        if self._delivery is not None and self._delivery != delivery:
+            raise RuntimeError("再開要求の配送結果は確定済みです")
+        self._delivery = delivery
 
     @property
     def initial_ticket(self) -> int:
@@ -168,6 +181,7 @@ class ResumePrompt:
                 cancellation_task.cancel()
                 await asyncio.gather(cancellation_task, return_exceptions=True)
                 await delivery_task
+                self.record_delivery("reply_started")
                 if self._current is not None and self._current[0] == ticket:
                     self._current = None
                 self._closed = True

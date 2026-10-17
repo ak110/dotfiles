@@ -304,6 +304,8 @@ async def test_task_starts_with_record_shortage_without_substitute(
 ) -> None:
     """不足した情報を起動本文へ残し、記録を要しないtaskも開始し、祖先や別の記録のパスで補わない。"""
     monkeypatch.delenv("CODEX_THREAD_ID", raising=False)
+    if availability != "unresolved":
+        monkeypatch.setenv("CODEX_THREAD_ID", "direct-parent")
     current = manager.AgentsServerManager(None)
     backend = _ObservedBackend(current.sessions, "claude")
     agents_server_support.install_backend(current, "claude", backend)
@@ -318,8 +320,7 @@ async def test_task_starts_with_record_shortage_without_substitute(
         return record_paths.SessionRecord(engine, candidates) if availability == "ambiguous" else None
 
     monkeypatch.setattr(record_paths, "find_session_record", find_record)
-    if availability != "unresolved":
-        monkeypatch.setenv("CODEX_THREAD_ID", "direct-parent")
+    monkeypatch.delenv("CODEX_THREAD_ID", raising=False)
     try:
         started = await _start_task(tmp_path, "request=/repo=awi=記録を取得しない観測")
         assert started["session_id"] == "claude-session"

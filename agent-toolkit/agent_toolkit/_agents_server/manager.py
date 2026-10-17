@@ -16,6 +16,7 @@ from agent_toolkit._agents_server import (
     manager_wait,
     result_projection,
     session_handoff,
+    session_identity,
     state,
     status_file,
     tool_names,
@@ -232,6 +233,8 @@ class AgentsServerManager(manager_wait.ManagerWait):
                     exc.reason,
                 )
                 continue
+            except session_identity.DuplicateSessionIdentityError:
+                raise
             except Exception as exc:
                 if not backend_type.START_FAILURE_EXCLUDES_CANDIDATE:
                     raise
@@ -634,6 +637,8 @@ class AgentsServerManager(manager_wait.ManagerWait):
                                     stopped_state,
                                     collector="send-message",
                                 )
+                            elif self._status_writer is None or self._status_writer.result_state(session_id) != "consumed":
+                                previous_result = self._stopped_result_response(resume_state)
                             return await self._resume_and_reply(
                                 resume_state,
                                 prompt,

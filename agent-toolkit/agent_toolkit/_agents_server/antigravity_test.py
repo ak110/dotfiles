@@ -10,9 +10,9 @@ from typing import Any
 
 import pytest
 
-from agent_toolkit._agents_server import antigravity, launch_prompts, session_errors
+from agent_toolkit._agents_server import antigravity, launch_prompts, mcp_tools, session_errors
 from agent_toolkit._agents_server import state as shared_state
-from agent_toolkit._common import session_registry, state_paths
+from agent_toolkit._common import mcp_environment, session_registry, state_paths
 from agent_toolkit._common.next_action import NEXT_ACTION_PREFIX, ActionableError
 
 _FAKE_AGY = """#!{python}
@@ -26,6 +26,34 @@ print(json.dumps({{"event": "init", "conversation_id": conversation, "init": {{"
 print(json.dumps({{"event": "step_update", "step_update": {{"text_delta": "調査中"}}}}), flush=True)
 print(json.dumps({{"event": "result", "result": {{"status": "SUCCESS", "response": prompt[-20:]}}}}), flush=True)
 """
+
+
+@pytest.mark.asyncio
+async def test_cli_inherits_prepared_conversation_environment(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
+    """MCPの共通整備後に起動するCLIは、起動元contextを除いて明示ownerと委譲印を受け取る。"""
+    for name in mcp_environment._NON_INHERITABLE_NAMES:  # pylint: disable=protected-access
+        monkeypatch.setenv(name.upper(), "source-context")
+    mcp_tools._prepare_child_environment()  # pylint: disable=protected-access
+    captured: dict[str, str] = {}
+
+    async def spawn(*_args: Any, **kwargs: Any) -> Any:
+        captured.update(kwargs["env"])
+        raise OSError("環境観測完了")
+
+    monkeypatch.setattr(asyncio, "create_subprocess_exec", spawn)
+    backend = antigravity.AntigravityManager(root_session_id="selected-owner")
+    try:
+        with pytest.raises(session_errors.DelegateBackendError, match="環境観測完了"):
+            await backend.start("環境確認", str(tmp_path))
+        forbidden = mcp_environment._NON_INHERITABLE_NAMES - {  # pylint: disable=protected-access
+            "agent_toolkit_owner_session",
+            "agent_toolkit_delegated_session",
+        }
+        assert not forbidden.intersection(name.casefold() for name in captured)
+        assert captured["AGENT_TOOLKIT_OWNER_SESSION"] == "selected-owner"
+        assert captured["AGENT_TOOLKIT_DELEGATED_SESSION"] == "1"
+    finally:
+        await backend.close()
 
 
 def _install_fake_agy(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> pathlib.Path:
@@ -255,6 +283,31 @@ def test_stream_events_are_saved_across_turns(tmp_path: pathlib.Path, monkeypatc
     assert records[5]["result"]["response"].endswith("次の依頼")
     assert stat.S_IMODE(log_directory.stat().st_mode) == 0o700
     assert stat.S_IMODE((log_directory / "conv-1.jsonl").stat().st_mode) == 0o600
+
+
+@pytest.mark.asyncio
+async def test_duplicate_conversation_keeps_event_log_and_allows_explicit_resume(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """重複initはイベントログと既存状態を保持し、同じIDを指定した再開は成功する。"""
+    _install_fake_agy(tmp_path, monkeypatch)
+    directory = tmp_path / "logs"
+    directory.mkdir()
+    log = directory / "conv-1.jsonl"
+    log.write_text("既存ログ\n", encoding="utf-8")
+    old = shared_state.SessionState("conv-1", str(tmp_path), engine="agy")
+    backend = antigravity.AntigravityManager({old.session_id: old}, log_directory=directory)
+    try:
+        with pytest.raises(ActionableError, match="duplicate session_id"):
+            await backend.start("重複確認", str(tmp_path))
+        assert backend.sessions[old.session_id] is old
+        assert log.read_text(encoding="utf-8") == "既存ログ\n"
+        prompt = shared_state.ResumePrompt("再開")
+        resumed = await backend.resume(old.session_id, prompt, str(tmp_path))
+        assert resumed.session_id == old.session_id
+        assert prompt.delivery == "reply_started"
+    finally:
+        await backend.close()
 
 
 def test_event_log_write_failure_does_not_fail_session(

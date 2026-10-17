@@ -387,7 +387,7 @@ def test_registration_changes_before_start_public_cli(tmp_path: pathlib.Path, mo
     monkeypatch.setattr(watch, "wait_for_start_permission", gate)
     monkeypatch.setattr(watch, "wait_for_changes", stop)
     monkeypatch.setattr(update_module, "resolve_dotfiles_root", lambda: None)
-    monkeypatch.setattr("agent_toolkit.atk._agents_manager.AgentsServerManager", lambda: manager)
+    monkeypatch.setattr("agent_toolkit.atk._agents_manager.AgentsServerManager", lambda **_kwargs: manager)
     with pytest.raises(SystemExit, match="0"):
         atk.main(["wi", "process-loop", "--no-update", "--no-alerts", "all-repos"], home=tmp_path)
     assert [targets for targets, _gate in gates] == [{repositories[0].repo_id}, {repositories[1].repo_id}]

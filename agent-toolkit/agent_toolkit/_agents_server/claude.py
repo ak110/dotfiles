@@ -28,6 +28,7 @@ from agent_toolkit._agents_server import (
     result_projection,
     resume_waits,
     session_errors,
+    session_identity,
     wait_output_tracking,
 )
 from agent_toolkit._agents_server import plugin_root as plugin_roots
@@ -495,6 +496,7 @@ class ClaudeServerManager:
         publish_registry: bool = False,
         *,
         root_session_id: str | None = None,
+        validate_session_id: session_identity.IdentityValidator | None = None,
     ) -> None:
         self.sessions = sessions if sessions is not None else {}
         self._condition = condition if condition is not None else asyncio.Condition()
@@ -502,6 +504,7 @@ class ClaudeServerManager:
         self._expire_session = expire_session or self._expire_local_session
         self._publish_registry = publish_registry
         self._root_session_id = root_session_id
+        self._validate_session_id = validate_session_id or session_identity.identity_validator(self.sessions, root_session_id)
         self._tasks: set[asyncio.Task[Any]] = set()
         self._task_sessions: dict[asyncio.Task[Any], str] = {}
         self._channels: dict[str, _CommandChannel] = {}
@@ -549,7 +552,7 @@ class ClaudeServerManager:
                 )
                 session.claude_connection_diagnostics = choices.warnings
                 return session
-            except SessionInitializationTimeoutError:
+            except SessionInitializationTimeoutError, session_identity.DuplicateSessionIdentityError:
                 raise
             except (OSError, ValueError, RuntimeError) as error:
                 if connection.kind == "inherit":
@@ -924,6 +927,7 @@ class ClaudeServerManager:
                             # 状態は同IDをinitからしか取得できないため、最初の有効なinitで生成し、
                             # turnごとにinitが再送されても再生成しない。
                             if session is None:
+                                self._validate_session_id(session_id, expected_session_id)
                                 diagnostic.stage = "initialized"
                                 _LOG.info("Claude session初期化完了: diagnostic=%s", diagnostic.public())
                                 session = existing_session or SessionState(

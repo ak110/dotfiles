@@ -10,6 +10,37 @@ H2見出しは索引元の条文が指す文字列と一致させる。索引元
 H2見出しは`<索引元のパス>：<節名>：<日付>`の形で書き、索引元のパスを持たない記録は`<題名>：<日付>`とする。同じ見出しが重なる場合は日付の後に「（1）」「（2）」を付ける。
 H2は索引元のパスの文字コード順に並べ、同じパスでは日付の昇順とする。パスを持たない記録はパスを持つ記録の後に題名の文字コード順で置き、同じ題名では日付の昇順とする。日を持たない日付（`2026年8月`など）はその月の最初に置く。記録を追加するときは、この並び順の位置へ置く。
 
+## .claude/skills/agent-toolkit-edit/references/agents-server-shared-state.md：実行主体：2026年10月18日
+
+会話contextの継承に関する2026年10月16日の調査記録と、2026年10月18日の実stdio MCPでの変更前後の観測を分けて示す。
+元の調査の一次記録と今回の観測JSON・標準エラー・実行スクリプトは、リポジトリ外に保持する。
+
+2026年10月16日の調査記録は、Claude Code 2.1.301のstdio MCP起動処理が自身の環境と`CLAUDE_CODE_SESSION_ID`を渡すことを本体で確認している。
+同記録によると、Claude Agent SDK 0.2.165は`os.environ`から`CLAUDECODE`だけを除き、`options.env`を上書きで合成する。
+クラウド実行環境の委譲先でremote変数の継承と識別子の重複が観測され、最小環境の対照実験でもremote sessionを表す変数群を加えた2回の起動が同じ識別子になった。
+この調査では`CLAUDE_CODE_POST_FOR_SESSION_INGRESS_V2`との単独の切り分けを実施していない。
+2026年10月18日の観測は実MCPへ環境を明示して起動しており、ホスト自身によるstdio環境の注入は直接再観測していない。
+
+今回の実MCP観測はClaude Code 2.1.302、Claude Agent SDK 0.2.165で行った。
+`agents_server_mcp.py`をstdioで起動し、初期化とツール一覧取得の後、Claude engineの`start`を2件並行して呼び出した。
+変更前後で専用の状態名前空間を分離し、次の変数を同じ条件で与えた。
+
+- `CLAUDE_CODE_SESSION_ID`: 起動ごとの任意のUUID
+- `CLAUDE_CODE_REMOTE`: `true`
+- `CLAUDE_CODE_REMOTE_SESSION_ID`: `cse_`で始まる検証用の値
+- `CLAUDE_CODE_POST_FOR_SESSION_INGRESS_V2`: `true`
+
+変更前は2件の起動応答が同じ識別子を返し、`atk agents wait --root-session-id <応答のroot_session_id>`は終端1件を回収して終了コード0だった。
+変更後は2件の識別子が互いと親の識別子から分かれ、回収前の`show`は両方で`result_available=true`を返した。
+同じCLIで終端2件を回収し、終了コード0を得た。
+両観測ともstdio接続を閉じてMCPの終了を確認した。
+
+再検証では専用の状態ディレクトリを使い、上記の変数を与えた実MCPへ2件の並行`start`を送る。
+起動応答の識別子を互いと親について比較し、終端時の`show`とCLIによる回収件数・終了コードを記録する。
+変更前の版でも同じ条件で実行し、識別子の重複と回収1件を対照にする。
+環境除去の単体検証は`_common/mcp_environment_test.py`と`_atk/orchestrator_test.py`を使う。
+全backendの登録前の重複拒否は`_agents_server/manager_test.py`の`test_start_rejects_duplicate_session_id`で再検証する。
+
 ## .claude/skills/dotfiles-development/references/verification-values.md：変更範囲の検証の値：2026年10月4日
 
 pyfltr 3.20.0の`pytest-fast-targets`へ`*_invariant_test.py`を指定した。指定した時点では横断テストをpytestのマーカー`repo_invariant`でも識別しており、マーカーでの収集と専用ファイルだけの収集は、ファイル名を除いた各nodeの多重集合が一致し、両側とも130件だった。クラス内の字下げされたマーカー1件も比較で検出して分離した。その後、fastがマーカーを選択に使わないため、マーカーを撤去してファイル名だけで識別する形にした。撤去後の確認では、fastのpytestが受け取ったファイルは33件で、`git ls-files`が返す`*_invariant_test.py`の33件と一致した。

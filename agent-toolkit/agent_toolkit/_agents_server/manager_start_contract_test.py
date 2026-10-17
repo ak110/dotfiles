@@ -425,11 +425,12 @@ async def test_task_start_delivers_launcher_record_without_manual_input(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, engine: str, record_count: int
 ) -> None:
     """公開taskが直接の委譲元情報と、記録の一意性を起動本文へ配送する。"""
+    monkeypatch.setenv("CODEX_THREAD_ID", "direct-parent")
     current = manager.AgentsServerManager(None)
     backend = ObservedBackend(current.sessions, "claude")
     agents_server_support.install_backend(current, "claude", backend)
     monkeypatch.setattr(mcp_tools, "_MANAGER", current)
-    monkeypatch.setenv("CODEX_THREAD_ID", "direct-parent")
+    monkeypatch.delenv("CODEX_THREAD_ID")
     paths = tuple(tmp_path / f"record-{index}.jsonl" for index in range(record_count))
     for path in paths:
         path.write_text("{}\n", encoding="utf-8")

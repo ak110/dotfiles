@@ -32,6 +32,10 @@ from agent_toolkit._common.next_action import ActionableError
 _LOG = logging.getLogger("agent-toolkit.agents-server.mcp")
 
 
+class _RegistryResumeState(SessionResumeState):
+    """別プロセスの共有登録から復元し、照会時に鮮度確認を要する再開状態。"""
+
+
 def _terminal_turn_status(
     turns: Sequence[tuple[str, str]], turn_id: str | None
 ) -> Literal["completed", "failed", "interrupted"] | None:
@@ -62,6 +66,8 @@ class ManagerRegistry(responses.ManagerResponses):
         session = (
             self.sessions.get(session_id) or self.expired_sessions.get(session_id) or self.stopped_sessions.get(session_id)
         )
+        if isinstance(session, SessionResumeState):
+            session = self._refresh_resume_state(session)
         running_action = (
             f"前任`{session_id}`の終端を`atk agents wait`で待つか、同じ前任へ`kill`で中断を要求して終端後に引き継ぐ"
         )
@@ -124,7 +130,33 @@ class ManagerRegistry(responses.ManagerResponses):
             and asyncio.get_running_loop().time() >= session.retention_deadline
         ):
             self._expire_session(session_id)
-        return self.expired_sessions.get(session_id)
+        resume_state = self.expired_sessions.get(session_id)
+        return self._refresh_resume_state(resume_state) if resume_state is not None else None
+
+    def _refresh_resume_state(self, resume_state: SessionResumeState) -> SessionResumeState:
+        """共有登録の現在turnを確認し、退避した終端を現在状態として使えるか判定する。"""
+        if (
+            not isinstance(resume_state, _RegistryResumeState)
+            or resume_state.session_id in self.sessions
+            or resume_state.session_id in self._pending_resumes
+        ):
+            return resume_state
+        resolution = session_registry.resolve(resume_state.session_id)
+        if resolution.state is session_registry.Resolution.RUNNING:
+            raise ActionableError(
+                f"error.recovery=turn_unobserved: {resume_state.session_id}",
+                next_action="そのsessionを起動したroot sessionで`atk agents wait`を実行して終端を観測する",
+            )
+        info = resolution.resume_info
+        if info is not None and (
+            info.turn_seq != resume_state.turn_seq or info.status != resume_state.status or resume_state.finalized_at is None
+        ):
+            self.stopped_sessions.pop(resume_state.session_id, None)
+            self.expired_sessions.pop(resume_state.session_id, None)
+            restored = self._restore_registry_session(resume_state.session_id, resolution=resolution)
+            if restored is not None:
+                return restored
+        return resume_state
 
     def _expired_result_response(self, session_id: str, *, collector: str) -> dict[str, Any] | None:
         """期限切れsessionの未回収結果を1回だけ返す。"""
@@ -148,6 +180,7 @@ class ManagerRegistry(responses.ManagerResponses):
         resume_state = self.stopped_sessions.get(session_id)
         if resume_state is None:
             return None
+        resume_state = self._refresh_resume_state(resume_state)
         if (
             not resume_state.result_delivered
             and resume_state.finalized_at is not None
@@ -242,8 +275,12 @@ class ManagerRegistry(responses.ManagerResponses):
         `resolution`は、呼び出し元が同じ識別子を既に解決している場合に渡す。
         登録簿のファイル読取を1回の照会へ収めるための入力であり、省略時は自ら解決する。
         """
-        if session_id in self.sessions or session_id in self.stopped_sessions or session_id in self.expired_sessions:
+        if session_id in self.sessions:
             return None
+        cached = self.stopped_sessions.get(session_id) or self.expired_sessions.get(session_id)
+        if cached is not None:
+            refreshed = self._refresh_resume_state(cached)
+            return refreshed if refreshed is not cached else None
         if resolution is None:
             resolution = session_registry.resolve(session_id)
         if resolution.state is session_registry.Resolution.RUNNING:
@@ -273,11 +310,14 @@ class ManagerRegistry(responses.ManagerResponses):
                 ),
             )
         persisted_result = self._status_writer.read_result(session_id) if self._status_writer is not None else None
+        if persisted_result is not None and persisted_result["turn_seq"] != info.turn_seq:
+            # 過去turnの未回収結果は共有ファイルへ残し、現在turnの状態とは分けて扱う。
+            persisted_result = None
         # 実行プロセスの不在から中断と解決した記録は、結果ファイルを持たなくても終了の理由を`show`へ返す。
         registry_error = (
             session_registry.interruption_error(resolution.interruption) if resolution.interruption is not None else None
         )
-        resume_state = SessionResumeState(
+        resume_state = _RegistryResumeState(
             session_id=session_id,
             cwd=info.cwd,
             model=info.model,
@@ -363,14 +403,18 @@ class ManagerRegistry(responses.ManagerResponses):
                     self._listed_session(session, status="running", progress="", result_available=False),
                 ),
             )
-        for session in self.expired_sessions.values():
+        for previous in tuple(self.expired_sessions.values()):
+            try:
+                session = self._refresh_resume_state(previous)
+            except ActionableError:
+                continue
             listed.setdefault(
                 session.session_id,
                 (
                     session.started_at,
                     self._listed_session(
                         session,
-                        status="expired",
+                        status="expired" if session.session_id in self.expired_sessions else session.status,
                         progress="",
                         result_available=has_uncollected_result(
                             session,
@@ -381,7 +425,11 @@ class ManagerRegistry(responses.ManagerResponses):
                     ),
                 ),
             )
-        for session in self.stopped_sessions.values():
+        for previous in tuple(self.stopped_sessions.values()):
+            try:
+                session = self._refresh_resume_state(previous)
+            except ActionableError:
+                continue
             if session_registry.resolve(session.session_id).state is not session_registry.Resolution.TERMINAL:
                 continue
             listed.setdefault(
@@ -432,6 +480,8 @@ class ManagerRegistry(responses.ManagerResponses):
             session = self._pending_resumes[session_id].state
         if session is None:
             session = self.expired_sessions.get(session_id) or self.stopped_sessions.get(session_id)
+            if session is not None:
+                session = self._refresh_resume_state(session)
         if session is None:
             resolution = session_registry.resolve(session_id)
             if resolution.state is session_registry.Resolution.RUNNING:

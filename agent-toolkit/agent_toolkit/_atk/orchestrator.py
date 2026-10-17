@@ -25,6 +25,7 @@ from agent_toolkit._common import console_title as _console_title
 from agent_toolkit._common import delegated_session as _delegated_session
 from agent_toolkit._common import host_homes as _host_homes
 from agent_toolkit._common import inherited_venv as _inherited_venv
+from agent_toolkit._common import mcp_environment as _mcp_environment
 from agent_toolkit._common import next_action as _next_action
 
 PROCESS_LOOP_SESSION_ENV = "AGENT_TOOLKIT_PROCESS_LOOP_SESSION"
@@ -95,9 +96,10 @@ class NoAvailableCandidateError(Exception):
 
 
 def child_env(*, drop: Iterable[str] = ()) -> dict[str, str]:
-    """起動元ツールの仮想環境と`drop`の環境変数を除いた子プロセス用の環境変数を返す。"""
+    """起動元の仮想環境・会話contextと`drop`の環境変数を除いた新しい会話の環境を返す。"""
     env = os.environ.copy()
     _inherited_venv.strip_inherited_venv(env)
+    _mcp_environment.strip_conversation_context(env)
     for name in drop:
         env.pop(name, None)
     return env

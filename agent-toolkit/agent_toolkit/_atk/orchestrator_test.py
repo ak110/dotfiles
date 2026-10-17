@@ -9,6 +9,23 @@ import types
 import pytest
 
 from agent_toolkit._atk import orchestrator
+from agent_toolkit._common import mcp_environment
+
+
+def test_child_env_strips_conversation_context_and_preserves_explicit_session_values(monkeypatch: pytest.MonkeyPatch) -> None:
+    """全起動で親contextを除き、接続設定と除去後に指定する委譲印を維持する。"""
+    for name in mcp_environment._NON_INHERITABLE_NAMES:  # pylint: disable=protected-access
+        monkeypatch.setenv(name.upper(), "parent")
+    monkeypatch.setenv("ANTHROPIC_AUTH_TOKEN", "test-token")
+    monkeypatch.setenv("DROP_SETTING", "remove")
+    environment = orchestrator.child_env(drop=("DROP_SETTING",))
+    assert not {name.casefold() for name in environment} & mcp_environment._NON_INHERITABLE_NAMES  # pylint: disable=protected-access
+    assert environment["ANTHROPIC_AUTH_TOKEN"] == "test-token"
+    assert "DROP_SETTING" not in environment
+    environment["AGENT_TOOLKIT_DELEGATED_SESSION"] = "1"
+    session = orchestrator.session_env(environment, "claude")
+    assert session["AGENT_TOOLKIT_DELEGATED_SESSION"] == "1"
+    assert session["CLAUDE_CODE_RETRY_WATCHDOG"] == "1"
 
 
 @pytest.mark.parametrize("mode", ["fallback", "retry", "failure", "earliest"])

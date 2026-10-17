@@ -469,7 +469,7 @@ def test_enter_releases_start_wait(
         target = repositories[0].repo_id
         manager = all_repos_test._Manager()  # pylint: disable=protected-access  # noqa: SLF001
         monkeypatch.setattr(_pl_update, "resolve_dotfiles_root", lambda: None)
-        monkeypatch.setattr("agent_toolkit.atk._agents_manager.AgentsServerManager", lambda: manager)
+        monkeypatch.setattr("agent_toolkit.atk._agents_manager.AgentsServerManager", lambda **_kwargs: manager)
         launched = manager.started.copy
         command = ["wi", "process-loop", "--no-update", "--no-alerts", "all-repos"]
     _start_entry(notes, "ready.md", repo=target, kind="awi")

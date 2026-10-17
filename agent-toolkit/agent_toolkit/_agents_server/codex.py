@@ -31,6 +31,7 @@ from agent_toolkit._agents_server import (
     result_projection,
     resume_waits,
     session_errors,
+    session_identity,
     shared_roots,  # pylint: disable=wrong-import-position
     wait_output_tracking,
 )
@@ -621,6 +622,7 @@ class AppServerManager:
         publish_registry: bool = False,
         *,
         root_session_id: str | None = None,
+        validate_session_id: session_identity.IdentityValidator | None = None,
     ) -> None:
         self._clients: dict[str, JsonRpcProcess] = {}
         """委譲session（親thread）の識別子から、そのsessionが所有するApp Server接続への対応。"""
@@ -628,6 +630,7 @@ class AppServerManager:
         self._condition = condition if condition is not None else asyncio.Condition()
         self._publish_registry = publish_registry
         self._root_session_id = root_session_id
+        self._validate_session_id = validate_session_id or session_identity.identity_validator(self.sessions, root_session_id)
         self._lock = asyncio.Lock()
         self._background_tasks: set[asyncio.Task[None]] = set()
         self._writer_session_ids: dict[str, str] = {}
@@ -837,6 +840,7 @@ class AppServerManager:
                 client, cwd, model, launch_kind
             )
             session_id = thread_response["thread"]["id"]
+            self._validate_session_id(session_id, None)
             if owner_session_id is not None and writer_session_id is not None:
                 await run_file_operation(shared_roots.write_host_alias, owner_session_id, writer_session_id, session_id)
         except BaseException:
@@ -1040,8 +1044,10 @@ class AppServerManager:
             await self._cancel_resume(session)
         except Exception as exc:
             if self._turn_start_response_is_ambiguous(client, exc):
+                prompt.record_delivery("reply_ambiguous")
                 await self._mark_turn_start_ambiguous(session, exc)
             else:
+                prompt.record_delivery("reply_failed")
                 await self._mark_failed(session, exc, retryable=False)
         await session.drain_registration()
         return session

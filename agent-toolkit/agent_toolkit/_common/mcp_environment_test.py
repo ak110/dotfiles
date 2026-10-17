@@ -130,3 +130,18 @@ def test_runtime_names_preserve_open_environment_and_exclude_parent_context(lowe
     environment = NamesOnly.fromkeys([*excluded, *retained], "synthetic-secret")
     assert set(mcp_environment.runtime_environment_variable_names(environment)) == set(retained)
     assert not mcp_environment.runtime_environment_variable_names({})
+
+
+@pytest.mark.parametrize("lowercase", [False, True])
+def test_strip_conversation_context_preserves_connection_environment(lowercase: bool) -> None:
+    """会話contextの共通集合だけを除き、inherit接続とproxy・保存先を維持する。"""
+    excluded = {name if lowercase else name.upper(): "parent" for name in mcp_environment._NON_INHERITABLE_NAMES}  # pylint: disable=protected-access
+    retained = {
+        "ANTHROPIC_AUTH_TOKEN": "test-token",
+        "ANTHROPIC_BASE_URL": "https://example.invalid",
+        "HTTPS_PROXY": "http://proxy.invalid",
+        "CODEX_HOME": "/test/codex",
+    }
+    environment = {**excluded, **retained}
+    mcp_environment.strip_conversation_context(environment)
+    assert environment == retained
