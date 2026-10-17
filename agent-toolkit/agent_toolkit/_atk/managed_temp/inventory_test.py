@@ -166,16 +166,17 @@ def test_cleanup_closes_scandir_after_snapshot_failure(monkeypatch: pytest.Monke
     iterators: list[typing.Any] = []
     original_scandir = os.scandir
     original_lstat = pathlib.Path.lstat
-    target_inode = target.stat().st_ino
+    target_metadata = target.stat()
 
     def record_scandir(path: typing.Any, **kwargs: typing.Any) -> typing.Any:
         iterator = original_scandir(path, **kwargs)
-        if path == target or isinstance(path, int) and os.fstat(path).st_ino == target_inode:
+        # Windowsの拡張パスとPOSIXのdescriptorを、領域自身のidentityで対応付ける。
+        if os.path.samestat(os.stat(path), target_metadata):
             iterators.append(iterator)
         return iterator
 
     def reject_metadata(path: pathlib.Path, **kwargs: typing.Any) -> os.stat_result:
-        if reject and iterators and path.parent == target:
+        if reject and iterators and path.parent.samefile(target):
             raise OSError("走査中のmetadata取得拒否")
         return original_lstat(path, **kwargs)
 
