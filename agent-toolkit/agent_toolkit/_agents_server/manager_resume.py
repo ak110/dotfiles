@@ -367,6 +367,8 @@ class ManagerResume(manager_registry.ManagerRegistry):
                 codex_model_provider=resume_state.codex_model_provider,
                 codex_subscription_provider=resume_state.codex_subscription_provider,
                 claude_api_env_file=resume_state.claude_api_env_file,
+                claude_connection=resume_state.claude_connection,
+                claude_role=resume_state.claude_role,
                 launch_kind=resume_state.launch_kind,
                 excluded_candidates=resume_state.excluded_candidates,
                 announced=True,

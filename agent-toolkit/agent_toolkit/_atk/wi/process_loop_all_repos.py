@@ -99,6 +99,7 @@ async def _launch_repository(
             session_id = resume_id
         else:
             response = await manager.start(
+                # 起動手段にかかわらず、用途からClaude接続の役割を決める。
                 "orchestrate",
                 prompt,
                 str(repository.worktree),

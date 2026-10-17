@@ -11,6 +11,7 @@ import time
 import uuid
 from collections.abc import Callable
 
+from agent_toolkit._atk import claude_connection as _connection
 from agent_toolkit._atk import lane as _lane
 from agent_toolkit._atk import orchestrator as _orchestrator
 from agent_toolkit._atk.wi import listing as _listing
@@ -21,10 +22,12 @@ from agent_toolkit._atk.wi import process_loop_ownership as _ownership
 from agent_toolkit._atk.wi import process_loop_update as _pl_update
 from agent_toolkit._atk.wi.constants import PROCESS_WI_GOAL_BODY
 from agent_toolkit._common import automated_prompt as _automated_prompt
+from agent_toolkit._common import claude_connection as _claude_settings
 from agent_toolkit._common import codex_usage_limit as _codex_usage_limit
 from agent_toolkit._common import console_title as _console_title
 from agent_toolkit._common import host_homes as _host_homes
 from agent_toolkit._common import next_action as _next_action
+from agent_toolkit._common import session_registry as _registry
 
 # モデル可用性だけを確認し、作業の副作用を生じさせない事前起動の固定プロンプト。
 # 受領した委譲先がユーザー自身の発話と区別できるよう、`atk-auto`要素で囲んで渡す。
@@ -128,11 +131,24 @@ def _record_usage_limit_wait(candidate: str, usage_limit: _orchestrator.UsageLim
 
 
 def select_available_orchestrator(
-    candidates: list[tuple[str, str, str]], env: dict[str, str], cwd: pathlib.Path
+    candidates: list[tuple[str, str, str]],
+    env: dict[str, str],
+    cwd: pathlib.Path,
+    *,
+    resume_session_id: str | None = None,
 ) -> tuple[str, str, str]:
     """候補を先頭から事前に試し、最初に可用な3つ組を返す。全候補が失敗した場合は異常終了する。"""
+    info = _registry.resolve(resume_session_id).resume_info if resume_session_id else None
+    selected = (
+        _connection.Connection(info.claude_connection or "api", info.claude_api_env_file)
+        if info is not None and (info.claude_api_env_file or info.claude_connection)
+        else None
+    )
     context = _orchestrator.ProbeContext(
-        title="atk wi process-loop", prompt=_AVAILABILITY_PROBE_PROMPT, record_wait=_record_usage_limit_wait
+        title="atk wi process-loop",
+        prompt=_AVAILABILITY_PROBE_PROMPT,
+        record_wait=_record_usage_limit_wait,
+        claude_connection=selected,
     )
     try:
         return _orchestrator.select_available(candidates, env, cwd, context)
@@ -150,10 +166,31 @@ def _build_session_argv(
     model: str,
     effort: str,
     resume_pending: bool,
+    cwd: pathlib.Path,
 ) -> tuple[list[str], pathlib.Path | None]:
     """選択したオーケストレーターの対話セッション用argvを構築する。"""
     env.pop(_pl_env.PROCESS_LOOP_SESSION_ID_ENV, None)
     if orchestrator == "claude":
+        info = _registry.resolve(args.resume).resume_info if resume_pending and args.resume else None
+        if info is not None and (info.claude_api_env_file or info.claude_connection):
+            connection = _connection.Connection(info.claude_connection or "api", info.claude_api_env_file)
+        else:
+            choices = _connection.candidates("orchestrator", env=env)
+            for diagnostic in choices.warnings:
+                print(diagnostic, file=sys.stderr)
+            connection = choices.require_first()
+        prepared = _connection.connection_environment(env, connection)
+        # 対話起動は未承認の環境APIキーで確認画面を表示するため、helperから取得する。
+        prepared.pop("ANTHROPIC_API_KEY", None)
+        env.clear()
+        env.update(prepared)
+        settings = _claude_settings.merge_settings(
+            _pl_env.dialog_timeout_settings(),
+            {key: prepared[key] for key in _connection.AUTH_ENV if key in prepared},
+            None,
+            force_file=bool(connection.api_env_file),
+            key_helper_command=_claude_settings.api_key_helper(connection.api_env_file) if connection.api_env_file else None,
+        )
         hook_debug_log = _pl_env.create_hook_debug_log(env)
         argv = [
             "claude",
@@ -161,7 +198,7 @@ def _build_session_argv(
             "--debug-file",
             str(hook_debug_log),
             "--settings",
-            _pl_env.dialog_timeout_settings(),
+            settings,
         ]
         if resume_pending:
             argv.extend(("--model", model, "--effort", effort))
@@ -173,6 +210,20 @@ def _build_session_argv(
             env[_pl_env.PROCESS_LOOP_SESSION_ID_ENV] = session_id
             argv.extend(("--session-id", session_id))
             argv.extend(("--permission-mode=auto", "--model", model, "--effort", effort, prompt))
+        if identifier := env.get(_pl_env.PROCESS_LOOP_SESSION_ID_ENV):
+            _registry.publish(
+                identifier,
+                terminal=False,
+                engine="claude",
+                cwd=str(cwd),
+                model=model,
+                effort=effort,
+                model_type="orchestrate",
+                claude_api_env_file=connection.api_env_file,
+                claude_connection=connection.kind,
+                claude_role="orchestrator",
+                processes=tuple(value for value in (_registry.owner_process(),) if value is not None),
+            )
         return argv, hook_debug_log
 
     argv = ["codex"]
@@ -230,6 +281,7 @@ def _run_process_session(
         model=model,
         effort=effort,
         resume_pending=resume_pending,
+        cwd=session_path,
     )
     if hook_debug_log is not None:
         print(f"Claude hook診断ログ: {hook_debug_log}")
@@ -258,6 +310,26 @@ def _run_process_session(
     except OSError as error:
         _process_loop_log.append("session_launch_failed", error=type(error).__name__, detail=str(error))
         raise
+    finally:
+        for argument in session_argv:
+            if isinstance(argument, _claude_settings.SettingsFile):
+                argument.cleanup()
+    if orchestrator == "claude" and (identifier := env.get(_pl_env.PROCESS_LOOP_SESSION_ID_ENV)):
+        info = _registry.resolve(identifier).resume_info
+        if info is not None:
+            _registry.publish(
+                identifier,
+                terminal=True,
+                engine="claude",
+                cwd=str(session_path),
+                model=model,
+                effort=effort,
+                model_type="orchestrate",
+                claude_api_env_file=info.claude_api_env_file,
+                claude_connection=info.claude_connection,
+                claude_role="orchestrator",
+                status="completed" if result.returncode == 0 else "interrupted",
+            )
     cleanup = _lane.cleanup_session(lane_session_id)
     _process_loop_log.append("lane_cleanup", **cleanup)
     if cleanup["retained"]:

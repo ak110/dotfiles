@@ -72,6 +72,127 @@ from agent_toolkit._testing.helpers import delivery_payload
 pytestmark = pytest.mark.usefixtures("agents_server_isolation")
 
 
+@pytest.mark.parametrize("mode,api_first", [("pay-as-you-go", False), ("api-credits", True)])
+@pytest.mark.parametrize("unavailable", [False, True])
+@pytest.mark.asyncio
+async def test_delegate_candidate_order_follows_mode(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    mode: str,
+    api_first: bool,
+    unavailable: bool,
+) -> None:
+    """新規起動と継続・冷再開でモード順と選択済み接続を維持する。"""
+    path = tmp_path / "api.env"
+    path.write_text("ANTHROPIC_API_KEY=test-api-key\n", encoding="utf-8")
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CLAUDE_API_ENV_FILE", str(path))
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CLAUDE_API_MODE", mode)
+    options_seen: list[Any] = []
+
+    def factory(options: Any) -> FakeClaudeClient:
+        options_seen.append(options)
+        if unavailable and len(options_seen) == 1:
+            raise ConnectionError("起動前認証を利用できない")
+        return FakeClaudeClient(
+            [
+                [SystemMessage(options.resume or "candidate-order"), AssistantMessage("応答"), ResultMessage("完了")],
+                [AssistantMessage("追送"), ResultMessage("継続完了")],
+            ]
+        )
+
+    manager = server_manager.AgentsServerManager()
+    backend = claude_backend.ClaudeServerManager(manager.sessions, client_factory=factory, publish_registry=True)
+    install_backend(manager, "claude", backend)
+    try:
+        started = await manager.start("claude:sonnet/high", "作業", str(tmp_path))
+        assert (await _wait_until_terminal(manager))["status"] == "completed"
+        assert bool(options_seen[0].env.get("ANTHROPIC_API_KEY")) is api_first
+        monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CLAUDE_API_MODE", "pay-as-you-go" if api_first else "api-credits")
+        await manager.send_message(started["session_id"], "継続")
+        assert (await _wait_until_terminal(manager))["status"] == "completed"
+        await manager.stop(started["session_id"])
+        await manager.send_message(started["session_id"], "再開")
+        assert (await _wait_until_terminal(manager))["status"] == "completed"
+        assert bool(options_seen[-1].env.get("ANTHROPIC_API_KEY")) is (not api_first if unavailable else api_first)
+        assert options_seen[-1].resume == started["session_id"]
+        assert options_seen[-1].model == "sonnet" and options_seen[-1].effort == "high"
+    finally:
+        await manager.close()
+
+
+@pytest.mark.asyncio
+async def test_single_api_connection_keeps_usage_limit_wait(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """API認証だけを持つ会話は残高不足の解除を待ち、接続先を変えない。"""
+    path = tmp_path / "api.env"
+    path.write_text("ANTHROPIC_API_KEY=test-api-key\n", encoding="utf-8")
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CLAUDE_API_ENV_FILE", str(path))
+    monkeypatch.delenv("CLAUDE_CODE_OAUTH_TOKEN", raising=False)
+    monkeypatch.setattr(server_manager, "START_AVAILABILITY_TIMEOUT", 0.01)
+    options_seen: list[Any] = []
+
+    def factory(options: Any) -> FakeClaudeClient:
+        options_seen.append(options)
+        return FakeClaudeClient([[SystemMessage("single-api"), ResultMessage("Credit balance is too low", is_error=True)]])
+
+    manager = server_manager.AgentsServerManager()
+    backend = claude_backend.ClaudeServerManager(manager.sessions, client_factory=factory)
+    install_backend(manager, "claude", backend)
+    try:
+        started = await manager.start("claude:sonnet/high", "作業", str(tmp_path))
+        assert started["status"] == "running"
+        shown = manager.show_session(started["session_id"])
+        assert shown["status"] == "running" and shown["result_held"]
+        assert len(options_seen) == 1 and options_seen[0].env["ANTHROPIC_API_KEY"] == "test-api-key"
+    finally:
+        await manager.close()
+
+
+@pytest.mark.asyncio
+async def test_api_credit_exhaustion_moves_to_subscription(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """API残高不足の同一会話をサブスクリプションで続け、停止後もその接続を保持する。"""
+    path = tmp_path / "api.env"
+    path.write_text("ANTHROPIC_API_KEY=test-api-key\n", encoding="utf-8")
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CLAUDE_API_ENV_FILE", str(path))
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CLAUDE_API_MODE", "api-credits")
+    monkeypatch.setattr(server_manager, "START_AVAILABILITY_TIMEOUT", 0.01)
+    options_seen: list[Any] = []
+
+    def factory(options: Any) -> FakeClaudeClient:
+        options_seen.append(options)
+        identifier = options.resume or f"credits-{len(options_seen)}"
+        if len(options_seen) == 1:
+            return FakeClaudeClient([[SystemMessage(identifier), ResultMessage("Credit balance is too low", is_error=True)]])
+        return FakeClaudeClient([[SystemMessage(identifier), AssistantMessage("再開"), ResultMessage("完了")]])
+
+    manager = server_manager.AgentsServerManager()
+    backend = claude_backend.ClaudeServerManager(manager.sessions, client_factory=factory, publish_registry=True)
+    install_backend(manager, "claude", backend)
+    try:
+        started = await manager.start("claude:sonnet/high", "作業", str(tmp_path))
+        assert (await _wait_until_terminal(manager))["status"] == "completed"
+        assert options_seen[0].env["ANTHROPIC_API_KEY"] == "test-api-key"
+        assert not options_seen[1].env.get("ANTHROPIC_API_KEY")
+        assert options_seen[1].resume == started["session_id"]
+        assert options_seen[1].model == "sonnet" and options_seen[1].effort == "high"
+        await manager.stop(started["session_id"])
+        await manager.send_message(started["session_id"], "残作業")
+        assert (await _wait_until_terminal(manager))["status"] == "completed"
+        assert not options_seen[-1].env.get("ANTHROPIC_API_KEY")
+        assert options_seen[-1].resume == started["session_id"]
+        fresh = await manager.start("claude:sonnet/high", "新規", str(tmp_path))
+        assert (await _wait_until_terminal(manager))["status"] == "completed"
+        assert fresh["session_id"] != started["session_id"]
+        assert options_seen[-1].env["ANTHROPIC_API_KEY"] == "test-api-key"
+    finally:
+        await manager.close()
+
+
 @pytest.mark.asyncio
 async def test_expired_explore_session_resumes_with_original_route_conditions(
     monkeypatch: pytest.MonkeyPatch,

@@ -16,7 +16,9 @@ import sys
 import time
 from collections.abc import Callable, Iterable
 
+from agent_toolkit._atk import claude_connection as _connection
 from agent_toolkit._atk import config as _config
+from agent_toolkit._common import claude_connection as _claude_settings
 from agent_toolkit._common import claude_usage_limit as _claude_usage_limit
 from agent_toolkit._common import codex_usage_limit as _codex_usage_limit
 from agent_toolkit._common import console_title as _console_title
@@ -67,6 +69,9 @@ class ProbeContext:
     省略時は経過を標準出力へ、失敗を次の操作とともに標準エラーへ書く。
     結果行だけを標準出力へ書くコマンドは、経過と失敗を自身のログへ送る。
     """
+
+    claude_connection: _connection.Connection | None = None
+    """process-loopの再開対象が既に選んだ接続。新規起動では役割別候補を解決する。"""
 
 
 def _notify(context: ProbeContext, message: str, next_action: str | None = None) -> None:
@@ -253,18 +258,36 @@ def _probe_candidate(
 
     解除待ちと候補切替の順序は呼び出し元がengine別に選ぶ。上限を返す場合は通常の失敗案内を省く。
     """
+    settings: str | None = None
     try:
+        probe_env = _probe_env(env, orchestrator)
+        probe_argv = _probe_argv(orchestrator, model, effort, context.prompt)
+        if orchestrator == "claude" and env.get(PROCESS_LOOP_SESSION_ENV):
+            connection = context.claude_connection
+            if connection is None:
+                choices = _connection.candidates("orchestrator", env=env)
+                for diagnostic in choices.warnings:
+                    _notify(context, diagnostic, "Claude接続設定を確認する")
+                connection = choices.require_first()
+            probe_env = _connection.connection_environment(probe_env, connection)
+            settings = _claude_settings.merge_settings(
+                None,
+                {key: probe_env[key] for key in _connection.AUTH_ENV if key in probe_env},
+                None,
+                force_file=bool(probe_env.get("ANTHROPIC_API_KEY") or probe_env.get("ANTHROPIC_AUTH_TOKEN")),
+            )
+            probe_argv[-1:-1] = ["--settings", settings]
         result = subprocess.run(
-            _probe_argv(orchestrator, model, effort, context.prompt),
+            probe_argv,
             check=False,
-            env=_probe_env(env, orchestrator),
+            env=probe_env,
             cwd=cwd,
             capture_output=True,
             text=True,
             encoding="utf-8",
             errors="replace",
         )
-    except OSError as error:
+    except (OSError, ValueError) as error:
         _console_title.set_console_title(context.title)
         _notify(
             context,
@@ -273,6 +296,9 @@ def _probe_candidate(
             "`atk config set <engine>_high_tier_model <モデル>`で候補を変える",
         )
         return None, (orchestrator, 1, f"engineを起動できません: {error}")
+    finally:
+        if isinstance(settings, _claude_settings.SettingsFile):
+            settings.cleanup()
     _console_title.set_console_title(context.title)
     ignored_effort = orchestrator == "claude" and _claude_ignored_effort(result.stderr)
     if result.returncode == 0 and not ignored_effort:

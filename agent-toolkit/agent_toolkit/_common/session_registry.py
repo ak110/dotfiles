@@ -177,6 +177,8 @@ class ResumeInfo:
     codex_model_provider: str | None = None
     codex_subscription_provider: str | None = None
     claude_api_env_file: str | None = None
+    claude_connection: str | None = None
+    claude_role: str | None = None
 
 
 @dataclasses.dataclass(frozen=True)
@@ -213,6 +215,8 @@ def publish(
     codex_model_provider: str | None = None,
     codex_subscription_provider: str | None = None,
     claude_api_env_file: str | None = None,
+    claude_connection: str | None = None,
+    claude_role: str | None = None,
     model_type: str | None = None,
     launch_kind: Literal["delegate", "explore", "shell", "write"] = "delegate",
     turn_seq: int = 0,
@@ -274,6 +278,9 @@ def publish(
         payload["codex_subscription_provider"] = codex_subscription_provider
     if engine == "claude" and claude_api_env_file:
         payload["claude_api_env_file"] = claude_api_env_file
+    if engine == "claude" and claude_connection:
+        payload["claude_connection"] = claude_connection
+        payload["claude_role"] = claude_role
     path = registry_directory(state_root) / f"{session_id}.json"
     launcher = launcher_session_id if launcher_session_id is not None else _recorded_launcher(path)
     if launcher is not None:
@@ -401,7 +408,7 @@ def release(session_id: str, *, reason: ReleaseReason, state_root: pathlib.Path 
             prior = {}
         # 初回解放のv2と、既に解放したv3の両方で同じ内部再開条件を引き継ぐ。
         payload["codex_resume_info"] = prior.get("codex_resume_info", prior)
-    if info is not None and info.engine == "claude" and info.claude_api_env_file:
+    if info is not None and info.engine == "claude" and (info.claude_api_env_file or info.claude_connection):
         prior = json.loads(path.read_text(encoding="utf-8"))
         payload["claude_resume_info"] = prior.get("claude_resume_info", prior)
     if launcher is not None:
@@ -457,4 +464,14 @@ def _resume_info(payload: dict[str, Any]) -> ResumeInfo | None:
         claude_api_env_file=payload.get("claude_api_env_file")
         if payload["engine"] == "claude" and isinstance(payload.get("claude_api_env_file"), str)
         else None,
+        claude_connection=payload.get("claude_connection")
+        if payload.get("claude_connection") in {"api", "subscription"}
+        else "api"
+        if payload.get("claude_api_env_file")
+        else None,
+        claude_role=payload.get("claude_role")
+        if payload.get("claude_role") in {"orchestrator", "delegate"}
+        else "orchestrator"
+        if payload.get("model_type") == "orchestrate"
+        else "delegate",
     )

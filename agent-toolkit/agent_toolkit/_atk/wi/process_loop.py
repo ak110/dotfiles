@@ -196,7 +196,10 @@ def cmd_process_loop(args: argparse.Namespace, private_notes: pathlib.Path) -> N
                             continue
                         session_path, session_prompt = prepared_target
                         orchestrator, model, effort = _pl_session.select_available_orchestrator(
-                            _pl_session.resolve_orchestrator_specs(), env, session_path
+                            _pl_session.resolve_orchestrator_specs(),
+                            env,
+                            session_path,
+                            resume_session_id=args.resume if current_resume_pending else None,
                         )
                         if count > 0:
                             print(f"{count}件のAWI/回答済みUWIを検知。{orchestrator}へ委譲します。")

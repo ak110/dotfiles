@@ -21,6 +21,49 @@ from agent_toolkit._testing.agents_server_support import (
 )
 
 
+@pytest.fixture(autouse=True)
+def _subscription_credentials(monkeypatch: pytest.MonkeyPatch) -> None:
+    """SDKダブルが持つサブスクリプション認証を起動環境にも明示する。"""
+    monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", "test-subscription")
+
+
+@pytest.mark.asyncio
+async def test_subscription_launch_drops_parent_api_auth(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """親環境・親settingsの両経路でAPI認証を遮断し、OAuth接続を保持する。"""
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "parent-key")
+    monkeypatch.setenv("ANTHROPIC_AUTH_TOKEN", "parent-token")
+    monkeypatch.setattr(
+        claude,
+        "_parent_settings",
+        lambda: json.dumps(
+            {
+                "env": {"ANTHROPIC_API_KEY": "settings-key", "ANTHROPIC_AUTH_TOKEN": "settings-token", "CUSTOM": "kept"},
+                "apiKeyHelper": "parent-helper",
+            }
+        ),
+    )
+    seen: list[Any] = []
+
+    def factory(options: Any) -> FakeClaudeClient:
+        seen.append(options)
+        return FakeClaudeClient([[SystemMessage("isolated-auth"), AssistantMessage("応答"), ResultMessage("完了")]])
+
+    backend = claude.ClaudeServerManager(client_factory=factory)
+    try:
+        await backend.start("作業", str(tmp_path))
+        options = seen[0]
+        assert not options.env.get("ANTHROPIC_API_KEY") and not options.env.get("ANTHROPIC_AUTH_TOKEN")
+        settings = json.loads(options.settings)
+        assert not settings["env"]["ANTHROPIC_API_KEY"] and not settings["env"]["ANTHROPIC_AUTH_TOKEN"]
+        assert settings["env"]["CUSTOM"] == "kept"
+        assert not settings["apiKeyHelper"]
+    finally:
+        await backend.close()
+
+
 @pytest.mark.asyncio
 @pytest.mark.parametrize("launch_kind", ["delegate", "explore", "shell", "write"])
 async def test_usage_limit_api_migration_and_cold_resume(

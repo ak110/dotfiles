@@ -261,6 +261,8 @@ class AgentsServerManager(manager_wait.ManagerWait):
                 "effort": effort,
             }
             response.update(state.fast_mode_fields(session.engine, session.fast_mode))
+            if session.claude_connection_diagnostics:
+                response["warnings"] = list(session.claude_connection_diagnostics)
             if excluded:
                 response["excluded_candidates"] = excluded_candidate_payload(excluded, excluded_session_ids)
             if self._status_writer is not None:

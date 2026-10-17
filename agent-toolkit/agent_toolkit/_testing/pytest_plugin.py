@@ -241,6 +241,7 @@ def _owner_session_environment(monkeypatch: pytest.MonkeyPatch) -> None:
 
 @pytest.fixture
 def agents_server_isolation(
+    monkeypatch: pytest.MonkeyPatch,
     _skip_plugin_preflight: None,
     _forbid_backend_process: None,
     _restore_session_listeners: None,
@@ -248,6 +249,7 @@ def agents_server_isolation(
     _immediate_wait_timeout: None,
 ) -> None:
     """agents_serverのmanagerとMCPツールのテストを、事前確認・子プロセス・共有リスナー・待機時間から切り離す。"""
+    monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", "test-subscription")
 
 
 @pytest.fixture(name="index_path")

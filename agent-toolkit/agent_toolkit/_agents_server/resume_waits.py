@@ -5,7 +5,6 @@ from __future__ import annotations
 import asyncio
 import dataclasses
 import logging
-import pathlib
 import time
 from collections.abc import Iterable
 from typing import Any
@@ -13,7 +12,8 @@ from typing import Any
 from agent_toolkit._agents_server import state
 from agent_toolkit._agents_server.result_projection import nonempty_error
 from agent_toolkit._agents_server.state import SessionState, utc_now
-from agent_toolkit._atk import config
+from agent_toolkit._atk import claude_connection
+from agent_toolkit._common import claude_usage_limit
 
 # Claude CodeのBashツールが背景実行へ許す実行時間の上限（ミリ秒を秒へ換算）。Claude Code 2.1.291の
 # Bashツールの入力スキーマは背景実行の`timeout`を「default 1800000, max 7200000」と説明し、上限に達した
@@ -221,28 +221,77 @@ def clear_usage_limit_wait(session: SessionState) -> None:
 
 
 def begin_usage_limit_wait(session: SessionState, result: dict[str, Any]) -> bool:
-    """対象の利用上限で失敗した結果を保留し、API移行または解除後の継続を予定する。
+    """利用枠・API残高・起動前認証の失敗を、次の接続または解除待ちへ進める。
 
     最後に報告された利用枠が待機の対象でなければ保留せずに連鎖を終えて偽を返し、呼び出し元は従来どおり扱う。
-    API未移行の会話にenvファイルが設定されていれば、その絶対パスだけを保持して即時の再開を予定する。
+    通常の委譲先は役割別の後続接続を選び、その接続とAPI環境ファイルの所在だけを保持して再開を予定する。
     解除待ちでは結果の`error.usageLimit`と`api_error`へ種類と解除予定時刻を記録し、状態の読者へ公開する。
     待機は`auto_resume_deadline`と`retention_deadline`の対象にせず、回数でも打ち切らない。
     """
     limit = session.usage_limit
-    if result.get("status") != "failed" or limit is None or not limit.is_wait_target:
+    credit_error = session.claude_api_env_file is not None and any(
+        marker in str(result.get("error", "")).casefold() + str(result.get("agent_message", "")).casefold()
+        for marker in (
+            "credit balance is too low",
+            "credit balance too low",
+            "billing_error",
+            "insufficient credits",
+            "usage limit",
+        )
+    )
+    failure = result.get("error")
+    startup_auth_error = (
+        not session.availability_checked
+        and isinstance(failure, dict)
+        and (
+            failure.get("apiErrorStatus") in {401, 403}
+            or any(marker in str(failure).casefold() for marker in ("authentication_error", "invalid_api_key", "not logged in"))
+        )
+    )
+    if result.get("status") != "failed" or not (
+        startup_auth_error or credit_error or limit is not None and limit.is_wait_target
+    ):
         clear_usage_limit_wait(session)
         return False
     original_error = result.get("error")
-    if session.claude_api_env_file is None and (path := config.resolve_mutable_setting("claude_api_env_file")):
-        session.claude_api_env_file = str(pathlib.Path(path).absolute())
+    role = session.claude_role or ("orchestrator" if session.model_type == "orchestrate" else "delegate")
+    choices = claude_connection.candidates(role)
+    current = session.claude_connection or ("api" if session.claude_api_env_file else "subscription")
+    session.claude_connection_failures[current] = str(original_error or result.get("agent_message") or "利用不能")
+    order = [connection.kind for connection in choices.connections]
+    following = choices.connections[order.index(current) + 1 :] if current in order else choices.connections
+    following = tuple(choice for choice in following if choice.kind not in session.claude_connection_failures)
+    if role == "delegate" and following:
+        selected = following[0]
+        session.claude_api_env_file = selected.api_env_file
+        session.claude_connection = selected.kind
+        session.claude_role = role
         session.claude_api_resume_pending = True
         session.pending_result = result
         session.awaiting_auto_resume = True
         session.auto_resume_deadline = None
         session.api_error = None
-        _LOG.info("claude_api_switch session_id=%s limit_type=%s", session.session_id, limit.limit_type)
+        _LOG.info("claude_api_switch session_id=%s limit_type=%s", session.session_id, limit.limit_type if limit else "credits")
         state.notify_touch_listeners()
         return True
+    if (
+        startup_auth_error
+        or not choices.connections
+        or credit_error
+        and role == "orchestrator"
+        or role == "delegate"
+        and len(order) > 1
+    ):
+        result["error"] = {
+            "message": "Claude接続候補が全て不成立。APIの残高とサブスクリプションの利用枠を確認する。"
+            + "; ".join(choices.diagnostics),
+            "cause": original_error,
+            "connectionFailures": dict(session.claude_connection_failures),
+        }
+        return False
+    if credit_error and limit is None:
+        limit = claude_usage_limit.UsageLimitState("rejected", "api_credits", None)
+    assert limit is not None
     error: dict[str, Any] = (
         dict(original_error)
         if isinstance(original_error, dict)

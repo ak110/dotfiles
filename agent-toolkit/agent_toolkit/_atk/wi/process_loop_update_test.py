@@ -178,6 +178,7 @@ _RESUME_ARGV_CASES = [
 @pytest.fixture(autouse=True)
 def _resolve_process_loop_commands(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
     """外部コマンド・Claude設定・managed-tempの登録簿をユーザー環境から分離する。"""
+    monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", "test-subscription")
     monkeypatch.setattr(_config.platformdirs, "user_config_dir", lambda _name, **_kwargs: str(tmp_path / "config"))
     setattr_in_managed_temp_modules(monkeypatch, "_state_root_path", lambda: tmp_path / "managed-temp-state")
     monkeypatch.setattr(shutil, "which", lambda command: f"/resolved/{command}")
@@ -252,7 +253,7 @@ class TestWaitLoopAutoRestart:
         monkeypatch.setattr(
             _pl_session,
             "select_available_orchestrator",
-            lambda candidates, _env, _cwd: candidates[0],
+            lambda candidates, _env, _cwd, **_kwargs: candidates[0],
         )
 
         wait_calls = {"n": 0}

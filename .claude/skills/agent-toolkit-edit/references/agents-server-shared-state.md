@@ -48,7 +48,7 @@ sessionの資源解放（`stop`、保持期限の経過、起動候補の断念�
 | --- | --- | --- | --- |
 | session一覧と`status`・`progress` | MCPサーバーのメモリーの`SessionState` | MCPサーバー | managerと、当該sessionのengineを所有するbackend。各backendは共有一覧から自身のengineだけを検索・状態遷移の対象とし、接続障害時も他engineを変更しない |
 | Codex会話の選択済みprovider IDと通常サブスクのprovider ID | `SessionState`、解放時の`SessionResumeState`と既存session登録簿の内部再開情報 | Codex backendとmanagerの復元処理。公開の状態・応答・通知・結果の射影は読まない | Codex backendが接続先を確定し、所有MCPサーバーが既存登録簿へ保存する。認証情報は保存しない |
-| APIへ移ったClaude会話のenvファイルの絶対パス | `SessionState.claude_api_env_file`、`SessionResumeState`とsession登録簿の内部再開情報 | Claude backendとmanagerの復元処理 | Claude backendが切替時に確定し、所有MCPサーバーが保存する。値は各起動でenvファイルから読み、登録簿と公開状態へ複製しない |
+| Claude会話の役割（`orchestrator`・`delegate`）、選択済みの接続（`api`・`subscription`）とAPI接続のenvファイルの絶対パス | `SessionState`の`claude_role`・`claude_connection`・`claude_api_env_file`、`SessionResumeState`とsession登録簿の内部再開情報 | Claude backend、managerの復元処理とprocess-loopの再開時の可用性判定 | 接続はClaude backendが起動時と接続の切替時に確定し、所有MCPサーバーが保存する。process-loopが直接起動するオーケストレーターは`process_loop_session.py`が自身の会話の役割と接続を登録する。再開は保存した接続を使い、新規sessionは`claude_api_mode`の候補順の先頭から選ぶ。envファイルの値は各起動で読み、登録簿と公開状態へ複製しない |
 | 引き継ぐ用途・配送済み追送・各turnの最終応答全文と終端エラー | `SessionState`、`SessionResumeState`とsession登録簿の`LaunchInfo`。解放済み記録では内部の`handoff_info` | managerの引き継ぎ起動と再開処理 | 所有MCPサーバーが起動・追送・終端時に更新し、解放時も既存登録簿へ保持する |
 | statusline・CLI向けの状態ファイル | `<状態ディレクトリ>/<ルートsession識別子>/<書込主体>.json` | statusline、`atk agents wait`、`atk agents list`、`atk agents show`、同じルートに属する他のMCPサーバー（稼働中の子孫を持つ終端sessionの表示判定）、全ルートを読む資源記録 | そのルートに属する各MCPサーバー。各MCPサーバーは自身のファイルだけを書く |
 | 書込主体からホストsessionへの索引 | `<状態ディレクトリ>/<ルートsession識別子>/hosts/<書込主体>.json` | 状態ファイルの`host_session_id`を委譲元のsession識別子へ解決する主体、PostToolUseフック、`atk agents wait` | そのsessionを起動したMCPサーバー |
@@ -127,8 +127,9 @@ ClaudeのAPI失敗が連続する間と、Codexの過負荷（`serverOverloaded`
 statuslineと`atk agents list`は`subagent.rs`の`format_tokens`と`context_usage.format_tokens`で同じ書式（小数1桁の`k`と整数の`%`）に描く。Rustのテストとリポジトリrootの`claude_statusline_invariant_test.py`が`rust/claude-statusline/testdata/agents_server_state.json`の同じ数値例を読む。
 
 Claude CodeのWeekly limitと5時間の利用上限の解除待ちもMCPサーバーの`SessionState`を正とする。Claudeが報告した最後の利用枠（`usage_limit`）はClaude backendが`RateLimitEvent`から記録し、初期化より前に届いた報告もsessionの作成時に引き継ぐ。turnが待機対象の拒否で終わると、Claude backendが結果を保留し、`api_error`へ種別`usage_limit`、利用枠の種類（`limit_type`）と解除予定時刻（`resets_at`）を記録する。次の継続の時刻と待機の回数はメモリーだけに置く。MCPサーバーの常駐監視が予定時刻に同じsessionへ継続を送り、正常なモデル出力で利用枠の記録と`api_error`を削除する。保留中の結果は`auto_resume_deadline`と保持期限の対象にしない。状態ファイルと`show`・`list`・CLIへは`limit_type`と`resets_at`を`api_error`の公開項目として射影する。
-`claude_api_env_file`が設定済みの場合は、同じ利用上限の契機で結果を保留し、`claude_api_resume_pending`を常駐監視が消費して同じsessionをAPI接続で再開する。
-この予定はメモリーだけに置き、接続先のパスだけを既存の内部再開情報へ保存する。移行後の会話は設定変更・解除や資源解放の後も保持したパスを使い、新規sessionは通常の接続から始める。
+委譲先の候補順は、`claude_api_mode`が`pay-as-you-go`ならサブスクリプション、APIの順、`api-credits`ならAPI、サブスクリプションの順とする。
+候補順に後続の接続が残る場合は、同じ利用上限かAPIクレジットの不足の契機で結果を保留し、`claude_api_resume_pending`を常駐監視が消費して同じsessionを後続の接続で再開する。
+この予定はメモリーだけに置き、選択した接続とAPI接続のパスを既存の内部再開情報へ保存する。移行後の会話は設定変更・解除や資源解放の後も保持した接続を使い、新規sessionは候補順の先頭から始める。
 切替のログはsession IDと利用枠の種類だけを記録し、envの値や切替の情報を公開応答と継続指示へ加えない。
 
 Codexの接続先選択順は`codex_model_providers`が持つ。先頭APIの不受理やサブスク利用上限で後続APIへ移す間も、既存の結果保留と監視を使う。空設定の会話は通常のCodex設定に従う。選択済みproviderは同じ会話の再開へ渡し、主接続先の設定変更と利用枠の回復は新規起動だけへ適用し、後続候補は次の代替試行で現行列から選ぶ。現在アカウントの利用可否は永続台帳へ記録せず、新規起動ごとにApp Serverへ照会する。人向けログへは候補の診断だけを記録する。接続先の設定とcold resumeの契約は`docs/guide/codex-guide.md`と`docs/development/design-agents-server.md`にある。

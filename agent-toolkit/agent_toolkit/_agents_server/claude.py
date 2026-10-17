@@ -367,8 +367,14 @@ def _build_options(
         options["extra_args"] = {"debug-file": str(debug_file)}
     if (cli_path := shutil.which("claude")) is not None:
         options["cli_path"] = cli_path
-    if api_env_file is not None:
+    from agent_toolkit._atk import claude_connection
+
+    # SDKは親環境へoptions.envを重ねるため、親にある接続変数は空値で遮断する。
+    env.update({key: "" for key in claude_connection.AUTH_ENV if key in os.environ})
+    if api_env_file:
         env.update(claude_settings.read_api_env_file(api_env_file))
+        env["CLAUDE_CODE_OAUTH_TOKEN"] = ""
+        env["CLAUDE_CODE_OAUTH_REFRESH_TOKEN"] = ""
     options["settings"] = claude_settings.merge_settings(
         _parent_settings(), env, root_session_id, force_file=api_env_file is not None
     )
@@ -518,17 +524,32 @@ class ClaudeServerManager:
         launch_kind: LaunchKind = "delegate",
         excluded_candidates: frozenset[ModelCandidate] = frozenset(),
     ) -> SessionState:
-        return await self._start_owned_task(
-            prompt,
-            cwd,
-            model,
-            effort,
-            session_id=None,
-            model_type=model_type,
-            launch_kind=launch_kind,
-            excluded_candidates=excluded_candidates,
-            turn_seq=1,
-        )
+        from agent_toolkit._atk import claude_connection
+
+        role = "orchestrator" if model_type == "orchestrate" else "delegate"
+        choices = claude_connection.candidates(role)
+        failures = list(choices.diagnostics)
+        for connection in choices.connections:
+            try:
+                session = await self._start_owned_task(
+                    prompt,
+                    cwd,
+                    model,
+                    effort,
+                    session_id=None,
+                    model_type=model_type,
+                    launch_kind=launch_kind,
+                    excluded_candidates=excluded_candidates,
+                    turn_seq=1,
+                    api_env_file=connection.api_env_file,
+                )
+                session.claude_connection_diagnostics = choices.warnings
+                return session
+            except SessionInitializationTimeoutError:
+                raise
+            except (OSError, ValueError, RuntimeError) as error:
+                failures.append(f"{connection.kind}: {type(error).__name__}: {error}。認証と利用枠を確認する")
+        raise RuntimeError("Claude接続候補が全て不成立: " + "; ".join(failures))
 
     async def resume(
         self,
@@ -904,7 +925,9 @@ class ClaudeServerManager:
                                     engine="claude",
                                     turn_seq=turn_seq,
                                     publish_registry=self._publish_registry,
-                                    claude_api_env_file=api_env_file,
+                                    claude_api_env_file=api_env_file or None,
+                                    claude_connection="api" if api_env_file else "subscription",
+                                    claude_role="orchestrator" if model_type == "orchestrate" else "delegate",
                                 )
                                 self.sessions[session_id] = session
                                 session.attach_executor(diagnostic.child_pid)

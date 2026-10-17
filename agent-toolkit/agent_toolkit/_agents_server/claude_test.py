@@ -21,7 +21,6 @@ from claude_agent_sdk import ToolResultBlock, UserMessage
 
 from agent_toolkit._agents_server import (
     claude,
-    claude_settings,
     launch_prompts,
     resume_waits,
     session_errors,
@@ -29,6 +28,7 @@ from agent_toolkit._agents_server import (
 )
 from agent_toolkit._agents_server import manager as server_manager
 from agent_toolkit._atk import config as _atk_config
+from agent_toolkit._common import claude_connection as claude_settings
 from agent_toolkit._common import plugin_environment, session_registry, state_paths
 from agent_toolkit._testing.agents_server_support import (
     AssistantMessage,
@@ -168,7 +168,8 @@ def test_build_options_inherits_parent_settings(
         assert value["env"]["OTHER"] == "secret-parent-value"
         assert value["disableAllHooks"] is True
     else:
-        assert set(value) == {"env"}
+        assert set(value) == {"env", "apiKeyHelper"}
+        assert not value["apiKeyHelper"]
     claude_settings.cleanup_settings(options)
     if isinstance(merged, claude_settings.SettingsFile):
         assert not pathlib.Path(merged).exists()
@@ -465,6 +466,7 @@ def test_initialization_diagnostic_lists_child_processes() -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.usefixtures("agents_server_isolation")
 async def test_start_aborts_when_init_message_never_arrives(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
@@ -1136,6 +1138,8 @@ async def test_claude_retention_expiry_disconnects_and_retains_result_record(
             model=None,
             effort=None,
             engine="claude",
+            claude_connection="subscription",
+            claude_role="delegate",
             label=session.label,
             created_at=session.created_at,
             started_at=session.started_at,
