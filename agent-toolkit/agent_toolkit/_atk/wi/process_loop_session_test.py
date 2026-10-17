@@ -98,6 +98,51 @@ def _connection_launch(
     return observed, settings
 
 
+@pytest.mark.parametrize("resume", [None, "inherit", "legacy"])
+def test_unconfigured_process_session_preserves_parent_auth(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, resume: str | None
+) -> None:
+    """未設定時とその会話の再開では、親のAPIキーと設定による通常の認証解決を保つ。"""
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CLAUDE_API_ENV_FILE", "")
+    monkeypatch.delenv("CLAUDE_CODE_OAUTH_TOKEN", raising=False)
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "parent-test-key")
+    monkeypatch.setenv("CLAUDE_CODE_USE_BEDROCK", "1")
+    if resume:
+        session_registry.publish(
+            resume,
+            terminal=True,
+            engine="claude",
+            cwd=str(tmp_path),
+            claude_connection="inherit" if resume == "inherit" else None,
+        )
+        path = tmp_path / "later.env"
+        path.write_text("ANTHROPIC_API_KEY=later-key\n", encoding="utf-8")
+        monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CLAUDE_API_ENV_FILE", str(path))
+    observed: dict[str, Any] = {}
+
+    def launch(argv: list[str], **kwargs: Any) -> subprocess.CompletedProcess[bytes]:
+        observed.update(env=kwargs["env"], settings=json.loads(argv[argv.index("--settings") + 1]))
+        return subprocess.CompletedProcess(argv, 0)
+
+    monkeypatch.setattr(subprocess, "run", launch)
+    monkeypatch.setattr(lane, "cleanup_session", lambda _session: {"retained": False})
+    _pl_session.run_process_session(
+        argparse.Namespace(resume=resume, no_update=True),
+        tmp_path,
+        "作業",
+        dict(os.environ),
+        orchestrator="claude",
+        model="sonnet",
+        effort="high",
+        resume_pending=resume is not None,
+        dotfiles_root=None,
+    )
+    assert observed["env"]["ANTHROPIC_API_KEY"] == "parent-test-key"
+    assert observed["env"]["CLAUDE_CODE_USE_BEDROCK"] == "1"
+    assert "apiKeyHelper" not in observed["settings"]
+    assert "ANTHROPIC_API_KEY" not in observed["settings"]["env"]
+
+
 @pytest.mark.parametrize("content", [None, "", "# 未記入\n"])
 def test_invalid_env_file_warning_reaches_process_loop_stderr(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], content: str | None

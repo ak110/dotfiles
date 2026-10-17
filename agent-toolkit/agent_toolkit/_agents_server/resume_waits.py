@@ -255,12 +255,22 @@ def begin_usage_limit_wait(session: SessionState, result: dict[str, Any]) -> boo
         return False
     original_error = result.get("error")
     role = session.claude_role or ("orchestrator" if session.model_type == "orchestrate" else "delegate")
-    choices = claude_connection.candidates(role)
-    current = session.claude_connection or ("api" if session.claude_api_env_file else "subscription")
+    current = session.claude_connection or ("api" if session.claude_api_env_file else "inherit")
+    if current == "inherit" and startup_auth_error:
+        return False
+    choices = (
+        claude_connection.Candidates((claude_connection.Connection("inherit"),))
+        if current == "inherit"
+        else claude_connection.candidates(role)
+    )
     session.claude_connection_failures[current] = str(original_error or result.get("agent_message") or "利用不能")
     order = [connection.kind for connection in choices.connections]
     following = choices.connections[order.index(current) + 1 :] if current in order else choices.connections
-    following = tuple(choice for choice in following if choice.kind not in session.claude_connection_failures)
+    following = tuple(
+        choice
+        for choice in following
+        if choice.kind != "inherit" and choice.kind not in session.claude_connection_failures and current != "inherit"
+    )
     if role == "delegate" and following:
         selected = following[0]
         session.claude_api_env_file = selected.api_env_file

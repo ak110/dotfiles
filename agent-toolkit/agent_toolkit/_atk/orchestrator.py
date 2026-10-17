@@ -272,9 +272,10 @@ def _probe_candidate(
             probe_env = _connection.connection_environment(probe_env, connection)
             settings = _claude_settings.merge_settings(
                 None,
-                {key: probe_env[key] for key in _connection.AUTH_ENV if key in probe_env},
+                {key: probe_env[key] for key in _connection.AUTH_ENV if key in probe_env and connection.kind != "inherit"},
                 None,
                 force_file=bool(probe_env.get("ANTHROPIC_API_KEY") or probe_env.get("ANTHROPIC_AUTH_TOKEN")),
+                isolate_auth=connection.kind != "inherit",
             )
             probe_argv[-1:-1] = ["--settings", settings]
         result = subprocess.run(

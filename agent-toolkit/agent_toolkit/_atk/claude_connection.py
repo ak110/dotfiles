@@ -37,8 +37,10 @@ class Candidates:
 
 def candidates(role: str, *, env: Mapping[str, str] | None = None) -> Candidates:
     """両認証があるときの役割別順序と、一方だけの環境での単独候補を返す。"""
-    mode = config.resolve_mutable_setting("claude_api_mode")
     raw_path = config.resolve_mutable_setting("claude_api_env_file")
+    if not raw_path:
+        return Candidates((Connection("inherit"),))
+    mode = config.resolve_mutable_setting("claude_api_mode")
     path = str(pathlib.Path(raw_path).absolute()) if raw_path else None
     diagnostic: list[str] = []
     api = False

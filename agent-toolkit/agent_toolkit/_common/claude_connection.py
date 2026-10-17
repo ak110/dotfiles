@@ -81,6 +81,7 @@ def merge_settings(
     *,
     force_file: bool = False,
     key_helper_command: str | None = None,
+    isolate_auth: bool = True,
 ) -> str:
     """親のJSONの意味を保ち、委譲先のenvを最後に適用する。
 
@@ -95,12 +96,17 @@ def merge_settings(
         value = {}
     settings = value if isinstance(value, dict) else {}
     inherited = settings.get("env")
-    settings["apiKeyHelper"] = ""
+    if isolate_auth:
+        settings["apiKeyHelper"] = ""
     if key_helper_command is not None:
         settings["apiKeyHelper"] = key_helper_command
     settings["env"] = {
-        **dict.fromkeys(AUTH_ENV, ""),
-        **({key: value for key, value in inherited.items() if key not in AUTH_ENV} if isinstance(inherited, dict) else {}),
+        **(dict.fromkeys(AUTH_ENV, "") if isolate_auth else {}),
+        **(
+            {key: value for key, value in inherited.items() if not isolate_auth or key not in AUTH_ENV}
+            if isinstance(inherited, dict)
+            else {}
+        ),
         **env,
     }
     content = json.dumps(settings, ensure_ascii=False)
@@ -178,6 +184,8 @@ def clean_environment(env: Mapping[str, str]) -> dict[str, str]:
 
 def connection_environment(env: Mapping[str, str], connection: Connection) -> dict[str, str]:
     """選択したAPIファイルだけを適用する。"""
+    if connection.kind == "inherit":
+        return dict(env)
     result = clean_environment(env)
     if connection.api_env_file:
         result.update(read_api_env_file(connection.api_env_file))

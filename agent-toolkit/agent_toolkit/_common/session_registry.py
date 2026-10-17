@@ -465,7 +465,7 @@ def _resume_info(payload: dict[str, Any]) -> ResumeInfo | None:
         if payload["engine"] == "claude" and isinstance(payload.get("claude_api_env_file"), str)
         else None,
         claude_connection=payload.get("claude_connection")
-        if payload.get("claude_connection") in {"api", "subscription"}
+        if payload.get("claude_connection") in {"api", "subscription", "inherit"}
         else "api"
         if payload.get("claude_api_env_file")
         else None,

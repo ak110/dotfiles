@@ -207,6 +207,8 @@ def test_cli_exits_quietly_when_stdout_pipe_is_closed_early(
         "codex_fast_mode": "false",
         "write_model": "claude:opus/medium",
         "codex_model_providers": "",
+        "claude_api_env_file": "",
+        "claude_api_mode": "pay-as-you-go",
         "process_loop_repositories": "[]",
     }
     for key in _config._MUTABLE_KEY_DEFAULTS:  # pylint: disable=protected-access  # noqa: SLF001

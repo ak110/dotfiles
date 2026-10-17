@@ -262,6 +262,8 @@ class ManagerResume(manager_registry.ManagerRegistry):
             provider_args: dict[str, Any] = {}
             if resume_state.engine == "claude" and resume_state.claude_api_env_file is not None:
                 provider_args["api_env_file"] = resume_state.claude_api_env_file
+            if resume_state.engine == "claude" and resume_state.claude_connection is not None:
+                provider_args["connection_kind"] = resume_state.claude_connection
             if resume_state.codex_model_provider is not None:
                 provider_args = {
                     "model_provider": resume_state.codex_model_provider,

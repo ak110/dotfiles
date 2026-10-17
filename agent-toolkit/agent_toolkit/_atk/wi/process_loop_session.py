@@ -144,6 +144,8 @@ def select_available_orchestrator(
         if info is not None and (info.claude_api_env_file or info.claude_connection)
         else None
     )
+    if info is not None and selected is None:
+        selected = _connection.Connection("inherit")
     context = _orchestrator.ProbeContext(
         title="atk wi process-loop",
         prompt=_AVAILABILITY_PROBE_PROMPT,
@@ -172,8 +174,10 @@ def _build_session_argv(
     env.pop(_pl_env.PROCESS_LOOP_SESSION_ID_ENV, None)
     if orchestrator == "claude":
         info = _registry.resolve(args.resume).resume_info if resume_pending and args.resume else None
-        if info is not None and (info.claude_api_env_file or info.claude_connection):
-            connection = _connection.Connection(info.claude_connection or "api", info.claude_api_env_file)
+        if info is not None:
+            connection = _connection.Connection(
+                info.claude_connection or ("api" if info.claude_api_env_file else "inherit"), info.claude_api_env_file
+            )
         else:
             choices = _connection.candidates("orchestrator", env=env)
             for diagnostic in choices.warnings:
@@ -181,15 +185,17 @@ def _build_session_argv(
             connection = choices.require_first()
         prepared = _connection.connection_environment(env, connection)
         # 対話起動は未承認の環境APIキーで確認画面を表示するため、helperから取得する。
-        prepared.pop("ANTHROPIC_API_KEY", None)
+        if connection.kind != "inherit":
+            prepared.pop("ANTHROPIC_API_KEY", None)
         env.clear()
         env.update(prepared)
         settings = _claude_settings.merge_settings(
             _pl_env.dialog_timeout_settings(),
-            {key: prepared[key] for key in _connection.AUTH_ENV if key in prepared},
+            {key: prepared[key] for key in _connection.AUTH_ENV if key in prepared and connection.kind != "inherit"},
             None,
             force_file=bool(connection.api_env_file),
             key_helper_command=_claude_settings.api_key_helper(connection.api_env_file) if connection.api_env_file else None,
+            isolate_auth=connection.kind != "inherit",
         )
         hook_debug_log = _pl_env.create_hook_debug_log(env)
         argv = [

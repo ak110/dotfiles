@@ -296,6 +296,13 @@ CodexのAPI移行先は工程別モデル候補とは別の設定である。サ
 
 ### Claudeの役割別API接続
 
+`claude_api_env_file`が未設定（空文字列）の場合、process-loopとagents_serverは親の環境変数とClaude Codeの通常の認証解決を使う。
+APIキー、Claude Codeの設定、Bedrock・Vertexなどをそのまま利用できる。
+この場合は認証検出による起動拒否、認証環境の隔離、役割別の接続割当や切替を行わない。
+その会話の再開も通常の認証解決を維持し、後からenvファイルを設定しても既存会話には適用しない。
+接続情報もAPIパスも持たない旧形式の登録も同じ扱いとなる。
+
+envファイルを設定した場合は、以下の役割別接続管理を適用する。
 通常の`atk wi process-loop`のオーケストレーター、`all-repos`のリポジトリ担当、および`agents_server`のClaude委譲へ適用する。
 ユーザーが直接起動するClaude Code、組み込みAgentとfork、`atk run-skill`、`atk commit`、Codexの接続先は対象外である。
 `all-repos`のリポジトリ担当はオーケストレーターとして扱う。

@@ -24,9 +24,10 @@ def test_candidate_matrix_by_environment_and_role(
 ) -> None:
     """一方だけの認証・両認証・認証なしを、両モードの両役割で評価する。"""
     path = tmp_path / "api.env"
-    path.write_text("ANTHROPIC_API_KEY=test-key\n", encoding="utf-8")
+    if api:
+        path.write_text("ANTHROPIC_API_KEY=test-key\n", encoding="utf-8")
     monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CLAUDE_API_MODE", mode)
-    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CLAUDE_API_ENV_FILE", str(path) if api else "")
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CLAUDE_API_ENV_FILE", str(path))
     monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", "subscription" if subscription else "")
     choices = connection.candidates(role)
     expected = (
@@ -45,7 +46,7 @@ def test_candidate_matrix_by_environment_and_role(
             choices.require_first()
 
 
-@pytest.mark.parametrize("invalid", ["", "missing", "directory", "malformed", "unreadable", "empty-file", "comments-only"])
+@pytest.mark.parametrize("invalid", ["missing", "directory", "malformed", "unreadable", "empty-file", "comments-only"])
 def test_invalid_env_file_disables_api_candidate(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,

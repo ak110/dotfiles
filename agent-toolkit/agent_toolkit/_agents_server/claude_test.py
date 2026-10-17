@@ -168,8 +168,7 @@ def test_build_options_inherits_parent_settings(
         assert value["env"]["OTHER"] == "secret-parent-value"
         assert value["disableAllHooks"] is True
     else:
-        assert set(value) == {"env", "apiKeyHelper"}
-        assert not value["apiKeyHelper"]
+        assert set(value) == {"env"}
     claude_settings.cleanup_settings(options)
     if isinstance(merged, claude_settings.SettingsFile):
         assert not pathlib.Path(merged).exists()
@@ -1138,7 +1137,7 @@ async def test_claude_retention_expiry_disconnects_and_retains_result_record(
             model=None,
             effort=None,
             engine="claude",
-            claude_connection="subscription",
+            claude_connection="inherit",
             claude_role="delegate",
             label=session.label,
             created_at=session.created_at,
