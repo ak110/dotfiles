@@ -147,10 +147,6 @@ _REMOVED_PATHS: dict[Path, list[cleanup_paths.RemovedPath]] = {
     Path.home() / ".claude": [
         # `references/`はスキル配下だけの名前としたため、旧配布先のディレクトリを削除する。
         cleanup_paths.RemovedPath(Path("references"), datetime.date(2026, 9, 18)),
-        # agent-basics → agent-toolkit のディレクトリ名リネームに伴い旧ディレクトリを削除する。
-        # cleanup_paths.cleanup_paths は is_dir() の場合 shutil.rmtree を呼ぶため、
-        # 配下の旧ルールファイル (python.md / claude-rules.md / markdown.md ほか) ごと一括で除去される。
-        cleanup_paths.RemovedPath(Path("rules/agent-basics"), datetime.date(2026, 4, 17)),
         # 再レビューは careful-spec-reviewer / careful-impl-reviewer の followup モードが担うため、
         # 配布先から旧エージェント定義を削除する。
         cleanup_paths.RemovedPath(Path("agents/careful-followup-reviewer.md"), datetime.date(2026, 4, 30)),
@@ -294,13 +290,6 @@ _REMOVED_PATHS_IF_CONTENT: dict[Path, list[cleanup_paths.RemovedPathIfContent]] 
         # 使われていないscreenの設定の配布をやめた。
         cleanup_paths.RemovedPathIfContent(
             Path(".screenrc"), datetime.date(2026, 10, 7), b"\ndefscrollback 1000000\n\nshell -${SHELL}\n"
-        ),
-    ],
-    Path.home() / ".claude": [
-        # `.chezmoi-source/dot_claude/CLAUDE.md` は配布対象外。未編集の配布先を除去する。
-        # 「簡潔に」応答を強制する指示はハルシネーション耐性を下げるため不要 (Giskard Phare)。
-        cleanup_paths.RemovedPathIfContent(
-            Path("CLAUDE.md"), datetime.date(2026, 4, 17), "# カスタム指示\n\n- シンプルに要点のみを述べる\n".encode()
         ),
     ],
     # 使われていないxonsh・yapf・Poetry・REST Clientの設定の配布をやめた。
