@@ -44,12 +44,14 @@ def candidates(role: str, *, env: Mapping[str, str] | None = None) -> Candidates
     api = False
     if path:
         try:
-            settings.read_api_env_file(path)
-            api = True
+            # 値を1つも持たないファイル（空、コメントと空行だけ）は認証を渡せないため、読めない場合と同じく候補から除く。
+            api = bool(settings.read_api_env_file(path))
         except OSError, ValueError, UnicodeError:
+            api = False
+        if not api:
             diagnostic.append(
-                f"API環境ファイルを読めません: {path}。atk config set claude_api_env_file <パス>"
-                "で修正するか、atk config set claude_api_env_file ''で解除する"
+                f"API環境ファイルを使えません（空、存在しない、読み取れない、または形式が不正）: {path}。"
+                "atk config set claude_api_env_file <パス>で修正するか、atk config set claude_api_env_file ''で解除する"
             )
     else:
         diagnostic.append("API: atk config set claude_api_env_file <パス>で認証環境を設定する")

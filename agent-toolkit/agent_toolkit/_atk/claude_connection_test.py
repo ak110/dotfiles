@@ -45,7 +45,7 @@ def test_candidate_matrix_by_environment_and_role(
             choices.require_first()
 
 
-@pytest.mark.parametrize("invalid", ["", "missing", "directory", "malformed", "unreadable"])
+@pytest.mark.parametrize("invalid", ["", "missing", "directory", "malformed", "unreadable", "empty-file", "comments-only"])
 def test_invalid_env_file_disables_api_candidate(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -57,6 +57,10 @@ def test_invalid_env_file_disables_api_candidate(
         path.mkdir()
     elif invalid == "malformed":
         path.write_text("invalid content", encoding="utf-8")
+    elif invalid == "empty-file":
+        path.write_text("", encoding="utf-8")
+    elif invalid == "comments-only":
+        path.write_text("# APIキーは未記入\n\n", encoding="utf-8")
     elif invalid == "unreadable":
 
         def denied(_path: str) -> dict[str, str]:

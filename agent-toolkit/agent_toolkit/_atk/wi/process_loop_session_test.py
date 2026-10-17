@@ -12,6 +12,7 @@ import subprocess
 import sys
 import time
 import uuid
+from collections.abc import Callable
 from typing import Any, NoReturn, cast
 
 import pytest
@@ -48,6 +49,28 @@ _ORIGINAL_RUN = subprocess.run
 _ORIGINAL_CODEX_SESSION = _pl_session._run_codex_session  # pylint: disable=protected-access  # noqa: SLF001
 
 
+def _run_claude_session(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    launch: Callable[..., subprocess.CompletedProcess[bytes]],
+) -> None:
+    """Claudeのオーケストレーターを1回起動し、本起動の`subprocess.run`を`launch`で受ける。"""
+    monkeypatch.setattr(subprocess, "run", launch)
+    monkeypatch.setattr(lane, "cleanup_session", lambda _session: {"retained": False})
+    args = argparse.Namespace(resume=None, no_update=True, worktree="custom")
+    assert not _pl_session.run_process_session(
+        args,
+        tmp_path,
+        "作業する",
+        dict(os.environ),
+        orchestrator="claude",
+        model="sonnet",
+        effort="high",
+        resume_pending=False,
+        dotfiles_root=None,
+    )
+
+
 def _connection_launch(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -71,21 +94,31 @@ def _connection_launch(
         settings.update(json.loads(pathlib.Path(raw).read_text(encoding="utf-8") if not raw.startswith("{") else raw))
         return subprocess.CompletedProcess(argv, 0)
 
-    monkeypatch.setattr(subprocess, "run", launch)
-    monkeypatch.setattr(lane, "cleanup_session", lambda _session: {"retained": False})
-    args = argparse.Namespace(resume=None, no_update=True, worktree="custom")
-    assert not _pl_session.run_process_session(
-        args,
-        tmp_path,
-        "作業する",
-        dict(os.environ),
-        orchestrator="claude",
-        model="sonnet",
-        effort="high",
-        resume_pending=False,
-        dotfiles_root=None,
-    )
+    _run_claude_session(tmp_path, monkeypatch, launch)
     return observed, settings
+
+
+@pytest.mark.parametrize("content", [None, "", "# 未記入\n"])
+def test_invalid_env_file_warning_reaches_process_loop_stderr(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], content: str | None
+) -> None:
+    """無効なAPI環境ファイルでは、process-loopの起動がサブスクリプションで続き、標準エラーへパスと修正操作を示す。"""
+    path = tmp_path / "invalid.env"
+    if content is not None:
+        path.write_text(content, encoding="utf-8")
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CLAUDE_API_ENV_FILE", str(path))
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CLAUDE_API_MODE", "pay-as-you-go")
+    observed: dict[str, Any] = {}
+
+    def launch(argv: list[str], **kwargs: Any) -> subprocess.CompletedProcess[bytes]:
+        observed.update(env=kwargs["env"])
+        return subprocess.CompletedProcess(argv, 0)
+
+    _run_claude_session(tmp_path, monkeypatch, launch)
+    stderr = capsys.readouterr().err
+    assert str(path) in stderr
+    assert "atk config set claude_api_env_file" in stderr
+    assert observed["env"]["CLAUDE_CODE_OAUTH_TOKEN"]
 
 
 def test_pay_as_you_go_orchestrator_uses_api_only(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
