@@ -227,8 +227,49 @@ def test_send_message_starts_a_new_turn_on_the_same_conversation(
 
 def test_each_turn_records_owner_and_cli_processes(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """登録簿の記録は所有プロセスとturnごとに起動したCLIの識別を持ち、継続のturnで起動し直したCLIへ更新する。"""
-    _install_fake_agy(tmp_path, monkeypatch)
+    fake = _install_fake_agy(tmp_path, monkeypatch)
     monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path / "state")
+    gates = tmp_path / "executor-gates"
+    gates.mkdir()
+    # この試験は生存するCLIの識別を要求するため、workerでの照会と保存が終わるまで子を保持する。
+    # 他の_FAKE_AGY利用試験はイベント・本文・子環境が対象で、終了後のCLI識別を要求しない。
+    marker = 'print(json.dumps({"event": "step_update"'
+    waiting = f"""
+import os
+import pathlib
+import time
+
+gates = pathlib.Path({str(gates)!r})
+(gates / (str(os.getpid()) + ".waiting")).touch()
+deadline = time.monotonic() + 10
+while not (gates / str(os.getpid())).exists():
+    if time.monotonic() >= deadline:
+        raise TimeoutError("PID登録完了の通知が届かない")
+    time.sleep(0.01)
+"""
+    source = fake.read_text(encoding="utf-8")
+    assert source.count(marker) == 1
+    fake.write_text(source.replace(marker, waiting + marker), encoding="utf-8")
+    original_attach = antigravity.AntigravityManager._attach_session  # pylint: disable=protected-access
+
+    async def attach_and_release(
+        manager: antigravity.AntigravityManager,
+        session: shared_state.SessionState,
+        process: asyncio.subprocess.Process,
+        turn_seq: int,
+    ) -> None:
+        async def wait_for_child() -> None:
+            while not (gates / f"{process.pid}.waiting").exists():
+                await asyncio.sleep(0.01)
+
+        await asyncio.wait_for(wait_for_child(), timeout=10)
+        await original_attach(manager, session, process, turn_seq)
+        await session.drain_registration()
+        assert session.executor_process is not None and session.executor_process.pid == process.pid
+        assert any(entry["pid"] == process.pid for entry in recorded())
+        (gates / str(process.pid)).touch()
+
+    monkeypatch.setattr(antigravity.AntigravityManager, "_attach_session", attach_and_release)
     owner = session_registry.owner_process()
     assert owner is not None
 
