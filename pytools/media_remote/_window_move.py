@@ -11,6 +11,8 @@ import queue
 import threading
 from typing import Any
 
+from agent_toolkit._common.async_operations import run_sync_operation
+
 from pytools.media_remote import _window_api, _window_uia
 
 logger = logging.getLogger(__name__)
@@ -65,6 +67,18 @@ class WindowMover:
         if self.worker is not None and self.worker.is_alive():
             self.events.put(None)
             self.worker.join()
+
+    async def __aenter__(self) -> WindowMover:
+        """準備完了をloopの外で待ち、取消時も開始済みの監視を回収する。"""
+        try:
+            return await run_sync_operation(self.__enter__)
+        except BaseException:
+            await run_sync_operation(self.__exit__, None, None, None)
+            raise
+
+    async def __aexit__(self, *args: Any) -> None:
+        """監視とworkerの終了を完了させる。"""
+        await run_sync_operation(self.__exit__, *args)
 
     def on_mouse(self, message: int, point: tuple[int, int], time: int, root: str) -> bool:
         """マウスフックから受け取り、奪う中クリックだけTrueを返す。"""

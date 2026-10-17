@@ -427,9 +427,12 @@ class RecordChangeTracker:
         """保留中の通知を破棄し、以後の通知を止める。"""
         with self._lock:
             self._stopped = True
+            pending = self._timer
             if self._timer is not None:
                 self._timer.cancel()
                 self._timer = None
+        if pending is not None and pending.ident is not None and pending is not threading.current_thread():
+            pending.join()
 
 
 class RecordWatch:
@@ -467,8 +470,12 @@ class RecordWatch:
         self._handler = Handler()
         self._event_types = watchdog.events
         self._observer = watchdog.observers.Observer()
-        self._schedule_roots()
-        self._observer.start()
+        try:
+            self._schedule_roots()
+            self._observer.start()
+        except BaseException:
+            self.stop()
+            raise
 
     def stop(self) -> None:
         """監視スレッドを終了させる。"""
@@ -477,7 +484,8 @@ class RecordWatch:
         if observer is None:
             return
         observer.stop()
-        observer.join()
+        if observer.ident is not None:
+            observer.join()
         self._observer = None
 
     def _schedule_roots(self) -> None:

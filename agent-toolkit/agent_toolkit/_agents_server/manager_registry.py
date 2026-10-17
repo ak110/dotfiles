@@ -67,7 +67,7 @@ class ManagerRegistry(responses.ManagerResponses):
             self.sessions.get(session_id) or self.expired_sessions.get(session_id) or self.stopped_sessions.get(session_id)
         )
         if isinstance(session, SessionResumeState):
-            session = self._refresh_resume_state(session)
+            session = await self._refresh_resume_state(session)
         running_action = (
             f"前任`{session_id}`の終端を`atk agents wait`で待つか、同じ前任へ`kill`で中断を要求して終端後に引き継ぐ"
         )
@@ -80,7 +80,7 @@ class ManagerRegistry(responses.ManagerResponses):
             if isinstance(session, SessionState):
                 await session.drain_registration()
             return session
-        resolution = session_registry.resolve(session_id)
+        resolution = await run_file_operation(session_registry.resolve, session_id)
         if resolution.state is session_registry.Resolution.RUNNING:
             raise ActionableError(f"前任は実行中です: {session_id}", next_action=running_action)
         info = resolution.handoff_info or resolution.resume_info
@@ -102,7 +102,7 @@ class ManagerRegistry(responses.ManagerResponses):
             **info.launch_info.as_kwargs(),
         )
 
-    def _get_session(self, session_id: str) -> SessionState:
+    async def _get_session(self, session_id: str) -> SessionState:
         """保持中のsessionを返し、未解決値は識別子体系と喪失に分けて診断する。"""
         if not isinstance(session_id, str) or not session_id:
             raise ActionableError("session_id must be a non-empty string", next_action=SESSION_ID_NEXT_ACTION)
@@ -113,13 +113,13 @@ class ManagerRegistry(responses.ManagerResponses):
                 raise ActionableError(
                     f"session retention expired: {session_id}", next_action=EXPIRED_SESSION_NEXT_ACTION
                 ) from exc
-            raise self._unresolved_session_error(session_id, label="session") from exc
+            raise (await self._unresolved_session_error(session_id, label="session")) from exc
         if session.retention_deadline is not None and asyncio.get_running_loop().time() >= session.retention_deadline:
             self._expire_session(session_id)
             raise ActionableError(f"session retention expired: {session_id}", next_action=EXPIRED_SESSION_NEXT_ACTION)
         return session
 
-    def _resolve_expired_session(self, session_id: str) -> SessionResumeState | None:
+    async def _resolve_expired_session(self, session_id: str) -> SessionResumeState | None:
         """保持期限を反映し、期限切れsessionの再開状態を返す。"""
         if not isinstance(session_id, str) or not session_id:
             return None
@@ -131,9 +131,9 @@ class ManagerRegistry(responses.ManagerResponses):
         ):
             self._expire_session(session_id)
         resume_state = self.expired_sessions.get(session_id)
-        return self._refresh_resume_state(resume_state) if resume_state is not None else None
+        return (await self._refresh_resume_state(resume_state)) if resume_state is not None else None
 
-    def _refresh_resume_state(self, resume_state: SessionResumeState) -> SessionResumeState:
+    async def _refresh_resume_state(self, resume_state: SessionResumeState) -> SessionResumeState:
         """共有登録の現在turnを確認し、退避した終端を現在状態として使えるか判定する。"""
         if (
             not isinstance(resume_state, _RegistryResumeState)
@@ -141,7 +141,7 @@ class ManagerRegistry(responses.ManagerResponses):
             or resume_state.session_id in self._pending_resumes
         ):
             return resume_state
-        resolution = session_registry.resolve(resume_state.session_id)
+        resolution = await run_file_operation(session_registry.resolve, resume_state.session_id)
         if resolution.state is session_registry.Resolution.RUNNING:
             raise ActionableError(
                 f"error.recovery=turn_unobserved: {resume_state.session_id}",
@@ -153,17 +153,17 @@ class ManagerRegistry(responses.ManagerResponses):
         ):
             self.stopped_sessions.pop(resume_state.session_id, None)
             self.expired_sessions.pop(resume_state.session_id, None)
-            restored = self._restore_registry_session(resume_state.session_id, resolution=resolution)
+            restored = await self._restore_registry_session(resume_state.session_id, resolution=resolution)
             if restored is not None:
                 return restored
         return resume_state
 
-    def _expired_result_response(self, session_id: str, *, collector: str) -> dict[str, Any] | None:
+    async def _expired_result_response(self, session_id: str, *, collector: str) -> dict[str, Any] | None:
         """期限切れsessionの未回収結果を1回だけ返す。"""
-        resume_state = self._resolve_expired_session(session_id)
+        resume_state = await self._resolve_expired_session(session_id)
         if resume_state is None:
             return None
-        if self._status_writer is not None and self._status_writer.result_state(session_id) == "consumed":
+        if self._status_writer is not None and (await self._status_writer.result_state_async(session_id)) == "consumed":
             resume_state = dataclasses.replace(resume_state, result_delivered=True)
             self.expired_sessions[session_id] = resume_state
         response = self._stopped_result_response(resume_state)
@@ -171,21 +171,21 @@ class ManagerRegistry(responses.ManagerResponses):
             return {"status": "expired"}
         self.expired_sessions[session_id] = dataclasses.replace(resume_state, result_delivered=True)
         if self._status_writer is not None:
-            self._status_writer.delete_result(session_id, collector=collector)
+            (await self._status_writer.delete_result_async(session_id, collector=collector))
             self._status_writer.schedule()
         return response
 
-    def _resolve_stopped_session(self, session_id: str) -> SessionResumeState | None:
+    async def _resolve_stopped_session(self, session_id: str) -> SessionResumeState | None:
         """破棄済みsessionを返し、別プロセスによる結果回収を反映する。"""
         resume_state = self.stopped_sessions.get(session_id)
         if resume_state is None:
             return None
-        resume_state = self._refresh_resume_state(resume_state)
+        resume_state = await self._refresh_resume_state(resume_state)
         if (
             not resume_state.result_delivered
             and resume_state.finalized_at is not None
             and self._status_writer is not None
-            and self._status_writer.result_state(session_id) == "consumed"
+            and (await self._status_writer.result_state_async(session_id)) == "consumed"
         ):
             resume_state = dataclasses.replace(resume_state, result_delivered=True)
             self.stopped_sessions[session_id] = resume_state
@@ -211,11 +211,11 @@ class ManagerRegistry(responses.ManagerResponses):
             or session_id in self.expired_sessions
         ):
             return
-        resolution = session_registry.resolve(session_id)
+        resolution = await run_file_operation(session_registry.resolve, session_id)
         info = resolution.resume_info
         if info is None or not (resolution.state is session_registry.Resolution.RUNNING or resolution.inferred_terminal):
             return
-        if status_file.live_writer_holds_session(session_id):
+        if await run_file_operation(status_file.live_writer_holds_session, session_id):
             return
         status: Literal["completed", "failed", "interrupted"] | None
         if resolution.inferred_terminal:
@@ -264,7 +264,7 @@ class ManagerRegistry(responses.ManagerResponses):
             info.turn_seq,
         )
 
-    def _restore_registry_session(
+    async def _restore_registry_session(
         self,
         session_id: str,
         *,
@@ -279,10 +279,10 @@ class ManagerRegistry(responses.ManagerResponses):
             return None
         cached = self.stopped_sessions.get(session_id) or self.expired_sessions.get(session_id)
         if cached is not None:
-            refreshed = self._refresh_resume_state(cached)
+            refreshed = await self._refresh_resume_state(cached)
             return refreshed if refreshed is not cached else None
         if resolution is None:
-            resolution = session_registry.resolve(session_id)
+            resolution = await run_file_operation(session_registry.resolve, session_id)
         if resolution.state is session_registry.Resolution.RUNNING:
             raise ActionableError(
                 f"error.recovery=turn_unobserved: {session_id}",
@@ -309,7 +309,9 @@ class ManagerRegistry(responses.ManagerResponses):
                     "継続が必要なら検証済みの状態から新規に起動する"
                 ),
             )
-        persisted_result = self._status_writer.read_result(session_id) if self._status_writer is not None else None
+        persisted_result = (
+            (await run_file_operation(self._status_writer.read_result, session_id)) if self._status_writer is not None else None
+        )
         if persisted_result is not None and persisted_result["turn_seq"] != info.turn_seq:
             # 過去turnの未回収結果は共有ファイルへ残し、現在turnの状態とは分けて扱う。
             persisted_result = None
@@ -344,7 +346,7 @@ class ManagerRegistry(responses.ManagerResponses):
         self.stopped_sessions[session_id] = resume_state
         return resume_state
 
-    def _take_stopped_result(
+    async def _take_stopped_result(
         self,
         session_id: str,
         resume_state: SessionResumeState,
@@ -357,18 +359,18 @@ class ManagerRegistry(responses.ManagerResponses):
             return None
         self.stopped_sessions[session_id] = dataclasses.replace(resume_state, result_delivered=True)
         if self._status_writer is not None:
-            self._status_writer.delete_result(session_id, collector=collector)
+            (await self._status_writer.delete_result_async(session_id, collector=collector))
             self._status_writer.schedule()
         return response
 
-    def _expired_kill_response(self, session_id: str) -> dict[str, Any] | None:
+    async def _expired_kill_response(self, session_id: str) -> dict[str, Any] | None:
         """期限切れsessionなら中断対象が無いことを示す成功応答を返す。"""
-        resume_state = self._resolve_expired_session(session_id)
+        resume_state = await self._resolve_expired_session(session_id)
         if resume_state is None:
             return None
         return {"status": "expired", "kill_requested": False, "next_action": EXPIRED_KILL_NEXT_ACTION}
 
-    def list_sessions(self, *, include_terminated: bool = False) -> dict[str, Any]:
+    async def list_sessions(self, *, include_terminated: bool = False) -> dict[str, Any]:
         """保持中のsessionを開始時刻順の公開項目へ射影する。
 
         一覧の範囲を指定しない場合も、未回収結果を持つsessionは終端済みまたは期限切れでも表示する。
@@ -390,7 +392,7 @@ class ManagerRegistry(responses.ManagerResponses):
                         session,
                         None
                         if self._status_writer is None
-                        else self._status_writer.result_state(session.session_id) == "consumed",
+                        else (await self._status_writer.result_state_async(session.session_id)) == "consumed",
                     ),
                 ),
             )
@@ -405,7 +407,7 @@ class ManagerRegistry(responses.ManagerResponses):
             )
         for previous in tuple(self.expired_sessions.values()):
             try:
-                session = self._refresh_resume_state(previous)
+                session = await self._refresh_resume_state(previous)
             except ActionableError:
                 continue
             listed.setdefault(
@@ -420,17 +422,19 @@ class ManagerRegistry(responses.ManagerResponses):
                             session,
                             None
                             if self._status_writer is None
-                            else self._status_writer.result_state(session.session_id) == "consumed",
+                            else (await self._status_writer.result_state_async(session.session_id)) == "consumed",
                         ),
                     ),
                 ),
             )
         for previous in tuple(self.stopped_sessions.values()):
             try:
-                session = self._refresh_resume_state(previous)
+                session = await self._refresh_resume_state(previous)
             except ActionableError:
                 continue
-            if session_registry.resolve(session.session_id).state is not session_registry.Resolution.TERMINAL:
+            if (
+                await run_file_operation(session_registry.resolve, session.session_id)
+            ).state is not session_registry.Resolution.TERMINAL:
                 continue
             listed.setdefault(
                 session.session_id,
@@ -444,7 +448,7 @@ class ManagerRegistry(responses.ManagerResponses):
                             session,
                             None
                             if self._status_writer is None
-                            else self._status_writer.result_state(session.session_id) == "consumed",
+                            else (await self._status_writer.result_state_async(session.session_id)) == "consumed",
                         ),
                     ),
                 ),
@@ -468,7 +472,7 @@ class ManagerRegistry(responses.ManagerResponses):
             response["root_session_id"] = self._status_writer.root_session_id
         return response
 
-    def show_session(self, session_id: str, *, verbose: bool = False) -> dict[str, Any]:
+    async def show_session(self, session_id: str, *, verbose: bool = False) -> dict[str, Any]:
         """保持中または再開可能なsessionの復旧用詳細を返す。
 
         自プロセスの保持状態に無い識別子は、共有の登録簿に記録されているか確かめて在否を判定する。
@@ -481,19 +485,19 @@ class ManagerRegistry(responses.ManagerResponses):
         if session is None:
             session = self.expired_sessions.get(session_id) or self.stopped_sessions.get(session_id)
             if session is not None:
-                session = self._refresh_resume_state(session)
+                session = await self._refresh_resume_state(session)
         if session is None:
-            resolution = session_registry.resolve(session_id)
+            resolution = await run_file_operation(session_registry.resolve, session_id)
             if resolution.state is session_registry.Resolution.RUNNING:
                 raise ActionableError(
                     f"session {session_id} belongs to another writer's agents_server process and is still running",
                     next_action="そのsessionを起動したroot sessionで`atk agents wait`を実行して結果を受領する",
                 )
-            session = self._restore_registry_session(session_id, resolution=resolution)
+            session = await self._restore_registry_session(session_id, resolution=resolution)
             if session is None:
-                raise self._unresolved_session_error(session_id, label="session", resolution=resolution)
+                raise await self._unresolved_session_error(session_id, label="session", resolution=resolution)
         if session is None:
-            raise self._unresolved_session_error(session_id, label="session")
+            raise await self._unresolved_session_error(session_id, label="session")
         status = "running" if session_id in self._pending_resumes else session.status
         result_available = bool(
             isinstance(session, SessionState) and session.result_available and not session.result_delivered
@@ -531,7 +535,7 @@ class ManagerRegistry(responses.ManagerResponses):
             unresolved: list[str] = []
             for child_session_id in sorted(session.live_child_session_ids):
                 try:
-                    resume_info = session_registry.resolve(child_session_id).resume_info
+                    resume_info = (await run_file_operation(session_registry.resolve, child_session_id)).resume_info
                 except Exception:
                     unresolved.append(child_session_id)
                     continue
@@ -579,6 +583,7 @@ class ManagerRegistry(responses.ManagerResponses):
         `stopped_sessions`への在籍は、このプロセスが解放すべきbackend資源を
         持たないことを表す。解放後の同期失敗では再発行が同期だけを再試行する。
         """
+        await self._drain_diagnostics()
         if not isinstance(session_id, str) or not session_id:
             raise ActionableError("session_id must be a non-empty string", next_action=SESSION_ID_NEXT_ACTION)
         if session_id in self._pending_resumes:
@@ -589,9 +594,9 @@ class ManagerRegistry(responses.ManagerResponses):
         await self._drain_candidate_records()
         if self._status_writer is not None:
             await self._status_writer.drain()
-        stopped_state = self._resolve_stopped_session(session_id)
+        stopped_state = await self._resolve_stopped_session(session_id)
         if stopped_state is None:
-            stopped_state = self._restore_registry_session(session_id)
+            stopped_state = await self._restore_registry_session(session_id)
         already_stopped = session_id in self.stopped_sessions
         session = self.sessions.get(session_id)
         if (
@@ -608,8 +613,8 @@ class ManagerRegistry(responses.ManagerResponses):
         else:
             resume_state = stopped_state or self.expired_sessions.get(session_id)
             if resume_state is None:
-                raise self._unresolved_session_error(session_id, label="session")
-        result_state = None if self._status_writer is None else self._status_writer.result_state(session_id)
+                raise await self._unresolved_session_error(session_id, label="session")
+        result_state = None if self._status_writer is None else (await self._status_writer.result_state_async(session_id))
         keep_result = retain_result and resume_state.finalized_at is not None and result_state != "consumed"
         resume_state = dataclasses.replace(resume_state, result_delivered=not keep_result)
         if session is not None:
@@ -629,10 +634,16 @@ class ManagerRegistry(responses.ManagerResponses):
             await run_file_operation(session_registry.release, session_id, reason="stopped")
             if self._status_writer is not None:
                 if not keep_result:
-                    self._status_writer.delete_wait_target(session_id)
-                if keep_result and result_state == "unpublished" and not self._status_writer.result_exists(session_id):
+                    (await run_file_operation(self._status_writer.delete_wait_target, session_id))
+                if (
+                    keep_result
+                    and result_state == "unpublished"
+                    and not (await run_file_operation(self._status_writer.result_exists, session_id))
+                ):
                     await self._status_writer.retain_result_async(resume_state)
-                elif not keep_result and (result_state == "published" or self._status_writer.result_exists(session_id)):
+                elif not keep_result and (
+                    result_state == "published" or (await run_file_operation(self._status_writer.result_exists, session_id))
+                ):
                     await self._status_writer.delete_result_async(session_id, collector="stop")
                 self._status_writer.schedule()
         except Exception as exc:

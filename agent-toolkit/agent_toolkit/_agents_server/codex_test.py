@@ -572,7 +572,7 @@ async def test_send_message_child_reactivation_holds_parent_until_child_terminat
             }
         )
         await backend._handle_notification(completion)
-        shown = manager.show_session(session.session_id)
+        shown = await manager.show_session(session.session_id)
         assert shown["status"] == "running" and shown["result_held"]
         assert shown["live_child_sessions"] == [{"session_id": "child", "cwd": str(tmp_path)}]
         assert not session.result_available

@@ -18,6 +18,7 @@ lazy import typing
 lazy from ctypes import wintypes
 
 lazy from agent_toolkit._atk import managed_temp as _managed_temp
+lazy from agent_toolkit._common.shell_tokens import atk_launcher_name
 
 
 def _windows_dll(name: str) -> typing.Any:
@@ -68,10 +69,10 @@ def _payload_object(payload_text: str) -> dict[str, typing.Any] | None:
 
 def _is_trusted_atk_launcher(plugin_root: pathlib.Path) -> bool:
     """PATH上のatkが配布済みの安定ランチャーか判定する。"""
-    executable = shutil.which("atk")
+    executable = shutil.which(atk_launcher_name(windows=False))
     if executable is None:
         return False
-    launcher_name = "atk.cmd" if os.name == "nt" else "atk"
+    launcher_name = atk_launcher_name(windows=os.name == "nt")
     candidates = (
         pathlib.Path.home() / ".local" / "bin" / launcher_name,
         plugin_root / "scripts" / launcher_name,
@@ -94,10 +95,10 @@ def _cleanup_target(
 ) -> pathlib.Path | None:
     """許可対象の新旧cleanupコマンドから対象パスを返す。"""
     if len(tokens) == 5 and tokens[1:4] == ["managed-temp", "cleanup", "--path"]:
-        if tokens[0] == "atk":
+        if tokens[0] == atk_launcher_name(windows=False):
             return pathlib.Path(tokens[4]) if _is_trusted_atk_launcher(plugin_root) else None
         executable = pathlib.Path(tokens[0])
-        launcher_name = "atk.cmd" if os.name == "nt" else "atk"
+        launcher_name = atk_launcher_name(windows=os.name == "nt")
         trusted = plugin_root / "scripts" / launcher_name
         if executable.is_absolute() and executable.resolve(strict=True) == trusted.resolve(strict=True):
             return pathlib.Path(tokens[4])

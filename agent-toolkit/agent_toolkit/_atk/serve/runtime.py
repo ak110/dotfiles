@@ -12,6 +12,7 @@ from agent_toolkit._atk.serve import plans as serve_plans
 from agent_toolkit._atk.serve import sessions as serve_sessions
 from agent_toolkit._atk.serve import state as serve_state
 from agent_toolkit._atk.serve import wi_operations as _wi_operations
+from agent_toolkit._common.async_operations import finish_task
 
 logger = logging.getLogger(__name__)
 
@@ -170,12 +171,16 @@ def register_lifecycle(
 
     @app.before_serving
     async def start_background_tasks() -> None:
-        runtime.background_task = asyncio.create_task(runtime.background_sync_loop())
-        serve_plans.start_local_watchers(plans)
-        serve_plans.start_remote_watchers(plans)
-        serve_sessions.start_local_watch(sessions)
-        serve_sessions.start_remote_clients(sessions)
-        runtime.remote_stop_task = asyncio.create_task(stop_remote_connections_on_shutdown())
+        try:
+            await serve_plans.start_local_watchers_async(plans)
+            serve_plans.start_remote_watchers(plans)
+            await serve_sessions.start_local_watch_async(sessions)
+            serve_sessions.start_remote_clients(sessions)
+            runtime.background_task = asyncio.create_task(runtime.background_sync_loop())
+            runtime.remote_stop_task = asyncio.create_task(stop_remote_connections_on_shutdown())
+        except BaseException:
+            await finish_task(asyncio.create_task(stop_background_tasks()))
+            raise
 
     async def stop_remote_connections_on_shutdown() -> None:
         # 停止要求から`after_serving`までの間に常駐SSHが終わると、常駐接続はバックオフの後に再接続する。
@@ -186,19 +191,27 @@ def register_lifecycle(
 
     @app.after_serving
     async def stop_background_tasks() -> None:
+        await finish_task(asyncio.create_task(stop_all()))
+
+    async def stop_all() -> None:
+        background: list[asyncio.Task[typing.Any]] = []
         if runtime.remote_stop_task is not None:
             if not runtime.remote_stop_task.done():
                 runtime.remote_stop_task.cancel()
-            with contextlib.suppress(asyncio.CancelledError):
-                await runtime.remote_stop_task
+            background.append(runtime.remote_stop_task)
             runtime.remote_stop_task = None
-        await serve_sessions.stop_remote_clients(sessions)
-        serve_sessions.stop_local_watch(sessions)
-        await serve_plans.stop_remote_watchers(plans)
-        serve_plans.stop_local_watchers(plans)
-        if runtime.background_task is None:
-            return
-        runtime.background_task.cancel()
-        with contextlib.suppress(asyncio.CancelledError):
-            await runtime.background_task
-        runtime.background_task = None
+        if runtime.background_task is not None:
+            runtime.background_task.cancel()
+            background.append(runtime.background_task)
+            runtime.background_task = None
+        previous = await asyncio.gather(*background, return_exceptions=True)
+        outcomes = await asyncio.gather(
+            serve_sessions.stop_remote_clients(sessions),
+            serve_sessions.stop_local_watch_async(sessions),
+            serve_plans.stop_remote_watchers(plans),
+            serve_plans.stop_local_watchers_async(plans),
+            return_exceptions=True,
+        )
+        for outcome in (*previous, *outcomes):
+            if isinstance(outcome, BaseException) and not isinstance(outcome, asyncio.CancelledError):
+                raise outcome

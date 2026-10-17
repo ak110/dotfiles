@@ -17,6 +17,7 @@ from agent_toolkit._agents_server import (
     state,
     status_file,
 )
+from agent_toolkit._agents_server.file_operations import run_file_operation
 from agent_toolkit._agents_server.manager_base import PendingResume
 from agent_toolkit._agents_server.state import (
     TERMINAL_STATUSES,
@@ -228,7 +229,7 @@ class ManagerResponses(manager_base.ManagerBase):
         return listed
 
     @staticmethod
-    def _unresolved_session_error(
+    async def _unresolved_session_error(
         session_id: str,
         *,
         label: str,
@@ -252,7 +253,7 @@ class ManagerResponses(manager_base.ManagerBase):
                 f"{label} identifier scheme mismatch: {session_id}; expected UUID", next_action=SESSION_ID_NEXT_ACTION
             )
         if resolution is None:
-            resolution = session_registry.resolve(session_id)
+            resolution = await run_file_operation(session_registry.resolve, session_id)
         if resolution.state is session_registry.Resolution.RELEASED:
             reason = "retention expired" if resolution.released_reason == "retention_expired" else "stopped"
             return ActionableError(
@@ -271,6 +272,17 @@ class ManagerResponses(manager_base.ManagerBase):
             return []
         return self._status_writer.take_notices(session_id)
 
+    async def _take_notices_async(self, session_id: str) -> list[dict[str, str]]:
+        """通知の排他回収の完了を待って返す。"""
+        if self._status_writer is None:
+            return []
+        return await self._status_writer.take_notices_async(session_id)
+
+    async def _result_response_async(self, session: SessionState, *, include_progress: bool = True) -> dict[str, Any]:
+        """記録の読取をworkerで待ち、回収の状態をloop上で確定する。"""
+        identity = await run_file_operation(observed_session_identity, session.session_id) if session.terminal else None
+        return self._result_response(session, include_progress=include_progress, observed_identity=identity, identity_read=True)
+
     @staticmethod
     def _response_with_notices(response: dict[str, Any], notices: list[dict[str, str]]) -> dict[str, Any]:
         """回収した通知がある場合だけ応答へ追加する。"""
@@ -279,7 +291,13 @@ class ManagerResponses(manager_base.ManagerBase):
         return response
 
     @staticmethod
-    def _result_response(session: SessionState, *, include_progress: bool = True) -> dict[str, Any]:
+    def _result_response(
+        session: SessionState,
+        *,
+        include_progress: bool = True,
+        observed_identity: dict[str, str] | None = None,
+        identity_read: bool = False,
+    ) -> dict[str, Any]:
         """waitまたはkillの応答を組み立て、返した終端結果を回収済みにする。
 
         `elapsed_seconds`はturnの`started_at`起点である。
@@ -293,7 +311,9 @@ class ManagerResponses(manager_base.ManagerBase):
                 "effort": session.effort,
                 "source": "launch_candidate",
             }
-            response["observed_identity"] = observed_session_identity(session.session_id)
+            response["observed_identity"] = (
+                observed_identity if identity_read else observed_session_identity(session.session_id)
+            )
         if response.get("status") == "running":
             elapsed_seconds = turn_elapsed_seconds(session.started_at)
             if elapsed_seconds is not None:

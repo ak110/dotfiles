@@ -14,6 +14,7 @@ from agent_toolkit._agents_server import (
     manager_registry,
     shared_layout,
 )
+from agent_toolkit._agents_server.file_operations import run_file_operation
 from agent_toolkit._agents_server.launch_requests import (
     wrap_delivery_body,
 )
@@ -28,7 +29,7 @@ from agent_toolkit._agents_server.resume_waits import (
     has_pending_auto_resume_targets,
 )
 from agent_toolkit._agents_server.state import ResumePrompt, SessionResumeState, SessionState
-from agent_toolkit._agents_server.wait_output_tracking import consume_agents_wait_background_outputs
+from agent_toolkit._agents_server.wait_output_tracking import consume_agents_wait_background_outputs_async
 from agent_toolkit._common import session_registry
 
 _LOG = logging.getLogger("agent-toolkit.agents-server.mcp")
@@ -37,7 +38,7 @@ _LOG = logging.getLogger("agent-toolkit.agents-server.mcp")
 class ManagerResume(manager_registry.ManagerRegistry):
     """孫sessionの終端と待機の解除を観測して自動で継続し、保存済みsessionを再開する。"""
 
-    def _child_result_is_terminal(self, session_id: str) -> bool:
+    async def _child_result_is_terminal(self, session_id: str) -> bool:
         """孫sessionの共有された終端結果ファイルが終端を示すかを返す。
 
         このファイルは同じルートsessionの`results`配下を全ての書込主体が共有するため、
@@ -45,7 +46,7 @@ class ManagerResume(manager_registry.ManagerRegistry):
         """
         if self._status_writer is None or not shared_layout.valid_session_id(session_id):
             return False
-        return self._status_writer.read_result(session_id) is not None
+        return (await run_file_operation(self._status_writer.read_result, session_id)) is not None
 
     async def _advance_child_session_wait(self, session: SessionState) -> None:
         """保留中の結果を、孫sessionの終端・過負荷と利用上限の待機の経過または保持期限に応じて進める。"""
@@ -105,8 +106,11 @@ class ManagerResume(manager_registry.ManagerRegistry):
                 await self._resume_after_usage_limit(session)
             return
         # 背景実行の`atk agents wait`で回収済みの孫sessionは、登録簿と終端結果ファイルが消えた後も未観測にしない。
-        consume_agents_wait_background_outputs(session)
-        resolutions = {session_id: session_registry.resolve(session_id) for session_id in session.live_child_session_ids}
+        await consume_agents_wait_background_outputs_async(session)
+        resolutions = {
+            session_id: (await run_file_operation(session_registry.resolve, session_id))
+            for session_id in session.live_child_session_ids
+        }
         terminal = {
             session_id
             for session_id, resolution in resolutions.items()
@@ -121,7 +125,7 @@ class ManagerResume(manager_registry.ManagerRegistry):
             }:
                 continue
             # レコードの不在と解放済みは、所有側の解放と7日超の回収からも生じるため、終端結果ファイルを終端の第2の根拠とする。
-            if self._child_result_is_terminal(session_id):
+            if await self._child_result_is_terminal(session_id):
                 terminal.add(session_id)
                 continue
             unobserved.add(session_id)
@@ -242,11 +246,11 @@ class ManagerResume(manager_registry.ManagerRegistry):
         if self._status_writer is not None:
             await self._status_writer.delete_result_async(session.session_id, collector="auto-resume")
 
-    def _pending_resume_status(self, pending: PendingResume) -> dict[str, Any]:
+    async def _pending_resume_status(self, pending: PendingResume) -> dict[str, Any]:
         """進行中の再開操作を通常のrunning状態として射影する。"""
         session = self.sessions.get(pending.state.session_id)
         if session is not None:
-            return self._result_response(session)
+            return await self._result_response_async(session)
         response: dict[str, Any] = {"status": "running", "progress": ""}
         elapsed_seconds = turn_elapsed_seconds(pending.state.started_at)
         if elapsed_seconds is not None:

@@ -538,3 +538,16 @@ engine名とbackendのクラスの対応と、engineごとに異なる生成時�
 終端結果は`retained_results.py`、待機対象は`wait_targets.py`、上り通知は`notice_inbox.py`、除外した候補は`unavailable_candidates.py`、掃引は`shared_sweep.py`が持つ。
 session状態は`state.py`、公開応答への射影は`result_projection.py`、自動再開の状態遷移は`resume_waits.py`が持つ。
 委譲先の待機の観測は`wait_output_tracking.py`、委譲先へ渡す指示の組み立ては`launch_prompts.py`が持つ。
+
+### 共有状態の非同期境界
+
+同期操作の共通実装は`_common/async_operations.py`が持つ。agents_serverは`file_operations.py`の既存名から利用し、serveの監視とmedia_remoteの監視も同じ実装で準備・終了を回収する。
+
+Managerの照会・復元・回収は非同期APIで提供する。登録簿、候補除外、終端結果と通知の排他回収、起動資料、設定合成、診断と資源照会は`file_operations.run_file_operation`でworkerの完了を待つ。同期CLI向けのファイル操作APIも保持する。
+SessionStateの更新、射影の組み立て、公開済み結果の台帳と保持タイマーはイベントループが所有する。workerへは操作に必要なパス・本文と、資源計測用の状態snapshotを渡す。終了では予約を取り消し、開始済みの保存・診断とbackendの後始末を回収する。Claudeの接続終了と設定の回収は1つの保護されたtaskで完走する。
+
+永続ログは専用workerが受理順に出力し、サーバーの返却前に全記録とworkerの終了を回収する。受信側handlerとファイルhandlerのロックを分け、Pythonのlogging終了処理がhandlerのロックを保持していてもworkerを回収できるようにする。
+
+### atkの起動形と観測
+
+`_common/shell_tokens.py`がランチャー名と起動の事実を記録するシェルツールの集合を所有する。案内側の`cli_instructions`と起動の判定側は同じ定義を使う。WindowsのPowerShellによる起動もPostToolUseの観測を解消する。待機の出力追跡は分解済みの実行トークンから起動を判定し、引数へ引用されたコマンドの文字列を実行の根拠へ含めない。

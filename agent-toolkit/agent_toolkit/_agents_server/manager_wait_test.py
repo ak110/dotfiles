@@ -305,10 +305,10 @@ async def test_wait_returns_uncollected_result_from_expired_state(tmp_path: path
     _complete(session, message="退避結果")
     manager.expired_sessions[session.session_id] = state.SessionResumeState.from_session(session)
 
-    assert manager.show_session(session.session_id)["result_available"] is True
+    assert (await manager.show_session(session.session_id))["result_available"] is True
     response = await manager.wait()
     assert response == {"session_id": session.session_id, "status": "completed", "agent_message": "退避結果"}
-    assert manager.show_session(session.session_id)["result_available"] is False
+    assert (await manager.show_session(session.session_id))["result_available"] is False
 
 
 @pytest.mark.asyncio

@@ -254,7 +254,7 @@ async def test_single_api_connection_keeps_usage_limit_wait(
     try:
         started = await manager.start("claude:sonnet/high", "作業", str(tmp_path))
         assert started["status"] == "running"
-        shown = manager.show_session(started["session_id"])
+        shown = await manager.show_session(started["session_id"])
         assert shown["status"] == "running" and shown["result_held"]
         assert len(options_seen) == 1 and options_seen[0].env["ANTHROPIC_API_KEY"] == "test-api-key"
     finally:
@@ -484,7 +484,7 @@ async def test_resumed_session_keeps_every_launch_info_item(
     projected = json.loads(writer.path.read_text(encoding="utf-8"))["sessions"]
     entry = next(item for item in projected if item["session_id"] == session.session_id)
     assert {name: entry[name] for name in _LAUNCH_VALUES} == _LAUNCH_VALUES
-    shown = manager.show_session(session.session_id)
+    shown = await manager.show_session(session.session_id)
     assert (shown["label"], shown["prompt"]) == (_LAUNCH_VALUES["label"], _LAUNCH_VALUES["prompt"])
     resume_info = session_registry.resolve(session.session_id).resume_info
     assert resume_info is not None
@@ -1134,8 +1134,8 @@ async def test_overload_wait_is_visible_as_running_with_api_error(
 
     started = await manager.start("high_tier", "作業する", str(tmp_path))
     await asyncio.gather(*backend.pending)
-    shown = manager.show_session(started["session_id"])
-    listed = manager.list_sessions()
+    shown = await manager.show_session(started["session_id"])
+    listed = await manager.list_sessions()
 
     assert shown["status"] == "running"
     assert shown["result_held"] is True
@@ -1268,8 +1268,10 @@ async def test_claude_usage_limit_wait_is_visible_and_kill_returns_held_result(
     manager, client, codex = await _usage_limited_manager(monkeypatch, streams)
     try:
         started = await manager.start("high_tier", "作業する", str(tmp_path))
-        shown = manager.show_session(started["session_id"])
-        listed = next(item for item in manager.list_sessions()["sessions"] if item["session_id"] == started["session_id"])
+        shown = await manager.show_session(started["session_id"])
+        listed = next(
+            item for item in (await manager.list_sessions())["sessions"] if item["session_id"] == started["session_id"]
+        )
 
         assert started["status"] == "running"
         assert shown["status"] == "running"

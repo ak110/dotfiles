@@ -196,9 +196,9 @@ async def test_usage_limit_api_migration_and_cold_resume(
         session = manager.sessions["api-session"]
         assert session.api_error is None
         assert session.claude_api_env_file == str(env_file)
-        shown = json.dumps(manager.show_session("api-session", verbose=True), ensure_ascii=False)
+        shown = json.dumps((await manager.show_session("api-session", verbose=True)), ensure_ascii=False)
         assert "dummy-secret" not in shown and "claude_api_env_file" not in shown
-        public = json.dumps([result, manager.list_sessions(include_terminated=True)], ensure_ascii=False)
+        public = json.dumps([result, (await manager.list_sessions(include_terminated=True))], ensure_ascii=False)
         assert "dummy-secret" not in public and "claude_api_env_file" not in public
         monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CLAUDE_API_ENV_FILE", "")
         await manager.send_message("api-session", "追送")
@@ -291,7 +291,7 @@ async def test_api_migration_holds_result_until_old_connection_closes(
     try:
         await manager.start("claude:sonnet/high", "作業する", str(tmp_path))
         await asyncio.wait_for(disconnecting.wait(), timeout=3)
-        shown = manager.show_session("migration")
+        shown = await manager.show_session("migration")
         assert shown["status"] == "running" and shown["result_held"]
         waiting = asyncio.create_task(manager.wait())
         await asyncio.sleep(0)

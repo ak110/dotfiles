@@ -10,7 +10,6 @@ import datetime
 import io
 import json
 import pathlib
-import shlex
 from collections.abc import Iterator
 from typing import Any
 
@@ -18,7 +17,8 @@ from agent_toolkit._atk import session_record_format
 from agent_toolkit._atk.wi.constants import PROCESS_WI_GOAL_BODY
 from agent_toolkit._atk.wi.repo import resolve_repo_id
 from agent_toolkit._common import host_homes
-from agent_toolkit._common.shell_tokens import is_agents_exit_session_command
+from agent_toolkit._common.shell_segments import extract_execution_segments
+from agent_toolkit._common.shell_tokens import ATK_SHELL_TOOLS, is_agents_exit_session_command
 
 # Claude Codeのハーネスが、`Skill`ツールの起動の`tool_result`として記録する起動確認文言。
 _CLAUDE_PROCESS_WI_MARKER = "Launching skill: agent-toolkit:process-wi"
@@ -124,11 +124,10 @@ def exit_session_reached(path: pathlib.Path, engine: str) -> bool | None:
     def _is_exit_command(command: object) -> bool:
         if not isinstance(command, str):
             return False
-        try:
-            tokens = shlex.split(command, posix=True)
-        except ValueError:
-            return False
-        return is_agents_exit_session_command(tokens)
+        return any(
+            segment.resolved and is_agents_exit_session_command(segment.tokens)
+            for segment in extract_execution_segments(command)
+        )
 
     def _has_invocation_record(value: object) -> bool:
         if isinstance(value, dict):
@@ -183,7 +182,7 @@ def exit_session_reached(path: pathlib.Path, engine: str) -> bool | None:
             for item in content:
                 if not isinstance(item, dict):
                     continue
-                if item.get("type") == "tool_use" and item.get("name") == "Bash":
+                if item.get("type") == "tool_use" and item.get("name") in ATK_SHELL_TOOLS:
                     tool_input = item.get("input")
                     command = tool_input.get("command") if isinstance(tool_input, dict) else None
                     tool_id = item.get("id")

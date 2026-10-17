@@ -37,12 +37,12 @@ def _claude_tool_result_record(content: str) -> dict[str, object]:
     }
 
 
-def _claude_bash_record(command: str) -> dict[str, object]:
+def _claude_bash_record(command: str, tool_name: str = "Bash") -> dict[str, object]:
     return {
         "type": "assistant",
         "message": {
             "role": "assistant",
-            "content": [{"type": "tool_use", "id": "x", "name": "Bash", "input": {"command": command}}],
+            "content": [{"type": "tool_use", "id": "x", "name": tool_name, "input": {"command": command}}],
         },
     }
 
@@ -180,14 +180,22 @@ class TestExitSessionReached:
             ("atk agents-exit-session", True),
             ("atk agents-exit-session 2>&1", True),
             ("atk agents-exit-session --x", False),
+            ("C:/x/atk.cmd agents-exit-session", True),
+            (r"'C:\x\atk.py' agents-exit-session", True),
+            (r"& 'C:\x\atk.cmd' agents-exit-session", True),
+            ("echo 'atk agents-exit-session'", False),
         ],
     )
-    def test_claude_cli_response_is_detected(self, tmp_path: pathlib.Path, command: str, expected: bool) -> None:
+    @pytest.mark.parametrize("tool_name", ["Bash", "PowerShell"])
+    def test_claude_cli_response_is_detected(
+        self, tmp_path: pathlib.Path, command: str, expected: bool, tool_name: str
+    ) -> None:
         path = tmp_path / "records.jsonl"
+        call = _claude_bash_record(command, tool_name)
         _write_record(
             path,
             [
-                _claude_bash_record(command),
+                call,
                 _claude_tool_result_record('{"exit_session_invoked":true,"status":"unsupported"}'),
             ],
         )

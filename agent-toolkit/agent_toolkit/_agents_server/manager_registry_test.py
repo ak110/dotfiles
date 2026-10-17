@@ -79,7 +79,7 @@ async def test_show_does_not_report_stale_terminal_after_resume_elsewhere(
     result_path = shared_layout.results_directory("root-session", tmp_path) / f"{session_id}.json"
     previous_bytes = result_path.read_bytes()
     try:
-        assert observer.show_session(session_id)["status"] == "completed"
+        assert (await observer.show_session(session_id))["status"] == "completed"
         if cache == "expired":
             observer.expired_sessions[session_id] = observer.stopped_sessions.pop(session_id)
 
@@ -89,8 +89,8 @@ async def test_show_does_not_report_stale_terminal_after_resume_elsewhere(
         session_registry.publish(session_id, terminal=False, cwd=str(tmp_path), turn_seq=3, status="running")
         assert session_registry.resolve(session_id).state is session_registry.Resolution.RUNNING
         with pytest.raises(ValueError, match="turn_unobserved"):
-            observer.show_session(session_id)
-        assert not observer.list_sessions(include_terminated=True)["sessions"]
+            (await observer.show_session(session_id))
+        assert not (await observer.list_sessions(include_terminated=True))["sessions"]
         for operation in (
             observer.stop(session_id),
             observer.kill(session_id, timeout=0),
@@ -102,16 +102,16 @@ async def test_show_does_not_report_stale_terminal_after_resume_elsewhere(
         assert result_path.read_bytes() == previous_bytes
 
         session_registry.publish(session_id, terminal=True, cwd=str(tmp_path), turn_seq=3, status=cast(Any, terminal_status))
-        shown = observer.show_session(session_id, verbose=True)
+        shown = await observer.show_session(session_id, verbose=True)
         assert shown["turn_seq"] == 3
         assert shown["status"] == terminal_status
         assert shown["result_available"] is False
         assert result_path.read_bytes() == previous_bytes
-        assert observer.list_sessions(include_terminated=True)["sessions"][0]["status"] == terminal_status
+        assert (await observer.list_sessions(include_terminated=True))["sessions"][0]["status"] == terminal_status
 
         _complete(current, message="現在turnの結果", error="失敗" if terminal_status == "failed" else None)
         owner_writer.retain_result(current)
-        assert observer.show_session(session_id)["result_available"] is True
+        assert (await observer.show_session(session_id))["result_available"] is True
         result = await observer.kill(session_id, timeout=0)
         assert result["agent_message"] == "現在turnの結果"
         assert result["status"] == terminal_status
@@ -176,7 +176,7 @@ async def test_list_sessions_projects_all_retention_states_in_start_order(tmp_pa
     )
     manager.expired_sessions[active.session_id] = state.SessionResumeState.from_session(active)
     try:
-        response = manager.list_sessions(include_terminated=True)
+        response = await manager.list_sessions(include_terminated=True)
     finally:
         task.cancel()
         await asyncio.gather(task, return_exceptions=True)
@@ -220,13 +220,13 @@ async def test_list_sessions_omits_terminated_sessions_without_pending_result(
     )
     manager.expired_sessions[delivered_expired.session_id] = delivered_expired
 
-    response = manager.list_sessions()
+    response = await manager.list_sessions()
     assert {session["session_id"] for session in response["sessions"]} == {
         "active",
         "pending-expired",
     }
     assert response["omitted"] == 2
-    all_sessions = manager.list_sessions(include_terminated=True)
+    all_sessions = await manager.list_sessions(include_terminated=True)
     assert len(all_sessions["sessions"]) == 4
     assert "omitted" not in all_sessions
 
@@ -239,7 +239,7 @@ async def test_list_sessions_omits_labels(tmp_path: pathlib.Path) -> None:
     exact_label = state.SessionState("exact", str(tmp_path), label="b" * 100)
     manager.sessions = {long_label.session_id: long_label, exact_label.session_id: exact_label}
 
-    listed = manager.list_sessions()["sessions"]
+    listed = (await manager.list_sessions())["sessions"]
 
     assert [item["session_id"] for item in listed] == ["long", "exact"]
     assert all(
@@ -278,7 +278,7 @@ async def test_fallback_start_and_verbose_show_publish_codex_speed(
     _install_backend(manager, "codex", backend)
     raw = await manager.start("plan", "調査", str(tmp_path))
     public = responses.public_start_response(raw)
-    shown = manager.show_session(raw["session_id"], verbose=True)
+    shown = await manager.show_session(raw["session_id"], verbose=True)
     assert public["engine"] == "codex"
     if fast_mode is None:
         assert "fast_mode" not in public
@@ -286,17 +286,18 @@ async def test_fallback_start_and_verbose_show_publish_codex_speed(
     else:
         assert public["fast_mode"] is fast_mode
         assert shown["fast_mode"] is fast_mode
-    assert "fast_mode" not in manager.show_session(raw["session_id"])
+    assert "fast_mode" not in (await manager.show_session(raw["session_id"]))
     await manager.close()
 
 
 @pytest.mark.parametrize("engine", ["claude", "agy"])
-def test_verbose_show_omits_speed_for_other_engines(engine: str, tmp_path: pathlib.Path) -> None:
+@pytest.mark.asyncio
+async def test_verbose_show_omits_speed_for_other_engines(engine: str, tmp_path: pathlib.Path) -> None:
     """他engineの構造化出力はCodexの速度項目を持たない。"""
     manager = server_manager.AgentsServerManager()
     session = state.SessionState("other-speed", str(tmp_path), engine=engine, fast_mode=True)
     manager.sessions[session.session_id] = session
-    assert "fast_mode" not in manager.show_session(session.session_id, verbose=True)
+    assert "fast_mode" not in (await manager.show_session(session.session_id, verbose=True))
 
 
 @pytest.mark.asyncio
@@ -316,15 +317,15 @@ async def test_show_reports_activity_and_output_elapsed_with_activity_based_stal
         }
     )
 
-    fresh_detail = manager.show_session(fresh.session_id)
-    text_silent_detail = manager.show_session(text_silent.session_id)
-    inactive_detail = manager.show_session(inactive.session_id)
+    fresh_detail = await manager.show_session(fresh.session_id)
+    text_silent_detail = await manager.show_session(text_silent.session_id)
+    inactive_detail = await manager.show_session(inactive.session_id)
 
     assert {"updated_at", "output_updated_at", "seconds_since_output"}.isdisjoint(fresh_detail)
     assert isinstance(fresh_detail["seconds_since_activity"], int)
     # テキスト出力だけが閾値を超えて止まっている状態と、活動そのものが止まった状態を経過秒数で区別できる。
     assert {"updated_at", "output_updated_at", "seconds_since_output"}.isdisjoint(text_silent_detail)
-    diagnostic = manager.show_session(text_silent.session_id, verbose=True)
+    diagnostic = await manager.show_session(text_silent.session_id, verbose=True)
     assert diagnostic["output_updated_at"] == text_silent.output_updated_at
     assert diagnostic["updated_at"] == text_silent.updated_at
     assert text_silent_detail["seconds_since_activity"] < state.STALL_NOTICE_SECONDS
@@ -380,11 +381,11 @@ async def test_show_returns_error_of_terminal_session(tmp_path: pathlib.Path) ->
         session_id="completed-stopped", cwd=str(tmp_path), model=None, effort=None, engine="codex", status="completed", error={}
     )
 
-    assert manager.show_session("failed-held")["error"] == usage_limit
-    assert manager.show_session("failed-expired")["error"] == "API Error"
-    assert manager.show_session("failed-stopped", verbose=True)["error"] == usage_limit
+    assert (await manager.show_session("failed-held"))["error"] == usage_limit
+    assert (await manager.show_session("failed-expired"))["error"] == "API Error"
+    assert (await manager.show_session("failed-stopped", verbose=True))["error"] == usage_limit
     for session_id in ("completed-held", "running-held", "completed-stopped"):
-        assert "error" not in manager.show_session(session_id)
+        assert "error" not in (await manager.show_session(session_id))
 
 
 @pytest.mark.asyncio
@@ -398,8 +399,8 @@ async def test_claude_api_error_is_visible_in_show_and_list(tmp_path: pathlib.Pa
 
     claude_backend.consume_assistant_message(session, failure)
     claude_backend.consume_assistant_message(session, failure)
-    shown = manager.show_session(session.session_id)
-    listed = manager.list_sessions()["sessions"][0]
+    shown = await manager.show_session(session.session_id)
+    listed = (await manager.list_sessions())["sessions"][0]
 
     assert shown["api_error"]["type"] == "rate_limit_error"
     assert shown["api_error"]["http_status"] == 429
@@ -412,8 +413,8 @@ async def test_claude_api_error_is_visible_in_show_and_list(tmp_path: pathlib.Pa
 
     claude_backend.consume_assistant_message(session, SimpleNamespace(content=[], error=None))
 
-    assert "api_error" not in manager.show_session(session.session_id)
-    assert "api_error" not in manager.list_sessions()["sessions"][0]
+    assert "api_error" not in (await manager.show_session(session.session_id))
+    assert "api_error" not in (await manager.list_sessions())["sessions"][0]
 
 
 @pytest.mark.asyncio
@@ -462,8 +463,8 @@ async def test_four_observation_paths_share_the_same_activity_projection(
         return cast(float, payload["seconds_since_activity"]) >= threshold
 
     flags = [
-        _stalled(manager.show_session(session.session_id)),
-        _stalled(manager.list_sessions()["sessions"][0]),
+        _stalled(await manager.show_session(session.session_id)),
+        _stalled((await manager.list_sessions())["sessions"][0]),
         _stalled(
             agents_wait._session_output_activity(  # pylint: disable=protected-access  # noqa: SLF001
                 [status_path],
@@ -497,8 +498,8 @@ async def test_show_reports_active_tool_uses_with_input_detail(tmp_path: pathlib
         }
     )
 
-    running_detail = manager.show_session(running.session_id)
-    codex_detail = manager.show_session(codex_running.session_id)
+    running_detail = await manager.show_session(running.session_id)
+    codex_detail = await manager.show_session(codex_running.session_id)
 
     assert running_detail["active_tool_uses"] == [
         {"name": "Bash", "started_at": "2026-09-15T00:00:01+00:00", "detail": "command=git status"}
@@ -506,8 +507,8 @@ async def test_show_reports_active_tool_uses_with_input_detail(tmp_path: pathlib
     assert codex_detail["active_tool_uses"][0]["type"] == "commandExecution"
     assert "id" not in codex_detail["active_tool_uses"][0]
     assert codex_detail["active_tool_uses"][0]["detail"] == "command=git status"
-    assert "active_tool_uses" not in manager.show_session(idle.session_id)
-    assert "active_tool_uses" not in manager.show_session(terminal.session_id)
+    assert "active_tool_uses" not in (await manager.show_session(idle.session_id))
+    assert "active_tool_uses" not in (await manager.show_session(terminal.session_id))
 
 
 @pytest.mark.asyncio
@@ -533,15 +534,15 @@ async def test_show_reports_sorted_live_child_sessions_only_for_running_parent(
         }
     )
 
-    parent_detail = manager.show_session(parent.session_id)
+    parent_detail = await manager.show_session(parent.session_id)
 
     assert parent_detail["live_child_sessions"] == [
         {"session_id": "child-a", "cwd": str(tmp_path)},
         {"session_id": "child-b", "cwd": str(tmp_path)},
     ]
     assert parent_detail["live_child_session_ids_without_cwd"] == ["child!invalid", "child-unknown"]
-    assert "live_child_sessions" not in manager.show_session(no_child.session_id)
-    assert "live_child_sessions" not in manager.show_session(terminal.session_id)
+    assert "live_child_sessions" not in (await manager.show_session(no_child.session_id))
+    assert "live_child_sessions" not in (await manager.show_session(terminal.session_id))
     await manager.close()
 
 
@@ -615,7 +616,7 @@ async def test_recovered_session_marks_persisted_result_as_uncollected(
     writer.retain_result(persisted)
     manager = server_manager.AgentsServerManager(writer)
 
-    resume_state = manager._restore_registry_session(session_id)
+    resume_state = await manager._restore_registry_session(session_id)
 
     assert resume_state is not None
     assert resume_state.result_delivered is False
@@ -720,7 +721,7 @@ async def test_stop_discards_terminal_session(
     response = await manager.stop(session.session_id)
 
     assert response == {}
-    listed = manager.list_sessions()
+    listed = await manager.list_sessions()
     assert listed["sessions"] == []
     assert "omitted" not in listed
     assert "terminal" not in manager.sessions
@@ -966,7 +967,7 @@ async def test_stop_discards_expired_session(tmp_path: pathlib.Path) -> None:
     assert response == {}
     assert session.session_id not in manager.expired_sessions
     assert session.session_id in manager.stopped_sessions
-    listed = manager.list_sessions()
+    listed = await manager.list_sessions()
     assert listed["sessions"] == []
     assert "omitted" not in listed
     # expiredへ移した時点で資源は解放済みなので、stopは再開状態の移動だけを行う。
@@ -1107,7 +1108,7 @@ async def test_show_reports_another_writer_for_running_registry_record(
     session_registry.publish(session_id, terminal=False, engine="codex", cwd=str(tmp_path))
 
     with pytest.raises(ValueError) as excinfo:
-        manager.show_session(session_id)
+        (await manager.show_session(session_id))
 
     message = _actionable_message(excinfo.value)
     assert "may have restarted" not in message
@@ -1127,7 +1128,7 @@ async def test_show_keeps_lost_session_diagnosis_without_registry_record(
     monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
 
     with pytest.raises(ValueError, match=f"unknown session: {session_id}"):
-        manager.show_session(session_id)
+        (await manager.show_session(session_id))
 
     await manager.close()
 
@@ -1142,7 +1143,7 @@ async def test_show_returns_terminal_session_restored_from_registry(
     session_id = "9f2a37f4-40f8-4d38-9c1b-1f6f9f52a1c3"
     _publish_recovered_session(monkeypatch, tmp_path, session_id, "completed")
 
-    response = manager.show_session(session_id)
+    response = await manager.show_session(session_id)
 
     assert response["session_id"] == session_id
     assert response["status"] == "completed"
@@ -1167,9 +1168,9 @@ async def test_other_manager_shows_saved_activity_and_lists_unknown_legacy_time(
     session_registry.publish("legacy-activity", terminal=True, cwd=str(tmp_path))
     observer, _ = _manager_with_fake("codex")
 
-    saved = observer.show_session(session.session_id, verbose=True)
-    legacy = observer.show_session("legacy-activity", verbose=True)
-    listed = {item["session_id"]: item for item in observer.list_sessions(include_terminated=True)["sessions"]}
+    saved = await observer.show_session(session.session_id, verbose=True)
+    legacy = await observer.show_session("legacy-activity", verbose=True)
+    listed = {item["session_id"]: item for item in (await observer.list_sessions(include_terminated=True))["sessions"]}
 
     assert saved["started_at"] == session.started_at
     assert saved["updated_at"] == session.updated_at
@@ -1270,7 +1271,7 @@ async def test_session_released_by_another_server_is_reported_as_released(
 
     with pytest.raises(ValueError) as exc_info:
         if operation == "show":
-            observer.show_session(session_id)
+            (await observer.show_session(session_id))
         elif operation == "send_message":
             await observer.send_message(session_id, "続行")
         elif operation == "kill":

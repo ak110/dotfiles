@@ -275,7 +275,7 @@ def register_plan_routes(app: quart.Quart, context: serve_plans.PlansContext) ->
 
     @app.get("/api/plans/file")
     async def plans_file() -> quart.Response:
-        host, source_id, rel = _plan_request_target(context)
+        host, source_id, rel = await _plan_request_target(context)
         try:
             body = await serve_plans.render_file_html(context, host, source_id, rel)
         except serve_plans.PlanFileError as error:
@@ -285,7 +285,7 @@ def register_plan_routes(app: quart.Quart, context: serve_plans.PlansContext) ->
     @app.get("/api/plans/raw")
     async def plans_raw() -> quart.Response:
         # クライアントのコピーボタン用に原文を返す。`/api/plans/file`はHTMLを返すため別のAPIとする。
-        host, source_id, rel = _plan_request_target(context)
+        host, source_id, rel = await _plan_request_target(context)
         try:
             text = await serve_plans.resolve_text(context, host, source_id, rel)
         except serve_plans.PlanFileError as error:
@@ -337,7 +337,7 @@ def _subscription_stream(
     )
 
 
-def _plan_request_target(context: serve_plans.PlansContext) -> tuple[str, str, str]:
+async def _plan_request_target(context: serve_plans.PlansContext) -> tuple[str, str, str]:
     """`/api/plans/file`・`/api/plans/raw`共通でhost・source・pathを取り出して検証する。
 
     `host`未指定時はローカルホストを採用する。許可リスト外のhostは入力エラーとして拒否する
@@ -352,7 +352,7 @@ def _plan_request_target(context: serve_plans.PlansContext) -> tuple[str, str, s
     if host != context.hostname and host not in context.allowed_remote_hosts:
         raise _wi_operations.WebApiInputError("未知のhostです")
     requested_source = quart.request.args.get("source") or quart.request.args.get("source_id") or ""
-    source_id = serve_plans.resolve_source_id(context, host, requested_source, rel)
+    source_id = await serve_plans.resolve_source_id(context, host, requested_source, rel)
     if source_id is None:
         raise _wi_operations.WebApiInputError("sourceを解決できません")
     return host, source_id, rel

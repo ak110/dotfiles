@@ -25,7 +25,7 @@ from agent_toolkit._common.atomic_file import atomic_write
 class RepositoryDelegateManager(Protocol):
     """公開CLIから注入される、通常delegateの起動・再開・終端の契約。"""
 
-    def activate(self) -> None:
+    async def activate_async(self) -> None:
         """登録と終端監視を有効にする。"""
         ...
 
@@ -130,7 +130,6 @@ async def run_repository_delegates(
         if manager_factory is None:
             raise ValueError("all-reposの担当起動には公開atk CLIのmanager factoryが必要")
         active_manager = manager_factory()
-    active_manager.activate()
     owners: dict[str, _ownership.Ownership] = {}
     results: dict[str, dict[str, Any]] = {}
     shared_instruction: str | None = None
@@ -142,6 +141,7 @@ async def run_repository_delegates(
         return shared_instruction
 
     try:
+        await active_manager.activate_async()
         resume_repository_id = None
         if getattr(args, "resume", None) is not None:
             resume_repository_id = _ownership.resume_repository(

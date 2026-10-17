@@ -11,6 +11,7 @@ import json
 import logging
 import os
 import pathlib
+import threading
 import uuid
 from types import SimpleNamespace
 from typing import Any
@@ -65,6 +66,30 @@ from agent_toolkit._testing.agents_server_support import (
 pytestmark = pytest.mark.usefixtures("agents_server_isolation")
 
 
+def test_server_stop_joins_worker_threads(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
+    """サーバー終了の返却時には永続ログのworkerと出力が完了する。"""
+    from agent_toolkit._agents_server import logging_config  # noqa: PLC0415  # pylint: disable=import-outside-toplevel
+
+    monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
+    before = set(threading.enumerate())
+    workers: list[threading.Thread] = []
+
+    def observe_workers() -> None:
+        workers.extend(
+            thread for thread in threading.enumerate() if thread not in before and thread.name == "agents-server-log"
+        )
+
+    monkeypatch.setattr(claude_backend, "check_dependencies", observe_workers)
+    monkeypatch.setattr(mcp_tools, "_prepare_child_environment", lambda: None)
+    assert mcp_tools.serve(check_dependencies=True) == 0
+    assert "agents_serverが正常終了しました" in (tmp_path / "agents-server.log").read_text(encoding="utf-8")
+    assert workers and all(not worker.is_alive() for worker in workers)
+    assert not any(
+        isinstance(handler, logging_config._LogFileHandler)  # noqa: SLF001  # pylint: disable=protected-access
+        for handler in logging.getLogger("agent-toolkit.agents-server").handlers
+    )
+
+
 @pytest.mark.asyncio
 async def test_parallel_claude_delegates_get_distinct_session_ids(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
@@ -116,7 +141,7 @@ async def test_parallel_claude_delegates_get_distinct_session_ids(
         for identifier in identifiers:
             session = manager.sessions[identifier]
             await session.drain_registration()
-        assert all(manager.show_session(identifier)["result_available"] for identifier in identifiers)
+        assert all([(await manager.show_session(identifier))["result_available"] for identifier in identifiers])
         assert manager._status_writer is not None
         await manager._status_writer.flush_async()
         for identifier in identifiers:
@@ -428,14 +453,14 @@ async def test_start_is_listed_as_starting_until_backend_initialization_finishes
     start_task = asyncio.create_task(manager.start("high_tier", "調査", str(tmp_path)))
     await registered.wait()
 
-    listed = manager.list_sessions()["sessions"]
+    listed = (await manager.list_sessions())["sessions"]
     assert [(item["session_id"], item["status"]) for item in listed] == [("codex-session", "starting")]
-    assert manager.show_session("codex-session")["status"] == "starting"
+    assert (await manager.show_session("codex-session"))["status"] == "starting"
 
     finish_initialization.set()
     response = await start_task
     assert response["status"] == "running"
-    assert manager.show_session("codex-session")["status"] == "running"
+    assert (await manager.show_session("codex-session"))["status"] == "running"
 
 
 @pytest.mark.asyncio
@@ -751,7 +776,7 @@ async def test_abandoned_candidate_is_released(
     assert response["session_id"] == "claude-session"
     assert response["excluded_candidates"][0]["session_id"] == "codex-session"
     assert set(manager.sessions) == {"claude-session"}
-    listed = manager.list_sessions(include_terminated=True)["sessions"]
+    listed = (await manager.list_sessions(include_terminated=True))["sessions"]
     assert [item["session_id"] for item in listed] == ["claude-session"]
     assert not abandoned_result.exists()
     assert codex.release_calls == ["codex-session"]

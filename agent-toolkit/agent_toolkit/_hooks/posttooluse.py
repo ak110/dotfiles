@@ -47,7 +47,7 @@ lazy from agent_toolkit._atk import run_script as _run_script
 lazy from agent_toolkit._common import plugin_environment
 lazy from agent_toolkit._common.session_state import read_state, update_state
 lazy from agent_toolkit._common.shell_segments import ExecutionSegment, extract_execution_segments
-lazy from agent_toolkit._common.shell_tokens import is_agents_exit_session_command
+lazy from agent_toolkit._common.shell_tokens import ATK_SHELL_TOOLS, is_agents_exit_session_command, is_atk_command
 lazy from agent_toolkit._common.task_stop_state import consume_completion, target_ids
 lazy from agent_toolkit._hooks import agents_server_observations as _agents_server_observations
 lazy from agent_toolkit._hooks import background_tasks as _background_tasks
@@ -234,15 +234,14 @@ def _record_bash_response_state(session_id: str, command: str, tool_response: ob
 
 
 _PLAN_CREATION_SCRIPT_NAME = "create_plan_files.py"
-_PLAN_CREATION_RUN_SCRIPT_PREFIX = ("atk", "run-script", "plan-create")
+_PLAN_CREATION_RUN_SCRIPT_PREFIX = ("run-script", "plan-create")
 
 
 def _is_plan_creation_invocation(tokens: tuple[str, ...]) -> bool:
     """実行トークン列が旧または現行の計画ファイルを作成するコマンドであるかを返す。"""
     if any(_PLAN_CREATION_SCRIPT_NAME in token for token in tokens):
         return True
-    normalized = (_executable_name(tokens[0]), *tokens[1:]) if tokens else ()
-    return normalized[: len(_PLAN_CREATION_RUN_SCRIPT_PREFIX)] == _PLAN_CREATION_RUN_SCRIPT_PREFIX
+    return is_atk_command(tokens) and tokens[1:3] == _PLAN_CREATION_RUN_SCRIPT_PREFIX
 
 
 def _record_created_plan_file(session_id: str, segments: list[ExecutionSegment], tool_response: object) -> None:
@@ -557,8 +556,7 @@ def _observe_tool(payload: dict, session_id: str, tool_name: str, tool_input: di
         consume_completion(session_id, target_ids(tool_input))
     elif tool_name in ("Write", "Edit", "MultiEdit", _hook_tool_input.CODEX_APPLY_PATCH_TOOL):
         notices.extend(_observe_edit_tool(session_id, tool_name, tool_input, cwd))
-    elif tool_name != "PowerShell":
-        # PowerShellは退避した出力の置き換え（`main`）だけを対象とする
+    elif tool_name in ATK_SHELL_TOOLS:
         _observe_bash_tool(payload, session_id, tool_input)
         if tool_name == "Bash" and (completion_notice := _completion_report_notice(payload, tool_input)) is not None:
             notices.append(completion_notice)

@@ -12,6 +12,7 @@ from collections.abc import Mapping
 from pathlib import Path
 
 from agent_toolkit._common import inherited_venv
+from agent_toolkit._common.shell_tokens import atk_launcher_name
 
 RUNTIME_DATA_ENV = "AGENT_TOOLKIT_RUNTIME_DATA"
 RUNTIME_ENVIRONMENT_ENV = inherited_venv.PLUGIN_RUNTIME_ENVIRONMENT_KEY
@@ -106,7 +107,7 @@ def persist_claude_environment(root: Path, environment: Mapping[str, str]) -> No
 def cli_instructions(root: Path, *, windows: bool | None = None) -> str:
     """直接起動と委譲の文脈へ、同じrootのCLIとホストに合う呼び方を示す。"""
     is_windows = os.name == "nt" if windows is None else windows
-    entry = root / "scripts" / ("atk.cmd" if is_windows else "atk")
+    entry = root / "scripts" / atk_launcher_name(windows=is_windows)
     command = "& '" + str(entry).replace("'", "''") + "'" if is_windows else shlex.quote(str(entry))
     return (
         f"agent-toolkitのCLI: {entry}\n"

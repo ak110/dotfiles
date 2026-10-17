@@ -23,12 +23,58 @@ from agent_toolkit._agents_server import (
     state,
     status_file,
     unavailable_candidates,
+    wait_output_tracking,
 )
 from agent_toolkit._atk import config as atk_config
 from agent_toolkit._common import atomic_file, session_registry, state_paths
 from agent_toolkit._testing.agents_server_support import FakeBackend, FakeCodexClient, install_backend
 
 pytestmark = pytest.mark.usefixtures("agents_server_isolation")
+
+
+@pytest.mark.asyncio
+async def test_terminal_notification_finishes_io_before_result_becomes_available(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """終端通知の読取待機中にもwriterを動かし、終端結果と確定時刻の一貫性を保つ。"""
+    session = state.SessionState("session", str(tmp_path), engine="codex", announced=True, status="running", turn_id="turn")
+    sessions = {session.session_id: session}
+    session.agents_wait_background_outputs.add(str(tmp_path / "output"))
+    writer = status_file.StatusFileWriter(
+        sessions, shared_roots.StatusFileIdentity("root", "root.json", None), state_root=tmp_path
+    )
+    backend = codex.AppServerManager(sessions)
+    await writer.activate_async()
+    loop = asyncio.get_running_loop()
+    entered, release = asyncio.Event(), threading.Event()
+
+    def read_outputs(_paths: tuple[str, ...], **_kwargs: Any) -> set[str]:
+        loop.call_soon_threadsafe(entered.set)
+        assert release.wait(5)
+        return set()
+
+    monkeypatch.setattr(wait_output_tracking, "_read_background_outputs", read_outputs)
+    completed = asyncio.create_task(
+        backend._handle_notification(
+            {
+                "method": "turn/completed",
+                "params": {"threadId": "session", "turn": {"id": "turn", "status": "completed"}},
+            }
+        )
+    )
+    try:
+        await asyncio.wait_for(entered.wait(), 5)
+        assert not session.result_available
+        await writer.flush_async()
+        assert not writer.result_exists("session")
+    finally:
+        release.set()
+        await completed
+        await writer.flush_async()
+        await backend.close()
+        await writer.deactivate_async()
+    result = writer.read_result("session")
+    assert result is not None and result["status"] == "completed" and result["finalized_at"]
 
 
 class _WindowsReplaceError(OSError):

@@ -228,6 +228,10 @@ drainは並行した保存の一部が失敗しても対象workerの全終了を
 
 ## 本書の更新が必要になる変更
 
+同期操作のworker実装は`_common/async_operations.py`が持ち、agents_serverの`file_operations.py`は既存名を再exportする。監視の開始・終了でも同じ実装を使い、キャンセル後も所有threadを回収する。
+
+非同期の共有状態操作は`file_operations.run_file_operation`で完了を待ち、結果と通知の一度だけの回収も排他区間全体をworkerで行う。Managerの照会・復元・結果回収は非同期APIを使う。射影、SessionState、タイマーと公開済み結果の台帳はloopが更新する。診断採取へ渡すsessionはloopで確定したsnapshotとする。永続ログは専用workerが順に出力し、サーバー終了の返却前に全記録とworkerの終了を回収する。
+
 - 上表のいずれかの状態について、基準となる保持先、読む主体または更新できる主体を変える変更。
 - 状態ディレクトリ配下へ新しい種類のファイルを置く変更。
 - MCPサーバー、`atk`のCLI、フックおよびstatuslineのいずれかへ、既存の共有状態を読み書きする処理を追加する変更。
