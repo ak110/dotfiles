@@ -40,7 +40,6 @@ managed-tempの掃引）と、サブコマンドの登録表・実行の登録�
 import argparse
 import dataclasses
 import datetime
-import hashlib
 import os
 import pathlib
 import sys
@@ -81,35 +80,9 @@ lazy from agent_toolkit._common import delegated_session as _delegated_session  
 lazy from agent_toolkit._common import inherited_venv as _inherited_venv
 lazy from agent_toolkit._common import mcp_environment as _mcp_environment
 lazy from agent_toolkit._common import private_notes as _private_notes  # noqa: E402
-lazy from agent_toolkit._common import session_state as _session_state  # noqa: E402
-lazy from agent_toolkit._plan import owner_records as _owner_records  # noqa: E402
-
-_UNREGISTERED_TEMP_FINGERPRINT_KEY = "unregistered_managed_temp_fingerprint"
 
 _MANAGED_TEMP_CHECK_NEXT_ACTION = "本来の操作は継続した。`atk managed-temp list`で残存を確認する"
 """managed-tempのディレクトリの自動削除・探索の失敗に添える次の操作。"""
-
-
-def _claim_unregistered_temp_warning(candidates: tuple[pathlib.Path, ...]) -> bool:
-    """候補集合を現行セッションでまだ報告していない場合だけ、報告済みとして記録して真を返す。"""
-    session_id = _owner_records.resolve_owner_session_id()
-    if session_id is None:
-        return bool(candidates)
-    source = "\0".join(str(path) for path in candidates)
-    fingerprint = hashlib.sha256(source.encode()).hexdigest()
-    should_warn = bool(candidates)
-
-    def _claim(current: dict) -> dict | None:
-        nonlocal should_warn
-        if current.get(_UNREGISTERED_TEMP_FINGERPRINT_KEY) == fingerprint:
-            should_warn = False
-            return None
-        current[_UNREGISTERED_TEMP_FINGERPRINT_KEY] = fingerprint
-        should_warn = bool(candidates)
-        return current
-
-    _session_state.update_state(session_id, _claim)
-    return should_warn
 
 
 _LEGACY_TOP_LEVEL_COMMANDS = {"mq": "wi"}
@@ -442,14 +415,14 @@ def main(
         argcomplete.autocomplete(parser)
     raw_argv, repo_path_override = _extract_legacy_repo_path(raw_argv)
     if not _output_capture_active and is_agent_environment() and any(flag in raw_argv for flag in ("--help", "-h")):
-        with _output_file.auto_save(lambda: _managed_temp.create_managed_temp("atk-output")):
+        with _output_file.auto_save(lambda: _managed_temp.create_output_temp("atk-output")):
             main(argv, home=home, now=now, _output_capture_active=True)
         return
     args = parser.parse_args(raw_argv)
     if not _output_capture_active and _auto_saves_output(args):
         output_as_file = _output_as_file_call(args)
         with _output_file.auto_save(
-            lambda: _managed_temp.create_managed_temp("atk-output"),
+            lambda: _managed_temp.create_output_temp("atk-output"),
             after_save=output_as_file.after_save if output_as_file is not None else None,
             force_stdout=output_as_file is not None,
             discard_directory=_managed_temp.cleanup_managed_temp,
@@ -475,23 +448,28 @@ def main(
         sweep_result = _managed_temp.sweep_managed_temp(now=now)
         automatically_cleaned = sweep_result.deleted
     except Exception as error:  # noqa: BLE001  # 自動削除の失敗で本来のサブコマンドを失敗させない
-        _outcome.report_warning(
+        _outcome.report_persistent_warning(
             f"managed-tempのディレクトリの自動削除に失敗した: {error}",
             next_action=_MANAGED_TEMP_CHECK_NEXT_ACTION,
         )
     is_delegated_session = _delegated_session.is_delegated(os.environ)
     if sweep_result is not None and args.command != "managed-temp" and not is_delegated_session:
+        if sweep_result.retention_changed:
+            _outcome.report_warning(
+                f"使用中または使用状態を確認できない配布物を{len(sweep_result.retained)}件保持した",
+                next_action="`atk managed-temp list`で対象・保持理由・再判定条件を確認する",
+            )
         # 掃引が同じ起動で探索した結果を使い、未登録候補を再探索しない。
         # 最終更新から7日以内の候補は使用中として自動削除から外れ、対処を要しないため数えない。
         unregistered_candidates = sweep_result.stale_unregistered
         if sweep_result.unregistered_error is not None:
-            _outcome.report_warning(
+            _outcome.report_persistent_warning(
                 f"登録を持たない管理対象を探索できなかった: {sweep_result.unregistered_error}",
                 next_action=_MANAGED_TEMP_CHECK_NEXT_ACTION,
             )
         else:
-            if _claim_unregistered_temp_warning(unregistered_candidates):
-                _outcome.report_warning(
+            if unregistered_candidates:
+                _outcome.report_persistent_warning(
                     f"自動削除されずに残った、登録を持たない管理対象が{len(unregistered_candidates)}件ある",
                     next_action="`atk managed-temp list`で一覧と回収方法を確認する",
                 )

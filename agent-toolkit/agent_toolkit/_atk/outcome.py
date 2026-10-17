@@ -9,8 +9,11 @@
 from __future__ import annotations
 
 import enum
+import hashlib
+import os
 import sys
 
+from agent_toolkit._common import delegated_session, session_state
 from agent_toolkit._common import next_action as _next_action
 
 SUCCESS_PREFIX = "成功: "
@@ -147,12 +150,47 @@ def report_failure(message: str, *, next_action: str) -> None:
 def report_warning(message: str, *, next_action: str, to_stderr: bool = True) -> None:
     """警告行と次に行う操作の行を書く。出力先はその警告を発生させた処理の現在の出力先を呼び出し側が指定する。
 
-    対処が不要な警告も、続行してよいことを次の操作として明示する。
+    警告の出力条件はwriting-standardsのwriting.md「エージェントが読む出力」に従う。
     """
     print(
         _next_action.with_next_action(f"{WARNING_PREFIX}{message}", next_action),
         file=sys.stderr if to_stderr else sys.stdout,
     )
+
+
+def claim_persistent_warning(message: str, *, session_id: str | None = None) -> bool:
+    """同じ会話で同じ持続状態を初めて報告する場合だけ真を返す。"""
+    session_id = session_id or next(
+        (
+            os.environ[key]
+            for key in ("AGENT_TOOLKIT_OWNER_SESSION", "CLAUDE_CODE_SESSION_ID", "CODEX_THREAD_ID")
+            if os.environ.get(key)
+        ),
+        None,
+    )
+    if not session_id:
+        return True
+    fingerprint = hashlib.sha256(message.encode()).hexdigest()
+    claimed = True
+
+    def claim(current: dict) -> dict | None:
+        nonlocal claimed
+        fingerprints = current.setdefault("persistent_warning_fingerprints", [])
+        if fingerprint in fingerprints:
+            claimed = False
+            return None
+        fingerprints.append(fingerprint)
+        claimed = True
+        return current
+
+    session_state.update_state(session_id, claim)
+    return claimed
+
+
+def report_persistent_warning(message: str, *, next_action: str) -> None:
+    """共通起動の警告を、委譲先を除いて会話ごとに1回出力する。"""
+    if not delegated_session.is_delegated(os.environ) and claim_persistent_warning(message):
+        report_warning(message, next_action=next_action)
 
 
 def report_no_match(message: str) -> None:

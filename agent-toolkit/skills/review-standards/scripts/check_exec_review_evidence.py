@@ -2201,7 +2201,7 @@ def _save_return_input(
     }
     # 生成側も消費側と同じ変換で受理を確認し、形式の定義を一括検査へ保つ。
     _batch_arguments(value)
-    path = managed_temp.create_managed_temp("exec-review-input") / "reviews.json"
+    path = managed_temp.create_output_temp("exec-review-input") / "reviews.json"
     _write_evidence_file(path, {"version": 1, "reviews": [value]})
     return path
 

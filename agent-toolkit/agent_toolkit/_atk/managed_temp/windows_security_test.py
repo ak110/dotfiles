@@ -711,7 +711,7 @@ class TestManagedTempPosix:
 
         assert subject.sweep_expired_managed_temp(now=now) == []
         assert triggered
-        assert f"警告: managed-tempのディレクトリを自動削除できない: {target}" in capsys.readouterr().err
+        assert f"警告: managed-tempのディレクトリを自動削除できない: {target}" not in capsys.readouterr().err
 
     def test_sweep_keeps_an_expired_root_with_recent_nested_content(
         self,
@@ -954,6 +954,7 @@ class TestManagedTempPosix:
         unreachable.rmdir()
         managed_temp_registry._registry_path(orphan).unlink()
 
+        _set_tree_mtime(orphan, int((datetime.datetime.now(datetime.UTC) - datetime.timedelta(days=8)).timestamp() * 1e9))
         assert subject.list_managed_temp(report_recovery_candidates=True) == []
         error = capsys.readouterr().err
         assert str(unreachable) in error
@@ -988,6 +989,7 @@ class TestManagedTempPosix:
         orphans = [subject.create_managed_temp(f"orphan-{index}") for index in range(2)]
         for orphan in orphans:
             managed_temp_registry._registry_path(orphan).unlink()
+            _set_tree_mtime(orphan, int((datetime.datetime.now(datetime.UTC) - datetime.timedelta(days=8)).timestamp() * 1e9))
         registered = subject.create_managed_temp("registered")
         unmarked = [tmp_path / f"unmarked-{index}" for index in range(20)]
         for directory in unmarked:
@@ -1130,6 +1132,9 @@ class TestManagedTempPosix:
             marker.unlink()
             marker.symlink_to(tmp_path / "missing-marker")
 
+        expired = (datetime.datetime.now(datetime.UTC) - datetime.timedelta(days=8)).timestamp()
+        for path in (marker, target):
+            os.utime(path, (expired, expired), follow_symlinks=False)
         assert subject.list_managed_temp(report_recovery_candidates=True) == []
         offered = f"atk managed-temp cleanup --path {target} --recover-registry" in capsys.readouterr().err
 
@@ -1152,6 +1157,7 @@ class TestManagedTempPosix:
         marker.write_text(json.dumps(record), encoding="utf-8")
         marker.chmod(0o600)
 
+        _set_tree_mtime(target, int((datetime.datetime.now(datetime.UTC) - datetime.timedelta(days=8)).timestamp() * 1e9))
         assert subject.list_managed_temp(report_recovery_candidates=True) == []
         error = capsys.readouterr().err
         assert f"警告: マーカーから登録を復元できない管理対象がある: {target}" in error
@@ -1243,7 +1249,7 @@ class TestManagedTempPosix:
         consuming, _ = _interrupt_cleanup(target)
 
         subject.cleanup_managed_temp(target)
-        assert "中断した後始末の登録を復元した" in capsys.readouterr().err
+        assert "中断した後始末の登録を復元した" not in capsys.readouterr().err
         assert not target.exists()
         assert not managed_temp_registry._registry_path(target).exists()
         assert not consuming.exists()
@@ -1277,7 +1283,7 @@ class TestManagedTempPosix:
         consuming, quarantine = _interrupt_cleanup(target, quarantine=True)
 
         subject.cleanup_managed_temp(target)
-        assert "中断した後始末の隔離先を後始末した" in capsys.readouterr().err
+        assert "中断した後始末の隔離先を後始末した" not in capsys.readouterr().err
         assert not target.exists()
         assert not quarantine.exists()
         assert not managed_temp_registry._registry_path(target).exists()

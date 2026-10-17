@@ -131,7 +131,7 @@ def _run(
     directory.mkdir(exist_ok=True)
     for previous in directory.iterdir():
         previous.unlink()
-    monkeypatch.setattr(run_command.managed_temp, "create_managed_temp", lambda _prefix: directory)
+    monkeypatch.setattr(run_command.managed_temp, "create_output_temp", lambda _prefix: directory)
     args = argparse.Namespace(command_argv=["--", *argv], cwd=(cwd or tmp_path).resolve(), timeout=timeout)
     result = run_command.dispatch(args)
     captured = capsys.readouterr()
@@ -292,7 +292,7 @@ def test_shell_metacharacters_and_leading_hyphen_keep_argv_boundaries(
 def test_empty_command_is_wrapper_failure(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    monkeypatch.setattr(run_command.managed_temp, "create_managed_temp", lambda _prefix: tmp_path / "unused")
+    monkeypatch.setattr(run_command.managed_temp, "create_output_temp", lambda _prefix: tmp_path / "unused")
     args = argparse.Namespace(command_argv=[], cwd=tmp_path.resolve(), timeout=None)
 
     result = run_command.dispatch(args)
@@ -307,7 +307,7 @@ def test_record_write_failure_preserves_child_result(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """記録の保存だけが失敗しても子の終了状態と両出力へ到達できる。"""
-    monkeypatch.setattr(run_command.managed_temp, "create_managed_temp", lambda _prefix: tmp_path)
+    monkeypatch.setattr(run_command.managed_temp, "create_output_temp", lambda _prefix: tmp_path)
     (tmp_path / "record.json").mkdir()
     args = argparse.Namespace(
         command_argv=["--", sys.executable, "-c", "import sys; print('out'); print('err', file=sys.stderr); sys.exit(7)"],
@@ -331,7 +331,7 @@ def test_stream_preparation_failure_returns_saved_wrapper_failure(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], stream: str
 ) -> None:
     """出力先を開けない失敗も例外で終わらず、起動前の失敗と未取得の属性を保存する。"""
-    monkeypatch.setattr(run_command.managed_temp, "create_managed_temp", lambda _prefix: tmp_path)
+    monkeypatch.setattr(run_command.managed_temp, "create_output_temp", lambda _prefix: tmp_path)
     (tmp_path / f"{stream}.bin").mkdir()
     args = argparse.Namespace(command_argv=["--", sys.executable, "-c", "print('child')"], cwd=tmp_path, timeout=30)
     assert run_command.dispatch(args) == 125
@@ -345,7 +345,7 @@ def test_command_without_separator_is_wrapper_failure(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """子argvの先頭がオプションでも曖昧にならないよう、区切り`--`を必須にする。"""
-    monkeypatch.setattr(run_command.managed_temp, "create_managed_temp", lambda _prefix: tmp_path / "unused")
+    monkeypatch.setattr(run_command.managed_temp, "create_output_temp", lambda _prefix: tmp_path / "unused")
     args = argparse.Namespace(command_argv=[sys.executable, "--version"], cwd=tmp_path.resolve(), timeout=None)
 
     result = run_command.dispatch(args)

@@ -83,7 +83,7 @@ class _BodyFileWriter:
     def write(self, session_id: str, result: Mapping[str, Any]) -> pathlib.Path:
         """本文を書いたファイルの絶対パスを返す。書けない場合は`OSError`か`ManagedTempError`を送出する。"""
         if self._directory is None:
-            self._directory = _managed_temp.create_managed_temp(_BODY_TEMP_PREFIX)
+            self._directory = _managed_temp.create_output_temp(_BODY_TEMP_PREFIX)
         # 呼び出しごとに新しい領域なので、内部のturn番号を公開結果へ残す必要はない。
         path = self._directory / f"{session_id}.md"
         with path.open("w", encoding="utf-8", newline="") as stream:

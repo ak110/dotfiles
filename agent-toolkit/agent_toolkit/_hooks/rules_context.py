@@ -220,13 +220,10 @@ def _existing_session_temp(session_id: object) -> str | None:
     if not isinstance(session_id, str) or not session_id:
         return None
     try:
-        entries = managed_temp.list_managed_temp(SESSION_TEMP_PREFIX, session_id=session_id)
+        path = managed_temp.find_session_temp(session_id)
     except managed_temp.ManagedTempError, OSError:
         return None
-    if not entries:
-        return None
-    path = entries[-1].get("path")
-    return path if isinstance(path, str) else None
+    return str(path) if path is not None else None
 
 
 def _subagent_temp_notice(session_temp: str, agent_id: object) -> str:

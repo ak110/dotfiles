@@ -581,6 +581,7 @@ class TestEnsurePluginCacheComplete:
         self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, caplog: pytest.LogCaptureFixture
     ) -> None:
         """plugin cache の外にある導入先は削除も再インストールもせず、警告して検査を省略する。"""
+        caplog.set_level("INFO")
         outside = tmp_path / "elsewhere" / "1.0.0"
         self._prepare(monkeypatch, tmp_path, install_path=outside)
         self._write_cache(outside, missing=("pyproject.toml",))
@@ -590,7 +591,7 @@ class TestEnsurePluginCacheComplete:
             lambda _name: pytest.fail("cache の外にある導入先で再インストールを起動した"),
         )
 
-        with caplog.at_level(logging.WARNING):
+        with caplog.at_level(logging.INFO):
             assert _install_claude_plugins._ensure_plugin_cache_complete(self._NAME) is False
 
         assert outside.is_dir()

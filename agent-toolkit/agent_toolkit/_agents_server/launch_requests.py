@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import logging
 import os
@@ -309,21 +310,16 @@ def capture_handoff_session() -> None:
 def _default_handoff_path() -> pathlib.Path | None:
     """`（新規）`の引き継ぎ記録先として、委譲元のセッションのmanaged-temp直下の未使用のファイルパスを返す。
 
-    セッションのmanaged-tempは`AGENT_TOOLKIT_OWNER_SESSION`か`CLAUDE_CODE_SESSION_ID`が示すsessionのものを作成せずに解決する。
-    解決できない場合（Codex CLIが直接起動したMCPサーバーなど）は新しいmanaged-tempを作成する。
+    会話を特定できる場合はセッションのmanaged-tempを直接解決して再利用する。
+    会話を特定できないMCP起動では、個別のhandoff領域を作成する。
     どちらも得られない場合は`None`を返し、呼び出し元は従来どおり欠落として拒否する。
     ファイル自体は作成しない。`（新規）`の記録先は委譲先が作成するためである。
     """
     directory: pathlib.Path | None = None
     session_id = _HANDOFF_SESSION[0] if _HANDOFF_SESSION is not None else shared_roots.resolve_root_session_id(os.environ)
-    if session_id is not None:
-        try:
-            entries = _managed_temp.list_managed_temp(_managed_temp.SESSION_TEMP_PREFIX, session_id=session_id)
-        except _managed_temp.ManagedTempError, OSError:
-            entries = []
-        recorded = entries[-1].get("path") if entries else None
-        if isinstance(recorded, str) and pathlib.Path(recorded).is_dir():
-            directory = pathlib.Path(recorded)
+    if session_id is not None and not session_id.startswith("mcp-"):
+        with contextlib.suppress(_managed_temp.ManagedTempError, OSError):
+            directory = _managed_temp.resolve_session_temp(session_id)
     if directory is None:
         try:
             directory = _managed_temp.create_managed_temp(_HANDOFF_TEMP_PREFIX)

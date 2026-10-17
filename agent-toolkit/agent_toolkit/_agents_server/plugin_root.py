@@ -46,6 +46,7 @@ def resolve_stable_plugin_root(plugin_root: Path | None = None) -> Path:
     `plugin_root`には解決済みrootを渡し、省略時は自身の位置から解決する。
     """
     root = Path(__file__).resolve().parents[2] if plugin_root is None else plugin_root
+    plugin_root_leases.register_lease_capability()
     cached = _stable_plugin_roots.get(root)
     if cached is not None:
         return cached

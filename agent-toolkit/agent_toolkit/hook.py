@@ -35,6 +35,7 @@ import sys
 lazy import datetime
 lazy import traceback
 
+lazy from agent_toolkit._atk import outcome as _outcome
 lazy from agent_toolkit._hooks.notice import formatter as _notice_formatter
 
 _SUBCOMMANDS: frozenset[str] = frozenset(
@@ -90,6 +91,14 @@ def main(argv: list[str]) -> int:
     """サブコマンド名から対象モジュールを解決し`main()`を呼び出す。"""
     _configure_standard_output()
     known_subcommands = "|".join(sorted(_SUBCOMMANDS))
+    if not argv or argv[0] not in _SUBCOMMANDS:
+        session_id = None
+        with contextlib.suppress(OSError, ValueError, UnicodeError):
+            early_payload = json.loads(sys.stdin.read())
+            if isinstance(early_payload, dict) and isinstance(early_payload.get("session_id"), str):
+                session_id = early_payload["session_id"]
+        if session_id and not _outcome.claim_persistent_warning(repr(argv), session_id=session_id):
+            return 0
     if not argv:
         print(
             _notice_formatter("hook")(
@@ -125,7 +134,7 @@ def main(argv: list[str]) -> int:
             _notice_formatter("hook")(
                 f"stdinのUTF-8デコードに失敗したためフック処理を通過させる: {exc}",
                 tag="warn",
-                fix="対応不要（フック処理を通過させて継続した）。",
+                fix="再発する場合はagent-toolkitの不具合としてユーザーへ報告する。",
                 removable_cause=False,
             ),
             file=sys.stderr,

@@ -11,7 +11,10 @@ from agent_toolkit._atk.managed_temp.cli import (
 from agent_toolkit._atk.managed_temp.creation import (
     SESSION_TEMP_PREFIX,
     create_managed_temp,
+    create_output_temp,
     create_session_temp,
+    find_session_temp,
+    resolve_session_temp,
 )
 from agent_toolkit._atk.managed_temp.errors import (
     ManagedTempError,
@@ -34,10 +37,13 @@ __all__ = [
     "build_parser",
     "cleanup_managed_temp",
     "create_managed_temp",
+    "create_output_temp",
     "create_session_temp",
     "dispatch",
+    "find_session_temp",
     "list_managed_temp",
     "main",
+    "resolve_session_temp",
     "sweep_expired_managed_temp",
     "sweep_managed_temp",
     "validate_managed_temp",

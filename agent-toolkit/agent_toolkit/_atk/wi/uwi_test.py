@@ -1084,13 +1084,13 @@ class TestUwiAdopt:
         assert (notes / "inbox" / f"{_FIXED_TIMESTAMP}-001.md").exists()
         assert not (notes / "adopted" / f"{_FIXED_TIMESTAMP}-001.md").exists()
 
-    def test_duplicate_filenames_deduplicated_with_warning(
+    def test_duplicate_filenames_deduplicated_without_warning(
         self,
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """同一ファイル名を重複指定した場合、重複除去のうえ警告を出力して1回のみ移動されること。
+        """同一ファイル名を重複指定した場合、初出の1件へ集約して移動する。
 
         重複除去前は`src.rename(dst)`が1回目の成功後に2回目で対象不在となり
         `FileNotFoundError`のTracebackが露出していた。
@@ -1110,7 +1110,7 @@ class TestUwiAdopt:
         assert not (notes / "inbox" / f"{_FIXED_TIMESTAMP}-001.md").exists()
         assert (notes / "adopted" / f"{_FIXED_TIMESTAMP}-001.md").exists()
         stderr = capsys.readouterr().err
-        assert "重複がある" in stderr
+        assert "重複がある" not in stderr
         commit_calls = [c["cmd"] for c in git_calls if c["cmd"][:2] == ["git", "commit"]]
         assert len(commit_calls) == 1
         assert "chore: process 1 entry (adopted)" in commit_calls[0]
@@ -1222,13 +1222,13 @@ class TestUwiRm:
         assert existing.exists()
         assert not [c["cmd"] for c in git_calls if "commit" in c["cmd"]]
 
-    def test_duplicate_filenames_deduplicated_with_warning(
+    def test_duplicate_filenames_deduplicated_without_warning(
         self,
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """同一ファイル名を重複指定した場合、重複除去のうえ警告を出力して1回のみ削除されること。
+        """同一ファイル名を重複指定した場合、初出の1件へ集約して削除する。
 
         重複除去前は`p.unlink()`が1回目の成功後に2回目で対象不在となり
         `FileNotFoundError`のTracebackが露出していた。
@@ -1245,7 +1245,7 @@ class TestUwiRm:
         assert exc_info.value.code == 0
         assert not (notes / "inbox" / f"{_FIXED_TIMESTAMP}-001.md").exists()
         stderr = capsys.readouterr().err
-        assert "重複がある" in stderr
+        assert "重複がある" not in stderr
         commit_cmd = [c["cmd"] for c in git_calls if "commit" in c["cmd"]][0]
         assert "chore: remove 1 entry" in " ".join(commit_cmd)
 

@@ -151,7 +151,7 @@ def _remove_version_dir(version_dir: Path, cache_resolved: Path) -> bool:
     try:
         version_dir.resolve().relative_to(cache_resolved)
     except OSError, ValueError:
-        logger.warning(
+        logger.info(
             log_format.format_status(
                 log_format.home_short(version_dir),
                 "cache配下ではないため削除をスキップ。保護対象として保持したため対応不要です（処理は継続した）。",

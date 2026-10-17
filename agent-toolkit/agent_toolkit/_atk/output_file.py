@@ -67,11 +67,8 @@ def _discard_unused(saved: pathlib.Path, discard_directory: Callable[[pathlib.Pa
         saved.unlink()
         if discard_directory is not None:
             discard_directory(saved.parent)
-    except Exception as error:  # noqa: BLE001  # 片付けの失敗で本来の終了状態を変えない
-        outcome.report_warning(
-            f"結果の無い出力保存先を片付けられなかった: {saved.parent}: {error}",
-            next_action="対応不要（終了状態は変えていない）。残った領域は最終更新から7日で自動削除される",
-        )
+    except Exception:  # noqa: BLE001  # 保存先は保持期限後の掃引で回収する
+        pass
 
 
 @contextlib.contextmanager

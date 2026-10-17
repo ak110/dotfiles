@@ -607,3 +607,86 @@ def test_conflicted_area_is_retained_then_collected() -> None:
         _release(holder)
     assert area in subject.sweep_expired_managed_temp(now=now)
     assert not area.exists()
+
+
+def test_list_does_not_offer_cleanup_for_retained_areas(capsys: pytest.CaptureFixture[str]) -> None:
+    """更新が期限内の未登録領域を保持し、回収の案内を出力しない。"""
+    area = subject.create_managed_temp("recent-orphan")
+    managed_temp_registry._registry_path(area).unlink()
+    assert subject.main(["list"]) == 1
+    assert "cleanup --path" not in capsys.readouterr().err
+    assert area.is_dir()
+
+
+def test_retention_summary_once_per_state_change(
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """同じ保持状態は初回だけ要約対象とし、明示listは対象別の理由と再判定条件を返す。"""
+    area = subject.create_managed_temp("agents-server-plugin-root")
+    with lease_subject.plugin_root_lock(area):
+        lease_subject.register_plugin_root_use(area)
+    now = datetime.datetime.now(datetime.UTC) + datetime.timedelta(days=8)
+    first = subject.sweep_managed_temp(now=now)
+
+    def repeated_judgement(*_args: object, **_kwargs: object) -> None:
+        pytest.fail("保持を再判定した")
+
+    with monkeypatch.context() as patch:
+        patch.setattr(inventory_subject, "_require_unused_plugin_root", repeated_judgement)
+        second = subject.sweep_managed_temp(now=now)
+    assert first.retention_changed
+    assert not second.retention_changed
+    assert first.retained == second.retained
+    assert subject.main(["list"]) == 0
+    error = capsys.readouterr().err
+    assert str(area) in error
+    assert "利用プロセスの終了後" in error
+
+
+@pytest.mark.parametrize("quarantined", [False, True])
+def test_list_and_sweep_skip_concurrent_cleanup(
+    quarantined: bool,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """別processが後始末中の消費・隔離状態は通知せず、中断後は元の対象から再開する。"""
+    area = subject.create_managed_temp("concurrent-cleanup")
+    expires = (datetime.datetime.now(datetime.UTC) - datetime.timedelta(days=8)).timestamp()
+    for path in (*area.rglob("*"), area):
+        os.utime(path, (expires, expires), follow_symlinks=False)
+    registry = managed_temp_registry._registry_path(area)
+    nonce = json.loads(registry.read_text(encoding="utf-8"))["nonce"]
+    consuming = registry.with_name(f"{registry.name}.consuming-{nonce}")
+    quarantine = area.parent / f".agent-toolkit-cleanup-{nonce}"
+    registry.replace(consuming)
+    if quarantined:
+        area.rename(quarantine)
+    holder = _hold_lock(_lock_paths(area)["outer"])
+    try:
+        assert subject.main(["list"]) == 1
+        result = subject.sweep_managed_temp(now=datetime.datetime.now(datetime.UTC))
+        assert not result.deleted
+        assert not result.stale_unregistered
+        assert "警告:" not in capsys.readouterr().err
+    finally:
+        _release(holder)
+    assert subject.main(["list"]) == 1
+    error = capsys.readouterr().err
+    assert str(area) in error
+    assert "--force-remove" not in error
+    subject.cleanup_managed_temp(area)
+    assert not area.exists() and not quarantine.exists() and not consuming.exists()
+
+
+def test_list_preserves_registration_for_interrupted_quarantine(capsys: pytest.CaptureFixture[str]) -> None:
+    """隔離先が残る登録を実体不在の登録として回収せず、同じcleanupへ渡す。"""
+    area = subject.create_managed_temp("interrupted-quarantine")
+    registry = managed_temp_registry._registry_path(area)
+    nonce = json.loads(registry.read_text(encoding="utf-8"))["nonce"]
+    quarantine = area.parent / f".agent-toolkit-cleanup-{nonce}"
+    area.rename(quarantine)
+    subject.list_managed_temp(report_recovery_candidates=True)
+    assert registry.exists()
+    assert str(area) in capsys.readouterr().err
+    subject.cleanup_managed_temp(area)
+    assert not quarantine.exists() and not registry.exists()

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import contextlib
 import datetime
+import hashlib
 import os
 import pathlib
 import secrets
@@ -16,9 +17,11 @@ from agent_toolkit._atk.managed_temp.registry import (
     _MARKER_NAME,
     _awis_are_valid,
     _invalid_prefix_error,
+    _load_private_json,
     _path_identity,
     _record,
     _registry_path,
+    _state_root,
     _temp_root,
     _validate_root,
     _write_marker,
@@ -26,12 +29,13 @@ from agent_toolkit._atk.managed_temp.registry import (
     is_valid_prefix,
 )
 from agent_toolkit._atk.managed_temp.validation import _validate_posix, _validate_windows, validate_managed_temp
+from agent_toolkit._common import file_lock
 
 # 他の処理で使わない依存は、使用時まで読み込まない。
 lazy from agent_toolkit._atk.managed_temp.windows_security import _windows_identity, _windows_secure_path
 
 SESSION_TEMP_PREFIX = "session"
-"""SessionStartが会話ごとに作成するセッションのmanaged-tempの接頭辞。
+"""会話ごとに再利用するセッションのmanaged-tempの接頭辞。
 
 フックとagents_serverの双方が同じ領域を求めるため、両者が読み込む下位の層にあるこのモジュールで定義する。
 """
@@ -93,9 +97,81 @@ def create_managed_temp(
     if not _awis_are_valid(list(awis)):
         raise ManagedTempError("awiはパス区切り文字と制御文字を含まない空でないファイル名で指定する")
     if session_id is not None:
-        existing = list_managed_temp(session_id=session_id)
-        if existing:
-            return pathlib.Path(existing[0]["path"])
+        return resolve_session_temp(session_id, prefix=prefix, root=root, awis=awis)
+    return _create_managed_temp(prefix, root, awis, session_id)
+
+
+def resolve_session_temp(
+    session_id: str,
+    *,
+    prefix: str = SESSION_TEMP_PREFIX,
+    root: pathlib.Path | str | None = None,
+    awis: tuple[str, ...] = (),
+) -> pathlib.Path:
+    """会話別の参照を検証して親領域を解決し、同時作成を同じ領域へ収束させる。"""
+    path = _resolve_session_temp(session_id, prefix=prefix, root=root, awis=awis, create=True)
+    assert path is not None
+    return path
+
+
+def find_session_temp(session_id: str) -> pathlib.Path | None:
+    """既存の会話領域を直接解決し、領域を作成せずに返す。"""
+    return _resolve_session_temp(session_id, prefix=SESSION_TEMP_PREFIX, root=None, awis=(), create=False)
+
+
+def _resolve_session_temp(
+    session_id: str,
+    *,
+    prefix: str,
+    root: pathlib.Path | str | None,
+    awis: tuple[str, ...],
+    create: bool,
+) -> pathlib.Path | None:
+    directory = _state_root() / ".sessions"
+    directory.mkdir(mode=0o700, exist_ok=True)
+    key = hashlib.sha256(session_id.encode()).hexdigest()
+    reference = directory / key
+    with (directory / f"{key}.lock").open("a+", encoding="utf-8") as handle:
+        file_lock.acquire_lock(handle)
+        try:
+            try:
+                record = _load_private_json(reference)
+                path = pathlib.Path(record["path"])
+                validated = _validate_posix(path) if os.name == "posix" else _validate_windows(path)
+                if validated.record == record and record.get("session_id") == session_id:
+                    return path
+            except KeyError, TypeError, OSError, ManagedTempError:
+                pass
+            existing = list_managed_temp(session_id=session_id)
+            if not existing and not create:
+                return None
+            path = pathlib.Path(existing[0]["path"]) if existing else _create_managed_temp(prefix, root, awis, session_id)
+            record = _load_private_json(_registry_path(path))
+            temporary = directory / f"{key}.{secrets.token_hex(8)}"
+            try:
+                _write_private_json(temporary, record)
+                os.replace(temporary, reference)
+            finally:
+                temporary.unlink(missing_ok=True)
+            return path
+        finally:
+            file_lock.release_lock(handle)
+
+
+def create_output_temp(prefix: str) -> pathlib.Path:
+    """会話が分かる保存物をセッションの子へ、端末の保存物を独立領域へ作成する。"""
+    session_id = os.environ.get("CLAUDE_CODE_SESSION_ID") or os.environ.get("CODEX_THREAD_ID")
+    if session_id:
+        return create_session_temp(prefix, resolve_session_temp(session_id))
+    return create_managed_temp(prefix)
+
+
+def _create_managed_temp(
+    prefix: str,
+    root: pathlib.Path | str | None,
+    awis: tuple[str, ...],
+    session_id: str | None,
+) -> pathlib.Path:
     explicit_root = root is not None
     if root is None:
         root_path = _temp_root()

@@ -133,7 +133,7 @@ Stop hookの無進捗停止（`busy_loop_guard.py`）の終了要求は、Stop�
 
 ## 通知反復系
 
-- `unregistered_managed_temp_fingerprint`: `atk`の共通エントリポイントが、登録を持たない管理対象の絶対パス集合を安定順で正規化した指紋。同じ集合を報告済みなら警告を省き、集合が変われば再度警告する。寿命はセッション状態ファイルと同じとする
+- `persistent_warning_fingerprints`: `_atk/outcome.py`が共通起動の持続状態とhookの引数不整合の警告本文の指紋を記録する。同じ会話で初めて報告する内容だけを出力する。CLIの識別子はowner・Claude Code・Codexの順、hookは入力の`session_id`を使う。委譲先の掃引警告は記録と出力を省く。寿命はセッション状態ファイルと同じとする
 - `warn_notice_counts`: `warn`区分の通知の、`<hook_id>|<原因識別子>`ごとの累積件数。通知の整形処理が記録し、2件目以降の通知へ反復していることと件数を載せるために読む。診断処理が要旨を渡した通知では2件目以降の本文を要旨と件数へ短縮する。セッション終了まで保持し、リセットは処理対象外とする
 
 ## agents_server連携系

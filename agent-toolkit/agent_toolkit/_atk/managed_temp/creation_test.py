@@ -5,6 +5,8 @@
 from __future__ import annotations
 
 import argparse
+import concurrent.futures
+import hashlib
 import os
 import pathlib
 import stat
@@ -14,6 +16,8 @@ import sys
 import pytest
 
 from agent_toolkit._atk import managed_temp as subject
+from agent_toolkit._atk.managed_temp import creation as creation_subject
+from agent_toolkit._atk.managed_temp import registry as registry_subject
 from agent_toolkit._testing.managed_temp_support import _isolated_cli_environment, setattr_in_managed_temp_modules
 
 _SCRIPT = pathlib.Path(__file__).resolve().parents[2] / "_managed_temp.py"
@@ -122,3 +126,55 @@ def test_session_child_rejects_non_session_managed_root() -> None:
         subject.create_session_temp("work", root)
 
     subject.cleanup_managed_temp(root)
+
+
+def test_session_outputs_share_one_session_area(monkeypatch: pytest.MonkeyPatch) -> None:
+    """保存の反復・同時要求・再開が同じ親を使い、別会話と既存本文を保持する。"""
+    monkeypatch.delenv("CLAUDE_CODE_SESSION_ID", raising=False)
+    monkeypatch.setenv("CODEX_THREAD_ID", "outputs-session")
+    prefixes = ["atk-output", "atk-command", "atk-diagnostics", "agents-wait", "plan-verify-results", "exec-review-input"]
+    with concurrent.futures.ThreadPoolExecutor(max_workers=4) as executor:
+        paths = list(executor.map(subject.create_output_temp, prefixes * 2))
+    parents = {path.parent for path in paths}
+    assert len(parents) == 1
+    assert len(set(paths)) == len(paths)
+    parent = parents.pop()
+    for index, path in enumerate(paths):
+        (path / "result").write_text(str(index), encoding="utf-8")
+    assert [entry["path"] for entry in subject.list_managed_temp()] == [str(parent)]
+    monkeypatch.setenv("CODEX_THREAD_ID", "other-session")
+    other = subject.create_output_temp("atk-output")
+    assert other.parent != parent
+    monkeypatch.setenv("CODEX_THREAD_ID", "outputs-session")
+    with monkeypatch.context() as patch:
+        patch.setattr(creation_subject, "list_managed_temp", lambda **_kwargs: pytest.fail("既存会話の全登録を探索した"))
+        assert subject.create_output_temp("atk-output").parent == parent
+    subject.cleanup_managed_temp(paths[0])
+    assert not paths[0].exists()
+    assert all((path / "result").read_text(encoding="utf-8") == str(index) for index, path in enumerate(paths) if index)
+
+
+@pytest.mark.parametrize("damage", ["missing", "corrupt", "foreign-session"])
+def test_session_reference_is_rebuilt_from_valid_registration(damage: str) -> None:
+    """直接参照の欠落・破損・別会話への変更を、既存の真正な登録から復元する。"""
+    parent = subject.resolve_session_temp("first-session")
+    other = subject.resolve_session_temp("other-session")
+    reference = registry_subject._state_root() / ".sessions" / hashlib.sha256(b"first-session").hexdigest()
+    if damage == "missing":
+        reference.unlink()
+    elif damage == "corrupt":
+        reference.write_text("{", encoding="utf-8")
+    else:
+        reference.write_bytes(registry_subject._registry_path(other).read_bytes())
+    assert subject.resolve_session_temp("first-session") == parent
+    assert {entry["path"] for entry in subject.list_managed_temp()} == {str(parent), str(other)}
+
+
+def test_invalid_session_reference_preserves_existing_area() -> None:
+    """参照先のmarkerが成立しない場合も、既存領域の内容を保持する。"""
+    parent = subject.resolve_session_temp("first-session")
+    (parent / "evidence").write_text("保持する証拠", encoding="utf-8")
+    (parent / _MARKER_NAME).unlink()
+    replacement = subject.resolve_session_temp("first-session")
+    assert replacement != parent
+    assert (parent / "evidence").read_text(encoding="utf-8") == "保持する証拠"

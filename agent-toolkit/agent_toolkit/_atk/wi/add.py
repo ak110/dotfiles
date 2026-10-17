@@ -729,7 +729,7 @@ def cmd_add(
         _style_diagnostics.report_warnings(
             style_warnings,
             next_action=(
-                "対応不要（投入は続行する）。直す場合は投入前に本文を書き直すか、"
+                "行番号付きの診断を確かめ、直す場合は投入前に本文を書き直すか、"
                 "投入後に`atk wi edit <ファイル名> --body-file <本文ファイル>`で置き換える"
             ),
         )

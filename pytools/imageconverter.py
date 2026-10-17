@@ -101,7 +101,7 @@ def open_image_with_exif(path: pathlib.Path) -> tuple[PIL.Image.Image, bool]:
     try:
         result = PIL.ImageOps.exif_transpose(img)
     except Exception as e:  # noqa: BLE001
-        warnings.warn(f"{type(e).__name__}: {e}", stacklevel=2)
+        warnings.warn(f"{type(e).__name__}: {e}。画像の向きを確認し、誤っている場合は回転して保存し直す", stacklevel=2)
         result = img.copy()
     return result, used_fallback
 
