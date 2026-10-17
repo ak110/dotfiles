@@ -497,7 +497,7 @@ def _latest_update_and_git_paths(path: pathlib.Path) -> tuple[int, list[pathlib.
     return latest_mtime_ns, [original_path / git_path.relative_to(extended_root) for git_path in git_paths]
 
 
-def _is_registered_git_worktree(git_path: pathlib.Path) -> bool:
+def _is_registered_git_worktree(git_path: pathlib.Path, *, tree_root: pathlib.Path) -> bool:
     """`.git`ファイルの`gitdir:`が指すリポジトリ側の管理ディレクトリが実在するかを返す。
 
     git worktreeの`.git`はファイルで、リポジトリ側の`worktrees/<名前>`を指す。指す先が残る間は
@@ -505,7 +505,7 @@ def _is_registered_git_worktree(git_path: pathlib.Path) -> bool:
     ディレクトリの`.git`（単独の複製）は他から参照されないため、ここでは使用中と扱わない。
     """
     try:
-        with _open_tree_parent(git_path) as (parent, name):
+        with _open_tree_parent(git_path, tree_root=tree_root) as (parent, name):
             metadata = os.stat(name, dir_fd=parent, follow_symlinks=False)
             if not stat.S_ISREG(metadata.st_mode):
                 return False
@@ -534,15 +534,20 @@ def _is_registered_git_worktree(git_path: pathlib.Path) -> bool:
 
 
 @contextlib.contextmanager
-def _open_tree_parent(path: pathlib.Path) -> typing.Generator[tuple[int | None, str]]:
-    """木の深部へ相対openで到達し、OS呼出し用の親と名前を返す。"""
+def _open_tree_parent(path: pathlib.Path, *, tree_root: pathlib.Path | None = None) -> typing.Generator[tuple[int | None, str]]:
+    """深部へ相対openで到達し、管理領域内ではsymlinkを追跡せず親と名前を返す。"""
     if os.name != "posix":
         yield None, _windows_extended_path(path)
         return
-    descriptor = os.open(path.anchor, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+    # 管理領域の祖先と外部gitdirは通常のパス解決を保つ。非追跡の境界は領域自身からとする。
+    root = pathlib.Path(path.anchor) if tree_root is None else tree_root
+    flags = os.O_RDONLY | os.O_DIRECTORY
+    if tree_root is not None:
+        flags |= os.O_NOFOLLOW
+    descriptor = os.open(root, flags)
     try:
-        for part in path.parts[1:-1]:
-            child = os.open(part, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=descriptor)
+        for part in path.relative_to(root).parts[:-1]:
+            child = os.open(part, flags, dir_fd=descriptor)
             os.close(descriptor)
             descriptor = child
         yield descriptor, path.name
@@ -608,7 +613,7 @@ def _registered_exclusion_holds(path: pathlib.Path, basis: tuple[str, ...]) -> b
     """登録済み候補を残した理由の`.git`が1つでも残るかを返す。"""
     for relative in basis:
         try:
-            with _open_tree_parent(path / relative) as (parent, name):
+            with _open_tree_parent(path / relative, tree_root=path) as (parent, name):
                 os.stat(name, dir_fd=parent, follow_symlinks=False)
             return True
         except FileNotFoundError, NotADirectoryError:
@@ -622,7 +627,7 @@ def _registered_exclusion_holds(path: pathlib.Path, basis: tuple[str, ...]) -> b
 def _unregistered_exclusion_holds(path: pathlib.Path, basis: tuple[str, ...]) -> bool:
     """登録を失った候補を残した理由（後始末の隔離先の名前、使用中のgit worktree）が残るかを返す。"""
     return path.name.startswith(_CLEANUP_QUARANTINE_PREFIX) or any(
-        _is_registered_git_worktree(path / relative) for relative in basis
+        _is_registered_git_worktree(path / relative, tree_root=path) for relative in basis
     )
 
 
@@ -859,7 +864,7 @@ def sweep_managed_temp(
             if candidate_latest_ns >= cutoff_ns:
                 next_schedule.unregistered[name] = (candidate_top_ns, candidate_latest_ns, ())
                 continue
-            live_worktrees = [git_path for git_path in git_paths if _is_registered_git_worktree(git_path)]
+            live_worktrees = [git_path for git_path in git_paths if _is_registered_git_worktree(git_path, tree_root=path)]
             if live_worktrees:
                 basis = _exclusion_basis(path, live_worktrees)
                 next_schedule.unregistered[name] = (candidate_top_ns, candidate_latest_ns, basis)
