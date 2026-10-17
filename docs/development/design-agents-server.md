@@ -541,6 +541,9 @@ session状態は`state.py`、公開応答への射影は`result_projection.py`�
 
 ### 共有状態の非同期境界
 
+イベントループのスレッドで同期のロック取得・Event待機・join・I/Oの完了を待つと、同じloopの独立した要求、通知、heartbeatと停止要求を処理できない。このため、同期操作をworkerへ分離し、loop側はawaitで完了を待つ。
+保存と監視の完了を待つのは、登録・保存の順序と終端結果の一度だけの回収を保ち、停止時に全threadの終了と出力の完了を確認するためである。待機を打ち切る案と、保存や監視を背景化したまま返る案ではこれらの完了を保証できないため採らない。
+
 同期操作の共通実装は`_common/async_operations.py`が持つ。agents_serverは`file_operations.py`の既存名から利用し、serveの監視とmedia_remoteの監視も同じ実装で準備・終了を回収する。
 
 Managerの照会・復元・回収は非同期APIで提供する。登録簿、候補除外、終端結果と通知の排他回収、起動資料、設定合成、診断と資源照会は`file_operations.run_file_operation`でworkerの完了を待つ。同期CLI向けのファイル操作APIも保持する。
@@ -550,4 +553,4 @@ SessionStateの更新、射影の組み立て、公開済み結果の台帳と�
 
 ### atkの起動形と観測
 
-`_common/shell_tokens.py`がランチャー名と起動の事実を記録するシェルツールの集合を所有する。案内側の`cli_instructions`と起動の判定側は同じ定義を使う。WindowsのPowerShellによる起動もPostToolUseの観測を解消する。待機の出力追跡は分解済みの実行トークンから起動を判定し、引数へ引用されたコマンドの文字列を実行の根拠へ含めない。
+`_common/shell_tokens.py`がランチャー名と起動の事実を記録するシェルツールの集合を所有する。案内側の`cli_instructions`と起動の判定側は同じ定義を使う。WindowsのPowerShellで実行した`atk agents wait`もPostToolUseが観測の試みとして記録し、`pending_observation`を解消する。待機の出力追跡は分解済みの実行トークンから起動を判定し、引数へ引用されたコマンドの文字列を実行の根拠へ含めない。
