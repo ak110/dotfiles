@@ -36,6 +36,11 @@ Stop系の判定とイベントをまたいで使う処理は責務ごとのモ�
 `background_tasks.py`はバックグラウンドタスクと非同期待機の追跡による継続判定、`stop_session.py`はStop入力の解析と判定根拠の常時ログを持つ。
 `agents_server_observations.py`はagents_serverの観測の記録の書き込みと読み取りを持ち、PostToolUse・Stop・PreToolUseと終了工程の証拠が同じ記録をこのモジュールを通して扱う。
 記録のファイルを開くのは`agent-toolkit/agent_toolkit/_common/transcript.py`の`read_transcript_bytes`だけとし、行・エントリ・バイト位置はその結果から組み立てる。
+Stop時の書き込み完了の待機（`wait_for_end_turn`）では1回の待機の中でファイル識別・サイズ・更新時刻と末尾64KiBの内容が前回のpollから変わらない間、全量の読取と行分割を省いて直前の未到着の判定を使い続ける。
+いずれかが変わった回だけ全量を読み直して判定を更新する。
+未変更の記録をpollごとに全量で読むと、待機時間あたりの費用が記録の大きさに比例して増えるためである。
+更新時刻の分解能の内側で起きた同サイズの更新はファイルの観測値に現れないため、Claude Codeが追記する末尾の内容で検出する。
+待機後の全文解析と、同じStop入力の判定間での解析結果の共有は従来どおり1回とする。
 ホストの判定は`host.py`の`is_codex_payload`だけが行う。
 これらをStopの名前を持つ1つのモジュールへまとめる構成は、PreToolUseとPostToolUseも使う処理の所在を名前から判断できないため採らない。
 

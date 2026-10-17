@@ -7,6 +7,7 @@ Stop時の書き込み完了の待機、走査範囲（sidechainの扱い）とt
 # 関数の実行時にだけ使う依存は、使用時まで読み込まない。
 import json
 lazy import collections.abc
+lazy import os
 lazy import time
 
 lazy from agent_toolkit._common import transcript as _transcript
@@ -15,6 +16,9 @@ lazy from agent_toolkit._common import transcript as _transcript
 # 1エントリー限定（`background_tasks._PENDING_ASYNC_WORK_CACHE`と同じ方式）。`transcript_path`のみをキーとし、
 # フラッシュ待機（`wait_for_end_turn`）と解析（`_transcript.read_transcript_entries`）の両方を1回に集約する。
 _TRANSCRIPT_ENTRIES_CACHE: dict[str, list[dict]] = {}
+
+# 末尾到着待ちが変更の検出に読む末尾の長さ。Claude Codeは記録へ追記するため、同サイズの更新は末尾に現れる。
+_TAIL_BYTES = 65536
 
 
 def read_transcript_entries_cached(transcript_path: str) -> list[dict]:
@@ -42,29 +46,52 @@ def wait_for_end_turn(transcript_path: str, *, timeout: float = 0.3) -> None:
     並行することがあり、hookが読んだ時点で最終assistantエントリが未到着の場合がある。
     末尾走査で最新assistantエントリ（非sidechain）の`stop_reason`が`end_turn`であれば
     フラッシュ完了とみなして即時戻る。未到着なら短時間ポーリングし、`timeout`経過で終了する。
+    1回の呼び出しの中では記録のファイル識別、サイズ、更新時刻と末尾`_TAIL_BYTES`バイトの内容を観測し、
+    前回のpollから変わっていない間は全量の読取・デコード・行分割を省いて直前の判定（未到着）を使い続ける。
+    追記、置換と縮小はファイルの観測値で、更新時刻の分解能の内側で起きた同サイズの更新は末尾の内容で検出する。
     """
     deadline = time.monotonic() + timeout
     poll = 0.05
+    observed: tuple[object, ...] | None = None
     while True:
-        lines = _transcript.read_transcript_lines(transcript_path)
-        if lines is None:
+        try:
+            metadata = os.stat(transcript_path)
+        except OSError, ValueError:
             return
-        for line in reversed(lines):
-            try:
-                entry = json.loads(line)
-            except json.JSONDecodeError, ValueError:
-                continue
-            if entry.get("type") != "assistant" or entry.get("isSidechain"):
-                continue
-            message = entry.get("message")
-            if isinstance(message, dict) and message.get("stop_reason") == "end_turn":
+        tail = _transcript.read_transcript_bytes(transcript_path, offset=max(0, metadata.st_size - _TAIL_BYTES))
+        signature = (
+            metadata.st_dev,
+            metadata.st_ino,
+            metadata.st_size,
+            metadata.st_mtime_ns,
+            metadata.st_ctime_ns,
+            tail,
+        )
+        if signature != observed:
+            observed = signature
+            lines = _transcript.read_transcript_lines(transcript_path)
+            if lines is None:
                 return
-            # 最新assistantエントリがend_turnではない（tool_use等）→レース状態の可能性あり、
-            # ポーリングを継続して最終エントリの到着を待つ。
-            break
+            if _latest_assistant_ended(lines):
+                return
         if time.monotonic() >= deadline:
             return
         time.sleep(poll)
+
+
+def _latest_assistant_ended(lines: list[str]) -> bool:
+    """最新の非sidechain assistantエントリの`stop_reason`が`end_turn`なら真を返す。"""
+    for line in reversed(lines):
+        try:
+            entry = json.loads(line)
+        except json.JSONDecodeError, ValueError:
+            continue
+        if not isinstance(entry, dict) or entry.get("type") != "assistant" or entry.get("isSidechain"):
+            continue
+        message = entry.get("message")
+        # 最新assistantエントリがend_turnではない（tool_use等）場合はレース状態の可能性があり、到着を待つ。
+        return isinstance(message, dict) and message.get("stop_reason") == "end_turn"
+    return False
 
 
 def entry_in_scan_scope(entry: dict, *, include_sidechain: bool) -> bool:
