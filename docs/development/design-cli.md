@@ -129,7 +129,7 @@ process-loopと委譲サーバーにも使う共通処理へ接続し、run-comm
 
 共通起動の持続状態の警告は`outcome.report_persistent_warning`を通し、同じ会話で同じ内容を1回だけ出力する。
 会話識別子は`AGENT_TOOLKIT_OWNER_SESSION`、`CLAUDE_CODE_SESSION_ID`、`CODEX_THREAD_ID`の順に解決し、識別子の無い端末では毎回出力する。
-委譲先では共通起動の掃引警告を出力しない。hookの起動時は標準入力の`session_id`で重複を抑止する。
+委譲先では共通起動の掃引警告を出力しない。`hook.py`起動時の引数不整合（usageと未知のサブコマンド）の通知は、標準入力の`session_id`で重複を抑止する。各hookの`warn`通知の件数集約は`warn_notice_counts`が扱う。
 
 不正な管理情報を持つ項目の確認先である`atk wi show <ファイル名>`は種別と`target_repo`を検証せず保存内容を表示する。
 失敗の案内が、失敗を起こした状態のまま実行できるようにするためである。

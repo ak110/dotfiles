@@ -92,7 +92,7 @@ process-loop、レーン操作と配布物保持が共有する状態は、前�
 | 掃引の省略判定 | `managed-temp/.sweep/schedule`と隣接する`.managed-temp-sweep-gate` | managed-tempの掃引 | 詳細と小さい集合・期限情報を分け、期限前・集合不変では候補列挙と詳細全量読取を省く |
 | セッション配下の作業用領域の回収再開情報 | `managed-temp/`配下の`.child-cleanup`ファイル | `atk managed-temp cleanup` | `_atk/managed_temp/inventory.py`。親の登録と対象identityを検収して回収し、途中失敗の情報を次回の同じ操作へ渡す。保存証拠を持つ親領域を保持する |
 
-使用記録のない保持領域の回収では、`_common/plugin_root_leases.py`がOSの起動引数と開いている既存診断ログへの参照も読む。旧形式は同じOSアカウント・状態名前空間のMCPと帰属不明の候補を保持し、候補の不在を確認した後に回収へ進める。旧形式・新形式とも、lease登録前に保持先を直接参照する公開MCPランチャーを保護する。新規の作成には`agents-server-plugin-root-shared`のprefixを使い、旧形式の列挙互換と完成済みmarkerの契約を保つ。
+使用記録のない保持領域の回収では、`_common/plugin_root_leases.py`がOSの起動引数と開いている既存診断ログへの参照も読む。旧形式は同じOSアカウント・状態名前空間のlease非対応MCPと帰属不明の候補を保持し、候補の不在を確認した後に回収へ進める。能力記録か有効な領域別leaseで対応能力を確認できるMCPは、この帰属不明の候補から外す。旧形式・新形式とも、lease登録前に保持先を直接参照する公開MCPランチャーを保護する。新規の作成には`agents-server-plugin-root-shared`のprefixを使い、旧形式の列挙互換と完成済みmarkerの契約を保つ。
 
 `_common/session_parents.py`と`_common/session_activity.py`は前表のsession登録簿を読み、保存済みの委譲元とプロセス識別を活動判定に使う。
 MCPサーバーのSessionStateとsession登録簿の更新は、両モジュールの対象外である。

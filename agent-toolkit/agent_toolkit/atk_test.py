@@ -30,6 +30,7 @@ from agent_toolkit._atk import managed_temp as _managed_temp  # noqa: E402  # py
 from agent_toolkit._atk import plans as _plans_module
 from agent_toolkit._atk import run_command as _run_command  # noqa: E402  # pylint: disable=wrong-import-position
 from agent_toolkit._atk import worktree_stash as _worktree_stash  # noqa: E402  # pylint: disable=wrong-import-position
+from agent_toolkit._atk.managed_temp import inventory as managed_temp_inventory
 from agent_toolkit._atk.managed_temp import registry as managed_temp_registry
 from agent_toolkit._atk.wi import add as _add  # noqa: E402  # pylint: disable=wrong-import-position
 from agent_toolkit._atk.wi import listing as _wi_listing
@@ -58,33 +59,58 @@ def test_persistent_warning_once_per_session(
     capsys: pytest.CaptureFixture[str],
     tmp_path: pathlib.Path,
 ) -> None:
-    """共通起動の失敗警告を会話ごとに1回とし、端末では毎回、委譲先では抑止する。"""
+    """期限超過の未登録領域の削除失敗と残存件数を、公開サブコマンドから観測する。"""
     for key in ("AGENT_TOOLKIT_OWNER_SESSION", "AGENT_TOOLKIT_DELEGATED_SESSION", "CLAUDE_CODE_SESSION_ID", "CODEX_THREAD_ID"):
         monkeypatch.delenv(key, raising=False)
 
-    def fail_sweep(**_kwargs: object):
-        raise OSError("persistent sweep failure")
+    area = _managed_temp.create_managed_temp("failed-orphan")
+    managed_temp_registry._registry_path(area).unlink()  # pylint: disable=protected-access
+    # マーカー不正のため強制回収へ進み、実際の削除primitiveだけを失敗させる。
+    (area / ".agent-toolkit-managed-temp.json").write_text("{}", encoding="utf-8")
+    expired = (datetime.datetime.now(datetime.UTC) - datetime.timedelta(days=8)).timestamp()
+    for path in (*area.rglob("*"), area):
+        os.utime(path, (expired, expired))
+    remove = managed_temp_inventory.shutil.rmtree
 
-    setattr_in_managed_temp_modules(monkeypatch, "sweep_managed_temp", fail_sweep)
+    def fail_removal(path: str | pathlib.Path) -> None:
+        if pathlib.Path(str(path)) == area:
+            raise PermissionError("persistent deletion failure")
+        remove(path, onexc=None)
+
+    monkeypatch.setattr(managed_temp_inventory.shutil, "rmtree", fail_removal)
     monkeypatch.setattr(_wait_schedule, "get_schedule", lambda _request_bucket: "result")
 
     def invoke() -> str:
         with pytest.raises(SystemExit) as raised:
             atk.main(["wait-schedule", "--request-bucket=main"], home=tmp_path)
         assert raised.value.code == 0
-        return capsys.readouterr().err
+        output = capsys.readouterr()
+        assert output.out == "result\n"
+        assert area.is_dir()
+        return output.err
+
+    def expect_warning(expected: bool) -> None:
+        output = invoke()
+        assert ("登録を失ったmanaged-tempのディレクトリを自動削除できない" in output) is expected
+        assert ("自動削除されずに残った、登録を持たない管理対象が1件ある" in output) is expected
+        if expected:
+            assert "persistent deletion failure" in output
 
     for key in ("CLAUDE_CODE_SESSION_ID", "CODEX_THREAD_ID"):
         monkeypatch.setenv(key, key)
-        assert "persistent sweep failure" in invoke()
-        assert not invoke()
+        expect_warning(True)
+        expect_warning(False)
         monkeypatch.setenv(key, key + "-other")
-        assert "persistent sweep failure" in invoke()
+        expect_warning(True)
+        expect_warning(False)
         monkeypatch.delenv(key)
-    assert "persistent sweep failure" in invoke()
-    assert "persistent sweep failure" in invoke()
+    expect_warning(True)
+    expect_warning(True)
     monkeypatch.setenv("AGENT_TOOLKIT_DELEGATED_SESSION", "1")
-    assert not invoke()
+    expect_warning(False)
+    monkeypatch.delenv("AGENT_TOOLKIT_DELEGATED_SESSION")
+    monkeypatch.setenv("AGENT_TOOLKIT_OWNER_SESSION", "owner-only")
+    expect_warning(False)
 
 
 _GitCall = dict[str, Any]

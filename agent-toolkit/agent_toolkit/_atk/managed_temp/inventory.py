@@ -339,12 +339,10 @@ def _report_unregistered_candidates(prefix: str | None) -> None:
                 _is_registered_git_worktree(git_path, tree_root=child) for git_path in git_paths
             ):
                 continue
-            _require_unused_plugin_root(child)
-        except _PluginRootRetained as error:
-            _outcome.report_warning(str(error), next_action=error.next_action)
-            continue
         except OSError:
             pass
+        if _report_retained_plugin_root(child):
+            continue
         if _consuming_registry_path(registry_path) is not None:
             _outcome.report_warning(
                 f"後始末が中断した可能性がある管理対象がある: {child}",
@@ -452,10 +450,9 @@ def _load_listed_entry(
             return None
         validate_managed_temp(path)
         if report_recovery_candidates:
-            try:
-                _require_unused_plugin_root(path)
-            except _PluginRootRetained as error:
-                _outcome.report_warning(str(error), next_action=error.next_action)
+            latest, _ = _latest_update_and_git_paths(path)
+            if latest < _cutoff_ns(datetime.datetime.now(datetime.UTC), MAX_AGE_DAYS):
+                _report_retained_plugin_root(path)
         return {
             "path": str(path),
             "prefix": item_prefix,
@@ -476,6 +473,27 @@ def _load_listed_entry(
             )
             _outcome.report_warning(f"管理対象を列挙できない: {registry_path}{recorded_target}: {error}", next_action=recovery)
     return None
+
+
+def _report_retained_plugin_root(path: pathlib.Path) -> bool:
+    """期限超過の配布物をロック下で判定し、保持理由と再判定条件を示す。
+
+    別processが判定・回収中なら、その対象の案内を省いてlistを継続する。
+    """
+    with contextlib.ExitStack() as stack:
+        try:
+            stack.enter_context(plugin_root_leases.plugin_root_lock(path, blocking=False))
+        except OSError:
+            return True
+        try:
+            _require_unused_plugin_root(path)
+        except _PluginRootRetained as error:
+            _outcome.report_warning(
+                str(error),
+                next_action="利用プロセスの終了後に atk managed-temp list で再判定結果を確認する。次の自動掃引でも再判定する",
+            )
+            return True
+    return False
 
 
 def _cleanup_in_progress(registry_path: pathlib.Path) -> bool:

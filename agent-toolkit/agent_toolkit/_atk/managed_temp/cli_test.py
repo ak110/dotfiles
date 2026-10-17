@@ -11,6 +11,7 @@ import pathlib
 import subprocess
 import sys
 import threading
+import types
 from collections.abc import Callable
 
 import pytest
@@ -609,12 +610,26 @@ def test_conflicted_area_is_retained_then_collected() -> None:
     assert not area.exists()
 
 
-def test_list_does_not_offer_cleanup_for_retained_areas(capsys: pytest.CaptureFixture[str]) -> None:
-    """更新が期限内の未登録領域を保持し、回収の案内を出力しない。"""
-    area = subject.create_managed_temp("recent-orphan")
-    managed_temp_registry._registry_path(area).unlink()
-    assert subject.main(["list"]) == 1
-    assert "cleanup --path" not in capsys.readouterr().err
+@pytest.mark.parametrize("registered", [False, True])
+@pytest.mark.parametrize("expired", [False, True])
+def test_list_does_not_offer_cleanup_for_retained_areas(
+    capsys: pytest.CaptureFixture[str], registered: bool, expired: bool
+) -> None:
+    """生存leaseを持つ共有配布物は期限超過時だけ保持理由と再判定条件を示す。"""
+    area = subject.create_managed_temp("agents-server-plugin-root-shared")
+    with lease_subject.plugin_root_lock(area):
+        lease_subject.register_plugin_root_use(area)
+    if not registered:
+        managed_temp_registry._registry_path(area).unlink()
+    if expired:
+        expires = (datetime.datetime.now(datetime.UTC) - datetime.timedelta(days=8)).timestamp()
+        for path in (*area.rglob("*"), area):
+            os.utime(path, (expires, expires))
+    assert subject.main(["list"]) == (0 if registered else 1)
+    error = capsys.readouterr().err
+    assert "cleanup --path" not in error
+    assert ("領域別lease" in error) is expired
+    assert ("利用プロセスの終了後" in error) is expired
     assert area.is_dir()
 
 
@@ -626,7 +641,10 @@ def test_retention_summary_once_per_state_change(
     area = subject.create_managed_temp("agents-server-plugin-root")
     with lease_subject.plugin_root_lock(area):
         lease_subject.register_plugin_root_use(area)
-    now = datetime.datetime.now(datetime.UTC) + datetime.timedelta(days=8)
+    expires = (datetime.datetime.now(datetime.UTC) - datetime.timedelta(days=8)).timestamp()
+    for path in (*area.rglob("*"), area):
+        os.utime(path, (expires, expires))
+    now = datetime.datetime.now(datetime.UTC)
     first = subject.sweep_managed_temp(now=now)
 
     def repeated_judgement(*_args: object, **_kwargs: object) -> None:
@@ -642,6 +660,35 @@ def test_retention_summary_once_per_state_change(
     error = capsys.readouterr().err
     assert str(area) in error
     assert "利用プロセスの終了後" in error
+
+
+@pytest.mark.parametrize("registered", [False, True])
+def test_list_checks_expired_plugin_root_under_lock(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], registered: bool
+) -> None:
+    """登録の有無によらずlistの保持判定は配布物ロックを取り、競合時は案内を省く。"""
+    area = subject.create_managed_temp("agents-server-plugin-root-shared")
+    if not registered:
+        managed_temp_registry._registry_path(area).unlink()
+    expires = (datetime.datetime.now(datetime.UTC) - datetime.timedelta(days=8)).timestamp()
+    for path in (*area.rglob("*"), area):
+        os.utime(path, (expires, expires))
+    calls: list[pathlib.Path] = []
+
+    def check_lock(path: pathlib.Path) -> None:
+        with pytest.raises(OSError), lease_subject.plugin_root_lock(path, blocking=False):
+            pytest.fail("保持判定がロックを取得していない")
+        calls.append(path)
+
+    monkeypatch.setattr(inventory_subject, "_require_unused_plugin_root", check_lock)
+    subject.main(["list"])
+    assert calls == [area]
+    capsys.readouterr()
+    calls.clear()
+    with lease_subject.plugin_root_lock(area):
+        subject.main(["list"])
+    assert not calls
+    assert "警告:" not in capsys.readouterr().err
 
 
 @pytest.mark.parametrize("quarantined", [False, True])
@@ -676,6 +723,90 @@ def test_list_and_sweep_skip_concurrent_cleanup(
     assert "--force-remove" not in error
     subject.cleanup_managed_temp(area)
     assert not area.exists() and not quarantine.exists() and not consuming.exists()
+
+
+@pytest.mark.parametrize("shared", [False, True])
+@pytest.mark.parametrize(
+    "observation",
+    ["capability", "matching-lease", "pid-reused", "exited", "arguments-denied", "log-denied", "lease-read-denied"],
+)
+def test_plugin_root_observation_recovers_on_next_sweep(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], shared: bool, observation: str
+) -> None:
+    """POSIX/Windowsの実領域で能力・PID・取得不能の保持と解消後の回収を確かめる。
+
+    OSのprocess観測と読取拒否だけを注入し、領域・lease・ロック・真正性検証・削除は実操作する。
+    WindowsはCIのtest-windowsが本ファイルをpytestで実行する。
+    """
+    prefix = "agents-server-plugin-root-shared" if shared else "agents-server-plugin-root"
+    area = subject.create_managed_temp(prefix)
+    (area / "payload").write_text("保持する内容", encoding="utf-8")
+    other = subject.create_managed_temp("agents-server-plugin-root-shared")
+    (other / "payload").write_text("別領域の内容", encoding="utf-8")
+    process = lease_subject.psutil.Process()
+    if observation == "capability":
+        lease_subject.register_lease_capability()
+    if observation == "matching-lease":
+        with lease_subject.plugin_root_lock(other):
+            lease_subject.register_plugin_root_use(other)
+    lease = None
+    if observation in {"pid-reused", "exited", "lease-read-denied"}:
+        with lease_subject.plugin_root_lock(area):
+            lease_subject.register_plugin_root_use(area)
+        lease = next(lease_subject._directory().glob(f"{lease_subject._key(area)}-*.json"))
+        record = json.loads(lease.read_text(encoding="utf-8"))
+        record["created_at"] = 0
+        if observation == "exited":
+            record["pid"] = 2**30
+        lease.write_text(json.dumps(record), encoding="utf-8")
+    expires = (datetime.datetime.now(datetime.UTC) - datetime.timedelta(days=8)).timestamp()
+    for path in (*area.rglob("*"), area):
+        os.utime(path, (expires, expires))
+    protected = observation in {"arguments-denied", "lease-read-denied"} or observation == "log-denied" and not shared
+
+    def denied(*_args: object, **_kwargs: object):
+        raise lease_subject.psutil.AccessDenied(process.pid)
+
+    original = types.SimpleNamespace(read_text=pathlib.Path.read_text)
+
+    def read_lease(
+        path: pathlib.Path, encoding: str | None = None, errors: str | None = None, newline: str | None = None
+    ) -> str:
+        if path == lease:
+            raise PermissionError("使用記録の取得拒否")
+        return original.read_text(path, encoding=encoding, errors=errors, newline=newline)
+
+    with monkeypatch.context() as patch:
+        patch.setattr(
+            lease_subject.psutil,
+            "process_iter",
+            lambda: [process] if observation in {"capability", "matching-lease", "arguments-denied", "log-denied"} else [],
+        )
+        patch.setattr(
+            type(process),
+            "cmdline",
+            denied
+            if observation == "arguments-denied"
+            else lambda self: ["python", "/source/agent_toolkit/agents_server_mcp.py"],
+        )
+        if observation == "log-denied":
+            patch.setattr(type(process), "open_files", denied)
+        if observation == "lease-read-denied":
+            patch.setattr(pathlib.Path, "read_text", read_lease)
+        result = subject.sweep_managed_temp(now=datetime.datetime.now(datetime.UTC))
+        assert bool(result.retained) is protected
+        assert area.exists() is protected
+        if protected:
+            assert (area / "payload").read_text(encoding="utf-8") == "保持する内容"
+            assert subject.main(["cleanup", "--path", str(area)]) == 2
+            error = capsys.readouterr().err
+            assert str(area) in error and "次の操作:" in error
+    monkeypatch.setattr(lease_subject.psutil, "process_iter", lambda: [])
+    if protected:
+        assert area in subject.sweep_managed_temp(now=datetime.datetime.now(datetime.UTC)).deleted
+    assert not area.exists()
+    assert not managed_temp_registry._registry_path(area).exists()
+    assert (other / "payload").read_text(encoding="utf-8") == "別領域の内容"
 
 
 def test_list_preserves_registration_for_interrupted_quarantine(capsys: pytest.CaptureFixture[str]) -> None:
