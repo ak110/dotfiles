@@ -82,6 +82,11 @@ def build_parser(parser: argparse.ArgumentParser) -> None:
     logs.add_argument("--include-subagents", action="store_true", help="markdownのメイン記録へサブエージェントを含める。")
     logs.add_argument("--no-tool-details", action="store_true", help="markdownのツール呼び出しを1行へ簡略化する。")
     logs.add_argument("--follow", action="store_true", help="新着の記録を表示し続ける。Ctrl-Cで終了する。")
+    logs.add_argument(
+        "--verbose",
+        action="store_true",
+        help="text表示でツール呼び出し・ツール結果・思考を含む全イベントを全文で表示する。省略時は会話の流れを要約する。",
+    )
 
 
 def _dump(payload: Any, environment: Mapping[str, str]) -> str:
@@ -312,6 +317,10 @@ def dispatch(args: argparse.Namespace, *, environment: Mapping[str, str] | None 
                     "session_idを1つ指定し、--format markdownと--output-dirを外して再実行する",
                 )
             )
+        if args.verbose and args.format != "text":
+            args.error_parser.error(
+                with_next_action("--verboseはtext形式でだけ使える", "--verboseを外すか、--format markdownを外して再実行する")
+            )
         if args.format == "text" and (args.include_thinking or args.include_subagents or args.no_tool_details):
             args.error_parser.error(
                 with_next_action(
@@ -319,7 +328,7 @@ def dispatch(args: argparse.Namespace, *, environment: Mapping[str, str] | None 
                 )
             )
         if args.session_id is not None and args.format == "text" and args.output_dir is None:
-            return _show_logs(args.session_id, follow=args.follow)
+            return _show_logs(args.session_id, follow=args.follow, verbose=args.verbose)
         return logs_export.export_logs(
             session_id=args.session_id,
             project_dir=args.project_dir,
@@ -329,6 +338,7 @@ def dispatch(args: argparse.Namespace, *, environment: Mapping[str, str] | None 
             include_thinking=args.include_thinking,
             include_subagents=args.include_subagents,
             tool_details=not args.no_tool_details,
+            verbose=args.verbose,
         )
     if root_session_id is None:
         root_session_id = shared_roots.find_root_session_id_for_session(args.session_id)
@@ -616,7 +626,7 @@ def _truncate(text: str, budget: int) -> str:
     return "".join(kept) + _ELLIPSIS
 
 
-def _show_logs(session_id: str, *, follow: bool) -> int:
+def _show_logs(session_id: str, *, follow: bool, verbose: bool) -> int:
     """保存済みのセッション記録を表示し、指定時は追尾する。"""
     selected = record_paths.find_session_record(session_id)
     if selected is None:
@@ -634,10 +644,8 @@ def _show_logs(session_id: str, *, follow: bool) -> int:
                     complete, separator, remainder = pending.rpartition("\n")
                     if separator:
                         records, broken = session_record_format.parse_records(complete)
-                        events = session_record_format.record_events(engine, records)
-                        for event in events:
-                            detail = event.text or event.name or ""
-                            print(f"[{event.timestamp or '-'}] {event.kind}: {detail}", flush=True)
+                        for item in logs_export.text_items(engine, records, verbose=verbose):
+                            print(f"{item}\n", flush=True)
                         if broken:
                             report(f"解析できない行: {broken}", next_action=logs_export.BROKEN_LINES_NEXT_ACTION)
                         pending = remainder

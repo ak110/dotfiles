@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Any, Literal, NamedTuple
 
 from agent_toolkit._agents_server import tool_names as _agents_server_tool_names
+from agent_toolkit._atk import session_record_format as _session_record_format
 from agent_toolkit._common import message_format as _message_format
 from agent_toolkit._common import runtime_inserted as _runtime_inserted
 from agent_toolkit._common import transcript as _transcript
@@ -23,10 +24,11 @@ from agent_toolkit._common.runtime_inserted import IMPROVEMENT_MARKER as _IMPROV
 from agent_toolkit._common.runtime_inserted import is_runtime_generated as _is_runtime_generated
 from agent_toolkit._common.runtime_inserted import is_runtime_inserted_text as _is_runtime_inserted_text
 
-_MAX_TEXT_LENGTH = 2000
+# 本文の上限と省略の標識は、`--verbose`を付けない`atk agents logs`のtext表示と共有する。
+_MAX_TEXT_LENGTH = _session_record_format.SUMMARY_TEXT_LIMIT
 
 
-_OMISSION_MARK = "…[省略]"
+_OMISSION_MARK = _session_record_format.OMISSION_MARK
 
 
 # Claude Codeのサブエージェントが報告本文を委譲元へ渡すツールの名前。

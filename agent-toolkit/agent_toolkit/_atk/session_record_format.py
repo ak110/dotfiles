@@ -22,6 +22,15 @@ from agent_toolkit._common.runtime_inserted import is_runtime_generated, is_runt
 RECORD_SUFFIX = ".jsonl"
 CODEX_ROLLOUT_PREFIX = "rollout-"
 
+SUMMARY_TEXT_LIMIT = 2000
+"""会話の流れを要約する表示で1件の本文に残す文字数。
+
+振り返りの通常表示と、`--verbose`を付けない`atk agents logs`のtext表示が共有する。
+"""
+
+OMISSION_MARK = "…[省略]"
+"""要約表示で本文を切り詰めた位置に付ける標識。"""
+
 
 def claude_session_records(claude_home: pathlib.Path) -> Iterator[pathlib.Path]:
     """Claude Codeのセッション本体の記録を返す。

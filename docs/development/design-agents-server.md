@@ -507,6 +507,7 @@ Antigravity CLIが渡すJSONはClaude CodeのstatusLine入力と項目が完全�
 人が`atk agents list`から選んだsessionの進行を読むため、backendは解析済みの公開JSONイベントを
 ルートsessionの状態ディレクトリ内にある`logs/<session-id>.jsonl`へ順に追記する。
 `atk agents logs`はClaude Code・Codexの既存記録と同じ表示処理で読み、`--follow`では追記分を表示する。
+text表示は`--verbose`を付けない場合に会話の流れを要約し、振り返りの通常表示と同じ基準でツール呼び出し・成功したツール結果・思考を除き、各本文を同じ上限で切り詰める。上限と省略の標識は`session_record_format`の定義を両者が参照する（2026年10月18日、ユーザー指示）。`--verbose`は全イベントを全文で表示し、どちらも項目の間に空行を1行置く。markdownはAntigravityの前任の引き継ぎが使う詳細表示のため変えない。
 保存済みの記録をmarkdownへ変換する場合も同じコマンドを使う。単一識別子に加え、作業ディレクトリまたは全件を選び、開始日時の新しい順で件数を限定する。1件1ファイルの保存では日時名の衝突を識別子で解消し、既存ファイルを上書きしない。Claude Codeのメイン記録にサブエージェントの会話を含めるか、思考とツール詳細を出力するかは呼び出し時に指定する。
 識別子から記録を探す処理は`agent-toolkit/agent_toolkit/_agents_server/record_paths.py`へ置き、`atk agents logs`と振り返りの`atk run-script session-review-evidence`が共有する。
 保持と期限回収は状態ディレクトリの7日契約に従う。

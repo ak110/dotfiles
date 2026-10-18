@@ -183,7 +183,7 @@ Claude CodeまたはCodex pluginから読み込まれるため、`codex plugin l
 
 委譲の状態は次のコマンドで確かめる。
 `atk agents list`は実行中と保持中の委譲先を一覧し、`--watch`を付けると約2秒ごとに表示を更新する。
-`atk agents logs <session-id>`は選んだ委譲先の記録を表示し、`--follow`を付けると追記分を表示し続ける。
+`atk agents logs <session-id>`は選んだ委譲先の記録を表示し、`--follow`を付けると追記分を表示し続ける。`--verbose`を付けない表示はツール呼び出し・ツール結果・思考を省いて会話の流れを要約し、`--verbose`を付けると全イベントを全文で表示する。
 `atk agents wait`は委譲先の終端を待ち、回収した結果を表示する。
 `agents_server`の公開ツール（`start`、`send_message`、`kill`、`list`、`show`、`stop`）の入力と応答の契約は[design-agents-server.md](../development/design-agents-server.md)を参照。
 

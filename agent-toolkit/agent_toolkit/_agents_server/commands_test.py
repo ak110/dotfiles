@@ -19,7 +19,7 @@ from agent_toolkit._agents_server import (
     status_file,
     wait_output_tracking,
 )
-from agent_toolkit._atk import environment, managed_temp, output_file
+from agent_toolkit._atk import environment, managed_temp, output_file, session_record_format
 from agent_toolkit._common import state_paths
 from agent_toolkit._common.next_action import NEXT_ACTION_PREFIX
 from agent_toolkit._testing.managed_temp_support import setattr_in_managed_temp_modules
@@ -1223,6 +1223,128 @@ def test_agents_logs_reads_and_follows_antigravity_events(
     output = capsys.readouterr().out
     assert "init: agy-1" in output
     assert "step_update: 調査中" in output
+
+
+_LONG_REPLY = "長" * 2100
+
+
+def _write_mixed_claude_record(tmp_path: pathlib.Path) -> None:
+    """発話、思考、ツール呼び出し、成功・失敗したツール結果、長い本文を含むClaude Codeの記録を作成する。"""
+    _write_jsonl(
+        tmp_path / "projects" / "sample" / "session-1.jsonl",
+        [
+            {
+                "type": "user",
+                "timestamp": "2026-09-24T00:00:00Z",
+                "message": {"content": [{"type": "text", "text": "調査して"}]},
+            },
+            {
+                "type": "assistant",
+                "timestamp": "2026-09-24T00:00:01Z",
+                "message": {
+                    "content": [
+                        {"type": "thinking", "thinking": "思考の本文"},
+                        {"type": "tool_use", "id": "toolu_a", "name": "Bash", "input": {"command": "echo hi"}},
+                    ]
+                },
+            },
+            {
+                "type": "user",
+                "timestamp": "2026-09-24T00:00:02Z",
+                "message": {"content": [{"type": "tool_result", "tool_use_id": "toolu_a", "content": "成功した出力"}]},
+            },
+            {
+                "type": "user",
+                "timestamp": "2026-09-24T00:00:03Z",
+                "message": {
+                    "content": [{"type": "tool_result", "tool_use_id": "toolu_b", "content": "失敗した出力", "is_error": True}]
+                },
+            },
+            {
+                "type": "assistant",
+                "timestamp": "2026-09-24T00:00:04Z",
+                "message": {"content": [{"type": "text", "text": _LONG_REPLY}]},
+            },
+        ],
+    )
+
+
+@pytest.mark.parametrize("argv", [["session-1"], ["--all"]], ids=["single", "bulk"])
+def test_logs_text_default_follows_conversation_with_blank_lines(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], argv: list[str]
+) -> None:
+    """`--verbose`を付けないtext表示は振り返りの通常表示と同じ基準で会話の流れを要約し、項目の間に空行を1行置く。
+
+    ツール呼び出し・成功したツール結果・思考を除き、失敗したツール結果は残し、長い本文を同じ上限で切り詰める。
+    """
+    _write_mixed_claude_record(tmp_path)
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(tmp_path))
+    monkeypatch.setenv("CODEX_HOME", str(tmp_path))
+
+    with pytest.raises(SystemExit, match="0"):
+        atk.main(["agents", "logs", *argv])
+
+    output = capsys.readouterr().out
+    clipped = "長" * session_record_format.SUMMARY_TEXT_LIMIT + session_record_format.OMISSION_MARK
+    items = [
+        "[2026-09-24T00:00:00Z] user: 調査して",
+        "[2026-09-24T00:00:03Z] tool_result: 失敗した出力",
+        f"[2026-09-24T00:00:04Z] assistant: {clipped}",
+    ]
+    assert output.endswith("\n\n".join(items) + "\n\n")
+    for omitted in ("思考の本文", "tool_call", "成功した出力", _LONG_REPLY):
+        assert omitted not in output
+
+
+def test_logs_verbose_keeps_current_events_with_blank_lines(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """`--verbose`は全イベントを全文で表示し、付けない場合と同じく項目の間に空行を1行置く。"""
+    _write_mixed_claude_record(tmp_path)
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(tmp_path))
+    monkeypatch.setenv("CODEX_HOME", str(tmp_path))
+
+    with pytest.raises(SystemExit, match="0"):
+        atk.main(["agents", "logs", "session-1", "--verbose"])
+
+    items = [
+        "[2026-09-24T00:00:00Z] user: 調査して",
+        "[2026-09-24T00:00:01Z] thinking: 思考の本文",
+        "[2026-09-24T00:00:01Z] tool_call: Bash",
+        "[2026-09-24T00:00:02Z] tool_result: 成功した出力",
+        "[2026-09-24T00:00:03Z] tool_result: 失敗した出力",
+        f"[2026-09-24T00:00:04Z] assistant: {_LONG_REPLY}",
+    ]
+    assert capsys.readouterr().out == "\n\n".join(items) + "\n\n"
+
+
+def test_logs_follow_uses_conversation_summary(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """`--follow`も`--verbose`を付けない場合は要約で表示し、項目の間に空行を1行置く。"""
+    _write_mixed_claude_record(tmp_path)
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(tmp_path))
+    monkeypatch.setenv("CODEX_HOME", str(tmp_path))
+
+    def stop(_seconds: float) -> None:
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(commands.time, "sleep", stop)
+
+    with pytest.raises(SystemExit, match="0"):
+        atk.main(["agents", "logs", "session-1", "--follow"])
+
+    output = capsys.readouterr().out
+    assert output.startswith("[2026-09-24T00:00:00Z] user: 調査して\n\n[2026-09-24T00:00:03Z] tool_result: 失敗した出力\n\n")
+    assert "思考の本文" not in output and "成功した出力" not in output
+
+
+def test_logs_verbose_rejects_markdown(capsys: pytest.CaptureFixture[str]) -> None:
+    """内容の制御オプションと同じく、`--verbose`とmarkdownの併用は次の操作付きの引数エラーにする。"""
+    with pytest.raises(SystemExit, match="2"):
+        atk.main(["agents", "logs", "session-1", "--format", "markdown", "--verbose"])
+    error = capsys.readouterr().err
+    assert "--verboseはtext形式でだけ使える" in error
 
 
 def _human_environment(monkeypatch: pytest.MonkeyPatch) -> None:
