@@ -67,7 +67,18 @@ def _files(name: str, args: tuple[str, ...]) -> list[str]:
     index = 0
     while index < len(args):
         value = args[index]
-        if value in {"-e", "--expression", "-f", "--file"} and expression:
+        if name == "jq" and value in {"--arg", "--argjson", "--slurpfile", "--rawfile"}:
+            index += 3
+            continue
+        if name == "jq" and value in {"--indent", "-L", "--library-path"}:
+            index += 2
+            continue
+        if name == "jq" and value in {"--args", "--jsonargs"}:
+            return []
+        if value in {"-e", "--expression", "-f", "--file", "--from-file"} and expression:
+            if name == "jq" and value == "-e":
+                index += 1
+                continue
             expression = False
             index += 2
             continue
