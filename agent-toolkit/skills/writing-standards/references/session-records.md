@@ -47,6 +47,8 @@ Codexでは、`type`が`response_item`、`payload.type`が`message`、`payload.r
 - `agent-toolkit:process-wi`の複数回の実行から現行の工程を評価する場合は、期間内にその工程を定める文書が変わったかを`git log --since=<期間の開始> -- <文書のパス>`などで確かめ、変わっていれば変更後の記録だけを現行の値とする
 - 同じファイルを行範囲に分けて取得した回数は1回の読了と数える
 
+別セッションを含む担当別の費用の要約は`--stats --summary-only`で取得する。総量・親・Claudeサブエージェント・agent threadの要約と由来・未解決診断を保持する表示選択であり、トークンの定義と合算方法は全量表示と同じである。bundleと準備文書は詳細内訳を使うため全量を保持する。
+
 ## 複数セッションの比較結果
 
 カタログの親セッション行は`--catalog-workflow`の完全一致、`--catalog-known-workflow`のunknown以外、`--catalog-cwd-contains`の部分文字列で選べる。

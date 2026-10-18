@@ -169,6 +169,8 @@ prepareの`conversation_ranges`は全行を1回ずつ覆う行範囲とUTF-8量�
 
 ### 証拠抽出スクリプトの構成
 
+統計の`--summary-only`は既存の集計イベントを生成側で選ぶ。総量・親・Claudeサブエージェント・agent threadの要約の順序と全フィールドを保ち、通常表示・bundle・準備文書は全量を使う。消費側ごとの一時選別と集計定義の複製を省くため、同じ統計照会の表示指定へ集約する。
+
 単一記録の照会は結果の`kind`による区別可能性で併用を判定し、固定順に全照会を評価する。共通の由来と未解決イベントは一度だけ出力し、終了コードは各照会の最大値とする。`--grep`・`--hook-notices`・`--user-events`は`summary`を共有し、既存の単独出力との互換性を保つため複数を含む組を拒否する。ファイル保存型の`--bundle`と入力集合が異なるカタログ・保存済み発話の排他条件は保持する。
 
 `atk run-script session-review-evidence`の起動スクリプト`agent-toolkit/skills/session-review/scripts/session_review_evidence.py`はCLIの引数の解釈と照会モードの振り分けだけを持つ。

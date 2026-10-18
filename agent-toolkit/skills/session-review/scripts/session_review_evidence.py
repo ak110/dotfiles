@@ -266,6 +266,11 @@ def _build_parser() -> argparse.ArgumentParser:
         "完了後に続く記録の`after_last_turn_seconds`を併せて返す。",
     )
     parser.add_argument(
+        "--summary-only",
+        action="store_true",
+        help="`--stats`と併用し、総量・親・サブエージェント・threadの要約だけを全フィールド・既存順で返す。集計値の定義は全量表示と同じ。",
+    )
+    parser.add_argument(
         "--hook-notices",
         action="store_true",
         help="hook実行の記録（追加コンテキスト・システムメッセージ・遮断エラー・実行成功）に"
@@ -400,6 +405,8 @@ def main(argv: list[str] | None = None) -> int:
         _print_events(events)
         return 0
     query_modes = _single_transcript_query_modes(args)
+    if args.summary_only and not args.stats:
+        return _print_error("--summary-onlyは--statsと併用する", next_action="`--stats`を付けて再実行する")
     summaries = [
         name
         for name, active in (
@@ -618,6 +625,12 @@ def main(argv: list[str] | None = None) -> int:
         exit_code = max(exit_code, code)
     if args.stats:
         stats = _stats_events(collected, compaction_record_dir)
+        if args.summary_only:
+            stats = [
+                event
+                for event in stats
+                if event["kind"] in {"stats-total", "stats-summary", "stats-subagent", "stats-agent-thread"}
+            ]
         events.extend([*stats, *_unresolved_events(unresolved)])
     if args.hook_notices:
         events.extend(

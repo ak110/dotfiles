@@ -5,8 +5,19 @@ import pathlib
 import pytest
 import session_review_evidence as evidence
 
+from agent_toolkit._testing import delegated_threads
 from agent_toolkit._testing.helpers import _write_transcript
-from agent_toolkit._testing.session_evidence_support import read_jsonl
+from agent_toolkit._testing.session_evidence_support import read_jsonl, write_subagent
+
+_SUMMARY_KINDS = {
+    "record-provenance",
+    "unresolved-record",
+    "unresolved-delegation",
+    "stats-total",
+    "stats-summary",
+    "stats-subagent",
+    "stats-agent-thread",
+}
 
 
 @pytest.mark.parametrize(
@@ -75,3 +86,46 @@ def test_ambiguous_queries_explain_conflict(capsys, query) -> None:
     (event,) = read_jsonl(capsys, raw=True)
     assert "summary" in event["text"]
     assert event["next_action"]
+
+
+def test_stats_summary_preserves_complete_summary_events(tmp_path: pathlib.Path, capsys) -> None:
+    """統計の表示選択は由来と診断を保ち、要約の全フィールドと順序を保持する。"""
+    transcript = _write_transcript(
+        tmp_path,
+        [
+            {"type": "user", "timestamp": "2026-10-01T00:00:00Z", "message": {"role": "user", "content": "依頼"}},
+            {"type": "assistant", "timestamp": "2026-10-01T00:00:01Z", "message": {"role": "assistant", "content": "結果"}},
+        ],
+    )
+    assert evidence.main([str(transcript), "--stats"]) == 0
+    full = read_jsonl(capsys, raw=True)
+    assert evidence.main([str(transcript), "--stats", "--summary-only"]) == 0
+    summary = read_jsonl(capsys, raw=True)
+    assert summary == [event for event in full if event["kind"] in _SUMMARY_KINDS]
+
+
+def test_stats_summary_includes_claude_and_codex_delegates(tmp_path: pathlib.Path, capsys, monkeypatch) -> None:
+    """混在する実行系の担当要約も全量と同じ順序・値で返す。"""
+    family = delegated_threads.write_delegated_threads(tmp_path)
+    write_subagent(
+        family.transcript.with_suffix("") / "subagents",
+        "agent-native",
+        [
+            {
+                "type": "assistant",
+                "isSidechain": True,
+                "timestamp": "2026-09-06T00:00:10Z",
+                "message": {"role": "assistant", "content": "完了"},
+            }
+        ],
+    )
+    monkeypatch.setenv("HOME", str(family.home))
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(family.home / ".claude"))
+    monkeypatch.setenv("CODEX_HOME", str(family.codex_home))
+    arguments = [str(family.transcript), "--stats"]
+    assert evidence.main(arguments) == 0
+    full = read_jsonl(capsys, raw=True)
+    assert evidence.main([*arguments, "--summary-only"]) == 0
+    summary = read_jsonl(capsys, raw=True)
+    assert summary == [event for event in full if event["kind"] in _SUMMARY_KINDS]
+    assert {event["kind"] for event in summary} >= {"stats-total", "stats-summary", "stats-subagent", "stats-agent-thread"}
