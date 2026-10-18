@@ -154,13 +154,13 @@ def test_windows_job_runs_public_launcher_tests(workflow_data: dict[str, object]
     assert "bin/update_dotfiles_launcher_test.py" in targets
 
 
-def test_windows_job_runs_pinned_codex_sandbox_integration(workflow_data: dict[str, object]) -> None:
-    """固定版CLIを導入した所有Windows jobが実sandbox成功と出力上限指定の拒否を検査する。"""
+def test_windows_job_runs_pinned_codex_command_integration(workflow_data: dict[str, object]) -> None:
+    """固定版CLIを導入した所有Windows jobが、探索の開始から通常コマンドへ到達することを検査する。"""
     job = workflow_mapping(workflow_jobs(workflow_data)["test-windows"])
     assert job["runs-on"] == "windows-latest"
     steps = workflow_steps(job)
     install_index, install = _windows_step(steps, "Codex CLI 0.163.0の導入")
-    integration_index, integration = _windows_step(steps, "Windows Codex sandbox integration")
+    integration_index, integration = _windows_step(steps, "Windows Codex command integration")
     assert install_index < integration_index
     assert install["if"] == integration["if"] == "needs.common-ci-owner.outputs.owns == 'true'"
     script = str(install["run"])
@@ -169,10 +169,7 @@ def test_windows_job_runs_pinned_codex_sandbox_integration(workflow_data: dict[s
     assert "$env:GITHUB_PATH" in script
     targets = direct_pytest_targets({"jobs": {"test-windows": {"steps": [integration]}}})
     prefix = "agent-toolkit/agent_toolkit/_agents_server/codex_sandbox_integration_test.py::"
-    assert targets == [
-        prefix + "test_windows_explore_probe_reaches_thread_start",
-        prefix + "test_windows_explore_probe_rejects_custom_output_cap",
-    ]
+    assert targets == [prefix + "test_explore_start_reaches_normal_commands"]
     assert integration["working-directory"] == "${{ env.DOTFILES_DIR }}"
 
 

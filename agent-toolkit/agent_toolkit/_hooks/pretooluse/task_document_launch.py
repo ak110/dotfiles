@@ -31,8 +31,9 @@ import markdown_it
 # 関数の実行時にだけ使う依存は、使用時まで読み込まない。
 lazy from markdown_it.token import Token
 
-from agent_toolkit._agents_server import launch_requests, task_documents
+from agent_toolkit._agents_server import task_documents
 from agent_toolkit._agents_server import tool_names as _tool_names
+lazy from agent_toolkit._agents_server import launch_requests
 lazy from agent_toolkit._hooks.pretooluse.notices import _block_notice
 
 START_TOOLS: frozenset[str] = frozenset(
