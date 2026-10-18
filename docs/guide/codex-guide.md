@@ -77,8 +77,10 @@ Codex向けのプラグインは`update-dotfiles`が生成して導入する。�
 
 `update-dotfiles`は未導入、disabled、version不一致のいずれかの場合に`codex plugin add`を実行し、導入後のversionと有効状態を再確認する。
 euryaleで`DOTFILES_CODEX_DAEMON_AUTO_RESTART=1`を指定せずに更新する場合は、同じユーザーのCodexが稼働中なら、導入済みagent-toolkitへの追加・更新を延期する。
-Linuxでは、診断ログDBの旧共有メモリー側targetまたは管理symlinkが残る場合に、通常ストレージへ復元し、復元済みtargetを回収して参照先を失った管理symlinkを整理する。
-これらの処置は、同じユーザーのCodexが稼働中なら対象と再実行の操作を案内して延期する。旧配置が無い場合は処置と延期の案内を省く。
+Linuxでは、過去の設定で診断ログDBを共有メモリー（`/dev/shm/codex-<UID>-logs_2.sqlite`と、その`-wal`・`-shm`ファイル）へ移していた場合、`update-dotfiles`が通常の保存先`~/.codex/`へ戻す。`<UID>`はOSのユーザーIDを指す。
+同じユーザーのCodexが稼働中なら、対象ファイルと再実行の操作を案内して処置を延期する。Codexを終了して`update-dotfiles`を再実行すると、共有メモリーのファイルを通常の保存先へコピーし、旧ファイルを指すシンボリックリンクを通常ファイルへ置き換える。
+復元後の次の`update-dotfiles`実行では両方の内容が一致することを確認して共有メモリーの旧コピーを削除する。旧ファイルが既に失われたシンボリックリンクは、復元処理の際に削除する。内容の不一致などで延期した場合は、表示された診断に従って復旧する。
+旧ファイルも旧ファイルを指すリンクも無い場合は、処置と延期の案内を省く。
 稼働判定の対象は、通常のCodexセッション、`agents_server`が委譲用に起動する`codex app-server --stdio`、およびapp-server daemon（`codex app-server daemon start`が起動する管理daemon）とその補助プロセスである。
 管理daemonの停止後も残る更新ループ`codex app-server daemon pid-update-loop`はpluginと診断ログDBを開かないため、対象に含めない。
 未導入plugin、他ホストの更新と、後述の自動再起動を明示した更新は、plugin更新の延期の対象に含めない。
