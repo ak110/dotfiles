@@ -614,7 +614,7 @@ def main(argv: list[str] | None = None) -> int:
         records = _apply_observation_boundary(records, boundary)
     delegate_codex_home = args.codex_home if args.codex_thread_id is not None or args.delegation_record is not None else None
     collected, unresolved = _collect_records(
-        transcript_path, records, delegate_codex_home, boundary, main_only=args.user_events
+        transcript_path, records, delegate_codex_home, boundary, main_only=args.user_events and sum(query_modes) == 1
     )
     compaction_record_dir = (
         Path(args.compaction_record_dir)

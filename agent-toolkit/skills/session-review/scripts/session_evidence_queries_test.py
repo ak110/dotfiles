@@ -129,3 +129,24 @@ def test_stats_summary_includes_claude_and_codex_delegates(tmp_path: pathlib.Pat
     summary = read_jsonl(capsys, raw=True)
     assert summary == [event for event in full if event["kind"] in _SUMMARY_KINDS]
     assert {event["kind"] for event in summary} >= {"stats-total", "stats-summary", "stats-subagent", "stats-agent-thread"}
+
+
+@pytest.mark.parametrize("query", [["--tool-calls"], ["--stats"], ["--detail", f"codex:{delegated_threads.CODEX_THREAD_ID}:3"]])
+def test_user_events_combination_keeps_delegate_queries(tmp_path: pathlib.Path, capsys, monkeypatch, query) -> None:
+    """親だけの発話選択が、併用した照会の委譲先と未解決診断を狭めない。"""
+    family = delegated_threads.write_delegated_threads(tmp_path)
+    monkeypatch.setenv("HOME", str(family.home))
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(family.home / ".claude"))
+    monkeypatch.setenv("CODEX_HOME", str(family.codex_home))
+    (family.home / ".claude/projects/repo" / f"{delegated_threads.CLAUDE_THREAD_ID}.jsonl").unlink()
+    expected = []
+    for options in (["--user-events"], query):
+        assert evidence.main([str(family.transcript), *options]) == 0
+        expected.extend(read_jsonl(capsys, raw=True))
+    assert evidence.main([str(family.transcript), "--user-events", *query]) == 0
+    actual = read_jsonl(capsys, raw=True)
+    assert all(event in actual for event in expected)
+    if query == ["--stats"]:
+        assert any(event.get("session_id") == delegated_threads.CODEX_THREAD_ID for event in actual)
+    else:
+        assert any(event.get("record") == f"codex:{delegated_threads.CODEX_THREAD_ID}" for event in actual)
