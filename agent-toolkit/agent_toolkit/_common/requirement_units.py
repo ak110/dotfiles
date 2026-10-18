@@ -136,7 +136,7 @@ def wi_body(output: str, filename: str) -> tuple[dict[str, str], list[str]]:
         ),
         len(lines),
     )
-    if start >= end or lines[start] != "---":
+    if start >= end or lines[start].removeprefix("\ufeff") != "---":
         raise ValueError(f"{filename}: frontmatterを取得できません")
     frontmatter_end = next((index for index in range(start + 1, end) if lines[index] == "---"), None)
     if frontmatter_end is None:

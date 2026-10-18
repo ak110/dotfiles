@@ -56,3 +56,12 @@ class TestTruncateTargetRepo:
         mixed = "組織名/長い日本語リポジトリ名/subpath/example"
         result = _formatters.truncate_target_repo(mixed)  # noqa: SLF001  # pylint: disable=protected-access
         assert _formatters.display_width(result) <= 30  # noqa: SLF001  # pylint: disable=protected-access
+
+
+@pytest.mark.parametrize("kind", ["awi", "uwi"])
+def test_summary_accepts_leading_bom_and_preserves_body_character(kind: str) -> None:
+    """先頭BOMの有無で要約が一致し、本文内のU+FEFFを保持する。"""
+    body = "表\ufeff題" if kind == "awi" else "## 質問\n\n表\ufeff題\n\n## 回答\n"
+    text = f"---\ntype: {kind}\n---\n\n{body}\n"
+    summarize = _formatters.body_summary if kind == "awi" else _formatters.uwi_body_summary
+    assert summarize("\ufeff" + text) == summarize(text) == "表\ufeff題"

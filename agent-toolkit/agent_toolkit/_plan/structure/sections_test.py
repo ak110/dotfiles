@@ -464,6 +464,21 @@ def test_origin_check_skips_when_source_is_unresolvable(tmp_path: pathlib.Path) 
     assert any(_plan_fixture.WI_FILES[0][0] in skip for skip in skips), skips
 
 
+@pytest.mark.parametrize("kind", ["awi", "uwi"])
+def test_origin_notices_are_equal_with_bom(tmp_path: pathlib.Path, kind: str) -> None:
+    """由来不一致の通知は保存WIの先頭BOMに依存しない。"""
+    inbox = tmp_path / "inbox"
+    inbox.mkdir()
+    path = inbox / _plan_fixture.WI_FILES[0][0]
+    text = f"---\ntype: {kind}\nsource: session-review\n---\n\n# 表題\n"
+    results = []
+    for prefix in ("", "\ufeff"):
+        path.write_text(prefix + text, encoding="utf-8")
+        results.append(_origin_check(tmp_path))
+    assert results[0] == results[1]
+    assert any("WI本文の由来と一致しない" in notice for notice in results[0][1])
+
+
 def test_progress_log_rows_returns_rows_in_document_order() -> None:
     """進捗ログの固定表の内容行を本文の出現順に3列のまま返す。"""
     content = (

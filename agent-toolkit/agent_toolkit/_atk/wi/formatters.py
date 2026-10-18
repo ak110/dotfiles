@@ -150,13 +150,8 @@ def body_summary(text: str, available_width: int = _SUMMARY_MAX_LEN) -> str:
 
     本文先頭行の表示幅が`available_width`を超える場合は切り詰めて`...`を付与する。
     """
-    body = text
-    if text.startswith("---\n"):
-        try:
-            end = text.index("\n---\n", 4)
-            body = text[end + 5 :]
-        except ValueError:
-            body = text
+    parsed = parse_frontmatter(text)
+    body = text.removeprefix("\ufeff") if parsed is None else parsed[1]
     stripped = body.strip()
     first_line = stripped.splitlines()[0] if stripped else ""
     return _truncate_summary(first_line, available_width)
@@ -168,13 +163,8 @@ def uwi_body_summary(text: str, available_width: int = _SUMMARY_MAX_LEN) -> str:
     frontmatterと`## 質問`見出し行をスキップし、質問本文の先頭行を`body_summary`と同じ
     切り詰めルールで返す。
     """
-    body = text
-    if text.startswith("---\n"):
-        try:
-            end = text.index("\n---\n", 4)
-            body = text[end + 5 :]
-        except ValueError:
-            body = text
+    parsed = parse_frontmatter(text)
+    body = text.removeprefix("\ufeff") if parsed is None else parsed[1]
     for line in body.splitlines():
         stripped_line = line.strip()
         if not stripped_line or stripped_line == "## 質問":

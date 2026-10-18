@@ -3,10 +3,11 @@
 `atk wi show --all`の出力形式を入力として、複数エントリをinboxへ原文保持で取り込む。
 別環境からの移行・復元用途であり、通常の投入を担う`add.add_entries`が行う
 `target_commit`の再取得・UWI見出しと回答欄の再生成・予約frontmatterキーの破棄を適用しない。
-取り込みが保存内容へ加える変更は次の2点だけとする。
+取り込みが保存内容へ加える変更は次の3点だけとする。
 
 1. 改行の正規化（CRLF・単独CRをLFへ揃え、`show`が付加する区切りの空行を除去して末尾改行1つへ揃える）。
 2. 再採番が生じたエントリを参照する`depends_on`要素行の値の差し替え。
+3. 各エントリ先頭のBOMの除去（単体投入と同じ扱い）。
 
 `show --all`の出力は可逆な直列化ではないため、次の限界がある（ユーザー確認済み）。
 
@@ -62,7 +63,7 @@ YAMLでは空白に続く`#`だけがコメントの開始となるため、最�
 class BatchEntry:
     """`show`形式から取り出した1エントリ。
 
-    `raw_text`は末尾改行の正規化だけを適用した保存対象の全文とする。
+    `raw_text`は先頭BOMの除去と改行の正規化を適用した保存対象の全文とする。
     """
 
     original_name: str
@@ -81,7 +82,9 @@ def _entry_boundaries(lines: list[str]) -> list[int]:
     return [
         index
         for index, line in enumerate(lines)
-        if _ENTRY_HEADING_RE.fullmatch(line) is not None and index + 1 < len(lines) and lines[index + 1] == "---"
+        if _ENTRY_HEADING_RE.fullmatch(line) is not None
+        and index + 1 < len(lines)
+        and lines[index + 1].removeprefix("\ufeff") == "---"
     ]
 
 
@@ -129,8 +132,8 @@ _DEPENDS_ON_BLOCK_NEXT_ACTION = "depends_onを`- <ファイル名>`を1行ずつ
 
 
 def _normalized_lines(text: str) -> list[str]:
-    """CRLF・単独CRをLFへ揃えて行へ分割する。"""
-    return text.replace("\r\n", "\n").replace("\r", "\n").split("\n")
+    """入力先頭のBOMを除き、CRLF・単独CRをLFへ揃えて行へ分割する。"""
+    return text.removeprefix("\ufeff").replace("\r\n", "\n").replace("\r", "\n").split("\n")
 
 
 def _structure_error(lines: list[str], boundaries: list[int]) -> tuple[str, str] | None:
@@ -166,7 +169,7 @@ def parse_show_batch(text: str) -> list[BatchEntry]:
     先頭境界より前には空行と`show`の構造見出し（`# awi`・`# uwi`・`## target_repo: ...`）だけを許し、
     それ以外を含む入力と境界が1件も無い入力は`WebInputError`で拒否する。
     各エントリの生テキストは境界の次行から次境界の前までとし、末尾の構造見出しと空行を除去してから
-    末尾改行1つへ正規化する。frontmatterと本文はこの生テキストのまま保持する。
+    先頭BOMを除いて末尾改行1つへ正規化する。frontmatterと本文はこの生テキストのまま保持する。
     行分割の前にCRLF・単独CRをLFへ正規化し、別環境（Windows等）から持ち込んだ入力でも
     境界行を検出できるようにする（保存内容の改行もLFへ揃う）。
     """
@@ -182,6 +185,7 @@ def parse_show_batch(text: str) -> list[BatchEntry]:
         heading = _ENTRY_HEADING_RE.fullmatch(lines[start])
         assert heading is not None
         entry_lines = lines[start + 1 : end]
+        entry_lines[0] = entry_lines[0].removeprefix("\ufeff")
         while entry_lines and _is_structural_line(entry_lines[-1]):
             entry_lines.pop()
         entries.append(_validate_entry(heading.group("name"), "\n".join(entry_lines) + "\n"))
