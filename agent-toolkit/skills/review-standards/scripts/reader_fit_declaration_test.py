@@ -8,6 +8,7 @@ import pathlib
 import check_exec_review_evidence as check
 import pytest
 import reader_fit_declaration
+import yaml
 
 from agent_toolkit._testing import git_repository as git
 
@@ -195,3 +196,56 @@ def test_external_artifacts_require_complete_structured_declaration(
             assert str(draft) in output and "起動" in output and "再実行" in output
     with pytest.raises(ValueError, match="対象集合に無い"):
         reader_fit_declaration.check(declarations[3][0], repo, head, head, 2)
+
+
+def test_contract_assigns_markdown_and_shared_lines_to_final_writer(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """他計画だけの文書と上書き済みの行を除外し、独立commitと自計画の差分を残す。"""
+    repo = git.init_repository(tmp_path / "repo", files={"shared.md": "元1\n元2\n"}, commit_message="開始")
+    start = git.git_output(repo, "rev-parse", "HEAD")
+    (repo / "shared.md").write_text("自計画1\n元2\n", encoding="utf-8")
+    (repo / "own.md").write_text("自計画\n", encoding="utf-8")
+    own = git.commit_all(repo, "自計画")
+    (repo / "shared.md").write_text("自計画1\n他計画2\n", encoding="utf-8")
+    (repo / "other.md").write_text("他計画\n", encoding="utf-8")
+    other = git.commit_all(repo, "他計画")
+    contract = tmp_path / "contract.yaml"
+    contract.write_text(
+        yaml.safe_dump(
+            {"version": 1, "clauses": [{"clause": "別計画の認可: 他", "content": f"対象commit: {other}。", "source": "要求"}]},
+            allow_unicode=True,
+        ),
+        encoding="utf-8",
+    )
+    assert set(reader_fit_declaration.changed_markdown(repo, start, other, contract)) == {"shared.md", "own.md"}
+    patch = reader_fit_declaration.patch_text(repo, start, other, "shared.md", contract)
+    assert "+自計画1" in patch and "他計画2" not in patch
+    monkeypatch.chdir(repo)
+    missing = json.dumps({"files": {}})
+    assert check.main([*_args(tmp_path, start, other, missing), "--review-contract", str(contract)]) == 1
+    diagnostics = capsys.readouterr().err
+    assert "own.md" in diagnostics and "shared.md" in diagnostics and "other.md" not in diagnostics
+    complete = json.dumps({"files": {name: {"sessions": [SESSION]} for name in ("own.md", "shared.md")}})
+    assert check.main([*_args(tmp_path, start, other, complete), "--review-contract", str(contract)]) == 0
+    capsys.readouterr()
+    other_contract = tmp_path / "other-contract.yaml"
+    other_contract.write_text(
+        yaml.safe_dump(
+            {"version": 1, "clauses": [{"clause": "別計画の認可: 自", "content": f"対象commit: {own}。", "source": "要求"}]},
+            allow_unicode=True,
+        ),
+        encoding="utf-8",
+    )
+    assert set(reader_fit_declaration.changed_markdown(repo, start, other, other_contract)) == {"shared.md", "other.md"}
+    other_patch = reader_fit_declaration.patch_text(repo, start, other, "shared.md", other_contract)
+    assert "+他計画2" in other_patch and "自計画1" not in other_patch
+    declaration = json.dumps({"files": {"shared.md": {"omission": "再点検対象なし"}, "own.md": {"sessions": [SESSION]}}})
+    reader_fit_declaration.check(declaration, repo, start, other, 2, start, own, review_contract=contract)
+    (repo / "shared.md").write_text("他計画による最終行\n他計画2\n", encoding="utf-8")
+    final = git.commit_all(repo, "他計画が同じ行を上書き")
+    contract.write_text(contract.read_text(encoding="utf-8").replace(f"{other}。", f"{other}, {final}。"), encoding="utf-8")
+    assert not reader_fit_declaration.patch_text(repo, start, final, "shared.md", contract)
+    (repo / "independent.md").write_text("即時対応\n", encoding="utf-8")
+    head = git.commit_all(repo, "独立commit")
+    assert "independent.md" in reader_fit_declaration.changed_markdown(repo, start, head, contract)

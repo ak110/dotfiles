@@ -1934,6 +1934,7 @@ def _list_evidence(parser: argparse.ArgumentParser, args: argparse.Namespace) ->
             args.plan,
             args.input_record,
             args.external_artifact,
+            args.review_contract,
             args.reader_fit_review is not None,
             args.results_file,
             verification_results.has_result_specification(args),
@@ -2196,7 +2197,7 @@ def _batch_arguments(value: object) -> tuple[str, list[str]]:
         "review_start",
         "external_artifacts",
     }
-    optional = {"previous_review_start", "previous_review_head"}
+    optional = {"previous_review_start", "previous_review_head", "review_contract"}
     if not isinstance(value, dict) or not fields <= set(value) or set(value) - fields - optional:
         raise ValueError(f"レビュー入力組には{', '.join(sorted(fields))}を指定する")
     for name in ("plan", "evidence", "reviewed_head", "review_table", "reader_fit_review", "review_start"):
@@ -2260,6 +2261,7 @@ def _save_return_input(
         "input_records": [str(path) for path in records],
         "reader_fit_review": args.reader_fit_review,
         "external_artifacts": [str(path) for path in args.external_artifact or []],
+        "review_contract": str(args.review_contract) if args.review_contract is not None else None,
         "review_start": review_start,
         "previous_review_start": previous_review_start,
         "previous_review_head": previous_review_head,
@@ -2371,6 +2373,9 @@ def main(argv: list[str] | None = None) -> int:
         help="Git管理外の文章成果物・回答下書きの絶対パス。複数成果物は反復指定する",
     )
     parser.add_argument(
+        "--review-contract", type=pathlib.Path, metavar="PATH", help="計画ごとの判定対象commitを定めたreview_contractの絶対パス"
+    )
+    parser.add_argument(
         "--show-all-rows",
         action="store_true",
         help="返却生成またはbatchへ両配列の全行を追加する。先に根拠を除いた全行の`証拠の行一覧`（配列・1始まり行番号・WI・判定・source・原文）、"
@@ -2433,8 +2438,8 @@ def main(argv: list[str] | None = None) -> int:
         )
     if args.reader_fit_review is not None and not args.return_result:
         parser.error("--reader-fit-reviewは--return-resultと指定する。batchでは各組のreader_fit_reviewへ申告を記す")
-    if args.external_artifact and not args.return_result:
-        parser.error("--external-artifactは--return-resultと指定する。batchでは各組へ記す")
+    if (args.external_artifact or args.review_contract) and not args.return_result:
+        parser.error("--external-artifactと--review-contractは--return-resultと指定する。batchでは各組へ記す")
     if any((args.review_start, args.previous_review_start, args.previous_review_head)) and not args.return_result:
         parser.error("レビューの開始時点と前回確認版は--return-resultと指定する。batchでは各組へ記す")
     if args.return_result and (
@@ -2641,6 +2646,7 @@ def main(argv: list[str] | None = None) -> int:
                 previous_start,
                 previous_head,
                 external_artifacts=args.external_artifact,
+                review_contract=args.review_contract,
             )
         except (OSError, UnicodeError, subprocess.SubprocessError, ValueError) as error:
             errors.append(str(error))

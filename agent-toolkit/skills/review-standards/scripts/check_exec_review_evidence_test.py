@@ -4028,6 +4028,7 @@ def test_generated_return_input_rechecks_without_conversion(
                 "round": round_value,
                 "plans": [str(path) for path in plans],
                 "external_artifacts": [],
+                "review_contract": None,
                 "input_records": [str(path) for path in records],
                 "reader_fit_review": declaration,
                 "review_start": first,

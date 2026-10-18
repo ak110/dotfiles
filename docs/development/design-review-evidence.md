@@ -288,6 +288,12 @@ Git管理外の絶対参照は実ファイルを読み、Git未登録を理由�
 Gitから求められない集合を委譲入力から受け取ると、回答下書きの申告も成果物ごとに確かめられる。
 実際の探索の内容はレビューと受領の検収に残す。
 
+同じレーンの複数計画ではreview_contractの別計画の認可条項に挙がる他計画のcommitを除き、自計画の判定対象commitが変えたMarkdownと差分を求める。
+どの計画にも属さないcommitは対象に残し、同じ行を再変更した場合は最終変更commitの計画が読者適合を判定する。
+他計画が書いた記述への候補は委譲元がその計画のレビュー担当へ1回だけ回し、同じHEADでの読者別探索を終えた判定を採用する。
+自計画の変更が参照先・手順・識別子などの前提を変えた場合は、自計画の直接影響範囲として扱う。
+計画を区別しない全差分を各担当へ渡す案は、同じ差分への矛盾する判定と修正の往復を生むため採らない。
+
 読者別探索の入力準備はreader-fit-prepareへrepository・review-start・review-head・output-dirを渡す1回の公開操作で行う。
 再レビューのprevious-review-start・previous-review-headとreview-contractも同じ規則へ渡し、files配列のpath・before・patchと任意のomissionを修正範囲へ使う。
 beforeとpatchは保存された本文・差分の絶対パスを示し、markdown表示からもファイルごとの入力へ到達できる。

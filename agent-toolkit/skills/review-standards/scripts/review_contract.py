@@ -129,6 +129,8 @@ def generate(path: pathlib.Path, directory: pathlib.Path) -> None:
                         f"認可資料: {other['plan']}。認可範囲: {other['scope']}。対象commit: {', '.join(commits)}。"
                         "資料から認可を確認した範囲だけを現在の基準による重複した認可判定から外す。"
                         "共有する公開契約・安全性・現在の基準が要求する統合結果への適合は判定する。"
+                        "他計画のcommitが書いた文書の記述の読者適合は、その計画のレビューが判定する。"
+                        "同じ行を再変更した場合は最終変更commitの計画が判定する。"
                     ),
                     "source": other["source"],
                 }

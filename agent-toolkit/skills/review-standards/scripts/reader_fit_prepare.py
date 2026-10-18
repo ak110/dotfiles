@@ -22,6 +22,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--review-head", required=True, help="今回レビューで確認するHEADのcommit識別子")
     parser.add_argument("--previous-review-start", help="再レビューで比較する前回の差分の基点となるcommit識別子")
     parser.add_argument("--previous-review-head", help="再レビューで比較する前回確認版のHEADのcommit識別子")
+    parser.add_argument(
+        "--review-contract", type=pathlib.Path, metavar="PATH", help="計画別の判定範囲を持つreview_contract YAMLの絶対パス"
+    )
     parser.add_argument("--output-dir", type=pathlib.Path, required=True, metavar="DIR", help="managed-temp内の保存先絶対パス")
     parser.add_argument("--markdown", action="append", help="対象Markdownのリポジトリ相対パス。省略時は全対象")
     args = parser.parse_args(argv)
@@ -43,7 +46,7 @@ def main(argv: list[str] | None = None) -> int:
                 if resolved.returncode:
                     raise ValueError(f"{field}のcommitを取得できません: {resolved.stderr.strip()}")
                 setattr(args, field, resolved.stdout.strip())
-        paths = declaration.changed_markdown(args.repository, args.review_start, args.review_head)
+        paths = declaration.changed_markdown(args.repository, args.review_start, args.review_head, args.review_contract)
         if args.markdown is not None:
             extra = set(args.markdown) - set(paths)
             if extra:
@@ -56,7 +59,7 @@ def main(argv: list[str] | None = None) -> int:
             patch = args.output_dir / f"reader-fit-{index}.diff"
             previous = args.previous_review_head or args.review_start
             before.write_text(declaration.body(args.repository, previous, path), encoding="utf-8", newline="")
-            current_patch = declaration.patch_text(args.repository, previous, args.review_head, path)
+            current_patch = declaration.patch_text(args.repository, previous, args.review_head, path, args.review_contract)
             patch.write_text(current_patch, encoding="utf-8", newline="")
             item = {"path": path, "before": str(before), "patch": str(patch)}
             if args.previous_review_head is not None and declaration.same_changes(
@@ -66,6 +69,7 @@ def main(argv: list[str] | None = None) -> int:
                 args.previous_review_start,
                 args.previous_review_head,
                 path,
+                args.review_contract,
             ):
                 item["omission"] = "再点検対象なし"
             result.append(item)
