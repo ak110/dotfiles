@@ -6,6 +6,7 @@ import os
 import pathlib
 import subprocess
 import threading
+from typing import Any
 
 import pytest
 
@@ -20,14 +21,14 @@ from agent_toolkit._testing.wi_bodies import AGENT_AWI_BODY
 @pytest.fixture(autouse=True)
 def _agent_output(monkeypatch: pytest.MonkeyPatch) -> None:
     """既存の結果検証はエージェント向けの出力を使う。"""
-    monkeypatch.setattr(_atk_git_sync, "is_agent_environment", lambda: True, raising=False)
+    monkeypatch.setattr(_atk_git_sync, "is_human_terminal", lambda: False)
 
 
 @pytest.mark.parametrize("agent", [False, True], ids=["human", "agent"])
 @pytest.mark.usefixtures("remote_sync")
 def test_sync_reports_progress_and_lock_wait(monkeypatch, tmp_path, capsys, agent):
     """ロックとremote処理を解放する前に対象と状態が届く。"""
-    monkeypatch.setattr(_atk_git_sync, "is_agent_environment", lambda: agent, raising=False)
+    monkeypatch.setattr(_atk_git_sync, "is_human_terminal", lambda: not agent)
     held = threading.Event()
     release = threading.Event()
 
@@ -41,11 +42,13 @@ def test_sync_reports_progress_and_lock_wait(monkeypatch, tmp_path, capsys, agen
     assert held.wait(30)
     capsys.readouterr()
     original_acquire = _atk_git_sync.filelock.FileLock.acquire
-    observed = []
+    observed: list[Any] = []
 
     def acquire(lock, *args, **kwargs):
-        observed.append(capsys.readouterr())
-        release.set()
+        # 待たずに取得を試す呼び出しは通し、待つ取得の直前で表示を読んでから保持側を解放する。
+        if kwargs.get("blocking") is not False and not observed:
+            observed.append(capsys.readouterr())
+            release.set()
         return original_acquire(lock, *args, **kwargs)
 
     monkeypatch.setattr(_atk_git_sync.filelock.FileLock, "acquire", acquire)
@@ -74,6 +77,14 @@ def test_sync_reports_progress_and_lock_wait(monkeypatch, tmp_path, capsys, agen
         assert not observed[0].err
     else:
         assert "ロック" in observed[0].err and str(tmp_path) in observed[0].err
+
+
+def test_uncontended_lock_does_not_report_waiting(monkeypatch, tmp_path, capsys):
+    """人の端末でも、他の主体が保持していないロックの取得では待機中と表示しない。"""
+    monkeypatch.setattr(_atk_git_sync, "is_human_terminal", lambda: True)
+    with _atk_git_sync.repo_lock(tmp_path):
+        pass
+    assert "ロック" not in capsys.readouterr().err
 
 
 @pytest.fixture(name="remote_sync")

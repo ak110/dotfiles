@@ -14,7 +14,7 @@ import sys
 from typing import Any
 
 from agent_toolkit._atk import managed_temp, outcome
-from agent_toolkit._atk.environment import is_agent_environment
+from agent_toolkit._atk.environment import is_human_terminal
 from agent_toolkit._common import process_tree
 from agent_toolkit._common.inherited_venv import strip_inherited_venv
 from agent_toolkit._git import command as _git_command
@@ -176,12 +176,12 @@ def execute(argv: list[str], cwd: pathlib.Path, timeout: float | None) -> tuple[
                     argv, cwd=cwd, env=child_env, stdout=stdout_stream, stderr=stderr_stream
                 )
                 try:
-                    if not is_agent_environment():
+                    if is_human_terminal():
                         print(f"実行中（両出力を保存中）: {shlex.join(argv)}", file=sys.stderr, flush=True)
                     process.wait(timeout=timeout)
                 except subprocess.TimeoutExpired:
                     timed_out = True
-                    if not is_agent_environment():
+                    if is_human_terminal():
                         print(f"時間上限に到達し、子と子孫を停止中: {shlex.join(argv)}", file=sys.stderr, flush=True)
                     residual = process_tree.stop_process_tree(process)
                     if residual:

@@ -38,7 +38,7 @@ def _short_wait(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None
     """結果の無い待機を即時に返して公開引数へ上限を露出させない。"""
     monkeypatch.setattr(agents_wait, "get_wait_timeout", lambda _bucket: 0)
     monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
-    monkeypatch.setattr(agents_wait, "is_agent_environment", lambda: True, raising=False)
+    monkeypatch.setattr(agents_wait, "is_human_terminal", lambda: False)
 
 
 @pytest.fixture(name="wait_environment")
@@ -100,7 +100,7 @@ def test_cli_wait_reports_waiting_state_to_human_terminal(monkeypatch, wait_envi
     """終端を公開する前に対象を表示し、公開後はJSON Linesを保つ。"""
     _write_own_status(wait_environment, [{"session_id": "session-1"}])
     monkeypatch.setattr(agents_wait, "get_wait_timeout", lambda _bucket: 30)
-    monkeypatch.setattr(agents_wait, "is_agent_environment", lambda: agent, raising=False)
+    monkeypatch.setattr(agents_wait, "is_human_terminal", lambda: not agent)
     observed = []
 
     def release_result(_seconds):

@@ -25,7 +25,7 @@ from agent_toolkit._agents_server import (
     wait_targets,
 )
 from agent_toolkit._atk import managed_temp as _managed_temp
-from agent_toolkit._atk.environment import is_agent_environment
+from agent_toolkit._atk.environment import is_human_terminal
 from agent_toolkit._common import session_registry
 from agent_toolkit._common.atomic_file import atomic_write
 from agent_toolkit._common.file_lock import acquire_lock, release_lock
@@ -435,7 +435,7 @@ def _wait_for_result(
         ";".join(f"{session_id}:{','.join(sorted(origins[session_id]))}" for session_id in ordered_ids) or "none",
     )
     lock_directory = shared_layout.status_directory(root_session_id, state_root) / "wait-locks"
-    if not is_agent_environment():
+    if is_human_terminal():
         print(f"終端結果・通知を待機中: {', '.join(ordered_ids) or identity.file_name}", file=sys.stderr, flush=True)
     lock_directory.mkdir(parents=True, exist_ok=True)
     lock_path = lock_directory / f"{identity.file_name}.lock"
@@ -450,7 +450,7 @@ def _wait_for_result(
             owns_lock = True
         except OSError:
             _LOG.info("wait_lock_failed owner=%s targets=%s", identity.file_name, ",".join(ordered_ids) or "none")
-            if not is_agent_environment():
+            if is_human_terminal():
                 print(
                     f"先行する待機の終了を待機中: {', '.join(ordered_ids) or identity.file_name}",
                     file=sys.stderr,
@@ -548,7 +548,7 @@ def _wait_for_result(
             for session_id in sorted(set(current_origins) - set(ordered_ids)):
                 ordered_ids.append(session_id)
                 ordered_ids.sort()
-                if not is_agent_environment():
+                if is_human_terminal():
                     print(f"終端結果・通知の待機対象を追加: {session_id}", file=sys.stderr, flush=True)
                 wait_targets.retain_wait_targets(root_session_id, identity.file_name, [session_id], state_root)
                 recorded = _read_json(run_path) or {}

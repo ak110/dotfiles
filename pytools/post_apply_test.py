@@ -38,13 +38,13 @@ _IMPORT_HOME = Path.home()
 def _isolate_update_log(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     """post-applyの永続ログを実際のOSアカウントのstate directoryから隔離する。"""
     monkeypatch.setattr(post_apply, "_UPDATE_LOG_PATH", tmp_path / "update-dotfiles.log")
-    monkeypatch.setattr(post_apply, "is_agent_environment", lambda: True, raising=False)
+    monkeypatch.setattr(post_apply, "is_human_terminal", lambda: False)
 
 
 @pytest.mark.parametrize("agent", [False, True], ids=["human", "agent"])
 def test_run_reports_overall_progress_while_steps_run(monkeypatch, tmp_path, capsys, agent):
     """保留中の工程を含む全体状態が届き、列挙順の結果と永続ログを保つ。"""
-    monkeypatch.setattr(post_apply, "is_agent_environment", lambda: agent, raising=False)
+    monkeypatch.setattr(post_apply, "is_human_terminal", lambda: not agent)
     real_wait = post_apply.wait
     release = threading.Event()
     observed = []

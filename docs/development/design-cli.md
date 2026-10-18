@@ -123,7 +123,9 @@ LLMが読む出力のトークン削減は、人向け表示を減らす理由�
 実装・改訂時は`agent-toolkit/skills/writing-standards/references/writing.md`「読み手別の追加注意点」からこの観点へ到達する。
 
 `agents_wait`のCLI待機、`git_sync`のremote同期・共有ロック取得、`run_command.execute`の子の終了待ち、`post_apply.run`の工程完了待ちは、人向けに対象と状態を標準エラーへ表示する。
-判定は`_atk.environment.is_agent_environment`を使い、エージェント環境で有限終了の出力を保存する既存の区分へ合わせる。
+判定は`_atk.environment.is_human_terminal`を使い、エージェント環境の外で標準エラーが端末の呼び出しだけへ表示する。
+エージェント環境の区分は有限終了の出力を保存する既存の判定と同じであり、パイプ・ファイル・テストの捕捉へ出力する呼び出しは結果の行だけを保つ。
+共有ロックは他の主体が保持して待つ場合だけ待機中と表示する。
 `agents wait`のJSON Lines、子の保存出力と終了状態、Git成功時の生出力の抑制を保つ。
 post-applyは全体の実行中表示を使い、工程結果の列挙順のまとまりと永続ログの開始時刻・詳細を保持する。
 工程ごとの開始行と所要時間行を画面へ重ねる案は、このまとまりを損なうため採らない。

@@ -25,7 +25,7 @@ from agent_toolkit._testing import git_repository
 @pytest.fixture(autouse=True)
 def _agent_output(monkeypatch: pytest.MonkeyPatch) -> None:
     """既存の結果検証はエージェント向けの出力を使う。"""
-    monkeypatch.setattr(run_command, "is_agent_environment", lambda: True, raising=False)
+    monkeypatch.setattr(run_command, "is_human_terminal", lambda: False)
 
 
 @pytest.mark.parametrize("agent", [False, True], ids=["human", "agent"])
@@ -48,7 +48,7 @@ def test_execute_reports_running_state_to_human_terminal(monkeypatch, tmp_path, 
         "exec('while not release.exists(): time.sleep(0.01)'); "
         "print('child-out'); print('child-err', file=sys.stderr); sys.exit(int(sys.argv[2]))"
     )
-    monkeypatch.setattr(run_command, "is_agent_environment", lambda: agent, raising=False)
+    monkeypatch.setattr(run_command, "is_human_terminal", lambda: not agent)
     monkeypatch.setattr(run_command.managed_temp, "create_output_temp", lambda _prefix: tmp_path)
     monkeypatch.setattr(run_command.subprocess, "Popen", GatedPopen)
     monkeypatch.setattr(run_command, "_git_state", lambda _cwd: (None, None))
