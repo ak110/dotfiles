@@ -813,7 +813,7 @@ class TestPs1EolCheck:
             "\n次の操作: `agent-toolkit:writing-standards`の`references/encoding.md`「書込ツールの改行・BOM保全」に従い"
             in context
         )
-        assert "既存ファイルには`Edit`ツールを使い" in context
+        assert "既存ファイルには`Edit`ツールを使う" in context
 
     def test_ps1_tmpl_edit_with_lf_only_allowed(self):
         """Edit は内部的に CRLF を維持するため、LF-only でもブロックしない。"""
@@ -1590,3 +1590,22 @@ def test_bash_drive_letter_path_warning_reaches_additional_context(
     assert pretooluse.main(json.dumps(payload)) == 0
     out = capsys.readouterr().out
     assert ("`PATH`へドライブ文字形式の要素" in out) is expected_warned
+
+
+@pytest.mark.parametrize("tool", ["Read", "Grep"])
+def test_original_record_warning_offers_delegation_without_command_access(tmp_path, monkeypatch, capsys, tool):
+    """読取専用担当へも専用抽出と委譲元経由の取得を案内し、通常資料との境界を保つ。"""
+    home = tmp_path / "claude"
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(home))
+    record = home / "projects/project/record.jsonl"
+    record.parent.mkdir(parents=True)
+    record.write_text("{}\n", encoding="utf-8")
+    key = "file_path" if tool == "Read" else "path"
+    payload = {"tool_name": tool, "tool_input": {key: str(record)}, "cwd": str(tmp_path)}
+    assert pretooluse.main(json.dumps(payload)) == 0
+    notice = capsys.readouterr().out
+    assert "session-review-evidence" in notice and "委譲元へ返し" in notice
+    assert "識別子・位置・必要な照会内容" in notice
+    payload["tool_input"] = {key: str(tmp_path / "AGENTS.md")}
+    assert pretooluse.main(json.dumps(payload)) == 0
+    assert "session-review-evidence" not in capsys.readouterr().out

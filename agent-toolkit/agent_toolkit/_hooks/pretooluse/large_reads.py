@@ -409,13 +409,15 @@ def session_record_reference_warning(tool_name: str, tool_input: dict, cwd: str)
         "セッションの原記録の本文を、汎用ツールで直接参照しようとしている。",
         tag="warn",
         fix=(
-            "`atk run-script session-review-evidence --`へ、ファイルは`--transcript <原記録の絶対パス>`、"
+            "コマンドを使え、実行が許可される担当は`atk run-script session-review-evidence --`へ、"
+            "ファイルは`--transcript <原記録の絶対パス>`、"
             "本文の検索は`--grep <正規表現>`か`--fixed-string <文字列>`、指定位置は`--detail <record:line>`、"
             "ツール入力は`--tool-calls --tool <名前> --input-regex <正規表現>`を渡す。"
             "期間探索は`--catalog-claude-project <ディレクトリ>`か`--catalog-codex-history <ディレクトリ>`へ"
             "`--since <時刻> --observation-boundary <時刻>`を加える。"
             "発話後の呼出順は`--user-events`とツール一覧、または`--bundle`の抽出済み`conversation.jsonl`から集計する。"
             f"入力の選択は{reference}に従い、抽出済みの結果を後処理する。"
+            "コマンドを使えないか実行が制限される担当は、原記録の識別子・位置・必要な照会内容を委譲元へ返し、抽出済みの資料を受け取る。"
         ),
         removable_cause=False,
         escalate_on_repeat=False,
@@ -426,14 +428,17 @@ def _large_read_notice(path: pathlib.Path, plan: _ReadPlan, byte_threshold: int)
     if _is_session_record(path):
         return _block_notice(
             f"原セッション記録の全文取得を遮断した（{plan.byte_count}バイト、閾値: {byte_threshold}バイト）: {path}",
-            fix="`atk run-script session-review-evidence -- --transcript <原記録の絶対パス>`に、目的に応じた照会条件を加える。"
-            "`agent-toolkit:writing-standards`の`references/session-records.md`で入力と照会モードを選ぶ。",
+            fix="コマンドを使え、実行が許可される担当は"
+            "`atk run-script session-review-evidence -- --transcript <原記録の絶対パス>`に、目的に応じた照会条件を加える。"
+            "`agent-toolkit:writing-standards`の`references/session-records.md`で入力と照会モードを選ぶ。"
+            "コマンドを使えないか実行が制限される担当は、原記録の識別子・位置・必要な照会内容を委譲元へ返し、抽出済みの資料を受け取る。",
         )
     return _block_notice(
         f"{plan.line_count}行、{plan.byte_count}バイトのファイルの全文取得を遮断した（閾値: {byte_threshold}バイト）: {path}",
         fix=(
-            f"`{read_file.first_read_command(path)}`で取得し、`text`を連結する。"
+            f"コマンドを使え、実行が許可される担当は`{read_file.first_read_command(path)}`で取得し、`text`を連結する。"
             "`next`を`--start`へ渡し、`eof`が`true`になるまで続ける。"
+            "コマンドを使えないか実行が制限される担当は、対象パス・必要な取得範囲を委譲元へ返し、分割取得した資料を受け取る。"
         ),
     )
 
@@ -442,8 +447,11 @@ def _large_multi_read_notice(path_counts: Sequence[tuple[pathlib.Path, _ReadPlan
     if any(_is_session_record(path) for path, _plan in path_counts):
         return _block_notice(
             "原セッション記録を含む複数ファイルの全文取得を遮断した。",
-            fix="原記録は`atk run-script session-review-evidence -- --transcript <原記録の絶対パス>`へ照会条件を渡し、"
-            "通常の本文は別の呼び出しで取得する。入力の選択は`agent-toolkit:writing-standards`の`references/session-records.md`に従う。",
+            fix="コマンドを使え、実行が許可される担当は原記録を"
+            "`atk run-script session-review-evidence -- --transcript <原記録の絶対パス>`へ照会条件を渡し、"
+            "通常の本文は別の呼び出しで取得する。入力の選択は`agent-toolkit:writing-standards`の`references/session-records.md`に従う。"
+            "コマンドを使えないか実行が制限される担当は、原記録の識別子・位置・必要な照会内容を委譲元へ返し、抽出済みの資料を受け取る。"
+            "通常資料も含む場合は対象パス・必要な取得範囲を添える。",
         )
     total_bytes = sum(plan.byte_count for _path, plan in path_counts)
     details = "、".join(
@@ -452,7 +460,9 @@ def _large_multi_read_notice(path_counts: Sequence[tuple[pathlib.Path, _ReadPlan
     )
     return _block_notice(
         f"複数ファイルの全文取得を遮断した（合計: {total_bytes}バイト、閾値: {byte_threshold}バイト）: {details}",
-        fix="ファイルごとに示したコマンドで取得し、`text`を連結する。`next`を`--start`へ渡し、`eof`が`true`になるまで続ける。",
+        fix="コマンドを使え、実行が許可される担当はファイルごとに示したコマンドで取得し、`text`を連結する。"
+        "`next`を`--start`へ渡し、`eof`が`true`になるまで続ける。"
+        "コマンドを使えないか実行が制限される担当は、対象パス・必要な取得範囲を委譲元へ返し、分割取得した資料を受け取る。",
     )
 
 

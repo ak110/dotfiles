@@ -286,3 +286,24 @@ class TestGeneralBehavior:
         """不正JSONはフックを無効化（安全側）。"""
         result = _run("this is not json")
         assert result.returncode == 0
+
+
+@pytest.mark.parametrize(
+    ("name", "body", "required"),
+    [
+        ("new.ps1", "本文\n", "BOMと改行"),
+        ("uv.lock", "version = 1\n", "依存変更または再生成"),
+        ("pyproject.toml", "dependencies = []\n", "依存変更と`lockfile`の同期"),
+    ],
+)
+def test_edit_warning_supports_command_restricted_agent(tmp_path, name, body, required):
+    """編集だけを持つ担当も、対象と必要な処置を返して担当範囲内で引き渡せる。"""
+    target = tmp_path / name
+    result = _run(
+        {"tool_name": "Write", "tool_input": {"file_path": str(target), "content": body}, "session_id": "restricted-" + name},
+        env_overrides={"HOME": str(tmp_path)},
+    )
+    assert result.returncode == 0
+    notice = _additional_context(result)
+    assert "委譲元へ返す" in notice and "対象パス" in notice
+    assert required in notice and "許可される担当" in notice
