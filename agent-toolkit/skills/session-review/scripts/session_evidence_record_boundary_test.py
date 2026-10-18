@@ -1,5 +1,6 @@
 """Claude Code 2.1.301で観測したAPI要求の写しと読取不能記録の境界を検証する。"""
 
+import collections
 import json
 import pathlib
 
@@ -11,7 +12,22 @@ from agent_toolkit._testing.helpers import _write_transcript
 from agent_toolkit._testing.session_evidence_support import read_jsonl
 
 
-@pytest.mark.parametrize("query", [[], ["--tool-calls"], ["--warn"], ["--stats"], ["--user-events"]])
+@pytest.mark.parametrize(
+    "query",
+    [
+        [],
+        ["--tool-calls"],
+        ["--warn"],
+        ["--stats"],
+        ["--stats", "--summary-only"],
+        ["--user-events"],
+        ["--hook-notices"],
+        ["--context-at", "3", "--phrase=warning"],
+        ["--detail", "1"],
+        ["--record-schema", "1"],
+        ["--elapsed-until", "2026-10-01T00:00:03Z"],
+    ],
+)
 def test_request_copies_do_not_create_conversation_events(tmp_path: pathlib.Path, capsys, query) -> None:
     """会話と同じmessageを持つ別種のエントリを追加しても抽出結果を増やさない。"""
     entries = [
@@ -50,6 +66,10 @@ def test_request_copies_do_not_create_conversation_events(tmp_path: pathlib.Path
     assert "false" in json.dumps(read_jsonl(capsys))
     assert evidence.main([str(transcript), "--grep", "false"]) == 0
     assert any(event.get("line") == 4 for event in read_jsonl(capsys))
+    assert evidence.main([str(transcript), "--fixed-string", "false"]) == 0
+    matches = read_jsonl(capsys)
+    # 固定文字列はgrepと同じ生の本文の照会であり、WIが保持を求める写しの所在も返す。
+    assert any(locator["line"] == 4 for event in matches for locator in event.get("locators", []))
 
 
 @pytest.mark.parametrize("content", [b"\xff", b"not json", None])
@@ -182,7 +202,21 @@ def test_prepare_bundle_does_not_read_request_copies_as_conversation(tmp_path: p
         assert prepare.main(["--transcript", str(transcript), "--work-dir", str(work)]) == 0
         record = json.loads(capsys.readouterr().out)
         documents.append(pathlib.Path(record["conversation_path"]).read_text(encoding="utf-8"))
-        for name in ("timeline", "warnings", "comparison-materials", "conversation"):
+        for name in ("timeline", "warnings", "comparison-materials", "conversation", "candidate-evidence"):
             events = [json.loads(line) for line in (work / "bundle" / f"{name}.jsonl").read_text(encoding="utf-8").splitlines()]
-            assert all(event.get("line", 0) <= 2 for event in events)
+            positions = []
+            pending = list(events)
+            while pending:
+                value = pending.pop()
+                if isinstance(value, dict):
+                    if isinstance(value.get("line"), int) and value["line"] > 0:
+                        positions.append(value["line"])
+                    pending.extend(value.values())
+                elif isinstance(value, list):
+                    pending.extend(value)
+            assert all(line <= 2 for line in positions)
+            types = collections.Counter(entries[line - 1]["type"] for line in positions)
+            assert not types.keys() - {"user", "assistant"}
+            if name == "candidate-evidence":
+                assert positions
     assert documents[0] == documents[1]
