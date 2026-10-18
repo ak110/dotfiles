@@ -3388,6 +3388,174 @@ def test_public_reference_classification_accepts_names_and_keeps_explicit_paths(
         assert reference in capsys.readouterr().err
 
 
+@pytest.mark.parametrize(
+    "name", ["docker-ce/docker-ce-cli/containerd.io", "React/Vue/Node.js", "vercel/next.js", "application/vnd.ms-excel"]
+)
+@pytest.mark.parametrize("inline", [False, True])
+@pytest.mark.parametrize("section", ["wi_conditions", "user_requirements"])
+def test_public_name_consumers_keep_shared_evidence_and_reference_boundaries(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    name: str,
+    inline: bool,
+    section: str,
+) -> None:
+    """名称だけの共用、参照だけの共用、名称を伴う説明付き参照を公開判定で区別する。"""
+    _mock_wi(monkeypatch, tmp_path, {FIRST_WI: "type: awi\n---\n## 完成条件\n- 保存\n- 再読込\n"})
+    description = f"`{name}`" if inline else name
+    record = tmp_path / "観測.md"
+    record.write_text("# 保存\n# 再読込\n", encoding="utf-8")
+    evidence = tmp_path / "evidence.json"
+    factory = _condition if section == "wi_conditions" else _requirement
+    rows = [factory(FIRST_WI, "保存"), factory(FIRST_WI, "再読込")]
+    conditions = [
+        {**_condition(FIRST_WI, text), "evidence": f"test_observed_{index} 成功"}
+        for index, text in enumerate(("保存", "再読込"))
+    ]
+
+    def write_rows() -> None:
+        _write_evidence(
+            evidence, rows if section == "wi_conditions" else conditions, rows if section == "user_requirements" else []
+        )
+
+    for body, reason in ((description, "具体的な参照先がありません"), (str(record), "説明が無いファイル参照だけ")):
+        for row in rows:
+            row["evidence"] = body
+        write_rows()
+        assert _check(evidence, FIRST_WI) == 1
+        diagnostic = capsys.readouterr().err
+        assert reason in diagnostic
+        assert all(f"{section}[{index}].evidence" in diagnostic for index in (0, 1))
+    for row in rows:
+        row["evidence"] = f"{record}#保存 で{description}の保存と再読込を観測した"
+    write_rows()
+    assert _check(evidence, FIRST_WI) == 0, capsys.readouterr().err
+    # 共通する名称があっても、参照の見出しの差を比較へ残す。
+    rows[1]["awi"] = SECOND_WI
+    rows[1]["evidence"] = f"{record}#再読込 で{description}の保存と再読込を観測した"
+    rows.append({**factory(FIRST_WI, "再読込"), "evidence": "test_reload_complete 成功"})
+    write_rows()
+    assert _check(evidence, FIRST_WI) == 0, capsys.readouterr().err
+    rows[1]["evidence"] = rows[0]["evidence"]
+    write_rows()
+    assert _check(evidence, FIRST_WI) == 1
+    assert "異なるWIの異なる要求単位で同じ達成根拠" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize(
+    "name", ["docker-ce/docker-ce-cli/containerd.io", "React/Vue/Node.js", "vercel/next.js", "application/vnd.ms-excel"]
+)
+@pytest.mark.parametrize("inline", [False, True])
+def test_public_name_consumers_keep_background_explanation_boundary(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    name: str,
+    inline: bool,
+) -> None:
+    """背景根拠でも名称を説明として残し、参照だけの理由を引き続き拒否する。"""
+    _mock_wi(monkeypatch, tmp_path, {FIRST_WI: _background_awi(_ELIDED_RECORD)})
+    description = f"`{name}`" if inline else name
+    evidence, record = tmp_path / "evidence.json", tmp_path / "分類.md"
+    record.write_text("# 分類\n", encoding="utf-8")
+    condition = {**_condition(FIRST_WI, "過負荷の後に同じsessionで続く"), "evidence": "test_observation 成功"}
+    for body, expected in ((description, 0), (str(record), 1), (f"{record} は{description}の観測である", 0)):
+        _write_evidence(evidence, [condition], _background_rows(f"{FIRST_WI} ## 反映内容と反映先", evidence=body))
+        assert _check(evidence, FIRST_WI) == expected
+        diagnostic = capsys.readouterr().err
+        if expected:
+            assert "要求を含まない理由がありません" in diagnostic
+
+
+@pytest.mark.parametrize(
+    "name", ["docker-ce/docker-ce-cli/containerd.io", "React/Vue/Node.js", "vercel/next.js", "application/vnd.ms-excel"]
+)
+@pytest.mark.parametrize("inline", [False, True])
+@pytest.mark.parametrize("section", ["wi_conditions", "user_requirements"])
+def test_public_name_consumers_select_only_located_deferral_records(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    name: str,
+    inline: bool,
+    section: str,
+) -> None:
+    """名称だけでは入力記録を選ばず、明示した所在の段落だけから延期を受理する。"""
+    _mock_wi(monkeypatch, tmp_path, {FIRST_WI: "type: awi\nsource: agent\n---\n## 完成条件\n- 保存\n"})
+    description = f"`{name}`" if inline else name
+    evidence, table, record = tmp_path / "evidence.json", tmp_path / "review.tsv", tmp_path / "入力記録.md"
+    record.write_text(
+        f"# 延期\n\nAWI: {FIRST_WI}\n判定対象: 保存\n終端区分: 終端しない\n後続工程: 公開後\n検収時機: 次回\n"
+        "\n# 別の判断\nこの条件への判断は無い。\n",
+        encoding="utf-8",
+    )
+    review_table.init(table)
+    factory = _condition if section == "wi_conditions" else _requirement
+    row = {**factory(FIRST_WI, "保存"), "outcome": "証拠不足"}
+    for reference, expected in (("", 1), (f"{record}#別の判断", 1), (f"{record}#延期", 0), (f"{record}:3-7", 0)):
+        row["evidence"] = f"{description} の観測を後続へ渡す。{reference}"
+        _write_evidence(
+            evidence,
+            [row] if section == "wi_conditions" else [{**_condition(FIRST_WI, "保存"), "evidence": "test_save_success 成功"}],
+            [row] if section == "user_requirements" else [],
+        )
+        capsys.readouterr()
+        assert run_script.dispatch(_return_args(evidence, table, "--input-record", str(record))) == expected
+        result = capsys.readouterr()
+        if expected:
+            assert not result.out and "未解決の指摘数0件と証拠不足" in result.err
+        else:
+            assert "状態: completed" in result.out and not result.err
+
+
+@pytest.mark.parametrize(
+    "name", ["docker-ce/docker-ce-cli/containerd.io", "React/Vue/Node.js", "vercel/next.js", "application/vnd.ms-excel"]
+)
+@pytest.mark.parametrize("inline", [False, True])
+@pytest.mark.parametrize("section", ["wi_conditions", "user_requirements"])
+def test_public_name_consumers_preserve_reject_text_and_remove_file_references(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    name: str,
+    inline: bool,
+    section: str,
+) -> None:
+    """名称を含む終端説明を読み、ファイル名のrejectだけで不採用終端を受理しない。"""
+    _mock_wi(monkeypatch, tmp_path, {FIRST_WI: "type: awi\nsource: agent\n---\n## 完成条件\n- 保存\n"})
+    description = f"`{name}`" if inline else name
+    evidence, table, record = tmp_path / "evidence.json", tmp_path / "review.tsv", tmp_path / "reject.md"
+    record.write_text(
+        f"## 実施内容\n\n| 実施内容 | 採否 | 根拠 |\n| --- | --- | --- |\n| {FIRST_WI}の要求 | 不採用 | 前提が成立しない |\n",
+        encoding="utf-8",
+    )
+    review_table.init(table)
+    factory = _condition if section == "wi_conditions" else _requirement
+    row = {**factory(FIRST_WI, "保存"), "outcome": "未達"}
+    for terminal, expected in (("", 1), ("reject終端。", 0)):
+        row["evidence"] = f"{terminal}{description}の判断。{record}#実施内容 の不採用根拠に従う"
+        conditions = (
+            [row]
+            if section == "wi_conditions"
+            else [
+                {
+                    **_condition(FIRST_WI, "保存"),
+                    "outcome": "未達",
+                    "evidence": f"reject終端。{record}#実施内容 の不採用根拠に従う",
+                }
+            ]
+        )
+        _write_evidence(evidence, conditions, [row] if section == "user_requirements" else [])
+        capsys.readouterr()
+        assert run_script.dispatch(_return_args(evidence, table, "--input-record", str(record))) == expected
+        result = capsys.readouterr()
+        if expected:
+            assert not result.out and "reject終端と計画の実施内容の不採用根拠" in result.err
+        else:
+            assert "状態: completed" in result.out and not result.err
+
+
 _SUFFIX_FILES = {
     "agent-toolkit/agent_toolkit/_atk/run_command_test.py": "def test_timeout():\n    pass\n",
     "docs/guide/手順.md": "# 手順\n本文。\n",
