@@ -117,7 +117,7 @@ def _validate_entry(name: str, raw_text: str) -> BatchEntry:
         # 復元元にだけ存在する旧ローカルパスは、保存済みの字面を維持する。
         pass
     else:
-        _wi_repo.resolve_repo_id_or_raise(target_repo, reject_non_origin=True)
+        _wi_repo.resolve_repo_id_or_raise(target_repo, warn_non_origin=True)
     if entry_type == WI_TYPE_AWI and body_is_effectively_empty(body):
         raise WebInputError(f"AWI本文が実質空です: {name}", next_action="本文を記入して再投入する")
     return BatchEntry(original_name=name, raw_text=raw_text, frontmatter=frontmatter, body=body)

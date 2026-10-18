@@ -1,4 +1,4 @@
-"""投入・本文編集の公開CLIでorigin以外への誤投入を防ぐ契約を検証する。"""
+"""投入・本文編集の公開CLIで別名リモートへの指定を警告付きで受理する契約を検証する。"""
 
 import collections.abc
 import os
@@ -50,20 +50,32 @@ def _setup(tmp_path: pathlib.Path) -> tuple[pathlib.Path, pathlib.Path]:
     return repo, notes
 
 
-@pytest.mark.parametrize("mode", ["option", "frontmatter", "batch", "edit"])
-def test_non_origin_target_is_rejected_without_saving(
+@pytest.mark.parametrize(
+    ("mode", "dry_run"),
+    [
+        ("option", False),
+        ("frontmatter", False),
+        ("batch", False),
+        ("edit", False),
+        ("option", True),
+        ("frontmatter", True),
+        ("edit", True),
+    ],
+)
+def test_non_origin_target_is_saved_with_warning(
     tmp_path: pathlib.Path,
     host_environ: collections.abc.Callable[[], dict[str, str]],
     mode: str,
+    dry_run: bool,
 ) -> None:
-    """引数・frontmatter・一括投入・編集が登録済みupstreamのURLを同じ診断で拒否する。"""
+    """引数・frontmatter・一括投入・編集でupstreamを受理し、指定識別子と警告を保持する。"""
     repo, notes = _setup(tmp_path)
     body = tmp_path / "body.md"
     before_head = git_repository.git_output(notes, "rev-parse", "HEAD")
     content = f"---\ntarget_repo: {_UPSTREAM}\ntype: awi\nsource: agent\n---\n\n{AGENT_AWI_BODY}\n"
     if mode == "option":
         body.write_text(AGENT_AWI_BODY, encoding="utf-8")
-        argv = ["wi", "add", "--dry-run", "--source=agent", f"--target-repo={_UPSTREAM}"]
+        argv = ["wi", "add", "--source=agent", f"--target-repo={_UPSTREAM}"]
     elif mode == "batch":
         body.write_text(f"# awi\n## target_repo: {_UPSTREAM}\n### item.md [inbox]\n{content}", encoding="utf-8")
         argv = ["wi", "add", "--batch"]
@@ -73,19 +85,26 @@ def test_non_origin_target_is_rejected_without_saving(
         git_repository.commit_all(notes, "既存WI")
         before_head = git_repository.git_output(notes, "rev-parse", "HEAD")
         body.write_text(content, encoding="utf-8")
-        argv = ["wi", "edit", "item.md", "--dry-run", f"--target-repo={_ORIGIN}"]
+        argv = ["wi", "edit", "item.md", f"--target-repo={_ORIGIN}"]
     else:
         body.write_text(content.replace("type: awi\n", ""), encoding="utf-8")
-        argv = ["wi", "add", "--dry-run", f"--target-repo={_ORIGIN}"]
+        argv = ["wi", "add", f"--target-repo={_ORIGIN}"]
+    if dry_run:
+        argv.append("--dry-run")
     before_files = {p.name: p.read_bytes() for p in (notes / "inbox").glob("*.md")}
     result = _invoke(repo, notes, [*argv, "--body-file", str(body)], host_environ)
-    assert result.returncode != 0, result.stdout + result.stderr
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "警告:" in result.stderr
     assert "upstream" in result.stderr
     assert _ORIGIN in result.stderr
-    assert "--target-repo" in result.stderr
-    assert "ローカル作業ツリーのパス" in result.stderr
-    assert git_repository.git_output(notes, "rev-parse", "HEAD") == before_head
-    assert {p.name: p.read_bytes() for p in (notes / "inbox").glob("*.md")} == before_files
+    if dry_run:
+        assert git_repository.git_output(notes, "rev-parse", "HEAD") == before_head
+        assert {p.name: p.read_bytes() for p in (notes / "inbox").glob("*.md")} == before_files
+    else:
+        saved_files = list((notes / "inbox").glob("*.md"))
+        assert len(saved_files) == 1
+        assert f"target_repo: {_UPSTREAM}" in saved_files[0].read_text(encoding="utf-8")
+        assert git_repository.git_output(notes, "rev-parse", "HEAD") != before_head
 
 
 @pytest.mark.parametrize("target", ["origin", "path", "unregistered", "same-origin-alias", "outside-git", "no-origin"])
@@ -119,3 +138,4 @@ def test_target_url_guard_keeps_supported_inputs(
         host_environ,
     )
     assert result.returncode == 0, result.stdout + result.stderr
+    assert "origin以外のリモート" not in result.stderr

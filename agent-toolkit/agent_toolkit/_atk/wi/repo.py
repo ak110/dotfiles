@@ -60,8 +60,8 @@ def _origin_url(worktree: pathlib.Path) -> str:
     return url
 
 
-def _reject_non_origin_remote(repo_id: str, cwd: pathlib.Path | None) -> None:
-    """投入元のorigin以外に登録されたURLを、誤投入先として拒否する。"""
+def _warn_non_origin_remote(repo_id: str, cwd: pathlib.Path | None) -> None:
+    """投入元のorigin以外に登録されたURLへの指定を警告し、指定値を受理する。"""
     worktree = pathlib.Path.cwd() if cwd is None else cwd
     origin = _git_remote.origin_url(worktree)
     if origin is None:
@@ -90,21 +90,22 @@ def _reject_non_origin_remote(repo_id: str, cwd: pathlib.Path | None) -> None:
         except ValueError:
             continue
         if repo_id == remote_id:
-            raise WebInputError(
+            _outcome.report_warning(
                 f"target_repoがorigin以外のリモート{name}に一致する: {repo_id}（origin: {origin_id}）",
-                next_action="`--target-repo`へローカル作業ツリーのパスか`origin`のURLを渡して再実行する",
+                next_action="指定先を受理して続行する。意図した投入先かを確認する",
             )
+            return
 
 
-def resolve_repo_id_or_raise(value: str | None, *, cwd: pathlib.Path | None = None, reject_non_origin: bool = False) -> str:
+def resolve_repo_id_or_raise(value: str | None, *, cwd: pathlib.Path | None = None, warn_non_origin: bool = False) -> str:
     """リポジトリ識別子（正規化リモートURL）を解決して返す。
 
     - `value`がURLらしい文字列（スキームを持つ・`@`を含む・スラッシュ2個以上の3要素）なら直接正規化する
     - ローカルパスとして判定した場合は`git -C <path> remote get-url origin`の出力を正規化する
     - `value`省略時は`cwd`（省略時は`resolve_local_worktree`で取得した作業ツリー）を使う
-    - `reject_non_origin`指定時はURL入力とcwdの登録リモートを比べ、origin以外だけへの一致を拒否する
+    - `warn_non_origin`指定時はURL入力とcwdの登録リモートを比べ、origin以外だけへの一致を警告する
     - パス不在・git未管理・remote未設定は理由と次の操作を持つ`WebInputError`を送出する。
-      呼び出し元が自分の失敗行へ包めるよう、ここでは出力しない
+      失敗行の出力は呼び出し元が担当する。`warn_non_origin`の警告は標準エラーへ書く
     """
     if value is not None:
         # ローカルパスとして実在すればremote URLを取得して正規化、それ以外はURL文字列として正規化を試みる
@@ -121,8 +122,8 @@ def resolve_repo_id_or_raise(value: str | None, *, cwd: pathlib.Path | None = No
             raise WebInputError(
                 f"パスが存在せずリモートURLとしても解析できない: {value}", next_action=_TARGET_REPO_NEXT_ACTION
             ) from exc
-        if reject_non_origin:
-            _reject_non_origin_remote(repo_id, cwd)
+        if warn_non_origin:
+            _warn_non_origin_remote(repo_id, cwd)
         return repo_id
 
     # value省略時: ローカル作業ツリーを特定してからremoteを取得
@@ -134,10 +135,10 @@ def resolve_repo_id_or_raise(value: str | None, *, cwd: pathlib.Path | None = No
         raise _wi_web_input.web_input_error_from(exc, next_action=_TARGET_REPO_NEXT_ACTION) from exc
 
 
-def resolve_repo_id(value: str | None, *, cwd: pathlib.Path | None = None, reject_non_origin: bool = False) -> str:
+def resolve_repo_id(value: str | None, *, cwd: pathlib.Path | None = None, warn_non_origin: bool = False) -> str:
     """リポジトリ識別子を解決して返す。解決できない場合は失敗行と次の操作を書いてexit 2で終了する。"""
     try:
-        return resolve_repo_id_or_raise(value, cwd=cwd, reject_non_origin=reject_non_origin)
+        return resolve_repo_id_or_raise(value, cwd=cwd, warn_non_origin=warn_non_origin)
     except WebInputError as error:
         _outcome.report_failure(error.reason, next_action=error.next_action)
         sys.exit(2)
@@ -181,7 +182,7 @@ def resolve_add_target(value: str | None) -> tuple[str, pathlib.Path | None]:
             sys.exit(2)
         return resolve_repo_id(str(local_worktree)), local_worktree
 
-    return resolve_repo_id(value, reject_non_origin=True), None
+    return resolve_repo_id(value, warn_non_origin=True), None
 
 
 def resolve_head_commit(local_worktree: pathlib.Path) -> str:

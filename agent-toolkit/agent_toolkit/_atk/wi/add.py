@@ -413,7 +413,7 @@ def _verify_frontmatter_target_repos(parsed_messages: list[tuple[dict[str, objec
                 next_action="frontmatterのtarget_repoへローカルworktreeのパスかremote URLを書いて再投入する",
             )
         try:
-            resolve_repo_id_or_raise(raw_target_repo, reject_non_origin=True)
+            resolve_repo_id_or_raise(raw_target_repo, warn_non_origin=True)
         except WebInputError as error:
             raise _target_repo_error(raw_target_repo, error) from error
 
@@ -515,7 +515,7 @@ def _add_entries_locked(
         raw_source = frontmatter.get("source", source)
         try:
             item_target_repo = (
-                resolve_repo_id_or_raise(raw_target_repo, reject_non_origin=True)
+                resolve_repo_id_or_raise(raw_target_repo, warn_non_origin=True)
                 if isinstance(raw_target_repo, str)
                 else target_repo
             )
@@ -666,7 +666,7 @@ def _validate_add_entries(
     normalized_target_repo: str | None = None
     if target_repo is not None:
         try:
-            normalized_target_repo = resolve_repo_id_or_raise(target_repo, reject_non_origin=True)
+            normalized_target_repo = resolve_repo_id_or_raise(target_repo, warn_non_origin=True)
         except WebInputError as error:
             raise _target_repo_error(target_repo, error) from error
     if entry_type != WI_TYPE_AWI and question_type not in _constants.NEW_QUESTION_TYPES:

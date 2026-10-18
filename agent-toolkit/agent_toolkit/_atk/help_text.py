@@ -531,7 +531,7 @@ HELP["atk wi show"]["description"] += (
 )
 HELP["atk wi add"]["description"] += (
     "\ntarget_repo: cwdのoriginと同値のURL、未登録のURLおよびローカルパスを受理する。"
-    "cwdのorigin以外の登録remoteのURLは拒否する。"
+    "cwdのorigin以外の登録remoteのURLは警告付きで受理する。"
 )
 
 _STATE_CHANGE_RESULT_LINE = "状態変更が成立した実行は標準出力の1行目へ`成功: `で始まる行を書く。非0で終了する実行は標準エラーへ`失敗: `で始まる行を書く。"
