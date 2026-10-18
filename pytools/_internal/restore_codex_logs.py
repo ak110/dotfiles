@@ -34,21 +34,30 @@ def run(
 
 def _restore(*, home_dir: pathlib.Path | None, shm_root: pathlib.Path) -> bool:
     """復元または回収を1段だけ進め、配布先を変更した場合は真を返す。"""
+    codex_dir = (home_dir or pathlib.Path.home()) / ".codex"
+    pairs = _database_pairs(codex_dir, shm_root)
+    states = {home_path: _home_state(home_path, target_path) for home_path, target_path in pairs}
+    pending = [
+        (home_path, target_path) for home_path, target_path in pairs if states[home_path] == "managed" or target_path.exists()
+    ]
+    if not pending:
+        return False
+
     running = codex_processes.running_codex_processes()
     if running:
         logger.warning(
             log_format.format_status(
                 "codex-logs",
-                "Codexが稼働中のため通常ストレージへの復元を延期: "
+                "Codexが稼働中のため診断ログの旧配置の処置を延期: "
                 f"{codex_processes.format_running_processes(running)}。"
+                "旧配置の復元・回収・管理リンク整理の対象: "
+                + ", ".join(f"{home_path} / {target_path}" for home_path, target_path in pending)
+                + "。"
                 "Codexを終了して`update-dotfiles`を再実行する",
             ),
         )
         return False
 
-    codex_dir = (home_dir or pathlib.Path.home()) / ".codex"
-    pairs = _database_pairs(codex_dir, shm_root)
-    states = {home_path: _home_state(home_path, target_path) for home_path, target_path in pairs}
     unrelated = [(home_path, target_path) for home_path, target_path in pairs if states[home_path] == "unrelated"]
     if unrelated:
         reasons = ", ".join(

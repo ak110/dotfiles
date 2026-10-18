@@ -894,7 +894,7 @@ def _pause_codex_daemon() -> _CodexDaemonPause | None:
     """利用セッションが無く管理daemonだけが稼働する場合に停止し、再起動に必要な情報を返す。
 
     停止しない場合は`None`を返す。管理daemonが稼働していない場合（更新ループだけが残る場合を含む）は
-    停止も再起動も要らない。停止しない理由がある場合は、post-applyの延期と結び付けられるよう表示とログへ残す。
+    停止も再起動も要らない。実際の延期の案内は処置の要否を判定するpost-applyへ委ねる。
     """
     if sys.platform != "linux":
         return None
@@ -902,21 +902,8 @@ def _pause_codex_daemon() -> _CodexDaemonPause | None:
     if not any(process.role == "managed-daemon" for process in processes):
         return None
     sessions = tuple(process.label for process in processes if process.role == "session")
-    reason: str | None = None
     codex = shutil.which("codex", path=_child_env()["PATH"])
-    if os.environ.get(_CODEX_AUTO_RESTART_ENV) == "1":
-        reason = f"{_CODEX_AUTO_RESTART_ENV}=1が設定されている"
-    elif sessions:
-        reason = f"Codexの利用セッションが稼働中: {codex_processes.format_running_processes(sessions)}"
-    elif codex is None:
-        reason = "codex CLIが見つからない"
-    if reason is not None or codex is None:
-        message = (
-            f"Codex管理daemonを停止せずに更新します（{reason}）。"
-            "plugin更新または診断ログ復元が延期された場合は、Codexの利用を終えてからupdate-dotfilesを再実行してください。"
-        )
-        logger.info(message)
-        print(message, flush=True)
+    if os.environ.get(_CODEX_AUTO_RESTART_ENV) == "1" or sessions or codex is None:
         return None
     logger.info("Codex管理daemonを一時停止: %s", codex)
     print("Codex管理daemonを一時停止します（更新後に再起動します）。", flush=True)

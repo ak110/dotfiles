@@ -75,7 +75,8 @@ Codex向けのプラグインは`update-dotfiles`が生成して導入する。�
 
 `update-dotfiles`は未導入、disabled、version不一致のいずれかの場合に`codex plugin add`を実行し、導入後のversionと有効状態を再確認する。
 euryaleで`DOTFILES_CODEX_DAEMON_AUTO_RESTART=1`を指定せずに更新する場合は、同じユーザーのCodexが稼働中なら、導入済みagent-toolkitへの追加・更新を延期する。
-Linuxでは、Codexの診断ログDBを共有メモリーから通常ストレージへ戻す復元も、同じユーザーのCodexが稼働中なら延期する。
+Linuxでは、診断ログDBの旧共有メモリー側targetまたは管理symlinkが残る場合に、通常ストレージへ復元し、復元済みtargetを回収して参照先を失った管理symlinkを整理する。
+これらの処置は、同じユーザーのCodexが稼働中なら対象と再実行の操作を案内して延期する。旧配置が無い場合は処置と延期の案内を省く。
 稼働判定の対象は、通常のCodexセッション、`agents_server`が委譲用に起動する`codex app-server --stdio`、およびapp-server daemon（`codex app-server daemon start`が起動する管理daemon）とその補助プロセスである。
 管理daemonの停止後も残る更新ループ`codex app-server daemon pid-update-loop`はpluginと診断ログDBを開かないため、対象に含めない。
 未導入plugin、他ホストの更新と、後述の自動再起動を明示した更新は、plugin更新の延期の対象に含めない。
@@ -104,7 +105,7 @@ codex app-server daemon start
 ### Codexの利用中に延期した更新の反映
 
 Codexのセッションまたは`agents_server`の委譲が残る場合と、`DOTFILES_CODEX_DAEMON_AUTO_RESTART=1`を指定した場合は、管理daemonを停止しない。
-このとき`update-dotfiles`は停止しない理由を表示し、post-applyはplugin更新と診断ログ復元の延期を更新ログへ記録する。
+post-applyは実際に必要なplugin更新や診断ログの処置を延期した場合に、その対象と再実行の操作を案内し、更新ログへ記録する。
 延期中も旧版のスキル・MCP実体と有効状態を保持し、dotfiles本体、snapshot生成、Claude Codeと`atk-serve`の更新は続行する。
 ウォームアップは導入済みの有効版を使い、disabledのまま延期した場合はCodex分を除く。
 

@@ -2164,23 +2164,22 @@ class TestCodexDaemonPause:
         assert "Codex管理daemon" not in capsys.readouterr().out
 
     @pytest.mark.parametrize(
-        ("processes", "auto_restart", "reason"),
+        ("processes", "auto_restart"),
         [
-            pytest.param((_DAEMON, _STDIO_DELEGATION), None, "利用セッションが稼働中", id="delegation"),
-            pytest.param((_DAEMON, _codex(14, "codex", "session")), None, "codex (1件)", id="interactive-session"),
-            pytest.param((_DAEMON,), "1", "DOTFILES_CODEX_DAEMON_AUTO_RESTART=1", id="auto-restart"),
+            pytest.param((_DAEMON, _STDIO_DELEGATION), None, id="delegation"),
+            pytest.param((_DAEMON, _codex(14, "codex", "session")), None, id="interactive-session"),
+            pytest.param((_DAEMON,), "1", id="auto-restart"),
         ],
     )
-    def test_daemon_is_kept_when_use_cannot_be_excluded(  # noqa: PLR0913  # pylint: disable=too-many-arguments
+    def test_daemon_is_kept_when_use_cannot_be_excluded(
         self,
         monkeypatch: pytest.MonkeyPatch,
         codex_env: list[list[str]],
         capsys: pytest.CaptureFixture[str],
         processes: tuple[Any, ...],
         auto_restart: str | None,
-        reason: str,
     ) -> None:
-        """利用セッションか明示設定があれば停止せず、理由を表示する。"""
+        """利用セッションか明示設定があれば、停止と事前案内を省いてapplyを続行する。"""
         monkeypatch.setattr(update_dotfiles.codex_processes, "codex_processes", lambda: processes)
         if auto_restart is not None:
             monkeypatch.setenv("DOTFILES_CODEX_DAEMON_AUTO_RESTART", auto_restart)
@@ -2188,9 +2187,13 @@ class TestCodexDaemonPause:
 
         assert update_dotfiles.main() == 0
         assert self._commands(codex_env) == ["git", "init", "status", "diff", "apply"]
-        output = capsys.readouterr().out
-        assert "Codex管理daemonを停止せずに更新します" in output
-        assert reason in output
+        captured = capsys.readouterr()
+        assert "Codex管理daemon" not in captured.out
+        assert "延期" not in captured.out
+        assert not captured.err
+        log_text = update_dotfiles._LOG_PATH.read_text(encoding="utf-8")
+        assert "Codex管理daemonを停止せず" not in log_text
+        assert "延期された場合" not in log_text
 
     def test_non_linux_does_not_inspect_codex(self, monkeypatch: pytest.MonkeyPatch, codex_env: list[list[str]]) -> None:
         """Linux以外では診断ログ復元が無く、plugin保護もeuryale限定のため、daemonを扱わない。"""

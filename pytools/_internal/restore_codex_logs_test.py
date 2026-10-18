@@ -49,19 +49,76 @@ def _link_all(pairs: tuple[tuple[pathlib.Path, pathlib.Path], ...]) -> None:
         home_path.symlink_to(target_path)
 
 
+@pytest.mark.parametrize("operation", ["restore", "cleanup", "dangling-link"])
 def test_running_at_start_defers_without_changes(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
+    caplog: pytest.LogCaptureFixture,
+    operation: str,
 ) -> None:
-    """開始時にCodexが稼働中なら管理linkとtargetを保持する。"""
+    """処置対象があれば稼働中は配置を保持して案内し、停止後に処置を進める。"""
     home, shm_root, pairs = _prepare(monkeypatch, tmp_path)
-    contents = _write_targets(pairs)
-    _link_all(pairs)
+    contents = _write_targets(pairs) if operation != "dangling-link" else {}
+    if operation == "cleanup":
+        for home_path, target_path in pairs:
+            home_path.write_bytes(contents[target_path])
+    else:
+        _link_all(pairs)
     monkeypatch.setattr(codex_processes, "running_codex_processes", lambda: ("codex mcp-server",))
 
-    assert restore_codex_logs.run(home_dir=home, shm_root=shm_root).changed is False
-    assert all(home_path.is_symlink() for home_path, _ in pairs)
-    assert all(target_path.read_bytes() == contents[target_path] for _, target_path in pairs)
+    with caplog.at_level("WARNING", logger=restore_codex_logs.logger.name):
+        assert restore_codex_logs.run(home_dir=home, shm_root=shm_root).changed is False
+    assert all(home_path.is_symlink() is (operation != "cleanup") for home_path, _ in pairs)
+    for _, target_path in pairs:
+        if operation == "dangling-link":
+            assert not target_path.exists()
+        else:
+            assert target_path.read_bytes() == contents[target_path]
+    warning = "\n".join(record.getMessage() for record in caplog.records)
+    assert "延期" in warning
+    assert "update-dotfiles" in warning
+    for home_path, target_path in pairs:
+        assert str(home_path) in warning
+        assert str(target_path) in warning
+
+    monkeypatch.setattr(codex_processes, "running_codex_processes", lambda: ())
+    assert restore_codex_logs.run(home_dir=home, shm_root=shm_root).changed is True
+    if operation == "restore":
+        assert all(
+            not home_path.is_symlink() and home_path.read_bytes() == contents[target_path] for home_path, target_path in pairs
+        )
+    elif operation == "cleanup":
+        assert all(not target_path.exists() for _, target_path in pairs)
+    else:
+        assert all(not home_path.is_symlink() and not home_path.exists() for home_path, _ in pairs)
+
+
+@pytest.mark.parametrize("running", [False, True])
+@pytest.mark.parametrize("regular_count", [0, 1, 3])
+def test_no_legacy_layout_is_quiet(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+    caplog: pytest.LogCaptureFixture,
+    running: bool,
+    regular_count: int,
+) -> None:
+    """旧配置が無ければDB未作成・部分作成・復元済みのいずれも変更と案内を省く。"""
+    home, shm_root, pairs = _prepare(monkeypatch, tmp_path)
+    if regular_count == 0:
+        (home / ".codex").rmdir()
+    for home_path, _ in pairs[:regular_count]:
+        home_path.write_bytes(b"regular-db")
+    before = {path: (path.read_bytes(), path.stat().st_mtime_ns) for path, _ in pairs if path.exists()}
+    monkeypatch.setattr(codex_processes, "running_codex_processes", lambda: ("codex",) if running else ())
+
+    with caplog.at_level("INFO", logger=restore_codex_logs.logger.name):
+        assert restore_codex_logs.run(home_dir=home, shm_root=shm_root).changed is False
+
+    assert not caplog.records
+    assert (home / ".codex").exists() is (regular_count > 0)
+    assert {path: (path.read_bytes(), path.stat().st_mtime_ns) for path, _ in pairs if path.exists()} == before
+    assert not list(shm_root.iterdir())
+    assert not list((home / ".codex").glob(".*.restore-*"))
 
 
 def test_running_after_copy_discards_only_temporary_files(
@@ -569,7 +626,7 @@ def test_running_warning_aggregates_labels_without_argument_values(
         assert restore_codex_logs.run(home_dir=home, shm_root=shm_root).changed is False
 
     warning = "\n".join(record.getMessage() for record in caplog.records)
-    assert "Codexが稼働中のため通常ストレージへの復元を延期: codex mcp-server (2件)" in warning
+    assert "Codexが稼働中のため診断ログの旧配置の処置を延期: codex mcp-server (2件)" in warning
     assert "/opt/codex" not in warning
     assert "--config" not in warning
     assert "secret-1" not in warning
@@ -595,7 +652,7 @@ def test_normal_launch_label_excludes_user_prompt(
         assert restore_codex_logs.run(home_dir=home, shm_root=shm_root).changed is False
 
     warning = "\n".join(record.getMessage() for record in caplog.records)
-    assert "Codexが稼働中のため通常ストレージへの復元を延期: codex (1件)" in warning
+    assert "Codexが稼働中のため診断ログの旧配置の処置を延期: codex (1件)" in warning
     assert prompt not in warning
 
 
@@ -631,7 +688,7 @@ def test_label_uses_executable_name_when_process_name_is_unavailable(
         assert restore_codex_logs.run(home_dir=home, shm_root=shm_root).changed is False
 
     warning = "\n".join(record.getMessage() for record in caplog.records)
-    assert f"Codexが稼働中のため通常ストレージへの復元を延期: {label} (1件)" in warning
+    assert f"Codexが稼働中のため診断ログの旧配置の処置を延期: {label} (1件)" in warning
     assert "pid 3000" not in warning
     assert "/opt/codex" not in warning
     assert "--config" not in warning
