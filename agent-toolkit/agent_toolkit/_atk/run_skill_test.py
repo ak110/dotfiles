@@ -524,6 +524,44 @@ def test_wi_save_and_edit_bind_report_to_run(
     assert wi_add.has_synced_run_report(notes, run_id="run-1", skill="my-skill")
 
 
+@pytest.mark.parametrize("collision", ["none", "branch-tag", "remote-current", "remote-ref"])
+def test_report_sync_uses_current_branch_config_with_ref_collisions(tmp_path: pathlib.Path, collision: str) -> None:
+    """同名の別refがあっても、現在branchの送信先へ到達した報告だけを同期済みとする。"""
+    notes = git_repository.init_repository(
+        tmp_path / "notes", initial_branch="review/reports", files={"README": "base\n"}, commit_message="base"
+    )
+    origin = git_repository.init_bare_repository(tmp_path / "origin.git")
+    other = git_repository.init_bare_repository(tmp_path / "other.git")
+    git_repository.run_git(notes, "remote", "add", "origin", str(origin))
+    git_repository.run_git(notes, "remote", "add", "other", str(other))
+    git_repository.run_git(notes, "push", "-u", "origin", "HEAD:refs/heads/published/reports")
+    git_repository.run_git(notes, "push", "other", "HEAD:refs/heads/unrelated")
+    # 短縮表示heads/review/reportsでbranch設定を照会すると、別の送信先を選ぶ入力。
+    git_repository.run_git(notes, "config", "branch.heads/review/reports.remote", "other")
+    git_repository.run_git(notes, "config", "branch.heads/review/reports.merge", "refs/heads/unrelated")
+    if collision == "branch-tag":
+        git_repository.run_git(notes, "tag", "review/reports")
+    elif collision == "remote-current":
+        git_repository.run_git(notes, "update-ref", "refs/remotes/review/reports", "HEAD")
+    elif collision == "remote-ref":
+        git_repository.run_git(notes, "tag", "origin/published/reports")
+        git_repository.run_git(notes, "branch", "--no-track", "origin/published/reports", "HEAD")
+    report = notes / "inbox" / "report.md"
+    report.parent.mkdir()
+    content = (
+        "---\ntype: uwi\nsource: run-skill\nscope: my-skill\n"
+        "run_skill_report: true\nrun_skill_run_id: run-1\n---\n\n実行の報告\n"
+    )
+    report.write_text(content, encoding="utf-8")
+    git_repository.commit_all(notes, "report")
+
+    assert not wi_add.has_synced_run_report(notes, run_id="run-1", skill="my-skill")
+    git_repository.run_git(notes, "push", "origin", "HEAD:refs/heads/published/reports")
+    assert wi_add.has_synced_run_report(notes, run_id="run-1", skill="my-skill")
+    report.write_text(content + "未commitの変更\n", encoding="utf-8")
+    assert not wi_add.has_synced_run_report(notes, run_id="run-1", skill="my-skill")
+
+
 def test_child_session_does_not_inherit_process_loop_markers(
     engine_env: _Env, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:

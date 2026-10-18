@@ -30,6 +30,7 @@ from agent_toolkit._atk.wi.repo import resolve_add_target, resolve_head_commit, 
 from agent_toolkit._atk.wi.web_input import WebInputError
 from agent_toolkit._common import body_match as _body_match
 from agent_toolkit._git import command as _git_command
+from agent_toolkit._git import refs as _git_refs
 from agent_toolkit._plan import owner_records as _owner_records
 
 
@@ -47,9 +48,11 @@ def has_synced_run_report(private_notes: pathlib.Path, *, run_id: str, skill: st
     with _wi_sync.repo_lock(private_notes, timeout=30):
         remote_revision: str | None = None
         if _wi_sync.has_remote(private_notes):
-            branch = _git_command.output(["symbolic-ref", "HEAD"], private_notes).strip().removeprefix("refs/heads/")
-            remote = _git_command.output(["config", f"branch.{branch}.remote"], private_notes).strip()
-            merge_ref = _git_command.output(["config", f"branch.{branch}.merge"], private_notes).strip()
+            branch = _git_refs.resolve_branch(private_notes, git_fn=lambda path, args: _git_command.output(args, path))
+            if branch is None:
+                return False
+            remote = _git_command.output(["config", f"branch.{branch.branch}.remote"], private_notes).strip()
+            merge_ref = _git_command.output(["config", f"branch.{branch.branch}.merge"], private_notes).strip()
             remote_tip = _git_command.run(
                 ["ls-remote", "--exit-code", remote, merge_ref],
                 private_notes,
