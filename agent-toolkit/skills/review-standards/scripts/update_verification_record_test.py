@@ -1210,6 +1210,98 @@ def _git(path: pathlib.Path, *args: str) -> str:
     ).stdout.strip()
 
 
+def test_public_repeated_rounds_replace_current_evidence_and_inherit_each_requirement(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """複数roundで行別の現行根拠へ置換し、同一ログの各観測と必要な旧取得版を独立判定へ引き継ぐ。"""
+    repository = git_repository.init_repository(
+        tmp_path / "repo", files={"app.cfg": "setting=one\n"}, commit_message="観測時の版"
+    )
+    old_head = _git(repository, "rev-parse", "HEAD")
+    (repository / "notes.txt").write_text("説明だけを改訂した。\n", encoding="utf-8")
+    git_repository.commit_all(repository, "説明の改訂")
+    current_head = _git(repository, "rev-parse", "HEAD")
+    assert old_head != current_head
+    monkeypatch.chdir(repository)
+    plan = _plan(tmp_path, "plan-user")
+    plan.write_text(
+        plan.read_text(encoding="utf-8").replace(
+            "### ユーザー発言2\n\n```text\n保存する。", "### ユーザー発言2\n\n```text\n再読込する。"
+        )
+        + "\n### ユーザー発言3\n\n```text\n削除する。\n```\n",
+        encoding="utf-8",
+    )
+    observation = tmp_path / "observations.txt"
+    observations = ["保存: setting=one", "再読込: setting=one", "削除: ファイル不在"]
+    observation.write_text("\n".join(observations) + "\n", encoding="utf-8")
+    captured = _json(
+        tmp_path / "observation-record.json",
+        {"git_head": old_head, "git_status": [], "cwd": str(repository), "stdout_path": str(observation)},
+    )
+    history = tmp_path / "review-history.tsv"
+    history.write_text("round\t応答\n1\t旧説明を訂正する\n2\t行別の観測へ整理した\n", encoding="utf-8")
+    pending, judged = tmp_path / "pending.json", tmp_path / "judged.json"
+    assert _run("--output", str(pending), "--plan", str(plan)) == 0
+    assert _run("--template", str(judged), "--plan", str(plan), name="exec-review-evidence-check") == 0
+    original = json.loads(pending.read_text(encoding="utf-8"))
+    for round_number in (1, 2):
+        pending_args = ["--output", str(pending), "--mode", "replace"]
+        review_args = [
+            str(judged),
+            "--output",
+            str(judged),
+            "--verification-record",
+            str(pending),
+            "--reviewed-head",
+            current_head,
+            "--mode",
+            "replace",
+        ]
+        expected = []
+        for index, observed in enumerate(observations, 1):
+            selector = f"user_requirements:{index}"
+            text = (
+                f"{observation}:{index}: {observed}。取得版HEAD={old_head}。取得記録: {captured}。"
+                "app.cfgと試験入力・実行環境は取得時と現行で同一のため、この観測を適用できる。"
+            )
+            if round_number == 1:
+                text += "失効した旧説明。別要求の修正経緯も転記した。"
+            else:
+                text += f"反復履歴の所在: {history}:3。"
+            explanation = tmp_path / f"round{round_number}-row{index}.txt"
+            explanation.write_text(text, encoding="utf-8")
+            expected.append(text)
+            pending_args += ["--select-row", selector, "--row-evidence-file", selector, str(explanation)]
+            review_args += [
+                "--select-row",
+                selector,
+                "--verification-row",
+                selector,
+                selector,
+                "--row-outcome",
+                selector,
+                "達成",
+            ]
+        assert _run(*pending_args) == 0, capsys.readouterr().err
+        preserved_pending = pending.read_bytes()
+        assert _run(*review_args, name="exec-review-evidence-check") == 0, capsys.readouterr().err
+        assert pending.read_bytes() == preserved_pending
+        current = json.loads(judged.read_text(encoding="utf-8"))
+        for index, (source, row) in enumerate(zip(original["user_requirements"], current["user_requirements"], strict=True)):
+            assert row["requirement"] == source["requirement"] and row["source"] == source["source"]
+            assert row["evidence"] == expected[index]
+            assert row["outcome"] == "達成" and row["reviewed_head"] == current_head
+            assert old_head in row["evidence"] and str(captured) in row["evidence"]
+            if round_number == 2:
+                assert "失効した旧説明" not in row["evidence"] and "別要求の修正経緯" not in row["evidence"]
+                assert observations[(index + 1) % len(observations)] not in row["evidence"]
+    pending_rows = json.loads(pending.read_text(encoding="utf-8"))["user_requirements"]
+    assert all(not row["outcome"] and not row["reviewed_head"] for row in pending_rows)
+    assert _run(str(judged), "--plan", str(plan), "--expected-head", current_head, name="exec-review-evidence-check") == 0, (
+        capsys.readouterr().err
+    )
+
+
 def _saved_trial(tmp_path: pathlib.Path, text: str, name: str) -> dict[str, str]:
     """隔離Gitで実pytestを実行し、公開run-commandの記録とXMLを受け取る。"""
     if not (tmp_path / ".git").is_dir():
