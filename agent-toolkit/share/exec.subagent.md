@@ -110,6 +110,11 @@
 - 根拠の記入: `--output <同じパス> --select-row <配列:N> --evidence-file <根拠のUTF-8ファイルの絶対パス> --mode replace`で、その要求単位の現在の根拠へ更新する。`--mode append`は同じ要求単位の現在の根拠に不足する観測の補完に使う
 - 行別の記入: 選択した行ごとに異なる根拠を渡す場合は`--row-evidence-file <配列:N> <根拠の絶対パス>`を反復する。行別の試験・診断は`--row-result-test <配列:N> <完全テスト名>`・`--row-result-diagnostic <配列:N> <診断識別子>`を反復する。`--evidence-file`・`--result-test`・`--result-diagnostic`は全選択行への共通指定で、同じ種類の行別指定と分けて使う。単一値の入力を異なる値で反復すると拒否されるため、モード・取得版などが異なる更新は呼び出しを分割し、行別の詳細は既存の`--updates-file`でも渡せる
 - 構造化結果の取得: 試験は`atk run-command -- ... pytest -v -o junit_family=xunit1 --junitxml=<XMLの絶対パス> <対象...>`で実行時にXML・実行記録・両出力を保存する。診断はpyfltrのrunのJSON Lines全体（header・command・summaryを事前に除く必要はない）、`show-run --commands <対象> --output-format=jsonl`かMCPの構造化結果を保存する。取得版・対象範囲・オプション・依存版・並列度・実行環境と必要な保存時本文を対応付ける
+- pytest以外の構造化試験: 各プロジェクトの試験コマンドへ次の指定を加え、`atk run-command`で結果ファイルと実行記録を保存する
+  - vitestは`--reporter=json --outputFile=<結果の絶対パス>`を指定する
+  - Playwrightは`env PLAYWRIGHT_JSON_OUTPUT_NAME=<結果の絶対パス> <Playwrightの起動形> test --reporter=json`で起動する
+  - dotnet testは`--logger "trx;LogFileName=<結果の絶対パス>"`を指定する
+- pytest以外の結果入力: `--test-format <vitest|playwright|trx> --test-file <保存結果> --test-record <実行記録>`を渡す。基準版は同じ組の`--baseline-test-format`・`--baseline-test-file`・`--baseline-test-record`へ指定する。一覧・詳細・行への記入は次の構造化結果の記入と同じ公開操作を使う
 - 保存出力の読取: 本文表示、構造化診断、試験結果の関連付けは、`agent-toolkit:check-execution`の「保存した実行出力の取得」で用途に合う公開指定を選ぶ。保存済みログの本文は`pyfltr show-run <run_id> --commands <コマンド名> --output --output-format=text`で読み、生成元に形式・対象の指定があれば保存前に選ぶ。構造化診断のJSONLと結果ファイルの関連付けは前後の取得・記入手順を使う
 - 構造化結果からの記入: 入力形式は`atk run-script verification-record -- --help`で取得する。試験は`--junit-xml <保存XML> --junit-record <実行記録>`で直接指定する。診断は`--diagnostics-file <保存JSONL> --diagnostics-record <実行記録> --diagnostics-conditions <取得時の条件JSON>`と必要な`--diagnostics-source <相対ファイル> <保存時本文>`の反復で直接指定する。基準比較は同じ組の`--baseline-junit-*`・`--baseline-diagnostics-*`へ保存物を指定する。`--output <初回記録の絶対パス> --list-results --results-summary`で状態・基準版との差、診断のまとまり・重複数・全識別子から必要な結果を選ぶ。続けて`--results-summary`を`--result-test <完全テスト名>`か`--result-diagnostic <診断識別子>`の反復へ替え、詳細・取得版・所在を読む（表示の追加指定を省けば全詳細）。代表の1件で全件の意味を判断せず、比較不能は不足として補う。記入では`--list-results`を外し、`--select-row <配列:N>`の反復と各要求を直接満たす完全テスト名・診断識別子を渡す。必要なら`--evidence-file`と`--mode append|replace`も渡し、同じ保存物から更新する（sourceは処理側が現行行から取得する）。不正な行が1件でもあれば全保存が拒否される。既存のJSON入力の契約も保持され、未選択行は変わらない
 

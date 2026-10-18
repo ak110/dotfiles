@@ -501,6 +501,13 @@ HELP["atk run-script"]["description"] += (
     "完成条件証拠は`atk run-script exec-review-evidence-check -- <証拠の絶対パス> --rewrite-map <対応表の絶対パス>`で参照を更新する。"
     "verification-recordとexec-review-evidence-checkは--results-fileでJUnit・実行記録・構造化診断を読み、"
     "--list-resultsで選択して--updates-fileで複数の要求行へ根拠を保存する。各scriptの--helpが入力JSONの形式を示す。"
+    "pytestは--junit-xmlと--junit-record、vitest・Playwright・dotnet testは"
+    "--test-format {vitest,playwright,trx}と--test-file・--test-recordで構造化結果を渡す。"
+    "基準版は--baseline-test-format・--baseline-test-file・--baseline-test-recordで渡す。"
+    "取得はatk run-command経由で、vitestの--reporter=json --outputFile=<絶対パス>、"
+    "Playwrightのenv PLAYWRIGHT_JSON_OUTPUT_NAME=<絶対パス>と--reporter=json、"
+    'dotnet testの--logger "trx;LogFileName=<絶対パス>"を指定する。'
+    "--list-results --results-summaryで一覧を読み、--result-testと--select-row・--modeで根拠を記入する。"
     "未判定記録の判定欄は空に保ち、レビューでは行ごとの判定とHEADを明示して別ファイルへ保存する。"
 )
 

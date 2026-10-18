@@ -1089,6 +1089,238 @@ def _json(path: pathlib.Path, value: object) -> pathlib.Path:
     return path
 
 
+def _runner_fixture(tmp_path: pathlib.Path, runner: str, *, baseline: bool = False) -> dict[str, str]:
+    """WIの実物観測（vitest 5.0.3・Playwright 1.63.0・VSTest TRX）の欄を再現する。"""
+    label = "baseline" if baseline else "current"
+    path = tmp_path / f"{runner}-{label}.json"
+    filename = tmp_path / "trial.spec.js"
+    filename.write_text("// 結果の生成元\n", encoding="utf-8")
+    git_repository.run_git(tmp_path, "add", "--", filename.name)
+    git_repository.run_git(tmp_path, "commit", "--allow-empty", "--no-verify", "-m", "試験の生成元")
+    names = ["PASSED", "changed", "skipped", "old" if baseline else "new"]
+    statuses = ["passed", "passed" if baseline else "failed", "skipped", "passed"]
+    if runner == "vitest":
+        _json(
+            path,
+            {
+                "testResults": [
+                    {
+                        "name": str(filename),
+                        "assertionResults": [
+                            {"ancestorTitles": ["suite"], "title": name, "status": status}
+                            for name, status in zip(names, statuses, strict=True)
+                        ]
+                        + [{"ancestorTitles": ["other"], "title": "PASSED", "status": "passed"}],
+                    }
+                ]
+            },
+        )
+        argv = ["vitest", "run", "--reporter=json", f"--outputFile={path}"]
+    elif runner == "playwright":
+        _json(
+            path,
+            {
+                "config": {"rootDir": str(tmp_path)},
+                "errors": [],
+                "suites": [
+                    {
+                        "title": filename.name,
+                        "suites": [
+                            {
+                                "title": "suite",
+                                "specs": [
+                                    {
+                                        "title": name,
+                                        "file": filename.name,
+                                        "tests": [
+                                            {
+                                                "projectName": project,
+                                                "status": {"passed": "expected", "failed": "unexpected", "skipped": "skipped"}[
+                                                    status
+                                                ],
+                                            }
+                                            for project in ("chromium", "firefox")
+                                        ],
+                                    }
+                                    for name, status in zip(names, statuses, strict=True)
+                                ],
+                            }
+                        ],
+                    }
+                ],
+            },
+        )
+        argv = ["env", f"PLAYWRIGHT_JSON_OUTPUT_NAME={path}", "playwright", "test", "--reporter=json"]
+    else:
+        root = ET.Element("TestRun", xmlns="http://microsoft.com/schemas/VisualStudio/TeamTest/2010")
+        results = ET.SubElement(root, "Results")
+        for name, status in zip(names, statuses, strict=True):
+            for value in ("PASSED", "FAILED"):
+                ET.SubElement(
+                    results,
+                    "UnitTestResult",
+                    testName=f'T.C.{name}(v: "{value}")',
+                    outcome={"passed": "Passed", "failed": "Failed", "skipped": "NotExecuted"}[status],
+                )
+        ET.ElementTree(root).write(path, encoding="utf-8")
+        argv = ["dotnet", "test", "--logger", f"trx;LogFileName={path}"]
+    stdout, stderr = tmp_path / "stdout.txt", tmp_path / "stderr.txt"
+    stdout.write_text("保存出力\n", encoding="utf-8")
+    stderr.write_text("", encoding="utf-8")
+    record = _json(
+        tmp_path / f"{runner}-{label}-record.json",
+        {
+            "cwd": str(tmp_path),
+            "argv": argv,
+            "git_head": _git(tmp_path, "rev-parse", "HEAD"),
+            "git_status": [],
+            "child_exit_code": 0 if baseline else 1,
+            "timed_out": False,
+            "signal": None,
+            "stdout_path": str(stdout),
+            "stderr_path": str(stderr),
+        },
+    )
+    return {"format": runner, "path": str(path), "run_record": str(record)}
+
+
+@pytest.mark.parametrize("name", ["verification-record", "exec-review-evidence-check"])
+@pytest.mark.parametrize("runner", ["vitest", "playwright", "trx"])
+def test_public_structured_runner_results_list_compare_select_and_reject(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], name: str, runner: str
+) -> None:
+    """全形式の識別・状態・版・比較・選択保存と、不正入力での全記録保持を両公開操作で確かめる。"""
+    git_repository.init_repository(tmp_path, commit_message="試験の基準")
+    monkeypatch.chdir(tmp_path)
+    before, after = _runner_fixture(tmp_path, runner, baseline=True), _runner_fixture(tmp_path, runner)
+    output = tmp_path / "pending.json"
+    assert _run("--output", str(output), "--plan", str(_plan(tmp_path, "plan-user"))) == 0
+    listing = ["--output", str(output)] if name == "verification-record" else []
+    result_args = ["--test-format", runner, "--test-file", after["path"], "--test-record", after["run_record"]]
+    baseline_args = [
+        "--baseline-test-format",
+        runner,
+        "--baseline-test-file",
+        before["path"],
+        "--baseline-test-record",
+        before["run_record"],
+    ]
+    capsys.readouterr()
+    assert _run(*listing, *result_args, *baseline_args, "--list-results", name=name) == 0
+    results = json.loads(capsys.readouterr().out)
+    head = _git(tmp_path, "rev-parse", "HEAD")
+    assert len(results["tests"]) == (5 if runner == "vitest" else 8)
+    assert {item["status"] for item in results["tests"].values()} == {"passed", "failed", "skipped"}
+    assert {item["change"] for item in results["test_changes"]} == {"added", "deleted", "changed"}
+    passed = [key for key, item in results["tests"].items() if "PASSED" in key and item["status"] == "passed"]
+    assert passed
+    for item in results["tests"].values():
+        assert item["path"] == after["path"] and item["git_head"] == head and item["child_exit_code"] == 1
+    if runner == "playwright":
+        assert 'trial.spec.js::suite::PASSED::"chromium"' in results["tests"]
+        assert 'trial.spec.js::suite::PASSED::"firefox"' in results["tests"]
+    if runner == "vitest":
+        assert "trial.spec.js::suite::PASSED" in results["tests"]
+        assert "trial.spec.js::other::PASSED" in results["tests"]
+    if runner == "trx":
+        assert 'T.C.PASSED(v: "PASSED")' in results["tests"]
+        assert 'T.C.PASSED(v: "FAILED")' in results["tests"]
+    update_args = [
+        "--output",
+        str(output),
+        *result_args,
+        "--select-row",
+        "user_requirements:2",
+        "--result-test",
+        passed[0],
+        "--mode",
+        "replace",
+    ]
+    if name == "exec-review-evidence-check":
+        update_args = [str(output), *update_args, "--row-outcome", "user_requirements:2", "達成", "--reviewed-head", head]
+    assert _run(*update_args, name=name) == 0, capsys.readouterr().err
+    rows = json.loads(output.read_text(encoding="utf-8"))["user_requirements"]
+    assert not rows[0]["evidence"] and f"`{passed[0]}` passed" in rows[1]["evidence"]
+    assert after["path"] in rows[1]["evidence"]
+    unchanged = output.read_bytes()
+    saved_text = pathlib.Path(after["path"]).read_text(encoding="utf-8")
+    for invalid in ("corrupt", "duplicate", "unknown-state", "argv", "exit", "unknown"):
+        record = json.loads(pathlib.Path(after["run_record"]).read_text(encoding="utf-8"))
+        original_record = dict(record)
+        args = list(update_args)
+        if invalid == "corrupt":
+            pathlib.Path(after["path"]).write_text("<", encoding="utf-8")
+        elif invalid == "duplicate":
+            if runner == "trx":
+                root = ET.fromstring(saved_text)
+                result = next(e for e in root if e.tag.endswith("Results"))
+                result.append(ET.fromstring(ET.tostring(result[0])))
+                ET.ElementTree(root).write(after["path"], encoding="utf-8")
+            else:
+                data = json.loads(saved_text)
+                if runner == "vitest":
+                    data["testResults"] *= 2
+                else:
+                    data["suites"] *= 2
+                _json(pathlib.Path(after["path"]), data)
+        elif invalid == "argv":
+            record["argv"] = ["unrelated"]
+        elif invalid == "unknown-state":
+            if runner == "trx":
+                root = ET.fromstring(saved_text)
+                next(e for e in root.iter() if e.tag.endswith("UnitTestResult")).set("outcome", "Unknown")
+                ET.ElementTree(root).write(after["path"], encoding="utf-8")
+            else:
+                data = json.loads(saved_text)
+                if runner == "vitest":
+                    data["testResults"][0]["assertionResults"][0]["status"] = "unknown"
+                else:
+                    data["suites"][0]["suites"][0]["specs"][0]["tests"][0]["status"] = "unknown"
+                _json(pathlib.Path(after["path"]), data)
+        elif invalid == "exit":
+            record["child_exit_code"] = 0
+        else:
+            spec = _json(tmp_path / "unknown.json", {"tests": {**after, "format": "unknown"}})
+            start = args.index("--test-format")
+            args[start : start + 6] = ["--results-file", str(spec)]
+        _json(pathlib.Path(after["run_record"]), record)
+        assert _run(*args, name=name) == 1
+        assert output.read_bytes() == unchanged
+        assert "次の操作:" in capsys.readouterr().err
+        pathlib.Path(after["path"]).write_text(saved_text, encoding="utf-8")
+        _json(pathlib.Path(after["run_record"]), original_record)
+
+
+@pytest.mark.parametrize("runner", ["vitest", "playwright"])
+@pytest.mark.parametrize("name", ["verification-record", "exec-review-evidence-check"])
+def test_public_runner_identity_uses_worktree_from_nested_cwd(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], runner: str, name: str
+) -> None:
+    """サブディレクトリ起動でも記録cwdのGit境界からworktree相対名を使う。"""
+    git_repository.init_repository(tmp_path, commit_message="取得時の基準")
+    app = tmp_path / "app"
+    app.mkdir()
+    spec = _runner_fixture(app, runner)
+    args = ["--output", str(tmp_path / "unused.json")] if name == "verification-record" else []
+    capsys.readouterr()
+    assert (
+        _run(
+            *args,
+            "--test-format",
+            runner,
+            "--test-file",
+            spec["path"],
+            "--test-record",
+            spec["run_record"],
+            "--list-results",
+            name=name,
+        )
+        == 0
+    )
+    observed = json.loads(capsys.readouterr().out)["tests"]
+    assert all(identity.startswith("app/trial.spec.js::") for identity in observed)
+
+
 @pytest.mark.parametrize("name", ["verification-record", "exec-review-evidence-check"])
 def test_public_selected_row_imports_saved_results_without_transcribing_source(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], name: str

@@ -50,6 +50,19 @@ atk run-script exec-review-evidence-check -- <完成条件証拠の絶対パス>
 ```
 
 構造化試験は`--junit-xml <保存XML> --junit-record <実行記録>`で指定する。診断は`--diagnostics-file <保存JSONL> --diagnostics-record <実行記録> --diagnostics-conditions <取得時の条件JSON>`と必要な`--diagnostics-source <相対ファイル> <保存時本文>`の反復で指定する。基準比較は同じ組の`--baseline-junit-*`・`--baseline-diagnostics-*`へ保存物を渡す。pyfltrのrun JSON Linesはheader・command・summaryを含む全体を使う。形式は`atk run-script exec-review-evidence-check -- --help`で読む。
+pytest以外の試験は、`--test-format <vitest|playwright|trx> --test-file <保存結果> --test-record <実行記録>`で形式と対応する保存物を渡す。
+基準版は`--baseline-test-format`・`--baseline-test-file`・`--baseline-test-record`へ同じ組で渡す。
+各runnerの取得は、対象プロジェクトの起動形へ次の指定を加えて`atk run-command`で実行し、結果ファイルと実行記録を保存する。
+
+| runner | 結果を保存する指定 |
+| --- | --- |
+| pytest | `-v -o junit_family=xunit1 --junitxml=<XMLの絶対パス>` |
+| vitest | `run --reporter=json --outputFile=<結果の絶対パス>` |
+| Playwright | `env PLAYWRIGHT_JSON_OUTPUT_NAME=<結果の絶対パス> <Playwrightの起動形> test --reporter=json` |
+| dotnet test | `--logger "trx;LogFileName=<結果の絶対パス>"` |
+
+形式ごとの状態と完全名は保存結果から読み取られ、一覧・詳細・要求行への記入・基準版との差の確認は共通の公開操作を使う。
+結果と実行記録の対応を確認できない入力は、診断の示す不足を補ってから再指定する。
 これらへ`--list-results --results-summary`を加えて状態・基準差と診断のまとまり・重複数・全識別子を読み、`--result-test <完全テスト名>`か`--result-diagnostic <診断識別子>`の反復で詳細・取得版・所在を読む。代表1件で全件の意味を判断せず、比較不能を一致と扱わず、成功件数だけから達成を生成しない。取得版と条件が行を直接満たすかは本担当が判定する。
 記入時は`--list-results`を外し、同じ保存物と識別子を`--select-row`・`--mode`・選択行ごとの`--row-outcome`と`--reviewed-head`へつなぐ。既存の`--results-file`・`--updates-file`も受理され、JSON入力のsource不一致は拒否される。
 

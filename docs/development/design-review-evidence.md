@@ -146,6 +146,17 @@ WI本文は`_atk/wi/entries.py`の指定名読取を同一プロセスで呼ぶ�
 
 選んだ結果の根拠は、同じXML・実行記録・両出力の組の参照を1回だけ記し、完全テスト名・状態・caseを全件残す。診断もbefore・afterの側ごとに同じ保存物の組をまとめ、差の種類とentry・message_positionを各結果へ残す。単一結果ごとの整形は同じ保存物を反復して読む量を増やすため、両CLIが共有する[verification_results.py](../../agent-toolkit/skills/review-standards/scripts/verification_results.py)で集合から整形する。結果を省く案と異なる保存物をまとめる案は根拠の所属を失うため採らず、参照先の実在と共用根拠の判定を保持する。
 
+試験結果の取込みは、形式ごとの識別・状態の読取りと、共通の結果モデル・実行記録の確認・選択記入に分ける。
+pytestのJUnitに加え、vitestとPlaywrightのJSON、dotnet testのTRXを`--test-format`・`--test-file`・`--test-record`で両公開操作へ渡せる。
+基準版の入力は対応する`--baseline-test-*`を使い、一覧・詳細・要求行への記入と差の比較は共通の操作に保つ。
+vitestの完全名はworktree相対ファイルパス・ancestorTitles・テスト名から、PlaywrightはrootDirとfileから得る相対パス・title列・プロジェクト名から組み立てる。
+TRXは引数値を含むUnitTestResultのtestNameを使い、完全名が重複する結果は受理しない。
+状態は各形式のstatusかoutcomeから読み、名前に含まれる状態語から推定しない。
+結果ファイルは実行argvの絶対パス指定と対応付け、終了コードと状態の整合も確かめる。
+不一致・破損・不明な形式は根拠を保存せず、診断と次の操作を返す。
+汎用のJUnit受理は、runnerごとにclassname・name・fileの意味が異なり、Playwrightのプロジェクトなどを一意に表せないため採らない。
+cargo 1.99.0のstable構成のcargo testは構造化出力を持たないため、この取込みの対象に含めない。
+
 構造化結果の取得・選択・保存は[変更範囲の検証の対象選定](../../agent-toolkit/skills/check-execution/references/verification-scope.md)「実行のしかた」の両公開操作へ集約する。原文とsourceは現行行から処理側が取得するため、結果指定JSONと更新配列の手製転記を要しない。既存の`--results-file`・`--updates-file`も受理し、sourceの不一致と不正行は全保存を拒否する。JUnitと`atk run-command`の実行記録を対応付ける[verification_results.py](../../agent-toolkit/skills/review-standards/scripts/verification_results.py)が使うのは実行rootからのファイル・クラス・パラメーターとXMLの状態要素である。名前の状態語と総数から個別結果を推定しない。[verification_diagnostics.py](../../agent-toolkit/skills/review-standards/scripts/verification_diagnostics.py)はpyfltrの構造化診断をGitの改名・保存時本文の対応行と発生条件へ対応付け、多重集合の差を返す。重複数、同件数の別内容、位置なし警告の実行固有値を区別し、対応不能は一致にしない。
 原文と出所は従来の要求抽出が所有し、更新配列の不正が1件でもあれば全行の保存を拒否する。実装側の判定欄は空で、レビュー側は未判定根拠も選択できるが、各行の判定とHEADを明示し別の完成条件証拠へ保存する。手動根拠ファイルの更新と返却前確認を保持する。個別のJUnit解析・診断集計・JSON編集コードを担当へ戻す案と、新しい独立コマンドや判定自動化を加える案は、反復作業と知識境界の混同を残すため採らない。
 
