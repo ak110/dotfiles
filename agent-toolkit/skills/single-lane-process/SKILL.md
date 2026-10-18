@@ -52,7 +52,7 @@ disable-model-invocation: true
 公開の開始前は、不良が本作業で導入したものか、残る工程へ具体的に作用するかを先に判定する。即時対応に当たる不良を、工程が止まらないことや不良の種類だけで次回へ回さない。
 
 - 公開（実行順8）の開始前に見つけた不良は`agent-toolkit:bugfix`で初動判定する。
-  拡張原因分析、類似見直しまたは再発防止策を要し即時対応に当たるものは、不良ごとに調査とAWIの起草・投入を`${CLAUDE_PLUGIN_ROOT}/share/add-wi.parent.md`に従って委譲する。
+  拡張原因分析、類似見直しまたは再発防止策を要し即時対応に当たるものは、`agent-toolkit:wi-standards`冒頭のAWIの粒度で分けた要求ごとに、調査とAWIの起草・投入を`${CLAUDE_PLUGIN_ROOT}/share/add-wi.parent.md`に従って委譲する。
   投入されたAWIは`atk wi start-processing <ファイル名> --target-repo=<対応付けたtarget_repo>`で`processing`へ移して処理対象と対応表へ加え、自ら実装してそのworktreeの実行レビューへ含める。
   即時対応に当たらない不良は同じ委譲で`source: process-wi`のAWIとして投入し次回へ回す
 - 根本原因と類似見直しの母集団を自ら確定でき、その全対象と再発防止策をその場で処置できる不良は、`agent-toolkit:bugfix`の`SKILL.md`「問題を見つけたときの対処」に従ってその場で直す
