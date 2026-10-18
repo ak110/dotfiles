@@ -47,7 +47,7 @@ rulesetのbypass主体は空にし、PR経由の更新、会話threadの解決�
 | `pull_request` | base repository | `develop`以外 | `master` | `pull_request` run | 7件のrequired check名 |
 | `pull_request` | base repository以外 | 任意 | `master` | `pull_request` run | 7件のrequired check名 |
 
-先行job`common-ci-owner`が所有判定を1回だけ求め、全共通jobの表示名、非所有marker、後続stepの条件へ同じ出力を渡す。
+先行job`common-ci-owner`が所有判定を1回だけ行い、全共通jobの表示名、非所有marker、後続stepの条件へ同じ出力を渡す。
 同一repositoryのheadが`develop`、baseが`master`のrelease pull requestは、`develop`のpushを所有者とする。
 `develop`へのpushでは、`actions: read`を持つ先行jobが同一repository・同一workflowのmaster push runを完全SHAで照会する。
 実行待ち・実行中または成功済みのrunがあれば、そのmaster runを所有者とする。該当runがない場合、失敗・取消済みのrunだけの場合、API照会が失敗した場合は、このdevelop runが共通検証を実行する。

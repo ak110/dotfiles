@@ -339,7 +339,7 @@ E-M2は恒常コストに見合う案が無い判断も技術判断として終�
 
 ## 規範文書の書き方
 
-- エージェントが書く全ての文章は、読み手と読む時点に合わせて極力簡潔に必要十分な情報で書く。種類ごとの対策は共通する原因へ集約し、人向けのcommitは日付や件名で示す。エージェント向けも一意な短縮OIDを使う（2026年10月16日、ユーザー指示）。現行の規定は`agent-toolkit/skills/writing-standards/references/writing.md`「文章の共通規定」にある
+- エージェントが書く全ての文章は、読み手と読む時点に合わせて極力簡潔に必要十分な情報で書く。種類ごとの対策は共通する原因へ集約する。人向けのcommitは日付、件名、PR・MR番号、tagで示し、再取得に使う場合だけ一意な短縮OIDを添える。エージェント向けには一意な短縮OIDを使う（2026年10月16日、ユーザー指示）。現行の規定は`agent-toolkit/skills/writing-standards/references/writing.md`「文章の共通規定」にある
 
 現行の規定は`agent-toolkit:writing-standards`にある。名前の方針と定義済みの名前の一覧は同スキルの`references/defined-names.md`にある。
 
