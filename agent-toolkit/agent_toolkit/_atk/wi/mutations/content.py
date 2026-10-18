@@ -220,7 +220,7 @@ def _build_noninteractive_edit_content(path: pathlib.Path, original: str, messag
             )
         updates["target_repo"] = resolve_repo_id(raw_target_repo, reject_non_origin=True)
     for reserved_key, reserved_next_action in _RESERVED_EDIT_KEY_NEXT_ACTIONS.items():
-        if reserved_key in updates:
+        if reserved_key in updates and (reserved_key not in stored_data or updates[reserved_key] != stored_data[reserved_key]):
             raise WebInputError(
                 f"{reserved_key}は予約キーのため atk wi edit では指定できません",
                 next_action=reserved_next_action,

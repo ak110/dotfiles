@@ -1092,10 +1092,10 @@ class TestEditBodyFile:
         assert content.split(uwi.ANSWER_HEADING, maxsplit=1)[1] == original_answer
 
     @pytest.mark.parametrize(
-        "message",
+        ("message", "expected_code"),
         [
-            "---\nsubmitter_session: other-session\n---\n\n変更後の質問",
-            "---\nsubmitter_session: self-session\n---\n\n変更後の質問",
+            ("---\nsubmitter_session: other-session\n---\n\n変更後の質問", 1),
+            ("---\nsubmitter_session: self-session\n---\n\n変更後の質問", 0),
         ],
     )
     def test_uwi_edit_keeps_stored_submitter_session(
@@ -1104,6 +1104,7 @@ class TestEditBodyFile:
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
         message: str,
+        expected_code: int,
     ) -> None:
         """本文のfrontmatterから投入元セッションを書き換えられない。
 
@@ -1123,9 +1124,14 @@ class TestEditBodyFile:
         with pytest.raises(SystemExit) as exc_info:
             atk.main(_edit_body_args(tmp_path, "uwi-001.md", message), home=tmp_path)
 
-        assert exc_info.value.code == 1
-        assert "予約キー" in capsys.readouterr().err
-        assert path.read_text(encoding="utf-8") == original
+        assert exc_info.value.code == expected_code
+        if expected_code:
+            assert "予約キー" in capsys.readouterr().err
+            assert path.read_text(encoding="utf-8") == original
+        else:
+            saved = frontmatter_parser.parse_frontmatter(path.read_text(encoding="utf-8"))
+            assert saved is not None and saved[0]["submitter_session"] == "self-session"
+            assert "変更後の質問" in saved[1]
 
     @pytest.mark.parametrize(
         "message",
@@ -1634,6 +1640,96 @@ def test_terminal_state_edit_rejection_guides_to_accepted_hold_form(tmp_path: pa
 
 
 _DRY_RUN_SUCCESS = "成功: 編集前の検証が成立した（--dry-runのため保存していない）"
+
+
+@pytest.mark.parametrize("entry_type", ["awi", "uwi"])
+@pytest.mark.parametrize("operation", ["same", "omit", "change", "new"])
+@pytest.mark.parametrize(
+    "key,value",
+    [
+        ("target_commit", "a" * 40),
+        ("depends_on", ["dependency.md"]),
+        ("cooldown_until", "2026-10-20T00:00:00+09:00"),
+        ("repair_target", "repair.md"),
+        ("repair_kind", "input"),
+        ("plan_file", "/plans/example.md"),
+        ("submitter_session", "session-1"),
+    ],
+)
+def test_edit_reserved_metadata_roundtrip(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    entry_type: str,
+    operation: str,
+    key: str,
+    value: object,
+) -> None:
+    """非対話CLIは保存値の再提示・省略を受理し、予約値の追加・変更を保存前に拒否する。"""
+    notes = _setup_notes(tmp_path)
+    filename = "fb-001.md"
+    path = _write_awi_file(notes, filename) if entry_type == "awi" else _write_uwi_entry(notes, filename)
+    parsed = frontmatter_parser.parse_frontmatter(path.read_text(encoding="utf-8"))
+    assert parsed is not None
+    data, body = parsed
+    if operation != "new":
+        data[key] = value
+    original = frontmatter_parser.serialize_frontmatter(data, body)
+    path.write_text(original, encoding="utf-8")
+    monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+    updates = {} if operation == "omit" else {key: "changed" if operation == "change" else value}
+    message = frontmatter_parser.serialize_frontmatter(updates, "編集後の本文")
+    args = _edit_body_args(tmp_path, filename, message)
+    for dry_run in (True, False):
+        with pytest.raises(SystemExit) as result:
+            atk.main([*args, *(["--dry-run"] if dry_run else [])], home=tmp_path)
+        output = capsys.readouterr()
+        accepted = operation in ("same", "omit")
+        assert result.value.code == (0 if accepted else 1), output.err
+        saved = path.read_text(encoding="utf-8")
+        if not accepted or dry_run:
+            assert saved == original
+        else:
+            updated = frontmatter_parser.parse_frontmatter(saved)
+            assert updated is not None and updated[0][key] == value
+            assert "編集後の本文" in saved
+            if entry_type == "uwi":
+                assert "既存回答" in saved
+        if not accepted:
+            assert key in output.err and "次の操作:" in output.err
+
+
+@pytest.mark.parametrize("change_repo", [False, True])
+def test_show_body_edit_keeps_or_invalidates_target_commit(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    change_repo: bool,
+) -> None:
+    """showの保存本文をdry-runと実保存へ戻し、対象変更時には再提示された旧commitを無効化する。"""
+    notes = _setup_notes(tmp_path)
+    filename = "fb-001.md"
+    path = _write_awi_file(notes, filename, body="変更前")
+    parsed = frontmatter_parser.parse_frontmatter(path.read_text(encoding="utf-8"))
+    assert parsed is not None
+    data, body = parsed
+    data["target_commit"] = "a" * 40
+    path.write_text(frontmatter_parser.serialize_frontmatter(data, body), encoding="utf-8")
+    monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+    with pytest.raises(SystemExit) as shown:
+        atk.main(["wi", "show", filename, "--skip-pull"], home=tmp_path)
+    assert shown.value.code == 0
+    message = capsys.readouterr().out.split("\n", 2)[2].replace("変更前", "変更後")
+    if change_repo:
+        message = message.replace("github.com/example/foo", "github.com/example/bar")
+    args = _edit_body_args(tmp_path, filename, message)
+    for dry_run in (True, False):
+        with pytest.raises(SystemExit) as result:
+            atk.main([*args, *(["--dry-run"] if dry_run else [])], home=tmp_path)
+        assert result.value.code == 0, capsys.readouterr().err
+    saved = frontmatter_parser.parse_frontmatter(path.read_text(encoding="utf-8"))
+    assert saved is not None and "変更後" in saved[1]
+    assert saved[0].get("target_commit") == (None if change_repo else "a" * 40)
 
 
 def _git_output(directory: pathlib.Path, *args: str) -> str:
