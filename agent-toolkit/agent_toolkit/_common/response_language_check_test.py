@@ -12,40 +12,13 @@ from agent_toolkit._common.response_language_check import (
     WARNING_FIX,
     CheckOutcome,
     check_text,
-    detailed_check,
 )
-from agent_toolkit._testing.helpers import _write_transcript
 
 _SCRIPTS_DIR = pathlib.Path(__file__).resolve().parent
 _RULES_FILE = _SCRIPTS_DIR.parent / "rules" / "01-agent.md"
 
 # hookメッセージがエージェント向け文書の見出しを鉤括弧付きで引用する形式。
 _RULE_HEADING_REFERENCE_PATTERN = re.compile(r"01-agent\.md「([^」]+)」")
-
-
-def _write_assistant_transcript(
-    tmp_path: pathlib.Path,
-    content_blocks: list[dict],
-    *,
-    is_sidechain: bool = False,
-) -> str:
-    """単一のassistantエントリをJSONLとして書き込みパスを返す。"""
-    entry: dict = {
-        "type": "assistant",
-        "message": {
-            "id": "m1",
-            "role": "assistant",
-            "content": content_blocks,
-            "stop_reason": "end_turn",
-        },
-    }
-    if is_sidechain:
-        entry["isSidechain"] = True
-    return str(_write_transcript(tmp_path, [entry]))
-
-
-def _text_block(text: str) -> dict:
-    return {"type": "text", "text": text}
 
 
 def _make_mixed(japanese_count: int, english_word_count: int) -> str:
@@ -210,225 +183,18 @@ class TestCheckText:
         assert body is not None
 
 
-class TestDetailedCheck:
-    """detailed_check()のOutcome・message ID返却の検証。"""
-
-    def test_warn_with_english_text(self, tmp_path: pathlib.Path):
-        """英語テキスト50文字以上でWARNを返す。"""
-        path = _write_assistant_transcript(tmp_path, [_text_block("A" * 100)])
-        outcome, body, msg_id = detailed_check(path)
-        assert outcome is CheckOutcome.WARN
-        assert body is not None
-        assert "英語主体" in body
-        assert "A" * 80 in body
-        assert "A" * 81 not in body
-        assert msg_id == "m1"
-
-    def test_quote_uses_first_plain_sentence(self, tmp_path: pathlib.Path) -> None:
-        """警告はコードを除いた地の文の最初の文だけを示す。"""
-        message = "`hidden secret` Resources collected. Another sentence follows."
-        path = _write_assistant_transcript(tmp_path, [_text_block(message)])
-
-        outcome, body, _ = detailed_check(path)
-
-        assert outcome is CheckOutcome.WARN
-        assert body is not None
-        assert "Resources collected." in body
-        assert "hidden secret" not in body
-        assert "Another sentence" not in body
-
-    def test_quote_removes_terminal_controls(self, tmp_path: pathlib.Path) -> None:
-        """判定対象の制御文字を警告本文へ渡さず、引用を一行に保つ。"""
-        message = "The process \x1b[2J \x00 \x7f \x9b finished.\nAnother sentence follows."
-        path = _write_assistant_transcript(tmp_path, [_text_block(message)])
-
-        outcome, body, _ = detailed_check(path)
-
-        assert outcome is CheckOutcome.WARN
-        assert body is not None
-        excerpt = body.split("判定対象の冒頭: 「", maxsplit=1)[1].split("」", maxsplit=1)[0]
-        assert excerpt == "The process [2J finished."
-        assert not any(ord(char) < 32 or 127 <= ord(char) <= 159 for char in excerpt)
-
-    def test_warn_for_english_send_to_user_message(self, tmp_path: pathlib.Path) -> None:
-        """send_to_userの`message`はユーザーへ届く本文であり、言語判定の対象に含める。"""
-        call = {
-            "type": "tool_use",
-            "id": "toolu_1",
-            "name": "mcp__agent-toolkit__send_to_user",
-            "input": {"message": "The investigation is finished and the root cause was identified."},
-        }
-        path = _write_assistant_transcript(tmp_path, [call])
-        outcome, body, msg_id = detailed_check(path)
-        assert outcome is CheckOutcome.WARN
-        assert body is not None
-        assert "The investigation is finished" in body
-        assert msg_id == "m1"
-
-    def test_pass_with_japanese_text(self, tmp_path: pathlib.Path):
-        """日本語テキスト50文字以上で比率≧0.30のときPASSを返す。"""
-        path = _write_assistant_transcript(tmp_path, [_text_block("あ" * 50)])
-        outcome, body, msg_id = detailed_check(path)
-        assert outcome is CheckOutcome.PASS
-        assert body is None
-        assert msg_id == "m1"
-
-    def test_skip_short_text(self, tmp_path: pathlib.Path):
-        """49文字のテキストはSKIPを返す。"""
-        path = _write_assistant_transcript(tmp_path, [_text_block("A" * 49)])
-        outcome, body, msg_id = detailed_check(path)
-        assert outcome is CheckOutcome.SKIP
-        assert body is None
-        assert msg_id == "m1"
-
-    def test_skip_empty_transcript_path(self):
-        """空文字列パスはSKIPを返す。"""
-        outcome, body, msg_id = detailed_check("")
-        assert outcome is CheckOutcome.SKIP
-        assert body is None
-        assert msg_id == ""
-
-    def test_skip_nonexistent_path(self, tmp_path: pathlib.Path):
-        """存在しないパスはSKIPを返す。"""
-        outcome, body, _ = detailed_check(str(tmp_path / "missing.jsonl"))
-        assert outcome is CheckOutcome.SKIP
-        assert body is None
-
-    def test_skip_sidechain(self, tmp_path: pathlib.Path):
-        """サブエージェント応答はSKIPを返す（テキストが空になるため）。"""
-        path = _write_assistant_transcript(tmp_path, [_text_block("A" * 100)], is_sidechain=True)
-        outcome, body, _ = detailed_check(path)
-        assert outcome is CheckOutcome.SKIP
-        assert body is None
-
-    def test_skip_when_latest_turn_ends_with_api_error(self, tmp_path: pathlib.Path):
-        """APIエラー終端時は以前の英語assistant本文を言語判定へ含めない。"""
-        transcript = _write_transcript(
-            tmp_path,
-            [
-                {
-                    "type": "assistant",
-                    "message": {
-                        "id": "previous",
-                        "role": "assistant",
-                        "content": [_text_block("A" * 100)],
-                        "stop_reason": "end_turn",
-                    },
-                },
-                {"type": "user", "message": {"role": "user", "content": "再開"}},
-                {
-                    "type": "assistant",
-                    "isApiErrorMessage": True,
-                    "message": {
-                        "id": "api-error",
-                        "role": "assistant",
-                        "content": [_text_block("The API request failed.")],
-                        "stop_reason": None,
-                    },
-                },
-                {"type": "system", "subtype": "turn_duration"},
-            ],
-        )
-
-        outcome, body, msg_id = detailed_check(str(transcript))
-
-        assert outcome is CheckOutcome.SKIP
-        assert body is None
-        assert msg_id == ""
-
-    def test_warns_for_latest_turn_with_text_before_thinking_turn(self, tmp_path: pathlib.Path) -> None:
-        transcript = _write_transcript(
-            tmp_path,
-            [
-                {
-                    "type": "assistant",
-                    "message": {
-                        "id": "text",
-                        "role": "assistant",
-                        "content": [_text_block("This response is written entirely in English.")],
-                    },
-                },
-                {
-                    "type": "assistant",
-                    "message": {"id": "thinking", "role": "assistant", "content": [{"type": "thinking"}]},
-                },
-            ],
-        )
-
-        outcome, body, msg_id = detailed_check(str(transcript))
-
-        assert outcome is CheckOutcome.WARN
-        assert body is not None
-        assert msg_id == "text"
-
-    def test_boundary_ratio_0_2857_warns(self, tmp_path: pathlib.Path):
-        """語数比0.2857 (<0.30) でWARNを返す。"""
-        text = _make_mixed(14, 35)
-        path = _write_assistant_transcript(tmp_path, [_text_block(text)])
-        outcome, body, _ = detailed_check(path)
-        assert outcome is CheckOutcome.WARN
-        assert body is not None
-
-    def test_boundary_ratio_0_30_passes(self, tmp_path: pathlib.Path):
-        """語数比0.30ちょうどでPASSを返す。"""
-        text = _make_mixed(15, 35)
-        path = _write_assistant_transcript(tmp_path, [_text_block(text)])
-        outcome, body, _ = detailed_check(path)
-        assert outcome is CheckOutcome.PASS
-        assert body is None
-
-    def test_boundary_ratio_0_40_passes(self, tmp_path: pathlib.Path):
-        """語数比0.40 (>0.30) でPASSを返す。"""
-        text = _make_mixed(20, 30)
-        path = _write_assistant_transcript(tmp_path, [_text_block(text)])
-        outcome, body, _ = detailed_check(path)
-        assert outcome is CheckOutcome.PASS
-        assert body is None
-
-    def test_boundary_text_length_50(self, tmp_path: pathlib.Path):
-        """テキスト長50文字で語数比を判定する。"""
-        path = _write_assistant_transcript(tmp_path, [_text_block("A" * 50)])
-        outcome, _, _ = detailed_check(path)
-        assert outcome is CheckOutcome.WARN
-
-    def test_boundary_text_length_51(self, tmp_path: pathlib.Path):
-        """テキスト長51文字で語数比を判定する。"""
-        path = _write_assistant_transcript(tmp_path, [_text_block("A" * 51)])
-        outcome, _, _ = detailed_check(path)
-        assert outcome is CheckOutcome.WARN
-
-    def test_message_id_from_transcript(self, tmp_path: pathlib.Path):
-        """transcriptから正しいmessage IDが取得される。"""
-        entry = {
-            "type": "assistant",
-            "message": {
-                "id": "msg_custom_123",
-                "role": "assistant",
-                "content": [{"type": "text", "text": "A" * 100}],
-                "stop_reason": "end_turn",
-            },
-        }
-        path = tmp_path / "transcript.jsonl"
-        path.write_text(json.dumps(entry, ensure_ascii=False) + "\n", encoding="utf-8")
-        outcome, _, msg_id = detailed_check(str(path))
-        assert outcome is CheckOutcome.WARN
-        assert msg_id == "msg_custom_123"
-
-
 class TestEnglishOnlyShortText:
     """日本語文字を含まない短文に対する判定の検証。"""
 
-    def test_warn_english_only_below_length_threshold(self, tmp_path: pathlib.Path):
+    def test_warn_english_only_below_length_threshold(self):
         """日本語文字0・英単語2語の短文は長さ下限を適用せずWARNを返す。"""
-        path = _write_assistant_transcript(tmp_path, [_text_block("Done here.")])
-        outcome, body, _ = detailed_check(path)
+        outcome, body = check_text("Done here.")
         assert outcome is CheckOutcome.WARN
         assert body is not None
 
-    def test_skip_english_single_word(self, tmp_path: pathlib.Path):
+    def test_skip_english_single_word(self):
         """日本語文字0でも英単語1語だけの短文は従来どおりSKIPを返す。"""
-        path = _write_assistant_transcript(tmp_path, [_text_block("Done.")])
-        outcome, body, _ = detailed_check(path)
+        outcome, body = check_text("Done.")
         assert outcome is CheckOutcome.SKIP
         assert body is None
 
@@ -478,30 +244,26 @@ class TestDiscourseMarker:
             "now、小文字表記でも検出する。",
         ],
     )
-    def test_warn_when_plain_text_starts_with_marker(self, tmp_path: pathlib.Path, text: str):
+    def test_warn_when_plain_text_starts_with_marker(self, text: str):
         """長さ下限未満でも先頭の談話標識でWARNを返す。"""
-        path = _write_assistant_transcript(tmp_path, [_text_block(text)])
-        outcome, body, _ = detailed_check(path)
+        outcome, body = check_text(text)
         assert outcome is CheckOutcome.WARN
         assert body is not None
 
-    def test_pass_product_name_form(self, tmp_path: pathlib.Path):
+    def test_pass_product_name_form(self):
         """標識の直後が`.`と英字の並び（製品名形式）である場合は該当しない。"""
-        path = _write_assistant_transcript(tmp_path, [_text_block("Next.jsの構成を確認する。" + "あ" * 50)])
-        outcome, body, _ = detailed_check(path)
+        outcome, body = check_text("Next.jsの構成を確認する。" + "あ" * 50)
         assert outcome is CheckOutcome.PASS
         assert body is None
 
-    def test_pass_marker_inside_inline_code(self, tmp_path: pathlib.Path):
+    def test_pass_marker_inside_inline_code(self):
         """バッククォート内の標識は地の文の先頭判定へ現れない。"""
-        path = _write_assistant_transcript(tmp_path, [_text_block("`Now` は識別子である。" + "あ" * 50)])
-        outcome, body, _ = detailed_check(path)
+        outcome, body = check_text("`Now` は識別子である。" + "あ" * 50)
         assert outcome is CheckOutcome.PASS
         assert body is None
 
-    def test_pass_marker_without_word_boundary(self, tmp_path: pathlib.Path):
+    def test_pass_marker_without_word_boundary(self):
         """標識の直後に語境界が無い場合は該当しない。"""
-        path = _write_assistant_transcript(tmp_path, [_text_block("Nowここから確認する。" + "あ" * 50)])
-        outcome, body, _ = detailed_check(path)
+        outcome, body = check_text("Nowここから確認する。" + "あ" * 50)
         assert outcome is CheckOutcome.PASS
         assert body is None

@@ -1,31 +1,12 @@
-"""操作を起動の契機とするスキルが未起動のまま、その操作を実行した呼び出しへ警告する。
+"""操作の直前に、必要なスキルの全文を配送する。
 
-スキルの起動の契機（descriptionと常時規範の参照文）はセッション開始時に配送されるが、
-その操作を実行する時点には未起動であることを示す手掛かりが無く、起動されないまま本文の規定が適用されない。
-本判定は操作の時点で起動記録の不在を示し、未適用の場合に基準の適用を求める。
+Skill起動も配送も記録されていない主体の最初の操作を止め、稼働版の本文と再発行の案内を返す。
+取得を後続の自発的な読取へ残すと、警告だけを受けた主体が未読で続行できるためである。
+配送自体を本文の取得とし、取得できない資料は記録せずに操作を止める。
 
-判定の結論は警告とする。根拠は`agent-toolkit:writing-standards`の`references/claude-hooks-block-warn.md`
-「遮断と警告の選択」にある。判定の入力はツール名、コマンド文字列およびSkill起動の記録だけで
-機械的に確定し、発火は呼び出し主体の文脈ごとに1回であるため費用が小さい。
-遮断しない理由は、スキルの起動が常時規範で努力目標とされていることと、検索が複合コマンドに含まれると
-遮断で全体の再実行を要し、失うターンの作業が大きいことである。
-
-呼び出し主体は`agent_id.resolve_hook_agent_id`で区別し、メイン会話と`Agent`ツールのサブエージェントを
-別の文脈として扱う。`agents_server`の委譲先は別のセッションとして自身の状態ファイルで判定する。
-起動済みの記録はセッション状態キー`rules_context.OPERATION_SKILL_READY_KEY`へ、警告を返した時点と
-PostToolUse(Skill)の起動の観測時点で書く。
-
-警告の次の操作は、`Skill`での起動と、自分のツール一覧に`Skill`が無い主体が`SKILL.md`を`Read`で全文読む操作を併記する。
-`agents_server`のClaudeの軽量起動（`explore`・`write`・`shell`）は`disallowed_tools`で`Skill`を除き、スキルの一覧も届かないため、
-警告が基準の本文へ到達する唯一の手掛かりになる。hookの入力は通常の委譲先と軽量起動を区別できないため、
-主体ごとに本文を書き分けず、両方の手段を同じ本文に示す。Readによる適用済みを観測できないため、
-起動記録が無い場合も、適用済みなら続行できる本文とする。
-
-Codexでは警告も記録もしない。Codexはスキルを`SKILL.md`の読取で適用し、hookはその読取を起動として観測できないため、
-記録の不在からは未起動と読了済みを区別できず、読了済みの操作にも警告する。Codexにはスキルの一覧と本文が配送される。
-
-表へスキルを加える場合は、操作の判定関数とその正例・負例のテストを同じ変更単位で加える。
-判定関数はツール名とツール入力だけから結果を確定し、作業の意味の解釈を要する条件を含めない。
+主体は`agent_id.resolve_hook_agent_id`で区別する。agents_serverの委譲先は独立した会話の状態を使う。
+Claude CodeとCodexで同じ契約を使い、手動読取の有無は推定しない。
+表へスキルを加える場合は、操作の判定関数と正例・負例のテストを同時に加える。
 """
 
 from __future__ import annotations
@@ -37,8 +18,7 @@ import re
 # 関数の実行時にだけ使う依存は、使用時まで読み込まない。
 lazy from collections.abc import Callable, Sequence
 
-from agent_toolkit._hooks.notice import _WARN_TAG
-from agent_toolkit._hooks.notice import formatter as _notice_formatter
+from agent_toolkit._hooks.pretooluse.notices import _block_notice
 lazy from agent_toolkit._common import shell_cwd
 lazy from agent_toolkit._common import shell_segments as _shell_segments
 lazy from agent_toolkit._common.bash_invocations import STATIC_UNKNOWN, extract_bash_invocations
@@ -47,7 +27,6 @@ lazy from agent_toolkit._common.session_state import read_state, update_state
 lazy from agent_toolkit._common.shell_tokens import is_atk_command
 lazy from agent_toolkit._common.uv_arguments import is_python_token
 lazy from agent_toolkit._hooks import agent_id as _agent_id
-lazy from agent_toolkit._hooks import plugin_resources as _plugin_resources
 lazy from agent_toolkit._hooks import rules_context as _rules_context
 lazy from agent_toolkit._hooks import tool_input as _tool_input
 lazy from agent_toolkit._hooks.pretooluse import shell_checks as _shell_checks
@@ -55,8 +34,6 @@ lazy from agent_toolkit._hooks.pretooluse.agent_checks import AGENTS_SERVER_HOOK
 lazy from agent_toolkit._hooks.pretooluse.large_reads import python_file_paths
 lazy from agent_toolkit._hooks.pretooluse.task_document_launch import AGENT_TOOL_NAMES
 lazy from agent_toolkit._plan.structure import is_agent_doc_target_file
-
-_llm_notice = _notice_formatter("pretooluse")
 
 _SEARCH_COMMANDS = frozenset({"rg", "find"})
 _GREP_COMMANDS = frozenset({"grep", "egrep", "fgrep"})
@@ -490,37 +467,33 @@ def record_skill_ready(session_id: str, skill_name: object, agent: str) -> None:
     update_state(session_id, _mark_ready(canonical, agent))
 
 
-def _warning(entry: OperationSkill) -> str:
-    skill_md = _plugin_resources.skill_reference(entry.short_name, "SKILL.md")
-    return _llm_notice(
-        f"{entry.operation}の呼び出しで、`{entry.skill_name}`の起動記録を確認できない。",
-        tag=_WARN_TAG,
-        fix=(
-            f"既に本文を読み基準を適用している場合は、そのまま続ける。"
-            f"未適用の場合は、ツール`Skill`で`{entry.skill_name}`を起動し、同スキルの基準で今回の{entry.operation}の手段と範囲を確かめ直す。"
-            f"ツール一覧に`Skill`が無い主体は、"
-            f"{skill_md}を`Read`で全文読んで同じ基準を適用する。"
-            f"基準に合わない{entry.operation}の結果は使わず、基準に合う{entry.operation}でやり直す。"
-        ),
-        removable_cause=False,
-    )
-
-
-def operation_skill_warnings(payload: dict, tool_name: str, tool_input: dict, session_id: str, *, is_codex: bool) -> list[str]:
-    """未起動のスキルの操作を実行する呼び出しへ、文脈ごとに1回だけ警告本文を返す。
-
-    警告を返した時点でその文脈のそのスキルを起動済みとして記録する。
-    `session_id`が無い呼び出しは記録できず文脈ごとの1回を保てないため、判定しない。
-    Codexの呼び出しは起動済みを観測できないため、警告も記録もしない。
-    """
-    if not session_id or is_codex:
+def operation_skill_delivery(payload: dict, tool_name: str, tool_input: dict, session_id: str) -> list[str]:
+    """最初の該当操作を止め、必要なスキルの全文と同じ操作の再発行を案内する。"""
+    if not session_id:
         return []
     agent = _agent_id.resolve_hook_agent_id(payload)
-    warnings: list[str] = []
+    deliveries: list[str] = []
     for entry in OPERATION_SKILLS:
         if _is_ready(session_id, entry.skill_name, agent) or not entry.matches(tool_name, tool_input):
             continue
-        # 並行する呼び出しが同時に判定しても、記録を書き込んだ1件だけが警告する。
-        if update_state(session_id, _mark_ready(entry.skill_name, agent)):
-            warnings.append(_warning(entry))
-    return warnings
+        skill_path = pathlib.Path(__file__).resolve().parents[3] / "skills" / entry.short_name / "SKILL.md"
+        try:
+            body = skill_path.read_text(encoding="utf-8")
+            if not body.strip():
+                raise ValueError("本文が空")
+        except (OSError, UnicodeError, ValueError) as exc:
+            deliveries.append(
+                _block_notice(
+                    f"`{skill_path}`の本文を取得できず、{entry.operation}を実行していない。診断: {exc}",
+                    fix="資料の読取失敗を委譲元またはユーザーへ報告し、資料の復旧後に同じ操作を再発行する。",
+                )
+            )
+            continue
+        delivery = _block_notice(
+            f"{entry.operation}の実行前に`{entry.skill_name}`の本文を配送する。\n\n{body}",
+            fix="この本文をスキルの取得として扱い、基準を適用して同じ操作を再発行する。追加の本文取得は要らない。",
+        )
+        # 書込失敗でも本文は配送し、次の操作で再配送する。並行する呼出にも各々本文を届ける。
+        update_state(session_id, _mark_ready(entry.skill_name, agent))
+        deliveries.append(delivery)
+    return deliveries

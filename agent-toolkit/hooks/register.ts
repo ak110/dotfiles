@@ -1,9 +1,12 @@
 import type { EngineInterface, Register } from "claude-code";
 
+import { automatedMessage } from "./automated_message.ts";
 import { COMPACT_CONVERSATION_DELEGATED_DENY, COMPACT_CONVERSATION_TOOL, register as registerCompactConversation } from "./compact_conversation.ts";
 import { register as registerPeriodicRecheck } from "./periodic_recheck.ts";
+import { register as registerResponseLanguage } from "./response_language.ts";
 import { register as registerSendToUser, SEND_TO_USER_DELEGATED_DENY, SEND_TO_USER_TOOL } from "./send_to_user.tsx";
 import { exitStatePath, register as registerSessionExit } from "./session_exit.ts";
+import { register as registerSessionTitle } from "./session_title.ts";
 import { register as registerUsageLimitResume } from "./usage_limit_resume.ts";
 
 // hooks.jsonの`modules`は1つのプラグインにつき1つのhooks moduleだけを受け付け、照合条件の無い同じイベントのhookは
@@ -27,7 +30,8 @@ const MAIN_ONLY_TOOLS = [
 
 function mainOnlyDeny(plugin: string, tool: string): string | undefined {
   const prefix = `mcp__${plugin}__`;
-  return tool.startsWith(prefix) ? MAIN_ONLY_TOOLS.find((entry) => entry.tool.name === tool.slice(prefix.length))?.deny : undefined;
+  const deny = tool.startsWith(prefix) ? MAIN_ONLY_TOOLS.find((entry) => entry.tool.name === tool.slice(prefix.length))?.deny : undefined;
+  return deny === undefined ? undefined : automatedMessage("main-only-tool", "block", deny);
 }
 
 export const register: Register = (on) => {
@@ -77,6 +81,8 @@ export const register: Register = (on) => {
   registerSessionExit(on);
   registerCompactConversation(on);
   registerSendToUser(on);
+  registerResponseLanguage(on);
+  registerSessionTitle(on);
   registerPeriodicRecheck(on);
   registerUsageLimitResume(on, usageLimitSession);
 };

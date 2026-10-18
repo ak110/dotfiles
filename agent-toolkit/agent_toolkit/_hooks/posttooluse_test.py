@@ -1038,7 +1038,7 @@ class TestDelegationReadiness:
         )
         assert result.returncode == 0
         state = _read_state(tmp_path, sid)
-        assert state["operation_skill_ready_agents"] == {"agent-toolkit:delegation": ["main"]}
+        assert state["operation_skill_delivered_agents"] == {"agent-toolkit:delegation": ["main"]}
 
 
 class TestUwiCompletionNotice:

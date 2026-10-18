@@ -583,21 +583,24 @@ class TestLazyDependencyLoading:
         assert not unused & lazy_modules
 
 
-def _call_hook_in_process(monkeypatch: pytest.MonkeyPatch, subcommand: str, payload: dict[str, object]) -> str:
+def _call_hook_in_process(
+    monkeypatch: pytest.MonkeyPatch, subcommand: str, payload: dict[str, object], expected_code: int = 0
+) -> str:
     """公開hookの`main`を同一プロセスで呼び、標準出力を返す。"""
     output = io.StringIO()
+    errors = io.StringIO()
     with monkeypatch.context() as context:
         stdin = io.TextIOWrapper(io.BytesIO(json.dumps(payload).encode("utf-8")), encoding="utf-8")
         context.setattr(sys, "stdin", stdin)
-        with contextlib.redirect_stdout(output):
-            assert _hook.main([subcommand]) == 0
-    return output.getvalue()
+        with contextlib.redirect_stdout(output), contextlib.redirect_stderr(errors):
+            assert _hook.main([subcommand]) == expected_code
+    return errors.getvalue() if expected_code == 2 else output.getvalue()
 
 
 def test_repeated_calls_in_one_process_follow_input_and_session_state(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
 ) -> None:
-    """依存を読み込んだ後の反復呼び出しでも、警告の記録と未配送通知の判定が入力と状態に従う。"""
+    """依存を読み込んだ後の反復呼び出しでも、本文配送と未配送通知の判定が入力と状態に従う。"""
     monkeypatch.setattr(tempfile, "tempdir", str(tmp_path))
     monkeypatch.setenv("TMPDIR", str(tmp_path))
     monkeypatch.delenv("AGENT_TOOLKIT_DELEGATED_SESSION", raising=False)
@@ -605,7 +608,7 @@ def test_repeated_calls_in_one_process_follow_input_and_session_state(
     empty_transcript = tmp_path / "empty.jsonl"
     empty_transcript.write_text("", encoding="utf-8")
 
-    def pretooluse(session_id: str, command: str) -> str:
+    def pretooluse(session_id: str, command: str, expected_code: int = 0) -> str:
         return _call_hook_in_process(
             monkeypatch,
             "pretooluse",
@@ -616,15 +619,15 @@ def test_repeated_calls_in_one_process_follow_input_and_session_state(
                 "tool_name": "Bash",
                 "tool_input": {"command": command},
             },
+            expected_code=expected_code,
         )
 
-    # 検索スキルを起動しない検索の警告は、同じセッションでは初回だけ返り、別のセッションでは再び返る。
-    first = pretooluse("repeat-session", "grep -rn needle .")
-    context = json.loads(first)["hookSpecificOutput"]["additionalContext"]
-    assert auto_message_opening_attributes(context) == {"source": "pretooluse", "kind": "warn"}
+    # 初回配送は操作を止め、同じセッションの再発行を通す。別セッションには再び本文を届ける。
+    context = pretooluse("repeat-session", "grep -rn needle .", expected_code=2)
+    assert auto_message_opening_attributes(context) == {"source": "pretooluse", "kind": "block"}
     assert not pretooluse("repeat-session", "ls")
     assert not pretooluse("repeat-session", "grep -rn needle .")
-    assert json.loads(pretooluse("other-session", "grep -rn needle ."))["hookSpecificOutput"]["additionalContext"] == context
+    assert pretooluse("other-session", "grep -rn needle .", expected_code=2) == context
 
     # 未配送の完了通知が残るtranscriptでは配送のためにターンを終え、残らないtranscriptでは何も返さない。
     # キューの記録の形は`_hooks/queued_notification_advisor_test.py`の生成と同じとする。

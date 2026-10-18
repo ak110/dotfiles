@@ -26,6 +26,14 @@ from agent_toolkit._testing.pretooluse_support import (
 )
 
 
+def _run_after_skill_delivery(payload: dict, env_overrides: dict[str, str] | None = None) -> subprocess.CompletedProcess[str]:
+    """操作前の基準を受け取り、agent_checksが判定した再発行の結果を返す。"""
+    result = _run(payload, env_overrides=env_overrides)
+    if result.returncode == 2 and "本文を配送する" in result.stderr:
+        return _run(payload, env_overrides=env_overrides)
+    return result
+
+
 @pytest.mark.parametrize(
     ("tool_input", "next_action_names"),
     [
@@ -38,7 +46,7 @@ def test_agents_server_missing_required_input_warns(
     tool_input: dict[str, str], next_action_names: list[str], tmp_path: pathlib.Path
 ) -> None:
     """必須値を欠く継続入力はツールの検証へ渡し、遮断せず、実在する名前で次の操作を示す。"""
-    result = _run(
+    result = _run_after_skill_delivery(
         {
             "tool_name": "mcp__agents_server__send_message",
             "tool_input": tool_input,
@@ -62,7 +70,7 @@ class TestAgentNameParameterAccepted:
     def test_name_parameter_does_not_block(self, tmp_path: pathlib.Path, tool_name: str, name_value: str | None) -> None:
         """`name`キーの値によらず、委譲に必要な他の条件を満たす起動はブロックされない。"""
         sid = f"agent-name-accept-{tool_name.lower()}-{name_value!r}"
-        result = _run(
+        result = _run_after_skill_delivery(
             {
                 "tool_name": tool_name,
                 "tool_input": {"subagent_type": "claude", "name": name_value, "prompt": "調査してください。"},
@@ -393,7 +401,7 @@ class TestExecuteReviewAlternateRouteAllowed:
     @pytest.mark.parametrize("task_name", _EXECUTE_REVIEW_TASK_NAMES)
     def test_codex_setting_allows_sidechain_agent(self, tmp_path: pathlib.Path, task_name: str) -> None:
         """可用性起因の代替としてClaudeによる実行へ切り替えた実行レビュー起動を遮断しない。"""
-        result = _run(
+        result = _run_after_skill_delivery(
             {
                 "tool_name": "Agent",
                 "tool_input": {"subagent_type": "general-purpose", "prompt": f"{task_name}を読んでレビューする。"},
@@ -407,7 +415,7 @@ class TestExecuteReviewAlternateRouteAllowed:
         assert "review_engine" not in result.stderr
 
     def test_claude_setting_allows_sidechain_agent(self, tmp_path: pathlib.Path) -> None:
-        result = _run(
+        result = _run_after_skill_delivery(
             {
                 "tool_name": "Agent",
                 "tool_input": {
@@ -425,7 +433,7 @@ class TestExecuteReviewAlternateRouteAllowed:
         session_id = "execute-review-main"
         env = _stage_model_env(tmp_path, "codex")
         env.update(_plan_file_state_env(tmp_path))
-        result = _run(
+        result = _run_after_skill_delivery(
             {
                 "tool_name": "Agent",
                 "tool_input": {
@@ -556,14 +564,14 @@ class TestPlanFileDoesNotRequireSelfPath:
 
 
 class TestAgentTaskLaunchIndependence:
-    """Agent／Task起動が`agent-toolkit:delegation`の起動状態から独立していることを確認する。"""
+    """Agent／Task起動が基準の配送後に通ることを確認する。"""
 
     @pytest.mark.parametrize("tool_name", ["Agent", "Task"])
-    def test_main_launch_without_skill_is_allowed(self, tmp_path: pathlib.Path, tool_name: str) -> None:
+    def test_main_launch_after_delivery_is_allowed(self, tmp_path: pathlib.Path, tool_name: str) -> None:
         sid = f"missing-{tool_name.lower()}"
         plan = _make_plan_file(tmp_path / "home", f"{tool_name.lower()}-missing.md")
         env = {**_plan_file_state_env(tmp_path), **_process_loop_log_env(tmp_path)}
-        result = _run(
+        result = _run_after_skill_delivery(
             {
                 "session_id": sid,
                 "tool_name": tool_name,
@@ -580,8 +588,10 @@ class TestAgentTaskLaunchIndependence:
     @pytest.mark.parametrize("tool_name", ["Agent", "Task"])
     def test_main_launch_with_delegation_or_sidechain_passes(self, tmp_path: pathlib.Path, tool_name: str) -> None:
         env = {"TMPDIR": str(tmp_path), "TEMP": str(tmp_path), "TMP": str(tmp_path)}
-        allowed = _run({"session_id": "ready", "tool_name": tool_name, "tool_input": {}}, env_overrides=env)
-        sidechain = _run(
+        allowed = _run_after_skill_delivery(
+            {"session_id": "ready", "tool_name": tool_name, "tool_input": {}}, env_overrides=env
+        )
+        sidechain = _run_after_skill_delivery(
             {"session_id": "sidechain", "tool_name": tool_name, "tool_input": {}, "isSidechain": True},
             env_overrides=env,
         )
@@ -590,7 +600,7 @@ class TestAgentTaskLaunchIndependence:
 
     def test_claude_code_guide_without_delegation_passes(self, tmp_path: pathlib.Path) -> None:
         """公式資料照会専用エージェントも入力が条件を満たすか独立して判定した後に許可する。"""
-        result = _run(
+        result = _run_after_skill_delivery(
             {
                 "session_id": "guide-without-delegation",
                 "tool_name": "Agent",
@@ -660,7 +670,7 @@ class TestWorkflowSkillInvocation:
     def test_agent_launch_after_workflow_skill_is_allowed(self, tmp_path: pathlib.Path) -> None:
         """`agent-toolkit:delegation`以外のスキルの起動後のAgent起動も、`agent-toolkit:delegation`の起動状態に依存しない。"""
         env = _plan_file_state_env(tmp_path)
-        skill_result = _run(
+        skill_result = _run_after_skill_delivery(
             {
                 "tool_name": "Skill",
                 "tool_input": {"skill": "agent-toolkit:plan-mode"},
@@ -668,7 +678,7 @@ class TestWorkflowSkillInvocation:
             },
             env_overrides=env,
         )
-        agent_result = _run(
+        agent_result = _run_after_skill_delivery(
             {
                 "tool_name": "Agent",
                 "tool_input": {"subagent_type": "general-purpose", "prompt": "調査する。"},
@@ -690,7 +700,7 @@ class TestWorkflowSkillInvocation:
 def test_language_boundary_uses_host_and_preserves_delegated_coverage(
     tmp_path: pathlib.Path, delegation_env: dict[str, str], codex: bool
 ) -> None:
-    """Claudeのメインと委譲先を遮断し、Codexではtranscriptの判定を行わない。"""
+    """全ホストのPreToolUseはtranscript言語判定を持たず、Claudeの実行前判定はmodが担う。"""
     entry = {
         "type": "assistant",
         "message": {
@@ -718,6 +728,6 @@ def test_language_boundary_uses_host_and_preserves_delegated_coverage(
 
     result = _run(payload, env_overrides=env)
 
-    assert result.returncode == (0 if codex else 2), result.stderr
+    assert result.returncode == 0, result.stderr
     assert result.stdout == ""
-    assert ("英語主体" in result.stderr) is (not codex)
+    assert not result.stderr

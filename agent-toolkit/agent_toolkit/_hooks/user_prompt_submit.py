@@ -10,12 +10,7 @@ Codexは`$agent-toolkit:<name>`・`$<name>`）で発話した手動のスキル�
 - Codexのplan-mode → `plan_mode_skill_invoked`
 - process-wi → `process_wi_skill_invoked`
 
-Claude CodeのsessionTitleは、process-loop起動セッションでは`process-loop`、
-process-wi手動起動セッションでは`process-wi`の固定値を優先する
-（両条件が真の場合はprocess-loopを優先する）。
-いずれにも該当しないセッションは計画ファイルのstemを一度だけ反映する。
-固定値の判定は、その呼び出しでのスキル起動フラグ更新の後に行う
-（同一呼び出しで検出したスラッシュコマンド起動を、その場でsessionTitleへ反映するため）。
+セッション名はFunction hooks moduleが設定する。
 
 セッション開始後と会話圧縮後で`agent-toolkit:user-confirmation-and-report`がまだ起動されていない間は、
 実ユーザー発話へ同スキルの起動を促す注記を返す（Codexでは文脈1つにつき1回）。
@@ -48,7 +43,6 @@ from __future__ import annotations
 
 import json
 import os
-import pathlib
 import re
 import sys
 
@@ -74,17 +68,12 @@ lazy from agent_toolkit._common.periodic_recheck import (  # noqa: E402  # pylin
     LEGACY_PERIODIC_RECHECK_MARKER,
     PERIODIC_RECHECK_MARKER,
 )
-lazy from agent_toolkit._common.process_loop_session import (
-    is_process_loop_session,  # noqa: E402  # pylint: disable=wrong-import-position,import-error
-)
 lazy from agent_toolkit._common.session_state import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
-    claim_session_title,
     read_state,
     update_state,
 )
 lazy from agent_toolkit._hooks import termination_evidence, work_contract
 lazy from agent_toolkit._hooks.host import is_codex_payload  # noqa: E402  # pylint: disable=wrong-import-position,import-error
-lazy from agent_toolkit._plan.path_kinds import is_plan_main_file  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 
 
 def _extend_with_short_names(names: frozenset[str]) -> frozenset[str]:
@@ -192,32 +181,6 @@ def _user_confirmation_notice() -> str:
     return _llm_notice(_USER_CONFIRMATION_NOTICE_BODY, tag="notice", fix=_USER_CONFIRMATION_NOTICE_FIX)
 
 
-def _fixed_session_title(session_id: str) -> str | None:
-    """process-loop起動またはprocess-wi手動起動セッションの固定sessionTitleを返す。
-
-    両条件が真の場合はprocess-loopを優先する。計画ファイルstemと同じく、
-    `claim_session_title`を介してセッションごとに一度だけ確定する。
-    """
-    if is_process_loop_session(session_id, os.environ):
-        title = "process-loop"
-    elif read_state(session_id).get("process_wi_skill_invoked") is True:
-        title = "process-wi"
-    else:
-        return None
-    return title if claim_session_title(session_id, title) else None
-
-
-def _plan_session_title(session_id: str) -> str | None:
-    """計画ファイルのstemをClaude CodeのsessionTitleへ一度だけ反映する。"""
-    raw_plan_path = read_state(session_id).get("current_plan_file_path")
-    if not isinstance(raw_plan_path, str) or not raw_plan_path or not is_plan_main_file(raw_plan_path):
-        return None
-    plan_stem = pathlib.Path(raw_plan_path).stem
-    if not plan_stem or not claim_session_title(session_id, plan_stem):
-        return None
-    return plan_stem
-
-
 def _claim_verification_notice(session_id: str, now: float) -> bool:
     """通常発話の時刻を更新し、発話の内容を現物で確かめる手順を示す注記を注入する場合に真を返す。"""
     claimed = False
@@ -234,11 +197,9 @@ def _claim_verification_notice(session_id: str, now: float) -> bool:
     return claimed
 
 
-def _emit_hook_output(*, session_title_output: str | None, additional_context: str | None) -> None:
+def _emit_hook_output(*, additional_context: str | None) -> None:
     """UserPromptSubmitの値を持つ応答欄を1つのJSONとして出力する。"""
     hook_specific_output: dict[str, str] = {"hookEventName": "UserPromptSubmit"}
-    if session_title_output is not None:
-        hook_specific_output["sessionTitle"] = session_title_output
     if additional_context is not None:
         hook_specific_output["additionalContext"] = additional_context
     print(json.dumps({"hookSpecificOutput": hook_specific_output}, ensure_ascii=False))
@@ -273,7 +234,6 @@ def main(payload_text: str) -> int:
         if is_codex_payload(payload):
             return 0
         _emit_hook_output(
-            session_title_output=None,
             additional_context=_llm_notice(
                 "このターンは`Claude Code`のバックグラウンドタスク完了の自動通知で始まった。"
                 "ユーザーの発話ではない。応答と成果物は日本語で書く。",
@@ -317,22 +277,13 @@ def main(payload_text: str) -> int:
             name = match.group(1)
             full_name = f"agent-toolkit:{name}"
 
-            # 対応スキル別にフラグを設定する。sessionTitleの固定値判定より先に行い、
-            # その呼び出しでの起動を同じ応答へ反映できるようにする。
+            # 対応スキル別にフラグを設定する。
             if is_codex and (name in _PLAN_MODE_NAMES_EXTENDED or full_name in _PLAN_MODE_SKILL_NAMES):
                 update_state(session_id, _set_plan_mode_invoked)
             if name in _PROCESS_WI_NAMES_EXTENDED or full_name in _PROCESS_WI_SKILL_NAMES:
                 update_state(session_id, _set_process_wi_invoked)
 
-    # Claude CodeのUserPromptSubmitだけがsessionTitleを出力する。
-    # Codexはスキル起動の状態記録だけを行い、sessionTitleを出力しない。
-    session_title = None
-    if not is_codex:
-        session_title = _fixed_session_title(session_id)
-        if session_title is None:
-            session_title = _plan_session_title(session_id)
-
-    if session_title is not None or additional_context is not None:
-        _emit_hook_output(session_title_output=session_title, additional_context=additional_context)
+    if additional_context is not None:
+        _emit_hook_output(additional_context=additional_context)
 
     return 0

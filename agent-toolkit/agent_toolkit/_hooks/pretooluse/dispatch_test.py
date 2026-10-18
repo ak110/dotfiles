@@ -38,7 +38,14 @@ _HOOKS_CODEX_JSON_PATH = pathlib.Path(__file__).resolve().parents[3] / "hooks" /
 @pytest.mark.parametrize("tool_name", sorted(agent_checks.AGENTS_SERVER_HOOK_TOOL_NAMES))
 def test_agents_server_pass_uses_host_output_contract(tmp_path: pathlib.Path, host: str, tool_name: str) -> None:
     """全agents_server通過の生成箇所が、ホスト別の公開hook契約へ到達する。"""
-    _write_session_state(tmp_path, "host-pass", {"agents_server_cwd_by_session": {"remote": str(tmp_path)}})
+    _write_session_state(
+        tmp_path,
+        "host-pass",
+        {
+            "agents_server_cwd_by_session": {"remote": str(tmp_path)},
+            "operation_skill_delivered_agents": {"agent-toolkit:delegation": ["main"]},
+        },
+    )
     result = _run(
         {
             "tool_name": tool_name,
@@ -71,6 +78,7 @@ def test_continuation_warning_preserves_host_contract(
     tmp_path: pathlib.Path, host: str, operation: str, tool_input: dict, missing: str
 ) -> None:
     """継続入力の各警告付き通過が追加文脈を保持する。"""
+    _write_session_state(tmp_path, "host-warning", {"operation_skill_delivered_agents": {"agent-toolkit:delegation": ["main"]}})
     result = _run(
         {
             "tool_name": f"mcp__agents_server__{operation}",
@@ -1194,10 +1202,10 @@ class TestPlanFileDoesNotRequireTextlintRead:
 
 
 class TestResponseLanguageCheck:
-    """英語の応答後は日本語の書き直しまで操作を止める。"""
+    """PreToolUseは直接入力を判定し、transcriptの判定はmodへ委ねる。"""
 
     @pytest.mark.parametrize("delegated", ["0", "1"])
-    def test_blocks_english_until_rewritten(self, tmp_path: pathlib.Path, delegated: str) -> None:
+    def test_transcript_language_does_not_block_current_operation(self, tmp_path: pathlib.Path, delegated: str) -> None:
         transcript = tmp_path / "transcript.jsonl"
         payload = {"tool_name": "Read", "tool_input": {"file_path": str(tmp_path / "file")}, "transcript_path": str(transcript)}
         env = {**_plan_file_state_env(tmp_path), "AGENT_TOOLKIT_DELEGATED_SESSION": delegated}
@@ -1217,9 +1225,7 @@ class TestResponseLanguageCheck:
         write("Read the draft and evidence.")
         first = _run(payload, env_overrides=env)
         repeated = _run(payload, env_overrides=env)
-        assert first.returncode == repeated.returncode == 2
-        assert "日本語で書き直す" in first.stderr
-        assert "識別子と名前" in first.stderr
+        assert first.returncode == repeated.returncode == 0
         write("原稿と根拠を読みます。")
         assert _run(payload, env_overrides=env).returncode == 0
 
@@ -1275,7 +1281,7 @@ class TestRemovedChecksAreSilent:
     )
     def test_bash_input_passes_without_output(self, tmp_path: pathlib.Path, command: str) -> None:
         # 検索コマンドは`agent-toolkit:search`の未起動の警告を返すため、起動済みの文脈で撤去済みの判定だけを確かめる。
-        _write_session_state(tmp_path, "removed-bash", {"operation_skill_ready_agents": {"agent-toolkit:search": ["main"]}})
+        _write_session_state(tmp_path, "removed-bash", {"operation_skill_delivered_agents": {"agent-toolkit:search": ["main"]}})
         result = _run(
             {"tool_name": "Bash", "tool_input": {"command": command}, "session_id": "removed-bash", "cwd": str(tmp_path)},
             env_overrides=_plan_file_state_env(tmp_path),
@@ -1317,7 +1323,7 @@ class TestRemovedChecksAreSilent:
             _write_session_state(
                 tmp_path,
                 f"removed-tool-{index}",
-                {"operation_skill_ready_agents": {"agent-toolkit:delegation": ["main"]}},
+                {"operation_skill_delivered_agents": {"agent-toolkit:delegation": ["main"]}},
             )
             result = _run(
                 {**payload, "session_id": f"removed-tool-{index}", "cwd": str(tmp_path)},

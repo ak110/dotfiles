@@ -7,11 +7,10 @@ from __future__ import annotations
 
 import json
 import pathlib
+import tempfile
 
 import pytest
 
-from agent_toolkit._agents_server import claude as claude_backend
-from agent_toolkit._agents_server import claude_settings
 from agent_toolkit._hooks import rules_context
 from agent_toolkit._hooks.pretooluse import operation_skills
 from agent_toolkit._testing.helpers import SESSION_STATE_FILENAME_TEMPLATE
@@ -24,8 +23,7 @@ from agent_toolkit._testing.pretooluse_support import (
 )
 
 _SEARCH_SKILL = "agent-toolkit:search"
-_SEARCH_SKILL_MD = pathlib.Path(__file__).resolve().parents[3] / "skills" / "search" / "SKILL.md"
-_WARN_OPENING = '<atk-auto source="pretooluse" kind="warn">'
+_WARN_OPENING = '<atk-auto source="pretooluse" kind="block">'
 
 _DELEGATION_TOOLS = (
     "Agent",
@@ -44,12 +42,10 @@ def test_delegation_warning_preserves_permission_and_context(tmp_path: pathlib.P
     # 継続入力の欠落は既存の警告判定を通し、未起動通知との結合も確かめる。
     payload = {"tool_name": tool, "tool_input": {"prompt": "調査する"}, "session_id": "delegation"}
     first = _run(payload, env)
-    assert first.returncode == 0
-    assert "agent-toolkit:delegation" in _additional_context(first)
-    if tool.startswith("mcp__"):
-        assert json.loads(first.stdout)["hookSpecificOutput"]["permissionDecision"] == "allow"
+    assert first.returncode == 2
+    assert "agent-toolkit:delegation" in first.stderr
     assert "agent-toolkit:delegation" not in _additional_context(_run(payload, env))
-    assert "agent-toolkit:delegation" in _additional_context(_run({**payload, "agent_id": "child"}, env))
+    assert "agent-toolkit:delegation" in _run({**payload, "agent_id": "child"}, env).stderr
 
 
 @pytest.mark.parametrize("tool", _DELEGATION_TOOLS)
@@ -59,10 +55,10 @@ def test_delegation_ready_and_codex_exclusion(tmp_path: pathlib.Path, tool: str)
     payload = {"tool_name": tool, "tool_input": {"prompt": "調査する"}, "session_id": "ready"}
     assert "agent-toolkit:delegation" not in _additional_context(_run(payload, env))
     codex = {**payload, "session_id": "codex-delegation", "turn_id": "turn-1"}
-    assert "agent-toolkit:delegation" not in _additional_context(_run(codex, env))
+    assert _run(codex, env).returncode == 2
     state_file = tmp_path / SESSION_STATE_FILENAME_TEMPLATE.format(session_id="codex-delegation")
     state = _read_session_state(tmp_path, "codex-delegation") if state_file.exists() else {}
-    assert rules_context.OPERATION_SKILL_READY_KEY not in state
+    assert state[rules_context.OPERATION_SKILL_READY_KEY]["agent-toolkit:delegation"] == ["main"]
 
 
 def test_blocked_delegation_does_not_consume_warning(tmp_path: pathlib.Path) -> None:
@@ -75,7 +71,7 @@ def test_blocked_delegation_does_not_consume_warning(tmp_path: pathlib.Path) -> 
     state = _read_session_state(tmp_path, "blocked") if state_file.exists() else {}
     assert rules_context.OPERATION_SKILL_READY_KEY not in state
     valid = {**blocked, "tool_name": _DELEGATION_TOOLS[5], "tool_input": {}}
-    assert "agent-toolkit:delegation" in _additional_context(_run(valid, env))
+    assert "agent-toolkit:delegation" in _run(valid, env).stderr
 
 
 def _bash(command: str, session_id: str, **extra: object) -> dict:
@@ -98,8 +94,8 @@ def _record_skill(env: dict[str, str], session_id: str, skill: str, **extra: obj
 
 def _search_warning(payload: dict, env: dict[str, str]) -> str:
     result = _run(payload, env)
-    assert result.returncode == 0
-    return _additional_context(result)
+    assert result.returncode in {0, 2}
+    return result.stderr if result.returncode == 2 else _additional_context(result)
 
 
 @pytest.mark.parametrize(
@@ -164,48 +160,6 @@ def test_subagent_context_is_separate_from_main(tmp_path: pathlib.Path) -> None:
     assert _search_warning(_bash("rg x", "t"), env).startswith(_WARN_OPENING)
 
 
-# 軽量起動の各modeで発火し得る検索の入力。許可ツールに含まれるツールだけを使う。
-_LIGHTWEIGHT_SEARCH_PAYLOADS = [
-    ("explore", {"tool_name": "Grep", "tool_input": {"pattern": "x"}}),
-    ("explore", {"tool_name": "Glob", "tool_input": {"pattern": "**/*.py"}}),
-    ("shell", {"tool_name": "Bash", "tool_input": {"command": "git grep -n -F x"}}),
-    ("write", {"tool_name": "Grep", "tool_input": {"pattern": "x"}}),
-    ("write", {"tool_name": "Glob", "tool_input": {"pattern": "*.md"}}),
-]
-
-
-@pytest.mark.parametrize(
-    ("launch_kind", "payload"),
-    _LIGHTWEIGHT_SEARCH_PAYLOADS,
-    ids=[f"{kind}-{payload['tool_name']}" for kind, payload in _LIGHTWEIGHT_SEARCH_PAYLOADS],
-)
-def test_claude_warning_offers_skill_md_read_for_sessions_without_skill(
-    tmp_path: pathlib.Path, launch_kind: claude_backend.LaunchKind, payload: dict
-) -> None:
-    """Claudeの警告は`Skill`の起動と、`Skill`を使えない主体が実在する`SKILL.md`を`Read`で読む操作を併記する。
-
-    `agents_server`の軽量起動の委譲先は`Skill`を使えずスキルの一覧も届かないため、`Skill`だけを示す警告では
-    起動の失敗を報告するだけで検索の基準へ到達できない。案内する`Read`が各modeの許可ツールにあることも確かめる。
-    """
-    allowed_tools = claude_backend._LAUNCH_ALLOWED_TOOLS[launch_kind]  # pylint: disable=protected-access
-    assert "Read" in allowed_tools
-    options = claude_backend._build_options(str(tmp_path), None, None, launch_kind=launch_kind)  # pylint: disable=protected-access
-    assert "Skill" in options.disallowed_tools
-    claude_settings.cleanup_settings(options)
-    assert payload["tool_name"] in allowed_tools
-    env = {**_plan_file_state_env(tmp_path), "AGENT_TOOLKIT_DELEGATED_SESSION": "1"}
-
-    warning = _search_warning({**payload, "session_id": f"light-{launch_kind}"}, env)
-
-    assert warning.startswith(_WARN_OPENING)
-    assert "起動しないまま" not in warning
-    assert "未適用の場合" in warning
-    assert f"ツール`Skill`で`{_SEARCH_SKILL}`を起動し" in warning
-    assert "ツール一覧に`Skill`が無い主体" in warning
-    assert f"`{_SEARCH_SKILL_MD}`）を`Read`で全文読んで" in warning
-    assert _SEARCH_SKILL_MD.is_file()
-
-
 @pytest.mark.parametrize(
     ("command", "expected"),
     [
@@ -250,23 +204,14 @@ def test_write_paths_respect_option_roles(command: str, expected: list[str], tmp
     ],
     ids=["rg", "git-grep", "find", "grep-r", "root-cause-bash", "root-cause-apply_patch", "managed-temp", "agent-doc"],
 )
-def test_codex_operations_do_not_warn_or_record(tmp_path: pathlib.Path, payload: dict) -> None:
-    """Codexでは表の全操作で未起動の警告も起動済みの記録も生じない。
-
-    Codexは`SKILL.md`の読取でスキルを適用し、hookはその読取を起動として観測できない。
-    警告すると、全文を読んだ後の正当な操作にも再読と結果の見直しを求める。
-    """
+def test_codex_operations_deliver_then_pass(tmp_path: pathlib.Path, payload: dict) -> None:
+    """Codexでも初回に本文を配送し、再発行は追加読取を要求しない。"""
     env = _plan_file_state_env(tmp_path)
-    codex_payload = {**payload, "turn_id": "turn-1"}
-
-    for _ in range(2):
-        result = _run(codex_payload, env)
-        assert result.returncode == 0
-        assert "を起動しないまま" not in _additional_context(result)
-
-    state_file = tmp_path / SESSION_STATE_FILENAME_TEMPLATE.format(session_id=payload["session_id"])
-    state = _read_session_state(tmp_path, payload["session_id"]) if state_file.exists() else {}
-    assert rules_context.OPERATION_SKILL_READY_KEY not in state
+    payload = {**payload, "turn_id": "turn-1"}
+    first = _run(payload, env)
+    assert first.returncode == 2
+    assert "同じ操作を再発行" in first.stderr
+    assert _run(payload, env).returncode == 0
 
 
 @pytest.mark.parametrize(
@@ -347,8 +292,8 @@ def test_edit_tool_agent_document_writing_and_skill_context(tmp_path: pathlib.Pa
 
 def test_search_warning_joins_other_warnings(tmp_path: pathlib.Path) -> None:
     result = _run(_bash("rg x; printf rule > AGENTS.md", "s"), _plan_file_state_env(tmp_path))
-    assert result.returncode == 0
-    context = json.loads(result.stdout)["hookSpecificOutput"]["additionalContext"]
+    assert result.returncode == 2
+    context = result.stderr
     assert context.count(_WARN_OPENING) == 2
     assert f"`{_SEARCH_SKILL}`" in context
     assert "agent-toolkit:writing-standards" in context
@@ -505,7 +450,7 @@ _ROOT_CAUSE_BODY = "# 表題\n\n## 原因分析\n\n| 要因系統 | L1 現象 |\
 
 
 def _bugfix_warnings(context: str) -> int:
-    return context.count(f"原因分析の記述の呼び出しで、`{_BUGFIX_SKILL}`の起動記録を確認できない")
+    return context.count(f"原因分析の記述の実行前に`{_BUGFIX_SKILL}`の本文を配送する")
 
 
 @pytest.mark.parametrize(
@@ -530,8 +475,8 @@ def test_root_cause_writing_without_bugfix_warns_once_per_context(tmp_path: path
     env = _plan_file_state_env(tmp_path)
     payload = {**payload, "session_id": "root-cause"}
     first = _run(payload, env)
-    assert first.returncode == 0
-    assert _bugfix_warnings(_additional_context(first)) == 1
+    assert first.returncode == 2
+    assert _bugfix_warnings(first.stderr) == 1
     second = _run(payload, env)
     assert second.returncode == 0
     assert _bugfix_warnings(_additional_context(second)) == 0
@@ -562,7 +507,7 @@ _MANAGED_TEMP_SKILL = "agent-toolkit:managed-temp"
 
 
 def _managed_temp_warnings(context: str) -> int:
-    return context.count(f"`{_MANAGED_TEMP_SKILL}`の起動記録を確認できない")
+    return context.count(f"個別のmanaged-temp領域の作成の実行前に`{_MANAGED_TEMP_SKILL}`の本文を配送する")
 
 
 @pytest.mark.parametrize(
@@ -586,8 +531,8 @@ def test_managed_temp_create_without_skill_warns_once_per_context(tmp_path: path
     """
     env = _plan_file_state_env(tmp_path)
     first = _run(_bash(command, "managed-temp"), env)
-    assert first.returncode == 0
-    assert _managed_temp_warnings(_additional_context(first)) == 1
+    assert first.returncode == 2
+    assert _managed_temp_warnings(first.stderr) == 1
     second = _run(_bash(command, "managed-temp"), env)
     assert _managed_temp_warnings(_additional_context(second)) == 0
 
@@ -612,6 +557,28 @@ def test_managed_temp_create_after_skill_does_not_warn(tmp_path: pathlib.Path, s
     ],
 )
 def test_other_commands_do_not_warn_managed_temp(tmp_path: pathlib.Path, command: str) -> None:
-    result = _run(_bash(command, "s"), _plan_file_state_env(tmp_path))
+    env = _plan_file_state_env(tmp_path)
+    _record_skill(env, "s", "search")
+    result = _run(_bash(command, "s"), env)
     assert result.returncode == 0
     assert _managed_temp_warnings(_additional_context(result)) == 0
+
+
+@pytest.mark.parametrize("source", ["compact", "clear"])
+def test_legacy_warning_and_context_reset_require_delivery(
+    tmp_path: pathlib.Path,
+    source: str,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """旧版の警告済み状態と文脈破棄後は配送を省かない。"""
+    env = _plan_file_state_env(tmp_path)
+    state_path = tmp_path / SESSION_STATE_FILENAME_TEMPLATE.format(session_id="legacy")
+    state_path.write_text(json.dumps({"operation_skill_ready_agents": {_SEARCH_SKILL: ["main"]}}), encoding="utf-8")
+    payload = {"tool_name": "Grep", "tool_input": {"pattern": "x"}, "session_id": "legacy"}
+    assert _run(payload, env).returncode == 2
+    assert _run(payload, env).returncode == 0
+    monkeypatch.setattr(tempfile, "tempdir", str(tmp_path))
+    assert rules_context.main(json.dumps({"hook_event_name": "SessionStart", "session_id": "legacy", "source": source})) == 0
+    capsys.readouterr()
+    assert _run(payload, env).returncode == 2

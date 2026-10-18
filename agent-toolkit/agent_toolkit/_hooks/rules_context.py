@@ -103,12 +103,11 @@ USER_CONFIRMATION_PENDING_KEY = "user_confirmation_skill_pending"
 """`agent-toolkit:user-confirmation-and-report`の内容が文脈に無い状態を示すセッション状態のキー。"""
 _CONTEXT_LOSING_SOURCES = frozenset({"startup", "clear", "compact"})
 """会話の文脈を引き継がずに始まるSessionStartの`source`。`resume`と`fork`は文脈を引き継ぐため含めない。"""
-OPERATION_SKILL_READY_KEY = "operation_skill_ready_agents"
+OPERATION_SKILL_READY_KEY = "operation_skill_delivered_agents"
 """操作を起動の契機とするスキルの名前から、起動済みの呼び出し主体の一覧への対応を持つセッション状態のキー。
 
-Claude Codeでは、PreToolUseの`pretooluse/operation_skills.py`が警告を返した時点と、
-PostToolUse(Skill)がスキルの起動を受けた時点で記録し、同モジュールの判定が記録を読む。
-Codexは起動済みを観測できず同モジュールが警告しないため、記録しない。
+PreToolUseが本文を配送した時点と、PostToolUse(Skill)が起動を観測した時点で記録する。
+Claude CodeとCodexで同じ契約を使い、旧版の警告済みキーは読まない。
 """
 _OPERATION_SKILL_RESET_SOURCES = frozenset({"clear", "compact"})
 """メイン会話の起動済みの記録を除くSessionStartの`source`。新しいセッションの`startup`は記録を持たない。"""
@@ -117,7 +116,7 @@ _OPERATION_SKILL_RESET_SOURCES = frozenset({"clear", "compact"})
 def reset_main_operation_skill_ready(session_id: str) -> None:
     """メイン会話の起動済みの記録を除く。
 
-    `clear`と`compact`ではスキルの本文が文脈から外れるため、次の操作で再び警告して起動を促す。
+    `clear`と`compact`ではスキルの本文が文脈から外れるため、次の操作で再配送する。
     サブエージェントの記録は親の会話圧縮と独立した文脈のため変えない。
     """
 

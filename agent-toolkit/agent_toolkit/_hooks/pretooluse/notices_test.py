@@ -82,8 +82,8 @@ class TestCodexBashCheckSelection:
             payload["turn_id"] = "turn-1"
         return payload
 
-    def test_transcript_language_check_is_claude_only(self, tmp_path: pathlib.Path) -> None:
-        """Codexではtranscriptを使って応答言語を判定しない。"""
+    def test_pretooluse_leaves_transcript_language_to_mod(self, tmp_path: pathlib.Path) -> None:
+        """Claude CodeとCodexのPreToolUseはtranscriptの応答言語で遮断しない。"""
         entry = {
             "type": "assistant",
             "message": {
@@ -108,9 +108,9 @@ class TestCodexBashCheckSelection:
         claude_result = _run(claude_payload, env_overrides=env)
         wait_result = _run(codex_payload, env_overrides=env)
 
-        assert claude_result.returncode == 2
+        assert claude_result.returncode == 0
         assert claude_result.stdout == ""
-        assert "英語主体" in claude_result.stderr
+        assert not claude_result.stderr
         assert wait_result.returncode == 0
         assert wait_result.stdout == ""
         assert "英語主体" not in wait_result.stderr

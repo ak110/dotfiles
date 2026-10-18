@@ -8,7 +8,7 @@ import subprocess
 
 import pytest
 
-from agent_toolkit._testing.pretooluse_support import _SHARE_DIR, _plan_file_state_env, _run
+from agent_toolkit._testing.pretooluse_support import _SHARE_DIR, _plan_file_state_env, _run, _run_posttooluse
 
 _EXEC_DOCUMENT = _SHARE_DIR / "exec.subagent.md"
 
@@ -17,14 +17,27 @@ def _invoke(tool_name: str, prompt: str, tmp_path: pathlib.Path, mode: str | Non
     tool_input = {"prompt": prompt, "cwd": str(tmp_path), "model_type": "high_tier"}
     if mode is not None:
         tool_input["mode"] = mode
+    session_id = f"task-document-launch-{tool_name.rsplit('__', 1)[-1].lower()}-{mode}"
+    env = _plan_file_state_env(tmp_path)
+    # 本文の取得後の文脈で、役割文書の入力判定だけを検証する。
+    recorded = _run_posttooluse(
+        {
+            "hook_event_name": "PostToolUse",
+            "tool_name": "Skill",
+            "tool_input": {"skill": "agent-toolkit:delegation"},
+            "session_id": session_id,
+        },
+        env,
+    )
+    assert recorded.returncode == 0
     return _run(
         {
             "tool_name": tool_name,
             "tool_input": tool_input,
-            "session_id": f"task-document-launch-{tool_name.rsplit('__', 1)[-1].lower()}-{mode}",
+            "session_id": session_id,
             "cwd": str(tmp_path),
         },
-        env_overrides=_plan_file_state_env(tmp_path),
+        env_overrides=env,
     )
 
 
