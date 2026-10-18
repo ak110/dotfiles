@@ -14,6 +14,7 @@ from agent_toolkit import atk
 from agent_toolkit._atk import help_text as _atk_help
 from agent_toolkit._atk import outcome as _outcome
 from agent_toolkit._common import wait_schedule
+from agent_toolkit._testing import cli_examples
 
 
 def test_agents_help_matches_mcp_and_cli_operations(capsys: pytest.CaptureFixture[str]) -> None:
@@ -98,6 +99,28 @@ def test_every_command_describes_purpose_scene_effect_precondition_and_recovery(
         assert "```" not in parser.epilog, command
         examples = parser.epilog.split("実行例:\n\n", maxsplit=1)[1].split("\n\n", maxsplit=1)[0]
         assert all(line.startswith("  ") for line in examples.splitlines()), command
+
+
+def test_help_examples_match_real_command_parsers() -> None:
+    """ヘルプの実物に書かれた引数名・必須指定・選択肢を実parserへ渡す。"""
+    parsers: dict[str, argparse.ArgumentParser] = {}
+    for command, parser, _summary in _walk_commands():
+        assert parser.epilog is not None
+        for line, example in cli_examples.examples(parser.epilog):
+            cli_examples.validate_example(example, source=f"{command} --help:{line}", parsers=parsers)
+
+
+def test_help_example_choice_and_separator_mutations_are_detected(monkeypatch: pytest.MonkeyPatch) -> None:
+    """ヘルプ実物の選択肢変更と区切りの移動を、受理側に接続して検出する。"""
+    for epilog in (
+        "実行例:\n\n  atk wi list --type unsupported-choice",
+        "実行例:\n\n  atk read-file -- /absolute/file --max-bytes 16000",
+        "実行例:\n\n  atk plans checkout",
+    ):
+        with monkeypatch.context() as patch:
+            patch.setitem(_atk_help.HELP["atk wi list"], "epilog", epilog)
+            with pytest.raises(AssertionError, match="--help"):
+                test_help_examples_match_real_command_parsers()
 
 
 @pytest.mark.parametrize(
