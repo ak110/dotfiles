@@ -207,8 +207,9 @@ FAILURE_EVENT_FIELDS = (
     "command_full",
     "record",
     "line",
+    "hook_notices",
 )
-"""`failure_candidate_exclusion`と`failure_signature`が読むイベントの欄。
+"""失敗候補の分類と署名が読むイベントの欄。hook_noticesは同じ位置の通知のtextとhook_nameを保持する。
 
 失敗候補の`failure_event`へ代表イベントから写し、失敗署名の台帳はこの欄を保存して読込時に判定し直す。
 """
@@ -456,24 +457,18 @@ def _candidate_events(
             seen.add(identity)
             text = event.get("text")
             normalized_text = " ".join(text.split()) if isinstance(text, str) else ""
-            if candidate_kind in {"warning", "tool-failure"} and any(
+            if candidate_kind == "warning" and any(
                 _same_hook_event(candidate_kind, event, notice) for notice in notices_by_locator.get((record, line), [])
             ):
                 excluded["hook-notice-represented"] += 1
                 continue
             event_kind = candidate_kind
             if candidate_kind in FAILURE_CANDIDATE_KINDS:
-                # hook通知へ置き換える失敗は置き換え前の結果の区分だけを適用し、失敗候補としての区分を適用しない。
-                hook_event = (
-                    _hook_originated_event(candidate_kind, event, hook_notice_origins)
-                    if candidate_kind == "tool-failure"
-                    else None
-                )
-                exclusion = (
-                    failure_candidate_exclusion(candidate_kind, event)
-                    if hook_event is None
-                    else _failure_result_exclusion(candidate_kind, _event_without_cd_prefix(event))
-                )
+                event["hook_notices"] = [
+                    {field: notice.get(field) for field in ("text", "hook_name")}
+                    for notice in notices_by_locator.get((record, line), [])
+                ]
+                exclusion, hook_event = classify_failure_candidate(candidate_kind, event)
                 if exclusion is not None:
                     excluded[exclusion] += 1
                     continue
@@ -948,12 +943,26 @@ def _initial_skill_input_locators(
     return (main_record_id, int(request["line"])), (main_record_id, int(body["line"]))
 
 
+def classify_failure_candidate(candidate_kind: str, event: dict[str, Any]) -> tuple[str | None, dict[str, Any] | None]:
+    """抽出と台帳で共通の入力から、除外区分または置換先のhook通知を返す。"""
+    if candidate_kind == "tool-failure":
+        notices = event.get("hook_notices", [])
+        if isinstance(notices, list) and any(
+            isinstance(notice, dict) and _same_hook_event(candidate_kind, event, notice) for notice in notices
+        ):
+            return "hook-notice-represented", None
+        hook_event = _hook_originated_event(candidate_kind, event, [])
+        if hook_event is not None:
+            exclusion = _failure_result_exclusion(candidate_kind, _event_without_cd_prefix(event))
+            return exclusion, hook_event
+    return failure_candidate_exclusion(candidate_kind, event), None
+
+
 def failure_candidate_exclusion(candidate_kind: str, event: dict[str, Any]) -> str | None:
     """失敗候補から除く区分を、1件のイベントの欄（`FAILURE_EVENT_FIELDS`）だけで判定して返す。除かない場合は`None`を返す。
 
     候補の抽出と失敗署名の台帳の読込が同じ判定を使い、除外規則の改訂を記録済みの台帳にも次の準備から適用する。
-    同じ位置のhook通知との対応で決まる区分（`hook-notice-represented`とhook通知への置き換え）は、
-    1件のイベントでは判定できないため呼び出し側が扱う。
+    hook通知との対応と置き換えを含む共通の分類は`classify_failure_candidate`が行う。
     """
     # 除外の判定は終了コードを帰属させるコマンドで行い、候補の署名と表示は記録どおりのイベントで行う。
     attributed = _event_without_cd_prefix(event)

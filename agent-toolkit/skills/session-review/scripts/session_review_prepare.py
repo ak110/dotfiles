@@ -691,7 +691,8 @@ def _rejudge_failure_record(item: dict[str, Any]) -> dict[str, Any] | None:
     candidate_kind = item.get("candidate_kind")
     if not isinstance(event, dict) or candidate_kind not in session_evidence_candidates.FAILURE_CANDIDATE_KINDS:
         raise ValueError("判定に使う欄が不正")
-    if session_evidence_candidates.failure_candidate_exclusion(candidate_kind, event) is not None:
+    exclusion, hook_event = session_evidence_candidates.classify_failure_candidate(candidate_kind, event)
+    if exclusion is not None or hook_event is not None:
         return None
     signature, summary = session_evidence_candidates.failure_signature(candidate_kind, event)
     return {**item, "failure_signature": signature, "failure_summary": summary}
