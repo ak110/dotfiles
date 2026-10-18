@@ -58,7 +58,9 @@ atk wi process-loop all-repos
 all-reposでは次の起動集合で1回受領し、各担当へ中継して、その担当の対象に関する部分を適用する。
 all-reposの`--resume`は保持した担当session IDを指定する。
 
-初期選定が1レーンなら、各対象リポジトリの同じレーン担当が計画・実装・独立した実行レビューの調整・統合を続ける。オーケストレーターはユーザー判断と最終結果を中継する。1レーンでも専用worktreeと独立文脈レビューを保ち、`atk lane create`・`integrate`・`delete`で準備・統合・回収を扱う。
+各対象リポジトリに担当エージェントを1人ずつ置く。あるリポジトリの初期選定が1レーンなら、その担当が計画・実装・独立した実行レビューの調整・統合を続ける。
+全体を調整する起動元のエージェントは、各担当が必要とするユーザー判断と最終結果をユーザーとの間で中継する。
+1レーンでも専用worktreeと独立文脈レビューを保ち、`atk lane create`・`integrate`・`delete`で準備・統合・回収を扱う。
 対象のWorktreeCreate/Removeを資源操作へ接続し、設定済みhookの失敗では途中資源を保持する。
 統合と計画保存・WI終端・統合済み記録を同じ操作で行い、失敗後は同じ入力で残工程から再開する。
 共通の運用は[推奨ワークフロー](claude-code-guide.md#推奨ワークフロー)、担当への受渡しは[all-repos-orchestration.md](../../agent-toolkit/skills/process-wi/references/all-repos-orchestration.md)を参照。
