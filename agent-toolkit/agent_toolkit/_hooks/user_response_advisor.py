@@ -4,7 +4,13 @@
 拡張思考の表示をエージェントから観測できないため、応答はユーザーへ届く本文の有無で判定する。
 ツール呼び出しより前の地の文が要約へ置き換わる事象をこの判定で検出することはしない。発話したつもりで届いていない事象は
 発話を契機とする判定では捉えられず、原文を`send_to_user`で運ぶ規範とツールで扱う（2026年10月6日、ユーザーの判断）。
-回答の意味を判定せず、拡張思考とツール呼び出しは本文へ数えない。
+回答の意味は判定せず、拡張思考とツール呼び出しは本文へ数えない。
+例外は人間の入力が単純な了承（ユーザーが原文で示した「単純に了承したパターン」）だけの場合で、了承の後にツールを呼ばず、
+`…`だけの本文で終えるStopは遮断しない。規範（`rules-main.md`「ユーザー向け発話ルール」と
+`rules-main.claude-code.md`「ターンの終え方」）は伝える内容が無い場合に`…`だけで終えることを許し、了承には伝える回答が無いためである。
+了承の判定は名指しした語の一覧への一致で閉じず、入力の全体をNFKC正規化と`casefold`の後に、了承を表す語、丁寧語・終助詞、
+末尾の記号・絵文字、読点による了承語どうしの連結だけから成るかを構成規則で確かめる。`?`は受理する記号に含めないため、問いは了承に当たらない。
+了承の後にツールを呼んだ場合は、観測した結果を伝える内容として持ち得て、フックはその有無を区別できないため、本文を求める。
 同じターンで可視本文を出力すれば解除できる。通知は伝える予定だった内容の再出力を求める。
 Stopの連続遮断上限は共通のStop処理に任せ、独自の状態や上限を持たない。
 
@@ -18,6 +24,8 @@ agent_idと委譲先の環境印でサブエージェントと委譲先を除く
 """
 
 import json
+import re
+import unicodedata
 
 from agent_toolkit._hooks import agent_id, notice
 from agent_toolkit._hooks import stop_session as _stop_session
@@ -28,6 +36,41 @@ lazy from agent_toolkit._common import transcript
 lazy from agent_toolkit._hooks.host import is_codex_payload
 
 _block_notice = notice.block_formatter("user_response_advisor")
+
+# 了承の構成規則。NFKC正規化と`casefold`の後の入力へ適用する。
+# 了承を表す語に丁寧語・終助詞が続く形を1単位とし、読点で単位を連結した入力の全体だけを了承とする。
+# 語の集合は概念の代表であり、単純な了承に当たる言い回しを受理できない場合はここへ加える。
+_ACKNOWLEDGEMENT_WORD = (
+    r"(?:ok(?:ay|ey)?|oke|おk|おけ|おっけ|おーけ|オーケ|オッケ|オケ|りょ(?:う(?:かい)?)?|了解|了承|承知|把握|"
+    r"わか(?:った|りました|り)|分か(?:った|りました|り)|はい|うん|ええ|いいよ|いいです|いいね|"
+    r"yes|yep|yeah|sure|roger|ラジャ)"
+)
+_ACKNOWLEDGEMENT_SUFFIX = r"(?:いたしました|しました|でした|です|っす|す|だよ|だ|よ|ね|な|ー|~|〜)*"
+_ACKNOWLEDGEMENT = re.compile(
+    rf"{_ACKNOWLEDGEMENT_WORD}{_ACKNOWLEDGEMENT_SUFFIX}(?:[、,]\s*{_ACKNOWLEDGEMENT_WORD}{_ACKNOWLEDGEMENT_SUFFIX})*"
+)
+# 了承の末尾に付く記号。問いを表す`?`は含めない。
+_TRAILING_MARKS = frozenset("!。.・…~〜ー♪")
+_TRAILING_CATEGORIES = frozenset({"So", "Sk", "Mn", "Me", "Cf"})
+
+
+def _is_acknowledgement(prompt: str) -> bool:
+    """入力の全体が単純な了承だけを伝えるかを構成規則で判定する。"""
+    text = unicodedata.normalize("NFKC", prompt).strip().casefold()
+    end = len(text)
+    while end and (
+        text[end - 1] in _TRAILING_MARKS
+        or text[end - 1].isspace()
+        or unicodedata.category(text[end - 1]) in _TRAILING_CATEGORIES
+    ):
+        end -= 1
+    return _ACKNOWLEDGEMENT.fullmatch(text[:end]) is not None
+
+
+def _calls_tool(message: object) -> bool:
+    """assistantのメッセージがツール呼び出しを含むかを返す。"""
+    content = message.get("content") if isinstance(message, dict) else None
+    return isinstance(content, list) and any(isinstance(block, dict) and block.get("type") == "tool_use" for block in content)
 
 
 def evaluate(payload_text: str) -> tuple[str, str]:
@@ -46,6 +89,10 @@ def evaluate(payload_text: str) -> tuple[str, str]:
         return "approve", ""
 
     needs_response = False
+    # 最後の可視本文より後の人間の入力が全て了承か、その後にツールを呼んだか、`…`だけの本文を出力したかを記録する。
+    acknowledged_only = False
+    called_tool = False
+    ellipsis_only = False
     for line in lines:
         try:
             entry = json.loads(line)
@@ -56,15 +103,22 @@ def evaluate(payload_text: str) -> tuple[str, str]:
         prompt = _input_text(entry)
         if prompt is not None:
             if _is_human_input(entry) and not entry.get("isMeta") and not _is_hook_input(prompt):
+                if not needs_response:
+                    acknowledged_only, called_tool, ellipsis_only = True, False, False
+                acknowledged_only = acknowledged_only and _is_acknowledgement(prompt)
                 needs_response = True
             elif not _is_human_input(entry) and prompt.lstrip().startswith("<task-notification>"):
                 needs_response = False
         elif entry.get("type") == "assistant":
-            text = transcript.visible_assistant_text(entry.get("message"))
+            message = entry.get("message")
+            text = transcript.visible_assistant_text(message)
             if any(not char.isspace() and char != "…" for char in text):
                 needs_response = False
+            elif needs_response:
+                called_tool = called_tool or _calls_tool(message)
+                ellipsis_only = ellipsis_only or "…" in text
 
-    if not needs_response:
+    if not needs_response or (acknowledged_only and not called_tool and ellipsis_only):
         return "approve", ""
     _stop_session.append_stop_log(session_id, "block_missing_user_response", {})
     delivery = "応答本文" if is_codex_payload(payload) else "mcp__agent-toolkit__send_to_user（無い環境では応答本文）"

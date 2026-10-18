@@ -162,3 +162,63 @@ def test_human_notification_quote_still_requires_response(
         else {**_HUMAN, "message": {"content": prompt}}
     )
     assert _stop([entry, _assistant("…")], tmp_path, capsys)["decision"] == "block"
+
+
+def _said(prompt: str) -> dict:
+    return {**_HUMAN, "message": {"content": prompt}}
+
+
+_TOOL_CALL = {"type": "assistant", "message": {"content": [{"type": "tool_use", "id": "toolu_1", "name": "Bash", "input": {}}]}}
+_TOOL_RESULT = {"type": "user", "message": {"content": [{"type": "tool_result", "content": "結果"}]}}
+_QUEUED_OK = {
+    "type": "attachment",
+    "attachment": {"type": "queued_command", "prompt": "OK", "origin": {"kind": "human"}},
+}
+
+
+@pytest.mark.parametrize(
+    "human",
+    [
+        _said("OK"),
+        _said("ok"),
+        _said("OK!"),
+        _said("ＯＫ"),
+        _said("了解"),
+        _QUEUED_OK,
+        _said("わかりました"),
+        _said("OKです"),
+        _said("いいよ"),
+        _said("はい、了解です"),
+        _said("了解👍"),
+    ],
+    ids=["OK", "ok", "OK!", "fullwidth", "了解", "queued", "わかりました", "OKです", "いいよ", "連結", "絵文字"],
+)
+def test_stop_accepts_ellipsis_after_acknowledgement(
+    human: dict, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """単純な了承には伝える回答が無く、ツールを呼ばずに`…`だけで終える規範どおりのStopを遮断しない。
+
+    了承は構成規則で判定するため、`わかりました`・`OKです`のように例示した語以外の言い回しも受理する。
+    """
+    output = _stop([_assistant("前の回答"), human, _assistant("…")], tmp_path, capsys)
+    assert 'source="user_response_advisor"' not in output.get("reason", "")
+
+
+@pytest.mark.parametrize(
+    "entries",
+    [
+        [_said("OK"), _assistant("")],
+        [_said("OK"), _TOOL_CALL, _TOOL_RESULT, _assistant("…")],
+        [_said("OK?"), _assistant("…")],
+        [_said("OK、あとXも直して"), _assistant("…")],
+        [_said("進捗を報告して"), _said("OK"), _assistant("…")],
+    ],
+    ids=["empty", "tool-after-ack", "question", "request-after-ack", "mixed-inputs"],
+)
+def test_stop_blocks_acknowledgement_that_still_requires_response(
+    entries: list[dict], tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """本文が空、了承の後のツール呼び出し、問い・依頼を含む入力、了承でない入力の混在では本文を求める。"""
+    output = _stop([_assistant("前の回答"), *entries], tmp_path, capsys)
+    assert output["decision"] == "block"
+    assert 'source="user_response_advisor"' in output["reason"]
