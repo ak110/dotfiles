@@ -46,12 +46,23 @@ CODEX_PLUGIN_UPDATED=0
 
 _cleanup() {
     # エラー終了時に既存の TARGET_DIR を可能な限り復元する。
-    if [ "$REPLACED" -eq 0 ] && [ -n "$OLD_DIR" ] && [ -d "$OLD_DIR" ] && [ ! -d "$TARGET_DIR" ]; then
-        mv "$OLD_DIR" "$TARGET_DIR" 2>/dev/null || true
+    if [ "$REPLACED" -eq 0 ] && [ -n "$OLD_DIR" ] && [ -d "$OLD_DIR" ] && [ ! -e "$TARGET_DIR" ]; then
+        if mv "$OLD_DIR" "$TARGET_DIR" 2>/dev/null; then
+            OLD_DIR=""
+        fi
     fi
-    # STAGE_DIR と OLD_DIR の残骸を削除する。
     [ -n "$STAGE_DIR" ] && [ -d "$STAGE_DIR" ] && rm -rf "$STAGE_DIR"
-    [ -n "$OLD_DIR" ] && [ -d "$OLD_DIR" ] && rm -rf "$OLD_DIR"
+    # 退避した旧規範は、新配置の確定後か復元の成功後だけ回収する。
+    # 確定前に復元できなかった場合は、旧規範の最後の実体を復旧用に保持する。
+    if [ -n "$OLD_DIR" ] && [ -d "$OLD_DIR" ]; then
+        if [ "$REPLACED" -eq 1 ]; then
+            rm -rf "$OLD_DIR"
+        else
+            echo "旧規範を配置先へ戻せなかったため、退避先に保持しました: $OLD_DIR" >&2
+            echo "次の操作: 配置先 $TARGET_DIR の親ディレクトリの書込権限と配置先の残存物を確認して原因を解消し、配置先が無い状態で次のコマンドを実行して旧規範を戻してください。" >&2
+            echo "mv \"$OLD_DIR\" \"$TARGET_DIR\"" >&2
+        fi
+    fi
     return 0
 }
 

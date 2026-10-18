@@ -171,7 +171,13 @@ def run_installer(
     conflict_version: str = "",
     create_cache: bool = True,
     check: bool = True,
+    extra_env: dict[str, str] | None = None,
+    ps1_script: pathlib.Path | None = None,
 ) -> subprocess.CompletedProcess[str]:
+    """インストーラーを隔離したHOMEとstubのPATHで公開入口から実行する。
+
+    `ps1_script`はPowerShell版の起動ファイルを差し替える（cmdletの失敗注入用の起動ラッパーなど）。
+    """
     path_parts = [str(stub_bin)] if stub_bin is not None else []
     path_parts.extend(["/usr/bin", "/bin"])
     if kind == "ps1" and (pwsh := shutil.which("pwsh")):
@@ -247,9 +253,12 @@ def run_installer(
         "CODEX_STUB_CONFLICT_VERSION": conflict_version,
         "CODEX_STUB_CREATE_CACHE": "1" if create_cache else "0",
         "STUB_MARKETPLACE_ROOT": str(marketplace_root),
+        **(extra_env or {}),
     }
     command = (
-        ["bash", str(INSTALL_SH)] if kind == "sh" else ["pwsh", "-NoProfile", "-NonInteractive", "-File", str(INSTALL_PS1)]
+        ["bash", str(INSTALL_SH)]
+        if kind == "sh"
+        else ["pwsh", "-NoProfile", "-NonInteractive", "-File", str(ps1_script or INSTALL_PS1)]
     )
     return subprocess.run(command, cwd=cwd, env=env, check=check, capture_output=True, text=True)
 
