@@ -169,6 +169,8 @@ prepareの`conversation_ranges`は全行を1回ずつ覆う行範囲とUTF-8量�
 
 ### 証拠抽出スクリプトの構成
 
+単一記録の照会は結果の`kind`による区別可能性で併用を判定し、固定順に全照会を評価する。共通の由来と未解決イベントは一度だけ出力し、終了コードは各照会の最大値とする。`--grep`・`--hook-notices`・`--user-events`は`summary`を共有し、既存の単独出力との互換性を保つため複数を含む組を拒否する。ファイル保存型の`--bundle`と入力集合が異なるカタログ・保存済み発話の排他条件は保持する。
+
 `atk run-script session-review-evidence`の起動スクリプト`agent-toolkit/skills/session-review/scripts/session_review_evidence.py`はCLIの引数の解釈と照会モードの振り分けだけを持つ。
 記録から時系列イベントへの変換と照会モードが共有する処理は同じディレクトリの`session_evidence_extract.py`、対象記録の解決と付随記録の収集は`session_evidence_records.py`に置く。
 照会モードごとの処理は`session_evidence_<照会モード>.py`（`warn`・`detail`・`stats`・`hook_notices`・`user_events`・`tool_calls`・`context`・`catalog`・`bundle`と、`--bundle`が使う問題候補の`candidates`）に置く。

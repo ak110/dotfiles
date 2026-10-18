@@ -23,18 +23,16 @@ from agent_toolkit._testing.session_evidence_support import (
 )
 
 
-def test_elapsed_until_conflicts_with_other_query_options(
+def test_elapsed_until_combines_with_other_query_options(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """経過時間照会と他の照会モードの同時指定を拒否する。"""
+    """経過時間と統計を区別して同じ照会から取得する。"""
     transcript = _write_transcript(tmp_path, [timestamped_entry("2026-09-01T00:00:01Z", "記録")])
 
-    assert evidence.main([str(transcript), "--elapsed-until", "2026-09-01T00:00:02Z", "--stats"]) == 2
+    assert evidence.main([str(transcript), "--elapsed-until", "2026-09-01T00:00:02Z", "--stats"]) == 0
 
-    (event,) = read_jsonl(capsys)
-    assert event["kind"] == "error"
-    assert "併用できない" in event["text"]
+    assert {event["kind"] for event in read_jsonl(capsys)} >= {"session-elapsed", "stats-total"}
 
 
 @pytest.mark.parametrize(

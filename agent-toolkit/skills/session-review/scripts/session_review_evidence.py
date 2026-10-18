@@ -254,7 +254,7 @@ def _build_parser() -> argparse.ArgumentParser:
         metavar="RECORD:LINE",
         help="指定したlocatorの元JSON recordについてkey pathと観測したJSON型だけを返す。"
         "record由来の値と本文は返さない。複数指定ではオプションを繰り返す。`--detail`と併用でき、"
-        "双方の全locatorをkind・record・lineで識別して返す。他の照会とは併用しない。",
+        "双方の全locatorをkind・record・lineで識別して返す。結果のkindを区別できる照会と併用できる。",
     )
     parser.add_argument(
         "--stats",
@@ -400,11 +400,24 @@ def main(argv: list[str] | None = None) -> int:
         _print_events(events)
         return 0
     query_modes = _single_transcript_query_modes(args)
-    if sum(query_modes) > 1:
+    summaries = [
+        name
+        for name, active in (
+            ("--grep", args.grep is not None),
+            ("--hook-notices", args.hook_notices),
+            ("--user-events", args.user_events),
+        )
+        if active
+    ]
+    if args.bundle is not None and sum(query_modes) > 1:
         return _print_error(
-            "--warn・--grep・--detail・--fixed-string・--record-schema・--stats・--hook-notices・--bundle・--elapsed-until・"
-            "--user-events・--context-at・--tool-callsは、--detailと--record-schemaの組以外では併用できない",
-            next_action="本文と構造は`--detail`・`--record-schema`を併用できる。他の照会は1回に1つだけ指定して再実行する",
+            "--bundleは他の照会と併用できない",
+            next_action="ファイルへ保存する`--bundle`と標準出力への照会を別々に実行する",
+        )
+    if len(summaries) > 1:
+        return _print_error(
+            f"{'・'.join(summaries)}はkind=summaryを共有するため結果を区別できず、併用できない",
+            next_action="`--grep`・`--hook-notices`・`--user-events`を別々に実行する。他のkindを返す照会は併用できる",
         )
     catalog_root = args.catalog_claude_project or args.catalog_codex_history
     catalog_runtime: _Runtime | None = (
@@ -431,7 +444,7 @@ def main(argv: list[str] | None = None) -> int:
         catalog_selection = _CatalogSelection(
             args.catalog_workflow, args.catalog_known_workflow, args.catalog_cwd_contains, fields
         )
-    if catalog_root is not None and any(query_modes) and not args.tool_calls:
+    if catalog_root is not None and any(query_modes) and (not args.tool_calls or sum(query_modes) > 1):
         return _print_error(
             "カタログ走査は`--tool-calls`以外の単一transcriptの照会モードと併用できない",
             next_action="カタログ走査（`--catalog-claude-project`・`--catalog-codex-history`）と単一transcriptの照会を別々に実行する",
@@ -541,7 +554,7 @@ def main(argv: list[str] | None = None) -> int:
     if records is None:
         return _print_error(
             f"対象記録を読み込めない: {transcript_path}",
-            next_action="`--transcript`へ実在する記録の絶対パスを渡し、読み取り権限を確かめて再実行する",
+            next_action="`--transcript`の対象の存在・読み取り権限・UTF-8・各行のJSONを確かめて再実行する",
         )
     boundary = None
     if args.observation_boundary is not None:
@@ -549,13 +562,19 @@ def main(argv: list[str] | None = None) -> int:
             boundary = _parse_cli_timestamp(args.observation_boundary)
         except ValueError:
             return _print_error(f"観測境界が不正: {args.observation_boundary}", next_action=_BOUNDARY_NEXT_ACTION)
+    elapsed_events = []
+    elapsed_code = 0
     if args.elapsed_until is not None:
         event = _elapsed_until_event(records, args.elapsed_until)
         if isinstance(event, str):
             message = event or f"経過時間を算出できる記録が無い: {transcript_path}"
-            return _print_error(message, next_action=_ELAPSED_UNTIL_NEXT_ACTION)
-        _print_events([event])
-        return 0
+            elapsed_events.append(_error_event(message, next_action=_ELAPSED_UNTIL_NEXT_ACTION))
+            elapsed_code = 2
+        else:
+            elapsed_events.append(event)
+        if sum(query_modes) == 1:
+            _print_events(elapsed_events)
+            return elapsed_code
     if boundary is not None:
         records = _apply_observation_boundary(records, boundary)
     delegate_codex_home = args.codex_home if args.codex_thread_id is not None else None
@@ -570,9 +589,10 @@ def main(argv: list[str] | None = None) -> int:
         events, exit_code = _bundle_events(collected, unresolved, Path(args.bundle), compaction_record_dir)
         _print_events(events, collected=collected)
         return exit_code
+    events = list(elapsed_events)
+    exit_code = elapsed_code
     if args.warn:
-        _print_events(_warning_collection_events(collected, unresolved), collected=collected)
-        return 0
+        events.extend(_warning_collection_events(collected, unresolved))
     if args.grep is not None:
         try:
             pattern = re.compile(args.grep)
@@ -580,11 +600,8 @@ def main(argv: list[str] | None = None) -> int:
             return _print_error(
                 f"正規表現が不正: {error}", next_action="`--grep`の正規表現の構文（括弧の対応、エスケープ）を直して再実行する"
             )
-        _print_events(_grep_collection_events(collected, unresolved, pattern), collected=collected)
-        return 0
+        events.extend(_grep_collection_events(collected, unresolved, pattern))
     if args.detail is not None or args.record_schema is not None:
-        events = []
-        exit_code = 0
         for locators, query in (
             (args.detail, _detail_collection_events),
             (args.record_schema, _record_schema_collection_events),
@@ -593,30 +610,43 @@ def main(argv: list[str] | None = None) -> int:
                 results, code = query(collected, locators)
                 events.extend(results)
                 exit_code = max(exit_code, code)
-        _print_events(events)
-        return exit_code
     if args.fixed_string is not None:
-        _print_events(_fixed_string_collection_events(collected, unresolved, args.fixed_string), collected=collected)
-        return 0
+        events.extend(_fixed_string_collection_events(collected, unresolved, args.fixed_string))
     if args.context_at is not None:
-        events, exit_code = _context_at_events(collected, args.context_at, args.phrase or [])
-        _print_events(events)
-        return exit_code
+        results, code = _context_at_events(collected, args.context_at, args.phrase or [])
+        events.extend(results)
+        exit_code = max(exit_code, code)
     if args.stats:
-        _print_events([*_stats_events(collected, compaction_record_dir), *_unresolved_events(unresolved)], collected=collected)
-        return 0
+        stats = _stats_events(collected, compaction_record_dir)
+        events.extend([*stats, *_unresolved_events(unresolved)])
     if args.hook_notices:
-        _print_events(
-            [*_hook_notice_events([record for item in collected for record in item.records]), *_unresolved_events(unresolved)],
-            collected=collected,
+        events.extend(
+            [*_hook_notice_events([record for item in collected for record in item.records]), *_unresolved_events(unresolved)]
         )
-        return 0
     if args.user_events:
-        _print_events(_user_events_since(collected, since))
-        return 0
+        events.extend(_user_events_since(collected, since))
     if args.tool_calls:
-        _print_events(_tool_call_collection_events(collected, unresolved, args.tool, input_pattern), collected=collected)
-        return 0
+        events.extend(_tool_call_collection_events(collected, unresolved, args.tool, input_pattern))
+    if any(query_modes):
+        seen = set()
+        unique = []
+        for event in events:
+            if event.get("kind") in {"unresolved-record", "unresolved-delegation"}:
+                key = json.dumps(event, sort_keys=True)
+                if key in seen:
+                    continue
+                seen.add(key)
+            unique.append(event)
+        provenance = (
+            args.warn
+            or args.grep is not None
+            or args.fixed_string is not None
+            or args.stats
+            or args.hook_notices
+            or args.tool_calls
+        )
+        _print_events(unique, collected=collected if provenance else None)
+        return exit_code
 
     _print_events(_default_events(collected, unresolved))
     return 0

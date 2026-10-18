@@ -1331,18 +1331,17 @@ def test_replaced_persisted_output_is_read_from_saved_file(
     assert "tail-only-marker" in capsys.readouterr().out
 
 
-def test_query_modes_are_mutually_exclusive(
+def test_query_modes_with_distinct_results_can_be_combined(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """照会モードの併用は引数誤用として終了コード2で返す。"""
+    """警告と検索結果を同じ照会から取得する。"""
     transcript = _write_transcript(tmp_path, [{"type": "user", "message": {"role": "user", "content": "依頼"}}])
 
-    assert evidence.main([str(transcript), "--warn", "--grep", "依頼"]) == 2
+    assert evidence.main([str(transcript), "--warn", "--grep", "依頼"]) == 0
 
     events = read_jsonl(capsys)
-    assert [event["kind"] for event in events] == ["error"]
-    assert "併用できない" in events[0]["text"]
+    assert {event["kind"] for event in events} >= {"warning", "match", "summary"}
 
 
 @pytest.mark.parametrize("host", ["claude", "codex"])

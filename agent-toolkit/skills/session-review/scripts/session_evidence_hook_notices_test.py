@@ -169,7 +169,7 @@ def test_hook_notices_mode_is_exclusive_with_other_query_modes(
     """構造化集計モードも他の照会モードとの併用を引数誤用として拒否する。"""
     transcript = _write_transcript(tmp_path, [{"type": "user", "message": {"role": "user", "content": "依頼"}}])
 
-    assert evidence.main([str(transcript), "--hook-notices", "--warn"]) == 2
+    assert evidence.main([str(transcript), "--hook-notices", "--user-events"]) == 2
 
     events = read_jsonl(capsys)
     assert [event["kind"] for event in events] == ["error"]

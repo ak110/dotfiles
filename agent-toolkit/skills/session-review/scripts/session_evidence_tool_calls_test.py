@@ -141,7 +141,7 @@ def test_tool_call_locators_round_trip_to_detail(
         pytest.param(["--tool", "Bash"], id="tool-without-tool-calls"),
         pytest.param(["--input-regex", "x"], id="input-regex-without-tool-calls"),
         pytest.param(["--tool-calls", "--input-regex", "("], id="invalid-regex"),
-        pytest.param(["--tool-calls", "--grep", "x"], id="other-query-mode"),
+        pytest.param(["--tool-calls", "--grep", "x", "--user-events"], id="ambiguous-query-modes"),
     ],
 )
 def test_tool_calls_reject_invalid_arguments(

@@ -77,7 +77,7 @@ WIの処理件数は、成功結果まで記録された直接の`atk wi`操作�
 通常表示と`--bundle`が書くファイルは、全収集記録の`record-provenance`を返す。warn・grep・fixed-string・tool-calls・hook-notices・statsとbundleの要約は、結果が参照する記録とその起動元の記録の`record-provenance`だけを返す。同イベントの`record`・`role`・`source_record`・`source_line`・`mode`・`role_document`を読む。親を収集していない情報と役割文書が無い値はnullである。
 役割別の呼び出し件数と起動した委譲先のmodeは、`--tool-calls`の`tool-call-summary.by_role`（`document:<役割名>`は最初の配送の役割文書、`record:<role>`は役割文書を持たない記録の収集区分）の`count`・`by_tool`・`by_mode`から読む。カタログと併用した場合も収集したroot外の委譲先を含む。
 
-単一transcriptでは`--detail`と`--record-schema`を併用でき、反復指定した全locatorの本文と構造を`kind`・`record`・`line`で区別して返す。不正なlocatorがあればエラーと次の操作を返して終了コード2で終える。それ以外の照会modeどうし、およびカタログ走査・保存済み発話照会・`--bundle`との組み合わせは入力形式ごとの排他条件に従う。
+単一transcriptの照会は結果の`kind`を区別できる組なら併用でき、全照会のイベントを返す。`--grep`・`--hook-notices`・`--user-events`は`summary`を共有するため、このうち複数を含む組は個別に実行する。共通の由来と未解決記録は一度だけ返す。不正なlocatorがあれば他の照会の結果も返し、終了コード2で終える。カタログ走査・保存済み発話照会・`--bundle`との組み合わせは入力形式ごとの排他条件に従う。
 
 生成側が返す`保存先:`の絶対パスから全量を読み、出所の引き渡しにも同じファイルを使う。
 JSONLファイル群への汎用CLIでの無限定の検索と、記録や`candidates.md`の標準出力への全量表示はしない（行数と1行の長さが入力に依存し、巨大な単一行へ広い正規表現を当てるとマッチングの上限に達する）。同コマンドが受理しない調査には`agent-toolkit/rules/02-agent-operations.md`「ツール・コマンド運用」の出力量の判定と分離実行の規定を適用する。
