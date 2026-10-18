@@ -633,6 +633,11 @@ def test_list_does_not_offer_cleanup_for_retained_areas(
     assert area.is_dir()
 
 
+def _listed_paths(stdout: str) -> set[str]:
+    """`list`の標準出力の各行のJSONから一覧のパスを取り出す。"""
+    return {json.loads(line)["path"] for line in stdout.splitlines() if line.strip()}
+
+
 @pytest.mark.parametrize("prefix", ["session", "atk-output", "agents-server-plugin-rootx"])
 def test_list_keeps_non_plugin_area_without_scanning(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], prefix: str
@@ -651,7 +656,7 @@ def test_list_keeps_non_plugin_area_without_scanning(
     try:
         assert subject.main(["list"]) == 0
         output = capsys.readouterr()
-        assert str(area) in output.out
+        assert str(area) in _listed_paths(output.out)
         assert "管理対象を列挙できない" not in output.err
         assert "cleanup --path" not in output.err
         assert not output.err
@@ -684,7 +689,7 @@ def test_list_keeps_plugin_area_when_expiry_scan_fails(
     assert subject.main(["list"]) == 0
     assert calls == [area]
     output = capsys.readouterr()
-    assert str(area) in output.out
+    assert str(area) in _listed_paths(output.out)
     assert "管理対象を列挙できない" not in output.err
     assert "cleanup --path" not in output.err
     assert not output.err
