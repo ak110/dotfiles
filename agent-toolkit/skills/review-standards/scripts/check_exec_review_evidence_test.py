@@ -581,7 +581,7 @@ def _listed(path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> list[str]
 
 
 def test_public_list_returns_selected_rows_in_full(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
-    """`--row`の反復で選んだ各行の根拠を同一根拠も参照にせず1回で返し、1行だけの指定でもその行の全文を返す。"""
+    """`--row`の反復は同一根拠を先行行で示し、1行だけの指定はその行の全文を返す。"""
     path = tmp_path / "evidence.json"
     shared = "test_save_settings 成功"
     conditions = [
@@ -594,6 +594,10 @@ def test_public_list_returns_selected_rows_in_full(tmp_path: pathlib.Path, capsy
         "証拠の全行: " + json.dumps({"配列": "wi_conditions", "行番号": number, **conditions[number - 1]}, ensure_ascii=False)
         for number in (3, 1)
     ]
+    selected = {"配列": "wi_conditions", "行番号": 1, **conditions[0]}
+    selected.pop("evidence")
+    selected["evidence_reference"] = {"display": "証拠の全行", "section": "wi_conditions", "row": 3}
+    expected[1] = "証拠の全行: " + json.dumps(selected, ensure_ascii=False)
     capsys.readouterr()
     assert check_exec_review_evidence.main([str(path), "--list", "--section", "wi_conditions", "--row", "3", "--row", "1"]) == 0
     assert capsys.readouterr().out.splitlines() == expected
@@ -3130,6 +3134,71 @@ def _commit_files(repository: pathlib.Path, files: dict[str, str]) -> str:
         check=True,
         timeout=30,
     ).stdout.strip()
+
+
+@pytest.mark.parametrize("route", ["return", "show-all", "batch", "rows", "single-row"])
+def test_public_nonachievement_repeated_evidence_uses_preceding_row(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], route: str
+) -> None:
+    """通常返却・一括返却・行指定でも同じ本文を一度だけ表示する。"""
+    _mock_wi(monkeypatch, tmp_path, {FIRST_WI: "type: awi\nsource: agent\n---\n## 完成条件\n- 保存\n- 再読込\n"})
+    evidence, table = tmp_path / "evidence.json", tmp_path / "review.tsv"
+    review_table.init(table)
+    review_table.add(table, "2", "exec-review", "実装", "修正を要する", "仕様")
+    shared = "保存結果をまだ観測できていないため再観測する"
+    _write_evidence(
+        evidence,
+        [
+            {**_condition(FIRST_WI, text), "outcome": outcome, "evidence": shared}
+            for text, outcome in [("保存", "証拠不足"), ("再読込", "未達")]
+        ],
+    )
+    if route in {"rows", "single-row"}:
+        argv = [str(evidence), "--list", "--section", "wi_conditions", "--row", "1"]
+        if route == "rows":
+            argv.extend(["--row", "2"])
+    elif route == "batch":
+        batch = tmp_path / "batch.json"
+        batch.write_text(
+            json.dumps(
+                {
+                    "version": 1,
+                    "reviews": [
+                        {
+                            "plan": "なし",
+                            "evidence": str(evidence),
+                            "wi": [FIRST_WI],
+                            "reviewed_head": REVIEWED_HEAD,
+                            "review_start": REVIEWED_HEAD,
+                            "previous_review_start": REVIEWED_HEAD,
+                            "previous_review_head": REVIEWED_HEAD,
+                            "review_table": str(table),
+                            "round": 2,
+                            "plans": [],
+                            "input_records": [],
+                            "reader_fit_review": "文章成果物なし",
+                        }
+                    ],
+                }
+            ),
+            encoding="utf-8",
+        )
+        argv = ["--batch", str(batch)]
+    else:
+        argv = _return_args(evidence, table).script_args
+        if route == "show-all":
+            argv.append("--show-all-rows")
+    capsys.readouterr()
+    assert run_script.dispatch(argparse.Namespace(script_name="exec-review-evidence-check", script_args=argv)) == 0
+    output = capsys.readouterr().out
+    lines = json.loads(output)["result"] if route == "batch" else output.splitlines()
+    assert sum(shared in line for line in lines) == 1
+    displayed = [json.loads(line.split(": ", 1)[1]) for line in lines if line.startswith(("達成以外の行: ", "証拠の全行: "))]
+    if route == "single-row":
+        assert displayed[0]["evidence"] == shared
+    else:
+        assert displayed[1]["evidence_reference"]["section"] == "wi_conditions"
+        assert displayed[1]["evidence_reference"]["row"] == 1
 
 
 @pytest.mark.parametrize("section", ["wi_conditions", "user_requirements"])

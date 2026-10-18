@@ -1863,20 +1863,20 @@ def evidence_rows(
 
     全行表示と配列だけの指定では、根拠を除いた`証拠の行一覧`を全行分先に並べ、続けて`証拠の全行`を並べる。
     受領者が全行の判定・原文・出所を見渡してから、選んだ行の根拠を読めるようにするためである。
-    行番号の指定では一覧を付けず、指定した各行の全文を同一根拠の参照へ置き換えずに返す。
+    行番号の指定では一覧を付けず、指定した行を返す。同じ空でない根拠は同じ出力の先行行への参照で示す。
     """
     sections = [section] if section else list(REQUIRED_FIELDS)
     if row_numbers is not None and (section is None or any(not 1 <= number <= len(payload[section]) for number in row_numbers)):
         raise ValueError("--rowには--sectionと、その配列に存在する1始まりの行番号を指定する")
+    references = seen if seen is not None else {}
     if row_numbers is not None:
         assert section is not None
         return [
             _display_row(
-                {"配列": section, "行番号": number, **payload[section][number - 1]}, section, number, "証拠の全行", None
+                {"配列": section, "行番号": number, **payload[section][number - 1]}, section, number, "証拠の全行", references
             )
             for number in dict.fromkeys(row_numbers)
         ]
-    references = seen if seen is not None else {}
     index_lines = [
         "証拠の行一覧: "
         + json.dumps(
@@ -2002,7 +2002,7 @@ def return_lines(
         payload = json.loads(evidence_path.read_text(encoding="utf-8"))
     outcome_order = [*JUDGMENT_ORDER, *dict.fromkeys(name for checks in EXEMPTIONS.values() for name in checks)]
     rows: list[str] = []
-    seen: dict[str, dict[str, typing.Any]] | None = {} if show_all_rows else None
+    seen: dict[str, dict[str, typing.Any]] = {}
     for section, field in (("wi_conditions", "condition"), ("user_requirements", "requirement")):
         counts = collections.Counter(row["outcome"] for row in payload[section])
         breakdown = {"総数": len(payload[section]), **{name: counts[name] for name in outcome_order if counts[name]}}
@@ -2337,14 +2337,16 @@ def main(argv: list[str] | None = None) -> int:
         help="採否と後続工程を持つWI・CI・引き継ぎ記録の絶対パス。反復できる",
     )
     parser.add_argument(
-        "--return-result", action="store_true", help="表と証拠の整合を確かめ、completedの固定形式の返却を生成する"
+        "--return-result",
+        action="store_true",
+        help="表と証拠の整合を確かめ、completedの固定形式の返却を生成する。同一根拠は先行行をevidence_referenceで示す",
     )
     parser.add_argument(
         "--show-all-rows",
         action="store_true",
         help="返却生成またはbatchへ両配列の全行を追加する。先に根拠を除いた全行の`証拠の行一覧`（配列・1始まり行番号・WI・判定・source・原文）、"
         "続けて`証拠の全行`を並べる。同一の空でない根拠は先行表示の配列・1始まり行番号をevidence_referenceで示す。"
-        "選んだ行の全文は--list --section --rowの反復で読む",
+        "選んだ行は--list --section --rowの反復で読み、同一根拠はその出力の先行行を参照する",
     )
     parser.add_argument(
         "--reader-fit-review",
@@ -2358,14 +2360,14 @@ def main(argv: list[str] | None = None) -> int:
         "--list",
         action="store_true",
         help="判定途中でも原文・出所・判定・根拠・HEADを読む。全行と--sectionだけの指定では先に根拠を除いた`証拠の行一覧`を並べ、"
-        "同一根拠は先行表示を指す。--rowを指定すると指定した各行の全文を返す",
+        "同一根拠は先行表示を指す。--rowの反復でも同じ規則で指定行を返す",
     )
     parser.add_argument("--section", choices=list(REQUIRED_FIELDS), help="--listで読む配列")
     parser.add_argument(
         "--row",
         type=int,
         action="append",
-        help="--listで全文を読む1始まりの行番号。--sectionと指定し、複数行は反復する",
+        help="--listで読む1始まりの行番号。--sectionと指定し、複数行は反復する。同一根拠は同じ出力の先行行を指す",
     )
     parser.add_argument(
         "--expected-head",
