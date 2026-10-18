@@ -410,7 +410,7 @@ def capture_handoff_session() -> None:
     """会話contextの除去前に、引き継ぎ記録を置く委譲元sessionを確定する。"""
     global _HANDOFF_SESSION  # pylint: disable=global-statement
     if _HANDOFF_SESSION is None:
-        _HANDOFF_SESSION = (shared_roots.resolve_root_session_id(os.environ),)
+        _HANDOFF_SESSION = ((shared_roots.resolve_root_session_id(os.environ) or os.environ.get("CODEX_THREAD_ID")),)
 
 
 def _default_handoff_path() -> pathlib.Path | None:
@@ -422,7 +422,11 @@ def _default_handoff_path() -> pathlib.Path | None:
     ファイル自体は作成しない。`（新規）`の記録先は委譲先が作成するためである。
     """
     directory: pathlib.Path | None = None
-    session_id = _HANDOFF_SESSION[0] if _HANDOFF_SESSION is not None else shared_roots.resolve_root_session_id(os.environ)
+    session_id = (
+        _HANDOFF_SESSION[0]
+        if _HANDOFF_SESSION is not None
+        else (shared_roots.resolve_root_session_id(os.environ) or os.environ.get("CODEX_THREAD_ID"))
+    )
     if session_id is not None and not session_id.startswith("mcp-"):
         with contextlib.suppress(_managed_temp.ManagedTempError, OSError):
             directory = _managed_temp.resolve_session_temp(session_id)
@@ -438,6 +442,54 @@ def _default_handoff_path() -> pathlib.Path | None:
             return candidate
 
 
+def delegate_request(prompt: str) -> tuple[str, pathlib.Path]:
+    """自由本文を保ち、通常委譲へ専用の現行記録先を配送する。"""
+    path = _default_handoff_path()
+    if path is None:
+        raise ActionableError(
+            "通常委譲の作業記録先を用意できません。委譲先は起動していない。",
+            next_action="managed-tempの診断を確認し、記録先を確保してからstartを再発行する",
+        )
+    return prompt + "\n\n" + handoff_notice(path) + "\n\n" + whole_contract_reference(), path
+
+
+def whole_contract_reference() -> str:
+    """所有する全体会話の現行記録への参照を、本文の複製をせず配送する。"""
+    session_id = (
+        _HANDOFF_SESSION[0]
+        if _HANDOFF_SESSION is not None
+        else (shared_roots.resolve_root_session_id(os.environ) or os.environ.get("CODEX_THREAD_ID"))
+    )
+    directory: pathlib.Path | None = None
+    if session_id is not None and not session_id.startswith("mcp-"):
+        with contextlib.suppress(_managed_temp.ManagedTempError, OSError):
+            directory = _managed_temp.find_session_temp(session_id)
+    path = directory / "work-contract.md" if directory is not None else None
+    if path is not None and path.is_file():
+        body = (
+            f"全体作業契約: {path}\n"
+            "担当工程の開始時に読み、割当が全体の要求を満たす範囲と、維持する成果・検収に使う証拠を確かめる。"
+            "全体記録の更新は委譲元が所有し、委譲先は自身の引き継ぎ記録へ判断を残す。"
+        )
+    else:
+        body = (
+            "全体作業契約: 未解決。担当の成果が全体の要求を満たすことを確認する工程では、"
+            "委譲元へ記録の所在を返却・通知で求め、取得した記録の要求と担当の成果を比べる。"
+        )
+    return auto_message(body, source="agents-server", kind="work-contract-reference")
+
+
+def handoff_notice(path: pathlib.Path) -> str:
+    """サーバーが所有する共通入力を、役割文書の入力宣言から分離して加える。"""
+    return auto_message(
+        f"引き継ぎ記録先: {path}（新規）\n"
+        "share/work-contract.mdとskills/delegation/references/handoff-record.mdに従い、"
+        "委譲先自身が最初の記録を作成する。記録は割当範囲を所有し、委譲元は終端後の検収で読む。",
+        source="agents-server",
+        kind="work-contract",
+    )
+
+
 def task_document_request(
     subagent_md_path: str,
     extra_params: Mapping[str, str],
@@ -447,7 +499,8 @@ def task_document_request(
     用途は役割に対応する値で、対応が無い場合は`None`（段位ごとの用途を使う）とする。
     `<役割名>.subagent.md`が`引き継ぎ記録先`を必須入力とし、`extra_params`がこれを持たない場合は、
     拒否せずに`（新規）`の記録先を用意して委譲プロンプトへ加え、その絶対パスを5要素目で返す。
-    委譲元が値を渡した場合と、宣言を読めない場合の5要素目は`None`とする。
+    宣言しない通常起動にも共通入力として専用の記録先を加え、5要素目で返す。
+    委譲元が値を渡した場合と軽量起動の5要素目は`None`とする。
     """
     task_document = _resolve_task_document_path(subagent_md_path).resolve()
     if not task_document.is_file() or not task_document.name.endswith(".subagent.md"):
@@ -500,6 +553,18 @@ def task_document_request(
         _check_declared_inputs(task_document, declaration, extra_params)
         launch_kind = declaration.launch_kind
     prompt_lines = [f"次の文書の手順を実行せよ（出所: {task_document}）。", document_text]
+    # 宣言された入力の検証を終えてから、サーバー所有の共通入力を加える。
+    # 軽量起動のtaskは独自の記録を持たない。
+    if launch_kind == "delegate" and _HANDOFF_INPUT_NAME not in extra_params:
+        handoff_path = _default_handoff_path()
+        if handoff_path is None:
+            raise ActionableError(
+                "通常委譲の作業記録先を用意できません。委譲先は起動していない。",
+                next_action="managed-tempの診断を確認し、記録先を確保してからstartを再発行する",
+            )
+        prompt_lines.append(handoff_notice(handoff_path))
+    if launch_kind == "delegate":
+        prompt_lines.append(whole_contract_reference())
     if extra_params:
         prompt_lines.append("入力:")
         prompt_lines.extend(f"{name}: {value}" for name, value in extra_params.items())

@@ -105,6 +105,10 @@ Stop hookの無進捗停止（`busy_loop_guard.py`）の終了要求は、Stop�
   4. `prompt`が`<task-notification`か旧形式の`<cross-session-message`で始まる
   5. `prompt`の1行目が新旧の自動挿入要素の開始タグを含む
 
+## 現行の作業契約の入力位置
+
+- `work_contract_input_sequence`: `_hooks/work_contract.py`がUserPromptSubmitのメインの実ユーザー入力だけで排他下に加算するセッション内の連番。同じモジュールが記録内の処理済み連番と最新の連番を比べ、UserPromptSubmitとSessionStartのcompactで記録の所在と未処理の入力区間を通知する。機械側の保存対象は連番に限り、入力本文・分類・達成状態はエージェントの記録で扱う。通常の状態ファイルと同じ寿命で保持し、圧縮・再開でも連番を継承する。
+
 ## 確認・操作スキル系
 
 - `user_confirmation_skill_pending`: `agent-toolkit:user-confirmation-and-report`の内容が文脈に無い状態（真偽値）。

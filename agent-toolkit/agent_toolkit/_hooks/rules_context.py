@@ -25,6 +25,7 @@ from agent_toolkit._common import message_format, plugin_environment
 from agent_toolkit._hooks.notice import formatter as _notice_formatter
 lazy from agent_toolkit._common.delegated_session import is_delegated
 lazy from agent_toolkit._common.session_state import update_state
+lazy from agent_toolkit._hooks import work_contract
 lazy from agent_toolkit._hooks.agent_id import MAIN_AGENT_ID
 lazy from agent_toolkit._hooks.message_format import xml_message
 
@@ -273,6 +274,10 @@ def main(payload_text: str, *, host: str = "claude") -> int:
             else:
                 temp_context = _llm_notice(session_temp_notice(session_temp))
                 content = f"{content}\n\n{temp_context}" if content else temp_context
+                if source == "compact" and not delegated:
+                    contract_notice = work_contract.notice(session_id)
+                    if contract_notice is not None:
+                        content += f"\n\n{_llm_notice(contract_notice)}"
     elif event_name == "SubagentStart":
         content = compose_subagent_start(host=host)
         session_temp = _existing_session_temp(payload.get("session_id"))

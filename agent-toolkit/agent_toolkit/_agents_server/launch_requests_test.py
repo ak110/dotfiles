@@ -672,6 +672,8 @@ async def test_start_warns_and_continues_without_required_input_marker(
     with caplog.at_level(logging.WARNING, logger="agent-toolkit.agents-server.mcp"):
         response = await mcp_tools.start(str(tmp_path), subagent_md_path=str(task_document), extra_params={})
 
+    handoff = pathlib.Path(response.pop("handoff_record_path"))
+    assert handoff.is_absolute()
     assert response == {"session_id": "session", "status": "running", "label": "担当"}
     assert "必須入力を確認できません" in caplog.text
 
@@ -783,6 +785,8 @@ async def test_start_accepts_task_document_path_with_spaces(
 
     response = await mcp_tools.start(str(tmp_path), subagent_md_path=str(task_document), extra_params={"対象": "値"})
 
+    handoff = pathlib.Path(response.pop("handoff_record_path"))
+    assert handoff.is_absolute()
     assert response == {"session_id": "session", "status": "running", "label": "担当"}
     manager.start.assert_awaited_once()
     assert str(task_document) in manager.start.await_args.args[1]

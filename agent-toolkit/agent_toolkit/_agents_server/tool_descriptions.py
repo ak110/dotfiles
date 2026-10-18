@@ -95,6 +95,7 @@ LIGHTWEIGHT_MODE_SELECTION = (
     "委譲の要否は独立した文脈の必要性、段位と役割契約、起動・自動配送と明示読取・"
     "委譲元の受領レビュー・統合の総費用で選ぶ。本文量だけで分割しない。"
     "同じ担当の連続した作業はまとめ、独立した要件と独立文脈レビューは分ける。"
+    "explore・shell・writeは自己完結した1回の入力と返却に使い、追加対話と要求の再構成を要する作業は通常taskかdelegateへ渡す。"
     "既存の担当が詳しい文脈を持つ調査と判断は、新しく本文を読む前にその担当へ戻す。"
     "exploreは結論と所在で後続の判断が成立する調査、shellは終了状態と要約で足りる実行へ使う。\n"
     "段位: 上位段位で動く主体は、判定基準を渡せる多数の対象の走査を費用の差から軽量段位のexploreへ分け、"
@@ -160,12 +161,14 @@ EXTRA_PARAMS_DESCRIPTION = parameter_description(
     "必須入力の欠落と宣言外の入力名を含む場合は委譲先を起動しない。"
     "ただし必須入力の`引き継ぎ記録先`を省略した場合は、サーバーが委譲元のセッションのmanaged-tempの直下に`（新規）`の記録先を用意し、"
     "その絶対パスを応答の`handoff_record_path`で返す。継続する担当へは、その値へ`（継続）`を付けて渡す。"
+    "通常taskで役割文書が記録先を宣言しない場合も、サーバーが共通入力として専用記録先を加える。軽量起動では生成しない。"
     + DELEGATION_INPUT_GUIDANCE
 )
 
 
 PROMPT_DESCRIPTION = parameter_description(
     "delegate・explore・writeで必須、taskとshellでは指定しない。委譲先へ渡す依頼本文。"
+    "delegateでは本文を保ち、サーバーが専用の引き継ぎ記録先を加え、同じパスをhandoff_record_pathで返す。"
     "explore・writeの委譲先は委譲先向けの規範（`share/rules-subagent.md`）を受け取らず、"
     "ClaudeとCodexでは作業ディレクトリのプロジェクト規範も読まないため、作業に必要な指示を全て書く。"
     "`<役割名>.subagent.md`を指す本文は渡さず、taskで起動する。" + DELEGATION_INPUT_GUIDANCE

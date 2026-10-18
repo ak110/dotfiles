@@ -82,7 +82,7 @@ lazy from agent_toolkit._common.session_state import (  # noqa: E402  # pylint: 
     read_state,
     update_state,
 )
-lazy from agent_toolkit._hooks import termination_evidence
+lazy from agent_toolkit._hooks import termination_evidence, work_contract
 lazy from agent_toolkit._hooks.host import is_codex_payload  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 lazy from agent_toolkit._plan.path_kinds import is_plan_main_file  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 
@@ -301,6 +301,13 @@ def main(payload_text: str) -> int:
     if is_normal_prompt and _claim_verification_notice(session_id, time.time()):
         notices.append(_llm_notice(VERIFICATION_NOTICE_BODY, tag=_VERIFICATION_NOTICE_TAG))
     if is_normal_prompt:
+        try:
+            contract_notice = work_contract.observe_input(session_id)
+        except (OSError, ValueError) as error:
+            print(f"現行の作業契約の入力位置を記録できない: {error}", file=sys.stderr)
+        else:
+            if contract_notice is not None:
+                notices.append(_llm_notice(contract_notice))
         notices.extend(content_notices(prompt, "user_prompt_submit"))
     additional_context = "\n".join(notices) if notices else None
 
