@@ -6,7 +6,6 @@ subprocessで起動しexit code・stderr・stdoutを検証する。
 
 import json
 import pathlib
-import subprocess
 
 import pytest
 
@@ -54,214 +53,59 @@ def test_trailing_tool_boundary_tags_in_regular_markdown_are_allowed(tmp_path: p
     assert result.returncode == 0
 
 
-class TestLanguageEscalation:
-    """日本語の使用を求める通知のエスカレーション（連続英語ターン → ブロック）。
+class TestLanguageRewrite:
+    """直前の英語を毎回止め、状態の累計や同じIDによる通過を使わない。"""
 
-    セッション状態を介してexit code 2でツール呼び出しをブロックする。
-    """
-
-    _state_env = staticmethod(_plan_file_state_env)
-
-    @staticmethod
-    def _write_transcript(tmp_path: pathlib.Path, text: str, msg_id: str = "m1") -> pathlib.Path:
-        entry = {
-            "type": "assistant",
-            "message": {
-                "id": msg_id,
-                "role": "assistant",
-                "content": [{"type": "text", "text": text}],
-                "stop_reason": "end_turn",
-            },
-        }
-        path = tmp_path / "transcript.jsonl"
-        path.write_text(json.dumps(entry, ensure_ascii=False) + "\n", encoding="utf-8")
-        return path
-
-    def _invoke(
-        self,
-        tmp_path: pathlib.Path,
-        env: dict[str, str],
-        session_id: str,
-        text: str,
-        msg_id: str = "m1",
-    ) -> subprocess.CompletedProcess[str]:
-        transcript = self._write_transcript(tmp_path, text, msg_id)
-        return _run(
-            {
-                "tool_name": "Bash",
-                "tool_input": {"command": "ls"},
-                "transcript_path": str(transcript),
-                "session_id": session_id,
-            },
-            env_overrides=env,
+    @pytest.mark.parametrize("text,expected", [("Read the evidence.", 2), ("根拠を確認します。", 0), ("了解した。", 0)])
+    def test_current_text_controls_decision_with_legacy_state(self, tmp_path: pathlib.Path, text: str, expected: int) -> None:
+        sid = "language-current-text"
+        legacy = {"english_warning_count": 2, "english_warning_msg_id": "same", "unrelated": True}
+        _write_session_state(tmp_path, sid, legacy)
+        transcript = tmp_path / "transcript.jsonl"
+        transcript.write_text(
+            json.dumps(
+                {
+                    "type": "assistant",
+                    "message": {"id": "same", "role": "assistant", "content": [{"type": "text", "text": text}]},
+                }
+            )
+            + "\n",
+            encoding="utf-8",
         )
+        payload = {"tool_name": "Bash", "tool_input": {"command": "ls"}, "session_id": sid, "transcript_path": str(transcript)}
+        for _ in range(2):
+            result = _run(payload, env_overrides=_plan_file_state_env(tmp_path))
+            assert result.returncode == expected
+            saved = _read_session_state(tmp_path, sid)
+            assert all(saved[key] == value for key, value in legacy.items())
+            if expected == 2:
+                assert "日本語で書き直す" in result.stderr
+                assert "識別子と名前" in result.stderr
+                assert result.stderr.rstrip().endswith("</atk-auto>")
 
-    def test_first_english_warns(self, tmp_path: pathlib.Path):
-        """1回目の英語検出はexit 0 + additionalContextで警告する。"""
-        env = self._state_env(tmp_path)
-        message = "The implementation is still in progress; I'll wait for the completion notice."
-        result = self._invoke(tmp_path, env, "esc-first", message, msg_id="m1")
-        assert result.returncode == 0
-        ctx = _additional_context(result)
-        assert "英語主体" in ctx
-        assert message in ctx
-        assert "evaluate relevance" not in ctx
-
-    def test_second_english_escalates_body(self, tmp_path: pathlib.Path):
-        """同一セッションの2回目の英語でもツールを通し、強い通知へ切り替える。
-
-        検出した回の応答は既にユーザーへ届いており、ツール呼び出しを止めても送信済みの応答は戻らない。
-        """
-        env = self._state_env(tmp_path)
-        sid = "esc-block"
-        # 1回目: warn
-        r1 = self._invoke(tmp_path, env, sid, "A" * 100, msg_id="m1")
-        assert r1.returncode == 0
-        # 2回目: 強い本文へ切り替え
-        message = "Meanwhile I'll read the publish-stage steps."
-        r2 = self._invoke(tmp_path, env, sid, message, msg_id="m2")
-        assert r2.returncode == 0
-        ctx = _additional_context(r2)
-        assert "累計2回以上" in ctx
-        assert message in ctx
-        assert "evaluate relevance" not in ctx
-
-    def test_control_characters_do_not_reach_either_warning(self, tmp_path: pathlib.Path) -> None:
-        """通常と連続の警告は同じ一行の安全な引用を示す。"""
-        env = self._state_env(tmp_path)
-        session_id = "esc-controls"
-        message = "The process \x1b[2J \x00 \x7f \x9b finished.\nAnother sentence follows."
-
-        first = self._invoke(tmp_path, env, session_id, message, msg_id="m1")
-        second = self._invoke(tmp_path, env, session_id, message, msg_id="m2")
-
-        assert first.returncode == second.returncode == 0
-        for result in (first, second):
-            context = _additional_context(result)
-            excerpt = context.split("判定対象の冒頭: 「", maxsplit=1)[1].split("」", maxsplit=1)[0]
-            assert excerpt == "The process [2J finished."
-            assert not any(ord(char) < 32 or 127 <= ord(char) <= 159 for char in excerpt)
-        assert "累計2回以上" in _additional_context(second)
-
-    def test_japanese_keeps_english_total(self, tmp_path: pathlib.Path):
-        """日本語応答が間に入る英語の反復でも強い通知へ切り替える。"""
-        env = self._state_env(tmp_path)
-        sid = "esc-japanese-between"
-        # 1回目: 英語 → warn
-        self._invoke(tmp_path, env, sid, "A" * 100, msg_id="m1")
-        # 2回目: 日本語 → pass（累計維持）
-        self._invoke(tmp_path, env, sid, "これは日本語の応答です。" * 5, msg_id="m2")
-        assert _read_session_state(tmp_path, sid)["english_warning_count"] == 1
-        # 3回目: 英語 → 累計2回目の強い通知
-        r3 = self._invoke(tmp_path, env, sid, "C" * 100, msg_id="m3")
-        assert r3.returncode == 0
-        ctx = _additional_context(r3)
-        assert "英語主体" in ctx
-        assert "累計2回以上" in ctx
-        assert _read_session_state(tmp_path, sid)["english_warning_count"] == 2
-
-    def test_skipped_message_keeps_english_total(self, tmp_path: pathlib.Path):
-        """判定対象外の短文が間に入っても次の英語を累計2回目とする。"""
-        env = self._state_env(tmp_path)
-        sid = "esc-skipped"
-        self._invoke(tmp_path, env, sid, "A" * 100, msg_id="m1")
-        self._invoke(tmp_path, env, sid, "了解した。", msg_id="m2")
-
-        second = self._invoke(tmp_path, env, sid, "C" * 100, msg_id="m3")
-
-        assert second.returncode == 0
-        assert "累計2回以上" in _additional_context(second)
-        assert _read_session_state(tmp_path, sid)["english_warning_count"] == 2
-
-    def test_english_total_is_per_session(self, tmp_path: pathlib.Path):
-        """別セッションの初回英語は通常の通知から始まる。"""
-        env = self._state_env(tmp_path)
-        self._invoke(tmp_path, env, "first-session", "A" * 100, msg_id="m1")
-
-        other = self._invoke(tmp_path, env, "other-session", "B" * 100, msg_id="m2")
-
-        assert other.returncode == 0
-        assert "累計2回以上" not in _additional_context(other)
-        assert _read_session_state(tmp_path, "first-session")["english_warning_count"] == 1
-        assert _read_session_state(tmp_path, "other-session")["english_warning_count"] == 1
-
-    def test_same_msg_id_no_double_count(self, tmp_path: pathlib.Path):
-        """同一message IDの並列ツール呼び出しはカウンタを1回のみ増加する。"""
-        env = self._state_env(tmp_path)
-        sid = "esc-parallel"
-        # 同じmsg_idで2回呼び出し（並列ツール呼び出しのシミュレーション）
-        r1 = self._invoke(tmp_path, env, sid, "A" * 100, msg_id="m-same")
-        assert r1.returncode == 0
-        r2 = self._invoke(tmp_path, env, sid, "A" * 100, msg_id="m-same")
-        assert r2.returncode == 0  # 同一IDなのでカウンタ増加なし、ブロックしない
-        assert "英語主体" not in _additional_context(r2)
-
-    def test_escalated_body_repeats_on_next_english(self, tmp_path: pathlib.Path):
-        """強い本文へ切り替えた後の次ターン英語でも同じ本文を返す。"""
-        env = self._state_env(tmp_path)
-        sid = "esc-reblock"
-        # 1回目: warn
-        self._invoke(tmp_path, env, sid, "A" * 100, msg_id="m1")
-        # 2回目: 強い本文
-        r2 = self._invoke(tmp_path, env, sid, "B" * 100, msg_id="m2")
-        assert r2.returncode == 0
-        # 3回目: 累計3回目も強い通知
-        r3 = self._invoke(tmp_path, env, sid, "C" * 100, msg_id="m3")
-        assert r3.returncode == 0
-        assert "累計2回以上" in _additional_context(r3)
-        assert _read_session_state(tmp_path, sid)["english_warning_count"] == 3
-
-    @pytest.mark.parametrize(
-        ("text", "expected_count", "expected_returncode"),
-        [
-            ("A" * 100, 2, 0),
-            ("これは日本語の応答です。" * 5, 1, 0),
-            ("了解した。", 1, 0),
-        ],
-        ids=["warn", "pass", "skip"],
-    )
-    def test_english_warning_count_transitions_for_each_outcome(
-        self,
-        tmp_path: pathlib.Path,
-        text: str,
-        expected_count: int,
-        expected_returncode: int,
-    ) -> None:
-        """判定結果の3値それぞれについて累計カウンタの遷移を検証する。
-
-        直前の検出が1回記録された状態から始める。英語主体と判定した回は前回と異なる
-        message IDでカウンタが2へ達して強い本文へ切り替える。
-        英語主体でないと判定した回は、警告本文を返さずカウンタを維持する。
-        """
-        env = self._state_env(tmp_path)
-        sid = "esc-transition"
-        _write_session_state(tmp_path, sid, {"english_warning_count": 1, "english_warning_msg_id": "m0"})
-
-        result = self._invoke(tmp_path, env, sid, text, msg_id="m1")
-
-        assert result.returncode == expected_returncode
-        assert _read_session_state(tmp_path, sid)["english_warning_count"] == expected_count
-
-    def test_warn_has_suffix(self, tmp_path: pathlib.Path):
-        """warn時のadditionalContextがXML境界で閉じることを検証する。"""
-        env = self._state_env(tmp_path)
-        result = self._invoke(tmp_path, env, "esc-suffix-warn", "A" * 100, msg_id="m1")
-        assert result.returncode == 0
-        ctx = _additional_context(result)
-        assert ctx  # 警告が出ていること
-        assert ctx.endswith("</atk-auto>")
-        assert "evaluate relevance" not in ctx
-
-    def test_escalated_body_has_suffix(self, tmp_path: pathlib.Path):
-        """強い本文へ切り替えた警告がXML境界で閉じる。"""
-        env = self._state_env(tmp_path)
-        sid = "esc-suffix-block"
-        self._invoke(tmp_path, env, sid, "A" * 100, msg_id="m1")
-        r2 = self._invoke(tmp_path, env, sid, "B" * 100, msg_id="m2")
-        assert r2.returncode == 0
-        ctx = _additional_context(r2)
-        assert ctx.rstrip().endswith("</atk-auto>")
-        assert "evaluate relevance" not in ctx
+    def test_block_excerpt_removes_control_characters(self, tmp_path: pathlib.Path) -> None:
+        transcript = tmp_path / "transcript.jsonl"
+        transcript.write_text(
+            json.dumps(
+                {
+                    "type": "assistant",
+                    "message": {
+                        "id": "control",
+                        "role": "assistant",
+                        "content": [{"type": "text", "text": "The process \x1b[2J \x00 finished.\nAnother sentence follows."}],
+                    },
+                }
+            ),
+            encoding="utf-8",
+        )
+        result = _run(
+            {"tool_name": "Bash", "tool_input": {"command": "ls"}, "transcript_path": str(transcript)},
+            env_overrides=_plan_file_state_env(tmp_path),
+        )
+        assert result.returncode == 2
+        excerpt = result.stderr.split("判定対象の冒頭: 「", maxsplit=1)[1].split("」", maxsplit=1)[0]
+        assert excerpt == "The process [2J finished."
+        assert not any(ord(char) < 32 or 127 <= ord(char) <= 159 for char in excerpt)
 
 
 class TestGeneralBehavior:

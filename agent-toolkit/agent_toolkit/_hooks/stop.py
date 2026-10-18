@@ -33,6 +33,7 @@ lazy from agent_toolkit._hooks.stop_session import append_stop_log
 lazy from agent_toolkit._hooks.stop_session import parse_stop_session as _parse_stop_session
 
 CHECK_MODULE_NAMES = (
+    "response_language_advisor",
     "busy_loop_guard",
     "autonomous_exit",
     "plan_save_advisor",
@@ -150,7 +151,7 @@ def evaluate(payload_text: str) -> dict[str, object]:
             result["systemMessage"] = "\n\n".join(user_messages)
         return result
 
-    if halt_request is not None and session_id:
+    if halt_request is not None and session_id and "response_language_advisor" not in blocking_checks:
         module, count = halt_request
         try:
             status, message = module.halt(session_id, count)  # type: ignore[attr-defined]

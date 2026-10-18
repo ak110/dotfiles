@@ -32,13 +32,6 @@ _HOOK_ID = "rules_context"
 _llm_notice = _notice_formatter(_HOOK_ID)
 
 RESPONSE_LANGUAGE_NOTICE = "ユーザーへ向けた地の文は、最初の応答の1文目から日本語で書く。"
-# 会話の途中で再注入する1行。英語化はツール呼び出し直前の短いステータス行で起きやすいため、その行を名指す。
-# 定期の注入であり違反の通知ではないため、反復件数を付けずに整形する。
-RESPONSE_LANGUAGE_REINJECTION_NOTICE = "ユーザーへ向けた地の文は、ツール呼び出し前の短いステータス行も含めて日本語で書く。"
-# 日本語の応答指示を直前に注入してからのツール呼び出し回数を保持するセッション状態キー。
-# PreToolUseが間隔に達した呼び出しで`RESPONSE_LANGUAGE_REINJECTION_NOTICE`を注入し、
-# SessionStartが`RESPONSE_LANGUAGE_NOTICE`を注入した時点で0へ戻す。
-LANGUAGE_REINJECTION_COUNT_KEY = "language_reinjection_count"
 QUALITY_CHECKPOINT_NOTICE = "会話圧縮後の復元は`01-agent.md`「行動と手順の目的」に従う。会話限定の指示を成果物へ混入させない。"
 
 SHARE_DIR = pathlib.Path(__file__).resolve().parents[2] / "share"
@@ -159,18 +152,6 @@ def mark_user_confirmation_pending(session_id: str) -> None:
     update_state(session_id, _mark)
 
 
-def reset_language_reinjection_count(session_id: str) -> None:
-    """`RESPONSE_LANGUAGE_NOTICE`を注入した時点で、再注入までのツール呼び出し回数を0へ戻す。"""
-
-    def _reset(current: dict) -> dict | None:
-        if current.get(LANGUAGE_REINJECTION_COUNT_KEY, 0) == 0:
-            return None
-        current[LANGUAGE_REINJECTION_COUNT_KEY] = 0
-        return current
-
-    update_state(session_id, _reset)
-
-
 def _normative_context(body: str, *, kind: str) -> str:
     """規範本文へ生成主体と種別を持つ境界を付ける。"""
     return message_format.auto_message(body, source=NORMATIVE_SOURCE, kind=kind)
@@ -280,10 +261,8 @@ def main(payload_text: str, *, host: str = "claude") -> int:
         if isinstance(session_id, str) and session_id:
             if source in _OPERATION_SKILL_RESET_SOURCES:
                 reset_main_operation_skill_ready(session_id)
-            if not delegated:
-                reset_language_reinjection_count(session_id)
-                if source in _CONTEXT_LOSING_SOURCES:
-                    mark_user_confirmation_pending(session_id)
+            if not delegated and source in _CONTEXT_LOSING_SOURCES:
+                mark_user_confirmation_pending(session_id)
             try:
                 session_temp = managed_temp.create_managed_temp(
                     SESSION_TEMP_PREFIX,

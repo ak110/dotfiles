@@ -81,12 +81,6 @@ Stop hookの無進捗停止（`busy_loop_guard.py`）の終了要求は、Stop�
 
 - `inherited_from_session_id`: 現行`session_id`の状態が不在のときに一意に特定した前身`session_id`。共通hookの起動処理が前身の全状態キーと同時に1回だけ書き込む
 
-## 応答言語系
-
-- `english_warning_count`: `agent-toolkit/agent_toolkit/_hooks/pretooluse/agent_checks.py`が、アシスタント応答の地の文を英語主体と判定した累計回数を記録し、強い通知への切り替えに読む。日本語判定と判定対象外の応答では維持する。セッション終了まで保持する
-- `english_warning_msg_id`: 同フックが直前に通知した応答のmessage IDを記録し、同じ応答への重複通知と二重加算の抑止に読む。セッション終了まで保持し、リセットは処理対象外とする
-- `language_reinjection_count`: 同フックが、Claude Codeのメインセッションで直前に日本語の応答指示を注入してからのツール呼び出し回数を記録し、再注入の間隔の判定に読む。間隔に達した呼び出しで途中注入用の指示を添えて0へ戻し、`agent-toolkit/agent_toolkit/_hooks/rules_context.py`もSessionStartで開始用の指示を注入した時点で0へ戻す。記録はClaude Codeのメインセッションに限り、セッション終了まで保持する
-
 ## plan系
 
 - `working_plan_save_notified`: `~/.claude/plans`に残る計画バンドルの保存確認を促した事実。`agent-toolkit/agent_toolkit/_hooks/plan_save_advisor.py`が記録し、再通知の抑止に読む。セッション終了まで保持し、リセットは処理対象外とする
@@ -139,7 +133,7 @@ Stop hookの無進捗停止（`busy_loop_guard.py`）の終了要求は、Stop�
   - 公開範囲: メインが原入力または適用済み認可から判断した範囲を`publish_scope`へ記録する。記録手順は`agent-toolkit:user-confirmation-and-report`の`references/publish-scope.md`が定める
   - プロジェクト規範による省略: メインが`omit-completion`で指定した規範の絶対パス、記録処理がそのパスから読んだ全文、対象リポジトリと人間入力の識別子を、作業ごとの`omit_completion`へ保持する。`input_id`の省略時は現在の会話の直近の人間入力へ対応付ける。記録時は観測した成果作業の単一リポジトリ、規範の所在、現在のメイン・会話・入力の対応を確かめ、明示した`quote`が規範全文と一致するかも確かめる。Stopでも規範の実体と入力の対応を確かめる。有効な省略を持つ作業だけ起動不足を免除する。次の判断で除き、新しい人間入力後の成果作業は新しい作業として省略を引き継がない。規範の変更・消失は免除を無効にする。手順は`agent-toolkit:completion-report`の`references/termination-evidence.md`が定める
   - 原入力と再入: `last_human_input`は最後の人間入力を保持し、自動通知で再開しても元の依頼への帰属を保つ。`--context`は現在の会話の`session_id`と作業の`work_id`を人間入力の有無によらず返し、その入力を観測した場合だけ`input_id`と`quote`を添え、観測していなければ両者を`null`とする。証拠が無いか別会話・旧版の値である場合、現在のメインとして解決できない場合と、作業も人間入力も無い場合は取得を拒否する。取得は判断の証拠条件を緩めず、人間の原入力・実際の失敗・所有する委譲先の待機の検証はactionごとの記録処理が行う。寿命と継承は本キーと同じで、公開範囲・起動証拠と現在のGit状態から不要な判定を除く
-  - 終了時の点検通知: `stop_review_notice`は作業ごとに通知した人間入力の識別子を保持する。人間入力が無い場合は作業開始の参照を使う。Stopの`termination_order_advisor`が`claim_stop_review`で排他下に記録し、同じ作業・入力への再通知を抑える。通知の事実だけを示し、工程完了や送達の証拠には使わない。新しい入力では再び一度通知し、作業の除去とともに消える
+  - 終了時の点検通知: `stop_review_notice`は作業ごとに通知した人間入力の識別子を保持する。人間入力が無い場合は作業開始の参照を使う。Stopの`termination_order_advisor`が`claim_stop_review`で排他下に記録し、同じ作業・入力への再通知を抑える。通知した事実だけを示す記録であり、用途は同じ作業・入力への再通知の抑止に限る。新しい入力では再び一度通知し、作業の除去とともに消える
 
 ## 通知反復系
 

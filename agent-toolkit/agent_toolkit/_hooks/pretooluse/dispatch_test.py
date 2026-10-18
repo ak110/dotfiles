@@ -13,7 +13,6 @@ from typing import Any
 import pytest
 
 from agent_toolkit import hook
-from agent_toolkit._hooks import rules_context
 from agent_toolkit._hooks.pretooluse import agent_checks
 from agent_toolkit._hooks.pretooluse import dispatch as pretooluse
 from agent_toolkit._hooks.pretooluse.decision import Decision
@@ -25,7 +24,6 @@ from agent_toolkit._testing.pretooluse_support import (
     _agent_messages,
     _make_plan_file,
     _plan_file_state_env,
-    _read_session_state,
     _run,
     _stderr_warn_offenders,
     _user_facing_payload,
@@ -745,7 +743,7 @@ class TestMojibakeCheck:
     """
 
     def test_user_facing_text_with_mojibake_is_warned(self):
-        result = _run({"tool_name": "ExitPlanMode", "tool_input": {"plan": "hello " + chr(0xFFFD) + " world"}})
+        result = _run({"tool_name": "ExitPlanMode", "tool_input": {"plan": "内容を確認" + chr(0xFFFD) + "してください。"}})
         assert result.returncode == 0
         context = _additional_context(result)
         assert "U+FFFD" in context
@@ -1196,232 +1194,56 @@ class TestPlanFileDoesNotRequireTextlintRead:
 
 
 class TestResponseLanguageCheck:
-    """直前メインエージェント応答の日本語文字比率を用いた判定の統合動作。"""
+    """英語の応答後は日本語の書き直しまで操作を止める。"""
 
-    @staticmethod
-    def _write_transcript(tmp_path: pathlib.Path, text: str, *, is_sidechain: bool = False) -> pathlib.Path:
-        entry: dict = {
-            "type": "assistant",
-            "message": {
-                "id": "m1",
-                "role": "assistant",
-                "content": [{"type": "text", "text": text}],
-                "stop_reason": "end_turn",
-            },
-        }
-        if is_sidechain:
-            entry["isSidechain"] = True
-        path = tmp_path / "transcript.jsonl"
-        path.write_text(json.dumps(entry, ensure_ascii=False) + "\n", encoding="utf-8")
-        return path
+    @pytest.mark.parametrize("delegated", ["0", "1"])
+    def test_blocks_english_until_rewritten(self, tmp_path: pathlib.Path, delegated: str) -> None:
+        transcript = tmp_path / "transcript.jsonl"
+        payload = {"tool_name": "Read", "tool_input": {"file_path": str(tmp_path / "file")}, "transcript_path": str(transcript)}
+        env = {**_plan_file_state_env(tmp_path), "AGENT_TOOLKIT_DELEGATED_SESSION": delegated}
 
-    def test_warns_when_response_is_english(self, tmp_path: pathlib.Path):
-        """日本語比率0%・プレーンテキスト50文字以上の応答で警告が乗る。"""
-        transcript = self._write_transcript(tmp_path, "A" * 100)
-        result = _run(
-            {
-                "tool_name": "Bash",
-                "tool_input": {"command": "ls"},
-                "transcript_path": str(transcript),
-            }
+        def write(text: str) -> None:
+            transcript.write_text(
+                json.dumps(
+                    {
+                        "type": "assistant",
+                        "message": {"id": "m1", "role": "assistant", "content": [{"type": "text", "text": text}]},
+                    }
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+
+        write("Read the draft and evidence.")
+        first = _run(payload, env_overrides=env)
+        repeated = _run(payload, env_overrides=env)
+        assert first.returncode == repeated.returncode == 2
+        assert "日本語で書き直す" in first.stderr
+        assert "識別子と名前" in first.stderr
+        write("原稿と根拠を読みます。")
+        assert _run(payload, env_overrides=env).returncode == 0
+
+    def test_subagent_pretooluse_leaves_parent_transcript(self, tmp_path: pathlib.Path) -> None:
+        transcript = tmp_path / "parent.jsonl"
+        transcript.write_text(
+            json.dumps({"type": "assistant", "message": {"content": [{"type": "text", "text": "Read the draft."}]}}),
+            encoding="utf-8",
         )
+        result = _run({"agent_id": "child", "tool_name": "Read", "tool_input": {}, "transcript_path": str(transcript)})
         assert result.returncode == 0
-        output = json.loads(result.stdout)
-        assert "permissionDecision" not in output["hookSpecificOutput"]
-        ctx = _additional_context(result)
-        assert auto_message_opening_attributes(ctx) == {"source": "pretooluse", "kind": "warn"}
-        assert "英語主体" in ctx
-        assert "evaluate relevance" not in ctx
-
-    def test_no_warn_when_response_is_japanese(self, tmp_path: pathlib.Path):
-        """日本語比率高めの応答では日本語比率警告が出ない。"""
-        transcript = self._write_transcript(tmp_path, "これは日本語の応答です。" * 5)
-        result = _run(
-            {
-                "tool_name": "Bash",
-                "tool_input": {"command": "ls"},
-                "transcript_path": str(transcript),
-            }
-        )
-        assert result.returncode == 0
-        assert "英語主体" not in _additional_context(result)
-
-    def test_no_warn_for_sidechain(self, tmp_path: pathlib.Path):
-        """payloadのisSidechain=trueでは応答の言語を判定しない。"""
-        transcript = self._write_transcript(tmp_path, "A" * 100)
-        result = _run(
-            {
-                "tool_name": "Bash",
-                "tool_input": {"command": "ls"},
-                "transcript_path": str(transcript),
-                "isSidechain": True,
-            }
-        )
-        assert result.returncode == 0
-        assert result.stdout == ""
-
-    @pytest.mark.parametrize(("delegated", "warns"), [(False, True), (True, False)])
-    def test_delegated_session_language_check_boundary(
-        self,
-        tmp_path: pathlib.Path,
-        monkeypatch: pytest.MonkeyPatch,
-        delegated: bool,
-        warns: bool,
-    ) -> None:
-        """agents_serverの委譲先の応答だけは言語を判定しない。"""
-        transcript = self._write_transcript(tmp_path, "This is a plain English status report for the current task.")
-        if delegated:
-            monkeypatch.setenv("AGENT_TOOLKIT_DELEGATED_SESSION", "1")
-        else:
-            monkeypatch.delenv("AGENT_TOOLKIT_DELEGATED_SESSION", raising=False)
-
-        result = _run(
-            {
-                "tool_name": "Bash",
-                "tool_input": {"command": "ls"},
-                "transcript_path": str(transcript),
-            }
-        )
-
-        assert result.returncode == 0
-        assert ("英語主体" in _additional_context(result)) is warns
 
     @pytest.mark.parametrize(
-        ("child_fields", "child_env"),
+        "tool_name,tool_input",
         [
-            ({"agent_id": "child-one"}, {}),
-            ({"agent_id": "child-two"}, {}),
-            ({"isSidechain": True}, {}),
-            ({}, {"AGENT_TOOLKIT_DELEGATED_SESSION": "1"}),
+            (
+                "AskUserQuestion",
+                {"questions": [{"question": "Which option should we choose?", "header": "確認", "options": []}]},
+            ),
+            ("ExitPlanMode", {"plan": "Implement the planned changes."}),
         ],
     )
-    def test_child_does_not_consume_main_warning(self, tmp_path: pathlib.Path, child_fields: dict, child_env: dict) -> None:
-        """子の後に同じ応答を読むメインだけが、一度の警告を受け取る。"""
-        sid = "language-child-main"
-        transcript = self._write_transcript(tmp_path, "English status report for the current work.")
-        environment = {**_plan_file_state_env(tmp_path), "AGENT_TOOLKIT_DELEGATED_SESSION": ""}
-        _write_session_state(tmp_path, sid, {"unrelated": True})
-        payload = {
-            "session_id": sid,
-            "tool_name": "Bash",
-            "tool_input": {"command": "ls"},
-            "transcript_path": str(transcript),
-        }
-
-        child = _run({**payload, **child_fields}, env_overrides={**environment, **child_env})
-        assert child.returncode == 0
-        assert "英語主体" not in _additional_context(child)
-        state = _read_session_state(tmp_path, sid)
-        assert "english_warning_count" not in state
-        assert "english_warning_msg_id" not in state
-        assert state["unrelated"] is True
-
-        first = _run(payload, env_overrides=environment)
-        repeated = _run(payload, env_overrides=environment)
-        assert first.returncode == repeated.returncode == 0
-        assert "英語主体" in _additional_context(first)
-        assert "permissionDecision" not in json.loads(first.stdout)["hookSpecificOutput"]
-        assert "英語主体" not in _additional_context(repeated)
-        state = _read_session_state(tmp_path, sid)
-        assert state["english_warning_count"] == 1
-        assert state["english_warning_msg_id"] == "m1"
-
-    def test_no_warn_without_transcript_path(self):
-        """transcript_pathを指定しなければ応答の言語を判定しない。"""
-        result = _run({"tool_name": "Bash", "tool_input": {"command": "ls"}})
-        assert result.returncode == 0
-        assert result.stdout == ""
-
-    def test_warns_for_text_turn_before_tool_only_turn(self, tmp_path: pathlib.Path) -> None:
-        transcript = tmp_path / "transcript.jsonl"
-        entries = [
-            {
-                "type": "assistant",
-                "message": {"id": "text", "role": "assistant", "content": [{"type": "text", "text": "English response only."}]},
-            },
-            {
-                "type": "assistant",
-                "message": {"id": "tool", "role": "assistant", "content": [{"type": "tool_use", "name": "Bash"}]},
-            },
-        ]
-        transcript.write_text("\n".join(json.dumps(entry) for entry in entries) + "\n", encoding="utf-8")
-
-        result = _run({"tool_name": "Bash", "tool_input": {"command": "ls"}, "transcript_path": str(transcript)})
-
-        assert result.returncode == 0
-        assert "英語主体" in _additional_context(result)
-
-
-class TestWarnJsonAndLanguageWarningComposition:
-    """言語警告をwarn系checkのJSONの`additionalContext`の末尾へ結合する契約を検証する。"""
-
-    def test_language_warning_appended_to_warn_json(self, tmp_path: pathlib.Path) -> None:
-        transcript = tmp_path / "transcript.jsonl"
-        transcript.write_text(
-            json.dumps(
-                {
-                    "type": "assistant",
-                    "message": {
-                        "id": "m-language-composition",
-                        "role": "assistant",
-                        "content": [{"type": "text", "text": "A" * 100}],
-                        "stop_reason": "end_turn",
-                    },
-                },
-                ensure_ascii=False,
-            )
-            + "\n",
-            encoding="utf-8",
-        )
-        result = _run(
-            {
-                "tool_name": "Write",
-                "tool_input": {"file_path": str(tmp_path / "uv.lock"), "content": "version = 1\n"},
-                "transcript_path": str(transcript),
-                "session_id": "edit-language-warning-composition",
-            },
-            env_overrides=_plan_file_state_env(tmp_path),
-        )
-        assert result.returncode == 0
-        output = json.loads(result.stdout)
-        assert "permissionDecision" not in output["hookSpecificOutput"]
-        context = output["hookSpecificOutput"]["additionalContext"]
-        language_warning = "英語主体"
-        lockfile_warning = "uv add"
-        assert language_warning in context
-        assert lockfile_warning in context
-
-    def test_atk_output_loss_block_preserves_pending_warning(self, tmp_path: pathlib.Path) -> None:
-        """新しいBash遮断でも、保留中の通知を失わずstderrへ届ける。"""
-        transcript = tmp_path / "transcript.jsonl"
-        transcript.write_text(
-            json.dumps(
-                {
-                    "type": "assistant",
-                    "message": {"id": "atk-output", "role": "assistant", "content": [{"type": "text", "text": "A" * 100}]},
-                }
-            )
-            + "\n",
-            encoding="utf-8",
-        )
-        env = {
-            **_plan_file_state_env(tmp_path),
-            "AGENT_TOOLKIT_DELEGATED_SESSION": "0",
-            "AGENT_TOOLKIT_OWNER_SESSION": "",
-        }
-        result = _run(
-            {
-                "tool_name": "Bash",
-                "tool_input": {"command": "atk agents wait >/dev/null &"},
-                "session_id": "atk-output-pending-warning",
-                "transcript_path": str(transcript),
-            },
-            env_overrides=env,
-        )
-        assert result.returncode == 2
-        assert result.stdout == ""
-        assert "結果と終了状態を直接受領できない入力" in result.stderr
-        assert "英語主体" in result.stderr
+    def test_blocks_english_user_facing_input(self, tool_name: str, tool_input: dict) -> None:
+        assert _run({"tool_name": tool_name, "tool_input": tool_input}).returncode == 2
 
 
 class TestRemovedChecksAreSilent:
@@ -1507,62 +1329,15 @@ class TestRemovedChecksAreSilent:
             assert result.stderr == "", payload
 
 
-class TestLanguageReinjection:
-    """Claude Codeのメインセッションで、直前の注入から10回目のツール呼び出しへ日本語の応答指示を添える。
-
-    間隔10回は、2026-09-22以降のClaude Codeメイン記録で、
-    セッション開始または会話圧縮から最初の`response_language_check`の通知までの
-    ツール呼び出し回数が中央値20回、下位30%が11回だった集計に基づく。
-    委譲先とCodexは応答をユーザーが直接読まないため添えない。
-    """
-
-    _MAIN_ENV = {"AGENT_TOOLKIT_DELEGATED_SESSION": "0", "AGENT_TOOLKIT_OWNER_SESSION": ""}
-
-    def _contexts(self, tmp_path: pathlib.Path, extra_payload: dict, extra_env: dict[str, str]) -> list[str]:
-        env = {**_plan_file_state_env(tmp_path), **self._MAIN_ENV, **extra_env}
-        payload = {
-            "session_id": "language-reinjection",
-            "tool_name": "Read",
-            "tool_input": {"file_path": str(tmp_path / "missing.txt")},
-            **extra_payload,
-        }
-        contexts = []
-        for _ in range(agent_checks.LANGUAGE_REINJECTION_INTERVAL + 1):
-            result = _run(payload, env_overrides=env)
-            assert result.returncode == 0, result.stderr
-            contexts.append(_additional_context(result))
-        return contexts
-
-    def test_main_session_receives_notice_on_interval(self, tmp_path: pathlib.Path) -> None:
-        contexts = self._contexts(tmp_path, {}, {})
-        notice = rules_context.RESPONSE_LANGUAGE_REINJECTION_NOTICE
-        interval = agent_checks.LANGUAGE_REINJECTION_INTERVAL
-        assert [notice in context for context in contexts] == [False] * (interval - 1) + [True, False]
-        assert all(rules_context.RESPONSE_LANGUAGE_NOTICE not in context for context in contexts)
-
-    def test_repeated_reinjection_has_no_repeat_count(self, tmp_path: pathlib.Path) -> None:
-        """定期の再注入は違反の通知ではないため、2周目以降も同じ本文を件数なしで届ける。"""
-        interval = agent_checks.LANGUAGE_REINJECTION_INTERVAL
-        contexts = self._contexts(tmp_path, {}, {}) + self._contexts(tmp_path, {}, {})
-        injected = [context for context in contexts if rules_context.RESPONSE_LANGUAGE_REINJECTION_NOTICE in context]
-        assert len(injected) == len(contexts) // interval
-        assert len(injected) >= 2
-        assert all("件目" not in context for context in injected)
-
-    @pytest.mark.parametrize(
-        ("extra_payload", "extra_env"),
-        [
-            ({}, {"AGENT_TOOLKIT_DELEGATED_SESSION": "1"}),
-            ({"agent_id": "subagent-1"}, {}),
-            ({"turn_id": "codex-turn"}, {}),
-        ],
-        ids=["agents-server-delegate", "claude-subagent", "codex"],
-    )
-    def test_delegates_and_codex_do_not_receive_notice(
-        self, tmp_path: pathlib.Path, extra_payload: dict, extra_env: dict[str, str]
-    ) -> None:
-        contexts = self._contexts(tmp_path, extra_payload, extra_env)
-        assert all(rules_context.RESPONSE_LANGUAGE_REINJECTION_NOTICE not in context for context in contexts)
+def test_repeated_pretooluse_does_not_reinject_language(tmp_path: pathlib.Path) -> None:
+    """11回以上の呼び出しでも定期の言語指示を返さない。"""
+    for _ in range(12):
+        result = _run(
+            {"session_id": "no-language-reinjection", "tool_name": "Read", "tool_input": {}},
+            env_overrides=_plan_file_state_env(tmp_path),
+        )
+        assert result.returncode == 0
+        assert "ツール呼び出し前の短いステータス行も含めて日本語" not in result.stdout
 
 
 @pytest.mark.parametrize(

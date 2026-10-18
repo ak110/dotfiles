@@ -552,7 +552,8 @@ class TestRealignNoticeInjection:
     ) -> None:
         result = _run({"session_id": "realign-machine", "prompt": prompt, **host_fields, **extra}, state_dir=tmp_path)
         assert result.returncode == 0
-        assert not result.stdout
+        assert "認識合わせ" not in result.stdout
+        assert "この発話は" not in result.stdout
         assert not _read_state(tmp_path, "realign-machine")
 
     @pytest.mark.parametrize("host_fields", [{}, {"model": "gpt-test", "turn_id": "turn-test"}])
@@ -786,7 +787,8 @@ class TestVerificationNoticeInjection:
         result = _run({"session_id": sid, "prompt": "<task-notification>完了</task-notification>"}, state_dir=tmp_path)
 
         assert result.returncode == 0
-        assert result.stdout == ""
+        assert "バックグラウンドタスク完了の自動通知" in result.stdout
+        assert "この発話は" not in result.stdout
         assert _read_state(tmp_path, sid)["last_user_prompt_at"] == previous
 
     def test_injects_for_slash_command(self, tmp_path: pathlib.Path) -> None:
@@ -1216,3 +1218,18 @@ class TestFixedSessionTitle:
 
         assert result.returncode == 0
         assert json.loads(result.stdout)["hookSpecificOutput"]["sessionTitle"] == "fallback-plan"
+
+
+@pytest.mark.parametrize("prefix", ["", "[SYSTEM NOTIFICATION - NOT USER INPUT]\n"])
+def test_task_completion_notice_has_japanese_automated_boundary(tmp_path: pathlib.Path, prefix: str) -> None:
+    """本体の包みを含む完了通知も、実ユーザー発話の注記を消費しない。"""
+    result = _run(
+        {"session_id": "completion-notice", "prompt": prefix + "<task-notification>Task complete</task-notification>"},
+        state_dir=tmp_path,
+    )
+    assert result.returncode == 0
+    context = json.loads(result.stdout)["hookSpecificOutput"]["additionalContext"]
+    assert "<atk-auto" in context
+    assert "ユーザーの発話ではない" in context
+    assert "日本語で書く" in context
+    assert "この発話は" not in context

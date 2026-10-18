@@ -106,7 +106,7 @@ _PROCESS_WI_NAMES_EXTENDED = _extend_with_short_names(_PROCESS_WI_SKILL_NAMES)
 # 先頭記号の直後に`agent-toolkit:`prefixがある場合と無い場合の両方を許容する。
 # スキル名として妥当な文字（英数・ハイフン・アンダースコア）のみを対象とする。
 _SKILL_COMMAND_PATTERN = re.compile(r"\A(?:agent-toolkit:)?([A-Za-z0-9][A-Za-z0-9_-]*)\b")
-_HARNESS_MESSAGE_RE = re.compile(r"^\s*<task-notification\b")
+_HARNESS_MESSAGE_RE = re.compile(r"^\s*(?:\[SYSTEM NOTIFICATION - NOT USER INPUT\]\s*)?<task-notification\b")
 _USER_PROMPT_SOURCE_KEY = "source"
 _USER_PROMPT_SOURCE_USER = "user"
 _VERIFICATION_NOTICE_INTERVAL_SECONDS = 180.0
@@ -270,6 +270,16 @@ def main(payload_text: str) -> int:
     # 公式契約では`prompt`はユーザーの送信本文である。実装版2.1.221で観測した
     # `<task-notification>`通知がユーザー発話として届く場合だけを防御的に除外し、一般的な入力契約とは扱わない。
     if _is_harness_message(prompt):
+        if is_codex_payload(payload):
+            return 0
+        _emit_hook_output(
+            session_title_output=None,
+            additional_context=_llm_notice(
+                "このターンは`Claude Code`のバックグラウンドタスク完了の自動通知で始まった。"
+                "ユーザーの発話ではない。応答と成果物は日本語で書く。",
+                tag="notice",
+            ),
+        )
         return 0
 
     machine_injected = _is_machine_injected(payload, prompt)

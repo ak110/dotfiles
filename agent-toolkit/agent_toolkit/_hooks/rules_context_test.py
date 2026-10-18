@@ -13,7 +13,7 @@ import pytest
 
 from agent_toolkit._atk import managed_temp
 from agent_toolkit._atk.wi import process_loop_log
-from agent_toolkit._common import plugin_environment, session_state
+from agent_toolkit._common import plugin_environment
 from agent_toolkit._hooks import posttooluse, pretooluse, rules_context, rules_context_codex
 from agent_toolkit._testing.managed_temp_support import setattr_in_managed_temp_modules
 
@@ -515,26 +515,6 @@ def test_subagent_start_separates_temp_files_and_reuses_agent_directory(
     (paths[1] / "msg1.txt").write_text("担当B", encoding="utf-8")
     assert (paths[0] / "msg1.txt").read_text(encoding="utf-8") == "担当A"
     assert len(managed_temp.list_managed_temp(session_id="parent")) == 1
-
-
-def test_session_start_resets_language_reinjection_count(
-    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """メインのSessionStartが日本語の応答指示を注入した時点で、再注入までの呼び出し回数を0へ戻す。"""
-    monkeypatch.delenv("AGENT_TOOLKIT_DELEGATED_SESSION", raising=False)
-    monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)
-    monkeypatch.setattr("tempfile.tempdir", str(tmp_path))
-
-    def _no_session_temp(*_args: object, **_kwargs: object) -> pathlib.Path:
-        raise OSError("テストではセッションのmanaged-tempを作成しない")
-
-    monkeypatch.setattr(rules_context.managed_temp, "create_managed_temp", _no_session_temp)
-    session_state.update_state("reset-target", lambda current: {**current, rules_context.LANGUAGE_REINJECTION_COUNT_KEY: 7})
-
-    rules_context.main(json.dumps({"hook_event_name": "SessionStart", "source": "compact", "session_id": "reset-target"}))
-
-    assert rules_context.RESPONSE_LANGUAGE_NOTICE in _output(capsys)
-    assert session_state.read_state("reset-target")[rules_context.LANGUAGE_REINJECTION_COUNT_KEY] == 0
 
 
 @pytest.mark.parametrize(

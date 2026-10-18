@@ -4,17 +4,19 @@ r"""Claude Code plugin agent-toolkit: PreToolUse統合フック。
 block系checkは1プロセスで直列実行し、最初の違反でexit 2する。
 warn種別のcheckはstdoutの`hookSpecificOutput.additionalContext`へ警告を載せつつ処理を継続する
 （exit 0で終了したフックのstderrはコーディングエージェントへ届かないため）。
-遮断は不可逆な操作とデータ破損を生む入力に限定し、後続の編集で復元できる結果は警告する。
+通常の遮断は不可逆な操作とデータ破損を生む入力に限定し、後続の編集で復元できる結果は警告する。
+記述言語の書き直しは`claude-hooks-block-warn.md`「遮断と警告の選択」の例外として遮断する。
 
 統合しているチェック:
 
 任意ツール:
 
-- メインエージェント応答の日本語文字比率が閾値未満の場合の警告 (warn)
+- メインと委譲先の直前応答が英語主体の場合の書き直し要求 (block)
 
 AskUserQuestion / ExitPlanMode:
 
 - ユーザーが直接読む質問本文・計画本文の文字化けの警告 (warn)
+- ユーザーが直接読む英語主体の質問本文・計画本文の書き直し要求 (block)
 - 確認の前に読む2資料（`agent-toolkit:user-confirmation-and-report`）を読まないままメインが呼んだ
   `AskUserQuestion`の警告 (warn、昇格しない)
 
@@ -91,7 +93,6 @@ lazy from agent_toolkit._hooks import (
 lazy from agent_toolkit._hooks import (
     message_format as _message_format,
 )
-lazy from agent_toolkit._hooks import rules_context as _rules_context
 lazy from agent_toolkit._hooks import (
     tool_input as _hook_tool_input,
 )
@@ -102,7 +103,6 @@ lazy from agent_toolkit._hooks.pretooluse.agent_checks import (
     _AGENTS_SERVER_SEND_TOOLS,
     _AGENTS_SERVER_TOOL_NAMES,
     _PLAN_MODE_SKILL_NAMES,
-    _advance_language_reinjection,
     _check_agents_server_continuation_input,
     _check_task_stop,
     _clear_current_plan_file_path,
@@ -117,7 +117,7 @@ lazy from agent_toolkit._hooks.pretooluse.large_reads import (
     check_large_bash_read,
     session_record_reference_warning,
 )
-lazy from agent_toolkit._hooks.pretooluse.notices import _HOOK_ID, _llm_notice
+lazy from agent_toolkit._hooks.pretooluse.notices import _HOOK_ID, _block_notice, _llm_notice
 lazy from agent_toolkit._hooks.pretooluse.operation_skills import operation_skill_warnings
 lazy from agent_toolkit._hooks.pretooluse.shell_checks import (
     _check_bash_atk_output_loss,
@@ -200,27 +200,13 @@ def main(payload_text: str) -> int:
     # ホスト判定はpayload読込直後に一度だけ行い、以降の判定処理の選択と入力アダプターへ同じ値を渡す。
     is_codex = is_codex_payload(payload)
 
-    # 直前メインエージェント応答の日本語比率警告（任意ツール）。
-    # 他warn系checkがJSONを返す場合はadditionalContextの末尾へ追記し、それ以外は単独でJSON出力する。
-    # transcriptを安定インターフェースとして扱えないCodexでは実行しない。
-    language_warning_body = None if is_codex else _handle_language_check(payload, session_id)
-
-    # 出力を保留する通知の一覧。exit 0のstderrはコーディングエージェントへ届かないため、
-    # 通常はstdoutの`hookSpecificOutput.additionalContext`へ結合して出力する。
-    # 遮断で終える場合はJSONを出力しないため、`exit_with`がstderrへ出力して消費する。
-    pending_notices: list[str] = []
-    if language_warning_body is not None:
-        pending_notices.append(
-            _llm_notice(
-                language_warning_body,
-                tag=_WARN_TAG,
-                fix=_response_language_check.WARNING_FIX,
-                removable_cause=True,
-            )
+    # 日本語で書き直して識別子を確認するまで、後続の操作を止める。
+    language_body = None if is_codex else _handle_language_check(payload)
+    if language_body is not None:
+        return _emit(
+            Decision(block=_block_notice(language_body, fix=_response_language_check.WARNING_FIX)), [], is_codex=is_codex
         )
-    # Claude Codeのメインセッションでは一定間隔で日本語の応答指示を文脈の近くへ置き直す。
-    if not is_codex and _advance_language_reinjection(payload, session_id):
-        pending_notices.append(_message_format.llm_notice(_rules_context.RESPONSE_LANGUAGE_REINJECTION_NOTICE, _HOOK_ID))
+    pending_notices: list[str] = []
     decision = _decide(payload, tool_name, tool_input, session_id, is_codex=is_codex)
     if decision.block is None:
         notices = operation_skill_warnings(payload, tool_name, tool_input, session_id, is_codex=is_codex)
@@ -480,12 +466,22 @@ def _decide_user_facing_text_tool(payload: dict, tool_name: str, tool_input: dic
     ユーザーへ直接到達する本文はユーザー自身が読んで誤りを指摘できるため、復元できない結果に当たらない。
     遮断するとそのターンの入力と作業を失い、同じ確認を再発行する必要があるため、警告で返す。
     判定の根拠は`agent-toolkit:writing-standards`の`references/claude-hooks-block-warn.md`
-    「遮断と警告の選択」が定める。2つの判定は互いの結果に依存せず、成立した警告を同じ追加コンテキストへ並べる。
+    「遮断と警告の選択」が定める。記述言語の判定は同節の例外により表示前に遮断し、日本語での書き直しを求める。他の2つの判定は、成立した警告を同じ追加コンテキストへ並べる。
     """
+    fields = _user_facing_text_fields(tool_name, tool_input)
+    for name, text in fields:
+        outcome, body = _response_language_check.check_text(text)
+        if outcome is _response_language_check.CheckOutcome.WARN:
+            return Decision(
+                block=_block_notice(
+                    f"対象の入力欄: `{name}`。{_response_language_check.BLOCK_BODY}{body}",
+                    fix=_response_language_check.WARNING_FIX,
+                )
+            )
     warnings = [
         warning
         for warning in (
-            _warn_mojibake(tool_name, _user_facing_text_fields(tool_name, tool_input)),
+            _warn_mojibake(tool_name, fields),
             unread_reference_warning(payload, tool_name),
         )
         if warning is not None

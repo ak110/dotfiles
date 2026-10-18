@@ -827,7 +827,7 @@ def _is_response_language_notice(event: dict[str, Any]) -> bool:
     同じ`pretooluse`の`warn`通知には他の判定処理が返す通知も含まれるため、発生源と区分に加えて本文の先頭を
     hook側の本文定数と比べる。定数を参照するのは、hook側の文言を変えたときに判定を追随させるためである。
     """
-    if event.get("hook") != "pretooluse" or event.get("tag") != "warn":
+    if event.get("hook") not in {"pretooluse", "response-language"} or event.get("tag") not in {"warn", "block"}:
         return False
     text = event.get("text")
     if not isinstance(text, str) or not text:

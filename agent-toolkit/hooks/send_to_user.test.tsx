@@ -77,6 +77,7 @@ for (const env of DELEGATED_ENVS) {
 
 test("send_to_userの呼び出しは許可され、確認応答を返す", async ($, on) => {
   mock.env(on, {});
+  on("process.run", () => ({ value: { exitCode: 0, stdout: JSON.stringify({ outcome: "pass", body: null, fix: "" }), stderr: "", isStdoutTruncated: false, isStderrTruncated: false } }));
   const { decision } = await $.tool.check({ tool: TOOL, input: { message: MESSAGE } });
   expect(decision).toBe("allow");
   const called = await $.tool.call({ tool: TOOL, message: MESSAGE });
@@ -87,6 +88,7 @@ test("send_to_userの呼び出しは許可され、確認応答を返す", async
 
 test("サブエージェントのsend_to_userは拒否し、結果本文を最終応答で委譲元へ返すよう案内する", async ($, on) => {
   mock.env(on, {});
+  on("process.run", () => ({ value: { exitCode: 0, stdout: JSON.stringify({ outcome: "pass", body: null, fix: "" }), stderr: "", isStdoutTruncated: false, isStderrTruncated: false } }));
   expect((await $.tool.check({ tool: TOOL, agentId: "child", input: { message: MESSAGE } })).decision).toBe("deny");
   const called = await $.tool.call({ tool: TOOL, agentId: "child", message: MESSAGE });
   expect(called.result).toBeUndefined();
@@ -96,6 +98,7 @@ test("サブエージェントのsend_to_userは拒否し、結果本文を最�
 
 test("send_to_userは文字列のmessageが無ければ表示済みと返さない", async ($, on) => {
   mock.env(on, {});
+  on("process.run", () => ({ value: { exitCode: 0, stdout: JSON.stringify({ outcome: "pass", body: null, fix: "" }), stderr: "", isStdoutTruncated: false, isStderrTruncated: false } }));
   for (const input of [{ text: MESSAGE }, {}, { message: null }, { message: 1 }, { message: {} }]) {
     const called = await $.tool.call({ tool: TOOL, ...input });
     expect(called.deny).toBeDefined();
@@ -105,6 +108,7 @@ test("send_to_userは文字列のmessageが無ければ表示済みと返さな�
 
 test("send_to_userは空文字のmessageも描画と同じ条件で受け取る", async ($, on) => {
   mock.env(on, {});
+  on("process.run", () => ({ value: { exitCode: 0, stdout: JSON.stringify({ outcome: "pass", body: null, fix: "" }), stderr: "", isStdoutTruncated: false, isStderrTruncated: false } }));
   const called = await $.tool.call({ tool: TOOL, message: "" });
   expect(called.deny).toBeUndefined();
   expect(called.isError).toBeUndefined();
@@ -148,3 +152,113 @@ test("他ツールとsend_to_userのエラー結果は後続の描画へ渡す",
     }
   }
 });
+
+test("英語主体のmessageは表示せず書き直しを求める", async ($, on) => {
+  mock.env(on, {});
+  on("process.run", (_$, e) => {
+    expect(e.argv).toContain("--text=The work is complete.");
+    return { value: { exitCode: 0, stdout: JSON.stringify({ outcome: "warn", body: "英語主体の本文。", fix: "日本語で書き直し、識別子と名前を確かめる。" }), stderr: "", isStdoutTruncated: false, isStderrTruncated: false } };
+  });
+  const result = await $.tool.call({ tool: TOOL, message: "The work is complete." });
+  expect(result.result).toBeUndefined();
+  expect(result.deny).toContain("日本語で書き直し");
+});
+
+test("言語判定中と拒否・中断後のToolUseに入力本文を描かない", async ($, on) => {
+  mock.env(on, {});
+  const message = "The work is complete.";
+  on("process.run", () => ({ value: { exitCode: 0, stdout: JSON.stringify({ outcome: "warn", body: "英語主体の本文。", fix: "日本語で書き直す。" }), stderr: "", isStdoutTruncated: false, isStderrTruncated: false } }));
+  const denied = await $.tool.call({ tool: TOOL, message });
+  expect(denied.result).toBeUndefined();
+  expect(denied.deny).toContain("日本語で書き直す");
+  for (const surface of ["terminal", "desktop"] as const) {
+    for (const status of [
+      { isRunning: true, isErrored: false, isInterrupted: false, output: undefined },
+      { isRunning: false, isErrored: true, isInterrupted: false, output: denied.deny },
+      { isRunning: false, isErrored: false, isInterrupted: true, output: "中断" },
+    ]) {
+      const ui = await $.ui.mount({ plugin: PLUGIN, surface, component: "ToolUse", requestId: "toolu_1", props: { ...row(TOOL, { message }), ...status } });
+      expect(await ui.find({ type: "Markdown" })).toBeUndefined();
+      expect(await ui.find({ type: "Box" })).toBeDefined();
+      await ui.unmount();
+    }
+  }
+});
+
+test("日本語の呼び出しが成功した後のToolUseに本文を描く", async ($, on) => {
+  mock.env(on, {});
+  on("process.run", () => ({ value: { exitCode: 0, stdout: JSON.stringify({ outcome: "pass", body: null, fix: "" }), stderr: "", isStdoutTruncated: false, isStderrTruncated: false } }));
+  const message = "確認と検証が完了しました。";
+  const accepted = await $.tool.call({ tool: TOOL, message });
+  expect(accepted.result).toBe("ユーザーの画面へ表示した。");
+  for (const surface of ["terminal", "desktop"] as const) {
+    const ui = await $.ui.mount({ plugin: PLUGIN, surface, component: "ToolUse", requestId: "toolu_1", props: { ...row(TOOL, { message }), output: accepted.result } });
+    expect((await ui.find({ type: "Markdown" }))?.props.text).toBe(message);
+    await ui.unmount();
+  }
+});
+
+for (const [name, response, expected] of [
+  ["非0終了", { exitCode: 7, stdout: "", stderr: "入力本文を含めない", isStdoutTruncated: false, isStderrTruncated: false }, "終了コード 7"],
+  ["標準出力の切り詰め", { exitCode: 0, stdout: "", stderr: "", isStdoutTruncated: true, isStderrTruncated: false }, "標準出力の切り詰め true"],
+  ["標準エラーの切り詰め", { exitCode: 0, stdout: "", stderr: "", isStdoutTruncated: false, isStderrTruncated: true }, "標準エラーの切り詰め true"],
+  ["JSON破損", { exitCode: 0, stdout: "broken-json", stderr: "", isStdoutTruncated: false, isStderrTruncated: false }, "JSONとして不正"],
+  ["JSON契約外", { exitCode: 0, stdout: "{}", stderr: "", isStdoutTruncated: false, isStderrTruncated: false }, "outcome・body・fixが契約外"],
+] as const) {
+  test(`言語判定の${name}は診断を返して反復を求めない`, async ($, on) => {
+    mock.env(on, {});
+    const calls: string[] = [];
+    on("process.run", () => { calls.push("check"); return { value: response }; });
+    const called = await $.tool.call({ tool: TOOL, message: "確認が完了しました。" });
+    expect(called.result).toBeUndefined();
+    expect(called.deny).toContain(expected);
+    expect(called.deny).toContain("response_language_check.py");
+    expect(called.deny).toContain("同じ呼び出しを繰り返さず");
+    expect(called.deny).toContain("ユーザーへ報告する");
+    expect(calls).toEqual(["check"]);
+    expect(called.deny).not.toContain("broken-json");
+    expect(called.deny).not.toContain("入力本文を含めない");
+  });
+}
+
+test("言語判定hookの例外は実行段階を返して反復を求めない", async ($, on) => {
+  mock.env(on, {});
+  on("process.run", () => { throw new Error("判定処理の障害"); });
+  const called = await $.tool.call({ tool: TOOL, message: "確認が完了しました。" });
+  expect(called.result).toBeUndefined();
+  expect(called.deny).toContain("process.runで例外が発生");
+  expect(called.deny).toContain("同じ呼び出しを繰り返さず");
+});
+
+for (const caller of [undefined, "", "/caller/project-environment"] as const) {
+  test(`呼出元UV_PROJECT_ENVIRONMENT=${String(caller)}でも専用ランチャーを使う`, async ($, on) => {
+    mock.env(on, caller === undefined ? {} : { UV_PROJECT_ENVIRONMENT: caller });
+    const seen: string[][] = [];
+    on("process.run", (_$, e) => {
+      seen.push([...e.argv]);
+      return { value: { exitCode: 0, stdout: JSON.stringify({ outcome: "pass", body: null, fix: "" }), stderr: "", isStdoutTruncated: false, isStderrTruncated: false } };
+    });
+    const result = await $.tool.call({ tool: TOOL, message: "確認しました。" });
+    expect(result.result).toBe("ユーザーの画面へ表示した。");
+    expect(seen.length).toBe(1);
+    const argv = seen[0]!;
+    expect(argv.slice(0, 7)).toEqual(["uv", "run", "--no-config", "--no-project", "--python", "3.15", "python"]);
+    expect(argv[7]!.endsWith("/scripts/launch.py")).toBe(true);
+    expect(argv.slice(8)).toEqual(["agent_toolkit/_common/response_language_check.py", "--text=確認しました。"]);
+  });
+}
+
+for (const message of ["--help", "--text", "", "--Next verify", "-x\n日本語の本文", "--name=空 白"] as const) {
+  test(`オプションに見える本文も単一の値引数で渡す: ${JSON.stringify(message)}`, async ($, on) => {
+    mock.env(on, {});
+    const seen: string[][] = [];
+    on("process.run", (_$, e) => {
+      seen.push([...e.argv]);
+      return { value: { exitCode: 0, stdout: JSON.stringify({ outcome: "skip", body: null, fix: "" }), stderr: "", isStdoutTruncated: false, isStderrTruncated: false } };
+    });
+    const result = await $.tool.call({ tool: TOOL, message });
+    expect(result.result).toBe("ユーザーの画面へ表示した。");
+    expect(seen.length).toBe(1);
+    expect(seen[0]!.slice(8)).toEqual(["agent_toolkit/_common/response_language_check.py", `--text=${message}`]);
+  });
+}

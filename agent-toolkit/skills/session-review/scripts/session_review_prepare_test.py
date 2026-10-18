@@ -26,7 +26,7 @@ from agent_toolkit._testing.failure_records import bash_failure_entries, failure
 _FIXED_NOW = datetime.datetime(2026, 9, 6, 12, 34, 56, tzinfo=datetime.UTC)
 _LONG_INTERVENTION = "そうじゃなくて、対象は全部です。" + "理由の説明。" * 400 + "最後まで読んで。"
 _BACKGROUND_OUTPUT_NOTICE = (
-    '<agent-toolkit-auto-inserted source="agent-toolkit/pretooluse" kind="warn">'
+    '<atk-auto source="response-language" kind="block">'
     "未完了のバックグラウンドタスクが書き込む出力ファイルを読み取った。完了通知を受けてから読むこと。</agent-toolkit-auto-inserted>"
 )
 
@@ -109,9 +109,9 @@ def test_response_language_notices_are_excluded_from_candidates(
     opening = '<atk-auto source="pretooluse" kind="warn">'
     first_warning = f"{opening}{response_language_check.WARNING_BODY}判定対象の冒頭: 「I will run」</atk-auto>"
     repeated_strong_warning = (
-        '<agent-toolkit-auto-inserted source="agent-toolkit/pretooluse" kind="warn">'
+        '<atk-auto source="response-language" kind="block">'
         f"{response_language_check.BLOCK_BODY}{response_language_check.WARNING_BODY}"
-        "\nこの通知は同一セッションで3件目である。</agent-toolkit-auto-inserted>"
+        "\nこの通知は同一セッションで3件目である。</atk-auto>"
     )
     other_source = f'<atk-auto source="posttooluse" kind="warn">{response_language_check.WARNING_BODY}</atk-auto>'
     entries = [

@@ -44,9 +44,33 @@ def test_codex_completion_rewrites_explanation_and_preserves_material(entrypoint
     assert "decision" not in invoke()
 
 
-@pytest.mark.parametrize(
-    "payload", [{}, [], {"last_assistant_message": "Done here."}, {"turn_id": "t", "last_assistant_message": None}]
-)
+@pytest.mark.parametrize("payload", [{}, [], {"turn_id": "t", "last_assistant_message": None}])
 def test_unavailable_or_other_host_input_is_not_blocked(payload):
     """取得不能や別ホストを未観測の欠陥へ読み替えない。"""
+    assert response_language_advisor.evaluate(json.dumps(payload)) == ("", "")
+
+
+@pytest.mark.parametrize("delegated", ["0", "1"])
+@pytest.mark.parametrize("child", [False, True])
+def test_claude_english_completion_rewrites_once(delegated, child, monkeypatch, capsys):
+    """メイン、委譲先、サブエージェントの英語の最終応答を書き直す。"""
+    monkeypatch.setenv("AGENT_TOOLKIT_DELEGATED_SESSION", delegated)
+    payload: dict[str, object] = {"last_assistant_message": "The work is complete."}
+    if child:
+        payload["agent_id"] = "child"
+    monkeypatch.setattr(stop, "CHECK_MODULE_NAMES", ("response_language_advisor",))
+    raw = json.dumps(payload)
+    if child:
+        assert subagent_stop_advisor.main(raw) == 0
+        blocked = json.loads(capsys.readouterr().out)
+    else:
+        blocked = stop.evaluate(raw)
+    decision, reason = blocked["decision"], blocked["reason"]
+    assert decision == "block"
+    assert isinstance(reason, str)
+    assert "日本語で書いてから停止" in reason
+    payload["stop_hook_active"] = True
+    assert response_language_advisor.evaluate(json.dumps(payload)) == ("", "")
+    payload["stop_hook_active"] = False
+    payload["last_assistant_message"] = "作業が完了しました。"
     assert response_language_advisor.evaluate(json.dumps(payload)) == ("", "")
