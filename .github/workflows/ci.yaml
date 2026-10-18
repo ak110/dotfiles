@@ -260,6 +260,34 @@ jobs:
           agent-toolkit/agent_toolkit/_hooks/permissionrequest_codex_test.py
           agent-toolkit/agent_toolkit/_plan/structure
           agent-toolkit/skills/review-standards/scripts/check_exec_review_evidence_test.py::test_public_command_reads_wi_in_process
+      - name: Codex CLI 0.163.0の導入
+        if: needs.common-ci-owner.outputs.owns == 'true'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $npmVersion = npm.cmd --version
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Write-Output "npm: $npmVersion"
+          npm.cmd install --global --no-audit --no-fund @openai/codex@0.163.0
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $npmRoot = npm.cmd root --global
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          # asyncioの子プロセス起動は、npmのcmd shimを介さず同じ配布物のnative executableを使う。
+          $binaries = @(Get-ChildItem -Path (Join-Path $npmRoot '@openai') -Filter codex.exe -File -Recurse)
+          if ($binaries.Count -ne 1) { throw "codex.exeを一意に解決できません: $($binaries.Count)件" }
+          $version = & $binaries[0].FullName --version
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Write-Output $version
+          if ($version -ne 'codex-cli 0.163.0') { throw "検証対象のCodex版が一致しません: $version" }
+          $binaries[0].DirectoryName | Out-File -FilePath $env:GITHUB_PATH -Append -Encoding utf8
+      - name: Windows Codex sandbox integration
+        if: needs.common-ci-owner.outputs.owns == 'true'
+        shell: pwsh
+        working-directory: ${{ env.DOTFILES_DIR }}
+        run: >-
+          uv run --frozen --python 3.15 pytest -v -rA -p no:cacheprovider
+          agent-toolkit/agent_toolkit/_agents_server/codex_sandbox_integration_test.py::test_windows_explore_probe_reaches_thread_start
+          agent-toolkit/agent_toolkit/_agents_server/codex_sandbox_integration_test.py::test_windows_explore_probe_rejects_custom_output_cap
       - name: 公開入口ランチャーの動作確認
         if: needs.common-ci-owner.outputs.owns == 'true'
         shell: pwsh

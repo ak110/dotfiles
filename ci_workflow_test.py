@@ -154,6 +154,75 @@ def test_windows_job_runs_public_launcher_tests(workflow_data: dict[str, object]
     assert "bin/update_dotfiles_launcher_test.py" in targets
 
 
+def test_windows_job_runs_pinned_codex_sandbox_integration(workflow_data: dict[str, object]) -> None:
+    """固定版CLIを導入した所有Windows jobが実sandbox成功と出力上限指定の拒否を検査する。"""
+    job = workflow_mapping(workflow_jobs(workflow_data)["test-windows"])
+    assert job["runs-on"] == "windows-latest"
+    steps = workflow_steps(job)
+    install_index, install = _windows_step(steps, "Codex CLI 0.163.0の導入")
+    integration_index, integration = _windows_step(steps, "Windows Codex sandbox integration")
+    assert install_index < integration_index
+    assert install["if"] == integration["if"] == "needs.common-ci-owner.outputs.owns == 'true'"
+    script = str(install["run"])
+    assert "npm.cmd install --global --no-audit --no-fund @openai/codex@0.163.0" in script
+    assert "codex-cli 0.163.0" in script
+    assert "$env:GITHUB_PATH" in script
+    targets = direct_pytest_targets({"jobs": {"test-windows": {"steps": [integration]}}})
+    prefix = "agent-toolkit/agent_toolkit/_agents_server/codex_sandbox_integration_test.py::"
+    assert targets == [
+        prefix + "test_windows_explore_probe_reaches_thread_start",
+        prefix + "test_windows_explore_probe_rejects_custom_output_cap",
+    ]
+    assert integration["working-directory"] == "${{ env.DOTFILES_DIR }}"
+
+
+@pytest.mark.skipif(shutil.which("pwsh") is None, reason="pwsh未インストール")
+@pytest.mark.parametrize("failure", ["none", "npm", "missing-cli", "wrong-version"])
+def test_windows_codex_installer_requires_pinned_executable(
+    workflow_data: dict[str, object], tmp_path: Path, failure: str
+) -> None:
+    """導入stepの実PowerShellがnpm失敗・CLI不在・版不一致を非0にし、成功時だけPATHを配送する。"""
+    steps = workflow_steps(workflow_mapping(workflow_jobs(workflow_data)["test-windows"]))
+    script = str(_windows_step(steps, "Codex CLI 0.163.0の導入")[1]["run"])
+    executable = tmp_path / "codex.ps1"
+    version = "codex-cli 0.162.0" if failure == "wrong-version" else "codex-cli 0.163.0"
+    executable.write_text(f"Write-Output '{version}'\n", encoding="utf-8-sig")
+    quoted_cli = str(executable).replace("'", "''")
+    quoted_directory = str(tmp_path).replace("'", "''")
+    npm_status = 1 if failure == "npm" else 0
+    binaries = (
+        "@()"
+        if failure == "missing-cli"
+        else f"[pscustomobject]@{{FullName='{quoted_cli}';DirectoryName='{quoted_directory}'}}"
+    )
+    prelude = "\n".join(
+        (
+            f"function npm.cmd {{ $global:LASTEXITCODE = {npm_status}; Write-Output 'npm-test' }}",
+            f"function Get-ChildItem {{ {binaries} }}",
+        )
+    )
+    script_path = tmp_path / "install.ps1"
+    script_path.write_text(f"{prelude}\n{script}", encoding="utf-8-sig")
+    github_path = tmp_path / "github-path"
+    pwsh = shutil.which("pwsh")
+    assert pwsh is not None
+    result = subprocess.run(
+        [pwsh, "-NoProfile", "-NonInteractive", "-File", str(script_path)],
+        env={**os.environ, "GITHUB_PATH": str(github_path)},
+        check=False,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        timeout=30,
+    )
+    assert (result.returncode == 0) == (failure == "none"), result.stdout + result.stderr
+    if failure == "none":
+        assert github_path.read_text(encoding="utf-8-sig").strip() == str(tmp_path)
+        assert version in result.stdout
+    else:
+        assert not github_path.exists()
+
+
 def test_windows_upgrade_is_independent_from_windows_tests(workflow_data: dict[str, object]) -> None:
     """更新検証とWindows固有検査は依存関係のない別jobが所有する。"""
     jobs = workflow_jobs(workflow_data)
