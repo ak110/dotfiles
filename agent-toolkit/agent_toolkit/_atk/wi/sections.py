@@ -31,21 +31,26 @@ def _lines(text: str) -> collections.abc.Iterator[tuple[str, bool]]:
             yield line, True
 
 
-def h2_sections(text: str) -> dict[str, str]:
-    """H2見出し名ごとの節の本文を返す。同じ名前の節が複数ある場合は後の節を返す。"""
-    sections: dict[str, str] = {}
+def h2_section_items(text: str) -> list[tuple[str, str]]:
+    """H2の節名と本文を出現順に返し、同じ名前の節も保持する。"""
+    sections: list[tuple[str, str]] = []
     current: str | None = None
     lines: list[str] = []
     for line, outside in _lines(text):
         if outside and line.startswith("## "):
             if current is not None:
-                sections[current] = "\n".join(lines).strip("\n")
+                sections.append((current, "\n".join(lines).strip("\n")))
             current, lines = line[3:].strip(), []
         elif current is not None:
             lines.append(line)
     if current is not None:
-        sections[current] = "\n".join(lines).strip("\n")
+        sections.append((current, "\n".join(lines).strip("\n")))
     return sections
+
+
+def h2_sections(text: str) -> dict[str, str]:
+    """H2見出し名ごとの節の本文を返す。同名の節は後の節を返す。"""
+    return dict(h2_section_items(text))
 
 
 def title(text: str) -> str:
