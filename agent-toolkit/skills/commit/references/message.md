@@ -12,7 +12,7 @@
 - エージェント向け文書は配布先の振る舞いを構成するため、判断分岐、規範削除、機能的な規範変更は`chore`の対象外とする。振る舞いを変えるなら`fix`、変えない構成の整理は`refactor`とする
 - scopeは単一モジュール・機能に閉じる場合だけ短い名詞で付ける（努力目標）
 - descriptionは日本語で、変更内容より必要性・可能になること・防ぐ問題を先に、scopeが無くても対象を特定できる粒度で書く（努力目標）。エンドユーザーが呼び出す・設定する・目にする識別子は原表記を保ち、言い換えるのは知り得ない内部識別子に限る
-- 本文は任意で、書く場合は`agent-toolkit:writing-standards`の`references/writing.md`「人間向け文章の共通規定」に従う
+- 本文は任意で、書く場合は`agent-toolkit:writing-standards`の`references/writing.md`「文章の共通規定」に従う
 
 ## `Co-Authored-By:`
 

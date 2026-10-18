@@ -178,7 +178,7 @@ Stopの応答だけやホストのtask_notificationだけを、モデルによ�
 
 ## agent-toolkit/agent_toolkit/_hooks/termination_evidence.py：終了工程の証拠のStop判定：2026年10月3日
 
-Stopで報告の不足を判定する変更（`4862700e1`）の要求を起草した時点で、両ホストの公式Hooks仕様のStopとPostToolUseを確認した。資料はCodexが<https://learn.chatgpt.com/docs/hooks>、Claude Codeが<https://code.claude.com/docs/en/hooks>である。両ホストのStopは`last_assistant_message`を供給し、`decision: "block"`と`reason`で同じターンを継続する。CodexのStopは`hookSpecificOutput`を受理せず、CodexのPostToolUseのBashの`tool_response`は終了コードを含まない出力文字列である（`claude-hooks.md`の既存記録と同じ）。
+Stopで報告の不足を判定する変更（2026年10月4日「fix: 残る報告工程と未発話の報告で停止しないようStopで検出する」、`4862700e1`）の要求を起草した時点で、両ホストの公式Hooks仕様のStopとPostToolUseを確認した。資料はCodexが<https://learn.chatgpt.com/docs/hooks>、Claude Codeが<https://code.claude.com/docs/en/hooks>である。両ホストのStopは`last_assistant_message`を供給し、`decision: "block"`と`reason`で同じターンを継続する。CodexのStopは`hookSpecificOutput`を受理せず、CodexのPostToolUseのBashの`tool_response`は終了コードを含まない出力文字列である（`claude-hooks.md`の既存記録と同じ）。
 実装時の作業ホストはcodex-cli 0.160.0とClaude Code 2.1.288である。確認した範囲は判定器の契約テストまでである。対象は`termination_evidence_test.py`と`completion_report_delivery_advisor_test.py`の判定である。加えて`output_contract_test.py`がCodex Stopの出力を、`sync_codex_plugin_manifests_test.py`が生成を確かめた。ホスト本体のStopの発火と継続、Codexの未信頼設定や無効化されたhookでの挙動は実機で試験していない。
 再検証は両ホストの公式Hooks仕様のStop・PostToolUseの入力と出力を取得し、`last_assistant_message`、Codexの`tool_response`の形とStopの出力契約を比べる。変わった場合は`termination_evidence.py`の可視本文と応答の読取、`output_contract.py`のCodex Stopの契約を改める。
 
@@ -268,8 +268,8 @@ Claude Code 2.1.292のセッション`6ff8ab5b-235b-4bfc-b765-115d1486cd60`で�
 
 ## agent-toolkit/share/rules-main.claude-code.md：ツールの入出力：2026年10月3日
 
-拡張思考の表示に関する変更（`31a598fd5`）の要求を起草した時点の観測環境はClaude Code 2.1.288、モデル`claude-opus-5-5`、
-`showThinkingSummaries=false`だった。transcriptの`thinking`ブロックに保存された文がユーザーの画面へ
+拡張思考の表示に関する変更は、2026年10月4日「fix: 拡張思考の表示を断定せず発話本文への出力を求める」、`31a598fd5`である。
+要求を起草した時点の観測環境はClaude Code 2.1.288、モデル`claude-opus-5-5`、`showThinkingSummaries=false`だった。transcriptの`thinking`ブロックに保存された文がユーザーの画面へ
 通常の応答文と同じ見た目で表示された。一次記録（当時のセッション記録とユーザーが貼った画面表示）はリポジトリ外にあり、
 本節は観測内容だけを保持する。続くStopはtext本文の欠落を遮断したが、思考の非表示を述べる理由は画面と一致しなかった。
 2026年9月28日の記録（Claude Code 2.1.283）では思考の文が表示されなかった。当時の記録は保持する。
@@ -489,7 +489,7 @@ Claude Code 2.1.241で検証した設定は、対象キーを含まない一時J
 
 ## agent-toolkit/skills/delegation/references/claude-code-runtime.md：待機中の定期再確認と背景転換：2026年10月4日
 
-HEAD `80ce39d82`、agent-toolkit 2.188.0の公開CLIで`atk watch --help`を確認した。
+HEAD 2026年10月4日「fix: 不変条件のテストを通常のcommitで自動実行する」、`80ce39d82`、agent-toolkit 2.188.0の公開CLIで`atk watch --help`を確認した。
 保持記録から解決した値を`atk watch --worktree "$worktree_path"`と
 `atk watch --file "$artifact_path"`へ個別に渡し、両方の終了コード0を確認した。
 前者は作業ツリーのdirty件数とHEAD、後者はファイルのlinesとageを返した。
@@ -554,7 +554,7 @@ Claude Code公式資料「Keep Claude working toward a goal」の「Background w
 
 ## agent-toolkit/skills/review-standards/SKILL.md：レビュー指摘管理表の共通操作：2026年10月8日
 
-agent-toolkit 2.199.0の基準commitは`3b3932b5`で、review-table実装の差分は無い。公開CLIで、通常名と`ci-3b3932b.exec-review.tsv`の表をそれぞれ`atk review-table init <パス>`で作成した。両方とも終了コード0で、`wc -c <パス>`は0バイトを示した。`atk review-table validate <パス>`も両方が終了コード0で、応答欄を含めた検証結果は0件だった。ヘッダーと仮の行は追加していない。
+agent-toolkit 2.199.0の基準commitは2026年10月8日「Merge pull request #147 from ak110/develop」、`3b3932b5`で、review-table実装の差分は無い。公開CLIで、通常名と`ci-3b3932b.exec-review.tsv`の表をそれぞれ`atk review-table init <パス>`で作成した。両方とも終了コード0で、`wc -c <パス>`は0バイトを示した。`atk review-table validate <パス>`も両方が終了コード0で、応答欄を含めた検証結果は0件だった。ヘッダーと仮の行は追加していない。
 
 再検証ではmanaged-tempへ異なる通常名とCI名のパスを用意し、前記のinit、バイト数確認、validateを順に実行する。列の順序と旧形式の読み取り互換は`atk review-table --help`で確認する。
 
@@ -608,7 +608,7 @@ A/B実験では、`agent-toolkit/rules/01-agent.md`の「判断指針」と「�
 再検証の契機は、規範文書の一括改訂と、文体の閾値の見直しとする。
 
 2026年10月14日、`scripts/check_agent_doc_tone.py`の文境界を、句点とMarkdown構文解析が返す本文ブロックの末尾へ変更した。同じブロックの折返しは連結し、文末の物理行と抜粋を保持する。frontmatter、HTMLコメント、フェンス付きコード、見出しと表の除外、インラインコードの置換語、8%・3%・20文の判定条件は維持した。字下げコードも保存データとして分子・分母の共通対象から除外し、引用内の本文段落は引き続き数える。
-入力WIの基準期間の再測定は、最初のCodex由来commit `4cef410f8`より前のClaude由来787commitのMarkdown追加行をhunkごとに数えたものである。同じ集合で、句点だけの数え方は1400/16182文（8.65%）、ブロック末も数える方法は1879/22925文（8.20%）だった。この再測定値は入力WIの観測に由来し、2026年9月16日の区分ごとの記録と集計単位が異なるため、数え方による差だけを閾値維持の根拠とする。
+入力WIの基準期間は次の方法で再測定した。最初のCodex由来commit 2026年8月2日「fix(agent-toolkit): プロジェクト規範を実態より優先してコミット帰属を統一する」、`4cef410f8`より前のClaude由来787commitについて、Markdown追加行をhunkごとに数えた。同じ集合で、句点だけの数え方は1400/16182文（8.65%）、ブロック末も数える方法は1879/22925文（8.20%）だった。この再測定値は入力WIの観測に由来し、2026年9月16日の区分ごとの記録と集計単位が異なるため、数え方による差だけを閾値維持の根拠とする。
 再検証では前掲の`--report`を使い、段落、句点の無い箇条の項目、引用内の段落を個別に数え、同じブロックの折返しを1文として数えることを確かめる。規範の一括改訂後は`uv run --frozen pyfltr run-for-agent --commands=agent-doc-tone`をパス指定なしで実行し、全対象への到達と密度超過の診断の不在を確認する。上記の旧値と比べる場合は数え方と集計単位をそろえる。
 
 ## agent-toolkit/skills/writing-standards/references/agent-documents-basics.md：責務と構成：2026年10月6日
@@ -733,7 +733,7 @@ agents_server（`agent-toolkit/agent_toolkit/agents_server_mcp.py`、MCP Python 
 - 任意の改善候補: annotationsは全ツールで未設定である。`show`は保持中の状態を読むだけで`readOnlyHint`を付与できる。`list`は保持期限に達したsessionの本体の解放を内部で進めるため、付与はその扱いを決めてから判断する。`outputSchema`は応答の項目を列挙していない
 - 仕様上の是正: 該当なし
 
-pyfltr（`/home/aki/pyfltr/pyfltr/cli/mcp_server.py`、commit `c5aa7e2`、MCP Python SDK 2.2.0）の公開ツールは`build_server`が登録する11件である。読み取り専用で`list_tools()`の結果と各ツールの直接の応答生成を読んだ。
+pyfltrの公開ツールは`build_server`が登録する11件である。対象は`/home/aki/pyfltr/pyfltr/cli/mcp_server.py`で、対応する変更は2026年10月1日「fix: 置換失敗時の復旧とMCPの応答性を改善し、公開前の動作確認を追加する」、`c5aa7e2`である。観測環境のMCP Python SDKは2.2.0だった。読み取り専用で`list_tools()`の結果と各ツールの直接の応答生成を読んだ。
 
 - 適用済み: 全ツールの`inputSchema`はobjectで、構造化結果は戻り値の型で検証してから返す。想定内の誤りは`ToolError`からツール実行エラーとして返り、`show_run`などは有効な値を得るツールを案内する。`grep`は件数上限、要約の選択、省略件数と`guidance`を返す。MCPのstdoutへは書かず、ログを標準エラーへ向ける
 - 任意の改善候補: 公開される説明は`description=`の文字列だけで、引数の意味、組合せ条件、省略時の動作はクライアントへ届かないdocstringにある（例: `grep`の`max_count`の0の意味、`replace`の`within`と文脈行数の組合せ、`config`の`action`ごとの必須引数）。全ツールの引数に説明が無い。`run`の`mode`、`replace_history`と`config`の`action`は文字列型で列挙値がスキーマに無い。`show_run_output`は出力ログの全文、`show_run_diagnostics`は指定コマンドの診断の全件を返し、範囲・件数の指定と省略の通知を持たない。annotationsは全ツールで未設定で、書込を伴う`replace_undo`と`config`の説明は書き換えを明示しない。説明の言語が日本語と英語で混在する。instructionsは未設定である
@@ -868,8 +868,8 @@ agents_serverは全説明とinstructionsを初期送信の4,096文字以内に�
 
 ## dotfiles-development：ホスト本体のバイナリの検索：2026年10月4日
 
-ホスト本体の検索手順の変更（`a896a6d06`）の要求を起草した時点の測定はClaude Code 2.1.288、codex-cli 0.160.0、
-ripgrep 15.2.0、GNU grep 3.11、Claude Code組込みugrep 7.8.4で、UTF-8ロケールだった。
+ホスト本体の検索手順に関する変更は、2026年10月4日「fix: ホスト本体の検索手順をdotfilesの開発スキルへ集める」、`a896a6d06`である。
+要求を起草した時点の測定環境はClaude Code 2.1.288、codex-cli 0.160.0、ripgrep 15.2.0、GNU grep 3.11、Claude Code組込みugrep 7.8.4で、UTF-8ロケールだった。
 Claude CodeのBashツールでgrepはugrepを呼ぶシェル関数として観測された。
 
 | 対象とコマンド | 起草時の測定 |
@@ -999,7 +999,7 @@ atk run-script session-review-evidence -- --claude-session-id '<対象session ID
 
 ## Python 3.15対応時の依存導入
 
-2026年10月10日の入力WIが保持する観測では、[pytilpackのCI run 38024857168・job 114133431911](https://github.com/ak110/pytilpack/actions/runs/38024857168/job/114133431911)が依存同期の終了1を記録した。停止した条件はcommit `1de178d2e7fb7e7cbf12135db690ae4a4c31b797`、CPython 3.15.0rc3、pydantic-core 2.46.5のsdistビルドとリンカー`cc`不在である。使用イメージは`ghcr.io/ak110/pyfltr`のdigest `sha256:224003f281050887c053eb24f14137970df5225b1b2c99af61b960fab43d8103`である。PyYAML 6.0.3のビルドは成功しており、ビルド発生だけを失敗と判定できない。同入力の更新commit `80d4be7`ではpydantic-core 2.50.0にcp315 wheelがある。この過去のCIの観測は入力WIに由来し、本レーンのローカル成功とは区別する。
+2026年10月10日の入力WIが保持する観測では、[pytilpackのCI run 38024857168・job 114133431911](https://github.com/ak110/pytilpack/actions/runs/38024857168/job/114133431911)が依存同期の終了1を記録した。停止した条件はcommit `1de178d2e7fb7e7cbf12135db690ae4a4c31b797`、CPython 3.15.0rc3、pydantic-core 2.46.5のsdistビルドとリンカー`cc`不在である。使用イメージは`ghcr.io/ak110/pyfltr`のdigest `sha256:224003f281050887c053eb24f14137970df5225b1b2c99af61b960fab43d8103`である。PyYAML 6.0.3のビルドは成功しており、ビルド発生だけを失敗と判定できない。同入力の更新commit 2026年10月10日「fix: 3.15用wheelのあるpydantic-coreへ依存を更新し、CIの3.15でソースビルドが走らないようにする」、`80d4be7`ではpydantic-core 2.50.0にcp315 wheelがある。この過去のCIの観測は入力WIに由来し、本レーンのローカル成功とは区別する。
 
 [uvのビルド失敗の公式説明](https://docs.astral.sh/uv/reference/troubleshooting/build-failures/#why-does-uv-build-a-package)では、導入環境に合うwheelが無ければsdistをビルドする。[CIキャッシュの説明](https://docs.astral.sh/uv/concepts/cache/#caching-in-continuous-integration)では、ソースからビルドしたwheelもキャッシュする。ローカルでの成功は、別のCI環境のビルド用ツールとキャッシュの成立を保証しない。
 

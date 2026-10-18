@@ -83,6 +83,8 @@ def _mock_wi(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, bodies: di
                 return subprocess.CompletedProcess(args, 1, stdout=b"", stderr=b"file is absent")
             value = str(tmp_path) if "--show-toplevel" in args else REVIEWED_HEAD
             output = f"{value}\n"
+            if "--short=7" in args:
+                value = REVIEWED_HEAD[:7]
             return subprocess.CompletedProcess(
                 args, 0, stdout=output if kwargs.get("text") else output.encode(), stderr="" if kwargs.get("text") else b""
             )
@@ -204,9 +206,11 @@ def test_return_result_rejects_zero_issues_with_missing_evidence_and_recovers_af
     capsys.readouterr()
     assert run_script.dispatch(_return_args(path, table)) == 0
     assert _without_return_input(capsys.readouterr().out) == (
-        f"状態: completed\nレビューしたHEAD: {REVIEWED_HEAD}\n未解決の指摘数: 1\n"
+        f"状態: completed\nレビューしたHEAD: {REVIEWED_HEAD[:7]}\n未解決の指摘数: 1\n"
         "読者別探索: 文章成果物なし\n"
-        f"レビュー開始時点: {REVIEWED_HEAD}\n前回確認版の開始時点: {REVIEWED_HEAD}\n前回確認版HEAD: {REVIEWED_HEAD}\n"
+        f"レビュー開始時点: {REVIEWED_HEAD[:7]}\n"
+        f"前回確認版の開始時点: {REVIEWED_HEAD[:7]}\n"
+        f"前回確認版HEAD: {REVIEWED_HEAD[:7]}\n"
         "計画のパス: []\n入力記録のパス: []\n"
         f"完成条件証拠のパス: {path}\n"
         'wi_conditionsの判定内訳: {"総数": 1, "証拠不足": 1}\n'
@@ -382,9 +386,11 @@ def test_return_result_without_evidence_generates_result_and_empty_input_arrays(
     capsys.readouterr()
     assert run_script.dispatch(_no_evidence_return_args(table)) == 0
     assert _without_return_input(capsys.readouterr().out) == (
-        f"状態: completed\nレビューしたHEAD: {REVIEWED_HEAD}\n未解決の指摘数: 0\n"
+        f"状態: completed\nレビューしたHEAD: {REVIEWED_HEAD[:7]}\n未解決の指摘数: 0\n"
         "読者別探索: 文章成果物なし\n"
-        f"レビュー開始時点: {REVIEWED_HEAD}\n前回確認版の開始時点: {REVIEWED_HEAD}\n前回確認版HEAD: {REVIEWED_HEAD}\n"
+        f"レビュー開始時点: {REVIEWED_HEAD[:7]}\n"
+        f"前回確認版の開始時点: {REVIEWED_HEAD[:7]}\n"
+        f"前回確認版HEAD: {REVIEWED_HEAD[:7]}\n"
         "計画のパス: []\n入力記録のパス: []\n"
         'wi_conditionsの判定内訳: {"総数": 0}\nuser_requirementsの判定内訳: {"総数": 0}\n'
     )
@@ -3773,9 +3779,11 @@ def test_input_record_saved_outside_repository_is_resolved_by_template_and_retur
     capsys.readouterr()
     assert run_script.dispatch(_no_evidence_return_args(table, "--input-record", str(record))) == 0
     assert _without_return_input(capsys.readouterr().out) == (
-        f"状態: completed\nレビューしたHEAD: {REVIEWED_HEAD}\n未解決の指摘数: 1\n"
+        f"状態: completed\nレビューしたHEAD: {REVIEWED_HEAD[:7]}\n未解決の指摘数: 1\n"
         "読者別探索: 文章成果物なし\n"
-        f"レビュー開始時点: {REVIEWED_HEAD}\n前回確認版の開始時点: {REVIEWED_HEAD}\n前回確認版HEAD: {REVIEWED_HEAD}\n"
+        f"レビュー開始時点: {REVIEWED_HEAD[:7]}\n"
+        f"前回確認版の開始時点: {REVIEWED_HEAD[:7]}\n"
+        f"前回確認版HEAD: {REVIEWED_HEAD[:7]}\n"
         f"計画のパス: []\n入力記録のパス: {json.dumps([str(record)])}\n"
         'wi_conditionsの判定内訳: {"総数": 0}\nuser_requirementsの判定内訳: {"総数": 0}\n'
     )
@@ -4041,7 +4049,12 @@ def test_generated_return_input_rechecks_without_conversion(
     assert run_script.dispatch(received) == 0
     result = json.loads(capsys.readouterr().out)
     assert result["exit_code"] == 0 and not result["diagnostics"]
-    assert f"レビューしたHEAD: {head}" in result["result"]
+    short_head = git_repository.git_output(pathlib.Path.cwd(), "rev-parse", "--short=7", head)
+    short_first = git_repository.git_output(pathlib.Path.cwd(), "rev-parse", "--short=7", first)
+    assert f"レビューしたHEAD: {short_head}" in result["result"]
+    assert f"レビュー開始時点: {short_first}" in result["result"]
+    for label in ("前回確認版の開始時点", "前回確認版HEAD"):
+        assert f"{label}: {short_first if round_value >= 2 else 'なし'}" in result["result"]
     assert evidence.read_bytes() == before
     # 保存入力だけで合格せず、受領時の証拠を改めて検査する。
     evidence.write_text("{}", encoding="utf-8")
@@ -4067,14 +4080,16 @@ def test_generated_return_input_freezes_resolved_commit_oids(
     review = json.loads(generated.read_text(encoding="utf-8"))["reviews"][0]
     fields = ("reviewed_head", "review_start", "previous_review_start", "previous_review_head")
     assert {field: review[field] for field in fields} == dict.fromkeys(fields, head)
-    assert f"レビューしたHEAD: {head}" in output
+    short_head = git_repository.git_output(repository, "rev-parse", "--short=7", head)
+    for label in ("レビューしたHEAD", "レビュー開始時点", "前回確認版の開始時点", "前回確認版HEAD"):
+        assert f"{label}: {short_head}" in output.splitlines()
     git_repository.git_output(repository, "branch", "-f", "deadbee", first)
     received = argparse.Namespace(script_name="exec-review-evidence-check", script_args=["--batch", str(generated)])
     assert run_script.dispatch(received) == 0
     result = json.loads(capsys.readouterr().out)
     assert result["exit_code"] == 0 and not result["diagnostics"]
     for label in ("レビューしたHEAD", "レビュー開始時点", "前回確認版の開始時点", "前回確認版HEAD"):
-        assert f"{label}: {head}" in result["result"]
+        assert f"{label}: {short_head}" in result["result"]
 
 
 def test_batch_accepts_multiple_generated_inputs(
@@ -4213,7 +4228,15 @@ def test_batch_keeps_per_review_inputs_and_does_not_write_evidence(
     assert [result["exit_code"] for result in results] == [0, 0]
     for review, result in zip(reviews, results, strict=True):
         assert result["plan"] == review["plan"]
-        assert f"レビューしたHEAD: {review['reviewed_head']}" in result["result"]
+        for label, field in (
+            ("レビューしたHEAD", "reviewed_head"),
+            ("レビュー開始時点", "review_start"),
+            ("前回確認版の開始時点", "previous_review_start"),
+            ("前回確認版HEAD", "previous_review_head"),
+        ):
+            revision = review[field]
+            expected = git_repository.git_output(repository, "rev-parse", "--short=7", revision) if revision else "なし"
+            assert f"{label}: {expected}" in result["result"]
         assert f"読者別探索: {review['reader_fit_review']}" in result["result"]
         assert f"計画のパス: {json.dumps(review['plans'])}" in result["result"]
         assert f"入力記録のパス: {json.dumps(review['input_records'])}" in result["result"]

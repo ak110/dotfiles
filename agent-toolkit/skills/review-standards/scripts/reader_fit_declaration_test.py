@@ -67,7 +67,10 @@ def test_public_reader_fit_declaration_covers_markdown_changes(
     declared = json.dumps({"files": {path: {"sessions": [SESSION]} for path in ("new.md", "template.md.tmpl")}})
     assert check.main(_args(tmp_path, start, head, declared)) == 0
     result = capsys.readouterr().out
-    assert f"レビュー開始時点: {start}" in result and "状態: completed" in result
+    assert (
+        f"レビュー開始時点: {git.git_output(repo, 'rev-parse', '--short=7', start)}" in result.splitlines()
+        and "状態: completed" in result
+    )
     assert check.main(_args(tmp_path, head, head, "文章成果物なし")) == 0
 
 
@@ -87,7 +90,10 @@ def test_public_reader_fit_recheck_compares_diffs(
     monkeypatch.chdir(repo)
     declaration = json.dumps({"files": {"a.md": {"omission": "再点検対象なし"}}}, ensure_ascii=False)
     assert check.main(_args(tmp_path, new_start, head, declaration, previous=(start, previous_head))) == 0
-    assert f"前回確認版HEAD: {previous_head}" in capsys.readouterr().out
+    assert (
+        f"前回確認版HEAD: {git.git_output(repo, 'rev-parse', '--short=7', previous_head)}"
+        in capsys.readouterr().out.splitlines()
+    )
     (repo / "a.md").write_text("追加の文脈\n前置き\n新 \n", encoding="utf-8")
     changed = git.commit_all(repo, "空白も変更")
     assert check.main(_args(tmp_path, new_start, changed, declaration, previous=(start, previous_head))) == 1

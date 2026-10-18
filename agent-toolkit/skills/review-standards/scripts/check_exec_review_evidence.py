@@ -261,6 +261,20 @@ def _commit_oid(repository: pathlib.Path, revision: str) -> str:
     return result.stdout.strip()
 
 
+def _short_commit_oid(repository: pathlib.Path, revision: str) -> str:
+    """工程間の表示へ渡すcommitを、対象リポジトリで一意な短縮OIDへ解決する。"""
+    result = _git_command.run(
+        ["-C", str(repository), "rev-parse", "--short=7", "--verify", "--end-of-options", f"{revision}^{{commit}}"],
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=30,
+    )
+    if result.returncode != 0:
+        raise ValueError(f"短縮OIDを解決できません: {revision}: {result.stderr.strip()}")
+    return result.stdout.strip()
+
+
 def _check_reviewed_heads(payload: dict[str, object], repository: pathlib.Path, expected_head: str) -> list[str]:
     """WIの指定集合によらず`完成条件証拠`の全ての行が実レビュー対象に対応するか確かめる。"""
     expected = _commit_oid(repository, expected_head)
@@ -2628,6 +2642,7 @@ def main(argv: list[str] | None = None) -> int:
         errors = check_evidence(args.evidence, filenames, expected_head=args.expected_head, plans=args.plan)
     reviewed_head = args.expected_head
     review_start = previous_start = previous_head = None
+    repository: pathlib.Path | None = None
     if args.return_result and not errors:
         try:
             repository = repository_root()
@@ -2667,19 +2682,19 @@ def main(argv: list[str] | None = None) -> int:
     if args.return_result:
         assert isinstance(args.reader_fit_review, str)
         try:
+            assert repository is not None and review_start is not None
             lines = return_lines(
-                reviewed_head,
+                _short_commit_oid(repository, reviewed_head),
                 unanswered,
                 plan_paths,
                 input_record_paths,
                 None if no_evidence else args.evidence,
                 reader_fit_review=args.reader_fit_review,
                 show_all_rows=args.show_all_rows,
-                review_start=review_start,
-                previous_review_start=previous_start,
-                previous_review_head=previous_head,
+                review_start=_short_commit_oid(repository, review_start),
+                previous_review_start=_short_commit_oid(repository, previous_start) if previous_start else None,
+                previous_review_head=_short_commit_oid(repository, previous_head) if previous_head else None,
             )
-            assert review_start is not None
             input_path = _save_return_input(
                 args,
                 filenames,

@@ -7,9 +7,9 @@ wheelへの混入を避けるため、`pytools/`の外へ配置する。
 
 | fixture | 取得元のGit object |
 | --- | --- |
-| `ipython_kernel_config.py.txt` | `89ce8990a:.chezmoi-source/dot_ipython/profile_ipy/ipython_kernel_config.py` |
-| `screenrc.txt` | `d074bebbe:.chezmoi-source/dot_screenrc` |
-| `xonsh_rc.xsh.txt` | `d074bebbe:.chezmoi-source/dot_config/xonsh/rc.xsh` |
-| `yapf_style.txt` | `d074bebbe:.chezmoi-source/dot_config/yapf/style` |
-| `pypoetry_config.toml.txt` | `d074bebbe:.chezmoi-source/dot_config/pypoetry/config.toml` |
-| `rest_client_environment.json.txt` | `d074bebbe:.chezmoi-source/dot_config/rest-client/environment.json`（空ファイル） |
+| `ipython_kernel_config.py.txt` | 2026年3月30日「.chezmoirootでソースステートをプロジェクトインフラから分離し、エージェントルールを再編成」、`89ce8990a:.chezmoi-source/dot_ipython/profile_ipy/ipython_kernel_config.py` |
+| `screenrc.txt` | 2026年10月7日「Merge pull request #143 from ak110/develop」、`d074bebbe:.chezmoi-source/dot_screenrc` |
+| `xonsh_rc.xsh.txt` | 2026年10月7日「Merge pull request #143 from ak110/develop」、`d074bebbe:.chezmoi-source/dot_config/xonsh/rc.xsh` |
+| `yapf_style.txt` | 2026年10月7日「Merge pull request #143 from ak110/develop」、`d074bebbe:.chezmoi-source/dot_config/yapf/style` |
+| `pypoetry_config.toml.txt` | 2026年10月7日「Merge pull request #143 from ak110/develop」、`d074bebbe:.chezmoi-source/dot_config/pypoetry/config.toml` |
+| `rest_client_environment.json.txt` | 2026年10月7日「Merge pull request #143 from ak110/develop」、`d074bebbe:.chezmoi-source/dot_config/rest-client/environment.json`（空ファイル） |
