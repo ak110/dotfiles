@@ -1041,6 +1041,35 @@ async def test_child_collected_by_background_agents_wait_is_not_unobserved(
 
 
 @pytest.mark.asyncio
+async def test_child_set_updated_during_resolution_does_not_abort_wait(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+) -> None:
+    """孫sessionの照会中に追跡集合が更新されても、待機の前進が例外で止まらない。
+
+    照会の`await`の間に委譲先の出力の追跡が同じ集合へ孫sessionを加えると、集合を直接回す実装は
+    `RuntimeError: Set changed size during iteration`で終わり、待機中の全担当を巻き込む。
+    """
+    monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
+    manager = server_manager.AgentsServerManager(status_writer=None)
+    parent = state.SessionState("parent-session", str(tmp_path), engine="claude")
+    parent.live_child_session_ids.add("child-a")
+    resume_waits.begin_auto_resume_wait(parent, {"status": "completed", "agent_message": "保留本文", "error": None})
+    manager.sessions[parent.session_id] = parent
+    original_resolve = session_registry.resolve
+
+    def resolve_and_track_new_child(session_id: str) -> Any:
+        parent.live_child_session_ids.add("child-b")
+        return original_resolve(session_id)
+
+    monkeypatch.setattr(session_registry, "resolve", resolve_and_track_new_child)
+
+    await manager._advance_child_session_wait(parent)  # pylint: disable=protected-access
+
+    assert "child-b" in parent.live_child_session_ids
+    await manager.close()
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize(
     "case", ["in-progress-after", "recorded-turn-running", "live-status-file", "query-failure", "claude-engine"]
 )
