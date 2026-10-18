@@ -42,8 +42,8 @@ def test_delegation_skill_refers_to_reviewee_response_section() -> None:
     assert not any(f"`{label}`" in paragraph for label in table.RESPONSE_LABELS)
 
 
-def test_show_help_exposes_body_selection(capsys: pytest.CaptureFixture[str]) -> None:
-    """公開ヘルプから行と本文の選択へ到達できる。"""
+def test_show_help_exposes_body_selection_and_history(capsys: pytest.CaptureFixture[str]) -> None:
+    """公開ヘルプから行・本文の選択と履歴を含むサマリーへ到達できる。"""
     with pytest.raises(SystemExit) as result:
         _parser().parse_args(["review-table", "show", "--help"])
     assert result.value.code == 0
@@ -51,3 +51,6 @@ def test_show_help_exposes_body_selection(capsys: pytest.CaptureFixture[str]) ->
     assert "--row-id" in help_text
     assert "--field" in help_text
     assert "no-response-reason" in help_text
+    assert "previous_findings" in help_text
+    assert "history_command" in help_text
+    assert "repetition_guidance" in help_text

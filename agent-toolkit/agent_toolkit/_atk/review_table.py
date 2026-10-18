@@ -14,9 +14,11 @@ import contextlib
 import hashlib
 import json
 import re
+import shlex
 import unicodedata
 from collections.abc import Callable, Generator
 from pathlib import Path
+from typing import NotRequired, TypedDict
 
 from agent_toolkit._atk import help_text as _atk_help
 from agent_toolkit._atk import outcome as _outcome
@@ -96,6 +98,26 @@ _YES_VALUES = frozenset({"yes", "true", "1", "required", "対応要"})
 _NO_VALUES = frozenset({"no", "false", "0", "not-required", "対応不要"})
 _WHITESPACE_RE = re.compile(r"\s+")
 _ROUND_RE = re.compile(r"^[1-9][0-9]*$")
+
+
+class _PreviousFindings(TypedDict):
+    """同じtrackの過去roundと保存順の行識別子。"""
+
+    round: int
+    row_ids: list[int]
+
+
+class _Summary(TypedDict):
+    """現在roundの応答件数と、比較できる過去指摘への到達情報。"""
+
+    round: int
+    track: str
+    total_count: int
+    unanswered_count: int
+    answered_count: int
+    previous_findings: NotRequired[list[_PreviousFindings]]
+    history_command: NotRequired[str]
+    repetition_guidance: NotRequired[str]
 
 
 def _path(raw_path: str) -> Path:
@@ -513,7 +535,7 @@ def respond(
     return 0
 
 
-def summary(path: str | Path, round_value: int, *, track: str = "exec-review") -> dict[str, int | str]:
+def summary(path: str | Path, round_value: int, *, track: str = "exec-review") -> _Summary:
     """指定ラウンドに登録した指摘を用いて未応答件数を導き、過去の応答を混ぜない。"""
     if round_value < 1:
         raise _ActionableError("roundは1以上の整数で指定する", next_action="現在のレビューの--roundを指定して再実行する")
@@ -521,13 +543,33 @@ def summary(path: str | Path, round_value: int, *, track: str = "exec-review") -
     _validate_rows(rows, require_responses=False)
     selected = [row for row in rows if _normalized(row[0]) == str(round_value) and row[1] == _normalize_track(track)]
     unanswered = sum(not row[5].strip() and not row[6].strip() for row in selected)
-    return {
+    result: _Summary = {
         "round": round_value,
         "track": _normalize_track(track),
         "total_count": len(selected),
         "unanswered_count": unanswered,
         "answered_count": len(selected) - unanswered,
     }
+    previous: dict[int, list[int]] = {}
+    if selected:
+        for row_id, row in enumerate(rows, start=1):
+            previous_round = int(_normalized(row[0]))
+            if row[1] == _normalize_track(track) and previous_round < round_value:
+                previous.setdefault(previous_round, []).append(row_id)
+    if previous:
+        result["previous_findings"] = [
+            {"round": previous_round, "row_ids": row_ids} for previous_round, row_ids in sorted(previous.items())
+        ]
+        result["history_command"] = shlex.join(
+            ["atk", "review-table", "show", str(_path(str(path))), f"--track={_normalize_track(track)}", "--format=jsonl"]
+        )
+        result["repetition_guidance"] = (
+            "過去の指摘・応答と今回の指摘を読み、"
+            "agent-toolkit/share/review-loop-coordination.md「反復原因の判定」と"
+            "agent-toolkit/skills/review-standards/references/reviewee.md「同じ指摘の反復」に従い、"
+            "違反規定と発生条件を比較して反復原因を判定する"
+        )
+    return result
 
 
 def show(
@@ -750,7 +792,9 @@ def build_parser(parent: argparse._SubParsersAction) -> None:
         default="tsv",
         help="出力形式。tsvは先頭にrow-idを付けたTSV、jsonlはrow-idとデコード済み各列のJSON Lines。"
         "summaryは--roundで指定したラウンドの登録数・未応答数・応答済み数を1件のJSONで返す。"
-        "summaryのtrack省略時はexec-review。",
+        "summaryのtrack省略時はexec-review。現在と過去の同じtrackに指摘がある場合は、"
+        "previous_findings（過去roundとrow_ids）、history_command（全roundを読む操作）、"
+        "repetition_guidance（反復原因の判定先）も返す。",
     )
     validate_parser = _atk_help.add_command(sub, "validate", **_atk_help.HELP["atk review-table validate"])
     validate_parser.add_argument(

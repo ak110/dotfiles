@@ -5,6 +5,7 @@ import json
 import os
 import pathlib
 import re
+import shlex
 from concurrent.futures import ThreadPoolExecutor
 
 import pytest
@@ -626,13 +627,15 @@ def test_public_summary_counts_current_unanswered_rows_without_waiting_for_respo
     assert returned.value.code == 0
     result = capsys.readouterr()
     assert not result.err
-    assert json.loads(result.out) == {
+    summary = json.loads(result.out)
+    assert {key: summary[key] for key in ("round", "track", "total_count", "unanswered_count", "answered_count")} == {
         "round": 2,
         "track": "exec-review",
         "total_count": 2,
         "unanswered_count": 1,
         "answered_count": 1,
     }
+    assert summary["previous_findings"] == [{"round": 1, "row_ids": [1, 2]}]
     assert path.read_bytes() == before
 
 
@@ -1705,3 +1708,55 @@ def test_public_show_rejects_invalid_body_selection(
     assert not output.out
     assert "次の操作" in output.err
     assert path.read_bytes() == before
+
+
+@pytest.mark.parametrize("name", ("plan.exec-review.tsv", "ci-abc123.exec-review.tsv"))
+def test_public_summary_guides_history_without_deciding_issue_identity(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], name: str
+) -> None:
+    """箇所・文言・発生条件が変わる指摘でも、同trackの過去指摘と判定先へ到達できる。"""
+    path = tmp_path / "space dir" / name
+    table.add(path, "1", _TRACK, "module.py:10", "完成条件4: 取得失敗時に記録へ進む")
+    table.respond(path, "", "", "", "", review_bodies.response_body("初回修正"), "", row_id=1)
+    table.add(path, "2", "independent", "module.py:11", "他trackの指摘")
+    table.add(path, "2", _TRACK, "module.py:20", "完成条件4: 入力形式が異なる条件で失敗する")
+    table.add(path, "3", _TRACK, "other.py:30", "取得失敗の扱いに不足がある")
+    capsys.readouterr()
+    before = path.read_bytes()
+    with pytest.raises(SystemExit) as result:
+        atk.main(["review-table", "show", str(path), "--round=3", "--format=summary"], home=tmp_path)
+    assert result.value.code == 0
+    summary = json.loads(capsys.readouterr().out)
+    assert summary["previous_findings"] == [{"round": 1, "row_ids": [1]}, {"round": 2, "row_ids": [3]}]
+    assert summary["total_count"] == summary["unanswered_count"] == 1
+    assert summary["answered_count"] == 0
+    assert "違反規定と発生条件" in summary["repetition_guidance"]
+    assert "反復原因の判定" in summary["repetition_guidance"]
+    assert "同じ指摘の反復" in summary["repetition_guidance"]
+    with pytest.raises(SystemExit) as result:
+        atk.main(shlex.split(summary["history_command"])[1:], home=tmp_path)
+    assert result.value.code == 0
+    history = [json.loads(line) for line in capsys.readouterr().out.splitlines()]
+    assert [row["row-id"] for row in history] == [1, 3, 4]
+    assert history[0]["response"] == review_bodies.response_body("初回修正")
+    assert all(len(line.split("\t")) == 7 for line in path.read_text(encoding="utf-8").splitlines())
+    assert path.read_bytes() == before
+
+
+@pytest.mark.parametrize("case", ("initial", "no-current", "other-track"))
+def test_public_summary_omits_history_when_comparison_has_no_input(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], case: str
+) -> None:
+    """初回・現在の指摘なし・同trackの過去指摘なしでは件数だけを返す。"""
+    path = tmp_path / "review.exec-review.tsv"
+    table.add(path, "1", "independent" if case == "other-track" else _TRACK, "以前", "指摘")
+    if case == "other-track":
+        table.add(path, "2", _TRACK, "今回", "指摘")
+    capsys.readouterr()
+    current_round = 1 if case == "initial" else 2
+    with pytest.raises(SystemExit) as result:
+        atk.main(["review-table", "show", str(path), f"--round={current_round}", "--format=summary"], home=tmp_path)
+    assert result.value.code == 0
+    summary = json.loads(capsys.readouterr().out)
+    assert set(summary) == {"round", "track", "total_count", "unanswered_count", "answered_count"}
+    assert summary["total_count"] == summary["unanswered_count"] == (0 if case == "no-current" else 1)
