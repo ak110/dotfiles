@@ -37,7 +37,7 @@ disable-model-invocation: true
 ## 処理の振り分け
 
 計画ファイルの作成要否を`agent-toolkit:plan-mode`「計画ファイルの作成要否」で判定し、作成する項目を計画対象、省く項目を直接実装対象とする。
-計画対象は対象worktreeごとに1つの計画ファイルへまとめ、計画のレビューは行わず実装後の実行レビューだけで検証する。専用worktreeは作成せず、対応表のworktreeで実装する。
+初期選定の全WIを保存した対応表から、対象worktreeの全計画対象を1つの計画ファイルへまとめ、計画のレビューは行わず実装後の実行レビューだけで検証する。専用worktreeは作成せず、対応表のworktreeで実装する。
 
 ## 不変条件
 
@@ -45,7 +45,7 @@ disable-model-invocation: true
 - 実行レビューは実装を担当しない独立した担当が行う
 - 人間由来の不採用範囲は、ユーザーの確認を得てから終端する
 - 処理対象WIは手順1で固定し、追加は`## 見つけた既存不良の扱い`で投入したAWIと、ユーザーが処理中に告げた項目に限る
-- 同じ対象worktreeの計画対象と直接実装対象は1件の実行レビューへまとめ、異なる対象worktreeの項目を同じ計画や実行レビューへ混在させない
+- 保存済み対応表の同じ対象worktreeの全計画対象と全直接実装対象の和を1件の実行レビューへまとめ、異なる対象worktreeの項目を同じ計画や実行レビューへ混在させない
 
 ## 見つけた既存不良の扱い
 
@@ -67,19 +67,19 @@ disable-model-invocation: true
 1. processable一覧と各WI本文を取得し、同時に`atk wi list --type=uwi --answered=yes --status=processable --source=!run-skill --target-repo=<対象リポジトリの絶対パス>`で回答済みUWIを取得する。
    対象worktreeごとに公開対象とベースbranchを明示し、`${CLAUDE_PLUGIN_ROOT}/skills/process-wi/references/selection-procedure.md`「処理対象の決定」の開始時CI点検を適用する。実際の照会、失敗ログの取得と残工程への作用の判定を実装前に行い、既存失敗は「見つけた既存不良の扱い」、ユーザー依存事項は確認手順へ渡す。公開時のbaselineとCI検収も実行順8で行う。
    `source`が`run-skill`のUWIは次回の`atk run-skill`が扱う。回答済みUWIは実装前に`agent-toolkit:wi-standards`「状態と依存」に従って終端するか処理対象へ加える。依存が未達の項目は、依存元がprocessableで同じ`target_repo`なら同じ実行へ加えて報告する。
-   依存元の状態変更や集合からの除外が要る場合は、`agent-toolkit:user-confirmation-and-report`「確認要否の判定」で確認の要否を決める。各WIについてファイル名、保存済みの`target_repo`、Git操作に使うworktreeの絶対パス、そのworktreeの処理開始時のHEADの短縮OIDを対応表にする。
+   依存元の状態変更や集合からの除外が要る場合は、`agent-toolkit:user-confirmation-and-report`「確認要否の判定」で確認の要否を決める。各WIについてファイル名、保存済みの`target_repo`、Git操作に使うworktreeの絶対パス、そのworktreeの処理開始時のHEADの短縮OID、開始前の状態、計画対象か直接実装対象か、完了済みと残工程を対応表にする。処理開始前に全件を既存の引き継ぎ記録へ保存し、後工程の比較元にする。
    同資料「集合確定直後の処理開始」の`resolve_repo_identifier`による解決手順で、保存済み`target_repo`と対応worktreeの有効な識別子の一致を確認し、同じworktree指定で取得できることを確かめる。不一致は同資料「処理対象の決定」の移転判定・編集に従い、移転の根拠が無ければ両識別子と不足する根拠を返す。移転が確定した場合は開始前に保存値と本文中の操作先を揃える。
-   `atk wi start-processing <ファイル名>... --target-repo=<対応worktreeの絶対パス>`で`processing`へ移して集合を固定する。固定後にユーザーが告げた回答済みUWIとAWIの追加は、`${CLAUDE_PLUGIN_ROOT}/skills/process-wi/references/selection-procedure.md`「処理対象WIの追加」の判断基準で扱う。
+   初回の`atk wi start-processing <ファイル名>... --target-repo=<対応worktreeの絶対パス>`の引数は保存済み対応表のうち開始前にinboxだった全件からworktreeごとに導く。開始済み項目は重複遷移させない。途中失敗はCLIの診断と残存状態を同じ対応表へ記録し、未完了工程から再開する。ユーザーの明示追加と即時対応の追加は同じ対応表へ反映し、後工程の比較元を更新する。固定後にユーザーが告げた回答済みUWIとAWIの追加は、`${CLAUDE_PLUGIN_ROOT}/skills/process-wi/references/selection-procedure.md`「処理対象WIの追加」の判断基準で扱う。
 2. `atk wi`の`adopt`・`reject`へ`--commit`を渡す場合は対象worktreeの絶対パスを`--target-repo`へ渡し、それ以外の操作は保存済み`target_repo`を使う。Gitの起点比較、実装、検証、commit、レビューは対応表のworktreeと開始時のHEADを使い、別のworktreeや複製元のHEADで代用しない。
-3. 計画対象がある場合は、対象worktreeごとに計画ファイルを起草する。計画メタ情報の対象リポジトリと計画構造の自動チェックの`--work-dir`にはそのworktreeを使う。
+3. 計画対象がある場合は、対象worktreeごとに計画ファイルを起草する。計画メタ情報の対象リポジトリと計画構造の自動チェックの`--work-dir`にはそのworktreeを使い、対応表の全計画対象を`--expected-wi <WIファイル名>`で全件反復指定して実装前に一致を確かめる。全件が直接実装対象なら計画を新設せず、対応表とレビュー集合の和で被覆を検収する。
 4. 対応表のworktreeで、計画対象は`## 要件・外部仕様`、直接実装対象はWIの要求と完成条件に従って実装する。Git管理外のファイルを変更する場合は最初の変更より前に変更前複製を作成し、証拠要求ありでは実装完了前に未判定検証記録JSONを作成する。複製の対とJSONの絶対パスは計画の`## 進捗ログ`か直接実装の引き継ぎ記録へ残す。検証は`${CLAUDE_PLUGIN_ROOT}/share/workflow-phases.md`の受入シナリオ検証に従い、シナリオ別のテスト名と合否を記録する。
-   直接実装対象もWIの消費主体と呼び出し手段から同じ基準でテストを選ぶ。テスト出力と手動観測の保存は`${CLAUDE_PLUGIN_ROOT}/share/exec.subagent.md`「操作の直前に判定する前提」に従う。
+   計画なしとレビュー修正でも、実装前に公開入口・入力と初期状態・有効な期待結果・検出する失敗を確定し、`agent-toolkit:writing-standards`の`references/testing.md`「検証単位の選定」で試験を選ぶ。公開経路の実結果を自己検収し、既存の未判定検証記録へ対応付ける。未実施と条件変更の判断、メインが所有する残工程の担当と再開先を分けて独立した実行レビューへ渡す。テスト出力と手動観測の保存は`${CLAUDE_PLUGIN_ROOT}/share/exec.subagent.md`「操作の直前に判定する前提」に従う。
    履歴整理で取得版が変わった記録の再利用は`agent-toolkit:review-standards`の`references/exec-review-recording.md`「根拠の書き方」に従う。互いに依存しないworktreeは並行してよい。
    commitは`agent-toolkit:commit`に従い、WI実装commitごとに同スキル`SKILL.md`「WI実装commitの対応」の手段で、計画（直接実装では引き継ぎ記録）と同じstemの対応記録ファイルへ記録する。レビュー修正・CI修正・履歴変更後も同節に従い、実行順8の前に現在の対応を取得してadoptへ渡す。
-5. 対象worktreeごとに1件の実行レビューを起動する。計画対象があれば計画ファイルの絶対パス、直接実装対象があればWIの記録を同じ委譲プロンプトへ渡し、計画対象が無ければそのworktreeの`開始時のHEAD`を渡す。`cwd`、`開始時のHEAD`、レビュー指摘管理表、レビュー基準には同じworktreeの値だけを使う。
+5. 保存済み対応表から対象worktreeの全計画対象と全直接実装対象の和を導き、1件の実行レビューを起動する。全対応表の所在と区分を同じ引き継ぎからたどれるようにする。計画対象があれば計画ファイルの絶対パス、直接実装対象があればWIの記録を同じ委譲プロンプトへ渡し、計画対象が無ければそのworktreeの`開始時のHEAD`を渡す。`cwd`、`開始時のHEAD`、レビュー指摘管理表、レビュー基準には同じworktreeの値だけを使う。
 6. worktreeごとに`${CLAUDE_PLUGIN_ROOT}/share/review-loop-coordination.md`に従って指摘を収束させる。修正はメインが行い、同じ`開始時のHEAD`とレビュー指摘管理表を継続する。
 7. 各計画について`atk run-script plan-progress --`で完了判定を`## 進捗ログ`へ記録し、計画構造の自動チェックの成功を確認してから計画バンドルを保存する。
 8. 各WIを`adopt`か`reject`し（`adopt`は`agent-toolkit:wi-standards`「状態と依存」のcommit対応付けを使う）、worktreeごとに`references/publish.md`に従って公開する。複数の対象リポジトリでは成果の依存順を保ち、独立した対象のpushを先に全て終えてからCI監視を並行して始め、全識別子の終端を待って結果を個別に回収する。CI成功を入力にする公開後の操作はその対象の成功後に行い、成功を入力とせず書込資源を占有しない操作は待機中に進めてよい。
    開発マシン上の常時稼働サーバーへの反映は、`agent-toolkit:completion-report`の`SKILL.md`「工程」の常時稼働サーバーへの反映の段落の条件を満たす場合にCI待機と並行して始め、反映したHEADの一意な短縮OID、反映コマンドの終了状態、稼働確認の結果を完了報告へ渡す。
-   Claude Codeでは、独立したpush群の監視と並行するサーバー反映などを開始してから、CI待機で会話圧縮を予約する。予約前にセッションのmanaged-temp直下の`parent-handoff.md`へ再開状態を保存する。固定したWIと対象worktree・開始HEADの対応表、計画集合と保存状態、WIと実装commitの対応と採否の到達点を含める。対象repo・forge・ref・source ref・短縮OID・baselineと監視識別子・出力先の対応、未回収集合、並行反映のHEADと到達点、CI後の操作と依存順も含める。予約と通知後の復元は`agent-toolkit:delegation`の`references/waiting-and-monitoring.md`「長時間待機前の会話圧縮」に従う。起動済みのwait_ci.pyのバックグラウンドタスクを保ち、Monitorで前景を占有せずにターンを終え、通知後は同じ入力と保存出力からCI結果を回収する。CI定義の無い対象にはこの圧縮境界を設けず、Codexと圧縮ツールが無い環境では既存の待機契約を使う。
+   Claude Codeでは、独立したpush群の監視と並行するサーバー反映などを開始してから、CI待機で会話圧縮を予約する。予約前にセッションのmanaged-temp直下の`parent-handoff.md`へ再開状態を保存する。処理開始前に保存した対応表の全体と完了済み・残工程を保持する。中断・圧縮後は同じ表から復元し、要約にある作業順で選定集合を置き換えない。固定したWIと対象worktree・開始HEADの対応表、計画集合と保存状態、WIと実装commitの対応と採否の到達点を含める。対象repo・forge・ref・source ref・短縮OID・baselineと監視識別子・出力先の対応、未回収集合、並行反映のHEADと到達点、CI後の操作と依存順も含める。予約と通知後の復元は`agent-toolkit:delegation`の`references/waiting-and-monitoring.md`「長時間待機前の会話圧縮」に従う。起動済みのwait_ci.pyのバックグラウンドタスクを保ち、Monitorで前景を占有せずにターンを終え、通知後は同じ入力と保存出力からCI結果を回収する。CI定義の無い対象にはこの圧縮境界を設けず、Codexと圧縮ツールが無い環境では既存の待機契約を使う。
 9. 一時的なレビュー指摘管理表を正式な保存または回収契約に従って処理し、`agent-toolkit:completion-report`で報告する。
