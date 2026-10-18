@@ -22,6 +22,8 @@ def test_on_creates_flag(tmp_path: pathlib.Path) -> None:
     assert result.returncode == 0
     assert flag.exists()
     assert "on" in result.stdout
+    assert "autotmux off" in result.stdout
+    assert "次回のSSH対話ログインから" in result.stdout
 
 
 def test_off_removes_flag(tmp_path: pathlib.Path) -> None:
@@ -32,11 +34,14 @@ def test_off_removes_flag(tmp_path: pathlib.Path) -> None:
     assert result.returncode == 0
     assert not flag.exists()
     assert "off" in result.stdout
+    assert "autotmux on" in result.stdout
+    assert "次回のSSH対話ログインから" in result.stdout
 
 
 def test_off_succeeds_when_flag_absent(tmp_path: pathlib.Path) -> None:
     result = _run(["off"], tmp_path)
     assert result.returncode == 0
+    assert "autotmux on" in result.stdout
 
 
 def test_status_on(tmp_path: pathlib.Path) -> None:
@@ -46,12 +51,15 @@ def test_status_on(tmp_path: pathlib.Path) -> None:
     result = _run(["status"], tmp_path)
     assert result.returncode == 0
     assert "on" in result.stdout
+    assert "autotmux off" in result.stdout
 
 
 def test_status_off(tmp_path: pathlib.Path) -> None:
     result = _run(["status"], tmp_path)
     assert result.returncode == 1
     assert "off" in result.stdout
+    assert "autotmux on" in result.stdout
+    assert "次回のSSH対話ログインから" in result.stdout
 
 
 def test_usage_on_unknown_arg(tmp_path: pathlib.Path) -> None:
