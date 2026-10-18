@@ -113,7 +113,7 @@ async def test_windows_explore_probe_rejects_custom_output_cap(tmp_path: pathlib
         with pytest.raises(codex.StartCandidateUnavailable) as raised:
             await backend.start("確認後のモデル入力は配送しない", str(tmp_path), launch_kind="explore")
         cause = raised.value.__cause__
-        assert raised.value.reason == "exploreSandboxRpcError"
+        assert raised.value.reason.startswith("exploreSandboxRpcError: ")
         assert isinstance(cause, codex.JsonRpcResponseError)
         assert cause.method == "command/exec"
         assert "custom outputBytesCap is not supported with windows sandbox" in str(cause)
