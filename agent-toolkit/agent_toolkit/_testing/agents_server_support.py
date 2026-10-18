@@ -471,6 +471,8 @@ def _observed_input_lines(task_name: str, root: pathlib.Path, *, rereview: bool 
     if task_name == "add-wi.subagent.md":
         return ["投入する要求: request-1=/repo=awi=検出条件の追加", handoff]
     if task_name == "external-write-review.subagent.md":
+        for name in ("pr-body.md", "diff.patch"):
+            (root / name).write_text("投稿の比較資料\n", encoding="utf-8")
         return [
             f"文面ファイル: {root / 'pr-body.md'}（12行）",
             "投稿先と目的: GitHubのPR本文。変更の目的をレビュアーへ伝える",
@@ -479,11 +481,13 @@ def _observed_input_lines(task_name: str, root: pathlib.Path, *, rereview: bool 
     if task_name == "copilot-review-audit.subagent.md":
         return [f"pending取得結果: {root / 'pending.json'}", handoff]
     if task_name == "reader-fit-review.subagent.md":
+        for name in ("guide.md", "before.md", "diff.patch"):
+            (root / name).write_text("読者別探索の比較資料\n", encoding="utf-8")
         lines = [
             f"成果物: {root / 'guide.md'}（40行）",
             "種別: エンドユーザー向け文書",
             "読者像: ツールを初めて導入するエンドユーザー。内部の実装は知らない",
-            f"修正範囲: {root / 'before.md'}と成果物の設定保存節の差分、直接影響は再読込節",
+            f"修正範囲: `{root / 'before.md'}`と`{root / 'diff.patch'}`。直接影響は再読込節",
         ]
         if rereview:
             lines.extend(
@@ -494,8 +498,11 @@ def _observed_input_lines(task_name: str, root: pathlib.Path, *, rereview: bool 
             )
         return lines
     if task_name == "bulk-replace-review.subagent.md":
+        (root / "word-diff.txt").write_text("[-旧-]{+新+}\n", encoding="utf-8")
         return [f"差分ファイル: {root / 'word-diff.txt'}（120行）"]
     if task_name == "pick-wi-explain.subagent.md":
+        for name in ("selection.json", "active-wi.md"):
+            (root / name).write_text("選定理由の説明資料\n", encoding="utf-8")
         return [
             f"説明対象の選定結果の出力先ファイル: {root / 'selection.json'}",
             f"activeなWI本文の保存先: {root / 'active-wi.md'}",
