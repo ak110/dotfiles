@@ -76,7 +76,7 @@ def run() -> post_apply_outcome.PostApplyOutcome:
             ),
         )
     for original, expanded, error in unresolved:
-        logger.warning(
+        logger.info(
             log_format.format_status(
                 _LOG_LABEL,
                 "ユーザー PATH のエントリーを検査できないため保持: "

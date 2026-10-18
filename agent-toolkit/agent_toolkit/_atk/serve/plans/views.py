@@ -47,6 +47,7 @@ from agent_toolkit._atk.serve.plans.roots import (
     deliver_root_status,
     logger,
 )
+from agent_toolkit._common.async_operations import run_sync_operation
 from agent_toolkit._plan import bundle_kinds as _bundle_kinds
 from agent_toolkit._plan.creation_times import cleanup_creation_time_temporaries
 from agent_toolkit._plan.viewer_files import (
@@ -147,6 +148,11 @@ def _scan_local_root(spec: RootSpec, host: str, stop: threading.Event | None = N
     if spec.warning is not None:
         return [], spec.warning
     return scan_files(spec.path, host, spec.source_id, migrate_legacy_ctime=spec.migrate_legacy_ctime, stop=stop)
+
+
+async def create_context_async(**kwargs: typing.Any) -> PlansContext:
+    """root解決と一時索引の回収をworkerで完了し、初期状態を返す。"""
+    return await run_sync_operation(create_context, **kwargs)
 
 
 def _oldest_host_per_file(entries: list[FileEntry]) -> list[FileEntry]:
@@ -274,14 +280,16 @@ async def _search_remote(context: PlansContext, host: str, query: str) -> tuple[
     return host, paths
 
 
-def resolve_source_id(context: PlansContext, host: str, source_id: str, rel: str) -> str | None:
+async def resolve_source_id(context: PlansContext, host: str, source_id: str, rel: str) -> str | None:
     """要求のsource IDを検証・補完する。確定できない場合は`None`を返す。"""
     if host == context.hostname:
         known = {spec.source_id for spec in context.roots}
         if source_id:
             return source_id if source_id in known else None
         candidates = [
-            spec.source_id for spec in context.roots if resolve_under_root(spec.path, rel, spec.source_id) is not None
+            spec.source_id
+            for spec in context.roots
+            if await run_sync_operation(resolve_under_root, spec.path, rel, spec.source_id) is not None
         ]
     else:
         known = set(context.state.root_info.get(host, {}))
@@ -365,7 +373,9 @@ async def _plan_exists(context: PlansContext, host: str, source_id: str, plan_re
     """
     if host == context.hostname:
         spec = next((item for item in context.roots if item.source_id == source_id), None)
-        return spec is not None and resolve_under_root(spec.path, plan_rel, spec.source_id) is not None
+        return (
+            spec is not None and await run_sync_operation(resolve_under_root, spec.path, plan_rel, spec.source_id) is not None
+        )
     if not is_safe_remote_relpath(plan_rel):
         return False
     watcher = context.state.remote_watchers.get(host)
@@ -396,7 +406,7 @@ async def resolve_text(
     """ファイル本文を取得する。取得できない場合は`PlanFileError`を送出する。"""
     if host == context.hostname:
         spec = next((item for item in context.roots if item.source_id == source_id), None)
-        target = resolve_under_root(spec.path, rel, spec.source_id) if spec is not None else None
+        target = await run_sync_operation(resolve_under_root, spec.path, rel, spec.source_id) if spec is not None else None
         if target is None:
             raise PlanFileError(404, "not found")
         return await asyncio.to_thread(_read_text, target)
@@ -440,6 +450,10 @@ def start_local_watchers(context: PlansContext) -> None:
     観測したイベントは`PlansEventHandler`が`BroadcastState`のSSE購読者へ通知する。
     """
     context.state.loop = asyncio.get_running_loop()
+    context.state.local_observer = _start_local_observer(context)
+
+
+def _start_local_observer(context: PlansContext) -> watchdog.observers.api.BaseObserver | None:
     observer = watchdog.observers.Observer()
     scheduled = 0
     for spec in context.roots:
@@ -448,9 +462,38 @@ def start_local_watchers(context: PlansContext) -> None:
         observer.schedule(PlansEventHandler(spec.path, context.state, spec.source_id), str(spec.path), recursive=True)
         scheduled += 1
     if scheduled == 0:
+        return None
+    try:
+        observer.start()
+    except BaseException:
+        observer.stop()
+        if observer.ident is not None:
+            observer.join()
+        raise
+    return observer
+
+
+async def start_local_watchers_async(context: PlansContext) -> None:
+    """loopの参照を保持し、ローカル監視の登録と準備完了を待つ。"""
+    context.state.loop = asyncio.get_running_loop()
+    await run_sync_operation(
+        _start_local_observer, context, on_success=lambda observer: setattr(context.state, "local_observer", observer)
+    )
+
+
+async def stop_local_watchers_async(context: PlansContext) -> None:
+    """ローカル監視の終了をworkerで待ち、保持欄をloopで空へ戻す。"""
+    observer = context.state.local_observer
+    if observer is None:
         return
-    observer.start()
-    context.state.local_observer = observer
+    await run_sync_operation(
+        _stop_local_observer, observer, on_success=lambda _result: setattr(context.state, "local_observer", None)
+    )
+
+
+def _stop_local_observer(observer: watchdog.observers.api.BaseObserver) -> None:
+    observer.stop()
+    observer.join()
 
 
 def stop_local_watchers(context: PlansContext) -> None:
@@ -461,8 +504,7 @@ def stop_local_watchers(context: PlansContext) -> None:
     observer = context.state.local_observer
     if observer is None:
         return
-    observer.stop()
-    observer.join()
+    _stop_local_observer(observer)
     context.state.local_observer = None
 
 

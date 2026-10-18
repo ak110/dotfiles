@@ -38,7 +38,7 @@ def test_save_failure_keeps_full_diagnostics(monkeypatch: pytest.MonkeyPatch, ca
     def fail(_prefix: str) -> pathlib.Path:
         raise OSError("保存できない")
 
-    monkeypatch.setattr(style_diagnostics.managed_temp, "create_managed_temp", fail)
+    monkeypatch.setattr(style_diagnostics.managed_temp, "create_output_temp", fail)
     style_diagnostics.report_warnings(["本文:1:1: 第一", "本文:2:1: 第二"], next_action="編集は続行する")
     error = capsys.readouterr().err
     assert all(text in error for text in ["保存できない", "第一", "第二", "編集は続行する"])

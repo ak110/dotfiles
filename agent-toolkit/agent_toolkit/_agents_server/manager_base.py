@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import copy
 import dataclasses
 import datetime
 import logging
@@ -94,6 +95,8 @@ class ManagerBase:
         self._retention_timers: dict[str, asyncio.TimerHandle] = {}
         self._resource_release_tasks: dict[str, asyncio.Task[None]] = {}
         self._candidate_tasks: set[asyncio.Task[None]] = set()
+        self._diagnostic_tasks: set[asyncio.Task[None]] = set()
+        self._diagnostic_lock = asyncio.Lock()
         self._status_writer: status_file.StatusFileWriter | None
         if status_writer is _DEFAULT_STATUS_WRITER:
             identity = shared_roots.resolve_status_file_identity(environment)
@@ -167,13 +170,29 @@ class ManagerBase:
         """自身が所有するsessionの遷移だけを共有状態とホスト資源へ対応付ける。"""
         if self._status_writer is None or self.sessions.get(session.session_id) is not session:
             return
-        resource_snapshot.record(
-            event,
-            session,
-            root_session_id=self._status_writer.root_session_id,
-            sessions=self.sessions,
-            state_root=self._status_writer.state_root,
+        task = asyncio.create_task(
+            self._record_resource_snapshot(
+                event,
+                copy.copy(session),
+                root_session_id=self._status_writer.root_session_id,
+                sessions={key: copy.copy(value) for key, value in self.sessions.items()},
+                state_root=self._status_writer.state_root,
+            )
         )
+        self._diagnostic_tasks.add(task)
+
+    async def _record_resource_snapshot(self, *args: Any, **kwargs: Any) -> None:
+        async with self._diagnostic_lock:
+            await run_file_operation(resource_snapshot.record, *args, **kwargs)
+
+    async def _drain_diagnostics(self) -> None:
+        """取得を開始した診断の完了を全件回収する。"""
+        tasks = tuple(self._diagnostic_tasks)
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+        self._diagnostic_tasks.difference_update(tasks)
+        for result in results:
+            if isinstance(result, BaseException):
+                raise result
 
     async def _refresh_heartbeat(self) -> None:
         """MCPサーバーの生存中に状態ファイルの生存の印を更新する。"""

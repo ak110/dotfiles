@@ -40,6 +40,19 @@ _SCRIPT = pathlib.Path(__file__).resolve().parent / "hook.py"
 _HOOK_DEFINITIONS = tuple(_SCRIPT.parents[1] / "hooks" / name for name in ("hooks.json", "hooks.codex.json"))
 
 
+@pytest.mark.parametrize("argv", [[], ["unknown-command"]])
+def test_unknown_hook_warning_once_per_payload_session(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    argv: list[str],
+) -> None:
+    """hook入力の会話識別子ごとに、同じ引数不整合の警告を1回だけ表示する。"""
+    for identifier, expected in (("first", True), ("first", False), ("second", True), (None, True), (None, True)):
+        monkeypatch.setattr(sys, "stdin", io.StringIO(json.dumps({"session_id": identifier})))
+        assert _hook.main(argv) == 0
+        assert bool(capsys.readouterr().err) is expected
+
+
 def _registered_subcommands() -> tuple[str, ...]:
     """Claude Code・Codexのhook定義が`hook.py`（`atk-hook`）へ渡すサブコマンドの和集合を返す。"""
     names: set[str] = set()

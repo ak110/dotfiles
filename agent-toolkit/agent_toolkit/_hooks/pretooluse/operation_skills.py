@@ -44,6 +44,7 @@ lazy from agent_toolkit._common import shell_segments as _shell_segments
 lazy from agent_toolkit._common.bash_invocations import STATIC_UNKNOWN, extract_bash_invocations
 lazy from agent_toolkit._common.heredocs import heredoc_bodies
 lazy from agent_toolkit._common.session_state import read_state, update_state
+lazy from agent_toolkit._common.shell_tokens import is_atk_command
 lazy from agent_toolkit._common.uv_arguments import is_python_token
 lazy from agent_toolkit._hooks import agent_id as _agent_id
 lazy from agent_toolkit._hooks import plugin_resources as _plugin_resources
@@ -148,25 +149,19 @@ def _is_root_cause_writing(tool_name: str, tool_input: dict) -> bool:
 def _is_managed_temp_create(tool_name: str, tool_input: dict) -> bool:
     """`agent-toolkit:managed-temp`の起動の契機とする`atk managed-temp create`の実行かを返す。
 
-    区間のトークン列にある`managed-temp`・`create`の連続を、直前のトークンが`atk`（パスを伴う形を含む）である場合と、
-    `managed-temp`が区間の先頭である場合に対象とする。`extract_execution_pipelines`は`for … ; do atk …`の`do`を
-    区間の先頭に残し、`d=$(atk …)`では`d=$(atk`を前置語として除くため、先頭のトークンだけでは両方の形を判定できない。
-    検索語として1つの引数に含めた文字列はトークンが分かれないため対象にならない。`cleanup`と`list`は対象外とする。
+    共通のBash解析から得た実行位置をランチャーの共通定義へ渡す。
+    複合文と置換の内側も同じ起動として扱い、他のコマンドの引数は起動に含めない。
+    `cleanup`と`list`は対象外とする。
     """
     if tool_name != "Bash":
         return False
     command = tool_input.get("command")
     if not isinstance(command, str):
         return False
-    for pipeline in _shell_segments.extract_execution_pipelines(command):
-        for segment in pipeline:
-            tokens = segment.tokens
-            for index in range(len(tokens) - 1):
-                if tokens[index] != "managed-temp" or tokens[index + 1] != "create":
-                    continue
-                if index == 0 or pathlib.PurePath(tokens[index - 1]).name == "atk":
-                    return True
-    return False
+    return any(
+        is_atk_command(invocation.segment.tokens) and invocation.segment.tokens[1:3] == ("managed-temp", "create")
+        for invocation in extract_bash_invocations(command)
+    )
 
 
 def _python_write_paths(code: str) -> list[str]:
@@ -374,7 +369,6 @@ def _bash_write_paths(command: str, cwd: str | None = None) -> list[str]:
     書込先の指定にも別の解釈を要するため対象へ含めない。
     """
     paths: list[str] = []
-    current = shell_cwd.CwdResolution(cwd or "", bool(cwd))
 
     def append_paths(found: list[str], base: shell_cwd.CwdResolution) -> None:
         for raw in found:
@@ -382,18 +376,14 @@ def _bash_write_paths(command: str, cwd: str | None = None) -> list[str]:
             if value is None:
                 continue
             path = pathlib.Path(value).expanduser()
-            if cwd is None:
-                paths.append(value)
-            elif path.is_absolute():
+            if path.is_absolute():
                 paths.append(str(path.resolve()))
             elif base.resolved:
                 paths.append(str((pathlib.Path(base.path) / path).resolve()))
+            elif cwd is None and base.unresolved_expression is None:
+                paths.append(value)
 
-    for invocation in extract_bash_invocations(command):
-        change = shell_cwd.resolve_cwd_change(list(invocation.segment.tokens), current)
-        if change is not None:
-            current = change
-            continue
+    for invocation, current in shell_cwd.bash_invocation_cwds(command, cwd or ""):
         found = [target for target in invocation.static_outputs if isinstance(target, str)]
         tokens = invocation.static_tokens
         name = pathlib.PurePath(tokens[0]).name
@@ -413,16 +403,11 @@ def _bash_write_paths(command: str, cwd: str | None = None) -> list[str]:
             found.extend(_python_write_paths(tokens[2]))
         append_paths(found, current)
     for body in heredoc_bodies(command):
-        header = command[: body.start].rstrip("\r\n").rsplit("\n", 1)[-1]
-        invocations = extract_bash_invocations(header)
-        if len(invocations) == 1:
-            tokens = invocations[0].segment.tokens
+        invocations = list(shell_cwd.bash_invocation_cwds(command[: body.start], cwd or ""))
+        if invocations:
+            invocation, base = invocations[-1]
+            tokens = invocation.segment.tokens
             if is_python_token(pathlib.PurePath(tokens[0]).name) and tokens[1:] in {(), ("-",)}:
-                base = shell_cwd.CwdResolution(cwd or "", bool(cwd))
-                for preceding in extract_bash_invocations(command[: body.start]):
-                    change = shell_cwd.resolve_cwd_change(list(preceding.segment.tokens), base)
-                    if change is not None:
-                        base = change
                 append_paths(_python_write_paths(command[body.start : body.end]), base)
     return paths
 

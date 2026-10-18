@@ -47,20 +47,20 @@ class ManagerWait(manager_resume.ManagerResume):
                 targets.add(session_id)
         return sorted(targets)
 
-    def _retained_result_response(self, session_id: str, *, collector: str) -> dict[str, Any] | None:
+    async def _retained_result_response(self, session_id: str, *, collector: str) -> dict[str, Any] | None:
         """破棄済みまたは期限切れsessionの未回収の終端結果だけを返す。"""
-        stopped_state = self._resolve_stopped_session(session_id)
+        stopped_state = await self._resolve_stopped_session(session_id)
         if stopped_state is not None:
-            response = self._take_stopped_result(session_id, stopped_state, collector=collector)
+            response = await self._take_stopped_result(session_id, stopped_state, collector=collector)
             if response is None:
                 return None
-            return self._response_with_notices(response, self._take_notices(session_id))
-        if self._resolve_expired_session(session_id) is None:
+            return self._response_with_notices(response, (await self._take_notices_async(session_id)))
+        if (await self._resolve_expired_session(session_id)) is None:
             return None
-        response = self._expired_result_response(session_id, collector=collector)
+        response = await self._expired_result_response(session_id, collector=collector)
         if response is None or "agent_message" not in response:
             return None
-        return self._response_with_notices(response, self._take_notices(session_id))
+        return self._response_with_notices(response, (await self._take_notices_async(session_id)))
 
     async def wait(self) -> dict[str, Any]:
         """委譲先の終端を待ち、終端時だけ結果本文を返す。
@@ -85,6 +85,7 @@ class ManagerWait(manager_resume.ManagerResume):
         `status`が`completed`、`failed`、`interrupted`のいずれかである応答は終端であり、`notices`を含む場合も結果本文とともに受領して本ツールを再発行しない。
         応答へ載せた通知は回収済みとして再び返さない。
         """
+        await self._drain_diagnostics()
         timeout = await self._resolve_wait_timeout("main")
         loop = asyncio.get_running_loop()
         deadline = loop.time() + float(timeout)
@@ -97,12 +98,12 @@ class ManagerWait(manager_resume.ManagerResume):
         while True:
             await self._drain_candidate_records()
             for session_id in ordered_ids:
-                self._resolve_expired_session(session_id)
+                (await self._resolve_expired_session(session_id))
                 await self._wait_for_resource_release(session_id)
             if self._status_writer is not None:
                 await self._status_writer.drain()
             for session_id in ordered_ids:
-                retained_response = self._retained_result_response(session_id, collector="mcp-wait")
+                retained_response = await self._retained_result_response(session_id, collector="mcp-wait")
                 if retained_response is not None:
                     return {"session_id": session_id, **retained_response}
                 session = self.sessions.get(session_id)
@@ -121,15 +122,23 @@ class ManagerWait(manager_resume.ManagerResume):
                 for session_id in ordered_ids:
                     candidate = self.sessions.get(session_id)
                     if candidate is not None and candidate.result_available and not candidate.result_delivered:
-                        if self._status_writer is not None and self._status_writer.result_state(session_id) == "consumed":
+                        if (
+                            self._status_writer is not None
+                            and await self._status_writer.result_state_async(session_id) == "consumed"
+                        ):
                             candidate.result_delivered = True
                             continue
                         terminal.append(candidate)
                 terminal.sort(key=lambda candidate: (candidate.finalized_at or "", candidate.session_id))
                 if terminal:
                     session = terminal[0]
-                    if self._status_writer is not None and self._status_writer.result_state(session.session_id) == "published":
-                        claimed, claim_error = self._status_writer.take_result(session.session_id, collector="mcp-wait")
+                    if (
+                        self._status_writer is not None
+                        and await self._status_writer.result_state_async(session.session_id) == "published"
+                    ):
+                        claimed, claim_error = await self._status_writer.take_result_async(
+                            session.session_id, collector="mcp-wait"
+                        )
                         if claim_error is not None:
                             raise RuntimeError(f"終端結果を回収できません: {session.session_id}: {claim_error}")
                         if claimed is None:
@@ -137,7 +146,7 @@ class ManagerWait(manager_resume.ManagerResume):
                             continue
                     _LOG.info("result_collected session_id=%s collector=mcp-wait", session.session_id)
                     response = self._response_with_notices(
-                        self._result_response(session), self._take_notices(session.session_id)
+                        await self._result_response_async(session), await self._take_notices_async(session.session_id)
                     )
                     return {"session_id": session.session_id, **response}
 
@@ -145,9 +154,9 @@ class ManagerWait(manager_resume.ManagerResume):
                     session = self.sessions.get(session_id)
                     if session is None:
                         continue
-                    notices = self._take_notices(session_id)
+                    notices = await self._take_notices_async(session_id)
                     if notices:
-                        response = self._response_with_notices(self._result_response(session), notices)
+                        response = self._response_with_notices(await self._result_response_async(session), notices)
                         return {"session_id": session_id, **response}
 
                 retained = [self.sessions[session_id] for session_id in ordered_ids if session_id in self.sessions]
@@ -162,11 +171,11 @@ class ManagerWait(manager_resume.ManagerResume):
                 if remaining <= 0:
                     if not retained:
                         session_id = pending_ids[0]
-                        response = self._pending_resume_status(self._pending_resumes[session_id])
+                        response = await self._pending_resume_status(self._pending_resumes[session_id])
                         return {"session_id": session_id, **response}
                     undelivered = next((candidate for candidate in retained if not candidate.result_delivered), None)
                     if undelivered is not None:
-                        return {"session_id": undelivered.session_id, **self._result_response(undelivered)}
+                        return {"session_id": undelivered.session_id, **await self._result_response_async(undelivered)}
                     session = retained[0]
                     timeout_response: dict[str, Any] = {"status": "running", "progress": ""}
                     elapsed_seconds = turn_elapsed_seconds(session.started_at)

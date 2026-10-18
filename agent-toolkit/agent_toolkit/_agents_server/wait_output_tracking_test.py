@@ -91,17 +91,27 @@ def test_send_message_reactivates_terminal_child_until_observed(namespace: str, 
     assert not session.terminal_child_session_ids
 
 
-def test_child_session_collected_by_agents_wait_leaves_auto_resume_targets() -> None:
+@pytest.mark.parametrize(
+    ("tool_name", "command"),
+    [
+        ("Bash", "atk agents wait"),
+        ("Bash", "C:/x/atk.cmd agents wait"),
+        ("Bash", r"'C:\x\atk.py' agents wait"),
+        ("PowerShell", r"& 'C:\x\atk.cmd' agents wait"),
+    ],
+)
+@pytest.mark.asyncio
+async def test_child_session_collected_by_agents_wait_leaves_auto_resume_targets(tool_name: str, command: str) -> None:
     """委譲先が`atk agents wait`で回収した孫sessionは、終端を理由とする自動再開の対象から外れる。"""
     session = state.SessionState("parent-1", "/tmp")
     _start_child(session, "toolu_1", "child-1")
     _start_child(session, "toolu_2", "child-2")
 
-    wait_output_tracking.consume_claude_agents_server_message(
+    await wait_output_tracking.consume_claude_agents_server_message_async(
         session,
-        {"content": [{"id": "toolu_3", "name": "Bash", "input": {"command": "atk agents wait"}}]},
+        {"content": [{"id": "toolu_3", "name": tool_name, "input": {"command": command}}]},
     )
-    wait_output_tracking.consume_claude_agents_server_message(
+    await wait_output_tracking.consume_claude_agents_server_message_async(
         session,
         {
             "content": [
@@ -238,20 +248,21 @@ async def test_background_agents_wait_output_releases_collected_child_before_uno
     session.pending_result = {"status": "completed", "agent_message": "待機表明", "error": None}
     session.awaiting_auto_resume = True
 
-    claude.ClaudeServerManager._finalize_pending_result(session)  # pylint: disable=protected-access
+    (await claude.ClaudeServerManager._finalize_pending_result(session))  # pylint: disable=protected-access
 
     error = session.error if isinstance(session.error, dict) else {}
     assert error.get("unobservedSessions") == expected_unobserved
 
 
-def test_unrelated_bash_output_does_not_release_child_session() -> None:
+@pytest.mark.parametrize("command", ["cat result.jsonl", "echo 'atk agents wait'", "printf '%s' 'atk agents wait'"])
+def test_unrelated_bash_output_does_not_release_child_session(command: str) -> None:
     """`atk agents wait`以外のBash出力に同じJSON行が現れても、追跡対象を変えない。"""
     session = state.SessionState("parent-1", "/tmp")
     _start_child(session, "toolu_1", "child-1")
 
     wait_output_tracking.consume_claude_agents_server_message(
         session,
-        {"content": [{"id": "toolu_2", "name": "Bash", "input": {"command": "cat result.jsonl"}}]},
+        {"content": [{"id": "toolu_2", "name": "Bash", "input": {"command": command}}]},
     )
     wait_output_tracking.consume_claude_agents_server_message(
         session,

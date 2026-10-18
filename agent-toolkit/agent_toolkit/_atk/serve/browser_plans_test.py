@@ -793,6 +793,8 @@ async def test_plan_failures_keep_selected_source_and_browser_owner(screen_harne
     await page.goto(harness.base_url + "/plans")
     if failure == "clipboard":
         await page.locator("#preview h1").wait_for(state="visible")
+        # 見出しは図の描画より先に現れる。初期描画の完了後にコピーして失敗表示を検証する。
+        await playwright.async_api.expect(page.locator("#preview")).to_have_attribute("aria-busy", "false")
         await page.locator("#copy-btn").click()
     alert = page.locator("#preview [role=alert]" if failure != "svg" else "#preview .diagram-error")
     await playwright.async_api.expect(alert).to_contain_text("plan.md")

@@ -110,7 +110,7 @@ def setup(
                     check=False,
                 )
             except (OSError, subprocess.SubprocessError) as error:
-                logger.warning(
+                logger.info(
                     log_format.format_status(
                         log_tag,
                         f"再起動理由をjournalへ記録できません: {error}。対応不要（再起動処理は継続した）",
@@ -118,7 +118,7 @@ def setup(
                 )
             else:
                 if journal_result.returncode != 0:
-                    logger.warning(
+                    logger.info(
                         log_format.format_status(
                             log_tag,
                             "再起動理由をjournalへ記録できません。対応不要（再起動処理は継続した）",

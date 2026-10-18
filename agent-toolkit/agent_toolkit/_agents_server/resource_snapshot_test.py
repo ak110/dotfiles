@@ -79,6 +79,7 @@ async def test_resource_snapshot_follows_public_session_lifecycle(
         await manager.send_message("restored", "登録簿から再開")
         _complete(manager.sessions["restored"])
         await manager.wait()
+        await manager.close()
         snapshots = [
             json.loads(line.split("resource_snapshot ", 1)[1])
             for line in path.read_text(encoding="utf-8").splitlines()
@@ -146,6 +147,7 @@ async def test_resource_snapshot_counts_shared_live_sessions(
         started = await manager.start("plan", "調査", str(tmp_path))
         session = manager.sessions[started["session_id"]]
         _complete(session)
+        await manager.close()
         rows = _snapshots(caplog)
         assert [(row["event"], row["running_by_root"]) for row in rows] == [
             ("start", {"root-a": 3, "root-b": 1}),
@@ -180,6 +182,7 @@ async def test_resource_snapshot_failure_does_not_fail_session(
         started = await manager.start("plan", "調査", str(tmp_path))
         _complete(manager.sessions[started["session_id"]])
         assert (await manager.wait())["status"] == "completed"
+        await manager.close()
         rows = _snapshots(caplog)
         assert len(rows) == 2
         assert all(row["running_total"] is None and row["counts_complete"] is False for row in rows)

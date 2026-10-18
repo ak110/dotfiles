@@ -30,6 +30,7 @@ from agent_toolkit._atk import managed_temp as _managed_temp  # noqa: E402  # py
 from agent_toolkit._atk import plans as _plans_module
 from agent_toolkit._atk import run_command as _run_command  # noqa: E402  # pylint: disable=wrong-import-position
 from agent_toolkit._atk import worktree_stash as _worktree_stash  # noqa: E402  # pylint: disable=wrong-import-position
+from agent_toolkit._atk.managed_temp import inventory as managed_temp_inventory
 from agent_toolkit._atk.managed_temp import registry as managed_temp_registry
 from agent_toolkit._atk.wi import add as _add  # noqa: E402  # pylint: disable=wrong-import-position
 from agent_toolkit._atk.wi import listing as _wi_listing
@@ -52,7 +53,95 @@ from agent_toolkit._testing.git_fakes import (  # noqa: E402  # pylint: disable=
 from agent_toolkit._testing.isolation import host_package_cache_environ
 from agent_toolkit._testing.managed_temp_support import setattr_in_managed_temp_modules
 
+
+def test_persistent_warning_once_per_session(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    tmp_path: pathlib.Path,
+) -> None:
+    """期限超過の未登録領域の削除失敗と残存件数を、公開サブコマンドから観測する。"""
+    for key in ("AGENT_TOOLKIT_OWNER_SESSION", "AGENT_TOOLKIT_DELEGATED_SESSION", "CLAUDE_CODE_SESSION_ID", "CODEX_THREAD_ID"):
+        monkeypatch.delenv(key, raising=False)
+
+    area = _managed_temp.create_managed_temp("failed-orphan")
+    managed_temp_registry._registry_path(area).unlink()  # pylint: disable=protected-access
+    # マーカー不正のため強制回収へ進み、実際の削除primitiveだけを失敗させる。
+    (area / ".agent-toolkit-managed-temp.json").write_text("{}", encoding="utf-8")
+    expired = (datetime.datetime.now(datetime.UTC) - datetime.timedelta(days=8)).timestamp()
+    for path in (*area.rglob("*"), area):
+        os.utime(path, (expired, expired))
+    remove = managed_temp_inventory.shutil.rmtree
+
+    def fail_removal(path: str | pathlib.Path) -> None:
+        if pathlib.Path(str(path)) == area:
+            raise PermissionError("persistent deletion failure")
+        remove(path, onexc=None)
+
+    monkeypatch.setattr(managed_temp_inventory.shutil, "rmtree", fail_removal)
+    monkeypatch.setattr(_wait_schedule, "get_schedule", lambda _request_bucket: "result")
+
+    def invoke() -> str:
+        with pytest.raises(SystemExit) as raised:
+            atk.main(["wait-schedule", "--request-bucket=main"], home=tmp_path)
+        assert raised.value.code == 0
+        output = capsys.readouterr()
+        assert output.out == "result\n"
+        assert area.is_dir()
+        return output.err
+
+    def expect_warning(expected: bool) -> None:
+        output = invoke()
+        assert ("登録を失ったmanaged-tempのディレクトリを自動削除できない" in output) is expected
+        assert ("自動削除されずに残った、登録を持たない管理対象が1件ある" in output) is expected
+        if expected:
+            assert "persistent deletion failure" in output
+
+    for key in ("CLAUDE_CODE_SESSION_ID", "CODEX_THREAD_ID"):
+        monkeypatch.setenv(key, key)
+        expect_warning(True)
+        expect_warning(False)
+        monkeypatch.setenv(key, key + "-other")
+        expect_warning(True)
+        expect_warning(False)
+        monkeypatch.delenv(key)
+    expect_warning(True)
+    expect_warning(True)
+    monkeypatch.setenv("AGENT_TOOLKIT_DELEGATED_SESSION", "1")
+    expect_warning(False)
+    monkeypatch.delenv("AGENT_TOOLKIT_DELEGATED_SESSION")
+    monkeypatch.setenv("AGENT_TOOLKIT_OWNER_SESSION", "owner-only")
+    expect_warning(False)
+
+
 _GitCall = dict[str, Any]
+
+
+def test_retention_transition_reports_same_count(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    tmp_path: pathlib.Path,
+) -> None:
+    """保持件数が同じでも対象の変化を要約し、不変の状態では出力を省く。"""
+    monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)
+    monkeypatch.delenv("AGENT_TOOLKIT_DELEGATED_SESSION", raising=False)
+    monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "retention-transitions")
+    results = iter(
+        [
+            _managed_temp.SweepResult([], (), None, (("first", "live"),), True),
+            _managed_temp.SweepResult([], (), None, (("second", "live"),), True),
+            _managed_temp.SweepResult([], (), None, (("second", "live"),), False),
+        ]
+    )
+    setattr_in_managed_temp_modules(monkeypatch, "sweep_managed_temp", lambda **_kwargs: next(results))
+    monkeypatch.setattr(_wait_schedule, "get_schedule", lambda _request_bucket: "result")
+    for changed in (True, True, False):
+        with pytest.raises(SystemExit) as raised:
+            atk.main(["wait-schedule", "--request-bucket=main"], home=tmp_path)
+        assert raised.value.code == 0
+        output = capsys.readouterr()
+        assert output.out == "result\n"
+        assert ("配布物を1件保持した" in output.err) is changed
+
 
 _ATK_PATH = pathlib.Path(atk.__file__).resolve()
 _PROJECT_ROOT = _ATK_PATH.parents[1]
@@ -677,13 +766,13 @@ class TestWaitScheduleParser:
         assert captured.out == "fixed-subcommand-output\n"
         assert "登録を持たない管理対象が1件ある" in captured.err
 
-    def test_managed_temp_list_reports_unregistered_paths(
+    def test_managed_temp_list_keeps_recent_unregistered_paths(
         self,
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """managed-temp listは未登録領域の絶対パスと回収方法を表示する。"""
+        """managed-temp listは直近に更新された未登録領域を保持する。"""
         monkeypatch.setattr(tempfile, "gettempdir", lambda: str(tmp_path))
         target = _managed_temp.create_managed_temp("orphan")
         managed_temp_registry._registry_path(target).unlink()  # pylint: disable=protected-access  # noqa: SLF001
@@ -693,8 +782,9 @@ class TestWaitScheduleParser:
 
         assert exc_info.value.code == 1
         captured = capsys.readouterr()
-        assert str(target) in captured.err
-        assert f"atk managed-temp cleanup --path {target} --recover-registry" in captured.err
+        assert str(target) not in captured.err
+        assert "cleanup --path" not in captured.err
+        assert target.exists()
         assert "登録を持たない管理対象が1件ある" not in captured.err
 
     def test_cleanup_failure_does_not_change_subcommand_exit_code(
@@ -775,9 +865,7 @@ class TestWaitScheduleParser:
         assert recent.exists()
         assert live_worktree.exists()
         err_lines = capsys.readouterr().err.splitlines()
-        assert [line for line in err_lines if "登録を持たない管理対象が" in line] == [
-            "警告: 自動削除されずに残った、登録を持たない管理対象が1件ある"
-        ]
+        assert not [line for line in err_lines if "登録を持たない管理対象が" in line]
 
     def test_startup_does_not_revalidate_pending_managed_temp(
         self,

@@ -87,6 +87,11 @@ def test_legacy_plugin_root_cleanup_checks_unregistered_consumers(
     class LegacyServer:
         """OSから得る起動引数と、参照不能・終了・別名前空間の境界を供給する。"""
 
+        pid = 123
+
+        def create_time(self) -> float:
+            return 1.0
+
         def username(self) -> str:
             if observation in {"non-mcp-account-denied", "account-and-cmdline-denied"}:
                 raise subject.psutil.AccessDenied()
@@ -143,3 +148,21 @@ def test_nonblocking_lock_reports_conflict(tmp_path: pathlib.Path) -> None:
         pytest.fail("保持中のロックを非待機で取得した")
     with subject.plugin_root_lock(area, blocking=False):
         pass
+
+
+def test_legacy_area_not_attributed_to_lease_aware_mcp(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """対応能力と既存leaseを旧領域への無帰属fallbackから除外し、直接参照を保つ。"""
+    area = tmp_path / "agents-server-plugin-root-legacy"
+    area.mkdir()
+    process = subject.psutil.Process()
+    monkeypatch.setattr(subject.psutil, "process_iter", lambda: [process])
+    monkeypatch.setattr(type(process), "cmdline", lambda self: ["python", "/source/agent_toolkit/agents_server_mcp.py"])
+    monkeypatch.setattr(subject, "_server_namespace_may_match", lambda _process: True)
+    assert subject.plugin_root_in_use(area)
+    subject.register_lease_capability()
+    assert not subject.plugin_root_in_use(area)
+    monkeypatch.setattr(type(process), "cmdline", lambda self: ["python", str(area / "agent_toolkit/agents_server_mcp.py")])
+    assert subject.plugin_root_in_use(area)

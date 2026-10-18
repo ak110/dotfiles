@@ -10,7 +10,6 @@ import pathlib
 import shutil
 import subprocess
 import sys
-from logging.handlers import RotatingFileHandler
 from types import SimpleNamespace
 from typing import Any
 from unittest.mock import AsyncMock
@@ -223,7 +222,7 @@ async def test_session_label_prefers_argument_over_generated_value(
         (shell_named, "作業ツリーの差分"),
     ):
         assert response["label"] == expected
-        assert manager.show_session(response["session_id"])["label"] == expected
+        assert (await manager.show_session(response["session_id"]))["label"] == expected
 
 
 @pytest.mark.parametrize("label", ["", "   "])
@@ -244,8 +243,8 @@ async def test_empty_session_label_falls_back_to_the_generated_value(
     started = await manager.start("plan", "対象の調査\n詳細", str(tmp_path), label=label)
     shell = await manager.start_shell("git status --short", str(tmp_path), "終了コードだけを返す", label=label)
 
-    assert started["label"] == manager.show_session(started["session_id"])["label"] == "対象の調査"
-    assert shell["label"] == manager.show_session(shell["session_id"])["label"] == "shell-git"
+    assert started["label"] == (await manager.show_session(started["session_id"]))["label"] == "対象の調査"
+    assert shell["label"] == (await manager.show_session(shell["session_id"]))["label"] == "shell-git"
 
 
 @pytest.mark.asyncio
@@ -294,7 +293,7 @@ async def test_public_start_returns_label_of_started_session(
     assert len({response["session_id"] for response in responses.values()}) == len(responses)
     for expected, response in responses.items():
         assert response["label"] == expected
-        assert manager.show_session(response["session_id"])["label"] == expected
+        assert (await manager.show_session(response["session_id"]))["label"] == expected
 
     candidates = [("codex", "first", "high"), ("claude", "second", "medium")]
     monkeypatch.setattr(_atk_config, "parse_unresolved_model_candidates", lambda _model_type, **_kwargs: candidates)
@@ -303,13 +302,13 @@ async def test_public_start_returns_label_of_started_session(
     monkeypatch.setattr(mcp_tools, "_MANAGER", switching)
     switched = await mcp_tools.start(cwd, mode="delegate", prompt="切替", model_type="high_tier", label="switched")
     assert switched["excluded_candidates"]
-    assert switched["label"] == switching.show_session(switched["session_id"])["label"] == "switched"
+    assert switched["label"] == (await switching.show_session(switched["session_id"]))["label"] == "switched"
 
     _install_backend(switching, "claude", UnavailableStartBackend(switching.sessions, "claude"))
     del claude
     failed = await mcp_tools.start(cwd, mode="delegate", prompt="失敗", model_type="high_tier", label="all-failed")
     assert failed["status"] == "failed"
-    assert failed["label"] == switching.show_session(failed["session_id"])["label"] == "all-failed"
+    assert failed["label"] == (await switching.show_session(failed["session_id"]))["label"] == "all-failed"
 
 
 @pytest.mark.asyncio
@@ -477,7 +476,7 @@ async def test_success_response_key_sets_for_all_tools(
     }
     assert await manager.stop(terminal_id) == {}
 
-    listed = manager.list_sessions(include_terminated=True)
+    listed = await manager.list_sessions(include_terminated=True)
     assert listed.keys() == {"sessions", "root_session_id"}
     assert listed["root_session_id"] == "root-session"
     assert all(
@@ -523,7 +522,7 @@ async def test_list_returns_root_session_id_when_session_list_is_empty(tmp_path:
     )
     manager = server_manager.AgentsServerManager(writer)
 
-    assert manager.list_sessions() == {
+    assert (await manager.list_sessions()) == {
         "sessions": [],
         "root_session_id": "root-session",
     }
@@ -579,10 +578,7 @@ def test_main_persists_startup_and_exit_diagnostics(monkeypatch: pytest.MonkeyPa
     assert "agents_serverを起動します: mode=check-dependencies" in content
     assert "agents_serverが正常終了しました: mode=check-dependencies" in content
     handlers = logging.getLogger("agent-toolkit.agents-server").handlers
-    file_handler = next(handler for handler in handlers if isinstance(handler, logging_config._LogFileHandler))  # pylint: disable=protected-access  # noqa: SLF001
-    assert isinstance(file_handler, RotatingFileHandler)
-    assert file_handler.maxBytes == logging_config.LOG_MAX_BYTES
-    assert file_handler.backupCount == logging_config.LOG_BACKUP_COUNT
+    assert not any(isinstance(handler, logging_config._LogFileHandler) for handler in handlers)  # pylint: disable=protected-access  # noqa: SLF001
 
 
 @pytest.mark.asyncio
@@ -699,7 +695,7 @@ async def test_start_tools_accept_model_type_override(monkeypatch: pytest.Monkey
 
     assert requested == [override] * 4
     for launch_kind, response in responses.items():
-        shown = manager.show_session(response["session_id"])
+        shown = await manager.show_session(response["session_id"])
         assert shown["model_type"] == override
         assert shown["launch_kind"] == launch_kind
 
@@ -747,7 +743,7 @@ async def test_start_label_defaults(monkeypatch: pytest.MonkeyPatch, tmp_path: p
         "write": await mcp_tools.start(str(tmp_path), mode="write", prompt="起草\n詳細"),
     }
 
-    shown = {key: manager.show_session(response["session_id"])["label"] for key, response in labels.items()}
+    shown = {key: (await manager.show_session(response["session_id"]))["label"] for key, response in labels.items()}
     assert shown == {
         "lane": "lane-01-exec",
         "explain": "pick-wi-explain",
@@ -816,7 +812,7 @@ async def test_start_routes_each_mode_to_launch_kind_model_and_label(
     shown = {}
     for mode, arguments in calls.items():
         response = await mcp_tools.start(str(tmp_path), **arguments)
-        shown[mode] = manager.show_session(response["session_id"])
+        shown[mode] = await manager.show_session(response["session_id"])
 
     assert requested == [
         (launch_requests._TASK_MODEL_TYPES[task_document.name], "execute"),

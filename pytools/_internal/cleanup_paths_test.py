@@ -72,6 +72,7 @@ class TestCleanupPaths:
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
     ) -> None:
         """1件の検査失敗後も後続対象を削除する。"""
+        caplog.set_level("INFO")
         failing = tmp_path / "failing"
         succeeding = tmp_path / "succeeding"
         failing.write_text("保持", encoding="utf-8")
@@ -84,7 +85,7 @@ class TestCleanupPaths:
             return real_exists(path)
 
         monkeypatch.setattr(Path, "exists", exists)
-        with caplog.at_level(logging.WARNING):
+        with caplog.at_level(logging.INFO):
             removed = cleanup_paths(tmp_path, (Path("failing"), Path("succeeding")))
 
         assert removed == 1
@@ -219,6 +220,7 @@ class TestCleanupPathsIfContentMatches:
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
     ) -> None:
         """内容一致検査の失敗後も後続対象を削除する。"""
+        caplog.set_level("INFO")
         failing = tmp_path / "failing.md"
         succeeding = tmp_path / "succeeding.md"
         failing.write_bytes(b"keep\n")
@@ -231,7 +233,7 @@ class TestCleanupPathsIfContentMatches:
             return real_exists(path)
 
         monkeypatch.setattr(Path, "exists", exists)
-        with caplog.at_level(logging.WARNING):
+        with caplog.at_level(logging.INFO):
             removed = cleanup_paths_if_content_matches(
                 tmp_path,
                 {Path("failing.md"): b"keep\n", Path("succeeding.md"): b"remove\n"},

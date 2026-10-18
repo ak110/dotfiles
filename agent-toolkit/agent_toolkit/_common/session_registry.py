@@ -89,6 +89,11 @@ def owner_process() -> ProcessIdentity | None:
     return _OWNER_PROCESS
 
 
+def owner_process_is_cached() -> bool:
+    """現在のプロセスの識別をI/Oなしで返せるかを示す。"""
+    return _OWNER_PROCESS is not None and _OWNER_PROCESS.pid == os.getpid()
+
+
 def interruption_error(reason: InterruptionReason) -> dict[str, str]:
     """解決が示す中断の理由を、公開応答の`error`の形で返す。"""
     return {"message": _INTERRUPTION_MESSAGES[reason], "interruptionReason": reason}

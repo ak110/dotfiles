@@ -22,8 +22,8 @@ lazy from collections.abc import Iterator, Sequence
 
 from agent_toolkit._hooks.notice import formatter
 lazy from agent_toolkit._atk import read_file
-lazy from agent_toolkit._common import host_homes, shell_cwd, shell_segments
-lazy from agent_toolkit._common.bash_invocations import extract_bash_invocations
+lazy from agent_toolkit._common import host_homes, shell_cwd
+lazy from agent_toolkit._common.shell_tokens import is_atk_command
 lazy from agent_toolkit._common.uv_arguments import is_python_token
 lazy from agent_toolkit._hooks import plugin_resources
 lazy from agent_toolkit._hooks.pretooluse.notices import _block_notice
@@ -163,7 +163,7 @@ def _read_operands(tokens: Sequence[str], *, include_partial: bool) -> tuple[str
         program = "".join(tokens[1].split())
         if program in {"{print}", "{print$0}"}:
             return (tokens[2],)
-    if include_partial and name == "atk" and tokens[1:2] == ("read-file",) and "--" in tokens:
+    if include_partial and is_atk_command(tokens) and tokens[1:2] == ("read-file",) and "--" in tokens:
         separator = tokens.index("--")
         options = tokens[2:separator]
         index = 0
@@ -183,22 +183,17 @@ def _read_operands(tokens: Sequence[str], *, include_partial: bool) -> tuple[str
 
 def bash_read_paths(command: str, cwd: str, *, include_partial: bool = False) -> Iterator[tuple[pathlib.Path, ...]]:
     """読取の解析とcwd・パスの解決を共有し、コマンドごとにファイル群を返す。"""
-    current = shell_cwd.CwdResolution(cwd, bool(cwd))
-    for pipeline in shell_segments.extract_execution_pipelines(command):
-        if len(pipeline) != 1 or not pipeline[0].resolved:
+    for invocation, current in shell_cwd.bash_invocation_cwds(command, cwd):
+        if not invocation.arguments_known or invocation.output_pipe or invocation.output_redirected or invocation.captured:
             continue
-        tokens = tuple(pipeline[0].tokens)
-        change = shell_cwd.resolve_cwd_change(list(tokens), current)
-        if change is not None:
-            current = change
-            continue
+        tokens = invocation.segment.tokens
         paths = []
         for operand in _read_operands(tokens, include_partial=include_partial):
             if include_partial and any(marker in operand for marker in ("$", "`", "<", ">", "*", "?")):
                 continue
-            if include_partial and not pathlib.Path(operand).expanduser().is_absolute() and not current.resolved:
+            if not pathlib.Path(operand).expanduser().is_absolute() and not current.resolved:
                 continue
-            base = current.path if current.resolved and current.path else cwd
+            base = current.path
             paths.append(_resolve_path(operand, base))
         if paths:
             yield tuple(paths)
@@ -361,16 +356,11 @@ def python_file_paths(code: str, *, writing: bool = False) -> list[str]:
 
 def _bash_session_record_paths(command: str, cwd: str) -> list[pathlib.Path]:
     """実行位置と静的引数だけから、原記録の読取・本文検索・解析入力を得る。"""
-    current = shell_cwd.CwdResolution(cwd, bool(cwd))
     found: list[pathlib.Path] = []
-    for invocation in extract_bash_invocations(command):
+    for invocation, current in shell_cwd.bash_invocation_cwds(command, cwd):
         if not invocation.arguments_known:
             continue
         tokens = invocation.segment.tokens
-        change = shell_cwd.resolve_cwd_change(list(tokens), current)
-        if change is not None:
-            current = change
-            continue
         name = pathlib.PurePath(tokens[0]).name
         search = name in {"rg", "grep", "egrep", "fgrep"}
         operands = list(_read_operands(tokens, include_partial=True))

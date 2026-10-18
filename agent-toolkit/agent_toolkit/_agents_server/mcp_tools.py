@@ -18,6 +18,7 @@ from agent_toolkit._agents_server import (
     logging_config,
     result_projection,
 )
+from agent_toolkit._agents_server.file_operations import run_file_operation
 from agent_toolkit._agents_server.launch_requests import task_document_label, task_document_request, validate_start_inputs
 from agent_toolkit._agents_server.manager import DEFAULT_KILL_TIMEOUT, DEFAULT_SEND_MESSAGE_TIMEOUT, AgentsServerManager
 from agent_toolkit._agents_server.mcp_transport import AgentsServerMCP
@@ -58,6 +59,7 @@ async def _mcp_lifespan(_server: MCPServer[None]) -> AsyncGenerator[None]:
         await _MANAGER.activate_async()
     except BaseException:
         _LOG.exception("manager activateに失敗しました: stage=manager_activate")
+        await run_file_operation(logging_config.flush_logging)
         raise
     _LOG.info("manager activateが完了しました")
     try:
@@ -68,8 +70,10 @@ async def _mcp_lifespan(_server: MCPServer[None]) -> AsyncGenerator[None]:
             await _MANAGER.close()
         except BaseException:
             _LOG.exception("manager closeに失敗しました: stage=manager_close")
+            await run_file_operation(logging_config.flush_logging)
             raise
         _LOG.info("manager closeが完了しました")
+        await run_file_operation(logging_config.flush_logging)
 
 
 mcp = AgentsServerMCP(
@@ -146,8 +150,11 @@ async def start(  # noqa: PLR0913 -- 公開入力をmodeごとの平坦な引数
     if mode == "task":
         assert subagent_md_path is not None
         params = extra_params or {}
-        task_model_type, task_usage, task_prompt, launch_kind, handoff_path = task_document_request(subagent_md_path, params)
-        task_prompt = launch_requests.with_launcher_record(task_prompt, _MANAGER.launcher_record_context())
+        task_model_type, task_usage, task_prompt, launch_kind, handoff_path = await run_file_operation(
+            task_document_request, subagent_md_path, params
+        )
+        context = await run_file_operation(_MANAGER.launcher_record_context)
+        task_prompt = launch_requests.with_launcher_record(task_prompt, context)
         response = await _MANAGER.start(
             model_type or task_model_type,
             task_prompt,
@@ -313,7 +320,7 @@ async def list_sessions(
     全件が必要な場合は`include_terminated`へ真を渡す。除いた件数が0なら`omitted`は省く。
     保持していた`session_id`を失った場合の回復と、並行する委譲先の残作業の把握へ用いる。
     """
-    return _MANAGER.list_sessions(include_terminated=include_terminated)
+    return await _MANAGER.list_sessions(include_terminated=include_terminated)
 
 
 @mcp.tool(name="show", structured_output=True)
@@ -363,7 +370,7 @@ async def show_session(
     終端結果本文は返さないため、受領には`atk agents wait`を使う。
     """
     await _MANAGER.take_over_orphaned_session(session_id)
-    return _MANAGER.show_session(session_id, verbose=verbose)
+    return await _MANAGER.show_session(session_id, verbose=verbose)
 
 
 def _prepare_child_environment() -> None:
@@ -396,6 +403,8 @@ def serve(*, check_dependencies: bool = False) -> int:
             mcp.run(transport="stdio")
     except BaseException:
         _LOG.exception("agents_serverが異常終了しました: mode=%s", mode)
+        logging_config.close_logging()
         raise
     _LOG.info("agents_serverが正常終了しました: mode=%s", mode)
+    logging_config.close_logging()
     return 0

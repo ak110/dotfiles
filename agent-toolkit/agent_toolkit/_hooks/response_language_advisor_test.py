@@ -25,7 +25,18 @@ def test_codex_completion_rewrites_explanation_and_preserves_material(entrypoint
         output = capsys.readouterr().out
         return json.loads(output) if output else {}
 
-    assert invoke()["decision"] == "block"
+    blocked = invoke()
+    assert blocked["decision"] == "block"
+    reason = blocked["reason"]
+    assert isinstance(reason, str)
+    for expected in ("判定基準", "基準の기준의所有位置", "完了本文を変更せず", "そのまま再出力して停止"):
+        assert expected in reason
+    assert "`…`だけ" not in reason
+    original_report = payload["last_assistant_message"]
+    payload["stop_hook_active"] = True
+    assert "decision" not in invoke()
+    assert payload["last_assistant_message"] == original_report
+    payload["stop_hook_active"] = False
     payload["last_assistant_message"] = '```json\n[{"retain":"基準の所有位置。引用は「기준의」。"}]\n```'
     assert "decision" not in invoke()
     payload["last_assistant_message"] = "説明の기준의混入"

@@ -568,6 +568,9 @@ def _managed_temp_warnings(context: str) -> int:
     "command",
     [
         "atk managed-temp create --prefix lane-02-grp-a",
+        "C:/tools/atk.cmd managed-temp create --prefix x",
+        r"'C:\tools\atk.cmd' managed-temp create --prefix x",
+        "atk.py managed-temp create --prefix x",
         "/home/u/dotfiles/agent-toolkit/bin/atk managed-temp create --prefix x",
         "cd /repo && atk managed-temp create --prefix x",
         "for l in a b; do atk managed-temp create --prefix $l; done",
@@ -603,6 +606,7 @@ def test_managed_temp_create_after_skill_does_not_warn(tmp_path: pathlib.Path, s
         "atk managed-temp list",
         "git grep -F 'atk managed-temp create'",
         "printf '%s' 'atk managed-temp create'",
+        "printf '%s' C:/tools/atk.cmd managed-temp create",
         "atk wi list",
     ],
 )

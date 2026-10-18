@@ -177,25 +177,20 @@ class TestConfigShow:
         assert _main(tmp_path, "config") == 0
         assert capsys.readouterr().out == shown
 
-    def test_show_warns_candidate_outside_known_list(
+    def test_show_keeps_candidate_outside_known_list_without_warning(
         self,
         tmp_path: pathlib.Path,
         monkeypatch: pytest.MonkeyPatch,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """参考一覧外のモデルとeffortは設定キーと値を標準エラーへ示す。"""
+        """参考一覧外のモデルとeffortも現在の値として表示する。"""
         monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CODEX_HIGH_TIER_MODEL", "unknown-model/ultra")
         monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CLAUDE_HIGH_TIER_MODEL", "another-unknown/medium")
 
         assert _main(tmp_path, "config", "show") == 0
         captured = capsys.readouterr()
         assert "codex_high_tier_model unknown-model/ultra" in captured.out
-        assert "設定キー`codex_high_tier_model`の候補`unknown-model/ultra`" in captured.err
-        assert "設定キー`claude_high_tier_model`の候補`another-unknown/medium`" in captured.err
-        assert "モデル名`unknown-model`は主に使うモデルの一覧" in captured.err
-        assert "effort`ultra`は主に使う値の一覧" in captured.err
-        assert captured.err.count("警告: ") == 3
-        assert captured.err.count("次の操作: ") == 1
+        assert not captured.err
 
     def test_show_emits_no_warning_when_all_candidates_known(
         self,
@@ -777,7 +772,7 @@ class TestConfigSet:
         assert "成功: 設定を更新した: codex_medium_tier_model=new-model/ultra" in captured.out
         assert "モデル名`new-model`は主に使うモデルの一覧" in captured.err
         assert "effort`ultra`は主に使う値の一覧" in captured.err
-        assert "利用可否は実行時に各engineが判定します" in captured.err
+        assert "意図した名前か確認し、誤記なら同じキーへ" in captured.err
         assert captured.err.count("警告: ") == 2
         assert captured.err.count("次の操作: ") == 1
         assert _saved(tmp_path) == {"codex_medium_tier_model": "new-model/ultra"}

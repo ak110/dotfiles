@@ -9,10 +9,11 @@
 判断を求めていないため、定型表現の条件から外す。
 疑問符は直後に語が続かない場合だけ文末として扱うため、`〜ですか？と尋ねられた`のように
 語句の内側にある疑問符は遮断の対象にならない。
-コードブロック、インラインコード、URLおよび行頭が`>`の引用行は地の文から除くため、
+コードブロック、インラインコード、URL、行頭が`>`の引用行と対になる「」『』は地の文から除くため、
 記録の引用と実行例の中の疑問符は遮断の対象にならない。
-判断を求めていない応答が遮断された場合は、その問いかけを本文から除いて応答を
-書き直すことで通過する。
+通知が示す検出文がユーザーの回答を待つ問いか依頼かを判定し、該当する場合はAskUserQuestionを使う。
+誤検出なら本文を書き換えず、`…`だけを出力してターンを終える。
+見出しの問いは実際の問いと機械的に区別できず、「あれば」の条件付き依頼も回答を求めるため、検出を維持する。
 
 委譲先での実行可否: 委譲先は`AskUserQuestion`を実行できないため、hook入力と環境印で除外する。
 """
@@ -33,7 +34,7 @@ _HOOK_ID = "pending_question_advisor"
 _block_notice = _block_notice_formatter(_HOOK_ID)
 
 # フェンス付きコードブロック・インラインコード・URL・行頭が`>`の引用行。
-# 地の文の抽出範囲を`_response_language_check`とそろえ、引用行を追加で除く。
+# 地の文の抽出は問いの判定が所有し、記録の引用として引用行とかぎ括弧も除く。
 _FENCED_CODE_PATTERN = re.compile(r"```[\s\S]*?```")
 _INLINE_CODE_PATTERN = re.compile(r"`[^`\n]*`")
 _URL_PATTERN = re.compile(r"https?://\S+")
@@ -59,21 +60,31 @@ _CONDITION_MARKERS = ("場合は", "場合、", "ときは", "たら、")
 
 _ASK_USER_QUESTION_TOOL = "AskUserQuestion"
 
-BLOCK_BODY = (
-    "地の文でユーザーへ判断を求めたままターンを終えようとしている。"
-    "判断を求める場合はAskUserQuestionで確認し、"
-    "確認が不要な場合はその問いかけを本文から除いて応答を書き直すこと。"
-)
+BLOCK_BODY = "判定基準: 検出した文が、ユーザーの回答を待つ問いか依頼かを確かめる。"
 
-_BLOCK_FIX = "AskUserQuestionで確認するか、その問いかけを本文から除いて応答を書き直す。"
+_BLOCK_FIX = (
+    "基準を満たす場合はAskUserQuestionで確認する。基準を満たさない場合は本文を書き換えず、`…`だけを出力してターンを終える。"
+)
 
 
 def _plain_text(text: str) -> str:
-    """コードブロック・インラインコード・URL・引用行を除いた地の文を返す。"""
+    """コードブロック・インラインコード・URL・引用行と対になるかぎ括弧を除いた地の文を返す。"""
     plain = _FENCED_CODE_PATTERN.sub(" ", text)
     plain = _INLINE_CODE_PATTERN.sub(" ", plain)
     plain = _URL_PATTERN.sub(" ", plain)
-    return _QUOTE_LINE_PATTERN.sub(" ", plain)
+    plain = _QUOTE_LINE_PATTERN.sub(" ", plain)
+    stack: list[tuple[str, int]] = []
+    ranges: list[tuple[int, int]] = []
+    for index, char in enumerate(plain):
+        if char in "「『":
+            stack.append((char, index))
+        elif stack and (stack[-1][0], char) in {("「", "」"), ("『", "』")}:
+            _, start = stack.pop()
+            ranges.append((start, index + 1))
+    characters = list(plain)
+    for start, end in ranges:
+        characters[start:end] = " " * (end - start)
+    return "".join(characters)
 
 
 def _sentences(plain_text: str) -> Iterator[str]:
@@ -85,17 +96,17 @@ def _sentences(plain_text: str) -> Iterator[str]:
     yield plain_text[start:]
 
 
-def _asks_user(plain_text: str) -> bool:
-    """地の文がユーザーへ判断を求める文を含むかを返す。"""
+def _asks_user(plain_text: str) -> str | None:
+    """地の文から判断要求として最初に検出した文を返す。一致が無ければNoneを返す。"""
     for raw in _sentences(plain_text):
         sentence = raw.strip()
         if not sentence:
             continue
         if sentence.endswith(("？", "?")):
-            return True
+            return sentence
         if any(_is_unconditional_request(sentence, expression) for expression in _REQUEST_EXPRESSIONS):
-            return True
-    return False
+            return sentence
+    return None
 
 
 def _is_unconditional_request(sentence: str, expression: str) -> bool:
@@ -184,10 +195,11 @@ def evaluate(payload_text: str) -> tuple[str, str]:
     if used_ask_user_question:
         append_stop_log(session_id, "approve_ask_user_question_used", {})
         return "approve", ""
-    if not _asks_user(_plain_text(text)):
+    detected = _asks_user(_plain_text(text))
+    if detected is None:
         append_stop_log(session_id, "approve_no_pending_question", {})
         return "approve", ""
 
-    reason = _block_notice(BLOCK_BODY, fix=_BLOCK_FIX)
+    reason = _block_notice(f"{BLOCK_BODY}\n検出した文: {detected[:200]}", fix=_BLOCK_FIX)
     append_stop_log(session_id, "block_pending_question", {})
     return "block", reason

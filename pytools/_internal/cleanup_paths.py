@@ -49,7 +49,7 @@ class RemovedPathIfContent:
 def _report_failure(failures: list[str] | None, message: str) -> None:
     """検査または削除の失敗を`failures`へ加える。`failures`が無い場合は警告として記録して処理を続ける。"""
     if failures is None:
-        logger.warning("%s（スキップして続行した）", message)
+        logger.info("%s（スキップして続行した）", message)
     else:
         failures.append(message)
 
@@ -199,7 +199,7 @@ def cleanup_paths_if_content_matches(
             continue
         try:
             if not target.is_file() or target.is_symlink():
-                logger.warning("%s は通常ファイルではないためスキップします。保護対象として保持したため対応不要です", target)
+                logger.info("%s は通常ファイルではないためスキップします。保護対象として保持したため対応不要です", target)
                 continue
             actual_bytes = target.read_bytes()
         except OSError as error:

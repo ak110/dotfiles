@@ -87,7 +87,7 @@ def test_public_wait_save_failure_keeps_unreceived_result(
     def fail(_prefix: str) -> pathlib.Path:
         raise OSError("保存準備に失敗")
 
-    setattr_in_managed_temp_modules(monkeypatch, "create_managed_temp", fail)
+    setattr_in_managed_temp_modules(monkeypatch, "create_output_temp", fail)
     with pytest.raises(SystemExit, match="1"):
         atk.main(["agents", "wait"])
     assert result_file.read_text(encoding="utf-8") == original

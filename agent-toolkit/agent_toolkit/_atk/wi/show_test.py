@@ -237,13 +237,13 @@ class TestShowMultipleFiles:
 
         assert capsys.readouterr().out.endswith("本文1\n\n")
 
-    def test_normalized_duplicates_are_shown_once_with_warning(
+    def test_normalized_duplicates_are_shown_once_without_warning(
         self,
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """拡張子省略形と正規形の重複は初出1件へ集約し警告する。"""
+        """拡張子省略形と正規形の重複は初出1件へ集約する。"""
         notes = _setup_notes(tmp_path)
         _write_awi_file(notes, "fb-001.md", body="本文1")
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
@@ -254,7 +254,7 @@ class TestShowMultipleFiles:
         assert exc_info.value.code == 0
         captured = capsys.readouterr()
         assert captured.out.count("### fb-001.md") == 1
-        assert "showの引数リストに重複" in captured.err
+        assert "showの引数リストに重複" not in captured.err
 
     def test_any_missing_or_filter_mismatch_suppresses_all_stdout(
         self,

@@ -1186,10 +1186,9 @@ async def _finished_failed_claude_session(
     同じsessionへの次のturnは、失敗しないクライアントで始まる。
     """
     manager = server_manager.AgentsServerManager()
-    clients = [
-        FailingClaudeClient([]),
-        FakeClaudeClient([[SystemMessage("claude-failed")]]),
-    ]
+    continuation = BlockingContinuationClaudeClient()
+    continuation.streams = [[SystemMessage("claude-failed")]]
+    clients = [FailingClaudeClient([]), continuation]
 
     def client_factory(_options: Any) -> FakeClaudeClient:
         return clients.pop(0)
@@ -1362,7 +1361,7 @@ async def test_send_message_reactivated_child_holds_claude_result_until_terminal
         client.messages.put_nowait(ResultMessage("親のturnの結果", is_error=failed))
         async with manager._condition:
             await asyncio.wait_for(manager._condition.wait_for(lambda: session.awaiting_auto_resume), 2)
-        shown = manager.show_session(session.session_id)
+        shown = await manager.show_session(session.session_id)
         assert shown["status"] == "running" and shown["result_held"]
         assert shown["live_child_sessions"] == [{"session_id": "child", "cwd": str(tmp_path)}]
         assert session.pending_result is not None

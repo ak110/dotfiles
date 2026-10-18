@@ -87,9 +87,12 @@ process-loop、レーン操作と配布物保持が共有する状態は、前�
 | Git統合と計画保存・WI終端の進行 | `lanes/<所有session>/<lane>.json`のintegration | `atk lane integrate`と回収判定 | `_atk/lane.py`。Git統合と成功済みの最終化を保存し、失敗後は残工程だけを再開する。全最終化と選定集合・統合状態の整合確認の成功後に統合済みを記録する。rebase対応表はmanaged-tempに保存し、レーン回収後も同じ保持期限で参照できる |
 | 保持した配布物を使用するプロセス | `plugin-root-leases/<保持領域の識別子>-<pid>.json`と領域ごとの`.lock` | 配布物の起動側とmanaged-tempの回収・掃引 | `_common/plugin_root_leases.py`。起動側が領域path・PID・プロセス作成時刻を登録し、読む側は同じ領域の排他下で生存を検収する。終了済みの使用記録を除き、取得不能な記録と使用中の実体を保護する。使用登録と回収が排他を共有するのは、検収と登録の間に実体を削除しないためであり、`atk`の自動掃引だけは排他を待たず、競合した領域を保持して次回へ回す |
 | 同じ配布元・版から共有する完成済み配布物 | managed-tempの保持領域直下の`.agent-toolkit-plugin-root.json` | `_agents_server/plugin_root.py`の起動・再利用 | コピーする起動側が配布元・版・root名を保存する。内側MCPも同じ完成済み実体を使い、回収側は前行の使用記録を検収する |
+| MCPのlease対応能力 | `plugin-root-leases/capability-<pid>.json` | 配布物rootの解決と旧形式領域の回収判定 | 保持領域を使わない起動もPIDと作成時刻を公開する。既存の領域別leaseも対応能力の証拠として使う |
+| 会話の保存領域の直接参照 | `managed-temp/.sessions/<session_idのhash>`と会話別`.lock` | managed-tempの作成API | 登録・marker・session_id・identityを検証して親を再利用し、参照不成立時は登録を探索して復元する。出力保存は親の一意な子へ集約する |
+| 掃引の省略判定 | `managed-temp/.sweep/schedule`と隣接する`.managed-temp-sweep-gate` | managed-tempの掃引 | 詳細と小さい集合・期限情報を分け、期限前・集合不変では候補列挙と詳細全量読取を省く |
 | セッション配下の作業用領域の回収再開情報 | `managed-temp/`配下の`.child-cleanup`ファイル | `atk managed-temp cleanup` | `_atk/managed_temp/inventory.py`。親の登録と対象identityを検収して回収し、途中失敗の情報を次回の同じ操作へ渡す。保存証拠を持つ親領域を保持する |
 
-使用記録のない保持領域の回収では、`_common/plugin_root_leases.py`がOSの起動引数と開いている既存診断ログへの参照も読む。旧形式は同じOSアカウント・状態名前空間のMCPと帰属不明の候補を保持し、候補の不在を確認した後に回収へ進める。旧形式・新形式とも、lease登録前に保持先を直接参照する公開MCPランチャーを保護する。新規の作成には`agents-server-plugin-root-shared`のprefixを使い、旧形式の列挙互換と完成済みmarkerの契約を保つ。
+使用記録のない保持領域の回収では、`_common/plugin_root_leases.py`がOSの起動引数と開いている既存診断ログへの参照も読む。旧形式は同じOSアカウント・状態名前空間のlease非対応MCPと帰属不明の候補を保持し、候補の不在を確認した後に回収へ進める。能力記録か有効な領域別leaseで対応能力を確認できるMCPは、この帰属不明の候補から外す。旧形式・新形式とも、lease登録前に保持先を直接参照する公開MCPランチャーを保護する。新規の作成には`agents-server-plugin-root-shared`のprefixを使い、旧形式の列挙互換と完成済みmarkerの契約を保つ。
 
 `_common/session_parents.py`と`_common/session_activity.py`は前表のsession登録簿を読み、保存済みの委譲元とプロセス識別を活動判定に使う。
 MCPサーバーのSessionStateとsession登録簿の更新は、両モジュールの対象外である。
@@ -227,6 +230,10 @@ drainは並行した保存の一部が失敗しても対象workerの全終了を
 - 登録簿のレコードが不在、解放済みまたは読取不能である場合は、同じ識別子の終端結果ファイルを確認し、そのファイルが終端を示す場合は終端として扱う。解放済みと不在は所有側の解放と7日超の掃引のいずれからも生じ、終端結果の在否と独立するため、終端結果の有無の判定には結果ファイルを用いる。解放済みの公開判定と待機対象の解放・実行中の判定は不在と同じに扱う。明示列で選択したAPI会話の復元だけは、解放済み記録の内部再開情報を消費し、同じproviderをbackendへ渡す。古い記録と他engineの復元条件は従来のままとする。
 
 ## 本書の更新が必要になる変更
+
+同期操作のworker実装は`_common/async_operations.py`が持ち、agents_serverの`file_operations.py`は既存名を再exportする。監視の開始・終了でも同じ実装を使い、キャンセル後も所有threadを回収する。
+
+非同期の共有状態操作は`file_operations.run_file_operation`で完了を待ち、結果と通知の一度だけの回収も排他区間全体をworkerで行う。Managerの照会・復元・結果回収は非同期APIを使う。射影、SessionState、タイマーと公開済み結果の台帳はloopが更新する。診断採取へ渡すsessionはloopで確定したsnapshotとする。永続ログは専用workerが順に出力し、サーバー終了の返却前に全記録とworkerの終了を回収する。
 
 - 上表のいずれかの状態について、基準となる保持先、読む主体または更新できる主体を変える変更。
 - 状態ディレクトリ配下へ新しい種類のファイルを置く変更。

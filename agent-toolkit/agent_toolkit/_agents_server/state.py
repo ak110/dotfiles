@@ -434,6 +434,12 @@ class SessionState:
             return
         self.executor_process = session_registry.ProcessIdentity.of(pid)
 
+    async def attach_executor_async(self, pid: int | None) -> None:
+        """プロセスの起動時刻の照会をworkerで待ち、loop上で登録情報へ反映する。"""
+        if pid is None or (self.executor_process is not None and self.executor_process.pid == pid):
+            return
+        self.executor_process = await run_file_operation(session_registry.ProcessIdentity.of, pid)
+
     def reset_progress(self) -> None:
         """現在turnの進捗を初期化する。"""
         self._progress_text = ""
@@ -511,6 +517,8 @@ class SessionState:
             listener()
 
     async def _publish_registration_until_current(self) -> str | None:
+        if not session_registry.owner_process_is_cached():
+            await run_file_operation(session_registry.owner_process)
         while self._registration_parameters() is not None:
             error = await self.publish_registration_async()
             if error is not None:
@@ -534,6 +542,8 @@ class SessionState:
             return await self._publish_registration_async()
 
     async def _publish_registration_async(self) -> str | None:
+        if not session_registry.owner_process_is_cached():
+            await run_file_operation(session_registry.owner_process)
         parameters = self._registration_parameters()
         if parameters is None:
             return None

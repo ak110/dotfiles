@@ -1048,13 +1048,13 @@ async def test_show_reports_held_result_and_live_background_tasks(
         client.emit(TaskStartedMessage("task-b", "local_agent", "子エージェント"))
         client.emit(TaskStartedMessage("task-a", "local_bash", "cat > /dev/null"))
         await _await_state(lambda: len(session.live_tasks) == 2)
-        running = manager.show_session(session.session_id)
+        running = await manager.show_session(session.session_id)
         assert "result_held" not in running
         assert "live_background_tasks" not in running
 
         client.emit(ResultMessage("初回結果"))
         await _await_state(lambda: session.awaiting_auto_resume)
-        held = manager.show_session(session.session_id)
+        held = await manager.show_session(session.session_id)
 
         assert held["status"] == "running"
         assert held["result_held"] is True
@@ -1066,7 +1066,7 @@ async def test_show_reports_held_result_and_live_background_tasks(
         assert all(isinstance(task["seconds_since_start"], int) for task in tasks)
 
         await manager.kill(session.session_id, timeout=1)
-        finalized = manager.show_session(session.session_id)
+        finalized = await manager.show_session(session.session_id)
         assert "result_held" not in finalized
         assert "live_background_tasks" not in finalized
     finally:
@@ -1463,7 +1463,7 @@ async def test_resumed_turn_is_not_finalized_by_previous_held_deadline(
 
         assert wait_task.done() is False
         assert session.pending_result is None
-        assert manager.show_session(session.session_id)["status"] == "running"
+        assert (await manager.show_session(session.session_id))["status"] == "running"
         client.finish_turn(ResultMessage("RESUMED", origin={"kind": "task-notification"}))
         result = await wait_task
 

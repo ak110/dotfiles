@@ -57,8 +57,12 @@ async def _serve(private_notes: pathlib.Path, config: _atk_serve_config.ServeCon
     SIGHUP到達時も購読中のSSE接続を片付けてから終了できるようにする。
     """
     state = _atk_serve_state.ServeState(private_notes)
-    state.start(asyncio.get_running_loop())
-    app = _atk_serve_app.create_app(private_notes, config, state)
+    try:
+        await state.start_async(asyncio.get_running_loop())
+        app = await _atk_serve_app.create_app_async(private_notes, config, state)
+    except BaseException:
+        await state.stop_async()
+        raise
     hypercorn_config = hypercorn.config.Config()
     hypercorn_config.bind = [f"{config.host}:{config.port}"]
     # アクセスログは常駐運用で情報価値が低いため出力しない。
@@ -90,7 +94,7 @@ async def _serve(private_notes: pathlib.Path, config: _atk_serve_config.ServeCon
     try:
         await hypercorn.asyncio.serve(app, hypercorn_config, shutdown_trigger=shutdown_trigger)
     finally:
-        state.stop()
+        await state.stop_async()
 
 
 def build_console_title() -> str:

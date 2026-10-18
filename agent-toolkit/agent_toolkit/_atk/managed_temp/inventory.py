@@ -318,7 +318,31 @@ def _report_unregistered_candidates(prefix: str | None) -> None:
         )
         return
     for child in candidates:
+        if child.name.startswith(_CLEANUP_QUARANTINE_PREFIX):
+            original = _quarantine_original_target(child)
+            if (
+                original is not None
+                and not os.path.lexists(_registry_path(original))
+                and not _cleanup_in_progress(_registry_path(original))
+            ):
+                _outcome.report_warning(
+                    f"後始末が中断した可能性がある管理対象がある: {original}",
+                    next_action=f"回収する場合は atk managed-temp cleanup --path {original} を実行する",
+                )
+            continue
         registry_path = _registry_path(child)
+        if _cleanup_in_progress(registry_path):
+            continue
+        try:
+            latest, git_paths = _latest_update_and_git_paths(child)
+            if latest >= _cutoff_ns(datetime.datetime.now(datetime.UTC), MAX_AGE_DAYS) or any(
+                _is_registered_git_worktree(git_path, tree_root=child) for git_path in git_paths
+            ):
+                continue
+        except OSError:
+            pass
+        if _report_retained_plugin_root(child):
+            continue
         if _consuming_registry_path(registry_path) is not None:
             _outcome.report_warning(
                 f"後始末が中断した可能性がある管理対象がある: {child}",
@@ -378,6 +402,8 @@ def _load_listed_entry(
 ) -> _ManagedTempEntry | None:
     """1件の登録を`list_managed_temp`と同じ条件で検証し、列挙対象なら項目を返す。"""
     recorded_path: object = None
+    if _cleanup_in_progress(registry_path):
+        return None
     try:
         record = _load_private_json(registry_path)
         recorded_path = record["path"]
@@ -403,10 +429,18 @@ def _load_listed_entry(
         if session_id is not None and item_session_id != session_id:
             return None
         if not os.path.lexists(path):
+            if _classify_quarantine(path.parent, path).state is not _QuarantineState.ABSENT:
+                if report_recovery_candidates:
+                    _outcome.report_warning(
+                        f"後始末が中断した可能性がある管理対象がある: {path}",
+                        next_action=f"回収する場合は atk managed-temp cleanup --path {path} を実行する",
+                    )
+                return None
             if _entity_absence_is_confirmed(record, path):
                 registry_path.unlink(missing_ok=True)
                 _outcome.report_warning(
-                    f"実体が失われた管理対象の登録を回収した: {path}", next_action="対応不要（処理は継続した）"
+                    f"実体が失われた管理対象の登録を回収した: {path}",
+                    next_action=f"{path}を使用中だった場合は、消失の原因を確認してユーザーへ報告する",
                 )
             elif report_recovery_candidates:
                 _outcome.report_warning(
@@ -415,6 +449,15 @@ def _load_listed_entry(
                 )
             return None
         validate_managed_temp(path)
+        if report_recovery_candidates and path.name.startswith("agents-server-plugin-root-"):
+            try:
+                latest, _ = _latest_update_and_git_paths(path)
+            except OSError, ManagedTempError:
+                # 期限の観測に失敗した配布物も、真正性を検証した登録として一覧へ残す。
+                pass
+            else:
+                if latest < _cutoff_ns(datetime.datetime.now(datetime.UTC), MAX_AGE_DAYS):
+                    _report_retained_plugin_root(path)
         return {
             "path": str(path),
             "prefix": item_prefix,
@@ -423,6 +466,8 @@ def _load_listed_entry(
             "session_id": item_session_id,
         }
     except (KeyError, OSError, ValueError, ManagedTempError) as error:
+        if not os.path.lexists(registry_path) or _cleanup_in_progress(registry_path):
+            return None
         if report_recovery_candidates:
             recorded_target = f": {recorded_path}" if isinstance(recorded_path, str) else ""
             recovery = (
@@ -432,6 +477,64 @@ def _load_listed_entry(
                 else f"登録ファイル{registry_path}の内容を確認し、自分で直せない場合はユーザーへ報告する"
             )
             _outcome.report_warning(f"管理対象を列挙できない: {registry_path}{recorded_target}: {error}", next_action=recovery)
+    return None
+
+
+def _report_retained_plugin_root(path: pathlib.Path) -> bool:
+    """期限超過の配布物をロック下で判定し、保持理由と再判定条件を示す。
+
+    別processが判定・回収中なら、その対象の案内を省いてlistを継続する。
+    """
+    with contextlib.ExitStack() as stack:
+        try:
+            stack.enter_context(plugin_root_leases.plugin_root_lock(path, blocking=False))
+        except OSError:
+            return True
+        try:
+            _require_unused_plugin_root(path)
+        except _PluginRootRetained as error:
+            _outcome.report_warning(
+                str(error),
+                next_action="利用プロセスの終了後に atk managed-temp list で再判定結果を確認する。次の自動掃引でも再判定する",
+            )
+            return True
+    return False
+
+
+def _cleanup_in_progress(registry_path: pathlib.Path) -> bool:
+    """対象別ロックを別実行が保持している間は、途中状態の読み直しを省く。"""
+    lock_path = registry_path.with_name(f"{registry_path.name}.cleanup.lock")
+    if not lock_path.exists():
+        return False
+    with lock_path.open("a+", encoding="utf-8") as handle:
+        try:
+            file_lock.acquire_lock(handle, blocking=False)
+        except OSError:
+            return True
+        file_lock.release_lock(handle)
+    return False
+
+
+def _quarantine_original_target(quarantine: pathlib.Path) -> pathlib.Path | None:
+    """隔離先のnonce・identityが管理側の記録と一致する場合だけ、元の回収対象を返す。"""
+    try:
+        marker = _load_private_json(quarantine / _MARKER_NAME)
+        nonce = marker.get("nonce")
+        recorded = marker.get("path")
+        if not isinstance(nonce, str) or not isinstance(recorded, str):
+            return None
+        original = pathlib.Path(recorded)
+        if original.parent != quarantine.parent or quarantine.name != f"{_CLEANUP_QUARANTINE_PREFIX}{nonce}":
+            return None
+        if os.path.lexists(original) or marker.get("identity") != list(_path_identity(quarantine)):
+            return None
+        registry = _registry_path(original)
+        consuming = registry.with_name(f"{registry.name}.consuming-{nonce}")
+        for path in (registry, consuming):
+            if os.path.lexists(path) and _load_private_json(path) == marker:
+                return original
+    except OSError, ManagedTempError:
+        pass
     return None
 
 
@@ -555,7 +658,7 @@ def _open_tree_parent(path: pathlib.Path, *, tree_root: pathlib.Path | None = No
         os.close(descriptor)
 
 
-_SWEEP_SCHEDULE_NAME = ".sweep-schedule"
+_SWEEP_SCHEDULE_NAME = ".sweep/schedule"
 """掃引の期限判定記録のファイル名。登録ファイルの`*.json`と区別するため拡張子を付けない。"""
 _SWEEP_SCHEDULE_VERSION = 2
 
@@ -583,11 +686,15 @@ class SweepResult(typing.NamedTuple):
     """掃引の後も残った、最終更新から期限を超えた登録を持たない管理対象。"""
     unregistered_error: ManagedTempError | OSError | None
     """登録を持たない管理対象を探索できなかった場合の原因。"""
+    retained: tuple[tuple[str, str], ...] = ()
+    retention_changed: bool = False
 
 
 class _SweepSchedule(typing.NamedTuple):
     registered: dict[str, _ScheduledRegistered]
     unregistered: dict[str, _ScheduledUnregistered]
+    retained: tuple[tuple[str, str], ...] = ()
+    retention_basis: dict[str, dict[str, typing.Any]] | None = None
 
 
 def _is_nanoseconds(value: object) -> bool:
@@ -673,7 +780,15 @@ def _load_sweep_schedule(state_root: pathlib.Path, temp_root: pathlib.Path, max_
         if basis is None:
             return None
         unregistered[name] = (item[0], item[1], basis)
-    return _SweepSchedule(registered, unregistered)
+    retained = value.get("retained", [])
+    if not isinstance(retained, list) or any(
+        not isinstance(item, list) or len(item) != 2 or not all(isinstance(part, str) for part in item) for item in retained
+    ):
+        return None
+    bases = value.get("retention_basis", {})
+    if not isinstance(bases, dict) or any(not isinstance(item, dict) for item in bases.values()):
+        return None
+    return _SweepSchedule(registered, unregistered, tuple((item[0], item[1]) for item in retained), bases)
 
 
 def _save_sweep_schedule(
@@ -689,6 +804,8 @@ def _save_sweep_schedule(
         "max_age_days": max_age_days,
         "registered": {name: [*item[:3], list(item[3])] for name, item in schedule.registered.items()},
         "unregistered": {name: [*item[:2], list(item[2])] for name, item in schedule.unregistered.items()},
+        "retained": [list(item) for item in schedule.retained],
+        "retention_basis": schedule.retention_basis or {},
     }
     try:
         _write_private_json(temporary, value)
@@ -725,6 +842,137 @@ def _registry_names(state_root: pathlib.Path) -> set[str]:
         return {entry.name for entry in entries if entry.name.endswith(".json")}
 
 
+def _retained_candidate_is_current(path: pathlib.Path, top_mtime_ns: int, basis: dict[str, typing.Any]) -> bool:
+    if not plugin_root_leases.usage_basis_is_current(basis):
+        return False
+    try:
+        return path.stat().st_mtime_ns == top_mtime_ns
+    except OSError:
+        return False
+
+
+def _sweep_signature(state_root: pathlib.Path, temp_root: pathlib.Path) -> list[list[int]]:
+    """集合と詳細記録の変更を、候補の列挙を経ずに検出する。"""
+    try:
+        detail = (state_root / _SWEEP_SCHEDULE_NAME).stat()
+    except FileNotFoundError:
+        detail = None
+    signature = [
+        [metadata.st_dev, metadata.st_ino, metadata.st_mtime_ns, metadata.st_ctime_ns, metadata.st_size, metadata.st_nlink]
+        for metadata in (state_root.stat(), temp_root.stat())
+    ]
+    signature.append([] if detail is None else [detail.st_dev, detail.st_ino, detail.st_mtime_ns, detail.st_ctime_ns])
+    return signature
+
+
+def _sweep_gate_path(state_root: pathlib.Path) -> pathlib.Path:
+    return state_root.parent / ".managed-temp-sweep-gate"
+
+
+def _sweep_gate_result(
+    state_root: pathlib.Path,
+    temp_root: pathlib.Path,
+    cutoff_ns: int,
+    days: int,
+) -> SweepResult | None:
+    try:
+        gate = _load_private_json(_sweep_gate_path(state_root))
+        until = gate.get("until")
+        if not (
+            gate.get("version") == 2
+            and gate.get("state_root") == str(state_root)
+            and gate.get("temp_root") == str(temp_root)
+            and gate.get("days") == days
+            and (until is None or _is_nanoseconds(until) and cutoff_ns <= until)
+            and gate.get("signature") == _sweep_signature(state_root, temp_root)
+        ):
+            return None
+        exceptions = gate.get("exceptions")
+        retained = gate.get("retained")
+        if not isinstance(exceptions, list) or not isinstance(retained, list):
+            return None
+        for item in exceptions:
+            if not isinstance(item, list) or len(item) != 6 or not isinstance(item[0], str):
+                return None
+            path, top, latest, registered, raw_basis, retention_basis = item
+            basis = _exclusion_basis_or_none(raw_basis)
+            if not _is_nanoseconds(top) or not _is_nanoseconds(latest) or basis is None or not isinstance(registered, bool):
+                return None
+            target = pathlib.Path(path)
+            if not target.is_absolute() or retention_basis is not None and not isinstance(retention_basis, dict):
+                return None
+            if isinstance(retention_basis, dict):
+                if not _retained_candidate_is_current(target, top, retention_basis):
+                    return None
+            elif not _scheduled_item_is_current(
+                target,
+                top,
+                latest,
+                cutoff_ns,
+                functools.partial(_registered_exclusion_holds if registered else _unregistered_exclusion_holds, target, basis),
+            ):
+                return None
+        if any(
+            not isinstance(item, list) or len(item) != 2 or not all(isinstance(part, str) for part in item) for item in retained
+        ):
+            return None
+        return SweepResult([], (), None, tuple((item[0], item[1]) for item in retained))
+    except OSError, TypeError, ValueError, ManagedTempError:
+        return None
+
+
+def _save_sweep_gate(
+    state_root: pathlib.Path,
+    temp_root: pathlib.Path,
+    days: int,
+    schedule: _SweepSchedule,
+    cutoff_ns: int,
+    before: list[list[int]] | None,
+) -> None:
+    deadlines: list[int] = []
+    exceptions: list[list[typing.Any]] = []
+    items = [
+        *((item[0], item[1], item[2], True, item[3]) for item in schedule.registered.values()),
+        *((str(temp_root / name), item[0], item[1], False, item[2]) for name, item in schedule.unregistered.items()),
+    ]
+    for path, top, latest, registered, basis in items:
+        if latest >= cutoff_ns:
+            deadlines.append(latest)
+            continue
+        retention_basis = (schedule.retention_basis or {}).get(path)
+        if (
+            not basis
+            and retention_basis is None
+            and (registered or not pathlib.Path(path).name.startswith(_CLEANUP_QUARANTINE_PREFIX))
+        ):
+            return
+        exceptions.append([path, top, latest, registered, list(basis), retention_basis])
+    temporary = state_root.parent / f".managed-temp-sweep-gate-{secrets.token_hex(8)}"
+    try:
+        signature = _sweep_signature(state_root, temp_root)
+        # 掃引中の集合変更と、並行した旧版の作成も有効な不変記録として確定しない。
+        if before is None or signature[:2] != before[:2]:
+            return
+        _write_private_json(
+            temporary,
+            {
+                "version": 2,
+                "state_root": str(state_root),
+                "temp_root": str(temp_root),
+                "days": days,
+                "until": min(deadlines) if deadlines else None,
+                "signature": signature,
+                "exceptions": exceptions,
+                "retained": [list(item) for item in schedule.retained],
+            },
+        )
+        os.replace(temporary, _sweep_gate_path(state_root))
+    except OSError, ManagedTempError:
+        pass
+    finally:
+        temporary.unlink(missing_ok=True)
+
+
 def sweep_expired_managed_temp(
     *,
     now: datetime.datetime,
@@ -734,6 +982,7 @@ def sweep_expired_managed_temp(
     return sweep_managed_temp(now=now, max_age_days=max_age_days).deleted
 
 
+@plugin_root_leases.reuse_process_observation()
 def sweep_managed_temp(
     *,
     now: datetime.datetime,
@@ -752,20 +1001,32 @@ def sweep_managed_temp(
     観測した最終更新を外部状態ディレクトリの期限判定記録へ残し、記録が期限前で領域自身が変わっていない
     候補だけを検証から外す。期限を超えても`.git`か使用中のgit worktreeを理由に残した候補は、その除外根拠を
     記録し、根拠が残る間は配下の走査と真正性検証を省き、根拠が消えた起動で再判定する。
-    新規の候補、期限到来、除外根拠の消失、領域自身の変化と消失、記録の欠落・破損では
-    従来の検証と削除判定を行う。記録は検証を省く範囲を決めるだけで、削除は従来の判定を通った候補に限る。
+    集合と詳細記録が不変で期限前の場合は、小さい判定情報と期限超過の除外根拠だけを読み直す。
+    集合変更、期限到来、除外根拠の消失、記録の欠落・破損では従来の検証と削除判定へ戻り、
+    領域自身の変化と消失も現物で確認する。削除は従来の判定を通った候補に限る。
     """
     cutoff_ns = _cutoff_ns(now, max_age_days)
     state_root = _state_root()
+    (state_root / ".sweep").mkdir(mode=0o700, exist_ok=True)
     temp_root: pathlib.Path | None = None
     temp_root_error: ManagedTempError | OSError | None = None
     try:
         temp_root = _temp_root()
     except (OSError, ManagedTempError) as error:
         temp_root_error = error
+    before = None
+    if temp_root is not None:
+        cached_result = _sweep_gate_result(state_root, temp_root, cutoff_ns, max_age_days)
+        if cached_result is not None:
+            return cached_result
+        with contextlib.suppress(OSError):
+            before = _sweep_signature(state_root, temp_root)
     schedule = None if temp_root is None else _load_sweep_schedule(state_root, temp_root, max_age_days)
-    next_schedule = _SweepSchedule({}, {})
+    next_schedule = _SweepSchedule({}, {}, (), {})
     deleted: list[pathlib.Path] = []
+    retained: list[tuple[str, str]] = []
+    previous_retained = {} if schedule is None else dict(schedule.retained)
+    retry_needed = False
 
     if schedule is None:
         entries = list_managed_temp()
@@ -775,6 +1036,18 @@ def sweep_managed_temp(
             known = schedule.registered.get(name)
             if known is not None:
                 known_path = pathlib.Path(known[0])
+                retained_basis = (schedule.retention_basis or {}).get(str(known_path))
+                reason = previous_retained.get(str(known_path))
+                if (
+                    reason is not None
+                    and retained_basis is not None
+                    and _retained_candidate_is_current(known_path, known[1], retained_basis)
+                ):
+                    retained.append((str(known_path), reason))
+                    next_schedule.registered[name] = known
+                    assert next_schedule.retention_basis is not None
+                    next_schedule.retention_basis[str(known_path)] = retained_basis
+                    continue
                 if _scheduled_item_is_current(
                     known_path,
                     known[1],
@@ -791,6 +1064,8 @@ def sweep_managed_temp(
         path = pathlib.Path(entry["path"])
         registry_path = _registry_path(path)
         nonce: str | None = None
+        top_mtime_ns: int | None = None
+        latest_mtime_ns: int | None = None
         try:
             record = _load_private_json(registry_path)
             recorded_nonce = record.get("nonce")
@@ -808,11 +1083,24 @@ def sweep_managed_temp(
                 next_schedule.registered[registry_path.name] = (str(path), top_mtime_ns, latest_mtime_ns, basis)
                 continue
             if not _cleanup_managed_temp(path, blocking=False):
+                retry_needed = True
                 continue
+        except _PluginRootRetained as error:
+            retained.append((str(path), str(error)))
+            if top_mtime_ns is not None and latest_mtime_ns is not None and error.basis is not None:
+                next_schedule.registered[registry_path.name] = (str(path), top_mtime_ns, latest_mtime_ns, ())
+                assert next_schedule.retention_basis is not None
+                next_schedule.retention_basis[str(path)] = error.basis
+            continue
         except (ManagedTempError, OSError) as error:
-            if _sweep_cleanup_completed_elsewhere(path, registry_path, nonce):
+            if (
+                not os.path.lexists(registry_path)
+                or _cleanup_in_progress(registry_path)
+                or _sweep_cleanup_completed_elsewhere(path, registry_path, nonce)
+            ):
                 continue
-            _outcome.report_warning(
+            retry_needed = True
+            _outcome.report_persistent_warning(
                 f"managed-tempのディレクトリを自動削除できない: {path}: {error}",
                 next_action=f"本来の操作は継続した。atk managed-temp cleanup --path {path} で回収する",
             )
@@ -836,6 +1124,18 @@ def sweep_managed_temp(
         known_unregistered = None if schedule is None else schedule.unregistered.get(name)
         if known_unregistered is not None:
             known_top_ns, known_latest_ns, known_basis = known_unregistered
+            retained_basis = (schedule.retention_basis or {}).get(str(child)) if schedule is not None else None
+            retained_reason = previous_retained.get(str(child))
+            if (
+                retained_reason is not None
+                and retained_basis is not None
+                and _retained_candidate_is_current(child, known_top_ns, retained_basis)
+            ):
+                retained.append((str(child), retained_reason))
+                next_schedule.unregistered[name] = known_unregistered
+                assert next_schedule.retention_basis is not None
+                next_schedule.retention_basis[str(child)] = retained_basis
+                continue
             if _scheduled_item_is_current(
                 child,
                 known_top_ns,
@@ -844,13 +1144,14 @@ def sweep_managed_temp(
                 functools.partial(_unregistered_exclusion_holds, child, known_basis),
             ):
                 next_schedule.unregistered[name] = known_unregistered
-                if known_latest_ns < cutoff_ns:
+                if known_latest_ns < cutoff_ns and not known_basis and not name.startswith(_CLEANUP_QUARANTINE_PREFIX):
                     stale.append(child.absolute())
                 continue
         if not os.path.lexists(child / _MARKER_NAME):
             continue
         path = child.absolute()
         candidate_latest_ns: int | None = None
+        candidate_top_ns: int | None = None
         try:
             candidate_top_ns = path.stat().st_mtime_ns
             candidate_latest_ns, git_paths = _latest_update_and_git_paths(path)
@@ -858,8 +1159,6 @@ def sweep_managed_temp(
                 # 中断した後始末の隔離先はマーカーを持つが、元の領域の登録か消費途中状態が後始末の再開を担う。
                 # 名前が除外根拠であり、名前が変われば別の候補として扱われるため、記録する根拠は持たない。
                 next_schedule.unregistered[name] = (candidate_top_ns, candidate_latest_ns, ())
-                if candidate_latest_ns < cutoff_ns:
-                    stale.append(path)
                 continue
             if candidate_latest_ns >= cutoff_ns:
                 next_schedule.unregistered[name] = (candidate_top_ns, candidate_latest_ns, ())
@@ -868,20 +1167,29 @@ def sweep_managed_temp(
             if live_worktrees:
                 basis = _exclusion_basis(path, live_worktrees)
                 next_schedule.unregistered[name] = (candidate_top_ns, candidate_latest_ns, basis)
-                stale.append(path)
                 continue
             try:
                 if not _cleanup_managed_temp(path, recover_registry=True, blocking=False):
+                    retry_needed = True
                     continue
             except ManagedTempError as error:
                 if not _force_remove_managed_temp(path, error, reason="自動削除", blocking=False):
+                    retry_needed = True
                     continue
+        except _PluginRootRetained as error:
+            retained.append((str(path), str(error)))
+            if candidate_top_ns is not None and candidate_latest_ns is not None and error.basis is not None:
+                next_schedule.unregistered[name] = (candidate_top_ns, candidate_latest_ns, ())
+                assert next_schedule.retention_basis is not None
+                next_schedule.retention_basis[str(path)] = error.basis
+            continue
         except (ManagedTempError, OSError) as error:
             if name.startswith(_CLEANUP_QUARANTINE_PREFIX):
                 continue
             if _sweep_cleanup_completed_elsewhere(path, _registry_path(path), None):
                 continue
-            _outcome.report_warning(
+            retry_needed = True
+            _outcome.report_persistent_warning(
                 f"登録を失ったmanaged-tempのディレクトリを自動削除できない: {path}: {error}",
                 next_action=f"本来の操作は継続した。atk managed-temp cleanup --path {path} --force-remove で回収する",
             )
@@ -889,9 +1197,14 @@ def sweep_managed_temp(
                 stale.append(path)
             continue
         deleted.append(path)
+    retention = tuple(sorted(retained))
+    next_schedule = next_schedule._replace(retained=retention)
+    retention_changed = bool(retention) and (schedule is None or schedule.retained != retention)
     if schedule != next_schedule:
         _save_sweep_schedule(state_root, temp_root, max_age_days, next_schedule)
-    return SweepResult(deleted, tuple(stale), None)
+    if not stale and not retry_needed and registry_names == set(next_schedule.registered):
+        _save_sweep_gate(state_root, temp_root, max_age_days, next_schedule, cutoff_ns, before)
+    return SweepResult(deleted, tuple(stale), None, retention, retention_changed)
 
 
 @contextlib.contextmanager
@@ -1325,8 +1638,7 @@ def _cleanup_managed_temp_locked(
     recover_registry: bool,
 ) -> None:
     """対象別ロックを所有する呼び出し元のために後始末の状態遷移を実行する。"""
-    if _restore_interrupted_consume(registry_path):
-        _outcome.report_warning(f"中断した後始末の登録を復元した: {registry_path}", next_action="対応不要（処理は継続した）")
+    _restore_interrupted_consume(registry_path)
     judgement = _classify_quarantine(root, path)
     if judgement.state is _QuarantineState.UNVERIFIABLE:
         raise ManagedTempError(
@@ -1338,7 +1650,6 @@ def _cleanup_managed_temp_locked(
         if judgement.quarantine is None or judgement.identity is None:
             raise AssertionError("一致した隔離途中状態に後始末情報がない")
         _cleanup_quarantine(root, judgement.quarantine, judgement.identity)
-        _outcome.report_warning(f"中断した後始末の隔離先を後始末した: {path}", next_action="対応不要（処理は継続した）")
     if is_missing_registered_temp(path):
         _cleanup_missing_registered_temp(path)
         return
@@ -1349,9 +1660,6 @@ def _cleanup_managed_temp_locked(
     )
     if _lstat_or_none(validated.registry_path) is None:
         _write_private_json(validated.registry_path, validated.record)
-        _outcome.report_warning(
-            f"欠落した登録をマーカーから復元した: {validated.registry_path}", next_action="対応不要（処理は継続した）"
-        )
     if os.name == "nt":
         # 利用中に追加された受理済みACEを除去し、隔離以降の処理は実行中のOSアカウントだけを許可するDACLの下で行う。
         _windows_secure_path(
@@ -1464,12 +1772,20 @@ def _force_remove_managed_temp(
     return True
 
 
+class _PluginRootRetained(ManagedTempError):
+    """使用中または観測不能のため保持する配布物。"""
+
+    basis: dict[str, typing.Any] | None = None
+
+
 def _require_unused_plugin_root(path: pathlib.Path) -> None:
     if plugin_root_leases.plugin_root_in_use(path):
-        raise ManagedTempError(
-            f"使用中または使用状態を確認できない配布物を保持した: {path}",
+        error = _PluginRootRetained(
+            f"使用中または使用状態を確認できない配布物を保持した: {path}。{plugin_root_leases.usage_details()}",
             next_action=f"利用プロセスの終了後に atk managed-temp cleanup --path {path} を再実行する",
         )
+        error.basis = plugin_root_leases.usage_basis()
+        raise error
 
 
 def _force_remove_validated_temp(path: pathlib.Path, *, reason: str) -> None:
@@ -1483,7 +1799,7 @@ def _force_remove_validated_temp(path: pathlib.Path, *, reason: str) -> None:
         raise ManagedTempError(f"管理対象を強制回収できない: {path}: {error}") from error
     _outcome.report_warning(
         f"{reason}により管理情報、登録および権限の検証を省いて管理対象を回収した: {path}",
-        next_action="対応不要（処理は継続した）",
+        next_action=f"{path}を使用中だった場合は、回収の原因を確認してユーザーへ報告する",
     )
 
 

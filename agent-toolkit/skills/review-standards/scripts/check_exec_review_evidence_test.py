@@ -3845,7 +3845,7 @@ def test_return_input_save_failure(
         return original_replace(path, target, **kwargs)
 
     if failure == "create":
-        monkeypatch.setattr(check_exec_review_evidence.managed_temp, "create_managed_temp", fail_create)
+        monkeypatch.setattr(check_exec_review_evidence.managed_temp, "create_output_temp", fail_create)
     else:
         monkeypatch.setattr(pathlib.Path, "replace", fail_save)
     argv = [

@@ -189,11 +189,14 @@ class _Manager:
         self.pending: list[dict[str, Any]] = []
         self.fail_repo = fail_repo
         self.closed = False
+        self.activated = False
 
-    def activate(self) -> None:
-        pass
+    async def activate_async(self) -> None:
+        await asyncio.sleep(0)
+        self.activated = True
 
     async def start(self, model_type: str, prompt: str, cwd: str, **kwargs: Any) -> dict[str, Any]:
+        assert self.activated
         assert model_type == "orchestrate" and kwargs["launch_kind"] == "delegate"
         self.started.append((cwd, prompt))
         if pathlib.Path(cwd).name == self.fail_repo:

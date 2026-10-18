@@ -230,12 +230,12 @@ def test_agents_wait_redelivers_result_after_body_file_failure(
     wait_environment.mkdir(parents=True, exist_ok=True)
     terminal = {"status": "completed", "agent_message": "結果本文", "turn_seq": 1}
     (wait_environment / "session-1.json").write_text(json.dumps(terminal), encoding="utf-8")
-    original_create = managed_temp.create_managed_temp
+    original_create = managed_temp.create_output_temp
 
     def fail_create(*_args: Any, **_kwargs: Any) -> pathlib.Path:
         raise managed_temp.ManagedTempError("容量不足")
 
-    setattr_in_managed_temp_modules(monkeypatch, "create_managed_temp", fail_create)
+    setattr_in_managed_temp_modules(monkeypatch, "create_output_temp", fail_create)
     with pytest.raises(SystemExit) as failed:
         atk.main(["agents", "wait"])
     first = capsys.readouterr()
@@ -244,7 +244,7 @@ def test_agents_wait_redelivers_result_after_body_file_failure(
     assert "結果本文のファイルを書けません" in first.err
     assert NEXT_ACTION_PREFIX in first.err
 
-    setattr_in_managed_temp_modules(monkeypatch, "create_managed_temp", original_create)
+    setattr_in_managed_temp_modules(monkeypatch, "create_output_temp", original_create)
     with pytest.raises(SystemExit, match="0"):
         atk.main(["agents", "wait"])
     delivered = json.loads(capsys.readouterr().out)

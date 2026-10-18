@@ -572,7 +572,7 @@ async def test_send_message_child_reactivation_holds_parent_until_child_terminat
             }
         )
         await backend._handle_notification(completion)
-        shown = manager.show_session(session.session_id)
+        shown = await manager.show_session(session.session_id)
         assert shown["status"] == "running" and shown["result_held"]
         assert shown["live_child_sessions"] == [{"session_id": "child", "cwd": str(tmp_path)}]
         assert not session.result_available
@@ -1072,7 +1072,10 @@ async def test_stable_plugin_root_shared_across_processes(
                     tools = {tool.name for tool in (await client.list_tools()).tools}
                     assert tools == expected_tools
                     clients.append(client)
-                    leases = [json.loads(path.read_text(encoding="utf-8")) for path in lease_directory.glob("*.json")]
+                    records = [json.loads(path.read_text(encoding="utf-8")) for path in lease_directory.glob("*.json")]
+                    leases = [record for record in records if "path" in record]
+                    capabilities = [record for record in records if record.get("lease_capable") is True]
+                    assert len(capabilities) == index + 1
                     assert len(leases) == index + 1
                     areas = {pathlib.Path(record["path"]) for record in leases}
                     assert len(areas) == 1

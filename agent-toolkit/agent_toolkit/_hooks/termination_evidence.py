@@ -22,11 +22,12 @@ lazy from agent_toolkit._agents_server import tool_names
 lazy from agent_toolkit._atk.wi import uwi_scan
 lazy from agent_toolkit._atk.wi.constants import WI_PROCESSABLE_STATES
 lazy from agent_toolkit._atk.wi.frontmatter import parse_frontmatter
-lazy from agent_toolkit._common import automated_prompt, next_action, runtime_inserted, session_state
+lazy from agent_toolkit._common import automated_prompt, next_action, runtime_inserted, session_state, shell_cwd
 lazy from agent_toolkit._common import delegated_session as _delegated_session
 lazy from agent_toolkit._common.bash_invocations import extract_bash_invocations
 lazy from agent_toolkit._common.process_loop_session import is_process_loop_session
 lazy from agent_toolkit._common.shell_segments import extract_execution_segments
+lazy from agent_toolkit._common.shell_tokens import ATK_SHELL_TOOLS, is_atk_command
 lazy from agent_toolkit._git import command as git_command
 lazy from agent_toolkit._hooks import agent_id, agents_server_observations
 lazy from agent_toolkit._hooks import tool_input as _hook_tool_input
@@ -43,6 +44,16 @@ COMPLETION_REPORT = "completion-report"
 
 TARGET_SKILLS = ("process-wi", "add-awi-by-user")
 """開始した時点で成果作業となるスキルの短縮名。適用条件は`completion-report/SKILL.md`「Stop hookの判定」の成果作業に従う。"""
+
+_UNRESOLVED_REPOSITORY_FIX = (
+    "この作業では省略を記録できないため、`agent-toolkit:completion-report`を起動して終了工程を進める。"
+    "規範がその起動を禁じる場合は、その旨をユーザーへ報告する。"
+)
+
+
+class _UnresolvedRepositoryError(ValueError):
+    """所属不明の作業には、省略の再申請と異なる終了操作を案内する。"""
+
 
 _READ_PROGRAMS = frozenset({"cat", "sed", "head", "nl", "less", "more", "bat", "type", "get-content", "gc"})
 """Codexが`SKILL.md`を表示する読取コマンド。検索・抽出のコマンドは本文全体を返さないため含めない。"""
@@ -120,6 +131,10 @@ def _compact(data: dict[str, Any]) -> None:
         retained.add(work.get("failure_call", ""))
         for call_id in list(work["calls"]):
             records = data["calls"].get(call_id, [])
+            # 所属不明の操作の種類を省略拒否へ示すため、起動証拠を得るまで既存の呼出し記録を保つ。
+            unresolved = any(record.get("kind") == "deliverable" and record.get("repository") is None for record in records)
+            if unresolved and not work.get("completion_report"):
+                continue
             if call_id not in retained and all(record.get("observed") for record in records):
                 data["calls"].pop(call_id, None)
                 work["calls"].remove(call_id)
@@ -181,9 +196,11 @@ def published_git_operations(command: str) -> list[str]:
     operations: list[str] = []
     for invocation in extract_bash_invocations(command):
         parsed = _git_subcommand_tokens(invocation.segment)
-        if invocation.background or not invocation.arguments_known or parsed is None or parsed[0] not in {"commit", "push"}:
+        if invocation.background or parsed is None or parsed[0] not in {"commit", "push"}:
             continue
         arguments = parsed[1]
+        if any("\x00" in argument for argument in arguments):
+            continue
         options = iter(arguments)
         excluded = False
         for option in options:
@@ -214,7 +231,7 @@ def _bash_operations(command: str) -> tuple[list[str], list[str]]:
             name = pathlib.PurePosixPath(tokens[0].replace("\\", "/")).name
         if "--help" in tokens or "-h" in tokens:
             continue
-        if name in {"atk", "atk.cmd", "atk.py"}:
+        if is_atk_command(tokens):
             if tokens[1:2] == ["wi"] and tokens[2:3] in (["add"], ["edit"]):
                 saved.append("WIの保存")
             elif tokens[1:3] == ["run-script", "plan-create"]:
@@ -280,14 +297,16 @@ def _invocations(payload: dict[str, Any], *, after: bool, failed: bool) -> list[
     cwd = payload.get("cwd")
     if isinstance(cwd, str):
         paths = written_paths(tool_name, tool_input, cwd)
-        if paths and (repository := _git_root(cwd)) is not None:
-            relative = sorted(
-                {
-                    path.relative_to(repository).as_posix()
-                    for value in paths
-                    if (path := pathlib.Path(value)).is_relative_to(repository)
-                }
-            )
+        grouped: dict[pathlib.Path, list[str]] = {}
+        private = uwi_scan.private_notes_root() if paths else None
+        for value in paths:
+            path = pathlib.Path(value)
+            if not path.is_absolute() or private is not None and path.is_relative_to(private):
+                continue
+            repository = _git_root(str(path.parent))
+            if repository is not None:
+                grouped.setdefault(repository, []).append(path.relative_to(repository).as_posix())
+        for repository, relative in grouped.items():
             if relative:
                 records.append(
                     {"kind": "deliverable", "labels": ["リポジトリの編集"], "repository": str(repository), "paths": relative}
@@ -296,41 +315,41 @@ def _invocations(payload: dict[str, Any], *, after: bool, failed: bool) -> list[
     if any(operation.exists_after_apply and is_plan_main_file(operation.display_path) for operation in operations or []):
         labels.append("計画の保存")
     command = tool_input.get("command")
-    if tool_name == "Bash" and isinstance(command, str):
-        saved, read_skills = _bash_operations(command)
-        labels.extend(saved)
-        labels.extend(published_git_operations(command))
-        if codex:
-            text = _response_text(payload.get("tool_response"))
-            for skill in dict.fromkeys(read_skills):
-                if not _read_succeeded(skill, text):
-                    continue
-                if skill == COMPLETION_REPORT:
-                    records.append({"kind": "completion"})
-                else:
-                    labels.append(f"agent-toolkit:{skill}の開始")
+    if tool_name in ATK_SHELL_TOOLS and isinstance(command, str):
+        for invocation, current in shell_cwd.bash_invocation_cwds(command, cwd if isinstance(cwd, str) else ""):
+            single = shlex.join(invocation.segment.tokens)
+            saved, read_skills = _bash_operations(single)
+            item_labels = [*saved, *([] if invocation.background else published_git_operations(single))]
+            if codex:
+                text = _response_text(payload.get("tool_response"))
+                for skill in dict.fromkeys(read_skills):
+                    if not _read_succeeded(skill, text):
+                        continue
+                    if skill == COMPLETION_REPORT:
+                        records.append({"kind": "completion"})
+                    else:
+                        item_labels.append(f"agent-toolkit:{skill}の開始")
+            if item_labels:
+                repository = _invocation_repository(invocation, current)
+                records.append(
+                    {"kind": "deliverable", "labels": item_labels, "repository": str(repository) if repository else None}
+                )
     if labels:
         record = {"kind": "deliverable", "labels": list(dict.fromkeys(labels))}
-        repository = _command_repository(command, cwd) if isinstance(command, str) and isinstance(cwd, str) else None
+        repository = _git_root(cwd) if isinstance(cwd, str) else None
         record["repository"] = str(repository) if repository is not None else None
         records.append(record)
     return records
 
 
-def _command_repository(command: str, cwd: str) -> pathlib.Path | None:
-    """直接実行の対象を取得し、シェルの移動・前置代入で対象が不明な場合は推測しない。"""
-    invocations = extract_bash_invocations(command)
-    if len(invocations) != 1 or not invocations[0].arguments_known:
+def _invocation_repository(invocation: shell_cwd.BashInvocation, cwd: shell_cwd.CwdResolution) -> pathlib.Path | None:
+    """操作ごとの実行位置とGitの位置指定から所属先を求める。"""
+    if not cwd.resolved or not invocation.arguments_known:
         return None
-    tokens = invocations[0].segment.tokens
-    try:
-        if tuple(shlex.split(command)) != tokens:
-            return None
-    except ValueError:
-        return None
-    parsed = _git_subcommand_tokens(invocations[0].segment)
+    tokens = invocation.segment.tokens
+    parsed = _git_subcommand_tokens(invocation.segment)
     options = tokens[1 : len(tokens) - len(parsed[1]) - 1] if parsed is not None else ()
-    return _git_root(cwd, options=options)
+    return _git_root(cwd.path, options=options)
 
 
 def _git_root(cwd: str, *, options: tuple[str, ...] = ()) -> pathlib.Path | None:
@@ -573,7 +592,7 @@ def missing_completion(work: dict[str, Any]) -> list[str]:
     return list(work.get("deliverables", []))
 
 
-def _omission_policy(document: dict[str, Any], work: dict[str, Any]) -> str:
+def _omission_policy(document: dict[str, Any], work: dict[str, Any], *, unresolved_labels: list[str] | None = None) -> str:
     """観測した作業の単一リポジトリ内の規範を読み、対象への適用範囲を確かめる。"""
     target = document.get("target_repo")
     policy = document.get("policy_file")
@@ -581,6 +600,10 @@ def _omission_policy(document: dict[str, Any], work: dict[str, Any]) -> str:
         raise ValueError("省略する作業のtarget_repoを絶対パスで渡す")
     repository = pathlib.Path(target).resolve(strict=True)
     observed = set(work.get("repositories", [])) | set(work.get("edits", {}))
+    if None in observed:
+        raise _UnresolvedRepositoryError(
+            "対象リポジトリを特定できなかった成果作業: " + "、".join(unresolved_labels or ["種類の内訳を保持しない旧記録"])
+        )
     if not work.get("deliverables") or observed != {str(repository)} or _git_root(str(repository)) != repository:
         raise ValueError("省略は観測済みの成果作業が属する単一リポジトリのrootを指定する")
     if not isinstance(policy, str) or not pathlib.Path(policy).is_absolute():
@@ -647,7 +670,16 @@ def record_decision(document: dict[str, Any]) -> str:
                 or document.get("input_id") != work.get("input_at_last_call")
             ):
                 raise ValueError("省略する観測済み作業の現在の人間入力のinput_idを渡す")
-            text = _omission_policy(document, work)
+            unresolved_labels = list(
+                dict.fromkeys(
+                    label
+                    for call_id in work.get("calls", [])
+                    for record in data["calls"].get(call_id, [])
+                    if record.get("kind") == "deliverable" and record.get("repository") is None
+                    for label in record["labels"]
+                )
+            )
+            text = _omission_policy(document, work, unresolved_labels=unresolved_labels)
             if text != document.get("quote"):
                 raise ValueError("適用するプロジェクト規範の原文全体をquoteへ渡す")
             evidence = {
@@ -896,7 +928,12 @@ def main(argv: list[str] | None = None) -> int:
             raise ValueError("判断記録はJSONオブジェクトで渡す")
         work_id = record_decision(document)
     except (OSError, UnicodeError, ValueError) as error:
-        next_action.report(str(error), next_action="原入力と対象を確かめ、判断のJSONファイルを直して同じコマンドで再実行する")
+        next_action.report(
+            str(error),
+            next_action=_UNRESOLVED_REPOSITORY_FIX
+            if isinstance(error, _UnresolvedRepositoryError)
+            else "原入力と対象を確かめ、判断のJSONファイルを直して同じコマンドで再実行する",
+        )
         return 2
     print(json.dumps({"work_id": work_id}, ensure_ascii=False))
     return 0

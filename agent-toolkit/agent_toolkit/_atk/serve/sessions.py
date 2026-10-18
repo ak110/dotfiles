@@ -27,6 +27,7 @@ from agent_toolkit._atk.serve import session_parents, session_watch
 from agent_toolkit._common import host_homes as _host_homes
 from agent_toolkit._common import session_launchers, stream_lines
 from agent_toolkit._common import state_paths as _state_paths
+from agent_toolkit._common.async_operations import run_sync_operation
 
 logger = logging.getLogger(__name__)
 
@@ -258,6 +259,11 @@ def _local_entry(
         size=st.st_size,
     )
     return summary, has_user, parent_thread_id
+
+
+async def create_context_async(**kwargs: typing.Any) -> SessionsContext:
+    """保存先の設定解決をworkerで完了して初期状態を返す。"""
+    return await run_sync_operation(create_context, **kwargs)
 
 
 def list_local_sessions(context: SessionsContext) -> list[SessionSummary]:
@@ -785,6 +791,10 @@ def start_local_watch(context: SessionsContext) -> None:
     監視は一覧の再取得と記録1件の更新の2種類の通知を、イベントループ上の購読者へ中継する。
     """
     loop = asyncio.get_running_loop()
+    context.state.record_watch = _start_local_record_watch(context, loop)
+
+
+def _start_local_record_watch(context: SessionsContext, loop: asyncio.AbstractEventLoop) -> session_watch.RecordWatch | None:
 
     def on_flush(refresh: bool, records: list[tuple[str, str]]) -> None:
         async def deliver() -> None:
@@ -805,8 +815,26 @@ def start_local_watch(context: SessionsContext) -> None:
         watch.start()
     except OSError as error:
         logger.warning("セッション記録の監視を開始できません: %s", error)
-        return
-    context.state.record_watch = watch
+        return None
+    return watch
+
+
+async def start_local_watch_async(context: SessionsContext) -> None:
+    """監視準備をworkerで待ち、保持欄をloopで更新する。"""
+    loop = asyncio.get_running_loop()
+    await run_sync_operation(
+        _start_local_record_watch,
+        context,
+        loop,
+        on_success=lambda watch: setattr(context.state, "record_watch", watch),
+    )
+
+
+async def stop_local_watch_async(context: SessionsContext) -> None:
+    """監視の全threadが終了してから保持欄を空へ戻す。"""
+    watch = context.state.record_watch
+    if watch is not None:
+        await run_sync_operation(watch.stop, on_success=lambda _result: setattr(context.state, "record_watch", None))
 
 
 def stop_local_watch(context: SessionsContext) -> None:

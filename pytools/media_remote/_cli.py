@@ -110,7 +110,7 @@ async def _serve(app: object, host: str, port: int) -> None:
     config = hypercorn.config.Config()
     config.bind = [f"{host}:{port}"]
     config.accesslog = None
-    with _window_move.WindowMover():
+    async with _window_move.WindowMover():
         await hypercorn.asyncio.serve(app, config)  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
 
 

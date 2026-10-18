@@ -1429,6 +1429,46 @@ def _ns(moment: datetime.datetime) -> int:
     return int(moment.timestamp() * 1_000_000_000)
 
 
+@pytest.mark.parametrize("count", [1, 20])
+@pytest.mark.parametrize("excluded", [False, True])
+def test_unchanged_sweep_skips_candidate_scan(monkeypatch: pytest.MonkeyPatch, count: int, excluded: bool) -> None:
+    """期限前・集合不変の2回目は登録列挙・root列挙・詳細記録読取を実行しない。"""
+    now = datetime.datetime.now(datetime.UTC)
+    if excluded:
+        held = subject.create_managed_temp("held-git")
+        (held / ".git").mkdir()
+        _set_tree_mtime(held, _ns(now - datetime.timedelta(days=8)))
+    for index in range(count):
+        subject.create_managed_temp(f"pending-{index}")
+    assert not subject.sweep_managed_temp(now=now).deleted
+
+    def forbidden(*_args: typing.Any, **_kwargs: typing.Any) -> typing.Any:
+        pytest.fail("期限前の不変集合を走査した")
+
+    monkeypatch.setattr(managed_temp_inventory, "_registry_names", forbidden)
+    monkeypatch.setattr(managed_temp_inventory, "_load_sweep_schedule", forbidden)
+    monkeypatch.setattr(managed_temp_inventory.os, "scandir", forbidden)
+    assert not subject.sweep_managed_temp(now=now).deleted
+
+
+def test_pending_candidates_do_not_hide_cleanup_failure(monkeypatch: pytest.MonkeyPatch) -> None:
+    """期限内の候補と共存する回収失敗を、次の起動でも再試行する。"""
+    now = datetime.datetime.now(datetime.UTC)
+    subject.create_managed_temp("pending")
+    failed = subject.create_managed_temp("failed")
+    _set_tree_mtime(failed, _ns(now - datetime.timedelta(days=8)))
+    calls = []
+
+    def fail(path: pathlib.Path, **_kwargs: typing.Any) -> bool:
+        calls.append(path)
+        raise subject.ManagedTempError("削除を拒否された")
+
+    monkeypatch.setattr(managed_temp_inventory, "_cleanup_managed_temp", fail)
+    for _ in range(2):
+        assert not subject.sweep_managed_temp(now=now).deleted
+    assert calls == [failed, failed]
+
+
 def _record_validations(monkeypatch: pytest.MonkeyPatch) -> list[pathlib.Path]:
     """登録済み候補の真正性検証と配下の走査の対象を記録する。"""
     observed: list[pathlib.Path] = []
@@ -1507,13 +1547,14 @@ class TestSweepSchedule:
         assert kept.exists()
 
     def test_changed_root_is_validated_again(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """記録後に領域自身の最終更新が変わった候補は記録を信用せず、期限超過なら回収する。"""
+        """再判定期限に達した起動で、変更された領域自身の状態を検証して回収する。"""
         target = subject.create_managed_temp("rewound")
+        _set_tree_mtime(target, _ns(self._NOW - datetime.timedelta(days=6)))
         assert subject.sweep_managed_temp(now=self._NOW).deleted == []
         _set_tree_mtime(target, _ns(self._NOW - datetime.timedelta(days=8)))
         observed = _record_validations(monkeypatch)
 
-        assert subject.sweep_managed_temp(now=self._NOW).deleted == [target]
+        assert subject.sweep_managed_temp(now=self._NOW + datetime.timedelta(days=2)).deleted == [target]
         assert target in observed
 
     @pytest.mark.parametrize("damage", ["missing", "corrupt", "other-root"])
@@ -1554,7 +1595,7 @@ class TestSweepSchedule:
         for _ in range(2):
             result = subject.sweep_managed_temp(now=self._NOW)
             assert result.deleted == []
-            assert result.stale_unregistered == (live.absolute(),)
+            assert result.stale_unregistered == ()
 
     def test_kept_by_exclusion_basis_skips_scan_until_basis_disappears(
         self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
@@ -1572,7 +1613,7 @@ class TestSweepSchedule:
         for target in (with_git, live):
             _set_tree_mtime(target, old_ns)
         first = subject.sweep_managed_temp(now=self._NOW)
-        assert first == subject.SweepResult([], (live.absolute(),), None)
+        assert first == subject.SweepResult([], (), None)
 
         observed = _record_validations(monkeypatch)
         assert subject.sweep_managed_temp(now=self._NOW) == first

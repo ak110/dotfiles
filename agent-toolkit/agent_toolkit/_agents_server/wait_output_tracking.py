@@ -6,12 +6,15 @@ import contextlib
 import json
 import logging
 import pathlib
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from typing import Any
 
 from agent_toolkit._agents_server import tool_names
+from agent_toolkit._agents_server.file_operations import run_file_operation
 from agent_toolkit._agents_server.state import TERMINAL_STATUSES, SessionState
 from agent_toolkit._common import background_output
+from agent_toolkit._common.shell_segments import extract_execution_segments
+from agent_toolkit._common.shell_tokens import ATK_SHELL_TOOLS, is_agents_wait_command
 
 # 子を稼働させる操作と、その終端・回収を観測する操作の対応。
 # CLI待機はBashとCodexのcommandExecutionの両方から同じ回収処理へ入る。
@@ -24,7 +27,9 @@ _CHILD_SESSION_OPERATIONS = {
 }
 
 
-def consume_claude_agents_server_message(session: SessionState, message: Any) -> None:
+def consume_claude_agents_server_message(
+    session: SessionState, message: Any, *, collected_output: Callable[[str], None] | None = None
+) -> None:
     """Claude SDKのツール利用と結果から、孫sessionと未完了のツール呼び出しの状態を更新する。
 
     未完了のツール呼び出しは`agents_server`のツールに限らず記録する。
@@ -41,7 +46,7 @@ def consume_claude_agents_server_message(session: SessionState, message: Any) ->
             if normalized is not None:
                 arguments = dict(tool_input) if isinstance(tool_input, Mapping) else {}
                 session.child_tool_uses[tool_use_id] = (normalized, arguments)
-            elif tool_name == "Bash" and _is_agents_wait_command(tool_input):
+            elif tool_name in ATK_SHELL_TOOLS and _is_agents_wait_command(tool_input):
                 session.child_tool_uses[tool_use_id] = (_AGENTS_WAIT_TOOL_USE, {})
             continue
 
@@ -53,11 +58,47 @@ def consume_claude_agents_server_message(session: SessionState, message: Any) ->
         if tool_use is None:
             continue
         if _CHILD_SESSION_OPERATIONS.get(tool_use[0]) == "collect":
-            consume_agents_wait_output(session, _tool_result_text(_block_value(block, "content")))
+            text = _tool_result_text(_block_value(block, "content"))
+            if collected_output is None:
+                consume_agents_wait_output(session, text)
+            else:
+                collected_output(text)
             continue
         result = _structured_tool_result(_block_value(block, "content"))
         if result is not None:
             consume_agents_server_tool_result(session, tool_use[0], tool_use[1], result)
+
+
+async def consume_claude_agents_server_message_async(session: SessionState, message: Any) -> None:
+    """ツール記録をloopで反映し、待機の保存出力の読取をworkerで待つ。"""
+    outputs: list[str] = []
+    consume_claude_agents_server_message(session, message, collected_output=outputs.append)
+    for text in outputs:
+        await consume_agents_wait_output_async(session, text)
+
+
+async def consume_agents_wait_output_async(session: SessionState, text: str) -> None:
+    """ファイル読取の後、回収した識別子だけをloopで反映する。"""
+    collected = await run_file_operation(_collected_from_wait_output, text)
+    session.agents_wait_background_outputs.update(background_output.output_paths(text))
+    _discard_collected(session, collected)
+
+
+async def consume_agents_wait_background_outputs_async(session: SessionState) -> None:
+    """背景出力のsnapshotを読み、sessionの追跡集合をloopで更新する。"""
+    paths = tuple(session.agents_wait_background_outputs)
+    if not paths:
+        return
+    collected = await run_file_operation(_read_background_outputs, paths)
+    _discard_collected(session, collected)
+
+
+def _read_background_outputs(paths: tuple[str, ...]) -> set[str]:
+    collected: set[str] = set()
+    for path in paths:
+        with contextlib.suppress(OSError, UnicodeError):
+            collected |= _collected_from_wait_output(pathlib.Path(path).read_text(encoding="utf-8"))
+    return collected
 
 
 def consume_agents_server_tool_result(
@@ -105,7 +146,9 @@ WAIT_BODY_END_PREFIX = "本文終了: session_id="
 
 def _is_agents_wait_command(tool_input: Any) -> bool:
     command = tool_input.get("command") if isinstance(tool_input, Mapping) else None
-    return isinstance(command, str) and _AGENTS_WAIT_TOOL_USE in command
+    return isinstance(command, str) and any(
+        segment.resolved and is_agents_wait_command(segment.tokens) for segment in extract_execution_segments(command)
+    )
 
 
 def _tool_result_text(value: Any) -> str:

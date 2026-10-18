@@ -503,6 +503,7 @@ class TestRun:
         caplog: pytest.LogCaptureFixture,
     ) -> None:
         """検査不能なエントリーを保持し、別の重複除去結果を書き戻す。"""
+        caplog.set_level("INFO")
         failing = str(tmp_path / "failing")
         write_calls, broadcast_calls = _stub_winutils(
             monkeypatch,
@@ -520,7 +521,7 @@ class TestRun:
 
         monkeypatch.setattr(Path, "exists", exists)
 
-        with caplog.at_level("WARNING", logger=cleanup_user_path.logger.name):
+        with caplog.at_level("INFO", logger=cleanup_user_path.logger.name):
             assert cleanup_user_path.run().changed is True
 
         assert write_calls == [("Path", failing, _REG_EXPAND_SZ)]

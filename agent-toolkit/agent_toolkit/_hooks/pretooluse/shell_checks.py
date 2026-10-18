@@ -13,11 +13,16 @@ lazy from collections.abc import (
     Sequence,
 )
 
-lazy from agent_toolkit._common.bash_invocations import BashInvocation, extract_bash_invocations, heredoc_command_substitutions
+lazy from agent_toolkit._common import shell_cwd
+lazy from agent_toolkit._common.bash_invocations import (
+    extract_bash_invocations,
+    heredoc_command_substitutions,
+    is_read_predicate,
+)
 lazy from agent_toolkit._common.heredocs import mask_heredoc_bodies
 lazy from agent_toolkit._common.runtime_identity import RuntimeIdentity, co_author_trailer
 lazy from agent_toolkit._common.shell_segments import ExecutionSegment, extract_execution_segments, split_bash_segments
-lazy from agent_toolkit._common.shell_tokens import strip_redirections
+lazy from agent_toolkit._common.shell_tokens import is_atk_command, strip_redirections
 lazy from agent_toolkit._hooks.notice import _WARN_TAG
 lazy from agent_toolkit._hooks.pretooluse.notices import _block_notice, _llm_notice
 
@@ -33,6 +38,18 @@ _GLOBAL_OPTIONS_WITH_VALUE: frozenset[str] = frozenset(
         "--list-cmds",
     }
 )
+
+
+def _check_read_predicate_stderr_discard(command: str) -> str | None:
+    """静的に確定する読取述語の標準エラーの破棄を実行前に遮断する。"""
+    for invocation in extract_bash_invocations(command):
+        if is_read_predicate(invocation.segment.tokens) and invocation.outputs[1] == "/dev/null":
+            return _block_notice(
+                "読取述語の標準エラーの最終接続先が`/dev/null`であり、入力・パス・権限の異常の診断を失う。",
+                fix="標準エラーの破棄を外して再実行する。出力量は標準出力の対象限定・保存で抑え、"
+                "標準エラーは呼び出し元へ残すか別ファイルへ保存し、別の呼び出しで読む。",
+            )
+    return None
 
 
 _GLOBAL_OPTIONS_WITHOUT_VALUE: frozenset[str] = frozenset(
@@ -287,12 +304,11 @@ def _git_commit_messages(command: str, *, cwd: str = "") -> Iterable[str]:
     メッセージは`-m`・`--message`に加え、`-F -`・`--file=-`へ同じコマンドのheredocで渡した本文と、
     `-F <path>`・`--file=<path>`で指定したhookの時点で存在する通常ファイルからも読む。
     エージェントのcommitの多くは`-F -`のheredocで作成されるため、この形を読めないと帰属行を確かめないまま通す。
-    相対パスは`git -C`とpayloadの`cwd`で解決し、同じコマンドの`cd`で基準が変わる場合は判定しない。
+    相対パスは呼出しごとの実行位置と`git -C`で解決し、実行位置が不明なら本文を読まない。
     heredocを一意に対応付けられない場合、存在しないファイル、`-C`・`-c`・`--reuse-message`・`--reedit-message`、
     `--amend --no-edit`、fixup、squashの場合は判定しない。
     """
-    invocations = extract_bash_invocations(command)
-    for position, invocation in enumerate(invocations):
+    for invocation, current in shell_cwd.bash_invocation_cwds(command, cwd):
         if not invocation.arguments_known:
             continue
         parsed = _git_subcommand_tokens(invocation.segment)
@@ -343,8 +359,7 @@ def _git_commit_messages(command: str, *, cwd: str = "") -> Iterable[str]:
                 body = _read_commit_message_file(
                     message_file,
                     invocation.segment.tokens,
-                    cwd=cwd,
-                    changes_directory=_changes_directory_before(invocations, position),
+                    cwd=current.path if current.resolved else "",
                 )
             if body is None:
                 unknown = True
@@ -411,22 +426,16 @@ def _commit_heredoc_body(command: str) -> str | None:
     return bodies[0] if len(bodies) == 1 else None
 
 
-def _changes_directory_before(invocations: Sequence[BashInvocation], position: int) -> bool:
-    """同じコマンドで対象の呼び出しより前に`cd`・`pushd`があるかを返す。"""
-    return any(item.segment.tokens[:1] in (("cd",), ("pushd",)) for item in invocations[:position])
-
-
 def _read_commit_message_file(
     path_text: str,
     git_tokens: Sequence[str],
     *,
     cwd: str,
-    changes_directory: bool,
 ) -> str | None:
     """`git commit -F <path>`が読むファイルの本文を返す。解決できないか通常ファイルでない場合は`None`を返す。"""
     path = pathlib.Path(path_text)
     if not path.is_absolute():
-        if changes_directory or not cwd:
+        if not cwd:
             return None
         base = pathlib.Path(cwd)
         for index, token in enumerate(git_tokens[1:], start=1):
@@ -640,7 +649,7 @@ def _check_bash_atk_output_loss(command: str) -> str | None:
     """
     for invocation in extract_bash_invocations(command):
         tokens = invocation.segment.tokens
-        if not invocation.segment.resolved or not tokens or pathlib.PurePosixPath(tokens[0]).name != "atk":
+        if not invocation.segment.resolved or not is_atk_command(tokens):
             continue
         is_wait = tokens[1:3] == ("agents", "wait")
         causes: list[str] = []

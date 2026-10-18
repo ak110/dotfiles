@@ -50,7 +50,7 @@ def report_warnings(warnings: list[str], *, next_action: str) -> None:
     if is_agent_environment():
         try:
             path = output_file.save_text(
-                details + "\n", lambda: managed_temp.create_managed_temp("atk-diagnostics"), filename="stderr.txt"
+                details + "\n", lambda: managed_temp.create_output_temp("atk-diagnostics"), filename="stderr.txt"
             )
         except Exception as error:  # noqa: BLE001  # 診断保存の失敗でも本来の詳細と結果を保持する
             outcome.report_warning(

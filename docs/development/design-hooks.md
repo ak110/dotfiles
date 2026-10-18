@@ -55,6 +55,17 @@ Bashの引数所属と出力接続は、`_common/bash_invocations.py`の`extract
 助言や実行記録が使う`extract_execution_pipelines`の既存契約は、用途が異なるため保持する。
 文書書込の判定には、引用を除き展開部分を未知印で保持した`static_tokens`と`static_outputs`を別に渡す。既存のtokens・arguments_known・outputsは変更しない。最後の未知印以降が`/`で始まる確定末尾だけを採用し、環境変数を評価せずに書込先を判定する。
 
+呼出しごとの作業ディレクトリは`_common/shell_cwd.py`の`bash_invocation_cwds`が所有する。
+Bash解析が保持する作用範囲を使い、サブシェル、パイプの要素、背景実行、コマンド置換の移動を子環境へ閉じ、波括弧と複合文の移動は後続へ渡す。
+未知の展開と`popd`の後は位置を不明として保持し、絶対パスへの移動で解決を再開する。
+読取・書込・commitのメッセージファイルと成果作業の帰属は同じ結果を使い、消費側ごとの移動追跡と元のcwdへの代用を避ける。
+
+読取述語の定義は`_common/bash_invocations.py`の`is_read_predicate`が所有し、PreToolUseとsession-reviewが共用する。
+`shell_checks.py`は同じBash解析の標準エラーの最終接続先がリテラルの`/dev/null`となる述語を、診断喪失による誤判断を防ぐため実行前に遮断する。
+リダイレクトを記述順に適用するため、`>/dev/null 2>&1`は遮断し、`2>&1 >/dev/null`と`2>errors.log`は診断を保持する形として通す。
+前置、`xargs`、シェル本文、グループ、複合文と置換にも同じ判定を適用し、実行名と接続先を静的に確定できない入力は推定しない。
+両ホストの入力と各接続の対照は`shell_checks_test.py::test_read_predicate_stderr_discard_is_blocked`が確かめる。
+
 原セッション記録の本文参照も、共通の呼出解析と静的な読取対象から判定する。`pretooluse/large_reads.py`は設定ホームからClaudeのprojectsとCodexのsessionsを解決し、Read・Grep・Bashの本文読取や検索へ既存の`session-review-evidence`の照会を案内する。Bashでは読取コマンドの入力パスと静的cwd、Pythonの直列に実行されるliteralの読取を扱う。Pythonの読取と文書書込は同じ`python_file_paths`で代入・実行位置を解析し、対象操作だけを分ける。未知のコードと外部スクリプトの内部へ解析を広げない。属性確認、パスの表示、正式な抽出・準備と派生証拠の処理は除く。大容量の原記録の遮断時にも専用CLIを案内し、一般本文の`atk read-file`案内を保つ。案内の目的は原記録を手で読み直す反復を減らすことであり、新しい証拠CLIと判定状態は加えず、反復による遮断へ昇格しない。
 
 heredocの区切り語は、bashと同じく引用を除いた語で終端行と比べる。区切り語のどこかに引用（`'`・`"`・`\`）があれば本文を展開しない区切り語として扱い、`\EOF`・`E"OF"`も`'EOF'`と同じ終端行`EOF`で閉じる。
@@ -263,6 +274,11 @@ LLMへの配送成功をHookの完了判定へ変換する案、SubagentStopへ�
 
 判定と保持の責務は`agent-toolkit/agent_toolkit/_hooks/termination_evidence.py`へ集約する。PreToolUse・PostToolUse・UserPromptSubmitは既存のエントリーポイントから呼び出しと人間の入力を供給し、Stopの集約は既存の例外隔離と連続block上限を保つ。
 
+Bashの成果作業は共通の呼出しごとの実行位置とGitの位置指定からリポジトリへ帰属させ、編集は書込先ごとの所属を記録する。
+private-notesとGitリポジトリ外の書込は成果作業の編集へ含めない。
+編集ツールによる計画保存はhookのcwdへ帰属させる。
+省略の拒否は複数の所属と所属不明を区別し、不明の場合は成果作業の種類と、completion-reportへ進む操作、起動を禁じる規範がある場合の報告先を示す。
+
 2026年10月11日のユーザー指示で、Stopが可視発話の報告見出しと報告本文（区切り、区分、候補ID、予定を示す語）を判定する方式を撤去した。送達後の報告が区切りの差でも遮断され、全文の再出力を往復させたためである。報告の内容と書式は`agent-toolkit:completion-report`の`references/report-formats.md`と既存の完成形の例へ集約し、報告を書くメインが確かめる。同じ判断のユーザー指示で、Stopは`agent-toolkit:completion-report`の呼び忘れの検出へ限定した。
 `termination_order_advisor`は、成果作業（成功した`agent-toolkit:process-wi`・`agent-toolkit:add-awi-by-user`の開始、リポジトリへの自編集、計画の保存、WIの保存、commit・push）を行った作業を対象とする。同じ作業に起動証拠も有効な省略判断も無ければ初回Stopから遮断し、起動と残工程への続行を案内する。適用するプロジェクト規範が起動を不要と定める場合は、メインが意味と優先順位を判断して`termination-evidence --decision-file`へ`omit-completion`を記録する。機械は現在のメイン・会話・原入力と作業対象、規範の絶対パスと全文引用を照合する。有効な判断は対応する作業だけへ作用し、別作業の起動不足と、process-loopの会話が終了時に`atk agents-exit-session`を実行する義務は保つ。規範の変更、新しい人間入力後の作業、開始・再開後の次判断では適用を確かめ直し、古い省略を流用しない。省略の記録手順は、completion-reportを起動する前に読める`agent-toolkit/skills/completion-report/references/termination-evidence.md`が持つ。起動証拠はClaude Codeでは成功したSkill呼び出し、CodexではBashへ正規化された読取コマンドの入力が同スキルの`SKILL.md`を指し、結果が本文を返した読取である。Codexの`tool_response`は終了コードを含まないため、結果にfrontmatterの`name`が現れることを本文の取得とみなし、パスの文字列やPostToolUseの発火だけを起動証拠にしない。読了は工程の完了を示さず、起動後の工程の完遂は規範が扱う。
 撤去した方式を別名の判定器、事前の本文の判定、別のフックへの移設で温存する案は、同じ再出力の往復を残すため採らない。起動済みフラグや完了の自己申告を加える案は、セッション途中の欠落で誤警告を反復させ、根拠の無い申告が判定を代替するため採らない。process-wiの`atk agents-exit-session`の起動順は同じ限定に従って本判定から外す。実行の時機はcompletion-reportの手順9が定め、常駐ループでの実行忘れは`autonomous_exit.py`が判定する。
@@ -274,7 +290,7 @@ LLMへの配送成功をHookの完了判定へ変換する案、SubagentStopへ�
 中止・置換・待機・技術的不成立の意味はメインが判断し、`atk run-script termination-evidence`の記録処理は原入力の由来と全文の一致、対象の実在、主体だけを確かめる。自然言語の意味を語句一覧で判定すると誤判定が生じ、完了の自己申告を受理すると根拠の無いフラグが判定を代替するためである。
 証拠を読めない場合とtranscriptを読めず待機対象を確かめられない場合は判定不能としてログへ残し、遮断しない。状態の欠落を未完了の証拠とする方式は、旧版や期限回収の後に遮断を反復させる。
 
-Codexでは生成元の許可表へStopとBashのPostToolUseを加え、Stopは`termination_order_advisor`だけを実行する。出力は`decision`と`reason`だけ、許可時は空のJSONとする。他のStop判定はClaude Codeの記録形式と通知手段を前提とするため、Codexへ広げない。
+Codexでは生成元の許可表へStopとBashのPostToolUseを加え、Stopは`termination_order_advisor`と`response_language_advisor`を実行する。出力は`decision`と`reason`だけ、許可時は空のJSONとする。他のStop判定はClaude Codeの記録形式と通知手段を前提とするため、Codexへ広げない。
 検出の保証範囲は判定器の出力までとし、無効化されたhook、Codexの未信頼設定、ホストの強制終了と連続block上限による終了は保証の外に置く。ホスト本体のStopの発火と継続は公開仕様で確認し、実機の発火試験は行っていない（`audit-records.md`「agent-toolkit/agent_toolkit/_hooks/termination_evidence.py：終了工程の証拠のStop判定：2026年10月3日」）。
 
 却下した代替案は4つある。文書の追記だけで続行を求める案は、規範の配送後も停止した観測を防がない。一般の本文有無で掲載を判定する案は、登録説明だけの最終回答を許可する。毎回のStopで別モデルが意味を評価する案は、恒常の費用と誤判定を加える。工程ごとに完了フラグや別のStop登録を加える案は、自己申告と起動の重複を生む。
@@ -324,8 +340,8 @@ PreToolUse側の生成はnotices.pyの共通整形へ集約し、大容量読取
 
 記述言語の判定は`check_text()`として入力取得から分離し、PreToolUseの直前応答チェックとSubagentStopの完了報告チェックで共有する。
 SubagentStopの言語判定は`last_assistant_message`だけを入力とし、完了報告の言語判定にtranscriptを使わない。
-SubagentStopの言語判定はClaude Code専用とし、共有中核へ集約しない。
-Codexでは`reason`の配送先と再提出の成立を確認できないためである。
+CodexのStopとSubagentStopは`response_language_advisor`から共通の`check_text()`へ本文を渡す。誤検出時の通知は、成果・判断・未達と指定の返却形式を含む完了本文の全文をそのまま再出力して停止する操作を示す。Codex backendは最後の`agentMessage`を完了本文として保持し、遮断された本文を委譲元へ返さないためである。再出力後は`stop_hook_active`で通過することを親子のhookのテストで確認する。
+Claude Codeのメインの問い判定は、送信済みの本文を保持して`…`だけで終える案内を維持する。この操作をCodexへ適用する案は、最後の応答が`…`になり成果・判断・未達が届かなくなるため採らない。
 却下した代替案は、PreToolUseのsidechain除外を解除する案である。
 サブエージェントのPreToolUseが受け取る`transcript_path`は親セッションを指すため、完了報告の判定対象を取り違える。
 
@@ -674,9 +690,9 @@ Codex欄の「対応」「部分対応」「非対応」は、Codex 0.154.0の�
 | plugin `PostToolUse/posttooluse` | 成功したツール実行の観測結果を記録する。TaskStopは登録から成功対象の完了記録だけを消費し、別対象と失敗・拒否の記録を保持する。計画ファイル・スキル起動・バックグラウンドタスク・`agents_server` sessionの状態を記録し、計画ファイルの書き込み後に計画構造の自動チェックを案内し、そのセッションが投入したUWIへの回答を通知する。`AskUserQuestion`への回答が選択肢と一致しない自由記述を含む場合は、UserPromptSubmitと同じ、発話の内容を現物で確かめる手順を示す注記を返す。ホストの上限を超えて退避したBashとPowerShellの結果は、抜粋を保存先・元の出力のバイト数・保存先を読む次の操作を示す本文へ置き換える | 対応 | 部分対応。成功した編集による計画ファイルの記録と計画構造の自動チェックの案内、`agents_server` sessionの状態記録、Bashで実行した振り返りの準備結果の記録に対応する。Codexはシェル出力を退避せず切り詰めて返すため、退避した結果の置き換えは対象外 |
 | plugin `SessionStart/rules_context` | セッションの開始、再開、`/clear`および圧縮の後に、メインエージェントだけに適用する条文（`share/rules-main.md`とClaude Code向けの`share/rules-main.claude-code.md`）を文脈へ追加する。`agents_server`が起動した委譲先では追加しない。圧縮の後は`QUALITY_CHECKPOINT_NOTICE`も併せて追加する。Claude Codeのメインへは入力の会話IDとtranscriptの絶対パスも通知する | 対応 | 対応。`rules_context_codex`として射影し、Claude Code固有の条文を除いて追加する。handlerの`additionalContextLimit`は0とし、切り詰めない |
 | plugin `SubagentStart/rules_context` | サブエージェントの起動時に、サブエージェントと委譲先だけに適用する条文（`share/rules-subagent.md`）を文脈へ追加する。親の一時領域がある場合は、agent_idごとの専用領域を通知する | 対応 | 対応。handlerの`additionalContextLimit`は0とし、切り詰めない |
-| plugin `SubagentStop/subagent_stop_advisor` | 空の完了報告での終了をブロックする | 対応 | 対応。空の完了報告のブロックに対応する |
+| plugin `SubagentStop/subagent_stop_advisor` | 空の完了報告での終了をブロックする | 対応 | 対応。空の完了報告のブロックに加え、`response_language_advisor`と共通の`check_text()`で説明言語を判定して遮断する。誤検出時は完了本文の全文をそのまま再出力して停止する操作を通知する |
 | plugin `SessionEnd/session_end_cleanup` | 期限を過ぎたセッション状態を回収する。会話を破棄する時だけ、そのセッションの状態を削除する | 対応 | 対応。終了理由が`other`固定のため、期限切れ状態の回収だけを実行する |
-| plugin `Stop/stop` | 自律終了、計画バンドル、`agents_server`および問いかけに関する終了判定を行う。人間の発話の後に本文が無いメインの終了を遮断し、拡張思考と発話本文の区別を促す。`send_to_user`ツールで送った本文も本文として数える。未配送の完了通知では、Agent・Taskに対応するものへ返却メッセージの利用を、Bashと種別不明のものへ出力ファイルの読取を1回だけ案内する。起動不足の作業は、その作業が起動した委譲先や背景のコマンド・Agentを待つ間だけ終了を許す。作業を始める前から動いている無関係なバックグラウンドタスクは、起動不足を免除しない。作業内で起動した常駐コマンドの実行中は起動不足を検出しない。それ以外は、成果作業（対象スキルの開始、リポジトリの編集、計画・WIの保存、commit・push）を行った作業でcompletion-reportの起動も現在の規範に基づく有効な省略判断も確認できない終了を遮断し、起動と残工程への続行を案内する。報告本文は判定しない | 対応 | 対応。`termination_order_advisor`だけを実行し、`decision`と`reason`だけを返す |
+| plugin `Stop/stop` | 自律終了、計画バンドル、`agents_server`および問いかけに関する終了判定を行う。人間の発話の後に本文が無いメインの終了を遮断し、拡張思考と発話本文の区別を促す。`send_to_user`ツールで送った本文も本文として数える。未配送の完了通知では、Agent・Taskに対応するものへ返却メッセージの利用を、Bashと種別不明のものへ出力ファイルの読取を1回だけ案内する。起動不足の作業は、その作業が起動した委譲先や背景のコマンド・Agentを待つ間だけ終了を許す。作業を始める前から動いている無関係なバックグラウンドタスクは、起動不足を免除しない。作業内で起動した常駐コマンドの実行中は起動不足を検出しない。それ以外は、成果作業（対象スキルの開始、リポジトリの編集、計画・WIの保存、commit・push）を行った作業でcompletion-reportの起動も現在の規範に基づく有効な省略判断も確認できない終了を遮断し、起動と残工程への続行を案内する。報告本文は判定しない | 対応 | 対応。`termination_order_advisor`と`response_language_advisor`を実行し、`decision`と`reason`だけを返す |
 | plugin `UserPromptSubmit/user_prompt_submit` | process modeと計画タイトルの状態を記録する。間隔に応じて発話の内容を現物で確かめる手順を示す注記を返す。実ユーザー発話に全角`！！`がある場合は`agent-toolkit:user-confirmation-and-report`の「認識合わせ」を促す注記を返し、半角`!!`だけの本文と機械注入は対象から除く。この注記は認識を確かめるきっかけである。セッションの開始（新規と`/clear`）と会話圧縮の後は、`agent-toolkit:user-confirmation-and-report`が起動されていない間に届いた実ユーザー発話へ同スキルの起動を促す注記を返す。委譲先のセッション、`resume`と`fork`による再開・分岐、機械注入のターンは対象から除く。実ユーザー発話が例示の語（「例えば」「たとえば」「例として」）と調査を求める語（「確認」「調査」「見直」など）を併せ持つ場合は、範囲語か開放列挙を伴う調査依頼であれば例示を除いた独立した調査を委ねる規範（`agent-toolkit:user-confirmation-and-report`の`SKILL.md`「原文の保持と取り込み」の該当項と`agent-toolkit:delegation`の`references/routing.md`）の所在を示す注記を返す。コードブロック、インラインコードおよび`>`で始まる引用行の中の語は判定に数えず、機械注入のターンと委譲先のセッションは対象から除く。これらの注記は発話の内容を現物で確かめる手順を示す注記と同じ出力にまとめ、初回や短い間隔の発話でも届く | 対応。`agent-toolkit:user-confirmation-and-report`の起動を促す注記は、同スキルが起動されるまで発話ごとに返す。例示と調査の語を併せ持つ発話への注記は該当する発話ごとに返す | 対応。`agent-toolkit:user-confirmation-and-report`の起動を促す注記は、開始・圧縮のたびに最初の実ユーザー発話へ1回だけ返す。例示と調査の語を併せ持つ発話への注記はClaude Codeと同じ条件で発話ごとに返す |
 | plugin `PermissionRequest/permissionrequest_codex` | 厳密な入力一致と所有者確認が成立したmanaged-tempのcleanupだけを限定的に許可する | 非対応。Claude Code向け`hooks.json`へ登録しない | 対応 |
 | plugin `PermissionRequest/permissionrequest` | 全ツールの確認ダイアログを自動許可し、許可した要求をJSON Lines形式のログへ記録する。記録には要求元セッションの識別子と、委譲の起点となった最上位セッションの識別子を残す | 対応 | 非対応。Claude固有の入力と無条件の自動許可を前提とし、Codexには限定済みの`permissionrequest_codex`があるため配布しない |

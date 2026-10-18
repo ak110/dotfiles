@@ -129,7 +129,7 @@ def missing_dependency_warnings(
 
 
 def dedup_positional_filenames(filenames: list[str], subcommand: str) -> list[str]:
-    """位置引数として渡された`filenames`から重複を除去し、除去件数が0より大きい場合はstderrへ警告する。
+    """位置引数として渡された`filenames`の同一項目を1件へ集約する。
 
     正規化後の同一性で重複判定するため、`normalize_md_filename`で正規化した値をキーに
     順序保存する（例: `name`と`name.md`は同一項目として1件へ集約）。
@@ -137,20 +137,12 @@ def dedup_positional_filenames(filenames: list[str], subcommand: str) -> list[st
     `cmd_start_processing`・`cmd_return_to_inbox`・`cmd_adopt`・`cmd_reject`・`cmd_rm`とする。
     戻り値は正規化前の原文字列のうち初出のものを保持する（正規化は判定にのみ用いる）。
     """
+    del subcommand
     seen: dict[str, str] = {}
-    duplicates: list[str] = []
     for name in filenames:
         key = normalize_md_filename(name)
-        if key in seen:
-            duplicates.append(name)
-        else:
+        if key not in seen:
             seen[key] = name
-    if duplicates:
-        unique_duplicates = list(dict.fromkeys(duplicates))
-        _outcome.report_warning(
-            f"{subcommand}の引数リストに重複がある（重複を除いて処理を継続する）: {', '.join(unique_duplicates)}",
-            next_action="対応不要（重複を除いて処理を継続した）",
-        )
     return list(seen.values())
 
 

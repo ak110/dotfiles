@@ -238,7 +238,7 @@ async def test_manager_turn_start_failure_finishes_without_provider_details(
         session = root.sessions["thread-codex"]
         assert not session.codex_provider_resume_pending
         assert not session.awaiting_auto_resume and session.pending_result is None
-        public = json.dumps([started, result, root.list_sessions(), root.show_session(session.session_id)])
+        public = json.dumps([started, result, (await root.list_sessions()), (await root.show_session(session.session_id))])
         assert "modelProvider" not in public and "providerDetails" not in public
         assert "private-value" not in public and "paid-a" not in public and "paid-b" not in public
         assert all(params["threadId"] == session.session_id for method, params in client.requests if method == "thread/resume")
@@ -374,11 +374,11 @@ async def test_provider_registry_lifecycle_and_public_projection(monkeypatch, tm
             session_registry.release("provider-thread", reason=release)
         root = manager.AgentsServerManager()
         try:
-            restored = root._restore_registry_session("provider-thread")
+            restored = await root._restore_registry_session("provider-thread")
             assert restored is not None
             assert restored.codex_model_provider == "paid-b"
             assert restored.codex_subscription_provider == "openai"
-            public = json.dumps(root.show_session("provider-thread"), ensure_ascii=False)
+            public = json.dumps((await root.show_session("provider-thread")), ensure_ascii=False)
             assert "paid-b" not in public and "codex_model_provider" not in public
         finally:
             await root.close()
@@ -428,7 +428,7 @@ async def test_provider_failover_result_collection(monkeypatch, tmp_path, provid
         result = await asyncio.wait_for(root.wait(), 5)
         assert result["status"] == "completed"
         assert result["agent_message"] == "継続後の結果"
-        public = json.dumps([started, result, root.list_sessions(), root.show_session("thread-codex")])
+        public = json.dumps([started, result, (await root.list_sessions()), (await root.show_session("thread-codex"))])
         assert "paid-a" not in public and "codex_model_provider" not in public
         assert "isolated-fake-api-key" not in caplog.text
         assert "provider=paid-a" in caplog.text
@@ -488,7 +488,7 @@ async def test_cancel_before_api_resume_keeps_provider(monkeypatch, tmp_path):
     publish_api_session(tmp_path)
     root = manager.AgentsServerManager()
     try:
-        restored = root._restore_registry_session("provider-thread")
+        restored = await root._restore_registry_session("provider-thread")
         assert restored is not None
         pending, _ = root._start_resume(restored, "未完了の続き", None)
         session, accepted = await root._cancel_pending_resume(pending, 1)

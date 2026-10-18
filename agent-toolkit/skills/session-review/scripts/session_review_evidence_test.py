@@ -1196,7 +1196,7 @@ def test_bundle_excludes_negative_results_and_checks_without_hiding_argument_err
 def test_bundle_treats_quoted_operator_shaped_search_terms_as_data(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """引用・エスケープした演算子形の検索語の一致0件を除外し、実際の演算子・診断・終了2は候補へ残す。"""
+    """演算子形の検索語と保存先で一致0件の分類を変えず、帰属不能な連結・診断・異常終了を残す。"""
     cases = [
         (["/bin/bash", "-lc", "rg -n -F '<<<<<<<' docs"], 1, ""),
         (["/bin/bash", "-lc", "rg -n -F ';' docs"], 1, ""),
@@ -1208,11 +1208,13 @@ def test_bundle_treats_quoted_operator_shaped_search_terms_as_data(
         (["/bin/bash", "-lc", "rg -n -F '<<<<<<<' docs > found.txt"], 1, ""),
         (["/bin/bash", "-lc", "rg -n -F '<<<<<<<' docs"], 2, ""),
         (["/bin/bash", "-lc", "rg -n -F ';' docs"], 1, "rg: docs: No such file or directory"),
+        (["/bin/bash", "-lc", "python3 check.py > found.txt"], 1, ""),
+        (["/bin/bash", "-lc", "rg -n -F '<<<<<<<' docs > found.txt"], 2, ""),
     ]
     records = _bundle_failed_codex_commands(tmp_path, capsys, cases)
     candidates = [item for item in records if item["kind"] == "candidate"]
-    assert {locator["line"] for item in candidates for locator in item["locators"]} == {7, 8, 9, 10}
-    assert records[-1]["excluded"]["normal-negative-result"] == 6
+    assert {locator["line"] for item in candidates for locator in item["locators"]} == {7, 9, 10, 11, 12}
+    assert records[-1]["excluded"]["normal-negative-result"] == 7
 
 
 def test_bundle_excludes_wait_continuations_but_keeps_real_failures(

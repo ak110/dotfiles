@@ -805,7 +805,7 @@ def _ensure_plugin_cache_complete(name: str) -> bool:
     if not cache_dir.is_relative_to(cache_root):
         # 削除の対象は plugin cache の内側だけとし、想定外の位置にある導入先は削除しない。
         short = log_format.home_short(cache_dir)
-        logger.warning(
+        logger.info(
             log_format.format_status(
                 name,
                 f"plugin cache の外にある導入先のため検査を省略: {short}。配置を保持したため対応不要（処理は継続した）",
@@ -815,7 +815,7 @@ def _ensure_plugin_cache_complete(name: str) -> bool:
     missing = _missing_plugin_cache_files(cache_dir)
     if not missing:
         return False
-    logger.warning(
+    logger.info(
         log_format.format_status(
             name,
             f"plugin cache に {', '.join(missing)} が無いため削除して再インストールします: "

@@ -14,10 +14,56 @@ import pytest
 
 from agent_toolkit import atk
 from agent_toolkit._hooks import pretooluse
-from agent_toolkit._hooks.pretooluse import dispatch
+from agent_toolkit._hooks.pretooluse import dispatch, large_reads, operation_skills
 from agent_toolkit._hooks.pretooluse.large_reads import bash_read_paths, check_large_bash_read
 
 _THRESHOLD = 48 * 1024
+
+
+@pytest.mark.parametrize("launcher", ["atk", "C:/tools/atk.cmd", r"'C:\tools\atk.cmd'", "atk.py"])
+def test_atk_launcher_read_paths_share_operand_contract(tmp_path, launcher):
+    """全ランチャーのread-fileが同じ読取対象を返す。"""
+    target = tmp_path / "note.md"
+    command = f"{launcher} read-file -- {shlex.quote(str(target))}"
+    assert list(bash_read_paths(command, str(tmp_path), include_partial=True)) == [(target,)]
+
+
+@pytest.mark.parametrize(
+    ("prefix", "moved"),
+    [
+        ("cd {next} &&", True),
+        ("{{ cd {next}; }};", True),
+        ("if true; then cd {next}; fi;", True),
+        ("(cd {next});", False),
+        ("cd {next} &", False),
+        ('echo "$(cd {next})";', False),
+    ],
+)
+def test_read_and_write_consumers_share_cwd(tmp_path, prefix, moved):
+    """同じ作用範囲の移動を読取・書込の両方へ渡す。"""
+    target = tmp_path / "next"
+    prefix = prefix.format(next=shlex.quote(str(target)))
+    expected = target if moved else tmp_path
+    assert list(bash_read_paths(prefix + " cat file", str(tmp_path))) == [(expected / "file",)]
+    assert operation_skills.written_paths("Bash", {"command": prefix + " echo x > file"}, str(tmp_path)) == [
+        str(expected / "file")
+    ]
+
+
+def test_unknown_session_record_cwd_is_not_replaced():
+    """未知の移動先を元のcwdの原記録へ帰属させない。"""
+    root = pathlib.Path.home() / ".claude/projects/project"
+    root.mkdir(parents=True)
+    (root / "record.jsonl").write_text("{}\n", encoding="utf-8")
+    assert large_reads.session_record_reference_warning("Bash", {"command": "cat record.jsonl"}, str(root))
+    assert large_reads.session_record_reference_warning("Bash", {"command": 'cd "$D" && cat record.jsonl'}, str(root)) is None
+
+
+def test_python_heredoc_write_uses_invocation_cwd(tmp_path):
+    """同じ行で移動した後のPython本文の書込先も共通の実行位置から得る。"""
+    target = tmp_path / "next"
+    command = f"cd {shlex.quote(str(target))} && python3 - <<'PY'\nfrom pathlib import Path\nPath('file').write_text('x')\nPY\n"
+    assert operation_skills.written_paths("Bash", {"command": command}, str(tmp_path)) == [str(target / "file")]
 
 
 @pytest.mark.parametrize(
@@ -205,13 +251,13 @@ def test_codex_resolves_relative_path_after_cwd_change(tmp_path: pathlib.Path, c
     assert str(target) in notice
 
 
-def test_codex_unresolved_cwd_change_uses_payload_cwd(tmp_path: pathlib.Path) -> None:
-    target = _sized_file(tmp_path, _THRESHOLD + 1)
+def test_codex_unresolved_cwd_change_keeps_read_target_unknown(tmp_path: pathlib.Path) -> None:
+    """元のcwdの同名ファイルの容量で、解決不能な移動先の読取を遮断しない。"""
+    _sized_file(tmp_path, _THRESHOLD + 1)
 
     notice = _codex_read('cd "$DIR" && cat large.txt', tmp_path)
 
-    assert notice is not None
-    assert str(target) in notice
+    assert notice is None
 
 
 def test_codex_blocks_only_direct_static_full_reads(tmp_path: pathlib.Path) -> None:

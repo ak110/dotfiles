@@ -164,7 +164,7 @@ def main(argv: list[str] | None = None) -> int:
         )
         failed = failed or state != "success"
     try:
-        output = args.records_output or managed_temp.create_managed_temp("plan-verify-results") / "results.json"
+        output = args.records_output or managed_temp.create_output_temp("plan-verify-results") / "results.json"
         payload = {
             "version": 1,
             "plan_path": str(args.plan),

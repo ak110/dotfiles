@@ -121,7 +121,8 @@ def _temp_root() -> pathlib.Path:
                     f"一時ディレクトリのルートの所有者または種別が不正: {root}",
                     next_action=ManagedTempError.PERMISSION_NEXT_ACTION,
                 )
-            root.chmod(0o700)
+            if stat.S_IMODE(metadata.st_mode) != 0o700:
+                root.chmod(0o700)
             if stat.S_IMODE(root.stat().st_mode) != 0o700:
                 raise ManagedTempError(
                     f"一時ディレクトリのルートの権限が不正: {root}", next_action=ManagedTempError.PERMISSION_NEXT_ACTION
@@ -235,7 +236,8 @@ def _state_root() -> pathlib.Path:
                 raise ManagedTempError(
                     f"外部状態ディレクトリの所有者または種別が不正: {root}", next_action=ManagedTempError.PERMISSION_NEXT_ACTION
                 )
-            root.chmod(0o700)
+            if stat.S_IMODE(metadata.st_mode) != 0o700:
+                root.chmod(0o700)
             if stat.S_IMODE(root.stat().st_mode) != 0o700:
                 raise ManagedTempError(
                     f"外部状態ディレクトリの権限が不正: {root}", next_action=ManagedTempError.PERMISSION_NEXT_ACTION

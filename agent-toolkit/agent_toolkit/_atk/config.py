@@ -452,7 +452,7 @@ def _resolved_settings(home: pathlib.Path) -> dict[str, str]:
     }
 
 
-_UNKNOWN_CANDIDATE_NEXT_ACTION = "利用可否は実行時に各engineが判定します。対応不要（処理は継続した）"
+_UNKNOWN_CANDIDATE_NEXT_ACTION = "意図した名前か確認し、誤記なら同じキーへ`atk config set <KEY> <VALUE>`で設定し直す"
 """参考一覧外のモデル候補の警告に添える次の操作。"""
 
 
@@ -480,12 +480,8 @@ def _stage_model_candidate_warnings(key: str, value: str) -> list[str]:
 def _cmd_config_show(home: pathlib.Path) -> None:
     """showサブコマンド: 設定値を1キー1行で表示する。"""
     settings = _resolved_settings(home)
-    warnings: list[str] = []
     for key, value in settings.items():
         print(f"{key} {value}")
-        if key in _MUTABLE_KEY_DEFAULTS:
-            warnings.extend(_stage_model_candidate_warnings(key, value))
-    _report_candidate_warnings(warnings)
 
 
 def _report_candidate_warnings(warnings: list[str]) -> None:

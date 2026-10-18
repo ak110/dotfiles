@@ -1,7 +1,7 @@
 """`atk wi`の位置引数の重複除去のテスト。
 
 `dedup_positional_filenames`を経由するadopt・reject・rm・start-processingの4サブコマンドで、
-同一ファイル名の重複指定時に警告を出力したうえで1回だけ処理されることを検証する。
+同一ファイル名の重複指定を初出の1件へ集約して処理することを検証する。
 """
 
 import pathlib
@@ -32,7 +32,7 @@ from agent_toolkit.atk_test import (  # pylint: disable=wrong-import-position
         ),
     ],
 )
-def test_duplicate_filenames_deduplicated_with_warning(
+def test_duplicate_filenames_deduplicated_without_warning(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
@@ -40,7 +40,7 @@ def test_duplicate_filenames_deduplicated_with_warning(
     present_directories: tuple[str, ...],
     commit_message: str,
 ) -> None:
-    """重複指定を除去し、各サブコマンドで対象を1回だけ処理して警告する。"""
+    """重複指定を除去し、各サブコマンドで対象を1回だけ処理する。"""
     notes = _setup_notes(tmp_path)
     _write_awi_file(notes, "fb-001.md")
     git_calls: list[_GitCall] = []
@@ -53,7 +53,7 @@ def test_duplicate_filenames_deduplicated_with_warning(
     assert not (notes / "inbox" / "fb-001.md").exists()
     for directory in present_directories:
         assert (notes / directory / "fb-001.md").exists()
-    assert "重複がある" in capsys.readouterr().err
+    assert "重複がある" not in capsys.readouterr().err
     commit_cmds = [call["cmd"] for call in git_calls if "commit" in call["cmd"]]
     assert len(commit_cmds) == 1
     assert commit_message in commit_cmds[0]

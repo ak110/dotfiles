@@ -523,6 +523,52 @@ def test_wait_collects_posttooluse_registered_result_and_releases_target(
     assert error is None
 
 
+@pytest.mark.parametrize(
+    ("tool_name", "command"),
+    [
+        ("Bash", "C:/Users/x/dotfiles/agent-toolkit/scripts/atk.cmd agents wait"),
+        ("Bash", r"'C:\Users\x\dotfiles\agent-toolkit\scripts\atk.cmd' agents wait"),
+        ("PowerShell", r"& 'C:\Users\x\dotfiles\agent-toolkit\scripts\atk.cmd' agents wait"),
+    ],
+)
+def test_windows_atk_cmd_wait_clears_pending_observation(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, tool_name: str, command: str
+) -> None:
+    """Windows向け起動形の回収後はStopの未観測警告を解消する。"""
+    from agent_toolkit._common import session_state  # noqa: PLC0415  # pylint: disable=import-outside-toplevel
+    from agent_toolkit._hooks import agents_server_session_advisor  # noqa: PLC0415  # pylint: disable=import-outside-toplevel
+
+    sid, child = "windows-wait-parent", "windows-wait-child"
+    path = tmp_path / SESSION_STATE_FILENAME_TEMPLATE.format(session_id=sid)
+    path.write_text(
+        json.dumps(
+            {
+                "agents_server_sessions": {
+                    child: {
+                        "pending_observation": True,
+                        "owner_agent_id": "main",
+                        "status": "completed",
+                    }
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    result = _run(
+        {
+            "session_id": sid,
+            "tool_name": tool_name,
+            "tool_input": {"command": command},
+            "tool_response": {"stdout": "結果回収済み"},
+        },
+        state_dir=tmp_path,
+    )
+    assert result.returncode == 0, result.stderr
+    assert _read_state(tmp_path, sid)["agents_server_sessions"][child]["pending_observation"] is False
+    monkeypatch.setattr(session_state, "state_path", lambda _sid: path)
+    assert agents_server_session_advisor.evaluate(json.dumps({"session_id": sid}))[0] == "approve"
+
+
 def _run(
     payload: dict | str,
     *,

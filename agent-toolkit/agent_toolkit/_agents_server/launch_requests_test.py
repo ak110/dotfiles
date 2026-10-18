@@ -363,7 +363,7 @@ async def test_start_uses_declared_launch_kind(monkeypatch: pytest.MonkeyPatch, 
         str(tmp_path), subagent_md_path=str(explain), extra_params=_observed_input_params(explain.name, tmp_path)
     )
 
-    shown = manager.show_session(response["session_id"])
+    shown = await manager.show_session(response["session_id"])
     assert shown["launch_kind"] == "explore"
     assert shown["model_type"] == "low_tier"
 
@@ -398,7 +398,7 @@ async def test_standard_review_task_documents_launch_with_declared_kinds(
         str(tmp_path), subagent_md_path=str(task_document), extra_params=_observed_input_params(task_name, tmp_path)
     )
 
-    shown = manager.show_session(response["session_id"])
+    shown = await manager.show_session(response["session_id"])
     assert shown["launch_kind"] == launch_kind
     assert shown["model_type"] == model_type
 

@@ -218,6 +218,24 @@ def test_resident_background_command_does_not_exempt_completion(tmp_path: pathli
     assert termination_order_advisor.evaluate(payload)[0] == "block"
 
 
+@pytest.mark.parametrize("tool", ["Bash", "PowerShell"])
+@pytest.mark.parametrize("launcher", ["atk", "C:/tools/atk.cmd", r"'C:\tools\atk.cmd'", "atk.py"])
+@pytest.mark.parametrize("arguments", ["serve", "serve --help"])
+def test_atk_launcher_resident_detection_for_both_shell_tools(tmp_path, tool, launcher, arguments):
+    """常駐起動は待機免除から除き、同じランチャーの有限のヘルプは待機できる。"""
+    trace = tmp_path / "trace.jsonl"
+    trace.touch()
+    _human_input("launcher-resident", trace, "request", "操作を進める")
+    _commit("launcher-resident", trace)
+    prefix = "& " if tool == "PowerShell" else ""
+    entries = _background_bash_entries("toolu_launcher", "launcher-task", prefix + launcher + " " + arguments)
+    entries[0]["message"]["content"][0]["name"] = tool
+    _append_entries(trace, entries)
+    payload = _payload("launcher-resident", str(trace), background_tasks=[{"id": "launcher-task", "type": "shell"}])
+    decision, _ = termination_order_advisor.evaluate(payload)
+    assert decision == ("block" if arguments == "serve" else "approve")
+
+
 @pytest.mark.parametrize(
     "command",
     [
@@ -559,6 +577,9 @@ def test_windows_edit_paths_match_git_status_paths(monkeypatch: pytest.MonkeyPat
     with monkeypatch.context() as context:
         context.setattr(termination_evidence, "written_paths", lambda *_args: [str(target)])
         context.setattr(termination_evidence, "_git_root", lambda _cwd: repository)
+        context.setattr(
+            termination_evidence.uwi_scan, "private_notes_root", lambda: pathlib.PureWindowsPath("C:/private-notes")
+        )
         context.setattr(termination_evidence._hook_tool_input, "parse_operations", lambda *_args: None)  # pylint: disable=protected-access
         context.setattr(pathlib, "Path", pathlib.PureWindowsPath)
         invocations = termination_evidence._invocations(  # pylint: disable=protected-access

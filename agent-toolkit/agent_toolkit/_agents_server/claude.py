@@ -33,6 +33,7 @@ from agent_toolkit._agents_server import (
 )
 from agent_toolkit._agents_server import plugin_root as plugin_roots
 from agent_toolkit._agents_server import state as shared_state
+from agent_toolkit._agents_server.file_operations import finish_task, run_file_operation
 from agent_toolkit._agents_server.launch_prompts import (
     AUTO_RESUME_NOTICE,
     CLAUDE_DELEGATE_SYSTEM_PROMPT,
@@ -107,13 +108,18 @@ class _InitializationDiagnostic:
         self.exception_type = type(error).__name__
         self.exception_body = str(error) or self.exception_type
 
-    def public(self) -> dict[str, Any]:
+    async def public_async(self) -> dict[str, Any]:
+        """子孫の照会を待ち、診断のsnapshotをloopで組み立てる。"""
+        children = await run_file_operation(_describe_child_processes, self.child_pid)
+        return self.public(child_processes=children)
+
+    def public(self, *, child_processes: list[str] | None = None) -> dict[str, Any]:
         return {
             "stage": self.stage,
             "received_message_types": dict(sorted(self.received_message_types.items())),
             "received_messages": list(self.received_messages),
             "child_pid": self.child_pid,
-            "child_processes": _describe_child_processes(self.child_pid),
+            "child_processes": _describe_child_processes(self.child_pid) if child_processes is None else child_processes,
             "debug_file": self.debug_file,
             "stderr": self.stderr.strip(),
             "exception_type": self.exception_type,
@@ -632,9 +638,10 @@ class ClaudeServerManager:
     ) -> SessionState:
         """新規または保存済みsessionを所有する長命タスクを開始する。"""
         diagnostic = _InitializationDiagnostic()
-        debug_file = _prepare_debug_file(launch_kind)
+        debug_file = await run_file_operation(_prepare_debug_file, launch_kind)
         diagnostic.debug_file = str(debug_file)
-        options = _build_options(
+        options = await run_file_operation(
+            _build_options,
             cwd,
             model,
             effort,
@@ -675,17 +682,20 @@ class ClaudeServerManager:
             # SDKがinitを届けないまま接続を保つ場合、所有タスクが失敗してもこの待機は解消しない。
             await self._release_unstarted_task(task)
             diagnostic.record_exception(exc)
-            _LOG.error("Claude session初期化timeout: diagnostic=%s", diagnostic.public())
+            details = await diagnostic.public_async()
+            _LOG.error("Claude session初期化timeout: diagnostic=%s", details)
             raise SessionInitializationTimeoutError(
                 f"Claude session did not reach init within {shared_state.SESSION_INITIALIZATION_TIMEOUT:.0f}s: "
-                f"cwd={cwd}, launch_kind={launch_kind}, model={model}; diagnostic={diagnostic.public()}"
+                f"cwd={cwd}, launch_kind={launch_kind}, model={model}; diagnostic={details}"
             ) from exc
         except BaseException as exc:
             await self._release_unstarted_task(task)
             diagnostic.record_exception(exc)
-            _LOG.error("Claude session初期化失敗: diagnostic=%s", diagnostic.public())
+            _LOG.error("Claude session初期化失敗: diagnostic=%s", await diagnostic.public_async())
             raise
-        diagnostic.debug_file = str(rename_debug_file_for_session(debug_file, session.session_id, launch_kind))
+        diagnostic.debug_file = str(
+            await run_file_operation(rename_debug_file_for_session, debug_file, session.session_id, launch_kind)
+        )
         await session.drain_registration()
         return session
 
@@ -818,7 +828,7 @@ class ClaudeServerManager:
                 loop = asyncio.get_running_loop()
                 now = loop.time()
                 if session is not None and session.auto_resume_deadline is not None and session.auto_resume_deadline <= now:
-                    self._finalize_pending_result(session)
+                    (await self._finalize_pending_result(session))
                     await self._notify_waiters()
                     continue
                 timeout: float | None = None
@@ -861,7 +871,7 @@ class ClaudeServerManager:
                 done, _ = await asyncio.wait(pending, timeout=timeout, return_when=asyncio.FIRST_COMPLETED)
                 if not done:
                     if session is not None and session.auto_resume_deadline is not None:
-                        self._finalize_pending_result(session)
+                        (await self._finalize_pending_result(session))
                         await self._notify_waiters()
                         continue
                     if session is not None:
@@ -885,7 +895,7 @@ class ClaudeServerManager:
                             and not session.claude_api_resume_pending
                             and not resume_waits.has_pending_auto_resume_targets(session)
                         ):
-                            self._finalize_pending_result(session)
+                            (await self._finalize_pending_result(session))
                             iterator = None
                             await self._notify_waiters()
                         elif (
@@ -927,9 +937,11 @@ class ClaudeServerManager:
                             # 状態は同IDをinitからしか取得できないため、最初の有効なinitで生成し、
                             # turnごとにinitが再送されても再生成しない。
                             if session is None:
-                                self._validate_session_id(session_id, expected_session_id)
+                                await session_identity.validate_identity(
+                                    self._validate_session_id, session_id, expected_session_id
+                                )
                                 diagnostic.stage = "initialized"
-                                _LOG.info("Claude session初期化完了: diagnostic=%s", diagnostic.public())
+                                _LOG.info("Claude session初期化完了: diagnostic=%s", await diagnostic.public_async())
                                 session = existing_session or SessionState(
                                     session_id=session_id,
                                     cwd=cwd,
@@ -946,7 +958,7 @@ class ClaudeServerManager:
                                     claude_role="orchestrator" if model_type == "orchestrate" else "delegate",
                                 )
                                 self.sessions[session_id] = session
-                                session.attach_executor(diagnostic.child_pid)
+                                await session.attach_executor_async(diagnostic.child_pid)
                                 session.usage_limit = early_usage_limit
                                 session.cli_turn_state = early_cli_turn_state
                                 session.status = "starting" if expected_session_id is None else "running"
@@ -992,7 +1004,7 @@ class ClaudeServerManager:
                             ):
                                 if held_from_task_notification:
                                     session.auto_resume_consumed = True
-                                self._finalize_pending_result(session)
+                                (await self._finalize_pending_result(session))
                                 await self._notify_waiters()
                         elif name == "RateLimitEvent":
                             # 利用枠の報告はモデル活動ではないため活動時刻を進めない。
@@ -1021,7 +1033,7 @@ class ClaudeServerManager:
                             elif isinstance(event, dict) and event.get("type") == "message_stop":
                                 usage_observer.request(session)
                         elif name == "UserMessage" and session is not None:
-                            wait_output_tracking.consume_claude_agents_server_message(session, message)
+                            await wait_output_tracking.consume_claude_agents_server_message_async(session, message)
                             session.touch()
                             await self._notify_waiters()
                         elif name == "TaskStartedMessage" and session is not None:
@@ -1039,7 +1051,7 @@ class ClaudeServerManager:
                                 await self._notify_waiters()
                         elif name == "ResultMessage" and session is not None:
                             usage_observer.request(session)
-                            held_from_task_notification = self._consume_result_message(
+                            held_from_task_notification = await self._consume_result_message(
                                 session, message, held_from_task_notification
                             )
                             await self._notify_waiters()
@@ -1055,36 +1067,43 @@ class ClaudeServerManager:
                 self._record_failure(session, exc, diagnostic=diagnostic)
                 await self._notify_waiters()
         finally:
-            for task in (message_task, command_task):
-                if task is not None and not task.done():
-                    task.cancel()
-            await asyncio.gather(*(task for task in (message_task, command_task) if task is not None), return_exceptions=True)
-            if command_task is not None and not command_task.cancelled() and command_task.exception() is None:
-                retrieved = command_task.result()
-            if retrieved is not None and not retrieved[2].done():
-                retrieved[2].set_exception(SessionOwnerGoneError("the Claude session owner task has ended"))
-            if active_future is not None and not active_future.done():
-                active_future.set_exception(SessionOwnerGoneError("the Claude session owner task has ended"))
-            if client is not None:
-                if usage_observer is not None:
-                    await usage_observer.close()
-                # 子孫の列挙は切断より前に行う。切断で委譲先プロセスが終了すると子孫の親が変わり、
-                # 保持しているPIDを起点に辿れなくなるためである。
-                descendants = process_tree.collect_descendants(diagnostic.child_pid)
-                await self._disconnect_client(client)
-                residual = await asyncio.to_thread(process_tree.reclaim_descendants, descendants)
-                process_tree.log_residual(
-                    residual, context=f"claude session_id={None if session is None else session.session_id}"
-                )
-            if session is not None:
-                await session.drain_registration()
-                self._channels.pop(session.session_id, None)
-            channel.close()
-            claude_settings.cleanup_settings(options)
 
-    def _consume_result_message(self, session: SessionState, message: Any, held_from_task_notification: bool) -> bool:
+            async def cleanup() -> None:
+                nonlocal retrieved
+                for task in (message_task, command_task):
+                    if task is not None and not task.done():
+                        task.cancel()
+                await asyncio.gather(
+                    *(task for task in (message_task, command_task) if task is not None), return_exceptions=True
+                )
+                if command_task is not None and not command_task.cancelled() and command_task.exception() is None:
+                    retrieved = command_task.result()
+                if retrieved is not None and not retrieved[2].done():
+                    retrieved[2].set_exception(SessionOwnerGoneError("the Claude session owner task has ended"))
+                if active_future is not None and not active_future.done():
+                    active_future.set_exception(SessionOwnerGoneError("the Claude session owner task has ended"))
+                if client is not None:
+                    if usage_observer is not None:
+                        await usage_observer.close()
+                    # 子孫の列挙は切断より前に行う。切断で委譲先プロセスが終了すると子孫の親が変わり、
+                    # 保持しているPIDを起点に辿れなくなるためである。
+                    descendants = await run_file_operation(process_tree.collect_descendants, diagnostic.child_pid)
+                    await self._disconnect_client(client)
+                    residual = await asyncio.to_thread(process_tree.reclaim_descendants, descendants)
+                    process_tree.log_residual(
+                        residual, context=f"claude session_id={None if session is None else session.session_id}"
+                    )
+                if session is not None:
+                    await session.drain_registration()
+                    self._channels.pop(session.session_id, None)
+                channel.close()
+                await run_file_operation(claude_settings.cleanup_settings, options)
+
+            await finish_task(asyncio.create_task(cleanup()))
+
+    async def _consume_result_message(self, session: SessionState, message: Any, held_from_task_notification: bool) -> bool:
         """turnの結果を保留または確定し、保留結果がtask完了通知のturnから届いたかを引き継ぐ。"""
-        wait_output_tracking.consume_agents_wait_background_outputs(session)
+        await wait_output_tracking.consume_agents_wait_background_outputs_async(session)
         result = self._result_values(session, message)
         # 対象の利用上限では結果を保留し、MCP層の常駐監視がAPI移行または解除後の継続を進める。
         if resume_waits.begin_usage_limit_wait(session, result):
@@ -1139,7 +1158,7 @@ class ClaudeServerManager:
                 if session.awaiting_auto_resume:
                     # モデルのturnは終わっており、Claude Code CLIはturnの外で受けた中断要求へ`ResultMessage`を返さない。
                     # 保留した結果をそのまま確定し、以後の再開turnは読まない。
-                    self._finalize_pending_result(session)
+                    (await self._finalize_pending_result(session))
                     iterator = None
                 if not future.done():
                     future.set_result(("interrupt_accepted", None))
@@ -1148,7 +1167,7 @@ class ClaudeServerManager:
         if future.cancelled():
             return iterator
         if session.awaiting_auto_resume and session.auto_resume_deadline is None:
-            self._finalize_pending_result(session)
+            (await self._finalize_pending_result(session))
         held = resume_waits.HeldTurn.capture(session)
         kind = "reply" if session.terminal or held is not None else "steer"
         previous_result = session.previous_result() if kind == "reply" and held is None else None
@@ -1240,14 +1259,14 @@ class ClaudeServerManager:
         )
 
     @classmethod
-    def _finalize_pending_result(cls, session: SessionState) -> None:
+    async def _finalize_pending_result(cls, session: SessionState) -> None:
         """保留した終端結果を確定する。
 
         Claude backendはタスク完了通知と孫sessionの終端によって同一sessionを再開できるため終端結果を保留する。
         Codex backendは孫sessionの終端による再開だけを持ち、同じ保留をMCP層の監視が確定する。
         確定の時点で残るバックグラウンドタスクと孫sessionの`error`への記録は、確定の契機によらず共通処理が行う。
         """
-        wait_output_tracking.consume_agents_wait_background_outputs(session)
+        await wait_output_tracking.consume_agents_wait_background_outputs_async(session)
         resume_waits.finalize_pending_result(session)
 
     @classmethod

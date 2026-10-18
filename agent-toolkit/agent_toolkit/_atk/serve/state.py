@@ -12,6 +12,7 @@ import watchdog.events
 import watchdog.observers
 
 from agent_toolkit._atk.wi import constants as _wi_constants
+from agent_toolkit._common.async_operations import run_sync_operation
 
 _TimerFactory = collections.abc.Callable[[float, collections.abc.Callable[..., None], tuple[typing.Any, ...]], threading.Timer]
 
@@ -68,23 +69,40 @@ class ServeState(watchdog.events.FileSystemEventHandler):
         """監視を開始する。"""
         self._loop = loop
         self._stopped = False
+        self._start_observer()
+
+    def _start_observer(self) -> None:
         for relative in _wi_constants.WI_STATES:
             path = self.root / relative
             path.mkdir(parents=True, exist_ok=True)
             self.observer.schedule(self, str(path), recursive=False)
         self.observer.start()
 
+    async def start_async(self, loop: asyncio.AbstractEventLoop) -> None:
+        """loopの参照を保持し、監視の登録・準備完了をworkerで待つ。"""
+        self._loop = loop
+        self._stopped = False
+        await run_sync_operation(self._start_observer)
+
+    async def stop_async(self) -> None:
+        """監視終了とthreadの回収が完了するまで待つ。"""
+        await run_sync_operation(self.stop)
+
     def stop(self) -> None:
         """監視を停止してスレッド終了を待つ。"""
         with self._lock:
             self._stopped = True
+            pending = self._pending_notification
             if self._pending_notification is not None:
                 self._pending_notification.cancel()
                 self._pending_notification = None
             self._pending_started_at = None
             self._pending_generation += 1
+        if isinstance(pending, threading.Thread) and pending.ident is not None and pending is not threading.current_thread():
+            pending.join()
         self.observer.stop()
-        self.observer.join()
+        if self.observer.ident is not None:
+            self.observer.join()
 
     def _publish_pending(self, generation: int) -> None:
         """静穏期間の経過後または最大待機時間の到達後に保留通知を1回だけ発行する。"""

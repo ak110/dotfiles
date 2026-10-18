@@ -28,6 +28,7 @@ from agent_toolkit._agents_server import (
     shared_layout,
 )
 from agent_toolkit._agents_server import state as shared_state
+from agent_toolkit._agents_server.file_operations import run_file_operation
 from agent_toolkit._agents_server.input_validation import validate_prompt
 from agent_toolkit._agents_server.launch_prompts import LAUNCH_SYSTEM_PROMPTS
 from agent_toolkit._agents_server.session_errors import SessionInitializationTimeoutError, SessionOwnerGoneError
@@ -358,7 +359,7 @@ class AntigravityManager:
                 raise session_errors.DelegateBackendError(f"failed to start Antigravity CLI ({command[0]}): {exc}") from exc
             assert process.stdout is not None
             if session is not None:
-                self._attach_session(session, process, turn_seq)
+                await self._attach_session(session, process, turn_seq)
                 if not initialized.done():
                     initialized.set_result(session)
             async for line in process.stdout:
@@ -370,7 +371,7 @@ class AntigravityManager:
                 if not isinstance(event_body, dict):
                     event_body = payload
                 if kind == "init" and session is None:
-                    session = self._create_session(
+                    session = await self._create_session(
                         payload,
                         cwd=cwd,
                         model=model,
@@ -381,13 +382,13 @@ class AntigravityManager:
                         turn_seq=turn_seq,
                         conversation_id=conversation_id,
                     )
-                    self._attach_session(session, process, turn_seq)
+                    await self._attach_session(session, process, turn_seq)
                     session.status = "starting"
                     session.touch()
                     if not initialized.done():
                         initialized.set_result(session)
                 if session is not None:
-                    self._append_event(session.session_id, payload)
+                    await run_file_operation(self._append_event, session.session_id, payload)
                 if kind == "step_update" and session is not None:
                     if event_body.get("step_type") == "agent_response":
                         usage = event_body.get("usage")
@@ -449,17 +450,17 @@ class AntigravityManager:
         except OSError:
             _LOG.warning("Antigravityイベントログへの書き込みに失敗した: %s", session_id, exc_info=True)
 
-    def _attach_session(self, session: SessionState, process: asyncio.subprocess.Process, turn_seq: int) -> None:
+    async def _attach_session(self, session: SessionState, process: asyncio.subprocess.Process, turn_seq: int) -> None:
         self.sessions[session.session_id] = session
         self._processes[session.session_id] = process
-        session.attach_executor(process.pid)
+        await session.attach_executor_async(process.pid)
         current_task = asyncio.current_task()
         if current_task is not None:
             self._task_sessions[current_task] = session.session_id
         session.turn_seq = turn_seq
         initialize_turn(session)
 
-    def _create_session(
+    async def _create_session(
         self,
         payload: dict[str, Any],
         *,
@@ -477,7 +478,7 @@ class AntigravityManager:
             raise session_errors.DelegateBackendError("Antigravity init event did not contain conversation_id")
         if conversation_id is not None and session_id != conversation_id:
             raise session_errors.DelegateBackendError("Antigravity resume returned an unexpected conversation_id")
-        self._validate_session_id(session_id, conversation_id)
+        await session_identity.validate_identity(self._validate_session_id, session_id, conversation_id)
         return SessionState(
             session_id=session_id,
             cwd=cwd,
@@ -575,7 +576,7 @@ async def _terminate(process: asyncio.subprocess.Process) -> None:
     """委譲先プロセスとその子孫を終了する。"""
     if process.returncode is not None:
         return
-    descendants = process_tree.collect_descendants(process.pid)
+    descendants = await run_file_operation(process_tree.collect_descendants, process.pid)
     with contextlib.suppress(ProcessLookupError):
         process.terminate()
     with contextlib.suppress(Exception):

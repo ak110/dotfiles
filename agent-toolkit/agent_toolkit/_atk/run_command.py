@@ -85,7 +85,7 @@ def _git_state(cwd: pathlib.Path) -> tuple[str | None, list[str] | None]:
     except (OSError, subprocess.SubprocessError) as error:
         outcome.report_warning(
             f"作業ツリーの状態を取得できない: {error}",
-            next_action="対応不要（コマンドは実行し、`git_head`と`git_status`を`null`で保存した）",
+            next_action="観測の版を根拠に使う場合は、同じcwdで`git rev-parse HEAD`と`git status`を確かめて記録する",
         )
         return None, None
     if inside.returncode != 0 or inside.stdout.strip() != "true":
@@ -105,8 +105,7 @@ def _git_state(cwd: pathlib.Path) -> tuple[str | None, list[str] | None]:
     if head is None or status_lines is None:
         outcome.report_warning(
             "作業ツリーのHEADまたは`git status`を取得できない",
-            next_action="対応不要（コマンドは実行し、取得できなかった項目を`null`で保存した）。"
-            "観測の版を根拠に使う場合は、同じcwdで`git rev-parse HEAD`と`git status`を確かめて記録する",
+            next_action="観測の版を根拠に使う場合は、同じcwdで`git rev-parse HEAD`と`git status`を確かめて記録する",
         )
     return head, status_lines
 
@@ -163,7 +162,7 @@ def execute(argv: list[str], cwd: pathlib.Path, timeout: float | None) -> tuple[
     failure: str | None = None
     directory: pathlib.Path | None = None
     try:
-        directory = managed_temp.create_managed_temp("atk-command")
+        directory = managed_temp.create_output_temp("atk-command")
         stdout_path = (directory / "stdout.bin").resolve()
         stderr_path = (directory / "stderr.bin").resolve()
         with stdout_path.open("xb") as stdout_stream, stderr_path.open("xb") as stderr_stream:

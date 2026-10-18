@@ -72,6 +72,7 @@ from agent_toolkit._common import delegated_session as _delegated_session
 from agent_toolkit._common import host_homes as _host_homes
 from agent_toolkit._common.message_format import AUTO_INSERTED_ELEMENT, auto_message
 from agent_toolkit._common.next_action import ActionableError
+from agent_toolkit._common.shell_tokens import is_agents_wait_command
 
 if typing.TYPE_CHECKING:
     import psutil
@@ -537,7 +538,9 @@ class JsonRpcProcess:
             self._closed = True
             # 子孫の列挙は終了要求より前に行う。App Serverが終了すると子孫の親が変わり、
             # 保持しているPIDを起点に辿れなくなるためである。
-            self._residual = process_tree.collect_descendants(None if process is None else process.pid)
+            self._residual = await run_file_operation(
+                process_tree.collect_descendants, None if process is None else process.pid
+            )
             tasks = tuple(
                 task
                 for task in (self._reader_task, self._stderr_task)
@@ -840,7 +843,7 @@ class AppServerManager:
                 client, cwd, model, launch_kind
             )
             session_id = thread_response["thread"]["id"]
-            self._validate_session_id(session_id, None)
+            await session_identity.validate_identity(self._validate_session_id, session_id, None)
             if owner_session_id is not None and writer_session_id is not None:
                 await run_file_operation(shared_roots.write_host_alias, owner_session_id, writer_session_id, session_id)
         except BaseException:
@@ -866,7 +869,7 @@ class AppServerManager:
             codex_attempted_provider_ids=attempted,
         )
         self.sessions[session_id] = session
-        session.attach_executor(_client_pid(client))
+        await session.attach_executor_async(_client_pid(client))
         initialize_turn(session)
         session.status = "starting"
         session.touch()
@@ -895,7 +898,7 @@ class AppServerManager:
             "cwd": cwd,
             "approvalPolicy": "never",
             "sandbox": "read-only" if launch_kind == "explore" else "danger-full-access",
-            "serviceTier": _current_service_tier(),
+            "serviceTier": await run_file_operation(_current_service_tier),
         }
         if model is not None:
             params["model"] = model
@@ -906,7 +909,7 @@ class AppServerManager:
             await self._restrict_explore_config(client, config, cwd)
             owner_session_id = writer_session_id = None
         params["config"] = config
-        params["developerInstructions"] = _developer_instructions(launch_kind)
+        params["developerInstructions"] = await run_file_operation(_developer_instructions, launch_kind)
         attempted: set[str] = set()
         try:
             async with asyncio.timeout(shared_state.SESSION_INITIALIZATION_TIMEOUT):
@@ -1029,7 +1032,7 @@ class AppServerManager:
             codex_subscription_provider=subscription_provider,
         )
         self.sessions[session_id] = session
-        session.attach_executor(_client_pid(client))
+        await session.attach_executor_async(_client_pid(client))
         initialize_turn(session)
         try:
             writer_session_id = await self._resume_thread(
@@ -1344,7 +1347,7 @@ class AppServerManager:
             "cwd": session.cwd,
             "approvalPolicy": "never",
             "sandbox": "read-only" if session.launch_kind == "explore" else "danger-full-access",
-            "serviceTier": _current_service_tier(),
+            "serviceTier": await run_file_operation(_current_service_tier),
         }
         if session.model is not None:
             resume_params["model"] = session.model
@@ -1359,7 +1362,7 @@ class AppServerManager:
             await self._restrict_explore_config(client, config, session.cwd)
             owner_session_id = writer_session_id = None
         resume_params["config"] = config
-        resume_params["developerInstructions"] = _developer_instructions(session.launch_kind)
+        resume_params["developerInstructions"] = await run_file_operation(_developer_instructions, session.launch_kind)
         resume_response = await self._request_thread_resume(client, resume_params)
         resumed_thread = resume_response.get("thread")
         if not isinstance(resumed_thread, dict) or resumed_thread.get("id") != session.session_id:
@@ -1507,14 +1510,14 @@ class AppServerManager:
         if client is None:
             client = await self._acquire_owned_client(session.session_id)
         # 再起動したApp Serverでturnを始める場合も、実行するプロセスの識別を登録簿へ反映する。
-        session.attach_executor(_client_pid(client))
+        await session.attach_executor_async(_client_pid(client))
         params: dict[str, Any] = {
             "threadId": session.session_id,
             "input": [{"type": "text", "text": prompt}],
             "cwd": session.cwd,
             "approvalPolicy": "never",
             "sandboxPolicy": {"type": "readOnly"} if session.launch_kind == "explore" else {"type": "dangerFullAccess"},
-            "serviceTier": _current_service_tier(),
+            "serviceTier": await run_file_operation(_current_service_tier),
         }
         if session.model is not None:
             params["model"] = session.model
@@ -1625,6 +1628,10 @@ class AppServerManager:
             if not session.failure_pending_completion:
                 session.status = "running"
         elif method == "turn/completed":
+            # 結果を公開可能にする前に保存出力の読取を完了し、終端状態と確定時刻を同じloop区間で反映する。
+            if isinstance(turn, dict):
+                await self._consume_items(session, turn.get("items"))
+            await wait_output_tracking.consume_agents_wait_background_outputs_async(session)
             failure_pending_completion = session.failure_pending_completion
             if isinstance(turn, dict):
                 turn_id = turn.get("id")
@@ -1635,7 +1642,6 @@ class AppServerManager:
                 turn_error = turn.get("error")
                 if turn_error is not None or not failure_pending_completion:
                     session.error = turn_error
-                self._consume_items(session, turn.get("items"))
                 session.turn_start_ambiguous = False
             else:
                 session.status = "failed"
@@ -1647,8 +1653,6 @@ class AppServerManager:
                 session.status = "failed"
             if session.status == "completed":
                 session.codex_attempted_provider_ids = {session.codex_model_provider} if session.codex_model_provider else set()
-            # 背景実行の`atk agents wait`で回収済みの孫sessionは、保留の判定より前に追跡から外す。
-            wait_output_tracking.consume_agents_wait_background_outputs(session)
             if resume_waits.has_pending_auto_resume_targets(session) and not session.auto_resume_consumed:
                 # 未観測の孫sessionが残るturnは、待機表明を完了報告として公開せずに結果を保留する。
                 # 監査記録は`docs/development/audit-records.md`の
@@ -1705,7 +1709,7 @@ class AppServerManager:
             item = params.get("item")
             if isinstance(item, dict):
                 session.record_current_item_start(None)
-                self._consume_item(session, item)
+                (await self._consume_item(session, item))
                 item_id = item.get("id")
                 completed_at_ms = params.get("completedAtMs")
                 if (
@@ -1715,7 +1719,8 @@ class AppServerManager:
                     and isinstance(completed_at_ms, int)
                     and not isinstance(completed_at_ms, bool)
                 ):
-                    compaction_metrics.append_compaction_record(
+                    await run_file_operation(
+                        compaction_metrics.append_compaction_record,
                         session.session_id,
                         item_id,
                         session.compaction_started_at_ms[item_id],
@@ -1895,15 +1900,15 @@ class AppServerManager:
         return None
 
     @staticmethod
-    def _consume_items(session: SessionState, items: Any) -> None:
+    async def _consume_items(session: SessionState, items: Any) -> None:
         if not isinstance(items, list):
             return
         for item in items:
             if isinstance(item, dict):
-                AppServerManager._consume_item(session, item)
+                (await AppServerManager._consume_item(session, item))
 
     @staticmethod
-    def _consume_item(session: SessionState, item: dict[str, Any]) -> None:
+    async def _consume_item(session: SessionState, item: dict[str, Any]) -> None:
         AppServerManager._track_subagent_thread(session, item)
         item_type = item.get("type")
         if item_type == "agentMessage":
@@ -1942,8 +1947,8 @@ class AppServerManager:
                         return
                     if len(arguments) >= 3 and Path(arguments[0]).name == "timeout":
                         arguments = arguments[2:]
-                if len(arguments) >= 3 and Path(arguments[0]).name == "atk" and arguments[1:3] == ["agents", "wait"]:
-                    wait_output_tracking.consume_agents_wait_output(session, output)
+                if is_agents_wait_command(arguments):
+                    await wait_output_tracking.consume_agents_wait_output_async(session, output)
         elif item_type == "mcpToolCall" and item.get("server") == "agents_server":
             arguments = item.get("arguments")
             result = item.get("result")
