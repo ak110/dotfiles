@@ -97,6 +97,8 @@
 
 候補一覧の候補に当たる行は行末の括弧へ候補ID（`c0006`の形。複数は読点で区切る）を書く。`atk run-script session-review-prepare`が評価を必須と示した候補（1行JSONの`mandatory_candidates`）は次のいずれかの行で必ず扱う。
 
+ローカルな終了操作と関連する訂正・続行を`agent-toolkit:bugfix`の`non-changing-request`で除外した事象は、候補一覧に残る場合も報告から外す。問題・見送り・除外理由のいずれも記載しない。
+
 - `### 確定した問題と対策`の行
 - 根拠の先頭へ除外区分を書いた`判定済み`の行（例: `根拠: non-changing-request: <観測>`）。除外区分は`single-inquiry`・`non-changing-request`・`unexplained-refusal`・`necessary-confirmation`・`own-secret-exposure`とする
 - `未確定`の行

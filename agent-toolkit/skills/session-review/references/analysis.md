@@ -41,6 +41,8 @@
 
 ### ユーザー介入の判定規則
 
+ローカルな終了操作と関連する訂正・続行は、共通判定の`non-changing-request`に従い分析・報告から外す。通読や候補一覧に残る場合も問題・再発防止要求・見送りの説明へ変換しない。終了操作の語を含む別の要求や方針変更は趣旨どおり扱う。この扱いは「一次選別」と「原因と対策」の報告にも適用する。
+
 介入・WIの記入欄の是正・ユーザー確認の必須性と除外区分は、`agent-toolkit:bugfix`の`references/root-cause-analysis.md`「ユーザー介入と確認の判定」に従う。元発話と構造化確認の全欄を判断の入力とする。
 介入として抽出された発話が生成本文だった場合の人間入力への誤分類も共通分析へ渡す。生成本文の判定は`agent-toolkit/agent_toolkit/_common/runtime_inserted.py`と`session-review-evidence --user-events`の抽出条件が持つ。
 
