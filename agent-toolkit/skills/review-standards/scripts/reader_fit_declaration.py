@@ -6,12 +6,12 @@ import difflib
 import json
 import pathlib
 import re
-import uuid
 from typing import Any
 
 import review_contract as contracts
 import yaml
 
+from agent_toolkit._agents_server import record_paths
 from agent_toolkit._git import command as git_command
 
 
@@ -163,15 +163,15 @@ def check(
         if set(item) == {"sessions"}:
             sessions = item["sessions"]
             if not isinstance(sessions, list) or not sessions:
-                errors.append(f"{path}: sessionsには1件以上のUUIDが必要")
+                errors.append(f"{path}: sessionsには1件以上の起動結果の識別子が必要")
                 continue
             for session in sessions:
-                try:
-                    valid = isinstance(session, str) and str(uuid.UUID(session)) == session.lower()
-                except ValueError:
-                    valid = False
-                if not valid:
-                    errors.append(f"{path}: session識別子のUUID形式が不正: {session!r}")
+                if not record_paths.is_launch_identifier(session):
+                    errors.append(
+                        f"{path}: 起動結果の識別子の形式が不正: {session!r}。"
+                        "agents_serverのsession_id（UUID）かAgentツールのagent ID"
+                        "（16進列またはagent-付き16進列）へ直して再実行する"
+                    )
         elif path in external_paths and set(item) == {"omission", "previous"} and item["omission"] == "再点検対象なし":
             previous = item["previous"]
             if round_value < 2:

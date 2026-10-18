@@ -43,10 +43,47 @@ from agent_toolkit._testing.agents_server_support import (
     _write_failing_uv,
     install_backend,
 )
+from agent_toolkit._testing.git_repository import commit_all, git_output, init_repository
 from agent_toolkit._testing.helpers import delivery_payload
 from agent_toolkit._testing.managed_temp_support import setattr_in_managed_temp_modules
 
 pytestmark = pytest.mark.usefixtures("agents_server_isolation")
+
+
+@pytest.mark.asyncio
+async def test_explore_role_and_free_text_share_investigation_capability(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """保存を強制せずGit識別子で同じ版を比較し、両入口が共通の探索経路へ届く。"""
+    repository = init_repository(tmp_path / "repo", files={"文章 空白.md": "比較元\n"}, commit_message="比較元")
+    base = git_output(repository, "rev-parse", "HEAD")
+    artifact = repository / "文章 空白.md"
+    artifact.write_text("今回の本文\n", encoding="utf-8")
+    head = commit_all(repository, "本文を更新")
+    comparison = json.dumps(
+        {"repository": str(repository), "base": base, "head": head, "paths": [artifact.name]}, ensure_ascii=False
+    )
+    _recording_candidates(monkeypatch)
+    manager, backend = _manager_with_fake("codex")
+    monkeypatch.setattr(mcp_tools, "_MANAGER", manager)
+    params = {"成果物": str(artifact), "種別": "文書", "読者像": "読者", "修正範囲": comparison, "比較資料": comparison}
+    try:
+        await mcp_tools.start(str(repository), subagent_md_path="reader-fit-review", extra_params=params)
+        await mcp_tools.start(str(repository), mode="explore", prompt="Gitの同じ版から本文と差分を比較する。\n" + comparison)
+        assert [call[2] for call in backend.start_calls] == ["explore", "explore"]
+        rereview = {**params, "レビュー種別": "再レビュー"}
+        with pytest.raises(ValueError, match="未解決事項"):
+            await mcp_tools.start(str(repository), subagent_md_path="reader-fit-review", extra_params=rereview)
+        await mcp_tools.start(
+            str(repository), subagent_md_path="reader-fit-review", extra_params={**rereview, "未解決事項": "なし"}
+        )
+        artifact.write_text("未commitの異なる版\n", encoding="utf-8")
+        with pytest.raises(ValueError, match="同じ版"):
+            await mcp_tools.start(str(repository), subagent_md_path="reader-fit-review", extra_params=params)
+        assert len(backend.start_calls) == 3
+    finally:
+        await manager.close()
 
 
 class TaskManager(_SimpleNamespace):
@@ -889,6 +926,37 @@ async def test_start_accepts_independent_wi_draft_review(tmp_path: pathlib.Path,
     assert manager.start.await_args.kwargs["usage"] == "review"
 
 
+@pytest.mark.parametrize("model_type", [None, "low_tier"])
+@pytest.mark.asyncio
+async def test_recurrence_self_check_public_start_keeps_review_usage(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, model_type: str | None
+) -> None:
+    """セルフチェックが宣言入力からexplore・中位で起動し、明示段位でもreview用途を保つ。"""
+    manager = TaskManager(start=AsyncMock(return_value={"session_id": "check", "status": "running", "label": "check"}))
+    monkeypatch.setattr(mcp_tools, "_MANAGER", manager)
+    params = {
+        "観点ファイル": json.dumps([str(tmp_path / "items.md")]),
+        "今回差分": str(tmp_path / "change.patch"),
+        "変更ファイル一覧": "example.py",
+        "対象worktree": str(tmp_path),
+        "未解決指摘": "なし",
+    }
+    await mcp_tools.start(str(tmp_path), subagent_md_path="recurrence-self-check", extra_params=params, model_type=model_type)
+    call = manager.start.await_args
+    assert call.args[0] == (model_type or "medium_tier")
+    assert call.kwargs["usage"] == "review"
+    assert call.kwargs["launch_kind"] == "explore"
+    assert all(f"{key}: {value}" in call.args[1] for key, value in params.items())
+    manager.start.reset_mock()
+    with pytest.raises(ActionableError, match="未解決指摘"):
+        await mcp_tools.start(
+            str(tmp_path),
+            subagent_md_path="recurrence-self-check",
+            extra_params={key: value for key, value in params.items() if key != "未解決指摘"},
+        )
+    manager.start.assert_not_awaited()
+
+
 def test_every_task_role_has_usage() -> None:
     """段位を持つ全役割に用途の対応があり、用途は段位名の候補合成が受理する値である。
 
@@ -1017,6 +1085,52 @@ async def test_start_accepts_saved_reader_materials(
 
     assert response["session_id"] == "reader"
     manager.start.assert_awaited_once()
+
+
+@pytest.mark.parametrize(
+    "defect", [None, "missing", "extra", "duplicate", "unreadable", "mismatch", "new-rereview", "no-array"]
+)
+@pytest.mark.asyncio
+async def test_public_start_reader_material_collection(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, defect: str | None
+) -> None:
+    """複数成果物の1対1の資料対応を公開startで確認し、不備を起動前に拒否する。"""
+    params = _observed_input_params("reader-fit-review.subagent.md", tmp_path)
+    paths = [tmp_path / "guide.md", tmp_path / "second.md"]
+    paths[1].write_text("第二の成果物\n", encoding="utf-8")
+    materials = [
+        {"比較元本文": str(tmp_path / "before.md"), "今回差分": str(tmp_path / "diff.patch"), "現行本文": str(path)}
+        for path in paths
+    ]
+    params["成果物"] = json.dumps([str(path) for path in paths])
+    if defect == "missing":
+        materials.pop()
+    elif defect == "extra":
+        extra = tmp_path / "extra.md"
+        extra.write_text("対象外\n", encoding="utf-8")
+        materials.append({**materials[0], "現行本文": str(extra)})
+    elif defect == "duplicate":
+        materials[1] = materials[0]
+    elif defect == "unreadable":
+        materials[1]["今回差分"] = str(tmp_path / "missing.patch")
+    elif defect == "mismatch":
+        materials[1]["現行本文"] = str(tmp_path / "before.md")
+    elif defect == "new-rereview":
+        params.update({"レビュー種別": "再レビュー", "未解決事項": "なし"})
+        materials[1].update({"比較元本文": "新規", "今回差分": "全文"})
+    params["比較資料"] = json.dumps(materials[0] if defect == "no-array" else materials, ensure_ascii=False)
+    manager = TaskManager(start=AsyncMock(return_value={"session_id": "reader", "status": "running", "label": "reader"}))
+    monkeypatch.setattr(mcp_tools, "_MANAGER", manager)
+    if defect:
+        with pytest.raises(ActionableError) as raised:
+            await mcp_tools.start(str(tmp_path), subagent_md_path="reader-fit-review", extra_params=params)
+        assert "再発行" in _actionable_message(raised.value)
+        manager.start.assert_not_awaited()
+    else:
+        assert (await mcp_tools.start(str(tmp_path), subagent_md_path="reader-fit-review", extra_params=params))[
+            "session_id"
+        ] == "reader"
+        manager.start.assert_awaited_once()
 
 
 @pytest.mark.parametrize("legacy", [False, True])

@@ -18,9 +18,9 @@ Codexから届く正規化済みの入力も同じ操作記録を使う。
 5. exit-session起動検知による`autonomous_exit_invoked`の記録と
    `process_wi_skill_invoked`のリセット (Skill)、
    `agent-toolkit:user-confirmation-and-report`起動による`user_confirmation_skill_pending`の解除 (Skill)、
-   操作を起動の契機とするスキルの起動による`operation_skill_ready_agents`の記録 (Skill)
+   操作を起動の契機とするスキルの起動による`operation_skill_delivered_agents`の記録 (Skill)
 6. 現在の計画ファイルパス記録 (Write / Edit / MultiEdit / apply_patch、plan file判定時)
-   （UserPromptSubmitの`sessionTitle`出力が計画名の解決に使用）
+   （Function hooksの命名が計画名の解決に使用）
 7. Bashの背景実行、MCP呼び出しの移行通知およびAgent・Taskの背景起動が返した識別子を、
    バックグラウンドタスクの所有記録へ記録 (Bash / MCP / Agent / Task)
    PostToolUseFailure: Bashのバックグラウンドタスク識別子を同じ所有記録へ保存し、その他は変更せず終了

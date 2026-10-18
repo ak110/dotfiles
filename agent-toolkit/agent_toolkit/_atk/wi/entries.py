@@ -10,8 +10,9 @@ from agent_toolkit._atk import outcome as _outcome
 from agent_toolkit._atk.wi import filenames as _wi_filenames
 from agent_toolkit._atk.wi import filters as _wi_filters
 from agent_toolkit._atk.wi.constants import WI_STATES, WI_TYPES, normalized_wi_type, unrepairable_entry_next_action
+from agent_toolkit._atk.wi.entry_text import EntryTexts, parse_frontmatter
 from agent_toolkit._atk.wi.formatters import parse_source, parse_target_repo
-from agent_toolkit._atk.wi.frontmatter import parse_frontmatter, write_entry_text
+from agent_toolkit._atk.wi.frontmatter import write_entry_text
 from agent_toolkit._git import remote as _git_remote
 
 
@@ -71,7 +72,9 @@ def canonical_repo(value: str, cache: dict[str, str | None]) -> str | None:
     return _git_remote.canonical_repo(value, cache)
 
 
-def iter_inbox_entries(inbox_dir: pathlib.Path, target_repo: str | None = None) -> Iterator[tuple[pathlib.Path, str, str]]:
+def iter_inbox_entries(
+    inbox_dir: pathlib.Path, target_repo: str | None = None, *, texts: EntryTexts | None = None
+) -> Iterator[tuple[pathlib.Path, str, str]]:
     """inbox配下の`.md`ファイルを名前順に走査し、`(path, target_repo, text)`を返す。
 
     `target_repo`指定時は、frontmatterの`target_repo`が`TargetRepoMatcher`の判定で一致するエントリのみ返す。
@@ -80,10 +83,11 @@ def iter_inbox_entries(inbox_dir: pathlib.Path, target_repo: str | None = None) 
     if not inbox_dir.exists():
         return
     matcher = _wi_filters.TargetRepoMatcher(target_repo)
+    texts = texts if texts is not None else EntryTexts()
     for path in sorted(inbox_dir.iterdir()):
         if path.suffix != ".md":
             continue
-        text = path.read_text(encoding="utf-8")
+        text = texts.read(path)
         entry_repo = parse_target_repo(text)
         if not matcher.matches(entry_repo):
             continue
@@ -118,6 +122,8 @@ def iter_entries(
     states: Iterable[str],
     filter_repo: str | Iterable[str] | None,
     entry_type: str | Iterable[str] = "all",
+    *,
+    texts: EntryTexts | None = None,
 ) -> Iterator[tuple[pathlib.Path, str, str, str, str | None]]:
     """指定状態のエントリをパス・対象repo・本文・状態・種別の順で列挙する。
 
@@ -125,9 +131,10 @@ def iter_entries(
     """
     matcher = _wi_filters.TargetRepoMatcher(filter_repo)
     entry_types = {entry_type} if isinstance(entry_type, str) else set(entry_type)
+    texts = texts if texts is not None else EntryTexts()
     for state in states:
         state_dir = private_notes / state
-        for path, target_repo, text in iter_inbox_entries(state_dir):
+        for path, target_repo, text in iter_inbox_entries(state_dir, texts=texts):
             actual_type = entry_type_of(path, text)
             if actual_type is not None and not matcher.matches(target_repo):
                 continue
@@ -183,12 +190,13 @@ def read_named_entries(
     kinds = set(entry_type)
     selected: list[EntryRecord] = []
     missing: list[str] = []
+    texts = EntryTexts()
     for requested, normalized in filenames:
         for state in WI_STATES:
             path = private_notes / state / normalized
             if not path.exists():
                 continue
-            text = path.read_text(encoding="utf-8")
+            text = texts.read(path)
             parsed = parse_frontmatter(text)
             kind = normalized_wi_type(parsed[0].get("type")) if parsed is not None else None
             if "all" not in kinds and kind not in kinds:
@@ -211,10 +219,11 @@ def select_entries(
     entry_type: str | Iterable[str],
     answered: str | Iterable[str],
     source: str | Iterable[str] | None,
+    texts: EntryTexts | None = None,
 ) -> list[EntryRecord]:
     """状態・対象repo・種別・回答状況・sourceの5条件の積集合を返す。一覧系のサブコマンドが共有する。"""
     selected: list[EntryRecord] = []
-    for entry in iter_entries(private_notes, _wi_filters.resolve_states(status), target_repo, entry_type):
+    for entry in iter_entries(private_notes, _wi_filters.resolve_states(status), target_repo, entry_type, texts=texts):
         _, _, text, _, actual_type = entry
         if not _wi_filters.answered_matches(actual_type, text, answered):
             continue

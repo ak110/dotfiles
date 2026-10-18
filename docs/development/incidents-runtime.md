@@ -269,6 +269,11 @@
   直接原因: 保留の打ち切り期限が結果保持期限と同じ1800秒で、待機対象であるBashの背景実行の上限（環境変数を設定しない場合は7,200,000ミリ秒）と結び付いていなかった。保留結果を確定する共通処理は確定時に残る待機対象を記録せず、記録は呼び出し元ごとに孫sessionだけを対象としていたため、稼働中のバックグラウンドタスクを残した確定が正常な完了として公開された。期限到来の契約テストも、稼働中のバックグラウンドタスクを残した`error`なしの確定を期待値として固定していた。
   対策: 期限を背景実行の上限に余裕を加えた値として上限の定数から導く。確定時に残るバックグラウンドタスクと孫sessionの記録を共通処理へ集約し、期限到来、ストリーム終端、保留中の`kill`と`send_message`のどの契機で確定しても`error`の`unfinishedBackgroundTasks`と`unobservedSessions`へ示す。保留の確定は`heldResultFinalized`で示す。`atk agents wait`の`終端行:`へ`unfinished_waits`を加え、委譲元の手順へその結果を再開turnの結果として扱わないことを書いた。各契機の記録と期限の関係をテストで確かめる
 
+- 2026年10月16日: `agent-toolkit:process-wi`の処理回で、終端済みのCodex委譲を5件`stop`した後も、レーンの専用worktreeをcwdとする`pyfltr mcp`が同じPIDのまま残った。同じ処理回では`atk lane delete`と`atk agents-exit-session`がそのプロセスをレーンの使用中と判定し、回収を保留した。
+  直接原因: Codex backendの`release_session`は複数の委譲sessionが共有するApp Serverへ`thread/unsubscribe`を送り、その応答を受けて戻っていた。App Serverは購読解除の後も猶予の間threadのstdio MCPを生存させるため、`stop`が解放済みと記録した時点でもMCPがレーンを使い続けた。Codex CLI 0.163.0で、購読解除後もthreadが`thread/loaded/list`に残りMCPも生存すること、起動元のApp Serverを終了するとMCPも終了することを確かめている。
+  背景原因: 委譲sessionの解放完了を、共有する実行系への非同期要求の受理で代用し、委譲の解放単位とプロセスの所有単位が一致していなかった。テストの偽クライアントは購読解除の応答だけを返してMCPの終了を表現せず、要求の送信成功を解放の検証としていたため検出できなかった。
+  対策: Codex backendがApp Serverを委譲sessionごとに起動して所有し、`release_session`は所有するApp Serverと子孫の終了をOS上で確認してから戻る（`db9d2f825`）。終了を確認できない対象が残れば再試行できる失敗を返し、`stop`は解放済みと記録しない。保持期限の失効、起動候補の断念、managerの停止も同じ解放境界を通す。thread開始でstdio MCPを起動し購読解除では終了させない実Codexの挙動を模擬App Serverの実プロセスで再現し、`stop`後のプロセス終了とレーン削除、他sessionの継続と再開、回収失敗の再試行を結合テストで確かめる
+
 ## 配布と更新に伴う不整合
 
 - 2026年8月: 対話シェルの入れ子でPATHが384要素まで肥大していた。

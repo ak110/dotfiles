@@ -538,7 +538,7 @@ def test_session_start_resets_operation_skill_ready_for_main(
     skill_name: str,
     operation: dict,
 ) -> None:
-    """`clear`・`compact`の後は検索・委譲で再び警告し、サブエージェントの記録と`resume`の後の判定を保つ。"""
+    """`clear`・`compact`の後は検索・委譲の本文を再配送し、サブエージェントの記録と`resume`の後の判定を保つ。"""
     monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)
     if delegated:
         monkeypatch.setenv("AGENT_TOOLKIT_DELEGATED_SESSION", "1")
@@ -552,9 +552,11 @@ def test_session_start_resets_operation_skill_ready_for_main(
     monkeypatch.setattr(rules_context.managed_temp, "create_managed_temp", _no_session_temp)
 
     def _hook_context(handler: Callable[[str], int], payload: dict) -> str:
-        handler(json.dumps(payload))
-        out = capsys.readouterr().out
-        return json.loads(out)["hookSpecificOutput"]["additionalContext"] if out else ""
+        code = handler(json.dumps(payload))
+        captured = capsys.readouterr()
+        if code == 2:
+            return captured.err
+        return json.loads(captured.out)["hookSpecificOutput"]["additionalContext"] if captured.out else ""
 
     def _operation_context(agent_id: str | None) -> str:
         payload = {**operation, "session_id": "reset-skill"}

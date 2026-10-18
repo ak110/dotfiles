@@ -254,15 +254,60 @@ def test_add_dry_run_reports_style_warnings_with_section_errors(
 
     assert exc_info.value.code == 1
     error = capsys.readouterr().err
-    assert "警告: 本文:1:3: ダッシュ" in error
+    assert f'入力元="{tmp_path / "body.md"}" 論理本文:1:3: ダッシュ' in error
+    assert "文脈: 本文【—】説明" in error
     assert "必須節" in error
+
+
+def test_add_multiple_body_files_preserves_source_and_occurrence(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """複数原稿の保存詳細から入力元と同じ行の各出現箇所を識別できる。"""
+    notes = _setup_notes(tmp_path)
+    _patch_cmd_add_operations(monkeypatch)
+    monkeypatch.setenv("CLAUDECODE", "1")
+    args = _cmd_add_args(tmp_path, _AGENT_AWI_BODY + "\n開始—中間—終了\nすぐ\u6765\u3044。", source="test", dry_run=True)
+    second = tmp_path / "second.md"
+    second.write_text(_AGENT_AWI_BODY + "\n別の説明—補足", encoding="utf-8")
+    args.body_file.append(str(second))
+
+    _run_public_add(args, notes, _FIXED_DT, tmp_path)
+
+    error = capsys.readouterr().err
+    detail_path = pathlib.Path(error.split("標準エラー保存先: ", 1)[1].splitlines()[0])
+    details = detail_path.read_text(encoding="utf-8")
+    assert f'入力元="{tmp_path / "body.md"}"' in details
+    assert f'入力元="{second}"' in details
+    assert "文脈: 開始【—】中間—終了" in details
+    assert "文脈: 開始—中間【—】終了" in details
+    assert "文脈: 別の説明【—】補足" in details
+    assert "文脈: すぐ【\u6765\u3044】。" in details
+
+
+@pytest.mark.parametrize("editor", [False, True])
+def test_add_frontmatter_diagnostics_use_logical_body_coordinates(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], editor: bool
+) -> None:
+    """単件ファイルとエディターのfrontmatter付き入力で座標の基準を明示する。"""
+    notes = _setup_notes(tmp_path)
+    _patch_cmd_add_operations(monkeypatch)
+    message = "---\ntitle: 原稿\n---\n\n開始—終了"
+    args = _cmd_add_args(tmp_path, message, dry_run=True)
+    if editor:
+        args.body_file = None
+        monkeypatch.setattr(_wi_cli_input, "collect_message_via_editor", lambda: message)
+    add_module.cmd_add(args, notes, _FIXED_DT, tmp_path)
+    error = capsys.readouterr().err
+    source = "エディター入力" if editor else str(tmp_path / "body.md")
+    assert f'入力元="{source}" 論理本文:2:3: ダッシュ' in error
+    assert "文脈: 開始【—】終了" in error
 
 
 def test_style_diagnostics_skips_fenced_code() -> None:
     """WI本文のコードフェンスはダッシュ警告の対象外とする。"""
     warnings = style_diagnostics.warnings_for_body("```text\n\u2014\n```\n説明\u2014追加")
 
-    assert warnings == ["本文:4:3: ダッシュ —"]
+    assert warnings == ['WI本文の表記診断: 入力元="本文入力" 論理本文:4:3: ダッシュ — | 文脈: 説明【—】追加']
 
 
 @pytest.mark.parametrize("diagnostic_count", [0, 2])
@@ -278,7 +323,7 @@ def test_public_add_reports_style_actions_once(
     body = "\n".join(["説明\u2014補足"] * diagnostic_count) or "説明。"
     _run_public_add(_cmd_add_args(tmp_path, body, dry_run=True), notes, _FIXED_DT, tmp_path)
     lines = capsys.readouterr().err.splitlines()
-    assert len([line for line in lines if line.startswith("警告: 本文:") and "ダッシュ" in line]) == diagnostic_count
+    assert len([line for line in lines if "論理本文:" in line and "ダッシュ" in line]) == diagnostic_count
     assert len([line for line in lines if line.startswith("次の操作: ")]) == bool(diagnostic_count)
 
 
@@ -293,7 +338,9 @@ def test_style_diagnostics_reports_colloquial_location(monkeypatch: pytest.Monke
 
     monkeypatch.setattr(style_diagnostics.colloquial, "load_patterns", fake_patterns)
 
-    assert style_diagnostics.warnings_for_body("説明\n口語") == ["本文:2:1: 口語表現 口語（候補: 書き言葉）"]
+    assert style_diagnostics.warnings_for_body("説明\n口語") == [
+        'WI本文の表記診断: 入力元="本文入力" 論理本文:2:1: 口語表現 口語（候補: 書き言葉） | 文脈: 【口語】'
+    ]
 
 
 def test_add_dry_run_does_not_report_kanji_compound_as_colloquial(
@@ -312,7 +359,10 @@ def test_add_dry_run_does_not_report_kanji_compound_as_colloquial(
 
     stderr_lines = capsys.readouterr().err.splitlines()
     colloquial_warnings = [line for line in stderr_lines if "口語表現" in line]
-    assert colloquial_warnings == [f"警告: 本文:2:3: 口語表現 {colloquial}（候補: 具体的な発生源と動作を記す）"]
+    assert colloquial_warnings == [
+        f'警告: WI本文の表記診断: 入力元="{tmp_path / "body.md"}" 論理本文:2:3: '
+        f"口語表現 {colloquial}（候補: 具体的な発生源と動作を記す） | 文脈: すぐ【{colloquial}】。"
+    ]
     # 表記の警告の次行へ、投入後に直す手段を置く。
     next_line = stderr_lines[stderr_lines.index(colloquial_warnings[0]) + 1]
     assert next_line.startswith("次の操作: ")

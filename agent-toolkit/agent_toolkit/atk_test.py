@@ -38,7 +38,7 @@ from agent_toolkit._atk.wi import sync as _wi_sync
 from agent_toolkit._atk.wi import web_input as _wi_web_input
 from agent_toolkit._atk.wi.mutations import targets as _mutation_targets
 from agent_toolkit._atk.wi.mutations import transitions as _mutation_transitions
-from agent_toolkit._common import mcp_environment
+from agent_toolkit._common import codex_models, mcp_environment
 from agent_toolkit._common import session_state as _session_state  # noqa: E402  # pylint: disable=wrong-import-position
 from agent_toolkit._common import wait_schedule as _wait_schedule  # noqa: E402  # pylint: disable=wrong-import-position
 from agent_toolkit._hooks import user_prompt_submit  # noqa: E402  # pylint: disable=wrong-import-position
@@ -328,18 +328,15 @@ def test_cli_exits_quietly_when_stdout_pipe_is_closed_early(
     os.close(read_fd)
     env = _isolated_cli_environ(host_environ, tmp_path)
     env["AGENT_TOOLKIT_PRIVATE_NOTES"] = str(notes)
-    # `config show`がCodexの系列名を解決するために`codex` CLIを起動しないよう、系列名を含まない値を与える。
-    values = {
-        "codex_fast_mode": "false",
-        "write_model": "claude:opus/medium",
-        "codex_model_providers": "",
-        "claude_api_env_file": "",
-        "claude_api_mode": "pay-as-you-go",
-        "process_loop_repositories": "[]",
-    }
-    for key in _config._MUTABLE_KEY_DEFAULTS:  # pylint: disable=protected-access  # noqa: SLF001
-        default = "claude" if key.endswith("_engine") else "opus/medium"
-        env[f"AGENT_TOOLKIT_CONFIG_{key.upper()}"] = values.get(key, default)
+    env.update(_child_config_env())
+    # `codex`が起動されると印のファイルを書く偽の実行ファイルをPATHの先頭へ置き、起動の有無を観測する。
+    fake_bin = tmp_path / "fake-bin"
+    fake_bin.mkdir()
+    marker = tmp_path / "codex-started"
+    fake_codex = fake_bin / "codex"
+    fake_codex.write_text(f"#!/bin/sh\ntouch '{marker}'\nexit 1\n", encoding="utf-8")
+    fake_codex.chmod(0o755)
+    env["PATH"] = os.pathsep.join((str(fake_bin), env.get("PATH", "")))
     # Gitの作業ツリー外で起動し、`--target-repo`を省略した場合も対象を限定しない状態にする。
     with subprocess.Popen(  # noqa: S603
         ["uv", "run", "--project", str(_PROJECT_ROOT), "--locked", "--no-default-groups", str(_ATK_PATH), *argv],
@@ -355,6 +352,50 @@ def test_cli_exits_quietly_when_stdout_pipe_is_closed_early(
         assert process.returncode == 1
     assert "Traceback" not in stderr
     assert "Exception ignored on flushing sys.stdout" not in stderr
+    assert not marker.exists()
+
+
+def _child_config_env() -> dict[str, str]:
+    """子の`atk`へ渡す全設定キーの環境変数を、設定の初期値から組み立てる。
+
+    `config show`がCodexの系列名を解決するために`codex` CLIを起動しないよう、
+    初期値がCodexの系列名である段位モデルだけを、系列名を含まない値で上書きする。
+    """
+    codex_tier_keys = {_config.tier_model_key("codex", tier) for tier in ("high", "medium", "low")}
+    env: dict[str, str] = {}
+    for key in _config._MUTABLE_KEY_DEFAULTS:  # pylint: disable=protected-access  # noqa: SLF001
+        value = _config.mutable_setting_default(key)
+        if key in codex_tier_keys and value.partition("/")[0] in codex_models.FAMILIES:
+            value = "opus/medium"
+        env[f"AGENT_TOOLKIT_CONFIG_{key.upper()}"] = value
+    return env
+
+
+def test_child_config_env_derives_values_from_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
+    """書式の異なる設定キーを加えても、組み立てた全キーの値が設定の検証を通る。
+
+    テストが値の書式を自前で持つと、段位モデルとengine順以外の書式のキーを加えるたびに検証で拒否される。
+    加えるキーは候補列の検証（engine接頭辞付き）の対象になり、キー名から書式を推測する値（`opus/medium`）は拒否される。
+    """
+    monkeypatch.setitem(
+        _config._MUTABLE_KEY_DEFAULTS,  # pylint: disable=protected-access  # noqa: SLF001
+        "future_stage_model",
+        "claude:opus/medium",
+    )
+    env = _child_config_env()
+    assert set(env) == {
+        f"AGENT_TOOLKIT_CONFIG_{key.upper()}"
+        for key in _config._MUTABLE_KEY_DEFAULTS  # pylint: disable=protected-access  # noqa: SLF001
+    }
+    for name, value in env.items():
+        monkeypatch.setenv(name, value)
+    for key in _config._MUTABLE_KEY_DEFAULTS:  # pylint: disable=protected-access  # noqa: SLF001
+        _config.resolve_mutable_setting(key)
+    candidates: list[tuple[str, str, str]] = []
+    for tier in ("high", "medium", "low"):
+        model, _, effort = env[f"AGENT_TOOLKIT_CONFIG_{_config.tier_model_key('codex', tier).upper()}"].partition("/")
+        candidates.append(("codex", model, effort))
+    assert not codex_models.needs_catalog(candidates)
 
 
 def test_cli_local_path_filter_counts_legacy_and_current_uwis(

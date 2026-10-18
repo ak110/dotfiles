@@ -18,6 +18,7 @@ import os
 import pathlib
 import re
 import shutil
+import time
 import typing
 from collections.abc import Callable
 from typing import Any, Literal, cast
@@ -402,12 +403,11 @@ def _build_options(
             allowed_tools=_LAUNCH_ALLOWED_TOOLS[launch_kind],
         )
     if launch_kind == "explore":
-        options["tools"] = _LAUNCH_TOOLS[launch_kind]
         # 起動定義はpluginのSSOTを使い、検索を担うpyfltrを軽量起動へ渡す。
         # pyfltrの読取用途はプロンプトが定め、個別ツールの許可リストは設けない。
         mcp_config = json.loads((plugin_root / ".mcp.json").read_text(encoding="utf-8"))
         options["mcp_servers"] = {"pyfltr": mcp_config["mcpServers"]["pyfltr"]}
-        options.setdefault("extra_args", {}).update({"strict-mcp-config": None, "permission-prompts": "none"})
+        options.setdefault("extra_args", {}).update({"permission-prompts": "none"})
     try:
         return ClaudeAgentOptions(**options)
     except BaseException:
@@ -466,6 +466,19 @@ def consume_assistant_message(session: SessionState, message: Any) -> None:
         session.set_progress(text)
     wait_output_tracking.consume_claude_agents_server_message(session, message)
     session.touch()
+
+
+def _returns_to_subscription(session: SessionState) -> bool:
+    """利用上限でAPIへ移した委譲先が、解除予定時刻を過ぎてサブスクリプションを先頭候補に持つかを返す。"""
+    from agent_toolkit._atk import claude_connection  # noqa: PLC0415  # pylint: disable=import-outside-toplevel
+
+    retry_at = session.claude_subscription_retry_at
+    if retry_at is None or session.claude_connection != "api" or session.claude_role != "delegate":
+        return False
+    if time.time() < retry_at:
+        return False
+    connections = claude_connection.candidates("delegate").connections
+    return bool(connections) and connections[0].kind == "subscription"
 
 
 class ClaudeServerManager:
@@ -739,6 +752,11 @@ class ClaudeServerManager:
         channel = self._channels.get(session.session_id)
         if channel is None:
             raise SessionOwnerGoneError("the Claude session owner task has ended")
+        # 通常の追送と、孫sessionの終端・利用上限・過負荷の後の自動再開は、いずれもここで次のturnを始める。
+        # 進行中のturnと、CLIが自ら次のturnを始め得る待機（バックグラウンドタスクなど）では所有タスクを止めない。
+        held_without_pending = session.awaiting_auto_resume and not resume_waits.has_pending_auto_resume_targets(session)
+        if (session.terminal or held_without_pending) and _returns_to_subscription(session):
+            return await self._return_to_subscription(session, prompt)
         async with session.turn_control_lock:
             if not session.terminal and session.interrupt_requested:
                 raise ActionableError(
@@ -750,6 +768,40 @@ class ClaudeServerManager:
         if actual_delivery in {"reply_started", "reply_failed", "reply_ambiguous"}:
             result["previous_result"] = previous_result
         return result
+
+    async def _return_to_subscription(self, session: SessionState, prompt: str) -> dict[str, Any]:
+        """APIへ移した会話を、次のturnの指示とともにサブスクリプションの新しい所有タスクで再開する。
+
+        接続は所有タスクの起動時に決まるため、上限でAPIへ移した場合と同じ再開の処理で同じsession IDを続ける。
+        再開に失敗した場合はAPIの接続と戻す時刻を元へ戻し、呼び出し元へ失敗を伝える。
+        """
+        previous_result = session.previous_result() if session.terminal and not session.awaiting_auto_resume else None
+        saved = (session.claude_connection, session.claude_api_env_file, session.claude_subscription_retry_at)
+        session.claude_connection = "subscription"
+        session.claude_api_env_file = None
+        session.claude_subscription_retry_at = None
+        session.claude_connection_failures.pop("subscription", None)
+        _LOG.info("claude_subscription_return session_id=%s", session.session_id)
+        resume_prompt = ResumePrompt(prompt)
+        try:
+            await self.resume(
+                session.session_id,
+                resume_prompt,
+                session.cwd,
+                session.model,
+                session.effort,
+                model_type=session.model_type,
+                launch_kind=session.launch_kind,
+                excluded_candidates=session.excluded_candidates,
+                turn_seq=session.turn_seq,
+                existing_session=session,
+            )
+        except BaseException:
+            session.claude_connection, session.claude_api_env_file, session.claude_subscription_retry_at = saved
+            raise
+        finally:
+            resume_prompt.close()
+        return {"delivery": "reply_started", "previous_result": previous_result}
 
     async def interrupt(self, session: SessionState) -> None:
         """公開killから所有タスクへ中断要求を送り、受理を待つ。"""

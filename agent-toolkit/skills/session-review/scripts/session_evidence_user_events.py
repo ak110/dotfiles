@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import datetime
 import json
+import re
 from pathlib import Path
 from typing import Any
 
@@ -19,9 +20,11 @@ from session_evidence_extract import (
     _finalize,
     _generated_user_event,
     _is_subagent_record,
+    _parse_timestamp,
     _PendingQuestion,
     _record_timestamp,
 )
+from session_evidence_records import _codex_record_thread_id
 from session_evidence_tool_calls import (
     _conversation_tool_calls,
 )
@@ -53,7 +56,9 @@ def _saved_user_events_at(path: Path, position: str) -> list[dict[str, Any]]:
     return events
 
 
-def _user_events_since(collected: list[_CollectedRecord], since: datetime.datetime | None) -> list[dict[str, Any]]:
+def _user_events_since(
+    collected: list[_CollectedRecord], since: datetime.datetime | None, *, source_positions: bool = False
+) -> list[dict[str, Any]]:
     """メイン記録の状態を保ち、指定時刻より後に成立したユーザーイベントだけを返す。
 
     `since`が`None`の場合はメイン記録の最初から返す。
@@ -61,7 +66,7 @@ def _user_events_since(collected: list[_CollectedRecord], since: datetime.dateti
     """
     token = _TEXT_LIMIT.set(None)
     try:
-        return _collect_user_events_since(collected, since)
+        return _collect_user_events_since(collected, since, source_positions=source_positions)
     finally:
         _TEXT_LIMIT.reset(token)
 
@@ -74,7 +79,9 @@ _CLAUDE_INTERRUPT_MARKERS = frozenset({"[Request interrupted by user]", "[Reques
 """
 
 
-def _collect_user_events_since(collected: list[_CollectedRecord], since: datetime.datetime | None) -> list[dict[str, Any]]:
+def _collect_user_events_since(
+    collected: list[_CollectedRecord], since: datetime.datetime | None, *, source_positions: bool = False
+) -> list[dict[str, Any]]:
     """`_user_events_since`の抽出本体。"""
     events: list[dict[str, Any]] = []
     for item in collected:
@@ -95,6 +102,9 @@ def _collect_user_events_since(collected: list[_CollectedRecord], since: datetim
             )
             for event in record_events:
                 event.setdefault("line", record.line)
+                if source_positions:
+                    event["line"] = record.line
+                    event["timestamp"] = record.entry.get("timestamp")
             timestamp = _record_timestamp(record)
             if since is None or (timestamp is not None and timestamp > since):
                 selected_events.extend(record_events)
@@ -108,6 +118,54 @@ def _collect_user_events_since(collected: list[_CollectedRecord], since: datetim
         events.extend(_events_with_record(user_events, item.record_id))
         break
     events.append({"kind": "summary", "count": len(events)})
+    return events
+
+
+def _query_user_events(
+    item: _CollectedRecord,
+    since: datetime.datetime | None,
+    boundary: datetime.datetime | None,
+    pattern: re.Pattern[str] | None,
+    *,
+    preceding_assistant: bool = False,
+) -> list[dict[str, Any]]:
+    """共有の人間入力抽出へ本文検索と元記録の時刻による期間選択を適用する。"""
+    users = _user_events_since([item._replace(role="main")], None, source_positions=True)
+    assistants = (
+        [event for event in _record_conversation_events(item) if event.get("role") == "assistant"]
+        if preceding_assistant
+        else []
+    )
+    events: list[dict[str, Any]] = []
+    session_id = _codex_record_thread_id(item) or item.path.stem
+    for event in users:
+        if event["kind"] != "user" or (pattern is not None and pattern.search(event["text"]) is None):
+            continue
+        try:
+            timestamp = _parse_timestamp(event["timestamp"]) if isinstance(event.get("timestamp"), str) else None
+        except ValueError:
+            timestamp = None
+        if (since is not None or boundary is not None) and timestamp is None:
+            events.append(
+                {
+                    "kind": "user-event-undated",
+                    "record": item.record_id,
+                    "line": event["line"],
+                    "session_id": session_id,
+                    "next_action": "`--detail <record>:<line>`で元記録を読み、期間を確定できない入力として扱う",
+                }
+            )
+            continue
+        if timestamp is not None and (
+            since is not None and timestamp <= since or boundary is not None and timestamp > boundary
+        ):
+            continue
+        result = {**event, "session_id": session_id}
+        if preceding_assistant:
+            result["preceding_assistant"] = next(
+                (assistant for assistant in reversed(assistants) if assistant["line"] < event["line"]), None
+            )
+        events.append(result)
     return events
 
 

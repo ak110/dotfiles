@@ -53,7 +53,7 @@ block・warn・noticeの本文の整形（整形関数、`fix`の要否、種別
 `hookSpecificOutput.additionalContext`をそのターンの応答生成前にユーザー発話へ前置注入する誘導に使い、受理する出力はそこまでとする。
 Claude Codeでは`decision`と独立に注入でき、stdoutのプレーン出力もコンテキストへ加わる。Codexでは`hookSpecificOutput.hookEventName`を`UserPromptSubmit`として`additionalContext`を返す。
 
-Claude CodeのUserPromptSubmit payloadは現在のセッション名を持たず、計画ファイルを扱うhookは、同一セッションでまだ出力していない場合だけ計画ファイル名のstemを`sessionTitle`へ一度出力する（Claude Code専用）。`additionalContext`も要る呼び出しでは、`hookSpecificOutput`へ両方を含む1つのJSONを返す。
+Claude CodeのUserPromptSubmit payloadは現在名`session_title`を持つ。名前の設定はFunction hooks moduleの`classic.UserPromptSubmit`がフラットな`sessionTitle`を返して行う。現在名が空か前回自動設定した名前と同じ場合だけ更新し、手動で付けた名前を保つ。Pythonのコマンドhookは注記を`additionalContext`へ返す。Codexでは名前を設定しない。
 
 応答契約を注入する注記は、本文の種別で頻度を分ける。
 

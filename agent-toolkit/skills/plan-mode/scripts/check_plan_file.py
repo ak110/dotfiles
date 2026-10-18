@@ -91,7 +91,21 @@ def _check_lane_selection(
     if not expected:
         return [f"レーン{lane}の全WIが再開位置を持ち、新しい計画の対象となるWIが無い。再開位置が指す既存計画で続ける"]
 
+    return _check_wi_selection(plans, tuple(expected), f"レーン{lane}の選定結果", prior_plans, work_dir)
+
+
+def _check_wi_selection(
+    plans: tuple[tuple[pathlib.Path | None, str], ...],
+    expected: tuple[str, ...],
+    selection_label: str,
+    prior_plans: tuple[pathlib.Path, ...],
+    work_dir: pathlib.Path,
+) -> list[str]:
+    """期待集合と計画の関連WIを比べ、人間由来行の根拠を確かめる。"""
     errors: list[str] = []
+    duplicate_expected = sorted({name for name in expected if expected.count(name) > 1})
+    if duplicate_expected:
+        errors.append(f"期待WIが重複する: {duplicate_expected}。比較元の各WIを1回ずつ指定する")
     related: list[tuple[str, str]] = []
     for label, text in plans:
         metadata, metadata_errors = structure.parse_plan_metadata(text)
@@ -122,8 +136,8 @@ def _check_lane_selection(
     extra = sorted(actual - set(expected))
     if missing or extra:
         errors.append(
-            f"関連WIとレーン{lane}の選定結果が一致しない: 欠落={missing}, 余剰={extra}。"
-            "計画メタ情報の`関連WI`を、選定結果のうち再開位置を持たないそのレーンのWIへそろえる"
+            f"関連WIと{selection_label}が一致しない: 欠落={missing}, 余剰={extra}。"
+            "計画メタ情報の`関連WI`を、比較元の全計画対象へそろえる"
         )
 
     for label, text in plans:
@@ -134,6 +148,15 @@ def _check_lane_selection(
 def _labeled(label: pathlib.Path | None, message: str) -> str:
     """計画の集合を確かめる場合に、診断の先頭へ対象の計画のパスを付ける。"""
     return message if label is None else f"{label}: {message}"
+
+
+def _validate_expected_wi(expected_wi: tuple[str, ...], selection_file: pathlib.Path | None, lane: str | None) -> None:
+    """期待WI入力の形式と、選定YAML入力との併用条件を確かめる。"""
+    if expected_wi and (selection_file is not None or lane is not None):
+        raise ValueError("--expected-wiは--selection-file・--laneと同時指定できない。比較元を1方式で指定する")
+    invalid = [name for name in expected_wi if re.fullmatch(r"[0-9]{8}-[0-9]{6}-[0-9]{3}\.md", name) is None]
+    if invalid:
+        raise ValueError(f"期待WIのファイル名が不正: {invalid}。--expected-wiへyyyymmdd-hhmmss-nnn.md形式で指定する")
 
 
 def _missing_human_reasons(text: str) -> list[str]:
@@ -676,6 +699,7 @@ def check(
     reject_progress_log_rows: bool = False,
     selection_file: pathlib.Path | None = None,
     lane: str | None = None,
+    expected_wi: tuple[str, ...] = (),
     prior_plans: tuple[pathlib.Path, ...] = (),
     agent_rule_paths: tuple[str, ...] = (),
     warning_details: list[_ClassifiedWarning] | None = None,
@@ -722,9 +746,10 @@ def check(
         for relative in agent_rule_paths
         if relative not in text
     )
+    _validate_expected_wi(expected_wi, selection_file, lane)
     if (selection_file is None) != (lane is None):
         raise ValueError("選定結果の出力先ファイルとレーン識別子は組で指定する")
-    if prior_plans and selection_file is None:
+    if prior_plans and selection_file is None and not expected_wi:
         raise ValueError("先行計画は選定結果の出力先ファイルとレーン識別子とともに指定する")
     if selection_file is not None and lane is not None:
         if not selection_file.is_absolute() or re.fullmatch(r"lane-\d{2}", lane) is None:
@@ -732,6 +757,8 @@ def check(
         if plan_path in prior_plans or len(prior_plans) != len(set(prior_plans)):
             raise ValueError("追加計画と先行計画に同じファイルを重複指定できない")
         errors.extend(_check_lane_selection(((None, text),), selection_file, lane, prior_plans, work_dir))
+    if expected_wi:
+        errors.extend(_check_wi_selection(((None, text),), expected_wi, "期待WI集合", prior_plans, work_dir))
     if reject_progress_log_rows and structure.has_progress_log_rows(text):
         errors.append(f"`## {progress_heading}`は起草時に内容行を置かない")
     warnings: list[str] = []
@@ -753,6 +780,7 @@ def check_plan_set(
     reject_progress_log_rows: bool = False,
     selection_file: pathlib.Path | None = None,
     lane: str | None = None,
+    expected_wi: tuple[str, ...] = (),
     prior_plans: tuple[pathlib.Path, ...] = (),
     agent_rule_paths: tuple[str, ...] = (),
     warning_details: list[_ClassifiedWarning] | None = None,
@@ -768,9 +796,10 @@ def check_plan_set(
     resolved = [path.resolve() for path in (*plan_paths, *prior_plans)]
     if len(resolved) != len(set(resolved)):
         raise ValueError("確かめる計画と先行計画に同じファイルを重複指定できない")
+    _validate_expected_wi(expected_wi, selection_file, lane)
     if (selection_file is None) != (lane is None):
         raise ValueError("選定結果の出力先ファイルとレーン識別子は組で指定する")
-    if prior_plans and selection_file is None:
+    if prior_plans and selection_file is None and not expected_wi:
         raise ValueError("先行計画は選定結果の出力先ファイルとレーン識別子とともに指定する")
     errors: list[str] = []
     warnings: list[str] = []
@@ -799,6 +828,8 @@ def check_plan_set(
         if not selection_file.is_absolute() or re.fullmatch(r"lane-\d{2}", lane) is None:
             raise ValueError("選定結果の出力先ファイルは絶対パス、レーン識別子はlane-NN形式で指定する")
         errors.extend(_check_lane_selection(tuple(texts), selection_file, lane, prior_plans, work_dir))
+    if expected_wi:
+        errors.extend(_check_wi_selection(tuple(texts), expected_wi, "期待WI集合", prior_plans, work_dir))
     return errors, warnings
 
 
@@ -847,6 +878,13 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--selection-file", type=pathlib.Path, metavar="PATH", help="メインが保存した選定結果の絶対パス")
     parser.add_argument("--lane", help="選定結果内のlane-NN形式のレーン識別子")
     parser.add_argument(
+        "--expected-wi",
+        action="append",
+        default=None,
+        metavar="WI",
+        help="保存済み対応表の全計画対象のWIファイル名を反復指定する。選定YAML方式とは併用しない",
+    )
+    parser.add_argument(
         "--agent-rule-path",
         action="append",
         default=None,
@@ -883,6 +921,7 @@ def main(argv: list[str] | None = None) -> int:
                 reject_progress_log_rows=args.reject_progress_log_rows,
                 selection_file=args.selection_file,
                 lane=args.lane,
+                expected_wi=tuple(args.expected_wi or ()),
                 prior_plans=prior_plans,
                 agent_rule_paths=agent_rule_paths,
                 warning_details=warning_details,
@@ -895,6 +934,7 @@ def main(argv: list[str] | None = None) -> int:
                 reject_progress_log_rows=args.reject_progress_log_rows,
                 selection_file=args.selection_file,
                 lane=args.lane,
+                expected_wi=tuple(args.expected_wi or ()),
                 prior_plans=prior_plans,
                 agent_rule_paths=agent_rule_paths,
                 warning_details=warning_details,

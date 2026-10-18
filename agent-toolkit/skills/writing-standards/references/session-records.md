@@ -34,6 +34,11 @@ Codexでは、`type`が`response_item`、`payload.type`が`message`、`payload.r
 
 ## 集計値の典拠
 
+期間を指定した週ごとの費用と実行レビューの指標は、`atk run-script cost-metrics -- --since <開始日> --until <終了日>`の出力を典拠にする。
+月曜0時からのローカル週ごとに、採用AWI件数、全ルートとprocess-wiの4成分のトークン・AWIあたりの値、レビューのラウンド・レベル・修正せずに応答した率を返す。
+`--until`省略時は実行時刻まで集計する。
+`cost-metrics-coverage`の走査root・期間・最古の読取記録・読取不能件数・未解決委譲件数と、各週の`missing_token_records`を併記し、被覆が欠けた週の値を完全な総量と扱わない。
+
 セッション記録から集計したトークン量、リクエスト数、所要時間を成果物やユーザーへの提示に書く場合は、`atk run-script session-review-evidence -- <引数>`の出力を典拠とし、自作の集計は典拠にしない。
 トークン量とリクエスト数には`--stats`、所要時間には`--elapsed-until <ISO 8601の時刻>`を付ける。振り返りの全候補は`--bundle`が生成する`candidates.jsonl`から取り、`atk run-script session-review-prepare`がこれを`candidates.md`へ整形する。
 
@@ -58,7 +63,8 @@ Codexでは、`type`が`response_item`、`payload.type`が`message`、`payload.r
 `--catalog-fields`へ項目名をASCIIカンマで並べると、その順で項目を返し、指定を省くと全項目を返す。
 `kind`は行の種類を示すため常に残る。
 選択後も`catalog-summary`は走査範囲を保持し、走査した親セッションの記録数の`parent_record_count`と選択した行数の`selected_parent_count`を区別する。
-これらの指定はClaudeとCodexの親セッション一覧に共通し、`--tool-calls`による呼出し照会とは分けて使う。
+これらの指定はClaudeとCodexの親セッション一覧に共通し、行条件は`--user-events`との併用でも親を選ぶ。
+`--catalog-fields`と`--tool-calls`による呼出し照会は、親の行条件と分けて使う。
 
 「最新」「該当なし」「全件」といった全称または終端を表す結論は、走査root、runtime、開始境界、観測境界および未解決記録数を同じ本文へ書き、その被覆範囲だけを対象とする。指定root外の記録、観測境界より後の記録および未解決記録は未確認範囲へ記録する。
 
@@ -77,6 +83,43 @@ WIの処理件数は、成功結果まで記録された直接の`atk wi`操作�
 - 複数の固定文字列の一致entry数と全locatorだけを得る: `--fixed-string`を文字列ごとに反復する（正規表現へ結合しない）
 - 位置が確定したレコードの構造だけを調べる: `--record-schema`
 - ツール呼び出しを呼び出し単位で列挙する: `--tool-calls`（1セッションの発話とツール呼び出しの時系列は`--bundle`が書く`conversation.jsonl`）
+
+件数・判定・保存先だけを読む場合は、次の照会へ`--summary-only`を加える。
+必要な詳細は同じ条件で`--summary-only`を外して取得する。
+
+| 照会 | 要約で返す値 |
+| --- | --- |
+| `--grep` | 記録別と総計の一致entry数（同じentry内の複数の一致行は1件） |
+| `--fixed-string` | 文字列別の一致entry数。全locatorの配列を省く |
+| `--context-at` | phraseごとの`context-verdict`の全フィールド |
+| `--tool-calls` | `tool-call-summary`の全フィールド。カタログとの併用も同じ |
+| `--warn` | 抽出・重複除去後の実際の警告イベント数。0件も明示する |
+| `--bundle` | `bundle-file`、`bundle-evidence-metrics`、`bundle-kind-count`。全量は保存ファイルで読む |
+
+要約でも由来、未解決記録・委譲、エラーと終了コードを保持する。
+統計の要約は「集計値の典拠」を参照する。
+他の照会では`--summary-only`を外す。
+
+人間の入力は`--user-events --user-match-fixed <文字列>`か`--user-events --user-match-regex <正規表現>`で検索する。
+検索は人間が入力した値へ適用し、確認回答の`assistant_context`は文脈として保持する。
+`--with-preceding-assistant`を加えると、直前の同じ記録のアシスタント発話の全文・位置・時刻を`preceding_assistant`へ添える。
+該当発話が無い場合の値はnullである。
+
+横断検索はカタログの指定と`--user-events`を併用する。
+親の選定にはworkflowとcwdの行条件を使える。
+`--catalog-fields`は親一覧で使う。
+元記録行の時刻が`--since`より後、`--observation-boundary`以前の入力を、時刻・記録・位置の安定順で件数上限なしに返す。
+各一致は全文、`record`・`line`・`sequence`・`timestamp`・`session_id`を持つ。
+時刻なし入力は`user-event-undated`、読取不能・未解決は診断で示す。
+要約の`parent_record_count`、`selected_parent_count`、`count`は走査した親、選定した親、一致イベントをそれぞれ数える。
+一致0件と未確認範囲を区別して読む。
+
+```sh
+atk run-script session-review-evidence -- --catalog-claude-project <projectの絶対パス> --since 2026-10-01 --observation-boundary 2026-10-08 --user-events --user-match-fixed <文字列> --with-preceding-assistant
+```
+
+Codexではカタログの指定を`--catalog-codex-history <履歴の絶対パス>`へ替える。
+単一記録ではカタログの指定を`--transcript <記録の絶対パス>`へ替え、同じ検索と前発話の指定を使える。
 
 通常表示と`--bundle`が書くファイルは、全収集記録の`record-provenance`を返す。warn・grep・fixed-string・tool-calls・hook-notices・statsとbundleの要約は、結果が参照する記録とその起動元の記録の`record-provenance`だけを返す。同イベントの`record`・`role`・`source_record`・`source_line`・`mode`・`role_document`を読む。親を収集していない情報と役割文書が無い値はnullである。
 役割別の呼び出し件数と起動した委譲先のmodeは、`--tool-calls`の`tool-call-summary.by_role`（`document:<役割名>`は最初の配送の役割文書、`record:<role>`は役割文書を持たない記録の収集区分）の`count`・`by_tool`・`by_mode`から読む。カタログと併用した場合も収集したroot外の委譲先を含む。

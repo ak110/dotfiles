@@ -414,8 +414,16 @@ function Main {
         if ($stageDir -and (Test-Path -LiteralPath $stageDir)) {
             Remove-Item -LiteralPath $stageDir -Recurse -Force -ErrorAction SilentlyContinue
         }
+        # 退避した旧規範は、新配置の確定後か復元の成功後だけ回収する。
+        # 確定前に復元できなかった場合は、旧規範の最後の実体を復旧用に保持する。
         if ($oldDir -and (Test-Path -LiteralPath $oldDir)) {
-            Remove-Item -LiteralPath $oldDir -Recurse -Force -ErrorAction SilentlyContinue
+            if ($replaced) {
+                Remove-Item -LiteralPath $oldDir -Recurse -Force -ErrorAction SilentlyContinue
+            } else {
+                [Console]::Error.WriteLine("旧規範を配置先へ戻せなかったため、退避先に保持しました: $oldDir")
+                [Console]::Error.WriteLine("次の操作: 配置先 $targetDir の親ディレクトリの書込権限と配置先の残存物を確認して原因を解消し、配置先が無い状態で次のコマンドを実行して旧規範を戻してください。")
+                [Console]::Error.WriteLine("Move-Item -LiteralPath '$oldDir' -Destination '$targetDir'")
+            }
         }
     }
 }

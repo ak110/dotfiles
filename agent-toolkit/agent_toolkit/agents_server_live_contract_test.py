@@ -17,6 +17,7 @@ _SESSION_IDS = [None, "saved-session"]
 _LIVE_INPUTS = [
     *(pytest.param(value, id=f"background-{mode}") for mode, value in live.BACKGROUND_RESUME_INPUTS.items()),
     pytest.param(live.EXPLORE_READ_INPUT, id="explore-read"),
+    pytest.param(live.COMMON_INVESTIGATION_INPUT, id="explore-common-investigation"),
     pytest.param(live.GRANDCHILD_INPUT, id="grandchild"),
 ]
 

@@ -29,6 +29,7 @@ from pytools._internal import (
     cleanup_user_path,
     codex_plugin_manifests,
     common,
+    deferred_updates,
     install_claude_plugins,
     install_codex_plugins,
     install_libarchive,
@@ -341,6 +342,7 @@ class _StepResult:
     # 失敗の内容は同期結果の記録へ残すため、ログ出力とは別に保持する。
     reason: str | None = None
     detail: str | None = None
+    deferred: bool = False
 
 
 @dataclass(frozen=True)
@@ -542,6 +544,7 @@ def main(
     try:
         logger.info("post-apply開始")
         results, recommendations = (runner or run)()
+        results = [*results, *_record_deferred_updates(results)]
         failed = [r for r in results if not r.ok]
         updated = [r for r in results if r.ok and r.changed]
         skipped = [r for r in results if r.ok and not r.changed]
@@ -566,6 +569,23 @@ def main(
         root_logger.setLevel(previous_level)
         for handler in current_handlers:
             handler.close()
+
+
+def _record_deferred_updates(results: list[_StepResult]) -> list[_StepResult]:
+    """延期を返した工程を延期記録へ残し（無ければ記録を削除し）、保存できなければ失敗の結果を返す。
+
+    自動更新タイマーはこの記録を確認して上流変更の有無によらず再試行する。記録を残せないと延期した更新が
+    手動の再実行まで反映されないため、失敗として終了コードで伝える。
+    """
+    steps = [result.name for result in results if result.deferred]
+    try:
+        path = deferred_updates.write(steps)
+    except OSError as error:
+        logger.error("    延期記録: 失敗: %s。次の操作: %s", error, _post_apply_recovery_action())
+        return [_StepResult(name="延期記録", ok=False, changed=False, reason=f"{type(error).__name__}: {error}")]
+    if steps and path is not None:
+        logger.info("    延期した更新を記録した: %s（%s）", ", ".join(steps), path)
+    return []
 
 
 def _record_sync_report(
@@ -710,10 +730,12 @@ def _execute_step(step: _StepSpec) -> tuple[_StepResult, list[str], float]:
         )
     if ret.failure is not None:
         logger.error("    %s: 失敗: %s。次の操作: %s", step.name, ret.failure, ret.next_action)
-        failure = _StepResult(name=step.name, ok=False, changed=ret.changed, notices=ret.notices, reason=ret.failure)
+        failure = _StepResult(
+            name=step.name, ok=False, changed=ret.changed, notices=ret.notices, reason=ret.failure, deferred=ret.deferred
+        )
         return failure, list(ret.recommendations), time.monotonic() - started_at
     return (
-        _StepResult(name=step.name, ok=True, changed=ret.changed, notices=ret.notices),
+        _StepResult(name=step.name, ok=True, changed=ret.changed, notices=ret.notices, deferred=ret.deferred),
         list(ret.recommendations),
         time.monotonic() - started_at,
     )

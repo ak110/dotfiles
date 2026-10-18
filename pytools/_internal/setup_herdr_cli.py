@@ -11,7 +11,7 @@ from pathlib import Path
 # ヘルプや他の処理で使わない依存は、使用時まで読み込まない。
 lazy import httpx
 
-from pytools._internal import common, log_format, post_apply_outcome, setup_cli_common
+from pytools._internal import common, deferred_updates, log_format, post_apply_outcome, setup_cli_common
 
 logger = logging.getLogger(__name__)
 
@@ -20,6 +20,8 @@ _TAG = "herdr"
 _POSIX_INSTALLER_URL = "https://herdr.dev/install.sh"
 _WINDOWS_INSTALLER_URL = "https://herdr.dev/install.ps1"
 _DETACHED_UPDATE_MARKER = "outside herdr after detaching from the session"
+# 稼働中のサーバーの再起動を要する更新で、非対話の`herdr update`が導入せずに終了0で返すときの診断。
+_NOT_UPDATED_MARKER = "Herdr was not updated."
 
 
 def _launcher_path() -> Path:
@@ -35,6 +37,8 @@ def run(client: httpx.Client | None = None) -> post_apply_outcome.PostApplyOutco
     """公式直接インストール版Herdrを導入または更新し、実行可能な状態を確認する。
 
     取得・導入・更新の失敗は警告を出力してスキップと数える。
+    セッション内の自己更新拒否と、稼働中のサーバーの再起動を要するため導入しなかった更新は延期として返し、
+    自動更新タイマーを持つホストでは延期記録から再試行する。
     """
     with _curl_env_overrides() as env_overrides:
         return _run(client, env_overrides)
@@ -60,6 +64,7 @@ def _curl_env_overrides() -> collections.abc.Generator[dict[str, str] | None]:
 def _run(client: httpx.Client | None, env_overrides: dict[str, str] | None) -> post_apply_outcome.PostApplyOutcome:
     launcher = _launcher_path()
     update_deferred = False
+    restart_deferred = False
     if launcher.is_file():
         result = common.run_subprocess(
             [str(launcher), "update"], timeout=_COMMAND_TIMEOUT, tag=_TAG, env_overrides=env_overrides
@@ -72,6 +77,7 @@ def _run(client: httpx.Client | None, env_overrides: dict[str, str] | None) -> p
             and "herdr update" in update_error
             and _DETACHED_UPDATE_MARKER in update_error
         )
+        restart_deferred = result is not None and result.returncode == 0 and _NOT_UPDATED_MARKER in update_error
     else:
         result, reason = setup_cli_common.run_official_installer(
             client,
@@ -100,14 +106,25 @@ def _run(client: httpx.Client | None, env_overrides: dict[str, str] | None) -> p
         )
         return post_apply_outcome.PostApplyOutcome()
     setup_cli_common.prepend_path(launcher.parent)
-    if update_deferred:
+    if update_deferred or restart_deferred:
         return post_apply_outcome.PostApplyOutcome(
             changed=False,
-            notices=(
-                post_apply_outcome.PostApplyNotice(
-                    message="Herdrセッション内では自己更新できないため、更新を保留しました。セッションから離脱した後、Herdr外の端末で次のコマンドを実行する。",
-                    command="herdr update",
-                ),
-            ),
+            notices=(_deferred_notice(inside_session=update_deferred),),
+            deferred=True,
         )
     return post_apply_outcome.PostApplyOutcome(changed=True)
+
+
+def _deferred_notice(*, inside_session: bool) -> post_apply_outcome.PostApplyNotice:
+    """保留した更新の理由と、自動更新タイマーによる反映か手動の操作かを案内する。"""
+    if inside_session:
+        reason = "Herdrセッション内では自己更新できないため、更新を保留しました。"
+        manual = "セッションから離脱した後、Herdr外の端末で次のコマンドを実行する。"
+        automatic = "自動更新タイマーがHerdr外で再試行して反映するため、操作は不要です。"
+    else:
+        reason = "稼働中のHerdrサーバーの再起動を要する更新のため、稼働中のセッションを保って更新を保留しました。"
+        manual = "Herdrのセッションを全て終了してから、次のコマンドを実行する。"
+        automatic = "Herdrのセッションを全て終了した後、自動更新タイマーの再試行で反映するため、操作は不要です。"
+    if deferred_updates.has_retry_timer():
+        return post_apply_outcome.PostApplyNotice(message=reason + automatic)
+    return post_apply_outcome.PostApplyNotice(message=reason + manual, command="herdr update")

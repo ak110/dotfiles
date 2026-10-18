@@ -3,7 +3,11 @@
 # requires-python = ">=3.15"
 # dependencies = ["filelock>=3.30", "platformdirs>=4.0"]
 # ///
-"""上流commitの反映が未完了ならupdate-dotfilesを起動する。"""
+"""上流commitの反映が未完了か、稼働中の利用を守るために延期した更新があればupdate-dotfilesを起動する。
+
+延期記録（`<キー>.deferred`）はpost-applyが`pytools._internal.deferred_updates`で書き、延期が解消した実行で削除する。
+本helperは記録を読むだけで削除しない。
+"""
 
 import argparse
 import hashlib
@@ -111,11 +115,12 @@ def _update_if_needed(pending_path: pathlib.Path) -> int:
     else:
         pending = True
     applied_path = pending_path.with_suffix(".applied")
+    deferred = pending_path.with_suffix(".deferred").exists()
     try:
         applied_commit = applied_path.read_text(encoding="utf-8").strip()
     except FileNotFoundError:
         applied_commit = None
-    if local_commit == upstream_commit == applied_commit and not pending:
+    if local_commit == upstream_commit == applied_commit and not pending and not deferred:
         print(f"{_UPSTREAM}に更新はありません: commit {local_commit}")
         return _prune_codex_packages()
 
@@ -131,6 +136,8 @@ def _update_if_needed(pending_path: pathlib.Path) -> int:
         print(f"{_UPSTREAM}が変化しました: local {local_commit}, upstream {upstream_commit}")
     elif pending:
         print(f"前回の自動更新が未完了のため再試行します: commit {local_commit}")
+    elif deferred:
+        print(f"稼働中の利用を守るために延期した更新を再試行します: commit {local_commit}")
     else:
         print(f"反映済みの記録がないcommitを更新します: {local_commit}")
     try:
@@ -173,8 +180,10 @@ def _prune_codex_packages() -> int:
 
 
 def main(argv: list[str] | None = None) -> int:
-    """euryaleの上流変更と未完了の自動更新を直列化して実行する。"""
-    parser = argparse.ArgumentParser(description="origin/developの変化または前回の未完了時にdotfilesを更新する")
+    """euryaleの上流変更、未完了の自動更新と延期した更新の再試行を直列化して実行する。"""
+    parser = argparse.ArgumentParser(
+        description="origin/developの変化、前回の未完了または延期した更新があるときにdotfilesを更新する"
+    )
     parser.parse_args(argv)
     try:
         pending_path, lock_path = _state_paths()

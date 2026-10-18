@@ -15,16 +15,15 @@ from typing import Any, cast
 
 import pytest
 
+from agent_toolkit._common import session_state
 from agent_toolkit._common.session_state import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
     STALE_STATE_MAX_AGE_SECONDS,
-    claim_session_title,
     clear_session_state,
     delete_state,
     inherit_state_from_transcript,
     read_state,
     state_path,
     sweep_stale_states,
-    title_state_path,
     update_state,
 )
 from agent_toolkit._testing.helpers import SESSION_STATE_FILENAME_TEMPLATE
@@ -200,39 +199,6 @@ class TestStateInheritance:
         assert inherit_state_from_transcript("current", str(tmp_path / "missing.jsonl")) is False
 
 
-class TestClaimSessionTitle:
-    """計画名の独立記録と失敗時の抑止。"""
-
-    def test_first_claim_wins_and_normal_state_is_unchanged(self) -> None:
-        update_state("sid", lambda current: {**current, "active": True})
-
-        assert claim_session_title("sid", "first-plan") is True
-        assert claim_session_title("sid", "second-plan") is False
-
-        assert read_state("sid") == {"active": True}
-        assert json.loads(title_state_path("sid").read_text(encoding="utf-8")) == {"last_hook_session_title": "first-plan"}
-
-    def test_corrupt_record_fails_without_replacement(self) -> None:
-        path = title_state_path("sid")
-        path.parent.mkdir(parents=True)
-        path.write_text("{", encoding="utf-8")
-
-        assert claim_session_title("sid", "plan") is False
-        assert path.read_text(encoding="utf-8") == "{"
-
-    def test_write_failure_returns_false(
-        self,
-        monkeypatch: pytest.MonkeyPatch,
-    ) -> None:
-        def _fail_write(_path: pathlib.Path, _content: str) -> None:
-            raise PermissionError("simulated failure")
-
-        monkeypatch.setattr("agent_toolkit._common.session_state._atomic_write", _fail_write)
-
-        assert claim_session_title("sid", "plan") is False
-        assert not title_state_path("sid").exists()
-
-
 class TestDeleteState:
     """状態JSONを削除する処理の入力と結果の境界。"""
 
@@ -307,32 +273,6 @@ class TestSweepStaleStates:
         assert sweep_stale_states() == 1
         assert not target.exists()
         assert lock.exists()
-
-    def test_stale_state_and_title_record_are_both_collected(self) -> None:
-        """期限切れの通常状態と計画名記録の双方を回収し、対応するロックは残す。"""
-        update_state(
-            "titled",
-            lambda current: {
-                **current,
-                "current_plan_file_path": "/home/example/.claude/plans/plan.md",
-            },
-        )
-        assert claim_session_title("titled", "plan") is True
-        target = state_path("titled")
-        lock = target.parent / (target.name + ".lock")
-        title_target = title_state_path("titled")
-        title_lock = title_target.with_name(title_target.name + ".lock")
-        self._age(target, STALE_STATE_MAX_AGE_SECONDS + 60)
-        self._age(lock, STALE_STATE_MAX_AGE_SECONDS + 60)
-        self._age(title_target, STALE_STATE_MAX_AGE_SECONDS + 60)
-        self._age(title_lock, STALE_STATE_MAX_AGE_SECONDS + 60)
-
-        assert sweep_stale_states() == 2
-        assert read_state("titled") == {}
-        assert not target.exists()
-        assert lock.exists()
-        assert not title_target.exists()
-        assert title_lock.exists()
 
     def test_old_lock_is_kept_while_state_is_fresh(self) -> None:
         """状態ファイルが期限内なら、対のロックが古くても残す。
@@ -439,20 +379,16 @@ class TestSweepStaleStates:
 
 
 class TestClearSessionState:
-    """会話破棄時の通常状態と計画名記録の一括削除。"""
+    """会話破棄時の通常状態の削除。"""
 
-    def test_state_and_title_are_deleted_but_locks_are_kept(self) -> None:
+    def test_state_is_deleted_but_lock_is_kept(self) -> None:
         update_state("sid", lambda current: {**current, "active": True})
-        assert claim_session_title("sid", "plan") is True
         normal = state_path("sid")
-        title = title_state_path("sid")
 
         assert clear_session_state("sid") is True
 
         assert not normal.exists()
         assert normal.with_name(normal.name + ".lock").exists()
-        assert not title.exists()
-        assert title.with_name(title.name + ".lock").exists()
 
     def test_invalid_session_ids_fail(self) -> None:
         assert clear_session_state("") is False
@@ -471,3 +407,15 @@ def test_session_state_persists_plan_flags() -> None:
     state = read_state(session_id)
     assert state["plan_mode_skill_invoked"] is True
     assert "codex_" + "exec_skill_invoked" not in state
+
+
+def test_mod_title_state_shares_locked_state(capsys: pytest.CaptureFixture[str]) -> None:
+    """modの読取・種別・命名の記録は他のhookの状態を保つ。"""
+    update_state("sid", lambda state: {**state, "current_plan_file_path": "/plans/18-1921_計画.md", "other": True})
+    assert session_state.main(["--session-id", "sid", "--kind=single-lane"]) == 0
+    assert json.loads(capsys.readouterr().out)["session_title_kind"] == "single-lane"
+    assert session_state.main(["--session-id", "sid", "--title=single-lane 計画"]) == 0
+    assert json.loads(capsys.readouterr().out)["last_hook_session_title"] == "single-lane 計画"
+    assert session_state.main(["--session-id", "sid"]) == 0
+    assert json.loads(capsys.readouterr().out)["current_plan_file_path"] == "/plans/18-1921_計画.md"
+    assert read_state("sid")["other"] is True

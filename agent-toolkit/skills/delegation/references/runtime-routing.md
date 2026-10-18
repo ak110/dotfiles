@@ -34,7 +34,7 @@ forkの監査記録は`docs/development/audit-records.md`の「agent-toolkit/ski
 | WIの選定とレーン分け、計画起草、実装、変更範囲の検証、レビュー修正、CI失敗修正、即時対応の修正、既存不良の調査、マージなしの統合、AWI投入、自動コードレビュー監査、公開工程の終端工程（`add-wi`・`copilot-review-audit`・`defect-investigation`・`lane-integration`・`session-termination`の`task`、`delegate`の`high_tier`） | base | high | 各担当を委譲するメイン | `agents_server` MCP |
 | レーンの計画・実装・変更範囲検証と同じexecによる修正（`exec`の`task`） | execute | high | 各担当を委譲するメイン | `agents_server` MCP |
 | 観点・判定基準の選定、新しい候補の案出し、走査が返した候補の判定と結論の統合（`explore`・`delegate`の`high_tier`） | base | high | 委譲するエージェント | `agents_server` MCP |
-| 実装後の実行レビュー、ユーザビリティレビュー、専念型の投入前レビュー（`exec-review`・`usability-review`・`wi-draft-review`の`task`、`delegate`の`medium_tier`） | review | medium | 各担当を委譲するメイン | `agents_server` MCP |
+| 実装後の実行レビュー、ユーザビリティレビュー、専念型の投入前レビュー、再発防止セルフチェック（`exec-review`・`usability-review`・`wi-draft-review`・`recurrence-self-check`の`task`、`delegate`の`medium_tier`） | review | medium | 各担当を委譲するエージェント | `agents_server` MCP |
 | プロンプト評価（`refine-prompt`の`task`） | base | medium | 評価を委譲するエージェント | `agents_server` MCP |
 | 小規模なレビューと小さい作業、判定基準を渡した多数の対象の走査（`bulk-replace-review`・`external-write-review`・`reader-fit-review`・`pick-wi-explain`の`task`、`delegate`の`low_tier`、`explore`の省略時と`low_tier`・`medium_tier`指定、`shell`） | chores | 省略時はlow、明示時は指定した段位 | 調査、レビューまたはshellを委譲するエージェント | `agents_server` MCP |
 | `start`の`write`による文章起草（`model_type`の省略時と`write`） | - | `write_model`を直接使う | 文章を委譲するエージェント | `agents_server` MCP |

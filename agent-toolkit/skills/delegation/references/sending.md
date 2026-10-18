@@ -5,6 +5,16 @@
 ## 委譲プロンプトの構成
 
 分量の判定は`agent-toolkit:writing-standards`の`references/writing.md`「文章の共通規定」に従う。
+役割指定の初回は`start(subagent_md_path=..., extra_params=...)`、定型継続は`send_message(session_id=..., instruction=..., extra_params=...)`から本文を生成する。
+受理する入力と条件は役割文書の`## 入力`の宣言が所有する。
+継続では保持済みの初回値を省き、今回の指示に必要な制御値と更新情報を渡す。
+
+組み込み委譲では、要求JSONをUTF-8で保存し、`atk run-script delegation-prompt -- --input <要求JSONの絶対パス>`が返すJSONの`prompt`をそのまま使う。
+初回の要求は`kind: initial`、`subagent_md_path`と`extra_params`を持つ。
+継続の要求は`kind: continuation`、`instruction`と`extra_params`、または自由本文の`prompt`を持つ。
+保持情報は登録済みの`session_id`、既存の起動・セッション記録JSONを指す`history_file`、履歴を持たない場合は`subagent_md_path`から解決する。
+`history_file`の既存記録は`prompt`と`followup_prompts`を保持するJSONオブジェクトを使う。
+生成CLIは本文の生成・検証だけを行い、起動と配送は呼び出し元が行う。
 
 起動前に、委譲する独立した作業、読取専用か書込可能か、完了条件と受領方法を確定する。
 同じ母集団を複数の委譲先へ分割する場合は、全要素と担当の対応表を作成し、未割当と重複が0件であることを集合演算で確かめる（主題単位の分割でも要素単位の対応で判定する）。同じ対象を独立した系統で意図的に確認する作業は重複の判定から除く。
@@ -41,7 +51,10 @@
 
 `必須入力名:`行と`起動対象:`行の書式は`agent-toolkit:writing-standards`の`references/sub-agents.md`「必須入力名と起動対象の書式」に従う。
 `start`は`<役割名>.subagent.md`の`必須入力名:`・`任意入力名:`行と共通入力名を読み、必須項目の欠落か宣言外の項目名があれば起動せず、該当項目、受理する項目名の一覧、参照した文書の絶対パスを返す。宣言の行を持たない文書は宣言を確認できないことを記録して起動する。
-PreToolUseフックは、`start`の`delegate`・`explore`・`write`の本文が`<役割名>.subagent.md`を指す起動と、`Agent`ツールで`<役割名>.subagent.md`を指す本文が1行目の命令と宣言済みの入力以外の行を含む起動を遮断する。遮断されたら通知に従って組み直す。`send_message`は対象外とする。
+PreToolUseフックは役割の実行命令を持つ初回起動を、サーバーと同じ宣言で検査する。
+`send_message`は構造化・自由本文の双方をサーバーで配送前に検査する。
+宣言外の説明、必須欠落、保持済みの初回入力の再掲は、違反箇所と再実行形を確認して直す。
+自由本文の新要求の意味上の必要性は送信側が判断し、機械検査は宣言・定型指示・既存履歴から確定できる範囲へ限る。
 
 - `agents_server`の各ツールの引数、省略時の値、応答項目は起動直前にMCPツールのスキーマで確かめる。返された`session_id`と`send_message`で指示したsessionの観測と破棄の義務はMCP instructionsに従い、観測は`atk agents wait`で行う。`send_message`は配送結果だけを確定し、応答生成の完了を待たない
 - 観測が`running`を返した場合と、観測がバックグラウンドタスクへ移された場合は、いずれも観測を試みたものとして扱い、ターンを終えるかは`references/waiting-and-monitoring.md`「待機区間の構成」に従う

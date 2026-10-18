@@ -1,7 +1,6 @@
 """Claude Code agent-toolkit: 文字列の記述言語を判定する。
 
 文字列からコードブロック・インラインコード・URL・機械可読な返却行を除いた地の文を判定する。
-テキストブロックを持つ直近のメインエージェント応答については、transcriptから文字列を取得して同じ判定へ渡す。
 判定条件は、日本語文字を含まない英語だけの地の文、地の文の先頭に置かれた英語の談話標識、
 語数比が閾値未満であることと、説明中の他文字体系の語を対象とする。
 語数比は日本語文字数を、日本語文字数と英単語数（連続英字列）の和で割った値とする。
@@ -19,7 +18,6 @@ import unicodedata
 if __package__ in {None, ""}:
     sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[2]))
 
-from agent_toolkit._common.transcript import iter_latest_assistant_text_messages, visible_text_blocks
 
 # プレーンテキストがこの文字数に満たない場合は語数比の判定をスキップする。
 # 「OK」「了解」程度の短文応答で英語化検出を行わないようにするための下限。
@@ -81,7 +79,6 @@ _ENGLISH_WORD_PATTERN = re.compile(r"[A-Za-z]+")
 # 日本語文字を含まない地の文を英語応答と判定するための英単語数の下限。
 # 1語だけの地の文は識別子・コマンド名の単独提示と区別できないため対象外とする。
 _MIN_ENGLISH_WORD_COUNT = 2
-_MAX_WARNING_EXCERPT_LENGTH = 80
 
 # 地の文の先頭に置かれたら英語応答と判定する談話標識。
 # 閉集合とする理由は、英単語一般を対象とする開いた集合にすると、
@@ -209,39 +206,6 @@ def _plain_text(text: str) -> str:
     return plain_text
 
 
-def _warning_excerpt(plain_text: str) -> str:
-    """判定対象の最初の文を通知に収まる長さで返す。"""
-    without_controls = re.sub(r"[\x00-\x1f\x7f-\x9f]", " ", plain_text)
-    normalized = re.sub(r"\s+", " ", without_controls).strip()
-    sentence_end = re.search(r"[.!?。！？](?=\s|$)", normalized)
-    first_sentence = normalized[: sentence_end.end()] if sentence_end else normalized
-    if len(first_sentence) > _MAX_WARNING_EXCERPT_LENGTH:
-        return first_sentence[:_MAX_WARNING_EXCERPT_LENGTH] + "…"
-    return first_sentence
-
-
-def detailed_check(transcript_path: str) -> tuple[CheckOutcome, str | None, str]:
-    """直前のメインエージェント応答の記述言語を判定し、3値で結果を返す。
-
-    判定対象テキストはアシスタントターン内の`type == "text"`ブロックと`send_to_user`の`message`で、
-    フェンス付きコードブロック・インラインコード・URL・機械可読な返却行を除外する。
-    長さ下限を適用しない2条件（英語だけの地の文、先頭の談話標識）を先に判定し、
-    どちらにも該当しない場合だけ長さ下限付きの語数比判定へ進む。
-
-    Returns:
-        (判定結果, 警告本文またはNone, message ID)のタプル。
-        SKIPまたはPASSの場合、警告本文はNoneを返す。
-        message IDはtranscriptから取得できなかった場合は空文字列を返す。
-    """
-    if not transcript_path:
-        return (CheckOutcome.SKIP, None, "")
-    raw_text, msg_id = _collect_raw_text(transcript_path)
-    outcome, body = check_text(raw_text)
-    if outcome is CheckOutcome.WARN and body is not None:
-        body += f"判定対象の冒頭: 「{_warning_excerpt(_plain_text(raw_text))}」"
-    return (outcome, body, msg_id)
-
-
 def _is_english_only(japanese_count: int, english_word_count: int) -> bool:
     """日本語文字を含まず英単語が下限以上の地の文かを返す。"""
     return japanese_count == 0 and english_word_count >= _MIN_ENGLISH_WORD_COUNT
@@ -258,23 +222,6 @@ def _is_below_word_ratio(japanese_count: int, english_word_count: int) -> bool:
     語数比は日本語文字数 ÷（日本語文字数 ＋ 英単語数）で求める。
     """
     return japanese_count / (japanese_count + english_word_count) < _MIN_JAPANESE_WORD_RATIO
-
-
-def _collect_raw_text(transcript_path: str) -> tuple[str, str]:
-    """直前アシスタントターンのテキストブロックを連結した文字列とmessage IDを返す。
-
-    テキストが空の場合は("", "")を返す。
-    """
-    texts: list[str] = []
-    msg_id = ""
-    for message in iter_latest_assistant_text_messages(transcript_path):
-        raw_id = message.get("id", "")
-        if not msg_id:
-            msg_id = raw_id if isinstance(raw_id, str) else ""
-        texts.extend(text for text in visible_text_blocks(message.get("content")) if text)
-    if not texts:
-        return ("", "")
-    return ("\n".join(texts), msg_id)
 
 
 def main(argv: list[str] | None = None) -> int:

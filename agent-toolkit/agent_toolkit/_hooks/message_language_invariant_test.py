@@ -192,21 +192,6 @@ def _run_user_prompt_submit(payload: dict, tmp_path: pathlib.Path) -> subprocess
     )
 
 
-def _write_english_transcript(tmp_path: pathlib.Path, message_id: str) -> pathlib.Path:
-    transcript = tmp_path / "transcript.jsonl"
-    entry = {
-        "type": "assistant",
-        "message": {
-            "id": message_id,
-            "role": "assistant",
-            "content": [{"type": "text", "text": "This response is written entirely in English for the language checker."}],
-            "stop_reason": "end_turn",
-        },
-    }
-    transcript.write_text(json.dumps(entry, ensure_ascii=False) + "\n", encoding="utf-8")
-    return transcript
-
-
 def test_process_termination_block_is_japanese(tmp_path: pathlib.Path) -> None:
     command = "p" + "kill -f myserver"
     result = _run({"tool_name": "Bash", "tool_input": {"command": command}}, tmp_path)
@@ -253,35 +238,19 @@ def test_manifest_edit_warning_uses_confirmed_japanese_notice(
     assert _is_japanese_notice(context)
 
 
-def test_response_language_block_is_japanese(tmp_path: pathlib.Path) -> None:
-    transcript = _write_english_transcript(tmp_path, "message-1")
-    result = _run(
-        {
-            "tool_name": "Bash",
-            "tool_input": {"command": "ls"},
-            "session_id": "language-warning",
-            "transcript_path": str(transcript),
-        },
-        tmp_path,
-    )
-    assert result.returncode == 2
-    assert _is_japanese_notice(result.stderr)
-
-
-def test_repeated_response_language_block_is_japanese(tmp_path: pathlib.Path) -> None:
-    transcript = _write_english_transcript(tmp_path, "message-1")
+@pytest.mark.parametrize("repetitions", [1, 2])
+def test_direct_response_language_block_is_japanese(tmp_path: pathlib.Path, repetitions: int) -> None:
+    """直接入力の英語を繰り返しても日本語の是正案内を返す。"""
     payload = {
-        "tool_name": "Bash",
-        "tool_input": {"command": "ls"},
+        "tool_name": "AskUserQuestion",
+        "tool_input": {"questions": [{"question": "Which option should we choose?", "header": "確認", "options": []}]},
         "session_id": "language-block",
-        "transcript_path": str(transcript),
     }
-    assert _run(payload, tmp_path).returncode == 2
-    _write_english_transcript(tmp_path, "message-2")
-    result = _run(payload, tmp_path)
-    assert result.returncode == 2
-    assert "日本語で書き直す" in result.stderr
-    assert _is_japanese_notice(result.stderr)
+    for _ in range(repetitions):
+        result = _run(payload, tmp_path)
+        assert result.returncode == 2
+        assert "日本語で書き直す" in result.stderr
+        assert _is_japanese_notice(result.stderr)
 
 
 def test_user_prompt_verification_notice_is_japanese(tmp_path: pathlib.Path) -> None:

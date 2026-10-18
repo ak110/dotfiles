@@ -2,6 +2,8 @@
 
 `atk wi process-loop`と`atk run-skill`はどちらも、`orchestrate_engine`のengine順と各engineの上位段位モデルから
 組んだ候補列で本作業のClaude CodeまたはCodexを選ぶ。
+可用性判定は応答内容を使わず、engine単位の起動の成否と利用上限だけを観測するため、候補のengineの軽量段位のモデルと
+effort `low`を軽量起動で使う（ユーザー指示）。候補モデル固有の利用上限とeffortの無視は判定しない。
 候補の解決、副作用の無い可用性判定、利用上限の解除待ちおよび正常終了の判定を本モジュールへ集め、両コマンドから同じ関数を呼ぶ。コマンドごとに異なるのは端末タイトル、可用性判定の
 プロンプトの生成元、利用上限の待機の記録先と失敗時の案内の文言だけであり、呼び出し側が`ProbeContext`で渡す。
 """
@@ -49,6 +51,10 @@ _CODEX_NORMAL_EXIT_CODES_POSIX: frozenset[int] = frozenset({0, -15})
 _CODEX_NORMAL_EXIT_CODES_WINDOWS: frozenset[int] = frozenset({0})
 
 UsageLimitState = _claude_usage_limit.UsageLimitState | _codex_usage_limit.UsageLimitState
+
+# 可用性判定のeffortとClaudeのシステムプロンプト。応答内容を使わないため最小の費用で起動する。
+_PROBE_EFFORT = "low"
+_PROBE_SYSTEM_PROMPT = "OKだけを返す。"
 
 
 @dataclasses.dataclass(frozen=True)
@@ -155,13 +161,14 @@ def select_available(
     （ユーザー指示）。Codexの上限は次候補を先に試し、全候補失敗時に最も早い解除まで待って先頭から判定する。
     待機の回数と総時間に上限を置かない。上限を含まない全候補の失敗は`NoAvailableCandidateError`を送出する。
     """
+    probe_models: dict[str, str] = {}
     while True:
         last_failure = (candidates[-1][0], 1, "")
         codex_limits: list[tuple[str, UsageLimitState]] = []
         for orchestrator, model, effort in candidates:
             candidate = f"{orchestrator}:{model}/{effort}"
             while True:
-                outcome = _probe_candidate(orchestrator, model, effort, env, cwd, candidate, context)
+                outcome = _probe_candidate(orchestrator, probe_models, env, cwd, candidate, context)
                 if outcome is None:
                     return orchestrator, model, effort
                 usage_limit, failure = outcome
@@ -190,10 +197,20 @@ def is_normal_session_exit(orchestrator: str, returncode: int, *, platform: str 
     return returncode in _CODEX_NORMAL_EXIT_CODES_POSIX
 
 
-def _probe_argv(orchestrator: str, model: str, effort: str, prompt: str) -> list[str]:
-    """候補3値を全て渡す副作用のない可用性判定用argvを返す。
+def _probe_model(orchestrator: str) -> str:
+    """候補のengineの軽量段位のモデルを返す。Codexの系列名は同系列の最新版へ解決し、Claudeの別名はそのまま渡す。"""
+    model = _config.resolve_mutable_setting(_config.tier_model_key(orchestrator, "low")).partition("/")[0]
+    return _config.resolve_catalog([(orchestrator, model, _PROBE_EFFORT)])[0][1]
 
-    Claudeは`stream-json`、Codexは`--json`から得るthread IDとrolloutで利用上限を判定する。
+
+def _probe_argv(orchestrator: str, model: str, prompt: str) -> list[str]:
+    """軽量段位のモデルとeffort `low`で軽量起動する、副作用のない可用性判定用argvを返す。
+
+    Claudeはセッションを保存せず、ユーザーとプロジェクトの設定・ツール・MCP・スキルを読まず、最小のシステムプロンプトで起動する。
+    `--bare`はOAuth認証を読まないため使わない。
+    `--tools ""`が後続の位置引数を値として消費しないよう、プロンプトは`--`の後ろへ置く。
+    Codexはユーザー設定とrulesを読まない。利用上限はClaudeは`stream-json`、Codexは`--json`から得るthread IDとrolloutで判定し、
+    rolloutを残さない`--ephemeral`は利用上限の判定と両立を確かめていないため使わない。
     """
     if orchestrator == "claude":
         return [
@@ -202,13 +219,34 @@ def _probe_argv(orchestrator: str, model: str, effort: str, prompt: str) -> list
             "--model",
             model,
             "--effort",
-            effort,
+            _PROBE_EFFORT,
             "--output-format",
             "stream-json",
             "--verbose",
+            "--no-session-persistence",
+            "--setting-sources",
+            "",
+            "--tools",
+            "",
+            "--strict-mcp-config",
+            "--disable-slash-commands",
+            "--system-prompt",
+            _PROBE_SYSTEM_PROMPT,
+            "--",
             prompt,
         ]
-    return ["codex", "exec", "--model", model, "-c", f"model_reasoning_effort={effort}", "--json", prompt]
+    return [
+        "codex",
+        "exec",
+        "--model",
+        model,
+        "-c",
+        f"model_reasoning_effort={_PROBE_EFFORT}",
+        "--ignore-user-config",
+        "--ignore-rules",
+        "--json",
+        prompt,
+    ]
 
 
 def _probe_env(env: dict[str, str], orchestrator: str) -> dict[str, str]:
@@ -218,12 +256,6 @@ def _probe_env(env: dict[str, str], orchestrator: str) -> dict[str, str]:
     probe_env.pop(PROCESS_LOOP_SESSION_ID_ENV, None)
     probe_env[_delegated_session.DELEGATED_SESSION_ENV] = "1"
     return probe_env
-
-
-def _claude_ignored_effort(stderr: str) -> bool:
-    """Claudeが`--effort`値を無視した警告を出力したか判定する。"""
-    folded = stderr.casefold()
-    return "--effort" in folded and any(word in folded for word in ("ignored", "ignoring"))
 
 
 def _probe_usage_limit(
@@ -249,8 +281,7 @@ def _wait_for_usage_limit(candidate: str, usage_limit: UsageLimitState, context:
 
 def _probe_candidate(
     orchestrator: str,
-    model: str,
-    effort: str,
+    probe_models: dict[str, str],
     env: dict[str, str],
     cwd: pathlib.Path,
     candidate: str,
@@ -259,11 +290,14 @@ def _probe_candidate(
     """1候補の可用性を判定する。可用なら`None`、失敗なら解除待ちの対象と失敗の内容の組を返す。
 
     解除待ちと候補切替の順序は呼び出し元がengine別に選ぶ。上限を返す場合は通常の失敗案内を省く。
+    可用性判定のモデルは`probe_models`へengineごとに保持し、1回の候補選択でCodexのモデル一覧の取得を繰り返さない。
     """
     settings: str | None = None
     try:
         probe_env = _probe_env(env, orchestrator)
-        probe_argv = _probe_argv(orchestrator, model, effort, context.prompt)
+        if orchestrator not in probe_models:
+            probe_models[orchestrator] = _probe_model(orchestrator)
+        probe_argv = _probe_argv(orchestrator, probe_models[orchestrator], context.prompt)
         if orchestrator == "claude" and env.get(PROCESS_LOOP_SESSION_ENV):
             connection = context.claude_connection
             if connection is None:
@@ -279,7 +313,8 @@ def _probe_candidate(
                 force_file=bool(probe_env.get("ANTHROPIC_API_KEY") or probe_env.get("ANTHROPIC_AUTH_TOKEN")),
                 isolate_auth=connection.kind != "inherit",
             )
-            probe_argv[-1:-1] = ["--settings", settings]
+            separator = probe_argv.index("--")
+            probe_argv[separator:separator] = ["--settings", settings]
         result = subprocess.run(
             probe_argv,
             check=False,
@@ -303,18 +338,16 @@ def _probe_candidate(
         if isinstance(settings, _claude_settings.SettingsFile):
             settings.cleanup()
     _console_title.set_console_title(context.title)
-    ignored_effort = orchestrator == "claude" and _claude_ignored_effort(result.stderr)
-    if result.returncode == 0 and not ignored_effort:
+    if result.returncode == 0:
         _notify(context, f"モデル候補の可用性判定に成功しました: {candidate}")
         _notify(context, f"本作業へ採用するモデル候補: {candidate}")
         return None
-    if not ignored_effort:
-        usage_limit = _probe_usage_limit(orchestrator, result, env)
-        if usage_limit is not None:
-            return usage_limit, None
+    usage_limit = _probe_usage_limit(orchestrator, result, env)
+    if usage_limit is not None:
+        return usage_limit, None
     failure_code = result.returncode or 1
     diagnostic = (result.stderr or "").strip()
-    reason = "engineがeffortを無視しました" if ignored_effort else f"exit code {result.returncode}"
+    reason = f"exit code {result.returncode}"
     reason = f"{reason}; engine診断: {diagnostic}" if diagnostic else f"{reason}; engineの診断出力はありません"
     _notify(
         context,

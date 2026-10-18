@@ -9,7 +9,7 @@ import pytest
 from agent_toolkit._testing import git_repository as git
 
 from pytools import prune_codex_packages as prune_cli
-from pytools._internal import codex_processes
+from pytools._internal import codex_processes, deferred_updates
 from pytools.prune_codex_packages_test import _release
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
@@ -414,3 +414,40 @@ def test_unchanged_cycle_prunes_daemon_and_propagates_failure(
     assert old.is_dir()
     assert upstream_update.main([]) == (1 if delete_error else 0)
     assert old.exists() == delete_error
+
+
+def test_deferred_record_retries_update_without_upstream_change(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+) -> None:
+    """上流不変でも延期記録があればupdate-dotfilesを再実行し、記録はpost-applyに任せて削除しない。
+
+    延期した更新は上流変更が無いと反映されず、利用終了後も手動の再実行が必要になっていた。
+    """
+    update_dotfiles = _prepare_root(monkeypatch, tmp_path)
+    calls: list[list[str]] = []
+    commit = "a" * 40
+    monkeypatch.setattr(subprocess, "run", _fake_run(calls, remote_commit=commit, local_commit=commit))
+    assert upstream_update.main([]) == 0
+    calls.clear()
+    pending_path, _lock = upstream_update._state_paths()  # pylint: disable=protected-access
+    deferred_path = pending_path.with_suffix(".deferred")
+    deferred_path.write_text('{"steps": ["Codex plugin"]}\n', encoding="utf-8")
+
+    assert upstream_update.main([]) == 0
+    assert calls.count([str(update_dotfiles)]) == 1
+    assert deferred_path.exists()
+
+    deferred_path.unlink()
+    calls.clear()
+    assert upstream_update.main([]) == 0
+    assert [str(update_dotfiles)] not in calls
+    assert [str(update_dotfiles.with_name("prune-codex-packages"))] in calls
+
+
+def test_deferred_record_path_matches_post_apply(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
+    """post-applyが書く延期記録と、helperが読む延期記録は同じdotfilesルートで同じパスになる。"""
+    _prepare_root(monkeypatch, tmp_path)
+    pending_path, _lock = upstream_update._state_paths()  # pylint: disable=protected-access
+
+    assert deferred_updates.record_path(tmp_path / "dotfiles") == pending_path.with_suffix(".deferred")

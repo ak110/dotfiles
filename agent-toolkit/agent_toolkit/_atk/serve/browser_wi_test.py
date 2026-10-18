@@ -921,7 +921,8 @@ async def test_answer_change_terminal_read_only_and_identifier_surfaces(browser_
     question_row = page.locator('.entry-select[data-key="inbox/question.md"]')
     await question_row.click()
     detail = page.get_by_role("dialog", name="詳細")
-    await playwright.async_api.expect(detail.locator("#detail-state")).to_have_text("uwi / inbox")
+    # 回答済みのinboxのuwiは、保存状態をinboxのまま表示ラベルだけをansweredにする。
+    await playwright.async_api.expect(detail.locator("#detail-state")).to_have_text("uwi / answered")
     await detail.get_by_role("button", name="回答を変更", exact=True).click()
     await playwright.async_api.expect(detail.locator("#answer-input")).to_have_value("既存回答")
     await page.keyboard.press("Escape")
@@ -1456,6 +1457,54 @@ async def test_needs_verify_badge_replaces_inbox(browser_harness: _BrowserHarnes
     await page.locator("#state-filter").select_option("inbox")
     await playwright.async_api.expect(page.locator('.entry-select[data-key="inbox/verify.md"]')).to_be_visible()
     assert (harness.root / "inbox" / "verify.md").is_file()
+
+
+@pytest.mark.asyncio
+async def test_answered_badge_replaces_inbox_for_answered_uwi(browser_harness: _BrowserHarness) -> None:
+    """inboxの回答済みuwiは一覧・詳細・削除確認でinboxの代わりにansweredを示し、色はinboxと同じにする。
+
+    保存状態だけでバッジを決めると、回答済みで次の処理を待つ項目と未回答の質問が同じinboxと表示され、一覧で区別できない。
+    未回答のuwiと、inbox以外の保存状態の回答済みuwiは保存状態を示す。状態フィルターは保存状態のinboxで扱う。
+    """
+    harness = browser_harness
+    page = harness.page
+    answered_text = "---\ntype: uwi\ntarget_repo: example/repo\n---\n\n## 質問\n\n確認\n\n## 回答\n\n回答済み\n"
+    (harness.root / "inbox" / "answered.md").write_text(answered_text, encoding="utf-8")
+    (harness.root / "inbox" / "unanswered.md").write_text(
+        "---\ntype: uwi\ntarget_repo: example/repo\n---\n\n## 質問\n\n確認\n\n## 回答\n\n<!-- 記入欄 -->\n",
+        encoding="utf-8",
+    )
+    (harness.root / "processing").mkdir(exist_ok=True)
+    (harness.root / "processing" / "taken.md").write_text(answered_text, encoding="utf-8")
+    await page.goto(harness.base_url + "/")
+    await playwright.async_api.expect(page.locator("#connection-status")).to_have_attribute("data-connected", "true")
+    row = page.locator('.entry-select[data-key="inbox/answered.md"]')
+    badge = row.locator(".state-badge")
+    await playwright.async_api.expect(badge).to_have_text("answered")
+    label = await row.get_attribute("aria-label")
+    assert label is not None
+    assert "answered" in label.split("、")
+    assert "inbox" not in label.split("、")
+    unanswered_badge = page.locator('.entry-select[data-key="inbox/unanswered.md"] .state-badge')
+    await playwright.async_api.expect(unanswered_badge).to_have_text("inbox")
+    await playwright.async_api.expect(page.locator('.entry-select[data-key="processing/taken.md"] .state-badge')).to_have_text(
+        "processing"
+    )
+    style = "element => [getComputedStyle(element).color, getComputedStyle(element).backgroundColor]"
+    assert await badge.evaluate(style) == await unanswered_badge.evaluate(style)
+
+    await row.click()
+    detail = page.get_by_role("dialog", name="詳細")
+    await playwright.async_api.expect(detail.locator("#detail-state")).to_have_text("uwi / answered")
+    await detail.locator("#delete-button").click()
+    delete_dialog = page.get_by_role("dialog", name="削除の確認")
+    await playwright.async_api.expect(delete_dialog.locator("#delete-state")).to_have_text("uwi / answered")
+    await delete_dialog.locator("#delete-close-button").click()
+    await detail.locator("#detail-close-button").click()
+
+    await _open_filters(page)
+    await page.locator("#state-filter").select_option("inbox")
+    await playwright.async_api.expect(page.locator('.entry-select[data-key="inbox/answered.md"]')).to_be_visible()
 
 
 @pytest.mark.asyncio

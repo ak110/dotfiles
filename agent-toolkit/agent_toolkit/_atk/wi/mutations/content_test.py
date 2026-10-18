@@ -63,7 +63,8 @@ def test_edit_reports_style_warning_with_new_section_error(
     assert exc_info.value.code == 1
     error = capsys.readouterr().err
     lines = error.splitlines()
-    warning_index = next(index for index, line in enumerate(lines) if line.startswith("警告: 本文:2:3: ダッシュ"))
+    warning_index = next(index for index, line in enumerate(lines) if '入力元="entry.md" 論理本文:2:3: ダッシュ' in line)
+    assert "文脈: 本文【—】補足" in lines[warning_index]
     # 表記の警告の直後に、直し方（本文を置き換えるコマンド）を示す次の操作の行が続くこと。
     assert lines[warning_index + 1].startswith("次の操作: ")
     assert "atk wi edit entry.md --body-file" in lines[warning_index + 1]
@@ -87,8 +88,28 @@ def test_public_edit_reports_style_actions_once(
         atk.main(_edit_body_args(tmp_path, "entry.md", body), home=tmp_path)
     assert result.value.code == 0
     lines = capsys.readouterr().err.splitlines()
-    assert len([line for line in lines if line.startswith("警告: 本文:") and "ダッシュ" in line]) == diagnostic_count
+    assert len([line for line in lines if "論理本文:" in line and "ダッシュ" in line]) == diagnostic_count
     assert len([line for line in lines if line.startswith("次の操作: ")]) == bool(diagnostic_count)
+
+
+def test_edit_frontmatter_diagnostics_identify_target_and_occurrences(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """frontmatter付きの置換入力でも編集対象と論理本文の各出現箇所を表示する。"""
+    notes = _setup_notes(tmp_path)
+    path = _write_awi_file(notes, "entry.md")
+    original = path.read_bytes()
+    monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+    args = _edit_body_args(tmp_path, "entry.md", "---\ntitle: 原稿\n---\n\n開始—中間—終了")
+    with pytest.raises(SystemExit) as result:
+        atk.main([*args, "--dry-run"], home=tmp_path)
+    assert result.value.code == 0
+    error = capsys.readouterr().err
+    assert '入力元="entry.md" 論理本文:2:3: ダッシュ' in error
+    assert '入力元="entry.md" 論理本文:2:6: ダッシュ' in error
+    assert "文脈: 開始【—】中間—終了" in error
+    assert "文脈: 開始—中間【—】終了" in error
+    assert path.read_bytes() == original
 
 
 def test_hold_and_unhold_reuse_standard_transition(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:

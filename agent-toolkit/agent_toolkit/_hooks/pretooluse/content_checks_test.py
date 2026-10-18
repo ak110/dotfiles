@@ -4,7 +4,6 @@
 subprocessで起動しexit code・stderr・stdoutを検証する。
 """
 
-import json
 import pathlib
 
 import pytest
@@ -54,25 +53,18 @@ def test_trailing_tool_boundary_tags_in_regular_markdown_are_allowed(tmp_path: p
 
 
 class TestLanguageRewrite:
-    """直前の英語を毎回止め、状態の累計や同じIDによる通過を使わない。"""
+    """質問の直接入力を毎回判定し、旧transcript判定の状態で通過させない。"""
 
     @pytest.mark.parametrize("text,expected", [("Read the evidence.", 2), ("根拠を確認します。", 0), ("了解した。", 0)])
     def test_current_text_controls_decision_with_legacy_state(self, tmp_path: pathlib.Path, text: str, expected: int) -> None:
         sid = "language-current-text"
         legacy = {"english_warning_count": 2, "english_warning_msg_id": "same", "unrelated": True}
         _write_session_state(tmp_path, sid, legacy)
-        transcript = tmp_path / "transcript.jsonl"
-        transcript.write_text(
-            json.dumps(
-                {
-                    "type": "assistant",
-                    "message": {"id": "same", "role": "assistant", "content": [{"type": "text", "text": text}]},
-                }
-            )
-            + "\n",
-            encoding="utf-8",
-        )
-        payload = {"tool_name": "Bash", "tool_input": {"command": "ls"}, "session_id": sid, "transcript_path": str(transcript)}
+        payload = {
+            "tool_name": "AskUserQuestion",
+            "tool_input": {"questions": [{"question": text, "header": "確認", "options": []}]},
+            "session_id": sid,
+        }
         for _ in range(2):
             result = _run(payload, env_overrides=_plan_file_state_env(tmp_path))
             assert result.returncode == expected
@@ -83,29 +75,19 @@ class TestLanguageRewrite:
                 assert "識別子と名前" in result.stderr
                 assert result.stderr.rstrip().endswith("</atk-auto>")
 
-    def test_block_excerpt_removes_control_characters(self, tmp_path: pathlib.Path) -> None:
-        transcript = tmp_path / "transcript.jsonl"
-        transcript.write_text(
-            json.dumps(
-                {
-                    "type": "assistant",
-                    "message": {
-                        "id": "control",
-                        "role": "assistant",
-                        "content": [{"type": "text", "text": "The process \x1b[2J \x00 finished.\nAnother sentence follows."}],
-                    },
-                }
-            ),
-            encoding="utf-8",
-        )
+    def test_control_characters_in_input_do_not_leak_into_notice(self, tmp_path: pathlib.Path) -> None:
         result = _run(
-            {"tool_name": "Bash", "tool_input": {"command": "ls"}, "transcript_path": str(transcript)},
+            {
+                "tool_name": "AskUserQuestion",
+                "tool_input": {
+                    "questions": [{"question": "The process \x1b[2J \x00 finished.", "header": "確認", "options": []}]
+                },
+            },
             env_overrides=_plan_file_state_env(tmp_path),
         )
         assert result.returncode == 2
-        excerpt = result.stderr.split("判定対象の冒頭: 「", maxsplit=1)[1].split("」", maxsplit=1)[0]
-        assert excerpt == "The process [2J finished."
-        assert not any(ord(char) < 32 or 127 <= ord(char) <= 159 for char in excerpt)
+        assert "\x1b" not in result.stderr
+        assert "\x00" not in result.stderr
 
 
 class TestGeneralBehavior:

@@ -43,6 +43,7 @@ from session_evidence_tool_calls import (
     _tool_call_events,
     _tool_call_summary,
 )
+from session_evidence_user_events import _query_user_events
 
 from agent_toolkit._agents_server import record_paths as _record_paths
 
@@ -483,3 +484,59 @@ def _catalog_tool_call_events(
     summary["parent_record_count"] = len(scan.parents)
     summary["unresolved_record_count"] = len(set(unresolved))
     return [*events, *_referenced_provenance_events(collected_records, events), *_unresolved_events(unresolved), summary], 0
+
+
+def _catalog_user_event_events(
+    root: Path,
+    runtime: _Runtime,
+    since: datetime.datetime,
+    boundary: datetime.datetime,
+    selection: _CatalogSelection | None,
+    pattern: re.Pattern[str] | None,
+    *,
+    preceding_assistant: bool = False,
+) -> tuple[list[dict[str, Any]], int]:
+    """既存カタログの親選定から、共有の人間入力照会へ接続する。"""
+    scan = _catalog_scan(root, runtime, since, boundary)
+    if isinstance(scan, dict):
+        return [scan], 2
+    events: list[dict[str, Any]] = []
+    selected = 0
+    for parent in scan.parents:
+        workflow, _locator = _workflow_evidence(parent.item)
+        if selection is not None and not selection.matches(
+            {"workflow": workflow, "cwd": _catalog_value(parent.item.records, "cwd", "originalCwd")}
+        ):
+            continue
+        selected += 1
+        collected, _unresolved = _collect_records(str(parent.item.path), parent.item.records, None, boundary, main_only=True)
+        results = _query_user_events(collected[0], since, boundary, pattern, preceding_assistant=preceding_assistant)
+        events.extend({**event, "session_id": parent.item.record_id} for event in results)
+    events.sort(
+        key=lambda event: (
+            _parse_timestamp(event["timestamp"]) if isinstance(event.get("timestamp"), str) else boundary,
+            event["record"],
+            event["line"],
+            event.get("sequence", 0),
+        )
+    )
+    summary = {
+        "kind": "summary",
+        "count": sum(event["kind"] == "user" for event in events),
+        "parent_record_count": len(scan.parents),
+        "selected_parent_count": selected,
+        "runtime": runtime,
+        "undated_event_count": sum(event["kind"] == "user-event-undated" for event in events),
+        "unresolved_record_count": scan.unresolved_count,
+        "scan_root": str(scan.root),
+        "since": since.isoformat(),
+        "observation_boundary": boundary.isoformat(),
+    }
+    diagnostics = [
+        {
+            **event,
+            "next_action": "対象の記録の存在・読取権限・UTF-8 JSONLを確認して再実行する。未解決の委譲先は未確認範囲として扱う",
+        }
+        for event in _unresolved_events(scan.unresolved)
+    ]
+    return [*events, *diagnostics, summary], 0

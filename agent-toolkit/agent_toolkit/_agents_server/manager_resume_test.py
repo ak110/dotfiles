@@ -18,6 +18,7 @@ import pytest
 
 from agent_toolkit._agents_server import (
     agents_wait,
+    launch_requests,
     result_projection,
     resume_waits,
     shared_layout,
@@ -1041,6 +1042,35 @@ async def test_child_collected_by_background_agents_wait_is_not_unobserved(
 
 
 @pytest.mark.asyncio
+async def test_child_set_updated_during_resolution_does_not_abort_wait(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+) -> None:
+    """孫sessionの照会中に追跡集合が更新されても、待機の前進が例外で止まらない。
+
+    照会の`await`の間に委譲先の出力の追跡が同じ集合へ孫sessionを加えると、集合を直接回す実装は
+    `RuntimeError: Set changed size during iteration`で終わり、待機中の全担当を巻き込む。
+    """
+    monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
+    manager = server_manager.AgentsServerManager(status_writer=None)
+    parent = state.SessionState("parent-session", str(tmp_path), engine="claude")
+    parent.live_child_session_ids.add("child-a")
+    resume_waits.begin_auto_resume_wait(parent, {"status": "completed", "agent_message": "保留本文", "error": None})
+    manager.sessions[parent.session_id] = parent
+    original_resolve = session_registry.resolve
+
+    def resolve_and_track_new_child(session_id: str) -> Any:
+        parent.live_child_session_ids.add("child-b")
+        return original_resolve(session_id)
+
+    monkeypatch.setattr(session_registry, "resolve", resolve_and_track_new_child)
+
+    await manager._advance_child_session_wait(parent)  # pylint: disable=protected-access
+
+    assert "child-b" in parent.live_child_session_ids
+    await manager.close()
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize(
     "case", ["in-progress-after", "recorded-turn-running", "live-status-file", "query-failure", "claude-engine"]
 )
@@ -1366,3 +1396,35 @@ async def test_legacy_claude_rate_limit_record_does_not_skip_candidate(
         assert codex.start_calls == []
     finally:
         await manager.close()
+
+
+@pytest.mark.asyncio
+async def test_minimal_followup_uses_restored_launch_history(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
+    """登録簿から戻した役割でも、余分な継続入力を配送前に拒否し必要なroundを保持する。"""
+    manager, _ = _resume_test_manager(monkeypatch, tmp_path)
+    _, _, prompt, _, _ = launch_requests.task_document_request(
+        "exec-review",
+        {
+            "レビュー基準": "計画",
+            "計画": str(tmp_path / "計画.md"),
+            "引き継ぎ記録先": str(tmp_path / "引継ぎ.md"),
+            "未判定検証記録": "なし",
+            "完成条件証拠": "なし",
+        },
+    )
+    session = state.SessionState("restored-review", str(tmp_path), engine="claude", prompt=prompt, publish_registry=True)
+    manager.sessions[session.session_id] = session
+    _complete(session)
+    await session.publish_registration_async()
+    await manager.close()
+    resumed, _ = _resume_test_manager(monkeypatch, tmp_path)
+    try:
+        with pytest.raises(ValueError, match="検証結果"):
+            await resumed.send_message(session.session_id, "再レビューせよ\nround: 2\n検証結果: 成功")
+        response = await resumed.send_message(session.session_id, instruction="再レビューせよ", extra_params={"round": "2"})
+        assert response["delivery"] == "reply_started"
+        current = resumed.sessions[session.session_id]
+        assert current.prompt == prompt
+        assert current.followup_prompts == ("再レビューせよ\nround: 2",)
+    finally:
+        await resumed.close()

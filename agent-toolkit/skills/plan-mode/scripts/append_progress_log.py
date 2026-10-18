@@ -206,7 +206,9 @@ def _record_mapping(args: argparse.Namespace, parser: argparse.ArgumentParser) -
         return True
     if args.commit:
         assert isinstance(args.previous_head, str)
-        event = commit_mapping.commit_event(args.worktree, args.commit, args.previous_head, args.awi or [], allowed)
+        event = commit_mapping.commit_event(
+            args.worktree, args.commit, args.previous_head, args.awi or [], allowed, events=events
+        )
     elif args.rewrite_map:
         mapping = commit_mapping.read_mapping(args.worktree, events, allowed)
         event = commit_mapping.rewrite_event(args.worktree, args.rewrite_map, mapping)
@@ -317,12 +319,13 @@ def _add_record_arguments(parser: argparse.ArgumentParser) -> None:
     operation = parser.add_mutually_exclusive_group()
     operation.add_argument(
         "--commit",
-        help="対応を記録する実装commit。現在のHEADを指定し、--previous-headから現在のHEADまでに加わった全commitを"
-        "同じAWI集合へ対応付けて記録する。マージcommitを含む範囲は受け付けない",
+        help="対応を記録する区間の末尾commit。現在のHEADか、そのfirst-parentの履歴上のcommitを指定し、"
+        "--previous-headから末尾までの全commitを同じAWI集合へ対応付ける。"
+        "取り込み後もAWI集合ごとの区間を区間ごとに記録できる。マージcommitや記録済みcommitを含む範囲は受け付けない",
     )
     parser.add_argument(
         "--previous-head",
-        help="commit作成や取り込みの操作の直前に取得したHEAD。短縮OIDか完全OID。--commitでは必須",
+        help="記録する区間の直前のcommit。操作の直前に取得したHEADも使える。短縮OIDか完全OID。--commitでは必須",
     )
     operation.add_argument(
         "--rewrite-map",

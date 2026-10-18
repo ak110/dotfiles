@@ -2,7 +2,6 @@
 
 配布物のhook間で共有する状態ファイルの設計、寿命、排他制御および個別フラグの記録元と利用先を定める。
 状態ファイルは`{tempdir}/claude-agent-toolkit-{session_id}.json`とする。
-計画名の再出力抑止記録は`{tempdir}/claude-agent-toolkit-session-title/{session_id}.json`へ分離する。
 
 ## 状態ファイルの設計
 
@@ -15,15 +14,14 @@ hookは呼び出しごとに独立プロセスとして起動するため、Clau
 - `session_id`の切替え: 現行状態が無い場合だけtranscriptを先頭から走査し、状態ファイルを持つ別の`session_id`が一意なら全キーを継承して継承元を記録する。現行状態がある通常時は存在確認だけで終える
 - フックイベント間の多段同期（コマンド文字列の完全一致とハッシュ値比較の組合せ等）は状態ファイルへ持ち込まず、ファイル実体への直接実行・直接読み取りで確かめる。構造化した記録は、記録元と利用先が同じフックの内側で閉じる場合に限る
 - フラグの用途・書き込み元・読み取り元・寿命・リセット処理を本書の後掲の各節へ記載し、新規フラグも併記する（努力目標）。同じ状態ファイルを共有する個人フックのフラグも同様とする
-- 通常状態の期限より長く保持する記録は、用途別の保存先と排他ロックへ分離する（計画名の再出力抑止記録は冒頭の分離先）
-- 状態JSONの削除契機は、期限回収と、終了理由が`clear`のSessionEndに限る。SessionEndは`--continue`・`--resume`・`/resume`で同じ`session_id`へ戻る場合にも発火するため、他の契機で削除すると再開後の記録が失われる。期限回収の対象は更新から一定期間が経過した通常状態と再出力抑止記録とし、`clear`では排他ロック下でそのセッションの両方を削除する
+- 状態JSONの削除契機は、期限回収と、終了理由が`clear`のSessionEndに限る。SessionEndは`--continue`・`--resume`・`/resume`で同じ`session_id`へ戻る場合にも発火するため、他の契機で削除すると再開後の記録が失われる。期限回収の対象は更新から一定期間が経過した通常状態とし、`clear`では排他ロック下でそのセッションの状態を削除する
 - サブエージェント起動の判定は`tool_name in ("Agent", "Task")`をSSOTとする。サブエージェント側の状態は委譲元へ伝播しないため、親側で必要な値は完了報告の構造化欄から厳格に解析する
 
 ### 並行書き込みの排他制御
 
 Claude Codeは並列ツール呼び出しでhookを同時発火するため、同一の状態ファイルへの書き込みが競合する。
 
-- 公開するAPIは、通常状態を排他ロック付きで更新する`update_state`と、計画名を記録する`claim_session_title`の2つに限る
+- 状態の更新は排他ロック付きの`update_state`へ集約する。Function hooksからの命名記録も`session_state.py`のCLIを通して同じAPIへ渡す
 - 前身状態の継承は現行セッションの排他ロック下で不在を再確認し、二重の継承を防ぐ
 - ロックファイルは削除しない空ファイルとし、一時ディレクトリの通常の回収に委ねる
 - 並行書き込みの回帰テストを維持する
@@ -85,8 +83,9 @@ Stop hookの無進捗停止（`busy_loop_guard.py`）の終了要求は、Stop�
 
 - `working_plan_save_notified`: `~/.claude/plans`に残る計画バンドルの保存確認を促した事実。`agent-toolkit/agent_toolkit/_hooks/plan_save_advisor.py`が記録し、再通知の抑止に読む。セッション終了まで保持し、リセットは処理対象外とする
 - `plan_mode_skill_invoked`: plan-mode起動を記録し、計画構造の自動チェックの適用判定に使う
-- `current_plan_file_path`: PostToolUseが計画ファイルの編集時と公開された計画ファイル作成コマンドの出力からパスを記録し、PreToolUse(Skill)がplan-mode起動時に消去する。UserPromptSubmitが計画名の`sessionTitle`出力に読む
-- `last_hook_session_title`: Claude CodeのUserPromptSubmitが計画ファイルのstemを`sessionTitle`へ実際に出力した値。出力は値が存在しない間の1回に限り、通常状態JSONへ複製せず、専用の排他ロック下で再出力抑止記録へ先に保存できた呼び出しだけが出力する。期限回収と通常のSessionEndでは保持し、`clear`の場合だけ削除する
+- `current_plan_file_path`: PostToolUseが計画ファイルの編集時と公開された計画ファイル作成コマンドの出力からパスを記録し、PreToolUse(Skill)がplan-mode起動時に消去する。Function hooksの`classic.UserPromptSubmit`が名前の選択に読む
+- `last_hook_session_title`: Function hooksの`classic.UserPromptSubmit`が設定した名前。現在名が空かこの値と同じ場合だけ、新しい種別・計画名への更新を許す。`session_state.py`のCLIが通常状態へ排他下で保存する。通常状態と同じ期限と`clear`で消去する
+- `session_title_kind`: Function hooksの`skill.prompt`が観測した命名用の種別（`process-wi`・`single-lane`・`add-awi`）。同じCLIが通常状態へ保存し、`classic.UserPromptSubmit`が読む。process-loopの環境印と会話IDが一致する場合は`process-wi`を優先する。通常状態と同じ寿命とする
 
 ## 振り返り・モード系
 
@@ -116,10 +115,10 @@ Stop hookの無進捗停止（`busy_loop_guard.py`）の終了要求は、Stop�
   `agent-toolkit/agent_toolkit/_hooks/user_prompt_submit.py`が実ユーザー発話の受領時に読み、真なら同スキルの起動を促す注記を返す（機械注入ターンでは読まず、変えない）。
   PostToolUse(Skill)が同スキルの起動で、UserPromptSubmitがユーザーによる同スキルのスラッシュコマンド起動で偽へ戻す。Skillの起動を観測できないCodexでは、注記を返した時点で偽へ戻す。
   寿命はセッション状態ファイルと同じとする
-- `operation_skill_ready_agents`: 操作を起動の契機とするスキルの完全名から、起動済みの呼び出し主体の一覧への対応。
+- `operation_skill_delivered_agents`: 操作を起動の契機とするスキルの完全名から、本文が届いた呼び出し主体の一覧への対応。
   対象は`agent-toolkit:delegation`、`agent-toolkit:search`、`agent-toolkit:bugfix`、`agent-toolkit:managed-temp`、`agent-toolkit:writing-standards`である。delegationは`Agent`・`Task`と、既存のagents_server hook対象集合に属する起動・追送・観測・巻取りを契機とする。writing-standardsはエージェント向け文書への編集と、書込先を確定できるBash操作を契機とする。
   呼び出し主体はhook payloadの`agent_id`とし、持たないメイン会話は`main`とする。
-  `agent-toolkit/agent_toolkit/_hooks/pretooluse/operation_skills.py`が未起動のまま操作した呼び出しへ警告を返した時点と、PostToolUse(Skill)が対象スキルの起動を観測した時点で主体を加え、同モジュールがPreToolUseで記録の無い主体の操作にだけ警告する。警告と記録は、Skillの起動を観測できるClaude Codeに限る。
+  `agent-toolkit/agent_toolkit/_hooks/pretooluse/operation_skills.py`が稼働版の`SKILL.md`全文を取得して操作を止める応答へ載せた時点と、PostToolUse(Skill)が対象スキルの起動を観測した時点で主体を加える。同モジュールは記録の無い主体の最初の操作で本文を配送し、同じ主体の再発行を通す。本文を取得できない場合は記録せず操作を止める。Claude CodeとCodexで同じ契約を使い、旧版の警告済みキー`operation_skill_ready_agents`は取得済みの証拠にしない。
   `agent-toolkit/agent_toolkit/_hooks/rules_context.py`がSessionStartの`source`が`clear`・`compact`のときと委譲先のセッションで`main`を除き、`resume`・`fork`とサブエージェントの記録は変えない。
   寿命はセッション状態ファイルと同じとする
 

@@ -31,7 +31,7 @@ lazy import yaml
 lazy from pdf2image import convert_from_path
 lazy from pdf2image.exceptions import PDFInfoNotInstalledError
 
-from pytools._internal import repack_archive_args
+from pytools._internal import libarchive_resolver, repack_archive_args
 from pytools._internal.cli import setup_logging
 lazy from pytools import imageconverter, rename
 
@@ -369,16 +369,19 @@ def _process_target(
     else:
         shutil.move(str(target), str(bk_entry))
 
-    # 2. 作業ディレクトリ作成
-    if dry_run:
-        work_dir = parent / f"{stem}.__dry_run__"
-        logger.info("[dry-run] mkworkdir: %s", work_dir)
-    else:
-        work_dir = pathlib.Path(tempfile.mkdtemp(prefix=_WORKDIR_PREFIX, dir=parent))
-
     source_for_extract = bk_entry  # アーカイブ・ディレクトリとも退避先から取得する
     entry_failures: list[EntryFailure] = []
+    work_dir: pathlib.Path | None = None
+    # 原本を退避した直後から出力ZIPの確定までを1つの保護区間にする。
+    # 作業ディレクトリの作成など準備段の失敗でも、原本を元のパスへ戻す。
     try:
+        # 2. 作業ディレクトリ作成
+        if dry_run:
+            work_dir = parent / f"{stem}.__dry_run__"
+            logger.info("[dry-run] mkworkdir: %s", work_dir)
+        else:
+            work_dir = pathlib.Path(tempfile.mkdtemp(prefix=_WORKDIR_PREFIX, dir=parent))
+
         # 3. 選択的展開 / コピー / PDF ラスタライズ
         if is_pdf:
             if dry_run:
@@ -433,13 +436,14 @@ def _process_target(
     except Exception:
         # ロールバック: 作業ディレクトリ削除 + 原本復元
         if not dry_run:
-            shutil.rmtree(work_dir, ignore_errors=True)
+            if work_dir is not None:
+                shutil.rmtree(work_dir, ignore_errors=True)
             if bk_entry.exists() and not target.exists():
                 shutil.move(str(bk_entry), str(target))
         raise
 
     # 7. 作業ディレクトリ削除
-    if not dry_run:
+    if not dry_run and work_dir is not None:
         shutil.rmtree(work_dir, ignore_errors=True)
 
     # 8. バックアップのゴミ箱送り (警告/失敗があれば欠落の可能性があるため原本を保持する)
@@ -547,30 +551,26 @@ def _load_libarchive() -> typing.Any:
     WindowsではMSYS2由来の ``libarchive-13.dll`` が
     ``~/.local/lib/libarchive/`` 配下に配置されている前提で、``LIBARCHIVE``
     環境変数とDLL探索ディレクトリを補ってからimportする。
-    libarchive-c側の ``ffi.py`` は ``LIBARCHIVE`` 環境変数を最優先で参照する。
-    加えて ``libarchive-13.dll`` は複数の依存DLL（bzip2・libxml2等）を持つため、
-    同じディレクトリを ``os.add_dll_directory`` でWindowsのDLL loaderに渡す。
+    探索条件は導入側の導入済み判定と共有する（``pytools._internal.libarchive_resolver``）。
 
     importが失敗した場合は復旧手順を含むRuntimeErrorを送出する。
     libarchive-cの未ガードな ``LoadLibrary(None)`` が ``TypeError`` を送出するケースも
     捕捉する必要があるため、ここでは ``Exception`` を広めに捕捉する。
     """
-    if sys.platform == "win32":
-        libarchive_dir = pathlib.Path.home() / ".local" / "lib" / "libarchive"
-        libarchive_dll = libarchive_dir / "libarchive-13.dll"
-        if libarchive_dll.exists():
-            os.environ.setdefault("LIBARCHIVE", str(libarchive_dll))
-            os.add_dll_directory(str(libarchive_dir))
+    message = (
+        "libarchive の DLL を読み込めませんでした。"
+        "Windows では update-dotfiles を再実行すると "
+        r"%USERPROFILE%\.local\lib\libarchive\ に libarchive-13.dll と依存DLLを "
+        "自動ダウンロードする。再実行後は新しい端末を開き直してから "
+        "repack-archive をもう一度実行すること。"
+    )
+    # 導入側の導入済み判定と同じ条件でロードできるかを先に確かめ、依存DLLの欠落を同じ基準で検出する。
+    if not libarchive_resolver.is_loadable():
+        raise RuntimeError(message)
     try:
         import libarchive  # noqa: PLC0415  # pylint: disable=import-outside-toplevel
     except Exception as e:  # noqa: BLE001
-        raise RuntimeError(
-            "libarchive の DLL を読み込めませんでした。"
-            "Windows では update-dotfiles を再実行すると "
-            r"%USERPROFILE%\.local\lib\libarchive\ に libarchive-13.dll を "
-            "自動ダウンロードする。再実行後は新しい端末を開き直してから "
-            "repack-archive をもう一度実行すること。"
-        ) from e
+        raise RuntimeError(message) from e
     return libarchive
 
 

@@ -25,9 +25,7 @@ _OID = re.compile(r"(?:[0-9a-f]{40}|[0-9a-f]{64})")
 _OID_VALUE = re.compile(r"[0-9a-fA-F]{7,64}")
 type RewriteValue = str | list[dict[str, object]]
 type RewriteMap = dict[str, RewriteValue]
-_RETRY_PREVIOUS_HEAD = (
-    "取り込みやcommit作成の操作の直前に取得したHEADを--previous-headへ渡し、操作後のHEADを--commitへ渡して再実行する"
-)
+_RETRY_PREVIOUS_HEAD = "記録する区間の直前のcommitを--previous-headへ渡し、区間の末尾commitを--commitへ渡して再実行する"
 
 
 class CommitMappingError(next_action.ActionableError):
@@ -80,11 +78,12 @@ def validate_targets(wis: list[str], allowed_wis: set[str]) -> set[str]:
     return names
 
 
-def _full_oid(worktree: pathlib.Path, value: str) -> str:
+def _full_oid(worktree: pathlib.Path, value: str, *, allow_missing: bool = False) -> str:
     """短縮OIDか完全OIDを対象worktreeでcommitの完全OIDへ解決する。
 
     完全OIDはobjectが失われた旧commitの記録とも比べられるよう、そのまま返す。
-    短縮OIDはcommitとして一意に解決できなければ失敗する。
+    短縮OIDはcommitとして一意に解決できなければ失敗する。重複判定用の`allow_missing`では、
+    解決できない保存済みOIDを先頭一致で比べるため、その値を保持する。
     """
     if _OID.fullmatch(value) is not None:
         return value
@@ -100,6 +99,8 @@ def _full_oid(worktree: pathlib.Path, value: str) -> str:
     assert isinstance(result.stdout, str)
     oid = result.stdout.strip()
     if result.returncode != 0 or _OID.fullmatch(oid) is None:
+        if allow_missing and _OID_VALUE.fullmatch(value):
+            return value.lower()
         raise _git_fail(f"commitを一意に解決できません（存在しないか、短縮OIDが複数のcommitに一致します）: {value}")
     return oid
 
@@ -175,8 +176,13 @@ def _decode(payload: str) -> dict[str, object]:
     return event
 
 
-def read_mapping(worktree: pathlib.Path, events: list[dict[str, object]], allowed_wis: set[str]) -> dict[str, set[str]]:
-    """記録順に生成と履歴変更の対応を適用し、完全OIDからAWIへの対応を返す。"""
+def read_mapping(
+    worktree: pathlib.Path, events: list[dict[str, object]], allowed_wis: set[str], *, allow_missing: bool = False
+) -> dict[str, set[str]]:
+    """記録順に生成と履歴変更の対応を適用し、OIDからAWIへの対応を返す。
+
+    通常は完全OIDへ解決する。重複判定用の`allow_missing`では解決不能な保存済みOIDも保持する。
+    """
     mapping: dict[str, set[str]] = {}
     for event in events:
         if set(event) in ({"commit", "awi"}, {"commits", "awi"}):
@@ -191,7 +197,7 @@ def read_mapping(worktree: pathlib.Path, events: list[dict[str, object]], allowe
                 raise _fail(f"記録に対象外AWIがあります: {sorted(outside)}")
             for oid in oids:
                 assert isinstance(oid, str)
-                mapping.setdefault(_full_oid(worktree, oid), set()).update(names)
+                mapping.setdefault(_full_oid(worktree, oid, allow_missing=allow_missing), set()).update(names)
         elif set(event) == {"rewrite"}:
             replacements = event["rewrite"]
             if not isinstance(replacements, dict) or not replacements:
@@ -199,12 +205,14 @@ def read_mapping(worktree: pathlib.Path, events: list[dict[str, object]], allowe
             inherited: dict[str, set[str]] = {}
             olds: list[str] = []
             for old, new in replacements.items():
-                full_old = _full_oid(worktree, old)
+                full_old = _full_oid(worktree, old, allow_missing=allow_missing)
+                if allow_missing:
+                    full_old = next((key for key in mapping if key.startswith(full_old) or full_old.startswith(key)), full_old)
                 if full_old not in mapping:
                     raise _fail(f"履歴変更の対応を確定できません: {old} -> {new}")
                 olds.append(full_old)
                 for target, names in rewrite_destinations(new):
-                    inherited.setdefault(_full_oid(worktree, target), set()).update(
+                    inherited.setdefault(_full_oid(worktree, target, allow_missing=allow_missing), set()).update(
                         mapping[full_old] if names is None else names & mapping[full_old]
                     )
                 _check_assignment(full_old, new, mapping[full_old])
@@ -218,11 +226,17 @@ def read_mapping(worktree: pathlib.Path, events: list[dict[str, object]], allowe
 
 
 def commit_event(
-    worktree: pathlib.Path, revision: str, previous_head: str, wis: list[str], allowed_wis: set[str]
+    worktree: pathlib.Path,
+    revision: str,
+    previous_head: str,
+    wis: list[str],
+    allowed_wis: set[str],
+    *,
+    events: list[dict[str, object]] | None = None,
 ) -> dict[str, object]:
-    """前HEADから現在のHEADまでに加わった全commitを記録するイベントを返す。
+    """現在のHEADのfirst-parent履歴上の未記録の区間を記録するイベントを返す。
 
-    `revision`は現在のHEADを指し、前HEADから現在のHEADまでのfirst-parentの履歴がマージcommitを含まない
+    `revision`は区間の末尾を指し、前HEADから区間の末尾までのfirst-parentの履歴がマージcommitを含まない
     1件以上のcommitの直列である場合だけ記録する。
     """
     names = validate_targets(wis, allowed_wis)
@@ -230,31 +244,38 @@ def commit_event(
         previous = _full_oid(worktree, previous_head)
     except CommitMappingError as error:
         raise _range_fail(f"前HEADを一意なcommitへ解決できません: {previous_head}") from error
-    oid = resolve_commit(worktree, revision)
+    oid = _full_oid(worktree, revision)
     try:
-        head = command.output(["rev-parse", "--verify", "HEAD"], worktree)
-        ancestor = command.run(["merge-base", "--is-ancestor", previous, head], worktree, capture_output=True, text=True)
+        history = command.output(["rev-list", "--first-parent", "HEAD"], worktree).splitlines()
     except (OSError, subprocess.SubprocessError) as error:
         raise _git_fail(f"現在のHEADを確認できません: {error}") from error
-    if oid != head:
-        raise _range_fail(f"指定commitが現在のHEADではありません: {revision}")
-    if previous == head:
-        raise _range_fail(f"前HEADから現在のHEADまでに加わったcommitがありません（範囲が空）: {previous_head}")
-    if ancestor.returncode != 0:
-        raise _range_fail(f"前HEADが現在のHEADのfirst-parentの祖先ではありません: {previous_head}")
+    if oid not in history:
+        raise _range_fail(
+            f"指定commitが現在のHEADのfirst-parentの履歴上にありません: {revision}",
+            "現在のHEADのfirst-parentの履歴に含まれる区間の末尾commitを--commitへ渡して再実行する",
+        )
+    if previous == oid:
+        raise _range_fail(f"前HEADから区間の末尾までに加わったcommitがありません（範囲が空）: {previous_head}")
+    if previous not in history[history.index(oid) + 1 :]:
+        raise _range_fail(f"前HEADが区間の末尾commitのfirst-parentの祖先ではありません: {previous_head}")
     try:
-        lines = command.output(["rev-list", "--first-parent", "--parents", f"{previous}..{head}"], worktree).splitlines()
+        lines = command.output(["rev-list", "--first-parent", "--parents", f"{previous}..{oid}"], worktree).splitlines()
     except (OSError, subprocess.SubprocessError) as error:
-        raise _git_fail(f"前HEADから現在のHEADまでのcommitを列挙できません: {error}") from error
+        raise _git_fail(f"前HEADから区間の末尾までのcommitを列挙できません: {error}") from error
     chain = [line.split() for line in lines]
-    if len(chain[-1]) < 2 or chain[-1][1] != previous:
-        raise _range_fail(f"前HEADが現在のHEADのfirst-parentの祖先ではありません: {previous_head}")
     if any(len(parts) != 2 for parts in chain):
         raise _range_fail(
-            f"前HEADから現在のHEADまでの範囲にマージcommitが含まれます: {previous_head}..{revision}",
+            f"前HEADから区間の末尾までの範囲にマージcommitが含まれます: {previous_head}..{revision}",
             "マージを使わずにcherry-pickかfast-forwardで取り込み直し、取り込み直前のHEADを--previous-headへ渡して再実行する",
         )
     commits = [short_oid(worktree, parts[0]) for parts in reversed(chain)]
+    mapping = read_mapping(worktree, events or [], allowed_wis, allow_missing=True)
+    duplicates = [short for short in commits if any(key.startswith(short) or short.startswith(key) for key in mapping)]
+    if duplicates:
+        raise _range_fail(
+            f"範囲に記録済みのcommitが含まれます: {', '.join(duplicates)}",
+            "未記録の区間の直前のcommitを--previous-headへ渡し、区間の末尾commitを--commitへ渡して未記録の区間だけを記録する",
+        )
     return {"commits": commits, "awi": sorted(names)}
 
 

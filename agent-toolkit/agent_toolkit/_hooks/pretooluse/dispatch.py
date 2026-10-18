@@ -106,7 +106,6 @@ lazy from agent_toolkit._hooks.pretooluse.agent_checks import (
     _check_agents_server_continuation_input,
     _check_task_stop,
     _clear_current_plan_file_path,
-    _handle_language_check,
     _record_iss_sidechain_probe,
 )
 lazy from agent_toolkit._hooks.pretooluse.confirmation_reads import unread_reference_warning
@@ -118,7 +117,7 @@ lazy from agent_toolkit._hooks.pretooluse.large_reads import (
     session_record_reference_warning,
 )
 lazy from agent_toolkit._hooks.pretooluse.notices import _HOOK_ID, _block_notice, _llm_notice
-lazy from agent_toolkit._hooks.pretooluse.operation_skills import operation_skill_warnings
+lazy from agent_toolkit._hooks.pretooluse.operation_skills import operation_skill_delivery
 lazy from agent_toolkit._hooks.pretooluse.shell_checks import (
     _check_bash_atk_output_loss,
     _check_bash_option_after_terminator,
@@ -200,17 +199,15 @@ def main(payload_text: str) -> int:
     # ホスト判定はpayload読込直後に一度だけ行い、以降の判定処理の選択と入力アダプターへ同じ値を渡す。
     is_codex = is_codex_payload(payload)
 
-    # 日本語で書き直して識別子を確認するまで、後続の操作を止める。
-    language_body = None if is_codex else _handle_language_check(payload)
-    if language_body is not None:
-        return _emit(
-            Decision(block=_block_notice(language_body, fix=_response_language_check.WARNING_FIX)), [], is_codex=is_codex
-        )
     pending_notices: list[str] = []
     decision = _decide(payload, tool_name, tool_input, session_id, is_codex=is_codex)
     if decision.block is None:
-        notices = operation_skill_warnings(payload, tool_name, tool_input, session_id, is_codex=is_codex)
-        decision = dataclasses.replace(decision, notices=(*decision.notices, *notices))
+        deliveries = operation_skill_delivery(payload, tool_name, tool_input, session_id)
+        if deliveries:
+            pending_notices.extend(decision.notices)
+            if decision.context:
+                pending_notices.append(decision.context)
+            decision = Decision(block="\n\n".join(deliveries))
     return _emit(decision, pending_notices, is_codex=is_codex)
 
 
@@ -218,7 +215,7 @@ def _decide(payload: dict, tool_name: str, tool_input: dict, session_id: str, *,
     """ツールの種類ごとの判定を実行し、その結果を返す。"""
     if tool_name in _USER_FACING_TEXT_TOOL_NAMES:
         return _decide_user_facing_text_tool(payload, tool_name, tool_input)
-    # Skill: plan-mode起動時は前の計画のパスを消去し、UserPromptSubmitが前の計画名を表示し続けないようにする。
+    # Skill: plan-mode起動時は前の計画のパスを消去する。
     if tool_name == "Skill":
         skill_name = tool_input.get("skill")
         if isinstance(skill_name, str) and skill_name in _PLAN_MODE_SKILL_NAMES:

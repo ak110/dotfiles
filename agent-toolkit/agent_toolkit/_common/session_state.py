@@ -1,8 +1,7 @@
 """Claude Code agent-toolkit: hook間で共有するセッション状態ファイルのアクセスヘルパー。
 
 並列ツール呼び出しで複数のhookプロセスが同一の状態ファイルへ同時書き込みする
-仕様に対応するため、通常状態は排他ロック付き`update_state`、計画名記録は
-独立した`claim_session_title`経由でのみ書き込む。
+仕様に対応するため、状態は排他ロック付き`update_state`経由で書き込む。
 `read_state` → 操作 → 直接 `write_state` する従来パターンは廃止する
 （先発プロセスの追加キーが後発プロセスの書き込みで消失する事象を防ぐ）。
 
@@ -18,9 +17,11 @@
 
 from __future__ import annotations
 
+import argparse
 import contextlib
 import json
 import pathlib
+import sys
 import tempfile
 import time
 from collections.abc import Callable, Generator
@@ -34,8 +35,6 @@ from agent_toolkit._common.file_lock import release_lock as _release_lock
 _FILENAME_PREFIX = "claude-agent-toolkit-"
 _FILENAME_SUFFIX = ".json"
 _LOCK_SUFFIX = ".lock"
-_TITLE_DIRECTORY_NAME = "claude-agent-toolkit-session-title"
-_SESSION_TITLE_KEY = "last_hook_session_title"
 _INHERITED_FROM_SESSION_KEY = "inherited_from_session_id"
 _WARN_NOTICE_COUNTS_KEY = "warn_notice_counts"
 _TRANSCRIPT_SESSION_ID_KEYS = ("sessionId", "session_id")
@@ -52,11 +51,6 @@ STALE_STATE_MAX_AGE_SECONDS = 14 * 24 * 60 * 60
 def state_path(session_id: str) -> pathlib.Path:
     """セッション状態ファイルのパスを返す。"""
     return pathlib.Path(tempfile.gettempdir()) / f"{_FILENAME_PREFIX}{session_id}{_FILENAME_SUFFIX}"
-
-
-def title_state_path(session_id: str) -> pathlib.Path:
-    """計画名の再出力抑止記録のパスを返す。"""
-    return pathlib.Path(tempfile.gettempdir()) / _TITLE_DIRECTORY_NAME / f"{session_id}{_FILENAME_SUFFIX}"
 
 
 def _lock_path(path: pathlib.Path) -> pathlib.Path:
@@ -88,14 +82,14 @@ def sweep_stale_states(
     now: float | None = None,
     max_age_seconds: float = STALE_STATE_MAX_AGE_SECONDS,
 ) -> int:
-    """期限を過ぎた状態ファイルと計画名の再出力抑止記録を回収し、削除した件数を返す。
+    """期限を過ぎた状態ファイルを回収し、削除した件数を返す。
 
-    `keep_session_id`を渡すと、指定したセッションの通常状態と計画名記録を
+    `keep_session_id`を渡すと、指定したセッションの状態を
     期限にかかわらず回収対象から除く。セッション終了イベントを契機に呼ぶ場合、
     そのセッションは`--continue`・`--resume`・`/resume`で戻れる一方、
     更新時刻は最後の記録時点のままとなり、長く記録が無いだけで削除されうるため。
 
-    通常状態・計画名記録とも、更新時刻が期限を超えた場合に削除する。
+    更新時刻が期限を超えた場合に削除する。
     どの処理もロックファイルを削除せず、一時ディレクトリの通常の回収に委ねる。
 
     個別の削除失敗は無視して走査を継続する。
@@ -103,16 +97,9 @@ def sweep_stale_states(
     directory = pathlib.Path(tempfile.gettempdir())
     threshold = (time.time() if now is None else now) - max_age_seconds
     kept_state_name = state_path(keep_session_id).name if keep_session_id else None
-    kept_title_path = title_state_path(keep_session_id) if keep_session_id else None
     removed = 0
     for path in directory.glob(f"{_FILENAME_PREFIX}*{_FILENAME_SUFFIX}"):
         if path.name == kept_state_name or not _is_stale(path, threshold):
-            continue
-        if _collect_stale_state(path, threshold):
-            removed += 1
-    title_directory = directory / _TITLE_DIRECTORY_NAME
-    for path in title_directory.glob(f"*{_FILENAME_SUFFIX}"):
-        if path == kept_title_path or not _is_stale(path, threshold):
             continue
         if _collect_stale_state(path, threshold):
             removed += 1
@@ -265,22 +252,6 @@ def increment_warn_notice_count(session_id: str, key: str) -> int:
     return count
 
 
-def claim_session_title(session_id: str, title: str) -> bool:
-    """計画名を未記録のセッションへ一度だけ保存する。"""
-    if not isinstance(session_id, str) or not session_id or not isinstance(title, str) or not title:
-        return False
-    path = title_state_path(session_id)
-    try:
-        with _locked_state(path):
-            current = _read_title_locked(path)
-            if current is None or current:
-                return False
-            _atomic_write(path, json.dumps({_SESSION_TITLE_KEY: title}, ensure_ascii=False))
-            return True
-    except OSError:
-        return False
-
-
 def delete_state(session_id: str) -> bool:
     """有効なセッションの通常状態を安全に削除する。対応するロックは削除しない。"""
     if not isinstance(session_id, str) or not session_id:
@@ -289,10 +260,10 @@ def delete_state(session_id: str) -> bool:
 
 
 def clear_session_state(session_id: str) -> bool:
-    """会話破棄時に通常状態と計画名記録を削除する。対応するロックは削除しない。"""
+    """会話破棄時に状態を削除する。対応するロックは削除しない。"""
     if not isinstance(session_id, str) or not session_id:
         return False
-    return _delete_state_paths((state_path(session_id), title_state_path(session_id)))
+    return delete_state(session_id)
 
 
 def _delete_state_paths(paths: tuple[pathlib.Path, ...]) -> bool:
@@ -323,17 +294,33 @@ def _read_locked(path: pathlib.Path) -> dict:
     return data if isinstance(data, dict) else {}
 
 
-def _read_title_locked(path: pathlib.Path) -> dict | None:
-    """計画名記録を読み、不在時は空辞書、破損・読取失敗時は`None`を返す。"""
-    try:
-        data = json.loads(path.read_text(encoding="utf-8"))
-    except FileNotFoundError:
-        return {}
-    except OSError, json.JSONDecodeError, ValueError:
-        return None
-    if not isinstance(data, dict):
-        return None
-    title = data.get(_SESSION_TITLE_KEY)
-    if set(data) != {_SESSION_TITLE_KEY} or not isinstance(title, str) or not title:
-        return None
-    return data
+def main(argv: list[str] | None = None) -> int:
+    """Function hooksへ命名に必要な通常状態を渡し、更新を既存の排他制御で保存する。"""
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--session-id", required=True)
+    fields = parser.add_mutually_exclusive_group()
+    fields.add_argument("--kind", choices=("process-wi", "single-lane", "add-awi"))
+    fields.add_argument("--title")
+    args = parser.parse_args(argv)
+    if not args.session_id or any(
+        char not in "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-" for char in args.session_id
+    ):
+        parser.error("session-idは英数字・アンダースコア・ハイフンで指定する")
+    if args.kind is not None or args.title is not None:
+        key = "session_title_kind" if args.kind is not None else "last_hook_session_title"
+        value = args.kind if args.kind is not None else args.title
+        if not value or not update_state(args.session_id, lambda state: {**state, key: value}):
+            print("セッション名の状態を保存できない", file=sys.stderr)
+            return 1
+    state = read_state(args.session_id)
+    print(
+        json.dumps(
+            {key: state.get(key) for key in ("session_title_kind", "last_hook_session_title", "current_plan_file_path")},
+            ensure_ascii=False,
+        )
+    )
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

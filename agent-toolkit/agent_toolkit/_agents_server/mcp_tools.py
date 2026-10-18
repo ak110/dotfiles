@@ -190,14 +190,14 @@ async def start(  # noqa: PLR0913 -- 公開入力をmodeごとの平坦な引数
 async def send_message(
     session_id: Annotated[str, Field(description=SESSION_ID_DESCRIPTION)],
     prompt: Annotated[
-        str,
+        str | None,
         Field(
             description=parameter_description(
                 "委譲先へ渡す追加指示または次のturnの依頼本文。実行中turnへは訂正として、終端済みsessionへは新しい依頼として届く。"
                 + DELEGATION_INPUT_GUIDANCE
             )
         ),
-    ],
+    ] = None,
     timeout: Annotated[
         float,
         Field(
@@ -208,6 +208,22 @@ async def send_message(
             )
         ),
     ] = DEFAULT_SEND_MESSAGE_TIMEOUT,
+    instruction: Annotated[
+        str | None,
+        Field(
+            description=parameter_description(
+                "役割文書が宣言する定型継続指示。extra_paramsと組み合わせ、promptと排他的に指定する。"
+            )
+        ),
+    ] = None,
+    extra_params: Annotated[
+        dict[str, str] | None,
+        Field(
+            description=parameter_description(
+                'instructionの宣言済み入力だけを渡す。例: instruction=再レビューせよ、extra_params={"round":"2"}。'
+            )
+        ),
+    ] = None,
 ) -> dict[str, Any]:
     """実行中turnへ追加指示を送り、終端済みなら同じsessionでreplyを開始する。
 
@@ -240,7 +256,10 @@ async def send_message(
     採用済みのengineが実際に利用不能で継続できない場合は、backendが返す理由に従って回復手段を選ぶ。
     保持済みsessionを失って継続できない場合は`unknown session: <session_id>`を返す。
     """
-    response = await _MANAGER.send_message(session_id, prompt, timeout)
+    if instruction is None and extra_params is None:
+        response = await _MANAGER.send_message(session_id, prompt, timeout)
+    else:
+        response = await _MANAGER.send_message(session_id, prompt, timeout, instruction=instruction, extra_params=extra_params)
     public: dict[str, Any] = {"delivery": response["delivery"], "label": response["label"]}
     if "root_session_id" in response:
         public["root_session_id"] = response["root_session_id"]

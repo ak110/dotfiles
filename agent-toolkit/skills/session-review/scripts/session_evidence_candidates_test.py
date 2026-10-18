@@ -1182,9 +1182,17 @@ def test_candidate_events_excludes_wi_body_style_diagnostics() -> None:
             "kind": "warning",
             "record": "main",
             "line": 1,
-            "text": "警告: 本文:80:88: 口語表現 例示語（候補: 置換語）",
+            "text": (
+                '警告: WI本文の表記診断: 入力元="原稿.md" 論理本文:80:88: '
+                "口語表現 例示語（候補: 置換語） | 文脈: 前【例示語】後"
+            ),
         },
-        {"kind": "warning", "record": "main", "line": 2, "text": "警告: 本文:3:5: ダッシュ —"},
+        {
+            "kind": "warning",
+            "record": "main",
+            "line": 2,
+            "text": '警告: WI本文の表記診断: 入力元="エディター入力" 論理本文:3:5: ダッシュ — | 文脈: 前【—】後',
+        },
         {
             "kind": "warning",
             "record": "main",

@@ -1,4 +1,4 @@
-r"""PreToolUse統合フックのうち、応答言語、TaskStop、agents_serverおよびplan-mode起動の可否を判定する。"""
+r"""PreToolUse統合フックのうち、TaskStop、agents_serverおよびplan-mode起動の可否を判定する。"""
 
 from __future__ import annotations
 
@@ -14,7 +14,6 @@ lazy import time
 from agent_toolkit._agents_server import (
     tool_names as _agents_server_tool_names,
 )
-lazy from agent_toolkit._common import response_language_check as _response_language_check
 lazy from agent_toolkit._common.file_lock import (
     locked_rotate_and_append as _locked_rotate_and_append,
 )
@@ -30,24 +29,6 @@ lazy from agent_toolkit._hooks import (
 lazy from agent_toolkit._hooks.notice import _WARN_TAG
 lazy from agent_toolkit._hooks.pretooluse.decision import Decision
 lazy from agent_toolkit._hooks.pretooluse.notices import _block_notice, _llm_notice
-
-
-def _handle_language_check(payload: dict) -> str | None:
-    """メインと委譲先の直前応答を判定し、書き直しまで操作を止める。
-
-    サブエージェントでは親のtranscriptを指すため、SubagentStopで判定する。
-    同じ英語応答での再発行も止め、日本語の新しい応答を受け取るまで通さない。
-    """
-    transcript_path = payload.get("transcript_path", "")
-    if not isinstance(transcript_path, str) or not transcript_path:
-        return None
-    if payload.get("agent_id") or payload.get("isSidechain") is True:
-        return None
-    outcome, body, _ = _response_language_check.detailed_check(transcript_path)
-    if outcome is _response_language_check.CheckOutcome.WARN:
-        return body
-    return None
-
 
 # Claude CodeとCodexが生成するagents_serverの完全修飾MCP tool名。
 _AGENTS_SERVER_NAMESPACES = _agents_server_tool_names.MCP_NAMESPACES
@@ -124,7 +105,7 @@ def _check_task_stop(session_id: str, tool_input: dict) -> str | None:
 def _clear_current_plan_file_path(session_id: str) -> None:
     """plan-mode起動時に前の計画ファイルのパスを消去する。
 
-    UserPromptSubmitが同じキーから計画名を`sessionTitle`へ出力するため、
+    Function hooksが同じキーから名前を選択するため、
     新しい計画を始めた後に前の計画名を出力し続けないようにする。
     """
     if not session_id:

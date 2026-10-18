@@ -139,8 +139,8 @@ def test_squash_inherits_union_of_wis(repo: pathlib.Path) -> None:
     }
 
 
-def test_commit_event_requires_new_head_and_its_previous_parent(repo: pathlib.Path) -> None:
-    """旧HEADや前HEADの取り違えをWIの実装commitとして記録しない。"""
+def test_commit_event_requires_nonempty_range_and_previous_ancestor(repo: pathlib.Path) -> None:
+    """空の区間と前HEADの不正な指定を理由・修正操作付きで拒否する。"""
     base = git_repository.git_output(repo, "rev-parse", "HEAD")
     current = _commit(repo, "recorded")
     assert commit_mapping.commit_event(repo, current, base, [WI_A], {WI_A}) == {

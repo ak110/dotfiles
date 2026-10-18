@@ -76,6 +76,9 @@ def _build_fixture(
         payload["agent_id"] = "agent-contract"
         payload["agent_type"] = "general-purpose"
     elif fixture_name == "pretooluse":
+        _state_path(tmp_path, session_id).write_text(
+            json.dumps({"operation_skill_delivered_agents": {"agent-toolkit:delegation": ["main"]}}), encoding="utf-8"
+        )
         payload.update(
             {
                 "tool_name": "mcp__plugin_agent-toolkit_agents_server__start",
@@ -137,7 +140,7 @@ def _build_fixture(
         plan.parent.mkdir(parents=True)
         plan.write_text("# 計画\n", encoding="utf-8")
         _state_path(tmp_path, session_id).write_text(
-            json.dumps({"current_plan_file_path": str(plan)}),
+            json.dumps({"current_plan_file_path": str(plan), "user_confirmation_skill_pending": True}),
             encoding="utf-8",
         )
         payload["prompt"] = "続行します"
@@ -171,6 +174,9 @@ def test_registered_hook_output_matches_event_contract(
     if expects_output:
         output = json.loads(result.stdout)
         assert validate_hook_output(event_name, output) == []
+        if event_name == "UserPromptSubmit":
+            assert "sessionTitle" not in output.get("hookSpecificOutput", {})
+            assert not (tmp_path / "claude-agent-toolkit-session-title").exists()
 
 
 @pytest.mark.parametrize(

@@ -82,7 +82,12 @@ TECHNICAL_JUDGMENT = "メインの技術判断"
 FILE_REFERENCE_FORM = (
     "`evidence`のファイル参照は、対象worktreeのルートからの相対パスか絶対パスで書き、"
     "リポジトリの外のファイル（managed-tempの検証記録など）は絶対パスで書く。"
-    "ファイル名だけや途中からのパスは、対象commitの追跡ファイルとパス末尾が1件に一致する場合だけ受理される"
+    "ファイル名だけや途中からのパスは、対象commitの追跡ファイルとパス末尾が1件に一致する場合だけ受理される。"
+    "見出しは`path#見出し`へ実在する見出し本文を書き、続く説明は空白か読点で区切る（例: docs/a.md#設定 で保存を確認）。"
+    "空白を含む見出しはインラインコードかMarkdownリンクで囲む（例: `docs/a.md#設定 保存`）。"
+    "行位置は`path:N`か`path:N-M`とし、複数の範囲は範囲ごとにパスを書き直す（例: docs/a.md:1-3、docs/a.md:8）。"
+    "複数のファイルは各パスを読点・`・`・空白で区切り、スラッシュでつながない（例: docs/a.md、docs/b.md）。"
+    "テスト名の角括弧の中のパスは試験の入力名として扱い、所在を確かめない"
 )
 # 背景の記録が原文の範囲を中略して引用するときの省略記号。
 ELLIPSIS = re.compile(r"…+|\.{3,}")
@@ -2398,7 +2403,9 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument(
         "--reader-fit-review",
-        help='成果物ごとのJSON申告 {"files":{"相対.md":{"sessions":["UUID"]}},"external":{"絶対パス":{"sessions":["UUID"]}}}。'
+        help='成果物ごとのJSON申告 {"files":{"相対.md":{"sessions":["起動結果の識別子"]}},'
+        '"external":{"絶対パス":{"sessions":["起動結果の識別子"]}}}。'
+        "識別子はUUID、16進列、agent-付き16進列を受理し、集約起動は各ファイルへ同じ識別子を申告する。"
         '再点検省略は{"omission":"再点検対象なし"}、externalには前回本文の複製の絶対パスpreviousも指定する。'
         "Markdown差分とexternal-artifactがともに無い場合だけ文章成果物なし",
     )
@@ -2446,7 +2453,7 @@ def main(argv: list[str] | None = None) -> int:
         or any(char in args.reader_fit_review for char in "\r\n")
     ):
         parser.error(
-            '返却生成には1行の--reader-fit-reviewが必要です。filesとexternalの各成果物へ{"sessions":["UUID"]}を対応付け、'
+            '返却生成には1行の--reader-fit-reviewが必要です。filesとexternalの各成果物へ{"sessions":["起動結果の識別子"]}を対応付け、'
             "reader-fit-review.parent.md「起動」に従って探索を起動・受領して申告を修復し再実行する。"
             "Markdown差分と--external-artifactがともに空の場合だけ文章成果物なしを指定する"
         )

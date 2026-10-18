@@ -15,6 +15,62 @@ from agent_toolkit._testing import git_repository as git
 SESSION = "11111111-2222-4333-8444-555555555555"
 
 
+@pytest.mark.parametrize("identifier", [SESSION, "a3aa408fdf18a760f", "agent-a3aa408fdf18a760f"])
+def test_launch_identifiers_roundtrip_return_and_batch(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], identifier: str
+) -> None:
+    """集約起動の識別子を全ファイルとexternalへ申告し、生成済みbatchでも受理する。"""
+    repo = git.init_repository(tmp_path / "repo", commit_message="開始")
+    start = git.git_output(repo, "rev-parse", "HEAD")
+    for name in ("a.md", "b.md"):
+        (repo / name).write_text("本文\n", encoding="utf-8")
+    head = git.commit_all(repo, "文章")
+    monkeypatch.chdir(repo)
+    draft = tmp_path / "draft.md"
+    draft.write_text("回答\n", encoding="utf-8")
+    declaration = json.dumps(
+        {
+            "files": {name: {"sessions": [identifier]} for name in ("a.md", "b.md")},
+            "external": {str(draft): {"sessions": [identifier]}},
+        }
+    )
+    assert check.main([*_args(tmp_path, start, head, declaration), "--external-artifact", str(draft)]) == 0
+    output = capsys.readouterr().out
+    batch = next(
+        line.removeprefix("受領確認入力のパス: ") for line in output.splitlines() if line.startswith("受領確認入力のパス: ")
+    )
+    assert check.main(["--batch", batch]) == 0
+    capsys.readouterr()
+
+
+@pytest.mark.parametrize("sessions", [["label"], ["日本語"], [], [1], [None]])
+@pytest.mark.parametrize("external", [False, True])
+def test_invalid_launch_identifiers_are_actionable(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    sessions: list[object],
+    external: bool,
+) -> None:
+    """管理内外の不正識別子は、修正と未起動探索の起動を案内する。"""
+    repo = git.init_repository(tmp_path / "repo", commit_message="開始")
+    start = git.git_output(repo, "rev-parse", "HEAD")
+    (repo / "a.md").write_text("本文\n", encoding="utf-8")
+    head = git.commit_all(repo, "文章")
+    monkeypatch.chdir(repo)
+    draft = tmp_path / "draft.md"
+    draft.write_text("回答\n", encoding="utf-8")
+    value = {"files": {"a.md": {"sessions": [SESSION] if external else sessions}}}
+    if external:
+        value["external"] = {str(draft): {"sessions": sessions}}
+    args = _args(tmp_path, start, head, json.dumps(value))
+    if external:
+        args.extend(["--external-artifact", str(draft)])
+    assert check.main(args) == 1
+    captured = capsys.readouterr()
+    assert not captured.out and "起動" in captured.err and "再実行" in captured.err
+
+
 def _args(
     tmp_path: pathlib.Path, start: str, head: str, declaration: str, *, previous: tuple[str, str] | None = None
 ) -> list[str]:

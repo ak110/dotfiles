@@ -28,6 +28,14 @@ Codexの可用性判定で利用上限を観測した場合は、次の候補を
 解除予定が不明なら300秒後に再確認し、待機の回数と総時間を打ち切らない。
 上限判定は共通層がロールアウト記録から行い、選択と待機はorchestratorが持つ。
 
+可用性判定は応答内容を使わず、engine単位の起動の成否と利用上限だけを観測する。
+そのため候補のengineの軽量段位のモデル（`claude_low_tier_model`・`codex_low_tier_model`のモデル部分）とeffort `low`で起動する（2026年10月18日、ユーザーの確認回答「最安モデル+軽量」）。
+Claudeはセッションを保存せず、ユーザーとプロジェクトの設定・ツール・MCP・スキルを読まず、最小のシステムプロンプトで起動し、process-loopの接続設定の`--settings`は保つ。`--bare`はOAuth認証を読まないため使わない。
+Claudeの別名はそのまま渡して最新版へ解決させる。
+Codexの系列名はChatGPT認証で系列名のままでは拒否されるため、既存の系列解決で完全IDへ解決し、1回の候補選択の中ではengineごとに1回だけ解決する。
+Codexはユーザー設定とrulesを読まずに起動する。利用上限の判定はrolloutを読むため、rolloutを残さない`--ephemeral`は`--json`の出力だけで判定できることを確かめるまで使わない。
+候補モデル固有の利用上限とeffortの無視はこの起動形では判定しない。ユーザーはモデル固有の制限は現状まれで、検出のための複雑化を避けるよう求めたため、代わりの検出や本作業の起動失敗時の再選択も加えない。
+
 ## process-loopのモジュール構成
 
 `atk wi process-loop`の工程は`agent-toolkit/agent_toolkit/_atk/wi/`配下の責務ごとのモジュールが持つ。作業ツリーの準備と上流との同期は`process_loop_worktree.py`、自己更新の確認と再起動は`process_loop_update.py`、miseの更新は`process_loop_mise.py`が持つ。変更の監視とprivate-notesの同期は`process_loop_watch.py`、プロンプトとオーケストレーターの選択とセッションの起動は`process_loop_session.py`、アラートの確認は`process_loop_alerts.py`が持つ。中断要求と追加指示の状態ファイルは`process_loop_control.py`、子プロセスの環境と実行ファイルの解決は`process_loop_env.py`が持つ。`process_loop.py`の`cmd_process_loop`はこれらを順に呼ぶ制御だけを持つ。以前は1つのファイルが全ての責務を持ち、工程を加える計画ごとに同じファイルへ追記していた。モジュール間の呼び出しは定義元のモジュールの属性として行い、テストは定義元を差し替える。テストも同じ単位で`process_loop_<責務>_test.py`へ分ける。

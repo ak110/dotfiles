@@ -16,8 +16,8 @@ from agent_toolkit._git import command as _git_command
 from agent_toolkit._plan.structure import is_agent_doc_target_file
 
 
-def changed_agent_doc_paths(repository: pathlib.Path, base: str, target: str) -> list[str]:
-    """`base`から`target`までに追加、変更、削除したエージェント向け文書のリポジトリ相対パスを返す。
+def _changed_paths(repository: pathlib.Path, base: str, target: str) -> list[str]:
+    """`base`から`target`までの全変更パスを返す。
 
     改名は削除と追加に分けて扱い、改名前と改名後の双方を対象へ含める。
     """
@@ -31,7 +31,12 @@ def changed_agent_doc_paths(repository: pathlib.Path, base: str, target: str) ->
             completed.stderr.decode("utf-8", errors="replace").strip() or f"git diff exit {completed.returncode}"
         )
     paths = completed.stdout.decode("utf-8").split("\0")
-    return sorted({path for path in paths if path and is_agent_doc_target_file(path)})
+    return sorted({path for path in paths if path})
+
+
+def changed_agent_doc_paths(repository: pathlib.Path, base: str, target: str) -> list[str]:
+    """変更したエージェント向け文書のリポジトリ相対パスを返す。"""
+    return [path for path in _changed_paths(repository, base, target) if is_agent_doc_target_file(path)]
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -51,16 +56,21 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument("base", help="比較の基準とするrevision")
     parser.add_argument("target", help="比較の対象とするrevision")
+    parser.add_argument("--review-risk", action="store_true", help="全変更パスから低リスクまたは通常を1行で返す")
     args = parser.parse_args(argv)
     try:
-        paths = changed_agent_doc_paths(args.repo, args.base, args.target)
+        paths = _changed_paths(args.repo, args.base, args.target)
     except RuntimeError as error:
         _next_action.report(
             f"失敗: {error}",
             next_action="`--repo`が対象リポジトリを指し、baseとtargetの両revisionがそこで解決できることを確かめて再実行する",
         )
         return 1
-    print(json.dumps(paths, ensure_ascii=False))
+    if args.review_risk:
+        low_risk = all(path.endswith((".md", ".md.tmpl")) and not is_agent_doc_target_file(path) for path in paths)
+        print("低リスク" if low_risk else "通常")
+    else:
+        print(json.dumps([path for path in paths if is_agent_doc_target_file(path)], ensure_ascii=False))
     return 0
 
 

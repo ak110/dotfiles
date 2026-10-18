@@ -15,6 +15,7 @@ from __future__ import annotations
 import dataclasses
 import pathlib
 import re
+import uuid
 
 from agent_toolkit._agents_server import shared_layout
 from agent_toolkit._atk import session_record_format
@@ -24,6 +25,18 @@ RECORD_ENGINES: frozenset[str] = frozenset({"claude", "codex", "agy"})
 """記録を探索できる実行系の名前。"""
 
 _SESSION_ID_PATTERN = re.compile(r"[A-Za-z0-9_-]+")
+
+
+def is_launch_identifier(value: object) -> bool:
+    """起動結果のUUID、素の16進agent ID、agent-付きagent IDを受理する。"""
+    if not isinstance(value, str):
+        return False
+    if re.fullmatch(r"(?:agent-)?[0-9a-fA-F]+", value):
+        return True
+    try:
+        return str(uuid.UUID(value)) == value.lower()
+    except ValueError:
+        return False
 
 
 @dataclasses.dataclass(frozen=True)

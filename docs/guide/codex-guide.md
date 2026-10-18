@@ -78,7 +78,7 @@ Codex向けのプラグインは`update-dotfiles`が生成して導入する。�
 `update-dotfiles`は未導入、disabled、version不一致のいずれかの場合に`codex plugin add`を実行し、導入後のversionと有効状態を再確認する。
 euryaleで`DOTFILES_CODEX_DAEMON_AUTO_RESTART=1`を指定せずに更新する場合は、同じユーザーのCodexが稼働中なら、導入済みagent-toolkitへの追加・更新を延期する。
 Linuxでは、過去の設定で診断ログDBを共有メモリー（`/dev/shm/codex-<UID>-logs_2.sqlite`と、その`-wal`・`-shm`ファイル）へ移していた場合、`update-dotfiles`が通常の保存先`~/.codex/`へ戻す。`<UID>`はOSのユーザーIDを指す。
-同じユーザーのCodexが稼働中なら、対象ファイルと再実行の操作を案内して処置を延期する。Codexを終了して`update-dotfiles`を再実行すると、共有メモリーのファイルを通常の保存先へコピーし、旧ファイルを指すシンボリックリンクを通常ファイルへ置き換える。
+同じユーザーのCodexが稼働中なら、対象ファイルを案内して処置を延期する。Codexの終了後の`update-dotfiles`（自動更新タイマーを持つホストではタイマーの再試行）で、共有メモリーのファイルを通常の保存先へコピーし、旧ファイルを指すシンボリックリンクを通常ファイルへ置き換える。タイマーを持たないホストでは、Codexを終了して`update-dotfiles`を再実行する。
 復元後の次の`update-dotfiles`実行では両方の内容が一致することを確認して共有メモリーの旧コピーを削除する。旧ファイルが既に失われたシンボリックリンクは、復元処理の際に削除する。内容の不一致などで延期した場合は、表示された診断に従って復旧する。
 旧ファイルも旧ファイルを指すリンクも無い場合は、処置と延期の案内を省く。
 稼働判定の対象は、通常のCodexセッション、`agents_server`が委譲用に起動する`codex app-server --stdio`、およびapp-server daemon（`codex app-server daemon start`が起動する管理daemon）とその補助プロセスである。
@@ -109,17 +109,17 @@ codex app-server daemon start
 ### Codexの利用中に延期した更新の反映
 
 Codexのセッションまたは`agents_server`の委譲が残る場合と、`DOTFILES_CODEX_DAEMON_AUTO_RESTART=1`を指定した場合は、管理daemonを停止しない。
-post-applyは実際に必要なplugin更新や診断ログの処置を延期した場合に、その対象と再実行の操作を案内し、更新ログへ記録する。
+post-applyは実際に必要なplugin更新や診断ログの処置を延期した場合に、その対象を案内して更新ログへ記録し、延期した工程を延期記録へ残す。
 延期中も旧版のスキル・MCP実体と有効状態を保持し、dotfiles本体、snapshot生成、Claude Codeと`atk-serve`の更新は続行する。
 ウォームアップは導入済みの有効版を使い、disabledのまま延期した場合はCodex分を除く。
 
 plugin更新を延期した場合は、延期の案内がpost-applyの完了案内と同期記録に残る。
 同期記録は状態ディレクトリ（`atk config get state_dir`が返すディレクトリ）の`sync-report.json`であり、案内は`post_apply.notices`にある。
-案内は対象plugin、導入版と目標版（再有効化だけを延期した場合は無効から有効への切り替え）、延期の理由になった稼働中のCodexおよび再実行の操作を示す。
+案内は対象plugin、導入版と目標版（再有効化だけを延期した場合は無効から有効への切り替え）、延期の理由になった稼働中のCodexを示す。
 dotfiles全体の同期が成功でも、この案内がある間はCodex pluginの最新版が反映されていない。
+plugin更新の延期は自動更新タイマーを持つLinuxサーバー（euryale）でだけ起きる。
+タイマーは延期記録がある間、上流に変更が無くても10分ごとに`update-dotfiles`を再実行する。Codexのセッションと委譲が終わった後の再試行で最新版が反映され、延期記録は削除される。手動の再実行は要らない。
 Codexを常に稼働させている間は延期が続き、最新版は適用されない。
-延期した更新は、Codexのセッションと委譲を全て終了してから`update-dotfiles`を再実行すると反映される。
-自動更新タイマーは上流変更が無ければpost-applyを実行しないため、停止後の次の周期に必ず反映されるわけではない。
 
 ### プラグイン更新後のdaemonの再起動
 

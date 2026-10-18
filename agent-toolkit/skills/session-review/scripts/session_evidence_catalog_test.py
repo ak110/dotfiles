@@ -520,7 +520,7 @@ def test_tool_calls_with_catalog_include_delegates_outside_root_within_window(
 
 
 def test_catalog_still_rejects_other_query_modes(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
-    """`--tool-calls`以外の照会modeとカタログ走査の併用は従来どおり拒否する。"""
+    """カタログと本文検索の併用を拒否し、利用できる照会を案内する。"""
     root = tmp_path / "project"
     write_jsonl(root / "session.jsonl", [timestamped_entry("2026-10-06T00:00:00Z", "記録")])
 
@@ -539,5 +539,6 @@ def test_catalog_still_rejects_other_query_modes(tmp_path: pathlib.Path, capsys:
         )
         == 2
     )
-    (event,) = read_jsonl(capsys)
-    assert "併用できない" in event["text"]
+    (event,) = read_jsonl(capsys, raw=True)
+    assert event["kind"] == "error"
+    assert "--tool-calls" in event["next_action"] and "--user-events" in event["next_action"]

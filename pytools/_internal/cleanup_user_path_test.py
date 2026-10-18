@@ -7,6 +7,7 @@
 
 # pylint: disable=protected-access
 
+import itertools
 from pathlib import Path, PureWindowsPath
 
 import pytest
@@ -590,7 +591,9 @@ def test_registration_then_cleanup_is_fixed_point(monkeypatch: pytest.MonkeyPatc
     )
     registry.install(monkeypatch)
     monkeypatch.setattr(install_libarchive, "_INSTALL_DIR", PureWindowsPath(_USERPROFILE) / ".local" / "lib" / "libarchive")
-    monkeypatch.setattr(install_libarchive, "_is_already_available", lambda: False)
+    # 各回とも導入前はロードできず、取得後はロードできる配置として登録の工程まで進める。
+    loadable = itertools.cycle([False, True])
+    monkeypatch.setattr(install_libarchive, "_is_loadable", lambda: next(loadable))
     monkeypatch.setattr(install_libarchive, "_download_dlls", lambda: True)
     monkeypatch.setattr(install_libarchive, "_persist_libarchive_env_var", lambda: False)
 

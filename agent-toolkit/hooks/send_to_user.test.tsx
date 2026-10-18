@@ -70,6 +70,7 @@ for (const env of DELEGATED_ENVS) {
     const called = await $.tool.call({ tool: TOOL, message: MESSAGE });
     expect(called.result).toBeUndefined();
     // 拒否の本文は、結果本文を委譲元へ返すことと、終端の返却へ書くことを案内する。
+    expect(called.deny).toMatch(/^<atk-auto source="main-only-tool" kind="block">\n[\s\S]*\n<\/atk-auto>$/);
     expect(called.deny).toMatch("委譲元へ返す");
     expect(called.deny).toMatch("終端の返却");
   });
@@ -92,6 +93,7 @@ test("サブエージェントのsend_to_userは拒否し、結果本文を最�
   expect((await $.tool.check({ tool: TOOL, agentId: "child", input: { message: MESSAGE } })).decision).toBe("deny");
   const called = await $.tool.call({ tool: TOOL, agentId: "child", message: MESSAGE });
   expect(called.result).toBeUndefined();
+  expect(called.deny).toMatch(/^<atk-auto source="main-only-tool" kind="block">\n[\s\S]*\n<\/atk-auto>$/);
   expect(called.deny).toMatch("委譲元へ返す");
   expect(called.deny).toMatch("最終応答");
 });
@@ -101,7 +103,7 @@ test("send_to_userは文字列のmessageが無ければ表示済みと返さな�
   on("process.run", () => ({ value: { exitCode: 0, stdout: JSON.stringify({ outcome: "pass", body: null, fix: "" }), stderr: "", isStdoutTruncated: false, isStderrTruncated: false } }));
   for (const input of [{ text: MESSAGE }, {}, { message: null }, { message: 1 }, { message: {} }]) {
     const called = await $.tool.call({ tool: TOOL, ...input });
-    expect(called.deny).toBeDefined();
+    expect(called.deny).toMatch(/^<atk-auto source="send-to-user" kind="block">\n[\s\S]*\n<\/atk-auto>$/);
     expect(called.result).toBeUndefined();
   }
 });
@@ -211,6 +213,7 @@ for (const [name, response, expected] of [
     on("process.run", () => { calls.push("check"); return { value: response }; });
     const called = await $.tool.call({ tool: TOOL, message: "確認が完了しました。" });
     expect(called.result).toBeUndefined();
+    expect(called.deny).toMatch(/^<atk-auto source="response-language" kind="block">\n[\s\S]*\n<\/atk-auto>$/);
     expect(called.deny).toContain(expected);
     expect(called.deny).toContain("response_language_check.py");
     expect(called.deny).toContain("同じ呼び出しを繰り返さず");
@@ -226,6 +229,7 @@ test("言語判定hookの例外は実行段階を返して反復を求めない"
   on("process.run", () => { throw new Error("判定処理の障害"); });
   const called = await $.tool.call({ tool: TOOL, message: "確認が完了しました。" });
   expect(called.result).toBeUndefined();
+  expect(called.deny).toMatch(/^<atk-auto source="response-language" kind="block">\n[\s\S]*\n<\/atk-auto>$/);
   expect(called.deny).toContain("process.runで例外が発生");
   expect(called.deny).toContain("同じ呼び出しを繰り返さず");
 });

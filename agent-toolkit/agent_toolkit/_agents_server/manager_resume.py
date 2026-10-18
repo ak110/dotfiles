@@ -107,9 +107,10 @@ class ManagerResume(manager_registry.ManagerRegistry):
             return
         # 背景実行の`atk agents wait`で回収済みの孫sessionは、登録簿と終端結果ファイルが消えた後も未観測にしない。
         await consume_agents_wait_background_outputs_async(session)
+        # 照会の`await`の間に委譲先の出力の追跡が同じ集合を更新するため、開始時点の写しを回す。
         resolutions = {
             session_id: (await run_file_operation(session_registry.resolve, session_id))
-            for session_id in session.live_child_session_ids
+            for session_id in tuple(session.live_child_session_ids)
         }
         terminal = {
             session_id

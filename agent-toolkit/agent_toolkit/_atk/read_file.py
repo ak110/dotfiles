@@ -53,26 +53,25 @@ def dispatch(args: argparse.Namespace) -> int:
             raise ValueError(f"開始位置が負です: {args.start}")
         with args.path.open(encoding="utf-8", newline="") as stream:
             text = stream.read()
-        if args.start > len(text):
-            raise ValueError(f"開始位置{args.start}が本文の末尾{len(text)}を超えています")
+        start = min(args.start, len(text))
     except (OSError, UnicodeError, ValueError) as error:
-        outcome.report_failure(str(error), next_action="実在するUTF-8ファイルの絶対パスと、本文内の0以上の--startを指定する")
+        outcome.report_failure(str(error), next_action="実在するUTF-8ファイルの絶対パスと、0以上の--startを指定する")
         return 2
-    minimum_end = min(len(text), args.start + 1)
-    minimum_bytes = len(_response(text, args.start, minimum_end).encode("utf-8"))
+    minimum_end = min(len(text), start + 1)
+    minimum_bytes = len(_response(text, start, minimum_end).encode("utf-8"))
     if not minimum_bytes <= args.max_bytes <= MAX_RESPONSE_BYTES:
         outcome.report_failure(
             f"返却予算{args.max_bytes}バイトでは取得できません（必要な最小予算{minimum_bytes}、最大予算{MAX_RESPONSE_BYTES}）",
             next_action=f"--max-bytesに{minimum_bytes}以上{MAX_RESPONSE_BYTES}以下を指定し、内側と外側の出力予算にも収める",
         )
         return 2
-    low = args.start
+    low = start
     high = min(len(text), low + args.max_bytes)
     while low < high:
         middle = (low + high + 1) // 2
-        if len(_response(text, args.start, middle).encode("utf-8")) <= args.max_bytes:
+        if len(_response(text, start, middle).encode("utf-8")) <= args.max_bytes:
             low = middle
         else:
             high = middle - 1
-    sys.stdout.write(_response(text, args.start, low))
+    sys.stdout.write(_response(text, start, low))
     return 0

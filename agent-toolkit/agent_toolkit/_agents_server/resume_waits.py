@@ -273,6 +273,11 @@ def begin_usage_limit_wait(session: SessionState, result: dict[str, Any]) -> boo
     )
     if role == "delegate" and following:
         selected = following[0]
+        if current == "subscription" and selected.kind == "api" and limit is not None and limit.is_wait_target:
+            # 上限の解除後に始まるturnでサブスクリプションへ戻すため、解除予定時刻を保持する。
+            # 不明な場合は解除待ちと同じ再確認の時刻を使う。
+            now = time.time()
+            session.claude_subscription_retry_at = now + limit.delay_seconds(now)
         session.claude_api_env_file = selected.api_env_file
         session.claude_connection = selected.kind
         session.claude_role = role

@@ -69,7 +69,7 @@ baseline作成と監視・再開では同じ指定を使う。
    - 総待機時間は、GitHub Actionsでは対象workflowの直近の成功runの`updatedAt - startedAt`へ登録猶予と変動分の余裕を加えて決め、取得・算出できなければ270秒とする。`gh`の入出力形式は実行直前のヘルプで確かめる
    - 終了コード6と2では同じ引数で呼び直し、それ以外を待機の終端とする
    - 背景実行では、ホストがコマンドを時間で停止する上限を総待機時間より長くする。先に止められるとスクリプトは判定結果を返せなくなる。実行ハンドルのyield・再開がある場合は60秒未満の間隔で同一processへ再接続し、processを短い`--timeout`へ分割したりplugin root更新を契機に置き換えたりしない
-   - push前のbaselineが無い場合と別の主体がpushしたcommitを待つ場合は、40桁の完全長SHAを`--wait-sha`へ、managed-temp内の待機専用JSONを`--failure-record`へ渡す。この形は対象SHAの全実行を判定し、baseline方式は自身のpushで新しく登録された実行だけを判定する
+   - push前のbaselineが無い場合（公開後のRelease workflowの完了確認を含む）と別の主体がpushしたcommitを待つ場合は、40桁の完全長SHAを`--wait-sha`へ、managed-temp内の待機専用JSONを`--failure-record`へ渡す。この形は対象SHAの全実行を判定し、baseline方式は自身のpushで新しく登録された実行だけを判定する
    - GitLabでは同一projectのbridgeが再帰的に指すdownstream pipelineとジョブも判定対象とし、別projectのdownstreamは対象外とする
 3. 全対象が終了コード0で完了した場合だけCI通過とする。出力が空か成功完了マーカーが無ければ未判定として直接確かめる。判定対象はbaselineに保存したSHAの実行であり、push後にsource refが進んでも同じSHAで判定する。登録猶予後に登録された実行も含む（猶予は実行が1件も登録されない場合を区別するための待機であり、判定対象の期限とは別物である）。GitHubで除外するのは`event`が`dynamic`かつworkflow名が`Dependabot Updates`の実行だけとする
 4. 終了コード6を受けたら`agent-toolkit:bugfix`を起動し、並行して同じbaseline・引数で呼び直す。終了コード1も同スキルで対処する

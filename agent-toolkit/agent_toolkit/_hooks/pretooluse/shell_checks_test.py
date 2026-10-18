@@ -20,8 +20,24 @@ from agent_toolkit._testing.pretooluse_support import (
     _additional_context,
     _plan_file_state_env,
     _run,
+    _run_posttooluse,
     _write_session_state,
 )
+
+
+def _run_in_ready_context(payload: dict, env_overrides: dict[str, str]) -> subprocess.CompletedProcess[str]:
+    """Skillの本文を受け取った状態で、シェル・MCP固有の判定を試す。"""
+    recorded = _run_posttooluse(
+        {
+            "hook_event_name": "PostToolUse",
+            "tool_name": "Skill",
+            "tool_input": {"skill": "agent-toolkit:delegation"},
+            "session_id": payload["session_id"],
+        },
+        env_overrides,
+    )
+    assert recorded.returncode == 0
+    return _run(payload, env_overrides=env_overrides)
 
 
 @pytest.mark.parametrize("codex", [False, True])
@@ -108,7 +124,7 @@ def test_commit_message_is_read_after_static_cd(tmp_path):
 
 
 class TestAgentsServerInputChecks:
-    """agents_serverの入力の妥当性判定が`agent-toolkit:delegation`の起動状態に依存しないことを確認する。"""
+    """基準の取得後に、agents_serverの入力の妥当性を判定する。"""
 
     @pytest.fixture(name="state_dir")
     def _state_dir(self, tmp_path: pathlib.Path) -> dict[str, str]:
@@ -128,7 +144,7 @@ class TestAgentsServerInputChecks:
             pytest.param("kill", {"session_id": "remote"}, "remote", id="kill"),
         ],
     )
-    def test_allowed_without_skill_record(
+    def test_allowed_with_skill_ready(
         self,
         state_dir: dict[str, str],
         tmp_path: pathlib.Path,
@@ -137,7 +153,7 @@ class TestAgentsServerInputChecks:
         remote_session_id: str | None,
         host: str,
     ) -> None:
-        """専用スキルの起動記録が無くても、起動記録とは独立した入力の妥当性の判定を通過すれば許可する。"""
+        """基準の取得後は、入力の妥当性の判定を通過すれば許可する。"""
         session_id = f"without-skill-{tool_suffix}"
         if remote_session_id is not None:
             _write_session_state(
@@ -145,7 +161,7 @@ class TestAgentsServerInputChecks:
                 session_id,
                 {"agents_server_cwd_by_session": {remote_session_id: "/tmp/workdir"}},
             )
-        result = _run(
+        result = _run_in_ready_context(
             {
                 "tool_name": f"mcp__plugin_agent-toolkit_agents_server__{tool_suffix}",
                 "tool_input": tool_input,
@@ -161,9 +177,9 @@ class TestAgentsServerInputChecks:
             out = json.loads(result.stdout)
             assert out["hookSpecificOutput"]["permissionDecision"] == "allow"
 
-    def test_allowed_when_sidechain_without_skill_record(self, state_dir: dict[str, str]) -> None:
+    def test_allowed_when_sidechain_with_skill_ready(self, state_dir: dict[str, str]) -> None:
         """サイドチェーンでは明示Skill起動記録を要求しない。"""
-        result = _run(
+        result = _run_in_ready_context(
             {
                 "tool_name": "mcp__plugin_agent-toolkit_agents_server__start",
                 "tool_input": {"prompt": "hello", "sandbox": "danger-full-access", "cwd": "/tmp/workdir"},
@@ -186,7 +202,7 @@ class TestCodexMcpExecution:
 
     def test_sandbox_unspecified_blocked(self, state_dir: dict[str, str]):
         """sandbox未指定の開始ツール呼び出しは入力を補正せずに通過させる。"""
-        result = _run(
+        result = _run_in_ready_context(
             {
                 "tool_name": "mcp__plugin_agent-toolkit_agents_server__start",
                 "tool_input": {"prompt": "hello", "cwd": "/tmp/workdir"},
@@ -202,7 +218,7 @@ class TestCodexMcpExecution:
     @pytest.mark.parametrize("sandbox", ["network-only", "read-only", "workspace-write"])
     def test_sandbox_other_values_blocked(self, sandbox: str, state_dir: dict[str, str]):
         """`danger-full-access`以外のsandbox指定も入力を補正せずに通過させる。"""
-        result = _run(
+        result = _run_in_ready_context(
             {
                 "tool_name": "mcp__plugin_agent-toolkit_agents_server__start",
                 "tool_input": {"prompt": "hello", "sandbox": sandbox, "cwd": "/tmp/workdir"},
@@ -217,7 +233,7 @@ class TestCodexMcpExecution:
 
     def test_sandbox_blocked_in_sidechain(self, state_dir: dict[str, str]):
         """サブエージェント内部からの呼び出しでもsandbox指定を補正せずに通過させる。"""
-        result = _run(
+        result = _run_in_ready_context(
             {
                 "tool_name": "mcp__plugin_agent-toolkit_agents_server__start",
                 "tool_input": {"prompt": "hello", "sandbox": "read-only", "cwd": "/tmp/workdir"},
@@ -233,7 +249,7 @@ class TestCodexMcpExecution:
 
     def test_sandbox_correct_no_message(self, state_dir: dict[str, str]):
         """sandbox・approval-policyが共に省略時の値と一致する場合、updatedInputは返すがsystemMessageを含めない。"""
-        result = _run(
+        result = _run_in_ready_context(
             {
                 "tool_name": "mcp__plugin_agent-toolkit_agents_server__start",
                 "tool_input": {
@@ -254,7 +270,7 @@ class TestCodexMcpExecution:
 
     def test_approval_policy_wrong_value_auto_fix_with_correct_sandbox(self, state_dir: dict[str, str]):
         """sandboxが正しい値でもapproval-policyのみ誤りなら単独でneverへ強制修正する。"""
-        result = _run(
+        result = _run_in_ready_context(
             {
                 "tool_name": "mcp__plugin_agent-toolkit_agents_server__start",
                 "tool_input": {
@@ -286,7 +302,7 @@ class TestCheckCodexMcpCwd:
         tool_input = {"prompt": "hello", "sandbox": "danger-full-access"}
         if cwd is not None:
             tool_input["cwd"] = cwd
-        result = _run(
+        result = _run_in_ready_context(
             {
                 "tool_name": "mcp__plugin_agent-toolkit_agents_server__start",
                 "tool_input": tool_input,
@@ -320,7 +336,7 @@ class TestCodexMcpReply:
             "reply1",
             {"agents_server_cwd_by_session": {"abc": "/tmp"}},
         )
-        result = _run(
+        result = _run_in_ready_context(
             {
                 "tool_name": tool_name,
                 "tool_input": {"session_id": "abc", **({"prompt": prompt} if prompt else {})},
@@ -334,7 +350,7 @@ class TestCodexMcpReply:
 
 
 class TestMcpLanguageBoundary:
-    """Claudeの英語はMCPの承認前に止め、Codexのtranscript除外と日本語の承認を保つ。"""
+    """MCPの承認は保存済みtranscriptの言語に依存せず、現在の応答はmodが判定する。"""
 
     _state_env = staticmethod(_plan_file_state_env)
     _write_state = staticmethod(_write_session_state)
@@ -359,7 +375,7 @@ class TestMcpLanguageBoundary:
         """同じMCP開始でも言語判定は呼出元ホストの契約に従う。"""
         env = self._state_env(tmp_path)
         transcript = self._write_transcript(tmp_path, "A" * 100)
-        result = _run(
+        result = _run_in_ready_context(
             {
                 "tool_name": "mcp__plugin_agent-toolkit_agents_server__start",
                 "tool_input": {"prompt": "hello", "sandbox": "danger-full-access", "cwd": "/tmp/workdir"},
@@ -369,11 +385,14 @@ class TestMcpLanguageBoundary:
             },
             env_overrides=env,
         )
-        assert result.returncode == (0 if codex else 2)
-        assert result.stdout == ""
-        assert ("英語主体" in result.stderr) is (not codex)
+        assert result.returncode == 0
+        assert not result.stderr
+        if codex:
+            assert not result.stdout
+        else:
+            assert json.loads(result.stdout)["hookSpecificOutput"]["permissionDecision"] == "allow"
         self._write_transcript(tmp_path, "根拠の確認が完了しました。")
-        approved = _run(
+        approved = _run_in_ready_context(
             {
                 "tool_name": "mcp__plugin_agent-toolkit_agents_server__start",
                 "tool_input": {"prompt": "調査する", "cwd": str(tmp_path)},
@@ -391,7 +410,7 @@ class TestMcpLanguageBoundary:
 
     @pytest.mark.parametrize("codex", [False, True])
     def test_continuation_permission_follows_host_language_boundary(self, tmp_path: pathlib.Path, codex: bool):
-        """所有記録のある継続操作でも言語の遮断とホスト除外を保つ。"""
+        """所有記録のある継続操作でも保存済みの言語を判定せず、ホスト別の承認を保つ。"""
         env = self._state_env(tmp_path)
         _write_session_state(
             tmp_path,
@@ -399,7 +418,7 @@ class TestMcpLanguageBoundary:
             {"agents_server_cwd_by_session": {"abc": "/tmp"}},
         )
         transcript = self._write_transcript(tmp_path, "A" * 100)
-        result = _run(
+        result = _run_in_ready_context(
             {
                 "tool_name": "mcp__plugin_agent-toolkit_agents_server__send_message",
                 "tool_input": {"session_id": "abc", "prompt": "next"},
@@ -409,11 +428,14 @@ class TestMcpLanguageBoundary:
             },
             env_overrides=env,
         )
-        assert result.returncode == (0 if codex else 2)
-        assert result.stdout == ""
-        assert ("英語主体" in result.stderr) is (not codex)
+        assert result.returncode == 0
+        assert not result.stderr
+        if codex:
+            assert not result.stdout
+        else:
+            assert json.loads(result.stdout)["hookSpecificOutput"]["permissionDecision"] == "allow"
         self._write_transcript(tmp_path, "根拠の確認が完了しました。")
-        approved = _run(
+        approved = _run_in_ready_context(
             {
                 "tool_name": "mcp__plugin_agent-toolkit_agents_server__send_message",
                 "tool_input": {"session_id": "abc", "prompt": "続ける"},
@@ -444,7 +466,7 @@ class TestIssSidechainProbe:
     def test_writes_one_jsonl_line_under_tempdir(self, tmp_path: pathlib.Path):
         """`tempfile.gettempdir()`起点、session_id含むパスへJSONL 1行を追記する。"""
         env = self._state_env(tmp_path)
-        result = _run(
+        result = _run_in_ready_context(
             {
                 "tool_name": "mcp__plugin_agent-toolkit_agents_server__start",
                 "tool_input": {"prompt": "hello", "sandbox": "danger-full-access", "cwd": "/tmp/workdir"},
@@ -468,7 +490,7 @@ class TestIssSidechainProbe:
                 "current_plan_file_path": "/tmp/plan.md",
             },
         )
-        result = _run(
+        result = _run_in_ready_context(
             {
                 "tool_name": "mcp__plugin_agent-toolkit_agents_server__start",
                 "tool_input": {"prompt": "hello", "sandbox": "danger-full-access", "cwd": "/tmp/workdir"},
@@ -491,7 +513,7 @@ class TestIssSidechainProbe:
     def test_iss_sidechain_absent_is_recorded_as_null(self, tmp_path: pathlib.Path):
         """`isSidechain`欠落時に`null`が記録される。"""
         env = self._state_env(tmp_path)
-        result = _run(
+        result = _run_in_ready_context(
             {
                 "tool_name": "mcp__plugin_agent-toolkit_agents_server__start",
                 "tool_input": {"prompt": "hello", "sandbox": "danger-full-access", "cwd": "/tmp/workdir"},
@@ -506,7 +528,7 @@ class TestIssSidechainProbe:
     def test_iss_sidechain_non_boolean_is_recorded_as_is(self, tmp_path: pathlib.Path):
         """`isSidechain`が非boolean型（整数・文字列など）でもそのまま記録される。"""
         env = self._state_env(tmp_path)
-        result = _run(
+        result = _run_in_ready_context(
             {
                 "tool_name": "mcp__plugin_agent-toolkit_agents_server__start",
                 "tool_input": {"prompt": "hello", "sandbox": "danger-full-access", "cwd": "/tmp/workdir"},
@@ -525,7 +547,7 @@ class TestIssSidechainProbe:
         session_id = "probe-oserror"
         log_path = self._log_path(tmp_path, session_id)
         log_path.mkdir()
-        result = _run(
+        result = _run_in_ready_context(
             {
                 "tool_name": "mcp__plugin_agent-toolkit_agents_server__start",
                 "tool_input": {"prompt": "os-error-probe", "sandbox": "danger-full-access", "cwd": "/tmp/workdir"},
@@ -545,7 +567,7 @@ class TestIssSidechainProbe:
         env = self._state_env(tmp_path)
         log_path = self._log_path(tmp_path, "probe-rotate")
         log_path.write_text("x" * (1_000_001), encoding="utf-8")
-        result = _run(
+        result = _run_in_ready_context(
             {
                 "tool_name": "mcp__plugin_agent-toolkit_agents_server__start",
                 "tool_input": {"prompt": "hello", "sandbox": "danger-full-access", "cwd": "/tmp/workdir"},
@@ -568,7 +590,7 @@ class TestIssSidechainProbe:
             "probe-reply",
             {"agents_server_cwd_by_session": {"abc": "/tmp"}},
         )
-        result = _run(
+        result = _run_in_ready_context(
             {
                 "tool_name": "mcp__plugin_agent-toolkit_agents_server__send_message",
                 "tool_input": {"session_id": "abc", "prompt": "next"},
@@ -585,7 +607,7 @@ class TestIssSidechainProbe:
     def test_called_even_when_iss_sidechain_true(self, tmp_path: pathlib.Path):
         """`isSidechain=True`ケースでも本ヘルパーが呼ばれる（既存の可否判定より前で実行されることの確認）。"""
         env = self._state_env(tmp_path)
-        result = _run(
+        result = _run_in_ready_context(
             {
                 "tool_name": "mcp__plugin_agent-toolkit_agents_server__start",
                 "tool_input": {"prompt": "hello", "sandbox": "danger-full-access", "cwd": "/tmp/workdir"},

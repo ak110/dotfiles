@@ -740,14 +740,13 @@ async def test_sdk_start_and_resume_deliver_executable_cli_without_old_path(
 def test_explore_options_keep_search_tools_and_mcp_on_resume(tmp_path: pathlib.Path, session_id: str | None) -> None:
     """新規・再接続の両方でコマンド検索とpyfltrへ到達し、診断ログの指定を保つ。"""
     options = claude._build_options(str(tmp_path), "model", "high", session_id, "explore", debug_file=tmp_path / "debug.log")
-    assert options.tools == ["Read", "Glob", "Grep", "Bash"]
+    assert options.tools == {"type": "preset", "preset": "claude_code"}
     assert set(options.allowed_tools) == {"Read", "Glob", "Grep", "Bash", "mcp__pyfltr__*"}
     assert options.permission_mode == "auto"
     assert not options.hooks
     assert options.disallowed_tools == ["Skill"]
     assert options.extra_args == {
         "debug-file": str(tmp_path / "debug.log"),
-        "strict-mcp-config": None,
         "permission-prompts": "none",
     }
     assert launch_prompts.python_runtime_instructions() in options.system_prompt
@@ -798,10 +797,10 @@ def test_claude_explore_options_reduce_instruction_sources_and_keep_tools(
         f"{launch_prompts.python_runtime_instructions()}\n"
         f"{launch_prompts.cli_runtime_instructions(claude.plugin_roots.SERVER_PLUGIN_ROOT)}"
     )
-    assert options.tools == ["Read", "Glob", "Grep", "Bash"]
+    assert options.tools == {"type": "preset", "preset": "claude_code"}
     assert set(options.allowed_tools) == {"Read", "Glob", "Grep", "Bash", "mcp__pyfltr__*"}
     assert set(options.mcp_servers) == {"pyfltr"}
-    assert options.extra_args == {"strict-mcp-config": None, "permission-prompts": "none"}
+    assert options.extra_args == {"permission-prompts": "none"}
 
 
 @pytest.mark.usefixtures("agents_server_isolation")

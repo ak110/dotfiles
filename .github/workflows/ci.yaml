@@ -280,14 +280,13 @@ jobs:
           Write-Output $version
           if ($version -ne 'codex-cli 0.163.0') { throw "検証対象のCodex版が一致しません: $version" }
           $binaries[0].DirectoryName | Out-File -FilePath $env:GITHUB_PATH -Append -Encoding utf8
-      - name: Windows Codex sandbox integration
+      - name: Windows Codex command integration
         if: needs.common-ci-owner.outputs.owns == 'true'
         shell: pwsh
         working-directory: ${{ env.DOTFILES_DIR }}
         run: >-
           uv run --frozen --python 3.15 pytest -v -rA -p no:cacheprovider
-          agent-toolkit/agent_toolkit/_agents_server/codex_sandbox_integration_test.py::test_windows_explore_probe_reaches_thread_start
-          agent-toolkit/agent_toolkit/_agents_server/codex_sandbox_integration_test.py::test_windows_explore_probe_rejects_custom_output_cap
+          agent-toolkit/agent_toolkit/_agents_server/codex_sandbox_integration_test.py::test_explore_start_reaches_normal_commands
       - name: 公開入口ランチャーの動作確認
         if: needs.common-ci-owner.outputs.owns == 'true'
         shell: pwsh
@@ -547,7 +546,7 @@ jobs:
         if: needs.common-ci-owner.outputs.owns == 'true'
         with:
           fetch-depth: 0
-      - uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca # v5.1.1
+      - uses: jdx/mise-action@9b200bcecbfd6303e69a4a261b2e09e3757440a7 # v5.2.0
         if: needs.common-ci-owner.outputs.owns == 'true'
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         if: needs.common-ci-owner.outputs.owns == 'true'
@@ -571,7 +570,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
-      - uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca # v5.1.1
+      - uses: jdx/mise-action@9b200bcecbfd6303e69a4a261b2e09e3757440a7 # v5.2.0
       - name: statuslineの版数とタグを検査
         working-directory: ${{ github.workspace }}
         env:

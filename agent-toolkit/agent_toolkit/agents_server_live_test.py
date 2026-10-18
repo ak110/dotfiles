@@ -4,21 +4,29 @@
 宣言と起動設定の整合は課金不要の`agents_server_live_contract_test.py`が判定する。
 """
 
+import asyncio
 import collections.abc
 import dataclasses
+import hashlib
 import http.server
 import json
+import os
 import pathlib
+import shlex
+import sys
 import threading
+import uuid
 from typing import Any
 
 import pytest
 
-from agent_toolkit._agents_server import codex_providers, mcp_tools
+from agent_toolkit._agents_server import codex_providers, mcp_tools, record_paths
 from agent_toolkit._agents_server import manager as server_manager
 from agent_toolkit._agents_server.state import LaunchKind
 from agent_toolkit._atk import config as _atk_config
+from agent_toolkit._atk import session_record_format
 from agent_toolkit._testing import isolation
+from agent_toolkit._testing.git_repository import init_repository, run_git
 
 pytestmark = pytest.mark.live_agents
 
@@ -63,6 +71,198 @@ EXPLORE_READ_INPUT = LiveInput(
     ),
     frozenset({"Read"}),
 )
+
+
+COMMON_INVESTIGATION_INPUT = LiveInput(
+    "explore",
+    (
+        """今回のturnで隔離した対象を読み、以下の5操作をそれぞれ実際のツール呼出で新たに実行せよ。
+同じsessionの継続でも、今回の5操作全てを再実行し、今回の実結果を返せ。
+対象成果物・入力資料・ユーザーデータを作成・変更・削除しない。ツール管理のキャッシュ・状態・保存出力は区別する。
+1. コマンド {git} を実行し、HEADとGit状態を取得する。
+2. コマンド {rg} を実行し、該当行番号と本文を取得する。
+3. コマンド {python} を実行し、Python標準ライブラリで分割取得した本文を得る。
+4. コマンド {atk} を実行し、read-fileのtextをeofまで取得する。
+5. 読取MCPクライアントのコマンド {mcp} を実行する。
+入力資料のクライアントはpyfltr MCPサーバーとstdioで接続する。
+grepへpaths=[{file_json}]、pattern=P4_READ_、fixed_strings=true、summary_mode=count、no_exclude=trueを渡す。
+最終応答はhead、git_status、rg_lines、python_text、atk_text、mcp_countを持つJSONオブジェクトだけにする。
+headはOID、git_statusは文字列、rg_linesは行番号付きの文字列2件の配列、python_textとatk_textは全文、mcp_countは整数とする。""",
+    ),
+    frozenset({"Bash"}),
+)
+
+_MCP_READER = """import asyncio
+import json
+import sys
+from mcp import ClientSession, StdioServerParameters
+from mcp.client.stdio import stdio_client
+
+async def main():
+    spec = json.loads(sys.argv[2])
+    params = StdioServerParameters(command=spec["command"], args=spec["args"])
+    async with stdio_client(params) as (read, write):
+        async with ClientSession(read, write) as client:
+            await client.initialize()
+            result = await client.call_tool(
+                "grep",
+                {"paths": [sys.argv[1]], "pattern": "P4_READ_", "fixed_strings": True,
+                 "summary_mode": "count", "no_exclude": True}
+            )
+            assert not result.is_error, result
+            value = {"server": "pyfltr", "transport": "stdio", "tool": "grep", "result": result.model_dump(mode="json")}
+            print(json.dumps(value, ensure_ascii=False))
+
+asyncio.run(main())
+"""
+
+
+def _investigation_snapshot(repository: pathlib.Path) -> dict[str, Any]:
+    """入力集合の全バイトとGitの版・index・worktreeを比較可能な値へ写す。"""
+    return {
+        "files": {
+            str(p.relative_to(repository)): hashlib.sha256(p.read_bytes()).hexdigest()
+            for p in sorted(repository.rglob("*"))
+            if p.is_file() and ".git" not in p.relative_to(repository).parts
+        },
+        "head": run_git(repository, "rev-parse", "HEAD").stdout.strip(),
+        "index": run_git(repository, "ls-files", "--stage").stdout,
+        "status": run_git(repository, "status", "--porcelain=v1", "--untracked-files=all").stdout,
+        "diff": run_git(repository, "diff", "--binary", "HEAD").stdout,
+    }
+
+
+def _investigation_events(session_id: str) -> tuple[list[str], list[dict[str, Any]]]:
+    """今回起動したsessionの実ツール記録を、各backendの既存の保存先から読む。"""
+    record = record_paths.find_session_record(session_id)
+    assert record is not None, f"sessionの実記録がない: {session_id}"
+    rows = []
+    for path in record.paths:
+        parsed, broken = session_record_format.parse_records(path.read_text(encoding="utf-8"))
+        assert not broken, path
+        rows.extend(parsed)
+    if record.engine == "agy":
+        tools = [row for row in rows if "tool" in json.dumps(row.get("step_type", row.get("step_update", {})))]
+    else:
+        tools = [
+            {**event.to_json(), "call_id": event.call_id}
+            for event in session_record_format.record_events(record.engine, rows)
+            if event.kind in {"tool_call", "tool_result"}
+        ]
+    return [str(path) for path in record.paths], tools
+
+
+@pytest.mark.asyncio
+@pytest.mark.timeout(900)
+@pytest.mark.parametrize("engine", ["claude", "codex", "agy"])
+async def test_live_explore_common_investigation(engine: str, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """同じ調査を全backendの新規・同session再開で実行し、実ツール結果と対象不変を確認する。"""
+    text = "P4_READ_ALPHA\n日本語の本文 " + uuid.uuid4().hex + "\nP4_READ_BETA\n"
+    repository = init_repository(
+        tmp_path / "target",
+        files={"input/読取 資料.txt": text, "input/pyfltr_mcp_read.py": _MCP_READER},
+        commit_message="調査入力を固定する",
+    )
+    source = repository / "input/読取 資料.txt"
+    before = _investigation_snapshot(repository)
+    # 認証情報はホストの通常の解決を使い、サーバー状態はテストfixtureの隔離先を保つ。
+    isolation.restore_host_environment(monkeypatch)
+    models = {"claude": "claude:sonnet[1m]/medium", "codex": "codex:sol/medium", "agy": "agy:gemini-3.8-flash/medium"}
+    python_code = f"import pathlib; s=pathlib.Path({str(source)!r}).read_text(encoding='utf-8'); print(s[:7]+s[7:], end='')"
+    atk = pathlib.Path(__file__).parents[1] / "scripts" / "atk"
+    mcp_spec = json.loads((atk.parents[1] / ".mcp.json").read_text(encoding="utf-8"))["mcpServers"]["pyfltr"]
+    prompt = COMMON_INVESTIGATION_INPUT.texts[0].format(
+        git=(
+            f"git -C {shlex.quote(str(repository))} rev-parse HEAD と "
+            f"git -C {shlex.quote(str(repository))} status --porcelain=v1"
+        ),
+        rg=f"rg -n -F P4_READ_ {shlex.quote(str(source))}",
+        python=f"{shlex.quote(sys.executable)} -c {shlex.quote(python_code)}",
+        atk=f"{shlex.quote(str(atk))} read-file -- {shlex.quote(str(source))}",
+        mcp=" ".join(
+            shlex.quote(value)
+            for value in (sys.executable, str(repository / "input/pyfltr_mcp_read.py"), str(source), json.dumps(mcp_spec))
+        ),
+        file_json=json.dumps(str(source), ensure_ascii=False),
+    )
+    manager = server_manager.AgentsServerManager()
+    monkeypatch.setattr(mcp_tools, "_MANAGER", manager)
+    observed: dict[str, Any] = {"engine": engine, "model_type": models[engine], "prompt": prompt, "before": before, "turns": []}
+    destination = (
+        pathlib.Path(os.environ.get("AGENT_TOOLKIT_LIVE_EVIDENCE_DIR", str(tmp_path))) / f"investigation-{engine}.json"
+    )
+    session_id = None
+    try:
+        for turn in (1, 2):
+            async with asyncio.timeout(360):
+                if turn == 1:
+                    response = await mcp_tools.start(str(repository), mode="explore", prompt=prompt, model_type=models[engine])
+                    session_id = response["session_id"]
+                else:
+                    assert session_id is not None
+                    response = await mcp_tools.send_message(session_id, prompt=prompt)
+                    assert response["delivery"] == "reply_started", response
+                observed["session_id"] = session_id
+                observed["last_response"] = response
+                result = await _wait_terminal(manager)
+            entry: dict[str, Any] = {"turn": turn, "session_id": session_id, "response": response, "result": result}
+            observed["turns"].append(entry)
+            assert result["status"] == "completed", result
+            assert session_id is not None
+            session = manager.sessions[session_id]
+            assert session.engine == engine
+            entry["turn_seq"] = session.turn_seq
+            if turn == 2:
+                assert session.turn_seq == observed["turns"][0]["turn_seq"] + 1
+            entry["record_paths"], entry["tool_events"] = _investigation_events(session_id)
+            prior_count = observed["turns"][0].get("event_count", 0) if turn == 2 else 0
+            entry["event_count"] = len(entry["tool_events"])
+            actual_events = entry["tool_events"][prior_count:]
+            tool_text = json.dumps(actual_events, ensure_ascii=False)
+            for command in ("git", "rg", "read-file", "python", "pyfltr"):
+                assert command in tool_text, (command, actual_events)
+            # CLIが引数を省略した実記録でも、MCPの実返却値で件数を確認する。
+            assert "mcp" in tool_text.lower(), actual_events
+            tool_outputs = [
+                event.get("text") or event.get("step_update", {}).get("tool_info", {}).get("output", "")
+                for event in actual_events
+            ]
+            entry["mcp_results"] = [
+                output
+                for output in tool_outputs
+                if '"transport":"stdio"' in "".join(output.replace("\\", "").split())
+                and '"total_matches":2' in "".join(output.replace("\\", "").split())
+            ]
+            assert entry["mcp_results"], actual_events
+            assert "P4_READ_ALPHA" in tool_text and "P4_READ_BETA" in tool_text
+            assert text.splitlines()[1] in tool_text
+            response_text = result["agent_message"].strip()
+            if response_text.startswith("```json\n") and response_text.endswith("\n```"):
+                response_text = response_text[len("```json\n") : -len("\n```")]
+            value = json.loads(response_text)
+            assert value == {
+                "head": before["head"],
+                "git_status": "",
+                "rg_lines": ["1:P4_READ_ALPHA", "3:P4_READ_BETA"],
+                "python_text": text,
+                "atk_text": text,
+                "mcp_count": 2,
+            }, value
+            entry["after"] = _investigation_snapshot(repository)
+            assert entry["after"] == before
+    except BaseException as error:
+        observed["error"] = f"{type(error).__name__}: {error}"
+        raise
+    finally:
+        observed["states_before_close"] = {
+            key: {"engine": value.engine, "status": value.status, "turn_seq": value.turn_seq, "error": value.error}
+            for key, value in manager.sessions.items()
+        }
+        await manager.close()
+        observed["after_close"] = _investigation_snapshot(repository)
+        observed["closed"] = True
+        destination.write_text(json.dumps(observed, ensure_ascii=False, indent=2), encoding="utf-8")
+        print(f"実backend受入記録: {destination}")
 
 
 async def _wait_terminal(manager: server_manager.AgentsServerManager) -> dict[str, Any]:

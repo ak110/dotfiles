@@ -42,6 +42,7 @@ def export_logs(
     include_thinking: bool,
     include_subagents: bool,
     tool_details: bool,
+    verbose: bool = False,
 ) -> int:
     """公開CLIの選択条件で記録を読み、標準出力か1件1ファイルへ出力する。"""
     if session_id is not None:
@@ -89,7 +90,7 @@ def export_logs(
                 tool_details=tool_details,
             )
         else:
-            rendered = _render_text(target, records, bulk=session_id is None)
+            rendered = _render_text(target, records, bulk=session_id is None, verbose=verbose)
         if destinations is None:
             sys.stdout.write(rendered)
             if index + 1 < len(targets):
@@ -199,10 +200,35 @@ def _safe_stem(value: str) -> str:
     return re.sub(r"[^0-9A-Za-z_-]", "-", value) or "session"
 
 
-def _render_text(target: RecordTarget, records: list[dict[str, typing.Any]], *, bulk: bool) -> str:
+def _render_text(target: RecordTarget, records: list[dict[str, typing.Any]], *, bulk: bool, verbose: bool) -> str:
     """単一記録は形式指定がない場合と同じ書式で出力し、複数件には識別子の区切りを付ける。"""
-    lines = [f"### {target.session_id}"] if bulk else []
-    for event in session_record_format.record_events(target.engine, records):
+    items = [f"### {target.session_id}"] if bulk else []
+    items.extend(text_items(target.engine, records, verbose=verbose))
+    return "".join(f"{item}\n\n" for item in items)
+
+
+def text_items(engine: str, records: typing.Iterable[dict[str, typing.Any]], *, verbose: bool) -> list[str]:
+    """text表示の項目を1件1文字列で返す。項目の間には呼び出し側が空行を1行置く。
+
+    `verbose`が偽の場合は会話の流れを要約し、振り返りの通常表示と同じ基準でツール呼び出し、成功したツール結果と思考を除き、
+    本文を同じ上限で切り詰める。失敗したツール結果は会話の流れに作用するため残す。`verbose`は全イベントを全文で返す。
+    """
+    items: list[str] = []
+    for event in session_record_format.record_events(engine, records):
         detail = event.text or event.name or ""
-        lines.append(f"[{event.timestamp or '-'}] {event.kind}: {detail}")
-    return "\n".join(lines) + "\n"
+        if not verbose:
+            if event.kind in {"tool_call", "thinking"} or (
+                event.kind == "tool_result" and not (event.detail or {}).get("is_error")
+            ):
+                continue
+            detail = _clip(detail)
+        items.append(f"[{event.timestamp or '-'}] {event.kind}: {detail}")
+    return items
+
+
+def _clip(text: str) -> str:
+    """要約表示の上限を超える本文を切り詰め、省略の標識を付ける。"""
+    normalized = text.strip()
+    if len(normalized) <= session_record_format.SUMMARY_TEXT_LIMIT:
+        return normalized
+    return normalized[: session_record_format.SUMMARY_TEXT_LIMIT] + session_record_format.OMISSION_MARK

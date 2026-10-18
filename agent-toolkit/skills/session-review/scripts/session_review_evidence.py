@@ -35,6 +35,7 @@ from session_evidence_catalog import (
     CATALOG_PARENT_FIELDS,
     _catalog_events,
     _catalog_tool_call_events,
+    _catalog_user_event_events,
     _CatalogSelection,
 )
 from session_evidence_context import (
@@ -75,6 +76,7 @@ from session_evidence_tool_calls import (
     _tool_call_collection_events,
 )
 from session_evidence_user_events import (
+    _query_user_events,
     _saved_user_events_at,
     _user_events_since,
 )
@@ -107,6 +109,48 @@ def _print_events(events: list[dict[str, Any]], *, collected: list[_CollectedRec
     """
     for event in [*(_referenced_provenance_events(collected, events) if collected is not None else []), *events]:
         print(json.dumps(event, ensure_ascii=False))
+
+
+def _summary_events(events: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """照会が生成した件数・判定・保存先と診断を保持して表示を選ぶ。"""
+    omitted = {"match", "context-match", "tool-call", "warning", "bundle-locator", "bundle-warning-group"}
+    selected = [
+        {key: value for key, value in event.items() if key != "locators"} if event["kind"] == "fixed-string-summary" else event
+        for event in events
+        if event["kind"] not in omitted
+    ]
+    if any(event["kind"] == "warning" for event in events):
+        selected.append(
+            {"kind": "warning-summary", "count": sum(event["kind"] == "warning" and "record" in event for event in events)}
+        )
+    return selected
+
+
+# 照会の公開指定と、併用できる表示・入力形式を同じ表で管理する。
+_QUERY_OPTIONS = {
+    "warn": (True, False),
+    "grep": (True, False),
+    "fixed_string": (True, False),
+    "context_at": (True, False),
+    "tool_calls": (True, True),
+    "bundle": (True, False),
+    "stats": (True, False),
+    "user_events": (False, True),
+    "detail": (False, False),
+    "record_schema": (False, False),
+    "elapsed_until": (False, False),
+    "hook_notices": (False, False),
+}
+
+
+def _active_queries(args: argparse.Namespace) -> list[str]:
+    """指定された照会名を、許可する組の表から取得する。"""
+    return [name for name in _QUERY_OPTIONS if getattr(args, name) is not None and getattr(args, name) is not False]
+
+
+def _query_option_names(names: list[str]) -> str:
+    """照会名を修正操作へ渡す公開オプションの列へ変換する。"""
+    return "・".join(f"`--{name.replace('_', '-')}`" for name in names)
 
 
 def _print_error(text: str, *, next_action: str) -> int:
@@ -281,7 +325,9 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--summary-only",
         action="store_true",
-        help="`--stats`と併用し、総量・親・サブエージェント・threadの要約だけを全フィールド・既存順で返す。集計値の定義は全量表示と同じ。",
+        help="`--grep`・`--fixed-string`・`--context-at`・`--tool-calls`・`--warn`・`--bundle`・`--stats`と併用し、"
+        "件数・判定・保存先だけを返す。警告は重複除去後のwarningイベント数を返す。"
+        "statsは総量・親・サブエージェント・threadの要約を全フィールド・既存順で返す。診断と由来を保持する。",
     )
     parser.add_argument(
         "--hook-notices",
@@ -312,7 +358,20 @@ def _build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="メイン記録にある人間の発話と確認回答を、観測境界まで全文で照会する。"
         "`--since`を指定した場合はその時刻より後だけを、省略した場合は記録の最初からを対象とする。"
-        "スキル展開、実行環境の生成本文およびClaude Codeの中断の定型文は除く。",
+        "スキル展開、実行環境の生成本文およびClaude Codeの中断の定型文は除く。"
+        "カタログと併用すると親セッションを横断し、workflow・cwdの条件で親を選べる。"
+        "検索は元記録行の時刻で期間を判定し、時刻なし入力はuser-event-undatedで示す。"
+        "要約は走査した親・選定した親・一致イベントの件数を区別し、0件も明示する。件数上限は設けない。",
+    )
+    parser.add_argument(
+        "--user-match-fixed", metavar="TEXT", help="`--user-events`の人間が入力した値を固定文字列の部分一致で検索する。"
+    )
+    parser.add_argument("--user-match-regex", metavar="REGEX", help="`--user-events`の人間が入力した値を正規表現で検索する。")
+    parser.add_argument(
+        "--with-preceding-assistant",
+        action="store_true",
+        help="`--user-events`の各一致へ同じ記録の直前のアシスタント発話を全文・位置・時刻付きで添える。"
+        "該当発話が無い場合はnull。単一記録とカタログで共通して使える。",
     )
     parser.add_argument(
         "--user-events-file",
@@ -418,8 +477,32 @@ def main(argv: list[str] | None = None) -> int:
         _print_events(events)
         return 0
     query_modes = _single_transcript_query_modes(args)
-    if args.summary_only and not args.stats:
-        return _print_error("--summary-onlyは--statsと併用する", next_action="`--stats`を付けて再実行する")
+    active_queries = _active_queries(args)
+    if args.summary_only and (not active_queries or any(not _QUERY_OPTIONS[name][0] for name in active_queries)):
+        supported = _query_option_names([name for name, (summary, _catalog) in _QUERY_OPTIONS.items() if summary])
+        return _print_error(
+            f"--summary-onlyの対象外の照会: {_query_option_names(active_queries) or '無指定の時系列表示・親一覧'}",
+            next_action=f"要約は{supported}と併用する。詳細照会では`--summary-only`を外して再実行する",
+        )
+    user_query = args.user_match_fixed is not None or args.user_match_regex is not None or args.with_preceding_assistant
+    user_pattern = None
+    if user_query:
+        user_next_action = (
+            "`--user-events`と併用し、`--user-match-fixed`か`--user-match-regex`の一方だけを指定する。"
+            "正規表現の構文を確認して再実行する"
+        )
+        if not args.user_events or args.user_match_fixed is not None and args.user_match_regex is not None:
+            return _print_error("発話検索の指定の組が不正", next_action=user_next_action)
+        try:
+            user_pattern = (
+                re.compile(re.escape(args.user_match_fixed))
+                if args.user_match_fixed is not None
+                else re.compile(args.user_match_regex)
+                if args.user_match_regex is not None
+                else None
+            )
+        except re.error as error:
+            return _print_error(f"発話検索の正規表現が不正: {error}", next_action=user_next_action)
     summaries = [
         name
         for name, active in (
@@ -452,10 +535,16 @@ def main(argv: list[str] | None = None) -> int:
     ):
         selection_next_action = (
             "親行の選択は`--catalog-claude-project`か`--catalog-codex-history`と併用し、`--tool-calls`を外す。"
-            "`--catalog-fields`には重複なしの項目名を指定して再実行する: " + ",".join(CATALOG_PARENT_FIELDS)
+            "`--catalog-fields`は親一覧だけで使い、`--user-events`との組では外す。"
+            "表示項目は重複なしで指定して再実行する: " + ",".join(CATALOG_PARENT_FIELDS)
         )
-        if catalog_root is None or args.tool_calls:
-            return _print_error("親行の選択はカタログの親セッション一覧だけで使える", next_action=selection_next_action)
+        if catalog_root is None or args.tool_calls or args.user_events and args.catalog_fields is not None:
+            return _print_error(
+                "--catalog-fieldsはカタログの親セッション一覧だけで使える"
+                if args.user_events and args.catalog_fields is not None
+                else "親行の選択はカタログの親セッション一覧だけで使える",
+                next_action=selection_next_action,
+            )
         fields = tuple(args.catalog_fields.split(",")) if args.catalog_fields is not None else None
         if fields is not None and (
             len(set(fields)) != len(fields) or any(field not in CATALOG_PARENT_FIELDS for field in fields)
@@ -464,10 +553,11 @@ def main(argv: list[str] | None = None) -> int:
         catalog_selection = _CatalogSelection(
             args.catalog_workflow, args.catalog_known_workflow, args.catalog_cwd_contains, fields
         )
-    if catalog_root is not None and any(query_modes) and (not args.tool_calls or sum(query_modes) > 1):
+    if catalog_root is not None and active_queries and (len(active_queries) != 1 or not _QUERY_OPTIONS[active_queries[0]][1]):
+        supported = _query_option_names([name for name, (_summary, catalog) in _QUERY_OPTIONS.items() if catalog])
         return _print_error(
-            "カタログ走査は`--tool-calls`以外の単一transcriptの照会モードと併用できない",
-            next_action="カタログ走査（`--catalog-claude-project`・`--catalog-codex-history`）と単一transcriptの照会を別々に実行する",
+            "カタログ走査と照会の指定の組が不正",
+            next_action=f"カタログ走査は{supported}の一方と併用する。他の照会は単一記録で実行する",
         )
     if (args.tool is not None or args.input_regex is not None) and not args.tool_calls:
         return _print_error(
@@ -544,9 +634,19 @@ def main(argv: list[str] | None = None) -> int:
             events, exit_code = _catalog_tool_call_events(
                 Path(catalog_root), catalog_runtime, since, catalog_boundary, args.tool, input_pattern
             )
+        elif args.user_events:
+            events, exit_code = _catalog_user_event_events(
+                Path(catalog_root),
+                catalog_runtime,
+                since,
+                catalog_boundary,
+                catalog_selection,
+                user_pattern,
+                preceding_assistant=args.with_preceding_assistant,
+            )
         else:
             events, exit_code = _catalog_events(Path(catalog_root), catalog_runtime, since, catalog_boundary, catalog_selection)
-        _print_events(events)
+        _print_events(_summary_events(events) if args.summary_only else events)
         return exit_code
     if args.delegation_record is not None or args.owner_session:
         try:
@@ -624,7 +724,8 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.bundle is not None:
         events, exit_code = _bundle_events(collected, unresolved, Path(args.bundle), compaction_record_dir)
-        _print_events(events, collected=collected)
+        provenance = _referenced_provenance_events(collected, events)
+        _print_events([*provenance, *(_summary_events(events) if args.summary_only else events)])
         return exit_code
     events = list(elapsed_events)
     exit_code = elapsed_code
@@ -667,7 +768,22 @@ def main(argv: list[str] | None = None) -> int:
             [*_hook_notice_events([record for item in collected for record in item.records]), *_unresolved_events(unresolved)]
         )
     if args.user_events:
-        events.extend(_user_events_since(collected, since))
+        if user_query:
+            results = _query_user_events(
+                collected[0], since, boundary, user_pattern, preceding_assistant=args.with_preceding_assistant
+            )
+            events.extend(
+                [
+                    *results,
+                    {
+                        "kind": "summary",
+                        "count": sum(event["kind"] == "user" for event in results),
+                        "undated_event_count": sum(event["kind"] == "user-event-undated" for event in results),
+                    },
+                ]
+            )
+        else:
+            events.extend(_user_events_since(collected, since))
     if args.tool_calls:
         events.extend(_tool_call_collection_events(collected, unresolved, args.tool, input_pattern))
     if any(query_modes):
@@ -690,7 +806,12 @@ def main(argv: list[str] | None = None) -> int:
             or args.user_events
             and (args.delegation_record is not None or args.owner_session)
         )
-        _print_events(unique, collected=collected if provenance else None)
+        provenance_events = _referenced_provenance_events(collected, unique) if provenance else []
+        if args.summary_only:
+            unique = _summary_events(unique)
+            if args.warn and not any(event["kind"] == "warning-summary" for event in unique):
+                unique.append({"kind": "warning-summary", "count": 0})
+        _print_events([*provenance_events, *unique])
         return exit_code
 
     _print_events(_default_events(collected, unresolved))

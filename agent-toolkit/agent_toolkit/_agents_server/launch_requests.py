@@ -27,6 +27,7 @@ from agent_toolkit._agents_server.tool_descriptions import START_MODE_EXAMPLES, 
 from agent_toolkit._atk import managed_temp as _managed_temp
 from agent_toolkit._common.message_format import auto_message
 from agent_toolkit._common.next_action import ActionableError
+from agent_toolkit._git import command as git_command
 
 _LOG = logging.getLogger("agent-toolkit.agents-server.mcp")
 
@@ -98,7 +99,7 @@ def _accepted_role_names() -> list[str]:
     return sorted(path.name.removesuffix(_TASK_DOCUMENT_SUFFIX) for path in _SHARE_DIRECTORY.glob(f"*{_TASK_DOCUMENT_SUFFIX}"))
 
 
-def _resolve_task_document_path(subagent_md_path: str) -> pathlib.Path:
+def resolve_task_document_path(subagent_md_path: str) -> pathlib.Path:
     """`subagent_md_path`の絶対パスはそのまま、役割名はサーバー自身のplugin rootの`share/`直下の文書へ解決する。
 
     委譲元は自身のシェルでplugin rootを解決できないことがあり、サーバーは自身のplugin rootを一意に持つため、
@@ -291,6 +292,147 @@ def _check_declared_inputs(
     _check_explore_materials(task_document, extra_params)
 
 
+def named_input_lines(params: Mapping[str, str]) -> list[str]:
+    """値の改行を区別して、名前付き入力を最小本文へ直列化する。"""
+    lines: list[str] = []
+    for name, value in params.items():
+        if "\n" in value:
+            lines.append(f"{name}:")
+            lines.extend(f"  {line}" for line in value.split("\n"))
+        else:
+            lines.append(f"{name}: {value}")
+    return lines
+
+
+def parse_named_inputs(lines: list[str]) -> dict[str, str]:
+    """定型本文の入力を復元し、説明行・重複項目を拒否する。"""
+    params: dict[str, str] = {}
+    current: str | None = None
+    first_continuation = False
+    for number, line in enumerate(lines, 2):
+        if current is not None and line.startswith("  "):
+            params[current] = line[2:] if first_continuation else params[current] + "\n" + line[2:]
+            first_continuation = False
+            continue
+        if not line.strip():
+            continue
+        name, separator, value = line.partition(":")
+        if (
+            not separator
+            or (value and not value.startswith(" "))
+            or not _REQUIRED_INPUT_NAME_PATTERN.fullmatch(name)
+            or name in params
+        ):
+            raise ActionableError(
+                f"入力本文の{number}行目を受理できません: {line}",
+                next_action="指示と宣言済みの名前付き入力だけで再実行する。本文生成にはdelegation-promptを使う",
+            )
+        current = name
+        params[name] = value.removeprefix(" ")
+        first_continuation = not params[name]
+    return params
+
+
+def builtin_task_prompt(subagent_md_path: str, extra_params: Mapping[str, str]) -> str:
+    """組み込み委譲へ渡す、役割参照と宣言済み入力だけの本文を生成する。"""
+    document = resolve_task_document_path(subagent_md_path)
+    warning = _validate_required_prompt_inputs(document, extra_params)
+    if warning is not None:
+        _LOG.warning("%s", warning)
+    return "\n".join([f"{document}の手順を実行せよ。", *named_input_lines(extra_params)])
+
+
+def continuation_prompt(
+    launch_prompt: str,
+    followup_prompts: tuple[str, ...],
+    *,
+    prompt: str | None = None,
+    instruction: str | None = None,
+    extra_params: Mapping[str, str] | None = None,
+) -> str:
+    """既存の起動記録と役割宣言から、継続本文を検査・生成する。"""
+    if (prompt is None) == (instruction is None) or (prompt is not None and extra_params is not None):
+        raise ActionableError(
+            "promptとinstruction/extra_paramsは排他的です。どちらか一方が必要です。",
+            next_action='`send_message(session_id, instruction="<指示>", extra_params={<必要入力>})`で再実行する',
+        )
+    documents = task_documents.find_task_documents(launch_prompt.split("\n", 1)[0])
+    declaration = task_documents.read_declaration(documents[0]) if documents else None
+    text = prompt if prompt is not None else instruction
+    assert text is not None
+    lines = text.strip().splitlines()
+    first = lines[0].strip().removesuffix("。") if lines else ""
+    continuations = declaration.continuations if isinstance(declaration, task_documents.TaskDocumentDeclaration) else ()
+    contract = next((item for item in continuations if item.instruction == first), None)
+    if contract is None:
+        if instruction is not None:
+            raise ActionableError(
+                f"宣言された継続指示ではありません: {instruction}",
+                next_action="役割文書の継続指示を指定する。新しい要求はpromptで送る",
+            )
+        if isinstance(declaration, task_documents.TaskDocumentDeclaration):
+            known_lines = set(launch_prompt.splitlines())
+            for followup in followup_prompts:
+                known_lines.update(followup.splitlines())
+            controls = frozenset(name for item in continuations for name in item.accepted)
+            for line in text.splitlines():
+                name, separator, value = line.partition(": ")
+                if (
+                    separator
+                    and name in declaration.accepted - controls
+                    and line in known_lines
+                    and not pathlib.Path(value).is_file()
+                ):
+                    raise ActionableError(
+                        f"保持済みの初回入力が再掲されています: {name}",
+                        next_action="新しい要求と変更した入力だけをpromptへ渡す。参照先の更新は定型継続の名前付き入力で指定する",
+                    )
+        # 同文の自由な指示も新しい操作になり得る。意味上の必要性は送信側へ残す。
+        if documents and text.lstrip().startswith("#"):
+            with contextlib.suppress(OSError, UnicodeError):
+                root = str(documents[0].parent.parent)
+                body = documents[0].read_text(encoding="utf-8").replace(_PLUGIN_ROOT_VARIABLE, root)
+                candidate = text.replace(_PLUGIN_ROOT_VARIABLE, root)
+                if candidate.strip() == body.strip() and body in launch_prompt:
+                    raise ActionableError(
+                        "保持済みの役割文書が全文再掲されています。配送していません。",
+                        next_action="今回の指示と新しい入力だけをpromptへ渡す",
+                    )
+        return text
+    minimal_form = json.dumps(
+        {"instruction": contract.instruction, "extra_params": {name: f"<{name}>" for name in contract.required}},
+        ensure_ascii=False,
+    )
+    try:
+        if instruction is not None and len(lines) != 1:
+            raise ValueError(f"instructionに説明行が混在しています: {instruction}")
+        params = dict(extra_params or {}) if instruction is not None else parse_named_inputs(lines[1:])
+    except ValueError as error:
+        raise ActionableError(str(error), next_action="最小の再実行形: " + minimal_form) from error
+    missing = [name for name in contract.required if not params.get(name)]
+    undeclared = [name for name in params if name not in contract.accepted]
+    minimal = {name: params.get(name, f"<{name}>") for name in contract.required}
+    if missing or undeclared:
+        raise ActionableError(
+            f"継続入力の違反: 必須欠落={missing}; 宣言外の項目・行={undeclared}",
+            next_action="最小の再実行形: "
+            + json.dumps({"instruction": contract.instruction, "extra_params": minimal}, ensure_ascii=False),
+        )
+    for name in (*contract.paths, *contract.references):
+        if name not in params:
+            continue
+        value = params[name]
+        path = pathlib.Path(value)
+        if name in contract.references and not (path.is_absolute() or pathlib.PureWindowsPath(value).is_absolute()):
+            continue
+        if not path.is_absolute() or not path.is_file():
+            raise ActionableError(
+                f"パス入力{name}を受理できません: {value}",
+                next_action=f"{name}へ実在するファイルの絶対パスだけを渡す。空白を含むファイル名はそのまま指定する",
+            )
+    return "\n".join([contract.instruction, *named_input_lines(params)])
+
+
 def _material_error(name: str, reason: str) -> ActionableError:
     """不足資料と、保存して再発行する操作を同じ応答へ載せる。"""
     return ActionableError(
@@ -299,7 +441,8 @@ def _material_error(name: str, reason: str) -> ActionableError:
             f"`{name}`に必要な本文・差分・証拠をUTF-8の読取可能な通常ファイルへ保存し、"
             "絶対パスで補完して`start`を再発行する。reader-fit-reviewの`比較資料`は"
             '`{"比較元本文":"/保存先/旧本文.md","今回差分":"/保存先/差分.patch","現行本文":"/成果物.md"}`'
-            "とする。新規成果物だけ比較元本文へ`新規`、今回差分へ`全文`を指定できる。"
+            "とする。複数成果物では同じ3項目のオブジェクト配列を渡す。"
+            "新規成果物だけ比較元本文へ`新規`、今回差分へ`全文`を指定できる。"
             "再レビューの`未解決事項`は保存ファイルの絶対パスか`なし`を渡す"
         ),
     )
@@ -337,32 +480,61 @@ def _material_paths(name: str, value: str) -> list[pathlib.Path]:
     return paths
 
 
+def _check_reader_unresolved(params: Mapping[str, str], review_kind: str) -> None:
+    """再レビューで必要な未解決事項の保存物を確かめる。"""
+    unresolved = params.get("未解決事項", "なし" if review_kind == "初回レビュー" else "")
+    if unresolved != "なし":
+        _material_paths("未解決事項", unresolved)
+
+
 def _check_reader_materials(params: Mapping[str, str]) -> None:
     """現行本文・比較元・今回差分を区別し、再レビューの証拠も起動前に読む。"""
     current = _material_paths("成果物", params["成果物"])
-    if len(current) != 1:
-        raise _material_error("成果物", "1件の現行本文が必要")
+    if len(set(current)) != len(current):
+        raise _material_error("成果物", "現行本文のパスが重複している")
+    review_kind = params.get("レビュー種別", "初回レビュー")
+    if review_kind not in {"初回レビュー", "再レビュー", "引き継ぎ再レビュー"}:
+        raise _material_error("レビュー種別", "初回レビュー・再レビュー・引き継ぎ再レビューのいずれかが必要")
     if "比較資料" in params:
         try:
             materials = json.loads(params["比較資料"])
         except json.JSONDecodeError as error:
-            raise _material_error("比較資料", "JSONオブジェクトを読めない") from error
+            raise _material_error("比較資料", "JSONオブジェクトまたはその配列を読めない") from error
+        if isinstance(materials, dict) and set(materials) == {"repository", "base", "head", "paths"}:
+            _check_git_reader_materials(materials, current)
+            _check_reader_unresolved(params, review_kind)
+            return
+        if isinstance(materials, dict) and len(current) == 1:
+            materials = [materials]
+        if not isinstance(materials, list) or not materials:
+            raise _material_error("比較資料", "成果物ごとの比較資料の空でない配列が必要")
         keys = {"比較元本文", "今回差分", "現行本文"}
-        if (
-            not isinstance(materials, dict)
-            or set(materials) != keys
-            or any(not isinstance(value, str) for value in materials.values())
-        ):
-            raise _material_error("比較資料", "比較元本文・今回差分・現行本文の3項目が必要")
-        actual = _material_paths("現行本文", materials["現行本文"])
-        if actual != current:
-            raise _material_error("現行本文", "成果物と同じパスが必要")
-        is_new = materials["比較元本文"] == "新規"
-        if not is_new:
-            _material_paths("比較元本文", materials["比較元本文"])
-        if not (is_new and materials["今回差分"] == "全文"):
-            _material_paths("今回差分", materials["今回差分"])
+        covered: set[pathlib.Path] = set()
+        for material in materials:
+            if (
+                not isinstance(material, dict)
+                or set(material) != keys
+                or any(not isinstance(value, str) for value in material.values())
+            ):
+                raise _material_error("比較資料", "比較元本文・今回差分・現行本文の3項目が必要")
+            actual = _material_paths("現行本文", material["現行本文"])
+            if len(actual) != 1 or actual[0] not in current:
+                raise _material_error("現行本文", "成果物のいずれか1件と同じパスが必要")
+            if actual[0] in covered:
+                raise _material_error("比較資料", f"現行本文の対応が重複している: {actual[0]}")
+            covered.add(actual[0])
+            is_new = material["比較元本文"] == "新規"
+            if review_kind != "初回レビュー" and is_new:
+                raise _material_error("比較元本文", "再レビューでは前回確認版の本文が必要")
+            if not is_new:
+                _material_paths("比較元本文", material["比較元本文"])
+            if not (is_new and material["今回差分"] == "全文"):
+                _material_paths("今回差分", material["今回差分"])
+        if covered != set(current):
+            raise _material_error("比較資料", "全成果物に比較資料を1件ずつ対応付ける必要がある")
     else:
+        if len(current) != 1:
+            raise _material_error("比較資料", "複数成果物には比較資料の配列が必要")
         # 旧形式も保存ファイルを共通検査へ通す。本文や差分の説明だけでは成立しない。
         scope = params["修正範囲"]
         is_new = scope.startswith("新規") and "全文" in scope
@@ -370,14 +542,9 @@ def _check_reader_materials(params: Mapping[str, str]) -> None:
             paths = _material_paths("修正範囲（比較元本文・今回差分）", scope)
             if len({path for path in paths if path != current[0]}) < 2:
                 raise _material_error("比較資料", "比較元本文と今回差分の保存物が必要")
-    review_kind = params.get("レビュー種別", "初回レビュー")
-    if review_kind not in {"初回レビュー", "再レビュー", "引き継ぎ再レビュー"}:
-        raise _material_error("レビュー種別", "初回レビュー・再レビュー・引き継ぎ再レビューのいずれかが必要")
-    if review_kind != "初回レビュー" and is_new:
-        raise _material_error("比較元本文", "再レビューでは前回確認版の本文が必要")
-    unresolved = params.get("未解決事項", "なし" if review_kind == "初回レビュー" else "")
-    if unresolved != "なし":
-        _material_paths("未解決事項", unresolved)
+        if review_kind != "初回レビュー" and is_new:
+            raise _material_error("比較元本文", "再レビューでは前回確認版の本文が必要")
+    _check_reader_unresolved(params, review_kind)
 
 
 def _check_explore_materials(task_document: pathlib.Path, params: Mapping[str, str]) -> None:
@@ -387,12 +554,52 @@ def _check_explore_materials(task_document: pathlib.Path, params: Mapping[str, s
         _check_reader_materials(params)
         return
     required_files = {
-        "external-write-review": ("文面ファイル", "根拠の所在"),
+        "external-write-review": ("文面ファイル",),
         "bulk-replace-review": ("差分ファイル",),
         "pick-wi-explain": ("説明対象の選定結果の出力先ファイル", "activeなWI本文の保存先"),
     }
     for name in required_files.get(role, ()):
         _material_paths(name, params[name])
+    if role == "external-write-review":
+        evidence = params["根拠の所在"].strip()
+        if evidence.startswith(("/", "`/", "[")) or pathlib.PureWindowsPath(evidence).is_absolute():
+            _material_paths("根拠の所在", evidence)
+
+
+def _check_git_reader_materials(materials: dict[str, Any], current: list[pathlib.Path]) -> None:
+    """保存物と同じ比較対象を、Git識別子で受け取る。"""
+    repository = materials["repository"]
+    paths = materials["paths"]
+    if not isinstance(repository, str) or not pathlib.Path(repository).is_absolute():
+        raise _material_error("比較資料", "repositoryにGit作業ツリーの絶対パスが必要")
+    if not isinstance(paths, list) or not paths or any(not isinstance(path, str) for path in paths):
+        raise _material_error("比較資料", "pathsに空でないリポジトリ相対パス配列が必要")
+    if len(paths) != len(current) or {pathlib.Path(repository) / path for path in paths} != set(current):
+        raise _material_error("比較資料", "pathsが成果物の集合と一致しない")
+    for key in ("base", "head"):
+        revision = materials[key]
+        if not isinstance(revision, str) or not re.fullmatch(r"[0-9a-fA-F]{7,40}", revision):
+            raise _material_error("比較資料", f"{key}にcommitの一意なOIDが必要")
+        checked = git_command.run(
+            ["rev-parse", "--verify", f"{revision}^{{commit}}"],
+            cwd=repository,
+            capture_output=True,
+            text=True,
+            timeout=PREFLIGHT_TIMEOUT,
+            check=False,
+        )
+        if checked.returncode != 0:
+            raise _material_error("比較資料", f"{key}のcommitを参照できない: {revision}")
+    for path in paths:
+        shown = git_command.run(
+            ["show", f"{materials['head']}:{path}"],
+            cwd=repository,
+            capture_output=True,
+            timeout=PREFLIGHT_TIMEOUT,
+            check=False,
+        )
+        if shown.returncode != 0 or shown.stdout != (pathlib.Path(repository) / path).read_bytes():
+            raise _material_error("比較資料", f"現行本文がheadの同じ版に一致しない: {path}")
 
 
 _HANDOFF_INPUT_NAME = "引き継ぎ記録先"
@@ -502,7 +709,7 @@ def task_document_request(
     宣言しない通常起動にも共通入力として専用の記録先を加え、5要素目で返す。
     委譲元が値を渡した場合と軽量起動の5要素目は`None`とする。
     """
-    task_document = _resolve_task_document_path(subagent_md_path).resolve()
+    task_document = resolve_task_document_path(subagent_md_path).resolve()
     if not task_document.is_file() or not task_document.name.endswith(".subagent.md"):
         raise ActionableError(
             f"subagent_md_path is not an existing .subagent.md file: {task_document}",
@@ -567,5 +774,5 @@ def task_document_request(
         prompt_lines.append(whole_contract_reference())
     if extra_params:
         prompt_lines.append("入力:")
-        prompt_lines.extend(f"{name}: {value}" for name, value in extra_params.items())
+        prompt_lines.extend(named_input_lines(extra_params))
     return model_type, _TASK_USAGES.get(task_document.name), "\n".join(prompt_lines), launch_kind, handoff_path

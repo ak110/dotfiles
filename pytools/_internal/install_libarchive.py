@@ -5,15 +5,13 @@ MSYS2リポジトリからlibarchiveと動的依存パッケージのDLLを取�
 """
 
 import compression.zstd
-import ctypes
-import ctypes.util
 import io
 import logging
 import pathlib
 import re
 import tarfile
 
-from pytools._internal import log_format, post_apply_outcome, winutils
+from pytools._internal import libarchive_resolver, log_format, post_apply_outcome, winutils
 
 logger = logging.getLogger(__name__)
 
@@ -37,7 +35,7 @@ _REQUIRED_PACKAGES = [
     "mingw-w64-x86_64-openssl",
 ]
 
-_INSTALL_DIR = pathlib.Path.home() / ".local" / "lib" / "libarchive"
+_INSTALL_DIR = libarchive_resolver.INSTALL_DIR
 _HTTP_TIMEOUT = 60.0
 # 展開後のtarを全量メモリへ置くため、壊れた入力や想定外の巨大パッケージで際限なく確保しないよう上限を設ける。
 _MAX_DECOMPRESSED_SIZE = 512 * 1024 * 1024
@@ -46,14 +44,16 @@ _MAX_DECOMPRESSED_SIZE = 512 * 1024 * 1024
 def run() -> post_apply_outcome.PostApplyOutcome:
     """libarchive.dllを配置し、ユーザーPATHと``LIBARCHIVE``環境変数を登録する。
 
-    DLLダウンロードはべき等とし、既に配置済みの場合はスキップする。
+    導入済みの判定は、消費側（`repack-archive`）と同じDLL探索条件で実際にロードできるかで行う。
+    本体DLLだけが残った部分配置や依存DLLの欠落はロードに失敗するため、取得へ進む。
+    取得後も同じ判定でロードできた場合だけ導入完了とする。
     ``LIBARCHIVE`` 環境変数の永続化は、DLLの有無にかかわらず毎回実施する。
     libarchive-cはWindowsでDLLを解決する際に ``LIBARCHIVE`` 環境変数を最優先で
     参照するため、DLLだけ配置されて環境変数が未設定の環境でも正しく動作させるためのワークアラウンドである。
     DLLの取得と配置の失敗はスキップ、ユーザーPATHと環境変数の書き込みの失敗は失敗と数える。
     """
     changed = False
-    if _is_already_available():
+    if _is_loadable():
         logger.info(log_format.format_status("libarchive", f"既に利用可能 ({_INSTALL_DIR})"))
     else:
         try:
@@ -68,6 +68,16 @@ def run() -> post_apply_outcome.PostApplyOutcome:
             )
             return post_apply_outcome.PostApplyOutcome()
         if not installed:
+            return post_apply_outcome.PostApplyOutcome()
+        if not _is_loadable():
+            logger.warning(
+                log_format.format_status(
+                    "libarchive",
+                    f"取得後もlibarchiveをロードできないため導入を完了していません（{_INSTALL_DIR}）。"
+                    "依存DLLの欠落か取得したパッケージの不整合が考えられます。"
+                    f"{_INSTALL_DIR}の内容を確認し、update-dotfilesを再実行してください。",
+                )
+            )
             return post_apply_outcome.PostApplyOutcome()
         try:
             winutils.append_user_path(str(_INSTALL_DIR))
@@ -118,11 +128,9 @@ def _download_dlls() -> bool:
     return True
 
 
-def _is_already_available() -> bool:
-    """libarchive.dll が既に解決可能か判定する。"""
-    if ctypes.util.find_library("archive"):
-        return True
-    return (_INSTALL_DIR / "libarchive-13.dll").exists() or (_INSTALL_DIR / "archive.dll").exists()
+def _is_loadable() -> bool:
+    """消費側と同じ探索条件でlibarchiveをロードできるかを判定する。"""
+    return libarchive_resolver.is_loadable(_INSTALL_DIR)
 
 
 def _pick_latest(index_html: str, prefix: str) -> str | None:
@@ -185,7 +193,7 @@ def _persist_libarchive_env_var() -> bool:
     Returns:
         レジストリを実際に書き換えた場合に ``True``。
     """
-    target_dll = _INSTALL_DIR / "libarchive-13.dll"
+    target_dll = _INSTALL_DIR / libarchive_resolver.DLL_NAME
     if not target_dll.exists():
         return False
     target = str(target_dll)

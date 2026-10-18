@@ -23,6 +23,7 @@ from agent_toolkit._plan import locations as _plan_locations
 ROOT_DESCRIPTION = "目的: agent-toolkitのWIキュー、計画ファイル、レビュー指摘管理表、managed-tempと委譲支援を1つのコマンドから操作する。\n利用場面: ユーザーとエージェントが、AWIの投入から計画、実装、保存までの一連の作業を進めるとき。\n対象と出力: サブコマンドを指定しない場合はコマンド一覧を標準出力へ書き、何も変更しない。実際の読み書きは各サブコマンドが行う。`AI_AGENT`・`CODEX_CI`・`CLAUDECODE`・`CURSOR_AGENT`のいずれかが設定されたエージェント環境では、標準出力と標準エラーを分けて保持する。UTF-8で16384バイトを超える出力は生成側が新規managed-tempへ保存し、標準出力には`保存先: <絶対パス>`・`行数: <N>`、標準エラーには`標準エラー保存先: <絶対パス>`・`標準エラー行数: <N>`を返す。結果をファイルとして受け取る呼び出し（`atk agents wait`、FILENAMEを2件以上指定するか`--all`を指定した`atk wi show`、`atk run-script session-review-evidence`の`--user-events`）は短い標準出力も保存する。保存後は、`atk agents wait`が通知・終端の内訳と本文を、`--user-events`が`kind`が`user`の行ごとに`発話: record=<record> line=<line> <本文の冒頭>`を続けて書く。それ以外の16384バイト以下の出力は直接表示する。`--help`の表示と、`atk info`のように結果を表示して終わるサブコマンドも同じ量で判定する。引数の誤りは標準エラーへ直接書き、終了コード2で終わる。WI本文の表記診断の詳細も`標準エラー保存先:`の保存先へ書く。`atk serve`、`atk wi process-loop`の常駐および`atk agents logs --follow`は対象外とし、エージェント環境でない場合は出力を変えない。保存先は最終更新から7日で自動削除される。\n前提: private-notesを扱うサブコマンドは`atk config get private_notes`が返すリポジトリを使う。\n復元・後始末: 本コマンド自身は状態を残さない。各サブコマンドの後始末はそのコマンドの`--help`に示す。"
 ROOT_EPILOG = "各コマンドの詳細は`atk <コマンド> --help`で表示する。階層コマンドではさらに`atk <コマンド> <サブコマンド> --help`を使う。\n\n実行例:\n\n  atk wi list\n  atk config show"
 ROOT_EPILOG += "\n\n保存後の表示は、標準出力と標準エラーのそれぞれを読む最初のatk read-fileコマンドを示す。返却JSONのtextを連結し、nextを--startへ渡してeof: trueまで読む。"
+ROOT_EPILOG += "\n全文を保存したatk wi showは、各項目のユーザー専用の記入欄（ユーザーコメント・回答）の有無と、保存先での開始行を全件示す。"
 
 CI_REVIEW_TABLE_NAME_FORMAT = "ci-<修正系列の開始時のHEADの7文字以上の一意な短縮OID>.exec-review.tsv"
 """CI対応レビュー指摘管理表の名前の書式。保存済みの表は`ci/`を前置する。
@@ -50,14 +51,15 @@ HELP: dict[str, dict[str, str]] = {
             "末尾の改行とJSONのエスケープを含む一回分の返却予算は指定なしで4096 UTF-8バイト。"
             "--max-bytesで最大16384バイトまで指定できる。"
             "位置はデコード後の文字数で、endは取得末尾を含まない。"
-            "textを連結し、nextを--startへ渡してeofがtrueになるまで取得する。終端のnextはnull。"
-            "空ファイルと末尾位置も空のtextで終端を示す。\n"
+            "同じファイルの直前の応答でeofがtrueなら終了し、それ以外はnextを--startへ渡してtextを連結する。終端のnextはnull。"
+            "非負の開始位置が末尾を超えた場合は末尾の位置へ補正する。空ファイルと末尾位置は空のtextで終端を示す。\n"
             "前提: 通常のファイルは事前に容量を測らず全文取得から始める。"
             "内側のコマンドと外側の実行セルの受信予算の双方へ収まる--max-bytesを選ぶ。"
-            "負の位置、末尾を超える位置、相対パス、不在、非UTF-8、最大予算超過と取得を前進させられない予算は非0で拒否する。\n"
+            "独立した複数ファイルは、それぞれの応答から継続し、合計出力量が受信予算内なら並列取得できる。"
+            "負の位置、相対パス、不在、非UTF-8、最大予算超過とJSON全体が収まらない予算は終端でも非0で拒否する。\n"
             "復元・後始末: 読取だけを行い、取得状態を保存しないため不要。"
         ),
-        "epilog": "実行例:\n\n  atk read-file -- /absolute/path/to/file.txt\n  atk read-file --max-bytes 12000 --start 1000 -- /absolute/path/to/file.txt",
+        "epilog": "実行例:\n\n  atk read-file --max-bytes 12000 -- /absolute/path/to/file.txt\n\n継続時は同じパスを指定し、直前の応答のnextを--startへ渡す。位置は文字単位、--max-bytesはJSON全体のUTF-8バイト単位である。",
     },
     "atk info": {
         "summary": "実行環境とpluginの位置・版を表示する",
@@ -273,7 +275,7 @@ HELP: dict[str, dict[str, str]] = {
     },
     "atk config set": {
         "summary": "変更可能な設定値を更新する",
-        "description": "目的: 変更できる設定値を更新して設定ファイルへ保存する。\n利用場面: engine別・段位別のモデル・推論の深さ、用途別のengine順、日本語文章の起草に使うwrite_model、agents_serverのCodexの速度・接続先の優先順、ClaudeのAPI接続用envファイルを切り替えるとき。\n対象と出力: 設定ディレクトリの`config.json`を書き換える。設定はユーザー単位で共有する。\n前提: KEYは変更できるキー。`claude_api_env_file`はenvファイルのパス1つを受理し、先頭の~を展開する。空文字列は未設定を表し、親環境とClaude Codeの通常の認証解決を維持する。認証検出による起動拒否・認証環境の隔離・役割別割当・接続切替は行わない。その会話と接続情報もAPIパスも持たない旧形式の会話は、後から設定しても再開時に通常の認証解決を使う。以下の役割別接続管理はenvファイルを設定した会話に適用する。set時にはファイルの存在・内容を確かめない。`claude_api_mode`は`pay-as-you-go`（未設定時の値）または`api-credits`を受理し、API認証の所在と役割別の接続方針を分ける。前者はオーケストレーターをAPIへ固定し、委譲先をサブスクリプション、APIの順にする。後者はオーケストレーターをサブスクリプションへ固定し、委譲先をAPI、サブスクリプションの順にする。`codex_fast_mode`は`true`または`false`を受理し、初期値は`false`。`codex_model_providers`は空、または主接続先を先頭にしたCodex provider IDのASCIIカンマ区切り列。空ならCodex通常設定に従い代替試行しない。後続は独立したAPI認証を使う接続先を受理する。前後空白と重複を除き、空要素は拒否する。モデル用の警告は適用しない。`<claude|codex>_<high|medium|low>_tier_model`はengine接頭辞を付けない単一の`<モデル>[/<effort>]`を受理し、effort省略時は`medium`を使う。`<base|review|chores|orchestrate>_engine`は`codex`と`claude`の一方または両方を重複なしで並べたASCIIカンマ区切り列を受理する。`write_model`は`<claude|codex|agy>:<モデル>[/<effort>]`のASCIIカンマ区切り列を受理する。Codexの`astra`・`sol`・`terra`・`luna`は起動時に同系列の最新版へ解決し、バージョン付き完全IDは固定する。旧モデル設定の移行で停止した場合も、示された新キーをこのコマンドで保存して復旧する。\n復元・後始末: 元の値へ戻す場合は同じコマンドで以前の値を設定する。provider列と`claude_api_env_file`は空文字列を設定して解除する。Claude会話は選択済みの接続を再開時にも保持し、新規sessionは役割とモードの先頭候補から評価する。provider列は新規起動と次の代替試行へ反映し、既存API会話の接続先をサブスクへ戻さない。",
+        "description": "目的: 変更できる設定値を更新して設定ファイルへ保存する。\n利用場面: engine別・段位別のモデル・推論の深さ、用途別のengine順、日本語文章の起草に使うwrite_model、agents_serverのCodexの速度・接続先の優先順、ClaudeのAPI接続用envファイルを切り替えるとき。\n対象と出力: 設定ディレクトリの`config.json`を書き換える。設定はユーザー単位で共有する。\n前提: KEYは変更できるキー。`claude_api_env_file`はenvファイルのパス1つを受理し、先頭の~を展開する。空文字列は未設定を表し、親環境とClaude Codeの通常の認証解決を維持する。認証検出による起動拒否・認証環境の隔離・役割別割当・接続切替は行わない。その会話と接続情報もAPIパスも持たない旧形式の会話は、後から設定しても再開時に通常の認証解決を使う。以下の役割別接続管理はenvファイルを設定した会話に適用する。set時にはファイルの存在・内容を確かめない。`claude_api_mode`は`pay-as-you-go`（未設定時の値）または`api-credits`を受理し、API認証の所在と役割別の接続方針を分ける。前者はオーケストレーターをAPIへ固定し、委譲先をサブスクリプション、APIの順にする。後者はオーケストレーターをサブスクリプションへ固定し、委譲先をAPI、サブスクリプションの順にする。`codex_fast_mode`は`true`または`false`を受理し、初期値は`false`。`codex_model_providers`は空、または主接続先を先頭にしたCodex provider IDのASCIIカンマ区切り列。空ならCodex通常設定に従い代替試行しない。後続は独立したAPI認証を使う接続先を受理する。前後空白と重複を除き、空要素は拒否する。モデル用の警告は適用しない。`<claude|codex>_<high|medium|low>_tier_model`はengine接頭辞を付けない単一の`<モデル>[/<effort>]`を受理し、effort省略時は`medium`を使う。`<base|review|chores|orchestrate>_engine`は`codex`と`claude`の一方または両方を重複なしで並べたASCIIカンマ区切り列を受理する。`write_model`は`<claude|codex|agy>:<モデル>[/<effort>]`のASCIIカンマ区切り列を受理する。Codexの`astra`・`sol`・`terra`・`luna`は起動時に同系列の最新版へ解決し、バージョン付き完全IDは固定する。旧モデル設定の移行で停止した場合も、示された新キーをこのコマンドで保存して復旧する。\n復元・後始末: 元の値へ戻す場合は同じコマンドで以前の値を設定する。provider列と`claude_api_env_file`は空文字列を設定して解除する。Claude会話は選択済みの接続を再開時にも保持し、新規sessionは役割とモードの先頭候補から評価する。`pay-as-you-go`で利用上限によりAPIへ移った委譲先は、上限の解除予定時刻の後の最初の追送か自動再開からサブスクリプションへ戻る。provider列は新規起動と次の代替試行へ反映し、既存API会話の接続先をサブスクへ戻さない。",
         "epilog": "実行例:\n\n  atk config set codex_high_tier_model sol/medium\n  atk config set review_engine claude,codex",
     },
     "atk config apply-preset": {
@@ -317,15 +319,18 @@ HELP: dict[str, dict[str, str]] = {
             "目的: 保存済みセッションの発話と操作を読み、markdownへ出力する。\n"
             "利用場面: 1件の経過を調べるか、複数の記録をまとめて保存するとき。\n"
             "対象と出力: Claude Codeの親・サブエージェント、Codex、agents_serverが保存したAntigravityの出力を扱う。"
-            "単一IDで形式を省略した場合は時刻・種別・本文をtextで表示し、`--format markdown`では会話とツールの詳細を描画する。"
+            "形式を省略した場合は時刻・種別・本文をtextで表示する。"
+            "text表示は`--verbose`を付けない場合に会話の流れを要約し、ツール呼び出し・成功したツール結果・思考を除いて各本文を2000文字で切り詰める。"
+            "`--verbose`は全イベントを全文で表示する。どちらも項目の間に空行を1行置く。`--format markdown`では会話とツールの詳細を描画する。"
             "`--all`と`--project-dir`はClaude Codeの親とCodexの記録を一括選択し、`--output-dir`は1件1ファイルへ保存する。\n"
             "前提: ローカルのセッション記録の読取権限を持つ。Antigravityを直接起動した会話DBは対象外。"
-            "`--follow`は単一IDのtext表示でだけ使い、Ctrl-Cで終了する。\n"
+            "`--follow`は単一IDのtext表示でだけ使い、Ctrl-Cで終了する。`--verbose`はtext表示でだけ使う。\n"
             "復元・後始末: 出力ファイルは上書きせず、不要ならユーザーが保存先から削除する。"
         ),
         "epilog": (
             "実行例:\n\n"
             "  atk agents logs <session_id>\n"
+            "  atk agents logs <session_id> --verbose\n"
             "  atk agents logs <session_id> --format markdown\n"
             "  atk agents logs --all --format markdown --output-dir /path/to/exports\n"
             "  atk agents logs --project-dir /path/to/project --latest 3 --format markdown\n"
@@ -526,6 +531,9 @@ HELP["atk plans checkout"]["description"] = HELP["atk plans checkout"]["descript
     "PLAN_FILEは`private-notes/plans/`相対またはそのroot配下の絶対パスで指定する。",
 )
 HELP["atk wi show"]["description"] += (
+    "\n全文を保存した場合は、保存先・行数・読取に続けて各項目を`記入欄: <ファイル名> <見出し> なし`または"
+    "`記入欄: <ファイル名> <見出し> あり 開始行: <N>`で全件示す。"
+    "見出しはAWIの`## ユーザーコメント`かUWIの`## 回答`、開始行は保存先での1始まりの行番号である。"
     "\n節の照会: --section H2は反復指定でき、指定したH2節の本文を読む。"
     "指定しない場合は本文全体を読み、--summary-onlyは要約だけを返す。"
 )

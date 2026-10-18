@@ -4,17 +4,21 @@ import asyncio
 import json
 import os
 import pathlib
+import types
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
+from claude_agent_sdk import ToolResultBlock, UserMessage
 
-from agent_toolkit._agents_server import claude, claude_settings
+from agent_toolkit._agents_server import claude, claude_settings, resume_waits
 from agent_toolkit._agents_server import manager as server_manager
 from agent_toolkit._agents_server.state import ResumePrompt
 from agent_toolkit._common import session_registry
 from agent_toolkit._testing.agents_server_support import (
     AssistantMessage,
     FakeClaudeClient,
+    QueueClaudeClient,
     ResultMessage,
     SystemMessage,
     _rejected_stream,
@@ -304,4 +308,185 @@ async def test_api_migration_holds_result_until_old_connection_closes(
         if waiting is not None and not waiting.done():
             waiting.cancel()
             await asyncio.gather(waiting, return_exceptions=True)
+        await manager.close()
+
+
+def _pay_as_you_go_with_clock(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> dict[str, float]:
+    """`pay-as-you-go`の両認証環境と、解除予定時刻の判定が読む差し替え可能な時刻を用意する。"""
+    env_file = tmp_path / "api.env"
+    env_file.write_text("ANTHROPIC_AUTH_TOKEN=dummy-secret\n", encoding="utf-8")
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CLAUDE_API_ENV_FILE", str(env_file))
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CLAUDE_API_MODE", "pay-as-you-go")
+    monkeypatch.setattr(server_manager, "START_AVAILABILITY_TIMEOUT", 0.01)
+    clock = {"now": 1_000_000.0}
+    fake_time = types.SimpleNamespace(time=lambda: clock["now"])
+    monkeypatch.setattr(resume_waits, "time", fake_time)
+    monkeypatch.setattr(claude, "time", fake_time)
+    return clock
+
+
+@pytest.mark.asyncio
+async def test_api_switched_delegate_returns_to_subscription_after_reset(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """`pay-as-you-go`で上限によりAPIへ移した委譲先は、解除予定時刻の後に始まる最初のturnで同じ会話をサブスクリプションへ戻す。
+
+    解除予定時刻より前の追送はAPIのまま所有タスクへ送り、上限による即時切替は従来どおり行う。
+    """
+    clock = _pay_as_you_go_with_clock(tmp_path, monkeypatch)
+    options_seen: list[Any] = []
+
+    def factory(options: Any) -> FakeClaudeClient:
+        options_seen.append(options)
+        if len(options_seen) == 1:
+            streams = [_rejected_stream("five_hour", int(clock["now"]) + 100, before_init=True, session_id="return-session")]
+        else:
+            streams = [
+                [SystemMessage(options.resume or "fresh-session"), AssistantMessage("応答"), ResultMessage("完了")],
+                [AssistantMessage("追送の応答"), ResultMessage("追送完了")],
+            ]
+        return FakeClaudeClient(streams)
+
+    async def terminal(manager: server_manager.AgentsServerManager) -> dict[str, Any]:
+        for _ in range(200):
+            result = await asyncio.wait_for(manager.wait(), timeout=3)
+            if result["status"] in {"completed", "failed", "interrupted"}:
+                return result
+            await asyncio.sleep(0)
+        pytest.fail("会話が終端しない")
+
+    manager = server_manager.AgentsServerManager()
+    install_backend(
+        manager, "claude", claude.ClaudeServerManager(manager.sessions, client_factory=factory, publish_registry=True)
+    )
+    try:
+        await manager.start("claude:sonnet/high", "作業する", str(tmp_path))
+        assert (await terminal(manager))["status"] == "completed"
+        assert len(options_seen) == 2
+        assert options_seen[1].env["ANTHROPIC_AUTH_TOKEN"] == "dummy-secret"
+        session = manager.sessions["return-session"]
+        assert session.claude_connection == "api"
+
+        clock["now"] += 50
+        await manager.send_message("return-session", "解除前の追送")
+        assert (await terminal(manager))["status"] == "completed"
+        assert len(options_seen) == 2
+        assert manager.sessions["return-session"].claude_connection == "api"
+
+        clock["now"] += 100
+        await manager.send_message("return-session", "解除後の追送")
+        assert (await terminal(manager))["status"] == "completed"
+        assert len(options_seen) == 3
+        assert options_seen[2].resume == "return-session"
+        assert not options_seen[2].env.get("ANTHROPIC_AUTH_TOKEN")
+        assert manager.sessions["return-session"].claude_connection == "subscription"
+    finally:
+        await manager.close()
+
+
+async def _until(condition: Any, timeout: float = 5.0) -> None:
+    """条件の成立を短い間隔で確かめ、上限までに成立しなければ失敗させる。"""
+    loop = asyncio.get_running_loop()
+    deadline = loop.time() + timeout
+    while not condition():
+        if loop.time() >= deadline:
+            pytest.fail("条件が成立しない")
+        await asyncio.sleep(0.01)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("mode", ["after-reset", "before-reset", "still-limited"])
+async def test_api_switched_delegate_auto_resume_returns_to_subscription_after_reset(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    mode: str,
+) -> None:
+    """孫sessionの終端による自動再開も、解除予定時刻の後なら同じ会話をサブスクリプションで再開する。
+
+    APIへ移した会話が孫sessionを待って結果を保留し、孫の終端で自動再開する。
+    解除予定時刻より前の自動再開はAPIの所有タスクへ送り、後の自動再開は通常の追送と同じくサブスクリプションへ戻す。
+    戻したturnがなお上限で拒否された場合は、既存の切替で同じ会話を再びAPIで続ける。
+    """
+    after_reset = mode != "before-reset"
+    clock = _pay_as_you_go_with_clock(tmp_path, monkeypatch)
+    options_seen: list[Any] = []
+    api_client = QueueClaudeClient(
+        [
+            [SystemMessage("auto-session"), AssistantMessage("APIで作業を続ける")],
+            [AssistantMessage("子の結果を確認した"), ResultMessage("APIの最終結果")],
+        ]
+    )
+
+    def factory(options: Any) -> FakeClaudeClient:
+        options_seen.append(options)
+        if len(options_seen) == 1:
+            return FakeClaudeClient(
+                [_rejected_stream("five_hour", int(clock["now"]) + 100, before_init=True, session_id="auto-session")]
+            )
+        if len(options_seen) == 2:
+            return api_client
+        if mode == "still-limited" and len(options_seen) == 3:
+            return FakeClaudeClient(
+                [_rejected_stream("five_hour", int(clock["now"]) + 100, before_init=False, session_id="auto-session")]
+            )
+        final = "再びAPIの最終結果" if mode == "still-limited" else "サブスクの最終結果"
+        return FakeClaudeClient([[SystemMessage("auto-session"), AssistantMessage("子の結果を確認した"), ResultMessage(final)]])
+
+    manager = server_manager.AgentsServerManager()
+    condition = manager._condition  # pylint: disable=protected-access  # noqa: SLF001
+    backend = claude.ClaudeServerManager(manager.sessions, condition, client_factory=factory, publish_registry=True)
+    install_backend(manager, "claude", backend)
+    session_registry.publish("child", terminal=False, cwd=str(tmp_path))
+    # 公開待機に依存せず、上限からのAPI移行と孫sessionの終端による自動再開を常駐監視で進める。
+    manager.activate()
+    try:
+        await manager.start("claude:sonnet/high", "作業する", str(tmp_path))
+        await _until(lambda: len(options_seen) == 2 and "auto-session" in manager.sessions and bool(api_client.queries))
+        session = manager.sessions["auto-session"]
+        assert session.claude_connection == "api"
+        tool_use = AssistantMessage("")
+        tool_use.content = [
+            SimpleNamespace(
+                id="reply-child", name="mcp__agents_server__send_message", input={"session_id": "child", "prompt": "続ける"}
+            )
+        ]
+        api_client.messages.put_nowait(tool_use)
+        api_client.messages.put_nowait(
+            UserMessage(
+                content=[
+                    ToolResultBlock(
+                        tool_use_id="reply-child",
+                        content=json.dumps({"session_id": "child", "delivery": "reply_started", "status": "running"}),
+                    )
+                ]
+            )
+        )
+        api_client.messages.put_nowait(ResultMessage("孫を待つ"))
+        await _until(lambda: session.awaiting_auto_resume)
+        if after_reset:
+            clock["now"] += 150
+        session_registry.publish("child", terminal=True, status="completed", cwd=str(tmp_path))
+        result = await asyncio.wait_for(manager.wait(), 3)
+        while result["status"] == "running":
+            result = await asyncio.wait_for(manager.wait(), 3)
+        assert result["status"] == "completed"
+        if mode == "after-reset":
+            assert result["agent_message"] == "サブスクの最終結果"
+            assert len(options_seen) == 3
+            assert options_seen[2].resume == "auto-session"
+            assert not options_seen[2].env.get("ANTHROPIC_AUTH_TOKEN")
+            assert session.claude_connection == "subscription"
+        elif mode == "still-limited":
+            assert result["agent_message"] == "再びAPIの最終結果"
+            assert len(options_seen) == 4
+            assert options_seen[2].resume == "auto-session" and not options_seen[2].env.get("ANTHROPIC_AUTH_TOKEN")
+            assert options_seen[3].resume == "auto-session"
+            assert options_seen[3].env["ANTHROPIC_AUTH_TOKEN"] == "dummy-secret"
+            assert session.claude_connection == "api"
+        else:
+            assert result["agent_message"] == "APIの最終結果"
+            assert len(options_seen) == 2
+            assert session.claude_connection == "api"
+    finally:
         await manager.close()

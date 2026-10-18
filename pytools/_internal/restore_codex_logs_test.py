@@ -7,7 +7,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from pytools._internal import codex_processes, restore_codex_logs
+from pytools._internal import codex_processes, deferred_updates, restore_codex_logs
 
 # 復元処理の安全境界を構成する内部関数と定数を直接検証する。
 # pylint: disable=protected-access
@@ -49,15 +49,21 @@ def _link_all(pairs: tuple[tuple[pathlib.Path, pathlib.Path], ...]) -> None:
         home_path.symlink_to(target_path)
 
 
+@pytest.mark.parametrize("retry_timer", [True, False], ids=["timer", "no-timer"])
 @pytest.mark.parametrize("operation", ["restore", "cleanup", "dangling-link"])
 def test_running_at_start_defers_without_changes(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
     caplog: pytest.LogCaptureFixture,
     operation: str,
+    retry_timer: bool,
 ) -> None:
-    """処置対象があれば稼働中は配置を保持して案内し、停止後に処置を進める。"""
+    """処置対象があれば稼働中は配置を保持して延期を返し、停止後に処置を進める。
+
+    自動更新タイマーを持つホストでは延期記録から再試行するため操作を求めず、持たないホストでは再実行を案内する。
+    """
     home, shm_root, pairs = _prepare(monkeypatch, tmp_path)
+    monkeypatch.setattr(deferred_updates, "has_retry_timer", lambda: retry_timer)
     contents = _write_targets(pairs) if operation != "dangling-link" else {}
     if operation == "cleanup":
         for home_path, target_path in pairs:
@@ -67,7 +73,9 @@ def test_running_at_start_defers_without_changes(
     monkeypatch.setattr(codex_processes, "running_codex_processes", lambda: ("codex mcp-server",))
 
     with caplog.at_level("WARNING", logger=restore_codex_logs.logger.name):
-        assert restore_codex_logs.run(home_dir=home, shm_root=shm_root).changed is False
+        outcome = restore_codex_logs.run(home_dir=home, shm_root=shm_root)
+    assert outcome.changed is False
+    assert outcome.deferred is True
     assert all(home_path.is_symlink() is (operation != "cleanup") for home_path, _ in pairs)
     for _, target_path in pairs:
         if operation == "dangling-link":
@@ -76,7 +84,8 @@ def test_running_at_start_defers_without_changes(
             assert target_path.read_bytes() == contents[target_path]
     warning = "\n".join(record.getMessage() for record in caplog.records)
     assert "延期" in warning
-    assert "update-dotfiles" in warning
+    assert ("update-dotfiles" in warning) is not retry_timer
+    assert ("自動更新タイマーが再試行し" in warning) is retry_timer
     for home_path, target_path in pairs:
         assert str(home_path) in warning
         assert str(target_path) in warning

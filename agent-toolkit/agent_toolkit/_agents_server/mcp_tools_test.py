@@ -23,6 +23,7 @@ from agent_toolkit._agents_server import (
     launch_requests,
     logging_config,
     mcp_tools,
+    session_handoff,
     shared_roots,
     state,
     status_file,
@@ -50,6 +51,50 @@ from agent_toolkit._testing.agents_server_support import (
 from agent_toolkit._testing.managed_temp_support import setattr_in_managed_temp_modules
 
 pytestmark = pytest.mark.usefixtures("agents_server_isolation")
+
+
+@pytest.mark.asyncio
+async def test_new_request_and_handoff_preserve_required_context(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+) -> None:
+    """新要求を配送し、後任にも原要求と追送を保持したまま定型継続できる。"""
+    _recording_candidates(monkeypatch)
+    manager, backend = _manager_with_fake("codex")
+    monkeypatch.setattr(mcp_tools, "_MANAGER", manager)
+    conversation = tmp_path / "conversation.md"
+    conversation.write_text("外部の会話抽出が返した記録\n", encoding="utf-8")
+    record = tmp_path / "record.jsonl"
+    record.write_text("{}\n", encoding="utf-8")
+
+    def extract_context(source: state.SessionResumeState, **_kwargs: Any) -> str:
+        # 外部CLIの会話抽出だけを代替し、保持情報からの引き継ぎ本文生成は実処理を使う。
+        return session_handoff.compose_prompt(source, conversation, (record,))
+
+    monkeypatch.setattr(session_handoff, "prepare_prompt", extract_context)
+    started = await mcp_tools.start(
+        str(tmp_path),
+        subagent_md_path="exec-review",
+        extra_params=_observed_input_params("exec-review.subagent.md", tmp_path),
+    )
+    try:
+        await mcp_tools.send_message(started["session_id"], "追加要求: 新しい文書の差分も確認する")
+        assert "新しい文書の差分" in backend.prompts[-1]
+        for _ in range(2):
+            await mcp_tools.send_message(started["session_id"], "現在の作業を続行する")
+        assert backend.send_calls == 3
+        document = launch_requests._SHARE_DIRECTORY / "exec-review.subagent.md"
+        with pytest.raises(ValueError, match="役割文書が全文再掲"):
+            await mcp_tools.send_message(started["session_id"], document.read_text(encoding="utf-8"))
+        assert backend.send_calls == 3
+        _complete(manager.sessions[started["session_id"]])
+        successor = await mcp_tools.start(handoff_from=started["session_id"])
+        received = manager.sessions[successor["session_id"]].prompt
+        assert "レビュー基準: 計画" in received
+        assert "追加要求: 新しい文書の差分も確認する" in received
+        await mcp_tools.send_message(successor["session_id"], instruction="再レビューせよ", extra_params={"round": "2"})
+        assert backend.prompts[-1] == launch_requests.wrap_delivery_body("再レビューせよ\nround: 2")
+    finally:
+        await manager.close()
 
 
 @pytest.fixture(autouse=True)
@@ -849,3 +894,169 @@ async def test_send_message_tool_returns_previous_result(monkeypatch: pytest.Mon
         "label": "",
         "previous_result": {"status": "completed", "agent_message": "計画作成完了"},
     }
+
+
+@pytest.mark.asyncio
+async def test_followup_rejects_extra_lines_before_delivery(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
+    """定型追送の説明と初回入力は、公開入口から配送されず履歴も増えない。"""
+    _recording_candidates(monkeypatch)
+    manager, backend = _manager_with_fake("codex")
+    monkeypatch.setattr(mcp_tools, "_MANAGER", manager)
+    started = await mcp_tools.start(
+        str(tmp_path),
+        subagent_md_path="exec-review",
+        extra_params=_observed_input_params("exec-review.subagent.md", tmp_path),
+    )
+    session = manager.sessions[started["session_id"]]
+    count = len(backend.prompts)
+    try:
+        for extra in ("検証結果: 成功", "担当別の根拠を説明します", "レビュー基準: 計画"):
+            with pytest.raises(ToolError, match="入力|行") as raised:
+                await mcp_tools.mcp.call_tool(
+                    "send_message",
+                    {
+                        "session_id": session.session_id,
+                        "prompt": "再レビューせよ\nround: 2\n" + extra,
+                    },
+                )
+            assert extra.partition(": ")[0] in str(raised.value)
+            assert "最小の再実行形" in str(raised.value)
+            assert len(backend.prompts) == count
+            assert not session.followup_prompts
+    finally:
+        await manager.close()
+
+
+@pytest.mark.asyncio
+async def test_followup_preserves_required_and_updated_inputs(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
+    """構造化・自由本文は必要な制御値と同じパスの更新を保持する。"""
+    _recording_candidates(monkeypatch)
+    manager, backend = _manager_with_fake("codex")
+    monkeypatch.setattr(mcp_tools, "_MANAGER", manager)
+    started = await mcp_tools.start(
+        str(tmp_path),
+        subagent_md_path="exec-review",
+        extra_params=_observed_input_params("exec-review.subagent.md", tmp_path),
+    )
+    contract = tmp_path / "更新 契約.yaml"
+    contract.write_text("clauses: []\n", encoding="utf-8")
+    try:
+        for round_number in ("2", "3"):
+            contract.write_text(f"round: {round_number}\n", encoding="utf-8")
+            await mcp_tools.mcp.call_tool(
+                "send_message",
+                {
+                    "session_id": started["session_id"],
+                    "instruction": "再レビューせよ",
+                    "extra_params": {"round": round_number, "review_contract": str(contract)},
+                },
+            )
+            assert f"round: {round_number}" in backend.prompts[-1]
+            assert str(contract) in backend.prompts[-1]
+        await mcp_tools.send_message(started["session_id"], "再レビューせよ\nround: 4")
+        assert "round: 4" in backend.prompts[-1]
+        await mcp_tools.send_message(
+            started["session_id"], instruction="再レビューせよ", extra_params={"round": "5", "rewrite_map": str(contract)}
+        )
+        assert f"rewrite_map: {contract}" in backend.prompts[-1]
+        direct_contract = "目的: 必要な入力を保持する\n\n対象: 現在の差分"
+        await mcp_tools.send_message(
+            started["session_id"],
+            instruction="再レビューせよ",
+            extra_params={"round": "6", "review_contract": direct_contract},
+        )
+        expected = "再レビューせよ\nround: 6\nreview_contract:\n  目的: 必要な入力を保持する\n  \n  対象: 現在の差分"
+        assert backend.prompts[-1] == launch_requests.wrap_delivery_body(expected)
+        await mcp_tools.send_message(started["session_id"], expected.replace("round: 6", "round: 7"))
+        assert backend.prompts[-1] == launch_requests.wrap_delivery_body(expected.replace("round: 6", "round: 7"))
+        before = backend.send_calls
+        for params in (
+            {},
+            {"round": "8", "rewrite_map": str(contract) + " 説明"},
+            {"round": "8", "review_contract": str(contract) + " 説明"},
+        ):
+            with pytest.raises(ToolError):
+                await mcp_tools.mcp.call_tool(
+                    "send_message",
+                    {
+                        "session_id": started["session_id"],
+                        "instruction": "再レビューせよ",
+                        "extra_params": params,
+                    },
+                )
+        assert backend.send_calls == before
+    finally:
+        await manager.close()
+
+
+@pytest.mark.parametrize(
+    ("role", "instruction", "params"),
+    [
+        ("exec", "実装開始", {}),
+        ("exec", "実装なし", {}),
+        ("exec", "レビュー指摘の対応をせよ", {"round": "1", "レビュー指摘管理表": "@table"}),
+        (
+            "exec",
+            "統合開始",
+            {
+                "統合区分": "マージなし",
+                "レーン開始時刻": "2026-10-18T19:30:00+09:00",
+                "実行レビュー済みHEAD": "なし",
+                "統合先worktree": "/repo",
+                "統合先branch": "develop",
+                "計画ファイル名一覧": "[]",
+                "AWI終端区分": "adopt",
+            },
+        ),
+        ("add-wi", "保存開始", {"要求識別子": "request-1"}),
+    ],
+)
+@pytest.mark.asyncio
+async def test_declared_role_continuations_keep_required_inputs(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+    role: str,
+    instruction: str,
+    params: dict[str, str],
+) -> None:
+    """初回値を再掲せず、各役割の指示と対象識別子が公開入口から届く。"""
+    if params.get("レビュー指摘管理表") == "@table":
+        table = tmp_path / "review.tsv"
+        table.write_text("指摘の記録\n", encoding="utf-8")
+        params = {**params, "レビュー指摘管理表": str(table)}
+    _recording_candidates(monkeypatch)
+    manager, backend = _manager_with_fake("codex")
+    monkeypatch.setattr(mcp_tools, "_MANAGER", manager)
+    started = await mcp_tools.start(
+        str(tmp_path),
+        subagent_md_path=role,
+        extra_params=_observed_input_params(f"{role}.subagent.md", tmp_path),
+    )
+    try:
+        await mcp_tools.mcp.call_tool(
+            "send_message",
+            {
+                "session_id": started["session_id"],
+                "instruction": instruction,
+                "extra_params": params,
+            },
+        )
+        expected = "\n".join([instruction, *(f"{name}: {value}" for name, value in params.items())])
+        assert backend.prompts[-1] == launch_requests.wrap_delivery_body(expected)
+        if role == "exec" and instruction == "レビュー指摘の対応をせよ":
+            await mcp_tools.mcp.call_tool("send_message", {"session_id": started["session_id"], "prompt": expected})
+            assert backend.prompts[-1] == launch_requests.wrap_delivery_body(expected)
+            session = manager.sessions[started["session_id"]]
+            received = len(backend.prompts)
+            history = session.followup_prompts
+            for extra in ("検証結果: 成功", "担当別根拠を補足する"):
+                with pytest.raises(ToolError) as raised:
+                    await mcp_tools.mcp.call_tool(
+                        "send_message", {"session_id": started["session_id"], "prompt": expected + "\n" + extra}
+                    )
+                assert extra.partition(": ")[0] in str(raised.value)
+                assert "最小の再実行形" in str(raised.value)
+                assert len(backend.prompts) == received
+                assert session.followup_prompts == history
+    finally:
+        await manager.close()

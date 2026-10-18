@@ -33,6 +33,7 @@ function engine(on: On, options: Options): Recorded {
   const recorded: Recorded = { calls: [], argv: [], created: [], files: new Map() };
   const jobs = [...(options.jobs ?? [])];
   on("session.id", () => ({ value: "life-1" }));
+  on("session.messages", () => ({ value: [] }));
   on("env.get", (_$, e) => ({ value: e.name === "HOME" ? "/home/tester" : undefined }));
   on("fs.read", (_$, e) => ({ value: recorded.files.get(e.path) ?? "consumed" }));
   on("fs.write", (_$, e) => { recorded.files.set(e.path, e.text); return { value: undefined }; });
@@ -177,6 +178,7 @@ test("標識で始まらないpromptではCronCreateを呼ばずに案内を届�
 
 test("CronCreateが公開されていなければ案内を届ける", async ($, on) => {
   const recorded: string[] = [];
+  on("session.messages", () => ({ value: [] }));
   on("tool.check", () => ({ decision: "allow" }));
   on("tool.call", { tool: START }, () => {
     recorded.push("start");

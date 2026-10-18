@@ -85,13 +85,40 @@ def test_budget_must_fit_a_complete_progressing_response(
     assert "--max-bytes" in captured.err
 
 
-@pytest.mark.parametrize("case", ["relative", "negative", "past-end", "missing", "non-utf8"])
+@pytest.mark.parametrize("text", ["", "日本語\r\n\ufeff", "長" * 12000], ids=["empty", "japanese-crlf-bom", "long-line"])
+@pytest.mark.parametrize("budget", [None, 12000, 16384])
+def test_start_beyond_end_is_eof(
+    text: str, budget: int | None, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """末尾ちょうどと超過は同じ終端応答を返し、終端でもJSON全体が予算に収まることを確かめる。"""
+    path = tmp_path / "input.txt"
+    path.write_bytes(text.encode("utf-8"))
+    expected = {"text": "", "start": len(text), "end": len(text), "next": None, "eof": True}
+    for position in (len(text), len(text) + 1000000):
+        options = [] if budget is None else ["--max-bytes", str(budget)]
+        with pytest.raises(SystemExit, match="0"):
+            atk.main(["read-file", "--start", str(position), *options, "--", str(path)])
+        captured = capsys.readouterr()
+        assert not captured.err
+        assert json.loads(captured.out) == expected
+        size = len(captured.out.encode("utf-8"))
+        assert size <= (4096 if budget is None else budget)
+        for invalid_budget in (size - 1, 16385):
+            with pytest.raises(SystemExit, match="2"):
+                atk.main(["read-file", "--start", str(position), "--max-bytes", str(invalid_budget), "--", str(path)])
+            captured = capsys.readouterr()
+            assert not captured.out
+            assert "返却予算" in captured.err
+            assert "次の操作:" in captured.err
+
+
+@pytest.mark.parametrize("case", ["relative", "negative", "missing", "non-utf8"])
 def test_invalid_file_or_position_has_recovery(case: str, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
     """不正な入力で本文を返さず、直す入力を案内する。"""
     path = tmp_path / "input.txt"
     path.write_bytes(b"abc" if case != "non-utf8" else b"\xff")
     target = "relative.txt" if case == "relative" else str(tmp_path / "missing") if case == "missing" else str(path)
-    start = "-1" if case == "negative" else "4" if case == "past-end" else "0"
+    start = "-1" if case == "negative" else "0"
     with pytest.raises(SystemExit, match="2"):
         atk.main(["read-file", "--start", start, "--", target])
     captured = capsys.readouterr()

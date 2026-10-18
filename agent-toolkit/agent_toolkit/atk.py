@@ -292,7 +292,7 @@ _OUTPUT_AS_FILE_CALLS = (
             and (args.all or len(set(args.filenames)) > 1)
         ),
         after_save=None,
-        reason="一括取得の消費側が保存ファイルの全見出しと本文を読むため、保存後の表示を持たない",
+        reason="一括取得の本文を保存し、保存後は項目ごとのユーザー専用の記入欄の有無と開始行を表示する",
     ),
     _OutputAsFile(
         applies=lambda args: (
@@ -401,6 +401,7 @@ def main(
     home: pathlib.Path | None = None,
     now: datetime.datetime | None = None,
     _output_capture_active: bool = False,
+    _saved_show_fields: list[str] | None = None,
 ) -> None:
     """エントリポイント。"""
     # Windowsのcp932環境で日本語出力が文字化けする事象を根本回避するためUTF-8を強制する。
@@ -419,15 +420,27 @@ def main(
             main(argv, home=home, now=now, _output_capture_active=True)
         return
     args = parser.parse_args(raw_argv)
+    args._saved_show_fields = _saved_show_fields
     if not _output_capture_active and _auto_saves_output(args):
         output_as_file = _output_as_file_call(args)
+        after_save = output_as_file.after_save if output_as_file is not None else None
+        show_fields: list[str] | None = None
+        if args.command == "wi" and args.wi_subcommand == "show" and not args.summary_only and args.section is None:
+            show_fields = []
+
+            def report_show_fields(_path: pathlib.Path) -> None:
+                assert show_fields is not None
+                for field in show_fields:
+                    print(field)
+
+            after_save = report_show_fields
         with _output_file.auto_save(
             lambda: _managed_temp.create_output_temp("atk-output"),
-            after_save=output_as_file.after_save if output_as_file is not None else None,
+            after_save=after_save,
             force_stdout=output_as_file is not None,
             discard_directory=_managed_temp.cleanup_managed_temp,
         ):
-            main(argv, home=home, now=now, _output_capture_active=True)
+            main(argv, home=home, now=now, _output_capture_active=True, _saved_show_fields=show_fields)
         return
     if args._help_parser is not None:
         args._help_parser.print_help()

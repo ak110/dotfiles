@@ -114,7 +114,7 @@ agent-toolkitプラグイン、共有`agents_server` MCP、`atk`ラッパーが�
 | claude.aiのChat・DesktopのChat | アカウントの`Customize > Plugins`からマーケットプレイスを追加するか、プラグインのZIPをアップロードする。スキル内の品質基準を読む。CLI・hook・local MCPを使う操作は、それらを提供する環境で行う |
 | DesktopのCowork | Coworkタブを開き、同じアカウントの`Customize > Plugins`から追加する。hook・local MCPはホストの対応、uvとネットワークの提供、組織の許可条件を確かめて使う |
 | DesktopのCode・ローカルClaude Code | 前述の単体インストーラーを実行し、Codeセッションで`/plugin`から導入状態を確認する。CLI・hook・MCPを使う |
-| Claude Codeクラウド | 環境のセットアップスクリプトで配布物と依存を用意し、環境変数の`CLAUDE_CODE_PLUGIN_DIRS`へ絶対パスを設定する |
+| Claude Codeクラウド | 環境の`Setup script`欄へ`install-claude-cloud.sh`の1行を置き、`Environment variables`欄へ`CLAUDE_CODE_PLUGIN_DIRS`など2行を保存する（後述「Claude Codeクラウドの環境設定」） |
 
 Chat・CoworkでGitマーケットプレイスを追加する場合は、`Customize > Plugins > Add > Add marketplace`で`Add from a repository`を選び、`ak110/dotfiles`を入力する。登録された`agent-toolkit`を選んで`Add`を実行する。ZIPで導入する場合は同じPlugins画面のカスタムプラグインのアップロードを使う。アカウント側に追加したプラグインの同期範囲と組織による制限は、[Claudeのプラグイン利用手順](https://support.claude.com/en/articles/13837440-use-plugins-in-claude)を参照。
 
@@ -130,26 +130,30 @@ ZIPの直下には`.claude-plugin/plugin.json`と`skills/`が置かれ、`bin/`�
 
 ### Claude Codeクラウドの環境設定
 
-Claude Code 2.1.280以上を使い、クラウドの環境設定で次の変数を保存する。ディレクトリはセットアップとセッションの両方から読める同じ絶対パスにする。[CLAUDE_CODE_PLUGIN_DIRSの仕様](https://code.claude.com/docs/en/env-vars)は相対パスを読み込まないことと必要なCLI版を定める。
+Claude Code 2.1.280以上のクラウド環境で、環境の設定画面の2つの欄へ次を保存する。
+
+`Environment variables`欄:
 
 ```dotenv
 CLAUDE_CODE_PLUGIN_DIRS=/opt/agent-toolkit-src/agent-toolkit
 AGENT_TOOLKIT_RUNTIME_DATA=/opt/agent-toolkit-data
 ```
 
-セットアップスクリプトには次を設定する。`git`と`uv`、Python 3.15の取得、およびGitHubとPythonパッケージ配布先へのネットワークが必要である。
+`Setup script`欄:
 
 ```bash
-#!/bin/bash
-set -eu
-git clone --depth 1 --branch master https://github.com/ak110/dotfiles.git /opt/agent-toolkit-src
-AGENT_TOOLKIT_RUNTIME_DATA=/opt/agent-toolkit-data \
-  uv run --no-config --no-project --python 3.15 python \
-  /opt/agent-toolkit-src/agent-toolkit/scripts/launch.py \
-  agent_toolkit/agents_server_mcp.py --check-dependencies
+curl -fsSL https://raw.githubusercontent.com/ak110/dotfiles/master/install-claude-cloud.sh | bash
 ```
 
-環境変数は環境設定の欄へ保存する。セットアップ内だけの`export`を後続セッションの設定として使わない。リポジトリの`enabledPlugins`だけではクラウドがプラグインを導入しない。セットアップの終了0、依存の確認（`--check-dependencies`）の成功、新しいセッションのスキル一覧・CLI案内・MCPの接続を順に確認する。setupの制限時間とネットワーク設定は[クラウド環境の設定](https://code.claude.com/docs/en/cloud-environments)を参照。
+`install-claude-cloud.sh`は配布物を`/opt/agent-toolkit-src`へ取得し（取得済みなら最新へ更新し）、agents_serverの依存を`/opt/agent-toolkit-data`へ事前に準備する。最後に`Environment variables`欄へ保存する2行を表示する。取得先と依存領域を変える場合は、`Setup script`欄の1行を次の形にする。変数はパイプの右側の`bash`の直前へ置く。行頭へ置くと`curl`だけに渡り、スクリプトへ届かない。表示された2行を`Environment variables`欄へ保存する。
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/ak110/dotfiles/master/install-claude-cloud.sh | AGENT_TOOLKIT_CLOUD_SRC=<取得先> AGENT_TOOLKIT_RUNTIME_DATA=<依存領域> bash
+```
+
+[CLAUDE_CODE_PLUGIN_DIRSの仕様](https://code.claude.com/docs/en/env-vars)は相対パスを読み込まないことと必要なCLI版を定めるため、取得先は絶対パスにする。
+
+ネットワークは`Trusted`などGitHubとPythonパッケージ配布先へ接続できる設定にする。環境の`git`・`uv`とPython 3.15の取得を使う。環境変数は`Environment variables`欄へ保存する。セットアップ内だけの`export`は後続セッションへ引き継がれない。リポジトリの`enabledPlugins`だけではクラウドがプラグインを導入しない。セットアップの終了0、新しいセッションのスキル一覧・CLI案内・MCPの接続を順に確認する。セットアップが失敗した場合は、失敗した段と確認事項が出力の末尾に表示される。setupの制限時間とネットワーク設定は[クラウド環境の設定](https://code.claude.com/docs/en/cloud-environments)を参照。
 
 ## 処理順序
 
@@ -183,7 +187,7 @@ Claude CodeまたはCodex pluginから読み込まれるため、`codex plugin l
 
 委譲の状態は次のコマンドで確かめる。
 `atk agents list`は実行中と保持中の委譲先を一覧し、`--watch`を付けると約2秒ごとに表示を更新する。
-`atk agents logs <session-id>`は選んだ委譲先の記録を表示し、`--follow`を付けると追記分を表示し続ける。
+`atk agents logs <session-id>`は選んだ委譲先の記録を表示し、`--follow`を付けると追記分を表示し続ける。`--verbose`を付けない表示はツール呼び出し・ツール結果・思考を省いて会話の流れを要約し、`--verbose`を付けると全イベントを全文で表示する。
 `atk agents wait`は委譲先の終端を待ち、回収した結果を表示する。
 `agents_server`の公開ツール（`start`、`send_message`、`kill`、`list`、`show`、`stop`）の入力と応答の契約は[design-agents-server.md](../development/design-agents-server.md)を参照。
 
@@ -206,6 +210,40 @@ atk run-script session-review-evidence -- --catalog-claude-project ~/.claude/pro
 
 振り返りの準備後や最終報告後に届いた新しい`気付いた改善点:`の行は`agent-toolkit:completion-report`の工程に従って振り返りへ取り込み、結果報告を更新してから終了する。
 Stopはこの行の有無と報告本文を判定しない。
+
+### 週ごとの費用とレビュー指標
+
+費用改善の前後比較と再悪化の確認には、開始と終了を指定して手動で集計する。
+次の例は2026年10月5日0時から19日0時までを集計し、終了を省くと実行時刻までを集計する。
+日付と時差のない日時は実行ホストのローカル時刻として解釈する。
+
+```sh
+atk run-script cost-metrics -- --since 2026-10-05 --until 2026-10-19
+```
+
+JSON Linesの`cost-metrics-week`は月曜0時から始まる週ごとの次の値を返す。
+
+| 項目 | 定義 |
+| --- | --- |
+| `adopted_awi_count` | private-notesのGit履歴で期間内にadopted/へ追加されたtypeがawiのファイル数。全対象リポジトリを合算し、同名ファイルは週内で1件とし、UWIを除く |
+| `tokens` | 開始時刻が期間内のルートと全委譲先のトークン。全ルートとprocess-wiを分け、それぞれ合計とruntime別に、非キャッシュ入力・キャッシュ作成入力・キャッシュ読取入力・出力の4成分を示す |
+| `tokens_per_awi` | 全ルートとprocess-wiそれぞれの4成分を同じ週の採用AWI数で割った値。0件の週はnull |
+| `review.rounds`・`five_or_more_ratio` | plans/配下の保存済みexec-review.tsvを最初の追加commitの週へ割り当て、exec-review行の最大roundが0・1・2・3・4・5・6以上の表数と、5以上の表の割合を示す。指摘なしは0 |
+| `review.levels` | exec-reviewの指摘を要件・仕様・詳細・実装・旧形式の未記録に分けた件数 |
+| `review.without_modification_count`・`without_modification_ratio` | exec-review行のうちno-response-reasonがありresponseが空の件数と、全exec-review指摘数に対する割合 |
+
+各記録は1回だけ数え、委譲先はルートの開始週へ合算する。
+Codexのreasoning_output_tokensは出力に内包される。
+トークンの金額換算や重み付けは行わない。
+レビュー表の旧trackであるimplementation-reviewはexec-reviewとして読み、他のtrackは対象外とする。
+`~/.claude/plans`だけにある未保存の表は集計から除き、`unsaved_table_count`で件数を示す。
+
+末尾の`cost-metrics-coverage`はruntimeごとの読めた最古の記録時刻、読めなかった記録・表、特定できなかった委譲先の件数を示す。
+最古の記録より前に始まる週は`missing_token_records`がtrueとなり、トークンの記録が欠けた週として扱う。
+記録が欠けた週の0は、使用量0の証拠にはならない。
+更新時刻が開始より前の記録は読込前に除くため、最古の時刻は今回の走査で読めた範囲を示す。
+`--claude-projects-dir`・`--codex-sessions-dir`・`--private-notes`で各入力のディレクトリを上書きできる。
+指定を省くと`~/.claude/projects`・`~/.codex/sessions`・`atk config get private_notes`と同じ値を使う。
 
 ## 工程別モデル設定
 
@@ -243,7 +281,7 @@ Remote Controlは、手元で動くClaude Codeの会話へブラウザーやClau
 | `codex_low_tier_model` | Codexの軽量モデル（未設定時は`luna/medium`） |
 | `base_engine` | 一般の実装・修正・新しい候補や評価軸を導く調査と案出し・AWI投入・公開工程の終端・自動コードレビュー監査（上位）、プロンプト評価（中位）、`atk commit`（省略時は中位）のengine順 |
 | `execute_engine` | レーンの計画・実装・変更範囲検証と同じexecによる修正（上位）のengine順 |
-| `review_engine` | 実行レビュー・ユーザビリティレビューと専念型の投入前レビュー（中位）のengine順 |
+| `review_engine` | 実行レビュー・ユーザビリティレビュー・専念型の投入前レビューと再発防止セルフチェック（中位）のengine順 |
 | `chores_engine` | 一括置換後レビュー・外部書込レビュー・読者適合レビュー・WI説明・`start`の`explore`と`shell`（省略時は軽量）のengine順 |
 | `orchestrate_engine` | `atk wi process-loop`・`atk run-skill`とWI作成専用セッションの要求別担当（上位）のengine順 |
 | `write_model` | `start`の`write`。日本語の文章力で選ぶ候補列で、段位と配分に属さない |
@@ -353,6 +391,7 @@ setは先頭の`~`を展開してパスだけを保存する。
 認証手段が1つだけの場合はその接続の解除を待つ。両認証を持ち全候補が尽きた場合と、認証手段が無い場合は、理由と復旧操作を返して終了する。
 オーケストレーターは選択済み接続を固定し、解除待ち・次のengine候補・不成立理由の返却へ進む。
 接続済みの会話はstop・保持期限・サーバー再起動後も選択済みの接続を保持する。
+`pay-as-you-go`で利用上限によりAPIへ移った委譲先は、上限の解除予定時刻の後の最初の追送か自動再開からサブスクリプションへ戻る。
 新規sessionは毎回モードの先頭候補から評価する。
 親環境と親settingsのAPI認証を隔離し、API会話には選択したenvファイルの値を渡す。
 
@@ -406,6 +445,10 @@ claude-plugins-officialのプラグインは次の方針で扱う。
 `/agent-toolkit:process-wi`を会話から起動する場合も、`atk wi process-loop`から起動する場合も、初期選定が1レーンなら、専用worktreeを持つ1人の担当エージェントが計画・実装・独立した実行レビューの調整・統合を続ける。
 `all-repos`で複数リポジトリを扱う場合は、リポジトリごとにこの担当を置く。
 ユーザーと会話する起動元のエージェントが、判断を要する事項と最終結果をユーザーへ届ける。
+各利用形態で、エージェントは実装前に使う操作・入力・期待する結果を決め、実装担当がその操作で結果を確かめる。
+実装担当は確認できた結果と未確認事項、要求が変わった場合の判断を、実装を担当していないレビュー担当へ渡す。
+未確認事項は、起動元のエージェントが担当者と作業を再開する方法を整理して次の担当へ引き継ぐ。
+ユーザーの判断や操作が必要な事項は、その内容をユーザーへ伝える。
 
 作業の進め方は次の4パターンを推奨する。要件がどこまで固まっているかと、AWIの発生頻度で選ぶ。決まったスキルを定期的に実行したい場合は定期実行型を選ぶ。
 
@@ -569,7 +612,7 @@ PATH=/home/user/.local/bin:/usr/local/bin:/usr/bin:/bin
 show形式の構造とは、直後にfrontmatterが続く`### <ファイル名>.md`の行を持ち、その行より前が空行と`# awi`・`# uwi`・`## target_repo: ...`の見出しだけで構成される本文を指す。
 このときtarget-repo欄とUWI用の入力欄の値は使わない。
 
-AWI作成専用のadd-awi-by-userでは、独立要求1件はメイン、複数件は要求別の上位担当が調査から保存まで完結する。親の原稿検収を通らない経路は中位の独立投入前レビューを経る。他作業に付随する投入は独立したWI投入担当と親の意味の検収・保存開始の二段階を使う。
+AWI作成専用のadd-awi-by-userでは、独立要求1件はメイン、複数件は要求別の上位担当が調査から保存まで完結する。親の原稿検収を通らない経路は投入前レビュー（原稿を書いた担当とは別のエージェントが、保存の前に要求との一致と根拠を確かめる工程）を経る。他作業に付随する投入は独立したWI投入担当と親の意味の検収・保存開始の二段階を使う。
 委譲の粒度は起動・自動配送・明示読取・親の検収・統合と再試行の総費用で選ぶ。同じ要求の取得済み証拠を再利用し、独立要求と独立文脈レビューの文脈、単一writerは保つ。
 
 登録したAWIの計画、実装と実行レビューはエージェントが進める。登録者が行う操作は、UWIへの回答と、次に述べる登録済み項目の修正である。
@@ -615,6 +658,8 @@ remote_hosts = ["remote-host"]
 WI画面で状態が`needs-verify`と表示される項目は、反映後の観測だけが残っているため、観測できる時刻まで`inbox`へ戻されたAWIである。保存状態は`inbox`のままで、状態フィルターの`inbox`にも含まれ、次の`agent-toolkit:process-wi`が観測から再開する。
 
 `cooldown`は冷却期限までは自動処理で次に選ばれる対象にならないinboxのAWIを示す。バッジはinboxと同じ青色で、マウスを乗せるとJSTの解除日時を確認できる。needs-verifyにも当たる項目ではcooldownを優先し、期限を迎えるとneeds-verifyへ、通常の項目はinboxへ戻る。画面を開いたままでも表示は更新される。保存状態はinboxのままで、状態フィルター・件数・操作の可否も保存状態に従う。holdなどinbox以外の項目は、冷却期限があっても元の状態を表示する。
+
+`answered`は回答済みのinboxのUWIを示す。回答は次の`agent-toolkit:process-wi`が元の作業へ反映する。バッジはinboxと同じ青色で、保存状態はinboxのままである。状態フィルター・件数・操作の可否も保存状態に従う。未回答のUWIと、inbox以外の状態の回答済みUWIは元の状態を表示する。
 
 CLIでは`atk wi add --cooldown-until '2026-10-11T12:00:00+09:00' --body-file <本文ファイル>`でAWIの初回保存から期限を設定できる。複数本文には同じ期限を適用する。空・不正日時・タイムゾーンなし、UWI・batchとの併用と通常本文のfrontmatterによる期限指定は拒否する。`inbox`または`hold`のAWIの期限は`atk wi edit <ファイル名> --cooldown-until <日時>`で変更し、この編集だけは空文字列で解除できる。`processing`では設定と解除の双方を拒否する。
 
@@ -778,7 +823,7 @@ pushを行わずローカルcommitまでで止める場合は`--skip-push`を指
 
 - `agent-toolkit:writing-standards`: ドキュメントとコード内コメント、コードとテストコード、エージェント向け文書の品質基準。成果物の種別ごとに`references/`配下の資料を読み分ける
 - `agent-toolkit:refine-prompt`: プロンプトの指摘を独立した実行者から集め、共通の文書基準で改善案を組み立てる
-- `agent-toolkit:commit`: git commit作業（通常commit・amend・fixup）の手順とConventional Commits規約
+- `agent-toolkit:commit`: commitを作成・取り込む操作（通常commit、amend、fixup、cherry-pick、merge、rebase、revertなど）の前に起動する手順とConventional Commits規約
 - `agent-toolkit:bugfix`: 問題対処の原因分析と、類似見直し・再発防止の唯一の判断基準。成果物の品質に影響する問題では、費用や所要時間を理由に、同じ原因の問題を探して直す範囲を狭めず、同じ原因の問題を今後起こさない対策を省かない。探す範囲には同じ原因の過去の作業と他のリポジトリも含める
 - `agent-toolkit:delegation`: 起動方式の選択、継続、停滞検知または複数主体調整が必要な高度な委譲の手順。
   自動的に適用せず、対象工程が高度な委譲の条件を持つ場合にだけ読み込む

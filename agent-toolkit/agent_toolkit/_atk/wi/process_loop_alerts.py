@@ -35,6 +35,8 @@ def check_process_loop_alerts(
     monotonic_now = time.monotonic()
     if last_alert_check is not None and monotonic_now - last_alert_check < args.alert_interval:
         return last_alert_check, 0, 0
+    # 外部APIの照会は1件あたり数秒から十数秒かかるため、待機中と区別できるよう着手を表示する。
+    print(f"{target_repo_id}のCI失敗とアラートを確認しています。", flush=True)
     try:
         submitted = _alerts.check_and_submit_alerts(
             private_notes,

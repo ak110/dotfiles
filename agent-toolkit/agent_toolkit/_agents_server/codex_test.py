@@ -200,30 +200,6 @@ class _ProcessTierClient(_TierClient):
         self.process = SimpleNamespace(pid=pid)
 
 
-class _SandboxProbeClient:
-    """公開command/exec応答を模し、接続の回収を観測する。"""
-
-    def __init__(self, *_args: Any, **_kwargs: Any) -> None:
-        self.process: Any = None
-        self.closed = False
-        self.requests: list[tuple[str, dict[str, Any]]] = []
-        self.response: dict[str, Any] = {"exitCode": 0, "stderr": "", "stdout": ""}
-        self.error: BaseException | None = None
-
-    async def start(self) -> None:
-        return None
-
-    async def request(self, method: str, params: dict[str, Any], **_kwargs: Any) -> dict[str, Any]:
-        assert method == "command/exec"
-        self.requests.append((method, params))
-        if self.error is not None:
-            raise self.error
-        return self.response
-
-    async def close(self) -> None:
-        self.closed = True
-
-
 @pytest.mark.asyncio
 async def test_start_and_resume_record_owner_and_app_server_processes(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
@@ -1443,6 +1419,9 @@ async def test_start_and_resume_pass_the_same_stable_plugin_root_to_all_launch_k
 ) -> None:
     """開始と再開の全役割へ、実在する同じplugin rootと、plugin rootの再解決を禁じる指示を渡す。"""
     source = _make_plugin_root(tmp_path / "cache", "2.125.0", versioned=True, root_is_version=True)
+    (source / ".mcp.json").write_text(
+        (plugin_roots.SERVER_PLUGIN_ROOT / ".mcp.json").read_text(encoding="utf-8"), encoding="utf-8"
+    )
     (source / "skills" / "sample").mkdir(parents=True)
     (source / "skills" / "sample" / "SKILL.md").write_text("# 手順\n", encoding="utf-8")
     plugin_root = plugin_roots.resolve_stable_plugin_root(source)
@@ -1453,7 +1432,6 @@ async def test_start_and_resume_pass_the_same_stable_plugin_root_to_all_launch_k
     client = _TierClient()
     manager = subject.AppServerManager(root_session_id="owner")
     monkeypatch.setattr(manager, "_ensure_client", AsyncMock(return_value=client))
-    monkeypatch.setattr(subject, "JsonRpcProcess", _SandboxProbeClient)
 
     await manager.start("開始", str(tmp_path), launch_kind=launch_kind)
     start_params = next(params for method, params in client.requests if method == "thread/start")
@@ -1472,13 +1450,10 @@ async def test_start_and_resume_pass_the_same_stable_plugin_root_to_all_launch_k
         else:
             assert shlex.split(command) == [str(entry)]
         assert (subject.python_runtime_instructions() in instructions) is (launch_kind != "delegate")
-        if launch_kind == "explore":
-            assert params["config"]["mcp_servers"]["agents_server"] == {"enabled": False}
-        else:
-            args = params["config"]["mcp_servers"]["agents_server"]["args"]
-            assert pathlib.Path(args[-2]) == plugin_root / "scripts" / "launch.py"
-            assert pathlib.Path(args[-2]).is_file()
-            assert (plugin_root / args[-1]).is_file()
+        args = params["config"]["mcp_servers"]["agents_server"]["args"]
+        assert pathlib.Path(args[-2]) == plugin_root / "scripts" / "launch.py"
+        assert pathlib.Path(args[-2]).is_file()
+        assert (plugin_root / args[-1]).is_file()
         assert (plugin_root / "skills" / "sample" / "SKILL.md").is_file()
         assert "別hostのcache版数から別のplugin rootを組み立てない" in instructions
     assert start_params["developerInstructions"] == resume_params["developerInstructions"]
@@ -1797,11 +1772,11 @@ async def test_codex_start_uses_noninteractive_policy_and_shared_projection(
 
 @pytest.mark.usefixtures("agents_server_isolation")
 @pytest.mark.asyncio
-async def test_codex_explore_limits_start_resume_and_followup(
+async def test_codex_explore_commands_reach_start_resume_and_followup(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> None:
-    """探索の開始・再開・追送は読取専用と外部tool無効を保ち、通常起動と分ける。"""
+    """探索の開始・再開・追送で通常のコマンドとMCP設定を保持する。"""
     normal_manager = subject.AppServerManager()
     normal_client = FakeCodexClient()
 
@@ -1818,7 +1793,6 @@ async def test_codex_explore_limits_start_resume_and_followup(
         return explore_client
 
     monkeypatch.setattr(explore_manager, "_ensure_client", ensure_explore_client)
-    monkeypatch.setattr(subject, "JsonRpcProcess", _SandboxProbeClient)
     session = await explore_manager.start("調査", str(tmp_path), "model", "high", launch_kind="explore")
     await explore_manager._start_turn(session, "追送", cast(subject.JsonRpcProcess, explore_client))
     await explore_manager._resume_thread(session, explore_client)
@@ -1827,20 +1801,23 @@ async def test_codex_explore_limits_start_resume_and_followup(
     explore_thread = explore_client.requests[0][1]
     assert normal_thread["config"] == {"bypass_hook_trust": True}
     assert normal_thread["developerInstructions"] == subject._developer_instructions("delegate")  # noqa: SLF001
-    assert explore_thread["config"] == {
-        "bypass_hook_trust": True,
-        "project_doc_max_bytes": 0,
-        "mcp_servers": {"agents_server": {"enabled": False}, "external": {"enabled": False}},
-        "features": {"apps": False, "plugins": False, "multi_agent": False},
-    }
+    assert explore_thread["config"]["bypass_hook_trust"] is True
+    assert explore_thread["config"]["project_doc_max_bytes"] == 0
+    assert explore_thread["config"]["features"] == {"plugins": False}
+    pyfltr = explore_thread["config"]["mcp_servers"]["pyfltr"]
+    definition = json.loads((subject.plugin_roots.SERVER_PLUGIN_ROOT / ".mcp.json").read_text(encoding="utf-8"))["mcpServers"][
+        "pyfltr"
+    ]
+    assert pyfltr["command"] == definition["command"]
+    assert pyfltr["args"] == definition["args"]
     assert explore_thread["developerInstructions"] == subject._developer_instructions("explore")  # noqa: SLF001
     for method, params in explore_client.requests:
         assert params["approvalPolicy"] == "never"
         if method in {"thread/start", "thread/resume"}:
-            assert params["sandbox"] == "read-only"
+            assert params["sandbox"] == "danger-full-access"
             assert params["config"] == explore_thread["config"]
         else:
-            assert params["sandboxPolicy"] == {"type": "readOnly"}
+            assert params["sandboxPolicy"] == {"type": "dangerFullAccess"}
     assert normal_client.requests[1][1]["sandboxPolicy"] == {"type": "dangerFullAccess"}
 
 
@@ -1872,7 +1849,6 @@ async def test_codex_resume_passes_delegate_instructions(monkeypatch: pytest.Mon
     client = _TierClient()
     manager = subject.AppServerManager()
     monkeypatch.setattr(manager, "_ensure_client", AsyncMock(return_value=client))
-    monkeypatch.setattr(subject, "JsonRpcProcess", _SandboxProbeClient)
     normal_session = state.SessionState("thread-normal", str(tmp_path), engine="codex")
     explore_session = state.SessionState("thread-explore", str(tmp_path), engine="codex", launch_kind="explore")
     shell_session = state.SessionState("thread-shell", str(tmp_path), engine="codex", launch_kind="shell")
@@ -1885,7 +1861,8 @@ async def test_codex_resume_passes_delegate_instructions(monkeypatch: pytest.Mon
     assert normal_resume["config"] == {"bypass_hook_trust": True}
     assert explore_resume["developerInstructions"] == subject._developer_instructions("explore")  # noqa: SLF001
     assert explore_resume["config"]["project_doc_max_bytes"] == 0
-    assert explore_resume["config"]["features"] == {"apps": False, "plugins": False, "multi_agent": False}
+    assert explore_resume["config"]["features"] == {"plugins": False}
+    assert explore_resume["config"]["mcp_servers"]["pyfltr"]["command"] == "uvx"
     assert shell_resume["developerInstructions"] == subject._developer_instructions("shell")  # noqa: SLF001
     assert shell_resume["config"] == {"bypass_hook_trust": True, "project_doc_max_bytes": 0}
 
@@ -2701,112 +2678,6 @@ async def test_codex_kill_reports_no_request_when_pending_turn_completes_natural
         assert not backend._background_tasks
     finally:
         await manager.close()
-
-
-@pytest.mark.parametrize("api_provider", [False, True])
-@pytest.mark.asyncio
-async def test_explore_resume_checks_sandbox_before_delivering_prompt(
-    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, api_provider: bool
-) -> None:
-    """探索再開の実行環境が使えない場合、入力を配送せず原因と新規探索の案内を返す。"""
-    probe = _SandboxProbeClient()
-    monkeypatch.setattr(subject, "JsonRpcProcess", lambda *_args, **_kwargs: probe)
-    manager = subject.AppServerManager()
-    client = _TierClient()
-    monkeypatch.setattr(manager, "_ensure_client", AsyncMock(return_value=client))
-    try:
-        await manager.start("調査", str(tmp_path), launch_kind="explore")
-        client.requests.clear()
-        probe.response = {
-            "exitCode": 1,
-            "stderr": "bwrap: No permissions to create a new namespace",
-            "stdout": "",
-        }
-        prompt = state.ResumePrompt("再調査")
-        resumed = await manager.resume(
-            "tier-thread", prompt, str(tmp_path), launch_kind="explore", model_provider="api" if api_provider else None
-        )
-        assert resumed.status == "failed"
-        assert "exploreSandboxNamespaceDenied" in str(resumed.error)
-        assert "新規" in str(resumed.error)
-        assert prompt.delivery == "reply_failed"
-        assert not client.requests
-        assert len(probe.requests) == 2
-        assert probe.closed
-    finally:
-        await manager.close()
-
-
-@pytest.mark.asyncio
-@pytest.mark.parametrize(
-    "failure", ["success", "namespace", "other", "rpc", "timeout", "invalid", "wrong-code", "initialization", "unreaped"]
-)
-async def test_explore_sandbox_probe_distinguishes_failure_kinds(
-    failure: str, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """公開起動は回収済みの事前確認の不成立を次候補へ渡し、診断と読取専用境界を保つ。"""
-    probe = _SandboxProbeClient()
-    if failure in {"namespace", "wrong-code"}:
-        probe.response = {
-            "exitCode": 1 if failure == "namespace" else 124,
-            "stderr": "bwrap: No permissions to create a new namespace",
-            "stdout": "",
-        }
-    elif failure == "other":
-        probe.response = {"exitCode": 1, "stderr": "permission denied", "stdout": ""}
-    elif failure == "invalid":
-        probe.response = {"exitCode": True, "stderr": "", "stdout": ""}
-    elif failure == "rpc":
-        probe.error = subject.JsonRpcResponseError("command/exec", -32600, "request rejected")
-    elif failure == "timeout":
-        probe.error = TimeoutError("probe deadline")
-    elif failure == "initialization":
-        monkeypatch.setattr(probe, "start", AsyncMock(side_effect=subject.AppServerError("initialize rejected")))
-    elif failure == "unreaped":
-        probe.process = SimpleNamespace(returncode=None)
-    monkeypatch.setattr(subject, "JsonRpcProcess", lambda *_args, **_kwargs: probe)
-    manager = subject.AppServerManager()
-    client = _TierClient()
-
-    async def ensure_client() -> _TierClient:
-        assert probe.closed
-        return client
-
-    monkeypatch.setattr(manager, "_ensure_client", ensure_client)
-    if failure == "success":
-        session = await manager.start("調査", str(tmp_path), launch_kind="explore")
-        assert session.session_id == "tier-thread"
-        assert [method for method, _params in client.requests] == ["thread/start", "turn/start"]
-    else:
-        error_type = subject.AppServerError if failure == "unreaped" else subject.StartCandidateUnavailable
-        with pytest.raises(error_type) as raised:
-            await manager.start("調査", str(tmp_path), launch_kind="explore")
-        if failure == "namespace":
-            assert isinstance(raised.value, subject.StartCandidateUnavailable)
-            assert raised.value.reason == "exploreSandboxNamespaceDenied"
-        else:
-            diagnostics = {
-                "other": ("exploreSandboxCommandFailed", "exitCode=1", "permission denied"),
-                "rpc": ("exploreSandboxRpcError", "request rejected"),
-                "timeout": ("exploreSandboxTimeout", "probe deadline"),
-                "invalid": ("exploreSandboxInvalidResponse", "exitCode"),
-                "wrong-code": ("exploreSandboxCommandFailed", "exitCode=124", "bwrap:"),
-                "initialization": ("exploreSandboxInitializationFailed", "initialize rejected"),
-                "unreaped": ("App Server終了を確認できません",),
-            }
-            for diagnostic in diagnostics[failure]:
-                assert diagnostic in str(raised.value)
-            if failure == "unreaped":
-                assert not isinstance(raised.value, subject.StartCandidateUnavailable)
-        assert not manager.sessions and not client.requests
-    assert probe.closed
-    if failure != "initialization":
-        params = probe.requests[0][1]
-        assert params["cwd"] == str(tmp_path)
-        assert params["sandboxPolicy"] == {"type": "readOnly"}
-        assert not {"outputBytesCap", "disableOutputCap", "tty", "streamStdin", "streamStdoutStderr"}.intersection(params)
-        assert params["timeoutMs"] > 0
-    await manager.close()
 
 
 @pytest.mark.asyncio

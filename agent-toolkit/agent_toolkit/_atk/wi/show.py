@@ -1,13 +1,17 @@
 """`atk wi show`による本文の表示。"""
 
 import argparse
+import dataclasses
 import pathlib
 import sys
 
 from agent_toolkit._atk import outcome as _outcome
 from agent_toolkit._atk.wi import entries as _wi_entries
+from agent_toolkit._atk.wi import frontmatter as _frontmatter
 from agent_toolkit._atk.wi import sections as _wi_sections
 from agent_toolkit._atk.wi import sync as _wi_sync
+from agent_toolkit._atk.wi import user_comment as _user_comment
+from agent_toolkit._atk.wi import uwi as _uwi
 from agent_toolkit._atk.wi import uwi_scan as _wi_uwi_scan
 from agent_toolkit._atk.wi.constants import WI_TYPE_UWI, WI_TYPES
 from agent_toolkit._atk.wi.formatters import (
@@ -15,6 +19,41 @@ from agent_toolkit._atk.wi.formatters import (
     uwi_body_summary,
 )
 from agent_toolkit._atk.wi.repo import resolve_repo_id
+from agent_toolkit._common.markdown_headings import top_level_atx_headings
+
+
+@dataclasses.dataclass
+class _ShowOutput:
+    """表示した行数と、同じ起動の保存後に示す記入欄の情報を保持する。"""
+
+    user_fields: list[str] | None
+    line: int = 1
+
+    def write(self, text: str = "") -> None:
+        """printと同じ改行を加え、次に書く行の位置を進める。"""
+        print(text)
+        self.line += text.count("\n") + 1
+
+    def body(self, name: str, text: str, kind: str | None, args: argparse.Namespace) -> None:
+        """本文と記入欄の開始行を、表示する元の項目から同時に取得する。"""
+        start = self.line
+        self.write(_display_body(text, kind, args))
+        if self.user_fields is None:
+            return
+        heading = _uwi.ANSWER_HEADING if kind == WI_TYPE_UWI else "## ユーザーコメント"
+        position: int | None = None
+        if kind == WI_TYPE_UWI or _user_comment.has_reserved_heading(text):
+            normalized = _frontmatter.normalize_newlines(text)
+            parsed = _frontmatter.parse_frontmatter(normalized)
+            body = parsed[1] if parsed is not None else normalized
+            prefix_lines = normalized.count("\n") - body.count("\n")
+            for token, content in top_level_atx_headings(body, 2):
+                if f"## {content}" == heading:
+                    assert token.map is not None
+                    position = prefix_lines + token.map[0]
+                    break
+        location = "なし" if position is None else f"あり 開始行: {start + position}"
+        self.user_fields.append(f"記入欄: {name} {heading} {location}")
 
 
 def _summary_line(text: str, kind: str | None) -> str:
@@ -61,6 +100,7 @@ def cmd_show(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
     `--source`指定時はfrontmatterのsource一致（`!`接頭で否定、無指定エントリも対象に含む）へ限定する。
     `--answered`は`--all`分岐でuwi側の回答状況（yes・no）を限定する（省略時はall）。
     """
+    output = _ShowOutput(getattr(args, "_saved_show_fields", None))
     if not args.filenames and not args.all:
         args.subparser.error("表示するファイル名または--allを指定してください。")
     validated_filenames = _wi_entries.validate_named_filenames(private_notes, args.filenames)
@@ -87,11 +127,11 @@ def cmd_show(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
             label = f" [{state}]"
             if kind == WI_TYPE_UWI:
                 label = f" [{state}/{'answered' if answered else 'unanswered'}]"
-            print(f"## target_repo: {target_repo}")
-            print(f"### {path.name}{label}")
-            print(_display_body(text, kind, args))
+            output.write(f"## target_repo: {target_repo}")
+            output.write(f"### {path.name}{label}")
+            output.body(path.name, text, kind, args)
             if len(selected_by_name) > 1:
-                print()
+                output.write()
         return
 
     selected = _wi_entries.select_entries(
@@ -110,13 +150,13 @@ def cmd_show(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
             answered = _wi_uwi_scan.is_uwi_answered(text)
             entries.setdefault(target_repo, []).append((path.name, text, state))
         if entries:
-            print(f"# {header_type}")
+            output.write(f"# {header_type}")
             for repo, items in entries.items():
-                print(f"## target_repo: {repo}")
+                output.write(f"## target_repo: {repo}")
                 for name, text, state in items:
                     label = f" [{state}]"
                     if header_type == WI_TYPE_UWI:
                         label = f" [{state}/{'answered' if _wi_uwi_scan.is_uwi_answered(text) else 'unanswered'}]"
-                    print(f"### {name}{label}")
-                    print(_display_body(text, header_type, args))
-                    print()
+                    output.write(f"### {name}{label}")
+                    output.body(name, text, header_type, args)
+                    output.write()

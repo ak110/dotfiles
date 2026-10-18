@@ -736,7 +736,10 @@ class TestProcessLoopPromptAndEnv:
         expected_model: str,
         expected_effort: str,
     ) -> None:
-        """orchestrate用途のモデル設定のmodelとeffortがClaude起動コマンドへ反映される。"""
+        """orchestrate用途のモデル設定のmodelとeffortが本作業のClaude起動コマンドへ反映される。
+
+        可用性判定は候補によらず軽量段位のモデルとeffort `low`で起動する。
+        """
         _setup_notes(tmp_path)
         set_orchestrate_model(tmp_path, config_value)
         myrepo = tmp_path / "myrepo"
@@ -773,7 +776,7 @@ class TestProcessLoopPromptAndEnv:
 
         assert len(claude_calls) == 1
         assert len(probe_calls) == 1
-        assert probe_calls[0][2:6] == ["--model", expected_model, "--effort", expected_effort]
+        assert probe_calls[0][2:6] == ["--model", "haiku", "--effort", "low"]
         command = claude_calls[0]["cmd"]
         hook_debug_log(command)
         settings = json.loads(command[5])
@@ -831,10 +834,11 @@ class TestProcessLoopPromptAndEnv:
             atk.main(["wi", "process-loop", f"--target-repo={myrepo}", "--no-update", "--no-alerts"], home=tmp_path)
 
         assert exc_info.value.code == 0
-        assert probes[0][2:6] == ["--model", "sonnet", "--effort", "high"]
+        assert probes[0][2:6] == ["--model", "haiku", "--effort", "low"]
+        assert probes[0][-2:] == ["--", probe_prompt]
         assert probes[1][2:6] == [
             "--model",
-            "gpt-5.6-sol",
+            "gpt-6-luna",
             "-c",
             "model_reasoning_effort=low",
         ]
@@ -958,12 +962,15 @@ class TestProcessLoopPromptAndEnv:
         assert not sleeps
         assert len(sessions) == 1
 
-    def test_effort_only_difference_changes_probe_and_ignored_claude_effort_falls_back(
+    def test_probe_does_not_judge_candidate_effort_and_starts_first_candidate(
         self,
         tmp_path: pathlib.Path,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """effortだけが異なる候補を区別し、Claudeが値を無視した候補を不成立とする。"""
+        """可用性判定は候補のeffortによらず`low`で起動し、候補固有のeffortの無視は判定せず先頭候補で本作業を起動する。
+
+        可用性判定は応答内容を使わずengine単位の起動の成否と利用上限だけを観測する（ユーザー指示）。
+        """
         _setup_notes(tmp_path)
         # 同じengineの候補を2件並べる構成は設定で表せないため、候補列の取得結果を差し替える。
         monkeypatch.setattr(
@@ -979,8 +986,7 @@ class TestProcessLoopPromptAndEnv:
         def fake_run(cmd: list[str], *_args: object, **kwargs: object) -> subprocess.CompletedProcess[Any]:
             if cmd[:2] == ["claude", "-p"]:
                 probes.append(cmd)
-                stderr = "Warning: --effort value ultra was ignored" if "ultra" in cmd else ""
-                return subprocess.CompletedProcess(cmd, 0, "OK\n", stderr)
+                return subprocess.CompletedProcess(cmd, 0, "OK\n", "")
             if cmd[:1] == ["claude"]:
                 sessions.append(cmd)
                 return subprocess.CompletedProcess(cmd, 0, "", "")
@@ -994,9 +1000,9 @@ class TestProcessLoopPromptAndEnv:
         with pytest.raises(SystemExit):
             atk.main(["wi", "process-loop", f"--target-repo={myrepo}", "--no-update", "--no-alerts"], home=tmp_path)
 
-        assert [probe[probe.index("--effort") + 1] for probe in probes] == ["ultra", "high"]
+        assert [probe[probe.index("--effort") + 1] for probe in probes] == ["low"]
         assert len(sessions) == 1
-        assert sessions[0][sessions[0].index("--effort") + 1] == "high"
+        assert sessions[0][sessions[0].index("--effort") + 1] == "ultra"
 
     def test_codex_probe_uses_returncode_without_interpreting_stderr(
         self,
@@ -1108,6 +1114,7 @@ class TestProcessLoopPromptAndEnv:
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """候補の実行ファイルを起動できない場合も残る候補を判定する。"""
+        monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CODEX_LOW_TIER_MODEL", "gpt-6-luna/medium")
         calls: list[list[str]] = []
 
         def fake_run(cmd: list[str], *_args: object, **_kwargs: object) -> subprocess.CompletedProcess[str]:
@@ -1133,6 +1140,7 @@ class TestProcessLoopPromptAndEnv:
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """全候補の実行機能を起動できない場合は既存の異常終了へ戻る。"""
+        monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CODEX_LOW_TIER_MODEL", "gpt-6-luna/medium")
         calls: list[list[str]] = []
 
         def fail_start(cmd: list[str], *_args: object, **_kwargs: object) -> subprocess.CompletedProcess[str]:
@@ -1181,7 +1189,8 @@ class TestProcessLoopPromptAndEnv:
         with pytest.raises(SystemExit):
             atk.main(["wi", "process-loop", f"--target-repo={myrepo}", "--no-update", "--no-alerts"], home=tmp_path)
 
-        assert probe_models == ["sonnet", "sonnet"]
+        # 可用性判定は先頭候補のengineの軽量段位のモデルで、反復ごとに先頭から起動する。
+        assert probe_models == ["haiku", "haiku"]
         assert len(sessions) == 2
 
     def test_environment_override_controls_process_loop_candidates(
@@ -1211,8 +1220,10 @@ class TestProcessLoopPromptAndEnv:
         with pytest.raises(SystemExit):
             atk.main(["wi", "process-loop", f"--target-repo={myrepo}", "--no-update", "--no-alerts"], home=tmp_path)
 
-        assert len(calls) == 2
-        assert all("gpt-5.6-terra" in call for call in calls)
+        # 可用性判定はCodexの軽量段位のモデル、本作業は環境変数で指定した候補のモデルで起動する。
+        assert [call[:2] == ["codex", "exec"] for call in calls] == [True, False]
+        assert "gpt-6-luna" in calls[0]
+        assert "gpt-5.6-terra" in calls[1]
 
     def test_invalid_saved_orchestrate_model_exits_before_starting_session(
         self,
