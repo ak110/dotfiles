@@ -267,6 +267,8 @@ def _collect_records(
     main_records: list[_Record],
     codex_home: str | None = None,
     boundary: datetime.datetime | None = None,
+    *,
+    main_only: bool = False,
 ) -> tuple[list[_CollectedRecord], list[_UnresolvedRecord]]:
     """メイン記録から全ての付随記録と委譲先を発見順に再帰収集する。"""
     main_path = Path(transcript_path)
@@ -285,6 +287,8 @@ def _collect_records(
             ("main",),
         )
     ]
+    if main_only:
+        return collected, []
     seen_paths = {main_path.resolve()}
     seen_sessions: set[str] = set()
     unresolved: list[_UnresolvedRecord] = []

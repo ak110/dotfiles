@@ -15,6 +15,8 @@
 `CLAUDE_CODE_SESSION_ID`は子プロセスの起動時に現行のsession識別子が注入される値である。
 Claude Codeが同一プロセスのままsession識別子を切り替えた場合、切替後に起動する短命プロセスは新しい値を得る一方、長命なMCPサーバーは起動時の値を保持し続ける。
 このため`start`の`task`が起動本文へ添える委譲元の記録情報（`atk-auto`の`kind="launcher-record"`。`ManagerBase.launcher_record_context`が組み立てる）も、会話の切替後は古い会話を指し得る。消費側は明示された出所と取得済みの`record`・`line`を優先し、対象発話との一致を確かめる。
+`session-review-evidence`の`--delegation-record parent`と`--delegation-record root`は、委譲先自身を起点に直接の委譲元と最上位の会話を解決する。
+親子判定は`_common/session_parents.py`を共有し、記録に残る起動結果を登録簿の作成時点の委譲元より優先する。
 MCPサーバープロセスには`CLAUDE_PID`が渡らないため、Claude Codeプロセスを指す識別子を環境変数から解決できない。
 
 Codex CLIはstdio MCPサーバーへ親環境を限定して渡す。届くのはCodexの既定の許可リストにある変数、`env_vars`に列挙した名前のうち親環境に値がある変数、`env`で明示した値である。
@@ -65,7 +67,7 @@ sessionの資源解放（`stop`、保持期限の経過、起動候補の断念�
 | CLI待機の実行結果 | `<状態ディレクトリ>/<ルートsession識別子>/wait-results/<書込主体>/<run_id>.json`と`current.json` | 先行waitへ合流する後続`atk agents wait`、待機対象0件（終了コード10）と`consumed`（終了コード8）の診断を組み立てる後続`atk agents wait` | 先行waitが`running`と`published`および再待機が必要かを示す`continuable`を書き、結果を返した後続waitが`consumed`を書く |
 | CLI待機が回収途中の結果と通知 | `<状態ディレクトリ>/<ルートsession識別子>/wait-results/<書込主体>/<run_id>/results/<session_id>.json`と`notices/<通知ファイル>` | 中断後に同じrunを再開する`atk agents wait` | 待機CLI。結果は所有者を確認した排他区間で、通知は原本の削除前に退避する |
 | CLI待機の対象登録 | `<状態ディレクトリ>/<ルートsession識別子>/wait-targets/<書込主体>/<session_id>.json` | `atk agents wait`、Stop時の未観測作業の助言 | PostToolUseフック（子sessionの開始とreply再開時の追加。`atk agents wait`と同じく索引を経たルートへ登録する）、`atk agents wait`（待機開始時の追加と回収・破棄時の削除）。助言側は読むだけとする |
-| 全sessionの終端登録と再開情報、所有するagents_serverとturnを実行する委譲先CLIのプロセスの識別（pidと起動時刻）、所有側による解放済みの理由と時刻、作成時点の委譲元（`launcher_session_id`） | `<状態ディレクトリ>/sessions/<session_id>.json` | 親を所有するMCPサーバー、同じ識別子を再解決するMCPサーバー、保持しない識別子への応答を診断するMCPサーバー、`atk agents wait`、`atk agents show`（状態ファイルに無いsessionの実行中・終端）、`atk serve`のセッション一覧（ローカルとリモートヘルパー。委譲元だけを親子付けに読む）、`atk lane create/delete`（専用worktreeを使う担当のcwdと、`session_registry.resolve`の解決結果から終了を判定する）。いずれも`session_registry.resolve`で解決し、実行プロセスの不在による中断を同じく扱う | そのsessionを所有するMCPサーバー（停止時の終端公開と、委譲先CLIを起動し直した時点の識別の更新を含む）。所有者のいない`running`の記録への終端の公開だけは、再起動後に同じ識別子を照会したMCPサーバーも行う（下記「再起動をまたぐsessionの解決」の条件） |
+| 全sessionの終端登録と再開情報、所有するagents_serverとturnを実行する委譲先CLIのプロセスの識別（pidと起動時刻）、所有側による解放済みの理由と時刻、作成時点の委譲元（`launcher_session_id`） | `<状態ディレクトリ>/sessions/<session_id>.json` | 親を所有するMCPサーバー、同じ識別子を再解決するMCPサーバー、保持しない識別子への応答を診断するMCPサーバー、`atk agents wait`、`atk agents show`（状態ファイルに無いsessionの実行中・終端）、`atk serve`のセッション一覧（ローカルとリモートヘルパー。委譲元だけを親子付けに読む）、`session-review-evidence`（共通の親子判定が登録簿の委譲元を起動結果の補助に読む）、`atk lane create/delete`（専用worktreeを使う担当のcwdと、`session_registry.resolve`の解決結果から終了を判定する）。実行状態を読む主体は`session_registry.resolve`で解決し、実行プロセスの不在による中断を同じく扱う | そのsessionを所有するMCPサーバー（停止時の終端公開と、委譲先CLIを起動し直した時点の識別の更新を含む）。所有者のいない`running`の記録への終端の公開だけは、再起動後に同じ識別子を照会したMCPサーバーも行う（下記「再起動をまたぐsessionの解決」の条件） |
 | 終端済み委譲sessionの解放要求と応答 | `<状態ディレクトリ>/sessions/<uuid>.release-request`と同名の`.release-response` | lane回収CLIと対象sessionを所有するMCPサーバー | CLIが要求を作成し、所有MCPサーバーが終端と所有を再検収して結果保持のstopを実行し応答する。CLI完了時に両ファイルを回収する |
 | Codexコンパクションの計測記録 | `<状態ディレクトリ>/compaction/<thread_id>.jsonl` | `atk run-script session-review-evidence` | agents_serverのCodex backend |
 | 上り通知 | `<状態ディレクトリ>/<ルートsession識別子>/notices/<通知ファイル>` | MCPサーバー、`atk agents wait` | `atk agents notify`が作成し、MCP待機とCLI待機が回収時に削除する |

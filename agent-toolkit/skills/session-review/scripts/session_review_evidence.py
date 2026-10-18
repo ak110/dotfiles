@@ -27,6 +27,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
+from session_evidence_ancestors import RESOLVE_NEXT_ACTION, AmbiguousOwnerRecord, delegation_record, owner_record
 from session_evidence_bundle import (
     _bundle_events,
 )
@@ -165,7 +166,19 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--codex-home",
         metavar="DIR",
-        help="Codexの記録の保存先。`--codex-thread-id`と併用する。",
+        help="Codexの記録の保存先。`--codex-thread-id`か`--delegation-record`と併用する。",
+    )
+    parser.add_argument(
+        "--delegation-record",
+        choices=("parent", "root"),
+        help="委譲先自身の環境と既存の親子対応から記録を解決する。parentは直接の委譲元の操作照会、"
+        "rootは最上位の会話の--user-eventsに使う。解決不能時は終了コード2で明示指定による再実行を案内する。",
+    )
+    parser.add_argument(
+        "--owner-session",
+        action="store_true",
+        help="環境の所有ルートからセッション記録を解決する。Claude Codeの委譲先で最上位の発話を照会する。"
+        "会話を示さないルートと記録が0件または複数の場合は終了コード2で再実行を案内する。",
     )
     catalog_group = parser.add_mutually_exclusive_group()
     catalog_group.add_argument(
@@ -502,19 +515,22 @@ def main(argv: list[str] | None = None) -> int:
         args.codex_thread_id,
         args.catalog_claude_project,
         args.catalog_codex_history,
+        args.delegation_record,
+        True if args.owner_session else None,
     )
     if sum(source is not None for source in sources) != 1:
         return _print_error(
-            "transcript_path・--transcript・--claude-session-id・--codex-thread-id・カタログ走査はいずれか一つだけを指定する",
+            "transcript_path・--transcript・--claude-session-id・--codex-thread-id・--delegation-record・--owner-session・"
+            "カタログ走査はいずれか一つだけを指定する",
             next_action=(
                 "対象の記録を`transcript_path`・`--transcript`・`--claude-session-id`・`--codex-thread-id`・"
-                "カタログ走査のいずれか1つだけで指定して再実行する"
+                "--delegation-record・--owner-session・カタログ走査のいずれか1つだけで指定して再実行する"
             ),
         )
-    if args.codex_home is not None and args.codex_thread_id is None:
+    if args.codex_home is not None and args.codex_thread_id is None and args.delegation_record is None:
         return _print_error(
-            "--codex-homeは--codex-thread-idと併用する",
-            next_action="`--codex-thread-id`を付けるか、`--codex-home`を外して再実行する",
+            "--codex-homeは--codex-thread-idか--delegation-recordと併用する",
+            next_action="`--codex-thread-id`か`--delegation-record`を付けるか、`--codex-home`を外して再実行する",
         )
     if catalog_root is not None:
         assert since is not None and catalog_runtime is not None and args.observation_boundary is not None
@@ -532,7 +548,19 @@ def main(argv: list[str] | None = None) -> int:
             events, exit_code = _catalog_events(Path(catalog_root), catalog_runtime, since, catalog_boundary, catalog_selection)
         _print_events(events)
         return exit_code
-    if args.claude_session_id is not None:
+    if args.delegation_record is not None or args.owner_session:
+        try:
+            transcript_path = str(
+                delegation_record(args.delegation_record, args.codex_home)
+                if args.delegation_record is not None
+                else owner_record()
+            )
+        except AmbiguousOwnerRecord as error:
+            candidates = "、".join(f"`{path}`" for path in error.paths)
+            return _print_error(str(error), next_action=f"{RESOLVE_NEXT_ACTION}。候補: {candidates}")
+        except (OSError, UnicodeError, ValueError) as error:
+            return _print_error(str(error), next_action=RESOLVE_NEXT_ACTION)
+    elif args.claude_session_id is not None:
         try:
             transcript_path = str(_resolve_claude_transcript(args.claude_session_id))
         except ValueError as error:
@@ -584,8 +612,10 @@ def main(argv: list[str] | None = None) -> int:
             return elapsed_code
     if boundary is not None:
         records = _apply_observation_boundary(records, boundary)
-    delegate_codex_home = args.codex_home if args.codex_thread_id is not None else None
-    collected, unresolved = _collect_records(transcript_path, records, delegate_codex_home, boundary)
+    delegate_codex_home = args.codex_home if args.codex_thread_id is not None or args.delegation_record is not None else None
+    collected, unresolved = _collect_records(
+        transcript_path, records, delegate_codex_home, boundary, main_only=args.user_events
+    )
     compaction_record_dir = (
         Path(args.compaction_record_dir)
         if args.compaction_record_dir is not None
@@ -657,6 +687,8 @@ def main(argv: list[str] | None = None) -> int:
             or args.stats
             or args.hook_notices
             or args.tool_calls
+            or args.user_events
+            and (args.delegation_record is not None or args.owner_session)
         )
         _print_events(unique, collected=collected if provenance else None)
         return exit_code
