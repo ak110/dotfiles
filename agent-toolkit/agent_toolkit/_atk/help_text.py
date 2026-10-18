@@ -508,6 +508,9 @@ HELP["atk run-script"]["description"] += (
     "Playwrightのenv PLAYWRIGHT_JSON_OUTPUT_NAME=<絶対パス>と--reporter=json、"
     'dotnet testの--logger "trx;LogFileName=<絶対パス>"を指定する。'
     "--list-results --results-summaryで一覧を読み、--result-testと--select-row・--modeで根拠を記入する。"
+    "読者別探索の入力はreader-fit-prepareへ--repository・--review-start・--review-head・--output-dirを渡して保存する。"
+    "再レビューは--previous-review-start・--previous-review-head、計画別の範囲は--review-contractを渡す。"
+    "files配列の各要素はpath・before・patchと任意のomissionを持ち、--markdownで修正範囲として読める表示を得る。"
     "未判定記録の判定欄は空に保ち、レビューでは行ごとの判定とHEADを明示して別ファイルへ保存する。"
 )
 

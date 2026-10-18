@@ -12,10 +12,10 @@ from agent_toolkit._git import command as git_command
 
 
 def _git(repository: pathlib.Path, args: list[str]) -> str:
-    result = git_command.run(["-C", str(repository), *args], capture_output=True, text=True, check=False, timeout=30)
+    result = git_command.run(["-C", str(repository), *args], capture_output=True, check=False, timeout=30)
     if result.returncode:
-        raise ValueError(f"読者別探索の対象差分を取得できません: {result.stderr.strip()}")
-    return result.stdout
+        raise ValueError(f"読者別探索の対象差分を取得できません: {result.stderr.decode('utf-8').strip()}")
+    return result.stdout.decode("utf-8")
 
 
 def changed_markdown(repository: pathlib.Path, start: str, head: str) -> list[str]:
@@ -106,10 +106,33 @@ def check(
         elif path in paths and set(item) == {"omission"} and item["omission"] == "再点検対象なし":
             if round_value < 2 or previous_start is None or previous_head is None:
                 errors.append(f"{path}: 再点検対象なしにはroundが2以上と前回の開始時点・HEADが必要")
-            elif _patch(repository, start, head, path) != _patch(repository, previous_start, previous_head, path):
+            elif not same_changes(repository, start, head, previous_start, previous_head, path):
                 errors.append(f"{path}: 前回確認版から変更内容が異なる")
         else:
             errors.append(f"{path}: sessionsかomissionの再点検対象なしを指定する")
     if errors:
         raise ValueError(f"読者別探索の申告を受理できません: {'。'.join(errors)}。{retry}")
     return json.dumps(data, ensure_ascii=False, separators=(",", ":"))
+
+
+def body(repository: pathlib.Path, revision: str, path: str) -> str:
+    """指定版の本文を返し、新規作成前の本文は空文字列にする。"""
+    exists = _git(repository, ["ls-tree", "-z", revision, "--", path])
+    return _git(repository, ["show", f"{revision}:{path}"]) if exists else ""
+
+
+def patch_text(repository: pathlib.Path, start: str, head: str, path: str) -> str:
+    """指定された範囲のGit差分を、そのまま資料保存へ渡す。"""
+    return _git(repository, ["diff", "--no-ext-diff", "--no-color", "--no-renames", "--binary", start, head, "--", path])
+
+
+def same_changes(
+    repository: pathlib.Path,
+    start: str,
+    head: str,
+    previous_start: str,
+    previous_head: str,
+    path: str,
+) -> bool:
+    """申告の受理と資料準備で共通の、行位置を除いた変更内容の同一性を返す。"""
+    return _patch(repository, start, head, path) == _patch(repository, previous_start, previous_head, path)
