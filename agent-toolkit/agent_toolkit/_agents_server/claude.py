@@ -12,6 +12,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import datetime
+import json
 import logging
 import os
 import pathlib
@@ -37,6 +38,7 @@ from agent_toolkit._agents_server.file_operations import finish_task, run_file_o
 from agent_toolkit._agents_server.launch_prompts import (
     AUTO_RESUME_NOTICE,
     CLAUDE_DELEGATE_SYSTEM_PROMPT,
+    CLAUDE_EXPLORE_SYSTEM_PROMPT,
     LAUNCH_SYSTEM_PROMPTS,
     LIGHTWEIGHT_LAUNCH_KINDS,
     cli_runtime_instructions,
@@ -59,12 +61,15 @@ from agent_toolkit._common.next_action import ActionableError
 _LOG = logging.getLogger("agent-toolkit.agents-server.claude")
 _ENV_EMIT_SESSION_STATE_EVENTS = "CLAUDE_CODE_EMIT_SESSION_STATE_EVENTS"
 _EffortLevel = Literal["low", "medium", "high", "xhigh", "max"]
-# 軽量な起動条件で許可するツール。探索は読み取り操作、シェル実行はコマンド実行と結果の確認へ限る。
-_LAUNCH_ALLOWED_TOOLS: dict[str, list[str]] = {
-    "explore": ["Read", "Glob", "Grep"],
+# 軽量起動の組込ツール。探索の読み取り専用性はプロンプトで指示する。
+_LAUNCH_TOOLS: dict[str, list[str]] = {
+    "explore": ["Read", "Glob", "Grep", "Bash"],
     "shell": ["Bash", "Read"],
     "write": ["Read", "Write", "Edit", "Glob", "Grep"],
 }
+# 無確認で使えるMCPは組込ツールの利用可能性と分ける。
+_LAUNCH_ALLOWED_TOOLS = {kind: list(tools) for kind, tools in _LAUNCH_TOOLS.items()}
+_LAUNCH_ALLOWED_TOOLS["explore"].append("mcp__pyfltr__*")
 _DeliveryResult = tuple[str, dict[str, Any] | None]
 _Command = tuple[Literal["prompt", "interrupt"], str, asyncio.Future[_DeliveryResult]]
 _INITIALIZATION_STDERR_LIMIT_CHARS = 4000
@@ -330,6 +335,7 @@ def _build_options(
         plugin_environment.RUNTIME_DATA_ENV: cli_env[plugin_environment.RUNTIME_DATA_ENV],
     }
     cli_instructions = cli_runtime_instructions(plugin_root)
+    launch_prompt = CLAUDE_EXPLORE_SYSTEM_PROMPT if launch_kind == "explore" else LAUNCH_SYSTEM_PROMPTS[launch_kind]
     # CLIのturn状態の報告（`SystemMessage`のsubtype `session_state_changed`）を受け取る。
     # Claude Agent SDKはこの変数が無い場合だけ報告を自身の判定用に要求し、呼び出し側のストリームから除く。
     # 結果の公開の判定に`idle`を使うため、全起動区分で有効にする（`_run`の`ResultMessage`の分岐を参照）。
@@ -360,7 +366,7 @@ def _build_options(
         "max_buffer_size": _MAX_BUFFER_SIZE,
         "setting_sources": ["user"] if lightweight else ["user", "project"],
         "system_prompt": (
-            f"{LAUNCH_SYSTEM_PROMPTS[launch_kind]}\n{AUTO_RESUME_NOTICE}\n{python_runtime_instructions()}\n{cli_instructions}"
+            f"{launch_prompt}\n{AUTO_RESUME_NOTICE}\n{python_runtime_instructions()}\n{cli_instructions}"
             if lightweight
             else {
                 "type": "preset",
@@ -396,8 +402,11 @@ def _build_options(
             allowed_tools=_LAUNCH_ALLOWED_TOOLS[launch_kind],
         )
     if launch_kind == "explore":
-        options["tools"] = _LAUNCH_ALLOWED_TOOLS[launch_kind]
-        options["mcp_servers"] = {}
+        options["tools"] = _LAUNCH_TOOLS[launch_kind]
+        # 起動定義はpluginのSSOTを使い、検索を担うpyfltrを軽量起動へ渡す。
+        # pyfltrの読取用途はプロンプトが定め、個別ツールの許可リストは設けない。
+        mcp_config = json.loads((plugin_root / ".mcp.json").read_text(encoding="utf-8"))
+        options["mcp_servers"] = {"pyfltr": mcp_config["mcpServers"]["pyfltr"]}
         options.setdefault("extra_args", {}).update({"strict-mcp-config": None, "permission-prompts": "none"})
     try:
         return ClaudeAgentOptions(**options)

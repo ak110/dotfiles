@@ -319,14 +319,43 @@ timeout後は、送った継続要求の受理結果、またはその要求に�
 ツール検索の前に届くserver instructionsへ基準を置き、自ら読むか委譲するかの判断に先行させる。常時規範を増やす案は読込費用が増えるため、遅延して取得するstartの説明だけへ基準を置く案はこの判断時点に届かないため採らない。
 委譲元の起動から受領までの義務はdelegation/SKILL.md「explore・shellの起動」へまとめ、共有資料は節名で参照する。起動のたびに共有資料の全文を読む案は、探索や出力分離が節約する量と同程度以上の文脈を先に消費するため採らない。作業全体の分割を判定する時点は、1件の探索・コマンドの起動とは分けてrouting.mdへ到達させる。
 
-Codexの読取専用sandboxでは、uv経由のatkは起動時のキャッシュ書込を拒否されて起動しない（`atk read-file`を含む）。ClaudeのexploreもRead・Glob・Grepだけを持ち、atkを起動できない。このため`mode: explore`を宣言する`<役割名>.subagent.md`はatkの実行を入力と手順に含めず、private-notesのWI本文などatkでしか得られない資料を、委譲元が取得して保存したファイルの絶対パスで受け取る。委譲元の`<役割名>.parent.md`は値の確定規則で取得と保存を委譲元の工程に置き、受領時に要る比較（説明担当のWI状態の前後比較など）も委譲元が行う。`delegation_contract_invariant_test.py`はexploreを宣言する全ての`<役割名>.subagent.md`について、委譲先に実行させるatkのインラインコードが無いことを確かめる。能力の共有定義は、直接読取のcat・rgと、配送済みPythonの標準ライブラリによるUTF-8の文字単位分割を案内し、渡された資料で確定できない事項は委譲先が未確認事項として返す。環境作成、権限拡大、再委譲による回避は案内しない。起動前の公開schemaと起動後のプロンプトが同じ定義を消費するため、説明文の複製は不要である。
-exploreでatkを起動できるようにする案は採らない。atkはuvのキャッシュのロックに加えて長い出力のmanaged-tempへの保存にも書込を要し、成立させるには書込可能な領域を持つsandboxへ変えるか、uvを経由しない起動手段を別に設ける必要がある。前者は権限拡大、後者は環境作成に当たり、Bashを持たないClaudeのexploreではどちらでも解消しない。
-同じ契約はgitとghにも適用する。`mode: explore`の`<役割名>.subagent.md`は入力と手順をファイルの読取と検索だけで完了できる形にし、差分、変更前の本文、コミット履歴、CIの結果、GitHub APIの応答などコマンドの実行で得る資料を、委譲元が出力を保存したファイルの絶対パスで受け取る。前回確認版をレビューしたcommitで特定する扱いは委譲元の記録に残し、委譲先へはcommitやコマンドを取得手段として渡さない。書き手が読む規定は`sub-agents.md`の`mode:`行の段落に置く。taskの起動では委譲元が`model_type`を渡さず、委譲先のengineは工程別設定から解決される。`claude-primary`のプリセットでは下位段の先頭がClaudeになり、他のプリセットでもCodexが利用上限などで起動できなければClaudeの候補へ切り替わる。ClaudeのexploreはBashを持たないため、コマンドの実行を前提とする入力はengineの解決結果しだいで読めなくなり、委譲先は資料を読めなかった指摘を返して`completed`で終わる。
-各担当の起動でCodexの候補を固定する案は採らない。ユーザーが`atk config`で選んだ工程別設定の並びを担当ごとに上書きし、Codexが利用上限に達した期間は読者別探索と投稿前レビューを起動できなくなるためである。
+`explore`は対象リポジトリの成果物、委譲入力およびユーザーデータを読み取り専用で調査し、結論と根拠を返す。
+読取ツールが管理するキャッシュ・状態・保存出力は対象成果物と区別し、担当自身の成果ファイルは作成しない。
+大きな検索結果は条件の絞込みか分割取得で判断に必要な範囲を最後まで読み、省略や未読から不在・件数・網羅性を結論しない。
+渡された資料で確定できない事項は未確認事項として返す。
 
-起動前に能力を選べるよう、エンジン別のexplore能力とコマンド調査の選び方は`tool_descriptions.py`の`EXPLORE_CAPABILITIES`が定義する。`start`と`mode`の公開説明、および`launch_prompts.py`が組み立てるexplore委譲プロンプトは同じ定義を消費する。ClaudeのRead・Glob・GrepとCodexの読み取り専用コマンドの差を、共通のshare文書へコマンド利用の前提として書かない。コマンド調査はCodex候補の明示、確定コマンドのshell、自由調査のdelegateから選び、後二者にはexploreの書込拒否を課さない。説明ごとの複製と、説明に合わせてClaudeのBash権限を戻す案は、能力の乖離と権限の拡大を生むため採らない。
+Claude backendは設定の読込元をユーザー設定に限り（`setting_sources=["user"]`）、プロジェクト設定とスキルの読込を省く。
+組込toolとしてRead・Glob・Grep・Bashを提供し、pluginの`.mcp.json`にあるpyfltrの起動定義を再利用する。
+継承MCPは`--strict-mcp-config`で除き、pyfltrだけを明示して渡す。
+組込toolの利用可能性は`tools`、確認なしの許可は`allowed_tools`が保持する。
+Bashとpyfltrの読み取り専用用途を探索プロンプトで指示し、権限モードは`auto`とする。
+ユーザーが、読み取り専用性はプロンプトで指示すれば十分であり、過剰なツール制限が調査手段を失わせると指定したため、コマンドの許可リストや実行前拒否callbackは設けない。
+Claude担当はpyfltr grepの集計・適応出力で検索し、保存された結果や巨大な1行をBashから`atk read-file`、読取コマンド、配送済みPython標準ライブラリで分割取得する。
 
-`start`の`explore`は調査委譲の初期コンテキストと起動費用を減らし、実行側で書込を制限する。Codex backendは開始・再開へ`project_doc_max_bytes=0`と探索用指示、読み取り専用sandboxを渡し、後続turnでも読み取り専用と承認不要の拒否を保つ。MCPの実効設定を取得して全serverを無効にし、Apps・プラグイン・下位委譲も無効にする。実効設定を取得できない場合は起動を中止する。Claude backendは設定の読込元をユーザー設定に限り（`setting_sources=["user"]`）、プロジェクト設定とスキルの読込を省く。提供する組込toolはRead・Glob・Grepに限定し、`--strict-mcp-config`で継承MCPを除き、承認を要する操作は待機せず拒否する。任意Bashや編集toolの事前承認を制限の代わりにしない。Antigravityは読み取り専用のexploreに対応しないため候補から除外する。探索結果は返却本文へ保持し、server自身のセッション記録保存とは区別する。各起動区分の委譲先へ届く規範は`agent-toolkit/skills/writing-standards/references/delivery-scope.md`の配送範囲表が示す。1件の探索を選ぶ条件はserver instructionsの採算の目安、作業全体の分割と探索への切り出しは`agent-toolkit/skills/delegation/references/routing.md`、起動から受領は同スキルのSKILL.mdの同名節を知識境界とする。検索の時点に読む`agent-toolkit:search`は切り出しの条件への参照を持つ。
+Codex backendは開始・再開へ`project_doc_max_bytes=0`と探索用指示、読み取り専用sandboxを渡し、後続turnでも読み取り専用と承認不要の拒否を保つ。
+MCPの実効設定を取得して全serverを無効にし、Apps・プラグイン・下位委譲も無効にする。
+実効設定を取得できない場合は起動を中止する。
+Codexのsandboxではuv経由のatkが起動時のキャッシュ書込を拒否されるため、`atk read-file`を含むatkは利用できない。
+Codex担当は直接読取のcat・rgと、配送済みPython標準ライブラリによるUTF-8文字単位の分割を使う。
+環境作成、権限拡大、再委譲による回避は案内しない。
+Antigravityはexplore候補から除外する。
+
+backend間で切り替わる定型explore担当の入力は、ファイルの読取と検索だけで完了できる形を保つ。
+atkでしか得られない資料に加え、差分・変更前の本文・コミット履歴・CI結果・GitHub API応答などは、委譲元が取得・保存したファイルの絶対パスで渡す。
+委譲元の`<役割名>.parent.md`が取得・保存と受領時の比較を担い、前回確認版をレビューしたcommitで特定する記録も委譲元に残す。
+`delegation_contract_invariant_test.py`はexploreを宣言する全ての`<役割名>.subagent.md`について、委譲先に実行させるatkのインラインコードが無いことを確かめる。
+書き手への契約は`sub-agents.md`の`mode:`行の段落が持つ。
+taskのengineは工程別設定から解決され、Codexが利用不能ならClaudeへ切り替わり得る。
+担当ごとにCodexへ固定する案は、ユーザー設定の候補順を上書きしCodexの利用不能時に探索も止まるため採らない。
+
+能力の共通契約は`tool_descriptions.py`の`EXPLORE_COMMON_CAPABILITIES`、backend別の手段は`EXPLORE_BACKEND_CAPABILITIES`が保持する。
+起動前の公開schemaは両者をまとめた`EXPLORE_CAPABILITIES`を使い、起動後のプロンプトは共通契約へ該当backendの説明だけを加える。
+Claudeの新規・再開には`CLAUDE_EXPLORE_SYSTEM_PROMPT`、Codexには`EXPLORE_SYSTEM_PROMPT`を渡す。
+探索結果は返却本文へ保持し、server自身のセッション記録保存と区別する。
+各起動区分へ届く規範は`agent-toolkit/skills/writing-standards/references/delivery-scope.md`の配送範囲表が示す。
+1件の探索を選ぶ条件はserver instructionsの採算の目安、作業全体の分割は`agent-toolkit/skills/delegation/references/routing.md`、起動から受領は同スキルのSKILL.mdを知識境界とする。
+検索時に読む`agent-toolkit:search`は切り出し条件への参照を持つ。
+確定コマンドの実行はshell、自由な判断を伴う書込はdelegateへ渡し、対象と操作を委譲元が定める。
 
 `start`の`shell`は`explore`と軽量な文書読込条件を共有し、コマンド実行専用の指示を渡す。共有するのはchores用途の軽量段位の候補列、Codex backendの`project_doc_max_bytes=0`、Claude backendのユーザー設定に限った設定読込元とスキルの省略であり、exploreの書込制限は共有しない。Claudeの軽量起動explore・write・shellは全て`disallowed_tools=["Skill"]`を指定し、新規とresumeでSkillを明示除外する。通常起動にはこの除外を設けない。Skillが無い主体は警告に記載されたSKILL.mdをReadで全文読む。`explore`は`model_type`を省略すると`low_tier`を使う。段位は作業の部分ごとに選ぶ。判定基準を言語化して渡せる多数の対象の走査は軽量段位の`explore`へ分ける。観点・評価軸・判定基準の選定と新しい候補の案出し、走査が返した候補の判定と結論の統合は`explore`・`delegate`を問わず`high_tier`を明示する。走査と案出しが混在する依頼も全体を`high_tier`にせず、走査を分けてから上位段位で判定する。軽量側の候補では判断材料が不足する走査は`medium_tier`を指定する。実行レビューなどの工程別割当は維持し、調査の段位を起動方法だけで選ぶ案は採らない。走査を軽量段位へ分けるのは、案出しを含む調査の全体を上位段位で行うと、基準を渡せば軽量段位でも判定できる多数の対象の読取まで上位段位の料金で行い、範囲の広い見直しの費用が大きくなるためである。以前の規定は案出しと機械的な事実確認を区別して段位を選ぶ目的で、混在する依頼の全体を`high_tier`にしていた。案出しと判定を上位段位に残せばこの目的は保たれる。類似見直しでも走査を軽量段位へ委ね、非該当と返った対象を上位段位で全件再検証しない。現に動いている成果物には致命的な問題が少ないとみなし、母集団は縮めずに上位段位の読取を該当・判定保留の対象へ集める。これは`agent-toolkit:bugfix`の`references/root-cause-analysis.md`「QとC・Dの区別」が許すQを満たす手段どうしの費用比較に当たる。
 この起動条件は2026-09-01にCodex 0.151.0とClaude Agent SDK 0.2.148で実際に動かして確かめた。Codexの`thread/start`は`config={"project_doc_max_bytes": 0}`を受理し、作業ディレクトリ側の`AGENTS.md`だけを`instructionSources`から外す。`CODEX_HOME`側のグローバル指示は残る。Claude Agent SDKの`ClaudeAgentOptions`は`setting_sources`、`skills`、`tools`および`env`を受理し、空の設定読込元とスキル、`CLAUDE_CODE_DISABLE_AUTO_MEMORY=1`および組込tool presetを併用できる。その後、軽量起動の設定読込元は`0d7ffbbe6`（2026-09-23）でユーザー設定（`setting_sources=["user"]`）へ変えたため、この確認の空の設定読込元は現行の起動条件と異なる。この起動方式はClaude Code組込Exploreとの完全一致を要件にせず、同一認証・設定ディレクトリを維持した軽量化として扱う。再検証ではCodexの`thread/start`応答の`instructionSources`と、SDKの`ClaudeAgentOptions`の公開フィールドを同じ版条件で確認する。`CODEX_HOME`側のグローバル指示だけを読み込ませない設定は無い。2026-09-03にcodex-cli 0.153.0の`codex app-server generate-json-schema`が出力する`ThreadStartParams`と、Codexの設定リファレンスが列挙する全設定キーを確認した。`project_doc_max_bytes`は`AGENTS.md`から読む上限バイト数、`model_instructions_file`は組込指示の置換であり、いずれもグローバル指示だけを外す用途を持たない。再検証は同じ2つの一覧から`instruction`、`doc`、`agents`を含むキーを抽出して確認する。
@@ -355,7 +384,7 @@ session登録簿は全sessionについて、終端結果を返せるかどうか
 この自動再開の目的は、委譲先が子の完了を待つ場合に、委譲元が追加の継続要求なしに`<役割名>.subagent.md`所定の返却値を受け取れるようにすることである。判定入力は`_agents_server/launch_prompts.py`の`AUTO_RESUME_NOTICE`とし、自動再開を実際に行う`_agents_server/claude.py`と`_agents_server/codex.py`だけが起動時の指示へ加える。Antigravity backendは自動再開を実機で確かめていないため、この通知を加えず能力を約束しない。Claude Code自身のバックグラウンドタスクの完了通知を消費する仕組みはClaude backendだけが持つ。Codex backendは、孫sessionが残るturnの終端で追跡集合を消去して結果を即時公開していたため、待機表明の行が完了報告として配送された（2026年9月4日と2026年10月1日の観測）。現在は孫sessionが残るturnの結果を`begin_auto_resume_wait`で保留し、MCP層の常駐監視が孫の終端後に同じsessionを再開する。保留中の`kill`は中断要求を送らずに保留した結果を未観測の孫とともに確定し、子sessionの完了待ちの保留中への`send_message`は待機対象を保持して新しいturnを開始し、古い保留結果を`previous_result`として返さない。再検証は両backendの委譲先から`agents_server`で孫sessionを起動し、孫の終端後に同じsessionが再開することを確認する。
 知識境界として、委譲先が返す文面と待機表明の可否の規定は`agent-toolkit/share/rules-subagent.md`と`agent-toolkit/share/agents-server-auto-resume.md`が持ち、本節は待機表明の判定入力を委譲手段ごとに生成する方法だけを扱う。待機表明を許すかは、能力を実行するサーバーが`share/agents-server-*.md`の指示で伝える。委譲元の起動入力で指定する方式は採らない。委譲元は起動の時点で採用されるbackendを確定できず、指定させると実際の能力と一致しない場合が生じるためである（2026年10月1日、ユーザーの指摘「起動時に余計な指示」）。却下した代替案は、全委譲手段へ共通の無条件の待機終端規範を置く案と、待機表明の文面を委譲元が判別して継続要求を送る案である。前者は自動再開を持たない委譲手段で返却値を回収できない終端をそのまま残し、後者は`agent-toolkit:delegation`の`references/waiting-and-monitoring.md`が禁じる文面判別に当たるため採用しない。委譲プロンプトへ委譲手段の能力を書かせる案も、`agents_server`はengineを起動時に解決するため委譲元が委譲プロンプトの作成時点で確定できず採用しない。
 
-Stopフックによる継続の強制は採用しない。バックグラウンドタスクの完了は委譲先が同じturn内の行動で解消できず、軽量な探索委譲とシェル実行委譲はプラグインのフックを読み込まないためである。委譲元へバックグラウンドタスクの判別値を返す方式も採用しない。再開の要否と時機を委譲元へ委ねると、`send_message`を送る追加の分岐が必要になり、同じsessionが自動的に進める処理を公開契約へ露出させるためである。
+Stopフックによる継続の強制は採用しない。バックグラウンドタスクの完了は委譲先が同じturn内の追加行動で解消できず、backendが終端とCLIのturn状態を観測して自動再開後の結果を公開するためである。Claudeの軽量起動へもユーザー設定と明示ロードするプラグインを渡す。停止と継続の判定は、フックの不在へ依存させず、担当区分と自動再開の契約に合わせる。委譲元へバックグラウンドタスクの判別値を返す方式も採用しない。再開の要否と時機を委譲元へ委ねると、`send_message`を送る追加の分岐が必要になり、同じsessionが自動的に進める処理を公開契約へ露出させるためである。
 
 ## 結果受領時の`next_action`
 
@@ -502,7 +531,8 @@ Antigravity CLI内部の会話DBは未公開protobufのため、記録の入力�
 用途から`mode`を選ぶ表、各`mode`の最小呼び出し例、委譲の採算と結果の受領は`start`の説明が持つ。
 サーバーの`instructions`はサーバー全体の操作の関係だけを持つ。
 探索の保存制約と保存できる呼び出し手段も`start`の説明本文へ置く。
-`explore`はファイルの作成・変更・削除を担わず、全量コマンド出力の保存は`shell`、調査と成果ファイルの作成は`delegate`、受領した返却本文の保存は委譲元が担う。
+`explore`は対象成果物・委譲入力・ユーザーデータの作成・変更・削除を担わず、読取ツールが管理する保存出力は完全取得に使える。
+全量コマンド出力の保存は`shell`、調査と成果ファイルの作成は`delegate`、受領した返却本文の保存は委譲元が担う。
 引数説明との結合だけで確認する案は、説明本文しか読まない起動側へ制約が届かないため採らない。
 新しい保存モードや探索側の書込許可は加えず、既存のmodeを選ぶ説明で誤った保存依頼を防ぐ。
 説明本文はClaude Codeが初期送信で切り詰める4,096文字以内に保ち、必須入力を持つ例を残したまま省略可能なlabelの例示を減らす。ツール検索で後から読む説明の上限16,384文字も同時に満たすため、検索の有無で説明を変えない。上限の版と典拠は[audit-records.md](audit-records.md)「agent-toolkit/skills/writing-standards/references/mcp-server-design.md：ホスト固有の条件：2026年10月13日」にある。

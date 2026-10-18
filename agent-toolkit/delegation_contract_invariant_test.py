@@ -397,8 +397,8 @@ def test_selection_explanation_contract_covers_questions_without_state_changes()
 def test_explore_task_documents_do_not_run_atk() -> None:
     """`mode: explore`を宣言する`<役割名>.subagent.md`は、委譲先に実行させる`atk`のコマンドを含まない。
 
-    exploreの委譲先はCodexの読取専用sandboxでもClaudeのRead・Glob・Grepでも`atk`を起動できない。
-    入力や手順が`atk`の実行を求めると、委譲先は資料を取得できないまま続行不能を返す。
+    Codexの読取専用sandboxでは`atk`を起動できないため、backend間で切り替わる定型担当の入力をファイル読取へそろえる。
+    ClaudeのBashとpyfltrによる探索能力を保ち、Codexへ切り替わった場合も同じ資料を取得できる契約を検証する。
     """
     share = pathlib.Path(__file__).resolve().parent / "share"
     explore_documents = [path for path in sorted(share.glob("*.subagent.md")) if _declaration(path).launch_kind == "explore"]

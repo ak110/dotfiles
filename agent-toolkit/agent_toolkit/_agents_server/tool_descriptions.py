@@ -49,16 +49,35 @@ StartMode = Literal["task", "delegate", "explore", "write", "shell"]
 """`start`の`mode`が受理する値。`tool_names.START_MODES`と同じ集合を保つ。"""
 
 
-EXPLORE_CAPABILITIES = (
-    "explore: ClaudeはRead/Glob/Grep（Bashなし）、Codexは読取専用sandbox、Antigravity非対応。"
-    "Codexでもatk（atk read-file含む）はuvのキャッシュ書込を拒否され起動しない。"
-    "atkでしか得られない資料は委譲元が保存したファイルで渡す。"
-    "読取・検索はcat/rg、UTF-8文字分割は配送済みPython標準ライブラリを使う。"
+EXPLORE_COMMON_CAPABILITIES = (
+    "explore: 対象成果物は読み取り専用。大きな検索結果は条件の絞込みか分割取得で必要範囲を最後まで読み、"
+    "省略や未読を不在・件数・網羅性の根拠にしない。"
     "資料で確定できなければ未確認事項を委譲元へ返す。環境作成・権限拡大・再委譲は禁止。"
-    "Git等はmodel_typeでCodex候補を指定し、確定した操作はshell、自由な判断はdelegateへ渡す。"
+    "確定した操作はshell、自由な判断を伴う書込はdelegateへ渡す。"
     "shellとdelegateは書込を拒否せず、対象と許可する操作は委譲元が定める。"
 )
-"""起動前の説明とexplore委譲先へ配送する、エンジン別の能力と調査の選び方。"""
+"""公開説明と全backendの探索プロンプトが共有する成果契約。"""
+
+
+EXPLORE_BACKEND_CAPABILITIES = {
+    "claude": (
+        "ClaudeはRead/Glob/Grep/Bashとpyfltr MCPを使う。読み取り専用性はプロンプトで指示する。"
+        "検索にはpyfltr grepの集計・適応出力を使え、保存結果と巨大な1行はBashからatk read-fileや"
+        "読取コマンド、配送済みPython標準ライブラリで分割取得できる。"
+    ),
+    "codex": (
+        "Codexは読取専用sandboxを使う。atk（atk read-file含む）はuvのキャッシュ書込を拒否され起動しない。"
+        "atkでしか得られない資料は委譲元が保存したファイルで渡す。"
+        "読取・検索はcat/rg、UTF-8文字分割は配送済みPython標準ライブラリを使う。"
+    ),
+}
+"""各backendの起動へ選択して配送する調査手段。"""
+
+
+EXPLORE_CAPABILITIES = (
+    EXPLORE_COMMON_CAPABILITIES + "".join(EXPLORE_BACKEND_CAPABILITIES.values()) + "Antigravityはexplore非対応。"
+)
+"""起動前の公開schemaへ配送する全backendの能力説明。"""
 
 
 DELEGATION_INPUT_GUIDANCE = (
@@ -112,7 +131,8 @@ MODE_DESCRIPTION = parameter_description(
     "スキルを使える保証も無い（Claude Codeの委譲先ではスキルを起動できない）。作業に必要な指示は全て`prompt`へ書く。"
     "読み取り専用、応答言語、担当の範囲は各modeの`share/agents-server-*.md`が既に定めるため書かない。"
     "スキルの手順を要する作業にはtaskかdelegateを使う。\n" + LIGHTWEIGHT_MODE_SELECTION + "\nexplore: "
-    "委譲先はファイルを作成、変更および削除しないため、成果ファイルの出力を依頼しない。"
+    "対象成果物・委譲入力・ユーザーデータの作成、変更および削除を禁止し、成果ファイルの出力を依頼しない。"
+    "読取ツールが管理するキャッシュ・状態・保存出力はこの対象と区別する。"
     "委譲元の文脈へは結果の要約だけが入る。"
     "判定基準を言語化して渡せる多数の対象の走査（所在・値・件数の確認、該当候補の抽出と非該当の判定）は"
     "model_typeを省略した軽量段位へ分け、多い対象は重複のない群へ分けて並列に委ねる。"
@@ -233,7 +253,7 @@ START_DESCRIPTION = "\n".join(
         DELEGATION_INPUT_GUIDANCE,
         "返した`session_id`は同じ応答で`atk agents wait`を単独実行して観測し、不要なら`kill`で破棄する。"
         "waitは`session_id`を引数に取らず、登録済みの全sessionの終端を待つ。",
-        "exploreは書込禁止。全量保存はshell、成果ファイル生成の調査はdelegateへ。返却は委譲元が保存する。",
+        "exploreは対象成果物への書込禁止。読取ツール管理の保存出力を使え、成果ファイル生成の調査はdelegateへ。返却は委譲元が保存する。",
         EXPLORE_CAPABILITIES,
         "",
         "| mode | 用途 | 必須の入力 | 起動条件と`model_type`省略時の設定 |",
