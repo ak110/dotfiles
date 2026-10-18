@@ -47,7 +47,7 @@ def has_synced_run_report(private_notes: pathlib.Path, *, run_id: str, skill: st
     with _wi_sync.repo_lock(private_notes, timeout=30):
         remote_revision: str | None = None
         if _wi_sync.has_remote(private_notes):
-            branch = _git_command.output(["symbolic-ref", "--short", "HEAD"], private_notes).strip()
+            branch = _git_command.output(["symbolic-ref", "HEAD"], private_notes).strip().removeprefix("refs/heads/")
             remote = _git_command.output(["config", f"branch.{branch}.remote"], private_notes).strip()
             merge_ref = _git_command.output(["config", f"branch.{branch}.merge"], private_notes).strip()
             remote_tip = _git_command.run(
