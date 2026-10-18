@@ -1019,6 +1019,52 @@ async def test_start_accepts_saved_reader_materials(
     manager.start.assert_awaited_once()
 
 
+@pytest.mark.parametrize(
+    "defect", [None, "missing", "extra", "duplicate", "unreadable", "mismatch", "new-rereview", "no-array"]
+)
+@pytest.mark.asyncio
+async def test_public_start_reader_material_collection(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, defect: str | None
+) -> None:
+    """複数成果物の1対1の資料対応を公開startで確認し、不備を起動前に拒否する。"""
+    params = _observed_input_params("reader-fit-review.subagent.md", tmp_path)
+    paths = [tmp_path / "guide.md", tmp_path / "second.md"]
+    paths[1].write_text("第二の成果物\n", encoding="utf-8")
+    materials = [
+        {"比較元本文": str(tmp_path / "before.md"), "今回差分": str(tmp_path / "diff.patch"), "現行本文": str(path)}
+        for path in paths
+    ]
+    params["成果物"] = json.dumps([str(path) for path in paths])
+    if defect == "missing":
+        materials.pop()
+    elif defect == "extra":
+        extra = tmp_path / "extra.md"
+        extra.write_text("対象外\n", encoding="utf-8")
+        materials.append({**materials[0], "現行本文": str(extra)})
+    elif defect == "duplicate":
+        materials[1] = materials[0]
+    elif defect == "unreadable":
+        materials[1]["今回差分"] = str(tmp_path / "missing.patch")
+    elif defect == "mismatch":
+        materials[1]["現行本文"] = str(tmp_path / "before.md")
+    elif defect == "new-rereview":
+        params.update({"レビュー種別": "再レビュー", "未解決事項": "なし"})
+        materials[1].update({"比較元本文": "新規", "今回差分": "全文"})
+    params["比較資料"] = json.dumps(materials[0] if defect == "no-array" else materials, ensure_ascii=False)
+    manager = TaskManager(start=AsyncMock(return_value={"session_id": "reader", "status": "running", "label": "reader"}))
+    monkeypatch.setattr(mcp_tools, "_MANAGER", manager)
+    if defect:
+        with pytest.raises(ActionableError) as raised:
+            await mcp_tools.start(str(tmp_path), subagent_md_path="reader-fit-review", extra_params=params)
+        assert "再発行" in _actionable_message(raised.value)
+        manager.start.assert_not_awaited()
+    else:
+        assert (await mcp_tools.start(str(tmp_path), subagent_md_path="reader-fit-review", extra_params=params))[
+            "session_id"
+        ] == "reader"
+        manager.start.assert_awaited_once()
+
+
 @pytest.mark.parametrize("legacy", [False, True])
 @pytest.mark.asyncio
 async def test_start_accepts_new_reader_artifact_full_text(

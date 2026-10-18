@@ -25,6 +25,15 @@ REVIEWED_HEAD = "a" * 40
 LEGACY_UNIT_MARKER = "証拠行 {source}"
 
 
+def test_public_help_describes_launch_identifier_declaration(capsys: pytest.CaptureFixture[str]) -> None:
+    """公開helpは、各起動手段の識別子と集約申告の操作へ到達させる。"""
+    args = argparse.Namespace(script_name="exec-review-evidence-check", script_args=["--", "--help"])
+    assert run_script.dispatch(args) == 0
+    output = capsys.readouterr().out
+    assert "--reader-fit-review" in output
+    assert all(value in output for value in ("UUID", "16進列", "agent-", "集約起動"))
+
+
 @pytest.mark.parametrize("selector", [["--results-summary"], ["--result-test", "test"], ["--result-diagnostic", "observed:1"]])
 def test_public_result_selectors_require_listing_without_changing_evidence(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], selector: list[str]

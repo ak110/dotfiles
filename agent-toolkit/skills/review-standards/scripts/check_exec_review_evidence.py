@@ -2403,7 +2403,9 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument(
         "--reader-fit-review",
-        help='成果物ごとのJSON申告 {"files":{"相対.md":{"sessions":["UUID"]}},"external":{"絶対パス":{"sessions":["UUID"]}}}。'
+        help='成果物ごとのJSON申告 {"files":{"相対.md":{"sessions":["起動結果の識別子"]}},'
+        '"external":{"絶対パス":{"sessions":["起動結果の識別子"]}}}。'
+        "識別子はUUID、16進列、agent-付き16進列を受理し、集約起動は各ファイルへ同じ識別子を申告する。"
         '再点検省略は{"omission":"再点検対象なし"}、externalには前回本文の複製の絶対パスpreviousも指定する。'
         "Markdown差分とexternal-artifactがともに無い場合だけ文章成果物なし",
     )
@@ -2451,7 +2453,7 @@ def main(argv: list[str] | None = None) -> int:
         or any(char in args.reader_fit_review for char in "\r\n")
     ):
         parser.error(
-            '返却生成には1行の--reader-fit-reviewが必要です。filesとexternalの各成果物へ{"sessions":["UUID"]}を対応付け、'
+            '返却生成には1行の--reader-fit-reviewが必要です。filesとexternalの各成果物へ{"sessions":["起動結果の識別子"]}を対応付け、'
             "reader-fit-review.parent.md「起動」に従って探索を起動・受領して申告を修復し再実行する。"
             "Markdown差分と--external-artifactがともに空の場合だけ文章成果物なしを指定する"
         )

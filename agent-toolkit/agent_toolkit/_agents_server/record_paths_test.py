@@ -7,6 +7,26 @@ import pytest
 from agent_toolkit._agents_server import backends, record_paths
 
 
+@pytest.mark.parametrize(
+    ("identifier", "accepted"),
+    [
+        ("11111111-2222-4333-8444-555555555555", True),
+        ("a3aa408fdf18a760f", True),
+        ("agent-a3aa408fdf18a760f", True),
+        ("a", True),
+        ("agent-ABCDEF0123456789ABCDEF0123456789ABCDEF", True),
+        ("reader-fit-review", False),
+        ("読者別探索", False),
+        ("", False),
+        (None, False),
+        (123, False),
+    ],
+)
+def test_launch_identifier_formats(identifier: object, accepted: bool) -> None:
+    """受理形式は起動結果の種類に従い、観測例の長さに固定しない。"""
+    assert record_paths.is_launch_identifier(identifier) is accepted
+
+
 def test_record_engines_match_supported_engines() -> None:
     """記録を探索できる実行系は、agents_serverが起動できる実行系と一致する。
 

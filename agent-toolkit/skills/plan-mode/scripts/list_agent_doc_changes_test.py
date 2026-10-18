@@ -94,3 +94,55 @@ def test_unknown_revision_fails_with_reason(repository: pathlib.Path, capsys: py
     assert code == 1
     assert out == ""
     assert err.startswith("失敗: ")
+
+
+@pytest.mark.parametrize(
+    ("path", "risk"),
+    [
+        ("README.md", "低リスク"),
+        ("docs/guide/help.md.tmpl", "低リスク"),
+        ("docs/development/design.md", "低リスク"),
+        ("AGENTS.md", "通常"),
+        ("CLAUDE.md", "通常"),
+        (".claude/rules/rule.md", "通常"),
+        (".claude/skills/tool/SKILL.md", "通常"),
+        (".chezmoi-source/dot_claude/skills/tool/SKILL.md.tmpl", "通常"),
+        (".claude/agents/reviewer.md", "通常"),
+        ("/".join(("agent-toolkit", "share", "reviewer.subagent.md")), "通常"),
+        ("/".join(("agent-toolkit", "rules", "rule.md")), "通常"),
+        ("/".join(("agent-toolkit", "skills", "tool", "SKILL.md")), "通常"),
+        ("/".join(("agent-toolkit", "skills", "tool", "references", "detail.md")), "通常"),
+        ("/".join(("agent-toolkit", "agents", "reviewer.md")), "通常"),
+        (".claude/skills/tool/references/detail.md", "通常"),
+        (".chezmoi-source/dot_claude/rules/rule.md.tmpl", "通常"),
+        ("main.py", "通常"),
+        ("settings.toml", "通常"),
+    ],
+)
+def test_public_review_risk_uses_all_changed_paths(
+    repository: pathlib.Path, capsys: pytest.CaptureFixture[str], path: str, risk: str
+) -> None:
+    """人間向けMarkdownに各種の変更を混ぜ、1件の通常要素も検出する。"""
+    base = _commit_all(repository, "base")
+    _write(repository / "README.md", "改訂\n")
+    _write(repository / path, "変更\n")
+    head = _commit_all(repository, "change")
+    assert _run(capsys, "--repo", str(repository), "--review-risk", base, head) == (0, risk + "\n", "")
+    assert _run(capsys, "--repo", str(repository), "--review-risk", head, head) == (0, "低リスク\n", "")
+
+
+@pytest.mark.parametrize("rename", [False, True])
+def test_public_review_risk_includes_deleted_and_renamed_source(
+    repository: pathlib.Path, capsys: pytest.CaptureFixture[str], rename: bool
+) -> None:
+    """通常要素の削除と人間向けMarkdownへの改名でも旧パスを判定する。"""
+    base = _commit_all(repository, "base")
+    source = repository / "agent-toolkit/share/old.subagent.md"
+    if rename:
+        source.rename(repository / "guide.md")
+    else:
+        source.unlink()
+    head = _commit_all(repository, "change")
+    assert _run(capsys, "--repo", str(repository), "--review-risk", base, head) == (0, "通常\n", "")
+    code, out, err = _run(capsys, "--repo", str(repository), "--review-risk", base, "missing")
+    assert code != 0 and not out and "再実行" in err

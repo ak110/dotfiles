@@ -299,7 +299,8 @@ def _material_error(name: str, reason: str) -> ActionableError:
             f"`{name}`に必要な本文・差分・証拠をUTF-8の読取可能な通常ファイルへ保存し、"
             "絶対パスで補完して`start`を再発行する。reader-fit-reviewの`比較資料`は"
             '`{"比較元本文":"/保存先/旧本文.md","今回差分":"/保存先/差分.patch","現行本文":"/成果物.md"}`'
-            "とする。新規成果物だけ比較元本文へ`新規`、今回差分へ`全文`を指定できる。"
+            "とする。複数成果物では同じ3項目のオブジェクト配列を渡す。"
+            "新規成果物だけ比較元本文へ`新規`、今回差分へ`全文`を指定できる。"
             "再レビューの`未解決事項`は保存ファイルの絶対パスか`なし`を渡す"
         ),
     )
@@ -340,29 +341,47 @@ def _material_paths(name: str, value: str) -> list[pathlib.Path]:
 def _check_reader_materials(params: Mapping[str, str]) -> None:
     """現行本文・比較元・今回差分を区別し、再レビューの証拠も起動前に読む。"""
     current = _material_paths("成果物", params["成果物"])
-    if len(current) != 1:
-        raise _material_error("成果物", "1件の現行本文が必要")
+    if len(set(current)) != len(current):
+        raise _material_error("成果物", "現行本文のパスが重複している")
+    review_kind = params.get("レビュー種別", "初回レビュー")
+    if review_kind not in {"初回レビュー", "再レビュー", "引き継ぎ再レビュー"}:
+        raise _material_error("レビュー種別", "初回レビュー・再レビュー・引き継ぎ再レビューのいずれかが必要")
     if "比較資料" in params:
         try:
             materials = json.loads(params["比較資料"])
         except json.JSONDecodeError as error:
-            raise _material_error("比較資料", "JSONオブジェクトを読めない") from error
+            raise _material_error("比較資料", "JSONオブジェクトまたはその配列を読めない") from error
+        if isinstance(materials, dict) and len(current) == 1:
+            materials = [materials]
+        if not isinstance(materials, list) or not materials:
+            raise _material_error("比較資料", "成果物ごとの比較資料の空でない配列が必要")
         keys = {"比較元本文", "今回差分", "現行本文"}
-        if (
-            not isinstance(materials, dict)
-            or set(materials) != keys
-            or any(not isinstance(value, str) for value in materials.values())
-        ):
-            raise _material_error("比較資料", "比較元本文・今回差分・現行本文の3項目が必要")
-        actual = _material_paths("現行本文", materials["現行本文"])
-        if actual != current:
-            raise _material_error("現行本文", "成果物と同じパスが必要")
-        is_new = materials["比較元本文"] == "新規"
-        if not is_new:
-            _material_paths("比較元本文", materials["比較元本文"])
-        if not (is_new and materials["今回差分"] == "全文"):
-            _material_paths("今回差分", materials["今回差分"])
+        covered: set[pathlib.Path] = set()
+        for material in materials:
+            if (
+                not isinstance(material, dict)
+                or set(material) != keys
+                or any(not isinstance(value, str) for value in material.values())
+            ):
+                raise _material_error("比較資料", "比較元本文・今回差分・現行本文の3項目が必要")
+            actual = _material_paths("現行本文", material["現行本文"])
+            if len(actual) != 1 or actual[0] not in current:
+                raise _material_error("現行本文", "成果物のいずれか1件と同じパスが必要")
+            if actual[0] in covered:
+                raise _material_error("比較資料", f"現行本文の対応が重複している: {actual[0]}")
+            covered.add(actual[0])
+            is_new = material["比較元本文"] == "新規"
+            if review_kind != "初回レビュー" and is_new:
+                raise _material_error("比較元本文", "再レビューでは前回確認版の本文が必要")
+            if not is_new:
+                _material_paths("比較元本文", material["比較元本文"])
+            if not (is_new and material["今回差分"] == "全文"):
+                _material_paths("今回差分", material["今回差分"])
+        if covered != set(current):
+            raise _material_error("比較資料", "全成果物に比較資料を1件ずつ対応付ける必要がある")
     else:
+        if len(current) != 1:
+            raise _material_error("比較資料", "複数成果物には比較資料の配列が必要")
         # 旧形式も保存ファイルを共通検査へ通す。本文や差分の説明だけでは成立しない。
         scope = params["修正範囲"]
         is_new = scope.startswith("新規") and "全文" in scope
@@ -370,11 +389,8 @@ def _check_reader_materials(params: Mapping[str, str]) -> None:
             paths = _material_paths("修正範囲（比較元本文・今回差分）", scope)
             if len({path for path in paths if path != current[0]}) < 2:
                 raise _material_error("比較資料", "比較元本文と今回差分の保存物が必要")
-    review_kind = params.get("レビュー種別", "初回レビュー")
-    if review_kind not in {"初回レビュー", "再レビュー", "引き継ぎ再レビュー"}:
-        raise _material_error("レビュー種別", "初回レビュー・再レビュー・引き継ぎ再レビューのいずれかが必要")
-    if review_kind != "初回レビュー" and is_new:
-        raise _material_error("比較元本文", "再レビューでは前回確認版の本文が必要")
+        if review_kind != "初回レビュー" and is_new:
+            raise _material_error("比較元本文", "再レビューでは前回確認版の本文が必要")
     unresolved = params.get("未解決事項", "なし" if review_kind == "初回レビュー" else "")
     if unresolved != "なし":
         _material_paths("未解決事項", unresolved)

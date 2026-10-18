@@ -161,8 +161,11 @@ def _developer_instructions(launch_kind: LaunchKind) -> str:
     return (
         f"{LAUNCH_SYSTEM_PROMPTS[launch_kind]}\n{AUTO_RESUME_NOTICE}{runtime}\n{cli_runtime_instructions(plugin_root)}\n\n"
         f"agent-toolkit plugin root: {plugin_root}\n"
-        "agent-toolkitのskillとplugin内部資源は、この実在する絶対パスを起点に読む。"
+        "担当自身が使うagent-toolkitのskillと実行基盤のplugin内部資源は、この実在する絶対パスを起点に読む。"
         "`<役割名>.subagent.md`や別hostのcache版数から別のplugin rootを組み立てない。"
+        "成果物と、その成果物が参照する実装・文書・CLIの存否と挙動は、"
+        "受領した絶対パスと対象worktreeまたは保存版から判定する。"
+        "保持版での不在を対象版の不在の根拠にしない。"
         f"{_user_rules_instructions()}"
     )
 
