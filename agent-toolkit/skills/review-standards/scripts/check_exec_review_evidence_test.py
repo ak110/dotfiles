@@ -82,9 +82,9 @@ def _mock_wi(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, bodies: di
                     return subprocess.CompletedProcess(args, 0, stdout=reference.read_bytes(), stderr=b"")
                 return subprocess.CompletedProcess(args, 1, stdout=b"", stderr=b"file is absent")
             value = str(tmp_path) if "--show-toplevel" in args else REVIEWED_HEAD
-            output = f"{value}\n"
             if "--short=7" in args:
                 value = REVIEWED_HEAD[:7]
+            output = f"{value}\n"
             return subprocess.CompletedProcess(
                 args, 0, stdout=output if kwargs.get("text") else output.encode(), stderr="" if kwargs.get("text") else b""
             )

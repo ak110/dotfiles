@@ -74,6 +74,6 @@ frontmatterに`source`を持つエージェント由来のWIの完成条件の�
 判定は条件の意味の判断であり、判断要請を受けたメインと、統合時の完成条件判定で記録を読むメインが行う。外す理由には、エージェント由来であることに加えて上記の全条件の充足を要する。
 
 記録先は判断時点で選ぶ。計画確定前は対象AWIの実施内容の根拠欄へ対象AWI・対象条件・`メインの技術判断`・外す根拠を記録し、初回レビューと統合はその記録をそのまま受理する。実装着手後は計画凍結を保ち、レビュー指摘管理表へ記録する。
-会話中の判断は、対象発話の逐語内容と反復を区別する時点・文脈を、その証拠を使う担当へ渡す。`agents_server`の委譲先は`atk run-script session-review-evidence -- --delegation-record root --user-events`で最上位の会話を解決するため、メイン自身の識別子とtranscriptの絶対パスの手渡しは要らない。メインは出所の抽出を待たずに回答する。取得済みの出所ファイルと`record`・`line`、明示された別会話の識別子か記録パスがあれば、担当はそれらを優先する。
+会話中の判断は、対象発話の逐語内容と反復を区別する時点・文脈を、その証拠を使う担当へ渡す。`agents_server`の委譲先は`atk run-script session-review-evidence -- --delegation-record root --user-events`で最上位の会話を解決するため、メイン自身の識別子とtranscriptの絶対パスの手渡しを省く。メインは出所の抽出を待たずに回答する。取得済みの出所ファイルと`record`・`line`、明示された別会話の識別子か記録パスがあれば、担当はそれらを優先する。
 解決が終了コード2で失敗した場合は、担当が対象会話の識別子か記録パスをメインから受け取り、既存の`--claude-session-id`・`--codex-thread-id`・`--transcript`のいずれかで再実行する。`Agent`ツールなど解決を確認していない起動方法でも明示値を渡す。
 保存済みの指定組は`atk run-script session-review-evidence -- --user-events-file <元の出力の絶対パス> --user-event-at <record>:<line>`で読む。根拠には元ファイルと元のrecord・lineを使う。失効の根拠の書式とユーザー由来の受理条件は`agent-toolkit:review-standards`の`references/exec-review-recording.md`「失効の根拠」に従う。
