@@ -18,7 +18,8 @@
 受領確認では各返却の`受領確認入力のパス`を`exec-review-evidence-check --batch`へそのまま渡し、複数入力は`--batch`を反復する。process-wiのレーン、メイン自身による計画あり・計画なしの実装で同じ生成済み入力を使う。
 各組の必須`external_artifacts`をメイン自身の回答下書きとGit管理外の変更の記録から求めた対象集合と比べ、任意`review_contract`を起動時に渡した契約と比べる。
 各組の`reader_fit_review`では、Git管理外の絶対パスごとにsessionsか、前回複製のpreviousを伴う`再点検対象なし`を対応付ける。
-コマンドが対象集合との対応と省略の成立を確かめ、CLIの成功後に同書の意味判定と未解決0件を確かめて収束させる。
+`exec-review-evidence-check`が対象集合との対応と省略の成立を構造から確かめる。
+委譲元はCLIの成功後に`${CLAUDE_PLUGIN_ROOT}/share/exec-review.parent.md`「完成条件証拠の受領確認」に従って本文・根拠を検収し、未解決0件を確かめて収束させる。
 各組には返却された今回の`review_start`と、2回目以降の`previous_review_start`・`previous_review_head`も保持する。rebaseで今回の開始時点が変わっても前回値を置き換えず、両差分の同一性とファイル別申告を同じ受領確認へ渡す。
 
 ## ラウンド番号の保持先

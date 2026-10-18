@@ -57,7 +57,7 @@ managed-tempのマーカーファイル（`.agent-toolkit-managed-temp.json`）�
 
 ## Function hooksの終了要求
 
-Claude CodeのFunction hooks moduleとPythonのCLI・Stop hookは、同じセッションIDの読込目印と終了要求を共有する。置き場所は絶対パスの`CLAUDE_CONFIG_DIR`、無い場合は`HOME`、次に`USERPROFILE`の`.claude`の下の`agent-toolkit-function-hooks/`とし、Python側の一時ディレクトリ解決は使わない。そこへ`marker-{session_id}.txt`と`request-{session_id}.txt`を置く。セッションIDは英数字、アンダースコア、ハイフンだけを受理する。
+Claude Codeが会話イベントの処理を登録するために読み込むプラグインのモジュールをFunction hooks module（以下「mod」）と呼ぶ。このmodとPythonのCLI・Stop hookは、同じセッションIDの読込目印と終了要求を共有する。置き場所は絶対パスの`CLAUDE_CONFIG_DIR`、無い場合は`HOME`、次に`USERPROFILE`の`.claude`の下の`agent-toolkit-function-hooks/`とし、Python側の一時ディレクトリ解決は使わない。そこへ`marker-{session_id}.txt`と`request-{session_id}.txt`を置く。セッションIDは英数字、アンダースコア、ハイフンだけを受理する。
 
 `session.start`は読込目印へ`ready`を書き、終了要求を`consumed`へ初期化する。Pythonは目印が`ready`で、更新時刻が現在のClaude Code本体の開始より後の場合だけ、終了要求へ`requested`を書いて`exit_requested`を返す。`turn.complete`はメインのターンだけでその値を読み、`consumed`へ書き換えた後に`/exit`をキューへ入れる。目印が無い場合とCodexでは、対話CLI本体を従来の方法で終了させる。
 

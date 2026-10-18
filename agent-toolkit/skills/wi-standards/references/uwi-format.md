@@ -32,7 +32,7 @@ UWI本文は、ユーザーが対象ファイルや他のキュー項目を参�
 手順を書く前に、各工程を到達と認可で振り分ける。
 
 - 到達と認可がある工程（差分の生成、読み取り専用の確認、ログの読み取りなど）は起草者が実施し、その結果を本文へ書く
-- 到達があり認可だけが欠ける工程は、エージェントが実施する認可を問う選択肢を持つ事前承認型UWIにする。承認後の操作と影響は`agent-toolkit:user-confirmation-and-report`の`references/approval-scope.md`「新しい挙動と準備の提示」と`agent-toolkit/rules/01-agent.md`「協調と自律」に従う
+- 到達があり認可だけが欠ける工程は、起草者がエージェントによる実施の認可を問う選択肢を示し、`agent-toolkit:user-confirmation-and-report`「手段の選択」に従って確認する。承認後の操作と影響は`agent-toolkit:user-confirmation-and-report`の`references/approval-scope.md`「新しい挙動と準備の提示」と`agent-toolkit/rules/01-agent.md`「協調と自律」に従う
 - 到達が欠ける工程は、ユーザーが実行する手順と、エージェントへ到達を与える権限付与を問う案を比べる。権限付与の案を選択肢へ含めない場合は理由を`## 判断材料`へ書く
 
 ## 承認型ごとの内容

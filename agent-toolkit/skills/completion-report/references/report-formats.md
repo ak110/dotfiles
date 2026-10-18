@@ -95,9 +95,11 @@
 
 `### 対策を見送った問題`には候補一覧と会話の流れで見つけた問題のうち対策を見送ったものを書く。`判定済み`の根拠は確認済みの観測を短く書き、欠陥ではないとの判定、原因が未確定、処置を採用しない判断のどれかが読み取れるようにする。原因か対策が未確定なら`未確定`の行で、分析した後に再発防止策を採用しない問題は`再発防止策なし`の行で書く。`再発防止策なし`の終了は`agent-toolkit:bugfix`の`references/root-cause-analysis.md`「QとC・Dの区別」で判定し、Q影響、重大度、探索範囲・限界と許容する残存リスクを正直に記録する。重大な問題で成立する手段が無ければ未達として`未確定`の行へ書く。見送ってよい条件は`agent-toolkit:session-review`の`references/analysis.md`「入力と照会」「一次選別」「原因と対策」に従う。
 
-候補一覧の候補に当たる行は行末の括弧へ候補ID（`c0006`の形。複数は読点で区切る）を書く。`atk run-script session-review-prepare`が評価を必須と示した候補（1行JSONの`mandatory_candidates`）は次のいずれかの行で必ず扱う。
+候補一覧の候補に当たる行は行末の括弧へ候補ID（`c0006`の形。複数は読点で区切る）を書く。
 
-ローカルな終了操作と関連する訂正・続行を`agent-toolkit:bugfix`の`non-changing-request`で除外した事象は、候補一覧に残る場合も報告から外す。問題・見送り・除外理由のいずれも記載しない。
+ローカルな終了操作と関連する訂正・続行を`agent-toolkit:bugfix`の`non-changing-request`で除外した事象は、候補一覧に残る場合も報告から外す。この除外は`mandatory_candidates`の報告義務にも優先し、問題・見送り・除外理由のいずれも記載しない。
+
+この除外に当たらず、`atk run-script session-review-prepare`が評価を必須と示した候補（1行JSONの`mandatory_candidates`）は次のいずれかの行で必ず扱う。
 
 - `### 確定した問題と対策`の行
 - 根拠の先頭へ除外区分を書いた`判定済み`の行（例: `根拠: non-changing-request: <観測>`）。除外区分は`single-inquiry`・`non-changing-request`・`unexplained-refusal`・`necessary-confirmation`・`own-secret-exposure`とする

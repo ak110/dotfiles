@@ -67,7 +67,7 @@ disable-model-invocation: true
    対象worktreeごとに公開対象とベースbranchを明示し、`${CLAUDE_PLUGIN_ROOT}/skills/process-wi/references/selection-procedure.md`「処理対象の決定」の開始時CI点検を適用する。実際の照会、失敗ログの取得と残工程への作用の判定を実装前に行い、既存失敗は「見つけた既存不良の扱い」、ユーザー依存事項は確認手順へ渡す。公開時のbaselineとCI検収も実行順8で行う。
    `source`が`run-skill`のUWIは次回の`atk run-skill`が扱う。回答済みUWIは実装前に`agent-toolkit:wi-standards`「状態と依存」に従って終端するか処理対象へ加える。依存が未達の項目は、依存元がprocessableで同じ`target_repo`なら同じ実行へ加えて報告する。
    依存元の状態変更や集合からの除外が要る場合は、`agent-toolkit:user-confirmation-and-report`「確認要否の判定」で確認の要否を決める。各WIについてファイル名、保存済みの`target_repo`、Git操作に使うworktreeの絶対パス、そのworktreeの処理開始時のHEADの短縮OIDを対応表にする。
-   保存済み`target_repo`と対応worktreeのoriginを正規化して一致を確認し、同じworktree指定で取得できることを確かめる。不一致は同資料「処理対象の決定」の移転判定・編集に従い、移転の根拠が無ければ両識別子と不足する根拠を返す。移転が確定した場合は開始前に保存値と本文中の操作先を揃える。
+   同資料「集合確定直後の処理開始」の`resolve_repo_identifier`による解決手順で、保存済み`target_repo`と対応worktreeの有効な識別子の一致を確認し、同じworktree指定で取得できることを確かめる。不一致は同資料「処理対象の決定」の移転判定・編集に従い、移転の根拠が無ければ両識別子と不足する根拠を返す。移転が確定した場合は開始前に保存値と本文中の操作先を揃える。
    `atk wi start-processing <ファイル名>... --target-repo=<対応worktreeの絶対パス>`で`processing`へ移して集合を固定する。固定後にユーザーが告げた回答済みUWIとAWIの追加は、`${CLAUDE_PLUGIN_ROOT}/skills/process-wi/references/selection-procedure.md`「処理対象WIの追加」の判断基準で扱う。
 2. `atk wi`の`adopt`・`reject`へ`--commit`を渡す場合は対象worktreeの絶対パスを`--target-repo`へ渡し、それ以外の操作は保存済み`target_repo`を使う。Gitの起点比較、実装、検証、commit、レビューは対応表のworktreeと開始時のHEADを使い、別のworktreeや複製元のHEADで代用しない。
 3. 計画対象がある場合は、対象worktreeごとに計画ファイルを起草する。計画メタ情報の対象リポジトリと計画構造の自動チェックの`--work-dir`にはそのworktreeを使う。

@@ -15,7 +15,7 @@ Codex固有の公開能力と常時規範との差分を扱う。Codexのメイ�
 
 - 最初の`SKILL.md`を読む前に、自身の起動通知が示すagent-toolkitのroot、またはCLI絶対パスの`scripts/`の親から`<plugin root>`を確定し、実体と`skills/`の存在を確認する
 - agents_serverの委譲先へ明示された保持rootは、その委譲が使う配布物として優先し、同じrootの`skills/<スキル名>/SKILL.md`を読む
-- 起動通知が無い場合と導入版変更後の再解決では、`codex plugin list --json`の結果をプログラム内で取得し、`installed`からagent-toolkitを一意に選別して、識別子・marketplace・version・有効状態と解決結果だけを返す
+- 起動通知とCLI絶対パスのどちらからもrootを確定できない場合は、`codex plugin list --json`の結果をプログラム内で取得する。導入版変更後の再解決でも同じ方法で取得する。`installed`からagent-toolkitを一意に選別し、識別子・marketplace・version・有効状態と解決結果だけを返す
 - 導入情報からのrootは`<Codexホーム>/plugins/cache/<marketplaceName>/<name>/<version>`で解決する。Codexホームは`CODEX_HOME`が設定済みならその値、未設定なら`~/.codex`とし、実体と`skills/`の存在を確認する
 - 取得失敗、対象なし、対象が一意でない場合、無効化、実体の欠落は原因を区別して委譲元へ返す。モデルへ返す情報を対象の識別情報・解決結果・診断へ限定し、rootは前掲の実在確認で確定する
 - 確定したrootを保持し、公開サブコマンドがないplugin内部資源も同じrootから読む。導入版変更後は新しい導入情報で再解決し、全資源を同じホスト・導入版のrootから読む

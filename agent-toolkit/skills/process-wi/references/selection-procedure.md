@@ -104,7 +104,7 @@ all-reposの担当は受領済みの候補本文を使い、次の`atk wi show`�
 候補と選定の集合が確定した直後に、選定YAMLの保存・検査・レーン起動を待たずに本節を実行する。
 
 開始時候補と選定完了前の明示追加を合わせた処理可能集合が`選定`のファイル名集合と一致し、各ファイル名が1回だけ現れ、複数レーンへ重複しないことを確かめる。
-初期・追加のどちらも、実施対象の正規化した`target_repo`が対象worktreeのoriginの識別子と一致してから開始する。不一致は「処理対象の決定」の移転判定と編集へ戻す。
+初期・追加のどちらも、保存済み`target_repo`と対象worktreeの絶対パスを、それぞれ`${CLAUDE_PLUGIN_ROOT}/agent_toolkit/_git/remote.py`の`resolve_repo_identifier`で解決する。同関数はURLを`host/owner/repository`形式へ正規化し、ローカルパスからはoriginを解決する。両方が有効な識別子を返し、一致してから開始する。識別子を解決できない場合は不足するoriginまたは入力を補い、不一致は「処理対象の決定」の移転判定と編集へ戻す。
 
 1. 処理対象へ含めた作業を求めない回答済みUWIを`atk wi adopt <filename>... --target-repo=<対象リポジトリの絶対パス>`で終端する。
 2. 回答済みUWIが指す元項目のうち`hold`のものを`atk wi unhold <filename>... --target-repo=<対象リポジトリの絶対パス>`で`inbox`へ戻す。
