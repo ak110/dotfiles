@@ -39,6 +39,7 @@ class RepositorySnapshot:
     repository: _config.ConfiguredRepository
     entries: tuple[_wi_entries.EntryRecord, ...]
     readiness: ReadinessResult
+    private_notes: pathlib.Path
 
     @property
     def candidates(self) -> tuple[_wi_entries.EntryRecord, ...]:
@@ -81,8 +82,7 @@ class RepositorySnapshot:
                 "body": text,
                 "staleness": _staleness(text, self.repository.worktree, now),
             }
-            for path, repo_id, text, state, kind in self.entries
-            if state in WI_PROCESSABLE_STATES
+            for path, repo_id, text, state, kind in self.candidates
         ]
 
 
@@ -108,6 +108,7 @@ def configured_repo_snapshot(
                 repository.repo_id,
                 snapshot=snapshot if index == 0 else tuple(entry for entry in snapshot if entry[4] is not None),
             ),
+            private_notes,
         )
         for index, repository in enumerate(targets)
     )

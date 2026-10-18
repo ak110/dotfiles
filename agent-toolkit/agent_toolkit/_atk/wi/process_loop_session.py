@@ -61,20 +61,19 @@ def build_repository_delegate_prompt(
         "worktree_name": worktree_name,
     }
     body = (
-        "対象cwdでagent-toolkit:process-wiの選定から計画・実装・独立した実行レビュー・統合・公開・WI終端・回収まで完遂する。"
-        "初回取得済み候補は次のJSONを使い、初期一覧を再取得しない。"
-        "対象プロジェクトの規範・CI・監査とworktree準備は担当が対象cwdで判断・実施する。"
-        "worktree_nameの指定がある場合は、対象リポジトリのworktree作成hookを含む既存の作成手順でworktreeを用意する。"
-        "処理所有は親のprocess-loopが取得済みのため、同じoriginの所有を別に取得しない。"
-        "レーン作成・再開・終了時回収の全操作にはlane_session_idを--session-idへ明示して使う。"
-        "追加指示は同じ起動集合で一度だけ受領して各対象へ中継した本文である。"
-        "この担当の対象に関する部分だけを対象cwdで適用する。別対象宛の部分は該当担当へ配送済みである。"
-        "previousがある場合は保持した未統合成果を既存の再開手順へ渡す。"
-        "結果には正常完了か続行できない理由、確認済み工程・残工程・再開先を返す。\n"
-        + json.dumps(data, ensure_ascii=False)
+        "対象cwdでagent-toolkit:process-wiを完遂し、次のJSONを受渡し値として使う。\n"
+        + json.dumps(_without_nulls(data), ensure_ascii=False)
         + ("\n追加指示:\n" + instruction if instruction else "")
     )
     return _automated_prompt.wrap(body, source=_automated_prompt.SOURCE_PROCESS_LOOP, kind="repository-delegate")
+
+
+def _without_nulls(value: object) -> object:
+    if isinstance(value, dict):
+        return {key: _without_nulls(item) for key, item in value.items() if item is not None}
+    if isinstance(value, list):
+        return [_without_nulls(item) for item in value]
+    return value
 
 
 def all_repos_resume_session(ownership: _ownership.Ownership, requested: str | None) -> str | None:

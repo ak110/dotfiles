@@ -21,8 +21,10 @@ from agent_toolkit import atk
 from agent_toolkit._atk import config as _config
 from agent_toolkit._atk import lane
 from agent_toolkit._atk import managed_temp as _managed_temp
+from agent_toolkit._atk.wi import listing
 from agent_toolkit._atk.wi import process_loop as _process_loop
 from agent_toolkit._atk.wi import process_loop_env as _pl_env
+from agent_toolkit._atk.wi import process_loop_ownership as ownership
 from agent_toolkit._atk.wi import process_loop_session as _pl_session
 from agent_toolkit._atk.wi import process_loop_update as _pl_update
 from agent_toolkit._atk.wi import process_loop_watch as _pl_watch
@@ -35,6 +37,7 @@ from agent_toolkit._common import (
 from agent_toolkit._common import inherited_venv as _inherited_venv
 from agent_toolkit._common import session_registry
 from agent_toolkit._common import wait_schedule as _wait_schedule
+from agent_toolkit._testing import git_repository
 from agent_toolkit._testing.managed_temp_support import setattr_in_managed_temp_modules
 from agent_toolkit._testing.process_loop_support import (
     fake_run_with_remote_url,
@@ -47,6 +50,33 @@ from agent_toolkit.atk_test import _setup_notes
 
 _ORIGINAL_RUN = subprocess.run
 _ORIGINAL_CODEX_SESSION = _pl_session._run_codex_session  # pylint: disable=protected-access  # noqa: SLF001
+
+
+def test_repository_delegate_prompt_is_minimal(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """目的文と候補JSONだけを渡し、nullキーと候補外の本文を省く。"""
+    notes = _setup_notes(tmp_path)
+    repo = git_repository.init_repository(tmp_path / "repo", origin="https://example.test/team/repo.git")
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_PROCESS_LOOP_REPOSITORIES", json.dumps([str(repo)]))
+    for name, extra in (("ready.md", ""), ("blocked.md", "depends_on: [missing.md]\n")):
+        path = notes / "inbox" / name
+        path.write_text(f"---\ntype: awi\ntarget_repo: example.test/team/repo\n{extra}---\n\n# {name}\n", encoding="utf-8")
+    snapshot = listing.configured_repo_snapshot(notes)[0]
+    acquired = ownership.try_acquire(snapshot.repository.repo_id, worktree=repo)
+    assert acquired is not None
+    prompt = _pl_session.build_repository_delegate_prompt(snapshot, acquired)
+    lines = prompt.splitlines()
+    payload_line = next(line for line in lines if line.startswith("{"))
+    payload = json.loads(payload_line)
+    assert len(lines) == 4
+    assert "agent-toolkit:process-wi" in lines[1]
+    assert "previous" not in payload and "worktree_name" not in payload
+    assert ": null" not in payload_line
+    assert [candidate["filename"] for candidate in payload["candidates"]] == ["ready.md"]
+    assert "blocked.md" not in str(payload["candidates"])
+    assert "追加指示:" not in prompt
+    instructed = _pl_session.build_repository_delegate_prompt(snapshot, acquired, instruction="追加の要求")
+    assert "追加指示:\n追加の要求" in instructed
+    ownership.release(acquired)
 
 
 def _run_claude_session(

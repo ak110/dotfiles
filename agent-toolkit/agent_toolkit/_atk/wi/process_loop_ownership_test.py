@@ -10,6 +10,7 @@ import pytest
 
 from agent_toolkit._atk.wi import process_loop_ownership as ownership
 from agent_toolkit._atk.wi import process_loop_session as session
+from agent_toolkit._common import session_registry
 from agent_toolkit._testing import git_repository as git
 
 
@@ -70,3 +71,31 @@ def test_dead_process_takeover(tmp_path: pathlib.Path) -> None:
     assert replacement is not None and replacement.previous is not None
     assert replacement.previous["worktree"] == str(repo)
     ownership.release(replacement)
+
+
+@pytest.mark.parametrize(
+    "state", [session_registry.Resolution.RUNNING, session_registry.Resolution.UNREADABLE, session_registry.Resolution.TERMINAL]
+)
+def test_held_ownership_live_uses_session_only(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    state: session_registry.Resolution,
+) -> None:
+    """保持中の所有は再起動後も担当sessionだけで判定し、非生存ならpreviousへ残して取得する。"""
+    repo = git.init_repository(tmp_path / "repo", origin="https://example.test/team/repo.git")
+    first = ownership.try_acquire("example.test/team/repo", worktree=repo, mode="all-repos")
+    assert first is not None
+    first = ownership.update_session(first, "held-session")
+    # holdが保存する形式を再起動前から残す。実装前も同じ保存入力で判定を比較できる。
+    record = json.loads(first.path.read_text(encoding="utf-8"))
+    record["held"] = True
+    first.path.write_text(json.dumps(record), encoding="utf-8")
+    monkeypatch.setattr(session_registry, "resolve", lambda *_args, **_kwargs: session_registry.SessionResolution(state))
+    replacement = ownership.try_acquire(first.repo_id, worktree=repo, mode="all-repos")
+    if state in {session_registry.Resolution.RUNNING, session_registry.Resolution.UNREADABLE}:
+        assert replacement is None
+    else:
+        assert replacement is not None and replacement.previous is not None
+        assert replacement.previous["session_id"] == "held-session"
+        assert replacement.previous["released"]
+        ownership.release(replacement)

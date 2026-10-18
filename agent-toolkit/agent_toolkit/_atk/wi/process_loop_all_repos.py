@@ -2,6 +2,9 @@
 
 import argparse
 import asyncio
+import contextlib
+import dataclasses
+import datetime
 import json
 import os
 import pathlib
@@ -10,6 +13,7 @@ from collections.abc import Callable
 from typing import Any, Literal, Protocol
 
 from agent_toolkit._atk import config as _config
+from agent_toolkit._atk import lane as _lane
 from agent_toolkit._atk.wi import listing as _listing
 from agent_toolkit._atk.wi import process_loop_alerts as _alerts
 from agent_toolkit._atk.wi import process_loop_control as _control
@@ -20,6 +24,12 @@ from agent_toolkit._atk.wi import process_loop_session as _session
 from agent_toolkit._atk.wi import process_loop_update as _update
 from agent_toolkit._atk.wi import process_loop_watch as _watch
 from agent_toolkit._common.atomic_file import atomic_write
+from agent_toolkit._git import command as _git_command
+
+# resume_waits.AUTO_RESUME_DEADLINE_SECONDSへ配送と再開の余裕を加える。
+# _atkから_agents_serverへの逆向きimportを避け、一致は契約テストで確かめる。
+STALL_THRESHOLD_SECONDS = 7800 + 1800
+_TERMINAL_STATUSES = {"completed", "failed", "interrupted", "expired"}
 
 
 class RepositoryDelegateManager(Protocol):
@@ -49,12 +59,100 @@ class RepositoryDelegateManager(Protocol):
         """終端と通知を既存の回収形式で受け取る。"""
         ...
 
+    async def show_session(self, session_id: str, *, verbose: bool = False) -> dict[str, Any]:
+        """担当の出力更新時刻と起動時刻を照会する。"""
+        ...
+
+    async def kill(self, session_id: str, timeout: float = 270, stop: bool = False) -> dict[str, Any]:
+        """待機上限を省略した場合は270秒で担当の終端を確認する。"""
+        ...
+
     async def close(self) -> None:
         """起動した実行主体と登録を閉じる。"""
         ...
 
 
 type RepositoryManagerFactory = Callable[[], RepositoryDelegateManager]
+
+
+@dataclasses.dataclass(frozen=True)
+class _Progress:
+    items: frozenset[tuple[str, str]]
+    lanes: frozenset[tuple[str, bool, str]]
+
+    def unfinished(self, candidates: set[str]) -> dict[str, list[str]]:
+        return {
+            "wi": sorted(name for name, state in self.items if state == "processing" or name in candidates),
+            "lanes": sorted(name for name, integrated, _head in self.lanes if not integrated),
+        }
+
+
+def _progress(snapshot: _listing.RepositorySnapshot, ownership: _ownership.Ownership) -> _Progress:
+    current = _listing.configured_repo_snapshot(snapshot.private_notes, (snapshot.repository,))[0]
+    resources = _lane.list_resources(ownership.lane_session_id)
+    if resources["errors"]:
+        raise ValueError(f"レーン登録を照会できない: {resources['errors']}")
+    lanes: set[tuple[str, bool, str]] = set()
+    for entry in resources["records"]:
+        record = entry["record"]
+        integrated = record.get("integration", {}).get("phase") in {"git-integrated", "finalized"}
+        result = _git_command.run(
+            ["rev-parse", "--short", "--verify", f"refs/heads/{record['branch']}"],
+            pathlib.Path(record["repo"]),
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if result.returncode:
+            raise ValueError(f"レーンbranchのHEADを取得できない: {record['lane']}: {result.stderr.strip()}")
+        lanes.add((record["lane"], integrated, result.stdout.strip()))
+    return _Progress(
+        frozenset((entry[0].name, entry[3]) for entry in current.entries if entry[3] in {"inbox", "processing"}),
+        frozenset(lanes),
+    )
+
+
+def _report(event: str, ownership: _ownership.Ownership, detail: str) -> None:
+    _log.append(event, target_repo=ownership.repo_id, session_id=ownership.session_id, detail=detail)
+    print(f"{ownership.repo_id}: {detail}", flush=True)
+
+
+async def _stop_repository(manager: RepositoryDelegateManager, ownership: _ownership.Ownership) -> dict[str, Any]:
+    try:
+        assert ownership.session_id is not None
+        result = await manager.kill(ownership.session_id)
+        if result.get("status") in _TERMINAL_STATUSES:
+            _ownership.release(ownership, completed=False)
+            return result
+        detail = str(result)
+    except Exception as error:
+        detail = str(error)
+    _ownership.hold(ownership)
+    _report(
+        "repository_ownership_held", ownership, f"停止を確認できず所有を保持した: {detail}。次の反復で担当の生存を照会する。"
+    )
+    return {"status": "owner_wait", "error": detail}
+
+
+async def _stop_stalled(
+    manager: RepositoryDelegateManager,
+    owners: dict[str, _ownership.Ownership],
+    results: dict[str, dict[str, Any]],
+) -> None:
+    for session_id, ownership in tuple(owners.items()):
+        try:
+            state = await manager.show_session(session_id, verbose=True)
+            timestamp = state.get("output_updated_at") or state["started_at"]
+            elapsed = (datetime.datetime.now(datetime.UTC) - datetime.datetime.fromisoformat(timestamp)).total_seconds()
+        except Exception as error:
+            _report(
+                "repository_observation_failed", ownership, f"出力時刻の照会に失敗した: {error}。次の待機で照会を再試行する。"
+            )
+            continue
+        if state.get("status") == "running" and elapsed > STALL_THRESHOLD_SECONDS:
+            _report("repository_stalled", ownership, "出力停止を検知した。担当を停止し、再開情報を次の反復へ保持する。")
+            results[ownership.repo_id] = await _stop_repository(manager, ownership)
+            owners.pop(session_id)
 
 
 def _wait_for_changes(private_notes: pathlib.Path, *, owner_wait: bool = False) -> None:
@@ -133,6 +231,10 @@ async def run_repository_delegates(
     owners: dict[str, _ownership.Ownership] = {}
     results: dict[str, dict[str, Any]] = {}
     shared_instruction: str | None = None
+    progress: dict[str, _Progress] = {}
+    unchanged: dict[str, int] = {}
+    snapshots_by_repo = {snapshot.repository.repo_id: snapshot for snapshot in snapshots}
+    wait_task: asyncio.Task[dict[str, Any]] | None = None
 
     def instruction() -> str:
         nonlocal shared_instruction
@@ -175,25 +277,82 @@ async def run_repository_delegates(
         if owners:
             print(f"{len(owners)}件の担当の終了を待機します。", flush=True)
         aborted = False
+        wait_failures = 0
         while owners:
             wait_task = asyncio.create_task(active_manager.wait())
-            while not wait_task.done():
-                await asyncio.wait({wait_task}, timeout=1)
-                if not aborted and _control.consume_process_loop_abort():
-                    aborted = True
-                    print("中断要求を検知しました。起動済みの担当の終了後にall-reposを終了します。", flush=True)
-            result = await wait_task
+            try:
+                while not wait_task.done():
+                    await asyncio.wait({wait_task}, timeout=1)
+                    if not aborted and _control.consume_process_loop_abort():
+                        aborted = True
+                        print("中断要求を検知しました。起動済みの担当の終了後にall-reposを終了します。", flush=True)
+                    await _stop_stalled(active_manager, owners, results)
+                    if not owners:
+                        wait_task.cancel()
+                        with contextlib.suppress(asyncio.CancelledError):
+                            await wait_task
+                        break
+                if not owners:
+                    break
+                result = await wait_task
+            except Exception as error:
+                wait_failures += 1
+                _log.append("repository_wait_failed", detail=str(error), consecutive=wait_failures)
+                print(f"担当の待機に失敗した（{wait_failures}回）: {error}。待機を再試行する。", flush=True)
+                if wait_failures >= 3:
+                    for session_id, owner in tuple(owners.items()):
+                        results[owner.repo_id] = await _stop_repository(active_manager, owner)
+                        owners.pop(session_id)
+                    print("待機の失敗が続いたため今回の担当を停止した。次の反復で再開する。", flush=True)
+                continue
+            wait_failures = 0
             for notice in result.get("notices", []):
                 print(f"担当からの通知: {notice}", flush=True)
             session_id = result.get("session_id")
-            if session_id not in owners or result.get("status") not in {"completed", "failed", "interrupted", "expired"}:
+            if session_id not in owners or result.get("status") not in _TERMINAL_STATUSES:
                 continue
-            ownership = owners.pop(session_id)
+            ownership = owners[session_id]
             result_path = ownership.path.with_name(ownership.path.stem + ".result.json")
             atomic_write(result_path, json.dumps(result, ensure_ascii=False, default=str) + "\n")
             results[ownership.repo_id] = {**result, "result_path": str(result_path)}
             blocked = any(line.startswith("続行できない理由:") for line in str(result.get("agent_message", "")).splitlines())
-            completed = result["status"] == "completed" and not blocked
+            completed = False
+            if not blocked:
+                try:
+                    snapshot = snapshots_by_repo[ownership.repo_id]
+                    observed = _progress(snapshot, ownership)
+                    remaining_work = observed.unfinished({entry[0].name for entry in snapshot.candidates})
+                    error = result.get("error")
+                    held_result = isinstance(error, dict) and bool(error.get("heldResultFinalized"))
+                    completed = not any(remaining_work.values()) and not held_result
+                    if not completed:
+                        unchanged[session_id] = unchanged.get(session_id, 0) + 1 if progress.get(session_id) == observed else 0
+                        progress[session_id] = observed
+                        if unchanged[session_id] < 2:
+                            response = await active_manager.send_message(
+                                session_id,
+                                "残りの工程を再開し、agent-toolkit:process-wiを完遂する。\n"
+                                + json.dumps(remaining_work, ensure_ascii=False),
+                            )
+                            if response.get("delivery") not in {"reply_started", "steered"}:
+                                raise RuntimeError(f"続行指示の配送を確定できない: {response}")
+                            _report("repository_session_continue", ownership, "未完了の工程の続行を指示した。")
+                            continue
+                        _report(
+                            "repository_no_progress",
+                            ownership,
+                            "続行後に2回連続で進捗が無いため打ち切った。再開情報を次の反復へ保持する。",
+                        )
+                except Exception as error:
+                    _report(
+                        "repository_completion_failed",
+                        ownership,
+                        f"完遂判定または続行に失敗した: {error}。担当を停止して次の反復で再開する。",
+                    )
+                    results[ownership.repo_id] = await _stop_repository(active_manager, ownership)
+                    owners.pop(session_id)
+                    continue
+            owners.pop(session_id)
             _ownership.release(ownership, completed=completed)
             _log.append(
                 "repository_session_end",
@@ -208,9 +367,13 @@ async def run_repository_delegates(
             results["abort"] = {"status": "aborted"}
         return results
     finally:
+        if wait_task is not None and not wait_task.done():
+            wait_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await wait_task
+        for owner in tuple(owners.values()):
+            await _stop_repository(active_manager, owner)
         await active_manager.close()
-        for ownership in owners.values():
-            _ownership.release(ownership, completed=False)
 
 
 def _print_work(snapshots: tuple[_listing.RepositorySnapshot, ...]) -> None:

@@ -6,6 +6,10 @@ import subprocess
 
 # キーは追跡ファイルと関数。停止・時間上限を許可する理由を箇所ごとに残す。
 _ALLOWED: dict[tuple[str, str], str] = {
+    (
+        "agent-toolkit/agent_toolkit/_atk/wi/process_loop_all_repos.py",
+        "_stop_repository",
+    ): "agents_serverのsession停止。子プロセスを直接止めず、終了の所有はkillの実装側にある",
     ("agent-toolkit/agent_toolkit/_common/process_tree.py", "reclaim_processes"): "子孫回収の共通実装",
     ("pytools/_internal/common.py", "stop_process_tree"): "pytoolsの子孫回収の共通実装",
     ("agent-toolkit/agent_toolkit/_agents_server/antigravity.py", "_terminate"): "停止前に列挙して子孫も回収する既存実装",
