@@ -63,6 +63,7 @@ disable-model-invocation: true
 実行レビューは`${CLAUDE_PLUGIN_ROOT}/share/exec-review.parent.md`に従って起動し、`未判定検証記録`は同書冒頭の規定に従って渡す。
 
 1. processable一覧と各WI本文を取得し、同時に`atk wi list --type=uwi --answered=yes --status=processable --source=!run-skill --target-repo=<対象リポジトリの絶対パス>`で回答済みUWIを取得する。
+   対象worktreeごとに公開対象とベースbranchを明示し、`${CLAUDE_PLUGIN_ROOT}/skills/process-wi/references/selection-procedure.md`「処理対象の決定」の開始時CI点検を適用する。実際の照会、失敗ログの取得と残工程への作用の判定を実装前に行い、既存失敗は「見つけた既存不良の扱い」、ユーザー依存事項は確認手順へ渡す。公開時のbaselineとCI検収も実行順8で行う。
    `source`が`run-skill`のUWIは次回の`atk run-skill`が扱う。回答済みUWIは実装前に`agent-toolkit:wi-standards`「状態と依存」に従って終端するか処理対象へ加える。依存が未達の項目は、依存元がprocessableで同じ`target_repo`なら同じ実行へ加えて報告する。
    依存元の状態変更や集合からの除外が要る場合は、`agent-toolkit:user-confirmation-and-report`「確認要否の判定」で確認の要否を決める。各WIについてファイル名、保存済みの`target_repo`、Git操作に使うworktreeの絶対パス、そのworktreeの処理開始時のHEADの短縮OIDを対応表にする。
    `atk wi start-processing <ファイル名>... --target-repo=<対応付けたtarget_repo>`で`processing`へ移して集合を固定する。固定後にユーザーが告げた回答済みUWIとAWIの追加は、`${CLAUDE_PLUGIN_ROOT}/skills/process-wi/references/selection-procedure.md`「処理対象WIの追加」の判断基準で扱う。

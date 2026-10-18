@@ -23,6 +23,9 @@ mise設定がある対象で`mise trust --show`が`untrusted`を示す場合は`
 
 ## 処理対象の決定
 
+選定開始時に公開対象のリポジトリとベースbranchを明示し、対象forgeの実際のCI照会と最新状態を確認する。GitHubでは公開の検収対象workflowごとの直近run、GitLabではベースbranchの直近pipelineの識別子・対象SHA・状態・URLを取得する。失敗があればjobとログまで取得し、原因と残工程への作用を判定してprocess-wi「即時対応」へ渡す。失敗jobが今回の差分と無関係の場合も、既存不良として同じ対応へ渡す。
+認証・到達・CLI・対象解決の不成立は技術的に回復できるものを回復し、資格情報の用意などユーザーだけの事項は`agent-toolkit:user-confirmation-and-report`へ渡す。回答に依存しない作業は同スキルに従って続ける。正常、失敗、未終端、実行未登録、CI定義なし、照会不能を区別し、失敗ログの取得権限はログの実取得で確かめる。未終端と実行未登録は、失敗を示す追加の証拠を得てから既存不良かを判断する。開始時点検に加え、公開時は従来どおりbaselineを作成し、push後のCIを検収する。
+
 通常起動では`atk wi list --status=processable --target-repo=<対象リポジトリの絶対パス> --skip-pull --with-staleness`を実行する。
 all-reposのリポジトリ担当は[all-repos-orchestration.md](all-repos-orchestration.md)「取得済み候補の受領」に従い、受領した`candidates`と`readiness`を初回取得結果として扱う。
 明示一覧がある場合は初回取得結果に現れる指定項目だけを対象とし、現れない名前は続行できない理由に記録する。指定が無い場合は`processing`の全項目と、`ready`が偽で`blocked_reason`が`dependency-unmet-internal`以外であるものを除いた`inbox`項目を候補とする。
