@@ -218,7 +218,7 @@ def _build_noninteractive_edit_content(path: pathlib.Path, original: str, messag
                 "target_repoは文字列で指定してください",
                 next_action="frontmatterのtarget_repoへローカルworktreeのパスかremote URLを文字列で指定する",
             )
-        updates["target_repo"] = resolve_repo_id(raw_target_repo)
+        updates["target_repo"] = resolve_repo_id(raw_target_repo, reject_non_origin=True)
     for reserved_key, reserved_next_action in _RESERVED_EDIT_KEY_NEXT_ACTIONS.items():
         if reserved_key in updates:
             raise WebInputError(

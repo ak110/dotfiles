@@ -513,6 +513,11 @@ HELP["atk wi show"]["description"] += (
     "\n節の照会: --section H2は反復指定でき、指定したH2節の本文を読む。"
     "指定しない場合は本文全体を読み、--summary-onlyは要約だけを返す。"
 )
+HELP["atk wi add"]["description"] += (
+    "\ntarget_repo: cwdのoriginと同値のURL、未登録のURLおよびローカルパスを受理する。"
+    "cwdのorigin以外の登録remoteのURLは拒否する。"
+)
+
 _STATE_CHANGE_RESULT_LINE = "状態変更が成立した実行は標準出力の1行目へ`成功: `で始まる行を書く。非0で終了する実行は標準エラーへ`失敗: `で始まる行を書く。"
 _VALUE_OUTPUT_RESULT_LINE = (
     "状態変更が成立した実行は標準エラーの1行目へ`成功: `で始まる行を書き、標準出力は値と構造化データだけを保つ。"

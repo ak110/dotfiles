@@ -334,6 +334,7 @@ def _add_wi_add_parser(sub: Any) -> None:
         help_extra=(
             "ローカルパス指定時は指定worktree、正規化リモートURL指定時は"
             "ローカルHEADを持たないリポジトリ識別子として解決する。"
+            "実行元worktreeのorigin以外の登録リモートだけに一致するURLは拒否する。"
             "frontmatterにtarget_repoが明示されていない場合のfallback値として扱う。"
         ),
         resolved_by_consumer=True,

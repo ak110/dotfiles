@@ -31,6 +31,7 @@ from agent_toolkit._atk.wi import cli_input as _wi_cli_input
 from agent_toolkit._atk.wi import entries as _wi_entries
 from agent_toolkit._atk.wi import filenames as _wi_filenames
 from agent_toolkit._atk.wi import frontmatter as _frontmatter
+from agent_toolkit._atk.wi import repo as _wi_repo
 from agent_toolkit._atk.wi import sync as _wi_sync
 from agent_toolkit._atk.wi import user_comment as _user_comment
 from agent_toolkit._atk.wi import web_input as _wi_web_input
@@ -39,6 +40,7 @@ from agent_toolkit._atk.wi.constants import WI_STATE_INBOX, WI_STATES, WI_TYPE_A
 from agent_toolkit._atk.wi.filenames import MISSING_DEPENDENCY_NEXT_ACTION
 from agent_toolkit._atk.wi.formatters import shorten_home
 from agent_toolkit._atk.wi.web_input import WebInputError
+from agent_toolkit._git import remote as _git_remote
 
 _ENTRY_HEADING_RE = re.compile(r"### (?P<name>\S+\.md)(?: \[[^\]]*\])?")
 """エントリ境界となる`show`の見出し行。角括弧内の状態ラベルは無視する。"""
@@ -87,9 +89,8 @@ def _validate_entry(name: str, raw_text: str) -> BatchEntry:
     """1エントリの保存前検証を行い、`BatchEntry`へ確定する。
 
     検証は解析結果の読み取りだけで完結させ、保存値は書き換えない。
-    frontmatterの`target_repo`は非空の文字列であることのみを必須とし、
-    リポジトリ識別子としての解決は要求しない（移行元にだけ存在する旧ローカルパス形式の
-    保存値も取り込めるようにするため）。
+    frontmatterの`target_repo`は非空の文字列を必須とし、URLは投入元の非originリモートとの
+    一致も検査する。移行元にだけ存在する旧ローカルパス形式の保存値は原値で取り込む。
     """
     parsed = _frontmatter.parse_frontmatter(raw_text)
     if parsed is None:
@@ -107,6 +108,13 @@ def _validate_entry(name: str, raw_text: str) -> BatchEntry:
             f"frontmatterのtarget_repoが空または文字列ではない: {name}",
             next_action="frontmatterのtarget_repoへローカルworktreeのパスかremote URLを書いて再投入する",
         )
+    try:
+        _git_remote.normalize_remote_url(target_repo)
+    except ValueError:
+        # 復元元にだけ存在する旧ローカルパスは、保存済みの字面を維持する。
+        pass
+    else:
+        _wi_repo.resolve_repo_id_or_raise(target_repo, reject_non_origin=True)
     if entry_type == WI_TYPE_AWI and body_is_effectively_empty(body):
         raise WebInputError(f"AWI本文が実質空です: {name}", next_action="本文を記入して再投入する")
     return BatchEntry(original_name=name, raw_text=raw_text, frontmatter=frontmatter, body=body)

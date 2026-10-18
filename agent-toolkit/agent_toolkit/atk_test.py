@@ -1980,11 +1980,14 @@ class TestAddSingleMessage:
         git_cmds = [c["cmd"] for c in git_calls]
         remote_url_cmd = ["git", "-C", str(myrepo), "remote", "get-url", "origin"]
         assert remote_url_cmd in git_cmds
-        fetch_idx = git_cmds.index(["git", "fetch"])
-        assert git_cmds[fetch_idx + 1] == ["git", "merge", "--ff-only", "@{u}"]
-        assert git_cmds[fetch_idx + 2] == ["git", "add", "--all", "--", "inbox"]
-        assert git_cmds[fetch_idx + 3] == ["git", "commit", "-m", "chore: add 1 awi item", "--", "inbox"]
-        assert ["git", "push"] in git_cmds[fetch_idx + 4 :]
+        saved_commands = [cmd for cmd in git_cmds if cmd[1] in {"fetch", "merge", "add", "commit", "push"}]
+        assert saved_commands[:4] == [
+            ["git", "fetch"],
+            ["git", "merge", "--ff-only", "@{u}"],
+            ["git", "add", "--all", "--", "inbox"],
+            ["git", "commit", "-m", "chore: add 1 awi item", "--", "inbox"],
+        ]
+        assert ["git", "push"] in saved_commands[4:]
         for call in git_calls:
             if call["cmd"][:2] != ["git", "-C"]:
                 assert call["kwargs"].get("cwd") == notes

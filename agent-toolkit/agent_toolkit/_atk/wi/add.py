@@ -245,7 +245,7 @@ _TABLE_CELL_DECORATION = "*_`~"
 def _strip_table_cell(cell: str) -> str:
     """表のセル値から前後の空白とMarkdown装飾を除く。
 
-    空白はUnicodeの空白（全角空白を含む）として扱い、装飾と空白が交互に並ぶ場合も除き切る。
+    空白はUnicodeの空白（全角空白を含む）として扱い、装飾と空白が交互に並ぶ場合もすべて除く。
     """
     while True:
         stripped = cell.strip().strip(_TABLE_CELL_DECORATION)
@@ -329,7 +329,7 @@ def _verify_frontmatter_target_repos(parsed_messages: list[tuple[dict[str, objec
                 next_action="frontmatterのtarget_repoへローカルworktreeのパスかremote URLを書いて再投入する",
             )
         try:
-            resolve_repo_id_or_raise(raw_target_repo)
+            resolve_repo_id_or_raise(raw_target_repo, reject_non_origin=True)
         except WebInputError as error:
             raise _target_repo_error(raw_target_repo, error) from error
 
@@ -429,7 +429,11 @@ def _add_entries_locked(
         raw_target_repo = frontmatter.get("target_repo", target_repo)
         raw_source = frontmatter.get("source", source)
         try:
-            item_target_repo = resolve_repo_id_or_raise(raw_target_repo) if isinstance(raw_target_repo, str) else target_repo
+            item_target_repo = (
+                resolve_repo_id_or_raise(raw_target_repo, reject_non_origin=True)
+                if isinstance(raw_target_repo, str)
+                else target_repo
+            )
         except WebInputError as error:
             raise _target_repo_error(raw_target_repo, error) from error
         item_source = raw_source if isinstance(raw_source, str) else source
@@ -575,7 +579,7 @@ def _validate_add_entries(
     normalized_target_repo: str | None = None
     if target_repo is not None:
         try:
-            normalized_target_repo = resolve_repo_id_or_raise(target_repo)
+            normalized_target_repo = resolve_repo_id_or_raise(target_repo, reject_non_origin=True)
         except WebInputError as error:
             raise _target_repo_error(target_repo, error) from error
     if entry_type != WI_TYPE_AWI and question_type not in _constants.NEW_QUESTION_TYPES:
@@ -604,6 +608,10 @@ def _validate_add_entries(
         )
     if normalized_target_repo is None:
         _verify_frontmatter_target_repos(parsed_messages)
+    else:
+        _verify_frontmatter_target_repos(
+            [(frontmatter, body) for frontmatter, body in parsed_messages if "target_repo" in frontmatter]
+        )
     if (
         entry_type != WI_TYPE_AWI
         and question_type == "choice"

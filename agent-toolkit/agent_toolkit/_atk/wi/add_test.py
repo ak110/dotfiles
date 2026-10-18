@@ -1581,7 +1581,7 @@ class TestAddOrderEditorFirst:
         assert exc_info.value.code == 0
         upstream_query = ["git", "rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"]
         assert upstream_query in git_cmds
-        synchronization_and_save = [cmd for cmd in git_cmds if cmd != upstream_query]
+        synchronization_and_save = [cmd for cmd in git_cmds if cmd[1] in {"fetch", "merge", "add", "commit", "push"}]
         assert synchronization_and_save[:2] == [["git", "fetch"], ["git", "merge", "--ff-only", "@{u}"]]
         assert synchronization_and_save[2][:2] == ["git", "add"]
 
