@@ -16,6 +16,7 @@ from agent_toolkit._atk import run_script
 from agent_toolkit._common import automated_prompt
 from agent_toolkit._hooks import (
     autonomous_exit,
+    stop,
     termination_evidence,
     termination_order_advisor,
     user_prompt_submit,
@@ -92,6 +93,7 @@ def test_blocks_target_skill_without_completion_report_from_first_stop(tmp_path:
     assert "Skillで`agent-toolkit:completion-report`を起動し" in body
     assert "終端工程" in body
     _start_skill("sess-missing", trace, "agent-toolkit:completion-report", "toolu_report")
+    assert termination_order_advisor.evaluate(_payload("sess-missing", str(trace)))[0] == "block"
     assert termination_order_advisor.evaluate(_payload("sess-missing", str(trace))) == ("approve", "")
 
 
@@ -396,7 +398,7 @@ def test_public_scope_evidence_removes_unscoped_note(tmp_path: pathlib.Path, ori
 
 @pytest.mark.parametrize("case", ["outside", "script", "failed", "completion", "delegated"])
 def test_self_edit_excludes_unowned_failed_and_completed_edits(tmp_path: pathlib.Path, case: str) -> None:
-    """リポジトリ外・推定できないスクリプト・失敗した編集・起動証拠のある作業・委譲先を遮断しない。"""
+    """担当外・失敗した編集と委譲先を除外し、起動済みの自編集は一度点検して終了できる。"""
     payload, repository = _self_edit_setup(tmp_path)
     target = tmp_path / "outside.md" if case == "outside" else repository / "README.md"
     if case == "script":
@@ -421,6 +423,8 @@ def test_self_edit_excludes_unowned_failed_and_completed_edits(tmp_path: pathlib
         )
     elif case == "delegated":
         payload["agent_id"] = "child"
+    if case == "completion":
+        assert termination_order_advisor.evaluate(json.dumps(payload))[0] == "block"
     assert termination_order_advisor.evaluate(json.dumps(payload)) == ("approve", "")
 
 
@@ -815,3 +819,86 @@ def test_omission_keeps_autonomous_exit_obligation(tmp_path: pathlib.Path, monke
     monkeypatch.setenv("AGENT_TOOLKIT_PROCESS_LOOP_SESSION_ID", "self-edit")
     assert termination_order_advisor.evaluate(json.dumps(payload)) == ("approve", "")
     assert autonomous_exit.evaluate(json.dumps(payload))[0] == "block"
+
+
+@pytest.mark.parametrize("codex", [False, True])
+def test_public_stop_reviews_delivery_once_per_human_input(tmp_path, monkeypatch, codex):
+    """両ホストで起動後の終了を一度止め、再入と回復では繰り返さず新入力で再び点検する。"""
+    monkeypatch.setattr(stop, "CHECK_MODULE_NAMES", ("termination_order_advisor",))
+    session_id = "review-codex" if codex else "review-claude"
+    trace = _write_transcript(tmp_path, [])
+    _human_input(session_id, trace, "request", "成果を仕上げる")
+    _commit(session_id, trace)
+    if codex:
+        invocation = {
+            "session_id": session_id,
+            "turn_id": "request",
+            "tool_name": "Bash",
+            "tool_use_id": "report-read",
+            "tool_input": {"command": "cat /plugin/skills/completion-report/SKILL.md"},
+            "tool_response": {"stdout": "---\nname: completion-report\n---\n"},
+        }
+        termination_evidence.observe_tool(json.dumps(invocation), after=True)
+    else:
+        _start_skill(session_id, trace, "agent-toolkit:completion-report", "report-start")
+    payload = json.loads(_payload(session_id, str(trace)))
+    if codex:
+        payload["turn_id"] = "request"
+    first = stop.evaluate(json.dumps(payload))
+    assert first["decision"] == "block"
+    reason = first["reason"]
+    assert isinstance(reason, str)
+    assert "送達" in reason and "session-review" in reason and "bugfix" in reason
+    assert "再出力せず終了" in reason
+    payload["stop_hook_active"] = True
+    assert "decision" not in stop.evaluate(json.dumps(payload))
+    _human_input(session_id, trace, "generated", '<atk-auto source="stop" kind="continuation">続行する</atk-auto>')
+    _commit(session_id, trace, "recovery-commit")
+    assert "decision" not in stop.evaluate(json.dumps(payload))
+    _human_input(session_id, trace, "correction", "報告漏れの是正も進めて")
+    assert stop.evaluate(json.dumps(payload))["decision"] == "block"
+    assert "decision" not in stop.evaluate(json.dumps(payload))
+
+
+@pytest.mark.parametrize("case", ["delegated", "cancel", "replace", "blocked", "unreadable", "waiting"])
+def test_started_completion_review_keeps_existing_exclusions(tmp_path, case):
+    """起動済みでも委譲先・中止・置換・不成立・読取不能・正当な背景待機を再開しない。"""
+    trace = _write_transcript(tmp_path, [])
+    session_id = "review-excluded"
+    _human_input(session_id, trace, "request", "成果作業を行う")
+    _commit(session_id, trace)
+    _start_skill(session_id, trace, "agent-toolkit:completion-report", "report-start")
+    payload = json.loads(_payload(session_id, str(trace)))
+    if case == "delegated":
+        payload["agent_id"] = "child"
+    elif case in {"cancel", "replace", "blocked"}:
+        document = {
+            "session_id": session_id,
+            "work_id": termination_evidence.session_works(payload)[0][0],
+            "action": case,
+            "reason": "観測した除外理由",
+            "input_id": "request",
+            "quote": "成果作業を行う",
+        }
+        if case == "blocked":
+            response = {"exit_code": 1, "stderr": "接続不能"}
+            termination_evidence.observe_tool(
+                json.dumps(
+                    {
+                        **payload,
+                        "tool_name": "Bash",
+                        "tool_use_id": "failure",
+                        "tool_input": {"command": "false"},
+                        "tool_response": response,
+                    }
+                ),
+                after=True,
+            )
+            document.update(call_id="failure", quote=json.dumps(response, ensure_ascii=False, sort_keys=True))
+        termination_evidence.record_decision(document)
+    elif case == "unreadable":
+        trace.unlink()
+    else:
+        _append_entries(trace, _background_bash_entries("wait-call", "wait-task"))
+        payload["background_tasks"] = [{"id": "wait-task", "type": "shell"}]
+    assert termination_order_advisor.evaluate(json.dumps(payload)) == ("approve", "")

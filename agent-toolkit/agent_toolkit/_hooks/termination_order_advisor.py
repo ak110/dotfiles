@@ -5,7 +5,8 @@ r"""成果作業で`agent-toolkit:completion-report`の起動を忘れた終了�
 有効なプロジェクト規範による省略も無い場合は、初回のStopから遮断し、起動と残工程への続行を案内する。
 起動証拠はClaude Codeでは成功したSkill呼び出し、Codexでは実際の入力と結果が示す`SKILL.md`の読取とし、
 `termination_evidence`が観測した記録だけを使う。報告本文の見出し・区切り・区分・候補IDは判定に使わない。
-起動後の工程の完遂と報告の内容はcompletion-reportの規範が扱い、本フックは確かめない。
+起動済みの成果作業は、同じ作業・人間入力につき一度だけ終了判断の点検へ戻す。
+工程の完遂と報告の送達・内容は、メインが元要求と実際の結果から判断する。
 
 中止・置換・技術的不成立と記録した作業と、確認の回答や委譲先の結果を待つ作業は遮断しない。
 成果作業が待つ非同期対象が生存している場合も遮断しない。待機対象は作業が起動したagents_serverのsessionと、
@@ -153,12 +154,10 @@ def evaluate(payload_text: str) -> tuple[str, str]:
     if not termination_evidence.evidence_available(payload):
         return "approve", ""
 
-    missing = {
-        work_id: kinds
-        for work_id, work in termination_evidence.pending_work(payload)
-        if (kinds := termination_evidence.missing_completion(work))
-    }
-    if not missing:
+    pending = dict(termination_evidence.pending_work(payload))
+    missing = {work_id: kinds for work_id, work in pending.items() if (kinds := termination_evidence.missing_completion(work))}
+    review_ids = {work_id for work_id, work in pending.items() if work.get("deliverables") and work.get("completion_report")}
+    if not missing and not review_ids:
         append_stop_log(session_id, "approve_completion_report_satisfied", {})
         return "approve", ""
 
@@ -167,10 +166,24 @@ def evaluate(payload_text: str) -> tuple[str, str]:
     if transcript_path and not pathlib.Path(transcript_path).is_file():
         append_stop_log(session_id, "approve_transcript_unreadable", {"reason": "作業の待機対象を確認できない"})
         return "approve", ""
-    waiting = _waiting_work_ids(payload, session_id, transcript_path, set(missing))
+    waiting = _waiting_work_ids(payload, session_id, transcript_path, set(missing) | review_ids)
     remaining = {work_id: kinds for work_id, kinds in missing.items() if work_id not in waiting}
     if not remaining:
-        append_stop_log(session_id, "approve_pending_async_for_work", {"count": len(waiting)})
+        review = termination_evidence.claim_stop_review(payload, review_ids - waiting) if review_ids - waiting else []
+        if review:
+            return "block", _block_notice(
+                "起動済みの完了処理について、終了時点の送達と残工程を点検する。対象: " + "、".join(review),
+                fix=(
+                    "元要求と実際の送達・処置結果から、必要な結果・未達・残工程がユーザーへ届いたか、"
+                    "新たな指摘で判明した問題に必要な処置が残っているかを判断する。"
+                    "内部の評価や報告用UWIの起草だけを保存検収済みの送達とせず、AWI登録と実装完了を区別する。"
+                    "未送達や残工程があれば`agent-toolkit:completion-report`の残る工程へ戻る。"
+                    "新しい是正事項は`agent-toolkit:session-review`の工程6と`agent-toolkit:bugfix`へ接続し、"
+                    "公開結果の補足後に判明した公開不良も必要な分析・処置を進める。"
+                    "充足済みなら報告本文を再出力せず終了する。同じ作業・人間入力にはこの点検通知を繰り返さない。"
+                ),
+            )
+        append_stop_log(session_id, "approve_completion_report_satisfied", {"waiting_count": len(waiting)})
         return "approve", ""
 
     works = dict(termination_evidence.session_works(payload))

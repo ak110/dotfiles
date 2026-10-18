@@ -208,13 +208,14 @@ def stop_payload(directory: pathlib.Path, visible: str, *, codex: bool = False) 
 
 @pytest.mark.parametrize("codex", [False, True])
 def test_missing_completion_blocks_from_first_stop_and_evidence_allows(tmp_path: pathlib.Path, *, codex: bool) -> None:
-    """両ホストとも起動証拠の無い成果作業を初回Stopで遮断し、実際の起動証拠を得た後は許可する。"""
+    """両ホストとも起動証拠の無い成果作業を初回Stopで遮断し、実際の起動証拠を得た後は一度点検して許可する。"""
     supply_commit(tmp_path, codex=codex)
     decision, reason = termination_order_advisor.evaluate(stop_payload(tmp_path, WORK_COMPLETE, codex=codex))
     assert decision == "block"
     assert "completion-report" in reason and "commit" in reason
     assert ("SKILL.md" in reason) is codex
     supply_completion(tmp_path, codex=codex)
+    assert termination_order_advisor.evaluate(stop_payload(tmp_path, WORK_COMPLETE, codex=codex))[0] == "block"
     assert termination_order_advisor.evaluate(stop_payload(tmp_path, WORK_COMPLETE, codex=codex)) == ("approve", "")
 
 
@@ -233,9 +234,10 @@ def test_missing_completion_blocks_from_first_stop_and_evidence_allows(tmp_path:
     ],
 )
 def test_report_body_differences_do_not_block_evidenced_work(tmp_path: pathlib.Path, visible: str, *, codex: bool) -> None:
-    """起動証拠を持つ作業は、見出し・句読点・区分・候補ID・予定を示す語だけが異なる本文で遮断しない。"""
+    """起動証拠を持つ作業は本文の形式によらず一度点検し、再入では終了を許可する。"""
     supply_commit(tmp_path, codex=codex)
     supply_completion(tmp_path, codex=codex)
+    assert termination_order_advisor.evaluate(stop_payload(tmp_path, visible, codex=codex))[0] == "block"
     assert termination_order_advisor.evaluate(stop_payload(tmp_path, visible, codex=codex)) == ("approve", "")
 
 
@@ -263,6 +265,7 @@ def test_codex_saved_output_of_read_is_evidence(tmp_path: pathlib.Path) -> None:
     saved.write_text(json.dumps({"text": COMPLETION_SKILL_TEXT, "eof": True}, ensure_ascii=False), encoding="utf-8")
     command = "atk read-file -- /plugin/skills/completion-report/SKILL.md"
     _tool(tmp_path, "read", "Bash", {"command": command}, f"保存先: {saved}\n行数: 1", codex=True)
+    assert termination_order_advisor.evaluate(stop_payload(tmp_path, "", codex=True))[0] == "block"
     assert termination_order_advisor.evaluate(stop_payload(tmp_path, "", codex=True)) == ("approve", "")
 
 
@@ -345,6 +348,10 @@ def test_completion_before_deliverable_in_same_work_is_evidence(tmp_path: pathli
     human_input(tmp_path, "request", "作業を頼む")
     supply_completion(tmp_path)
     supply_commit(tmp_path)
+    decision, reason = termination_order_advisor.evaluate(stop_payload(tmp_path, ""))
+    assert decision == "block" and "起動済みの完了処理" in reason
+    works = termination_evidence.session_works(json.loads(stop_payload(tmp_path, "")))
+    assert all(not termination_evidence.missing_completion(work) for _, work in works)
     assert termination_order_advisor.evaluate(stop_payload(tmp_path, "")) == ("approve", "")
 
 
@@ -1102,3 +1109,9 @@ async def test_started_session_without_projection_is_waited_by_same_work(
     finally:
         monkeypatch.setattr(atomic_file.os, "replace", original_replace)
         await current.close()
+
+
+def test_stop_review_notice_is_a_fact_not_completion_evidence():
+    """通知の記録を持つだけでは成果作業の起動不足を免除しない。"""
+    work = {"deliverables": ["commit"], "stop_review_notice": {"input_id": "request"}}
+    assert termination_evidence.missing_completion(work) == ["commit"]
