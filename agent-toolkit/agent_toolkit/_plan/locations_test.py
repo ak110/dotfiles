@@ -159,10 +159,10 @@ def test_portable_plan_file_round_trips_direct_working_copy(tmp_path: pathlib.Pa
 
 @pytest.mark.parametrize(
     "filename",
-    ["01-計画-d4f9.md", "31-legacy-name.md"],
+    ["01-0900_計画.md", "01-計画-d4f9.md", "31-legacy-name.md"],
 )
 def test_validate_working_plan_relative_path_accepts_direct_formats(filename: str) -> None:
-    """直下の正規形式と移行済み形式を作業パスとして受理する。"""
+    """現行形式、旧正規形式と移行済み形式を作業パスとして受理する。"""
     assert _plan_file.validate_working_plan_relative_path(filename) == pathlib.Path(filename)
 
 

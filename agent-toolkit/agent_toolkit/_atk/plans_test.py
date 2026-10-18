@@ -4,6 +4,7 @@ import argparse
 import datetime
 import os
 import pathlib
+import runpy
 import types
 import typing
 
@@ -16,6 +17,7 @@ from agent_toolkit._atk import review_table as _review_table
 from agent_toolkit._atk import run_script
 from agent_toolkit._atk.wi import sync as _wi_sync
 from agent_toolkit._atk.wi import web_input as _wi_web_input
+from agent_toolkit._common.next_action import ActionableError
 from agent_toolkit._plan import bundle_kinds as _bundle_kinds
 from agent_toolkit._plan import locations as _plan_file
 from agent_toolkit._plan import owner_records as _owner_records
@@ -173,26 +175,75 @@ def test_checkout_copies_saved_bundle_into_working_root(tmp_path: pathlib.Path) 
     assert snapshots == {detail.name: detail.read_bytes(), main.name: main.read_bytes()}
 
 
-def test_cli_checkout_edit_and_commit_saved_bundle(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+@pytest.mark.parametrize("input_source", ["name", "checkout", "list"])
+def test_cli_checkout_edit_and_commit_saved_bundle(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], input_source: str
+) -> None:
     """公開CLIで保存済み計画を取得し、編集内容を元の保存先へ反映する。"""
     home = tmp_path / "home"
     notes = tmp_path / "private-notes"
-    _init_local_notes(notes)
-    relative = pathlib.Path("2026/08/30-再編集-d4f9.md")
+    _init_remote_notes(notes, tmp_path / "origin.git")
+    relative = pathlib.Path("2026/08/30-1310_再編集.md")
     saved_main, _ = _create_saved_plan(notes, relative)
     monkeypatch.setattr(_wi_sync, "ensure_environment", lambda _home: notes)
 
     with pytest.raises(SystemExit, match="0"):
-        atk.main(["plans", "checkout", relative.as_posix()], home=home)
+        atk.main(["plans", "checkout", str(saved_main)], home=home, _output_capture_active=True)
+
+    checkout_output = capsys.readouterr().out
 
     working_main = _plan_file.working_plans_root(home) / saved_main.name
     working_main.write_text("# updated main\n", encoding="utf-8")
 
+    argument = saved_main.name
+    if input_source == "checkout":
+        argument = checkout_output.strip().rsplit(": ", maxsplit=1)[1]
+    elif input_source == "list":
+        with pytest.raises(SystemExit, match="0"):
+            atk.main(["plans", "list"], home=home, _output_capture_active=True)
+        argument = capsys.readouterr().out.splitlines()[0].split("\t")[0]
     with pytest.raises(SystemExit, match="0"):
-        atk.main(["plans", "commit", saved_main.name, "--skip-push"], home=home)
+        atk.main(["plans", "commit", argument, "--skip-push"], home=home, _output_capture_active=True)
 
     assert saved_main.read_text(encoding="utf-8") == "# updated main\n"
     assert not working_main.exists()
+
+
+@pytest.mark.parametrize("operation", ["commit", "checkout"])
+def test_plan_absolute_path_outside_roots_is_rejected_without_changes(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], operation: str
+) -> None:
+    """許可root外の絶対パスを、状態変更前に受理範囲の案内付きで拒否する。"""
+    notes = tmp_path / "notes"
+    _init_local_notes(notes)
+    outside = tmp_path / "14-1310_計画.md"
+    outside.write_text("# 保持\n", encoding="utf-8")
+    monkeypatch.setattr(_wi_sync, "ensure_environment", lambda _home: notes)
+    before = git_repository.git_output(notes, "rev-parse", "HEAD")
+    with pytest.raises(SystemExit) as rejected:
+        atk.main(["plans", operation, str(outside)], home=tmp_path / "home", _output_capture_active=True)
+    assert rejected.value.code != 0
+    diagnostic = capsys.readouterr().err
+    assert "絶対パス" in diagnostic and "yyyy/MM" in diagnostic and "~/.claude/plans" in diagnostic
+    assert outside.read_text(encoding="utf-8") == "# 保持\n"
+    assert git_repository.git_output(notes, "rev-parse", "HEAD") == before
+    assert not git_repository.git_output(notes, "status", "--short")
+
+
+def test_commit_accepts_legacy_dated_working_absolute_path(tmp_path: pathlib.Path) -> None:
+    """日付階層に残る旧作業ファイルも、listが返す絶対パスのまま保存できる。"""
+    notes = tmp_path / "notes"
+    home = tmp_path / "home"
+    _init_local_notes(notes)
+    relative = pathlib.Path("2026/08/30-旧計画-1a2b.md")
+    working = _plan_file.working_plans_root(home) / relative
+    working.parent.mkdir(parents=True)
+    working.write_text("# 旧計画\n", encoding="utf-8")
+    listed = _atk_plans.list_working_plans(home)
+    result = _atk_plans.commit_plan(notes, str(listed[0]["path"]), home=home, skip_push=True)
+    assert result["plan_file"] == relative.as_posix()
+    assert (_plan_file.new_plans_root(notes) / relative).read_text(encoding="utf-8") == "# 旧計画\n"
+    assert not working.exists()
 
 
 def test_checkout_syncs_remote_before_reading_saved_bundle(tmp_path: pathlib.Path) -> None:
@@ -253,7 +304,7 @@ def test_ci_review_table_round_trip_commits_pushes_and_cleans(tmp_path: pathlib.
     _review_table.init(working)
     _review_table.add(working, "1", "exec-review", "sample.py:1", "初回指摘", "仕様")
 
-    first = _atk_plans.commit_plan(notes, name, home=home)
+    first = _atk_plans.commit_plan(notes, str(working), home=home)
 
     saved_relative = pathlib.Path("ci") / name
     saved = _plan_file.new_plans_root(notes) / saved_relative
@@ -265,7 +316,7 @@ def test_ci_review_table_round_trip_commits_pushes_and_cleans(tmp_path: pathlib.
     _clone_notes(remote, clone)
     assert (clone / "plans" / saved_relative).read_bytes() == saved.read_bytes()
 
-    assert _atk_plans.checkout_plan(notes, saved_relative.as_posix(), home=home) == (working,)
+    assert _atk_plans.checkout_plan(notes, str(saved), home=home) == (working,)
     assert _review_table.validate(working, require_responses=False) == 0
     _review_table.respond(
         working,
@@ -1724,3 +1775,25 @@ def test_public_save_all_then_restore_unfinished_plan(
     assert not (working / names[1]).exists()
     assert "20260930-175957-001.md" in (working / names[0]).read_text(encoding="utf-8")
     assert "反映後の観測だけが残る" in (working / names[0]).read_text(encoding="utf-8")
+
+
+def test_generated_plan_names_are_current_and_help_shares_the_format(capsys: pytest.CaptureFixture[str]) -> None:
+    """作成側の生成名を保存検査が現行として受理し、現行名の拒否にも同じ形式を案内する。"""
+    creator = runpy.run_path(str(run_script.PLUGIN_ROOT / "skills/plan-mode/scripts/create_plan_files.py"))
+    now = datetime.datetime(2026, 10, 14, 13, 10, tzinfo=datetime.UTC)
+    stems = [creator["process_lane_plan_name"]("lane-01", now=now), creator["named_plan_name"]("計画", now=now)]
+    for stem in stems:
+        for suffix in ("", "-abcd"):
+            name = f"{stem}{suffix}.md"
+            assert _plan_file.validate_working_plan_relative_path(name) == pathlib.Path(name)
+            assert _plan_file.validate_plan_relative_path(f"2026/10/{name}") == pathlib.Path("2026/10") / name
+        with pytest.raises(ActionableError) as invalid:
+            _plan_file.validate_working_plan_relative_path(f"{stem}:禁止.md")
+        assert "移行済み" not in str(invalid.value)
+        assert _plan_file.PLAN_NAME_FORMAT in invalid.value.next_action
+        with pytest.raises(ActionableError):
+            _plan_file.validate_working_plan_relative_path(f"{stem}.detail.md")
+    for subcommand in ("commit", "checkout"):
+        with pytest.raises(SystemExit, match="0"):
+            atk.main(["plans", subcommand, "--help"], _output_capture_active=True)
+        assert _plan_file.PLAN_NAME_FORMAT in capsys.readouterr().out

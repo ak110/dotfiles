@@ -745,7 +745,9 @@ turn終了時にも残るため、同じ会話の再開や委譲先の結果確�
 `agent-toolkit:single-lane-process`では`dd-HHmm_single-lane-process.md`とし、同じ名前が既にある場合だけ`-<小文字16進数4桁>`が付く。
 
 viewerのパスコピーは選択中の実体を指すため、作業中は`~/.claude/plans/...`、保存後はprivate-notes側の可搬表記を返す。
-実装後レビューが収束した後だけ、`~/.claude/plans`からの相対パスを指定して計画バンドルを保存する。
+実装後レビューが収束した後だけ、`~/.claude/plans`直下のファイル名またはそのroot配下の絶対パスを指定して計画バンドルを保存する。
+現行名は`dd-HHmm_<名称>.md`で、衝突時は名称の後に`-<小文字16進数4桁>`が付く。
+保存済み計画には`private-notes/plans/`相対パスと、そのroot配下の絶対パスを指定できる。
 
 ```bash
 atk plans commit dd-HHmm_<名詞>.md
