@@ -2170,7 +2170,7 @@ class TestAddBodyFile:
 
         assert exc_info.value.code == 2
         captured = capsys.readouterr()
-        assert "解釈できない引数" in captured.err
+        assert "余った位置引数:" in captured.err
 
     def test_body_file_missing_path_rejected(
         self,

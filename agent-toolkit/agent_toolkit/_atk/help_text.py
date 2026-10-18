@@ -610,9 +610,18 @@ class GuidedSubcommandParser(argparse.ArgumentParser):
                 if action is not None and rejected in after_separator:
                     with_value = "（値を取る場合はその値も一緒に）" if action.nargs != 0 else ""
                     self.error(
-                        f"オプション{rejected}の位置が誤っています。"
+                        f"区切り記号`--`の後は位置引数として扱われるため、オプション{rejected}の位置が誤っています。"
                         f"次の操作: {rejected}{with_value}を区切り記号`--`の前へ移して、同じコマンドを再実行する"
                     )
+            rejected = next((value for value in remaining if value != "--"), "--")
+            if not rejected.startswith("-"):
+                positionals = [
+                    str(action.metavar or action.dest)
+                    for action in self._actions
+                    if not action.option_strings and action.nargs != argparse.PARSER
+                ]
+                accepted = "・".join(positionals) if positionals else "なし"
+                self.error(f"余った位置引数: {rejected}。{self.prog}が受け取る位置引数は{accepted}")
             self.error(f"解釈できない引数: {remaining[0]}。{self._accepted_form()}")
         return parsed, remaining
 

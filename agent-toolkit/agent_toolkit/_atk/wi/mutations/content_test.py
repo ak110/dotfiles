@@ -866,7 +866,7 @@ class TestEditBodyFile:
 
         assert exc_info.value.code == 2
         captured = capsys.readouterr()
-        assert "解釈できない引数" in captured.err
+        assert "余った位置引数:" in captured.err
         assert "Traceback" not in captured.err
         assert path.read_text(encoding="utf-8").endswith("\n編集前\n")
 

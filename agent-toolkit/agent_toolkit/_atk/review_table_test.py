@@ -1244,7 +1244,7 @@ def test_add_parser_requires_canonical_level(arguments: list[str]) -> None:
         (
             "add",
             ["review.tsv", "--round=1", f"--track={_TRACK}", "--level=詳細", "位置", "指摘", "--file", "本文.txt"],
-            ("--issue-file", "--level", "--location-file", "--round", "--track"),
+            None,
         ),
         (
             "respond",
@@ -1263,14 +1263,14 @@ def test_add_parser_requires_canonical_level(arguments: list[str]) -> None:
         (
             "add",
             ["review.tsv", "--round=1", f"--track={_TRACK}", "--level=詳細", "位置", "指摘", "余分"],
-            ("--issue-file", "--level", "--location-file", "--round", "--track"),
+            None,
         ),
     ),
 )
 def test_parser_rejects_unsupported_options_with_guidance(
     subcommand: str,
     arguments: list[str],
-    accepted_options: tuple[str, ...],
+    accepted_options: tuple[str, ...] | None,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     with pytest.raises(SystemExit) as exc_info:
@@ -1279,8 +1279,13 @@ def test_parser_rejects_unsupported_options_with_guidance(
     assert exc_info.value.code == 2
     error = capsys.readouterr().err
     assert error.startswith(f"使い方: atk review-table {subcommand}")
-    accepted = "・".join(accepted_options) if accepted_options else "なし"
-    assert f"atk review-table {subcommand}が受理するオプションは{accepted}" in error
+    if accepted_options is None:
+        assert "余った位置引数: 位置" in error
+        assert f"atk review-table {subcommand}が受け取る位置引数はpath" in error
+        assert "区切り記号" not in error
+    else:
+        accepted = "・".join(accepted_options) if accepted_options else "なし"
+        assert f"atk review-table {subcommand}が受理するオプションは{accepted}" in error
 
 
 def test_shared_column_layout_is_explained_by_parent_help(capsys: pytest.CaptureFixture[str]) -> None:

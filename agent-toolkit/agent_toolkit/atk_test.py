@@ -2409,7 +2409,7 @@ class TestAddBatchOption:
             atk.main(["wi", "add", "--batch", "--body-file", str(body_path), self._ENTRY], home=tmp_path, now=_FIXED_DT)
 
         assert exc_info.value.code == 2
-        assert "解釈できない引数" in capsys.readouterr().err
+        assert "余った位置引数:" in capsys.readouterr().err
 
     def test_rejects_positional_message_without_writing(
         self,

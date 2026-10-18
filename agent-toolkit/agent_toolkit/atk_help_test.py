@@ -101,6 +101,26 @@ def test_every_command_describes_purpose_scene_effect_precondition_and_recovery(
 
 
 @pytest.mark.parametrize(
+    "argv, expected",
+    [
+        (["read-file", "/tmp/a", "/tmp/b"], "path"),
+        (["wi", "list", "extra-positional"], "なし"),
+    ],
+)
+def test_extra_positionals_report_the_accepted_positionals(
+    argv: list[str], expected: str, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """余剰位置引数の原因と受理形式を、配置修正と区別して返す。"""
+    with pytest.raises(SystemExit) as rejected:
+        atk._build_parser().parse_args(argv)  # pylint: disable=protected-access
+    assert rejected.value.code == 2
+    diagnostic = capsys.readouterr().err
+    assert "余った位置引数:" in diagnostic
+    assert f"が受け取る位置引数は{expected}" in diagnostic
+    assert "区切り記号" not in diagnostic
+
+
+@pytest.mark.parametrize(
     "argv",
     [[], ["wi"], ["plans"], ["managed-temp"], ["review-table"], ["review-audit"]],
 )
@@ -269,6 +289,16 @@ def test_consumed_and_forwarded_options_keep_their_meaning(capsys: pytest.Captur
     with pytest.raises(SystemExit):
         parser.parse_args(["read-file", "--", "/example", "--unknown"])
     assert "位置が誤っています" not in capsys.readouterr().err
+
+
+def test_separator_before_help_is_reported_as_misplaced_flag(capsys: pytest.CaptureFixture[str]) -> None:
+    """先頭に未消費の区切りがある値なしの登録名も、位置引数化を説明する。"""
+    with pytest.raises(SystemExit) as rejected:
+        atk._build_parser().parse_args(["info", "--", "--help"])  # pylint: disable=protected-access
+    assert rejected.value.code == 2
+    diagnostic = capsys.readouterr().err
+    assert "位置引数として扱われる" in diagnostic
+    assert "--helpを区切り記号`--`の前へ移して" in diagnostic
 
 
 def test_wrapped_help_keeps_identifiers_intact(monkeypatch: pytest.MonkeyPatch) -> None:
