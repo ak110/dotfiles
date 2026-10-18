@@ -383,8 +383,8 @@ async def test_session_screen_lists_and_renders_both_engines(screen_harness: _Sc
         "inputTextOverflow": "ellipsis",
         "inputWhiteSpace": "nowrap",
     }
-    # 思考とツール呼び出しは初期状態では畳み、要求された時だけ本文を展開する。
-    await harness.page.locator("#detail .kind-thinking summary").click()
+    # 本文のある思考は発言と同じく初期状態で開き、ツール呼び出しは畳む。
+    assert await harness.page.locator("#detail .kind-thinking").evaluate("element => element.open")
     detail_text = await harness.page.locator("#detail").inner_text()
     assert "Claudeの発話" in detail_text
     assert "Claudeの思考" in detail_text
@@ -400,7 +400,7 @@ async def test_session_screen_lists_and_renders_both_engines(screen_harness: _Sc
 
 @pytest.mark.asyncio
 async def test_session_details_use_exclusive_default_closed_sections(screen_harness: _ScreenHarness) -> None:
-    """思考とツール呼び出しは初期状態では畳み、同時に1項目だけを展開する。"""
+    """ツール呼び出しなどの畳む項目は初期状態では閉じ、同時に1項目だけを展開する。"""
     page = screen_harness.page
     await page.goto(screen_harness.base_url + "/sessions")
     await page.locator('#sessions .session-item[data-engine="claude"]').click()
@@ -624,6 +624,42 @@ async def test_session_non_assistant_events_stay_preformatted(
             assert await events.locator(".event-markdown").count() == 0, kind
             assert await events.locator(":scope > pre").count() == await events.count(), kind
         await playwright.async_api.expect(page.locator("#detail .event.kind-user > pre").last).to_have_text("## ユーザー")
+
+
+@pytest.mark.asyncio
+async def test_session_thinking_with_text_opens_like_assistant(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, browser: playwright.async_api.Browser
+) -> None:
+    """本文のある思考・要約は発言と同じく開いて排他の対象から外し、空の思考は閉じて排他の対象に残す。"""
+    path = _write_local_session(
+        tmp_path,
+        "thinking-open",
+        {
+            "type": "assistant",
+            "timestamp": "2026-09-30T00:00:01Z",
+            "message": {
+                "content": [
+                    {"type": "thinking", "thinking": ""},
+                    {"type": "thinking", "thinking": "本文のある思考"},
+                    {"type": "tool_use", "id": "t1", "name": "Bash", "input": {"command": "ls"}},
+                    {"type": "text", "text": "発言"},
+                ]
+            },
+        },
+    )
+    async with _markdown_sessions_page(tmp_path, monkeypatch, browser) as (page, base_url):
+        await _open_session(page, base_url, "browser-test", path)
+        thinking = page.locator("#detail .event.kind-thinking")
+        await playwright.async_api.expect(thinking).to_have_count(2)
+        empty, filled = thinking.nth(0), thinking.nth(1)
+        await playwright.async_api.expect(filled).to_have_attribute("open", "")
+        await playwright.async_api.expect(filled).not_to_have_attribute("data-exclusive-event", "true")
+        await playwright.async_api.expect(page.locator("#detail .event.kind-assistant")).to_have_attribute("open", "")
+        await playwright.async_api.expect(empty).not_to_have_attribute("open", "")
+        await playwright.async_api.expect(empty).to_have_attribute("data-exclusive-event", "true")
+        # 排他の項目を開いても、本文のある思考は閉じない。
+        await page.locator("#detail .event.kind-tool_call summary").click()
+        await playwright.async_api.expect(filled).to_have_attribute("open", "")
 
 
 @pytest.mark.asyncio
@@ -912,10 +948,10 @@ async def test_session_detail_follows_appended_events_and_keeps_view_state(
     for expected in (200, 231):
         await page.evaluate(_SCROLL_DETAIL_TO_END_JS)
         await playwright.async_api.expect(events).to_have_count(expected)
-    # 最初から展開されるユーザー発話を閉じ、折りたたまれた思考を1件開く。
+    # 最初から展開されるユーザー発話と、本文があるため展開される思考を1件閉じる。
     await events.nth(0).locator("summary").click()
     await events.nth(120).locator("summary").click()
-    await playwright.async_api.expect(events.nth(120)).to_have_attribute("open", "")
+    await playwright.async_api.expect(events.nth(120)).not_to_have_attribute("open", "")
     scroll_top = await page.evaluate(
         "() => { const main = document.querySelector('#screen-sessions main'); main.scrollTop = 1500; return main.scrollTop; }"
     )
@@ -935,7 +971,7 @@ async def test_session_detail_follows_appended_events_and_keeps_view_state(
 
     await playwright.async_api.expect(events).to_have_count(232, timeout=5000)
     assert not await events.nth(0).evaluate("element => element.open")
-    assert await events.nth(120).evaluate("element => element.open")
+    assert not await events.nth(120).evaluate("element => element.open")
     assert await page.evaluate("() => document.querySelector('#screen-sessions main').scrollTop") == scroll_top
     await playwright.async_api.expect(page.get_by_role("button", name=re.compile("新しいイベント"))).to_have_count(0)
     await asyncio.sleep(1.0)
