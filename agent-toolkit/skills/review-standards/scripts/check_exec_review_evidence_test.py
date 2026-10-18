@@ -2853,6 +2853,53 @@ def test_public_command_resolves_evidence_references(
         assert not error
 
 
+@pytest.mark.parametrize(
+    ("reference", "expected"),
+    [
+        # 受理形式の案内（`FILE_REFERENCE_FORM`と「根拠の書き方」）が示す区切りで書いた実在の参照は受理する。
+        ("docs/record.md#重複 で結果を確認", 0),
+        ("docs/record.md#重複、結果を確認", 0),
+        ("`docs/record.md#括弧 (完了)`の手順で観測", 0),
+        ("[記録](docs/record.md#重複)で観測", 0),
+        ("docs/record.md:1-3、docs/record.md:8 で入力と結果を確認", 0),
+        ("docs/record.md、docs/日本語名.md の両方で確認", 0),
+        ("docs/record.md・docs/日本語名.md の両方で確認", 0),
+        ("docs/record.md docs/日本語名.md の両方で確認", 0),
+        ("test_save[docs/missing.md]: 成功", 0),
+        # 案内の区切りを欠くと説明まで見出し名として比べ、所在の誤った明示参照は拒否する。
+        ("docs/record.md#重複で結果を確認", 1),
+        ("docs/record.md#存在しない 見出しで確認", 1),
+        ("docs/record.md:1-3、docs/record.md:80 で確認", 1),
+        ("docs/record.md、docs/missing.md の両方で確認", 1),
+    ],
+)
+def test_guided_reference_forms_are_accepted_and_misplaced_references_rejected(
+    reference_repository: tuple[pathlib.Path, str, pathlib.Path],
+    reference: str,
+    expected: int,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """案内どおりに見出し・行位置・複数名と説明を区切った参照は受理され、所在の誤りは拒否される。
+
+    案内の例と確認実装の切り出し規則が一致しないと、記入者は案内どおりに書いた根拠を確認で拒否されて書き直す。
+    期待値は案内が定める区切り（空白・読点・`・`、範囲ごとのパス、角括弧の外の所在）と対象版の見出し・行数から導く。
+    """
+    repository, head, evidence = reference_repository
+    row = {**_condition(FIRST_WI, "完成"), "reviewed_head": head, "evidence": reference}
+    _write_evidence(evidence, [row])
+    del repository
+    args = argparse.Namespace(
+        script_name="exec-review-evidence-check", script_args=["--", str(evidence), FIRST_WI, "--expected-head", head]
+    )
+    assert run_script.dispatch(args) == expected
+    error = capsys.readouterr().err
+    if expected:
+        assert "wi_conditions[0].evidence" in error
+        assert check_exec_review_evidence.FILE_REFERENCE_FORM in error or "見出し『" in error or "行範囲" in error
+    else:
+        assert not error
+
+
 # 地の文の参照の区切り規則から期待値を導く組み合わせ。パスは拡張子で終わり、行位置は`:`に続くASCIIの並びとし、
 # 最初の非ASCII文字か空白で参照を終える。参照の終わりは前置きの有無と語の先頭の実在で変えない。
 _OLD_FULL = "1" * 40
