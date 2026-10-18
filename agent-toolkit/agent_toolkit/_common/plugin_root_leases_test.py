@@ -51,6 +51,8 @@ def test_plugin_root_in_use_distinguishes_live_stale_and_unknown(
     [
         "live",
         "other-namespace",
+        "rotated-log",
+        "other-namespace-rotated",
         "denied",
         "vanished",
         "other-user",
@@ -79,9 +81,10 @@ def test_legacy_plugin_root_cleanup_checks_unregistered_consumers(
     area.mkdir()
     (area / "old-version").mkdir()
     real_process = subject.psutil.Process()
-    state = tmp_path / "other/agent-toolkit" if observation == "other-namespace" else state_paths.state_dir()
+    state = tmp_path / "other/agent-toolkit" if observation.startswith("other-namespace") else state_paths.state_dir()
     state.mkdir(parents=True, exist_ok=True)
-    log = state / "agents-server.log"
+    # 別のMCPが回転させたログは、開いたままのファイルが番号付きの名前へ改名される。
+    log = state / ("agents-server.log.1" if "rotated" in observation else "agents-server.log")
     log.touch()
 
     class LegacyServer:
@@ -135,7 +138,7 @@ def test_legacy_plugin_root_cleanup_checks_unregistered_consumers(
     protected = (
         observation in {"denied", "starting-wrapper", "account-and-cmdline-denied", "same-account-cmdline-oserror"}
         or not shared
-        and observation in {"live", "missing-log", "denied-files", "wrong-log"}
+        and observation in {"live", "rotated-log", "missing-log", "denied-files", "wrong-log"}
     )
     assert subject.plugin_root_in_use(area) is protected
 
