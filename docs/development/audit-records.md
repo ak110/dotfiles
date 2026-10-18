@@ -711,6 +711,14 @@ Readを経ない取得手段（Bashのリダイレクトでの作成、`cp`で�
 
 再検証では同じ公式タグのCLIオプション、execへの適用、認証更新条件と保存経路を対応付けて読む。実測する場合は公開された状態隔離手段と通常認証の成立を先に確認し、同じ実体のmtimeなどを前後で比較する。外部認証情報を隔離先へ複製しない。通常利用と既存のテスト隔離へ一律の隔離を追加する根拠にはしない。
 
+## agent-toolkit/skills/writing-standards/references/investigation.md：実行結果の検証：2026年10月18日
+
+観測した日付は2026年10月18日、版数はClaude Code 2.1.302である。
+再検証では再開・分岐を伴わない新規の`claude -p`を空のmanaged-tempで起動する。
+まず`--allowedTools Read`だけを指定して実行する。
+次に`--tools "" --strict-mcp-config --mcp-config '{"mcpServers":{}}'`も指定して実行する。
+両実行のstream-jsonの`system`/`init`にある`tools`と`mcp_servers`を比較する。
+
 ## agent-toolkit/skills/writing-standards/references/mcp-server-design.md：典拠と既存サーバーへの適用：2026年10月2日
 
 2026年10月2日、同書の典拠表の各資料を取得した。Claude Code公式資料（Claude Code 2.1.286の時点）の「For MCP server authors」は、ツール説明とserver instructionsを各2,048文字に切り詰めると記す。この値は`CLAUDE_CODE_MAX_MCP_DESCRIPTION_LENGTH`で変更できる。「MCP output limits and warnings」は1万トークンの警告と2万5千トークンの上限を記し、上限を変える`MAX_MCP_OUTPUT_TOKENS`と`_meta["anthropic/maxResultSizeChars"]`を示す。MCP 2025-11-25のSchema Referenceは`InitializeResult.instructions`をsystem promptへ加えてもよいヒントとし、`ToolAnnotations`の全項目をヒントとする。
