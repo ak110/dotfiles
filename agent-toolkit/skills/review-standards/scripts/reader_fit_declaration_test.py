@@ -7,6 +7,7 @@ import pathlib
 
 import check_exec_review_evidence as check
 import pytest
+import reader_fit_declaration
 
 from agent_toolkit._testing import git_repository as git
 
@@ -113,6 +114,7 @@ def test_public_batch_checks_reader_fit_declaration(
         "plans": [],
         "input_records": [],
         "review_start": start,
+        "external_artifacts": [],
     }
     batch = tmp_path / "batch.json"
     batch.write_text(
@@ -130,3 +132,66 @@ def test_public_batch_checks_reader_fit_declaration(
     assert check.main(["--batch", str(batch)]) == 1
     result = [json.loads(line) for line in capsys.readouterr().out.splitlines()]
     assert [item["exit_code"] for item in result] == [0, 1]
+
+
+@pytest.mark.parametrize("batch_mode", [False, True])
+def test_external_artifacts_require_complete_structured_declaration(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], batch_mode: bool
+) -> None:
+    """回答下書きの欠落と自由記述を公開CLIで拒否し、UUIDと同一複製だけを受理する。"""
+    repo = git.init_repository(tmp_path / "repo", commit_message="開始")
+    head = git.git_output(repo, "rev-parse", "HEAD")
+    monkeypatch.chdir(repo)
+    draft, previous = tmp_path / "draft.md", tmp_path / "previous.md"
+    different = tmp_path / "different.md"
+    draft.write_bytes(b"answer\n")
+    previous.write_bytes(draft.read_bytes())
+    different.write_bytes(b"old answer\n")
+    declarations = [
+        ("文章成果物なし", False),
+        (json.dumps({"files": {}, "external": "同系統なので省略"}), False),
+        (json.dumps({"files": {}, "external": {}}), False),
+        (json.dumps({"files": {}, "external": {str(draft): {"sessions": [SESSION]}}}), True),
+        (json.dumps({"files": {}, "external": {str(draft): {"omission": "再点検対象なし", "previous": str(previous)}}}), True),
+        (
+            json.dumps({"files": {}, "external": {str(draft): {"omission": "再点検対象なし", "previous": str(different)}}}),
+            False,
+        ),
+    ]
+    table = tmp_path / "review.tsv"
+    table.touch()
+    for value, accepted in declarations:
+        review_round = 2 if '"omission"' in value else 1
+        if batch_mode:
+            batch = tmp_path / "batch.json"
+            item = {
+                "plan": "なし",
+                "evidence": "なし",
+                "wi": [],
+                "reviewed_head": head,
+                "review_table": str(table),
+                "round": review_round,
+                "plans": [],
+                "input_records": [],
+                "review_start": head,
+                "reader_fit_review": value,
+                "external_artifacts": [str(draft)],
+                "previous_review_start": head,
+                "previous_review_head": head,
+            }
+            batch.write_text(json.dumps({"version": 1, "reviews": [item]}), encoding="utf-8")
+            assert check.main(["--batch", str(batch)]) == (0 if accepted else 1)
+            captured = capsys.readouterr()
+            result = json.loads(captured.out)
+            output = "\n".join([*result["diagnostics"], *result["result"]])
+        else:
+            args = _args(tmp_path, head, head, value, previous=(head, head) if review_round == 2 else None)
+            assert check.main([*args, "--external-artifact", str(draft)]) == (0 if accepted else 1)
+            captured = capsys.readouterr()
+            output = captured.out + captured.err
+            if not accepted:
+                assert not captured.out
+        if not accepted:
+            assert str(draft) in output and "起動" in output and "再実行" in output
+    with pytest.raises(ValueError, match="対象集合に無い"):
+        reader_fit_declaration.check(declarations[3][0], repo, head, head, 2)

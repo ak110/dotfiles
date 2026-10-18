@@ -1918,6 +1918,7 @@ def _list_evidence(parser: argparse.ArgumentParser, args: argparse.Namespace) ->
             args.round,
             args.plan,
             args.input_record,
+            args.external_artifact,
             args.reader_fit_review is not None,
             args.results_file,
             verification_results.has_result_specification(args),
@@ -2178,6 +2179,7 @@ def _batch_arguments(value: object) -> tuple[str, list[str]]:
         "input_records",
         "reader_fit_review",
         "review_start",
+        "external_artifacts",
     }
     optional = {"previous_review_start", "previous_review_head"}
     if not isinstance(value, dict) or not fields <= set(value) or set(value) - fields - optional:
@@ -2185,7 +2187,7 @@ def _batch_arguments(value: object) -> tuple[str, list[str]]:
     for name in ("plan", "evidence", "reviewed_head", "review_table", "reader_fit_review", "review_start"):
         if not isinstance(value[name], str) or not value[name].strip():
             raise ValueError(f"{name}には空でない文字列を指定する")
-    for name in ("wi", "plans", "input_records"):
+    for name in ("wi", "plans", "input_records", "external_artifacts"):
         if not isinstance(value[name], list) or any(not isinstance(item, str) or not item for item in value[name]):
             raise ValueError(f"{name}には文字列の配列を指定する")
     if not isinstance(value["round"], int) or isinstance(value["round"], bool) or value["round"] < 1:
@@ -2210,7 +2212,11 @@ def _batch_arguments(value: object) -> tuple[str, list[str]]:
             if not isinstance(value[name], str) or not value[name].strip():
                 raise ValueError(f"{name}には前回確認版のOIDを指定する")
             args.extend(("--" + name.replace("_", "-"), value[name]))
-    for option, field in (("--plan", "plans"), ("--input-record", "input_records")):
+    for option, field in (
+        ("--plan", "plans"),
+        ("--input-record", "input_records"),
+        ("--external-artifact", "external_artifacts"),
+    ):
         for path in value[field]:
             args.extend((option, path))
     return value["plan"], args
@@ -2238,6 +2244,7 @@ def _save_return_input(
         "plans": [str(path) for path in plans],
         "input_records": [str(path) for path in records],
         "reader_fit_review": args.reader_fit_review,
+        "external_artifacts": [str(path) for path in args.external_artifact or []],
         "review_start": review_start,
         "previous_review_start": previous_review_start,
         "previous_review_head": previous_review_head,
@@ -2342,6 +2349,13 @@ def main(argv: list[str] | None = None) -> int:
         help="表と証拠の整合を確かめ、completedの固定形式の返却を生成する。同一根拠は先行行をevidence_referenceで示す",
     )
     parser.add_argument(
+        "--external-artifact",
+        type=pathlib.Path,
+        action="append",
+        metavar="PATH",
+        help="Git管理外の文章成果物・回答下書きの絶対パス。複数成果物は反復指定する",
+    )
+    parser.add_argument(
         "--show-all-rows",
         action="store_true",
         help="返却生成またはbatchへ両配列の全行を追加する。先に根拠を除いた全行の`証拠の行一覧`（配列・1始まり行番号・WI・判定・source・原文）、"
@@ -2350,8 +2364,9 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument(
         "--reader-fit-review",
-        help='ファイルごとのJSON申告 {"files":{"相対.md":{"sessions":["UUID"]}},"external":"Git管理外の申告"}。'
-        '同一差分の再点検省略はファイル値を{"omission":"再点検対象なし"}とする。Markdown差分が無い場合は文章成果物なし',
+        help='成果物ごとのJSON申告 {"files":{"相対.md":{"sessions":["UUID"]}},"external":{"絶対パス":{"sessions":["UUID"]}}}。'
+        '再点検省略は{"omission":"再点検対象なし"}、externalには前回本文の複製の絶対パスpreviousも指定する。'
+        "Markdown差分とexternal-artifactがともに無い場合だけ文章成果物なし",
     )
     parser.add_argument("--review-start", help="今回のレビューの開始時点のOID。返却生成では必須")
     parser.add_argument("--previous-review-start", help="前回確認版の開始時点のOID。roundが2以上の返却では必須")
@@ -2397,10 +2412,14 @@ def main(argv: list[str] | None = None) -> int:
         or any(char in args.reader_fit_review for char in "\r\n")
     ):
         parser.error(
-            "返却生成には1行の--reader-fit-reviewが必要です。起動した読者のsession・label、省略根拠、または文章成果物なしを申告して再実行する"
+            '返却生成には1行の--reader-fit-reviewが必要です。filesとexternalの各成果物へ{"sessions":["UUID"]}を対応付け、'
+            "reader-fit-review.parent.md「起動」に従って探索を起動・受領して申告を修復し再実行する。"
+            "Markdown差分と--external-artifactがともに空の場合だけ文章成果物なしを指定する"
         )
     if args.reader_fit_review is not None and not args.return_result:
         parser.error("--reader-fit-reviewは--return-resultと指定する。batchでは各組のreader_fit_reviewへ申告を記す")
+    if args.external_artifact and not args.return_result:
+        parser.error("--external-artifactは--return-resultと指定する。batchでは各組へ記す")
     if any((args.review_start, args.previous_review_start, args.previous_review_head)) and not args.return_result:
         parser.error("レビューの開始時点と前回確認版は--return-resultと指定する。batchでは各組へ記す")
     if args.return_result and (
@@ -2606,6 +2625,7 @@ def main(argv: list[str] | None = None) -> int:
                 typing.cast(int, args.round),
                 previous_start,
                 previous_head,
+                external_artifacts=args.external_artifact,
             )
         except (OSError, UnicodeError, subprocess.SubprocessError, ValueError) as error:
             errors.append(str(error))

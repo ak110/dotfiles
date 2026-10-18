@@ -75,7 +75,6 @@ def _mock_wi(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, bodies: di
     requested: list[str] = []
 
     def fake_run(args: list[str], **kwargs: object) -> subprocess.CompletedProcess[typing.Any]:
-        del kwargs
         if args[0] == "git":
             if "cat-file" in args:
                 reference = tmp_path / args[-1].split(":", maxsplit=1)[1]
@@ -83,7 +82,10 @@ def _mock_wi(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, bodies: di
                     return subprocess.CompletedProcess(args, 0, stdout=reference.read_bytes(), stderr=b"")
                 return subprocess.CompletedProcess(args, 1, stdout=b"", stderr=b"file is absent")
             value = str(tmp_path) if "--show-toplevel" in args else REVIEWED_HEAD
-            return subprocess.CompletedProcess(args, 0, stdout=f"{value}\n", stderr="")
+            output = f"{value}\n"
+            return subprocess.CompletedProcess(
+                args, 0, stdout=output if kwargs.get("text") else output.encode(), stderr="" if kwargs.get("text") else b""
+            )
         raise AssertionError(f"WI取得で子CLIを起動した: {args}")
 
     def read_named(
@@ -555,6 +557,7 @@ def test_public_show_all_rows_lists_rows_before_bodies(
                         "review_table": str(table),
                         "round": 2,
                         "plans": [],
+                        "external_artifacts": [],
                         "input_records": [str(record)],
                         "reader_fit_review": "文章成果物なし",
                     }
@@ -2632,6 +2635,7 @@ def test_non_git_cwd_guides_same_arguments_to_target_worktree(
                             "review_table": str(table),
                             "round": 1,
                             "plans": [],
+                            "external_artifacts": [],
                             "input_records": [],
                             "reader_fit_review": "文章成果物なし",
                         }
@@ -3176,6 +3180,7 @@ def test_public_nonachievement_repeated_evidence_uses_preceding_row(
                             "round": 2,
                             "plans": [],
                             "input_records": [],
+                            "external_artifacts": [],
                             "reader_fit_review": "文章成果物なし",
                         }
                     ],
@@ -3253,6 +3258,38 @@ def test_public_reference_classification_uses_reviewed_commit_after_path_removal
     assert _check_reference(evidence, old, "obsolete/record.md で観測") == 0, capsys.readouterr().err
     assert _check_reference(evidence, old, "obsolete/record.md:99 で観測") == 1
     assert "行範囲" in capsys.readouterr().err
+
+
+def test_public_batch_requires_external_artifact_input_set(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """メインが持つ外部成果物集合を欠いた一括入力から返却を生成しない。"""
+    _mock_wi(monkeypatch, tmp_path, {})
+    table, batch = tmp_path / "review.tsv", tmp_path / "batch.json"
+    review_table.init(table)
+    value = {
+        "plan": "なし",
+        "evidence": "なし",
+        "wi": [],
+        "reviewed_head": REVIEWED_HEAD,
+        "review_start": REVIEWED_HEAD,
+        "review_table": str(table),
+        "round": 1,
+        "plans": [],
+        "input_records": [],
+        "reader_fit_review": "文章成果物なし",
+    }
+    batch.write_text(json.dumps({"version": 1, "reviews": [value]}), encoding="utf-8")
+    capsys.readouterr()
+    args = argparse.Namespace(script_name="exec-review-evidence-check", script_args=["--batch", str(batch)])
+    assert run_script.dispatch(args) == 1
+    failed = json.loads(capsys.readouterr().out)
+    assert failed["exit_code"] != 0 and not failed["result"]
+    assert any("external_artifacts" in line for line in failed["diagnostics"])
+    value["external_artifacts"] = []
+    batch.write_text(json.dumps({"version": 1, "reviews": [value]}), encoding="utf-8")
+    assert run_script.dispatch(args) == 0
+    assert "状態: completed" in json.loads(capsys.readouterr().out)["result"]
 
 
 @pytest.mark.parametrize(
@@ -3928,7 +3965,7 @@ def test_generated_return_input_rechecks_without_conversion(
     records = [tmp_path / "record1.md", tmp_path / "record2.md"]
     for path in [*plans, *records]:
         path.write_text("# 入力\n", encoding="utf-8")
-    declaration = json.dumps({"files": {}, "external": "読者: session-example"}, ensure_ascii=False, separators=(",", ":"))
+    declaration = json.dumps({"files": {}, "external": {}}, ensure_ascii=False, separators=(",", ":"))
     options = _review_options(head, table, round_value)
     options[options.index("--review-start") + 1] = first
     if round_value >= 2:
@@ -3954,6 +3991,7 @@ def test_generated_return_input_rechecks_without_conversion(
                 "review_table": str(table),
                 "round": round_value,
                 "plans": [str(path) for path in plans],
+                "external_artifacts": [],
                 "input_records": [str(path) for path in records],
                 "reader_fit_review": declaration,
                 "review_start": first,
@@ -4123,10 +4161,9 @@ def test_batch_keeps_per_review_inputs_and_does_not_write_evidence(
                 "review_table": str(table),
                 "round": index,
                 "plans": [str(plan)],
+                "external_artifacts": [],
                 "input_records": [str(record)] if index == 2 else [],
-                "reader_fit_review": json.dumps(
-                    {"files": {}, "external": f"読者{index}: session-{index}"}, ensure_ascii=False, separators=(",", ":")
-                ),
+                "reader_fit_review": json.dumps({"files": {}, "external": {}}, ensure_ascii=False, separators=(",", ":")),
             }
         )
     batch = tmp_path / "batch.json"
