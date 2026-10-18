@@ -1,5 +1,6 @@
 """区別可能な照会を同じ記録へまとめる公開CLIの契約を検証する。"""
 
+import json
 import pathlib
 
 import pytest
@@ -150,3 +151,59 @@ def test_user_events_combination_keeps_delegate_queries(tmp_path: pathlib.Path, 
         assert any(event.get("session_id") == delegated_threads.CODEX_THREAD_ID for event in actual)
     else:
         assert any(event.get("record") == f"codex:{delegated_threads.CODEX_THREAD_ID}" for event in actual)
+
+
+@pytest.mark.parametrize(
+    ("source", "family_kind"),
+    [
+        (source, kind)
+        for source in ("positional", "transcript", "claude-session-id")
+        for kind in ("parent", "native", "delegates")
+    ]
+    + [(source, "parent") for source in ("codex-positional", "codex-transcript", "codex-thread-id")],
+)
+def test_stats_summary_input_routes_and_unresolved_diagnostics(
+    tmp_path: pathlib.Path, capsys, monkeypatch, source, family_kind
+) -> None:
+    """公開入力の各指定で担当要約を取得し、未解決を含む全量の順序・全欄を保つ。"""
+    family = delegated_threads.write_delegated_threads(tmp_path)
+    monkeypatch.setenv("HOME", str(family.home))
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(family.home / ".claude"))
+    monkeypatch.setenv("CODEX_HOME", str(family.codex_home))
+    transcript = family.home / ".claude/projects/repo" / family.transcript.name
+    family.transcript.replace(transcript)
+    if source.startswith("codex-"):
+        transcript = next(family.codex_home.rglob("*.jsonl"))
+        arguments = {
+            "codex-positional": [str(transcript)],
+            "codex-transcript": ["--transcript", str(transcript)],
+            "codex-thread-id": ["--codex-thread-id", delegated_threads.CODEX_THREAD_ID],
+        }[source]
+    else:
+        arguments = {
+            "positional": [str(transcript)],
+            "transcript": ["--transcript", str(transcript)],
+            "claude-session-id": ["--claude-session-id", delegated_threads.MAIN_SESSION_ID],
+        }[source]
+    if family_kind != "delegates" and not source.startswith("codex-"):
+        entries = [{"type": "user", "timestamp": "2026-09-06T00:00:00Z", "message": {"role": "user", "content": "依頼"}}]
+        transcript.write_text("".join(json.dumps(entry) + "\n" for entry in entries), encoding="utf-8")
+    if family_kind == "native":
+        write_subagent(
+            transcript.with_suffix("") / "subagents",
+            "agent-child",
+            [{"type": "assistant", "isSidechain": True, "message": {"role": "assistant", "content": "委譲結果"}}],
+        )
+    if family_kind == "delegates" and source != "codex-thread-id":
+        (family.home / ".claude/projects/repo" / f"{delegated_threads.CLAUDE_THREAD_ID}.jsonl").unlink()
+    assert evidence.main([*arguments, "--stats"]) == 0
+    full = read_jsonl(capsys, raw=True)
+    assert evidence.main([*arguments, "--stats", "--summary-only"]) == 0
+    summary = read_jsonl(capsys, raw=True)
+    assert summary == [event for event in full if event["kind"] in _SUMMARY_KINDS]
+    assert {event["kind"] for event in summary} >= {"stats-total", "stats-summary"}
+    if family_kind == "native":
+        assert any(event["kind"] == "stats-subagent" for event in summary)
+    if family_kind == "delegates" and source != "codex-thread-id":
+        assert any(event["kind"] == "unresolved-record" for event in summary)
+        assert any(event["kind"] == "stats-agent-thread" for event in summary)
