@@ -15,7 +15,10 @@ def test_report_preserves_every_warning_and_distinguishes_stderr(
     monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
     if agent:
         monkeypatch.setenv("CLAUDECODE", "1")
-    warnings = ["本文:1:3: 口語表現 あとで", "本文:4:2: ダッシュ —"]
+    warnings = style_diagnostics.warnings_for_body("開始—中間—終了", source="原稿.md")
+    assert len(warnings) == 2
+    assert "文脈: 開始【—】中間—終了" in warnings[0]
+    assert "文脈: 開始—中間【—】終了" in warnings[1]
     style_diagnostics.report_warnings(warnings, next_action="表記診断による停止はなく、投入は続行する")
     captured = capsys.readouterr()
     assert not captured.out
@@ -39,6 +42,8 @@ def test_save_failure_keeps_full_diagnostics(monkeypatch: pytest.MonkeyPatch, ca
         raise OSError("保存できない")
 
     monkeypatch.setattr(style_diagnostics.managed_temp, "create_output_temp", fail)
-    style_diagnostics.report_warnings(["本文:1:1: 第一", "本文:2:1: 第二"], next_action="編集は続行する")
+    warnings = style_diagnostics.warnings_for_body("開始—中間—終了", source="原稿.md")
+    style_diagnostics.report_warnings(warnings, next_action="編集は続行する")
     error = capsys.readouterr().err
-    assert all(text in error for text in ["保存できない", "第一", "第二", "編集は続行する"])
+    assert all(text in error for text in ["保存できない", *warnings, "編集は続行する"])
+    assert all(style_diagnostics.is_body_style_diagnostic_warning("警告: " + warning) for warning in warnings)

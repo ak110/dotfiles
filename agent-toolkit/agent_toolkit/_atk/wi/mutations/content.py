@@ -466,7 +466,7 @@ def cmd_edit(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
         parsed = _frontmatter.parse_frontmatter(edited)
         if parsed is not None:
             frontmatter, body = parsed
-            style_warnings = _style_diagnostics.warnings_for_body(body)
+            style_warnings = _style_diagnostics.warnings_for_body(body, source=path.name)
             if style_warnings:
                 _style_diagnostics.report_warnings(
                     style_warnings,

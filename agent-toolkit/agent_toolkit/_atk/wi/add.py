@@ -787,7 +787,7 @@ def cmd_add(
         messages = [message]
     validation_errors: list[WebInputError] = []
     style_warnings: list[str] = []
-    for message in messages:
+    for index, message in enumerate(messages):
         try:
             if is_agent_environment() and _user_comment.has_reserved_heading(message):
                 raise WebInputError(
@@ -796,7 +796,8 @@ def cmd_add(
                 )
             frontmatter, body = parse_entry_message(message, entry_type=args.type)
             _require_agent_source(frontmatter, args.source)
-            style_warnings.extend(_style_diagnostics.warnings_for_body(body))
+            source = body_files[index] if body_files else "エディター入力"
+            style_warnings.extend(_style_diagnostics.warnings_for_body(body, source=source))
             try:
                 require_agent_awi_sections(
                     body,
