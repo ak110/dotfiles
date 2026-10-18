@@ -81,7 +81,7 @@ atk run-script verification-record -- --output <未判定検証記録の絶対�
 atk run-script exec-review-evidence-check -- <完成条件証拠の絶対パス> --rewrite-map <対応表の絶対パス>
 ```
 
-対応表を受け取ったコマンドが完成条件証拠と未判定検証記録のevidenceで書き換えるのは、現行成果物への`commit:<OID>`参照だけである（分割時は全対応先をそれぞれ`commit:`標識で残す）。裸のOID、過去の取得版（HEAD・git_head・比較元）、観測ファイル、判定とreviewed_headは保持する。既存の自由文を推測して標識へ移さず、曖昧・不正な入力は部分保存せず拒否する。OIDの対応だけで観測を新しい版へ適用せず、結果に作用する内容と条件が変わった行だけを再観測する。根拠共用のCOMMIT_REFERENCEはこの更新とは別の責務として維持する。
+`exec-review-evidence-check --rewrite-map`と`verification-record --rewrite-map`が各記録のevidenceで書き換えるのは、現行成果物への`commit:<OID>`参照だけである（分割時は全対応先をそれぞれ`commit:`標識で残す）。裸のOID、過去の取得版（HEAD・git_head・比較元）、観測ファイル、判定とreviewed_headは保持する。既存の自由文を推測して標識へ移さず、曖昧・不正な入力は部分保存せず拒否する。OIDの対応だけで観測を新しい版へ適用せず、結果に作用する内容と条件が変わった行だけを再観測する。根拠共用のCOMMIT_REFERENCEはこの更新とは別の責務として維持する。
 
 書換え直前のHEADと対応表を、書換え範囲のcommitを作成したレーンの計画と計画なしの引き継ぎ記録の全てとともに、次の形で1回だけ渡す（記録・worktree・対応表は絶対パス、`--rewrite-map`はファイルパス）。同じ修正系列で書換えを繰り返す間は毎回同じ記録の集合を渡す。
 
