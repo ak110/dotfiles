@@ -430,7 +430,7 @@ def test_records_range_from_cherry_pick_and_fast_forward_in_one_call(
         )
         == 1
     )
-    assert "現在のHEADではありません" in capsys.readouterr().err
+    assert "記録済みのcommit" in capsys.readouterr().err
 
 
 def test_legacy_body_comment_and_attachment_are_combined(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
@@ -474,13 +474,14 @@ def test_legacy_body_comment_and_attachment_are_combined(tmp_path: pathlib.Path,
     ]
 
 
-def test_help_describes_range_and_merge_rejection(capsys: pytest.CaptureFixture[str]) -> None:
-    """ヘルプから前HEADから現在のHEADまでの全commitの記録とマージcommitの拒否を読める。"""
+def test_help_describes_past_ranges(capsys: pytest.CaptureFixture[str]) -> None:
+    """ヘルプから区間の末尾commitの指定と事後の区間記録、マージ・重複の拒否を読める。"""
     with pytest.raises(SystemExit, match="0"):
         append_progress_log.main(["--help"])
     output = "".join(capsys.readouterr().out.split())
-    assert "--previous-headから現在のHEADまでに加わった全commit" in output
-    assert "マージcommitを含む範囲は受け付けない" in output
+    assert "現在のHEADか、そのfirst-parentの履歴上のcommit" in output
+    assert "取り込み後もAWI集合ごとの区間を区間ごとに記録できる" in output
+    assert "マージcommitや記録済みcommitを含む範囲は受け付けない" in output
 
 
 @pytest.mark.parametrize("handoff", [False, True])
@@ -531,3 +532,140 @@ def test_public_progress_split_preserves_assignment_and_rejects_loss(
         wi: [git_repository.git_output(repo, "rev-parse", "--short", oid)]
         for oid, wi in zip(destinations, (wi_a, wi_b), strict=True)
     }
+
+
+@pytest.mark.parametrize("handoff", [False, True])
+def test_record_past_ranges_per_awi(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], handoff: bool) -> None:
+    """HEADを先へ進めた後、公開コマンドから各区間を別AWIへ記録し、両取得コマンドで対応を得る。"""
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    git_repository.init_repository(repo, initial_branch="main")
+    commits = []
+    for message in ("base", "first", "second", "third"):
+        git_repository.git_output(repo, "commit", "--allow-empty", "-m", message)
+        commits.append(git_repository.git_output(repo, "rev-parse", "HEAD"))
+    wis = ["20261017-171745-001.md", "20261017-171745-002.md", "20261017-171745-003.md"]
+    path = tmp_path / "record.md"
+    path.write_text("# 引き継ぎ\n" if handoff else _related_plan(*wis), encoding="utf-8")
+    common = [str(path), "--worktree", str(repo)]
+    if handoff:
+        common += ["--handoff", *[value for wi in wis for value in ("--allowed-awi", wi)]]
+    for previous, current, wi in zip(commits[:-1], commits[1:], wis, strict=True):
+        assert (
+            run_script.dispatch(
+                argparse.Namespace(
+                    script_name="plan-progress",
+                    script_args=[
+                        *common,
+                        "--commit",
+                        current,
+                        "--previous-head",
+                        previous,
+                        "--awi",
+                        wi,
+                        "--completed-step",
+                        "区間記録",
+                        "--result",
+                        "成功",
+                    ],
+                )
+            )
+            == 0
+        )
+    capsys.readouterr()
+    expected = {
+        wi: [git_repository.git_output(repo, "rev-parse", "--short", oid)] for wi, oid in zip(wis, commits[1:], strict=True)
+    }
+    for name, extra in (("plan-commits", []), ("plan-progress", ["--get-commits"])):
+        assert run_script.dispatch(argparse.Namespace(script_name=name, script_args=[*common, *extra])) == 0
+        rows = [json.loads(line) for line in capsys.readouterr().out.splitlines()]
+        assert {row["awi"]: row["commits"] for row in rows} == expected
+    assert git_repository.git_output(repo, "rev-parse", "HEAD") == commits[-1]
+    assert len(path.with_suffix(".wi-commits.jsonl").read_text(encoding="utf-8").splitlines()) == 3
+
+
+@pytest.mark.parametrize("handoff", [False, True])
+@pytest.mark.parametrize("case", ["branch", "second-parent", "previous", "empty", "merge", "duplicate", "overlap"])
+def test_record_range_rejections_keep_files(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], handoff: bool, case: str
+) -> None:
+    """各不正区間を公開コマンドで拒否し、条件・次の操作と計画・対応記録のバイト列保持を確かめる。"""
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    git_repository.init_repository(repo, initial_branch="main")
+    git_repository.git_output(repo, "commit", "--allow-empty", "-m", "base")
+    base = git_repository.git_output(repo, "rev-parse", "HEAD")
+    git_repository.git_output(repo, "switch", "-c", "side")
+    git_repository.git_output(repo, "commit", "--allow-empty", "-m", "side")
+    side = git_repository.git_output(repo, "rev-parse", "HEAD")
+    git_repository.git_output(repo, "switch", "main")
+    git_repository.git_output(repo, "commit", "--allow-empty", "-m", "first")
+    first = git_repository.git_output(repo, "rev-parse", "HEAD")
+    git_repository.git_output(repo, "commit", "--allow-empty", "-m", "second")
+    second = git_repository.git_output(repo, "rev-parse", "HEAD")
+    if case in {"second-parent", "merge"}:
+        git_repository.git_output(repo, "merge", "--no-ff", "-m", "merge", "side")
+    wi = "20261017-171745-001.md"
+    path = tmp_path / "record.md"
+    path.write_text("# 引き継ぎ\n" if handoff else _related_plan(wi), encoding="utf-8")
+    common = [str(path), "--worktree", str(repo), "--awi", wi, "--completed-step", "記録", "--result", "結果"]
+    if handoff:
+        common += ["--handoff", "--allowed-awi", wi]
+
+    def record(current: str, previous: str) -> int:
+        return run_script.dispatch(
+            argparse.Namespace(
+                script_name="plan-progress", script_args=[*common, "--commit", current, "--previous-head", previous]
+            )
+        )
+
+    assert record(first, base) == 0
+    attachment = path.with_suffix(".wi-commits.jsonl")
+    saved = path.read_bytes(), attachment.read_bytes()
+    revision, previous, diagnostic = {
+        "branch": (side, base, "first-parentの履歴上にありません"),
+        "second-parent": (side, base, "first-parentの履歴上にありません"),
+        "previous": (second, side, "first-parentの祖先ではありません"),
+        "empty": (second, second, "範囲が空"),
+        "merge": ("HEAD", second, "マージcommit"),
+        "duplicate": (first, base, "記録済みのcommit"),
+        "overlap": (second, base, "記録済みのcommit"),
+    }[case]
+    capsys.readouterr()
+    assert record(revision, previous) == 1
+    error = capsys.readouterr().err
+    assert diagnostic in error and "次の操作:" in error
+    if case in {"duplicate", "overlap"}:
+        assert git_repository.git_output(repo, "rev-parse", "--short", first) in error
+        assert "未記録の区間" in error
+    assert (path.read_bytes(), attachment.read_bytes()) == saved
+
+
+@pytest.mark.parametrize("rewritten", [False, True])
+def test_record_range_checks_legacy_and_rewritten_mapping(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], rewritten: bool
+) -> None:
+    """旧本文と継承後の対応で重複を拒否し、解決できない旧OIDがあっても別区間は記録する。"""
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    git_repository.init_repository(repo)
+    commits = []
+    for message in ("base", "first", "second"):
+        git_repository.git_output(repo, "commit", "--allow-empty", "-m", message)
+        commits.append(git_repository.git_output(repo, "rev-parse", "HEAD"))
+    wi = "20261017-171745-001.md"
+    path = tmp_path / "record.md"
+    old = "d" * 40
+    legacy = {"commit": old if rewritten else commits[1], "awi": [wi]}
+    path.write_text(_related_plan(wi) + "\n<!-- wi-commits: " + json.dumps(legacy) + " -->\n", encoding="utf-8")
+    attachment = path.with_suffix(".wi-commits.jsonl")
+    events: list[dict[str, object]] = [{"commits": ["badcafe"], "awi": [wi]}]
+    if rewritten:
+        events.append({"rewrite": {old[:9]: commits[1]}})
+    attachment.write_text("".join(json.dumps(event) + "\n" for event in events), encoding="utf-8")
+    common = [str(path), "--worktree", str(repo), "--awi", wi, "--completed-step", "記録", "--result", "結果"]
+    saved = path.read_bytes(), attachment.read_bytes()
+    assert append_progress_log.main([*common, "--commit", commits[1], "--previous-head", commits[0]]) == 1
+    assert "記録済みのcommit" in capsys.readouterr().err
+    assert (path.read_bytes(), attachment.read_bytes()) == saved
+    assert append_progress_log.main([*common, "--commit", commits[2], "--previous-head", commits[1]]) == 0

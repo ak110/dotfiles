@@ -778,7 +778,7 @@ pushを行わずローカルcommitまでで止める場合は`--skip-push`を指
 
 - `agent-toolkit:writing-standards`: ドキュメントとコード内コメント、コードとテストコード、エージェント向け文書の品質基準。成果物の種別ごとに`references/`配下の資料を読み分ける
 - `agent-toolkit:refine-prompt`: プロンプトの指摘を独立した実行者から集め、共通の文書基準で改善案を組み立てる
-- `agent-toolkit:commit`: git commit作業（通常commit・amend・fixup）の手順とConventional Commits規約
+- `agent-toolkit:commit`: commitを作成・取り込む操作（通常commit、amend、fixup、cherry-pick、merge、rebase、revertなど）の前に起動する手順とConventional Commits規約
 - `agent-toolkit:bugfix`: 問題対処の原因分析と、類似見直し・再発防止の唯一の判断基準。成果物の品質に影響する問題では、費用や所要時間を理由に、同じ原因の問題を探して直す範囲を狭めず、同じ原因の問題を今後起こさない対策を省かない。探す範囲には同じ原因の過去の作業と他のリポジトリも含める
 - `agent-toolkit:delegation`: 起動方式の選択、継続、停滞検知または複数主体調整が必要な高度な委譲の手順。
   自動的に適用せず、対象工程が高度な委譲の条件を持つ場合にだけ読み込む
