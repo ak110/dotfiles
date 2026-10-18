@@ -281,7 +281,7 @@ Remote Controlは、手元で動くClaude Codeの会話へブラウザーやClau
 | `codex_low_tier_model` | Codexの軽量モデル（未設定時は`luna/medium`） |
 | `base_engine` | 一般の実装・修正・新しい候補や評価軸を導く調査と案出し・AWI投入・公開工程の終端・自動コードレビュー監査（上位）、プロンプト評価（中位）、`atk commit`（省略時は中位）のengine順 |
 | `execute_engine` | レーンの計画・実装・変更範囲検証と同じexecによる修正（上位）のengine順 |
-| `review_engine` | 実行レビュー・ユーザビリティレビューと専念型の投入前レビュー（中位）のengine順 |
+| `review_engine` | 実行レビュー・ユーザビリティレビュー・専念型の投入前レビューと再発防止セルフチェック（中位）のengine順 |
 | `chores_engine` | 一括置換後レビュー・外部書込レビュー・読者適合レビュー・WI説明・`start`の`explore`と`shell`（省略時は軽量）のengine順 |
 | `orchestrate_engine` | `atk wi process-loop`・`atk run-skill`とWI作成専用セッションの要求別担当（上位）のengine順 |
 | `write_model` | `start`の`write`。日本語の文章力で選ぶ候補列で、段位と配分に属さない |

@@ -889,6 +889,37 @@ async def test_start_accepts_independent_wi_draft_review(tmp_path: pathlib.Path,
     assert manager.start.await_args.kwargs["usage"] == "review"
 
 
+@pytest.mark.parametrize("model_type", [None, "low_tier"])
+@pytest.mark.asyncio
+async def test_recurrence_self_check_public_start_keeps_review_usage(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, model_type: str | None
+) -> None:
+    """セルフチェックが宣言入力からexplore・中位で起動し、明示段位でもreview用途を保つ。"""
+    manager = TaskManager(start=AsyncMock(return_value={"session_id": "check", "status": "running", "label": "check"}))
+    monkeypatch.setattr(mcp_tools, "_MANAGER", manager)
+    params = {
+        "観点ファイル": json.dumps([str(tmp_path / "items.md")]),
+        "今回差分": str(tmp_path / "change.patch"),
+        "変更ファイル一覧": "example.py",
+        "対象worktree": str(tmp_path),
+        "未解決指摘": "なし",
+    }
+    await mcp_tools.start(str(tmp_path), subagent_md_path="recurrence-self-check", extra_params=params, model_type=model_type)
+    call = manager.start.await_args
+    assert call.args[0] == (model_type or "medium_tier")
+    assert call.kwargs["usage"] == "review"
+    assert call.kwargs["launch_kind"] == "explore"
+    assert all(f"{key}: {value}" in call.args[1] for key, value in params.items())
+    manager.start.reset_mock()
+    with pytest.raises(ActionableError, match="未解決指摘"):
+        await mcp_tools.start(
+            str(tmp_path),
+            subagent_md_path="recurrence-self-check",
+            extra_params={key: value for key, value in params.items() if key != "未解決指摘"},
+        )
+    manager.start.assert_not_awaited()
+
+
 def test_every_task_role_has_usage() -> None:
     """段位を持つ全役割に用途の対応があり、用途は段位名の候補合成が受理する値である。
 

@@ -24,6 +24,7 @@ description: >
 | 時点または条件 | 全文読む資料 |
 | --- | --- |
 | 根本原因を確定する前、類似見直しの範囲と観点を確定する前、処置の階層と再発防止策の段を比べて処置を選ぶ前（拡張原因分析の対象外の不良を含む） | `references/root-cause-analysis.md` |
+| 再発防止策として再発防止セルフチェック観点への追加を選ぶ前 | `references/recurrence-self-check.md` |
 | 拡張原因分析へ進む前と、根本原因の確定に履歴・記録の探索や2系統の分析を用いる前 | `references/causal-analysis.md` |
 | AWIの`## 原因分析`を起草する前と、計画ファイル（バグ）を作成する前（拡張原因分析の対象外の不良を含む） | `references/analysis-records.md` |
 | 事象単位の調査を委譲する前（拡張原因分析の対象外の不良を含む） | `references/investigation-delegation.md` |
