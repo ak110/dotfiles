@@ -735,18 +735,40 @@ def integrate(args: argparse.Namespace, session_id: str) -> dict[str, typing.Any
         if state is not None and args.restart_review:
             if state["phase"] in {"git-integrated", "finalized"}:
                 raise ValueError("Git統合後は--restart-reviewで再開せず、同じ入力で残る最終化を実行する")
-            if _git(worktree, "rev-parse", "HEAD") != reviewed:
-                raise ValueError("再レビューしたHEADが現在HEADと一致しない")
+            current = _git(worktree, "rev-parse", "HEAD")
             record["previous_integration"] = state
-            state = None
+            if (
+                state["phase"] in {"rebased", "awaiting-validation", "verified"}
+                and all(state.get(name) for name in ("old_base", "old_head", "new_base", "new_head"))
+                and current == state["new_head"]
+            ):
+                if reviewed not in {state["old_head"], state["new_head"]}:
+                    raise ValueError("再開のレビュー対象HEADは記録のold_headかnew_headを指定する")
+                state = {
+                    **state,
+                    "input_digest": digest,
+                    "input": identity,
+                    "phase": "rebased",
+                    "completed": [key for key in state["completed"] if not key.startswith("verification-")],
+                    "results": {
+                        key: value for key, value in state.get("results", {}).items() if not key.startswith("verification-")
+                    },
+                }
+                record["integration"] = state
+                _save(path, record)
+            else:
+                if current != reviewed:
+                    raise ValueError("再レビューしたHEADが現在HEADと一致しない")
+                state = None
         if state is not None and state["input_digest"] != digest:
             if args.amend_finalization:
                 _amend_finalization(state, identity, digest)
                 _save(path, record)
             elif state["phase"] != "finalized":
                 raise ValueError(
-                    "統合途中の入力が異なる。同じ入力で再開する。"
-                    "Git統合前の是正は--restart-review、未完了の最終化argvの補完は--amend-finalizationを指定する"
+                    "統合途中の入力が異なる。Git統合前の検証argv・最終化argv・handoffの是正は--restart-reviewで再開する。"
+                    "HEADが記録のnew_headのままならold_headかnew_headを--reviewed-headへ渡し、rebase結果を再検証して検収待ちへ戻る。"
+                    "未完了の最終化argvだけの補完は--amend-finalizationを指定する"
                 )
             else:
                 state = None
@@ -830,7 +852,7 @@ def integrate(args: argparse.Namespace, session_id: str) -> dict[str, typing.Any
             state["phase"] = "awaiting-validation"
             _save(path, record)
         if state["phase"] == "awaiting-validation":
-            if args.accept_rebased_head != state["new_head"]:
+            if args.restart_review or args.accept_rebased_head != state["new_head"]:
                 return dict(
                     state,
                     record_path=str(path),
@@ -922,7 +944,9 @@ def build_parser(parser: argparse.ArgumentParser) -> None:
     integrate_parser.add_argument("--no-merge", action="store_true", help="Gitを変更せず計画保存・WI終端だけ行う。")
     integrate_parser.add_argument("--accept-rebased-head", help="対応表と再検証の診断を受理したHEADの完全なOID。")
     integrate_parser.add_argument(
-        "--restart-review", action="store_true", help="Git統合前の是正を再レビューした現在HEADから再開する。"
+        "--restart-review",
+        action="store_true",
+        help="Git統合前の入力是正から再開する。HEAD不変のrebase結果は再検証して検収待ちへ戻る。",
     )
     integrate_parser.add_argument("--session-id", help="現在の書込所有session。")
     integrate_parser.add_argument(

@@ -63,7 +63,7 @@ plan-verifyの実行argvには`--summary-only`を含め、順序と終了状態�
 
 rebase後はhistory-compareによる一意な全1対1対応表と変更範囲の再検証結果を保存し、`phase: awaiting-validation`と終了コード1を返す。対応表、後掲の警告判定、WI実装commitと証拠の参照更新を検収してから、同じ入力に`--accept-rebased-head <返された完全new_head>`を加えて再開する。受理前は統合先を現状のまま保持する。
 
-Git統合前の失敗を是正してHEADか検証入力が変わった場合は、独立文脈レビューを受理した現在HEADと更新したmanifestへ`--restart-review`を加えて同じCLIから再開する。直前の進行と結果は`previous_integration`へ保持する。Git統合後はレビューHEADと対象集合を保ち、残る最終化だけを再開する。
+Git統合前に検証argv・最終化argv・handoffを是正してmanifestだけが変わった場合は、レビュー済みHEADと更新したmanifestへ`--restart-review`を加えて同じCLIから再開する。現在HEADが記録の`new_head`と一致するrebase結果は、記録の`old_head`か`new_head`を`--reviewed-head`へ渡す。新しい独立文脈レビューは要さず、引き継いだ対応表と再実行した検証の`awaiting-validation`を検収し、`--restart-review`を外して`--accept-rebased-head`で再開する。受理後の`verified`からの再開も検収待ちへ戻る。HEADが変わった場合は、独立文脈レビューを受理した現在HEADと更新したmanifestへ`--restart-review`を加える。直前の進行と結果は`previous_integration`へ保持する。Git統合後はレビューHEADと対象集合を保ち、残る最終化だけを再開する。
 
 rebase対応表で確定したWI commitや、保存失敗の原因を直した未完了の最終化argvは、更新したmanifestと`--amend-finalization`で補完する。CLIはレビューHEAD・統合先・検証・引き継ぎ記録、全計画・WIの集合と順序、成功済みargvを保持する。検収待ちの受理は同時に`--accept-rebased-head`を指定し、Git統合済みではGitを再実行しない。
 

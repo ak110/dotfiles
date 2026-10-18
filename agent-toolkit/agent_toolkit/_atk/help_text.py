@@ -40,7 +40,7 @@ HELP: dict[str, dict[str, str]] = {
     "atk lane integrate": {
         "summary": "レビュー済みレーンを統合し最終化する",
         "epilog": "実行例:\n\n  atk lane integrate --record /absolute/lane-record.json --reviewed-head 0123456789abcdef --target-worktree /absolute/repository --target-branch develop --manifest /absolute/finalization.json --session-id lane-owner",
-        "description": "目的: レビュー済みレーンのGit統合と計画保存・WI終端・選定状態の最終化を再開可能な工程として実施する。\n利用場面: レーンの独立した実行レビューと検証が完了したとき。\n対象と出力: --record ABS --reviewed-head OID --target-worktree ABS --target-branch BRANCH --manifest ABS --session-id IDを指定する。manifestのplansは計画名と最終化argv、wisはWI名と終端argv、verificationはrebase後検証argv、handoffは計画なし時の引継ぎ絶対パスを保持する。工程・HEAD・記録JSONを返す。\n前提: 所有登録、cleanな同一Git登録、レビュー対象HEADとの一致。\n復元・後始末: 失敗時は記録と資源を保持し、原因を解消して同じ入力で再開する。Git統合済みなら未完了の最終化から進める。",
+        "description": "目的: レビュー済みレーンのGit統合と計画保存・WI終端・選定状態の最終化を再開可能な工程として実施する。\n利用場面: レーンの独立した実行レビューと検証が完了したとき。\n対象と出力: --record ABS --reviewed-head OID --target-worktree ABS --target-branch BRANCH --manifest ABS --session-id IDを指定する。manifestのplansは計画名と最終化argv、wisはWI名と終端argv、verificationはrebase後検証argv、handoffは計画なし時の引継ぎ絶対パスを保持する。工程・HEAD・記録JSONを返す。\n前提: 所有登録、cleanな同一Git登録、レビュー対象HEADとの一致。\n復元・後始末: 失敗時は記録と資源を保持し、同じ入力で再開する。Git統合前の検証argv・最終化argv・handoffの是正は--restart-reviewを指定する。HEADが記録のnew_headのままなら、old_headかnew_headを--reviewed-headへ渡す。rebase記録と対応表を引き継いで検証を全件やり直し、awaiting-validation（終了1）へ戻る。対応表と診断を検収後、--restart-reviewを外して--accept-rebased-headで再開する。HEADが変わる是正では再レビューを受理した現在HEADを渡す。Git統合済みなら未完了の最終化から進める。",
     },
     "atk read-file": {
         "summary": "UTF-8本文を上限内で連続取得する",

@@ -1084,25 +1084,8 @@ def test_integrate_restarts_after_reviewed_correction(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """Git統合前の検証失敗は記録を残し、是正後の独立文脈レビュー入力で公開操作から再開する。"""
-    repo, selected, record = _create(tmp_path, monkeypatch, capsys)
-    _integration_selection(selected, monkeypatch, repo)
+    repo, record, manifest, value, _original = _rebased_integration(tmp_path, monkeypatch, capsys, failed=True)
     worktree = pathlib.Path(record["worktree"])
-    (worktree / "feature").write_text("成果", encoding="utf-8")
-    reviewed = git_repository.commit_all(worktree, "成果")
-    (repo / "upstream").write_text("先行統合", encoding="utf-8")
-    git_repository.commit_all(repo, "先行統合")
-    handoff = tmp_path / "handoff.md"
-    handoff.touch()
-    manifest = tmp_path / "integration.json"
-    value = {
-        "plans": [],
-        "wis": [{"name": "awi.md", "commands": []}],
-        "handoff": str(handoff),
-        "verification": [[sys.executable, "-c", "raise SystemExit(3)"]],
-    }
-    manifest.write_text(json.dumps(value), encoding="utf-8")
-    code, _result, stderr = _invoke(capsys, *_integration_args(record, repo, manifest, reviewed))
-    assert code == 2 and "verification-0" in stderr
     (worktree / "feature").write_text("是正済み", encoding="utf-8")
     reviewed = git_repository.commit_all(worktree, "是正")
     value["verification"] = [[sys.executable, "-c", "pass"]]
@@ -1223,3 +1206,103 @@ def test_process_activity_ignores_nested_worktree(
     assert lane._process_activity(worktree) is None  # pylint: disable=protected-access
     location = worktree
     assert lane._process_activity(worktree)  # pylint: disable=protected-access
+
+
+def _rebased_integration(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], *, failed: bool = False
+) -> tuple[pathlib.Path, dict[str, Any], pathlib.Path, dict[str, Any], dict[str, Any]]:
+    repo, selected, record = _create(tmp_path, monkeypatch, capsys)
+    _integration_selection(selected, monkeypatch, repo)
+    worktree = pathlib.Path(record["worktree"])
+    (worktree / "feature").write_text("成果", encoding="utf-8")
+    reviewed = git_repository.commit_all(worktree, "成果")
+    (repo / "upstream").write_text("先行統合", encoding="utf-8")
+    git_repository.commit_all(repo, "先行統合")
+    handoff = tmp_path / "handoff.md"
+    handoff.touch()
+    manifest = tmp_path / "integration.json"
+    value: dict[str, Any] = {
+        "plans": [],
+        "wis": [{"name": "awi.md", "commands": []}],
+        "handoff": str(handoff),
+        "verification": [[sys.executable, "-c", "raise SystemExit(3)" if failed else "pass"]],
+    }
+    manifest.write_text(json.dumps(value), encoding="utf-8")
+    code, _result, stderr = _invoke(capsys, *_integration_args(record, repo, manifest, reviewed))
+    assert code == (2 if failed else 1), stderr
+    if failed:
+        assert "verification-0" in stderr
+    state = json.loads(pathlib.Path(record["record_path"]).read_text(encoding="utf-8"))["integration"]
+    return repo, record, manifest, value, state
+
+
+@pytest.mark.parametrize("phase", ["rebased", "awaiting-validation", "verified"])
+@pytest.mark.parametrize("changed", ["verification", "plans", "wis", "handoff"])
+@pytest.mark.parametrize("reviewed_key", ["old_head", "new_head"])
+def test_integrate_restart_review_keeps_rebase_validation(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    phase: str,
+    changed: str,
+    reviewed_key: str,
+) -> None:
+    """全ての工程と入力是正で、同じrebase結果を再検証・検収してから統合する。"""
+    repo, record, manifest, value, original = _rebased_integration(tmp_path, monkeypatch, capsys)
+    record_path = pathlib.Path(record["record_path"])
+    stored = json.loads(record_path.read_text(encoding="utf-8"))
+    # Git統合前の永続状態を再現する。verifiedは受理後・ff前の中断に相当する。
+    stored["integration"]["phase"] = phase
+    record_path.write_text(json.dumps(stored), encoding="utf-8")
+    if changed == "verification":
+        value[changed] = [[sys.executable, "-c", "assert True"]]
+    elif changed in {"plans", "wis"}:
+        value[changed] = [{"name": "plan.md" if changed == "plans" else "awi.md", "commands": [[sys.executable, "-c", "pass"]]}]
+    else:
+        handoff = tmp_path / "corrected-handoff.md"
+        handoff.touch()
+        value[changed] = str(handoff)
+    manifest.write_text(json.dumps(value), encoding="utf-8")
+    args = _integration_args(record, repo, manifest, original[reviewed_key])
+    code, pending, stderr = _invoke(capsys, *args, "--restart-review")
+    assert code == 1 and pending["phase"] == "awaiting-validation", stderr
+    assert pending["new_head"] == original["new_head"] and pending["rewrite_map"] == original["rewrite_map"]
+    previous = json.loads(record_path.read_text(encoding="utf-8"))["previous_integration"]
+    assert previous == stored["integration"]
+    assert pending["results"]["history-compare"] == original["results"]["history-compare"]
+    assert pending["results"]["verification-0"]["record_path"] != original["results"]["verification-0"]["record_path"]
+    assert git_repository.git_output(repo, "rev-parse", "HEAD") == original["new_base"]
+    code, final, stderr = _invoke(capsys, *args, "--accept-rebased-head", original["new_head"])
+    assert code == 0 and final["phase"] == "finalized", stderr
+    assert git_repository.git_output(repo, "rev-parse", "HEAD") == original["new_head"]
+
+
+def test_integrate_restart_review_after_failed_rebased_verification(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """検証失敗後、argvだけの是正をrebase前のレビューHEADで再開し検収を経る。"""
+    repo, record, manifest, value, original = _rebased_integration(tmp_path, monkeypatch, capsys, failed=True)
+    value["verification"] = [[sys.executable, "-c", "pass"]]
+    manifest.write_text(json.dumps(value), encoding="utf-8")
+    args = _integration_args(record, repo, manifest, original["old_head"])
+    code, pending, stderr = _invoke(capsys, *args, "--restart-review", "--accept-rebased-head", original["new_head"])
+    assert code == 1 and pending["new_head"] == original["new_head"], stderr
+    assert pending["phase"] == "awaiting-validation"
+    code, final, stderr = _invoke(capsys, *args, "--accept-rebased-head", pending["new_head"])
+    assert code == 0 and final["phase"] == "finalized", stderr
+
+
+def test_integrate_rejects_changed_input_with_restart_guidance(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    record_property: Callable[[str, object], None],
+) -> None:
+    """manifest是正だけの再開が、検収へ戻る操作を拒否文から選べる。"""
+    repo, record, manifest, value, original = _rebased_integration(tmp_path, monkeypatch, capsys)
+    value["verification"] = [[sys.executable, "-c", "assert True"]]
+    manifest.write_text(json.dumps(value), encoding="utf-8")
+    code, _result, stderr = _invoke(capsys, *_integration_args(record, repo, manifest, original["old_head"]))
+    record_property("restart_diagnostic", stderr)
+    assert code == 2
+    assert all(word in stderr for word in ("--restart-review", "検証argv", "最終化argv", "handoff", "検収待ち"))
