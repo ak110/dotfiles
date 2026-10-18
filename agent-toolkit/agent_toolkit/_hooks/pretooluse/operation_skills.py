@@ -409,6 +409,23 @@ def _is_agent_document_writing(tool_name: str, tool_input: dict) -> bool:
     )
 
 
+def _is_body_writing(tool_name: str, tool_input: dict) -> bool:
+    """本文を作成・更新する編集入力と、既存のBash文書編集を判定する。"""
+    if tool_name == "Bash":
+        return _is_agent_document_writing(tool_name, tool_input)
+    operations = _tool_input.parse_operations(tool_name, tool_input, "")
+    return any(
+        operation.path
+        and operation.kind != _tool_input.KIND_DELETE
+        and (
+            bool(operation.whole_after_text)
+            if operation.is_whole_write
+            else any(fragment.before != fragment.after for fragment in operation.fragments)
+        )
+        for operation in operations or []
+    )
+
+
 def _is_delegation_operation(tool_name: str, _tool_input: dict) -> bool:
     """既存の委譲ツール集合から、起動・追送・観測・巻取りの操作を判定する。"""
     return tool_name in AGENT_TOOL_NAMES | AGENTS_SERVER_HOOK_TOOL_NAMES
@@ -419,9 +436,7 @@ OPERATION_SKILLS: tuple[OperationSkill, ...] = (
     OperationSkill("agent-toolkit:search", "search", "検索", _is_search_operation),
     OperationSkill("agent-toolkit:bugfix", "bugfix", "原因分析の記述", _is_root_cause_writing),
     OperationSkill("agent-toolkit:managed-temp", "managed-temp", "個別のmanaged-temp領域の作成", _is_managed_temp_create),
-    OperationSkill(
-        "agent-toolkit:writing-standards", "writing-standards", "エージェント向け文書の編集", _is_agent_document_writing
-    ),
+    OperationSkill("agent-toolkit:writing-standards", "writing-standards", "本文の作成・更新", _is_body_writing),
 )
 """操作を起動の契機とするスキルの表。"""
 

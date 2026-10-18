@@ -902,3 +902,70 @@ def test_started_completion_review_keeps_existing_exclusions(tmp_path, case):
         _append_entries(trace, _background_bash_entries("wait-call", "wait-task"))
         payload["background_tasks"] = [{"id": "wait-task", "type": "shell"}]
     assert termination_order_advisor.evaluate(json.dumps(payload)) == ("approve", "")
+
+
+@pytest.mark.parametrize("channel", ["text", "send_to_user", "send_then_ellipsis", "codex"])
+@pytest.mark.parametrize("ending", ["", "。\n  "])
+def test_public_stop_allows_delivered_final_report(tmp_path, monkeypatch, channel, ending):
+    """最終報告を届けた作業の終了は両ホストで点検通知を省いて許可する。"""
+    monkeypatch.setattr(stop, "CHECK_MODULE_NAMES", ("termination_order_advisor",))
+    monkeypatch.setattr(stop, "CODEX_CHECK_MODULE_NAMES", ("termination_order_advisor",))
+    trace = _write_transcript(tmp_path, [])
+    session_id = "final-report"
+    _human_input(session_id, trace, "request", "成果を仕上げる")
+    _commit(session_id, trace)
+    payload = json.loads(_payload(session_id, str(trace)))
+    text = "結果を届けた。\n以上で、このセッションの作業は全て終わりました" + ending
+    if channel == "codex":
+        payload.update(turn_id="request", last_assistant_message=text)
+        termination_evidence.observe_tool(
+            json.dumps(
+                {
+                    **payload,
+                    "tool_use_id": "read-report",
+                    "tool_name": "Bash",
+                    "tool_input": {"command": "cat /plugin/skills/completion-report/SKILL.md"},
+                    "tool_response": {"stdout": "---\nname: completion-report\n---\n"},
+                }
+            ),
+            after=True,
+        )
+    else:
+        _start_skill(session_id, trace, "agent-toolkit:completion-report", "report-start")
+        block = (
+            {"type": "text", "text": text}
+            if channel == "text"
+            else {"type": "tool_use", "id": "send", "name": "mcp__agent-toolkit__send_to_user", "input": {"message": text}}
+        )
+        _append_entries(trace, [{"type": "assistant", "message": {"content": [block]}}])
+        if channel == "send_then_ellipsis":
+            _append_entries(trace, [{"type": "assistant", "message": {"content": [{"type": "text", "text": "…"}]}}])
+    assert "decision" not in stop.evaluate(json.dumps(payload))
+    log_text = (tmp_path / f"claude-agent-toolkit-stop-{session_id}.log").read_text(encoding="utf-8")
+    assert "approve_final_report_delivered" in log_text
+
+
+@pytest.mark.parametrize("case", ["supplement", "new_input", "previous_work", "quote"])
+def test_final_report_suppression_requires_current_last_body(tmp_path, monkeypatch, case):
+    """補足・新入力・別作業・引用だけの固定文では通常の点検を一度通知する。"""
+    monkeypatch.setattr(stop, "CHECK_MODULE_NAMES", ("termination_order_advisor",))
+    trace = _write_transcript(tmp_path, [])
+    session_id = "not-final-report"
+    text = "以上で、このセッションの作業は全て終わりました。"
+    if case == "previous_work":
+        _append_entries(trace, [{"type": "assistant", "message": {"content": [{"type": "text", "text": text}]}}])
+    _human_input(session_id, trace, "request", "成果を仕上げる")
+    _commit(session_id, trace)
+    _start_skill(session_id, trace, "agent-toolkit:completion-report", "report-start")
+    if case != "previous_work":
+        visible = f"「{text}」を引用した。" if case == "quote" else text
+        _append_entries(trace, [{"type": "assistant", "message": {"content": [{"type": "text", "text": visible}]}}])
+    if case == "supplement":
+        _append_entries(
+            trace, [{"type": "assistant", "message": {"content": [{"type": "text", "text": "追加の結果を伝える。"}]}}]
+        )
+    elif case == "new_input":
+        _human_input(session_id, trace, "correction", "追加の状況を確認して")
+    payload = _payload(session_id, str(trace))
+    assert stop.evaluate(payload)["decision"] == "block"
+    assert "decision" not in stop.evaluate(payload)

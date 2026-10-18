@@ -461,6 +461,7 @@ class TestPlanFileDoesNotRequireSelfPath:
             session_id,
             {
                 "plan_mode_skill_invoked": True,
+                "operation_skill_delivered_agents": {"agent-toolkit:writing-standards": ["main"]},
             },
         )
 
@@ -507,6 +508,7 @@ class TestPlanFileDoesNotRequireSelfPath:
     def test_non_plan_file_is_skipped(self, tmp_path: pathlib.Path):
         """plan fileでないパスへ書き込む場合は判定しない。"""
         content = _path_section_build_content("/tmp/x.md")
+        self._prior_flags(tmp_path, "path-nonplan", content)
         result = _run(
             {
                 "tool_name": "Write",
@@ -514,6 +516,7 @@ class TestPlanFileDoesNotRequireSelfPath:
                 "session_id": "path-nonplan",
                 "permission_mode": "default",
             },
+            env_overrides=self._state_env(tmp_path),
         )
         assert result.returncode == 0
 

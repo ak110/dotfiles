@@ -290,6 +290,56 @@ def test_edit_tool_agent_document_writing_and_skill_context(tmp_path: pathlib.Pa
     assert "agent-toolkit:writing-standards" not in _search_warning(payload, env)
 
 
+@pytest.mark.parametrize(
+    ("tool", "tool_input"),
+    [
+        ("Write", {"file_path": "calc_test.py", "content": "def test_sum():\n    assert sum([1, 2]) == 3\n"}),
+        ("Edit", {"file_path": "src/lib.rs", "old_string": "old", "new_string": "#[test]\nfn check() {}"}),
+        ("MultiEdit", {"file_path": "src/main.ts", "edits": [{"old_string": "old", "new_string": "new"}]}),
+        ("Write", {"file_path": "docs/guide.md", "content": "# 使い方\n"}),
+        (
+            "apply_patch",
+            {"command": "*** Begin Patch\n*** Add File: tests/case.spec.ts\n+test('sum', () => {});\n*** End Patch"},
+        ),
+        ("apply_patch", {"command": "*** Begin Patch\n*** Update File: notes.md\n@@\n-old\n+new\n*** End Patch"}),
+        (
+            "apply_patch",
+            {"command": "*** Begin Patch\n*** Update File: source.cs\n*** Move to: test.cs\n@@\n-old\n+new\n*** End Patch"},
+        ),
+    ],
+)
+def test_body_edit_delivers_writing_standards_per_actor(tmp_path, tool, tool_input):
+    """本文を持つ編集は命名と言語によらず同じ配送と主体別の取得記録を使う。"""
+    env = _plan_file_state_env(tmp_path)
+    payload = {"tool_name": tool, "tool_input": tool_input, "session_id": "body-writing"}
+    first = _run(payload, env)
+    assert first.returncode == 2
+    assert "agent-toolkit:writing-standards" in first.stderr
+    assert "references/testing.md" in first.stderr
+    assert _run(payload, env).returncode == 0
+    assert _run({**payload, "agent_id": "child"}, env).returncode == 2
+    _record_skill(env, "ready-body", "writing-standards")
+    assert _run({**payload, "session_id": "ready-body"}, env).returncode == 0
+
+
+@pytest.mark.parametrize(
+    ("tool", "tool_input"),
+    [
+        ("Read", {"file_path": "calc_test.py"}),
+        ("Write", {"file_path": "calc_test.py"}),
+        ("Edit", {"file_path": "calc_test.py", "old_string": "old"}),
+        ("Edit", {"new_string": "new"}),
+        ("MultiEdit", {"file_path": "calc_test.py", "edits": []}),
+        ("apply_patch", {"command": "*** Begin Patch\n*** Delete File: calc_test.py\n*** End Patch"}),
+        ("apply_patch", {"command": "*** Begin Patch\n*** Update File: source.py\n*** Move to: renamed.py\n*** End Patch"}),
+    ],
+)
+def test_operations_without_body_edit_do_not_deliver(tmp_path, tool, tool_input):
+    """読取・本文欠落・削除・純粋な移動を本文執筆の契機から除く。"""
+    payload = {"tool_name": tool, "tool_input": tool_input, "session_id": "no-body"}
+    assert "agent-toolkit:writing-standards" not in _search_warning(payload, _plan_file_state_env(tmp_path))
+
+
 def test_search_warning_joins_other_warnings(tmp_path: pathlib.Path) -> None:
     result = _run(_bash("rg x; printf rule > AGENTS.md", "s"), _plan_file_state_env(tmp_path))
     assert result.returncode == 2
@@ -485,6 +535,7 @@ def test_root_cause_writing_without_bugfix_warns_once_per_context(tmp_path: path
 @pytest.mark.parametrize("skill", [_BUGFIX_SKILL, "bugfix"])
 def test_root_cause_writing_after_bugfix_does_not_warn(tmp_path: pathlib.Path, skill: str) -> None:
     env = _plan_file_state_env(tmp_path)
+    _record_skill(env, "root-cause", "writing-standards")
     _record_skill(env, "root-cause", skill)
     payload = {"tool_name": "Write", "tool_input": {"file_path": "/tmp/awi.md", "content": _ROOT_CAUSE_BODY}}
     result = _run({**payload, "session_id": "root-cause"}, env)
@@ -498,7 +549,9 @@ def test_root_cause_writing_after_bugfix_does_not_warn(tmp_path: pathlib.Path, s
 )
 def test_writing_without_root_cause_heading_does_not_warn(tmp_path: pathlib.Path, content: str) -> None:
     payload = {"tool_name": "Write", "tool_input": {"file_path": "/tmp/awi.md", "content": content}, "session_id": "s"}
-    result = _run(payload, _plan_file_state_env(tmp_path))
+    env = _plan_file_state_env(tmp_path)
+    _record_skill(env, "s", "writing-standards")
+    result = _run(payload, env)
     assert result.returncode == 0
     assert _bugfix_warnings(_additional_context(result)) == 0
 

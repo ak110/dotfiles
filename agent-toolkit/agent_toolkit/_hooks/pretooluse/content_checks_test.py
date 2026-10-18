@@ -17,6 +17,14 @@ from agent_toolkit._testing.pretooluse_support import (
 )
 
 
+def _writing_ready_env(tmp_path: pathlib.Path, session_id: str) -> dict[str, str]:
+    """執筆基準を取得済みの主体で、編集内容の判定を確かめる。"""
+    _write_session_state(
+        tmp_path, session_id, {"operation_skill_delivered_agents": {"agent-toolkit:writing-standards": ["main"]}}
+    )
+    return _plan_file_state_env(tmp_path)
+
+
 @pytest.mark.parametrize("suffix", [".py", ".md"])
 def test_trailing_tool_boundary_tags_warn(
     suffix: str,
@@ -34,7 +42,7 @@ def test_trailing_tool_boundary_tags_warn(
             "tool_input": {"file_path": str(target), "content": "本文\n</content>\n</invoke>\n"},
             "session_id": f"boundary-{suffix}",
         },
-        env_overrides={"HOME": str(tmp_path)},
+        env_overrides={**_writing_ready_env(tmp_path, f"boundary-{suffix}"), "HOME": str(tmp_path)},
     )
     assert result.returncode == 0
     assert "ツール境界タグ" in result.stdout
@@ -47,7 +55,8 @@ def test_trailing_tool_boundary_tags_in_regular_markdown_are_allowed(tmp_path: p
             "tool_name": "Write",
             "tool_input": {"file_path": str(tmp_path / "note.md"), "content": "本文\n</content>\n</invoke>\n"},
             "session_id": "boundary-regular-markdown",
-        }
+        },
+        env_overrides=_writing_ready_env(tmp_path, "boundary-regular-markdown"),
     )
     assert result.returncode == 0
 
@@ -127,7 +136,7 @@ def test_edit_warning_supports_command_restricted_agent(tmp_path, name, body, re
     target = tmp_path / name
     result = _run(
         {"tool_name": "Write", "tool_input": {"file_path": str(target), "content": body}, "session_id": "restricted-" + name},
-        env_overrides={"HOME": str(tmp_path)},
+        env_overrides={**_writing_ready_env(tmp_path, "restricted-" + name), "HOME": str(tmp_path)},
     )
     assert result.returncode == 0
     notice = _additional_context(result)

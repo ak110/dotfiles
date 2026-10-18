@@ -11,6 +11,7 @@ import json
 
 from agent_toolkit._common import response_language_check
 from agent_toolkit._common.response_language_check import CheckOutcome, check_text
+from agent_toolkit._hooks.agent_id import is_main_agent_context
 from agent_toolkit._hooks.host import is_codex_payload
 from agent_toolkit._hooks.notice import block_formatter
 
@@ -33,7 +34,7 @@ def evaluate(payload_text: str) -> tuple[str, str]:
         return "", ""
     recovery = (
         "基準を満たさない場合は成果・判断・未達と指定の返却形式を含む完了本文を変更せず、そのまま再出力して停止する。"
-        if is_codex_payload(payload) or payload.get("agent_id")
+        if is_codex_payload(payload) or not is_main_agent_context(payload)
         else "基準を満たさない場合は`…`だけを出力して停止する。"
     )
     return "block", _block_notice(

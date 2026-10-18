@@ -116,7 +116,7 @@ Stop hookの無進捗停止（`busy_loop_guard.py`）の終了要求は、Stop�
   PostToolUse(Skill)が同スキルの起動で、UserPromptSubmitがユーザーによる同スキルのスラッシュコマンド起動で偽へ戻す。Skillの起動を観測できないCodexでは、注記を返した時点で偽へ戻す。
   寿命はセッション状態ファイルと同じとする
 - `operation_skill_delivered_agents`: 操作を起動の契機とするスキルの完全名から、本文が届いた呼び出し主体の一覧への対応。
-  対象は`agent-toolkit:delegation`、`agent-toolkit:search`、`agent-toolkit:bugfix`、`agent-toolkit:managed-temp`、`agent-toolkit:writing-standards`である。delegationは`Agent`・`Task`と、既存のagents_server hook対象集合に属する起動・追送・観測・巻取りを契機とする。writing-standardsはエージェント向け文書への編集と、書込先を確定できるBash操作を契機とする。
+  対象は`agent-toolkit:delegation`、`agent-toolkit:search`、`agent-toolkit:bugfix`、`agent-toolkit:managed-temp`、`agent-toolkit:writing-standards`である。delegationは`Agent`・`Task`と、既存のagents_server hook対象集合に属する起動・追送・観測・巻取りを契機とする。writing-standardsは編集ツールによる本文の作成・更新（書込先の種類と言語を問わない。本文を変えない削除・移動は除く）と、エージェント向け文書への書込先を確定できるBash操作を契機とする。
   呼び出し主体はhook payloadの`agent_id`とし、持たないメイン会話は`main`とする。
   `agent-toolkit/agent_toolkit/_hooks/pretooluse/operation_skills.py`が稼働版の`SKILL.md`全文を取得して操作を止める応答へ載せた時点と、PostToolUse(Skill)が対象スキルの起動を観測した時点で主体を加える。同モジュールは記録の無い主体の最初の操作で本文を配送し、同じ主体の再発行を通す。本文を取得できない場合は記録せず操作を止める。Claude CodeとCodexで同じ契約を使い、旧版の警告済みキー`operation_skill_ready_agents`は取得済みの証拠にしない。
   `agent-toolkit/agent_toolkit/_hooks/rules_context.py`がSessionStartの`source`が`clear`・`compact`のときと委譲先のセッションで`main`を除き、`resume`・`fork`とサブエージェントの記録は変えない。
