@@ -59,6 +59,8 @@ autosquash成功後は`git rev-parse --short=7 HEAD`で書換え後HEADを取得
 - 統合は`GIT_SEQUENCE_EDITOR=: git -c rebase.updateRefs=false rebase -i --autosquash <base>`（`<base>`は対象コミットの親以前）で行い、直前に`## 履歴確認の起動形`の`git log`を単独で再実行する。作業branch以外のlocal branch refの更新は設定で抑止する。`--no-update-refs`はGit 2.38で追加された引数で、agent-toolkitが対応するGit 2.34.1は受理しない（Git 2.38未満はref更新の機能自体を持たない）
 - `amend:`・`reword:`では統合先の既存の異なるtrailerを保持し、`Co-Authored-By:`を統合後に1回だけ残す
 
+対応Git版での統合と参照保持の再検証は、`docs/development/audit-records.md`の「agent-toolkit/skills/commit/references/history-rewrite.md：fixupの実行上の制約：2026年10月18日」にある。
+
 ## 失敗時の扱い
 
 本節の`pre_fixup`・`fixup`・`autosquash`・`amend`の各phase名と、続行できない理由を返す返却は`${CLAUDE_PLUGIN_ROOT}/share/exec.subagent.md`が定める実装担当の契約の値とする。この契約を受け取っていないエージェントは、同じ観測結果を委譲元へ報告する。
