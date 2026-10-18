@@ -146,6 +146,21 @@ def test_reference_in_nested_worktree_is_outside_repository(tmp_path: pathlib.Pa
     assert check.row_errors(row, "wi_conditions", "condition", head)
 
 
+@pytest.mark.parametrize("worktree", [False, True])
+@pytest.mark.parametrize("located", [False, True])
+def test_reference_via_external_symlink_uses_repository_content(tmp_path: pathlib.Path, worktree: bool, located: bool) -> None:
+    """root外のリンクから対象worktreeへ解決した参照も対象commitの内容で確かめる。"""
+    repository = git_repository.init_repository(tmp_path / "repo", files={"proof.md": "基準\n2行目\n"}, commit_message="基準")
+    head = git_repository.git_output(repository, "rev-parse", "HEAD")
+    (repository / "proof.md").write_text("作業中の1行\n", encoding="utf-8")
+    alias = tmp_path / "alias"
+    alias.symlink_to(repository, target_is_directory=True)
+    check = check_exec_review_evidence.ReferenceCheck(repository, {}, worktree=worktree)
+    suffix = ":2" if located else ""
+    row = {**_condition(FIRST_WI, "所属する対象版を読む"), "evidence": f"観測した根拠: {alias / 'proof.md'}{suffix}"}
+    assert not check.row_errors(row, "wi_conditions", "condition", head)
+
+
 def _review_options(head: str, table: pathlib.Path, round_value: int = 2) -> list[str]:
     """表・対象版・開始時点の共通入力を返し、再レビューだけ前回の組を加える。"""
     options = ["--expected-head", head, "--review-table", str(table), "--round", str(round_value), "--review-start", head]

@@ -463,6 +463,14 @@ def _belongs_to_repository(path: pathlib.Path, repository: pathlib.Path) -> bool
     return owner is not None and owner.path.resolve() == repository.resolve()
 
 
+def _repository_relative(path: pathlib.Path, repository: pathlib.Path) -> str:
+    """所属確認済みの参照をGit相対パスへ変換し、root外のリンクは解決先を使う。"""
+    try:
+        return path.relative_to(repository).as_posix()
+    except ValueError:
+        return path.resolve().relative_to(repository.resolve()).as_posix()
+
+
 def _is_untracked_file(candidate: str, repository: pathlib.Path) -> bool:
     """作業ツリーにファイルとして実在するが、Gitで追跡されていないリポジトリ内の候補かを返す。
 
@@ -474,7 +482,7 @@ def _is_untracked_file(candidate: str, repository: pathlib.Path) -> bool:
     if not _is_file(path) or not _belongs_to_repository(path, repository):
         return False
     result = _git_command.run(
-        ["-C", str(repository), "ls-files", "--error-unmatch", "--", path.relative_to(repository).as_posix()],
+        ["-C", str(repository), "ls-files", "--error-unmatch", "--", _repository_relative(path, repository)],
         capture_output=True,
         text=True,
         check=False,
@@ -511,7 +519,7 @@ def _reference_content(path: pathlib.Path, repository: pathlib.Path, head: str) 
     """worktree内の参照は対象commitのblob、外部参照は現在の実ファイルから読む。"""
     if not _belongs_to_repository(path, repository):
         return path.read_bytes()
-    relative = path.relative_to(repository).as_posix()
+    relative = _repository_relative(path, repository)
     result = _git_command.run(
         ["-C", str(repository), "cat-file", "blob", f"{head}:{relative}"], capture_output=True, check=False, timeout=30
     )
@@ -638,7 +646,7 @@ class ReferenceCheck:
         for match in _file_references(body, base, head):
             candidate, location = _reference_parts(match)
             is_wi = WI_FILENAME.fullmatch(candidate) is not None
-            # abspathは..を整理するが、現在のリンク先で対象commitのパスを変えない。
+            # 字面上の内部パスを保ち、root外のリンクは所属確認後に解決する。
             path = pathlib.Path(os.path.abspath(base / candidate))
             key = (head, path)
             if key not in self._contents:
