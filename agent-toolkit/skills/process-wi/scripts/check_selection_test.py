@@ -35,6 +35,7 @@ def fixture_env(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> tupl
     for relative in _REPO_FILES:
         (repo / relative).parent.mkdir(parents=True, exist_ok=True)
         (repo / relative).write_text("x\n", encoding="utf-8")
+    git_repository.init_repository(repo, origin="https://github.com/test/repo.git")
     notes = tmp_path / "notes"
     (notes / "processing").mkdir(parents=True)
     monkeypatch.setenv("AGENT_TOOLKIT_PRIVATE_NOTES", str(notes))
@@ -1110,6 +1111,48 @@ def _derived(path: str, scope: str = "src/") -> dict[str, str]:
         "要求": "結果を保存する入口を新設する",
         "配置根拠": "既存model.pyの保存処理と同じ配置にする",
     }
+
+
+@pytest.mark.parametrize("body_scope", [False, True])
+@pytest.mark.parametrize("origin", ["https://other.example/test/repo.git", "https://github.com/test/renamed.git"])
+def test_public_check_rejects_migrated_repository_until_metadata_is_updated(
+    tmp_path: pathlib.Path,
+    env: tuple[pathlib.Path, pathlib.Path],
+    body_scope: bool,
+    origin: str,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """同じHEADのホスト移転・パス改名でも、保存値を揃えるまで初期・追加の検査で拒否する。"""
+    repo, notes = env
+    git_repository.commit_all(repo, "初期状態")
+    original_head = git_repository.git_output(repo, "rev-parse", "HEAD")
+    git_repository.run_git(repo, "remote", "set-url", "origin", origin)
+    assert git_repository.git_output(repo, "rev-parse", "HEAD") == original_head
+    _awi(notes, "a.md", "`src/model.py`を是正する。")
+    path = _write_selection(
+        tmp_path / "selection.yaml",
+        [{"WI": "a.md", "レーン": "lane-01", "書込対象": ["src/model.py"]}],
+    )
+    args = [str(path), "--work-dir", str(repo), *(["--body-wi", "a.md"] if body_scope else [])]
+    assert _dispatch(*args) == 1
+    diagnostic = capsys.readouterr().err
+    assert "a.md: target_repoとworktreeのoriginが一致しない" in diagnostic
+    assert "保存値=github.com/test/repo" in diagnostic
+    assert str(repo) in diagnostic and "atk wi edit" in diagnostic and "start-processing前" in diagnostic
+    source = notes / "processing/a.md"
+    source.write_text(source.read_text(encoding="utf-8").replace("github.com/test/repo", origin), encoding="utf-8")
+    assert _dispatch(*args) == 0
+
+
+def test_public_check_normalizes_equivalent_repository_addresses(
+    tmp_path: pathlib.Path,
+    env: tuple[pathlib.Path, pathlib.Path],
+) -> None:
+    """SSH短縮形とHTTPSの構文差は所属の不一致にしない。"""
+    repo, notes = env
+    git_repository.run_git(repo, "remote", "set-url", "origin", "git@GitHub.com:TEST/REPO.git")
+    _awi(notes, "a.md", "`src/model.py`を変更する。")
+    assert _run(tmp_path, repo, [{"WI": "a.md", "レーン": "lane-01", "書込対象": ["src/model.py"]}]) == 0
 
 
 @pytest.mark.parametrize("section", ["書込対象", "公開工程の書込対象"])

@@ -3,14 +3,19 @@
 from __future__ import annotations
 
 import argparse
+import collections.abc
 import json
+import os
 import pathlib
+import subprocess
+import sys
 from typing import Any
 
 import pytest
 import yaml
 
 from agent_toolkit._atk import run_script
+from agent_toolkit._testing import git_repository
 
 
 def _dispatch(*args: str) -> int:
@@ -22,6 +27,7 @@ def _environment(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> tup
     repo = tmp_path / "repo"
     (repo / "src").mkdir(parents=True)
     (repo / "src/model.py").write_text("pass\n", encoding="utf-8")
+    git_repository.init_repository(repo, origin="https://github.com/test/repo.git")
     notes = tmp_path / "notes"
     (notes / "processing").mkdir(parents=True)
     monkeypatch.setenv("AGENT_TOOLKIT_PRIVATE_NOTES", str(notes))
@@ -118,6 +124,107 @@ def test_public_generation_empty_candidates_and_failure_preserve_destination(
     judgments.write_text("選定: [{}]\nレーンの所要時間: []\n", encoding="utf-8")
     assert _dispatch(str(judgments), "--candidate-file", str(facts), "--output", str(output), "--work-dir", str(repo)) == 2
     assert output.read_bytes() == empty
+
+
+def test_public_generation_checks_repository_before_saving(
+    environment: tuple[pathlib.Path, pathlib.Path],
+    tmp_path: pathlib.Path,
+) -> None:
+    """生成経路でも移転前の保存値を拒否し、所属修正後に同じ候補を保存できる。"""
+    repo, notes = environment
+    _wi(notes, "first.md")
+    facts, judgments = _inputs(tmp_path, ["first.md"])
+    git_repository.run_git(repo, "remote", "set-url", "origin", "https://moved.example/team/project.git")
+    output = tmp_path / "selection.yaml"
+    output.write_text("既存の保存物", encoding="utf-8")
+    args = [str(judgments), "--candidate-file", str(facts), "--output", str(output), "--work-dir", str(repo)]
+    assert _dispatch(*args) == 1
+    assert output.read_text(encoding="utf-8") == "既存の保存物"
+    source = notes / "processing/first.md"
+    source.write_text(
+        source.read_text(encoding="utf-8").replace("github.com/test/repo", "moved.example/team/project"),
+        encoding="utf-8",
+    )
+    assert _dispatch(*args) == 0
+    assert yaml.safe_load(output.read_text(encoding="utf-8"))["選定"][0]["WI"] == "first.md"
+
+
+@pytest.mark.parametrize("old_address", ["old.example/team/project", "github.com/test/old-name"])
+def test_repository_migration_cli_edit_list_start_and_verification(
+    environment: tuple[pathlib.Path, pathlib.Path],
+    tmp_path: pathlib.Path,
+    old_address: str,
+    host_environ: collections.abc.Callable[[], dict[str, str]],
+) -> None:
+    """隔離した実CLIで旧住所の未取得から編集・一覧・処理開始・完成条件取得まで進む。"""
+    repo, notes = environment
+    git_repository.commit_all(repo, "対象の初期状態")
+    filename = "20261013-101220-001.md"
+    (notes / "inbox").mkdir()
+    body = (
+        f"---\ntype: awi\ntarget_repo: {old_address}\ntarget_commit: "
+        + git_repository.git_output(repo, "rev-parse", "HEAD")
+        + f"\n---\n\n# 住所移転のテストコード\n\n操作先: {old_address}\n\n"
+        "## 反映内容と反映先\n\n`src/model.py`を変更する。\n\n"
+        "## 完成条件\n\n- 保存した結果を取得できる。\n"
+    )
+    source = notes / "inbox" / filename
+    source.write_text(body, encoding="utf-8")
+    git_repository.init_repository(notes, commit_message="旧住所の要求")
+    child_env = host_environ()
+    # CLIが読むホーム・状態・設定はpytestの隔離値を保ち、実行器のPATHだけホスト値を使う。
+    for name in (
+        "HOME",
+        "USERPROFILE",
+        "XDG_CONFIG_HOME",
+        "XDG_CACHE_HOME",
+        "XDG_DATA_HOME",
+        "XDG_STATE_HOME",
+        "LOCALAPPDATA",
+        "APPDATA",
+    ):
+        if name in os.environ:
+            child_env[name] = os.environ[name]
+        else:
+            child_env.pop(name, None)
+    child_env["AGENT_TOOLKIT_PRIVATE_NOTES"] = str(notes)
+
+    def cli(*args: str) -> subprocess.CompletedProcess[str]:
+        return subprocess.run(
+            [sys.executable, "-m", "agent_toolkit.atk", *args],
+            cwd=repo,
+            env=child_env,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            timeout=60,
+            check=False,
+        )
+
+    def listed() -> list[dict[str, Any]]:
+        result = cli("wi", "list", "--target-repo", str(repo), "--skip-pull", "--jsonl")
+        assert result.returncode == 0, result.stderr
+        return [json.loads(line) for line in result.stdout.splitlines() if line.strip()]
+
+    output = tmp_path / "verification.json"
+    record_args = ("run-script", "verification-record", "--", "--wi", filename, "--output", str(output), "--list")
+    assert not listed()
+    before = cli(*record_args)
+    assert before.returncode == 1 and "WI本文を取得できません" in before.stderr
+    draft = tmp_path / "migrated.md"
+    draft.write_text(body.replace(old_address, "github.com/test/repo"), encoding="utf-8")
+    edited = cli("wi", "edit", filename, "--target-repo", old_address, "--body-file", str(draft))
+    assert edited.returncode == 0, edited.stderr
+    assert "target_commit:" not in source.read_text(encoding="utf-8")
+    assert old_address not in source.read_text(encoding="utf-8")
+    assert [row["filename"] for row in listed()] == [filename]
+    started = cli("wi", "start-processing", filename, "--target-repo", str(repo))
+    assert started.returncode == 0, started.stderr
+    assert (notes / "processing" / filename).is_file()
+    after = cli(*record_args)
+    assert after.returncode == 0, after.stderr
+    payload = json.loads(output.read_text(encoding="utf-8"))
+    assert [row["condition"] for row in payload["wi_conditions"]] == ["保存した結果を取得できる。"]
 
 
 def test_generated_addition_saves_once_and_preserves_initial_allocation(

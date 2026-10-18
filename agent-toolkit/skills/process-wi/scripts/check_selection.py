@@ -756,6 +756,7 @@ def check(
         raise InputError(f"private-notesが実在しない: {private_notes}", next_action=_FIX_PRIVATE_NOTES)
     conditions = load_norm_conditions(work_dir)
     errors: list[Violation] = []
+    work_repo: str | None = None
     for decision in items:
         awi = typing.cast(str, decision[_selection.WI_KEY])
         if decision[_selection.LANE_KEY] == _LANE_NONE or body_wis is not None and awi not in body_wis:
@@ -781,6 +782,31 @@ def check(
             body = source.read_text(encoding="utf-8")
         except (OSError, UnicodeDecodeError) as error:
             raise InputError(f"WI本文を読み込めない: {source}: {error}", next_action=_FIX_PRIVATE_NOTES) from error
+        parsed = _wi_frontmatter.parse_frontmatter(body)
+        saved_repo = parsed[0].get("target_repo") if parsed else None
+        if isinstance(saved_repo, str):
+            if work_repo is None:
+                origin = _git_remote.origin_url(work_dir, timeout=60)
+                work_repo = _git_remote.resolve_repo_identifier(origin) if origin else None
+                if work_repo is None:
+                    raise InputError(
+                        f"`--work-dir`のoriginの識別子を解決できない: {work_dir}: origin={origin!r}",
+                        next_action="対象worktreeと`git remote get-url origin`を確かめ、同じ検査を再実行する",
+                    )
+            if _git_remote.resolve_repo_identifier(saved_repo) != work_repo:
+                errors.append(
+                    Violation(
+                        f"{awi}: target_repoとworktreeのoriginが一致しない: 保存値={saved_repo}、"
+                        f"worktree={work_dir}、originの識別子={work_repo}",
+                        next_action=(
+                            "ユーザーの明示指定か移転・別名対応の記録で所属を確かめ、移転が確定したWIは"
+                            "start-processing前に`atk wi edit <WIファイル名> --target-repo=<保存済みtarget_repo> "
+                            "--body-file <原稿>`でtarget_repoと"
+                            "本文中の操作先を揃え、worktree指定の一覧と同じ選定検査を再実行する。"
+                            "同じOIDだけでは移転と判定しない"
+                        ),
+                    )
+                )
         reflected = reflected_paths(body, work_dir)
         errors.extend(
             check_decision(

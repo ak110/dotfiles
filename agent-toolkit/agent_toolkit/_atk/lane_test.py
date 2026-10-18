@@ -648,7 +648,10 @@ def _integration_args(record: dict[str, Any], repo: pathlib.Path, manifest: path
     )
 
 
-def _integration_selection(path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def _integration_selection(path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, repo: pathlib.Path) -> None:
+    # WIの所属と統合先の識別子を揃え、模擬remoteへの外部fetchは行わない。
+    git_repository.run_git(repo, "remote", "add", "origin", "https://github.com/test/repo.git")
+    git_repository.run_git(repo, "config", "remote.origin.skipFetchAll", "true")
     notes = path.parent / "notes"
     (notes / "processing").mkdir(parents=True, exist_ok=True)
     (notes / "processing/awi.md").write_text(
@@ -677,7 +680,7 @@ def test_integrate_public_lifecycle(
 ) -> None:
     """レビュー済み成果を公開操作で統合し、計画あり・なしの最終化後だけ回収できる。"""
     repo, selected, record = _create(tmp_path, monkeypatch, capsys)
-    _integration_selection(selected, monkeypatch)
+    _integration_selection(selected, monkeypatch, repo)
     worktree = pathlib.Path(record["worktree"])
     (worktree / "feature.txt").write_text("成果", encoding="utf-8")
     git_repository.commit_all(worktree, "成果")
@@ -716,7 +719,7 @@ def test_integrate_resume_and_preservation(
 ) -> None:
     """最終化の途中失敗はGit統合と成功済み保存を繰り返さず、未完了のWI終端から再開する。"""
     repo, selected, record = _create(tmp_path, monkeypatch, capsys)
-    _integration_selection(selected, monkeypatch)
+    _integration_selection(selected, monkeypatch, repo)
     worktree = pathlib.Path(record["worktree"])
     git_repository.commit_all(worktree, "成果")
     head = git_repository.git_output(worktree, "rev-parse", "HEAD")
@@ -791,7 +794,7 @@ def test_integrate_rebase_returns_mapping_and_requires_diagnostic_acceptance(
 ) -> None:
     """分岐した未push成果は内容比較と再検証を保存し、受理後だけffと最終化へ進む。"""
     repo, selected, record = _create(tmp_path, monkeypatch, capsys)
-    _integration_selection(selected, monkeypatch)
+    _integration_selection(selected, monkeypatch, repo)
     worktree = pathlib.Path(record["worktree"])
     (worktree / "feature").write_text("成果", encoding="utf-8")
     head = git_repository.commit_all(worktree, "成果")
@@ -903,7 +906,7 @@ def test_hook_owned_resource(
     code, reused, stderr = _create_in(capsys, monkeypatch, "hook-owner", repo, selected)
     assert code == 0 and reused["reused"] and reused["worktree"] == str(destination), stderr
     assert reused["ready"] and reused["branch"] == record["branch"]
-    _integration_selection(selected, monkeypatch)
+    _integration_selection(selected, monkeypatch, repo)
     head = git_repository.commit_all(destination, "hookの成果を保存")
     handoff = tmp_path / "handoff.md"
     handoff.write_text("検収済みhook成果", encoding="utf-8")
@@ -979,7 +982,7 @@ def test_integrate_observation_and_saved_plan(
 ) -> None:
     """観測のみの再開はGitを変更せず、保存済み計画と延期WIを検収して最終化する。"""
     repo, selected, record = _create(tmp_path, monkeypatch, capsys)
-    _integration_selection(selected, monkeypatch)
+    _integration_selection(selected, monkeypatch, repo)
     saved = tmp_path / "plan.md"
     saved.write_text("保存済み計画", encoding="utf-8")
     manifest = tmp_path / "integration.json"
@@ -1005,7 +1008,7 @@ def test_integrate_additional_wi_uses_current_review_and_collection(
 ) -> None:
     """同じ資源への追加WIは今回のレビューHEADと全WI集合で再統合する。"""
     repo, selected, record = _create(tmp_path, monkeypatch, capsys)
-    _integration_selection(selected, monkeypatch)
+    _integration_selection(selected, monkeypatch, repo)
     worktree = pathlib.Path(record["worktree"])
     handoff = tmp_path / "handoff.md"
     handoff.touch()
@@ -1037,9 +1040,10 @@ def test_integrate_refreshes_publication_before_rewriting(
 ) -> None:
     """古いremote追跡refが無くても、公開済みcommitをfetchして書換えを拒否する。"""
     repo, selected, record = _create(tmp_path, monkeypatch, capsys)
-    _integration_selection(selected, monkeypatch)
+    _integration_selection(selected, monkeypatch, repo)
     remote = git_repository.init_bare_repository(tmp_path / "origin.git")
-    git_repository.run_git(repo, "remote", "add", "origin", str(remote))
+    git_repository.run_git(repo, "remote", "set-url", "origin", str(remote))
+    git_repository.run_git(repo, "config", "--unset", "remote.origin.skipFetchAll")
     worktree = pathlib.Path(record["worktree"])
     (worktree / "published").write_text("公開済み", encoding="utf-8")
     head = git_repository.commit_all(worktree, "公開済み")
@@ -1072,7 +1076,7 @@ def test_integrate_restarts_after_reviewed_correction(
 ) -> None:
     """Git統合前の検証失敗は記録を残し、是正後の独立文脈レビュー入力で公開操作から再開する。"""
     repo, selected, record = _create(tmp_path, monkeypatch, capsys)
-    _integration_selection(selected, monkeypatch)
+    _integration_selection(selected, monkeypatch, repo)
     worktree = pathlib.Path(record["worktree"])
     (worktree / "feature").write_text("成果", encoding="utf-8")
     reviewed = git_repository.commit_all(worktree, "成果")
@@ -1110,7 +1114,7 @@ def test_integrate_uses_reviewed_oid_when_branch_advances_before_merge(
 ) -> None:
     """最後の検収後にbranchが進んでも、未レビューcommitをffへ混入しない。"""
     repo, selected, record = _create(tmp_path, monkeypatch, capsys)
-    _integration_selection(selected, monkeypatch)
+    _integration_selection(selected, monkeypatch, repo)
     worktree = pathlib.Path(record["worktree"])
     (worktree / "reviewed").write_text("受理済み", encoding="utf-8")
     head = git_repository.commit_all(worktree, "レビュー済み")

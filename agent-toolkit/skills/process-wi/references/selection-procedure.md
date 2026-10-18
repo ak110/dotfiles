@@ -28,7 +28,7 @@ mise設定がある対象で`mise trust --show`が`untrusted`を示す場合は`
 
 通常起動では`atk wi list --status=processable --target-repo=<対象リポジトリの絶対パス> --skip-pull --with-staleness`を実行する。
 all-reposのリポジトリ担当は[all-repos-orchestration.md](all-repos-orchestration.md)「取得済み候補の受領」に従い、受領した`candidates`と`readiness`を初回取得結果として扱う。
-明示一覧がある場合は初回取得結果に現れる指定項目だけを対象とし、現れない名前は続行できない理由に記録する。指定が無い場合は`processing`の全項目と、`ready`が偽で`blocked_reason`が`dependency-unmet-internal`以外であるものを除いた`inbox`項目を候補とする。
+明示一覧がある場合にworktree指定の初回取得結果に現れない項目は、`atk wi show <WIファイル名> --target-repo=all`で保存済み`target_repo`を取得し、originとの不一致が住所の移転・パス改名か別リポジトリかを判定する。同一性と変更先はユーザーの明示指定か移転・別名対応の記録で確定する。`ls-remote`のOID一致だけでは移転の根拠が不足する。移転が確定した項目は`start-processing`前に`atk wi edit <WIファイル名> --target-repo=<保存済みtarget_repo> --body-file <原稿>`で`target_repo`と本文中の操作先を変更先へ揃える。旧住所に結び付くメタデータの更新は同コマンドへ任せる。同じworktree指定の一覧と`verification-record --list`から対象と完成条件を取得できることを確かめて候補に加える。移転の根拠が得られなければ両識別子と不足する根拠を続行できない理由へ記録する。指定が無い場合は`processing`の全項目と、`ready`が偽で`blocked_reason`が`dependency-unmet-internal`以外であるものを除いた`inbox`項目を候補とする。
 `staleness`は選定結果の`鮮度`へそのまま保存する。`notice`だけでは履歴を調べず（選定時間を短く保つため）、内容の不一致、充足済みまたは巻戻しの危険を観測した項目だけ履歴を確認する。
 
 各項目の`depends_on`は依存先ごとに`atk wi show <依存ファイル名> --skip-pull`で全状態・全対象リポジトリを照会して解決する。現在の対象リポジトリにあればそれに従い、無ければ1件の候補の`target_repo`と状態に従う。複数の`target_repo`に同名項目がある場合は自動選択せず続行できない理由とする。別リポジトリの依存先は終端済みなら充足、未終端なら`dependency-unmet-external`とする。
@@ -104,6 +104,7 @@ all-reposの担当は受領済みの候補本文を使い、次の`atk wi show`�
 候補と選定の集合が確定した直後に、選定YAMLの保存・検査・レーン起動を待たずに本節を実行する。
 
 開始時候補と選定完了前の明示追加を合わせた処理可能集合が`選定`のファイル名集合と一致し、各ファイル名が1回だけ現れ、複数レーンへ重複しないことを確かめる。
+初期・追加のどちらも、実施対象の正規化した`target_repo`が対象worktreeのoriginの識別子と一致してから開始する。不一致は「処理対象の決定」の移転判定と編集へ戻す。
 
 1. 処理対象へ含めた作業を求めない回答済みUWIを`atk wi adopt <filename>... --target-repo=<対象リポジトリの絶対パス>`で終端する。
 2. 回答済みUWIが指す元項目のうち`hold`のものを`atk wi unhold <filename>... --target-repo=<対象リポジトリの絶対パス>`で`inbox`へ戻す。
