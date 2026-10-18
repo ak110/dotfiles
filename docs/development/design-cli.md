@@ -216,7 +216,7 @@ WIの表記診断は詳細の全量を別ファイルへ保存し、件数・`�
 
 ## `atk run-skill`
 
-`atk run-skill`はcronなど端末を持たない定期実行から、指定した対象リポジトリで指定したスキルを自律モードの最上位セッションとして1回実行する。ユーザーは別環境のリポジトリに持つスキルを数日に1回、自律モードで実行したいと求めた。確認への回答では、WIキューを経由しない単発実行コマンドと毎回の報告用UWIを選んだ（2026年10月6日）。実装は`agent-toolkit/agent_toolkit/_atk/run_skill.py`が持つ。モデル候補の解決、可用性判定、利用上限の待機と正常終了の判定は、`atk wi process-loop`と共通の`agent-toolkit/agent_toolkit/_atk/orchestrator.py`が持つ。
+`atk run-skill`はcronなど端末を持たない定期実行から、指定した対象リポジトリで指定したスキルを自律モードの最上位セッションとして1回実行する。ユーザーは別環境のリポジトリに持つスキルを数日に1回、自律モードで実行したいと求めた。確認への回答では、WIキューを経由しない単発実行コマンドと毎回の報告用UWIを選んだ（2026年10月6日）。実装は`agent-toolkit/agent_toolkit/_atk/run_skill.py`が持つ。モデル候補の解決、可用性判定、利用上限の待機と正常終了の判定は、`atk wi process-loop`と共通の`agent-toolkit/agent_toolkit/_atk/orchestrator.py`が持つ。可用性判定を軽量段位のモデル・effort `low`・軽量起動で行う理由は[design-process-loop.md](design-process-loop.md)にある。
 
 `atk run-skill`が指定スキルを実行する子セッションは非対話起動（Claudeは`claude -p`、Codexは`codex exec`）とする。定期実行には操作する端末が無く、対話型のCLIは入力を待ったまま止まるためである。Claudeでは最初の入力を`/goal`へ渡し、目標評価で報告用UWIの保存までターンを続けさせる。Codexの非対話起動は`/goal`の行を通常の入力として残し目標として扱わないため（Codex 0.160.1で観測）、`atk-auto`要素の目的文だけを渡し、セッションはモデルの最終応答で終わる。
 

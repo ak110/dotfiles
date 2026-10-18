@@ -1,5 +1,6 @@
 """候補選択を偽のCLIと保存ロールアウトで検証する。"""
 
+import json
 import os
 import pathlib
 import stat
@@ -34,16 +35,20 @@ def test_codex_probe_fallback_and_all_candidates_retry(
     monkeypatch: pytest.MonkeyPatch,
     mode: str,
 ) -> None:
-    """次候補を優先し、全候補が失敗した上限だけを待って先頭から再判定する。"""
+    """次候補を優先し、全候補が失敗した上限だけを待って先頭から再判定する。
+
+    可用性判定は候補によらずengineの軽量段位のモデルで起動するため、偽のCLIは呼び出し順で候補を識別する。
+    """
     binary = tmp_path / "codex"
     calls = tmp_path / "calls"
     binary.write_text(
         f"#!{sys.executable}\n"
         "import json, os, pathlib, sys\n"
         "assert '--json' in sys.argv\n"
-        "model = sys.argv[sys.argv.index('--model') + 1]\n"
+        "assert sys.argv[sys.argv.index('--model') + 1] == 'gpt-6-luna'\n"
         "calls = pathlib.Path(os.environ['PROBE_CALLS'])\n"
         "previous = calls.read_text().splitlines() if calls.exists() else []\n"
+        "model = ['first', 'second', 'first'][len(previous)]\n"
         "calls.write_text('\\n'.join([*previous, model]))\n"
         "mode = os.environ['PROBE_MODE']\n"
         "if len(previous) >= 2 or mode == 'fallback' and model == 'second': sys.exit(0)\n"
@@ -69,6 +74,8 @@ def test_codex_probe_fallback_and_all_candidates_retry(
         "PROBE_MODE": mode,
         "CODEX_HOME": str(tmp_path / "codex-home"),
     }
+    # 系列名の解決で`codex`のモデル一覧を取得しないよう、軽量段位へ完全IDを与える。
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CODEX_LOW_TIER_MODEL", "gpt-6-luna/medium")
     sleeps: list[float] = []
     monkeypatch.setattr(orchestrator, "time", types.SimpleNamespace(time=lambda: 1000, sleep=sleeps.append))
     candidates = [("codex", "first", "high"), ("codex", "second", "low")]
@@ -84,3 +91,45 @@ def test_codex_probe_fallback_and_all_candidates_retry(
         assert selected == candidates[1 if mode == "fallback" else 0]
         assert calls.read_text().splitlines() == (["first", "second"] if mode == "fallback" else ["first", "second", "first"])
         assert sleeps == ([] if mode == "fallback" else [5 if mode == "earliest" else 10])
+
+
+@pytest.mark.parametrize("engine", ["claude", "codex"])
+def test_probe_uses_low_tier_model_and_lightweight_startup(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, engine: str
+) -> None:
+    """可用性判定は候補のモデルとeffortによらず、engineの軽量段位のモデル・effort `low`・軽量起動で起動する。
+
+    応答内容を使わない判定へ本作業と同じ起動形を使うと、ユーザー設定・規範・MCPの読込とセッション記録の分だけ消費が増える。
+    Claudeの固定プロンプトは`--tools ""`の値として消費されないよう`--`の後ろへ置く。選ばれる候補は本作業用の3値のままとする。
+    """
+    binary = tmp_path / engine
+    argv_file = tmp_path / "argv.json"
+    binary.write_text(
+        f"#!{sys.executable}\nimport json, pathlib, sys\n"
+        f"pathlib.Path({str(argv_file)!r}).write_text(json.dumps(sys.argv[1:]))\n",
+        encoding="utf-8",
+    )
+    binary.chmod(binary.stat().st_mode | stat.S_IXUSR)
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CLAUDE_LOW_TIER_MODEL", "haiku/medium")
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CODEX_LOW_TIER_MODEL", "gpt-6-luna/medium")
+    env = {**os.environ, "PATH": str(tmp_path) + os.pathsep + os.environ["PATH"], "CODEX_HOME": str(tmp_path / "home")}
+    candidate = (engine, "opus[1m]" if engine == "claude" else "gpt-6.1-sol", "high")
+    context = orchestrator.ProbeContext(title="test", prompt="可用性の確認")
+
+    assert orchestrator.select_available([candidate], env, tmp_path, context) == candidate
+
+    argv = json.loads(argv_file.read_text(encoding="utf-8"))
+    if engine == "claude":
+        assert argv[argv.index("--model") + 1] == "haiku"
+        assert argv[argv.index("--effort") + 1] == "low"
+        for flag in ("--no-session-persistence", "--strict-mcp-config", "--disable-slash-commands"):
+            assert flag in argv
+        assert argv[argv.index("--setting-sources") + 1] == ""
+        assert argv[argv.index("--tools") + 1] == ""
+        assert "--system-prompt" in argv and "--bare" not in argv
+        assert argv[-2:] == ["--", "可用性の確認"]
+    else:
+        assert argv[argv.index("--model") + 1] == "gpt-6-luna"
+        assert "model_reasoning_effort=low" in argv
+        assert "--ignore-user-config" in argv and "--ignore-rules" in argv
+        assert argv[-1] == "可用性の確認"

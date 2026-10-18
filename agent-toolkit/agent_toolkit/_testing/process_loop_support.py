@@ -21,12 +21,14 @@ DOTFILES_REPO_ID = _pl_worktree.DOTFILES_REPO_ID  # pylint: disable=protected-ac
 def set_orchestrate_model(tmp_path: pathlib.Path, value: str) -> None:
     """テスト用のorchestrate候補列を、engine別のhigh段位モデルと`orchestrate_engine`へ分けて公開設定CLI経由で保存する。
 
-    各engineは候補列へ1回だけ現れる前提とする。
+    各engineは候補列へ1回だけ現れる前提とする。可用性判定はengineの軽量段位のモデルで起動するため、
+    Codexの系列名の解決で`codex`のモデル一覧を取得しないよう、Codexの軽量段位へ完全IDを与える。
     """
     candidates = _config.parse_stage_model_candidates(value)
     engines = [engine for engine, _model, _effort in candidates]
     assert len(set(engines)) == len(engines), "同じengineを複数回含む候補列は設定で表せない"
     settings = [(_config.tier_model_key(engine, "high"), f"{model}/{effort}") for engine, model, effort in candidates]
+    settings.append((_config.tier_model_key("codex", "low"), "gpt-6-luna/medium"))
     for key, setting in [*settings, ("orchestrate_engine", ",".join(engines))]:
         with pytest.raises(SystemExit) as exc_info:
             atk.main(["config", "set", key, setting], home=tmp_path)
@@ -36,7 +38,8 @@ def set_orchestrate_model(tmp_path: pathlib.Path, value: str) -> None:
 def set_orchestrate_environment(monkeypatch: pytest.MonkeyPatch, value: str) -> None:
     """テスト用のorchestrate候補列を、engine別のhigh段位モデルと`orchestrate_engine`の環境変数へ分けて設定する。
 
-    各engineは候補列へ1回だけ現れる前提とする。
+    各engineは候補列へ1回だけ現れる前提とする。可用性判定はengineの軽量段位のモデルで起動するため、
+    Codexの系列名の解決で`codex`のモデル一覧を取得しないよう、Codexの軽量段位へ完全IDを与える。
     """
     candidates = _config.parse_stage_model_candidates(value)
     engines = [engine for engine, _model, _effort in candidates]
@@ -44,6 +47,7 @@ def set_orchestrate_environment(monkeypatch: pytest.MonkeyPatch, value: str) -> 
     for engine, model, effort in candidates:
         monkeypatch.setenv(f"AGENT_TOOLKIT_CONFIG_{_config.tier_model_key(engine, 'high').upper()}", f"{model}/{effort}")
     monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_ORCHESTRATE_ENGINE", ",".join(engines))
+    monkeypatch.setenv(f"AGENT_TOOLKIT_CONFIG_{_config.tier_model_key('codex', 'low').upper()}", "gpt-6-luna/medium")
 
 
 def hook_debug_log(command: list[str]) -> pathlib.Path:
