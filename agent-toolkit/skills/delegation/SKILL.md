@@ -3,7 +3,7 @@ name: delegation
 description: >
   作業へ着手する前に担当範囲の一部を委譲先へ分けるかと委譲単位を判定する時
   （計画の起草前、独立した複数の作業単位か長い工程を含む作業の着手前）、
-  委譲済みの要求について自ら本文を読む、追加調査する、回答を作る前、
+  委譲済みの要求について自ら本文を読む、追加調査する、回答を作成する前、
   サブエージェントまたは委譲先を起動、観測、継続もしくは巻き取るとき、または停滞検知・複数のエージェントの調整が必要な場合に起動し、委譲の共通契約と実行手段ごとの契約を提供する。
 user-invocable: false
 ---
@@ -28,11 +28,11 @@ user-invocable: false
 | agents_serverのexplore・shellを起動する前 | 本書「explore・shellの起動」 |
 | `<役割名>.parent.md`を持つ委譲を起動する前 | 起動する`${CLAUDE_PLUGIN_ROOT}/share/<役割名>.parent.md`と、同書の読込表が条件付きで挙げる資料 |
 | 委譲先とモデルを選ぶ時点（explore・shellと、`<役割名>.parent.md`を持つ起動で`model_type`を指定しない場合を除く） | `references/runtime-routing.md` |
-| Claude Codeで`Agent`ツールの委譲先かバックグラウンドタスクを最初に起動する前、定期再確認を自ら装着する前（装着できなかった通知を受けた場合と、装着の通知も定期再確認のtaskも無い場合）、およびClaude Code固有の手順を確定する時（explore・shellの起動から受領までの操作は除き、本書の同名節に従う） | `references/claude-code-runtime.md` |
+| Claude Codeで`Agent`ツールの委譲先かバックグラウンドタスクを最初に起動する前、定期再確認を自ら装着する前、装着・回収の失敗通知に対処する時、およびClaude Code固有の手順を確定する時（explore・shellの起動から受領までの操作は除き、本書の同名節に従う） | `references/claude-code-runtime.md` |
 | 完了通知および待機・停滞を確定する時 | `references/waiting-and-monitoring.md` |
 | `atk agents wait`が終了コード4・8・10または待機対象0件の非0で終わった時、待機の呼び出しがホストの上限で失敗した時、ホストから背景待機の停止通知を受けた時、委譲先か自身のツール呼び出しが終端statusを返さずに終わった時、`agents_server`のMCPサーバーが再起動した後 | `references/wait-anomalies.md` |
 | 稼働中の委譲先へ追送する前 | `references/base-contract.md` |
-| 委譲済みの要求について自ら本文を読む、追加調査する、回答を作る前 | 本書「継続と新規起動」、`references/routing.md` |
+| 委譲済みの要求について自ら本文を読む、追加調査する、回答を作成する前 | 本書「継続と新規起動」、`references/routing.md` |
 | 同じworktreeへ後続または並列の書込担当を起動する前（shellを除く。shellは本書「explore・shellの起動」に従う） | `references/mandatory-rules.md` |
 | 委譲先の完了報告を受領して検収する前（explore・shellを除く） | `references/receiving.md`、`references/mandatory-rules.md` |
 | 委譲先が、委譲プロンプトで`引き継ぎ記録先`を受け取って最初の記録を書く前 | `references/handoff-record.md` |
@@ -64,13 +64,13 @@ user-invocable: false
 Codexでは、`functions.exec`内の起動応答が返した`root_session_id`を保持し、ランタイム間の識別子の受渡しとして`atk agents wait`の`--root-session-id`へ渡す（待機対象のsession集合の指定とは別物である）。
 待機CLIと外側の実行セルは別々に回収する。CLIへ待機対象やtimeoutを指定せず、外側のcell IDは`functions.wait`、exec_commandのsession IDは`write_stdin`で同じターンに回収する。外側がyieldした間は同じCLIを再発行せず、CLI自身が上限で`running`を返した後に次の待機を発行する（codex-runtime.md「agents_serverの二層待機」）。
 
-Claude Codeのメインは、最初の`start`でmodが装着した定期再確認のtask IDを保持する。装着失敗の通知を受けた場合と、装着通知も`CronList`の該当taskも無い場合は、`CronCreate`・`CronList`・`CronDelete`を使えるときだけ自ら装着する。
+Claude Codeのメインは、最初の`start`でmodが装着した定期再確認のtask IDを保持する。modは自身の一覧取得・作成・削除能力を確認して装着し、全待機対象の終端と結果回収後に共通promptのtaskを自動回収する。モデルに`CronDelete`が公開されていることは自動回収の条件に含めない。装着失敗の通知では理由と次の操作に従う。modの装着通知も`CronList`の該当taskも無い場合は、`CronCreate`・`CronList`・`CronDelete`を使えるときだけ自ら装着する。
 
 - `atk wait-schedule --request-bucket main --format json`を1回実行し、返った`cron`と`prompt`を変更せず`CronCreate`へ渡して`recurring: true`で1件作成する
 - 所有taskはpromptの1行目の標識`<atk-auto source="periodic-recheck" kind="periodic-recheck">`と保持したIDで確認する。再開・会話圧縮後も`CronList`の実在taskと比べ、一意に確認できないtaskの操作や重複作成はしない
-- 未完了の対象がある間は同じtaskを再利用し、全対象の終端後に保持したIDを`CronDelete`へ渡す。定期promptは待機CLIが所有する対象を再照会せず、終端はCLIの結果と完了通知から確定する
+- 未完了の対象や未回収の結果がある間は同じtaskを再利用する。共通promptのtaskの通常回収はmodが担い、追加義務付きのtaskはセッション終了時に回収する。modが無い環境で自ら装着したtaskは、全対象の終端後に保持したIDを`CronDelete`へ渡す。定期promptは待機CLIが所有する対象を再照会せず、終端はCLIの結果と完了通知から確定する
 - 固有の経過時間起動の義務がある場合は、義務ごとの測定コマンドと閾値を共通promptの終了タグの前へ加え、所有taskを削除して同じ開始標識で作成し直す
-- Cronツールを使えない場合と`atk wait-schedule`の失敗時は、背景タイマーを加えず完了通知による待機を保つ。`Agent`ツールのサブエージェントは装着せず、agents_serverで起動された独立sessionのメインは同じ装着条件を使う（claude-code-runtime.md「待機中の定期再確認と背景転換」）
+- Cronツールを使えない場合と`atk wait-schedule`の失敗時は背景タイマーを加えず完了通知による待機を保つ。`Agent`ツールのサブエージェントは装着せず、agents_serverで起動された独立sessionのメインは同じ装着条件を使う（claude-code-runtime.md「待機中の定期再確認と背景転換」）
 
 ## `<役割名>.parent.md`を持つ委譲の起動
 
@@ -92,7 +92,7 @@ Claude Codeのメインは、最初の`start`でmodが装着した定期再確�
 
 - 同じ作業を継続し、計画、進捗ログ、保存済みのレビュー指摘管理表のいずれかが状態を持つ場合は、同じroute・`model_type`・識別子へ該当ファイルの絶対パス、対象IDと未記録の差分だけを送る。状態記録が無い場合は未完了事項と検収済み状態を委譲プロンプト内で完結させる（レビュー指摘管理表が必要なら委譲元がmanaged-tempへ作成し、絶対パスで渡す）
 - 委譲先が調査中か調査済みの要求へ追加調査が必要になった場合（ユーザーの指摘・質問、検収その他の後続工程から）は、その要求を担当した委譲先へ追加の情報と調査の論点を渡す。委譲元は同じ目的の調査を自ら行わない。稼働中なら追送、終端済みなら継続・回復・置換の条件に従って渡す
-- 委譲元が同じ主題の本文を読み始める前、追加調査に着手する前、回答を作る前に、元担当が詳しい文脈を持つか確かめる。持つ場合は、ユーザーの原文、未確定の論点と参照記録をその担当へ渡し、技術的な調査と判断を戻す。委譲元は認可、全体調整と返却結果の検収を担い、自身の判断に必要な根拠だけを読む。独立文脈レビューの責務と元担当の終端観測は保つ
+- 委譲元が同じ主題の本文を読み始める前、追加調査に着手する前、回答を作成する前に、元担当が詳しい文脈を持つか確かめる。持つ場合はユーザーの原文、未確定の論点と参照記録をその担当へ渡し、技術的な調査と判断を戻す。委譲元は認可、全体調整と返却結果の検収を担い、自身の判断に必要な根拠だけを読む。独立文脈レビューの責務と元担当の終端観測は保つ
 - 独立したレビュー系統、異なる観点、先行履歴に依存しない評価は新しい識別子で起動する。この起動は前項が避ける同じ目的の調査の重複に当たらない
 - 同一応答で複数の継続を発行する場合は、各呼び出しの宛先識別子と本文の組み合わせが正しいことを送信前に確かめる
 - ユーザーの介入が生じた場合は、強制停止を前提にせず、`agent-toolkit:review-standards`の`references/reviewee.md`「指摘発生時の扱い」で採否を終えた差分だけを追加指示として委譲先へ伝える。停止するのは、介入で対象範囲や前提が無効になり続行が誤った成果物を生み、かつ介入を稼働中の作業の完了後まで遅らせられない場合に限る

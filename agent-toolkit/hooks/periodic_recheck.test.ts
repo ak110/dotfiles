@@ -24,14 +24,25 @@ type Options = {
   scheduleExitCode?: number;
   createError?: string;
   createdId?: string;
+  deleteUnavailable?: boolean;
 };
 
-type Recorded = { calls: string[]; argv: (readonly string[])[]; created: { cron: string; prompt: string; recurring?: boolean }[] };
+type Recorded = { calls: string[]; argv: (readonly string[])[]; created: { cron: string; prompt: string; recurring?: boolean }[]; files: Map<string, string> };
 
 function engine(on: On, options: Options): Recorded {
-  const recorded: Recorded = { calls: [], argv: [], created: [] };
+  const recorded: Recorded = { calls: [], argv: [], created: [], files: new Map() };
   const jobs = [...(options.jobs ?? [])];
-  on("tool.check", (_$, e) => ({ decision: options.decisions?.[e.tool] ?? "allow" }));
+  on("session.id", () => ({ value: "life-1" }));
+  on("env.get", (_$, e) => ({ value: e.name === "HOME" ? "/home/tester" : undefined }));
+  on("fs.read", (_$, e) => ({ value: recorded.files.get(e.path) ?? "consumed" }));
+  on("fs.write", (_$, e) => { recorded.files.set(e.path, e.text); return { value: undefined }; });
+  on("turn.complete", () => ({ text: "" }));
+  on("turn.start", (_$, e) => ({ turnId: e.turnId }));
+  on("tool.list", () => ({ value: ["CronList", "CronCreate", "CronDelete"].map((name) => ({ name, description: name, mcp: false })) }));
+  on("tool.check", (_$, e) => {
+    if (e.tool === "CronDelete" && options.deleteUnavailable) throw new Error("No such tool available: CronDelete");
+    return { decision: options.decisions?.[e.tool] ?? "allow" };
+  });
   on("tool.call", { tool: START }, () => {
     recorded.calls.push("start");
     return { result: START_TEXT };
@@ -47,6 +58,12 @@ function engine(on: On, options: Options): Recorded {
     const id = options.createdId ?? "cron-1";
     jobs.push({ id, prompt: e.prompt });
     return { result: { id, humanSchedule: "Every 30 minutes", recurring: true } };
+  });
+  on("tool.call", { tool: "CronDelete" }, (_$, e) => {
+    recorded.calls.push(`CronDelete:${e.id}`);
+    const index = jobs.findIndex((job) => job.id === e.id);
+    if (index >= 0) jobs.splice(index, 1);
+    return { result: { id: e.id } };
   });
   on("process.run", (_$, e) => {
     recorded.argv.push(e.argv);
@@ -103,13 +120,13 @@ test("標識の無いtaskだけならメインは作成する", async ($, on) =>
   expect(recorded.calls).toEqual(["start", "CronList", "CronCreate"]);
 });
 
-test("CronCreateの許可の判定がdenyなら作成せず、モデルが装着する案内を届ける", async ($, on) => {
+test("CronCreateの許可の判定がdenyなら作成せず、許可確認の案内を届ける", async ($, on) => {
   const recorded = engine(on, { decisions: { CronCreate: "deny" } });
   const result = await $.tool.call(START_INPUT);
   expect(recorded.calls).toEqual(["start", "CronList"]);
   expect(result.context?.[0]).toContain('kind="warn"');
   expect(result.context?.[0]).toContain("`CronCreate`の許可の判定が`deny`");
-  expect(result.context?.[0]).toContain("「待機中の定期再確認と背景転換」に従って自ら装着する");
+  expect(result.context?.[0]).toContain("完了通知と終端観測で続ける");
 });
 
 test("CronListの許可の判定がdenyなら一覧も作成も呼ばずに案内を届ける", async ($, on) => {
@@ -124,7 +141,7 @@ test("CronCreateが拒否されたら理由と案内を届ける", async ($, on)
   const result = await $.tool.call(START_INPUT);
   expect(recorded.calls).toEqual(["start", "CronList", "CronCreate"]);
   expect(result.context?.[0]).toContain("classifier denied");
-  expect(result.context?.[0]).toContain("自ら装着する");
+  expect(result.context?.[0]).toContain("必要な許可と公開状態を確認する");
 });
 
 test("cron式を得られなければCronCreateを呼ばずに案内を届ける", async ($, on) => {
@@ -207,4 +224,54 @@ test("subagent start does not mount: サブエージェントのstartは一覧�
   expect(recorded.calls).toEqual(["start"]);
   expect(recorded.argv).toEqual([]);
   expect(result.context ?? []).toEqual([]);
+});
+
+for (const decision of ["ask", "deny"] as const) {
+  test(`modの削除能力が${decision}ならtaskを作成せず理由を届ける`, async ($, on) => {
+    const recorded = engine(on, { decisions: { CronDelete: decision } });
+    const result = await $.tool.call(START_INPUT);
+    expect(recorded.created).toEqual([]);
+    expect(result.context?.[0]).toContain("CronDelete");
+  });
+}
+
+test("複数startから一部待機・全結果回収までmodがtaskの寿命を管理する", async ($, on) => {
+  const recorded = engine(on, {});
+  await $.tool.call(START_INPUT);
+  await $.tool.call(START_INPUT);
+  const path = "/home/tester/.claude/agent-toolkit-function-hooks/recheck-life-1.txt";
+  const turn = { answer: "", durationMs: 0, isAborted: false, turnId: "t1", reason: "answer" as const };
+  recorded.files.set(path, "pending");
+  await $.turn.complete(turn);
+  expect(recorded.calls).toEqual(["start", "CronList", "CronCreate", "start", "CronList"]);
+  recorded.files.set(path, "complete");
+  await $.turn.complete(turn);
+  expect(recorded.calls).toEqual(["start", "CronList", "CronCreate", "start", "CronList", "CronList", "CronDelete:cron-1"]);
+  expect(recorded.created.length).toBe(1);
+});
+
+test("再読込後の既存共通taskもID台帳なしで通常回収する", async ($, on) => {
+  const recorded = engine(on, { jobs: [{ id: "resumed", prompt: SCHEDULE_PROMPT }] });
+  await $.tool.call(START_INPUT);
+  recorded.files.set("/home/tester/.claude/agent-toolkit-function-hooks/recheck-life-1.txt", "complete");
+  await $.turn.complete({ answer: "", durationMs: 0, isAborted: false, turnId: "t1", reason: "answer" });
+  expect(recorded.created).toEqual([]);
+  expect(recorded.calls).toEqual(["start", "CronList", "CronList", "CronDelete:resumed"]);
+});
+
+test("中断した前ターンの終了判定は新ターンで無効になる", async ($, on) => {
+  const recorded = engine(on, { jobs: [{ id: "resumed", prompt: SCHEDULE_PROMPT }] });
+  const path = "/home/tester/.claude/agent-toolkit-function-hooks/recheck-life-1.txt";
+  recorded.files.set(path, "complete");
+  await $.turn.start({ text: "再開", turnId: "next" });
+  await $.turn.complete({ answer: "", durationMs: 0, isAborted: false, turnId: "next", reason: "answer" });
+  expect(recorded.files.get(path)).toBe("consumed");
+  expect(recorded.calls).toEqual([]);
+});
+
+test("modでCronDeleteの能力確認が例外になる環境ではtaskを作成しない", async ($, on) => {
+  const recorded = engine(on, { deleteUnavailable: true });
+  const result = await $.tool.call(START_INPUT);
+  expect(recorded.created).toEqual([]);
+  expect(result.context?.[0]).toContain("CronDelete");
 });

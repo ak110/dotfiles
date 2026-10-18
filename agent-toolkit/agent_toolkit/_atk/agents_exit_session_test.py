@@ -200,3 +200,32 @@ def test_unrelated_process_is_not_identified(tmp_path: pathlib.Path) -> None:
     executable.write_text("", encoding="utf-8")
 
     assert _identify(["python3", "app.py"], executable) is None
+
+
+@pytest.mark.parametrize("clear", [False, True])
+def test_sweep_function_hook_files_includes_recheck(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, clear: bool
+) -> None:
+    """受渡しを含む現行会話の記録を保持し、期限切れとclear対象だけを回収する。"""
+    directory = tmp_path / "agent-toolkit-function-hooks"
+    directory.mkdir()
+    now = 10_000_000.0
+    expired = now - agents_exit_session._STATE_MAX_AGE_SECONDS - 1  # pylint: disable=protected-access  # noqa: SLF001
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(tmp_path))
+    monkeypatch.setattr(agents_exit_session.time, "time", lambda: now)
+    for prefix in ("marker", "request", "recheck"):
+        for session_id, modified_at in (("own", expired), ("old", expired), ("fresh", now)):
+            path = directory / f"{prefix}-{session_id}.txt"
+            path.write_text("consumed", encoding="utf-8")
+            os.utime(path, (modified_at, modified_at))
+    unrelated = directory / "notes-old.txt"
+    unrelated.write_text("保持する", encoding="utf-8")
+    os.utime(unrelated, (expired, expired))
+
+    agents_exit_session.sweep_function_hook_files(keep_session_id="own", clear=clear)
+
+    for prefix in ("marker", "request", "recheck"):
+        assert (directory / f"{prefix}-own.txt").exists() is not clear
+        assert not (directory / f"{prefix}-old.txt").exists()
+        assert (directory / f"{prefix}-fresh.txt").is_file()
+    assert unrelated.is_file()

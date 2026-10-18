@@ -3,7 +3,7 @@ import { automatedMessage } from "./automated_message.ts";
 
 // `agents_server`の`start`の処理の中で、メインの定期再確認のtaskを`CronCreate`で装着し、結果をメインの会話へ届ける。
 // モデルが起動前に`atk wait-schedule`と`CronCreate`を呼ぶ手順は装着漏れを残し、起動までの呼び出しも増やすため、
-// 装着をモデルの遵守に依存させない。装着できない場合は、モデルが規範の手順で装着するよう案内する。
+// 作成前にmod自身の回収能力も確認する。装着できない場合は理由と完了通知による待機を案内する。
 // cron式とpromptの共通本文は`atk wait-schedule --format json`の出力から得る。本文の定義元はPython側の1か所であり、
 // モデルが自ら装着する手順も同じ出力を使う。
 // `Agent`ツールのサブエージェント（`agentId`を持つ呼出主体）へは装着も通知もしない。`CronList`はメインと共有され、
@@ -24,7 +24,7 @@ const CRON_EXPRESSION = /^\S+( \S+){4}$/;
 const WAIT_SCHEDULE_TIMEOUT_MS = 60_000;
 
 // 装着の結果は保持するtask IDを伝えるだけで対処を要さないため`notice`、
-// 装着できなかった事実はモデルが自ら装着して原因を除けるため`warn`とする。
+// 装着できなかった事実は許可とツールの公開状態の確認を要するため`warn`とする。
 function notice(kind: "notice" | "warn", body: string): string {
   return automatedMessage("periodic-recheck", kind, body);
 }
@@ -33,11 +33,11 @@ function notMounted(reason: string): string {
   return notice(
     "warn",
     `agent-toolkitのmodは定期再確認を装着できなかった（理由: ${reason}）。` +
-      `待機でターンを終える場合は、${RUNTIME_REFERENCE}に従って自ら装着する。`,
+      `taskの自動回収に必要な許可と公開状態を確認する。待機は${RUNTIME_REFERENCE}の完了通知と終端観測で続ける。`,
   );
 }
 
-function isMarked(prompt: string): boolean {
+export function isMarked(prompt: string): boolean {
   return (prompt.split("\n", 1)[0] ?? "").trim() === PERIODIC_RECHECK_MARKER;
 }
 
@@ -51,7 +51,7 @@ function holdsTask(markedIds: string[]): boolean {
 type Schedule = { cron: string; prompt: string };
 
 // `atk wait-schedule --format json`の標準出力から、cron式と標識で始まるpromptを取り出す。形が合わなければ`undefined`を返す。
-function parseSchedule(stdout: string): Schedule | undefined {
+export function parseSchedule(stdout: string): Schedule | undefined {
   let parsed: unknown;
   try {
     parsed = JSON.parse(stdout);
@@ -68,8 +68,9 @@ function parseSchedule(stdout: string): Schedule | undefined {
 // 装着の結果をメインへ届ける本文を返す。サブエージェントの呼び出しと、既にtaskを持つ場合は`undefined`を返し、何も届けない。
 async function mount($: EngineInterface, agentId: string | undefined): Promise<string | undefined> {
   if (agentId !== undefined) return undefined;
-  if ((await $.tool.check({ tool: "CronList", input: {} })).decision === "deny") {
-    return notMounted("`CronList`の許可の判定が`deny`");
+  const listDecision = (await $.tool.check({ tool: "CronList", input: {} })).decision;
+  if (listDecision !== "allow") {
+    return notMounted(`\`CronList\`の許可の判定が\`${listDecision}\``);
   }
   const listed = await $.tool.call({ tool: "CronList" });
   if (listed.deny !== undefined) return notMounted(`\`CronList\`が拒否された: ${listed.deny}`);
@@ -104,9 +105,17 @@ async function mount($: EngineInterface, agentId: string | undefined): Promise<s
   }
   const { cron } = parsed;
 
+  // 作成前に回収能力も確認する。既存IDが無い段階では検査専用IDを使い、削除は呼ばない。
+  try {
+    const deleteDecision = (await $.tool.check({ tool: "CronDelete", input: { id: "periodic-recheck-capability-check" } })).decision;
+    if (deleteDecision !== "allow") return notMounted(`\`CronDelete\`の許可の判定が\`${deleteDecision}\``);
+  } catch (error) {
+    return notMounted(`\`CronDelete\`の能力確認が失敗した: ${String(error)}`);
+  }
   const input = { cron, prompt: parsed.prompt, recurring: true };
-  if ((await $.tool.check({ tool: "CronCreate", input })).decision === "deny") {
-    return notMounted("`CronCreate`の許可の判定が`deny`");
+  const createDecision = (await $.tool.check({ tool: "CronCreate", input })).decision;
+  if (createDecision !== "allow") {
+    return notMounted(`\`CronCreate\`の許可の判定が\`${createDecision}\``);
   }
   const created = await $.tool.call({ tool: "CronCreate", ...input });
   if (created.deny !== undefined) return notMounted(`\`CronCreate\`が拒否された: ${created.deny}`);
@@ -114,8 +123,8 @@ async function mount($: EngineInterface, agentId: string | undefined): Promise<s
   return notice(
     "notice",
     `agent-toolkitのmodが定期再確認のtaskを作成した（task ID: ${created.result.id}、cron: ${cron}、` +
-      `request bucket: main）。このtask IDを保持し、再利用、resumeとcompaction後の確認、` +
-      `待機する全対象の終端後の\`CronDelete\`は${RUNTIME_REFERENCE}に従う。`,
+      `request bucket: main）。全待機対象の終端と結果回収後にmodが共通promptのtaskを自動回収する。` +
+      `追加義務付きのtaskはセッション終了時に回収する。再利用とresume・compaction後の確認は${RUNTIME_REFERENCE}に従う。`,
   );
 }
 

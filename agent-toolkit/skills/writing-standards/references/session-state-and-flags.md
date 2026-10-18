@@ -66,7 +66,16 @@ process-loopが起動した会話の最上位のStopでは、終了要求が`req
 
 Stop hookの無進捗停止（`busy_loop_guard.py`）の終了要求は、Stopの全判定の後に共通ハンドラー（`stop.py`）が発行する。要求が`requested`か単一PIDへの終了要求として成立した場合、同じStopの応答は停止の通知だけになる。このため`autonomous_exit_invoked`が偽のままでも、無進捗停止による終了要求はそのまま`turn.complete`で消費される。`autonomous_exit_invoked`が記録するのは`atk agents-exit-session`の実行だけであり、Stop内で発行した終了要求はこのフラグとは別に終了要求のファイルが表す。
 
-通常のSessionEndでは現行セッションの2ファイルを保持して期限を過ぎた他セッションのファイルを回収し、`clear`では現行セッションの2ファイルも除く。保持期限と回収は`agents_exit_session.sweep_function_hook_files`が持つ。ファイルに保存するのは前掲の固定値だけとする。
+通常のSessionEndでは現行セッションの読込目印・終了要求・後述の定期再確認の判定ファイルを保持して、期限を過ぎた他セッションのファイルを回収する。`clear`では現行セッションの3ファイルも除く。保持期限と回収は`agents_exit_session.sweep_function_hook_files`が持つ。ファイルに保存するのは各用途が定める固定値だけとする。
+
+### 定期再確認の通常回収の判定
+
+`recheck-{session_id}.txt`は同じFunction hooks用ディレクトリに置き、PythonのStop入力を同じ会話のmodへ1回限りで渡す。
+セッション限りの定期再確認taskの作成・保持・回収はmodが担い、待機対象の一覧は既存の非同期判定と`CronList`から得る。
+
+- 書込元: `agent_toolkit/_hooks/stop.py`が各Stopの開始時に`unknown`を書く。終了判定の集約後は、既存の`background_tasks.is_pending_async_work`へtranscript・会話ID・背景task一覧・現在のセッション状態を渡す。その結果に応じて`pending`か`complete`へ更新する。読み取れないtranscript、欠落・破損と継続要求のあるStopは`unknown`を保持する。Claude Codeの会話のメインに適用し、`agent_id`を持つサブエージェントとCodexは対象外とする
+- 消費元: `hooks/session_exit.ts`の既存の`turn.complete`が使用前に`consumed`へ書き換える。`complete`だけを通常回収の根拠とし、`$.tool.list()`で`CronList`の公開を確認した会話に適用する。非公開の会話では回収と通知を省き、正常な返却を保つ。適用対象では共通promptと一致する非durableの所有taskを一覧から再解決して削除し、所有taskの削除拒否・失敗を対象IDとともに通知する。追加義務付きtaskはセッション終了時の既存回収へ渡す。欠落・読取不能・不明な値は回収の許可にしない
+- 初期化と寿命: `hooks/register.ts`が`session.start`とメインの`turn.start`で`consumed`へ初期化し、中断した前ターンの判定を持ち越さない。内容は各Stopで上書きし、回収の拒否・失敗後は次の有効なStopで再評価する。ファイル自体は前掲のSessionEnd・clear・期限回収に従う
 
 ## 状態の継承
 

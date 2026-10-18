@@ -56,11 +56,23 @@ export const register: Register = (on) => {
     const home = (await $.env.get("HOME")) || (await $.env.get("USERPROFILE"));
     const marker = exitStatePath(sessionId, configured, home, "marker");
     const request = exitStatePath(sessionId, configured, home, "request");
+    const recheck = exitStatePath(sessionId, configured, home, "recheck");
+    if (recheck) await $.fs.write(recheck, "consumed");
     if (marker && request) {
       await $.fs.write(request, "consumed");
       await $.fs.write(marker, "ready");
     }
     return result;
+  });
+  // 前ターンが中断して受渡しを消費できなかった場合も、新ターンへ判定を持ち越さない。
+  on("turn.start", { turnId: /^/ }, async ($, e, next) => {
+    if (e.agentId === undefined) {
+      const configured = await $.env.get("CLAUDE_CONFIG_DIR");
+      const home = (await $.env.get("HOME")) || (await $.env.get("USERPROFILE"));
+      const path = exitStatePath(await $.session.id(), configured, home, "recheck");
+      if (path) await $.fs.write(path, "consumed");
+    }
+    return next(e);
   });
   registerSessionExit(on);
   registerCompactConversation(on);

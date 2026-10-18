@@ -1,4 +1,6 @@
 import type { EngineInterface, On } from "claude-code";
+import { automatedMessage } from "./automated_message.ts";
+import { isMarked, parseSchedule } from "./periodic_recheck.ts";
 
 const SESSION_ID = /^[A-Za-z0-9_-]+$/;
 
@@ -12,7 +14,7 @@ export function exitStatePath(
   sessionId: string,
   configured: string | undefined,
   home: string | undefined,
-  kind: "marker" | "request",
+  kind: "marker" | "request" | "recheck",
 ): string | undefined {
   if (!SESSION_ID.test(sessionId)) return undefined;
   let root: string | undefined;
@@ -22,10 +24,61 @@ export function exitStatePath(
   return `${root}/agent-toolkit-function-hooks/${kind}-${sessionId}.txt`;
 }
 
-async function statePath($: EngineInterface, sessionId: string, kind: "marker" | "request"): Promise<string | undefined> {
+async function statePath($: EngineInterface, sessionId: string, kind: "marker" | "request" | "recheck"): Promise<string | undefined> {
   const configured = await $.env.get("CLAUDE_CONFIG_DIR");
   const home = (await $.env.get("HOME")) || (await $.env.get("USERPROFILE"));
   return exitStatePath(sessionId, configured, home, kind);
+}
+
+function cleanupWarning(reason: string): string {
+  return automatedMessage("periodic-recheck", "warn", `定期再確認taskの自動回収を完了できなかった（理由: ${reason}）。` +
+    "taskは保持する。必要な許可とツールの公開状態を確認し、次のStopで全待機終了の判定が得られたときにmodが再評価する。");
+}
+
+// Stopが同じターンの非同期判定を書き、ここで一度だけ消費する。欠落・不明は回収の許可にしない。
+async function collectPeriodicRecheck($: EngineInterface, sessionId: string, aborted: boolean): Promise<string | undefined> {
+  const path = await statePath($, sessionId, "recheck");
+  if (!path) return undefined;
+  try {
+    const verdict = await $.fs.read(path);
+    await $.fs.write(path, "consumed");
+    if (verdict !== "complete" || aborted) return undefined;
+    // 軽量探索などCronListを持たない会話は、この回収機能の適用対象外である。
+    // 非公開ツールをtool.checkへ渡すと例外になり、正常な返却後に不要な通知ターンが発生する。
+    if (!(await $.tool.list()).some((tool) => tool.name === "CronList")) return undefined;
+    const listDecision = (await $.tool.check({ tool: "CronList", input: {} })).decision;
+    if (listDecision !== "allow") return cleanupWarning(`CronList: ${listDecision}`);
+    const listed = await $.tool.call({ tool: "CronList" });
+    if (listed.deny !== undefined) return cleanupWarning(`CronList: ${listed.deny}`);
+    if (listed.isError === true) return cleanupWarning(`CronList: ${listed.text ?? "一覧取得エラー"}`);
+    const marked = listed.result.jobs.filter((job) => job.durable !== true && isMarked(job.prompt));
+    if (marked.length === 0) return undefined;
+    const root = $.plugin.root;
+    const schedule = await $.process.run(
+      ["uv", "run", "--project", root, "--locked", "--no-default-groups", `${root}/agent_toolkit/atk.py`, "wait-schedule", "--request-bucket", "main", "--format", "json"],
+      { timeoutMs: 60_000 },
+    );
+    const common = schedule.exitCode === 0 ? parseSchedule(schedule.stdout) : undefined;
+    if (!common) return cleanupWarning(`共通promptの取得失敗: ${schedule.stderr.trim() || schedule.exitCode}`);
+    const failures: string[] = [];
+    for (const job of marked) {
+      if (job.prompt !== common.prompt) continue;
+      try {
+        const decision = (await $.tool.check({ tool: "CronDelete", input: { id: job.id } })).decision;
+        if (decision !== "allow") {
+          failures.push(`${job.id}: ${decision}`);
+          continue;
+        }
+        const deleted = await $.tool.call({ tool: "CronDelete", id: job.id });
+        if (deleted.deny !== undefined || deleted.isError === true) failures.push(`${job.id}: ${deleted.deny ?? deleted.text ?? "削除エラー"}`);
+      } catch (error) {
+        failures.push(`${job.id}: CronDelete: ${String(error)}`);
+      }
+    }
+    return failures.length ? cleanupWarning(failures.join("、")) : undefined;
+  } catch (error) {
+    return isMissing(error) ? undefined : cleanupWarning(String(error));
+  }
 }
 
 function isMissing(error: unknown): boolean {
@@ -55,19 +108,30 @@ async function deleteSessionCrons($: EngineInterface): Promise<void> {
 }
 
 export function register(on: On): void {
+  const deliveredFailures = new Set<string>();
   on("turn.complete", async ($, e, next) => {
     const result = await next(e);
     if (e.agentId !== undefined) return result;
-    const request = await statePath($, await $.session.id(), "request");
+    const sessionId = await $.session.id();
+    const request = await statePath($, sessionId, "request");
     if (!request) return result;
     let content: string;
     try {
       content = await $.fs.read(request);
     } catch (error) {
-      if (isMissing(error)) return result;
-      throw error;
+      if (isMissing(error)) content = "consumed";
+      else throw error;
     }
-    if (content !== "requested") return result;
+    if (content !== "requested") {
+      const note = await collectPeriodicRecheck($, sessionId, e.isAborted);
+      if (note && !deliveredFailures.has(note)) {
+        deliveredFailures.add(note);
+        // 同じ失敗による通知ターンの反復を避け、処置できる本文を会話へ一度届ける。
+        $.clock.after(0, async () => { await $.prompt.submit({ text: note }); });
+      }
+      if (!note) deliveredFailures.clear();
+      return result;
+    }
     await $.fs.write(request, "consumed");
     await deleteSessionCrons($);
     await $.command.run({ command: "exit" });

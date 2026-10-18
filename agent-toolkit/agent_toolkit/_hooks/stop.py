@@ -22,8 +22,12 @@ import importlib
 import json
 import sys
 
+lazy from agent_toolkit._atk.agents_exit_session import function_hook_paths
+lazy from agent_toolkit._common import transcript as _transcript
+
 # 関数の実行時にだけ使う依存は、使用時まで読み込まない。
 lazy from agent_toolkit._common.session_state import read_state, update_state  # noqa: E402  # pylint: disable=wrong-import-position
+lazy from agent_toolkit._hooks.background_tasks import is_pending_async_work
 lazy from agent_toolkit._hooks.host import is_codex_payload
 lazy from agent_toolkit._hooks.stop_session import append_stop_log
 lazy from agent_toolkit._hooks.stop_session import parse_stop_session as _parse_stop_session
@@ -55,6 +59,42 @@ def _set_consecutive_block_count(state: dict, count: int) -> dict:
     return state
 
 
+def _write_recheck_verdict(session_id: str, payload: dict, *, may_collect: bool) -> None:
+    """同じ会話のmodへStopの非同期判定を渡す。サブエージェントとCodexは対象外。"""
+    if not session_id or is_codex_payload(payload) or payload.get("agent_id"):
+        return
+    paths = function_hook_paths(session_id)
+    if paths is None:
+        return
+    marker, request = paths
+    path = request.with_name(f"recheck-{session_id}.txt")
+    try:
+        if marker.read_text(encoding="utf-8") != "ready":
+            return
+        # 先に前回の判定を無効にする。読取失敗や判定例外から全終端を推定しない。
+        path.write_text("unknown", encoding="utf-8")
+        transcript = payload.get("transcript_path")
+        if not may_collect or not isinstance(transcript, str) or not transcript:
+            return
+        lines = _transcript.read_transcript_lines(transcript)
+        if not lines or not any(line.strip() for line in lines):
+            return
+        for line in lines:
+            if line.strip() and not isinstance(json.loads(line), dict):
+                return
+        pending = is_pending_async_work(
+            transcript,
+            session_id,
+            background_tasks=payload.get("background_tasks"),
+            session_state=read_state(session_id),
+        )
+        path.write_text("pending" if pending else "complete", encoding="utf-8")
+    except FileNotFoundError:
+        return
+    except Exception as exc:  # noqa: BLE001 -- 回収判定の故障を他のStop判定から隔離する
+        print(f"[stop/periodic-recheck] 判定受渡し失敗: {type(exc).__name__}: {exc}", file=sys.stderr)
+
+
 def evaluate(payload_text: str) -> dict[str, object]:
     """各Stop判定を実行し、集約したhook応答を返す。"""
     resolved = _parse_stop_session(payload_text, lambda: None)
@@ -62,6 +102,7 @@ def evaluate(payload_text: str) -> dict[str, object]:
     payload: dict = {}
     if resolved is not None:
         session_id, payload = resolved
+    _write_recheck_verdict(session_id, payload, may_collect=False)
 
     block_reasons: list[str] = []
     blocking_checks: list[str] = []
@@ -99,6 +140,11 @@ def evaluate(payload_text: str) -> dict[str, object]:
         """ユーザー宛ての本文がある場合に`systemMessage`を添えて返す。"""
         if is_codex_payload(payload):
             return {key: value for key, value in result.items() if key in {"decision", "reason"}}
+        _write_recheck_verdict(
+            session_id,
+            payload,
+            may_collect=result.get("decision") != "block" and not yield_for_delivery and halt_request is None,
+        )
         if user_messages:
             result["systemMessage"] = "\n\n".join(user_messages)
         return result
