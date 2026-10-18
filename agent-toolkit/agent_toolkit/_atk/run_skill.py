@@ -33,12 +33,14 @@ lazy import psutil
 from agent_toolkit._atk import orchestrator as _orchestrator
 from agent_toolkit._atk import outcome as _outcome
 from agent_toolkit._atk.run_skill_progress import Progress
+from agent_toolkit._atk.wi import add as _wi_add
 from agent_toolkit._atk.wi.repo import resolve_local_worktree
 from agent_toolkit._common import automated_prompt as _automated_prompt
 from agent_toolkit._common import claude_usage_limit as _claude_usage_limit
 from agent_toolkit._common import codex_usage_limit as _codex_usage_limit
 from agent_toolkit._common import console_title as _console_title
 from agent_toolkit._common import host_homes as _host_homes
+from agent_toolkit._common import private_notes as _private_notes
 from agent_toolkit._common import process_tree as _process_tree
 from agent_toolkit._common import state_paths as _state_paths
 from agent_toolkit._git import command as _git_command
@@ -174,6 +176,9 @@ def _run_locked(
             _orchestrator.PROCESS_LOOP_SESSION_ID_ENV,
         )
     )
+    run_id = uuid.uuid4().hex
+    env["AGENT_TOOLKIT_RUN_SKILL_ID"] = run_id
+    _log_line(log, f"実行識別子: {run_id}")
 
     def record_wait(candidate: str, usage_limit: _orchestrator.UsageLimitState, delay: float) -> None:
         _log_line(log, f"利用上限の解除待ち: {candidate} {usage_limit.describe()}（{int(delay)}秒）")
@@ -257,6 +262,8 @@ def _run_locked(
             progress=progress,
             output=output,
             codex_home=_host_homes.codex_home(env),
+            run_id=run_id,
+            skill=args.skill,
         )
         remaining = max(0.0, remaining - (time.monotonic() - started_at))
         if code == TIMEOUT_EXIT_CODE or output.usage_limit is None:
@@ -333,6 +340,8 @@ def _wait_session(
     progress: Progress,
     output: _SessionOutput,
     codex_home: pathlib.Path,
+    run_id: str,
+    skill: str,
 ) -> int:
     """子セッションの終了か時間上限を待ち、結果行を出力して終了コードを返す。"""
     lock = threading.Lock()
@@ -374,6 +383,20 @@ def _wait_session(
         if output.usage_limit is not None:
             return returncode
     if _orchestrator.is_normal_session_exit(orchestrator, returncode):
+        try:
+            saved = _wi_add.has_synced_run_report(_private_notes.default_private_notes(), run_id=run_id, skill=skill)
+        except (OSError, subprocess.SubprocessError) as error:
+            saved = False
+            _log_line(log, f"報告の保存確認に失敗した: {error}")
+        if not saved:
+            _outcome.report_failure(
+                f"報告用UWIの保存が同期契約へ到達していない（ログ: {log_path}）",
+                next_action=(
+                    "ログの実行識別子に対応する報告用UWIを確認し、同じ会話を再開してcompletion-reportで保存する。"
+                    "保存済みの場合はWI保存先のcommit・pushを完了してから次回の実行を待つ"
+                ),
+            )
+            return 1
         _outcome.report_success(f"スキルを実行した（ログ: {log_path}）")
         return 0
     exit_code = returncode if returncode > 0 else 128 - returncode

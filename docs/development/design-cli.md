@@ -206,7 +206,12 @@ Codexは常に`--json`の`thread.started`からthread IDを取得し、ロール
 候補判定時のCodex上限は次の候補を先に試し、全候補失敗かつ上限失敗がある場合だけ最も早い解除予定まで待って先頭から判定し直す。
 上限判定は共通層、同じ会話の再開はrun-skill、候補判定はorchestratorが所有する。
 
-報告用UWIはセッション内の`agent-toolkit:completion-report`が作成する。報告の内容と保存の検収は同スキルが既に定めており、`atk`の後処理で作成すると同じ報告の定義が2箇所に分かれる。保存に失敗したセッションは目標を満たせず時間上限の終了コード124で終わり、cronが非0の終了を通知する。
+報告用UWIの本文作成と内容の十分性の判断は、セッション内の`agent-toolkit:completion-report`が所有する。
+CLIは子の正常終了に加え、同じ実行IDと`source=run-skill`・`scope=<スキル名>`・`run_skill_report=true`を持つUWI本文のcommitを確かめる。
+upstreamがある場合は実remoteへのpush到達も確かめ、全て成立した場合だけ終了コード0を返す。
+保存未達は終了コード1とし、標準エラーへ診断、ログの所在と次の操作を書く。124は時間上限の到達だけに用いる。
+回復時はログの実行IDと対応UWIを確認し、同じ会話を再開してcompletion-reportで保存する。
+保存済みならWI保存先のcommit・pushを完了し、次回の実行を待つ。
 
 過去の実行が投入したUWIは、次回の同じスキルの実行が`source`（`run-skill`）と`scope`（スキル名）で識別して扱う。手順は`agent-toolkit/skills/user-confirmation-and-report/references/answer-transitions.md`「`atk run-skill`の過去の実行のUWI」にある。process-wiは回答済みUWIの取得へ`--source=!run-skill`を付け、`calculate_readiness`もこれらのUWIをreadyへ含めない。含めると、process-wiの選定が除くUWIのためにprocess-loopが子セッションの起動を繰り返す。識別には既存の`source`と`scope`を使い、新しい状態や保存先は加えない。
 

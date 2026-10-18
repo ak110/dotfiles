@@ -6,6 +6,7 @@ modのホスト契約自体はclaude plugin testが検証する。
 """
 
 import argparse
+import datetime
 import io
 import json
 import pathlib
@@ -22,10 +23,12 @@ from agent_toolkit._agents_server import manager, notify, shared_layout
 from agent_toolkit._agents_server.state import SessionState
 from agent_toolkit._atk import commit, run_skill
 from agent_toolkit._atk.run_skill_progress import Progress
+from agent_toolkit._atk.wi import add as wi_add
 from agent_toolkit._atk.wi import process_loop_session
 from agent_toolkit._common import automated_prompt, periodic_recheck
 from agent_toolkit._hooks import pretooluse
 from agent_toolkit._hooks.message_format import llm_notice
+from agent_toolkit._testing import git_repository
 from agent_toolkit._testing.helpers import auto_message_opening_attributes
 
 
@@ -109,6 +112,8 @@ def test_run_skill_generated_probe_and_goal_reach_shared_receiver(
 ) -> None:
     """run-skillが外部プロセスへ渡す可用性照会と目的文の、実際の送出値を取得する。"""
     bodies: list[str] = []
+    notes = git_repository.init_repository(tmp_path / "notes")
+    monkeypatch.setenv("AGENT_TOOLKIT_PRIVATE_NOTES", str(notes))
 
     def select(_candidates: object, _env: object, _root: object, context: Any, **_kwargs: object) -> tuple[str, str, str]:
         bodies.append(context.prompt)
@@ -117,8 +122,22 @@ def test_run_skill_generated_probe_and_goal_reach_shared_receiver(
     original = subprocess.Popen
 
     def launch(argv: list[str], **kwargs: Any) -> subprocess.Popen[str]:
+        if argv[0] not in {"claude", "codex"}:
+            return original(argv, **kwargs)
         bodies.append(argv[-1])
-        # 外部モデルの起動だけを短いPythonプロセスへ代替し、実際の待機・出力回収を通す。
+        # モデルの代役が報告をWI保存境界でcommitし、実際の待機・保存到達確認を通す。
+        with monkeypatch.context() as context:
+            context.setenv("AGENT_TOOLKIT_RUN_SKILL_ID", kwargs["env"]["AGENT_TOOLKIT_RUN_SKILL_ID"])
+            wi_add.add_entries(
+                notes,
+                messages=["---\nrun_skill_report: true\n---\n定期実行の結果を確認してください。"],
+                target_repo="github.com/example/repo",
+                source="run-skill",
+                now=datetime.datetime(2026, 10, 18),
+                entry_type="uwi",
+                scope="agent-toolkit:search",
+                question_type="post-approval",
+            )
         return original([sys.executable, "-c", "print('OK')"], **kwargs)
 
     monkeypatch.setattr(run_skill._orchestrator, "select_available", select)  # noqa: SLF001  # pylint: disable=protected-access
