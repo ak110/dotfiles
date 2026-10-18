@@ -274,9 +274,11 @@ function formatDateParts(value) {
 function kindLabel(kind) { return KIND_LABELS[kind] || '種別不明'; }
 function stateLabel(state) { return STATE_LABELS[state] || state || '不明'; }
 // 反映後の観測だけが残るinboxのawiは、保存状態をinboxのまま、表示だけをneeds-verifyにする。
+// inboxの回答済みuwiは表示だけをansweredにし、色は保存状態inboxのバッジと同じにする。
 // 状態フィルター・件数・操作の可否は保存状態で判定する。
 function displayStateLabel(entry) {
   if (entry.state === 'inbox' && Date.parse(entry.cooldown_until) > Date.now()) return 'cooldown';
+  if (entry.state === 'inbox' && entry.kind === 'uwi' && entry.answered === true) return 'answered';
   return entry.needs_verify === true ? 'needs-verify' : STATE_LABELS[entry.state] || 'unknown';
 }
 function entryStateText(entry) {
