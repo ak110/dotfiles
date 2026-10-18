@@ -52,7 +52,7 @@ plan-verifyの実行argvには`--summary-only`を含め、順序と終了状態�
 
 公開統合操作は、作業ツリーがcleanであること、Git共通ディレクトリとbranch登録、レビュー対象HEADの一致、所有sessionを検収する。稼働中の合意した担当は`--writer-session <session_id>`を反復して指定する。登録された他担当の稼働とGit中断状態がある場合は成果を保持する。
 
-統合先HEADの子孫ならrebaseせずffへ進む。分岐している場合は書換え範囲の全commitがremote追跡refへ未到達であることを確認し、旧ベースとHEADを保存してrebaseする。push済み、競合、内容不一致、検証失敗では続行できない理由と所有記録を返す。競合は`lane-integration-failure.md`で処置し、同じCLIへ戻る。
+統合先HEADの子孫ならrebaseせずffへ進む。分岐している場合は書換え範囲の全commitがremote追跡refへ未到達であることを確認し、旧ベースとHEADを保存してrebaseする。親だけを操作するrebaseと、その続行・中止では`git -c submodule.recurse=false`を呼び出しごとに適用し、初期化済みの子のHEAD・branch・作業内容を保持する。push済み、競合、内容不一致、検証失敗では続行できない理由と所有記録を返す。競合は`lane-integration-failure.md`で処置し、同じCLIへ戻る。
 
 rebase後はhistory-compareによる一意な全1対1対応表と変更範囲の再検証結果を保存し、`phase: awaiting-validation`と終了コード1を返す。対応表、後掲の警告判定、WI実装commitと証拠の参照更新を検収してから、同じ入力に`--accept-rebased-head <返された完全new_head>`を加えて再開する。受理前は統合先を現状のまま保持する。
 

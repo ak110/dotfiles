@@ -321,7 +321,7 @@ def _sync_worktree_with_upstream(local_path: pathlib.Path, worktree_name: str) -
                     raise ValueError("hook作成先のGit共通ディレクトリが対象と異なる")
                 current = _git_output(["symbolic-ref", "--short", "HEAD"], cwd=worktree_path)
                 if current != branch:
-                    switched = _run_worktree_git(["switch", "-c", branch], worktree_path)
+                    switched = _run_worktree_git(["-c", "submodule.recurse=false", "switch", "-c", branch], worktree_path)
                     if switched.returncode:
                         raise ValueError(f"hook作成先のbranchを接続できない: {switched.stderr.strip()}")
                 created = subprocess.CompletedProcess(command, 0, stdout="", stderr="")
@@ -363,7 +363,7 @@ def _sync_worktree_with_upstream(local_path: pathlib.Path, worktree_name: str) -
                 next_action=_fetch_failure_next_action(worktree_path, upstream_remote),
             )
             return None
-    rebase = _run_worktree_git(["rebase", upstream_branch], worktree_path)
+    rebase = _run_worktree_git(["-c", "submodule.recurse=false", "rebase", upstream_branch], worktree_path)
     if rebase.returncode == 0:
         print(f"worktreeを{upstream_branch}へ追随させました: {worktree_path}")
         if _worktree_is_clean(worktree_path):
@@ -372,11 +372,12 @@ def _sync_worktree_with_upstream(local_path: pathlib.Path, worktree_name: str) -
             "追随後のworktreeがdirtyになった", worktree_path, next_action=_worktree_dirty_next_action(worktree_path)
         )
         return None
-    _run_worktree_git(["rebase", "--abort"], worktree_path)
+    _run_worktree_git(["-c", "submodule.recurse=false", "rebase", "--abort"], worktree_path)
     _next_action.report(
         f"worktreeの{upstream_branch}への追随に失敗したため実装セッションを起動しません（{rebase.stderr.strip()}）。",
         next_action=(
-            f"rebaseは中止した。`git -C {worktree_path} rebase {upstream_branch}`を手作業で実行して競合を解消する。"
+            f"rebaseは中止した。`git -C {worktree_path} -c submodule.recurse=false rebase {upstream_branch}`を"
+            "手作業で実行して競合を解消する。"
             "解消後はprocess-loopが次の反復で再試行する"
         ),
     )

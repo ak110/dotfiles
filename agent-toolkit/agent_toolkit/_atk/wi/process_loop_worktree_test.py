@@ -272,7 +272,7 @@ class TestSyncWorktreeWithUpstream:
         _pl_worktree._sync_worktree_with_upstream(tmp_path / "repo", "process-loop")  # pylint: disable=protected-access  # noqa: SLF001
 
         assert ["git", "fetch", "origin"] in calls
-        assert ["git", "rebase", "origin/master"] in calls
+        assert ["git", "-c", "submodule.recurse=false", "rebase", "origin/master"] in calls
         assert worktree.is_dir()
 
     def test_tracking_branch_has_priority_without_origin_head(
@@ -307,7 +307,7 @@ class TestSyncWorktreeWithUpstream:
 
         assert result == worktree
         assert ["git", "fetch", "origin"] in calls
-        assert ["git", "rebase", "origin/feature"] in calls
+        assert ["git", "-c", "submodule.recurse=false", "rebase", "origin/feature"] in calls
 
     def test_fetches_tracking_remote_before_rebase(
         self,
@@ -340,7 +340,7 @@ class TestSyncWorktreeWithUpstream:
         assert result == worktree
         assert ["git", "fetch", "upstream"] in calls
         assert ["git", "fetch", "origin"] not in calls
-        assert ["git", "rebase", "upstream/feature"] in calls
+        assert ["git", "-c", "submodule.recurse=false", "rebase", "upstream/feature"] in calls
 
     def test_reuses_existing_branch_when_worktree_absent(self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """worktree未作成でも専用ブランチがあれば同ブランチから作成する。"""
@@ -377,7 +377,7 @@ class TestSyncWorktreeWithUpstream:
 
         assert result == worktree
         assert ["git", "worktree", "add", str(worktree), "worktree-process-loop"] in calls
-        assert ["git", "rebase", "origin/master"] in calls
+        assert ["git", "-c", "submodule.recurse=false", "rebase", "origin/master"] in calls
 
     def test_aborts_rebase_and_warns_on_conflict(
         self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
@@ -394,14 +394,14 @@ class TestSyncWorktreeWithUpstream:
                 return subprocess.CompletedProcess(cmd, returncode=0, stdout="origin/master", stderr="")
             if cmd[1:2] == ["remote"]:
                 return subprocess.CompletedProcess(cmd, returncode=0, stdout="origin\n", stderr="")
-            if cmd[1:3] == ["rebase", "origin/master"]:
+            if cmd[1:5] == ["-c", "submodule.recurse=false", "rebase", "origin/master"]:
                 return subprocess.CompletedProcess(cmd, returncode=1, stdout="", stderr="conflict")
             return subprocess.CompletedProcess(cmd, returncode=0, stdout="", stderr="")
 
         monkeypatch.setattr(subprocess, "run", fake_run)
         _pl_worktree._sync_worktree_with_upstream(tmp_path / "repo", "process-loop")  # pylint: disable=protected-access  # noqa: SLF001
 
-        assert ["git", "rebase", "--abort"] in calls
+        assert ["git", "-c", "submodule.recurse=false", "rebase", "--abort"] in calls
         stderr = capsys.readouterr().err
         assert "追随に失敗したため実装セッションを起動しません" in stderr
         # 手作業で競合を解消するrebaseのコマンドを次の操作として続ける。
@@ -1148,7 +1148,7 @@ class TestWorktreeWriterGate:
             str(worktree_path),
             "origin/main",
         ] in calls
-        assert ["git", "rebase", "origin/main"] in calls
+        assert ["git", "-c", "submodule.recurse=false", "rebase", "origin/main"] in calls
 
     @pytest.mark.parametrize("dirty_command", ["diff", "cached", "untracked"])
     def test_worktree_is_clean_rejects_each_dirty_kind(

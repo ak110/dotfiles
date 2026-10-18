@@ -226,7 +226,7 @@ def test_push_pending_defers_diverged_history_when_worktree_is_dirty(
     with _atk_git_sync.repo_lock(repo):
         _atk_git_sync.push_pending_commits(repo, run_git=run_git, result_runner=result_runner)
 
-    assert ["rebase", "@{u}"] not in calls
+    assert ["-c", "submodule.recurse=false", "rebase", "@{u}"] not in calls
     stderr = capsys.readouterr().err
     assert "Git履歴が分岐している" in stderr
     lines = stderr.splitlines()
@@ -281,7 +281,7 @@ def test_wi_hold_defers_dirty_divergence_and_commit_recovers(
     blocked = capsys.readouterr()
     assert blocked.err.count("失敗: ") == 1
     next_action = blocked.err.rsplit("次の操作: ", 1)[1]
-    assert next_action.index("clean") < next_action.index("git rebase")
+    assert next_action.index("clean") < next_action.index("git -c submodule.recurse=false rebase")
 
     dirty.unlink()
     with pytest.raises(SystemExit, match="0"):
@@ -382,7 +382,7 @@ def test_pull_suppresses_output_of_recovered_first_merge(
         _atk_git_sync.pull(repo, run_git=run_git, result_runner=result_runner)
 
     assert (["merge", "--ff-only", "@{u}"], False) in calls
-    assert calls[-1] == (["rebase", "@{u}"], True)
+    assert calls[-1] == (["-c", "submodule.recurse=false", "rebase", "@{u}"], True)
     assert capsys.readouterr().err == ""
 
 
@@ -496,15 +496,15 @@ def test_mq_pull_reports_dirty_divergence_without_rewriting(
     assert "Git履歴が分岐している（ローカルのみ1件、upstreamのみ1件）" in stderr
     assert "local.txt" in stderr
     assert "remote.txt" in stderr
-    assert "git rebase @{u}" in stderr
-    assert "git rebase --skip" in stderr
-    assert "git rebase --abort" in stderr
+    assert "git -c submodule.recurse=false rebase @{u}" in stderr
+    assert "git -c submodule.recurse=false rebase --skip" in stderr
+    assert "git -c submodule.recurse=false rebase --abort" in stderr
     # 分岐の報告に汎用の同期失敗行を重ねず、原因別の失敗行1本にする。
     assert stderr.count("失敗: ") == 1
     assert "private-notesのpullに失敗した" not in stderr
     lines = stderr.splitlines()
     failure_end = next(index for index, line in enumerate(lines) if line.startswith("次の操作: "))
-    assert "git rebase @{u}" in lines[failure_end]
+    assert "git -c submodule.recurse=false rebase @{u}" in lines[failure_end]
 
 
 def test_mq_pull_reports_rebase_failure_and_preserves_state(
@@ -528,7 +528,9 @@ def test_mq_pull_reports_rebase_failure_and_preserves_state(
     assert "rebaseに失敗したため、rebase状態を保持した" in stderr
     assert "Git履歴が分岐している" not in stderr
     assert stderr.count("失敗: ") == 1
-    assert "git rebase --continue" in next(line for line in stderr.splitlines() if line.startswith("次の操作: "))
+    assert "git -c submodule.recurse=false rebase --continue" in next(
+        line for line in stderr.splitlines() if line.startswith("次の操作: ")
+    )
 
 
 def test_conflicting_divergence_keeps_rebase_and_rejects_next_mutation(tmp_path: pathlib.Path) -> None:
@@ -632,9 +634,9 @@ def test_rebase_in_progress_error_keeps_reason_and_next_action(tmp_path: pathlib
     with pytest.raises(_atk_git_sync.RebaseInProgressError) as exc_info:
         _atk_git_sync.ensure_not_rebasing(repo)
 
-    assert "git rebase --continue" not in str(exc_info.value)
-    assert "git rebase --continue" in exc_info.value.next_action
-    assert "git rebase --abort" in exc_info.value.next_action
+    assert "git -c submodule.recurse=false rebase --continue" not in str(exc_info.value)
+    assert "git -c submodule.recurse=false rebase --continue" in exc_info.value.next_action
+    assert "git -c submodule.recurse=false rebase --abort" in exc_info.value.next_action
 
 
 @pytest.mark.parametrize("configuration", ["local", "remote", "upstream"])

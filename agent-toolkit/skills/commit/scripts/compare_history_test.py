@@ -11,7 +11,7 @@ from agent_toolkit import atk
 from agent_toolkit._plan import commit_mapping
 
 # 手順書`history-rewrite.md`がautosquashに指示する、`<base>`を除くGitの引数。
-AUTOSQUASH_ARGUMENTS = ("-c", "rebase.updateRefs=false", "rebase", "-i", "--autosquash")
+AUTOSQUASH_ARGUMENTS = ("-c", "submodule.recurse=false", "-c", "rebase.updateRefs=false", "rebase", "-i", "--autosquash")
 
 
 def _git(repo: pathlib.Path, *argv: str) -> str:

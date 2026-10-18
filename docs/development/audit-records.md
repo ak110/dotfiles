@@ -380,6 +380,20 @@ Git 2.47.3で局所設定のfalseだけを除いた対照は、別branchのOID�
 新しいGitでは通常のPATHで同じテストを実行し、参照更新機能が有効な環境でも局所指定が保護することを確認する。
 サブモジュールの作業状態を保持する局所設定は同じautosquashへ併用でき、履歴比較はGit 2.38以降だけの`patch-id --verbatim`を呼び出さない。
 
+## agent-toolkit/skills/commit/references/history-rewrite.md：親だけのGit操作とサブモジュール：2026年10月18日
+
+Git 2.34.1での検証担当の記録によると、`agent-toolkit/agent_toolkit/_atk/submodule_state_test.py`の15件が成功した。
+GitはCIと同じUbuntuのdebを一時領域へ展開して使用した。
+親の履歴内でgitlinkが異なる隔離fixtureへ再帰trueとfalseを与え、autosquash・通常rebase・keep reset・switch・checkout・restoreを比較した。
+再帰trueでは子の作業状態が変わり、呼び出し限りの`-c submodule.recurse=false`では子のHEAD・branch・作業内容を保持した。
+比較した値はHEAD・symbolic-ref・porcelain・追跡ファイルの内容・未追跡のレビュー内容である。
+autosquashは基点への切替を確実にするため`--force-rebase`を併用した。
+局所falseを指定した後も、永続設定の`submodule.recurse=true`を保持した。
+同じ実Gitの試験で、private-notes同期のrebaseとkeep reset、laneの準備時のdetached worktreeからbranchへの接続も、子の作業状態を保持した。
+
+再検証ではGit 2.34.1を展開した`usr/bin`をPATHの先頭、`usr/lib/git-core`を`GIT_EXEC_PATH`へ設定し、`git --version`で版数を確認して上記のpytestを実行する。
+再帰設定だけを変えた対照の結果と、子の5種類の観測値を確認する。
+
 ## agent-toolkit/skills/commit/references/publish.md：検証とCI：2026年10月11日
 
 uv 0.13.0で、`UV_PROJECT_ENVIRONMENT`で隔離した仮想環境を使い、dotfilesのリポジトリ直下と`agent-toolkit/`のプロジェクトを`UV_FROZEN=1`のもとで同期した。

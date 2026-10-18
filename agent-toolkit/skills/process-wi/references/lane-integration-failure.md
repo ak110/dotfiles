@@ -4,8 +4,8 @@
 
 ## rebaseの競合
 
-- 停止時: `git rebase --abort`も`git rebase --continue`も実行せず、rebaseを進行中のまま保って続行できない理由を返す。`続行できない理由:`へ、競合したファイルのリポジトリ相対パス、専用worktreeの絶対パス、そのworktreeでrebaseが進行中であることを書く。
-- メインから解消の指示を受領した場合: 競合を解消して解消したパスだけをstageし、`agent-toolkit:commit`の`references/history-rewrite.md`「履歴確認の起動形」の`git log`を単独で実行してから`git rebase --continue`で完了させる。競合箇所、解消方針、変更内容、影響範囲を`atk review-table add`でレビュー指摘管理表へ1行登録し、同じ行へ`atk review-table respond`で解消内容を記録する。そのうえで`${CLAUDE_PLUGIN_ROOT}/share/exec.subagent.md`「レビュー修正の履歴統合」の返却値を返す。
+- 停止時: `git -c submodule.recurse=false rebase --abort`も`git -c submodule.recurse=false rebase --continue`も実行せず、rebaseを進行中のまま保って続行できない理由を返す。`続行できない理由:`へ、競合したファイルのリポジトリ相対パス、専用worktreeの絶対パス、そのworktreeでrebaseが進行中であることを書く。
+- メインから解消の指示を受領した場合: 競合を解消して解消したパスだけをstageする。`agent-toolkit:commit`の`references/history-rewrite.md`「履歴確認の起動形」の`git log`を単独で実行する。その後、`git -c submodule.recurse=false rebase --continue`で完了させる。競合箇所、解消方針、変更内容、影響範囲を`atk review-table add`でレビュー指摘管理表へ1行登録する。同じ行へ`atk review-table respond`で解消内容を記録する。そのうえで`${CLAUDE_PLUGIN_ROOT}/share/exec.subagent.md`「レビュー修正の履歴統合」の返却値を返す。
 - 統合指示を再び受領した場合: 同書「マージありの統合」の冒頭（専用worktreeのclean状態の確認）から行う。
 
 ## 統合後の変更範囲の検証の失敗
