@@ -257,10 +257,12 @@ class DelayedUnavailableBackend(FakeBackend):
         condition: asyncio.Condition,
         delay: float = 0.0,
         error: Any = None,
+        failure_release: asyncio.Event | None = None,
     ) -> None:
         super().__init__(sessions, engine)
         self._condition = condition
         self._delay = delay
+        self._failure_release = failure_release
         self.error = error if error is not None else {"message": "usage limit", "codexErrorInfo": "usageLimitExceeded"}
         self.pending: list[asyncio.Task[None]] = []
 
@@ -270,7 +272,10 @@ class DelayedUnavailableBackend(FakeBackend):
         return session
 
     async def _fail_after_response(self, session: state.SessionState) -> None:
-        await asyncio.sleep(self._delay)
+        if self._failure_release is None:
+            await asyncio.sleep(self._delay)
+        else:
+            await self._failure_release.wait()
         _complete(session, message="", error=self.error)
         async with self._condition:
             self._condition.notify_all()
@@ -524,20 +529,33 @@ _LAUNCHER_ENVIRONMENT_NAMES = (
 )
 
 
+async def _start_late_unavailability(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+    candidates: list[tuple[str, str, str]],
+) -> tuple[server_manager.AgentsServerManager, dict[str, Any]]:
+    """起動応答の返却後に最初の候補を失敗させ、結果の回収前で返す。"""
+    monkeypatch.setattr(_atk_config, "parse_unresolved_model_candidates", lambda _model_type, **_kwargs: candidates)
+    monkeypatch.setattr(server_manager, "START_AVAILABILITY_TIMEOUT", 0.001)
+    manager = server_manager.AgentsServerManager()
+    failure_release = asyncio.Event()
+    delayed = DelayedUnavailableBackend(manager.sessions, "codex", manager._condition, failure_release=failure_release)
+    _install_backend(manager, "codex", delayed)
+
+    started = await manager.start("plan", "調査", str(tmp_path))
+    assert started["status"] == "running"
+    failure_release.set()
+    await asyncio.gather(*delayed.pending)
+    return manager, started
+
+
 async def _carry_over_late_unavailability(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
     candidates: list[tuple[str, str, str]],
 ) -> tuple[server_manager.AgentsServerManager, FakeBackend]:
     """開始確認の上限後に候補が失敗した状態まで進め、利用できるbackendへ差し替える。"""
-    monkeypatch.setattr(_atk_config, "parse_unresolved_model_candidates", lambda _model_type, **_kwargs: candidates)
-    monkeypatch.setattr(server_manager, "START_AVAILABILITY_TIMEOUT", 0.001)
-    manager = server_manager.AgentsServerManager()
-    delayed = DelayedUnavailableBackend(manager.sessions, "codex", manager._condition, delay=0.01)
-    _install_backend(manager, "codex", delayed)
-
-    await manager.start("plan", "調査", str(tmp_path))
-    await asyncio.gather(*delayed.pending)
+    manager, _ = await _start_late_unavailability(monkeypatch, tmp_path, candidates)
     assert (await manager.wait())["status"] == "failed"
     available = FakeBackend(manager.sessions, "codex")
     _install_backend(manager, "codex", available)

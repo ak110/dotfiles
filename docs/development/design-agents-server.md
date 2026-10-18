@@ -360,12 +360,17 @@ Stopフックによる継続の強制は採用しない。バックグラウン�
 ## 結果受領時の`next_action`
 
 受領した主体が次に特定の工程へ入る場合は、正常に終端した結果にも`next_action`を載せる。
-`agent-toolkit:review-standards`を起動して`references/reviewee.md`に従い採否を確定する次の操作は、labelが`-review`で終わるsessionの`completed`結果へ加える。
+labelが`-review`で終わるsessionの`completed`結果には`agent-toolkit:review-standards`を起動して採否を確定する次の操作を加える。
+labelが`reader-fit-review`で終わる結果は受領者であるレビュー担当向けの`reader-fit-review.parent.md`「受領」へ案内し、他の`-review`の結果はレビューイー向けの`references/reviewee.md`へ案内する。
 `atk agents wait`の回収と、`send_message`が未回収の結果を返す`previous_result`の双方が、`_agents_server/result_projection.py`の同じ判定と文面を使う。
 2026年10月1日に、レビュー結果を受け取った主体が同スキルを起動しないまま採否を確定し、合意の無い指摘を「承認済み」として見送った事象による。
 レビュー目的の判定にはlabelを使う。`start`のlabelの凡例と`<役割名>.subagent.md`から生成するlabelが、レビューを目的とするsessionへ`-review`の末尾を与えるためである。
 凡例から外れたlabelでは案内が出ないが、新しい状態や入力を加えずに、観測した事象の起動と受領を覆える。
 `reviewee.md`へ合意の扱いの条文を加える案は、同書が既に合意の確認を求めており、読まれなかったことが原因であるため採らない。
+
+読者別探索の結果を分岐するのは、2026年10月13日にレビュー担当へ`reviewee.md`を案内し、設計上の役割分離と受領時の読込先が食い違っていたためである。
+採否の確定前に受領者の役割に合う基準へ導く目的を保ち、失敗・中断の結果と改善点の転記案内は従来の契約を保つ。
+案内の削除は採否確定前の見送りを再発させるため採らず、既存のlabelで区別できるため新しい状態や入力は加えない。
 
 2026年10月3日には、WI投入担当の返却にあった`気付いた改善点:`の行がユーザーへの発話へ転記されなかった。
 転記の条文は常時規範にあったが、受領時の結果には案内が無かった。

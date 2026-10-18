@@ -24,6 +24,13 @@ REVIEW_RESULT_NEXT_ACTION = (
 )
 
 
+# 読者別探索の結果はレビュー担当が受領し、同担当向けの契約で採否を確定する。
+READER_FIT_REVIEW_RESULT_NEXT_ACTION = (
+    "読者別探索の指摘を受領した。採否を確定する前に`agent-toolkit:review-standards`を起動し、"
+    "`reader-fit-review.parent.md`「受領」に従って、指摘ごとの採否と根拠を確定する"
+)
+
+
 # 結果はメインと委譲先の双方が受け取るため、両者が実行できる操作を受け取った主体の役割ごとに示す。
 IMPROVEMENT_RESULT_NEXT_ACTION = (
     "`agent_message`の`気付いた改善点:`で始まる全行を上流へ渡す。"
@@ -49,7 +56,8 @@ def append_result_next_action(result: dict[str, Any], next_action: str) -> dict[
 def with_result_next_action(result: dict[str, Any], label: str | None) -> dict[str, Any]:
     """受領時に必要なレビューの採否確定と改善点の転記を、既存の次の操作に併記する。"""
     if result.get("status") == "completed" and isinstance(label, str) and label.endswith(REVIEW_LABEL_SUFFIX):
-        result = append_result_next_action(result, REVIEW_RESULT_NEXT_ACTION)
+        next_action = READER_FIT_REVIEW_RESULT_NEXT_ACTION if label.endswith("reader-fit-review") else REVIEW_RESULT_NEXT_ACTION
+        result = append_result_next_action(result, next_action)
     message = result.get("agent_message")
     if isinstance(message, str) and any(line.lstrip().startswith("気付いた改善点:") for line in message.splitlines()):
         result = append_result_next_action(result, IMPROVEMENT_RESULT_NEXT_ACTION)
