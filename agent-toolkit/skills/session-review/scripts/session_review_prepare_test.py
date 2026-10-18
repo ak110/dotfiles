@@ -571,14 +571,11 @@ def test_prepare_writes_conversation_candidates_and_stats_without_queue_changes(
     assert "初期要求" in conversation
     assert "I will run the linter now." in conversation
     assert "agent-toolkit-auto-inserted" not in conversation
-    # ツール呼び出しは発話と区別できるリスト行で、失敗したツール結果は呼び出しの直後に診断の1行で載せる。
-    assert "- ツール呼び出し（main:2）: Bash make lint\n  - 失敗（main:4）: Error: 検査に失敗した\n" in conversation
+    assert "ツール呼び出し（2026-09-06T12:00:10Z、claude:" in conversation
+    assert "make lint" in conversation and "Error: 検査に失敗した" in conversation
     assert "hook_additional_context" not in conversation
-    # 1000字を超える介入は先頭と末尾だけを載せ、全文を照会する記録位置を示す。
-    assert _LONG_INTERVENTION not in conversation
-    assert _LONG_INTERVENTION[:500] in conversation
-    assert _LONG_INTERVENTION[-500:] in conversation
-    assert "全文は記録位置main:5" in conversation
+    assert _LONG_INTERVENTION in conversation
+    assert f"claude:{transcript.stem}:5" in conversation
     assert f"atk run-script session-review-evidence -- {transcript.resolve()} --detail <記録位置>" in conversation
 
     candidates = pathlib.Path(record["candidates_path"]).read_text(encoding="utf-8")
@@ -842,12 +839,10 @@ def test_prepare_keeps_improvement_lines_in_omitted_middle(tmp_path: pathlib.Pat
     assert prepare.main(["--transcript", str(transcript), "--work-dir", str(_work_dir(tmp_path))], now=_FIXED_NOW) == 0
 
     conversation = pathlib.Path(json.loads(capsys.readouterr().out)["conversation_path"]).read_text(encoding="utf-8")
-    assert report not in conversation
-    omitted_marker = "全文は記録位置main:2）…\n"
-    assert f"{omitted_marker}{first_note}\n{second_note.strip()}\n" in conversation
-    assert filler not in conversation
-    # 行を持たない長い発話は、省略の標識の直後に末尾の本文が続く。
-    assert f"全文は記録位置main:3）…\n{_LONG_INTERVENTION[-500:]}" in conversation
+    assert report in conversation
+    assert first_note in conversation and second_note.strip() in conversation
+    assert filler in conversation
+    assert _LONG_INTERVENTION in conversation
 
 
 def test_prepare_reads_codex_thread(
@@ -917,10 +912,10 @@ def test_prepare_reads_codex_thread(
     assert record["utterance_counts"] == {"user": 1, "assistant": 0}
     conversation = pathlib.Path(record["conversation_path"]).read_text(encoding="utf-8")
     assert f"--codex-thread-id {thread_id} --detail <記録位置>" in conversation
-    assert "- ツール呼び出し（main:2）: exec_command ls docs" in conversation
-    assert "- ツール呼び出し（main:4）: apply_patch docs/a.md" in conversation
-    assert "  - 失敗（main:5）: rg: 失敗" in conversation
-    assert "成功した出力の本文" not in conversation and "書き込む本文" not in conversation
+    assert "exec_command" in conversation and "ls docs" in conversation
+    assert "apply_patch" in conversation and "docs/a.md" in conversation
+    assert "rg: 失敗" in conversation
+    assert "成功した出力の本文" in conversation
     assert "候補として残す問題は無かった。" in pathlib.Path(record["candidates_path"]).read_text(encoding="utf-8")
 
 
@@ -1298,7 +1293,7 @@ def test_prepare_reports_missing_items(
     captured = capsys.readouterr()
     assert captured.out == ""
     assert captured.err.splitlines()[0] == "不足: work_dir"
-    assert "`--work-dir`" in captured.err.splitlines()[1].removeprefix("次の操作: ")
+    assert "`--work-dir`" in captured.err.splitlines()[-1].removeprefix("次の操作: ")
 
     monkeypatch.setattr(prepare, "__file__", str(tmp_path / "detached" / "session_review_prepare.py"))
     assert prepare.main(["--transcript", str(transcript), "--work-dir", str(work_dir)]) == 2

@@ -24,7 +24,6 @@ from session_evidence_extract import (
     _OMISSION_MARK,
     _SHELL_NAMES,
     _basename,
-    _clip,
     _CollectedRecord,
     _DetailBudget,
     _generated_user_event,
@@ -342,8 +341,7 @@ def _wi_candidate_events(collected: list[_CollectedRecord], session_id: str) -> 
 def _adhoc_processing_events(collected: list[_CollectedRecord]) -> list[dict[str, Any]]:
     """メイン記録と全ての委譲先の記録から、その場のコードによる加工に当たるシェル呼び出しを返す。
 
-    会話の流れはメイン記録だけを対象とするため、委譲先の成功した呼び出しは候補を通してだけ振り返りの入力に含まれる。
-    代表入力は会話の流れと同じく空白を詰めた1行を`_BUNDLE_BODY_LENGTH`字までとする。
+    全担当の通読へ渡す操作と同じ呼び出し位置を保持し、候補でも操作入力の全文を残す。
     """
     events: list[dict[str, Any]] = []
     for item in collected:
@@ -357,7 +355,7 @@ def _adhoc_processing_events(collected: list[_CollectedRecord]) -> list[dict[str
                     "line": call.line,
                     "timestamp": call.timestamp,
                     "tool": call.tool,
-                    "text": _clip(" ".join(call.text.split()), _BUNDLE_BODY_LENGTH),
+                    "text": call.text,
                 }
             )
     return events

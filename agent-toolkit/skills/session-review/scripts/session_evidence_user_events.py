@@ -112,19 +112,12 @@ def _collect_user_events_since(collected: list[_CollectedRecord], since: datetim
 
 
 def _conversation_events(collected: list[_CollectedRecord]) -> list[dict[str, Any]]:
-    """メイン記録のユーザー発話とアシスタント発話、ツール呼び出しおよび失敗の標識を時系列で返す。
+    """収集できた全担当の発話・操作・結果を、記録別の前後関係と全文を保って返す。"""
+    return [event for item in collected for event in _record_conversation_events(item)]
 
-    振り返りでセッション全体の流れ（試したコマンド、読み書きしたファイル、委譲の起動、遠回り、手戻り、
-    同じ論点の反復、ユーザーによる是正）を通読するための入力とする。発話は切り詰めずに返す。
-    ツール呼び出しはツール名と代表入力だけを返し、書き込む本文と置換文字列は含めない。
-    ツール結果は本スクリプトが`failed-tool`として検出した失敗だけを、診断の1行とともに返す。
-    自動挿入本文、実行環境が生成した本文、スキル本文の展開、hookの追加コンテキスト、成功したツール結果の本文は除く。
-    確認への回答（本文は回答値と自由記述、質問と選択肢は`assistant_context`）と初期要求はユーザーの入力として残す。
-    委譲先の内部は問題候補の側で扱うため、メイン記録だけを対象とする。
-    """
-    main_record = next((item for item in collected if item.role == "main"), None)
-    if main_record is None:
-        return []
+
+def _record_conversation_events(main_record: _CollectedRecord) -> list[dict[str, Any]]:
+    """1記録の通読イベントを、元の行順で返す。"""
     token = _TEXT_LIMIT.set(None)
     try:
         events = _extract_records(main_record.records)
@@ -140,20 +133,17 @@ def _conversation_events(collected: list[_CollectedRecord]) -> list[dict[str, An
         raw_line = event.get("line")
         line = raw_line if isinstance(raw_line, int) else 0
         if kind == "failed-tool":
-            diagnostic = event.get("diagnostic_last_line") or next(
-                (value.strip() for value in reversed(text.splitlines()) if value.strip()), ""
-            )
             ordered.append(
                 (
                     line,
                     2,
                     {
                         "kind": "tool-failure",
-                        "record": "main",
+                        "record": main_record.record_id,
                         "line": event.get("line"),
                         "timestamp": event.get("timestamp"),
                         "call_id": event.get("tool"),
-                        "text": diagnostic,
+                        "text": text,
                     },
                 )
             )
@@ -173,13 +163,16 @@ def _conversation_events(collected: list[_CollectedRecord]) -> list[dict[str, An
                 {
                     "kind": "utterance",
                     "role": role,
-                    "record": "main",
+                    "record": main_record.record_id,
                     "line": event.get("line"),
                     "timestamp": event.get("timestamp"),
                     "text": text,
                 },
             )
         )
-    ordered.extend((call["line"], 1, call) for call in _conversation_tool_calls(main_record.records))
+    ordered.extend(
+        (call["line"], 1 if call["kind"] == "tool-call" else 2, {**call, "record": main_record.record_id})
+        for call in _conversation_tool_calls(main_record.records)
+    )
     ordered.sort(key=lambda item: (item[0], item[1]))
     return [item for _, _, item in ordered]

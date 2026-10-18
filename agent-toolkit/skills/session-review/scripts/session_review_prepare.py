@@ -1,7 +1,7 @@
 """セッション振り返りの入力を抽出し、会話・比較材料・候補・統計を作業ディレクトリへ書く。
 
 1回の実行で証拠bundleを抽出し、会話の流れ・比較材料・問題候補・統計を書いて、所在と読取範囲を1行のJSONで返す。
-会話の流れはメイン記録の発話、ツール呼び出しおよび失敗の標識を時系列で並べた文書であり、メインが最初に全範囲を通読する。
+会話の流れは全収集記録の発話・操作・成功と失敗の結果を記録別に並べた文書であり、メインが最初に全範囲を通読する。
 原因と対策の確定、AWIの起草と投入はメインが自身のコンテキストで行うため、本スクリプトはキューを変更しない。
 `candidates.md`は1候補を1行の要約と、記録の由来（役割文書、起動mode、起動元）を添えた記録位置で示す。全文が要る候補だけを、
 メインが`atk run-script session-review-evidence`の`--detail`で照会する。
@@ -36,7 +36,6 @@ from agent_toolkit._common import atomic_file, file_lock
 from agent_toolkit._common import host_homes as _host_homes
 from agent_toolkit._common import next_action as _next_action
 from agent_toolkit._common import state_paths as _state_paths
-from agent_toolkit._common.runtime_inserted import IMPROVEMENT_MARKER as _IMPROVEMENT_MARKER
 from agent_toolkit._git import command as _git_command
 
 CONVERSATION_FILENAME = "conversation.md"
@@ -52,19 +51,8 @@ Claude Code 2.1.296のReadは25,000トークンで拒否し、行番号を含む
 1トークンあたり2.06バイトだった。行番号とJSONの引用符の分に余裕を残す量を選んでいる。
 """
 
-_UTTERANCE_FULL_LIMIT = 1000
-_UTTERANCE_EDGE_LENGTH = 500
-"""会話の流れへ全文を載せる発話の上限と、それを超える発話で載せる先頭・末尾の文字数。
-
-実際の記録では自動挿入本文を除いた発話の大半が1000字以下で、超える発話は記録あたり0〜2件だった。
-流れをたどるには先頭と末尾で足り、全文が要る発話は記録位置から照会する。
-ツール呼び出しと失敗の標識は1行（`_SUMMARY_LENGTH`字まで）で載せ、発話とは別の書式で区別する。
-"""
 _SUMMARY_LENGTH = 200
-"""`candidates.md`の1行の要約、対象のツール呼び出しおよび直前のアシスタント発話、会話の流れのツール呼び出しと失敗の標識へ載せる文字数。
-
-ツール呼び出しの行を500字にすると大きい記録で会話の流れが約3割増えた一方、200字でコマンドとファイルパスを識別できた。
-"""
+"""候補の概要へ載せる文字数。通読の本文と操作入力の全文は別に保持する。"""
 _SLOW_CALL_LIMIT = 10
 _FULL_TEXT_KINDS = frozenset({"user-intervention", "wi-user-response", "escalation"})
 """`candidates.md`へ本文の全文を載せる候補種別。ユーザーの是正と上位判断の要求は要約すると趣旨が変わるため全文を載せる。"""
@@ -200,7 +188,7 @@ def _fence(body: str, info: str = "text") -> list[str]:
     """本文中のバッククォート連続より長いフェンスで囲み、本文中の見出しを見出しとして扱わせない。"""
     longest = max((len(run) for run in re.findall(r"`+", body)), default=0)
     fence = "`" * max(3, longest + 1)
-    return [f"{fence}{info}", body.rstrip("\n"), fence]
+    return [f"{fence}{info}", body, fence]
 
 
 def _one_line(text: str, limit: int = _SUMMARY_LENGTH) -> str:
@@ -210,72 +198,37 @@ def _one_line(text: str, limit: int = _SUMMARY_LENGTH) -> str:
 
 
 def _conversation_document(events: list[dict[str, Any]], detail_command: str) -> str:
-    """会話の流れを、発話と、ツール呼び出し・失敗の標識の行で時系列に組み立てる。
-
-    発話は本文を改変せずフェンスで囲む（逐語引用の出所に使われるため）。
-    ツール呼び出しと失敗の標識はフェンスの外のリスト行とし、発話と区別できるようにする。
-    """
+    """全担当の記録を記録別・行順に並べ、本文を文字位置付きの読取単位へ分ける。"""
     lines = [
         "# 会話の流れ",
         "",
-        "メイン記録のユーザー発話、アシスタント発話およびツール呼び出しを時系列で並べる。"
-        f"ツール呼び出しはツール名と代表入力（{_SUMMARY_LENGTH}字まで。`Write`・`Edit`は対象ファイルだけ）の1行で示し、"
-        "失敗したツール結果は直後に診断の1行を示す。"
-        "成功したツール結果の本文、自動挿入本文、実行環境の挿入、スキル展開、hookの追加コンテキスト、thinkingおよび委譲先の記録の内部は含まない。"
-        f"{_UTTERANCE_FULL_LIMIT}字を超える発話は先頭と末尾の{_UTTERANCE_EDGE_LENGTH}字ずつを載せ、"
-        f"省略した中間にある`{_IMPROVEMENT_MARKER}`で始まる行は省略の標識の後へ全て載せる。"
-        f"発話とツール呼び出し・結果の全文は`{detail_command} --detail <記録位置>`で取得する。",
+        "収集できた全担当の発話・操作・成功と失敗の結果を、記録別に元の行順で示す。"
+        "記録をまたぐ時系列ではない。本文は文字位置付きの連続区間へ分けて全量を保持する。"
+        f"元の記録は`{detail_command} --detail <記録位置>`から照会できる。",
     ]
     if not events:
         lines.extend(["", "発話とツール呼び出しは0件である。"])
-    calls: dict[str, int] = {}
     for item in events:
         locator = f"{item['record']}:{item['line']}"
         kind = item.get("kind", "utterance")
-        if kind == "tool-call":
-            if item.get("call_id"):
-                calls[str(item["call_id"])] = len(lines)
-            lines.extend(
-                ["", f"- ツール呼び出し（{locator}）: {item.get('tool') or '名前なし'} {_one_line(str(item['text']))}".rstrip()]
-            )
-            continue
-        if kind == "tool-failure":
-            failure = f"  - 失敗（{locator}）: {_one_line(str(item['text'])) or '診断なし'}"
-            position = calls.get(str(item.get("call_id")))
-            if position is not None and position + 1 < len(lines) and lines[position + 1].startswith("- ツール呼び出し"):
-                # 並列の呼び出しでは結果の行が後の呼び出しより後に現れるため、対応する呼び出しの直後へ置く。
-                lines.insert(position + 2, failure)
-                calls = {key: value + 1 if value > position else value for key, value in calls.items()}
-            else:
-                lines.append(failure)
-            continue
-        role = "ユーザー" if item["role"] == "user" else "アシスタント"
-        text = str(item["text"]).strip()
-        lines.extend(["", f"## {role}（{item.get('timestamp') or '時刻なし'}、{locator}）", ""])
-        if len(text) > _UTTERANCE_FULL_LIMIT:
-            omitted = len(text) - 2 * _UTTERANCE_EDGE_LENGTH
-            kept = "".join(f"{line}\n" for line in _omitted_improvement_lines(text))
-            body = (
-                f"{text[:_UTTERANCE_EDGE_LENGTH]}\n…（中間の{omitted}字を省略。全文は記録位置{locator}）…\n"
-                f"{kept}{text[-_UTTERANCE_EDGE_LENGTH:]}"
-            )
+        if kind == "utterance":
+            label = "ユーザー" if item["role"] == "user" else "アシスタント"
         else:
-            body = text
-        lines.extend(_fence(body))
+            label = {"tool-call": "ツール呼び出し", "tool-result": "ツール結果", "tool-failure": "失敗"}[kind]
+        title = f"{label}（{item.get('timestamp') or '時刻なし'}、{locator}）"
+        if kind != "utterance":
+            title += f" {item.get('tool') or ''} call_id={item.get('call_id')}"
+        lines.extend(_full_body_lines(str(item["text"]), title=title))
     return "\n".join(lines) + "\n"
 
 
-def _omitted_improvement_lines(text: str) -> list[str]:
-    """先頭と末尾の載せる範囲に全体が収まらない`気付いた改善点:`の行を、出現順に全文で返す。"""
-    kept: list[str] = []
-    start = 0
-    tail_start = len(text) - _UTTERANCE_EDGE_LENGTH
-    for line in text.splitlines(keepends=True):
-        end = start + len(line)
-        if line.lstrip().startswith(_IMPROVEMENT_MARKER) and end > _UTTERANCE_EDGE_LENGTH and start < tail_start:
-            kept.append(line.strip())
-        start = end
-    return kept
+def _full_body_lines(text: str, *, title: str) -> list[str]:
+    """長い単一行も上限内で読み、連続する文字位置から全文を復元できる形で返す。"""
+    lines = []
+    for start in range(0, max(1, len(text)), 4000):
+        body = text[start : start + 4000]
+        lines.extend(["", f"## {title}（文字{start + 1}〜{start + len(body)}）", "", *_fence(body)])
+    return lines
 
 
 def _conversation_ranges(text: str, events: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -287,7 +240,7 @@ def _conversation_ranges(text: str, events: list[dict[str, Any]]) -> list[dict[s
     sizes = [0]
     for index, line in enumerate(lines):
         sizes.append(sizes[-1] + len(line.encode("utf-8")))
-        if not fence_length and index and line.startswith(("## ユーザー（", "## アシスタント（", "- ツール呼び出し（")):
+        if not fence_length and index and line.startswith("## "):
             boundaries.append(index)
         fence = re.match(r"^(`{3,})([^`]*)$", line.rstrip("\n"))
         if fence is not None:
@@ -322,7 +275,7 @@ def _conversation_ranges(text: str, events: list[dict[str, Any]]) -> list[dict[s
                 continue
             if in_fence:
                 continue
-            utterance = re.match(r"^## (?:ユーザー|アシスタント)（([^、]+)、([^）]+)）", line)
+            utterance = re.match(r"^## [^（]+（([^、]+)、([^）]+)）", line)
             call = re.match(r"^(?:- ツール呼び出し|  - 失敗)（([^）]+)）", line)
             if utterance:
                 locators.append(utterance[2])
@@ -475,6 +428,10 @@ def _candidate_lines(
             f"  - {call['record']}:{call['line']}: {_one_line(str(call.get('text', ''))) or '（入力なし）'}"
             for call in candidate.get("calls", [])
         )
+        for call in candidate.get("calls", []):
+            text = str(call.get("text", ""))
+            if len(text) > _SUMMARY_LENGTH or "\n" in text:
+                lines.extend(_full_body_lines(text, title=f"操作 {call['record']}:{call['line']}"))
         return lines
     events = evidence.get("events", [])
     bodies, text = _candidate_bodies(candidate, evidence)
@@ -1051,6 +1008,7 @@ def _comparison_document(events: list[dict[str, Any]], detail_command: str) -> s
             f"対象={json.dumps(event['target'], ensure_ascii=False)}、入力={locator}、結果={result}、"
             f"代表入力={_one_line(str(event.get('summary', '')))}"
         )
+        lines.extend(_full_body_lines(str(event.get("summary", "")), title=f"入力 {locator}"))
     lines.extend(["", f"全文と参照先は`{detail_command} --detail <入力または結果の記録位置>`から取得する。", ""])
     return "\n".join(lines)
 

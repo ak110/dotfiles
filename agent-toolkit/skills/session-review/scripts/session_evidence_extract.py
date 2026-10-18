@@ -518,9 +518,20 @@ def _failed_tool_events(entry: dict[str, Any]) -> list[dict[str, Any]]:
         text = "\n".join(_text_blocks(block.get("content")))
         event = _event("failed-tool", text, tool=str(block.get("tool_use_id", "")))
         if event:
-            event["diagnostic_last_line"] = next((line.strip() for line in reversed(text.splitlines()) if line.strip()), "")
+            event["diagnostic_last_line"] = _failure_diagnostic(text)
             events.append(event)
     return events
+
+
+def _failure_diagnostic(text: str) -> str:
+    """hookの失敗は通知本文を診断にし、通常の失敗は最後の本文行を返す。"""
+    if _HOOK_FAILURE_PREFIX.match(text):
+        body = _HOOK_FAILURE_PREFIX.sub("", text, count=1)
+        return re.sub(r"</?[^>]+>", "", body).strip()
+    return next(
+        (line.strip() for line in reversed(text.splitlines()) if line.strip() and not re.fullmatch(r"</[^>]+>", line.strip())),
+        "",
+    )
 
 
 def _completion_event(entry: dict[str, Any]) -> dict[str, Any] | None:
@@ -944,7 +955,7 @@ def _codex_command_event(payload: dict[str, Any]) -> dict[str, Any] | None:
             event["command_full"] = json.dumps(command, ensure_ascii=False)
             event["executable"] = _basename(command[0]) if command else ""
         event["diagnostic"] = "" if text == "CommandExecution failed" else _clip(text)
-        event["diagnostic_last_line"] = next((line.strip() for line in reversed(text.splitlines()) if line.strip()), "")
+        event["diagnostic_last_line"] = _failure_diagnostic(text)
         exit_code = item.get("exit_code")
         if isinstance(exit_code, int) and not isinstance(exit_code, bool):
             event["exit_code"] = exit_code
