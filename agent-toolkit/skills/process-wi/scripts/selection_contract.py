@@ -24,6 +24,8 @@ _DECISION_KEYS = frozenset(
         _STALENESS_KEY,
         _selection.WRITE_FILES_KEY,
         _selection.PUBLIC_WRITE_FILES_KEY,
+        _selection.PUBLIC_WRITE_RATIONALES_KEY,
+        _selection.WRITE_SCOPE_REASONS_KEY,
         _selection.MODEL_TYPES_KEY,
         _selection.EXCLUDED_PATHS_KEY,
         _selection.DERIVED_NEW_PATHS_KEY,
@@ -42,6 +44,8 @@ _LANE_COST_KEYS = frozenset(
         _selection.PRIOR_LANES_KEY,
         _IMPLEMENTATION_SECONDS_KEY,
         _INTEGRATION_SECONDS_KEY,
+        _selection.UNCORRECTED_IMPLEMENTATION_KEY,
+        _selection.UNCORRECTED_INTEGRATION_KEY,
         _selection.RATIONALE_KEY,
         _selection.INTEGRATION_STATE_KEY,
         "after_lanes",
@@ -57,6 +61,8 @@ _TOP_LEVEL_KEYS = frozenset(
         _BLOCKERS_KEY,
         _selection.LANE_OVERLAPS_KEY,
         _selection.SINGLE_STAGE_ESTIMATE_KEY,
+        _selection.STAGED_ESTIMATE_KEY,
+        _selection.ESTIMATE_CORRECTION_KEY,
         _selection.INITIAL_ALLOCATION_KEY,
         _selection.ADDED_WIS_KEY,
     }
@@ -225,6 +231,11 @@ def structure_errors(selection: object) -> tuple[list[str], list[str]]:
     if comparison in selection and not is_non_negative_number(selection[comparison]):
         errors.append(f"`{comparison}`の型はbool以外の0以上の数値とする: {selection[comparison]!r}")
     model_errors: list[str] = []
+    staged = _selection.STAGED_ESTIMATE_KEY
+    if staged in selection and selection[staged] != _selection.NO_STAGED_PLAN and not is_non_negative_number(selection[staged]):
+        errors.append(f"`{staged}`はbool以外の0以上の数値か`{_selection.NO_STAGED_PLAN}`とする")
+    if _selection.ESTIMATE_CORRECTION_KEY in selection:
+        errors.extend(_correction_structure_errors(selection[_selection.ESTIMATE_CORRECTION_KEY]))
     items = _selection.decisions(selection)
     if items is None:
         errors.append(f"`{_selection.DECISIONS_KEY}`の列がない")
@@ -235,6 +246,11 @@ def structure_errors(selection: object) -> tuple[list[str], list[str]]:
             continue
         label = item.get(_selection.WI_KEY) if isinstance(item.get(_selection.WI_KEY), str) else f"{index}件目"
         errors.extend(_derived_structure_errors(str(label), item.get(_selection.DERIVED_NEW_PATHS_KEY, [])))
+        for field, keys in (
+            (_selection.PUBLIC_WRITE_RATIONALES_KEY, {"パス", "規範ファイル", "節"}),
+            (_selection.WRITE_SCOPE_REASONS_KEY, {"パス", "理由"}),
+        ):
+            errors.extend(_record_structure_errors(str(label), field, item.get(field, []), keys))
         errors.extend(f"{label}: 未知の欄: {key}" for key in item if key not in _DECISION_KEYS)
         errors.extend(f"{label}: 必須の欄がない: {key}" for key in _DECISION_REQUIRED_KEYS if key not in item)
         errors.extend(
@@ -288,6 +304,9 @@ def structure_errors(selection: object) -> tuple[list[str], list[str]]:
             if not is_non_negative_number(value):
                 errors.append(f"{label}: `{key}`が0以上の数値ではない: {value!r}")
         rationale = row.get(_selection.RATIONALE_KEY)
+        for key in (_selection.UNCORRECTED_IMPLEMENTATION_KEY, _selection.UNCORRECTED_INTEGRATION_KEY):
+            if key in row and not is_non_negative_number(row[key]):
+                errors.append(f"{label}: `{key}`が0以上の数値ではない: {row[key]!r}")
         if not isinstance(rationale, str) or not rationale.strip():
             errors.append(f"{label}: `{_selection.RATIONALE_KEY}`が空でない文字列ではない: {rationale!r}")
         state = row.get(_selection.INTEGRATION_STATE_KEY, _selection.NOT_INTEGRATED)
@@ -516,16 +535,22 @@ def _derived_structure_errors(label: str, records: object) -> list[str]:
 def cost_update_errors(value: object, destinations: set[str]) -> list[str]:
     """最終レーンへ渡す費用更新だけを受理する。省略は呼出側で判定する。"""
     if not isinstance(value, dict):
-        return ["費用更新JSONは最終レーンから3欄への写像とする"]
+        return ["費用更新JSONは最終レーンから補正前後の実装秒数・統合秒数と根拠の5欄への写像とする"]
     errors: list[str] = []
-    keys = {_IMPLEMENTATION_SECONDS_KEY, _INTEGRATION_SECONDS_KEY, _selection.RATIONALE_KEY}
+    seconds = (
+        _IMPLEMENTATION_SECONDS_KEY,
+        _INTEGRATION_SECONDS_KEY,
+        _selection.UNCORRECTED_IMPLEMENTATION_KEY,
+        _selection.UNCORRECTED_INTEGRATION_KEY,
+    )
+    keys = {*seconds, _selection.RATIONALE_KEY}
     for lane, row in value.items():
         if lane not in destinations:
             errors.append(f"費用更新の対象外レーン: {lane}")
         if not isinstance(row, dict) or set(row) != keys:
             errors.append(f"{lane}: 費用更新の欄を{', '.join(sorted(keys))}へそろえる")
             continue
-        for key in (_IMPLEMENTATION_SECONDS_KEY, _INTEGRATION_SECONDS_KEY):
+        for key in seconds:
             if not is_non_negative_number(row[key]):
                 errors.append(f"{lane}: `{key}`をbool以外の0以上の数値にする")
         rationale = row[_selection.RATIONALE_KEY]
@@ -565,3 +590,33 @@ def is_string_list(value: object) -> typing.TypeGuard[list[str]]:
 def is_non_negative_number(value: object) -> bool:
     """値が真偽値以外の0以上の数値かを返す。"""
     return isinstance(value, int | float) and not isinstance(value, bool) and value >= 0
+
+
+def _record_structure_errors(label: str, field: str, records: object, keys: set[str]) -> list[str]:
+    """対応するパスと記録を所定の欄の列として受け取る。値の対応は本文検査へ渡す。"""
+    if not isinstance(records, list):
+        return [f"{label}: `{field}`が列ではない"]
+    return [
+        f"{label}: `{field}`の各記録は{'・'.join(sorted(keys))}を文字列で持つ写像にする"
+        for record in records
+        if not isinstance(record, dict) or set(record) != keys or any(not isinstance(value, str) for value in record.values())
+    ]
+
+
+def _correction_structure_errors(value: object) -> list[str]:
+    """補正係数と参照・除外した記録の型を確かめる。"""
+    field = _selection.ESTIMATE_CORRECTION_KEY
+    if not isinstance(value, dict) or set(value) != {"係数", "参照した記録", "除外した記録"}:
+        return [f"`{field}`は係数・参照した記録・除外した記録を持つ写像にする"]
+    errors = []
+    coefficient = value["係数"]
+    if not is_non_negative_number(coefficient) or coefficient == 0:
+        errors.append(f"`{field}`の係数はbool以外の0より大きい数値にする")
+    if not is_string_list(value["参照した記録"]) or any(not record.strip() for record in value["参照した記録"]):
+        errors.append(f"`{field}`の参照した記録は空でない文字列の列にする")
+    errors.extend(_record_structure_errors(field, "除外した記録", value["除外した記録"], {"記録", "理由"}))
+    if isinstance(value["除外した記録"], list):
+        for record in value["除外した記録"]:
+            if isinstance(record, dict) and any(isinstance(part, str) and not part.strip() for part in record.values()):
+                errors.append(f"`{field}`の除外した記録と理由は空でない文字列にする")
+    return errors

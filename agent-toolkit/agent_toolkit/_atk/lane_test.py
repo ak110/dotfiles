@@ -662,8 +662,17 @@ def _integration_selection(path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, 
     monkeypatch.setenv("AGENT_TOOLKIT_PRIVATE_NOTES", str(notes))
     document = {
         "選定": [{"WI": "awi.md", "レーン": "lane-01", "書込対象": [], "鮮度": {"status": "current", "later_commit_count": 0}}],
+        "見込みの補正": {"係数": 1, "参照した記録": [], "除外した記録": []},
         "レーンの所要時間": [
-            {"レーン": "lane-01", "統合状態": "未統合", "実装秒数": 60, "統合秒数": 60, "根拠": "隔離した観測試験"}
+            {
+                "レーン": "lane-01",
+                "統合状態": "未統合",
+                "実装秒数": 60,
+                "統合秒数": 60,
+                "補正前の実装秒数": 60,
+                "補正前の統合秒数": 60,
+                "根拠": "隔離した観測試験",
+            }
         ],
         "初回配分": {
             "候補WI": ["awi.md"],
