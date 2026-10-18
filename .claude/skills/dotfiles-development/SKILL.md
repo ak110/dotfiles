@@ -38,7 +38,7 @@ description: >
 
 ### 自動チェックと依存更新
 
-- `make update`は、読込表のtargetの実処理の更新対象に変更対象が含まれる場合だけ候補にする。現行の対象は`uv.lock`と`agent-toolkit/uv.lock`の依存更新、prek autoupdate、mise lock、pinactアクション更新、全テストで、`rust/claude-statusline/Cargo.lock`は対象外である。GitHub Actionsのハッシュピンだけなら`make update-actions`
+- `make update`は、読込表のtargetの実処理の更新対象に変更対象が含まれる場合だけ候補にする。現行の対象は`uv.lock`と`agent-toolkit/uv.lock`の依存更新である。lock更新後にcontainer依存導入を検証する（`ci-deps-check`）。さらにprek autoupdate、mise lock、pinactアクション更新と全テストを実行する。`rust/claude-statusline/Cargo.lock`は対象外である。GitHub Actionsのハッシュピンだけなら`make update-actions`
 - 全体検証は`make test`（`uv run --frozen pyfltr run --no-fix`）。`agent-toolkit:check-execution`を起動し、標準出力と標準エラーを保存して検収できる手段（例: `agents_server`の`start`の`shell`）で実行する
   - pyfltrのformatter段（`ruff-format`・`uv-sort`・`shfmt`・`prek`・`sync-generated-files`）は`--no-fix`でもファイルを書き換え、終了コード0で終わる。コミット範囲を確定する前に`git status`で自分以外の差分を確かめる。自動修正は`make format`（`uv run --frozen pyfltr fast`）で行う
 - 特定ファイルに限定する検証は、MCPの`run`へパスを渡すか、`uv run --frozen pyfltr run <対象ファイルの絶対パス>`を使う。初回は`commands`（CLIは`--commands`）を指定せず、修正後の再実行だけ失敗したチェックへ限定する

@@ -32,7 +32,7 @@ PowerShellスクリプトのローカル完全検証は`pwsh`と`PSScriptAnalyze
 | --- | --- |
 | `make format` | 整形・軽量lint・自動修正 |
 | `make test` | 全チェック実行（コミット可否判定） |
-| `make update` | 依存更新（リポジトリ直下と`agent-toolkit/`の`uv.lock`を含む） |
+| `make update` | 依存更新（リポジトリ直下と`agent-toolkit/`の`uv.lock`を含む）、lock更新後のcontainer依存導入検証と全テスト |
 | `make update-mise-locks` | リポジトリ用と配布用のmise lockfileを更新 |
 | `make update-actions` | GitHub Actionsのハッシュピン更新（pinact経由） |
 

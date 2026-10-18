@@ -58,6 +58,21 @@ uv run --frozen prek run pyfltr --files docs/development/design-packages.md
 3行目の出力の1行目（`"kind":"header"`）が示す`run_id`を4行目へ渡す。4行目が返すJSONの`output`に、pyfltrのsubprojectごとの`# subproject: <ディレクトリ>`の行と、収集したテストの`<ファイル>::<テスト名>`の行が並ぶ。各行のファイルへsubprojectのディレクトリ（`.`はroot）を前置した集合が、fastのpytestが受け取ったファイルの集合である。
 この集合が`git ls-files`の一覧と一致し、通常の動作テストのファイルを含まないことを確認する。件数だけを比べると、対象のファイルが別のファイルへ置き換わった場合を見逃すため、集合を比べる。Markdownだけを渡したprekのhookからpytestが起動し、不変条件の失敗が同じhookの失敗へ届くことも確かめる。rebaseで組合せが変わった場合は、commit時の成功だけで判定せず、同じfastのpytestを統合前に再実行する。
 
+## .claude/skills/dotfiles-development/references/verification-values.md：変更範囲の検証の値：2026年10月18日
+
+Python 3.15、CIと同じimageのdigest `sha256:b13645f08610527422a741872c2457ee7b0e2ce96880acee22be2f1984477600`で、lockだけの変更によるsdistビルドの差を観測した。
+基準commit `a151f22a2a3447cfc4925e2a708d279138de46f4`のarchiveへ、`uv.lock`のzstandard依存2行から`python_full_version < '3.14'`のmarkerだけを除いた入力を作成した。
+両入力を同じcontainerの`poppler-utils libarchive13 zstd`導入後に`UV_FROZEN=1 UV_PYTHON=3.15 uv sync --all-groups --all-extras`へ渡した。
+marker保持側は終了0、除去側はzstandard 0.25.0のビルドに到達して`FileNotFoundError: No such file or directory: 'cc'`で終了1となった。
+現行commit `3c7276065cc081b9759f2702b7d149d3aaa06c7c`のlockにはzstandardが含まれないため、故障対照は基準版の入力として保持する。
+同じ現行commitのarchiveも上記と同じ操作へ渡し、135パッケージの依存導入と終了0を確認した。
+
+再検証では同じ基準版のarchiveから上記2入力を作成し、同じimage・ネイティブパッケージ・Python版・uvの同期引数を使う。
+実行結果は基準版の正常導入とlock変更によるビルド失敗を区別して読む。
+`ci_workflow_test.py::test_update_checks_container_dependencies_after_lock_updates`で依存更新の手順を確かめる。
+`update`から`$(MAKE) ci-deps-check`を除いたMakefileでは、同じ試験が失敗することを確かめる。
+`make -n update`では両lockの更新後に`ci-deps-check`の`docker run`が出力された。
+
 ## .claude/skills/merge-pr/SKILL.md：マージ前の確認：2026年10月5日
 
 2026年10月5日、GitHub CLI 2.101.0でPR #138のcheck登録順を確認した。run `37327087407`は同じPR headの`push`起点CIであり、run `37329129743`は`pull_request`起点CIであった。後者の`statusline-version`は先行するcheckの観測後に非同期で登録された。同じheadとcheck名だけでは起点を識別できず、PR起点checkの登録前に必須checkの集合を完全と判定できない。

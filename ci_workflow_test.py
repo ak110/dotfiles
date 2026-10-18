@@ -324,6 +324,20 @@ def test_ci_deps_check_matches_ci_container(workflow_data: dict[str, object]) ->
     assert _makefile_variable("CI_PYTHON_VERSIONS").split() == versions
 
 
+def test_update_checks_container_dependencies_after_lock_updates() -> None:
+    """依存更新は両lockの更新後、全体検証の前にcontainerの依存導入を確かめる。"""
+    text = (REPO_ROOT / "Makefile").read_text(encoding="utf-8")
+    match = re.search(r"^update:\n((?:\t.*\n)+)", text, flags=re.MULTILINE)
+    assert match is not None
+    commands = match.group(1).splitlines()
+    check = commands.index("\t$(MAKE) ci-deps-check")
+    assert next(index for index, command in enumerate(commands) if "uv sync --upgrade" in command) < check
+    assert (
+        next(index for index, command in enumerate(commands) if "uv lock --upgrade --project agent-toolkit" in command) < check
+    )
+    assert check < commands.index("\t$(MAKE) test")
+
+
 def test_minimum_git_tests_run_with_readme_version(workflow_data: dict[str, object]) -> None:
     """pytestのmatrix要素が、READMEの対応版と同じGitを導入し、その実行ファイルで実Gitテストを実行する。"""
     job = workflow_mapping(workflow_jobs(workflow_data)["python-lint"])
