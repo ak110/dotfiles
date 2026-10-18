@@ -95,6 +95,15 @@
 ## レビュー指摘管理表への応答
 
 レビュー指摘管理表が指定された場合は、渡された修正対象の`track`集合に属する行だけを採否判断と更新の対象とする（検証は表全体が対象）。実行レビューでは`exec-review`の単一trackに限る。
+既存行の応答本文と対応不要理由は、`show`が返す`row-id`で行を選び、次の公開操作でデコード済みの全文を読む。
+`response`は応答本文、`no-response-reason`は対応不要理由を指し、改行・日本語・引用符を保持する。
+次の例は行IDが1の場合を示す。
+
+```text
+atk review-table show <表の絶対パス> --row-id 1 --field response
+atk review-table show <表の絶対パス> --row-id 1 --field no-response-reason
+```
+
 応答は`atk review-table respond <表の絶対パス> --row-id <ROW_ID>`の形式で実行し、`<ROW_ID>`には`atk review-table show <表の絶対パス>`が出力した`row-id`を渡す。対応要では`--response-file <対応内容PATH>`を、対応不要では`--no-response-reason-file <理由PATH>`を添える。`--response-file`と`--no-response-reason-file`は併用できず、どちらを渡したかが対応要否を決める。互換の指定として`--round <ラウンド番号> --track <区分>`で行を指定する場合、同じ`round`と`track`で行を一意に特定できなければ`--location-file`と`--issue-file`も指定する。
 互換指定の両ファイルにはデコード後の指摘箇所と指摘内容を書く。表のセルはJSON文字列で保存されるため、raw TSVの値をそのまま渡すと一致する行が0件になる。値は`atk review-table show <表の絶対パス> --track <レビュー区分> --round <ラウンド番号> --format=jsonl`の出力から取る。
 
