@@ -1259,7 +1259,7 @@ runpy.run_path(sys.argv[0], run_name="__main__")
             env=environment,
         )
         assert parallel.stdout is not None
-        assert await asyncio.wait_for(parallel.stdout.readline(), timeout=5) == b"ready\n"
+        assert (await asyncio.wait_for(parallel.stdout.readline(), timeout=5)).rstrip() == b"ready"
         # Windowsで約40秒を要したcold導入と、実MCP操作の予算を確保する。
         with log.open("w", encoding="utf-8") as errors, anyio.fail_after(90):
             async with contextlib.AsyncExitStack() as stack:
