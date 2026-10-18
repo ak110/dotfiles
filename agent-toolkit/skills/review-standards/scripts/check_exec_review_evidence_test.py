@@ -1207,13 +1207,19 @@ def test_public_command_rejects_unprotected_number_differences(
     _write_evidence(path, rows)
 
     assert _check(path, FIRST_WI) == 1
-    assert "参照の外の整数" in capsys.readouterr().err
+    assert "参照の外の番号" in capsys.readouterr().err
 
 
 @pytest.mark.parametrize("section", ["wi_conditions", "user_requirements"])
 @pytest.mark.parametrize("label", ["条項番号={}", "完成条件 {}", "判定単位番号 {}", "No.{}"])
+@pytest.mark.parametrize("numbers", [("1", "2"), ("１", "２"), ("①", "②"), ("一", "二"), ("Ⅰ", "Ⅱ"), ("A", "B"), ("ア", "イ")])
 def test_public_shared_evidence_ignores_unprotected_integers(
-    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], section: str, label: str
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    section: str,
+    label: str,
+    numbers: tuple[str, str],
 ) -> None:
     """両配列で整数の付け方を変えても、異なるWIの同じ参照の共用を拒否する。"""
     _mock_wi(monkeypatch, tmp_path, {FIRST_WI: "type: awi\n---\n## 完成条件\n- 保存\n"})
@@ -1221,8 +1227,8 @@ def test_public_shared_evidence_ignores_unprotected_integers(
     record.write_text("# 観測\n保存と再読込。\n", encoding="utf-8")
     factory = _condition if section == "wi_conditions" else _requirement
     rows = [factory(FIRST_WI, "保存"), factory(SECOND_WI, "再読込")]
-    for index, row in enumerate(rows, 1):
-        row["evidence"] = f"{record}#観測 で操作を確認。{label.format(index)}"
+    for number, row in zip(numbers, rows, strict=True):
+        row["evidence"] = f"{record}#観測 で操作を確認。{label.format(number)}"
     path = tmp_path / "evidence.json"
     _write_evidence(
         path,
@@ -1232,7 +1238,7 @@ def test_public_shared_evidence_ignores_unprotected_integers(
     assert _check(path, FIRST_WI) == 1
     diagnostic = capsys.readouterr().err
     assert all(f"{section}[{index}].evidence" in diagnostic for index in (0, 1))
-    assert "参照の外の整数" in diagnostic and "証拠不足へ再判定" in diagnostic
+    assert "参照の外の番号" in diagnostic and "証拠不足へ再判定" in diagnostic
 
 
 @pytest.mark.parametrize(
@@ -1248,6 +1254,41 @@ def test_public_shared_evidence_keeps_reference_differences(
     rows = [_condition(FIRST_WI, "保存"), _condition(SECOND_WI, "再読込")]
     for row, reference in zip(rows, references, strict=True):
         row["evidence"] = f"{record}{reference} で確認" if reference[0] in ":#" else f"{reference} を確認"
+    path = tmp_path / "evidence.json"
+    _write_evidence(path, rows)
+    assert _check(path, FIRST_WI) == 0, capsys.readouterr().err
+
+
+@pytest.mark.parametrize("number", ["1", "①"])
+def test_public_shared_reference_rejects_one_sided_condition_number(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], number: str
+) -> None:
+    """同じWIの参照だけの共用も片側の条件番号で区別しない。"""
+    _mock_wi(monkeypatch, tmp_path, {FIRST_WI: "type: awi\n---\n## 完成条件\n- 保存\n- 再読込\n"})
+    record = tmp_path / "観測.md"
+    record.write_text("# 観測\n", encoding="utf-8")
+    rows = [_condition(FIRST_WI, "保存"), _condition(FIRST_WI, "再読込")]
+    rows[0]["evidence"], rows[1]["evidence"] = str(record), f"{record}（条件{number}）"
+    path = tmp_path / "evidence.json"
+    _write_evidence(path, rows)
+    assert _check(path, FIRST_WI) == 1
+    assert "行ごとの説明が無いファイル参照だけ" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize("observations", [("保存を確認", "削除を確認"), ("値を確認", "値を確認し、追加で3件を確認")])
+def test_public_shared_comparison_keeps_observation_words(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    observations: tuple[str, str],
+) -> None:
+    """同じ参照でも観測内容の違いは番号ラベルとして除去しない。"""
+    _mock_wi(monkeypatch, tmp_path, {FIRST_WI: "type: awi\n---\n## 完成条件\n- 保存\n"})
+    record = tmp_path / "観測.md"
+    record.write_text("# 観測\n", encoding="utf-8")
+    rows = [_condition(FIRST_WI, "保存"), _condition(SECOND_WI, "再読込")]
+    for row, observation in zip(rows, observations, strict=True):
+        row["evidence"] = f"{record}#観測 で{observation}"
     path = tmp_path / "evidence.json"
     _write_evidence(path, rows)
     assert _check(path, FIRST_WI) == 0, capsys.readouterr().err
@@ -1328,7 +1369,11 @@ def test_public_command_accepts_bullets_and_paragraph(tmp_path: pathlib.Path, mo
     evidence = tmp_path / "evidence.json"
     _write_evidence(
         evidence,
-        [_condition(FIRST_WI, "第一条件"), _condition(FIRST_WI, "第二条件"), _condition(SECOND_WI, "段落の完成条件。")],
+        [
+            {**_condition(FIRST_WI, "第一条件"), "evidence": "test_first_condition 成功"},
+            {**_condition(FIRST_WI, "第二条件"), "evidence": "test_second_condition 成功"},
+            _condition(SECOND_WI, "段落の完成条件。"),
+        ],
     )
 
     _mock_wi(
@@ -3085,6 +3130,33 @@ def _commit_files(repository: pathlib.Path, files: dict[str, str]) -> str:
         check=True,
         timeout=30,
     ).stdout.strip()
+
+
+@pytest.mark.parametrize("section", ["wi_conditions", "user_requirements"])
+@pytest.mark.parametrize("labels", [("", "条項番号=2"), ("", "No.2"), ("条項番号=1", "No.2"), ("", "（条件2）")])
+def test_public_shared_evidence_rejects_asymmetric_number_labels(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    section: str,
+    labels: tuple[str, str],
+) -> None:
+    """片側のラベルと末尾句点の違いを共用の書き分けとして受理しない。"""
+    _mock_wi(monkeypatch, tmp_path, {FIRST_WI: "type: awi\n---\n## 完成条件\n- 保存\n"})
+    factory = _condition if section == "wi_conditions" else _requirement
+    rows = [factory(FIRST_WI, "保存"), factory(SECOND_WI, "再読込")]
+    for row, label in zip(rows, labels, strict=True):
+        row["evidence"] = f"操作の結果を確認。{label}"
+    path = tmp_path / "evidence.json"
+    _write_evidence(
+        path,
+        rows if section == "wi_conditions" else [_condition(FIRST_WI, "保存")],
+        rows if section == "user_requirements" else [],
+    )
+    assert _check(path, FIRST_WI) == 1
+    diagnostic = capsys.readouterr().err
+    assert all(f"{section}[{index}].evidence" in diagnostic for index in (0, 1))
+    assert "番号付きラベル" in diagnostic and "証拠不足へ再判定" in diagnostic
 
 
 def _check_reference(evidence: pathlib.Path, head: str, reference: str) -> int:

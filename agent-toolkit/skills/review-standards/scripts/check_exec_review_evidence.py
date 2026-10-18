@@ -27,6 +27,7 @@ import subprocess
 import sys
 import tempfile
 import typing
+import unicodedata
 
 import accepted_review_evidence
 import reader_fit_declaration
@@ -767,7 +768,31 @@ def _shared_body(row: dict[str, str], field: str, repository: pathlib.Path) -> s
         *COMMIT_REFERENCE.finditer(evidence),
     ]:
         protected[match.start() : match.end()] = [True] * (match.end() - match.start())
-    return re.sub(r"\d+", lambda match: match.group() if any(protected[match.start() : match.end()]) else "<整数>", evidence)
+    parts: list[str] = []
+    start = 0
+    for index in range(1, len(evidence) + 1):
+        if index == len(evidence) or protected[index] != protected[start]:
+            part = evidence[start:index]
+            parts.append(part if protected[start] else _normalize_number_labels(part))
+            start = index
+    return "".join(parts).rstrip(" 、。，,.．")
+
+
+def _normalize_number_labels(text: str) -> str:
+    """参照外の番号を性質で正規化し、区切られた番号ラベルを比較から除く。"""
+    normalized = "".join("\0" if unicodedata.numeric(char, None) is not None else char for char in text)
+    for alphabet in (r"A-Za-zＡ-Ｚａ-ｚ", r"ァ-ヺー"):
+        normalized = re.sub(rf"(?<![{alphabet}])[{alphabet}](?![{alphabet}])", "\0", normalized)
+    separators = r"\s、。，,.;；|・（）()「」『』\[\]【】"
+    without_labels = re.sub(
+        rf"(^|[{separators}])[^ぁ-ゖ\0{separators}=:：.#]*[ =:：.#]*\0+(?=$|[{separators}])",
+        r"\1",
+        normalized,
+    )
+    without_labels = re.sub(r"[（(「『\[【]\s*[）)」』\]】]", "", without_labels)
+    if without_labels != normalized:
+        without_labels = re.sub(r"[\s、。，,.;；|・]{2,}", " ", without_labels)
+    return re.sub("\0+", "<番号>", without_labels)
 
 
 def review_wi_filenames(explicit: list[str], plans: list[pathlib.Path]) -> list[str]:
@@ -822,7 +847,8 @@ def _check_shared_evidence(payload: dict[str, object], repository: pathlib.Path,
         if any(awi != other_awi and text != other_text for _, awi, text in units for _, other_awi, other_text in units):
             reason = (
                 f"異なるWIの異なる要求単位で同じ達成根拠を共用しています: {evidence!r}。"
-                "参照の外の整数の違いは書き分けとして扱わない。各行の要求を満たす箇所（節、行、テスト名など）と観測した内容を行ごとに記入する"
+                "参照の外の番号（数字、丸数字、漢数字、ローマ数字、1文字の英字・片仮名）と番号付きラベル句の有無は書き分けとして扱わない。"
+                "各行の要求を満たす箇所（節、行、テスト名など）と観測した内容を行ごとに記入する"
             )
         elif _is_reference_only(evidence, repository, head):
             reason = (
