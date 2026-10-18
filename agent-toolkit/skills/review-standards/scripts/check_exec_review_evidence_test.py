@@ -2474,8 +2474,8 @@ def _judge_first_row(evidence: pathlib.Path, head: str, *extra: str) -> int:
 @pytest.mark.parametrize(
     ("text", "reference"),
     [
-        ("{outside}、同dir/stdout.bin を確認した", "dir/stdout.bin"),
-        ("出力値はnested/note.mdだった", "nested/note.md"),
+        ("{outside}、同dir/stdout.bin:1 を確認した", "dir/stdout.bin:1"),
+        ("出力値はnested/note.md:1だった", "nested/note.md:1"),
         ("docs/new.md:1 の見出しを確認した", "docs/new.md:1"),
         ("abc1234:docs/record.md の本文を確認した", "abc1234:docs/record.md"),
     ],
@@ -3094,6 +3094,78 @@ def _check_reference(evidence: pathlib.Path, head: str, reference: str) -> int:
         script_name="exec-review-evidence-check", script_args=["--", str(evidence), FIRST_WI, "--expected-head", head]
     )
     return run_script.dispatch(args)
+
+
+def test_public_reference_classification_uses_reviewed_commit_after_path_removal(
+    reference_repository: tuple[pathlib.Path, str, pathlib.Path], capsys: pytest.CaptureFixture[str]
+) -> None:
+    """現在のHEADから親ごと消えた参照も、判定対象版の追跡ファイルとして検査する。"""
+    repository, _, evidence = reference_repository
+    folder = repository / "obsolete"
+    folder.mkdir()
+    record = folder / "record.md"
+    record.write_text("# 観測\n", encoding="utf-8")
+    old = git_repository.commit_all(repository, "過去の記録")
+    record.unlink()
+    folder.rmdir()
+    git_repository.commit_all(repository, "記録を削除")
+    assert _check_reference(evidence, old, "obsolete/record.md で観測") == 0, capsys.readouterr().err
+    assert _check_reference(evidence, old, "obsolete/record.md:99 で観測") == 1
+    assert "行範囲" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize(
+    "name", ["docker-ce/docker-ce-cli/containerd.io", "React/Vue/Node.js", "vercel/next.js", "application/vnd.ms-excel"]
+)
+@pytest.mark.parametrize("inline", [False, True])
+@pytest.mark.parametrize("route", ["review", "record"])
+def test_public_reference_classification_accepts_names_and_keeps_explicit_paths(
+    reference_repository: tuple[pathlib.Path, str, pathlib.Path],
+    capsys: pytest.CaptureFixture[str],
+    name: str,
+    inline: bool,
+    route: str,
+) -> None:
+    """名称を保存・所在確認で受理し、同じ入力内の明示参照の誤りを拒否する。"""
+    _, head, evidence = reference_repository
+    description = f"`{name}`" if inline else name
+    assert _check_reference(evidence, head, f"{description} の動作を確認") == 0, capsys.readouterr().err
+    evidence.write_text(json.dumps(_pending_row()), encoding="utf-8")
+    text = evidence.parent / "observation.txt"
+    text.write_text(f"{description} の動作を確認", encoding="utf-8")
+
+    def save() -> int:
+        if route == "review":
+            return _judge_first_row(evidence, head, "--evidence-file", str(text))
+        return run_script.dispatch(
+            argparse.Namespace(
+                script_name="verification-record",
+                script_args=[
+                    "--output",
+                    str(evidence),
+                    "--section",
+                    "wi_conditions",
+                    "--row",
+                    "1",
+                    "--source",
+                    "WI本文",
+                    "--evidence-file",
+                    str(text),
+                    "--mode",
+                    "replace",
+                ],
+            )
+        )
+
+    assert save() == 0, capsys.readouterr().err
+    before = evidence.read_bytes()
+    external = check_exec_review_evidence.managed_temp.create_managed_temp("plan-verify-results") / "results.json"
+    external.write_text("{}", encoding="utf-8")
+    for reference in ("docs/missing.md", f"{external.parent.name}/{external.name}"):
+        text.write_text(f"{description}、{reference} で確認", encoding="utf-8")
+        assert save() == 1
+        assert evidence.read_bytes() == before
+        assert reference in capsys.readouterr().err
 
 
 _SUFFIX_FILES = {

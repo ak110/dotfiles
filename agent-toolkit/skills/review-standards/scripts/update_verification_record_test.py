@@ -561,8 +561,8 @@ def _update_route(route: str, record: pathlib.Path, source: str, evidence: pathl
 @pytest.mark.parametrize(
     ("text", "reference"),
     [
-        ("{saved}/record.json、同dir/stdout.bin を確認した", "dir/stdout.bin"),
-        ("出力値はnested/note.mdだった", "nested/note.md"),
+        ("{saved}/record.json、同dir/stdout.bin:1 を確認した", "dir/stdout.bin:1"),
+        ("出力値はnested/note.md:1だった", "nested/note.md:1"),
     ],
     ids=["same-dir", "plain-value"],
 )
@@ -576,7 +576,7 @@ def test_public_update_rejects_unresolved_references(
 ) -> None:
     """返却前の確認が拒否する参照を、未判定記録の3つの更新方法が保存の時点で全件示して拒否し、記録を変えない。
 
-    `nested/note.md`は追跡ファイルにも作業ツリーにも無い値であり、地の文の値を参照として扱う検出条件は変えない。
+    位置を持つ明示参照は、追跡ファイルにも作業ツリーにも無い場合に保存を拒否する。
     """
     record, source, saved = _reference_record(tmp_path, monkeypatch)
     evidence = tmp_path / "evidence.txt"

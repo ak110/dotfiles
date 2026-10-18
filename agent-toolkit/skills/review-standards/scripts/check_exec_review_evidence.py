@@ -290,7 +290,7 @@ def _unit_markers(source: str) -> tuple[str, str]:
     return rf"対象単位\s*[:：]\s*{source}", rf"証拠行\s*[:：]?\s*{source}"
 
 
-def _file_references(evidence: str, repository: pathlib.Path) -> list[re.Match[str]]:
+def _file_references(evidence: str, repository: pathlib.Path, head: str = "HEAD") -> list[re.Match[str]]:
     """根拠から明示されたファイル参照を取り出し、不在の参照も対象版で確認する。
 
     明示された参照は、Markdownリンク、WI名、実在するファイル、拡張子付きのパス、行・見出し位置付きのファイル名とする。
@@ -300,7 +300,7 @@ def _file_references(evidence: str, repository: pathlib.Path) -> list[re.Match[s
     matches = []
     for word in _evidence_words(evidence):
         for match in _plain_references(evidence, word, repository) if word.group("plain") is not None else [word]:
-            if _is_explicit_reference(match, evidence, repository):
+            if _is_explicit_reference(match, evidence, repository, head):
                 matches.append(match)
     return matches
 
@@ -373,7 +373,7 @@ def _plain_references(evidence: str, word: re.Match[str], repository: pathlib.Pa
     return references or [word]
 
 
-def _is_explicit_reference(match: re.Match[str], evidence: str, repository: pathlib.Path) -> bool:
+def _is_explicit_reference(match: re.Match[str], evidence: str, repository: pathlib.Path, head: str) -> bool:
     """切り出した候補が、所在を確かめるファイル参照として明示されているかを返す。"""
     # pytestの角括弧内は試験の入力値であり、そこに現れるパスは根拠の所在を指さない。
     # nodeidのファイル接頭辞は通常の参照として保持し、パラメーター値だけを候補から外す。
@@ -411,12 +411,29 @@ def _is_explicit_reference(match: re.Match[str], evidence: str, repository: path
     explicit = (
         _reference_group(match, "link") is not None
         or WI_FILENAME.fullmatch(candidate) is not None
-        or (has_separator and has_extension)
+        or (has_separator and has_extension and _path_clue(candidate, repository, head))
         or located
     )
-    if not candidate or (not location and _is_untracked_file(candidate, repository)):
+    if not candidate or (
+        not location
+        and _is_untracked_file(candidate, repository)
+        and not _suffix_matches(candidate, _tracked_files(repository, head))
+    ):
         return False
     return explicit or _is_file(repository / candidate)
+
+
+def _path_clue(candidate: str, repository: pathlib.Path, head: str) -> bool:
+    """名称と同形の相対候補について、所在として使われる手掛かりを確かめる。"""
+    path = pathlib.Path(candidate)
+    if path.is_absolute() or candidate.startswith(("./", "../")) or re.match(r"[A-Za-z]:[\\/]|[0-9a-fA-F]{7,64}:", candidate):
+        return True
+    if (repository / path).is_file() or (repository / path).parent.is_dir():
+        return True
+    if _suffix_matches(candidate, _tracked_files(repository, head)):
+        return True
+    first = candidate.replace("\\", "/").split("/", 1)[0]
+    return any(pathlib.Path(entry["path"]).name == first for entry in managed_temp.list_managed_temp() if entry["path"])
 
 
 def _is_untracked_file(candidate: str, repository: pathlib.Path) -> bool:
@@ -591,7 +608,7 @@ class ReferenceCheck:
         base = self.repository or pathlib.Path.cwd()
         body = accepted_review_evidence.without_references(_evidence_body(row, accepted_review_evidence.FIELDS[section]))
         errors: list[str] = []
-        for match in _file_references(body, base):
+        for match in _file_references(body, base, head):
             candidate, location = _reference_parts(match)
             is_wi = WI_FILENAME.fullmatch(candidate) is not None
             # abspathは..を整理するが、現在のリンク先で対象commitのパスを変えない。
@@ -682,16 +699,16 @@ def saved_row_label(row: dict[str, str], section: str, number: int) -> str:
     return f"{_row_label(row, section, number - 1)}（行番号{number}）"
 
 
-def _has_evidence_reference(evidence: str, repository: pathlib.Path) -> bool:
+def _has_evidence_reference(evidence: str, repository: pathlib.Path, head: str = "HEAD") -> bool:
     """所在を記したファイル参照か、具体的なテスト識別子と成功結果を認識する。"""
-    return bool(TEST_RESULT.search(evidence) or _file_references(evidence, repository))
+    return bool(TEST_RESULT.search(evidence) or _file_references(evidence, repository, head))
 
 
-def _is_reference_only(evidence: str, repository: pathlib.Path) -> bool:
+def _is_reference_only(evidence: str, repository: pathlib.Path, head: str = "HEAD") -> bool:
     """根拠がファイル参照だけで、その行の条件を満たす箇所や内容の説明を持たないかを判定する。"""
     if TEST_RESULT.search(evidence):
         return False
-    references = _file_references(evidence, repository)
+    references = _file_references(evidence, repository, head)
     if not references:
         return False
     rest = evidence
@@ -745,7 +762,7 @@ def _shared_body(row: dict[str, str], field: str, repository: pathlib.Path) -> s
     evidence = re.sub(pattern, " ", evidence).strip()
     protected = [False] * len(evidence)
     for match in [
-        *_file_references(evidence, repository),
+        *_file_references(evidence, repository, row.get("reviewed_head") or "HEAD"),
         *TEST_RESULT.finditer(evidence),
         *COMMIT_REFERENCE.finditer(evidence),
     ]:
@@ -776,7 +793,7 @@ def review_wi_filenames(explicit: list[str], plans: list[pathlib.Path]) -> list[
     return list(dict.fromkeys(filenames))
 
 
-def _check_shared_evidence(payload: dict[str, object], repository: pathlib.Path) -> list[str]:
+def _check_shared_evidence(payload: dict[str, object], repository: pathlib.Path, head: str) -> list[str]:
     """両配列の全達成行を要求単位で区別し、所在のない共用と、説明のない参照だけの共用を報告する。
 
     同じ検証記録のパスだけを多数の行へ写すと、各行の条件を判定せずに空欄を埋めた証拠と区別できない。
@@ -807,12 +824,12 @@ def _check_shared_evidence(payload: dict[str, object], repository: pathlib.Path)
                 f"異なるWIの異なる要求単位で同じ達成根拠を共用しています: {evidence!r}。"
                 "参照の外の整数の違いは書き分けとして扱わない。各行の要求を満たす箇所（節、行、テスト名など）と観測した内容を行ごとに記入する"
             )
-        elif _is_reference_only(evidence, repository):
+        elif _is_reference_only(evidence, repository, head):
             reason = (
                 f"異なる要求単位で、行ごとの説明が無いファイル参照だけの達成根拠を共用しています: {evidence!r}。"
                 "参照先のうちその行の条件を満たす箇所（節、行、テスト名など）と観測した内容を行ごとに記入する"
             )
-        elif not _has_evidence_reference(evidence, repository):
+        elif not _has_evidence_reference(evidence, repository, head):
             reason = (
                 f"異なる要求単位で達成根拠を共用していますが、具体的な参照先がありません: {evidence!r}。"
                 "実在ファイルのパスか具体的なテスト名と成功結果を記入する"
@@ -1335,7 +1352,7 @@ def _background_source_error(
             "要求を含む文は背景にせず、達成・未達・証拠不足のいずれかで判定する"
         )
     evidence = row["evidence"].strip()
-    if not evidence or _is_reference_only(evidence, repository):
+    if not evidence or _is_reference_only(evidence, repository, row.get("reviewed_head") or "HEAD"):
         return (
             f"{label}.evidence: 要求を含まない理由がありません。"
             "分類の記録を指し、その単位が要求・制約・採否・選好・回答を求める問いを含まない理由をevidenceへ書く"
@@ -1463,7 +1480,7 @@ def check_evidence(
         wi_outputs = WiOutputs(repository)
         errors.extend(_check_reviewed_heads(payload, repository, expected_head))
         errors.extend(_check_reference_locations(payload, repository, expected_head, wi_outputs))
-        errors.extend(_check_shared_evidence(payload, repository))
+        errors.extend(_check_shared_evidence(payload, repository, expected_head))
     except (OSError, subprocess.TimeoutExpired, ValueError) as exc:
         return [_diagnostic(exc)]
     condition_rows = payload["wi_conditions"]
@@ -1538,7 +1555,7 @@ def _referenced_records(
 ) -> list[tuple[pathlib.Path, str]]:
     """sourceとevidenceが実際に指す、今回渡された入力記録の絶対パスと指された範囲の本文を返す。"""
     found: list[tuple[pathlib.Path, str]] = []
-    for match in _file_references(row["source"] + " " + row["evidence"], repository):
+    for match in _file_references(row["source"] + " " + row["evidence"], repository, row.get("reviewed_head") or "HEAD"):
         candidate, location = _reference_parts(match)
         if WI_FILENAME.fullmatch(candidate):
             continue
@@ -1757,7 +1774,7 @@ def check_return_result(
             rejects = [(path, text) for path, text in records.items() if _reject_record(text, row["awi"])]
             if rejects:
                 terminal_text = row["evidence"]
-                for reference in reversed(_file_references(terminal_text, repository)):
+                for reference in reversed(_file_references(terminal_text, repository, head)):
                     terminal_text = terminal_text[: reference.start()] + " " + terminal_text[reference.end() :]
                 if row["outcome"] != "未達" or not (
                     re.search(r"(?<![A-Za-z0-9_])reject(?![A-Za-z0-9_])", terminal_text)
