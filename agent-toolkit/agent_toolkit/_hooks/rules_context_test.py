@@ -380,6 +380,17 @@ def test_direct_hooks_deliver_cli_when_bash_environment_file_is_unavailable(
     output = _output(capsys)
     entry = rules_context.SHARE_DIR.parent / "scripts" / ("atk.cmd" if windows else "atk")
     assert entry.is_file()
+    notified_entry = next(
+        pathlib.Path(line.removeprefix("agent-toolkitのCLI: "))
+        for line in output.splitlines()
+        if line.startswith("agent-toolkitのCLI: ")
+    )
+    plugin_root = notified_entry.parent.parent
+    assert notified_entry == entry
+    assert plugin_root == rules_context.SHARE_DIR.parent
+    skill = plugin_root / "skills" / "writing-standards" / "SKILL.md"
+    assert skill.is_file()
+    assert "name: writing-standards" in skill.read_text(encoding="utf-8")
     command = next(line.removeprefix("起動部分: ") for line in output.splitlines() if line.startswith("起動部分: "))
     if windows:
         assert command == "& '" + str(entry).replace("'", "''") + "'"
