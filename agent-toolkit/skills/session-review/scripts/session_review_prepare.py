@@ -28,7 +28,7 @@ from typing import Any
 import session_evidence_candidates  # pylint: disable=import-error
 import session_review_evidence  # pylint: disable=import-error
 
-from agent_toolkit._atk import run_script
+from agent_toolkit._atk import managed_temp, run_script
 from agent_toolkit._atk.wi import constants as _wi_constants
 from agent_toolkit._atk.wi import sections as _wi_sections
 from agent_toolkit._atk.wi import uwi_scan as _uwi_scan
@@ -91,8 +91,7 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--work-dir",
         metavar="PATH",
-        required=True,
-        help="メインがmanaged-tempに作成したディレクトリの絶対パス。会話・比較材料・候補・統計と証拠bundleを書く。",
+        help="作成済みの出力ディレクトリの絶対パス。省略時は対象セッションのmanaged-temp内へ実行ごとの領域を確保する。",
     )
     parser.add_argument(
         "--target-repo",
@@ -864,20 +863,28 @@ def main(argv: list[str] | None = None, *, now: datetime.datetime | None = None)
     if local_evidence_script != evidence_script:
         return _missing("evidence_script")
 
-    work_dir = pathlib.Path(args.work_dir).expanduser()
-    if not work_dir.is_absolute() or not work_dir.is_dir():
-        return _missing("work_dir")
     transcript_path = pathlib.Path(args.transcript).expanduser().resolve() if args.transcript is not None else None
     if transcript_path is not None and not transcript_path.is_file():
         return _missing("transcript_path")
     target_repo = pathlib.Path(args.target_repo).expanduser().resolve() if args.target_repo is not None else None
+    if args.work_dir is not None:
+        work_dir = pathlib.Path(args.work_dir).expanduser()
+        if not work_dir.is_absolute() or not work_dir.is_dir():
+            return _missing("work_dir", f"既存の絶対ディレクトリではない: {work_dir}")
+    else:
+        session_id = transcript_path.stem if transcript_path is not None else str(args.codex_thread_id)
+        try:
+            session_root = managed_temp.resolve_session_temp(session_id)
+            work_dir = managed_temp.create_session_temp("session-review", session_root)
+        except (managed_temp.ManagedTempError, OSError) as error:
+            return _missing("work_dir", str(error))
 
     session_arguments = [str(transcript_path)] if transcript_path is not None else ["--codex-thread-id", args.codex_thread_id]
     bundle_dir = work_dir / "bundle"
     bundle_dir.mkdir(exist_ok=True)
     failure, unresolved = _extract_bundle(session_arguments, bundle_dir)
     if failure is not None:
-        return _missing("bundle", failure)
+        return _missing("bundle", f"{failure}\n診断用に保持した作業領域: {work_dir}")
     try:
         candidate_rows = _read_jsonl(bundle_dir / "candidates.jsonl")
         stats = _read_jsonl(bundle_dir / "stats.jsonl")

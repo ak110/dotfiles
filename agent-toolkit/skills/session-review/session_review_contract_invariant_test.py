@@ -29,6 +29,7 @@ def test_session_review_documents_use_public_script_entries() -> None:
     for command in commands:
         assert command[:2] == ["atk", "run-script"]
         assert command[3] == "--"
+        assert "--work-dir" not in command
         assert run_script.registered_script_path(command[2]).is_file()
         cli_examples.validate_example(shlex.join(command), source=str(documents[0]))
 

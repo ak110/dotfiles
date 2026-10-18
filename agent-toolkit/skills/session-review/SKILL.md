@@ -32,12 +32,14 @@ description: >
 
 ## 工程
 
-1. セッションのmanaged-temp（`agent-toolkit:managed-temp`）の中へ実行ごとに異なる名前（`session-review-<時刻>`など）の作業ディレクトリを作成し、次のいずれかの形で1回実行する。Claude Codeでは現在のtranscriptの絶対パス（`rules-main.claude-code.md`「自身の会話の記録」の取得元の値）を、Codexでは`CODEX_THREAD_ID`を渡す。`--target-repo`は対象リポジトリを確定できた場合だけ渡す。
+1. 次のいずれかの形で1回実行する。出力領域は準備コマンドが対象セッションのmanaged-temp内へ実行ごとに確保する。Claude Codeでは現在のtranscriptの絶対パス（`rules-main.claude-code.md`「自身の会話の記録」の取得元の値）を、Codexでは`CODEX_THREAD_ID`を渡す。`--target-repo`は対象リポジトリを確定できた場合だけ渡す。
 
    ```text
-   atk run-script session-review-prepare -- --transcript <transcriptの絶対パス> --work-dir <作業ディレクトリの絶対パス> --target-repo <対象リポジトリの絶対パス>
-   atk run-script session-review-prepare -- --codex-thread-id <thread ID> --work-dir <作業ディレクトリの絶対パス> --target-repo <対象リポジトリの絶対パス>
+   atk run-script session-review-prepare -- --transcript <transcriptの絶対パス> --target-repo <対象リポジトリの絶対パス>
+   atk run-script session-review-prepare -- --codex-thread-id <thread ID> --target-repo <対象リポジトリの絶対パス>
    ```
+
+   JSONの`work_dir`から確保した出力領域を取得する。生成物は準備終了後も保持し、セッションのmanaged-tempの7日保持へ委ねる。既存の絶対ディレクトリを`--work-dir`で明示した場合の保持と回収は呼出側が担う。
 
    作業ディレクトリへ会話の流れ（`conversation.md`）、比較材料（`comparison-materials.md`）、問題候補（`candidates.md`）、セッション統計（`stats.md`）の4文書が書かれる。
    - `comparison-materials.md`は委譲入力・規範読込の比較材料を記録別に示す参照資料で、対象・時点・記録位置から詳細照会の全文位置を選ぶのに使う。時系列は会話の流れから読む
