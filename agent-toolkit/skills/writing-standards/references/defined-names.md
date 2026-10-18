@@ -65,6 +65,7 @@
 | 画面差分 | 画面の変更 | `agent-toolkit/share/workflow-phases.md`「用語」 |
 | 並列画面レビュー | 画面差分のある運用 | `agent-toolkit/share/workflow-phases.md`「用語」 |
 | WI投入担当 | WI作成の委譲先 | `agent-toolkit/share/add-wi.subagent.md` |
+| 投入前レビュー | WI原稿の保存前レビュー | `agent-toolkit/share/wi-draft-review.parent.md`冒頭 |
 | 一括置換後レビュー担当 | 一括置換の委譲先 | `agent-toolkit/share/bulk-replace-review.subagent.md` |
 | 投稿前レビュー担当 | 外部投稿の委譲先 | `agent-toolkit/share/external-write-review.subagent.md` |
 | 調査担当 | 原因調査の委譲先 | `agent-toolkit/share/defect-investigation.subagent.md` |
