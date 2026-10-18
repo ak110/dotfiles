@@ -510,7 +510,8 @@ HELP["atk run-script"]["description"] += (
     "--list-results --results-summaryで一覧を読み、--result-testと--select-row・--modeで根拠を記入する。"
     "読者別探索の入力はreader-fit-prepareへ--repository・--review-start・--review-head・--output-dirを渡して保存する。"
     "再レビューは--previous-review-start・--previous-review-head、計画別の範囲は--review-contractを渡す。"
-    "files配列の各要素はpath・before・patchと任意のomissionを持ち、--markdownで修正範囲として読める表示を得る。"
+    "files配列の各要素は対象識別用の相対path、現行本文の絶対current、保存資料の絶対before・patchと任意のomissionを持つ。"
+    "currentを成果物と比較資料の現行本文へ同じ値で渡し、--markdownで対象の相対パスを反復指定できる。"
     "未判定記録の判定欄は空に保ち、レビューでは行ごとの判定とHEADを明示して別ファイルへ保存する。"
 )
 

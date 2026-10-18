@@ -16,7 +16,12 @@ from agent_toolkit._git import command
 
 def main(argv: list[str] | None = None) -> int:
     """対象集合と前回との差分をそろえ、修正範囲の保存パスをJSONで返す。"""
-    parser = argparse.ArgumentParser(description=__doc__)
+    parser = argparse.ArgumentParser(
+        description=__doc__,
+        epilog=(
+            "出力filesのpathは対象識別用のリポジトリ相対パス。currentは現行本文の絶対パス、beforeとpatchは保存資料の絶対パス。"
+        ),
+    )
     parser.add_argument("--repository", type=pathlib.Path, required=True, metavar="DIR", help="対象Gitリポジトリの絶対パス")
     parser.add_argument("--review-start", required=True, help="今回レビューの差分の基点となるcommit識別子")
     parser.add_argument("--review-head", required=True, help="今回レビューで確認するHEADのcommit識別子")
@@ -61,7 +66,12 @@ def main(argv: list[str] | None = None) -> int:
             before.write_text(declaration.body(args.repository, previous, path), encoding="utf-8", newline="")
             current_patch = declaration.patch_text(args.repository, previous, args.review_head, path, args.review_contract)
             patch.write_text(current_patch, encoding="utf-8", newline="")
-            item = {"path": path, "before": str(before), "patch": str(patch)}
+            item = {
+                "path": path,
+                "current": str((args.repository / path).resolve()),
+                "before": str(before),
+                "patch": str(patch),
+            }
             if args.previous_review_head is not None and declaration.same_changes(
                 args.repository,
                 args.review_start,
