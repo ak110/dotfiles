@@ -2199,6 +2199,35 @@ class TestGlabJobList:
             _glab_job_list("group/repository", _run(), 1.0)
 
 
+def _port_endpoint_options(repository: str) -> list[str]:
+    """baselineとSHA待機へ同じrepository・ref・登録猶予・poll間隔を与える。"""
+    return [
+        "--repo",
+        repository,
+        "--forge",
+        "gitlab",
+        "--ref",
+        "refs/heads/main",
+        "--source-ref",
+        "HEAD",
+        "--registration-grace",
+        "0",
+        "--poll-interval",
+        "0.01",
+    ]
+
+
+def _assert_port_endpoint(command: list[str], environment: dict[str, str], repository: str, expected_host: str) -> None:
+    """glabのCLI境界で明示URLのscheme・host・portとrepositoryを確認する。"""
+    assert command[0] == "glab"
+    assert "--hostname" not in command
+    assert environment["GITLAB_HOST"] == expected_host
+    assert environment["GITLAB_API_HOST"] == expected_host
+    assert environment["GLAB_API_PROTOCOL"] == repository.split(":", 1)[0]
+    if command[1:3] == ["ci", "list"]:
+        assert command[command.index("--repo") + 1] == repository
+
+
 @pytest.mark.parametrize(
     "repository", ["http://10.230.22.47:40108/AIWG/aitools", "https://gitlab.example.com:8443/group/sub/repo"]
 )
@@ -2225,14 +2254,9 @@ def test_port_endpoint_baseline_wait_resume(
         }
 
     def run(command: list[str], **kwargs: Any) -> subprocess.CompletedProcess[bytes]:
-        assert command[0] == "glab"
-        assert "--hostname" not in command
-        assert kwargs["env"]["GITLAB_HOST"] == expected_host
-        assert kwargs["env"]["GITLAB_API_HOST"] == expected_host
-        assert kwargs["env"]["GLAB_API_PROTOCOL"] == repository.split(":", 1)[0]
+        _assert_port_endpoint(command, kwargs["env"], repository, expected_host)
         calls.append(command)
         if command[1:3] == ["ci", "list"]:
-            assert command[command.index("--repo") + 1] == repository
             payload: object = [pipeline(1 if phase == "baseline" else 2)]
         else:
             endpoint = command[2]
@@ -2250,20 +2274,7 @@ def test_port_endpoint_baseline_wait_resume(
     monkeypatch.setattr(json_command.subprocess, "run", run)
     monkeypatch.setattr(wait_ci, "_resolve_sha", lambda *_args: "a" * 40)
     baseline = tmp_path / "baseline.json"
-    options = [
-        "--repo",
-        repository,
-        "--forge",
-        "gitlab",
-        "--ref",
-        "refs/heads/main",
-        "--source-ref",
-        "HEAD",
-        "--registration-grace",
-        "0",
-        "--poll-interval",
-        "0.01",
-    ]
+    options = _port_endpoint_options(repository)
     assert wait_ci.main(["--write-baseline", str(baseline), *options]) == 0
     phase = "failure"
     assert wait_ci.main(["--baseline", str(baseline), *options]) == 6
@@ -2273,3 +2284,101 @@ def test_port_endpoint_baseline_wait_resume(
     assert os.environ == parent_environment
     assert any(command[2].endswith("/3") for command in calls if command[1] == "api")
     assert any("/jobs?" in command[2] for command in calls if command[1] == "api")
+
+
+@pytest.mark.parametrize(
+    "repository", ["http://10.230.22.47:40108/AIWG/aitools", "https://gitlab.example.com:8443/group/sub/repo"]
+)
+@pytest.mark.parametrize("case", ["success", "failed", "partial", "running"])
+def test_port_endpoint_wait_sha_covers_downstream_states(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], repository: str, case: str
+) -> None:
+    """ポート付きSHA待機が親・下流・jobを取得し、成功・終端失敗・部分失敗・未終端を区別する。"""
+    expected_host = "10.230.22.47:40108" if repository.startswith("http:") else "gitlab.example.com:8443"
+    project = "projects/AIWG%2Faitools" if repository.startswith("http:") else "projects/group%2Fsub%2Frepo"
+    monkeypatch.setenv("GITLAB_HOST", "other.example.com:9443")
+    monkeypatch.setenv("GITLAB_API_HOST", "other-api.example.com:9443")
+    parent_environment = os.environ.copy()
+    calls: list[list[str]] = []
+
+    def pipeline(identifier: int) -> dict[str, Any]:
+        return {
+            "id": identifier,
+            "project_id": 7,
+            "sha": _FULL_SHA,
+            "status": (
+                {"success": "success", "failed": "failed", "partial": "failed", "running": "running"}[case]
+                if identifier == 2
+                else "running"
+                if case == "partial"
+                else "success"
+            ),
+        }
+
+    def run(command: list[str], **kwargs: Any) -> subprocess.CompletedProcess[bytes]:
+        # GitLab Pipelines/Jobs APIの公開fieldを、CLI子プロセスの境界で応答する。
+        _assert_port_endpoint(command, kwargs["env"], repository, expected_host)
+        calls.append(command)
+        if command[1:3] == ["ci", "list"]:
+            assert command[command.index("--sha") + 1] == _FULL_SHA
+            assert command[command.index("--ref") + 1] == "main"
+            payload: object = [pipeline(1)]
+        else:
+            endpoint = command[2]
+            assert endpoint.startswith(f"{project}/pipelines/")
+            if endpoint == f"{project}/pipelines/1/bridges?per_page=100":
+                payload = [{"downstream_pipeline": {"id": 2, "project_id": 7}}]
+            elif endpoint == f"{project}/pipelines/2/bridges?per_page=100":
+                payload = []
+            elif endpoint == f"{project}/pipelines/2":
+                payload = pipeline(2)
+            else:
+                assert endpoint in {
+                    f"{project}/pipelines/{identifier}/jobs?include_retried=false&per_page=100" for identifier in (1, 2)
+                }
+                identifier = int(endpoint.split("/")[-2])
+                payload = [
+                    {
+                        "id": 100 + identifier,
+                        "name": f"test-{identifier}",
+                        "allow_failure": False,
+                        "status": pipeline(identifier)["status"],
+                    }
+                ]
+        return subprocess.CompletedProcess(command, 0, stdout=json.dumps(payload).encode(), stderr=b"")
+
+    monkeypatch.setattr(json_command.subprocess, "run", run)
+    assert (
+        wait_ci.main(
+            [
+                "--wait-sha",
+                _FULL_SHA,
+                *_port_endpoint_options(repository),
+                "--timeout",
+                "0.03",
+            ]
+        )
+        == {
+            "success": wait_ci.EXIT_SUCCESS,
+            "failed": wait_ci.EXIT_CI_FAILED,
+            "partial": wait_ci.EXIT_NEW_FAILURE,
+            "running": wait_ci.EXIT_TIMEOUT,
+        }[case]
+    )
+    endpoints = {command[2] for command in calls if command[1] == "api"}
+    assert {
+        f"{project}/pipelines/1/bridges?per_page=100",
+        f"{project}/pipelines/2/bridges?per_page=100",
+        f"{project}/pipelines/2",
+        f"{project}/pipelines/1/jobs?include_retried=false&per_page=100",
+        f"{project}/pipelines/2/jobs?include_retried=false&per_page=100",
+    } <= endpoints
+    assert os.environ == parent_environment
+    output = capsys.readouterr()
+    if case == "partial":
+        assert forge_cli.failure_next_action("gitlab", repository, "102", job=True) in output.err
+    elif case == "failed":
+        assert forge_cli.failure_next_action("gitlab", repository, "2") in output.err
+        assert "job test-2: failure" in output.out
+    elif case == "running":
+        assert "タイムアウト" in output.err
