@@ -430,6 +430,8 @@ HELP: dict[str, dict[str, str]] = {
         "未応答はresponseとno-response-reasonがともに空の行であり、過去ラウンドの応答を含めない。"
         "エージェント環境の長い出力は全量を保存し、保存先と行数を返す。表は変更しない。\n"
         "前提: --trackと--roundで行を限定できる。summaryは1以上の--roundが必須で、track省略時はexec-review。"
+        "--row-id Nで保存順の既存識別子により1行を選び、--field responseか--field no-response-reasonでデコード済み本文だけを全文取得できる。"
+        "改行・日本語・引用符を保持し、保存JSONの加工を要しない。"
         "対象行が無い場合、summaryは各件数0のJSON、tsvとjsonlは空の出力で終了0となる。\n"
         "復元・後始末: 読み取りだけを行うため不要。",
         "epilog": "実行例:\n\n  atk review-table show /home/aki/.claude/plans/2026/09/01-example-1a2b.exec-review.tsv",

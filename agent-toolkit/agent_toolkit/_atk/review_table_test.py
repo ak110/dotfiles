@@ -1259,7 +1259,7 @@ def test_add_parser_requires_canonical_level(arguments: list[str]) -> None:
                 "--track",
             ),
         ),
-        ("show", ["review.tsv", "--all"], ("--format", "--round", "--track")),
+        ("show", ["review.tsv", "--all"], ("--field", "--format", "--round", "--row-id", "--track")),
         (
             "add",
             ["review.tsv", "--round=1", f"--track={_TRACK}", "--level=詳細", "位置", "指摘", "余分"],
@@ -1644,3 +1644,64 @@ def test_cli_lock_is_created_under_state_lock_dir(
     lock_dir = tmp_path / "state" / "agent-toolkit" / "locks" / "review-table"
     assert [lock.parent for lock in lock_dir.glob("*.lock")] == [lock_dir]
     assert not list((home / ".claude").glob(".atk-*"))
+
+
+@pytest.mark.parametrize("field", ("response", "no-response-reason"))
+@pytest.mark.parametrize("layout", ("current", "legacy-seven", "legacy-eight"))
+def test_public_show_selected_body_preserves_full_decoded_text(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], field: str, layout: str
+) -> None:
+    """現行・旧形式の指定行の本文を、空行を除く保存順IDで全文取得する。"""
+    path = tmp_path / "review.exec-review.tsv"
+    body = '  日本語の応答\n"引用符"\t逆斜線\\と`記号`\n\n'
+    first = ["1", _TRACK, "先の行", "別指摘", "詳細", "別の本文", ""]
+    second = ["2", _COMPAT_TRACK, "後の行", "対象指摘", "仕様", "", ""]
+    second[table.COLUMNS.index(field)] = body
+    if layout == "legacy-seven":
+        second[4] = "yes" if field == "response" else "no"
+    elif layout == "legacy-eight":
+        second.insert(5, "yes" if field == "response" else "no")
+    raw = "\n" + "\n\n".join("\t".join(json.dumps(cell) for cell in row) for row in (first, second)) + "\n"
+    path.write_text(raw, encoding="utf-8")
+
+    with pytest.raises(SystemExit) as result:
+        atk.main(["review-table", "show", str(path), "--row-id=2", f"--field={field}"], home=tmp_path)
+
+    assert result.value.code == 0
+    output = capsys.readouterr()
+    assert output.out == body
+    assert not output.err
+    assert path.read_text(encoding="utf-8") == raw
+    with pytest.raises(SystemExit) as result:
+        atk.main(["review-table", "show", str(path), "--row-id=2", "--format=jsonl"], home=tmp_path)
+    assert result.value.code == 0
+    assert json.loads(capsys.readouterr().out)["row-id"] == 2
+
+
+@pytest.mark.parametrize(
+    "options",
+    (
+        ["--field=response"],
+        ["--row-id=1", "--field=response", "--format=jsonl"],
+        ["--row-id=1", "--format=summary", "--round=1"],
+        ["--row-id=0"],
+        ["--row-id=bad"],
+        ["--row-id=2"],
+        ["--row-id=1", "--field=response", "--round=2"],
+    ),
+)
+def test_public_show_rejects_invalid_body_selection(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], options: list[str]
+) -> None:
+    """本文を特定できない指定は診断を返し、本文を出力しない。"""
+    path = tmp_path / "review.exec-review.tsv"
+    table.add(path, "1", _TRACK, "場所", "指摘")
+    capsys.readouterr()
+    before = path.read_bytes()
+    with pytest.raises(SystemExit) as result:
+        atk.main(["review-table", "show", str(path), *options], home=tmp_path)
+    assert result.value.code in (1, 2)
+    output = capsys.readouterr()
+    assert not output.out
+    assert "次の操作" in output.err
+    assert path.read_bytes() == before
