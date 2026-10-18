@@ -445,7 +445,7 @@ class TestPrivateNotesAutoCreate:
         tmp_path: pathlib.Path,
         capfd: pytest.CaptureFixture[str],
     ) -> None:
-        """初回の`wi list`はローカルリポジトリを生成してもGitの成功出力を残さない。"""
+        """初回の`wi list`はローカルリポジトリを生成してもGitの成功出力を残さず、保存先の警告だけを書く。"""
         home = tmp_path / "home"
         home.mkdir()
 
@@ -455,7 +455,72 @@ class TestPrivateNotesAutoCreate:
         captured = capfd.readouterr()
         assert excinfo.value.code == 0
         assert captured.out == ""
-        assert captured.err == ""
+        lines = captured.err.splitlines()
+        assert lines[0].startswith("警告: ") and lines[1].startswith("次の操作: ")
+        assert len(lines) == 2
+
+    @pytest.mark.parametrize(
+        ("argv", "stdout"),
+        [
+            (["wi", "list", "--target-repo=all", "--skip-pull"], ""),
+            (["wi", "list", "--target-repo=all", "--skip-pull", "--summary-only"], ""),
+            (["wi", "list", "--target-repo=all", "--skip-pull", "--count"], "0\n"),
+            (["plans", "list"], ""),
+        ],
+    )
+    def test_wi_list_warns_when_using_empty_default_private_notes(
+        self,
+        tmp_path: pathlib.Path,
+        capfd: pytest.CaptureFixture[str],
+        argv: list[str],
+        stdout: str,
+    ) -> None:
+        """省略時に解決した空の保存先を使う場合、標準出力を変えずに保存先と設定方法を標準エラーへ警告する。
+
+        既存のキューが別の場所にあるエンドユーザーは、無出力の結果をキューが空であることと区別できない。
+        """
+        home = tmp_path / "home"
+        home.mkdir()
+
+        with pytest.raises(SystemExit) as excinfo:
+            atk.main(argv, home=home)
+
+        captured = capfd.readouterr()
+        assert excinfo.value.code == 0
+        assert captured.out == stdout
+        warning = captured.err
+        assert warning.startswith("警告: ")
+        assert str(tmp_path / "data" / "private-notes") in warning
+        assert "AGENT_TOOLKIT_PRIVATE_NOTES" in warning and "~/private-notes" in warning
+        assert "対応不要" in warning
+
+    @pytest.mark.parametrize("condition", ["override", "home-default", "existing-wi", "existing-plan"])
+    def test_default_private_notes_warning_conditions(
+        self,
+        tmp_path: pathlib.Path,
+        monkeypatch: pytest.MonkeyPatch,
+        capfd: pytest.CaptureFixture[str],
+        condition: str,
+    ) -> None:
+        """環境変数の指定、`~/private-notes`の実在、WIか計画を持つ保存先では警告しない。"""
+        home = tmp_path / "home"
+        home.mkdir()
+        if condition == "override":
+            notes = tmp_path / "explicit-notes"
+            _wi_sync.init_local_private_notes_repo(notes)
+            monkeypatch.setenv("AGENT_TOOLKIT_PRIVATE_NOTES", str(notes))
+        elif condition == "home-default":
+            _wi_sync.init_local_private_notes_repo(home / "private-notes")
+        else:
+            root = _wi_sync.ensure_environment(home)
+            target = root / "inbox" / "item.md" if condition == "existing-wi" else root / "plans" / "2026" / "10" / "p.md"
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text("# 項目\n", encoding="utf-8")
+        capfd.readouterr()
+
+        _wi_sync.ensure_environment(home)
+
+        assert capfd.readouterr().err == ""
 
     def test_ensure_environment_is_idempotent(self, tmp_path: pathlib.Path) -> None:
         """2回連続で呼んでも2回目は既存のローカルリポジトリをそのまま返す（再初期化しない）。"""

@@ -44,6 +44,7 @@ def init_local_private_notes_repo(root: pathlib.Path) -> None:
     `AGENT_TOOLKIT_PRIVATE_NOTES`が未設定で、未指定時に使う`~/private-notes/`も存在しない場合に、
     `root`（`platformdirs.user_data_dir("agent-toolkit")`配下）へ生成する。
     remoteとupstreamは設定せず、以後の同期はローカルcommitだけで完了する。
+    生成した保存先はWIも計画も持たないため、`ensure_environment`が保存先と設定方法を警告する。
     """
     root.mkdir(parents=True, exist_ok=True)
     run_git(["init"], cwd=root)
@@ -73,6 +74,10 @@ def ensure_environment(home: pathlib.Path) -> pathlib.Path:
     `AGENT_TOOLKIT_PRIVATE_NOTES`で明示指定されたパスが不在の場合はexit 1で原因を案内する。
     未指定かつ省略時に使うパスも不在の場合は`init_local_private_notes_repo`でローカルリポジトリを自動生成する。
     旧2階層レイアウトが残るリポジトリは`migrate_legacy_layout`が平坦レイアウトへ移行する。
+
+    環境変数が未設定で`~/private-notes/`も無く、保存先にWIも計画も無い場合は、保存先の場所と既存のprivate-notesを
+    使う設定方法を標準エラーへ警告する。既存のキューが別の場所にあるエンドユーザーが、空の保存先の結果を
+    キューが空であることと取り違えないためである。終了コードと標準出力は変えない。
     """
     root = _private_notes.default_private_notes(home)
     if not root.exists():
@@ -86,7 +91,22 @@ def ensure_environment(home: pathlib.Path) -> pathlib.Path:
         init_local_private_notes_repo(root)
     _file_lock.ensure_plan_lock_ignored(root / "plans" / ".agent-toolkit-plan-create.lock")
     migrate_legacy_layout(root)
+    if _private_notes.private_notes_override() is None and not (home / "private-notes").exists() and _has_no_items(root):
+        _outcome.report_warning(
+            f"省略時の保存先へ自動生成したローカル管理用のprivate-notesを使っている（WIと計画は0件）: {root}",
+            next_action="既存のprivate-notesを使う場合は、環境変数AGENT_TOOLKIT_PRIVATE_NOTESへそのパスを設定するか"
+            "~/private-notesへ配置して再実行する。この保存先を使い続ける場合は対応不要で、処理は継続した。"
+            f"AGENT_TOOLKIT_PRIVATE_NOTES={root}を設定すると、この警告は出力されなくなる",
+        )
     return root
+
+
+def _has_no_items(root: pathlib.Path) -> bool:
+    """状態ディレクトリにWIの`.md`が無く、`plans/`にも計画ファイルが無いかを返す。"""
+    if any(next((root / state).glob("*.md"), None) is not None for state in WI_STATES):
+        return False
+    plans = root / "plans"
+    return not plans.is_dir() or next(plans.rglob("*.md"), None) is None
 
 
 def run_git(args: list[str], cwd: pathlib.Path, *, forward_error_output: bool = True) -> None:
