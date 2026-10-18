@@ -5,7 +5,6 @@ from __future__ import annotations
 import asyncio
 import json
 from typing import Any
-from unittest.mock import AsyncMock
 
 import pytest
 
@@ -125,8 +124,7 @@ def backend_with_client(monkeypatch, client, root=None):
         return client
 
     monkeypatch.setattr(backend, "_ensure_client", ensure_client)
-    # 探索環境の成否はcodex_test.pyで専用接続から確かめる。ここは接続先の選択だけを扱う。
-    monkeypatch.setattr(backend, "_probe_explore_sandbox", AsyncMock())
+    # ここでは接続先の選択だけを扱う。
     return backend
 
 

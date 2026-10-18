@@ -19,6 +19,7 @@ OPTIONAL_INPUT_PREFIX = "任意入力名: "
 LAUNCH_KIND_PREFIX = "mode: "
 # `mode:`へ改める前の宣言行。旧形式の`<役割名>.subagent.md`を同じ意味で読む読み取り互換に限って使う。
 _LEGACY_LAUNCH_KIND_PREFIX = "起動種別: "
+CONTINUATION_PREFIX = "継続入力: "
 INPUT_NAME_PATTERN = re.compile(r"^[^`\s:，、](?:[^`\s，、]*[^`\s:，、])?$")
 TASK_DOCUMENT_SUFFIX = ".subagent.md"
 
@@ -31,12 +32,30 @@ _TASK_DOCUMENT_PATH_PATTERN = re.compile(r"(?:[A-Za-z]:)?[/\\][^\s`'\"<>|（）�
 
 
 @dataclasses.dataclass(frozen=True)
+class ContinuationDeclaration:
+    """役割文書が所有する定型継続の入力契約。"""
+
+    instruction: str
+    required: tuple[str, ...] = ()
+    optional: tuple[str, ...] = ()
+    paths: tuple[str, ...] = ()
+    references: tuple[str, ...] = ()
+    condition: str = ""
+
+    @property
+    def accepted(self) -> frozenset[str]:
+        """受理する名前付き入力。"""
+        return frozenset((*self.required, *self.optional))
+
+
+@dataclasses.dataclass(frozen=True)
 class TaskDocumentDeclaration:
     """`<役割名>.subagent.md`が`## 入力`で宣言した入力名と`mode:`の値。"""
 
     required: tuple[str, ...]
     optional: tuple[str, ...]
     launch_kind: LaunchKind
+    continuations: tuple[ContinuationDeclaration, ...] = ()
 
     @property
     def accepted(self) -> frozenset[str]:
@@ -89,6 +108,7 @@ def read_declaration_unchecked(
         return f"必須入力を確認できません: 必須入力名の書式が不正です: {task_document}"
     optional: tuple[str, ...] = ()
     launch_kind: LaunchKind = "delegate"
+    continuations: list[ContinuationDeclaration] = []
     for line in block[1:]:
         if line.startswith(OPTIONAL_INPUT_PREFIX):
             parsed = _parse_names(line.removeprefix(OPTIONAL_INPUT_PREFIX))
@@ -101,14 +121,52 @@ def read_declaration_unchecked(
             if value not in LAUNCH_KINDS:
                 return f"必須入力を確認できません: `mode:`の値が不正です: {value}: {task_document}"
             launch_kind = value
-    return TaskDocumentDeclaration(required=required, optional=optional, launch_kind=launch_kind)
+        elif line.startswith(CONTINUATION_PREFIX):
+            try:
+                entry = json.loads(line.removeprefix(CONTINUATION_PREFIX))
+                continuation = ContinuationDeclaration(**entry)
+                if (
+                    not isinstance(continuation.instruction, str)
+                    or not isinstance(continuation.condition, str)
+                    or any(
+                        not isinstance(value, (list, tuple))
+                        for value in (continuation.required, continuation.optional, continuation.paths, continuation.references)
+                    )
+                ):
+                    raise ValueError("継続指示・条件は文字列、入力名は配列が必要")
+                names = (*continuation.required, *continuation.optional, *continuation.paths, *continuation.references)
+                if (
+                    not continuation.instruction
+                    or any(not INPUT_NAME_PATTERN.fullmatch(name) for name in names)
+                    or not set(continuation.paths) <= continuation.accepted
+                    or not set(continuation.references) <= continuation.accepted
+                    or any(item.instruction == continuation.instruction for item in continuations)
+                ):
+                    raise ValueError("継続入力の指示または入力名が不正")
+                continuations.append(
+                    dataclasses.replace(
+                        continuation,
+                        required=tuple(continuation.required),
+                        optional=tuple(continuation.optional),
+                        paths=tuple(continuation.paths),
+                        references=tuple(continuation.references),
+                    )
+                )
+            except (TypeError, ValueError) as error:
+                return f"必須入力を確認できません: 継続入力の書式が不正です: {task_document}: {error}"
+    return TaskDocumentDeclaration(
+        required=required, optional=optional, launch_kind=launch_kind, continuations=tuple(continuations)
+    )
 
 
 def find_task_documents(text: str) -> list[pathlib.Path]:
     """本文が絶対パスで指すagent-toolkitの`<役割名>.subagent.md`を出現順に重複なく返す。"""
     found: list[pathlib.Path] = []
-    for match in _TASK_DOCUMENT_PATH_PATTERN.finditer(text):
-        path = pathlib.Path(match.group(0))
+    candidates = [match.group(0) for match in _TASK_DOCUMENT_PATH_PATTERN.finditer(text)]
+    candidates.extend(re.findall(r"出所: (.+?\.subagent\.md)", text))
+    candidates.extend(re.findall(r"^`?((?:[A-Za-z]:)?[/\\].+?\.subagent\.md)`?\s*の手順", text, re.MULTILINE))
+    for candidate in candidates:
+        path = pathlib.Path(candidate)
         if path in found or not path.is_file() or not is_agent_toolkit_task_document(path):
             continue
         found.append(path)

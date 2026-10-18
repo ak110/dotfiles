@@ -92,15 +92,26 @@ def test_build_command_omits_absent_options() -> None:
 
 
 @pytest.mark.asyncio
-async def test_explore_is_rejected_before_start_and_resume(tmp_path: pathlib.Path) -> None:
-    """直接backendを使う開始と再開でもexploreはCLIを起動しない。"""
+async def test_explore_reaches_cli_on_start_and_resume(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """探索も同じCLIを開始・再開し、共通の読取責務と調査要求を届ける。"""
+    _install_fake_agy(tmp_path, monkeypatch)
     backend = antigravity.AntigravityManager()
-    with pytest.raises(ActionableError, match="読み取り専用のexploreに対応していません"):
-        await backend.start("探索", str(tmp_path), launch_kind="explore")
-    with pytest.raises(ActionableError, match="読み取り専用のexploreに対応していません"):
-        await backend.resume("conversation", "探索", str(tmp_path), launch_kind="explore")
-    assert not backend.sessions
-    await backend.close()
+    try:
+        session = await backend.start("GitとPythonと読取MCPで調査", str(tmp_path), launch_kind="explore")
+        async with asyncio.timeout(10):
+            while not session.terminal:
+                await asyncio.sleep(0.01)
+        assert session.agent_message.endswith("GitとPythonと読取MCPで調査")
+        resumed = await backend.resume(
+            session.session_id, shared_state.ResumePrompt("同じ調査を継続"), str(tmp_path), launch_kind="explore"
+        )
+        async with asyncio.timeout(10):
+            while not resumed.terminal:
+                await asyncio.sleep(0.01)
+        assert resumed.session_id == session.session_id
+        assert resumed.agent_message.endswith("同じ調査を継続")
+    finally:
+        await backend.close()
 
 
 @pytest.mark.parametrize(

@@ -18,6 +18,7 @@ import pytest
 
 from agent_toolkit._agents_server import (
     agents_wait,
+    launch_requests,
     result_projection,
     resume_waits,
     shared_layout,
@@ -1395,3 +1396,35 @@ async def test_legacy_claude_rate_limit_record_does_not_skip_candidate(
         assert codex.start_calls == []
     finally:
         await manager.close()
+
+
+@pytest.mark.asyncio
+async def test_minimal_followup_uses_restored_launch_history(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
+    """登録簿から戻した役割でも、余分な継続入力を配送前に拒否し必要なroundを保持する。"""
+    manager, _ = _resume_test_manager(monkeypatch, tmp_path)
+    _, _, prompt, _, _ = launch_requests.task_document_request(
+        "exec-review",
+        {
+            "レビュー基準": "計画",
+            "計画": str(tmp_path / "計画.md"),
+            "引き継ぎ記録先": str(tmp_path / "引継ぎ.md"),
+            "未判定検証記録": "なし",
+            "完成条件証拠": "なし",
+        },
+    )
+    session = state.SessionState("restored-review", str(tmp_path), engine="claude", prompt=prompt, publish_registry=True)
+    manager.sessions[session.session_id] = session
+    _complete(session)
+    await session.publish_registration_async()
+    await manager.close()
+    resumed, _ = _resume_test_manager(monkeypatch, tmp_path)
+    try:
+        with pytest.raises(ValueError, match="検証結果"):
+            await resumed.send_message(session.session_id, "再レビューせよ\nround: 2\n検証結果: 成功")
+        response = await resumed.send_message(session.session_id, instruction="再レビューせよ", extra_params={"round": "2"})
+        assert response["delivery"] == "reply_started"
+        current = resumed.sessions[session.session_id]
+        assert current.prompt == prompt
+        assert current.followup_prompts == ("再レビューせよ\nround: 2",)
+    finally:
+        await resumed.close()

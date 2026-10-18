@@ -43,10 +43,47 @@ from agent_toolkit._testing.agents_server_support import (
     _write_failing_uv,
     install_backend,
 )
+from agent_toolkit._testing.git_repository import commit_all, git_output, init_repository
 from agent_toolkit._testing.helpers import delivery_payload
 from agent_toolkit._testing.managed_temp_support import setattr_in_managed_temp_modules
 
 pytestmark = pytest.mark.usefixtures("agents_server_isolation")
+
+
+@pytest.mark.asyncio
+async def test_explore_role_and_free_text_share_investigation_capability(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """保存を強制せずGit識別子で同じ版を比較し、両入口が共通の探索経路へ届く。"""
+    repository = init_repository(tmp_path / "repo", files={"文章 空白.md": "比較元\n"}, commit_message="比較元")
+    base = git_output(repository, "rev-parse", "HEAD")
+    artifact = repository / "文章 空白.md"
+    artifact.write_text("今回の本文\n", encoding="utf-8")
+    head = commit_all(repository, "本文を更新")
+    comparison = json.dumps(
+        {"repository": str(repository), "base": base, "head": head, "paths": [artifact.name]}, ensure_ascii=False
+    )
+    _recording_candidates(monkeypatch)
+    manager, backend = _manager_with_fake("codex")
+    monkeypatch.setattr(mcp_tools, "_MANAGER", manager)
+    params = {"成果物": str(artifact), "種別": "文書", "読者像": "読者", "修正範囲": comparison, "比較資料": comparison}
+    try:
+        await mcp_tools.start(str(repository), subagent_md_path="reader-fit-review", extra_params=params)
+        await mcp_tools.start(str(repository), mode="explore", prompt="Gitの同じ版から本文と差分を比較する。\n" + comparison)
+        assert [call[2] for call in backend.start_calls] == ["explore", "explore"]
+        rereview = {**params, "レビュー種別": "再レビュー"}
+        with pytest.raises(ValueError, match="未解決事項"):
+            await mcp_tools.start(str(repository), subagent_md_path="reader-fit-review", extra_params=rereview)
+        await mcp_tools.start(
+            str(repository), subagent_md_path="reader-fit-review", extra_params={**rereview, "未解決事項": "なし"}
+        )
+        artifact.write_text("未commitの異なる版\n", encoding="utf-8")
+        with pytest.raises(ValueError, match="同じ版"):
+            await mcp_tools.start(str(repository), subagent_md_path="reader-fit-review", extra_params=params)
+        assert len(backend.start_calls) == 3
+    finally:
+        await manager.close()
 
 
 class TaskManager(_SimpleNamespace):

@@ -172,7 +172,11 @@ Git管理外の変更元と変更前複製の対がある場合は、レーン�
 
 ## レビュー修正
 
-指摘への修正は、そのworktreeを所有するエージェントが行う。起動方法ごとの担当と反復の調整は`${CLAUDE_PLUGIN_ROOT}/share/review-loop-coordination.md`が定める。同じthreadを継続する場合は`レビュー指摘の対応をせよ`、`round: <ラウンド番号>`、`レビュー指摘管理表: <絶対パス>`を送る。
+同じレビューsessionの再レビューは、`send_message`へ`instruction: 再レビューせよ`と`extra_params`を渡して生成する。
+役割の継続宣言を入力契約とし、後掲の条件で必要な更新情報を加える。
+組み込み委譲では`agent-toolkit:delegation`の`references/sending.md`の生成CLIを使う。
+
+指摘への修正は、そのworktreeを所有するエージェントが行う。起動方法ごとの担当と反復の調整は`${CLAUDE_PLUGIN_ROOT}/share/review-loop-coordination.md`が定める。同じthreadを継続する場合は`send_message`へ`instruction: レビュー指摘の対応をせよ`と、`extra_params`に`round: <ラウンド番号>`・`レビュー指摘管理表: <絶対パス>`を渡す。自由本文でも同じ指示と名前付き入力の行を使う。
 継続できない場合は`agent-toolkit:delegation`のSKILL.mdの`## 継続と新規起動`に従い、`exec.parent.md`の`## 入力`と同じ形式で新しいレーン担当を起動する。このとき`担当種別`を`レビュー修正担当`、`再開位置`を`~/.claude/plans`の計画ファイルの絶対パス、`レビュー指摘管理表`を表の絶対パスとする。
 採否、対象commit、修正方針、成果物・Git状態・検証結果の検収は修正するエージェントが担う（採否の基準は`exec.subagent.md`「実装」、履歴統合は同書「レビュー修正の履歴統合」）。メインが表を読むのは`review-loop-coordination.md`「応答済みの判定」の範囲に限る（努力目標。メインのコンテキストを保つ）。
 

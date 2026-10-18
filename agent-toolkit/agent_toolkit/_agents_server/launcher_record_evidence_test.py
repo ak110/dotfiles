@@ -18,6 +18,7 @@ from agent_toolkit import atk
 from agent_toolkit._agents_server import launch_requests, manager, mcp_tools, record_paths, state, status_file
 from agent_toolkit._common import state_paths
 from agent_toolkit._testing import agents_server_support
+from agent_toolkit._testing.helpers import delivery_payload
 
 
 class _ObservedBackend(agents_server_support.FakeBackend):
@@ -142,12 +143,19 @@ async def test_task_record_reaches_public_evidence(
         assert context["status"] == "resolved"
         assert context["record_engine"] == engine
         assert context["record_path"] == str(records["direct-parent"])
+        input_body = delivery_payload(backend.prompts[0]).rsplit("\n入力:\n", 1)[1]
+        delivered_inputs = launch_requests.parse_named_inputs(input_body.splitlines())
+        assert delivered_inputs["投入する要求"] == request
+        (tmp_path / "delivered-inputs.json").write_text(json.dumps(delivered_inputs, ensure_ascii=False), encoding="utf-8")
         if source == "delivered":
             # この引数だけは生成本文から取得し、要求入力にはID・記録パスを含めない。
             arguments = ["--transcript", context["record_path"], "--user-events"]
         elif saved_input is not None:
-            assert request in backend.prompts[0]
-            arguments = ["--user-events-file", str(saved_input), "--user-event-at", f"{engine}:other:2"]
+            reference = delivered_inputs["投入する要求"].split("\n発話: ", 1)[1]
+            saved_path, location = reference.rsplit(" record=", 1)
+            record_id, line = location.rsplit(" line=", 1)
+            assert (saved_path, record_id, line) == (str(saved_input), f"{engine}:other", "2")
+            arguments = ["--user-events-file", saved_path, "--user-event-at", f"{record_id}:{line}"]
         else:
             assert str(records[selected]) in backend.prompts[0]
             arguments = ["--transcript", str(records[selected]), "--user-events"]

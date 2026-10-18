@@ -81,7 +81,9 @@ async def test_stdio_initializes_and_lists_tools(tmp_path: pathlib.Path) -> None
             assert tool.description
             assert tool.input_schema["type"] == "object"
             assert all(field.get("description") for field in tool.input_schema["properties"].values())
-        assert tools["send_message"].input_schema["required"] == ["session_id", "prompt"]
+        schema = tools["send_message"].input_schema
+        assert schema["required"] == ["session_id"]
+        assert {"prompt", "instruction", "extra_params"} <= schema["properties"].keys()
     log = (tmp_path / "agent-toolkit" / "agents-server.log").read_text(encoding="utf-8")
     assert "MCP initializeを受信しました" in log
     assert "MCP initialize応答が完了しました" in log

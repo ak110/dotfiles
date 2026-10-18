@@ -3,6 +3,7 @@
 PreToolUseフックをsubprocessで起動し、配布物の`<役割名>.subagent.md`を指す委譲プロンプトの終了コードと通知を検証する。
 """
 
+import json
 import pathlib
 import subprocess
 
@@ -11,6 +12,17 @@ import pytest
 from agent_toolkit._testing.pretooluse_support import _SHARE_DIR, _plan_file_state_env, _run, _run_posttooluse
 
 _EXEC_DOCUMENT = _SHARE_DIR / "exec.subagent.md"
+
+
+@pytest.mark.parametrize("tool_name", ["Agent", "Task"])
+def test_role_launch_hook_requires_same_named_inputs(tool_name: str, tmp_path: pathlib.Path) -> None:
+    """既存fixtureを変えず、欠けた必須入力が初回hookでも拒否される。"""
+    prompt = f"{_EXEC_DOCUMENT}の手順を実行せよ。\n担当種別: レーン担当\n"
+    result = _invoke(tool_name, prompt, tmp_path)
+    assert result.returncode == 2
+    assert "引き継ぎ記録先" in result.stderr
+    valid = prompt + f"引き継ぎ記録先: {tmp_path / '引継ぎ 記録.md'}\n"
+    assert _invoke(tool_name, valid, tmp_path).returncode == 0
 
 
 def _invoke(tool_name: str, prompt: str, tmp_path: pathlib.Path, mode: str | None = None) -> subprocess.CompletedProcess[str]:
@@ -152,10 +164,20 @@ def test_agent_task_document_prompt_allows_only_declared_lines(tmp_path: pathlib
 def test_reader_fit_review_inputs_pass_task_document_hook(tmp_path: pathlib.Path) -> None:
     """差分を持つ初回と再レビュー入力を通し、宣言外補足の拒否を維持する。"""
     task = _SHARE_DIR / "reader-fit-review.subagent.md"
+    current = tmp_path / "guide.md"
+    before = tmp_path / "before.md"
+    patch = tmp_path / "guide.patch"
+    before.write_text("# 保存\n保存先を選ぶ。\n", encoding="utf-8")
+    current.write_text("# 保存\n保存先を選んで確定する。\n", encoding="utf-8")
+    patch.write_text(
+        "--- before.md\n+++ guide.md\n@@ -1,2 +1,2 @@\n # 保存\n-保存先を選ぶ。\n+保存先を選んで確定する。\n",
+        encoding="utf-8",
+    )
+    materials = json.dumps({"比較元本文": str(before), "今回差分": str(patch), "現行本文": str(current)}, ensure_ascii=False)
     initial = (
-        f"{task}の手順を実行せよ。\n成果物: {tmp_path / 'guide.md'}\n"
+        f"{task}の手順を実行せよ。\n成果物: {current}\n"
         "種別: エンドユーザー向け文書\n読者像: 初めて導入するエンドユーザー\n"
-        f"修正範囲: {tmp_path / 'before.md'}と成果物の保存節の差分、直接影響は読込節\n"
+        f"修正範囲: 保存節の差分、直接影響は読込節\n比較資料: {materials}\n"
     )
     rereview = initial + ("レビュー種別: 再レビュー\n未解決事項: なし\n")
     assert _invoke("Agent", initial, tmp_path).returncode == 0
@@ -171,6 +193,7 @@ def test_exec_review_previous_revision_passes_task_document_hook(tmp_path: pathl
     prompt = (
         f"{task}の手順を実行せよ。\nレビュー基準: 計画\n計画: {tmp_path / 'plan.md'}\n"
         f"引き継ぎ記録先: {tmp_path / 'handoff.md'}\n完成条件証拠: なし\n"
+        "未判定検証記録: なし\n"
         f"レビュー種別: 引き継ぎ再レビュー\nround: 2\n前回確認版: {tmp_path / 'previous.md'}\n"
     )
     assert _invoke("Agent", prompt, tmp_path).returncode == 0
@@ -264,6 +287,6 @@ def test_reading_and_command_examples_pass(tool_name: str, mode: str | None, pro
 
 def test_agent_accepts_spacing_variant_with_declared_inputs_only(tmp_path: pathlib.Path) -> None:
     """パスの後に空白を置いた定型の命令と宣言済みの入力だけの本文は、宣言外の指示を持たないため通す。"""
-    prompt = f"{_EXEC_DOCUMENT} の手順を実行せよ。\n担当種別: レーン担当\n"
+    prompt = f"{_EXEC_DOCUMENT} の手順を実行せよ。\n担当種別: レーン担当\n引き継ぎ記録先: {tmp_path / 'handoff.md'}\n"
 
     assert _invoke("Agent", prompt, tmp_path).returncode == 0

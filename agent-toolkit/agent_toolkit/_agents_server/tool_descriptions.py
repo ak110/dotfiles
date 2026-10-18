@@ -60,23 +60,18 @@ EXPLORE_COMMON_CAPABILITIES = (
 
 
 EXPLORE_BACKEND_CAPABILITIES = {
-    "claude": (
-        "ClaudeはRead/Glob/Grep/Bashとpyfltr MCPを使う。読み取り専用性はプロンプトで指示する。"
-        "検索にはpyfltr grepの集計・適応出力を使え、保存結果と巨大な1行はBashからatk read-fileや"
-        "読取コマンド、配送済みPython標準ライブラリで分割取得できる。"
-    ),
-    "codex": (
-        "Codexは読取専用sandboxを使う。atk（atk read-file含む）はuvのキャッシュ書込を拒否され起動しない。"
-        "atkでしか得られない資料は委譲元が保存したファイルで渡す。"
-        "読取・検索はcat/rg、UTF-8文字分割は配送済みPython標準ライブラリを使う。"
-    ),
+    engine: (
+        "全backendでGitの読取照会、本文・属性検索、Python標準ライブラリの分割取得、"
+        "atk read-fileなどの読取CLIとpyfltr grepなどの読取MCPを使える。"
+        "対象成果物・委譲入力・ユーザーデータの作成・変更・削除は禁止。"
+        "実行環境が管理するキャッシュ・状態・保存出力はこの変更禁止対象と区別する。"
+    )
+    for engine in ("claude", "codex", "agy")
 }
 """各backendの起動へ選択して配送する調査手段。"""
 
 
-EXPLORE_CAPABILITIES = (
-    EXPLORE_COMMON_CAPABILITIES + "".join(EXPLORE_BACKEND_CAPABILITIES.values()) + "Antigravityはexplore非対応。"
-)
+EXPLORE_CAPABILITIES = EXPLORE_COMMON_CAPABILITIES + EXPLORE_BACKEND_CAPABILITIES["codex"]
 """起動前の公開schemaへ配送する全backendの能力説明。"""
 
 

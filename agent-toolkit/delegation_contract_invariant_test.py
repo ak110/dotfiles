@@ -396,26 +396,6 @@ def test_selection_explanation_contract_covers_questions_without_state_changes()
     assert "selection-procedure.md" in lanes and "包含理由、除外理由" in lanes
 
 
-def test_explore_task_documents_do_not_run_atk() -> None:
-    """`mode: explore`を宣言する`<役割名>.subagent.md`は、委譲先に実行させる`atk`のコマンドを含まない。
-
-    Codexの読取専用sandboxでは`atk`を起動できないため、backend間で切り替わる定型担当の入力をファイル読取へそろえる。
-    ClaudeのBashとpyfltrによる探索能力を保ち、Codexへ切り替わった場合も同じ資料を取得できる契約を検証する。
-    """
-    share = pathlib.Path(__file__).resolve().parent / "share"
-    explore_documents = [path for path in sorted(share.glob("*.subagent.md")) if _declaration(path).launch_kind == "explore"]
-    errors = [
-        f"{path.name}:{number}: 委譲先に`atk`の実行を求めている。"
-        "`atk`でしか得られない資料は、委譲元が取得して保存したファイルの絶対パスを受け取る入力へ改める"
-        for path in explore_documents
-        for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1)
-        if "`atk " in line
-    ]
-
-    assert explore_documents
-    assert not errors, "\n".join(errors)
-
-
 def _declaration(task_document: pathlib.Path) -> task_documents.TaskDocumentDeclaration:
     """配布物の`<役割名>.subagent.md`の宣言を読み、読めない場合はテストを失敗させる。"""
     declaration = task_documents.read_declaration(task_document)

@@ -403,12 +403,11 @@ def _build_options(
             allowed_tools=_LAUNCH_ALLOWED_TOOLS[launch_kind],
         )
     if launch_kind == "explore":
-        options["tools"] = _LAUNCH_TOOLS[launch_kind]
         # 起動定義はpluginのSSOTを使い、検索を担うpyfltrを軽量起動へ渡す。
         # pyfltrの読取用途はプロンプトが定め、個別ツールの許可リストは設けない。
         mcp_config = json.loads((plugin_root / ".mcp.json").read_text(encoding="utf-8"))
         options["mcp_servers"] = {"pyfltr": mcp_config["mcpServers"]["pyfltr"]}
-        options.setdefault("extra_args", {}).update({"strict-mcp-config": None, "permission-prompts": "none"})
+        options.setdefault("extra_args", {}).update({"permission-prompts": "none"})
     try:
         return ClaudeAgentOptions(**options)
     except BaseException:

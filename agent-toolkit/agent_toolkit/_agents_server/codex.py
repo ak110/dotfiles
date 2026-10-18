@@ -722,24 +722,25 @@ class AppServerManager:
         config.update(self._agents_server_config(owner_session_id, writer_session_id, client))
         return config, owner_session_id, writer_session_id
 
+    @staticmethod
+    def _explore_config(config: dict[str, Any], client: Any) -> dict[str, Any]:
+        """スキル非配送を保ち、読取MCPの定義を直接の設定として渡す。"""
+        root = plugin_roots.SERVER_PLUGIN_ROOT
+        pyfltr = json.loads((root / ".mcp.json").read_text(encoding="utf-8"))["mcpServers"]["pyfltr"]
+        environment = getattr(client, "parent_environment", None) or os.environ
+        pyfltr["env_vars"] = list(mcp_environment.runtime_environment_variable_names(environment))
+        pyfltr["default_tools_approval_mode"] = "approve"
+        return {
+            **config,
+            "features": {**config.get("features", {}), "plugins": False},
+            "mcp_servers": {**config.get("mcp_servers", {}), "pyfltr": pyfltr},
+        }
+
     def _schedule(self, awaitable: Coroutine[Any, Any, None]) -> None:
         """同じイベントループで回収する管理対象taskを登録する。"""
         task: asyncio.Task[None] = asyncio.create_task(awaitable)
         self._background_tasks.add(task)
         task.add_done_callback(self._background_tasks.discard)
-
-    @staticmethod
-    async def _restrict_explore_config(client: Any, config: dict[str, Any], cwd: str) -> None:
-        """sandbox外で動く外部toolを実効設定から除く。取得不能時は起動しない。"""
-        response = await client.request("config/read", {"cwd": cwd, "includeLayers": False})
-        effective = response.get("config")
-        if not isinstance(effective, dict):
-            raise AppServerError("exploreの外部tool制限に必要な実効設定を取得できません")
-        servers = effective.get("mcp_servers", {})
-        if not isinstance(servers, dict):
-            raise AppServerError("exploreの実効mcp_serversが不正です")
-        config["mcp_servers"] = {name: {"enabled": False} for name in servers}
-        config["features"] = {"apps": False, "plugins": False, "multi_agent": False}
 
     async def _ensure_client(self) -> JsonRpcProcess:
         """新しいApp Serverを起動して初期化した接続を返す。
@@ -850,8 +851,6 @@ class AppServerManager:
         validate_prompt(prompt)
         validate_cwd(cwd)
         validate_model_effort(model, effort)
-        if launch_kind == "explore":
-            await self._probe_explore_sandbox(cwd)
         client = await self._ensure_client()
         try:
             thread_response, selection, attempted, owner_session_id, writer_session_id = await self._start_thread(
@@ -912,7 +911,7 @@ class AppServerManager:
         params: dict[str, Any] = {
             "cwd": cwd,
             "approvalPolicy": "never",
-            "sandbox": "read-only" if launch_kind == "explore" else "danger-full-access",
+            "sandbox": "danger-full-access",
             "serviceTier": await run_file_operation(_current_service_tier),
         }
         if model is not None:
@@ -921,8 +920,7 @@ class AppServerManager:
             lightweight=launch_kind in LIGHTWEIGHT_LAUNCH_KINDS, client=client
         )
         if launch_kind == "explore":
-            await self._restrict_explore_config(client, config, cwd)
-            owner_session_id = writer_session_id = None
+            config = await run_file_operation(self._explore_config, config, client)
         params["config"] = config
         params["developerInstructions"] = await run_file_operation(_developer_instructions, launch_kind)
         attempted: set[str] = set()
@@ -966,71 +964,6 @@ class AppServerManager:
         if not isinstance(thread, dict) or not isinstance(thread.get("id"), str) or not thread["id"]:
             raise AppServerError("thread/start returned no thread.id")
         return thread_response, selection, attempted, owner_session_id, writer_session_id
-
-    async def _probe_explore_sandbox(self, cwd: str) -> None:
-        """専用接続で読取専用コマンドを実行し、モデル開始前に接続を回収する。"""
-
-        async def ignore(_message: dict[str, Any]) -> None:
-            return None
-
-        client = JsonRpcProcess(ignore, ignore, root_session_id=self._root_session_id)
-        response: Any = None
-        probe_error: Exception | None = None
-        initialized = False
-        try:
-            async with asyncio.timeout(shared_state.SESSION_INITIALIZATION_TIMEOUT):
-                await client.start()
-                initialized = True
-                response = await client.request(
-                    "command/exec",
-                    {
-                        "command": [sys.executable, "-c", "pass"],
-                        "cwd": cwd,
-                        "sandboxPolicy": {"type": "readOnly"},
-                        "timeoutMs": 5000,
-                    },
-                )
-        except Exception as exc:
-            probe_error = exc
-        finally:
-            process = client.process
-            residual = await client.close()
-            if residual or (process is not None and process.returncode is None):
-                raise AppServerError("explore sandbox probeのApp Server終了を確認できません")
-        if probe_error is not None:
-            if isinstance(probe_error, TimeoutError):
-                reason = "exploreSandboxTimeout"
-            elif isinstance(probe_error, JsonRpcResponseError):
-                reason = "exploreSandboxRpcError"
-            elif not initialized:
-                reason = "exploreSandboxInitializationFailed"
-            else:
-                reason = "exploreSandboxProbeFailed"
-            raise StartCandidateUnavailable(
-                f"{reason}: {type(probe_error).__name__}: {probe_error}", scope="launch_engine"
-            ) from probe_error
-        if not isinstance(response, dict):
-            raise StartCandidateUnavailable(f"exploreSandboxInvalidResponse: {response!r}", scope="launch_engine")
-        exit_code = response.get("exitCode")
-        stderr = response.get("stderr")
-        stdout = response.get("stdout")
-        if (
-            isinstance(exit_code, bool)
-            or not isinstance(exit_code, int)
-            or not isinstance(stderr, str)
-            or not isinstance(stdout, str)
-        ):
-            raise StartCandidateUnavailable(f"exploreSandboxInvalidResponse: {response!r}", scope="launch_engine")
-        if exit_code == 0:
-            return
-        # 0.162.0で観測した単独実行の診断だけを分類し、モデルの自由本文は入力にしない。
-        if exit_code == 1 and any(
-            line.startswith("bwrap: No permissions to create a new namespace") for line in stderr.splitlines()
-        ):
-            raise StartCandidateUnavailable("exploreSandboxNamespaceDenied", scope="launch_engine")
-        raise StartCandidateUnavailable(
-            f"exploreSandboxCommandFailed: exitCode={exit_code}; stderr={stderr}; stdout={stdout}", scope="launch_engine"
-        )
 
     async def resume(
         self,
@@ -1378,20 +1311,11 @@ class AppServerManager:
         writer_session_id: str | None = None,
     ) -> str | None:
         """保存済みCodex threadを現在の実行条件で再開する。"""
-        if session.launch_kind == "explore":
-            try:
-                await self._probe_explore_sandbox(session.cwd)
-            except StartCandidateUnavailable as exc:
-                raise StartCandidateUnavailable(
-                    f"探索threadの再開前確認が不成立です: {exc.reason}; "
-                    "次の操作: startのmode=exploreで新規探索を開始してください",
-                    scope=exc.scope,
-                ) from exc
         resume_params: dict[str, Any] = {
             "threadId": session.session_id,
             "cwd": session.cwd,
             "approvalPolicy": "never",
-            "sandbox": "read-only" if session.launch_kind == "explore" else "danger-full-access",
+            "sandbox": "danger-full-access",
             "serviceTier": await run_file_operation(_current_service_tier),
         }
         if session.model is not None:
@@ -1404,8 +1328,7 @@ class AppServerManager:
             writer_session_id = writer_session_id or uuid.uuid4().hex
             config.update(self._agents_server_config(owner_session_id, writer_session_id, client))
         if session.launch_kind == "explore":
-            await self._restrict_explore_config(client, config, session.cwd)
-            owner_session_id = writer_session_id = None
+            config = await run_file_operation(self._explore_config, config, client)
         resume_params["config"] = config
         resume_params["developerInstructions"] = await run_file_operation(_developer_instructions, session.launch_kind)
         resume_response = await self._request_thread_resume(client, resume_params)
@@ -1566,7 +1489,7 @@ class AppServerManager:
             "input": [{"type": "text", "text": prompt}],
             "cwd": session.cwd,
             "approvalPolicy": "never",
-            "sandboxPolicy": {"type": "readOnly"} if session.launch_kind == "explore" else {"type": "dangerFullAccess"},
+            "sandboxPolicy": {"type": "dangerFullAccess"},
             "serviceTier": await run_file_operation(_current_service_tier),
         }
         if session.model is not None:

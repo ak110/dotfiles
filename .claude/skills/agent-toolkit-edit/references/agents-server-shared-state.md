@@ -128,6 +128,9 @@ sessionの`created_at`は最初の開始時刻で、turnごとに更新する`st
 `start`と`send_message`の公開応答へは、開始したsessionと配送先のsessionがメモリーに保持する`label`を返す。委譲元が起動応答と追送応答だけで`session_id`と担当名を対応付け、追送の宛先を確かめられるようにするためである。
 `LaunchInfo`は用途の`usage`、配送済みの`followup_prompts`、turn番号と最終応答全文の`final_responses`、`terminal_error`も保持する。
 これらは所有側が起動・追送・終端の各契機で更新し、同じsessionの再開と前任からの引き継ぎに使う。
+配送前の確認とdelegation-prompt生成CLIも既存の`prompt`・`followup_prompts`を読み、今回の入力が役割宣言に合うかを確かめる。
+CLIは登録済みsessionか既存の起動・セッション記録への参照を使い、既存の保持先へ集約する。
+同じパスの参照先が更新された場合も、今回必要な入力を保持する。
 `handoff_from`を使うstartは前任のcwdとmodel_typeを復元して応答へ返し、PostToolUseフックは引き継ぎ起動時だけ両値を応答から取得し、後任の待機対象と工程種別を記録する。通常のstartでは入力cwdとmodel_typeを検収する。
 引き継ぎ用の会話抽出はsession-reviewの`--conversation-only`を使う。既存bundleの抽出物を生成し、候補文書・比較材料・統計の生成とfailure ledgerの更新を省く。生成物の保存先はmanaged-tempの保持期限へ委ねる。
 

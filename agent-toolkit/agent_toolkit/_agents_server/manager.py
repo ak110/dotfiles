@@ -137,11 +137,7 @@ class AgentsServerManager(manager_wait.ManagerWait):
             raise ActionableError(
                 f"no model candidates remain for model_type: {model_type}", next_action=MODEL_TYPE_NEXT_ACTION
             )
-        unsupported = {
-            candidate: "Antigravityは読み取り専用のexploreに対応していません"
-            for candidate in candidates
-            if launch_kind == "explore" and candidate[0] == "agy"
-        }
+        unsupported: dict[ModelCandidate, str] = {}
         forced = dict(excluded_candidates or {})
         unsupported.update(forced)
         candidates = [candidate for candidate in candidates if candidate not in unsupported]
@@ -586,8 +582,11 @@ class AgentsServerManager(manager_wait.ManagerWait):
     async def send_message(
         self,
         session_id: str,
-        prompt: str,
+        prompt: str | None = None,
         timeout: float = DEFAULT_SEND_MESSAGE_TIMEOUT,
+        *,
+        instruction: str | None = None,
+        extra_params: Mapping[str, str] | None = None,
     ) -> dict[str, Any]:
         """実行中turnを継続し、終端済みなら同じsessionでreplyを開始する。
 
@@ -595,6 +594,22 @@ class AgentsServerManager(manager_wait.ManagerWait):
         再起動した会話が既存sessionへの`send_message`から再開しても、PostToolUseがこの値で別名索引を書けるようにするためである。
         """
         await self._drain_diagnostics()
+        pending = self._pending_resumes.get(session_id)
+        current = (
+            pending.state if pending is not None else (self.sessions.get(session_id) or self.expired_sessions.get(session_id))
+        )
+        if current is None:
+            current = await self._resolve_stopped_session(session_id)
+        if current is None:
+            current = await self._restore_registry_session(session_id)
+        prompt = await run_file_operation(
+            launch_requests.continuation_prompt,
+            current.prompt if current is not None else "",
+            current.followup_prompts if current is not None else (),
+            prompt=prompt,
+            instruction=instruction,
+            extra_params=extra_params,
+        )
         response = await self._deliver_message(session_id, prompt, timeout)
         session = self.sessions.get(session_id)
         if session is not None and response["delivery"] != "reply_failed":

@@ -31,7 +31,7 @@ import markdown_it
 # 関数の実行時にだけ使う依存は、使用時まで読み込まない。
 lazy from markdown_it.token import Token
 
-from agent_toolkit._agents_server import task_documents
+from agent_toolkit._agents_server import launch_requests, task_documents
 from agent_toolkit._agents_server import tool_names as _tool_names
 lazy from agent_toolkit._hooks.pretooluse.notices import _block_notice
 
@@ -128,6 +128,17 @@ def _check_agent_prompt(prompt: str) -> str | None:
         in_value = False
         violations.append(line)
     if not violations:
+        try:
+            params = launch_requests.parse_named_inputs(lines[1:])
+            launch_requests.builtin_task_prompt(str(document), params)
+        except ValueError as error:
+            return _block_notice(
+                str(error),
+                fix=(
+                    "`atk run-script delegation-prompt -- --input <要求JSONの絶対パス>`で"
+                    "必須入力を持つ本文を生成し、その本文で起動し直す。"
+                ),
+            )
         return None
     shown = "\n".join(f"  {line}" for line in violations[:5])
     return _block_notice(

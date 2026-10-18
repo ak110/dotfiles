@@ -90,6 +90,12 @@ async def test_tool_input_schema_is_unchanged_by_error_wrapping() -> None:
     """例外を包む共通層を通しても、ツールの引数と説明文はツール関数の定義から生成される。"""
     tools = {tool.name: tool for tool in await mcp_tools.mcp.list_tools()}
 
-    assert set(tools["send_message"].input_schema["properties"]) == {"session_id", "prompt", "timeout"}
-    assert tools["send_message"].input_schema["required"] == ["session_id", "prompt"]
+    assert set(tools["send_message"].input_schema["properties"]) == {
+        "session_id",
+        "prompt",
+        "timeout",
+        "instruction",
+        "extra_params",
+    }
+    assert tools["send_message"].input_schema["required"] == ["session_id"]
     assert "reply_failed" in (tools["send_message"].description or "")
