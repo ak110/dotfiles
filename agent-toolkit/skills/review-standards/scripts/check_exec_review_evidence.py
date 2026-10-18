@@ -91,7 +91,7 @@ EVIDENCE_REFERENCE = re.compile(
     r"(?P<test>`?(?:[^\s`\[\]（）「」、。]+::)?test_\w+\[[^\n]*\])|"
     r"\[[^\]]*\]\((?P<link>[^)]+)\)|`(?P<code>[^`]+)`|"
     r"(?P<quoted>(?:[\w-]+=)?\"[^\"\n]+\"|(?:[\w-]+=)?'[^'\n]+')|"
-    r"(?P<plain>[^\s`\[\]（）「」、。]+)"
+    r"(?P<plain>[^\s`\[\]（）「」、。#]+(?:#[^\s`\[\]「」、。]+)?)"
 )
 JAPANESE_ASCII_PATH_BOUNDARY = re.compile(r"(?<=[\u3040-\u30ff\u3400-\u9fff])(?=[A-Za-z0-9_-]+(?:[/\\.]|$)|/)")
 # 地の文の1語から切り出す参照。パスは最後の拡張子までとし、拡張子の直後がパスの続きでない位置で終える。
@@ -102,7 +102,7 @@ JAPANESE_ASCII_PATH_BOUNDARY = re.compile(r"(?<=[\u3040-\u30ff\u3400-\u9fff])(?=
 # 見出しは日本語を含むため、文字種で終わりを決められず、区切り記号の手前までを見出しとする。
 PLAIN_REFERENCE = re.compile(
     r"(?P<plain>[^\s`\[\]（）「」、。:#]*?\.[A-Za-z][A-Za-z0-9_-]*(?![A-Za-z0-9_/\\-]|\.[A-Za-z0-9_])"
-    r"(?::[!-~]+|#[^\s`\[\]（）「」、。]+)?)"
+    r"(?::[!-~]+|#[^\s`\[\]「」、。]+)?)"
 )
 # 名前の本体（ピリオド以外の文字）を持ち、`.<英字>…`で終わるファイル名。`.env`は本体を持たず、拡張子なしとする。
 NAMED_EXTENSION = re.compile(r"\.*[^.]+.*\.[A-Za-z][A-Za-z0-9_-]*")
@@ -1577,7 +1577,11 @@ def _normalized_paths(paths: list[pathlib.Path]) -> list[pathlib.Path]:
 
 
 def _referenced_records(
-    row: dict[str, str], records: dict[pathlib.Path, str], repository: pathlib.Path
+    row: dict[str, str],
+    records: dict[pathlib.Path, str],
+    repository: pathlib.Path,
+    *,
+    errors: list[str] | None = None,
 ) -> list[tuple[pathlib.Path, str]]:
     """sourceとevidenceが実際に指す、今回渡された入力記録の絶対パスと指された範囲の本文を返す。"""
     found: list[tuple[pathlib.Path, str]] = []
@@ -1589,7 +1593,9 @@ def _referenced_records(
         text = records.get(record_path)
         if text is not None:
             headings = {title for level in range(1, 7) for _, title in markdown_headings.parse_headings(text, level)}
-            if _reference_location_error(text.encode("utf-8"), location, headings) is not None:
+            if (reason := _reference_location_error(text.encode("utf-8"), location, headings)) is not None:
+                if errors is not None:
+                    errors.append(f"参照{candidate}{location}: {reason}")
                 continue
             body = markdown_body_text(text).splitlines()
             if location.startswith("#"):
@@ -1687,9 +1693,16 @@ def _record_mismatches(path: pathlib.Path, whole: str, text: str, row: dict[str,
     mismatches: list[str] = []
     for paragraph in text.split("\n\n"):
         values = _paragraph_values(paragraph)
-        if values.get("AWI") != (row["awi"] or "計画由来") or (missing := _deferral_missing(values)) is None:
+        if values.get("AWI") != (row["awi"] or "計画由来"):
             continue
+        missing = _deferral_missing(values)
         location = paragraph_location(paragraph.strip())
+        if missing is None:
+            mismatches.append(
+                f"{location}: 終端区分か判定工程の値が受理値と一致しません。"
+                "終端区分は延期adopt・終端しない、判定工程は公開工程・ユーザビリティレビューを完全一致で記入する"
+            )
+            continue
         if values.get("判定対象") != row[field]:
             mismatches.append(
                 f"{location}: 項目`判定対象`が行の`{field}`の原文と一致しません（記録の値: {values.get('判定対象', '')!r}）。"
@@ -1796,7 +1809,8 @@ def check_return_result(
     payload = json.loads(evidence_path.read_text(encoding="utf-8"))
     for section, field in (("wi_conditions", "condition"), ("user_requirements", "requirement")):
         for index, row in enumerate(payload[section]):
-            referred = _referenced_records(row, records, repository)
+            reference_errors: list[str] = []
+            referred = _referenced_records(row, records, repository, errors=reference_errors)
             rejects = [(path, text) for path, text in records.items() if _reject_record(text, row["awi"])]
             if rejects:
                 terminal_text = row["evidence"]
@@ -1821,12 +1835,13 @@ def check_return_result(
             mismatches = [
                 mismatch for path, text in referred for mismatch in _record_mismatches(path, records[path], text, row, field)
             ]
-            detail = f"（{'。'.join(mismatches)}）" if mismatches else ""
+            detail = f"（{'。'.join([*reference_errors, *mismatches])}）" if reference_errors or mismatches else ""
             errors.append(
                 f"{_row_label(row, section, index)}: 未解決の指摘数0件と{row['outcome']}が一致しません{detail}。"
                 "後続工程、本実行で終端しない項目または不採用で許容される非達成なら、入力記録の段落（条件ごとに1段落とし、"
                 "`AWI:`、条件の原文を逐語で置く`判定対象:`、`終端区分:`か`判定工程:`を持つ）か計画の不採用行で表し、"
-                "その記録をsourceとevidenceで指して、計画かWI・CI記録を--planまたは--input-recordで渡す。"
+                "その記録の絶対パスと位置をsourceかevidenceの一方で指し、計画かWI・CI記録を--planまたは--input-recordで渡す。"
+                "延期行はsourceを保ち、--select-row・--evidence-file・--modeでevidenceへ所在を記入して再実行する。"
                 "観測が不足する行は証拠を補って再判定する。"
                 "成果物に実装の欠陥がある場合に限り、その欠陥を指摘として現在roundの表へ登録する"
             )

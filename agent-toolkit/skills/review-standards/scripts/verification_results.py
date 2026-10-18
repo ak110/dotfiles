@@ -845,7 +845,12 @@ def updated_payload(
                 evidence.append(matches[0]["evidence"])
             if "new_source" in update:
                 if update["outcome"] not in {"失効", "割当外", "背景"}:
-                    raise ValueError("new_sourceは失効・割当外・背景の判断根拠へ変更する場合だけ指定する")
+                    raise ValueError(
+                        "new_sourceは失効・割当外・背景の判断根拠へ変更する場合だけ指定する。"
+                        "延期・終端しない行はsourceを変えず、evidenceへ記録の所在を書く。"
+                        "new_sourceまたは--row-sourceの指定を外し、所在を書いた説明ファイルを"
+                        "更新JSONではevidence_file、CLIでは--evidence-fileへ指定する"
+                    )
                 if not isinstance(update["new_source"], str) or not update["new_source"].strip():
                     raise ValueError("判断根拠のnew_sourceは空でない所在を指定する")
                 row["source"] = update["new_source"]

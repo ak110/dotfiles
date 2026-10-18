@@ -1442,6 +1442,68 @@ def _git(path: pathlib.Path, *args: str) -> str:
     ).stdout.strip()
 
 
+@pytest.mark.parametrize("route", ["cli", "json"])
+def test_public_nonterminal_source_rejection_guides_both_inputs_to_evidence(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], route: str
+) -> None:
+    """通常判定で出所変更を拒否し、CLIと更新JSONの説明ファイル指定で出所を保持して回復できる。"""
+    record = tmp_path / "review.json"
+    assert _run("--output", str(record), "--plan", str(_plan(tmp_path, "plan-user"))) == 0
+    original = json.loads(record.read_text(encoding="utf-8"))
+    explanation = tmp_path / "explanation.txt"
+    explanation.write_text("延期した観測の再開条件を記録した。", encoding="utf-8")
+    update = {
+        "section": "user_requirements",
+        "row": 1,
+        "source": original["user_requirements"][0]["source"],
+        "new_source": "変更する出所",
+        "outcome": "証拠不足",
+        "reviewed_head": "a" * 40,
+        "evidence_file": str(explanation),
+        "mode": "replace",
+    }
+    prefix = [str(record), "--output", str(record)]
+    updates = tmp_path / "updates.json"
+    if route == "json":
+        _json(updates, [update])
+        args = [*prefix, "--updates-file", str(updates)]
+    else:
+        args = [
+            *prefix,
+            "--select-row",
+            "user_requirements:1",
+            "--row-outcome",
+            "user_requirements:1",
+            "証拠不足",
+            "--reviewed-head",
+            "a" * 40,
+            "--evidence-file",
+            str(explanation),
+            "--mode",
+            "replace",
+            "--row-source",
+            "user_requirements:1",
+            "変更する出所",
+        ]
+    before = record.read_bytes()
+    capsys.readouterr()
+    assert _run(*args, name="exec-review-evidence-check") == 1
+    assert record.read_bytes() == before
+    diagnostic = capsys.readouterr().err
+    assert "new_sourceまたは--row-source" in diagnostic
+    assert "更新JSONではevidence_file、CLIでは--evidence-file" in diagnostic
+    if route == "json":
+        update.pop("new_source")
+        _json(updates, [update])
+    else:
+        args = args[:-3]
+    assert _run(*args, name="exec-review-evidence-check") == 0, capsys.readouterr().err
+    final = json.loads(record.read_text(encoding="utf-8"))
+    assert final["user_requirements"][0]["source"] == original["user_requirements"][0]["source"]
+    assert final["user_requirements"][0]["evidence"] == explanation.read_text(encoding="utf-8")
+    assert final["user_requirements"][1] == original["user_requirements"][1]
+
+
 def test_public_repeated_rounds_replace_current_evidence_and_inherit_each_requirement(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:

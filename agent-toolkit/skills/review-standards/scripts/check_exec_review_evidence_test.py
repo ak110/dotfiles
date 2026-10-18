@@ -259,7 +259,7 @@ def test_return_result_distinguishes_optional_observation_from_observed_failure(
     assert run_script.dispatch(_return_args(path, table)) == expected
 
 
-@pytest.mark.parametrize("kind", ["reject", "deferred", "publication", "parallel", "not-terminating"])
+@pytest.mark.parametrize("kind", ["reject", "deferred", "publication", "parallel", "not-terminating", "parenthesized-heading"])
 def test_return_result_accepts_nonachievement_only_from_referenced_input_record(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], kind: str
 ) -> None:
@@ -275,6 +275,8 @@ def test_return_result_accepts_nonachievement_only_from_referenced_input_record(
         "parallel": f"AWI: {FIRST_WI}\n判定対象: 保存\n判定工程: ユーザビリティレビュー\n進行状態: 並行中\n",
         "not-terminating": f"AWI: {FIRST_WI}\n判定対象: 保存\n終端区分: 終端しない\n"
         "後続工程: 依存の是正版の公開後に再処理\n検収時機: 次回の処理で依存を更新した後\n",
+        "parenthesized-heading": f"# 終端区分（判断）\n\nAWI: {FIRST_WI}\n判定対象: 保存\n終端区分: 終端しない\n"
+        "後続工程: 公開後\n検収時機: 次回\n",
     }
     record.write_text(bodies[kind], encoding="utf-8")
     review_table.init(table)
@@ -284,6 +286,8 @@ def test_return_result_accepts_nonachievement_only_from_referenced_input_record(
     )
     if kind == "reject":
         row.update(outcome="未達", evidence=f"reject終端。{record} の実施内容の不採用根拠に従う")
+    if kind == "parenthesized-heading":
+        row.update(source="WI本文", evidence=f"{record}#終端区分（判断） の判断に従う")
     _write_evidence(path, [row])
     capsys.readouterr()
     assert run_script.dispatch(_return_args(path, table, "--input-record", str(record))) == 0
@@ -306,6 +310,38 @@ _MISMATCHED_RECORDS = {
     "reject-without-wi": "# 計画\n\n## 実施内容\n\n| 実施内容 | 採否 | 根拠 |\n| --- | --- | --- |\n"
     "| 保存の要求 | 不採用 | 前提が成立しない |\n",
 }
+
+
+@pytest.mark.parametrize("fault", ["termination", "stage", "location", "missing-reference"])
+def test_public_deferral_diagnostics_keep_rejected_candidates_and_recovery(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], fault: str
+) -> None:
+    """拒否した近い形の記録と所在の理由から、担当が実行できる修復へ到達する。"""
+    _mock_wi(monkeypatch, tmp_path, {FIRST_WI: "type: awi\nsource: agent\n---\n## 完成条件\n- 保存\n"})
+    path, table, record = tmp_path / "evidence.json", tmp_path / "review.tsv", tmp_path / "input.md"
+    review_table.init(table)
+    kind = "終端区分: 終端しない（説明）" if fault == "termination" else "判定工程: 公開工程（説明）"
+    record.write_text(
+        f"# 記録\n\nAWI: {FIRST_WI}\n判定対象: 保存\n{kind}\n後続工程: 公開後\n検収時機: 次回\n", encoding="utf-8"
+    )
+    reference = f"{record}:999" if fault == "location" else str(record)
+    row = {
+        **_condition(FIRST_WI, "保存"),
+        "outcome": "証拠不足",
+        "evidence": "観測不足" if fault == "missing-reference" else f"{reference} の判断に従う",
+    }
+    _write_evidence(path, [row])
+    capsys.readouterr()
+    assert run_script.dispatch(_return_args(path, table, "--input-record", str(record))) == 1
+    result = capsys.readouterr()
+    assert not result.out
+    assert "sourceかevidenceの一方" in result.err and "--select-row・--evidence-file・--mode" in result.err
+    assert "sourceとevidenceで指して" not in result.err
+    if fault in {"termination", "stage"}:
+        assert f"{record}の3行目" in result.err
+        assert "延期adopt・終端しない" in result.err and "公開工程・ユーザビリティレビュー" in result.err
+    elif fault == "location":
+        assert f"{record}:999" in result.err and "行範囲" in result.err
 
 
 @pytest.mark.parametrize("kind", list(_MISMATCHED_RECORDS))
