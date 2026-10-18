@@ -537,8 +537,13 @@ PATH=/home/user/.local/bin:/usr/local/bin:/usr/bin:/bin
 毎回の結果は報告用UWIとして届く。
 終了コード0は、子の正常終了と今回の報告用UWIのcommit、upstreamがある場合はpush到達まで成立したことを示す。
 報告の保存未達は終了コード1で、診断、ログの所在と次の操作が標準エラーへ届く。124は時間上限の到達を示す。
-保存未達の場合はログの実行IDと対応UWIを確認し、同じ会話を再開して`agent-toolkit:completion-report`で保存する。
-既に保存済みならWI保存先のcommit・pushを完了して次回の実行を待つ。
+保存未達の場合は、標準エラーが示すログを開き、次の手順で保存を完了する。
+
+1. ログの「実行識別子」を控える。`atk wi show --all --type uwi --state all --source run-skill --target-repo /home/user/repo --skip-pull`で報告を表示する。`/home/user/repo`には実行時の対象リポジトリを指定する。frontmatterの`run_skill_run_id`が実行識別子と一致するUWIを探す。
+2. 対象リポジトリのディレクトリで、実行した会話を再開する。Claude Codeではログの「Claudeのセッション識別子」を使って`AGENT_TOOLKIT_RUN_SKILL_ID=<実行識別子> claude --resume <セッション識別子>`を実行する。Codexではログの`thread.started`の`thread_id`を使って`AGENT_TOOLKIT_RUN_SKILL_ID=<実行識別子> codex resume <thread_id>`を実行する。山括弧の値はログの値に置き換える。
+3. 再開した会話で「`agent-toolkit:completion-report`で今回の報告用UWIの保存を完了して」と依頼する。対応UWIが既にあればそのファイル名も伝え、「WI保存先のcommitと、upstreamがある場合のpushを完了して」と依頼する。保存完了の報告を確認したら、次回の定期実行を待つ。
+
+ログに会話の識別子が無い場合や再開に失敗する場合は、対象リポジトリで新しい会話を開き、ログの所在・実行識別子・実行したスキル名を伝えて保存未達の調査と復旧を依頼する。
 破壊的な操作など判断が要る対応は、実施せずに事前承認型UWIとして届く。
 そのUWIへ回答すると、同じ対象リポジトリと同じスキルの次回の`atk run-skill`がその対応を実施してUWIを終端する。
 未回答の間は、同じ対応のUWIを重ねて投入せず、報告用UWIの未達・持ち越しの欄へ実施しなかった対応と既存のUWIを示す。
