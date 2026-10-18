@@ -921,7 +921,8 @@ async def test_answer_change_terminal_read_only_and_identifier_surfaces(browser_
     question_row = page.locator('.entry-select[data-key="inbox/question.md"]')
     await question_row.click()
     detail = page.get_by_role("dialog", name="詳細")
-    await playwright.async_api.expect(detail.locator("#detail-state")).to_have_text("uwi / inbox")
+    # 回答済みのinboxのuwiは、保存状態をinboxのまま表示ラベルだけをansweredにする。
+    await playwright.async_api.expect(detail.locator("#detail-state")).to_have_text("uwi / answered")
     await detail.get_by_role("button", name="回答を変更", exact=True).click()
     await playwright.async_api.expect(detail.locator("#answer-input")).to_have_value("既存回答")
     await page.keyboard.press("Escape")
