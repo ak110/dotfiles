@@ -17,6 +17,7 @@ disable-model-invocation: true
 
 | 時点または条件 | 全文読む資料 |
 | --- | --- |
+| 計画または直接実装に着手する前 | `${CLAUDE_PLUGIN_ROOT}/share/single-lane-execution.md` |
 | 計画対象がある場合に計画を起草する前（実行順3） | `agent-toolkit:plan-mode`のSKILL.mdと同スキルの`references/plan-file-standards.md` |
 | 計画あり・なしのどちらでも、メインが自ら実装に着手する直前（実行順4） | `${CLAUDE_PLUGIN_ROOT}/share/exec-review.parent.md`冒頭の`未判定検証記録`の段落と「起動」の`Git管理外の変更`の段落 |
 | 対象worktreeごとに公開する前（実行順8） | `agent-toolkit:commit`を起動し、同スキルの`references/publish.md` |
@@ -52,7 +53,7 @@ disable-model-invocation: true
 公開の開始前は、不良が本作業で導入したものか、残る工程へ具体的に作用するかを先に判定する。即時対応に当たる不良を、工程が止まらないことや不良の種類だけで次回へ回さない。
 
 - 公開（実行順8）の開始前に見つけた不良は`agent-toolkit:bugfix`で初動判定する。
-  拡張原因分析、類似見直しまたは再発防止策を要し即時対応に当たるものは、不良ごとに調査とAWIの起草・投入を`${CLAUDE_PLUGIN_ROOT}/share/add-wi.parent.md`に従って委譲する。
+  拡張原因分析、類似見直しまたは再発防止策を要し即時対応に当たるものは、`agent-toolkit:wi-standards`冒頭のAWIの粒度で分けた要求ごとに、調査とAWIの起草・投入を`${CLAUDE_PLUGIN_ROOT}/share/add-wi.parent.md`に従って委譲する。
   投入されたAWIは`atk wi start-processing <ファイル名> --target-repo=<対応付けたtarget_repo>`で`processing`へ移して処理対象と対応表へ加え、自ら実装してそのworktreeの実行レビューへ含める。
   即時対応に当たらない不良は同じ委譲で`source: process-wi`のAWIとして投入し次回へ回す
 - 根本原因と類似見直しの母集団を自ら確定でき、その全対象と再発防止策をその場で処置できる不良は、`agent-toolkit:bugfix`の`SKILL.md`「問題を見つけたときの対処」に従ってその場で直す
@@ -60,12 +61,14 @@ disable-model-invocation: true
 
 ## 実行順
 
-実行レビューは`${CLAUDE_PLUGIN_ROOT}/share/exec-review.parent.md`に従って起動し、`未判定検証記録`は同書冒頭の規定に従って渡す。
+計画・実装・独立した実行レビューの調整は`${CLAUDE_PLUGIN_ROOT}/share/single-lane-execution.md`の共通契約に従う。以下は本スキル固有の対象取得、worktree対応付けと公開の手順を定める。実行レビューは`${CLAUDE_PLUGIN_ROOT}/share/exec-review.parent.md`に従って起動し、`未判定検証記録`は同書冒頭の規定に従って渡す。
 
 1. processable一覧と各WI本文を取得し、同時に`atk wi list --type=uwi --answered=yes --status=processable --source=!run-skill --target-repo=<対象リポジトリの絶対パス>`で回答済みUWIを取得する。
+   対象worktreeごとに公開対象とベースbranchを明示し、`${CLAUDE_PLUGIN_ROOT}/skills/process-wi/references/selection-procedure.md`「処理対象の決定」の開始時CI点検を適用する。実際の照会、失敗ログの取得と残工程への作用の判定を実装前に行い、既存失敗は「見つけた既存不良の扱い」、ユーザー依存事項は確認手順へ渡す。公開時のbaselineとCI検収も実行順8で行う。
    `source`が`run-skill`のUWIは次回の`atk run-skill`が扱う。回答済みUWIは実装前に`agent-toolkit:wi-standards`「状態と依存」に従って終端するか処理対象へ加える。依存が未達の項目は、依存元がprocessableで同じ`target_repo`なら同じ実行へ加えて報告する。
    依存元の状態変更や集合からの除外が要る場合は、`agent-toolkit:user-confirmation-and-report`「確認要否の判定」で確認の要否を決める。各WIについてファイル名、保存済みの`target_repo`、Git操作に使うworktreeの絶対パス、そのworktreeの処理開始時のHEADの短縮OIDを対応表にする。
-   `atk wi start-processing <ファイル名>... --target-repo=<対応付けたtarget_repo>`で`processing`へ移して集合を固定する。固定後にユーザーが告げた回答済みUWIとAWIの追加は、`${CLAUDE_PLUGIN_ROOT}/skills/process-wi/references/selection-procedure.md`「処理対象WIの追加」の判断基準で扱う。
+   同資料「集合確定直後の処理開始」の`resolve_repo_identifier`による解決手順で、保存済み`target_repo`と対応worktreeの有効な識別子の一致を確認し、同じworktree指定で取得できることを確かめる。不一致は同資料「処理対象の決定」の移転判定・編集に従い、移転の根拠が無ければ両識別子と不足する根拠を返す。移転が確定した場合は開始前に保存値と本文中の操作先を揃える。
+   `atk wi start-processing <ファイル名>... --target-repo=<対応worktreeの絶対パス>`で`processing`へ移して集合を固定する。固定後にユーザーが告げた回答済みUWIとAWIの追加は、`${CLAUDE_PLUGIN_ROOT}/skills/process-wi/references/selection-procedure.md`「処理対象WIの追加」の判断基準で扱う。
 2. `atk wi`の`adopt`・`reject`へ`--commit`を渡す場合は対象worktreeの絶対パスを`--target-repo`へ渡し、それ以外の操作は保存済み`target_repo`を使う。Gitの起点比較、実装、検証、commit、レビューは対応表のworktreeと開始時のHEADを使い、別のworktreeや複製元のHEADで代用しない。
 3. 計画対象がある場合は、対象worktreeごとに計画ファイルを起草する。計画メタ情報の対象リポジトリと計画構造の自動チェックの`--work-dir`にはそのworktreeを使う。
 4. 対応表のworktreeで、計画対象は`## 要件・外部仕様`、直接実装対象はWIの要求と完成条件に従って実装する。Git管理外のファイルを変更する場合は最初の変更より前に変更前複製を作成し、証拠要求ありでは実装完了前に未判定検証記録JSONを作成する。複製の対とJSONの絶対パスは計画の`## 進捗ログ`か直接実装の引き継ぎ記録へ残す。検証は`${CLAUDE_PLUGIN_ROOT}/share/workflow-phases.md`の受入シナリオ検証に従い、シナリオ別のテスト名と合否を記録する。
@@ -76,6 +79,6 @@ disable-model-invocation: true
 6. worktreeごとに`${CLAUDE_PLUGIN_ROOT}/share/review-loop-coordination.md`に従って指摘を収束させる。修正はメインが行い、同じ`開始時のHEAD`とレビュー指摘管理表を継続する。
 7. 各計画について`atk run-script plan-progress --`で完了判定を`## 進捗ログ`へ記録し、計画構造の自動チェックの成功を確認してから計画バンドルを保存する。
 8. 各WIを`adopt`か`reject`し（`adopt`は`agent-toolkit:wi-standards`「状態と依存」のcommit対応付けを使う）、worktreeごとに`references/publish.md`に従って公開する。複数の対象リポジトリでは成果の依存順を保ち、独立した対象のpushを先に全て終えてからCI監視を並行して始め、全識別子の終端を待って結果を個別に回収する。CI成功を入力にする公開後の操作はその対象の成功後に行い、成功を入力とせず書込資源を占有しない操作は待機中に進めてよい。
-   開発マシン上の常時稼働サーバーへの反映は、`agent-toolkit:completion-report`の`SKILL.md`「工程」の常時稼働サーバーへの反映の段落の条件を満たす場合にCI待機と並行して始め、反映したHEADの完全OID、反映コマンドの終了状態、稼働確認の結果を完了報告へ渡す。
-   Claude Codeでは、独立したpush群の監視と並行するサーバー反映などを開始してから、CI待機で会話圧縮を予約する。予約前にセッションのmanaged-temp直下の`parent-handoff.md`へ再開状態を保存する。固定したWIと対象worktree・開始HEADの対応表、計画集合と保存状態、WIと実装commitの対応と採否の到達点を含める。対象repo・forge・ref・source ref・完全OID・baselineと監視識別子・出力先の対応、未回収集合、並行反映のHEADと到達点、CI後の操作と依存順も含める。予約と通知後の復元は`agent-toolkit:delegation`の`references/waiting-and-monitoring.md`「長時間待機前の会話圧縮」に従う。起動済みのwait_ci.pyのバックグラウンドタスクを保ち、Monitorで前景を占有せずにターンを終え、通知後は同じ入力と保存出力からCI結果を回収する。CI定義の無い対象にはこの圧縮境界を設けず、Codexと圧縮ツールが無い環境では既存の待機契約を使う。
+   開発マシン上の常時稼働サーバーへの反映は、`agent-toolkit:completion-report`の`SKILL.md`「工程」の常時稼働サーバーへの反映の段落の条件を満たす場合にCI待機と並行して始め、反映したHEADの一意な短縮OID、反映コマンドの終了状態、稼働確認の結果を完了報告へ渡す。
+   Claude Codeでは、独立したpush群の監視と並行するサーバー反映などを開始してから、CI待機で会話圧縮を予約する。予約前にセッションのmanaged-temp直下の`parent-handoff.md`へ再開状態を保存する。固定したWIと対象worktree・開始HEADの対応表、計画集合と保存状態、WIと実装commitの対応と採否の到達点を含める。対象repo・forge・ref・source ref・短縮OID・baselineと監視識別子・出力先の対応、未回収集合、並行反映のHEADと到達点、CI後の操作と依存順も含める。予約と通知後の復元は`agent-toolkit:delegation`の`references/waiting-and-monitoring.md`「長時間待機前の会話圧縮」に従う。起動済みのwait_ci.pyのバックグラウンドタスクを保ち、Monitorで前景を占有せずにターンを終え、通知後は同じ入力と保存出力からCI結果を回収する。CI定義の無い対象にはこの圧縮境界を設けず、Codexと圧縮ツールが無い環境では既存の待機契約を使う。
 9. 一時的なレビュー指摘管理表を正式な保存または回収契約に従って処理し、`agent-toolkit:completion-report`で報告する。

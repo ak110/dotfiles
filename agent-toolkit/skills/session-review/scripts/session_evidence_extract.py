@@ -184,6 +184,11 @@ class _Record(NamedTuple):
     text: str
     entry: dict[str, Any]
 
+    @property
+    def raw_entry(self) -> dict[str, Any]:
+        """行の生の内容を、明示的な本文・構造照会へ返す。"""
+        return json.loads(self.text)
+
 
 class _CollectedRecord(NamedTuple):
     """全照会モードが共有する、由来と識別子を持つ1記録。"""
@@ -210,7 +215,7 @@ class _UnresolvedRecord(NamedTuple):
 _TEXT_LIMIT: contextvars.ContextVar[int | None] = contextvars.ContextVar("_TEXT_LIMIT", default=_MAX_TEXT_LENGTH)
 """`_clip`が上限を省略された場合に使う本文の上限。`None`は切り詰めないことを表す。
 
-会話の流れは発話の全文から先頭と末尾を切り出すため、イベントの生成を共有しつつ上限だけを外す。
+会話の流れは発話の全文を保持するため、イベントの生成を共有しつつ上限だけを外す。
 """
 
 
@@ -513,9 +518,20 @@ def _failed_tool_events(entry: dict[str, Any]) -> list[dict[str, Any]]:
         text = "\n".join(_text_blocks(block.get("content")))
         event = _event("failed-tool", text, tool=str(block.get("tool_use_id", "")))
         if event:
-            event["diagnostic_last_line"] = next((line.strip() for line in reversed(text.splitlines()) if line.strip()), "")
+            event["diagnostic_last_line"] = _failure_diagnostic(text)
             events.append(event)
     return events
+
+
+def _failure_diagnostic(text: str) -> str:
+    """hookの失敗は通知本文を診断にし、通常の失敗は最後の本文行を返す。"""
+    if _HOOK_FAILURE_PREFIX.match(text):
+        body = _HOOK_FAILURE_PREFIX.sub("", text, count=1)
+        return re.sub(r"</?[^>]+>", "", body).strip()
+    return next(
+        (line.strip() for line in reversed(text.splitlines()) if line.strip() and not re.fullmatch(r"</[^>]+>", line.strip())),
+        "",
+    )
 
 
 def _completion_event(entry: dict[str, Any]) -> dict[str, Any] | None:
@@ -939,7 +955,7 @@ def _codex_command_event(payload: dict[str, Any]) -> dict[str, Any] | None:
             event["command_full"] = json.dumps(command, ensure_ascii=False)
             event["executable"] = _basename(command[0]) if command else ""
         event["diagnostic"] = "" if text == "CommandExecution failed" else _clip(text)
-        event["diagnostic_last_line"] = next((line.strip() for line in reversed(text.splitlines()) if line.strip()), "")
+        event["diagnostic_last_line"] = _failure_diagnostic(text)
         exit_code = item.get("exit_code")
         if isinstance(exit_code, int) and not isinstance(exit_code, bool):
             event["exit_code"] = exit_code
@@ -1054,7 +1070,7 @@ def _load_records(raw_path: str | None) -> list[_Record] | None:
         return None
     try:
         text = path.read_text(encoding="utf-8")
-    except OSError:
+    except OSError, UnicodeError:
         return None
 
     records: list[_Record] = []
@@ -1064,6 +1080,8 @@ def _load_records(raw_path: str | None) -> list[_Record] | None:
                 continue
             parsed = json.loads(line)
             if isinstance(parsed, dict):
+                if parsed.get("type") not in {"user", "assistant"} and "message" in parsed:
+                    parsed = {key: value for key, value in parsed.items() if key != "message"}
                 records.append(_Record(number, line, parsed))
     except json.JSONDecodeError, ValueError:
         return None

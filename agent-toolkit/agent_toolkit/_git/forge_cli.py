@@ -11,14 +11,18 @@ _GLAB_HOST_VARIABLES = ("GITLAB_HOST", "GITLAB_URI", "GITLAB_URL")
 def glab_environment(repository: str | remote.RemoteLocation, *, prefer_environment: bool = False) -> dict[str, str]:
     """glabの子環境へ、待機では明示指定、通知では公開環境指定を優先して反映する。"""
     target = remote.parse_remote_location(repository) if isinstance(repository, str) else repository
+    # SSHのポートはGit転送用であり、HTTP APIの接続先へ引き継がない。
+    authority = (
+        remote.RemoteLocation(target.hostname, target.project_path).authority if target.protocol == "ssh" else target.authority
+    )
     env = os.environ.copy()
     inherited_host = next((env[name] for name in _GLAB_HOST_VARIABLES if env.get(name)), None)
     if prefer_environment and inherited_host:
         env["GITLAB_HOST"] = inherited_host
-    elif target.authority is not None:
-        env["GITLAB_HOST"] = target.authority
-    if target.authority is not None and not prefer_environment:
-        env["GITLAB_API_HOST"] = target.authority
+    elif authority is not None:
+        env["GITLAB_HOST"] = authority
+    if authority is not None and not prefer_environment:
+        env["GITLAB_API_HOST"] = authority
     if target.protocol in {"http", "https"} and (
         not prefer_environment or not inherited_host and not (env.get("GLAB_API_PROTOCOL") or env.get("API_PROTOCOL"))
     ):
@@ -59,10 +63,10 @@ def failure_log_commands(
         return (("gh", "run", "view", identifier, "--repo", repo, "--log-failed"),)
     repo = glab_repository(repository, prefer_environment=prefer_environment)
     assignments: list[str] = []
+    environment = glab_environment(repository, prefer_environment=prefer_environment)
     if target.authority is not None and not prefer_environment:
-        assignments.append(f"GITLAB_API_HOST={target.authority}")
+        assignments.append(f"GITLAB_API_HOST={environment['GITLAB_API_HOST']}")
     if target.protocol in {"http", "https"}:
-        environment = glab_environment(repository, prefer_environment=prefer_environment)
         protocol = environment.get("GLAB_API_PROTOCOL") or environment.get("API_PROTOCOL")
         if protocol:
             assignments.append(f"GLAB_API_PROTOCOL={protocol}")

@@ -172,7 +172,7 @@ class TestCommitAndPushRetry:
             ["fetch"],
             ["merge-base", "--is-ancestor", "HEAD", "@{u}"],
             ["merge-base", "--is-ancestor", "@{u}", "HEAD"],
-            ["rebase", "@{u}"],
+            ["-c", "submodule.recurse=false", "rebase", "@{u}"],
             ["push"],
         ]
 
@@ -203,10 +203,12 @@ class TestCommitAndPushRetry:
         capsys: pytest.CaptureFixture[str],
     ) -> None:
         """rebaseが失敗した場合はabortせず、状態と手動手順をstderrへ出力する。"""
+        calls: list[list[str]] = []
 
         def fake_run_git(args: list[str], cwd: pathlib.Path, *, forward_error_output: bool = True) -> None:
             del cwd, forward_error_output
-            if args[0] == "push" or args == ["rebase", "@{u}"]:
+            calls.append(args)
+            if args[0] == "push" or args == ["-c", "submodule.recurse=false", "rebase", "@{u}"]:
                 raise subprocess.CalledProcessError(1, ["git", *args])
             if args[:2] == ["merge-base", "--is-ancestor"]:
                 raise subprocess.CalledProcessError(1, ["git", *args])
@@ -221,7 +223,9 @@ class TestCommitAndPushRetry:
         assert "rebase状態を保持" in error
         assert "git add <競合解消済みパス>" in error
         assert "自動abortは行っていない" in error
-        assert "git rebase --abort" in error
+        assert "git -c submodule.recurse=false rebase --abort" in error
+        assert ["-c", "submodule.recurse=false", "rebase", "@{u}"] in calls
+        assert not any("--abort" in args for args in calls)
 
     def test_reports_conflict_path_when_rebase_fails(
         self,
@@ -230,10 +234,12 @@ class TestCommitAndPushRetry:
         capsys: pytest.CaptureFixture[str],
     ) -> None:
         """rebase失敗時に競合解消手順をstderrへ出力してから例外を送出する。"""
+        calls: list[list[str]] = []
 
         def fake_run_git(args: list[str], cwd: pathlib.Path, *, forward_error_output: bool = True) -> None:
             del cwd, forward_error_output
-            if args[0] == "push" or args == ["rebase", "@{u}"]:
+            calls.append(args)
+            if args[0] == "push" or args == ["-c", "submodule.recurse=false", "rebase", "@{u}"]:
                 raise subprocess.CalledProcessError(1, ["git", *args])
             if args[:2] == ["merge-base", "--is-ancestor"]:
                 raise subprocess.CalledProcessError(1, ["git", *args])
@@ -248,6 +254,7 @@ class TestCommitAndPushRetry:
             _wi_sync.commit_and_push(tmp_path, "chore: test", ["inbox"])  # pylint: disable=protected-access  # noqa: SLF001
 
         assert "rebase状態を保持" in capsys.readouterr().err
+        assert ["-c", "submodule.recurse=false", "rebase", "@{u}"] in calls
 
 
 class TestExplicitUpstreamIntegration:
@@ -523,14 +530,27 @@ class TestMigrateLegacyLayout:
     `ensure_environment`へ渡すhomeは解決結果に影響しない。
     """
 
-    def test_migrates_entries_and_removes_legacy_dirs(self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
+    @pytest.mark.parametrize(
+        "filename",
+        [
+            "20260101-000000-001.md",
+            "日本語 space.md",
+            pytest.param(
+                "日本語 space\n改行.md",
+                marks=pytest.mark.skipif(os.name == "nt", reason="Windowsのファイル名は改行を許可しない"),
+            ),
+        ],
+    )
+    def test_migrates_entries_and_removes_legacy_dirs(
+        self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], filename: str
+    ) -> None:
         """種別ディレクトリ配下のエントリへtypeを補って状態ディレクトリ直下へ移し、旧ディレクトリを削除する。"""
         root = tmp_path / "private-notes"
         _init_legacy_repo(
             root,
             {
-                "feedback/inbox/20260101-000000-001.md": _LEGACY_AWI,
-                "feedback/adopted/20260101-000000-002.md": _LEGACY_AWI,
+                f"feedback/inbox/{filename}": _LEGACY_AWI,
+                f"feedback/adopted/done-{filename}": _LEGACY_AWI,
                 "tbd/inbox/20260102-000000-001.md": _LEGACY_UWI,
             },
         )
@@ -539,10 +559,10 @@ class TestMigrateLegacyLayout:
 
         assert not (root / "feedback").exists()
         assert not (root / "tbd").exists()
-        assert (root / "inbox" / "20260101-000000-001.md").read_text(encoding="utf-8") == (
+        assert (root / "inbox" / filename).read_text(encoding="utf-8") == (
             "---\ntarget_repo: github.com/example/repo\ntype: awi\n---\n\n本文\n"
         )
-        assert (root / "adopted" / "20260101-000000-002.md").read_text(encoding="utf-8").splitlines()[2] == "type: awi"
+        assert (root / "adopted" / f"done-{filename}").read_text(encoding="utf-8").splitlines()[2] == "type: awi"
         assert (root / "inbox" / "20260102-000000-001.md").read_text(encoding="utf-8").splitlines()[1:4] == [
             "target_repo: github.com/example/repo",
             "type: uwi",
@@ -893,7 +913,7 @@ class TestPullWithRecentNotice:
             ["merge", "--ff-only", "@{u}"],
             ["merge-base", "--is-ancestor", "HEAD", "@{u}"],
             ["merge-base", "--is-ancestor", "@{u}", "HEAD"],
-            ["rebase", "@{u}"],
+            ["-c", "submodule.recurse=false", "rebase", "@{u}"],
         ]
         assert migrations == [local]
 

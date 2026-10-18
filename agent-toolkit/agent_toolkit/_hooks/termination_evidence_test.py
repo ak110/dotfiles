@@ -208,13 +208,14 @@ def stop_payload(directory: pathlib.Path, visible: str, *, codex: bool = False) 
 
 @pytest.mark.parametrize("codex", [False, True])
 def test_missing_completion_blocks_from_first_stop_and_evidence_allows(tmp_path: pathlib.Path, *, codex: bool) -> None:
-    """両ホストとも起動証拠の無い成果作業を初回Stopで遮断し、実際の起動証拠を得た後は許可する。"""
+    """両ホストとも起動証拠の無い成果作業を初回Stopで遮断し、実際の起動証拠を得た後は一度点検して許可する。"""
     supply_commit(tmp_path, codex=codex)
     decision, reason = termination_order_advisor.evaluate(stop_payload(tmp_path, WORK_COMPLETE, codex=codex))
     assert decision == "block"
     assert "completion-report" in reason and "commit" in reason
     assert ("SKILL.md" in reason) is codex
     supply_completion(tmp_path, codex=codex)
+    assert termination_order_advisor.evaluate(stop_payload(tmp_path, WORK_COMPLETE, codex=codex))[0] == "block"
     assert termination_order_advisor.evaluate(stop_payload(tmp_path, WORK_COMPLETE, codex=codex)) == ("approve", "")
 
 
@@ -233,9 +234,10 @@ def test_missing_completion_blocks_from_first_stop_and_evidence_allows(tmp_path:
     ],
 )
 def test_report_body_differences_do_not_block_evidenced_work(tmp_path: pathlib.Path, visible: str, *, codex: bool) -> None:
-    """起動証拠を持つ作業は、見出し・句読点・区分・候補ID・予定を示す語だけが異なる本文で遮断しない。"""
+    """起動証拠を持つ作業は本文の形式によらず一度点検し、再入では終了を許可する。"""
     supply_commit(tmp_path, codex=codex)
     supply_completion(tmp_path, codex=codex)
+    assert termination_order_advisor.evaluate(stop_payload(tmp_path, visible, codex=codex))[0] == "block"
     assert termination_order_advisor.evaluate(stop_payload(tmp_path, visible, codex=codex)) == ("approve", "")
 
 
@@ -263,6 +265,7 @@ def test_codex_saved_output_of_read_is_evidence(tmp_path: pathlib.Path) -> None:
     saved.write_text(json.dumps({"text": COMPLETION_SKILL_TEXT, "eof": True}, ensure_ascii=False), encoding="utf-8")
     command = "atk read-file -- /plugin/skills/completion-report/SKILL.md"
     _tool(tmp_path, "read", "Bash", {"command": command}, f"保存先: {saved}\n行数: 1", codex=True)
+    assert termination_order_advisor.evaluate(stop_payload(tmp_path, "", codex=True))[0] == "block"
     assert termination_order_advisor.evaluate(stop_payload(tmp_path, "", codex=True)) == ("approve", "")
 
 
@@ -345,6 +348,10 @@ def test_completion_before_deliverable_in_same_work_is_evidence(tmp_path: pathli
     human_input(tmp_path, "request", "作業を頼む")
     supply_completion(tmp_path)
     supply_commit(tmp_path)
+    decision, reason = termination_order_advisor.evaluate(stop_payload(tmp_path, ""))
+    assert decision == "block" and "起動済みの完了処理" in reason
+    works = termination_evidence.session_works(json.loads(stop_payload(tmp_path, "")))
+    assert all(not termination_evidence.missing_completion(work) for _, work in works)
     assert termination_order_advisor.evaluate(stop_payload(tmp_path, "")) == ("approve", "")
 
 
@@ -531,6 +538,99 @@ def test_blocked_requires_actual_failure_of_same_work(tmp_path: pathlib.Path) ->
     quote = json.dumps(failure["tool_response"], ensure_ascii=False, sort_keys=True)
     termination_evidence.record_decision({**base, "call_id": "network", "quote": quote})
     assert termination_order_advisor.evaluate(stop_payload(tmp_path, "取得できない"))[0] == "approve"
+
+
+@pytest.mark.parametrize(
+    "action",
+    ["cancel", "replace", "start", "resume", "instruction", "answer", "standing-authorization", "wait", "blocked"],
+)
+@pytest.mark.parametrize("quote_mode", ["omitted", "matching", "different"])
+def test_decision_cli_reads_evidence_from_identifiers(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, action: str, quote_mode: str
+) -> None:
+    """識別子だけで判断を記録し、明示した引用の不一致は全判断で拒否する。"""
+    human_input(tmp_path, "request", "公開せず作業を進める")
+    supply_commit(tmp_path)
+    document: dict[str, Any] = {
+        "session_id": "evidence-test",
+        "action": action,
+        "work_id": "work-1",
+        "reason": "実体に基づく判断",
+        "input_id": "request",
+    }
+    text = "公開せず作業を進める"
+    if action in {"instruction", "answer", "standing-authorization"}:
+        document.update(action="publish-scope", origin=action, scope="commitしない")
+        if action == "standing-authorization":
+            policy = tmp_path / "policy.md"
+            text = "この作業の公開範囲はcommitしない。\n"
+            policy.write_text(text, encoding="utf-8")
+            document["policy_file"] = str(policy)
+    elif action == "wait":
+        queue = tmp_path / "private-notes"
+        inbox = queue / "inbox"
+        inbox.mkdir(parents=True)
+        monkeypatch.setenv("AGENT_TOOLKIT_PRIVATE_NOTES", str(queue))
+        question = inbox / "20261016-000000-001.md"
+        text = "---\ntype: uwi\nsubmitter_session: evidence-test\n---\n\n## 確認\n\n選択してください。\n\n## 回答\n"
+        question.write_text(text, encoding="utf-8")
+        document["uwi_file"] = str(question)
+    elif action == "blocked":
+        response = {"exit_code": 1, "stderr": "接続できない"}
+        termination_evidence.observe_tool(
+            json.dumps(
+                {
+                    "session_id": "evidence-test",
+                    "tool_name": "Bash",
+                    "tool_use_id": "failed-call",
+                    "tool_input": {"command": "false"},
+                    "tool_response": response,
+                }
+            ),
+            after=True,
+        )
+        document["call_id"] = "failed-call"
+        text = json.dumps(response, ensure_ascii=False, sort_keys=True)
+    if quote_mode != "omitted":
+        document["quote"] = text if quote_mode == "matching" else "実体と異なる本文"
+    status, reason = public_decision(tmp_path, document)
+    assert status == (2 if quote_mode == "different" else 0), reason
+    if quote_mode != "different":
+        works = termination_evidence.session_works({"session_id": "evidence-test"})
+        work = works[-1][1] if action == "start" else works[0][1]
+        if action in {"instruction", "answer", "standing-authorization"}:
+            assert work["publish_scope"]["origin"] == action
+            if action == "standing-authorization":
+                assert work["publish_scope"]["policy_text"] == text
+        else:
+            assert work["decisions"][-1]["action"] == action
+
+
+def test_omission_cli_resolves_policy_and_current_input(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """最小の省略JSONが全文と人間入力を保存し、規範の変更後は免除を失効させる。"""
+    text = "完了報告は指示まで省く。\n"
+    repository = git_repository.init_repository(tmp_path / "repo", files={"CLAUDE.md": text})
+    policy = repository / "CLAUDE.md"
+    monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "evidence-test")
+    monkeypatch.delenv("CODEX_THREAD_ID", raising=False)
+    human_input(tmp_path, "request", "成果を作成する")
+    supply_commit(repository)
+    document = {
+        "session_id": "evidence-test",
+        "action": "omit-completion",
+        "work_id": "work-1",
+        "reason": "適用規範に従う",
+        "policy_file": str(policy),
+        "target_repo": str(repository),
+    }
+    status, reason = public_decision(tmp_path, document)
+    assert status == 0, reason
+    work = termination_evidence.session_works({"session_id": "evidence-test"})[0][1]
+    assert work["omit_completion"]["policy_text"] == text
+    assert work["omit_completion"]["input_id"] == "request"
+    assert not termination_evidence.missing_completion(work)
+    policy.write_text("完了報告を行う。\n", encoding="utf-8")
+    assert termination_evidence.missing_completion(work) == ["commit"]
 
 
 def automated_input(directory: pathlib.Path, prompt_id: str, prompt: str) -> None:
@@ -1009,3 +1109,9 @@ async def test_started_session_without_projection_is_waited_by_same_work(
     finally:
         monkeypatch.setattr(atomic_file.os, "replace", original_replace)
         await current.close()
+
+
+def test_stop_review_notice_is_a_fact_not_completion_evidence():
+    """通知の記録を持つだけでは成果作業の起動不足を免除しない。"""
+    work = {"deliverables": ["commit"], "stop_review_notice": {"input_id": "request"}}
+    assert termination_evidence.missing_completion(work) == ["commit"]

@@ -343,6 +343,8 @@ def test_handoff_path_mentions_match_delegation_document_set() -> None:
     }
     recipient_names = {path.name for path in share.glob("*.subagent.md")} - lightweight
     contract_names = {name for name, content in markdown.items() if "## 多段工程の引き継ぎ記録" in content}
+    # 現行要求の記録仕様は、役割別の起動契約と共通の引き継ぎ記録先を使う。
+    contract_names.add("work-contract.md")
     expected_names = parent_names | recipient_names | contract_names
     actual_names = {name for name, content in markdown.items() if "引き継ぎ記録先" in content}
 
@@ -397,8 +399,8 @@ def test_selection_explanation_contract_covers_questions_without_state_changes()
 def test_explore_task_documents_do_not_run_atk() -> None:
     """`mode: explore`を宣言する`<役割名>.subagent.md`は、委譲先に実行させる`atk`のコマンドを含まない。
 
-    exploreの委譲先はCodexの読取専用sandboxでもClaudeのRead・Glob・Grepでも`atk`を起動できない。
-    入力や手順が`atk`の実行を求めると、委譲先は資料を取得できないまま続行不能を返す。
+    Codexの読取専用sandboxでは`atk`を起動できないため、backend間で切り替わる定型担当の入力をファイル読取へそろえる。
+    ClaudeのBashとpyfltrによる探索能力を保ち、Codexへ切り替わった場合も同じ資料を取得できる契約を検証する。
     """
     share = pathlib.Path(__file__).resolve().parent / "share"
     explore_documents = [path for path in sorted(share.glob("*.subagent.md")) if _declaration(path).launch_kind == "explore"]
@@ -1040,3 +1042,68 @@ def _selection_format(plugin_root: pathlib.Path) -> str:
 def _selection_documents(plugin_root: pathlib.Path) -> str:
     """書式と手順を使う契約の確認へ両定義を渡す。"""
     return _selection_procedure(plugin_root) + "\n" + _selection_format(plugin_root)
+
+
+def test_post_approval_contract_waits_for_reviewed_implementation() -> None:
+    """実施内容を確定する承認はレビュー収束後、事前承認は受領時に届ける。"""
+    root = pathlib.Path(__file__).resolve().parent
+    lanes = (root / "skills/process-wi/references/run-lanes.md").read_text(encoding="utf-8")
+    approval = (root / "skills/user-confirmation-and-report/references/approval-scope.md").read_text(encoding="utf-8")
+    executor = (root / "share/exec.subagent.md").read_text(encoding="utf-8")
+    timing = _h2_section(lanes, "実装とレビュー")
+    assert "事後承認型UWIは受領時には発行せず" in timing
+    assert "事前承認の確認事項は受領時に直ちに発行する" in timing
+    assert "収束後・統合前" in timing
+    assert "収束した実装と一致する本文で発行する" in timing
+    assert "終端返却を受領した時点で発行する" in timing
+    assert "実装なし" in timing and "マージなし" in timing
+    assert "発行対象だけを直ちに発行する" not in timing
+    post_approval = next(
+        line for line in _h2_section(approval, "事前承認と事後承認").splitlines() if line.startswith("- 事後承認:")
+    )
+    assert "実施内容が実行レビューを経る作業では" in post_approval
+    assert "実行レビューの収束後の内容" in post_approval
+    assert "確認手段を問わず適用する" in post_approval
+    assert re.search("通知済みの事後承認.*レビュー修正.*変更後の内容.*再びメインへ送る", executor)
+
+
+def test_post_publish_prerequisite_failure_preserves_resumable_work() -> None:
+    """公開後操作の前提不足を受領し、同じcommitの未完了操作へ戻す。"""
+    root = pathlib.Path(__file__).resolve().parent
+    parent = (root / "share/session-termination.parent.md").read_text(encoding="utf-8")
+    finish = (root / "skills/process-wi/references/finish-session.md").read_text(encoding="utf-8")
+    publish = (root / "skills/commit/references/publish.md").read_text(encoding="utf-8")
+    receipt = _h2_section(parent, "受領と検収")
+    assert "公開後の操作" in receipt
+    assert "「公開工程の続行不能の回復と再開」へ渡す" in receipt
+    assert "push前の工程" in receipt
+    assert "CI以外の続行不能は、失敗した工程の既存手順で回復" not in receipt
+    restart = _h2_section(finish, "公開状態の検収と再起動")
+    unfinished = next(line for line in restart.splitlines() if "新しいcommitが無く公開後の操作が未完了の場合" in line)
+    assert "未完了工程だけを再開する" in unfinished
+    completed = next(line for line in restart.splitlines() if "再起動せず報告処理へ進む" in line)
+    assert "CIの検収と公開後の操作が完了している場合" in completed
+    recovery = _h2_section(publish, "公開工程の続行不能からの再開")
+    assert "CI結果と成功済みの公開後の操作を保持する" in recovery
+    assert "未完了工程だけを再開" in recovery
+    assert "成功済みの版数更新・push・公開後の操作" in recovery
+
+
+def test_publication_recovery_references_resolve_to_shared_sections() -> None:
+    """続行不能の送り手と受け手が、実在する同じ回復節へ接続する。"""
+    root = pathlib.Path(__file__).resolve().parent
+    publish = "skills/commit/references/publish.md"
+    push = "skills/commit/references/push-and-ci.md"
+    finish = "skills/process-wi/references/finish-session.md"
+    routes = [
+        (publish, push, "公開工程の続行不能の受渡し"),
+        (push, publish, "公開工程の続行不能からの再開"),
+        (finish, publish, "公開工程の続行不能からの再開"),
+        ("share/session-termination.parent.md", finish, "公開工程の続行不能の回復と再開"),
+        ("share/session-termination.subagent.md", push, "公開工程の続行不能の受渡し"),
+    ]
+    for source, target, heading in routes:
+        source_text = (root / source).read_text(encoding="utf-8")
+        target_text = (root / target).read_text(encoding="utf-8")
+        assert f"「{heading}」" in source_text, source
+        assert f"\n## {heading}\n" in target_text, target

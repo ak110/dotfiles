@@ -261,7 +261,7 @@ class TestSyncWorktreeWithUpstream:
         def fake_run(cmd: list[str], *_args: object, **_kwargs: object) -> subprocess.CompletedProcess[Any]:
             calls.append(list(cmd))
             if cmd[1:2] == ["symbolic-ref"]:
-                stdout = "origin/master"
+                stdout = "refs/remotes/origin/master"
             elif cmd[1:2] == ["remote"]:
                 stdout = "origin\n"
             else:
@@ -272,7 +272,7 @@ class TestSyncWorktreeWithUpstream:
         _pl_worktree._sync_worktree_with_upstream(tmp_path / "repo", "process-loop")  # pylint: disable=protected-access  # noqa: SLF001
 
         assert ["git", "fetch", "origin"] in calls
-        assert ["git", "rebase", "origin/master"] in calls
+        assert ["git", "-c", "submodule.recurse=false", "rebase", "refs/remotes/origin/master"] in calls
         assert worktree.is_dir()
 
     def test_tracking_branch_has_priority_without_origin_head(
@@ -288,11 +288,11 @@ class TestSyncWorktreeWithUpstream:
 
         def fake_git_output(args: list[str], cwd: pathlib.Path) -> str | None:
             del cwd
-            if args == ["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"]:
-                return "origin/feature"
+            if args == ["rev-parse", "--symbolic-full-name", "@{u}"]:
+                return "refs/remotes/origin/feature"
             if args == ["remote"]:
                 return "origin"
-            if args == ["symbolic-ref", "--short", "refs/remotes/origin/HEAD"]:
+            if args == ["symbolic-ref", "refs/remotes/origin/HEAD"]:
                 raise AssertionError("追跡先が解決できた場合はorigin/HEADを使わないこと")
             return None
 
@@ -307,7 +307,7 @@ class TestSyncWorktreeWithUpstream:
 
         assert result == worktree
         assert ["git", "fetch", "origin"] in calls
-        assert ["git", "rebase", "origin/feature"] in calls
+        assert ["git", "-c", "submodule.recurse=false", "rebase", "refs/remotes/origin/feature"] in calls
 
     def test_fetches_tracking_remote_before_rebase(
         self,
@@ -322,8 +322,8 @@ class TestSyncWorktreeWithUpstream:
 
         def fake_git_output(args: list[str], cwd: pathlib.Path) -> str | None:
             del cwd
-            if args == ["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"]:
-                return "upstream/feature"
+            if args == ["rev-parse", "--symbolic-full-name", "@{u}"]:
+                return "refs/remotes/upstream/feature"
             if args == ["remote"]:
                 return "origin\nupstream"
             raise AssertionError(args)
@@ -340,7 +340,7 @@ class TestSyncWorktreeWithUpstream:
         assert result == worktree
         assert ["git", "fetch", "upstream"] in calls
         assert ["git", "fetch", "origin"] not in calls
-        assert ["git", "rebase", "upstream/feature"] in calls
+        assert ["git", "-c", "submodule.recurse=false", "rebase", "refs/remotes/upstream/feature"] in calls
 
     def test_reuses_existing_branch_when_worktree_absent(self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """worktree未作成でも専用ブランチがあれば同ブランチから作成する。"""
@@ -350,7 +350,7 @@ class TestSyncWorktreeWithUpstream:
 
         def fake_git_output(args: list[str], cwd: pathlib.Path) -> str:
             del cwd
-            return "origin" if args == ["remote"] else "origin/master"
+            return "origin" if args == ["remote"] else "refs/remotes/origin/master"
 
         monkeypatch.setattr(_pl_worktree, "_git_output", fake_git_output)
         monkeypatch.setattr(_pl_worktree, "_worktree_is_clean", lambda path: path == worktree)
@@ -377,7 +377,7 @@ class TestSyncWorktreeWithUpstream:
 
         assert result == worktree
         assert ["git", "worktree", "add", str(worktree), "worktree-process-loop"] in calls
-        assert ["git", "rebase", "origin/master"] in calls
+        assert ["git", "-c", "submodule.recurse=false", "rebase", "refs/remotes/origin/master"] in calls
 
     def test_aborts_rebase_and_warns_on_conflict(
         self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
@@ -391,21 +391,21 @@ class TestSyncWorktreeWithUpstream:
         def fake_run(cmd: list[str], *_args: object, **_kwargs: object) -> subprocess.CompletedProcess[Any]:
             calls.append(list(cmd))
             if cmd[1:2] == ["symbolic-ref"]:
-                return subprocess.CompletedProcess(cmd, returncode=0, stdout="origin/master", stderr="")
+                return subprocess.CompletedProcess(cmd, returncode=0, stdout="refs/remotes/origin/master", stderr="")
             if cmd[1:2] == ["remote"]:
                 return subprocess.CompletedProcess(cmd, returncode=0, stdout="origin\n", stderr="")
-            if cmd[1:3] == ["rebase", "origin/master"]:
+            if cmd[1:5] == ["-c", "submodule.recurse=false", "rebase", "refs/remotes/origin/master"]:
                 return subprocess.CompletedProcess(cmd, returncode=1, stdout="", stderr="conflict")
             return subprocess.CompletedProcess(cmd, returncode=0, stdout="", stderr="")
 
         monkeypatch.setattr(subprocess, "run", fake_run)
         _pl_worktree._sync_worktree_with_upstream(tmp_path / "repo", "process-loop")  # pylint: disable=protected-access  # noqa: SLF001
 
-        assert ["git", "rebase", "--abort"] in calls
+        assert ["git", "-c", "submodule.recurse=false", "rebase", "--abort"] in calls
         stderr = capsys.readouterr().err
         assert "追随に失敗したため実装セッションを起動しません" in stderr
         # 手作業で競合を解消するrebaseのコマンドを次の操作として続ける。
-        assert "rebase origin/master`を手作業で実行" in stderr.split("\n次の操作: ", 1)[1]
+        assert "rebase refs/remotes/origin/master`を手作業で実行" in stderr.split("\n次の操作: ", 1)[1]
 
     def test_unresolved_upstream_guides_upstream_setting(
         self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
@@ -542,18 +542,18 @@ class TestPublicWorktreePreparation:
                 return empty
             if cmd == ["git", "check-ignore", "-q", ".claude/worktrees/"]:
                 return empty
-            if cmd == ["git", "symbolic-ref", "--short", "refs/remotes/origin/HEAD"]:
-                return subprocess.CompletedProcess(cmd, returncode=0, stdout="origin/main", stderr="")
+            if cmd == ["git", "symbolic-ref", "refs/remotes/origin/HEAD"]:
+                return subprocess.CompletedProcess(cmd, returncode=0, stdout="refs/remotes/origin/main", stderr="")
             if cmd == ["git", "rev-parse", "--git-common-dir"]:
                 if failure_kind == "empty":
                     return empty
-                common = local_common if cwd == local_path else tmp_path / "other.git"
+                common = tmp_path / "other.git" if failure_kind == "common-dir" and cwd == worktree_path else local_common
                 return subprocess.CompletedProcess(cmd, returncode=0, stdout=str(common), stderr="")
             if cmd == ["git", "rev-parse", "--show-toplevel"]:
                 top = local_path if failure_kind == "show-toplevel" else worktree_path
                 return subprocess.CompletedProcess(cmd, returncode=0, stdout=str(top), stderr="")
-            if cmd == ["git", "symbolic-ref", "--short", "HEAD"]:
-                branch = "main" if failure_kind == "branch" else "worktree-custom"
+            if cmd == ["git", "symbolic-ref", "HEAD"]:
+                branch = "refs/heads/main" if failure_kind == "branch" else "refs/heads/worktree-custom"
                 return subprocess.CompletedProcess(cmd, returncode=0, stdout=branch, stderr="")
             return None
 
@@ -1123,7 +1123,7 @@ class TestWorktreeWriterGate:
 
         def fake_git_output(args: list[str], cwd: pathlib.Path) -> str:
             del cwd
-            return "origin" if args == ["remote"] else "origin/main"
+            return "origin" if args == ["remote"] else "refs/remotes/origin/main"
 
         monkeypatch.setattr(_pl_worktree, "_git_output", fake_git_output)
         monkeypatch.setattr(_pl_worktree, "_worktree_is_clean", lambda path: path == worktree_path)
@@ -1146,9 +1146,9 @@ class TestWorktreeWriterGate:
             "-b",
             "worktree-process-loop",
             str(worktree_path),
-            "origin/main",
+            "refs/remotes/origin/main",
         ] in calls
-        assert ["git", "rebase", "origin/main"] in calls
+        assert ["git", "-c", "submodule.recurse=false", "rebase", "refs/remotes/origin/main"] in calls
 
     @pytest.mark.parametrize("dirty_command", ["diff", "cached", "untracked"])
     def test_worktree_is_clean_rejects_each_dirty_kind(
@@ -1183,32 +1183,39 @@ class TestWorktreeWriterGate:
         worktree_path = local_path / ".claude" / "worktrees" / "process-loop"
         monkeypatch.setattr(_pl_worktree, "_worktree_is_clean", lambda _path: True)
         monkeypatch.setattr(_pl_worktree, "_ensure_worktree_excluded", lambda _path: True)
+        failures: list[str] = []
 
         def fake_git_output(args: list[str], cwd: pathlib.Path) -> str:
             del cwd
-            if args == ["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"]:
+            if args == ["rev-parse", "--symbolic-full-name", "@{u}"]:
                 return ""
-            if args == ["symbolic-ref", "--short", "refs/remotes/origin/HEAD"]:
-                return "origin/main"
+            if args == ["symbolic-ref", "refs/remotes/origin/HEAD"]:
+                return "refs/remotes/origin/main"
             if args == ["remote"]:
                 return "origin"
             if args == ["rev-parse", "--git-common-dir"]:
                 return str(local_path / ".git")
             if args == ["rev-parse", "--show-toplevel"]:
                 return str(worktree_path)
-            if args == ["symbolic-ref", "--short", "HEAD"]:
-                return "worktree-process-loop"
+            if args == ["symbolic-ref", "HEAD"]:
+                return "refs/heads/worktree-process-loop"
             raise AssertionError(args)
 
         monkeypatch.setattr(_pl_worktree, "_git_output", fake_git_output)
 
         def fake_run(cmd: list[str], **_kwargs: object) -> subprocess.CompletedProcess[str]:
-            command = cmd[1] if len(cmd) > 1 else ""
+            arguments = cmd[1:]
+            if arguments[:2] == ["-c", "submodule.recurse=false"]:
+                arguments = arguments[2:]
+            command = arguments[0] if arguments else ""
             failed = command == failed_step
+            if failed:
+                failures.append(command)
             return subprocess.CompletedProcess(cmd, 1 if failed else 0, "", "failure" if failed else "")
 
         monkeypatch.setattr(subprocess, "run", fake_run)
         assert _pl_worktree._sync_worktree_with_upstream(local_path, "process-loop") is None  # pylint: disable=protected-access  # noqa: SLF001
+        assert failed_step in failures
 
     def test_title_set_at_start_and_after_runs(self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
         """process-loop開始時にタイトルを設定し、claude起動・update-dotfiles実行の直後にも再設定すること。"""

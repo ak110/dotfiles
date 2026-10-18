@@ -58,6 +58,7 @@ from agent_toolkit._testing.agents_server_support import (
     _install_backend,
     _manager_with_fake,
     _RegistryBackend,
+    _start_late_unavailability,
     _without_root,
     _write_notice,
     install_backend,
@@ -282,8 +283,14 @@ async def test_reply_cancels_old_retention_deadline(tmp_path: pathlib.Path, monk
     monkeypatch.setattr(state, "RESULT_RETENTION_SECONDS", 0.01)
     try:
         session = await backend.start("調査", str(tmp_path), None, None)
-        _complete(session)
-        await manager.send_message(session.session_id, "続行")
+        loop = asyncio.get_running_loop()
+        completed_at = loop.time()
+        # 診断・保存の所要によらず、返信の受付を旧turnの保持期限より前へ固定する。
+        with monkeypatch.context() as clock_patch:
+            clock_patch.setattr(loop, "time", lambda: completed_at)
+            _complete(session)
+            await manager.send_message(session.session_id, "続行")
+        # 実時計へ戻し、旧turnの期限を過ぎても再開中のsessionが解放されないことを確かめる。
         await asyncio.sleep(0.03)
         assert not backend.release_calls
         assert manager.sessions[session.session_id] is session
@@ -968,23 +975,36 @@ async def test_late_engine_unavailability_carries_over_to_next_start(
     assert available.start_calls == [("second", "medium", "delegate")]
 
 
+@pytest.mark.parametrize(
+    ("providers", "expected_model", "expected_effort"), [("", "second", "medium"), ("chatgpt,api", "first", "high")]
+)
 @pytest.mark.asyncio
 async def test_carried_over_exclusion_survives_a_successful_start(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
+    providers: str,
+    expected_model: str,
+    expected_effort: str,
 ) -> None:
-    """後続の候補で成立しても、除外した候補は保持期間内は先頭から試さない。"""
+    """API設定ありの旧利用上限は再確認し、未設定の候補除外は成功後も保持する。"""
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CODEX_MODEL_PROVIDERS", providers)
     candidates = [("codex", "first", "high"), ("codex", "second", "medium")]
-    manager, _ = await _carry_over_late_unavailability(monkeypatch, tmp_path, candidates)
+    manager, available = await _carry_over_late_unavailability(monkeypatch, tmp_path, candidates)
+    try:
+        recovered = await manager.start("plan", "再試行", str(tmp_path))
+        following = await manager.start("plan", "通常起動", str(tmp_path))
 
-    recovered = await manager.start("plan", "再試行", str(tmp_path))
-    following = await manager.start("plan", "通常起動", str(tmp_path))
-
-    assert recovered["model"] == "second"
-    assert following["model"] == "second"
-    assert recovered["excluded_candidates"] == [
-        {"engine": "codex", "model": "first", "effort": "high", "reason": "usageLimitExceeded"}
-    ]
+        for response in (recovered, following):
+            assert response["model"] == expected_model
+            if providers:
+                assert "excluded_candidates" not in response
+            else:
+                assert response["excluded_candidates"] == [
+                    {"engine": "codex", "model": "first", "effort": "high", "reason": "usageLimitExceeded"}
+                ]
+        assert available.start_calls == [(expected_model, expected_effort, "delegate")] * 2
+    finally:
+        await manager.close()
 
 
 @pytest.mark.asyncio
@@ -1014,10 +1034,12 @@ async def test_shell_launch_carries_over_candidate_within_shell_launch_kind(
     monkeypatch.setattr(_atk_config, "parse_unresolved_model_candidates", lambda _model_type, **_kwargs: candidates)
     monkeypatch.setattr(server_manager, "START_AVAILABILITY_TIMEOUT", 0.001)
     manager = server_manager.AgentsServerManager()
-    delayed = DelayedUnavailableBackend(manager.sessions, "codex", manager._condition, delay=0.01)
+    failure_release = asyncio.Event()
+    delayed = DelayedUnavailableBackend(manager.sessions, "codex", manager._condition, failure_release=failure_release)
     _install_backend(manager, "codex", delayed)
 
     await manager.start_shell("make test", str(tmp_path), "終了状態だけ")
+    failure_release.set()
     await asyncio.gather(*delayed.pending)
     await manager.wait()
     available = FakeBackend(manager.sessions, "codex")
@@ -1031,29 +1053,37 @@ async def test_shell_launch_carries_over_candidate_within_shell_launch_kind(
     assert available.start_calls == [("first", "high", "explore"), ("second", "medium", "shell")]
 
 
+@pytest.mark.parametrize(
+    ("providers", "expected_model", "expected_effort"), [("", "second", "medium"), ("chatgpt,api", "first", "high")]
+)
 @pytest.mark.asyncio
 async def test_stop_without_wait_carries_over_unavailable_candidate(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
+    providers: str,
+    expected_model: str,
+    expected_effort: str,
 ) -> None:
-    """結果を受領せずstopで破棄した可用性失敗も、次回起動から除外する。"""
+    """stop後の旧利用上限はAPI設定ありなら再確認し、未設定なら候補除外を保持する。"""
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CODEX_MODEL_PROVIDERS", providers)
     candidates = [("codex", "first", "high"), ("codex", "second", "medium")]
-    monkeypatch.setattr(_atk_config, "parse_unresolved_model_candidates", lambda _model_type, **_kwargs: candidates)
-    monkeypatch.setattr(server_manager, "START_AVAILABILITY_TIMEOUT", 0.001)
-    manager = server_manager.AgentsServerManager()
-    delayed = DelayedUnavailableBackend(manager.sessions, "codex", manager._condition, delay=0.01)
-    _install_backend(manager, "codex", delayed)
+    manager, failed = await _start_late_unavailability(monkeypatch, tmp_path, candidates)
 
-    failed = await manager.start("plan", "調査", str(tmp_path))
-    await asyncio.gather(*delayed.pending)
-    assert await manager.stop(failed["session_id"]) == {}
-    available = FakeBackend(manager.sessions, "codex")
-    _install_backend(manager, "codex", available)
+    try:
+        assert await manager.stop(failed["session_id"]) == {}
+        available = FakeBackend(manager.sessions, "codex")
+        _install_backend(manager, "codex", available)
 
-    response = await manager.start("plan", "再試行", str(tmp_path))
+        response = await manager.start("plan", "再試行", str(tmp_path))
 
-    assert response["model"] == "second"
-    assert available.start_calls == [("second", "medium", "delegate")]
+        assert response["model"] == expected_model
+        assert available.start_calls == [(expected_model, expected_effort, "delegate")]
+        if providers:
+            assert "excluded_candidates" not in response
+        else:
+            assert response["excluded_candidates"][0]["reason"] == "usageLimitExceeded"
+    finally:
+        await manager.close()
 
 
 @pytest.mark.asyncio
@@ -1063,14 +1093,7 @@ async def test_expired_kill_keeps_carried_over_unavailable_candidate(
 ) -> None:
     """期限切れsessionへのkillだけを経た可用性失敗も、次回起動から除外する。"""
     candidates = [("codex", "first", "high"), ("codex", "second", "medium")]
-    monkeypatch.setattr(_atk_config, "parse_unresolved_model_candidates", lambda _model_type, **_kwargs: candidates)
-    monkeypatch.setattr(server_manager, "START_AVAILABILITY_TIMEOUT", 0.001)
-    manager = server_manager.AgentsServerManager()
-    delayed = DelayedUnavailableBackend(manager.sessions, "codex", manager._condition, delay=0.01)
-    _install_backend(manager, "codex", delayed)
-
-    failed = await manager.start("plan", "調査", str(tmp_path))
-    await asyncio.gather(*delayed.pending)
+    manager, failed = await _start_late_unavailability(monkeypatch, tmp_path, candidates)
     manager.sessions[failed["session_id"]].retention_deadline = asyncio.get_running_loop().time() - 1
     assert (await manager.kill(failed["session_id"], timeout=0))["status"] == "expired"
     available = FakeBackend(manager.sessions, "codex")
@@ -1143,12 +1166,14 @@ async def test_late_codex_model_rejection_is_carried_over_to_next_start(
     monkeypatch.setattr(_atk_config, "parse_unresolved_model_candidates", lambda _model_type, **_kwargs: candidates)
     monkeypatch.setattr(server_manager, "START_AVAILABILITY_TIMEOUT", 0.001)
     manager = server_manager.AgentsServerManager()
+    failure_release = asyncio.Event()
     delayed = DelayedUnavailableBackend(
-        manager.sessions, "codex", manager._condition, delay=0.01, error=_codex_model_rejected_error()
+        manager.sessions, "codex", manager._condition, error=_codex_model_rejected_error(), failure_release=failure_release
     )
     _install_backend(manager, "codex", delayed)
 
     failed = await manager.start("high_tier", "調査", str(tmp_path))
+    failure_release.set()
     await asyncio.gather(*delayed.pending)
     assert failed["status"] == "running"
     assert await manager.stop(failed["session_id"]) == {}
@@ -1718,9 +1743,12 @@ async def test_send_message_terminal_session_returns_previous_result_without_int
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("engine", ["codex", "claude"])
-@pytest.mark.parametrize(("label", "guided"), [("pr-body-review", True), ("explore-pyfltr", False)])
+@pytest.mark.parametrize(
+    ("label", "expected"),
+    [("pr-body-review", "reviewee.md"), ("lane-01-reader-fit-review", "reader-fit-review.parent.md"), ("explore-pyfltr", None)],
+)
 async def test_send_message_previous_result_guides_review_findings(
-    engine: str, label: str, guided: bool, tmp_path: pathlib.Path
+    engine: str, label: str, expected: str | None, tmp_path: pathlib.Path
 ) -> None:
     """レビューを目的とするsessionの未回収の完了結果を`previous_result`で返す場合も、採否確定の次の操作を加える。"""
     manager, _ = _manager_with_fake(engine, "reply_started")
@@ -1731,13 +1759,24 @@ async def test_send_message_previous_result_guides_review_findings(
     response = await manager.send_message(session.session_id, "再レビュー")
 
     previous = response["previous_result"]
-    assert (previous.get("next_action") == result_projection.REVIEW_RESULT_NEXT_ACTION) is guided
-    if not guided:
+    if expected is None:
         assert "next_action" not in previous
+    else:
+        assert expected in previous["next_action"]
+        if expected == "reader-fit-review.parent.md":
+            assert "reviewee.md" not in previous["next_action"]
+        else:
+            assert previous["next_action"] == result_projection.REVIEW_RESULT_NEXT_ACTION
 
 
 @pytest.mark.asyncio
-async def test_stopped_review_session_previous_result_guides_review_findings(tmp_path: pathlib.Path) -> None:
+@pytest.mark.parametrize(
+    ("label", "expected"),
+    [("lane-01-exec-review", "reviewee.md"), ("lane-01-reader-fit-review", "reader-fit-review.parent.md")],
+)
+async def test_stopped_review_session_previous_result_guides_review_findings(
+    label: str, expected: str, tmp_path: pathlib.Path
+) -> None:
     """破棄済みのレビューsessionの未回収結果を再開時に返す場合も、同じ次の操作を加える。"""
     resume_state = state.SessionResumeState(
         session_id="stopped-review",
@@ -1748,18 +1787,22 @@ async def test_stopped_review_session_previous_result_guides_review_findings(tmp
         status="completed",
         agent_message="指摘1件",
         finalized_at="2026-10-01T00:00:00+00:00",
-        label="lane-01-exec-review",
+        label=label,
     )
 
     response = server_manager.AgentsServerManager._stopped_result_response(resume_state)
 
     assert response is not None
-    assert response["next_action"] == result_projection.REVIEW_RESULT_NEXT_ACTION
+    assert expected in response["next_action"]
+    if expected == "reader-fit-review.parent.md":
+        assert "reviewee.md" not in response["next_action"]
+    else:
+        assert response["next_action"] == result_projection.REVIEW_RESULT_NEXT_ACTION
 
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("engine", ["codex", "claude"])
-@pytest.mark.parametrize("label", ["add-wi", "lane-01-exec-review"])
+@pytest.mark.parametrize("label", ["add-wi", "lane-01-exec-review", "lane-01-reader-fit-review"])
 @pytest.mark.parametrize("status", ["completed", "failed", "interrupted"])
 async def test_send_message_previous_and_stopped_results_relay_improvements(
     engine: str, label: str, status: str, tmp_path: pathlib.Path
@@ -1787,7 +1830,10 @@ async def test_send_message_previous_and_stopped_results_relay_improvements(
     assert "標識とコロンの間へ報告元などの語を入れない" in action
     assert "標識行の原文の後ろか別の行に添える" in action
     assert "`agent-toolkit:delegation`の`references/receiving.md`「受領後の扱い」" in action
-    assert (result_projection.REVIEW_RESULT_NEXT_ACTION in action) is (status == "completed" and label.endswith("-review"))
+    assert (result_projection.REVIEW_RESULT_NEXT_ACTION in action) is (status == "completed" and label == "lane-01-exec-review")
+    assert (result_projection.READER_FIT_REVIEW_RESULT_NEXT_ACTION in action) is (
+        status == "completed" and label == "lane-01-reader-fit-review"
+    )
 
 
 @pytest.mark.asyncio

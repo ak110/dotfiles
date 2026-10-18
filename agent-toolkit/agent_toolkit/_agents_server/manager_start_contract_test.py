@@ -7,12 +7,14 @@ import pathlib
 import re
 import sys
 from typing import Any
+from unittest.mock import AsyncMock
 
 import pytest
 
 from agent_toolkit._agents_server import (
     agents_wait,
     backends,
+    codex,
     manager,
     mcp_tools,
     record_paths,
@@ -52,7 +54,112 @@ class UnavailableProbeBackend(agents_server_support.FakeBackend):
     async def start(self, *args: Any, **kwargs: Any) -> state.SessionState:
         del args, kwargs
         self.probe_calls += 1
-        raise backends.StartCandidateUnavailable("exploreSandboxNamespaceDenied")
+        raise backends.StartCandidateUnavailable("candidateDependencyUnavailable")
+
+
+@pytest.mark.parametrize("failure", ["namespace", "rpc"])
+@pytest.mark.parametrize("legacy_record", [False, True])
+@pytest.mark.asyncio
+async def test_public_explore_start_advances_after_probe_rpc_rejection(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, failure: str, legacy_record: bool
+) -> None:
+    """sandbox不成立は同要求の全Codex探索を除外し、次要求と通常起動でCodexを再利用できる。"""
+    monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
+    current = manager.AgentsServerManager(None)
+    # 公開startへ実backendを接続するため、managerと同じ待機条件を注入する。
+    # pylint: disable-next=protected-access
+    probe = codex.AppServerManager(current.sessions, current._condition)
+    selected = ObservedBackend(current.sessions, "claude")
+    probe_calls = 0
+    close_calls = 0
+    recovered = False
+
+    class RejectedClient:
+        """Windows App Server 0.163.0のcommand/exec拒否を返す専用接続。"""
+
+        process = None
+
+        def __init__(self, *_args: Any, **_kwargs: Any) -> None:
+            pass
+
+        async def start(self) -> None:
+            pass
+
+        async def request(self, method: str, _params: dict[str, Any]) -> dict[str, Any]:
+            nonlocal probe_calls
+            assert method == "command/exec"
+            probe_calls += 1
+            if recovered:
+                return {"exitCode": 0, "stdout": "", "stderr": ""}
+            if failure == "namespace":
+                return {"exitCode": 1, "stdout": "", "stderr": "bwrap: No permissions to create a new namespace"}
+            raise codex.JsonRpcResponseError(method, -32600, "custom outputBytesCap is not supported with windows sandbox")
+
+        async def close(self) -> list[str]:
+            nonlocal close_calls
+            close_calls += 1
+            return []
+
+    monkeypatch.setattr(codex, "JsonRpcProcess", RejectedClient)
+    agents_server_support.install_backend(current, "codex", probe)
+    agents_server_support.install_backend(current, "claude", selected)
+    monkeypatch.setattr(mcp_tools, "_MANAGER", current)
+    candidates = "codex:gpt-6-sol/medium,codex:gpt-6-astra/high,claude:test/medium"
+    try:
+        response = await mcp_tools.start(mode="explore", cwd=str(tmp_path), prompt="調査", model_type=candidates)
+        assert response["session_id"] == "claude-session"
+        assert probe_calls == close_calls == 1
+        assert len(response["excluded_candidates"]) == 2
+        reason = response["excluded_candidates"][0]["reason"]
+        if failure == "rpc":
+            assert "exploreSandboxRpcError" in reason
+            assert "custom outputBytesCap is not supported with windows sandbox" in reason
+        else:
+            assert reason == "exploreSandboxNamespaceDenied"
+        assert {item["reason"] for item in response["excluded_candidates"]} == {reason}
+        assert not unavailable_candidates.load_unavailable_candidates(
+            candidates, "explore", now=datetime.datetime.now(datetime.UTC)
+        )
+        assert len(selected.start_calls) == 1
+
+        # 同じホストの通常Codex起動は読取専用sandboxを使わず、事前確認失敗の影響を受けない。
+        normal_client = agents_server_support.FakeCodexClient()
+        monkeypatch.setattr(probe, "_ensure_client", AsyncMock(return_value=normal_client))
+        monkeypatch.setattr(current, "_await_start_outcome", AsyncMock())
+        normal = await mcp_tools.start(mode="delegate", cwd=str(tmp_path), prompt="処理", model_type=candidates)
+        assert current.sessions[normal["session_id"]].engine == "codex"
+        assert probe_calls == 1
+
+        # 別のmanagerも永続除外に妨げられず、復旧した同じ先頭候補を確認して開始する。
+        recovered = True
+        if legacy_record:
+            unavailable_candidates.record_unavailable_candidate(
+                candidates,
+                "explore",
+                ("codex", "gpt-6-sol", "medium"),
+                reason,
+                now=datetime.datetime.now(datetime.UTC),
+            )
+        second = manager.AgentsServerManager(None)
+        # 同じ公開契約を別managerでも検証するため、実backendへその待機条件を注入する。
+        # pylint: disable-next=protected-access
+        second_probe = codex.AppServerManager(second.sessions, second._condition)
+        model_client = agents_server_support.FakeCodexClient()
+        monkeypatch.setattr(second_probe, "_ensure_client", AsyncMock(return_value=model_client))
+        monkeypatch.setattr(second_probe, "_restrict_explore_config", AsyncMock())
+        monkeypatch.setattr(second, "_await_start_outcome", AsyncMock())
+        agents_server_support.install_backend(second, "codex", second_probe)
+        monkeypatch.setattr(mcp_tools, "_MANAGER", second)
+        try:
+            restarted = await mcp_tools.start(mode="explore", cwd=str(tmp_path), prompt="再調査", model_type=candidates)
+            assert second.sessions[restarted["session_id"]].engine == "codex"
+            assert "excluded_candidates" not in restarted
+            assert probe_calls == close_calls == 2
+            assert any(method == "turn/start" for method, _params in model_client.requests)
+        finally:
+            await second.close()
+    finally:
+        await current.close()
 
 
 @pytest.mark.parametrize("engine", ["claude", "codex"])
@@ -105,7 +212,7 @@ async def test_public_start_classifies_dependency_import_failure(
 
 
 @pytest.mark.asyncio
-async def test_start_advances_only_for_confirmed_explore_sandbox_failure(
+async def test_start_advances_only_for_confirmed_prelaunch_candidate_failure(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """公開startは型付きの事前判定で不成立と確定した候補だけを除いて次の候補を起動し、別のmanagerもその除外記録を使う。"""
@@ -120,7 +227,7 @@ async def test_start_advances_only_for_confirmed_explore_sandbox_failure(
     try:
         response = await mcp_tools.start(mode="explore", cwd=str(tmp_path), prompt="調査", model_type=candidates)
         assert response["session_id"] == "claude-session"
-        assert response["excluded_candidates"][0]["reason"] == "exploreSandboxNamespaceDenied"
+        assert response["excluded_candidates"][0]["reason"] == "candidateDependencyUnavailable"
         assert probe.probe_calls == 1
         assert not probe.start_calls
         assert len(selected.start_calls) == 1
@@ -147,7 +254,40 @@ async def test_start_advances_only_for_confirmed_explore_sandbox_failure(
 
 
 @pytest.mark.asyncio
-async def test_explore_sandbox_candidate_exhaustion(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_explore_sandbox_exhaustion_is_request_local(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """全Codex候補が同じsandbox能力へ依存する場合は一度だけ確認し、原因と次の操作を返す。"""
+    monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
+    current = manager.AgentsServerManager(None)
+
+    class SandboxUnavailable(ObservedBackend):
+        calls = 0
+
+        async def start(self, *_args: Any, **_kwargs: Any) -> state.SessionState:
+            self.calls += 1
+            raise backends.StartCandidateUnavailable("exploreSandboxNamespaceDenied", scope="launch_engine")
+
+    probe = SandboxUnavailable(current.sessions, "codex")
+    agents_server_support.install_backend(current, "codex", probe)
+    monkeypatch.setattr(mcp_tools, "_MANAGER", current)
+    candidates = "codex:gpt-6-sol/medium,codex:gpt-6-astra/high"
+    try:
+        with pytest.raises(session_errors.ActionableRuntimeError) as raised:
+            await mcp_tools.start(mode="explore", cwd=str(tmp_path), prompt="調査", model_type=candidates)
+        message = str(raised.value)
+        assert "no available model candidates" in message
+        assert message.count("exploreSandboxNamespaceDenied") == 2
+        assert raised.value.next_action
+        assert probe.calls == 1
+        assert not current.sessions
+        assert not unavailable_candidates.load_unavailable_candidates(
+            candidates, "explore", now=datetime.datetime.now(datetime.UTC)
+        )
+    finally:
+        await current.close()
+
+
+@pytest.mark.asyncio
+async def test_prelaunch_candidate_exhaustion(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """全候補が型付きの事前判定で不成立のとき、候補ごとの理由と次の操作を公開startの失敗で返す。"""
     monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
     current = manager.AgentsServerManager(None)
@@ -161,14 +301,14 @@ async def test_explore_sandbox_candidate_exhaustion(tmp_path: pathlib.Path, monk
             await mcp_tools.start(mode="explore", cwd=str(tmp_path), prompt="調査", model_type=candidates)
         message = agents_server_support._actionable_message(raised.value)  # pylint: disable=protected-access
         assert "no available model candidates" in message
-        assert message.count("exploreSandboxNamespaceDenied") == 2
+        assert message.count("candidateDependencyUnavailable") == 2
         assert [probe.probe_calls for probe in probes.values()] == [1, 1]
         assert not current.sessions
         assert all(not probe.start_calls for probe in probes.values())
         recorded = unavailable_candidates.load_unavailable_candidates(
             candidates, "explore", now=datetime.datetime.now(datetime.UTC)
         )
-        assert set(recorded.values()) == {"exploreSandboxNamespaceDenied"}
+        assert set(recorded.values()) == {"candidateDependencyUnavailable"}
         assert {candidate[0] for candidate in recorded} == {"codex", "claude"}
     finally:
         await current.close()

@@ -223,7 +223,7 @@ def _session_path(session_id: str, codex_home: str | None = None) -> tuple[Path,
     return first, cast(_Runtime, found.engine)
 
 
-def _subagent_records(source: _CollectedRecord) -> list[_CollectedRecord]:
+def _subagent_records(source: _CollectedRecord, unresolved: list[_UnresolvedRecord]) -> list[_CollectedRecord]:
     """Claude記録に付随するサブエージェント記録をファイル名順で返す。"""
     if source.runtime != "claude":
         return []
@@ -236,6 +236,7 @@ def _subagent_records(source: _CollectedRecord) -> list[_CollectedRecord]:
     for path in paths:
         records = _load_records(str(path))
         if records is None:
+            unresolved.append(_UnresolvedRecord(f"{source.record_id}/{path.stem}", 0))
             continue
         meta_path = path.with_name(f"{path.stem}.meta.json")
         try:
@@ -266,6 +267,8 @@ def _collect_records(
     main_records: list[_Record],
     codex_home: str | None = None,
     boundary: datetime.datetime | None = None,
+    *,
+    main_only: bool = False,
 ) -> tuple[list[_CollectedRecord], list[_UnresolvedRecord]]:
     """メイン記録から全ての付随記録と委譲先を発見順に再帰収集する。"""
     main_path = Path(transcript_path)
@@ -284,6 +287,8 @@ def _collect_records(
             ("main",),
         )
     ]
+    if main_only:
+        return collected, []
     seen_paths = {main_path.resolve()}
     seen_sessions: set[str] = set()
     unresolved: list[_UnresolvedRecord] = []
@@ -293,7 +298,7 @@ def _collect_records(
         index += 1
         agents_server_call_ids = _agents_server_call_ids(source.records)
         unresolved_delegation_calls: set[str] = set()
-        for subagent in _subagent_records(source):
+        for subagent in _subagent_records(source, unresolved):
             if boundary is not None and _started_after_boundary(subagent.records, boundary):
                 continue
             resolved = subagent.path.resolve()

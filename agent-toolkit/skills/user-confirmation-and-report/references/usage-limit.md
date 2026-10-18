@@ -24,7 +24,7 @@ moduleは最大使用窓の解除予定時刻後に投入し、予定時刻が�
 - `agents_server`の`api_error.type`が`usage_limit`の委譲先は解除後に同じsessionで自動的に続く。背景の`atk agents wait`と定期再確認のtaskを保ち、停止の判断は`agent-toolkit:delegation`の`references/waiting-and-monitoring.md`「停滞の検知と巻き取り」に従う
 - 猶予通知の「実行中のサブエージェント」は同じ会話の`Agent`ツールの委譲先を指す。独立sessionの`agents_server`の解除待ちへその停止案内を適用しない
 - 再開情報は計画があれば`agent-toolkit:plan-mode`の計画ファイルの`## 進捗ログ`、既存の引き継ぎ記録があればその記録、いずれも無ければ`agent-toolkit:managed-temp`で確定したセッションのmanaged-tempの中のMarkdownへ残す。目的、認可の内容と出所、対象worktreeの絶対パス、成果物の絶対パスまたはcommit、完了した工程と検証結果、順序付きの未完了工程を、次のエージェントが読める形で記す
-- 中断後にユーザーの再開指示、Function hooks moduleの再開prompt、ホストの自動継続を受けたエージェントは保存先を読む。計画では`agent-toolkit:plan-mode`の進捗ログの読取手順に従い、現在の実体と記録した成果を比べ、成立済みの認可と成果から最初の未完了工程を続ける。保存先や認可を復元できない場合は不足する情報をユーザーへ確認する
+- 中断後にユーザーの再開指示、Function hooks moduleの再開prompt、ホストの自動継続を受けたClaude Codeのメインは保存先を読む。計画では`agent-toolkit:plan-mode`の進捗ログの読取手順に従い、現在の実体と記録した成果を比べ、成立済みの認可と成果から最初の未完了工程を続ける。主成果物の確定後に完了処理が残る場合は、`agent-toolkit:completion-report`の適用本文と「工程」の再開条件を使い、元の適用と未完了工程を引き継ぐ。保存先や認可を復元できない場合は不足する情報をユーザーへ確認する
 
 解除後の再開はFunction hooks moduleまたはホストが起動するため、猶予通知時の報告ではユーザーへ再開指示を求めない。
 

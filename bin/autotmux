@@ -16,18 +16,18 @@ case "${1:-}" in
 on)
     mkdir -p "$(dirname "$flag")"
     : >"$flag"
-    echo "autotmux: on (${flag})"
+    echo "autotmux: on (${flag})。次回のSSH対話ログインからtmuxへ自動アタッチします。無効化: autotmux off"
     ;;
 off)
     rm -f "$flag"
-    echo "autotmux: off"
+    echo "autotmux: off。次回のSSH対話ログインから自動アタッチしません。有効化: autotmux on"
     ;;
 status)
     if [ -e "$flag" ]; then
-        echo "autotmux: on (${flag})"
+        echo "autotmux: on (${flag})。無効化: autotmux off"
         exit 0
     else
-        echo "autotmux: off"
+        echo "autotmux: off。有効化: autotmux on（次回のSSH対話ログインから有効）"
         exit 1
     fi
     ;;

@@ -334,6 +334,7 @@ def _add_wi_add_parser(sub: Any) -> None:
         help_extra=(
             "ローカルパス指定時は指定worktree、正規化リモートURL指定時は"
             "ローカルHEADを持たないリポジトリ識別子として解決する。"
+            "実行元worktreeのorigin以外の登録リモートだけに一致するURLは警告付きで受理する。"
             "frontmatterにtarget_repoが明示されていない場合のfallback値として扱う。"
         ),
         resolved_by_consumer=True,
@@ -427,13 +428,21 @@ def _add_mq_read_parsers(sub: Any) -> None:
         allow_all=True,
         help_extra="FILENAME指定時は明示的照会として扱い、省略時の限定を適用しない。",
     )
-    show.add_argument(
+    show_output = show.add_mutually_exclusive_group()
+    show_output.add_argument(
         "--summary-only",
         action="store_true",
         help=(
             "target_repoとファイル名・状態の見出しに続けて、AWIはH1表題、UWIは質問本文の先頭行だけを"
             "省略せずに1行で表示し、frontmatterと他の本文を省く。"
         ),
+    )
+    show_output.add_argument(
+        "--section",
+        metavar="H2",
+        action="append",
+        default=None,
+        help="H2見出し名で指定した節を表示する。複数回指定可。同名の節を全て保持し、フェンス内の見出しは境界としない。",
     )
     show.add_argument(
         "--type",

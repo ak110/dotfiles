@@ -6,6 +6,7 @@ import sys
 import typing
 
 import pytest
+from agent_toolkit._testing import git_repository as git
 
 from pytools import prune_codex_packages as prune_cli
 from pytools._internal import codex_processes
@@ -43,9 +44,9 @@ def _fake_run(
             stdout = f"{remote_commit}\trefs/heads/develop\n" if remote_commit else ""
             return subprocess.CompletedProcess(command, remote_returncode, stdout, "")
         if "--symbolic-full-name" in command:
-            return subprocess.CompletedProcess(command, 0, f"{upstream}\n", "")
-        if "--abbrev-ref" in command:
-            return subprocess.CompletedProcess(command, 0, f"{branch}\n", "")
+            return subprocess.CompletedProcess(command, 0, f"refs/remotes/{upstream}\n", "")
+        if "symbolic-ref" in command:
+            return subprocess.CompletedProcess(command, 0, f"refs/heads/{branch}\n", "")
         return subprocess.CompletedProcess(command, 0, f"{local_commit}\n", "")
 
     return run
@@ -65,6 +66,33 @@ def _prepare_root(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> pa
     monkeypatch.setenv("USERPROFILE", str(tmp_path / "profile"))
     monkeypatch.setenv("WIN_PD_OVERRIDE_LOCAL_APPDATA", str(tmp_path / "state"))
     return update_dotfiles
+
+
+@pytest.mark.parametrize("collision", ["none", "tag", "branch"])
+def test_update_decision_uses_full_refs(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, collision: str) -> None:
+    """同名refを追加しても正当なdevelopとorigin/developで更新を実行できる。"""
+    launcher = _prepare_root(monkeypatch, tmp_path)
+    repo = git.init_repository(launcher.parent.parent, initial_branch="develop", commit_message="base")
+    git.run_git(repo, "remote", "add", "origin", str(repo))
+    git.run_git(repo, "fetch", "origin")
+    git.run_git(repo, "branch", "--set-upstream-to=origin/develop", "develop")
+    if collision == "tag":
+        git.run_git(repo, "tag", "develop")
+        git.run_git(repo, "tag", "origin/develop")
+    if collision == "branch":
+        git.run_git(repo, "branch", "origin/develop")
+    original = upstream_update._run  # noqa: SLF001  # pylint: disable=protected-access
+    calls: list[list[str]] = []
+
+    def run(command: list[str], *, capture_output: bool = True) -> subprocess.CompletedProcess[str]:
+        if command[0] == "git":
+            return original(command, capture_output=capture_output)
+        calls.append(command)
+        return subprocess.CompletedProcess(command, 0, "", "")
+
+    monkeypatch.setattr(upstream_update, "_run", run)
+    assert upstream_update.main([]) == 0
+    assert [str(launcher)] in calls
 
 
 def test_matching_commit_skips_update(

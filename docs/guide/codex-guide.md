@@ -58,6 +58,8 @@ atk wi process-loop all-repos
 all-reposでは次の起動集合で1回受領し、各担当へ中継して、その担当の対象に関する部分を適用する。
 all-reposの`--resume`は保持した担当session IDを指定する。
 
+各対象リポジトリに担当エージェントを1人ずつ置く。あるリポジトリの初期選定が1レーンなら、その担当が計画・実装・独立した実行レビューの調整・統合を続ける。
+全体を調整する起動元のエージェントは、各担当が必要とするユーザー判断と最終結果をユーザーとの間で中継する。
 1レーンでも専用worktreeと独立文脈レビューを保ち、`atk lane create`・`integrate`・`delete`で準備・統合・回収を扱う。
 対象のWorktreeCreate/Removeを資源操作へ接続し、設定済みhookの失敗では途中資源を保持する。
 統合と計画保存・WI終端・統合済み記録を同じ操作で行い、失敗後は同じ入力で残工程から再開する。
@@ -75,7 +77,10 @@ Codex向けのプラグインは`update-dotfiles`が生成して導入する。�
 
 `update-dotfiles`は未導入、disabled、version不一致のいずれかの場合に`codex plugin add`を実行し、導入後のversionと有効状態を再確認する。
 euryaleで`DOTFILES_CODEX_DAEMON_AUTO_RESTART=1`を指定せずに更新する場合は、同じユーザーのCodexが稼働中なら、導入済みagent-toolkitへの追加・更新を延期する。
-Linuxでは、Codexの診断ログDBを共有メモリーから通常ストレージへ戻す復元も、同じユーザーのCodexが稼働中なら延期する。
+Linuxでは、過去の設定で診断ログDBを共有メモリー（`/dev/shm/codex-<UID>-logs_2.sqlite`と、その`-wal`・`-shm`ファイル）へ移していた場合、`update-dotfiles`が通常の保存先`~/.codex/`へ戻す。`<UID>`はOSのユーザーIDを指す。
+同じユーザーのCodexが稼働中なら、対象ファイルと再実行の操作を案内して処置を延期する。Codexを終了して`update-dotfiles`を再実行すると、共有メモリーのファイルを通常の保存先へコピーし、旧ファイルを指すシンボリックリンクを通常ファイルへ置き換える。
+復元後の次の`update-dotfiles`実行では両方の内容が一致することを確認して共有メモリーの旧コピーを削除する。旧ファイルが既に失われたシンボリックリンクは、復元処理の際に削除する。内容の不一致などで延期した場合は、表示された診断に従って復旧する。
+旧ファイルも旧ファイルを指すリンクも無い場合は、処置と延期の案内を省く。
 稼働判定の対象は、通常のCodexセッション、`agents_server`が委譲用に起動する`codex app-server --stdio`、およびapp-server daemon（`codex app-server daemon start`が起動する管理daemon）とその補助プロセスである。
 管理daemonの停止後も残る更新ループ`codex app-server daemon pid-update-loop`はpluginと診断ログDBを開かないため、対象に含めない。
 未導入plugin、他ホストの更新と、後述の自動再起動を明示した更新は、plugin更新の延期の対象に含めない。
@@ -104,7 +109,7 @@ codex app-server daemon start
 ### Codexの利用中に延期した更新の反映
 
 Codexのセッションまたは`agents_server`の委譲が残る場合と、`DOTFILES_CODEX_DAEMON_AUTO_RESTART=1`を指定した場合は、管理daemonを停止しない。
-このとき`update-dotfiles`は停止しない理由を表示し、post-applyはplugin更新と診断ログ復元の延期を更新ログへ記録する。
+post-applyは実際に必要なplugin更新や診断ログの処置を延期した場合に、その対象と再実行の操作を案内し、更新ログへ記録する。
 延期中も旧版のスキル・MCP実体と有効状態を保持し、dotfiles本体、snapshot生成、Claude Codeと`atk-serve`の更新は続行する。
 ウォームアップは導入済みの有効版を使い、disabledのまま延期した場合はCodex分を除く。
 

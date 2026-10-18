@@ -21,6 +21,7 @@ from typing import Any, Self, cast
 import platformdirs
 import psutil
 import pytest
+from agent_toolkit._testing import git_repository
 from agent_toolkit._testing.isolation import restore_host_environment
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
@@ -1435,13 +1436,24 @@ class TestGitConflictRecovery:
         if dirty:
             _assert_saved_changes_survive_gc(local, tmp_path)
 
+    @pytest.mark.parametrize(
+        "untracked_name",
+        [
+            "untracked.txt",
+            "日本語 space.txt",
+            pytest.param(
+                " 日本語 space\n改行.txt ",
+                marks=pytest.mark.skipif(os.name == "nt", reason="Windowsのファイル名は改行と末尾空白を許可しない"),
+            ),
+        ],
+    )
     def test_dirty_restore_conflict_keeps_recoverable_ref_and_clean_upstream(
-        self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, untracked_name: str
     ) -> None:
         local, seed, _remote = _create_git_pair(tmp_path)
         (local / "tracked.txt").write_text("dirty\n", encoding="utf-8")
         (local / "staged.txt").write_text("staged\n", encoding="utf-8")
-        (local / "untracked.txt").write_text("untracked\n", encoding="utf-8")
+        (local / untracked_name).write_text("untracked\n", encoding="utf-8")
         _git(local, "add", "staged.txt")
         (seed / "tracked.txt").write_text("upstream\n", encoding="utf-8")
         _git(seed, "add", "tracked.txt")
@@ -1454,15 +1466,19 @@ class TestGitConflictRecovery:
 
         worktree_refs = _git(local, "for-each-ref", "--format=%(refname)", "refs/worktree").splitlines()
         stash_ref = next(ref for ref in worktree_refs if ref.startswith("refs/worktree/update-dotfiles-"))
-        saved_paths = _git(local, "stash", "show", "--include-untracked", "--name-only", stash_ref).splitlines()
+        saved_paths = git_repository.run_git(
+            local, "stash", "show", "--include-untracked", "--name-only", "-z", stash_ref
+        ).stdout.split("\0")
         assert result == 0
         assert _git(local, "status", "--porcelain=v1") == ""
         assert _git(local, "rev-parse", "HEAD") == _git(local, "rev-parse", "@{upstream}")
-        assert {"tracked.txt", "staged.txt", "untracked.txt"} <= set(saved_paths)
-        _assert_saved_changes_survive_gc(local, tmp_path)
+        assert {"tracked.txt", "staged.txt", untracked_name} <= set(saved_paths)
+        _assert_saved_changes_survive_gc(local, tmp_path, untracked_name=untracked_name)
 
 
-def _assert_saved_changes_survive_gc(local: pathlib.Path, tmp_path: pathlib.Path) -> None:
+def _assert_saved_changes_survive_gc(
+    local: pathlib.Path, tmp_path: pathlib.Path, *, untracked_name: str = "untracked.txt"
+) -> None:
     """未復元の3状態を別worktreeのGC後も復旧できる。"""
     other = tmp_path / "gc-worktree"
     _git(local, "worktree", "add", "-b", "gc-worktree", str(other))
@@ -1473,7 +1489,7 @@ def _assert_saved_changes_survive_gc(local: pathlib.Path, tmp_path: pathlib.Path
     _git(other, "stash", "apply", "--index", f"main-worktree/{ref}")
     assert (other / "tracked.txt").read_text(encoding="utf-8") in {"dirty\n", "unstaged\n"}
     assert (other / "staged.txt").read_text(encoding="utf-8") == "staged\n"
-    assert (other / "untracked.txt").read_text(encoding="utf-8") == "untracked\n"
+    assert (other / untracked_name).read_text(encoding="utf-8") == "untracked\n"
     assert "A  staged.txt" in _git(other, "status", "--porcelain=v1").splitlines()
 
 
@@ -2093,15 +2109,21 @@ def test_skipped_update_keeps_pending_for_next_timer(
     monkeypatch.setattr(update_dotfiles, "_update_git_with_recovery", _REAL_UPDATE_GIT_WITH_RECOVERY)
     monkeypatch.setattr(update_dotfiles, "_git_operation_in_progress", lambda: True)
     attempts: list[int] = []
+    head = _git(local, "rev-parse", "HEAD")
+    git_outputs = {
+        ("symbolic-ref", "HEAD"): "refs/heads/develop",
+        ("rev-parse", "--symbolic-full-name", "@{upstream}"): "refs/remotes/origin/develop",
+        ("ls-remote", "--exit-code", "--refs", "origin", "refs/heads/develop"): f"{head}\trefs/heads/develop",
+        ("rev-parse", "HEAD"): head,
+    }
 
     def run(command: list[str], **_kwargs: object) -> subprocess.CompletedProcess[str]:
         if command == [str(launcher)]:
             code = update_dotfiles.main()
             attempts.append(code)
             return subprocess.CompletedProcess(command, code, "", "")
-        argument = command[-1]
-        text = {"HEAD": "develop", "@{upstream}": "origin/develop"}.get(argument, "upstream\trefs/heads/develop")
-        return subprocess.CompletedProcess(command, 0, text, "")
+        assert command[:3] == ["git", "-C", str(local)]
+        return subprocess.CompletedProcess(command, 0, git_outputs[tuple(command[3:])], "")
 
     monkeypatch.setattr(timer, "_run", run)
     pending = tmp_path / "test.pending"
@@ -2164,23 +2186,22 @@ class TestCodexDaemonPause:
         assert "Codex管理daemon" not in capsys.readouterr().out
 
     @pytest.mark.parametrize(
-        ("processes", "auto_restart", "reason"),
+        ("processes", "auto_restart"),
         [
-            pytest.param((_DAEMON, _STDIO_DELEGATION), None, "利用セッションが稼働中", id="delegation"),
-            pytest.param((_DAEMON, _codex(14, "codex", "session")), None, "codex (1件)", id="interactive-session"),
-            pytest.param((_DAEMON,), "1", "DOTFILES_CODEX_DAEMON_AUTO_RESTART=1", id="auto-restart"),
+            pytest.param((_DAEMON, _STDIO_DELEGATION), None, id="delegation"),
+            pytest.param((_DAEMON, _codex(14, "codex", "session")), None, id="interactive-session"),
+            pytest.param((_DAEMON,), "1", id="auto-restart"),
         ],
     )
-    def test_daemon_is_kept_when_use_cannot_be_excluded(  # noqa: PLR0913  # pylint: disable=too-many-arguments
+    def test_daemon_is_kept_when_use_cannot_be_excluded(
         self,
         monkeypatch: pytest.MonkeyPatch,
         codex_env: list[list[str]],
         capsys: pytest.CaptureFixture[str],
         processes: tuple[Any, ...],
         auto_restart: str | None,
-        reason: str,
     ) -> None:
-        """利用セッションか明示設定があれば停止せず、理由を表示する。"""
+        """利用セッションか明示設定があれば、停止と事前案内を省いてapplyを続行する。"""
         monkeypatch.setattr(update_dotfiles.codex_processes, "codex_processes", lambda: processes)
         if auto_restart is not None:
             monkeypatch.setenv("DOTFILES_CODEX_DAEMON_AUTO_RESTART", auto_restart)
@@ -2188,9 +2209,13 @@ class TestCodexDaemonPause:
 
         assert update_dotfiles.main() == 0
         assert self._commands(codex_env) == ["git", "init", "status", "diff", "apply"]
-        output = capsys.readouterr().out
-        assert "Codex管理daemonを停止せずに更新します" in output
-        assert reason in output
+        captured = capsys.readouterr()
+        assert "Codex管理daemon" not in captured.out
+        assert "延期" not in captured.out
+        assert not captured.err
+        log_text = update_dotfiles._LOG_PATH.read_text(encoding="utf-8")
+        assert "Codex管理daemonを停止せず" not in log_text
+        assert "延期された場合" not in log_text
 
     def test_non_linux_does_not_inspect_codex(self, monkeypatch: pytest.MonkeyPatch, codex_env: list[list[str]]) -> None:
         """Linux以外では診断ログ復元が無く、plugin保護もeuryale限定のため、daemonを扱わない。"""

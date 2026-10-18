@@ -185,6 +185,7 @@ def _rewrite_references(args: argparse.Namespace) -> None:
     if errors:
         raise ValueError("。".join(errors))
     print(f"成功: 未判定検証記録のcommit参照を更新しました（更新した行 {updated} 行、置換 {count} 件）: {args.output}")
+    print("次の操作: 結果に作用する内容・条件の差がある行だけ検証を取り直し、未判定検証記録の根拠を更新する")
 
 
 def _row_check(plan_paths: list[pathlib.Path]) -> typing.Callable[[str, int, dict[str, str]], list[str]]:
@@ -253,7 +254,7 @@ def main(argv: list[str] | None = None) -> int:
         run(args)
     except (OSError, UnicodeError, ValueError, subprocess.SubprocessError) as error:
         next_action.report(
-            str(error),
+            f"未判定検証記録の参照更新に失敗しました: {error}" if args.rewrite_map is not None else str(error),
             next_action=error.next_action
             if isinstance(error, next_action.ActionableError)
             else "入力と原文・出所を確認する。記録は変更していない。同じ操作を再実行する",

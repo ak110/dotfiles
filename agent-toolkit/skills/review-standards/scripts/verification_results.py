@@ -19,6 +19,11 @@ from verification_diagnostics import path_value, run_record
 from agent_toolkit._common.atomic_file import atomic_write
 
 SCHEMA = (
+    '試験JSON: {"tests":{"format":"vitest|playwright|trx","path":"/絶対/結果","run_record":"/絶対/record.json"},'
+    '"baseline_tests":{同形式}}。直接指定は--test-format・--test-file・--test-record、'
+    "基準版は--baseline-test-format・--baseline-test-file・--baseline-test-record。"
+    "vitestは--reporter=json --outputFile=/絶対/結果、Playwrightはenv PLAYWRIGHT_JSON_OUTPUT_NAME=/絶対/結果 "
+    'playwright test --reporter=json、dotnet testは--logger "trx;LogFileName=/絶対/結果"でatk run-commandから取得する。'
     '結果JSON: {"junit":{"xml":"/絶対/XML","run_record":"/絶対/record.json"},'
     '"baseline_junit":{同形式},"diagnostics":{"path":"/絶対/JSONL","run_record":"/絶対/record.json",'
     '"head":"完全OID","conditions":{"scope":[],"options":[],"dependencies":{},"parallelism":1,"environment":{}},'
@@ -112,6 +117,10 @@ def add_arguments(parser: argparse.ArgumentParser, *, reviewing: bool = False) -
             f"--{prefix}-xml", type=pathlib.Path, metavar="PATH", help="保存したJUnit XML。対応する-recordと指定する"
         )
         parser.add_argument(f"--{prefix}-record", type=pathlib.Path, metavar="PATH", help="JUnitを取得したrun-commandの記録")
+    for prefix in ("test", "baseline-test"):
+        parser.add_argument(f"--{prefix}-format", choices=("vitest", "playwright", "trx"), help="試験結果の生成形式")
+        parser.add_argument(f"--{prefix}-file", type=pathlib.Path, metavar="PATH", help="構造化試験結果の絶対パス")
+        parser.add_argument(f"--{prefix}-record", type=pathlib.Path, metavar="PATH", help="試験を取得したrun-commandの記録")
     for prefix in ("diagnostics", "baseline-diagnostics"):
         parser.add_argument(
             f"--{prefix}-file",
@@ -237,6 +246,8 @@ def _junit(spec: object) -> dict[str, dict[str, Any]]:
             "test": identity,
             "status": state,
             "xml": str(xml),
+            "path": str(xml),
+            "format": "pytest",
             "case": number,
             "run_record": str(record_path),
             "git_head": record["git_head"],
@@ -253,20 +264,181 @@ def _junit(spec: object) -> dict[str, dict[str, Any]]:
     return results
 
 
+def _relative_file(filename: object, root: pathlib.Path, worktree: pathlib.Path) -> str:
+    if not isinstance(filename, str) or not filename:
+        raise ValueError("試験のfileが不足しています")
+    try:
+        return (root / filename).resolve().relative_to(worktree.resolve()).as_posix()
+    except ValueError as error:
+        raise ValueError(f"試験のfileが対象worktreeの外です: {filename}") from error
+
+
+def _titles(values: object) -> list[str]:
+    if not isinstance(values, list) or any(not isinstance(value, str) or not value for value in values):
+        raise ValueError("試験のtitle列は空でない文字列の配列が必要です")
+    return values
+
+
+def _vitest(data: Any, cwd: pathlib.Path, worktree: pathlib.Path) -> list[tuple[str, str]]:
+    cases = []
+    for suite in data["testResults"]:
+        filename = _relative_file(suite["name"], cwd, worktree)
+        if not suite["assertionResults"] and suite.get("status") == "failed":
+            raise ValueError(f"vitestの試験収集が完了していません: {filename}。収集エラーを直して再実行する")
+        for case in suite["assertionResults"]:
+            name = case["title"]
+            if not isinstance(name, str) or not name:
+                raise ValueError("vitestのtitleが不足しています")
+            identity = "::".join([filename, *_titles(case["ancestorTitles"]), name])
+            status = {"passed": "passed", "failed": "failed", "pending": "skipped", "skipped": "skipped", "todo": "skipped"}[
+                case["status"]
+            ]
+            cases.append((identity, status))
+    return cases
+
+
+def _playwright(data: Any, cwd: pathlib.Path) -> list[tuple[str, str]]:
+    root = pathlib.Path(data["config"]["rootDir"])
+    if not root.is_absolute() or data.get("errors"):
+        raise ValueError("Playwrightの絶対rootDirと実行エラーのない結果が必要です")
+    cases: list[tuple[str, str]] = []
+
+    def visit(suites: Any, titles: list[str]) -> None:
+        for suite in suites:
+            # 最外のsuite.titleはファイル名。fileから相対パスを確定する。
+            ancestors = [*titles, *_titles([suite["title"]])] if titles else _titles([suite["title"]])
+            for spec in suite.get("specs", []):
+                filename = _relative_file(spec["file"], root, cwd)
+                for case in spec["tests"]:
+                    project = case["projectName"]
+                    if not isinstance(project, str):
+                        raise ValueError("PlaywrightのprojectNameが不足しています")
+                    identity = "::".join(
+                        [filename, *ancestors[1:], *_titles([spec["title"]]), json.dumps(project, ensure_ascii=False)]
+                    )
+                    status = {"expected": "passed", "unexpected": "failed", "flaky": "passed", "skipped": "skipped"}[
+                        case["status"]
+                    ]
+                    cases.append((identity, status))
+            visit(suite.get("suites", []), ancestors)
+
+    visit(data["suites"], [])
+    return cases
+
+
+def _trx(path: pathlib.Path) -> list[tuple[str, str]]:
+    root = ET.parse(path).getroot()
+    if root.tag.rsplit("}", 1)[-1] != "TestRun":
+        raise ValueError("TRXのTestRunが不足しています")
+    return [
+        (
+            case.attrib["testName"],
+            {"Passed": "passed", "Failed": "failed", "Error": "error", "NotExecuted": "skipped"}[case.attrib["outcome"]],
+        )
+        for case in root.iter()
+        if case.tag.rsplit("}", 1)[-1] == "UnitTestResult"
+    ]
+
+
+def _structured_tests(spec: object) -> dict[str, dict[str, Any]]:
+    if not isinstance(spec, dict) or set(spec) != {"format", "path", "run_record"}:
+        raise ValueError("試験の組にはformat・path・run_recordを指定する")
+    format_name = spec["format"]
+    if not isinstance(format_name, str) or format_name not in {"vitest", "playwright", "trx"}:
+        raise ValueError(f"未知の試験形式です: {format_name!r}。vitest・playwright・trxから指定する")
+    path = path_value(spec["path"])
+    record_path, record = run_record(spec["run_record"])
+    argv, cwd = record["argv"], pathlib.Path(record["cwd"])
+    worktree = verification_diagnostics.worktree_root(record) if format_name in {"vitest", "playwright"} else cwd
+    if format_name == "vitest":
+        outputs = [arg.removeprefix("--outputFile=") for arg in argv if arg.startswith("--outputFile=")]
+        reporter = "--reporter=json" in argv or any(
+            a == "--reporter" and b == "json" for a, b in zip(argv, argv[1:], strict=False)
+        )
+    elif format_name == "playwright":
+        outputs = [
+            arg.removeprefix("PLAYWRIGHT_JSON_OUTPUT_NAME=") for arg in argv if arg.startswith("PLAYWRIGHT_JSON_OUTPUT_NAME=")
+        ]
+        reporter = "env" in [pathlib.Path(arg).name for arg in argv] and (
+            "--reporter=json" in argv or any(a == "--reporter" and b == "json" for a, b in zip(argv, argv[1:], strict=False))
+        )
+    else:
+        loggers = [arg.split("=", 1)[1] for arg in argv if arg.startswith("--logger=")]
+        loggers.extend(b for a, b in zip(argv, argv[1:], strict=False) if a == "--logger")
+        outputs = [
+            part.removeprefix("LogFileName=")
+            for logger in loggers
+            if logger.startswith("trx;")
+            for part in logger.split(";")
+            if part.startswith("LogFileName=")
+        ]
+        reporter = True
+    if (
+        not reporter
+        or len(outputs) != 1
+        or not pathlib.Path(outputs[0]).is_absolute()
+        or pathlib.Path(outputs[0]).resolve() != path.resolve()
+    ):
+        raise ValueError(
+            f"試験結果と実行argvの出力指定が対応しません: {path}, {record_path}。絶対パスの構造化出力指定で再実行する"
+        )
+    try:
+        if format_name == "trx":
+            cases = _trx(path)
+        else:
+            data = load_json(path)
+            cases = _vitest(data, cwd, worktree) if format_name == "vitest" else _playwright(data, worktree)
+    except (KeyError, TypeError, AttributeError, ET.ParseError, json.JSONDecodeError) as error:
+        raise ValueError(f"試験結果の形式・状態が不正です: {path}: {error}。選んだ形式の結果を再取得する") from error
+    results = {}
+    for number, (identity, status) in enumerate(cases, 1):
+        if not isinstance(identity, str) or not identity or identity in results:
+            raise ValueError(f"テスト完全名が一意ではありません: {path}: {identity!r}")
+        results[identity] = {
+            "test": identity,
+            "status": status,
+            "format": format_name,
+            "path": str(path),
+            "case": number,
+            "run_record": str(record_path),
+            "git_head": record["git_head"],
+            "git_status": record["git_status"],
+            "child_exit_code": record["child_exit_code"],
+            "stdout": record["stdout_path"],
+            "stderr": record["stderr_path"],
+        }
+    failed = any(value["status"] in {"failed", "error"} for value in results.values())
+    if not results or record["child_exit_code"] not in {0, 1} or failed != (record["child_exit_code"] == 1):
+        raise ValueError(f"試験結果の状態と子の終了コードが一致しません: {path}。結果と実行記録を再取得する")
+    return results
+
+
 def load_results(path: pathlib.Path | None, *, specification: dict[str, Any] | None = None) -> dict[str, Any]:
     """保存した試験結果と診断を読み、基準版の指定があれば差を求めて返す。診断の読込と比較はverification_diagnosticsが行う。"""
     if path is None and not specification:
         return {"tests": {}, "test_changes": [], "diagnostics": {}}
     spec = load_json(path) if path is not None else specification
-    allowed = {"junit", "baseline_junit", "diagnostics", "baseline_diagnostics"}
+    allowed = {"junit", "baseline_junit", "tests", "baseline_tests", "diagnostics", "baseline_diagnostics"}
     if not isinstance(spec, dict) or not spec or set(spec) - allowed:
-        raise ValueError("結果JSONにはjunit・baseline_junit・diagnostics・baseline_diagnosticsの組を指定する")
+        raise ValueError(
+            "結果JSONにはtests・baseline_tests・junit・baseline_junit・diagnostics・baseline_diagnosticsの組を指定する"
+        )
+    if ({"tests", "baseline_tests"} & spec.keys()) and ({"junit", "baseline_junit"} & spec.keys()):
+        raise ValueError("同じ版のtestsとjunitは別々に指定する")
+    if "baseline_tests" in spec and "tests" not in spec:
+        raise ValueError("基準版と比較する対象結果を指定する")
     if "baseline_junit" in spec and "junit" not in spec or "baseline_diagnostics" in spec and "diagnostics" not in spec:
         raise ValueError("基準版と比較する対象結果を指定する")
     tests = _junit(spec["junit"]) if "junit" in spec else {}
     baseline = _junit(spec["baseline_junit"]) if "baseline_junit" in spec else {}
+    if "tests" in spec:
+        tests = _structured_tests(spec["tests"])
+    if "baseline_tests" in spec:
+        baseline = _structured_tests(spec["baseline_tests"])
+        if spec["tests"]["format"] != spec["baseline_tests"]["format"]:
+            raise ValueError("比較する試験結果は同じ形式で指定する")
     changes = []
-    if "baseline_junit" in spec:
+    if "baseline_junit" in spec or "baseline_tests" in spec:
         for name in sorted(tests.keys() | baseline.keys()):
             before, after = baseline.get(name), tests.get(name)
             if before is None or after is None or before["status"] != after["status"]:
@@ -287,6 +459,13 @@ def load_results(path: pathlib.Path | None, *, specification: dict[str, Any] | N
 def results_for_arguments(args: argparse.Namespace) -> dict[str, Any]:
     """対応する保存物を公開引数から組み立て、既存の取込みと比較へ渡す。"""
     specification: dict[str, Any] = {}
+    for prefix, key in (("test", "tests"), ("baseline_test", "baseline_tests")):
+        values = [getattr(args, prefix + suffix, None) for suffix in ("_format", "_file", "_record")]
+        if all(value is None for value in values):
+            continue
+        if any(value is None for value in values):
+            raise ValueError(f"{prefix}の形式・結果・実行記録は組で指定する")
+        specification[key] = {"format": values[0], "path": str(values[1]), "run_record": str(values[2])}
     for prefix in ("junit", "baseline_junit"):
         xml = getattr(args, prefix + "_xml", None)
         record = getattr(args, prefix + "_record", None)
@@ -322,6 +501,7 @@ def has_result_specification(args: argparse.Namespace) -> bool:
     return args.results_file is not None or any(
         getattr(args, prefix + suffix, None) is not None
         for prefixes, suffixes in (
+            (("test", "baseline_test"), ("_format", "_file", "_record")),
             (("junit", "baseline_junit"), ("_xml", "_record")),
             (("diagnostics", "baseline_diagnostics"), ("_file", "_record", "_conditions", "_source")),
         )
@@ -514,7 +694,7 @@ def list_results(results: dict[str, Any], args: argparse.Namespace) -> None:
 def _observed_evidence(values: list[dict[str, Any]]) -> str:
     """同じ保存物の参照を集合でまとめ、各結果の完全名・状態と固有の位置を残す。"""
     groups: dict[tuple, list[dict[str, Any]]] = {}
-    fields = ("xml", "run_record", "child_exit_code", "stdout", "stderr")
+    fields = ("path", "run_record", "child_exit_code", "stdout", "stderr")
     for value in values:
         if "test" in value:
             key = ("test", *(value[field] for field in fields))
@@ -533,6 +713,8 @@ def _observed_evidence(values: list[dict[str, Any]]) -> str:
         lines.append(f"保存物の組{number}:")
         if key[0] == "test":
             lines.extend(f"{field}: `{items[0][field]}`" for field in fields)
+            if "xml" in items[0]:
+                lines.append(f"xml: `{items[0]['xml']}`")
             lines.extend(f"`{item['test']}` {item['status']}、case: `{item['case']}`" for item in items)
             continue
         for side in ("before", "after"):
@@ -663,7 +845,12 @@ def updated_payload(
                 evidence.append(matches[0]["evidence"])
             if "new_source" in update:
                 if update["outcome"] not in {"失効", "割当外", "背景"}:
-                    raise ValueError("new_sourceは失効・割当外・背景の判断根拠へ変更する場合だけ指定する")
+                    raise ValueError(
+                        "new_sourceは失効・割当外・背景の判断根拠へ変更する場合だけ指定する。"
+                        "延期・終端しない行はsourceを変えず、evidenceへ記録の所在を書く。"
+                        "new_sourceまたは--row-sourceの指定を外し、所在を書いた説明ファイルを"
+                        "更新JSONではevidence_file、CLIでは--evidence-fileへ指定する"
+                    )
                 if not isinstance(update["new_source"], str) or not update["new_source"].strip():
                     raise ValueError("判断根拠のnew_sourceは空でない所在を指定する")
                 row["source"] = update["new_source"]

@@ -27,6 +27,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
+from session_evidence_ancestors import RESOLVE_NEXT_ACTION, AmbiguousOwnerRecord, delegation_record, owner_record
 from session_evidence_bundle import (
     _bundle_events,
 )
@@ -165,7 +166,19 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--codex-home",
         metavar="DIR",
-        help="Codexの記録の保存先。`--codex-thread-id`と併用する。",
+        help="Codexの記録の保存先。`--codex-thread-id`か`--delegation-record`と併用する。",
+    )
+    parser.add_argument(
+        "--delegation-record",
+        choices=("parent", "root"),
+        help="委譲先自身の環境と既存の親子対応から記録を解決する。parentは直接の委譲元の操作照会、"
+        "rootは最上位の会話の--user-eventsに使う。解決不能時は終了コード2で明示指定による再実行を案内する。",
+    )
+    parser.add_argument(
+        "--owner-session",
+        action="store_true",
+        help="環境の所有ルートからセッション記録を解決する。Claude Codeの委譲先で最上位の発話を照会する。"
+        "会話を示さないルートと記録が0件または複数の場合は終了コード2で再実行を案内する。",
     )
     catalog_group = parser.add_mutually_exclusive_group()
     catalog_group.add_argument(
@@ -254,7 +267,7 @@ def _build_parser() -> argparse.ArgumentParser:
         metavar="RECORD:LINE",
         help="指定したlocatorの元JSON recordについてkey pathと観測したJSON型だけを返す。"
         "record由来の値と本文は返さない。複数指定ではオプションを繰り返す。`--detail`と併用でき、"
-        "双方の全locatorをkind・record・lineで識別して返す。他の照会とは併用しない。",
+        "双方の全locatorをkind・record・lineで識別して返す。結果のkindを区別できる照会と併用できる。",
     )
     parser.add_argument(
         "--stats",
@@ -264,6 +277,11 @@ def _build_parser() -> argparse.ArgumentParser:
         "`elapsed_seconds`は記録の最初と最後の差であり、turnの完了を持つ記録では最初のturnの開始から"
         "最後のturnの完了までの`turn_elapsed_seconds`、完了時刻の`last_turn_completed_at`、"
         "完了後に続く記録の`after_last_turn_seconds`を併せて返す。",
+    )
+    parser.add_argument(
+        "--summary-only",
+        action="store_true",
+        help="`--stats`と併用し、総量・親・サブエージェント・threadの要約だけを全フィールド・既存順で返す。集計値の定義は全量表示と同じ。",
     )
     parser.add_argument(
         "--hook-notices",
@@ -347,7 +365,7 @@ def _build_parser() -> argparse.ArgumentParser:
         "--bundle",
         metavar="DIR",
         help="通常表示、`--warn`、`--stats`および`--hook-notices`の走査と、問題候補と会話の流れ"
-        "（メイン記録の発話、ツール呼び出しと失敗の標識）の抽出を"
+        "（全収集記録の発話、ツール呼び出しと成功・失敗の結果）の抽出を"
         "1回の記録読み込みで行い、走査ごとの全量を指定したディレクトリ配下のファイルへ書く。"
         "標準出力へは、走査ごとのファイルの絶対パスとイベント件数、通常表示のイベント種別ごとの件数、"
         "問題候補の特定に用いるイベントの位置と本文の冒頭、および警告の種別ごとの件数を返す。"
@@ -400,11 +418,26 @@ def main(argv: list[str] | None = None) -> int:
         _print_events(events)
         return 0
     query_modes = _single_transcript_query_modes(args)
-    if sum(query_modes) > 1:
+    if args.summary_only and not args.stats:
+        return _print_error("--summary-onlyは--statsと併用する", next_action="`--stats`を付けて再実行する")
+    summaries = [
+        name
+        for name, active in (
+            ("--grep", args.grep is not None),
+            ("--hook-notices", args.hook_notices),
+            ("--user-events", args.user_events),
+        )
+        if active
+    ]
+    if args.bundle is not None and sum(query_modes) > 1:
         return _print_error(
-            "--warn・--grep・--detail・--fixed-string・--record-schema・--stats・--hook-notices・--bundle・--elapsed-until・"
-            "--user-events・--context-at・--tool-callsは、--detailと--record-schemaの組以外では併用できない",
-            next_action="本文と構造は`--detail`・`--record-schema`を併用できる。他の照会は1回に1つだけ指定して再実行する",
+            "--bundleは他の照会と併用できない",
+            next_action="ファイルへ保存する`--bundle`と標準出力への照会を別々に実行する",
+        )
+    if len(summaries) > 1:
+        return _print_error(
+            f"{'・'.join(summaries)}はkind=summaryを共有するため結果を区別できず、併用できない",
+            next_action="`--grep`・`--hook-notices`・`--user-events`を別々に実行する。他のkindを返す照会は併用できる",
         )
     catalog_root = args.catalog_claude_project or args.catalog_codex_history
     catalog_runtime: _Runtime | None = (
@@ -431,7 +464,7 @@ def main(argv: list[str] | None = None) -> int:
         catalog_selection = _CatalogSelection(
             args.catalog_workflow, args.catalog_known_workflow, args.catalog_cwd_contains, fields
         )
-    if catalog_root is not None and any(query_modes) and not args.tool_calls:
+    if catalog_root is not None and any(query_modes) and (not args.tool_calls or sum(query_modes) > 1):
         return _print_error(
             "カタログ走査は`--tool-calls`以外の単一transcriptの照会モードと併用できない",
             next_action="カタログ走査（`--catalog-claude-project`・`--catalog-codex-history`）と単一transcriptの照会を別々に実行する",
@@ -482,19 +515,22 @@ def main(argv: list[str] | None = None) -> int:
         args.codex_thread_id,
         args.catalog_claude_project,
         args.catalog_codex_history,
+        args.delegation_record,
+        True if args.owner_session else None,
     )
     if sum(source is not None for source in sources) != 1:
         return _print_error(
-            "transcript_path・--transcript・--claude-session-id・--codex-thread-id・カタログ走査はいずれか一つだけを指定する",
+            "transcript_path・--transcript・--claude-session-id・--codex-thread-id・--delegation-record・--owner-session・"
+            "カタログ走査はいずれか一つだけを指定する",
             next_action=(
                 "対象の記録を`transcript_path`・`--transcript`・`--claude-session-id`・`--codex-thread-id`・"
-                "カタログ走査のいずれか1つだけで指定して再実行する"
+                "--delegation-record・--owner-session・カタログ走査のいずれか1つだけで指定して再実行する"
             ),
         )
-    if args.codex_home is not None and args.codex_thread_id is None:
+    if args.codex_home is not None and args.codex_thread_id is None and args.delegation_record is None:
         return _print_error(
-            "--codex-homeは--codex-thread-idと併用する",
-            next_action="`--codex-thread-id`を付けるか、`--codex-home`を外して再実行する",
+            "--codex-homeは--codex-thread-idか--delegation-recordと併用する",
+            next_action="`--codex-thread-id`か`--delegation-record`を付けるか、`--codex-home`を外して再実行する",
         )
     if catalog_root is not None:
         assert since is not None and catalog_runtime is not None and args.observation_boundary is not None
@@ -512,7 +548,19 @@ def main(argv: list[str] | None = None) -> int:
             events, exit_code = _catalog_events(Path(catalog_root), catalog_runtime, since, catalog_boundary, catalog_selection)
         _print_events(events)
         return exit_code
-    if args.claude_session_id is not None:
+    if args.delegation_record is not None or args.owner_session:
+        try:
+            transcript_path = str(
+                delegation_record(args.delegation_record, args.codex_home)
+                if args.delegation_record is not None
+                else owner_record()
+            )
+        except AmbiguousOwnerRecord as error:
+            candidates = "、".join(f"`{path}`" for path in error.paths)
+            return _print_error(str(error), next_action=f"{RESOLVE_NEXT_ACTION}。候補: {candidates}")
+        except (OSError, UnicodeError, ValueError) as error:
+            return _print_error(str(error), next_action=RESOLVE_NEXT_ACTION)
+    elif args.claude_session_id is not None:
         try:
             transcript_path = str(_resolve_claude_transcript(args.claude_session_id))
         except ValueError as error:
@@ -541,7 +589,7 @@ def main(argv: list[str] | None = None) -> int:
     if records is None:
         return _print_error(
             f"対象記録を読み込めない: {transcript_path}",
-            next_action="`--transcript`へ実在する記録の絶対パスを渡し、読み取り権限を確かめて再実行する",
+            next_action="`--transcript`の対象の存在・読み取り権限・UTF-8・各行のJSONを確かめて再実行する",
         )
     boundary = None
     if args.observation_boundary is not None:
@@ -549,17 +597,25 @@ def main(argv: list[str] | None = None) -> int:
             boundary = _parse_cli_timestamp(args.observation_boundary)
         except ValueError:
             return _print_error(f"観測境界が不正: {args.observation_boundary}", next_action=_BOUNDARY_NEXT_ACTION)
+    elapsed_events = []
+    elapsed_code = 0
     if args.elapsed_until is not None:
         event = _elapsed_until_event(records, args.elapsed_until)
         if isinstance(event, str):
             message = event or f"経過時間を算出できる記録が無い: {transcript_path}"
-            return _print_error(message, next_action=_ELAPSED_UNTIL_NEXT_ACTION)
-        _print_events([event])
-        return 0
+            elapsed_events.append(_error_event(message, next_action=_ELAPSED_UNTIL_NEXT_ACTION))
+            elapsed_code = 2
+        else:
+            elapsed_events.append(event)
+        if sum(query_modes) == 1:
+            _print_events(elapsed_events)
+            return elapsed_code
     if boundary is not None:
         records = _apply_observation_boundary(records, boundary)
-    delegate_codex_home = args.codex_home if args.codex_thread_id is not None else None
-    collected, unresolved = _collect_records(transcript_path, records, delegate_codex_home, boundary)
+    delegate_codex_home = args.codex_home if args.codex_thread_id is not None or args.delegation_record is not None else None
+    collected, unresolved = _collect_records(
+        transcript_path, records, delegate_codex_home, boundary, main_only=args.user_events and sum(query_modes) == 1
+    )
     compaction_record_dir = (
         Path(args.compaction_record_dir)
         if args.compaction_record_dir is not None
@@ -570,9 +626,10 @@ def main(argv: list[str] | None = None) -> int:
         events, exit_code = _bundle_events(collected, unresolved, Path(args.bundle), compaction_record_dir)
         _print_events(events, collected=collected)
         return exit_code
+    events = list(elapsed_events)
+    exit_code = elapsed_code
     if args.warn:
-        _print_events(_warning_collection_events(collected, unresolved), collected=collected)
-        return 0
+        events.extend(_warning_collection_events(collected, unresolved))
     if args.grep is not None:
         try:
             pattern = re.compile(args.grep)
@@ -580,11 +637,8 @@ def main(argv: list[str] | None = None) -> int:
             return _print_error(
                 f"正規表現が不正: {error}", next_action="`--grep`の正規表現の構文（括弧の対応、エスケープ）を直して再実行する"
             )
-        _print_events(_grep_collection_events(collected, unresolved, pattern), collected=collected)
-        return 0
+        events.extend(_grep_collection_events(collected, unresolved, pattern))
     if args.detail is not None or args.record_schema is not None:
-        events = []
-        exit_code = 0
         for locators, query in (
             (args.detail, _detail_collection_events),
             (args.record_schema, _record_schema_collection_events),
@@ -593,30 +647,51 @@ def main(argv: list[str] | None = None) -> int:
                 results, code = query(collected, locators)
                 events.extend(results)
                 exit_code = max(exit_code, code)
-        _print_events(events)
-        return exit_code
     if args.fixed_string is not None:
-        _print_events(_fixed_string_collection_events(collected, unresolved, args.fixed_string), collected=collected)
-        return 0
+        events.extend(_fixed_string_collection_events(collected, unresolved, args.fixed_string))
     if args.context_at is not None:
-        events, exit_code = _context_at_events(collected, args.context_at, args.phrase or [])
-        _print_events(events)
-        return exit_code
+        results, code = _context_at_events(collected, args.context_at, args.phrase or [])
+        events.extend(results)
+        exit_code = max(exit_code, code)
     if args.stats:
-        _print_events([*_stats_events(collected, compaction_record_dir), *_unresolved_events(unresolved)], collected=collected)
-        return 0
+        stats = _stats_events(collected, compaction_record_dir)
+        if args.summary_only:
+            stats = [
+                event
+                for event in stats
+                if event["kind"] in {"stats-total", "stats-summary", "stats-subagent", "stats-agent-thread"}
+            ]
+        events.extend([*stats, *_unresolved_events(unresolved)])
     if args.hook_notices:
-        _print_events(
-            [*_hook_notice_events([record for item in collected for record in item.records]), *_unresolved_events(unresolved)],
-            collected=collected,
+        events.extend(
+            [*_hook_notice_events([record for item in collected for record in item.records]), *_unresolved_events(unresolved)]
         )
-        return 0
     if args.user_events:
-        _print_events(_user_events_since(collected, since))
-        return 0
+        events.extend(_user_events_since(collected, since))
     if args.tool_calls:
-        _print_events(_tool_call_collection_events(collected, unresolved, args.tool, input_pattern), collected=collected)
-        return 0
+        events.extend(_tool_call_collection_events(collected, unresolved, args.tool, input_pattern))
+    if any(query_modes):
+        seen = set()
+        unique = []
+        for event in events:
+            if event.get("kind") in {"unresolved-record", "unresolved-delegation"}:
+                key = json.dumps(event, sort_keys=True)
+                if key in seen:
+                    continue
+                seen.add(key)
+            unique.append(event)
+        provenance = (
+            args.warn
+            or args.grep is not None
+            or args.fixed_string is not None
+            or args.stats
+            or args.hook_notices
+            or args.tool_calls
+            or args.user_events
+            and (args.delegation_record is not None or args.owner_session)
+        )
+        _print_events(unique, collected=collected if provenance else None)
+        return exit_code
 
     _print_events(_default_events(collected, unresolved))
     return 0

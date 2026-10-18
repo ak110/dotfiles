@@ -63,11 +63,11 @@ def test_prepare_conversation_ranges_cover_atomic_blocks(
             assert selected[0].startswith(("## ユーザー（", "## アシスタント（", "- ツール呼び出し（"))
             assert "fake:" not in selected[0]
         assert not selected[0].startswith("  - 失敗")
-    assert "agent-child" not in document
+    assert "agent-child" in document
     comparison = pathlib.Path(result["comparison_materials_path"]).read_text(encoding="utf-8")
     assert "### claude:" in comparison and "agent-child" in comparison
     assert "/repo/child.md" in comparison
-    assert ranges[0]["first_locator"] == "main:1"
+    assert ranges[0]["first_locator"] == "claude:parent:1"
     assert ranges[0]["first_timestamp"] == "2026-10-10T00:00:00Z"
 
 
@@ -100,8 +100,8 @@ def test_prepare_range_timestamps_follow_tool_and_failure_locators(
     assert prepare.main(["--transcript", str(parent), "--work-dir", str(work)]) == 0
     ranges = json.loads(capsys.readouterr().out)["conversation_ranges"]
     assert len(ranges) == 1
-    assert ranges[0]["first_locator"] == "main:1"
-    assert ranges[0]["last_locator"] == "main:3"
+    assert ranges[0]["first_locator"] == "claude:parent:1"
+    assert ranges[0]["last_locator"] == "claude:parent:3"
     assert ranges[0]["first_timestamp"] == first_timestamp
     assert ranges[0]["last_timestamp"] == "2026-10-10T00:02:00Z"
 

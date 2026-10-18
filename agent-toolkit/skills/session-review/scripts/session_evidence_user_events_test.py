@@ -297,7 +297,7 @@ def test_user_events_rejects_misused_since(
     invocations = (
         [str(transcript), "--since", "2026-09-01T00:00:00Z"],
         [str(transcript), "--user-events", "--since", "不正な時刻"],
-        [str(transcript), "--user-events", "--since", "2026-09-01T00:00:00Z", "--warn"],
+        [str(transcript), "--user-events", "--since", "2026-09-01T00:00:00Z", "--hook-notices"],
     )
     for arguments in invocations:
         assert evidence.main(arguments) == 2

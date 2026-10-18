@@ -336,11 +336,19 @@ pub(crate) fn render_state_files(
             let usage_limit = api_error.filter(|error| error.error_type == USAGE_LIMIT_ERROR_TYPE);
             let description = if let Some(usage_limit) = usage_limit {
                 format!(
-                    "利用上限の解除待ち {}",
+                    "対応不要: 利用上限の解除待ち {}（解除後に同じsessionを自動再開）",
                     usage_limit.limit_type.as_deref().unwrap_or("?")
                 )
             } else if let Some(api_error) = api_error {
-                format!("API再試行 {}", api_error.error_type)
+                format!(
+                    "対応不要: API再試行 {}（自動再試行中）",
+                    api_error.error_type
+                )
+            } else if matches!(
+                item.session.status.as_str(),
+                "completed" | "failed" | "interrupted"
+            ) {
+                "対応不要: 委譲元の結果回収・子孫session終端後に非表示".to_string()
             } else if item.session.last_action.is_empty() {
                 item.session.progress.clone()
             } else {
@@ -1089,14 +1097,16 @@ mod tests {
                 serde_json::json!([malformed]),
             ),
         ];
-        let lines = render_state_files(&files, 80, now);
+        let lines = render_state_files(&files, 160, now);
 
         assert_eq!(lines.len(), 5);
         assert!(lines[0].contains("API再試行 rate_limit_error"));
         assert!(lines[0].contains("HTTP 429"));
         assert!(lines[0].contains("40s"));
         assert!(lines[0].contains("3回"));
-        assert!(lines.iter().all(|line| display_width(line) <= 80));
+        assert!(lines[0].contains("対応不要"));
+        assert!(lines[0].contains("自動再試行中"));
+        assert!(lines.iter().all(|line| display_width(line) <= 160));
         assert!(!lines[0].contains("Bash"));
         let overloaded_line = lines
             .iter()
@@ -1105,13 +1115,23 @@ mod tests {
         assert!(overloaded_line.contains("API再試行 serverOverloaded"));
         assert!(overloaded_line.contains("HTTP ?"));
         assert!(overloaded_line.contains("2回"));
+        assert!(overloaded_line.contains("対応不要"));
         let others: Vec<_> = lines[1..]
             .iter()
             .filter(|line| !line.contains("serverOverloaded"))
             .collect();
         assert_eq!(others.len(), 3);
         assert!(others.iter().all(|line| !line.contains("API再試行")));
-        assert!(others.iter().all(|line| line.contains("Bash")));
+        assert!(others
+            .iter()
+            .filter(|line| !line.contains("completed"))
+            .all(|line| line.contains("Bash")));
+        let terminal_line = others
+            .iter()
+            .find(|line| line.contains("completed"))
+            .unwrap();
+        assert!(terminal_line.contains("対応不要"));
+        assert!(terminal_line.contains("結果回収・子孫session終端後に非表示"));
     }
 
     #[test]
@@ -1151,7 +1171,7 @@ mod tests {
                 serde_json::json!([unknown_reset]),
             ),
         ];
-        let lines = render_state_files(&files, 100, now);
+        let lines = render_state_files(&files, 180, now);
 
         assert_eq!(lines.len(), 2);
         let waiting_line = lines
@@ -1164,13 +1184,19 @@ mod tests {
         );
         assert!(waiting_line.contains("解除まで2h5m"), "{lines:?}");
         assert!(waiting_line.contains("30m0s"), "{lines:?}");
+        assert!(waiting_line.contains("対応不要"), "{lines:?}");
+        assert!(
+            waiting_line.contains("解除後に同じsessionを自動再開"),
+            "{lines:?}"
+        );
         assert!(!waiting_line.contains("API再試行"), "{lines:?}");
         let unknown_line = lines
             .iter()
             .find(|line| line.contains("five_hour"))
             .expect("5時間の利用上限の解除待ちを表示する");
         assert!(unknown_line.contains("解除時刻確認中"), "{lines:?}");
-        assert!(lines.iter().all(|line| display_width(line) <= 100));
+        assert!(unknown_line.contains("対応不要"), "{lines:?}");
+        assert!(lines.iter().all(|line| display_width(line) <= 180));
     }
 
     #[test]
@@ -1209,6 +1235,48 @@ mod tests {
             "{lines:?}"
         );
         assert!(lines.iter().all(|line| display_width(line) <= 200));
+    }
+
+    #[test]
+    fn waiting_and_terminal_rows_keep_identity_elapsed_and_guidance_at_80_columns() {
+        let now = DateTime::parse_from_rfc3339("2026-01-01T00:00:00+00:00")
+            .unwrap()
+            .with_timezone(&Utc);
+        for state in [
+            "usage_limit",
+            "rate_limit_error",
+            "completed",
+            "failed",
+            "interrupted",
+        ] {
+            let terminal = matches!(state, "completed" | "failed" | "interrupted");
+            let status = if terminal { state } else { "running" };
+            let mut row = status_session("session-id", status, "2025-12-31T23:59:00+00:00");
+            if !terminal {
+                row["api_error"] = serde_json::json!({
+                    "type": state, "http_status": 429,
+                    "first_at": "2025-12-31T23:59:00+00:00", "count": 3,
+                    "limit_type": "seven_day", "resets_at": "2026-01-01T01:00:00+00:00"
+                });
+            }
+            let files = [state_file(
+                "root.json",
+                Value::Null,
+                serde_json::json!([row]),
+            )];
+            let lines = render_state_files(&files, 80, now);
+            assert!(lines[0].starts_with("session-id (claude)"), "{lines:?}");
+            assert!(lines[0].contains("対応不要"), "{lines:?}");
+            assert!(lines[0].contains("1m0s"), "{lines:?}");
+            if terminal {
+                assert!(lines[0].ends_with(status), "{lines:?}");
+            } else if state == "usage_limit" {
+                assert!(lines[0].contains("解除まで1h0m"), "{lines:?}");
+            } else {
+                assert!(lines[0].ends_with("HTTP 429 · 1m0s · 3回"), "{lines:?}");
+            }
+            assert!(display_width(&lines[0]) <= 80, "{lines:?}");
+        }
     }
 
     #[test]
@@ -1446,6 +1514,11 @@ mod tests {
             assert_eq!(lines.len(), 2, "{lines:?}");
             assert!(lines[0].starts_with("parent (claude)"), "{lines:?}");
             assert!(lines[0].ends_with(&format!("1m0s · {status}")), "{lines:?}");
+            assert!(lines[0].contains("対応不要"), "{lines:?}");
+            assert!(
+                lines[0].contains("結果回収・子孫session終端後に非表示"),
+                "{lines:?}"
+            );
             assert!(lines[1].starts_with("└ grandchild (claude)"), "{lines:?}");
             assert!(lines[1].ends_with("30s · running"), "{lines:?}");
 

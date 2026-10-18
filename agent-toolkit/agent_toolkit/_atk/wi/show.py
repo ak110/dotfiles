@@ -6,6 +6,7 @@ import sys
 
 from agent_toolkit._atk import outcome as _outcome
 from agent_toolkit._atk.wi import entries as _wi_entries
+from agent_toolkit._atk.wi import sections as _wi_sections
 from agent_toolkit._atk.wi import sync as _wi_sync
 from agent_toolkit._atk.wi import uwi_scan as _wi_uwi_scan
 from agent_toolkit._atk.wi.constants import WI_TYPE_UWI, WI_TYPES
@@ -26,6 +27,16 @@ def _summary_line(text: str, kind: str | None) -> str:
         return uwi_body_summary(text, sys.maxsize)
     summary = body_summary(text, sys.maxsize)
     return summary.removeprefix("# ") if summary.startswith("# ") else summary
+
+
+def _display_body(text: str, kind: str | None, args: argparse.Namespace) -> str:
+    """全文・要約・指定節のいずれかを表示用に取り出す。"""
+    if getattr(args, "summary_only", False):
+        return _summary_line(text, kind)
+    names = getattr(args, "section", None)
+    if names is None:
+        return text
+    return "\n\n".join(f"#### {name}\n{body}" for name, body in _wi_sections.h2_section_items(text) if name in names)
 
 
 def cmd_show(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
@@ -52,7 +63,6 @@ def cmd_show(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
     """
     if not args.filenames and not args.all:
         args.subparser.error("表示するファイル名または--allを指定してください。")
-    summary_only = getattr(args, "summary_only", False)
     validated_filenames = _wi_entries.validate_named_filenames(private_notes, args.filenames)
     if not args.skip_pull:
         with _wi_sync.repo_lock(private_notes):
@@ -79,7 +89,7 @@ def cmd_show(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
                 label = f" [{state}/{'answered' if answered else 'unanswered'}]"
             print(f"## target_repo: {target_repo}")
             print(f"### {path.name}{label}")
-            print(_summary_line(text, kind) if summary_only else text)
+            print(_display_body(text, kind, args))
             if len(selected_by_name) > 1:
                 print()
         return
@@ -108,5 +118,5 @@ def cmd_show(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
                     if header_type == WI_TYPE_UWI:
                         label = f" [{state}/{'answered' if _wi_uwi_scan.is_uwi_answered(text) else 'unanswered'}]"
                     print(f"### {name}{label}")
-                    print(_summary_line(text, header_type) if summary_only else text)
+                    print(_display_body(text, header_type, args))
                     print()

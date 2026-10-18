@@ -58,6 +58,21 @@ uv run --frozen prek run pyfltr --files docs/development/design-packages.md
 3行目の出力の1行目（`"kind":"header"`）が示す`run_id`を4行目へ渡す。4行目が返すJSONの`output`に、pyfltrのsubprojectごとの`# subproject: <ディレクトリ>`の行と、収集したテストの`<ファイル>::<テスト名>`の行が並ぶ。各行のファイルへsubprojectのディレクトリ（`.`はroot）を前置した集合が、fastのpytestが受け取ったファイルの集合である。
 この集合が`git ls-files`の一覧と一致し、通常の動作テストのファイルを含まないことを確認する。件数だけを比べると、対象のファイルが別のファイルへ置き換わった場合を見逃すため、集合を比べる。Markdownだけを渡したprekのhookからpytestが起動し、不変条件の失敗が同じhookの失敗へ届くことも確かめる。rebaseで組合せが変わった場合は、commit時の成功だけで判定せず、同じfastのpytestを統合前に再実行する。
 
+## .claude/skills/dotfiles-development/references/verification-values.md：変更範囲の検証の値：2026年10月18日
+
+Python 3.15、CIと同じimageのdigest `sha256:b13645f08610527422a741872c2457ee7b0e2ce96880acee22be2f1984477600`で、lockだけの変更によるsdistビルドの差を観測した。
+基準commit `a151f22a2a3447cfc4925e2a708d279138de46f4`のarchiveへ、`uv.lock`のzstandard依存2行から`python_full_version < '3.14'`のmarkerだけを除いた入力を作成した。
+両入力を同じcontainerの`poppler-utils libarchive13 zstd`導入後に`UV_FROZEN=1 UV_PYTHON=3.15 uv sync --all-groups --all-extras`へ渡した。
+marker保持側は終了0、除去側はzstandard 0.25.0のビルドに到達して`FileNotFoundError: No such file or directory: 'cc'`で終了1となった。
+現行commit `3c7276065cc081b9759f2702b7d149d3aaa06c7c`のlockにはzstandardが含まれないため、故障対照は基準版の入力として保持する。
+同じ現行commitのarchiveも上記と同じ操作へ渡し、135パッケージの依存導入と終了0を確認した。
+
+再検証では同じ基準版のarchiveから上記2入力を作成し、同じimage・ネイティブパッケージ・Python版・uvの同期引数を使う。
+実行結果は基準版の正常導入とlock変更によるビルド失敗を区別して読む。
+`ci_workflow_test.py::test_update_checks_container_dependencies_after_lock_updates`で依存更新の手順を確かめる。
+`update`から`$(MAKE) ci-deps-check`を除いたMakefileでは、同じ試験が失敗することを確かめる。
+`make -n update`では両lockの更新後に`ci-deps-check`の`docker run`が出力された。
+
 ## .claude/skills/merge-pr/SKILL.md：マージ前の確認：2026年10月5日
 
 2026年10月5日、GitHub CLI 2.101.0でPR #138のcheck登録順を確認した。run `37327087407`は同じPR headの`push`起点CIであり、run `37329129743`は`pull_request`起点CIであった。後者の`statusline-version`は先行するcheckの観測後に非同期で登録された。同じheadとcheck名だけでは起点を識別できず、PR起点checkの登録前に必須checkの集合を完全と判定できない。
@@ -163,7 +178,7 @@ Stopの応答だけやホストのtask_notificationだけを、モデルによ�
 
 ## agent-toolkit/agent_toolkit/_hooks/termination_evidence.py：終了工程の証拠のStop判定：2026年10月3日
 
-Stopで報告の不足を判定する変更（`4862700e1`）の要求を起草した時点で、両ホストの公式Hooks仕様のStopとPostToolUseを確認した。資料はCodexが<https://learn.chatgpt.com/docs/hooks>、Claude Codeが<https://code.claude.com/docs/en/hooks>である。両ホストのStopは`last_assistant_message`を供給し、`decision: "block"`と`reason`で同じターンを継続する。CodexのStopは`hookSpecificOutput`を受理せず、CodexのPostToolUseのBashの`tool_response`は終了コードを含まない出力文字列である（`claude-hooks.md`の既存記録と同じ）。
+Stopで報告の不足を判定する変更（2026年10月4日「fix: 残る報告工程と未発話の報告で停止しないようStopで検出する」、`4862700e1`）の要求を起草した時点で、両ホストの公式Hooks仕様のStopとPostToolUseを確認した。資料はCodexが<https://learn.chatgpt.com/docs/hooks>、Claude Codeが<https://code.claude.com/docs/en/hooks>である。両ホストのStopは`last_assistant_message`を供給し、`decision: "block"`と`reason`で同じターンを継続する。CodexのStopは`hookSpecificOutput`を受理せず、CodexのPostToolUseのBashの`tool_response`は終了コードを含まない出力文字列である（`claude-hooks.md`の既存記録と同じ）。
 実装時の作業ホストはcodex-cli 0.160.0とClaude Code 2.1.288である。確認した範囲は判定器の契約テストまでである。対象は`termination_evidence_test.py`と`completion_report_delivery_advisor_test.py`の判定である。加えて`output_contract_test.py`がCodex Stopの出力を、`sync_codex_plugin_manifests_test.py`が生成を確かめた。ホスト本体のStopの発火と継続、Codexの未信頼設定や無効化されたhookでの挙動は実機で試験していない。
 再検証は両ホストの公式Hooks仕様のStop・PostToolUseの入力と出力を取得し、`last_assistant_message`、Codexの`tool_response`の形とStopの出力契約を比べる。変わった場合は`termination_evidence.py`の可視本文と応答の読取、`output_contract.py`のCodex Stopの契約を改める。
 
@@ -253,8 +268,8 @@ Claude Code 2.1.292のセッション`6ff8ab5b-235b-4bfc-b765-115d1486cd60`で�
 
 ## agent-toolkit/share/rules-main.claude-code.md：ツールの入出力：2026年10月3日
 
-拡張思考の表示に関する変更（`31a598fd5`）の要求を起草した時点の観測環境はClaude Code 2.1.288、モデル`claude-opus-5-5`、
-`showThinkingSummaries=false`だった。transcriptの`thinking`ブロックに保存された文がユーザーの画面へ
+拡張思考の表示に関する変更は、2026年10月4日「fix: 拡張思考の表示を断定せず発話本文への出力を求める」、`31a598fd5`である。
+要求を起草した時点の観測環境はClaude Code 2.1.288、モデル`claude-opus-5-5`、`showThinkingSummaries=false`だった。transcriptの`thinking`ブロックに保存された文がユーザーの画面へ
 通常の応答文と同じ見た目で表示された。一次記録（当時のセッション記録とユーザーが貼った画面表示）はリポジトリ外にあり、
 本節は観測内容だけを保持する。続くStopはtext本文の欠落を遮断したが、思考の非表示を述べる理由は画面と一致しなかった。
 2026年9月28日の記録（Claude Code 2.1.283）では思考の文が表示されなかった。当時の記録は保持する。
@@ -366,6 +381,34 @@ Git 2.47.3で、`commit.verbose=true`を設定した隔離リポジトリ2つへ
 
 再検証では新規の隔離リポジトリで初期commitを作成し、`git config commit.verbose true`を設定する。ファイルを変更してstageし、編集バッファの各行を読み、`#`で始まる行だけを除いて保存するスクリプトを`GIT_EDITOR`へ指定する。`git commit --no-verbose --fixup=amend:<初期commit>`と、別の同一条件のリポジトリで`--no-verbose`を除いた起動を比較し、前記の本文の差を確認する。
 
+## agent-toolkit/skills/commit/references/history-rewrite.md：fixupの実行上の制約：2026年10月18日
+
+Git 2.34.1と2.47.3で、`compare_history_test.py`の隔離履歴に対する20件のテストが成功した。
+Git 2.34.1はCIと同じUbuntuの`git_2.34.1-1ubuntu1_amd64.deb`を一時領域へ展開して使用し、SHA-256は`0a0bd5c85eafb688025d68e69f49919591b22abf8b7d608d7e64307714d361ca`だった。
+`rebase.updateRefs=true`と別branchを置いた。
+文書と同じ`GIT_SEQUENCE_EDITOR=:`、`-c rebase.updateRefs=false rebase -i --autosquash`でfixupを統合した。
+最終treeと別branchのOIDが保持され、制御件名が消失した。
+Git 2.47.3で局所設定のfalseだけを除いた対照は、別branchのOID保持の試験で失敗した。
+履歴検収は空白・path・mode・type・binary・曖昧な対応を区別し、統合後の対応表を公開記録操作へ渡した。
+
+再検証では上記debを展開した`usr/bin`をPATHの先頭、`usr/lib/git-core`を`GIT_EXEC_PATH`へ設定し、`git --version`を確認して同じ20件を実行する。
+新しいGitでは通常のPATHで同じテストを実行し、参照更新機能が有効な環境でも局所指定が保護することを確認する。
+サブモジュールの作業状態を保持する局所設定は同じautosquashへ併用でき、履歴比較はGit 2.38以降だけの`patch-id --verbatim`を呼び出さない。
+
+## agent-toolkit/skills/commit/references/history-rewrite.md：親だけのGit操作とサブモジュール：2026年10月18日
+
+Git 2.34.1での検証担当の記録によると、`agent-toolkit/agent_toolkit/_atk/submodule_state_test.py`の15件が成功した。
+GitはCIと同じUbuntuのdebを一時領域へ展開して使用した。
+親の履歴内でgitlinkが異なる隔離fixtureへ再帰trueとfalseを与え、autosquash・通常rebase・keep reset・switch・checkout・restoreを比較した。
+再帰trueでは子の作業状態が変わり、呼び出し限りの`-c submodule.recurse=false`では子のHEAD・branch・作業内容を保持した。
+比較した値はHEAD・symbolic-ref・porcelain・追跡ファイルの内容・未追跡のレビュー内容である。
+autosquashは基点への切替を確実にするため`--force-rebase`を併用した。
+局所falseを指定した後も、永続設定の`submodule.recurse=true`を保持した。
+同じ実Gitの試験で、private-notes同期のrebaseとkeep reset、laneの準備時のdetached worktreeからbranchへの接続も、子の作業状態を保持した。
+
+再検証ではGit 2.34.1を展開した`usr/bin`をPATHの先頭、`usr/lib/git-core`を`GIT_EXEC_PATH`へ設定し、`git --version`で版数を確認して上記のpytestを実行する。
+再帰設定だけを変えた対照の結果と、子の5種類の観測値を確認する。
+
 ## agent-toolkit/skills/commit/references/publish.md：検証とCI：2026年10月11日
 
 uv 0.13.0で、`UV_PROJECT_ENVIRONMENT`で隔離した仮想環境を使い、dotfilesのリポジトリ直下と`agent-toolkit/`のプロジェクトを`UV_FROZEN=1`のもとで同期した。
@@ -446,7 +489,7 @@ Claude Code 2.1.241で検証した設定は、対象キーを含まない一時J
 
 ## agent-toolkit/skills/delegation/references/claude-code-runtime.md：待機中の定期再確認と背景転換：2026年10月4日
 
-HEAD `80ce39d82`、agent-toolkit 2.188.0の公開CLIで`atk watch --help`を確認した。
+HEAD 2026年10月4日「fix: 不変条件のテストを通常のcommitで自動実行する」、`80ce39d82`、agent-toolkit 2.188.0の公開CLIで`atk watch --help`を確認した。
 保持記録から解決した値を`atk watch --worktree "$worktree_path"`と
 `atk watch --file "$artifact_path"`へ個別に渡し、両方の終了コード0を確認した。
 前者は作業ツリーのdirty件数とHEAD、後者はファイルのlinesとageを返した。
@@ -511,7 +554,7 @@ Claude Code公式資料「Keep Claude working toward a goal」の「Background w
 
 ## agent-toolkit/skills/review-standards/SKILL.md：レビュー指摘管理表の共通操作：2026年10月8日
 
-agent-toolkit 2.199.0の基準commitは`3b3932b5`で、review-table実装の差分は無い。公開CLIで、通常名と`ci-3b3932b.exec-review.tsv`の表をそれぞれ`atk review-table init <パス>`で作成した。両方とも終了コード0で、`wc -c <パス>`は0バイトを示した。`atk review-table validate <パス>`も両方が終了コード0で、応答欄を含めた検証結果は0件だった。ヘッダーと仮の行は追加していない。
+agent-toolkit 2.199.0の基準commitは2026年10月8日「Merge pull request #147 from ak110/develop」、`3b3932b5`で、review-table実装の差分は無い。公開CLIで、通常名と`ci-3b3932b.exec-review.tsv`の表をそれぞれ`atk review-table init <パス>`で作成した。両方とも終了コード0で、`wc -c <パス>`は0バイトを示した。`atk review-table validate <パス>`も両方が終了コード0で、応答欄を含めた検証結果は0件だった。ヘッダーと仮の行は追加していない。
 
 再検証ではmanaged-tempへ異なる通常名とCI名のパスを用意し、前記のinit、バイト数確認、validateを順に実行する。列の順序と旧形式の読み取り互換は`atk review-table --help`で確認する。
 
@@ -565,7 +608,7 @@ A/B実験では、`agent-toolkit/rules/01-agent.md`の「判断指針」と「�
 再検証の契機は、規範文書の一括改訂と、文体の閾値の見直しとする。
 
 2026年10月14日、`scripts/check_agent_doc_tone.py`の文境界を、句点とMarkdown構文解析が返す本文ブロックの末尾へ変更した。同じブロックの折返しは連結し、文末の物理行と抜粋を保持する。frontmatter、HTMLコメント、フェンス付きコード、見出しと表の除外、インラインコードの置換語、8%・3%・20文の判定条件は維持した。字下げコードも保存データとして分子・分母の共通対象から除外し、引用内の本文段落は引き続き数える。
-入力WIの基準期間の再測定は、最初のCodex由来commit `4cef410f8`より前のClaude由来787commitのMarkdown追加行をhunkごとに数えたものである。同じ集合で、句点だけの数え方は1400/16182文（8.65%）、ブロック末も数える方法は1879/22925文（8.20%）だった。この再測定値は入力WIの観測に由来し、2026年9月16日の区分ごとの記録と集計単位が異なるため、数え方による差だけを閾値維持の根拠とする。
+入力WIの基準期間は次の方法で再測定した。最初のCodex由来commit 2026年8月2日「fix(agent-toolkit): プロジェクト規範を実態より優先してコミット帰属を統一する」、`4cef410f8`より前のClaude由来787commitについて、Markdown追加行をhunkごとに数えた。同じ集合で、句点だけの数え方は1400/16182文（8.65%）、ブロック末も数える方法は1879/22925文（8.20%）だった。この再測定値は入力WIの観測に由来し、2026年9月16日の区分ごとの記録と集計単位が異なるため、数え方による差だけを閾値維持の根拠とする。
 再検証では前掲の`--report`を使い、段落、句点の無い箇条の項目、引用内の段落を個別に数え、同じブロックの折返しを1文として数えることを確かめる。規範の一括改訂後は`uv run --frozen pyfltr run-for-agent --commands=agent-doc-tone`をパス指定なしで実行し、全対象への到達と密度超過の診断の不在を確認する。上記の旧値と比べる場合は数え方と集計単位をそろえる。
 
 ## agent-toolkit/skills/writing-standards/references/agent-documents-basics.md：責務と構成：2026年10月6日
@@ -668,6 +711,14 @@ Readを経ない取得手段（Bashのリダイレクトでの作成、`cp`で�
 
 再検証では同じ公式タグのCLIオプション、execへの適用、認証更新条件と保存経路を対応付けて読む。実測する場合は公開された状態隔離手段と通常認証の成立を先に確認し、同じ実体のmtimeなどを前後で比較する。外部認証情報を隔離先へ複製しない。通常利用と既存のテスト隔離へ一律の隔離を追加する根拠にはしない。
 
+## agent-toolkit/skills/writing-standards/references/investigation.md：実行結果の検証：2026年10月18日
+
+観測した日付は2026年10月18日、版数はClaude Code 2.1.302である。
+再検証では再開・分岐を伴わない新規の`claude -p`を空のmanaged-tempで起動する。
+まず`--allowedTools Read`だけを指定して実行する。
+次に`--tools "" --strict-mcp-config --mcp-config '{"mcpServers":{}}'`も指定して実行する。
+両実行のstream-jsonの`system`/`init`にある`tools`と`mcp_servers`を比較する。
+
 ## agent-toolkit/skills/writing-standards/references/mcp-server-design.md：典拠と既存サーバーへの適用：2026年10月2日
 
 2026年10月2日、同書の典拠表の各資料を取得した。Claude Code公式資料（Claude Code 2.1.286の時点）の「For MCP server authors」は、ツール説明とserver instructionsを各2,048文字に切り詰めると記す。この値は`CLAUDE_CODE_MAX_MCP_DESCRIPTION_LENGTH`で変更できる。「MCP output limits and warnings」は1万トークンの警告と2万5千トークンの上限を記し、上限を変える`MAX_MCP_OUTPUT_TOKENS`と`_meta["anthropic/maxResultSizeChars"]`を示す。MCP 2025-11-25のSchema Referenceは`InitializeResult.instructions`をsystem promptへ加えてもよいヒントとし、`ToolAnnotations`の全項目をヒントとする。
@@ -682,7 +733,7 @@ agents_server（`agent-toolkit/agent_toolkit/agents_server_mcp.py`、MCP Python 
 - 任意の改善候補: annotationsは全ツールで未設定である。`show`は保持中の状態を読むだけで`readOnlyHint`を付与できる。`list`は保持期限に達したsessionの本体の解放を内部で進めるため、付与はその扱いを決めてから判断する。`outputSchema`は応答の項目を列挙していない
 - 仕様上の是正: 該当なし
 
-pyfltr（`/home/aki/pyfltr/pyfltr/cli/mcp_server.py`、commit `c5aa7e2`、MCP Python SDK 2.2.0）の公開ツールは`build_server`が登録する11件である。読み取り専用で`list_tools()`の結果と各ツールの直接の応答生成を読んだ。
+pyfltrの公開ツールは`build_server`が登録する11件である。対象は`/home/aki/pyfltr/pyfltr/cli/mcp_server.py`で、対応する変更は2026年10月1日「fix: 置換失敗時の復旧とMCPの応答性を改善し、公開前の動作確認を追加する」、`c5aa7e2`である。観測環境のMCP Python SDKは2.2.0だった。読み取り専用で`list_tools()`の結果と各ツールの直接の応答生成を読んだ。
 
 - 適用済み: 全ツールの`inputSchema`はobjectで、構造化結果は戻り値の型で検証してから返す。想定内の誤りは`ToolError`からツール実行エラーとして返り、`show_run`などは有効な値を得るツールを案内する。`grep`は件数上限、要約の選択、省略件数と`guidance`を返す。MCPのstdoutへは書かず、ログを標準エラーへ向ける
 - 任意の改善候補: 公開される説明は`description=`の文字列だけで、引数の意味、組合せ条件、省略時の動作はクライアントへ届かないdocstringにある（例: `grep`の`max_count`の0の意味、`replace`の`within`と文脈行数の組合せ、`config`の`action`ごとの必須引数）。全ツールの引数に説明が無い。`run`の`mode`、`replace_history`と`config`の`action`は文字列型で列挙値がスキーマに無い。`show_run_output`は出力ログの全文、`show_run_diagnostics`は指定コマンドの診断の全件を返し、範囲・件数の指定と省略の通知を持たない。annotationsは全ツールで未設定で、書込を伴う`replace_undo`と`config`の説明は書き換えを明示しない。説明の言語が日本語と英語で混在する。instructionsは未設定である
@@ -754,6 +805,11 @@ agents_serverは全説明とinstructionsを初期送信の4,096文字以内に�
 同日、codex-cli 0.160.1の記録（`~/.codex/sessions/2026/10/06/rollout-*.jsonl`）で、`encrypted_content`を持つレコードの`type`が`response_item`、`payload.type`が`reasoning`であることを確かめた。観測はいずれも値を開かずに行った。
 公式文書の2つの節を取得して前掲の記述を確かめ、Codexの記録で`encrypted_content`を持つレコードの`payload.type`を数えて再検証する。
 
+## セッション記録のAPI要求の写し：2026年10月18日
+
+既存調査はClaude Code 2.1.301の記録`7542c54d-c7b2-4bca-9e29-c9199e63c7a4.jsonl`の1022行と1031行に、同じtool_use IDを持つ`assistant`と`api-request-blob`があると報告した。写しは`message`に会話と同じ形のcontentを持ち、timestampとuuidを持たない。公開仕様での形式の保証は未確認である。
+今回の検証は、報告された構造を最小化した検体へツール呼出・失敗結果・完了通知の写しを追加し、通常抽出・呼出照会・警告・統計・ユーザー発話の結果が追加前と一致することを確かめる。生の行のdetail・grepは写しも表示する。再検証は`session_evidence_record_boundary_test.py`の`test_request_copies_do_not_create_conversation_events`を実行する。
+
 ## agent-toolkit/skills/writing-standards/references/sqlalchemy.md：問い合わせと属性代入の順序：2026年9月14日
 
 2026年9月14日、SQLAlchemy 2.0.52の公式文書で、`autoflush`を無効にしていない`Session`がORM対応の問い合わせ前に保留変更をflushすることと、`Session.flush()`で明示的にflushできることを確認した。
@@ -812,8 +868,8 @@ agents_serverは全説明とinstructionsを初期送信の4,096文字以内に�
 
 ## dotfiles-development：ホスト本体のバイナリの検索：2026年10月4日
 
-ホスト本体の検索手順の変更（`a896a6d06`）の要求を起草した時点の測定はClaude Code 2.1.288、codex-cli 0.160.0、
-ripgrep 15.2.0、GNU grep 3.11、Claude Code組込みugrep 7.8.4で、UTF-8ロケールだった。
+ホスト本体の検索手順に関する変更は、2026年10月4日「fix: ホスト本体の検索手順をdotfilesの開発スキルへ集める」、`a896a6d06`である。
+要求を起草した時点の測定環境はClaude Code 2.1.288、codex-cli 0.160.0、ripgrep 15.2.0、GNU grep 3.11、Claude Code組込みugrep 7.8.4で、UTF-8ロケールだった。
 Claude CodeのBashツールでgrepはugrepを呼ぶシェル関数として観測された。
 
 | 対象とコマンド | 起草時の測定 |
@@ -943,7 +999,7 @@ atk run-script session-review-evidence -- --claude-session-id '<対象session ID
 
 ## Python 3.15対応時の依存導入
 
-2026年10月10日の入力WIが保持する観測では、[pytilpackのCI run 38024857168・job 114133431911](https://github.com/ak110/pytilpack/actions/runs/38024857168/job/114133431911)が依存同期の終了1を記録した。停止した条件はcommit `1de178d2e7fb7e7cbf12135db690ae4a4c31b797`、CPython 3.15.0rc3、pydantic-core 2.46.5のsdistビルドとリンカー`cc`不在である。使用イメージは`ghcr.io/ak110/pyfltr`のdigest `sha256:224003f281050887c053eb24f14137970df5225b1b2c99af61b960fab43d8103`である。PyYAML 6.0.3のビルドは成功しており、ビルド発生だけを失敗と判定できない。同入力の更新commit `80d4be7`ではpydantic-core 2.50.0にcp315 wheelがある。この過去のCIの観測は入力WIに由来し、本レーンのローカル成功とは区別する。
+2026年10月10日の入力WIが保持する観測では、[pytilpackのCI run 38024857168・job 114133431911](https://github.com/ak110/pytilpack/actions/runs/38024857168/job/114133431911)が依存同期の終了1を記録した。停止した条件はcommit `1de178d2e7fb7e7cbf12135db690ae4a4c31b797`、CPython 3.15.0rc3、pydantic-core 2.46.5のsdistビルドとリンカー`cc`不在である。使用イメージは`ghcr.io/ak110/pyfltr`のdigest `sha256:224003f281050887c053eb24f14137970df5225b1b2c99af61b960fab43d8103`である。PyYAML 6.0.3のビルドは成功しており、ビルド発生だけを失敗と判定できない。同入力の更新commit 2026年10月10日「fix: 3.15用wheelのあるpydantic-coreへ依存を更新し、CIの3.15でソースビルドが走らないようにする」、`80d4be7`ではpydantic-core 2.50.0にcp315 wheelがある。この過去のCIの観測は入力WIに由来し、本レーンのローカル成功とは区別する。
 
 [uvのビルド失敗の公式説明](https://docs.astral.sh/uv/reference/troubleshooting/build-failures/#why-does-uv-build-a-package)では、導入環境に合うwheelが無ければsdistをビルドする。[CIキャッシュの説明](https://docs.astral.sh/uv/concepts/cache/#caching-in-continuous-integration)では、ソースからビルドしたwheelもキャッシュする。ローカルでの成功は、別のCI環境のビルド用ツールとキャッシュの成立を保証しない。
 

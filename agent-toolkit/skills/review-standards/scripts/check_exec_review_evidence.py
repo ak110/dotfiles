@@ -27,6 +27,7 @@ import subprocess
 import sys
 import tempfile
 import typing
+import unicodedata
 
 import accepted_review_evidence
 import reader_fit_declaration
@@ -90,7 +91,7 @@ EVIDENCE_REFERENCE = re.compile(
     r"(?P<test>`?(?:[^\s`\[\]（）「」、。]+::)?test_\w+\[[^\n]*\])|"
     r"\[[^\]]*\]\((?P<link>[^)]+)\)|`(?P<code>[^`]+)`|"
     r"(?P<quoted>(?:[\w-]+=)?\"[^\"\n]+\"|(?:[\w-]+=)?'[^'\n]+')|"
-    r"(?P<plain>[^\s`\[\]（）「」、。]+)"
+    r"(?P<plain>[^\s`\[\]（）「」、。#]+(?:#[^\s`\[\]「」、。]+)?)"
 )
 JAPANESE_ASCII_PATH_BOUNDARY = re.compile(r"(?<=[\u3040-\u30ff\u3400-\u9fff])(?=[A-Za-z0-9_-]+(?:[/\\.]|$)|/)")
 # 地の文の1語から切り出す参照。パスは最後の拡張子までとし、拡張子の直後がパスの続きでない位置で終える。
@@ -101,7 +102,7 @@ JAPANESE_ASCII_PATH_BOUNDARY = re.compile(r"(?<=[\u3040-\u30ff\u3400-\u9fff])(?=
 # 見出しは日本語を含むため、文字種で終わりを決められず、区切り記号の手前までを見出しとする。
 PLAIN_REFERENCE = re.compile(
     r"(?P<plain>[^\s`\[\]（）「」、。:#]*?\.[A-Za-z][A-Za-z0-9_-]*(?![A-Za-z0-9_/\\-]|\.[A-Za-z0-9_])"
-    r"(?::[!-~]+|#[^\s`\[\]（）「」、。]+)?)"
+    r"(?::[!-~]+|#[^\s`\[\]「」、。]+)?)"
 )
 # 名前の本体（ピリオド以外の文字）を持ち、`.<英字>…`で終わるファイル名。`.env`は本体を持たず、拡張子なしとする。
 NAMED_EXTENSION = re.compile(r"\.*[^.]+.*\.[A-Za-z][A-Za-z0-9_-]*")
@@ -260,6 +261,20 @@ def _commit_oid(repository: pathlib.Path, revision: str) -> str:
     return result.stdout.strip()
 
 
+def _short_commit_oid(repository: pathlib.Path, revision: str) -> str:
+    """工程間の表示へ渡すcommitを、対象リポジトリで一意な短縮OIDへ解決する。"""
+    result = _git_command.run(
+        ["-C", str(repository), "rev-parse", "--short=7", "--verify", "--end-of-options", f"{revision}^{{commit}}"],
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=30,
+    )
+    if result.returncode != 0:
+        raise ValueError(f"短縮OIDを解決できません: {revision}: {result.stderr.strip()}")
+    return result.stdout.strip()
+
+
 def _check_reviewed_heads(payload: dict[str, object], repository: pathlib.Path, expected_head: str) -> list[str]:
     """WIの指定集合によらず`完成条件証拠`の全ての行が実レビュー対象に対応するか確かめる。"""
     expected = _commit_oid(repository, expected_head)
@@ -290,7 +305,7 @@ def _unit_markers(source: str) -> tuple[str, str]:
     return rf"対象単位\s*[:：]\s*{source}", rf"証拠行\s*[:：]?\s*{source}"
 
 
-def _file_references(evidence: str, repository: pathlib.Path) -> list[re.Match[str]]:
+def _file_references(evidence: str, repository: pathlib.Path, head: str = "HEAD") -> list[re.Match[str]]:
     """根拠から明示されたファイル参照を取り出し、不在の参照も対象版で確認する。
 
     明示された参照は、Markdownリンク、WI名、実在するファイル、拡張子付きのパス、行・見出し位置付きのファイル名とする。
@@ -300,7 +315,7 @@ def _file_references(evidence: str, repository: pathlib.Path) -> list[re.Match[s
     matches = []
     for word in _evidence_words(evidence):
         for match in _plain_references(evidence, word, repository) if word.group("plain") is not None else [word]:
-            if _is_explicit_reference(match, evidence, repository):
+            if _is_explicit_reference(match, evidence, repository, head):
                 matches.append(match)
     return matches
 
@@ -373,7 +388,7 @@ def _plain_references(evidence: str, word: re.Match[str], repository: pathlib.Pa
     return references or [word]
 
 
-def _is_explicit_reference(match: re.Match[str], evidence: str, repository: pathlib.Path) -> bool:
+def _is_explicit_reference(match: re.Match[str], evidence: str, repository: pathlib.Path, head: str) -> bool:
     """切り出した候補が、所在を確かめるファイル参照として明示されているかを返す。"""
     # pytestの角括弧内は試験の入力値であり、そこに現れるパスは根拠の所在を指さない。
     # nodeidのファイル接頭辞は通常の参照として保持し、パラメーター値だけを候補から外す。
@@ -411,12 +426,29 @@ def _is_explicit_reference(match: re.Match[str], evidence: str, repository: path
     explicit = (
         _reference_group(match, "link") is not None
         or WI_FILENAME.fullmatch(candidate) is not None
-        or (has_separator and has_extension)
+        or (has_separator and has_extension and _path_clue(candidate, repository, head))
         or located
     )
-    if not candidate or (not location and _is_untracked_file(candidate, repository)):
+    if not candidate or (
+        not location
+        and _is_untracked_file(candidate, repository)
+        and not _suffix_matches(candidate, _tracked_files(repository, head))
+    ):
         return False
     return explicit or _is_file(repository / candidate)
+
+
+def _path_clue(candidate: str, repository: pathlib.Path, head: str) -> bool:
+    """名称と同形の相対候補について、所在として使われる手掛かりを確かめる。"""
+    path = pathlib.Path(candidate)
+    if path.is_absolute() or candidate.startswith(("./", "../")) or re.match(r"[A-Za-z]:[\\/]|[0-9a-fA-F]{7,64}:", candidate):
+        return True
+    if (repository / path).is_file() or (repository / path).parent.is_dir():
+        return True
+    if _suffix_matches(candidate, _tracked_files(repository, head)):
+        return True
+    first = candidate.replace("\\", "/").split("/", 1)[0]
+    return any(pathlib.Path(entry["path"]).name == first for entry in managed_temp.list_managed_temp() if entry["path"])
 
 
 def _is_untracked_file(candidate: str, repository: pathlib.Path) -> bool:
@@ -591,7 +623,7 @@ class ReferenceCheck:
         base = self.repository or pathlib.Path.cwd()
         body = accepted_review_evidence.without_references(_evidence_body(row, accepted_review_evidence.FIELDS[section]))
         errors: list[str] = []
-        for match in _file_references(body, base):
+        for match in _file_references(body, base, head):
             candidate, location = _reference_parts(match)
             is_wi = WI_FILENAME.fullmatch(candidate) is not None
             # abspathは..を整理するが、現在のリンク先で対象commitのパスを変えない。
@@ -682,16 +714,16 @@ def saved_row_label(row: dict[str, str], section: str, number: int) -> str:
     return f"{_row_label(row, section, number - 1)}（行番号{number}）"
 
 
-def _has_evidence_reference(evidence: str, repository: pathlib.Path) -> bool:
+def _has_evidence_reference(evidence: str, repository: pathlib.Path, head: str = "HEAD") -> bool:
     """所在を記したファイル参照か、具体的なテスト識別子と成功結果を認識する。"""
-    return bool(TEST_RESULT.search(evidence) or _file_references(evidence, repository))
+    return bool(TEST_RESULT.search(evidence) or _file_references(evidence, repository, head))
 
 
-def _is_reference_only(evidence: str, repository: pathlib.Path) -> bool:
+def _is_reference_only(evidence: str, repository: pathlib.Path, head: str = "HEAD") -> bool:
     """根拠がファイル参照だけで、その行の条件を満たす箇所や内容の説明を持たないかを判定する。"""
     if TEST_RESULT.search(evidence):
         return False
-    references = _file_references(evidence, repository)
+    references = _file_references(evidence, repository, head)
     if not references:
         return False
     rest = evidence
@@ -745,12 +777,36 @@ def _shared_body(row: dict[str, str], field: str, repository: pathlib.Path) -> s
     evidence = re.sub(pattern, " ", evidence).strip()
     protected = [False] * len(evidence)
     for match in [
-        *_file_references(evidence, repository),
+        *_file_references(evidence, repository, row.get("reviewed_head") or "HEAD"),
         *TEST_RESULT.finditer(evidence),
         *COMMIT_REFERENCE.finditer(evidence),
     ]:
         protected[match.start() : match.end()] = [True] * (match.end() - match.start())
-    return re.sub(r"\d+", lambda match: match.group() if any(protected[match.start() : match.end()]) else "<整数>", evidence)
+    parts: list[str] = []
+    start = 0
+    for index in range(1, len(evidence) + 1):
+        if index == len(evidence) or protected[index] != protected[start]:
+            part = evidence[start:index]
+            parts.append(part if protected[start] else _normalize_number_labels(part))
+            start = index
+    return "".join(parts).rstrip(" 、。，,.．")
+
+
+def _normalize_number_labels(text: str) -> str:
+    """参照外の番号を性質で正規化し、区切られた番号ラベルを比較から除く。"""
+    normalized = "".join("\0" if unicodedata.numeric(char, None) is not None else char for char in text)
+    for alphabet in (r"A-Za-zＡ-Ｚａ-ｚ", r"ァ-ヺー"):
+        normalized = re.sub(rf"(?<![{alphabet}])[{alphabet}](?![{alphabet}])", "\0", normalized)
+    separators = r"\s、。，,.;；|・（）()「」『』\[\]【】"
+    without_labels = re.sub(
+        rf"(^|[{separators}])[^ぁ-ゖ\0{separators}=:：.#]*[ =:：.#]*\0+(?=$|[{separators}])",
+        r"\1",
+        normalized,
+    )
+    without_labels = re.sub(r"[（(「『\[【]\s*[）)」』\]】]", "", without_labels)
+    if without_labels != normalized:
+        without_labels = re.sub(r"[\s、。，,.;；|・]{2,}", " ", without_labels)
+    return re.sub("\0+", "<番号>", without_labels)
 
 
 def review_wi_filenames(explicit: list[str], plans: list[pathlib.Path]) -> list[str]:
@@ -776,7 +832,7 @@ def review_wi_filenames(explicit: list[str], plans: list[pathlib.Path]) -> list[
     return list(dict.fromkeys(filenames))
 
 
-def _check_shared_evidence(payload: dict[str, object], repository: pathlib.Path) -> list[str]:
+def _check_shared_evidence(payload: dict[str, object], repository: pathlib.Path, head: str) -> list[str]:
     """両配列の全達成行を要求単位で区別し、所在のない共用と、説明のない参照だけの共用を報告する。
 
     同じ検証記録のパスだけを多数の行へ写すと、各行の条件を判定せずに空欄を埋めた証拠と区別できない。
@@ -805,14 +861,15 @@ def _check_shared_evidence(payload: dict[str, object], repository: pathlib.Path)
         if any(awi != other_awi and text != other_text for _, awi, text in units for _, other_awi, other_text in units):
             reason = (
                 f"異なるWIの異なる要求単位で同じ達成根拠を共用しています: {evidence!r}。"
-                "参照の外の整数の違いは書き分けとして扱わない。各行の要求を満たす箇所（節、行、テスト名など）と観測した内容を行ごとに記入する"
+                "参照の外の番号（数字、丸数字、漢数字、ローマ数字、1文字の英字・片仮名）と番号付きラベル句の有無は書き分けとして扱わない。"
+                "各行の要求を満たす箇所（節、行、テスト名など）と観測した内容を行ごとに記入する"
             )
-        elif _is_reference_only(evidence, repository):
+        elif _is_reference_only(evidence, repository, head):
             reason = (
                 f"異なる要求単位で、行ごとの説明が無いファイル参照だけの達成根拠を共用しています: {evidence!r}。"
                 "参照先のうちその行の条件を満たす箇所（節、行、テスト名など）と観測した内容を行ごとに記入する"
             )
-        elif not _has_evidence_reference(evidence, repository):
+        elif not _has_evidence_reference(evidence, repository, head):
             reason = (
                 f"異なる要求単位で達成根拠を共用していますが、具体的な参照先がありません: {evidence!r}。"
                 "実在ファイルのパスか具体的なテスト名と成功結果を記入する"
@@ -1335,7 +1392,7 @@ def _background_source_error(
             "要求を含む文は背景にせず、達成・未達・証拠不足のいずれかで判定する"
         )
     evidence = row["evidence"].strip()
-    if not evidence or _is_reference_only(evidence, repository):
+    if not evidence or _is_reference_only(evidence, repository, row.get("reviewed_head") or "HEAD"):
         return (
             f"{label}.evidence: 要求を含まない理由がありません。"
             "分類の記録を指し、その単位が要求・制約・採否・選好・回答を求める問いを含まない理由をevidenceへ書く"
@@ -1463,7 +1520,7 @@ def check_evidence(
         wi_outputs = WiOutputs(repository)
         errors.extend(_check_reviewed_heads(payload, repository, expected_head))
         errors.extend(_check_reference_locations(payload, repository, expected_head, wi_outputs))
-        errors.extend(_check_shared_evidence(payload, repository))
+        errors.extend(_check_shared_evidence(payload, repository, expected_head))
     except (OSError, subprocess.TimeoutExpired, ValueError) as exc:
         return [_diagnostic(exc)]
     condition_rows = payload["wi_conditions"]
@@ -1534,11 +1591,15 @@ def _normalized_paths(paths: list[pathlib.Path]) -> list[pathlib.Path]:
 
 
 def _referenced_records(
-    row: dict[str, str], records: dict[pathlib.Path, str], repository: pathlib.Path
+    row: dict[str, str],
+    records: dict[pathlib.Path, str],
+    repository: pathlib.Path,
+    *,
+    errors: list[str] | None = None,
 ) -> list[tuple[pathlib.Path, str]]:
     """sourceとevidenceが実際に指す、今回渡された入力記録の絶対パスと指された範囲の本文を返す。"""
     found: list[tuple[pathlib.Path, str]] = []
-    for match in _file_references(row["source"] + " " + row["evidence"], repository):
+    for match in _file_references(row["source"] + " " + row["evidence"], repository, row.get("reviewed_head") or "HEAD"):
         candidate, location = _reference_parts(match)
         if WI_FILENAME.fullmatch(candidate):
             continue
@@ -1546,7 +1607,9 @@ def _referenced_records(
         text = records.get(record_path)
         if text is not None:
             headings = {title for level in range(1, 7) for _, title in markdown_headings.parse_headings(text, level)}
-            if _reference_location_error(text.encode("utf-8"), location, headings) is not None:
+            if (reason := _reference_location_error(text.encode("utf-8"), location, headings)) is not None:
+                if errors is not None:
+                    errors.append(f"参照{candidate}{location}: {reason}")
                 continue
             body = markdown_body_text(text).splitlines()
             if location.startswith("#"):
@@ -1644,9 +1707,16 @@ def _record_mismatches(path: pathlib.Path, whole: str, text: str, row: dict[str,
     mismatches: list[str] = []
     for paragraph in text.split("\n\n"):
         values = _paragraph_values(paragraph)
-        if values.get("AWI") != (row["awi"] or "計画由来") or (missing := _deferral_missing(values)) is None:
+        if values.get("AWI") != (row["awi"] or "計画由来"):
             continue
+        missing = _deferral_missing(values)
         location = paragraph_location(paragraph.strip())
+        if missing is None:
+            mismatches.append(
+                f"{location}: 終端区分か判定工程の値が受理値と一致しません。"
+                "終端区分は延期adopt・終端しない、判定工程は公開工程・ユーザビリティレビューを完全一致で記入する"
+            )
+            continue
         if values.get("判定対象") != row[field]:
             mismatches.append(
                 f"{location}: 項目`判定対象`が行の`{field}`の原文と一致しません（記録の値: {values.get('判定対象', '')!r}）。"
@@ -1753,11 +1823,12 @@ def check_return_result(
     payload = json.loads(evidence_path.read_text(encoding="utf-8"))
     for section, field in (("wi_conditions", "condition"), ("user_requirements", "requirement")):
         for index, row in enumerate(payload[section]):
-            referred = _referenced_records(row, records, repository)
+            reference_errors: list[str] = []
+            referred = _referenced_records(row, records, repository, errors=reference_errors)
             rejects = [(path, text) for path, text in records.items() if _reject_record(text, row["awi"])]
             if rejects:
                 terminal_text = row["evidence"]
-                for reference in reversed(_file_references(terminal_text, repository)):
+                for reference in reversed(_file_references(terminal_text, repository, head)):
                     terminal_text = terminal_text[: reference.start()] + " " + terminal_text[reference.end() :]
                 if row["outcome"] != "未達" or not (
                     re.search(r"(?<![A-Za-z0-9_])reject(?![A-Za-z0-9_])", terminal_text)
@@ -1778,12 +1849,13 @@ def check_return_result(
             mismatches = [
                 mismatch for path, text in referred for mismatch in _record_mismatches(path, records[path], text, row, field)
             ]
-            detail = f"（{'。'.join(mismatches)}）" if mismatches else ""
+            detail = f"（{'。'.join([*reference_errors, *mismatches])}）" if reference_errors or mismatches else ""
             errors.append(
                 f"{_row_label(row, section, index)}: 未解決の指摘数0件と{row['outcome']}が一致しません{detail}。"
                 "後続工程、本実行で終端しない項目または不採用で許容される非達成なら、入力記録の段落（条件ごとに1段落とし、"
                 "`AWI:`、条件の原文を逐語で置く`判定対象:`、`終端区分:`か`判定工程:`を持つ）か計画の不採用行で表し、"
-                "その記録をsourceとevidenceで指して、計画かWI・CI記録を--planまたは--input-recordで渡す。"
+                "その記録の絶対パスと位置をsourceかevidenceの一方で指し、計画かWI・CI記録を--planまたは--input-recordで渡す。"
+                "延期行はsourceを保ち、--select-row・--evidence-file・--modeでevidenceへ所在を記入して再実行する。"
                 "観測が不足する行は証拠を補って再判定する。"
                 "成果物に実装の欠陥がある場合に限り、その欠陥を指摘として現在roundの表へ登録する"
             )
@@ -1820,20 +1892,20 @@ def evidence_rows(
 
     全行表示と配列だけの指定では、根拠を除いた`証拠の行一覧`を全行分先に並べ、続けて`証拠の全行`を並べる。
     受領者が全行の判定・原文・出所を見渡してから、選んだ行の根拠を読めるようにするためである。
-    行番号の指定では一覧を付けず、指定した各行の全文を同一根拠の参照へ置き換えずに返す。
+    行番号の指定では一覧を付けず、指定した行を返す。同じ空でない根拠は同じ出力の先行行への参照で示す。
     """
     sections = [section] if section else list(REQUIRED_FIELDS)
     if row_numbers is not None and (section is None or any(not 1 <= number <= len(payload[section]) for number in row_numbers)):
         raise ValueError("--rowには--sectionと、その配列に存在する1始まりの行番号を指定する")
+    references = seen if seen is not None else {}
     if row_numbers is not None:
         assert section is not None
         return [
             _display_row(
-                {"配列": section, "行番号": number, **payload[section][number - 1]}, section, number, "証拠の全行", None
+                {"配列": section, "行番号": number, **payload[section][number - 1]}, section, number, "証拠の全行", references
             )
             for number in dict.fromkeys(row_numbers)
         ]
-    references = seen if seen is not None else {}
     index_lines = [
         "証拠の行一覧: "
         + json.dumps(
@@ -1875,6 +1947,8 @@ def _list_evidence(parser: argparse.ArgumentParser, args: argparse.Namespace) ->
             args.round,
             args.plan,
             args.input_record,
+            args.external_artifact,
+            args.review_contract,
             args.reader_fit_review is not None,
             args.results_file,
             verification_results.has_result_specification(args),
@@ -1959,7 +2033,7 @@ def return_lines(
         payload = json.loads(evidence_path.read_text(encoding="utf-8"))
     outcome_order = [*JUDGMENT_ORDER, *dict.fromkeys(name for checks in EXEMPTIONS.values() for name in checks)]
     rows: list[str] = []
-    seen: dict[str, dict[str, typing.Any]] | None = {} if show_all_rows else None
+    seen: dict[str, dict[str, typing.Any]] = {}
     for section, field in (("wi_conditions", "condition"), ("user_requirements", "requirement")):
         counts = collections.Counter(row["outcome"] for row in payload[section])
         breakdown = {"総数": len(payload[section]), **{name: counts[name] for name in outcome_order if counts[name]}}
@@ -2135,14 +2209,15 @@ def _batch_arguments(value: object) -> tuple[str, list[str]]:
         "input_records",
         "reader_fit_review",
         "review_start",
+        "external_artifacts",
     }
-    optional = {"previous_review_start", "previous_review_head"}
+    optional = {"previous_review_start", "previous_review_head", "review_contract"}
     if not isinstance(value, dict) or not fields <= set(value) or set(value) - fields - optional:
         raise ValueError(f"レビュー入力組には{', '.join(sorted(fields))}を指定する")
     for name in ("plan", "evidence", "reviewed_head", "review_table", "reader_fit_review", "review_start"):
         if not isinstance(value[name], str) or not value[name].strip():
             raise ValueError(f"{name}には空でない文字列を指定する")
-    for name in ("wi", "plans", "input_records"):
+    for name in ("wi", "plans", "input_records", "external_artifacts"):
         if not isinstance(value[name], list) or any(not isinstance(item, str) or not item for item in value[name]):
             raise ValueError(f"{name}には文字列の配列を指定する")
     if not isinstance(value["round"], int) or isinstance(value["round"], bool) or value["round"] < 1:
@@ -2167,7 +2242,11 @@ def _batch_arguments(value: object) -> tuple[str, list[str]]:
             if not isinstance(value[name], str) or not value[name].strip():
                 raise ValueError(f"{name}には前回確認版のOIDを指定する")
             args.extend(("--" + name.replace("_", "-"), value[name]))
-    for option, field in (("--plan", "plans"), ("--input-record", "input_records")):
+    for option, field in (
+        ("--plan", "plans"),
+        ("--input-record", "input_records"),
+        ("--external-artifact", "external_artifacts"),
+    ):
         for path in value[field]:
             args.extend((option, path))
     return value["plan"], args
@@ -2195,6 +2274,8 @@ def _save_return_input(
         "plans": [str(path) for path in plans],
         "input_records": [str(path) for path in records],
         "reader_fit_review": args.reader_fit_review,
+        "external_artifacts": [str(path) for path in args.external_artifact or []],
+        "review_contract": str(args.review_contract) if args.review_contract is not None else None,
         "review_start": review_start,
         "previous_review_start": previous_review_start,
         "previous_review_head": previous_review_head,
@@ -2294,19 +2375,32 @@ def main(argv: list[str] | None = None) -> int:
         help="採否と後続工程を持つWI・CI・引き継ぎ記録の絶対パス。反復できる",
     )
     parser.add_argument(
-        "--return-result", action="store_true", help="表と証拠の整合を確かめ、completedの固定形式の返却を生成する"
+        "--return-result",
+        action="store_true",
+        help="表と証拠の整合を確かめ、completedの固定形式の返却を生成する。同一根拠は先行行をevidence_referenceで示す",
+    )
+    parser.add_argument(
+        "--external-artifact",
+        type=pathlib.Path,
+        action="append",
+        metavar="PATH",
+        help="Git管理外の文章成果物・回答下書きの絶対パス。複数成果物は反復指定する",
+    )
+    parser.add_argument(
+        "--review-contract", type=pathlib.Path, metavar="PATH", help="計画ごとの判定対象commitを定めたreview_contractの絶対パス"
     )
     parser.add_argument(
         "--show-all-rows",
         action="store_true",
         help="返却生成またはbatchへ両配列の全行を追加する。先に根拠を除いた全行の`証拠の行一覧`（配列・1始まり行番号・WI・判定・source・原文）、"
         "続けて`証拠の全行`を並べる。同一の空でない根拠は先行表示の配列・1始まり行番号をevidence_referenceで示す。"
-        "選んだ行の全文は--list --section --rowの反復で読む",
+        "選んだ行は--list --section --rowの反復で読み、同一根拠はその出力の先行行を参照する",
     )
     parser.add_argument(
         "--reader-fit-review",
-        help='ファイルごとのJSON申告 {"files":{"相対.md":{"sessions":["UUID"]}},"external":"Git管理外の申告"}。'
-        '同一差分の再点検省略はファイル値を{"omission":"再点検対象なし"}とする。Markdown差分が無い場合は文章成果物なし',
+        help='成果物ごとのJSON申告 {"files":{"相対.md":{"sessions":["UUID"]}},"external":{"絶対パス":{"sessions":["UUID"]}}}。'
+        '再点検省略は{"omission":"再点検対象なし"}、externalには前回本文の複製の絶対パスpreviousも指定する。'
+        "Markdown差分とexternal-artifactがともに無い場合だけ文章成果物なし",
     )
     parser.add_argument("--review-start", help="今回のレビューの開始時点のOID。返却生成では必須")
     parser.add_argument("--previous-review-start", help="前回確認版の開始時点のOID。roundが2以上の返却では必須")
@@ -2315,14 +2409,14 @@ def main(argv: list[str] | None = None) -> int:
         "--list",
         action="store_true",
         help="判定途中でも原文・出所・判定・根拠・HEADを読む。全行と--sectionだけの指定では先に根拠を除いた`証拠の行一覧`を並べ、"
-        "同一根拠は先行表示を指す。--rowを指定すると指定した各行の全文を返す",
+        "同一根拠は先行表示を指す。--rowの反復でも同じ規則で指定行を返す",
     )
     parser.add_argument("--section", choices=list(REQUIRED_FIELDS), help="--listで読む配列")
     parser.add_argument(
         "--row",
         type=int,
         action="append",
-        help="--listで全文を読む1始まりの行番号。--sectionと指定し、複数行は反復する",
+        help="--listで読む1始まりの行番号。--sectionと指定し、複数行は反復する。同一根拠は同じ出力の先行行を指す",
     )
     parser.add_argument(
         "--expected-head",
@@ -2352,10 +2446,14 @@ def main(argv: list[str] | None = None) -> int:
         or any(char in args.reader_fit_review for char in "\r\n")
     ):
         parser.error(
-            "返却生成には1行の--reader-fit-reviewが必要です。起動した読者のsession・label、省略根拠、または文章成果物なしを申告して再実行する"
+            '返却生成には1行の--reader-fit-reviewが必要です。filesとexternalの各成果物へ{"sessions":["UUID"]}を対応付け、'
+            "reader-fit-review.parent.md「起動」に従って探索を起動・受領して申告を修復し再実行する。"
+            "Markdown差分と--external-artifactがともに空の場合だけ文章成果物なしを指定する"
         )
     if args.reader_fit_review is not None and not args.return_result:
         parser.error("--reader-fit-reviewは--return-resultと指定する。batchでは各組のreader_fit_reviewへ申告を記す")
+    if (args.external_artifact or args.review_contract) and not args.return_result:
+        parser.error("--external-artifactと--review-contractは--return-resultと指定する。batchでは各組へ記す")
     if any((args.review_start, args.previous_review_start, args.previous_review_head)) and not args.return_result:
         parser.error("レビューの開始時点と前回確認版は--return-resultと指定する。batchでは各組へ記す")
     if args.return_result and (
@@ -2544,6 +2642,7 @@ def main(argv: list[str] | None = None) -> int:
         errors = check_evidence(args.evidence, filenames, expected_head=args.expected_head, plans=args.plan)
     reviewed_head = args.expected_head
     review_start = previous_start = previous_head = None
+    repository: pathlib.Path | None = None
     if args.return_result and not errors:
         try:
             repository = repository_root()
@@ -2561,33 +2660,41 @@ def main(argv: list[str] | None = None) -> int:
                 typing.cast(int, args.round),
                 previous_start,
                 previous_head,
+                external_artifacts=args.external_artifact,
+                review_contract=args.review_contract,
             )
         except (OSError, UnicodeError, subprocess.SubprocessError, ValueError) as error:
             errors.append(str(error))
+            errors.append(
+                _next_action.next_action_line(
+                    "実行レビュー担当がreader-fit-review.parent.md「起動」に従って不足した探索を起動・受領し、申告を修復して再実行する。"
+                    "担当で補えない入力・判断・認可・権限がある場合は、その不足と再開位置を委譲元へ返す"
+                )
+            )
     if errors:
         _report_diagnostics(
             errors,
-            next_action="各行が示す箇所を`完成条件証拠`で直して同じコマンドでもう一度確かめる。"
+            next_action="実行レビュー担当が各行が示す箇所を`完成条件証拠`で修復・再判定して同じコマンドでもう一度確かめる。"
             "WI本文や節を取得できない行は、`atk wi show <ファイル名>`で実在と綴りを確かめ、"
-            "WI側が欠けている場合はWIの欠陥として報告する",
+            "担当で補えない入力・判断・認可・権限がある場合は、その不足と再開位置を委譲元へ返す",
         )
         return 1
     if args.return_result:
         assert isinstance(args.reader_fit_review, str)
         try:
+            assert repository is not None and review_start is not None
             lines = return_lines(
-                reviewed_head,
+                _short_commit_oid(repository, reviewed_head),
                 unanswered,
                 plan_paths,
                 input_record_paths,
                 None if no_evidence else args.evidence,
                 reader_fit_review=args.reader_fit_review,
                 show_all_rows=args.show_all_rows,
-                review_start=review_start,
-                previous_review_start=previous_start,
-                previous_review_head=previous_head,
+                review_start=_short_commit_oid(repository, review_start),
+                previous_review_start=_short_commit_oid(repository, previous_start) if previous_start else None,
+                previous_review_head=_short_commit_oid(repository, previous_head) if previous_head else None,
             )
-            assert review_start is not None
             input_path = _save_return_input(
                 args,
                 filenames,

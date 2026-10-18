@@ -56,26 +56,26 @@ def _git_output(args: list[str], *, label: str) -> str | None:
 
 def _update_if_needed(pending_path: pathlib.Path) -> int:
     """取得元を検証したうえで、上流変更または未完了の更新を1回実行する。"""
-    branch = _git_output(["rev-parse", "--abbrev-ref", "HEAD"], label="現在branch")
+    branch = _git_output(["symbolic-ref", "HEAD"], label="現在branch")
     if branch is None:
         return 1
-    if branch != "develop":
+    if branch != "refs/heads/develop":
         print(
-            f"現在branchがdevelopではありません: {branch}。作業内容を保存し、"
+            f"現在branchがdevelopではありません: {branch.removeprefix('refs/heads/')}。作業内容を保存し、"
             f'git -C "{_DOTFILES_ROOT}" switch developで切り替えてからupdate-dotfilesを実行してください。',
             file=sys.stderr,
         )
         return 1
 
     upstream = _git_output(
-        ["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{upstream}"],
+        ["rev-parse", "--symbolic-full-name", "@{upstream}"],
         label="upstream",
     )
     if upstream is None:
         return 1
-    if upstream != _UPSTREAM:
+    if upstream != f"refs/remotes/{_UPSTREAM}":
         print(
-            f"upstreamが{_UPSTREAM}ではありません: {upstream}。"
+            f"upstreamが{_UPSTREAM}ではありません: {upstream.removeprefix('refs/remotes/')}。"
             f'git -C "{_DOTFILES_ROOT}" branch --set-upstream-to={_UPSTREAM} developで設定して、'
             "update-dotfilesを実行してください。",
             file=sys.stderr,

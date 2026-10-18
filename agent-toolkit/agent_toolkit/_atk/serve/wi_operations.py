@@ -127,8 +127,7 @@ def _without_source_frontmatter(message: str) -> str:
     return frontmatter.serialize_frontmatter(normalized_metadata, body)
 
 
-def _summary(text: str, kind: str) -> str:
-    body = re.sub(r"\A---\n.*?\n---\n", "", text, count=1, flags=re.DOTALL)
+def _summary(body: str, kind: str) -> str:
     lines = [line.strip() for line in body.splitlines() if line.strip() and not line.startswith("## ")]
     if kind == wi_constants.WI_TYPE_UWI:
         lines = [line for line in lines if not line.startswith("<!--")]
@@ -165,6 +164,7 @@ def _entry(
     state: str,
     text: str,
     metadata: dict[str, typing.Any],
+    body: str,
     updated_at: str | None = None,
 ) -> dict[str, object]:
     answered = wi_uwi_scan.is_uwi_answered(text) if kind == wi_constants.WI_TYPE_UWI else None
@@ -180,7 +180,7 @@ def _entry(
         "plan": kind == wi_constants.WI_TYPE_AWI and isinstance(metadata.get("plan_file"), str),
         "target_repo": _json_compatible(metadata.get("target_repo")),
         "source": _json_compatible(metadata.get("source")),
-        "summary": _summary(text, kind),
+        "summary": _summary(body, kind),
         "updated_at": updated_at
         if updated_at is not None
         else datetime.datetime.fromtimestamp(path.stat().st_mtime, tz=datetime.UTC).isoformat(),
@@ -428,6 +428,7 @@ class Operations:
                         indexed.state,
                         indexed.text,
                         metadata,
+                        indexed.body,
                         indexed.updated_at,
                     ),
                 )
@@ -458,9 +459,10 @@ class Operations:
             text = path.read_text(encoding="utf-8")
             parsed = frontmatter.parse_frontmatter(text)
             metadata = parsed[0] if parsed is not None else {}
+            body = parsed[1] if parsed is not None else text.removeprefix("\ufeff")
             kind = wi_constants.normalized_wi_type(metadata.get("type"))
             question_type, choices = _question_metadata(metadata, kind or "unknown")
-            detail_entry = _entry(path, kind or "unknown", state, text, metadata)
+            detail_entry = _entry(path, kind or "unknown", state, text, metadata, body)
             display_text = text
             if kind == wi_constants.WI_TYPE_UWI and uwi_mutations.ANSWER_MARKER in text:
                 # 保存・回答抽出と同じ最後の区切りだけを、表示用本文から除く。

@@ -39,10 +39,7 @@ _SAVED_BUNDLE_CONFLICT_MESSAGE = "保存先に内容の異なる計画ファイ�
 _SAVED_BUNDLE_CONFLICT_NEXT_ACTION = (
     "保存済み計画を正とする場合は作業側を退避し、作業側を残す場合は別名の新しい計画として保存してください"
 )
-_PLAN_PATH_NEXT_ACTION = (
-    "`~/.claude/plans`直下のdd-{名称}-{16進数4桁}.md、または`private-notes/plans/`相対のyyyy/MM/dd-{名称}-{16進数4桁}.mdで指定し直す。"
-    "作業中の計画は`atk plans list`で確認できる"
-)
+_PLAN_PATH_NEXT_ACTION = _plan_file.PLAN_INPUT_NEXT_ACTION
 _UNPUSHED_NEXT_ACTION = "commitはローカルに残っている。`atk wi commit`でpushしてから、同じコマンドを再実行して到達を確認する"
 _REPORT_BUG_NEXT_ACTION = "agent-toolkitの不具合としてユーザーへ報告する"
 _READBACK_NEXT_ACTION = (
@@ -66,15 +63,15 @@ def build_parser(parser) -> None:
     checkout_parser.add_argument(
         "plan_file",
         metavar="PLAN_FILE",
-        help="`private-notes/plans/`相対の計画メインファイル、またはCI対応レビュー指摘管理表のパス",
+        help="`private-notes/plans/`相対またはそのroot配下の絶対パス（計画メインファイル・CI対応レビュー指摘管理表）",
     )
     commit_parser = _atk_help.add_command(sub, "commit", **_atk_help.HELP["atk plans commit"])
     commit_parser.add_argument(
         "plan_file",
         metavar="PLAN_FILE",
         help=(
-            "`~/.claude/plans`直下のメイン計画ファイル名（dd-{名称}-{16進数4桁}.md）、"
-            "`private-notes/plans/`相対のyyyy/MM/dd-{名称}-{16進数4桁}.md、または"
+            f"`~/.claude/plans`直下のメイン計画ファイル名（{_plan_file.PLAN_NAME_FORMAT}）、"
+            "`private-notes/plans/`相対のyyyy/MM/<ファイル名>、これらのroot配下の絶対パス、または"
             f"{_atk_help.CI_REVIEW_TABLE_NAME_FORMAT}。"
         ),
     )
@@ -411,7 +408,9 @@ def checkout_plan(
     """保存済み計画バンドルを`~/.claude/plans`へ取得し、取得時点と所有セッションを記録する。"""
     if _bundle_kinds.EXEC_REVIEW.matches(plan_file):
         return checkout_ci_review(private_notes, plan_file, home=home)
-    relative_main = _validate_saved_plan_relative_path(plan_file)
+    relative_main = _validate_saved_plan_relative_path(
+        _plan_file.resolve_plan_input(plan_file, private_notes=private_notes, home=home, saved_only=True).as_posix()
+    )
     working_root = _plan_file.working_plans_root(home)
     working_main = working_root / relative_main.name
     duplicate_error = _wi_web_input.WebInputError(
@@ -432,7 +431,7 @@ def checkout_plan(
         if not saved_bundle:
             raise _wi_web_input.WebInputError(
                 f"指定したメイン計画が見つかりません: {relative_main}",
-                next_action="`private-notes/plans/`相対のyyyy/MM/dd-{名称}-{16進数4桁}.mdを確かめて指定し直す",
+                next_action=_PLAN_PATH_NEXT_ACTION,
             )
         destinations = tuple(working_root / path.name for path in saved_bundle)
         conflicts = tuple(path for path in destinations if path.exists())
@@ -466,7 +465,9 @@ def checkout_ci_review(
     home: pathlib.Path | str | None = None,
 ) -> tuple[pathlib.Path, ...]:
     """保存済みのCI対応レビュー指摘管理表を`~/.claude/plans`へ取得する。"""
-    relative = _validate_saved_ci_review_relative_path(review_table)
+    relative = _validate_saved_ci_review_relative_path(
+        _plan_file.resolve_plan_input(review_table, private_notes=private_notes, home=home, saved_only=True).as_posix()
+    )
     working = _plan_file.working_plans_root(home) / relative.name
     duplicate_error = _wi_web_input.WebInputError(
         f"同じCI対応レビュー指摘管理表を取得済みです: {relative}",
@@ -720,6 +721,7 @@ def commit_plan(
             lock_timeout=lock_timeout,
             skip_push=skip_push,
         )
+    plan_file = _plan_file.resolve_plan_input(plan_file, private_notes=private_notes, home=home).as_posix()
     working_relative: pathlib.Path | None = None
     try:
         working_relative = _plan_file.validate_working_plan_relative_path(plan_file)
@@ -873,6 +875,7 @@ def commit_ci_review(
     skip_push: bool = False,
 ) -> dict[str, object]:
     """CI対応レビュー指摘管理表を対象限定でcommitし、成功後に作業側を回収する。"""
+    review_table = _plan_file.resolve_plan_input(review_table, private_notes=private_notes, home=home).as_posix()
     try:
         working_relative = _validate_working_ci_review_relative_path(review_table)
         requested_relative = working_relative
@@ -986,6 +989,7 @@ def _resolve_progress_source(
     保存済み計画参照の既存の解決規則と同じ順序にそろえる。
     """
     working_root = _plan_file.working_plans_root(home)
+    plan_file = _plan_file.resolve_plan_input(plan_file, private_notes=private_notes, home=home).as_posix()
     try:
         working_relative = _plan_file.validate_working_plan_relative_path(plan_file)
     except ValueError as working_error:

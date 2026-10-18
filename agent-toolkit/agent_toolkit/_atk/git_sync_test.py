@@ -2,6 +2,7 @@
 
 # pylint: disable=protected-access
 
+import os
 import pathlib
 import subprocess
 
@@ -49,7 +50,9 @@ def test_run_git_suppresses_success_output(tmp_path: pathlib.Path, capsys: pytes
     assert captured.err == ""
 
 
-def _init_diverged_mq_repos(tmp_path: pathlib.Path) -> tuple[pathlib.Path, pathlib.Path]:
+def _init_diverged_mq_repos(
+    tmp_path: pathlib.Path, *, filename: str = "20260831-101752-001.md"
+) -> tuple[pathlib.Path, pathlib.Path]:
     """同じMQ項目を別々に終端できる2つのcloneを作成する。"""
     origin = tmp_path / "origin.git"
     seed = tmp_path / "seed"
@@ -61,7 +64,7 @@ def _init_diverged_mq_repos(tmp_path: pathlib.Path) -> tuple[pathlib.Path, pathl
     git_repository.init_repository(seed, initial_branch="main")
     git_repository.run_git(seed, "config", "user.name", "sync-test")
     git_repository.run_git(seed, "config", "user.email", "sync-test@example.invalid")
-    source = seed / "processing" / "20260831-101752-001.md"
+    source = seed / "processing" / filename
     source.parent.mkdir()
     source.write_text("---\ntype: awi\n---\n\n同じ項目\n", encoding="utf-8")
     git_repository.run_git(seed, "add", ".")
@@ -75,9 +78,11 @@ def _init_diverged_mq_repos(tmp_path: pathlib.Path) -> tuple[pathlib.Path, pathl
     return local, peer
 
 
-def _finish_entry(repo: pathlib.Path, timestamp: str, *, note: str | None = None) -> None:
+def _finish_entry(
+    repo: pathlib.Path, timestamp: str, *, note: str | None = None, filename: str = "20260831-101752-001.md"
+) -> None:
     """MQが生成する形式でprocessing項目をadoptedへ移してcommitする。"""
-    source = repo / "processing" / "20260831-101752-001.md"
+    source = repo / "processing" / filename
     destination = repo / "adopted" / source.name
     destination.parent.mkdir()
     body = source.read_text(encoding="utf-8")
@@ -226,7 +231,7 @@ def test_push_pending_defers_diverged_history_when_worktree_is_dirty(
     with _atk_git_sync.repo_lock(repo):
         _atk_git_sync.push_pending_commits(repo, run_git=run_git, result_runner=result_runner)
 
-    assert ["rebase", "@{u}"] not in calls
+    assert ["-c", "submodule.recurse=false", "rebase", "@{u}"] not in calls
     stderr = capsys.readouterr().err
     assert "Git履歴が分岐している" in stderr
     lines = stderr.splitlines()
@@ -281,7 +286,7 @@ def test_wi_hold_defers_dirty_divergence_and_commit_recovers(
     blocked = capsys.readouterr()
     assert blocked.err.count("失敗: ") == 1
     next_action = blocked.err.rsplit("次の操作: ", 1)[1]
-    assert next_action.index("clean") < next_action.index("git rebase")
+    assert next_action.index("clean") < next_action.index("git -c submodule.recurse=false rebase")
 
     dirty.unlink()
     with pytest.raises(SystemExit, match="0"):
@@ -382,7 +387,7 @@ def test_pull_suppresses_output_of_recovered_first_merge(
         _atk_git_sync.pull(repo, run_git=run_git, result_runner=result_runner)
 
     assert (["merge", "--ff-only", "@{u}"], False) in calls
-    assert calls[-1] == (["rebase", "@{u}"], True)
+    assert calls[-1] == (["-c", "submodule.recurse=false", "rebase", "@{u}"], True)
     assert capsys.readouterr().err == ""
 
 
@@ -422,19 +427,31 @@ def test_sync_recovers_matching_tree_divergence(
 
 @pytest.mark.parametrize("operation", ["pull", "push"])
 @pytest.mark.parametrize("agent_environment", [False, True])
+@pytest.mark.parametrize(
+    "filename",
+    [
+        "20260831-101752-001.md",
+        "日本語 space.md",
+        pytest.param(
+            "日本語 space\n改行.md",
+            marks=pytest.mark.skipif(os.name == "nt", reason="Windowsのファイル名は改行を許可しない"),
+        ),
+    ],
+)
 def test_mq_sync_recovers_duplicate_terminal_commit(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
     operation: str,
     monkeypatch: pytest.MonkeyPatch,
     agent_environment: bool,
+    filename: str,
 ) -> None:
     """処理日時だけが異なる同一終端はpull・pushのどちらでもupstreamへ揃える。"""
     if agent_environment:
         monkeypatch.setenv("AI_AGENT", "1")
-    local, peer = _init_diverged_mq_repos(tmp_path)
-    _finish_entry(local, "2026-08-31T20:42:20+00:00")
-    _finish_entry(peer, "2026-08-31T20:48:40+00:00")
+    local, peer = _init_diverged_mq_repos(tmp_path, filename=filename)
+    _finish_entry(local, "2026-08-31T20:42:20+00:00", filename=filename)
+    _finish_entry(peer, "2026-08-31T20:48:40+00:00", filename=filename)
     git_repository.run_git(peer, "push")
     upstream = git_repository.run_git(peer, "rev-parse", "HEAD").stdout.strip()
 
@@ -496,26 +513,38 @@ def test_mq_pull_reports_dirty_divergence_without_rewriting(
     assert "Git履歴が分岐している（ローカルのみ1件、upstreamのみ1件）" in stderr
     assert "local.txt" in stderr
     assert "remote.txt" in stderr
-    assert "git rebase @{u}" in stderr
-    assert "git rebase --skip" in stderr
-    assert "git rebase --abort" in stderr
+    assert "git -c submodule.recurse=false rebase @{u}" in stderr
+    assert "git -c submodule.recurse=false rebase --skip" in stderr
+    assert "git -c submodule.recurse=false rebase --abort" in stderr
     # 分岐の報告に汎用の同期失敗行を重ねず、原因別の失敗行1本にする。
     assert stderr.count("失敗: ") == 1
     assert "private-notesのpullに失敗した" not in stderr
     lines = stderr.splitlines()
     failure_end = next(index for index, line in enumerate(lines) if line.startswith("次の操作: "))
-    assert "git rebase @{u}" in lines[failure_end]
+    assert "git -c submodule.recurse=false rebase @{u}" in lines[failure_end]
 
 
+@pytest.mark.parametrize(
+    "filename",
+    [
+        "20260831-101752-001.md",
+        "日本語 space.md",
+        pytest.param(
+            "日本語 space\n改行.md",
+            marks=pytest.mark.skipif(os.name == "nt", reason="Windowsのファイル名は改行を許可しない"),
+        ),
+    ],
+)
 def test_mq_pull_reports_rebase_failure_and_preserves_state(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
+    filename: str,
 ) -> None:
     """rebase競合時は中間状態を保持し、競合解消手順を表示する。"""
-    local, peer = _init_diverged_mq_repos(tmp_path)
-    _finish_entry(local, "2026-08-31T20:42:20+00:00", note="local")
+    local, peer = _init_diverged_mq_repos(tmp_path, filename=filename)
+    _finish_entry(local, "2026-08-31T20:42:20+00:00", note="local", filename=filename)
     local_head = git_repository.run_git(local, "rev-parse", "HEAD").stdout.strip()
-    _finish_entry(peer, "2026-08-31T20:48:40+00:00", note="remote")
+    _finish_entry(peer, "2026-08-31T20:48:40+00:00", note="remote", filename=filename)
     git_repository.run_git(peer, "push")
 
     with _atk_git_sync.repo_lock(local), pytest.raises(subprocess.CalledProcessError) as exc_info:
@@ -526,9 +555,12 @@ def test_mq_pull_reports_rebase_failure_and_preserves_state(
     assert git_repository.run_git(local, "rev-parse", "ORIG_HEAD").stdout.strip() == local_head
     stderr = capsys.readouterr().err
     assert "rebaseに失敗したため、rebase状態を保持した" in stderr
+    assert f"競合ファイル: adopted/{filename}\n" in stderr
     assert "Git履歴が分岐している" not in stderr
     assert stderr.count("失敗: ") == 1
-    assert "git rebase --continue" in next(line for line in stderr.splitlines() if line.startswith("次の操作: "))
+    assert "git -c submodule.recurse=false rebase --continue" in next(
+        line for line in stderr.splitlines() if line.startswith("次の操作: ")
+    )
 
 
 def test_conflicting_divergence_keeps_rebase_and_rejects_next_mutation(tmp_path: pathlib.Path) -> None:
@@ -632,9 +664,9 @@ def test_rebase_in_progress_error_keeps_reason_and_next_action(tmp_path: pathlib
     with pytest.raises(_atk_git_sync.RebaseInProgressError) as exc_info:
         _atk_git_sync.ensure_not_rebasing(repo)
 
-    assert "git rebase --continue" not in str(exc_info.value)
-    assert "git rebase --continue" in exc_info.value.next_action
-    assert "git rebase --abort" in exc_info.value.next_action
+    assert "git -c submodule.recurse=false rebase --continue" not in str(exc_info.value)
+    assert "git -c submodule.recurse=false rebase --continue" in exc_info.value.next_action
+    assert "git -c submodule.recurse=false rebase --abort" in exc_info.value.next_action
 
 
 @pytest.mark.parametrize("configuration", ["local", "remote", "upstream"])

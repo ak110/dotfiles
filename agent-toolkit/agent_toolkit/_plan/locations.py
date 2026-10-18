@@ -38,10 +38,17 @@ _UNRESOLVED_PRIVATE_NOTES_DIRNAME = ".plans-viewer-private-notes-unresolved"
 # 自身をメイン計画の候補とする種別。移行で生成した旧ファイル名の検証でも、付属ファイルの名前をメイン計画として受理しない。
 _MAIN_CANDIDATE_KINDS = (_bundle_kinds.MAIN, _bundle_kinds.HANDOFF)
 _FORBIDDEN_NAME_CHARACTERS = set('/\\:*?"<>|')
+PLAN_NAME_FORMAT = "dd-HHmm_<名称>.md（衝突時は名称の後に-<小文字16進数4桁>）"
+"""現行の計画作成処理が生成する名前の説明。"""
+_CURRENT_MAIN_RE = re.compile(r"(?P<day>[0-9]{2})-(?P<time>[0-9]{4})_(?P<label>.+)\.md\Z")
 _CANONICAL_MAIN_RE = re.compile(r"(?P<day>[0-9]{2})-(?P<label>.+)-(?P<token>[0-9a-f]{4})\.md\Z")
 _MIGRATED_MAIN_RE = re.compile(r"(?P<day>[0-9]{2})-(?P<legacy_name>.+\.md)\Z")
-_SAVED_PLAN_PATH_NEXT_ACTION = "`private-notes/plans/`相対のyyyy/MM/dd-{名称}-{小文字16進数4桁}.mdの形式で指定し直す"
-_WORKING_PLAN_PATH_NEXT_ACTION = "`~/.claude/plans`直下のdd-{名称}-{小文字16進数4桁}.mdの形式で指定し直す"
+_SAVED_PLAN_PATH_NEXT_ACTION = f"`private-notes/plans/`相対のyyyy/MM/{PLAN_NAME_FORMAT}の形式で指定し直す"
+_WORKING_PLAN_PATH_NEXT_ACTION = f"`~/.claude/plans`直下の{PLAN_NAME_FORMAT}の形式で指定し直す"
+PLAN_INPUT_NEXT_ACTION = (
+    f"`~/.claude/plans`直下の{PLAN_NAME_FORMAT}、`private-notes/plans/`相対のyyyy/MM/<ファイル名>、"
+    "またはこれらのroot配下の絶対パスで指定し直す。作業中の計画は`atk plans list`で確認できる"
+)
 _MIGRATED_PLAN_PATH_NEXT_ACTION = "`private-notes/plans/`相対のyyyy/MM/dd-{旧ファイル名}の形式で指定し直す"
 _PLAN_FILE_VALUE_NEXT_ACTION = (
     "plan_fileを`$(atk config get private_notes)/plans/yyyy/MM/<ファイル名>`の可搬表記か、"
@@ -113,6 +120,28 @@ def _resolve(path: pathlib.Path) -> pathlib.Path:
     return path.expanduser().resolve(strict=False)
 
 
+def resolve_plan_input(
+    value: pathlib.Path | str,
+    *,
+    private_notes: pathlib.Path | str,
+    home: pathlib.Path | str | None = None,
+    saved_only: bool = False,
+) -> pathlib.Path:
+    """名前・root相対・許可root内の絶対パスを、既存の配置検査へ渡す相対値へそろえる。
+
+    日付階層を持つ旧作業ファイルは、同じ階層の相対指定として扱う。
+    名前と日付・種別の検査は呼出し側の配置検査が担う。
+    """
+    path = pathlib.Path(value).expanduser()
+    if not path.is_absolute():
+        return path
+    roots = (new_plans_root(private_notes),) if saved_only else (working_plans_root(home), new_plans_root(private_notes))
+    for root in roots:
+        if _lexically_under(path, root) and _resolve(path).is_relative_to(_resolve(root)):
+            return path.relative_to(root)
+    raise ActionableError("計画の入力パスが許可root外を指しています", next_action=PLAN_INPUT_NEXT_ACTION)
+
+
 def _lexically_under(path: pathlib.Path, root: pathlib.Path) -> bool:
     """symlinkを解決せずにpathがroot配下にあるかを判定する。"""
     try:
@@ -151,8 +180,7 @@ def _validate_portable_remainder(remainder: str) -> pathlib.PurePosixPath:
 def validate_plan_relative_path(relative_path: pathlib.Path | str) -> pathlib.Path:
     """新plans rootからの相対メイン計画パスを検証して返す。
 
-    形式は`yyyy/MM/dd-{名称}-{小文字16進数4桁}.md`で、年・月・日の実在日付、
-    パス文字、名称、16進数を検証する。
+    現行形式と旧正規形式について、年月日の実在日付、パス文字と名称を検証する。
     """
     raw = os.fspath(relative_path)
     if not raw or "$(" in raw or "\x00" in raw or "\\" in raw:
@@ -169,10 +197,10 @@ def validate_plan_relative_path(relative_path: pathlib.Path | str) -> pathlib.Pa
     year_text, month_text, filename = relative.parts
     if not (re.fullmatch(r"[0-9]{4}", year_text) and re.fullmatch(r"[0-9]{2}", month_text)):
         raise ActionableError("計画ファイルの年月ディレクトリが不正です", next_action=_SAVED_PLAN_PATH_NEXT_ACTION)
-    match = _CANONICAL_MAIN_RE.fullmatch(filename)
-    if match is None:
+    match = _CURRENT_MAIN_RE.fullmatch(filename) or _CANONICAL_MAIN_RE.fullmatch(filename)
+    if match is None or _bundle_kinds.kind_of_name(filename) not in _MAIN_CANDIDATE_KINDS:
         raise ActionableError(
-            "計画ファイル名はdd-{日本語の名称}-{小文字16進数4桁}.mdの形式で指定してください",
+            f"計画ファイル名は{PLAN_NAME_FORMAT}の形式で指定してください",
             next_action=_SAVED_PLAN_PATH_NEXT_ACTION,
         )
     label = match.group("label")
@@ -197,8 +225,10 @@ def validate_working_plan_relative_path(relative_path: pathlib.Path | str) -> pa
             next_action=_WORKING_PLAN_PATH_NEXT_ACTION,
         )
     filename = relative.name
-    canonical = _CANONICAL_MAIN_RE.fullmatch(filename)
+    canonical = _CURRENT_MAIN_RE.fullmatch(filename) or _CANONICAL_MAIN_RE.fullmatch(filename)
     migrated = _MIGRATED_MAIN_RE.fullmatch(filename)
+    if _bundle_kinds.kind_of_name(filename) not in _MAIN_CANDIDATE_KINDS:
+        raise ActionableError("付属ファイルはメイン計画として指定できません", next_action=_WORKING_PLAN_PATH_NEXT_ACTION)
     if canonical is not None:
         label = canonical.group("label")
         if not label or any(character in _FORBIDDEN_NAME_CHARACTERS or ord(character) < 0x20 for character in label):
@@ -217,7 +247,7 @@ def validate_working_plan_relative_path(relative_path: pathlib.Path | str) -> pa
         day = int(migrated.group("day"))
     else:
         raise ActionableError(
-            "作業中の計画ファイル名はdd-{名称}-{小文字16進数4桁}.mdの形式で指定してください",
+            f"作業中の計画ファイル名は{PLAN_NAME_FORMAT}の形式で指定してください",
             next_action=_WORKING_PLAN_PATH_NEXT_ACTION,
         )
     if not 1 <= day <= 31:

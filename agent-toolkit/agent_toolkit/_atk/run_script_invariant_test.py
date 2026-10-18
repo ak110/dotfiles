@@ -6,14 +6,7 @@ import pathlib
 import pytest
 
 from agent_toolkit._atk import run_script
-
-
-class _ParserCaptured(Exception):
-    """登録スクリプトが組み立てた引数解析器を、解析の直前で取り出すための例外。"""
-
-    def __init__(self, parser: argparse.ArgumentParser) -> None:
-        super().__init__(parser.prog)
-        self.parser = parser
+from agent_toolkit._testing import cli_examples
 
 
 def test_registry_stays_inside_plugin_root() -> None:
@@ -25,16 +18,22 @@ def test_registry_stays_inside_plugin_root() -> None:
 
 def _registered_parser(monkeypatch: pytest.MonkeyPatch, script_name: str) -> argparse.ArgumentParser:
     """`atk run-script`と同じ起動経路でスクリプトを実行し、最初に解析を始めた解析器を返す。"""
+    del monkeypatch
+    return cli_examples.registered_parser(script_name)
 
-    def _capture(self: argparse.ArgumentParser, *args: object, **kwargs: object) -> argparse.Namespace:
-        del args, kwargs
-        raise _ParserCaptured(self)
 
-    with monkeypatch.context() as patch:
-        patch.setattr(argparse.ArgumentParser, "parse_args", _capture)
-        with pytest.raises(_ParserCaptured) as captured:
-            run_script.dispatch(argparse.Namespace(script_name=script_name, script_args=[]))
-    return captured.value.parser
+def test_public_documents_examples_use_real_parsers() -> None:
+    """配布原本と利用ガイドの完全な実行例を、登録先の実parserが受理するか確かめる。"""
+    roots = [run_script.PLUGIN_ROOT / name for name in ("skills", "share", "rules")]
+    guide = run_script.PLUGIN_ROOT.parent / "docs" / "guide"
+    if guide.is_dir():
+        roots.append(guide)
+    parsers: dict[str, argparse.ArgumentParser] = {}
+    checked = 0
+    for root in roots:
+        for path in sorted(root.rglob("*.md")):
+            checked += cli_examples.validate_document(path, parsers=parsers)
+    assert checked > 20
 
 
 def test_every_registered_script_argument_states_its_value(monkeypatch: pytest.MonkeyPatch) -> None:

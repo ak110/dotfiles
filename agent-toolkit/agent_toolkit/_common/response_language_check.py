@@ -5,14 +5,19 @@
 判定条件は、日本語文字を含まない英語だけの地の文、地の文の先頭に置かれた英語の談話標識、
 語数比が閾値未満であることと、説明中の他文字体系の語を対象とする。
 語数比は日本語文字数を、日本語文字数と英単語数（連続英字列）の和で割った値とする。
-いずれかの条件へ該当すると警告メッセージを返し、PreToolUseのadditionalContext経由で
-コーディングエージェントへ通知する。
+いずれかの条件へ該当するとWARNと本文を返す。呼出側は同じ判定結果から、表示・後続操作・終了の前に日本語への書き直しを求める。
 """
 
+import argparse
 import enum
 import json
+import pathlib
 import re
+import sys
 import unicodedata
+
+if __package__ in {None, ""}:
+    sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[2]))
 
 from agent_toolkit._common.transcript import iter_latest_assistant_text_messages, visible_text_blocks
 
@@ -105,14 +110,14 @@ WARNING_BODY = (
     "ユーザーは英語の発話を読まない。"
 )
 
-BLOCK_BODY = "同一セッションで英語主体の応答を累計2回以上検出した。ツール呼び出しは続行できる。ユーザーは英語の発話を読まない。"
+BLOCK_BODY = "英語主体の本文を日本語で書き直すまで、呼び出しまたは終了を止めた。"
 
 WARNING_FIX = (
-    "訂正や謝罪を宣言せず、次の応答の冒頭の1文から日本語で書く。"
-    "`agent-toolkit/share/rules-main.md`「ユーザー向け発話ルール」に従い、進捗報告・判断・ステータス更新を"
-    "ツール呼び出し前後の短文ステータスも含めて日本語で書く。"
+    "直前の文または入力本文を、内容を保って日本語で書き直す。"
+    "識別子と名前が対象の正式名と一致することを確かめてから、同じ呼び出しを再発行する。"
+    "通知への返信・訂正や謝罪の宣言は省く。"
 )
-"""英語検知の通知が求める次の操作。通知の本文とは別に通知の整形関数へ渡す。"""
+"""表示と後続の操作の取り違えを防ぐ、モデル自身による書き直し。"""
 
 
 def check_text(text: str) -> tuple[CheckOutcome, str | None]:
@@ -270,3 +275,17 @@ def _collect_raw_text(transcript_path: str) -> tuple[str, str]:
     if not texts:
         return ("", "")
     return ("\n".join(texts), msg_id)
+
+
+def main(argv: list[str] | None = None) -> int:
+    """共通判定の結果をFunction hooks向けのJSONとして返す。"""
+    parser = argparse.ArgumentParser(description="記述言語を共通基準で判定する。")
+    parser.add_argument("--text", required=True, help="判定する本文")
+    args = parser.parse_args(argv)
+    result, reason = check_text(args.text)
+    print(json.dumps({"outcome": result.value, "body": reason, "fix": WARNING_FIX}, ensure_ascii=False))
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

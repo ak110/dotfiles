@@ -385,7 +385,9 @@ async def test_public_start_variants_and_send_message_return_minimal_responses(
         "observed_identity": None,
     }
 
-    assert await mcp_tools.start(str(tmp_path), mode="delegate", prompt="本文", model_type="high_tier") == {
+    delegated = await mcp_tools.start(str(tmp_path), mode="delegate", prompt="本文", model_type="high_tier")
+    assert pathlib.Path(delegated.pop("handoff_record_path")).is_absolute()
+    assert delegated == {
         "session_id": "session",
         "status": "running",
         "label": "担当",

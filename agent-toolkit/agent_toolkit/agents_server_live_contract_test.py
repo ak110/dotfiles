@@ -64,7 +64,7 @@ def test_live_input_texts_name_only_declared_tools(live_input: live.LiveInput) -
 
 @pytest.mark.parametrize("session_id", _SESSION_IDS)
 @pytest.mark.usefixtures("agents_server_isolation")
-def test_explore_rejects_background_resume_input(session_id: str | None) -> None:
-    """読取限定の探索起動へBash背景実行の入力を渡す組合せを、新規起動と再開の両方で不整合と判定する。"""
+def test_explore_exposes_tools_for_background_resume_input(session_id: str | None) -> None:
+    """探索も読取用のBash背景処理に必要なツールを、新規起動と再開の両方で公開する。"""
     required = live.BACKGROUND_RESUME_INPUTS["delegate"].required_tools
-    assert _unavailable_tools("explore", session_id, required) == {"Bash"}
+    assert not _unavailable_tools("explore", session_id, required)

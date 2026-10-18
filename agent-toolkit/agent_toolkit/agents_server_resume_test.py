@@ -5,7 +5,9 @@
 
 import asyncio
 import json
+import os
 import pathlib
+import sys
 from collections.abc import Coroutine
 from types import SimpleNamespace
 from typing import Any, cast
@@ -753,6 +755,98 @@ async def test_codex_child_session_holds_result_until_single_auto_resume(
         assert len(prompts) == 1
         assert child_session_id in prompts[0]
     finally:
+        await manager.close()
+
+
+@pytest.mark.asyncio
+async def test_agents_wait_cli_keeps_target_until_child_termination_and_same_session_resume(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+) -> None:
+    """公開CLIの実プロセスは子の終端まで待ち、同じsessionが続けた作業の結果を回収する。"""
+    isolated_state = tmp_path / "state" / "agent-toolkit"
+    monkeypatch.setattr(state_paths, "state_dir", lambda: isolated_state)
+    manager, backend, session, writer = _codex_parent_with_child(isolated_state)
+    session.announced = True
+    child = "cli-child"
+    resumed: list[tuple[str, int]] = []
+    process: asyncio.subprocess.Process | None = None
+
+    async def resume(target: state.SessionState, _prompt: str) -> dict[str, Any]:
+        # モデルの応答だけを代替し、常駐監視・登録・結果保存・CLI回収は実装を通す。
+        state.begin_reply(target)
+        resumed.append((target.session_id, target.turn_seq))
+        target.status = "completed"
+        target.agent_message = "CLI_RESUMED_WORK_COMPLETED"
+        target.turn_completed = True
+        target.touch()
+        return {"delivery": "reply_started", "previous_result": {}}
+
+    monkeypatch.setattr(backend, "send_message", resume)
+    environment = dict(os.environ)
+    for name in (
+        "AGENT_TOOLKIT_OWNER_SESSION",
+        "AGENT_TOOLKIT_DELEGATED_SESSION",
+        "AGENT_TOOLKIT_STATUS_HOST_SESSION",
+        "CODEX_THREAD_ID",
+        "AI_AGENT",
+        "CODEX_CI",
+        "CLAUDECODE",
+        "CURSOR_AGENT",
+    ):
+        environment.pop(name, None)
+    environment.update(
+        CLAUDE_CODE_SESSION_ID="root",
+        XDG_STATE_HOME=str(isolated_state.parent),
+        LOCALAPPDATA=str(isolated_state.parent),
+        XDG_CACHE_HOME=str(tmp_path / "cache"),
+    )
+    cli = pathlib.Path(__file__).with_name("atk.py")
+    wait_directory = shared_layout.status_directory("root", isolated_state) / "wait-results" / "root.json"
+    try:
+        session_registry.publish(child, terminal=False)
+        await _complete_codex_turn_with_child(backend, session, child)
+        await manager.activate_async()
+        process = await asyncio.create_subprocess_exec(
+            sys.executable,
+            str(cli),
+            "agents",
+            "wait",
+            "--root-session-id",
+            "root",
+            env=environment,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        await _await_state(lambda: (wait_directory / "current.json").is_file() or process.returncode is not None)
+        assert process.returncode is None, "子の待機中に公開CLIが終了した"
+        current = json.loads((wait_directory / "current.json").read_text(encoding="utf-8"))
+        run = json.loads((wait_directory / f"{current['run_id']}.json").read_text(encoding="utf-8"))
+        assert run["targets"] == [session.session_id]
+        assert session_registry.resolve(child).state is session_registry.Resolution.RUNNING
+        assert session.awaiting_auto_resume and not session.result_available
+        assert not writer.result_exists(session.session_id)
+        await asyncio.sleep(0.15)
+        assert process.returncode is None, "子の未終端中はCLIが待機を続ける"
+        assert not resumed
+
+        session_registry.publish(child, terminal=True)
+        stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=_STATE_TIMEOUT)
+        assert process.returncode == 0, stderr.decode()
+        rows = [json.loads(line) for line in stdout.decode().splitlines()]
+        assert len(rows) == 1
+        assert (rows[0]["session_id"], rows[0]["status"], rows[0]["agent_message"]) == (
+            session.session_id,
+            "completed",
+            "CLI_RESUMED_WORK_COMPLETED",
+        )
+        assert pathlib.Path(rows[0]["agent_message_path"]).read_text(encoding="utf-8") == rows[0]["agent_message"]
+        assert "error" not in rows[0]
+        assert resumed == [(session.session_id, 2)]
+    finally:
+        if process is not None and process.returncode is None:
+            process.kill()
+            await process.communicate()
         await manager.close()
 
 

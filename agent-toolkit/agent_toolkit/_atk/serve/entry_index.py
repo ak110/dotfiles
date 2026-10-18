@@ -41,6 +41,7 @@ class IndexedEntry:
     text: str
     text_folded: str
     metadata: dict[str, typing.Any]
+    body: str
     kind: str | None
     updated_at: str
     derived: dict[str, typing.Any]
@@ -54,6 +55,7 @@ class _ParsedFile:
     text: str
     text_folded: str
     metadata: dict[str, typing.Any]
+    body: str
     kind: str | None
     derived: dict[str, typing.Any] = dataclasses.field(default_factory=dict)
 
@@ -138,8 +140,9 @@ class EntryIndex:
                         continue
                     parsed_frontmatter = frontmatter.parse_frontmatter(text)
                     metadata = parsed_frontmatter[0] if parsed_frontmatter is not None else {}
+                    body = parsed_frontmatter[1] if parsed_frontmatter is not None else text.removeprefix("\ufeff")
                     kind = wi_constants.normalized_wi_type(metadata.get("type"))
-                    parsed = _ParsedFile(text=text, text_folded=text.casefold(), metadata=metadata, kind=kind)
+                    parsed = _ParsedFile(text=text, text_folded=text.casefold(), metadata=metadata, body=body, kind=kind)
                     cached = _CacheEntry(
                         mtime_ns=file_stat.st_mtime_ns,
                         size=file_stat.st_size,
@@ -167,6 +170,7 @@ class EntryIndex:
                         text=cached.parsed.text,
                         text_folded=cached.parsed.text_folded,
                         metadata=cached.parsed.metadata,
+                        body=cached.parsed.body,
                         kind=cached.parsed.kind,
                         updated_at=cached.updated_at,
                         derived=cached.parsed.derived,

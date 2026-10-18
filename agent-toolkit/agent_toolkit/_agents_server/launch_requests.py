@@ -8,6 +8,7 @@ import json
 import logging
 import os
 import pathlib
+import re
 import subprocess
 import uuid
 from collections.abc import Mapping
@@ -287,6 +288,111 @@ def _check_declared_inputs(
                 "今回限りの補足を渡す欄は無いため、値を`<役割名>.subagent.md`が宣言した入力へ収めるか、宣言外の値を渡さずに起動する"
             ),
         )
+    _check_explore_materials(task_document, extra_params)
+
+
+def _material_error(name: str, reason: str) -> ActionableError:
+    """不足資料と、保存して再発行する操作を同じ応答へ載せる。"""
+    return ActionableError(
+        f"探索資料の入力が不成立です: {name}: {reason}。委譲先は起動していない。",
+        next_action=(
+            f"`{name}`に必要な本文・差分・証拠をUTF-8の読取可能な通常ファイルへ保存し、"
+            "絶対パスで補完して`start`を再発行する。reader-fit-reviewの`比較資料`は"
+            '`{"比較元本文":"/保存先/旧本文.md","今回差分":"/保存先/差分.patch","現行本文":"/成果物.md"}`'
+            "とする。新規成果物だけ比較元本文へ`新規`、今回差分へ`全文`を指定できる。"
+            "再レビューの`未解決事項`は保存ファイルの絶対パスか`なし`を渡す"
+        ),
+    )
+
+
+def _material_paths(name: str, value: str) -> list[pathlib.Path]:
+    """JSON配列と既存の保存ファイル指定を、共通の読取検査へ渡す。"""
+    value = value.strip()
+    if value.startswith("["):
+        try:
+            items = json.loads(value)
+        except json.JSONDecodeError as error:
+            raise _material_error(name, "パス配列のJSONを読めない") from error
+        if not isinstance(items, list) or not items or any(not isinstance(item, str) for item in items):
+            raise _material_error(name, "絶対パスの空でないJSON配列が必要")
+    else:
+        # 全体が実在するパスの場合は、空白・日本語の区切り文字を含む名前もそのまま保つ。
+        if pathlib.Path(value).is_absolute() and pathlib.Path(value).is_file():
+            items = [value]
+        else:
+            tokens = re.findall(r"`(/[^`]+)`|(/[^\s`、,;；（）()]+)", value)
+            items = [quoted or bare for quoted, bare in tokens]
+    if not items:
+        raise _material_error(name, "保存ファイルの絶対パスが無い")
+    paths = [pathlib.Path(item) for item in items]
+    for path in paths:
+        if not path.is_absolute() or not path.is_file():
+            raise _material_error(name, f"通常ファイルを参照できない: {path}")
+        try:
+            with path.open(encoding="utf-8") as stream:
+                for _line in stream:
+                    pass
+        except (OSError, UnicodeError) as error:
+            raise _material_error(name, f"UTF-8で読めない: {path}: {error}") from error
+    return paths
+
+
+def _check_reader_materials(params: Mapping[str, str]) -> None:
+    """現行本文・比較元・今回差分を区別し、再レビューの証拠も起動前に読む。"""
+    current = _material_paths("成果物", params["成果物"])
+    if len(current) != 1:
+        raise _material_error("成果物", "1件の現行本文が必要")
+    if "比較資料" in params:
+        try:
+            materials = json.loads(params["比較資料"])
+        except json.JSONDecodeError as error:
+            raise _material_error("比較資料", "JSONオブジェクトを読めない") from error
+        keys = {"比較元本文", "今回差分", "現行本文"}
+        if (
+            not isinstance(materials, dict)
+            or set(materials) != keys
+            or any(not isinstance(value, str) for value in materials.values())
+        ):
+            raise _material_error("比較資料", "比較元本文・今回差分・現行本文の3項目が必要")
+        actual = _material_paths("現行本文", materials["現行本文"])
+        if actual != current:
+            raise _material_error("現行本文", "成果物と同じパスが必要")
+        is_new = materials["比較元本文"] == "新規"
+        if not is_new:
+            _material_paths("比較元本文", materials["比較元本文"])
+        if not (is_new and materials["今回差分"] == "全文"):
+            _material_paths("今回差分", materials["今回差分"])
+    else:
+        # 旧形式も保存ファイルを共通検査へ通す。本文や差分の説明だけでは成立しない。
+        scope = params["修正範囲"]
+        is_new = scope.startswith("新規") and "全文" in scope
+        if not is_new:
+            paths = _material_paths("修正範囲（比較元本文・今回差分）", scope)
+            if len({path for path in paths if path != current[0]}) < 2:
+                raise _material_error("比較資料", "比較元本文と今回差分の保存物が必要")
+    review_kind = params.get("レビュー種別", "初回レビュー")
+    if review_kind not in {"初回レビュー", "再レビュー", "引き継ぎ再レビュー"}:
+        raise _material_error("レビュー種別", "初回レビュー・再レビュー・引き継ぎ再レビューのいずれかが必要")
+    if review_kind != "初回レビュー" and is_new:
+        raise _material_error("比較元本文", "再レビューでは前回確認版の本文が必要")
+    unresolved = params.get("未解決事項", "なし" if review_kind == "初回レビュー" else "")
+    if unresolved != "なし":
+        _material_paths("未解決事項", unresolved)
+
+
+def _check_explore_materials(task_document: pathlib.Path, params: Mapping[str, str]) -> None:
+    """読取と検索だけで動く担当の保存資料を、起動要求の境界で検査する。"""
+    role = task_document.name.removesuffix(_TASK_DOCUMENT_SUFFIX)
+    if role == "reader-fit-review":
+        _check_reader_materials(params)
+        return
+    required_files = {
+        "external-write-review": ("文面ファイル", "根拠の所在"),
+        "bulk-replace-review": ("差分ファイル",),
+        "pick-wi-explain": ("説明対象の選定結果の出力先ファイル", "activeなWI本文の保存先"),
+    }
+    for name in required_files.get(role, ()):
+        _material_paths(name, params[name])
 
 
 _HANDOFF_INPUT_NAME = "引き継ぎ記録先"
@@ -304,7 +410,7 @@ def capture_handoff_session() -> None:
     """会話contextの除去前に、引き継ぎ記録を置く委譲元sessionを確定する。"""
     global _HANDOFF_SESSION  # pylint: disable=global-statement
     if _HANDOFF_SESSION is None:
-        _HANDOFF_SESSION = (shared_roots.resolve_root_session_id(os.environ),)
+        _HANDOFF_SESSION = ((shared_roots.resolve_root_session_id(os.environ) or os.environ.get("CODEX_THREAD_ID")),)
 
 
 def _default_handoff_path() -> pathlib.Path | None:
@@ -316,7 +422,11 @@ def _default_handoff_path() -> pathlib.Path | None:
     ファイル自体は作成しない。`（新規）`の記録先は委譲先が作成するためである。
     """
     directory: pathlib.Path | None = None
-    session_id = _HANDOFF_SESSION[0] if _HANDOFF_SESSION is not None else shared_roots.resolve_root_session_id(os.environ)
+    session_id = (
+        _HANDOFF_SESSION[0]
+        if _HANDOFF_SESSION is not None
+        else (shared_roots.resolve_root_session_id(os.environ) or os.environ.get("CODEX_THREAD_ID"))
+    )
     if session_id is not None and not session_id.startswith("mcp-"):
         with contextlib.suppress(_managed_temp.ManagedTempError, OSError):
             directory = _managed_temp.resolve_session_temp(session_id)
@@ -332,6 +442,54 @@ def _default_handoff_path() -> pathlib.Path | None:
             return candidate
 
 
+def delegate_request(prompt: str) -> tuple[str, pathlib.Path]:
+    """自由本文を保ち、通常委譲へ専用の現行記録先を配送する。"""
+    path = _default_handoff_path()
+    if path is None:
+        raise ActionableError(
+            "通常委譲の作業記録先を用意できません。委譲先は起動していない。",
+            next_action="managed-tempの診断を確認し、記録先を確保してからstartを再発行する",
+        )
+    return prompt + "\n\n" + handoff_notice(path) + "\n\n" + whole_contract_reference(), path
+
+
+def whole_contract_reference() -> str:
+    """所有する全体会話の現行記録への参照を、本文の複製をせず配送する。"""
+    session_id = (
+        _HANDOFF_SESSION[0]
+        if _HANDOFF_SESSION is not None
+        else (shared_roots.resolve_root_session_id(os.environ) or os.environ.get("CODEX_THREAD_ID"))
+    )
+    directory: pathlib.Path | None = None
+    if session_id is not None and not session_id.startswith("mcp-"):
+        with contextlib.suppress(_managed_temp.ManagedTempError, OSError):
+            directory = _managed_temp.find_session_temp(session_id)
+    path = directory / "work-contract.md" if directory is not None else None
+    if path is not None and path.is_file():
+        body = (
+            f"全体作業契約: {path}\n"
+            "担当工程の開始時に読み、割当が全体の要求を満たす範囲と、維持する成果・検収に使う証拠を確かめる。"
+            "全体記録の更新は委譲元が所有し、委譲先は自身の引き継ぎ記録へ判断を残す。"
+        )
+    else:
+        body = (
+            "全体作業契約: 未解決。担当の成果が全体の要求を満たすことを確認する工程では、"
+            "委譲元へ記録の所在を返却・通知で求め、取得した記録の要求と担当の成果を比べる。"
+        )
+    return auto_message(body, source="agents-server", kind="work-contract-reference")
+
+
+def handoff_notice(path: pathlib.Path) -> str:
+    """サーバーが所有する共通入力を、役割文書の入力宣言から分離して加える。"""
+    return auto_message(
+        f"引き継ぎ記録先: {path}（新規）\n"
+        "share/work-contract.mdとskills/delegation/references/handoff-record.mdに従い、"
+        "委譲先自身が最初の記録を作成する。記録は割当範囲を所有し、委譲元は終端後の検収で読む。",
+        source="agents-server",
+        kind="work-contract",
+    )
+
+
 def task_document_request(
     subagent_md_path: str,
     extra_params: Mapping[str, str],
@@ -341,7 +499,8 @@ def task_document_request(
     用途は役割に対応する値で、対応が無い場合は`None`（段位ごとの用途を使う）とする。
     `<役割名>.subagent.md`が`引き継ぎ記録先`を必須入力とし、`extra_params`がこれを持たない場合は、
     拒否せずに`（新規）`の記録先を用意して委譲プロンプトへ加え、その絶対パスを5要素目で返す。
-    委譲元が値を渡した場合と、宣言を読めない場合の5要素目は`None`とする。
+    宣言しない通常起動にも共通入力として専用の記録先を加え、5要素目で返す。
+    委譲元が値を渡した場合と軽量起動の5要素目は`None`とする。
     """
     task_document = _resolve_task_document_path(subagent_md_path).resolve()
     if not task_document.is_file() or not task_document.name.endswith(".subagent.md"):
@@ -394,6 +553,18 @@ def task_document_request(
         _check_declared_inputs(task_document, declaration, extra_params)
         launch_kind = declaration.launch_kind
     prompt_lines = [f"次の文書の手順を実行せよ（出所: {task_document}）。", document_text]
+    # 宣言された入力の検証を終えてから、サーバー所有の共通入力を加える。
+    # 軽量起動のtaskは独自の記録を持たない。
+    if launch_kind == "delegate" and _HANDOFF_INPUT_NAME not in extra_params:
+        handoff_path = _default_handoff_path()
+        if handoff_path is None:
+            raise ActionableError(
+                "通常委譲の作業記録先を用意できません。委譲先は起動していない。",
+                next_action="managed-tempの診断を確認し、記録先を確保してからstartを再発行する",
+            )
+        prompt_lines.append(handoff_notice(handoff_path))
+    if launch_kind == "delegate":
+        prompt_lines.append(whole_contract_reference())
     if extra_params:
         prompt_lines.append("入力:")
         prompt_lines.extend(f"{name}: {value}" for name, value in extra_params.items())

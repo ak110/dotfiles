@@ -9,7 +9,7 @@ import shlex
 import sys
 
 from agent_toolkit._agents_server.state import LaunchKind
-from agent_toolkit._agents_server.tool_descriptions import EXPLORE_CAPABILITIES
+from agent_toolkit._agents_server.tool_descriptions import EXPLORE_BACKEND_CAPABILITIES, EXPLORE_COMMON_CAPABILITIES
 from agent_toolkit._common import message_format, plugin_environment
 
 TASK_MODEL_TYPES = {
@@ -103,9 +103,19 @@ CLAUDE_DELEGATE_SYSTEM_PROMPT = (
 )
 
 
-EXPLORE_SYSTEM_PROMPT = _normative(
-    f"{DELEGATE_NOTICE}\n{_read_prompt('agents-server-explore.md')}\n\n{EXPLORE_CAPABILITIES}", kind="explore"
-)
+def _explore_system_prompt(backend: str) -> str:
+    """共通の探索契約へ、選んだbackendの調査手段を加える。"""
+    return _normative(
+        f"{DELEGATE_NOTICE}\n{_read_prompt('agents-server-explore.md')}\n\n"
+        f"{EXPLORE_COMMON_CAPABILITIES}{EXPLORE_BACKEND_CAPABILITIES[backend]}",
+        kind="explore",
+    )
+
+
+EXPLORE_SYSTEM_PROMPT = _explore_system_prompt("codex")
+
+
+CLAUDE_EXPLORE_SYSTEM_PROMPT = _explore_system_prompt("claude")
 
 
 SHELL_SYSTEM_PROMPT = _normative(f"{DELEGATE_NOTICE}\n{_read_prompt('agents-server-shell.md')}", kind="shell")

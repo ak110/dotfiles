@@ -3,7 +3,6 @@ r"""PreToolUse統合フックのうち、応答言語、TaskStop、agents_server
 from __future__ import annotations
 
 import json
-import os
 import pathlib
 
 # 関数の実行時にだけ使う依存は、使用時まで読み込まない。
@@ -16,7 +15,6 @@ from agent_toolkit._agents_server import (
     tool_names as _agents_server_tool_names,
 )
 lazy from agent_toolkit._common import response_language_check as _response_language_check
-lazy from agent_toolkit._common.delegated_session import is_delegated
 lazy from agent_toolkit._common.file_lock import (
     locked_rotate_and_append as _locked_rotate_and_append,
 )
@@ -29,120 +27,26 @@ lazy from agent_toolkit._hooks import agents_server_observations as _agents_serv
 lazy from agent_toolkit._hooks import (
     plugin_resources as _plugin_resources,
 )
-lazy from agent_toolkit._hooks import (
-    rules_context as _rules_context,
-)
 lazy from agent_toolkit._hooks.notice import _WARN_TAG
 lazy from agent_toolkit._hooks.pretooluse.decision import Decision
 lazy from agent_toolkit._hooks.pretooluse.notices import _block_notice, _llm_notice
 
 
-def _handle_language_check(payload: dict, session_id: str) -> str | None:
-    """直前のメインエージェント応答が日本語であるか判定し、セッション状態でエスカレーションを管理する。
+def _handle_language_check(payload: dict) -> str | None:
+    """メインと委譲先の直前応答を判定し、書き直しまで操作を止める。
 
-    サブエージェントとagents_serverの委譲先では、メイン応答の言語判定と警告状態の更新を行わない。
-
-    Returns:
-        通知本文。対象外の場合はNone。
-
-    検出した回の応答は既にユーザーへ届いており、このツール呼び出しを止めてもその応答は戻らない。
-    以降の応答を日本語へ切り替えることで是正できるため、
-    `agent-toolkit:writing-standards`の`references/claude-hooks-block-warn.md`「遮断と警告の選択」により遮断しない。
-
-    セッション状態キー:
-    - english_warning_count: 同一セッションの英語判定累計（int）
-    - english_warning_msg_id: 前回検出時のmessage ID（str）
-
-    エスカレーションロジック:
-    - WARN: message IDが前回と異なればカウンタ+1、同一なら据え置き。カウンタ≧2で強い本文へ切り替える
-    - PASS・SKIP: 累計を維持する
+    サブエージェントでは親のtranscriptを指すため、SubagentStopで判定する。
+    同じ英語応答での再発行も止め、日本語の新しい応答を受け取るまで通さない。
     """
     transcript_path = payload.get("transcript_path", "")
     if not isinstance(transcript_path, str) or not transcript_path:
         return None
     if payload.get("agent_id") or payload.get("isSidechain") is True:
         return None
-    if is_delegated(os.environ):
-        return None
-
-    outcome, body, msg_id = _response_language_check.detailed_check(transcript_path)
-
-    if outcome in (
-        _response_language_check.CheckOutcome.PASS,
-        _response_language_check.CheckOutcome.SKIP,
-    ):
-        return None
-
-    # WARN
-    if not session_id:
+    outcome, body, _ = _response_language_check.detailed_check(transcript_path)
+    if outcome is _response_language_check.CheckOutcome.WARN:
         return body
-
-    # update_stateがOSErrorで失敗した場合、_incrementは実行されずcountは初期値0のまま残る。
-    # この場合はブロックしない方向（安全側）にフォールバックする。
-    count = 0
-    duplicate = False
-
-    def _increment(current: dict) -> dict | None:
-        nonlocal count, duplicate
-        prev_id = current.get("english_warning_msg_id", "")
-        prev_count = current.get("english_warning_count", 0)
-        if msg_id and prev_id == msg_id:
-            count = prev_count
-            duplicate = True
-            return None
-        count = prev_count + 1
-        current["english_warning_count"] = count
-        current["english_warning_msg_id"] = msg_id
-        return current
-
-    update_state(session_id, _increment)
-
-    if duplicate:
-        return None
-
-    if count >= 2:
-        assert body is not None
-        return _response_language_check.BLOCK_BODY + body.removeprefix(_response_language_check.WARNING_BODY)
-
-    return body
-
-
-# 日本語の応答指示を再注入するツール呼び出しの間隔。
-# 2026-09-22以降のClaude Codeメイン記録で、セッション開始または会話圧縮から最初の`response_language_check`の通知までの
-# ツール呼び出し回数は55件で中央値20回、下位20%が7回、下位30%が11回だった。
-# 10回ごとに注入すると、最初の英語の応答が現れた事例の約7割で、それより前に日本語の指示が文脈の近くへ入る。
-# 注入は1行のため文脈の消費は小さい。
-LANGUAGE_REINJECTION_INTERVAL = 10
-
-
-def _advance_language_reinjection(payload: dict, session_id: str) -> bool:
-    """メインセッションのツール呼び出しを数え、再注入の間隔に達した呼び出しで真を返す。
-
-    委譲先（agents_serverの委譲先セッションと`agent_id`を持つサブエージェント）とセッション識別を
-    確定できない呼び出しでは数えない。Codexの除外は呼び出し元が判定する。
-    間隔に達した呼び出しでは回数を0へ戻す。SessionStartの注入時も`rules_context`が0へ戻す。
-    """
-    if not session_id or is_delegated(os.environ):
-        return False
-    if payload.get("agent_id") or payload.get("isSidechain") is True:
-        return False
-    reached = False
-    key = _rules_context.LANGUAGE_REINJECTION_COUNT_KEY
-
-    def _advance(current: dict) -> dict | None:
-        nonlocal reached
-        count = current.get(key, 0)
-        if not isinstance(count, int) or isinstance(count, bool) or count < 0:
-            count = 0
-        count += 1
-        if count >= LANGUAGE_REINJECTION_INTERVAL:
-            reached = True
-            count = 0
-        current[key] = count
-        return current
-
-    update_state(session_id, _advance)
-    return reached
+    return None
 
 
 # Claude CodeとCodexが生成するagents_serverの完全修飾MCP tool名。

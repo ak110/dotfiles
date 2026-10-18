@@ -5,11 +5,14 @@
 フェンスが確認回答の記録（行頭`回答: `か`自由記述: `の行を持つ書式）の場合は、ユーザーの値である回答・自由記述と
 記録より前の地の文だけを原文と比べ、エージェントが書いた質問と選択肢は比べない。
 全フェンスが一致した場合は、要求単位ごとの`逐語引用 text[N] 文字A-B`を出力する。
+引用節のtextフェンスの外にある本文の参照も、現在のフェンスの番号と要求単位の開始・終了位置に一致するか確かめる。
+参照がずれている場合は位置の一覧を出力し、該当行と書き換え方法を標準エラーへ示す。
 A-Bはフェンスの内容の先頭を1とし、改行も1文字として数えるUnicodeコードポイントの範囲で、単位の最初の文字から
 最後の文字までを含む。要求単位への分け方は`exec-review-evidence-check`と共有する`requirement_units`に従う。
 
 textフェンスの番号付け、文字範囲の数え方、確認回答の記録から回答と自由記述を取り出す規則は本スクリプトだけが持ち、
-起草規範はこのスクリプトの実行を案内する。終了コードは一致が0、不一致が1、引数の誤りと読めない入力が2である。
+起草規範はこのスクリプトの実行を案内する。終了コードは一致が0、フェンスの不一致か本文の参照のずれが1、
+引数の誤りと読めない入力が2である。
 
 `--import-spec PATH`は保存済みuser-eventsから引用節へ取り込む。PATHは選択オブジェクトのJSON配列で、
 各要素にsource（保存済みJSONLの絶対パス）、record、lineを指定する。同位置に複数イベントがある場合はsequenceも指定する。
@@ -37,6 +40,7 @@ QUOTE_HEADING = "## ユーザー指摘の逐語引用"
 ANSWER_LABELS = ("質問: ", "選択肢: ", "回答: ", "自由記述: ")
 # 質問と選択肢はエージェントが書いた文であり、ユーザーの値は回答と自由記述だけである。
 USER_ANSWER_LABELS = ("回答: ", "自由記述: ")
+QUOTE_POSITION = re.compile(r"逐語引用\s*text\[(\d+)\]\s*文字(\d+)-(\d+)")
 
 
 class InputError(Exception):
@@ -296,10 +300,35 @@ def _unit_spans(content: str, part: Part) -> list[tuple[int, int, str]]:
     return spans
 
 
-def check(body: str, originals: list[Original]) -> tuple[list[str], list[str]]:
-    """一致した場合の出力行と、不一致の診断を返す。"""
+def _reference_errors(body: str, spans: list[list[tuple[int, int, str]]]) -> list[str]:
+    """引用節のtextフェンス外にある参照を、算出済みの要求単位の境界と比べる。"""
+    start, end = _quote_section(body)
+    first_line = len(body[:start].splitlines())
+    section = body[start:end].splitlines(keepends=True)
+    quoted = {
+        first_line + index
+        for first, last, info in requirement_units.fenced_blocks(section)
+        if info == "text"
+        for index in range(first + 1, last)
+    }
+    errors: list[str] = []
+    for index, line in enumerate(body.splitlines()):
+        if index in quoted:
+            continue
+        for match in QUOTE_POSITION.finditer(line):
+            number, first, last = map(int, match.groups())
+            units = spans[number - 1] if 1 <= number <= len(spans) else []
+            if first <= last and any(first == unit[0] for unit in units) and any(last == unit[1] for unit in units):
+                continue
+            errors.append(f"本文の{index + 1}行目: {match.group()} が現在の引用節の要求単位の範囲と一致しません")
+    return errors
+
+
+def check(body: str, originals: list[Original]) -> tuple[list[str], list[str], str]:
+    """一致と位置の出力行、不一致の診断、次の操作を返す。"""
     output: list[str] = []
     errors: list[str] = []
+    spans: list[list[tuple[int, int, str]]] = []
     for number, content in enumerate(_quote_fences(body), start=1):
         parts = _parts(content)
         for part in parts:
@@ -312,11 +341,23 @@ def check(body: str, originals: list[Original]) -> tuple[list[str], list[str]]:
                 output.append(f"text[{number}] {part.label}: 一致 {matched.location()}")
         if errors:
             continue
-        for part in parts:
-            output.extend(
-                f"逐語引用 text[{number}] 文字{start}-{end}: {unit}" for start, end, unit in _unit_spans(content, part)
-            )
-    return output, errors
+        units = [span for part in parts for span in _unit_spans(content, part)]
+        spans.append(units)
+        output.extend(f"逐語引用 text[{number}] 文字{start}-{end}: {unit}" for start, end, unit in units)
+    if errors:
+        return (
+            [],
+            errors,
+            (
+                "出所の原文（`--user-events`の出力では該当行の`text`）を読み直し、本文の該当する`text`フェンスを原文どおりへ"
+                "直してから同じコマンドを再実行する。原文が渡した出所に無い場合は、原文を保持する記録を`--source`へ加える"
+            ),
+        )
+    return (
+        output,
+        _reference_errors(body, spans),
+        ("標準出力の位置の一覧から同じ要求単位の値へ本文の参照を書き換え、同じコマンドを再実行する"),
+    )
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -359,7 +400,7 @@ def main(argv: list[str] | None = None) -> int:
             body, originals = _import_quotes(body, args.import_spec)
         else:
             originals = [original for path in args.source for original in _originals(path)]
-        output, errors = check(body, originals)
+        output, errors, next_action = check(body, originals)
         if args.import_spec is not None and not errors:
             atomic_file.atomic_write(args.body, body)
     except (InputError, OSError, UnicodeError, json.JSONDecodeError, pydantic.ValidationError) as error:
@@ -369,18 +410,16 @@ def main(argv: list[str] | None = None) -> int:
             "sequence・mode・範囲を保存済みuser-eventsに合わせてから同じコマンドを再実行する",
         )
         return 2
+    if output:
+        print("\n".join(output))
     if errors:
         for error in errors:
             print(f"失敗: {error}", file=sys.stderr)
         print(
-            _next_action.next_action_line(
-                "出所の原文（`--user-events`の出力では該当行の`text`）を読み直し、本文の該当する`text`フェンスを原文どおりへ"
-                "直してから同じコマンドを再実行する。原文が渡した出所に無い場合は、原文を保持する記録を`--source`へ加える"
-            ),
+            _next_action.next_action_line(next_action),
             file=sys.stderr,
         )
         return 1
-    print("\n".join(output))
     return 0
 
 

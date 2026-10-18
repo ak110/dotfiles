@@ -87,9 +87,28 @@ def test_explore_capabilities_are_shared_with_public_schema() -> None:
     capabilities = tool_descriptions.EXPLORE_CAPABILITIES
     assert capabilities in tool_descriptions.START_DESCRIPTION[:4096]
     assert capabilities in tool_descriptions.MODE_DESCRIPTION
-    assert capabilities in launch_prompts.LAUNCH_SYSTEM_PROMPTS["explore"]
+    for backend, prompt in (
+        ("claude", launch_prompts.CLAUDE_EXPLORE_SYSTEM_PROMPT),
+        ("codex", launch_prompts.EXPLORE_SYSTEM_PROMPT),
+    ):
+        assert tool_descriptions.EXPLORE_COMMON_CAPABILITIES in prompt
+        assert tool_descriptions.EXPLORE_BACKEND_CAPABILITIES[backend] in prompt
+        for other in tool_descriptions.EXPLORE_BACKEND_CAPABILITIES.keys() - {backend}:
+            assert tool_descriptions.EXPLORE_BACKEND_CAPABILITIES[other] not in prompt
     for kind in ("delegate", "shell", "write"):
         assert capabilities not in launch_prompts.LAUNCH_SYSTEM_PROMPTS[kind]
+
+
+def test_explore_contract_covers_complete_reading_and_tool_managed_output() -> None:
+    """保存結果の完全取得と成果物の読取専用境界を各backendへ配送する。"""
+    for prompt in (launch_prompts.EXPLORE_SYSTEM_PROMPT, launch_prompts.CLAUDE_EXPLORE_SYSTEM_PROMPT):
+        assert _shared_document_body("agents-server-explore.md") in prompt
+        assert "ファイルやディレクトリを作成、変更および削除せず" in prompt
+        assert "自身の成果ファイルは作成しない" in prompt
+        assert "キャッシュ・状態・保存出力" in prompt
+        assert "省略や未読" in prompt
+    assert "atk read-file" in tool_descriptions.EXPLORE_BACKEND_CAPABILITIES["claude"]
+    assert "pyfltr grep" in tool_descriptions.EXPLORE_BACKEND_CAPABILITIES["claude"]
 
 
 def test_all_launch_system_prompts_include_language_condition() -> None:

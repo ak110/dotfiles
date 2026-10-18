@@ -1396,6 +1396,8 @@ def test_accepts_direct_and_date_hierarchy_working_paths(
     ("filename", "rejected"),
     [
         ("example-plan.md", True),
+        ("13-1310_計画名検査.md", False),
+        ("13-1310_計画名検査-a1b2.md", False),
         ("13-計画名検査-a1b2.md", False),
         ("13-legacy.md", False),
     ],
@@ -1418,7 +1420,7 @@ def test_working_plan_filename_follows_save_stage_condition(
     filename_errors = [error for error in errors if _FILENAME_ERROR_MARKER in error]
     assert bool(filename_errors) is rejected, errors
     if rejected:
-        assert "dd-{名称}-{小文字16進数4桁}.md" in filename_errors[0]
+        assert "dd-HHmm_<名称>.md" in filename_errors[0]
 
 
 def test_working_plan_filename_is_not_checked_outside_working_root(

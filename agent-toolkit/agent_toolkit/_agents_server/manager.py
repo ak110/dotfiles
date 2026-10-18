@@ -183,6 +183,7 @@ class AgentsServerManager(manager_wait.ManagerWait):
 
         起動直後にengineの可用性を理由として終端した候補とagyの失敗候補を
         除外集合へ加えて次候補へ進む。Claudeの依存読込失敗も型付きの候補不成立として扱う。
+        engine共通能力の不成立は同じ要求内の同engine候補を全て除外し、永続記録へ渡さない。
         Claude/Codexで候補を変えても結果が変わらない失敗は、そのまま委譲元へ返す。
         候補を除外して後続の候補で成立した場合は、除外した候補と除外の根拠を応答へ加える。
         """
@@ -202,6 +203,8 @@ class AgentsServerManager(manager_wait.ManagerWait):
         display_label = resolve_display_label(label, prompt)
         delivery_body = wrap_delivery_body(prompt)
         for candidate_index, candidate in enumerate(candidates):
+            if candidate in excluded:
+                continue
             engine, model, effort = candidate
             backend_type = backends.backend_class(engine)
             if backend_type is None:
@@ -219,15 +222,18 @@ class AgentsServerManager(manager_wait.ManagerWait):
                     excluded_candidates=frozenset(excluded),
                 )
             except backends.StartCandidateUnavailable as exc:
-                excluded[candidate] = exc.reason
-                await run_file_operation(
-                    unavailable_candidates.record_unavailable_candidate,
-                    model_type,
-                    launch_kind,
-                    candidate,
-                    exc.reason,
-                    now=datetime.datetime.now(datetime.UTC),
-                )
+                if exc.scope == "launch_engine":
+                    excluded.update({item: exc.reason for item in candidates if item[0] == engine})
+                else:
+                    excluded[candidate] = exc.reason
+                    await run_file_operation(
+                        unavailable_candidates.record_unavailable_candidate,
+                        model_type,
+                        launch_kind,
+                        candidate,
+                        exc.reason,
+                        now=datetime.datetime.now(datetime.UTC),
+                    )
                 _LOG.warning(
                     "モデル開始前の起動環境が成立しません: engine=%s model_type=%s launch_kind=%s reason=%s",
                     engine,

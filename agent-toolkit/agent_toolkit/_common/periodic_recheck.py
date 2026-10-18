@@ -47,7 +47,10 @@ _PERIODIC_RECHECK_BODY_LINES: tuple[str, ...] = (
     "確定した義務はその行を加えたpromptでこのtaskを作成し直す。",
     "6. 全対象が未完了で到達した義務も無ければ、ユーザー向けの報告を出力せずに待機を続ける。"
     "この発火を完了と停滞の判定の入力に含めない。",
-    "7. 待機する全対象の終端を確認したら、このtaskのIDを`CronDelete`へ渡して削除する。",
+    "7. 待機する全対象の終端と結果回収後、共通promptのtaskはmodが自動回収する。"
+    "追加した経過時間起動の義務を持つtaskは通常回収で保持し、セッション終了時にmodが回収する。"
+    "modが無い環境で自ら装着したtaskは、全対象の終端後に保持したIDを`CronDelete`へ渡して削除する。"
+    "自動回収の失敗通知が届いた場合は、その理由と次の操作を確認する。",
     "詳細は`agent-toolkit:delegation`の`references/claude-code-runtime.md`「待機中の定期再確認と背景転換」と"
     "`references/waiting-and-monitoring.md`「完了通知を待ってターンを終える場合」に従う。",
 )

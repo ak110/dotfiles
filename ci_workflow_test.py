@@ -1,14 +1,21 @@
 """CI workflowの静的契約を検証する。"""
 
+import io
+import json
 import os
 import re
+import runpy
 import shutil
 import subprocess
 import sys
 import typing
+import urllib.error
+import urllib.parse
+import urllib.request
 from pathlib import Path
 
 import pytest
+import yaml
 
 from _test_helpers import (
     REPO_ROOT,
@@ -147,13 +154,81 @@ def test_windows_job_runs_public_launcher_tests(workflow_data: dict[str, object]
     assert "bin/update_dotfiles_launcher_test.py" in targets
 
 
+def test_windows_job_runs_pinned_codex_sandbox_integration(workflow_data: dict[str, object]) -> None:
+    """固定版CLIを導入した所有Windows jobが実sandbox成功と出力上限指定の拒否を検査する。"""
+    job = workflow_mapping(workflow_jobs(workflow_data)["test-windows"])
+    assert job["runs-on"] == "windows-latest"
+    steps = workflow_steps(job)
+    install_index, install = _windows_step(steps, "Codex CLI 0.163.0の導入")
+    integration_index, integration = _windows_step(steps, "Windows Codex sandbox integration")
+    assert install_index < integration_index
+    assert install["if"] == integration["if"] == "needs.common-ci-owner.outputs.owns == 'true'"
+    script = str(install["run"])
+    assert "npm.cmd install --global --no-audit --no-fund @openai/codex@0.163.0" in script
+    assert "codex-cli 0.163.0" in script
+    assert "$env:GITHUB_PATH" in script
+    targets = direct_pytest_targets({"jobs": {"test-windows": {"steps": [integration]}}})
+    prefix = "agent-toolkit/agent_toolkit/_agents_server/codex_sandbox_integration_test.py::"
+    assert targets == [
+        prefix + "test_windows_explore_probe_reaches_thread_start",
+        prefix + "test_windows_explore_probe_rejects_custom_output_cap",
+    ]
+    assert integration["working-directory"] == "${{ env.DOTFILES_DIR }}"
+
+
+@pytest.mark.skipif(shutil.which("pwsh") is None, reason="pwsh未インストール")
+@pytest.mark.parametrize("failure", ["none", "npm", "missing-cli", "wrong-version"])
+def test_windows_codex_installer_requires_pinned_executable(
+    workflow_data: dict[str, object], tmp_path: Path, failure: str
+) -> None:
+    """導入stepの実PowerShellがnpm失敗・CLI不在・版不一致を非0にし、成功時だけPATHを配送する。"""
+    steps = workflow_steps(workflow_mapping(workflow_jobs(workflow_data)["test-windows"]))
+    script = str(_windows_step(steps, "Codex CLI 0.163.0の導入")[1]["run"])
+    executable = tmp_path / "codex.ps1"
+    version = "codex-cli 0.162.0" if failure == "wrong-version" else "codex-cli 0.163.0"
+    executable.write_text(f"Write-Output '{version}'\n", encoding="utf-8-sig")
+    quoted_cli = str(executable).replace("'", "''")
+    quoted_directory = str(tmp_path).replace("'", "''")
+    npm_status = 1 if failure == "npm" else 0
+    binaries = (
+        "@()"
+        if failure == "missing-cli"
+        else f"[pscustomobject]@{{FullName='{quoted_cli}';DirectoryName='{quoted_directory}'}}"
+    )
+    prelude = "\n".join(
+        (
+            f"function npm.cmd {{ $global:LASTEXITCODE = {npm_status}; Write-Output 'npm-test' }}",
+            f"function Get-ChildItem {{ {binaries} }}",
+        )
+    )
+    script_path = tmp_path / "install.ps1"
+    script_path.write_text(f"{prelude}\n{script}", encoding="utf-8-sig")
+    github_path = tmp_path / "github-path"
+    pwsh = shutil.which("pwsh")
+    assert pwsh is not None
+    result = subprocess.run(
+        [pwsh, "-NoProfile", "-NonInteractive", "-File", str(script_path)],
+        env={**os.environ, "GITHUB_PATH": str(github_path)},
+        check=False,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        timeout=30,
+    )
+    assert (result.returncode == 0) == (failure == "none"), result.stdout + result.stderr
+    if failure == "none":
+        assert github_path.read_text(encoding="utf-8-sig").strip() == str(tmp_path)
+        assert version in result.stdout
+    else:
+        assert not github_path.exists()
+
+
 def test_windows_upgrade_is_independent_from_windows_tests(workflow_data: dict[str, object]) -> None:
     """更新検証とWindows固有検査は依存関係のない別jobが所有する。"""
     jobs = workflow_jobs(workflow_data)
     upgrade = workflow_mapping(jobs["update-dotfiles-upgrade-windows"])
     windows = workflow_mapping(jobs["test-windows"])
-    assert "needs" not in upgrade
-    assert "needs" not in windows
+    assert upgrade.get("needs") == windows.get("needs") == "common-ci-owner"
     assert all(step.get("name") != "約3日前からの update-dotfiles 更新検証" for step in workflow_steps(windows))
     assert any(step.get("name") == "公開入口ランチャーの動作確認" for step in workflow_steps(windows))
 
@@ -185,7 +260,7 @@ _RELEASE_PULL_REQUEST_CONDITIONS = (
     "github.head_ref == 'develop'",
     "github.base_ref == 'master'",
 )
-_OWNS = "steps.owner.outputs.owns == 'true'"
+_OWNS = "needs.common-ci-owner.outputs.owns == 'true'"
 
 
 def _common_job_names(workflow: dict[str, object]) -> list[str]:
@@ -193,8 +268,8 @@ def _common_job_names(workflow: dict[str, object]) -> list[str]:
     return [name for name, job in workflow_jobs(workflow).items() if "(non-owner)" in str(workflow_mapping(job)["name"])]
 
 
-def test_common_jobs_compute_release_pull_request_once(workflow_data: dict[str, object]) -> None:
-    """全共通jobが先頭の判定stepで1回だけ判定し、非所有markerと後続stepは判定式を書かずにその出力を参照する。"""
+def test_common_jobs_share_owner_output(workflow_data: dict[str, object]) -> None:
+    """共通7表示名と全実処理が先行jobの所有出力を参照する。"""
     common_jobs = _common_job_names(workflow_data)
     assert common_jobs == [
         "test-linux",
@@ -204,15 +279,30 @@ def test_common_jobs_compute_release_pull_request_once(workflow_data: dict[str, 
         "browser-e2e",
         "rust-lint",
     ]
+    owner = workflow_mapping(workflow_jobs(workflow_data)["common-ci-owner"])
+    assert owner["permissions"] == {"actions": "read"}
+    outputs = workflow_mapping(owner["outputs"])
+    assert outputs["owns"] == "${{ steps.owner.outputs.owns }}"
+    assert outputs["reason"] == "${{ steps.owner.outputs.reason }}"
+    judgment = workflow_steps(owner)[0]
+    assert judgment["id"] == "owner"
+    release_expression = str(workflow_mapping(judgment["env"])["RELEASE_PULL_REQUEST"])
+    assert release_expression == "${{ " + " && ".join(_RELEASE_PULL_REQUEST_CONDITIONS) + " }}"
     for job_name in common_jobs:
-        steps = workflow_steps(workflow_mapping(workflow_jobs(workflow_data)[job_name]))
-        judgment, marker, *real_steps = steps
-        assert judgment["id"] == "owner", job_name
-        assert "if" not in judgment, job_name
-        release_expression = str(workflow_mapping(judgment["env"])["RELEASE_PULL_REQUEST"])
-        assert all(condition in release_expression for condition in _RELEASE_PULL_REQUEST_CONDITIONS), job_name
+        job = workflow_mapping(workflow_jobs(workflow_data)[job_name])
+        assert job["needs"] == "common-ci-owner"
+        assert "if" not in job
+        base_name = {"update-dotfiles-upgrade-windows": "update-dotfiles-upgrade (windows)"}.get(job_name, job_name)
+        suffix = (
+            "format('{0} (non-owner)', matrix.check-name) || matrix.check-name"
+            if job_name == "python-lint"
+            else f"'{base_name} (non-owner)' || '{base_name}'"
+        )
+        assert job["name"] == "${{ needs.common-ci-owner.outputs.owns == 'false' && " + suffix + " }}"
+        marker, *real_steps = workflow_steps(job)
         assert marker["name"] == "共通CI非所有経路", job_name
-        assert marker["if"] == "steps.owner.outputs.owns == 'false'", job_name
+        assert marker["if"] == "needs.common-ci-owner.outputs.owns == 'false'", job_name
+        assert workflow_mapping(marker["env"])["OWNER_REASON"] == "${{ needs.common-ci-owner.outputs.reason }}"
         for step in [marker, *real_steps]:
             condition = str(step.get("if", ""))
             assert not any(term in condition for term in ("github.head_ref", "github.base_ref", "github.event_name")), (
@@ -220,6 +310,165 @@ def test_common_jobs_compute_release_pull_request_once(workflow_data: dict[str, 
                 step.get("name"),
             )
         assert all(str(step.get("if", "")).startswith(_OWNS) for step in real_steps), job_name
+
+    version = _statusline_job(workflow_data)
+    assert "needs" not in version
+    assert version["if"] == (
+        "(github.event_name == 'pull_request' && github.base_ref == 'master') || "
+        "(github.event_name == 'push' && github.ref == 'refs/heads/develop')"
+    )
+    assert workflow_data["concurrency"] == {
+        "group": "ci-${{ github.event_name }}-${{ github.ref }}",
+        "cancel-in-progress": "true",
+    }
+
+
+class _WorkflowRunsResponse(io.BytesIO):
+    headers: typing.ClassVar[dict[str, str]] = {}
+
+
+@pytest.mark.parametrize(
+    ("event", "branch", "release_pr", "run_state", "expected_owns"),
+    [
+        ("push", "develop", False, "queued", False),
+        ("push", "develop", False, "in_progress", False),
+        ("push", "develop", False, "success", False),
+        ("push", "develop", False, "failure", True),
+        ("push", "develop", False, "cancelled", True),
+        ("push", "develop", False, "none", True),
+        ("push", "develop", False, "api-error", True),
+        ("push", "develop", False, "wrong-sha", True),
+        ("push", "develop", False, "wrong-repo", True),
+        ("push", "develop", False, "wrong-branch", True),
+        ("push", "develop", False, "wrong-event", True),
+        ("push", "master", False, "success", True),
+        ("push", "feature", False, "success", True),
+        ("pull_request", "develop", True, "none", False),
+        ("pull_request", "feature", False, "none", True),
+        ("pull_request", "develop", False, "none", True),
+    ],
+)
+def test_common_ci_owner_runs_workflow_judgment(
+    workflow_data: dict[str, object],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    event: str,
+    branch: str,
+    *,
+    release_pr: bool,
+    run_state: str,
+    expected_owns: bool,
+) -> None:
+    """実判定へREST応答を与え、同期push・通常push・PR・照会失敗の出力を確かめる。
+
+    応答fieldはGitHub REST list-workflow-runs-for-a-workflowの公開schemaに従う。
+    """
+    job = workflow_mapping(workflow_jobs(workflow_data)["common-ci-owner"])
+    step = workflow_steps(job)[0]
+    script = str(step["run"])
+    assert script.startswith("python3 - <<'PY'\n")
+    script_path = tmp_path / "owner.py"
+    script_path.write_text(script.split("\n", 1)[1].rsplit("\nPY", 1)[0], encoding="utf-8")
+    output = tmp_path / "output"
+    for key, value in {
+        "GITHUB_EVENT_NAME": event,
+        "GITHUB_REF": f"refs/heads/{branch}",
+        "GITHUB_REPOSITORY": "ak110/dotfiles",
+        "GITHUB_SHA": "a" * 40,
+        "GITHUB_API_URL": "https://api.github.com",
+        "GH_TOKEN": "test-token",
+        "RELEASE_PULL_REQUEST": str(release_pr).lower(),
+        "GITHUB_OUTPUT": str(output),
+    }.items():
+        monkeypatch.setenv(key, value)
+    requests: list[str] = []
+
+    def urlopen(request: urllib.request.Request, **_kwargs: object) -> io.BytesIO:
+        requests.append(request.full_url)
+        parsed = urllib.parse.urlsplit(request.full_url)
+        assert parsed.path == "/repos/ak110/dotfiles/actions/workflows/ci.yaml/runs"
+        assert urllib.parse.parse_qs(parsed.query) == {
+            "branch": ["master"],
+            "event": ["push"],
+            "head_sha": ["a" * 40],
+            "per_page": ["100"],
+        }
+        if run_state == "api-error":
+            raise urllib.error.URLError("API unavailable")
+        run = {
+            "head_sha": "b" * 40 if run_state == "wrong-sha" else "a" * 40,
+            "head_branch": "feature" if run_state == "wrong-branch" else "master",
+            "head_repository": {"full_name": "other/repo" if run_state == "wrong-repo" else "ak110/dotfiles"},
+            "event": "pull_request" if run_state == "wrong-event" else "push",
+            "status": run_state if run_state in {"queued", "in_progress"} else "completed",
+            "conclusion": run_state if run_state in {"success", "failure", "cancelled"} else "success",
+            "html_url": "https://github.com/ak110/dotfiles/actions/runs/123",
+        }
+        return _WorkflowRunsResponse(json.dumps({"workflow_runs": [] if run_state == "none" else [run]}).encode())
+
+    monkeypatch.setattr(urllib.request, "urlopen", urlopen)
+    runpy.run_path(str(script_path))
+    values = dict(line.split("=", 1) for line in output.read_text(encoding="utf-8").splitlines())
+    assert values["owns"] == str(expected_owns).lower()
+    assert bool(requests) == (event == "push" and branch == "develop")
+    if not expected_owns:
+        assert ("develop branch" if release_pr else "/actions/runs/123") in values["reason"]
+
+
+@pytest.mark.parametrize(
+    ("event", "conclusion", "branch", "repository", "eligible"),
+    [
+        ("push", "success", "master", "ak110/dotfiles", True),
+        ("push", "success", "develop", "ak110/dotfiles", False),
+        ("push", "failure", "master", "ak110/dotfiles", False),
+        ("pull_request", "success", "master", "ak110/dotfiles", False),
+        ("push", "success", "master", "other/repo", False),
+    ],
+)
+def test_common_ci_release_boundary(
+    tmp_path: Path,
+    event: str,
+    conclusion: str,
+    branch: str,
+    repository: str,
+    *,
+    eligible: bool,
+) -> None:
+    """Releaseの実gateは同一repositoryのmaster push成功だけを受理する。"""
+    release = workflow_mapping(
+        yaml.load(
+            (REPO_ROOT / ".github/workflows/release-statusline.yaml").read_text(encoding="utf-8"),
+            Loader=yaml.BaseLoader,
+        )
+    )
+    jobs = workflow_jobs(release)
+    gate = workflow_steps(workflow_mapping(jobs["gate"]))[0]
+    assert workflow_mapping(gate["env"])["CONCLUSION"] == "${{ github.event.workflow_run.conclusion }}"
+    output = tmp_path / "gate-output"
+    result = subprocess.run(
+        ["bash"],
+        input=str(gate["run"]),
+        check=False,
+        capture_output=True,
+        text=True,
+        env={
+            "PATH": os.pathsep.join((str(Path(sys.executable).parent), "/usr/bin", "/bin")),
+            "EVENT": event,
+            "CONCLUSION": conclusion,
+            "HEAD_BRANCH": branch,
+            "HEAD_REPOSITORY": repository,
+            "REPOSITORY": "ak110/dotfiles",
+            "HEAD_SHA": "a" * 40,
+            "GITHUB_OUTPUT": str(output),
+        },
+        timeout=10,
+    )
+    assert result.returncode == 0, result.stderr
+    values = dict(line.split("=", 1) for line in output.read_text(encoding="utf-8").splitlines())
+    assert values["eligible"] == str(eligible).lower()
+    prepare = workflow_mapping(jobs["prepare"])
+    assert prepare["if"] == "needs.gate.outputs.eligible == 'true'"
+    assert workflow_mapping(workflow_steps(prepare)[0]["with"])["ref"] == "${{ needs.gate.outputs.head_sha }}"
 
 
 def test_chezmoi_is_installed_by_shared_action(workflow_data: dict[str, object]) -> None:
@@ -322,6 +571,20 @@ def test_ci_deps_check_matches_ci_container(workflow_data: dict[str, object]) ->
     include = [workflow_mapping(value) for value in typing.cast(list[object], matrix["include"])]
     versions = sorted({str(entry["python-version"]) for entry in include}, key=lambda value: tuple(map(int, value.split("."))))
     assert _makefile_variable("CI_PYTHON_VERSIONS").split() == versions
+
+
+def test_update_checks_container_dependencies_after_lock_updates() -> None:
+    """依存更新は両lockの更新後、全体検証の前にcontainerの依存導入を確かめる。"""
+    text = (REPO_ROOT / "Makefile").read_text(encoding="utf-8")
+    match = re.search(r"^update:\n((?:\t.*\n)+)", text, flags=re.MULTILINE)
+    assert match is not None
+    commands = match.group(1).splitlines()
+    check = commands.index("\t$(MAKE) ci-deps-check")
+    assert next(index for index, command in enumerate(commands) if "uv sync --upgrade" in command) < check
+    assert (
+        next(index for index, command in enumerate(commands) if "uv lock --upgrade --project agent-toolkit" in command) < check
+    )
+    assert check < commands.index("\t$(MAKE) test")
 
 
 def test_minimum_git_tests_run_with_readme_version(workflow_data: dict[str, object]) -> None:

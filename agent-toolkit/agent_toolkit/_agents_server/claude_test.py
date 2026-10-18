@@ -737,16 +737,34 @@ async def test_sdk_start_and_resume_deliver_executable_cli_without_old_path(
 
 @pytest.mark.parametrize("session_id", [None, "saved-session"])
 @pytest.mark.usefixtures("agents_server_isolation")
-def test_explore_options_keep_read_tools_and_no_inherited_mcp_on_resume(tmp_path: pathlib.Path, session_id: str | None) -> None:
-    """再接続しても組込道具とMCPを制限し、診断ログの指定を保つ。"""
+def test_explore_options_keep_search_tools_and_mcp_on_resume(tmp_path: pathlib.Path, session_id: str | None) -> None:
+    """新規・再接続の両方でコマンド検索とpyfltrへ到達し、診断ログの指定を保つ。"""
     options = claude._build_options(str(tmp_path), "model", "high", session_id, "explore", debug_file=tmp_path / "debug.log")
-    assert options.tools == ["Read", "Glob", "Grep"]
+    assert options.tools == ["Read", "Glob", "Grep", "Bash"]
+    assert set(options.allowed_tools) == {"Read", "Glob", "Grep", "Bash", "mcp__pyfltr__*"}
+    assert options.permission_mode == "auto"
+    assert not options.hooks
+    assert options.disallowed_tools == ["Skill"]
     assert options.extra_args == {
         "debug-file": str(tmp_path / "debug.log"),
         "strict-mcp-config": None,
         "permission-prompts": "none",
     }
     assert launch_prompts.python_runtime_instructions() in options.system_prompt
+
+
+@pytest.mark.parametrize("session_id", [None, "saved-session"])
+@pytest.mark.usefixtures("agents_server_isolation")
+def test_explore_mcp_uses_plugin_definition_on_start_and_resume(tmp_path: pathlib.Path, session_id: str | None) -> None:
+    """pyfltrの既存起動定義を使い、個別MCPツールの用途は探索プロンプトへ委ねる。"""
+    options = claude._build_options(str(tmp_path), "model", "high", session_id, "explore")
+    assert options.mcp_servers == {
+        "pyfltr": json.loads((claude.plugin_roots.SERVER_PLUGIN_ROOT / ".mcp.json").read_text(encoding="utf-8"))["mcpServers"][
+            "pyfltr"
+        ]
+    }
+    assert "mcp__pyfltr__*" in options.allowed_tools
+    assert options.disallowed_tools == ["Skill"]
 
 
 def _lightweight_environment() -> dict[str, str]:
@@ -776,13 +794,13 @@ def test_claude_explore_options_reduce_instruction_sources_and_keep_tools(
     assert options.skills == []
     assert options.env == _lightweight_environment()
     assert options.system_prompt == (
-        f"{launch_prompts.EXPLORE_SYSTEM_PROMPT}\n{launch_prompts.AUTO_RESUME_NOTICE}\n"
+        f"{launch_prompts.CLAUDE_EXPLORE_SYSTEM_PROMPT}\n{launch_prompts.AUTO_RESUME_NOTICE}\n"
         f"{launch_prompts.python_runtime_instructions()}\n"
         f"{launch_prompts.cli_runtime_instructions(claude.plugin_roots.SERVER_PLUGIN_ROOT)}"
     )
-    assert options.tools == ["Read", "Glob", "Grep"]
-    assert set(options.allowed_tools) == {"Read", "Glob", "Grep"}
-    assert not options.mcp_servers
+    assert options.tools == ["Read", "Glob", "Grep", "Bash"]
+    assert set(options.allowed_tools) == {"Read", "Glob", "Grep", "Bash", "mcp__pyfltr__*"}
+    assert set(options.mcp_servers) == {"pyfltr"}
     assert options.extra_args == {"strict-mcp-config": None, "permission-prompts": "none"}
 
 

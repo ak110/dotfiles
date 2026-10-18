@@ -42,7 +42,7 @@ def _names(root: Path, scope: str) -> list[str]:
         "unstaged": ("diff", "--name-only"),
         "untracked": ("ls-files", "--others", "--exclude-standard"),
     }
-    return [name for name in _git(root, *commands[scope]).stdout.splitlines() if name]
+    return [name for name in _git(root, *commands[scope], "-z").stdout.split("\0") if name]
 
 
 def _stat(root: Path, *, staged: bool) -> str:

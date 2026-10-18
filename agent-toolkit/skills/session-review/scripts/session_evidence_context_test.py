@@ -124,12 +124,12 @@ def test_record_schema_rejects_out_of_range_and_invalid_locators(
     assert message in events[0]["text"]
 
 
-def test_new_query_modes_are_mutually_exclusive(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
+def test_new_query_modes_can_be_combined(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
     transcript = _write_transcript(tmp_path, [{"type": "user", "message": {"role": "user", "content": "依頼"}}])
 
-    assert evidence.main([str(transcript), "--fixed-string", "依頼", "--record-schema", "1"]) == 2
+    assert evidence.main([str(transcript), "--fixed-string", "依頼", "--record-schema", "1"]) == 0
 
-    assert "併用できない" in read_jsonl(capsys)[0]["text"]
+    assert {event["kind"] for event in read_jsonl(capsys)} >= {"fixed-string-summary", "record-schema"}
 
 
 def _context_verdicts(capsys: pytest.CaptureFixture[str]) -> dict[str, dict]:
@@ -290,7 +290,6 @@ def test_context_at_keeps_codex_replacement_history(tmp_path: pathlib.Path, caps
         (["--context-at", "main:99", "--phrase=x"], "範囲外"),
         (["--context-at", "1"], "--phrase"),
         (["--context-at", "1", "--phrase="], "--phrase"),
-        (["--context-at", "1", "--phrase=x", "--stats"], "併用できない"),
         (["--phrase=x"], "--context-at"),
     ],
 )

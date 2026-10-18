@@ -10,6 +10,7 @@ import sys
 from pathlib import Path
 from typing import Any, NamedTuple
 
+import session_evidence_execution
 from session_evidence_detail import (
     _clip_structure,
     _entry_detail_events,
@@ -24,7 +25,6 @@ from session_evidence_extract import (
     _OMISSION_MARK,
     _SHELL_NAMES,
     _basename,
-    _clip,
     _CollectedRecord,
     _DetailBudget,
     _generated_user_event,
@@ -41,6 +41,7 @@ from session_evidence_hook_notices import (
 )
 from session_evidence_tool_calls import (
     _record_tool_calls,
+    _recorded_input,
 )
 
 from agent_toolkit._atk import outcome as _outcome
@@ -188,28 +189,6 @@ _ADHOC_SHELL_TOOLS = frozenset({"bash", "exec", "exec_command", "shell", "local_
 """シェルのコマンドを実行するツール名の末尾部分。Codexの`exec`はJavaScript本文から`exec_command`を呼ぶ形でコマンドを渡す。"""
 
 
-_ADHOC_PYTHON = r"(?<![\w.-])python(?:\d+(?:\.\d+)*)?"
-
-
-_ADHOC_INLINE_CODE = re.compile(
-    _ADHOC_PYTHON + r"(?:\s+-[A-Za-z]+)*?\s+-c(?![\w-])"
-    r"|" + _ADHOC_PYTHON + r"(?:\s+-[A-Za-z]+)*(?:\s+-)?\s*<<"
-    r"|(?<![\w.-])(?:python(?:\d+(?:\.\d+)*)?|uv\s+run)(?:\s+-\S+)*\s+\S*managed-temp/\S+\.py(?!\w)"
-    r"|(?<![\w.-])node(?:\s+-\S+)*?\s+(?:-e|--eval)(?![\w-])"
-)
-"""インタプリタへその場で書いたコードを渡す実行（`-c`、ヒアドキュメントの標準入力、managed-tempのスクリプト、`node -e`）。"""
-
-
-_ADHOC_SAVED_OUTPUT = re.compile(r"atk-output-|agents-wait-|/tool-results/|/tasks/[^\s'\"]*\.output(?!\w)")
-"""`atk`が標準出力の代わりに示す保存先、`atk agents wait`の結果ファイル、
-ホストが退避したツール結果とバックグラウンドタスクの出力。
-"""
-
-
-_ADHOC_OUTPUT_PROCESSOR = re.compile(r"(?<![\w.-])(?:jq|awk|gawk|cut|sed|python(?:\d+(?:\.\d+)*)?)(?![\w.-])")
-"""保存された出力の後加工に使うコマンド。読むだけの`cat`・`rg`・`head`は含めない。"""
-
-
 _CANDIDATE_CONTEXT_FIELDS = ("assistant_context", "user_response", "wi_file", "wi_state", "wi_section")
 """候補へ写す判断材料の項目。確認の質問・選択肢・回答と、記入元のWIの所在を候補一覧へ載せるために使う。"""
 
@@ -228,8 +207,9 @@ FAILURE_EVENT_FIELDS = (
     "command_full",
     "record",
     "line",
+    "hook_notices",
 )
-"""`failure_candidate_exclusion`と`failure_signature`が読むイベントの欄。
+"""失敗候補の分類と署名が読むイベントの欄。hook_noticesは同じ位置の通知のtextとhook_nameを保持する。
 
 失敗候補の`failure_event`へ代表イベントから写し、失敗署名の台帳はこの欄を保存して読込時に判定し直す。
 """
@@ -342,13 +322,16 @@ def _wi_candidate_events(collected: list[_CollectedRecord], session_id: str) -> 
 def _adhoc_processing_events(collected: list[_CollectedRecord]) -> list[dict[str, Any]]:
     """メイン記録と全ての委譲先の記録から、その場のコードによる加工に当たるシェル呼び出しを返す。
 
-    会話の流れはメイン記録だけを対象とするため、委譲先の成功した呼び出しは候補を通してだけ振り返りの入力に含まれる。
-    代表入力は会話の流れと同じく空白を詰めた1行を`_BUNDLE_BODY_LENGTH`字までとする。
+    全担当の通読へ渡す操作と同じ呼び出し位置を保持し、候補でも操作入力の全文を残す。
     """
     events: list[dict[str, Any]] = []
     for item in collected:
+        entries = {record.line: record.entry for record in item.records}
         for call in _record_tool_calls(item.records):
-            if not _is_adhoc_processing(call.tool, call.text):
+            inputs = _recorded_input(entries[call.line], call.call_id)
+            raw = inputs.get("cmd", inputs.get("command"))
+            command = shlex.join(raw) if isinstance(raw, list) and all(isinstance(value, str) for value in raw) else call.text
+            if not _is_adhoc_processing(call.tool, command):
                 continue
             events.append(
                 {
@@ -357,7 +340,7 @@ def _adhoc_processing_events(collected: list[_CollectedRecord]) -> list[dict[str
                     "line": call.line,
                     "timestamp": call.timestamp,
                     "tool": call.tool,
-                    "text": _clip(" ".join(call.text.split()), _BUNDLE_BODY_LENGTH),
+                    "text": call.text,
                 }
             )
     return events
@@ -381,9 +364,9 @@ def _is_adhoc_processing(tool: str, command: str) -> bool:
     leaf = tool.casefold().rsplit("__", maxsplit=1)[-1].rsplit(".", maxsplit=1)[-1]
     if leaf not in _ADHOC_SHELL_TOOLS:
         return False
-    if _ADHOC_INLINE_CODE.search(command):
-        return True
-    return bool(_ADHOC_SAVED_OUTPUT.search(command) and _ADHOC_OUTPUT_PROCESSOR.search(command))
+    return any(
+        session_evidence_execution.processes_output(value) for value in session_evidence_execution.command_inputs(tool, command)
+    )
 
 
 def _candidate_events(
@@ -474,24 +457,18 @@ def _candidate_events(
             seen.add(identity)
             text = event.get("text")
             normalized_text = " ".join(text.split()) if isinstance(text, str) else ""
-            if candidate_kind in {"warning", "tool-failure"} and any(
+            if candidate_kind == "warning" and any(
                 _same_hook_event(candidate_kind, event, notice) for notice in notices_by_locator.get((record, line), [])
             ):
                 excluded["hook-notice-represented"] += 1
                 continue
             event_kind = candidate_kind
             if candidate_kind in FAILURE_CANDIDATE_KINDS:
-                # hook通知へ置き換える失敗は置き換え前の結果の区分だけを適用し、失敗候補としての区分を適用しない。
-                hook_event = (
-                    _hook_originated_event(candidate_kind, event, hook_notice_origins)
-                    if candidate_kind == "tool-failure"
-                    else None
-                )
-                exclusion = (
-                    failure_candidate_exclusion(candidate_kind, event)
-                    if hook_event is None
-                    else _failure_result_exclusion(candidate_kind, _event_without_cd_prefix(event))
-                )
+                event["hook_notices"] = [
+                    {field: notice.get(field) for field in ("text", "hook_name")}
+                    for notice in notices_by_locator.get((record, line), [])
+                ]
+                exclusion, hook_event = classify_failure_candidate(candidate_kind, event)
                 if exclusion is not None:
                     excluded[exclusion] += 1
                     continue
@@ -850,7 +827,7 @@ def _is_response_language_notice(event: dict[str, Any]) -> bool:
     同じ`pretooluse`の`warn`通知には他の判定処理が返す通知も含まれるため、発生源と区分に加えて本文の先頭を
     hook側の本文定数と比べる。定数を参照するのは、hook側の文言を変えたときに判定を追随させるためである。
     """
-    if event.get("hook") != "pretooluse" or event.get("tag") != "warn":
+    if event.get("hook") not in {"pretooluse", "response-language"} or event.get("tag") not in {"warn", "block"}:
         return False
     text = event.get("text")
     if not isinstance(text, str) or not text:
@@ -966,12 +943,26 @@ def _initial_skill_input_locators(
     return (main_record_id, int(request["line"])), (main_record_id, int(body["line"]))
 
 
+def classify_failure_candidate(candidate_kind: str, event: dict[str, Any]) -> tuple[str | None, dict[str, Any] | None]:
+    """抽出と台帳で共通の入力から、除外区分または置換先のhook通知を返す。"""
+    if candidate_kind == "tool-failure":
+        notices = event.get("hook_notices", [])
+        if isinstance(notices, list) and any(
+            isinstance(notice, dict) and _same_hook_event(candidate_kind, event, notice) for notice in notices
+        ):
+            return "hook-notice-represented", None
+        hook_event = _hook_originated_event(candidate_kind, event, [])
+        if hook_event is not None:
+            exclusion = _failure_result_exclusion(candidate_kind, _event_without_cd_prefix(event))
+            return exclusion, hook_event
+    return failure_candidate_exclusion(candidate_kind, event), None
+
+
 def failure_candidate_exclusion(candidate_kind: str, event: dict[str, Any]) -> str | None:
     """失敗候補から除く区分を、1件のイベントの欄（`FAILURE_EVENT_FIELDS`）だけで判定して返す。除かない場合は`None`を返す。
 
     候補の抽出と失敗署名の台帳の読込が同じ判定を使い、除外規則の改訂を記録済みの台帳にも次の準備から適用する。
-    同じ位置のhook通知との対応で決まる区分（`hook-notice-represented`とhook通知への置き換え）は、
-    1件のイベントでは判定できないため呼び出し側が扱う。
+    hook通知との対応と置き換えを含む共通の分類は`classify_failure_candidate`が行う。
     """
     # 除外の判定は終了コードを帰属させるコマンドで行い、候補の署名と表示は記録どおりのイベントで行う。
     attributed = _event_without_cd_prefix(event)

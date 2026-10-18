@@ -196,12 +196,12 @@ def _prepare(record: dict[str, typing.Any], path: pathlib.Path) -> None:
         raise ValueError("作成先のGit共通ディレクトリが所有記録と異なる。途中資源を保持した")
     if record.get("project_hook") and registered and registered != branch:
         # hookのbranchと成果を残し、そのHEADからレーンの専用branchへ接続する。
-        _git(worktree, "switch", "-c", branch)
+        _git(worktree, "-c", "submodule.recurse=false", "switch", "-c", branch)
         registered = _worktrees(repo).get(str(worktree))
     if registered == "":
         branch_arguments = () if branch in refs else ("-c",)
         start_arguments = (record["initial_head"],) if branch_arguments else ()
-        _git(worktree, "switch", *branch_arguments, branch, *start_arguments)
+        _git(worktree, "-c", "submodule.recurse=false", "switch", *branch_arguments, branch, *start_arguments)
         registered = _worktrees(repo).get(str(worktree))
     if registered != branch or _common(worktree) != record["common_dir"]:
         raise ValueError("作成先のGit登録が入力と一致しない。記録と作成先を確認する")
@@ -776,7 +776,7 @@ def integrate(args: argparse.Namespace, session_id: str) -> dict[str, typing.Any
                     raise ValueError("rebase後の検証argvがmanifestに無い")
                 state.update(phase="rebasing", old_base=old_base, new_base=base)
                 _save(path, record)
-                _git(worktree, "rebase", base)
+                _git(worktree, "-c", "submodule.recurse=false", "rebase", base)
                 state.update(phase="rebased", new_head=_git(worktree, "rev-parse", "HEAD"))
                 _save(path, record)
             else:

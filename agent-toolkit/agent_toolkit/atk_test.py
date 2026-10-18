@@ -1980,11 +1980,14 @@ class TestAddSingleMessage:
         git_cmds = [c["cmd"] for c in git_calls]
         remote_url_cmd = ["git", "-C", str(myrepo), "remote", "get-url", "origin"]
         assert remote_url_cmd in git_cmds
-        fetch_idx = git_cmds.index(["git", "fetch"])
-        assert git_cmds[fetch_idx + 1] == ["git", "merge", "--ff-only", "@{u}"]
-        assert git_cmds[fetch_idx + 2] == ["git", "add", "--all", "--", "inbox"]
-        assert git_cmds[fetch_idx + 3] == ["git", "commit", "-m", "chore: add 1 awi item", "--", "inbox"]
-        assert ["git", "push"] in git_cmds[fetch_idx + 4 :]
+        saved_commands = [cmd for cmd in git_cmds if cmd[1] in {"fetch", "merge", "add", "commit", "push"}]
+        assert saved_commands[:4] == [
+            ["git", "fetch"],
+            ["git", "merge", "--ff-only", "@{u}"],
+            ["git", "add", "--all", "--", "inbox"],
+            ["git", "commit", "-m", "chore: add 1 awi item", "--", "inbox"],
+        ]
+        assert ["git", "push"] in saved_commands[4:]
         for call in git_calls:
             if call["cmd"][:2] != ["git", "-C"]:
                 assert call["kwargs"].get("cwd") == notes
@@ -2409,7 +2412,7 @@ class TestAddBatchOption:
             atk.main(["wi", "add", "--batch", "--body-file", str(body_path), self._ENTRY], home=tmp_path, now=_FIXED_DT)
 
         assert exc_info.value.code == 2
-        assert "解釈できない引数" in capsys.readouterr().err
+        assert "余った位置引数:" in capsys.readouterr().err
 
     def test_rejects_positional_message_without_writing(
         self,
@@ -2551,7 +2554,7 @@ class TestMainFailureNextAction:
         """wiの処理で発生した`RebaseInProgressError`は失敗行と競合解消の次の操作で出力する。"""
         error = _git_sync.RebaseInProgressError("rebase中")
         lines = self._run_wi_commit(tmp_path, monkeypatch, capsys, error)
-        assert "git rebase --continue" in self._next_action_after_failure(lines)
+        assert "git -c submodule.recurse=false rebase --continue" in self._next_action_after_failure(lines)
 
     def test_wi_edit_rejects_rebase_in_progress_before_change(
         self,
@@ -2580,7 +2583,7 @@ class TestMainFailureNextAction:
         assert exc_info.value.code == 1
         lines = capsys.readouterr().err.splitlines()
         assert "rebase中" in next(line for line in lines if line.startswith("失敗: "))
-        assert "git rebase --continue" in self._next_action_after_failure(lines)
+        assert "git -c submodule.recurse=false rebase --continue" in self._next_action_after_failure(lines)
         assert entry.read_text(encoding="utf-8") == original
 
     def test_unreported_git_failure_names_status_check(

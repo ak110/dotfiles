@@ -710,7 +710,7 @@ def _has_frontmatter_source(content: str) -> bool:
     キーの有無だけを判定するため、YAMLパーサーへ依存せず行頭一致で確定する。
     本モジュールはhookとPEP 723スクリプトから読み込まれるため、依存を広げない選択とする。
     """
-    lines = content.splitlines()
+    lines = content.removeprefix("\ufeff").splitlines()
     if not lines or lines[0].strip() != _FRONTMATTER_DELIMITER:
         return False
     for line in lines[1:]:

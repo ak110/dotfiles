@@ -5,6 +5,7 @@ import json
 import os
 import pathlib
 import re
+import shlex
 from concurrent.futures import ThreadPoolExecutor
 
 import pytest
@@ -626,13 +627,15 @@ def test_public_summary_counts_current_unanswered_rows_without_waiting_for_respo
     assert returned.value.code == 0
     result = capsys.readouterr()
     assert not result.err
-    assert json.loads(result.out) == {
+    summary = json.loads(result.out)
+    assert {key: summary[key] for key in ("round", "track", "total_count", "unanswered_count", "answered_count")} == {
         "round": 2,
         "track": "exec-review",
         "total_count": 2,
         "unanswered_count": 1,
         "answered_count": 1,
     }
+    assert summary["previous_findings"] == [{"round": 1, "row_ids": [1, 2]}]
     assert path.read_bytes() == before
 
 
@@ -1244,7 +1247,7 @@ def test_add_parser_requires_canonical_level(arguments: list[str]) -> None:
         (
             "add",
             ["review.tsv", "--round=1", f"--track={_TRACK}", "--level=詳細", "位置", "指摘", "--file", "本文.txt"],
-            ("--issue-file", "--level", "--location-file", "--round", "--track"),
+            None,
         ),
         (
             "respond",
@@ -1259,18 +1262,18 @@ def test_add_parser_requires_canonical_level(arguments: list[str]) -> None:
                 "--track",
             ),
         ),
-        ("show", ["review.tsv", "--all"], ("--format", "--round", "--track")),
+        ("show", ["review.tsv", "--all"], ("--field", "--format", "--round", "--row-id", "--track")),
         (
             "add",
             ["review.tsv", "--round=1", f"--track={_TRACK}", "--level=詳細", "位置", "指摘", "余分"],
-            ("--issue-file", "--level", "--location-file", "--round", "--track"),
+            None,
         ),
     ),
 )
 def test_parser_rejects_unsupported_options_with_guidance(
     subcommand: str,
     arguments: list[str],
-    accepted_options: tuple[str, ...],
+    accepted_options: tuple[str, ...] | None,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     with pytest.raises(SystemExit) as exc_info:
@@ -1279,8 +1282,13 @@ def test_parser_rejects_unsupported_options_with_guidance(
     assert exc_info.value.code == 2
     error = capsys.readouterr().err
     assert error.startswith(f"使い方: atk review-table {subcommand}")
-    accepted = "・".join(accepted_options) if accepted_options else "なし"
-    assert f"atk review-table {subcommand}が受理するオプションは{accepted}" in error
+    if accepted_options is None:
+        assert "余った位置引数: 位置" in error
+        assert f"atk review-table {subcommand}が受け取る位置引数はpath" in error
+        assert "区切り記号" not in error
+    else:
+        accepted = "・".join(accepted_options) if accepted_options else "なし"
+        assert f"atk review-table {subcommand}が受理するオプションは{accepted}" in error
 
 
 def test_shared_column_layout_is_explained_by_parent_help(capsys: pytest.CaptureFixture[str]) -> None:
@@ -1639,3 +1647,116 @@ def test_cli_lock_is_created_under_state_lock_dir(
     lock_dir = tmp_path / "state" / "agent-toolkit" / "locks" / "review-table"
     assert [lock.parent for lock in lock_dir.glob("*.lock")] == [lock_dir]
     assert not list((home / ".claude").glob(".atk-*"))
+
+
+@pytest.mark.parametrize("field", ("response", "no-response-reason"))
+@pytest.mark.parametrize("layout", ("current", "legacy-seven", "legacy-eight"))
+def test_public_show_selected_body_preserves_full_decoded_text(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], field: str, layout: str
+) -> None:
+    """現行・旧形式の指定行の本文を、空行を除く保存順IDで全文取得する。"""
+    path = tmp_path / "review.exec-review.tsv"
+    body = '  日本語の応答\n"引用符"\t逆斜線\\と`記号`\n\n'
+    first = ["1", _TRACK, "先の行", "別指摘", "詳細", "別の本文", ""]
+    second = ["2", _COMPAT_TRACK, "後の行", "対象指摘", "仕様", "", ""]
+    second[table.COLUMNS.index(field)] = body
+    if layout == "legacy-seven":
+        second[4] = "yes" if field == "response" else "no"
+    elif layout == "legacy-eight":
+        second.insert(5, "yes" if field == "response" else "no")
+    raw = "\n" + "\n\n".join("\t".join(json.dumps(cell) for cell in row) for row in (first, second)) + "\n"
+    path.write_text(raw, encoding="utf-8")
+
+    with pytest.raises(SystemExit) as result:
+        atk.main(["review-table", "show", str(path), "--row-id=2", f"--field={field}"], home=tmp_path)
+
+    assert result.value.code == 0
+    output = capsys.readouterr()
+    assert output.out == body
+    assert not output.err
+    assert path.read_text(encoding="utf-8") == raw
+    with pytest.raises(SystemExit) as result:
+        atk.main(["review-table", "show", str(path), "--row-id=2", "--format=jsonl"], home=tmp_path)
+    assert result.value.code == 0
+    assert json.loads(capsys.readouterr().out)["row-id"] == 2
+
+
+@pytest.mark.parametrize(
+    "options",
+    (
+        ["--field=response"],
+        ["--row-id=1", "--field=response", "--format=jsonl"],
+        ["--row-id=1", "--format=summary", "--round=1"],
+        ["--row-id=0"],
+        ["--row-id=bad"],
+        ["--row-id=2"],
+        ["--row-id=1", "--field=response", "--round=2"],
+    ),
+)
+def test_public_show_rejects_invalid_body_selection(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], options: list[str]
+) -> None:
+    """本文を特定できない指定は診断を返し、本文を出力しない。"""
+    path = tmp_path / "review.exec-review.tsv"
+    table.add(path, "1", _TRACK, "場所", "指摘")
+    capsys.readouterr()
+    before = path.read_bytes()
+    with pytest.raises(SystemExit) as result:
+        atk.main(["review-table", "show", str(path), *options], home=tmp_path)
+    assert result.value.code in (1, 2)
+    output = capsys.readouterr()
+    assert not output.out
+    assert "次の操作" in output.err
+    assert path.read_bytes() == before
+
+
+@pytest.mark.parametrize("name", ("plan.exec-review.tsv", "ci-abc123.exec-review.tsv"))
+def test_public_summary_guides_history_without_deciding_issue_identity(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], name: str
+) -> None:
+    """箇所・文言・発生条件が変わる指摘でも、同trackの過去指摘と判定先へ到達できる。"""
+    path = tmp_path / "space dir" / name
+    table.add(path, "1", _TRACK, "module.py:10", "完成条件4: 取得失敗時に記録へ進む")
+    table.respond(path, "", "", "", "", review_bodies.response_body("初回修正"), "", row_id=1)
+    table.add(path, "2", "independent", "module.py:11", "他trackの指摘")
+    table.add(path, "2", _TRACK, "module.py:20", "完成条件4: 入力形式が異なる条件で失敗する")
+    table.add(path, "3", _TRACK, "other.py:30", "取得失敗の扱いに不足がある")
+    capsys.readouterr()
+    before = path.read_bytes()
+    with pytest.raises(SystemExit) as result:
+        atk.main(["review-table", "show", str(path), "--round=3", "--format=summary"], home=tmp_path)
+    assert result.value.code == 0
+    summary = json.loads(capsys.readouterr().out)
+    assert summary["previous_findings"] == [{"round": 1, "row_ids": [1]}, {"round": 2, "row_ids": [3]}]
+    assert summary["total_count"] == summary["unanswered_count"] == 1
+    assert summary["answered_count"] == 0
+    assert "違反規定と発生条件" in summary["repetition_guidance"]
+    assert "反復原因の判定" in summary["repetition_guidance"]
+    assert "同じ指摘の反復" in summary["repetition_guidance"]
+    with pytest.raises(SystemExit) as result:
+        atk.main(shlex.split(summary["history_command"])[1:], home=tmp_path)
+    assert result.value.code == 0
+    history = [json.loads(line) for line in capsys.readouterr().out.splitlines()]
+    assert [row["row-id"] for row in history] == [1, 3, 4]
+    assert history[0]["response"] == review_bodies.response_body("初回修正")
+    assert all(len(line.split("\t")) == 7 for line in path.read_text(encoding="utf-8").splitlines())
+    assert path.read_bytes() == before
+
+
+@pytest.mark.parametrize("case", ("initial", "no-current", "other-track"))
+def test_public_summary_omits_history_when_comparison_has_no_input(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], case: str
+) -> None:
+    """初回・現在の指摘なし・同trackの過去指摘なしでは件数だけを返す。"""
+    path = tmp_path / "review.exec-review.tsv"
+    table.add(path, "1", "independent" if case == "other-track" else _TRACK, "以前", "指摘")
+    if case == "other-track":
+        table.add(path, "2", _TRACK, "今回", "指摘")
+    capsys.readouterr()
+    current_round = 1 if case == "initial" else 2
+    with pytest.raises(SystemExit) as result:
+        atk.main(["review-table", "show", str(path), f"--round={current_round}", "--format=summary"], home=tmp_path)
+    assert result.value.code == 0
+    summary = json.loads(capsys.readouterr().out)
+    assert set(summary) == {"round", "track", "total_count", "unanswered_count", "answered_count"}
+    assert summary["total_count"] == summary["unanswered_count"] == (0 if case == "no-current" else 1)

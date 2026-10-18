@@ -735,15 +735,17 @@ def test_bundle_writes_conversation_of_main_utterances_with_full_text_detail(
     assert [(item["kind"], item.get("role") or item.get("tool"), item["line"], item["text"]) for item in conversation] == [
         ("utterance", "user", 1, "振り返りを速くしたい"),
         ("utterance", "assistant", 6, "調べます。"),
-        ("tool-call", "Bash", 6, "ls"),
-        ("tool-call", "Write", 8, "/x/a.md"),
-        ("tool-failure", None, 9, "書込失敗の診断"),
+        ("tool-call", "Bash", 6, '{"command": "ls"}'),
+        ("tool-result", "Bash", 7, "a.txt"),
+        ("tool-call", "Write", 8, '{"file_path": "/x/a.md", "content": "書き込む本文"}'),
+        ("tool-failure", None, 9, "Exit code 1\n書込失敗の診断"),
+        ("tool-result", "Write", 9, "Exit code 1\n書込失敗の診断"),
         ("utterance", "user", 10, "全文抽出すべきでは？"),
         ("utterance", "assistant", 11, long_reply),
     ]
-    assert conversation[4]["call_id"] == "call-2"
+    assert conversation[5]["call_id"] == "call-2"
     serialized = (bundle_dir / "conversation.jsonl").read_text(encoding="utf-8")
-    assert "a.txt" not in serialized and "書き込む本文" not in serialized
+    assert "a.txt" in serialized and "書き込む本文" in serialized
 
     assert evidence.main([str(transcript), "--detail", "main:11"]) == 0
     assert read_jsonl(capsys) == [{"kind": "detail", "line": 11, "timestamp": None, "role": "assistant", "text": long_reply}]
@@ -978,7 +980,7 @@ def test_bundle_collects_adhoc_processing_per_record_including_delegates(
                 {
                     "record": "claude:parent-session/agent-child",
                     "line": 1,
-                    "text": "python3 - <<'EOF' import json print(json.dumps({'start': 1, 'end': 48})) EOF",
+                    "text": "python3 - <<'EOF'\nimport json\nprint(json.dumps({'start': 1, 'end': 48}))\nEOF",
                 },
                 {
                     "record": "claude:parent-session/agent-child",

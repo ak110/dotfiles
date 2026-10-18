@@ -67,8 +67,8 @@ class RebaseInProgressError(RuntimeError):
     """
 
     next_action = (
-        "現在の競合を解消して`git add <path>`、`git rebase --continue`、`git push`を実行するか、"
-        "不要であれば`git rebase --abort`を実行してから、元の`atk`操作を再実行する"
+        "現在の競合を解消して`git add <path>`、`git -c submodule.recurse=false rebase --continue`、`git push`を実行するか、"
+        "不要であれば`git -c submodule.recurse=false rebase --abort`を実行してから、元の`atk`操作を再実行する"
     )
 
 
@@ -334,7 +334,7 @@ def _pull_impl(
         mark_reported(merge_error)
         raise merge_error
     try:
-        run_git(["rebase", "@{u}"], private_notes)
+        run_git(["-c", "submodule.recurse=false", "rebase", "@{u}"], private_notes)
     except subprocess.CalledProcessError:
         _forward_error_output(merge_error)
         _report_rebase_failure(private_notes, result_runner=result_runner)
@@ -411,7 +411,7 @@ def _recover_redundant_divergence(
         return False
     if not redundant_divergence(private_notes):
         return False
-    run_git(["reset", "--keep", "@{u}"], private_notes)
+    run_git(["-c", "submodule.recurse=false", "reset", "--keep", "@{u}"], private_notes)
     return True
 
 
@@ -475,10 +475,13 @@ def _report_divergence(
         _divergence_details(private_notes, result_runner=result_runner),
         next_action=preparation
         + (
-            "`git log --left-right --oneline HEAD...@{u}`で分岐を確認し、`git rebase @{u}`を実行する。"
-            "競合したら解消して`git add <path>`、`git rebase --continue`、`git push`の順に実行する。\n"
-            "同じ変更がupstreamに存在する重複commitなら、内容を確認して`git rebase --skip`を実行できる。"
-            "中止する場合は`git rebase --abort`を実行する"
+            "`git log --left-right --oneline HEAD...@{u}`で分岐を確認し、"
+            "`git -c submodule.recurse=false rebase @{u}`を実行する。"
+            "競合したら解消して`git add <path>`、`git -c submodule.recurse=false rebase --continue`、"
+            "`git push`の順に実行する。\n"
+            "同じ変更がupstreamに存在する重複commitなら、内容を確認して"
+            "`git -c submodule.recurse=false rebase --skip`を実行できる。"
+            "中止する場合は`git -c submodule.recurse=false rebase --abort`を実行する"
         ),
     )
 
@@ -487,19 +490,21 @@ def _report_rebase_failure(private_notes: pathlib.Path, *, result_runner: _GitRe
     """rebase失敗時に状態保持と復旧手順を表示する。"""
     try:
         conflicts = result_runner(
-            ["diff", "--name-only", "--diff-filter=U"],
+            ["diff", "--name-only", "--diff-filter=U", "-z"],
             private_notes,
         )
-        names = [line for line in conflicts.stdout.splitlines() if line]
+        names = [name for name in conflicts.stdout.split("\0") if name]
     except OSError, subprocess.SubprocessError:
         names = []
     _outcome.report_failure(
         "rebaseに失敗したため、rebase状態を保持した。自動abortは行っていない\n"
         "競合ファイル: " + ("、".join(names) if names else "取得できなかった"),
         next_action=(
-            "競合を解消した後、`git add <競合解消済みパス>`、`git rebase --continue`、`git push`の順に実行する。\n"
-            "同じ変更がupstreamへ反映済みの重複commitなら、内容を確認して`git rebase --skip`を実行できる。"
-            "中止する場合は`git rebase --abort`を実行する"
+            "競合を解消した後、`git add <競合解消済みパス>`、"
+            "`git -c submodule.recurse=false rebase --continue`、`git push`の順に実行する。\n"
+            "同じ変更がupstreamへ反映済みの重複commitなら、内容を確認して"
+            "`git -c submodule.recurse=false rebase --skip`を実行できる。"
+            "中止する場合は`git -c submodule.recurse=false rebase --abort`を実行する"
         ),
     )
 
@@ -659,7 +664,7 @@ def _push_pending_commits_impl(
         return 0
 
     try:
-        run_git(["rebase", "@{u}"], private_notes)
+        run_git(["-c", "submodule.recurse=false", "rebase", "@{u}"], private_notes)
     except subprocess.CalledProcessError as error:
         _report_rebase_failure(private_notes, result_runner=result_runner)
         mark_reported(error)

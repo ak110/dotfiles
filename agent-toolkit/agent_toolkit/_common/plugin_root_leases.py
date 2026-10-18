@@ -184,14 +184,19 @@ def _server_namespace_may_match(process: psutil.Process) -> bool:
     """実MCPが開いている既存診断ログから保存先を確認し、欠損時は保持する。"""
     # logging_config.configure_loggingがstate_dir直下へ開く永続ログを使う。
     # process.environは起動後の変更を反映しないOSがあるため判定に使わない。
-    logs = [
-        Path(record.path)
-        for record in process.open_files()
-        if Path(record.path).parts[-2:] == ("agent-toolkit", "agents-server.log")
-    ]
+    # 別のMCPがログを回転させると、開いたままのファイルは`agents-server.log.<番号>`へ改名される。
+    logs = [Path(record.path) for record in process.open_files() if _is_server_log(Path(record.path))]
     if len(logs) != 1 or not logs[0].is_file():
         return True
     return logs[0].parent.samefile(state_paths.state_dir())
+
+
+def _is_server_log(path: Path) -> bool:
+    """agents_serverの永続ログか、その回転後の名前かを判定する。"""
+    if path.parent.name != "agent-toolkit":
+        return False
+    suffix = path.name.removeprefix("agents-server.log")
+    return suffix != path.name and (not suffix or (suffix.startswith(".") and suffix[1:].isdigit()))
 
 
 def _server_may_use_root(area: Path, *, allow_unattributed: bool) -> bool:

@@ -88,7 +88,7 @@ def _referenced_with_launchers(events: list[dict]) -> set[str]:
     """結果のイベントが`record`欄か配列要素の`record`欄で参照する記録と、その起動元を根まで集める。"""
     records: set[str] = set()
     for event in events:
-        if event["kind"] == "record-provenance":
+        if event["kind"] in {"record-provenance", "unresolved-record", "unresolved-delegation"}:
             continue
         values = [event.get("record")]
         for value in event.values():

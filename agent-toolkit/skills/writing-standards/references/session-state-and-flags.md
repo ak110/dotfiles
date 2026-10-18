@@ -39,7 +39,7 @@ Claude Codeは並列ツール呼び出しでhookを同時発火するため、�
 - 応答待ちの除外には、セッション記録のターン終了またはホスト登録のidle状態と、稼働する子がないことを使う。
 - SessionEndは活動JSONを削除し、記録されたPIDと起動時刻が生存プロセスに一致しない場合は取得側で失効させる。
 - 更新と削除は固定の`activity.lock`の排他下で行い、会話ごとの履歴や終了した子の項目を残さない。
-- 読取不能な活動記録は活動候補として返す。会話を解決できない生存プロセスは、どの作業にも属さないため活動に数えない。
+- 読取不能な活動記録は活動候補として返す。会話を解決できない生存プロセスは、どの作業にも属さないため活動の集計から除く。
 - WI投入作業の属性は`session-activity/submissions/{session_id}.json`へ会話ごとに保存する。項目は版数、会話ID、作業種別（`add-awi-by-user`）、正規化した投入先URLの一覧、更新時刻とする。`atk wi submission begin`が作成・置換し、`atk wi submission end`が削除する。hookのSessionEndは削除せず、再開した会話で属性を再び有効にする。
 - 開始前判定は、投入先がprocess-loopの対象リポジトリ集合と交わる属性を持つ会話とその子孫の活動だけを理由にし、属性を読めない会話と属性のない会話を除く。
 - 除外する会話とその子孫は`_common/session_parents.py`の親子解決を使い、process-loopの共通環境印だけで別ループの会話を除外しない。
@@ -57,7 +57,7 @@ managed-tempのマーカーファイル（`.agent-toolkit-managed-temp.json`）�
 
 ## Function hooksの終了要求
 
-Claude CodeのFunction hooks moduleとPythonのCLI・Stop hookは、同じセッションIDの読込目印と終了要求を共有する。置き場所は絶対パスの`CLAUDE_CONFIG_DIR`、無い場合は`HOME`、次に`USERPROFILE`の`.claude`の下の`agent-toolkit-function-hooks/`とし、Python側の一時ディレクトリ解決は使わない。そこへ`marker-{session_id}.txt`と`request-{session_id}.txt`を置く。セッションIDは英数字、アンダースコア、ハイフンだけを受理する。
+Claude Codeが会話イベントの処理を登録するために読み込むプラグインのモジュールをFunction hooks module（以下「mod」）と呼ぶ。このmodとPythonのCLI・Stop hookは、同じセッションIDの読込目印と終了要求を共有する。置き場所は絶対パスの`CLAUDE_CONFIG_DIR`、無い場合は`HOME`、次に`USERPROFILE`の`.claude`の下の`agent-toolkit-function-hooks/`とし、Python側の一時ディレクトリ解決は使わない。そこへ`marker-{session_id}.txt`と`request-{session_id}.txt`を置く。セッションIDは英数字、アンダースコア、ハイフンだけを受理する。
 
 `session.start`は読込目印へ`ready`を書き、終了要求を`consumed`へ初期化する。Pythonは目印が`ready`で、更新時刻が現在のClaude Code本体の開始より後の場合だけ、終了要求へ`requested`を書いて`exit_requested`を返す。`turn.complete`はメインのターンだけでその値を読み、`consumed`へ書き換えた後に`/exit`をキューへ入れる。目印が無い場合とCodexでは、対話CLI本体を従来の方法で終了させる。
 
@@ -66,17 +66,20 @@ process-loopが起動した会話の最上位のStopでは、終了要求が`req
 
 Stop hookの無進捗停止（`busy_loop_guard.py`）の終了要求は、Stopの全判定の後に共通ハンドラー（`stop.py`）が発行する。要求が`requested`か単一PIDへの終了要求として成立した場合、同じStopの応答は停止の通知だけになる。このため`autonomous_exit_invoked`が偽のままでも、無進捗停止による終了要求はそのまま`turn.complete`で消費される。`autonomous_exit_invoked`が記録するのは`atk agents-exit-session`の実行だけであり、Stop内で発行した終了要求はこのフラグとは別に終了要求のファイルが表す。
 
-通常のSessionEndでは現行セッションの2ファイルを保持して期限を過ぎた他セッションのファイルを回収し、`clear`では現行セッションの2ファイルも除く。保持期限と回収は`agents_exit_session.sweep_function_hook_files`が持つ。ファイルに保存するのは前掲の固定値だけとする。
+通常のSessionEndでは現行セッションの読込目印・終了要求・後述の定期再確認の判定ファイルを保持して、期限を過ぎた他セッションのファイルを回収する。`clear`では現行セッションの3ファイルも除く。保持期限と回収は`agents_exit_session.sweep_function_hook_files`が持つ。ファイルに保存するのは各用途が定める固定値だけとする。
+
+### 定期再確認の通常回収の判定
+
+`recheck-{session_id}.txt`は同じFunction hooks用ディレクトリに置き、PythonのStop入力を同じ会話のmodへ1回限りで渡す。
+セッション限りの定期再確認taskの作成・保持・回収はmodが担い、待機対象の一覧は既存の非同期判定と`CronList`から得る。
+
+- 書込元: `agent_toolkit/_hooks/stop.py`が各Stopの開始時に`unknown`を書く。終了判定の集約後は、既存の`background_tasks.is_pending_async_work`へtranscript・会話ID・背景task一覧・現在のセッション状態を渡す。その結果に応じて`pending`か`complete`へ更新する。読み取れないtranscript、欠落・破損と継続要求のあるStopは`unknown`を保持する。Claude Codeの会話のメインに適用し、`agent_id`を持つサブエージェントとCodexは対象外とする
+- 消費元: `hooks/session_exit.ts`の既存の`turn.complete`が使用前に`consumed`へ書き換える。`complete`だけを通常回収の根拠とし、`$.tool.list()`で`CronList`の公開を確認した会話に適用する。非公開の会話では回収と通知を省き、正常な返却を保つ。適用対象では共通promptと一致する非durableの所有taskを一覧から再解決して削除し、所有taskの削除拒否・失敗を対象IDとともに通知する。追加義務付きtaskはセッション終了時の既存回収へ渡す。欠落・読取不能・不明な値は回収の許可にしない
+- 初期化と寿命: `hooks/register.ts`が`session.start`とメインの`turn.start`で`consumed`へ初期化し、中断した前ターンの判定を持ち越さない。内容は各Stopで上書きし、回収の拒否・失敗後は次の有効なStopで再評価する。ファイル自体は前掲のSessionEnd・clear・期限回収に従う
 
 ## 状態の継承
 
 - `inherited_from_session_id`: 現行`session_id`の状態が不在のときに一意に特定した前身`session_id`。共通hookの起動処理が前身の全状態キーと同時に1回だけ書き込む
-
-## 応答言語系
-
-- `english_warning_count`: `agent-toolkit/agent_toolkit/_hooks/pretooluse/agent_checks.py`が、アシスタント応答の地の文を英語主体と判定した累計回数を記録し、強い通知への切り替えに読む。日本語判定と判定対象外の応答では維持する。セッション終了まで保持する
-- `english_warning_msg_id`: 同フックが直前に通知した応答のmessage IDを記録し、同じ応答への重複通知と二重加算の抑止に読む。セッション終了まで保持し、リセットは処理対象外とする
-- `language_reinjection_count`: 同フックが、Claude Codeのメインセッションで直前に日本語の応答指示を注入してからのツール呼び出し回数を記録し、再注入の間隔の判定に読む。間隔に達した呼び出しで途中注入用の指示を添えて0へ戻し、`agent-toolkit/agent_toolkit/_hooks/rules_context.py`もSessionStartで開始用の指示を注入した時点で0へ戻す。記録はClaude Codeのメインセッションに限り、セッション終了まで保持する
 
 ## plan系
 
@@ -101,6 +104,10 @@ Stop hookの無進捗停止（`busy_loop_guard.py`）の終了要求は、Stop�
   3. 委譲先として起動されている
   4. `prompt`が`<task-notification`か旧形式の`<cross-session-message`で始まる
   5. `prompt`の1行目が新旧の自動挿入要素の開始タグを含む
+
+## 現行の作業契約の入力位置
+
+- `work_contract_input_sequence`: `_hooks/work_contract.py`がUserPromptSubmitのメインの実ユーザー入力だけで排他下に加算するセッション内の連番。同じモジュールが記録内の処理済み連番と最新の連番を比べ、UserPromptSubmitとSessionStartのcompactで記録の所在と未処理の入力区間を通知する。機械側の保存対象は連番に限り、入力本文・分類・達成状態はエージェントの記録で扱う。通常の状態ファイルと同じ寿命で保持し、圧縮・再開でも連番を継承する。
 
 ## 確認・操作スキル系
 
@@ -128,8 +135,9 @@ Stop hookの無進捗停止（`busy_loop_guard.py`）の終了要求は、Stop�
   - 委譲先へのwait判断: `async_targets`と所有者を確認し、観測義務とは別に有効なCLI待機所有権・対象登録を共通の読取処理で確認する。`pending_observation`が偽でも待機が有効なら保持し、両方が終わると不足判定へ戻る
   - 自編集: 成功したEdit・Write・`apply_patch`と、既存の抽出で静的に確定したBash書込先を、作業ごとの`edits`へリポジトリと相対パスで記録する。Claude Codeの協調モードのメインでは、Stopがその集合だけを終了時のGit状態と比べて公開範囲が未確定の編集を遮断の通知へ添え、他主体の差分を取り込まない
   - 公開範囲: メインが原入力または適用済み認可から判断した範囲を`publish_scope`へ記録する。記録手順は`agent-toolkit:user-confirmation-and-report`の`references/publish-scope.md`が定める
-  - プロジェクト規範による省略: メインが`omit-completion`で記録した規範の絶対パス・全文、対象リポジトリと人間入力の識別子を、作業ごとの`omit_completion`へ保持する。記録時は観測した成果作業の単一リポジトリ、規範の所在と全文、現在のメイン・会話・入力の対応を確かめ、Stopでも規範の実体と入力の対応を確かめる。有効な省略を持つ作業だけ起動不足を免除する。次の判断で除き、新しい人間入力後の成果作業は新しい作業として省略を引き継がない。規範の変更・消失は免除を無効にする。手順は`agent-toolkit:completion-report`の`references/termination-evidence.md`が定める
+  - プロジェクト規範による省略: メインが`omit-completion`で指定した規範の絶対パス、記録処理がそのパスから読んだ全文、対象リポジトリと人間入力の識別子を、作業ごとの`omit_completion`へ保持する。`input_id`の省略時は現在の会話の直近の人間入力へ対応付ける。記録時は観測した成果作業の単一リポジトリ、規範の所在、現在のメイン・会話・入力の対応を確かめ、明示した`quote`が規範全文と一致するかも確かめる。Stopでも規範の実体と入力の対応を確かめる。有効な省略を持つ作業だけ起動不足を免除する。次の判断で除き、新しい人間入力後の成果作業は新しい作業として省略を引き継がない。規範の変更・消失は免除を無効にする。手順は`agent-toolkit:completion-report`の`references/termination-evidence.md`が定める
   - 原入力と再入: `last_human_input`は最後の人間入力を保持し、自動通知で再開しても元の依頼への帰属を保つ。`--context`は現在の会話の`session_id`と作業の`work_id`を人間入力の有無によらず返し、その入力を観測した場合だけ`input_id`と`quote`を添え、観測していなければ両者を`null`とする。証拠が無いか別会話・旧版の値である場合、現在のメインとして解決できない場合と、作業も人間入力も無い場合は取得を拒否する。取得は判断の証拠条件を緩めず、人間の原入力・実際の失敗・所有する委譲先の待機の検証はactionごとの記録処理が行う。寿命と継承は本キーと同じで、公開範囲・起動証拠と現在のGit状態から不要な判定を除く
+  - 終了時の点検通知: `stop_review_notice`は作業ごとに通知した人間入力の識別子を保持する。人間入力が無い場合は作業開始の参照を使う。Stopの`termination_order_advisor`が`claim_stop_review`で排他下に記録し、同じ作業・入力への再通知を抑える。通知した事実だけを示す記録であり、用途は同じ作業・入力への再通知の抑止に限る。新しい入力では再び一度通知し、作業の除去とともに消える
 
 ## 通知反復系
 

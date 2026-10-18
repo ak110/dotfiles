@@ -590,8 +590,8 @@ async def test_mutations_reject_rebase_in_progress_with_409(
     body = await response.get_json()
     assert body["code"] == "rebase_in_progress"
     assert "rebase中" in body["error"]
-    assert "git rebase --continue" in body["error"]
-    assert "git rebase --abort" in body["error"]
+    assert "git -c submodule.recurse=false rebase --continue" in body["error"]
+    assert "git -c submodule.recurse=false rebase --abort" in body["error"]
     assert _notes_snapshot(notes) == before
 
 

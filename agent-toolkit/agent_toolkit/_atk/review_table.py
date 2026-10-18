@@ -14,9 +14,11 @@ import contextlib
 import hashlib
 import json
 import re
+import shlex
 import unicodedata
 from collections.abc import Callable, Generator
 from pathlib import Path
+from typing import NotRequired, TypedDict
 
 from agent_toolkit._atk import help_text as _atk_help
 from agent_toolkit._atk import outcome as _outcome
@@ -96,6 +98,26 @@ _YES_VALUES = frozenset({"yes", "true", "1", "required", "対応要"})
 _NO_VALUES = frozenset({"no", "false", "0", "not-required", "対応不要"})
 _WHITESPACE_RE = re.compile(r"\s+")
 _ROUND_RE = re.compile(r"^[1-9][0-9]*$")
+
+
+class _PreviousFindings(TypedDict):
+    """同じtrackの過去roundと保存順の行識別子。"""
+
+    round: int
+    row_ids: list[int]
+
+
+class _Summary(TypedDict):
+    """現在roundの応答件数と、比較できる過去指摘への到達情報。"""
+
+    round: int
+    track: str
+    total_count: int
+    unanswered_count: int
+    answered_count: int
+    previous_findings: NotRequired[list[_PreviousFindings]]
+    history_command: NotRequired[str]
+    repetition_guidance: NotRequired[str]
 
 
 def _path(raw_path: str) -> Path:
@@ -390,6 +412,16 @@ def _row_id(raw: str) -> int:
     return value
 
 
+def _row_index(row_id: int, row_count: int) -> int:
+    """表示と応答が共有する保存順の行識別子を添字へ変換する。"""
+    if row_id < 1 or row_id > row_count:
+        raise _ActionableError(
+            f"row-idが範囲外である: {row_id}（行数: {row_count}）",
+            next_action="`atk review-table show <PATH>`でrow-idを確認して指定し直す",
+        )
+    return row_id - 1
+
+
 def _format_key_diagnostic(rows: list[list[str]], given: list[tuple[int, str]], matches: list[int]) -> str:
     """一意に解決できない部分キーとデコード済み候補行を整形する。"""
     requested = ", ".join(f"{COLUMNS[index]}={value}" for index, value in given) or "なし"
@@ -457,7 +489,7 @@ def respond(
 
     def updater(rows: list[list[str]]) -> list[list[str]]:
         if row_id is not None:
-            matches = [row_id - 1] if row_id <= len(rows) else []
+            matches = [_row_index(row_id, len(rows))]
         else:
             matches = [
                 row_index
@@ -465,11 +497,6 @@ def respond(
                 if all(_normalized(row[column_index]) == value for column_index, value in given)
             ]
         if len(matches) != 1:
-            if row_id is not None:
-                raise _ActionableError(
-                    f"row-idが範囲外である: {row_id}（行数: {len(rows)}）",
-                    next_action="`atk review-table show <PATH>`でrow-idを確認して指定し直す",
-                )
             diagnostic = _format_key_diagnostic(rows, given, matches)
             raise _ActionableError(
                 f"応答対象の複合キーが一意に解決できない: {len(matches)}件\n{diagnostic}",
@@ -508,7 +535,7 @@ def respond(
     return 0
 
 
-def summary(path: str | Path, round_value: int, *, track: str = "exec-review") -> dict[str, int | str]:
+def summary(path: str | Path, round_value: int, *, track: str = "exec-review") -> _Summary:
     """指定ラウンドに登録した指摘を用いて未応答件数を導き、過去の応答を混ぜない。"""
     if round_value < 1:
         raise _ActionableError("roundは1以上の整数で指定する", next_action="現在のレビューの--roundを指定して再実行する")
@@ -516,13 +543,33 @@ def summary(path: str | Path, round_value: int, *, track: str = "exec-review") -
     _validate_rows(rows, require_responses=False)
     selected = [row for row in rows if _normalized(row[0]) == str(round_value) and row[1] == _normalize_track(track)]
     unanswered = sum(not row[5].strip() and not row[6].strip() for row in selected)
-    return {
+    result: _Summary = {
         "round": round_value,
         "track": _normalize_track(track),
         "total_count": len(selected),
         "unanswered_count": unanswered,
         "answered_count": len(selected) - unanswered,
     }
+    previous: dict[int, list[int]] = {}
+    if selected:
+        for row_id, row in enumerate(rows, start=1):
+            previous_round = int(_normalized(row[0]))
+            if row[1] == _normalize_track(track) and previous_round < round_value:
+                previous.setdefault(previous_round, []).append(row_id)
+    if previous:
+        result["previous_findings"] = [
+            {"round": previous_round, "row_ids": row_ids} for previous_round, row_ids in sorted(previous.items())
+        ]
+        result["history_command"] = shlex.join(
+            ["atk", "review-table", "show", str(_path(str(path))), f"--track={_normalize_track(track)}", "--format=jsonl"]
+        )
+        result["repetition_guidance"] = (
+            "過去の指摘・応答と今回の指摘を読み、"
+            "agent-toolkit/share/review-loop-coordination.md「反復原因の判定」と"
+            "agent-toolkit/skills/review-standards/references/reviewee.md「同じ指摘の反復」に従い、"
+            "違反規定と発生条件を比較して反復原因を判定する"
+        )
+    return result
 
 
 def show(
@@ -530,9 +577,23 @@ def show(
     track: str | None = None,
     output_format: str = "tsv",
     round_value: int | None = None,
+    *,
+    row_id: int | None = None,
+    field: str | None = None,
 ) -> int:
     """表を保存順で表示し、指定時はtrackとラウンドで限定する。"""
+    if field is not None and (row_id is None or output_format != "tsv"):
+        raise _ActionableError(
+            "本文の取得には--row-idとtsv出力形式が必要である",
+            next_action="`atk review-table show <PATH> --row-id <ROW_ID> --field response`で本文を取得する",
+        )
+    if field is not None and field not in ("response", "no-response-reason"):
+        raise _ActionableError(
+            f"本文の列が正規値ではない: {field}", next_action="--fieldにresponseかno-response-reasonを指定する"
+        )
     if output_format == "summary":
+        if row_id is not None:
+            raise _ActionableError("summaryとrow-idは同時に指定できない", next_action="件数の取得は--row-idを外して再実行する")
         if round_value is None:
             raise _ActionableError(
                 "件数の生成にはroundが必要である", next_action="--format=summaryへ現在のレビューの--roundを加えて再実行する"
@@ -542,21 +603,33 @@ def show(
     target = _path(str(path))
     text = _read_table_text(target)
     rows = _parse_text(text)
+    if row_id is not None:
+        _row_index(row_id, len(rows))
     if track is not None and track not in _TRACK_READ_VALUES:
         raise _ActionableError(
             f"trackが正規値ではない: {track}", next_action=f"trackを{', '.join(TRACK_VALUES)}のいずれかで指定し直す"
         )
     track = _normalize_track(track) if track is not None else None
     selected = [
-        (row_id, raw_line, row)
-        for row_id, (raw_line, row) in enumerate(rows, start=1)
-        if (track is None or row[1] == track) and (round_value is None or row[0] == str(round_value))
+        (saved_row_id, raw_line, row)
+        for saved_row_id, (raw_line, row) in enumerate(rows, start=1)
+        if (row_id is None or row_id == saved_row_id)
+        and (track is None or row[1] == track)
+        and (round_value is None or row[0] == str(round_value))
     ]
+    if field is not None:
+        if not selected:
+            raise _ActionableError(
+                "指定行はtrack・roundの表示条件に一致しない",
+                next_action="--trackと--roundを外して同じ--row-idで再実行する",
+            )
+        print(selected[0][2][COLUMNS.index(field)], end="")
+        return 0
     if output_format == "tsv":
         print("".join(f"{row_id}\t{raw_line}" for row_id, raw_line, _ in selected), end="")
         return 0
-    for row_id, _, row in selected:
-        print(json.dumps({"row-id": row_id, **dict(zip(COLUMNS, row, strict=True))}, ensure_ascii=False))
+    for saved_row_id, _, row in selected:
+        print(json.dumps({"row-id": saved_row_id, **dict(zip(COLUMNS, row, strict=True))}, ensure_ascii=False))
     return 0
 
 
@@ -696,6 +769,14 @@ def build_parser(parent: argparse._SubParsersAction) -> None:
     show_parser = _atk_help.add_command(sub, "show", **_atk_help.HELP["atk review-table show"])
     show_parser.add_argument("path", help=path_help)
     show_parser.add_argument(
+        "--row-id", type=_row_id, help="保存順の1始まりの行識別子で表示行を選ぶ。respondと同じ識別子を使う。"
+    )
+    show_parser.add_argument(
+        "--field",
+        choices=("response", "no-response-reason"),
+        help="--row-idの行の指定列をデコード済み全文で表示する。tsv出力形式で使う。",
+    )
+    show_parser.add_argument(
         "--track",
         choices=_TRACK_READ_VALUES,
         help="表示対象を指定したレビュー区分の行だけに限定する。省略すると全行を表示する。",
@@ -711,7 +792,9 @@ def build_parser(parent: argparse._SubParsersAction) -> None:
         default="tsv",
         help="出力形式。tsvは先頭にrow-idを付けたTSV、jsonlはrow-idとデコード済み各列のJSON Lines。"
         "summaryは--roundで指定したラウンドの登録数・未応答数・応答済み数を1件のJSONで返す。"
-        "summaryのtrack省略時はexec-review。",
+        "summaryのtrack省略時はexec-review。現在と過去の同じtrackに指摘がある場合は、"
+        "previous_findings（過去roundとrow_ids）、history_command（全roundを読む操作）、"
+        "repetition_guidance（反復原因の判定先）も返す。",
     )
     validate_parser = _atk_help.add_command(sub, "validate", **_atk_help.HELP["atk review-table validate"])
     validate_parser.add_argument(
@@ -729,7 +812,7 @@ def dispatch(args: argparse.Namespace) -> int:
         _require_writable_exec_review(args.path)
         return init(args.path)
     if command == "show":
-        return show(args.path, args.track, args.format, args.round)
+        return show(args.path, args.track, args.format, args.round, row_id=args.row_id, field=args.field)
     if command == "validate":
         return validate(args.path, require_responses=not args.allow_unanswered)
     if command == "add":

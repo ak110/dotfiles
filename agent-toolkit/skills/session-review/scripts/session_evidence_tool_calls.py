@@ -9,8 +9,8 @@ import pathlib
 import re
 from typing import Any, NamedTuple
 
+from session_evidence_detail import _tool_result_body
 from session_evidence_extract import (
-    _clip,
     _CollectedRecord,
     _json_object,
     _parse_timestamp,
@@ -26,27 +26,70 @@ from session_evidence_stats import (
 
 from agent_toolkit._agents_server import tool_names as _agents_server_tool_names
 
-_CONVERSATION_INPUT_LIMIT = 1000
-"""会話の流れのツール呼び出しへ保存する代表入力の上限。表示側がさらに1行へ切り詰める。"""
-
-
 _APPLY_PATCH_FILE = re.compile(r"^\*\*\* (?:Add|Update|Delete) File: (.+)$", re.MULTILINE)
 
 
 def _conversation_tool_calls(records: list[_Record]) -> list[dict[str, Any]]:
-    """メイン記録のツール呼び出しを、ツール名、代表入力、呼び出し識別子および記録位置で返す。"""
-    return [
-        {
-            "kind": "tool-call",
+    """記録上の全呼び出しと結果を、入力全文・識別子・位置の対応を保って返す。"""
+    entries = {record.line: record.entry for record in records}
+    events = []
+    for record in records:
+        entry = record.entry
+        step = entry.get("step_update")
+        if entry.get("event") != "step_update" or not isinstance(step, dict):
+            continue
+        info = step.get("tool_info")
+        if step.get("step_type") != "tool" or step.get("state") == "ACTIVE" or not isinstance(info, dict):
+            continue
+        common = {
             "record": "main",
-            "line": call.line,
-            "timestamp": call.timestamp,
-            "tool": call.tool,
-            "call_id": call.call_id,
-            "text": _clip(call.text, _CONVERSATION_INPUT_LIMIT),
+            "line": record.line,
+            "timestamp": entry.get("timestamp"),
+            "call_id": None,
+            "tool": str(step.get("tool_name", "")),
         }
-        for call in _record_tool_calls(records)
-    ]
+        events.extend(
+            [
+                {**common, "kind": "tool-call", "text": json.dumps(info.get("parameters"), ensure_ascii=False)},
+                {**common, "kind": "tool-result", "text": json.dumps(info, ensure_ascii=False)},
+            ]
+        )
+    for call in _record_tool_calls(records):
+        inputs = _recorded_input(entries[call.line], call.call_id)
+        payload = entries[call.line].get("payload")
+        raw_input = payload.get("input") if isinstance(payload, dict) else None
+        events.append(
+            {
+                "kind": "tool-call",
+                "record": "main",
+                "line": call.line,
+                "timestamp": call.timestamp,
+                "tool": call.tool,
+                "call_id": call.call_id,
+                "text": json.dumps(inputs, ensure_ascii=False)
+                if inputs
+                else raw_input
+                if isinstance(raw_input, str)
+                else call.text,
+                "result_line": call.result_line,
+            }
+        )
+        if call.result_line is not None:
+            result = _recorded_result(entries[call.result_line], call.call_id)
+            if result is not None:
+                events.append(
+                    {
+                        "kind": "tool-result",
+                        "record": "main",
+                        "line": call.result_line,
+                        "timestamp": entries[call.result_line].get("timestamp"),
+                        "call_id": call.call_id,
+                        "tool": call.tool,
+                        "text": result,
+                        "input_line": call.line,
+                    }
+                )
+    return events
 
 
 def comparison_material_events(collected: list[_CollectedRecord]) -> list[dict[str, Any]]:
@@ -95,7 +138,7 @@ def comparison_material_events(collected: list[_CollectedRecord]) -> list[dict[s
                 "input_form": "file-reference" if delegate and paths else "direct-body" if body is not None else "command",
                 "observed_body_characters": len(body) if body is not None else None,
                 "recorded_result_characters": len(result) if result is not None else None,
-                "summary": _clip(call.text, _CONVERSATION_INPUT_LIMIT),
+                "summary": call.text,
             }
             events.append(event)
     return events
@@ -129,14 +172,11 @@ def _recorded_result(entry: dict[str, Any], call_id: str | None) -> str | None:
     if isinstance(message, dict) and isinstance(message.get("content"), list):
         for block in message["content"]:
             if isinstance(block, dict) and block.get("type") == "tool_result" and block.get("tool_use_id") == call_id:
-                content = block.get("content")
-                if isinstance(content, str):
-                    return content
-                if isinstance(content, list):
-                    return "\n".join(
-                        part["text"] for part in content if isinstance(part, dict) and isinstance(part.get("text"), str)
-                    )
+                return _tool_result_body(block, entry)
     payload = entry.get("payload", {})
+    item = payload.get("item") if isinstance(payload, dict) else None
+    if isinstance(item, dict) and item.get("type") in {"McpToolCall", "CommandExecution"}:
+        return json.dumps(item.get("result", item), ensure_ascii=False)
     value = payload.get("output") if isinstance(payload, dict) else None
     return value if isinstance(value, str) else None
 
@@ -194,6 +234,16 @@ def _record_tool_calls(records: list[_Record]) -> list[_ToolCall]:
         payload_type = payload.get("type")
         call_id = payload.get("call_id")
         item = payload.get("item")
+        if payload_type == "item_completed" and isinstance(item, dict) and item.get("type") == "CommandExecution":
+            identity = item.get("id")
+            if isinstance(identity, str) and any(call[3] == identity for call in pending):
+                continue
+            command = item.get("command", "")
+            text = " ".join(command) if isinstance(command, list) else str(command)
+            pending.append((record.line, timestamp, "CommandExecution", str(identity) if identity is not None else None, text))
+            if isinstance(identity, str):
+                result_lines.setdefault(identity, []).append(record.line)
+            continue
         if payload_type == "item_completed" and isinstance(item, dict) and item.get("type") == "McpToolCall":
             identity = item.get("id")
             if isinstance(identity, str) and any(call[3] == identity for call in pending):
@@ -219,10 +269,17 @@ def _record_tool_calls(records: list[_Record]) -> list[_ToolCall]:
         elif payload_type in {"function_call_output", "custom_tool_call_output"} and isinstance(call_id, str):
             result_lines.setdefault(call_id, []).append(record.line)
     calls: list[_ToolCall] = []
+    completed_lines = {
+        record.line
+        for record in records
+        if isinstance(record.entry.get("payload"), dict) and record.entry["payload"].get("type") == "item_completed"
+    }
     for line, timestamp, name, call_id, text in pending:
         result_line = (
             next((value for value in result_lines.get(call_id, ()) if value >= line), None) if call_id is not None else None
         )
+        if result_line is None and line in completed_lines:
+            result_line = line
         calls.append(_ToolCall(line, timestamp, name, call_id, text, result_line))
     return calls
 

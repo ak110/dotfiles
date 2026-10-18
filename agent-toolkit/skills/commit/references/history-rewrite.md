@@ -35,6 +35,7 @@ autosquash成功後は`git rev-parse --short=7 HEAD`で書換え後HEADを取得
 
 ## 操作前後の確認
 
+- 上位リポジトリだけを操作する履歴統合・検証時の切替では、初期化済みサブモジュールごとに操作前後のHEAD・branch・作業内容が一致することを確認する。子の参照を更新する目的の操作は別に扱う。親だけのrebase開始・続行・中止とcheckout・switch・restoreには、その呼び出しごとに`git -c submodule.recurse=false`を使い、環境の再帰設定にかかわらず子の作業状態を保持する
 - fixupとamendは、変更ファイルへの正式formatterの実行、formatterの差分の検収、そのcommitへ帰属する差分だけのstage、`git status --short`で未stageの差分が無いことの確認を終えてからcommitする。pre-commitがcommit時に初めて差分を変えると、stage済みと未stageの差分が併存してcommitが成立しない（その場合は`## 失敗時の扱い`）
 - 操作直前に`## 履歴確認の起動形`の`git log`を単独で実行して対象commitを再特定し、`git blame`か`git log -p -n 20 -- <ファイル>`と`git show --stat <sha>`で統合先を確定する
 - autosquash後は、全fixup作成直後のHEADと`<最古fixup対象>^`を使って次を実行する。同操作が最終tree一致、件数、制御件名の残存0、fixup対象以外のpatch-id不変を検収し、対応表を生成する（`reword:`の対象もfixup対象として扱う）。非0なら`## 失敗時の扱い`に従う
@@ -43,7 +44,7 @@ autosquash成功後は`git rev-parse --short=7 HEAD`で書換え後HEADを取得
   atk run-script history-compare -- --operation autosquash --work-dir <worktreeの絶対パス> --old-base <保持した親OID> --old-head <autosquash直前HEAD> --new-base <保持した親OID> --new-head <書換え後HEAD> --output <managed-temp内の対応表JSONの絶対パス>
   ```
 
-- 書き換え後は各中間`HEAD`で変更範囲の検証を再実行し、`git log -1 --format=%B <統合後sha>`で最終メッセージと`Co-Authored-By:`を、stage状態と`git show HEAD:<path>`で未反映差分が無いことを確かめる
+- 書き換え後は各中間`HEAD`で変更範囲の検証を再実行し、`git log -1 --format=%B <統合後sha>`で最終メッセージと`Co-Authored-By:`を、stage状態と`git show HEAD:<path>`で未反映差分が無いことを確かめる。中間版への切替と検証後の復帰にはそれぞれ`git -c submodule.recurse=false checkout <参照>`を使う
 
 ## fixupの実行上の制約
 
@@ -56,8 +57,11 @@ autosquash成功後は`git rev-parse --short=7 HEAD`で書換え後HEADを取得
   次のいずれかに当たる場合はfixupを作成せずにautosquashを中止し、`## 失敗時の扱い`に従う。`amend:`・`reword:`の対象件名が一意でない場合、範囲内に件名先頭が制御語（`fixup!`・`squash!`・`amend!`）と半角空白1文字に完全一致する既存commitがある場合、範囲にmergeがある場合、これらの判定が失敗した場合である。
   autosquash直前にもTOCTOU対策として再判定する
 - fixup作成直後に`git log -1 --format=%s`で期待件名（`fixup! <統合先の件名>`、`fixup! <対象の完全OID>`または`amend! <統合先の件名>`）との完全一致を確かめ、一致した場合だけautosquashする
-- 統合は`GIT_SEQUENCE_EDITOR=: git -c rebase.updateRefs=false rebase -i --autosquash <base>`（`<base>`は対象コミットの親以前）で行い、直前に`## 履歴確認の起動形`の`git log`を単独で再実行する。作業branch以外のlocal branch refの更新は設定で抑止する。`--no-update-refs`はGit 2.38で追加された引数で、agent-toolkitが対応するGit 2.34.1は受理しない（Git 2.38未満はref更新の機能自体を持たない）
+- 統合は`GIT_SEQUENCE_EDITOR=: git -c submodule.recurse=false -c rebase.updateRefs=false rebase -i --autosquash <base>`で行う。`<base>`には対象コミットの親以前を指定する。直前に`## 履歴確認の起動形`の`git log`を単独で再実行する。作業branch以外のlocal branch refの更新と、子の作業状態の変更をコマンド単位の設定で抑止する。`--no-update-refs`はGit 2.38で追加された引数で、agent-toolkitが対応するGit 2.34.1は受理しない（Git 2.38未満はref更新の機能自体を持たない）
 - `amend:`・`reword:`では統合先の既存の異なるtrailerを保持し、`Co-Authored-By:`を統合後に1回だけ残す
+
+対応Git版での統合と参照保持の再検証は、`docs/development/audit-records.md`の「agent-toolkit/skills/commit/references/history-rewrite.md：fixupの実行上の制約：2026年10月18日」にある。
+子の状態保持の再検証は、同書の「agent-toolkit/skills/commit/references/history-rewrite.md：親だけのGit操作とサブモジュール：2026年10月18日」にある。
 
 ## 失敗時の扱い
 
@@ -65,7 +69,7 @@ autosquash成功後は`git rev-parse --short=7 HEAD`で書換え後HEADを取得
 
 これらのphaseのいずれかが失敗した場合は、後述の内容競合を除き、失敗の事実と観測結果を委譲元へ返して同じ指摘の履歴統合を終える。復旧操作と再試行は委譲元の判断を得てから行う。失敗時点の履歴とindexの状態は種別ごとに異なり、状態を確定しない復旧や再試行はcommitの消失を招く。
 `rebase.updateRefs=false`を指定せずにrebaseしたことを観測した場合は、local branch refsを事前に保持したOIDと比べる。作業branch以外のrefが動いていたら、そのrefと変更前後のOIDと復旧に必要な許可を委譲元へ返し、復旧は委譲元の判断に委ねる。
-autosquashが内容競合で停止した場合は、競合箇所が採用済みの指摘への修正と統合先commitの変更だけから成り、解消後も中間commitの公開契約を保てる場合に限り、同じ実装担当が解消してよい。解消したパスだけをstageし、`## 履歴確認の起動形`の`git log`を単独で実行した直後に`git rebase --continue`する（同じrebaseの続行）。再停止のたびに同じ条件を判定する。担当外の変更を含む競合、帰属を確定できない修正、公開契約を保てない場合は、競合を残して委譲元へ返す。
+autosquashが内容競合で停止した場合は、競合箇所が採用済みの指摘への修正と統合先commitの変更だけから成り、解消後も中間commitの公開契約を保てる場合に限り、同じ実装担当が解消してよい。解消したパスだけをstageし、`## 履歴確認の起動形`の`git log`を単独で実行した直後に`git -c submodule.recurse=false rebase --continue`する（同じrebaseの続行）。再停止のたびに同じ条件を判定する。担当外の変更を含む競合、帰属を確定できない修正、公開契約を保てない場合は、競合を残して委譲元へ返す。
 返す際は失敗した操作と終了コードと標準エラー出力に、失敗時点の`git status --short`と`git log --oneline -5`を添える。
 
 ## WI実装commitの対応の継承
@@ -81,7 +85,7 @@ atk run-script verification-record -- --output <未判定検証記録の絶対�
 atk run-script exec-review-evidence-check -- <完成条件証拠の絶対パス> --rewrite-map <対応表の絶対パス>
 ```
 
-対応表を受け取ったコマンドが完成条件証拠と未判定検証記録のevidenceで書き換えるのは、現行成果物への`commit:<OID>`参照だけである（分割時は全対応先をそれぞれ`commit:`標識で残す）。裸のOID、過去の取得版（HEAD・git_head・比較元）、観測ファイル、判定とreviewed_headは保持する。既存の自由文を推測して標識へ移さず、曖昧・不正な入力は部分保存せず拒否する。OIDの対応だけで観測を新しい版へ適用せず、結果に作用する内容と条件が変わった行だけを再観測する。根拠共用のCOMMIT_REFERENCEはこの更新とは別の責務として維持する。
+`exec-review-evidence-check --rewrite-map`と`verification-record --rewrite-map`が各記録のevidenceで書き換えるのは、現行成果物への`commit:<OID>`参照だけである（分割時は全対応先をそれぞれ`commit:`標識で残す）。裸のOID、過去の取得版（HEAD・git_head・比較元）、観測ファイル、判定とreviewed_headは保持する。既存の自由文を推測して標識へ移さず、曖昧・不正な入力は部分保存せず拒否する。OIDの対応だけで観測を新しい版へ適用せず、結果に作用する内容と条件が変わった行だけを再観測する。根拠共用のCOMMIT_REFERENCEはこの更新とは別の責務として維持する。
 
 書換え直前のHEADと対応表を、書換え範囲のcommitを作成したレーンの計画と計画なしの引き継ぎ記録の全てとともに、次の形で1回だけ渡す（記録・worktree・対応表は絶対パス、`--rewrite-map`はファイルパス）。同じ修正系列で書換えを繰り返す間は毎回同じ記録の集合を渡す。
 

@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import contextlib
+import datetime
 import json
 import os
 import pathlib
@@ -24,6 +25,8 @@ import pytest
 
 from agent_toolkit import atk
 from agent_toolkit._atk import orchestrator, run_skill
+from agent_toolkit._atk.wi import add as wi_add
+from agent_toolkit._atk.wi import frontmatter
 from agent_toolkit._common import claude_usage_limit
 from agent_toolkit._testing import git_repository
 from agent_toolkit._testing.process_loop_support import set_orchestrate_environment
@@ -31,6 +34,7 @@ from agent_toolkit._testing.process_loop_support import set_orchestrate_environm
 _FAKE_ENGINE = """\
 #!{python}
 import json, os, pathlib, subprocess, sys, time, uuid
+import datetime, re
 name = pathlib.Path(sys.argv[0]).name
 args = sys.argv[1:]
 record_dir = pathlib.Path(os.environ["FAKE_RECORD_DIR"])
@@ -46,6 +50,7 @@ record = {{
         "AGENT_TOOLKIT_PROCESS_LOOP_SESSION_ID",
         "AGENT_TOOLKIT_DELEGATED_SESSION",
         "AGENT_TOOLKIT_RESTART_SPEC",
+        "AGENT_TOOLKIT_RUN_SKILL_ID",
     )}},
 }}
 (record_dir / f"{{time.time_ns()}}-{{uuid.uuid4().hex}}.json").write_text(json.dumps(record), encoding="utf-8")
@@ -66,6 +71,33 @@ if probe:
         sys.exit(1)
     print(json.dumps({{"type": "result", "is_error": False}}))
     sys.exit(0)
+if os.environ.get("FAKE_REPORT_MODE", "saved") != "missing":
+    notes = pathlib.Path(os.environ["AGENT_TOOLKIT_PRIVATE_NOTES"])
+    mode = os.environ.get("FAKE_REPORT_MODE", "saved")
+    run_id = os.environ["AGENT_TOOLKIT_RUN_SKILL_ID"]
+    scope_file = record_dir / "scope"
+    match = re.search(r"スキル`([^`]+)`", args[-1])
+    if match:
+        scope_file.write_text(match[1])
+    scope = scope_file.read_text()
+    (notes / "inbox").mkdir(exist_ok=True)
+    old = notes / "inbox" / (run_id + ".md")
+    body = old.read_text().split("\\n---\\n", 1)[1] + "\\n再開後の報告更新\\n" if old.exists() else "定期実行の報告\\n"
+    saved_id = "other-run" if mode == "other" else run_id
+    old.write_text("---\\ntype: uwi\\nsource: run-skill\\nscope: " + json.dumps(scope) +
+        "\\nrun_skill_report: " + ("false" if mode == "question" else "true") +
+        "\\nrun_skill_run_id: " + saved_id + "\\n---\\n" + body)
+    subprocess.run(["git", "-C", str(notes), "add", "."], check=True, stdout=subprocess.DEVNULL)
+    subprocess.run(["git", "-C", str(notes), "commit", "-qm", "report"], check=True)
+    if os.environ.get("FAKE_REPORT_REMOTE"):
+        pushed = subprocess.run(["git", "-C", str(notes), "push"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        if pushed.returncode and not os.environ.get("FAKE_REPORT_PUSH_FAIL"):
+            sys.exit(pushed.returncode)
+    if mode in ("other", "unsynced"):
+        old.write_text(old.read_text() + "\\n未同期の更新\\n")
+        if mode == "other":
+            subprocess.run(["git", "-C", str(notes), "add", "."], check=True, stdout=subprocess.DEVNULL)
+            subprocess.run(["git", "-C", str(notes), "commit", "-qm", "other report"], check=True)
 if os.environ.get("FAKE_SESSION_LIMIT_COUNT"):
     counter = record_dir / "session-count"
     count = int(counter.read_text()) if counter.exists() else 0
@@ -140,6 +172,10 @@ def _engine_env(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> _Env
     repo = tmp_path / "repo"
     (repo / "sub").mkdir(parents=True)
     git_repository.init_repository(repo)
+    notes = tmp_path / "notes"
+    git_repository.init_repository(notes)
+    monkeypatch.setenv("AGENT_TOOLKIT_PRIVATE_NOTES", str(notes))
+    monkeypatch.setenv("PYTHONPATH", str(pathlib.Path(run_skill.__file__).resolve().parents[2]))
     monkeypatch.setenv("PATH", os.pathsep.join((str(bin_dir), os.environ.get("PATH", ""))))
     monkeypatch.setenv("FAKE_RECORD_DIR", str(records))
     monkeypatch.setenv("XDG_STATE_HOME", str(state))
@@ -400,6 +436,132 @@ def test_codex_session_receives_goal_without_slash_command(
     assert sessions[0]["argv"][-1].startswith('<atk-auto source="run-skill" kind="goal">')
 
 
+@pytest.mark.parametrize("engine", ["claude", "codex"])
+@pytest.mark.parametrize("mode", ["missing", "question", "other", "unsynced"])
+def test_normal_exit_requires_same_run_synced_report(
+    engine_env: _Env, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], engine: str, mode: str
+) -> None:
+    """子の正常終了と報告保存を独立に変え、未保存・途中確認・他実行・未commitの更新を拒否する。"""
+    set_orchestrate_environment(monkeypatch, f"{engine}:test-model/low")
+    monkeypatch.setenv("FAKE_REPORT_MODE", mode)
+    code, out, err = _run(["--target-repo", str(engine_env.repo), "my-skill"], capsys)
+    assert code == 1
+    assert not out
+    assert "報告用UWI" in err and "同期契約" in err and "次の操作:" in err
+    assert str(_log_files(engine_env)[0]) in err
+
+
+@pytest.mark.parametrize("engine", ["claude", "codex"])
+@pytest.mark.parametrize("push_fails", [False, True])
+def test_report_requires_remote_push(
+    engine_env: _Env,
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    engine: str,
+    push_fails: bool,
+) -> None:
+    """実bare remoteへ報告が到達した場合に成功し、commit後のpush失敗は保存未達になる。"""
+    set_orchestrate_environment(monkeypatch, f"{engine}:test-model/low")
+    notes = pathlib.Path(os.environ["AGENT_TOOLKIT_PRIVATE_NOTES"])
+    origin = git_repository.init_bare_repository(tmp_path / "origin.git")
+    git_repository.commit_all(notes, "initial")
+    git_repository.run_git(notes, "remote", "add", "origin", str(origin))
+    git_repository.run_git(notes, "push", "-u", "origin", "HEAD")
+    monkeypatch.setenv("FAKE_REPORT_REMOTE", "1")
+    if push_fails:
+        hook = origin / "hooks" / "pre-receive"
+        hook.write_text("#!/bin/sh\nexit 1\n", encoding="utf-8")
+        hook.chmod(0o755)
+        monkeypatch.setenv("FAKE_REPORT_PUSH_FAIL", "1")
+    code, out, err = _run(["--target-repo", str(engine_env.repo), "my-skill"], capsys)
+    assert code == (1 if push_fails else 0), err
+    assert bool(out) is not push_fails
+
+
+def test_wi_save_and_edit_bind_report_to_run(
+    engine_env: _Env,
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """WIの実保存と公開editは実行IDと報告区分を保持し、更新した本文のcommitを照会できる。"""
+    del engine_env
+    notes = pathlib.Path(os.environ["AGENT_TOOLKIT_PRIVATE_NOTES"])
+    monkeypatch.setenv("AGENT_TOOLKIT_RUN_SKILL_ID", "run-1")
+    names = wi_add.add_entries(
+        notes,
+        messages=["---\nrun_skill_report: true\n---\n実行結果を確認してください。"],
+        target_repo="github.com/example/repo",
+        source="run-skill",
+        now=datetime.datetime(2026, 10, 18),
+        entry_type="uwi",
+        scope="my-skill",
+        question_type="post-approval",
+    )
+    path = notes / "inbox" / names[0]
+    saved = frontmatter.parse_frontmatter(path.read_text(encoding="utf-8"))
+    assert saved is not None and saved[0]["run_skill_run_id"] == "run-1"
+    assert wi_add.has_synced_run_report(notes, run_id="run-1", skill="my-skill")
+    body_file = tmp_path / "report-update.md"
+    body_file.write_text("更新後の実行結果を確認してください。", encoding="utf-8")
+    with pytest.raises(SystemExit) as updated:
+        atk.main(
+            [
+                "wi",
+                "edit",
+                names[0],
+                "--body-file",
+                str(body_file),
+                "--target-repo=github.com/example/repo",
+            ],
+            home=tmp_path,
+        )
+    assert updated.value.code == 0, capsys.readouterr().err
+    saved = frontmatter.parse_frontmatter(path.read_text(encoding="utf-8"))
+    assert saved is not None and saved[0]["run_skill_run_id"] == "run-1"
+    assert "更新後の実行結果" in saved[1]
+    assert wi_add.has_synced_run_report(notes, run_id="run-1", skill="my-skill")
+
+
+@pytest.mark.parametrize("collision", ["none", "branch-tag", "remote-current", "remote-ref"])
+def test_report_sync_uses_current_branch_config_with_ref_collisions(tmp_path: pathlib.Path, collision: str) -> None:
+    """同名の別refがあっても、現在branchの送信先へ到達した報告だけを同期済みとする。"""
+    notes = git_repository.init_repository(
+        tmp_path / "notes", initial_branch="review/reports", files={"README": "base\n"}, commit_message="base"
+    )
+    origin = git_repository.init_bare_repository(tmp_path / "origin.git")
+    other = git_repository.init_bare_repository(tmp_path / "other.git")
+    git_repository.run_git(notes, "remote", "add", "origin", str(origin))
+    git_repository.run_git(notes, "remote", "add", "other", str(other))
+    git_repository.run_git(notes, "push", "-u", "origin", "HEAD:refs/heads/published/reports")
+    git_repository.run_git(notes, "push", "other", "HEAD:refs/heads/unrelated")
+    # 短縮表示heads/review/reportsでbranch設定を照会すると、別の送信先を選ぶ入力。
+    git_repository.run_git(notes, "config", "branch.heads/review/reports.remote", "other")
+    git_repository.run_git(notes, "config", "branch.heads/review/reports.merge", "refs/heads/unrelated")
+    if collision == "branch-tag":
+        git_repository.run_git(notes, "tag", "review/reports")
+    elif collision == "remote-current":
+        git_repository.run_git(notes, "update-ref", "refs/remotes/review/reports", "HEAD")
+    elif collision == "remote-ref":
+        git_repository.run_git(notes, "tag", "origin/published/reports")
+        git_repository.run_git(notes, "branch", "--no-track", "origin/published/reports", "HEAD")
+    report = notes / "inbox" / "report.md"
+    report.parent.mkdir()
+    content = (
+        "---\ntype: uwi\nsource: run-skill\nscope: my-skill\n"
+        "run_skill_report: true\nrun_skill_run_id: run-1\n---\n\n実行の報告\n"
+    )
+    report.write_text(content, encoding="utf-8")
+    git_repository.commit_all(notes, "report")
+
+    assert not wi_add.has_synced_run_report(notes, run_id="run-1", skill="my-skill")
+    git_repository.run_git(notes, "push", "origin", "HEAD:refs/heads/published/reports")
+    assert wi_add.has_synced_run_report(notes, run_id="run-1", skill="my-skill")
+    report.write_text(content + "未commitの変更\n", encoding="utf-8")
+    assert not wi_add.has_synced_run_report(notes, run_id="run-1", skill="my-skill")
+
+
 def test_child_session_does_not_inherit_process_loop_markers(
     engine_env: _Env, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -603,7 +765,6 @@ def test_usage_limit_resumes_work_conversation_outside_timeout(
     monkeypatch.setattr(sys.stderr, "isatty", lambda: progress)
     sleeps: list[float] = []
     clock = [1000.0]
-    real_monotonic = time.monotonic
 
     def sleep(delay: float) -> None:
         sleeps.append(delay)
@@ -614,7 +775,7 @@ def test_usage_limit_resumes_work_conversation_outside_timeout(
         "time",
         types.SimpleNamespace(
             time=lambda: clock[0],
-            monotonic=lambda: real_monotonic() + clock[0],
+            monotonic=lambda: clock[0],
             sleep=sleep,
         ),
     )
@@ -637,3 +798,10 @@ def test_usage_limit_resumes_work_conversation_outside_timeout(
         assert argv[argv.index("--model") + 1] == "test-model"
     log = _log_files(engine_env)[0].read_text(encoding="utf-8")
     assert log.count("利用上限の解除待ち:") == 2
+    run_ids = {session["env"]["AGENT_TOOLKIT_RUN_SKILL_ID"] for session in sessions}
+    assert len(run_ids) == 1 and None not in run_ids
+    reports = list((pathlib.Path(os.environ["AGENT_TOOLKIT_PRIVATE_NOTES"]) / "inbox").glob("*.md"))
+    assert len(reports) == 1
+    saved = reports[0].read_text(encoding="utf-8")
+    assert next(iter(run_ids)) in saved
+    assert saved.count("再開後の報告更新") == 2

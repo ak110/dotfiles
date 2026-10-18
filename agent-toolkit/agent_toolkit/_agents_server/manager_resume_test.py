@@ -432,6 +432,7 @@ async def test_resumed_session_keeps_created_at_in_status_file(tmp_path: pathlib
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("label", ["lane-01-exec-review", "lane-01-reader-fit-review"])
 @pytest.mark.parametrize(
     "prepare_resume",
     [
@@ -443,6 +444,7 @@ async def test_resumed_session_keeps_every_launch_info_item(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
+    label: str,
     prepare_resume: Callable[[server_manager.AgentsServerManager, state.SessionState], None],
 ) -> None:
     """再開の処理によらず、起動情報の定義の全項目を`start`時の値のまま保つ。
@@ -451,8 +453,9 @@ async def test_resumed_session_keeps_every_launch_info_item(
     labelで自sessionを探す手順と、`-review`の完了結果に付く採否確定の案内が成立しなくなる。
     再開後の登録簿にも同じ値を書き、もう一度再起動しても保たれることを確かめる。
     """
+    expected_launch = {**_LAUNCH_VALUES, "label": label}
     launch_values: dict[str, Any] = {
-        **_LAUNCH_VALUES,
+        **expected_launch,
         "usage": "review",
         "followup_prompts": ("先行追送",),
         "final_responses": ((1, "先行応答"),),
@@ -471,7 +474,7 @@ async def test_resumed_session_keeps_every_launch_info_item(
 
     response = await manager.send_message(session.session_id, "続行")
     assert response["delivery"] == "reply_started"
-    assert response["label"] == _LAUNCH_VALUES["label"]
+    assert response["label"] == label
     if prepare_resume is _expire_launched_session:
         assert response["previous_result"]["agent_message"] == "前のturn"
     else:
@@ -480,12 +483,12 @@ async def test_resumed_session_keeps_every_launch_info_item(
 
     resumed = manager.sessions[session.session_id]
     assert resumed is not session
-    assert {name: getattr(resumed, name) for name in _LAUNCH_VALUES} == _LAUNCH_VALUES
+    assert {name: getattr(resumed, name) for name in expected_launch} == expected_launch
     projected = json.loads(writer.path.read_text(encoding="utf-8"))["sessions"]
     entry = next(item for item in projected if item["session_id"] == session.session_id)
-    assert {name: entry[name] for name in _LAUNCH_VALUES} == _LAUNCH_VALUES
+    assert {name: entry[name] for name in expected_launch} == expected_launch
     shown = await manager.show_session(session.session_id)
-    assert (shown["label"], shown["prompt"]) == (_LAUNCH_VALUES["label"], _LAUNCH_VALUES["prompt"])
+    assert (shown["label"], shown["prompt"]) == (label, expected_launch["prompt"])
     resume_info = session_registry.resolve(session.session_id).resume_info
     assert resume_info is not None
     assert session_registry.LaunchInfo.of(resumed) == expected_info
@@ -497,10 +500,14 @@ async def test_resumed_session_keeps_every_launch_info_item(
     result = json.loads(capsys.readouterr().out)
     assert (result["session_id"], result["label"], result["status"]) == (
         session.session_id,
-        _LAUNCH_VALUES["label"],
+        label,
         "completed",
     )
-    assert result_projection.REVIEW_RESULT_NEXT_ACTION in result["next_action"]
+    if label.endswith("reader-fit-review"):
+        assert "`reader-fit-review.parent.md`「受領」" in result["next_action"]
+        assert "reviewee.md" not in result["next_action"]
+    else:
+        assert result_projection.REVIEW_RESULT_NEXT_ACTION in result["next_action"]
     await manager.close()
 
 

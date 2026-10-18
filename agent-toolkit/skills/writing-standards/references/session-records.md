@@ -14,6 +14,8 @@ Codexでは`type`が`compacted`のレコードに、所要時間を除いた情�
 
 ## Claude Codeの記録
 
+会話の要素はエントリの`type`が`user`・`assistant`のものだけで判定する。Claude Code 2.1.301の`api-request-blob`はAPI要求の写しであり、同じ形の`message.content`にツール入力・結果・発話を持つため、形だけで数えると二重計数になる。生の行の本文・構造を調べる照会は写しも表示する。監査記録は`docs/development/audit-records.md`の「セッション記録のAPI要求の写し：2026年10月18日」にある。
+
 - 記録階層は深さ2（`<project>/<session-uuid>.jsonl`、メイン記録）と深さ4（`<session-uuid>/subagents/agent-<agentId>.jsonl`、サブエージェント記録）だけであり、孫エージェントの記録も祖先セッション直下へフラットに置かれる
 - `<project>`の名前はセッションを開始した作業ディレクトリの絶対パスの英数字以外を`-`へ置き換えた形であり、worktreeなどで開始したセッションは複製元と別の`<project>`に置かれる。Claude Codeのメインが自身の記録を使う場合は、SessionStartの通知が示すtranscriptの絶対パスをそのまま使い、更新時刻順やcwdから推測しない（`rules-main.claude-code.md`「自身の会話の記録」）。特定済みのセッションIDから別の記録を読む場合は`atk run-script session-review-evidence -- --claude-session-id <ID>`へIDを渡す。所在のパスが要る場合は`find ~/.claude/projects -maxdepth 2 -name '<session-uuid>.jsonl'`で1件に確定する。得たパスは引用して渡す（引用しないグロブ展開が複数語へ分かれると後続のコマンドが標準入力を待ち続ける）
 - 同一事象が親と子の記録へ重複して現れるため、重複を除いてから件数を確定する。深さ2に限るとサブエージェント内部のイベント（ツール呼び出し等）を取りこぼすため、限る場合は適用条件を明示する
@@ -34,6 +36,8 @@ Codexでは、`type`が`response_item`、`payload.type`が`message`、`payload.r
 
 セッション記録から集計したトークン量、リクエスト数、所要時間を成果物やユーザーへの提示に書く場合は、`atk run-script session-review-evidence -- <引数>`の出力を典拠とし、自作の集計は典拠にしない。
 トークン量とリクエスト数には`--stats`、所要時間には`--elapsed-until <ISO 8601の時刻>`を付ける。振り返りの全候補は`--bundle`が生成する`candidates.jsonl`から取り、`atk run-script session-review-prepare`がこれを`candidates.md`へ整形する。
+
+別セッションを含む担当別の費用の要約は`--stats --summary-only`で取得する。総量・親・Claudeサブエージェント・agent threadの要約と由来・未解決診断を保持する表示選択であり、トークンの定義と合算方法は全量表示と同じである。bundleと準備文書は詳細内訳を使うため全量を保持する。
 
 - Claude Codeの記録では1回のAPI応答が同じ`usage`を持つ複数のレコードへ分かれる。同コマンドは同一`message.id`を最後の`usage`へ畳み込んだ値を返す
 - `--elapsed-until`の`elapsed_seconds`はセッションの最初のレコードから指定時刻までの差であり、その後の工程を含まない
@@ -77,7 +81,7 @@ WIの処理件数は、成功結果まで記録された直接の`atk wi`操作�
 通常表示と`--bundle`が書くファイルは、全収集記録の`record-provenance`を返す。warn・grep・fixed-string・tool-calls・hook-notices・statsとbundleの要約は、結果が参照する記録とその起動元の記録の`record-provenance`だけを返す。同イベントの`record`・`role`・`source_record`・`source_line`・`mode`・`role_document`を読む。親を収集していない情報と役割文書が無い値はnullである。
 役割別の呼び出し件数と起動した委譲先のmodeは、`--tool-calls`の`tool-call-summary.by_role`（`document:<役割名>`は最初の配送の役割文書、`record:<role>`は役割文書を持たない記録の収集区分）の`count`・`by_tool`・`by_mode`から読む。カタログと併用した場合も収集したroot外の委譲先を含む。
 
-単一transcriptでは`--detail`と`--record-schema`を併用でき、反復指定した全locatorの本文と構造を`kind`・`record`・`line`で区別して返す。不正なlocatorがあればエラーと次の操作を返して終了コード2で終える。それ以外の照会modeどうし、およびカタログ走査・保存済み発話照会・`--bundle`との組み合わせは入力形式ごとの排他条件に従う。
+単一transcriptの照会は結果の`kind`を区別できる組なら併用でき、全照会のイベントを返す。`--grep`・`--hook-notices`・`--user-events`は`summary`を共有するため、このうち複数を含む組は個別に実行する。共通の由来と未解決記録は一度だけ返す。不正なlocatorがあれば他の照会の結果も返し、終了コード2で終える。カタログ走査・保存済み発話照会・`--bundle`との組み合わせは入力形式ごとの排他条件に従う。
 
 生成側が返す`保存先:`の絶対パスから全量を読み、出所の引き渡しにも同じファイルを使う。
 JSONLファイル群への汎用CLIでの無限定の検索と、記録や`candidates.md`の標準出力への全量表示はしない（行数と1行の長さが入力に依存し、巨大な単一行へ広い正規表現を当てるとマッチングの上限に達する）。同コマンドが受理しない調査には`agent-toolkit/rules/02-agent-operations.md`「ツール・コマンド運用」の出力量の判定と分離実行の規定を適用する。

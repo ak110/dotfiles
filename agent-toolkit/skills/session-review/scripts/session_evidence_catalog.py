@@ -280,6 +280,7 @@ class _CatalogScan(NamedTuple):
     root: Path
     parents: list[_CatalogParent]
     unresolved_count: int
+    unresolved: list[_UnresolvedRecord]
 
 
 def _catalog_scan(
@@ -302,10 +303,13 @@ def _catalog_scan(
     loaded: dict[str, _CollectedRecord] = {}
     path_items: dict[Path, _CollectedRecord] = {}
     unresolved_loads = 0
+    unresolved = []
     for path in paths:
         records = _load_records(str(path))
         if records is None:
             unresolved_loads += 1
+            identity = f"claude:{path.parent.parent.name}/{path.stem}" if path.parent.name == "subagents" else str(path)
+            unresolved.append(_UnresolvedRecord(identity, 0))
             continue
         detected = _detect_runtime([record.entry for record in records])
         if detected != runtime:
@@ -380,7 +384,8 @@ def _catalog_scan(
                 end_text if isinstance(end_text, str) else None,
             )
         )
-    return _CatalogScan(resolved_root, parents, unresolved_loads + len(unresolved_references))
+    unresolved.extend(_UnresolvedRecord(child_id, 0) for _, child_id in sorted(unresolved_references))
+    return _CatalogScan(resolved_root, parents, unresolved_loads + len(unresolved_references), unresolved)
 
 
 def _catalog_events(
@@ -431,7 +436,7 @@ def _catalog_events(
         summary["selected_parent_count"] = len(events)
         if selection.fields is not None:
             events = [{"kind": event["kind"], **{field: event[field] for field in selection.fields}} for event in events]
-    return [*events, summary], 0
+    return [*events, *_unresolved_events(scan.unresolved), summary], 0
 
 
 def _catalog_tool_call_events(
@@ -452,7 +457,7 @@ def _catalog_tool_call_events(
     if isinstance(scan, dict):
         return [scan], 2
     events: list[dict[str, Any]] = []
-    unresolved: list[_UnresolvedRecord] = []
+    unresolved: list[_UnresolvedRecord] = list(scan.unresolved)
     all_collected: dict[str, _CollectedRecord] = {}
     for parent in scan.parents:
         collected, parent_unresolved = _collect_records(str(parent.item.path), parent.item.records, None, boundary)
@@ -468,10 +473,13 @@ def _catalog_tool_call_events(
                     events.append({**event, "session_id": parent.item.record_id})
     events = _sorted_tool_call_events(events)
     collected_records = list(all_collected.values())
+    resolved_ids = {identity for item in collected_records for identity in (item.record_id, item.record_id.partition(":")[2])}
+    unresolved = [item for item in unresolved if item.record_id not in resolved_ids]
     summary = _tool_call_summary(events, collected_records)
     summary["by_session"] = dict(sorted(collections.Counter(str(event["session_id"]) for event in events).items()))
     summary["scan_root"] = str(scan.root)
     summary["since"] = since.isoformat()
     summary["observation_boundary"] = boundary.isoformat()
     summary["parent_record_count"] = len(scan.parents)
+    summary["unresolved_record_count"] = len(set(unresolved))
     return [*events, *_referenced_provenance_events(collected_records, events), *_unresolved_events(unresolved), summary], 0

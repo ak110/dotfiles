@@ -366,3 +366,22 @@ def test_large_original_record_is_guided_to_evidence_query(
     assert "session-review-evidence" in captured.err
     assert "--transcript" in captured.err
     assert "atk read-file" not in captured.err
+
+
+@pytest.mark.parametrize("multiple", [False, True])
+@pytest.mark.parametrize("original", [False, True])
+def test_large_read_notice_supports_command_restricted_agent(tmp_path, monkeypatch, multiple, original):
+    """原記録・通常資料の単体・複数遮断が、実行可能な取得と必要入力の返却を案内する。"""
+    home = tmp_path / "codex"
+    monkeypatch.setenv("CODEX_HOME", str(home))
+    target = _sized_file(home / "sessions" if original else tmp_path, _THRESHOLD + 1, "record.jsonl")
+    extra = _sized_file(tmp_path, 10, "extra.txt")
+    notice = _codex_read(shlex.join(["cat", str(target), *([str(extra)] if multiple else [])]), tmp_path)
+    assert notice is not None
+    assert "実行が許可される担当" in notice and "実行が制限される担当" in notice
+    assert "委譲元へ返し" in notice and "資料を受け取る" in notice
+    if original:
+        assert "session-review-evidence" in notice
+        assert "識別子・位置・必要な照会内容" in notice
+    else:
+        assert "atk read-file" in notice and "対象パス・必要な取得範囲" in notice

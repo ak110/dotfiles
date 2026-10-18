@@ -49,6 +49,17 @@ def run_record(value: object) -> tuple[pathlib.Path, dict[str, Any]]:
     return path, record
 
 
+def worktree_root(record: dict[str, Any]) -> pathlib.Path:
+    """記録cwdからGit境界の所在だけを読み、結果の取得版と現在のHEADを混同しない。"""
+    root = _git(record["cwd"], "rev-parse", "--show-toplevel").strip()
+    if not pathlib.Path(root).is_absolute():
+        raise ValueError("実行記録cwdの対象worktreeを特定できません。対象worktreeでrun-commandを再実行する")
+    result = pathlib.Path(root)
+    if not pathlib.Path(record["cwd"]).resolve().is_relative_to(result.resolve()):
+        raise ValueError("実行記録cwdと対象worktreeが対応しません。対象worktreeでrun-commandを再実行する")
+    return result
+
+
 def _load(spec: object) -> tuple[dict[str, Any], list[dict[str, Any]]]:
     if not isinstance(spec, dict) or set(spec) != {"path", "run_record", "head", "conditions", "sources"}:
         raise ValueError("診断の組にはpath・run_record・head・conditions・sourcesを指定する")

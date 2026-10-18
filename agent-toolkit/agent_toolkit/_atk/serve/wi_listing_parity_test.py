@@ -6,8 +6,12 @@ import pathlib
 import pytest
 
 from agent_toolkit import atk
+from agent_toolkit._atk.serve import app as serve_app
+from agent_toolkit._atk.serve import config as serve_config
+from agent_toolkit._atk.serve import state as serve_state
 from agent_toolkit._atk.serve import wi_operations
 from agent_toolkit._atk.wi import entries as _wi_entries
+from agent_toolkit._atk.wi import frontmatter
 from agent_toolkit._atk.wi import sync as _wi_sync
 
 _REPO = "github.com/example/repo"
@@ -112,3 +116,61 @@ def test_unresolvable_target_repo_matches_stored_value_in_cli_selection_and_web(
     )
     web = _web_filenames(notes, {"status": status, "answered": "all", "target_repo": _UNRESOLVABLE_REPO})
     assert {entry[0].name for entry in selected} == web == {"20260101-000000-007.md"}
+
+
+@pytest.mark.parametrize("kind", ["awi", "uwi"])
+@pytest.mark.asyncio
+async def test_bom_preserves_cli_and_web_summaries(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    kind: str,
+) -> None:
+    """同じ保存本文の先頭BOMだけを変え、一覧・検索・表示と一覧APIの要約を比較する。"""
+    notes = tmp_path / "notes"
+    name = "20260101-000000-001.md"
+    _write(notes, "inbox", name, kind=kind, target_repo=_REPO, source=None, answered=False)
+    path = notes / "inbox" / name
+    original = path.read_text(encoding="utf-8")
+    monkeypatch.setattr(_wi_sync, "ensure_environment", lambda _home: notes)
+    outputs: list[list[str]] = []
+    summaries: list[object] = []
+    original_parse = frontmatter.parse_frontmatter
+    parsed_inputs: list[str] = []
+
+    def counting_parse(text: str) -> tuple[dict[str, object], str] | None:
+        parsed_inputs.append(text)
+        return original_parse(text)
+
+    for prefix in ("", "\ufeff"):
+        path.write_text(prefix + original, encoding="utf-8")
+        current: list[str] = []
+        for command in (
+            ["list", "--target-repo=all", "--type=all"],
+            ["grep", "github.com/example/repo", "--target-repo=all", "--type=all"],
+            ["show", name],
+        ):
+            capsys.readouterr()
+            with pytest.raises(SystemExit) as raised:
+                atk.main(["wi", *command, "--skip-pull", "--summary-only"], home=tmp_path)
+            assert raised.value.code == 0
+            captured = capsys.readouterr()
+            assert not captured.err
+            current.append(captured.out)
+        outputs.append(current)
+        parsed_inputs.clear()
+        app = serve_app.create_app(notes, serve_config.ServeConfig("127.0.0.1", 28766), serve_state.ServeState(notes))
+        with monkeypatch.context() as parser_patch:
+            parser_patch.setattr(frontmatter, "parse_frontmatter", counting_parse)
+            response = await app.test_client().get("/api/entries?type=all&status=inbox&period=all")
+        assert response.status_code == 200
+        payload = await response.get_json()
+        entries = payload["entries"]
+        assert parsed_inputs == [prefix + original]
+        assert not payload["warnings"]
+        assert len(entries) == 1
+        assert entries[0]["filename"] == name
+        assert entries[0]["kind"] == kind
+        summaries.append(entries[0]["summary"])
+    assert outputs[0] == outputs[1]
+    assert summaries[0] == summaries[1] == ("本文" if kind == "awi" else "続けるか")

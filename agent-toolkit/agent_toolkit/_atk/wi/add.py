@@ -3,6 +3,7 @@
 import argparse
 import datetime
 import json
+import os
 import pathlib
 import re
 import subprocess
@@ -28,7 +29,93 @@ from agent_toolkit._atk.wi.formatters import shorten_home
 from agent_toolkit._atk.wi.repo import resolve_add_target, resolve_head_commit, resolve_repo_id_or_raise
 from agent_toolkit._atk.wi.web_input import WebInputError
 from agent_toolkit._common import body_match as _body_match
+from agent_toolkit._git import command as _git_command
+from agent_toolkit._git import refs as _git_refs
 from agent_toolkit._plan import owner_records as _owner_records
+
+
+def run_report_metadata(data: dict[str, object]) -> dict[str, object]:
+    """報告区分を明示したUWIへ、起動元が発行した実行対応を設定する。"""
+    if data.get("run_skill_report") == "true" and (run_id := os.environ.get("AGENT_TOOLKIT_RUN_SKILL_ID")):
+        return {**data, "run_skill_run_id": run_id}
+    return data
+
+
+def has_synced_run_report(private_notes: pathlib.Path, *, run_id: str, skill: str) -> bool:
+    """当該実行の報告UWIが、保存本文と同じ内容でcommit・必要なpushへ到達したかを返す。"""
+    if not private_notes.is_dir():
+        return False
+    with _wi_sync.repo_lock(private_notes, timeout=30):
+        remote_revision: str | None = None
+        if _wi_sync.has_remote(private_notes):
+            branch = _git_refs.resolve_branch(private_notes, git_fn=lambda path, args: _git_command.output(args, path))
+            if branch is None:
+                return False
+            remote = _git_command.output(["config", f"branch.{branch.branch}.remote"], private_notes).strip()
+            merge_ref = _git_command.output(["config", f"branch.{branch.branch}.merge"], private_notes).strip()
+            remote_tip = _git_command.run(
+                ["ls-remote", "--exit-code", remote, merge_ref],
+                private_notes,
+                check=True,
+                capture_output=True,
+                text=True,
+                timeout=30,
+            ).stdout.split()
+            if not remote_tip:
+                return False
+            remote_revision = remote_tip[0]
+            known = _git_command.run(
+                ["cat-file", "-e", f"{remote_revision}^{{commit}}"],
+                private_notes,
+                capture_output=True,
+                text=True,
+                timeout=30,
+            )
+            if known.returncode != 0:
+                _git_command.run(
+                    ["fetch", "--no-tags", remote, merge_ref],
+                    private_notes,
+                    check=True,
+                    capture_output=True,
+                    text=True,
+                    timeout=30,
+                )
+        for state in WI_STATES:
+            for path in (private_notes / state).glob("*.md"):
+                content = path.read_text(encoding="utf-8")
+                parsed = _frontmatter.parse_frontmatter(content)
+                if parsed is None:
+                    continue
+                data, _body = parsed
+                if not (
+                    data.get("type") == WI_TYPE_UWI
+                    and data.get("source") == "run-skill"
+                    and data.get("scope") == skill
+                    and data.get("run_skill_report") == "true"
+                    and data.get("run_skill_run_id") == run_id
+                ):
+                    continue
+                relative = path.relative_to(private_notes).as_posix()
+                committed = _git_command.run(
+                    ["-C", str(private_notes), "show", f"HEAD:{relative}"],
+                    capture_output=True,
+                    text=True,
+                    check=False,
+                )
+                if committed.returncode != 0 or committed.stdout != content:
+                    continue
+                if remote_revision is None:
+                    return True
+                commit = _git_command.output(["log", "-1", "--format=%H", "--", relative], private_notes).strip()
+                reached = _git_command.run(
+                    ["-C", str(private_notes), "merge-base", "--is-ancestor", commit, remote_revision],
+                    capture_output=True,
+                    text=True,
+                    check=False,
+                )
+                if reached.returncode == 0:
+                    return True
+    return False
 
 
 def _saved_mismatch_next_action(filename: str) -> str:
@@ -245,7 +332,7 @@ _TABLE_CELL_DECORATION = "*_`~"
 def _strip_table_cell(cell: str) -> str:
     """表のセル値から前後の空白とMarkdown装飾を除く。
 
-    空白はUnicodeの空白（全角空白を含む）として扱い、装飾と空白が交互に並ぶ場合も除き切る。
+    空白はUnicodeの空白（全角空白を含む）として扱い、装飾と空白が交互に並ぶ場合もすべて除く。
     """
     while True:
         stripped = cell.strip().strip(_TABLE_CELL_DECORATION)
@@ -329,7 +416,7 @@ def _verify_frontmatter_target_repos(parsed_messages: list[tuple[dict[str, objec
                 next_action="frontmatterのtarget_repoへローカルworktreeのパスかremote URLを書いて再投入する",
             )
         try:
-            resolve_repo_id_or_raise(raw_target_repo)
+            resolve_repo_id_or_raise(raw_target_repo, warn_non_origin=True)
         except WebInputError as error:
             raise _target_repo_error(raw_target_repo, error) from error
 
@@ -343,6 +430,7 @@ _RESERVED_ADD_KEY_NEXT_ACTIONS = {
     "cooldown_until": "--cooldown-untilで指定する",
     "target_commit": "atkによる対象HEADの自動取得に任せる",
     "submitter_session": "atkによる投入元セッションの自動取得に任せる",
+    "run_skill_run_id": "atkによるrun-skill実行識別子の自動取得に任せる",
     "origin_session": "通常新規投入では除き、移行・復元では--batchを使う",
     "origin_locator": "通常新規投入では除き、移行・復元では--batchを使う",
     "plan_file": "通常新規投入では除き、移行・復元では--batchを使う",
@@ -429,7 +517,11 @@ def _add_entries_locked(
         raw_target_repo = frontmatter.get("target_repo", target_repo)
         raw_source = frontmatter.get("source", source)
         try:
-            item_target_repo = resolve_repo_id_or_raise(raw_target_repo) if isinstance(raw_target_repo, str) else target_repo
+            item_target_repo = (
+                resolve_repo_id_or_raise(raw_target_repo, warn_non_origin=True)
+                if isinstance(raw_target_repo, str)
+                else target_repo
+            )
         except WebInputError as error:
             raise _target_repo_error(raw_target_repo, error) from error
         item_source = raw_source if isinstance(raw_source, str) else source
@@ -443,6 +535,8 @@ def _add_entries_locked(
         if item_source:
             frontmatter_data["source"] = item_source
         frontmatter_data.update((key, value) for key, value in frontmatter.items() if key not in _RESERVED_FRONTMATTER_KEYS)
+        if entry_type == WI_TYPE_UWI:
+            frontmatter_data = run_report_metadata(frontmatter_data)
         if entry_type != WI_TYPE_AWI:
             if scope:
                 frontmatter_data["scope"] = scope
@@ -575,7 +669,7 @@ def _validate_add_entries(
     normalized_target_repo: str | None = None
     if target_repo is not None:
         try:
-            normalized_target_repo = resolve_repo_id_or_raise(target_repo)
+            normalized_target_repo = resolve_repo_id_or_raise(target_repo, warn_non_origin=True)
         except WebInputError as error:
             raise _target_repo_error(target_repo, error) from error
     if entry_type != WI_TYPE_AWI and question_type not in _constants.NEW_QUESTION_TYPES:
@@ -604,6 +698,10 @@ def _validate_add_entries(
         )
     if normalized_target_repo is None:
         _verify_frontmatter_target_repos(parsed_messages)
+    else:
+        _verify_frontmatter_target_repos(
+            [(frontmatter, body) for frontmatter, body in parsed_messages if "target_repo" in frontmatter]
+        )
     if (
         entry_type != WI_TYPE_AWI
         and question_type == "choice"

@@ -672,6 +672,8 @@ async def test_start_warns_and_continues_without_required_input_marker(
     with caplog.at_level(logging.WARNING, logger="agent-toolkit.agents-server.mcp"):
         response = await mcp_tools.start(str(tmp_path), subagent_md_path=str(task_document), extra_params={})
 
+    handoff = pathlib.Path(response.pop("handoff_record_path"))
+    assert handoff.is_absolute()
     assert response == {"session_id": "session", "status": "running", "label": "担当"}
     assert "必須入力を確認できません" in caplog.text
 
@@ -783,6 +785,8 @@ async def test_start_accepts_task_document_path_with_spaces(
 
     response = await mcp_tools.start(str(tmp_path), subagent_md_path=str(task_document), extra_params={"対象": "値"})
 
+    handoff = pathlib.Path(response.pop("handoff_record_path"))
+    assert handoff.is_absolute()
     assert response == {"session_id": "session", "status": "running", "label": "担当"}
     manager.start.assert_awaited_once()
     assert str(task_document) in manager.start.await_args.args[1]
@@ -977,3 +981,172 @@ def test_preflight_passes_where_plugin_commands_succeed(tmp_path: pathlib.Path) 
     if shutil.which("uv") is None or shutil.which("uvx") is None:
         pytest.skip("uvまたはuvxが未導入")
     _REAL_PLUGIN_PREFLIGHT(str(tmp_path))
+
+
+@pytest.mark.parametrize("review_kind", ["初回レビュー", "再レビュー", "引き継ぎ再レビュー"])
+@pytest.mark.parametrize("external", [False, True])
+@pytest.mark.asyncio
+async def test_start_accepts_saved_reader_materials(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, review_kind: str, external: bool
+) -> None:
+    """管理内外の本文・差分・前回指摘を、同じ起動境界で受理する。"""
+    params = _observed_input_params("reader-fit-review.subagent.md", tmp_path)
+    current = tmp_path / ("回答 下書き.md" if external else "guide.md")
+    current.write_text("現行本文\n", encoding="utf-8")
+    findings = tmp_path / "findings.md"
+    findings.write_text("前回指摘と応答・検証証拠\n", encoding="utf-8")
+    params.update(
+        {
+            "成果物": str(current),
+            "レビュー種別": review_kind,
+            "比較資料": json.dumps(
+                {
+                    "比較元本文": str(tmp_path / "before.md"),
+                    "今回差分": str(tmp_path / "diff.patch"),
+                    "現行本文": str(current),
+                },
+                ensure_ascii=False,
+            ),
+            "未解決事項": str(findings),
+        }
+    )
+    manager = TaskManager(start=AsyncMock(return_value={"session_id": "reader", "status": "running", "label": "reader"}))
+    monkeypatch.setattr(mcp_tools, "_MANAGER", manager)
+
+    response = await mcp_tools.start(str(tmp_path), subagent_md_path="reader-fit-review", extra_params=params)
+
+    assert response["session_id"] == "reader"
+    manager.start.assert_awaited_once()
+
+
+@pytest.mark.parametrize("legacy", [False, True])
+@pytest.mark.asyncio
+async def test_start_accepts_new_reader_artifact_full_text(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, legacy: bool
+) -> None:
+    """初回の新規成果物は全文差分を明示すれば旧本文を要しない。"""
+    params = _observed_input_params("reader-fit-review.subagent.md", tmp_path)
+    params["修正範囲"] = "新規文書。全文が差分"
+    if not legacy:
+        params["比較資料"] = json.dumps(
+            {"比較元本文": "新規", "今回差分": "全文", "現行本文": str(tmp_path / "guide.md")}, ensure_ascii=False
+        )
+    manager = TaskManager(start=AsyncMock(return_value={"session_id": "reader", "status": "running", "label": "reader"}))
+    monkeypatch.setattr(mcp_tools, "_MANAGER", manager)
+
+    await mcp_tools.start(str(tmp_path), subagent_md_path="reader-fit-review", extra_params=params)
+
+    manager.start.assert_awaited_once()
+
+
+@pytest.mark.parametrize(
+    "defect",
+    [
+        "commit-only",
+        "description-only",
+        "missing-findings",
+        "command-findings",
+        "missing-file",
+        "directory",
+        "invalid-utf8",
+        "missing-current",
+        "new-rereview",
+        "missing-key",
+    ],
+)
+@pytest.mark.asyncio
+async def test_start_rejects_reader_material_defects_before_launch(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, defect: str
+) -> None:
+    """比較元・差分・証拠の欠落と参照不能は探索を起動せず補完を案内する。"""
+    params = _observed_input_params("reader-fit-review.subagent.md", tmp_path)
+    params["レビュー種別"] = "再レビュー"
+    params["未解決事項"] = "なし"
+    materials = {
+        "比較元本文": str(tmp_path / "before.md"),
+        "今回差分": str(tmp_path / "diff.patch"),
+        "現行本文": str(tmp_path / "guide.md"),
+    }
+    if defect == "commit-only":
+        materials["比較元本文"] = "abc1234"
+    elif defect == "description-only":
+        materials["今回差分"] = "設定保存節を修正した"
+    elif defect == "missing-findings":
+        del params["未解決事項"]
+    elif defect == "command-findings":
+        params["未解決事項"] = "git show HEAD"
+    elif defect == "missing-file":
+        materials["今回差分"] = str(tmp_path / "missing.patch")
+    elif defect == "directory":
+        materials["比較元本文"] = str(tmp_path)
+    elif defect == "invalid-utf8":
+        (tmp_path / "before.md").write_bytes(b"\xff")
+    elif defect == "missing-current":
+        params["成果物"] = str(tmp_path / "missing.md")
+    elif defect == "new-rereview":
+        materials.update({"比較元本文": "新規", "今回差分": "全文"})
+    elif defect == "missing-key":
+        del materials["比較元本文"]
+    params["比較資料"] = json.dumps(materials, ensure_ascii=False)
+    manager = TaskManager(start=AsyncMock(return_value={"session_id": "unexpected", "status": "running", "label": "reader"}))
+    monkeypatch.setattr(mcp_tools, "_MANAGER", manager)
+
+    with pytest.raises(ActionableError) as raised:
+        await mcp_tools.start(str(tmp_path), subagent_md_path="reader-fit-review", extra_params=params)
+
+    message = _actionable_message(raised.value)
+    assert "保存" in message and "再発行" in message
+    manager.start.assert_not_awaited()
+
+
+@pytest.mark.parametrize(
+    ("role", "field"),
+    [
+        ("external-write-review", "文面ファイル"),
+        ("external-write-review", "根拠の所在"),
+        ("bulk-replace-review", "差分ファイル"),
+        ("pick-wi-explain", "説明対象の選定結果の出力先ファイル"),
+        ("pick-wi-explain", "activeなWI本文の保存先"),
+    ],
+)
+@pytest.mark.asyncio
+async def test_start_rejects_missing_explore_materials_and_accepts_repair(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, role: str, field: str
+) -> None:
+    """他の探索役割も保存物を欠く起動を拒否し、補完後の再発行を受理する。"""
+    params = _observed_input_params(f"{role}.subagent.md", tmp_path)
+    params[field] = str(tmp_path / "saved material.md")
+    manager = TaskManager(start=AsyncMock(return_value={"session_id": "explorer", "status": "running", "label": "explorer"}))
+    monkeypatch.setattr(mcp_tools, "_MANAGER", manager)
+    with pytest.raises(ActionableError) as raised:
+        await mcp_tools.start(str(tmp_path), subagent_md_path=role, extra_params=params)
+    assert field in str(raised.value)
+    assert "再発行" in _actionable_message(raised.value)
+    manager.start.assert_not_awaited()
+
+    pathlib.Path(params[field]).write_text("保存済み資料\n", encoding="utf-8")
+    await mcp_tools.start(str(tmp_path), subagent_md_path=role, extra_params=params)
+    manager.start.assert_awaited_once()
+
+
+@pytest.mark.parametrize("json_array", [False, True])
+@pytest.mark.asyncio
+async def test_start_checks_all_external_evidence_files(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, json_array: bool
+) -> None:
+    """複数の根拠は全ファイルを検査し、識別子の注記を保存物と取り違えない。"""
+    params = _observed_input_params("external-write-review.subagent.md", tmp_path)
+    first = tmp_path / "diff.patch"
+    second = tmp_path / "CI result.txt"
+    params["根拠の所在"] = (
+        json.dumps([str(first), str(second)]) if json_array else f"`{first}`（commit `abc123`）\n`{second}`（run ID `123`）"
+    )
+    manager = TaskManager(start=AsyncMock(return_value={"session_id": "review", "status": "running", "label": "review"}))
+    monkeypatch.setattr(mcp_tools, "_MANAGER", manager)
+    with pytest.raises(ActionableError):
+        await mcp_tools.start(str(tmp_path), subagent_md_path="external-write-review", extra_params=params)
+    manager.start.assert_not_awaited()
+
+    second.write_text("成功したCIの保存結果\n", encoding="utf-8")
+    await mcp_tools.start(str(tmp_path), subagent_md_path="external-write-review", extra_params=params)
+    manager.start.assert_awaited_once()

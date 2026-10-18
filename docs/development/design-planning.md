@@ -202,6 +202,9 @@ plan-modeの内部作成処理が`~/.claude/plans`で計画ファイルを準備
 保存の契機に達した時点で、所有主体が計画stemのバンドルを`atk plans commit`へ渡す。契機は起動形態ごとに`agent-toolkit/skills/plan-mode/references/plan-file-storage.md`の`## 計画ファイルの保存と参照`が定め、本節は保存の契機を再掲しない。同コマンドはprivate-notesへ移動して対象限定commit・pushを完了し、成功後に作業側を回収する。外側の運用がpushを禁止した場合は`--skip-push`で対象限定commitまでを完了し、作業側を回収する。
 失敗時は作業側を保持し、保存先が同内容なら再実行でcommit・pushを再開し、異内容なら上書きせず停止する。
 保存時はメイン計画ファイルの作成日から年月を取得し、stemを変えずに`private-notes/plans/yyyy/MM/`へ移動する。
+`atk plans`が出力する絶対パスは同じコマンド群への入力として受理する。
+名前・root相対・許可root内の絶対パスの解決は`_plan/locations.py`へ集約し、`~/.claude/plans`と`private-notes/plans/`の外への到達を拒否する。
+現行の`dd-HHmm_<名称>.md`と衝突時の接尾辞の説明も同モジュールが所有し、CLIヘルプと診断へ共用する。
 原因commitに対応する計画がない場合は、新しい計画を作成せず、`~/.claude/plans`直下の`ci-<修正系列の開始時のHEAD>.exec-review.tsv`を用いる。
 修正系列を始めた時点のHEADの7文字以上の一意な短縮OIDを`修正系列の開始時のHEAD`とし、同じ再帰的CI失敗処理では原因commitが変わっても同じCI対応レビュー指摘管理表を継続する。
 `atk plans commit`は`ci-<修正系列の開始時のHEAD>.exec-review.tsv`だけを`private-notes/plans/ci/`へcommit・pushする。

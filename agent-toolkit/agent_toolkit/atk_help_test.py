@@ -14,6 +14,7 @@ from agent_toolkit import atk
 from agent_toolkit._atk import help_text as _atk_help
 from agent_toolkit._atk import outcome as _outcome
 from agent_toolkit._common import wait_schedule
+from agent_toolkit._testing import cli_examples
 
 
 def test_agents_help_matches_mcp_and_cli_operations(capsys: pytest.CaptureFixture[str]) -> None:
@@ -98,6 +99,48 @@ def test_every_command_describes_purpose_scene_effect_precondition_and_recovery(
         assert "```" not in parser.epilog, command
         examples = parser.epilog.split("実行例:\n\n", maxsplit=1)[1].split("\n\n", maxsplit=1)[0]
         assert all(line.startswith("  ") for line in examples.splitlines()), command
+
+
+def test_help_examples_match_real_command_parsers() -> None:
+    """ヘルプの実物に書かれた引数名・必須指定・選択肢を実parserへ渡す。"""
+    parsers: dict[str, argparse.ArgumentParser] = {}
+    for command, parser, _summary in _walk_commands():
+        assert parser.epilog is not None
+        for line, example in cli_examples.examples(parser.epilog):
+            cli_examples.validate_example(example, source=f"{command} --help:{line}", parsers=parsers)
+
+
+def test_help_example_choice_and_separator_mutations_are_detected(monkeypatch: pytest.MonkeyPatch) -> None:
+    """ヘルプ実物の選択肢変更と区切りの移動を、受理側に接続して検出する。"""
+    for epilog in (
+        "実行例:\n\n  atk wi list --type unsupported-choice",
+        "実行例:\n\n  atk read-file -- /absolute/file --max-bytes 16000",
+        "実行例:\n\n  atk plans checkout",
+    ):
+        with monkeypatch.context() as patch:
+            patch.setitem(_atk_help.HELP["atk wi list"], "epilog", epilog)
+            with pytest.raises(AssertionError, match="--help"):
+                test_help_examples_match_real_command_parsers()
+
+
+@pytest.mark.parametrize(
+    "argv, expected",
+    [
+        (["read-file", "/tmp/a", "/tmp/b"], "path"),
+        (["wi", "list", "extra-positional"], "なし"),
+    ],
+)
+def test_extra_positionals_report_the_accepted_positionals(
+    argv: list[str], expected: str, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """余剰位置引数の原因と受理形式を、配置修正と区別して返す。"""
+    with pytest.raises(SystemExit) as rejected:
+        atk._build_parser().parse_args(argv)  # pylint: disable=protected-access
+    assert rejected.value.code == 2
+    diagnostic = capsys.readouterr().err
+    assert "余った位置引数:" in diagnostic
+    assert f"が受け取る位置引数は{expected}" in diagnostic
+    assert "区切り記号" not in diagnostic
 
 
 @pytest.mark.parametrize(
@@ -269,6 +312,16 @@ def test_consumed_and_forwarded_options_keep_their_meaning(capsys: pytest.Captur
     with pytest.raises(SystemExit):
         parser.parse_args(["read-file", "--", "/example", "--unknown"])
     assert "位置が誤っています" not in capsys.readouterr().err
+
+
+def test_separator_before_help_is_reported_as_misplaced_flag(capsys: pytest.CaptureFixture[str]) -> None:
+    """先頭に未消費の区切りがある値なしの登録名も、位置引数化を説明する。"""
+    with pytest.raises(SystemExit) as rejected:
+        atk._build_parser().parse_args(["info", "--", "--help"])  # pylint: disable=protected-access
+    assert rejected.value.code == 2
+    diagnostic = capsys.readouterr().err
+    assert "位置引数として扱われる" in diagnostic
+    assert "--helpを区切り記号`--`の前へ移して" in diagnostic
 
 
 def test_wrapped_help_keeps_identifiers_intact(monkeypatch: pytest.MonkeyPatch) -> None:

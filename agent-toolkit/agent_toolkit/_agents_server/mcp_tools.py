@@ -169,7 +169,11 @@ async def start(  # noqa: PLR0913 -- 公開入力をmodeごとの平坦な引数
             return public
     elif mode == "delegate":
         assert prompt is not None and model_type is not None
-        response = await _MANAGER.start(model_type, prompt, cwd, label=label)
+        delegate_prompt, handoff_path = await run_file_operation(launch_requests.delegate_request, prompt)
+        response = await _MANAGER.start(model_type, delegate_prompt, cwd, label=label)
+        public = public_start_response(response)
+        public["handoff_record_path"] = str(handoff_path)
+        return public
     elif mode == "explore":
         assert prompt is not None
         response = await _MANAGER.start_explore(prompt, cwd, label=label, model_type=model_type)

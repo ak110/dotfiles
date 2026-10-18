@@ -64,7 +64,7 @@ def _record_schema_collection_events(
         if error_events is not None:
             return error_events, 2
         assert selected is not None and line is not None
-        entry = next(record.entry for record in selected.records if record.line == line)
+        entry = next(record.raw_entry for record in selected.records if record.line == line)
         paths: dict[str, set[str]] = {}
         _schema_paths(entry, "$", paths)
         events.extend(

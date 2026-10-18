@@ -141,7 +141,9 @@ def test_check_and_submit_alerts_submits_one_awi_per_pipeline(monkeypatch: pytes
             tmp_path / "repo",
             forge="gitlab",
             now=datetime.datetime(2026, 1, 1),
-            git_fn=lambda _p, args: "refs/remotes/origin/develop" if args[0] == "symbolic-ref" else None,
+            git_fn=lambda _p, args: (
+                "origin" if args == ["remote"] else ("refs/remotes/origin/develop" if args[0] == "symbolic-ref" else None)
+            ),
             ci_list_fn=lambda _r, _b: [{"id": 437813, "status": "failed"}],
             glab_api_fn=_gitlab_schedule_api([]),
         )
@@ -165,7 +167,7 @@ def test_resolve_target_branch_paths() -> None:
 
     def upstream_git(_path: pathlib.Path, args: list[str]) -> str | None:
         if args[0] == "rev-parse":
-            return "origin/feature/foo"
+            return "refs/remotes/origin/feature/foo"
         if args == ["remote"]:
             return "origin"
         raise AssertionError(args)
@@ -175,6 +177,8 @@ def test_resolve_target_branch_paths() -> None:
     def fallback_git(_path: pathlib.Path, args: list[str]) -> str | None:
         if args[0] == "rev-parse":
             return None
+        if args == ["remote"]:
+            return "origin"
         return "refs/remotes/origin/master"
 
     assert alerts.resolve_target_branch(pathlib.Path("/repo"), git_fn=fallback_git) == "master"
@@ -274,7 +278,11 @@ def test_check_and_submit_alerts_invokes_add_entries(monkeypatch: pytest.MonkeyP
         tmp_path / "repo",
         forge="github",
         now=datetime.datetime(2026, 1, 1),
-        git_fn=lambda _p, args: "refs/remotes/origin/main" if args == ["symbolic-ref", "refs/remotes/origin/HEAD"] else None,
+        git_fn=lambda _p, args: (
+            "origin"
+            if args == ["remote"]
+            else ("refs/remotes/origin/main" if args == ["symbolic-ref", "refs/remotes/origin/HEAD"] else None)
+        ),
         run_list_fn=lambda _r, _b: runs,
     )
     assert count.submitted == 1
@@ -298,6 +306,8 @@ def test_check_and_submit_alerts_writes_kind_specific_completion(
     _prepare_alert_submission(monkeypatch, notes)
 
     def git_fn(_path: pathlib.Path, args: list[str]) -> str | None:
+        if args == ["remote"]:
+            return "origin"
         if args == ["symbolic-ref", "refs/remotes/origin/HEAD"]:
             return "refs/remotes/origin/main"
         return None
@@ -478,6 +488,52 @@ def _invoke_loop_alerts(repo: pathlib.Path, notes: pathlib.Path, forge: str) -> 
     return process_loop_alerts.check_process_loop_alerts(args, notes, f"{host}/owner/repo", repo, None, count_dependabot=False)[
         1
     ]
+
+
+@pytest.mark.parametrize("mode", ["single", "loop"])
+@pytest.mark.parametrize("authority", ["gitlab.example.com:40108", "gitlab.example.com"])
+def test_local_origin_preserves_monitor_api_endpoint(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, mode: str, authority: str
+) -> None:
+    """単発・常駐監視の一覧と詳細が、ポートを含むoriginのHTTP接続先を使う。"""
+    repo, notes = _prepare_alert_cli(monkeypatch, tmp_path, forge="gitlab")
+    origin = f"http://{authority}/owner/repo.git"
+    git_repository.run_git(repo, "remote", "set-url", "origin", origin)
+    for name in ("GITLAB_HOST", "GITLAB_URI", "GITLAB_URL", "GITLAB_API_HOST", "GLAB_API_PROTOCOL", "API_PROTOCOL"):
+        monkeypatch.delenv(name, raising=False)
+    real_run = subprocess.run
+    endpoints: list[str] = []
+
+    def run(command: list[str], **kwargs: Any) -> subprocess.CompletedProcess:
+        if command[0] != "glab":
+            return real_run(command, check=kwargs.pop("check", False), **kwargs)
+        assert "--hostname" not in command
+        assert kwargs["env"]["GITLAB_HOST"] == authority
+        assert kwargs["env"]["GLAB_API_PROTOCOL"] == "http"
+        if command[1:3] == ["ci", "list"]:
+            assert command[command.index("-R") + 1] == f"http://{authority}/owner/repo"
+            payload: object = []
+        else:
+            endpoint = command[2]
+            endpoints.append(endpoint)
+            if endpoint.endswith("?per_page=100"):
+                payload = [{"id": 1, "active": True, "ref": "main"}]
+            elif "/repository/branches/" in endpoint:
+                payload = {"commit": {"id": "head"}}
+            else:
+                payload = {"last_pipeline": {"id": 23, "status": "failed", "ref": "main"}}
+        return subprocess.CompletedProcess(command, 0, stdout=json.dumps(payload).encode(), stderr=b"")
+
+    monkeypatch.setattr(_json_command.subprocess, "run", run)
+    if mode == "single":
+        assert _invoke_alert_cli(repo, forge="gitlab") == 0
+    else:
+        assert _invoke_loop_alerts(repo, notes, "gitlab") == 1
+    assert "projects/owner%2Frepo/pipeline_schedules?per_page=100" in endpoints
+    assert "projects/owner%2Frepo/pipeline_schedules/1" in endpoints
+    saved = _saved_awis_by_heading(notes)
+    assert list(saved) == ["# パイプライン23失敗"]
+    assert f"http://{authority}/owner/repo" in next(iter(saved.values()))
 
 
 @pytest.mark.parametrize("explicit_target", [False, True], ids=["cwd", "target-worktree"])

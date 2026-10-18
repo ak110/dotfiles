@@ -25,7 +25,27 @@
 
 - 計画で確定した検証行は本スキルの`SKILL.md`「統合実行ツール経由の起動」の`plan-verify --summary-only`で実行し、順序・コマンド・状態・終了コード・記録参照・保存失敗と未記録集合を一覧で受領する。凍結後の訂正済み検証表を引き継いだ場合は、同節の`--verification-plan`を指定して訂正後の条件を実行する。訂正表の書式・保持・引き継ぎは`agent-toolkit:plan-mode`の`references/plan-file-standards.md`「検証と終端工程」に従う
 - 保存済みの結果は子を再実行せずに読む。plan-verifyの結果まとめは`results_path`を`atk run-command --records-file <絶対パス>`へ渡す。計画なしの保存済み実行は`--record <record_path>`の反復で渡す。どちらの方法でも順序・argv・cwd・取得版・Git状態・子とwrapperの終了状態・両出力へ到達する。旧記録の`unrecorded`は未記録として保持し、読取失敗・欠損・破損を成功と扱わない
-- 保存結果の試験・診断を完成条件へ対応付けるときは、`atk run-script`の`verification-record`か`exec-review-evidence-check`で、試験を`--junit-xml`と`--junit-record`から読む。診断は`--diagnostics-file`・`--diagnostics-record`・`--diagnostics-conditions`と必要な`--diagnostics-source`から読む。`--list-results --results-summary`と完全テスト名・診断識別子の詳細で意味を判定する。`--select-row <配列:N>`と`--result-test`・`--result-diagnostic`・`--evidence-file`・`--mode`で要求行へ保存する（原文・sourceの転記や手製のJSONは不要）。診断の比較条件と保存時本文は取得時の保存物を使う
+- 保存結果の試験・診断を完成条件へ対応付けるときは、`atk run-script`の`verification-record`か`exec-review-evidence-check`で、後掲「構造化試験結果の取得と記入」の入力を使う。診断は`--diagnostics-file`・`--diagnostics-record`・`--diagnostics-conditions`と必要な`--diagnostics-source`から読む。`--list-results --results-summary`と完全テスト名・診断識別子の詳細で意味を判定する。`--select-row <配列:N>`と`--result-test`・`--result-diagnostic`・`--evidence-file`・`--mode`で要求行へ保存する（原文・sourceの転記や手製のJSONは不要）。診断の比較条件と保存時本文は取得時の保存物を使う
 - ロックファイルかインタープリターの版指定を変えた後は、対象リポジトリの開発手順が定める環境同期を実行してから検証する（同期前の仮想環境はCIと異なる結果を返す）
 - 初回は変更ファイルに適用できるチェックを全て動かし、修正後の再実行は失敗したチェックへ限定してよい
 - 並行する別の書込主体が新しい呼び出し元を加えると結果が変わる検証（共有契約やパッケージ外の呼び出し元を変えた変更の検証、全体を走査するチェック）は、プロジェクト規範が統合後の検証として定める場合に統合時にも実行する
+
+### 構造化試験結果の取得と記入
+
+試験はプロジェクトの起動形に次の出力指定を加え、`atk run-command`で実行記録とともに保存する。
+結果ファイルはmanaged-temp内の絶対パスを指定し、返された`record_path`を取込みへ渡す。
+
+| runner | `atk run-command --cwd <worktree> --`に続ける実行形 | 両公開操作へ渡す入力 |
+| --- | --- | --- |
+| pytest | `uv run --frozen pytest -o junit_family=xunit1 --junitxml=<結果XMLの絶対パス> <対象>` | `--junit-xml <結果XML> --junit-record <実行記録>` |
+| vitest | `pnpm exec vitest run --reporter=json --outputFile=<結果JSONの絶対パス> <対象>` | `--test-format vitest --test-file <結果JSON> --test-record <実行記録>` |
+| Playwright | `env PLAYWRIGHT_JSON_OUTPUT_NAME=<結果JSONの絶対パス> pnpm exec playwright test --reporter=json <対象>` | `--test-format playwright --test-file <結果JSON> --test-record <実行記録>` |
+| dotnet test | `dotnet test <対象> --logger "trx;LogFileName=<結果TRXの絶対パス>"` | `--test-format trx --test-file <結果TRX> --test-record <実行記録>` |
+
+各入力は`verification-record -- --output <未判定検証記録>`か`exec-review-evidence-check -- <完成条件証拠>`に続けて指定する。
+まず`--list-results --results-summary`で状態を読み、`--result-test <完全テスト名>`を反復して詳細を取得する。
+同じ入力とテスト名へ`--select-row <配列:N> --mode append`を指定すると、その要求行へ根拠を記入できる。
+レビュー側は行ごとの`--row-outcome`と`--reviewed-head`も指定し、実装側は判定欄を空に保つ。
+基準版を比べる場合は`--baseline-junit-xml`・`--baseline-junit-record`か、`--baseline-test-format`・`--baseline-test-file`・`--baseline-test-record`も渡す。
+名前・状態・所在と基準版との差は公開操作が生成し、担当は各結果の要求への適合を判定する。
+形式と実行記録の不一致、不明な形式、破損と完全名の重複は、保存前の診断が示す次の操作に従って直す。

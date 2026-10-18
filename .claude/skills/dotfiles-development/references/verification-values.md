@@ -24,7 +24,8 @@
   - 型チェック: `npx --yes -p typescript@5.9.3 tsc --project <設定ファイル> --pretty false`。型宣言はホスト同梱の`plugin-authoring`スキルの起動時にClaude Codeがその基準ディレクトリへ書く`types/claude-code.d.ts`か、モジュールを読み込んだプラグインの`.claude-plugin/types/`から得る。設定ファイルはmanaged-tempへ置き、`include`に型宣言と`agent-toolkit/hooks/`の`*.ts`・`*.tsx`を挙げる。`compilerOptions`は型宣言の冒頭が示す値に`allowImportingTsExtensions: true`を加える。設定ファイルと型宣言はリポジトリへ追加しない
   - モジュールテスト: `claude plugin test <worktree>/agent-toolkit`（プラグインのルートを渡す。`agent-toolkit/hooks`を渡すと`hooks/hooks.json`が見つからず失敗する）
 - 名前の削除・改名の全体静的確認: `uv run --frozen pyfltr run --commands=ty`。対象ファイルを渡さずリポジトリ全体を対象にし、Pythonファイルを変更するレーンでは計画の`変更範囲の検証`行へ含める
-- Python版指定（`.python-version`、`.github/workflows/ci.yaml`のmatrixのPython版）かCIのcontainer jobの依存導入（同ファイルの`ネイティブ依存インストール`step）を変えた場合: `make ci-deps-check`。CIと同じimageの中でmatrixの各Python版の依存導入と`uv sync`を再現し、ローカルではビルドできてもCIでは失敗するsdistなどをpush前に検出する。imageと導入パッケージと版は`Makefile`の変数が持ち、`ci_workflow_test.py`がCI定義との一致を確かめる。dockerを要し1版あたり約1分かかる
+- CIのcontainer jobの`uv sync`が読む入力を変えた場合: `make ci-deps-check`。対象はPython版指定（`.python-version`、`.github/workflows/ci.yaml`のmatrixのPython版）と、同ファイルの`ネイティブ依存インストール`stepである。リポジトリ直下の`uv.lock`、同じ場所の`pyproject.toml`の依存宣言と`[tool.uv]`も対象に含む。lockだけの依存追加・削除・更新と、`agent-toolkit/pyproject.toml`の依存変更に伴う直下のlock更新も含む。`make update`はlock更新の後にcontainer依存導入を常に確かめる。CIと同じimageの中でmatrixの各Python版の依存導入と`uv sync`を再現し、ローカルではビルドできてもCIでは失敗するsdistなどをpush前に検出する。imageと導入パッケージと版は`Makefile`の変数が持ち、`ci_workflow_test.py`がCI定義との一致を確かめる。dockerを要し1版あたり約1分かかる。
+  再検証の記録は`docs/development/audit-records.md`の「.claude/skills/dotfiles-development/references/verification-values.md：変更範囲の検証の値：2026年10月18日」にある
 - 統合後の検証: rebase後の組合せはcommit時に確かめられないため、fast-forwardの前に専用worktreeで`make sync`の後に次を1回実行する。共有契約とパッケージ外の呼び出し元のpytest、`uv run --frozen pyfltr fast --commands=pytest`、`ty`、`uv run --frozen pyfltr run --commands=arid`
 
 ## push前のチェックとCIだけが実行するチェック

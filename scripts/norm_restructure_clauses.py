@@ -90,14 +90,14 @@ class Clause:
 def list_target_files(commit: str, cwd: pathlib.Path) -> list[str]:
     """指定commitの対象集合のファイルを、リポジトリ相対パスの昇順で返す。"""
     result = subprocess.run(
-        ["git", "ls-tree", "-r", "--name-only", commit, "--", *TARGET_PATHSPECS],
+        ["git", "ls-tree", "-r", "-z", "--name-only", commit, "--", *TARGET_PATHSPECS],
         cwd=cwd,
         capture_output=True,
         text=True,
         encoding="utf-8",
         check=True,
     )
-    return sorted(path for path in result.stdout.splitlines() if path.endswith(TARGET_SUFFIXES))
+    return sorted(path for path in result.stdout.split("\0") if path.endswith(TARGET_SUFFIXES))
 
 
 def read_file_at(commit: str, path: str, cwd: pathlib.Path) -> str:

@@ -18,11 +18,13 @@
   ただし`書き込まない反映先`の範囲が書込区分（`書込対象`・`公開工程の書込対象`）のパスを真に含む組は除く。
   AWI本文が変更しない範囲として挙げる上位ディレクトリの配下で個別のファイルを書く選定を表すためであり、
   そのパスは書込区分の指定を優先し、範囲の残りを書き込まない扱いとする
-- `公開工程の書込対象`の根拠不足: 対象リポジトリの規範、節およびpathがレーンの根拠に無い
+- `公開工程の書込対象`の根拠不足: 公開工程の規範根拠が各パスに対応せず、規範ファイルや節が実在しない
 - 別レーンの重複根拠不足: 共通ファイルまたは狭い方の範囲が双方のレーンの根拠に無い
 - 同じ再開計画の別レーン割当: メインが出力した通常中断または観測のみの再開位置が同じ計画を指す項目を別レーンへ置いた
 - 導出記録の不正: 完全な新設名・要求の反映範囲・書込区分への対応が成立しない、または同じ新設先を重複宣言した
-- 段階案の比較値の欠落: 段階2以上の行があるのに単一段階案の完了見込み秒数が無い
+- 比較値の欠落: 段階2以上の単一段階案比較、または6000秒超の単一段階で段階案比較が無い
+- 補正の記録の不正: 補正前の2値・係数・参照した記録が欠けるか、補正後の値が積から1秒を超えてずれる
+- 書込範囲の理由の不正: 本文に無い範囲やパスを明示しないUWIの書込対象に理由が対応しない
 
 これらは共有書込の判定や配分の比較が成立しないため、違反として終了コード1を返す。
 各違反は理由と次の操作の組で生成し、出力では違反の理由の行の後に、出力に現れた違反の次の操作だけを1回ずつまとめた行を置く。
@@ -46,7 +48,7 @@
 対応JSONは追加のレーン識別子を最終レーン識別子へ対応付ける。型を確認したデータの合流はselection_merge.pyが担当し、
 本スクリプトは統合後の選定の全体検査が成功した場合だけ結果を原子的に保存する。
 `--body-wi`は本文の被覆検査を指定したWIへ限定する。レーンの参照・段階・重なりなどの関係検査は統合結果全体へ適用する。
-任意の`--lane-cost-updates <JSON>`は、追加レーンの最終割当に対して確定した実装秒数・統合秒数・根拠を渡す。
+任意の`--lane-cost-updates <JSON>`は、追加レーンの最終割当に対して確定した補正前後の実装秒数・統合秒数・根拠を渡す。
 段階2以上では最上位の`単一段階案の完了見込み秒数`を必須とする。統合時は追加YAMLで全体配分の比較値を再確定する。
 本文に新設名を明示しない要求は、`導出した新設先`の範囲と両書込区分への対応を確かめる。要求と配置根拠の意味はメインが検収する。
 
@@ -61,7 +63,7 @@
 開かずに把握できるようにするためであり、根拠と分類の意味の検収は選定結果の本文の読解で行う。
 比較欄がある場合は同名の値行も要約へ含める。
 
-UWIの本文がリポジトリ相対パスを明示しない場合、比べるパスが無いため違反を報告しない。
+UWIの本文がリポジトリ相対パスを明示しない場合、書込対象の各パスに書込範囲の理由を求める。
 この成功はUWIの書込範囲を検証した結果ではない。パスを明示しない回答の書込範囲は、
 メインの限定調査と読解による検収が確かめる。
 """
@@ -154,15 +156,21 @@ _NEXT_EXCLUDED = "`書き込まない反映先`から本文の反映先に無い
 _NEXT_SECTION_OVERLAP = "区分間で重複するパスは、所有する1区分だけへ残す"
 _NEXT_DERIVED = (
     "`導出した新設先`の記録を診断行が示す条件に合わせて直す。新設パスは実在する親ディレクトリと拡張子を持つ完全な名前にし、"
-    "反映範囲を本文のディレクトリ範囲へ対応させ、同じパスを1件だけ記録して書込区分へ個別に置く"
+    "反映範囲を配置根拠のある実在ディレクトリへ対応させ、同じパスを1件だけ記録して書込区分へ個別に置く"
 )
 _NEXT_NORM_SPEC = (
     "`--work-dir`の`pyproject.toml`の`[tool.agent-toolkit.pick-wi-check]`が定める条件に従い、"
     "該当項目の`プロジェクト規範の指定`へ欠けた記載を書く"
 )
 _NEXT_PUBLIC_RATIONALE = (
-    "`レーンの所要時間`の`根拠`へ、`公開工程の書込対象`を所有させる対象リポジトリの規範、節およびpathを記録する"
+    "各WIの`公開工程の規範根拠`へ、公開工程の各パスと実在する規範ファイルのリポジトリ相対パス・見出しの節を1件ずつ記録する"
 )
+_NEXT_STAGED = "比較した段階案の秒数か`成立する段階案なし`を最上位の`段階案の完了見込み秒数`へ書く"
+_NEXT_CORRECTION = (
+    "最上位の`見込みの補正`へ係数・参照した記録・除外した記録を、各行へ`補正前の実装秒数`・`補正前の統合秒数`を書き、"
+    "実装秒数・統合秒数を補正前の値×係数の1秒以内へそろえる。係数が1以外なら参照した記録を1件以上挙げる"
+)
+_NEXT_SCOPE_REASON = "該当WIの`書込範囲の理由`へ、理由が必要なパスごとに空でない理由を1件だけ記録し、不要なパスの記録を除く"
 _NEXT_MISSING_BODY = "`atk wi list`の出力で対象のWIファイル名を確かめ、選定の`WI`をprivate-notesにあるファイル名へ直す"
 _NEXT_SINGLE_STAGE = (
     "比較した単一段階案の秒数を最上位の`単一段階案の完了見込み秒数`へ、配分の説明を`レーンの所要時間`の`根拠`へ書く"
@@ -572,7 +580,7 @@ def check_decision(
     derived_scopes: set[str] = set()
     if work_dir is not None:
         derived_paths, derived_scopes, derived_errors = _check_derived_paths(
-            awi, reflected, [*write_files, *public_write_files], derived_new_paths or [], work_dir
+            awi, [*write_files, *public_write_files], derived_new_paths or [], work_dir
         )
         errors.extend(derived_errors)
         declared = {record["パス"] for record in derived_new_paths or []}
@@ -627,17 +635,16 @@ def check_decision(
 
 
 def _check_derived_paths(
-    awi: str, reflected: set[str], writes: list[str], records: list[dict[str, str]], work_dir: pathlib.Path
+    awi: str, writes: list[str], records: list[dict[str, str]], work_dir: pathlib.Path
 ) -> tuple[set[str], set[str], list[Violation]]:
     """導出記録のパス・範囲・書込への対応を確かめ、正当な範囲だけを被覆へ渡す。"""
     paths: set[str] = set()
     scopes: set[str] = set()
     seen: set[str] = set()
     errors: list[Violation] = []
-    body_scopes = sorted(value for value in reflected if _is_range(value))
     for record in records:
         path, scope = record["パス"], record["反映範囲"]
-        failures = _derived_record_failures(path, scope, body_scopes, work_dir)
+        failures = _derived_record_failures(path, scope, work_dir)
         if path in seen:
             failures.append("同じパスを重複して宣言している")
         if path not in writes:
@@ -656,7 +663,7 @@ def _check_derived_paths(
     return paths, scopes, errors
 
 
-def _derived_record_failures(path: str, scope: str, body_scopes: list[str], work_dir: pathlib.Path) -> list[str]:
+def _derived_record_failures(path: str, scope: str, work_dir: pathlib.Path) -> list[str]:
     """導出記録1件のパスと反映範囲について、成立しない条件を比べた値とともに返す。"""
     failures: list[str] = []
     if (
@@ -678,8 +685,6 @@ def _derived_record_failures(path: str, scope: str, body_scopes: list[str], work
         failures.append("反映範囲が末尾/付きの実在ディレクトリではない")
     elif not _covers(scope, path):
         failures.append("反映範囲がパスを含まない")
-    elif body_scopes and scope not in body_scopes:
-        failures.append(f"反映範囲が本文のディレクトリ範囲のいずれでもない: 本文の範囲={', '.join(body_scopes)}")
     return failures
 
 
@@ -705,29 +710,92 @@ def _write_path_failure(
     return "未作成のパスで、本文の反映先にも`導出した新設先`にも無い"
 
 
-def _check_public_write_rationales(items: list[dict[str, object]], costs: list[dict[str, object]]) -> list[Violation]:
-    """公開工程所有の各pathについて、レーンの根拠がそのpathと対象リポジトリの規範・節を記していなければ違反として返す。"""
-    rationales = {
-        row[_selection.LANE_KEY]: row.get(_selection.RATIONALE_KEY, "")
-        for row in costs
-        if isinstance(row, dict) and isinstance(row.get(_selection.LANE_KEY), str)
-    }
+def _check_public_write_rationales(items: list[dict[str, object]], work_dir: pathlib.Path) -> list[Violation]:
+    """公開工程の各パスに対応する規範ファイルと見出しの実在を確かめる。意味はメインが検収する。"""
     errors: list[Violation] = []
     for item in items:
-        lane = item.get(_selection.LANE_KEY)
-        rationale = rationales.get(lane, "") if isinstance(lane, str) else ""
-        for path in _string_list(item, _selection.PUBLIC_WRITE_FILES_KEY):
-            pattern = re.compile(r"(?<![A-Za-z0-9_./-])" + re.escape(path) + r"(?![A-Za-z0-9_./-])")
-            if (
-                not isinstance(rationale, str)
-                or not pattern.search(rationale)
-                or "規範" not in rationale
-                or "節" not in rationale
-            ):
+        expected = set(_string_list(item, _selection.PUBLIC_WRITE_FILES_KEY))
+        records = typing.cast(list[dict[str, str]], item.get(_selection.PUBLIC_WRITE_RATIONALES_KEY, []))
+        paths = [record["パス"] for record in records]
+        failures = []
+        if set(paths) != expected or len(paths) != len(set(paths)):
+            failures.append(f"パスの対応が不一致: 必須={sorted(expected)}、記録={paths}")
+        for record in records:
+            norm = record["規範ファイル"]
+            target = work_dir / norm
+            if not norm or _normalize_candidate(norm) != norm or not target.is_file():
+                failures.append(f"規範ファイルがリポジトリ相対の通常ファイルではない: {norm}")
+                continue
+            try:
+                text = target.read_text(encoding="utf-8")
+            except (OSError, UnicodeError) as error:
+                failures.append(f"規範ファイルを読めない: {norm}: {error}")
+                continue
+            headings = {heading for level in range(1, 7) for _, heading in _markdown_headings.parse_headings(text, level)}
+            if not record["節"].strip() or record["節"] not in headings:
+                failures.append(f"規範ファイルに節の見出しがない: {norm}: {record['節']}")
+        if failures:
+            errors.append(
+                Violation(
+                    f"{item[_selection.WI_KEY]}: `{_selection.PUBLIC_WRITE_FILES_KEY}`の根拠不足: {'; '.join(failures)}",
+                    next_action=_NEXT_PUBLIC_RATIONALE,
+                )
+            )
+    return errors
+
+
+def _check_scope_reasons(decision: dict[str, object], reflected: set[str], body: str) -> list[Violation]:
+    """本文から導いた書込範囲に必要な理由をパスごとに対応付ける。"""
+    writes = _string_list(decision, _selection.WRITE_FILES_KEY)
+    parsed = _wi_frontmatter.parse_frontmatter(_markdown_headings.normalize_newlines(body))
+    pathless_uwi = parsed is not None and parsed[0].get("type") == _UWI_TYPE and not reflected
+    required = {path for path in writes if pathless_uwi or path.endswith("/") and path not in reflected}
+    records = typing.cast(list[dict[str, str]], decision.get(_selection.WRITE_SCOPE_REASONS_KEY, []))
+    paths = [record["パス"] for record in records]
+    empty_reasons = [record["パス"] for record in records if not record["理由"].strip()]
+    if set(paths) != required or len(paths) != len(set(paths)) or empty_reasons:
+        return [
+            Violation(
+                f"{decision[_selection.WI_KEY]}: `{_selection.WRITE_SCOPE_REASONS_KEY}`が不一致: "
+                f"必須={sorted(required)}、記録={paths}、理由が空={empty_reasons}",
+                next_action=_NEXT_SCOPE_REASON,
+            )
+        ]
+    return []
+
+
+def _check_estimate_records(selection: dict[str, object], costs: list[dict[str, object]]) -> list[Violation]:
+    """段階案の比較と補正の記録を、所要時間の値へ対応付ける。"""
+    errors: list[Violation] = []
+    costs = [dict(row) for row in costs]
+    for row in costs:
+        for legacy, current in _LEGACY_SECONDS_KEYS.items():
+            if current not in row and legacy in row:
+                row[current] = row[legacy]
+    if (
+        costs
+        and all(row.get(_selection.STAGE_KEY, 1) == 1 for row in costs)
+        and any(typing.cast(float, row[_IMPLEMENTATION_SECONDS_KEY]) > 6000 for row in costs)
+        and _selection.STAGED_ESTIMATE_KEY not in selection
+    ):
+        errors.append(Violation(f"6000秒超の単一段階案に`{_selection.STAGED_ESTIMATE_KEY}`がない", next_action=_NEXT_STAGED))
+    correction = selection.get(_selection.ESTIMATE_CORRECTION_KEY)
+    if not isinstance(correction, dict):
+        return [*errors, Violation(f"`{_selection.ESTIMATE_CORRECTION_KEY}`がない", next_action=_NEXT_CORRECTION)]
+    coefficient = correction["係数"]
+    if coefficient != 1 and not correction["参照した記録"]:
+        errors.append(Violation("係数が1以外の`見込みの補正`に参照した記録がない", next_action=_NEXT_CORRECTION))
+    for row in costs:
+        for corrected, raw in (
+            (_IMPLEMENTATION_SECONDS_KEY, _selection.UNCORRECTED_IMPLEMENTATION_KEY),
+            (_INTEGRATION_SECONDS_KEY, _selection.UNCORRECTED_INTEGRATION_KEY),
+        ):
+            if raw not in row or abs(typing.cast(float, row[corrected]) - typing.cast(float, row[raw]) * coefficient) > 1:
                 errors.append(
                     Violation(
-                        f"{item.get(_selection.WI_KEY, 'WI不明')}: `{_selection.PUBLIC_WRITE_FILES_KEY}`の根拠不足: {path}",
-                        next_action=_NEXT_PUBLIC_RATIONALE,
+                        f"{row[_selection.LANE_KEY]}: `{raw}`の欠落または`{corrected}`と補正の積の不一致: "
+                        f"補正前={row.get(raw)!r}、係数={coefficient}、補正後={row[corrected]}",
+                        next_action=_NEXT_CORRECTION,
                     )
                 )
     return errors
@@ -756,6 +824,7 @@ def check(
         raise InputError(f"private-notesが実在しない: {private_notes}", next_action=_FIX_PRIVATE_NOTES)
     conditions = load_norm_conditions(work_dir)
     errors: list[Violation] = []
+    work_repo: str | None = None
     for decision in items:
         awi = typing.cast(str, decision[_selection.WI_KEY])
         if decision[_selection.LANE_KEY] == _LANE_NONE or body_wis is not None and awi not in body_wis:
@@ -781,7 +850,33 @@ def check(
             body = source.read_text(encoding="utf-8")
         except (OSError, UnicodeDecodeError) as error:
             raise InputError(f"WI本文を読み込めない: {source}: {error}", next_action=_FIX_PRIVATE_NOTES) from error
+        parsed = _wi_frontmatter.parse_frontmatter(body)
+        saved_repo = parsed[0].get("target_repo") if parsed else None
+        if isinstance(saved_repo, str):
+            if work_repo is None:
+                origin = _git_remote.origin_url(work_dir, timeout=60)
+                work_repo = _git_remote.resolve_repo_identifier(origin) if origin else None
+                if work_repo is None:
+                    raise InputError(
+                        f"`--work-dir`のoriginの識別子を解決できない: {work_dir}: origin={origin!r}",
+                        next_action="対象worktreeと`git remote get-url origin`を確かめ、同じ検査を再実行する",
+                    )
+            if _git_remote.resolve_repo_identifier(saved_repo) != work_repo:
+                errors.append(
+                    Violation(
+                        f"{awi}: target_repoとworktreeのoriginが一致しない: 保存値={saved_repo}、"
+                        f"worktree={work_dir}、originの識別子={work_repo}",
+                        next_action=(
+                            "ユーザーの明示指定か移転・別名対応の記録で所属を確かめ、移転が確定したWIは"
+                            "start-processing前に`atk wi edit <WIファイル名> --target-repo=<保存済みtarget_repo> "
+                            "--body-file <原稿>`でtarget_repoと"
+                            "本文中の操作先を揃え、worktree指定の一覧と同じ選定検査を再実行する。"
+                            "同じOIDだけでは移転と判定しない"
+                        ),
+                    )
+                )
         reflected = reflected_paths(body, work_dir)
+        errors.extend(_check_scope_reasons(decision, reflected, body))
         errors.extend(
             check_decision(
                 awi,
@@ -809,7 +904,8 @@ def check(
             items, costs, typing.cast(list[dict[str, object]], selection.get(_selection.LANE_OVERLAPS_KEY, []))
         )
     )
-    errors.extend(_check_public_write_rationales(items, costs))
+    errors.extend(_check_public_write_rationales(items, work_dir))
+    errors.extend(_check_estimate_records(selection, costs))
     errors.extend(selection_contract.allocation_errors(selection))
     errors.extend(_check_allocation_sources(selection, private_notes))
     return errors
@@ -1184,6 +1280,8 @@ def summary_lines(selection: dict[str, object], body_wis: set[str] | None = None
     lines = [f"WI総数: {len(items)}", f"通常レーン数: {len(lanes)}"]
     if _selection.SINGLE_STAGE_ESTIMATE_KEY in selection:
         lines.append(f"{_selection.SINGLE_STAGE_ESTIMATE_KEY}: {selection[_selection.SINGLE_STAGE_ESTIMATE_KEY]}")
+    if _selection.STAGED_ESTIMATE_KEY in selection:
+        lines.append(f"{_selection.STAGED_ESTIMATE_KEY}: {selection[_selection.STAGED_ESTIMATE_KEY]}")
     for lane, names in lanes.items():
         row = costs.get(lane, {})
         seconds = [
@@ -1302,7 +1400,7 @@ def main(argv: list[str] | None = None) -> int:
                 if args.lane_cost_updates is not None:
                     updates = json.loads(args.lane_cost_updates.read_text(encoding="utf-8"))
                     if not isinstance(updates, dict):
-                        raise ValueError("費用更新JSONは最終レーンから3欄への写像とする")
+                        raise ValueError("費用更新JSONは最終レーンから補正前後の実装秒数・統合秒数と根拠の5欄への写像とする")
                 addition = load_selection(args.merge, additional=True, candidate_file=args.candidate_file)
                 selection = merge_selection(selection, addition, mapping, updates)
             except (OSError, ValueError) as error:

@@ -35,6 +35,7 @@ def fixture_env(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> tupl
     for relative in _REPO_FILES:
         (repo / relative).parent.mkdir(parents=True, exist_ok=True)
         (repo / relative).write_text("x\n", encoding="utf-8")
+    git_repository.init_repository(repo, origin="https://github.com/test/repo.git")
     notes = tmp_path / "notes"
     (notes / "processing").mkdir(parents=True)
     monkeypatch.setenv("AGENT_TOOLKIT_PRIVATE_NOTES", str(notes))
@@ -65,15 +66,43 @@ def _write_selection(
     legacy = any("awi" in decision for decision in decisions)
     for decision in decisions:
         decision.setdefault("staleness" if "awi" in decision else "鮮度", {"status": "current", "later_commit_count": 0})
+        public = decision.get("公開工程の書込対象", [])
+        if isinstance(public, list) and public and "公開工程の規範根拠" not in decision:
+            norm = path.parent / "repo" / "TEST_RULES.md"
+            norm.write_text("# 検査用規範\n\n## 公開工程\n", encoding="utf-8")
+            decision["公開工程の規範根拠"] = [
+                {"パス": entry, "規範ファイル": "TEST_RULES.md", "節": "公開工程"} for entry in public
+            ]
+        name = decision.get("WI", decision.get("awi"))
+        source = path.parent / "notes" / "processing" / str(name)
+        if source.is_file():
+            body = source.read_text(encoding="utf-8")
+            try:
+                reflected = check_selection.reflected_paths(body, path.parent / "repo")
+            except check_selection.InputError:
+                continue
+            pathless = "type: uwi" in body and not reflected
+            writes = decision.get("書込対象", decision.get("write_files", []))
+            decision.setdefault(
+                "書込範囲の理由",
+                [
+                    {"パス": entry, "理由": "検査用の限定調査で範囲を確定"}
+                    for entry in writes
+                    if pathless or entry.endswith("/") and entry not in reflected
+                ],
+            )
     if costs is None:
         lanes = {str(decision.get("lane", decision.get("レーン"))) for decision in decisions} - {"なし"}
         costs = [{"レーン": lane} for lane in sorted(lanes)]
     for row in costs:
         row.setdefault("実装秒数", 600)
         row.setdefault("統合秒数", 60)
+        row.setdefault("補正前の実装秒数", row["実装秒数"])
+        row.setdefault("補正前の統合秒数", row["統合秒数"])
         if "rationale" not in row:
             row.setdefault("根拠", "検査用の根拠")
     selection: dict[str, object] = {"decisions" if legacy else "選定": decisions, "レーンの所要時間": costs}
+    selection["見込みの補正"] = {"係数": 1, "参照した記録": [], "除外した記録": []}
     selection["初回配分"] = _initial_allocation(decisions)
     if any(isinstance(row.get("段階"), int) and row["段階"] >= 2 for row in costs):
         selection["単一段階案の完了見込み秒数"] = 1320
@@ -106,6 +135,139 @@ def _run(tmp_path: pathlib.Path, repo: pathlib.Path, decisions: list[dict[str, t
 def _dispatch(*args: str) -> int:
     """`atk run-script pick-wi-check`の公開名から検証を実行し、終了コードを返す。"""
     return run_script.dispatch(argparse.Namespace(script_name="pick-wi-check", script_args=["--", *args]))
+
+
+@pytest.mark.parametrize(
+    "case,expected",
+    [
+        ("public-missing", 1),
+        ("public-file", 1),
+        ("public-heading", 1),
+        ("public-valid", 0),
+        ("public-duplicate", 1),
+        ("public-surplus", 1),
+        ("staged-missing", 1),
+        ("staged-number", 0),
+        ("staged-impossible", 0),
+        ("staged-type", 2),
+        ("staged-boundary", 0),
+        ("raw-missing", 1),
+        ("raw-type", 2),
+        ("correction-missing", 1),
+        ("correction-mismatch", 1),
+        ("correction-no-source", 1),
+        ("correction-valid", 0),
+        ("correction-tolerance", 0),
+        ("scope-missing", 1),
+        ("scope-valid", 0),
+        ("uwi-missing", 1),
+        ("uwi-valid", 0),
+        ("scope-surplus", 1),
+        ("scope-duplicate", 1),
+        ("scope-empty", 1),
+    ],
+)
+def test_structured_records_and_rationale_independence(
+    env: tuple[pathlib.Path, pathlib.Path],
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+    case: str,
+    expected: int,
+) -> None:
+    """4種類の記録を公開入口で検査し、自由記述の置換で終了コードと診断が変わらないことを確かめる。"""
+    repo, notes = env
+    _awi(notes, "a.md", "`README.md`を変更する。")
+    item: dict[str, typing.Any] = {"WI": "a.md", "レーン": "lane-01", "書込対象": ["README.md"]}
+    path = _write_selection(tmp_path / "structured.yaml", [item])
+    data = yaml.safe_load(path.read_text(encoding="utf-8"))
+    item, row = data["選定"][0], data["レーンの所要時間"][0]
+    if case.startswith("public-"):
+        item.update({"書込対象": [], "公開工程の書込対象": ["README.md"]})
+        (repo / "RULES.md").write_text("# 規範\n\n## 公開\n", encoding="utf-8")
+        if case != "public-missing":
+            record = {"パス": "README.md", "規範ファイル": "RULES.md", "節": "公開"}
+            item["公開工程の規範根拠"] = [record]
+            if case == "public-file":
+                record["規範ファイル"] = "missing.md"
+            if case == "public-heading":
+                record["節"] = "存在しない節"
+            if case == "public-duplicate":
+                item["公開工程の規範根拠"].append(dict(record))
+            if case == "public-surplus":
+                record["パス"] = "src/model.py"
+        # 同じ定型文を全レーンへ置いても、パスごとの記録欠落を埋めない。
+        other = {**item, "WI": "b.md", "レーン": "lane-02"}
+        _awi(notes, "b.md", "`README.md`を変更する。")
+        data["選定"].append(other)
+        data["レーンの所要時間"].append({**row, "レーン": "lane-02"})
+        data["初回配分"] = _initial_allocation(data["選定"])
+        for cost in data["レーンの所要時間"]:
+            cost["根拠"] = "規範の節に従いREADME.mdを公開工程で書く"
+    elif case.startswith("staged-"):
+        row["実装秒数"] = row["補正前の実装秒数"] = 6000 if case == "staged-boundary" else 6001
+        if case not in ("staged-missing", "staged-boundary"):
+            data["段階案の完了見込み秒数"] = {
+                "staged-number": 6200,
+                "staged-impossible": "成立する段階案なし",
+                "staged-type": True,
+            }[case]
+    elif case.startswith("raw-"):
+        if case == "raw-missing":
+            del row["補正前の実装秒数"]
+        else:
+            row["補正前の実装秒数"] = True
+    elif case.startswith("correction-"):
+        if case == "correction-missing":
+            del data["見込みの補正"]
+        elif case == "correction-mismatch":
+            row["実装秒数"] += 2
+        else:
+            data["見込みの補正"]["係数"] = 2
+            row["実装秒数"] *= 2
+            row["統合秒数"] *= 2
+            if case != "correction-no-source":
+                data["見込みの補正"]["参照した記録"] = ["plans/example.progress.jsonl"]
+            if case == "correction-tolerance":
+                row["実装秒数"] += 1
+    else:
+        target = "src/model.py" if case.startswith("uwi-") else "src/"
+        if case.startswith("uwi-"):
+            (notes / "processing/a.md").write_text("---\ntype: uwi\n---\n\n## 回答\n\nモデルを更新する。\n", encoding="utf-8")
+            item["書込対象"] = [target]
+        else:
+            item["書込対象"].append(target)
+        if case not in ("scope-missing", "uwi-missing"):
+            record = {"パス": target, "理由": "回答と配置を調査して範囲を導いた"}
+            item["書込範囲の理由"] = [record]
+            if case == "scope-surplus":
+                record["パス"] = "README.md"
+            if case == "scope-duplicate":
+                item["書込範囲の理由"].append(dict(record))
+            if case == "scope-empty":
+                record["理由"] = " "
+    observed = []
+    for replacement in (False, True):
+        if replacement:
+            for cost in data["レーンの所要時間"]:
+                cost["根拠"] = "配分案を比較した固定文"
+        path.write_text(yaml.safe_dump(data, allow_unicode=True), encoding="utf-8")
+        result = _dispatch(str(path), "--work-dir", str(repo))
+        stderr = capsys.readouterr().err
+        assert result == expected, stderr
+        if result == 1:
+            assert "次の操作:" in stderr
+            field = (
+                "公開工程の規範根拠"
+                if case.startswith("public-")
+                else "段階案の完了見込み秒数"
+                if case.startswith("staged-")
+                else "書込範囲の理由"
+                if case.startswith(("scope-", "uwi-"))
+                else "見込みの補正"
+            )
+            assert field in stderr
+        observed.append((result, stderr))
+    assert observed[0] == observed[1]
 
 
 @pytest.mark.parametrize(
@@ -237,11 +399,14 @@ def test_public_check_absolute_limit_counts_all_lanes(
     data["追加WI"] = [item["WI"] for item in decisions[initial:]]
     for row in data["レーンの所要時間"]:
         row["実装秒数"] = seconds
+        row["補正前の実装秒数"] = seconds
         if integrated:
             row["統合状態"] = "統合済み"
     if integrated and total > 1:
         data["レーンの所要時間"][-1].update({"段階": 2, "先行レーン": ["lane-01"]})
         data["単一段階案の完了見込み秒数"] = seconds
+    if seconds > 6000:
+        data["段階案の完了見込み秒数"] = "成立する段階案なし"
     path.write_text(yaml.safe_dump(data, allow_unicode=True), encoding="utf-8")
     bound = {0: 0, 11: 2, 24: 3}[count]
     assert _dispatch(str(path), "--work-dir", str(repo)) == (1 if total > bound else 0)
@@ -398,7 +563,17 @@ def _generated_overlap_selection(tmp_path: pathlib.Path, repo: pathlib.Path, not
                     {"WI": "a.md", "レーン": "lane-01", "書込対象": ["src/model.py", "README.md"]},
                     {"WI": "b.md", "レーン": "lane-01", "書込対象": ["src/model.py"]},
                 ],
-                "レーンの所要時間": [{"レーン": "lane-01", "実装秒数": 600, "統合秒数": 60, "根拠": "同じ定義を順に書く"}],
+                "見込みの補正": {"係数": 1, "参照した記録": [], "除外した記録": []},
+                "レーンの所要時間": [
+                    {
+                        "レーン": "lane-01",
+                        "実装秒数": 600,
+                        "統合秒数": 60,
+                        "補正前の実装秒数": 600,
+                        "補正前の統合秒数": 60,
+                        "根拠": "同じ定義を順に書く",
+                    }
+                ],
                 "結合条件": [
                     {
                         "WI1": "a.md",
@@ -675,8 +850,8 @@ def _diagnostic(output: str, marker: str) -> str:
 @pytest.mark.parametrize(
     "case,marker,expected",
     [
-        ("derived-body-scope", "`導出した新設先`の対応が不正", ["本文の範囲", "docs/development/"]),
-        ("derived-body-scope", "`書込対象`のパスの不正", ["src/save.py", "`導出した新設先`の記録が不正"]),
+        ("derived-scope-missing", "`導出した新設先`の対応が不正", ["実在ディレクトリ", "missing/"]),
+        ("derived-scope-missing", "`書込対象`のパスの不正", ["src/save.py", "`導出した新設先`の記録が不正"]),
         ("derived-duplicate", "`導出した新設先`の対応が不正", ["重複して宣言"]),
         (
             "derived-missing-write",
@@ -713,8 +888,8 @@ def test_compound_diagnostics_name_failed_condition(
             "導出した新設先": [record],
         }
         body = "`src/`へ保存用入口を新設する。"
-        if case == "derived-body-scope":
-            body = "`docs/development/`へ保存用入口を新設する。"
+        if case == "derived-scope-missing":
+            record["反映範囲"] = "missing/"
         elif case == "derived-duplicate":
             item["導出した新設先"].append(dict(record))
         elif case == "derived-missing-write":
@@ -1113,6 +1288,82 @@ def _derived(path: str, scope: str = "src/") -> dict[str, str]:
 
 
 @pytest.mark.parametrize("section", ["書込対象", "公開工程の書込対象"])
+@pytest.mark.parametrize("documentation", [False, True])
+def test_public_check_accepts_related_fixture_outside_body_directories(
+    tmp_path: pathlib.Path,
+    env: tuple[pathlib.Path, pathlib.Path],
+    section: str,
+    documentation: bool,
+) -> None:
+    """実装に必要な別配置のテストコードは、本文への文書範囲の併記にかかわらず個別登録できる。"""
+    repo, notes = env
+    (repo / "tests").mkdir()
+    _awi(notes, "a.md", "`src/model.py`を是正する。" + ("`docs/`も更新する。" if documentation else ""))
+    record = _derived("tests/model_test.py", "tests/")
+    record["要求"] = "modelの是正結果を検証する"
+    record["配置根拠"] = "テストコードはtestsへ配置する対象リポジトリの方針に従う"
+    item: dict[str, typing.Any] = {
+        "WI": "a.md",
+        "レーン": "lane-01",
+        "書込対象": ["src/model.py"],
+        "導出した新設先": [record],
+    }
+    item.setdefault(section, []).append(record["パス"])
+    if documentation:
+        item["書込対象"].append("docs/")
+    path = _write_selection(
+        tmp_path / "selection.yaml",
+        [item],
+        [{"レーン": "lane-01", "根拠": "対象リポジトリの規範AGENTS.mdの公開の節でtests/model_test.pyを所有する"}],
+    )
+    assert _dispatch(str(path), "--work-dir", str(repo)) == 0
+    saved = yaml.safe_load(path.read_text(encoding="utf-8"))
+    assert record["パス"] in saved["選定"][0][section]
+
+
+@pytest.mark.parametrize("body_scope", [False, True])
+@pytest.mark.parametrize("origin", ["https://other.example/test/repo.git", "https://github.com/test/renamed.git"])
+def test_public_check_rejects_migrated_repository_until_metadata_is_updated(
+    tmp_path: pathlib.Path,
+    env: tuple[pathlib.Path, pathlib.Path],
+    body_scope: bool,
+    origin: str,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """同じHEADのホスト移転・パス改名でも、保存値を揃えるまで初期・追加の検査で拒否する。"""
+    repo, notes = env
+    git_repository.commit_all(repo, "初期状態")
+    original_head = git_repository.git_output(repo, "rev-parse", "HEAD")
+    git_repository.run_git(repo, "remote", "set-url", "origin", origin)
+    assert git_repository.git_output(repo, "rev-parse", "HEAD") == original_head
+    _awi(notes, "a.md", "`src/model.py`を是正する。")
+    path = _write_selection(
+        tmp_path / "selection.yaml",
+        [{"WI": "a.md", "レーン": "lane-01", "書込対象": ["src/model.py"]}],
+    )
+    args = [str(path), "--work-dir", str(repo), *(["--body-wi", "a.md"] if body_scope else [])]
+    assert _dispatch(*args) == 1
+    diagnostic = capsys.readouterr().err
+    assert "a.md: target_repoとworktreeのoriginが一致しない" in diagnostic
+    assert "保存値=github.com/test/repo" in diagnostic
+    assert str(repo) in diagnostic and "atk wi edit" in diagnostic and "start-processing前" in diagnostic
+    source = notes / "processing/a.md"
+    source.write_text(source.read_text(encoding="utf-8").replace("github.com/test/repo", origin), encoding="utf-8")
+    assert _dispatch(*args) == 0
+
+
+def test_public_check_normalizes_equivalent_repository_addresses(
+    tmp_path: pathlib.Path,
+    env: tuple[pathlib.Path, pathlib.Path],
+) -> None:
+    """SSH短縮形とHTTPSの構文差は所属の不一致にしない。"""
+    repo, notes = env
+    git_repository.run_git(repo, "remote", "set-url", "origin", "git@GitHub.com:TEST/REPO.git")
+    _awi(notes, "a.md", "`src/model.py`を変更する。")
+    assert _run(tmp_path, repo, [{"WI": "a.md", "レーン": "lane-01", "書込対象": ["src/model.py"]}]) == 0
+
+
+@pytest.mark.parametrize("section", ["書込対象", "公開工程の書込対象"])
 def test_public_check_accepts_derived_new_paths(
     tmp_path: pathlib.Path, env: tuple[pathlib.Path, pathlib.Path], section: str, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -1469,6 +1720,7 @@ def test_public_check_keeps_global_checks(
         costs[0]["段階"] = 2
     elif violation == "public":
         old["公開工程の書込対象"] = ["README.md"]
+        old["公開工程の規範根拠"] = []
     elif violation == "structure":
         old["unknown"] = True
     elif violation == "model-type":
@@ -1594,10 +1846,15 @@ def test_accepts_covered_selection_and_skips_out_of_scope_decisions(
     _awi(notes, "a.md", reflected)
     _awi(notes, "b.md", "`docs/development/design.md`を変える。")
     (notes / "processing" / "u.md").write_text("---\ntype: uwi\n---\n\n## 質問\n\nどちらか？\n", encoding="utf-8")
-    decisions = [
+    decisions: list[dict[str, typing.Any]] = [
         {"awi": "a.md", "lane": "lane-01", "write_files": ["src/"]},
         {"awi": "b.md", "lane": "なし", "write_files": []},
-        {"awi": "u.md", "lane": "lane-01", "write_files": ["src/"]},
+        {
+            "awi": "u.md",
+            "lane": "lane-01",
+            "write_files": ["src/"],
+            "書込範囲の理由": [{"パス": "src/", "理由": "回答の変更対象を調査した"}],
+        },
     ]
 
     assert _run(tmp_path, repo, decisions) == 0
@@ -1611,7 +1868,7 @@ def test_public_write_target_covers_reflection_and_can_be_shared_across_lanes(
     repo, notes = env
     _awi(notes, "a.md", "`README.md`と`docs/development/design.md`を変える。")
     _awi(notes, "b.md", "`README.md`と`src/model.py`を変える。")
-    decisions = [
+    decisions: list[dict[str, typing.Any]] = [
         {
             "WI": "a.md",
             "レーン": "lane-01",
@@ -1625,10 +1882,10 @@ def test_public_write_target_covers_reflection_and_can_be_shared_across_lanes(
             "公開工程の書込対象": ["README.md"],
         },
     ]
-    costs = [
-        {"レーン": lane, "根拠": "対象リポジトリの規範 AGENTS.md の公開工程の節がREADME.mdを割り当てる"}
-        for lane in ("lane-01", "lane-02")
-    ]
+    costs = [{"レーン": lane, "根拠": "同一レーン案と分割案を比較した"} for lane in ("lane-01", "lane-02")]
+    (repo / "AGENTS.md").write_text("# 規範\n\n## 公開工程\n", encoding="utf-8")
+    for item in decisions:
+        item["公開工程の規範根拠"] = [{"パス": "README.md", "規範ファイル": "AGENTS.md", "節": "公開工程"}]
     selection = _write_selection(tmp_path / "selection.yaml", decisions, costs)
 
     assert check_selection.main(["--work-dir", str(repo), str(selection)]) == 0, capsys.readouterr().err
@@ -1674,12 +1931,14 @@ def test_rejects_public_write_target_without_repository_rule_section_rationale(
     """公開工程だけの所有を規範と節から確認できない分類を受理しない。"""
     repo, notes = env
     _awi(notes, "a.md", "`README.md`を変える。")
-    decisions = [{"WI": "a.md", "レーン": "lane-01", "書込対象": [], "公開工程の書込対象": ["README.md"]}]
+    decisions = [
+        {"WI": "a.md", "レーン": "lane-01", "書込対象": [], "公開工程の書込対象": ["README.md"], "公開工程の規範根拠": []}
+    ]
 
     assert _run(tmp_path, repo, decisions) == 1
     stderr = capsys.readouterr().err
-    assert "`公開工程の書込対象`の根拠不足: README.md" in stderr
-    assert "対象リポジトリの規範、節およびpathを記録する" in stderr
+    assert "`公開工程の書込対象`の根拠不足" in stderr
+    assert "`公開工程の規範根拠`" in stderr
 
 
 @pytest.mark.parametrize(
@@ -1915,11 +2174,14 @@ def test_selection_values_with_yaml_syntax_characters_round_trip(
         "- レーン: 'lane-01'\n"
         "  実装秒数: 600\n"
         "  統合秒数: 60\n"
+        "  補正前の実装秒数: 600\n"
+        "  補正前の統合秒数: 60\n"
         "  根拠: '同一レーン案: 3000秒\n"
         "\n"
         "    分割案: 2000秒'\n"
         "続行できない理由:\n"
         "- 'なし'\n"
+        "見込みの補正: {係数: 1, 参照した記録: [], 除外した記録: []}\n"
         "初回配分:\n  候補WI: [a.md]\n  レーン割当: {a.md: lane-01}\n"
         "  不可分成分:\n  - WI: [a.md]\n    結合条件: []\n",
         encoding="utf-8",
@@ -2406,8 +2668,16 @@ def test_public_check_rejects_rationale_only_overlaps(
                         staleness_key: {"status": "current"},
                     },
                 ],
+                "見込みの補正": {"係数": 1, "参照した記録": [], "除外した記録": []},
                 costs_key: [
-                    {lane_key: lane, rationale_key: rationale, seconds: 600, "統合秒数": 60}
+                    {
+                        lane_key: lane,
+                        rationale_key: rationale,
+                        seconds: 600,
+                        "統合秒数": 60,
+                        "補正前の実装秒数": 600,
+                        "補正前の統合秒数": 60,
+                    }
                     for lane in (("lane-01",) if same_lane else ("lane-01", "lane-02"))
                 ],
                 "初回配分": _initial_allocation(
@@ -2878,6 +3148,10 @@ def test_public_command_prints_lane_summary_on_success(
         }
     else:
         selection = {"選定": [], "レーンの所要時間": []}
+    selection["見込みの補正"] = {"係数": 1, "参照した記録": [], "除外した記録": []}
+    for row in selection.get("レーンの所要時間", selection.get("lane_costs", [])):
+        row["補正前の実装秒数"] = row.get("実装秒数", row.get("implementation_seconds"))
+        row["補正前の統合秒数"] = row.get("統合秒数", row.get("integration_seconds"))
     for item in selection.get("選定", selection.get("decisions", [])):
         item.setdefault("鮮度" if "WI" in item else "staleness", {"status": "current", "later_commit_count": 0})
     selection["初回配分"] = _initial_allocation(selection.get("選定", selection.get("decisions", [])))

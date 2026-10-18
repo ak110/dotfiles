@@ -257,10 +257,12 @@ class DelayedUnavailableBackend(FakeBackend):
         condition: asyncio.Condition,
         delay: float = 0.0,
         error: Any = None,
+        failure_release: asyncio.Event | None = None,
     ) -> None:
         super().__init__(sessions, engine)
         self._condition = condition
         self._delay = delay
+        self._failure_release = failure_release
         self.error = error if error is not None else {"message": "usage limit", "codexErrorInfo": "usageLimitExceeded"}
         self.pending: list[asyncio.Task[None]] = []
 
@@ -270,7 +272,10 @@ class DelayedUnavailableBackend(FakeBackend):
         return session
 
     async def _fail_after_response(self, session: state.SessionState) -> None:
-        await asyncio.sleep(self._delay)
+        if self._failure_release is None:
+            await asyncio.sleep(self._delay)
+        else:
+            await self._failure_release.wait()
         _complete(session, message="", error=self.error)
         async with self._condition:
             self._condition.notify_all()
@@ -466,6 +471,8 @@ def _observed_input_lines(task_name: str, root: pathlib.Path, *, rereview: bool 
     if task_name == "add-wi.subagent.md":
         return ["投入する要求: request-1=/repo=awi=検出条件の追加", handoff]
     if task_name == "external-write-review.subagent.md":
+        for name in ("pr-body.md", "diff.patch"):
+            (root / name).write_text("投稿の比較資料\n", encoding="utf-8")
         return [
             f"文面ファイル: {root / 'pr-body.md'}（12行）",
             "投稿先と目的: GitHubのPR本文。変更の目的をレビュアーへ伝える",
@@ -474,11 +481,13 @@ def _observed_input_lines(task_name: str, root: pathlib.Path, *, rereview: bool 
     if task_name == "copilot-review-audit.subagent.md":
         return [f"pending取得結果: {root / 'pending.json'}", handoff]
     if task_name == "reader-fit-review.subagent.md":
+        for name in ("guide.md", "before.md", "diff.patch"):
+            (root / name).write_text("読者別探索の比較資料\n", encoding="utf-8")
         lines = [
             f"成果物: {root / 'guide.md'}（40行）",
             "種別: エンドユーザー向け文書",
             "読者像: ツールを初めて導入するエンドユーザー。内部の実装は知らない",
-            f"修正範囲: {root / 'before.md'}と成果物の設定保存節の差分、直接影響は再読込節",
+            f"修正範囲: `{root / 'before.md'}`と`{root / 'diff.patch'}`。直接影響は再読込節",
         ]
         if rereview:
             lines.extend(
@@ -489,8 +498,11 @@ def _observed_input_lines(task_name: str, root: pathlib.Path, *, rereview: bool 
             )
         return lines
     if task_name == "bulk-replace-review.subagent.md":
+        (root / "word-diff.txt").write_text("[-旧-]{+新+}\n", encoding="utf-8")
         return [f"差分ファイル: {root / 'word-diff.txt'}（120行）"]
     if task_name == "pick-wi-explain.subagent.md":
+        for name in ("selection.json", "active-wi.md"):
+            (root / name).write_text("選定理由の説明資料\n", encoding="utf-8")
         return [
             f"説明対象の選定結果の出力先ファイル: {root / 'selection.json'}",
             f"activeなWI本文の保存先: {root / 'active-wi.md'}",
@@ -524,20 +536,33 @@ _LAUNCHER_ENVIRONMENT_NAMES = (
 )
 
 
+async def _start_late_unavailability(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+    candidates: list[tuple[str, str, str]],
+) -> tuple[server_manager.AgentsServerManager, dict[str, Any]]:
+    """起動応答の返却後に最初の候補を失敗させ、結果の回収前で返す。"""
+    monkeypatch.setattr(_atk_config, "parse_unresolved_model_candidates", lambda _model_type, **_kwargs: candidates)
+    monkeypatch.setattr(server_manager, "START_AVAILABILITY_TIMEOUT", 0.001)
+    manager = server_manager.AgentsServerManager()
+    failure_release = asyncio.Event()
+    delayed = DelayedUnavailableBackend(manager.sessions, "codex", manager._condition, failure_release=failure_release)
+    _install_backend(manager, "codex", delayed)
+
+    started = await manager.start("plan", "調査", str(tmp_path))
+    assert started["status"] == "running"
+    failure_release.set()
+    await asyncio.gather(*delayed.pending)
+    return manager, started
+
+
 async def _carry_over_late_unavailability(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
     candidates: list[tuple[str, str, str]],
 ) -> tuple[server_manager.AgentsServerManager, FakeBackend]:
     """開始確認の上限後に候補が失敗した状態まで進め、利用できるbackendへ差し替える。"""
-    monkeypatch.setattr(_atk_config, "parse_unresolved_model_candidates", lambda _model_type, **_kwargs: candidates)
-    monkeypatch.setattr(server_manager, "START_AVAILABILITY_TIMEOUT", 0.001)
-    manager = server_manager.AgentsServerManager()
-    delayed = DelayedUnavailableBackend(manager.sessions, "codex", manager._condition, delay=0.01)
-    _install_backend(manager, "codex", delayed)
-
-    await manager.start("plan", "調査", str(tmp_path))
-    await asyncio.gather(*delayed.pending)
+    manager, _ = await _start_late_unavailability(monkeypatch, tmp_path, candidates)
     assert (await manager.wait())["status"] == "failed"
     available = FakeBackend(manager.sessions, "codex")
     _install_backend(manager, "codex", available)

@@ -50,8 +50,9 @@ _RESERVED_EDIT_KEY_NEXT_ACTIONS = {
         "frontmatterからplan_fileを除いて再実行する（plan_fileは廃止した型で保存された項目のメタデータであり、新しく書けない）"
     ),
     "submitter_session": "frontmatterからsubmitter_sessionを除いて再実行する（submitter_sessionはatkが記録する）",
+    "run_skill_run_id": "frontmatterからrun_skill_run_idを除いて再実行する（実行識別子はatkが記録する）",
 }
-"""`atk wi edit`が受け付けない予約キーと、代わりに行う操作の対応。"""
+"""`atk wi edit`が変更を受け付けない予約キーと、代わりに行う操作の対応。"""
 
 
 def _reject_agent_user_comment_change(original: str, updated: str) -> bool:
@@ -218,14 +219,16 @@ def _build_noninteractive_edit_content(path: pathlib.Path, original: str, messag
                 "target_repoは文字列で指定してください",
                 next_action="frontmatterのtarget_repoへローカルworktreeのパスかremote URLを文字列で指定する",
             )
-        updates["target_repo"] = resolve_repo_id(raw_target_repo)
+        updates["target_repo"] = resolve_repo_id(raw_target_repo, warn_non_origin=True)
     for reserved_key, reserved_next_action in _RESERVED_EDIT_KEY_NEXT_ACTIONS.items():
-        if reserved_key in updates:
+        if reserved_key in updates and (reserved_key not in stored_data or updates[reserved_key] != stored_data[reserved_key]):
             raise WebInputError(
                 f"{reserved_key}は予約キーのため atk wi edit では指定できません",
                 next_action=reserved_next_action,
             )
     updated_data = {**stored_data, **updates}
+    if entry_type == WI_TYPE_UWI:
+        updated_data = _add.run_report_metadata(updated_data)
     target_repo_changed = "target_repo" in updates and stored_data.get("target_repo") != updates["target_repo"]
     if target_repo_changed:
         updated_data.pop("target_commit", None)

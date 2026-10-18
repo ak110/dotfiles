@@ -220,6 +220,7 @@ def test_process_termination_block_is_japanese(tmp_path: pathlib.Path) -> None:
         (
             "pyproject.toml",
             "`Write`で`pyproject.toml`の依存の節を編集しようとしている。\n次の操作: "
+            "コマンドを使え、依存変更が許可される担当は次の処置を行う。"
             "`[project.dependencies]`・`[project.optional-dependencies]`の編集は、"
             "`uv.lock`を同期させるため`uv add`・`uv remove`を使う。"
             "`[tool.*]`と版数の編集はそのまま進めてよい。",
@@ -227,6 +228,7 @@ def test_process_termination_block_is_japanese(tmp_path: pathlib.Path) -> None:
         (
             "package.json",
             "`Write`で`package.json`の依存の節を編集しようとしている。\n次の操作: "
+            "コマンドを使え、依存変更が許可される担当は次の処置を行う。"
             "依存の編集は、`pnpm-lock.yaml`を同期させるため`pnpm add`・`pnpm remove`を使う。"
             "`scripts`とメタデータの編集はそのまま進めてよい。",
         ),
@@ -251,7 +253,7 @@ def test_manifest_edit_warning_uses_confirmed_japanese_notice(
     assert _is_japanese_notice(context)
 
 
-def test_response_language_warning_is_japanese(tmp_path: pathlib.Path) -> None:
+def test_response_language_block_is_japanese(tmp_path: pathlib.Path) -> None:
     transcript = _write_english_transcript(tmp_path, "message-1")
     result = _run(
         {
@@ -262,12 +264,11 @@ def test_response_language_warning_is_japanese(tmp_path: pathlib.Path) -> None:
         },
         tmp_path,
     )
-    assert result.returncode == 0
-    context = json.loads(result.stdout)["hookSpecificOutput"]["additionalContext"]
-    assert _is_japanese_notice(context)
+    assert result.returncode == 2
+    assert _is_japanese_notice(result.stderr)
 
 
-def test_response_language_escalated_body_is_japanese(tmp_path: pathlib.Path) -> None:
+def test_repeated_response_language_block_is_japanese(tmp_path: pathlib.Path) -> None:
     transcript = _write_english_transcript(tmp_path, "message-1")
     payload = {
         "tool_name": "Bash",
@@ -275,13 +276,12 @@ def test_response_language_escalated_body_is_japanese(tmp_path: pathlib.Path) ->
         "session_id": "language-block",
         "transcript_path": str(transcript),
     }
-    assert _run(payload, tmp_path).returncode == 0
+    assert _run(payload, tmp_path).returncode == 2
     _write_english_transcript(tmp_path, "message-2")
     result = _run(payload, tmp_path)
-    assert result.returncode == 0
-    context = json.loads(result.stdout)["hookSpecificOutput"]["additionalContext"]
-    assert "この通知は同一セッションで2件目である" in context
-    assert _is_japanese_notice(context)
+    assert result.returncode == 2
+    assert "日本語で書き直す" in result.stderr
+    assert _is_japanese_notice(result.stderr)
 
 
 def test_user_prompt_verification_notice_is_japanese(tmp_path: pathlib.Path) -> None:

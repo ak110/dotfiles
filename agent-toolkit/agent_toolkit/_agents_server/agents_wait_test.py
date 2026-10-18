@@ -257,6 +257,10 @@ def test_agents_wait_redelivers_result_after_body_file_failure(
     [
         ("slides-review", "completed", "review"),
         ("lane-01-exec-review", "completed", "review"),
+        ("reader-fit-review", "completed", "reader-fit-review"),
+        ("lane-01-reader-fit-review", "completed", "reader-fit-review"),
+        ("reader-fit-review", "failed", "failed"),
+        ("reader-fit-review", "interrupted", "interrupted"),
         ("explore-pyfltr", "completed", None),
         ("slides-review", "failed", "failed"),
         ("slides-review", "interrupted", "interrupted"),
@@ -292,12 +296,17 @@ def test_agents_wait_guides_review_result_before_deciding_findings(
         assert next_action == result_projection.REVIEW_RESULT_NEXT_ACTION
         for fragment in ("`agent-toolkit:review-standards`", "`references/reviewee.md`", "合意を示すユーザー発話を特定"):
             assert fragment in next_action
+    elif expected == "reader-fit-review":
+        assert next_action == result_projection.READER_FIT_REVIEW_RESULT_NEXT_ACTION
+        assert "`agent-toolkit:review-standards`" in next_action
+        assert "`reader-fit-review.parent.md`「受領」" in next_action
+        assert "reviewee.md" not in next_action
     else:
         assert next_action is not None
         assert next_action != result_projection.REVIEW_RESULT_NEXT_ACTION
 
 
-@pytest.mark.parametrize("label", ["add-wi", "lane-01-exec-review"])
+@pytest.mark.parametrize("label", ["add-wi", "lane-01-exec-review", "lane-01-reader-fit-review"])
 @pytest.mark.parametrize("status", ["completed", "failed", "interrupted"])
 @pytest.mark.parametrize(
     "message", ["完了", "本文中の気付いた改善点: は標識ではない", "完了\n  気付いた改善点: 反復した\n気付いた改善点: 再読した"]
@@ -335,7 +344,11 @@ def test_agents_wait_relays_improvements_with_existing_guidance(
         ):
             assert fragment in action
     if status == "completed" and label.endswith("-review"):
-        assert result_projection.REVIEW_RESULT_NEXT_ACTION in action
+        if label.endswith("reader-fit-review"):
+            assert result_projection.READER_FIT_REVIEW_RESULT_NEXT_ACTION in action
+            assert "reviewee.md" not in action
+        else:
+            assert result_projection.REVIEW_RESULT_NEXT_ACTION in action
     elif status == "failed":
         assert "失敗の種類を確かめる" in action
     elif status == "interrupted":

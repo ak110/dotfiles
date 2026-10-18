@@ -16,7 +16,15 @@ def _item(wi: str, lane: str) -> dict[str, object]:
 
 
 def _cost(lane: str, **extra: object) -> dict[str, object]:
-    return {"レーン": lane, "実装秒数": 10, "統合秒数": 2, "根拠": lane + "の根拠", **extra}
+    return {
+        "レーン": lane,
+        "実装秒数": 10,
+        "統合秒数": 2,
+        "補正前の実装秒数": 10,
+        "補正前の統合秒数": 2,
+        "根拠": lane + "の根拠",
+        **extra,
+    }
 
 
 def _overlap(left: str, right: str, judgment: str = "交わらない") -> dict[str, object]:
@@ -49,6 +57,7 @@ def fixture_inputs(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> t
         yaml.safe_dump(
             {
                 "選定": [_item("a.md", "lane-01"), _item("b.md", "lane-02")],
+                "見込みの補正": {"係数": 1, "参照した記録": [], "除外した記録": []},
                 "レーンの所要時間": [_cost("lane-01"), _cost("lane-02")],
                 "レーン間の重なり": [_overlap("lane-01", "lane-02")],
                 "初回配分": _allocation({"a.md": "lane-01", "b.md": "lane-02"}, 11),
@@ -61,6 +70,7 @@ def fixture_inputs(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> t
         yaml.safe_dump(
             {
                 "選定": [_item("c.md", "lane-03"), _item("d.md", "lane-04")],
+                "見込みの補正": {"係数": 1, "参照した記録": [], "除外した記録": []},
                 "レーンの所要時間": [_cost("lane-03"), _cost("lane-04")],
                 "レーン間の重なり": [
                     _overlap(left, right)
@@ -82,6 +92,53 @@ def fixture_inputs(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> t
 
 def _dispatch(*args: str) -> int:
     return run_script.dispatch(argparse.Namespace(script_name="pick-wi-check", script_args=["--", *args]))
+
+
+@pytest.mark.parametrize("existing_coefficient,coefficient", [(1, 1), (1, 2), (2, 2)])
+def test_public_merge_correction_and_staged_comparison(
+    inputs: tuple[pathlib.Path, pathlib.Path, pathlib.Path],
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+    existing_coefficient: int,
+    coefficient: int,
+) -> None:
+    """追加の係数違いを保存前に拒否し、同じ係数の補正前の値と再確定した比較だけを合流する。"""
+    repo, existing, added = inputs
+    original = yaml.safe_load(existing.read_text(encoding="utf-8"))
+    original["段階案の完了見込み秒数"] = 999
+    original["見込みの補正"] = {"係数": existing_coefficient, "参照した記録": ["plans/previous.jsonl"], "除外した記録": []}
+    for row in original["レーンの所要時間"]:
+        row["実装秒数"] *= existing_coefficient
+        row["統合秒数"] *= existing_coefficient
+    existing.write_text(yaml.safe_dump(original, allow_unicode=True), encoding="utf-8")
+    data = yaml.safe_load(added.read_text(encoding="utf-8"))
+    data["見込みの補正"] = {"係数": coefficient, "参照した記録": ["plans/log.jsonl"], "除外した記録": []}
+    for row in data["レーンの所要時間"]:
+        row["実装秒数"] *= coefficient
+        row["統合秒数"] *= coefficient
+    mapping = tmp_path / "map.json"
+    mapping.write_text(json.dumps({"lane-03": "lane-01", "lane-04": "lane-02"}), encoding="utf-8")
+    output = tmp_path / "merged.yaml"
+    output.write_text("保存済みの内容", encoding="utf-8")
+    for comparison in (None, "成立する段階案なし"):
+        if comparison is not None:
+            data["段階案の完了見込み秒数"] = comparison
+        added.write_text(yaml.safe_dump(data, allow_unicode=True), encoding="utf-8")
+        before = output.read_bytes()
+        result = _dispatch(
+            str(existing), "--merge", str(added), "--lane-map", str(mapping), "--output", str(output), "--work-dir", str(repo)
+        )
+        if coefficient != existing_coefficient:
+            assert result != 0
+            assert output.read_bytes() == before
+            assert "係数が既存と異なる" in capsys.readouterr().err
+        else:
+            assert result == 0, capsys.readouterr().err
+            merged = yaml.safe_load(output.read_text(encoding="utf-8"))
+            assert merged["レーンの所要時間"][0]["補正前の実装秒数"] == 20
+            assert merged["レーンの所要時間"][0]["補正前の統合秒数"] == 4
+            assert merged["レーンの所要時間"][0]["実装秒数"] == 20 * coefficient
+            assert merged.get("段階案の完了見込み秒数") == comparison
 
 
 def _allocation(assignments: dict[str, str], candidate_count: int = 1) -> dict[str, object]:
@@ -108,7 +165,12 @@ def test_public_merge_rejects_new_final_lane_with_room(
         for row in original["レーンの所要時間"]:
             row["統合状態"] = "統合済み"
     if case == "empty":
-        original = {"選定": [], "レーンの所要時間": [], "初回配分": _allocation({}, 0)}
+        original = {
+            "選定": [],
+            "見込みの補正": {"係数": 1, "参照した記録": [], "除外した記録": []},
+            "レーンの所要時間": [],
+            "初回配分": _allocation({}, 0),
+        }
     existing.write_text(yaml.safe_dump(original, allow_unicode=True), encoding="utf-8")
     mapping = tmp_path / "map.json"
     mapping.write_text(json.dumps({"lane-03": "lane-99", "lane-04": "lane-01"}), encoding="utf-8")
@@ -376,6 +438,7 @@ def test_public_merge_accepts_completion_marker_and_reuses_result(
         yaml.safe_dump(
             {
                 "選定": [{**_item("e.md", "lane-07"), "書込対象": ["EXTRA.md"]}],
+                "見込みの補正": {"係数": 1, "参照した記録": [], "除外した記録": []},
                 "レーンの所要時間": [_cost("lane-07")],
                 "続行できない理由": ["なし"],
             },
@@ -415,6 +478,7 @@ def test_public_merge_transforms_existing_predecessor(
         yaml.safe_dump(
             {
                 "選定": [_item("a.md", "lane-01"), _item("b.md", "lane-02")],
+                "見込みの補正": {"係数": 1, "参照した記録": [], "除外した記録": []},
                 "レーンの所要時間": [_cost("lane-01"), _cost("lane-02", **{"段階": 2, "先行レーン": ["lane-01"]})],
                 "初回配分": _allocation({"a.md": "lane-01", "b.md": "lane-02"}, 11),
             }
@@ -432,6 +496,7 @@ def test_public_merge_transforms_existing_predecessor(
         yaml.safe_dump(
             {
                 "選定": [_item("c.md", "lane-03"), _item("d.md", "lane-04")],
+                "見込みの補正": {"係数": 1, "参照した記録": [], "除外した記録": []},
                 "レーンの所要時間": [_cost("lane-03"), _cost("lane-04", **{"段階": 2, "先行レーン": ["lane-03"]})],
                 "レーン間の重なり": [
                     overlap,
@@ -483,7 +548,9 @@ def test_public_merge_applies_final_cost_updates_and_preserves_metadata(
         path.write_text(yaml.safe_dump(data, allow_unicode=True), encoding="utf-8")
     mapping = tmp_path / "map.json"
     mapping.write_text(json.dumps({"lane-03": "lane-01", "lane-04": "lane-02"}), encoding="utf-8")
-    updates = {"lane-01": {"実装秒数": 15.5, "統合秒数": 0, "根拠": "再見積りを確定"}}
+    updates = {
+        "lane-01": {"実装秒数": 15.5, "統合秒数": 0, "補正前の実装秒数": 15.5, "補正前の統合秒数": 0, "根拠": "再見積りを確定"}
+    }
     costs = tmp_path / "costs.json"
     costs.write_text(json.dumps(updates, ensure_ascii=False), encoding="utf-8")
     before = {path: path.read_bytes() for path in (existing, added, mapping, costs)}
@@ -504,7 +571,11 @@ def test_public_merge_applies_final_cost_updates_and_preserves_metadata(
     additional = tmp_path / "additional.yaml"
     additional.write_text(
         yaml.safe_dump(
-            {"選定": [{**_item("e.md", "lane-03"), "書込対象": ["EXTRA.md"]}], "レーンの所要時間": [_cost("lane-03")]},
+            {
+                "選定": [{**_item("e.md", "lane-03"), "書込対象": ["EXTRA.md"]}],
+                "見込みの補正": {"係数": 1, "参照した記録": [], "除外した記録": []},
+                "レーンの所要時間": [_cost("lane-03")],
+            },
             allow_unicode=True,
         ),
         encoding="utf-8",
@@ -512,7 +583,7 @@ def test_public_merge_applies_final_cost_updates_and_preserves_metadata(
     second_map = tmp_path / "second-map.json"
     second_map.write_text(json.dumps({"lane-03": "lane-01"}), encoding="utf-8")
     second_costs = tmp_path / "second-costs.json"
-    final_cost = {"実装秒数": 11, "統合秒数": 1, "根拠": "既存レーンの確定値"}
+    final_cost = {"実装秒数": 11, "統合秒数": 1, "補正前の実装秒数": 11, "補正前の統合秒数": 1, "根拠": "既存レーンの確定値"}
     second_costs.write_text(json.dumps({"lane-01": final_cost}, ensure_ascii=False), encoding="utf-8")
     assert _merge_with_costs(repo, output, additional, second_map, second_costs, output) == 0
     final = yaml.safe_load(output.read_text(encoding="utf-8"))
@@ -567,6 +638,7 @@ def test_public_merge_requires_whole_selection_comparison(
     repo, existing, added = inputs
     original: dict[str, object] = {
         "選定": [_item("a.md", "lane-01"), _item("b.md", "lane-02")],
+        "見込みの補正": {"係数": 1, "参照した記録": [], "除外した記録": []},
         "レーンの所要時間": [_cost("lane-01"), _cost("lane-02", **{"段階": 2, "先行レーン": ["lane-01"]})],
     }
     original["初回配分"] = _allocation({"a.md": "lane-01", "b.md": "lane-02"}, 11)
@@ -582,6 +654,7 @@ def test_public_merge_requires_whole_selection_comparison(
     overlap["レーン1の定義"] = overlap["レーン2の定義"] = ["共通の契約"]
     data: dict[str, object] = {
         "選定": [_item("c.md", "lane-03"), _item("d.md", "lane-04")],
+        "見込みの補正": {"係数": 1, "参照した記録": [], "除外した記録": []},
         "レーンの所要時間": [_cost("lane-03"), _cost("lane-04", **{"段階": 2, "先行レーン": ["lane-03"]})],
         "レーン間の重なり": [
             overlap,
@@ -636,6 +709,9 @@ def test_public_merge_preserves_created_derived_paths(
         section = "書込対象" if index == 0 else "公開工程の書込対象"
         item["書込対象"] = []
         item[section] = [name]
+        if section == "公開工程の書込対象":
+            (repo / "RULES.md").write_text("# 規範\n\n## 公開\n", encoding="utf-8")
+            item["公開工程の規範根拠"] = [{"パス": name, "規範ファイル": "RULES.md", "節": "公開"}]
         item["導出した新設先"] = [{"パス": name, "反映範囲": "src/", "要求": "結果を保存する", "配置根拠": "保存用入口の配置"}]
         (repo / name).write_text("# 保存入口\n", encoding="utf-8")
         (repo.parent / "notes/processing" / item["WI"]).write_text(

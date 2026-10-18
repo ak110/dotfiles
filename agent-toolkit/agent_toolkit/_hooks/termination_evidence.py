@@ -3,7 +3,7 @@
 各イベントはこの所有モジュールへ観測を渡す。成果作業は成功した対象スキルの開始、リポジトリへの自編集、
 計画の保存、WIの保存、commit・pushの実行記録から、起動証拠はClaude Codeの成功したSkill呼び出しと、
 Codexの実際の入力と結果が示す`SKILL.md`の読取から取得する。完了の自己申告と報告本文は受理しない。
-意味上の中止・開始はメインが原入力と対象を結び付け、ここでは由来、引用、対象の一致を確かめる。
+意味上の中止・開始はメインが原入力と対象を結び付け、ここでは識別子から実体を読み、由来と対象を確かめる。
 """
 
 from __future__ import annotations
@@ -614,8 +614,9 @@ def _omission_policy(document: dict[str, Any], work: dict[str, Any], *, unresolv
     return path.read_text(encoding="utf-8")
 
 
-def _waiting_uwi(path_text: object, session_id: str, quote: object) -> pathlib.Path:
-    """現在の会話が投入した実在の未回答UWIと引用を対応付ける。"""
+def _waiting_uwi(document: dict[str, Any], session_id: str) -> pathlib.Path:
+    """現在の会話が投入した実在の未回答UWIを確かめる。"""
+    path_text = document.get("uwi_file")
     root = uwi_scan.private_notes_root()
     if root is None or not isinstance(path_text, str):
         raise ValueError("確認待ちには未回答UWIの絶対パスを渡す")
@@ -626,8 +627,10 @@ def _waiting_uwi(path_text: object, session_id: str, quote: object) -> pathlib.P
     parsed = parse_frontmatter(text)
     if parsed is None or parsed[0].get("type") != "uwi" or parsed[0].get("submitter_session") != session_id:
         raise ValueError("現在の会話が投入したUWIを指定する")
-    if uwi_scan.is_uwi_answered(text) or quote != text:
-        raise ValueError("実際の未回答UWI全文をquoteへ渡す")
+    if uwi_scan.is_uwi_answered(text):
+        raise ValueError("未回答のUWIを指定する")
+    if "quote" in document and document["quote"] != text:
+        raise ValueError("quoteは指定した未回答UWIの全文と一致させるか省略する")
     return path
 
 
@@ -660,14 +663,15 @@ def record_decision(document: dict[str, Any]) -> str:
         evidence: dict[str, Any] = {}
         if action == "omit-completion":
             work = data["works"].get(document.get("work_id"))
-            reference = data["inputs"].get(document.get("input_id"))
+            input_id = document.get("input_id", data.get("last_human_input"))
+            reference = data["inputs"].get(input_id)
             if not isinstance(work, dict):
                 raise ValueError("実在するwork_idを指定する")
             if (
                 not isinstance(reference, dict)
                 or reference.get("human") is not True
-                or document.get("input_id") != data.get("last_human_input")
-                or document.get("input_id") != work.get("input_at_last_call")
+                or input_id != data.get("last_human_input")
+                or input_id != work.get("input_at_last_call")
             ):
                 raise ValueError("省略する観測済み作業の現在の人間入力のinput_idを渡す")
             unresolved_labels = list(
@@ -680,10 +684,10 @@ def record_decision(document: dict[str, Any]) -> str:
                 )
             )
             text = _omission_policy(document, work, unresolved_labels=unresolved_labels)
-            if text != document.get("quote"):
-                raise ValueError("適用するプロジェクト規範の原文全体をquoteへ渡す")
+            if "quote" in document and text != document["quote"]:
+                raise ValueError("quoteは適用するプロジェクト規範の全文と一致させるか省略する")
             evidence = {
-                "input_id": document["input_id"],
+                "input_id": input_id,
                 "policy_file": document["policy_file"],
                 "target_repo": document["target_repo"],
                 "policy_text": text,
@@ -706,7 +710,7 @@ def record_decision(document: dict[str, Any]) -> str:
                     )
                 evidence["target_session_id"] = target
             else:
-                evidence["uwi_file"] = str(_waiting_uwi(document.get("uwi_file"), session_id, document.get("quote")))
+                evidence["uwi_file"] = str(_waiting_uwi(document, session_id))
         elif action == "blocked":
             call_id = document.get("call_id")
             records = data["calls"].get(call_id)
@@ -717,29 +721,29 @@ def record_decision(document: dict[str, Any]) -> str:
                 or records[0].get("work_id") != document.get("work_id")
             ):
                 raise ValueError("対象作業の実際の失敗call_idを指定する")
-            if json.dumps(records[0]["response"], ensure_ascii=False, sort_keys=True) != document.get("quote"):
-                raise ValueError("実際の失敗応答全体をJSONのquoteへ渡す")
+            if (
+                "quote" in document
+                and json.dumps(records[0]["response"], ensure_ascii=False, sort_keys=True) != document["quote"]
+            ):
+                raise ValueError("quoteは実際の失敗応答全体のJSONと一致させるか省略する")
             evidence["call_id"] = call_id
         elif action == "publish-scope" and document.get("origin") == "standing-authorization":
             policy = document.get("policy_file")
             reference = data["inputs"].get(document.get("input_id"))
             if not isinstance(reference, dict) or reference.get("human") is not True:
                 raise ValueError("適用済み認可を使う作業の人間入力のinput_idを渡す")
-            if (
-                not isinstance(policy, str)
-                or not pathlib.Path(policy).is_absolute()
-                or pathlib.Path(policy).read_text(encoding="utf-8") != document.get("quote")
-            ):
-                raise ValueError("適用済み認可の実在するpolicy_fileと原文全体を渡す")
-            evidence = {"policy_file": policy, "input_id": document.get("input_id")}
+            if not isinstance(policy, str) or not pathlib.Path(policy).is_absolute():
+                raise ValueError("適用済み認可の実在するpolicy_fileを絶対パスで渡す")
+            text = pathlib.Path(policy).read_text(encoding="utf-8")
+            if "quote" in document and text != document["quote"]:
+                raise ValueError("quoteは適用済み認可の全文と一致させるか省略する")
+            evidence = {"policy_file": policy, "input_id": document.get("input_id"), "policy_text": text}
         else:
             reference = data["inputs"].get(document.get("input_id"))
-            if (
-                not isinstance(reference, dict)
-                or reference.get("human") is not True
-                or reference.get("text") != document.get("quote")
-            ):
-                raise ValueError("原入力のinput_idと全文のquoteを渡す。生成入力は人間の判断の根拠にできない")
+            if not isinstance(reference, dict) or reference.get("human") is not True:
+                raise ValueError("原入力のinput_idを渡す。生成入力は人間の判断の根拠にできない")
+            if "quote" in document and reference.get("text") != document["quote"]:
+                raise ValueError("quoteは指定した原入力の全文と一致させるか省略する")
             evidence["input_id"] = document["input_id"]
         if action == "publish-scope":
             if document.get("scope") not in {
@@ -762,8 +766,6 @@ def record_decision(document: dict[str, Any]) -> str:
                 "reason": document["reason"],
                 **evidence,
             }
-            if document["origin"] == "standing-authorization":
-                work["publish_scope"]["policy_text"] = document["quote"]
             work["input_at_last_call"] = data.get("last_human_input", data.get("last_input"))
         elif action == "start":
             selected, work = _new_work(data, document["input_id"])
@@ -853,6 +855,38 @@ def pending_work(payload: dict[str, Any]) -> list[tuple[str, dict[str, Any]]]:
                     continue
         pending.append((work_id, work))
     return pending
+
+
+def claim_stop_review(payload: dict[str, Any], work_ids: set[str]) -> list[str]:
+    """起動済み成果作業への点検通知を同じ人間入力につき一度だけ確保する。
+
+    記録するのはStop自身の通知事実であり、工程の完了証拠には使わない。
+    人間入力の無い自動起動では、作業を開始した参照を入力区間として保つ。
+    """
+    claimed: list[str] = []
+    session_id = payload["session_id"]
+
+    def update(state: dict[str, Any]) -> dict[str, Any]:
+        data = state.get(STATE_KEY)
+        if not isinstance(data, dict):
+            return state
+        for work_id, work in _session_works(state, session_id).items():
+            if work_id not in work_ids or not work.get("deliverables") or not work.get("completion_report"):
+                continue
+            reference = data.get("last_human_input", work.get("reference"))
+            previous = work.get("stop_review_notice")
+            if isinstance(previous, dict) and previous.get("input_id") == reference:
+                continue
+            work["stop_review_notice"] = {"input_id": reference}
+            claimed.append(work_id)
+        return state
+
+    if not session_state.update_state(session_id, update):
+        append_stop_log(session_id, "approve_review_record_unavailable", {"reason": "点検通知の事実を保存できない"})
+        return []
+    if claimed:
+        append_stop_log(session_id, "block_completion_delivery_review", {"work_ids": ",".join(claimed)})
+    return claimed
 
 
 def decision_hint(payload: dict[str, Any]) -> str:

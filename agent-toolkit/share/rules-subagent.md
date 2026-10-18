@@ -57,6 +57,8 @@
 
 ### 多段工程の引き継ぎ記録
 
+委譲先は`share/work-contract.md`「作成と所有」で作成要否と保存先を判断する。作成する委譲先は割当範囲の現行の作業契約を自身で更新し、追送を分類・統合して工程境界で再読する。返却時に要求・成果・残工程の対応と所在を委譲元へ渡す。
+
 `引き継ぎ記録先`を受け取った多段工程は`agent-toolkit:delegation`の`references/handoff-record.md`を使う。キュー操作の反映抑止は`agent-toolkit:wi-standards`の`references/subagent-queue-ops.md`に従う。
 
 ## 返却と終端

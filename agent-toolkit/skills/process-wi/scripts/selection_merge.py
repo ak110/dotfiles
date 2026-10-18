@@ -46,10 +46,12 @@ def extend_write_targets(existing: dict[str, object], addition: object) -> dict[
     # 保存済みの旧欄名と、更新しない項目の表記も保持する。
     items = typing.cast(_Rows, result.get(_selection.DECISIONS_KEY, result.get("decisions")))
     by_wi = {str(item.get(_selection.WI_KEY, item.get("awi"))): item for item in items}
-    fields = (_selection.WRITE_FILES_KEY, _selection.DERIVED_NEW_PATHS_KEY)
+    fields = (_selection.WRITE_FILES_KEY, _selection.DERIVED_NEW_PATHS_KEY, _selection.WRITE_SCOPE_REASONS_KEY)
     for update in updates:
         if not isinstance(update, dict) or set(update) - {_selection.WI_KEY, *fields}:
-            raise ValueError("追加入力の`選定`の各項目は`WI`・`書込対象`・`導出した新設先`だけを持つ写像とする")
+            raise ValueError(
+                "追加入力の`選定`の各項目は`WI`・`書込対象`・`導出した新設先`・`書込範囲の理由`だけを持つ写像とする"
+            )
         name = update.get(_selection.WI_KEY)
         if not isinstance(name, str) or name not in by_wi:
             raise ValueError(f"書込対象の追加先WIが保存済み選定に無い: {name}")
@@ -81,6 +83,13 @@ def merge_selection(
 ) -> dict[str, object]:
     """合流結果を返す。変換不足や不整合は保存前に拒否し、元の入力を変更しない。"""
     existing, added = copy.deepcopy(existing), copy.deepcopy(added)
+    correction_key = _selection.ESTIMATE_CORRECTION_KEY
+    if correction_key not in existing or correction_key not in added:
+        raise ValueError("既存と追加の両YAMLへ`見込みの補正`を記録する")
+    correction = typing.cast(dict[str, object], existing[correction_key])
+    additional_correction = typing.cast(dict[str, object], added[correction_key])
+    if correction["係数"] != additional_correction["係数"]:
+        raise ValueError("追加YAMLの`見込みの補正`の係数が既存と異なる。同じ係数で追加分を補正する")
     first, second = _rows(existing), _rows(added)
     names = [str(item[_selection.WI_KEY]) for item in [*first, *second]]
     if len(names) != len(set(names)):
@@ -129,8 +138,13 @@ def merge_selection(
         prior[_selection.INTEGRATION_STATE_KEY] = _selection.NOT_INTEGRATED
         if prior.get(_selection.STAGE_KEY, 1) != row.get(_selection.STAGE_KEY, 1):
             raise ValueError(f"{lane}: 合流するレーンの段階が異なる。最終割当に合う入力へ直す")
-        for key in _SECONDS.values():
-            prior[key] = typing.cast(float, prior[key]) + typing.cast(float, row[key])
+        for key, raw in zip(
+            _SECONDS.values(), (_selection.UNCORRECTED_IMPLEMENTATION_KEY, _selection.UNCORRECTED_INTEGRATION_KEY), strict=True
+        ):
+            if raw not in prior or raw not in row:
+                raise ValueError(f"{lane}: 合流する両行へ`{raw}`を記録する")
+            prior[raw] = typing.cast(float, prior[raw]) + typing.cast(float, row[raw])
+            prior[key] = typing.cast(float, prior[raw]) * typing.cast(float, correction["係数"])
         prior[_selection.RATIONALE_KEY] = f"{prior[_selection.RATIONALE_KEY]}\n{row[_selection.RATIONALE_KEY]}"
         prior[_selection.PRIOR_LANES_KEY] = list(
             dict.fromkeys(
@@ -174,6 +188,16 @@ def merge_selection(
         _selection.LANE_COSTS_KEY: list(costs.values()),
         _selection.LANE_OVERLAPS_KEY: list(overlaps.values()),
         "続行できない理由": ["なし"],
+        correction_key: {
+            "係数": correction["係数"],
+            "参照した記録": list(
+                dict.fromkeys(
+                    typing.cast(list[str], correction["参照した記録"])
+                    + typing.cast(list[str], additional_correction["参照した記録"])
+                )
+            ),
+            "除外した記録": list(typing.cast(list[object], correction["除外した記録"])),
+        },
     }
     if _selection.INITIAL_ALLOCATION_KEY in existing:
         result[_selection.INITIAL_ALLOCATION_KEY] = existing[_selection.INITIAL_ALLOCATION_KEY]
@@ -184,4 +208,11 @@ def merge_selection(
     # 全体配分の比較値は追加時に再確定した値だけを使う。
     if _selection.SINGLE_STAGE_ESTIMATE_KEY in added:
         result[_selection.SINGLE_STAGE_ESTIMATE_KEY] = added[_selection.SINGLE_STAGE_ESTIMATE_KEY]
+    if _selection.STAGED_ESTIMATE_KEY in added:
+        result[_selection.STAGED_ESTIMATE_KEY] = added[_selection.STAGED_ESTIMATE_KEY]
+    excluded = typing.cast(dict[str, object], result[correction_key])["除外した記録"]
+    assert isinstance(excluded, list)
+    excluded.extend(
+        record for record in typing.cast(list[object], additional_correction["除外した記録"]) if record not in excluded
+    )
     return result

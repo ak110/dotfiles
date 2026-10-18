@@ -75,8 +75,8 @@ def test_combined_locator_query_errors(tmp_path: pathlib.Path, capsys: pytest.Ca
     assert any(event["kind"] == "detail" for event in events)
     errors = [event for event in events if event["kind"] == "error"]
     assert errors and all(event.get("next_action") for event in errors)
-    assert evidence.main([str(transcript), "--detail", "main:1", "--record-schema", "main:1", "--stats"]) == 2
-    assert any(event["kind"] == "error" for event in read_jsonl(capsys))
+    assert evidence.main([str(transcript), "--detail", "main:1", "--record-schema", "main:1", "--stats"]) == 0
+    assert {event["kind"] for event in read_jsonl(capsys)} >= {"detail", "record-schema", "stats-total"}
 
 
 def test_output_file_option_is_removed(capsys: pytest.CaptureFixture[str]) -> None:

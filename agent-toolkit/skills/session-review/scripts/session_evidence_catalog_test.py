@@ -334,7 +334,7 @@ def test_catalog_claude_project_aggregates_traceable_descendants_without_leaving
         == 0
     )
     events = read_jsonl(capsys, raw=True)
-    parent, summary = events
+    parent, summary = [event for event in events if event["kind"] != "unresolved-record"]
     assert parent["session_id"] == "parent-session"
     assert parent["workflow"] == "process-wi"
     assert parent["descendant_count"] == 1
@@ -494,7 +494,9 @@ def test_tool_calls_with_catalog_include_delegates_outside_root_within_window(
         == 0
     )
 
-    *calls, summary = [event for event in read_jsonl(capsys, raw=True) if event["kind"] != "record-provenance"]
+    *calls, summary = [
+        event for event in read_jsonl(capsys, raw=True) if event["kind"] not in {"record-provenance", "unresolved-record"}
+    ]
     assert [(call["session_id"], call["record"], call["call_id"]) for call in calls] == [
         ("parent-session", "claude:parent-session", "bash-embed"),
         ("parent-session", "claude:parent-session/agent-child", "read-1"),

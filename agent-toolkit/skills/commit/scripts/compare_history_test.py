@@ -11,7 +11,7 @@ from agent_toolkit import atk
 from agent_toolkit._plan import commit_mapping
 
 # 手順書`history-rewrite.md`がautosquashに指示する、`<base>`を除くGitの引数。
-AUTOSQUASH_ARGUMENTS = ("-c", "rebase.updateRefs=false", "rebase", "-i", "--autosquash")
+AUTOSQUASH_ARGUMENTS = ("-c", "submodule.recurse=false", "-c", "rebase.updateRefs=false", "rebase", "-i", "--autosquash")
 
 
 def _git(repo: pathlib.Path, *argv: str) -> str:
@@ -36,6 +36,10 @@ def _commit(repo: pathlib.Path, filename: str, text: str, subject: str) -> str:
 
 def _autosquash(repo: pathlib.Path, base: str) -> None:
     """手順書と同じ引数で、編集を素通しする`GIT_SEQUENCE_EDITOR`のautosquashを実行する。"""
+    _git(repo, "config", "rebase.updateRefs", "true")
+    _git(repo, "branch", "retained", "HEAD~1")
+    retained = _git(repo, "rev-parse", "refs/heads/retained")
+    tree = _git(repo, "rev-parse", "HEAD^{tree}")
     subprocess.run(
         ["git", "-C", str(repo), *AUTOSQUASH_ARGUMENTS, base],
         capture_output=True,
@@ -45,6 +49,10 @@ def _autosquash(repo: pathlib.Path, base: str) -> None:
         env={**os.environ, "GIT_SEQUENCE_EDITOR": ":", "GIT_EDITOR": "true"},
         timeout=30,
     )
+    assert _git(repo, "rev-parse", "refs/heads/retained") == retained
+    assert _git(repo, "rev-parse", "HEAD^{tree}") == tree
+    subjects = _git(repo, "log", "--format=%s", f"{base}..HEAD").splitlines()
+    assert not any(subject.startswith(("fixup! ", "squash! ", "amend! ")) for subject in subjects)
 
 
 @pytest.fixture(name="repo")

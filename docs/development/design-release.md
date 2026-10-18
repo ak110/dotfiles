@@ -40,16 +40,23 @@ rulesetのbypass主体は空にし、PR経由の更新、会話threadの解決�
 
 | イベント | head repository | head branch | base branch | 共通7 jobの実処理所有者 | 表示名 |
 | --- | --- | --- | --- | --- | --- |
-| `push` | base repository | 任意 | 該当なし | `push` run | 7件のrequired check名 |
+| `push` | base repository | `master` | 該当なし | `master`の`push` run | 7件のrequired check名 |
+| `push` | base repository | `develop`、同一SHAの利用可能なmaster runあり | 該当なし | `master`の`push` run | 7件の`(non-owner)`名 |
+| `push` | base repository | その他 | 該当なし | この`push` run | 7件のrequired check名 |
 | `pull_request` | base repository | `develop` | `master` | `develop`の`push` run | 7件の`(non-owner)`名 |
 | `pull_request` | base repository | `develop`以外 | `master` | `pull_request` run | 7件のrequired check名 |
 | `pull_request` | base repository以外 | 任意 | `master` | `pull_request` run | 7件のrequired check名 |
 
-共通jobの先頭の判定stepが、release pull requestかどうか（同一repositoryのheadが`develop`、baseが`master`のpull request）を1回だけ求めて出力し、非所有markerと後続stepの条件はその出力を参照する。
-release pull requestでは、非所有markerだけを成功させ、checkoutを含む既存実処理を実行しない。
-このrelease pull request以外の同一repository pull requestとfork pull requestでは、非所有markerをskipして既存実処理を実行する。
-判定stepと非所有markerはcheckout前から存在する`${{ github.workspace }}`を作業場所とし、Windowsの共通jobは`pwsh`、その他の共通jobは`bash`を明示する。
-`rust-lint`は既存jobの`defaults.run.working-directory`を維持し、判定stepと非所有markerだけがworkspace rootを明示してその指定を上書きする。
+先行job`common-ci-owner`が所有判定を1回だけ行い、全共通jobの表示名、非所有marker、後続stepの条件へ同じ出力を渡す。
+同一repositoryのheadが`develop`、baseが`master`のrelease pull requestは、`develop`のpushを所有者とする。
+`develop`へのpushでは、`actions: read`を持つ先行jobが同一repository・同一workflowのmaster push runを完全SHAで照会する。
+実行待ち・実行中または成功済みのrunがあれば、そのmaster runを所有者とする。該当runがない場合、失敗・取消済みのrunだけの場合、API照会が失敗した場合は、このdevelop runが共通検証を実行する。
+`master`へのpushは常に所有し、Release起点を維持する。その他のbranchのpush、release PR以外の同一repository PR、fork PRも所有する。
+非所有時はmarkerだけを成功させ、checkout・依存導入・検査を省く。markerはrelease PRではdevelop branch、同期pushでは所有master runのURLを確認先として示す。
+非所有markerはcheckout前から存在する`${{ github.workspace }}`を作業場所とし、Windowsの共通jobは`pwsh`、その他の共通jobは`bash`を明示する。
+`rust-lint`は既存jobの`defaults.run.working-directory`を維持し、非所有markerがworkspace rootを明示してその指定を上書きする。
+共通jobは短い先行判定だけを待つ。Windowsの2ジョブは互いを待たず、`statusline-version`は所有判定から独立する。concurrencyはeventとrefを分け、master runとdevelop runを相互取消しの対象にしない。
+実行中のmaster runが後に失敗した場合は、その失敗結果が残る。非所有側の別名checkはrequired checkの成功を代替しない。
 
 job-level条件を使うと条件が偽のjobがmatrix展開前にskipされ、job名式が評価されないため、非所有時の7件の表示名を保証できない。
 共通jobを開始して非所有markerを成功させる構成により、required check名と異なる表示名を生成し、同名のskip-successで所有runを代替しない。
@@ -155,11 +162,11 @@ pushの前に実行したチェックが失敗した場合はCI修正と同じ�
 
 ### 公開状態の観測
 
-CI照会不能の返却は、正常完了の検収より前に受領する。
+確認済みpush後の公開工程の続行不能（CI照会不能と、公開後の操作の前提不足）の返却は、正常完了の検収より前に受領する。認証不足のrelease作成と配布先への到達不能も、同じ回復・確認・個別UWI・保留・再開へ接続する。CI専用の接続では、公開後の操作が未完了でも報告へ進み得るため、成功済み工程を保持する共通の接続へ集約する。
 終端担当はforge・repository・commit、失敗操作と診断、確認済みpush・公開状態・全体検証、残工程と引き継ぎ記録を既存の続行不能形式で渡す。
 メインは同じ失敗を正常形式へ差し戻さず、認可内で回復できる前提を整え、同じcommitの未完了工程を再開する。
 ユーザーだけに残る操作は既存の確認・個別UWIへ渡し、保存成功後に回答依存の未終端項目だけを保留する。
-終端済みの実装要求は戻さず、CI未判定と成功済みの公開工程を再開記録に分けて保持する。
+終端済みの実装要求は戻さず、CI結果、失敗した操作と対象、成功済みの公開後の操作と残工程を再開記録に分けて保持する。
 回復と回答後の取り込みはpublish、process-wi固有の受渡しはfinish-sessionが持つ。
 返却形式へ成功と未判定を混ぜる案は、確認済みpushと未完了CIを同じ結論にして再開位置を失うため採らない。
 
@@ -170,7 +177,7 @@ all-reposの公開・CI・確認・再開は対象リポジトリの担当が所
 終端担当の完了後に`agent-toolkit:completion-report`を起動する。同スキルは元作業の完了報告を先に出力し、現在のセッションを対象とする`agent-toolkit:session-review`を起動する。振り返りが対策のAWIを投入する場合は投入の前に振り返り結果を予告し、担当の終端後の応答で振り返りの最終報告（投入が1件以上なら`## AWI投入結果報告`、0件なら`## 振り返り結果報告`）を出力し、続けて`atk agents-exit-session`を単独で実行する。各工程は同じ完了本文を再生成しない。
 
 終端担当の返却後と振り返り後に、メインはベースbranch、追跡ref、最新HEADのCIと作業ツリーを確認する。前回push後に是正レーンまたは主作業ツリーのcommitが統合された場合は、全レーンの終端と書込主体の解放を確認してから追加差分だけを終端担当へ再び渡す。前回公開済み成果の版数更新、プロジェクト固有の公開後の操作、延期adoptを重ねず、最新HEADのpushとCI成功を同じセッションで検収する。
-新しいcommitが無くCIの検収も済んでいれば再起動を省き、CI未判定なら同じcommitの未完了工程を再開する。
+新しいcommitが無くCIの検収と公開後の操作が完了していれば再起動を省き、CI未判定か公開後の操作が未完了なら同じcommitの未完了工程だけを再開する。
 起動回数で重複公開を防ぐ案は追加成果を未pushのまま残すため採用しない。
 
 終端担当はpushの完了後にベースbranchの公開状態を観測し、`ベースbranchの状態`として返す。メインは`agent-toolkit:completion-report`の完了報告の前に同じ項目を1回観測する。終端担当が返却した時点のOID一致だけを判定に用いると、作業ツリーの未コミット差分と中断状態が観測されず、以降の工程を経た後の状態も対象に入らないためである。終端担当後の是正commit以外の理由で解消できない場合はUWI（ユーザーの判断を要する確認事項）へ引き継ぎ、観測を経ないまま完了報告へ到達させない。

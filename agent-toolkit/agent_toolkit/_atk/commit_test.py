@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 from pathlib import Path
 from typing import Any
@@ -65,12 +66,24 @@ def test_public_commit_creates_git_commit(
     )
 
 
+@pytest.mark.parametrize(
+    "untracked_name",
+    [
+        "日本語 space.txt",
+        pytest.param(
+            " 日本語 space\n改行.txt ",
+            marks=pytest.mark.skipif(os.name == "nt", reason="Windowsのファイル名は改行と末尾空白を許可しない"),
+        ),
+    ],
+)
 def test_dry_run_passes_forwarded_prompt_without_committing(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
+    untracked_name: str,
 ) -> None:
     repository = _repo(tmp_path)
+    (repository / untracked_name).write_text("追加\n", encoding="utf-8")
     monkeypatch.chdir(repository)
     monkeypatch.setattr(commit, "_executable", lambda _engine: "/fake/codex")
     original_run = subprocess.run
@@ -97,6 +110,7 @@ def test_dry_run_passes_forwarded_prompt_without_committing(
     assert calls[0][:6] == ["/fake/codex", "exec", "--model", "gpt-6-sol", "-c", "model_reasoning_effort=high"]
     assert "--dangerously-bypass-approvals-and-sandbox" in calls[0]
     assert "forwarded-user-input" in calls[0][-1]
+    assert untracked_name in calls[0][-1]
     assert "背景を説明して" in calls[0][-1]
     assert "コミットはしない" in calls[0][-1]
     assert "commitを実行するturnでホストが観測したmodelとeffort" in calls[0][-1]

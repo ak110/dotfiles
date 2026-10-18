@@ -171,6 +171,45 @@ def test_parse_accepts_crlf_line_endings() -> None:
     assert entries[0].raw_text == "---\ntarget_repo: github.com/example/foo\ntype: awi\n---\n\n本文\n"
 
 
+@pytest.mark.parametrize("kind", ["awi", "uwi"])
+@pytest.mark.parametrize(("file_bom", "body_bom"), [(True, False), (False, True), (True, True)])
+def test_batch_cli_bom_matches_plain_import(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    kind: str,
+    file_bom: bool,
+    body_bom: bool,
+) -> None:
+    """ファイルと各本文の先頭BOMを受理し、再採番と依存先の読替えを同じ保存結果へ導く。"""
+    _patch_repo_operations(monkeypatch)
+    body = "表\ufeff題" if kind == "awi" else "## 質問\n\n表\ufeff題\n\n## 回答\n"
+    first = _entry_text("dep.md", body=body).replace("type: awi", f"type: {kind}")
+    second = _entry_text("plan.md", body=body).replace("type: awi", f"type: {kind}\ndepends_on:\n- dep.md")
+    plain = "# awi\n" + first + second
+    changed = plain.replace("\n---\n", "\n\ufeff---\n") if body_bom else plain
+    # 閉じる区切りは構造の先頭ではない。
+    changed = changed.replace(f"type: {kind}\n\ufeff---", f"type: {kind}\n---")
+    changed = changed.replace("- dep.md\n\ufeff---", "- dep.md\n---")
+    changed = ("\ufeff" if file_bom else "") + changed
+    assert batch.is_show_batch_format(changed)
+    saved = []
+    for index, text in enumerate((plain, changed)):
+        notes = _setup_notes(tmp_path, f"notes-{index}")
+        (notes / "inbox" / "dep.md").write_text("既存\n", encoding="utf-8")
+        monkeypatch.setattr(_wi_sync, "ensure_environment", lambda _home, _notes=notes, **_kwargs: _notes)
+        source = tmp_path / f"batch-{index}.md"
+        source.write_text(text, encoding="utf-8")
+        with pytest.raises(SystemExit) as raised:
+            atk.main(["wi", "add", "--batch", "--body-file", str(source)], home=tmp_path, now=_FIXED_DT)
+        assert raised.value.code == 0
+        assert not capsys.readouterr().err
+        saved.append({path.name: path.read_bytes() for path in (notes / "inbox").iterdir()})
+    assert saved[0] == saved[1]
+    assert f"- {_FIXED_TIMESTAMP}-001.md\n".encode() in saved[1]["plan.md"]
+    assert "表\ufeff題".encode() in saved[1]["plan.md"]
+
+
 @pytest.mark.parametrize(
     "text",
     [

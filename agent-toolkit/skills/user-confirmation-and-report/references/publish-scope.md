@@ -20,8 +20,13 @@
 
 Claude Codeの協調モードのメインは、同じ作業の公開範囲が指定・回答・適用済み認可から確定した時点で、原入力と判断結果を終了工程の証拠へ渡す。
 
-1. `atk run-script termination-evidence -- --context`で現在の会話から原入力の`session_id`・`input_id`・`quote`を取得する。取得した識別子と原文をそのまま使う。`input_id`と`quote`は人間入力を観測した場合だけ値を持つ。`null`の場合は原入力を取得できていないため、生成入力などで代えず、公開範囲を記録しない
-2. JSONファイルへ`session_id`・`action: "publish-scope"`・`scope`・`origin`・`input_id`・原文全体の`quote`・判断理由の`reason`を記し、既存の作業があれば`work_id`も記す。`scope`は前掲の4選択肢の値で、`commitしない`も確定済みの範囲として渡す。`origin`は依頼文の指定なら`instruction`、回答なら`answer`、適用済み認可なら`standing-authorization`とする。適用済み認可では`policy_file`へ文書の絶対パス、`quote`へその現行本文全体、`input_id`へ認可を適用する作業の人間入力の識別子を渡す
+1. `atk run-script termination-evidence -- --context`で現在の会話から原入力の`session_id`・`input_id`を取得する。取得した識別子をそのまま使う。`input_id`は人間入力を観測した場合だけ値を持つ。`null`の場合は原入力を取得できていないため、生成入力などで代えず、公開範囲を記録しない
+2. JSONファイルへ`session_id`・`action: "publish-scope"`・`scope`・`origin`・`input_id`・判断理由の`reason`を記し、既存の作業があれば`work_id`も記す。`scope`は前掲の4選択肢の値で、`commitしない`も確定済みの範囲として渡す。`origin`は依頼文の指定なら`instruction`、回答なら`answer`、適用済み認可なら`standing-authorization`とする。適用済み認可では`policy_file`へ文書の絶対パス、`input_id`へ認可を適用する作業の人間入力の識別子を渡す
 3. `atk run-script termination-evidence -- --decision-file <JSONの絶対パス>`へ渡し、成功した記録の`work_id`を後続工程へ引き継ぐ
 
-`termination-evidence`の記録処理は原入力の由来と全文の一致だけを確かめ、意味判断と認可の適否はメインが確定する。既存作業への回答は同じ`work_id`へ対応付け、独立した新しい作業は既存の`start`判断で区切ってから公開範囲を渡す。作業をまだ作成していない場合だけ`work_id`を省略でき、原入力に属する作業が作成されて返る。
+`termination-evidence`の記録処理は識別子から原入力や規範ファイルを読み、由来と実体を確かめる。
+適用済み認可では規範全文を記録へ保存する。
+`quote`は省略でき、明示した場合は取得した実体の全文との一致を確かめる。
+意味判断と認可の適否はメインが確定する。
+既存作業への回答は同じ`work_id`へ対応付け、独立した新しい作業は既存の`start`判断で区切ってから公開範囲を渡す。
+作業をまだ作成していない場合だけ`work_id`を省略でき、原入力に属する作業が作成されて返る。

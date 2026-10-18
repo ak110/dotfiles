@@ -561,8 +561,8 @@ def _update_route(route: str, record: pathlib.Path, source: str, evidence: pathl
 @pytest.mark.parametrize(
     ("text", "reference"),
     [
-        ("{saved}/record.json、同dir/stdout.bin を確認した", "dir/stdout.bin"),
-        ("出力値はnested/note.mdだった", "nested/note.md"),
+        ("{saved}/record.json、同dir/stdout.bin:1 を確認した", "dir/stdout.bin:1"),
+        ("出力値はnested/note.md:1だった", "nested/note.md:1"),
     ],
     ids=["same-dir", "plain-value"],
 )
@@ -576,7 +576,7 @@ def test_public_update_rejects_unresolved_references(
 ) -> None:
     """返却前の確認が拒否する参照を、未判定記録の3つの更新方法が保存の時点で全件示して拒否し、記録を変えない。
 
-    `nested/note.md`は追跡ファイルにも作業ツリーにも無い値であり、地の文の値を参照として扱う検出条件は変えない。
+    位置を持つ明示参照は、追跡ファイルにも作業ツリーにも無い場合に保存を拒否する。
     """
     record, source, saved = _reference_record(tmp_path, monkeypatch)
     evidence = tmp_path / "evidence.txt"
@@ -1089,6 +1089,238 @@ def _json(path: pathlib.Path, value: object) -> pathlib.Path:
     return path
 
 
+def _runner_fixture(tmp_path: pathlib.Path, runner: str, *, baseline: bool = False) -> dict[str, str]:
+    """WIの実物観測（vitest 5.0.3・Playwright 1.63.0・VSTest TRX）の欄を再現する。"""
+    label = "baseline" if baseline else "current"
+    path = tmp_path / f"{runner}-{label}.json"
+    filename = tmp_path / "trial.spec.js"
+    filename.write_text("// 結果の生成元\n", encoding="utf-8")
+    git_repository.run_git(tmp_path, "add", "--", filename.name)
+    git_repository.run_git(tmp_path, "commit", "--allow-empty", "--no-verify", "-m", "試験の生成元")
+    names = ["PASSED", "changed", "skipped", "old" if baseline else "new"]
+    statuses = ["passed", "passed" if baseline else "failed", "skipped", "passed"]
+    if runner == "vitest":
+        _json(
+            path,
+            {
+                "testResults": [
+                    {
+                        "name": str(filename),
+                        "assertionResults": [
+                            {"ancestorTitles": ["suite"], "title": name, "status": status}
+                            for name, status in zip(names, statuses, strict=True)
+                        ]
+                        + [{"ancestorTitles": ["other"], "title": "PASSED", "status": "passed"}],
+                    }
+                ]
+            },
+        )
+        argv = ["vitest", "run", "--reporter=json", f"--outputFile={path}"]
+    elif runner == "playwright":
+        _json(
+            path,
+            {
+                "config": {"rootDir": str(tmp_path)},
+                "errors": [],
+                "suites": [
+                    {
+                        "title": filename.name,
+                        "suites": [
+                            {
+                                "title": "suite",
+                                "specs": [
+                                    {
+                                        "title": name,
+                                        "file": filename.name,
+                                        "tests": [
+                                            {
+                                                "projectName": project,
+                                                "status": {"passed": "expected", "failed": "unexpected", "skipped": "skipped"}[
+                                                    status
+                                                ],
+                                            }
+                                            for project in ("chromium", "firefox")
+                                        ],
+                                    }
+                                    for name, status in zip(names, statuses, strict=True)
+                                ],
+                            }
+                        ],
+                    }
+                ],
+            },
+        )
+        argv = ["env", f"PLAYWRIGHT_JSON_OUTPUT_NAME={path}", "playwright", "test", "--reporter=json"]
+    else:
+        root = ET.Element("TestRun", xmlns="http://microsoft.com/schemas/VisualStudio/TeamTest/2010")
+        results = ET.SubElement(root, "Results")
+        for name, status in zip(names, statuses, strict=True):
+            for value in ("PASSED", "FAILED"):
+                ET.SubElement(
+                    results,
+                    "UnitTestResult",
+                    testName=f'T.C.{name}(v: "{value}")',
+                    outcome={"passed": "Passed", "failed": "Failed", "skipped": "NotExecuted"}[status],
+                )
+        ET.ElementTree(root).write(path, encoding="utf-8")
+        argv = ["dotnet", "test", "--logger", f"trx;LogFileName={path}"]
+    stdout, stderr = tmp_path / "stdout.txt", tmp_path / "stderr.txt"
+    stdout.write_text("保存出力\n", encoding="utf-8")
+    stderr.write_text("", encoding="utf-8")
+    record = _json(
+        tmp_path / f"{runner}-{label}-record.json",
+        {
+            "cwd": str(tmp_path),
+            "argv": argv,
+            "git_head": _git(tmp_path, "rev-parse", "HEAD"),
+            "git_status": [],
+            "child_exit_code": 0 if baseline else 1,
+            "timed_out": False,
+            "signal": None,
+            "stdout_path": str(stdout),
+            "stderr_path": str(stderr),
+        },
+    )
+    return {"format": runner, "path": str(path), "run_record": str(record)}
+
+
+@pytest.mark.parametrize("name", ["verification-record", "exec-review-evidence-check"])
+@pytest.mark.parametrize("runner", ["vitest", "playwright", "trx"])
+def test_public_structured_runner_results_list_compare_select_and_reject(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], name: str, runner: str
+) -> None:
+    """全形式の識別・状態・版・比較・選択保存と、不正入力での全記録保持を両公開操作で確かめる。"""
+    git_repository.init_repository(tmp_path, commit_message="試験の基準")
+    monkeypatch.chdir(tmp_path)
+    before, after = _runner_fixture(tmp_path, runner, baseline=True), _runner_fixture(tmp_path, runner)
+    output = tmp_path / "pending.json"
+    assert _run("--output", str(output), "--plan", str(_plan(tmp_path, "plan-user"))) == 0
+    listing = ["--output", str(output)] if name == "verification-record" else []
+    result_args = ["--test-format", runner, "--test-file", after["path"], "--test-record", after["run_record"]]
+    baseline_args = [
+        "--baseline-test-format",
+        runner,
+        "--baseline-test-file",
+        before["path"],
+        "--baseline-test-record",
+        before["run_record"],
+    ]
+    capsys.readouterr()
+    assert _run(*listing, *result_args, *baseline_args, "--list-results", name=name) == 0
+    results = json.loads(capsys.readouterr().out)
+    head = _git(tmp_path, "rev-parse", "HEAD")
+    assert len(results["tests"]) == (5 if runner == "vitest" else 8)
+    assert {item["status"] for item in results["tests"].values()} == {"passed", "failed", "skipped"}
+    assert {item["change"] for item in results["test_changes"]} == {"added", "deleted", "changed"}
+    passed = [key for key, item in results["tests"].items() if "PASSED" in key and item["status"] == "passed"]
+    assert passed
+    for item in results["tests"].values():
+        assert item["path"] == after["path"] and item["git_head"] == head and item["child_exit_code"] == 1
+    if runner == "playwright":
+        assert 'trial.spec.js::suite::PASSED::"chromium"' in results["tests"]
+        assert 'trial.spec.js::suite::PASSED::"firefox"' in results["tests"]
+    if runner == "vitest":
+        assert "trial.spec.js::suite::PASSED" in results["tests"]
+        assert "trial.spec.js::other::PASSED" in results["tests"]
+    if runner == "trx":
+        assert 'T.C.PASSED(v: "PASSED")' in results["tests"]
+        assert 'T.C.PASSED(v: "FAILED")' in results["tests"]
+    update_args = [
+        "--output",
+        str(output),
+        *result_args,
+        "--select-row",
+        "user_requirements:2",
+        "--result-test",
+        passed[0],
+        "--mode",
+        "replace",
+    ]
+    if name == "exec-review-evidence-check":
+        update_args = [str(output), *update_args, "--row-outcome", "user_requirements:2", "達成", "--reviewed-head", head]
+    assert _run(*update_args, name=name) == 0, capsys.readouterr().err
+    rows = json.loads(output.read_text(encoding="utf-8"))["user_requirements"]
+    assert not rows[0]["evidence"] and f"`{passed[0]}` passed" in rows[1]["evidence"]
+    assert after["path"] in rows[1]["evidence"]
+    unchanged = output.read_bytes()
+    saved_text = pathlib.Path(after["path"]).read_text(encoding="utf-8")
+    for invalid in ("corrupt", "duplicate", "unknown-state", "argv", "exit", "unknown"):
+        record = json.loads(pathlib.Path(after["run_record"]).read_text(encoding="utf-8"))
+        original_record = dict(record)
+        args = list(update_args)
+        if invalid == "corrupt":
+            pathlib.Path(after["path"]).write_text("<", encoding="utf-8")
+        elif invalid == "duplicate":
+            if runner == "trx":
+                root = ET.fromstring(saved_text)
+                result = next(e for e in root if e.tag.endswith("Results"))
+                result.append(ET.fromstring(ET.tostring(result[0])))
+                ET.ElementTree(root).write(after["path"], encoding="utf-8")
+            else:
+                data = json.loads(saved_text)
+                if runner == "vitest":
+                    data["testResults"] *= 2
+                else:
+                    data["suites"] *= 2
+                _json(pathlib.Path(after["path"]), data)
+        elif invalid == "argv":
+            record["argv"] = ["unrelated"]
+        elif invalid == "unknown-state":
+            if runner == "trx":
+                root = ET.fromstring(saved_text)
+                next(e for e in root.iter() if e.tag.endswith("UnitTestResult")).set("outcome", "Unknown")
+                ET.ElementTree(root).write(after["path"], encoding="utf-8")
+            else:
+                data = json.loads(saved_text)
+                if runner == "vitest":
+                    data["testResults"][0]["assertionResults"][0]["status"] = "unknown"
+                else:
+                    data["suites"][0]["suites"][0]["specs"][0]["tests"][0]["status"] = "unknown"
+                _json(pathlib.Path(after["path"]), data)
+        elif invalid == "exit":
+            record["child_exit_code"] = 0
+        else:
+            spec = _json(tmp_path / "unknown.json", {"tests": {**after, "format": "unknown"}})
+            start = args.index("--test-format")
+            args[start : start + 6] = ["--results-file", str(spec)]
+        _json(pathlib.Path(after["run_record"]), record)
+        assert _run(*args, name=name) == 1
+        assert output.read_bytes() == unchanged
+        assert "次の操作:" in capsys.readouterr().err
+        pathlib.Path(after["path"]).write_text(saved_text, encoding="utf-8")
+        _json(pathlib.Path(after["run_record"]), original_record)
+
+
+@pytest.mark.parametrize("runner", ["vitest", "playwright"])
+@pytest.mark.parametrize("name", ["verification-record", "exec-review-evidence-check"])
+def test_public_runner_identity_uses_worktree_from_nested_cwd(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], runner: str, name: str
+) -> None:
+    """サブディレクトリ起動でも記録cwdのGit境界からworktree相対名を使う。"""
+    git_repository.init_repository(tmp_path, commit_message="取得時の基準")
+    app = tmp_path / "app"
+    app.mkdir()
+    spec = _runner_fixture(app, runner)
+    args = ["--output", str(tmp_path / "unused.json")] if name == "verification-record" else []
+    capsys.readouterr()
+    assert (
+        _run(
+            *args,
+            "--test-format",
+            runner,
+            "--test-file",
+            spec["path"],
+            "--test-record",
+            spec["run_record"],
+            "--list-results",
+            name=name,
+        )
+        == 0
+    )
+    observed = json.loads(capsys.readouterr().out)["tests"]
+    assert all(identity.startswith("app/trial.spec.js::") for identity in observed)
+
+
 @pytest.mark.parametrize("name", ["verification-record", "exec-review-evidence-check"])
 def test_public_selected_row_imports_saved_results_without_transcribing_source(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], name: str
@@ -1208,6 +1440,160 @@ def _git(path: pathlib.Path, *args: str) -> str:
     return subprocess.run(
         ["git", "-C", str(path), *args], capture_output=True, text=True, check=True, timeout=30
     ).stdout.strip()
+
+
+@pytest.mark.parametrize("route", ["cli", "json"])
+def test_public_nonterminal_source_rejection_guides_both_inputs_to_evidence(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], route: str
+) -> None:
+    """通常判定で出所変更を拒否し、CLIと更新JSONの説明ファイル指定で出所を保持して回復できる。"""
+    record = tmp_path / "review.json"
+    assert _run("--output", str(record), "--plan", str(_plan(tmp_path, "plan-user"))) == 0
+    original = json.loads(record.read_text(encoding="utf-8"))
+    explanation = tmp_path / "explanation.txt"
+    explanation.write_text("延期した観測の再開条件を記録した。", encoding="utf-8")
+    update = {
+        "section": "user_requirements",
+        "row": 1,
+        "source": original["user_requirements"][0]["source"],
+        "new_source": "変更する出所",
+        "outcome": "証拠不足",
+        "reviewed_head": "a" * 40,
+        "evidence_file": str(explanation),
+        "mode": "replace",
+    }
+    prefix = [str(record), "--output", str(record)]
+    updates = tmp_path / "updates.json"
+    if route == "json":
+        _json(updates, [update])
+        args = [*prefix, "--updates-file", str(updates)]
+    else:
+        args = [
+            *prefix,
+            "--select-row",
+            "user_requirements:1",
+            "--row-outcome",
+            "user_requirements:1",
+            "証拠不足",
+            "--reviewed-head",
+            "a" * 40,
+            "--evidence-file",
+            str(explanation),
+            "--mode",
+            "replace",
+            "--row-source",
+            "user_requirements:1",
+            "変更する出所",
+        ]
+    before = record.read_bytes()
+    capsys.readouterr()
+    assert _run(*args, name="exec-review-evidence-check") == 1
+    assert record.read_bytes() == before
+    diagnostic = capsys.readouterr().err
+    assert "new_sourceまたは--row-source" in diagnostic
+    assert "更新JSONではevidence_file、CLIでは--evidence-file" in diagnostic
+    if route == "json":
+        update.pop("new_source")
+        _json(updates, [update])
+    else:
+        args = args[:-3]
+    assert _run(*args, name="exec-review-evidence-check") == 0, capsys.readouterr().err
+    final = json.loads(record.read_text(encoding="utf-8"))
+    assert final["user_requirements"][0]["source"] == original["user_requirements"][0]["source"]
+    assert final["user_requirements"][0]["evidence"] == explanation.read_text(encoding="utf-8")
+    assert final["user_requirements"][1] == original["user_requirements"][1]
+
+
+def test_public_repeated_rounds_replace_current_evidence_and_inherit_each_requirement(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """複数roundで行別の現行根拠へ置換し、同一ログの各観測と必要な旧取得版を独立判定へ引き継ぐ。"""
+    repository = git_repository.init_repository(
+        tmp_path / "repo", files={"app.cfg": "setting=one\n"}, commit_message="観測時の版"
+    )
+    old_head = _git(repository, "rev-parse", "HEAD")
+    (repository / "notes.txt").write_text("説明だけを改訂した。\n", encoding="utf-8")
+    git_repository.commit_all(repository, "説明の改訂")
+    current_head = _git(repository, "rev-parse", "HEAD")
+    assert old_head != current_head
+    monkeypatch.chdir(repository)
+    plan = _plan(tmp_path, "plan-user")
+    plan.write_text(
+        plan.read_text(encoding="utf-8").replace(
+            "### ユーザー発言2\n\n```text\n保存する。", "### ユーザー発言2\n\n```text\n再読込する。"
+        )
+        + "\n### ユーザー発言3\n\n```text\n削除する。\n```\n",
+        encoding="utf-8",
+    )
+    observation = tmp_path / "observations.txt"
+    observations = ["保存: setting=one", "再読込: setting=one", "削除: ファイル不在"]
+    observation.write_text("\n".join(observations) + "\n", encoding="utf-8")
+    captured = _json(
+        tmp_path / "observation-record.json",
+        {"git_head": old_head, "git_status": [], "cwd": str(repository), "stdout_path": str(observation)},
+    )
+    history = tmp_path / "review-history.tsv"
+    history.write_text("round\t応答\n1\t旧説明を訂正する\n2\t行別の観測へ整理した\n", encoding="utf-8")
+    pending, judged = tmp_path / "pending.json", tmp_path / "judged.json"
+    assert _run("--output", str(pending), "--plan", str(plan)) == 0
+    assert _run("--template", str(judged), "--plan", str(plan), name="exec-review-evidence-check") == 0
+    original = json.loads(pending.read_text(encoding="utf-8"))
+    for round_number in (1, 2):
+        pending_args = ["--output", str(pending), "--mode", "replace"]
+        review_args = [
+            str(judged),
+            "--output",
+            str(judged),
+            "--verification-record",
+            str(pending),
+            "--reviewed-head",
+            current_head,
+            "--mode",
+            "replace",
+        ]
+        expected = []
+        for index, observed in enumerate(observations, 1):
+            selector = f"user_requirements:{index}"
+            text = (
+                f"{observation}:{index}: {observed}。取得版HEAD={old_head}。取得記録: {captured}。"
+                "app.cfgと試験入力・実行環境は取得時と現行で同一のため、この観測を適用できる。"
+            )
+            if round_number == 1:
+                text += "失効した旧説明。別要求の修正経緯も転記した。"
+            else:
+                text += f"反復履歴の所在: {history}:3。"
+            explanation = tmp_path / f"round{round_number}-row{index}.txt"
+            explanation.write_text(text, encoding="utf-8")
+            expected.append(text)
+            pending_args += ["--select-row", selector, "--row-evidence-file", selector, str(explanation)]
+            review_args += [
+                "--select-row",
+                selector,
+                "--verification-row",
+                selector,
+                selector,
+                "--row-outcome",
+                selector,
+                "達成",
+            ]
+        assert _run(*pending_args) == 0, capsys.readouterr().err
+        preserved_pending = pending.read_bytes()
+        assert _run(*review_args, name="exec-review-evidence-check") == 0, capsys.readouterr().err
+        assert pending.read_bytes() == preserved_pending
+        current = json.loads(judged.read_text(encoding="utf-8"))
+        for index, (source, row) in enumerate(zip(original["user_requirements"], current["user_requirements"], strict=True)):
+            assert row["requirement"] == source["requirement"] and row["source"] == source["source"]
+            assert row["evidence"] == expected[index]
+            assert row["outcome"] == "達成" and row["reviewed_head"] == current_head
+            assert old_head in row["evidence"] and str(captured) in row["evidence"]
+            if round_number == 2:
+                assert "失効した旧説明" not in row["evidence"] and "別要求の修正経緯" not in row["evidence"]
+                assert observations[(index + 1) % len(observations)] not in row["evidence"]
+    pending_rows = json.loads(pending.read_text(encoding="utf-8"))["user_requirements"]
+    assert all(not row["outcome"] and not row["reviewed_head"] for row in pending_rows)
+    assert _run(str(judged), "--plan", str(plan), "--expected-head", current_head, name="exec-review-evidence-check") == 0, (
+        capsys.readouterr().err
+    )
 
 
 def _saved_trial(tmp_path: pathlib.Path, text: str, name: str) -> dict[str, str]:

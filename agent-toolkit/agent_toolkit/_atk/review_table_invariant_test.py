@@ -40,3 +40,17 @@ def test_delegation_skill_refers_to_reviewee_response_section() -> None:
     paragraph = next(line for line in skill.read_text(encoding="utf-8").splitlines() if "応答欄の本文は" in line)
     assert "`references/reviewee.md`「レビュー指摘管理表への応答」" in paragraph
     assert not any(f"`{label}`" in paragraph for label in table.RESPONSE_LABELS)
+
+
+def test_show_help_exposes_body_selection_and_history(capsys: pytest.CaptureFixture[str]) -> None:
+    """公開ヘルプから行・本文の選択と履歴を含むサマリーへ到達できる。"""
+    with pytest.raises(SystemExit) as result:
+        _parser().parse_args(["review-table", "show", "--help"])
+    assert result.value.code == 0
+    help_text = capsys.readouterr().out
+    assert "--row-id" in help_text
+    assert "--field" in help_text
+    assert "no-response-reason" in help_text
+    assert "previous_findings" in help_text
+    assert "history_command" in help_text
+    assert "repetition_guidance" in help_text

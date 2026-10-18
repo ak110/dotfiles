@@ -129,7 +129,9 @@ def _check_ps1_eol(tool_name: str, fields: list[tuple[str, str]], file_path: str
             tag=_WARN_TAG,
             fix=(
                 "`agent-toolkit:writing-standards`の`references/encoding.md`「書込ツールの改行・BOM保全」に従い、"
-                "既存ファイルには`Edit`ツールを使い、新規ファイルは`Bash`で`UTF-8`の`BOM`と`CRLF`改行を指定して書き込む。"
+                "既存ファイルには`Edit`ツールを使う。コマンドを使え、実行が許可される担当は、"
+                "新規ファイルを`Bash`で`UTF-8`の`BOM`と`CRLF`改行を指定して書き込む。"
+                "コマンドを使えないか実行が制限される担当は、対象パス・必要なBOMと改行の修正を委譲元へ返す。"
             ),
             removable_cause=True,
         )
@@ -177,7 +179,11 @@ def _check_lockfiles(tool_name: str, file_path: str) -> str | None:
             return _llm_notice(
                 f"{tool_name}による{label}の直接編集を検出した。対象: {file_path}",
                 tag=_WARN_TAG,
-                fix=fix,
+                fix=(
+                    "コマンドを使え、再生成が許可される担当は次の処置を行う。"
+                    + fix
+                    + "コマンドを使えないか再生成が担当範囲外の場合は、対象パス・必要な依存変更または再生成を委譲元へ返す。"
+                ),
                 removable_cause=True,
             )
     return None
@@ -231,7 +237,11 @@ def _check_manifest(tool_name: str, fields: list[tuple[str, str]], file_path: st
         return _llm_notice(
             f"`{tool_name}`で`{label}`の依存の節を編集しようとしている。",
             tag=_WARN_TAG,
-            fix=hint,
+            fix=(
+                "コマンドを使え、依存変更が許可される担当は次の処置を行う。"
+                + hint
+                + "コマンドを使えないか依存変更が担当範囲外の場合は、対象パス・必要な依存変更と`lockfile`の同期を委譲元へ返す。"
+            ),
             removable_cause=True,
         )
     return None

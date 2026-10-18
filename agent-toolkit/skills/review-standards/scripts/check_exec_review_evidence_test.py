@@ -75,7 +75,6 @@ def _mock_wi(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, bodies: di
     requested: list[str] = []
 
     def fake_run(args: list[str], **kwargs: object) -> subprocess.CompletedProcess[typing.Any]:
-        del kwargs
         if args[0] == "git":
             if "cat-file" in args:
                 reference = tmp_path / args[-1].split(":", maxsplit=1)[1]
@@ -83,7 +82,12 @@ def _mock_wi(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, bodies: di
                     return subprocess.CompletedProcess(args, 0, stdout=reference.read_bytes(), stderr=b"")
                 return subprocess.CompletedProcess(args, 1, stdout=b"", stderr=b"file is absent")
             value = str(tmp_path) if "--show-toplevel" in args else REVIEWED_HEAD
-            return subprocess.CompletedProcess(args, 0, stdout=f"{value}\n", stderr="")
+            if "--short=7" in args:
+                value = REVIEWED_HEAD[:7]
+            output = f"{value}\n"
+            return subprocess.CompletedProcess(
+                args, 0, stdout=output if kwargs.get("text") else output.encode(), stderr="" if kwargs.get("text") else b""
+            )
         raise AssertionError(f"WI取得で子CLIを起動した: {args}")
 
     def read_named(
@@ -202,9 +206,11 @@ def test_return_result_rejects_zero_issues_with_missing_evidence_and_recovers_af
     capsys.readouterr()
     assert run_script.dispatch(_return_args(path, table)) == 0
     assert _without_return_input(capsys.readouterr().out) == (
-        f"状態: completed\nレビューしたHEAD: {REVIEWED_HEAD}\n未解決の指摘数: 1\n"
+        f"状態: completed\nレビューしたHEAD: {REVIEWED_HEAD[:7]}\n未解決の指摘数: 1\n"
         "読者別探索: 文章成果物なし\n"
-        f"レビュー開始時点: {REVIEWED_HEAD}\n前回確認版の開始時点: {REVIEWED_HEAD}\n前回確認版HEAD: {REVIEWED_HEAD}\n"
+        f"レビュー開始時点: {REVIEWED_HEAD[:7]}\n"
+        f"前回確認版の開始時点: {REVIEWED_HEAD[:7]}\n"
+        f"前回確認版HEAD: {REVIEWED_HEAD[:7]}\n"
         "計画のパス: []\n入力記録のパス: []\n"
         f"完成条件証拠のパス: {path}\n"
         'wi_conditionsの判定内訳: {"総数": 1, "証拠不足": 1}\n'
@@ -257,7 +263,7 @@ def test_return_result_distinguishes_optional_observation_from_observed_failure(
     assert run_script.dispatch(_return_args(path, table)) == expected
 
 
-@pytest.mark.parametrize("kind", ["reject", "deferred", "publication", "parallel", "not-terminating"])
+@pytest.mark.parametrize("kind", ["reject", "deferred", "publication", "parallel", "not-terminating", "parenthesized-heading"])
 def test_return_result_accepts_nonachievement_only_from_referenced_input_record(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], kind: str
 ) -> None:
@@ -273,6 +279,8 @@ def test_return_result_accepts_nonachievement_only_from_referenced_input_record(
         "parallel": f"AWI: {FIRST_WI}\n判定対象: 保存\n判定工程: ユーザビリティレビュー\n進行状態: 並行中\n",
         "not-terminating": f"AWI: {FIRST_WI}\n判定対象: 保存\n終端区分: 終端しない\n"
         "後続工程: 依存の是正版の公開後に再処理\n検収時機: 次回の処理で依存を更新した後\n",
+        "parenthesized-heading": f"# 終端区分（判断）\n\nAWI: {FIRST_WI}\n判定対象: 保存\n終端区分: 終端しない\n"
+        "後続工程: 公開後\n検収時機: 次回\n",
     }
     record.write_text(bodies[kind], encoding="utf-8")
     review_table.init(table)
@@ -282,6 +290,8 @@ def test_return_result_accepts_nonachievement_only_from_referenced_input_record(
     )
     if kind == "reject":
         row.update(outcome="未達", evidence=f"reject終端。{record} の実施内容の不採用根拠に従う")
+    if kind == "parenthesized-heading":
+        row.update(source="WI本文", evidence=f"{record}#終端区分（判断） の判断に従う")
     _write_evidence(path, [row])
     capsys.readouterr()
     assert run_script.dispatch(_return_args(path, table, "--input-record", str(record))) == 0
@@ -304,6 +314,38 @@ _MISMATCHED_RECORDS = {
     "reject-without-wi": "# 計画\n\n## 実施内容\n\n| 実施内容 | 採否 | 根拠 |\n| --- | --- | --- |\n"
     "| 保存の要求 | 不採用 | 前提が成立しない |\n",
 }
+
+
+@pytest.mark.parametrize("fault", ["termination", "stage", "location", "missing-reference"])
+def test_public_deferral_diagnostics_keep_rejected_candidates_and_recovery(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], fault: str
+) -> None:
+    """拒否した近い形の記録と所在の理由から、担当が実行できる修復へ到達する。"""
+    _mock_wi(monkeypatch, tmp_path, {FIRST_WI: "type: awi\nsource: agent\n---\n## 完成条件\n- 保存\n"})
+    path, table, record = tmp_path / "evidence.json", tmp_path / "review.tsv", tmp_path / "input.md"
+    review_table.init(table)
+    kind = "終端区分: 終端しない（説明）" if fault == "termination" else "判定工程: 公開工程（説明）"
+    record.write_text(
+        f"# 記録\n\nAWI: {FIRST_WI}\n判定対象: 保存\n{kind}\n後続工程: 公開後\n検収時機: 次回\n", encoding="utf-8"
+    )
+    reference = f"{record}:999" if fault == "location" else str(record)
+    row = {
+        **_condition(FIRST_WI, "保存"),
+        "outcome": "証拠不足",
+        "evidence": "観測不足" if fault == "missing-reference" else f"{reference} の判断に従う",
+    }
+    _write_evidence(path, [row])
+    capsys.readouterr()
+    assert run_script.dispatch(_return_args(path, table, "--input-record", str(record))) == 1
+    result = capsys.readouterr()
+    assert not result.out
+    assert "sourceかevidenceの一方" in result.err and "--select-row・--evidence-file・--mode" in result.err
+    assert "sourceとevidenceで指して" not in result.err
+    if fault in {"termination", "stage"}:
+        assert f"{record}の3行目" in result.err
+        assert "延期adopt・終端しない" in result.err and "公開工程・ユーザビリティレビュー" in result.err
+    elif fault == "location":
+        assert f"{record}:999" in result.err and "行範囲" in result.err
 
 
 @pytest.mark.parametrize("kind", list(_MISMATCHED_RECORDS))
@@ -344,9 +386,11 @@ def test_return_result_without_evidence_generates_result_and_empty_input_arrays(
     capsys.readouterr()
     assert run_script.dispatch(_no_evidence_return_args(table)) == 0
     assert _without_return_input(capsys.readouterr().out) == (
-        f"状態: completed\nレビューしたHEAD: {REVIEWED_HEAD}\n未解決の指摘数: 0\n"
+        f"状態: completed\nレビューしたHEAD: {REVIEWED_HEAD[:7]}\n未解決の指摘数: 0\n"
         "読者別探索: 文章成果物なし\n"
-        f"レビュー開始時点: {REVIEWED_HEAD}\n前回確認版の開始時点: {REVIEWED_HEAD}\n前回確認版HEAD: {REVIEWED_HEAD}\n"
+        f"レビュー開始時点: {REVIEWED_HEAD[:7]}\n"
+        f"前回確認版の開始時点: {REVIEWED_HEAD[:7]}\n"
+        f"前回確認版HEAD: {REVIEWED_HEAD[:7]}\n"
         "計画のパス: []\n入力記録のパス: []\n"
         'wi_conditionsの判定内訳: {"総数": 0}\nuser_requirementsの判定内訳: {"総数": 0}\n'
     )
@@ -555,6 +599,7 @@ def test_public_show_all_rows_lists_rows_before_bodies(
                         "review_table": str(table),
                         "round": 2,
                         "plans": [],
+                        "external_artifacts": [],
                         "input_records": [str(record)],
                         "reader_fit_review": "文章成果物なし",
                     }
@@ -581,7 +626,7 @@ def _listed(path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> list[str]
 
 
 def test_public_list_returns_selected_rows_in_full(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
-    """`--row`の反復で選んだ各行の根拠を同一根拠も参照にせず1回で返し、1行だけの指定でもその行の全文を返す。"""
+    """`--row`の反復は同一根拠を先行行で示し、1行だけの指定はその行の全文を返す。"""
     path = tmp_path / "evidence.json"
     shared = "test_save_settings 成功"
     conditions = [
@@ -594,6 +639,10 @@ def test_public_list_returns_selected_rows_in_full(tmp_path: pathlib.Path, capsy
         "証拠の全行: " + json.dumps({"配列": "wi_conditions", "行番号": number, **conditions[number - 1]}, ensure_ascii=False)
         for number in (3, 1)
     ]
+    selected = {"配列": "wi_conditions", "行番号": 1, **conditions[0]}
+    selected.pop("evidence")
+    selected["evidence_reference"] = {"display": "証拠の全行", "section": "wi_conditions", "row": 3}
+    expected[1] = "証拠の全行: " + json.dumps(selected, ensure_ascii=False)
     capsys.readouterr()
     assert check_exec_review_evidence.main([str(path), "--list", "--section", "wi_conditions", "--row", "3", "--row", "1"]) == 0
     assert capsys.readouterr().out.splitlines() == expected
@@ -1207,13 +1256,19 @@ def test_public_command_rejects_unprotected_number_differences(
     _write_evidence(path, rows)
 
     assert _check(path, FIRST_WI) == 1
-    assert "参照の外の整数" in capsys.readouterr().err
+    assert "参照の外の番号" in capsys.readouterr().err
 
 
 @pytest.mark.parametrize("section", ["wi_conditions", "user_requirements"])
 @pytest.mark.parametrize("label", ["条項番号={}", "完成条件 {}", "判定単位番号 {}", "No.{}"])
+@pytest.mark.parametrize("numbers", [("1", "2"), ("１", "２"), ("①", "②"), ("一", "二"), ("Ⅰ", "Ⅱ"), ("A", "B"), ("ア", "イ")])
 def test_public_shared_evidence_ignores_unprotected_integers(
-    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], section: str, label: str
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    section: str,
+    label: str,
+    numbers: tuple[str, str],
 ) -> None:
     """両配列で整数の付け方を変えても、異なるWIの同じ参照の共用を拒否する。"""
     _mock_wi(monkeypatch, tmp_path, {FIRST_WI: "type: awi\n---\n## 完成条件\n- 保存\n"})
@@ -1221,8 +1276,8 @@ def test_public_shared_evidence_ignores_unprotected_integers(
     record.write_text("# 観測\n保存と再読込。\n", encoding="utf-8")
     factory = _condition if section == "wi_conditions" else _requirement
     rows = [factory(FIRST_WI, "保存"), factory(SECOND_WI, "再読込")]
-    for index, row in enumerate(rows, 1):
-        row["evidence"] = f"{record}#観測 で操作を確認。{label.format(index)}"
+    for number, row in zip(numbers, rows, strict=True):
+        row["evidence"] = f"{record}#観測 で操作を確認。{label.format(number)}"
     path = tmp_path / "evidence.json"
     _write_evidence(
         path,
@@ -1232,7 +1287,7 @@ def test_public_shared_evidence_ignores_unprotected_integers(
     assert _check(path, FIRST_WI) == 1
     diagnostic = capsys.readouterr().err
     assert all(f"{section}[{index}].evidence" in diagnostic for index in (0, 1))
-    assert "参照の外の整数" in diagnostic and "証拠不足へ再判定" in diagnostic
+    assert "参照の外の番号" in diagnostic and "証拠不足へ再判定" in diagnostic
 
 
 @pytest.mark.parametrize(
@@ -1248,6 +1303,41 @@ def test_public_shared_evidence_keeps_reference_differences(
     rows = [_condition(FIRST_WI, "保存"), _condition(SECOND_WI, "再読込")]
     for row, reference in zip(rows, references, strict=True):
         row["evidence"] = f"{record}{reference} で確認" if reference[0] in ":#" else f"{reference} を確認"
+    path = tmp_path / "evidence.json"
+    _write_evidence(path, rows)
+    assert _check(path, FIRST_WI) == 0, capsys.readouterr().err
+
+
+@pytest.mark.parametrize("number", ["1", "①"])
+def test_public_shared_reference_rejects_one_sided_condition_number(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], number: str
+) -> None:
+    """同じWIの参照だけの共用も片側の条件番号で区別しない。"""
+    _mock_wi(monkeypatch, tmp_path, {FIRST_WI: "type: awi\n---\n## 完成条件\n- 保存\n- 再読込\n"})
+    record = tmp_path / "観測.md"
+    record.write_text("# 観測\n", encoding="utf-8")
+    rows = [_condition(FIRST_WI, "保存"), _condition(FIRST_WI, "再読込")]
+    rows[0]["evidence"], rows[1]["evidence"] = str(record), f"{record}（条件{number}）"
+    path = tmp_path / "evidence.json"
+    _write_evidence(path, rows)
+    assert _check(path, FIRST_WI) == 1
+    assert "行ごとの説明が無いファイル参照だけ" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize("observations", [("保存を確認", "削除を確認"), ("値を確認", "値を確認し、追加で3件を確認")])
+def test_public_shared_comparison_keeps_observation_words(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    observations: tuple[str, str],
+) -> None:
+    """同じ参照でも観測内容の違いは番号ラベルとして除去しない。"""
+    _mock_wi(monkeypatch, tmp_path, {FIRST_WI: "type: awi\n---\n## 完成条件\n- 保存\n"})
+    record = tmp_path / "観測.md"
+    record.write_text("# 観測\n", encoding="utf-8")
+    rows = [_condition(FIRST_WI, "保存"), _condition(SECOND_WI, "再読込")]
+    for row, observation in zip(rows, observations, strict=True):
+        row["evidence"] = f"{record}#観測 で{observation}"
     path = tmp_path / "evidence.json"
     _write_evidence(path, rows)
     assert _check(path, FIRST_WI) == 0, capsys.readouterr().err
@@ -1328,7 +1418,11 @@ def test_public_command_accepts_bullets_and_paragraph(tmp_path: pathlib.Path, mo
     evidence = tmp_path / "evidence.json"
     _write_evidence(
         evidence,
-        [_condition(FIRST_WI, "第一条件"), _condition(FIRST_WI, "第二条件"), _condition(SECOND_WI, "段落の完成条件。")],
+        [
+            {**_condition(FIRST_WI, "第一条件"), "evidence": "test_first_condition 成功"},
+            {**_condition(FIRST_WI, "第二条件"), "evidence": "test_second_condition 成功"},
+            _condition(SECOND_WI, "段落の完成条件。"),
+        ],
     )
 
     _mock_wi(
@@ -2474,8 +2568,8 @@ def _judge_first_row(evidence: pathlib.Path, head: str, *extra: str) -> int:
 @pytest.mark.parametrize(
     ("text", "reference"),
     [
-        ("{outside}、同dir/stdout.bin を確認した", "dir/stdout.bin"),
-        ("出力値はnested/note.mdだった", "nested/note.md"),
+        ("{outside}、同dir/stdout.bin:1 を確認した", "dir/stdout.bin:1"),
+        ("出力値はnested/note.md:1だった", "nested/note.md:1"),
         ("docs/new.md:1 の見出しを確認した", "docs/new.md:1"),
         ("abc1234:docs/record.md の本文を確認した", "abc1234:docs/record.md"),
     ],
@@ -2583,6 +2677,7 @@ def test_non_git_cwd_guides_same_arguments_to_target_worktree(
                             "review_table": str(table),
                             "round": 1,
                             "plans": [],
+                            "external_artifacts": [],
                             "input_records": [],
                             "reader_fit_review": "文章成果物なし",
                         }
@@ -3087,6 +3182,99 @@ def _commit_files(repository: pathlib.Path, files: dict[str, str]) -> str:
     ).stdout.strip()
 
 
+@pytest.mark.parametrize("route", ["return", "show-all", "batch", "rows", "single-row"])
+def test_public_nonachievement_repeated_evidence_uses_preceding_row(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], route: str
+) -> None:
+    """通常返却・一括返却・行指定でも同じ本文を一度だけ表示する。"""
+    _mock_wi(monkeypatch, tmp_path, {FIRST_WI: "type: awi\nsource: agent\n---\n## 完成条件\n- 保存\n- 再読込\n"})
+    evidence, table = tmp_path / "evidence.json", tmp_path / "review.tsv"
+    review_table.init(table)
+    review_table.add(table, "2", "exec-review", "実装", "修正を要する", "仕様")
+    shared = "保存結果をまだ観測できていないため再観測する"
+    _write_evidence(
+        evidence,
+        [
+            {**_condition(FIRST_WI, text), "outcome": outcome, "evidence": shared}
+            for text, outcome in [("保存", "証拠不足"), ("再読込", "未達")]
+        ],
+    )
+    if route in {"rows", "single-row"}:
+        argv = [str(evidence), "--list", "--section", "wi_conditions", "--row", "1"]
+        if route == "rows":
+            argv.extend(["--row", "2"])
+    elif route == "batch":
+        batch = tmp_path / "batch.json"
+        batch.write_text(
+            json.dumps(
+                {
+                    "version": 1,
+                    "reviews": [
+                        {
+                            "plan": "なし",
+                            "evidence": str(evidence),
+                            "wi": [FIRST_WI],
+                            "reviewed_head": REVIEWED_HEAD,
+                            "review_start": REVIEWED_HEAD,
+                            "previous_review_start": REVIEWED_HEAD,
+                            "previous_review_head": REVIEWED_HEAD,
+                            "review_table": str(table),
+                            "round": 2,
+                            "plans": [],
+                            "input_records": [],
+                            "external_artifacts": [],
+                            "reader_fit_review": "文章成果物なし",
+                        }
+                    ],
+                }
+            ),
+            encoding="utf-8",
+        )
+        argv = ["--batch", str(batch)]
+    else:
+        argv = _return_args(evidence, table).script_args
+        if route == "show-all":
+            argv.append("--show-all-rows")
+    capsys.readouterr()
+    assert run_script.dispatch(argparse.Namespace(script_name="exec-review-evidence-check", script_args=argv)) == 0
+    output = capsys.readouterr().out
+    lines = json.loads(output)["result"] if route == "batch" else output.splitlines()
+    assert sum(shared in line for line in lines) == 1
+    displayed = [json.loads(line.split(": ", 1)[1]) for line in lines if line.startswith(("達成以外の行: ", "証拠の全行: "))]
+    if route == "single-row":
+        assert displayed[0]["evidence"] == shared
+    else:
+        assert displayed[1]["evidence_reference"]["section"] == "wi_conditions"
+        assert displayed[1]["evidence_reference"]["row"] == 1
+
+
+@pytest.mark.parametrize("section", ["wi_conditions", "user_requirements"])
+@pytest.mark.parametrize("labels", [("", "条項番号=2"), ("", "No.2"), ("条項番号=1", "No.2"), ("", "（条件2）")])
+def test_public_shared_evidence_rejects_asymmetric_number_labels(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    section: str,
+    labels: tuple[str, str],
+) -> None:
+    """片側のラベルと末尾句点の違いを共用の書き分けとして受理しない。"""
+    _mock_wi(monkeypatch, tmp_path, {FIRST_WI: "type: awi\n---\n## 完成条件\n- 保存\n"})
+    factory = _condition if section == "wi_conditions" else _requirement
+    rows = [factory(FIRST_WI, "保存"), factory(SECOND_WI, "再読込")]
+    for row, label in zip(rows, labels, strict=True):
+        row["evidence"] = f"操作の結果を確認。{label}"
+    path = tmp_path / "evidence.json"
+    _write_evidence(
+        path,
+        rows if section == "wi_conditions" else [_condition(FIRST_WI, "保存")],
+        rows if section == "user_requirements" else [],
+    )
+    assert _check(path, FIRST_WI) == 1
+    diagnostic = capsys.readouterr().err
+    assert all(f"{section}[{index}].evidence" in diagnostic for index in (0, 1))
+    assert "番号付きラベル" in diagnostic and "証拠不足へ再判定" in diagnostic
+
+
 def _check_reference(evidence: pathlib.Path, head: str, reference: str) -> int:
     """1行の達成根拠へ参照を書き、公開コマンドで確かめた終了コードを返す。"""
     _write_evidence(evidence, [{**_condition(FIRST_WI, "完成"), "reviewed_head": head, "evidence": reference}])
@@ -3094,6 +3282,278 @@ def _check_reference(evidence: pathlib.Path, head: str, reference: str) -> int:
         script_name="exec-review-evidence-check", script_args=["--", str(evidence), FIRST_WI, "--expected-head", head]
     )
     return run_script.dispatch(args)
+
+
+def test_public_reference_classification_uses_reviewed_commit_after_path_removal(
+    reference_repository: tuple[pathlib.Path, str, pathlib.Path], capsys: pytest.CaptureFixture[str]
+) -> None:
+    """現在のHEADから親ごと消えた参照も、判定対象版の追跡ファイルとして検査する。"""
+    repository, _, evidence = reference_repository
+    folder = repository / "obsolete"
+    folder.mkdir()
+    record = folder / "record.md"
+    record.write_text("# 観測\n", encoding="utf-8")
+    old = git_repository.commit_all(repository, "過去の記録")
+    record.unlink()
+    folder.rmdir()
+    git_repository.commit_all(repository, "記録を削除")
+    assert _check_reference(evidence, old, "obsolete/record.md で観測") == 0, capsys.readouterr().err
+    assert _check_reference(evidence, old, "obsolete/record.md:99 で観測") == 1
+    assert "行範囲" in capsys.readouterr().err
+
+
+def test_public_batch_requires_external_artifact_input_set(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """メインが持つ外部成果物集合を欠いた一括入力から返却を生成しない。"""
+    _mock_wi(monkeypatch, tmp_path, {})
+    table, batch = tmp_path / "review.tsv", tmp_path / "batch.json"
+    review_table.init(table)
+    value = {
+        "plan": "なし",
+        "evidence": "なし",
+        "wi": [],
+        "reviewed_head": REVIEWED_HEAD,
+        "review_start": REVIEWED_HEAD,
+        "review_table": str(table),
+        "round": 1,
+        "plans": [],
+        "input_records": [],
+        "reader_fit_review": "文章成果物なし",
+    }
+    batch.write_text(json.dumps({"version": 1, "reviews": [value]}), encoding="utf-8")
+    capsys.readouterr()
+    args = argparse.Namespace(script_name="exec-review-evidence-check", script_args=["--batch", str(batch)])
+    assert run_script.dispatch(args) == 1
+    failed = json.loads(capsys.readouterr().out)
+    assert failed["exit_code"] != 0 and not failed["result"]
+    assert any("external_artifacts" in line for line in failed["diagnostics"])
+    value["external_artifacts"] = []
+    batch.write_text(json.dumps({"version": 1, "reviews": [value]}), encoding="utf-8")
+    assert run_script.dispatch(args) == 0
+    assert "状態: completed" in json.loads(capsys.readouterr().out)["result"]
+
+
+@pytest.mark.parametrize(
+    "name", ["docker-ce/docker-ce-cli/containerd.io", "React/Vue/Node.js", "vercel/next.js", "application/vnd.ms-excel"]
+)
+@pytest.mark.parametrize("inline", [False, True])
+@pytest.mark.parametrize("route", ["review", "record"])
+def test_public_reference_classification_accepts_names_and_keeps_explicit_paths(
+    reference_repository: tuple[pathlib.Path, str, pathlib.Path],
+    capsys: pytest.CaptureFixture[str],
+    name: str,
+    inline: bool,
+    route: str,
+) -> None:
+    """名称を保存・所在確認で受理し、同じ入力内の明示参照の誤りを拒否する。"""
+    _, head, evidence = reference_repository
+    description = f"`{name}`" if inline else name
+    assert _check_reference(evidence, head, f"{description} の動作を確認") == 0, capsys.readouterr().err
+    evidence.write_text(json.dumps(_pending_row()), encoding="utf-8")
+    text = evidence.parent / "observation.txt"
+    text.write_text(f"{description} の動作を確認", encoding="utf-8")
+
+    def save() -> int:
+        if route == "review":
+            return _judge_first_row(evidence, head, "--evidence-file", str(text))
+        return run_script.dispatch(
+            argparse.Namespace(
+                script_name="verification-record",
+                script_args=[
+                    "--output",
+                    str(evidence),
+                    "--section",
+                    "wi_conditions",
+                    "--row",
+                    "1",
+                    "--source",
+                    "WI本文",
+                    "--evidence-file",
+                    str(text),
+                    "--mode",
+                    "replace",
+                ],
+            )
+        )
+
+    assert save() == 0, capsys.readouterr().err
+    before = evidence.read_bytes()
+    external = check_exec_review_evidence.managed_temp.create_managed_temp("plan-verify-results") / "results.json"
+    external.write_text("{}", encoding="utf-8")
+    for reference in ("docs/missing.md", f"{external.parent.name}/{external.name}"):
+        text.write_text(f"{description}、{reference} で確認", encoding="utf-8")
+        assert save() == 1
+        assert evidence.read_bytes() == before
+        assert reference in capsys.readouterr().err
+
+
+@pytest.mark.parametrize(
+    "name", ["docker-ce/docker-ce-cli/containerd.io", "React/Vue/Node.js", "vercel/next.js", "application/vnd.ms-excel"]
+)
+@pytest.mark.parametrize("inline", [False, True])
+@pytest.mark.parametrize("section", ["wi_conditions", "user_requirements"])
+def test_public_name_consumers_keep_shared_evidence_and_reference_boundaries(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    name: str,
+    inline: bool,
+    section: str,
+) -> None:
+    """名称だけの共用、参照だけの共用、名称を伴う説明付き参照を公開判定で区別する。"""
+    _mock_wi(monkeypatch, tmp_path, {FIRST_WI: "type: awi\n---\n## 完成条件\n- 保存\n- 再読込\n"})
+    description = f"`{name}`" if inline else name
+    record = tmp_path / "観測.md"
+    record.write_text("# 保存\n# 再読込\n", encoding="utf-8")
+    evidence = tmp_path / "evidence.json"
+    factory = _condition if section == "wi_conditions" else _requirement
+    rows = [factory(FIRST_WI, "保存"), factory(FIRST_WI, "再読込")]
+    conditions = [
+        {**_condition(FIRST_WI, text), "evidence": f"test_observed_{index} 成功"}
+        for index, text in enumerate(("保存", "再読込"))
+    ]
+
+    def write_rows() -> None:
+        _write_evidence(
+            evidence, rows if section == "wi_conditions" else conditions, rows if section == "user_requirements" else []
+        )
+
+    for body, reason in ((description, "具体的な参照先がありません"), (str(record), "説明が無いファイル参照だけ")):
+        for row in rows:
+            row["evidence"] = body
+        write_rows()
+        assert _check(evidence, FIRST_WI) == 1
+        diagnostic = capsys.readouterr().err
+        assert reason in diagnostic
+        assert all(f"{section}[{index}].evidence" in diagnostic for index in (0, 1))
+    for row in rows:
+        row["evidence"] = f"{record}#保存 で{description}の保存と再読込を観測した"
+    write_rows()
+    assert _check(evidence, FIRST_WI) == 0, capsys.readouterr().err
+    # 共通する名称があっても、参照の見出しの差を比較へ残す。
+    rows[1]["awi"] = SECOND_WI
+    rows[1]["evidence"] = f"{record}#再読込 で{description}の保存と再読込を観測した"
+    rows.append({**factory(FIRST_WI, "再読込"), "evidence": "test_reload_complete 成功"})
+    write_rows()
+    assert _check(evidence, FIRST_WI) == 0, capsys.readouterr().err
+    rows[1]["evidence"] = rows[0]["evidence"]
+    write_rows()
+    assert _check(evidence, FIRST_WI) == 1
+    assert "異なるWIの異なる要求単位で同じ達成根拠" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize(
+    "name", ["docker-ce/docker-ce-cli/containerd.io", "React/Vue/Node.js", "vercel/next.js", "application/vnd.ms-excel"]
+)
+@pytest.mark.parametrize("inline", [False, True])
+def test_public_name_consumers_keep_background_explanation_boundary(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    name: str,
+    inline: bool,
+) -> None:
+    """背景根拠でも名称を説明として残し、参照だけの理由を引き続き拒否する。"""
+    _mock_wi(monkeypatch, tmp_path, {FIRST_WI: _background_awi(_ELIDED_RECORD)})
+    description = f"`{name}`" if inline else name
+    evidence, record = tmp_path / "evidence.json", tmp_path / "分類.md"
+    record.write_text("# 分類\n", encoding="utf-8")
+    condition = {**_condition(FIRST_WI, "過負荷の後に同じsessionで続く"), "evidence": "test_observation 成功"}
+    for body, expected in ((description, 0), (str(record), 1), (f"{record} は{description}の観測である", 0)):
+        _write_evidence(evidence, [condition], _background_rows(f"{FIRST_WI} ## 反映内容と反映先", evidence=body))
+        assert _check(evidence, FIRST_WI) == expected
+        diagnostic = capsys.readouterr().err
+        if expected:
+            assert "要求を含まない理由がありません" in diagnostic
+
+
+@pytest.mark.parametrize(
+    "name", ["docker-ce/docker-ce-cli/containerd.io", "React/Vue/Node.js", "vercel/next.js", "application/vnd.ms-excel"]
+)
+@pytest.mark.parametrize("inline", [False, True])
+@pytest.mark.parametrize("section", ["wi_conditions", "user_requirements"])
+def test_public_name_consumers_select_only_located_deferral_records(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    name: str,
+    inline: bool,
+    section: str,
+) -> None:
+    """名称だけでは入力記録を選ばず、明示した所在の段落だけから延期を受理する。"""
+    _mock_wi(monkeypatch, tmp_path, {FIRST_WI: "type: awi\nsource: agent\n---\n## 完成条件\n- 保存\n"})
+    description = f"`{name}`" if inline else name
+    evidence, table, record = tmp_path / "evidence.json", tmp_path / "review.tsv", tmp_path / "入力記録.md"
+    record.write_text(
+        f"# 延期\n\nAWI: {FIRST_WI}\n判定対象: 保存\n終端区分: 終端しない\n後続工程: 公開後\n検収時機: 次回\n"
+        "\n# 別の判断\nこの条件への判断は無い。\n",
+        encoding="utf-8",
+    )
+    review_table.init(table)
+    factory = _condition if section == "wi_conditions" else _requirement
+    row = {**factory(FIRST_WI, "保存"), "outcome": "証拠不足"}
+    for reference, expected in (("", 1), (f"{record}#別の判断", 1), (f"{record}#延期", 0), (f"{record}:3-7", 0)):
+        row["evidence"] = f"{description} の観測を後続へ渡す。{reference}"
+        _write_evidence(
+            evidence,
+            [row] if section == "wi_conditions" else [{**_condition(FIRST_WI, "保存"), "evidence": "test_save_success 成功"}],
+            [row] if section == "user_requirements" else [],
+        )
+        capsys.readouterr()
+        assert run_script.dispatch(_return_args(evidence, table, "--input-record", str(record))) == expected
+        result = capsys.readouterr()
+        if expected:
+            assert not result.out and "未解決の指摘数0件と証拠不足" in result.err
+        else:
+            assert "状態: completed" in result.out and not result.err
+
+
+@pytest.mark.parametrize(
+    "name", ["docker-ce/docker-ce-cli/containerd.io", "React/Vue/Node.js", "vercel/next.js", "application/vnd.ms-excel"]
+)
+@pytest.mark.parametrize("inline", [False, True])
+@pytest.mark.parametrize("section", ["wi_conditions", "user_requirements"])
+def test_public_name_consumers_preserve_reject_text_and_remove_file_references(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    name: str,
+    inline: bool,
+    section: str,
+) -> None:
+    """名称を含む終端説明を読み、ファイル名のrejectだけで不採用終端を受理しない。"""
+    _mock_wi(monkeypatch, tmp_path, {FIRST_WI: "type: awi\nsource: agent\n---\n## 完成条件\n- 保存\n"})
+    description = f"`{name}`" if inline else name
+    evidence, table, record = tmp_path / "evidence.json", tmp_path / "review.tsv", tmp_path / "reject.md"
+    record.write_text(
+        f"## 実施内容\n\n| 実施内容 | 採否 | 根拠 |\n| --- | --- | --- |\n| {FIRST_WI}の要求 | 不採用 | 前提が成立しない |\n",
+        encoding="utf-8",
+    )
+    review_table.init(table)
+    factory = _condition if section == "wi_conditions" else _requirement
+    row = {**factory(FIRST_WI, "保存"), "outcome": "未達"}
+    for terminal, expected in (("", 1), ("reject終端。", 0)):
+        row["evidence"] = f"{terminal}{description}の判断。{record}#実施内容 の不採用根拠に従う"
+        conditions = (
+            [row]
+            if section == "wi_conditions"
+            else [
+                {
+                    **_condition(FIRST_WI, "保存"),
+                    "outcome": "未達",
+                    "evidence": f"reject終端。{record}#実施内容 の不採用根拠に従う",
+                }
+            ]
+        )
+        _write_evidence(evidence, conditions, [row] if section == "user_requirements" else [])
+        capsys.readouterr()
+        assert run_script.dispatch(_return_args(evidence, table, "--input-record", str(record))) == expected
+        result = capsys.readouterr()
+        if expected:
+            assert not result.out and "reject終端と計画の実施内容の不採用根拠" in result.err
+        else:
+            assert "状態: completed" in result.out and not result.err
 
 
 _SUFFIX_FILES = {
@@ -3487,9 +3947,11 @@ def test_input_record_saved_outside_repository_is_resolved_by_template_and_retur
     capsys.readouterr()
     assert run_script.dispatch(_no_evidence_return_args(table, "--input-record", str(record))) == 0
     assert _without_return_input(capsys.readouterr().out) == (
-        f"状態: completed\nレビューしたHEAD: {REVIEWED_HEAD}\n未解決の指摘数: 1\n"
+        f"状態: completed\nレビューしたHEAD: {REVIEWED_HEAD[:7]}\n未解決の指摘数: 1\n"
         "読者別探索: 文章成果物なし\n"
-        f"レビュー開始時点: {REVIEWED_HEAD}\n前回確認版の開始時点: {REVIEWED_HEAD}\n前回確認版HEAD: {REVIEWED_HEAD}\n"
+        f"レビュー開始時点: {REVIEWED_HEAD[:7]}\n"
+        f"前回確認版の開始時点: {REVIEWED_HEAD[:7]}\n"
+        f"前回確認版HEAD: {REVIEWED_HEAD[:7]}\n"
         f"計画のパス: []\n入力記録のパス: {json.dumps([str(record)])}\n"
         'wi_conditionsの判定内訳: {"総数": 0}\nuser_requirementsの判定内訳: {"総数": 0}\n'
     )
@@ -3715,7 +4177,7 @@ def test_generated_return_input_rechecks_without_conversion(
     records = [tmp_path / "record1.md", tmp_path / "record2.md"]
     for path in [*plans, *records]:
         path.write_text("# 入力\n", encoding="utf-8")
-    declaration = json.dumps({"files": {}, "external": "読者: session-example"}, ensure_ascii=False, separators=(",", ":"))
+    declaration = json.dumps({"files": {}, "external": {}}, ensure_ascii=False, separators=(",", ":"))
     options = _review_options(head, table, round_value)
     options[options.index("--review-start") + 1] = first
     if round_value >= 2:
@@ -3741,6 +4203,8 @@ def test_generated_return_input_rechecks_without_conversion(
                 "review_table": str(table),
                 "round": round_value,
                 "plans": [str(path) for path in plans],
+                "external_artifacts": [],
+                "review_contract": None,
                 "input_records": [str(path) for path in records],
                 "reader_fit_review": declaration,
                 "review_start": first,
@@ -3753,7 +4217,12 @@ def test_generated_return_input_rechecks_without_conversion(
     assert run_script.dispatch(received) == 0
     result = json.loads(capsys.readouterr().out)
     assert result["exit_code"] == 0 and not result["diagnostics"]
-    assert f"レビューしたHEAD: {head}" in result["result"]
+    short_head = git_repository.git_output(pathlib.Path.cwd(), "rev-parse", "--short=7", head)
+    short_first = git_repository.git_output(pathlib.Path.cwd(), "rev-parse", "--short=7", first)
+    assert f"レビューしたHEAD: {short_head}" in result["result"]
+    assert f"レビュー開始時点: {short_first}" in result["result"]
+    for label in ("前回確認版の開始時点", "前回確認版HEAD"):
+        assert f"{label}: {short_first if round_value >= 2 else 'なし'}" in result["result"]
     assert evidence.read_bytes() == before
     # 保存入力だけで合格せず、受領時の証拠を改めて検査する。
     evidence.write_text("{}", encoding="utf-8")
@@ -3779,14 +4248,16 @@ def test_generated_return_input_freezes_resolved_commit_oids(
     review = json.loads(generated.read_text(encoding="utf-8"))["reviews"][0]
     fields = ("reviewed_head", "review_start", "previous_review_start", "previous_review_head")
     assert {field: review[field] for field in fields} == dict.fromkeys(fields, head)
-    assert f"レビューしたHEAD: {head}" in output
+    short_head = git_repository.git_output(repository, "rev-parse", "--short=7", head)
+    for label in ("レビューしたHEAD", "レビュー開始時点", "前回確認版の開始時点", "前回確認版HEAD"):
+        assert f"{label}: {short_head}" in output.splitlines()
     git_repository.git_output(repository, "branch", "-f", "deadbee", first)
     received = argparse.Namespace(script_name="exec-review-evidence-check", script_args=["--batch", str(generated)])
     assert run_script.dispatch(received) == 0
     result = json.loads(capsys.readouterr().out)
     assert result["exit_code"] == 0 and not result["diagnostics"]
     for label in ("レビューしたHEAD", "レビュー開始時点", "前回確認版の開始時点", "前回確認版HEAD"):
-        assert f"{label}: {head}" in result["result"]
+        assert f"{label}: {short_head}" in result["result"]
 
 
 def test_batch_accepts_multiple_generated_inputs(
@@ -3910,10 +4381,9 @@ def test_batch_keeps_per_review_inputs_and_does_not_write_evidence(
                 "review_table": str(table),
                 "round": index,
                 "plans": [str(plan)],
+                "external_artifacts": [],
                 "input_records": [str(record)] if index == 2 else [],
-                "reader_fit_review": json.dumps(
-                    {"files": {}, "external": f"読者{index}: session-{index}"}, ensure_ascii=False, separators=(",", ":")
-                ),
+                "reader_fit_review": json.dumps({"files": {}, "external": {}}, ensure_ascii=False, separators=(",", ":")),
             }
         )
     batch = tmp_path / "batch.json"
@@ -3926,7 +4396,15 @@ def test_batch_keeps_per_review_inputs_and_does_not_write_evidence(
     assert [result["exit_code"] for result in results] == [0, 0]
     for review, result in zip(reviews, results, strict=True):
         assert result["plan"] == review["plan"]
-        assert f"レビューしたHEAD: {review['reviewed_head']}" in result["result"]
+        for label, field in (
+            ("レビューしたHEAD", "reviewed_head"),
+            ("レビュー開始時点", "review_start"),
+            ("前回確認版の開始時点", "previous_review_start"),
+            ("前回確認版HEAD", "previous_review_head"),
+        ):
+            revision = review[field]
+            expected = git_repository.git_output(repository, "rev-parse", "--short=7", revision) if revision else "なし"
+            assert f"{label}: {expected}" in result["result"]
         assert f"読者別探索: {review['reader_fit_review']}" in result["result"]
         assert f"計画のパス: {json.dumps(review['plans'])}" in result["result"]
         assert f"入力記録のパス: {json.dumps(review['input_records'])}" in result["result"]
