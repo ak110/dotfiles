@@ -223,7 +223,7 @@ def _session_path(session_id: str, codex_home: str | None = None) -> tuple[Path,
     return first, cast(_Runtime, found.engine)
 
 
-def _subagent_records(source: _CollectedRecord) -> list[_CollectedRecord]:
+def _subagent_records(source: _CollectedRecord, unresolved: list[_UnresolvedRecord]) -> list[_CollectedRecord]:
     """Claude記録に付随するサブエージェント記録をファイル名順で返す。"""
     if source.runtime != "claude":
         return []
@@ -236,6 +236,7 @@ def _subagent_records(source: _CollectedRecord) -> list[_CollectedRecord]:
     for path in paths:
         records = _load_records(str(path))
         if records is None:
+            unresolved.append(_UnresolvedRecord(f"{source.record_id}/{path.stem}", 0))
             continue
         meta_path = path.with_name(f"{path.stem}.meta.json")
         try:
@@ -293,7 +294,7 @@ def _collect_records(
         index += 1
         agents_server_call_ids = _agents_server_call_ids(source.records)
         unresolved_delegation_calls: set[str] = set()
-        for subagent in _subagent_records(source):
+        for subagent in _subagent_records(source, unresolved):
             if boundary is not None and _started_after_boundary(subagent.records, boundary):
                 continue
             resolved = subagent.path.resolve()

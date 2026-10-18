@@ -52,6 +52,106 @@ def test_request_copies_do_not_create_conversation_events(tmp_path: pathlib.Path
     assert any(event.get("line") == 4 for event in read_jsonl(capsys))
 
 
+@pytest.mark.parametrize("content", [b"\xff", b"not json", None])
+def test_unreadable_main_record_is_query_error(tmp_path: pathlib.Path, capsys, content) -> None:
+    """読取不能なJSONLを原因と次の操作が分かる終了2へ変換する。"""
+    transcript = tmp_path / "broken.jsonl"
+    if content is None:
+        transcript.mkdir()
+    else:
+        transcript.write_bytes(content)
+    assert evidence.main([str(transcript)]) == 2
+    (event,) = read_jsonl(capsys, raw=True)
+    assert str(transcript) in event["text"]
+    assert "UTF-8" in event["next_action"]
+
+
+@pytest.mark.parametrize("broken", [b"\xff", b"not-json", None])
+@pytest.mark.parametrize("query", [[], ["--tool-calls"]])
+@pytest.mark.parametrize("runtime", ["claude", "codex"])
+def test_catalog_retains_readable_records_and_unconfirmed_scope(tmp_path: pathlib.Path, capsys, broken, query, runtime) -> None:
+    """カタログの通常表示・呼出照会がUTF-8・JSON・I/O失敗を正常な兄弟から分離する。"""
+    transcript = _write_transcript(
+        tmp_path,
+        [
+            {
+                "type": "assistant",
+                "timestamp": "2026-10-01T00:00:01Z",
+                "message": {
+                    "role": "assistant",
+                    "content": [{"type": "tool_use", "id": "ok", "name": "Read", "input": {"file_path": "/ok"}}],
+                },
+            }
+        ],
+    )
+    if runtime == "codex":
+        transcript.rename(tmp_path / "rollout-ok.jsonl")
+        (tmp_path / "rollout-ok.jsonl").write_text(
+            json.dumps(
+                {
+                    "type": "response_item",
+                    "timestamp": "2026-10-01T00:00:01Z",
+                    "payload": {"type": "function_call", "name": "exec_command", "call_id": "ok", "arguments": '{"cmd":"ls"}'},
+                }
+            ),
+            encoding="utf-8",
+        )
+    path = tmp_path / ("rollout-broken.jsonl" if runtime == "codex" else "broken.jsonl")
+    if broken is None:
+        path.mkdir()
+    else:
+        path.write_bytes(broken)
+    assert (
+        evidence.main(
+            [
+                "--catalog-codex-history" if runtime == "codex" else "--catalog-claude-project",
+                str(tmp_path),
+                "--since",
+                "2026-10-01T00:00:00Z",
+                "--observation-boundary",
+                "2026-10-01T00:00:02Z",
+                *query,
+            ]
+        )
+        == 0
+    )
+    events = read_jsonl(capsys, raw=True)
+    assert any(event["kind"] == ("tool-call" if query else "catalog-parent") for event in events)
+    assert any(event["kind"] == "unresolved-record" and event["record"] == str(path) for event in events)
+    assert events[-1]["unresolved_record_count"] == 1
+
+
+@pytest.mark.parametrize("broken", [b"\xff", b"not-json", None])
+def test_subagent_read_failure_keeps_normal_sibling(tmp_path: pathlib.Path, capsys, broken) -> None:
+    """付随記録の読取失敗を未解決へ渡し、正常な記録の操作を収集する。"""
+    transcript = _write_transcript(tmp_path, [{"type": "user", "message": {"role": "user", "content": "依頼"}}])
+    directory = transcript.with_suffix("") / "subagents"
+    directory.mkdir(parents=True)
+    good = directory / "agent-good.jsonl"
+    good.write_text(
+        json.dumps(
+            {
+                "type": "assistant",
+                "isSidechain": True,
+                "message": {
+                    "role": "assistant",
+                    "content": [{"type": "tool_use", "id": "ok", "name": "Read", "input": {"file_path": "/ok"}}],
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    bad = directory / "agent-bad.jsonl"
+    if broken is None:
+        bad.mkdir()
+    else:
+        bad.write_bytes(broken)
+    assert evidence.main([str(transcript), "--tool-calls"]) == 0
+    events = read_jsonl(capsys, raw=True)
+    assert any(event.get("call_id") == "ok" for event in events)
+    assert any(event["kind"] == "unresolved-record" and "agent-bad" in event["record"] for event in events)
+
+
 def test_prepare_bundle_does_not_read_request_copies_as_conversation(tmp_path: pathlib.Path, capsys) -> None:
     """準備文書とbundleの位置が写しを追加する前と同じ実エントリを指す。"""
     entries = [
