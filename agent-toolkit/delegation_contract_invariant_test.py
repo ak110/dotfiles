@@ -1042,3 +1042,26 @@ def _selection_format(plugin_root: pathlib.Path) -> str:
 def _selection_documents(plugin_root: pathlib.Path) -> str:
     """書式と手順を使う契約の確認へ両定義を渡す。"""
     return _selection_procedure(plugin_root) + "\n" + _selection_format(plugin_root)
+
+
+def test_post_approval_contract_waits_for_reviewed_implementation() -> None:
+    """実施内容を確定する承認はレビュー収束後、事前承認は受領時に届ける。"""
+    root = pathlib.Path(__file__).resolve().parent
+    lanes = (root / "skills/process-wi/references/run-lanes.md").read_text(encoding="utf-8")
+    approval = (root / "skills/user-confirmation-and-report/references/approval-scope.md").read_text(encoding="utf-8")
+    executor = (root / "share/exec.subagent.md").read_text(encoding="utf-8")
+    timing = _h2_section(lanes, "実装とレビュー")
+    assert "事後承認型UWIは受領時には発行せず" in timing
+    assert "事前承認の確認事項は受領時に直ちに発行する" in timing
+    assert "収束後・統合前" in timing
+    assert "収束した実装と一致する本文で発行する" in timing
+    assert "終端返却を受領した時点で発行する" in timing
+    assert "実装なし" in timing and "マージなし" in timing
+    assert "発行対象だけを直ちに発行する" not in timing
+    post_approval = next(
+        line for line in _h2_section(approval, "事前承認と事後承認").splitlines() if line.startswith("- 事後承認:")
+    )
+    assert "実施内容が実行レビューを経る作業では" in post_approval
+    assert "実行レビューの収束後の内容" in post_approval
+    assert "確認手段を問わず適用する" in post_approval
+    assert re.search("通知済みの事後承認.*レビュー修正.*変更後の内容.*再びメインへ送る", executor)
