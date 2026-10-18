@@ -52,7 +52,7 @@ WI作成工程の入力、責務および出口は`${CLAUDE_PLUGIN_ROOT}/share/w
 既存AWIの更新と判断した場合は、調査より先に手順1の保留を適用し、手順3の同じ作成主体が、現行本文、確定した変更内容と逐語本文を対象の`ファイル名`に対応付けて更新する。
 起動後の「反映して」「修正して」、再発防止や完遂の要求はAWI本文への反映として扱う。成果物の制限の例外は、登録用一時入力の作成と`atk managed-temp`による後始末、対象リポジトリの規範が同じ工程で求める追跡先への記載、完成条件や採否が依存する値の測定と測定のための一時的な変更（`references/measurement.md`）とする。
 
-対象リポジトリ外の操作の依頼範囲、認可と確認要否は、`agent-toolkit/rules/01-agent.md`「完遂と先送り」と`agent-toolkit:user-confirmation-and-report`「確認要否の判定」・`references/approval-scope.md`に従う。委譲する場合は、起動スキル、WIだけを許す成果物制限、session終端を委譲プロンプトへ含める。
+対象リポジトリ外の操作の依頼範囲、認可と確認要否は、`agent-toolkit/rules/01-agent.md`「完遂と先送り」と`agent-toolkit:user-confirmation-and-report`「確認要否の判定」・`references/approval-scope.md`に従う。委譲する場合は、起動スキル、対象リポジトリ内の恒久変更をWIへ限定する範囲と対象外の通常判断、session終端を委譲プロンプトへ含める。
 
 ## 完成条件
 
