@@ -154,7 +154,7 @@ _NEXT_EXCLUDED = "`書き込まない反映先`から本文の反映先に無い
 _NEXT_SECTION_OVERLAP = "区分間で重複するパスは、所有する1区分だけへ残す"
 _NEXT_DERIVED = (
     "`導出した新設先`の記録を診断行が示す条件に合わせて直す。新設パスは実在する親ディレクトリと拡張子を持つ完全な名前にし、"
-    "反映範囲を本文のディレクトリ範囲へ対応させ、同じパスを1件だけ記録して書込区分へ個別に置く"
+    "反映範囲を配置根拠のある実在ディレクトリへ対応させ、同じパスを1件だけ記録して書込区分へ個別に置く"
 )
 _NEXT_NORM_SPEC = (
     "`--work-dir`の`pyproject.toml`の`[tool.agent-toolkit.pick-wi-check]`が定める条件に従い、"
@@ -572,7 +572,7 @@ def check_decision(
     derived_scopes: set[str] = set()
     if work_dir is not None:
         derived_paths, derived_scopes, derived_errors = _check_derived_paths(
-            awi, reflected, [*write_files, *public_write_files], derived_new_paths or [], work_dir
+            awi, [*write_files, *public_write_files], derived_new_paths or [], work_dir
         )
         errors.extend(derived_errors)
         declared = {record["パス"] for record in derived_new_paths or []}
@@ -627,17 +627,16 @@ def check_decision(
 
 
 def _check_derived_paths(
-    awi: str, reflected: set[str], writes: list[str], records: list[dict[str, str]], work_dir: pathlib.Path
+    awi: str, writes: list[str], records: list[dict[str, str]], work_dir: pathlib.Path
 ) -> tuple[set[str], set[str], list[Violation]]:
     """導出記録のパス・範囲・書込への対応を確かめ、正当な範囲だけを被覆へ渡す。"""
     paths: set[str] = set()
     scopes: set[str] = set()
     seen: set[str] = set()
     errors: list[Violation] = []
-    body_scopes = sorted(value for value in reflected if _is_range(value))
     for record in records:
         path, scope = record["パス"], record["反映範囲"]
-        failures = _derived_record_failures(path, scope, body_scopes, work_dir)
+        failures = _derived_record_failures(path, scope, work_dir)
         if path in seen:
             failures.append("同じパスを重複して宣言している")
         if path not in writes:
@@ -656,7 +655,7 @@ def _check_derived_paths(
     return paths, scopes, errors
 
 
-def _derived_record_failures(path: str, scope: str, body_scopes: list[str], work_dir: pathlib.Path) -> list[str]:
+def _derived_record_failures(path: str, scope: str, work_dir: pathlib.Path) -> list[str]:
     """導出記録1件のパスと反映範囲について、成立しない条件を比べた値とともに返す。"""
     failures: list[str] = []
     if (
@@ -678,8 +677,6 @@ def _derived_record_failures(path: str, scope: str, body_scopes: list[str], work
         failures.append("反映範囲が末尾/付きの実在ディレクトリではない")
     elif not _covers(scope, path):
         failures.append("反映範囲がパスを含まない")
-    elif body_scopes and scope not in body_scopes:
-        failures.append(f"反映範囲が本文のディレクトリ範囲のいずれでもない: 本文の範囲={', '.join(body_scopes)}")
     return failures
 
 

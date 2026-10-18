@@ -676,8 +676,8 @@ def _diagnostic(output: str, marker: str) -> str:
 @pytest.mark.parametrize(
     "case,marker,expected",
     [
-        ("derived-body-scope", "`導出した新設先`の対応が不正", ["本文の範囲", "docs/development/"]),
-        ("derived-body-scope", "`書込対象`のパスの不正", ["src/save.py", "`導出した新設先`の記録が不正"]),
+        ("derived-scope-missing", "`導出した新設先`の対応が不正", ["実在ディレクトリ", "missing/"]),
+        ("derived-scope-missing", "`書込対象`のパスの不正", ["src/save.py", "`導出した新設先`の記録が不正"]),
         ("derived-duplicate", "`導出した新設先`の対応が不正", ["重複して宣言"]),
         (
             "derived-missing-write",
@@ -714,8 +714,8 @@ def test_compound_diagnostics_name_failed_condition(
             "導出した新設先": [record],
         }
         body = "`src/`へ保存用入口を新設する。"
-        if case == "derived-body-scope":
-            body = "`docs/development/`へ保存用入口を新設する。"
+        if case == "derived-scope-missing":
+            record["反映範囲"] = "missing/"
         elif case == "derived-duplicate":
             item["導出した新設先"].append(dict(record))
         elif case == "derived-missing-write":
@@ -1111,6 +1111,40 @@ def _derived(path: str, scope: str = "src/") -> dict[str, str]:
         "要求": "結果を保存する入口を新設する",
         "配置根拠": "既存model.pyの保存処理と同じ配置にする",
     }
+
+
+@pytest.mark.parametrize("section", ["書込対象", "公開工程の書込対象"])
+@pytest.mark.parametrize("documentation", [False, True])
+def test_public_check_accepts_related_fixture_outside_body_directories(
+    tmp_path: pathlib.Path,
+    env: tuple[pathlib.Path, pathlib.Path],
+    section: str,
+    documentation: bool,
+) -> None:
+    """実装に必要な別配置のテストコードは、本文への文書範囲の併記にかかわらず個別登録できる。"""
+    repo, notes = env
+    (repo / "tests").mkdir()
+    _awi(notes, "a.md", "`src/model.py`を是正する。" + ("`docs/`も更新する。" if documentation else ""))
+    record = _derived("tests/model_test.py", "tests/")
+    record["要求"] = "modelの是正結果を検証する"
+    record["配置根拠"] = "テストコードはtestsへ配置する対象リポジトリの方針に従う"
+    item: dict[str, typing.Any] = {
+        "WI": "a.md",
+        "レーン": "lane-01",
+        "書込対象": ["src/model.py"],
+        "導出した新設先": [record],
+    }
+    item.setdefault(section, []).append(record["パス"])
+    if documentation:
+        item["書込対象"].append("docs/")
+    path = _write_selection(
+        tmp_path / "selection.yaml",
+        [item],
+        [{"レーン": "lane-01", "根拠": "対象リポジトリの規範AGENTS.mdの公開の節でtests/model_test.pyを所有する"}],
+    )
+    assert _dispatch(str(path), "--work-dir", str(repo)) == 0
+    saved = yaml.safe_load(path.read_text(encoding="utf-8"))
+    assert record["パス"] in saved["選定"][0][section]
 
 
 @pytest.mark.parametrize("body_scope", [False, True])
