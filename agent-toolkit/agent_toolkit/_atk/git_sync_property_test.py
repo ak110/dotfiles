@@ -203,7 +203,7 @@ def test_divergence_recovery_matches_reference_model(
         result_runner=fake.result,
     )
     assert recovered is (redundant and not dirty)
-    expected = [("reset", "--keep", "@{u}")] if redundant and not dirty else []
+    expected = [("-c", "submodule.recurse=false", "reset", "--keep", "@{u}")] if redundant and not dirty else []
     assert fake.mutations == expected
 
 
@@ -328,7 +328,11 @@ def test_pull_event_sequence_matches_reference_model(
             redundant_divergence=lambda _path: redundant,
         )
     if not fast_forward and diverged and not tree_matches and not dirty:
-        expected = ("reset", "--keep", "@{u}") if redundant else ("rebase", "@{u}")
+        expected = (
+            ("-c", "submodule.recurse=false", "reset", "--keep", "@{u}")
+            if redundant
+            else ("-c", "submodule.recurse=false", "rebase", "@{u}")
+        )
         assert expected in fake.mutations
 
 
@@ -380,5 +384,9 @@ def test_rejected_push_sequence_matches_reference_model(
     )
     assert result in {0, 2}
     if diverged and not tree_matches and not dirty:
-        expected = ("reset", "--keep", "@{u}") if redundant else ("rebase", "@{u}")
+        expected = (
+            ("-c", "submodule.recurse=false", "reset", "--keep", "@{u}")
+            if redundant
+            else ("-c", "submodule.recurse=false", "rebase", "@{u}")
+        )
         assert expected in fake.mutations

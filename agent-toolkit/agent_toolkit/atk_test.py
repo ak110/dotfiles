@@ -2554,7 +2554,7 @@ class TestMainFailureNextAction:
         """wiの処理で発生した`RebaseInProgressError`は失敗行と競合解消の次の操作で出力する。"""
         error = _git_sync.RebaseInProgressError("rebase中")
         lines = self._run_wi_commit(tmp_path, monkeypatch, capsys, error)
-        assert "git rebase --continue" in self._next_action_after_failure(lines)
+        assert "git -c submodule.recurse=false rebase --continue" in self._next_action_after_failure(lines)
 
     def test_wi_edit_rejects_rebase_in_progress_before_change(
         self,
@@ -2583,7 +2583,7 @@ class TestMainFailureNextAction:
         assert exc_info.value.code == 1
         lines = capsys.readouterr().err.splitlines()
         assert "rebase中" in next(line for line in lines if line.startswith("失敗: "))
-        assert "git rebase --continue" in self._next_action_after_failure(lines)
+        assert "git -c submodule.recurse=false rebase --continue" in self._next_action_after_failure(lines)
         assert entry.read_text(encoding="utf-8") == original
 
     def test_unreported_git_failure_names_status_check(
