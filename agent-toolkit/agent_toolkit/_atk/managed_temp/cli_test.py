@@ -763,7 +763,7 @@ def test_list_and_sweep_skip_concurrent_cleanup(
     area = subject.create_managed_temp("concurrent-cleanup")
     expires = (datetime.datetime.now(datetime.UTC) - datetime.timedelta(days=8)).timestamp()
     for path in (*area.rglob("*"), area):
-        os.utime(path, (expires, expires), follow_symlinks=False)
+        os.utime(path, (expires, expires), follow_symlinks=os.utime not in os.supports_follow_symlinks)
     registry = managed_temp_registry._registry_path(area)
     nonce = json.loads(registry.read_text(encoding="utf-8"))["nonce"]
     consuming = registry.with_name(f"{registry.name}.consuming-{nonce}")
