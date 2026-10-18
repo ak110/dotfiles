@@ -651,13 +651,14 @@ def _default_handoff_path() -> pathlib.Path | None:
 
 def delegate_request(prompt: str) -> tuple[str, pathlib.Path]:
     """自由本文を保ち、通常委譲へ専用の現行記録先を配送する。"""
+    whole_contract = whole_contract_reference()
     path = _default_handoff_path()
     if path is None:
         raise ActionableError(
             "通常委譲の作業記録先を用意できません。委譲先は起動していない。",
             next_action="managed-tempの診断を確認し、記録先を確保してからstartを再発行する",
         )
-    return prompt + "\n\n" + handoff_notice(path) + "\n\n" + whole_contract_reference(), path
+    return prompt + "\n\n" + handoff_notice(path, plugin_root.SERVER_PLUGIN_ROOT) + "\n\n" + whole_contract, path
 
 
 def whole_contract_reference() -> str:
@@ -672,7 +673,12 @@ def whole_contract_reference() -> str:
         with contextlib.suppress(_managed_temp.ManagedTempError, OSError):
             directory = _managed_temp.find_session_temp(session_id)
     path = directory / "work-contract.md" if directory is not None else None
-    if path is not None and path.is_file():
+    if path is not None and not path.is_file():
+        raise ActionableError(
+            f"全体作業契約が未作成です: {path}。委譲先は起動していない。",
+            next_action="`share/work-contract.md`に従って期待パスへ全体作業契約を作成し、`start`を再発行する",
+        )
+    if path is not None:
         body = (
             f"全体作業契約: {path}\n"
             "担当工程の開始時に読み、割当が全体の要求を満たす範囲と、維持する成果・検収に使う証拠を確かめる。"
@@ -686,12 +692,13 @@ def whole_contract_reference() -> str:
     return auto_message(body, source="agents-server", kind="work-contract-reference")
 
 
-def handoff_notice(path: pathlib.Path) -> str:
+def handoff_notice(path: pathlib.Path | None, root: pathlib.Path) -> str:
     """サーバーが所有する共通入力を、役割文書の入力宣言から分離して加える。"""
+    record_line = f"引き継ぎ記録先: {path}（新規）\n" if path is not None else ""
     return auto_message(
-        f"引き継ぎ記録先: {path}（新規）\n"
-        "share/work-contract.mdとskills/delegation/references/handoff-record.mdに従い、"
-        "委譲先自身が最初の記録を作成する。記録は割当範囲を所有し、委譲元は終端後の検収で読む。",
+        record_line + f"{root / 'share/work-contract.md'}と{root / 'skills/delegation/references/handoff-record.md'}に従い、"
+        "委譲先自身が新規・継続の指定に応じて記録を作成・更新する。"
+        "記録は割当範囲を所有し、委譲元は終端後の検収で読む。",
         source="agents-server",
         kind="work-contract",
     )
@@ -748,7 +755,9 @@ def task_document_request(
     # 未展開のまま渡すと、委譲先は変数の値を推測して参照先を探す。
     document_text = document_text.replace(_PLUGIN_ROOT_VARIABLE, str(task_document.parent.parent))
     declaration = _task_document_declaration(task_document, document_text)
-    launch_kind: LaunchKind = "delegate"
+    launch_kind: LaunchKind = declaration.launch_kind if not isinstance(declaration, str) else "delegate"
+    # 共通前提の不足は記録先の生成より先に起動元へ返す。
+    whole_contract = whole_contract_reference() if launch_kind == "delegate" else None
     handoff_path: pathlib.Path | None = None
     if isinstance(declaration, str):
         _LOG.warning("%s", declaration)
@@ -758,7 +767,6 @@ def task_document_request(
             if handoff_path is not None:
                 extra_params = {**extra_params, _HANDOFF_INPUT_NAME: f"{handoff_path}（新規）"}
         _check_declared_inputs(task_document, declaration, extra_params)
-        launch_kind = declaration.launch_kind
     prompt_lines = [f"次の文書の手順を実行せよ（出所: {task_document}）。", document_text]
     # 宣言された入力の検証を終えてから、サーバー所有の共通入力を加える。
     # 軽量起動のtaskは独自の記録を持たない。
@@ -769,9 +777,11 @@ def task_document_request(
                 "通常委譲の作業記録先を用意できません。委譲先は起動していない。",
                 next_action="managed-tempの診断を確認し、記録先を確保してからstartを再発行する",
             )
-        prompt_lines.append(handoff_notice(handoff_path))
     if launch_kind == "delegate":
-        prompt_lines.append(whole_contract_reference())
+        notice_path = handoff_path if _HANDOFF_INPUT_NAME not in extra_params else None
+        prompt_lines.append(handoff_notice(notice_path, task_document.parent.parent))
+        assert whole_contract is not None
+        prompt_lines.append(whole_contract)
     if extra_params:
         prompt_lines.append("入力:")
         prompt_lines.extend(named_input_lines(extra_params))

@@ -443,6 +443,9 @@ async def test_standard_review_task_documents_launch_with_declared_kinds(
 @pytest.mark.asyncio
 async def test_start_without_launch_kind_uses_delegate(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
     """`mode:`行の無い`<役割名>.subagent.md`は通常委譲で起動し、不正な値は宣言を読めない扱いで通常委譲とする。"""
+    monkeypatch.setattr(launch_requests, "_HANDOFF_SESSION", ("caller-session",))
+    session_area = _managed_temp.resolve_session_temp("caller-session")
+    (session_area / "work-contract.md").write_text("目的: 宣言に応じた`mode`を確かめる\n", encoding="utf-8")
     manager = TaskManager(start=AsyncMock(return_value={"session_id": "session", "status": "running", "label": "担当"}))
     monkeypatch.setattr(mcp_tools, "_MANAGER", manager)
     task_document = _write_declared_task_document(tmp_path, "必須入力名: 対象\n任意入力名: 補足")
@@ -636,6 +639,7 @@ async def test_start_prepares_handoff_path_when_omitted(monkeypatch: pytest.Monk
     monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "caller-session")
     monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)
     session_area = _managed_temp.create_managed_temp("session", session_id="caller-session")
+    (session_area / "work-contract.md").write_text("目的: 引き継ぎ記録先の自動用意を確かめる\n", encoding="utf-8")
     task_document = launch_requests._SHARE_DIRECTORY / "exec.subagent.md"
     input_lines = [
         line for line in _observed_input_lines(task_document.name, tmp_path) if not line.startswith("引き継ぎ記録先:")
