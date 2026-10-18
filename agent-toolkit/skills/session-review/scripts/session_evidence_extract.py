@@ -184,6 +184,11 @@ class _Record(NamedTuple):
     text: str
     entry: dict[str, Any]
 
+    @property
+    def raw_entry(self) -> dict[str, Any]:
+        """行の生の内容を、明示的な本文・構造照会へ返す。"""
+        return json.loads(self.text)
+
 
 class _CollectedRecord(NamedTuple):
     """全照会モードが共有する、由来と識別子を持つ1記録。"""
@@ -210,7 +215,7 @@ class _UnresolvedRecord(NamedTuple):
 _TEXT_LIMIT: contextvars.ContextVar[int | None] = contextvars.ContextVar("_TEXT_LIMIT", default=_MAX_TEXT_LENGTH)
 """`_clip`が上限を省略された場合に使う本文の上限。`None`は切り詰めないことを表す。
 
-会話の流れは発話の全文から先頭と末尾を切り出すため、イベントの生成を共有しつつ上限だけを外す。
+会話の流れは発話の全文を保持するため、イベントの生成を共有しつつ上限だけを外す。
 """
 
 
@@ -1054,7 +1059,7 @@ def _load_records(raw_path: str | None) -> list[_Record] | None:
         return None
     try:
         text = path.read_text(encoding="utf-8")
-    except OSError:
+    except OSError, UnicodeError:
         return None
 
     records: list[_Record] = []
@@ -1064,6 +1069,8 @@ def _load_records(raw_path: str | None) -> list[_Record] | None:
                 continue
             parsed = json.loads(line)
             if isinstance(parsed, dict):
+                if parsed.get("type") not in {"user", "assistant"} and "message" in parsed:
+                    parsed = {key: value for key, value in parsed.items() if key != "message"}
                 records.append(_Record(number, line, parsed))
     except json.JSONDecodeError, ValueError:
         return None

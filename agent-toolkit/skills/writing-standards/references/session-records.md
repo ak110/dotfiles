@@ -14,6 +14,8 @@ Codexでは`type`が`compacted`のレコードに、所要時間を除いた情�
 
 ## Claude Codeの記録
 
+会話の要素はエントリの`type`が`user`・`assistant`のものだけで判定する。Claude Code 2.1.301の`api-request-blob`はAPI要求の写しであり、同じ形の`message.content`にツール入力・結果・発話を持つため、形だけで数えると二重計数になる。生の行の本文・構造を調べる照会は写しも表示する。監査記録は`docs/development/audit-records.md`の「セッション記録のAPI要求の写し：2026年10月18日」にある。
+
 - 記録階層は深さ2（`<project>/<session-uuid>.jsonl`、メイン記録）と深さ4（`<session-uuid>/subagents/agent-<agentId>.jsonl`、サブエージェント記録）だけであり、孫エージェントの記録も祖先セッション直下へフラットに置かれる
 - `<project>`の名前はセッションを開始した作業ディレクトリの絶対パスの英数字以外を`-`へ置き換えた形であり、worktreeなどで開始したセッションは複製元と別の`<project>`に置かれる。Claude Codeのメインが自身の記録を使う場合は、SessionStartの通知が示すtranscriptの絶対パスをそのまま使い、更新時刻順やcwdから推測しない（`rules-main.claude-code.md`「自身の会話の記録」）。特定済みのセッションIDから別の記録を読む場合は`atk run-script session-review-evidence -- --claude-session-id <ID>`へIDを渡す。所在のパスが要る場合は`find ~/.claude/projects -maxdepth 2 -name '<session-uuid>.jsonl'`で1件に確定する。得たパスは引用して渡す（引用しないグロブ展開が複数語へ分かれると後続のコマンドが標準入力を待ち続ける）
 - 同一事象が親と子の記録へ重複して現れるため、重複を除いてから件数を確定する。深さ2に限るとサブエージェント内部のイベント（ツール呼び出し等）を取りこぼすため、限る場合は適用条件を明示する
@@ -35,6 +37,8 @@ Codexでは、`type`が`response_item`、`payload.type`が`message`、`payload.r
 セッション記録から集計したトークン量、リクエスト数、所要時間を成果物やユーザーへの提示に書く場合は、`atk run-script session-review-evidence -- <引数>`の出力を典拠とし、自作の集計は典拠にしない。
 トークン量とリクエスト数には`--stats`、所要時間には`--elapsed-until <ISO 8601の時刻>`を付ける。振り返りの全候補は`--bundle`が生成する`candidates.jsonl`から取り、`atk run-script session-review-prepare`がこれを`candidates.md`へ整形する。
 
+別セッションを含む担当別の費用の要約は`--stats --summary-only`で取得する。総量・親・Claudeサブエージェント・agent threadの要約と由来・未解決診断を保持する表示選択であり、トークンの定義と合算方法は全量表示と同じである。bundleと準備文書は詳細内訳を使うため全量を保持する。
+
 - Claude Codeの記録では1回のAPI応答が同じ`usage`を持つ複数のレコードへ分かれる。同コマンドは同一`message.id`を最後の`usage`へ畳み込んだ値を返す
 - `--elapsed-until`の`elapsed_seconds`はセッションの最初のレコードから指定時刻までの差であり、その後の工程を含まない
 - `--stats`の総量の`elapsed_seconds`は最初と最後のレコードの時刻差である。工程別の`stats-tool`の秒はツール呼び出しごとの区間で、親と委譲先の並行区間を重複して数えるため、合計が総量を超えることがある。比率を示す場合はこの基準差を併記する
@@ -46,8 +50,6 @@ Codexでは、`type`が`response_item`、`payload.type`が`message`、`payload.r
 - 委譲先の所要時間は`stats-agent-thread`と`stats-subagent`の`turn_elapsed_seconds`で比べる。`elapsed_seconds`はturn完了後に残るプロセスや待機（`after_last_turn_seconds`）を含む
 - `agent-toolkit:process-wi`の複数回の実行から現行の工程を評価する場合は、期間内にその工程を定める文書が変わったかを`git log --since=<期間の開始> -- <文書のパス>`などで確かめ、変わっていれば変更後の記録だけを現行の値とする
 - 同じファイルを行範囲に分けて取得した回数は1回の読了と数える
-
-別セッションを含む担当別の費用の要約は`--stats --summary-only`で取得する。総量・親・Claudeサブエージェント・agent threadの要約と由来・未解決診断を保持する表示選択であり、トークンの定義と合算方法は全量表示と同じである。bundleと準備文書は詳細内訳を使うため全量を保持する。
 
 ## 複数セッションの比較結果
 

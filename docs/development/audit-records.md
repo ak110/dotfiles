@@ -754,6 +754,11 @@ agents_serverは全説明とinstructionsを初期送信の4,096文字以内に�
 同日、codex-cli 0.160.1の記録（`~/.codex/sessions/2026/10/06/rollout-*.jsonl`）で、`encrypted_content`を持つレコードの`type`が`response_item`、`payload.type`が`reasoning`であることを確かめた。観測はいずれも値を開かずに行った。
 公式文書の2つの節を取得して前掲の記述を確かめ、Codexの記録で`encrypted_content`を持つレコードの`payload.type`を数えて再検証する。
 
+## セッション記録のAPI要求の写し：2026年10月18日
+
+既存調査はClaude Code 2.1.301の記録`7542c54d-c7b2-4bca-9e29-c9199e63c7a4.jsonl`の1022行と1031行に、同じtool_use IDを持つ`assistant`と`api-request-blob`があると報告した。写しは`message`に会話と同じ形のcontentを持ち、timestampとuuidを持たない。公開仕様での形式の保証は未確認である。
+今回の検証は、報告された構造を最小化した検体へツール呼出・失敗結果・完了通知の写しを追加し、通常抽出・呼出照会・警告・統計・ユーザー発話の結果が追加前と一致することを確かめる。生の行のdetail・grepは写しも表示する。再検証は`session_evidence_record_boundary_test.py`の`test_request_copies_do_not_create_conversation_events`を実行する。
+
 ## agent-toolkit/skills/writing-standards/references/sqlalchemy.md：問い合わせと属性代入の順序：2026年9月14日
 
 2026年9月14日、SQLAlchemy 2.0.52の公式文書で、`autoflush`を無効にしていない`Session`がORM対応の問い合わせ前に保留変更をflushすることと、`Session.flush()`で明示的にflushできることを確認した。

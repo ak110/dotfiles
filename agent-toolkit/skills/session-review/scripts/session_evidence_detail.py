@@ -38,7 +38,7 @@ def _grep_events(records: list[_Record], pattern: re.Pattern[str]) -> list[dict[
     events: list[dict[str, Any]] = []
     matched = 0
     for record in _scannable_records(records):
-        matched_lines = _matched_lines(record.entry, pattern)
+        matched_lines = _matched_lines(record.raw_entry, pattern)
         events.extend(
             {"kind": "match", "line": record.line, "timestamp": _entry_timestamp(record.entry), "text": _clip(line_text)}
             for line_text in matched_lines
@@ -50,7 +50,7 @@ def _grep_events(records: list[_Record], pattern: re.Pattern[str]) -> list[dict[
 
 def _detail_events(records: list[_Record], numbers: list[int]) -> tuple[list[dict[str, Any]], int]:
     """指定行のエントリを整形して返す。範囲外の行番号はエラーと終了コード2を返す。"""
-    index = {record.line: record.entry for record in records}
+    index = {record.line: record.raw_entry for record in records}
     events: list[dict[str, Any]] = []
     for number in numbers:
         entry = index.get(number)
@@ -335,7 +335,7 @@ def _fixed_string_collection_events(
         pattern = re.compile(re.escape(phrase))
         for item in collected:
             for record in _scannable_records(item.records):
-                if not _matched_lines(record.entry, pattern):
+                if not _matched_lines(record.raw_entry, pattern):
                     continue
                 locators.append(
                     {
