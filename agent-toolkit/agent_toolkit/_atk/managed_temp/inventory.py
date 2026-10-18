@@ -449,10 +449,15 @@ def _load_listed_entry(
                 )
             return None
         validate_managed_temp(path)
-        if report_recovery_candidates:
-            latest, _ = _latest_update_and_git_paths(path)
-            if latest < _cutoff_ns(datetime.datetime.now(datetime.UTC), MAX_AGE_DAYS):
-                _report_retained_plugin_root(path)
+        if report_recovery_candidates and path.name.startswith("agents-server-plugin-root-"):
+            try:
+                latest, _ = _latest_update_and_git_paths(path)
+            except OSError, ManagedTempError:
+                # 期限の観測に失敗した配布物も、真正性を検証した登録として一覧へ残す。
+                pass
+            else:
+                if latest < _cutoff_ns(datetime.datetime.now(datetime.UTC), MAX_AGE_DAYS):
+                    _report_retained_plugin_root(path)
         return {
             "path": str(path),
             "prefix": item_prefix,

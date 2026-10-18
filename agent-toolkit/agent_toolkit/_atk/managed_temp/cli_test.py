@@ -633,6 +633,64 @@ def test_list_does_not_offer_cleanup_for_retained_areas(
     assert area.is_dir()
 
 
+@pytest.mark.parametrize("prefix", ["session", "atk-output", "agents-server-plugin-rootx"])
+def test_list_keeps_non_plugin_area_without_scanning(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], prefix: str
+) -> None:
+    """読取権限の無い配下を持つ通常領域も、期限走査をせず一覧へ返す。"""
+    area = subject.create_managed_temp(prefix)
+    restricted = area / "container-data"
+    restricted.mkdir()
+    if os.name == "posix":
+        restricted.chmod(0)
+
+    def unexpected_scan(_path: pathlib.Path):
+        pytest.fail("配布物以外の登録済み領域を走査した")
+
+    monkeypatch.setattr(inventory_subject, "_latest_update_and_git_paths", unexpected_scan)
+    try:
+        assert subject.main(["list"]) == 0
+        output = capsys.readouterr()
+        assert str(area) in output.out
+        assert "管理対象を列挙できない" not in output.err
+        assert "cleanup --path" not in output.err
+        assert not output.err
+    finally:
+        if os.name == "posix":
+            restricted.chmod(0o700)
+
+
+@pytest.mark.parametrize("prefix", ["agents-server-plugin-root", "agents-server-plugin-root-shared"])
+@pytest.mark.parametrize("error_type", [PermissionError, subject.ManagedTempError])
+def test_list_keeps_plugin_area_when_expiry_scan_fails(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    prefix: str,
+    error_type: type[Exception],
+) -> None:
+    """配布物の期限走査で読取拒否・置換を観測しても、真正な登録は一覧へ返す。"""
+    area = subject.create_managed_temp(prefix)
+    calls: list[pathlib.Path] = []
+
+    def failed_scan(path: pathlib.Path):
+        calls.append(path)
+        raise error_type("期限判定用の走査に失敗した")
+
+    def unexpected_retention(_path: pathlib.Path):
+        pytest.fail("期限不明の領域で保持判定した")
+
+    monkeypatch.setattr(inventory_subject, "_latest_update_and_git_paths", failed_scan)
+    monkeypatch.setattr(inventory_subject, "_report_retained_plugin_root", unexpected_retention)
+    assert subject.main(["list"]) == 0
+    assert calls == [area]
+    output = capsys.readouterr()
+    assert str(area) in output.out
+    assert "管理対象を列挙できない" not in output.err
+    assert "cleanup --path" not in output.err
+    assert not output.err
+    assert area.is_dir() and managed_temp_registry._registry_path(area).is_file()
+
+
 def test_retention_summary_once_per_state_change(
     capsys: pytest.CaptureFixture[str],
     monkeypatch: pytest.MonkeyPatch,
