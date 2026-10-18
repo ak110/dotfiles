@@ -3,6 +3,7 @@
 import json
 import pathlib
 
+import pytest
 import session_review_prepare as prepare
 
 from agent_toolkit._testing import delegated_threads
@@ -48,11 +49,16 @@ def test_prepare_keeps_allocated_directory_on_extraction_failure(tmp_path: pathl
     assert "診断用に保持した作業領域:" in captured.err
 
 
-def test_prepare_allocates_workdir_from_codex_thread(tmp_path: pathlib.Path, capsys, monkeypatch) -> None:
+@pytest.mark.parametrize("conversation_only", [False, True])
+def test_prepare_allocates_workdir_from_codex_thread(tmp_path: pathlib.Path, capsys, monkeypatch, conversation_only) -> None:
     """thread指定の通常起動と引き継ぎの会話だけの起動も事前作成を要さない。"""
     family = delegated_threads.write_delegated_threads(tmp_path)
     monkeypatch.setenv("CODEX_HOME", str(family.codex_home))
-    assert prepare.main(["--codex-thread-id", delegated_threads.CODEX_THREAD_ID, "--conversation-only"]) == 0
+    options = ["--conversation-only"] if conversation_only else []
+    assert prepare.main(["--codex-thread-id", delegated_threads.CODEX_THREAD_ID, *options]) == 0
     record = json.loads(capsys.readouterr().out)
     assert pathlib.Path(record["work_dir"]).is_dir()
     assert pathlib.Path(record["conversation_path"]).read_text(encoding="utf-8")
+    if not conversation_only:
+        for key in ("conversation_path", "candidates_path", "stats_path", "comparison_materials_path"):
+            assert pathlib.Path(record[key]).read_text(encoding="utf-8")
