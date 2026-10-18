@@ -1147,3 +1147,79 @@ def test_integrate_uses_reviewed_oid_when_branch_advances_before_merge(
     assert code == 0 and result["integrated_head"] == head, stderr
     assert not (repo / "unreviewed").exists()
     assert (worktree / "unreviewed").exists()
+
+
+def test_integrate_ignores_session_in_nested_lane_worktree(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """統合先配下の別レーンの担当を所有へ含めずに統合を完了できる。"""
+    repo, selected, record = _create(tmp_path, monkeypatch, capsys)
+    _integration_selection(selected, monkeypatch, repo)
+    nested = repo / ".claude/worktrees/other"
+    git_repository.run_git(repo, "worktree", "add", "-b", "other", str(nested))
+    session_registry.publish("other-writer", terminal=False, cwd=str(nested))
+    handoff = tmp_path / "handoff.md"
+    handoff.touch()
+    manifest = tmp_path / "integration.json"
+    manifest.write_text(
+        json.dumps({"plans": [], "wis": [{"name": "awi.md", "commands": []}], "handoff": str(handoff)}),
+        encoding="utf-8",
+    )
+    code, result, stderr = _invoke(capsys, *_integration_args(record, repo, manifest, record["initial_head"]))
+    assert code == 0 and result["phase"] == "finalized", stderr
+
+
+@pytest.mark.parametrize("relative", [".", "direct"])
+def test_integrate_rejects_session_in_target_outside_nested_worktree(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], relative: str
+) -> None:
+    """統合先の直下と通常の子ディレクトリを使う合意外の担当を検出する。"""
+    repo, _selected, record = _create(tmp_path, monkeypatch, capsys)
+    session_registry.publish("target-writer", terminal=False, cwd=str(repo / relative))
+    code, _result, stderr = _invoke(capsys, *_integration_args(record, repo, tmp_path / "unused", record["initial_head"]))
+    assert code == 2 and "現在の書込所有に含まれない担当が稼働中" in stderr
+
+
+def test_worktree_activity_ignores_nested_worktree(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """解放対象の選別と再走査で、入れ子の別worktreeの担当を区別する。"""
+    _repo, _selected, record = _create(tmp_path, monkeypatch, capsys)
+    worktree = pathlib.Path(record["worktree"])
+    nested = worktree / ".claude/worktrees/nested"
+    git_repository.run_git(worktree, "worktree", "add", "-b", "nested", str(nested))
+    session_registry.publish("nested-writer", terminal=False, cwd=str(nested))
+    assert lane._worktree_activity(worktree) is None  # pylint: disable=protected-access
+    session_registry.publish("direct-writer", terminal=False, cwd=str(worktree))
+    assert "direct-writer" in (lane._worktree_activity(worktree) or "")  # pylint: disable=protected-access
+
+
+@pytest.mark.parametrize("source", ["cwd", "argv"])
+def test_process_activity_ignores_nested_worktree(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], source: str
+) -> None:
+    """プロセスのcwdと絶対引数の双方で入れ子の別worktreeを区別する。"""
+    _repo, _selected, record = _create(tmp_path, monkeypatch, capsys)
+    worktree = pathlib.Path(record["worktree"])
+    nested = worktree / ".claude/worktrees/nested"
+    git_repository.run_git(worktree, "worktree", "add", "-b", "nested", str(nested))
+    location = nested
+
+    class Process:
+        """外部プロセスの照会を決定論的なパスへ向ける。"""
+
+        pid = 12345
+        info = {"username": lane.psutil.Process().username()}
+
+        def cwd(self) -> str:
+            """照会対象のcwdを返す。"""
+            return str(location if source == "cwd" else tmp_path)
+
+        def cmdline(self) -> list[str]:
+            """照会対象の絶対引数を返す。"""
+            return ["program", f"--file={location / 'file'}"] if source == "argv" else ["program"]
+
+    monkeypatch.setattr(lane.psutil, "process_iter", lambda *_args, **_kwargs: [Process()])
+    assert lane._process_activity(worktree) is None  # pylint: disable=protected-access
+    location = worktree
+    assert lane._process_activity(worktree)  # pylint: disable=protected-access

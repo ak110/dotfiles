@@ -29,6 +29,7 @@ lazy from agent_toolkit._common.process_loop_session import is_process_loop_sess
 lazy from agent_toolkit._common.shell_segments import extract_execution_segments
 lazy from agent_toolkit._common.shell_tokens import ATK_SHELL_TOOLS, is_atk_command
 lazy from agent_toolkit._git import command as git_command
+lazy from agent_toolkit._git import worktrees as git_worktrees
 lazy from agent_toolkit._hooks import agent_id, agents_server_observations
 lazy from agent_toolkit._hooks import tool_input as _hook_tool_input
 lazy from agent_toolkit._hooks.host import is_codex_payload
@@ -609,7 +610,8 @@ def _omission_policy(document: dict[str, Any], work: dict[str, Any], *, unresolv
     if not isinstance(policy, str) or not pathlib.Path(policy).is_absolute():
         raise ValueError("プロジェクト規範のpolicy_fileを絶対パスで渡す")
     path = pathlib.Path(policy).resolve(strict=True)
-    if not path.is_relative_to(repository):
+    owner = git_worktrees.owning_worktree(path, git_worktrees.list_worktrees(repository, timeout=5))
+    if owner is None or owner.path.resolve() != repository:
         raise ValueError("policy_fileは対象リポジトリ内の適用するプロジェクト規範を指定する")
     return path.read_text(encoding="utf-8")
 

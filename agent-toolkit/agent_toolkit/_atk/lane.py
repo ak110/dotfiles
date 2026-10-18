@@ -353,6 +353,8 @@ def _session_activity(worktree: pathlib.Path, allowed: frozenset[str] = frozense
     directory = session_launchers.registry_directory(state_root)
     if not directory.exists():
         return None
+    entries = git_worktrees.list_worktrees(worktree, timeout=_TIMEOUT)
+    target = git_worktrees.owning_worktree(worktree, entries)
     for path in directory.glob("*.json"):
         if path.stem in allowed:
             continue
@@ -367,13 +369,15 @@ def _session_activity(worktree: pathlib.Path, allowed: frozenset[str] = frozense
             resolution.state is session_registry.Resolution.RUNNING
             and info is not None
             and info.cwd
-            and pathlib.Path(info.cwd).resolve().is_relative_to(worktree)
+            and git_worktrees.owning_worktree(pathlib.Path(info.cwd), entries) == target
         ):
             return f"担当の終了を確認できない: {path.stem}"
     return None
 
 
 def _process_activity(worktree: pathlib.Path) -> str | None:
+    entries = git_worktrees.list_worktrees(worktree, timeout=_TIMEOUT)
+    target = git_worktrees.owning_worktree(worktree, entries)
     username = psutil.Process().username()
     for process in psutil.process_iter(["username"]):
         if process.info["username"] != username:
@@ -384,7 +388,7 @@ def _process_activity(worktree: pathlib.Path) -> str | None:
             continue
         except psutil.AccessDenied:
             cwd = None
-        if cwd is not None and cwd.is_relative_to(worktree):
+        if cwd is not None and git_worktrees.owning_worktree(cwd, entries) == target:
             return f"外部プロセスが使用中: pid={process.pid}"
         # 所属の分からない別プロセスの取得失敗を、当該レーンの保持条件へ広げない。
         try:
@@ -393,7 +397,7 @@ def _process_activity(worktree: pathlib.Path) -> str | None:
             continue
         for argument in argv:
             candidate = pathlib.Path(argument.split("=", 1)[-1])
-            if candidate.is_absolute() and candidate.is_relative_to(worktree):
+            if candidate.is_absolute() and git_worktrees.owning_worktree(candidate, entries) == target:
                 return f"外部プロセスが資源を参照中: pid={process.pid}"
     return None
 
@@ -403,10 +407,12 @@ def _worktree_activity(worktree: pathlib.Path) -> str | None:
     directory = session_registry.registry_directory()
     deadline: float | None = None
     released: list[str] = []
+    entries = git_worktrees.list_worktrees(worktree, timeout=_TIMEOUT)
+    target = git_worktrees.owning_worktree(worktree, entries)
     for path in directory.glob("*.json"):
         resolution = session_registry.resolve(path.stem)
         info = resolution.resume_info
-        if info is None or not info.cwd or not pathlib.Path(info.cwd).resolve().is_relative_to(worktree):
+        if info is None or not info.cwd or git_worktrees.owning_worktree(pathlib.Path(info.cwd), entries) != target:
             continue
         instruction = f"agents_serverのstopへsession_id={path.stem}を渡し、同じlane deleteを再実行する"
         if resolution.state is session_registry.Resolution.RUNNING:
@@ -418,7 +424,9 @@ def _worktree_activity(worktree: pathlib.Path) -> str | None:
         if resolution.state is session_registry.Resolution.TERMINAL:
             if deadline is None:
                 deadline = time.monotonic() + get_wait_timeout("main")
-            reason = session_release.request_release(path.stem, worktree, deadline=deadline)
+            reason = session_release.request_release(
+                path.stem, worktree, deadline=deadline, worktree_paths=tuple(entry.path for entry in entries)
+            )
             if reason:
                 return f"session_id={path.stem}: {reason}。{instruction}"
             released.append(path.stem)

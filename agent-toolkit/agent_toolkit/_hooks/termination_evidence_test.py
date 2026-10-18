@@ -633,6 +633,24 @@ def test_omission_cli_resolves_policy_and_current_input(tmp_path: pathlib.Path, 
     assert termination_evidence.missing_completion(work) == ["commit"]
 
 
+def test_omission_policy_rejects_policy_in_nested_worktree(tmp_path: pathlib.Path) -> None:
+    """入れ子の別worktreeの規範では省略できず、対象自身の規範だけを受理する。"""
+    repository = git_repository.init_repository(
+        tmp_path / "repo", files={"CLAUDE.md": "完了報告を省く。\n"}, commit_message="規範を保存"
+    )
+    nested = repository / ".claude/worktrees/nested"
+    git_repository.run_git(repository, "worktree", "add", "-b", "nested", str(nested))
+    document = {
+        "policy_file": str(nested / "CLAUDE.md"),
+        "target_repo": str(repository),
+    }
+    work = {"deliverables": ["commit"], "repositories": [str(repository)]}
+    with pytest.raises(ValueError, match="policy_fileは対象リポジトリ内"):
+        termination_evidence._omission_policy(document, work)  # pylint: disable=protected-access
+    document["policy_file"] = str(repository / "CLAUDE.md")
+    assert termination_evidence._omission_policy(document, work) == "完了報告を省く。\n"  # pylint: disable=protected-access
+
+
 def automated_input(directory: pathlib.Path, prompt_id: str, prompt: str) -> None:
     """process-loopなどの自動起動が入力欄へ渡す生成入力を、公開hookのUserPromptSubmitへ供給する。"""
     with contextlib.redirect_stdout(io.StringIO()):
