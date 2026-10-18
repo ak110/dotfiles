@@ -490,10 +490,10 @@ def _report_rebase_failure(private_notes: pathlib.Path, *, result_runner: _GitRe
     """rebase失敗時に状態保持と復旧手順を表示する。"""
     try:
         conflicts = result_runner(
-            ["diff", "--name-only", "--diff-filter=U"],
+            ["diff", "--name-only", "--diff-filter=U", "-z"],
             private_notes,
         )
-        names = [line for line in conflicts.stdout.splitlines() if line]
+        names = [name for name in conflicts.stdout.split("\0") if name]
     except OSError, subprocess.SubprocessError:
         names = []
     _outcome.report_failure(

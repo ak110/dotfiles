@@ -530,14 +530,27 @@ class TestMigrateLegacyLayout:
     `ensure_environment`へ渡すhomeは解決結果に影響しない。
     """
 
-    def test_migrates_entries_and_removes_legacy_dirs(self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
+    @pytest.mark.parametrize(
+        "filename",
+        [
+            "20260101-000000-001.md",
+            "日本語 space.md",
+            pytest.param(
+                "日本語 space\n改行.md",
+                marks=pytest.mark.skipif(os.name == "nt", reason="Windowsのファイル名は改行を許可しない"),
+            ),
+        ],
+    )
+    def test_migrates_entries_and_removes_legacy_dirs(
+        self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], filename: str
+    ) -> None:
         """種別ディレクトリ配下のエントリへtypeを補って状態ディレクトリ直下へ移し、旧ディレクトリを削除する。"""
         root = tmp_path / "private-notes"
         _init_legacy_repo(
             root,
             {
-                "feedback/inbox/20260101-000000-001.md": _LEGACY_AWI,
-                "feedback/adopted/20260101-000000-002.md": _LEGACY_AWI,
+                f"feedback/inbox/{filename}": _LEGACY_AWI,
+                f"feedback/adopted/done-{filename}": _LEGACY_AWI,
                 "tbd/inbox/20260102-000000-001.md": _LEGACY_UWI,
             },
         )
@@ -546,10 +559,10 @@ class TestMigrateLegacyLayout:
 
         assert not (root / "feedback").exists()
         assert not (root / "tbd").exists()
-        assert (root / "inbox" / "20260101-000000-001.md").read_text(encoding="utf-8") == (
+        assert (root / "inbox" / filename).read_text(encoding="utf-8") == (
             "---\ntarget_repo: github.com/example/repo\ntype: awi\n---\n\n本文\n"
         )
-        assert (root / "adopted" / "20260101-000000-002.md").read_text(encoding="utf-8").splitlines()[2] == "type: awi"
+        assert (root / "adopted" / f"done-{filename}").read_text(encoding="utf-8").splitlines()[2] == "type: awi"
         assert (root / "inbox" / "20260102-000000-001.md").read_text(encoding="utf-8").splitlines()[1:4] == [
             "target_repo: github.com/example/repo",
             "type: uwi",

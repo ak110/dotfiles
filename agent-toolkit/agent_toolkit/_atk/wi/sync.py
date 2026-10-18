@@ -172,19 +172,18 @@ def _terminal_commit_is_redundant(private_notes: pathlib.Path, commit: str) -> b
     if (count == 1) != (match.group("noun") == "entry"):
         return False
     outcome = match.group("outcome")
-    changes = _git_command.lines(
-        ["diff-tree", "--no-commit-id", "--name-status", "-r", "--no-renames", commit],
+    output = _git_command.optional_stdout(
+        ["diff-tree", "--no-commit-id", "--name-status", "-z", "-r", "--no-renames", commit],
         private_notes,
     )
-    if changes is None:
+    if output is None:
+        return False
+    changes = output.removesuffix("\0").split("\0") if output else []
+    if len(changes) % 2:
         return False
     removed: dict[str, str] = {}
     added: dict[str, str] = {}
-    for line in changes:
-        fields = line.split("\t")
-        if len(fields) != 2:
-            return False
-        status, relative = fields
+    for status, relative in zip(changes[::2], changes[1::2], strict=True):
         path = pathlib.PurePosixPath(relative)
         if len(path.parts) != 2 or path.suffix != ".md":
             return False
@@ -195,7 +194,7 @@ def _terminal_commit_is_redundant(private_notes: pathlib.Path, commit: str) -> b
             added[filename] = relative
         else:
             return False
-    if len(changes) != count * 2 or len(removed) != count or removed.keys() != added.keys():
+    if len(changes) != count * 4 or len(removed) != count or removed.keys() != added.keys():
         return False
 
     for filename, destination in added.items():

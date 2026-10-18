@@ -21,6 +21,7 @@ from typing import Any, Self, cast
 import platformdirs
 import psutil
 import pytest
+from agent_toolkit._testing import git_repository
 from agent_toolkit._testing.isolation import restore_host_environment
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
@@ -1435,13 +1436,24 @@ class TestGitConflictRecovery:
         if dirty:
             _assert_saved_changes_survive_gc(local, tmp_path)
 
+    @pytest.mark.parametrize(
+        "untracked_name",
+        [
+            "untracked.txt",
+            "日本語 space.txt",
+            pytest.param(
+                " 日本語 space\n改行.txt ",
+                marks=pytest.mark.skipif(os.name == "nt", reason="Windowsのファイル名は改行と末尾空白を許可しない"),
+            ),
+        ],
+    )
     def test_dirty_restore_conflict_keeps_recoverable_ref_and_clean_upstream(
-        self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, untracked_name: str
     ) -> None:
         local, seed, _remote = _create_git_pair(tmp_path)
         (local / "tracked.txt").write_text("dirty\n", encoding="utf-8")
         (local / "staged.txt").write_text("staged\n", encoding="utf-8")
-        (local / "untracked.txt").write_text("untracked\n", encoding="utf-8")
+        (local / untracked_name).write_text("untracked\n", encoding="utf-8")
         _git(local, "add", "staged.txt")
         (seed / "tracked.txt").write_text("upstream\n", encoding="utf-8")
         _git(seed, "add", "tracked.txt")
@@ -1454,15 +1466,19 @@ class TestGitConflictRecovery:
 
         worktree_refs = _git(local, "for-each-ref", "--format=%(refname)", "refs/worktree").splitlines()
         stash_ref = next(ref for ref in worktree_refs if ref.startswith("refs/worktree/update-dotfiles-"))
-        saved_paths = _git(local, "stash", "show", "--include-untracked", "--name-only", stash_ref).splitlines()
+        saved_paths = git_repository.run_git(
+            local, "stash", "show", "--include-untracked", "--name-only", "-z", stash_ref
+        ).stdout.split("\0")
         assert result == 0
         assert _git(local, "status", "--porcelain=v1") == ""
         assert _git(local, "rev-parse", "HEAD") == _git(local, "rev-parse", "@{upstream}")
-        assert {"tracked.txt", "staged.txt", "untracked.txt"} <= set(saved_paths)
-        _assert_saved_changes_survive_gc(local, tmp_path)
+        assert {"tracked.txt", "staged.txt", untracked_name} <= set(saved_paths)
+        _assert_saved_changes_survive_gc(local, tmp_path, untracked_name=untracked_name)
 
 
-def _assert_saved_changes_survive_gc(local: pathlib.Path, tmp_path: pathlib.Path) -> None:
+def _assert_saved_changes_survive_gc(
+    local: pathlib.Path, tmp_path: pathlib.Path, *, untracked_name: str = "untracked.txt"
+) -> None:
     """未復元の3状態を別worktreeのGC後も復旧できる。"""
     other = tmp_path / "gc-worktree"
     _git(local, "worktree", "add", "-b", "gc-worktree", str(other))
@@ -1473,7 +1489,7 @@ def _assert_saved_changes_survive_gc(local: pathlib.Path, tmp_path: pathlib.Path
     _git(other, "stash", "apply", "--index", f"main-worktree/{ref}")
     assert (other / "tracked.txt").read_text(encoding="utf-8") in {"dirty\n", "unstaged\n"}
     assert (other / "staged.txt").read_text(encoding="utf-8") == "staged\n"
-    assert (other / "untracked.txt").read_text(encoding="utf-8") == "untracked\n"
+    assert (other / untracked_name).read_text(encoding="utf-8") == "untracked\n"
     assert "A  staged.txt" in _git(other, "status", "--porcelain=v1").splitlines()
 
 

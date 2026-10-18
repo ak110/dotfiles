@@ -430,14 +430,14 @@ def _git_capture(*arguments: str) -> subprocess.CompletedProcess[str]:
 _MISE_LOCK = "mise.lock"
 
 
-def _git_value(*arguments: str) -> str | None:
+def _git_value(*arguments: str, strip: bool = True) -> str | None:
     """Gitの成功した単一値を返し、失敗時は診断を転送する。"""
     result = _git_capture(*arguments)
     if result.returncode != 0:
         if result.stderr:
             sys.stderr.write(result.stderr)
         return None
-    return result.stdout.strip()
+    return result.stdout.strip() if strip else result.stdout
 
 
 def _git_operation_in_progress() -> str | bool:
@@ -840,10 +840,10 @@ def _update_owned_git(step_no: int, total: int, *, timeout: int | None) -> int:
     status = _git_value("status", "--porcelain=v1", "--untracked-files=all")
     if status is None:
         return 1
-    untracked_output = _git_value("ls-files", "--others", "--exclude-standard")
+    untracked_output = _git_value("ls-files", "-z", "--others", "--exclude-standard", strip=False)
     if untracked_output is None:
         return 1
-    untracked = tuple(line for line in untracked_output.splitlines() if line)
+    untracked = tuple(path for path in untracked_output.split("\0") if path)
     suffix = f"{time.time_ns()}-{os.getpid()}"
     stash_ref = _save_worktree(f"update-dotfiles-{suffix}") if status else None
     if status and stash_ref is None:

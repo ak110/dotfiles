@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+import os
 import pathlib
 import subprocess
 
@@ -127,6 +128,28 @@ def test_count_matches_rows(repo: pathlib.Path, monkeypatch: pytest.MonkeyPatch,
     """`--count`の件数は台帳の行数（見出し行を除く）と一致する。"""
     rows = _run(repo, monkeypatch, capsys).splitlines()
     assert _run(repo, monkeypatch, capsys, "--count").strip() == str(len(rows) - 1)
+
+
+@pytest.mark.parametrize(
+    "filename",
+    [
+        "日本語 space.md",
+        pytest.param(
+            " 日本語 space\n改行.md",
+            marks=pytest.mark.skipif(os.name == "nt", reason="Windowsのファイル名は改行を許可しない"),
+        ),
+    ],
+)
+def test_collect_clauses_preserves_git_paths(repo: pathlib.Path, filename: str) -> None:
+    """日本語・空白・改行を含む文書名の本文を基準commitから取得する。"""
+    relative = f"agent-toolkit/rules/{filename}"
+    (repo / relative).write_text("# 名前\n\n追加の条文。\n", encoding="utf-8")
+    _git(repo, "add", "--", relative)
+    _git(repo, "commit", "-q", message="文書を追加")
+
+    clauses = norm_restructure_clauses.collect_clauses("HEAD", repo)
+
+    assert any(clause.path == relative and clause.lines == ["追加の条文。"] for clause in clauses)
 
 
 def test_split_dir_and_origin(repo: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:

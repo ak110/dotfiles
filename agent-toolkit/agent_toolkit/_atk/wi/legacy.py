@@ -98,9 +98,9 @@ def _tracked_names(private_notes: pathlib.Path, names: Iterable[str]) -> list[st
     削除済みディレクトリをcommit対象へ含める際の限定に用いる。
     """
     name_list = list(names)
-    result = _git_command.run(["ls-files", "--", *name_list], private_notes, capture_output=True, text=True, check=True)
+    result = _git_command.run(["ls-files", "-z", "--", *name_list], private_notes, capture_output=True, text=True, check=True)
     assert isinstance(result.stdout, str)
-    tracked = {line.split("/", 1)[0] for line in result.stdout.splitlines()}
+    tracked = {path.split("/", 1)[0] for path in result.stdout.split("\0") if path}
     return [name for name in name_list if name in tracked]
 
 
