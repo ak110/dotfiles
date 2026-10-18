@@ -34,6 +34,11 @@ Codexでは、`type`が`response_item`、`payload.type`が`message`、`payload.r
 
 ## 集計値の典拠
 
+期間を指定した週ごとの費用と実行レビューの指標は、`atk run-script cost-metrics -- --since <開始日> --until <終了日>`の出力を典拠にする。
+月曜0時からのローカル週ごとに、採用AWI件数、全ルートとprocess-wiの4成分のトークン・AWIあたりの値、レビューのラウンド・レベル・修正せずに応答した率を返す。
+`--until`省略時は実行時刻まで集計する。
+`cost-metrics-coverage`の走査root・期間・最古の読取記録・読取不能件数・未解決委譲件数と、各週の`missing_token_records`を併記し、被覆が欠けた週の値を完全な総量と扱わない。
+
 セッション記録から集計したトークン量、リクエスト数、所要時間を成果物やユーザーへの提示に書く場合は、`atk run-script session-review-evidence -- <引数>`の出力を典拠とし、自作の集計は典拠にしない。
 トークン量とリクエスト数には`--stats`、所要時間には`--elapsed-until <ISO 8601の時刻>`を付ける。振り返りの全候補は`--bundle`が生成する`candidates.jsonl`から取り、`atk run-script session-review-prepare`がこれを`candidates.md`へ整形する。
 

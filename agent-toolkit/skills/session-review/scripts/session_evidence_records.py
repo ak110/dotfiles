@@ -8,6 +8,7 @@ from __future__ import annotations
 import datetime
 import json
 import re
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any, cast
 
@@ -209,11 +210,17 @@ def _resolve_claude_transcript(session_id: str) -> Path:
     return first
 
 
-def _session_path(session_id: str, codex_home: str | None = None) -> tuple[Path, _Runtime] | None:
+def _session_path(
+    session_id: str,
+    codex_home: str | None = None,
+    session_resolver: Callable[[str], tuple[Path, _Runtime] | None] | None = None,
+) -> tuple[Path, _Runtime] | None:
     """委譲先の記録を`atk agents logs`と共有する解決処理で探し、記録と実行系を返す。
 
     Codexの記録が複数一致する場合は、別の委譲先の記録を混入させないよう解決できない扱いとする。
     """
+    if session_resolver is not None:
+        return session_resolver(session_id)
     found = _record_paths.find_session_record(session_id, codex_home=Path(codex_home) if codex_home else None)
     if found is None or found.engine not in RUNTIME_EXTRACTORS:
         return None
@@ -223,7 +230,11 @@ def _session_path(session_id: str, codex_home: str | None = None) -> tuple[Path,
     return first, cast(_Runtime, found.engine)
 
 
-def _subagent_records(source: _CollectedRecord, unresolved: list[_UnresolvedRecord]) -> list[_CollectedRecord]:
+def _subagent_records(
+    source: _CollectedRecord,
+    unresolved: list[_UnresolvedRecord],
+    modified_since: datetime.datetime | None = None,
+) -> list[_CollectedRecord]:
     """Claude記録に付随するサブエージェント記録をファイル名順で返す。"""
     if source.runtime != "claude":
         return []
@@ -234,6 +245,8 @@ def _subagent_records(source: _CollectedRecord, unresolved: list[_UnresolvedReco
         return []
     selected: list[_CollectedRecord] = []
     for path in paths:
+        if modified_since is not None and path.stat().st_mtime < modified_since.timestamp():
+            continue
         records = _load_records(str(path))
         if records is None:
             unresolved.append(_UnresolvedRecord(f"{source.record_id}/{path.stem}", 0))
@@ -269,6 +282,8 @@ def _collect_records(
     boundary: datetime.datetime | None = None,
     *,
     main_only: bool = False,
+    session_resolver: Callable[[str], tuple[Path, _Runtime] | None] | None = None,
+    modified_since: datetime.datetime | None = None,
 ) -> tuple[list[_CollectedRecord], list[_UnresolvedRecord]]:
     """メイン記録から全ての付随記録と委譲先を発見順に再帰収集する。"""
     main_path = Path(transcript_path)
@@ -298,7 +313,7 @@ def _collect_records(
         index += 1
         agents_server_call_ids = _agents_server_call_ids(source.records)
         unresolved_delegation_calls: set[str] = set()
-        for subagent in _subagent_records(source, unresolved):
+        for subagent in _subagent_records(source, unresolved, modified_since):
             if boundary is not None and _started_after_boundary(subagent.records, boundary):
                 continue
             resolved = subagent.path.resolve()
@@ -320,7 +335,7 @@ def _collect_records(
                 if session_id in seen_sessions:
                     continue
                 seen_sessions.add(session_id)
-                resolved_session = _session_path(session_id, codex_home)
+                resolved_session = _session_path(session_id, codex_home, session_resolver)
                 if resolved_session is None:
                     unresolved.append(_UnresolvedRecord(session_id, record.line))
                     continue
@@ -328,6 +343,8 @@ def _collect_records(
                 record_id = f"{resolved_engine}:{session_id}"
                 resolved = path.resolve()
                 if resolved in seen_paths:
+                    continue
+                if modified_since is not None and path.stat().st_mtime < modified_since.timestamp():
                     continue
                 records = _load_records(str(path))
                 if records is None:

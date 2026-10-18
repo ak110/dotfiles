@@ -207,6 +207,40 @@ atk run-script session-review-evidence -- --catalog-claude-project ~/.claude/pro
 振り返りの準備後や最終報告後に届いた新しい`気付いた改善点:`の行は`agent-toolkit:completion-report`の工程に従って振り返りへ取り込み、結果報告を更新してから終了する。
 Stopはこの行の有無と報告本文を判定しない。
 
+### 週ごとの費用とレビュー指標
+
+費用改善の前後比較と再悪化の確認には、開始と終了を指定して手動で集計する。
+次の例は2026年10月5日0時から19日0時までを集計し、終了を省くと実行時刻までを集計する。
+日付と時差のない日時は実行ホストのローカル時刻として解釈する。
+
+```sh
+atk run-script cost-metrics -- --since 2026-10-05 --until 2026-10-19
+```
+
+JSON Linesの`cost-metrics-week`は月曜0時から始まる週ごとの次の値を返す。
+
+| 項目 | 定義 |
+| --- | --- |
+| `adopted_awi_count` | private-notesのGit履歴で期間内にadopted/へ追加されたtypeがawiのファイル数。全対象リポジトリを合算し、同名ファイルは週内で1件とし、UWIを除く |
+| `tokens` | 開始時刻が期間内のルートと全委譲先のトークン。全ルートとprocess-wiを分け、それぞれ合計とruntime別に、非キャッシュ入力・キャッシュ作成入力・キャッシュ読取入力・出力の4成分を示す |
+| `tokens_per_awi` | 全ルートとprocess-wiそれぞれの4成分を同じ週の採用AWI数で割った値。0件の週はnull |
+| `review.rounds`・`five_or_more_ratio` | plans/配下の保存済みexec-review.tsvを最初の追加commitの週へ割り当て、exec-review行の最大roundが0・1・2・3・4・5・6以上の表数と、5以上の表の割合を示す。指摘なしは0 |
+| `review.levels` | exec-reviewの指摘を要件・仕様・詳細・実装・旧形式の未記録に分けた件数 |
+| `review.without_modification_count`・`without_modification_ratio` | exec-review行のうちno-response-reasonがありresponseが空の件数と、全exec-review指摘数に対する割合 |
+
+各記録は1回だけ数え、委譲先はルートの開始週へ合算する。
+Codexのreasoning_output_tokensは出力に内包される。
+トークンの金額換算や重み付けは行わない。
+レビュー表の旧trackであるimplementation-reviewはexec-reviewとして読み、他のtrackは対象外とする。
+`~/.claude/plans`だけにある未保存の表は集計から除き、`unsaved_table_count`で件数を示す。
+
+末尾の`cost-metrics-coverage`はruntimeごとの読めた最古の記録時刻、読めなかった記録・表、特定できなかった委譲先の件数を示す。
+最古の記録より前に始まる週は`missing_token_records`がtrueとなり、トークンの記録が欠けた週として扱う。
+記録が欠けた週の0は、使用量0の証拠にはならない。
+更新時刻が開始より前の記録は読込前に除くため、最古の時刻は今回の走査で読めた範囲を示す。
+`--claude-projects-dir`・`--codex-sessions-dir`・`--private-notes`で各入力のディレクトリを上書きできる。
+指定を省くと`~/.claude/projects`・`~/.codex/sessions`・`atk config get private_notes`と同じ値を使う。
+
 ## 工程別モデル設定
 
 計画・実装・レビューの配分は、実効の用途別engine順と各engineの段位モデルで決まる。
