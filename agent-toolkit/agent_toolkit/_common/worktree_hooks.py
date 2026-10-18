@@ -73,7 +73,8 @@ def _execute(
         record: dict[str, typing.Any] = {"input": payload, "type": hook["type"]}
         path = diagnostics_directory / f"{event}-{index}.json"
         try:
-            seconds = min(timeout, float(hook.get("timeout", timeout)))
+            # hook定義のtimeoutはhook自身の上限であり、呼出側の値は定義が無いhookだけに使う。
+            seconds = float(hook["timeout"]) if "timeout" in hook else timeout
             if not math.isfinite(seconds) or seconds <= 0:
                 raise ValueError("hookのtimeoutは有限の正の値で指定する")
             if hook["type"] == "command":

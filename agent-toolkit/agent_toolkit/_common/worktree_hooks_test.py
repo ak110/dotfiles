@@ -84,6 +84,33 @@ def test_hook_failure_preserves_diagnostic_and_partial_resource(tmp_path: pathli
     assert record["input"]["name"] == "fixed-name" and record["input"]["session_id"] == "owner"
 
 
+@pytest.mark.parametrize("hook_timeout", [3, None])
+def test_hook_timeout_takes_precedence_over_caller_timeout(tmp_path: pathlib.Path, hook_timeout: int | None) -> None:
+    """hook定義の`timeout`はhook自身の上限として呼出側の値より優先し、定義が無いhookだけを呼出側の値で打ち切る。"""
+    repo, destination = tmp_path / "repo", tmp_path / "created"
+    settings = repo / ".claude/settings.local.json"
+    settings.parent.mkdir(parents=True)
+    argv = [
+        sys.executable,
+        "-c",
+        "import pathlib,sys,time;time.sleep(2);pathlib.Path(sys.argv[1]).mkdir();print(sys.argv[1])",
+        str(destination),
+    ]
+    hook: dict[str, object] = {
+        "type": "command",
+        "command": subprocess.list2cmdline(argv) if os.name == "nt" else shlex.join(argv),
+    }
+    if hook_timeout is not None:
+        hook["timeout"] = hook_timeout
+    settings.write_text(json.dumps({"hooks": {"WorktreeCreate": [{"hooks": [hook]}]}}), encoding="utf-8")
+    diagnostics = tmp_path / "diagnostics"
+    if hook_timeout is None:
+        with pytest.raises(ValueError, match="hookが失敗した"):
+            worktree_hooks.create(repo, "fixed", "owner", timeout=1, diagnostics_directory=diagnostics)
+    else:
+        assert worktree_hooks.create(repo, "fixed", "owner", timeout=1, diagnostics_directory=diagnostics) == destination
+
+
 def test_http_project_hook_lifecycle(tmp_path: pathlib.Path) -> None:
     """HTTPの公式返却を作成先へ解決し、同じ返却先を撤去へ渡す。"""
     repo, destination = tmp_path / "repo", tmp_path / "created"
