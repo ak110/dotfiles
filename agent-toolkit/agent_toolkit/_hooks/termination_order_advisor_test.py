@@ -625,10 +625,8 @@ def _omit_self_edit(
         "session_id": "self-edit",
         "action": "omit-completion",
         "work_id": work_id,
-        "input_id": "request",
         "reason": "適用するプロジェクト規範を優先する",
         "policy_file": str(policy),
-        "quote": quote,
         "target_repo": str(repository),
     }
     source = tmp_path / "omit.json"

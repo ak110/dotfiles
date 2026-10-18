@@ -43,7 +43,7 @@ CodexのStopは`response_language_advisor`と`termination_order_advisor`を実�
 
 判定と保持の責務は`agent-toolkit/agent_toolkit/_hooks/termination_evidence.py`が所有する。設計の経緯と却下した案は`docs/development/design-hooks.md`「終了工程の証拠」にある。
 プロジェクト規範による省略を記録するメインは、`agent-toolkit:completion-report`を起動せず同スキルの`references/termination-evidence.md`を直接読む。
-意味と優先順位はメインが判断し、記録処理は規範全文と所在、観測した作業の対象、現在のメインと会話・入力の対応を確かめる。
+意味と優先順位はメインが判断し、記録処理は指定したパスから規範全文を読んで保存し、所在、観測した作業の対象、現在のメインと会話・入力の対応を確かめる。
 規範の変更、次の判断、新しい人間入力の後の成果作業では、省略の適用を改めて判断する。省略後も別作業の起動不足を判定し、process-loopの会話が終了時に`atk agents-exit-session`を実行する義務（`agent-toolkit:completion-report`の`references/termination-evidence.md`）を維持する。
 
 - 供給と消費: PreToolUseとPostToolUse（Claude CodeではPostToolUseFailureを含む）が実際の呼び出しと応答を供給し、UserPromptSubmitが人間の入力を供給する。Stopの`termination_order_advisor`は同じ証拠だけを消費し、報告本文は消費対象から除く
@@ -51,5 +51,5 @@ CodexのStopは`response_language_advisor`と`termination_order_advisor`を実�
 - 起動証拠: Claude Codeは成功したSkill呼び出し、CodexはBashへ正規化された読取コマンドの入力が`skills/completion-report/SKILL.md`を指し、その結果が同スキルのfrontmatterの`name`を含む読取とする。読取パスの文字列、起動するという発話、失敗・空の読取、検索の一致行、他の作業や委譲先の起動は証拠にしない。コマンドの対象は`agent-toolkit/agent_toolkit/_common/shell_segments.py`の`extract_execution_segments`が取り出した実行位置で識別し、検索語や引用の中のコマンド名は対象外とする
 - 待機の許可: 起動証拠を欠く作業でも、その作業が待つ非同期対象が生存する間は終了を許可する。待機対象は、作業が起動したagents_serverのsessionと、作業の開始以後に起動が記録された非同期対象（背景Agent・MCPのバックグラウンドタスク・未配送の完了通知・背景Bash）である。終了する背景Bashは完了通知でターンが再開し、その時点で改めて判定される。実行位置から既知のサーバー・watch起動と判別できる背景Bashは待機免除から除き、起動不足を判定する。有限の長時間コマンドと待機CLIの免除は保ち、任意の自作コマンドの常駐性は静的に確定しない。作業の開始前から動くタスクは待機対象から外す。作業との対応はStop側で判定し、他のhookが使う`background_tasks.is_pending_async_work`の意味を変えない
 - 作業の区切り: ユーザーの入力、呼び出しの単位、開始と判断記録で区切る。起動証拠を得た作業の後に新しい人間の入力があり、続けて成果作業が届いた場合は新しい作業とし、前の起動証拠を流用しない
-- 判断の記録: 中止・置換・開始・再開・確認待ち・委譲先の待機・技術的不成立は、メインが`atk run-script termination-evidence`で記録する。意味はメインが決め、記録処理は原入力の由来と全文の一致、対象の実在と主体だけを確かめる。Stopの継続入力、`atk-auto`、構造上の生成標識を持つ入力と`source`が`user`以外の入力は人間の根拠から除く。完了の申告を記録する操作は設けない。現在の作業を中止・置換・技術的不成立と記録しても、他の作業に残る起動不足は判定する
+- 判断の記録: 中止・置換・開始・再開・確認待ち・委譲先の待機・技術的不成立は、メインが`atk run-script termination-evidence`で記録する。意味はメインが決め、記録処理は識別子から実体を読み、原入力の由来、対象の実在と主体だけを確かめる。Stopの継続入力、`atk-auto`、構造上の生成標識を持つ入力と`source`が`user`以外の入力は人間の根拠から除く。完了の申告を記録する操作は設けない。現在の作業を中止・置換・技術的不成立と記録しても、他の作業に残る起動不足は判定する
 - 証拠を読めない場合（状態の破損、旧版の未供給、期限回収後、transcriptを読めず待機対象を確かめられない場合）は完了とも未完了とも扱わず、Stop判定ログへ診断を残して許可する

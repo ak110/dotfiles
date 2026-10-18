@@ -16,10 +16,8 @@ Stop hookが同スキルの起動不足を示して遮断した場合、起動�
   "session_id": "現在の会話の識別子",
   "action": "omit-completion",
   "work_id": "観測済み作業の識別子",
-  "input_id": "その作業の現在の人間入力の識別子",
   "reason": "規範の意味と優先順位から省略する理由",
   "policy_file": "/対象リポジトリ/CLAUDE.md",
-  "quote": "適用する規範ファイルの全文",
   "target_repo": "/対象リポジトリ"
 }
 ```
@@ -29,7 +27,9 @@ Claude Codeでは`atk run-script termination-evidence -- --context`からも現�
 省略は人間入力を根拠とするため、取得結果の`input_id`が値を持つ会話でだけ記録できる。
 `policy_file`は対象リポジトリ内の適用するプロジェクト規範の絶対パス、`target_repo`は観測した成果作業が属するGitリポジトリのrootの絶対パスとする。
 複数のリポジトリの成果作業を持つ場合は、作業をリポジトリごとに区切って判断する。
-記録処理は規範全文の一致と所在、観測済み成果作業の対象、現在のメインと会話・人間入力の対応を確かめる。
+記録処理は`policy_file`から規範全文を読んで保存し、観測済み成果作業の対象と所在、現在のメインと会話・人間入力の対応を確かめる。
+省略した`input_id`は現在の会話の直近の人間入力へ対応付ける。
+明示した`input_id`が現在の人間入力を指し、`quote`が規範全文と一致するか確かめる。
 規範の意味と優先順位はメインが判断する。
 規範の内容変更、次の判断、新しい人間入力の後の成果作業では、古い省略を流用せず改めて判断する。
 省略は指定した作業の起動不足だけへ作用し、別作業の不足とprocess-loopの`atk agents-exit-session`の義務は残る。
@@ -39,7 +39,9 @@ Claude Codeでは`atk run-script termination-evidence -- --context`からも現�
 
 ユーザーが作業の中止、別作業への置換を指示した場合、確認の回答または起動した委譲先の結果を待つ場合、技術的に続行できない場合は、`atk run-script termination-evidence -- --decision-file <判断JSONの絶対パス>`で判断を記録する。
 判断JSONは`session_id`、`action`（`cancel`・`replace`・`start`・`resume`・`wait`・`blocked`）、対象の`work_id`と`reason`を持つ。
-中止・置換・開始・再開にはユーザーの原入力の`input_id`と全文の`quote`を、確認待ちには投入した未回答UWIの`uwi_file`と全文の`quote`を、委譲先の待機には`target_session_id`を、技術的不成立には失敗した呼び出しの`call_id`とその応答全体のJSONの`quote`を渡す。
+中止・置換・開始・再開にはユーザーの原入力の`input_id`を、確認待ちには投入した未回答UWIの`uwi_file`を、委譲先の待機には`target_session_id`を、技術的不成立には失敗した呼び出しの`call_id`を渡す。
+記録処理は識別子から本文や応答を読み、由来と対象を確かめる。
+`quote`は省略でき、明示した場合は取得した実体の全文との一致を確かめる。
 `session_id`、`work_id`と直近のユーザー入力の`input_id`は遮断の通知から得る。
 Claude Codeでは`atk run-script termination-evidence -- --context`からも取得できる。
 取得結果は`session_id`と現在の`work_id`を人間入力の有無によらず返し、`input_id`と原文の`quote`は人間入力を観測した場合だけ値を持ち、観測していなければ`null`とする。
