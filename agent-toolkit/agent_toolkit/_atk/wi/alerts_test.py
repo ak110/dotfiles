@@ -480,6 +480,52 @@ def _invoke_loop_alerts(repo: pathlib.Path, notes: pathlib.Path, forge: str) -> 
     ]
 
 
+@pytest.mark.parametrize("mode", ["single", "loop"])
+@pytest.mark.parametrize("authority", ["gitlab.example.com:40108", "gitlab.example.com"])
+def test_local_origin_preserves_monitor_api_endpoint(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, mode: str, authority: str
+) -> None:
+    """単発・常駐監視の一覧と詳細が、ポートを含むoriginのHTTP接続先を使う。"""
+    repo, notes = _prepare_alert_cli(monkeypatch, tmp_path, forge="gitlab")
+    origin = f"http://{authority}/owner/repo.git"
+    git_repository.run_git(repo, "remote", "set-url", "origin", origin)
+    for name in ("GITLAB_HOST", "GITLAB_URI", "GITLAB_URL", "GITLAB_API_HOST", "GLAB_API_PROTOCOL", "API_PROTOCOL"):
+        monkeypatch.delenv(name, raising=False)
+    real_run = subprocess.run
+    endpoints: list[str] = []
+
+    def run(command: list[str], **kwargs: Any) -> subprocess.CompletedProcess:
+        if command[0] != "glab":
+            return real_run(command, check=kwargs.pop("check", False), **kwargs)
+        assert "--hostname" not in command
+        assert kwargs["env"]["GITLAB_HOST"] == authority
+        assert kwargs["env"]["GLAB_API_PROTOCOL"] == "http"
+        if command[1:3] == ["ci", "list"]:
+            assert command[command.index("-R") + 1] == f"http://{authority}/owner/repo"
+            payload: object = []
+        else:
+            endpoint = command[2]
+            endpoints.append(endpoint)
+            if endpoint.endswith("?per_page=100"):
+                payload = [{"id": 1, "active": True, "ref": "main"}]
+            elif "/repository/branches/" in endpoint:
+                payload = {"commit": {"id": "head"}}
+            else:
+                payload = {"last_pipeline": {"id": 23, "status": "failed", "ref": "main"}}
+        return subprocess.CompletedProcess(command, 0, stdout=json.dumps(payload).encode(), stderr=b"")
+
+    monkeypatch.setattr(_json_command.subprocess, "run", run)
+    if mode == "single":
+        assert _invoke_alert_cli(repo, forge="gitlab") == 0
+    else:
+        assert _invoke_loop_alerts(repo, notes, "gitlab") == 1
+    assert "projects/owner%2Frepo/pipeline_schedules?per_page=100" in endpoints
+    assert "projects/owner%2Frepo/pipeline_schedules/1" in endpoints
+    saved = _saved_awis_by_heading(notes)
+    assert list(saved) == ["# パイプライン23失敗"]
+    assert f"http://{authority}/owner/repo" in next(iter(saved.values()))
+
+
 @pytest.mark.parametrize("explicit_target", [False, True], ids=["cwd", "target-worktree"])
 def test_check_alerts_cli_submits_and_exits(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], explicit_target: bool

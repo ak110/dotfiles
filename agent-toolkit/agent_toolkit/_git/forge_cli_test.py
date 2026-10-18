@@ -66,3 +66,24 @@ def test_hostless_repository_uses_glab_settings(monkeypatch: pytest.MonkeyPatch)
     environment = forge_cli.glab_environment("group/sub/repo")
     assert environment["GITLAB_HOST"] == "git.example.org"
     assert environment["GITLAB_API_HOST"] == "api.example.org:8443"
+
+
+@pytest.mark.parametrize(
+    "repository,host,protocol",
+    [
+        ("http://git.example.org:40108/group/repo", "git.example.org:40108", "http"),
+        ("https://git.example.org/group/repo", "git.example.org", "https"),
+        ("ssh://git@git.example.org:2222/group/repo.git", "git.example.org", None),
+    ],
+)
+def test_api_endpoint_distinguishes_http_and_ssh_ports(
+    monkeypatch: pytest.MonkeyPatch, repository: str, host: str, protocol: str | None
+) -> None:
+    """HTTPのポートを保持し、SSH転送用のポートをAPIへ転用しない。"""
+    for name in ("GITLAB_HOST", "GITLAB_URI", "GITLAB_URL", "GITLAB_API_HOST", "GLAB_API_PROTOCOL", "API_PROTOCOL"):
+        monkeypatch.delenv(name, raising=False)
+    environment = forge_cli.glab_environment(repository)
+    assert environment["GITLAB_HOST"] == host
+    assert environment["GITLAB_API_HOST"] == host
+    assert environment.get("GLAB_API_PROTOCOL") == protocol
+    assert forge_cli.glab_repository(repository) == f"{protocol or 'https'}://{host}/group/repo"

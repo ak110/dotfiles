@@ -341,14 +341,18 @@ def _run_glab_api(host: str, endpoint: str) -> Any:
     )
 
 
-def collect_gitlab_schedule_failures(host: str, repo: str, *, api_fn: GlabApiFn = _run_glab_api) -> list[Alert]:
+def collect_gitlab_schedule_failures(
+    host: str, repo: str, *, api_fn: GlabApiFn = _run_glab_api, repository_url: str | None = None
+) -> list[Alert]:
     """有効なPipeline Scheduleごとに、直近のパイプラインが失敗している場合にアラート候補を返す。
 
     スケジュールの一覧は`last_pipeline`を持たないため、有効なスケジュールごとに個別の取得で直近のパイプラインを得る。
     スケジュールの`ref`は対象ブランチに限らない。
     """
     project = f"projects/{urllib.parse.quote(repo, safe='')}/pipeline_schedules"
-    schedules = api_fn(host, f"{project}?per_page=100")
+    api_target = repository_url or host
+    repository = repository_url or f"{host}/{repo}"
+    schedules = api_fn(api_target, f"{project}?per_page=100")
     if not isinstance(schedules, list):
         raise AlertCollectError(
             f"Pipeline Scheduleの一覧の応答形状が不正です: {json.dumps(schedules, ensure_ascii=False)[:200]!r}"
@@ -358,7 +362,7 @@ def collect_gitlab_schedule_failures(host: str, repo: str, *, api_fn: GlabApiFn 
     for schedule in schedules:
         if not isinstance(schedule, dict) or schedule.get("active") is not True or schedule.get("id") is None:
             continue
-        detail = api_fn(host, f"{project}/{schedule['id']}")
+        detail = api_fn(api_target, f"{project}/{schedule['id']}")
         pipeline = detail.get("last_pipeline") if isinstance(detail, dict) else None
         if not isinstance(pipeline, dict) or pipeline.get("status") != "failed" or pipeline.get("id") is None:
             continue
@@ -367,7 +371,7 @@ def collect_gitlab_schedule_failures(host: str, repo: str, *, api_fn: GlabApiFn 
         if ref not in heads:
             endpoint = f"projects/{urllib.parse.quote(repo, safe='')}/repository/branches/{urllib.parse.quote(ref, safe='')}"
             try:
-                heads[ref] = (_branch_head(api_fn(host, endpoint), "id"), None)
+                heads[ref] = (_branch_head(api_fn(api_target, endpoint), "id"), None)
             except AlertCollectError as exc:
                 heads[ref] = (None, str(exc))
         head_sha, head_error = heads[ref]
@@ -375,7 +379,7 @@ def collect_gitlab_schedule_failures(host: str, repo: str, *, api_fn: GlabApiFn 
         alerts.append(
             _gitlab_pipeline_alert(
                 pipeline,
-                f"{host}/{repo}",
+                repository,
                 ref,
                 context=context,
                 origin=f"定期実行`{description}`（Pipeline Schedule {schedule['id']}）の",
@@ -420,6 +424,7 @@ def collect_new_alerts(
     glab_api_fn: GlabApiFn = _run_glab_api,
     failures: list[str] | None = None,
     next_action: str = ALERT_FAILURE_NEXT_ACTION,
+    repository_url: str | None = None,
 ) -> list[Alert]:
     """収集に失敗した種別を警告し、未投入の新規アラート一覧を返す。
 
@@ -446,11 +451,13 @@ def collect_new_alerts(
     else:
         if branch is not None:
             try:
-                candidates.extend(collect_gitlab_ci_failures(repo_id, branch, ci_list_fn=ci_list_fn))
+                candidates.extend(collect_gitlab_ci_failures(repository_url or repo_id, branch, ci_list_fn=ci_list_fn))
             except AlertCollectError as exc:
                 report_failure(f"GitLab CI状態の取得に失敗しました: {exc}")
         try:
-            candidates.extend(collect_gitlab_schedule_failures(host, repo_path, api_fn=glab_api_fn))
+            candidates.extend(
+                collect_gitlab_schedule_failures(host, repo_path, api_fn=glab_api_fn, repository_url=repository_url)
+            )
         except AlertCollectError as exc:
             report_failure(f"GitLabのPipeline Scheduleの状態の取得に失敗しました: {exc}")
     existing = existing_alert_keys(private_notes, repo_id)
@@ -488,6 +495,11 @@ def check_and_submit_alerts(
         glab_api_fn=glab_api_fn,
         failures=failures,
         next_action=next_action,
+        repository_url=(
+            _git_remote.origin_url(local_path, timeout=_GIT_SUBPROCESS_TIMEOUT)
+            if forge == "gitlab" or forge == "auto" and not repo_id.startswith("github.com/")
+            else None
+        ),
     )
     if not alerts:
         return AlertCheckResult(0, tuple(failures))
