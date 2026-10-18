@@ -40,16 +40,23 @@ rulesetのbypass主体は空にし、PR経由の更新、会話threadの解決�
 
 | イベント | head repository | head branch | base branch | 共通7 jobの実処理所有者 | 表示名 |
 | --- | --- | --- | --- | --- | --- |
-| `push` | base repository | 任意 | 該当なし | `push` run | 7件のrequired check名 |
+| `push` | base repository | `master` | 該当なし | `master`の`push` run | 7件のrequired check名 |
+| `push` | base repository | `develop`、同一SHAの利用可能なmaster runあり | 該当なし | `master`の`push` run | 7件の`(non-owner)`名 |
+| `push` | base repository | その他 | 該当なし | この`push` run | 7件のrequired check名 |
 | `pull_request` | base repository | `develop` | `master` | `develop`の`push` run | 7件の`(non-owner)`名 |
 | `pull_request` | base repository | `develop`以外 | `master` | `pull_request` run | 7件のrequired check名 |
 | `pull_request` | base repository以外 | 任意 | `master` | `pull_request` run | 7件のrequired check名 |
 
-共通jobの先頭の判定stepが、release pull requestかどうか（同一repositoryのheadが`develop`、baseが`master`のpull request）を1回だけ求めて出力し、非所有markerと後続stepの条件はその出力を参照する。
-release pull requestでは、非所有markerだけを成功させ、checkoutを含む既存実処理を実行しない。
-このrelease pull request以外の同一repository pull requestとfork pull requestでは、非所有markerをskipして既存実処理を実行する。
-判定stepと非所有markerはcheckout前から存在する`${{ github.workspace }}`を作業場所とし、Windowsの共通jobは`pwsh`、その他の共通jobは`bash`を明示する。
-`rust-lint`は既存jobの`defaults.run.working-directory`を維持し、判定stepと非所有markerだけがworkspace rootを明示してその指定を上書きする。
+先行job`common-ci-owner`が所有判定を1回だけ求め、全共通jobの表示名、非所有marker、後続stepの条件へ同じ出力を渡す。
+同一repositoryのheadが`develop`、baseが`master`のrelease pull requestは、`develop`のpushを所有者とする。
+`develop`へのpushでは、`actions: read`を持つ先行jobが同一repository・同一workflowのmaster push runを完全SHAで照会する。
+実行待ち・実行中または成功済みのrunがあれば、そのmaster runを所有者とする。該当runがない場合、失敗・取消済みのrunだけの場合、API照会が失敗した場合は、このdevelop runが共通検証を実行する。
+`master`へのpushは常に所有し、Release起点を維持する。その他のbranchのpush、release PR以外の同一repository PR、fork PRも所有する。
+非所有時はmarkerだけを成功させ、checkout・依存導入・検査を省く。markerはrelease PRではdevelop branch、同期pushでは所有master runのURLを確認先として示す。
+非所有markerはcheckout前から存在する`${{ github.workspace }}`を作業場所とし、Windowsの共通jobは`pwsh`、その他の共通jobは`bash`を明示する。
+`rust-lint`は既存jobの`defaults.run.working-directory`を維持し、非所有markerがworkspace rootを明示してその指定を上書きする。
+共通jobは短い先行判定だけを待つ。Windowsの2ジョブは互いを待たず、`statusline-version`は所有判定から独立する。concurrencyはeventとrefを分け、master runとdevelop runを相互取消しの対象にしない。
+実行中のmaster runが後に失敗した場合は、その失敗結果が残る。非所有側の別名checkはrequired checkの成功を代替しない。
 
 job-level条件を使うと条件が偽のjobがmatrix展開前にskipされ、job名式が評価されないため、非所有時の7件の表示名を保証できない。
 共通jobを開始して非所有markerを成功させる構成により、required check名と異なる表示名を生成し、同名のskip-successで所有runを代替しない。

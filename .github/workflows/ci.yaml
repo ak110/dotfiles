@@ -14,55 +14,106 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  test-linux:
-    name: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.head_ref == 'develop' && github.base_ref == 'master' && 'test-linux (non-owner)' || 'test-linux' }}
+  common-ci-owner:
+    name: common-ci-owner
     runs-on: ubuntu-latest
+    permissions:
+      actions: read
+    outputs:
+      owns: ${{ steps.owner.outputs.owns }}
+      reason: ${{ steps.owner.outputs.reason }}
     steps:
-      # developからmasterへのrelease pull requestかどうかをjobごとに1回だけ求め、後続stepのifはこの出力を参照する。
       - name: 共通CI所有の判定
         id: owner
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_PULL_REQUEST: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.head_ref == 'develop' && github.base_ref == 'master' }}
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import json
+          import os
+          import urllib.error
+          import urllib.parse
+          import urllib.request
+
+          owns = True
+          reason = "このrunが共通CIを所有します。"
+          if os.environ["RELEASE_PULL_REQUEST"] == "true":
+              owns = False
+              reason = "release PR: develop pushが共通CIを所有します。develop branchのCI結果を確認してください。"
+          elif os.environ["GITHUB_EVENT_NAME"] == "push" and os.environ["GITHUB_REF"] == "refs/heads/develop":
+              repository = os.environ["GITHUB_REPOSITORY"]
+              sha = os.environ["GITHUB_SHA"]
+              query = urllib.parse.urlencode({"branch": "master", "event": "push", "head_sha": sha, "per_page": 100})
+              url = f'{os.environ["GITHUB_API_URL"]}/repos/{repository}/actions/workflows/ci.yaml/runs?{query}'
+              try:
+                  while url and owns:
+                      request = urllib.request.Request(url, headers={
+                          "Authorization": f'Bearer {os.environ["GH_TOKEN"]}',
+                          "Accept": "application/vnd.github+json",
+                          "X-GitHub-Api-Version": "2022-11-28",
+                      })
+                      with urllib.request.urlopen(request, timeout=20) as response:
+                          runs = json.load(response)["workflow_runs"]
+                          links = urllib.request.parse_http_list(response.headers.get("Link", ""))
+                      for run in runs:
+                          if (run["head_sha"] == sha and run["head_branch"] == "master"
+                                  and run["event"] == "push" and run["head_repository"]["full_name"] == repository
+                                  and (run["status"] in {"queued", "in_progress", "waiting", "pending", "requested"}
+                                       or (run["status"] == "completed" and run["conclusion"] == "success"))):
+                              owns = False
+                              reason = f'同期push: masterの所有run {run["html_url"]} を確認してください。'
+                              break
+                      url = next((link.split(">", 1)[0].lstrip("<") for link in links if 'rel="next"' in link), "")
+              except (OSError, ValueError, KeyError, TypeError) as error:
+                  print(f"::warning::master CIを照会できないため、このrunで共通検証を実行します: {type(error).__name__}")
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
+              output.write(f"owns={str(owns).lower()}\nreason={reason}\n")
+          PY
+
+  test-linux:
+    needs: common-ci-owner
+    name: ${{ needs.common-ci-owner.outputs.owns == 'false' && 'test-linux (non-owner)' || 'test-linux' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: 共通CI非所有経路
+        if: needs.common-ci-owner.outputs.owns == 'false'
         shell: bash
         working-directory: ${{ github.workspace }}
         env:
-          RELEASE_PULL_REQUEST: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.head_ref == 'develop' && github.base_ref == 'master' }}
-        run: |
-          if [ "$RELEASE_PULL_REQUEST" = "true" ]; then owns=false; else owns=true; fi
-          echo "owns=$owns" >> "$GITHUB_OUTPUT"
-      - name: 共通CI非所有経路
-        if: steps.owner.outputs.owns == 'false'
-        shell: bash
-        working-directory: ${{ github.workspace }}
-        run: echo "developからmasterへのrelease pull requestではdevelop pushが共通CIを所有する。対応不要です。develop pushのCI結果を確認してください。"
+          OWNER_REASON: ${{ needs.common-ci-owner.outputs.reason }}
+        run: echo "$OWNER_REASON"
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        if: steps.owner.outputs.owns == 'true'
+        if: needs.common-ci-owner.outputs.owns == 'true'
         with:
           fetch-depth: 0
           path: dotfiles
       # ローカルのcomposite actionは作業場所の実在パスで参照するため、checkoutしたディレクトリを移す前に導入する。
       - name: chezmoi インストール
-        if: steps.owner.outputs.owns == 'true'
+        if: needs.common-ci-owner.outputs.owns == 'true'
         uses: ./dotfiles/.github/actions/install-chezmoi
       - name: ~/dotfiles に配置
-        if: steps.owner.outputs.owns == 'true'
+        if: needs.common-ci-owner.outputs.owns == 'true'
         run: |
           mv dotfiles ~/dotfiles
           echo "DOTFILES_DIR=$HOME/dotfiles" >> "$GITHUB_ENV"
       - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
-        if: steps.owner.outputs.owns == 'true'
+        if: needs.common-ci-owner.outputs.owns == 'true'
         with:
           working-directory: ${{ env.DOTFILES_DIR }}
       - name: PowerShell + PSScriptAnalyzer インストール
-        if: steps.owner.outputs.owns == 'true'
+        if: needs.common-ci-owner.outputs.owns == 'true'
         run: make -C "$HOME/dotfiles" setup-pwsh
       - name: 約3日前からの update-dotfiles 更新検証
-        if: steps.owner.outputs.owns == 'true'
+        if: needs.common-ci-owner.outputs.owns == 'true'
         working-directory: ${{ env.DOTFILES_DIR }}
         run: uv run --script scripts/check_update_dotfiles_upgrade.py --platform linux --repo "$DOTFILES_DIR"
       - name: install.sh 実行
-        if: steps.owner.outputs.owns == 'true'
+        if: needs.common-ci-owner.outputs.owns == 'true'
         run: ~/dotfiles/install.sh
       - name: 主要ファイルの存在確認
-        if: steps.owner.outputs.owns == 'true'
+        if: needs.common-ci-owner.outputs.owns == 'true'
         run: |
           set -euo pipefail
           for required in "$HOME/.bashrc" "$HOME/.vimrc" "$HOME/.claude/rules/agent-toolkit/01-agent.md" "$HOME/.ssh/config"; do
@@ -78,26 +129,19 @@ jobs:
           }
 
   update-dotfiles-upgrade-windows:
-    name: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.head_ref == 'develop' && github.base_ref == 'master' && 'update-dotfiles-upgrade (windows) (non-owner)' || 'update-dotfiles-upgrade (windows)' }}
+    needs: common-ci-owner
+    name: ${{ needs.common-ci-owner.outputs.owns == 'false' && 'update-dotfiles-upgrade (windows) (non-owner)' || 'update-dotfiles-upgrade (windows)' }}
     runs-on: windows-latest
     steps:
-      # developからmasterへのrelease pull requestかどうかをjobごとに1回だけ求め、後続stepのifはこの出力を参照する。
-      - name: 共通CI所有の判定
-        id: owner
+      - name: 共通CI非所有経路
+        if: needs.common-ci-owner.outputs.owns == 'false'
         shell: pwsh
         working-directory: ${{ github.workspace }}
         env:
-          RELEASE_PULL_REQUEST: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.head_ref == 'develop' && github.base_ref == 'master' }}
-        run: |
-          if ($env:RELEASE_PULL_REQUEST -eq 'true') { $owns = 'false' } else { $owns = 'true' }
-          "owns=$owns" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
-      - name: 共通CI非所有経路
-        if: steps.owner.outputs.owns == 'false'
-        shell: pwsh
-        working-directory: ${{ github.workspace }}
-        run: Write-Output "developからmasterへのrelease pull requestではdevelop pushが共通CIを所有する。対応不要です。develop pushのCI結果を確認してください。"
+          OWNER_REASON: ${{ needs.common-ci-owner.outputs.reason }}
+        run: Write-Output "$env:OWNER_REASON"
       - name: Mozilla予約タスクの停止
-        if: steps.owner.outputs.owns == 'true'
+        if: needs.common-ci-owner.outputs.owns == 'true'
         # ランナーイメージのFirefox Default Browser Agentなどの予約タスクは、runneradminとしてジョブと無関係な時刻に
         # 通常profile（LOCALAPPDATA・APPDATA直下のMozilla）へ書き込む。更新検証の通常profile監視と衝突するため、ジョブ冒頭で止める。
         shell: pwsh
@@ -119,18 +163,18 @@ jobs:
             }
           }
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        if: steps.owner.outputs.owns == 'true'
+        if: needs.common-ci-owner.outputs.owns == 'true'
         with:
           fetch-depth: 0
           path: dotfiles
       # ローカルのcomposite actionは作業場所の実在パスで参照するため、checkoutしたディレクトリを移す前に導入する。
       - name: chezmoi インストール
-        if: steps.owner.outputs.owns == 'true'
+        if: needs.common-ci-owner.outputs.owns == 'true'
         uses: ./dotfiles/.github/actions/install-chezmoi
         with:
           ssl-revoke-best-effort: "true"
       - name: ~/dotfiles に配置
-        if: steps.owner.outputs.owns == 'true'
+        if: needs.common-ci-owner.outputs.owns == 'true'
         shell: pwsh
         run: |
           $src = "$env:GITHUB_WORKSPACE\dotfiles"
@@ -145,11 +189,11 @@ jobs:
           "DOTFILES_DIR=$dst" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
           exit 0
       - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
-        if: steps.owner.outputs.owns == 'true'
+        if: needs.common-ci-owner.outputs.owns == 'true'
         with:
           working-directory: ${{ env.DOTFILES_DIR }}
       - name: 約3日前からの update-dotfiles 更新検証
-        if: steps.owner.outputs.owns == 'true'
+        if: needs.common-ci-owner.outputs.owns == 'true'
         shell: pwsh
         working-directory: ${{ env.DOTFILES_DIR }}
         run: |
@@ -157,37 +201,30 @@ jobs:
           uv run --script scripts/check_update_dotfiles_upgrade.py --platform windows --repo "$env:DOTFILES_DIR"
 
   test-windows:
-    name: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.head_ref == 'develop' && github.base_ref == 'master' && 'test-windows (non-owner)' || 'test-windows' }}
+    needs: common-ci-owner
+    name: ${{ needs.common-ci-owner.outputs.owns == 'false' && 'test-windows (non-owner)' || 'test-windows' }}
     runs-on: windows-latest
     steps:
-      # developからmasterへのrelease pull requestかどうかをjobごとに1回だけ求め、後続stepのifはこの出力を参照する。
-      - name: 共通CI所有の判定
-        id: owner
+      - name: 共通CI非所有経路
+        if: needs.common-ci-owner.outputs.owns == 'false'
         shell: pwsh
         working-directory: ${{ github.workspace }}
         env:
-          RELEASE_PULL_REQUEST: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.head_ref == 'develop' && github.base_ref == 'master' }}
-        run: |
-          if ($env:RELEASE_PULL_REQUEST -eq 'true') { $owns = 'false' } else { $owns = 'true' }
-          "owns=$owns" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
-      - name: 共通CI非所有経路
-        if: steps.owner.outputs.owns == 'false'
-        shell: pwsh
-        working-directory: ${{ github.workspace }}
-        run: Write-Output "developからmasterへのrelease pull requestではdevelop pushが共通CIを所有する。対応不要です。develop pushのCI結果を確認してください。"
+          OWNER_REASON: ${{ needs.common-ci-owner.outputs.reason }}
+        run: Write-Output "$env:OWNER_REASON"
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        if: steps.owner.outputs.owns == 'true'
+        if: needs.common-ci-owner.outputs.owns == 'true'
         with:
           fetch-depth: 0
           path: dotfiles
       # ローカルのcomposite actionは作業場所の実在パスで参照するため、checkoutしたディレクトリを移す前に導入する。
       - name: chezmoi インストール
-        if: steps.owner.outputs.owns == 'true'
+        if: needs.common-ci-owner.outputs.owns == 'true'
         uses: ./dotfiles/.github/actions/install-chezmoi
         with:
           ssl-revoke-best-effort: "true"
       - name: ~/dotfiles に配置
-        if: steps.owner.outputs.owns == 'true'
+        if: needs.common-ci-owner.outputs.owns == 'true'
         # Windows runnerはチェックアウト先（D:）と $env:USERPROFILE（C:）が別ボリュームのため、
         # GNU mvでクロスドライブ移動するとシンボリックリンクの再作成に失敗する。
         # robocopyの /SL でsymlinkを保持しつつコピーし、元ディレクトリを削除して移動を実現する。
@@ -205,11 +242,11 @@ jobs:
           "DOTFILES_DIR=$dst" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
           exit 0
       - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
-        if: steps.owner.outputs.owns == 'true'
+        if: needs.common-ci-owner.outputs.owns == 'true'
         with:
           working-directory: ${{ env.DOTFILES_DIR }}
       - name: Windows境界テスト
-        if: steps.owner.outputs.owns == 'true'
+        if: needs.common-ci-owner.outputs.owns == 'true'
         shell: pwsh
         working-directory: ${{ env.DOTFILES_DIR }}
         run: >-
@@ -224,7 +261,7 @@ jobs:
           agent-toolkit/agent_toolkit/_plan/structure
           agent-toolkit/skills/review-standards/scripts/check_exec_review_evidence_test.py::test_public_command_reads_wi_in_process
       - name: 公開入口ランチャーの動作確認
-        if: steps.owner.outputs.owns == 'true'
+        if: needs.common-ci-owner.outputs.owns == 'true'
         shell: pwsh
         working-directory: ${{ env.DOTFILES_DIR }}
         run: >-
@@ -232,18 +269,18 @@ jobs:
           bin/atk_launcher_test.py
           bin/update_dotfiles_launcher_test.py
       - name: chezmoi 適用
-        if: steps.owner.outputs.owns == 'true'
+        if: needs.common-ci-owner.outputs.owns == 'true'
         shell: bash
         run: |
           set -euo pipefail
           export PATH="$HOME/.local/bin:$PATH"
           chezmoi init --source=~/dotfiles --apply
       - name: dotfiles-post-apply の動作確認
-        if: steps.owner.outputs.owns == 'true'
+        if: needs.common-ci-owner.outputs.owns == 'true'
         shell: pwsh
         run: dotfiles-post-apply
       - name: 主要ファイルの存在確認
-        if: steps.owner.outputs.owns == 'true'
+        if: needs.common-ci-owner.outputs.owns == 'true'
         shell: pwsh
         run: |
           if (-not (Test-Path "$env:USERPROFILE\.claude\rules\agent-toolkit\01-agent.md")) {
@@ -275,7 +312,8 @@ jobs:
           }
 
   python-lint:
-    name: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.head_ref == 'develop' && github.base_ref == 'master' && format('{0} (non-owner)', matrix.check-name) || matrix.check-name }}
+    needs: common-ci-owner
+    name: ${{ needs.common-ci-owner.outputs.owns == 'false' && format('{0} (non-owner)', matrix.check-name) || matrix.check-name }}
     runs-on: ubuntu-latest
     container:
       image: ghcr.io/ak110/pyfltr:latest
@@ -306,38 +344,30 @@ jobs:
       # container job では明示しないと secrets.GITHUB_TOKEN がコンテナへ渡らない
       GITHUB_TOKEN: ${{ github.token }}
     steps:
-      # developからmasterへのrelease pull requestかどうかをjobごとに1回だけ求め、後続stepのifはこの出力を参照する。
-      - name: 共通CI所有の判定
-        id: owner
+      - name: 共通CI非所有経路
+        if: needs.common-ci-owner.outputs.owns == 'false'
         shell: bash
         working-directory: ${{ github.workspace }}
         env:
-          RELEASE_PULL_REQUEST: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.head_ref == 'develop' && github.base_ref == 'master' }}
-        run: |
-          if [ "$RELEASE_PULL_REQUEST" = "true" ]; then owns=false; else owns=true; fi
-          echo "owns=$owns" >> "$GITHUB_OUTPUT"
-      - name: 共通CI非所有経路
-        if: steps.owner.outputs.owns == 'false'
-        shell: bash
-        working-directory: ${{ github.workspace }}
-        run: echo "developからmasterへのrelease pull requestではdevelop pushが共通CIを所有する。対応不要です。develop pushのCI結果を確認してください。"
+          OWNER_REASON: ${{ needs.common-ci-owner.outputs.reason }}
+        run: echo "$OWNER_REASON"
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        if: steps.owner.outputs.owns == 'true'
+        if: needs.common-ci-owner.outputs.owns == 'true'
       - name: ユーザー設定から隔離したlockfile検証
-        if: steps.owner.outputs.owns == 'true' && matrix.python-version == '3.15' && matrix.check == 'lint'
+        if: needs.common-ci-owner.outputs.owns == 'true' && matrix.python-version == '3.15' && matrix.check == 'lint'
         run: |
           set -euo pipefail
           config_dir="$(mktemp -d)"
           trap 'rm -r -- "$config_dir"' EXIT
           env --unset=UV_FROZEN XDG_CONFIG_HOME="$config_dir" uv lock --check
       - name: safe.directory の設定
-        if: steps.owner.outputs.owns == 'true'
+        if: needs.common-ci-owner.outputs.owns == 'true'
         # --user root 実行のためワークスペース所有者（UID 1001）と実行ユーザーが不一致になり、
         # pre-commit 等の git 操作が dubious ownership で停止する。safe.directory へ追加して回避する。
         run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
 
       - name: ネイティブ依存インストール
-        if: steps.owner.outputs.owns == 'true'
+        if: needs.common-ci-owner.outputs.owns == 'true'
         # actions/cacheはPATH上のzstdを使ってキャッシュを圧縮するため、キャッシュの復元より前に導入する。
         # repack-archive の PDF 入力テストが pdftoppm を、libarchive-c 経由のアーカイブ展開が
         # libarchive13 の共有ライブラリを必要とする。
@@ -348,13 +378,13 @@ jobs:
 
 
       - name: chezmoi インストール
-        if: steps.owner.outputs.owns == 'true'
+        if: needs.common-ci-owner.outputs.owns == 'true'
         uses: ./.github/actions/install-chezmoi
         with:
           bin-dir: /usr/local/bin
 
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        if: steps.owner.outputs.owns == 'true'
+        if: needs.common-ci-owner.outputs.owns == 'true'
         with:
           path: /cache
           # 固定キーでは一度保存されると更新されないため、run_idとrun_attemptを含めて毎回保存させる。
@@ -366,11 +396,11 @@ jobs:
           restore-keys: pyfltr-cache-${{ runner.os }}-py${{ matrix.python-version }}-${{ matrix.check }}-
 
       - name: Install dependencies
-        if: steps.owner.outputs.owns == 'true'
+        if: needs.common-ci-owner.outputs.owns == 'true'
         run: uv sync --all-groups --all-extras
 
       - name: Python 3.15 pytest以外の検査
-        if: steps.owner.outputs.owns == 'true' && matrix.python-version == '3.15' && matrix.check == 'lint'
+        if: needs.common-ci-owner.outputs.owns == 'true' && matrix.python-version == '3.15' && matrix.check == 'lint'
         env:
           # cargo-fmt/cargo-clippy はrust-lint jobで専用実行するため python-lint 側では
           # 除外する（ccを含むRustビルドツールチェーンをcontainer imageに追加せずに済む）
@@ -382,12 +412,12 @@ jobs:
         run: pyfltr ci --disable=pytest,claude-plugin-validate,statusline-version
 
       - name: Python 3.15 pytest
-        if: steps.owner.outputs.owns == 'true' && matrix.python-version == '3.15' && matrix.check == 'pytest'
+        if: needs.common-ci-owner.outputs.owns == 'true' && matrix.python-version == '3.15' && matrix.check == 'pytest'
         run: pyfltr ci --commands=pytest
 
       - name: Git 2.34.1の導入
         id: minimum-git
-        if: steps.owner.outputs.owns == 'true' && matrix.python-version == '3.15' && matrix.check == 'pytest'
+        if: needs.common-ci-owner.outputs.owns == 'true' && matrix.python-version == '3.15' && matrix.check == 'pytest'
         # agent-toolkitが対応する最低版のGit（README.mdの前提条件）。Ubuntu 22.04の公式パッケージを展開し、
         # 開発用のGitを置き換えずに実Gitテストだけへ渡す。版を変える場合はREADME.mdの記載も同じ変更で更新する。
         env:
@@ -406,18 +436,19 @@ jobs:
           echo "git=$root/git" >> "$GITHUB_OUTPUT"
 
       - name: Git 2.34.1での実Gitテスト
-        if: steps.owner.outputs.owns == 'true' && matrix.python-version == '3.15' && matrix.check == 'pytest'
+        if: needs.common-ci-owner.outputs.owns == 'true' && matrix.python-version == '3.15' && matrix.check == 'pytest'
         # agent-toolkitの全テストを対象にし、Git呼び出しを新設した経路も個別の指定なしに最低版で検収する。
         env:
           AGENT_TOOLKIT_TEST_GIT: ${{ steps.minimum-git.outputs.git }}
         run: uv run pytest agent-toolkit/
 
       - name: Prune uv cache for CI
-        if: steps.owner.outputs.owns == 'true'
+        if: needs.common-ci-owner.outputs.owns == 'true'
         run: uv cache prune --ci
 
   browser-e2e:
-    name: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.head_ref == 'develop' && github.base_ref == 'master' && 'browser-e2e (non-owner)' || 'browser-e2e' }}
+    needs: common-ci-owner
+    name: ${{ needs.common-ci-owner.outputs.owns == 'false' && 'browser-e2e (non-owner)' || 'browser-e2e' }}
     runs-on: ubuntu-latest
     container:
       image: ghcr.io/ak110/pyfltr:latest
@@ -435,88 +466,73 @@ jobs:
       # 実ブラウザーE2Eは最新のPythonで実行する
       UV_PYTHON: "3.15"
     steps:
-      # developからmasterへのrelease pull requestかどうかをjobごとに1回だけ求め、後続stepのifはこの出力を参照する。
-      - name: 共通CI所有の判定
-        id: owner
+      - name: 共通CI非所有経路
+        if: needs.common-ci-owner.outputs.owns == 'false'
         shell: bash
         working-directory: ${{ github.workspace }}
         env:
-          RELEASE_PULL_REQUEST: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.head_ref == 'develop' && github.base_ref == 'master' }}
-        run: |
-          if [ "$RELEASE_PULL_REQUEST" = "true" ]; then owns=false; else owns=true; fi
-          echo "owns=$owns" >> "$GITHUB_OUTPUT"
-      - name: 共通CI非所有経路
-        if: steps.owner.outputs.owns == 'false'
-        shell: bash
-        working-directory: ${{ github.workspace }}
-        run: echo "developからmasterへのrelease pull requestではdevelop pushが共通CIを所有する。対応不要です。develop pushのCI結果を確認してください。"
+          OWNER_REASON: ${{ needs.common-ci-owner.outputs.reason }}
+        run: echo "$OWNER_REASON"
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        if: steps.owner.outputs.owns == 'true'
+        if: needs.common-ci-owner.outputs.owns == 'true'
       - name: safe.directory の設定
-        if: steps.owner.outputs.owns == 'true'
+        if: needs.common-ci-owner.outputs.owns == 'true'
         # --user root 実行のためワークスペース所有者（UID 1001）と実行ユーザーが不一致になり、
         # git 操作が dubious ownership で停止する。safe.directory へ追加して回避する。
         run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
       - name: ネイティブ依存インストール
-        if: steps.owner.outputs.owns == 'true'
+        if: needs.common-ci-owner.outputs.owns == 'true'
         # make は container image に含まれないため、後続ステップの make setup-browser 用に導入する
         run: |
           set -euo pipefail
           apt-get update
           apt-get install -y --no-install-recommends make
       - name: Install dependencies
-        if: steps.owner.outputs.owns == 'true'
+        if: needs.common-ci-owner.outputs.owns == 'true'
         run: uv sync --all-groups --all-extras
       - name: Playwright Chromiumの導入
-        if: steps.owner.outputs.owns == 'true'
+        if: needs.common-ci-owner.outputs.owns == 'true'
         run: make setup-browser
       - name: ブラウザーE2E
-        if: steps.owner.outputs.owns == 'true'
+        if: needs.common-ci-owner.outputs.owns == 'true'
         run: >-
           uv run pytest
           -m browser agent-toolkit/agent_toolkit/_atk/serve
           -o addopts='' -p no:cacheprovider
 
   rust-lint:
-    name: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.head_ref == 'develop' && github.base_ref == 'master' && 'rust-lint (non-owner)' || 'rust-lint' }}
+    needs: common-ci-owner
+    name: ${{ needs.common-ci-owner.outputs.owns == 'false' && 'rust-lint (non-owner)' || 'rust-lint' }}
     runs-on: ubuntu-latest
     defaults:
       run:
         working-directory: rust/claude-statusline
     steps:
-      # developからmasterへのrelease pull requestかどうかをjobごとに1回だけ求め、後続stepのifはこの出力を参照する。
-      - name: 共通CI所有の判定
-        id: owner
+      - name: 共通CI非所有経路
+        if: needs.common-ci-owner.outputs.owns == 'false'
         shell: bash
         working-directory: ${{ github.workspace }}
         env:
-          RELEASE_PULL_REQUEST: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.head_ref == 'develop' && github.base_ref == 'master' }}
-        run: |
-          if [ "$RELEASE_PULL_REQUEST" = "true" ]; then owns=false; else owns=true; fi
-          echo "owns=$owns" >> "$GITHUB_OUTPUT"
-      - name: 共通CI非所有経路
-        if: steps.owner.outputs.owns == 'false'
-        shell: bash
-        working-directory: ${{ github.workspace }}
-        run: echo "developからmasterへのrelease pull requestではdevelop pushが共通CIを所有する。対応不要です。develop pushのCI結果を確認してください。"
+          OWNER_REASON: ${{ needs.common-ci-owner.outputs.reason }}
+        run: echo "$OWNER_REASON"
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        if: steps.owner.outputs.owns == 'true'
+        if: needs.common-ci-owner.outputs.owns == 'true'
         with:
           fetch-depth: 0
       - uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca # v5.1.1
-        if: steps.owner.outputs.owns == 'true'
+        if: needs.common-ci-owner.outputs.owns == 'true'
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
-        if: steps.owner.outputs.owns == 'true'
+        if: needs.common-ci-owner.outputs.owns == 'true'
         with:
           workspaces: rust/claude-statusline
       - name: cargo fmt --check
-        if: steps.owner.outputs.owns == 'true'
+        if: needs.common-ci-owner.outputs.owns == 'true'
         run: cargo fmt --check
       - name: cargo clippy
-        if: steps.owner.outputs.owns == 'true'
+        if: needs.common-ci-owner.outputs.owns == 'true'
         run: cargo clippy --all-targets --all-features -- -D warnings
       - name: cargo test
-        if: steps.owner.outputs.owns == 'true'
+        if: needs.common-ci-owner.outputs.owns == 'true'
         run: cargo test
 
   statusline-version:
