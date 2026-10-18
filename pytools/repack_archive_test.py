@@ -1021,3 +1021,73 @@ class TestProcessPdf:
         assert ordered == ["0001.jpg", "0002.jpg"]
         # バックアップは元の PDF 名のまま保持される
         assert (tmp_path / "bk" / "book.pdf").exists()
+
+
+def _snapshot(target: pathlib.Path) -> object:
+    """ファイルはバイト列、ディレクトリは相対パスと内容の組で原本を比較できる形にする。"""
+    if target.is_file():
+        return target.read_bytes()
+    return sorted((path.relative_to(target).as_posix(), path.read_bytes()) for path in target.rglob("*") if path.is_file())
+
+
+def _make_input(tmp_path: pathlib.Path, kind: str) -> pathlib.Path:
+    """入力形態ごとに、作業領域の準備前に退避される原本を作成する。"""
+    if kind == "zip":
+        target = tmp_path / "book.zip"
+        _make_zip(target, {"page.txt": b"page"})
+    elif kind == "directory":
+        target = tmp_path / "book_dir"
+        (target / "inner").mkdir(parents=True)
+        (target / "inner" / "page.txt").write_bytes(b"page")
+    else:
+        target = tmp_path / "book.pdf"
+        target.write_bytes(b"%PDF-1.4\n%placeholder\n")
+    return target
+
+
+class TestPreparationFailureRestoresOriginal:
+    """原本の退避後、作業領域の準備段で失敗しても公開`main`の後に原本が元のパスへ戻る。
+
+    退避と復元の保護区間が分かれていると、準備段の例外は原本をバックアップ先だけに残す。
+    """
+
+    @pytest.mark.parametrize("kind", ["zip", "directory", "pdf"])
+    def test_workdir_creation_failure_restores_original(
+        self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, kind: str
+    ) -> None:
+        target = _make_input(tmp_path, kind)
+        original = _snapshot(target)
+
+        def fail_mkdtemp(*args: object, **kwargs: object) -> str:
+            del args, kwargs
+            raise OSError(36, "File name too long")
+
+        monkeypatch.setattr(repack_archive.tempfile, "mkdtemp", fail_mkdtemp)
+        exit_code = _run_main(monkeypatch, ["--no-trash", str(target)])
+
+        assert exit_code == 1
+        assert target.exists()
+        assert _snapshot(target) == original
+        assert not (tmp_path / "bk" / target.name).exists()
+
+    @pytest.mark.parametrize(
+        ("kind", "stage"),
+        [("zip", "_extract_archive"), ("directory", "_copy_filtered"), ("pdf", "_render_pdf")],
+    )
+    def test_format_specific_preparation_failure_restores_original(
+        self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, kind: str, stage: str
+    ) -> None:
+        target = _make_input(tmp_path, kind)
+        original = _snapshot(target)
+
+        def fail_stage(*args: object, **kwargs: object) -> None:
+            del args, kwargs
+            raise OSError("準備段の失敗")
+
+        monkeypatch.setattr(repack_archive, stage, fail_stage)
+        exit_code = _run_main(monkeypatch, ["--no-trash", str(target)])
+
+        assert exit_code == 1
+        assert _snapshot(target) == original
+        assert not (tmp_path / "bk" / target.name).exists()
+        assert not list(tmp_path.glob(f"{repack_archive._WORKDIR_PREFIX}*"))  # pylint: disable=protected-access

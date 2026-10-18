@@ -369,16 +369,19 @@ def _process_target(
     else:
         shutil.move(str(target), str(bk_entry))
 
-    # 2. 作業ディレクトリ作成
-    if dry_run:
-        work_dir = parent / f"{stem}.__dry_run__"
-        logger.info("[dry-run] mkworkdir: %s", work_dir)
-    else:
-        work_dir = pathlib.Path(tempfile.mkdtemp(prefix=_WORKDIR_PREFIX, dir=parent))
-
     source_for_extract = bk_entry  # アーカイブ・ディレクトリとも退避先から取得する
     entry_failures: list[EntryFailure] = []
+    work_dir: pathlib.Path | None = None
+    # 原本を退避した直後から出力ZIPの確定までを1つの保護区間にする。
+    # 作業ディレクトリの作成など準備段の失敗でも、原本を元のパスへ戻す。
     try:
+        # 2. 作業ディレクトリ作成
+        if dry_run:
+            work_dir = parent / f"{stem}.__dry_run__"
+            logger.info("[dry-run] mkworkdir: %s", work_dir)
+        else:
+            work_dir = pathlib.Path(tempfile.mkdtemp(prefix=_WORKDIR_PREFIX, dir=parent))
+
         # 3. 選択的展開 / コピー / PDF ラスタライズ
         if is_pdf:
             if dry_run:
@@ -433,13 +436,14 @@ def _process_target(
     except Exception:
         # ロールバック: 作業ディレクトリ削除 + 原本復元
         if not dry_run:
-            shutil.rmtree(work_dir, ignore_errors=True)
+            if work_dir is not None:
+                shutil.rmtree(work_dir, ignore_errors=True)
             if bk_entry.exists() and not target.exists():
                 shutil.move(str(bk_entry), str(target))
         raise
 
     # 7. 作業ディレクトリ削除
-    if not dry_run:
+    if not dry_run and work_dir is not None:
         shutil.rmtree(work_dir, ignore_errors=True)
 
     # 8. バックアップのゴミ箱送り (警告/失敗があれば欠落の可能性があるため原本を保持する)
