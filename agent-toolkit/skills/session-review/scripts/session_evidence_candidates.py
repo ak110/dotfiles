@@ -10,6 +10,7 @@ import sys
 from pathlib import Path
 from typing import Any, NamedTuple
 
+import session_evidence_execution
 from session_evidence_detail import (
     _clip_structure,
     _entry_detail_events,
@@ -40,6 +41,7 @@ from session_evidence_hook_notices import (
 )
 from session_evidence_tool_calls import (
     _record_tool_calls,
+    _recorded_input,
 )
 
 from agent_toolkit._atk import outcome as _outcome
@@ -187,28 +189,6 @@ _ADHOC_SHELL_TOOLS = frozenset({"bash", "exec", "exec_command", "shell", "local_
 """シェルのコマンドを実行するツール名の末尾部分。Codexの`exec`はJavaScript本文から`exec_command`を呼ぶ形でコマンドを渡す。"""
 
 
-_ADHOC_PYTHON = r"(?<![\w.-])python(?:\d+(?:\.\d+)*)?"
-
-
-_ADHOC_INLINE_CODE = re.compile(
-    _ADHOC_PYTHON + r"(?:\s+-[A-Za-z]+)*?\s+-c(?![\w-])"
-    r"|" + _ADHOC_PYTHON + r"(?:\s+-[A-Za-z]+)*(?:\s+-)?\s*<<"
-    r"|(?<![\w.-])(?:python(?:\d+(?:\.\d+)*)?|uv\s+run)(?:\s+-\S+)*\s+\S*managed-temp/\S+\.py(?!\w)"
-    r"|(?<![\w.-])node(?:\s+-\S+)*?\s+(?:-e|--eval)(?![\w-])"
-)
-"""インタプリタへその場で書いたコードを渡す実行（`-c`、ヒアドキュメントの標準入力、managed-tempのスクリプト、`node -e`）。"""
-
-
-_ADHOC_SAVED_OUTPUT = re.compile(r"atk-output-|agents-wait-|/tool-results/|/tasks/[^\s'\"]*\.output(?!\w)")
-"""`atk`が標準出力の代わりに示す保存先、`atk agents wait`の結果ファイル、
-ホストが退避したツール結果とバックグラウンドタスクの出力。
-"""
-
-
-_ADHOC_OUTPUT_PROCESSOR = re.compile(r"(?<![\w.-])(?:jq|awk|gawk|cut|sed|python(?:\d+(?:\.\d+)*)?)(?![\w.-])")
-"""保存された出力の後加工に使うコマンド。読むだけの`cat`・`rg`・`head`は含めない。"""
-
-
 _CANDIDATE_CONTEXT_FIELDS = ("assistant_context", "user_response", "wi_file", "wi_state", "wi_section")
 """候補へ写す判断材料の項目。確認の質問・選択肢・回答と、記入元のWIの所在を候補一覧へ載せるために使う。"""
 
@@ -345,8 +325,12 @@ def _adhoc_processing_events(collected: list[_CollectedRecord]) -> list[dict[str
     """
     events: list[dict[str, Any]] = []
     for item in collected:
+        entries = {record.line: record.entry for record in item.records}
         for call in _record_tool_calls(item.records):
-            if not _is_adhoc_processing(call.tool, call.text):
+            inputs = _recorded_input(entries[call.line], call.call_id)
+            raw = inputs.get("cmd", inputs.get("command"))
+            command = shlex.join(raw) if isinstance(raw, list) and all(isinstance(value, str) for value in raw) else call.text
+            if not _is_adhoc_processing(call.tool, command):
                 continue
             events.append(
                 {
@@ -379,9 +363,9 @@ def _is_adhoc_processing(tool: str, command: str) -> bool:
     leaf = tool.casefold().rsplit("__", maxsplit=1)[-1].rsplit(".", maxsplit=1)[-1]
     if leaf not in _ADHOC_SHELL_TOOLS:
         return False
-    if _ADHOC_INLINE_CODE.search(command):
-        return True
-    return bool(_ADHOC_SAVED_OUTPUT.search(command) and _ADHOC_OUTPUT_PROCESSOR.search(command))
+    return any(
+        session_evidence_execution.processes_output(value) for value in session_evidence_execution.command_inputs(tool, command)
+    )
 
 
 def _candidate_events(
