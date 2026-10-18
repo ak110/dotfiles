@@ -41,7 +41,7 @@ def test_document_option_mutation_is_detected(monkeypatch: pytest.MonkeyPatch) -
 
     def mutated(path: pathlib.Path, *args: Any, **kwargs: Any) -> str:
         text = original(path, *args, **kwargs)
-        return text.replace("--work-dir", "--unsupported-r2") if path == document else text
+        return text.replace("--target-repo", "--unsupported-r2") if path == document else text
 
     monkeypatch.setattr(pathlib.Path, "read_text", mutated)
     with pytest.raises(AssertionError, match="unsupported-r2"):
