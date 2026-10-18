@@ -54,7 +54,7 @@
 
 - 委譲先の稼働中は、その対象範囲のファイルを編集しない。編集する場合は終了を確かめ、作業ツリーとコミット履歴を確認してから行い、競合したら採用する版を確定して統合し、破棄した内容を委譲先へ伝える
 - 完了報告が退避識別子か複製パスを開示した場合は、その内容も確かめ、`agent-toolkit:commit`の`references/stash-cleanup.md`に従って処置する
-- 指摘の採否と修正は`agent-toolkit:review-standards`の`references/reviewee.md`を読んで確定する。裏付けを取得できないと記録された行の扱いは同スキルが定める
+- レビュー指摘と、委譲先が追加対策・残存経路について求めた判断の採否は、`agent-toolkit:review-standards`の`references/reviewee.md`を読んで確定する。元の要求・公開契約・利用場面から経路の所属を確かめ、`agent-toolkit/rules/01-agent.md`「QCDと3段判定」の必要性判定を適用してから対策を選ぶ。完成条件の変更・除外へ進む判断は`${CLAUDE_PLUGIN_ROOT}/share/review-loop-coordination.md`「エスカレーションの事由別の扱い」に従う。裏付けを取得できないと記録された行の扱いは同スキルが定める
 - 返却（`Agent`ツールの戻り値を含む）や`agents_server`の結果に`気付いた改善点:`で始まる行があれば、全ての該当行を役割に応じて上流へ渡す。事前の全件調査は前提にせず作業を続け、原因分析は`agent-toolkit:session-review`へ集める
   - メイン: モードによらず、次のユーザーへの発話へ標識と原文を保って転記し、標識は字下げを除く行頭へ置く。報告元とメインが確かめた範囲を引用の外へ添え、確かめていない主張は委譲先からの未確認の報告と分かる形で伝える。作業完了を報告する報告用UWIは`agent-toolkit:completion-report`の契約に従う
   - 委譲先: `agent-toolkit/share/rules-subagent.md`「返却形式の受け渡し」に従う
