@@ -2093,15 +2093,21 @@ def test_skipped_update_keeps_pending_for_next_timer(
     monkeypatch.setattr(update_dotfiles, "_update_git_with_recovery", _REAL_UPDATE_GIT_WITH_RECOVERY)
     monkeypatch.setattr(update_dotfiles, "_git_operation_in_progress", lambda: True)
     attempts: list[int] = []
+    head = _git(local, "rev-parse", "HEAD")
+    git_outputs = {
+        ("symbolic-ref", "HEAD"): "refs/heads/develop",
+        ("rev-parse", "--symbolic-full-name", "@{upstream}"): "refs/remotes/origin/develop",
+        ("ls-remote", "--exit-code", "--refs", "origin", "refs/heads/develop"): f"{head}\trefs/heads/develop",
+        ("rev-parse", "HEAD"): head,
+    }
 
     def run(command: list[str], **_kwargs: object) -> subprocess.CompletedProcess[str]:
         if command == [str(launcher)]:
             code = update_dotfiles.main()
             attempts.append(code)
             return subprocess.CompletedProcess(command, code, "", "")
-        argument = command[-1]
-        text = {"HEAD": "develop", "@{upstream}": "origin/develop"}.get(argument, "upstream\trefs/heads/develop")
-        return subprocess.CompletedProcess(command, 0, text, "")
+        assert command[:3] == ["git", "-C", str(local)]
+        return subprocess.CompletedProcess(command, 0, git_outputs[tuple(command[3:])], "")
 
     monkeypatch.setattr(timer, "_run", run)
     pending = tmp_path / "test.pending"
