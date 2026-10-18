@@ -203,7 +203,7 @@ def _get_current_branch() -> str:
 def _get_default_branch() -> str:
     """origin/HEADが指すデフォルトブランチ名を返す（例: 'master'）。"""
     result = subprocess.run(
-        ["git", "symbolic-ref", "--short", "refs/remotes/origin/HEAD"],
+        ["git", "symbolic-ref", "refs/remotes/origin/HEAD"],
         capture_output=True,
         text=True,
         encoding="utf-8",
@@ -213,7 +213,7 @@ def _get_default_branch() -> str:
     if result.returncode != 0:
         raise _ReleaserError("origin/HEADを解決できません。`git remote set-head origin --auto`を試してください。")
     name = result.stdout.strip()
-    return name.removeprefix("origin/")
+    return name.removeprefix("refs/remotes/origin/")
 
 
 def _ensure_clean_working_tree() -> None:

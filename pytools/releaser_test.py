@@ -8,7 +8,9 @@ from unittest.mock import patch
 
 import pytest
 import yaml
+from agent_toolkit._testing import git_repository
 
+from pytools import releaser
 from pytools.releaser import (
     _build_parser,
     _list_release_runs,
@@ -20,6 +22,26 @@ from pytools.releaser import (
     _watch_run,
     main,
 )
+
+
+@pytest.mark.parametrize("collision", ["none", "tag", "branch"])
+def test_default_branch_ignores_other_ref_namespaces(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, collision: str) -> None:
+    """既定branchの識別がorigin/developと同名のtag・ローカルbranchに左右されない。"""
+    repo = git_repository.init_repository(tmp_path / "repo", initial_branch="develop", commit_message="base")
+    git_repository.run_git(repo, "remote", "add", "origin", str(repo))
+    git_repository.run_git(repo, "fetch", "origin")
+    git_repository.run_git(repo, "symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/develop")
+    if collision == "tag":
+        git_repository.run_git(repo, "tag", "origin/develop")
+    if collision == "branch":
+        git_repository.run_git(repo, "branch", "origin/develop")
+    original = subprocess.run
+
+    def run(command: list[str], **kwargs: Any) -> subprocess.CompletedProcess[str]:
+        return original(command, cwd=repo, check=kwargs.pop("check", False), **kwargs)
+
+    monkeypatch.setattr(subprocess, "run", run)
+    assert releaser._get_default_branch() == "develop"  # noqa: SLF001  # pylint: disable=protected-access
 
 
 class TestValidateReleaseWorkflow:

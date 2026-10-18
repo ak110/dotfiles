@@ -29,6 +29,7 @@ from agent_toolkit._atk.wi.formatters import parse_alert_keys
 from agent_toolkit._common import json_command as _json_command
 from agent_toolkit._git import command as _git_command
 from agent_toolkit._git import forge_cli as _forge_cli
+from agent_toolkit._git import refs as _git_refs
 from agent_toolkit._git import remote as _git_remote
 
 _GH_SUBPROCESS_TIMEOUT = 30.0
@@ -157,18 +158,8 @@ def _run_git_capture(local_path: pathlib.Path, args: list[str]) -> str | None:
 
 def resolve_target_branch(local_path: pathlib.Path, *, git_fn: GitCaptureFn = _run_git_capture) -> str | None:
     """CI失敗収集の対象ブランチを解決する。"""
-    upstream = git_fn(local_path, ["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"])
-    if upstream is not None:
-        remotes = (git_fn(local_path, ["remote"]) or "").splitlines()
-        for remote in remotes:
-            prefix = f"{remote}/"
-            if upstream.startswith(prefix):
-                return upstream[len(prefix) :]
-    head_ref = git_fn(local_path, ["symbolic-ref", "refs/remotes/origin/HEAD"])
-    prefix = "refs/remotes/origin/"
-    if head_ref is not None and head_ref.startswith(prefix):
-        return head_ref[len(prefix) :]
-    return None
+    resolved = _git_refs.resolve_branch(local_path, git_fn=git_fn, upstream=True)
+    return resolved.branch if resolved else None
 
 
 def _run_alert_json_command(

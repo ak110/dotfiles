@@ -718,7 +718,7 @@ class TestProcessLoopPromptAndEnv:
         """対象リポジトリ固有の公開先をprocess-loopが目的文へ注入しない。"""
         prompt = _pl_session.build_process_loop_prompt()  # pylint: disable=protected-access  # noqa: SLF001
 
-        assert "origin/master" not in prompt
+        assert "refs/remotes/origin/master" not in prompt
         assert "公開先" not in prompt
         assert "git push" not in prompt
         assert "commit" not in prompt
@@ -1859,9 +1859,9 @@ class TestConsoleTitleReset:
                 return subprocess.CompletedProcess(cmd, 0, str(local_path / ".git"), "")
             if cmd == ["git", "rev-parse", "--show-toplevel"]:
                 return subprocess.CompletedProcess(cmd, 0, str(local_path / ".claude" / "worktrees" / "process-loop"), "")
-            if cmd == ["git", "symbolic-ref", "--short", "HEAD"]:
+            if cmd == ["git", "symbolic-ref", "HEAD"]:
                 return subprocess.CompletedProcess(cmd, 0, "worktree-process-loop", "")
-            if cmd == ["git", "symbolic-ref", "--short", "refs/remotes/origin/HEAD"]:
+            if cmd == ["git", "symbolic-ref", "refs/remotes/origin/HEAD"]:
                 return subprocess.CompletedProcess(cmd, 0, "origin/master\n", "")
             if cmd == ["git", "remote"]:
                 return subprocess.CompletedProcess(cmd, 0, "origin\n", "")

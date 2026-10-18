@@ -141,7 +141,9 @@ def test_check_and_submit_alerts_submits_one_awi_per_pipeline(monkeypatch: pytes
             tmp_path / "repo",
             forge="gitlab",
             now=datetime.datetime(2026, 1, 1),
-            git_fn=lambda _p, args: "refs/remotes/origin/develop" if args[0] == "symbolic-ref" else None,
+            git_fn=lambda _p, args: (
+                "origin" if args == ["remote"] else ("refs/remotes/origin/develop" if args[0] == "symbolic-ref" else None)
+            ),
             ci_list_fn=lambda _r, _b: [{"id": 437813, "status": "failed"}],
             glab_api_fn=_gitlab_schedule_api([]),
         )
@@ -165,7 +167,7 @@ def test_resolve_target_branch_paths() -> None:
 
     def upstream_git(_path: pathlib.Path, args: list[str]) -> str | None:
         if args[0] == "rev-parse":
-            return "origin/feature/foo"
+            return "refs/remotes/origin/feature/foo"
         if args == ["remote"]:
             return "origin"
         raise AssertionError(args)
@@ -175,6 +177,8 @@ def test_resolve_target_branch_paths() -> None:
     def fallback_git(_path: pathlib.Path, args: list[str]) -> str | None:
         if args[0] == "rev-parse":
             return None
+        if args == ["remote"]:
+            return "origin"
         return "refs/remotes/origin/master"
 
     assert alerts.resolve_target_branch(pathlib.Path("/repo"), git_fn=fallback_git) == "master"
@@ -274,7 +278,11 @@ def test_check_and_submit_alerts_invokes_add_entries(monkeypatch: pytest.MonkeyP
         tmp_path / "repo",
         forge="github",
         now=datetime.datetime(2026, 1, 1),
-        git_fn=lambda _p, args: "refs/remotes/origin/main" if args == ["symbolic-ref", "refs/remotes/origin/HEAD"] else None,
+        git_fn=lambda _p, args: (
+            "origin"
+            if args == ["remote"]
+            else ("refs/remotes/origin/main" if args == ["symbolic-ref", "refs/remotes/origin/HEAD"] else None)
+        ),
         run_list_fn=lambda _r, _b: runs,
     )
     assert count.submitted == 1
@@ -298,6 +306,8 @@ def test_check_and_submit_alerts_writes_kind_specific_completion(
     _prepare_alert_submission(monkeypatch, notes)
 
     def git_fn(_path: pathlib.Path, args: list[str]) -> str | None:
+        if args == ["remote"]:
+            return "origin"
         if args == ["symbolic-ref", "refs/remotes/origin/HEAD"]:
             return "refs/remotes/origin/main"
         return None
