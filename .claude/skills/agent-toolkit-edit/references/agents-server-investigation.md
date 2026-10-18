@@ -12,7 +12,7 @@ Claude Codeの作業ディレクトリのスラッグは、絶対パスのパス
 `agents_server`の診断ログの書き手は次のとおり。
 
 - MCPサーバーの起動・終了とinitializeの節目: `_agents_server/mcp_tools.py`と`mcp_transport.py`
-- 候補ごとの初期化と候補の切替: `manager.py`。Codexの`explore`で読み取り専用sandboxが名前空間を作成できなかった候補は、モデルを呼ぶ前に除外理由`exploreSandboxNamespaceDenied`で警告を残し、`unavailable-candidates.json`へ記録して次候補へ進む
+- 候補ごとの初期化と候補の切替: `manager.py`。Codexの`explore`ではモデル開始前にsandboxを確認する。接続と子孫の回収後に確定した名前空間拒否、RPC拒否、非0終了、応答不正、初期化失敗および時間切れを、種類と診断を持つ除外理由で警告へ残して次候補へ進む。名前空間拒否の理由は`exploreSandboxNamespaceDenied`である。RPC拒否とコマンド失敗には`exploreSandboxRpcError`と`exploreSandboxCommandFailed`を使う。応答不正と初期化失敗には`exploreSandboxInvalidResponse`と`exploreSandboxInitializationFailed`を使う。時間切れとその他の確認失敗には`exploreSandboxTimeout`と`exploreSandboxProbeFailed`を使う。除外範囲は同じ起動要求内の全Codex探索候補で、警告ログと起動応答の`excluded_candidates`から原因を読む。sandbox能力の不成立は`unavailable-candidates.json`へ保存せず次要求で確認し直し、旧版が保存した既知のsandbox理由も除外の根拠から外す。その他の候補固有の可用性失敗は同JSONと警告ログから調べる。確認接続の終了を確かめられない場合は回収エラーを返し、候補の切替を止める
 - 開始後の保存失敗（登録簿、待機対象、状態ファイル）: `manager.py`と`state.py`。予約した保存とheartbeatの失敗は`status_file.py`と`manager_base.py`が、書込主体の状態ファイルとsession識別子の一覧とともに記録する。いずれもスタックを含み、置換元と置換先のパスは例外の`add_note`による注記にある。共通の置換（`_common/atomic_file.py`）はWindowsのWinError 5・32を1秒未満の有限回で再試行し、上限後と対象外のエラーでは旧本文を残して失敗を返す
 - sessionの状態遷移（`session_transition`）: `manager.py`・`manager_registry.py`・`manager_resume.py`・`state.py`
 - 開始・終端の資源記録（`resource_snapshot`）: `resource_snapshot.py`

@@ -204,7 +204,7 @@ class _SandboxProbeClient:
     """公開command/exec応答を模し、接続の回収を観測する。"""
 
     def __init__(self, *_args: Any, **_kwargs: Any) -> None:
-        self.process = None
+        self.process: Any = None
         self.closed = False
         self.requests: list[tuple[str, dict[str, Any]]] = []
         self.response: dict[str, Any] = {"exitCode": 0, "stderr": "", "stdout": ""}
@@ -1194,13 +1194,53 @@ async def test_legacy_plugin_root_real_mcp_lifecycle(
     assert uv is not None
     command = plugin_environment.launch_command(source, pathlib.Path("agent_toolkit/agents_server_mcp.py"))
     log = tmp_path / "legacy-mcp.stderr"
+    log.touch()
     owned: dict[int, psutil.Process] = {}
     observation: dict[str, Any] = {}
     area: pathlib.Path | None = None
+    parallel: asyncio.subprocess.Process | None = None
+    parallel_script = tmp_path / "parallel" / "agent_toolkit" / "agents_server_mcp.py"
+    parallel_script.parent.mkdir(parents=True)
+    parallel_script.write_text('import sys\nprint("ready", flush=True)\nsys.stdin.read()\n', encoding="utf-8")
+    cleanup_script = tmp_path / "fixture_cleanup.py"
+    cleanup_script.write_text(
+        '''"""公開cleanupへ、この試験が所有するプロセスの実OS情報だけを渡す。"""
+import json
+import runpy
+import sys
+import psutil
 
-    def cleanup(target: pathlib.Path) -> subprocess.CompletedProcess[str]:
+identities = json.loads(sys.argv[1])
+
+def fixture_processes(*_args, **_kwargs):
+    for pid, created_at in identities:
+        try:
+            process = psutil.Process(pid)
+            if process.create_time() == created_at:
+                yield process
+        except psutil.NoSuchProcess:
+            continue
+
+psutil.process_iter = fixture_processes
+sys.argv = sys.argv[2:]
+runpy.run_path(sys.argv[0], run_name="__main__")
+''',
+        encoding="utf-8",
+    )
+
+    def cleanup(target: pathlib.Path, processes: dict[int, psutil.Process] | None = None) -> subprocess.CompletedProcess[str]:
+        # 列挙集合だけをfixtureのidentityへ限定する。argv・実行中のOSアカウント・open_filesと公開cleanupは実物を使う。
+        identities = [(process.pid, process.create_time()) for process in (owned if processes is None else processes).values()]
         return subprocess.run(
-            [sys.executable, str(plugin / "agent_toolkit/_managed_temp.py"), "cleanup", "--path", str(target)],
+            [
+                sys.executable,
+                str(cleanup_script),
+                json.dumps(identities),
+                str(plugin / "agent_toolkit/_managed_temp.py"),
+                "cleanup",
+                "--path",
+                str(target),
+            ],
             capture_output=True,
             text=True,
             encoding="utf-8",
@@ -1210,6 +1250,16 @@ async def test_legacy_plugin_root_real_mcp_lifecycle(
         )
 
     try:
+        # この試験が所有する別主体で、名前空間の帰属を確定できない並行MCPを再現する。
+        parallel = await asyncio.create_subprocess_exec(
+            sys.executable,
+            str(parallel_script),
+            stdin=asyncio.subprocess.PIPE,
+            stdout=asyncio.subprocess.PIPE,
+            env=environment,
+        )
+        assert parallel.stdout is not None
+        assert await asyncio.wait_for(parallel.stdout.readline(), timeout=5) == b"ready\n"
         # Windowsで約40秒を要したcold導入と、実MCP操作の予算を確保する。
         with log.open("w", encoding="utf-8") as errors, anyio.fail_after(90):
             async with contextlib.AsyncExitStack() as stack:
@@ -1295,19 +1345,34 @@ async def test_legacy_plugin_root_real_mcp_lifecycle(
                     "area": str(area),
                     "live_cleanup": {"exit_code": protected.returncode, "stdout": protected.stdout, "stderr": protected.stderr},
                 }
-    finally:
         _wait_mcp_processes(owned, timeout=5)
+        assert area is not None
+        parallel_process = psutil.Process(parallel.pid)
+        unknown_protected = cleanup(area, {parallel.pid: parallel_process})
+        assert unknown_protected.returncode == 2, unknown_protected.stderr
+        assert f"pid={parallel.pid}" in unknown_protected.stderr
+        assert area.exists() and parallel.returncode is None
+        cleaned = cleanup(area)
+        assert cleaned.returncode == 0, cleaned.stderr
+        assert not area.exists()
+        assert parallel.returncode is None
+        observation.update(
+            terminated_processes=sorted(owned),
+            stopped_cleanup={"exit_code": cleaned.returncode, "stdout": cleaned.stdout, "stderr": cleaned.stderr},
+            parallel_process={"pid": parallel.pid, "created_at": parallel_process.create_time(), "alive": True},
+            unknown_process_cleanup={"exit_code": unknown_protected.returncode, "stderr": unknown_protected.stderr},
+            root_removed=True,
+        )
+        print("旧形式MCP観測: " + json.dumps(observation, ensure_ascii=False))
+    finally:
+        try:
+            _wait_mcp_processes(owned, timeout=5)
+        finally:
+            if parallel is not None:
+                assert parallel.stdin is not None
+                parallel.stdin.close()
+                await asyncio.wait_for(parallel.wait(), timeout=5)
         print("旧形式MCP診断:\n" + log.read_text(encoding="utf-8"))
-    assert area is not None
-    cleaned = cleanup(area)
-    assert cleaned.returncode == 0, cleaned.stderr
-    assert not area.exists()
-    observation.update(
-        terminated_processes=sorted(owned),
-        stopped_cleanup={"exit_code": cleaned.returncode, "stdout": cleaned.stdout, "stderr": cleaned.stderr},
-        root_removed=True,
-    )
-    print("旧形式MCP観測: " + json.dumps(observation, ensure_ascii=False))
 
 
 @pytest.mark.parametrize("legacy_server_present", [False, True])
@@ -1807,6 +1872,7 @@ async def test_codex_resume_passes_delegate_instructions(monkeypatch: pytest.Mon
     client = _TierClient()
     manager = subject.AppServerManager()
     monkeypatch.setattr(manager, "_ensure_client", AsyncMock(return_value=client))
+    monkeypatch.setattr(subject, "JsonRpcProcess", _SandboxProbeClient)
     normal_session = state.SessionState("thread-normal", str(tmp_path), engine="codex")
     explore_session = state.SessionState("thread-explore", str(tmp_path), engine="codex", launch_kind="explore")
     shell_session = state.SessionState("thread-shell", str(tmp_path), engine="codex", launch_kind="shell")
@@ -2637,12 +2703,48 @@ async def test_codex_kill_reports_no_request_when_pending_turn_completes_natural
         await manager.close()
 
 
+@pytest.mark.parametrize("api_provider", [False, True])
 @pytest.mark.asyncio
-@pytest.mark.parametrize("failure", ["success", "namespace", "other", "rpc", "timeout", "invalid", "wrong-code"])
+async def test_explore_resume_checks_sandbox_before_delivering_prompt(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, api_provider: bool
+) -> None:
+    """探索再開の実行環境が使えない場合、入力を配送せず原因と新規探索の案内を返す。"""
+    probe = _SandboxProbeClient()
+    monkeypatch.setattr(subject, "JsonRpcProcess", lambda *_args, **_kwargs: probe)
+    manager = subject.AppServerManager()
+    client = _TierClient()
+    monkeypatch.setattr(manager, "_ensure_client", AsyncMock(return_value=client))
+    try:
+        await manager.start("調査", str(tmp_path), launch_kind="explore")
+        client.requests.clear()
+        probe.response = {
+            "exitCode": 1,
+            "stderr": "bwrap: No permissions to create a new namespace",
+            "stdout": "",
+        }
+        prompt = state.ResumePrompt("再調査")
+        resumed = await manager.resume(
+            "tier-thread", prompt, str(tmp_path), launch_kind="explore", model_provider="api" if api_provider else None
+        )
+        assert resumed.status == "failed"
+        assert "exploreSandboxNamespaceDenied" in str(resumed.error)
+        assert "新規" in str(resumed.error)
+        assert prompt.delivery == "reply_failed"
+        assert not client.requests
+        assert len(probe.requests) == 2
+        assert probe.closed
+    finally:
+        await manager.close()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "failure", ["success", "namespace", "other", "rpc", "timeout", "invalid", "wrong-code", "initialization", "unreaped"]
+)
 async def test_explore_sandbox_probe_distinguishes_failure_kinds(
     failure: str, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """公開の起動では確定した名前空間の作成拒否だけを候補不成立として扱い、probeの接続をthread開始より先に回収する。"""
+    """公開起動は回収済みの事前確認の不成立を次候補へ渡し、診断と読取専用境界を保つ。"""
     probe = _SandboxProbeClient()
     if failure in {"namespace", "wrong-code"}:
         probe.response = {
@@ -2658,6 +2760,10 @@ async def test_explore_sandbox_probe_distinguishes_failure_kinds(
         probe.error = subject.JsonRpcResponseError("command/exec", -32600, "request rejected")
     elif failure == "timeout":
         probe.error = TimeoutError("probe deadline")
+    elif failure == "initialization":
+        monkeypatch.setattr(probe, "start", AsyncMock(side_effect=subject.AppServerError("initialize rejected")))
+    elif failure == "unreaped":
+        probe.process = SimpleNamespace(returncode=None)
     monkeypatch.setattr(subject, "JsonRpcProcess", lambda *_args, **_kwargs: probe)
     manager = subject.AppServerManager()
     client = _TierClient()
@@ -2672,25 +2778,34 @@ async def test_explore_sandbox_probe_distinguishes_failure_kinds(
         assert session.session_id == "tier-thread"
         assert [method for method, _params in client.requests] == ["thread/start", "turn/start"]
     else:
-        error_type = (
-            subject.StartCandidateUnavailable
-            if failure == "namespace"
-            else (TimeoutError if failure == "timeout" else subject.AppServerError)
-        )
+        error_type = subject.AppServerError if failure == "unreaped" else subject.StartCandidateUnavailable
         with pytest.raises(error_type) as raised:
             await manager.start("調査", str(tmp_path), launch_kind="explore")
         if failure == "namespace":
             assert isinstance(raised.value, subject.StartCandidateUnavailable)
             assert raised.value.reason == "exploreSandboxNamespaceDenied"
         else:
-            assert not isinstance(raised.value, subject.StartCandidateUnavailable)
+            diagnostics = {
+                "other": ("exploreSandboxCommandFailed", "exitCode=1", "permission denied"),
+                "rpc": ("exploreSandboxRpcError", "request rejected"),
+                "timeout": ("exploreSandboxTimeout", "probe deadline"),
+                "invalid": ("exploreSandboxInvalidResponse", "exitCode"),
+                "wrong-code": ("exploreSandboxCommandFailed", "exitCode=124", "bwrap:"),
+                "initialization": ("exploreSandboxInitializationFailed", "initialize rejected"),
+                "unreaped": ("App Server終了を確認できません",),
+            }
+            for diagnostic in diagnostics[failure]:
+                assert diagnostic in str(raised.value)
+            if failure == "unreaped":
+                assert not isinstance(raised.value, subject.StartCandidateUnavailable)
         assert not manager.sessions and not client.requests
     assert probe.closed
-    params = probe.requests[0][1]
-    assert params["cwd"] == str(tmp_path)
-    assert params["sandboxPolicy"] == {"type": "readOnly"}
-    assert params["disableOutputCap"] is True
-    assert params["timeoutMs"] > 0
+    if failure != "initialization":
+        params = probe.requests[0][1]
+        assert params["cwd"] == str(tmp_path)
+        assert params["sandboxPolicy"] == {"type": "readOnly"}
+        assert not {"outputBytesCap", "disableOutputCap", "tty", "streamStdin", "streamStdoutStderr"}.intersection(params)
+        assert params["timeoutMs"] > 0
     await manager.close()
 
 

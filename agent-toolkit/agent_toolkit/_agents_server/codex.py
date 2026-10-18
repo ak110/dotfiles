@@ -174,9 +174,11 @@ class AppServerError(session_errors.DelegateBackendError):
 class StartCandidateUnavailable(AppServerError):
     """モデルの実行開始前に候補の不成立が確定し、資源も回収済みであることを表す。"""
 
-    def __init__(self, reason: str) -> None:
+    def __init__(self, reason: str, *, scope: typing.Literal["candidate", "launch_engine"] = "candidate") -> None:
         super().__init__(reason)
         self.reason = reason
+        # launch_engineは同じ起動要求内のengine共通能力の不成立で、永続記録へ渡さない。
+        self.scope: typing.Literal["candidate", "launch_engine"] = scope
 
 
 class ResourceReleaseError(session_errors.ActionableRuntimeError):
@@ -615,7 +617,17 @@ class AppServerManager:
 
     @staticmethod
     def excludes_with_recorded_reason(reason: str) -> bool:
-        """利用上限の旧記録だけは、設定したAPIと現在の利用可否で判定し直す。"""
+        """sandboxの旧記録と、API設定済みの利用上限の旧記録は現在の利用可否で判定し直す。"""
+        if reason.partition(":")[0] in {
+            "exploreSandboxNamespaceDenied",
+            "exploreSandboxRpcError",
+            "exploreSandboxTimeout",
+            "exploreSandboxInitializationFailed",
+            "exploreSandboxProbeFailed",
+            "exploreSandboxInvalidResponse",
+            "exploreSandboxCommandFailed",
+        }:
+            return False
         return reason != "usageLimitExceeded" or not codex_providers.has_provider_configuration()
 
     def __init__(
@@ -959,9 +971,13 @@ class AppServerManager:
             return None
 
         client = JsonRpcProcess(ignore, ignore, root_session_id=self._root_session_id)
+        response: Any = None
+        probe_error: Exception | None = None
+        initialized = False
         try:
             async with asyncio.timeout(shared_state.SESSION_INITIALIZATION_TIMEOUT):
                 await client.start()
+                initialized = True
                 response = await client.request(
                     "command/exec",
                     {
@@ -969,14 +985,29 @@ class AppServerManager:
                         "cwd": cwd,
                         "sandboxPolicy": {"type": "readOnly"},
                         "timeoutMs": 5000,
-                        "disableOutputCap": True,
                     },
                 )
+        except Exception as exc:
+            probe_error = exc
         finally:
             process = client.process
-            await client.close()
-            if process is not None and process.returncode is None:
+            residual = await client.close()
+            if residual or (process is not None and process.returncode is None):
                 raise AppServerError("explore sandbox probeのApp Server終了を確認できません")
+        if probe_error is not None:
+            if isinstance(probe_error, TimeoutError):
+                reason = "exploreSandboxTimeout"
+            elif isinstance(probe_error, JsonRpcResponseError):
+                reason = "exploreSandboxRpcError"
+            elif not initialized:
+                reason = "exploreSandboxInitializationFailed"
+            else:
+                reason = "exploreSandboxProbeFailed"
+            raise StartCandidateUnavailable(
+                f"{reason}: {type(probe_error).__name__}: {probe_error}", scope="launch_engine"
+            ) from probe_error
+        if not isinstance(response, dict):
+            raise StartCandidateUnavailable(f"exploreSandboxInvalidResponse: {response!r}", scope="launch_engine")
         exit_code = response.get("exitCode")
         stderr = response.get("stderr")
         stdout = response.get("stdout")
@@ -986,15 +1017,17 @@ class AppServerManager:
             or not isinstance(stderr, str)
             or not isinstance(stdout, str)
         ):
-            raise AppServerError(f"command/exec returned an invalid sandbox probe response: {response}")
+            raise StartCandidateUnavailable(f"exploreSandboxInvalidResponse: {response!r}", scope="launch_engine")
         if exit_code == 0:
             return
         # 0.162.0で観測した単独実行の診断だけを分類し、モデルの自由本文は入力にしない。
         if exit_code == 1 and any(
             line.startswith("bwrap: No permissions to create a new namespace") for line in stderr.splitlines()
         ):
-            raise StartCandidateUnavailable("exploreSandboxNamespaceDenied")
-        raise AppServerError(f"explore sandbox probe failed: exitCode={exit_code}; stderr={stderr}; stdout={stdout}")
+            raise StartCandidateUnavailable("exploreSandboxNamespaceDenied", scope="launch_engine")
+        raise StartCandidateUnavailable(
+            f"exploreSandboxCommandFailed: exitCode={exit_code}; stderr={stderr}; stdout={stdout}", scope="launch_engine"
+        )
 
     async def resume(
         self,
@@ -1342,6 +1375,15 @@ class AppServerManager:
         writer_session_id: str | None = None,
     ) -> str | None:
         """保存済みCodex threadを現在の実行条件で再開する。"""
+        if session.launch_kind == "explore":
+            try:
+                await self._probe_explore_sandbox(session.cwd)
+            except StartCandidateUnavailable as exc:
+                raise StartCandidateUnavailable(
+                    f"探索threadの再開前確認が不成立です: {exc.reason}; "
+                    "次の操作: startのmode=exploreで新規探索を開始してください",
+                    scope=exc.scope,
+                ) from exc
         resume_params: dict[str, Any] = {
             "threadId": session.session_id,
             "cwd": session.cwd,
@@ -1468,7 +1510,11 @@ class AppServerManager:
         if isinstance(error, JsonRpcResponseError) and isinstance(error.data, dict):
             # RPCの追加dataは内部の切替判定だけへ渡し、公開結果へ保存しない。
             failure.update(error.data)
-        if session.codex_model_provider and session.codex_model_provider != session.codex_subscription_provider:
+        if (
+            session.codex_model_provider
+            and session.codex_model_provider != session.codex_subscription_provider
+            and not isinstance(error, StartCandidateUnavailable)
+        ):
             session.error = {"message": "Codex connection rejected the request"}
         session.agent_message = ""
         session.protocol_warnings = []
@@ -1478,7 +1524,8 @@ class AppServerManager:
         session.interrupt_requested = False
         session.turn_completed = True
         session.failure_pending_completion = False
-        self._hold_provider_failure(session, failure)
+        if not isinstance(error, StartCandidateUnavailable):
+            self._hold_provider_failure(session, failure)
         session.touch()
         await self._notify_waiters()
 
@@ -1499,7 +1546,7 @@ class AppServerManager:
     @staticmethod
     def _turn_start_response_is_ambiguous(client: Any, error: BaseException) -> bool:
         """turn/startの失敗が実行状態を判定できない応答喪失であるかを返す。"""
-        if isinstance(error, JsonRpcResponseError):
+        if isinstance(error, (JsonRpcResponseError, StartCandidateUnavailable)):
             return False
         if bool(getattr(client, "closed", False)) or getattr(client, "reader_failure", None) is not None:
             return False
