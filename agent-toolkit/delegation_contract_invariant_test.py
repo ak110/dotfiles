@@ -1065,3 +1065,45 @@ def test_post_approval_contract_waits_for_reviewed_implementation() -> None:
     assert "実行レビューの収束後の内容" in post_approval
     assert "確認手段を問わず適用する" in post_approval
     assert re.search("通知済みの事後承認.*レビュー修正.*変更後の内容.*再びメインへ送る", executor)
+
+
+def test_post_publish_prerequisite_failure_preserves_resumable_work() -> None:
+    """公開後操作の前提不足を受領し、同じcommitの未完了操作へ戻す。"""
+    root = pathlib.Path(__file__).resolve().parent
+    parent = (root / "share/session-termination.parent.md").read_text(encoding="utf-8")
+    finish = (root / "skills/process-wi/references/finish-session.md").read_text(encoding="utf-8")
+    publish = (root / "skills/commit/references/publish.md").read_text(encoding="utf-8")
+    receipt = _h2_section(parent, "受領と検収")
+    assert "公開後の操作" in receipt
+    assert "「公開工程の続行不能の回復と再開」へ渡す" in receipt
+    assert "push前の工程" in receipt
+    assert "CI以外の続行不能は、失敗した工程の既存手順で回復" not in receipt
+    restart = _h2_section(finish, "公開状態の検収と再起動")
+    unfinished = next(line for line in restart.splitlines() if "新しいcommitが無く公開後の操作が未完了の場合" in line)
+    assert "未完了工程だけを再開する" in unfinished
+    completed = next(line for line in restart.splitlines() if "再起動せず報告処理へ進む" in line)
+    assert "CIの検収と公開後の操作が完了している場合" in completed
+    recovery = _h2_section(publish, "公開工程の続行不能からの再開")
+    assert "CI結果と成功済みの公開後の操作を保持する" in recovery
+    assert "未完了工程だけを再開" in recovery
+    assert "成功済みの版数更新・push・公開後の操作" in recovery
+
+
+def test_publication_recovery_references_resolve_to_shared_sections() -> None:
+    """続行不能の送り手と受け手が、実在する同じ回復節へ接続する。"""
+    root = pathlib.Path(__file__).resolve().parent
+    publish = "skills/commit/references/publish.md"
+    push = "skills/commit/references/push-and-ci.md"
+    finish = "skills/process-wi/references/finish-session.md"
+    routes = [
+        (publish, push, "公開工程の続行不能の受渡し"),
+        (push, publish, "公開工程の続行不能からの再開"),
+        (finish, publish, "公開工程の続行不能からの再開"),
+        ("share/session-termination.parent.md", finish, "公開工程の続行不能の回復と再開"),
+        ("share/session-termination.subagent.md", push, "公開工程の続行不能の受渡し"),
+    ]
+    for source, target, heading in routes:
+        source_text = (root / source).read_text(encoding="utf-8")
+        target_text = (root / target).read_text(encoding="utf-8")
+        assert f"「{heading}」" in source_text, source
+        assert f"\n## {heading}\n" in target_text, target
