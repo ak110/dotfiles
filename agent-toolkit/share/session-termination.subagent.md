@@ -11,7 +11,7 @@
 | --- | --- |
 | 版数更新、生成物、push前のチェック、push、CI確認または公開状態の判定に着手する前 | `agent-toolkit:commit`の`references/publish.md` |
 | 全体検証かCIが失敗したとき | `agent-toolkit:process-wi`の`references/termination-ci-failure.md` |
-| CI定義判定、baseline作成またはCI監視を完了できないとき | `agent-toolkit:commit`の`references/push-and-ci.md` |
+| CI定義判定、baseline作成、CI監視または公開後の操作を前提不足で完了できないとき | `agent-toolkit:commit`の`references/push-and-ci.md` |
 
 ## 入力
 
@@ -61,7 +61,7 @@ CIの結果: <CIが成功した場合はCI成功。CI定義なしは共通判定
 ```
 
 続行不能時は`agent-toolkit/share/rules-subagent.md`「返却形式の受け渡し」の`続行できない理由:`の1行だけを返す。
-CI照会不能の場合は、`references/push-and-ci.md`「CI照会不能の受渡し」の対象、診断、確認済み工程、残工程と再開位置を含める。
+CI照会不能または公開後の操作の前提不足の場合は、`references/push-and-ci.md`「公開工程の続行不能の受渡し」の対象、失敗した操作と対象、診断、確認済み工程、成功済みの公開後の操作、残工程と再開位置を含める。
 1行に収まらない証拠は引き継ぎ記録へ保存し、その絶対パスを同じ行に示す。
 完了報告はツール戻り値で1回返し、`SendMessage`では送らない。
 想定外事象の追加行は`agent-toolkit/share/rules-subagent.md`に従う。
