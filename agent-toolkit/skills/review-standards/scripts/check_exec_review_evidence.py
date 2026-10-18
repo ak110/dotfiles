@@ -2564,12 +2564,18 @@ def main(argv: list[str] | None = None) -> int:
             )
         except (OSError, UnicodeError, subprocess.SubprocessError, ValueError) as error:
             errors.append(str(error))
+            errors.append(
+                _next_action.next_action_line(
+                    "実行レビュー担当がreader-fit-review.parent.md「起動」に従って不足した探索を起動・受領し、申告を修復して再実行する。"
+                    "担当で補えない入力・判断・認可・権限がある場合は、その不足と再開位置を委譲元へ返す"
+                )
+            )
     if errors:
         _report_diagnostics(
             errors,
-            next_action="各行が示す箇所を`完成条件証拠`で直して同じコマンドでもう一度確かめる。"
+            next_action="実行レビュー担当が各行が示す箇所を`完成条件証拠`で修復・再判定して同じコマンドでもう一度確かめる。"
             "WI本文や節を取得できない行は、`atk wi show <ファイル名>`で実在と綴りを確かめ、"
-            "WI側が欠けている場合はWIの欠陥として報告する",
+            "担当で補えない入力・判断・認可・権限がある場合は、その不足と再開位置を委譲元へ返す",
         )
         return 1
     if args.return_result:
