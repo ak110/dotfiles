@@ -11,7 +11,7 @@ import subprocess
 import typing
 import urllib.request
 
-from agent_toolkit._common import atomic_file, host_homes
+from agent_toolkit._common import atomic_file, host_homes, process_tree
 
 
 def _hooks(repo: pathlib.Path, event: str) -> list[dict[str, typing.Any]]:
@@ -79,7 +79,7 @@ def _execute(
             if hook["type"] == "command":
                 argv = ["cmd", "/d", "/s", "/c", hook["command"]] if os.name == "nt" else ["sh", "-c", hook["command"]]
                 env = {**os.environ, **hook["_environment"], "CLAUDE_PROJECT_DIR": str(repo)}
-                completed = subprocess.run(
+                completed = process_tree.run_with_timeout(
                     argv, cwd=repo, env=env, input=body, capture_output=True, timeout=seconds, check=False
                 )
                 stdout = completed.stdout.decode("utf-8", errors="replace")

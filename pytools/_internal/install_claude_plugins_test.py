@@ -17,7 +17,7 @@ from pytools._internal import claude_marketplace as _claude_marketplace
 from pytools._internal import common as _common
 from pytools._internal import install_claude_plugins as _install_claude_plugins
 
-from ._test_helpers import _FakeResult, command_matches, make_fresh_install_fake
+from ._test_helpers import _FakeResult, command_matches, make_fresh_install_fake, plugin_management_response
 
 _REAL_VERIFY_TARGET_PLUGINS = _install_claude_plugins._verify_target_plugins
 
@@ -161,7 +161,7 @@ class TestExtractPluginVersionMap:
                 )
             return _FakeResult(returncode=0)
 
-        monkeypatch.setattr(_common.subprocess, "run", fake_run)
+        monkeypatch.setattr(_common, "run_subprocess", fake_run)
 
         changed = _install_claude_plugins.run().changed
         # version 一致のため changed は False
@@ -181,18 +181,9 @@ class TestExtractPluginVersionMap:
                         ensure_ascii=False,
                     ),
                 )
-            if command_matches(cmd, ["claude", "plugin", "marketplace", "list"]):
-                return _FakeResult(
-                    returncode=0,
-                    stdout=json.dumps([{"name": _claude_common.MARKETPLACE_NAME}], ensure_ascii=False),
-                )
-            if command_matches(cmd, ["claude", "plugin", "install"]):
-                return _FakeResult(returncode=0)
-            if command_matches(cmd, ["claude", "plugin", "uninstall"]):
-                return _FakeResult(returncode=0)
-            return _FakeResult(returncode=1)
+            return plugin_management_response(cmd, (("install",), ("uninstall",)))
 
-        monkeypatch.setattr(_common.subprocess, "run", fake_run)
+        monkeypatch.setattr(_common, "run_subprocess", fake_run)
 
         changed = _install_claude_plugins.run().changed
         # project scope は user scope 用のインストール判定から外れるため install が発行される
@@ -221,7 +212,7 @@ class TestExtractPluginVersionMap:
                 )
             return _FakeResult(returncode=0)
 
-        monkeypatch.setattr(_common.subprocess, "run", fake_run)
+        monkeypatch.setattr(_common, "run_subprocess", fake_run)
 
         changed = _install_claude_plugins.run().changed
         # version 一致のため install は発行されない
@@ -243,18 +234,9 @@ class TestExtractPluginVersionMap:
                         ensure_ascii=False,
                     ),
                 )
-            if command_matches(cmd, ["claude", "plugin", "marketplace", "list"]):
-                return _FakeResult(
-                    returncode=0,
-                    stdout=json.dumps([{"name": _claude_common.MARKETPLACE_NAME}], ensure_ascii=False),
-                )
-            if command_matches(cmd, ["claude", "plugin", "marketplace", "update"]):
-                return _FakeResult(returncode=0)
-            if command_matches(cmd, ["claude", "plugin", "update"]):
-                return _FakeResult(returncode=0)
-            return _FakeResult(returncode=1)
+            return plugin_management_response(cmd, (("marketplace", "update"), ("update",)))
 
-        monkeypatch.setattr(_common.subprocess, "run", fake_run)
+        monkeypatch.setattr(_common, "run_subprocess", fake_run)
 
         changed = _install_claude_plugins.run().changed
         assert changed is True
@@ -265,7 +247,7 @@ class TestExtractPluginVersionMap:
         calls: list[list[str]] = []
         fake_run = make_fresh_install_fake(calls)
 
-        monkeypatch.setattr(_common.subprocess, "run", fake_run)
+        monkeypatch.setattr(_common, "run_subprocess", fake_run)
 
         changed = _install_claude_plugins.run().changed
         assert changed is True
@@ -299,7 +281,7 @@ class TestEnsureMarketplaceCliPath:
                 )
             return _FakeResult(returncode=1)
 
-        monkeypatch.setattr(_common.subprocess, "run", fake_run)
+        monkeypatch.setattr(_common, "run_subprocess", fake_run)
 
         assert _claude_marketplace.ensure_marketplace() is True
         assert [c for c in calls if command_matches(c, ["claude", "plugin", "marketplace", "remove"])] == []
@@ -324,7 +306,7 @@ class TestEnsureMarketplaceCliPath:
                 return _FakeResult(returncode=0)
             return _FakeResult(returncode=1)
 
-        monkeypatch.setattr(_common.subprocess, "run", fake_run)
+        monkeypatch.setattr(_common, "run_subprocess", fake_run)
 
         assert _claude_marketplace.ensure_marketplace() is True
         add_calls = [c for c in calls if command_matches(c, ["claude", "plugin", "marketplace", "add"])]
@@ -387,8 +369,8 @@ class TestLegacyGithubTypeMigration:
 
         # CLI remove+add は settings 側を更新しない再現環境として成功のみ返す
         monkeypatch.setattr(
-            _common.subprocess,
-            "run",
+            _common,
+            "run_subprocess",
             lambda *_a, **_k: _FakeResult(returncode=0),
         )
 
@@ -429,7 +411,7 @@ class TestReadTargetInfo:
         calls: list[list[str]] = []
         fake_run = make_fresh_install_fake(calls)
 
-        monkeypatch.setattr(_common.subprocess, "run", fake_run)
+        monkeypatch.setattr(_common, "run_subprocess", fake_run)
 
         changed = _install_claude_plugins.run().changed
         assert changed is True
@@ -453,7 +435,7 @@ class TestReadTargetInfo:
             calls.append(cmd)
             return _FakeResult(returncode=0)
 
-        monkeypatch.setattr(_common.subprocess, "run", fake_run)
+        monkeypatch.setattr(_common, "run_subprocess", fake_run)
 
         changed = _install_claude_plugins.run().changed
         assert changed is False

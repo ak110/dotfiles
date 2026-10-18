@@ -1,7 +1,7 @@
-"""起動したエージェントCLIのプロセスが起動した子孫プロセスを回収する。
+"""起動した外部コマンドを子孫プロセスごと回収する。
 
-`agents_server`の委譲先CLIと`atk run-skill`の子セッションは、自身の実行中にMCPサーバーなどの子プロセスを起動する。
-終端処理がCLIのプロセスだけを終了させると、これらの子孫は親を失ったまま生存し続ける。
+ラッパー、シェル、エージェントCLIは、自身の実行中に補助プロセスを起動する。
+終端処理が直接の子だけを終了させると、これらの子孫は親を失ったまま生存し続ける。
 `collect_descendants`と`reclaim_descendants`は、その残留をCLIのプロセスの終端に合わせて回収する。
 
 `collect_descendants`はCLIのプロセスへ終了を要求する前に呼ぶ。
@@ -13,7 +13,9 @@ CLIのプロセスが終了すると子孫の親が変わり、そのPIDを起�
 
 import contextlib
 import logging
+import subprocess
 import time
+from typing import Any
 
 # 回収しない呼出し元では、プロセス管理の依存を読み込まない。
 lazy import psutil
@@ -30,6 +32,66 @@ RECLAIM_TIMEOUT_SECONDS = 5.0
 
 _POLL_INTERVAL_SECONDS = 0.05
 """子孫の終了を確認する間隔（秒）。"""
+
+
+def stop_process_tree(process: subprocess.Popen[Any]) -> list[str]:
+    """所有する子を子孫ごと停止し、回収できなかったPIDと起動コマンドを返す。"""
+    descendants = collect_descendants(process.pid)
+    try:
+        targets = [psutil.Process(process.pid), *descendants]
+    except psutil.NoSuchProcess:
+        targets = descendants
+    residual = reclaim_descendants(targets)
+    try:
+        process.wait(timeout=0)
+    except subprocess.TimeoutExpired:
+        if not residual:
+            residual.append(f"{process.pid}: {process.args!r}")
+    return residual
+
+
+def run_with_timeout(
+    *popenargs: Any,
+    input: Any = None,  # pylint: disable=redefined-builtin  # subprocess.runの公開引数とそろえる
+    capture_output: bool = False,
+    timeout: float | None = None,
+    check: bool = False,
+    **kwargs: Any,
+) -> subprocess.CompletedProcess[Any]:
+    """subprocess.runと同じ入力で実行し、時間上限では子孫の停止後に例外を送出する。"""
+    if input is not None:
+        if kwargs.get("stdin") is not None:
+            raise ValueError("stdinとinputは同時に指定できない")
+        kwargs["stdin"] = subprocess.PIPE
+    if capture_output:
+        if kwargs.get("stdout") is not None or kwargs.get("stderr") is not None:
+            raise ValueError("capture_outputとstdout・stderrは同時に指定できない")
+        kwargs["stdout"] = kwargs["stderr"] = subprocess.PIPE
+    process = subprocess.Popen(*popenargs, **kwargs)  # pylint: disable=consider-using-with
+    try:
+        stdout, stderr = process.communicate(input, timeout=timeout)
+    except subprocess.TimeoutExpired as error:
+        residual = stop_process_tree(process)
+        log_residual(residual, context="run_with_timeout")
+        # 残存がパイプを保持していても、元の時間上限の報告へ戻る。
+        if not residual:
+            stdout, stderr = process.communicate()
+            encoding = kwargs.get("encoding") or "utf-8"
+            error.output = stdout.encode(encoding) if isinstance(stdout, str) else stdout
+            error.stderr = stderr.encode(encoding) if isinstance(stderr, str) else stderr
+        raise
+    except BaseException:
+        log_residual(stop_process_tree(process), context="run_with_timeout")
+        raise
+    finally:
+        for stream in (process.stdin, process.stdout, process.stderr):
+            if stream is not None:
+                stream.close()
+    returncode = process.returncode
+    assert returncode is not None
+    if check and returncode:
+        raise subprocess.CalledProcessError(returncode, process.args, output=stdout, stderr=stderr)
+    return subprocess.CompletedProcess(process.args, returncode, stdout, stderr)
 
 
 def collect_descendants(pid: int | None) -> list[psutil.Process]:

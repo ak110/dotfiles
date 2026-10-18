@@ -227,7 +227,7 @@ class TestRepairMarketplace:
                 write_settings_entry(settings, healthy_entry)
             return _FakeResult(returncode=0)
 
-        monkeypatch.setattr(_common.subprocess, "run", fake_run)
+        monkeypatch.setattr(_common, "run_subprocess", fake_run)
 
         def fail_replace(*_args, **_kwargs):
             raise AssertionError("os.replace should not be called when CLI succeeds")
@@ -250,7 +250,7 @@ class TestRepairMarketplace:
             calls.append(cmd)
             return _FakeResult(returncode=0)
 
-        monkeypatch.setattr(_common.subprocess, "run", fake_run)
+        monkeypatch.setattr(_common, "run_subprocess", fake_run)
 
         _claude_marketplace.repair_marketplace()
         add_calls = [c for c in calls if command_matches(c, ["claude", "plugin", "marketplace", "add"])]
@@ -287,7 +287,7 @@ class TestRepairMarketplace:
             calls.append(cmd)
             return _FakeResult(returncode=0)
 
-        monkeypatch.setattr(_common.subprocess, "run", fake_run)
+        monkeypatch.setattr(_common, "run_subprocess", fake_run)
 
         assert _claude_marketplace.repair_marketplace() is True
         # 両ファイルとも directory 型 + dotfiles 絶対パスへ更新されている
@@ -331,8 +331,8 @@ class TestRepairMarketplace:
             encoding="utf-8",
         )
         monkeypatch.setattr(
-            _common.subprocess,
-            "run",
+            _common,
+            "run_subprocess",
             lambda *_a, **_k: _FakeResult(returncode=0),
         )
 
@@ -361,8 +361,8 @@ class TestRepairMarketplace:
         # 旧 GitHub 型エントリで破損した状態
         write_known_entry(known, {"source": {"source": "github", "repo": "ak110/dotfiles"}})
         monkeypatch.setattr(
-            _common.subprocess,
-            "run",
+            _common,
+            "run_subprocess",
             lambda *_a, **_k: _FakeResult(returncode=0),
         )
 
@@ -392,7 +392,7 @@ class TestEnsureMarketplaceHealthy:
         def fail_run(cmd, **_kwargs):  # noqa: ANN001
             raise AssertionError(f"subprocess.run should not be called: {cmd}")
 
-        monkeypatch.setattr(_common.subprocess, "run", fail_run)
+        monkeypatch.setattr(_common, "run_subprocess", fail_run)
 
         def fail_replace(*_args, **_kwargs):
             raise AssertionError("os.replace should not be called in healthy state")

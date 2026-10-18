@@ -117,7 +117,7 @@ class TestReadInstalledFromFile:
                 )
             return _FakeResult(returncode=0)
 
-        monkeypatch.setattr(_common.subprocess, "run", fake_run)
+        monkeypatch.setattr(_common, "run_subprocess", fake_run)
 
         changed = _install_claude_plugins.run().changed
         assert changed is False
@@ -145,7 +145,7 @@ class TestReadInstalledFromFile:
         calls: list[list[str]] = []
         fake_run = make_fresh_install_fake(calls, version="0.2.0")
 
-        monkeypatch.setattr(_common.subprocess, "run", fake_run)
+        monkeypatch.setattr(_common, "run_subprocess", fake_run)
 
         changed = _install_claude_plugins.run().changed
         assert changed is True
@@ -199,7 +199,7 @@ class TestReadInstalledFromFile:
                 return _FakeResult(returncode=0)
             return _FakeResult(returncode=0)
 
-        monkeypatch.setattr(_common.subprocess, "run", fake_run)
+        monkeypatch.setattr(_common, "run_subprocess", fake_run)
 
         _install_claude_plugins.run()
         # user scope で version 一致のため install/update は発行されない
@@ -337,7 +337,7 @@ class TestHappyPathDirectoryType:
                 return _FakeResult(returncode=0)
             raise AssertionError(f"予期しない subprocess 呼び出し: {cmd}")
 
-        monkeypatch.setattr(_common.subprocess, "run", fake_run)
+        monkeypatch.setattr(_common, "run_subprocess", fake_run)
 
         assert _install_claude_plugins.run().changed is True
         # 全プラグインに対して install が --scope=user で再実行される

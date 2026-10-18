@@ -14,6 +14,7 @@ from typing import Any
 from agent_toolkit._agents_server import backends, plugin_root, record_paths
 from agent_toolkit._agents_server.state import SessionResumeState, SessionState
 from agent_toolkit._atk import managed_temp
+from agent_toolkit._common import process_tree
 from agent_toolkit._common.next_action import ActionableError
 
 
@@ -78,7 +79,7 @@ def prepare_prompt(session: SessionState | SessionResumeState) -> str:
         ]
         conversation = directory / "conversation.md"
     try:
-        completed = subprocess.run(
+        completed = process_tree.run_with_timeout(
             command, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=270, check=False
         )
     except (OSError, subprocess.TimeoutExpired) as error:

@@ -27,6 +27,7 @@ from agent_toolkit._common import codex_usage_limit as _codex_usage_limit
 from agent_toolkit._common import console_title as _console_title
 from agent_toolkit._common import host_homes as _host_homes
 from agent_toolkit._common import next_action as _next_action
+from agent_toolkit._common import process_tree
 from agent_toolkit._common import session_registry as _registry
 
 # モデル可用性だけを確認し、作業の副作用を生じさせない事前起動の固定プロンプト。
@@ -389,17 +390,11 @@ def _run_codex_session(argv: list[str], env: dict[str, str], cwd: pathlib.Path) 
                     if rollout is None or _codex_usage_limit.from_rollout(rollout) is None:
                         continue
                     _process_loop_log.append("session_usage_limit", rollout_path=str(rollout))
-                    process.terminate()
-                    try:
-                        process.wait(timeout=5)
-                    except subprocess.TimeoutExpired:
-                        process.kill()
-                        process.wait()
+                    process_tree.log_residual(process_tree.stop_process_tree(process), context="process-loop usage-limit")
                     # WindowsのTerminateProcessの値も、この所有済み上限停止だけは次の反復へ進める。
                     return subprocess.CompletedProcess(argv, 0)
         except BaseException:
-            process.kill()
-            process.wait()
+            process_tree.log_residual(process_tree.stop_process_tree(process), context="process-loop exception")
             raise
 
 

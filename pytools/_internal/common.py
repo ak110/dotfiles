@@ -8,10 +8,13 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 import typing
 from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
 from typing import cast
+
+lazy import psutil
 
 # ヘルプや他の処理で使わない依存は、使用時まで読み込まない。
 lazy import pytilpack.jsonc
@@ -22,6 +25,60 @@ logger = logging.getLogger(__name__)
 
 # 短時間で終わる外部コマンドの呼び出しに使う既定のタイムアウト（秒）
 COMMAND_TIMEOUT = 30
+
+
+def stop_process_tree(process: subprocess.Popen[typing.Any], *, stdin_grace_seconds: float = 0) -> list[str]:
+    """所有する子と停止前に列挙した子孫を回収し、残存のPIDとコマンドを返す。
+
+    stdin_grace_secondsを指定した呼出元は、標準入力のEOFによる正常終了を先に待つ。
+    その場合もEOFより前に子孫を列挙し、子の終了後に残る子孫まで回収する。
+    """
+    try:
+        parent = psutil.Process(process.pid)
+        targets = [*parent.children(recursive=True), parent]
+    except psutil.NoSuchProcess:
+        targets = []
+    descriptions: dict[int, str] = {}
+    for target in targets:
+        with contextlib.suppress(psutil.Error, OSError):
+            descriptions[target.pid] = f"{target.pid}: {' '.join(target.cmdline())}"
+    if stdin_grace_seconds:
+        if process.stdin is not None:
+            with contextlib.suppress(OSError):
+                process.stdin.close()
+        with contextlib.suppress(subprocess.TimeoutExpired):
+            process.wait(timeout=stdin_grace_seconds)
+    for target in targets:
+        with contextlib.suppress(psutil.Error, OSError):
+            target.terminate()
+    alive = _wait_process_resources(targets)
+    for target in alive:
+        with contextlib.suppress(psutil.Error, OSError):
+            target.kill()
+    alive = _wait_process_resources(alive)
+    residual = [descriptions.get(target.pid, str(target.pid)) for target in alive]
+    try:
+        process.wait(timeout=0)
+    except subprocess.TimeoutExpired:
+        if not residual:
+            residual.append(f"{process.pid}: {process.args!r}")
+    return residual
+
+
+def _wait_process_resources(targets: list[psutil.Process]) -> list[psutil.Process]:
+    """親の回収待ちだけになったzombieを除き、資源の解放を上限付きで待つ。"""
+    deadline = time.monotonic() + 5
+    while targets:
+        alive = []
+        for target in targets:
+            with contextlib.suppress(psutil.Error, OSError):
+                if target.is_running() and target.status() != psutil.STATUS_ZOMBIE:
+                    alive.append(target)
+        targets = alive
+        if not targets or time.monotonic() >= deadline:
+            break
+        time.sleep(0.05)
+    return targets
 
 
 def safe_resolve(path: Path) -> Path:
@@ -143,18 +200,29 @@ def run_subprocess(
         env = os.environ.copy()
         env.update(env_overrides)
     try:
-        return subprocess.run(
+        process = subprocess.Popen(  # pylint: disable=consider-using-with
             cmd,
-            capture_output=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
             text=True,
-            check=False,
-            timeout=timeout,
             encoding=encoding,
             errors="replace",
             cwd=cwd,
             stdin=subprocess.DEVNULL,
             env=env,
         )
+        try:
+            stdout, stderr = process.communicate(timeout=timeout)
+        except BaseException:
+            residual = stop_process_tree(process)
+            if residual:
+                logger.warning("子孫プロセスを回収できない: %s", residual)
+            raise
+        finally:
+            for stream in (process.stdout, process.stderr):
+                if stream is not None:
+                    stream.close()
+        return subprocess.CompletedProcess(cmd, process.returncode, stdout, stderr)
     except (OSError, subprocess.SubprocessError) as e:
         label = tag or cmd[0]
         rest = " ".join(cmd[1:])

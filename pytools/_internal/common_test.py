@@ -6,9 +6,11 @@ import json
 import os
 import subprocess
 import sys
+import time
 import typing
 from pathlib import Path
 
+import psutil
 import pytest
 
 from pytools._internal import common
@@ -148,7 +150,7 @@ class TestEnsureFlagFilePresent:
 
 
 class TestRunSubprocess:
-    """``run_subprocess`` が ``subprocess.run`` へ渡す引数の検証。"""
+    """``run_subprocess``の文字コード・標準入力・環境継承を検証する。"""
 
     def test_explicit_code_page_preserves_powershell_diagnostic(self) -> None:
         """PowerShell 5.1相当のCP932診断を文字化けさせずに受け取る。"""
@@ -162,21 +164,12 @@ class TestRunSubprocess:
         self,
         monkeypatch: pytest.MonkeyPatch,
     ):
-        captured: dict[str, typing.Any] = {}
-
-        def fake_run(cmd: list[str], **kwargs: typing.Any) -> subprocess.CompletedProcess[str]:
-            captured["cmd"] = cmd
-            captured["kwargs"] = kwargs
-            return subprocess.CompletedProcess(args=cmd, returncode=0, stdout="", stderr="")
-
-        monkeypatch.setattr(subprocess, "run", fake_run)
-        result = common.run_subprocess(["echo", "hi"])
-
-        assert result is not None
-        assert result.returncode == 0
-        assert captured["cmd"] == ["echo", "hi"]
-        assert captured["kwargs"]["stdin"] is subprocess.DEVNULL
-        assert captured["kwargs"]["env"] is None
+        monkeypatch.setenv("COMMON_TEST_VALUE", "inherited")
+        result = common.run_subprocess(
+            [sys.executable, "-c", "import os,sys; print(repr(sys.stdin.read())); print(os.environ['COMMON_TEST_VALUE'])"]
+        )
+        assert result is not None and result.returncode == 0
+        assert result.stdout == "''\ninherited\n"
 
     @pytest.mark.parametrize(
         ("overrides", "preset_env", "expected_subset"),
@@ -195,17 +188,11 @@ class TestRunSubprocess:
     ):
         for key, value in preset_env.items():
             monkeypatch.setenv(key, value)
-        captured: dict[str, typing.Any] = {}
-
-        def fake_run(cmd: list[str], **kwargs: typing.Any) -> subprocess.CompletedProcess[str]:
-            del cmd
-            captured["kwargs"] = kwargs
-            return subprocess.CompletedProcess(args=[], returncode=0, stdout="", stderr="")
-
-        monkeypatch.setattr(subprocess, "run", fake_run)
-        common.run_subprocess(["echo"], env_overrides=overrides)
-
-        env = captured["kwargs"]["env"]
+        result = common.run_subprocess(
+            [sys.executable, "-c", "import json,os; print(json.dumps(dict(os.environ)))"], env_overrides=overrides
+        )
+        assert result is not None and result.returncode == 0
+        env = json.loads(result.stdout)
         for key, value in expected_subset.items():
             assert env[key] == value
         # os.environ をベースとしているため、上書きしていない他のキーも残る
@@ -213,6 +200,35 @@ class TestRunSubprocess:
             if key in overrides:
                 continue
             assert env.get(key) == value
+
+
+def test_run_subprocess_timeout_stops_grandchildren(monkeypatch, tmp_path):
+    """時間上限の失敗を返す時点で、準備済みの子孫が解放されている。"""
+    ready = tmp_path / "ready"
+    started: list[psutil.Process] = []
+
+    class ReadyPopen(subprocess.Popen):
+        def communicate(self, input=None, timeout=None):
+            if timeout is not None:
+                deadline = time.monotonic() + 30
+                while not ready.exists() and time.monotonic() < deadline:
+                    time.sleep(0.01)
+                assert ready.exists(), "孫の準備が時間内に完了しなかった"
+                parent = psutil.Process(self.pid)
+                started.extend([parent, *parent.children(recursive=True)])
+            return super().communicate(input, timeout=timeout)
+
+    child = f"import pathlib,time; pathlib.Path({str(ready)!r}).touch(); time.sleep(120)"
+    parent = f"import subprocess,sys,time; subprocess.Popen([sys.executable,'-c',{child!r}]); time.sleep(120)"
+    monkeypatch.setattr(subprocess, "Popen", ReadyPopen)
+    try:
+        assert common.run_subprocess([sys.executable, "-c", parent], timeout=0.05) is None
+        assert started
+        assert not [p for p in started if p.is_running() and p.status() != psutil.STATUS_ZOMBIE]
+    finally:
+        for process in started:
+            if process.is_running():
+                process.kill()
 
 
 class TestCollectValueOnlyUpdates:
