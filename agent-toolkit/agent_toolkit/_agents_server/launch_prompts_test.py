@@ -103,7 +103,8 @@ def test_explore_contract_covers_complete_reading_and_tool_managed_output() -> N
     """保存結果の完全取得と成果物の読取専用境界を各backendへ配送する。"""
     for prompt in (launch_prompts.EXPLORE_SYSTEM_PROMPT, launch_prompts.CLAUDE_EXPLORE_SYSTEM_PROMPT):
         assert _shared_document_body("agents-server-explore.md") in prompt
-        assert "対象リポジトリの成果物、委譲入力およびユーザーデータ" in prompt
+        assert "ファイルやディレクトリを作成、変更および削除せず" in prompt
+        assert "自身の成果ファイルは作成しない" in prompt
         assert "キャッシュ・状態・保存出力" in prompt
         assert "省略や未読" in prompt
     assert "atk read-file" in tool_descriptions.EXPLORE_BACKEND_CAPABILITIES["claude"]
