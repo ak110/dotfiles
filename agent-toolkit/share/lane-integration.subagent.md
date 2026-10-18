@@ -44,7 +44,7 @@ manifestはJSON objectで、次の値を持つ。
 
 - `plans`: 全計画の順序付き配列。各項目は`name`（計画ファイル名）と`commands`（後掲「計画最終化」のplan-check・保存argv配列）を持つ。保存済みで進捗を追記していない計画は`commands: []`とし、`saved`へ同名の保存済み計画の絶対パスを指定する。計画なしは`[]`
 - `wis`: 選定の今回のレーンへ属する全WIの順序付き配列。各項目は`name`（WIファイル名）と`commands`（後掲「AWI行の終端」の確定済み終端argv配列）を持つ。延期・終端しない項目と既に終端した項目は`commands: []`とし、その区分と根拠を引き継ぎ記録へ残す
-- `verification`: 統合前に実行する検証argvの順序付き配列。計画ありは各計画のplan-verify、計画なしは引き継ぎ記録の確定済み検証を使う。訂正済み検証表がある計画のargvには`--verification-plan`とその絶対パスを含める。訂正済み検証表の保持と引き継ぎは`agent-toolkit:plan-mode`の`references/plan-file-standards.md`「検証と終端工程」、列挙と結果の検収は`agent-toolkit:check-execution`「統合実行ツール経由の起動」に従う。統合後にだけ成立するプロジェクト検証も含める。rebaseした場合は新しいHEADで実行し、成功済みの同じ検証はff前に繰り返さない
+- `verification`: 統合前に実行する検証argvの順序付き配列。計画ありは各計画のplan-verify、計画なしは引き継ぎ記録の確定済み検証を使う。CLIは検証argvへ時間上限を重ねないため、各argvは自身の上限を持つ形で渡す。plan-verifyは`--timeout`を必須とし、計画なしの確定済み検証は`atk run-command --timeout <秒数> --`で包む。包む秒数はその検証が正常に終わる所要を上回る有限の値とし、引き継ぎ記録にある同じ検証の実行記録の所要を基準にする。訂正済み検証表がある計画のargvには`--verification-plan`とその絶対パスを含める。訂正済み検証表の保持と引き継ぎは`agent-toolkit:plan-mode`の`references/plan-file-standards.md`「検証と終端工程」、列挙と結果の検収は`agent-toolkit:check-execution`「統合実行ツール経由の起動」に従う。統合後にだけ成立するプロジェクト検証も含める。rebaseした場合は新しいHEADで実行し、成功済みの同じ検証はff前に繰り返さない
 - `handoff`: 計画なしの場合に使う既存引き継ぎ記録の絶対パス。計画ありでは省略でき、省略時は引き継ぎ記録の追加入力を要しない
 
 各argvは文字列配列とし、対象・OID・採否・完成条件証拠は受理済み入力から確定する。レビュー採否とWIごとのcommit対応はレーン担当が確定し、CLIへ渡す。計画の稼働時間、採否、証拠と進捗追記の値は以下の節で検収してからmanifestへ渡す。実行済み結果は所有登録の`integration.results`から読み、同じ操作は個別の再実行対象から除く。

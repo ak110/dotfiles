@@ -635,17 +635,30 @@ def _integration_input(args: argparse.Namespace, record: dict[str, typing.Any]) 
 
 
 def _integration_command(
-    record: dict[str, typing.Any], state: dict[str, typing.Any], key: str, argv: list[str], cwd: pathlib.Path
+    record: dict[str, typing.Any],
+    state: dict[str, typing.Any],
+    key: str,
+    argv: list[str],
+    cwd: pathlib.Path,
+    *,
+    timeout: float | None,
 ) -> None:
     if key in state["completed"]:
         return
-    observed, code, failure = run_command.execute(argv, cwd, record["procedure_timeout"])
+    observed, code, failure = run_command.execute(argv, cwd, timeout)
     state.setdefault("results", {})[key] = observed
     if code == 0:
         state["completed"].append(key)
     _save(pathlib.Path(record["record_path"]), record)
     if code:
         raise ValueError(f"統合の{key}が終了{code}: {failure or observed['record_path']}。同じlane integrateで再開する")
+
+
+def _verify(record: dict[str, typing.Any], state: dict[str, typing.Any], argvs: list[list[str]], cwd: pathlib.Path) -> None:
+    # 検証argvはplan-verifyの--timeoutやatk run-command --timeoutで自身の上限を持つ。
+    # 固有手順向けのprocedure_timeoutを重ねると、検証が自身の上限より先に打ち切られる。
+    for index, argv in enumerate(argvs):
+        _integration_command(record, state, f"verification-{index}", argv, cwd, timeout=None)
 
 
 def _atk_script(*arguments: str) -> list[str]:
@@ -845,10 +858,10 @@ def integrate(args: argparse.Namespace, session_id: str) -> dict[str, typing.Any
                     str(mapping),
                 ),
                 worktree,
+                timeout=record["procedure_timeout"],
             )
             state["rewrite_map"] = str(mapping)
-            for index, argv in enumerate(manifest["verification"]):
-                _integration_command(record, state, f"verification-{index}", argv, worktree)
+            _verify(record, state, manifest["verification"], worktree)
             state["phase"] = "awaiting-validation"
             _save(path, record)
         if state["phase"] == "awaiting-validation":
@@ -864,8 +877,7 @@ def integrate(args: argparse.Namespace, session_id: str) -> dict[str, typing.Any
             state["phase"] = "verified"
             _save(path, record)
         if state["phase"] == "verified" or (state["phase"] == "prepared" and args.no_merge):
-            for index, argv in enumerate(manifest.get("verification", [])):
-                _integration_command(record, state, f"verification-{index}", argv, worktree)
+            _verify(record, state, manifest.get("verification", []), worktree)
             _assert_integration_tree(record, target, args.target_branch)
             if not args.no_merge:
                 if _git(worktree, "rev-parse", "HEAD") != state["new_head"]:
@@ -879,7 +891,12 @@ def integrate(args: argparse.Namespace, session_id: str) -> dict[str, typing.Any
                 for row in manifest[group]:
                     for index, argv in enumerate(row["commands"]):
                         _integration_command(
-                            record, state, f"{group}:{row['name']}:{index}", argv, worktree if group == "plans" else target
+                            record,
+                            state,
+                            f"{group}:{row['name']}:{index}",
+                            argv,
+                            worktree if group == "plans" else target,
+                            timeout=record["procedure_timeout"],
                         )
             _integration_input(args, record)
             selected = pathlib.Path(record["selection_file"])
@@ -900,6 +917,7 @@ def integrate(args: argparse.Namespace, session_id: str) -> dict[str, typing.Any
                     str(target),
                 ),
                 target,
+                timeout=record["procedure_timeout"],
             )
             state["phase"] = "finalized"
             _save(path, record)
@@ -921,7 +939,10 @@ def build_parser(parser: argparse.ArgumentParser) -> None:
     create_parser.add_argument("--commands-file", type=pathlib.Path, help="create・prepare・deleteのargvを持つJSON。")
     create_parser.add_argument("--reuse-record", type=pathlib.Path, help="終端済みの担当が使っていた資源のrecord_path。")
     create_parser.add_argument(
-        "--timeout", type=_positive_timeout, default=600, help="各固有手順の正の上限秒数。省略すると600秒。"
+        "--timeout",
+        type=_positive_timeout,
+        default=600,
+        help="固有手順・timeoutの無いhook・統合の最終化操作の正の上限秒数。省略すると600秒。",
     )
     create_parser.add_argument("--session-id", help="所有session。省略すると実行環境から解決する。")
     delete_parser = help_text.add_command(children, "delete", **help_text.HELP["atk lane delete"])

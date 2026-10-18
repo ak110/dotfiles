@@ -1306,3 +1306,61 @@ def test_integrate_rejects_changed_input_with_restart_guidance(
     record_property("restart_diagnostic", stderr)
     assert code == 2
     assert all(word in stderr for word in ("--restart-review", "検証argv", "最終化argv", "handoff", "検収待ち"))
+
+
+def _timed_integration(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], *, rebased: bool
+) -> tuple[pathlib.Path, dict[str, Any], pathlib.Path, str]:
+    # 統合の操作より短い固有手順の上限で所有登録を作成する。
+    # history-compareは同じ上限で動くため、負荷の揺れを吸収する余裕を残す。
+    repo, selected, record = _create(tmp_path, monkeypatch, capsys, "--timeout", "5")
+    _integration_selection(selected, monkeypatch, repo)
+    worktree = pathlib.Path(record["worktree"])
+    (worktree / "feature").write_text("成果", encoding="utf-8")
+    head = git_repository.commit_all(worktree, "成果")
+    if rebased:
+        (repo / "upstream").write_text("先行統合", encoding="utf-8")
+        git_repository.commit_all(repo, "先行統合")
+    handoff = tmp_path / "handoff.md"
+    handoff.touch()
+    return repo, record, handoff, head
+
+
+_SLOW_ARGV = [sys.executable, "-c", "import time;time.sleep(6)"]
+
+
+@pytest.mark.parametrize("rebased", [False, True])
+def test_integrate_verification_is_not_limited_by_procedure_timeout(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], rebased: bool
+) -> None:
+    """検証argvは自身の上限で終わり、固有手順向けのprocedure_timeoutで打ち切られずに統合が進む。"""
+    repo, record, handoff, head = _timed_integration(tmp_path, monkeypatch, capsys, rebased=rebased)
+    manifest = tmp_path / "integration.json"
+    manifest.write_text(
+        json.dumps(
+            {"plans": [], "wis": [{"name": "awi.md", "commands": []}], "handoff": str(handoff), "verification": [_SLOW_ARGV]}
+        ),
+        encoding="utf-8",
+    )
+    code, result, stderr = _invoke(capsys, *_integration_args(record, repo, manifest, head))
+    if rebased:
+        assert code == 1 and result["phase"] == "awaiting-validation", stderr
+    else:
+        assert code == 0 and result["phase"] == "finalized", stderr
+    assert "verification-0" in result["completed"]
+
+
+def test_integrate_finalization_keeps_procedure_timeout(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """自身の上限を持たない最終化argvは、従来どおりprocedure_timeoutで打ち切られる。"""
+    repo, record, handoff, head = _timed_integration(tmp_path, monkeypatch, capsys, rebased=False)
+    manifest = tmp_path / "integration.json"
+    manifest.write_text(
+        json.dumps(
+            {"plans": [], "wis": [{"name": "awi.md", "commands": [_SLOW_ARGV]}], "handoff": str(handoff), "verification": []}
+        ),
+        encoding="utf-8",
+    )
+    code, _result, stderr = _invoke(capsys, *_integration_args(record, repo, manifest, head))
+    assert code == 2 and "wis:awi.md:0が終了124" in stderr, stderr
