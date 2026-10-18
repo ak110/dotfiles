@@ -164,11 +164,16 @@ async def run_repository_delegates(
             if isinstance(launched, BaseException):
                 results[repo_id] = {"status": "failed", "error": str(launched)}
                 _log.append("repository_launch_failed", target_repo=repo_id, detail=str(launched))
+                print(f"{repo_id}の担当を起動できませんでした: {launched}", flush=True)
             elif launched is None:
                 results[repo_id] = {"status": "owner_wait"}
+                print(f"{repo_id}は別のprocess-loopが処理中です。所有者の終了を待って再取得します。", flush=True)
             else:
                 ownership, session_id = launched
                 owners[session_id] = ownership
+                print(f"{repo_id}の担当を起動しました（session: {session_id}）。", flush=True)
+        if owners:
+            print(f"{len(owners)}件の担当の終了を待機します。", flush=True)
         aborted = False
         while owners:
             wait_task = asyncio.create_task(active_manager.wait())
@@ -176,9 +181,10 @@ async def run_repository_delegates(
                 await asyncio.wait({wait_task}, timeout=1)
                 if not aborted and _control.consume_process_loop_abort():
                     aborted = True
+                    print("中断要求を検知しました。起動済みの担当の終了後にall-reposを終了します。", flush=True)
             result = await wait_task
             for notice in result.get("notices", []):
-                print(f"担当からの通知: {notice}")
+                print(f"担当からの通知: {notice}", flush=True)
             session_id = result.get("session_id")
             if session_id not in owners or result.get("status") not in {"completed", "failed", "interrupted", "expired"}:
                 continue
@@ -196,6 +202,8 @@ async def run_repository_delegates(
                 status=result["status"],
                 result_path=str(result_path),
             )
+            remaining = f"残り{len(owners)}件の担当を待機します。" if owners else ""
+            print(f"{ownership.repo_id}の担当が終了しました（{result['status']}）。{remaining}", flush=True)
         if aborted:
             results["abort"] = {"status": "aborted"}
         return results
@@ -203,6 +211,13 @@ async def run_repository_delegates(
         await active_manager.close()
         for ownership in owners.values():
             _ownership.release(ownership, completed=False)
+
+
+def _print_work(snapshots: tuple[_listing.RepositorySnapshot, ...]) -> None:
+    """取得したWIのうち、担当の起動を要する件数をリポジトリごとに表示する。"""
+    for snapshot in snapshots:
+        if snapshot.has_work:
+            print(f"  {snapshot.repository.repo_id}: 処理候補{len(snapshot.candidates)}件", flush=True)
 
 
 def _run_loop(
@@ -219,15 +234,18 @@ def _run_loop(
     dotfiles_root = _update.resolve_dotfiles_root()
     startup_hash = _update.code_hash(dotfiles_root / "agent-toolkit" / "scripts") if dotfiles_root else None
     last_alert_checks: dict[str, float | None] = {}
-    print("atk wi process-loop all-repos 常駐モード開始。Ctrl+Cで終了。")
+    print("atk wi process-loop all-repos 常駐モード開始。Ctrl+Cで終了。", flush=True)
     try:
         while not _control.consume_process_loop_abort():
             repositories = _config.resolve_configured_repositories()
             target_ids = {repository.repo_id for repository in repositories}
+            print(f"private-notesを同期し、登録した{len(repositories)}件のリポジトリのWIを取得しています。", flush=True)
             if not _watch.pull_private_notes(private_notes):
+                print("同期を再試行するまで変更検知を待機します。", flush=True)
                 _wait_for_changes(private_notes)
                 continue
             snapshots = _listing.configured_repo_snapshot(private_notes, repositories)
+            _print_work(snapshots)
             audit: set[str] = set()
             if args.resume is not None:
                 audit.add(_ownership.resume_repository(args.resume, tuple(target_ids)))
@@ -246,12 +264,16 @@ def _run_loop(
                     )
                     last_alert_checks[repository.repo_id] = checked
                     if pending:
+                        print(f"{repository.repo_id}に未判定のDependabotアラートが{pending}件あります。", flush=True)
                         audit.add(repository.repo_id)
                     if submitted:
+                        print(f"アラート監視により{repository.repo_id}へ{submitted}件のAWIを投入しました。", flush=True)
                         snapshots = _listing.configured_repo_snapshot(private_notes, repositories)
                 except (OSError, ValueError) as error:
                     _log.append("repository_alert_failed", target_repo=repository.repo_id, detail=str(error))
+                    print(f"{repository.repo_id}のアラート確認に失敗しました: {error}", flush=True)
             if not any(snapshot.has_work for snapshot in snapshots) and not audit:
+                print("処理対象が0件のため変更検知を待機します。", flush=True)
                 _wait_for_changes(private_notes)
                 if not args.no_update and dotfiles_root is not None and startup_hash is not None:
                     _update.check_and_restart_on_update(dotfiles_root, startup_hash, sys.argv)
@@ -260,18 +282,28 @@ def _run_loop(
                 return
             if _config.resolve_configured_repositories() != repositories:
                 # 起動前の登録変更は次の取得へ渡し、新集合の同期・監査・A/B判定をやり直す。
+                print("登録先の変更を検知したため、WIを取得し直します。", flush=True)
                 continue
             snapshots = _listing.configured_repo_snapshot(private_notes, repositories)
             if not args.no_update and not args.internal_dotfiles_updated:
+                print("処理開始前にdotfilesとprivate-notesを更新します。", flush=True)
                 ready, _updated = _update.update_before_session(
                     private_notes, dotfiles_root, startup_hash, sys.argv, _env.child_env(), mark_mise_refreshed=False
                 )
                 if not ready:
+                    print("同期を再試行するまで変更検知を待機します。", flush=True)
                     _wait_for_changes(private_notes)
                     continue
                 snapshots = _listing.configured_repo_snapshot(private_notes, repositories)
             if _config.resolve_configured_repositories() != repositories:
+                print("登録先の変更を検知したため、WIを取得し直します。", flush=True)
                 continue
+            launching = [
+                snapshot.repository.repo_id
+                for snapshot in snapshots
+                if snapshot.has_work or snapshot.repository.repo_id in audit
+            ]
+            print(f"{len(launching)}件のリポジトリの担当へ委譲します: {', '.join(launching)}", flush=True)
             gate.started()
             results = asyncio.run(
                 run_repository_delegates(args, snapshots, manager_factory=manager_factory, audit_repositories=audit)
@@ -281,6 +313,7 @@ def _run_loop(
             args.auto_resume = False
             if "abort" in results:
                 return
+            print("今回起動した全担当が終了しました。", flush=True)
             if not args.no_update:
                 _update.restart_process_loop(
                     sys.argv, dotfiles_root, resume_consumed=True, mise_refreshed=False, dotfiles_updated=False
