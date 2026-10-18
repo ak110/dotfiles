@@ -38,6 +38,50 @@ _IMPORT_HOME = Path.home()
 def _isolate_update_log(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     """post-applyの永続ログを実際のOSアカウントのstate directoryから隔離する。"""
     monkeypatch.setattr(post_apply, "_UPDATE_LOG_PATH", tmp_path / "update-dotfiles.log")
+    monkeypatch.setattr(post_apply, "is_agent_environment", lambda: True, raising=False)
+
+
+@pytest.mark.parametrize("agent", [False, True], ids=["human", "agent"])
+def test_run_reports_overall_progress_while_steps_run(monkeypatch, tmp_path, capsys, agent):
+    """保留中の工程を含む全体状態が届き、列挙順の結果と永続ログを保つ。"""
+    monkeypatch.setattr(post_apply, "is_agent_environment", lambda: agent, raising=False)
+    real_wait = post_apply.wait
+    release = threading.Event()
+    observed = []
+
+    def first():
+        assert release.wait(30)
+        logging.getLogger("progress-test").info("first-detail")
+        return post_apply_outcome.PostApplyOutcome(changed=True)
+
+    def second():
+        logging.getLogger("progress-test").info("second-detail")
+        return post_apply_outcome.PostApplyOutcome(failure="工程の失敗", next_action="再実行する")
+
+    def wait_for_steps(*args, **kwargs):
+        observed.append(capsys.readouterr())
+        release.set()
+        return real_wait(*args, **kwargs)
+
+    monkeypatch.setattr(post_apply, "wait", wait_for_steps)
+    steps = [post_apply._StepSpec("先行工程", first), post_apply._StepSpec("後続工程", second, after=("先行工程",))]
+    try:
+        with pytest.raises(SystemExit) as ended:
+            post_apply.main(runner=lambda: post_apply.run(steps))
+        assert ended.value.code == 1
+    finally:
+        release.set()
+    assert observed
+    if agent:
+        assert not observed[0].err
+    else:
+        assert "post-apply実行中" in observed[0].err and "先行工程" in observed[0].err
+    output = "".join(item.out for item in observed) + capsys.readouterr().out
+    assert output.index("[1/2] 先行工程") < output.index("first-detail") < output.index("[2/2] 後続工程")
+    assert output.index("[2/2] 後続工程") < output.index("second-detail")
+    assert output.count("[1/2] 先行工程") == 1
+    log = (tmp_path / "update-dotfiles.log").read_text(encoding="utf-8")
+    assert "first-detail" in log and "second-detail" in log and "post-apply終了: exit=1" in log
 
 
 @pytest.fixture(autouse=True, name="sync_report_path")

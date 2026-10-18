@@ -22,6 +22,48 @@ from agent_toolkit._common import process_tree
 from agent_toolkit._testing import git_repository
 
 
+@pytest.fixture(autouse=True)
+def _agent_output(monkeypatch: pytest.MonkeyPatch) -> None:
+    """既存の結果検証はエージェント向けの出力を使う。"""
+    monkeypatch.setattr(run_command, "is_agent_environment", lambda: True, raising=False)
+
+
+@pytest.mark.parametrize("agent", [False, True], ids=["human", "agent"])
+@pytest.mark.parametrize("exit_code", [0, 7])
+def test_execute_reports_running_state_to_human_terminal(monkeypatch, tmp_path, capsys, agent, exit_code):
+    """子を終了させる前に実行状態が届き、両出力と終了値は保存される。"""
+    release = tmp_path / "release"
+    observed = []
+
+    class GatedPopen(subprocess.Popen):
+        def wait(self, timeout=None):
+            if not release.exists():
+                assert self.poll() is None
+                observed.append(capsys.readouterr())
+                release.touch()
+            return super().wait(timeout=timeout)
+
+    script = (
+        "import pathlib,sys,time; release=pathlib.Path(sys.argv[1]); "
+        "exec('while not release.exists(): time.sleep(0.01)'); "
+        "print('child-out'); print('child-err', file=sys.stderr); sys.exit(int(sys.argv[2]))"
+    )
+    monkeypatch.setattr(run_command, "is_agent_environment", lambda: agent, raising=False)
+    monkeypatch.setattr(run_command.managed_temp, "create_output_temp", lambda _prefix: tmp_path)
+    monkeypatch.setattr(run_command.subprocess, "Popen", GatedPopen)
+    monkeypatch.setattr(run_command, "_git_state", lambda _cwd: (None, None))
+    metadata, code, failure = run_command.execute([sys.executable, "-c", script, str(release), str(exit_code)], tmp_path, 30)
+    assert code == exit_code and failure is None
+    assert observed and not observed[0].out
+    if agent:
+        assert not observed[0].err
+    else:
+        assert "実行中" in observed[0].err and str(release) in observed[0].err
+    assert pathlib.Path(metadata["stdout_path"]).read_bytes() == b"child-out\n"
+    assert pathlib.Path(metadata["stderr_path"]).read_bytes() == b"child-err\n"
+    assert json.loads(pathlib.Path(metadata["record_path"]).read_text(encoding="utf-8")) == metadata
+
+
 def test_execute_timeout_stops_grandchildren_before_recording(monkeypatch, tmp_path):
     """停止確認後に記録を確定し、遅れて孫が出力を書かない。"""
     ready = tmp_path / "ready"

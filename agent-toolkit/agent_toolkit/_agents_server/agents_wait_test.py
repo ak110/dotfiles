@@ -38,6 +38,7 @@ def _short_wait(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None
     """結果の無い待機を即時に返して公開引数へ上限を露出させない。"""
     monkeypatch.setattr(agents_wait, "get_wait_timeout", lambda _bucket: 0)
     monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
+    monkeypatch.setattr(agents_wait, "is_agent_environment", lambda: True, raising=False)
 
 
 @pytest.fixture(name="wait_environment")
@@ -91,6 +92,33 @@ def _wait_for_session_1_result(results_directory: pathlib.Path) -> int:
         environment={"CLAUDE_CODE_SESSION_ID": "root-session"},
         state_root=results_directory.parents[2],
     )
+
+
+@pytest.mark.parametrize("agent", [False, True], ids=["human", "agent"])
+@pytest.mark.parametrize("status", ["completed", "failed"])
+def test_cli_wait_reports_waiting_state_to_human_terminal(monkeypatch, wait_environment, capsys, agent, status):
+    """終端を公開する前に対象を表示し、公開後はJSON Linesを保つ。"""
+    _write_own_status(wait_environment, [{"session_id": "session-1"}])
+    monkeypatch.setattr(agents_wait, "get_wait_timeout", lambda _bucket: 30)
+    monkeypatch.setattr(agents_wait, "is_agent_environment", lambda: agent, raising=False)
+    observed = []
+
+    def release_result(_seconds):
+        observed.append(capsys.readouterr())
+        wait_environment.mkdir(parents=True, exist_ok=True)
+        (wait_environment / "session-1.json").write_text(json.dumps({"status": status}), encoding="utf-8")
+
+    monkeypatch.setattr(agents_wait.time, "sleep", release_result)
+    assert _wait_for_session_1_result(wait_environment) == 0
+    assert observed and not observed[0].out
+    if agent:
+        assert not observed[0].err
+    else:
+        assert "待機中" in observed[0].err and "session-1" in observed[0].err
+    result = json.loads(capsys.readouterr().out)
+    assert result["status"] == status and result["session_id"] == "session-1"
+    if status == "failed":
+        assert result["next_action"]
 
 
 def test_agents_wait_outputs_every_retained_result(
