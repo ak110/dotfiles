@@ -4,10 +4,13 @@ import datetime
 import pathlib
 import subprocess
 from typing import Any
+from unittest import mock
 
 import pytest
 
 from agent_toolkit._atk.serve import wi_operations
+from agent_toolkit._atk.wi import entries as _wi_entries
+from agent_toolkit._atk.wi import entry_text, frontmatter
 from agent_toolkit._atk.wi import readiness as _wi_readiness
 from agent_toolkit._testing import git_repository
 from agent_toolkit._testing.wi_entry_files import write_awi, write_uwi
@@ -518,6 +521,56 @@ class TestReadiness:
         assert reads.count(active_path) == 1
         assert reads.count(referenced) == 1
         assert unreferenced not in reads
+
+
+@pytest.mark.parametrize("snapshot", [False, True])
+def test_readiness_reuses_parsed_dependencies_and_terminal_metadata(tmp_path: pathlib.Path, snapshot: bool) -> None:
+    """依存・冷却期限・sourceの判定まで各本文を1回だけ解析する。"""
+    write_awi(tmp_path, "awi.md", depends_on=("done.md",), cooldown_until="2999-01-01T00:00:00+00:00")
+    write_awi(tmp_path, "done.md", state="adopted")
+    write_awi(tmp_path, "legacy.md", legacy_dependency="    kind: entries\n    filenames: [done.md]")
+    write_uwi(tmp_path, "skill.md", source="run-skill", answer="回答済み")
+    with mock.patch.object(frontmatter, "parse_frontmatter", wraps=frontmatter.parse_frontmatter) as parser:
+        acquired = tuple(_wi_entries.iter_entries(tmp_path, ("inbox", "adopted"), None)) if snapshot else None
+        result = _wi_readiness.calculate_readiness(
+            tmp_path, "github.com/example/repo", now=datetime.datetime(2026, 10, 18, tzinfo=datetime.UTC), snapshot=acquired
+        )
+        assert result.ready == ("legacy.md",)
+        assert result.cooldown_pending == ("awi.md",)
+        assert result.blocked == ("awi.md",)
+        assert parser.call_count == 4
+
+
+def test_readiness_refreshes_changed_body_within_operation(tmp_path: pathlib.Path) -> None:
+    """同じ取得集合でも内容が変われば再解析し、変更後の依存を使う。"""
+    path = write_awi(tmp_path, "awi.md")
+    original = path.read_text(encoding="utf-8")
+    texts = entry_text.EntryTexts()
+    with mock.patch.object(frontmatter, "parse_frontmatter", wraps=frontmatter.parse_frontmatter) as parser:
+        assert _wi_readiness.calculate_readiness(tmp_path, None, texts=texts).ready == ("awi.md",)
+        path.write_text(original.replace("type: awi\n", "type: awi\ndepends_on: [absent.md]\n"), encoding="utf-8")
+        changed = _wi_readiness.calculate_readiness(tmp_path, None, texts=texts)
+        assert changed.missing_dependencies == ("awi.md",)
+        assert not changed.ready
+        assert parser.call_count == 2
+
+
+@pytest.mark.parametrize("text", ["\ufeff---\ntype: unexpected\n---\n本文\n", "---\ntype: [awi, uwi]\n---\n本文\n"])
+def test_readiness_preserves_invalid_type_diagnostic(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], text: str
+) -> None:
+    """解析可能な不正種別は終了コード2と対象名を含む診断で返す。"""
+    path = tmp_path / "inbox" / "invalid.md"
+    path.parent.mkdir()
+    path.write_text(text, encoding="utf-8")
+    with mock.patch.object(frontmatter, "parse_frontmatter", wraps=frontmatter.parse_frontmatter) as parser:
+        with pytest.raises(SystemExit) as failure:
+            _wi_readiness.calculate_readiness(tmp_path, None)
+        assert failure.value.code == 2
+        assert parser.call_count == 1
+    diagnostic = capsys.readouterr().err
+    assert "frontmatterのtypeが不正または欠落" in diagnostic
+    assert str(path) in diagnostic
 
 
 class TestUpstreamCrossRepoDependency:

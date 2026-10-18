@@ -5,7 +5,7 @@ import shutil
 import unicodedata
 
 from agent_toolkit._atk.wi.constants import normalized_wi_type
-from agent_toolkit._atk.wi.frontmatter import parse_frontmatter
+from agent_toolkit._atk.wi.entry_text import parse_frontmatter
 
 _SUMMARY_MAX_LEN = 40
 """`available_width`が不明な呼び出し元向けのフォールバック表示幅上限。"""

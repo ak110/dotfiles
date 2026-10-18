@@ -13,6 +13,7 @@ import shutil
 import subprocess
 import sys
 import unicodedata
+from unittest import mock
 
 import pytest
 
@@ -36,6 +37,34 @@ from agent_toolkit.atk_test import (  # pylint: disable=wrong-import-position
 )  # noqa: E402  # pylint: disable=wrong-import-position
 
 _AGENT_ENVIRONMENT_VARIABLES = ("AI_AGENT", "CODEX_CI", "CLAUDECODE", "CURSOR_AGENT")
+
+
+@pytest.mark.parametrize("output", ["--jsonl", "--no-jsonl", "--summary-only", "--count"])
+def test_list_shares_one_parse_across_readiness_selection_and_display(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], output: str
+) -> None:
+    """各表示形式で着手可否とsource選択と要約が同じ解析結果を使う。"""
+    notes = _setup_notes(tmp_path)
+    _write_awi_file(notes, "first.md", source="session-review", body="要約")
+    _write_uwi_file(notes, "second.md", source="session-review", question="質問", answer="回答")
+    monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+    with mock.patch.object(frontmatter, "parse_frontmatter", wraps=frontmatter.parse_frontmatter) as parser:
+        for count in (2, 4):
+            with pytest.raises(SystemExit) as result:
+                atk.main(
+                    ["wi", "list", "--skip-pull", "--source=session-review", output],
+                    home=tmp_path,
+                    _output_capture_active=True,
+                )
+            assert result.value.code == 0
+            captured = capsys.readouterr()
+            assert not captured.err
+            if output == "--count":
+                assert captured.out == "2\n"
+            else:
+                assert "first.md" in captured.out and "second.md" in captured.out
+                assert "要約" in captured.out and "質問" in captured.out
+            assert parser.call_count == count
 
 
 @pytest.fixture(autouse=True)

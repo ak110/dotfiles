@@ -17,6 +17,7 @@ from agent_toolkit._atk.wi import readiness as _wi_readiness
 from agent_toolkit._atk.wi import sync as _wi_sync
 from agent_toolkit._atk.wi import uwi_scan as _wi_uwi_scan
 from agent_toolkit._atk.wi.constants import WI_PROCESSABLE_STATES, WI_STATES, WI_TYPE_UWI, WI_TYPES
+from agent_toolkit._atk.wi.entry_text import EntryTexts, parse_frontmatter
 from agent_toolkit._atk.wi.formatters import (
     body_summary,
     display_width,
@@ -25,7 +26,6 @@ from agent_toolkit._atk.wi.formatters import (
     truncate_target_repo,
     uwi_body_summary,
 )
-from agent_toolkit._atk.wi.frontmatter import parse_frontmatter
 from agent_toolkit._atk.wi.readiness import ReadinessResult
 from agent_toolkit._atk.wi.repo import resolve_local_worktree, resolve_repo_id
 from agent_toolkit._common import automated_prompt as _automated_prompt
@@ -337,7 +337,8 @@ def cmd_list(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
     target_values = args.target_repo if isinstance(args.target_repo, list) else [args.target_repo] if args.target_repo else []
     resolved_repos = tuple(dict.fromkeys(resolve_repo_id(repo) for repo in target_values))
     readiness_target = resolved_repos[0] if len(resolved_repos) == 1 else None
-    readiness = _wi_readiness.calculate_readiness(private_notes, readiness_target)
+    texts = EntryTexts()
+    readiness = _wi_readiness.calculate_readiness(private_notes, readiness_target, texts=texts)
 
     selected = _wi_entries.select_entries(
         private_notes,
@@ -346,6 +347,7 @@ def cmd_list(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
         entry_type=args.type,
         answered=args.answered,
         source=args.source,
+        texts=texts,
     )
 
     if args.count:

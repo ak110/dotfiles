@@ -1,12 +1,14 @@
 """WIエントリの走査、対象リポジトリによる限定と種別の判定のテスト。"""
 
 import pathlib
+from unittest import mock
 
 import pytest
 
 from agent_toolkit import atk
 from agent_toolkit._atk.wi import constants as _wi_constants
 from agent_toolkit._atk.wi import entries as _wi_entries
+from agent_toolkit._atk.wi import entry_text, formatters, frontmatter
 from agent_toolkit._atk.wi import readiness as _readiness
 from agent_toolkit._atk.wi.mutations import content as _mutations_content
 from agent_toolkit._atk.wi.mutations import targets as _mutations_targets
@@ -167,3 +169,77 @@ def test_named_read_preserves_request_order_filters_and_state_priority(tmp_path:
     selected, missing = _wi_entries.read_named_entries(tmp_path, names, target_repo=None, source="user")
     assert [item[0].name for item in selected] == [second]
     assert missing == [first, absent]
+
+
+@pytest.mark.parametrize("operation", ["select", "named"])
+def test_entry_metadata_is_parsed_once_per_acquisition(tmp_path: pathlib.Path, operation: str) -> None:
+    """属性の抽出と消費を共有し、別操作では本文を読み直す。"""
+    path = tmp_path / "inbox" / "20261018-000000-001.md"
+    path.parent.mkdir()
+    text = "\ufeff---\ntarget_repo: github.com/example/repo\ntype: awi\nsource: 001\n---\n\n要約\n"
+    path.write_text(text, encoding="utf-8")
+
+    def acquire() -> list[_wi_entries.EntryRecord]:
+        if operation == "named":
+            selected, missing = _wi_entries.read_named_entries(
+                tmp_path, [(path.name, path.name)], target_repo=None, source="001"
+            )
+            assert missing == ([] if selected else [path.name])
+            return selected
+        return _wi_entries.select_entries(
+            tmp_path, status="inbox", target_repo=None, entry_type="awi", answered="all", source="001"
+        )
+
+    with mock.patch.object(frontmatter, "parse_frontmatter", wraps=frontmatter.parse_frontmatter) as parser:
+        for count in (1, 2):
+            selected = acquire()
+            assert [(item[1], item[4]) for item in selected] == [("github.com/example/repo", "awi")]
+            assert formatters.parse_source(selected[0][2]) == "001"
+            assert formatters.body_summary(selected[0][2]) == "要約"
+            assert parser.call_count == count
+        path.write_text(text.replace("001\n---", "002\n---"), encoding="utf-8")
+        assert not acquire()
+        assert parser.call_count == 3
+
+
+@pytest.mark.parametrize(
+    ("text", "kind", "repo"),
+    [
+        ("\ufeff---\ntype: awi\ntarget_repo: 001\n---\n本文\n", "awi", "001"),
+        ("---\ntype: [\n---\n本文\n", None, "(unknown)"),
+        ("---\ntype: unexpected\n---\n本文\n", None, "(unknown)"),
+    ],
+)
+def test_named_read_preserves_special_input_values(tmp_path: pathlib.Path, text: str, kind: str | None, repo: str) -> None:
+    """指定名読取は破損と不正種別を表示可能な値として保つ。"""
+    path = tmp_path / "inbox" / "20261018-000000-001.md"
+    path.parent.mkdir()
+    path.write_text(text, encoding="utf-8")
+    with mock.patch.object(frontmatter, "parse_frontmatter", wraps=frontmatter.parse_frontmatter) as parser:
+        selected, missing = _wi_entries.read_named_entries(tmp_path, [(path.name, path.name)], target_repo=None)
+        assert not missing
+        assert selected[0][1:] == (repo, text, "inbox", kind)
+        assert parser.call_count == 1
+
+
+def test_acquired_text_preserves_literal_scalars_and_typed_schedule(tmp_path: pathlib.Path) -> None:
+    """解析結果を受け取る消費側で字面とqueue_scheduleの型を保持する。"""
+    path = tmp_path / "inbox" / "entry.md"
+    path.parent.mkdir()
+    path.write_text(
+        "---\ntype: awi\ntarget_repo: github.com/example/repo\nsource: false\ntarget_commit: 001\n"
+        "queue_schedule:\n  carry_count: 2\n  enabled: true\n---\n\n本文\n",
+        encoding="utf-8",
+    )
+    selected = list(_wi_entries.iter_entries(tmp_path, ("inbox",), None))
+    parsed = entry_text.parse_frontmatter(selected[0][2])
+    assert parsed == (
+        {
+            "type": "awi",
+            "target_repo": "github.com/example/repo",
+            "source": "false",
+            "target_commit": "001",
+            "queue_schedule": {"carry_count": 2, "enabled": True},
+        },
+        "\n本文\n",
+    )
