@@ -424,7 +424,7 @@ Stopは既存の非同期待機判定を同じ会話の`turn.complete`へ1回限
 
 ## レーン資源の統合操作
 
-1レーンでも隔離・独立文脈レビュー・検証を保ち、準備は`atk lane create`、統合と最終化は`atk lane integrate`へ集約する。
+初期選定が1レーンの場合は、実装と工程調整を同じ担当へ集約し、メインの定型受領を省く。共通契約は`agent-toolkit/share/single-lane-execution.md`が持ち、process-wiとsingle-lane-processの両方が使う。CLIだけの短縮は担当境界を残し、主作業ツリーへの直接実装は隔離を失うため、専用worktreeと独立した実行レビューを保つ集約を採用する。1レーンでも隔離・独立文脈レビュー・検証を保ち、準備は`atk lane create`、統合と最終化は`atk lane integrate`へ集約する。
 既存のlane recordとレビュー済みHEAD、統合先、順序付き全計画・WI・再検証・計画なしの引き継ぎを渡す。
 clean・Git登録・現書込所有・レビューHEAD一致とffへ至る判定は資源操作が持ち、エージェントに個別Git操作を組み立てさせない。
 内容の意味判断、競合解消、レビュー採否と検証は担当が持ち、入力manifestへ確定した操作を渡す。

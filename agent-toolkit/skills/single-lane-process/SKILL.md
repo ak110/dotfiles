@@ -17,6 +17,7 @@ disable-model-invocation: true
 
 | 時点または条件 | 全文読む資料 |
 | --- | --- |
+| 計画または直接実装に着手する前 | `${CLAUDE_PLUGIN_ROOT}/share/single-lane-execution.md` |
 | 計画対象がある場合に計画を起草する前（実行順3） | `agent-toolkit:plan-mode`のSKILL.mdと同スキルの`references/plan-file-standards.md` |
 | 計画あり・なしのどちらでも、メインが自ら実装に着手する直前（実行順4） | `${CLAUDE_PLUGIN_ROOT}/share/exec-review.parent.md`冒頭の`未判定検証記録`の段落と「起動」の`Git管理外の変更`の段落 |
 | 対象worktreeごとに公開する前（実行順8） | `agent-toolkit:commit`を起動し、同スキルの`references/publish.md` |
@@ -60,7 +61,7 @@ disable-model-invocation: true
 
 ## 実行順
 
-実行レビューは`${CLAUDE_PLUGIN_ROOT}/share/exec-review.parent.md`に従って起動し、`未判定検証記録`は同書冒頭の規定に従って渡す。
+計画・実装・独立した実行レビューの調整は`${CLAUDE_PLUGIN_ROOT}/share/single-lane-execution.md`の共通契約に従う。以下は本スキル固有の対象取得、worktree対応付けと公開の手順を定める。実行レビューは`${CLAUDE_PLUGIN_ROOT}/share/exec-review.parent.md`に従って起動し、`未判定検証記録`は同書冒頭の規定に従って渡す。
 
 1. processable一覧と各WI本文を取得し、同時に`atk wi list --type=uwi --answered=yes --status=processable --source=!run-skill --target-repo=<対象リポジトリの絶対パス>`で回答済みUWIを取得する。
    対象worktreeごとに公開対象とベースbranchを明示し、`${CLAUDE_PLUGIN_ROOT}/skills/process-wi/references/selection-procedure.md`「処理対象の決定」の開始時CI点検を適用する。実際の照会、失敗ログの取得と残工程への作用の判定を実装前に行い、既存失敗は「見つけた既存不良の扱い」、ユーザー依存事項は確認手順へ渡す。公開時のbaselineとCI検収も実行順8で行う。

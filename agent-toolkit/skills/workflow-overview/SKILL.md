@@ -50,7 +50,7 @@ process-loopは子セッションの開始前に、WI投入作業の活動によ
 
 process-wiでは、対象のメインが候補本文から分類と配分を判断し、取得済み候補と意味判断を`pick-wi-check`へ渡して定型欄の生成・確認・保存を1回で行う。
 保存済み選定YAMLから`atk lane create`へレーンを渡し、準備後に同じ担当threadが計画から統合までを担う。
-1レーンでも`atk lane integrate`を使い、統合と計画保存・WI終端・統合済み記録を同じ操作で完了する。
+初期選定が1レーンなら同じ担当が計画・実装・独立した実行レビューの調整から統合まで継続し、メインはユーザー判断と最終結果を受領する。共通契約は`${CLAUDE_PLUGIN_ROOT}/share/single-lane-execution.md`とする。1レーンでも`atk lane integrate`を使い、統合と計画保存・WI終端・統合済み記録を同じ操作で完了する。
 操作の入力と失敗後の再開は`${CLAUDE_PLUGIN_ROOT}/skills/process-wi/references/run-lanes.md`が定める。
 意味判断、レーン数上限、単一writer、独立した実行レビュー、直列統合は各工程に残す。
 レーンの専用worktreeは対象リポジトリの主作業ツリーの`.claude/worktrees/process-wi-<レーン識別子>`に固定され、対象リポジトリごとに1つだけ起動するprocess-wiの反復でもパスが増えない。レーンのworktreeとbranchは統合後も追加に備えて保持し、通常終了では`atk agents-exit-session`が、process-loopでは子セッションの終了後の処理が、`atk lane delete`と同じ安全条件で回収する。次回の開始時は`atk lane delete --list`から残存登録と前回結果を読み、未統合・dirty・稼働中・不明の成果を保って再判定する。セッションのmanaged-tempと証拠は専用資源の回収対象から外す。
