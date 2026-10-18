@@ -6,6 +6,9 @@ import pathlib
 import pytest
 
 from agent_toolkit import atk
+from agent_toolkit._atk.serve import app as serve_app
+from agent_toolkit._atk.serve import config as serve_config
+from agent_toolkit._atk.serve import state as serve_state
 from agent_toolkit._atk.serve import wi_operations
 from agent_toolkit._atk.wi import entries as _wi_entries
 from agent_toolkit._atk.wi import frontmatter
@@ -116,7 +119,8 @@ def test_unresolvable_target_repo_matches_stored_value_in_cli_selection_and_web(
 
 
 @pytest.mark.parametrize("kind", ["awi", "uwi"])
-def test_bom_preserves_cli_and_web_summaries(
+@pytest.mark.asyncio
+async def test_bom_preserves_cli_and_web_summaries(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
@@ -155,12 +159,18 @@ def test_bom_preserves_cli_and_web_summaries(
             current.append(captured.out)
         outputs.append(current)
         parsed_inputs.clear()
+        app = serve_app.create_app(notes, serve_config.ServeConfig("127.0.0.1", 28766), serve_state.ServeState(notes))
         with monkeypatch.context() as parser_patch:
             parser_patch.setattr(frontmatter, "parse_frontmatter", counting_parse)
-            entries, warnings = wi_operations.Operations(notes).entries_with_warnings({"type": "all"})
+            response = await app.test_client().get("/api/entries?type=all&status=inbox&period=all")
+        assert response.status_code == 200
+        payload = await response.get_json()
+        entries = payload["entries"]
         assert parsed_inputs == [prefix + original]
-        assert not warnings
+        assert not payload["warnings"]
         assert len(entries) == 1
+        assert entries[0]["filename"] == name
+        assert entries[0]["kind"] == kind
         summaries.append(entries[0]["summary"])
     assert outputs[0] == outputs[1]
     assert summaries[0] == summaries[1] == ("本文" if kind == "awi" else "続けるか")
