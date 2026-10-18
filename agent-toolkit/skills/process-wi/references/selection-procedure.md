@@ -154,10 +154,11 @@ atk run-script pick-wi-check -- <意味判断YAMLの絶対パス> --candidate-fi
 ユーザーが処理中のセッションへキュー操作（UWIへの回答、AWIの投入）を告げた発話は、その項目を同じ実行へ加える明示指示として扱い、追加の可否を問い返さない。ユーザーが加えるよう明示した項目と告げた項目（UWIは投入元のセッションによらない）、および即時対応で投入または再利用を確定したAWIを候補差分とする。UWIが名指しされない場合は、次の一覧から処理対象に含まれない回答済み未終端UWIの全件を得る。
 
 ```text
-atk wi list --type=uwi --answered=yes --status=processable --source=!run-skill --target-repo=<対象リポジトリの絶対パス> --skip-pull
+atk wi list --type=uwi --answered=yes --status=processable --source=!run-skill --target-repo=<対象リポジトリの絶対パス> --pull
 ```
 
 同じ実行への追加を目的に起草・投入したAWIは、投入担当へ委譲した場合も保存結果の正式ファイル名を受領した直後に候補差分へ含める。
+ユーザーが告げた個別UWIとAWIは`atk wi show <WIファイル名> --pull`で取得する。強制同期後も未回答、項目の不在、更新前の内容のいずれかなら、`agent-toolkit:wi-standards`「投入と取得」の再取得条件を適用する。回答を得たUWIは`agent-toolkit:user-confirmation-and-report`の`references/answer-transitions.md`へ渡す。
 ユーザーが名指ししたWIは、追加指示と対象が確定した直後に候補差分へ含める。
 いずれも他の要求の起草・検収・保存の完了を待たず、次の初期選定中または選定完了後の手順へ進む。
 告げられていない新着と次回向けに起草した振り返りAWIは次回へ残し、ready一覧を再取得しない。この発話解釈は本節が定め、他の文書は本節を参照する。候補差分にも「処理対象の決定」の回答済みUWIと元項目の扱いを適用する。

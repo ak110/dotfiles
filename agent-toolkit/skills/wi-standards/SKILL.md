@@ -67,6 +67,8 @@ WIの保存状態は`inbox`、`processing`、`hold`、`adopted`、`rejected`で�
 
 ## 投入と取得
 
+ユーザーが現在のセッションへキュー項目の外部更新（UWIへの回答、AWIの投入・一括投入、ユーザーコメント、本文編集、状態遷移など）を告げた場合は、個別本文を`atk wi show <WIファイル名> --pull`で強制同期して取得する。項目を特定する一覧も`atk wi list`へ`--pull`を付ける。強制同期後も項目が見つからないか更新前の内容なら、保存側の送信が未完了の可能性を保ち、既存の待機・再確認契機で同じ公開操作を再実行する。同期成功と更新の到達は区別し、private-notesの直接Git操作の扱いは`references/repository-scope.md`の公開操作と例外条件に従う。通常の軽量参照、投入前の回答済みUWIとの整合確認と、既に同期した候補の定期参照には本条件を適用しない。
+
 WIの投入前と投入済みWIへの着手前に、対象リポジトリの回答済みUWIを`atk wi list --target-repo=<対象リポジトリの絶対パス> --type=uwi --answered=yes --skip-pull --summary-only`で取得する。同じ実装領域の項目は`atk wi show`で回答を読み、新しい要求と両立するか確かめる。両立しない部分は投入・着手せず、原要求と回答を上位として本文を是正する。ユーザーだけが決められる値が残る場合だけ確認する（`agent-toolkit:user-confirmation-and-report`「確認要否の判定」）。
 WIの追跡先と本文形式を同じ工程に求めるリポジトリでは、その規範の形式と時機に従って記載し、登録後に完了を確かめる。
 依存を伴う要求は、`references/states-and-dependencies.md`の先行成果の必要性基準で確定した依存だけを後続本文と`depends_on`へ反映する。
