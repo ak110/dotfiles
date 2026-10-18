@@ -11,6 +11,7 @@ dotnet = "10.0.401"
 # GitHub Releaseを直接参照するbackendを指定して上流の配布物名へ追随する。実行ファイル名は`editorconfig-checker`になる。
 "github:editorconfig-checker/editorconfig-checker" = "latest"
 fzf = "latest"
+gcloud = "latest"
 gh = "latest"
 git-cliff = "latest"
 glab = "latest"
