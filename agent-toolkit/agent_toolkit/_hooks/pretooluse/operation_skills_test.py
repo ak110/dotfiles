@@ -71,7 +71,8 @@ def test_blocked_delegation_does_not_consume_warning(tmp_path: pathlib.Path) -> 
     result = _run(blocked, env)
     assert result.returncode == 2
     assert "agent-toolkit:delegation" not in result.stderr
-    state = _read_session_state(tmp_path, "blocked")
+    state_file = tmp_path / SESSION_STATE_FILENAME_TEMPLATE.format(session_id="blocked")
+    state = _read_session_state(tmp_path, "blocked") if state_file.exists() else {}
     assert rules_context.OPERATION_SKILL_READY_KEY not in state
     valid = {**blocked, "tool_name": _DELEGATION_TOOLS[5], "tool_input": {}}
     assert "agent-toolkit:delegation" in _additional_context(_run(valid, env))

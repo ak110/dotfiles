@@ -48,10 +48,13 @@ def test_nonempty_report_does_not_require_legacy_labels(capsys: pytest.CaptureFi
     assert capsys.readouterr().out == ""
 
 
-def test_english_completion_report_is_allowed(capsys: pytest.CaptureFixture[str]) -> None:
-    """英語の完了報告も非空なら空stdoutで許可する。"""
+def test_english_completion_report_requests_japanese_rewrite(capsys: pytest.CaptureFixture[str]) -> None:
+    """非空の英語の最終応答も、日本語への書き直しを求める。"""
     assert advisor.main(json.dumps(_payload("Done here."))) == 0
-    assert capsys.readouterr().out == ""
+    decision = json.loads(capsys.readouterr().out)
+    assert decision["decision"] == "block"
+    assert auto_message_opening_attributes(decision["reason"]) == {"source": "response-language", "kind": "block"}
+    assert "日本語で書いてから停止する" in decision["reason"]
 
 
 def test_japanese_completion_report_is_allowed(capsys: pytest.CaptureFixture[str]) -> None:

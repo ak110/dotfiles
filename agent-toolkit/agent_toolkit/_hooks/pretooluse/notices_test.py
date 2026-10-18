@@ -108,5 +108,9 @@ class TestCodexBashCheckSelection:
         claude_result = _run(claude_payload, env_overrides=env)
         wait_result = _run(codex_payload, env_overrides=env)
 
-        assert "英語主体" in _additional_context(claude_result)
+        assert claude_result.returncode == 2
+        assert claude_result.stdout == ""
+        assert "英語主体" in claude_result.stderr
+        assert wait_result.returncode == 0
         assert wait_result.stdout == ""
+        assert "英語主体" not in wait_result.stderr

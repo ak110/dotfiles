@@ -333,13 +333,8 @@ class TestCodexMcpReply:
         assert out["hookSpecificOutput"]["permissionDecision"] == "allow"
 
 
-class TestCodexMcpLanguageWarningMerge:
-    """codex MCP強制承認時に保留言語警告が単一JSONへ統合されることを検証する。
-
-    `flush_pending_notices()`を廃止し`emit_json()`単独で承認とadditionalContextを
-    出力する回帰を防ぐ。stdoutが2件のJSONへ分裂しないこと・`additionalContext`に
-    警告本文が統合されることを確認する。
-    """
+class TestMcpLanguageBoundary:
+    """Claudeの英語はMCPの承認前に止め、Codexのtranscript除外と日本語の承認を保つ。"""
 
     _state_env = staticmethod(_plan_file_state_env)
     _write_state = staticmethod(_write_session_state)
@@ -359,27 +354,44 @@ class TestCodexMcpLanguageWarningMerge:
         path.write_text(json.dumps(entry, ensure_ascii=False) + "\n", encoding="utf-8")
         return path
 
-    def test_codex_merges_pending_language_warning(self, tmp_path: pathlib.Path):
-        """mcp__plugin_agent-toolkit_agents_server__start分岐で保留警告が承認JSONへ統合される。"""
+    @pytest.mark.parametrize("codex", [False, True])
+    def test_start_permission_follows_host_language_boundary(self, tmp_path: pathlib.Path, codex: bool):
+        """同じMCP開始でも言語判定は呼出元ホストの契約に従う。"""
         env = self._state_env(tmp_path)
         transcript = self._write_transcript(tmp_path, "A" * 100)
         result = _run(
             {
                 "tool_name": "mcp__plugin_agent-toolkit_agents_server__start",
                 "tool_input": {"prompt": "hello", "sandbox": "danger-full-access", "cwd": "/tmp/workdir"},
+                **({"turn_id": "codex-turn"} if codex else {}),
                 "transcript_path": str(transcript),
                 "session_id": "codex-lang",
             },
             env_overrides=env,
         )
-        assert result.returncode == 0
-        # stdoutは単一JSONオブジェクトとしてパースできる（2件分裂していない）
-        out = json.loads(result.stdout)
-        assert out["hookSpecificOutput"]["permissionDecision"] == "allow"
-        assert "英語主体" in out["hookSpecificOutput"]["additionalContext"]
+        assert result.returncode == (0 if codex else 2)
+        assert result.stdout == ""
+        assert ("英語主体" in result.stderr) is (not codex)
+        self._write_transcript(tmp_path, "根拠の確認が完了しました。")
+        approved = _run(
+            {
+                "tool_name": "mcp__plugin_agent-toolkit_agents_server__start",
+                "tool_input": {"prompt": "調査する", "cwd": str(tmp_path)},
+                "transcript_path": str(transcript),
+                "session_id": "codex-lang",
+                **({"turn_id": "codex-turn"} if codex else {}),
+            },
+            env_overrides=env,
+        )
+        assert approved.returncode == 0
+        if codex:
+            assert approved.stdout == ""
+        else:
+            assert json.loads(approved.stdout)["hookSpecificOutput"]["permissionDecision"] == "allow"
 
-    def test_codex_reply_merges_pending_language_warning(self, tmp_path: pathlib.Path):
-        """mcp__plugin_agent-toolkit_agents_server__send_message分岐で保留警告が承認JSONへ統合される。"""
+    @pytest.mark.parametrize("codex", [False, True])
+    def test_continuation_permission_follows_host_language_boundary(self, tmp_path: pathlib.Path, codex: bool):
+        """所有記録のある継続操作でも言語の遮断とホスト除外を保つ。"""
         env = self._state_env(tmp_path)
         _write_session_state(
             tmp_path,
@@ -391,15 +403,31 @@ class TestCodexMcpLanguageWarningMerge:
             {
                 "tool_name": "mcp__plugin_agent-toolkit_agents_server__send_message",
                 "tool_input": {"session_id": "abc", "prompt": "next"},
+                **({"turn_id": "codex-turn"} if codex else {}),
                 "transcript_path": str(transcript),
                 "session_id": "reply-lang",
             },
             env_overrides=env,
         )
-        assert result.returncode == 0
-        out = json.loads(result.stdout)
-        assert out["hookSpecificOutput"]["permissionDecision"] == "allow"
-        assert "英語主体" in out["hookSpecificOutput"]["additionalContext"]
+        assert result.returncode == (0 if codex else 2)
+        assert result.stdout == ""
+        assert ("英語主体" in result.stderr) is (not codex)
+        self._write_transcript(tmp_path, "根拠の確認が完了しました。")
+        approved = _run(
+            {
+                "tool_name": "mcp__plugin_agent-toolkit_agents_server__send_message",
+                "tool_input": {"session_id": "abc", "prompt": "続ける"},
+                "transcript_path": str(transcript),
+                "session_id": "reply-lang",
+                **({"turn_id": "codex-turn"} if codex else {}),
+            },
+            env_overrides=env,
+        )
+        assert approved.returncode == 0
+        if codex:
+            assert approved.stdout == ""
+        else:
+            assert json.loads(approved.stdout)["hookSpecificOutput"]["permissionDecision"] == "allow"
 
 
 class TestIssSidechainProbe:
