@@ -975,23 +975,36 @@ async def test_late_engine_unavailability_carries_over_to_next_start(
     assert available.start_calls == [("second", "medium", "delegate")]
 
 
+@pytest.mark.parametrize(
+    ("providers", "expected_model", "expected_effort"), [("", "second", "medium"), ("chatgpt,api", "first", "high")]
+)
 @pytest.mark.asyncio
 async def test_carried_over_exclusion_survives_a_successful_start(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
+    providers: str,
+    expected_model: str,
+    expected_effort: str,
 ) -> None:
-    """後続の候補で成立しても、除外した候補は保持期間内は先頭から試さない。"""
+    """API設定ありの旧利用上限は再確認し、未設定の候補除外は成功後も保持する。"""
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CODEX_MODEL_PROVIDERS", providers)
     candidates = [("codex", "first", "high"), ("codex", "second", "medium")]
-    manager, _ = await _carry_over_late_unavailability(monkeypatch, tmp_path, candidates)
+    manager, available = await _carry_over_late_unavailability(monkeypatch, tmp_path, candidates)
+    try:
+        recovered = await manager.start("plan", "再試行", str(tmp_path))
+        following = await manager.start("plan", "通常起動", str(tmp_path))
 
-    recovered = await manager.start("plan", "再試行", str(tmp_path))
-    following = await manager.start("plan", "通常起動", str(tmp_path))
-
-    assert recovered["model"] == "second"
-    assert following["model"] == "second"
-    assert recovered["excluded_candidates"] == [
-        {"engine": "codex", "model": "first", "effort": "high", "reason": "usageLimitExceeded"}
-    ]
+        for response in (recovered, following):
+            assert response["model"] == expected_model
+            if providers:
+                assert "excluded_candidates" not in response
+            else:
+                assert response["excluded_candidates"] == [
+                    {"engine": "codex", "model": "first", "effort": "high", "reason": "usageLimitExceeded"}
+                ]
+        assert available.start_calls == [(expected_model, expected_effort, "delegate")] * 2
+    finally:
+        await manager.close()
 
 
 @pytest.mark.asyncio
@@ -1040,22 +1053,37 @@ async def test_shell_launch_carries_over_candidate_within_shell_launch_kind(
     assert available.start_calls == [("first", "high", "explore"), ("second", "medium", "shell")]
 
 
+@pytest.mark.parametrize(
+    ("providers", "expected_model", "expected_effort"), [("", "second", "medium"), ("chatgpt,api", "first", "high")]
+)
 @pytest.mark.asyncio
 async def test_stop_without_wait_carries_over_unavailable_candidate(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
+    providers: str,
+    expected_model: str,
+    expected_effort: str,
 ) -> None:
-    """結果を受領せずstopで破棄した可用性失敗も、次回起動から除外する。"""
+    """stop後の旧利用上限はAPI設定ありなら再確認し、未設定なら候補除外を保持する。"""
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CODEX_MODEL_PROVIDERS", providers)
     candidates = [("codex", "first", "high"), ("codex", "second", "medium")]
     manager, failed = await _start_late_unavailability(monkeypatch, tmp_path, candidates)
-    assert await manager.stop(failed["session_id"]) == {}
-    available = FakeBackend(manager.sessions, "codex")
-    _install_backend(manager, "codex", available)
 
-    response = await manager.start("plan", "再試行", str(tmp_path))
+    try:
+        assert await manager.stop(failed["session_id"]) == {}
+        available = FakeBackend(manager.sessions, "codex")
+        _install_backend(manager, "codex", available)
 
-    assert response["model"] == "second"
-    assert available.start_calls == [("second", "medium", "delegate")]
+        response = await manager.start("plan", "再試行", str(tmp_path))
+
+        assert response["model"] == expected_model
+        assert available.start_calls == [(expected_model, expected_effort, "delegate")]
+        if providers:
+            assert "excluded_candidates" not in response
+        else:
+            assert response["excluded_candidates"][0]["reason"] == "usageLimitExceeded"
+    finally:
+        await manager.close()
 
 
 @pytest.mark.asyncio
