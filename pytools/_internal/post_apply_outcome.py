@@ -30,6 +30,9 @@ class PostApplyOutcome:
     - ステップが使うツールが無いために処理できない場合（先行ステップの取得・導入がスキップされた場合を含む）は
       「スキップ」とする。
     - 予期しない例外は、`post_apply`が「失敗」と数える。
+
+    `deferred`は、必要な更新を稼働中の利用を守るために延期したことを示す（数え方は「スキップ」と同じ）。
+    `post_apply`は延期を返した工程を延期記録へ残し、自動更新タイマーが上流変更の有無によらず再試行する。
     """
 
     changed: bool = False
@@ -38,6 +41,7 @@ class PostApplyOutcome:
     recommendations: tuple[str, ...] = ()
     failure: str | None = None
     next_action: str | None = None
+    deferred: bool = False
 
     def __post_init__(self) -> None:
         """失敗理由と次の操作が揃った結果だけを受け取る。"""

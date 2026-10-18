@@ -263,9 +263,11 @@ def _installed(data: dict[str, Any], plugin_id: str) -> tuple[bool, dict[str, An
 def _outcome(
     changed: bool,
     notices: list[post_apply_outcome.PostApplyNotice] | tuple[post_apply_outcome.PostApplyNotice, ...],
+    *,
+    deferred: bool = False,
 ) -> post_apply_outcome.PostApplyOutcome:
     """案内を初出順で重複排除した結果を返す。"""
-    return post_apply_outcome.PostApplyOutcome(changed=changed, notices=tuple(dict.fromkeys(notices)))
+    return post_apply_outcome.PostApplyOutcome(changed=changed, notices=tuple(dict.fromkeys(notices)), deferred=deferred)
 
 
 def _append_restart_notice_if_daemon_running(notices: list[post_apply_outcome.PostApplyNotice]) -> None:
@@ -361,9 +363,10 @@ def _install_hook_wrapper(root: Path) -> bool:
 def _deferred_update_notice(
     plugin_id: str, current: dict[str, Any], version: str, running_text: str
 ) -> post_apply_outcome.PostApplyNotice:
-    """稼働中のCodexを守るために延期した更新の内容と、利用を終えてから再実行する操作を案内する。
+    """稼働中のCodexを守るために延期した更新の内容と、自動更新タイマーが再試行して反映することを案内する。
 
     延期した結果は変更なしと同じ成功になるため、案内が無いと同期記録の読み手は最新版を適用済みと扱う。
+    延期はLinuxサーバーでだけ起き、同じホストの自動更新タイマーが延期記録から再試行するため、再実行の操作は求めない。
     """
     differences = []
     current_version = current.get("version")
@@ -377,9 +380,8 @@ def _deferred_update_notice(
         message=(
             f"Codexが稼働中のため、{plugin_id}の{'と'.join(differences)}を延期しました（稼働中: {running_text}）。"
             "利用中のセッションを守るため導入済みの版と有効状態を保持しており、最新版の内容はまだ反映されていません。"
-            "Codexのセッションと委譲を全て終了してから、`update-dotfiles`を再実行してください。"
+            "自動更新タイマーが再試行し、Codexのセッションと委譲が終わった後に反映するため、操作は不要です。"
         ),
-        command="update-dotfiles",
     )
 
 
@@ -390,7 +392,8 @@ def _sync_local_plugin(
     version: str,
     current: dict[str, Any] | None,
     notices: list[post_apply_outcome.PostApplyNotice],
-) -> bool:
+) -> tuple[bool, bool]:
+    """Local marketplaceのpluginを目標版へ同期し、変更の有無と稼働中による延期の有無を返す。"""
     plugin_id = f"{plugin_name}@{marketplace_name}"
     needs_plugin_add = current is None or current.get("enabled") is not True or current.get("version") != version
     # addは旧版のスキルとMCP実体も回収するため、hook入口の安定化だけでは稼働中の参照を守れない。
@@ -406,12 +409,12 @@ def _sync_local_plugin(
             log_format.format_status(
                 "codex plugins",
                 f"Codexが稼働中のためplugin更新を延期: {running_text}。"
-                "導入済みの版と有効状態を保持しました。Codex停止後の次のupdate-dotfilesで更新します。",
+                "導入済みの版と有効状態を保持しました。自動更新タイマーがCodexの停止後に再試行して更新します。",
             )
         )
         # 同期記録はnoticeの本文だけを保存するため、再実行の操作も本文に含める。
         notices.append(_deferred_update_notice(plugin_id, current, version, running_text))
-        return False
+        return False, True
     wrapper = _hook_bin() / ("atk-hook.cmd" if os.name == "nt" else "atk-hook")
     first_transition = not wrapper.exists()
     wrapper_changed = _install_hook_wrapper(root)
@@ -436,7 +439,7 @@ def _sync_local_plugin(
             notices.insert(0, _CODEX_HOOK_TRUST_NOTICE)
         _restart_daemon_after_plugin_update(notices)
     removed_legacy_links = _remove_legacy_links(root)
-    return needs_plugin_add or wrapper_changed or removed_legacy_links
+    return needs_plugin_add or wrapper_changed or removed_legacy_links, False
 
 
 def _remove_unused_plugins() -> post_apply_outcome.PostApplyOutcome:
@@ -596,8 +599,8 @@ def run() -> post_apply_outcome.PostApplyOutcome:
                 )
             )
             return _outcome(changed, notices)
-        local_changed = _sync_local_plugin(root, marketplace_name, plugin_name, version, current, notices)
-        return _outcome(changed or local_changed, notices)
+        local_changed, deferred = _sync_local_plugin(root, marketplace_name, plugin_name, version, current, notices)
+        return _outcome(changed or local_changed, notices, deferred=deferred)
     except RuntimeError as error:
         # 導入・更新とその後の状態確認の失敗。設定ファイルとランチャーの書き込みの失敗（OSError）は失敗として送出する。
         logger.warning(

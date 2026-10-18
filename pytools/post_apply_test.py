@@ -24,7 +24,7 @@ import pytest
 import pytilpack.jsonc
 
 from pytools import post_apply
-from pytools._internal import apply_dotfiles_plugins, claude_common, common, post_apply_outcome
+from pytools._internal import apply_dotfiles_plugins, claude_common, common, deferred_updates, post_apply_outcome
 
 # `post_apply`は削除対象の表をimport時のホームで組み立てる。テストの実行中はホームが一時ディレクトリへ隔離されるため、
 # 表を引く鍵もimport時のホームから組み立てる。
@@ -181,6 +181,53 @@ def test_sync_report_records_failed_step_reason_and_detail(sync_report_path: Pat
     assert failed_step["name"] == "failure"
     assert failed_step["reason"] == "RuntimeError: boom"
     assert "RuntimeError: boom" in failed_step["detail"]
+
+
+def test_deferred_steps_are_recorded_and_cleared(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """延期を返した工程を延期記録へ残し、延期の無い実行で記録を削除する。
+
+    自動更新タイマーはこの記録を確認して上流変更の有無によらず再試行するため、延期が残る間は記録が要る。
+    """
+    monkeypatch.setattr(common, "find_dotfiles_root", lambda: tmp_path / "dotfiles")
+    record = deferred_updates.record_path(tmp_path / "dotfiles")
+    deferring = [
+        ("延期する工程", lambda: post_apply_outcome.PostApplyOutcome(deferred=True)),
+        ("通常の工程", lambda: post_apply_outcome.PostApplyOutcome(changed=True)),
+    ]
+
+    with pytest.raises(SystemExit) as exc_info:
+        post_apply.main(runner=lambda: post_apply.run(steps=deferring))
+
+    assert exc_info.value.code == 0
+    assert json.loads(record.read_text(encoding="utf-8"))["steps"] == ["延期する工程"]
+
+    with pytest.raises(SystemExit) as exc_info:
+        post_apply.main(runner=lambda: post_apply.run(steps=deferring[1:]))
+
+    assert exc_info.value.code == 0
+    assert not record.exists()
+
+
+def test_deferred_record_write_failure_fails_post_apply(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, sync_report_path: Path
+) -> None:
+    """延期記録を保存できない場合は、自動の再試行が成立しないため失敗として終了コード1で伝える。"""
+    monkeypatch.setattr(common, "find_dotfiles_root", lambda: tmp_path / "dotfiles")
+
+    def fail(_steps: list[str]) -> None:
+        raise OSError("書込権限が無い")
+
+    monkeypatch.setattr(deferred_updates, "write", fail)
+
+    with pytest.raises(SystemExit) as exc_info:
+        post_apply.main(
+            runner=lambda: post_apply.run(steps=[("延期する工程", lambda: post_apply_outcome.PostApplyOutcome(deferred=True))])
+        )
+
+    assert exc_info.value.code == 1
+    failed_steps = json.loads(sync_report_path.read_text(encoding="utf-8"))["post_apply"]["failed_steps"]
+    assert [step["name"] for step in failed_steps] == ["延期記録"]
+    assert "書込権限が無い" in failed_steps[0]["reason"]
 
 
 def test_sync_report_preserves_report_of_the_same_run(monkeypatch: pytest.MonkeyPatch, sync_report_path: Path) -> None:

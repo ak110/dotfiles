@@ -11,7 +11,7 @@ import pathlib
 import shutil
 import tempfile
 
-from pytools._internal import codex_processes, log_format, post_apply_outcome
+from pytools._internal import codex_processes, deferred_updates, log_format, post_apply_outcome
 
 logger = logging.getLogger(__name__)
 
@@ -28,12 +28,14 @@ def run(
     """管理対象の診断ログを通常ストレージへ復元し、安全な後続実行で旧targetを回収する。
 
     稼働中のCodexや競合で復元を延期する場合は警告を出力して変更なしを返し、ファイル操作の失敗は例外として送出する。
+    稼働中のCodexによる延期は`deferred`で返し、自動更新タイマーが延期記録から再試行する。
     """
-    return post_apply_outcome.PostApplyOutcome(changed=_restore(home_dir=home_dir, shm_root=shm_root))
+    changed, deferred = _restore(home_dir=home_dir, shm_root=shm_root)
+    return post_apply_outcome.PostApplyOutcome(changed=changed, deferred=deferred)
 
 
-def _restore(*, home_dir: pathlib.Path | None, shm_root: pathlib.Path) -> bool:
-    """復元または回収を1段だけ進め、配布先を変更した場合は真を返す。"""
+def _restore(*, home_dir: pathlib.Path | None, shm_root: pathlib.Path) -> tuple[bool, bool]:
+    """復元または回収を1段だけ進め、配布先の変更の有無と、稼働中のCodexによる延期の有無を返す。"""
     codex_dir = (home_dir or pathlib.Path.home()) / ".codex"
     pairs = _database_pairs(codex_dir, shm_root)
     states = {home_path: _home_state(home_path, target_path) for home_path, target_path in pairs}
@@ -41,7 +43,7 @@ def _restore(*, home_dir: pathlib.Path | None, shm_root: pathlib.Path) -> bool:
         (home_path, target_path) for home_path, target_path in pairs if states[home_path] == "managed" or target_path.exists()
     ]
     if not pending:
-        return False
+        return False, False
 
     running = codex_processes.running_codex_processes()
     if running:
@@ -53,10 +55,10 @@ def _restore(*, home_dir: pathlib.Path | None, shm_root: pathlib.Path) -> bool:
                 "旧配置の復元・回収・管理リンク整理の対象: "
                 + ", ".join(f"{home_path} / {target_path}" for home_path, target_path in pending)
                 + "。"
-                "Codexを終了して`update-dotfiles`を再実行する",
+                + deferred_updates.retry_guidance("Codexを終了して`update-dotfiles`を再実行する"),
             ),
         )
-        return False
+        return False, True
 
     unrelated = [(home_path, target_path) for home_path, target_path in pairs if states[home_path] == "unrelated"]
     if unrelated:
@@ -71,7 +73,7 @@ def _restore(*, home_dir: pathlib.Path | None, shm_root: pathlib.Path) -> bool:
                 + "。Codexを終了し、表示されたpathの内容を確認して別の場所へ退避した後に`update-dotfiles`を再実行する",
             ),
         )
-        return False
+        return False, False
 
     conflicting = [
         (home_path, target_path)
@@ -81,7 +83,7 @@ def _restore(*, home_dir: pathlib.Path | None, shm_root: pathlib.Path) -> bool:
     if conflicting:
         snapshot = _save_conflict_snapshot(codex_dir, pairs)
         _warn_conflict(codex_dir, pairs, snapshot)
-        return False
+        return False, False
 
     if all(state == "regular" for state in states.values()):
         targets = [target_path for _, target_path in pairs if target_path.is_file()]
@@ -91,8 +93,8 @@ def _restore(*, home_dir: pathlib.Path | None, shm_root: pathlib.Path) -> bool:
             logger.info(
                 log_format.format_status("codex-logs", f"復元済みの共有メモリー側DBを回収: {len(targets)}件"),
             )
-            return True
-        return False
+            return True, False
+        return False, False
 
     changed = False
     for home_path, target_path in pairs:
@@ -106,7 +108,7 @@ def _restore(*, home_dir: pathlib.Path | None, shm_root: pathlib.Path) -> bool:
         if states[home_path] in {"managed", "missing"} and target_path.is_file()
     ]
     if not restore_pairs:
-        return changed
+        return changed, False
 
     codex_dir.mkdir(parents=True, exist_ok=True)
     required_bytes = sum(target_path.stat().st_size for _, target_path in restore_pairs)
@@ -119,7 +121,7 @@ def _restore(*, home_dir: pathlib.Path | None, shm_root: pathlib.Path) -> bool:
                 f"（空き{available_bytes}バイト・必要{required_bytes}バイト）。このストレージの空き容量を確保して`update-dotfiles`を再実行する",
             ),
         )
-        return changed
+        return changed, False
 
     temporary_paths = _copy_to_temporary_files(restore_pairs)
     try:
@@ -129,10 +131,11 @@ def _restore(*, home_dir: pathlib.Path | None, shm_root: pathlib.Path) -> bool:
                 log_format.format_status(
                     "codex-logs",
                     "コピー中にCodexの起動を検知したため通常ストレージへの置換を延期: "
-                    f"{codex_processes.format_running_processes(running)}。Codexを終了して`update-dotfiles`を再実行する",
+                    f"{codex_processes.format_running_processes(running)}。"
+                    + deferred_updates.retry_guidance("Codexを終了して`update-dotfiles`を再実行する"),
                 ),
             )
-            return changed
+            return changed, True
         for home_path, _ in restore_pairs:
             os.replace(temporary_paths[home_path], home_path)
             temporary_paths.pop(home_path)
@@ -143,7 +146,7 @@ def _restore(*, home_dir: pathlib.Path | None, shm_root: pathlib.Path) -> bool:
             temporary_path.unlink(missing_ok=True)
 
     logger.info(log_format.format_status("codex-logs", f"通常ストレージへ復元: {len(restore_pairs)}件"))
-    return changed
+    return changed, False
 
 
 def _database_pairs(codex_dir: pathlib.Path, shm_root: pathlib.Path) -> tuple[tuple[pathlib.Path, pathlib.Path], ...]:

@@ -19,6 +19,7 @@ from pytools import post_apply
 from pytools._internal import (
     codex_processes,
     common,
+    deferred_updates,
     host_roles,
     install_codex_plugins,
     plugin_warmup,
@@ -319,15 +320,20 @@ def test_running_codex_preserves_cache_then_updates_after_stop(  # noqa: PLR0913
     outcome = install_codex_plugins.run()
     assert outcome.changed is False
     assert not calls
-    deferral = [notice for notice in outcome.notices if notice.command == "update-dotfiles"]
+    # 延期は自動更新タイマーが延期記録から再試行するため、再実行の操作を求めずに延期の結果を返す。
+    assert outcome.deferred is True
+    deferral = [notice for notice in outcome.notices if "を延期しました" in notice.message]
     assert len(deferral) == 1
+    assert deferral[0].command is None
     assert "agent-toolkit@ak110-dotfiles" in deferral[0].message
     assert f"{deferred_change}を延期しました（稼働中: codex app-server (1件)）" in deferral[0].message
-    assert "`update-dotfiles`を再実行してください" in deferral[0].message
+    assert "自動更新タイマーが再試行し" in deferral[0].message
+    assert "操作は不要です" in deferral[0].message
+    assert "再実行してください" not in deferral[0].message
     assert current == {"version": old_version, "enabled": enabled}
     assert (previous / "skills/coding/SKILL.md").read_text(encoding="utf-8") == "old skill"
     assert (previous / "agent_toolkit/agents_server_mcp.py").read_text(encoding="utf-8") == "old mcp"
-    assert "plugin更新を延期" in caplog.text and "Codex停止後の次のupdate-dotfiles" in caplog.text
+    assert "plugin更新を延期" in caplog.text and "自動更新タイマーがCodexの停止後に再試行" in caplog.text
     warmup = plugin_warmup.codex_plugin_script(
         plugin_id="agent-toolkit@ak110-dotfiles",
         plugin_name="agent-toolkit",
@@ -339,7 +345,8 @@ def test_running_codex_preserves_cache_then_updates_after_stop(  # noqa: PLR0913
     running = False
     updated = install_codex_plugins.run()
     assert updated.changed is True
-    assert not [notice for notice in updated.notices if notice.command == "update-dotfiles"]
+    assert updated.deferred is False
+    assert not [notice for notice in updated.notices if "を延期しました" in notice.message]
     assert calls.count(["plugin", "add", "agent-toolkit@ak110-dotfiles"]) == 1
     assert current == {"version": "1.2.3", "enabled": True}
     latest = cache / "1.2.3"
@@ -411,7 +418,8 @@ def test_euryale_update_is_deferred_only_by_codex_using_plugins(
     outcome = install_codex_plugins.run()
     assert outcome.changed is updated
     assert (["plugin", "add", "agent-toolkit@ak110-dotfiles"] in calls) is updated
-    assert any(notice.command == "update-dotfiles" for notice in outcome.notices) is not updated
+    assert outcome.deferred is not updated
+    assert any("を延期しました" in notice.message for notice in outcome.notices) is not updated
 
 
 @pytest.mark.parametrize("enabled", [True, False])
@@ -471,7 +479,8 @@ def test_post_apply_deferral_continues_with_installed_warmup_version(
     assert all(result.ok for result in results)
     codex_result = next(result for result in results if result.name == "Codex plugin のインストール")
     assert codex_result.changed is False
-    assert [notice.command for notice in codex_result.notices] == ["update-dotfiles"]
+    assert codex_result.deferred is True
+    assert [notice.command for notice in codex_result.notices] == [None]
     expected = (
         install_codex_plugins.CODEX_HOME / "plugins/cache/ak110-dotfiles/agent-toolkit/1.2.2/agent_toolkit/agents_server_mcp.py"
     )
@@ -998,9 +1007,14 @@ def test_codex_plugin_deferral_notice_reaches_sync_report_and_summary(  # noqa: 
     stderr = capsys.readouterr().err
     assert len(deferral) == 1
     assert f"agent-toolkit@ak110-dotfilesの{deferred_change}を延期しました（稼働中: codex app-server (1件)）" in deferral[0]
-    assert "`update-dotfiles`を再実行してください" in deferral[0]
+    assert "自動更新タイマーが再試行し" in deferral[0]
     assert deferral[0] in stderr
-    assert stderr.splitlines()[-1] == "update-dotfiles"
+    assert stderr.splitlines()[-1] != "update-dotfiles"
+    # 自動更新タイマーが上流変更の有無によらず再試行できるよう、延期した工程を延期記録へ残す。
+    dotfiles_root = common.find_dotfiles_root()
+    assert dotfiles_root is not None
+    record = json.loads(deferred_updates.record_path(dotfiles_root).read_text(encoding="utf-8"))
+    assert record["steps"] == ["Codex plugin のインストール"]
 
 
 def test_running_codex_with_current_plugin_reports_no_deferral(plugin_env: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -1016,4 +1030,5 @@ def test_running_codex_with_current_plugin_reports_no_deferral(plugin_env: Path,
 
     outcome = install_codex_plugins.run()
 
-    assert not [notice for notice in outcome.notices if notice.command == "update-dotfiles"]
+    assert outcome.deferred is False
+    assert not [notice for notice in outcome.notices if "を延期しました" in notice.message]
