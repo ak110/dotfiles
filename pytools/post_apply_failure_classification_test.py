@@ -144,7 +144,7 @@ def _uvx_environment_build_fails(monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 
 def _libarchive_download_fails(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     del tmp_path
-    monkeypatch.setattr(install_libarchive, "_is_already_available", lambda: False)
+    monkeypatch.setattr(install_libarchive, "_is_loadable", lambda: False)
     monkeypatch.setattr(install_libarchive, "_download_dlls", _raise(OSError("network unreachable")))
 
 
@@ -449,7 +449,7 @@ def test_install_and_write_failures_in_one_step_are_classified_separately(
 ) -> None:
     """取得と書き換えの両方を行う工程は、書き換えの失敗だけを失敗と数える。"""
     del tmp_path
-    monkeypatch.setattr(install_libarchive, "_is_already_available", lambda: True)
+    monkeypatch.setattr(install_libarchive, "_is_loadable", lambda: True)
     monkeypatch.setattr(install_libarchive, "_persist_libarchive_env_var", _raise(PermissionError("denied")))
     outcome = install_libarchive.run()
     assert outcome.failure is not None
