@@ -228,6 +228,93 @@ def test_matching_quote_reports_record_and_unit_positions(tmp_path: pathlib.Path
         assert _UTTERANCE[start - 1 : end] == unit
 
 
+def test_stale_reference_after_adding_option_reports_line_and_new_positions(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """位置を写してから確認回答へ選択肢を追加すると、古い位置を拒否して同じ実行で修正値を示す。"""
+    source = tmp_path / "source.txt"
+    source.write_text(_UTTERANCE, encoding="utf-8")
+    before = "質問: 対象は？\n回答: " + _UTTERANCE
+    after = before.replace("回答: ", "選択肢: 表示と手順\n回答: ")
+    old_start = before.index("検索") + 1
+    reference = f"逐語引用 text[1] 文字{old_start}-{old_start + 11}"
+    draft = "## 反映内容と反映先\n\n" + reference + "を直す。\n\n" + _body(after)
+    body = tmp_path / "body.md"
+    body.write_text(draft, encoding="utf-8")
+
+    assert _run(body, source) == 1
+    captured = capsys.readouterr()
+    assert f"3行目: {reference}" in captured.err
+    assert "標準出力の位置の一覧" in captured.err and "同じコマンドを再実行" in captured.err
+    new_start = after.index("検索") + 1
+    assert f"逐語引用 text[1] 文字{new_start}-{new_start + 11}: 検索画面の表示を直して。" in captured.out
+    assert body.read_text(encoding="utf-8") == draft
+
+
+@pytest.mark.parametrize(
+    ("fences", "reference"),
+    [
+        (("追加した発話。", _UTTERANCE), "逐語引用 text[1] 文字14-23"),
+        ((_UTTERANCE,), "逐語引用 text[2] 文字1-12"),
+        ((_UTTERANCE,), "逐語引用 text[0] 文字1-12"),
+        ((_UTTERANCE,), "逐語引用 text[1] 文字2-12"),
+        ((_UTTERANCE,), "逐語引用 text[1] 文字1-11"),
+        ((_UTTERANCE,), "逐語引用text[1]文字24-12"),
+    ],
+    ids=["inserted-fence", "missing-fence", "zero-fence", "partial-start", "partial-end", "reversed-range"],
+)
+def test_invalid_reference_is_rejected(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], fences: tuple[str, ...], reference: str
+) -> None:
+    """フェンスの番号と要求単位の境界のずれを、引用節の後ろにある参照でも検出する。"""
+    source = tmp_path / "source.txt"
+    source.write_text("\n".join(fences), encoding="utf-8")
+    body = tmp_path / "body.md"
+    draft = _body(*fences) + "\n## 反映内容と反映先\n\n" + reference + "を直す。\n"
+    body.write_text(draft, encoding="utf-8")
+
+    assert _run(body, source) == 1
+    captured = capsys.readouterr()
+    line = draft.splitlines().index(reference + "を直す。") + 1
+    assert f"{line}行目: {reference}" in captured.err
+    assert "逐語引用 text[1] 文字1-" in captured.out
+
+
+def test_valid_references_preserve_output(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
+    """単位どおりと連続単位の参照は、語間の空白にかかわらず参照が無い本文と同じ出力を返す。"""
+    source = tmp_path / "source.txt"
+    source.write_text(_UTTERANCE, encoding="utf-8")
+    body = tmp_path / "body.md"
+    body.write_text(_body(_UTTERANCE), encoding="utf-8")
+    assert _run(body, source) == 0
+    baseline = capsys.readouterr()
+    references = "逐語引用text[1]文字1-12、逐語引用 text[1] 文字14-32、逐語引用  text[1]  文字24-32"
+    body.write_text(_body(_UTTERANCE) + "\n## 反映内容と反映先\n\n" + references, encoding="utf-8")
+
+    assert _run(body, source) == 0
+    assert capsys.readouterr() == baseline
+
+
+def test_reference_scan_excludes_only_quote_text_fences(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
+    """引用中の参照文字列はユーザーの原文として保ち、引用節の地の文と別節のフェンスは検査する。"""
+    content = "逐語引用 text[99] 文字1-2を使って。"
+    source = tmp_path / "source.txt"
+    source.write_text(content, encoding="utf-8")
+    body = tmp_path / "body.md"
+    body.write_text(_body(content), encoding="utf-8")
+    assert _run(body, source) == 0
+    capsys.readouterr()
+    body.write_text(
+        _body(content) + "\n地の文: 逐語引用 text[98] 文字1-2\n\n## 別節\n\n```text\n逐語引用 text[97] 文字1-2\n```\n",
+        encoding="utf-8",
+    )
+
+    assert _run(body, source) == 1
+    captured = capsys.readouterr()
+    assert "text[98]" in captured.err and "text[97]" in captured.err
+    assert "text[99]" not in captured.err
+
+
 def test_one_character_difference_is_reported_with_fence_number(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
