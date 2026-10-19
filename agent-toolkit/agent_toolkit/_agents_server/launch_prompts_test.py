@@ -11,6 +11,7 @@ import sys
 import pytest
 
 from agent_toolkit._agents_server import launch_prompts, state, tool_descriptions
+from agent_toolkit._common import automated_prompt
 
 
 @pytest.mark.skipif(os.name == "nt", reason="POSIX shellによる実行の受入例")
@@ -71,6 +72,26 @@ def test_launch_prompts_load_shared_documents() -> None:
         assert f"{notice}\n{_shared_document_body(document)}" in prompt, kind
         assert (launch_prompts.SUBAGENT_RULES in prompt) is (kind == "delegate"), kind
     assert _shared_document_body("agents-server-auto-resume.md") in launch_prompts.AUTO_RESUME_NOTICE
+
+
+def test_process_loop_launched_delegate_takes_main_role() -> None:
+    """process-loopの常駐プログラムが起動した通常委譲を、system promptがメインの役割へ切り替える。
+
+    all-reposの担当は委譲元がエージェントではないため、委譲先としてメイン限定の工程（完了報告・振り返り）を
+    省くと誰も実行しない。切替の条件は生成側が委譲プロンプトを包む`atk-auto`要素の`source`であり、
+    生成側の定数と配送文の条件が一致しないと、担当は委譲先として振る舞い続ける。
+    参照先の節は見出しの実在で確かめる。軽量委譲は担当を起動しないため条件を持たない。
+    """
+    marker = f'source="{automated_prompt.SOURCE_PROCESS_LOOP}"'
+    reference = "references/all-repos-orchestration.md`「担当の役割」"
+    for prompt in (launch_prompts.DELEGATE_SYSTEM_PROMPT, launch_prompts.CLAUDE_DELEGATE_SYSTEM_PROMPT):
+        assert marker in prompt
+        assert reference in prompt
+    for kind in ("explore", "shell", "write"):
+        assert marker not in launch_prompts.LAUNCH_SYSTEM_PROMPTS[kind], kind
+    orchestration = launch_prompts.SHARE_DIR.parent / "skills" / "process-wi" / "references" / "all-repos-orchestration.md"
+    assert "## 担当の役割" in orchestration.read_text(encoding="utf-8").splitlines()
+    assert marker in automated_prompt.wrap("本文", source=automated_prompt.SOURCE_PROCESS_LOOP, kind="repository-delegate")
 
 
 def test_launch_prompts_carry_normative_boundaries() -> None:

@@ -65,3 +65,4 @@ push前の工程（版数更新、生成物、push前のチェック、push）�
 
 全ての確認の後、延期対象から`延期後にadoptしたAWI`を除いた集合を`agent-toolkit/skills/process-wi/references/finish-session.md`「延期adoptと反映後の観測」へ、検収した公開状態の4項目を同書「公開状態の検収と再起動」へ渡す。間に主作業ツリー・対象refの変更や外部更新を観測した場合は、同節に従って現在状態を取得し直す。
 未終端集合の処置の後、同書「完了報告と終了」に従って`agent-toolkit:completion-report`による報告と`atk agents-exit-session`を実施する。
+all-reposのリポジトリ担当は同節に従い、`atk agents-exit-session`の代わりに常駐プログラムへの最終返却でターンを終える。
