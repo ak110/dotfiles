@@ -65,37 +65,81 @@ def test_agents_server_pass_uses_host_output_contract(tmp_path: pathlib.Path, ho
         assert output["hookSpecificOutput"]["permissionDecision"] == "allow"
 
 
+def _assert_plain_pass(result, host: str) -> None:
+    """追加文脈を持たない通過がホスト別の公開hook契約に従うことを確かめる。"""
+    assert result.returncode == 0, result.stderr
+    assert not result.stderr
+    output = json.loads(result.stdout) if result.stdout else {}
+    assert not validate_hook_output("PreToolUse", output, host=host)
+    if host == "codex":
+        assert not output
+    else:
+        specific = output["hookSpecificOutput"]
+        assert specific["permissionDecision"] == "allow"
+        assert "additionalContext" not in specific
+
+
 @pytest.mark.parametrize("host", ["claude-code", "codex"])
 @pytest.mark.parametrize(
-    "operation,tool_input,missing",
+    "tool_input",
     [
-        ("send_message", {"session_id": "remote"}, "prompt"),
-        ("send_message", {"prompt": "続行"}, "session_id"),
-        ("kill", {}, "session_id"),
+        {"session_id": "remote", "prompt": "続行する"},
+        {"session_id": "remote", "instruction": "保存開始", "extra_params": {"要求識別子": "r-1"}},
+        {"session_id": "remote", "instruction": "再レビューせよ", "extra_params": {"round": "2"}},
     ],
+    ids=["free-prompt", "save-start", "rereview"],
 )
-def test_continuation_warning_preserves_host_contract(
-    tmp_path: pathlib.Path, host: str, operation: str, tool_input: dict, missing: str
-) -> None:
-    """継続入力の各警告付き通過が追加文脈を保持する。"""
-    _write_session_state(tmp_path, "host-warning", {"operation_skill_delivered_agents": {"agent-toolkit:delegation": ["main"]}})
+def test_continuation_inputs_pass_without_input_warning(tmp_path: pathlib.Path, host: str, tool_input: dict) -> None:
+    """保存済みcwdを持つ対象への自由本文と定型継続は、本文不足の警告を伴わずに通過する。"""
+    _write_session_state(
+        tmp_path,
+        "host-continuation",
+        {
+            "agents_server_cwd_by_session": {"remote": str(tmp_path)},
+            "operation_skill_delivered_agents": {"agent-toolkit:delegation": ["main"]},
+        },
+    )
     result = _run(
         {
-            "tool_name": f"mcp__agents_server__{operation}",
+            "tool_name": "mcp__agents_server__send_message",
             "tool_input": tool_input,
-            "session_id": "host-warning",
+            "session_id": "host-continuation",
             **({"turn_id": "codex-turn"} if host == "codex" else {}),
         },
         env_overrides=_plan_file_state_env(tmp_path),
     )
-    assert result.returncode == 0, result.stderr
-    assert not result.stderr
-    output = json.loads(result.stdout)
-    assert not validate_hook_output("PreToolUse", output, host=host)
-    specific = output["hookSpecificOutput"]
-    assert f"`{missing}`" in specific["additionalContext"]
-    assert "次の操作:" in specific["additionalContext"]
-    assert ("permissionDecision" in specific) is (host == "claude-code")
+    _assert_plain_pass(result, host)
+
+
+@pytest.mark.parametrize("host", ["claude-code", "codex"])
+@pytest.mark.parametrize(
+    "operation,tool_input",
+    [
+        ("send_message", {"session_id": "remote"}),
+        ("send_message", {"prompt": "続行"}),
+        ("kill", {}),
+    ],
+)
+def test_continuation_format_errors_pass_to_tool(tmp_path: pathlib.Path, host: str, operation: str, tool_input: dict) -> None:
+    """入力形式の不成立は追加文脈なしで通過し、原因と次の操作をツールの入力検証へ委ねる。"""
+    _write_session_state(
+        tmp_path,
+        "host-format",
+        {
+            "agents_server_cwd_by_session": {"remote": str(tmp_path)},
+            "operation_skill_delivered_agents": {"agent-toolkit:delegation": ["main"]},
+        },
+    )
+    result = _run(
+        {
+            "tool_name": f"mcp__agents_server__{operation}",
+            "tool_input": tool_input,
+            "session_id": "host-format",
+            **({"turn_id": "codex-turn"} if host == "codex" else {}),
+        },
+        env_overrides=_plan_file_state_env(tmp_path),
+    )
+    _assert_plain_pass(result, host)
 
 
 def _original_record(tmp_path: pathlib.Path, root_kind: str, monkeypatch: pytest.MonkeyPatch) -> pathlib.Path:

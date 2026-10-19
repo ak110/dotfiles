@@ -897,9 +897,8 @@ async def test_send_message_tool_returns_previous_result(monkeypatch: pytest.Mon
     }
 
 
-@pytest.mark.asyncio
-async def test_followup_rejects_extra_lines_before_delivery(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
-    """定型追送の説明と初回入力は、公開入口から配送されず履歴も増えない。"""
+async def _start_exec_review_session(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path):
+    """実行レビュー担当の役割文書で偽のcodex sessionを公開`start`から起動し、継続入力の検証に使う。"""
     _recording_candidates(monkeypatch)
     manager, backend = _manager_with_fake("codex")
     monkeypatch.setattr(mcp_tools, "_MANAGER", manager)
@@ -908,6 +907,13 @@ async def test_followup_rejects_extra_lines_before_delivery(monkeypatch: pytest.
         subagent_md_path="exec-review",
         extra_params=_observed_input_params("exec-review.subagent.md", tmp_path),
     )
+    return manager, backend, started
+
+
+@pytest.mark.asyncio
+async def test_followup_rejects_extra_lines_before_delivery(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
+    """定型追送の説明と初回入力は、公開入口から配送されず履歴も増えない。"""
+    manager, backend, started = await _start_exec_review_session(monkeypatch, tmp_path)
     session = manager.sessions[started["session_id"]]
     count = len(backend.prompts)
     try:
@@ -929,16 +935,40 @@ async def test_followup_rejects_extra_lines_before_delivery(monkeypatch: pytest.
 
 
 @pytest.mark.asyncio
+async def test_continuation_input_errors_return_reason_and_next_action(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+) -> None:
+    """継続入力の形式不成立は、配送せずに理由と次の操作をツールのエラー応答で返す。
+
+    PreToolUseのhookは入力形式を判定しないため、修正案内はこの応答だけが担う。
+    """
+    manager, backend, started = await _start_exec_review_session(monkeypatch, tmp_path)
+    session_id = started["session_id"]
+    count = len(backend.prompts)
+    cases = [
+        ("send_message", {"session_id": session_id, "prompt": "続行する", "instruction": "再レビューせよ"}, "排他的"),
+        ("send_message", {"session_id": session_id}, "排他的"),
+        ("send_message", {"session_id": session_id, "instruction": "宣言されていない指示"}, "宣言された継続指示ではありません"),
+        ("send_message", {"session_id": session_id, "prompt": "   "}, "prompt must be a non-empty string"),
+        ("send_message", {"session_id": "", "prompt": "続行する"}, "invalid session_id"),
+        ("kill", {"session_id": ""}, "invalid session_id"),
+    ]
+    try:
+        for tool, arguments, reason in cases:
+            with pytest.raises(ToolError) as raised:
+                await mcp_tools.mcp.call_tool(tool, arguments)
+            message = str(raised.value)
+            assert reason in message, (tool, arguments, message)
+            assert NEXT_ACTION_PREFIX in message, (tool, arguments, message)
+            assert len(backend.prompts) == count
+    finally:
+        await manager.close()
+
+
+@pytest.mark.asyncio
 async def test_followup_preserves_required_and_updated_inputs(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
     """構造化・自由本文は必要な制御値と同じパスの更新を保持する。"""
-    _recording_candidates(monkeypatch)
-    manager, backend = _manager_with_fake("codex")
-    monkeypatch.setattr(mcp_tools, "_MANAGER", manager)
-    started = await mcp_tools.start(
-        str(tmp_path),
-        subagent_md_path="exec-review",
-        extra_params=_observed_input_params("exec-review.subagent.md", tmp_path),
-    )
+    manager, backend, started = await _start_exec_review_session(monkeypatch, tmp_path)
     contract = tmp_path / "更新 契約.yaml"
     contract.write_text("clauses: []\n", encoding="utf-8")
     try:

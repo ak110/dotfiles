@@ -23,8 +23,9 @@ AskUserQuestion / ExitPlanMode:
 mcp__plugin_agent-toolkit_agents_server__start / send_message / kill / list:
 
 - `start`の自由本文のmode（`delegate`・`explore`・`write`）の本文が`share/<役割名>.subagent.md`を指す起動の遮断 (block)
-- `send_message`の`prompt`と`send_message`・`kill`の`session_id`の欠落はツール自身が拒否できるため警告 (warn)
-- 対象sessionの保存済み`cwd`の欠落は所有を確認できないため遮断 (block)
+- `send_message`・`kill`の空でない`session_id`が指す対象sessionの保存済み`cwd`の欠落は
+  所有を確認できないため、入力形式によらず遮断 (block)。
+  入力形式（`prompt`・`instruction`・`session_id`の欠落・併用）の検証と修正案内はツールが返す
 - 全チェック通過時はClaude Codeで強制承認、Codexで通常の権限フローへ通過
 
 Agent / Task:
@@ -103,7 +104,7 @@ lazy from agent_toolkit._hooks.pretooluse.agent_checks import (
     _AGENTS_SERVER_SEND_TOOLS,
     _AGENTS_SERVER_TOOL_NAMES,
     _PLAN_MODE_SKILL_NAMES,
-    _check_agents_server_continuation_input,
+    _check_agents_server_continuation_target,
     _check_task_stop,
     _clear_current_plan_file_path,
     _record_iss_sidechain_probe,
@@ -289,7 +290,7 @@ def _decide_agents_server_tool(payload: dict, tool_name: str, tool_input: dict, 
     if launch_block is not None:
         return Decision(block=launch_block)
     if tool_name in _AGENTS_SERVER_SEND_TOOLS | _AGENTS_SERVER_KILL_TOOLS:
-        return _check_agents_server_continuation_input(session_id, tool_input, tool_name)
+        return _check_agents_server_continuation_target(session_id, tool_input, tool_name)
     return Decision(allow=True)
 
 

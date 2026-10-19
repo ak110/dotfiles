@@ -26,9 +26,8 @@ lazy from agent_toolkit._hooks import agents_server_observations as _agents_serv
 lazy from agent_toolkit._hooks import (
     plugin_resources as _plugin_resources,
 )
-lazy from agent_toolkit._hooks.notice import _WARN_TAG
 lazy from agent_toolkit._hooks.pretooluse.decision import Decision
-lazy from agent_toolkit._hooks.pretooluse.notices import _block_notice, _llm_notice
+lazy from agent_toolkit._hooks.pretooluse.notices import _block_notice
 
 # Claude CodeとCodexが生成するagents_serverの完全修飾MCP tool名。
 _AGENTS_SERVER_NAMESPACES = _agents_server_tool_names.MCP_NAMESPACES
@@ -154,38 +153,21 @@ def _record_iss_sidechain_probe(
         pass
 
 
-def _check_agents_server_continuation_input(session_id: str, tool_input: dict, tool_name: str) -> Decision:
-    """`send_message`・`kill`の入力と保存済みcwdから操作の可否を判定する。
+def _check_agents_server_continuation_target(session_id: str, tool_input: dict, tool_name: str) -> Decision:
+    """`send_message`・`kill`の対象sessionを、呼出元に保存された絶対cwdで確認する。
 
-    必須値の欠落はツール自身が入力を拒否し、入力を直せば再実行できるため警告で返す。
+    入力形式（`prompt`か`instruction`・`extra_params`か、`session_id`の有無と形式）の受理条件と修正案内は
+    agents_serverのツールが所有し、本関数は判定しない。
+    hookが同じ条件を独立に持つと、ツールが受理する入力形式を追加したときに正当な入力を誤って警告するためである。
+    空でない文字列の`session_id`だけを対象確認へ通し、それ以外はツールの入力検証へ渡す。
+    対象のcwd記録の欠落は所有を確認できないため、入力形式によらず遮断する。
     通過時の`allow`は出力境界でClaude Codeの強制承認とCodexの通常通過へ変換される。
-    停止対象のcwd記録の欠落は所有を確認できないため遮断する。
     """
-    display_name = tool_name.rsplit("__", 1)[-1]
-    if tool_name in _AGENTS_SERVER_SEND_TOOLS:
-        prompt = tool_input.get("prompt")
-        if not isinstance(prompt, str) or not prompt.strip():
-            return Decision(
-                context=_llm_notice(
-                    f"warn: {display_name}には空でない`prompt`が必要である。",
-                    tag=_WARN_TAG,
-                    fix="空でない`prompt`を指定して再実行する。",
-                    removable_cause=True,
-                ),
-                allow=True,
-            )
     remote_session_id = tool_input.get("session_id")
     if not isinstance(remote_session_id, str) or not remote_session_id:
-        return Decision(
-            context=_llm_notice(
-                f"warn: {display_name}には空でない`session_id`が必要である。",
-                tag=_WARN_TAG,
-                fix=("`start`が返した`session_id`を指定して再実行する。"),
-                removable_cause=True,
-            ),
-            allow=True,
-        )
+        return Decision(allow=True)
     if _agents_server_observations.session_cwd(read_state(session_id), remote_session_id) is None:
+        display_name = tool_name.rsplit("__", 1)[-1]
         return Decision(
             block=_block_notice(
                 f"blocked: {display_name}は、`session_id`に対応する絶対`cwd`が保存されていないため続行できない。",

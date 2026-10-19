@@ -40,31 +40,63 @@ def _run_after_skill_acquisition(
 
 
 @pytest.mark.parametrize(
-    ("tool_input", "next_action_names"),
+    ("operation", "tool_input"),
     [
-        ({"session_id": "owned"}, ["`prompt`"]),
-        # 継続先の識別子は起動ツールだけが返すため、実在する起動ツール名を案内する。
-        ({"prompt": "続行する"}, ["`start`"]),
+        ("send_message", {"session_id": "owned"}),
+        ("send_message", {"prompt": "続行する"}),
+        ("send_message", {"session_id": "", "prompt": "続行する"}),
+        ("kill", {}),
     ],
 )
-def test_agents_server_missing_required_input_warns(
-    tool_input: dict[str, str], next_action_names: list[str], tmp_path: pathlib.Path
-) -> None:
-    """必須値を欠く継続入力はツールの検証へ渡し、遮断せず、実在する名前で次の操作を示す。"""
+def test_agents_server_format_errors_pass_without_warning(operation: str, tool_input: dict, tmp_path: pathlib.Path) -> None:
+    """入力形式の不成立はhookが警告せずツールの入力検証へ渡す。
+
+    hookが独自の必須条件で警告すると、ツールが受理する入力形式（定型継続など）を追加したときに
+    正当な入力へ誤った修正案内を返す。原因と次の操作はツールのエラー応答が返す。
+    """
+    _write_session_state(tmp_path, "format-error", {"agents_server_cwd_by_session": {"owned": str(tmp_path)}})
     result = _run_after_skill_acquisition(
         {
-            "tool_name": "mcp__agents_server__send_message",
+            "tool_name": f"mcp__agents_server__{operation}",
             "tool_input": tool_input,
-            "session_id": "missing-input",
+            "session_id": "format-error",
             "cwd": str(tmp_path),
-        }
+        },
+        env_overrides=_plan_file_state_env(tmp_path),
     )
-    assert result.returncode == 0
+    assert result.returncode == 0, result.stderr
     messages = _agent_messages(result)
-    assert "空でない" in messages
-    next_action = messages.split("\n次の操作: ", maxsplit=1)[1].split("\n", maxsplit=1)[0]
-    assert all(name in next_action for name in next_action_names)
-    assert "codex_start" not in messages
+    assert "空でない" not in messages
+    assert "warn:" not in messages
+
+
+@pytest.mark.parametrize(
+    ("operation", "tool_input"),
+    [
+        ("send_message", {"session_id": "unsaved", "prompt": "続行する"}),
+        ("send_message", {"session_id": "unsaved", "instruction": "保存開始", "extra_params": {"要求識別子": "r-1"}}),
+        ("send_message", {"session_id": "unsaved", "instruction": "再レビューせよ", "extra_params": {"round": "2"}}),
+        ("send_message", {"session_id": "unsaved"}),
+        ("kill", {"session_id": "unsaved"}),
+    ],
+)
+def test_agents_server_continuation_without_saved_cwd_is_blocked(
+    operation: str, tool_input: dict, tmp_path: pathlib.Path
+) -> None:
+    """呼出元に対象の絶対cwdが保存されていない継続と中断は、入力形式によらず遮断する。"""
+    _write_session_state(tmp_path, "unsaved-target", {"agents_server_cwd_by_session": {"other": str(tmp_path)}})
+    result = _run_after_skill_acquisition(
+        {
+            "tool_name": f"mcp__agents_server__{operation}",
+            "tool_input": tool_input,
+            "session_id": "unsaved-target",
+            "cwd": str(tmp_path),
+        },
+        env_overrides=_plan_file_state_env(tmp_path),
+    )
+    assert result.returncode == 2
+    assert f"blocked: {operation}は、`session_id`に対応する絶対`cwd`が保存されていないため続行できない。" in result.stderr
+    assert "空でない" not in result.stderr
 
 
 class TestAgentNameParameterAccepted:
