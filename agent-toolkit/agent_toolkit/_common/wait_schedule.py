@@ -18,8 +18,15 @@ Claude Agent SDKで開始したセッションのターンは、main conversatio
 プロジェクト設定と`--settings`の指定は、判定を要求する主体の起動条件から確定できないため読まない。
 サブエージェント定義のfrontmatterも、判定時点では対象の定義が定まらないため読まない。
 
-委譲先として起動されたセッションでは、実際に確認したMCPクライアントの300秒のツール呼び出し上限の内側へ
-収めるため、上限を指定しない場合は待機を240秒までとする。上限には2割の余裕を取り、実行環境の版ごとの変動を吸収する。
+待機上限は用途ごとに別の関数から得る。MCPのツール呼び出しなど通信手段に固有の制限は、その手段を使う用途の関数だけに置き、
+別の用途の関数を改訂しても他の用途の上限が変わらないようにする。
+
+- `get_cli_wait_timeout`: CLIの`atk agents wait`の結果待機。保持期間とホストの判定だけから導く。
+  CLIはMCPのツール呼び出しを経由しないため、委譲先セッションでもMCPクライアントの制限を適用しない
+- `get_wait_timeout`: MCPサーバー内部の待機と、`atk lane delete`の資源解放の待機。
+  委譲先として起動されたセッションでは、実際に確認したMCPクライアントの300秒のツール呼び出し上限の内側へ
+  収めるため、待機を240秒までとする。上限には2割の余裕を取り、実行環境の版ごとの変動を吸収する。
+  資源解放の待機は用途の分離前から同じ値を使っており、その期限を変えないためこの関数を使う
 """
 
 import json
@@ -37,7 +44,8 @@ _SCHEDULE_FOR_5M_TTL = "*/3 * * * *"
 _SCHEDULE_FOR_1H_TTL = "*/30 * * * *"
 # キャッシュTTLごとの委譲先の終端を待つ上限。TTLが満了する前に委譲元のターンが再開するよう、上限はTTLより短く取る。
 # 1hのTTLでは、Claude Codeがstdio MCPサーバーへ課すアイドル上限30分が先に働くため、この上限より60秒短い値とする。
-# この値はCLIの`atk agents wait`の上限にも使う。同コマンドは外側の`timeout`を付けずにBashツールの背景実行で待つため、
+# この値はCLIの`atk agents wait`の上限（`get_cli_wait_timeout`）にも使う。
+# 同コマンドは外側の`timeout`を付けずにBashツールの背景実行で待つため、
 # Claude CodeのBashツールの背景実行で上限を指定しない場合の1800秒（Claude Code 2.1.285の実装では
 # `max(1800000, BASH_DEFAULT_TIMEOUT_MS)`ミリ秒）も下回る必要がある。上回るとホストが先に待機を打ち切り、
 # 上限到達時の終了コード3が委譲元へ届かず、同じコマンドを再発行して待機を続けられない。
@@ -48,6 +56,7 @@ _WAIT_TIMEOUT_FOR_1H_TTL = 1740.0
 # 誤判定の影響は誤りの向きによって異なり、Claude Codeを誤って対象ホストと判定した場合は待機の再発行が増えるだけで、
 # 逆の誤りだけがタイムアウト失敗を残す。このため`CLAUDECODE`を確認できない場合も同様のホストとして扱う。
 _WAIT_TIMEOUT_FOR_UNKNOWN_HOST = 270.0
+# 委譲先セッションでMCPのツール呼び出しを経由する待機の上限。CLIの結果待機には適用しない。
 _WAIT_TIMEOUT_FOR_DELEGATED_SESSION = 240.0
 _BUCKET_TTL_ENV = {
     "main": "CLAUDE_CODE_PROMPT_CACHE_TTL",
@@ -158,11 +167,20 @@ def get_schedule(request_bucket: str) -> str:
     return _SCHEDULE_FOR_5M_TTL
 
 
-def get_wait_timeout(request_bucket: str) -> float:
-    """プロンプトキャッシュTTLを委譲先の終端を待つ上限秒数へ変換する。"""
+def get_cli_wait_timeout(request_bucket: str) -> float:
+    """CLIの`atk agents wait`が委譲先の終端を待つ上限秒数を、保持期間とホストの判定から導く。"""
     timeout = _WAIT_TIMEOUT_FOR_1H_TTL if get_prompt_cache_ttl(request_bucket) == "1h" else _WAIT_TIMEOUT_FOR_5M_TTL
     if "CLAUDECODE" not in os.environ:
         timeout = min(timeout, _WAIT_TIMEOUT_FOR_UNKNOWN_HOST)
+    return timeout
+
+
+def get_wait_timeout(request_bucket: str) -> float:
+    """MCPサーバー内部の待機とlaneの資源解放の待機が使う上限秒数を導く。
+
+    `get_cli_wait_timeout`の値に加え、委譲先セッションではMCPクライアントのツール呼び出し上限の内側へ縮める。
+    """
+    timeout = get_cli_wait_timeout(request_bucket)
     if is_delegated(os.environ):
         timeout = min(timeout, _WAIT_TIMEOUT_FOR_DELEGATED_SESSION)
     return timeout

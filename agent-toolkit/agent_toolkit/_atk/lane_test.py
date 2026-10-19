@@ -19,7 +19,7 @@ import yaml
 from agent_toolkit import atk
 from agent_toolkit._atk import agents_exit_session, lane, managed_temp
 from agent_toolkit._atk.wi import process_loop_session
-from agent_toolkit._common import session_registry
+from agent_toolkit._common import session_registry, wait_schedule
 from agent_toolkit._testing import git_repository, isolation
 from agent_toolkit._testing.session_release_support import retained_executor
 
@@ -1575,3 +1575,27 @@ def test_integrate_rebuilds_expired_rebase_materials(
     assert pending["new_head"] == original["new_head"]
     code, final, stderr = _invoke(capsys, *args, "--accept-rebased-head", original["new_head"])
     assert code == 0 and final["phase"] == "finalized", stderr
+
+
+@pytest.mark.parametrize(
+    ("environment", "expected_timeout"),
+    [
+        ({"CLAUDECODE": "1", "CLAUDE_CODE_PROMPT_CACHE_TTL": "1h"}, 1740.0),
+        ({"CLAUDECODE": "1", "CLAUDE_CODE_PROMPT_CACHE_TTL": "1h", "AGENT_TOOLKIT_DELEGATED_SESSION": "1"}, 240.0),
+    ],
+    ids=["main", "delegated"],
+)
+def test_release_deadline_keeps_delegated_cap(
+    monkeypatch: pytest.MonkeyPatch, environment: dict[str, str], expected_timeout: float
+) -> None:
+    """資源解放の待機は、CLIの結果待機と別の関数から委譲先の短縮を含む期限を得る。
+
+    CLIの結果待機の関数を使うと、CLIの上限の改訂で資源解放の期限が変わる。
+    """
+    for name in ("CLAUDECODE", "AGENT_TOOLKIT_DELEGATED_SESSION", "AGENT_TOOLKIT_OWNER_SESSION", "FORCE_PROMPT_CACHING_5M"):
+        monkeypatch.delenv(name, raising=False)
+    for name, value in environment.items():
+        monkeypatch.setenv(name, value)
+
+    assert lane.get_wait_timeout is wait_schedule.get_wait_timeout
+    assert lane.get_wait_timeout("main") == expected_timeout

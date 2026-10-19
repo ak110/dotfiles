@@ -364,13 +364,15 @@ def test_agents_wait_help_states_own_limit_and_standalone_invocation(
         monkeypatch.delenv(name, raising=False)
     for name, value in environment.items():
         monkeypatch.setenv(name, value)
-    limit = wait_schedule.get_wait_timeout("main")
+    limit = wait_schedule.get_cli_wait_timeout("main")
     commands = {name: parser for name, parser, _summary in _walk_commands()}
     description = commands["atk agents wait"].description
 
     assert description is not None
     assert limit.is_integer()
     assert f"{int(limit)}秒" in description
+    # 委譲先の短縮はMCPの待機だけに適用するため、CLIの説明は240秒を示さない。
+    assert "240秒" not in description
 
 
 @pytest.mark.parametrize(

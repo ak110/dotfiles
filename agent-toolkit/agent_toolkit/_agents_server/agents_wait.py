@@ -30,7 +30,7 @@ from agent_toolkit._common import session_registry
 from agent_toolkit._common.atomic_file import atomic_write
 from agent_toolkit._common.file_lock import acquire_lock, release_lock
 from agent_toolkit._common.next_action import ActionableError, report, with_next_action
-from agent_toolkit._common.wait_schedule import get_wait_timeout
+from agent_toolkit._common.wait_schedule import get_cli_wait_timeout
 
 _LOG = logging.getLogger("agent-toolkit.agents-server.wait")
 
@@ -443,7 +443,7 @@ def _wait_for_result(
     owns_lock = False
     run_path: pathlib.Path | None = None
     # 排他の取得と結果の回収は同じ一回の待機期限を消費する。
-    deadline = time.monotonic() + get_wait_timeout("main")
+    deadline = time.monotonic() + get_cli_wait_timeout("main")
     try:
         try:
             acquire_lock(lock_file, blocking=False)
@@ -513,7 +513,8 @@ def _wait_for_result(
             _write_json(run_directory / "current.json", {"run_id": run_id})
         wait_targets.retain_wait_targets(root_session_id, identity.file_name, ordered_ids, state_root)
 
-        # 上限はMCPの`wait`と同じくプロンプトキャッシュの保持期間から導出し、CLIとMCPで同じ値を使う。
+        # 上限はMCPの`wait`と同じ保持期間とホストの判定から導出する。CLIはMCPのツール呼び出しを経由しないため、
+        # 委譲先セッションでもMCPクライアントの上限に由来する短縮を適用しない（`get_cli_wait_timeout`）。
         # 委譲元がメイン会話かサブエージェントかを判定できないため、MCPと同じくmainのbucketを用いる。
         body_writer = _BodyFileWriter()
         while True:

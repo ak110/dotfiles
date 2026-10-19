@@ -819,7 +819,7 @@ async def test_stop_releases_wait_target_before_waiting_for_new_result(
     old_session = state.SessionState("old-session", str(tmp_path), engine="codex", announced=True)
     manager.sessions[old_session.session_id] = old_session
     writer.flush()
-    monkeypatch.setattr(agents_wait, "get_wait_timeout", lambda _bucket: 0)
+    monkeypatch.setattr(agents_wait, "get_cli_wait_timeout", lambda _bucket: 0)
 
     assert (
         agents_wait.wait_for_result(
