@@ -121,8 +121,14 @@ def merge_selection(
     def destination(lane: str) -> str:
         return mapping.get(lane, lane)
 
+    # 合流先のレーン行は未統合へ戻るため、統合済みレーンの既存項目へ状態を写して旧項目を区別できるようにする。
+    integrated = _selection.integrated_lanes(existing)
+    for item in first:
+        if item[_selection.LANE_KEY] in integrated:
+            item[_selection.INTEGRATION_STATE_KEY] = _selection.INTEGRATED
     for item in second:
         item[_selection.LANE_KEY] = destination(str(item[_selection.LANE_KEY]))
+        item.pop(_selection.INTEGRATION_STATE_KEY, None)
     # 元の追加結果で所要時間とレーンの対応を確認する。
     added_costs = _costs(added)
     costs = {str(row[_selection.LANE_KEY]): row for row in _costs(existing)}

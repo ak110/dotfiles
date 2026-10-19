@@ -252,6 +252,33 @@ def test_merge_preserves_initial_allocation_and_resets_only_destination(
     assert _dispatch(str(existing), "--work-dir", str(repo)) == 0
 
 
+def test_merge_preserves_item_integration_state(
+    inputs: tuple[pathlib.Path, pathlib.Path, pathlib.Path],
+    tmp_path: pathlib.Path,
+) -> None:
+    """合流先のレーン行を未統合へ戻しても、統合済みレーンの既存項目は統合済みとして残り、追加項目は未統合となる。"""
+    repo, existing, added = inputs
+    original = yaml.safe_load(existing.read_text(encoding="utf-8"))
+    original["レーンの所要時間"][0]["統合状態"] = "統合済み"
+    existing.write_text(yaml.safe_dump(original, allow_unicode=True), encoding="utf-8")
+    addition = yaml.safe_load(added.read_text(encoding="utf-8"))
+    addition["選定"][0]["統合状態"] = "統合済み"
+    added.write_text(yaml.safe_dump(addition, allow_unicode=True), encoding="utf-8")
+    mapping = tmp_path / "map.json"
+    mapping.write_text(json.dumps({"lane-03": "lane-01", "lane-04": "lane-02"}), encoding="utf-8")
+    output = tmp_path / "whole.yaml"
+    assert (
+        _dispatch(
+            str(existing), "--merge", str(added), "--lane-map", str(mapping), "--output", str(output), "--work-dir", str(repo)
+        )
+        == 0
+    )
+    result = yaml.safe_load(output.read_text(encoding="utf-8"))
+    assert {row["レーン"]: row["統合状態"] for row in result["レーンの所要時間"]} == {"lane-01": "未統合", "lane-02": "未統合"}
+    items = {item["WI"]: item.get("統合状態", "未統合") for item in result["選定"]}
+    assert items == {"a.md": "統合済み", "b.md": "未統合", "c.md": "未統合", "d.md": "未統合"}
+
+
 def test_merge_cannot_hide_initial_limit_violation(
     inputs: tuple[pathlib.Path, pathlib.Path, pathlib.Path],
     tmp_path: pathlib.Path,
@@ -746,7 +773,11 @@ def test_public_merge_preserves_created_derived_paths(
     assert _dispatch(str(existing), "--mark-integrated", target, "--output", str(existing), "--work-dir", str(repo)) == 0
     final = yaml.safe_load(existing.read_text(encoding="utf-8"))
     assert next(cost for cost in final["レーンの所要時間"] if cost["レーン"] == target)["統合状態"] == "統合済み"
-    assert final["選定"] == result["選定"]
+    # 統合状態の記録は対象レーンの項目の`統合状態`だけを変え、他の欄を保持する。
+    assert all(item["統合状態"] == "統合済み" for item in final["選定"] if item["レーン"] == target)
+    assert [{key: value for key, value in item.items() if key != "統合状態"} for item in final["選定"]] == [
+        {key: value for key, value in item.items() if key != "統合状態"} for item in result["選定"]
+    ]
     assert not capsys.readouterr().err
 
 

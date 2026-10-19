@@ -27,6 +27,13 @@
 - 書込範囲の理由の不正: 本文に無い範囲やパスを明示しないUWIの書込対象に理由が対応しない
 
 これらは共有書込の判定や配分の比較が成立しないため、違反として終了コード1を返す。
+
+前記のうち作業ツリーを読む項目ごとの判定（反映先パスの抽出、未被覆・広すぎる範囲・書き込まない反映先の不正・
+区分間の重複・書込区分のパスと導出記録の不正、プロジェクト規範の指定、公開工程の規範根拠）は、未統合の項目にだけ適用する。
+統合済みの項目は、項目か所属レーンの`統合状態`が`統合済み`の項目と、同じ呼び出しの`--mark-integrated`が指定したレーンの項目とする。
+これらの判定は作業前の作業ツリーで成り立つ選定時の前提であり、統合後の作業ツリーで判定し直すと、
+レーンの作業による改名・削除・追加で統合済みの項目を拒否し、統合状態の記録と以後の検査が止まるためである。
+本文の特定、target_repoとoriginの一致、レーン間の関係と初回配分の判定は全項目へ適用する。
 各違反は理由と次の操作の組で生成し、出力では違反の理由の行の後に、出力に現れた違反の次の操作だけを1回ずつまとめた行を置く。
 分類と定義の独立性の意味判断はメインの読解へ委ねる。
 
@@ -808,8 +815,13 @@ def check(
     body_wis: set[str] | None = None,
     *,
     selection: dict[str, object] | None = None,
+    integrating: collections.abc.Set[str] = frozenset(),
 ) -> list[Violation]:
-    """指定した集合の本文と選定全体の関係を確かめ、違反を返す。省略時は全本文を対象とする。"""
+    """指定した集合の本文と選定全体の関係を確かめ、違反を返す。省略時は全本文を対象とする。
+
+    統合済みの項目（項目か所属レーンの`統合状態`が`統合済み`の項目と、`integrating`が示す同じ呼び出しで
+    統合状態を記録するレーンの項目）には、作業ツリーに依存する項目ごとの判定を適用しない。
+    """
     if selection is None:
         selection = load_selection(selection_file)
     items = typing.cast(list[dict[str, object]], _selection.decisions(selection))
@@ -822,12 +834,16 @@ def check(
         )
     if items and not private_notes.is_dir():
         raise InputError(f"private-notesが実在しない: {private_notes}", next_action=_FIX_PRIVATE_NOTES)
-    conditions = load_norm_conditions(work_dir)
+    integrated_lanes = _selection.integrated_lanes(selection) | set(integrating)
+    # 選定時の前提は作業前の作業ツリーで成り立つ条件であり、作業を統合した項目は履歴として扱う。
+    # 統合後の作業ツリーで判定し直すと、レーンの作業による改名・削除・追加で統合済みの項目を拒否する。
+    pending = [item for item in items if not _is_integrated(item, integrated_lanes)]
+    conditions = load_norm_conditions(work_dir) if any(_needs_body_check(item, body_wis) for item in pending) else []
     errors: list[Violation] = []
     work_repo: str | None = None
     for decision in items:
         awi = typing.cast(str, decision[_selection.WI_KEY])
-        if decision[_selection.LANE_KEY] == _LANE_NONE or body_wis is not None and awi not in body_wis:
+        if not _needs_body_check(decision, body_wis):
             continue
         write_files = _string_list(decision, _selection.WRITE_FILES_KEY)
         public_write_files = _string_list(decision, _selection.PUBLIC_WRITE_FILES_KEY)
@@ -875,6 +891,8 @@ def check(
                         ),
                     )
                 )
+        if _is_integrated(decision, integrated_lanes):
+            continue
         reflected = reflected_paths(body, work_dir)
         errors.extend(_check_scope_reasons(decision, reflected, body))
         errors.extend(
@@ -904,11 +922,24 @@ def check(
             items, costs, typing.cast(list[dict[str, object]], selection.get(_selection.LANE_OVERLAPS_KEY, []))
         )
     )
-    errors.extend(_check_public_write_rationales(items, work_dir))
+    errors.extend(_check_public_write_rationales(pending, work_dir))
     errors.extend(_check_estimate_records(selection, costs))
     errors.extend(selection_contract.allocation_errors(selection))
     errors.extend(_check_allocation_sources(selection, private_notes))
     return errors
+
+
+def _is_integrated(decision: dict[str, object], integrated_lanes: set[str]) -> bool:
+    """項目の`統合状態`か所属レーンの統合状態から、作業を統合済みの項目かを返す。"""
+    return (
+        decision.get(_selection.INTEGRATION_STATE_KEY) == _selection.INTEGRATED
+        or decision[_selection.LANE_KEY] in integrated_lanes
+    )
+
+
+def _needs_body_check(decision: dict[str, object], body_wis: set[str] | None) -> bool:
+    """レーンを持ち、本文検査の対象集合に含まれる項目かを返す。"""
+    return decision[_selection.LANE_KEY] != _LANE_NONE and (body_wis is None or decision[_selection.WI_KEY] in body_wis)
 
 
 def _check_allocation_sources(selection: dict[str, object], private_notes: pathlib.Path) -> list[Violation]:
@@ -1335,7 +1366,10 @@ def main(argv: list[str] | None = None) -> int:
         help="取得済み候補JSONL。初回はPATH、追加は--mergeの意味判断から選定を生成する",
     )
     parser.add_argument(
-        "--mark-integrated", action="append", metavar="LANE", help="検収済みレーンの統合状態を記録する。反復指定可"
+        "--mark-integrated",
+        action="append",
+        metavar="LANE",
+        help=("検収済みレーンと所属項目の統合状態を記録する。その項目には作業ツリーに依存する判定を適用しない。反復指定可"),
     )
     parser.add_argument(
         "--lane-cost-updates", type=pathlib.Path, metavar="PATH", help="最終レーンの確定した秒数と根拠のJSON（統合時だけ）"
@@ -1410,7 +1444,14 @@ def main(argv: list[str] | None = None) -> int:
             structural, models = selection_contract.structure_errors(selection)
             if structural or models:
                 raise InputError("\n".join([*models, *structural]), next_action=_FIX_CONTENT)
-        errors = check(args.selection_file, work_dir, _plan_file.private_notes_root(), body_wis, selection=selection)
+        errors = check(
+            args.selection_file,
+            work_dir,
+            _plan_file.private_notes_root(),
+            body_wis,
+            selection=selection,
+            integrating=set(args.mark_integrated or []),
+        )
     except InputError as error:
         _next_action.report(error.reason, next_action=error.next_action)
         return 2
@@ -1427,6 +1468,10 @@ def main(argv: list[str] | None = None) -> int:
             if row[_selection.LANE_KEY] in args.mark_integrated:
                 row[_selection.INTEGRATION_STATE_KEY] = _selection.INTEGRATED
         selection[_selection.LANE_COSTS_KEY] = rows
+        # 後で同じレーンへ追加が合流してレーン行が未統合へ戻っても、統合済みの項目を区別できるよう項目にも記録する。
+        for item in typing.cast(list[dict[str, object]], selection.get(_selection.DECISIONS_KEY, selection.get("decisions"))):
+            if item.get(_selection.LANE_KEY, item.get("lane")) in args.mark_integrated:
+                item[_selection.INTEGRATION_STATE_KEY] = _selection.INTEGRATED
     if args.output is not None:
         try:
             if args.merge is not None and args.output.resolve() == args.merge.resolve():

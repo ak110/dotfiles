@@ -29,6 +29,7 @@ _DECISION_KEYS = frozenset(
         _selection.MODEL_TYPES_KEY,
         _selection.EXCLUDED_PATHS_KEY,
         _selection.DERIVED_NEW_PATHS_KEY,
+        _selection.INTEGRATION_STATE_KEY,
         _UPSTREAM_TARGETS_KEY,
         *_DECISION_STRING_KEYS,
     }
@@ -258,6 +259,9 @@ def structure_errors(selection: object) -> tuple[list[str], list[str]]:
             for key in (_selection.WI_KEY, _selection.LANE_KEY, *_DECISION_STRING_KEYS)
             if key in item and not isinstance(item[key], str)
         )
+        state = item.get(_selection.INTEGRATION_STATE_KEY, _selection.NOT_INTEGRATED)
+        if state not in (_selection.NOT_INTEGRATED, _selection.INTEGRATED):
+            errors.append(f"{label}: 統合状態は未統合か統合済みを指定する: {state!r}")
         if _STALENESS_KEY in item and not isinstance(item[_STALENESS_KEY], dict):
             errors.append(f"{label}: `{_STALENESS_KEY}`が写像ではない: {item[_STALENESS_KEY]!r}")
         errors.extend(
