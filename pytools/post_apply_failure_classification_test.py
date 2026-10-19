@@ -18,6 +18,7 @@ from pytools import post_apply
 from pytools._internal import (
     apply_dotfiles_plugins,
     claude_common,
+    claude_plugin_references,
     cleanup_paths,
     cleanup_user_path,
     common,
@@ -241,7 +242,9 @@ def _plugin_cache_removal_fails(monkeypatch: pytest.MonkeyPatch, tmp_path: Path)
     old.mkdir(parents=True)
     monkeypatch.setattr(prune_claude_plugin_cache, "_INSTALLED_PLUGINS_PATH", tmp_path / "plugins" / "installed_plugins.json")
     monkeypatch.setattr(prune_claude_plugin_cache, "_current_install_paths", lambda: {("market", "plugin"): set()})
-    monkeypatch.setattr(prune_claude_plugin_cache, "_expired_versions", lambda *_args: [old])
+    monkeypatch.setattr(prune_claude_plugin_cache, "_expired_versions", lambda *_args: [(old, (0.0, 0.0))])
+    # 開発機で稼働中のClaude Codeを参照判定へ混ぜず、削除の失敗の分類だけを確かめる。
+    monkeypatch.setattr(claude_plugin_references, "scan", lambda: ())
     monkeypatch.setattr(prune_claude_plugin_cache.shutil, "rmtree", _raise(PermissionError("denied")))
 
 

@@ -204,6 +204,61 @@ raise SystemExit(1)
 PY
 }
 
+# 自ユーザーの稼働中のCodexプロセスを`<pid> <実行名>`の行で出力する。プロセス一覧を取得できない場合は非0で終わる。
+# 実行名（command line第1要素）が`codex`か`codex-`で始まるもの、node系起動でentry pointが`@openai/codex`のものを数える。
+# 管理daemonの更新ループ（`app-server daemon pid-update-loop`）はplugin実体を参照しないため数えない。
+_running_codex_processes() {
+    local listing=""
+    if ! listing=$(ps -u "$(id -u)" -o pid= -o stat= -o args=); then
+        return 1
+    fi
+    awk '
+        $2 ~ /^Z/ { next }
+        {
+            name = $3
+            sub(/.*\//, "", name)
+            lowered = tolower(name)
+            sub(/\.exe$/, "", lowered)
+            if (lowered == "codex" || index(lowered, "codex-") == 1) {
+                first = 4
+            } else if ((lowered == "node" || lowered == "nodejs") && index(tolower($4), "@openai/codex") > 0) {
+                first = 5
+            } else {
+                next
+            }
+            if ($first == "app-server" && $(first + 1) == "daemon" && $(first + 2) == "pid-update-loop") { next }
+            print $1 " " name
+        }
+    ' <<<"$listing"
+}
+
+# 更新前の導入が目標版と異なるか無効で、既存版を使うCodexが稼働中なら、`codex plugin add`による旧版の回収を延期する。
+# 延期した場合は保持中の版、未反映の目標版、再実行の案内を表示して0で終わり、延期しない場合は1で終わる。
+_defer_codex_plugin_update_if_running() {
+    local before_state="$1"
+    local expected_version="$2"
+    local present=""
+    local version=""
+    local enabled=""
+    local running=""
+    present=$(_codex_state_value "$before_state" present)
+    version=$(_codex_state_value "$before_state" version)
+    enabled=$(_codex_state_value "$before_state" enabled)
+    if [ "$present" != "true" ] || { [ "$version" = "$expected_version" ] && [ "$enabled" = "true" ]; }; then
+        return 1
+    fi
+    if ! running=$(_running_codex_processes); then
+        echo "Codexの稼働状況をプロセス一覧（ps）から確認できないため、agent-toolkitプラグインの更新を延期しました。" >&2
+    elif [ -z "$running" ]; then
+        return 1
+    else
+        echo "Codexが稼働中のため、agent-toolkitプラグインの更新を延期しました（稼働中: $(printf '%s' "$running" | paste -sd ',' - | sed 's/,/, /g')）。" >&2
+    fi
+    echo "保持中の版: ${version}（$([ "$enabled" = "true" ] && echo 有効 || echo 無効)）。未反映の目標版: ${expected_version}。利用中のセッションを守るため既存版と旧cacheを保持しています。" >&2
+    echo "Codexのセッションを全て終了してから、同じインストーラーを再実行してください。" >&2
+    return 0
+}
+
 # 期待する版はGitHubのmarketplace（ak110/dotfiles）を登録したCodexが取得したmanifestから読む。
 # dotfilesのpost-applyはローカルの作業ツリーをmarketplaceとして登録し、その版を期待値にする。
 # 単体インストーラーは作業ツリーを前提にできないため、配布元の違いをそのまま残す。
@@ -231,6 +286,9 @@ _install_codex_plugin() {
         return 1
     fi
     before_state_known=1
+    if _defer_codex_plugin_update_if_running "$before_state" "$expected_version"; then
+        return 0
+    fi
     if [ ! -e "$hook_wrapper" ]; then
         first_hook_transition=1
     fi

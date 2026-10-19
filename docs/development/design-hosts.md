@@ -66,6 +66,27 @@ Codex 0.154.0はroot直下のAgent Plugins用`plugin.json`を`.codex-plugin/plug
 そのため、`agent-toolkit-codex/`は全資源を通常ファイルとして生成し、公式CLIへsnapshotと版数別cacheの管理を委ねる。
 検証条件と再検証手順は「[docs/development/design-hosts.md：Claude CodeとCodexの規範配置：2026年9月13日](audit-records.md#docsdevelopmentdesign-hostsmdclaude-codeとcodexの規範配置2026年9月13日)」を参照する。
 
+### plugin実体の回収と稼働中の参照
+
+更新・回収・修復でplugin実体を削除または置換する処理は、消費側の参照が終わったと判定できた実体だけを対象にする。
+稼働中のhook・skill・MCPは起動時に解決したplugin rootの絶対パスを使い続けるため、参照中に旧版を削除すると実行中の処理が`[Errno 2]`などで失敗する。
+ホストの役割、後継版の導入からの経過時間、現行版一覧は参照の終了を表さないため、回収可能の根拠にしない。
+参照の終了を判定できない間（プロセス情報を取得できない場合を含む）は既存の実体を保持し、延期として扱う。
+
+| 処理 | 参照の判定 | 延期後の再開 |
+| --- | --- | --- |
+| Codexのpost-apply更新（`install_codex_plugins.py`） | `codex_processes.py`の役割分類。`session`（通常セッション、`codex app-server --stdio`、判定素材を取得できないプロセス）を常に数え、管理daemonは`DOTFILES_CODEX_DAEMON_AUTO_RESTART=1`の指定が無い場合だけ数える | post-applyの`deferred`と延期記録による自動更新タイマーの再試行。タイマーを持たないホストではCodexの終了後に`update-dotfiles`を再実行する |
+| 単体インストーラー（`install-claude.sh`・`install-claude.ps1`） | `ps`（WindowsはWin32_Process）が返す実行名`codex`のプロセスと、node系起動でentry pointが`@openai/codex`のプロセス | Codexの終了後に同じインストーラーを再実行する |
+| Claude Codeの旧版cache整理（`prune_claude_plugin_cache.py`） | `claude_plugin_references.py`。その版の配下を指すプロセスと、その版が現行だった期間に起動したClaude Codeセッション | 参照の終了後の`update-dotfiles`で削除する |
+| Claude Codeの現行版cache欠落修復（`install_claude_plugins.py`） | `claude_plugin_references.py`。導入先を指すプロセスと、起動時刻を問わない稼働中のClaude Codeセッション | post-applyの`deferred`と延期記録による自動更新タイマーの再試行。タイマーを持たないホストではClaude Codeのセッションを全て終了してから`update-dotfiles`を再実行する |
+| Codexの不要pluginの除去（`install_codex_plugins.py`の`_remove_unused_plugins`） | Codexのpost-apply更新と同じ役割分類 | post-applyの`deferred`と延期記録による自動更新タイマーの再試行。タイマーを持たないホストではCodexの終了後に`update-dotfiles`を再実行する |
+
+Claude Code 2.1.303の`claude plugin uninstall`とmarketplaceの削除は、plugin cacheの実体を孤立の標識（`.orphaned_at`）付きで残す。他のscopeが残らないpluginでは永続データ領域（`plugins/data/<id>/`）を削除する（いずれも隔離した設定ディレクトリでの観測）。`install_claude_plugins.py`のdeprecated pluginの除去とproject scopeの除去は、実体を削除せず、データ領域も`--keep-data`で残すため、稼働中のセッションが使う実体を削除する処理に当たらず、延期を設けない。`claude_marketplace.py`の登録修復は、marketplaceの削除で収録pluginを除去してデータ領域を削除し、同じ実行で再導入する。収録するagent-toolkitの`plugin_environment.py`の`runtime_data`は、ユーザーデータ領域（Linuxでは`XDG_DATA_HOME`配下の`agent-toolkit`）を先に選び、そこへ書き込めない場合だけデータ領域（`CLAUDE_PLUGIN_DATA`）を使う。`plugin.json`は設定項目を持たない。このため通常の環境では稼働中のセッションのhook・MCPはデータ領域を参照せず、削除しても動作は変わらないので、この修復は参照の終了を待つ延期の対象にしない。
+daemon自動再起動の指定は管理daemonを更新後に再起動する許可であり、通常セッションと`agents_server`のApp Serverが使う版を回収する許可を含まない。
+旧cacheを退避して復元する案は、退避中に元のパスから実体へ到達できないため採らない。
+最新版へhookを付け替える案は、旧版のskill・MCP・遅延importを守れないため採らない。
+固定猶予の延長と回収後の再導入は、参照中の削除を防げないため採らない。
+
 ### ルールの配置と配送
 
 `agent-toolkit/rules/`配下にはメインエージェント、サブエージェントおよび委譲先の全てへ適用する条文だけを置く。

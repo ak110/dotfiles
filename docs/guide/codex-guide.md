@@ -77,14 +77,15 @@ Windows絶対パスを渡す。Claude、`update-dotfiles`、process-loop外のCo
 Codex向けのプラグインは`update-dotfiles`が生成して導入する。生成物の構成は[architecture.md](../development/architecture.md)「agent-toolkitの3形式配布」を参照。
 
 `update-dotfiles`は未導入、disabled、version不一致のいずれかの場合に`codex plugin add`を実行し、導入後のversionと有効状態を再確認する。
-euryaleで`DOTFILES_CODEX_DAEMON_AUTO_RESTART=1`を指定せずに更新する場合は、同じユーザーのCodexが稼働中なら、導入済みagent-toolkitへの追加・更新を延期する。
+導入済みagent-toolkitの更新と再有効化は、同じユーザーのCodexが稼働中ならホストによらず延期する。`codex plugin add`は旧版のhook・スキル・MCP実体を削除するため、旧版を使うセッションが終わるまで導入済みの版を保持する。
 Linuxでは、過去の設定で診断ログDBを共有メモリー（`/dev/shm/codex-<UID>-logs_2.sqlite`と、その`-wal`・`-shm`ファイル）へ移していた場合、`update-dotfiles`が通常の保存先`~/.codex/`へ戻す。`<UID>`はOSのユーザーIDを指す。
 同じユーザーのCodexが稼働中なら、対象ファイルを案内して処置を延期する。Codexの終了後の`update-dotfiles`（自動更新タイマーを持つホストではタイマーの再試行）で、共有メモリーのファイルを通常の保存先へコピーし、旧ファイルを指すシンボリックリンクを通常ファイルへ置き換える。タイマーを持たないホストでは、Codexを終了して`update-dotfiles`を再実行する。
 復元後の次の`update-dotfiles`実行では両方の内容が一致することを確認して共有メモリーの旧コピーを削除する。旧ファイルが既に失われたシンボリックリンクは、復元処理の際に削除する。内容の不一致などで延期した場合は、表示された診断に従って復旧する。
 旧ファイルも旧ファイルを指すリンクも無い場合は、処置と延期の案内を省く。
 稼働判定の対象は、通常のCodexセッション、`agents_server`が委譲用に起動する`codex app-server --stdio`、およびapp-server daemon（`codex app-server daemon start`が起動する管理daemon）とその補助プロセスである。
 管理daemonの停止後も残る更新ループ`codex app-server daemon pid-update-loop`はpluginと診断ログDBを開かないため、対象に含めない。
-未導入plugin、他ホストの更新と、後述の自動再起動を明示した更新は、plugin更新の延期の対象に含めない。
+`DOTFILES_CODEX_DAEMON_AUTO_RESTART=1`を指定した場合は、管理daemonとその補助プロセスだけが稼働中なら更新して管理daemonを再起動し、通常のCodexセッションか`codex app-server --stdio`が稼働中なら延期する。
+未導入pluginの導入は、plugin更新の延期の対象に含めない。
 
 ### 管理daemonだけが残る場合の一時停止
 
@@ -116,11 +117,19 @@ post-applyは実際に必要なplugin更新や診断ログの処置を延期し�
 
 plugin更新を延期した場合は、延期の案内がpost-applyの完了案内と同期記録に残る。
 同期記録は状態ディレクトリ（`atk config get state_dir`が返すディレクトリ）の`sync-report.json`であり、案内は`post_apply.notices`にある。
-案内は対象plugin、導入版と目標版（再有効化だけを延期した場合は無効から有効への切り替え）、延期の理由になった稼働中のCodexを示す。
+案内は対象plugin、保持中の導入版と未反映の目標版（再有効化だけを延期した場合は無効から有効への切り替え）、延期の理由になった稼働中のCodex、再開の操作を示す。
 dotfiles全体の同期が成功でも、この案内がある間はCodex pluginの最新版が反映されていない。
-plugin更新の延期は自動更新タイマーを持つLinuxサーバー（euryale）でだけ起きる。
-タイマーは延期記録がある間、上流に変更が無くても10分ごとに`update-dotfiles`を再実行する。Codexのセッションと委譲が終わった後の再試行で最新版が反映され、延期記録は削除される。手動の再実行は要らない。
+再開の操作はホストで異なり、案内の末尾に表示される。
+
+- 自動更新タイマーを持つLinuxサーバー（euryale）: タイマーが延期記録のある間、上流に変更が無くても10分ごとに`update-dotfiles`を再実行する。Codexのセッションと委譲が終わった後の再試行で最新版が反映され、延期記録は削除される。手動の再実行は要らない
+- タイマーを持たないホスト: Codexのセッションを全て終了してから`update-dotfiles`を再実行する。再実行で最新版が反映され、延期記録は削除される
+
 Codexを常に稼働させている間は延期が続き、最新版は適用されない。
+
+公開インストーラー（`install-claude.sh`・`install-claude.ps1`）も、導入済みの版が目標版と異なるか無効で同じユーザーのCodexが稼働中なら、`codex plugin add`を実行せず既存版と旧cacheを保持する。
+インストーラーは保持中の版と未反映の目標版を表示し、Codex pluginの導入工程だけを延期して残りの工程を続ける。
+Codexのセッションを全て終了してから同じインストーラーを再実行すると、目標版へ更新される。
+プロセス一覧（Linux・macOSでは`ps`）を取得できない場合も、稼働中のCodexを確かめられないため延期する。
 
 ### プラグイン更新後のdaemonの再起動
 

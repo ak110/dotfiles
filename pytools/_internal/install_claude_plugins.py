@@ -12,9 +12,17 @@ import logging
 import shutil
 from collections.abc import Sequence
 from pathlib import Path
-from typing import cast
+from typing import Literal, cast
 
-from pytools._internal import claude_common, claude_marketplace, common, log_format, post_apply_outcome
+from pytools._internal import (
+    claude_common,
+    claude_marketplace,
+    claude_plugin_references,
+    common,
+    deferred_updates,
+    log_format,
+    post_apply_outcome,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -60,9 +68,10 @@ def run() -> post_apply_outcome.PostApplyOutcome:
 
     管理対象pluginの導入・更新の失敗と、導入後の状態が目標と一致しない場合は、警告を出力してスキップと数える。
     外部marketplaceのpluginの自動無効化（設定の書き換え）の失敗は失敗と数える。
+    稼働中の参照を守るためにplugin cacheの修復を延期した場合は延期と数える。
     """
     try:
-        changed, recommendations, disable_failed_count = _install_plugins()
+        changed, recommendations, disable_failed_count, deferred = _install_plugins()
     except RuntimeError as error:
         logger.warning(
             log_format.format_status("plugins", f"導入または更新に失敗: {error}。`update-dotfiles`を再実行する"),
@@ -74,17 +83,18 @@ def run() -> post_apply_outcome.PostApplyOutcome:
         recommendations=tuple(recommendations),
         failure=failure,
         next_action="`update-dotfiles`を再実行して外部pluginの無効化をやり直す。" if failure is not None else None,
+        deferred=deferred,
     )
 
 
-def _install_plugins() -> tuple[bool, list[str], int]:
-    """導入・更新・自動無効化を行い、`(変更の有無, 推奨コマンド, 自動無効化の失敗件数)`を返す。
+def _install_plugins() -> tuple[bool, list[str], int, bool]:
+    """導入・更新・自動無効化を行い、`(変更の有無, 推奨コマンド, 自動無効化の失敗件数, 修復の延期の有無)`を返す。
 
     Raises:
         RuntimeError: 管理対象pluginの導入・更新に失敗した場合、または導入後の状態が目標と一致しない場合。
     """
     if not _prerequisites_ok():
-        return False, [], 0
+        return False, [], 0, False
 
     external_changed = _install_external_marketplaces()
 
@@ -96,7 +106,7 @@ def _install_plugins() -> tuple[bool, list[str], int]:
                 "dotfiles ルート (marketplace.json) が見つからずスキップ。`update-dotfiles`を再実行する",
             ),
         )
-        return external_changed, [], 0
+        return external_changed, [], 0, False
 
     # 対象プラグインは marketplace.json の plugins[] 全件から動的に決める。
     target_versions, deprecated_names = _read_target_info(dotfiles_root)
@@ -107,10 +117,10 @@ def _install_plugins() -> tuple[bool, list[str], int]:
                 "marketplace.json に対象 plugin が無いためスキップ。導入対象が無いため対応不要",
             ),
         )
-        return external_changed, [], 0
+        return external_changed, [], 0, False
 
     if not claude_marketplace.ensure_marketplace():
-        return external_changed, [], 0
+        return external_changed, [], 0, False
 
     # marketplace の修復は remove/add により導入済み登録を変更し得るため、
     # 修復完了後の実体だけを導入判定へ用いる。
@@ -124,7 +134,7 @@ def _install_plugins() -> tuple[bool, list[str], int]:
                     "インストール済み plugin 一覧の取得に失敗したためスキップ。`update-dotfiles`を再実行する",
                 ),
             )
-            return external_changed, [], 0
+            return external_changed, [], 0, False
 
     any_change = False
 
@@ -195,9 +205,11 @@ def _install_plugins() -> tuple[bool, list[str], int]:
 
     # CLI が成功終了しても、同じ version を既に導入済みと判定した場合はキャッシュが検証されない。
     # Claude Code が次回起動時に読む実体を確認し、欠落していれば 1 回だけ再インストールで修復する。
+    cache_deferred = False
     for name in cache_check_names:
-        if _ensure_plugin_cache_complete(name):
-            any_change = True
+        cache_state = _ensure_plugin_cache_complete(name)
+        any_change = any_change or cache_state == "repaired"
+        cache_deferred = cache_deferred or cache_state == "deferred"
 
     # 外部 marketplace の自動 disable 実行と install/enable 推奨コマンド算出 (公式プラグイン)。
     # 対象は ak110-dotfiles 以外の marketplace であり、上記のインストールループで
@@ -220,7 +232,7 @@ def _install_plugins() -> tuple[bool, list[str], int]:
     )
     # CLIの終了コードだけでなく、Claude Codeが次回起動時に読む実体を完了条件とする。
     _verify_target_plugins(target_versions, failed_operations)
-    return external_changed or any_change, recommendations, disable_failed_count
+    return external_changed or any_change, recommendations, disable_failed_count, cache_deferred
 
 
 def _install_external_marketplaces() -> bool:
@@ -625,10 +637,15 @@ def _project_scope_paths(name: str, raw_data: object) -> list[Path]:
 
 
 def _uninstall_deprecated(name: str, raw_data: object) -> bool:
-    """Deprecated プラグインがインストール済みならアンインストールする。"""
+    """Deprecated プラグインがインストール済みならアンインストールする。
+
+    `claude plugin uninstall`は導入先の実体を削除せず孤立として残し、永続データ領域（`plugins/data/<id>/`）を削除する
+    （Claude Code 2.1.303の隔離環境での観測）。稼働中のセッションのhook・MCPが使い続けるデータ領域を削除しないよう、
+    `--keep-data`で残す。
+    """
     if not _is_installed(name, raw_data):
         return False
-    result = claude_common.run_claude(["plugin", "uninstall", f"{name}@{claude_common.MARKETPLACE_NAME}"])
+    result = claude_common.run_claude(["plugin", "uninstall", f"{name}@{claude_common.MARKETPLACE_NAME}", "--keep-data"])
     if result is not None and result.returncode == 0:
         logger.info(log_format.format_status(name, "deprecated のためアンインストールしました"))
         return True
@@ -636,7 +653,7 @@ def _uninstall_deprecated(name: str, raw_data: object) -> bool:
         log_format.format_status(
             name,
             f"アンインストールに失敗: {common.format_cli_error(result)}。"
-            f"`claude plugin uninstall {name}@{claude_common.MARKETPLACE_NAME}`を実行する",
+            f"`claude plugin uninstall {name}@{claude_common.MARKETPLACE_NAME} --keep-data`を実行する",
         ),
     )
     return False
@@ -647,6 +664,8 @@ def _cleanup_old_project_scope(name: str, raw_data: object) -> None:
 
     `claude plugin uninstall --scope=project` は呼び出し時の cwd から
     プロジェクト設定を特定するため、各エントリの projectPath を cwd に渡す。
+    他の scope が残らない除去は永続データ領域を削除するため、続けて導入する user scope が同じデータ領域を
+    使えるよう`--keep-data`で残す。
     """
     for project_path in _project_scope_paths(name, raw_data):
         if not project_path.is_dir():
@@ -659,7 +678,7 @@ def _cleanup_old_project_scope(name: str, raw_data: object) -> None:
             )
             continue
         result = claude_common.run_claude(
-            ["plugin", "uninstall", f"{name}@{claude_common.MARKETPLACE_NAME}", "--scope=project"],
+            ["plugin", "uninstall", f"{name}@{claude_common.MARKETPLACE_NAME}", "--scope=project", "--keep-data"],
             cwd=project_path,
         )
         if result is not None and result.returncode == 0:
@@ -670,7 +689,7 @@ def _cleanup_old_project_scope(name: str, raw_data: object) -> None:
                     name,
                     f"project scope の除去に失敗 (続行): {common.format_cli_error(result)}。"
                     f"{project_path}へ移動して`claude plugin uninstall "
-                    f"{name}@{claude_common.MARKETPLACE_NAME} --scope=project`を実行する",
+                    f"{name}@{claude_common.MARKETPLACE_NAME} --scope=project --keep-data`を実行する",
                 ),
             )
 
@@ -778,8 +797,10 @@ def _missing_plugin_cache_files(cache_dir: Path) -> list[str]:
     return [relative for relative in _PLUGIN_CACHE_REQUIRED_FILES if not (cache_dir / relative).is_file()]
 
 
-def _ensure_plugin_cache_complete(name: str) -> bool:
-    """導入先の実体が揃っていることを確認し、欠落を 1 回だけ修復する (修復した場合 True)。
+def _ensure_plugin_cache_complete(name: str) -> Literal["unchanged", "repaired", "deferred"]:
+    """導入先の実体が揃っていることを確認し、欠落を 1 回だけ修復する。
+
+    修復した場合は`repaired`、稼働中の参照を守るため修復を延期した場合は`deferred`、それ以外は`unchanged`を返す。
 
     `claude plugin install/update` は同じ version の plugin を既に導入済みと判定した場合に
     キャッシュを検証せずスキップするため、CLI の終了コード 0 はキャッシュの完全性を含意しない。
@@ -787,8 +808,12 @@ def _ensure_plugin_cache_complete(name: str) -> bool:
     そのディレクトリがプロジェクトとして解決されず `ModuleNotFoundError` で終わる。
 
     導入先を解決できない場合と、導入先が plugin cache の外にある場合は、検査できなかったことと
-    探索先を警告して False を返す。導入そのものの欠落は `_verify_target_plugins` が扱うため、
+    探索先を警告して`unchanged`を返す。導入そのものの欠落は `_verify_target_plugins` が扱うため、
     本関数では新しい失敗経路を増やさない。
+
+    修復は導入先を削除してから再導入するため、削除の間は導入先の他のファイルへも到達できなくなる。
+    このため導入先を参照するプロセスか稼働中のClaude Codeセッション（起動時刻を問わない）があれば、
+    `claude_plugin_references`の判定に従って削除せず延期し、参照の終了後の`update-dotfiles`で修復する。
     """
     cache_root = claude_common.INSTALLED_PLUGINS_PATH.parent / "cache"
     cache_dir = _plugin_cache_directory(name)
@@ -801,7 +826,7 @@ def _ensure_plugin_cache_complete(name: str) -> bool:
                 "`claude plugin list --json`でこのpluginの導入状態を確認して`update-dotfiles`を再実行する",
             ),
         )
-        return False
+        return "unchanged"
     if not cache_dir.is_relative_to(cache_root):
         # 削除の対象は plugin cache の内側だけとし、想定外の位置にある導入先は削除しない。
         short = log_format.home_short(cache_dir)
@@ -811,10 +836,23 @@ def _ensure_plugin_cache_complete(name: str) -> bool:
                 f"plugin cache の外にある導入先のため検査を省略: {short}。配置を保持したため対応不要（処理は継続した）",
             ),
         )
-        return False
+        return "unchanged"
     missing = _missing_plugin_cache_files(cache_dir)
     if not missing:
-        return False
+        return "unchanged"
+    reasons = claude_plugin_references.holding_reasons(claude_plugin_references.scan(), cache_dir, session_window=None)
+    if reasons:
+        logger.warning(
+            log_format.format_status(
+                name,
+                f"plugin cache に {', '.join(missing)} がありませんが、稼働中の参照があるため修復を延期しました"
+                f"（{'、'.join(reasons)}）。導入先 {log_format.home_short(cache_dir)} を削除せず保持しています。"
+                + deferred_updates.retry_guidance(
+                    "Claude Codeのセッションを全て終了してから`update-dotfiles`を再実行してください。"
+                ),
+            ),
+        )
+        return "deferred"
     logger.info(
         log_format.format_status(
             name,
@@ -837,7 +875,7 @@ def _ensure_plugin_cache_complete(name: str) -> bool:
         )
         raise RuntimeError(f"{name}: {message}")
     logger.info(log_format.format_status(name, "plugin cache の欠落を再インストールで解消しました"))
-    return True
+    return "repaired"
 
 
 def _verify_target_plugins(target_versions: dict[str, str], failed_operations: Sequence[str] = ()) -> None:

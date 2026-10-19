@@ -84,6 +84,19 @@ fi
 exit 0
 """
 
+# 開発機で動く他のCodexを稼働判定へ混ぜないため、`PS_STUB_PIDS`へ空白区切りで列挙したpidの行だけを実際の`ps`の出力から返す。
+# 未指定なら稼働中のプロセスが無い状態として何も出力しない。
+_PS_STUB = """#!/bin/sh
+[ -n "$PS_STUB_PIDS" ] || exit 0
+for candidate in /usr/bin/ps /bin/ps; do
+    if [ -x "$candidate" ]; then
+        "$candidate" "$@" | awk -v pids=" $PS_STUB_PIDS " 'index(pids, " " $1 " ") > 0'
+        exit 0
+    fi
+done
+exit 1
+"""
+
 
 class _QuietHandler(http.server.SimpleHTTPRequestHandler):
     def log_message(self, *args: typing.Any, **kwargs: typing.Any) -> None:
@@ -133,6 +146,10 @@ def make_command_stubs(
         stub = bin_dir / command_name
         stub.write_text(_COMMAND_STUB, encoding="utf-8")
         stub.chmod(stub.stat().st_mode | executable_mode)
+
+    ps_stub = bin_dir / "ps"
+    ps_stub.write_text(_PS_STUB, encoding="utf-8")
+    ps_stub.chmod(ps_stub.stat().st_mode | executable_mode)
 
     if omit != "uv":
         uv_stub = bin_dir / "uv"
