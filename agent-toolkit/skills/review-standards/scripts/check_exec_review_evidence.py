@@ -2420,7 +2420,8 @@ def main(argv: list[str] | None = None) -> int:
         "--reader-fit-review",
         help='成果物ごとのJSON申告 {"files":{"相対.md":{"sessions":["起動結果の識別子"]}},'
         '"external":{"絶対パス":{"sessions":["起動結果の識別子"]}}}。'
-        "識別子はUUID、16進列、agent-付き16進列を受理し、集約起動は各ファイルへ同じ識別子を申告する。"
+        "識別子はagents_serverのsession_id（UUID）、Agentツールのagent ID（16進列、agent-付き16進列）、"
+        "Codexの組み込み委譲spawn_agentが返すtask_name（/root/<名前>）を受理し、集約起動は各ファイルへ同じ識別子を申告する。"
         '再点検省略は{"omission":"再点検対象なし"}、externalには前回本文の複製の絶対パスpreviousも指定する。'
         "Markdown差分とexternal-artifactがともに無い場合だけ文章成果物なし",
     )

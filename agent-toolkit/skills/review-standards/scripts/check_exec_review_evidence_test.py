@@ -33,7 +33,7 @@ def test_public_help_describes_launch_identifier_declaration(capsys: pytest.Capt
     assert run_script.dispatch(args) == 0
     output = capsys.readouterr().out
     assert "--reader-fit-review" in output
-    assert all(value in output for value in ("UUID", "16進列", "agent-", "集約起動"))
+    assert all(value in output for value in ("UUID", "16進列", "agent-", "/root/", "spawn_agent", "集約起動"))
 
 
 @pytest.mark.parametrize("selector", [["--results-summary"], ["--result-test", "test"], ["--result-diagnostic", "observed:1"]])

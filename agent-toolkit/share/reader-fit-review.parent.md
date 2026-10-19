@@ -52,7 +52,7 @@ Git管理下の資料は`reader-fit-prepare`の公開操作へ`--repository`・`
 
 行数は読む担当が実体から取得する。入力や比較元が欠ける場合は補完してから起動する。
 実行レビューの返却では、ファイルごとに起動結果の識別子の配列か再点検の省略をJSONで申告する。
-識別子はUUID、16進列、`agent-`付き16進列を受理し、集約起動では各ファイルへ同じ起動結果の識別子を記す。
+識別子は`agents_server`の`session_id`（UUID）、Claude Codeの`Agent`ツールのagent ID（16進列、`agent-`付き16進列）、Codexの組み込み委譲`spawn_agent`が返す`task_name`（`/root/<名前>`のagentのパス）を受理する。組み込み委譲で起動した場合は返却の`task_name`をそのまま申告する。集約起動では各ファイルへ同じ起動結果の識別子を記す。
 形式とGit差分との対応は`exec-review-evidence-check --help`の`--reader-fit-review`、`--review-start`と前回確認版の入力に従う。
 受領した`review_contract`も同じコマンドへ渡し、複数計画の境界を確かめる。
 Git管理外では、回答下書きの絶対パスと`Git管理外の変更`の元ファイルのうち`.md`・`.md.tmpl`の絶対パスを、反復指定の`--external-artifact`で対象集合として渡す。`--batch`では各組の`external_artifacts`に同じ集合を配列で渡し、対象が無い場合も`[]`を指定する。申告の`external`は対象集合の絶対パスごとに`{"sessions":["<起動結果の識別子>"]}`または`{"omission":"再点検対象なし","previous":"/前回本文の複製.md"}`を持つオブジェクトとする。後者はround 2以上で、前回本文の複製と現行本文のバイト列が一致する場合だけ受理される。対象集合と申告に欠落・過剰があれば、返却の生成は失敗する。`文章成果物なし`はGit差分の対象とGit管理外の対象集合がともに空の場合に限る。
