@@ -783,6 +783,39 @@ def test_updates_file_accepts_model_identifier_evidence(tmp_path: pathlib.Path, 
     assert json.loads(record.read_text(encoding="utf-8"))["user_requirements"][0]["evidence"] == text
 
 
+@pytest.mark.parametrize(
+    ("text", "code"),
+    [
+        ("バックアップの説明pytools/repack_archive_test.py::TestRestore::test_restore[zip]で確認", 0),
+        ("原因をpytools/repack_archive_test.py::test_save[zip]で確認", 0),
+        ("原因をpytools/missing_test.py::test_save[zip]で確認", 1),
+    ],
+)
+def test_saves_nodeid_following_japanese_text(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    text: str,
+    code: int,
+) -> None:
+    """和文へ直接続けたnodeidは、未判定記録の保存でも和文を除いたファイル接頭辞の所在で確かめる。"""
+    record, source, _ = _reference_record(tmp_path, monkeypatch)
+    test_file = record.parent / "repo/pytools/repack_archive_test.py"
+    test_file.parent.mkdir()
+    test_file.write_text("def test_save():\n    pass\n", encoding="utf-8")
+    _git(test_file.parent.parent, "add", "pytools/repack_archive_test.py")
+    _git(test_file.parent.parent, "-c", "user.name=Test", "-c", "user.email=test@example.com", "commit", "-qm", "追加")
+    evidence = tmp_path / "evidence.txt"
+    evidence.write_text(text, encoding="utf-8")
+    capsys.readouterr()
+    assert _run(*_update_route("updates-file", record, source, evidence)) == code
+    error = capsys.readouterr().err
+    if code:
+        assert "参照『pytools/missing_test.py::test_save[zip]』" in error, error
+    else:
+        assert json.loads(record.read_text(encoding="utf-8"))["user_requirements"][0]["evidence"] == text
+
+
 @pytest.mark.parametrize("cwd_kind", ["outside", "other"])
 @pytest.mark.parametrize("mode", ["plan-wi", "plan-user", "mixed"])
 def test_public_generation_uses_plan_repository_from_other_cwd(

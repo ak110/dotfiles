@@ -326,7 +326,13 @@ def _file_references(evidence: str, repository: pathlib.Path, head: str = "HEAD"
     """
     matches = []
     for word in _evidence_words(evidence):
-        for match in _plain_references(evidence, word, repository) if word.group("plain") is not None else [word]:
+        if word.group("plain") is not None:
+            candidates = _plain_references(evidence, word, repository)
+        elif word.group("test") is not None:
+            candidates = [_test_reference(evidence, word, repository)]
+        else:
+            candidates = [word]
+        for match in candidates:
             if _is_explicit_reference(match, evidence, repository, head):
                 matches.append(match)
     return matches
@@ -373,8 +379,7 @@ def _plain_references(evidence: str, word: re.Match[str], repository: pathlib.Pa
     position = start
     if first is not None:
         path, _ = _reference_parts(first)
-        path_end = start + len(path)
-        if _is_file(repository / path) or JAPANESE_ASCII_PATH_BOUNDARY.search(evidence, start + 1, path_end) is None:
+        if _starts_path(evidence, start, path, repository):
             references.append(first)
             position = first.end()
     while True:
@@ -385,12 +390,7 @@ def _plain_references(evidence: str, word: re.Match[str], repository: pathlib.Pa
                 continue
             path, _ = _reference_parts(found)
             # 地の文のスラッシュ語から次のファイル名までを1パスにせず、内側の始点を調べる。
-            # 日本語を含む実在パスは語全体を保持する。
-            if (
-                not _is_file(repository / path)
-                and JAPANESE_ASCII_PATH_BOUNDARY.search(evidence, boundary.start() + 1, boundary.start() + len(path))
-                is not None
-            ):
+            if not _starts_path(evidence, boundary.start(), path, repository):
                 continue
             reference = found
             break
@@ -402,6 +402,40 @@ def _plain_references(evidence: str, word: re.Match[str], repository: pathlib.Pa
         return references
     # 拡張子で終わるパスを持たない語も、行位置を添えた場合は行位置の後ろの和文を参照に含めない。
     return [LOCATED_NAME.match(evidence, start, end) or word]
+
+
+def _test_reference(evidence: str, word: re.Match[str], repository: pathlib.Path) -> re.Match[str]:
+    """nodeidのファイル接頭辞の始まりを、地の文のパスと同じ境界判断（`_starts_path`）で決める。
+
+    `EVIDENCE_REFERENCE`の`test`は語の先頭からテスト識別子までを1語として取り込むため、接頭辞の前に接した和文
+    （`原因を<テストファイルのパス>::test_save[zip]`の`原因を`）も接頭辞に含む。形式ごとに境界の処理を持つと、通常パスへの是正が
+    テスト参照へ及ばないため、接頭辞の始まりは地の文のパスと同じ関数で決める。
+    角括弧の内側（パラメーター値）は境界の探索に含めず、引用で囲んだnodeidは引用を境界としてそのまま返す。
+    """
+    start = word.start("test")
+    separator = evidence.find("::", start, evidence.index("[", start, word.end()))
+    if separator < 0 or evidence.startswith("`", start):
+        return word
+    positions = (start, *(found.start() for found in JAPANESE_ASCII_PATH_BOUNDARY.finditer(evidence, start + 1, separator)))
+    boundary = next(
+        (position for position in positions if _starts_path(evidence, position, evidence[position:separator], repository)),
+        start,
+    )
+    if boundary == start:
+        return word
+    reference = EVIDENCE_REFERENCE.match(evidence, boundary, word.end())
+    assert reference is not None and reference.group("test") is not None
+    return reference
+
+
+def _starts_path(evidence: str, start: int, path: str, repository: pathlib.Path) -> bool:
+    """`evidence`の`start`から始まる`path`を、参照の始まりとして扱えるかを返す。
+
+    パスが実在するか、途中に日本語の直後から始まるパスが無い場合に始まりとする。日本語を含む実在パスは語全体を保持する。
+    地の文のパスとnodeidのファイル接頭辞がこの1つの判断を使い、同じ接頭辞の境界を参照の形式で変えない。
+    """
+    inner = JAPANESE_ASCII_PATH_BOUNDARY.search(evidence, start + 1, start + len(path))
+    return _is_file(repository / path) or inner is None
 
 
 def _is_explicit_reference(match: re.Match[str], evidence: str, repository: pathlib.Path, head: str) -> bool:
