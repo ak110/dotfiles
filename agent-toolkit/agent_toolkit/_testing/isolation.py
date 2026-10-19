@@ -66,6 +66,7 @@ DEVELOPMENT_SESSION_ENVIRONMENT_NAMES = (
     "CURSOR_AGENT",
     # 委譲先セッションの標識。process-loopが委譲先へ渡す環境を検証するテストは、実行元に標識が無いことを前提とする。
     "AGENT_TOOLKIT_DELEGATED_SESSION",
+    "AGENT_TOOLKIT_DELEGATED_LAUNCH_KIND",
     "AGENT_TOOLKIT_OWNER_SESSION",
     "AGENT_TOOLKIT_STATUS_HOST_SESSION",
     # process-loop起動セッションの標識。UserPromptSubmitの固定sessionTitleを決める入力であり、

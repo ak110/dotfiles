@@ -31,6 +31,7 @@ lazy from agent_toolkit._common.shell_tokens import ATK_SHELL_TOOLS, is_atk_comm
 lazy from agent_toolkit._git import command as git_command
 lazy from agent_toolkit._git import worktrees as git_worktrees
 lazy from agent_toolkit._hooks import agent_id, agents_server_observations
+lazy from agent_toolkit._hooks import document_reads as _document_reads
 lazy from agent_toolkit._hooks import tool_input as _hook_tool_input
 lazy from agent_toolkit._hooks.host import is_codex_payload
 lazy from agent_toolkit._hooks.pretooluse.operation_skills import written_paths
@@ -55,9 +56,6 @@ _UNRESOLVED_REPOSITORY_FIX = (
 class _UnresolvedRepositoryError(ValueError):
     """所属不明の作業には、省略の再申請と異なる終了操作を案内する。"""
 
-
-_READ_PROGRAMS = frozenset({"cat", "sed", "head", "nl", "less", "more", "bat", "type", "get-content", "gc"})
-"""Codexが`SKILL.md`を表示する読取コマンド。検索・抽出のコマンドは本文全体を返さないため含めない。"""
 
 _GIT_VALUE_OPTIONS = frozenset(
     {
@@ -218,10 +216,9 @@ def published_git_operations(command: str) -> list[str]:
     return operations
 
 
-def _bash_operations(command: str) -> tuple[list[str], list[str]]:
-    """Bashのコマンドから、WI・計画を保存する操作と`SKILL.md`の読取対象のスキル名を返す。"""
+def _saved_operations(command: str) -> list[str]:
+    """Bashのコマンドから、WI・計画を保存する操作を返す。"""
     saved: list[str] = []
-    read_skills: list[str] = []
     for segment in extract_execution_segments(command):
         if not segment.resolved or not segment.tokens:
             continue
@@ -237,33 +234,21 @@ def _bash_operations(command: str) -> tuple[list[str], list[str]]:
                 saved.append("WIの保存")
             elif tokens[1:3] == ["run-script", "plan-create"]:
                 saved.append("計画の保存")
-            elif tokens[1:2] == ["read-file"]:
-                read_skills.extend(_skill_paths(tokens[2:]))
         elif name == "create_plan_files.py":
             saved.append("計画の保存")
-        elif name.lower().removesuffix(".exe") in _READ_PROGRAMS:
-            read_skills.extend(_skill_paths(tokens[1:]))
-    return saved, read_skills
+    return saved
 
 
-def _skill_paths(arguments: list[str]) -> list[str]:
-    """引数のうち、起動証拠と成果作業の対象スキルの`SKILL.md`を指すパスのスキル名を返す。"""
-    names = []
-    for argument in arguments:
-        parts = pathlib.PurePosixPath(argument.replace("\\", "/")).parts
-        if (
-            len(parts) >= 3
-            and parts[-1] == "SKILL.md"
-            and parts[-3] == "skills"
-            and parts[-2] in {COMPLETION_REPORT, *TARGET_SKILLS}
-        ):
-            names.append(parts[-2])
-    return names
-
-
-def _read_succeeded(skill: str, text: str | None) -> bool:
-    """読取の結果が、そのスキルの`SKILL.md`の本文を返したかを返す。パスの文字列だけを根拠にしない。"""
-    return text is not None and f"name: {skill}" in _returned_text(text)
+# 読取の`tool_response`の形とStopの出力契約の監査記録は`docs/development/audit-records.md`の
+# 「agent-toolkit/agent_toolkit/_hooks/termination_evidence.py：終了工程の証拠のStop判定：2026年10月3日」にある。
+# 読取が本文を返したかの判定は`document_reads.py`が持つ。
+def _read_skills(command: str) -> list[str]:
+    """Bashのコマンドが読む、起動証拠と成果作業の対象スキルの`SKILL.md`のスキル名を返す。範囲指定の読取も含める。"""
+    return [
+        read.skill
+        for read in _document_reads.bash_document_reads(command)
+        if read.relative_path == "SKILL.md" and read.skill in {COMPLETION_REPORT, *TARGET_SKILLS}
+    ]
 
 
 def _invocations(payload: dict[str, Any], *, after: bool, failed: bool) -> list[dict[str, Any]]:
@@ -319,12 +304,11 @@ def _invocations(payload: dict[str, Any], *, after: bool, failed: bool) -> list[
     if tool_name in ATK_SHELL_TOOLS and isinstance(command, str):
         for invocation, current in shell_cwd.bash_invocation_cwds(command, cwd if isinstance(cwd, str) else ""):
             single = shlex.join(invocation.segment.tokens)
-            saved, read_skills = _bash_operations(single)
-            item_labels = [*saved, *([] if invocation.background else published_git_operations(single))]
+            item_labels = [*_saved_operations(single), *([] if invocation.background else published_git_operations(single))]
             if codex:
-                text = _response_text(payload.get("tool_response"))
-                for skill in dict.fromkeys(read_skills):
-                    if not _read_succeeded(skill, text):
+                text = _document_reads.response_text(payload.get("tool_response"))
+                for skill in dict.fromkeys(_read_skills(single)):
+                    if not _document_reads.body_returned(skill, "SKILL.md", text):
                         continue
                     if skill == COMPLETION_REPORT:
                         records.append({"kind": "completion"})
@@ -417,39 +401,6 @@ def unscoped_self_edits(payload: dict[str, Any], work: dict[str, Any]) -> list[s
             continue
         changed.extend(str(pathlib.Path(repository) / path) for path in current)
     return changed
-
-
-# 両ホストのPostToolUseの`tool_response`の形（CodexのBashでは終了コードを含まない出力文字列）と、
-# Stopの出力契約を公式Hooks仕様で確かめた監査記録は`docs/development/audit-records.md`の
-# 「agent-toolkit/agent_toolkit/_hooks/termination_evidence.py：終了工程の証拠のStop判定：2026年10月3日」にある。
-def _response_text(response: object) -> str | None:
-    if isinstance(response, str):
-        try:
-            decoded = json.loads(response)
-        except json.JSONDecodeError, ValueError:
-            return response
-        if isinstance(decoded, dict):
-            return _response_text(decoded) or response
-        return response
-    if isinstance(response, dict):
-        for key in ("stdout", "output", "text"):
-            value = response.get(key)
-            if isinstance(value, str):
-                return value
-    return None
-
-
-def _returned_text(text: str) -> str:
-    # atkが出力を保存先へ書いた場合は保存先の全量を読み、欠落したpreviewを読取結果の代わりにしない。
-    paths = [line.removeprefix("保存先: ").strip() for line in text.splitlines() if line.startswith("保存先: ")]
-    if len(paths) == 1:
-        path = pathlib.Path(paths[0])
-        if path.is_absolute():
-            try:
-                return path.read_text(encoding="utf-8")
-            except OSError, UnicodeError:
-                return ""
-    return text
 
 
 def observe_user(payload_text: str) -> None:

@@ -1,6 +1,6 @@
 r"""Claude Code plugin agent-toolkit: PostToolUse セッション状態の記録とplan file書式の判定。
 
-Bash / Write / Edit / MultiEdit / apply_patch / Skill / Agent / Task / AskUserQuestion / agents_server MCPの実行後に
+Bash / Write / Edit / MultiEdit / apply_patch / Read / Skill / Agent / Task / AskUserQuestion / agents_server MCPの実行後に
 イベントを検出し、セッション状態ファイルに記録する。
 PreToolUse、UserPromptSubmitおよびStopフックが参照して判定に使う。
 本モジュールは実行後の観測と警告だけを行い、操作を遮断しない。
@@ -18,7 +18,8 @@ Codexから届く正規化済みの入力も同じ操作記録を使う。
 5. exit-session起動検知による`autonomous_exit_invoked`の記録と
    `process_wi_skill_invoked`のリセット (Skill)、
    `agent-toolkit:user-confirmation-and-report`起動による`user_confirmation_skill_pending`の解除 (Skill)、
-   操作を起動の契機とするスキルの起動による`operation_skill_delivered_agents`の記録 (Skill)
+   操作を起動の契機とするスキルの起動による`operation_skill_delivered_agents`の記録 (Skill)、
+   同じスキルの必須資料を全文読んだ観測による同じ記録 (Read、CodexのBash)
 6. 現在の計画ファイルパス記録 (Write / Edit / MultiEdit / apply_patch、plan file判定時)
    （Function hooksの命名が計画名の解決に使用）
 7. Bashの背景実行、MCP呼び出しの移行通知およびAgent・Taskの背景起動が返した識別子を、
@@ -35,6 +36,7 @@ Codexから届く正規化済みの入力も同じ操作記録を使う。
 """
 
 import json
+import os
 import re
 import sys
 
@@ -44,6 +46,7 @@ lazy import shlex
 from agent_toolkit._hooks.notice import _WARN_TAG, set_warning_session_id
 from agent_toolkit._hooks.notice import formatter as _notice_formatter
 lazy from agent_toolkit._atk import run_script as _run_script
+lazy from agent_toolkit._common import delegated_session as _delegated_session
 lazy from agent_toolkit._common import plugin_environment
 lazy from agent_toolkit._common.session_state import read_state, update_state
 lazy from agent_toolkit._common.shell_segments import ExecutionSegment, extract_execution_segments
@@ -51,12 +54,13 @@ lazy from agent_toolkit._common.shell_tokens import ATK_SHELL_TOOLS, is_agents_e
 lazy from agent_toolkit._common.task_stop_state import consume_completion, target_ids
 lazy from agent_toolkit._hooks import agents_server_observations as _agents_server_observations
 lazy from agent_toolkit._hooks import background_tasks as _background_tasks
+lazy from agent_toolkit._hooks import document_reads as _document_reads
 lazy from agent_toolkit._hooks import persisted_output as _persisted_output
 lazy from agent_toolkit._hooks import plugin_resources as _plugin_resources
 lazy from agent_toolkit._hooks import termination_evidence
 lazy from agent_toolkit._hooks import tool_input as _hook_tool_input
 lazy from agent_toolkit._hooks import uwi_completion as _uwi_completion
-lazy from agent_toolkit._hooks.agent_id import is_main_agent_context, resolve_hook_agent_id
+lazy from agent_toolkit._hooks.agent_id import MAIN_AGENT_ID, is_main_agent_context, resolve_hook_agent_id
 lazy from agent_toolkit._hooks.host import is_codex_payload
 lazy from agent_toolkit._hooks.pretooluse import operation_skills as _operation_skills
 lazy from agent_toolkit._hooks.pretooluse.agent_checks import _PLAN_MODE_SKILL_NAMES
@@ -461,6 +465,32 @@ def _plan_file_check_notice(file_path: str, cwd: str) -> str:
     )
 
 
+def _observe_document_reads(payload: dict, session_id: str, tool_name: str, tool_input: dict) -> None:
+    """操作を起動の契機とするスキルの必須資料を全文読んだ観測を、主体の取得として記録する。
+
+    Claude CodeのReadは参照資料と、Skillを使えない場合があるサブエージェントの`SKILL.md`を対象にする。
+    メイン会話とClaude委譲先の`SKILL.md`はSkill起動を取得手段とするため、Readでは記録しない。
+    CodexはBashの読取が資料の本文を返したことを対象にする。軽量委譲先はスキルを使わない前提のため記録しない。
+    """
+    if _delegated_session.is_lightweight_delegated(os.environ):
+        return
+    agent = resolve_hook_agent_id(payload)
+    if is_codex_payload(payload):
+        command = tool_input.get("command")
+        if tool_name not in ATK_SHELL_TOOLS or not isinstance(command, str):
+            return
+        text = _document_reads.response_text(payload.get("tool_response"))
+        for read in _document_reads.bash_document_reads(command):
+            if _document_reads.body_returned(read.skill, read.relative_path, text):
+                _operation_skills.record_document_read(session_id, read, agent)
+        return
+    if tool_name != "Read":
+        return
+    read = _document_reads.read_tool_document(tool_input, payload.get("tool_response"))
+    if read is not None and (read.relative_path != _operation_skills.SKILL_DOCUMENT or agent != MAIN_AGENT_ID):
+        _operation_skills.record_document_read(session_id, read, agent)
+
+
 def _observe_bash_tool(payload: dict, session_id: str, tool_input: dict) -> None:
     """成功したBashの応答から、バックグラウンドタスクの所有、`atk agents wait`の観測、終了CLIと計画ファイル作成を記録する。"""
     command = tool_input.get("command")
@@ -556,7 +586,10 @@ def _observe_tool(payload: dict, session_id: str, tool_name: str, tool_input: di
         consume_completion(session_id, target_ids(tool_input))
     elif tool_name in ("Write", "Edit", "MultiEdit", _hook_tool_input.CODEX_APPLY_PATCH_TOOL):
         notices.extend(_observe_edit_tool(session_id, tool_name, tool_input, cwd))
+    elif tool_name == "Read":
+        _observe_document_reads(payload, session_id, tool_name, tool_input)
     elif tool_name in ATK_SHELL_TOOLS:
+        _observe_document_reads(payload, session_id, tool_name, tool_input)
         _observe_bash_tool(payload, session_id, tool_input)
         if tool_name == "Bash" and (completion_notice := _completion_report_notice(payload, tool_input)) is not None:
             notices.append(completion_notice)

@@ -531,6 +531,7 @@ _LAUNCHER_ENVIRONMENT_NAMES = (
     "CLAUDE_CODE_SESSION_ID",
     "AGENT_TOOLKIT_OWNER_SESSION",
     "AGENT_TOOLKIT_DELEGATED_SESSION",
+    "AGENT_TOOLKIT_DELEGATED_LAUNCH_KIND",
     "AGENT_TOOLKIT_STATUS_HOST_SESSION",
     "CODEX_THREAD_ID",
 )
@@ -883,7 +884,7 @@ def _pending_codex_manager[PendingCodexClient: (HoldingTurnStartClient, Naturall
     backend = codex_backend.AppServerManager(manager.sessions, manager._condition)
     client = client_type(backend)
 
-    async def ensure_client() -> PendingCodexClient:
+    async def ensure_client(*_args: Any, **_kwargs: Any) -> PendingCodexClient:
         return client
 
     monkeypatch.setattr(backend, "_ensure_client", ensure_client)

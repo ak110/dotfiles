@@ -12,13 +12,18 @@ import pathlib
 _PLUGIN_ROOT = pathlib.Path(__file__).resolve().parents[2]
 
 
+def skill_document_path(skill_name: str, relative_path: str) -> pathlib.Path:
+    """スキル配下の資料の、稼働版のplugin rootから解決した絶対パスを返す。実在は確かめない。"""
+    return _PLUGIN_ROOT / "skills" / skill_name / relative_path
+
+
 def skill_reference(skill_name: str, relative_path: str) -> str:
     """スキル配下の資料を、スキル名と絶対パスの併記で返す。
 
     plugin rootから解決した実体が存在しない場合はスキル名と相対パスだけを返し、
     配布形態が異なる実行環境でも従来の本文へ戻る。
     """
-    resolved = _PLUGIN_ROOT / "skills" / skill_name / relative_path
+    resolved = skill_document_path(skill_name, relative_path)
     if not resolved.exists():
         return f"`agent-toolkit:{skill_name}`の`{relative_path}`"
     return f"`agent-toolkit:{skill_name}`の`{relative_path}`（`{resolved}`）"

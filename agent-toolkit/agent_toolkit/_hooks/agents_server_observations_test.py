@@ -53,6 +53,12 @@ def _hook(hook: Callable[[str], int], payload: dict[str, Any]) -> int:
         return hook(json.dumps(payload, ensure_ascii=False))
 
 
+def _acquire_delegation(payload: dict[str, Any]) -> None:
+    """委譲操作の前に求められる`agent-toolkit:delegation`の取得を、Skill起動のPostToolUseとして観測させる。"""
+    skill = {"session_id": payload["session_id"], "tool_name": "Skill", "tool_input": {"skill": "agent-toolkit:delegation"}}
+    assert _hook(posttooluse.main, {"hook_event_name": "PostToolUse", **skill}) == 0
+
+
 @pytest.mark.asyncio
 async def test_public_start_after_projection_failure_reaches_hook_records_and_send_message(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
@@ -92,6 +98,7 @@ async def test_public_start_after_projection_failure_reaches_hook_records_and_se
             "tool_input": start_input,
         }
         assert _hook(pretooluse.main, payload) == 2
+        _acquire_delegation(payload)
         assert _hook(pretooluse.main, payload) == 0
         assert _hook(posttooluse.main, {**payload, "tool_response": {"structuredContent": started}}) == 0
 
@@ -288,6 +295,7 @@ async def test_public_handoff_start_registers_successor_for_wait_and_followup(
             "tool_input": {"session_id": successor, "prompt": "残工程を続ける"},
         }
         assert _hook(pretooluse.main, send) == 2
+        _acquire_delegation(send)
         assert _hook(pretooluse.main, send) == 0
         assert (await mcp_tools.send_message(successor, "残工程を続ける"))["delivery"] == "steered"
         assert backend.send_calls == 1

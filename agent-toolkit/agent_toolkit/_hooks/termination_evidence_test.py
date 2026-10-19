@@ -1133,3 +1133,31 @@ def test_stop_review_notice_is_a_fact_not_completion_evidence():
     """通知の記録を持つだけでは成果作業の起動不足を免除しない。"""
     work = {"deliverables": ["commit"], "stop_review_notice": {"input_id": "request"}}
     assert termination_evidence.missing_completion(work) == ["commit"]
+
+
+@pytest.mark.parametrize(
+    ("command", "response", "accepted"),
+    [
+        ("cat /plugin/skills/{skill}/SKILL.md", "---\nname: {skill}\n---\n", True),
+        ("atk read-file -- /plugin/skills/{skill}/SKILL.md", "---\nname: {skill}\n---\n", True),
+        ("cat /plugin/skills/{skill}/SKILL.md", "cat: /plugin/skills/{skill}/SKILL.md: No such file", False),
+        ("echo /plugin/skills/{skill}/SKILL.md", "/plugin/skills/{skill}/SKILL.md", False),
+        ("grep -n name /plugin/skills/{skill}/SKILL.md", "2:name: {skill}", False),
+    ],
+    ids=["cat", "atk-read-file", "failed", "path-only", "grep"],
+)
+def test_termination_evidence_and_operation_skills_share_read_judgment(
+    tmp_path: pathlib.Path, command: str, response: str, *, accepted: bool
+) -> None:
+    """completion-reportの起動証拠と操作を起動の契機とするスキルの取得の記録は、同じ読取を同じく受理・拒否する。"""
+    supply_commit(tmp_path, codex=True)
+    skill = "completion-report"
+    _tool(tmp_path, "read", "Bash", {"command": command.format(skill=skill)}, response.format(skill=skill), codex=True)
+    assert termination_order_advisor.evaluate(stop_payload(tmp_path, WORK_COMPLETE, codex=True))[0] == "block"
+    second = termination_order_advisor.evaluate(stop_payload(tmp_path, WORK_COMPLETE, codex=True))
+    assert (second == ("approve", "")) is accepted
+
+    skill = "search"
+    _tool(tmp_path, "search", "Bash", {"command": command.format(skill=skill)}, response.format(skill=skill), codex=True)
+    recorded = session_state.read_state("evidence-test").get("operation_skill_delivered_agents") or {}
+    assert ("agent-toolkit:search" in recorded) is accepted
