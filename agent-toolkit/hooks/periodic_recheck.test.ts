@@ -215,6 +215,8 @@ test("startが拒否された呼び出しでは装着しない", async ($, on) =
 
 test("他のツールの呼び出しには関与しない", async ($, on) => {
   const calls: string[] = [];
+  // 応答言語の判定が本文を取得できると、判定を経ずに後続へ渡る。
+  on("session.messages", () => ({ value: [] }));
   on("tool.call", { tool: "mcp__plugin_agent-toolkit_agents_server__list" }, () => ({ result: "[]" }));
   on("tool.call", { tool: "CronList" }, () => {
     calls.push("CronList");

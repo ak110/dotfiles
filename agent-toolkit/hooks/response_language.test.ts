@@ -79,66 +79,112 @@ for (const outcome of ["pass", "skip"]) {
   });
 }
 
-for (const failed of ["warn", "process-failure"]) {
-  test(`${failed}の後は同じ本文も再判定し、以前の通過本文へ戻っても再判定する`, async ($, on) => {
-    let text = JAPANESE;
-    let calls = 0;
-    on("session.id", () => ({ value: "language-test" }));
-    on("session.messages", () => ({ value: [{ role: "assistant", text, toolUses: [] }] }));
-    on("process.run", () => {
-      calls++;
-      const rejected = text === ENGLISH;
-      return { value: { exitCode: rejected && failed === "process-failure" ? 1 : 0, stdout: JSON.stringify({ outcome: rejected ? "warn" : "pass", body: rejected ? "英語主体の本文。" : null, fix: "日本語で書き直す。" }), stderr: "", isStdoutTruncated: false, isStderrTruncated: false } };
-    });
-    on("tool.call", { tool: "Bash" }, () => ({ result: "実行済み" }));
-    expect((await $.tool.call({ tool: "Bash", command: "ls" })).result).toBe("実行済み");
-    text = ENGLISH;
-    expect((await $.tool.call({ tool: "Bash", command: "ls" })).deny).toBeDefined();
-    expect((await $.tool.call({ tool: "Bash", command: "ls" })).deny).toBeDefined();
-    text = JAPANESE;
-    expect((await $.tool.call({ tool: "Bash", command: "ls" })).result).toBe("実行済み");
-    expect(calls).toBe(4);
-    expect((await $.tool.call({ tool: "Bash", command: "ls" })).result).toBe("実行済み");
-    expect(calls).toBe(4);
-  });
-}
-
-test("本文取得失敗の後は同じ通過本文も再判定する", async ($, on) => {
-  let retrievalFails = false;
+test("warnの後は同じ本文も再判定し、以前の通過本文へ戻っても再判定する", async ($, on) => {
+  let text = JAPANESE;
   let calls = 0;
   on("session.id", () => ({ value: "language-test" }));
-  on("session.messages", () => {
-    if (retrievalFails) throw new Error("本文取得の失敗");
-    return { value: [{ role: "assistant", text: JAPANESE, toolUses: [] }] };
-  });
+  on("session.messages", () => ({ value: [{ role: "assistant", text, toolUses: [] }] }));
   on("process.run", () => {
     calls++;
-    return { value: { exitCode: 0, stdout: JSON.stringify({ outcome: "pass", body: null, fix: "" }), stderr: "", isStdoutTruncated: false, isStderrTruncated: false } };
+    const rejected = text === ENGLISH;
+    return { value: { exitCode: 0, stdout: JSON.stringify({ outcome: rejected ? "warn" : "pass", body: rejected ? "英語主体の本文。" : null, fix: "日本語で書き直す。" }), stderr: "", isStdoutTruncated: false, isStderrTruncated: false } };
   });
   on("tool.call", { tool: "Bash" }, () => ({ result: "実行済み" }));
   expect((await $.tool.call({ tool: "Bash", command: "ls" })).result).toBe("実行済み");
-  retrievalFails = true;
-  const denied = (await $.tool.call({ tool: "Bash", command: "ls" })).deny;
-  expect(denied).toMatch(BLOCK_ENVELOPE);
-  expect(denied).toContain("同じ呼び出しを繰り返さず");
-  retrievalFails = false;
+  text = ENGLISH;
+  expect((await $.tool.call({ tool: "Bash", command: "ls" })).deny).toBeDefined();
+  expect((await $.tool.call({ tool: "Bash", command: "ls" })).deny).toBeDefined();
+  text = JAPANESE;
   expect((await $.tool.call({ tool: "Bash", command: "ls" })).result).toBe("実行済み");
-  expect(calls).toBe(2);
+  expect(calls).toBe(4);
+  expect((await $.tool.call({ tool: "Bash", command: "ls" })).result).toBe("実行済み");
+  expect(calls).toBe(4);
 });
 
-for (const [name, response, expected] of [
-  ["非0終了", { exitCode: 7, stdout: "", stderr: "", isStdoutTruncated: false, isStderrTruncated: false }, "終了コード 7"],
-  ["JSON破損", { exitCode: 0, stdout: "broken-json", stderr: "", isStdoutTruncated: false, isStderrTruncated: false }, "JSONとして不正"],
-] as const) {
-  test(`実行前判定の${name}は機械生成の遮断として診断と次の操作を返す`, async ($, on) => {
-    on("session.id", () => ({ value: "language-test" }));
-    on("session.messages", () => ({ value: [{ role: "assistant", text: JAPANESE, toolUses: [] }] }));
-    on("process.run", () => ({ value: response }));
-    on("tool.call", { tool: "Bash" }, () => ({ result: "実行済み" }));
-    const denied = (await $.tool.call({ tool: "Bash", command: "ls" })).deny;
-    expect(denied).toMatch(BLOCK_ENVELOPE);
-    expect(denied).toContain(expected);
-    expect(denied).toContain("同じ呼び出しを繰り返さず");
-    expect(denied).toContain("ユーザーへ報告する");
+// 判定基盤の障害は日本語へ書き直しても解消しないため、拒否すると後続の操作も報告も止まる。
+// 障害の形（入力取得・プロセス実行・応答解析）ごとに、元の操作が1回だけ実行され、診断が同じ会話へ1回だけ届くことを確かめる。
+const OK_RESPONSE = { exitCode: 0, stdout: JSON.stringify({ outcome: "pass", body: null, fix: "" }), stderr: "", isStdoutTruncated: false, isStderrTruncated: false };
+const SECRET_STDERR = "判定プロセスの標準エラー";
+const UNAVAILABLE: [string, { messages?: true; sessionId?: true; run?: true; response?: typeof OK_RESPONSE }, string][] = [
+  ["本文取得の例外", { messages: true }, "応答本文の取得で例外が発生"],
+  ["セッションID取得の例外", { sessionId: true }, "セッションIDの取得で例外が発生"],
+  ["process.runの例外", { run: true }, "process.runで例外が発生"],
+  ["非0終了", { response: { ...OK_RESPONSE, exitCode: 7, stdout: "", stderr: SECRET_STDERR } }, "終了コード 7"],
+  ["標準出力の切り詰め", { response: { ...OK_RESPONSE, isStdoutTruncated: true } }, "標準出力の切り詰め true"],
+  ["JSON破損", { response: { ...OK_RESPONSE, stdout: "broken-json" } }, "JSONとして不正"],
+  ["JSON契約外", { response: { ...OK_RESPONSE, stdout: "{}" } }, "outcome・body・fixが契約外"],
+];
+
+for (const [name, failure, expected] of UNAVAILABLE) {
+  test(`実行前判定の${name}では後続の操作を続け、診断を同じ会話へ1回だけ届ける`, async ($, on) => {
+    let failing = true;
+    let executed = 0;
+    on("session.id", () => {
+      if (failing && failure.sessionId) throw new Error("セッションIDの取得の失敗");
+      return { value: "language-test" };
+    });
+    on("session.messages", () => {
+      if (failing && failure.messages) throw new Error("本文取得の失敗");
+      return { value: [{ role: "assistant", text: JAPANESE, toolUses: [] }] };
+    });
+    on("process.run", () => {
+      if (failing && failure.run) throw new Error("判定処理の障害");
+      return { value: failing && failure.response ? failure.response : OK_RESPONSE };
+    });
+    on("tool.call", { tool: "Bash" }, () => { executed++; return { result: "実行済み" }; });
+    on("tool.call", { tool: "Read" }, () => ({ result: "読込済み" }));
+    const first = await $.tool.call({ tool: "Bash", command: "ls" });
+    expect(first.deny).toBeUndefined();
+    expect(first.result).toBe("実行済み");
+    expect(first.context?.length).toBe(1);
+    const notice = first.context?.[0] ?? "";
+    expect(notice).toMatch(/^<atk-auto source="response-language" kind="warn">\n[\s\S]*\n<\/atk-auto>$/);
+    expect(notice).toContain(expected);
+    expect(notice).toContain("ユーザーへ報告する");
+    expect(notice).not.toContain(JAPANESE);
+    expect(notice).not.toContain(SECRET_STDERR);
+    expect(notice).not.toContain("broken-json");
+    const second = await $.tool.call({ tool: "Read", file_path: "/repo/a.txt" });
+    expect(second.result).toBe("読込済み");
+    // 会話を識別できない障害では抑止しない。識別できる障害では同じ診断を重ねない。
+    expect(second.context ?? []).toEqual(failure.messages || failure.sessionId ? [notice] : []);
+    expect(executed).toBe(1);
+    failing = false;
+    const recovered = await $.tool.call({ tool: "Bash", command: "ls" });
+    expect(recovered.result).toBe("実行済み");
+    expect(recovered.context ?? []).toEqual([]);
+    expect(executed).toBe(2);
   });
 }
+
+test("判定不能が解消して判定に成功した後の同じ障害は再び診断を届ける", async ($, on) => {
+  let failing = true;
+  let text = JAPANESE;
+  on("session.id", () => ({ value: "language-test" }));
+  on("session.messages", () => ({ value: [{ role: "assistant", text, toolUses: [] }] }));
+  on("process.run", () => ({ value: failing ? { ...OK_RESPONSE, exitCode: 7 } : OK_RESPONSE }));
+  on("tool.call", { tool: "Bash" }, () => ({ result: "実行済み" }));
+  expect((await $.tool.call({ tool: "Bash", command: "ls" })).context?.length).toBe(1);
+  failing = false;
+  expect((await $.tool.call({ tool: "Bash", command: "ls" })).context ?? []).toEqual([]);
+  failing = true;
+  text = "別の本文で次の操作を進める。";
+  expect((await $.tool.call({ tool: "Bash", command: "ls" })).context?.length).toBe(1);
+});
+
+test("判定不能の後の英語本文は正常な判定で書き直しを求める", async ($, on) => {
+  let failing = true;
+  let text = JAPANESE;
+  on("session.id", () => ({ value: "language-test" }));
+  on("session.messages", () => ({ value: [{ role: "assistant", text, toolUses: [] }] }));
+  on("process.run", () => ({ value: failing ? { ...OK_RESPONSE, exitCode: 7 } : { ...OK_RESPONSE, stdout: JSON.stringify({ outcome: text === ENGLISH ? "warn" : "pass", body: "英語主体の本文。", fix: "日本語で書き直す。" }) } }));
+  on("tool.call", { tool: "Bash" }, () => ({ result: "実行済み" }));
+  expect((await $.tool.call({ tool: "Bash", command: "ls" })).result).toBe("実行済み");
+  failing = false;
+  text = ENGLISH;
+  const denied = await $.tool.call({ tool: "Bash", command: "ls" });
+  expect(denied.deny).toMatch(BLOCK_ENVELOPE);
+  expect(denied.deny).toContain("日本語で書き直す");
+  text = JAPANESE;
+  expect((await $.tool.call({ tool: "Bash", command: "ls" })).result).toBe("実行済み");
+});
