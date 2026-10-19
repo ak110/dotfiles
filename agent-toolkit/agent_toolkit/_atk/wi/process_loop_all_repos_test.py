@@ -873,7 +873,7 @@ def test_finished_delegate_cleans_lane_resources(tmp_path: pathlib.Path, monkeyp
 def test_unfinished_or_protected_lanes_are_retained(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], condition: str
 ) -> None:
-    """続行中・停止未確認の間は回収せず、成果保全条件に当たる資源は理由と再回収の操作を残して保持する。"""
+    """続行中・停止未確認の間は回収せず、`lane.py`の`_eligible`の保持条件に当たる資源は理由と再回収の操作を残して保持する。"""
     repositories = _lane_repositories(tmp_path, monkeypatch)
     recorded = _record_log(monkeypatch)
     notes = tmp_path / "notes"

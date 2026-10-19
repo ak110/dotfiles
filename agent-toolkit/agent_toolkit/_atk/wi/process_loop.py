@@ -22,6 +22,7 @@ from agent_toolkit._atk.wi import process_loop_worktree as _pl_worktree
 from agent_toolkit._atk.wi import readiness as _wi_readiness
 from agent_toolkit._atk.wi.repo import resolve_local_worktree, resolve_repo_id
 from agent_toolkit._common import console_title as _console_title
+from agent_toolkit._common import next_action as _next_action
 
 
 def cmd_process_loop(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
@@ -144,8 +145,9 @@ def cmd_process_loop(args: argparse.Namespace, private_notes: pathlib.Path) -> N
                     _pl_gate.record_no_progress(target_repo_id, start, end)
             except (OSError, ValueError) as error:
                 # 記録できない場合は次の反復を従来どおり起動させ、所有の解放と再起動判断を止めない。
-                _process_loop_log.append("no_progress_record_failed", detail=str(error))
-                print(f"無進捗記録を保存できませんでした: {error}", file=sys.stderr)
+                next_action = _pl_gate.record_failure_next_action()
+                _process_loop_log.append("no_progress_record_failed", detail=str(error), next_action=next_action)
+                _next_action.report(f"無進捗記録を保存できなかった: {error}", next_action=next_action)
         finish_session_ownership(completed)
 
     with _console_title.console_title("atk wi process-loop"):

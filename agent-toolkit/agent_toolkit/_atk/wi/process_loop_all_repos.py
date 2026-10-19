@@ -24,6 +24,7 @@ from agent_toolkit._atk.wi import process_loop_ownership as _ownership
 from agent_toolkit._atk.wi import process_loop_session as _session
 from agent_toolkit._atk.wi import process_loop_update as _update
 from agent_toolkit._atk.wi import process_loop_watch as _watch
+from agent_toolkit._common import next_action as _next_action
 from agent_toolkit._common.atomic_file import atomic_write
 from agent_toolkit._git import command as _git_command
 
@@ -122,7 +123,7 @@ def _finish_repository(ownership: _ownership.Ownership, *, completed: bool) -> N
     """続行の予定が無くなった担当の所有を解放し、その担当のレーン所有sessionの資源を回収する。
 
     停止を確認できない担当と続行を配送する担当はここへ到達させない。回収の可否は`lane.cleanup_session`の
-    成果保全条件が決め、未統合の資源は次の反復の再開（同じレーン所有session）へ残る。
+    `_eligible`が判定する保持条件（未統合、使用中、未commitの変更など）が決め、未統合の資源は次の反復の再開（同じレーン所有session）へ残る。
     """
     _ownership.release(ownership, completed=completed)
     _session.cleanup_lane_session(ownership.lane_session_id, target_repo=ownership.repo_id)
@@ -236,8 +237,9 @@ def _record_no_progress(snapshot: _listing.RepositorySnapshot, start: _gate.Laun
         )
     except (OSError, ValueError) as error:
         # 記録できない場合は次の反復を従来どおり起動させ、他担当の終了処理を続ける。
-        _log.append("no_progress_record_failed", target_repo=repo_id, detail=str(error))
-        print(f"{repo_id}: 無進捗記録を保存できませんでした: {error}", flush=True)
+        next_action = _gate.record_failure_next_action()
+        _log.append("no_progress_record_failed", target_repo=repo_id, detail=str(error), next_action=next_action)
+        _next_action.report(f"{repo_id}: 無進捗記録を保存できなかった: {error}", next_action=next_action, stream=sys.stdout)
 
 
 async def run_repository_delegates(

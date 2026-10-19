@@ -113,6 +113,17 @@ def record_directory() -> pathlib.Path:
     return _state_paths.state_dir() / "process-loop-no-progress"
 
 
+def record_failure_next_action() -> str:
+    """無進捗記録を保存できなかった場合の次の操作を返す。
+
+    保存できない間は見送りが働かず、進捗なしで終わった担当も同じ起動入力のまま次の反復で起動する。
+    """
+    return (
+        f"{record_directory()}の書込権限と空き容量を確かめる"
+        "（解消するまでは、進捗なしで終わった担当も同じ起動入力のまま次の反復で起動する）"
+    )
+
+
 def _path(repo_id: str) -> pathlib.Path:
     digest = hashlib.sha256(_remote.normalize_remote_url(repo_id).encode("utf-8")).hexdigest()
     return record_directory() / f"{digest}.json"
