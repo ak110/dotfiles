@@ -25,6 +25,9 @@ type Options = {
   createError?: string;
   createdId?: string;
   deleteUnavailable?: boolean;
+  listError?: string;
+  listThrows?: boolean;
+  sessionId?: string;
 };
 
 type Recorded = { calls: string[]; argv: (readonly string[])[]; created: { cron: string; prompt: string; recurring?: boolean }[]; files: Map<string, string> };
@@ -32,7 +35,8 @@ type Recorded = { calls: string[]; argv: (readonly string[])[]; created: { cron:
 function engine(on: On, options: Options): Recorded {
   const recorded: Recorded = { calls: [], argv: [], created: [], files: new Map() };
   const jobs = [...(options.jobs ?? [])];
-  on("session.id", () => ({ value: "life-1" }));
+  // 試験の途中で書き換えた値を各呼び出しが読むよう、optionsを呼び出しの時点で参照する。
+  on("session.id", () => ({ value: options.sessionId ?? "life-1" }));
   on("session.messages", () => ({ value: [] }));
   on("env.get", (_$, e) => ({ value: e.name === "HOME" ? "/home/tester" : undefined }));
   on("fs.read", (_$, e) => ({ value: recorded.files.get(e.path) ?? "consumed" }));
@@ -50,6 +54,8 @@ function engine(on: On, options: Options): Recorded {
   });
   on("tool.call", { tool: "CronList" }, () => {
     recorded.calls.push("CronList");
+    if (options.listThrows) throw new Error("No such tool available: CronList");
+    if (options.listError !== undefined) return { deny: options.listError };
     return { result: { jobs: jobs.map((job) => ({ cron: "*/30 * * * *", humanSchedule: "Every 30 minutes", ...job })) } };
   });
   on("tool.call", { tool: "CronCreate" }, (_$, e) => {
@@ -209,6 +215,8 @@ test("startが拒否された呼び出しでは装着しない", async ($, on) =
 
 test("他のツールの呼び出しには関与しない", async ($, on) => {
   const calls: string[] = [];
+  // 応答言語の判定が本文を取得できると、判定を経ずに後続へ渡る。
+  on("session.messages", () => ({ value: [] }));
   on("tool.call", { tool: "mcp__plugin_agent-toolkit_agents_server__list" }, () => ({ result: "[]" }));
   on("tool.call", { tool: "CronList" }, () => {
     calls.push("CronList");
@@ -276,4 +284,81 @@ test("modでCronDeleteの能力確認が例外になる環境ではtaskを作成
   const result = await $.tool.call(START_INPUT);
   expect(recorded.created).toEqual([]);
   expect(result.context?.[0]).toContain("CronDelete");
+});
+
+// 同じ会話へ同じ失敗を重ねて届けると、成功した`start`ごとに同じ警告が会話へ積み上がる。
+// 通知だけを省き装着の評価は毎回行うことで、許可の回復後の自動作成を保つ。
+function warnings(context: readonly string[] | undefined): string[] {
+  return (context ?? []).filter((note) => note.includes('kind="warn"'));
+}
+
+test("同じ理由の装着失敗は同じ会話で初回だけ届け、startの結果と装着の評価は毎回保つ", async ($, on) => {
+  const recorded = engine(on, { decisions: { CronCreate: "ask" } });
+  const results = [];
+  for (let index = 0; index < 3; index++) results.push(await $.tool.call(START_INPUT));
+  expect(results.map((result) => warnings(result.context).length)).toEqual([1, 0, 0]);
+  expect(results.map((result) => result.result)).toEqual([START_TEXT, START_TEXT, START_TEXT]);
+  expect(recorded.calls).toEqual(["start", "CronList", "start", "CronList", "start", "CronList"]);
+  expect(recorded.created).toEqual([]);
+});
+
+// 自動装着の失敗分岐ごとに、同じ失敗の反復を抑え、理由が変わった時点で新しい理由を届けることを確かめる。
+const FAILURES: [string, Options, string][] = [
+  ["CronListの許可判定", { decisions: { CronList: "ask" } }, "`CronList`の許可の判定が`ask`"],
+  ["CronListの拒否", { listError: "一覧の拒否" }, "一覧の拒否"],
+  ["wait-scheduleの失敗", { scheduleExitCode: 1 }, "cron式と標識付きのpromptを返さなかった"],
+  ["CronDeleteの許可判定", { decisions: { CronDelete: "ask" } }, "`CronDelete`の許可の判定が`ask`"],
+  ["CronDeleteの能力確認の例外", { deleteUnavailable: true }, "`CronDelete`の能力確認が失敗した"],
+  ["CronCreateの許可判定", { decisions: { CronCreate: "deny" } }, "`CronCreate`の許可の判定が`deny`"],
+  ["CronCreateの拒否", { createError: "作成の拒否" }, "作成の拒否"],
+  ["装着の例外", { listThrows: true }, "装着の処理が例外で終わった"],
+];
+
+for (const [name, failure, reason] of FAILURES) {
+  test(`${name}の反復は通知せず、理由が変わると新しい理由を届ける`, async ($, on) => {
+    const options: Options = { ...failure };
+    engine(on, options);
+    const first = warnings((await $.tool.call(START_INPUT)).context);
+    expect(first.length).toBe(1);
+    expect(first[0]).toContain(reason);
+    expect(warnings((await $.tool.call(START_INPUT)).context)).toEqual([]);
+    // 失敗の条件を外し、別の分岐の失敗へ切り替える。
+    for (const key of Object.keys(failure) as (keyof Options)[]) delete options[key];
+    const changed = name === "CronCreateの許可判定" ? "ask" : "deny";
+    options.decisions = { CronCreate: changed };
+    const next = warnings((await $.tool.call(START_INPUT)).context);
+    expect(next.length).toBe(1);
+    expect(next[0]).toContain(`\`CronCreate\`の許可の判定が\`${changed}\``);
+  });
+}
+
+test("許可の回復後は自動作成し、既存taskを再利用し、正常化後の新しい失敗は再び届ける", async ($, on) => {
+  const options: Options = { decisions: { CronCreate: "ask" } };
+  const recorded = engine(on, options);
+  expect(warnings((await $.tool.call(START_INPUT)).context).length).toBe(1);
+  expect(warnings((await $.tool.call(START_INPUT)).context)).toEqual([]);
+  options.decisions = {};
+  const mounted = await $.tool.call(START_INPUT);
+  expect(mounted.context?.length).toBe(1);
+  expect(mounted.context?.[0]).toContain("task ID: cron-1");
+  expect((await $.tool.call(START_INPUT)).context ?? []).toEqual([]);
+  expect(recorded.created.length).toBe(1);
+  // taskを失った後に作成の許可を再び失うと、正常化の後に生じた失敗として届ける。
+  await $.turn.complete({ answer: "", durationMs: 0, isAborted: false, turnId: "t1", reason: "answer" });
+  recorded.files.set("/home/tester/.claude/agent-toolkit-function-hooks/recheck-life-1.txt", "complete");
+  await $.turn.complete({ answer: "", durationMs: 0, isAborted: false, turnId: "t1", reason: "answer" });
+  expect(recorded.calls).toContain("CronDelete:cron-1");
+  options.decisions = { CronCreate: "ask" };
+  const failedAgain = warnings((await $.tool.call(START_INPUT)).context);
+  expect(failedAgain.length).toBe(1);
+  expect(failedAgain[0]).toContain("`CronCreate`の許可の判定が`ask`");
+});
+
+test("別の会話では同じ失敗の初回通知を届ける", async ($, on) => {
+  const options: Options = { decisions: { CronCreate: "ask" } };
+  engine(on, options);
+  expect(warnings((await $.tool.call(START_INPUT)).context).length).toBe(1);
+  expect(warnings((await $.tool.call(START_INPUT)).context)).toEqual([]);
+  options.sessionId = "life-2";
+  expect(warnings((await $.tool.call(START_INPUT)).context).length).toBe(1);
 });

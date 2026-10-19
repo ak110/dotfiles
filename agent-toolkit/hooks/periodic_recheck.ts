@@ -29,12 +29,18 @@ function notice(kind: "notice" | "warn", body: string): string {
   return automatedMessage("periodic-recheck", kind, body);
 }
 
-function notMounted(reason: string): string {
-  return notice(
-    "warn",
-    `agent-toolkitのmodは定期再確認を装着できなかった（理由: ${reason}）。` +
-      `taskの自動回収に必要な許可と公開状態を確認する。待機は${RUNTIME_REFERENCE}の完了通知と終端観測で続ける。`,
-  );
+// 装着の結果。`failed`は同じ会話へ同じ失敗の通知を重ねない判定に使う。
+type MountOutcome = { note: string; failed: boolean };
+
+function notMounted(reason: string): MountOutcome {
+  return {
+    note: notice(
+      "warn",
+      `agent-toolkitのmodは定期再確認を装着できなかった（理由: ${reason}）。` +
+        `taskの自動回収に必要な許可と公開状態を確認する。待機は${RUNTIME_REFERENCE}の完了通知と終端観測で続ける。`,
+    ),
+    failed: true,
+  };
 }
 
 export function isMarked(prompt: string): boolean {
@@ -65,9 +71,8 @@ export function parseSchedule(stdout: string): Schedule | undefined {
   return { cron: cron.trim(), prompt };
 }
 
-// 装着の結果をメインへ届ける本文を返す。サブエージェントの呼び出しと、既にtaskを持つ場合は`undefined`を返し、何も届けない。
-async function mount($: EngineInterface, agentId: string | undefined): Promise<string | undefined> {
-  if (agentId !== undefined) return undefined;
+// 装着の結果をメインへ届ける本文を返す。既にtaskを持つ場合は`undefined`を返し、何も届けない。
+async function mount($: EngineInterface): Promise<MountOutcome | undefined> {
   const listDecision = (await $.tool.check({ tool: "CronList", input: {} })).decision;
   if (listDecision !== "allow") {
     return notMounted(`\`CronList\`の許可の判定が\`${listDecision}\``);
@@ -120,28 +125,48 @@ async function mount($: EngineInterface, agentId: string | undefined): Promise<s
   const created = await $.tool.call({ tool: "CronCreate", ...input });
   if (created.deny !== undefined) return notMounted(`\`CronCreate\`が拒否された: ${created.deny}`);
   if (created.isError === true) return notMounted(`\`CronCreate\`が失敗した: ${created.text ?? "本文なし"}`);
-  return notice(
-    "notice",
-    `agent-toolkitのmodが定期再確認のtaskを作成した（task ID: ${created.result.id}、cron: ${cron}、` +
-      `request bucket: main）。全待機対象の終端と結果回収後にmodが共通promptのtaskを自動回収する。` +
-      `追加義務付きのtaskはセッション終了時に回収する。再利用とresume・compaction後の確認は${RUNTIME_REFERENCE}に従う。`,
-  );
+  return {
+    note: notice(
+      "notice",
+      `agent-toolkitのmodが定期再確認のtaskを作成した（task ID: ${created.result.id}、cron: ${cron}、` +
+        `request bucket: main）。全待機対象の終端と結果回収後にmodが共通promptのtaskを自動回収する。` +
+        `追加義務付きのtaskはセッション終了時に回収する。再利用とresume・compaction後の確認は${RUNTIME_REFERENCE}に従う。`,
+    ),
+    failed: false,
+  };
 }
 
 export function register(on: On): void {
+  // 会話ごとに、最後に届けた装着失敗の本文を持つ。装着は`start`ごとに評価し直し、同じ失敗が続く間は通知だけを省く。
+  // 既往はmodの読込ごとに初期化し、再読込後の最初の失敗は届ける。
+  const deliveredFailures = new Map<string, string>();
   // `start`の結果は変えず、装着の結果を同じ呼び出しの後にモデルが読む文脈として加える。
   // 起動が拒否または失敗した呼び出しでは待機対象が生じないため装着しない。
   on("tool.call", { tool: START_TOOL }, async ($, e, next) => {
     const result = await next(e);
     if (result.deny !== undefined || result.isError === true) return result;
-    let note: string | undefined;
+    // サブエージェントへは装着も通知もせず、メインの失敗の既往も変えない。
+    if (e.agentId !== undefined) return result;
+    let outcome: MountOutcome | undefined;
     try {
-      note = await mount($, e.agentId);
+      outcome = await mount($);
     } catch (error) {
       // `$.tool.call`は呼び出し先のツールが公開されていない場合にrejectする。
-      note = notMounted(`装着の処理が例外で終わった: ${String(error)}`);
+      outcome = notMounted(`装着の処理が例外で終わった: ${String(error)}`);
     }
-    if (note === undefined) return result;
-    return { ...result, context: [...(result.context ?? []), note] };
+    let sessionId: string | undefined;
+    try {
+      sessionId = await $.session.id();
+    } catch {
+      // 会話を識別できない場合は抑止せずに届ける。
+      sessionId = undefined;
+    }
+    if (sessionId !== undefined) {
+      if (outcome?.failed !== true) deliveredFailures.delete(sessionId);
+      else if (deliveredFailures.get(sessionId) === outcome.note) return result;
+      else deliveredFailures.set(sessionId, outcome.note);
+    }
+    if (outcome === undefined) return result;
+    return { ...result, context: [...(result.context ?? []), outcome.note] };
   }).catch(($, e, next) => next(e));
 }
