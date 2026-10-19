@@ -73,24 +73,6 @@ def _write_selection(
             decision["公開工程の規範根拠"] = [
                 {"パス": entry, "規範ファイル": "TEST_RULES.md", "節": "公開工程"} for entry in public
             ]
-        name = decision.get("WI", decision.get("awi"))
-        source = path.parent / "notes" / "processing" / str(name)
-        if source.is_file():
-            body = source.read_text(encoding="utf-8")
-            try:
-                reflected = check_selection.reflected_paths(body, path.parent / "repo")
-            except check_selection.InputError:
-                continue
-            pathless = "type: uwi" in body and not reflected
-            writes = decision.get("書込対象", decision.get("write_files", []))
-            decision.setdefault(
-                "書込範囲の理由",
-                [
-                    {"パス": entry, "理由": "検査用の限定調査で範囲を確定"}
-                    for entry in writes
-                    if pathless or entry.endswith("/") and entry not in reflected
-                ],
-            )
     if costs is None:
         lanes = {str(decision.get("lane", decision.get("レーン"))) for decision in decisions} - {"なし"}
         costs = [{"レーン": lane} for lane in sorted(lanes)]
@@ -158,13 +140,6 @@ def _dispatch(*args: str) -> int:
         ("correction-no-source", 1),
         ("correction-valid", 0),
         ("correction-tolerance", 0),
-        ("scope-missing", 1),
-        ("scope-valid", 0),
-        ("uwi-missing", 1),
-        ("uwi-valid", 0),
-        ("scope-surplus", 1),
-        ("scope-duplicate", 1),
-        ("scope-empty", 1),
     ],
 )
 def test_structured_records_and_rationale_independence(
@@ -174,7 +149,7 @@ def test_structured_records_and_rationale_independence(
     case: str,
     expected: int,
 ) -> None:
-    """4種類の記録を公開入口で検査し、自由記述の置換で終了コードと診断が変わらないことを確かめる。"""
+    """3種類の記録を公開入口で検査し、自由記述の置換で終了コードと診断が変わらないことを確かめる。"""
     repo, notes = env
     _awi(notes, "a.md", "`README.md`を変更する。")
     item: dict[str, typing.Any] = {"WI": "a.md", "レーン": "lane-01", "書込対象": ["README.md"]}
@@ -216,7 +191,7 @@ def test_structured_records_and_rationale_independence(
             del row["補正前の実装秒数"]
         else:
             row["補正前の実装秒数"] = True
-    elif case.startswith("correction-"):
+    else:
         if case == "correction-missing":
             del data["見込みの補正"]
         elif case == "correction-mismatch":
@@ -229,22 +204,6 @@ def test_structured_records_and_rationale_independence(
                 data["見込みの補正"]["参照した記録"] = ["plans/example.progress.jsonl"]
             if case == "correction-tolerance":
                 row["実装秒数"] += 1
-    else:
-        target = "src/model.py" if case.startswith("uwi-") else "src/"
-        if case.startswith("uwi-"):
-            (notes / "processing/a.md").write_text("---\ntype: uwi\n---\n\n## 回答\n\nモデルを更新する。\n", encoding="utf-8")
-            item["書込対象"] = [target]
-        else:
-            item["書込対象"].append(target)
-        if case not in ("scope-missing", "uwi-missing"):
-            record = {"パス": target, "理由": "回答と配置を調査して範囲を導いた"}
-            item["書込範囲の理由"] = [record]
-            if case == "scope-surplus":
-                record["パス"] = "README.md"
-            if case == "scope-duplicate":
-                item["書込範囲の理由"].append(dict(record))
-            if case == "scope-empty":
-                record["理由"] = " "
     observed = []
     for replacement in (False, True):
         if replacement:
@@ -261,8 +220,6 @@ def test_structured_records_and_rationale_independence(
                 if case.startswith("public-")
                 else "段階案の完了見込み秒数"
                 if case.startswith("staged-")
-                else "書込範囲の理由"
-                if case.startswith(("scope-", "uwi-"))
                 else "見込みの補正"
             )
             assert field in stderr
@@ -2059,16 +2016,46 @@ def test_accepts_covered_selection_and_skips_out_of_scope_decisions(
     decisions: list[dict[str, typing.Any]] = [
         {"awi": "a.md", "lane": "lane-01", "write_files": ["src/"]},
         {"awi": "b.md", "lane": "なし", "write_files": []},
-        {
-            "awi": "u.md",
-            "lane": "lane-01",
-            "write_files": ["src/"],
-            "書込範囲の理由": [{"パス": "src/", "理由": "回答の変更対象を調査した"}],
-        },
+        {"awi": "u.md", "lane": "lane-01", "write_files": ["src/"]},
     ]
 
     assert _run(tmp_path, repo, decisions) == 0
     assert capsys.readouterr().err == ""
+
+
+@pytest.mark.parametrize("legacy", [False, True])
+def test_legacy_write_scope_reasons_are_dropped(
+    env: tuple[pathlib.Path, pathlib.Path], tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], legacy: bool
+) -> None:
+    """旧版が保存した`書込範囲の理由`は読取時に捨て、記録の過不足を判定せず、保存時にも出力しない。
+
+    同欄は重なりの判定と配分に寄与しないため撤去した。新しく書く追加入力の同欄は未知の欄として拒否する。
+    """
+    repo, notes = env
+    _awi(notes, "a.md", "`README.md`を変える。")
+    keys = ("awi", "lane", "write_files") if legacy else ("WI", "レーン", "書込対象")
+    item = {keys[0]: "a.md", keys[1]: "lane-01", keys[2]: ["README.md", "src/"]}
+    path = _write_selection(tmp_path / "selection.yaml", [item])
+    data = yaml.safe_load(path.read_text(encoding="utf-8"))
+    items = data["decisions" if legacy else "選定"]
+    # 旧版では必須パスと記録の不一致（余分な記録と空の理由）で拒否された記録を置く。
+    items[0]["書込範囲の理由"] = [{"パス": "README.md", "理由": " "}, {"パス": "README.md", "理由": "重複"}]
+    path.write_text(yaml.safe_dump(data, allow_unicode=True), encoding="utf-8")
+    assert _dispatch(str(path), "--work-dir", str(repo)) == 0
+    assert "書込範囲の理由" not in capsys.readouterr().err
+    assert _dispatch(str(path), "--mark-integrated", "lane-01", "--output", str(path), "--work-dir", str(repo)) == 0
+    assert "書込範囲の理由" not in path.read_text(encoding="utf-8")
+    addition = tmp_path / "extend.yaml"
+    addition.write_text(
+        yaml.safe_dump(
+            {"選定": [{"WI": "a.md", "書込対象": ["README.md"], "書込範囲の理由": [{"パス": "README.md", "理由": "x"}]}]},
+            allow_unicode=True,
+        ),
+        encoding="utf-8",
+    )
+    before = path.read_bytes()
+    assert _dispatch(str(path), "--work-dir", str(repo), "--extend-write-targets", str(addition), "--output", str(path)) == 2
+    assert path.read_bytes() == before
 
 
 def test_public_write_target_covers_reflection_and_can_be_shared_across_lanes(

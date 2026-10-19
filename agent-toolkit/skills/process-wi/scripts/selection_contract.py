@@ -25,7 +25,6 @@ _DECISION_KEYS = frozenset(
         _selection.WRITE_FILES_KEY,
         _selection.PUBLIC_WRITE_FILES_KEY,
         _selection.PUBLIC_WRITE_RATIONALES_KEY,
-        _selection.WRITE_SCOPE_REASONS_KEY,
         _selection.MODEL_TYPES_KEY,
         _selection.EXCLUDED_PATHS_KEY,
         _selection.DERIVED_NEW_PATHS_KEY,
@@ -247,11 +246,14 @@ def structure_errors(selection: object) -> tuple[list[str], list[str]]:
             continue
         label = item.get(_selection.WI_KEY) if isinstance(item.get(_selection.WI_KEY), str) else f"{index}件目"
         errors.extend(_derived_structure_errors(str(label), item.get(_selection.DERIVED_NEW_PATHS_KEY, [])))
-        for field, keys in (
-            (_selection.PUBLIC_WRITE_RATIONALES_KEY, {"パス", "規範ファイル", "節"}),
-            (_selection.WRITE_SCOPE_REASONS_KEY, {"パス", "理由"}),
-        ):
-            errors.extend(_record_structure_errors(str(label), field, item.get(field, []), keys))
+        errors.extend(
+            _record_structure_errors(
+                str(label),
+                _selection.PUBLIC_WRITE_RATIONALES_KEY,
+                item.get(_selection.PUBLIC_WRITE_RATIONALES_KEY, []),
+                {"パス", "規範ファイル", "節"},
+            )
+        )
         errors.extend(f"{label}: 未知の欄: {key}" for key in item if key not in _DECISION_KEYS)
         errors.extend(f"{label}: 必須の欄がない: {key}" for key in _DECISION_REQUIRED_KEYS if key not in item)
         errors.extend(

@@ -24,7 +24,6 @@
 - 導出記録の不正: 完全な新設名・要求の反映範囲・書込区分への対応が成立しない、または同じ新設先を重複宣言した
 - 比較値の欠落: 段階2以上の単一段階案比較、または6000秒超の単一段階で段階案比較が無い
 - 補正の記録の不正: 補正前の2値・係数・参照した記録が欠けるか、補正後の値が積から1秒を超えてずれる
-- 書込範囲の理由の不正: 本文に無い範囲やパスを明示しないUWIの書込対象に理由が対応しない
 
 これらは共有書込の判定や配分の比較が成立しないため、違反として終了コード1を返す。
 
@@ -70,8 +69,7 @@
 開かずに把握できるようにするためであり、根拠と分類の意味の検収は選定結果の本文の読解で行う。
 比較欄がある場合は同名の値行も要約へ含める。
 
-UWIの本文がリポジトリ相対パスを明示しない場合、書込対象の各パスに書込範囲の理由を求める。
-この成功はUWIの書込範囲を検証した結果ではない。パスを明示しない回答の書込範囲は、
+UWIの本文がリポジトリ相対パスを明示しない場合、この成功はUWIの書込範囲を検証した結果ではない。パスを明示しない回答の書込範囲は、
 メインの限定調査と読解による検収が確かめる。
 """
 
@@ -177,7 +175,6 @@ _NEXT_CORRECTION = (
     "最上位の`見込みの補正`へ係数・参照した記録・除外した記録を、各行へ`補正前の実装秒数`・`補正前の統合秒数`を書き、"
     "実装秒数・統合秒数を補正前の値×係数の1秒以内へそろえる。係数が1以外なら参照した記録を1件以上挙げる"
 )
-_NEXT_SCOPE_REASON = "該当WIの`書込範囲の理由`へ、理由が必要なパスごとに空でない理由を1件だけ記録し、不要なパスの記録を除く"
 _NEXT_MISSING_BODY = "`atk wi list`の出力で対象のWIファイル名を確かめ、選定の`WI`をprivate-notesにあるファイル名へ直す"
 _NEXT_SINGLE_STAGE = (
     "比較した単一段階案の秒数を最上位の`単一段階案の完了見込み秒数`へ、配分の説明を`レーンの所要時間`の`根拠`へ書く"
@@ -751,26 +748,6 @@ def _check_public_write_rationales(items: list[dict[str, object]], work_dir: pat
     return errors
 
 
-def _check_scope_reasons(decision: dict[str, object], reflected: set[str], body: str) -> list[Violation]:
-    """本文から導いた書込範囲に必要な理由をパスごとに対応付ける。"""
-    writes = _string_list(decision, _selection.WRITE_FILES_KEY)
-    parsed = _wi_frontmatter.parse_frontmatter(_markdown_headings.normalize_newlines(body))
-    pathless_uwi = parsed is not None and parsed[0].get("type") == _UWI_TYPE and not reflected
-    required = {path for path in writes if pathless_uwi or path.endswith("/") and path not in reflected}
-    records = typing.cast(list[dict[str, str]], decision.get(_selection.WRITE_SCOPE_REASONS_KEY, []))
-    paths = [record["パス"] for record in records]
-    empty_reasons = [record["パス"] for record in records if not record["理由"].strip()]
-    if set(paths) != required or len(paths) != len(set(paths)) or empty_reasons:
-        return [
-            Violation(
-                f"{decision[_selection.WI_KEY]}: `{_selection.WRITE_SCOPE_REASONS_KEY}`が不一致: "
-                f"必須={sorted(required)}、記録={paths}、理由が空={empty_reasons}",
-                next_action=_NEXT_SCOPE_REASON,
-            )
-        ]
-    return []
-
-
 def _check_estimate_records(selection: dict[str, object], costs: list[dict[str, object]]) -> list[Violation]:
     """段階案の比較と補正の記録を、所要時間の値へ対応付ける。"""
     errors: list[Violation] = []
@@ -894,7 +871,6 @@ def check(
         if _is_integrated(decision, integrated_lanes):
             continue
         reflected = reflected_paths(body, work_dir)
-        errors.extend(_check_scope_reasons(decision, reflected, body))
         errors.extend(
             check_decision(
                 awi,
@@ -1073,6 +1049,8 @@ def load_selection(
         raise InputError(f"選定結果のYAML構文が不正: {selection_file}: {error}", next_action=_FIX_YAML) from error
     if candidate_file is not None:
         selection = _generate_selection(selection, candidate_file, additional=additional)
+    elif not additional:
+        _drop_write_scope_reasons(selection)
     errors, model_errors = selection_contract.structure_errors(selection)
     if isinstance(selection, dict) and not additional and _selection.INITIAL_ALLOCATION_KEY not in selection:
         errors.append(
@@ -1085,6 +1063,20 @@ def load_selection(
             "\n".join([f"選定結果の内容が不正: {selection_file}", *model_errors, *errors]), next_action=next_action
         )
     return typing.cast(dict[str, object], selection)
+
+
+def _drop_write_scope_reasons(selection: object) -> None:
+    """旧版が保存した選定結果の`書込範囲の理由`を捨てる。
+
+    同欄は重なりの判定と配分に寄与しないため撤去した。保存済みの選定結果をそのまま読めるよう、
+    読取時に除いて保存時にも出力しない。新しく書く入力（生成入力・追加入力）の同欄は未知の欄として拒否する。
+    """
+    if not isinstance(selection, dict):
+        return
+    items = selection.get(_selection.DECISIONS_KEY, selection.get("decisions"))
+    for item in items if isinstance(items, list) else []:
+        if isinstance(item, dict):
+            item.pop(_selection.WRITE_SCOPE_REASONS_KEY, None)
 
 
 def _check_lane_models(items: list[dict[str, object]]) -> list[Violation]:
