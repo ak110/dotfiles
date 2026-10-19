@@ -867,10 +867,14 @@ def _proxy_endpoint() -> Iterator[tuple[str, list[str]]]:
 
 @pytest.mark.asyncio
 @pytest.mark.skipif(shutil.which("codex") is None, reason="Codex CLIが存在しない")
+@pytest.mark.parametrize("index", [0, 1, 2], ids=["plugin-agents-server", "plugin-pyfltr", "backend-agents-server"])
 async def test_codex_stdio_inherits_proxy_environment(
-    manifest_root: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, proxy_endpoint: tuple[str, list[str]]
+    manifest_root: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, proxy_endpoint: tuple[str, list[str]], index: int
 ) -> None:
-    """実Codexの起動・再開で保存先と公開overrideを保持し、専用proxyへ要求が届く。"""
+    """実Codexの起動・再開で保存先と公開overrideを保持し、専用proxyへ要求が届く。
+
+    実Codexの起動は1件あたり2回かかるため、設定ごとに試験を分けて60秒の上限を各設定が個別に持つ。
+    """
     isolation.restore_host_environment(monkeypatch)
     proxy_url, requests = proxy_endpoint
     inherited = {
@@ -949,76 +953,76 @@ async def test_codex_stdio_inherits_proxy_environment(
             await client.start()
             assert client.process is not None
             processes.append(client.process)
-            for index, configuration in enumerate(configurations):
-                expected_namespace = {
-                    **namespace,
-                    "UNKNOWN_VENDOR_API_KEY": "synthetic-unknown-key" if index == 2 else None,
-                    "UNSET_VENDOR_SETTING": None,
-                    "CLAUDE_CODE_SESSION_ID": None,
-                }
-                output = tmp_path / f"child-{index}.json"
-                server = {
-                    **configuration,
-                    "command": sys.executable,
-                    "args": [str(launcher)],
+            configuration = configurations[index]
+            expected_namespace = {
+                **namespace,
+                "UNKNOWN_VENDOR_API_KEY": "synthetic-unknown-key" if index == 2 else None,
+                "UNSET_VENDOR_SETTING": None,
+                "CLAUDE_CODE_SESSION_ID": None,
+            }
+            output = tmp_path / f"child-{index}.json"
+            server = {
+                **configuration,
+                "command": sys.executable,
+                "args": [str(launcher)],
+                "cwd": str(tmp_path),
+                "env": {**configuration.get("env", {}), "OBS_PATH": str(output)},
+            }
+            server.pop("type", None)
+            response = await client.request(
+                "thread/start",
+                {
                     "cwd": str(tmp_path),
-                    "env": {**configuration.get("env", {}), "OBS_PATH": str(output)},
-                }
-                server.pop("type", None)
-                response = await client.request(
-                    "thread/start",
-                    {
-                        "cwd": str(tmp_path),
-                        "approvalPolicy": "never",
-                        "sandbox": "danger-full-access",
-                        "config": {"mcp_servers": {"probe": server}, "features": {"plugins": False, "apps": False}},
-                    },
-                )
-                thread_id = response["thread"]["id"]
-                inventory = await client.request("mcpServerStatus/list", {"threadId": thread_id, "serverName": "probe"})
-                assert inventory["data"], inventory
-                diagnostic = Path(str(output) + ".stderr")
-                assert inventory["data"][0]["runtimeStatus"] == "connected", json.dumps(inventory) + (
-                    diagnostic.read_text(encoding="utf-8") if diagnostic.exists() else ""
-                )
-                observation = json.loads(output.read_text(encoding="utf-8"))
-                assert observation == {"env": inherited, "namespace": expected_namespace, "response": "proxy-observed"}
-                # モデルを呼ばず履歴を保存する0.162.1の公開実験APIで、cold resumeの入力を準備する。
-                await client.request(
-                    "thread/inject_items",
-                    {
-                        "threadId": thread_id,
-                        "items": [{"type": "message", "role": "user", "content": [{"type": "input_text", "text": "fixture"}]}],
-                    },
-                )
-                await client.close()
-                output.unlink()
-                client = _ProxyCodexClient(_ignore_proxy_notification, _ignore_proxy_notification)
-                await client.start()
-                assert client.process is not None
-                processes.append(client.process)
-                await client.request(
-                    "thread/resume",
-                    {
-                        "threadId": thread_id,
-                        "cwd": str(tmp_path),
-                        "approvalPolicy": "never",
-                        "sandbox": "danger-full-access",
-                        "config": {"mcp_servers": {"probe": server}},
-                    },
-                )
-                inventory = await client.request("mcpServerStatus/list", {"threadId": thread_id, "serverName": "probe"})
-                assert inventory["data"][0]["runtimeStatus"] == "connected", json.dumps(inventory)
-                assert json.loads(output.read_text(encoding="utf-8")) == {
-                    "env": inherited,
-                    "namespace": expected_namespace,
-                    "response": "proxy-observed",
-                }
-                await client.request("thread/unsubscribe", {"threadId": thread_id})
+                    "approvalPolicy": "never",
+                    "sandbox": "danger-full-access",
+                    "config": {"mcp_servers": {"probe": server}, "features": {"plugins": False, "apps": False}},
+                },
+            )
+            thread_id = response["thread"]["id"]
+            inventory = await client.request("mcpServerStatus/list", {"threadId": thread_id, "serverName": "probe"})
+            assert inventory["data"], inventory
+            diagnostic = Path(str(output) + ".stderr")
+            assert inventory["data"][0]["runtimeStatus"] == "connected", json.dumps(inventory) + (
+                diagnostic.read_text(encoding="utf-8") if diagnostic.exists() else ""
+            )
+            observation = json.loads(output.read_text(encoding="utf-8"))
+            assert observation == {"env": inherited, "namespace": expected_namespace, "response": "proxy-observed"}
+            # モデルを呼ばず履歴を保存する0.162.1の公開実験APIで、cold resumeの入力を準備する。
+            await client.request(
+                "thread/inject_items",
+                {
+                    "threadId": thread_id,
+                    "items": [{"type": "message", "role": "user", "content": [{"type": "input_text", "text": "fixture"}]}],
+                },
+            )
+            await client.close()
+            output.unlink()
+            client = _ProxyCodexClient(_ignore_proxy_notification, _ignore_proxy_notification)
+            await client.start()
+            assert client.process is not None
+            processes.append(client.process)
+            await client.request(
+                "thread/resume",
+                {
+                    "threadId": thread_id,
+                    "cwd": str(tmp_path),
+                    "approvalPolicy": "never",
+                    "sandbox": "danger-full-access",
+                    "config": {"mcp_servers": {"probe": server}},
+                },
+            )
+            inventory = await client.request("mcpServerStatus/list", {"threadId": thread_id, "serverName": "probe"})
+            assert inventory["data"][0]["runtimeStatus"] == "connected", json.dumps(inventory)
+            assert json.loads(output.read_text(encoding="utf-8")) == {
+                "env": inherited,
+                "namespace": expected_namespace,
+                "response": "proxy-observed",
+            }
+            await client.request("thread/unsubscribe", {"threadId": thread_id})
     finally:
         await client.close()
     assert processes and all(process.returncode is not None for process in processes)
-    assert requests.count("http://proxy-probe.invalid/resource") == len(configurations) * 2
+    assert requests.count("http://proxy-probe.invalid/resource") == 2
 
 
 async def _ignore_proxy_notification(_message: dict[str, Any]) -> None:
