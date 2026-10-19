@@ -5,7 +5,10 @@
 ## gv / lc（Windows用プロジェクト）の特殊事情
 
 - Linuxでの検証範囲はプロジェクトごとに異なる。正式な手順は各リポジトリの`AGENTS.md`と`docs/development/development.md`が定める
-  - `~/gv`: lint系（textlint / markdownlint / prettier）のみ確認できる。Rustコードの制約は後述する
+  - `~/gv`: Debian/Ubuntuで`mise install`の後に`mise run setup-linux`を実行すると、cargo-xwinによるWindowsターゲットのクロスビルド環境がGit管理外の`.mise.local.toml`へ設定される。
+    以後はWindowsと同じ手順で`mise run test`・`mise run build`とpre-commitのpyfltr hookを使える。
+    Linuxの`mise run test`はclippy・cargo-deny・テストのコンパイルまでを行い、テストの実行はWindows CIで確かめる。
+    LinuxビルドはRAR展開を除外する（`--cfg gv_no_rar`）
   - `~/lc`: `mise run setup-linux`で環境を構築すると、`mise run test`（`dotnet-test`を除く全チェック）と、配布用exeを出力する`mise run build`を実行できる。
     `dotnet-test`はWindows CIで確かめる
 - `mise.toml`のタスクを使用する。prekフレームワークは`uvx prek`で呼び出す
@@ -17,14 +20,6 @@
 
 `~/gv`の`mise.toml`が参照する値に`LOCALAPPDATA`は含まれず、`~/lc`の`mise.toml`はWindows用タスクの内側でだけ参照するため、Linuxでの設定読み込みはこの値と無関係に成立する。
 両リポジトリでは、Linuxからmiseを起動するための`LOCALAPPDATA`の付与は不要である。
-
-加えて`~/gv`のRustコードは、`windows-future`等のWindows専用クレートが依存ツリーに含まれるため、
-Linux環境で`cargo check`・`cargo clippy`・`cargo test`がビルド段階で失敗する。
-Linuxから`~/gv`のRustコードを変更する場合は次のいずれかで対処する。
-
-- Windows実機で`cargo`系チェックを実行してからpushする
-- `SKIP=pyfltr`でcargo系チェックを含むhookを無効化してコミットし、cargo対象外の変更パスへ`uvx --exclude-newer-package pyfltr=false pyfltr run`を実行する
-- 該当コードを`#[cfg(windows)]`ガードで囲み、Linux向けビルド対象外にする
 
 ## prek / pyfltr / ビルド関連
 
