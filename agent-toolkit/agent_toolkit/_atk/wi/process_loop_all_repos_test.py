@@ -14,9 +14,11 @@ from typing import Any, cast
 import pytest
 
 from agent_toolkit import atk
-from agent_toolkit._atk import config, lane
+from agent_toolkit._atk import config, lane, review_audit
+from agent_toolkit._atk.wi import alerts as wi_alerts
 from agent_toolkit._atk.wi import listing
 from agent_toolkit._atk.wi import process_loop_all_repos as all_repos
+from agent_toolkit._atk.wi import process_loop_launch_gate as launch_gate
 from agent_toolkit._atk.wi import process_loop_log as loop_log
 from agent_toolkit._atk.wi import process_loop_ownership as ownership
 from agent_toolkit._atk.wi import process_loop_session as session
@@ -999,3 +1001,136 @@ def test_cleanup_failure_is_reported_and_others_continue(
     assert events[repositories[1].repo_id]["error"] == "回収先へ書けない"
     ended = [fields["target_repo"] for fields in _events(recorded, "repository_session_end")]
     assert sorted(ended) == sorted(repository.repo_id for repository in repositories)
+
+
+def _run_loop_rounds(
+    monkeypatch: pytest.MonkeyPatch,
+    notes: pathlib.Path,
+    manager: _Manager,
+    *,
+    on_wait: tuple[Any, ...] = (),
+    **options: Any,
+) -> list[tuple[str, dict[str, Any]]]:
+    """公開の常駐関数`cmd_process_loop_all_repos`を`--no-update`で回し、変更待機ごとに`on_wait`を順に適用し、尽きたら終了させる。"""
+    recorded = _record_log(monkeypatch)
+    waits = iter(on_wait)
+
+    def wait(*_args: Any, **_kwargs: Any) -> bool:
+        action = next(waits, None)
+        if action is None:
+            raise KeyboardInterrupt
+        action()
+        return True
+
+    monkeypatch.setattr(watch, "pull_private_notes", lambda *_args, **_kwargs: True)
+    monkeypatch.setattr(watch, "wait_for_start_permission", lambda *_args, **_kwargs: True)
+    monkeypatch.setattr(watch, "wait_for_changes", wait)
+    monkeypatch.setattr(update_module, "resolve_dotfiles_root", lambda: None)
+    args = _loop_args(no_update=True)
+    for key, value in options.items():
+        setattr(args, key, value)
+    all_repos.cmd_process_loop_all_repos(
+        args, notes, manager_factory=lambda: cast(all_repos.RepositoryDelegateManager, manager)
+    )
+    return recorded
+
+
+class _UnresolvedManager(_Manager):
+    """候補を解消せずに返す担当。`blocked`なら`続行できない理由:`を返す。"""
+
+    def __init__(self, *, blocked: bool) -> None:
+        super().__init__()
+        self.blocked = blocked
+        self.finish_work = False
+        self.during_start: Any = None
+
+    async def start(self, model_type: str, prompt: str, cwd: str, **kwargs: Any) -> dict[str, Any]:
+        response = await super().start(model_type, prompt, cwd, **kwargs)
+        if self.blocked:
+            self.pending[-1]["agent_message"] = "続行できない理由: このホストでは完成条件を観測できない"
+        if self.during_start is not None:
+            self.during_start(len(self.started))
+        return response
+
+
+@pytest.mark.parametrize("ending", ["blocked", "no_progress"])
+def test_no_progress_repository_is_skipped(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], ending: str
+) -> None:
+    """続行できない返却と無進捗の打切りの後は、起動入力が変わらない間その対象の担当を起動しない。"""
+    repositories = _repositories(tmp_path, monkeypatch)
+    notes = tmp_path / "notes"
+    _write(notes, "one.md", repositories[0].repo_id)
+    manager = _UnresolvedManager(blocked=ending == "blocked")
+    recorded = _run_loop_rounds(monkeypatch, notes, manager, on_wait=(lambda: None,))
+    assert len(manager.started) == 1
+    assert [fields["target_repo"] for fields in _events(recorded, "launch_skipped_no_progress")] == [repositories[0].repo_id]
+    out = capsys.readouterr().out
+    assert "担当の起動を見送ります" in out and "新しい未判定のDependabotアラート" in out
+
+
+@pytest.mark.parametrize("change", ["new-wi", "body", "state", "readiness", "new-alert", "during-run"])
+def test_skipped_repository_relaunches_on_change(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, change: str) -> None:
+    """見送り中に起動入力が変われば次の反復で同じ対象の担当を起動する。稼働中に加わったWIも次の起動対象になる。"""
+    repositories = _repositories(tmp_path, monkeypatch)
+    notes = tmp_path / "notes"
+    repo_id = repositories[0].repo_id
+    task = _write(notes, "one.md", repo_id)
+    if change == "readiness":
+        _write(notes, "two.md", repo_id, extra="depends_on:\n- one.md\n")
+    alerts: list[dict[str, Any]] = [{"number": 1}]
+    monkeypatch.setattr(wi_alerts, "check_and_submit_alerts", lambda *_a, **_k: wi_alerts.AlertCheckResult(0, ()))
+    monkeypatch.setattr(review_audit, "dependabot_pending", lambda _repository: {"status": "available", "alerts": alerts})
+    manager = _UnresolvedManager(blocked=True)
+    if change == "during-run":
+        manager.during_start = lambda count: _write(notes, "arrived.md", repo_id) if count == 1 else None
+
+    def apply() -> None:
+        if change == "new-wi":
+            _write(notes, "added.md", repo_id)
+        elif change == "body":
+            task.write_text(task.read_text(encoding="utf-8") + "\n## ユーザーコメント\n\n回答\n", encoding="utf-8")
+        elif change == "state":
+            (notes / "processing").mkdir(exist_ok=True)
+            task.rename(notes / "processing" / task.name)
+        elif change == "readiness":
+            # 依存先の終端で依存元の区分が内部依存待ちからreadyへ変わる。
+            (notes / "adopted").mkdir(exist_ok=True)
+            task.rename(notes / "adopted" / task.name)
+        elif change == "new-alert":
+            alerts.append({"number": 2})
+
+    recorded = _run_loop_rounds(
+        monkeypatch, notes, manager, on_wait=(apply,), no_alerts=False, alert_interval=0, alert_forge="github"
+    )
+    # 未判定アラートだけを持つ他の対象は、1回目の担当の後は入力が変わらない限り見送られる。
+    launched = [pathlib.Path(cwd).name for cwd, _prompt in manager.started] + [
+        session_id.removeprefix("session-") for session_id, prompt in manager.sent if "repository-delegate" in prompt
+    ]
+    # 2回目は保持したall-repos担当への再開の配送で起動する。新しいアラートは全対象の入力を変える。
+    relaunched = ["one", "two", "empty"] if change == "new-alert" else ["one"]
+    assert launched == ["one", "two", "empty", *relaunched]
+    assert {fields["target_repo"] for fields in _events(recorded, "launch_skipped_no_progress")} == (
+        set() if change == "new-alert" else {repositories[1].repo_id, repositories[2].repo_id}
+    )
+
+
+@pytest.mark.parametrize("mode", ["resume", "auto-resume"])
+def test_explicit_resume_bypasses_skip(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, mode: str) -> None:
+    """無進捗記録があっても`--resume`と`--auto-resume`の対象は起動する。"""
+    repositories = _repositories(tmp_path, monkeypatch)
+    notes = tmp_path / "notes"
+    repo_id = repositories[0].repo_id
+    _write(notes, "one.md", repo_id)
+    snapshot = listing.configured_repo_snapshot(notes, repositories)[0]
+    current = launch_gate.repository_input(snapshot, None)
+    launch_gate.record_no_progress(repo_id, current, current)
+    assert launch_gate.decide(repo_id, current).skipped
+    held = ownership.try_acquire(repo_id, worktree=repositories[0].worktree, mode="all-repos")
+    assert held is not None
+    ownership.release(ownership.update_session(held, "session-one"), completed=False)
+    manager = _UnresolvedManager(blocked=True)
+    options: dict[str, Any] = {"resume": "session-one"} if mode == "resume" else {"auto_resume": True}
+    _run_loop_rounds(monkeypatch, notes, manager, **options)
+    # 保持したall-repos担当へ再開を配送し、記録による見送りを適用しない。
+    assert not manager.started and "repository-delegate" in manager.sent[0][1]

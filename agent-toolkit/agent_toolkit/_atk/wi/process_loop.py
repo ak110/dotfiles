@@ -1,6 +1,7 @@
 """`atk wi process-loop`の常駐ループ。各工程を担うモジュールを順に呼ぶ制御だけを持つ。"""
 
 import argparse
+import functools
 import os
 import pathlib
 import sys
@@ -10,6 +11,7 @@ from agent_toolkit._atk.wi import auto_resume as _auto_resume
 from agent_toolkit._atk.wi import process_loop_alerts as _pl_alerts
 from agent_toolkit._atk.wi import process_loop_control as _pl_control
 from agent_toolkit._atk.wi import process_loop_env as _pl_env
+from agent_toolkit._atk.wi import process_loop_launch_gate as _pl_gate
 from agent_toolkit._atk.wi import process_loop_log as _process_loop_log
 from agent_toolkit._atk.wi import process_loop_mise as _pl_mise
 from agent_toolkit._atk.wi import process_loop_ownership as _pl_ownership
@@ -28,6 +30,8 @@ def cmd_process_loop(args: argparse.Namespace, private_notes: pathlib.Path) -> N
     初回と0件待機からの復帰時はprivate-notesを同期し、ready項目があれば`update-dotfiles`と
     private-notesの再同期を終えてからセッションを起動する。同期失敗時は子を起動せず待機へ戻る。
     件数は選択したオーケストレーターのセッション起動要否だけに使う。
+    起動要否は`process_loop_launch_gate`の無進捗記録とも比べ、正常終了した子が起動時の候補を1件も解消しなかった
+    場合は、起動入力が変わるか`--resume`を指定するまで次のセッションを起動せず、見送りを表示して変更待機へ進む。
     分類結果の保存、依存判定、セッション上限、実行順、着手可否判定、バッチ選択は
     process-wiが担う。
     初回再開時は選択したCLIのresume形式だけを渡し、再開後のプロンプト入力はユーザーへ委ねる。
@@ -88,6 +92,8 @@ def cmd_process_loop(args: argparse.Namespace, private_notes: pathlib.Path) -> N
     print(f"atk wi process-loop 常駐モード開始（対象: {local_path}）。Ctrl+Cで終了。")
     last_alert_check: float | None = None
     alert_session_pending = False
+    # 起動の契機になった未判定アラートの番号。候補WIで起動する反復ではNone（未観測）とする。
+    pending_alerts: frozenset[int] | None = None
     # 自プロセスのos.environにも設定し、本関数内の_process_loop_log.append呼び出し
     # （自プロセス側の観測記録）を有効化する。claude起動時は明示的な`env=env`引数で継承する。
     # 関数終了時に元の値へ戻し、in-process呼び出し（テスト等）への環境変数漏洩を避ける。
@@ -118,6 +124,30 @@ def cmd_process_loop(args: argparse.Namespace, private_notes: pathlib.Path) -> N
 
     resume_pending = args.resume is not None
     refresh_before_session = not args.internal_dotfiles_updated
+
+    def launch_input() -> _pl_gate.LaunchInput:
+        return _pl_gate.target_input(private_notes, target_repo_id, pending_alerts if alert_session_pending else None)
+
+    def wants_launch(count: int) -> bool:
+        """件数と無進捗記録から、この反復で子セッションを起動するかを返す。"""
+        if count == 0 and not alert_session_pending:
+            return False
+        return _pl_gate.decide(target_repo_id, launch_input(), explicit=resume_pending).launch
+
+    def record_session_result(start: _pl_gate.LaunchInput, completed: bool) -> None:
+        """正常終了した子セッションが起動時の要素を1件も解消しなければ、無進捗記録を保存する。"""
+        if completed:
+            try:
+                end_alerts = _pl_alerts.observe_dependabot_pending(args, target_repo_id) if start.alerts else None
+                end = _pl_gate.target_input(private_notes, target_repo_id, end_alerts)
+                if _pl_gate.unresolved(start, end):
+                    _pl_gate.record_no_progress(target_repo_id, start, end)
+            except (OSError, ValueError) as error:
+                # 記録できない場合は次の反復を従来どおり起動させ、所有の解放と再起動判断を止めない。
+                _process_loop_log.append("no_progress_record_failed", detail=str(error))
+                print(f"無進捗記録を保存できませんでした: {error}", file=sys.stderr)
+        finish_session_ownership(completed)
+
     with _console_title.console_title("atk wi process-loop"):
         try:
             try:
@@ -130,7 +160,8 @@ def cmd_process_loop(args: argparse.Namespace, private_notes: pathlib.Path) -> N
                         refresh_before_session = True
                         continue
                     count = _wi_readiness.count_pending_entries(private_notes, target_repo=target_repo_id)
-                    if (count > 0 or alert_session_pending) and refresh_before_session and not args.no_update:
+                    launching = wants_launch(count)
+                    if launching and refresh_before_session and not args.no_update:
                         session_ready, update_succeeded = _pl_update.update_before_session(
                             private_notes,
                             dotfiles_root,
@@ -147,7 +178,8 @@ def cmd_process_loop(args: argparse.Namespace, private_notes: pathlib.Path) -> N
                             refresh_before_session = True
                             continue
                         count = _wi_readiness.count_pending_entries(private_notes, target_repo=target_repo_id)
-                    if count > 0 or alert_session_pending:
+                        launching = wants_launch(count)
+                    if launching:
                         last_alert_check, submitted, _ = _pl_alerts.check_process_loop_alerts(
                             args,
                             private_notes,
@@ -160,12 +192,16 @@ def cmd_process_loop(args: argparse.Namespace, private_notes: pathlib.Path) -> N
                             print(f"アラート監視により{submitted}件のAWIを投入しました。")
                             count = _wi_readiness.count_pending_entries(private_notes, target_repo=target_repo_id)
                     _process_loop_log.append("loop_iter_start", count=count)
-                    if count > 0 or alert_session_pending:
+                    skipped = (count > 0 or alert_session_pending) and not launching
+                    if skipped:
+                        _pl_gate.report_skip(target_repo_id)
+                        alert_session_pending = False
+                    if launching:
                         if not _pl_watch.wait_for_start_permission(private_notes, {target_repo_id}, start_gate):
                             return
                         # 回答・活動の変化で待機した間に候補が消える場合もある。
                         count = _wi_readiness.count_pending_entries(private_notes, target_repo=target_repo_id)
-                        if count == 0 and not alert_session_pending:
+                        if not wants_launch(count):
                             continue
                         active_ownership = _pl_ownership.try_acquire(target_repo_id, worktree=local_path)
                         if active_ownership is None:
@@ -205,6 +241,12 @@ def cmd_process_loop(args: argparse.Namespace, private_notes: pathlib.Path) -> N
                             print(f"{count}件のAWI/回答済みUWIを検知。{orchestrator}へ委譲します。")
                         else:
                             print(f"未判定のDependabotアラートを検知。監査のため{orchestrator}へ委譲します。")
+                        start_input = launch_input()
+                        if start_input.alerts is None:
+                            # 起動時の未判定アラートを基準に記録し、終了後に増えたアラートだけを新しい入力として扱う。
+                            start_input = start_input.with_alerts(_pl_alerts.observe_dependabot_pending(args, target_repo_id))
+                        # 見送らずに起動した時点で記録を削除し、この子セッションの結果から記録し直す。
+                        _pl_gate.clear(target_repo_id)
                         alert_session_pending = False
                         start_gate.started()
                         if _pl_session.run_process_session(
@@ -217,10 +259,11 @@ def cmd_process_loop(args: argparse.Namespace, private_notes: pathlib.Path) -> N
                             effort=effort,
                             resume_pending=current_resume_pending,
                             dotfiles_root=dotfiles_root,
-                            on_session_finished=finish_session_ownership,
+                            on_session_finished=functools.partial(record_session_result, start_input),
                         ):
                             return
                         continue
+                    # 見送った反復も候補が無い場合と同じくアラートを数え、新しい未判定アラートを観測する。
                     last_alert_check, submitted, dependabot_pending = _pl_alerts.check_process_loop_alerts(
                         args,
                         private_notes,
@@ -233,12 +276,23 @@ def cmd_process_loop(args: argparse.Namespace, private_notes: pathlib.Path) -> N
                         print(f"アラート監視により{submitted}件のAWIを投入しました。")
                         refresh_before_session = True
                         continue
-                    if dependabot_pending > 0:
-                        print(f"未判定のDependabotアラートが{dependabot_pending}件あるためprocess-wiを1回実行させます。")
+                    if dependabot_pending:
                         alert_session_pending = True
-                        refresh_before_session = True
-                        continue
-                    print("0件のため変更検知を待機します。")
+                        pending_alerts = dependabot_pending
+                        if wants_launch(count):
+                            print(
+                                f"未判定のDependabotアラートが{len(dependabot_pending)}件あるためprocess-wiを1回実行させます。"
+                            )
+                            refresh_before_session = True
+                            continue
+                        alert_session_pending = False
+                        if not skipped:
+                            _pl_gate.report_skip(target_repo_id)
+                            skipped = True
+                    elif count == 0 and dependabot_pending is not None:
+                        # 候補・診断が無く、アラートの取得に成功して0件なら起動入力は空である。
+                        _pl_gate.clear(target_repo_id)
+                    print("起動を見送ったため変更検知を待機します。" if skipped else "0件のため変更検知を待機します。")
                     changed = _pl_watch.wait_for_changes(private_notes, target_repo_id)
                     refresh_before_session = True
                     if (

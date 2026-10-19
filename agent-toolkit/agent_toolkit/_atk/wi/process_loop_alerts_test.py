@@ -151,7 +151,8 @@ class TestAlertMonitoring:
         """キューに項目がある間も、セッションの開始前にCI失敗を確認して投入し、数え直した件数で起動する。
 
         確認が件数0の間だけだと、セッションが続く期間に起きた失敗はキューが空になるまでAWIへ入らない。
-        この確認ではDependabotアラートを数えない（起動するセッションの監査が扱う）。
+        この確認ではDependabotアラートを起動判定に数えない（起動するセッションの監査が扱う）。
+        起動時には無進捗記録の基準とするため未判定アラートの番号を1回だけ取得する。
         """
         _setup_notes(tmp_path)
         myrepo = tmp_path / "myrepo"
@@ -173,18 +174,22 @@ class TestAlertMonitoring:
             fake_check,
         )
 
-        def fail_dependabot(_repository: str) -> dict[str, Any]:
-            raise AssertionError("セッション開始前の確認ではDependabotアラートを数えないはず")
+        observed: list[str] = []
+
+        def record_dependabot(repository: str) -> dict[str, Any]:
+            observed.append(repository)
+            return {"status": "available", "alerts": [{"number": 7}]}
 
         monkeypatch.setattr(  # pylint: disable=protected-access
             _review_audit_module,  # pylint: disable=protected-access
             "dependabot_pending",
-            fail_dependabot,
+            record_dependabot,
         )
         with pytest.raises(SystemExit):
             atk.main(["wi", "process-loop", f"--target-repo={myrepo}", "--no-update"], home=tmp_path)
         assert calls == ["checked"]
         assert len(claude_calls) == 1
+        assert observed == ["example/myrepo"]
         log = (tmp_path / "state" / "agent-toolkit" / "process-wi.log").read_text(encoding="utf-8")
         assert "event=alert_check submitted=1 dependabot_pending=0 session_started=False" in log
         assert "event=loop_iter_start count=2" in log
