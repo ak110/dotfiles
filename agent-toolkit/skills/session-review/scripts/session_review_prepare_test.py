@@ -574,7 +574,8 @@ def test_prepare_writes_conversation_candidates_and_stats_without_queue_changes(
     assert "I will run the linter now." in conversation
     assert "agent-toolkit-auto-inserted" not in conversation
     assert "ツール呼び出し（2026-09-06T12:00:10Z、claude:" in conversation
-    assert "make lint" in conversation and "Error: 検査に失敗した" in conversation
+    assert "make lint" in conversation and "Error: 検査に失敗した" not in conversation
+    assert re.search(r"^- ツール結果（claude:[^）]+）: 失敗 Bash call_id=toolu_fail、", conversation, flags=re.MULTILINE)
     assert "hook_additional_context" not in conversation
     assert _LONG_INTERVENTION in conversation
     assert f"claude:{transcript.stem}:5" in conversation
@@ -916,8 +917,8 @@ def test_prepare_reads_codex_thread(
     assert f"--codex-thread-id {thread_id} --detail <記録位置>" in conversation
     assert "exec_command" in conversation and "ls docs" in conversation
     assert "apply_patch" in conversation and "docs/a.md" in conversation
-    assert "rg: 失敗" in conversation
-    assert "成功した出力の本文" in conversation
+    assert "rg: 失敗" not in conversation and "成功した出力の本文" not in conversation
+    assert "）: 失敗 CommandExecution" in conversation
     assert "候補として残す問題は無かった。" in pathlib.Path(record["candidates_path"]).read_text(encoding="utf-8")
 
 
@@ -1427,29 +1428,28 @@ def test_prepare_conversation_only_preserves_failure_ledger(
 
 
 def _file_body(name: str) -> str:
-    """先頭の数行に収まらない、末尾の行で全文の取得を確かめられる本文を返す。"""
+    """末尾の行で結果の本文の有無を確かめられる本文を返す。"""
     return "\n".join(f"{name}-line-{index}" for index in range(20))
 
 
-def _detail_locators(conversation: str) -> list[str]:
-    """写しを省略した結果の、全文を取得する記録位置を返す。"""
-    return re.findall(r"^- 全文: `[^`]* --detail (\S+)`$", conversation, flags=re.MULTILINE)
+def _result_lines(conversation: str) -> list[str]:
+    """会話の流れのツール結果の行を返す。"""
+    return re.findall(r"^- ツール結果（.*$", conversation, flags=re.MULTILINE)
 
 
-def test_prepare_replaces_copied_file_bodies_in_claude_conversation(
+def test_prepare_omits_tool_result_bodies_in_claude_conversation(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """ファイル表示と準備資料の読取の結果は対象・本文量・先頭の数行で示し、記録位置から全文を取得できる。
+    """ツール結果は本文を載せず成否・量・記録位置の1行で示し、入力は全文で載せる。
 
-    パイプを含む表示、失敗した表示、ホストの長文保存の通知を含む結果、全ての入力は全文で残す。
+    会話の流れは作業の流れを振り返る入力であり、結果の本文は記録位置から照会する。
+    ファイル表示、パイプを含む加工、失敗、ホストの長文保存の通知のいずれの結果も本文を載せない。
     """
     persisted = "<persisted-output>\nOutput too large (73.7KB). Full output saved to: /tmp/saved.txt\n" + _file_body("saved")
     calls: list[tuple[str, str, dict[str, Any], str, bool]] = [
         ("read", "Read", {"file_path": "/repo/read.md", "offset": 3}, _file_body("read"), False),
-        ("cat", "Bash", {"command": "cat /repo/cat.md"}, _file_body("cat"), False),
-        ("rg", "Bash", {"command": "rg -n needle /work/session-review-x/conversation.md"}, _file_body("prepared"), False),
-        ("pipe", "Bash", {"command": "cat /repo/pipe.md | head -20"}, _file_body("pipe"), False),
-        ("failed", "Bash", {"command": "cat /repo/failed.md"}, _file_body("failed"), True),
+        ("pipe", "Bash", {"command": "rg -n needle /repo | head -20"}, _file_body("pipe"), False),
+        ("failed", "Bash", {"command": "make lint"}, _file_body("failed"), True),
         ("persisted", "Read", {"file_path": "/repo/persisted.md"}, persisted, False),
     ]
     entries: list[dict[str, Any]] = [support.timestamped_entry("2026-10-19T00:00:00Z", "依頼")]
@@ -1464,29 +1464,28 @@ def test_prepare_replaces_copied_file_bodies_in_claude_conversation(
     assert prepare.main(["--transcript", str(transcript), "--work-dir", str(_work_dir(tmp_path))], now=_FIXED_NOW) == 0
 
     conversation = pathlib.Path(json.loads(capsys.readouterr().out)["conversation_path"]).read_text(encoding="utf-8")
+    assert "依頼" in conversation
     for _call_id, _name, tool_input, _content, _is_error in calls:
         assert json.dumps(tool_input, ensure_ascii=False) in conversation
-    assert "- 対象: /repo/read.md（offset=3）" in conversation
-    assert "- 対象: cat /repo/cat.md" in conversation
-    assert "- 本文量: 249文字、249バイト" in conversation
-    for name in ("read", "cat", "prepared"):
-        assert f"{name}-line-4" in conversation
-        assert f"{name}-line-19" not in conversation
-    for name in ("pipe", "failed", "saved"):
-        assert f"{name}-line-19" in conversation
-    locators = _detail_locators(conversation)
-    assert locators == [f"claude:{transcript.stem}:{line}" for line in (3, 5, 7)]
-    for locator, name in zip(locators, ("read", "cat", "prepared"), strict=True):
-        assert evidence.main([str(transcript), "--detail", locator]) == 0
-        assert f"{name}-line-19" in capsys.readouterr().out
+    for name in ("read", "pipe", "failed", "saved"):
+        assert f"{name}-line-" not in conversation
+    assert "Output too large" not in conversation
+    results = _result_lines(conversation)
+    assert [line.split("）: ", 1)[1].split(" ", 1)[0] for line in results] == ["完了", "完了", "失敗", "完了"]
+    assert "本文249文字・249バイト" in results[0]
+    locators = [line.removeprefix("- ツール結果（").split("）", 1)[0] for line in results]
+    assert locators == [f"claude:{transcript.stem}:{line}" for line in (3, 5, 7, 9)]
+    assert evidence.main([str(transcript), "--detail", locators[0]]) == 0
+    assert "read-line-19" in capsys.readouterr().out
 
 
-def test_prepare_replaces_copied_file_bodies_in_codex_conversation(
+def test_prepare_omits_tool_result_bodies_in_codex_conversation(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Codexの単独の`sed -n`の結果は写しを省略し、失敗した表示は全文で残す。
+    """CodexのCommandExecutionと`exec_command`の結果も本文を載せず、非0終了を失敗として示す。
 
-    CommandExecutionの`item_completed`の形は2026年10月19日のCodex CLI 0.163.0の記録を写す。
+    CommandExecutionの`item_completed`の形と、`exec_command`の結果の先頭の`Chunk ID:`から`Output:`までの行の形は、
+    2026年10月19日のCodex CLI 0.163.0の記録を写す。
     """
     thread_id = "019a0000-1111-7222-8333-444444444444"
     rollout_dir = tmp_path / "codex-home" / "sessions" / "2026" / "10" / "19"
@@ -1503,6 +1502,21 @@ def test_prepare_replaces_copied_file_bodies_in_codex_conversation(
         }
         return {"timestamp": line_time, "type": "event_msg", "payload": {"type": "item_completed", "item": item}}
 
+    def exec_command(line_time: str, call_id: str, command: str, output: str, exit_code: int) -> list[dict[str, Any]]:
+        header = f"Chunk ID: abc\nWall time: 0.0 seconds\nProcess exited with code {exit_code}\nOutput:\n"
+        return [
+            support.codex_item(
+                line_time,
+                {
+                    "type": "function_call",
+                    "name": "exec_command",
+                    "call_id": call_id,
+                    "arguments": json.dumps({"cmd": command}),
+                },
+            ),
+            support.codex_item(line_time, {"type": "function_call_output", "call_id": call_id, "output": header + output}),
+        ]
+
     support.write_jsonl(
         rollout_dir / f"rollout-2026-10-19T00-00-00-{thread_id}.jsonl",
         [
@@ -1511,7 +1525,9 @@ def test_prepare_replaces_copied_file_bodies_in_codex_conversation(
                 {"type": "message", "role": "user", "content": [{"type": "input_text", "text": "依頼"}]},
             ),
             command_execution("2026-10-19T00:00:01Z", "exec-sed", "sed -n '1,40p' /repo/sed.md", _file_body("sed"), 0),
-            command_execution("2026-10-19T00:00:02Z", "exec-failed", "cat /repo/failed.md", _file_body("failed"), 1),
+            command_execution("2026-10-19T00:00:02Z", "exec-failed", "make check", _file_body("checked"), 1),
+            *exec_command("2026-10-19T00:00:03Z", "call-ok", "rg -n needle /repo", _file_body("found"), 0),
+            *exec_command("2026-10-19T00:00:04Z", "call-ng", "make lint", _file_body("linted"), 2),
         ],
     )
     monkeypatch.setenv("CODEX_HOME", str(tmp_path / "codex-home"))
@@ -1519,55 +1535,10 @@ def test_prepare_replaces_copied_file_bodies_in_codex_conversation(
     assert prepare.main(["--codex-thread-id", thread_id, "--work-dir", str(_work_dir(tmp_path))], now=_FIXED_NOW) == 0
 
     conversation = pathlib.Path(json.loads(capsys.readouterr().out)["conversation_path"]).read_text(encoding="utf-8")
-    assert "- 対象: sed -n '1,40p' /repo/sed.md" in conversation
-    assert "sed-line-4" in conversation and "sed-line-19" not in conversation
-    assert "failed-line-19" in conversation
-    locators = _detail_locators(conversation)
-    assert len(locators) == 1 and locators[0].startswith("codex:") and locators[0].endswith(":2")
-    assert evidence.main(["--codex-thread-id", thread_id, "--detail", locators[0]]) == 0
-    assert "sed-line-19" in capsys.readouterr().out
-
-
-def test_prepare_previews_command_output_of_codex_exec_command(
-    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """Codexの`exec_command`の結果は、`Output:`の行より後の本文から先頭の数行を示す。
-
-    結果の先頭の`Chunk ID:`から`Output:`までの行の形は、2026年10月19日のCodex CLI 0.163.0の記録を写す。
-    """
-    thread_id = "019a0000-1111-7222-8333-555555555555"
-    rollout_dir = tmp_path / "codex-home" / "sessions" / "2026" / "10" / "19"
-    output = (
-        "Chunk ID: abc\nWall time: 0.0 seconds\nProcess exited with code 0\nOriginal token count: 50\nOutput:\n"
-        + _file_body("sed")
-    )
-    support.write_jsonl(
-        rollout_dir / f"rollout-2026-10-19T00-00-00-{thread_id}.jsonl",
-        [
-            support.codex_item(
-                "2026-10-19T00:00:00Z",
-                {"type": "message", "role": "user", "content": [{"type": "input_text", "text": "依頼"}]},
-            ),
-            support.codex_item(
-                "2026-10-19T00:00:01Z",
-                {
-                    "type": "function_call",
-                    "name": "exec_command",
-                    "call_id": "call-sed",
-                    "arguments": json.dumps({"cmd": "sed -n '1,40p' /repo/sed.md"}),
-                },
-            ),
-            support.codex_item(
-                "2026-10-19T00:00:02Z", {"type": "function_call_output", "call_id": "call-sed", "output": output}
-            ),
-        ],
-    )
-    monkeypatch.setenv("CODEX_HOME", str(tmp_path / "codex-home"))
-
-    assert prepare.main(["--codex-thread-id", thread_id, "--work-dir", str(_work_dir(tmp_path))], now=_FIXED_NOW) == 0
-
-    conversation = pathlib.Path(json.loads(capsys.readouterr().out)["conversation_path"]).read_text(encoding="utf-8")
-    assert "- 対象: sed -n '1,40p' /repo/sed.md" in conversation
-    assert "sed-line-0" in conversation and "sed-line-4" in conversation
+    for command in ("sed -n '1,40p' /repo/sed.md", "make check", "rg -n needle /repo", "make lint"):
+        assert command in conversation
+    for name in ("sed", "checked", "found", "linted"):
+        assert f"{name}-line-" not in conversation
     assert "Chunk ID: abc" not in conversation
-    assert "sed-line-19" not in conversation
+    states = [line.split("）: ", 1)[1].split(" ", 1)[0] for line in _result_lines(conversation)]
+    assert states == ["完了", "失敗", "完了", "失敗"]

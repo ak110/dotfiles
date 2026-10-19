@@ -1,8 +1,8 @@
 """セッション振り返りの入力を抽出し、会話・比較材料・候補・統計を作業ディレクトリへ書く。
 
 1回の実行で証拠bundleを抽出し、会話の流れ・比較材料・問題候補・統計を書いて、所在と読取範囲を1行のJSONで返す。
-会話の流れは全収集記録の発話・操作・成功と失敗の結果を記録別に並べた文書であり、メインが最初に全範囲を通読する。
-ファイルを表示しただけの結果と前回の準備資料を読んだ結果は、既存の本文の写しなので対象・本文量・先頭の数行だけを示す。
+会話の流れは全収集記録の発話とツール呼び出しの入力を記録別に並べ、結果を成否・量・記録位置の1行で示した文書であり、
+メインが最初に全範囲を通読する。
 原因と対策の確定、AWIの起草と投入はメインが自身のコンテキストで行うため、本スクリプトはキューを変更しない。
 `candidates.md`は1候補を1行の要約と、記録の由来（役割文書、起動mode、起動元）を添えた記録位置で示す。全文が要る候補だけを、
 メインが`atk run-script session-review-evidence`の`--detail`で照会する。
@@ -59,16 +59,7 @@ _READER_RANGE_BYTES = 400_000
 観測はCodexの読取専用の担当で行った。観測で読了できた最大量より小さい値を選んでいる。
 """
 
-_COPY_PREVIEW_LINES = 5
-"""写しを省いたツール結果へ載せる先頭の行数。"""
-_SHELL_TOOLS = frozenset({"Bash", "exec_command", "shell"})
-_FILE_DISPLAY_COMMANDS = frozenset({"cat", "head", "tail", "nl"})
-_PREPARED_FILE_PATTERN = re.compile(r"(?<![\w.-])(?:conversation|candidates|comparison-materials|stats)\.md(?![\w.-])")
-"""`session-review-prepare`が作業ディレクトリへ書く文書の名前。入力がこれを含む呼び出しは前回の準備資料の写しを返す。"""
-_HOST_NOTICE_MARKERS = ("<persisted-output>", "Output too large", "PARTIAL view", "truncated output", "<atk-auto ")
-"""ホストやhookが結果へ付けた切り詰め・長文保存・拒否の通知。通知を読み手が読めるよう、通知を含む結果は全文で残す。"""
-_HOST_NOTICE_WINDOW = 500
-"""通知を探す結果の先頭と末尾の文字数。通知は結果の前後に付くため、表示したファイルの本文中の同じ文字列は通知として扱わない。"""
+
 _CODEX_EXIT_CODE = re.compile(r"^Process exited with code (\d+)$", re.MULTILINE)
 
 _SUMMARY_LENGTH = 200
@@ -217,146 +208,59 @@ def _one_line(text: str, limit: int = _SUMMARY_LENGTH) -> str:
 
 
 def _conversation_document(events: list[dict[str, Any]], detail_command: str) -> str:
-    """全担当の記録を記録別・行順に並べ、本文を文字位置付きの読取単位へ分ける。"""
+    """全担当の発話とツール呼び出しの入力を記録別・行順に並べ、結果は成否・量・記録位置の1行で示す。
+
+    会話の流れは作業の流れ（遠回り、手戻り、試行錯誤、同じ論点の反復）を振り返る入力であり、
+    流れは発話と呼び出しの入力から読める。結果の本文は記録から再取得できるため載せない。
+    失敗の有無は試行錯誤をたどるのに要るため、結果の行へ残す。
+    """
     lines = [
         "# 会話の流れ",
         "",
-        "収集できた全担当の発話・操作・成功と失敗の結果を、記録別に元の行順で示す。"
+        "収集できた全担当の発話とツール呼び出しの入力を、記録別に元の行順で示す。"
         "記録をまたぐ時系列ではない。本文は文字位置付きの連続区間へ分けて全量を保持する。"
-        "ただし、ファイルを表示しただけの結果と前回の準備資料を読んだ結果は、対象・本文量・先頭の数行だけを示す。"
-        f"元の記録は`{detail_command} --detail <記録位置>`から照会できる。",
+        "ツール結果は本文を載せず、成否・本文量・記録位置の1行で示す。"
+        f"結果の本文と元の記録は`{detail_command} --detail <記録位置>`から照会できる。",
     ]
     if not events:
         lines.extend(["", "発話とツール呼び出しは0件である。"])
-    calls = {
-        (item["record"], item["call_id"]): item
-        for item in events
-        if item.get("kind") == "tool-call" and item.get("call_id") is not None
-    }
-    failed = {(item["record"], item["call_id"]) for item in events if item.get("kind") == "tool-failure"}
+    result_lines = {(item["record"], item["line"]) for item in events if item.get("kind") == "tool-result"}
+    failed_lines = {(item["record"], item["line"]) for item in events if item.get("kind") == "tool-failure"}
     for item in events:
         locator = f"{item['record']}:{item['line']}"
         kind = item.get("kind", "utterance")
-        if kind == "utterance":
-            label = "ユーザー" if item["role"] == "user" else "アシスタント"
-        else:
-            label = {"tool-call": "ツール呼び出し", "tool-result": "ツール結果", "tool-failure": "失敗"}[kind]
+        text = str(item["text"])
+        if kind in {"tool-result", "tool-failure"}:
+            if kind == "tool-failure" and (item["record"], item["line"]) in result_lines:
+                continue
+            failed = (item["record"], item["line"]) in failed_lines or _codex_failed(text)
+            state = "失敗" if failed else "完了"
+            call = f" {item.get('tool')} call_id={item.get('call_id')}" if kind == "tool-result" else ""
+            lines.extend(
+                [
+                    "",
+                    f"- ツール結果（{locator}）: {state}{call}、"
+                    f"本文{len(text)}文字・{len(text.encode('utf-8'))}バイト（{item.get('timestamp') or '時刻なし'}）",
+                ]
+            )
+            continue
+        label = ("ユーザー" if item["role"] == "user" else "アシスタント") if kind == "utterance" else "ツール呼び出し"
         title = f"{label}（{item.get('timestamp') or '時刻なし'}、{locator}）"
         if kind != "utterance":
             title += f" {item.get('tool') or ''} call_id={item.get('call_id')}"
-        key = (item["record"], item.get("call_id"))
-        copied = None
-        if kind == "tool-result" and key in calls and key not in failed:
-            copied = _copied_result(calls[key], str(item["text"]))
-        if copied is None:
-            lines.extend(_full_body_lines(str(item["text"]), title=title))
-        else:
-            lines.extend(
-                _copied_result_lines(str(item["text"]), copied, title=title, locator=locator, detail_command=detail_command)
-            )
+        lines.extend(_full_body_lines(text, title=title))
     return "\n".join(lines) + "\n"
 
 
-def _copied_result(call: dict[str, Any], result: str) -> tuple[str, str] | None:
-    """既存の本文の写しだけを返した結果なら、読んだ対象と表示された本文を返す。それ以外は`None`を返す。
-
-    写しはファイルを表示しただけの結果と、前回の準備資料を入力にした呼び出しの結果とする。
-    失敗した結果、ホストの通知を含む結果、先頭の数行で全文を示せる結果は全文で残す。
-    CodexのCommandExecutionは結果がコマンド・終了状態・出力をまとめたJSONであるため、結果から取り出す。
-    """
-    tool = str(call.get("tool") or "")
-    body = result
-    target = None
-    if tool == "CommandExecution":
-        try:
-            item = json.loads(result)
-        except ValueError:
-            return None
-        if not isinstance(item, dict) or item.get("status") != "completed" or item.get("exit_code") not in {0, None}:
-            return None
-        command = _shell_command(item)
-        body = str(item.get("aggregated_output", ""))
-    else:
-        try:
-            tool_input = json.loads(str(call.get("text", "")))
-        except ValueError:
-            return None
-        if not isinstance(tool_input, dict):
-            return None
-        command = _shell_command(tool_input) if tool in _SHELL_TOOLS else None
-        if command is not None:
-            body = _codex_shell_output(result)
-        if tool == "Read" and isinstance(tool_input.get("file_path"), str):
-            options = "、".join(f"{name}={tool_input[name]}" for name in ("offset", "limit", "pages") if name in tool_input)
-            target = tool_input["file_path"] + (f"（{options}）" if options else "")
-    edges = result[:_HOST_NOTICE_WINDOW] + "\n" + result[-_HOST_NOTICE_WINDOW:]
-    if any(marker in edges for marker in _HOST_NOTICE_MARKERS) or _codex_failed(result):
-        return None
-    if len(body.splitlines()) <= _COPY_PREVIEW_LINES and len(body) <= _COPY_PREVIEW_LINES * _SUMMARY_LENGTH:
-        return None
-    if target is None and command is not None and (_PREPARED_FILE_PATTERN.search(command) or _is_file_display(command)):
-        target = _one_line(command)
-    return (target, body) if target is not None else None
-
-
-def _shell_command(tool_input: dict[str, Any]) -> str | None:
-    """Claude CodeのBashとCodexのシェル実行の入力から、シェルへ渡したコマンド文字列を返す。"""
-    for key in ("command", "cmd"):
-        value = tool_input.get(key)
-        if isinstance(value, str):
-            return value
-        if isinstance(value, list) and len(value) == 3 and value[1] in {"-c", "-lc"} and isinstance(value[2], str):
-            return value[2]
-    return None
-
-
-def _is_file_display(command: str) -> bool:
-    """連結・リダイレクト・コマンド置換を含まない、ファイルを表示するだけのコマンドかを返す。解析できない入力は偽とする。"""
-    if "`" in command or "$(" in command:
-        return False
-    tokens = session_evidence_candidates._shell_command_tokens(command)  # pylint: disable=protected-access
-    if tokens is None or any(token.operator for token in tokens):
-        return False
-    words = [token.value for token in tokens]
-    name = pathlib.PurePath(words[0]).name
-    if name in _FILE_DISPLAY_COMMANDS:
-        return True
-    if name == "sed":
-        return "-n" in words[1:]
-    return name == "atk" and words[1:2] == ["read-file"]
-
-
-def _codex_shell_output(result: str) -> str:
-    """Codexのシェル実行の結果から、コマンドが出力した本文（`Output:`の行より後）を返す。
-
-    結果は`Chunk ID:`・`Wall time:`・`Process exited with code`などの行と`Output:`の行で始まり、その後に出力が続く。
-    この形でない結果（Claude CodeのBashなど）はそのまま返す。
-    """
-    header, separator, output = result.partition("\nOutput:\n")
-    return output if separator and _CODEX_EXIT_CODE.search(header) else result
-
-
 def _codex_failed(result: str) -> bool:
-    """Codexのシェル実行の結果が0以外の終了コードを報告しているかを返す。"""
+    """Codexのシェル実行の結果が0以外の終了コードを報告しているかを返す。
+
+    結果は`Chunk ID:`・`Wall time:`・`Process exited with code`などの行と`Output:`の行で始まる。
+    抽出はこの形の失敗を失敗の標識にしないため、結果の行の成否はここで判定する。
+    """
     header = result.split("\nOutput:\n", 1)[0]
     match = _CODEX_EXIT_CODE.search(header)
     return match is not None and match[1] != "0"
-
-
-def _copied_result_lines(text: str, copied: tuple[str, str], *, title: str, locator: str, detail_command: str) -> list[str]:
-    """写しの結果を、読んだ対象、本文量、先頭の数行、全文の照会手段で示す。"""
-    target, body = copied
-    preview = "\n".join(line[:_SUMMARY_LENGTH] for line in body.splitlines()[:_COPY_PREVIEW_LINES])
-    return [
-        "",
-        f"## {title}（写しを省略）",
-        "",
-        f"- 対象: {target}",
-        f"- 本文量: {len(text)}文字、{len(text.encode('utf-8'))}バイト",
-        f"- 全文: `{detail_command} --detail {locator}`",
-        "",
-        *_fence(preview),
-    ]
 
 
 def _full_body_lines(text: str, *, title: str) -> list[str]:
@@ -413,7 +317,7 @@ def _conversation_ranges(text: str, events: list[dict[str, Any]]) -> list[dict[s
             if in_fence:
                 continue
             utterance = re.match(r"^## [^（]+（([^、]+)、([^）]+)）", line)
-            call = re.match(r"^(?:- ツール呼び出し|  - 失敗)（([^）]+)）", line)
+            call = re.match(r"^- ツール結果（([^）]+)）", line)
             if utterance:
                 locators.append(utterance[2])
             elif call:
