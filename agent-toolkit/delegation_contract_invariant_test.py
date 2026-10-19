@@ -6,9 +6,10 @@ import re
 
 import pytest
 
-from agent_toolkit._agents_server import launch_prompts, task_documents
+from agent_toolkit._agents_server import launch_prompts
 from agent_toolkit._atk import run_script
 from agent_toolkit._atk.wi import constants as wi_constants
+from agent_toolkit._common import task_documents
 from agent_toolkit._plan import selection
 
 _LAUNCH_TARGET_PREFIX = "起動対象:"
@@ -239,7 +240,7 @@ def _write_pair(root: pathlib.Path, *, parent_body: str, required_name: str = "�
     root.mkdir(parents=True, exist_ok=True)
     (root / "task.parent.md").write_text(parent_body, encoding="utf-8")
     (root / "task.subagent.md").write_text(
-        f"# 委譲先\n\n## 入力\n\n```text\n{_REQUIRED_INPUT_PREFIX} {required_name}\n```\n",
+        f"# 委譲先\n\n## 入力\n\n```text\n{_REQUIRED_INPUT_PREFIX} {required_name}\n作業ツリーへの書込: あり\n```\n",
         encoding="utf-8",
     )
 
@@ -427,6 +428,22 @@ def test_parent_input_names_are_declared_by_recipient() -> None:
             if match.group("name") not in accepted:
                 errors.append(f"{parent.name}: {match.group('name')}")
 
+    assert not errors, "\n".join(errors)
+
+
+def test_every_task_document_declares_worktree_write() -> None:
+    """全ての`<役割名>.subagent.md`が作業ツリーへの書込を宣言し、宣言を読める。
+
+    `atk lane integrate`の稼働判定は、宣言を読めない役割の担当を書込主体として数え、統合を止める。
+    起動対象を持たない役割文書も判定の対象になるため、起動関係からではなく全文書を列挙して確かめる。
+    """
+    share = pathlib.Path(__file__).resolve().parent / "share"
+    documents = sorted(share.glob("*.subagent.md"))
+    errors = [
+        declaration for document in documents if isinstance(declaration := task_documents.read_declaration(document), str)
+    ]
+
+    assert documents
     assert not errors, "\n".join(errors)
 
 
@@ -824,7 +841,7 @@ def test_recipient_read_by_launched_recipient_is_assigned_and_needs_parent_input
         encoding="utf-8",
     )
     (tmp_path / "merge.subagent.md").write_text(
-        f"# 統合\n\n## 入力\n\n```text\n{_REQUIRED_INPUT_PREFIX} 統合区分\n```\n", encoding="utf-8"
+        f"# 統合\n\n## 入力\n\n```text\n{_REQUIRED_INPUT_PREFIX} 統合区分\n作業ツリーへの書込: あり\n```\n", encoding="utf-8"
     )
 
     errors = _contract_errors(tmp_path)
@@ -840,7 +857,7 @@ def test_unassigned_recipient_is_reported(tmp_path: pathlib.Path) -> None:
     """どの`<役割名>.parent.md`からも選ばれない`<役割名>.subagent.md`を報告する。"""
     _write_pair(tmp_path, parent_body=_parent_body())
     (tmp_path / "orphan.subagent.md").write_text(
-        f"# 委譲先\n\n## 入力\n\n```text\n{_REQUIRED_INPUT_PREFIX} 対象\n```\n",
+        f"# 委譲先\n\n## 入力\n\n```text\n{_REQUIRED_INPUT_PREFIX} 対象\n作業ツリーへの書込: あり\n```\n",
         encoding="utf-8",
     )
 
@@ -928,7 +945,7 @@ def test_exact_bullet_label_is_accepted(tmp_path: pathlib.Path, optional: bool) 
     (tmp_path / "task.subagent.md").write_text(
         "# 委譲先\n\n## 入力\n\n```text\n"
         + ("必須入力名: 対象\n任意入力名: 対象リポジトリ\n" if optional else "必須入力名: 対象,対象リポジトリ\n")
-        + "```\n",
+        + "作業ツリーへの書込: あり\n```\n",
         encoding="utf-8",
     )
 
@@ -977,7 +994,7 @@ def test_required_input_block_must_immediately_follow_heading(tmp_path: pathlib.
     """入力見出しと必須入力名ブロックの間に本文がある文書を拒否する。"""
     _write_pair(tmp_path, parent_body=_parent_body())
     (tmp_path / "task.subagent.md").write_text(
-        "# 委譲先\n\n## 入力\n\n説明\n\n```text\n必須入力名: 対象リポジトリ\n```\n",
+        "# 委譲先\n\n## 入力\n\n説明\n\n```text\n必須入力名: 対象リポジトリ\n作業ツリーへの書込: あり\n```\n",
         encoding="utf-8",
     )
 

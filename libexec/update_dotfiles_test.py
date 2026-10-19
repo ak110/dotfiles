@@ -1,6 +1,6 @@
 """`libexec/update_dotfiles.py`のテスト。
 
-通常4段の表示順序・fail-fast・排他ロック・標準ストリーム・Codex管理daemonの一時停止を検証する。
+通常4段の表示順序・前提となる段のfail-fastと続行する段の失敗の集約・排他ロック・標準ストリーム・Codex管理daemonの一時停止を検証する。
 """
 
 # pylint: disable=protected-access
@@ -88,13 +88,13 @@ def test_plugin_pulls_precede_chezmoi(monkeypatch: pytest.MonkeyPatch, tmp_path:
 
 
 @pytest.mark.parametrize("timeout", [False, True])
-def test_plugin_pull_failure_stops_update(
+def test_plugin_pull_failure_continues_update(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
     sync_report_path: pathlib.Path,
     timeout: bool,
 ) -> None:
-    """失敗とtimeoutを対象名・Git出力付きで記録し、次のpullとinitを停止する。"""
+    """失敗とtimeoutを対象名・Git出力付きで記録し、次のpullと以降の段を続けて終了コード1で終える。"""
     for name in ("10-fail", "20-next"):
         (tmp_path / "plugins" / name / ".git").mkdir(parents=True)
     monkeypatch.setattr(update_dotfiles, "_DOTFILES_ROOT", tmp_path)
@@ -111,10 +111,19 @@ def test_plugin_pull_failure_stops_update(
     monkeypatch.setattr(subprocess, "Popen", popen)
     monkeypatch.setattr(subprocess, "run", _fake_run({}, calls))
     monkeypatch.setattr(update_dotfiles, "_kill_process_tree", lambda _process: None)
-    assert update_dotfiles.main() == (1 if timeout else 7)
-    assert len(calls) == 2
+    assert update_dotfiles.main() == 1
+    assert [call[:2] for call in calls if call[0] == "chezmoi"] == [
+        ["chezmoi", "git"],
+        ["chezmoi", "init"],
+        ["chezmoi", "status"],
+        ["chezmoi", "diff"],
+        ["chezmoi", "apply"],
+    ]
+    assert any("20-next" in " ".join(call) for call in calls)
     report = json.loads(sync_report_path.read_text(encoding="utf-8"))
+    assert report["status"] == "failed"
     assert "10-fail" in report["failed_stage"]
+    assert "20-next" in report["failed_stage"]
     assert "10-fail" in report["stderr_tail"]
     assert ("partial plugin error" if timeout else "plugin stderr") in report["stderr_tail"]
     if not timeout:
@@ -664,14 +673,14 @@ def test_save_worktree_reports_launcher_failure(monkeypatch: pytest.MonkeyPatch,
 
 
 @pytest.mark.parametrize("always_timeout", [False, True])
-def test_old_stash_timeout_stops_update_and_records_diagnostics(
+def test_old_stash_timeout_continues_update_and_records_diagnostics(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
     sync_report_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
     always_timeout: bool,
 ) -> None:
-    """旧退避の保護が停止しても有限回の回収で戻り、pull前に失敗を記録する。"""
+    """旧退避の保護が停止しても有限回の回収で戻り、失敗を記録してpullへ進み、終了コード1で終える。"""
     ref = "refs/worktree/update-dotfiles-old"
     calls: list[list[str]] = []
     timeouts: list[int | None] = []
@@ -685,14 +694,27 @@ def test_old_stash_timeout_stops_update_and_records_diagnostics(
     )
     monkeypatch.setattr(update_dotfiles, "_update_git_with_recovery", _REAL_UPDATE_GIT_WITH_RECOVERY)
     monkeypatch.setattr(update_dotfiles, "_git_operation_in_progress", lambda: False)
-    monkeypatch.setattr(
-        update_dotfiles,
-        "_git_capture",
-        lambda *args: subprocess.CompletedProcess([], 0, str(tmp_path / "index") if args[-1] == "index" else ref + "\n", ""),
-    )
+
+    def git_capture(*args: str) -> subprocess.CompletedProcess[str]:
+        if args[-1] == "index":
+            return subprocess.CompletedProcess([], 0, str(tmp_path / "index"), "")
+        if "status" in args or "--others" in args:
+            return subprocess.CompletedProcess([], 0, "", "")
+        return subprocess.CompletedProcess([], 0, ref + "\n", "")
+
+    monkeypatch.setattr(update_dotfiles, "_git_capture", git_capture)
+    monkeypatch.setattr(update_dotfiles, "_DOTFILES_ROOT", tmp_path)
     monkeypatch.setattr(update_dotfiles, "_LOCK_PATH", tmp_path / "update.lock")
-    monkeypatch.setattr(update_dotfiles, "_run_git_pull", lambda *_args, **_kwargs: pytest.fail("pullへ進んだ"))
+    pulls: list[int] = []
+
+    def fake_pull(*_args: object, **_kwargs: object) -> int:
+        pulls.append(1)
+        return 0
+
+    monkeypatch.setattr(update_dotfiles, "_run_git_pull", fake_pull)
     monkeypatch.setattr(subprocess, "Popen", lambda *_args, **_kwargs: process)
+    chezmoi_calls: list[list[str]] = []
+    monkeypatch.setattr(subprocess, "run", _fake_run({}, chezmoi_calls))
     killed: list[int] = []
     monkeypatch.setattr(update_dotfiles, "_kill_process_tree", lambda child: killed.append(child.pid))
 
@@ -700,11 +722,14 @@ def test_old_stash_timeout_stops_update_and_records_diagnostics(
     assert timeouts == [120, 30]
     assert killed == [process.pid]
     report = json.loads(sync_report_path.read_text(encoding="utf-8"))
-    assert report["failed_stage"] == "worktree-stash protect-old"
+    assert pulls == [1]
+    assert [call[1] for call in chezmoi_calls] == ["init", "status", "diff", "apply"]
+    assert report["failed_stage"] == "過去の退避データの整理"
     assert "120秒以内" in report["stderr_tail"]
     captured = capsys.readouterr()
     assert "worktree-stash" not in captured.out
-    assert "更新を中止" in captured.err
+    assert "過去の退避データを確認できませんでしたが、更新を続けます" in captured.err
+    assert "git statusとupdate-dotfiles logs" in captured.err
     log = update_dotfiles._LOG_PATH.read_text(encoding="utf-8")
     assert "退避操作開始" in log
     assert "退避操作timeout" in log
@@ -928,19 +953,26 @@ def test_child_python_output_uses_utf8(monkeypatch: pytest.MonkeyPatch) -> None:
     assert update_dotfiles._child_env()["PYTHONIOENCODING"] == "utf-8:replace"  # noqa: SLF001
 
 
-def test_missing_persistent_log_stops_before_updates(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_missing_persistent_log_continues_updates(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, sync_report_path: pathlib.Path
+) -> None:
+    """永続ログを開始できなくても更新を続け、終了コード1と失敗した段を残す。"""
+    calls: list[list[str]] = []
     monkeypatch.setattr(update_dotfiles, "_configure_persistent_log", lambda _run_id: None)
-    monkeypatch.setattr(
-        update_dotfiles,
-        "_update_git_with_recovery",
-        lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("更新を開始してはならない")),
-    )
+    monkeypatch.setattr(subprocess, "Popen", _fake_popen({}, calls))
+    monkeypatch.setattr(subprocess, "run", _fake_run({}, calls))
+    monkeypatch.setattr(update_dotfiles, "_LOCK_PATH", tmp_path / "locks" / "update-dotfiles.lock")
 
     assert update_dotfiles.main() == 1
+    assert [call[1] for call in calls] == ["git", "init", "status", "diff", "apply"]
+    assert json.loads(sync_report_path.read_text(encoding="utf-8"))["failed_stage"] == "永続ログの開始"
 
 
 class TestStepFailureStopsExecution:
-    """途中段の失敗でそのexit codeを返し、以降の段を呼ばないことを検証する。"""
+    """後続の前提になる段の失敗でそのexit codeを返し、以降の段を呼ばないことを検証する。
+
+    失敗しても前提を壊さない段は、後続の段を続けて終了コード1で終える。
+    """
 
     def test_step2_failure_skips_step3_and_4(self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
         calls: list[list[str]] = []
@@ -952,24 +984,128 @@ class TestStepFailureStopsExecution:
         assert len(calls) == 2
         assert calls[1][:2] == ["chezmoi", "init"]
 
-    def test_step3_failure_stops_before_apply(self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
-        """`chezmoi status`段の失敗も他段と同様にfail-fastすること。"""
+    def test_dotfiles_pull_failure_stops_before_init(self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
+        """dotfiles自身のpullの失敗は、不確定なソースを配備しないよう以降の段を止める。"""
         calls: list[list[str]] = []
-        monkeypatch.setattr(subprocess, "Popen", _fake_popen({}, calls))
-        monkeypatch.setattr(subprocess, "run", _fake_run({"status": 2}, calls))
+        monkeypatch.setattr(subprocess, "Popen", _fake_popen({"git": 4}, calls))
+        monkeypatch.setattr(subprocess, "run", _fake_run({}, calls))
         monkeypatch.setattr(update_dotfiles, "_LOCK_PATH", tmp_path / "locks" / "update-dotfiles.lock")
 
-        assert update_dotfiles.main() == 2
-        assert len(calls) == 3
+        assert update_dotfiles.main() == 4
+        assert [call[1] for call in calls] == ["git"]
 
-    def test_diff_failure_stops_before_apply(self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
+    @pytest.mark.parametrize(("failed_command", "exit_code"), [("status", 2), ("diff", 7)])
+    def test_display_stage_failure_continues_to_apply(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+        failed_command: str,
+        exit_code: int,
+    ) -> None:
+        """表示専用の`chezmoi status`・`chezmoi diff`の失敗は記録して`chezmoi apply`まで続け、終了コード1で終える。"""
         calls: list[list[str]] = []
         monkeypatch.setattr(subprocess, "Popen", _fake_popen({}, calls))
-        monkeypatch.setattr(subprocess, "run", _fake_run({"diff": 7}, calls))
+        monkeypatch.setattr(subprocess, "run", _fake_run({failed_command: exit_code}, calls))
         monkeypatch.setattr(update_dotfiles, "_LOCK_PATH", tmp_path / "locks" / "update-dotfiles.lock")
 
-        assert update_dotfiles.main() == 7
-        assert [call[1] for call in calls] == ["git", "init", "status", "diff"]
+        assert update_dotfiles.main() == 1
+        assert [call[1] for call in calls] == ["git", "init", "status", "diff", "apply"]
+        err = capsys.readouterr().err
+        assert "失敗しても後続の段を続けた段:" in err
+        assert f"chezmoi {failed_command}" in err
+
+    def test_failure_guidance_follows_continued_failure_list_once(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """失敗の案内は続行した段の一覧の後に1回だけ出る。"""
+        calls: list[list[str]] = []
+        monkeypatch.setattr(subprocess, "Popen", _fake_popen({}, calls))
+        monkeypatch.setattr(subprocess, "run", _fake_run({"status": 2, "diff": 7}, calls))
+        monkeypatch.setattr(update_dotfiles, "_LOCK_PATH", tmp_path / "locks" / "update-dotfiles.lock")
+
+        assert update_dotfiles.main() == 1
+        err = capsys.readouterr().err
+        assert err.count("次の操作:") == 1
+        assert err.count("永続ログ:") == 1
+        assert err.count("失敗の詳細は update-dotfiles logs") == 1
+        assert err.index("失敗しても後続の段を続けた段:") < err.index("次の操作:") < err.index("永続ログ:")
+
+    def test_post_apply_failure_shows_next_action_once(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """post-applyの失敗で`chezmoi apply`が失敗した実行でも、次の操作と永続ログの所在が画面に各1回出る。
+
+        post-applyは`update-dotfiles`経由では失敗後の案内を出さないため、終了時の案内が唯一の次の操作になる。
+        """
+        calls: list[list[str]] = []
+        monkeypatch.setattr(subprocess, "Popen", _fake_popen({}, calls))
+        monkeypatch.setattr(subprocess, "run", _fake_run({"apply": 1}, calls))
+        monkeypatch.setattr(update_dotfiles, "_LOCK_PATH", tmp_path / "locks" / "update-dotfiles.lock")
+
+        assert update_dotfiles.main() == 1
+        err = capsys.readouterr().err
+        assert err.count("次の操作:") == 1
+        assert err.count("永続ログ:") == 1
+
+    def test_multiple_continued_failures_are_all_listed(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+        sync_report_path: pathlib.Path,
+    ) -> None:
+        """続行した複数の失敗を一覧に並べ、同期記録へ全ての段の名前を残す。"""
+        calls: list[list[str]] = []
+        monkeypatch.setattr(subprocess, "Popen", _fake_popen({}, calls))
+        monkeypatch.setattr(subprocess, "run", _fake_run({"status": 2, "diff": 7}, calls))
+        monkeypatch.setattr(update_dotfiles, "_LOCK_PATH", tmp_path / "locks" / "update-dotfiles.lock")
+
+        assert update_dotfiles.main() == 1
+        err = capsys.readouterr().err
+        assert "chezmoi status" in err and "chezmoi diff" in err
+        report = json.loads(sync_report_path.read_text(encoding="utf-8"))
+        assert "chezmoi status" in report["failed_stage"] and "chezmoi diff" in report["failed_stage"]
+
+    def test_apply_failure_after_continued_failure_keeps_apply_exit_code(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """前提となる`chezmoi apply`が失敗した場合は、その終了コードを返し、続行した失敗も一覧に並べる。"""
+        calls: list[list[str]] = []
+        monkeypatch.setattr(subprocess, "Popen", _fake_popen({}, calls))
+        monkeypatch.setattr(subprocess, "run", _fake_run({"status": 2, "apply": 5}, calls))
+        monkeypatch.setattr(update_dotfiles, "_LOCK_PATH", tmp_path / "locks" / "update-dotfiles.lock")
+
+        assert update_dotfiles.main() == 5
+        assert "chezmoi status" in capsys.readouterr().err
+
+    def test_mise_lock_discard_failure_continues_update(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """`mise.lock`の差分を破棄できなくても、pullへ進み、失敗を記録して終了コード1で終える。"""
+        local, _seed, _remote = _create_git_pair(tmp_path)
+        monkeypatch.setattr(update_dotfiles, "_DOTFILES_ROOT", local)
+        monkeypatch.setattr(update_dotfiles, "_LOCK_PATH", tmp_path / "update.lock")
+        monkeypatch.setattr(update_dotfiles, "_update_git_with_recovery", _REAL_UPDATE_GIT_WITH_RECOVERY)
+        monkeypatch.setattr(update_dotfiles, "_discard_mise_lock_changes", lambda: False)
+        _patch_real_pull(monkeypatch, local)
+        chezmoi_calls: list[list[str]] = []
+        monkeypatch.setattr(subprocess, "run", _fake_run({}, chezmoi_calls))
+
+        assert update_dotfiles.main() == 1
+        assert [call[1] for call in chezmoi_calls if call[0] == "chezmoi"] == ["init", "status", "diff", "apply"]
+        err = capsys.readouterr().err
+        assert "mise.lockの差分を破棄できませんでしたが、更新を続けます" in err
+        assert "mise.lockの差分の破棄" in err
 
 
 class TestSyncReport:
@@ -1126,7 +1262,8 @@ class TestCapturedStderr:
         captured = capsys.readouterr()
         assert "fatal: pull failed" not in captured.out
         assert captured.err == (
-            f"fatal: pull failed\n永続ログ: {update_dotfiles._LOG_PATH}\n"  # noqa: SLF001
+            "fatal: pull failed\n次の操作: 失敗理由を確認し、update-dotfilesを再実行してください。\n"
+            f"永続ログ: {update_dotfiles._LOG_PATH}\n"  # noqa: SLF001
             "失敗の詳細は update-dotfiles logs で直近1回の実行ログを表示して確認できる。\n"
         )
         assert len(calls) == 1

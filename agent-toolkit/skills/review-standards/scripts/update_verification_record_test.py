@@ -65,59 +65,223 @@ def test_public_pending_commit_rewrite_preserves_observation_and_judgment(
     assert "未判定検証記録" in result.out and "--expected-head" not in result.out
 
 
-@pytest.mark.parametrize("name", ["verification-record", "exec-review-evidence-check"])
-@pytest.mark.parametrize("invalid", ["none", "duplicate", "outside", "missing", "common"])
-def test_public_row_evidence_is_unambiguous_and_atomic(
-    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], name: str, invalid: str
-) -> None:
-    """両配列の異なる根拠を公開CLIで一度で保存し、対応不成立では全記録を保持する。"""
+def _two_array_record(tmp_path: pathlib.Path) -> tuple[pathlib.Path, dict[str, typing.Any]]:
+    """両配列に2行ずつの未判定行を持つ記録を生成して返し、配列をまたぐ行選択を公開CLIで検収できるようにする。"""
     record = tmp_path / "pending.json"
     assert _run("--output", str(record), "--plan", str(_plan(tmp_path, "plan-user"))) == 0
     payload = json.loads(record.read_text(encoding="utf-8"))
-    # 同じ構造の要求を両配列に用意し、配列をまたぐ選択も公開CLIで検収する。
     payload["wi_conditions"] = [
         {
             "awi": WI,
-            "condition": "保存する。",
-            "source": "試験の完成条件",
+            "condition": f"保存する{number}。",
+            "source": f"試験の完成条件{number}",
             "outcome": "",
             "reviewed_head": "",
             "evidence": "",
         }
+        for number in (1, 2)
     ]
     _json(record, payload)
+    return record, payload
+
+
+@pytest.mark.parametrize("explicit", [False, True], ids=["omitted", "explicit"])
+def test_row_options_select_rows_without_select_row(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], explicit: bool
+) -> None:
+    """行別指定の更新先だけで両配列の行を1回ずつ更新し、同じ集合の明示選択とも同じ結果を保存する。"""
+    text = "def test_first():\n    assert True\ndef test_second():\n    assert True\n"
+    trial = _saved_trial(tmp_path, text, "row-only")
+    monkeypatch.chdir(tmp_path)
+    diagnostics = _saved_diagnostics(
+        tmp_path,
+        [
+            {
+                "kind": "diagnostic",
+                "command": "lint",
+                "file": "trial_test.py",
+                "messages": [{"line": 2, "col": 1, "severity": "warning", "rule": "W001", "msg": "行別の観測"}],
+            }
+        ],
+        {"trial_test.py": text},
+        "row-only-diagnostics",
+    )
+    results = _json(tmp_path / "results.json", {"junit": trial, "diagnostics": diagnostics})
+    record, payload = _two_array_record(tmp_path)
+    capsys.readouterr()
+    assert _run("--output", str(record), "--results-file", str(results), "--list-results") == 0
+    (diagnostic,) = json.loads(capsys.readouterr().out)["diagnostics"]
+    first, second = tmp_path / "first.txt", tmp_path / "second.txt"
+    first.write_text("第一の保存結果を観測した。", encoding="utf-8")
+    second.write_text("第二の保存結果を観測した。", encoding="utf-8")
+    # 同じ行へ根拠・試験・診断の3種類を記し、別の配列の行へは根拠と試験を記す。
+    args = ["--output", str(record), "--results-file", str(results), "--mode", "replace"]
+    args += ["--row-evidence-file", "wi_conditions:2", str(first)]
+    args += ["--row-result-test", "wi_conditions:2", "trial_test.py::test_first"]
+    args += ["--row-result-diagnostic", "wi_conditions:2", diagnostic]
+    args += ["--row-result-test", "user_requirements:1", "trial_test.py::test_second"]
+    args += ["--row-evidence-file", "user_requirements:1", str(second)]
+    if explicit:
+        args += ["--select-row", "user_requirements:1", "--select-row", "wi_conditions:2"]
+    assert _run(*args) == 0, capsys.readouterr().err
+    updated = json.loads(record.read_text(encoding="utf-8"))
+    assert updated["wi_conditions"][0] == payload["wi_conditions"][0]
+    assert updated["user_requirements"][1] == payload["user_requirements"][1]
+    for section, index, own, other, evidence in (
+        ("wi_conditions", 1, "test_first", "test_second", first),
+        ("user_requirements", 0, "test_second", "test_first", second),
+    ):
+        row, original = updated[section][index], payload[section][index]
+        assert {**row, "evidence": ""} == original
+        assert row["evidence"].count(f"trial_test.py::{own}") == 1 and other not in row["evidence"]
+        assert row["evidence"].count(evidence.read_text(encoding="utf-8")) == 1
+        assert ("after.message_position" in row["evidence"]) == (section == "wi_conditions")
+
+
+def test_review_row_options_select_rows_without_select_row(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """レビュー更新は判定・出所・継承・受理済み参照の更新先だけを選び、第2要素が指す行を選ばない。"""
+    repository = git_repository.init_repository(tmp_path / "repo", commit_message="基準")
+    head = git_repository.git_output(repository, "rev-parse", "HEAD")
+    monkeypatch.chdir(repository)
+    current, payload = _two_array_record(tmp_path)
+    payload["wi_conditions"].append({**payload["wi_conditions"][0], "condition": "保存する3。", "source": "試験の完成条件3"})
+    _json(current, payload)
+    # 未判定記録と受理済み証拠の行順を入れ替え、第2要素の行番号が現在の別の行を指すようにする。
+    pending = tmp_path / "verification.json"
+    pending_rows = [{**row, "evidence": f"未判定の観測{index}"} for index, row in enumerate(payload["user_requirements"], 1)]
+    _json(pending, {"wi_conditions": [], "user_requirements": pending_rows[::-1]})
+    accepted = tmp_path / "accepted.json"
+    accepted_rows = [
+        {**row, "outcome": "達成", "reviewed_head": head, "evidence": "以前の判定"} for row in payload["wi_conditions"]
+    ]
+    _json(accepted, {"wi_conditions": accepted_rows[1::-1], "user_requirements": []})
+    reason, expired = tmp_path / "reason.txt", tmp_path / "expired.txt"
+    reason.write_text("今回の差分は保存の入力を変えていない。", encoding="utf-8")
+    expired.write_text("完成条件は失効の判断根拠へ従う。", encoding="utf-8")
+    output = tmp_path / "review.json"
+    args = [str(current), "--output", str(output), "--mode", "replace", "--reviewed-head", head]
+    args += ["--row-outcome", "wi_conditions:1", "達成", "--row-evidence-file", "wi_conditions:1", str(reason)]
+    args += ["--accepted-evidence", str(accepted), "--accepted-row", "wi_conditions:1", "wi_conditions:2"]
+    args += ["--row-outcome", "wi_conditions:3", "失効", "--row-evidence-file", "wi_conditions:3", str(expired)]
+    args += ["--row-source", "wi_conditions:3", "失効の判断根拠"]
+    args += ["--verification-record", str(pending), "--verification-row", "user_requirements:1", "user_requirements:2"]
+    args += ["--row-outcome", "user_requirements:1", "達成"]
+    assert _run(*args, name="exec-review-evidence-check") == 0, capsys.readouterr().err
+    saved = json.loads(output.read_text(encoding="utf-8"))
+    accepted_row, unselected, expired_row = saved["wi_conditions"]
+    assert unselected == payload["wi_conditions"][1]
+    assert saved["user_requirements"][1] == payload["user_requirements"][1]
+    assert accepted_row["outcome"] == "達成" and accepted_row["evidence"].startswith("受理済み判定: ")
+    assert json.loads(accepted_row["evidence"].splitlines()[0].removeprefix("受理済み判定: "))["row"] == 2
+    assert accepted_row["evidence"].count(reason.read_text(encoding="utf-8")) == 1
+    assert expired_row["source"] == "失効の判断根拠" and expired_row["outcome"] == "失効"
+    inherited = saved["user_requirements"][0]
+    assert inherited["outcome"] == "達成" and inherited["evidence"] == "未判定の観測1"
+    assert inherited["source"] == payload["user_requirements"][0]["source"] and inherited["reviewed_head"] == head
+    assert json.loads(current.read_text(encoding="utf-8")) == payload
+
+
+# 拒否の理由ごとに、診断が示す語を対にして、別の理由による拒否で通らないようにする。
+_INVALID_SELECTIONS = {
+    "outside": "--select-rowを明示した場合はその集合",
+    "missing-row": "選択行が存在しません",
+    "malformed": "行選択はwi_conditions:N",
+    "duplicate": "各選択行へ一意に指定する",
+    "common": "全選択行への共通指定は別々に使う",
+    "mode": "--modeを指定する",
+    "missing-file": "second.txt",
+}
+
+
+@pytest.mark.parametrize(
+    ("name", "invalid"),
+    [("verification-record", invalid) for invalid in _INVALID_SELECTIONS]
+    + [("exec-review-evidence-check", invalid) for invalid in [*_INVALID_SELECTIONS, "outcome"]],
+)
+def test_row_options_reject_invalid_selection_without_partial_write(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], name: str, invalid: str
+) -> None:
+    """明示選択の集合外・不正な行・重複・共通値との混在・mode欠落・根拠の不在・判定不足は、入力と保存先を変えずに拒否する。"""
+    record, _payload = _two_array_record(tmp_path)
     files = [tmp_path / "first.txt", tmp_path / "second.txt"]
     files[0].write_text("第一の保存結果を観測した。", encoding="utf-8")
     files[1].write_text("第二の保存結果を観測した。", encoding="utf-8")
-    selectors = ["wi_conditions:1", "user_requirements:2"]
-    args = [str(record)] if name == "exec-review-evidence-check" else []
-    args += ["--output", str(record), "--mode", "replace"]
+    reviewing = name == "exec-review-evidence-check"
+    output = tmp_path / "review.json" if reviewing else record
+    args = [str(record)] if reviewing else []
+    args += ["--output", str(output)]
+    if invalid != "mode":
+        args += ["--mode", "replace"]
+    selectors = ["wi_conditions:2", "user_requirements:1"]
     for selector, path in zip(selectors, files, strict=True):
-        args += ["--select-row", selector, "--row-evidence-file", selector, str(path)]
-        if name == "exec-review-evidence-check":
+        args += ["--row-evidence-file", selector, str(path)]
+        if reviewing and not (invalid == "outcome" and selector == selectors[1]):
             args += ["--row-outcome", selector, "達成"]
-    if name == "exec-review-evidence-check":
+    if reviewing:
         args += ["--reviewed-head", "a" * 40]
-    if invalid == "duplicate":
-        args += ["--row-evidence-file", selectors[0], str(files[0])]
-    elif invalid == "outside":
-        args += ["--row-evidence-file", "user_requirements:1", str(files[0])]
-    elif invalid == "missing":
-        files[1].unlink()
+    if invalid == "outside":
+        args += ["--select-row", selectors[0]]
+    elif invalid == "missing-row":
+        args += ["--row-evidence-file", "user_requirements:99", str(files[0])]
+    elif invalid == "malformed":
+        args += ["--row-evidence-file", "wi_conditions", str(files[0])]
+    elif invalid == "duplicate":
+        args += ["--row-evidence-file", selectors[0], str(files[1])]
     elif invalid == "common":
         args += ["--evidence-file", str(files[0])]
-    before = record.read_bytes()
+    elif invalid == "missing-file":
+        files.pop().unlink()
+    inputs = {path: path.read_bytes() for path in (record, *files)}
     capsys.readouterr()
-    assert _run(*args, name=name) == (0 if invalid == "none" else 1)
-    if invalid != "none":
-        assert record.read_bytes() == before
-        assert "次の操作:" in capsys.readouterr().err
-        return
-    updated = json.loads(record.read_text(encoding="utf-8"))
-    assert updated["wi_conditions"][0]["evidence"] == files[0].read_text(encoding="utf-8")
-    assert updated["user_requirements"][1]["evidence"] == files[1].read_text(encoding="utf-8")
-    assert updated["user_requirements"][0] == payload["user_requirements"][0]
-    assert updated["wi_conditions"][0]["source"] == payload["wi_conditions"][0]["source"]
+    assert _run(*args, name=name) == 1
+    assert {path: path.read_bytes() for path in inputs} == inputs
+    assert not reviewing or not output.exists()
+    diagnostic = capsys.readouterr().err
+    assert "次の操作:" in diagnostic
+    assert {**_INVALID_SELECTIONS, "outcome": "判定の無い行"}[invalid] in diagnostic
+
+
+@pytest.mark.parametrize("name", ["verification-record", "exec-review-evidence-check"])
+def test_help_describes_row_selection_contract(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], name: str
+) -> None:
+    """--select-rowのhelpが省略時に選ぶ全ての行別指定を挙げ、案内どおりの省略と共通値の行選択を受理する。"""
+    monkeypatch.setenv("COLUMNS", "1000")
+    assert _run("--help", name=name) == 0
+    lines = capsys.readouterr().out.splitlines()
+    start = next(index for index, line in enumerate(lines) if line.lstrip().startswith("--select-row "))
+    end = next(index for index in range(start + 1, len(lines)) if lines[index].lstrip().startswith("-"))
+    help_text = "".join(line.strip() for line in lines[start:end])
+    reviewing = name == "exec-review-evidence-check"
+    targets = ["--row-evidence-file", "--row-result-test", "--row-result-diagnostic"]
+    if reviewing:
+        targets += ["--row-outcome", "--row-source", "--verification-row", "--accepted-row"]
+    assert all(target in help_text for target in targets), help_text
+    record, payload = _two_array_record(tmp_path)
+    explanation = tmp_path / "explanation.txt"
+    explanation.write_text("保存結果を観測した。", encoding="utf-8")
+    output = tmp_path / "review.json"
+    prefix = [str(record), "--output", str(output)] if reviewing else ["--output", str(record)]
+    prefix += ["--mode", "replace"]
+    judgment = ["--row-outcome", "wi_conditions:1", "証拠不足", "--reviewed-head", "a" * 40] if reviewing else []
+    assert _run(*prefix, "--row-evidence-file", "wi_conditions:1", str(explanation), *judgment, name=name) == 0
+    saved = json.loads((output if reviewing else record).read_text(encoding="utf-8"))
+    assert saved["wi_conditions"][0]["evidence"] == explanation.read_text(encoding="utf-8")
+    assert saved["wi_conditions"][1] == payload["wi_conditions"][1]
+    common = [*prefix, "--evidence-file", str(explanation)]
+    if reviewing:
+        common += ["--reviewed-head", "a" * 40]
+    capsys.readouterr()
+    assert _run(*common, name=name) == 1
+    assert "--select-row" in capsys.readouterr().err
+    selected = ["--select-row", "user_requirements:2"]
+    if reviewing:
+        selected += ["--row-outcome", "user_requirements:2", "証拠不足"]
+    assert _run(*common, *selected, name=name) == 0
+    saved = json.loads((output if reviewing else record).read_text(encoding="utf-8"))
+    assert saved["user_requirements"][1]["evidence"] == explanation.read_text(encoding="utf-8")
 
 
 @pytest.mark.parametrize("name", ["verification-record", "exec-review-evidence-check"])
@@ -609,6 +773,49 @@ def test_public_update_accepts_resolved_references(
     assert json.loads(record.read_text(encoding="utf-8"))["user_requirements"][0]["evidence"] == text.format(saved=saved)
 
 
+def test_updates_file_accepts_model_identifier_evidence(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """行位置付きのモデル識別子は追跡ファイルの名前・拡張子と一致せず、`--updates-file`の保存で参照として拒否しない。"""
+    record, source, _ = _reference_record(tmp_path, monkeypatch)
+    evidence = tmp_path / "evidence.txt"
+    text = "amazon.nova-lite-v1:0の料金はdocs/tracked.md:2 の表で確認した"
+    evidence.write_text(text, encoding="utf-8")
+    assert _run(*_update_route("updates-file", record, source, evidence)) == 0
+    assert json.loads(record.read_text(encoding="utf-8"))["user_requirements"][0]["evidence"] == text
+
+
+@pytest.mark.parametrize(
+    ("text", "code"),
+    [
+        ("バックアップの説明pytools/repack_archive_test.py::TestRestore::test_restore[zip]で確認", 0),
+        ("原因をpytools/repack_archive_test.py::test_save[zip]で確認", 0),
+        ("原因をpytools/missing_test.py::test_save[zip]で確認", 1),
+    ],
+)
+def test_saves_nodeid_following_japanese_text(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    text: str,
+    code: int,
+) -> None:
+    """和文へ直接続けたnodeidは、未判定記録の保存でも和文を除いたファイル接頭辞の所在で確かめる。"""
+    record, source, _ = _reference_record(tmp_path, monkeypatch)
+    test_file = record.parent / "repo/pytools/repack_archive_test.py"
+    test_file.parent.mkdir()
+    test_file.write_text("def test_save():\n    pass\n", encoding="utf-8")
+    _git(test_file.parent.parent, "add", "pytools/repack_archive_test.py")
+    _git(test_file.parent.parent, "-c", "user.name=Test", "-c", "user.email=test@example.com", "commit", "-qm", "追加")
+    evidence = tmp_path / "evidence.txt"
+    evidence.write_text(text, encoding="utf-8")
+    capsys.readouterr()
+    assert _run(*_update_route("updates-file", record, source, evidence)) == code
+    error = capsys.readouterr().err
+    if code:
+        assert "参照『pytools/missing_test.py::test_save[zip]』" in error, error
+    else:
+        assert json.loads(record.read_text(encoding="utf-8"))["user_requirements"][0]["evidence"] == text
+
+
 @pytest.mark.parametrize("cwd_kind", ["outside", "other"])
 @pytest.mark.parametrize("mode", ["plan-wi", "plan-user", "mixed"])
 def test_public_generation_uses_plan_repository_from_other_cwd(
@@ -1045,6 +1252,31 @@ def test_public_diagnostics_comparison_distinguishes_movement_multiplicity_and_i
             groups = json.loads(capsys.readouterr().out)["diagnostics"]
             assert {identity for group in groups for identity in group["diagnostics"]} == compared.keys()
             assert any(group["change"] == "incomparable" for group in groups)
+
+
+def test_diagnostics_from_subproject_follow_renames(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
+    """サブプロジェクトを作業ディレクトリとした診断を、worktree起点の改名と保存時本文へ対応付ける。"""
+    text = "\n".join(f"value_{number} = {number}" for number in range(5)) + "\n"
+    repository = git_repository.init_repository(tmp_path / "repo", files={"sub/old.py": text}, commit_message="基準")
+    subproject = repository / "sub"
+
+    def entry(file: str) -> dict:
+        message = {"line": 2, "col": 1, "severity": "warning", "rule": "W001", "msg": "同じ診断"}
+        return {"kind": "diagnostic", "command": "lint", "file": file, "messages": [message]}
+
+    before = _saved_diagnostics(subproject, [entry("old.py")], {"sub/old.py": text}, "before")
+    _git(repository, "mv", "sub/old.py", "sub/new.py")
+    _git(repository, "-c", "user.name=試験担当", "-c", "user.email=test@example.invalid", "commit", "--no-verify", "-m", "改名")
+    # 絶対パスの診断fileも、相対パスと同じworktree起点の名前へそろう。
+    after = _saved_diagnostics(subproject, [entry(str(subproject / "new.py"))], {"sub/new.py": text}, "after")
+    results = _json(tmp_path / "results.json", {"diagnostics": after, "baseline_diagnostics": before})
+    output = tmp_path / "record.json"
+    assert _run("--output", str(output), "--plan", str(_plan(repository, "plan-user"))) == 0
+    capsys.readouterr()
+    assert _run("--output", str(output), "--results-file", str(results), "--list-results") == 0, capsys.readouterr().err
+    listed = json.loads(capsys.readouterr().out)["diagnostics"]
+    assert list(listed) == ["unchanged:1"]
+    assert (listed["unchanged:1"]["before"]["file"], listed["unchanged:1"]["after"]["file"]) == ("sub/old.py", "sub/new.py")
 
 
 @pytest.mark.parametrize("invalid", ["missing-history", "missing-fence", "empty-utterance"])
@@ -1754,6 +1986,199 @@ def test_public_import_roundtrip_reaches_return_result(
     returned = capsys.readouterr().out
     assert "状態: completed" in returned and "未解決の指摘数: 0" in returned
     assert "読者別探索: 文章成果物なし" in returned
+
+
+def _saved_pyfltr_trial(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, name: str, *options: str
+) -> tuple[dict[str, str], subprocess.CompletedProcess[str]]:
+    """実pyfltrでpytestを起動し、公開run-commandの記録とXMLを受け取る。
+
+    `PYFLTR_CACHE_DIR`でpyfltrの実行記録をテストの一時領域へ書き、テスト外のキャッシュに依存しない。
+    """
+    monkeypatch.setenv("PYFLTR_CACHE_DIR", str(tmp_path / "pyfltr-cache"))
+    pytest_path = pathlib.Path(sys.executable).parent / "pytest"
+    (tmp_path / "pyproject.toml").write_text(
+        "[tool.pyfltr]\npytest = true\npytest-path = " + json.dumps(str(pytest_path)) + "\n", encoding="utf-8"
+    )
+    xml = tmp_path / f"{name}.xml"
+    result = _saved_command(
+        tmp_path,
+        "pyfltr",
+        "run-for-agent",
+        "--commands=pytest",
+        *options,
+        f"--pytest-args=-v -p no:cacheprovider -o junit_family=xunit1 --junitxml={xml}",
+        "trial_test.py",
+    )
+    assert result.returncode in {0, 1}, result.stderr
+    saved = json.loads(result.stdout[result.stdout.index("{") :])
+    return {"xml": str(xml), "run_record": saved["record_path"]}, result
+
+
+def _list_junit(record: pathlib.Path, spec: dict[str, str]) -> int:
+    return _run("--output", str(record), "--junit-xml", spec["xml"], "--junit-record", spec["run_record"], "--list-results")
+
+
+def test_junit_accepts_pyfltr_run_record(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """pyfltr経由の記録とXMLの組を、直接起動の取込みと同じ形の完全テスト名と状態で取り込む。
+
+    直接起動の名前の形は`test_public_import_uses_junit_states_and_updates_selected_rows`が確かめる。
+    """
+    text = "import pytest\n@pytest.mark.parametrize('value', [1, 2])\ndef test_value(value):\n    assert value == 1\n"
+    git_repository.init_repository(tmp_path, files={"trial_test.py": text}, commit_message="基準")
+    monkeypatch.chdir(tmp_path)
+    spec, _ = _saved_pyfltr_trial(tmp_path, monkeypatch, "pyfltr", "--output-format=jsonl")
+    record = tmp_path / "record.json"
+    assert _run("--output", str(record), "--plan", str(_plan(tmp_path, "plan-user"))) == 0
+    capsys.readouterr()
+    assert _list_junit(record, spec) == 0, capsys.readouterr().err
+    listed = {name: value["status"] for name, value in json.loads(capsys.readouterr().out)["tests"].items()}
+    assert listed == {"trial_test.py::test_value[1]": "passed", "trial_test.py::test_value[2]": "failed"}
+
+
+@pytest.mark.parametrize("invalid", ["no-archive", "text-output"])
+def test_junit_rejects_missing_pyfltr_record_with_next_action(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], invalid: str
+) -> None:
+    """pyfltrの実行記録を読めない組を、受理する起動の形と再実行の操作を示して拒否する。"""
+    git_repository.init_repository(
+        tmp_path, files={"trial_test.py": "def test_one():\n    assert True\n"}, commit_message="基準"
+    )
+    monkeypatch.chdir(tmp_path)
+    options = ["--output-format=jsonl", "--no-archive"] if invalid == "no-archive" else ["--output-format=text"]
+    spec, _ = _saved_pyfltr_trial(tmp_path, monkeypatch, "pyfltr", *options)
+    assert pathlib.Path(spec["xml"]).is_file()
+    record = tmp_path / "record.json"
+    assert _run("--output", str(record), "--plan", str(_plan(tmp_path, "plan-user"))) == 0
+    capsys.readouterr()
+    assert _list_junit(record, spec) == 1
+    error = capsys.readouterr().err
+    assert "pyfltr" in error and "--output-format=jsonl" in error
+    assert "pytest -v -o junit_family=xunit1 --junitxml=<XMLの絶対パス>" in error
+
+
+def test_junit_rejects_unmatched_junitxml_with_next_action(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """実行argvの--junitxmlと対応しないXMLを、受理する起動の形と再実行の操作を示して拒否する。"""
+    monkeypatch.chdir(tmp_path)
+    first = _saved_trial(tmp_path, "def test_one():\n    assert True\n", "first")
+    # 同じ内容で、実行argvの--junitxmlが指していないXMLを用意する。
+    other = tmp_path / "other.xml"
+    other.write_bytes(pathlib.Path(first["xml"]).read_bytes())
+    record = tmp_path / "record.json"
+    assert _run("--output", str(record), "--plan", str(_plan(tmp_path, "plan-user"))) == 0
+    capsys.readouterr()
+    assert _list_junit(record, {"xml": str(other), "run_record": first["run_record"]}) == 1
+    error = capsys.readouterr().err
+    assert "--junitxml" in error and "pyfltr" in error
+    assert "pytest -v -o junit_family=xunit1 --junitxml=<XMLの絶対パス>" in error
+
+
+def _subproject_repository(tmp_path: pathlib.Path) -> pathlib.Path:
+    """同名の試験ファイルを2つのサブプロジェクトへ置き、ファイル名だけでは1件に決まらないリポジトリを用意する。"""
+    text = "def test_saved():\n    assert True\n"
+    return git_repository.init_repository(
+        tmp_path / "repo",
+        files={"alpha/same_test.py": text, "beta/same_test.py": text},
+        commit_message="基準",
+    )
+
+
+def _subproject_trial(repository: pathlib.Path, name: str, *pytest_args: str) -> dict[str, str]:
+    """サブプロジェクトを作業ディレクトリとして実pytestを起動し、公開run-commandの記録とXMLを受け取る。"""
+    xml = repository.parent / f"{name}.xml"
+    result = _saved_command(
+        repository / "alpha",
+        "pytest",
+        "-v",
+        "-p",
+        "no:cacheprovider",
+        "-o",
+        "junit_family=xunit1",
+        f"--junitxml={xml}",
+        *pytest_args,
+        "same_test.py",
+    )
+    assert result.returncode == 0, result.stderr
+    saved = json.loads(result.stdout[result.stdout.index("{") :])
+    assert saved["child_exit_code"] == 0
+    return {"xml": str(xml), "run_record": saved["record_path"]}
+
+
+def _listed_tests(record: pathlib.Path, spec: dict[str, str], capsys: pytest.CaptureFixture[str]) -> dict[str, str]:
+    capsys.readouterr()
+    assert _list_junit(record, spec) == 0, capsys.readouterr().err
+    return {name: value["status"] for name, value in json.loads(capsys.readouterr().out)["tests"].items()}
+
+
+def test_junit_names_from_subproject_and_root_rootdir_match(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """サブプロジェクトで実行した組と、rootdirにworktreeのルートを指定した組が同じworktree起点の名前になる。"""
+    repository = _subproject_repository(tmp_path)
+    monkeypatch.chdir(repository)
+    subproject = _subproject_trial(repository, "subproject")
+    root = _subproject_trial(repository, "root", f"--rootdir={repository}")
+    record = repository / "record.json"
+    assert _run("--output", str(record), "--plan", str(_plan(repository, "plan-user"))) == 0
+    expected = {"alpha/same_test.py::test_saved": "passed"}
+    assert _listed_tests(record, subproject, capsys) == expected
+    assert _listed_tests(record, root, capsys) == expected
+
+
+def test_junit_subproject_names_pass_reference_check(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """サブプロジェクトで取り込んだ名前を根拠へ保存し、保存時の参照の所在確認を通す。"""
+    repository = _subproject_repository(tmp_path)
+    monkeypatch.chdir(repository)
+    spec = _subproject_trial(repository, "subproject")
+    record = repository / "record.json"
+    assert _run("--output", str(record), "--plan", str(_plan(repository, "plan-user"))) == 0
+    payload = json.loads(record.read_text(encoding="utf-8"))
+    name = "alpha/same_test.py::test_saved"
+    updates = _json(
+        tmp_path / "updates.json",
+        [
+            {"section": "user_requirements", "row": index, "source": row["source"], "tests": [name], "mode": "replace"}
+            for index, row in enumerate(payload["user_requirements"], 1)
+        ],
+    )
+    capsys.readouterr()
+    assert (
+        _run(
+            "--output",
+            str(record),
+            "--junit-xml",
+            spec["xml"],
+            "--junit-record",
+            spec["run_record"],
+            "--updates-file",
+            str(updates),
+        )
+        == 0
+    ), capsys.readouterr().err
+    for row in json.loads(record.read_text(encoding="utf-8"))["user_requirements"]:
+        assert f"`{name}` passed" in row["evidence"]
+
+
+def test_junit_rejects_rootdir_outside_worktree(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """worktreeの外のrootdirを持つ組を、起点とrootdirを示して拒否する。"""
+    repository = _subproject_repository(tmp_path)
+    monkeypatch.chdir(repository)
+    spec = _subproject_trial(repository, "outside", f"--rootdir={tmp_path}")
+    record = repository / "record.json"
+    assert _run("--output", str(record), "--plan", str(_plan(repository, "plan-user"))) == 0
+    capsys.readouterr()
+    assert _list_junit(record, spec) == 1
+    error = capsys.readouterr().err
+    # worktreeのパスはtmp_pathを接頭辞に持つため、rootdirの表示は出現回数で区別する。
+    assert str(repository) in error and error.count(str(tmp_path)) >= 2
 
 
 @pytest.mark.parametrize("invalid", ["xml", "file", "duplicate", "head", "exit", "argv", "source", "row"])

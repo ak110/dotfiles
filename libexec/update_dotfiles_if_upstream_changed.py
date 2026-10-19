@@ -44,12 +44,18 @@ def _run(command: list[str], *, capture_output: bool = True) -> subprocess.Compl
     )
 
 
+def _diagnostic(result: subprocess.CompletedProcess[str]) -> str:
+    """失敗した子プロセスの標準エラーと標準出力を、表示へ含める1つの文字列にする。"""
+    parts = [text for text in ((result.stderr or "").strip(), (result.stdout or "").strip()) if text]
+    return " / ".join(parts) if parts else "出力なし"
+
+
 def _git_output(args: list[str], *, label: str) -> str | None:
     """gitコマンドの標準出力を返し、失敗時は理由を表示する。"""
     result = _run(["git", "-C", str(_DOTFILES_ROOT), *args])
     if result.returncode != 0:
         print(
-            f"{label}の取得に失敗しました: exit {result.returncode}。自動更新は中止しました。"
+            f"{label}の取得に失敗しました: exit {result.returncode} ({_diagnostic(result)})。自動更新は中止しました。"
             f'git -C "{_DOTFILES_ROOT}" statusとgit branch -vvで状態を確認し、'
             "原因を解消してupdate-dotfilesを実行してください。",
             file=sys.stderr,
@@ -89,7 +95,8 @@ def _update_if_needed(pending_path: pathlib.Path) -> int:
     remote_result = _run(["git", "-C", str(_DOTFILES_ROOT), "ls-remote", "--exit-code", "--refs", "origin", _UPSTREAM_REF])
     if remote_result.returncode != 0:
         print(
-            f"{_UPSTREAM_REF}の取得に失敗しました: exit {remote_result.returncode}。自動更新は中止しました。"
+            f"{_UPSTREAM_REF}の取得に失敗しました: exit {remote_result.returncode} ({_diagnostic(remote_result)})。"
+            "自動更新は中止しました。"
             f'git -C "{_DOTFILES_ROOT}" ls-remote origin {_UPSTREAM_REF}で接続と認証を確認し、'
             "解消してからupdate-dotfilesを実行してください。",
             file=sys.stderr,

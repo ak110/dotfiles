@@ -10,6 +10,7 @@ import sys
 import time
 import uuid
 from collections.abc import Callable
+from typing import Any
 
 from agent_toolkit._atk import claude_connection as _connection
 from agent_toolkit._atk import lane as _lane
@@ -261,6 +262,35 @@ def _exit_abnormal_session(orchestrator: str, returncode: int, detail: str = "")
     sys.exit(returncode)
 
 
+def cleanup_lane_session(lane_session_id: str, *, target_repo: str | None = None) -> dict[str, Any]:
+    """担当の終了を確定した後に、そのレーン所有sessionの資源を`atk lane delete`と同じ条件で回収する。
+
+    単一起動の子終了後と、all-reposで担当の所有を解放した後の両方がこの処理を通る。
+    結果はprocess-loopログの`lane_cleanup`へ残し、保持した資源と回収の失敗には同じ所有sessionで
+    再回収する操作を示す。回収の失敗は戻り値へ記録して送出せず、呼び出し側の残りの終了処理
+    （他担当の終了と回収、再起動判断）を続けさせる。
+    """
+    next_action = f"残存理由を解消し、atk lane delete --session-id {lane_session_id}を実行する"
+    scope = "" if target_repo is None else f"{target_repo}: "
+    fields: dict[str, Any] = {} if target_repo is None else {"target_repo": target_repo}
+    try:
+        cleanup = _lane.cleanup_session(lane_session_id)
+    except Exception as error:
+        # 境界層で全例外を捕捉する。回収できなかった資源は登録とともに残り、同じ操作で再回収できる。
+        _process_loop_log.append("lane_cleanup", **fields, lane_session_id=lane_session_id, error=str(error))
+        _next_action.report(f"{scope}担当の終了後にレーン資源を回収できなかった: {error}", next_action=next_action)
+        return {"lane_session_id": lane_session_id, "error": str(error)}
+    # 回収結果のsession_idはレーン所有sessionを指すため、担当sessionと区別できる名前で記録する。
+    result = {key: value for key, value in cleanup.items() if key != "session_id"}
+    _process_loop_log.append("lane_cleanup", **fields, lane_session_id=lane_session_id, **result)
+    if cleanup["retained"]:
+        _next_action.report(
+            f"{scope}担当の終了後に未回収のレーン資源を保持した: {cleanup.get('result_path')}",
+            next_action=next_action,
+        )
+    return {"lane_session_id": lane_session_id, **result}
+
+
 def _run_process_session(
     args: argparse.Namespace,
     session_path: pathlib.Path,
@@ -336,13 +366,7 @@ def _run_process_session(
                 claude_role="orchestrator",
                 status="completed" if result.returncode == 0 else "interrupted",
             )
-    cleanup = _lane.cleanup_session(lane_session_id)
-    _process_loop_log.append("lane_cleanup", **cleanup)
-    if cleanup["retained"]:
-        _next_action.report(
-            f"子セッション終了後に未回収のレーン資源を保持した: {cleanup.get('result_path')}",
-            next_action=f"残存理由を解消し、atk lane delete --session-id {lane_session_id}を実行する",
-        )
+    cleanup_lane_session(lane_session_id)
     _pl_env.reset_console()
     _console_title.set_console_title("atk wi process-loop")
     _process_loop_log.append(

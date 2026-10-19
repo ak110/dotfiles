@@ -2,6 +2,7 @@
 
 本スクリプトは履歴を読み取るだけで、認可・公開済みの確認・操作の実行は呼出側が所有する。
 rebaseは変更内容の一意な全1対1対応、autosquashはtree・件数・制御件名・非対象patchの不変を検収する。
+amendは内容の変更を前提とし、旧新が同じbaseの直上の異なる1commitどうしであることだけを検収する。
 """
 
 from __future__ import annotations
@@ -18,6 +19,11 @@ from agent_toolkit._common.atomic_file import atomic_write
 from agent_toolkit._git import command as git_command
 
 _CONTROL = ("fixup! ", "squash! ", "amend! ")
+_ACTION = "エラーが示した対象と端点の指定を補って再実行する。内容が変わった履歴は検収せず、履歴操作を中止して委譲元へ返す"
+_AMEND_ACTION = (
+    "--old-baseと--new-baseへamend前HEADの親、--old-headへamend直前のHEAD、--new-headへamend後のHEADを指定して再実行する。"
+    "2件以上のcommitを書き換えた場合は--operation rebaseかautosquashで検収する"
+)
 
 
 def _git(work_dir: pathlib.Path, *args: str, data: str | None = None) -> str:
@@ -145,10 +151,20 @@ def _autosquash(work_dir: pathlib.Path, old: list[str], new: list[str]) -> dict[
     return mapping
 
 
+def _amend(old_base: str, new_base: str, old: list[str], new: list[str]) -> dict[str, str]:
+    if old_base != new_base:
+        raise ValueError(f"amendの旧新のbaseが異なります: old-base={old_base}, new-base={new_base}")
+    if len(old) != 1 or len(new) != 1:
+        raise ValueError(f"amendの旧新の系列はそれぞれbaseの直上の1件である必要があります: old={old}, new={new}")
+    if old == new:
+        raise ValueError(f"amendの旧新HEADが同じOIDです: {old[0]}")
+    return {old[0]: new[0]}
+
+
 def main(argv: list[str] | None = None) -> int:
     """操作別の履歴不変条件を検収し、完全OID対応を原子的に保存する。"""
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--operation", choices=("rebase", "autosquash"), required=True, help="検収する履歴操作")
+    parser.add_argument("--operation", choices=("rebase", "autosquash", "amend"), required=True, help="検収する履歴操作")
     parser.add_argument(
         "--work-dir", type=pathlib.Path, metavar="DIR", required=True, help="Git比較を実行するworktreeの絶対パス"
     )
@@ -167,13 +183,15 @@ def main(argv: list[str] | None = None) -> int:
         )
         old = _series(args.work_dir, old_base, old_head)
         new = _series(args.work_dir, new_base, new_head)
-        mapping = _rebase(args.work_dir, old, new) if args.operation == "rebase" else _autosquash(args.work_dir, old, new)
+        if args.operation == "rebase":
+            mapping = _rebase(args.work_dir, old, new)
+        elif args.operation == "autosquash":
+            mapping = _autosquash(args.work_dir, old, new)
+        else:
+            mapping = _amend(old_base, new_base, old, new)
         atomic_write(args.output, json.dumps(mapping, ensure_ascii=False, indent=2) + "\n")
     except (OSError, UnicodeError, ValueError, subprocess.TimeoutExpired) as error:
-        outcome.report_failure(
-            str(error),
-            next_action="エラーが示した対象と端点の指定を補って再実行する。内容が変わった履歴は検収せず、履歴操作を中止して委譲元へ返す",
-        )
+        outcome.report_failure(str(error), next_action=_AMEND_ACTION if args.operation == "amend" else _ACTION)
         return 1
     outcome.report_success(f"{args.operation}の履歴を検収し、{len(mapping)}件の完全OID対応を保存した: {args.output}")
     return 0

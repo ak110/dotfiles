@@ -835,7 +835,19 @@ def _registered_posttooluse_names(event: str = "PostToolUse") -> set[str]:
 
 def test_hooks_json_routes_tool_specific_processing_to_posttooluse() -> None:
     """ツール別処理を持つ現行Claude入力群が登録から到達する。"""
-    tool_names = {"AskUserQuestion", "Skill", "Agent", "Task", "TaskStop", "Bash", "PowerShell", "Write", "Edit", "MultiEdit"}
+    tool_names = {
+        "AskUserQuestion",
+        "Skill",
+        "Agent",
+        "Task",
+        "TaskStop",
+        "Bash",
+        "PowerShell",
+        "Write",
+        "Edit",
+        "MultiEdit",
+        "Read",
+    }
     tool_names.update(
         f"mcp__plugin_agent-toolkit_agents_server__{operation}"
         for operation in ("start", "send_message", "kill", "stop", "list", "show")
@@ -2351,3 +2363,102 @@ class TestRemovedRecordsAreAbsent:
                 assert result.stdout == ""
         state = _read_state(tmp_path, sid)
         assert not [key for key in self._REMOVED_KEYS if key in state]
+
+
+_SEARCH_SKILL_MD = pathlib.Path(__file__).resolve().parents[2] / "skills" / "search" / "SKILL.md"
+_SCOPE_REFERENCE = (
+    pathlib.Path(__file__).resolve().parents[2] / "skills" / "check-execution" / "references" / "verification-scope.md"
+)
+_SCOPE_ID = "agent-toolkit:check-execution:references/verification-scope.md"
+
+
+def _read_response(path: pathlib.Path, *, start: int = 1, lines: int | None = None, capped: bool = False) -> dict:
+    """Claude CodeのReadの`tool_response`を返す。形はClaude Code 2.1.303の本体のReadの結果（`type`・`file`）から写した。"""
+    text = path.read_text(encoding="utf-8")
+    total = len(text.splitlines())
+    file = {"filePath": str(path), "content": text, "numLines": total if lines is None else lines, "startLine": start}
+    file["totalLines"] = total
+    if capped:
+        file["truncatedByTokenCap"] = True
+    return {"type": "text", "file": file}
+
+
+@pytest.mark.parametrize(
+    ("path", "tool_input", "response", "agent_id", "expected"),
+    [
+        (_SEARCH_SKILL_MD, {}, _read_response(_SEARCH_SKILL_MD), "child", {"agent-toolkit:search": ["child"]}),
+        (_SEARCH_SKILL_MD, {}, _read_response(_SEARCH_SKILL_MD, lines=3), "child", None),
+        (_SEARCH_SKILL_MD, {}, _read_response(_SEARCH_SKILL_MD, capped=True), "child", None),
+        (_SEARCH_SKILL_MD, {"limit": 5}, {"type": "file_unchanged", "file": {"filePath": "x"}}, "child", None),
+        (
+            _SEARCH_SKILL_MD,
+            {},
+            {"type": "file_unchanged", "file": {"filePath": "x"}},
+            "child",
+            {"agent-toolkit:search": ["child"]},
+        ),
+        (_SEARCH_SKILL_MD, {}, _read_response(_SEARCH_SKILL_MD), None, None),
+        (_SCOPE_REFERENCE, {}, _read_response(_SCOPE_REFERENCE), None, {_SCOPE_ID: ["main"]}),
+        (_SCOPE_REFERENCE, {"offset": 10}, _read_response(_SCOPE_REFERENCE, start=10), None, None),
+    ],
+    ids=[
+        "subagent-full",
+        "subagent-partial",
+        "token-cap",
+        "unchanged-ranged",
+        "unchanged",
+        "main-skill-md",
+        "main-ref",
+        "ranged",
+    ],
+)
+def test_read_records_operation_skill_acquisition_only_for_full_body(
+    tmp_path: pathlib.Path,
+    path: pathlib.Path,
+    tool_input: dict,
+    response: dict,
+    agent_id: str | None,
+    expected: dict | None,
+) -> None:
+    """Readは全文を返した場合だけ取得を記録する。メイン会話の`SKILL.md`はSkill起動を取得手段とするため記録しない。"""
+    payload = {
+        "hook_event_name": "PostToolUse",
+        "session_id": "read-acquisition",
+        "tool_name": "Read",
+        "tool_input": {"file_path": str(path), **tool_input},
+        "tool_response": response,
+        **({"agent_id": agent_id} if agent_id else {}),
+    }
+    assert _run(payload, state_dir=tmp_path).returncode == 0
+    state_file = tmp_path / SESSION_STATE_FILENAME_TEMPLATE.format(session_id="read-acquisition")
+    state = _read_state(tmp_path, "read-acquisition") if state_file.exists() else {}
+    assert state.get("operation_skill_delivered_agents") == expected
+
+
+@pytest.mark.parametrize(
+    ("command", "output", "expected"),
+    [
+        (f"cat {_SEARCH_SKILL_MD}", _SEARCH_SKILL_MD.read_text(encoding="utf-8"), {"agent-toolkit:search": ["main"]}),
+        (f"cat {_SEARCH_SKILL_MD}", f"cat: {_SEARCH_SKILL_MD}: No such file or directory", None),
+        (f"ls {_SEARCH_SKILL_MD}", str(_SEARCH_SKILL_MD), None),
+        (f"head -n 5 {_SEARCH_SKILL_MD}", _SEARCH_SKILL_MD.read_text(encoding="utf-8"), None),
+        (f"cat {_SCOPE_REFERENCE}", _SCOPE_REFERENCE.read_text(encoding="utf-8"), {_SCOPE_ID: ["main"]}),
+    ],
+    ids=["cat", "failed", "path-only", "head", "reference"],
+)
+def test_codex_bash_read_records_operation_skill_acquisition(
+    tmp_path: pathlib.Path, command: str, output: str, expected: dict | None
+) -> None:
+    """CodexはBashの全文の読取が資料の本文を返した場合だけ取得を記録する。"""
+    payload = {
+        "hook_event_name": "PostToolUse",
+        "session_id": "codex-read",
+        "turn_id": "turn-1",
+        "tool_name": "Bash",
+        "tool_input": {"command": command},
+        "tool_response": output,
+    }
+    assert _run(payload, state_dir=tmp_path).returncode == 0
+    state_file = tmp_path / SESSION_STATE_FILENAME_TEMPLATE.format(session_id="codex-read")
+    state = _read_state(tmp_path, "codex-read") if state_file.exists() else {}
+    assert state.get("operation_skill_delivered_agents") == expected

@@ -159,6 +159,73 @@ function Test-CodexPluginStateChanged {
         $beforeState.Enabled -ne $afterState.Enabled
 }
 
+# 実行名（拡張子を除く）が`codex`か`codex-`で始まるもの、node系起動でentry pointが`@openai/codex`のものをCodexプロセスとして数える。
+# 管理daemonの更新ループ（`app-server daemon pid-update-loop`）はplugin実体を参照しないため数えない。
+function Test-CodexProcessCommand {
+    param([string]$name, [string[]]$arguments)
+    $stem = [IO.Path]::GetFileName(($name -replace '\\', '/')).ToLowerInvariant() -replace '\.exe$', ''
+    $rest = @($arguments)
+    if ($stem -eq 'node' -or $stem -eq 'nodejs') {
+        if ($rest.Count -lt 1 -or -not $rest[0].ToLowerInvariant().Contains('@openai/codex')) { return $false }
+        $rest = @($rest | Select-Object -Skip 1)
+    } elseif ($stem -ne 'codex' -and -not $stem.StartsWith('codex-')) {
+        return $false
+    }
+    return -not ($rest.Count -ge 3 -and $rest[0] -eq 'app-server' -and $rest[1] -eq 'daemon' -and $rest[2] -eq 'pid-update-loop')
+}
+
+# 自ユーザーの稼働中のCodexプロセスを`<pid> <実行名>`の文字列で返す。プロセス一覧を取得できない場合は例外を送出する。
+# Windowsでは現在のログオンセッションのプロセス、それ以外ではpsが返す実ユーザーのプロセスを対象にする。
+function Get-RunningCodexProcess {
+    $found = [System.Collections.Generic.List[string]]::new()
+    if ([Environment]::OSVersion.Platform -eq [PlatformID]::Win32NT) {
+        $sessionId = (Get-Process -Id $PID).SessionId
+        foreach ($process in @(Get-CimInstance -ClassName Win32_Process -ErrorAction Stop)) {
+            if ($process.SessionId -ne $sessionId) { continue }
+            $tokens = @()
+            if ($process.CommandLine) {
+                $tokens = @([regex]::Matches($process.CommandLine, '"[^"]*"|\S+') | ForEach-Object { $_.Value.Trim('"') })
+            }
+            if (Test-CodexProcessCommand $process.Name @($tokens | Select-Object -Skip 1)) {
+                $found.Add("$($process.ProcessId) $($process.Name)")
+            }
+        }
+    } else {
+        $lines = & ps -u (& id -u) -o pid= -o stat= -o args=
+        if ($LASTEXITCODE -ne 0) { throw 'プロセス一覧を取得できません。' }
+        foreach ($line in @($lines | Where-Object { $_ })) {
+            $fields = @($line.Trim() -split '\s+')
+            if ($fields.Count -lt 3 -or $fields[1].StartsWith('Z')) { continue }
+            $name = [IO.Path]::GetFileName($fields[2])
+            if (Test-CodexProcessCommand $name @($fields | Select-Object -Skip 3)) { $found.Add("$($fields[0]) $name") }
+        }
+    }
+    return $found.ToArray()
+}
+
+# 更新前の導入が目標版と異なるか無効で、既存版を使うCodexが稼働中なら、`codex plugin add`による旧版の回収を延期する。
+# 延期した場合は保持中の版、未反映の目標版、再実行の案内を標準エラーへ表示して$trueを返す。
+function Test-CodexPluginUpdateDeferred {
+    param([object]$beforeState, [string]$expectedVersion)
+    if (-not $beforeState.Present -or ($beforeState.Version -eq $expectedVersion -and $beforeState.Enabled)) { return $false }
+    try {
+        $running = @(Get-RunningCodexProcess)
+    } catch {
+        $running = $null
+    }
+    if ($null -eq $running) {
+        [Console]::Error.WriteLine('Codexの稼働状況をプロセス一覧から確認できないため、agent-toolkitプラグインの更新を延期しました。')
+    } elseif ($running.Count -eq 0) {
+        return $false
+    } else {
+        [Console]::Error.WriteLine("Codexが稼働中のため、agent-toolkitプラグインの更新を延期しました（稼働中: $($running -join ', ')）。")
+    }
+    $enabledText = if ($beforeState.Enabled) { '有効' } else { '無効' }
+    [Console]::Error.WriteLine("保持中の版: $($beforeState.Version)（$enabledText）。未反映の目標版: $expectedVersion。利用中のセッションを守るため既存版と旧cacheを保持しています。")
+    [Console]::Error.WriteLine('Codexのセッションを全て終了してから、同じインストーラーを再実行してください。')
+    return $true
+}
+
 function Install-CodexPlugin {
     Write-Output 'Codex側のagent-toolkitプラグインを設定します...'
     & codex plugin marketplace add ak110/dotfiles --json 2>&1 | Out-Null
@@ -166,6 +233,7 @@ function Install-CodexPlugin {
     $expectedVersion = Get-CodexExpectedPluginVersion
     $beforeState = Get-CodexPluginState
     if ($null -eq $beforeState) { throw 'Codex plugin更新前の状態を確認できません。' }
+    if (Test-CodexPluginUpdateDeferred $beforeState $expectedVersion) { return }
     $binDir = Join-Path $HOME '.local/bin'
     New-Item -ItemType Directory -Path $binDir -Force | Out-Null
     $hookWrapper = Join-Path $binDir 'atk-hook.cmd'

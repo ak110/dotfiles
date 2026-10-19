@@ -4,6 +4,7 @@ from __future__ import annotations
 
 # テストでは共有状態とバックエンドの内部境界も直接検証する。
 # pylint: disable=protected-access
+import json
 import logging
 import os
 import pathlib
@@ -33,7 +34,7 @@ from agent_toolkit._agents_server import (
 from agent_toolkit._agents_server import manager as server_manager
 from agent_toolkit._atk import config as _atk_config
 from agent_toolkit._atk import managed_temp as _managed_temp
-from agent_toolkit._common import mcp_environment, state_paths
+from agent_toolkit._common import mcp_environment, session_registry, state_paths
 from agent_toolkit._common.next_action import NEXT_ACTION_PREFIX
 from agent_toolkit._testing.agents_server_support import (
     _MODE_INPUT_CASES,
@@ -97,14 +98,9 @@ async def test_new_request_and_handoff_preserve_required_context(
         await manager.close()
 
 
-@pytest.fixture(autouse=True)
-def _isolate_handoff_session(monkeypatch: pytest.MonkeyPatch) -> None:
-    """サーバー起動時のsnapshotを各テストの環境へ対応させる。"""
-    monkeypatch.setattr(launch_requests, "_HANDOFF_SESSION", None, raising=False)
-
-
 def test_main_strips_conversation_context_before_backend_start(monkeypatch: pytest.MonkeyPatch) -> None:
     """MCP起動は全backendの継承元を整え、接続設定と引き継ぎ元snapshotを保持する。"""
+    monkeypatch.setattr(launch_requests, "_HANDOFF_SESSION", None, raising=False)
     for name in mcp_environment._NON_INHERITABLE_NAMES:
         monkeypatch.setenv(name.upper(), "parent-session")
     monkeypatch.setenv("ANTHROPIC_AUTH_TOKEN", "test-token")
@@ -213,6 +209,7 @@ def test_public_tools_expose_single_start_with_modes() -> None:
         "label",
         "model_type",
         "handoff_from",
+        "whole_contract_path",
     }
     assert {"engine", "model", "effort"}.isdisjoint(properties)
     assert tuple(properties["mode"]["anyOf"][0]["enum"]) == tool_names.START_MODES
@@ -411,6 +408,7 @@ async def test_public_start_variants_and_send_message_return_minimal_responses(
         "label": "担当",
     }
     manager = SimpleNamespace(
+        launcher_session_id=lambda: None,
         start=AsyncMock(return_value=response),
         start_explore=AsyncMock(return_value=response),
         start_write=AsyncMock(return_value=response),
@@ -683,7 +681,10 @@ async def test_start_response_adds_next_action_only_for_failed_start(
     tmp_path: pathlib.Path,
 ) -> None:
     """起動直後に失敗で終端した応答だけが、結果の受領と別候補での再起動を`next_action`で示す。"""
-    manager = SimpleNamespace(start=AsyncMock(return_value={"session_id": "session", "status": status, "label": "担当"}))
+    manager = SimpleNamespace(
+        launcher_session_id=lambda: None,
+        start=AsyncMock(return_value={"session_id": "session", "status": status, "label": "担当"}),
+    )
     monkeypatch.setattr(mcp_tools, "_MANAGER", manager)
 
     response = await mcp_tools.start(str(tmp_path), mode="delegate", prompt="調査", model_type="high_tier")
@@ -897,9 +898,8 @@ async def test_send_message_tool_returns_previous_result(monkeypatch: pytest.Mon
     }
 
 
-@pytest.mark.asyncio
-async def test_followup_rejects_extra_lines_before_delivery(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
-    """定型追送の説明と初回入力は、公開入口から配送されず履歴も増えない。"""
+async def _start_exec_review_session(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path):
+    """実行レビュー担当の役割文書で偽のcodex sessionを公開`start`から起動し、継続入力の検証に使う。"""
     _recording_candidates(monkeypatch)
     manager, backend = _manager_with_fake("codex")
     monkeypatch.setattr(mcp_tools, "_MANAGER", manager)
@@ -908,6 +908,13 @@ async def test_followup_rejects_extra_lines_before_delivery(monkeypatch: pytest.
         subagent_md_path="exec-review",
         extra_params=_observed_input_params("exec-review.subagent.md", tmp_path),
     )
+    return manager, backend, started
+
+
+@pytest.mark.asyncio
+async def test_followup_rejects_extra_lines_before_delivery(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
+    """定型追送の説明と初回入力は、公開入口から配送されず履歴も増えない。"""
+    manager, backend, started = await _start_exec_review_session(monkeypatch, tmp_path)
     session = manager.sessions[started["session_id"]]
     count = len(backend.prompts)
     try:
@@ -929,16 +936,40 @@ async def test_followup_rejects_extra_lines_before_delivery(monkeypatch: pytest.
 
 
 @pytest.mark.asyncio
+async def test_continuation_input_errors_return_reason_and_next_action(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+) -> None:
+    """継続入力の形式不成立は、配送せずに理由と次の操作をツールのエラー応答で返す。
+
+    PreToolUseのhookは入力形式を判定しないため、修正案内はこの応答だけが担う。
+    """
+    manager, backend, started = await _start_exec_review_session(monkeypatch, tmp_path)
+    session_id = started["session_id"]
+    count = len(backend.prompts)
+    cases = [
+        ("send_message", {"session_id": session_id, "prompt": "続行する", "instruction": "再レビューせよ"}, "排他的"),
+        ("send_message", {"session_id": session_id}, "排他的"),
+        ("send_message", {"session_id": session_id, "instruction": "宣言されていない指示"}, "宣言された継続指示ではありません"),
+        ("send_message", {"session_id": session_id, "prompt": "   "}, "prompt must be a non-empty string"),
+        ("send_message", {"session_id": "", "prompt": "続行する"}, "invalid session_id"),
+        ("kill", {"session_id": ""}, "invalid session_id"),
+    ]
+    try:
+        for tool, arguments, reason in cases:
+            with pytest.raises(ToolError) as raised:
+                await mcp_tools.mcp.call_tool(tool, arguments)
+            message = str(raised.value)
+            assert reason in message, (tool, arguments, message)
+            assert NEXT_ACTION_PREFIX in message, (tool, arguments, message)
+            assert len(backend.prompts) == count
+    finally:
+        await manager.close()
+
+
+@pytest.mark.asyncio
 async def test_followup_preserves_required_and_updated_inputs(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
     """構造化・自由本文は必要な制御値と同じパスの更新を保持する。"""
-    _recording_candidates(monkeypatch)
-    manager, backend = _manager_with_fake("codex")
-    monkeypatch.setattr(mcp_tools, "_MANAGER", manager)
-    started = await mcp_tools.start(
-        str(tmp_path),
-        subagent_md_path="exec-review",
-        extra_params=_observed_input_params("exec-review.subagent.md", tmp_path),
-    )
+    manager, backend, started = await _start_exec_review_session(monkeypatch, tmp_path)
     contract = tmp_path / "更新 契約.yaml"
     contract.write_text("clauses: []\n", encoding="utf-8")
     try:
@@ -1061,3 +1092,34 @@ async def test_declared_role_continuations_keep_required_inputs(
                 assert session.followup_prompts == history
     finally:
         await manager.close()
+
+
+def test_serve_records_exception_exit(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
+    """stdio起動が例外で終わると、起動単位の終了診断へ例外型とメッセージを記録し、例外を呼出元へ伝える。"""
+    monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
+    monkeypatch.setattr(logging_config, "_CURRENT_INSTANCE", None)
+    monkeypatch.setattr(session_registry, "_OWNER_SERVER_INSTANCE", None)
+    for name in ("CLAUDE_CODE_SESSION_ID", logging_config.LAUNCH_RECORD_ENV):
+        monkeypatch.delenv(name, raising=False)
+
+    def fail(**_kwargs: Any) -> None:
+        raise RuntimeError("transport broke")
+
+    monkeypatch.setattr(mcp_tools.mcp, "run", fail)
+    with pytest.raises(RuntimeError, match="transport broke"):
+        mcp_tools.serve()
+
+    [path] = logging_config.instance_directory(tmp_path).glob("*.jsonl")
+    events = [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines()]
+    assert [event["event"] for event in events] == ["started", "exited"]
+    assert events[1] | {"at": None} == {
+        "at": None,
+        "event": "exited",
+        "writer": "server",
+        "outcome": "exception",
+        "exception_type": "RuntimeError",
+        "message": "transport broke",
+    }
+    # 終えた起動単位は同じプロセスの後続の記録へ書かない。
+    assert logging_config.current_server_instance() is None
+    assert session_registry.owner_server_instance() is None

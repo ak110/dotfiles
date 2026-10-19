@@ -1,4 +1,4 @@
-"""公開の準備から全担当・長文・成功結果を通読できる契約を検証する。"""
+"""公開の準備から全担当の発話・長い入力・結果の記録位置を通読できる契約を検証する。"""
 
 import json
 import pathlib
@@ -10,8 +10,8 @@ from agent_toolkit._testing.helpers import _write_transcript
 from agent_toolkit._testing.session_evidence_support import write_subagent
 
 
-def test_prepare_keeps_all_records_inputs_results_and_read_ranges(tmp_path: pathlib.Path, capsys) -> None:
-    """候補に依存せず委譲先の正常操作と長い複合入力・遮断理由へ到達する。"""
+def test_prepare_keeps_all_records_inputs_and_read_ranges(tmp_path: pathlib.Path, capsys) -> None:
+    """候補に依存せず委譲先の正常操作と長い複合入力へ到達し、結果は本文を載せず成否で示す。"""
     command = "echo " + "x" * 2500 + "中間の操作" + "y" * 6500 + "末尾の操作"
     output = "z" * 3999 + "\n保存先: /results/success.txt"
     transcript = _write_transcript(
@@ -100,22 +100,20 @@ def test_prepare_keeps_all_records_inputs_results_and_read_ranges(tmp_path: path
     for marker in (
         "中間の操作",
         "末尾の操作",
-        "保存先: /results/success.txt",
         "委譲の目的",
         "unique-normal-operation",
-        "正常結果の全内容",
         "agent-child",
         "blocked-operation",
-        "遮断の理由",
-        "次の操作: 修正して再実行",
     ):
         assert marker in text
+    for result_body in ("保存先: /results/success.txt", "正常結果の全内容", "遮断の理由"):
+        assert result_body not in text
+    assert ": 失敗" in text
     ranges = record["conversation_ranges"]
     assert ranges[0]["start_line"] == 1
     assert ranges[-1]["end_line"] == len(text.splitlines())
     assert all(left["end_line"] + 1 == right["start_line"] for left, right in zip(ranges, ranges[1:], strict=False))
     assert all(item["utf8_bytes"] <= 32000 for item in ranges)
-    assert "z" * 3999 + "\n\n```" in text
 
 
 @pytest.mark.parametrize(
@@ -150,11 +148,12 @@ def test_prepare_keeps_all_records_inputs_results_and_read_ranges(tmp_path: path
     ],
 )
 def test_prepare_keeps_native_and_agy_successful_operations(tmp_path: pathlib.Path, capsys, entries) -> None:
-    """通常のツール結果以外の実行記録も操作と成功結果を通読へ渡す。"""
+    """通常のツール結果以外の実行記録も操作を通読へ渡し、結果の本文は載せない。"""
     transcript = _write_transcript(tmp_path, entries)
     work = tmp_path / "work"
     work.mkdir()
     assert prepare.main(["--transcript", str(transcript), "--work-dir", str(work)]) == 0
     result = json.loads(capsys.readouterr().out)
     text = pathlib.Path(result["conversation_path"]).read_text(encoding="utf-8")
-    assert "normal-operation" in text and "normal-result" in text
+    assert "normal-operation" in text and "normal-result" not in text
+    assert "- ツール結果（" in text

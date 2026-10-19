@@ -18,14 +18,14 @@ from agent_toolkit._agents_server import (
     launch_prompts,
     plugin_root,
     shared_roots,
-    task_documents,
 )
 from agent_toolkit._agents_server.state import (
     LaunchKind,
 )
 from agent_toolkit._agents_server.tool_descriptions import START_MODE_EXAMPLES, START_MODE_INPUTS
 from agent_toolkit._atk import managed_temp as _managed_temp
-from agent_toolkit._common.message_format import auto_message
+from agent_toolkit._common import session_registry, task_documents
+from agent_toolkit._common.message_format import AUTO_INSERTED_ELEMENT, auto_message, opening_tag
 from agent_toolkit._common.next_action import ActionableError
 from agent_toolkit._git import command as git_command
 
@@ -443,7 +443,9 @@ def _material_error(name: str, reason: str) -> ActionableError:
             '`{"比較元本文":"/保存先/旧本文.md","今回差分":"/保存先/差分.patch","現行本文":"/成果物.md"}`'
             "とする。複数成果物では同じ3項目のオブジェクト配列を渡す。"
             "新規成果物だけ比較元本文へ`新規`、今回差分へ`全文`を指定できる。"
-            "再レビューの`未解決事項`は保存ファイルの絶対パスか`なし`を渡す"
+            "Git管理下では`reader-fit-prepare`の出力の`before`・`patch`・`current`を3項目へ、"
+            "`scope_patch`を任意の`判定範囲差分`へ渡す（Git識別子の形式ではpathsの各パスから保存ファイルへの対応で渡す）。"
+            "再レビューの`未解決事項`は保存ファイルの絶対パス、その絶対パスのJSON配列か`なし`だけを渡し、説明は保存物へ書く"
         ),
     )
 
@@ -481,10 +483,114 @@ def _material_paths(name: str, value: str) -> list[pathlib.Path]:
 
 
 def _check_reader_unresolved(params: Mapping[str, str], review_kind: str) -> None:
-    """再レビューで必要な未解決事項の保存物を確かめる。"""
-    unresolved = params.get("未解決事項", "なし" if review_kind == "初回レビュー" else "")
-    if unresolved != "なし":
-        _material_paths("未解決事項", unresolved)
+    """再レビューで必要な未解決事項の保存物を、パスだけの値として確かめる。
+
+    パスに説明を連結した値は、説明の対象が別の成果物でも探索担当が今回の資料の範囲と誤認するため受理しない。
+    """
+    unresolved = params.get("未解決事項", "なし" if review_kind == "初回レビュー" else "").strip()
+    if unresolved == "なし":
+        return
+    if not unresolved.startswith("[") and not (pathlib.Path(unresolved).is_absolute() and pathlib.Path(unresolved).is_file()):
+        raise _material_error(
+            "未解決事項", "値は保存ファイルの絶対パス、その絶対パスのJSON配列か`なし`だけにし、説明は保存物へ書く"
+        )
+    _material_paths("未解決事項", unresolved)
+
+
+_HUNK_HEADER = re.compile(r"@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@")
+
+
+def _apply_unified_diff(before: str, patch: str) -> str | None:
+    """1ファイル分の統一差分を比較元本文へ適用した本文を返し、適用できない差分ではNoneを返す。
+
+    行位置を持たない帰属限定差分、複数ファイルの差分、比較元と文脈が一致しない差分は適用できない。
+    """
+    lines = patch.splitlines(keepends=True)
+    if sum(1 for line in lines if line.startswith("+++ ")) > 1:
+        return None
+    entries: list[tuple[str, str]] = []
+    for line in lines:
+        if line.startswith("\\"):
+            if not entries:
+                return None
+            tag, text = entries[-1]
+            entries[-1] = (tag, text.removesuffix("\n"))
+        else:
+            entries.append((line[:1], line[1:]))
+    source = before.splitlines(keepends=True)
+    result: list[str] = []
+    position = 0
+    index = 0
+    while index < len(entries) and not (entries[index][0] == "@" and entries[index][1].startswith("@ ")):
+        if entries[index][0] == "@":
+            return None
+        index += 1
+    while index < len(entries):
+        header = _HUNK_HEADER.match("@" + entries[index][1])
+        if header is None:
+            return None
+        old_start, old_count = int(header[1]), int(header[2] if header[2] is not None else 1)
+        new_count = int(header[4] if header[4] is not None else 1)
+        anchor = old_start if old_count == 0 else old_start - 1
+        if anchor < position or anchor > len(source):
+            return None
+        result.extend(source[position:anchor])
+        position = anchor
+        index += 1
+        while old_count or new_count:
+            if index >= len(entries):
+                return None
+            tag, text = entries[index]
+            if tag in {" ", "-"}:
+                if position >= len(source) or source[position] != text or old_count == 0:
+                    return None
+                position += 1
+                old_count -= 1
+            if tag in {" ", "+"}:
+                if new_count == 0:
+                    return None
+                result.append(text)
+                new_count -= 1
+            if tag not in {" ", "-", "+"}:
+                return None
+            index += 1
+    result.extend(source[position:])
+    return "".join(result)
+
+
+def _patch_target_error(patch: str, current: pathlib.Path) -> str | None:
+    """差分の新しい側のファイル見出しが現行本文と異なるファイルを指す場合に理由を返す。"""
+    for line in patch.splitlines():
+        if not line.startswith("+++ "):
+            continue
+        target = line[4:].split("\t", 1)[0].strip()
+        if target == "/dev/null":
+            return None
+        relative = target.removeprefix("b/") if not pathlib.Path(target).is_absolute() else target
+        if pathlib.Path(relative).is_absolute():
+            matched = pathlib.Path(relative) == current
+        else:
+            matched = current.as_posix().endswith("/" + relative.lstrip("/"))
+        return None if matched else f"差分の対象`{target}`が現行本文`{current}`と異なる成果物を指す"
+    return None
+
+
+def _check_patch_consistency(name: str, before: str, patch_path: pathlib.Path, current: pathlib.Path) -> None:
+    """比較元本文へ今回差分を適用した結果が現行本文と一致するかを確かめる。
+
+    別成果物の差分、計画別の判定範囲だけの差分、レビューHEADと異なる現行本文は、いずれもこの一致が崩れる。
+    """
+    patch = patch_path.read_text(encoding="utf-8")
+    if error := _patch_target_error(patch, current):
+        raise _material_error(name, error)
+    expected = current.read_text(encoding="utf-8")
+    applied = _apply_unified_diff(before, patch) if patch else before
+    if applied != expected:
+        raise _material_error(
+            name,
+            "比較元本文へ今回差分を適用した結果が現行本文と一致しない。今回差分は比較元と現行本文の本文間の完全な差分にし、"
+            "計画別の差分は`判定範囲差分`へ分ける。現行本文はレビューHEADの同じ版を渡す",
+        )
 
 
 def _check_reader_materials(params: Mapping[str, str]) -> None:
@@ -500,7 +606,7 @@ def _check_reader_materials(params: Mapping[str, str]) -> None:
             materials = json.loads(params["比較資料"])
         except json.JSONDecodeError as error:
             raise _material_error("比較資料", "JSONオブジェクトまたはその配列を読めない") from error
-        if isinstance(materials, dict) and set(materials) == {"repository", "base", "head", "paths"}:
+        if isinstance(materials, dict) and set(materials) - {"判定範囲差分"} == {"repository", "base", "head", "paths"}:
             _check_git_reader_materials(materials, current)
             _check_reader_unresolved(params, review_kind)
             return
@@ -513,10 +619,10 @@ def _check_reader_materials(params: Mapping[str, str]) -> None:
         for material in materials:
             if (
                 not isinstance(material, dict)
-                or set(material) != keys
+                or set(material) - {"判定範囲差分"} != keys
                 or any(not isinstance(value, str) for value in material.values())
             ):
-                raise _material_error("比較資料", "比較元本文・今回差分・現行本文の3項目が必要")
+                raise _material_error("比較資料", "比較元本文・今回差分・現行本文の3項目（任意で判定範囲差分）が必要")
             actual = _material_paths("現行本文", material["現行本文"])
             if len(actual) != 1 or actual[0] not in current:
                 raise _material_error("現行本文", "成果物のいずれか1件と同じパスが必要")
@@ -526,10 +632,20 @@ def _check_reader_materials(params: Mapping[str, str]) -> None:
             is_new = material["比較元本文"] == "新規"
             if review_kind != "初回レビュー" and is_new:
                 raise _material_error("比較元本文", "再レビューでは前回確認版の本文が必要")
+            before = ""
             if not is_new:
-                _material_paths("比較元本文", material["比較元本文"])
+                before = _material_paths("比較元本文", material["比較元本文"])[0].read_text(encoding="utf-8")
             if not (is_new and material["今回差分"] == "全文"):
-                _material_paths("今回差分", material["今回差分"])
+                patch_paths = _material_paths("今回差分", material["今回差分"])
+                if len(patch_paths) != 1:
+                    raise _material_error("今回差分", "成果物ごとに1件の差分ファイルが必要")
+                _check_patch_consistency("今回差分", before, patch_paths[0], actual[0])
+            if "判定範囲差分" in material:
+                scope_paths = _material_paths("判定範囲差分", material["判定範囲差分"])
+                if len(scope_paths) != 1:
+                    raise _material_error("判定範囲差分", "成果物ごとに1件の差分ファイルが必要")
+                if error := _patch_target_error(scope_paths[0].read_text(encoding="utf-8"), actual[0]):
+                    raise _material_error("判定範囲差分", error)
         if covered != set(current):
             raise _material_error("比較資料", "全成果物に比較資料を1件ずつ対応付ける必要がある")
     else:
@@ -540,8 +656,16 @@ def _check_reader_materials(params: Mapping[str, str]) -> None:
         is_new = scope.startswith("新規") and "全文" in scope
         if not is_new:
             paths = _material_paths("修正範囲（比較元本文・今回差分）", scope)
-            if len({path for path in paths if path != current[0]}) < 2:
+            saved = list(dict.fromkeys(path for path in paths if path != current[0]))
+            if len(saved) < 2:
                 raise _material_error("比較資料", "比較元本文と今回差分の保存物が必要")
+            # 旧形式は役割を名前で示さないため、差分の形を持つファイルを1件に識別できる場合だけ同じ対応を確かめる。
+            patches = [path for path in saved if path.read_text(encoding="utf-8").startswith(("diff --git ", "--- "))]
+            if len(patches) == 1 and len(saved) == 2:
+                before_path = next(path for path in saved if path != patches[0])
+                _check_patch_consistency(
+                    "修正範囲（比較元本文・今回差分）", before_path.read_text(encoding="utf-8"), patches[0], current[0]
+                )
         if review_kind != "初回レビュー" and is_new:
             raise _material_error("比較元本文", "再レビューでは前回確認版の本文が必要")
     _check_reader_unresolved(params, review_kind)
@@ -576,6 +700,19 @@ def _check_git_reader_materials(materials: dict[str, Any], current: list[pathlib
         raise _material_error("比較資料", "pathsに空でないリポジトリ相対パス配列が必要")
     if len(paths) != len(current) or {pathlib.Path(repository) / path for path in paths} != set(current):
         raise _material_error("比較資料", "pathsが成果物の集合と一致しない")
+    # 計画別の判定範囲は、保存資料の形式と同じ`reader-fit-prepare`の`scope_patch`をパスごとに受け取る。
+    # 探索担当は読み取り専用のため、契約から帰属を計算させず、計算済みの差分で走査範囲を1通りに決める。
+    scopes = materials.get("判定範囲差分", {})
+    if not isinstance(scopes, dict) or set(scopes) - set(paths) or any(not isinstance(value, str) for value in scopes.values()):
+        raise _material_error(
+            "比較資料", "判定範囲差分にはpathsのリポジトリ相対パスから保存ファイルの絶対パスへのオブジェクトが必要"
+        )
+    for path, scope in scopes.items():
+        scope_paths = _material_paths("判定範囲差分", scope)
+        if len(scope_paths) != 1:
+            raise _material_error("判定範囲差分", "成果物ごとに1件の差分ファイルが必要")
+        if error := _patch_target_error(scope_paths[0].read_text(encoding="utf-8"), pathlib.Path(repository) / path):
+            raise _material_error("判定範囲差分", error)
     for key in ("base", "head"):
         revision = materials[key]
         if not isinstance(revision, str) or not re.fullmatch(r"[0-9a-fA-F]{7,40}", revision):
@@ -620,21 +757,42 @@ def capture_handoff_session() -> None:
         _HANDOFF_SESSION = ((shared_roots.resolve_root_session_id(os.environ) or os.environ.get("CODEX_THREAD_ID")),)
 
 
-def _default_handoff_path() -> pathlib.Path | None:
-    """`（新規）`の引き継ぎ記録先として、委譲元のセッションのmanaged-temp直下の未使用のファイルパスを返す。
+def _owner_conversation(launcher_session_id: str | None) -> str | None:
+    """全体記録と専用記録先を置く会話の識別子を返す。
 
-    会話を特定できる場合はセッションのmanaged-tempを直接解決して再利用する。
-    会話を特定できないMCP起動では、個別のhandoff領域を作成する。
-    どちらも得られない場合は`None`を返し、呼び出し元は従来どおり欠落として拒否する。
-    ファイル自体は作成しない。`（新規）`の記録先は委譲先が作成するためである。
+    起動時に保持した識別子が会話を表す場合はそれを使う。
+    プロセス専用ルート（`mcp-`形式）か識別子なしの場合は、Managerが解決した実際の委譲元会話を使う。
+    共有状態の名前空間は会話と一致しないことがあるため、名前空間の識別子を会話の代わりに使わない。
     """
-    directory: pathlib.Path | None = None
-    session_id = (
+    captured = (
         _HANDOFF_SESSION[0]
         if _HANDOFF_SESSION is not None
         else (shared_roots.resolve_root_session_id(os.environ) or os.environ.get("CODEX_THREAD_ID"))
     )
-    if session_id is not None and not session_id.startswith("mcp-"):
+    for candidate in (captured, launcher_session_id):
+        if candidate and not candidate.startswith(shared_roots.PROCESS_ROOT_PREFIX):
+            return candidate
+    return None
+
+
+def _conversation_temp(session_id: str) -> pathlib.Path | None:
+    """会話の既存managed-tempを作成せずに返す。解決できなければ`None`を返す。"""
+    with contextlib.suppress(_managed_temp.ManagedTempError, OSError):
+        return _managed_temp.find_session_temp(session_id)
+    return None
+
+
+def _default_handoff_path(launcher_session_id: str | None = None) -> pathlib.Path | None:
+    """`（新規）`の引き継ぎ記録先として、委譲元のセッションのmanaged-temp直下の未使用のファイルパスを返す。
+
+    所有会話（`_owner_conversation`）を特定できる場合はそのmanaged-tempを直接解決して再利用する。
+    会話を特定できない起動では、個別のhandoff領域を作成する。
+    どちらも得られない場合は`None`を返し、呼び出し元は従来どおり欠落として拒否する。
+    ファイル自体は作成しない。`（新規）`の記録先は委譲先が作成するためである。
+    """
+    directory: pathlib.Path | None = None
+    session_id = _owner_conversation(launcher_session_id)
+    if session_id is not None:
         with contextlib.suppress(_managed_temp.ManagedTempError, OSError):
             directory = _managed_temp.resolve_session_temp(session_id)
     if directory is None:
@@ -649,10 +807,15 @@ def _default_handoff_path() -> pathlib.Path | None:
             return candidate
 
 
-def delegate_request(prompt: str) -> tuple[str, pathlib.Path]:
-    """自由本文を保ち、通常委譲へ専用の現行記録先を配送する。"""
-    whole_contract = whole_contract_reference()
-    path = _default_handoff_path()
+def delegate_request(
+    prompt: str,
+    *,
+    whole_contract_path: str | None = None,
+    launcher_session_id: str | None = None,
+) -> tuple[str, pathlib.Path]:
+    """自由本文を保ち、通常委譲へ専用の現行記録先と全体作業契約の参照を配送する。"""
+    whole_contract = whole_contract_reference(whole_contract_path=whole_contract_path, launcher_session_id=launcher_session_id)
+    path = _default_handoff_path(launcher_session_id)
     if path is None:
         raise ActionableError(
             "通常委譲の作業記録先を用意できません。委譲先は起動していない。",
@@ -661,35 +824,118 @@ def delegate_request(prompt: str) -> tuple[str, pathlib.Path]:
     return prompt + "\n\n" + handoff_notice(path, plugin_root.SERVER_PLUGIN_ROOT) + "\n\n" + whole_contract, path
 
 
-def whole_contract_reference() -> str:
-    """所有する全体会話の現行記録への参照を、本文の複製をせず配送する。"""
-    session_id = (
-        _HANDOFF_SESSION[0]
-        if _HANDOFF_SESSION is not None
-        else (shared_roots.resolve_root_session_id(os.environ) or os.environ.get("CODEX_THREAD_ID"))
-    )
-    directory: pathlib.Path | None = None
-    if session_id is not None and not session_id.startswith("mcp-"):
-        with contextlib.suppress(_managed_temp.ManagedTempError, OSError):
-            directory = _managed_temp.find_session_temp(session_id)
-    path = directory / "work-contract.md" if directory is not None else None
-    if path is not None and not path.is_file():
-        raise ActionableError(
-            f"全体作業契約が未作成です: {path}。委譲先は起動していない。",
-            next_action="`share/work-contract.md`に従って期待パスへ全体作業契約を作成し、`start`を再発行する",
-        )
-    if path is not None:
-        body = (
-            f"全体作業契約: {path}\n"
-            "担当工程の開始時に読み、割当が全体の要求を満たす範囲と、維持する成果・検収に使う証拠を確かめる。"
-            "全体記録の更新は委譲元が所有し、委譲先は自身の引き継ぎ記録へ判断を残す。"
-        )
+_WHOLE_CONTRACT_KIND = "work-contract-reference"
+_WHOLE_CONTRACT_LINE_PREFIX = "全体作業契約: "
+_WHOLE_CONTRACT_OPENING = opening_tag(AUTO_INSERTED_ELEMENT, {"source": "agents-server", "kind": _WHOLE_CONTRACT_KIND})
+
+
+_WHOLE_CONTRACT_REISSUE = "`whole_contract_path`へ既存の全体作業契約の絶対パスを指定して`start`を再発行する"
+
+
+def _delivered_whole_contract(prompt: str) -> pathlib.Path | None:
+    """配送済みの起動本文から、サーバーが加えた全体作業契約の絶対パスを取り出す。
+
+    依頼本文が同じ語を含んでも取り違えないよう、サーバーが付けた要素の内側だけを読む。
+    旧形式の未解決の通知と要素の不在は`None`とする。
+    """
+    start = prompt.rfind(_WHOLE_CONTRACT_OPENING)
+    if start < 0:
+        return None
+    first_line = prompt[start + len(_WHOLE_CONTRACT_OPENING) :].lstrip("\n").split("\n", 1)[0]
+    if not first_line.startswith(_WHOLE_CONTRACT_LINE_PREFIX):
+        return None
+    path = pathlib.Path(first_line.removeprefix(_WHOLE_CONTRACT_LINE_PREFIX).strip())
+    return path if path.is_absolute() else None
+
+
+def _inherited_whole_contract(launcher_session_id: str | None) -> pathlib.Path | None:
+    """直接の委譲元sessionが起動時に受領した全体作業契約の参照を、session登録簿の起動本文から返す。
+
+    委譲先自身の保存領域は全体記録を所有しないため、孫へは委譲元が受領した同じ全体記録を渡す。
+    資源を解放した記録は`handoff_info`の起動本文を読む。
+    """
+    if launcher_session_id is None:
+        return None
+    try:
+        resolution = session_registry.resolve(launcher_session_id)
+    except ValueError, OSError:
+        return None
+    for info in (resolution.resume_info, resolution.handoff_info):
+        if info is not None and (path := _delivered_whole_contract(info.launch_info.prompt)) is not None:
+            return path
+    return None
+
+
+def _explicit_whole_contract(value: str) -> pathlib.Path:
+    """明示された全体作業契約のパスを、起動前に読める通常ファイルであることを確かめて返す。"""
+    path = pathlib.Path(value)
+    reason: str | None = None
+    if not path.is_absolute():
+        reason = "絶対パスではない"
+    elif not path.exists():
+        reason = "存在しない"
+    elif not path.is_file():
+        reason = "通常ファイルではない"
     else:
-        body = (
-            "全体作業契約: 未解決。担当の成果が全体の要求を満たすことを確認する工程では、"
-            "委譲元へ記録の所在を返却・通知で求め、取得した記録の要求と担当の成果を比べる。"
+        try:
+            path.read_text(encoding="utf-8")
+        except (OSError, UnicodeError) as error:
+            reason = f"UTF-8で読めない（{error}）"
+    if reason is not None:
+        raise ActionableError(
+            f"whole_contract_pathの全体作業契約を使えません: {value}: {reason}。委譲先は起動していない。",
+            next_action=(
+                "既存の全体作業契約の絶対パスを`whole_contract_path`へ指定するか、"
+                "`share/work-contract.md`に従ってそのパスへ記録を作成し、同じ入力で`start`を再発行する"
+            ),
         )
-    return auto_message(body, source="agents-server", kind="work-contract-reference")
+    return path
+
+
+def _resolve_whole_contract(whole_contract_path: str | None, launcher_session_id: str | None) -> pathlib.Path:
+    """全体作業契約を、明示入力、委譲元の受領済み参照、所有会話の`work-contract.md`の順に解決する。
+
+    いずれも成立しない場合と、期待パスが確定して未作成の場合は起動前に拒否する。
+    未解決のまま担当を起動すると、担当が委譲元へ所在を照会する往復が生じるためである。
+    """
+    if whole_contract_path is not None:
+        return _explicit_whole_contract(whole_contract_path)
+    expected = _inherited_whole_contract(launcher_session_id)
+    if expected is None:
+        owner = _owner_conversation(launcher_session_id)
+        directory = _conversation_temp(owner) if owner is not None else None
+        if directory is None:
+            reason = (
+                "全体作業契約を所有する会話を特定できません"
+                if owner is None
+                else f"全体作業契約を所有する会話の保存領域を解決できません: {owner}"
+            )
+            raise ActionableError(f"{reason}。委譲先は起動していない。", next_action=_WHOLE_CONTRACT_REISSUE)
+        expected = directory / "work-contract.md"
+    if not expected.is_file():
+        raise ActionableError(
+            f"全体作業契約が未作成です: {expected}。委譲先は起動していない。",
+            next_action=(
+                f"`share/work-contract.md`に従って期待パスへ全体作業契約を作成し、`start`を再発行する。"
+                f"別の記録を使う場合は{_WHOLE_CONTRACT_REISSUE}"
+            ),
+        )
+    return expected
+
+
+def whole_contract_reference(
+    *,
+    whole_contract_path: str | None = None,
+    launcher_session_id: str | None = None,
+) -> str:
+    """全体作業契約を解決し、本文を複製せずその参照を配送する本文を返す。"""
+    path = _resolve_whole_contract(whole_contract_path, launcher_session_id)
+    body = (
+        f"{_WHOLE_CONTRACT_LINE_PREFIX}{path}\n"
+        "担当工程の開始時に読み、割当が全体の要求を満たす範囲と、維持する成果・検収に使う証拠を確かめる。"
+        "全体記録の更新は委譲元が所有し、委譲先は自身の引き継ぎ記録へ判断を残す。"
+    )
+    return auto_message(body, source="agents-server", kind=_WHOLE_CONTRACT_KIND)
 
 
 def handoff_notice(path: pathlib.Path | None, root: pathlib.Path) -> str:
@@ -707,6 +953,9 @@ def handoff_notice(path: pathlib.Path | None, root: pathlib.Path) -> str:
 def task_document_request(
     subagent_md_path: str,
     extra_params: Mapping[str, str],
+    *,
+    whole_contract_path: str | None = None,
+    launcher_session_id: str | None = None,
 ) -> tuple[str, str | None, str, LaunchKind, pathlib.Path | None]:
     """`<役割名>.subagent.md`と名前付き入力からmodel種別、用途、委譲プロンプト、`mode:`の値およびサーバーが用意した引き継ぎ記録先を返す。
 
@@ -715,6 +964,7 @@ def task_document_request(
     拒否せずに`（新規）`の記録先を用意して委譲プロンプトへ加え、その絶対パスを5要素目で返す。
     宣言しない通常起動にも共通入力として専用の記録先を加え、5要素目で返す。
     委譲元が値を渡した場合と軽量起動の5要素目は`None`とする。
+    `whole_contract_path`と`launcher_session_id`は通常起動の全体作業契約の解決（`whole_contract_reference`）へ渡す。
     """
     task_document = resolve_task_document_path(subagent_md_path).resolve()
     if not task_document.is_file() or not task_document.name.endswith(".subagent.md"):
@@ -756,22 +1006,32 @@ def task_document_request(
     document_text = document_text.replace(_PLUGIN_ROOT_VARIABLE, str(task_document.parent.parent))
     declaration = _task_document_declaration(task_document, document_text)
     launch_kind: LaunchKind = declaration.launch_kind if not isinstance(declaration, str) else "delegate"
+    if launch_kind != "delegate" and whole_contract_path is not None:
+        raise ActionableError(
+            f"軽量起動（mode: {launch_kind}）の役割はwhole_contract_pathを受理しません: {task_document.name}。"
+            "委譲先は起動していない。",
+            next_action="`whole_contract_path`を外して`start`を再発行する",
+        )
     # 共通前提の不足は記録先の生成より先に起動元へ返す。
-    whole_contract = whole_contract_reference() if launch_kind == "delegate" else None
+    whole_contract = (
+        whole_contract_reference(whole_contract_path=whole_contract_path, launcher_session_id=launcher_session_id)
+        if launch_kind == "delegate"
+        else None
+    )
     handoff_path: pathlib.Path | None = None
     if isinstance(declaration, str):
         _LOG.warning("%s", declaration)
     else:
         if _HANDOFF_INPUT_NAME in declaration.required and _HANDOFF_INPUT_NAME not in extra_params:
-            handoff_path = _default_handoff_path()
+            handoff_path = _default_handoff_path(launcher_session_id)
             if handoff_path is not None:
                 extra_params = {**extra_params, _HANDOFF_INPUT_NAME: f"{handoff_path}（新規）"}
         _check_declared_inputs(task_document, declaration, extra_params)
-    prompt_lines = [f"次の文書の手順を実行せよ（出所: {task_document}）。", document_text]
+    prompt_lines = [task_documents.task_prompt_header(task_document), document_text]
     # 宣言された入力の検証を終えてから、サーバー所有の共通入力を加える。
     # 軽量起動のtaskは独自の記録を持たない。
     if launch_kind == "delegate" and _HANDOFF_INPUT_NAME not in extra_params:
-        handoff_path = _default_handoff_path()
+        handoff_path = _default_handoff_path(launcher_session_id)
         if handoff_path is None:
             raise ActionableError(
                 "通常委譲の作業記録先を用意できません。委譲先は起動していない。",

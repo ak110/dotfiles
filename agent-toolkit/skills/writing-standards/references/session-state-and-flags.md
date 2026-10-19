@@ -115,10 +115,11 @@ Stop hookの無進捗停止（`busy_loop_guard.py`）の終了要求は、Stop�
   `agent-toolkit/agent_toolkit/_hooks/user_prompt_submit.py`が実ユーザー発話の受領時に読み、真なら同スキルの起動を促す注記を返す（機械注入ターンでは読まず、変えない）。
   PostToolUse(Skill)が同スキルの起動で、UserPromptSubmitがユーザーによる同スキルのスラッシュコマンド起動で偽へ戻す。Skillの起動を観測できないCodexでは、注記を返した時点で偽へ戻す。
   寿命はセッション状態ファイルと同じとする
-- `operation_skill_delivered_agents`: 操作を起動の契機とするスキルの完全名から、本文が届いた呼び出し主体の一覧への対応。
-  対象は`agent-toolkit:delegation`、`agent-toolkit:search`、`agent-toolkit:bugfix`、`agent-toolkit:managed-temp`、`agent-toolkit:writing-standards`である。delegationは`Agent`・`Task`と、既存のagents_server hook対象集合に属する起動・追送・観測・巻取りを契機とする。writing-standardsは編集ツールによる本文の作成・更新（書込先の種類と言語を問わない。本文を変えない削除・移動は除く）と、エージェント向け文書への書込先を確定できるBash操作を契機とする。
-  呼び出し主体はhook payloadの`agent_id`とし、持たないメイン会話は`main`とする。
-  `agent-toolkit/agent_toolkit/_hooks/pretooluse/operation_skills.py`が稼働版の`SKILL.md`全文を取得して操作を止める応答へ載せた時点と、PostToolUse(Skill)が対象スキルの起動を観測した時点で主体を加える。同モジュールは記録の無い主体の最初の操作で本文を配送し、同じ主体の再発行を通す。本文を取得できない場合は記録せず操作を止める。Claude CodeとCodexで同じ契約を使い、旧版の警告済みキー`operation_skill_ready_agents`は取得済みの証拠にしない。
+- `operation_skill_delivered_agents`: 操作を起動の契機とするスキルの必須資料の識別子から、取得を観測した呼び出し主体の一覧への対応。キー名は本文を配送していた旧契約の名前を保つ。
+  対象はdelegation・search・bugfix・managed-temp・writing-standards・check-executionの各スキルで、`agent-toolkit:`で修飾した完全名で記録する。delegationは`Agent`・`Task`と、既存のagents_server hook対象集合に属する起動・追送・観測・巻取りを契機とする。writing-standardsは編集ツールによる本文の作成・更新（書込先の種類と言語を問わない。本文を変えない削除・移動は除く）と、エージェント向け文書への書込先を確定できるBash操作を契機とする。check-executionは検証の実行を契機とし、ヘルプ・保存ログ・一覧・設定の照会は対象外とする。対象は閉じた集合で、定義元は`operation_skills.py`の`_is_verification_tokens`である。集合は`plan-verify`、pyfltrの実行系のCLIとMCPの`run`、`pytest`・`py.test`・`vitest`から成る。ほかに`playwright test`・`cargo test`・`dotnet test`、タスクランナー（`npm`・`pnpm`・`yarn`・`make`・`mise run`）の検証ターゲット、`atk run-command`が包む同じ実行を含む。
+  識別子は、`SKILL.md`ではスキルの完全名、必須の参照資料（check-executionの`references/verification-scope.md`）では`<スキルの完全名>:<スキルからの相対パス>`とする。項目の全必須資料に主体が記録されたときだけ取得済みとする。呼び出し主体はhook payloadの`agent_id`とし、持たないメイン会話は`main`とする。
+  `agent-toolkit/agent_toolkit/_hooks/posttooluse.py`が取得を観測した時点で主体を加える。観測はPostToolUse(Skill)の対象スキルの起動、Claude CodeのReadが全文を返したこと（参照資料と、サブエージェントの`SKILL.md`）、CodexのBashの読取が資料の本文を返したことである。部分取得、失敗した読取とパスだけの表示は記録の対象外とする。読取の判定はcompletion-reportの起動証拠と同じ`agent-toolkit/agent_toolkit/_hooks/document_reads.py`を使う。
+  `agent-toolkit/agent_toolkit/_hooks/pretooluse/operation_skills.py`は記録の無い主体の該当操作を止めて取得手段を案内する。記録は前述の観測の時点に限る。案内する資料を取得できない場合も記録せず操作を止める。agents_serverの軽量委譲先（環境変数`AGENT_TOOLKIT_DELEGATED_LAUNCH_KIND`が`explore`・`shell`・`write`）は遮断と記録の対象から外す。旧版の警告済みキー`operation_skill_ready_agents`は取得済みの証拠にしない。
   `agent-toolkit/agent_toolkit/_hooks/rules_context.py`がSessionStartの`source`が`clear`・`compact`のときと委譲先のセッションで`main`を除き、`resume`・`fork`とサブエージェントの記録は変えない。
   寿命はセッション状態ファイルと同じとする
 

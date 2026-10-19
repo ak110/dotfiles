@@ -33,7 +33,7 @@ def test_public_help_describes_launch_identifier_declaration(capsys: pytest.Capt
     assert run_script.dispatch(args) == 0
     output = capsys.readouterr().out
     assert "--reader-fit-review" in output
-    assert all(value in output for value in ("UUID", "16進列", "agent-", "集約起動"))
+    assert all(value in output for value in ("UUID", "16進列", "agent-", "/root/", "spawn_agent", "集約起動"))
 
 
 @pytest.mark.parametrize("selector", [["--results-summary"], ["--result-test", "test"], ["--result-diagnostic", "observed:1"]])
@@ -2949,6 +2949,159 @@ def test_guided_reference_forms_are_accepted_and_misplaced_references_rejected(
         assert check_exec_review_evidence.FILE_REFERENCE_FORM in error or "見出し『" in error or "行範囲" in error
     else:
         assert not error
+
+
+def _commit_reference_files(repository: pathlib.Path, files: dict[str, str]) -> str:
+    """参照判定のテスト用リポジトリへ追跡ファイルを加えてcommitし、新しいHEADを返す。"""
+    for name, text in files.items():
+        (repository / name).parent.mkdir(parents=True, exist_ok=True)
+        (repository / name).write_text(text, encoding="utf-8")
+    for command in (
+        ["add", *files],
+        ["-c", "user.name=Test", "-c", "user.email=test@example.com", "commit", "-qm", "追加"],
+    ):
+        subprocess.run(["git", "-C", str(repository), *command], capture_output=True, check=True, timeout=30)
+    return subprocess.run(
+        ["git", "-C", str(repository), "rev-parse", "HEAD"], capture_output=True, text=True, check=True, timeout=30
+    ).stdout.strip()
+
+
+def _check_reference_text(evidence: pathlib.Path, head: str, text: str, capsys: pytest.CaptureFixture[str]) -> tuple[int, str]:
+    """1行の達成根拠を返却前の確認へ渡し、終了コードと標準エラーを返す。"""
+    _write_evidence(evidence, [{**_condition(FIRST_WI, "完成"), "reviewed_head": head, "evidence": text}])
+    capsys.readouterr()
+    args = argparse.Namespace(
+        script_name="exec-review-evidence-check", script_args=["--", str(evidence), FIRST_WI, "--expected-head", head]
+    )
+    code = run_script.dispatch(args)
+    return code, capsys.readouterr().err
+
+
+_VOCABULARY_FILES = {
+    "app/main.py": "a = 1\nb = 2\nc = 3\n",
+    "Makefile": "all:\n\techo 1\n\techo 2\n",
+    "docker/Dockerfile": "FROM x\nRUN y\n",
+}
+
+
+@pytest.mark.parametrize(
+    ("text", "rejected"),
+    [
+        # 行位置を添えても、名前と拡張子が対象版のどの追跡ファイルとも一致しない識別子はファイルを指さない。
+        ("amazon.nova-lite-v1:0とanthropic.claude-opus-4-5-20251101-v1:0の料金を比べた", ""),
+        ("example.com:443 へ接続して確認", ""),
+        ("mcr.microsoft.com/devcontainers/python:3を使う", ""),
+        ("ghcr.io/astral-sh/uv:0.9で確認", ""),
+        # 観測していない同じ類型（レジストリのイメージ、内部ホストとポート）も同じ規則で参照にしない。
+        ("registry.example.org/team/app:2 を使う", ""),
+        ("db.internal:5432 へ接続して確認", ""),
+        # 追跡ファイルと同じ拡張子を持つ不在の参照と、実在ファイルの範囲外の行位置は従来どおり拒否する。
+        ("nosuch.py:3 で確認", "nosuch.py:3"),
+        ("app/nosuch.py:3 で確認", "app/nosuch.py:3"),
+        ("app/main.py:99 で確認", "app/main.py:99"),
+        ("amazon.nova-lite-v1:0の料金。nosuch.py:3 で確認", "nosuch.py:3"),
+    ],
+)
+def test_reference_check_ignores_non_file_identifiers_with_ports(
+    reference_repository: tuple[pathlib.Path, str, pathlib.Path],
+    capsys: pytest.CaptureFixture[str],
+    text: str,
+    rejected: str,
+) -> None:
+    """行位置付きの候補は、対象版の追跡ファイルの名前・拡張子と比べて参照かを決める。
+
+    モデル識別子・ホストとポート・イメージの参照を不在ファイルとして拒否すると、正当な根拠の保存が止まる。
+    """
+    repository, _, evidence = reference_repository
+    head = _commit_reference_files(repository, _VOCABULARY_FILES)
+    code, error = _check_reference_text(evidence, head, text, capsys)
+    if rejected:
+        assert code == 1
+        assert f"参照『{rejected}』" in error, error
+        assert "amazon" not in error
+    else:
+        assert code == 0, error
+
+
+@pytest.mark.parametrize(
+    ("text", "rejected"),
+    [
+        ("Makefile:3で確認", ""),
+        ("Makefile:3 で確認", ""),
+        ("docker/Dockerfile:2で確認", ""),
+        ("Makefile:9で確認", "Makefile:9"),
+        ("Makefile:1-2,5-7 で確認", "Makefile:1-2,5-7"),
+    ],
+)
+def test_reference_check_accepts_extensionless_file_line_before_japanese(
+    reference_repository: tuple[pathlib.Path, str, pathlib.Path],
+    capsys: pytest.CaptureFixture[str],
+    text: str,
+    rejected: str,
+) -> None:
+    """拡張子を持たないファイルの行位置も、拡張子を持つ参照と同じく最初の非ASCII文字か空白で終える。"""
+    repository, _, evidence = reference_repository
+    head = _commit_reference_files(repository, _VOCABULARY_FILES)
+    code, error = _check_reference_text(evidence, head, text, capsys)
+    if rejected:
+        assert code == 1
+        assert f"参照『{rejected}』" in error, error
+    else:
+        assert code == 0, error
+
+
+_NODEID_FORMS = {
+    "class": "pytools/repack_archive_test.py::TestRestore::test_restore[zip]",
+    "function": "pytools/repack_archive_test.py::test_save[zip]",
+    "path": "pytools/repack_archive_test.py:1",
+}
+
+
+@pytest.mark.parametrize(
+    ("text", "rejected"),
+    [
+        # 参照の形式（クラス付き・クラス無しのnodeid、通常パス）と前置き（無し、和文の直結、空白区切り）の全組合せ。
+        *((f"{lead}{form}で確認", "") for form in _NODEID_FORMS.values() for lead in ("", "バックアップの説明", "説明 ")),
+        # 実際に所在が誤る接頭辞は、和文を除いた接頭辞の所在の不一致として拒否する。
+        *(
+            (f"{lead}{form.replace('repack_archive', 'missing')}で確認", "pytools/missing_test.py")
+            for form in _NODEID_FORMS.values()
+            for lead in ("", "バックアップの説明")
+        ),
+        # 角括弧内のパラメーター値（パス・入れ子）は所在検査から外す。
+        ("原因をpytools/repack_archive_test.py::test_save[docs/missing.md:1]で確認", ""),
+        ("原因をpytools/repack_archive_test.py::test_save[[記録](docs/missing.md)]で確認", ""),
+        # 日本語名の実在ファイルは語全体を保持し、明示引用は引用の境界で所在を確かめる。
+        ("原因をdocs/日本語名_test.py::test_save[a]で確認", ""),
+        ("原因を`pytools/repack_archive_test.py::test_save[zip]`で確認", ""),
+        ("原因を`pytools/missing_test.py::test_save[zip]`で確認", "pytools/missing_test.py"),
+        # nodeidと通常パスの組合せでは、両方の所在を確かめる。
+        ("原因をpytools/repack_archive_test.py::test_save[zip]とdocs/record.md:1で確認", ""),
+        ("原因をpytools/repack_archive_test.py::test_save[zip]とdocs/missing.md:1で確認", "docs/missing.md:1"),
+    ],
+)
+def test_reference_boundary_matrix_for_nodeids_and_paths(
+    reference_repository: tuple[pathlib.Path, str, pathlib.Path],
+    capsys: pytest.CaptureFixture[str],
+    text: str,
+    rejected: str,
+) -> None:
+    """nodeidのファイル接頭辞と通常パスは同じ境界判断で前置きの和文から切り離し、保存と確認で同じ結果になる。"""
+    repository, _, evidence = reference_repository
+    head = _commit_reference_files(
+        repository, {"pytools/repack_archive_test.py": "def test_save():\n    pass\n", "docs/日本語名_test.py": "x = 1\n"}
+    )
+    code, error = _check_reference_text(evidence, head, text, capsys)
+    assert code == (1 if rejected else 0), error
+    if rejected:
+        assert f"参照『{rejected}" in error, error
+        assert "参照『バックアップ" not in error and "参照『原因" not in error
+    # 判定の記入（保存）も同じ抽出を通り、確認と同じ結果になる。
+    evidence.write_text(json.dumps(_pending_row(), ensure_ascii=False), encoding="utf-8")
+    explanation = repository.parent / "explanation.txt"
+    explanation.write_text(text, encoding="utf-8")
+    capsys.readouterr()
+    assert _judge_first_row(evidence, head, "--evidence-file", str(explanation)) == code, capsys.readouterr().err
 
 
 # 地の文の参照の区切り規則から期待値を導く組み合わせ。パスは拡張子で終わり、行位置は`:`に続くASCIIの並びとし、

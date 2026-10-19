@@ -263,11 +263,12 @@ class ManagerBase:
                     self._status_writer.schedule()
             raise
 
-    def _launcher_session_id(self) -> str | None:
+    def launcher_session_id(self) -> str | None:
         """作成するsessionの委譲元sessionの識別子を返す。
 
         状態ファイルの書込主体が射影する委譲元、所有ルート（プロセス専用ルートを除く）、
         呼び出しプロセスの環境の`CODEX_THREAD_ID`の順に解決する。
+        公開`start`は通常起動の全体作業契約と専用記録先の解決にも同じ値を使う。
         """
         if self._status_writer is not None:
             launcher = self._status_writer.launcher_session_id()
@@ -278,7 +279,7 @@ class ManagerBase:
 
     def launcher_record_context(self) -> dict[str, Any]:
         """直接の委譲元と、一意に解決した記録ファイルをtask本文へ渡す。"""
-        launcher = self._launcher_session_id()
+        launcher = self.launcher_session_id()
         if launcher is None:
             return {"status": "unresolved"}
         context: dict[str, Any] = {"launcher_session_id": launcher}

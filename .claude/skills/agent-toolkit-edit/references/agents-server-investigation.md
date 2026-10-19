@@ -12,14 +12,16 @@ Claude Codeの作業ディレクトリのスラッグは、絶対パスのパス
 `agents_server`の診断ログの書き手は次のとおり。
 
 - MCPサーバーの起動・終了とinitializeの節目: `_agents_server/mcp_tools.py`と`mcp_transport.py`
+- 起動単位の終了診断: サーバー自身のイベントは`_agents_server/logging_config.py`（呼び出しは`mcp_tools.py`・`mcp_transport.py`・`manager_registry.py`）、子の終了状態と標準エラー末尾は`scripts/launch.py`
 - 候補ごとの初期化と候補の切替: `manager.py`。全backendのexploreは通常のコマンド実行を使う。起動応答の`excluded_candidates`と警告ログから、実際のCLI導入・認証・モデル可用性の失敗を調べる。Codexの開始・再開には、スキル非配送用のplugins設定と、配布定義から直接配送するpyfltr MCP設定を確かめる。専用sandboxのprobeは使わない
-- 開始後の保存失敗（登録簿、待機対象、状態ファイル）: `manager.py`と`state.py`。予約した保存とheartbeatの失敗は`status_file.py`と`manager_base.py`が、書込主体の状態ファイルとsession識別子の一覧とともに記録する。いずれもスタックを含み、置換元と置換先のパスは例外の`add_note`による注記にある。共通の置換（`_common/atomic_file.py`）はWindowsのWinError 5・32を1秒未満の有限回で再試行し、上限後と対象外のエラーでは旧本文を残して失敗を返す
+- 開始後の保存失敗（agents_serverのsession登録簿`<状態ディレクトリ>/agents-server/sessions/<session_id>.json`、待機対象、状態ファイル）: `manager.py`と`state.py`。予約した保存とheartbeatの失敗は`status_file.py`と`manager_base.py`が、書込主体の状態ファイルとsession識別子の一覧とともに記録する。いずれもスタックを含み、置換元と置換先のパスは例外の`add_note`による注記にある。共通の置換（`_common/atomic_file.py`）はWindowsのWinError 5・32を1秒未満の有限回で再試行し、上限後と対象外のエラーでは旧本文を残して失敗を返す
 - sessionの状態遷移（`session_transition`）: `manager.py`・`manager_registry.py`・`manager_resume.py`・`state.py`
 - 開始・終端の資源記録（`resource_snapshot`）: `resource_snapshot.py`
 
 | 記録 | 所在 | 読み取れる事実 |
 | --- | --- | --- |
 | `agents_server`の診断ログ | 診断ログのディレクトリ直下の`agents-server.log`（`RotatingFileHandler`が世代管理） | 起動ごとの`engine`、`launch_kind`、`model_type`、初期化の成否と再試行、sessionの状態遷移、開始・終端時の稼働数とホスト資源 |
+| 起動単位の終了診断 | 診断ログのディレクトリ直下の`agents-server-instances/<server_instance>.jsonl`。中断を返す`show`・`atk agents show`・`atk agents wait`の`error.diagnostics.path`と`interrupted_turns[].diagnostics.path`が同じファイルを指す。参照元のsession登録簿と終端結果が残る間は保持される | 起動の`pid`・`cwd`・親CLIの接続記録の候補（`parent_connection_log`）、所属ルートと書込主体、受信シグナル、標準入力の終端、停止で中断したsessionとturn、正常・例外終了、ランチャーが観測した終了コード・シグナル・標準エラー末尾。`diagnostics.status`の`incomplete`はサーバーとランチャーがともに記録できずに終わったこと、`not_collected`は記録を始める前の中断であることを示す。所在の報告前に終了した起動はこのファイルを持たず、ランチャーの標準エラー1行が親CLIの接続記録へ残る唯一の記録になる。`parent_connection_log`が`reason`（`unsupported_parent`・`not_found`）を返す起動は親の接続記録を特定できない |
 | 委譲先のCLIの診断ログ | 診断ログのディレクトリ直下の`delegate-debug`配下。名前はUTC時刻、session識別子、`launch_kind`をハイフンで連ねた`.log`（session識別子は初期化完了時に入るため、未到達の起動はその部分を持たない）。保持世代を超えた記録は次の起動時に削除される | SessionStart hookの完了、MCPサーバーの接続、機能フラグの取得、skillsの送信、`[engine] turn 1 start`への到達、セッション間メッセージの保留 |
 | Claude Codeが委譲先ごとに残すMCPサーバー接続ログ | Claude CLIのキャッシュディレクトリ配下の`<作業ディレクトリのスラッグ>/mcp-logs-<サーバー名>/<起動時刻>.jsonl`（Windowsのキャッシュは`%LOCALAPPDATA%\claude-cli-nodejs\Cache`） | 各MCPサーバーの接続完了時刻と接続の失敗 |
 | 委譲先のセッションのトランスクリプト | `~/.claude/projects/<作業ディレクトリのスラッグ>/<session識別子>.jsonl` | 委譲先が受け取った指示と返した応答。初期化を完了しなかった委譲先はこのファイルを作成しないため、不在が初期化未到達の証拠になる |
@@ -28,6 +30,12 @@ Claude Codeの作業ディレクトリのスラッグは、絶対パスのパス
 | 実行ホスト上のセッション登録簿 | `~/.claude/sessions/<プロセス識別子>.json` | `sessionId`、`cwd`、`kind`、`entrypoint`、メッセージ送受信用の識別名（委譲先も登録される） |
 
 ## 切り分けの順序
+
+中断（`interrupted`）を調べるときは応答の`diagnostics.next_action`が示す`atk read-file`で終了診断を読み、受信シグナル・標準入力の終端・終了状態の有無からサーバーがどの契機で終わったかを確定する。親が終了を開始した理由は、親側の記録だけが保持する。`parent_connection_log.path`が指す親CLIの接続記録のうち、終了を示すイベント（`exited`・`signal_received`・`process_exited`）の`at`と同じ時刻の記録を読む。
+
+`parent_connection_log`が`path`を持たず`reason`を返す起動では、親の接続記録の所在は不明である。`unsupported_parent`は環境変数`CLAUDECODE`が`1`以外の起動（親がClaude Code以外）を示す。`not_found`はClaude CLIのキャッシュディレクトリが解決できない場合と、作業ディレクトリのスラッグ配下に起動時刻以前の`mcp-logs-*agents*server*`の記録が無い場合を示す。どちらも親側の記録を別の手段で確かめる。
+
+サーバーが診断ファイルの所在を報告する前に終了した起動（依存導入や起動直後の失敗）は、診断ファイルとsession登録簿の`server_instance`の両方が欠ける。この場合の唯一の記録は、ランチャーが子の異常終了時に標準エラーへ出力する1行（診断ファイルが未作成であることと次の操作を含む）で、親CLIの接続記録へ残る。終了コード0の正常終了（`--check-dependencies`など起動単位を持たないもの）はこの行の対象外である。
 
 通常の公開応答では活動の経過を`seconds_since_activity`で確認し、絶対時刻と実行条件を比べる調査にはMCPの`show(verbose=True)`を使う。API失敗の公開診断は種別、HTTP状態、経過時間で、初期化診断は受信したメッセージの種別とその位置の失敗情報を示す。
 

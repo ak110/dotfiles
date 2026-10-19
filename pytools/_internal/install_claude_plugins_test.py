@@ -9,17 +9,27 @@
 import json
 import logging
 import pathlib
+import sys
 
 import pytest
 
 from pytools._internal import claude_common as _claude_common
 from pytools._internal import claude_marketplace as _claude_marketplace
+from pytools._internal import claude_plugin_references as _claude_plugin_references
 from pytools._internal import common as _common
+from pytools._internal import deferred_updates as _deferred_updates
 from pytools._internal import install_claude_plugins as _install_claude_plugins
 
-from ._test_helpers import _FakeResult, command_matches, make_fresh_install_fake, plugin_management_response
+from ._test_helpers import (
+    ResidentProcesses,
+    _FakeResult,
+    command_matches,
+    make_fresh_install_fake,
+    plugin_management_response,
+)
 
 _REAL_VERIFY_TARGET_PLUGINS = _install_claude_plugins._verify_target_plugins
+_REAL_SCAN = _claude_plugin_references.scan
 
 
 @pytest.fixture(name="fake_which_present")
@@ -45,9 +55,10 @@ def _fake_target_info(monkeypatch: pytest.MonkeyPatch) -> None:
 
 @pytest.fixture(autouse=True)
 def _empty_external_marketplaces(monkeypatch: pytest.MonkeyPatch) -> None:
-    """外部マーケットプレイスの専用テスト以外では対象を空にする。"""
+    """外部マーケットプレイスの専用テスト以外では対象を空にし、開発機のプロセスを参照判定へ混ぜない。"""
     monkeypatch.setattr(_install_claude_plugins, "_EXTERNAL_MARKETPLACES", ())
     monkeypatch.setattr(_install_claude_plugins, "_verify_target_plugins", lambda _targets, _failed=(): None)
+    monkeypatch.setattr(_claude_plugin_references, "scan", lambda: ())
 
 
 def test_verify_target_plugins_requires_installed_and_enabled(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -442,6 +453,65 @@ class TestReadTargetInfo:
         assert not calls
 
 
+class TestUninstallDeprecated:
+    """deprecated プラグインの除去が稼働中のセッションが使う実体を削除しないことを検証する。"""
+
+    _NAME = "old-plugin"
+
+    def test_uninstall_keeps_plugin_data(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """`--keep-data`を付けて除去し、稼働中のセッションのhook・MCPが使う永続データ領域を残す。
+
+        `claude plugin uninstall`は導入先の実体を孤立として残し、永続データ領域だけを削除する
+        （Claude Code 2.1.303の隔離環境での観測）。
+        """
+        raw_data = [{"id": f"{self._NAME}@{_claude_common.MARKETPLACE_NAME}", "version": "1.0.0", "scope": "user"}]
+        calls: list[list[str]] = []
+
+        def fake_run_claude(args: list[str], **_kwargs: object) -> _FakeResult:
+            calls.append(args)
+            return _FakeResult(returncode=0)
+
+        monkeypatch.setattr(_claude_common, "run_claude", fake_run_claude)
+
+        assert _install_claude_plugins._uninstall_deprecated(self._NAME, raw_data) is True
+        assert calls == [["plugin", "uninstall", f"{self._NAME}@{_claude_common.MARKETPLACE_NAME}", "--keep-data"]]
+
+
+class TestCleanupOldProjectScope:
+    """project scope の除去がデータ領域を残すことを検証する。"""
+
+    def test_failure_guidance_keeps_plugin_data(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """除去の失敗時に案内する手動コマンドも、自動実行と同じく`--keep-data`を含める。
+
+        案内どおりに手動実行したときに、他のscopeが残らないpluginの永続データ領域を削除しないため。
+        """
+        raw_data = [
+            {
+                "id": f"agent-toolkit@{_claude_common.MARKETPLACE_NAME}",
+                "version": "1.0.0",
+                "scope": "project",
+                "projectPath": str(tmp_path),
+            }
+        ]
+        calls: list[list[str]] = []
+
+        def fake_run_claude(args: list[str], **_kwargs: object) -> _FakeResult:
+            calls.append(args)
+            return _FakeResult(returncode=1, stderr="uninstall failed")
+
+        monkeypatch.setattr(_claude_common, "run_claude", fake_run_claude)
+
+        with caplog.at_level(logging.INFO):
+            _install_claude_plugins._cleanup_old_project_scope("agent-toolkit", raw_data)
+
+        assert calls == [
+            ["plugin", "uninstall", f"agent-toolkit@{_claude_common.MARKETPLACE_NAME}", "--scope=project", "--keep-data"]
+        ]
+        assert f"agent-toolkit@{_claude_common.MARKETPLACE_NAME} --scope=project --keep-data`を実行する" in caplog.text
+
+
 class TestEnsurePluginCacheComplete:
     """plugin cache の必須ファイルの欠落を検出し、1 回だけ再インストールで修復する。"""
 
@@ -489,7 +559,7 @@ class TestEnsurePluginCacheComplete:
             lambda _name: pytest.fail("必須ファイルが揃う状態で再インストールを起動した"),
         )
 
-        assert _install_claude_plugins._ensure_plugin_cache_complete(self._NAME) is False
+        assert _install_claude_plugins._ensure_plugin_cache_complete(self._NAME) == "unchanged"
 
     def test_missing_file_triggers_repair_install(self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
         """欠落を検出したらキャッシュを削除して再インストールし、欠落を解消する。"""
@@ -506,7 +576,62 @@ class TestEnsurePluginCacheComplete:
 
         monkeypatch.setattr(_install_claude_plugins, "_install_plugin", fake_install)
 
-        assert _install_claude_plugins._ensure_plugin_cache_complete(self._NAME) is True
+        assert _install_claude_plugins._ensure_plugin_cache_complete(self._NAME) == "repaired"
+        assert calls == [self._NAME]
+        assert _install_claude_plugins._missing_plugin_cache_files(cache_dir) == []
+
+    @pytest.mark.skipif(sys.platform != "linux", reason="実行名をsymlinkで与える常駐プロセスはLinuxで起動する")
+    @pytest.mark.parametrize(
+        ("holder", "retry_timer"),
+        [("mcp-cwd", False), ("claude-session", True)],
+        ids=["mcp-cwd-manual", "claude-session-retry-timer"],
+    )
+    def test_referenced_cache_defers_repair_until_reference_ends(  # noqa: PLR0913 -- 参照の種類とホスト条件を組で与える
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        caplog: pytest.LogCaptureFixture,
+        holder: str,
+        retry_timer: bool,
+    ) -> None:
+        """欠落した導入先を参照するプロセスか稼働中のClaude Codeがある間は削除せず延期し、終了後の再実行で修復する。
+
+        修復は導入先を削除してから再導入するため、参照中に進むと残っているhook・MCPの実体まで消える。
+        """
+        monkeypatch.setattr(_claude_plugin_references, "scan", _REAL_SCAN)
+        monkeypatch.setattr(_deferred_updates, "has_retry_timer", lambda: retry_timer)
+        cache_dir = self._cache_dir(tmp_path)
+        self._prepare(monkeypatch, tmp_path, install_path=cache_dir)
+        self._write_cache(cache_dir, missing=("pyproject.toml",))
+        (cache_dir / "agent_toolkit").mkdir()
+        (cache_dir / "agent_toolkit" / "hook.py").write_text("in use", encoding="utf-8")
+        calls: list[str] = []
+
+        def fake_install(name: str) -> bool:
+            calls.append(name)
+            assert not cache_dir.exists()
+            self._write_cache(cache_dir)
+            return True
+
+        monkeypatch.setattr(_install_claude_plugins, "_install_plugin", fake_install)
+        residents = ResidentProcesses(tmp_path, monkeypatch)
+        if holder == "mcp-cwd":
+            process = residents.start("python3", cwd=cache_dir / "agent_toolkit")
+        else:
+            process = residents.start("claude", cwd=tmp_path)
+        try:
+            with caplog.at_level(logging.WARNING):
+                assert _install_claude_plugins._ensure_plugin_cache_complete(self._NAME) == "deferred"
+            assert not calls
+            assert (cache_dir / "agent_toolkit" / "hook.py").read_text(encoding="utf-8") == "in use"
+            assert "pyproject.toml" in caplog.text
+            assert str(cache_dir.relative_to(tmp_path)) in caplog.text
+            expected = "操作は不要です" if retry_timer else "`update-dotfiles`を再実行してください"
+            assert expected in caplog.text
+        finally:
+            residents.stop(process)
+
+        assert _install_claude_plugins._ensure_plugin_cache_complete(self._NAME) == "repaired"
         assert calls == [self._NAME]
         assert _install_claude_plugins._missing_plugin_cache_files(cache_dir) == []
 
@@ -555,7 +680,7 @@ class TestEnsurePluginCacheComplete:
         )
 
         with caplog.at_level(logging.WARNING):
-            assert _install_claude_plugins._ensure_plugin_cache_complete(self._NAME) is False
+            assert _install_claude_plugins._ensure_plugin_cache_complete(self._NAME) == "unchanged"
 
         assert str(installed) in caplog.text
 
@@ -574,7 +699,7 @@ class TestEnsurePluginCacheComplete:
         )
 
         with caplog.at_level(logging.INFO):
-            assert _install_claude_plugins._ensure_plugin_cache_complete(self._NAME) is False
+            assert _install_claude_plugins._ensure_plugin_cache_complete(self._NAME) == "unchanged"
 
         assert outside.is_dir()
         assert str(outside) in caplog.text

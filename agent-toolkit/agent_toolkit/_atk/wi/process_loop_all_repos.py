@@ -18,11 +18,13 @@ from agent_toolkit._atk.wi import listing as _listing
 from agent_toolkit._atk.wi import process_loop_alerts as _alerts
 from agent_toolkit._atk.wi import process_loop_control as _control
 from agent_toolkit._atk.wi import process_loop_env as _env
+from agent_toolkit._atk.wi import process_loop_launch_gate as _gate
 from agent_toolkit._atk.wi import process_loop_log as _log
 from agent_toolkit._atk.wi import process_loop_ownership as _ownership
 from agent_toolkit._atk.wi import process_loop_session as _session
 from agent_toolkit._atk.wi import process_loop_update as _update
 from agent_toolkit._atk.wi import process_loop_watch as _watch
+from agent_toolkit._common import next_action as _next_action
 from agent_toolkit._common.atomic_file import atomic_write
 from agent_toolkit._git import command as _git_command
 
@@ -117,12 +119,22 @@ def _report(event: str, ownership: _ownership.Ownership, detail: str) -> None:
     print(f"{ownership.repo_id}: {detail}", flush=True)
 
 
+def _finish_repository(ownership: _ownership.Ownership, *, completed: bool) -> None:
+    """続行の予定が無くなった担当の所有を解放し、その担当のレーン所有sessionの資源を回収する。
+
+    停止を確認できない担当と続行を配送する担当はここへ到達させない。回収の可否は`lane.cleanup_session`の
+    `_eligible`が判定する保持条件（未統合、使用中、未commitの変更など）が決め、未統合の資源は次の反復の再開（同じレーン所有session）へ残る。
+    """
+    _ownership.release(ownership, completed=completed)
+    _session.cleanup_lane_session(ownership.lane_session_id, target_repo=ownership.repo_id)
+
+
 async def _stop_repository(manager: RepositoryDelegateManager, ownership: _ownership.Ownership) -> dict[str, Any]:
     try:
         assert ownership.session_id is not None
         result = await manager.kill(ownership.session_id)
         if result.get("status") in _TERMINAL_STATUSES:
-            _ownership.release(ownership, completed=False)
+            _finish_repository(ownership, completed=False)
             return result
         detail = str(result)
     except Exception as error:
@@ -213,6 +225,23 @@ async def _launch_repository(
         raise
 
 
+def _record_no_progress(snapshot: _listing.RepositorySnapshot, start: _gate.LaunchInput | None) -> None:
+    """進捗なしで終わった担当の起動入力を記録し、同じ入力の間は次の反復の判定がその対象の起動を見送る。"""
+    repo_id = snapshot.repository.repo_id
+    try:
+        current = _listing.configured_repo_snapshot(snapshot.private_notes, (snapshot.repository,))[0]
+        _gate.record_no_progress(
+            repo_id,
+            start if start is not None else _gate.repository_input(snapshot, None),
+            _gate.repository_input(current, None),
+        )
+    except (OSError, ValueError) as error:
+        # 記録できない場合は次の反復を従来どおり起動させ、他担当の終了処理を続ける。
+        next_action = _gate.record_failure_next_action()
+        _log.append("no_progress_record_failed", target_repo=repo_id, detail=str(error), next_action=next_action)
+        _next_action.report(f"{repo_id}: 無進捗記録を保存できなかった: {error}", next_action=next_action, stream=sys.stdout)
+
+
 async def run_repository_delegates(
     args: argparse.Namespace,
     snapshots: tuple[_listing.RepositorySnapshot, ...],
@@ -220,8 +249,13 @@ async def run_repository_delegates(
     manager: RepositoryDelegateManager | None = None,
     manager_factory: RepositoryManagerFactory | None = None,
     audit_repositories: set[str] | None = None,
+    launch_inputs: dict[str, _gate.LaunchInput] | None = None,
 ) -> dict[str, dict[str, Any]]:
-    """リポジトリを独立に起動・回収し、1担当の失敗を他担当へ伝播させない。"""
+    """リポジトリを独立に起動・回収し、1担当の失敗を他担当へ伝播させない。
+
+    `launch_inputs`は起動判定に使った対象別の起動入力で、省略した対象は取得済み候補からアラート未観測として作成する。
+    続行できない返却と無進捗の打切りでは、この起動入力と終了時の起動入力に共通する要素を無進捗記録へ残す。
+    """
     if manager is not None:
         active_manager = manager
     else:
@@ -273,6 +307,8 @@ async def run_repository_delegates(
             else:
                 ownership, session_id = launched
                 owners[session_id] = ownership
+                # 見送らずに起動した時点で記録を削除し、この担当の結果から記録し直す。
+                _gate.clear(repo_id)
                 print(f"{repo_id}の担当を起動しました（session: {session_id}）。", flush=True)
         if owners:
             print(f"{len(owners)}件の担当の終了を待機します。", flush=True)
@@ -317,6 +353,7 @@ async def run_repository_delegates(
             results[ownership.repo_id] = {**result, "result_path": str(result_path)}
             blocked = any(line.startswith("続行できない理由:") for line in str(result.get("agent_message", "")).splitlines())
             completed = False
+            abandoned = False
             if not blocked:
                 try:
                     snapshot = snapshots_by_repo[ownership.repo_id]
@@ -343,6 +380,7 @@ async def run_repository_delegates(
                             ownership,
                             "続行後に2回連続で進捗が無いため打ち切った。再開情報を次の反復へ保持する。",
                         )
+                        abandoned = True
                 except Exception as error:
                     _report(
                         "repository_completion_failed",
@@ -353,7 +391,9 @@ async def run_repository_delegates(
                     owners.pop(session_id)
                     continue
             owners.pop(session_id)
-            _ownership.release(ownership, completed=completed)
+            _finish_repository(ownership, completed=completed)
+            if blocked or abandoned:
+                _record_no_progress(snapshots_by_repo[ownership.repo_id], (launch_inputs or {}).get(ownership.repo_id))
             _log.append(
                 "repository_session_end",
                 target_repo=ownership.repo_id,
@@ -383,6 +423,31 @@ def _print_work(snapshots: tuple[_listing.RepositorySnapshot, ...]) -> None:
             print(f"  {snapshot.repository.repo_id}: 処理候補{len(snapshot.candidates)}件", flush=True)
 
 
+def _launch_plan(
+    snapshots: tuple[_listing.RepositorySnapshot, ...],
+    explicit: set[str],
+    alerts: dict[str, frozenset[int] | None],
+) -> tuple[dict[str, _gate.LaunchInput], list[str]]:
+    """起動する対象と起動入力、無進捗記録を理由に見送る対象を、共通の起動要否の判定で決める。
+
+    明示指定（`--resume`・`--auto-resume`）の対象は記録によらず起動する。候補・診断・未判定アラートが無く、
+    アラートの取得に成功して0件だった対象は起動入力が空になったため記録を削除する。
+    """
+    inputs: dict[str, _gate.LaunchInput] = {}
+    skipped: list[str] = []
+    for snapshot in snapshots:
+        repo_id = snapshot.repository.repo_id
+        observed = alerts.get(repo_id)
+        current = _gate.repository_input(snapshot, observed)
+        if repo_id in explicit or ((snapshot.has_work or observed) and _gate.decide(repo_id, current).launch):
+            inputs[repo_id] = current
+        elif snapshot.has_work or observed:
+            skipped.append(repo_id)
+        elif observed is not None:
+            _gate.clear(repo_id)
+    return inputs, skipped
+
+
 def _run_loop(
     args: argparse.Namespace,
     private_notes: pathlib.Path,
@@ -409,11 +474,14 @@ def _run_loop(
                 continue
             snapshots = _listing.configured_repo_snapshot(private_notes, repositories)
             _print_work(snapshots)
-            audit: set[str] = set()
+            explicit: set[str] = set()
             if args.resume is not None:
-                audit.add(_ownership.resume_repository(args.resume, tuple(target_ids)))
+                explicit.add(_ownership.resume_repository(args.resume, tuple(target_ids)))
             elif args.auto_resume:
-                audit.update(_ownership.unfinished_repository_ids(tuple(target_ids)))
+                explicit.update(_ownership.unfinished_repository_ids(tuple(target_ids)))
+            alerts: dict[str, frozenset[int] | None] = {}
+            # 候補WIだけで起動する対象はアラートを数えない。見送る対象と候補の無い対象は数え、新しい未判定アラートを観測する。
+            item_launches, _skipped = _launch_plan(snapshots, explicit, alerts)
             for snapshot in snapshots:
                 repository = snapshot.repository
                 try:
@@ -423,20 +491,28 @@ def _run_loop(
                         repository.repo_id,
                         repository.worktree,
                         last_alert_checks.get(repository.repo_id),
-                        count_dependabot=not snapshot.has_work,
+                        count_dependabot=repository.repo_id not in item_launches,
                     )
                     last_alert_checks[repository.repo_id] = checked
+                    alerts[repository.repo_id] = pending
                     if pending:
-                        print(f"{repository.repo_id}に未判定のDependabotアラートが{pending}件あります。", flush=True)
-                        audit.add(repository.repo_id)
+                        print(f"{repository.repo_id}に未判定のDependabotアラートが{len(pending)}件あります。", flush=True)
                     if submitted:
                         print(f"アラート監視により{repository.repo_id}へ{submitted}件のAWIを投入しました。", flush=True)
                         snapshots = _listing.configured_repo_snapshot(private_notes, repositories)
                 except (OSError, ValueError) as error:
                     _log.append("repository_alert_failed", target_repo=repository.repo_id, detail=str(error))
                     print(f"{repository.repo_id}のアラート確認に失敗しました: {error}", flush=True)
-            if not any(snapshot.has_work for snapshot in snapshots) and not audit:
-                print("処理対象が0件のため変更検知を待機します。", flush=True)
+            launch_inputs, skipped = _launch_plan(snapshots, explicit, alerts)
+            for repo_id in skipped:
+                _gate.report_skip(repo_id)
+            if not launch_inputs:
+                print(
+                    "起動を見送った対象を除き処理対象が0件のため変更検知を待機します。"
+                    if skipped
+                    else "処理対象が0件のため変更検知を待機します。",
+                    flush=True,
+                )
                 _wait_for_changes(private_notes)
                 if not args.no_update and dotfiles_root is not None and startup_hash is not None:
                     _update.check_and_restart_on_update(dotfiles_root, startup_hash, sys.argv)
@@ -461,15 +537,26 @@ def _run_loop(
             if _config.resolve_configured_repositories() != repositories:
                 print("登録先の変更を検知したため、WIを取得し直します。", flush=True)
                 continue
-            launching = [
-                snapshot.repository.repo_id
-                for snapshot in snapshots
-                if snapshot.has_work or snapshot.repository.repo_id in audit
-            ]
-            print(f"{len(launching)}件のリポジトリの担当へ委譲します: {', '.join(launching)}", flush=True)
+            launch_inputs, _skipped = _launch_plan(snapshots, explicit, alerts)
+            for repo_id, current in tuple(launch_inputs.items()):
+                if current.alerts is None:
+                    # 起動時の未判定アラートを基準に記録し、終了後に増えたアラートだけを新しい入力として扱う。
+                    launch_inputs[repo_id] = current.with_alerts(_alerts.observe_dependabot_pending(args, repo_id))
+            launching = [snapshot for snapshot in snapshots if snapshot.repository.repo_id in launch_inputs]
+            if not launching:
+                print("開始待機の間に処理対象が無くなったため、WIを取得し直します。", flush=True)
+                continue
+            names = [snapshot.repository.repo_id for snapshot in launching]
+            print(f"{len(launching)}件のリポジトリの担当へ委譲します: {', '.join(names)}", flush=True)
             gate.started()
             results = asyncio.run(
-                run_repository_delegates(args, snapshots, manager_factory=manager_factory, audit_repositories=audit)
+                run_repository_delegates(
+                    args,
+                    tuple(launching),
+                    manager_factory=manager_factory,
+                    audit_repositories=set(names),
+                    launch_inputs=launch_inputs,
+                )
             )
             args.resume = None
             # --auto-resumeも既存の共通CLI契約どおり初回だけ有効とする。

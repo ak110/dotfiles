@@ -431,6 +431,9 @@ def _write_declared_task_document(tmp_path: pathlib.Path, input_block: str) -> p
     manifest.write_text('{"name":"agent-toolkit"}', encoding="utf-8")
     task_document = plugin_root / "share" / "declared.subagent.md"
     task_document.parent.mkdir()
+    if "作業ツリーへの書込: " not in input_block:
+        # 書込宣言は必須行のため、宣言の他の行を確かめる試験では書き込む役割として補う。
+        input_block += "\n作業ツリーへの書込: あり"
     task_document.write_text(f"# 担当\n\n## 入力\n\n```text\n{input_block}\n```\n\n## 出力\n\n結果を返す。\n", encoding="utf-8")
     return task_document
 
@@ -531,6 +534,7 @@ _LAUNCHER_ENVIRONMENT_NAMES = (
     "CLAUDE_CODE_SESSION_ID",
     "AGENT_TOOLKIT_OWNER_SESSION",
     "AGENT_TOOLKIT_DELEGATED_SESSION",
+    "AGENT_TOOLKIT_DELEGATED_LAUNCH_KIND",
     "AGENT_TOOLKIT_STATUS_HOST_SESSION",
     "CODEX_THREAD_ID",
 )
@@ -883,7 +887,7 @@ def _pending_codex_manager[PendingCodexClient: (HoldingTurnStartClient, Naturall
     backend = codex_backend.AppServerManager(manager.sessions, manager._condition)
     client = client_type(backend)
 
-    async def ensure_client() -> PendingCodexClient:
+    async def ensure_client(*_args: Any, **_kwargs: Any) -> PendingCodexClient:
         return client
 
     monkeypatch.setattr(backend, "_ensure_client", ensure_client)

@@ -17,6 +17,7 @@
 - 新規にテーブルデータの処理ライブラリを選ぶ場合は`pandas`に代えて`polars`を選ぶ。既存プロジェクトでは採用済みのものにそろえる
 - インターフェースの都合で未使用の引数は、関数先頭で`del xxx # noqa`と書く
 - `Literal`の分岐は`assert_never`などで網羅性を確かめる
+- `subprocess`をテキストモード（`text=True`、`encoding`の指定）で起動すると、Windowsでは`input`と標準入力への書込みの`\n`が`os.linesep`（`\r\n`）へ変わる（`subprocess`の「Frequently Used Arguments」）。改行に厳密な子プロセス（`git update-ref --stdin`など）へは入力を符号化したバイト列で渡す。agent-toolkitのパッケージ内のGitの起動には`agent_toolkit._git.command.run`を使う（`text=True`で渡した文字列の`input`もUTF-8のバイト列として子プロセスへ渡す）
 - `isinstance(x, int)`と`isinstance(value, type(reference))`は`bool`値も真と判定する。数値型を厳格に限定するときは`bool`を除外する
 
 ### 入力検証とセキュリティ

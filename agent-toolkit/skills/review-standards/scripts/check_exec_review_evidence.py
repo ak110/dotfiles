@@ -110,8 +110,12 @@ PLAIN_REFERENCE = re.compile(
     r"(?P<plain>[^\s`\[\]（）「」、。:#]*?\.[A-Za-z][A-Za-z0-9_-]*(?![A-Za-z0-9_/\\-]|\.[A-Za-z0-9_])"
     r"(?::[!-~]+|#[^\s`\[\]「」、。]+)?)"
 )
-# 名前の本体（ピリオド以外の文字）を持ち、`.<英字>…`で終わるファイル名。`.env`は本体を持たず、拡張子なしとする。
-NAMED_EXTENSION = re.compile(r"\.*[^.]+.*\.[A-Za-z][A-Za-z0-9_-]*")
+# 拡張子で終わるパスを持たない語の行位置付き参照（`Makefile:3で確認`）。行位置は`PLAIN_REFERENCE`と同じく
+# `:`に続くASCIIの並びとし、最初の非ASCII文字か空白で終える。
+LOCATED_NAME = re.compile(r"(?P<plain>[^\s`\[\]（）「」、。:#]+:[+-]?\d[!-~]*)")
+# 名前の本体（ピリオド以外の文字）を持ち、`.<英字>…`で終わるファイル名と、その最後の拡張子（グループ1）。
+# `.env`は本体を持たず、拡張子なしとする。
+NAMED_EXTENSION = re.compile(r"\.*[^.]+.*(\.[A-Za-z][A-Za-z0-9_-]*)")
 # 共用の比較で除く条件文・要求原文の再掲の境界。区切りは語の境界とし、ファイル名の`.`と`/`は含めない。
 # ラベルはコロンで終わる短い語（`確認対象: `など）とし、パスを飲み込まないよう`/`と区切りを含めない。
 RESTATEMENT_SEPARATORS = r"\s、。，,;；|・"
@@ -314,13 +318,21 @@ def _unit_markers(source: str) -> tuple[str, str]:
 def _file_references(evidence: str, repository: pathlib.Path, head: str = "HEAD") -> list[re.Match[str]]:
     """根拠から明示されたファイル参照を取り出し、不在の参照も対象版で確認する。
 
-    明示された参照は、Markdownリンク、WI名、実在するファイル、拡張子付きのパス、行・見出し位置付きのファイル名とする。
-    画面やAPIのパス（`/settings`、`/api/items`）と製品名（`Node.js`、`ASP.NET`）はファイルを指さないため候補にしない。
+    明示された参照は、Markdownリンク、WI名、実在するファイル、拡張子付きのパス、見出し位置付きのファイル名と、
+    対象版のファイルの語彙と一致する行位置付きの名前とする。
+    画面やAPIのパス（`/settings`、`/api/items`）、製品名（`Node.js`、`ASP.NET`）、モデル識別子やホストとポート
+    （`amazon.nova-lite-v1:0`、`example.com:443`）はファイルを指さないため候補にしない。
     これらを候補にすると、正当な達成根拠が不在ファイルへの参照として拒否される。
     """
     matches = []
     for word in _evidence_words(evidence):
-        for match in _plain_references(evidence, word, repository) if word.group("plain") is not None else [word]:
+        if word.group("plain") is not None:
+            candidates = _plain_references(evidence, word, repository)
+        elif word.group("test") is not None:
+            candidates = [_test_reference(evidence, word, repository)]
+        else:
+            candidates = [word]
+        for match in candidates:
             if _is_explicit_reference(match, evidence, repository, head):
                 matches.append(match)
     return matches
@@ -354,7 +366,8 @@ def _plain_references(evidence: str, word: re.Match[str], repository: pathlib.Pa
     参照の始まりは語の先頭とし、先頭からのパスが実在せず、その途中に日本語の直後から始まるパスがある場合は
     その位置とする（`原因をdocs/record.md:1で確認`）。日本語でつないだ2件目以降の参照（`A.md:1・B.md:2が`）も
     日本語の直後から同じ規則で切り出し、全ての参照の所在を確かめる。
-    拡張子で終わるパスを持たない語は、語全体を候補として返す。
+    拡張子で終わるパスを持たない語は、行位置を添えていれば行位置の終わりまで（`LOCATED_NAME`）、
+    添えていなければ語全体を候補として返す。
     """
     start, end = word.span("plain")
     # 保存結果のラベルと引用符は参照の外側として扱い、返すspanもパスから始める。
@@ -366,8 +379,7 @@ def _plain_references(evidence: str, word: re.Match[str], repository: pathlib.Pa
     position = start
     if first is not None:
         path, _ = _reference_parts(first)
-        path_end = start + len(path)
-        if _is_file(repository / path) or JAPANESE_ASCII_PATH_BOUNDARY.search(evidence, start + 1, path_end) is None:
+        if _starts_path(evidence, start, path, repository):
             references.append(first)
             position = first.end()
     while True:
@@ -378,12 +390,7 @@ def _plain_references(evidence: str, word: re.Match[str], repository: pathlib.Pa
                 continue
             path, _ = _reference_parts(found)
             # 地の文のスラッシュ語から次のファイル名までを1パスにせず、内側の始点を調べる。
-            # 日本語を含む実在パスは語全体を保持する。
-            if (
-                not _is_file(repository / path)
-                and JAPANESE_ASCII_PATH_BOUNDARY.search(evidence, boundary.start() + 1, boundary.start() + len(path))
-                is not None
-            ):
+            if not _starts_path(evidence, boundary.start(), path, repository):
                 continue
             reference = found
             break
@@ -391,7 +398,44 @@ def _plain_references(evidence: str, word: re.Match[str], repository: pathlib.Pa
             break
         references.append(reference)
         position = reference.end()
-    return references or [word]
+    if references:
+        return references
+    # 拡張子で終わるパスを持たない語も、行位置を添えた場合は行位置の後ろの和文を参照に含めない。
+    return [LOCATED_NAME.match(evidence, start, end) or word]
+
+
+def _test_reference(evidence: str, word: re.Match[str], repository: pathlib.Path) -> re.Match[str]:
+    """nodeidのファイル接頭辞の始まりを、地の文のパスと同じ境界判断（`_starts_path`）で決める。
+
+    `EVIDENCE_REFERENCE`の`test`は語の先頭からテスト識別子までを1語として取り込むため、接頭辞の前に接した和文
+    （`原因を<テストファイルのパス>::test_save[zip]`の`原因を`）も接頭辞に含む。形式ごとに境界の処理を持つと、通常パスへの是正が
+    テスト参照へ及ばないため、接頭辞の始まりは地の文のパスと同じ関数で決める。
+    角括弧の内側（パラメーター値）は境界の探索に含めず、引用で囲んだnodeidは引用を境界としてそのまま返す。
+    """
+    start = word.start("test")
+    separator = evidence.find("::", start, evidence.index("[", start, word.end()))
+    if separator < 0 or evidence.startswith("`", start):
+        return word
+    positions = (start, *(found.start() for found in JAPANESE_ASCII_PATH_BOUNDARY.finditer(evidence, start + 1, separator)))
+    boundary = next(
+        (position for position in positions if _starts_path(evidence, position, evidence[position:separator], repository)),
+        start,
+    )
+    if boundary == start:
+        return word
+    reference = EVIDENCE_REFERENCE.match(evidence, boundary, word.end())
+    assert reference is not None and reference.group("test") is not None
+    return reference
+
+
+def _starts_path(evidence: str, start: int, path: str, repository: pathlib.Path) -> bool:
+    """`evidence`の`start`から始まる`path`を、参照の始まりとして扱えるかを返す。
+
+    パスが実在するか、途中に日本語の直後から始まるパスが無い場合に始まりとする。日本語を含む実在パスは語全体を保持する。
+    地の文のパスとnodeidのファイル接頭辞がこの1つの判断を使い、同じ接頭辞の境界を参照の形式で変えない。
+    """
+    inner = JAPANESE_ASCII_PATH_BOUNDARY.search(evidence, start + 1, start + len(path))
+    return _is_file(repository / path) or inner is None
 
 
 def _is_explicit_reference(match: re.Match[str], evidence: str, repository: pathlib.Path, head: str) -> bool:
@@ -422,11 +466,15 @@ def _is_explicit_reference(match: re.Match[str], evidence: str, repository: path
     # 拡張子は名前の本体を持つファイル名の`.<英字>…`とし、`.env`のように先頭がピリオドで本体の無い名前は拡張子を持たない。
     # 見出し位置はファイルの節を指すため、拡張子を持つ名前に添えた場合だけ所在とする。
     # `pytest-dev/pytest#14635`のようなIssueの参照は区切りと`#`を持つが、ファイルを指さない。
-    # 行位置を添えた名前（`.gitignore:9`、`scripts/.env:1`）は、根拠の所在を示すため候補として確かめる。
+    # 行位置を添えた名前は、区切りと拡張子を持つパスでなければ、
+    # 対象版の追跡ファイルの名前・拡張子と比べて参照かを決める（`_names_file`）。
     has_separator = "/" in candidate or "\\" in candidate
-    has_extension = NAMED_EXTENSION.fullmatch(re.split(r"[/\\]", candidate)[-1]) is not None
+    name = re.split(r"[/\\]", candidate)[-1]
+    has_extension = NAMED_EXTENSION.fullmatch(name) is not None
     if location.startswith("#"):
         located = has_extension
+    elif location.startswith(":") and not location.startswith("::"):
+        located = (has_separator and has_extension) or _names_file(candidate, name, repository, head)
     else:
         located = bool(location) and (has_separator or re.search(r"\.[A-Za-z][A-Za-z0-9_-]*$", candidate) is not None)
     explicit = (
@@ -442,6 +490,32 @@ def _is_explicit_reference(match: re.Match[str], evidence: str, repository: path
     ):
         return False
     return explicit or _is_file(repository / candidate)
+
+
+def _names_file(candidate: str, name: str, repository: pathlib.Path, head: str) -> bool:
+    """行位置を添えた候補が、対象版のファイルの語彙でファイルを指すかを返す。
+
+    絶対パス、実在するファイル、先頭がピリオドの名前（`.gitignore:9`、`scripts/.env:1`）と、
+    最後のパス要素が対象版の追跡ファイルのいずれかと同じファイル名か同じ拡張子を持つ候補をファイル参照とする。
+    行位置の書式だけで参照とすると、モデル識別子（`amazon.nova-lite-v1:0`）、ホストとポート（`example.com:443`）、
+    イメージの参照（`ghcr.io/astral-sh/uv:0.9`）を不在ファイルとして拒否し、語彙を観測するたびに除外を足すことになる。
+    追跡ファイルを列挙できない場合（リポジトリを特定できない保存操作）は、区切りか拡張子の形を持つ候補を参照とし、
+    リポジトリを特定できない理由を参照の解決で示す。
+    """
+    if (
+        name.startswith(".")
+        or pathlib.Path(candidate).is_absolute()
+        or re.match(r"[A-Za-z]:[\\/]", candidate)
+        or _is_file(repository / candidate)
+    ):
+        return True
+    try:
+        tracked = [pathlib.PurePosixPath(path).name for path in _tracked_files(repository, head)]
+    except OSError, subprocess.SubprocessError, ValueError:
+        return "/" in candidate or "\\" in candidate or re.search(r"\.[A-Za-z][A-Za-z0-9_-]*$", candidate) is not None
+    extension = NAMED_EXTENSION.fullmatch(name)
+    extensions = {found[1] for tracked_name in tracked if (found := NAMED_EXTENSION.fullmatch(tracked_name))}
+    return name in tracked or (extension is not None and extension[1] in extensions)
 
 
 def _path_clue(candidate: str, repository: pathlib.Path, head: str) -> bool:
@@ -2420,7 +2494,8 @@ def main(argv: list[str] | None = None) -> int:
         "--reader-fit-review",
         help='成果物ごとのJSON申告 {"files":{"相対.md":{"sessions":["起動結果の識別子"]}},'
         '"external":{"絶対パス":{"sessions":["起動結果の識別子"]}}}。'
-        "識別子はUUID、16進列、agent-付き16進列を受理し、集約起動は各ファイルへ同じ識別子を申告する。"
+        "識別子はagents_serverのsession_id（UUID）、Agentツールのagent ID（16進列、agent-付き16進列）、"
+        "Codexの組み込み委譲spawn_agentが返すtask_name（/root/<名前>）を受理し、集約起動は各ファイルへ同じ識別子を申告する。"
         '再点検省略は{"omission":"再点検対象なし"}、externalには前回本文の複製の絶対パスpreviousも指定する。'
         "Markdown差分とexternal-artifactがともに無い場合だけ文章成果物なし",
     )
@@ -2530,8 +2605,11 @@ def main(argv: list[str] | None = None) -> int:
                     raise ValueError("結果一覧には--results-fileだけを指定し、更新とは別に実行する")
                 verification_results.list_results(results, args)
                 return 0
-            if args.evidence is None or not (args.updates_file or args.select_row) or args.output is None:
-                raise ValueError("レビュー更新は入力証拠・--select-row（または--updates-file）・--outputを指定する")
+            selected = verification_results.selected_rows(args)
+            if args.evidence is None or not (args.updates_file or selected) or args.output is None:
+                raise ValueError(
+                    "レビュー更新は入力証拠・行選択（--select-rowか行別指定。または--updates-file）・--outputを指定する"
+                )
             if args.verification_record and args.output.resolve() == args.verification_record.resolve():
                 raise ValueError("レビュー出力は未判定記録と別ファイルへ保存する")
             if args.accepted_evidence and args.output.resolve() == args.accepted_evidence.resolve():
@@ -2544,9 +2622,7 @@ def main(argv: list[str] | None = None) -> int:
             if errors:
                 raise ValueError("。".join(errors))
             updates = (
-                verification_results.updates_for_arguments(payload, args, reviewing=True, pending=pending)
-                if args.select_row
-                else None
+                verification_results.updates_for_arguments(payload, args, reviewing=True, pending=pending) if selected else None
             )
             references = saving_reference_check(repository_root)
 

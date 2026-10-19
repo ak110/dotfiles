@@ -2,6 +2,7 @@
 
 import getpass
 import logging
+import os
 import pathlib
 import subprocess
 import time
@@ -27,8 +28,51 @@ _ACTIVE_TIMEOUT_SECONDS = 30.0
 _CONFIRM_SECONDS = 6.0
 
 
+# ユーザーマネージャーが停止しているときのsystemctl --userの標準エラーの先頭。
+# 続く理由はロケールで翻訳されるため、この英語の前半だけで判定する。
+_USER_MANAGER_UNREACHABLE_MARKER = "Failed to connect to user scope bus"
+
+
 class SetupError(RuntimeError):
     """サービスが常駐状態に至らなかったことを表す。"""
+
+
+class UserManagerUnavailableError(SetupError):
+    """systemdのユーザーマネージャーへ接続できないことを表す。
+
+    `next_action`は呼出元が工程の次の操作として表示する復旧手順を持つ。
+    """
+
+    def __init__(self, message: str, next_action: str) -> None:
+        super().__init__(message)
+        self.next_action = next_action
+
+
+def _failure_message(subject: str, label: str, result: subprocess.CompletedProcess[str] | None) -> str:
+    """systemctlの失敗を伝える文面を返す。捕捉した標準エラーを含める。"""
+    if result is None:
+        return f"{subject}の{label}に失敗しました ({common.format_cli_error(result)})"
+    return f"{subject}の{label}に失敗しました (exit {result.returncode}): {common.format_cli_error(result)}"
+
+
+def _raise_if_user_manager_unavailable(subject: str, label: str, result: subprocess.CompletedProcess[str] | None) -> None:
+    """接続不能の応答ならUserManagerUnavailableErrorを送出する。"""
+    if result is None or result.returncode == 0 or _USER_MANAGER_UNREACHABLE_MARKER not in (result.stderr or ""):
+        return
+    uid = os.getuid()
+    raise UserManagerUnavailableError(
+        f"systemdのユーザーマネージャーが稼働していないため{subject}の{label}を実行できません: "
+        f"{common.format_cli_error(result)}",
+        f"`sudo systemctl start user@{uid}.service`でユーザーマネージャーを起動してから`update-dotfiles`を再実行してください。",
+    )
+
+
+def _raise_systemctl_failure(subject: str, label: str, result: subprocess.CompletedProcess[str] | None) -> None:
+    """非0終了・実行失敗のsystemctlをSetupErrorへ変換する。成功なら何もしない。"""
+    if result is not None and result.returncode == 0:
+        return
+    _raise_if_user_manager_unavailable(subject, label, result)
+    raise SetupError(_failure_message(subject, label, result))
 
 
 def _ensure_unit_content(unit_path: pathlib.Path, unit_content: str, log_tag: str) -> bool:
@@ -61,6 +105,7 @@ def setup(
         実行ファイル不在で何もしなかった場合False、設定を確認した場合True。
 
     Raises:
+        UserManagerUnavailableError: systemdのユーザーマネージャーへ接続できない場合に送出する。
         SetupError: systemctl呼び出しが失敗した場合、
             またはrestart後にサービスが常駐状態へ至らない場合に送出する。
     """
@@ -76,17 +121,18 @@ def setup(
     commands: list[tuple[list[str], float, str]] = []
     if changed:
         reload_result = common.run_subprocess(["systemctl", "--user", "daemon-reload"], timeout=15.0, tag=log_tag)
-        if reload_result is None or reload_result.returncode != 0:
-            return_code = reload_result.returncode if reload_result is not None else "N/A"
-            raise SetupError(f"{service_name}のdaemon-reloadに失敗しました (exit {return_code})")
+        _raise_systemctl_failure(service_name, "daemon-reload", reload_result)
     enabled = common.run_subprocess(["systemctl", "--user", "is-enabled", service_name], timeout=15.0, tag=log_tag)
     if enabled is None:
         raise SetupError(f"{service_name}の有効状態を取得できません")
+    # is-enabledの非0はユニットの未有効を表すが、接続不能の場合はenableを試みず環境の異常として扱う。
+    _raise_if_user_manager_unavailable(service_name, "有効状態の取得", enabled)
     if enabled.returncode != 0:
         commands.append((["systemctl", "--user", "enable", service_name], 15.0, "enable"))
     active = common.run_subprocess(["systemctl", "--user", "is-active", service_name], timeout=15.0, tag=log_tag)
     if active is None:
         raise SetupError(f"{service_name}の稼働状態を取得できません")
+    _raise_if_user_manager_unavailable(service_name, "稼働状態の取得", active)
     needs_restart = changed or restart_needed or enabled.returncode != 0 or active.returncode != 0
     if needs_restart:
         reasons = []
@@ -128,10 +174,7 @@ def setup(
     # systemctlの失敗は後続の常駐確認を無意味にする（旧プロセスがactiveのまま残ると
     # NRestartsも変化せず成功と誤判定するため）。失敗した時点で例外を送出して打ち切る。
     for command, timeout, label in commands:
-        result = common.run_subprocess(command, timeout=timeout, tag=log_tag)
-        if result is None or result.returncode != 0:
-            return_code = result.returncode if result is not None else "N/A"
-            raise SetupError(f"{service_name}の{label}に失敗しました (exit {return_code})")
+        _raise_systemctl_failure(service_name, label, common.run_subprocess(command, timeout=timeout, tag=log_tag))
     if needs_restart:
         _wait_until_running(service_name=service_name, log_tag=log_tag)
     _report_linger_status(log_tag)
@@ -157,6 +200,7 @@ def setup_timer(
         実行ファイル不在で何もしなかった場合False、unit配置とrestartを実施した場合True。
 
     Raises:
+        UserManagerUnavailableError: systemdのユーザーマネージャーへ接続できない場合に送出する。
         SetupError: systemctl呼び出しが失敗した場合、またはtimerがactiveでない場合に送出する。
     """
     if not executable_path.is_file():
@@ -186,10 +230,7 @@ def setup_timer(
         ]
     )
     for command, timeout, label in commands:
-        result = common.run_subprocess(command, timeout=timeout, tag=log_tag)
-        if result is None or result.returncode != 0:
-            return_code = result.returncode if result is not None else "N/A"
-            raise SetupError(f"{timer_name}の{label}に失敗しました (exit {return_code})")
+        _raise_systemctl_failure(timer_name, label, common.run_subprocess(command, timeout=timeout, tag=log_tag))
 
     result = common.run_subprocess(
         ["systemctl", "--user", "show", timer_name, "--property=ActiveState"],
@@ -197,7 +238,8 @@ def setup_timer(
         tag=log_tag,
     )
     if result is None or result.returncode != 0:
-        raise SetupError(f"{timer_name}の状態を取得できません")
+        _raise_if_user_manager_unavailable(timer_name, "状態の取得", result)
+        raise SetupError(f"{timer_name}の状態を取得できません: {common.format_cli_error(result)}")
     active_state = ""
     for line in result.stdout.splitlines():
         key, separator, value = line.partition("=")
@@ -227,7 +269,8 @@ def _report_linger_status(log_tag: str) -> None:
         logger.warning(
             log_format.format_status(
                 log_tag,
-                f"linger確認: 失敗 (exit {result.returncode})。`loginctl show-user {user} --property=Linger`を手動実行する",
+                f"linger確認: 失敗 (exit {result.returncode}: {common.format_cli_error(result)})。"
+                f"`loginctl show-user {user} --property=Linger`を手動実行する",
             ),
         )
     elif "Linger=no" in result.stdout:
@@ -251,7 +294,8 @@ def _query_service(service_name: str, log_tag: str) -> tuple[str, str]:
         tag=log_tag,
     )
     if result is None or result.returncode != 0:
-        raise SetupError(f"{service_name}の状態を取得できません")
+        _raise_if_user_manager_unavailable(service_name, "状態の取得", result)
+        raise SetupError(f"{service_name}の状態を取得できません: {common.format_cli_error(result)}")
     values: dict[str, str] = {}
     for line in result.stdout.splitlines():
         key, separator, value = line.partition("=")

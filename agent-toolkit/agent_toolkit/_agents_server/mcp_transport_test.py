@@ -6,10 +6,17 @@ import contextlib
 
 # テストでは共有状態とバックエンドの内部境界も直接検証する。
 # pylint: disable=protected-access
+import json
 import os
 import pathlib
+import queue
 import shutil
-from collections.abc import AsyncGenerator
+import signal
+import subprocess
+import sys
+import threading
+import time
+from collections.abc import AsyncGenerator, Callable
 from types import SimpleNamespace
 from typing import Any
 from unittest.mock import AsyncMock
@@ -26,6 +33,7 @@ from mcp.types import ErrorData, JSONRPCError, JSONRPCRequest, JSONRPCResponse
 import agent_toolkit.agents_server_mcp as entry_script
 from agent_toolkit._agents_server import codex as codex_backend
 from agent_toolkit._agents_server import (
+    logging_config,
     mcp_tools,
     mcp_transport,
     session_errors,
@@ -218,3 +226,236 @@ async def test_tool_error_body_carries_next_action(
     reason, next_action = body.split(f"\n{NEXT_ACTION_PREFIX}", 1)
     assert reason.endswith(str(error))
     assert operation in next_action
+
+
+_PLUGIN_ROOT = pathlib.Path(__file__).resolve().parents[2]
+_LAUNCH_TIMEOUT = 60.0
+
+
+class _LaunchedServer:
+    """起動ランチャーまたは変更前の起動形でagents_serverを起動し、JSON-RPCを1行ずつ送受信する。"""
+
+    def __init__(
+        self,
+        tmp_path: pathlib.Path,
+        host_environment: dict[str, str],
+        *,
+        direct: bool = False,
+        arguments: tuple[str, ...] = (),
+    ) -> None:
+        # 起動用の依存環境と依存のキャッシュは実行ホストの値を使い、状態ディレクトリと一時領域だけを分離する。
+        # 依存環境を分離すると、作業者ごとに数百MBのコピーを一時領域へ作るためである。
+        # `UV_FROZEN`は起動形の`--locked`と重なるとuvが無視する旨の警告を標準エラーへ出力するため、CIのjob環境から引き継がない。
+        env = {
+            key: value
+            for key, value in host_environment.items()
+            if key not in {"AGENT_TOOLKIT_OWNER_SESSION", "CLAUDE_CODE_SESSION_ID", "VIRTUAL_ENV", "CLAUDECODE", "UV_FROZEN"}
+        }
+        env.update(
+            XDG_STATE_HOME=str(tmp_path),
+            LOCALAPPDATA=str(tmp_path),
+            TMPDIR=str(tmp_path / "tmp"),
+        )
+        (tmp_path / "tmp").mkdir(parents=True, exist_ok=True)
+        search_path = os.pathsep.join(directory for directory in os.get_exec_path() if pathlib.Path(directory).name != "shims")
+        env["PATH"] = search_path
+        uv = shutil.which("uv", path=search_path)
+        assert uv is not None
+        target = str(_PLUGIN_ROOT / "agent_toolkit" / "agents_server_mcp.py")
+        command = (
+            [uv, "run", "--project", str(_PLUGIN_ROOT), "--locked", "--no-default-groups", target, *arguments]
+            if direct
+            else [sys.executable, str(_PLUGIN_ROOT / "scripts" / "launch.py"), "agent_toolkit/agents_server_mcp.py", *arguments]
+        )
+        self.state_dir = tmp_path / "agent-toolkit"
+        self.temporary = tmp_path / "tmp"
+        # テストを実行する端末のCtrl-Cが子へ届かないよう、独立したセッションで起動する。
+        self.process = subprocess.Popen(  # pylint: disable=consider-using-with
+            command,
+            env=env,
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            start_new_session=os.name != "nt",
+        )
+        self._lines: queue.Queue[bytes] = queue.Queue()
+        self.stderr = b""
+        self._readers = [
+            threading.Thread(target=self._read_stdout, daemon=True),
+            threading.Thread(target=self._drain_stderr, daemon=True),
+        ]
+        for reader in self._readers:
+            reader.start()
+
+    def _read_stdout(self) -> None:
+        assert self.process.stdout is not None
+        for line in self.process.stdout:
+            self._lines.put(line)
+
+    def _drain_stderr(self) -> None:
+        assert self.process.stderr is not None
+        self.stderr = self.process.stderr.read()
+
+    def request(self, request_id: int, method: str, params: dict[str, Any]) -> dict[str, Any]:
+        self.send({"jsonrpc": "2.0", "id": request_id, "method": method, "params": params})
+        while True:
+            payload = json.loads(self._lines.get(timeout=_LAUNCH_TIMEOUT))
+            if payload.get("id") == request_id:
+                return payload
+
+    def send(self, payload: dict[str, Any]) -> None:
+        assert self.process.stdin is not None
+        self.process.stdin.write(json.dumps(payload).encode() + b"\n")
+        self.process.stdin.flush()
+
+    def initialize(self) -> None:
+        """initializeの応答を同期点とし、シグナルの記録handlerの設置後に操作を始める。"""
+        response = self.request(
+            1,
+            "initialize",
+            {"protocolVersion": "2025-11-25", "capabilities": {}, "clientInfo": {"name": "test", "version": "1"}},
+        )
+        assert "result" in response
+        self.send({"jsonrpc": "2.0", "method": "notifications/initialized"})
+
+    def wait(self) -> int:
+        """終了を待ち、読取threadを回収してから全パイプを閉じる。"""
+        returncode = self.process.wait(timeout=_LAUNCH_TIMEOUT)
+        for reader in self._readers:
+            reader.join(timeout=_LAUNCH_TIMEOUT)
+        for stream in (self.process.stdin, self.process.stdout, self.process.stderr):
+            if stream is not None:
+                with contextlib.suppress(OSError):
+                    stream.close()
+        return returncode
+
+    def events(self) -> list[dict[str, Any]]:
+        [path] = (self.state_dir / logging_config.INSTANCE_DIRECTORY_NAME).glob("*.jsonl")
+        return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines()]
+
+    def diagnostics_status(self) -> str:
+        [path] = (self.state_dir / logging_config.INSTANCE_DIRECTORY_NAME).glob("*.jsonl")
+        reference = logging_config.diagnostics_reference(
+            logging_config.InstanceReference(path.stem, 1), state_root=self.state_dir
+        )
+        return reference["status"]
+
+    def await_event(self, name: str) -> None:
+        """診断ファイルに指定のイベントが現れるまで、上限付きで待つ。"""
+        deadline = time.monotonic() + _LAUNCH_TIMEOUT
+        while not any(event["event"] == name for event in self.events()):
+            assert time.monotonic() < deadline, f"診断に{name}が現れない"
+            time.sleep(0.05)
+
+    def server_pid(self) -> int:
+        return next(event["pid"] for event in self.events() if event["event"] == "started")
+
+
+def test_launcher_records_stdin_close_exit(tmp_path: pathlib.Path, host_environ: Callable[[], dict[str, str]]) -> None:
+    """親が標準入力を閉じた正常終了を、サーバーとランチャーの双方が時刻付きで記録し、tools/listと終了コード0を保つ。"""
+    server = _LaunchedServer(tmp_path, host_environ())
+    server.initialize()
+    tools = server.request(2, "tools/list", {})["result"]["tools"]
+    assert {tool["name"] for tool in tools} == {"start", "send_message", "kill", "stop", "list", "show"}
+    assert server.process.stdin is not None
+    server.process.stdin.close()
+
+    assert server.wait() == 0
+    events = server.events()
+    names = [event["event"] for event in events]
+    assert names[:2] == ["started", "bound"]
+    assert {"stdin_closed", "exited", "process_exited"} <= set(names)
+    assert next(event for event in events if event["event"] == "exited")["outcome"] == "normal"
+    exited = next(event for event in events if event["event"] == "process_exited")
+    assert exited["writer"] == "launcher" and exited["returncode"] == 0 and exited["signal"] is None
+    assert all(event["at"] for event in events)
+    assert not list(server.temporary.glob("agent-toolkit-agents-server-launch-*"))
+
+
+def test_launcher_check_dependencies_exits_silently(tmp_path: pathlib.Path, host_environ: Callable[[], dict[str, str]]) -> None:
+    """起動単位を持たない正常終了は、診断ファイルの所在を受け取れなかった旨を標準エラーへ出力しない。"""
+    # ランチャーは子の標準エラーを中継する。依存環境を初めて作成するuvの進行表示を
+    # 判定対象の標準エラーへ含めないよう、先に作成を済ませる。
+    warmup = _LaunchedServer(tmp_path / "warmup", host_environ(), arguments=("--check-dependencies",))
+    assert warmup.wait() == 0, warmup.stderr
+    server = _LaunchedServer(tmp_path, host_environ(), arguments=("--check-dependencies",))
+
+    assert server.wait() == 0
+    assert server.stderr == b"", server.stderr
+    assert not list((server.state_dir / logging_config.INSTANCE_DIRECTORY_NAME).glob("*.jsonl"))
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIXのシグナル転送と終了状態を検証する")
+@pytest.mark.parametrize("signum", [signal.SIGTERM, signal.SIGINT], ids=["SIGTERM", "SIGINT"])
+def test_launcher_preserves_signal_exit_status(
+    tmp_path: pathlib.Path,
+    signum: signal.Signals,
+    host_environ: Callable[[], dict[str, str]],
+) -> None:
+    """ランチャーが受けたシグナルを記録し、変更前の起動形と同じ終了状態を呼出元へ返す。
+
+    MCPホストと同じく、シグナルは起動したプロセスのpidへ送る（uvもpid宛てのSIGINT・SIGTERMを子へ転送する）。
+    SIGINTを受けたサーバーは標準入力の読取が終わるまで停止しないため（変更前の起動形も同じ）、受信の記録を同期点として標準入力を閉じる。
+    """
+
+    def deliver(launched: _LaunchedServer) -> None:
+        launched.process.send_signal(signum)
+        if signum == signal.SIGINT:
+            launched.await_event("signal_received")
+            assert launched.process.stdin is not None
+            launched.process.stdin.close()
+
+    # 起動の待ち時間を重ねるため、対照とランチャーを同時に起動する。
+    control = _LaunchedServer(tmp_path / "control", host_environ(), direct=True)
+    server = _LaunchedServer(tmp_path / "launcher", host_environ())
+    for launched in (control, server):
+        launched.initialize()
+    for launched in (control, server):
+        deliver(launched)
+
+    assert server.wait() == control.wait()
+    events = server.events()
+    assert {"event": "signal_received", "signal": signum.name} in [
+        {"event": event["event"], "signal": event.get("signal")} for event in events
+    ]
+    exited = next(event for event in events if event["event"] == "process_exited")
+    assert [item["signal"] for item in exited["launcher_signals"]] == [signum.name]
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIXのSIGKILLを使う")
+def test_launcher_records_server_kill(tmp_path: pathlib.Path, host_environ: Callable[[], dict[str, str]]) -> None:
+    """サーバーだけが記録できずに終わった場合も、ランチャーが終了状態と標準エラー末尾を記録する。"""
+    server = _LaunchedServer(tmp_path, host_environ())
+    server.initialize()
+    os.kill(server.server_pid(), signal.SIGKILL)
+    server.wait()
+
+    names = [event["event"] for event in server.events()]
+    assert "exited" not in names
+    exited = next(event for event in server.events() if event["event"] == "process_exited")
+    assert exited["returncode"] != 0
+    assert "stderr_tail" in exited
+    assert server.diagnostics_status() == "collected"
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIXのSIGKILLを使う")
+def test_launcher_and_server_kill_is_incomplete(tmp_path: pathlib.Path, host_environ: Callable[[], dict[str, str]]) -> None:
+    """ランチャーとサーバーがともに記録できずに終わった診断は`incomplete`として返し、終了状態を補わない。"""
+    server = _LaunchedServer(tmp_path, host_environ())
+    server.initialize()
+    server_pid = server.server_pid()
+    # ランチャーを先に止め、サーバーの終了を観測する主体を残さない。サーバーが標準出力を保持するため、両方を止めてから待つ。
+    server.process.kill()
+    os.kill(server_pid, signal.SIGKILL)
+    server.wait()
+    deadline = time.monotonic() + _LAUNCH_TIMEOUT
+    while time.monotonic() < deadline:
+        try:
+            os.kill(server_pid, 0)
+        except ProcessLookupError:
+            break
+        time.sleep(0.05)
+
+    names = {event["event"] for event in server.events()}
+    assert not names & logging_config.TERMINATION_EVENTS
+    assert server.diagnostics_status() == "incomplete"

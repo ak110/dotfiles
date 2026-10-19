@@ -1,19 +1,30 @@
 """prune_claude_plugin_cacheのテスト。
 
-期待値は「現行版と、後継版の導入から7日以内の版と、後継の無い版を残し、それ以外の非現行版を削除する」
-という判定規則から導く。導入時刻は各版の`plugin.json`のmtime（欠く場合は版ディレクトリのmtime）とする。
+期待値は「現行版と、後継版の導入から7日以内の版と、後継の無い版と、稼働中の参照がある版を残し、
+それ以外の非現行版を削除する」という判定規則から導く。導入時刻は各版の`plugin.json`のmtime
+（欠く場合は版ディレクトリのmtime）とする。
 """
 
 import json
 import os
+import sys
 import time
 from pathlib import Path
 
 import pytest
 
-from pytools._internal import prune_claude_plugin_cache
+from pytools._internal import claude_plugin_references, prune_claude_plugin_cache
+
+from ._test_helpers import ResidentProcesses
 
 _DAY = 86400
+_REAL_SCAN = claude_plugin_references.scan
+
+
+@pytest.fixture(autouse=True)
+def _no_running_processes(monkeypatch: pytest.MonkeyPatch) -> None:
+    """稼働中の参照を扱うテスト以外では、開発機のプロセスを判定へ混ぜない。"""
+    monkeypatch.setattr(claude_plugin_references, "scan", lambda: ())
 
 
 @pytest.fixture(name="plugins_root")
@@ -154,4 +165,63 @@ def test_orders_versions_by_install_time_not_by_name(plugins_root: Path) -> None
     assert prune_claude_plugin_cache.run().changed is True
 
     assert not older.exists()
+    assert current.is_dir()
+
+
+@pytest.mark.skipif(sys.platform != "linux", reason="実行名をsymlinkで与える常駐プロセスはLinuxで起動する")
+@pytest.mark.parametrize("reference", ["cwd", "plugin-root-env"])
+def test_keeps_expired_version_while_a_process_refers_to_it(
+    plugins_root: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, reference: str
+) -> None:
+    """猶予期間を過ぎた旧版でも、配下を作業ディレクトリか`CLAUDE_PLUGIN_ROOT`にする稼働中プロセスがあれば残す。
+
+    当該配布物から起動したMCP・hookは旧版を参照し続けるため、削除すると実行中の処理が失敗する。
+    """
+    monkeypatch.setattr(claude_plugin_references, "scan", _REAL_SCAN)
+    old = _make_version(plugins_root, "mkt", "tool", "1.0.0", 30)
+    current = _make_version(plugins_root, "mkt", "tool", "2.0.0", 20)
+    _write_installed(plugins_root, {"tool@mkt": [current]})
+    residents = ResidentProcesses(tmp_path, monkeypatch)
+    if reference == "cwd":
+        server = residents.start("python3", cwd=old / ".venv")
+    else:
+        server = residents.start("python3", env={"CLAUDE_PLUGIN_ROOT": str(old)})
+    try:
+        assert prune_claude_plugin_cache.run().changed is False
+        assert old.is_dir()
+    finally:
+        residents.stop(server)
+
+    assert prune_claude_plugin_cache.run().changed is True
+    assert not old.exists()
+    assert current.is_dir()
+
+
+@pytest.mark.skipif(sys.platform != "linux", reason="実行名をsymlinkで与える常駐プロセスはLinuxで起動する")
+def test_keeps_expired_version_used_by_session_started_while_it_was_current(
+    plugins_root: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """旧版が現行だった期間に起動したClaude Codeセッションが稼働中なら、作業ディレクトリが別でも旧版を残す。
+
+    セッションは起動時に解決した版のhook・skillを使い続けるため、参照先のパスはプロセス情報に現れない。
+    期間外に起動したセッションは旧版を使わないため、削除を妨げない。
+    """
+    monkeypatch.setattr(claude_plugin_references, "scan", _REAL_SCAN)
+    # 起動時刻を旧版が現行だった期間へ収めるため、旧版の導入を1時間前、後継版の導入を1時間後に置き、猶予を負にして候補へ含める。
+    monkeypatch.setattr(prune_claude_plugin_cache, "GRACE_DAYS", -1)
+    old = _make_version(plugins_root, "mkt", "tool", "1.0.0", 1 / 24)
+    current = _make_version(plugins_root, "mkt", "tool", "2.0.0", -1 / 24)
+    older = _make_version(plugins_root, "mkt", "tool", "0.9.0", 3)
+    _write_installed(plugins_root, {"tool@mkt": [current]})
+    residents = ResidentProcesses(tmp_path, monkeypatch)
+    session = residents.start("claude", cwd=tmp_path)
+    try:
+        assert prune_claude_plugin_cache.run().changed is True
+        assert old.is_dir()
+        assert not older.exists()
+    finally:
+        residents.stop(session)
+
+    assert prune_claude_plugin_cache.run().changed is True
+    assert not old.exists()
     assert current.is_dir()

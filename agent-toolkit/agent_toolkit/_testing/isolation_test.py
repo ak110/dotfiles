@@ -234,6 +234,7 @@ def test_shared_cache_child_keeps_development_state_isolated(tmp_path: pathlib.P
     assert pathlib.Path(observed["XDG_CONFIG_HOME"]).is_relative_to(tmp_path)
     assert pathlib.Path(observed["XDG_CACHE_HOME"]).is_relative_to(tmp_path)
     assert pathlib.Path(observed["AGENT_TOOLKIT_PRIVATE_NOTES"]).is_relative_to(tmp_path)
+    assert observed["MISE_CEILING_PATHS"] == str(tmp_path)
     for name in ("WIN_PD_OVERRIDE_APPDATA", "WIN_PD_OVERRIDE_LOCAL_APPDATA", "WIN_PD_OVERRIDE_COMMON_APPDATA"):
         assert pathlib.Path(observed[name]).is_relative_to(tmp_path)
     isolation.assert_development_state_isolated(tmp_path)

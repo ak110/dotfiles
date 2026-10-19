@@ -1,6 +1,7 @@
 """agent-toolkit/agent_toolkit/_hooks/pretooluse/operation_skills.py のテスト。
 
-PreToolUseとPostToolUseの統合フックをsubprocessで起動し、セッション状態を経由した警告の有無を検証する。
+PreToolUseとPostToolUseの統合フックをsubprocessで起動し、セッション状態を経由した遮断の有無を検証する。
+遮断はホスト本来の取得（Skill起動か資料の読取）をPostToolUseが観測するまで続く。
 """
 
 from __future__ import annotations
@@ -11,7 +12,7 @@ import tempfile
 
 import pytest
 
-from agent_toolkit._hooks import rules_context
+from agent_toolkit._hooks import plugin_resources, rules_context
 from agent_toolkit._hooks.pretooluse import operation_skills
 from agent_toolkit._testing.helpers import SESSION_STATE_FILENAME_TEMPLATE
 from agent_toolkit._testing.pretooluse_support import (
@@ -44,12 +45,15 @@ def test_delegation_warning_preserves_permission_and_context(tmp_path: pathlib.P
     first = _run(payload, env)
     assert first.returncode == 2
     assert "agent-toolkit:delegation" in first.stderr
+    assert "agent-toolkit:delegation" in _run(payload, env).stderr
+    _record_skill(env, "delegation", "agent-toolkit:delegation")
     assert "agent-toolkit:delegation" not in _additional_context(_run(payload, env))
     assert "agent-toolkit:delegation" in _run({**payload, "agent_id": "child"}, env).stderr
 
 
 @pytest.mark.parametrize("tool", _DELEGATION_TOOLS)
-def test_delegation_ready_and_codex_exclusion(tmp_path: pathlib.Path, tool: str) -> None:
+def test_delegation_ready_and_codex_acquisition(tmp_path: pathlib.Path, tool: str) -> None:
+    """Skill起動の後は通り、Codexは`SKILL.md`の読取を観測するまで記録せずに遮断を続ける。"""
     env = _plan_file_state_env(tmp_path)
     _record_skill(env, "ready", "delegation")
     payload = {"tool_name": tool, "tool_input": {"prompt": "調査する"}, "session_id": "ready"}
@@ -58,7 +62,11 @@ def test_delegation_ready_and_codex_exclusion(tmp_path: pathlib.Path, tool: str)
     assert _run(codex, env).returncode == 2
     state_file = tmp_path / SESSION_STATE_FILENAME_TEMPLATE.format(session_id="codex-delegation")
     state = _read_session_state(tmp_path, "codex-delegation") if state_file.exists() else {}
+    assert rules_context.OPERATION_SKILL_READY_KEY not in state
+    _acquire(env, codex, "delegation")
+    state = _read_session_state(tmp_path, "codex-delegation")
     assert state[rules_context.OPERATION_SKILL_READY_KEY]["agent-toolkit:delegation"] == ["main"]
+    assert "agent-toolkit:delegation" not in _additional_context(_run(codex, env))
 
 
 def test_blocked_delegation_does_not_consume_warning(tmp_path: pathlib.Path) -> None:
@@ -92,6 +100,41 @@ def _record_skill(env: dict[str, str], session_id: str, skill: str, **extra: obj
     assert result.returncode == 0
 
 
+def _acquire(env: dict[str, str], payload: dict, skill: str) -> None:
+    """主体の区分に応じたホスト本来の手段で`SKILL.md`を取得し、PostToolUseへ観測させる。
+
+    Claude CodeはSkill起動、Codexは`SKILL.md`の全文を返したBashの読取を観測の入力とする。
+    """
+    extra = {key: payload[key] for key in ("agent_id", "turn_id") if key in payload}
+    if "turn_id" not in payload:
+        _record_skill(env, payload["session_id"], f"agent-toolkit:{skill}", **extra)
+        return
+    path = plugin_resources.skill_document_path(skill, "SKILL.md")
+    result = _run_posttooluse(
+        {
+            "hook_event_name": "PostToolUse",
+            "tool_name": "Bash",
+            "tool_input": {"command": f"cat {path}"},
+            "tool_response": path.read_text(encoding="utf-8"),
+            "session_id": payload["session_id"],
+            **extra,
+        },
+        env,
+    )
+    assert result.returncode == 0
+
+
+def _blocked_until_acquired(env: dict[str, str], payload: dict, skill: str) -> None:
+    """取得の観測までは同じ操作の再発行も遮断し、観測の後は同じ主体の操作を通す。"""
+    full = f"agent-toolkit:{skill}"
+    for _ in range(2):
+        warning = _search_warning(payload, env)
+        assert warning.startswith(_WARN_OPENING)
+        assert f"`{full}`" in warning
+    _acquire(env, payload, skill)
+    assert f"`{full}`" not in _search_warning(payload, env)
+
+
 def _search_warning(payload: dict, env: dict[str, str]) -> str:
     result = _run(payload, env)
     assert result.returncode in {0, 2}
@@ -116,11 +159,9 @@ def _search_warning(payload: dict, env: dict[str, str]) -> str:
     ],
     ids=lambda payload: payload["tool_input"].get("command") or payload["tool_name"],
 )
-def test_search_without_skill_warns_once_per_context(tmp_path: pathlib.Path, payload: dict) -> None:
+def test_search_without_skill_blocks_until_acquired(tmp_path: pathlib.Path, payload: dict) -> None:
     env = _plan_file_state_env(tmp_path)
-    first = _search_warning(payload, env)
-    assert first.startswith(_WARN_OPENING)
-    assert f"`{_SEARCH_SKILL}`" in first
+    _blocked_until_acquired(env, payload, "search")
     assert _search_warning(payload, env) == ""
 
 
@@ -187,30 +228,38 @@ def test_write_paths_respect_option_roles(command: str, expected: list[str], tmp
 
 
 @pytest.mark.parametrize(
-    "payload",
+    ("payload", "skills"),
     [
-        _bash("rg x", "codex"),
-        _bash("git grep -n -F x", "codex"),
-        _bash("find . -name x", "codex"),
-        _bash("grep -rn x .", "codex"),
-        _bash("cat > /tmp/awi.md <<'EOF'\n# 表題\n\n## 原因分析\nEOF", "codex"),
-        {
-            "tool_name": "apply_patch",
-            "tool_input": {"command": "*** Begin Patch\n*** Add File: awi.md\n+# 表題\n+## 原因分析\n*** End Patch\n"},
-            "session_id": "codex",
-        },
-        _bash("atk managed-temp create --prefix x", "codex"),
-        _bash("echo rule > AGENTS.md", "codex"),
+        (_bash("rg x", "codex"), ["search"]),
+        (_bash("git grep -n -F x", "codex"), ["search"]),
+        (_bash("find . -name x", "codex"), ["search"]),
+        (_bash("grep -rn x .", "codex"), ["search"]),
+        (_bash("cat > /tmp/awi.md <<'EOF'\n# 表題\n\n## 原因分析\nEOF", "codex"), ["bugfix"]),
+        (
+            {
+                "tool_name": "apply_patch",
+                "tool_input": {"command": "*** Begin Patch\n*** Add File: awi.md\n+# 表題\n+## 原因分析\n*** End Patch\n"},
+                "session_id": "codex",
+            },
+            ["bugfix", "writing-standards"],
+        ),
+        (_bash("atk managed-temp create --prefix x", "codex"), ["managed-temp"]),
+        (_bash("echo rule > AGENTS.md", "codex"), ["writing-standards"]),
     ],
     ids=["rg", "git-grep", "find", "grep-r", "root-cause-bash", "root-cause-apply_patch", "managed-temp", "agent-doc"],
 )
-def test_codex_operations_deliver_then_pass(tmp_path: pathlib.Path, payload: dict) -> None:
-    """Codexでも初回に本文を配送し、再発行は追加読取を要求しない。"""
+def test_codex_operations_block_until_skill_md_read(tmp_path: pathlib.Path, payload: dict, skills: list[str]) -> None:
+    """Codexは`SKILL.md`の絶対パスの読取を案内し、本文を返した読取の観測までは再発行も遮断する。"""
     env = _plan_file_state_env(tmp_path)
     payload = {**payload, "turn_id": "turn-1"}
-    first = _run(payload, env)
-    assert first.returncode == 2
-    assert "同じ操作を再発行" in first.stderr
+    for _ in range(2):
+        result = _run(payload, env)
+        assert result.returncode == 2
+        assert "同じ操作を再発行" in result.stderr
+        for skill in skills:
+            assert str(plugin_resources.skill_document_path(skill, "SKILL.md")) in result.stderr
+    for skill in skills:
+        _acquire(env, payload, skill)
     assert _run(payload, env).returncode == 0
 
 
@@ -234,11 +283,8 @@ def test_codex_operations_deliver_then_pass(tmp_path: pathlib.Path, payload: dic
         "coproc WORKER if test -f marker; then cp -t .claude/rules AGENTS.md; fi",
     ],
 )
-def test_agent_document_bash_writing_warns_once(tmp_path: pathlib.Path, command: str) -> None:
-    env = _plan_file_state_env(tmp_path)
-    payload = _bash(command, "writing")
-    assert "agent-toolkit:writing-standards" in _search_warning(payload, env)
-    assert "agent-toolkit:writing-standards" not in _search_warning(payload, env)
+def test_agent_document_bash_writing_blocks_until_acquired(tmp_path: pathlib.Path, command: str) -> None:
+    _blocked_until_acquired(_plan_file_state_env(tmp_path), _bash(command, "writing"), "writing-standards")
 
 
 @pytest.mark.parametrize(
@@ -286,8 +332,7 @@ def test_edit_tool_agent_document_writing_and_skill_context(tmp_path: pathlib.Pa
     payload = {"tool_name": tool, "tool_input": tool_input, "session_id": "writing"}
     assert "agent-toolkit:writing-standards" not in _search_warning(payload, env)
     payload["agent_id"] = "child"
-    assert "agent-toolkit:writing-standards" in _search_warning(payload, env)
-    assert "agent-toolkit:writing-standards" not in _search_warning(payload, env)
+    _blocked_until_acquired(env, payload, "writing-standards")
 
 
 @pytest.mark.parametrize(
@@ -309,13 +354,10 @@ def test_edit_tool_agent_document_writing_and_skill_context(tmp_path: pathlib.Pa
     ],
 )
 def test_body_edit_delivers_writing_standards_per_actor(tmp_path, tool, tool_input):
-    """本文を持つ編集は命名と言語によらず同じ配送と主体別の取得記録を使う。"""
+    """本文を持つ編集は命名と言語によらず同じ遮断と主体別の取得記録を使う。"""
     env = _plan_file_state_env(tmp_path)
     payload = {"tool_name": tool, "tool_input": tool_input, "session_id": "body-writing"}
-    first = _run(payload, env)
-    assert first.returncode == 2
-    assert "agent-toolkit:writing-standards" in first.stderr
-    assert "references/testing.md" in first.stderr
+    _blocked_until_acquired(env, payload, "writing-standards")
     assert _run(payload, env).returncode == 0
     assert _run({**payload, "agent_id": "child"}, env).returncode == 2
     _record_skill(env, "ready-body", "writing-standards")
@@ -340,11 +382,12 @@ def test_operations_without_body_edit_do_not_deliver(tmp_path, tool, tool_input)
     assert "agent-toolkit:writing-standards" not in _search_warning(payload, _plan_file_state_env(tmp_path))
 
 
-def test_search_warning_joins_other_warnings(tmp_path: pathlib.Path) -> None:
+def test_operation_skills_for_one_operation_share_one_notice(tmp_path: pathlib.Path) -> None:
+    """同じ操作に該当する複数のスキルの取得は、1回の遮断の案内へまとめる。"""
     result = _run(_bash("rg x; printf rule > AGENTS.md", "s"), _plan_file_state_env(tmp_path))
     assert result.returncode == 2
     context = result.stderr
-    assert context.count(_WARN_OPENING) == 2
+    assert context.count(_WARN_OPENING) == 1
     assert f"`{_SEARCH_SKILL}`" in context
     assert "agent-toolkit:writing-standards" in context
 
@@ -371,17 +414,14 @@ _WRITE_FORMS = [
 
 @pytest.mark.parametrize("form", _WRITE_FORMS)
 @pytest.mark.parametrize("prefix", ["", "/repo/", "~/", "$HOME/", '"$HOME/', "${HOME}/"])
-def test_bash_static_document_suffix_warns_once(tmp_path: pathlib.Path, form: str, prefix: str) -> None:
-    """展開される先頭と操作形式を組み合わせ、公開hookが初回だけ警告し、2回目には警告しないことを検証する。"""
+def test_bash_static_document_suffix_blocks_until_acquired(tmp_path: pathlib.Path, form: str, prefix: str) -> None:
+    """展開される先頭と操作形式を組み合わせ、公開hookが取得の観測まで遮断し、観測の後は通すことを検証する。"""
     closing_quote = '"' if prefix.startswith('"') else ""
     path = prefix + ".claude/rules/AGENTS.md" + closing_quote
     directory = prefix + ".claude/rules/" + closing_quote
     literal = prefix.replace('"', "") + ".claude/rules/AGENTS.md"
     command = form.format(path=path, directory=directory, literal=literal)
-    env = _plan_file_state_env(tmp_path)
-    payload = _bash(command, "static-writing")
-    assert "agent-toolkit:writing-standards" in _search_warning(payload, env)
-    assert "agent-toolkit:writing-standards" not in _search_warning(payload, env)
+    _blocked_until_acquired(_plan_file_state_env(tmp_path), _bash(command, "static-writing"), "writing-standards")
 
 
 @pytest.mark.parametrize("form", _WRITE_FORMS)
@@ -490,9 +530,10 @@ def test_perl_document_write_option_and_program_boundaries(tmp_path: pathlib.Pat
     """公開hookは、オプションの値に含まれる`i`とprogramfile以降のオプションを除き、有効なin-place編集だけを警告する。"""
     payload = _bash(f"perl {options} ~/.claude/rules/x.md", "perl-options")
     env = _plan_file_state_env(tmp_path)
-    warning = _search_warning(payload, env)
-    assert ("agent-toolkit:writing-standards" in warning) is writes
-    assert "agent-toolkit:writing-standards" not in _search_warning(payload, env)
+    if writes:
+        _blocked_until_acquired(env, payload, "writing-standards")
+    else:
+        assert "agent-toolkit:writing-standards" not in _search_warning(payload, env)
 
 
 _BUGFIX_SKILL = "agent-toolkit:bugfix"
@@ -500,7 +541,7 @@ _ROOT_CAUSE_BODY = "# 表題\n\n## 原因分析\n\n| 要因系統 | L1 現象 |\
 
 
 def _bugfix_warnings(context: str) -> int:
-    return context.count(f"原因分析の記述の実行前に`{_BUGFIX_SKILL}`の本文を配送する")
+    return context.count(f"原因分析の記述の実行前に`{_BUGFIX_SKILL}`の基準を取得する")
 
 
 @pytest.mark.parametrize(
@@ -516,17 +557,20 @@ def _bugfix_warnings(context: str) -> int:
     ],
     ids=["write", "edit", "multiedit", "bash"],
 )
-def test_root_cause_writing_without_bugfix_warns_once_per_context(tmp_path: pathlib.Path, payload: dict) -> None:
-    """`agent-toolkit:bugfix`を起動しないまま`## 原因分析`の見出し行を書くと、文脈ごとに1回だけ警告する。
+def test_root_cause_writing_without_bugfix_blocks_until_acquired(tmp_path: pathlib.Path, payload: dict) -> None:
+    """`agent-toolkit:bugfix`を起動しないまま`## 原因分析`の見出し行を書くと、起動を観測するまで遮断する。
 
     起草で原因分析を書く時点に未起動を示す手掛かりが無いと、起動を求める条文が文脈にあっても起動されず、
     外部の挙動を一次資料で確かめる初動の基準が適用されないまま原因が確定する。
     """
     env = _plan_file_state_env(tmp_path)
     payload = {**payload, "session_id": "root-cause"}
-    first = _run(payload, env)
-    assert first.returncode == 2
-    assert _bugfix_warnings(first.stderr) == 1
+    _record_skill(env, "root-cause", "writing-standards")
+    for _ in range(2):
+        result = _run(payload, env)
+        assert result.returncode == 2
+        assert _bugfix_warnings(result.stderr) == 1
+    _record_skill(env, "root-cause", _BUGFIX_SKILL)
     second = _run(payload, env)
     assert second.returncode == 0
     assert _bugfix_warnings(_additional_context(second)) == 0
@@ -560,7 +604,7 @@ _MANAGED_TEMP_SKILL = "agent-toolkit:managed-temp"
 
 
 def _managed_temp_warnings(context: str) -> int:
-    return context.count(f"個別のmanaged-temp領域の作成の実行前に`{_MANAGED_TEMP_SKILL}`の本文を配送する")
+    return context.count(f"個別のmanaged-temp領域の作成の実行前に`{_MANAGED_TEMP_SKILL}`の基準を取得する")
 
 
 @pytest.mark.parametrize(
@@ -576,18 +620,20 @@ def _managed_temp_warnings(context: str) -> int:
         "cd /repo && d=$(atk managed-temp create --prefix y)",
     ],
 )
-def test_managed_temp_create_without_skill_warns_once_per_context(tmp_path: pathlib.Path, command: str) -> None:
-    """`agent-toolkit:managed-temp`を起動しないまま個別の領域を作成すると、文脈ごとに1回だけ警告する。
+def test_managed_temp_create_without_skill_blocks_until_acquired(tmp_path: pathlib.Path, command: str) -> None:
+    """`agent-toolkit:managed-temp`を起動しないまま個別の領域を作成すると、起動を観測するまで遮断する。
 
     作成の時点に未起動を示す手掛かりが無いと、置き場所の規定を読まずに参照される保存物を個別の領域へ置き、
     領域の回収で保存物が失われる。
     """
     env = _plan_file_state_env(tmp_path)
-    first = _run(_bash(command, "managed-temp"), env)
-    assert first.returncode == 2
-    assert _managed_temp_warnings(first.stderr) == 1
+    for _ in range(2):
+        result = _run(_bash(command, "managed-temp"), env)
+        assert result.returncode == 2
+        assert _managed_temp_warnings(result.stderr) == 1
+    _record_skill(env, "managed-temp", _MANAGED_TEMP_SKILL)
     second = _run(_bash(command, "managed-temp"), env)
-    assert _managed_temp_warnings(_additional_context(second)) == 0
+    assert _managed_temp_warnings(second.stderr + _additional_context(second)) == 0
 
 
 @pytest.mark.parametrize("skill", [_MANAGED_TEMP_SKILL, "managed-temp"])
@@ -618,20 +664,143 @@ def test_other_commands_do_not_warn_managed_temp(tmp_path: pathlib.Path, command
 
 
 @pytest.mark.parametrize("source", ["compact", "clear"])
-def test_legacy_warning_and_context_reset_require_delivery(
+def test_legacy_warning_and_context_reset_require_acquisition(
     tmp_path: pathlib.Path,
     source: str,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """旧版の警告済み状態と文脈破棄後は配送を省かない。"""
+    """旧版の警告済み状態は取得の証拠にせず、文脈破棄の後は取得を再び求める。"""
     env = _plan_file_state_env(tmp_path)
     state_path = tmp_path / SESSION_STATE_FILENAME_TEMPLATE.format(session_id="legacy")
     state_path.write_text(json.dumps({"operation_skill_ready_agents": {_SEARCH_SKILL: ["main"]}}), encoding="utf-8")
     payload = {"tool_name": "Grep", "tool_input": {"pattern": "x"}, "session_id": "legacy"}
     assert _run(payload, env).returncode == 2
+    assert _run(payload, env).returncode == 2
+    _record_skill(env, "legacy", _SEARCH_SKILL)
     assert _run(payload, env).returncode == 0
     monkeypatch.setattr(tempfile, "tempdir", str(tmp_path))
     assert rules_context.main(json.dumps({"hook_event_name": "SessionStart", "session_id": "legacy", "source": source})) == 0
     capsys.readouterr()
     assert _run(payload, env).returncode == 2
+
+
+_CHECK_EXECUTION_SKILL = "agent-toolkit:check-execution"
+_SCOPE_REFERENCE = plugin_resources.skill_document_path("check-execution", "references/verification-scope.md")
+
+
+def _record_read(env: dict[str, str], session_id: str, path: pathlib.Path, **extra: object) -> None:
+    """Claude CodeのReadが資料の全文を返したPostToolUseを観測させる。
+
+    `tool_response`の形はClaude Code 2.1.303の本体のReadの結果（`type`・`file`）から写した。
+    """
+    text = path.read_text(encoding="utf-8")
+    lines = len(text.splitlines())
+    file = {"filePath": str(path), "content": text, "numLines": lines, "startLine": 1, "totalLines": lines}
+    result = _run_posttooluse(
+        {
+            "hook_event_name": "PostToolUse",
+            "tool_name": "Read",
+            "tool_input": {"file_path": str(path)},
+            "tool_response": {"type": "text", "file": file},
+            "session_id": session_id,
+            **extra,
+        },
+        env,
+    )
+    assert result.returncode == 0
+
+
+_VERIFICATION_PAYLOADS = [
+    _bash("atk run-script plan-verify -- --plan /p.md --worktree /w --timeout 60 --summary-only", "verify"),
+    _bash("atk run-script plan-verify -- --plan /p.md --worktree /w --list", "verify"),
+    _bash("uv run --frozen pyfltr run --output-format=jsonl a.py", "verify"),
+    _bash("uvx pyfltr fast --commands=pytest", "verify"),
+    _bash("python3 -m pyfltr ci", "verify"),
+    _bash("uv run --frozen pytest -v -p no:cacheprovider agent-toolkit/agent_toolkit", "verify"),
+    _bash("python3 -m pytest tests", "verify"),
+    _bash("make test", "verify"),
+    _bash("mise run lint", "verify"),
+    _bash("pnpm run test:unit", "verify"),
+    _bash("npm test", "verify"),
+    _bash("pnpm exec vitest run", "verify"),
+    _bash("npx playwright test", "verify"),
+    _bash("cargo test", "verify"),
+    _bash("dotnet test lc.sln", "verify"),
+    _bash("atk run-command --cwd /w --timeout 60 -- uv run --frozen pytest a_test.py", "verify"),
+    _bash("cd /w && make test-browser", "verify"),
+    {"tool_name": "mcp__plugin_agent-toolkit_pyfltr__run", "tool_input": {"paths": ["/w/a.py"]}, "session_id": "verify"},
+    {"tool_name": "mcp__pyfltr__run", "tool_input": {"paths": ["/w/a.py"]}, "session_id": "verify"},
+]
+
+
+@pytest.mark.parametrize(
+    "payload",
+    _VERIFICATION_PAYLOADS,
+    ids=lambda payload: payload["tool_input"].get("command") or payload["tool_name"],
+)
+def test_verification_operations_require_check_execution_and_scope_reference(tmp_path: pathlib.Path, payload: dict) -> None:
+    """検証の実行は`SKILL.md`のSkill起動と`references/verification-scope.md`の全文の読取を観測するまで遮断する。
+
+    対象選定の基準は参照資料にあり、スキル本体の起動だけでは実行直前に基準へ到達しない。
+    """
+    env = _plan_file_state_env(tmp_path)
+    first = _run(payload, env)
+    assert first.returncode == 2
+    assert f"`Skill`で`{_CHECK_EXECUTION_SKILL}`を起動する" in first.stderr
+    assert str(_SCOPE_REFERENCE) in first.stderr
+    _record_skill(env, "verify", _CHECK_EXECUTION_SKILL)
+    after_skill = _run(payload, env)
+    assert after_skill.returncode == 2
+    assert str(_SCOPE_REFERENCE) in after_skill.stderr
+    assert f"`Skill`で`{_CHECK_EXECUTION_SKILL}`を起動する" not in after_skill.stderr
+    _record_read(env, "verify", _SCOPE_REFERENCE)
+    assert _run(payload, env).returncode == 0
+
+
+def test_verification_acquisition_is_requested_again_after_compact(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """会話圧縮の後はメインの取得の記録を除き、次の検証の実行で再び取得を求める。"""
+    env = _plan_file_state_env(tmp_path)
+    payload = _bash("uv run --frozen pytest a_test.py", "verify-compact")
+    _record_skill(env, "verify-compact", _CHECK_EXECUTION_SKILL)
+    _record_read(env, "verify-compact", _SCOPE_REFERENCE)
+    assert _run(payload, env).returncode == 0
+    monkeypatch.setattr(tempfile, "tempdir", str(tmp_path))
+    event = {"hook_event_name": "SessionStart", "session_id": "verify-compact", "source": "compact"}
+    assert rules_context.main(json.dumps(event)) == 0
+    capsys.readouterr()
+    result = _run(payload, env)
+    assert result.returncode == 2
+    assert str(_SCOPE_REFERENCE) in result.stderr
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        _bash("uv run --frozen pyfltr show-run 1 --commands pytest --output", "query"),
+        _bash("pyfltr list-runs", "query"),
+        _bash("uvx pyfltr command-info pytest --output-format=jsonl", "query"),
+        _bash("uv run --frozen pytest --help", "query"),
+        _bash("uv run --frozen pytest --collect-only -q", "query"),
+        _bash("atk run-script plan-verify -- --help", "query"),
+        _bash("atk run-command --records-file /tmp/results.json", "query"),
+        _bash("atk read-file -- /tmp/pytest.log", "query"),
+        _bash("cat /tmp/pytest.log", "query"),
+        _bash("make help", "query"),
+        _bash("pnpm install", "query"),
+        _bash("cargo build", "query"),
+        _bash("git status", "query"),
+        _bash("echo pytest", "query"),
+        {"tool_name": "mcp__plugin_agent-toolkit_pyfltr__show_run", "tool_input": {"run_id": "1"}, "session_id": "query"},
+        {"tool_name": "mcp__pyfltr__list_runs", "tool_input": {}, "session_id": "query"},
+    ],
+    ids=lambda payload: payload["tool_input"].get("command") or payload["tool_name"],
+)
+def test_verification_queries_do_not_require_check_execution(tmp_path: pathlib.Path, payload: dict) -> None:
+    """ヘルプ・保存ログ・一覧・状態の照会は検証の実行として遮断しない。"""
+    result = _run(payload, _plan_file_state_env(tmp_path))
+    assert _CHECK_EXECUTION_SKILL not in result.stderr + _additional_context(result)

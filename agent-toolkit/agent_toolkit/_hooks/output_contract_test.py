@@ -479,9 +479,13 @@ def test_pretooluse_public_entry_returns_host_output(
             for hook_entry in group["hooks"]
         )
         payload["turn_id"] = "codex-turn"
-    if scenario in {"warning", "block"}:
+    if scenario == "warning":
+        # 警告は再編集で是正できる入力として、計画本文の文字化けを使う。
+        payload["tool_name"] = "ExitPlanMode"
+        payload["tool_input"] = {"plan": "内容を確認" + chr(0xFFFD) + "してください。"}
+    elif scenario == "block":
         payload["tool_name"] = "mcp__agents_server__kill"
-        payload["tool_input"] = {} if scenario == "warning" else {"session_id": "missing"}
+        payload["tool_input"] = {"session_id": "missing"}
     result = subprocess.run(
         [sys.executable, str(_HOOK_SCRIPT), "pretooluse"],
         input=json.dumps(payload, ensure_ascii=False),
@@ -501,8 +505,9 @@ def test_pretooluse_public_entry_returns_host_output(
     output = json.loads(result.stdout) if result.stdout else {}
     assert not validate_hook_output("PreToolUse", output, host=host)
     if scenario == "warning":
-        assert "session_id" in output["hookSpecificOutput"]["additionalContext"]
-    if host == "codex":
+        assert "U+FFFD" in output["hookSpecificOutput"]["additionalContext"]
+        assert "permissionDecision" not in output["hookSpecificOutput"]
+    elif host == "codex":
         assert "permissionDecision" not in output.get("hookSpecificOutput", {})
     else:
         assert output["hookSpecificOutput"]["permissionDecision"] == "allow"

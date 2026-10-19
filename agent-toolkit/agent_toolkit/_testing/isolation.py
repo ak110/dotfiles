@@ -66,6 +66,7 @@ DEVELOPMENT_SESSION_ENVIRONMENT_NAMES = (
     "CURSOR_AGENT",
     # 委譲先セッションの標識。process-loopが委譲先へ渡す環境を検証するテストは、実行元に標識が無いことを前提とする。
     "AGENT_TOOLKIT_DELEGATED_SESSION",
+    "AGENT_TOOLKIT_DELEGATED_LAUNCH_KIND",
     "AGENT_TOOLKIT_OWNER_SESSION",
     "AGENT_TOOLKIT_STATUS_HOST_SESSION",
     # process-loop起動セッションの標識。UserPromptSubmitの固定sessionTitleを決める入力であり、
@@ -98,7 +99,7 @@ _GIT_LOCAL_ENVIRONMENT_NAMES = (
     "GIT_SHALLOW_FILE",
     "GIT_COMMON_DIR",
 )
-_HOST_RESTORED_ENVIRONMENT_NAMES = (*HOME_ENVIRONMENT_NAMES, *CONFIG_DIRECTORY_ENVIRONMENT_NAMES, "PATH")
+_HOST_RESTORED_ENVIRONMENT_NAMES = (*HOME_ENVIRONMENT_NAMES, *CONFIG_DIRECTORY_ENVIRONMENT_NAMES, "PATH", "MISE_CEILING_PATHS")
 # 隔離する前の値。fixture適用後の`os.environ`からは取得できないため、conftestが本モジュールを
 # 読み込む時点（どのfixtureよりも先）で控える。`host_environ`と`restore_host_environment`が復元に使う。
 _HOST_ENVIRON = {
@@ -184,6 +185,9 @@ def isolate_development_state(tmp_path: pathlib.Path, monkeypatch: pytest.Monkey
     for name in ("TMPDIR", "TEMP", "TMP"):
         monkeypatch.setenv(name, str(tmp_path))
     monkeypatch.setattr(tempfile, "tempdir", str(tmp_path))
+    # miseは作業ディレクトリの祖先から設定を探す。テストの一時領域が実ホームの配下にあると、HOMEを差し替えた子プロセスの
+    # miseが祖先の`~/.config/mise/config.toml`を未信頼のプロジェクト設定として読んで失敗するため、探索をテスト領域で止める。
+    monkeypatch.setenv("MISE_CEILING_PATHS", str(tmp_path))
     for name in _GIT_LOCAL_ENVIRONMENT_NAMES:
         monkeypatch.delenv(name, raising=False)
     # 識別情報を環境変数で与え、global・system設定を遮断する。テストが生成した作業ツリーを所有者差で
@@ -210,7 +214,7 @@ def isolate_development_state(tmp_path: pathlib.Path, monkeypatch: pytest.Monkey
 
 @pytest.fixture(name="host_environ")
 def host_environ() -> Callable[[], dict[str, str]]:
-    """ホームディレクトリ、設定ディレクトリおよびPATHを隔離前の値へ戻した環境変数を組み立てるfactory。
+    """ホームディレクトリ、設定ディレクトリ、PATHおよびmiseの探索範囲を隔離前の値へ戻した環境変数を組み立てるfactory。
 
     他の次元の隔離は維持する。呼び出し時点の`os.environ`を基にするため、autouse fixtureの適用順序へ依存しない。
     """

@@ -30,7 +30,7 @@ Codexプラグインの導入版が変わった場合は、保持済みのplugin
 取得失敗、対象なし、対象が一意でない場合、無効化、実体の欠落を区別して診断し、全一覧は返さない。
 plugin cache directory配下の新versionのrootを解決し、そのrootの`skills/`、plugin manifestの`version`と導入版の一致、使うスクリプトの実在を確かめてから使う。
 確かめられなければ未完了とし、旧rootへ戻さない（`source.path`は配布元を示す値であり、cache rootの解決には新versionのrootを使う）。
-起動通知の保持rootは、導入版を変更する前の処理に使う。
+起動通知が示した変更前のplugin rootは、導入版を変更する前の処理に使う。
 
 ## plan modeでの取り扱い
 

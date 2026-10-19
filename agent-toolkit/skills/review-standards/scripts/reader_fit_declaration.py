@@ -169,8 +169,9 @@ def check(
                 if not record_paths.is_launch_identifier(session):
                     errors.append(
                         f"{path}: 起動結果の識別子の形式が不正: {session!r}。"
-                        "agents_serverのsession_id（UUID）かAgentツールのagent ID"
-                        "（16進列またはagent-付き16進列）へ直して再実行する"
+                        "agents_serverのsession_id（UUID）、Claude CodeのAgentツールのagent ID"
+                        "（16進列またはagent-付き16進列）、Codexの組み込み委譲spawn_agentが返すtask_name"
+                        "（/root/<名前>のagentのパス）のいずれかへ直して再実行する"
                     )
         elif path in external_paths and set(item) == {"omission", "previous"} and item["omission"] == "再点検対象なし":
             previous = item["previous"]

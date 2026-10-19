@@ -259,7 +259,7 @@ def test_process_loop_event_sequences_match_reference_model(
         lambda _title: contextlib.nullcontext(),
     )
     monkeypatch.setattr(process_loop._process_loop_log, "append", lambda *_args, **_kwargs: None)
-    monkeypatch.setattr(_pl_alerts, "check_process_loop_alerts", lambda *_args, **_kwargs: (None, 0, 0))
+    monkeypatch.setattr(_pl_alerts, "check_process_loop_alerts", lambda *_args, **_kwargs: (None, 0, None))
     monkeypatch.setattr(_pl_watch, "_submission_active", lambda _targets: False)
 
     launches = 0

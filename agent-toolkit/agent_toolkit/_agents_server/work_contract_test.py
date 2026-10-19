@@ -15,6 +15,7 @@ import pytest
 
 from agent_toolkit._agents_server import launch_requests, mcp_tools, plugin_root, session_handoff
 from agent_toolkit._agents_server.state import SessionState
+from agent_toolkit._common.next_action import ActionableError
 
 pytestmark = pytest.mark.usefixtures("agents_server_isolation")
 
@@ -37,12 +38,12 @@ def test_normal_task_gets_one_record_path(
     cwd.mkdir()
     monkeypatch.chdir(cwd)
     names = "対象,引き継ぎ記録先" if handoff_input is not None else "対象"
-    document.write_text(f"# 担当\n\n## 入力\n\n```text\n必須入力名: {names}\n```\n", encoding="utf-8")
+    document.write_text(f"# 担当\n\n## 入力\n\n```text\n必須入力名: {names}\n作業ツリーへの書込: あり\n```\n", encoding="utf-8")
     monkeypatch.setattr(launch_requests, "resolve_task_document_path", lambda *_args: document)
     monkeypatch.setattr(launch_requests, "_is_agent_toolkit_task_document", lambda *_args: True)
     monkeypatch.setitem(launch_requests._TASK_MODEL_TYPES, document.name, "high_tier")
     handoff = tmp_path / "handoff.md"
-    monkeypatch.setattr(launch_requests, "_default_handoff_path", lambda: handoff)
+    monkeypatch.setattr(launch_requests, "_default_handoff_path", lambda _launcher=None: handoff)
     params = {"対象": "A全体"}
     explicit = handoff_input in {"新規", "継続"}
     if explicit:
@@ -66,8 +67,11 @@ async def test_delegate_preserves_original_and_returns_same_record(
 ) -> None:
     """自由本文を原文のまま残し、配送と起動応答を同じ記録先へ接続する。"""
     path = tmp_path / "handoff.md"
-    monkeypatch.setattr(launch_requests, "_default_handoff_path", lambda: path)
-    manager = SimpleNamespace(start=AsyncMock(return_value={"session_id": "child", "status": "running", "label": "担当"}))
+    monkeypatch.setattr(launch_requests, "_default_handoff_path", lambda _launcher=None: path)
+    manager = SimpleNamespace(
+        start=AsyncMock(return_value={"session_id": "child", "status": "running", "label": "担当"}),
+        launcher_session_id=lambda: None,
+    )
     monkeypatch.setattr(mcp_tools, "_MANAGER", manager)
     original = "Aを変更する。\n追加指示の後もA全体を検収する。"
     response = await mcp_tools.start(str(tmp_path), mode="delegate", prompt=original, model_type="high_tier")
@@ -117,7 +121,9 @@ def test_lightweight_task_does_not_deliver_contract_materials(
 ) -> None:
     """軽量な役割指定taskは全体契約の確認と専用記録・資料の配送を経由しない。"""
     document = tmp_path / "task.subagent.md"
-    document.write_text(f"# 担当\n\n## 入力\n\n```text\n必須入力名: 対象\nmode: {kind}\n```\n", encoding="utf-8")
+    document.write_text(
+        f"# 担当\n\n## 入力\n\n```text\n必須入力名: 対象\nmode: {kind}\n作業ツリーへの書込: あり\n```\n", encoding="utf-8"
+    )
     monkeypatch.setattr(launch_requests, "resolve_task_document_path", lambda *_args: document)
     monkeypatch.setattr(launch_requests, "_is_agent_toolkit_task_document", lambda *_args: True)
     monkeypatch.setitem(launch_requests._TASK_MODEL_TYPES, document.name, "high_tier")
@@ -130,6 +136,49 @@ def test_lightweight_task_does_not_deliver_contract_materials(
     assert "全体作業契約:" not in prompt
     assert "share/work-contract.md" not in prompt
     assert "skills/delegation/references/handoff-record.md" not in prompt
+
+
+@pytest.mark.parametrize("target", ["explore", "write", "shell", "lightweight-task", "handoff"])
+@pytest.mark.asyncio
+async def test_whole_contract_path_rejected_outside_normal_start(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    target: str,
+) -> None:
+    """軽量起動・軽量な役割指定task・引き継ぎ起動は全体作業契約の明示入力を受理せず、起動前に拒否する。"""
+    whole = tmp_path / "work-contract.md"
+    whole.write_text("目的: A全体\n", encoding="utf-8")
+    manager = SimpleNamespace(
+        launcher_session_id=lambda: None,
+        start=AsyncMock(),
+        start_explore=AsyncMock(),
+        start_write=AsyncMock(),
+        start_shell=AsyncMock(),
+        start_handoff=AsyncMock(),
+    )
+    monkeypatch.setattr(mcp_tools, "_MANAGER", manager)
+    inputs: dict[str, Any] = {"whole_contract_path": str(whole)}
+    if target == "handoff":
+        inputs["handoff_from"] = "prior"
+    elif target == "lightweight-task":
+        document = tmp_path / "task.subagent.md"
+        document.write_text(
+            "# 担当\n\n## 入力\n\n```text\n必須入力名: 対象\nmode: explore\n作業ツリーへの書込: なし\n```\n", encoding="utf-8"
+        )
+        monkeypatch.setattr(launch_requests, "resolve_task_document_path", lambda *_args: document)
+        monkeypatch.setattr(launch_requests, "_is_agent_toolkit_task_document", lambda *_args: True)
+        monkeypatch.setitem(launch_requests._TASK_MODEL_TYPES, document.name, "high_tier")
+        inputs |= {"cwd": str(tmp_path), "subagent_md_path": str(document), "extra_params": {"対象": "調査"}}
+    elif target == "shell":
+        inputs |= {"cwd": str(tmp_path), "mode": "shell", "command": "pwd", "summary_policy": "終了状態"}
+    else:
+        inputs |= {"cwd": str(tmp_path), "mode": target, "prompt": "自己完結した作業"}
+    with pytest.raises(ActionableError) as caught:
+        await mcp_tools.start(**inputs)
+    assert "whole_contract_path" in caught.value.reason
+    assert "委譲先は起動していない" in caught.value.message or "handoff_from" in caught.value.reason
+    for operation in (manager.start, manager.start_explore, manager.start_write, manager.start_shell, manager.start_handoff):
+        operation.assert_not_awaited()
 
 
 def test_successor_reads_same_record_after_followup(tmp_path: pathlib.Path) -> None:

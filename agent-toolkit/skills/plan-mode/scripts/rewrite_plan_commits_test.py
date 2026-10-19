@@ -4,6 +4,7 @@ import argparse
 import dataclasses
 import json
 import pathlib
+import re
 
 import get_plan_commits
 import pytest
@@ -257,7 +258,11 @@ def test_missing_recorded_oid_fails_without_writes(rebased: _Rebased, capsys: py
     error = capsys.readouterr().err
     assert f"{rebased.plan}: 対応表の不足" in error and rebased.old["a"] in error
     assert "過去の書換えの未追記" not in error
-    assert "次の操作: " in error and "atk run-script history-compare" in error and "amend" in error
+    guided = re.search(r"次の操作: .*atk run-script history-compare -- --operation <([a-z|]+)>", error)
+    assert guided is not None and "amend" in guided.group(1).split("|")
+    assert run_script.dispatch(argparse.Namespace(script_name="history-compare", script_args=["--help"])) == 0
+    accepted = re.search(r"--operation \{([a-z,]+)\}", capsys.readouterr().out)
+    assert accepted is not None and set(guided.group(1).split("|")) <= set(accepted.group(1).split(","))
     assert _snapshot(records) == before
 
 

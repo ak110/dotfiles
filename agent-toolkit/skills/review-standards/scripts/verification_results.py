@@ -7,8 +7,11 @@ import collections
 import collections.abc
 import copy
 import json
+import os
 import pathlib
 import re
+import subprocess
+import sys
 import xml.etree.ElementTree as ET
 from typing import Any
 
@@ -16,6 +19,7 @@ import accepted_review_evidence
 import verification_diagnostics
 from verification_diagnostics import path_value, run_record
 
+from agent_toolkit._common import next_action, process_tree
 from agent_toolkit._common.atomic_file import atomic_write
 
 SCHEMA = (
@@ -27,7 +31,7 @@ SCHEMA = (
     '結果JSON: {"junit":{"xml":"/絶対/XML","run_record":"/絶対/record.json"},'
     '"baseline_junit":{同形式},"diagnostics":{"path":"/絶対/JSONL","run_record":"/絶対/record.json",'
     '"head":"完全OID","conditions":{"scope":[],"options":[],"dependencies":{},"parallelism":1,"environment":{}},'
-    '"sources":{"相対ファイル":"/絶対/保存時本文"}},"baseline_diagnostics":{同形式}}。'
+    '"sources":{"worktreeのルートからの相対ファイル":"/絶対/保存時本文"}},"baseline_diagnostics":{同形式}}。'
     '不要な組は省略できる。更新JSONは配列: [{"section":"wi_conditions","row":1,"source":"一覧の完全一致値",'
     '"tests":["相対file::Class::test[param]"],"diagnostics":["added:1"],'
     '"evidence_file":"/絶対/説明.txt","mode":"append"}]。'
@@ -41,6 +45,9 @@ SCHEMA = (
     "--evidence-file・--result-test・--result-diagnosticは全選択行で共通に使う値。"
     "行別には--row-evidence-file SECTION:N PATH・--row-result-test SECTION:N NAME・"
     "--row-result-diagnostic SECTION:N IDを反復する。"
+    "--select-rowを省略した更新は、行別指定（レビュー更新では--row-outcome・--row-source・"
+    "--verification-rowと--accepted-rowの第1要素を含む）の更新先の行を重複なく選ぶ。"
+    "共通値だけの更新は--select-rowで行を選ぶ。--select-rowを明示した場合は、その集合外の行別指定を拒否する。"
     "同じ種類の共通指定と行別指定は別々に使う。単一値オプションの異なる値での反復は拒否する。"
     "モードや取得版が異なる更新は呼び出しを分割し、行別の詳細な入力は--updates-fileでも渡せる。"
 )
@@ -84,7 +91,8 @@ def add_arguments(parser: argparse.ArgumentParser, *, reviewing: bool = False) -
             action="append",
             nargs=2,
             metavar=("SECTION:N", value),
-            help="選択行と、その行だけへ関連付ける根拠・結果の対応。反復可。共通指定と分けて使う",
+            help="更新する行と、その行だけへ関連付ける根拠・結果の対応。反復可。"
+            "--select-rowの省略時はこの行を選ぶ。同じ種類の共通指定と分けて使う",
         )
     parser.add_argument("--results-file", type=pathlib.Path, metavar="PATH", help="保存した結果の組を持つJSONの絶対パス")
     parser.add_argument("--list-results", action="store_true", help="テスト完全名・状態・版・所在と基準版との差を表示")
@@ -106,17 +114,25 @@ def add_arguments(parser: argparse.ArgumentParser, *, reviewing: bool = False) -
     parser.add_argument(
         "--updates-file", type=pathlib.Path, metavar="PATH", help="出所と選択した根拠を持つ更新配列JSONの絶対パス"
     )
+    targets = "・".join(f"--{option.replace('_', '-')}" for option in _row_target_options(reviewing=reviewing))
     parser.add_argument(
         "--select-row",
         action="append",
         metavar="SECTION:N",
-        help="根拠を保存する配列と1始まり行番号。反復可。sourceは処理が取得する",
+        help="根拠を保存する配列と1始まり行番号。反復可。sourceは処理が取得する。"
+        f"省略すると{targets}の更新先（第1要素）を重複なく選ぶ。"
+        "共通値だけの更新では必須。明示した場合は集合外の行別指定を拒否する",
     )
     for prefix in ("junit", "baseline-junit"):
         parser.add_argument(
             f"--{prefix}-xml", type=pathlib.Path, metavar="PATH", help="保存したJUnit XML。対応する-recordと指定する"
         )
-        parser.add_argument(f"--{prefix}-record", type=pathlib.Path, metavar="PATH", help="JUnitを取得したrun-commandの記録")
+        parser.add_argument(
+            f"--{prefix}-record",
+            type=pathlib.Path,
+            metavar="PATH",
+            help="JUnitを取得したrun-commandの記録。pytestの直接起動か、--output-format=jsonlのpyfltr経由の起動を受理する",
+        )
     for prefix in ("test", "baseline-test"):
         parser.add_argument(f"--{prefix}-format", choices=("vitest", "playwright", "trx"), help="試験結果の生成形式")
         parser.add_argument(f"--{prefix}-file", type=pathlib.Path, metavar="PATH", help="構造化試験結果の絶対パス")
@@ -145,7 +161,7 @@ def add_arguments(parser: argparse.ArgumentParser, *, reviewing: bool = False) -
             action="append",
             nargs=2,
             metavar=("FILE", "SNAPSHOT"),
-            help="相対ファイルと保存時本文の絶対パス。反復可",
+            help="worktreeのルートからの相対ファイルと保存時本文の絶対パス。反復可",
         )
     if reviewing:
         parser.add_argument(
@@ -157,7 +173,7 @@ def add_arguments(parser: argparse.ArgumentParser, *, reviewing: bool = False) -
             action="append",
             nargs=2,
             metavar=("SECTION:N", "OUTCOME"),
-            help="選んだ各行の明示判定。全選択行へ反復指定する",
+            help="更新する各行の明示判定。全選択行へ反復指定する。--select-rowの省略時はこの行も選ぶ",
         )
         parser.add_argument("--reviewed-head", help="全選択行を判定した対象版の完全OID")
         parser.add_argument(
@@ -165,14 +181,14 @@ def add_arguments(parser: argparse.ArgumentParser, *, reviewing: bool = False) -
             action="append",
             nargs=2,
             metavar=("SECTION:N", "SOURCE"),
-            help="失効・割当外・背景の判断根拠の所在へ選択行のsourceを変更する。反復可",
+            help="失効・割当外・背景の判断根拠の所在へ選択行のsourceを変更する。反復可。--select-rowの省略時はこの行も選ぶ",
         )
         parser.add_argument(
             "--verification-row",
             action="append",
             nargs=2,
             metavar=("TARGET", "PENDING"),
-            help="選択行SECTION:Nと未判定記録のSECTION:Nの対応。反復可",
+            help="選択行SECTION:Nと未判定記録のSECTION:Nの対応。反復可。--select-rowの省略時は第1要素の行も選ぶ",
         )
         parser.add_argument(
             "--verification-record", type=pathlib.Path, metavar="PATH", help="選択できる未判定検証記録の絶対パス"
@@ -188,8 +204,8 @@ def add_arguments(parser: argparse.ArgumentParser, *, reviewing: bool = False) -
             action="append",
             nargs=2,
             metavar=("TARGET", "ACCEPTED"),
-            help="選択行SECTION:Nと同じ配列の受理済み行SECTION:Nの対応。"
-            "--accepted-evidence・--evidence-file・--mode replaceと指定する",
+            help="選択行SECTION:Nと同じ配列の受理済み行SECTION:Nの対応。--select-rowの省略時は第1要素の行も選ぶ。"
+            "--accepted-evidence・--evidence-file（または同じ行の--row-evidence-file）・--mode replaceと指定する",
         )
         parser.add_argument(
             "--output", type=pathlib.Path, metavar="PATH", help="未判定記録と異なる完成条件証拠の絶対パス。入力証拠を更新できる"
@@ -201,26 +217,113 @@ def load_json(path: pathlib.Path) -> Any:
     return json.loads(path_value(str(path)).read_text(encoding="utf-8"))
 
 
+# JUnitの取得条件を読めない組へ示す、受理する起動の形と再実行の操作。
+_JUNIT_RERUN = (
+    "受理する起動はpytestの直接起動か、--output-format=jsonlで実行アーカイブを有効にしたpyfltr経由"
+    "（run・run-for-agent・ci・fast）である。"
+    "atk run-command -- ... pytest -v -o junit_family=xunit1 --junitxml=<XMLの絶対パス> <対象...>で再実行し、"
+    "そのXMLと記録を指定する"
+)
+_PYFLTR_RUNS = {"run", "run-for-agent", "ci", "fast"}
+
+
+def _junit_rejection(reason: str) -> next_action.ActionableError:
+    return next_action.ActionableError(reason, next_action=_JUNIT_RERUN)
+
+
+def _pyfltr_show(run_id: str, *options: str) -> dict[str, Any]:
+    """pyfltrの公開操作show-runで実行記録を読む。pyfltrはagent-toolkitの依存として同じ実行環境にある。"""
+    try:
+        result = process_tree.run_with_timeout(
+            [sys.executable, "-m", "pyfltr", "show-run", run_id, *options, "--output-format=json"],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            env={**os.environ, "PYTHONUTF8": "1"},
+            check=False,
+            timeout=60,
+        )
+    except (OSError, subprocess.TimeoutExpired) as error:
+        raise _junit_rejection(f"pyfltrの実行記録{run_id}の読取を完了できません: {error}") from error
+    if result.returncode:
+        raise _junit_rejection(
+            f"pyfltrの実行記録{run_id}を読めません（--no-archiveでの実行か保持期間の経過）: {result.stderr.strip()}"
+        )
+    shown = json.loads(result.stdout)
+    if not isinstance(shown, dict):
+        raise _junit_rejection(f"pyfltrの実行記録{run_id}の形式が不正です")
+    return shown
+
+
+def _junit_origin(record: dict[str, Any], record_path: pathlib.Path) -> tuple[list[str], list[tuple[pathlib.Path, str]]]:
+    """XMLを書いたpytestの起動引数と、作業ディレクトリごとのrootdirを、その実行主体の記録から読む。
+
+    直接起動ではrun-commandの記録、pyfltr経由ではpyfltrの実行記録を読む。
+    pyfltr経由の記録はトップレベルのargvと標準出力がpyfltr自身のものであり、pytestの取得条件を含まないためである。
+    記録のargvから組み立てたコマンドは実行しない。
+    """
+    argv, cwd = record["argv"], pathlib.Path(record["cwd"])
+    stdout = path_value(record["stdout_path"]).read_text(encoding="utf-8")
+    launcher = next((i for i, value in enumerate(argv[:-1]) if pathlib.Path(value).stem == "pyfltr"), None)
+    if launcher is None or argv[launcher + 1] not in _PYFLTR_RUNS:
+        return argv, [(cwd, root) for root in re.findall(r"^rootdir: (.+)$", stdout, re.MULTILINE)]
+    try:
+        header = json.loads(stdout.splitlines()[0]) if stdout.strip() else None
+    except json.JSONDecodeError:
+        header = None
+    run_id = header.get("run_id") if isinstance(header, dict) and header.get("kind") == "header" else None
+    if not isinstance(run_id, str) or not run_id:
+        raise _junit_rejection(f"pyfltrの標準出力の先頭にJSON Linesのheaderが無く、実行記録を特定できません: {record_path}")
+    meta = _pyfltr_show(run_id).get("meta")
+    if (
+        not isinstance(meta, dict)
+        or not isinstance(meta.get("cwd"), str)
+        or pathlib.Path(meta["cwd"]).resolve() != cwd.resolve()
+    ):
+        raise _junit_rejection(f"pyfltrの実行記録{run_id}のcwdが記録cwdと一致しません: {record_path}")
+    command = _pyfltr_show(run_id, "--commands", "pytest").get("command")
+    commandline = command.get("commandline") if isinstance(command, dict) else None
+    output = _pyfltr_show(run_id, "--commands", "pytest", "--output").get("output")
+    if not isinstance(commandline, list) or any(not isinstance(v, str) for v in commandline) or not isinstance(output, str):
+        raise _junit_rejection(f"pyfltrの実行記録{run_id}にpytestのcommandlineと生出力がありません")
+    # サブプロジェクトごとの実行は生出力を`# subproject: <相対>`で区切り、各区間のpytestはその配下で起動する。
+    roots: list[tuple[pathlib.Path, str]] = []
+    section = cwd
+    for line in output.splitlines():
+        if header_match := re.fullmatch(r"# subproject: (.+)", line):
+            section = cwd / header_match[1]
+        elif root_match := re.fullmatch(r"rootdir: (.+)", line):
+            roots.append((section, root_match[1]))
+    return commandline, roots
+
+
 def _junit(spec: object) -> dict[str, dict[str, Any]]:
     if not isinstance(spec, dict) or set(spec) != {"xml", "run_record"}:
         raise ValueError("JUnitの組にはxmlとrun_recordを指定する")
     xml = path_value(spec["xml"])
     record_path, record = run_record(spec["run_record"])
-    argv = record["argv"]
+    argv, roots = _junit_origin(record, record_path)
+    if len(roots) != 1 or not pathlib.Path(roots[0][1]).is_absolute():
+        raise _junit_rejection(
+            f"保存出力のpytest実行rootを一意に特定できません（pyfltrの複数サブプロジェクトの実行を含む）: {record_path}"
+        )
+    pytest_cwd, rootdir = roots[0]
     xml_args = [v.split("=", 1)[1] for v in argv if v.startswith("--junitxml=")]
     xml_args.extend(argv[i + 1] for i, v in enumerate(argv[:-1]) if v == "--junitxml")
-    if len(xml_args) != 1 or (pathlib.Path(record["cwd"]) / xml_args[0]).resolve() != xml.resolve():
-        raise ValueError(f"XMLと実行argvの--junitxmlが対応しません: {xml}, {record_path}")
+    if len(xml_args) != 1 or (pytest_cwd / xml_args[0]).resolve() != xml.resolve():
+        raise _junit_rejection(f"XMLと実行argvの--junitxmlが対応しません: {xml}, {record_path}")
     if "junit_family=xunit1" not in argv:
-        raise ValueError(f"file属性を保存するjunit_family=xunit1で再実行する: {record_path}")
-    stdout = path_value(record["stdout_path"]).read_text(encoding="utf-8")
-    roots = re.findall(r"^rootdir: (.+)$", stdout, re.MULTILINE)
-    if len(roots) != 1 or not pathlib.Path(roots[0]).is_absolute():
-        raise ValueError(f"保存出力のpytest実行rootを一意に特定できません: {record_path}")
+        raise _junit_rejection(f"file属性を保存するjunit_family=xunit1の指定が実行argvにありません: {record_path}")
+    # 完全テスト名のファイル部分は、参照の所在確認と同じworktreeのルートを起点にする。
+    worktree = verification_diagnostics.worktree_root(record)
     try:
-        prefix = pathlib.Path(roots[0]).relative_to(record["cwd"])
+        prefix = pathlib.Path(rootdir).resolve().relative_to(worktree.resolve())
     except ValueError as error:
-        raise ValueError(f"pytest実行rootが記録cwdの外です: {roots[0]}") from error
+        raise next_action.ActionableError(
+            f"pytest実行root {rootdir} が対象worktree {worktree} の外です",
+            next_action="--rootdirを省くか対象worktree内のディレクトリを指定してpytestを再実行し、そのXMLと記録を指定する",
+        ) from error
     try:
         root = ET.parse(xml).getroot()
     except ET.ParseError as error:
@@ -510,6 +613,26 @@ def has_result_specification(args: argparse.Namespace) -> bool:
     )
 
 
+def _row_target_options(*, reviewing: bool) -> tuple[str, ...]:
+    """更新先の行を第1要素に持つ行別指定の属性名を返す。レビュー更新の第2要素（継承元・受理済み行）は更新先ではない。"""
+    options = ("row_evidence_file", "row_result_test", "row_result_diagnostic")
+    return options + (("row_outcome", "row_source", "verification_row", "accepted_row") if reviewing else ())
+
+
+def selected_rows(args: argparse.Namespace) -> list[str]:
+    """両公開操作の更新先の行選択を解決する。
+
+    `--select-row`を明示した場合は重複の有無を確かめる前の値をそのまま返し、省略した場合は行別指定の更新先を
+    オプションごとの指定順に重複なく並べて返す。どちらも無ければ空リストを返す。
+    表示・更新の判定と更新配列の組み立ては、この結果だけから行を選ぶ。
+    """
+    if getattr(args, "select_row", None):
+        return list(args.select_row)
+    return list(
+        dict.fromkeys(pair[0] for option in _row_target_options(reviewing=True) for pair in getattr(args, option, None) or [])
+    )
+
+
 def _row_selector(payload: dict[str, Any], value: str) -> tuple[str, int]:
     section, separator, raw = value.partition(":")
     if not separator or section not in {"wi_conditions", "user_requirements"} or not raw.isdecimal():
@@ -528,11 +651,18 @@ def updates_for_arguments(
     pending: dict[str, Any] | None = None,
 ) -> list[dict[str, Any]]:
     """選んだ行の原文・出所を現在の記録から取得し、選択した結果へ対応付ける。"""
-    selectors = args.select_row or []
-    if not selectors or len(selectors) != len(set(selectors)) or args.mode not in {"append", "replace"}:
-        raise ValueError("重複のない--select-rowと--modeを指定する")
+    selectors = selected_rows(args)
+    if not selectors:
+        raise ValueError("更新する行を行別指定（--row-evidence-fileなど）か--select-rowで指定する")
+    if len(selectors) != len(set(selectors)):
+        raise ValueError("--select-rowは重複なく指定する")
+    if args.mode not in {"append", "replace"}:
+        raise ValueError("選択行の更新には--modeを指定する")
     if args.updates_file is not None:
-        raise ValueError("--select-rowと--updates-fileは別々に使う")
+        raise ValueError("行選択（--select-rowか行別指定）と--updates-fileは別々に使う")
+    # 不正な行を判定の不足などの派生した診断より先に、その行の値として示す。
+    for selector in selectors:
+        _row_selector(payload, selector)
     row_files: dict[str, str] = {}
     row_tests: dict[str, list[str]] = collections.defaultdict(list)
     row_diagnostics: dict[str, list[str]] = collections.defaultdict(list)
@@ -547,7 +677,9 @@ def updates_for_arguments(
         seen_pairs: set[tuple[str, str]] = set()
         for selector, value in pairs:
             if selector not in selectors or (selector, value) in seen_pairs:
-                raise ValueError(f"--{option.replace('_', '-')}は選択行へ重複なく指定する")
+                raise ValueError(
+                    f"--{option.replace('_', '-')}は選択行（--select-rowを明示した場合はその集合）へ重複なく指定する"
+                )
             seen_pairs.add((selector, value))
             if option == "row_evidence_file":
                 if selector in row_files:
@@ -567,7 +699,7 @@ def updates_for_arguments(
     accepted = dict(accepted_pairs)
     accepted_path = getattr(args, "accepted_evidence", None)
     if len(accepted) != len(accepted_pairs) or set(accepted) - set(selectors):
-        raise ValueError("--accepted-rowは選択行へ重複なく指定する")
+        raise ValueError("--accepted-rowは選択行（--select-rowを明示した場合はその集合）へ重複なく指定する")
     if bool(accepted) != (accepted_path is not None):
         raise ValueError("--accepted-rowと--accepted-evidenceは組で指定する")
     if accepted and (
@@ -579,7 +711,10 @@ def updates_for_arguments(
     if len(outcomes) != len(outcome_pairs) or len(inherited) != len(inherited_pairs) or len(sources) != len(source_pairs):
         raise ValueError("行の判定と未判定行への対応は重複なく指定する")
     if reviewing and set(outcomes) != set(selectors):
-        raise ValueError("--row-outcomeで全選択行の判定を明示する")
+        raise ValueError(
+            f"--row-outcomeで全選択行の判定を明示する: 判定の無い行={sorted(set(selectors) - set(outcomes))}。"
+            "選択行は--select-rowか、省略時は行別指定の更新先で決まる"
+        )
     if set(inherited) - set(selectors):
         raise ValueError("--verification-rowの対応先は--select-rowで選んだ行を指定する")
     if set(sources) - set(selectors):
@@ -622,14 +757,12 @@ def updates_for_arguments(
 def validate_display(args: argparse.Namespace) -> None:
     """表示の選択を更新へ混入させず、要約と詳細の用途を分ける。"""
     selecting = bool(args.result_test or args.result_diagnostic)
-    direct = bool(getattr(args, "select_row", None))
-    if (
-        any(getattr(args, name, None) for name in ("row_evidence_file", "row_result_test", "row_result_diagnostic"))
-        and not direct
-    ):
-        raise ValueError("行別の根拠・結果は--select-rowで選んだ行へ指定する")
+    direct = bool(selected_rows(args))
     if args.results_summary and not args.list_results or selecting and not (args.list_results or direct):
-        raise ValueError("--results-summary・--result-test・--result-diagnosticは--list-resultsと指定する")
+        raise ValueError(
+            "--results-summary・--result-test・--result-diagnosticは--list-resultsと指定する。"
+            "--result-test・--result-diagnosticを全選択行の共通値として保存する場合は--select-rowで行を選ぶ"
+        )
     if args.results_summary and selecting:
         raise ValueError("要約と指定結果の詳細は別々に表示する")
     if args.list_results and direct:

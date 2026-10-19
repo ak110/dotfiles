@@ -94,7 +94,8 @@ LIGHTWEIGHT_MODE_SELECTION = (
     "既存の担当が詳しい文脈を持つ調査と判断は、新しく本文を読む前にその担当へ戻す。"
     "exploreは結論と所在で後続の判断が成立する調査、shellは終了状態と要約で足りる実行へ使う。\n"
     "段位: 上位段位で動く主体は、判定基準を渡せる多数の対象の走査を費用の差から軽量段位のexploreへ分け、"
-    "自身は観点の選定と返った候補の判定に使う。"
+    "自身は観点の選定と返った候補の判定に使う。計画・設計判断・原因分析は自身で行い、"
+    "内容の確定した書込作業はdelegateのmedium_tierへ任せる（自身で行う方が総費用で安い場合を除く）。"
 )
 """server instructionsとmodeの説明が共有する、コンテキストと費用の節約の目安。"""
 
@@ -170,6 +171,17 @@ PROMPT_DESCRIPTION = parameter_description(
 )
 
 
+WHOLE_CONTRACT_PATH_DESCRIPTION = parameter_description(
+    "task・delegateの通常起動だけで受理し、軽量起動（explore・write・shellと`mode:`が軽量の役割）とhandoff_fromでは指定しない。"
+    "担当へ参照を配送する全体作業契約（`share/work-contract.md`の記録）の絶対パス。"
+    "省略時はサーバーが、直接の委譲元が受領済みの参照、委譲元の会話のmanaged-tempの`work-contract.md`の順に解決する。"
+    "委譲先がさらに委譲する場合も受領済みの参照を継承するため、通常は指定しない。"
+    "委譲元の会話を特定できず解決元が無いと起動前に拒否されるため、そのときと自動解決が別の記録を指すときに指定する。"
+    "期待パスの記録が未作成で拒否されたときは、指定せずに期待パスへ記録を作成して再発行する。"
+    "指定時は自動解決より優先し、不在・ディレクトリ・UTF-8で読めないパスは起動前に拒否する。"
+)
+
+
 COMMAND_DESCRIPTION = parameter_description("shellで必須、他のmodeでは指定しない。委譲先がシェルで実行するコマンド。")
 
 
@@ -213,6 +225,8 @@ MODEL_TYPE_DESCRIPTION = parameter_description(
     "観点・判定基準の選定、新しい候補の案出し、走査結果の判定と統合はexplore・delegateを問わず`high_tier`を明示する。"
     "走査と案出しが混在する依頼も全体を`high_tier`にせず、走査を分けてから判定する。"
     "軽量側の候補では判断材料が不足する走査には、exploreで`medium_tier`を指定する。"
+    "計画・設計判断で内容の確定した書込作業（単発のコーディング、確定済みの修正など）はdelegateの`medium_tier`へ任せ、"
+    "計画・設計判断・原因分析は上位段位の担当自身が行う。"
     "段位名の候補は、`<役割名>.subagent.md`の役割かmodeで決まる用途のengine順に、engine別の段位のモデル設定を並べる。"
     "`orchestrate`はorchestrate用途の上位段位を使う。"
     "指定した値はそのsessionだけに使い、恒常的な変更は`atk config set`で行う。"
@@ -221,8 +235,8 @@ MODEL_TYPE_DESCRIPTION = parameter_description(
 
 # modeごとの必須の入力と受理する入力。`model_type`と`label`は全modeで受理するため含めない。
 START_MODE_INPUTS: dict[str, tuple[tuple[str, ...], frozenset[str]]] = {
-    "task": (("subagent_md_path",), frozenset({"subagent_md_path", "extra_params"})),
-    "delegate": (("prompt", "model_type"), frozenset({"prompt"})),
+    "task": (("subagent_md_path",), frozenset({"subagent_md_path", "extra_params", "whole_contract_path"})),
+    "delegate": (("prompt", "model_type"), frozenset({"prompt", "whole_contract_path"})),
     "explore": (("prompt",), frozenset({"prompt"})),
     "write": (("prompt",), frozenset({"prompt"})),
     "shell": (("command", "summary_policy"), frozenset({"command", "summary_policy"})),

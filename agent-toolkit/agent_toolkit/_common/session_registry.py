@@ -31,13 +31,17 @@ _STATUSES = frozenset({"starting", "running", "completed", "failed", "interrupte
 ReleaseReason = Literal["retention_expired", "stopped"]
 _RELEASE_REASONS: frozenset[str] = frozenset({"retention_expired", "stopped"})
 LAUNCHER_KEY = _session_launchers.LAUNCHER_KEY
-InterruptionReason = Literal["owner_processes_exited"]
+InterruptionReason = Literal["owner_processes_exited", "owner_server_stopped"]
 OWNER_PROCESSES_EXITED: InterruptionReason = "owner_processes_exited"
+OWNER_SERVER_STOPPED: InterruptionReason = "owner_server_stopped"
 _INTERRUPTION_MESSAGES: dict[str, str] = {
     OWNER_PROCESSES_EXITED: (
         "the owning agents_server exited without publishing the terminal state, and no process running the turn remains"
     ),
+    OWNER_SERVER_STOPPED: "the owning agents_server stopped while the turn was running and published it as interrupted",
 }
+INTERRUPTED_TURNS_LIMIT = 16
+"""登録簿が保持する中断turnの履歴の件数。新しい順に保ち、超えた古い要素は参照ごと失う。"""
 
 
 class Resolution(enum.StrEnum):
@@ -87,6 +91,20 @@ def owner_process() -> ProcessIdentity | None:
     if _OWNER_PROCESS is None or _OWNER_PROCESS.pid != os.getpid():
         _OWNER_PROCESS = ProcessIdentity.of(os.getpid())
     return _OWNER_PROCESS
+
+
+_OWNER_SERVER_INSTANCE: str | None = None
+
+
+def set_owner_server_instance(instance_id: str | None) -> None:
+    """登録簿を書くagents_serverの起動単位を設定する。`publish`は以降の記録へこの値を書く。"""
+    global _OWNER_SERVER_INSTANCE  # pylint: disable=global-statement
+    _OWNER_SERVER_INSTANCE = instance_id
+
+
+def owner_server_instance() -> str | None:
+    """登録簿を書くagents_serverの起動単位を返す。stdio起動していないプロセスでは`None`を返す。"""
+    return _OWNER_SERVER_INSTANCE
 
 
 def owner_process_is_cached() -> bool:
@@ -187,6 +205,16 @@ class ResumeInfo:
 
 
 @dataclasses.dataclass(frozen=True)
+class InterruptedTurn:
+    """中断で終わったturnと、そのturnを所有していた起動単位。`server_instance`が`None`なら旧記録を表す。"""
+
+    turn_seq: int
+    reason: InterruptionReason
+    server_instance: str | None
+    at: str
+
+
+@dataclasses.dataclass(frozen=True)
 class SessionResolution:
     """登録簿の解決結果と、利用可能な再開情報を保持する。"""
 
@@ -201,6 +229,10 @@ class SessionResolution:
     # 記録上は`running`で、記録された全プロセスの不在から終端と解決した場合に真とする。登録簿へ未公開であることを示す。
     inferred_terminal: bool = False
     handoff_info: ResumeInfo | None = None
+    # 記録を最後に書いた所有サーバーの起動単位。項目を持たない旧記録では`None`とする。
+    server_instance: str | None = None
+    # 中断で終わったturnの履歴（新しい順）。再開・所有者の交代・解放の後も引き継ぐ。
+    interrupted_turns: tuple[InterruptedTurn, ...] = ()
 
 
 def registry_directory(state_root: pathlib.Path | None = None) -> pathlib.Path:
@@ -233,6 +265,7 @@ def publish(
     processes: Sequence[ProcessIdentity] = (),
     interruption: InterruptionReason | None = None,
     launcher_session_id: str | None = None,
+    preserve_server_instance: bool = False,
     state_root: pathlib.Path | None = None,
 ) -> None:
     """sessionの終端可否と再開条件を原子的に公開する。
@@ -242,6 +275,9 @@ def publish(
     `launcher_session_id`はsessionを作成した時点の委譲元sessionの識別子である。
     省略した場合は既存のレコードが持つ値を引き継ぐ。`atk serve`の一覧が、親のセッション記録に
     起動結果が残らない委譲先の親を結ぶために読むため、状態の更新で失わないようにする。
+    `server_instance`は所有サーバーの起動単位（`set_owner_server_instance`の値）を書く。
+    `preserve_server_instance`が真の場合は既存の記録の値を保つ（所有者のいない記録の引き継ぎで使う）。
+    既存の記録の`interrupted_turns`は引き継ぎ、`interruption`を渡した場合は現在のturnを履歴へ加える。
     """
     _validate_session_id(session_id)
     if not isinstance(terminal, bool):
@@ -249,6 +285,7 @@ def publish(
     status = ("completed" if terminal else "running") if status is None else status
     if status not in _STATUSES:
         raise ValueError(f"invalid status: {status}")
+    updated_at = datetime.datetime.now(datetime.UTC).isoformat()
     payload = {
         "version": 2,
         "session_id": session_id,
@@ -261,7 +298,7 @@ def publish(
         "launch_kind": launch_kind,
         "turn_seq": turn_seq,
         "status": status,
-        "updated_at": datetime.datetime.now(datetime.UTC).isoformat(),
+        "updated_at": updated_at,
     }
     if launch_info is not None:
         # 版数2の任意項目として加え、項目を持たない旧形式のレコードは`LaunchInfo.from_record`が空文字列か`None`として読む。
@@ -287,6 +324,16 @@ def publish(
         payload["claude_connection"] = claude_connection
         payload["claude_role"] = claude_role
     path = registry_directory(state_root) / f"{session_id}.json"
+    prior = _read_payload(path)
+    instance = prior.get("server_instance") if preserve_server_instance else _OWNER_SERVER_INSTANCE
+    if isinstance(instance, str) and instance:
+        payload["server_instance"] = instance
+    turns = _recorded_interrupted_turns(prior)
+    if interruption is not None:
+        recorded_instance = instance if isinstance(instance, str) and instance else None
+        turns = _with_interrupted_turn(turns, InterruptedTurn(turn_seq, interruption, recorded_instance, updated_at))
+    if turns:
+        payload["interrupted_turns"] = _interrupted_turns_payload(turns)
     launcher = launcher_session_id if launcher_session_id is not None else _recorded_launcher(path)
     if launcher is not None:
         payload[LAUNCHER_KEY] = launcher
@@ -332,6 +379,8 @@ def resolve(session_id: str, *, state_root: pathlib.Path | None = None) -> Sessi
             released_reason=reason,
             released_at=payload["updated_at"],
             handoff_info=_resume_info(handoff) if isinstance(handoff, dict) else None,
+            server_instance=_recorded_server_instance(payload),
+            interrupted_turns=_recorded_interrupted_turns(payload),
         )
     if payload.get("version") == 1:
         if not isinstance(payload.get("terminal"), bool):
@@ -342,10 +391,16 @@ def resolve(session_id: str, *, state_root: pathlib.Path | None = None) -> Sessi
     info = _resume_info(payload)
     if info is None:
         return SessionResolution(Resolution.UNREADABLE)
+    instance = _recorded_server_instance(payload)
+    turns = _recorded_interrupted_turns(payload)
     if payload["terminal"]:
         interruption = payload.get("interruption")
         return SessionResolution(
-            Resolution.TERMINAL, info, interruption=interruption if interruption in _INTERRUPTION_MESSAGES else None
+            Resolution.TERMINAL,
+            info,
+            interruption=interruption if interruption in _INTERRUPTION_MESSAGES else None,
+            server_instance=instance,
+            interrupted_turns=turns,
         )
     processes = _recorded_processes(payload)
     if processes and not any(process.exists() for process in processes):
@@ -354,8 +409,10 @@ def resolve(session_id: str, *, state_root: pathlib.Path | None = None) -> Sessi
             dataclasses.replace(info, status="interrupted"),
             interruption=OWNER_PROCESSES_EXITED,
             inferred_terminal=True,
+            server_instance=instance,
+            interrupted_turns=turns,
         )
-    return SessionResolution(Resolution.RUNNING, info)
+    return SessionResolution(Resolution.RUNNING, info, server_instance=instance, interrupted_turns=turns)
 
 
 def _recorded_processes(payload: dict[str, Any]) -> tuple[ProcessIdentity, ...]:
@@ -416,9 +473,102 @@ def release(session_id: str, *, reason: ReleaseReason, state_root: pathlib.Path 
     if info is not None and info.engine == "claude" and (info.claude_api_env_file or info.claude_connection):
         prior = json.loads(path.read_text(encoding="utf-8"))
         payload["claude_resume_info"] = prior.get("claude_resume_info", prior)
+    prior_payload = _read_payload(path)
+    instance = _recorded_server_instance(prior_payload)
+    if instance is not None:
+        payload["server_instance"] = instance
+    turns = _recorded_interrupted_turns(prior_payload)
+    if turns:
+        payload["interrupted_turns"] = _interrupted_turns_payload(turns)
     if launcher is not None:
         payload[LAUNCHER_KEY] = launcher
     atomic_write(path, json.dumps(payload, ensure_ascii=False) + "\n")
+
+
+def record_interrupted_turn(
+    session_id: str, *, turn_seq: int, reason: InterruptionReason, state_root: pathlib.Path | None = None
+) -> None:
+    """所有側が中断として公開した終端の記録へ、中断の理由と中断turnの履歴を加える。
+
+    記録が無いか、同じturnの終端を示さない場合は書き換えない。
+    """
+    _validate_session_id(session_id)
+    path = registry_directory(state_root) / f"{session_id}.json"
+    payload = _read_payload(path)
+    if payload.get("version") != 2 or payload.get("terminal") is not True or payload.get("turn_seq") != turn_seq:
+        return
+    payload["interruption"] = reason
+    payload["interrupted_turns"] = _interrupted_turns_payload(
+        _with_interrupted_turn(
+            _recorded_interrupted_turns(payload),
+            InterruptedTurn(
+                turn_seq, reason, _recorded_server_instance(payload), datetime.datetime.now(datetime.UTC).isoformat()
+            ),
+        )
+    )
+    atomic_write(path, json.dumps(payload, ensure_ascii=False) + "\n")
+
+
+def recorded_server_instances(state_root: pathlib.Path | None = None) -> set[str]:
+    """登録簿の全記録が参照する起動単位を返す。読めない記録は除く。"""
+    instances: set[str] = set()
+    try:
+        paths = tuple(registry_directory(state_root).glob("*.json"))
+    except OSError:
+        return instances
+    for path in paths:
+        payload = _read_payload(path)
+        instance = _recorded_server_instance(payload)
+        if instance is not None:
+            instances.add(instance)
+        instances.update(turn.server_instance for turn in _recorded_interrupted_turns(payload) if turn.server_instance)
+    return instances
+
+
+def _read_payload(path: pathlib.Path) -> dict[str, Any]:
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except OSError, UnicodeError, json.JSONDecodeError:
+        return {}
+    return payload if isinstance(payload, dict) else {}
+
+
+def _recorded_server_instance(payload: dict[str, Any]) -> str | None:
+    value = payload.get("server_instance")
+    return value if isinstance(value, str) and _SESSION_ID_PATTERN.fullmatch(value) else None
+
+
+def _recorded_interrupted_turns(payload: dict[str, Any]) -> tuple[InterruptedTurn, ...]:
+    entries = payload.get("interrupted_turns")
+    if not isinstance(entries, list):
+        return ()
+    turns: list[InterruptedTurn] = []
+    for entry in entries:
+        if not isinstance(entry, dict):
+            continue
+        turn_seq = entry.get("turn_seq")
+        reason = entry.get("reason")
+        instance = entry.get("server_instance")
+        at = entry.get("at")
+        if (
+            isinstance(turn_seq, int)
+            and not isinstance(turn_seq, bool)
+            and reason in _INTERRUPTION_MESSAGES
+            and (instance is None or isinstance(instance, str) and _SESSION_ID_PATTERN.fullmatch(instance))
+            and isinstance(at, str)
+        ):
+            turns.append(InterruptedTurn(turn_seq, reason, instance, at))
+    return tuple(turns)
+
+
+def _with_interrupted_turn(turns: tuple[InterruptedTurn, ...], turn: InterruptedTurn) -> tuple[InterruptedTurn, ...]:
+    if any(existing.turn_seq == turn.turn_seq for existing in turns):
+        return turns
+    return (turn, *turns)[:INTERRUPTED_TURNS_LIMIT]
+
+
+def _interrupted_turns_payload(turns: tuple[InterruptedTurn, ...]) -> list[dict[str, Any]]:
+    return [dataclasses.asdict(turn) for turn in turns]
 
 
 def _validate_session_id(session_id: str) -> None:

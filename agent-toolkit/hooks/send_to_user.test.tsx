@@ -200,38 +200,73 @@ test("日本語の呼び出しが成功した後のToolUseに本文を描く", a
   }
 });
 
+// 判定基盤の障害は日本語へ書き直しても解消しないため、拒否すると報告の本文がユーザーへ届かない。
+// 障害の形ごとに、成功結果と本文の描画が成立し、診断が同じ会話へ1回だけ届くことを確かめる。
+const PASS_RESPONSE = { exitCode: 0, stdout: JSON.stringify({ outcome: "pass", body: null, fix: "" }), stderr: "", isStdoutTruncated: false, isStderrTruncated: false };
+const SECRET_STDERR = "入力本文を含めない";
+const JAPANESE_MESSAGE = "確認が完了しました。";
+
 for (const [name, response, expected] of [
-  ["非0終了", { exitCode: 7, stdout: "", stderr: "入力本文を含めない", isStdoutTruncated: false, isStderrTruncated: false }, "終了コード 7"],
-  ["標準出力の切り詰め", { exitCode: 0, stdout: "", stderr: "", isStdoutTruncated: true, isStderrTruncated: false }, "標準出力の切り詰め true"],
-  ["標準エラーの切り詰め", { exitCode: 0, stdout: "", stderr: "", isStdoutTruncated: false, isStderrTruncated: true }, "標準エラーの切り詰め true"],
-  ["JSON破損", { exitCode: 0, stdout: "broken-json", stderr: "", isStdoutTruncated: false, isStderrTruncated: false }, "JSONとして不正"],
-  ["JSON契約外", { exitCode: 0, stdout: "{}", stderr: "", isStdoutTruncated: false, isStderrTruncated: false }, "outcome・body・fixが契約外"],
+  ["非0終了", { ...PASS_RESPONSE, exitCode: 7, stdout: "", stderr: SECRET_STDERR }, "終了コード 7"],
+  ["標準出力の切り詰め", { ...PASS_RESPONSE, stdout: "", isStdoutTruncated: true }, "標準出力の切り詰め true"],
+  ["標準エラーの切り詰め", { ...PASS_RESPONSE, stdout: "", isStderrTruncated: true }, "標準エラーの切り詰め true"],
+  ["JSON破損", { ...PASS_RESPONSE, stdout: "broken-json" }, "JSONとして不正"],
+  ["JSON契約外", { ...PASS_RESPONSE, stdout: "{}" }, "outcome・body・fixが契約外"],
+  ["process.runの例外", undefined, "process.runで例外が発生"],
 ] as const) {
-  test(`言語判定の${name}は診断を返して反復を求めない`, async ($, on) => {
+  test(`言語判定の${name}では本文を表示し、診断を同じ会話へ1回だけ届ける`, async ($, on) => {
     mock.env(on, {});
-    const calls: string[] = [];
-    on("process.run", () => { calls.push("check"); return { value: response }; });
-    const called = await $.tool.call({ tool: TOOL, message: "確認が完了しました。" });
-    expect(called.result).toBeUndefined();
-    expect(called.deny).toMatch(/^<atk-auto source="response-language" kind="block">\n[\s\S]*\n<\/atk-auto>$/);
-    expect(called.deny).toContain(expected);
-    expect(called.deny).toContain("response_language_check.py");
-    expect(called.deny).toContain("同じ呼び出しを繰り返さず");
-    expect(called.deny).toContain("ユーザーへ報告する");
-    expect(calls).toEqual(["check"]);
-    expect(called.deny).not.toContain("broken-json");
-    expect(called.deny).not.toContain("入力本文を含めない");
+    on("session.id", () => ({ value: "send-test" }));
+    let failing = true;
+    on("process.run", () => {
+      if (!failing) return { value: PASS_RESPONSE };
+      if (response === undefined) throw new Error("判定処理の障害");
+      return { value: response };
+    });
+    const called = await $.tool.call({ tool: TOOL, message: JAPANESE_MESSAGE });
+    expect(called.deny).toBeUndefined();
+    expect(called.result).toBe("ユーザーの画面へ表示した。");
+    expect(called.context?.length).toBe(1);
+    const notice = called.context?.[0] ?? "";
+    expect(notice).toMatch(/^<atk-auto source="response-language" kind="warn">\n[\s\S]*\n<\/atk-auto>$/);
+    expect(notice).toContain(expected);
+    expect(notice).toContain("ユーザーへ報告する");
+    expect(notice).not.toContain(JAPANESE_MESSAGE);
+    expect(notice).not.toContain(SECRET_STDERR);
+    expect(notice).not.toContain("broken-json");
+    for (const surface of ["terminal", "desktop"] as const) {
+      const ui = await $.ui.mount({ plugin: PLUGIN, surface, component: "ToolUse", requestId: "toolu_1", props: { ...row(TOOL, { message: JAPANESE_MESSAGE }), output: called.result } });
+      expect((await ui.find({ type: "Markdown" }))?.props.text).toBe(JAPANESE_MESSAGE);
+      await ui.unmount();
+    }
+    const repeated = await $.tool.call({ tool: TOOL, message: JAPANESE_MESSAGE });
+    expect(repeated.result).toBe("ユーザーの画面へ表示した。");
+    expect(repeated.context ?? []).toEqual([]);
+    failing = false;
+    const recovered = await $.tool.call({ tool: TOOL, message: JAPANESE_MESSAGE });
+    expect(recovered.result).toBe("ユーザーの画面へ表示した。");
+    expect(recovered.context ?? []).toEqual([]);
   });
 }
 
-test("言語判定hookの例外は実行段階を返して反復を求めない", async ($, on) => {
+test("判定不能の後の英語のmessageは書き直しを求め、書き直し後は表示する", async ($, on) => {
   mock.env(on, {});
-  on("process.run", () => { throw new Error("判定処理の障害"); });
-  const called = await $.tool.call({ tool: TOOL, message: "確認が完了しました。" });
-  expect(called.result).toBeUndefined();
-  expect(called.deny).toMatch(/^<atk-auto source="response-language" kind="block">\n[\s\S]*\n<\/atk-auto>$/);
-  expect(called.deny).toContain("process.runで例外が発生");
-  expect(called.deny).toContain("同じ呼び出しを繰り返さず");
+  on("session.id", () => ({ value: "send-test" }));
+  let failing = true;
+  on("process.run", (_$, e) => {
+    if (failing) return { value: { ...PASS_RESPONSE, exitCode: 7 } };
+    const english = e.argv.at(-1) === "--text=The work is complete.";
+    return { value: { ...PASS_RESPONSE, stdout: JSON.stringify({ outcome: english ? "warn" : "pass", body: "英語主体の本文。", fix: "日本語で書き直す。" }) } };
+  });
+  expect((await $.tool.call({ tool: TOOL, message: JAPANESE_MESSAGE })).result).toBe("ユーザーの画面へ表示した。");
+  failing = false;
+  const denied = await $.tool.call({ tool: TOOL, message: "The work is complete." });
+  expect(denied.result).toBeUndefined();
+  expect(denied.deny).toMatch(/^<atk-auto source="response-language" kind="block">\n[\s\S]*\n<\/atk-auto>$/);
+  expect(denied.deny).toContain("日本語で書き直す");
+  const rewritten = await $.tool.call({ tool: TOOL, message: "作業が完了した。" });
+  expect(rewritten.result).toBe("ユーザーの画面へ表示した。");
+  expect(rewritten.context ?? []).toEqual([]);
 });
 
 for (const caller of [undefined, "", "/caller/project-environment"] as const) {

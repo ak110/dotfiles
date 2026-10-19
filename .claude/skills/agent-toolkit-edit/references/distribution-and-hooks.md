@@ -64,7 +64,7 @@ agent-toolkit配下の編集では、`pytools/claude_hook/pretooluse.py`がdotfi
 - PreToolUseは`send_message`・`kill`の保存済みsessionと、`<役割名>.subagent.md`の実行命令を持つ起動を確認する
 - `start`の`delegate`・`explore`・`write`へ引用の外で`<役割名>.subagent.md`の手順の実行命令を渡した場合は、タスク起動へ直すよう遮断する。`Agent`・`Task`の実行命令では、1行目の正式な命令と宣言済み入力以外の行を遮断する
 - 文書の読解・引用・比較の対象への参照、引用に載せた実行命令の例、参照だけでは用途を確定できない場合は通し、会話の意味を推定する遮断・警告を加えない
-- `start`の入力検証（`mode`ごとの欠落と混在を含む）は実行基盤へ委ね、実行権限値はそのまま渡す。`wait`は新しいturnを開始しないためチェック対象外とする
+- `start`の入力検証（`mode`ごとの欠落と混在を含む）と、`send_message`・`kill`の入力形式（`prompt`・`instruction`・`extra_params`・`session_id`の欠落と併用）の検証は実行基盤へ委ね、原因と次の操作はツールのエラー応答で返す。hookが同じ受理条件を持つと、ツールが入力形式を追加したときに正当な入力を誤って警告するためである。実行権限値はそのまま渡す。`wait`は新しいturnを開始しないためチェック対象外とする
 - PostToolUseは成功した`start`（全`mode`。旧名で記録された開始も含む）のcwdと、`wait`・`send_message`・`kill`のsession状態を記録する
 
 ## 複数hook共存時の識別子

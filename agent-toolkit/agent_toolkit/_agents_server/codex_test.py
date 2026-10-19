@@ -637,7 +637,7 @@ async def test_thread_start_overrides_agents_server_with_owner_and_writer_env(
     runtime_data = tmp_path / "plugin data"
     monkeypatch.setenv(plugin_environment.RUNTIME_DATA_ENV, str(runtime_data))
     manager = subject.AppServerManager(root_session_id="root-session")
-    monkeypatch.setattr(manager, "_ensure_client", lambda: _return(client))
+    monkeypatch.setattr(manager, "_ensure_client", lambda *_args, **_kwargs: _return(client))
     monkeypatch.setattr(shared_roots, "write_host_alias", lambda root, writer, thread: aliases.append((root, writer, thread)))
     aliases: list[tuple[str, str, str]] = []
     monkeypatch.setattr(manager, "_start_turn", lambda *_args: _return_none())
@@ -866,7 +866,7 @@ async def test_start_aborts_when_thread_start_never_returns(monkeypatch: pytest.
     monkeypatch.setattr(state, "SESSION_INITIALIZATION_TIMEOUT", 0.05)
     manager = subject.AppServerManager()
     client = _SilentClient()
-    monkeypatch.setattr(manager, "_ensure_client", lambda: _return(client))
+    monkeypatch.setattr(manager, "_ensure_client", lambda *_args, **_kwargs: _return(client))
 
     with pytest.raises(session_errors.SessionInitializationTimeoutError):
         await manager.start("実装する", str(tmp_path))
@@ -1755,7 +1755,7 @@ async def test_codex_start_uses_noninteractive_policy_and_shared_projection(
     manager = subject.AppServerManager()
     client = FakeCodexClient()
 
-    async def ensure_client() -> FakeCodexClient:
+    async def ensure_client(*_args: Any, **_kwargs: Any) -> FakeCodexClient:
         return client
 
     monkeypatch.setattr(manager, "_ensure_client", ensure_client)
@@ -1780,7 +1780,7 @@ async def test_codex_explore_commands_reach_start_resume_and_followup(
     normal_manager = subject.AppServerManager()
     normal_client = FakeCodexClient()
 
-    async def ensure_normal_client() -> FakeCodexClient:
+    async def ensure_normal_client(*_args: Any, **_kwargs: Any) -> FakeCodexClient:
         return normal_client
 
     monkeypatch.setattr(normal_manager, "_ensure_client", ensure_normal_client)
@@ -1789,7 +1789,7 @@ async def test_codex_explore_commands_reach_start_resume_and_followup(
     explore_manager = subject.AppServerManager()
     explore_client = _TierClient()
 
-    async def ensure_explore_client() -> _TierClient:
+    async def ensure_explore_client(*_args: Any, **_kwargs: Any) -> _TierClient:
         return explore_client
 
     monkeypatch.setattr(explore_manager, "_ensure_client", ensure_explore_client)
@@ -1831,7 +1831,7 @@ async def test_codex_shell_start_shares_explore_thread_conditions(
     manager = subject.AppServerManager()
     client = FakeCodexClient()
 
-    async def ensure_client() -> FakeCodexClient:
+    async def ensure_client(*_args: Any, **_kwargs: Any) -> FakeCodexClient:
         return client
 
     monkeypatch.setattr(manager, "_ensure_client", ensure_client)
@@ -1877,7 +1877,7 @@ async def test_codex_turn_start_response_loss_remains_running_until_completion(
     manager = subject.AppServerManager()
     client = LostTurnStartClient()
 
-    async def ensure_client() -> LostTurnStartClient:
+    async def ensure_client(*_args: Any, **_kwargs: Any) -> LostTurnStartClient:
         return client
 
     monkeypatch.setattr(manager, "_ensure_client", ensure_client)
@@ -1906,7 +1906,7 @@ async def test_codex_steer_rejection_waits_for_terminal_race_then_replies(
     manager = subject.AppServerManager()
     client = SteerRaceClient()
 
-    async def ensure_client() -> SteerRaceClient:
+    async def ensure_client(*_args: Any, **_kwargs: Any) -> SteerRaceClient:
         return client
 
     monkeypatch.setattr(manager, "_ensure_client", ensure_client)
@@ -2470,7 +2470,7 @@ async def test_shared_manager_integrates_codex_start_and_send_message(
     backend = subject.AppServerManager(manager.sessions, manager._condition)
     client = FakeCodexClient()
 
-    async def ensure_client() -> FakeCodexClient:
+    async def ensure_client(*_args: Any, **_kwargs: Any) -> FakeCodexClient:
         return client
 
     monkeypatch.setattr(backend, "_ensure_client", ensure_client)
@@ -2512,7 +2512,7 @@ async def test_shared_manager_send_message_resumes_expired_codex_thread(
     backend = subject.AppServerManager(manager.sessions, manager._condition)
     client = FakeCodexClient()
 
-    async def ensure_client() -> FakeCodexClient:
+    async def ensure_client(*_args: Any, **_kwargs: Any) -> FakeCodexClient:
         return client
 
     monkeypatch.setattr(backend, "_ensure_client", ensure_client)
@@ -2555,7 +2555,7 @@ async def test_codex_resume_timeout_drops_prompt_without_duplicate_resume(
     backend = subject.AppServerManager(manager.sessions, manager._condition)
     client = BlockingResumeCodexClient()
 
-    async def ensure_client() -> BlockingResumeCodexClient:
+    async def ensure_client(*_args: Any, **_kwargs: Any) -> BlockingResumeCodexClient:
         return client
 
     monkeypatch.setattr(backend, "_ensure_client", ensure_client)

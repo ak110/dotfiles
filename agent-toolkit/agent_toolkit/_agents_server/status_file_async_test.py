@@ -459,7 +459,7 @@ async def test_auxiliary_save_retry_runs_outside_loop(
     direct = codex.AppServerManager(root_session_id="root")
     fake_client = FakeCodexClient()
 
-    async def ensure_client() -> FakeCodexClient:
+    async def ensure_client(*_args: Any, **_kwargs: Any) -> FakeCodexClient:
         return fake_client
 
     monkeypatch.setattr(direct, "_ensure_client", ensure_client)

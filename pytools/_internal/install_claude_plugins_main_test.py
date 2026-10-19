@@ -13,6 +13,7 @@ import pytest
 
 from pytools._internal import claude_common as _claude_common
 from pytools._internal import claude_marketplace as _claude_marketplace
+from pytools._internal import claude_plugin_references as _claude_plugin_references
 from pytools._internal import common as _common
 from pytools._internal import install_claude_plugins as _install_claude_plugins
 from pytools._internal import post_apply_outcome
@@ -51,8 +52,9 @@ def _fake_target_info(monkeypatch: pytest.MonkeyPatch) -> None:
 
 @pytest.fixture(autouse=True)
 def _empty_external_marketplaces(monkeypatch: pytest.MonkeyPatch) -> None:
-    """外部マーケットプレイスの専用テスト以外では対象を空にする。"""
+    """外部マーケットプレイスの専用テスト以外では対象を空にし、開発機のプロセスを参照判定へ混ぜない。"""
     monkeypatch.setattr(_install_claude_plugins, "_EXTERNAL_MARKETPLACES", ())
+    monkeypatch.setattr(_claude_plugin_references, "scan", lambda: ())
 
 
 class TestPrerequisites:
@@ -362,7 +364,9 @@ class TestRunFlow:
         # project scope の清掃 (uninstall) が tmp_path を cwd にして呼ばれること
         uninstall_calls = [(cmd, cwd) for cmd, cwd in calls if command_matches(cmd, ["claude", "plugin", "uninstall"])]
         matched = [
-            (cmd, cwd) for cmd, cwd in uninstall_calls if "agent-toolkit@ak110-dotfiles" in cmd and "--scope=project" in cmd
+            (cmd, cwd)
+            for cmd, cwd in uninstall_calls
+            if "agent-toolkit@ak110-dotfiles" in cmd and "--scope=project" in cmd and "--keep-data" in cmd
         ]
         assert matched, f"project scope 除去の呼び出しが無い: {uninstall_calls}"
         assert all(cwd == tmp_path for _cmd, cwd in matched)
@@ -435,7 +439,7 @@ class TestRunFlow:
         assert _install_claude_plugins.run().changed is True
         # deprecated プラグインのアンインストールが呼ばれること
         uninstall_calls = [c for c in calls if command_matches(c, ["claude", "plugin", "uninstall"])]
-        assert any("old-plugin@ak110-dotfiles" in c for c in uninstall_calls)
+        assert any("old-plugin@ak110-dotfiles" in c and "--keep-data" in c for c in uninstall_calls)
         # 通常プラグインの install も呼ばれること
         install_calls = [c for c in calls if command_matches(c, ["claude", "plugin", "install"])]
         assert any("agent-toolkit@ak110-dotfiles" in c for c in install_calls)

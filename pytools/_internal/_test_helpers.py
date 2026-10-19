@@ -1,13 +1,16 @@
 """テスト用の共通ヘルパー。"""
 
 import json
+import os
 import pathlib
+import shutil
 import subprocess
 import typing
 from collections.abc import Callable
 from pathlib import Path
 
 from pytools._internal import claude_common as _claude_common
+from pytools._internal import common as _common
 from pytools._internal.update_claude_settings import update_claude_settings
 
 FakeRunFunc = Callable[..., subprocess.CompletedProcess[str] | None]
@@ -253,3 +256,51 @@ class FakeEnvironmentRegistry:
     def user_path(self) -> str:
         """ユーザー側の`Path`を返す。"""
         return self.user.get("Path", ("", self.REG_SZ))[0]
+
+
+class ResidentProcesses:
+    """指定した実行名の常駐プロセスを起動し、psutilによるプロセス走査の結果をこれらのプロセスだけに限る。
+
+    走査は実プロセスの情報（実行名、command line、作業ディレクトリ、環境変数、起動時刻）を経由する。
+    開発機で動く他のClaude CodeやCodexを判定へ混ぜないため、走査結果だけを起動したpidへ絞る。
+    実行名は`sleep`へのsymlinkの名前で与えるため、Linuxでだけ使う。
+    """
+
+    def __init__(self, tmp_path: Path, monkeypatch: typing.Any) -> None:
+        import psutil  # noqa: PLC0415  # pylint: disable=import-outside-toplevel
+
+        sleep = shutil.which("sleep")
+        assert sleep is not None, "sleepコマンドが無い"
+        self._sleep = sleep
+        self._bin = tmp_path / "resident-bin"
+        self._processes: list[subprocess.Popen[bytes]] = []
+        real_process_iter = psutil.process_iter
+
+        def own_processes(*args: typing.Any, **kwargs: typing.Any) -> list[typing.Any]:
+            pids = {process.pid for process in self._processes if process.poll() is None}
+            return [item for item in real_process_iter(*args, **kwargs) if item.pid in pids]
+
+        monkeypatch.setattr(psutil, "process_iter", own_processes)
+
+    def start(self, name: str, *, cwd: Path | None = None, env: dict[str, str] | None = None) -> subprocess.Popen[bytes]:
+        """実行名`name`の常駐プロセスを起動する。"""
+        link = self._bin / name
+        if not link.exists():
+            link.parent.mkdir(parents=True, exist_ok=True)
+            link.symlink_to(self._sleep)
+        process = subprocess.Popen(  # noqa: S603  # pylint: disable=consider-using-with
+            [str(link), "600"], cwd=cwd, env=None if env is None else {**os.environ, **env}
+        )
+        self._processes.append(process)
+        return process
+
+    def stop(self, process: subprocess.Popen[bytes]) -> None:
+        """起動したプロセスを終了させて回収する。"""
+        residual = _common.stop_process_tree(process)
+        assert not residual, f"常駐プロセスを回収できない: {residual}"
+
+    def stop_all(self) -> None:
+        """起動した全てのプロセスを終了させて回収する。"""
+        for process in self._processes:
+            if process.poll() is None:
+                self.stop(process)

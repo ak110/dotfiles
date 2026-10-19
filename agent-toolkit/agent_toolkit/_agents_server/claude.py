@@ -332,6 +332,8 @@ def _build_options(
     cli_env = plugin_environment.cli_environment(plugin_root, os.environ)
     env = {
         _delegated_session.DELEGATED_SESSION_ENV: "1",
+        # 委譲先のhookが軽量起動を判別して、スキルの取得を求めない判定に使う。
+        _delegated_session.LAUNCH_KIND_ENV: launch_kind,
         "PATH": cli_env["PATH"],
         plugin_environment.RUNTIME_DATA_ENV: cli_env[plugin_environment.RUNTIME_DATA_ENV],
     }

@@ -7,6 +7,7 @@ import re
 import shutil
 import stat
 import subprocess
+import sys
 import typing
 
 import pytest
@@ -175,6 +176,65 @@ def test_plugin_update_preserves_previous_cache_for_first_wrapper_transition(
     assert not (codex_home / "plugins/cache-compat/ak110-dotfiles/agent-toolkit/versions").exists()
     assert not old_compat.is_symlink()
     assert (cache_root / "1.2.2" / "scripts" / "hook.py").read_text(encoding="utf-8") == "old hook\n"
+
+
+# インストーラーを延期と再実行の2回起動するため、1回分を見込んだ既定の上限より長くする。
+@pytest.mark.timeout(180)
+@pytest.mark.skipif(not sys.platform.startswith("linux"), reason="実行名をsymlinkで与える常駐プロセスはLinuxで起動する")
+@pytest.mark.parametrize("kind", installer_runners())
+def test_running_codex_defers_plugin_update_until_session_ends(kind: str, tmp_path: pathlib.Path, rules_url: str) -> None:
+    """既存版を使うCodexの稼働中は`codex plugin add`を呼ばず旧cacheを残し、終了後の再実行で更新する。
+
+    スタブの`codex plugin add`は公式CLIと同じく旧cacheを削除するため、延期せずに進むと旧版のhookが消える。
+    """
+    home = tmp_path / "home"
+    home.mkdir()
+    codex_home = home / ".codex"
+    old_hook = codex_home / "plugins/cache/ak110-dotfiles/agent-toolkit/1.2.2/scripts/hook.py"
+    stub_bin, stub_log = make_command_stubs(tmp_path)
+    sleep = shutil.which("sleep")
+    assert sleep is not None
+    session_executable = tmp_path / "resident-bin" / "codex"
+    session_executable.parent.mkdir()
+    session_executable.symlink_to(sleep)
+    session = subprocess.Popen([str(session_executable), "600"])  # pylint: disable=consider-using-with
+    try:
+        deferred = run_installer(
+            kind,
+            home,
+            rules_url,
+            stub_bin=stub_bin,
+            stub_log=stub_log,
+            codex_plugin_before=("1.2.2", True),
+            codex_plugin_after=("1.2.3", True),
+            codex_home=codex_home,
+            extra_env={"PS_STUB_PIDS": str(session.pid)},
+        )
+        assert not any("codex plugin add" in line for line in read_log_lines(stub_log))
+        assert old_hook.read_text(encoding="utf-8") == "old hook\n"
+        assert f"稼働中: {session.pid} codex" in deferred.stderr
+        assert "保持中の版: 1.2.2（有効）。未反映の目標版: 1.2.3。" in deferred.stderr
+        assert "Codexのセッションを全て終了してから、同じインストーラーを再実行してください。" in deferred.stderr
+        assert "codex app-server daemon restart" not in deferred.stderr
+    finally:
+        session.kill()
+        session.wait(timeout=10)
+
+    # 再実行も更新前の導入状態から始めるため、スタブが返す導入状態を更新前へ戻す。
+    stub_log.with_suffix(".codex-plugin-state").unlink()
+    run_installer(
+        kind,
+        home,
+        rules_url,
+        stub_bin=stub_bin,
+        stub_log=stub_log,
+        codex_plugin_before=("1.2.2", True),
+        codex_plugin_after=("1.2.3", True),
+        codex_home=codex_home,
+        extra_env={"PS_STUB_PIDS": str(session.pid)},
+    )
+    assert any("codex plugin add agent-toolkit@ak110-dotfiles --json" in line for line in read_log_lines(stub_log))
+    assert (codex_home / "plugins/cache/ak110-dotfiles/agent-toolkit/1.2.3/agent_toolkit/hook.py").is_file()
 
 
 @pytest.mark.parametrize("kind", installer_runners())

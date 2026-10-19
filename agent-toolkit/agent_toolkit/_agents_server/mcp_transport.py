@@ -10,6 +10,7 @@ from collections.abc import Callable
 from contextlib import AbstractAsyncContextManager
 from typing import Any
 
+import anyio
 from anyio.abc import ObjectReceiveStream, ObjectSendStream
 from mcp.server.context import ServerRequestContext
 from mcp.server.lowlevel import Server
@@ -28,6 +29,7 @@ from mcp.types import (
     ToolAnnotations,
 )
 
+from agent_toolkit._agents_server import logging_config
 from agent_toolkit._agents_server.session_errors import DelegateBackendError, SessionInitializationTimeoutError
 from agent_toolkit._agents_server.tool_descriptions import KIND_MCP_TOOL, schema_text
 from agent_toolkit._common.next_action import ActionableError, with_next_action
@@ -115,7 +117,12 @@ class _InitializationLoggingReceiveStream(ObjectReceiveStream[SessionMessage | E
         self._tracker = tracker
 
     async def receive(self) -> SessionMessage | Exception:
-        message = await self._stream.receive()
+        try:
+            message = await self._stream.receive()
+        except anyio.EndOfStream:
+            # 親が標準入力を閉じた接続終了を、起動単位の終了診断へ残す。
+            logging_config.record_instance_event("stdin_closed")
+            raise
         self._tracker.receive(message)
         return message
 
@@ -254,12 +261,17 @@ class AgentsServerMCP(MCPServer[None]):
             on_call_tool=self._call_registered_tool,
         )
         tracker = _InitializationLogTracker()
-        async with stdio_server() as (read_stream, write_stream):
-            try:
-                await server.run(
-                    _InitializationLoggingReceiveStream(read_stream, tracker),
-                    _InitializationLoggingSendStream(write_stream, tracker),
-                    server.create_initialization_options(),
-                )
-            finally:
-                tracker.transport_closed()
+        # asyncioがSIGINTのhandlerを設置した後に包むため、実行中のloopの内側で設置する。
+        restore_signals = logging_config.install_signal_recording()
+        try:
+            async with stdio_server() as (read_stream, write_stream):
+                try:
+                    await server.run(
+                        _InitializationLoggingReceiveStream(read_stream, tracker),
+                        _InitializationLoggingSendStream(write_stream, tracker),
+                        server.create_initialization_options(),
+                    )
+                finally:
+                    tracker.transport_closed()
+        finally:
+            restore_signals()

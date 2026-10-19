@@ -422,13 +422,44 @@ def test_wait_timeout_is_capped_for_delegated_session(
     environment_name: str,
     value: str,
 ) -> None:
-    """委譲先の印がある場合は保持期間によらず待機上限を240秒へ収める。"""
+    """委譲先の印がある場合、MCP内部待機と資源解放の上限は保持期間によらず240秒へ収める。"""
     monkeypatch.setenv("CLAUDECODE", "1")
     monkeypatch.setenv("CLAUDE_CODE_PROMPT_CACHE_TTL", value)
     monkeypatch.setenv(environment_name, "1")
     monkeypatch.setattr(_wait_schedule.subprocess, "run", _fail_if_auth_status_is_called)
 
     assert _wait_schedule.get_wait_timeout("main") == 240.0
+
+
+@pytest.mark.parametrize(
+    ("environment", "expected_timeout"),
+    [
+        ({"CLAUDECODE": "1", "CLAUDE_CODE_PROMPT_CACHE_TTL": "1h"}, 1740.0),
+        ({"CLAUDECODE": "1", "CLAUDE_CODE_PROMPT_CACHE_TTL": "5m"}, 270.0),
+        ({"CLAUDE_CODE_PROMPT_CACHE_TTL": "1h"}, 270.0),
+        ({"CLAUDECODE": "1", "CLAUDE_CODE_PROMPT_CACHE_TTL": "1h", "AGENT_TOOLKIT_DELEGATED_SESSION": "1"}, 1740.0),
+        ({"CLAUDECODE": "1", "CLAUDE_CODE_PROMPT_CACHE_TTL": "1h", "AGENT_TOOLKIT_OWNER_SESSION": "owner"}, 1740.0),
+        ({"CLAUDECODE": "1", "CLAUDE_CODE_PROMPT_CACHE_TTL": "5m", "AGENT_TOOLKIT_DELEGATED_SESSION": "1"}, 270.0),
+    ],
+    ids=["1h", "5m", "unknown-host", "delegated-1h", "owner-1h", "delegated-5m"],
+)
+def test_cli_wait_timeout_ignores_delegated_session(
+    monkeypatch: pytest.MonkeyPatch,
+    environment: dict[str, str],
+    expected_timeout: float,
+) -> None:
+    """CLIの待機上限は保持期間とホストだけから導き、委譲先の印では縮めない。
+
+    CLIはMCPのツール呼び出しを経由しないため、MCPクライアントの上限に由来する240秒を適用すると
+    長時間の背景待機が約4分ごとの終了と再発行を反復する。
+    """
+    for name in ("CLAUDECODE", "AGENT_TOOLKIT_DELEGATED_SESSION", "AGENT_TOOLKIT_OWNER_SESSION"):
+        monkeypatch.delenv(name, raising=False)
+    for name, value in environment.items():
+        monkeypatch.setenv(name, value)
+    monkeypatch.setattr(_wait_schedule.subprocess, "run", _fail_if_auth_status_is_called)
+
+    assert _wait_schedule.get_cli_wait_timeout("main") == expected_timeout
 
 
 def test_rejects_unknown_request_bucket() -> None:

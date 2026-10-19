@@ -31,9 +31,10 @@ forkの監査記録は`docs/development/audit-records.md`の「agent-toolkit/ski
 
 | 対応工程（呼び出し・役割） | 用途 | 段位 | 起動直前に解決するエージェント | 起動手段 |
 | --- | --- | --- | --- | --- |
-| WIの選定とレーン分け、計画起草、実装、変更範囲の検証、レビュー修正、CI失敗修正、即時対応の修正、既存不良の調査、マージなしの統合、AWI投入、自動コードレビュー監査、公開工程の終端工程（`add-wi`・`copilot-review-audit`・`defect-investigation`・`lane-integration`・`session-termination`の`task`、`delegate`の`high_tier`） | base | high | 各担当を委譲するメイン | `agents_server` MCP |
+| WIの選定とレーン分け、計画起草、設計判断を伴う実装と修正（レビュー修正、CI失敗修正、即時対応の修正のうち判断を要するもの）、変更範囲の検証、既存不良の調査、マージなしの統合、AWI投入、自動コードレビュー監査、公開工程の終端工程（`add-wi`・`copilot-review-audit`・`defect-investigation`・`lane-integration`・`session-termination`の`task`、`delegate`の`high_tier`） | base | high | 各担当を委譲するメイン | `agents_server` MCP |
 | レーンの計画・実装・変更範囲検証と同じexecによる修正（`exec`の`task`） | execute | high | 各担当を委譲するメイン | `agents_server` MCP |
 | 観点・判定基準の選定、新しい候補の案出し、走査が返した候補の判定と結論の統合（`explore`・`delegate`の`high_tier`） | base | high | 委譲するエージェント | `agents_server` MCP |
+| 計画・設計判断で変更内容と完成判定が確定した書込作業の単位（単発のコーディング、確定済みの修正、機械的な追随など。`delegate`の`medium_tier`） | review | medium | 作業を分けて委譲する担当 | `agents_server` MCP |
 | 実装後の実行レビュー、ユーザビリティレビュー、専念型の投入前レビュー、再発防止セルフチェック（`exec-review`・`usability-review`・`wi-draft-review`・`recurrence-self-check`の`task`、`delegate`の`medium_tier`） | review | medium | 各担当を委譲するエージェント | `agents_server` MCP |
 | プロンプト評価（`refine-prompt`の`task`） | base | medium | 評価を委譲するエージェント | `agents_server` MCP |
 | 小規模なレビューと小さい作業、判定基準を渡した多数の対象の走査（`bulk-replace-review`・`external-write-review`・`reader-fit-review`・`pick-wi-explain`の`task`、`delegate`の`low_tier`、`explore`の省略時と`low_tier`・`medium_tier`指定、`shell`） | chores | 省略時はlow、明示時は指定した段位 | 調査、レビューまたはshellを委譲するエージェント | `agents_server` MCP |
@@ -62,7 +63,7 @@ forkの監査記録は`docs/development/audit-records.md`の「agent-toolkit/ski
 
 WI（選定結果の`担当モデル`）が担当とモデル・effortを指定した工程では、その担当を起動する委譲元が指定値を`model_type`へ渡す。同じ起動の対象WIで指定が異なる場合は、WIと指定値を示して起動を止め、起動の単位を分ける。終端結果の実際の`engine`、`model`、`effort`を指定値と比べ、WI、指定値と実際値を計画の進捗ログか引き継ぎ記録へ残す。各工程の文書は、自身が使う担当名（`担当モデル.実装担当`など）と本段落の参照を持つ。
 
-段位は作業全体ではなく、作業の部分ごとに成果から選ぶ。判定基準を言語化して渡せる多数の対象の走査（所在・値・件数の確認、基準に照らした該当候補の抽出と非該当の判定）は、極力`explore`の軽量段位（`model_type`の省略時）へ分け、対象が多い場合は重複のない対象群へ分けて並列に委ねる。観点・評価軸・判定基準の選定、新しい候補の案出し、走査が返した該当候補と判定保留の対象の判定、結論の統合は上位段位で行い、`mode`が`explore`でも`delegate`でも`model_type="high_tier"`を明示する。走査と案出しが混在する依頼は、全体を`high_tier`にせず、走査を軽量段位の`explore`へ分けてから上位段位で判定する（上位段位で全量を走査すると費用が大きいため）。軽量段位では判断材料が不足する走査には`medium_tier`を指定し、軽量段位では判定できないと分かった走査を中位以上で行うことは妨げない。`explore`で指定を省略した場合の`low_tier`と、表の工程別の割当（実装・計画などの`high_tier`、実行レビューの`medium_tier`など）は維持する。
+段位は作業の部分ごとに、その性質（判断を要するか、内容が確定した実行か）から選ぶ。上位段位で動く担当は計画・設計判断・原因分析・結論の統合を自ら行い、内容の確定した書込作業を分解して`delegate`の`medium_tier`の委譲先へ任せる。自ら行う方が総費用（起動、規範の自動配送、明示読取、受領レビュー、統合と再試行）で安い場合だけ自ら行う。判定基準を言語化して渡せる多数の対象の走査（所在・値・件数の確認、基準に照らした該当候補の抽出と非該当の判定）は、極力`explore`の軽量段位（`model_type`の省略時）へ分け、対象が多い場合は重複のない対象群へ分けて並列に委ねる。観点・評価軸・判定基準の選定、新しい候補の案出し、走査が返した該当候補と判定保留の対象の判定、結論の統合は上位段位で行い、`mode`が`explore`でも`delegate`でも`model_type="high_tier"`を明示する。走査と案出しが混在する依頼は、全体を`high_tier`にせず、走査を軽量段位の`explore`へ分けてから上位段位で判定する（上位段位で全量を走査すると費用が大きいため）。軽量段位では判断材料が不足する走査には`medium_tier`を指定し、軽量段位では判定できないと分かった走査を中位以上で行うことは妨げない。`explore`で指定を省略した場合の`low_tier`と、役割の`task`の段位（`launch_prompts.py`の`TASK_MODEL_TYPES`。レーン担当の`exec`は`high_tier`、実行レビューは`medium_tier`など）は維持する。
 
 工程別モデル設定は表の工程に限り、他の委譲には「modelとreasoning effort」を適用する。工程別モデル設定のキーを持たない名前付きagentは、その定義のfrontmatterに従って起動する。
 
@@ -102,7 +103,7 @@ WI（選定結果の`担当モデル`）が担当とモデル・effortを指定�
 
 ## modelとreasoning effort
 
-工程別モデル設定の対象外の委譲では、設計判断を伴う実装とレビュー、観点・判定基準の選定と新しい候補の案出し、走査が返した候補の判定と結論の統合に上位モデル、その他に標準モデルを選ぶ（努力目標）。判定基準を言語化して渡せる多数の対象の走査は軽量モデルへ分ける（努力目標。段位は調査の起動方法でなく作業の部分ごとに選び、分担は「工程別モデル設定」の段位の段落と同じとする）。reasoning effortの省略時は`medium`とし、高いeffortは読むファイルが少なく推論の深さが結果を左右すると事前に分かる工程で選ぶ（努力目標）。モデルを明示する場合はeffortも指定する。指定モデルを使えない場合は、再試行を含む総コストで、作業を成立させるモデルへ切り替える。
+工程別モデル設定の対象外の委譲では、設計判断を伴う実装とレビュー、観点・判定基準の選定と新しい候補の案出し、走査が返した候補の判定と結論の統合に上位モデル、内容の確定した書込作業を含むその他に標準モデルを選ぶ（努力目標）。判定基準を言語化して渡せる多数の対象の走査は軽量モデルへ分ける（努力目標。段位は作業の部分ごとに選び、走査と書込作業の分担は「工程別モデル設定」の段位の段落と同じとする）。reasoning effortの省略時は`medium`とし、高いeffortは読むファイルが少なく推論の深さが結果を左右すると事前に分かる工程で選ぶ（努力目標）。モデルを明示する場合はeffortも指定する。指定モデルを使えない場合は、再試行を含む総コストで、作業を成立させるモデルへ切り替える。
 監査記録は`docs/development/audit-records.md`の「agent-toolkit/skills/delegation/references/runtime-routing.md：modelとreasoning effort：2026年8月」にある。
 
 ## 代替時の組合せの目安

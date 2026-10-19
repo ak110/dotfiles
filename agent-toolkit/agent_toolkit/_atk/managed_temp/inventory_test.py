@@ -1644,3 +1644,51 @@ class TestSweepSchedule:
 
         assert subject.sweep_managed_temp(now=self._NOW + datetime.timedelta(days=2)).deleted == [expired]
         assert expired in observed
+
+    @pytest.mark.parametrize("registered", [True, False])
+    def test_in_use_plugin_root_is_retained_without_warning(
+        self, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], registered: bool
+    ) -> None:
+        """使用中と判定した期限超過の配布物保持実体は回収の失敗として警告せずに残し、判定が偽へ変わった掃引で回収する。
+
+        共通起動の掃引が起動ごとに「自動削除できない」と警告し、登録を失った候補を残存件数へ数えた退行を検出する。
+        """
+        # 持続警告は会話ごとに1回へ抑止されるため、会話識別子を外して各回の警告を観測する。
+        for name in ("CLAUDE_CODE_SESSION_ID", "CODEX_THREAD_ID"):
+            monkeypatch.delenv(name, raising=False)
+
+        def no_processes() -> list[typing.Any]:
+            # 実行環境で稼働するagents_serverを使用者として観測せず、leaseだけで使用中を判定させる。
+            return []
+
+        monkeypatch.setattr(plugin_root_leases.psutil, "process_iter", no_processes)
+        area = subject.create_managed_temp("agents-server-plugin-root-shared")
+        (area / "payload").write_text("保持する内容", encoding="utf-8")
+        registry = managed_temp_registry._registry_path(area)
+        with plugin_root_leases.plugin_root_lock(area):
+            plugin_root_leases.register_plugin_root_use(area)
+        if not registered:
+            registry.unlink()
+        _set_tree_mtime(area, _ns(self._NOW - datetime.timedelta(days=8)))
+
+        def repeated_judgement(*_args: typing.Any, **_kwargs: typing.Any) -> None:
+            pytest.fail("記録した保持の根拠が保たれる間に保持を再判定した")
+
+        for attempt in range(2):
+            with monkeypatch.context() as patch:
+                if attempt:
+                    patch.setattr(managed_temp_inventory, "_require_unused_plugin_root", repeated_judgement)
+                result = subject.sweep_managed_temp(now=self._NOW)
+            assert result.deleted == []
+            assert result.stale_unregistered == ()
+            assert "自動削除できない" not in capsys.readouterr().err
+            assert (area / "payload").read_text(encoding="utf-8") == "保持する内容"
+
+        for lease in plugin_root_leases._directory().glob(f"{plugin_root_leases._key(area)}-*.json"):
+            lease.unlink()
+        result = subject.sweep_managed_temp(now=self._NOW)
+
+        assert result.deleted == [area.absolute()]
+        assert "自動削除できない" not in capsys.readouterr().err
+        assert not area.exists()
+        assert not registry.exists()

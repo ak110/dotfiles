@@ -17,7 +17,7 @@
 遮断の根拠: 委譲の起動は委譲プロンプトを委譲先のコンテキストへ取り込ませるため、通した後に結果を復元できない。
 実行主体は同じターンで、通知が示す`start`の呼び出しまたは宣言済みの行だけの本文へ組み直して再実行できる。
 宣言を読めない`<役割名>.subagent.md`は入力との一致を確かめられないため遮断しない（`agents_server`の`start`も警告だけで起動を続ける）。
-宣言の解析は`agents_server`の`start`と`agent_toolkit._agents_server.task_documents`を共有する。
+宣言の解析は`agents_server`の`start`と`agent_toolkit._common.task_documents`を共有する。
 読解・比較の参照と、コードや引用に載せた命令の例は通す。命令を確定できない参照も通し、会話の意味を推定しない。
 """
 
@@ -31,8 +31,8 @@ import markdown_it
 # 関数の実行時にだけ使う依存は、使用時まで読み込まない。
 lazy from markdown_it.token import Token
 
-from agent_toolkit._agents_server import task_documents
 from agent_toolkit._agents_server import tool_names as _tool_names
+from agent_toolkit._common import task_documents
 lazy from agent_toolkit._agents_server import launch_requests
 lazy from agent_toolkit._hooks.pretooluse.notices import _block_notice
 

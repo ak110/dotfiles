@@ -19,6 +19,31 @@ mypyがキャッシュの型情報を復元する途中で内部エラーを返�
 作業ディレクトリごとの分離と自動リトライは行わない。
 保存済み情報と新規解析の成否差だけでは、キャッシュの共有や同時更新がその情報を不整合にした原因だとは確定できない。
 
+## Linuxの一時ディレクトリのディスク上への移動と経過削除
+
+このホストの`/tmp`はメモリー上のtmpfsであり、エージェントの作業とテストの一時ファイルが標準でそこへ溜まるとメモリーとswapの空きが無くなる。
+容量不足による検証の失敗、バックグラウンドタスクとユーザーのsystemdマネージャーの強制終了、`/tmp`に置いたhookのセッション状態ファイルの消失が実際に起きた。
+
+`.bashrc`は非対話シェルでも、Linuxに限り`TMPDIR`を`${XDG_CACHE_HOME:-$HOME/.cache}/agent-toolkit/tmp`へ設定する。
+XDGのキャッシュディレクトリはアプリケーションごとに分けるため、managed-temp（`agent-toolkit/managed-temp`）と同じ`agent-toolkit`配下に置く。
+Pythonの`tempfile`、pytest、Node、Rust、Claude Code本体とhookは`TMPDIR`を一時ディレクトリの置き場所として使うため、プログラムごとの設定なしにディスク上へ移る。
+ディレクトリは権限0700で作成する。作成できない場合は`TMPDIR`を設定しない。指すディレクトリが無いとPythonの`tempfile`は警告なしに`/tmp`へ戻るためである。
+Windowsは一時ディレクトリがディスク上にあるため対象外であり、`.bashrc`はWindowsへ配布しない。
+
+ディスク上の一時領域はtmpfsと違って再起動で空にならないため、`~/.config/user-tmpfiles.d/dotfiles-tmp.conf`の`d %C/agent-toolkit/tmp 0700 - - 7d`が古い項目を削除する。
+削除するのは、最終更新・最終アクセス・状態変更（ディレクトリは最終更新と最終アクセス）の全てが7日より古い項目である（`man 5 tmpfiles.d`）。
+読み取るだけの項目が最終アクセスによって残るのは、最終アクセスの時刻を更新するマウントの場合に限る（`noatime`のマウントでは最終更新と状態変更だけで判定される）。
+7日はmanaged-tempの自動削除の期限に合わせた値である。対象は`agent-toolkit/tmp`配下だけで、兄弟のmanaged-tempは自身の自動削除が扱う。
+削除はユーザーの`systemd-tmpfiles-clean.timer`が実行する。`setup_dotfiles_autoupdate.py`は役割によらず全Linuxホストでこのタイマーを有効化する。
+`systemctl`が無い環境、またはユーザーのsystemdマネージャーへ接続できない環境では理由と次の操作を示して見送り、systemdのユーザーセッションがある環境で`update-dotfiles`を再実行する。
+
+テストの環境隔離（`agent_toolkit/_testing/isolation.py`）は`MISE_CEILING_PATHS`を各テストの`tmp_path`へ設定する。
+HOMEを差し替えたテストの子プロセスがmiseのshimを起動すると、miseは作業ディレクトリの祖先を順に探す。
+一時領域が実ホーム配下にあると、祖先の`~/.config/mise/config.toml`を未信頼のプロジェクト設定として読んで終了コード1になる。
+この失敗のため、エージェントは一時領域を実ホーム配下へ置いたテストの失敗を避けようとして`/tmp`を選んでいた。
+探索をテスト領域で止めることで、一時領域の置き場所によらずテストが成功する。
+ホストの設定を使うテストは`host_environ`と`restore_host_environment`で、`MISE_CEILING_PATHS`もホストの値へ戻す。
+
 ## 生成物の一括同期（`sync_generated_files.py`）
 
 生成物の一括同期は`uv run python scripts/sync_generated_files.py`で起動する。
@@ -258,6 +283,15 @@ lockedモードの`install`が失敗しても、lockを書き戻すlockedなし�
 `mise.toml`にあってlockに無いツールによる失敗はlockの更新不足であり、`make update-mise-locks`で解消する。
 `update-dotfiles`はgit pull工程の前にルート`mise.lock`の差分を破棄してHEADの内容へ戻し、それ以外の未コミット差分だけを退避して復元する。
 
+`update-dotfiles`の各段は、後続の段の前提になる段と、失敗しても後続の段の前提を壊さない段に分ける。
+前提になる段は、ロックの取得、git timeout設定の検証、dotfiles自身のGit更新、`chezmoi init`、`chezmoi apply`である。
+これらが失敗したときは、ソースの状態が不確定なまま配備しないよう、その時点で止める。
+前提を壊さない段は、過去の退避データの整理、`mise.lock`の差分の破棄、プラグインのpull、`chezmoi status`、`chezmoi diff`、
+Codex管理daemonの一時停止と再起動、永続ログの開始である。
+これらが失敗したときは、失敗を記録して後続の段を続ける。
+最後に失敗した段と次の操作の一覧を標準エラーへ表示し、終了コード1で終える。
+分類の詳細は`libexec/update_dotfiles.py`のモジュールdocstringにある。
+
 ## 対話シェル起動時のbash補完のキャッシュ
 
 対話シェルは補完定義を得るためにコマンドごとの子プロセスを起動する。
@@ -470,8 +504,13 @@ Claude Codeは`plugin install`と`plugin update`で`~/.claude/plugins/cache/<mar
 `post_apply`の「Claude Code plugin cacheの旧版削除」工程（`pytools/_internal/prune_claude_plugin_cache.py`）がこれを整理する。
 
 - 対象は`~/.claude/plugins/installed_plugins.json`に載っているmarketplaceとpluginの組だけとし、`installPath`が指す現行版は削除しない
-- 現行でない版は、導入時刻の順で次に新しい版（後継）の導入から7日が経過した後に削除する。後継の無い版は残す
-  - 起動中のClaude Codeセッションは起動時に解決した版ディレクトリを`hooks.json`と`.mcp.json`から参照し続けるため、即時に削除するとそのセッションのhookとMCPが失敗する。7日はその参照が残る期間を見込んだ猶予である
+- 現行でない版は、導入時刻の順で次に新しい版（後継）の導入から7日が経過し、かつ稼働中の参照が無い場合に削除する。後継の無い版は残す
+  - 起動中のClaude Codeセッションは起動時に解決した版ディレクトリを`hooks.json`と`.mcp.json`から参照し続けるため、参照中に削除するとそのセッションのhookとMCPが失敗する。経過日数は参照の終了を表さないため、削除の候補を選ぶ条件として使う
+  - 稼働中の参照は`pytools/_internal/claude_plugin_references.py`が自ユーザーのプロセスから判定する。次のいずれかに当たる版は保持し、参照が終わった後の`update-dotfiles`で削除する。保持した版と理由は`update-dotfiles logs`に残る
+    - プロセスの作業ディレクトリ、実行ファイル、command line、環境変数`CLAUDE_PLUGIN_ROOT`がその版の配下を指す（その版から起動したMCPとhookを含む）
+    - その版が現行だった期間（その版の導入から後継版の導入まで）に起動したClaude Codeセッションが稼働中である
+    - Claude Codeのプロセスの参照先を取得できない
+- 現行版の必須ファイルの欠落を修復する「Claude Code pluginのインストール」工程（`install_claude_plugins.py`の`_ensure_plugin_cache_complete`）も、導入先を削除して再導入するため同じ判定を使う。導入先を参照するプロセスか稼働中のClaude Codeセッション（起動時刻を問わない）があれば修復を延期し、欠落ファイル、保持した導入先、再開の操作を警告する。自動更新タイマーを持つホストはタイマーの再試行で、持たないホストはClaude Codeのセッションを全て終了してから`update-dotfiles`を再実行して修復する
 - 導入時刻には各版の`.claude-plugin/plugin.json`のmtimeを用いる
   - 版ディレクトリ自体のmtimeは`uv run`が`.venv`などを作成するたびに更新され、版の順序と一致しない（74版中74件が不一致）。`plugin.json`のmtimeは版の順序と一致する
   - `claude-plugins-official`配下はcommit hashなど自然順に並ばない版名を持つため、導入時刻で後継を決める

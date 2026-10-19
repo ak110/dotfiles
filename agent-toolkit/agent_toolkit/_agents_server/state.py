@@ -11,7 +11,6 @@ import typing
 from collections.abc import Callable, Coroutine
 from typing import Any
 
-from agent_toolkit._agents_server import task_documents
 from agent_toolkit._agents_server.file_operations import finish_task, run_file_operation
 from agent_toolkit._agents_server.input_validation import validate_prompt
 from agent_toolkit._agents_server.result_projection import (
@@ -20,7 +19,7 @@ from agent_toolkit._agents_server.result_projection import (
     progress_excerpt,
     with_result_next_action,
 )
-from agent_toolkit._common import claude_usage_limit, session_registry
+from agent_toolkit._common import claude_usage_limit, session_registry, task_documents
 
 _LOG = logging.getLogger("agent-toolkit.agents-server.state")
 

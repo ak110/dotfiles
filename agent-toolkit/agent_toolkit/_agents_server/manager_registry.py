@@ -10,6 +10,7 @@ from typing import Any, Literal, cast
 
 from agent_toolkit._agents_server import (
     backends,
+    logging_config,
     responses,
     result_projection,
     shared_layout,
@@ -27,7 +28,7 @@ from agent_toolkit._agents_server.responses import (
 from agent_toolkit._agents_server.session_errors import ActionableRuntimeError
 from agent_toolkit._agents_server.state import TERMINAL_STATUSES, SessionResumeState, SessionState, has_uncollected_result
 from agent_toolkit._common import session_registry
-from agent_toolkit._common.next_action import ActionableError
+from agent_toolkit._common.next_action import ActionableError, next_action_line
 
 _LOG = logging.getLogger("agent-toolkit.agents-server.mcp")
 
@@ -256,6 +257,7 @@ class ManagerRegistry(responses.ManagerResponses):
             session_updated_at=info.session_updated_at,
             turn_id=info.turn_id,
             interruption=resolution.interruption,
+            preserve_server_instance=True,
         )
         _LOG.info(
             "session_transition event=terminal session_id=%s writer=takeover status=%s turn_seq=%d",
@@ -316,9 +318,7 @@ class ManagerRegistry(responses.ManagerResponses):
             # 過去turnの未回収結果は共有ファイルへ残し、現在turnの状態とは分けて扱う。
             persisted_result = None
         # 実行プロセスの不在から中断と解決した記録は、結果ファイルを持たなくても終了の理由を`show`へ返す。
-        registry_error = (
-            session_registry.interruption_error(resolution.interruption) if resolution.interruption is not None else None
-        )
+        registry_error = result_projection.resolution_interruption_error(resolution)
         resume_state = _RegistryResumeState(
             session_id=session_id,
             cwd=info.cwd,
@@ -472,6 +472,19 @@ class ManagerRegistry(responses.ManagerResponses):
             response["root_session_id"] = self._status_writer.root_session_id
         return response
 
+    def status_owner(self) -> tuple[str | None, str | None]:
+        """このManagerが状態ファイルを書くルートsession識別子と書込主体を返す。"""
+        writer = self._status_writer
+        return (None, None) if writer is None else (writer.root_session_id, writer.path.name)
+
+    async def _interrupted_turns(self, session_id: str) -> list[dict[str, Any]]:
+        """登録簿が記録する中断turnの履歴を、診断参照付きの公開形で返す。読めない記録は空とする。"""
+        try:
+            resolution = await run_file_operation(session_registry.resolve, session_id)
+        except OSError, ValueError:
+            return []
+        return result_projection.interrupted_turns_projection(resolution.interrupted_turns)
+
     async def show_session(self, session_id: str, *, verbose: bool = False) -> dict[str, Any]:
         """保持中または再開可能なsessionの復旧用詳細を返す。
 
@@ -523,7 +536,11 @@ class ManagerRegistry(responses.ManagerResponses):
         response.update(activity)
         if status in TERMINAL_STATUSES and result_projection.nonempty_error(session.error):
             # 失敗で終端したsessionの原因を、結果の回収とは別に照会できるようにする。
-            response["error"] = session.error
+            response["error"] = result_projection.refresh_error_diagnostics(session.error)
+        interrupted_turns = await self._interrupted_turns(session_id)
+        if interrupted_turns:
+            # 再開・解放の後も、過去に中断したturnと終了診断を識別できるようにする。
+            response["interrupted_turns"] = interrupted_turns
         if status == "running" and isinstance(session, SessionState):
             active_tool_uses = session.active_tool_uses()
             if active_tool_uses:
@@ -674,11 +691,18 @@ class ManagerRegistry(responses.ManagerResponses):
         登録簿が終端を示さない記録は、再起動後のプロセスが別プロセスの実行中と区別できず回収できなくなる。
         遷移はbackendごとに書かず、全engineに共通の停止処理として本関数へ集約する。
         """
+        interrupted: list[SessionState] = []
         for session in tuple(self.sessions.values()):
             if not session.publish_registry or session.result_available or session.result_delivered:
                 continue
             if not session.terminal:
                 session.status = "interrupted"
+                session.error = result_projection.interruption_error(
+                    session_registry.OWNER_SERVER_STOPPED,
+                    server_instance=session_registry.owner_server_instance(),
+                    turn_seq=session.turn_seq,
+                )
+                interrupted.append(session)
             session.turn_completed = True
             session.turn_start_ambiguous = False
             session.awaiting_auto_resume = False
@@ -689,3 +713,23 @@ class ManagerRegistry(responses.ManagerResponses):
             await self._status_writer.flush_async()
         for session in tuple(self.sessions.values()):
             await session.drain_registration()
+        if interrupted:
+            logging_config.record_instance_event(
+                "sessions_interrupted",
+                sessions=[{"session_id": session.session_id, "turn_seq": session.turn_seq} for session in interrupted],
+            )
+        for session in interrupted:
+            try:
+                await run_file_operation(
+                    session_registry.record_interrupted_turn,
+                    session.session_id,
+                    turn_seq=session.turn_seq,
+                    reason=session_registry.OWNER_SERVER_STOPPED,
+                )
+            except OSError:
+                _LOG.exception(
+                    "中断turnの履歴を登録簿へ保存できませんでした: session_id=%s。"
+                    "この中断の過去履歴（interrupted_turns）が欠けるだけで、停止処理は続く。%s",
+                    session.session_id,
+                    next_action_line("登録簿ファイルの書込権限と状態ディレクトリの空き容量を確認してください。"),
+                )

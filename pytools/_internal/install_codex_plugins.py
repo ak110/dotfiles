@@ -18,7 +18,7 @@ from typing import Any
 from pytools._internal import (
     codex_processes,
     common,
-    host_roles,
+    deferred_updates,
     log_format,
     post_apply_outcome,
     setup_codex_links,
@@ -29,6 +29,8 @@ CODEX_HOME = Path.home() / ".codex"
 _TIMEOUT = 60.0
 _VERSION_PATTERN = re.compile(r"[A-Za-z0-9._+-]+\Z")
 _AUTO_RESTART_ENV = "DOTFILES_CODEX_DAEMON_AUTO_RESTART"
+# 自動更新タイマーを持たないホストで、延期した更新を反映する操作。
+_MANUAL_RETRY = "Codexのセッションを全て終了してから`update-dotfiles`を再実行してください。"
 _CODEX_PLUGIN_RESTART_NOTICE = post_apply_outcome.PostApplyNotice(
     message=(
         "Codex pluginを変更しました。実行中のCodexセッションを終了してから、"
@@ -289,7 +291,8 @@ def _restart_daemon_after_plugin_update(notices: list[post_apply_outcome.PostApp
     logger.warning(
         log_format.format_status(
             "codex plugins",
-            f"app-server daemonの自動再起動に失敗 (exit {exit_code if exit_code is not None else 'codeなし'})。"
+            f"app-server daemonの自動再起動に失敗 (exit {exit_code if exit_code is not None else 'codeなし'}: "
+            f"{common.format_cli_error(result)})。"
             "実行中のCodexセッションを終了し、codex app-server daemon restartを実行してください。",
         )
     )
@@ -354,13 +357,28 @@ def _install_hook_wrapper(root: Path) -> bool:
     return changed
 
 
+def _codex_processes_using_plugin() -> tuple[str, ...]:
+    """導入済みのplugin実体を参照し得る稼働中のCodexプロセスの表示ラベルを返す。
+
+    `plugin add`は旧版のhook・スキル・MCP実体を回収するため、参照するプロセスが1件でもあれば更新を延期する。
+    参照の有無はホストの役割と無関係に、プロセスの役割だけで判定する。
+    daemon自動再起動の指定は管理daemonを更新後に再起動する許可であり、通常セッションと`agents_server`の
+    `codex app-server --stdio`が使う版を回収する許可を含まない。このため指定の下では管理daemonとその補助実行体を除き、
+    `session`の役割（判定素材を取得できないプロセスを含む）だけを数える。
+    """
+    if os.environ.get(_AUTO_RESTART_ENV) == "1":
+        return tuple(process.label for process in codex_processes.codex_processes() if process.role == "session")
+    return codex_processes.running_codex_processes()
+
+
 def _deferred_update_notice(
     plugin_id: str, current: dict[str, Any], version: str, running_text: str
 ) -> post_apply_outcome.PostApplyNotice:
-    """稼働中のCodexを守るために延期した更新の内容と、自動更新タイマーが再試行して反映することを案内する。
+    """稼働中のCodexを守るために延期した更新の内容と、反映を再開する操作を案内する。
 
     延期した結果は変更なしと同じ成功になるため、案内が無いと同期記録の読み手は最新版を適用済みと扱う。
-    延期はLinuxサーバーでだけ起き、同じホストの自動更新タイマーが延期記録から再試行するため、再実行の操作は求めない。
+    自動更新タイマーを持つホストではタイマーが延期記録から再試行するため操作を求めず、
+    持たないホストではCodexの終了後に`update-dotfiles`を再実行する操作を示す。
     """
     differences = []
     current_version = current.get("version")
@@ -374,7 +392,7 @@ def _deferred_update_notice(
         message=(
             f"Codexが稼働中のため、{plugin_id}の{'と'.join(differences)}を延期しました（稼働中: {running_text}）。"
             "利用中のセッションを守るため導入済みの版と有効状態を保持しており、最新版の内容はまだ反映されていません。"
-            "自動更新タイマーが再試行し、Codexのセッションと委譲が終わった後に反映するため、操作は不要です。"
+            + deferred_updates.retry_guidance(_MANUAL_RETRY)
         ),
     )
 
@@ -391,19 +409,13 @@ def _sync_local_plugin(
     plugin_id = f"{plugin_name}@{marketplace_name}"
     needs_plugin_add = current is None or current.get("enabled") is not True or current.get("version") != version
     # addは旧版のスキルとMCP実体も回収するため、hook入口の安定化だけでは稼働中の参照を守れない。
-    if (
-        needs_plugin_add
-        and current is not None
-        and host_roles.is_linux_server()
-        and os.environ.get(_AUTO_RESTART_ENV) != "1"
-        and (running := codex_processes.running_codex_processes())
-    ):
+    if needs_plugin_add and current is not None and (running := _codex_processes_using_plugin()):
         running_text = codex_processes.format_running_processes(running)
         logger.warning(
             log_format.format_status(
                 "codex plugins",
-                f"Codexが稼働中のためplugin更新を延期: {running_text}。"
-                "導入済みの版と有効状態を保持しました。自動更新タイマーがCodexの停止後に再試行して更新します。",
+                f"Codexが稼働中のためplugin更新を延期: {running_text}。導入済みの版と有効状態を保持しました。"
+                + deferred_updates.retry_guidance(_MANUAL_RETRY),
             )
         )
         # 同期記録はnoticeの本文だけを保存するため、再実行の操作も本文に含める。
@@ -439,6 +451,7 @@ def _sync_local_plugin(
 def _remove_unused_plugins() -> post_apply_outcome.PostApplyOutcome:
     """Codexで使用しない導入済みpluginを除去する。"""
     changed = False
+    deferred = False
     notices: list[post_apply_outcome.PostApplyNotice] = []
     for plugin_id in _UNUSED_PLUGINS:
         installed_data = _codex_json(["plugin", "list", "--json"])
@@ -463,6 +476,27 @@ def _remove_unused_plugins() -> post_apply_outcome.PostApplyOutcome:
             continue
         if installed is None:
             continue
+        # removeも旧版と同じくplugin実体を回収するため、参照し得るCodexが稼働中なら更新と同じく延期する。
+        if running := _codex_processes_using_plugin():
+            running_text = codex_processes.format_running_processes(running)
+            logger.warning(
+                log_format.format_status(
+                    plugin_id,
+                    f"Codexが稼働中のため使用しないpluginの除去を延期: {running_text}。導入済みの実体を保持しました。"
+                    + deferred_updates.retry_guidance(_MANUAL_RETRY),
+                )
+            )
+            notices.append(
+                post_apply_outcome.PostApplyNotice(
+                    message=(
+                        f"Codexが稼働中のため、使用しない{plugin_id}の除去を延期しました（稼働中: {running_text}）。"
+                        "利用中のセッションを守るため導入済みの実体を保持しています。"
+                        + deferred_updates.retry_guidance(_MANUAL_RETRY)
+                    ),
+                )
+            )
+            deferred = True
+            continue
         if not _command(["plugin", "remove", plugin_id]):
             logger.warning(
                 log_format.format_status(
@@ -473,7 +507,7 @@ def _remove_unused_plugins() -> post_apply_outcome.PostApplyOutcome:
             continue
         changed = True
         _append_restart_notice_if_daemon_running(notices)
-    return _outcome(changed, notices)
+    return _outcome(changed, notices, deferred=deferred)
 
 
 def _remove_legacy_links(root: Path) -> bool:
@@ -527,9 +561,10 @@ def run() -> post_apply_outcome.PostApplyOutcome:
         unused_outcome = _remove_unused_plugins()
         changed = unused_outcome.changed
         notices.extend(unused_outcome.notices)
+        unused_deferred = unused_outcome.deferred
         root = common.find_dotfiles_root()
         if root is None:
-            return _outcome(changed, notices)
+            return _outcome(changed, notices, deferred=unused_deferred)
         # dotfilesの作業ツリーをmarketplaceとして登録し、その版を期待値にする。単体インストーラー
         # （`install-claude.sh`・`install-claude.ps1`）は作業ツリーを前提にできないため、GitHubのmarketplaceを使う。
         target = _target(root)
@@ -542,7 +577,7 @@ def run() -> post_apply_outcome.PostApplyOutcome:
                     "dotfilesの作者へ報告してください。",
                 )
             )
-            return _outcome(changed, notices)
+            return _outcome(changed, notices, deferred=unused_deferred)
         marketplace_name, plugin_name, version = target
         if _plugin_source(root, marketplace_name, plugin_name) is None:
             logger.warning(
@@ -552,14 +587,14 @@ def run() -> post_apply_outcome.PostApplyOutcome:
                     "sourceが作業ツリー内の実在するディレクトリを指すか確認し、update-dotfilesを再実行してください。",
                 )
             )
-            return _outcome(changed, notices)
+            return _outcome(changed, notices, deferred=unused_deferred)
         marketplace_data = _codex_json(["plugin", "marketplace", "list", "--json"])
         if marketplace_data is None:
-            return _outcome(changed, notices)
+            return _outcome(changed, notices, deferred=unused_deferred)
         registered_root = _marketplace_root(marketplace_data, marketplace_name)
         if registered_root is None:
             if not _command(["plugin", "marketplace", "add", str(root)]):
-                return _outcome(changed, notices)
+                return _outcome(changed, notices, deferred=unused_deferred)
             changed = True
         elif registered_root != root.resolve():
             logger.error(
@@ -570,7 +605,7 @@ def run() -> post_apply_outcome.PostApplyOutcome:
                     f'codex plugin marketplace add "{root}"で登録してupdate-dotfilesを再実行してください。',
                 )
             )
-            return _outcome(changed, notices)
+            return _outcome(changed, notices, deferred=unused_deferred)
 
         plugin_id = f"{plugin_name}@{marketplace_name}"
         before = _codex_json(["plugin", "list", "--json"])
@@ -582,7 +617,7 @@ def run() -> post_apply_outcome.PostApplyOutcome:
                     "取得できる状態にしてからupdate-dotfilesを再実行してください。",
                 )
             )
-            return _outcome(changed, notices)
+            return _outcome(changed, notices, deferred=unused_deferred)
         state_known, current = _installed(before, plugin_id)
         if not state_known:
             logger.error(
@@ -592,9 +627,9 @@ def run() -> post_apply_outcome.PostApplyOutcome:
                     "取得できる状態にしてからupdate-dotfilesを再実行してください。",
                 )
             )
-            return _outcome(changed, notices)
+            return _outcome(changed, notices, deferred=unused_deferred)
         local_changed, deferred = _sync_local_plugin(root, marketplace_name, plugin_name, version, current, notices)
-        return _outcome(changed or local_changed, notices, deferred=deferred)
+        return _outcome(changed or local_changed, notices, deferred=deferred or unused_deferred)
     except RuntimeError as error:
         # 導入・更新とその後の状態確認の失敗。設定ファイルとランチャーの書き込みの失敗（OSError）は失敗として送出する。
         logger.warning(

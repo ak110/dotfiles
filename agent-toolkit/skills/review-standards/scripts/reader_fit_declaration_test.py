@@ -15,11 +15,44 @@ from agent_toolkit._testing import git_repository as git
 SESSION = "11111111-2222-4333-8444-555555555555"
 
 
+# 受理側の入力は、runtime-routing.md「実行手段」が認める起動手段ごとに実際に観測した識別子から作成する。
+# agents_serverのsession_id（UUID）、Claude CodeのAgentツールのagent ID（16進列と`agent-`付き16進列）、
+# Codexの組み込み委譲`spawn_agent`の返却`task_name`（2026年10月19日の実機記録の値）である。
 @pytest.mark.parametrize("identifier", [SESSION, "a3aa408fdf18a760f", "agent-a3aa408fdf18a760f"])
 def test_launch_identifiers_roundtrip_return_and_batch(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], identifier: str
 ) -> None:
     """集約起動の識別子を全ファイルとexternalへ申告し、生成済みbatchでも受理する。"""
+    _roundtrip(tmp_path, monkeypatch, capsys, identifier)
+
+
+@pytest.mark.parametrize("identifier", ["/root/reader_review", "/root/recurrence_check_r2"])
+def test_accepts_codex_spawn_agent_path(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], identifier: str
+) -> None:
+    """Codexの組み込み委譲が返すagentのパスを、返却生成とbatchの両方で受理する。"""
+    _roundtrip(tmp_path, monkeypatch, capsys, identifier)
+
+
+@pytest.mark.parametrize("identifier", ["lane-01-reader-fit", "reader_review", "/tmp/x", "/root/", "/root", "/root/a b"])
+def test_rejects_non_launch_paths_with_launch_means(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], identifier: str
+) -> None:
+    """起動手段が返さない名前とパスを拒否し、受理する3種の起動手段と識別子を示す。"""
+    repo = git.init_repository(tmp_path / "repo", commit_message="開始")
+    start = git.git_output(repo, "rev-parse", "HEAD")
+    (repo / "a.md").write_text("本文\n", encoding="utf-8")
+    head = git.commit_all(repo, "文章")
+    monkeypatch.chdir(repo)
+    declaration = json.dumps({"files": {"a.md": {"sessions": [identifier]}}})
+    assert check.main(_args(tmp_path, start, head, declaration)) == 1
+    error = capsys.readouterr().err
+    assert all(means in error for means in ("agents_server", "Agentツール", "spawn_agent"))
+
+
+def _roundtrip(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], identifier: str
+) -> None:
     repo = git.init_repository(tmp_path / "repo", commit_message="開始")
     start = git.git_output(repo, "rev-parse", "HEAD")
     for name in ("a.md", "b.md"):

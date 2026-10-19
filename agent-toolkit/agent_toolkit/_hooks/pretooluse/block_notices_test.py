@@ -44,7 +44,7 @@ def test_block_notices_describe_entire_unexecuted_call(
     manifest = document.parent.parent / ".claude-plugin/plugin.json"
     manifest.parent.mkdir()
     manifest.write_text('{"name":"agent-toolkit"}', encoding="utf-8")
-    document.write_text("## 入力\n\n```text\n必須入力名: 対象\n```\n", encoding="utf-8")
+    document.write_text("## 入力\n\n```text\n必須入力名: 対象\n作業ツリーへの書込: あり\n```\n", encoding="utf-8")
     large = tmp_path / "large.txt"
     large.write_text("a" * (48 * 1024 + 1), encoding="utf-8")
     commands = {

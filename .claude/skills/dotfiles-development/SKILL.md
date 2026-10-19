@@ -55,6 +55,7 @@ description: >
 
 - `make setup-browser`（Chromiumとシステム依存）と`make setup-pwsh`（Ubuntu/DebianのPowerShell）は、ユーザーが自分の端末で実行する初期導入である。エージェントが`make test-browser`の前提不足を検出した場合は、システム依存を導入せず、不足する前提と未実施の検証を報告する
 - `atk serve`のブラウザーUI、ブラウザーから到達するサーバー処理、静的資産、実ブラウザーテストを変更した場合は`make test-browser`を実行する
+- レビュー用に一時データで`atk serve`を起動する場合は、保存先を`AGENT_TOOLKIT_PRIVATE_NOTES=<一時領域の絶対パス>`で指定する。起動前に、起動に使うのと同じCLI・同じ環境変数で`atk config get private_notes`を実行し、結果が一時領域と一致したときだけ起動する。不一致か解決の失敗では起動せず、保存先の指定を直してから照合をやり直す（未対応の変数名で指定すると通常の保存先、つまり実データへ接続する）
 - 画面の実描画には、ブラウザー操作ツールのほか、`pyproject.toml`が依存に持つPython版Playwright（`uv run --frozen python`から使う）を使える。導入済みのブラウザーは`~/.cache/ms-playwright`で確かめる
 
 ## ホスト本体のバイナリの検索

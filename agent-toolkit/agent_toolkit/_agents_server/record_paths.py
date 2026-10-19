@@ -27,11 +27,24 @@ RECORD_ENGINES: frozenset[str] = frozenset({"claude", "codex", "agy"})
 _SESSION_ID_PATTERN = re.compile(r"[A-Za-z0-9_-]+")
 
 
+_CODEX_AGENT_PATH = re.compile(r"/root(?:/[A-Za-z0-9_.-]+)+")
+"""Codexの組み込み委譲`spawn_agent`が起動結果の`task_name`として返すagentのパス（例: `/root/reader_review`）。"""
+
+
 def is_launch_identifier(value: object) -> bool:
-    """起動結果のUUID、素の16進agent ID、agent-付きagent IDを受理する。"""
+    """規範が認める起動手段が起動結果として返す識別子を受理する。
+
+    受理する形式と、それを返す起動手段は次のとおり。形式は各起動手段で実際に観測した値から定める。
+
+    - UUID: `agents_server`の`start`が返す`session_id`
+    - 16進列と`agent-`付き16進列: Claude Codeの`Agent`ツールが返すagent ID
+    - `/root`で始まり`/`区切りの空でない名前を続けるパス: Codexの組み込み委譲`spawn_agent`が返す`task_name`
+
+    任意の名前（`label`など）、`/root`で始まらないパス、空の区間を含むパスは、起動結果と取り違えないよう拒否する。
+    """
     if not isinstance(value, str):
         return False
-    if re.fullmatch(r"(?:agent-)?[0-9a-fA-F]+", value):
+    if re.fullmatch(r"(?:agent-)?[0-9a-fA-F]+", value) or _CODEX_AGENT_PATH.fullmatch(value):
         return True
     try:
         return str(uuid.UUID(value)) == value.lower()

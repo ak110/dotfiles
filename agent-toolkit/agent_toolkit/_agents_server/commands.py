@@ -365,7 +365,11 @@ def dispatch(args: argparse.Namespace, *, environment: Mapping[str, str] | None 
             ),
         )
         return 2
-    print(_dump(_public_session(selected, detailed=True), env))
+    public = _public_session(selected, detailed=True)
+    interrupted_turns = _registry_interrupted_turns(args.session_id)
+    if interrupted_turns:
+        public["interrupted_turns"] = interrupted_turns
+    print(_dump(public, env))
     return 0
 
 
@@ -393,8 +397,15 @@ def _public_session(session: Mapping[str, Any], *, detailed: bool = False) -> di
             key: result["api_error"][key] for key in result_projection.API_ERROR_PUBLIC_KEYS if key in result["api_error"]
         }
     if detailed and session.get("error"):
-        result["error"] = session["error"]
+        result["error"] = result_projection.refresh_error_diagnostics(session["error"])
     return result
+
+
+def _registry_interrupted_turns(session_id: str) -> list[dict[str, Any]]:
+    """登録簿が記録する中断turnの履歴を、診断参照付きの公開形で返す。"""
+    if not shared_layout.valid_session_id(session_id):
+        return []
+    return result_projection.interrupted_turns_projection(session_registry.resolve(session_id).interrupted_turns)
 
 
 def _list_groups(
@@ -687,8 +698,11 @@ def _registry_session(session_id: str) -> dict[str, Any] | None:
     if not shared_layout.valid_session_id(session_id):
         return None
     resolution = session_registry.resolve(session_id)
-    info = resolution.resume_info
-    if info is None or resolution.state not in {session_registry.Resolution.RUNNING, session_registry.Resolution.TERMINAL}:
+    info = resolution.resume_info or resolution.handoff_info
+    shown = {session_registry.Resolution.RUNNING, session_registry.Resolution.TERMINAL}
+    if info is None or not (
+        resolution.state in shown or resolution.state is session_registry.Resolution.RELEASED and resolution.interrupted_turns
+    ):
         return None
     session: dict[str, Any] = {
         "session_id": session_id,
@@ -704,8 +718,9 @@ def _registry_session(session_id: str) -> dict[str, Any] | None:
     }
     if info.started_at is not None:
         session["started_at"] = info.started_at
-    if resolution.interruption is not None:
-        session["error"] = session_registry.interruption_error(resolution.interruption)
+    error = result_projection.resolution_interruption_error(resolution)
+    if error is not None:
+        session["error"] = error
     return session
 
 

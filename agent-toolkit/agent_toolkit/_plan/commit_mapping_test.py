@@ -2,10 +2,12 @@
 
 import json
 import pathlib
+import re
 import subprocess
 
 import pytest
 
+from agent_toolkit import atk
 from agent_toolkit._plan import commit_mapping
 from agent_toolkit._testing import git_repository
 
@@ -259,12 +261,18 @@ def test_reads_legacy_body_comments_before_attachment(tmp_path: pathlib.Path, re
 
 
 @pytest.mark.parametrize("mapping", [{}, {"missing": "missing"}])
-def test_range_mapping_failure_points_to_public_comparison(repo: pathlib.Path, mapping: dict[str, str]) -> None:
-    """不正な対応表の復旧を担当の手作業へ戻さず、公開比較とamendの区別を案内する。"""
+def test_range_mapping_failure_points_to_public_comparison(
+    repo: pathlib.Path, mapping: dict[str, str], capsys: pytest.CaptureFixture[str]
+) -> None:
+    """不正な対応表の復旧を担当の手作業へ戻さず、amendを含めhistory-compareが受理する操作名で案内する。"""
     source = repo / "invalid.json"
     source.write_text(json.dumps(mapping), encoding="utf-8")
     with pytest.raises(commit_mapping.CommitMappingError) as raised:
         commit_mapping.load_range_rewrite(repo, source, "HEAD")
-    assert "atk run-script history-compare" in raised.value.next_action
-    assert "amend" in raised.value.next_action
+    guided = re.search(r"atk run-script history-compare -- --operation <([a-z|]+)>", raised.value.next_action)
+    assert guided is not None and "amend" in guided.group(1).split("|")
+    with pytest.raises(SystemExit):
+        atk.main(["run-script", "history-compare", "--", "--help"])
+    accepted = re.search(r"--operation \{([a-z,]+)\}", capsys.readouterr().out)
+    assert accepted is not None and set(guided.group(1).split("|")) <= set(accepted.group(1).split(","))
     assert "git range-diff" not in raised.value.next_action

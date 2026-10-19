@@ -135,10 +135,12 @@ async def test_parallel_claude_delegates_get_distinct_session_ids(
             forbidden = mcp_environment._NON_INHERITABLE_NAMES - {
                 "agent_toolkit_owner_session",
                 "agent_toolkit_delegated_session",
+                "agent_toolkit_delegated_launch_kind",
             }
             assert not forbidden.intersection(name.casefold() for name in environment)
             assert environment["AGENT_TOOLKIT_OWNER_SESSION"] == parent
             assert environment["AGENT_TOOLKIT_DELEGATED_SESSION"] == "1"
+            assert environment["AGENT_TOOLKIT_DELEGATED_LAUNCH_KIND"] == "delegate"
         for identifier in identifiers:
             session = manager.sessions[identifier]
             await session.drain_registration()

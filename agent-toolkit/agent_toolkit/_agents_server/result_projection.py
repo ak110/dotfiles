@@ -5,8 +5,12 @@ from __future__ import annotations
 import datetime
 import json
 import logging
+import pathlib
 from collections.abc import Mapping
 from typing import Any
+
+from agent_toolkit._agents_server import logging_config
+from agent_toolkit._common import session_registry
 
 RESEND_AFTER_WAIT_NEXT_ACTION = "`atk agents wait`で終端を観測してから`send_message`を再送する"
 """turnが中断中または未終端のため継続要求を受け付けない場合の次の操作。MCP層と各backendが共有する。"""
@@ -183,8 +187,63 @@ def public_result(payload: Mapping[str, Any]) -> dict[str, Any]:
         if key in payload
     }
     if nonempty_error(payload.get("error")):
-        result["error"] = payload["error"]
+        result["error"] = refresh_error_diagnostics(payload["error"])
     return result
+
+
+def interruption_error(
+    reason: session_registry.InterruptionReason,
+    *,
+    server_instance: str | None,
+    turn_seq: int,
+    state_root: pathlib.Path | None = None,
+) -> dict[str, Any]:
+    """中断の理由と、中断したturnの起動単位の終了診断への参照を、公開応答の`error`の形で返す。"""
+    return {
+        **session_registry.interruption_error(reason),
+        "diagnostics": logging_config.diagnostics_reference(
+            logging_config.InstanceReference(server_instance, turn_seq), state_root=state_root
+        ),
+    }
+
+
+def resolution_interruption_error(
+    resolution: session_registry.SessionResolution, *, state_root: pathlib.Path | None = None
+) -> dict[str, Any] | None:
+    """登録簿の解決が中断を示す場合に、中断したturnの診断参照を含む`error`を返す。"""
+    info = resolution.resume_info
+    if resolution.interruption is None or info is None:
+        return None
+    recorded = next((turn for turn in resolution.interrupted_turns if turn.turn_seq == info.turn_seq), None)
+    return interruption_error(
+        resolution.interruption,
+        server_instance=recorded.server_instance if recorded is not None else resolution.server_instance,
+        turn_seq=info.turn_seq,
+        state_root=state_root,
+    )
+
+
+def interrupted_turns_projection(
+    turns: tuple[session_registry.InterruptedTurn, ...], *, state_root: pathlib.Path | None = None
+) -> list[dict[str, Any]]:
+    """登録簿の中断turnの履歴を、turn番号・理由・診断参照の組の配列へ射影する。"""
+    return [
+        {
+            "turn_seq": turn.turn_seq,
+            "interruptionReason": turn.reason,
+            "diagnostics": logging_config.diagnostics_reference(
+                logging_config.InstanceReference(turn.server_instance, turn.turn_seq), state_root=state_root
+            ),
+        }
+        for turn in turns
+    ]
+
+
+def refresh_error_diagnostics(error: Any) -> Any:
+    """保存済みの`error`が診断参照を持つ場合、参照の状態を表示時点の診断ファイルから求め直す。"""
+    if not isinstance(error, Mapping) or not isinstance(error.get("diagnostics"), Mapping):
+        return error
+    return {**error, "diagnostics": logging_config.refresh_diagnostics_reference(error["diagnostics"])}
 
 
 def public_notice(payload: Mapping[str, str]) -> dict[str, str]:

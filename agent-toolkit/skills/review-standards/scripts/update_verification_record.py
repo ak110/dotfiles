@@ -44,7 +44,8 @@ def _parser() -> argparse.ArgumentParser:
         "--rewrite-map",
         type=pathlib.Path,
         metavar="PATH",
-        help="未判定検証記録のevidenceにあるcommit:参照だけを検収済み旧新OID対応表で更新する。ほかの操作と分けて実行する",
+        help="未判定検証記録のevidenceにあるcommit:参照だけを検収済み旧新OID対応表で更新する。"
+        "取得版をcommit:で書いた行は更新で取得版が変わるため、取得版は観測ファイルと裸のOIDで書く。ほかの操作と分けて実行する",
     )
     verification_results.add_arguments(parser)
     return parser
@@ -84,14 +85,17 @@ def run(args: argparse.Namespace) -> None:
             raise ValueError("--list-resultsは--results-fileと指定し、更新・原文一覧とは別に実行する")
         verification_results.list_results(results, args)
         return
-    direct = bool(args.select_row)
+    direct = bool(verification_results.selected_rows(args))
     if direct and any(value is not None for value in (args.section, args.row, args.source)):
-        raise ValueError("--select-rowと従来の--section・--row・--sourceは別々に使う")
+        raise ValueError("行選択（--select-rowか行別指定）と従来の--section・--row・--sourceは別々に使う")
     updating = not direct and any(
         value is not None for value in (args.section, args.row, args.source, args.evidence_file, args.mode)
     )
     if updating and any(value is None for value in (args.section, args.row, args.source, args.evidence_file, args.mode)):
-        raise ValueError("更新には--section・--row・--source・--evidence-file・--modeを全て指定する")
+        raise ValueError(
+            "更新には--section・--row・--source・--evidence-file・--modeを全て指定する。"
+            "共通の--evidence-fileを複数行へ保存する場合は--select-rowで行を選ぶ"
+        )
     if args.list and (updating or direct):
         raise ValueError("一覧と更新は別々に実行する")
     if args.updates_file and (args.list or updating or direct):

@@ -46,12 +46,10 @@ def extend_write_targets(existing: dict[str, object], addition: object) -> dict[
     # 保存済みの旧欄名と、更新しない項目の表記も保持する。
     items = typing.cast(_Rows, result.get(_selection.DECISIONS_KEY, result.get("decisions")))
     by_wi = {str(item.get(_selection.WI_KEY, item.get("awi"))): item for item in items}
-    fields = (_selection.WRITE_FILES_KEY, _selection.DERIVED_NEW_PATHS_KEY, _selection.WRITE_SCOPE_REASONS_KEY)
+    fields = (_selection.WRITE_FILES_KEY, _selection.DERIVED_NEW_PATHS_KEY)
     for update in updates:
         if not isinstance(update, dict) or set(update) - {_selection.WI_KEY, *fields}:
-            raise ValueError(
-                "追加入力の`選定`の各項目は`WI`・`書込対象`・`導出した新設先`・`書込範囲の理由`だけを持つ写像とする"
-            )
+            raise ValueError("追加入力の`選定`の各項目は`WI`・`書込対象`・`導出した新設先`だけを持つ写像とする")
         name = update.get(_selection.WI_KEY)
         if not isinstance(name, str) or name not in by_wi:
             raise ValueError(f"書込対象の追加先WIが保存済み選定に無い: {name}")
@@ -121,8 +119,14 @@ def merge_selection(
     def destination(lane: str) -> str:
         return mapping.get(lane, lane)
 
+    # 合流先のレーン行は未統合へ戻るため、統合済みレーンの既存項目へ状態を写して旧項目を区別できるようにする。
+    integrated = _selection.integrated_lanes(existing)
+    for item in first:
+        if item[_selection.LANE_KEY] in integrated:
+            item[_selection.INTEGRATION_STATE_KEY] = _selection.INTEGRATED
     for item in second:
         item[_selection.LANE_KEY] = destination(str(item[_selection.LANE_KEY]))
+        item.pop(_selection.INTEGRATION_STATE_KEY, None)
     # 元の追加結果で所要時間とレーンの対応を確認する。
     added_costs = _costs(added)
     costs = {str(row[_selection.LANE_KEY]): row for row in _costs(existing)}

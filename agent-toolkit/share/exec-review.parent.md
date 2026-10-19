@@ -113,7 +113,7 @@ YAML契約は起動前に`atk run-script review-contract -- --contract <review-c
 atk run-script reader-fit-prepare -- --repository <対象worktree> --review-start <今回の開始時点> --review-head <レビュー対象HEAD> --output-dir <managed-temp内の出力先>
 ```
 
-再レビューは`--previous-review-start`と`--previous-review-head`、YAML契約があれば`--review-contract`を同じレビューの値で渡し、生成済みの比較資料を再利用する。
+再レビューは`--previous-review-start`と`--previous-review-head`、YAML契約があれば`--review-contract`を同じレビューの値で渡し、生成済みの比較資料を再利用する。メインが準備した資料で読者別探索を起動する場合は、`reader-fit-review.parent.md`「起動」に従って`scope_patch`を`判定範囲差分`へ、`change`の値を`修正範囲`へ渡す。
 
 Git管理外の変更元と変更前複製の対がある場合は、レーンの引き継ぎ記録にある全対を任意入力`Git管理外の変更`で渡し、無ければ省く。メインが自ら実装した場合は、`exec.subagent.md`「実装」のGit管理外のファイルの項と同じ手順で最初の変更より前に複製を作成し、対を計画の`## 進捗ログ`（計画なしでは直接実装の引き継ぎ記録）へ残す。作業ツリー内の.env等は通常の全文差分として扱う。元ファイルが作業ツリー外にあり`agent-toolkit:secret-files`の対象となる対では、比較をキー名の集合とキーごとの値の一致・不一致に限る（同スキルの全文の読み取りと出力の禁止を守るため）。
 

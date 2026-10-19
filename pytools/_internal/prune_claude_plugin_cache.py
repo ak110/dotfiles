@@ -3,7 +3,9 @@
 Claude Codeは`plugin install`と`plugin update`で`<cache>/<marketplace>/<name>/<version>/`を新設するだけで、
 旧版を削除しない。一方、起動中のClaude Codeセッションは起動時に解決した版ディレクトリを
 `hooks.json`と`.mcp.json`の`${CLAUDE_PLUGIN_ROOT}`から参照し続けるため、旧版を即時に削除すると
-そのセッションのhookとMCPが失敗する。そこで後継版の導入から`GRACE_DAYS`日が経過した版だけを削除する。
+そのセッションのhookとMCPが失敗する。そこで後継版の導入から`GRACE_DAYS`日が経過した版のうち、
+`claude_plugin_references`が稼働中の参照の終了を判定できた版だけを削除する。
+経過日数は削除の候補を選ぶ条件であり、参照の終了を表さない。参照中の版は保持し、参照の終了後の`update-dotfiles`で削除する。
 
 導入時刻には各版の`.claude-plugin/plugin.json`のmtimeを用いる。版ディレクトリ自体のmtimeは
 `uv run`が`.venv`などを作成するたびに更新され、導入時刻を表さないためである。
@@ -16,7 +18,7 @@ import shutil
 import time
 from pathlib import Path
 
-from pytools._internal import claude_common, log_format, post_apply_outcome
+from pytools._internal import claude_common, claude_plugin_references, log_format, post_apply_outcome
 
 logger = logging.getLogger(__name__)
 
@@ -24,7 +26,7 @@ _TAG = "plugin cache"
 _INSTALLED_PLUGINS_PATH = claude_common.INSTALLED_PLUGINS_PATH
 
 # 後継版の導入から旧版を削除するまでの猶予日数。
-# 起動中のセッションが旧版を参照し続ける期間を見込んだ値であり、変更する場合はこの定数だけを変える。
+# 稼働中の参照は別に判定するため、この値は参照を判定する候補の選択だけに使う。
 GRACE_DAYS = 7
 
 
@@ -51,9 +53,22 @@ def run() -> post_apply_outcome.PostApplyOutcome:
     deadline = time.time() - GRACE_DAYS * 86400
     removed = 0
     failures: list[str] = []
+    processes: tuple[claude_plugin_references.ReferencingProcess, ...] | None = None
     for (marketplace, name), installed in sorted(current_paths.items()):
         plugin_dir = cache_root / marketplace / name
-        for version_dir in _expired_versions(plugin_dir, installed, deadline):
+        for version_dir, window in _expired_versions(plugin_dir, installed, deadline):
+            if processes is None:
+                processes = claude_plugin_references.scan()
+            reasons = claude_plugin_references.holding_reasons(processes, version_dir, session_window=window)
+            if reasons:
+                logger.info(
+                    log_format.format_status(
+                        log_format.home_short(version_dir),
+                        f"稼働中の参照があるため旧版を保持: {'、'.join(reasons)}。"
+                        "参照の終了後に実行するupdate-dotfilesで削除するため、対応不要です（処理は継続した）。",
+                    )
+                )
+                continue
             try:
                 if _remove_version_dir(version_dir, cache_resolved):
                     removed += 1
@@ -116,20 +131,23 @@ def _current_install_paths() -> dict[tuple[str, str], set[Path]] | None:
     return result
 
 
-def _expired_versions(plugin_dir: Path, installed: set[Path], deadline: float) -> list[Path]:
-    """後継版の導入時刻が`deadline`以前である非現行の版ディレクトリを返す。"""
+def _expired_versions(plugin_dir: Path, installed: set[Path], deadline: float) -> list[tuple[Path, tuple[float, float]]]:
+    """後継版の導入時刻が`deadline`以前である非現行の版ディレクトリと、その版が現行だった期間を返す。
+
+    期間は`(その版の導入時刻, 後継版の導入時刻)`とし、この間に起動したClaude Codeセッションがその版を使う。
+    """
     try:
         candidates = [child for child in plugin_dir.iterdir() if not _is_link_like(child) and child.is_dir()]
     except OSError:
         return []
     timed = sorted(((_installed_at(child), child) for child in candidates), key=lambda item: (item[0], item[1].name))
-    expired: list[Path] = []
-    for index, (_, version_dir) in enumerate(timed[:-1]):
+    expired: list[tuple[Path, tuple[float, float]]] = []
+    for index, (installed_at, version_dir) in enumerate(timed[:-1]):
         if _resolve(version_dir) in installed:
             continue
         successor_installed_at = timed[index + 1][0]
         if successor_installed_at <= deadline:
-            expired.append(version_dir)
+            expired.append((version_dir, (installed_at, successor_installed_at)))
     return expired
 
 

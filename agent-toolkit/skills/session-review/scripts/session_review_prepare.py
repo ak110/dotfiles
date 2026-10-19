@@ -1,7 +1,8 @@
 """セッション振り返りの入力を抽出し、会話・比較材料・候補・統計を作業ディレクトリへ書く。
 
 1回の実行で証拠bundleを抽出し、会話の流れ・比較材料・問題候補・統計を書いて、所在と読取範囲を1行のJSONで返す。
-会話の流れは全収集記録の発話・操作・成功と失敗の結果を記録別に並べた文書であり、メインが最初に全範囲を通読する。
+会話の流れは全収集記録の発話とツール呼び出しの入力を記録別に並べ、結果を成否・量・記録位置の1行で示した文書であり、
+メインが最初に全範囲を通読する。
 原因と対策の確定、AWIの起草と投入はメインが自身のコンテキストで行うため、本スクリプトはキューを変更しない。
 `candidates.md`は1候補を1行の要約と、記録の由来（役割文書、起動mode、起動元）を添えた記録位置で示す。全文が要る候補だけを、
 メインが`atk run-script session-review-evidence`の`--detail`で照会する。
@@ -50,6 +51,16 @@ _CONVERSATION_RANGE_BYTES = 32_000
 Claude Code 2.1.296のReadは25,000トークンで拒否し、行番号を含む高密度の記録は
 1トークンあたり2.06バイトだった。行番号とJSONの引用符の分に余裕を残す量を選んでいる。
 """
+
+_READER_RANGE_BYTES = 400_000
+"""1担当へ渡す担当範囲（`reader_ranges`）の本文量の上限。
+
+2026年10月19日の通読の再依頼65件のうち、449,390バイト以下を渡した55件は未読範囲を残さず全文を読了した。
+観測はCodexの読取専用の担当で行った。観測で読了できた最大量より小さい値を選んでいる。
+"""
+
+
+_CODEX_EXIT_CODE = re.compile(r"^Process exited with code (\d+)$", re.MULTILINE)
 
 _SUMMARY_LENGTH = 200
 """候補の概要へ載せる文字数。通読の本文と操作入力の全文は別に保持する。"""
@@ -197,28 +208,59 @@ def _one_line(text: str, limit: int = _SUMMARY_LENGTH) -> str:
 
 
 def _conversation_document(events: list[dict[str, Any]], detail_command: str) -> str:
-    """全担当の記録を記録別・行順に並べ、本文を文字位置付きの読取単位へ分ける。"""
+    """全担当の発話とツール呼び出しの入力を記録別・行順に並べ、結果は成否・量・記録位置の1行で示す。
+
+    会話の流れは作業の流れ（遠回り、手戻り、試行錯誤、同じ論点の反復）を振り返る入力であり、
+    流れは発話と呼び出しの入力から読める。結果の本文は記録から再取得できるため載せない。
+    失敗の有無は試行錯誤をたどるのに要るため、結果の行へ残す。
+    """
     lines = [
         "# 会話の流れ",
         "",
-        "収集できた全担当の発話・操作・成功と失敗の結果を、記録別に元の行順で示す。"
+        "収集できた全担当の発話とツール呼び出しの入力を、記録別に元の行順で示す。"
         "記録をまたぐ時系列ではない。本文は文字位置付きの連続区間へ分けて全量を保持する。"
-        f"元の記録は`{detail_command} --detail <記録位置>`から照会できる。",
+        "ツール結果は本文を載せず、成否・本文量・記録位置の1行で示す。"
+        f"結果の本文と元の記録は`{detail_command} --detail <記録位置>`から照会できる。",
     ]
     if not events:
         lines.extend(["", "発話とツール呼び出しは0件である。"])
+    result_lines = {(item["record"], item["line"]) for item in events if item.get("kind") == "tool-result"}
+    failed_lines = {(item["record"], item["line"]) for item in events if item.get("kind") == "tool-failure"}
     for item in events:
         locator = f"{item['record']}:{item['line']}"
         kind = item.get("kind", "utterance")
-        if kind == "utterance":
-            label = "ユーザー" if item["role"] == "user" else "アシスタント"
-        else:
-            label = {"tool-call": "ツール呼び出し", "tool-result": "ツール結果", "tool-failure": "失敗"}[kind]
+        text = str(item["text"])
+        if kind in {"tool-result", "tool-failure"}:
+            if kind == "tool-failure" and (item["record"], item["line"]) in result_lines:
+                continue
+            failed = (item["record"], item["line"]) in failed_lines or _codex_failed(text)
+            state = "失敗" if failed else "完了"
+            call = f" {item.get('tool')} call_id={item.get('call_id')}" if kind == "tool-result" else ""
+            lines.extend(
+                [
+                    "",
+                    f"- ツール結果（{locator}）: {state}{call}、"
+                    f"本文{len(text)}文字・{len(text.encode('utf-8'))}バイト（{item.get('timestamp') or '時刻なし'}）",
+                ]
+            )
+            continue
+        label = ("ユーザー" if item["role"] == "user" else "アシスタント") if kind == "utterance" else "ツール呼び出し"
         title = f"{label}（{item.get('timestamp') or '時刻なし'}、{locator}）"
         if kind != "utterance":
             title += f" {item.get('tool') or ''} call_id={item.get('call_id')}"
-        lines.extend(_full_body_lines(str(item["text"]), title=title))
+        lines.extend(_full_body_lines(text, title=title))
     return "\n".join(lines) + "\n"
+
+
+def _codex_failed(result: str) -> bool:
+    """Codexのシェル実行の結果が0以外の終了コードを報告しているかを返す。
+
+    結果は`Chunk ID:`・`Wall time:`・`Process exited with code`などの行と`Output:`の行で始まる。
+    抽出はこの形の失敗を失敗の標識にしないため、結果の行の成否はここで判定する。
+    """
+    header = result.split("\nOutput:\n", 1)[0]
+    match = _CODEX_EXIT_CODE.search(header)
+    return match is not None and match[1] != "0"
 
 
 def _full_body_lines(text: str, *, title: str) -> list[str]:
@@ -275,7 +317,7 @@ def _conversation_ranges(text: str, events: list[dict[str, Any]]) -> list[dict[s
             if in_fence:
                 continue
             utterance = re.match(r"^## [^（]+（([^、]+)、([^）]+)）", line)
-            call = re.match(r"^(?:- ツール呼び出し|  - 失敗)（([^）]+)）", line)
+            call = re.match(r"^- ツール結果（([^）]+)）", line)
             if utterance:
                 locators.append(utterance[2])
             elif call:
@@ -292,6 +334,29 @@ def _conversation_ranges(text: str, events: list[dict[str, Any]]) -> list[dict[s
             }
         )
     return result
+
+
+def _reader_ranges(ranges: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """読取範囲を分割・合成せず先頭から連続して束ね、1担当が全文を読了できる量の担当範囲を返す。"""
+    groups: list[list[int]] = []
+    total = 0
+    for index, item in enumerate(ranges):
+        if groups and total + item["utf8_bytes"] <= _READER_RANGE_BYTES:
+            groups[-1].append(index)
+            total += item["utf8_bytes"]
+        else:
+            groups.append([index])
+            total = item["utf8_bytes"]
+    return [
+        {
+            "start_line": ranges[group[0]]["start_line"],
+            "end_line": ranges[group[-1]]["end_line"],
+            "utf8_bytes": sum(ranges[index]["utf8_bytes"] for index in group),
+            "first_range_index": group[0],
+            "last_range_index": group[-1],
+        }
+        for group in groups
+    ]
 
 
 def _readable_entry_text(text: str) -> str:
@@ -913,13 +978,16 @@ def main(argv: list[str] | None = None, *, now: datetime.datetime | None = None)
     comparison_path = work_dir / COMPARISON_FILENAME
     conversation_text = _conversation_document(conversation, detail_command)
     conversation_path.write_text(conversation_text, encoding="utf-8")
+    conversation_ranges = _conversation_ranges(conversation_text, conversation)
+    reader_ranges = _reader_ranges(conversation_ranges)
     if args.conversation_only:
         print(
             json.dumps(
                 {
                     "work_dir": str(work_dir),
                     "conversation_path": str(conversation_path),
-                    "conversation_ranges": _conversation_ranges(conversation_text, conversation),
+                    "conversation_ranges": conversation_ranges,
+                    "reader_ranges": reader_ranges,
                     "unconfirmed_scope": unresolved,
                 },
                 ensure_ascii=False,
@@ -964,7 +1032,8 @@ def main(argv: list[str] | None = None, *, now: datetime.datetime | None = None)
     record = {
         "work_dir": str(work_dir),
         "conversation_path": str(conversation_path),
-        "conversation_ranges": _conversation_ranges(conversation_text, conversation),
+        "conversation_ranges": conversation_ranges,
+        "reader_ranges": reader_ranges,
         "comparison_materials_path": str(comparison_path),
         "candidates_path": str(candidates_path),
         "stats_path": str(stats_path),

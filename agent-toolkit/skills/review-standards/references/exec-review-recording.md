@@ -43,13 +43,13 @@ atk run-script exec-review-evidence-check -- <完成条件証拠の絶対パス>
 atk run-script exec-review-evidence-check -- <完成条件証拠の絶対パス> --list --section user_requirements --row 1 --row 3
 ```
 
-記入は表示された配列名と1始まりの行番号を`--select-row <配列:N>`へ渡して行う（sourceは処理側が現行行から取る）。各選択行へ`--row-outcome`を明示し、`--reviewed-head`へ本担当が判定した完全OID、`--evidence-file`へその行を直接満たす説明を渡し、`--mode`のappendかreplaceで根拠を追記・置換する。失効・割当外・背景で判断根拠の所在へsourceを変える場合だけ`--row-source <配列:N> <所在>`も渡す（受理条件は本書の各判定値の規定による）。
+記入は表示された配列名と1始まりの行番号を`--select-row <配列:N>`へ渡して行う（sourceは処理側が現行行から取る）。`--select-row`を省略した場合は、`--row-outcome`などの行別指定に書いた行（`--verification-row`と`--accepted-row`では第1要素の行）が選択行になる。各選択行へ`--row-outcome`を明示し、`--reviewed-head`へ本担当が判定した完全OID、`--evidence-file`へその行を直接満たす説明を渡し、`--mode`のappendかreplaceで根拠を追記・置換する。失効・割当外・背景で判断根拠の所在へsourceを変える場合だけ`--row-source <配列:N> <所在>`も渡す（受理条件は本書の各判定値の規定による）。
 
 ```text
 atk run-script exec-review-evidence-check -- <完成条件証拠の絶対パス> --select-row user_requirements:1 --row-outcome user_requirements:1 達成 --reviewed-head <レビューした完全OID> --evidence-file <説明の絶対パス> --mode replace --output <同じ完成条件証拠の絶対パス>
 ```
 
-構造化試験は`--junit-xml <保存XML> --junit-record <実行記録>`で指定する。診断は`--diagnostics-file <保存JSONL> --diagnostics-record <実行記録> --diagnostics-conditions <取得時の条件JSON>`と必要な`--diagnostics-source <相対ファイル> <保存時本文>`の反復で指定する。基準比較は同じ組の`--baseline-junit-*`・`--baseline-diagnostics-*`へ保存物を渡す。pyfltrのrun JSON Linesはheader・command・summaryを含む全体を使う。形式は`atk run-script exec-review-evidence-check -- --help`で読む。
+構造化試験は`--junit-xml <保存XML> --junit-record <実行記録>`で指定する。診断は`--diagnostics-file <保存JSONL> --diagnostics-record <実行記録> --diagnostics-conditions <取得時の条件JSON>`と必要な`--diagnostics-source <相対ファイル> <保存時本文>`の反復で指定する。相対ファイルはworktreeのルートを起点とする。基準比較は同じ組の`--baseline-junit-*`・`--baseline-diagnostics-*`へ保存物を渡す。pyfltrのrun JSON Linesはheader・command・summaryを含む全体を使う。形式は`atk run-script exec-review-evidence-check -- --help`で読む。
 pytest以外の試験は、`--test-format <vitest|playwright|trx> --test-file <保存結果> --test-record <実行記録>`で形式と対応する保存物を渡す。
 基準版は`--baseline-test-format`・`--baseline-test-file`・`--baseline-test-record`へ同じ組で渡す。
 各runnerの取得は、対象プロジェクトの起動形へ次の指定を加えて`atk run-command`で実行し、結果ファイルと実行記録を保存する。

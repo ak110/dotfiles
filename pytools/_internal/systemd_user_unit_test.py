@@ -563,3 +563,174 @@ def test_setup_raises_when_unit_write_fails(tmp_path: pathlib.Path, monkeypatch:
             log_tag="test",
             service_name="tool.service",
         )
+
+
+def _setup_timer(tmp_path: pathlib.Path, executable: pathlib.Path) -> bool:
+    """既定の引数でsetup_timerを呼ぶ。"""
+    return systemd_user_unit.setup_timer(
+        service_unit_path=tmp_path / "tool.service",
+        timer_unit_path=tmp_path / "tool.timer",
+        executable_path=executable,
+        service_unit_content="service\n",
+        timer_unit_content="timer\n",
+        log_tag="test",
+        timer_name="tool.timer",
+    )
+
+
+_BUS_ERROR = "Failed to connect to user scope bus via local transport: 接続を拒否されました"
+
+
+def _unreachable_run(commands: list[list[str]]):
+    """ユーザーマネージャー停止時のsystemctl（標準エラー付きの終了コード1）を返すstubを生成する。"""
+
+    def run(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+        del kwargs
+        commands.append(command)
+        return subprocess.CompletedProcess(command, 1, "", _BUS_ERROR)
+
+    return run
+
+
+def test_setup_reports_user_manager_unavailable_without_enable(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """ユーザーマネージャーへ接続できない場合はenable・restartを試みず、復旧コマンドを示す。"""
+    executable = tmp_path / "tool"
+    executable.write_text("", encoding="utf-8")
+    unit = tmp_path / "tool.service"
+    unit.write_text("unit\n", encoding="utf-8")
+    commands: list[list[str]] = []
+    monkeypatch.setattr(common, "run_subprocess", _unreachable_run(commands))
+    monkeypatch.setattr(systemd_user_unit.os, "getuid", lambda: 4321)
+    with pytest.raises(systemd_user_unit.UserManagerUnavailableError) as excinfo:
+        systemd_user_unit.setup(
+            unit_path=unit,
+            executable_path=executable,
+            unit_content="unit\n",
+            log_tag="test",
+            service_name="tool.service",
+        )
+    assert "ユーザーマネージャー" in str(excinfo.value)
+    assert _BUS_ERROR in str(excinfo.value)
+    assert "sudo systemctl start user@4321.service" in excinfo.value.next_action
+    assert not [command for command in commands if command[2] in {"enable", "restart"}]
+
+
+def test_setup_timer_reports_user_manager_unavailable_without_restart(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """timer設定でも接続不能なら復旧コマンドを示し、後続のrestartへ進まない。"""
+    executable = tmp_path / "uv"
+    executable.write_text("", encoding="utf-8")
+    commands: list[list[str]] = []
+    monkeypatch.setattr(common, "run_subprocess", _unreachable_run(commands))
+    monkeypatch.setattr(systemd_user_unit.os, "getuid", lambda: 4321)
+    with pytest.raises(systemd_user_unit.UserManagerUnavailableError) as excinfo:
+        _setup_timer(tmp_path, executable)
+    assert "sudo systemctl start user@4321.service" in excinfo.value.next_action
+    assert not [command for command in commands if command[2] == "restart"]
+
+
+@pytest.mark.parametrize("failed_label", ["daemon-reload", "enable", "restart"])
+def test_setup_failure_message_includes_stderr(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    failed_label: str,
+) -> None:
+    """接続不能以外のsystemctl失敗でも、捕捉した標準エラーを失敗の文面へ含める。"""
+    executable = tmp_path / "tool"
+    executable.write_text("", encoding="utf-8")
+
+    def run(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+        del kwargs
+        if command[2] in {"is-enabled", "is-active"}:
+            return subprocess.CompletedProcess(command, 1, "", "")
+        if command[2] == failed_label:
+            return subprocess.CompletedProcess(command, 1, "", "Unit tool.service not found")
+        return subprocess.CompletedProcess(command, 0, "Linger=yes", "")
+
+    monkeypatch.setattr(common, "run_subprocess", run)
+    with pytest.raises(systemd_user_unit.SetupError, match="Unit tool.service not found") as excinfo:
+        systemd_user_unit.setup(
+            unit_path=tmp_path / "tool.service",
+            executable_path=executable,
+            unit_content="unit\n",
+            log_tag="test",
+            service_name="tool.service",
+        )
+    assert not isinstance(excinfo.value, systemd_user_unit.UserManagerUnavailableError)
+
+
+@pytest.mark.parametrize("failed_label", ["daemon-reload", "enable", "restart"])
+def test_setup_timer_failure_message_includes_stderr(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    failed_label: str,
+) -> None:
+    """timer設定のsystemctl失敗にも標準エラーを含める。"""
+    executable = tmp_path / "uv"
+    executable.write_text("", encoding="utf-8")
+
+    def run(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+        del kwargs
+        if command[2] == failed_label:
+            return subprocess.CompletedProcess(command, 1, "", "Unit tool.timer not found")
+        return subprocess.CompletedProcess(command, 0, "", "")
+
+    monkeypatch.setattr(common, "run_subprocess", run)
+    with pytest.raises(systemd_user_unit.SetupError, match="Unit tool.timer not found"):
+        _setup_timer(tmp_path, executable)
+
+
+def test_state_query_failure_message_includes_stderr(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """状態取得（show）の失敗にも標準エラーを含める。"""
+    executable = tmp_path / "tool"
+    executable.write_text("", encoding="utf-8")
+
+    def run(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+        del kwargs
+        if "show" in command:
+            return subprocess.CompletedProcess(command, 1, "", "show failed detail")
+        return subprocess.CompletedProcess(command, 0, "Linger=yes", "")
+
+    monkeypatch.setattr(common, "run_subprocess", run)
+    with pytest.raises(systemd_user_unit.SetupError, match="show failed detail"):
+        systemd_user_unit.setup(
+            unit_path=tmp_path / "tool.service",
+            executable_path=executable,
+            unit_content="unit\n",
+            log_tag="test",
+            service_name="tool.service",
+        )
+
+
+def test_linger_failure_warning_includes_stderr(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """linger確認の失敗警告に標準エラーを含める。"""
+    executable = tmp_path / "tool"
+    executable.write_text("", encoding="utf-8")
+
+    def run(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+        del kwargs
+        if command[0] == "loginctl":
+            return subprocess.CompletedProcess(command, 1, "", "loginctl detail")
+        if "show" in command:
+            return subprocess.CompletedProcess(command, 0, _ACTIVE_SHOW, "")
+        return subprocess.CompletedProcess(command, 0, "", "")
+
+    monkeypatch.setattr(common, "run_subprocess", run)
+    with caplog.at_level("INFO"):
+        assert systemd_user_unit.setup(
+            unit_path=tmp_path / "tool.service",
+            executable_path=executable,
+            unit_content="unit\n",
+            log_tag="test",
+            service_name="tool.service",
+        )
+    assert "loginctl detail" in caplog.text

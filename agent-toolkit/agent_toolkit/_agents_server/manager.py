@@ -255,7 +255,7 @@ class AgentsServerManager(manager_wait.ManagerWait):
             # `atk serve`の一覧が親の下へ置けるよう、作成時点の委譲元を登録簿へ記録する。
             if self._status_writer is not None:
                 await self._status_writer.launcher_session_id_async()
-            session.launcher_session_id = self._launcher_session_id()
+            session.launcher_session_id = self.launcher_session_id()
             if session.status == "starting":
                 session.status = "running"
             await self._save_started_session(session)

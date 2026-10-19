@@ -4,11 +4,13 @@ version: 1
 # 誤検出を避けるため、後続に長音符がある場合や派生複合語を含めた例外は
 # 先読み表明で個別に除外する。
 # 旧接続詞は追跡ファイルの残存検索と区別できるようUnicodeエスケープで表す。
+# 接続詞「および」の漢字表記は動詞「及ぶ」の連用形と同じ字面であり、字面だけで一律に置換すると
+# 「及び得た」「及びます」などの動詞を接続詞の表記へ書き換えて文意を壊す。このため辞書では置換せず、
+# この接続詞の表記は文脈を読む執筆とレビューで確かめる
+# （agent-toolkit/skills/writing-standards/references/notation-rules.md「日本語の表記ルール」）。
 rules:
   - expected: または
     pattern: /\u53c8\u306f/
-  - expected: および
-    pattern: /\u53ca\u3073/
   - expected: もしくは
     pattern: /\u82e5\u3057\u304f\u306f/
   - expected: ユーザー
