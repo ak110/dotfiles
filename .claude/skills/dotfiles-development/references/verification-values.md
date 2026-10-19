@@ -14,7 +14,7 @@
   共有ヘルパーを経由するテストが`app_test.py`・`assets_test.py`・`cli_test.py`・`config_test.py`・`state_test.py`へ分かれている。
   変更ファイルの名前だけでは消費側を選べないため、serve全域を検証する
 - 期待値を保持するテスト: `agent-toolkit/agent_toolkit/_hooks/`のエンドユーザー向け通知文言は、hook固有の`<hook名>_test.py`が期待値を持つ
-- 別の文法で定義を読む試験（前項の横断テストと異なり`pyfltr fast`の対象外のため、個別に含める）: `.github/workflows/`のjob・step名やpytestの対象指定を変えた場合はリポジトリ直下の`ci_workflow_test.py`を含める。
+- 別の文法で定義を読む試験（「横断テスト」の項の試験と異なり`pyfltr fast`の対象外のため、個別に含める）: `.github/workflows/`のjob・step名やpytestの対象指定を変えた場合はリポジトリ直下の`ci_workflow_test.py`を含める。
   `agent-toolkit/hooks/hooks.json`・`hooks.codex.json`の登録を変えた場合と、`agent-toolkit/agent_toolkit/hook.py`か各イベントの処理が読み込むモジュールを変えた場合は`agent-toolkit/agent_toolkit/hook_test.py`を含める。
   どちらも変更ファイルの名前からは選ばれない
 - 共有契約を変えた場合: `uv run --frozen pytest -v -p no:cacheprovider agent-toolkit/agent_toolkit`。対象は`_common/`配下、`_hooks/`の通知生成元の`source`・`kind`、`atk.py`のサブコマンド登録、2つ以上の`atk`サブコマンドが呼ぶ処理や共通出力の契約の変更である。`agents_server`のMCPツールと`atk agents wait`の公開応答の項目（内容・書式・条件・有無）の変更も含む。同じ応答の項目をMCP層、CLIの待機、自動再開後の応答のテストが別ファイルで確かめるためである。コメント・空白だけの変更は対象外とする
