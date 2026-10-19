@@ -33,7 +33,7 @@
 CIが実行しないチェックの集合は、プロジェクト規範の定めを使い、無ければCIの実行形、有効なチェック、チェックが読む設定、実行環境を比べて求める。集合を確定できない場合とCI定義が無い場合（`references/push-and-ci.md`「公開先に対応するCI定義の判定」）は、タスクランナーの全体検証をpush前に1回実行する。直前に同じtreeで実行済みならその結果を使う。
 CI定義が未判定の場合も、ローカル全体検証の成功とCI未判定を別々に保持する。
 CIのOS・言語版・実機などローカルで実行しない条件へ変更が及ぶ場合は、CI待機を工程へ含める。
-push前のチェックの前には、ロックファイルの変更の有無によらず、対象リポジトリの開発手順が定める環境同期を毎回実行し、仮想環境をロックファイルのパッケージ集合とCIのPython版へそろえる。uvの`uv run`の自動同期は余分なパッケージと既存のPython版を残すため、代わりの手段から外す。監査記録は`docs/development/audit-records.md`「agent-toolkit/skills/commit/references/publish.md：検証とCI：2026年10月11日」にある。
+push前のチェックの前には、ロックファイルの変更の有無によらず、対象リポジトリの開発手順が定める環境同期を毎回実行し、仮想環境をロックファイルのパッケージ集合とCIのPython版へそろえる。uvの`uv run`の自動同期は余分なパッケージを残すため、代わりの手段から外す。`.python-version`を持たないプロジェクトと`UV_PYTHON`などで別の版を指定した環境では、既存の仮想環境のPython版も保つ。監査記録は`docs/development/audit-records.md`「agent-toolkit/skills/commit/references/publish.md：検証とCI：2026年10月11日」にある。`.python-version`の有無と版指定による条件別の観測は、同じ文書の「agent-toolkit/skills/commit/references/publish.md：検証とCI：2026年10月19日」にある。
 
 push前のチェックとローカルの全体検証は出力が大きいため、`agent-toolkit/rules/02-agent-operations.md`「ツール・コマンド運用」の分離した実行（`agents_server`の`start`の`shell`など）で行う。
 `shell`には対象リポジトリを`cwd`、コマンドをそのまま`command`、managed-temp内の出力保存先を`summary_policy`へ渡す。

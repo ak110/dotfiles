@@ -28,6 +28,7 @@ from typing import Protocol
 import filelock
 
 from agent_toolkit._atk import outcome as _outcome
+from agent_toolkit._atk.environment import is_human_terminal
 from agent_toolkit._common import next_action as _next_action
 from agent_toolkit._common import state_paths as _state_paths
 from agent_toolkit._git import command as _git_command
@@ -165,6 +166,7 @@ class _RepoLock(filelock.FileLock):
     """Git common directory単位で保持記録を管理するFileLock。"""
 
     def __init__(self, repo_path: pathlib.Path, *, timeout: float = -1) -> None:
+        self._repo_path = repo_path
         self._target = _lock_key(repo_path)
         super().__init__(str(repo_lock_path(repo_path)), timeout=timeout)
 
@@ -177,13 +179,23 @@ class _RepoLock(filelock.FileLock):
         blocking: bool | None = None,
         cancel_check: Callable[[], bool] | None = None,
     ) -> filelock.AcquireReturnProxy:
-        result = super().acquire(
-            timeout,
-            poll_interval,
-            poll_intervall=poll_intervall,
-            blocking=blocking,
-            cancel_check=cancel_check,
-        )
+        result: filelock.AcquireReturnProxy | None = None
+        if blocking is not False and is_human_terminal():
+            # 他の主体が保持していて待つ場合だけ、待機中であることを人の端末へ届ける。
+            try:
+                result = super().acquire(
+                    0, poll_interval, poll_intervall=poll_intervall, blocking=False, cancel_check=cancel_check
+                )
+            except filelock.Timeout:
+                print(f"共有ロックの取得を待機中: {self._repo_path}", file=sys.stderr, flush=True)
+        if result is None:
+            result = super().acquire(
+                timeout,
+                poll_interval,
+                poll_intervall=poll_intervall,
+                blocking=blocking,
+                cancel_check=cancel_check,
+            )
         _LOCK_HELD_PATHS.paths[self._target] = _LOCK_HELD_PATHS.paths.get(self._target, 0) + 1
         return result
 
@@ -300,6 +312,8 @@ def _pull_impl(
     if not has_remote(private_notes):
         _report_missing_upstream(private_notes)
         return
+    if is_human_terminal():
+        print(f"remoteから取得・統合して同期中: {private_notes}", file=sys.stderr, flush=True)
     run_git(["fetch"], private_notes)
     try:
         run_git(["merge", "--ff-only", "@{u}"], private_notes, forward_error_output=False)
@@ -610,6 +624,8 @@ def _push_pending_commits_impl(
     if not has_remote(private_notes):
         _report_missing_upstream(private_notes)
         return 0
+    if is_human_terminal():
+        print(f"remoteへ送信して同期中: {private_notes}", file=sys.stderr, flush=True)
     original_error: subprocess.CalledProcessError
     count = pending_commit_count(private_notes, result_runner=result_runner)
     try:

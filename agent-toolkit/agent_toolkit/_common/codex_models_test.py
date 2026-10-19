@@ -112,7 +112,7 @@ async def test_model_catalog_reads_long_response_and_unterminated_eof(monkeypatc
         return 0
 
     async def start(*_args: Any, **_kwargs: Any) -> Any:
-        return SimpleNamespace(stdin=Stdin(), stdout=stream, returncode=0, wait=wait)
+        return SimpleNamespace(stdin=Stdin(), stdout=stream, returncode=0, wait=wait, pid=None)
 
     monkeypatch.setattr(asyncio, "create_subprocess_exec", start)
     assert await codex_models.list_models_from_app_server() == [model]

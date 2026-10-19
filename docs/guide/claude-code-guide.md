@@ -758,7 +758,7 @@ commitされていないことだけを理由にcommitを求めない。
 
 Claude CodeとCodexでは、`git rev-parse --short HEAD HEAD~1`のように、`--short`や`--verify`の後へリビジョンを複数並べると、PreToolUseが実行前に遮断する。通知に従い、同じオプションを付けたままリビジョンを1つずつ実行する。
 
-Claude CodeのPreToolUseは、委譲操作のdelegationと、エージェント向け文書の編集および書込先を確定できるBash操作の前に、未起動のwriting-standardsを文脈ごとに1回案内する。親子の起動済み記録は分け、Codexはこの警告と記録の対象から外す。
+PreToolUseは、未取得のdelegationを委譲操作の前に、未取得のwriting-standardsを本文の作成・更新の前に全文で配送し、同じ操作の再発行を案内する。本文編集は`Write`・`Edit`・`MultiEdit`と`apply_patch`を言語やファイル名によらず対象にし、Bashでは書込先を確定できるエージェント向け文書の編集を対象にする。親子の取得済み記録は分け、Codexにも同じ配送契約を適用する。
 commit・push後のPostToolUseの案内は、成果報告へ進むメインへcompletion-reportの適用条件を示す。Claude CodeではSkillの起動、Codexでは通知されたSKILL.mdの読取へ進む。失敗・背景・dry-run・help・委譲先は対象外で、後続の該当操作にも案内する。
 
 plugin `PreToolUse/pretooluse`がatkの呼び出しを遮断するのは、静的に分かるatkの実行位置と出力の接続先に限る。

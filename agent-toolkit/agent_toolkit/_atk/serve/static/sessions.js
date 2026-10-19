@@ -304,7 +304,10 @@ function renderEvent(event, index) {
   const block = document.createElement("details");
   block.className = `event kind-${event.kind}`;
   block.dataset.eventIndex = String(index);
-  block.open = event.kind === "user" || event.kind === "assistant" || event.kind === "developer";
+  // 発言と本文のある思考・要約は読む対象として開き、ツールの入出力などは要求された時だけ1項目ずつ展開する。
+  const hasThinkingText =
+    event.kind === "thinking" && (typeof event.html === "string" || (typeof event.text === "string" && event.text.trim() !== ""));
+  block.open = event.kind === "user" || event.kind === "assistant" || event.kind === "developer" || hasThinkingText;
   if (!block.open) {
     block.dataset.exclusiveEvent = "true";
   }

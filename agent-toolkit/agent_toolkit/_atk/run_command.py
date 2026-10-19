@@ -8,10 +8,14 @@ import math
 import os
 import pathlib
 import re
+import shlex
 import subprocess
+import sys
 from typing import Any
 
 from agent_toolkit._atk import managed_temp, outcome
+from agent_toolkit._atk.environment import is_human_terminal
+from agent_toolkit._common import process_tree
 from agent_toolkit._common.inherited_venv import strip_inherited_venv
 from agent_toolkit._git import command as _git_command
 
@@ -167,16 +171,25 @@ def execute(argv: list[str], cwd: pathlib.Path, timeout: float | None) -> tuple[
         stderr_path = (directory / "stderr.bin").resolve()
         with stdout_path.open("xb") as stdout_stream, stderr_path.open("xb") as stderr_stream:
             try:
-                with subprocess.Popen(  # noqa: S603
+                # 回収不能でも記録を確定するため、context managerの無期限waitを重ねない。
+                process = subprocess.Popen(  # noqa: S603  # pylint: disable=consider-using-with
                     argv, cwd=cwd, env=child_env, stdout=stdout_stream, stderr=stderr_stream
-                ) as process:
-                    try:
-                        process.wait(timeout=timeout)
-                    except subprocess.TimeoutExpired:
-                        timed_out = True
-                        process.kill()
-                        process.wait()
-                    child_exit_code = process.returncode
+                )
+                try:
+                    if is_human_terminal():
+                        print(f"実行中（両出力を保存中）: {shlex.join(argv)}", file=sys.stderr, flush=True)
+                    process.wait(timeout=timeout)
+                except subprocess.TimeoutExpired:
+                    timed_out = True
+                    if is_human_terminal():
+                        print(f"時間上限に到達し、子と子孫を停止中: {shlex.join(argv)}", file=sys.stderr, flush=True)
+                    residual = process_tree.stop_process_tree(process)
+                    if residual:
+                        failure = "子孫プロセスを回収できない: " + "; ".join(residual)
+                except BaseException:
+                    process_tree.log_residual(process_tree.stop_process_tree(process), context="run-command exception")
+                    raise
+                child_exit_code = process.returncode
             except (OSError, ValueError) as error:
                 failure = f"子プロセスを開始できない: {error}"
         if timed_out:

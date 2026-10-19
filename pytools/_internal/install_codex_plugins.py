@@ -143,17 +143,11 @@ def _hooks_list() -> dict[str, Any] | None:
         send({"id": 2, "method": "hooks/list", "params": {}})
         return response(2)
     finally:
+        residual = common.stop_process_tree(process, stdin_grace_seconds=2)
+        if residual:
+            logger.warning("Codex App Serverの子孫を回収できない: %s", residual)
         with contextlib.suppress(OSError):
             process_stdin.close()
-        try:
-            process.wait(timeout=2)
-        except subprocess.TimeoutExpired:
-            process.terminate()
-            try:
-                process.wait(timeout=2)
-            except subprocess.TimeoutExpired:
-                process.kill()
-                process.wait()
         reader.join(timeout=2)
 
 

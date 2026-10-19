@@ -98,3 +98,49 @@ async def test_release_request_rechecks_owner_and_turn_and_preserves_failures(tm
         assert not list(session_registry.registry_directory(tmp_path).glob("*.release-*"))
     finally:
         await task
+
+
+@pytest.mark.parametrize("registered_paths", [False, True])
+@pytest.mark.parametrize("nested", [False, True])
+@pytest.mark.asyncio
+async def test_process_requests_rejects_nested_worktree_cwd(
+    tmp_path: pathlib.Path, registered_paths: bool, nested: bool
+) -> None:
+    """新要求は最内側の所属で判定し、登録集合を持たない旧要求も受理できる。"""
+    owner = session_registry.owner_process()
+    assert owner is not None
+    cwd = tmp_path / "nested" if nested else tmp_path
+    session_registry.publish("child", terminal=True, cwd=str(cwd), processes=(owner,), state_root=tmp_path)
+    task = asyncio.create_task(
+        asyncio.to_thread(
+            session_release.request_release,
+            "child",
+            tmp_path,
+            deadline=time.monotonic() + 2,
+            state_root=tmp_path,
+        )
+    )
+    calls: list[str] = []
+
+    async def stop(session_id: str, **_kwargs: Any) -> dict[str, Any]:
+        calls.append(session_id)
+        session_registry.release(session_id, reason="stopped", state_root=tmp_path)
+        return {}
+
+    try:
+        async with asyncio.timeout(3):
+            while not (requests := list(session_registry.registry_directory(tmp_path).glob("*.release-request"))):
+                await asyncio.sleep(0.001)
+        if registered_paths:
+            payload = json.loads(requests[0].read_text(encoding="utf-8"))
+            payload["worktree_paths"] = [str(tmp_path), str(tmp_path / "nested")]
+            requests[0].write_text(json.dumps(payload), encoding="utf-8")
+        await session_release.process_requests({"child": _Session(True, str(cwd))}, stop, state_root=tmp_path)
+        reason = await task
+        if registered_paths and nested:
+            assert reason and "要求後に所有または終端状態が変わった" in reason
+            assert not calls
+        else:
+            assert reason is None and calls == ["child"]
+    finally:
+        await task

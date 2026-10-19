@@ -11,7 +11,7 @@ import subprocess
 import typing
 import urllib.request
 
-from agent_toolkit._common import atomic_file, host_homes
+from agent_toolkit._common import atomic_file, host_homes, process_tree
 
 
 def _hooks(repo: pathlib.Path, event: str) -> list[dict[str, typing.Any]]:
@@ -73,13 +73,14 @@ def _execute(
         record: dict[str, typing.Any] = {"input": payload, "type": hook["type"]}
         path = diagnostics_directory / f"{event}-{index}.json"
         try:
-            seconds = min(timeout, float(hook.get("timeout", timeout)))
+            # hook定義のtimeoutはhook自身の上限であり、呼出側の値は定義が無いhookだけに使う。
+            seconds = float(hook["timeout"]) if "timeout" in hook else timeout
             if not math.isfinite(seconds) or seconds <= 0:
                 raise ValueError("hookのtimeoutは有限の正の値で指定する")
             if hook["type"] == "command":
                 argv = ["cmd", "/d", "/s", "/c", hook["command"]] if os.name == "nt" else ["sh", "-c", hook["command"]]
                 env = {**os.environ, **hook["_environment"], "CLAUDE_PROJECT_DIR": str(repo)}
-                completed = subprocess.run(
+                completed = process_tree.run_with_timeout(
                     argv, cwd=repo, env=env, input=body, capture_output=True, timeout=seconds, check=False
                 )
                 stdout = completed.stdout.decode("utf-8", errors="replace")

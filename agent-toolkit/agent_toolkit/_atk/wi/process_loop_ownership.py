@@ -60,7 +60,7 @@ def _live(record: dict[str, Any]) -> bool:
     pid, created = record.get("pid"), record.get("create_time")
     if not isinstance(pid, int) or not isinstance(created, (int, float)):
         raise ValueError("処理所有記録のプロセス識別が不正")
-    if _registry.ProcessIdentity(pid, created).exists():
+    if record.get("held") is not True and _registry.ProcessIdentity(pid, created).exists():
         return True
     session_id = record.get("session_id")
     if isinstance(session_id, str):
@@ -102,6 +102,9 @@ def try_acquire(
         prior = _read(path)
         if prior is not None and _live(prior):
             return None
+        if prior is not None and prior.get("held") is True:
+            prior.update(completed=False, released=True, held=False)
+            atomic_write(path, json.dumps(prior, ensure_ascii=False) + "\n")
         identity = _registry.ProcessIdentity.of(os.getpid())
         if identity is None:
             raise RuntimeError("処理所有者のPIDと起動時刻を取得できない")
@@ -169,10 +172,20 @@ def release(ownership: Ownership, *, completed: bool = True) -> None:
         record = _read(ownership.path)
         if record is None or record["token"] != ownership.token:
             raise ValueError("処理所有者が変更されたため解放しなかった")
-        record.update(completed=completed, released=True)
+        record.update(completed=completed, released=True, held=False)
         if not completed and record.get("session_id") is None and isinstance(record.get("previous"), dict):
             record["session_id"] = record["previous"].get("session_id")
             record["mode"] = record["previous"].get("mode", record["mode"])
         if completed:
             record.pop("previous", None)
+        atomic_write(ownership.path, json.dumps(record, ensure_ascii=False) + "\n")
+
+
+def hold(ownership: Ownership) -> None:
+    """停止を確認できない担当の所有を保持し、生存照会を担当sessionへ切り替える。"""
+    with filelock.FileLock(str(ownership.path.with_suffix(".lock")), timeout=10):
+        record = _read(ownership.path)
+        if record is None or record["token"] != ownership.token:
+            raise ValueError("処理所有者が変更されたため保持しなかった")
+        record.update(held=True, completed=False, released=False)
         atomic_write(ownership.path, json.dumps(record, ensure_ascii=False) + "\n")

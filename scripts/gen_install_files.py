@@ -1,7 +1,7 @@
 #!/usr/bin/env -S uv run --script
 # /// script
 # requires-python = ">=3.15"
-# dependencies = ["pytilpack[quart]>=1.47.0"]
+# dependencies = ["psutil", "pytilpack[quart]>=1.47.0"]
 # ///
 """install scriptのFILES一覧をagent-toolkit/rules/*.mdから自動生成する。"""
 

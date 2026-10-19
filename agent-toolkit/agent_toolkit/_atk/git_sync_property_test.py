@@ -48,21 +48,28 @@ def test_git_initialization_is_owned_by_shared_test_helper() -> None:
     assert not violations, "初期化は_testing/git_repository.pyへ集約する: " + ", ".join(violations)
 
 
-@settings(max_examples=12, deadline=None, suppress_health_check=[HealthCheck.function_scoped_fixture])
+def _init_synced_repositories(root: pathlib.Path) -> tuple[pathlib.Path, pathlib.Path, pathlib.Path]:
+    """bare remote、upstreamを持つローカル、remoteへpushする別の作業コピーを同じ初期commitで用意する。"""
+    remote = git_repository.init_bare_repository(root / "origin.git")
+    local = git_repository.init_repository(root / "local", initial_branch="main", origin=str(remote))
+    (local / "base.txt").write_text("base\n", encoding="utf-8")
+    git_repository.commit_all(local, "base")
+    git_repository.run_git(local, "push", "-u", "origin", "main")
+    actor = root / "actor"
+    git_repository.run_git(root, "clone", "--branch", "main", str(remote), str(actor))
+    git_repository.run_git(actor, "config", "user.name", "Test")
+    git_repository.run_git(actor, "config", "user.email", "test@example.invalid")
+    return remote, local, actor
+
+
+# 実Gitを起動する回数は生成例と操作の数に比例するため、テスト単位の時間上限に余裕を残す例数にする。
+# 分岐判定と回復操作の網羅は、Gitを差し替える下記のプロパティテストが多数の例で担う。
+@settings(max_examples=5, deadline=None, suppress_health_check=[HealthCheck.function_scoped_fixture])
 @given(choices=st.lists(st.integers(min_value=0, max_value=100), min_size=8, max_size=18))
 def test_generated_operations_preserve_history_and_uncommitted_content(tmp_path: pathlib.Path, choices: list[int]) -> None:
     """有効な操作列を独立した変更集合モデルと実Gitへ順に適用し、各遷移の内容と履歴を比較する。"""
     with tempfile.TemporaryDirectory(dir=tmp_path) as directory:
-        root = pathlib.Path(directory)
-        remote = git_repository.init_bare_repository(root / "origin.git")
-        local = git_repository.init_repository(root / "local", initial_branch="main", origin=str(remote))
-        (local / "base.txt").write_text("base\n", encoding="utf-8")
-        git_repository.commit_all(local, "base")
-        git_repository.run_git(local, "push", "-u", "origin", "main")
-        actor = root / "actor"
-        git_repository.run_git(root, "clone", "--branch", "main", str(remote), str(actor))
-        git_repository.run_git(actor, "config", "user.name", "Test")
-        git_repository.run_git(actor, "config", "user.email", "test@example.invalid")
+        remote, local, actor = _init_synced_repositories(pathlib.Path(directory))
         local_changes: set[str] = {"base.txt"}
         remote_changes = set(local_changes)
         dirty = False
@@ -107,33 +114,39 @@ def test_generated_operations_preserve_history_and_uncommitted_content(tmp_path:
                             remote_changes = set(local_changes)
                         assert git_sync.push_was_deferred(local) is blocked
                 observed = set(git_repository.git_output(local, "ls-tree", "--name-only", "HEAD").splitlines())
-                published = set(git_repository.git_output(remote, "ls-tree", "--name-only", "main").splitlines())
                 assert observed == local_changes
-                assert published == remote_changes
                 assert (local / "base.txt").read_text(encoding="utf-8") == ("uncommitted\n" if dirty else "base\n")
-                subjects = set(git_repository.git_output(local, "log", "--format=%s").splitlines())
-                assert local_changes - {"base.txt"} <= subjects
+                # remoteの内容はremote側のcommitとpushでだけ変わるため、その遷移の後に比べる。
+                if operation in {"remote", "push"}:
+                    published = set(git_repository.git_output(remote, "ls-tree", "--name-only", "main").splitlines())
+                    assert published == remote_changes
+            # ローカルの件名は名前が一意で失われると戻らないため、例の終わりに一度比べれば欠落を検出できる。
+            subjects = set(git_repository.git_output(local, "log", "--format=%s").splitlines())
+            assert local_changes - {"base.txt"} <= subjects
             if dirty:
                 (local / "base.txt").write_text("base\n", encoding="utf-8")
             git_sync.pull(local)
             git_sync.push_pending_commits(local)
-            # 実際の競合を起こしてrebase中間状態を作り、生成した同期操作が状態を変えないことも確かめる。
-            git_repository.run_git(actor, "fetch", "origin")
-            git_repository.run_git(actor, "reset", "--hard", "origin/main")
-            for target, value in ((actor, "remote conflict\n"), (local, "local conflict\n")):
-                (target / "base.txt").write_text(value, encoding="utf-8")
-                git_repository.commit_all(target, value.strip())
-            git_repository.run_git(actor, "push", "origin", "main")
-            with pytest.raises(subprocess.CalledProcessError):
-                git_sync.pull(local)
-            assert git_sync.is_rebase_in_progress(local)
-            before = (git_repository.git_output(local, "rev-parse", "HEAD"), (local / "base.txt").read_bytes())
-            for choice in choices:
-                with pytest.raises(git_sync.RebaseInProgressError):
-                    (git_sync.pull if choice % 2 else git_sync.push_pending_commits)(local)
-                assert before == (git_repository.git_output(local, "rev-parse", "HEAD"), (local / "base.txt").read_bytes())
-            git_repository.run_git(local, "rebase", "--abort")
-            assert not git_sync.is_rebase_in_progress(local)
+
+
+def test_sync_operations_keep_rebase_in_progress_unchanged(tmp_path: pathlib.Path) -> None:
+    """競合で止まったrebase中間状態では、pullとpushがRebaseInProgressErrorを送出してHEADと作業ツリーを変えない。"""
+    _, local, actor = _init_synced_repositories(tmp_path)
+    with git_sync.repo_lock(local):
+        for target, value in ((actor, "remote conflict\n"), (local, "local conflict\n")):
+            (target / "base.txt").write_text(value, encoding="utf-8")
+            git_repository.commit_all(target, value.strip())
+        git_repository.run_git(actor, "push", "origin", "main")
+        with pytest.raises(subprocess.CalledProcessError):
+            git_sync.pull(local)
+        assert git_sync.is_rebase_in_progress(local)
+        before = (git_repository.git_output(local, "rev-parse", "HEAD"), (local / "base.txt").read_bytes())
+        for operation in (git_sync.pull, git_sync.push_pending_commits):
+            with pytest.raises(git_sync.RebaseInProgressError):
+                operation(local)
+            assert before == (git_repository.git_output(local, "rev-parse", "HEAD"), (local / "base.txt").read_bytes())
+        git_repository.run_git(local, "rebase", "--abort")
+        assert not git_sync.is_rebase_in_progress(local)
 
 
 class _GitDouble:

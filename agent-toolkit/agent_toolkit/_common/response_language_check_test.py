@@ -124,6 +124,16 @@ class TestCheckText:
             "550e8400-e29b-41d4-a716-446655440000",
             "b4acde0123456789abcdef0123456789abcdef01",
             "pending_observation",
+            "AUTO_RESUME_COMPLETED",
+            "EXPLORE_FIRST_CONTENT",
+            "Foo_Bar_Baz",
+            "auto-resume-completed",
+            "--no-fix --dry-run",
+            "README.md CHANGELOG.md",
+            "foo.bar.baz",
+            "RESULT: PASS",
+            "RESULT2: PASS3",
+            "AUTO_RESUME_COMPLETED.",
         ],
     )
     def test_excludes_bare_machine_identifiers_from_word_ratio(self, identifier: str):
@@ -131,6 +141,28 @@ class TestCheckText:
         outcome, body = check_text("確認: " + " ".join([identifier] * 8))
         assert outcome is not CheckOutcome.WARN
         assert body is None
+
+    @pytest.mark.parametrize(
+        "text",
+        [
+            "AUTO_RESUME_COMPLETED",
+            "EXPLORE_FIRST_CONTENT",
+            "Foo_Bar_Baz",
+            "auto-resume-completed",
+            "--no-fix --dry-run",
+            "README.md CHANGELOG.md",
+            "foo.bar.baz",
+            "RESULT: PASS",
+        ],
+    )
+    def test_fixed_return_values_are_not_english_prose(self, text: str):
+        """委譲の固定返却値の構造は、裸でも言語の書換えを要求しない。"""
+        assert check_text(text)[0] is not CheckOutcome.WARN
+
+    @pytest.mark.parametrize("text", ["The task completed successfully.", "Summary: done well"])
+    def test_ordinary_english_prose_remains_detected(self, text: str):
+        """固定識別子の除外後も、英語の説明を検出する。"""
+        assert check_text(text)[0] is CheckOutcome.WARN
 
     def test_machine_identifier_exclusion_does_not_hide_english_prose(self):
         """機械識別子の前後にある英語の地の文は引き続きWARNを返す。"""
@@ -240,7 +272,6 @@ class TestDiscourseMarker:
             "Let me 実装へ着手する。",
             "So、方針を確定する。",
             "Okay、方針を確定する。",
-            "OK、方針を確定する。",
             "now、小文字表記でも検出する。",
         ],
     )

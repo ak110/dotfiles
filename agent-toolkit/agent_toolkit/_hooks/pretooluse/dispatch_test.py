@@ -690,6 +690,11 @@ def test_second_removable_warning_continues_with_count_and_fix(tmp_path: pathlib
         "session_id": "dispatch-repeated-removable-warning",
     }
     environment = _plan_file_state_env(tmp_path)
+    _write_session_state(
+        tmp_path,
+        "dispatch-repeated-removable-warning",
+        {"operation_skill_delivered_agents": {"agent-toolkit:writing-standards": ["main"]}},
+    )
 
     first = _run(payload, env_overrides=environment)
     second = _run(payload, env_overrides=environment)
@@ -1120,13 +1125,21 @@ class TestPlanFileDoesNotRequireTextlintRead:
     _state_env = staticmethod(_plan_file_state_env)
     _make_plan = staticmethod(_make_plan_file)
 
+    @staticmethod
+    def _prior_flags(tmp_path: pathlib.Path, session_id: str, **flags: object) -> None:
+        _write_session_state(
+            tmp_path,
+            session_id,
+            {"operation_skill_delivered_agents": {"agent-toolkit:writing-standards": ["main"]}, **flags},
+        )
+
     def test_write_without_read_does_not_warn(self, tmp_path: pathlib.Path):
         """資料未読のWriteを警告しない。"""
         home = tmp_path / "home"
         plan = self._make_plan(home)
         env = self._state_env(tmp_path, home)
         sid = "req-both-unread"
-        _write_session_state(tmp_path, sid, {"plan_mode_skill_invoked": True})
+        self._prior_flags(tmp_path, sid, plan_mode_skill_invoked=True)
         result = _run(
             {
                 "tool_name": "Write",
@@ -1145,7 +1158,7 @@ class TestPlanFileDoesNotRequireTextlintRead:
         plan = self._make_plan(home, "edit.md")
         env = self._state_env(tmp_path, home)
         sid = "req-textlint-unread"
-        _write_session_state(tmp_path, sid, {"plan_mode_skill_invoked": True})
+        self._prior_flags(tmp_path, sid, plan_mode_skill_invoked=True)
         result = _run(
             {
                 "tool_name": "Edit",
@@ -1164,13 +1177,11 @@ class TestPlanFileDoesNotRequireTextlintRead:
         plan = self._make_plan(home)
         env = self._state_env(tmp_path, home)
         sid = "req-read"
-        _write_session_state(
+        self._prior_flags(
             tmp_path,
             sid,
-            {
-                "plan_mode_skill_invoked": True,
-                "textlint_violations_read": True,
-            },
+            plan_mode_skill_invoked=True,
+            textlint_violations_read=True,
         )
         result = _run(
             {
@@ -1188,6 +1199,7 @@ class TestPlanFileDoesNotRequireTextlintRead:
         home = tmp_path / "home"
         home.mkdir()
         env = self._state_env(tmp_path, home)
+        self._prior_flags(tmp_path, "req-other-file")
         result = _run(
             {
                 "tool_name": "Write",
@@ -1323,7 +1335,12 @@ class TestRemovedChecksAreSilent:
             _write_session_state(
                 tmp_path,
                 f"removed-tool-{index}",
-                {"operation_skill_delivered_agents": {"agent-toolkit:delegation": ["main"]}},
+                {
+                    "operation_skill_delivered_agents": {
+                        "agent-toolkit:delegation": ["main"],
+                        "agent-toolkit:writing-standards": ["main"],
+                    }
+                },
             )
             result = _run(
                 {**payload, "session_id": f"removed-tool-{index}", "cwd": str(tmp_path)},

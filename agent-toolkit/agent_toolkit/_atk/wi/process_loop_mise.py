@@ -6,6 +6,7 @@ import subprocess
 from agent_toolkit._atk.wi import process_loop_env as _pl_env
 from agent_toolkit._common import console_title as _console_title
 from agent_toolkit._common import next_action as _next_action
+from agent_toolkit._common import process_tree
 
 # `latest`指定ツールを外部の登録簿に対して再評価する間隔と、導入処理の実行上限。
 MISE_REFRESH_INTERVAL_SEC = 24 * 60 * 60
@@ -32,7 +33,7 @@ def refresh_mise_tools(dotfiles_root: pathlib.Path) -> bool:
     if executable is None:
         return False
     try:
-        result = subprocess.run(
+        result = process_tree.run_with_timeout(
             [executable, "install", "--quiet"],
             cwd=dotfiles_root,
             env=_pl_env.child_env() | _MISE_LOCKED_ENV,

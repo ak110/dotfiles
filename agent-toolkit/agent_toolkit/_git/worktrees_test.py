@@ -118,3 +118,14 @@ def test_reports_failure_outside_repository(tmp_path: pathlib.Path) -> None:
     outside.mkdir()
     with pytest.raises(worktrees.WorktreeListError):
         worktrees.list_worktrees(outside)
+
+
+def test_owning_worktree(tmp_path: pathlib.Path) -> None:
+    """主作業ツリーと入れ子の登録を区別し、登録外のパスは所属なしとする。"""
+    repo = git_repository.init_repository(tmp_path / "repo", initial_branch="main", commit_message="初期")
+    nested = repo / ".claude/worktrees/nested"
+    git_repository.run_git(repo, "worktree", "add", "-b", "nested", str(nested))
+    entries = worktrees.list_worktrees(repo)
+    for path, expected in ((repo / "file", repo), (nested / "sub/../file", nested), (tmp_path / "outside", None)):
+        owner = worktrees.owning_worktree(path, reversed(entries))
+        assert (owner.path.resolve() if owner else None) == expected

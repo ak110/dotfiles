@@ -28,7 +28,6 @@ import uuid
 
 # ヘルプや他の処理で使わない依存は、使用時まで読み込まない。
 lazy import filelock
-lazy import psutil
 
 from agent_toolkit._atk import orchestrator as _orchestrator
 from agent_toolkit._atk import outcome as _outcome
@@ -357,14 +356,7 @@ def _wait_session(
     try:
         returncode = process.wait(timeout=timeout)
     except subprocess.TimeoutExpired:
-        # 終了を要求する前に子孫を列挙する。子が先に終わると子孫の親が変わり、PIDから辿れなくなる。
-        descendants = _process_tree.collect_descendants(process.pid)
-        try:
-            targets = [psutil.Process(process.pid), *descendants]
-        except psutil.NoSuchProcess:
-            targets = descendants
-        residual = _process_tree.reclaim_descendants(targets)
-        process.wait()
+        residual = _process_tree.stop_process_tree(process)
         _drain_output(readers, log, lock)
         with lock:
             _log_line(log, f"終了状態: 時間上限（{timeout:g}秒）を超えたため終了させた")

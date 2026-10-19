@@ -6,6 +6,7 @@ import argparse
 import json
 import os
 import pathlib
+import shlex
 import shutil
 import signal
 import subprocess
@@ -13,10 +14,108 @@ import sys
 import time
 from collections.abc import Callable
 
+import psutil
 import pytest
 
 from agent_toolkit._atk import run_command
+from agent_toolkit._common import process_tree
 from agent_toolkit._testing import git_repository
+
+
+@pytest.fixture(autouse=True)
+def _agent_output(monkeypatch: pytest.MonkeyPatch) -> None:
+    """既存の結果検証はエージェント向けの出力を使う。"""
+    monkeypatch.setattr(run_command, "is_human_terminal", lambda: False)
+
+
+@pytest.mark.parametrize("agent", [False, True], ids=["human", "agent"])
+@pytest.mark.parametrize("exit_code", [0, 7])
+def test_execute_reports_running_state_to_human_terminal(monkeypatch, tmp_path, capsys, agent, exit_code):
+    """子を終了させる前に実行状態が届き、両出力と終了値は保存される。"""
+    release = tmp_path / "release"
+    observed = []
+
+    class GatedPopen(subprocess.Popen):
+        def wait(self, timeout=None):
+            if not release.exists():
+                assert self.poll() is None
+                observed.append(capsys.readouterr())
+                release.touch()
+            return super().wait(timeout=timeout)
+
+    script = (
+        "import pathlib,sys,time; release=pathlib.Path(sys.argv[1]); "
+        "exec('while not release.exists(): time.sleep(0.01)'); "
+        "print('child-out'); print('child-err', file=sys.stderr); sys.exit(int(sys.argv[2]))"
+    )
+    monkeypatch.setattr(run_command, "is_human_terminal", lambda: not agent)
+    monkeypatch.setattr(run_command.managed_temp, "create_output_temp", lambda _prefix: tmp_path)
+    monkeypatch.setattr(run_command.subprocess, "Popen", GatedPopen)
+    monkeypatch.setattr(run_command, "_git_state", lambda _cwd: (None, None))
+    metadata, code, failure = run_command.execute([sys.executable, "-c", script, str(release), str(exit_code)], tmp_path, 30)
+    assert code == exit_code and failure is None
+    assert observed and not observed[0].out
+    if agent:
+        assert not observed[0].err
+    else:
+        assert "実行中" in observed[0].err and str(release) in observed[0].err
+    assert pathlib.Path(metadata["stdout_path"]).read_bytes() == b"child-out\n"
+    assert pathlib.Path(metadata["stderr_path"]).read_bytes() == b"child-err\n"
+    assert json.loads(pathlib.Path(metadata["record_path"]).read_text(encoding="utf-8")) == metadata
+
+
+def test_execute_timeout_stops_grandchildren_before_recording(monkeypatch, tmp_path):
+    """停止確認後に記録を確定し、遅れて孫が出力を書かない。"""
+    ready = tmp_path / "ready"
+    started: list[psutil.Process] = []
+
+    class ReadyPopen(subprocess.Popen):
+        def wait(self, timeout=None):
+            if not started and timeout is not None:
+                deadline = time.monotonic() + 30
+                while not ready.exists() and time.monotonic() < deadline:
+                    time.sleep(0.01)
+                assert ready.exists(), "孫の準備が時間内に完了しなかった"
+                started.extend([psutil.Process(self.pid), *process_tree.collect_descendants(self.pid)])
+            return super().wait(timeout=timeout)
+
+    child = f"import pathlib,time; pathlib.Path({str(ready)!r}).touch(); time.sleep(3); print('late', flush=True)"
+    parent = f"import subprocess,sys,time; subprocess.Popen([sys.executable,'-c',{child!r}]); time.sleep(120)"
+    argv = (
+        [sys.executable, "-c", parent]
+        if os.name == "nt"
+        else ["sh", "-c", shlex.join([sys.executable, "-c", child]) + " & wait"]
+    )
+    monkeypatch.setattr(run_command.managed_temp, "create_output_temp", lambda _prefix: tmp_path)
+    monkeypatch.setattr(run_command, "_git_state", lambda _cwd: (None, None))
+    monkeypatch.setattr(subprocess, "Popen", ReadyPopen)
+    try:
+        metadata, code, failure = run_command.execute(argv, tmp_path, 1)
+        assert code == 124 and failure is None
+        assert started
+        assert not [p for p in started if p.is_running() and p.status() != psutil.STATUS_ZOMBIE]
+        output = pathlib.Path(metadata["stdout_path"])
+        before = output.read_bytes()
+        time.sleep(5)
+        assert output.read_bytes() == before
+        assert metadata["stdout_bytes"] == len(before)
+    finally:
+        process_tree.reclaim_descendants(started, timeout=0.1)
+
+
+def test_execute_reports_residual_descendants_in_failure(monkeypatch, tmp_path):
+    """回収できない子孫の診断を公開記録のfailureへ残す。"""
+    real_stop = process_tree.stop_process_tree
+
+    def stop_with_residual(process):
+        real_stop(process)
+        return ["12345: residual-command"]
+
+    monkeypatch.setattr(process_tree, "stop_process_tree", stop_with_residual)
+    monkeypatch.setattr(run_command.managed_temp, "create_output_temp", lambda _prefix: tmp_path)
+    metadata, code, failure = run_command.execute([sys.executable, "-c", "import time; time.sleep(120)"], tmp_path, 0.05)
+    assert code == 124 and failure is not None and "12345: residual-command" in failure
+    assert metadata["failure"] == failure
 
 
 def _public_command(argv: list[str], cwd: pathlib.Path, env: dict[str, str]) -> tuple[subprocess.CompletedProcess[str], dict]:

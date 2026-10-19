@@ -8,7 +8,7 @@ from collections.abc import Awaitable, Callable
 from typing import Any
 
 from agent_toolkit._common import next_action as _next_action
-from agent_toolkit._common import stream_lines
+from agent_toolkit._common import process_tree, stream_lines
 
 FAMILIES = frozenset({"astra", "sol", "terra", "luna"})
 _VERSIONED_MODEL = re.compile(r"^gpt-(\d+)(?:\.(\d+))?-(astra|sol|terra|luna)$")
@@ -141,6 +141,7 @@ async def list_models_from_app_server() -> list[dict[str, Any]]:
             await stdin.drain()
             return await fetch_catalog(request)
         finally:
+            descendants = process_tree.collect_descendants(process.pid)
             stdin.close()
             if process.returncode is None:
                 process.terminate()
@@ -149,6 +150,8 @@ async def list_models_from_app_server() -> list[dict[str, Any]]:
             except TimeoutError:
                 process.kill()
                 await process.wait()
+            residual = await asyncio.to_thread(process_tree.reclaim_descendants, descendants)
+            process_tree.log_residual(residual, context="model/list")
 
 
 def list_models() -> list[dict[str, Any]]:

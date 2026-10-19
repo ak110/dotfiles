@@ -100,6 +100,15 @@ def make_installed_two_plugin_fake(
     return fake_run
 
 
+def plugin_management_response(cmd: list[str], successful: tuple[tuple[str, ...], ...]) -> _FakeResult:
+    """登録済みmarketplaceの照会と、指定したplugin変更操作の成功を返す。"""
+    if command_matches(cmd, ["claude", "plugin", "marketplace", "list"]):
+        return _FakeResult(stdout=json.dumps([{"name": _claude_common.MARKETPLACE_NAME}], ensure_ascii=False))
+    if any(command_matches(cmd, ["claude", "plugin", *suffix]) for suffix in successful):
+        return _FakeResult()
+    return _FakeResult(returncode=1)
+
+
 def assert_scope_user_install_calls(calls: list[list[str]]) -> None:
     """agent-toolkit / sample-plugin の両方が `--scope=user` で install されたことを検証する。"""
     assert any(

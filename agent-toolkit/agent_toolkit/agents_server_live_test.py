@@ -31,6 +31,17 @@ from agent_toolkit._testing.git_repository import init_repository, run_git
 pytestmark = pytest.mark.live_agents
 
 
+@pytest.fixture(autouse=True)
+def _detach_caller_conversation(monkeypatch: pytest.MonkeyPatch) -> None:
+    """エージェントの会話から実行しても、その会話の全体作業契約や記録先へ起動結果を結び付けない。
+
+    通常委譲の起動は所有会話のmanaged-tempに全体作業契約が無いと拒否するため、呼出元の会話を継承すると
+    試験の成否が呼出元の状態で変わる。端末から実行した場合と同じく所有会話を持たない状態にそろえる。
+    """
+    for name in ("AGENT_TOOLKIT_OWNER_SESSION", "CLAUDE_CODE_SESSION_ID", "CODEX_THREAD_ID"):
+        monkeypatch.delenv(name, raising=False)
+
+
 @dataclasses.dataclass(frozen=True)
 class LiveInput:
     """live testが1つの起動区分へ渡す入力と、委譲先がその入力を実行するのに要るClaude Codeの組込ツール。

@@ -451,6 +451,36 @@ UV_PROJECT_ENVIRONMENT="$SUB_ENV" uv sync --project "$SUB_PROJECT" --python 3.15
 "$SUB_ENV/bin/python" -c 'import sys; print(sys.version_info[:2])'
 ```
 
+## agent-toolkit/skills/commit/references/publish.md：検証とCI：2026年10月19日
+
+前節の観測は`.python-version`を持たないプロジェクトの条件であり、`.python-version`を持つプロジェクトでは`uv run`の自動同期が既存の仮想環境を再作成する。
+2026年10月19日にuv 0.13.1で、依存を持たず`requires-python`が`>=3.14`の一時プロジェクトへ`.python-version`（`3.15`）と`uv.lock`を置き、3.14の仮想環境から始めて次を観測した。
+
+- 版指定なし: `uv run --frozen`の後に3.15で再作成された
+- `UV_PYTHON=3.14`: `uv run --frozen`と`--python`なしの`uv sync --frozen`の後も3.14のままだった
+- `UV_PYTHON=3.14`のまま`uv sync --frozen --python "$(cat .python-version)"`: 3.15で再作成された
+- 対照として`.python-version`を除くと、版指定なしの`uv run --frozen`の後も3.14のままだった
+- `uv pip install six`で加えたパッケージは`uv run --frozen`の後も残り、`uv sync --frozen`で除かれた
+
+再検証は次を順に実行する。
+最初の`cd`で作業ツリーの外に空の一時ディレクトリを作成して移動し、以降のファイル作成と`uv`の呼び出しはそのディレクトリだけを対象にする。
+`uv run`の後の版が3.15、`UV_PYTHON=3.14`の2操作の後が3.14、`--python "$(cat .python-version)"`の後が3.15なら、記述どおりである。
+処理時点のuvで版が異なれば、その版の観測へ記述を合わせる。
+
+```sh
+cd "$(mktemp -d)"
+unset UV_PYTHON VIRTUAL_ENV
+printf '[project]\nname = "observe"\nversion = "0.0.0"\nrequires-python = ">=3.14"\ndependencies = []\n' > pyproject.toml
+echo 3.15 > .python-version
+uv lock
+uv venv --python 3.14 .venv
+uv run --frozen python -c 'import sys; print(sys.version_info[:2])'
+rm -rf .venv && uv venv --python 3.14 .venv
+UV_PYTHON=3.14 uv run --frozen python -c 'import sys; print(sys.version_info[:2])'
+UV_PYTHON=3.14 uv sync --frozen && .venv/bin/python -c 'import sys; print(sys.version_info[:2])'
+UV_PYTHON=3.14 uv sync --frozen --python "$(cat .python-version)" && .venv/bin/python -c 'import sys; print(sys.version_info[:2])'
+```
+
 ## agent-toolkit/skills/delegation/references/base-contract.md：基本委譲契約：2026年9月27日
 
 2026-09-27、Claude Code 2.1.283の公式資料<https://code.claude.com/docs/en/sub-agents>は通常のサブエージェントを独立文脈、forkを親の会話履歴の継承として区別する。Codex CLI 0.157.1の`spawn_agent`スキーマも`fork_turns`で渡す履歴を選べる。再検証は各ホストの通常起動と全履歴forkの入力契約を比較する。

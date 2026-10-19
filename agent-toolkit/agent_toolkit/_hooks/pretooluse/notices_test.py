@@ -12,11 +12,20 @@ from agent_toolkit._testing.pretooluse_support import (
     _patch,
     _plan_file_state_env,
     _run,
+    _write_session_state,
 )
 
 
 class TestCodexApplyPatchEditChecks:
     """Codexの`apply_patch`入力に対するホスト共通の編集内容の判定。"""
+
+    @staticmethod
+    def _ready_env(tmp_path: pathlib.Path) -> dict[str, str]:
+        """執筆基準の取得を前提とする編集判定の状態を用意する。"""
+        _write_session_state(
+            tmp_path, "codex-edit", {"operation_skill_delivered_agents": {"agent-toolkit:writing-standards": ["main"]}}
+        )
+        return _plan_file_state_env(tmp_path)
 
     def test_multiple_warnings_are_merged_into_single_json(self, tmp_path: pathlib.Path) -> None:
         """同一入力の初回警告と反復警告を単一のJSONへまとめる。"""
@@ -24,7 +33,7 @@ class TestCodexApplyPatchEditChecks:
             "*** Add File: one/uv.lock\n+version = 1\n",
             "*** Add File: two/uv.lock\n+version = 1\n",
         )
-        result = _run(_codex_payload(patch_text, tmp_path))
+        result = _run(_codex_payload(patch_text, tmp_path), env_overrides=self._ready_env(tmp_path))
 
         assert result.returncode == 0
         assert len(result.stdout.strip().splitlines()) == 1
@@ -36,7 +45,7 @@ class TestCodexApplyPatchEditChecks:
     def test_mojibake_in_patch_warns(self, tmp_path: pathlib.Path) -> None:
         """patch本文の文字化けを警告する。編集対象は再編集で復元できる。"""
         patch_text = _patch("*** Add File: docs/a.md\n+hello � world\n")
-        result = _run(_codex_payload(patch_text, tmp_path))
+        result = _run(_codex_payload(patch_text, tmp_path), env_overrides=self._ready_env(tmp_path))
 
         assert result.returncode == 0
         assert "U+FFFD" in _additional_context(result)
@@ -51,7 +60,7 @@ class TestCodexApplyPatchEditChecks:
     def test_lockfile_path_in_patch_warns(self, tmp_path: pathlib.Path) -> None:
         """patchの対象パス判定は既存のパターンとの一致判定を共有する。"""
         patch_text = _patch("*** Update File: uv.lock\n@@\n-old\n+new\n")
-        result = _run(_codex_payload(patch_text, tmp_path))
+        result = _run(_codex_payload(patch_text, tmp_path), env_overrides=self._ready_env(tmp_path))
 
         assert result.returncode == 0
         assert "uv.lock" in _additional_context(result)

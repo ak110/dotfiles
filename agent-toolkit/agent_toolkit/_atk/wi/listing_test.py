@@ -18,6 +18,7 @@ from unittest import mock
 import pytest
 
 from agent_toolkit import atk  # noqa: E402  # pylint: disable=wrong-import-position
+from agent_toolkit._atk import config
 from agent_toolkit._atk.wi import frontmatter, listing  # noqa: E402  # pylint: disable=wrong-import-position
 from agent_toolkit._atk.wi import legacy as legacy_module  # noqa: E402  # pylint: disable=wrong-import-position
 from agent_toolkit._common.next_action import ActionableError  # noqa: E402  # pylint: disable=wrong-import-position
@@ -37,6 +38,25 @@ from agent_toolkit.atk_test import (  # pylint: disable=wrong-import-position
 )  # noqa: E402  # pylint: disable=wrong-import-position
 
 _AGENT_ENVIRONMENT_VARIABLES = ("AI_AGENT", "CODEX_CI", "CLAUDECODE", "CURSOR_AGENT")
+
+
+def test_candidate_records_match_filtered_candidates(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """依存待ち・未回答・run-skillの本文を除き、候補件数と同じ集合を引き渡す。"""
+    notes = _setup_notes(tmp_path)
+    repo = git_repository.init_repository(tmp_path / "repo", origin="https://github.com/example/foo.git")
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_PROCESS_LOOP_REPOSITORIES", json.dumps([str(repo)]))
+    _write_awi_file(notes, "ready.md")
+    blocked = _write_awi_file(notes, "blocked.md", body="候補外の依存待ち")
+    blocked.write_text(
+        blocked.read_text(encoding="utf-8").replace("type: awi\n", "type: awi\ndepends_on: [missing.md]\n"), encoding="utf-8"
+    )
+    _write_uwi_file(notes, "unanswered.md", question="候補外の未回答", answer="")
+    _write_uwi_file(notes, "run-skill.md", question="候補外のrun-skill", answer="回答", source="run-skill")
+    snapshot = listing.configured_repo_snapshot(notes, config.resolve_configured_repositories())[0]
+    records = snapshot.candidate_records()
+    assert {record["filename"] for record in records} == {"ready.md"}
+    assert len(records) == len(snapshot.candidates) and snapshot.lane_limit == 1
+    assert records[0]["body"] == (notes / "inbox/ready.md").read_text(encoding="utf-8")
 
 
 @pytest.mark.parametrize("output", ["--jsonl", "--no-jsonl", "--summary-only", "--count"])

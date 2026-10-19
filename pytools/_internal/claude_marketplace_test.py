@@ -92,7 +92,7 @@ class TestMarketplaceAlreadyRegistered:
                 return _FakeResult(returncode=0)
             return _FakeResult(returncode=1)
 
-        monkeypatch.setattr(_common.subprocess, "run", fake_run)
+        monkeypatch.setattr(_common, "run_subprocess", fake_run)
         result = _claude_marketplace.ensure_marketplace()
         return result, calls
 
@@ -160,7 +160,7 @@ class TestRewriteKnownMarketplacesEntry:
         known, _settings = marketplace_paths
         # 旧 GitHub 型 → CLI add 後も recheck が False のまま → 直接書き換え経路へ
         write_known_entry(known, {"source": {"source": "github", "repo": "ak110/dotfiles"}})
-        monkeypatch.setattr(_common.subprocess, "run", lambda *_a, **_k: _FakeResult(returncode=0))
+        monkeypatch.setattr(_common, "run_subprocess", lambda *_a, **_k: _FakeResult(returncode=0))
 
         result = _claude_marketplace.repair_marketplace()
 
@@ -189,7 +189,7 @@ class TestRewriteKnownMarketplacesEntry:
             ),
             encoding="utf-8",
         )
-        monkeypatch.setattr(_common.subprocess, "run", lambda *_a, **_k: _FakeResult(returncode=0))
+        monkeypatch.setattr(_common, "run_subprocess", lambda *_a, **_k: _FakeResult(returncode=0))
 
         result = _claude_marketplace.repair_marketplace()
 
@@ -212,7 +212,7 @@ class TestRewriteKnownMarketplacesEntry:
         known, _settings = marketplace_paths
         # 旧 GitHub 型 → recheck=False → 直接書き換え経路へ
         write_known_entry(known, {"source": {"source": "github", "repo": "ak110/dotfiles"}})
-        monkeypatch.setattr(_common.subprocess, "run", lambda *_a, **_k: _FakeResult(returncode=0))
+        monkeypatch.setattr(_common, "run_subprocess", lambda *_a, **_k: _FakeResult(returncode=0))
 
         def fail_replace(*_args, **_kwargs):
             raise OSError("permission denied")
@@ -238,7 +238,7 @@ class TestRewriteKnownMarketplacesEntry:
         write_known_entry(known, {"source": {"source": "github", "repo": "ak110/dotfiles"}})
         # settings: 不正 JSON → _rewrite_settings_extra_known_entry が False を返す
         settings.write_text("{invalid", encoding="utf-8")
-        monkeypatch.setattr(_common.subprocess, "run", lambda *_a, **_k: _FakeResult(returncode=0))
+        monkeypatch.setattr(_common, "run_subprocess", lambda *_a, **_k: _FakeResult(returncode=0))
 
         assert _claude_marketplace.repair_marketplace() is False
 
@@ -263,7 +263,7 @@ class TestRewriteSettingsExtraKnownEntry:
         # known を旧 GitHub 型にして直接書き換え経路へ誘導する
         write_known_entry(known, {"source": {"source": "github", "repo": "ak110/dotfiles"}})
         assert not settings.exists()
-        monkeypatch.setattr(_common.subprocess, "run", lambda *_a, **_k: _FakeResult(returncode=0))
+        monkeypatch.setattr(_common, "run_subprocess", lambda *_a, **_k: _FakeResult(returncode=0))
 
         result = _claude_marketplace.repair_marketplace()
 
@@ -280,7 +280,7 @@ class TestRewriteSettingsExtraKnownEntry:
         known, settings = marketplace_paths
         write_known_entry(known, {"source": {"source": "github", "repo": "ak110/dotfiles"}})
         write_settings_entry(settings, {"source": {"source": "github", "repo": "ak110/dotfiles"}})
-        monkeypatch.setattr(_common.subprocess, "run", lambda *_a, **_k: _FakeResult(returncode=0))
+        monkeypatch.setattr(_common, "run_subprocess", lambda *_a, **_k: _FakeResult(returncode=0))
 
         result = _claude_marketplace.repair_marketplace()
 
@@ -300,7 +300,7 @@ class TestRewriteSettingsExtraKnownEntry:
         known, settings = marketplace_paths
         write_known_entry(known, {"source": {"source": "github", "repo": "ak110/dotfiles"}})
         settings.write_text(json.dumps({"otherSetting": True}, ensure_ascii=False), encoding="utf-8")
-        monkeypatch.setattr(_common.subprocess, "run", lambda *_a, **_k: _FakeResult(returncode=0))
+        monkeypatch.setattr(_common, "run_subprocess", lambda *_a, **_k: _FakeResult(returncode=0))
 
         result = _claude_marketplace.repair_marketplace()
 
@@ -318,7 +318,7 @@ class TestRewriteSettingsExtraKnownEntry:
         known, settings = marketplace_paths
         write_known_entry(known, {"source": {"source": "github", "repo": "ak110/dotfiles"}})
         settings.write_text(json.dumps({"extraKnownMarketplaces": {}}, ensure_ascii=False), encoding="utf-8")
-        monkeypatch.setattr(_common.subprocess, "run", lambda *_a, **_k: _FakeResult(returncode=0))
+        monkeypatch.setattr(_common, "run_subprocess", lambda *_a, **_k: _FakeResult(returncode=0))
 
         def fail_replace(*_args, **_kwargs):
             raise OSError("permission denied")
@@ -336,7 +336,7 @@ class TestRewriteSettingsExtraKnownEntry:
         known, settings = marketplace_paths
         write_known_entry(known, {"source": {"source": "github", "repo": "ak110/dotfiles"}})
         settings.write_text("{invalid", encoding="utf-8")
-        monkeypatch.setattr(_common.subprocess, "run", lambda *_a, **_k: _FakeResult(returncode=0))
+        monkeypatch.setattr(_common, "run_subprocess", lambda *_a, **_k: _FakeResult(returncode=0))
 
         assert _claude_marketplace.repair_marketplace() is False
 
@@ -349,7 +349,7 @@ class TestRewriteSettingsExtraKnownEntry:
         known, settings = marketplace_paths
         write_known_entry(known, {"source": {"source": "github", "repo": "ak110/dotfiles"}})
         settings.write_text(json.dumps({"extraKnownMarketplaces": []}, ensure_ascii=False), encoding="utf-8")
-        monkeypatch.setattr(_common.subprocess, "run", lambda *_a, **_k: _FakeResult(returncode=0))
+        monkeypatch.setattr(_common, "run_subprocess", lambda *_a, **_k: _FakeResult(returncode=0))
 
         result = _claude_marketplace.repair_marketplace()
 
@@ -372,7 +372,7 @@ class TestRefreshMarketplace:
             calls.append(cmd)
             return _FakeResult(returncode=0)
 
-        monkeypatch.setattr(_common.subprocess, "run", fake_run)
+        monkeypatch.setattr(_common, "run_subprocess", fake_run)
 
         assert _claude_marketplace.refresh_marketplace() is True
         update_calls = [c for c in calls if command_matches(c, ["claude", "plugin", "marketplace", "update"])]
@@ -382,8 +382,8 @@ class TestRefreshMarketplace:
     def test_cli_failure_returns_false(self, monkeypatch: pytest.MonkeyPatch):
         """CLI が失敗しても例外を発生させず False を返す (best-effort)。"""
         monkeypatch.setattr(
-            _common.subprocess,
-            "run",
+            _common,
+            "run_subprocess",
             lambda *_a, **_k: _FakeResult(returncode=1, stderr="update failed"),
         )
 
@@ -421,7 +421,7 @@ class TestEnsureRepairRefreshFullCycle:
                 )
             return _FakeResult(returncode=0)
 
-        monkeypatch.setattr(_common.subprocess, "run", fake_run)
+        monkeypatch.setattr(_common, "run_subprocess", fake_run)
 
         assert _claude_marketplace.ensure_marketplace() is True
         assert [
@@ -505,7 +505,7 @@ class TestEnsureMarketplace:
                 return _FakeResult(returncode=0)
             return _FakeResult(returncode=1)
 
-        monkeypatch.setattr(_common.subprocess, "run", fake_run)
+        monkeypatch.setattr(_common, "run_subprocess", fake_run)
 
         result = _claude_marketplace.ensure_marketplace()
         assert result is True
@@ -524,7 +524,7 @@ class TestEnsureMarketplace:
         def fake_run(_cmd: list[str], **_kwargs: object) -> _FakeResult:
             return _FakeResult(returncode=1, stderr="fail")
 
-        monkeypatch.setattr(_common.subprocess, "run", fake_run)
+        monkeypatch.setattr(_common, "run_subprocess", fake_run)
 
         assert _claude_marketplace.ensure_marketplace() is False
 
@@ -546,7 +546,7 @@ class TestEnsureMarketplace:
                 return _FakeResult(returncode=0, stdout="[]")
             return _FakeResult(returncode=1)
 
-        monkeypatch.setattr(_common.subprocess, "run", fake_run)
+        monkeypatch.setattr(_common, "run_subprocess", fake_run)
 
         result = _claude_marketplace.ensure_marketplace()
         assert result is False

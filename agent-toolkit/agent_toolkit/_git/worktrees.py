@@ -10,7 +10,9 @@ Gitの起動は共通Gitディレクトリと`core.bare`の取得に限り、ど
 import dataclasses
 import pathlib
 import subprocess
+from collections.abc import Iterable
 
+from agent_toolkit._common import path_ownership
 from agent_toolkit._git import command as git_command
 
 _SYMBOLIC_REF_PREFIX = "ref: "
@@ -37,6 +39,13 @@ class Worktree:
     bare: bool
     locked: bool
     prunable: bool
+
+
+def owning_worktree(path: pathlib.Path, entries: Iterable[Worktree]) -> Worktree | None:
+    """解決済みのパスを含む登録のうち、最も内側のworktreeを返す。"""
+    by_path = {entry.path.resolve(): entry for entry in entries}
+    root = path_ownership.owning_root(path, by_path)
+    return by_path.get(root) if root is not None else None
 
 
 def _git(repo: pathlib.Path, args: list[str], timeout: float | None) -> str:

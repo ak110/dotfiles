@@ -353,6 +353,8 @@ def _session_activity(worktree: pathlib.Path, allowed: frozenset[str] = frozense
     directory = session_launchers.registry_directory(state_root)
     if not directory.exists():
         return None
+    entries = git_worktrees.list_worktrees(worktree, timeout=_TIMEOUT)
+    target = git_worktrees.owning_worktree(worktree, entries)
     for path in directory.glob("*.json"):
         if path.stem in allowed:
             continue
@@ -367,13 +369,15 @@ def _session_activity(worktree: pathlib.Path, allowed: frozenset[str] = frozense
             resolution.state is session_registry.Resolution.RUNNING
             and info is not None
             and info.cwd
-            and pathlib.Path(info.cwd).resolve().is_relative_to(worktree)
+            and git_worktrees.owning_worktree(pathlib.Path(info.cwd), entries) == target
         ):
             return f"担当の終了を確認できない: {path.stem}"
     return None
 
 
 def _process_activity(worktree: pathlib.Path) -> str | None:
+    entries = git_worktrees.list_worktrees(worktree, timeout=_TIMEOUT)
+    target = git_worktrees.owning_worktree(worktree, entries)
     username = psutil.Process().username()
     for process in psutil.process_iter(["username"]):
         if process.info["username"] != username:
@@ -384,7 +388,7 @@ def _process_activity(worktree: pathlib.Path) -> str | None:
             continue
         except psutil.AccessDenied:
             cwd = None
-        if cwd is not None and cwd.is_relative_to(worktree):
+        if cwd is not None and git_worktrees.owning_worktree(cwd, entries) == target:
             return f"外部プロセスが使用中: pid={process.pid}"
         # 所属の分からない別プロセスの取得失敗を、当該レーンの保持条件へ広げない。
         try:
@@ -393,7 +397,7 @@ def _process_activity(worktree: pathlib.Path) -> str | None:
             continue
         for argument in argv:
             candidate = pathlib.Path(argument.split("=", 1)[-1])
-            if candidate.is_absolute() and candidate.is_relative_to(worktree):
+            if candidate.is_absolute() and git_worktrees.owning_worktree(candidate, entries) == target:
                 return f"外部プロセスが資源を参照中: pid={process.pid}"
     return None
 
@@ -403,10 +407,12 @@ def _worktree_activity(worktree: pathlib.Path) -> str | None:
     directory = session_registry.registry_directory()
     deadline: float | None = None
     released: list[str] = []
+    entries = git_worktrees.list_worktrees(worktree, timeout=_TIMEOUT)
+    target = git_worktrees.owning_worktree(worktree, entries)
     for path in directory.glob("*.json"):
         resolution = session_registry.resolve(path.stem)
         info = resolution.resume_info
-        if info is None or not info.cwd or not pathlib.Path(info.cwd).resolve().is_relative_to(worktree):
+        if info is None or not info.cwd or git_worktrees.owning_worktree(pathlib.Path(info.cwd), entries) != target:
             continue
         instruction = f"agents_serverのstopへsession_id={path.stem}を渡し、同じlane deleteを再実行する"
         if resolution.state is session_registry.Resolution.RUNNING:
@@ -418,7 +424,9 @@ def _worktree_activity(worktree: pathlib.Path) -> str | None:
         if resolution.state is session_registry.Resolution.TERMINAL:
             if deadline is None:
                 deadline = time.monotonic() + get_wait_timeout("main")
-            reason = session_release.request_release(path.stem, worktree, deadline=deadline)
+            reason = session_release.request_release(
+                path.stem, worktree, deadline=deadline, worktree_paths=tuple(entry.path for entry in entries)
+            )
             if reason:
                 return f"session_id={path.stem}: {reason}。{instruction}"
             released.append(path.stem)
@@ -627,17 +635,30 @@ def _integration_input(args: argparse.Namespace, record: dict[str, typing.Any]) 
 
 
 def _integration_command(
-    record: dict[str, typing.Any], state: dict[str, typing.Any], key: str, argv: list[str], cwd: pathlib.Path
+    record: dict[str, typing.Any],
+    state: dict[str, typing.Any],
+    key: str,
+    argv: list[str],
+    cwd: pathlib.Path,
+    *,
+    timeout: float | None,
 ) -> None:
     if key in state["completed"]:
         return
-    observed, code, failure = run_command.execute(argv, cwd, record["procedure_timeout"])
+    observed, code, failure = run_command.execute(argv, cwd, timeout)
     state.setdefault("results", {})[key] = observed
     if code == 0:
         state["completed"].append(key)
     _save(pathlib.Path(record["record_path"]), record)
     if code:
         raise ValueError(f"統合の{key}が終了{code}: {failure or observed['record_path']}。同じlane integrateで再開する")
+
+
+def _verify(record: dict[str, typing.Any], state: dict[str, typing.Any], argvs: list[list[str]], cwd: pathlib.Path) -> None:
+    # 検証argvはplan-verifyの--timeoutやatk run-command --timeoutで自身の上限を持つ。
+    # 固有手順向けのprocedure_timeoutを重ねると、検証が自身の上限より先に打ち切られる。
+    for index, argv in enumerate(argvs):
+        _integration_command(record, state, f"verification-{index}", argv, cwd, timeout=None)
 
 
 def _atk_script(*arguments: str) -> list[str]:
@@ -727,18 +748,40 @@ def integrate(args: argparse.Namespace, session_id: str) -> dict[str, typing.Any
         if state is not None and args.restart_review:
             if state["phase"] in {"git-integrated", "finalized"}:
                 raise ValueError("Git統合後は--restart-reviewで再開せず、同じ入力で残る最終化を実行する")
-            if _git(worktree, "rev-parse", "HEAD") != reviewed:
-                raise ValueError("再レビューしたHEADが現在HEADと一致しない")
+            current = _git(worktree, "rev-parse", "HEAD")
             record["previous_integration"] = state
-            state = None
+            if (
+                state["phase"] in {"rebased", "awaiting-validation", "verified"}
+                and all(state.get(name) for name in ("old_base", "old_head", "new_base", "new_head"))
+                and current == state["new_head"]
+            ):
+                if reviewed not in {state["old_head"], state["new_head"]}:
+                    raise ValueError("再開のレビュー対象HEADは記録のold_headかnew_headを指定する")
+                state = {
+                    **state,
+                    "input_digest": digest,
+                    "input": identity,
+                    "phase": "rebased",
+                    "completed": [key for key in state["completed"] if not key.startswith("verification-")],
+                    "results": {
+                        key: value for key, value in state.get("results", {}).items() if not key.startswith("verification-")
+                    },
+                }
+                record["integration"] = state
+                _save(path, record)
+            else:
+                if current != reviewed:
+                    raise ValueError("再レビューしたHEADが現在HEADと一致しない")
+                state = None
         if state is not None and state["input_digest"] != digest:
             if args.amend_finalization:
                 _amend_finalization(state, identity, digest)
                 _save(path, record)
             elif state["phase"] != "finalized":
                 raise ValueError(
-                    "統合途中の入力が異なる。同じ入力で再開する。"
-                    "Git統合前の是正は--restart-review、未完了の最終化argvの補完は--amend-finalizationを指定する"
+                    "統合途中の入力が異なる。Git統合前の検証argv・最終化argv・handoffの是正は--restart-reviewで再開する。"
+                    "HEADが記録のnew_headのままならold_headかnew_headを--reviewed-headへ渡し、rebase結果を再検証して検収待ちへ戻る。"
+                    "未完了の最終化argvだけの補完は--amend-finalizationを指定する"
                 )
             else:
                 state = None
@@ -815,14 +858,14 @@ def integrate(args: argparse.Namespace, session_id: str) -> dict[str, typing.Any
                     str(mapping),
                 ),
                 worktree,
+                timeout=record["procedure_timeout"],
             )
             state["rewrite_map"] = str(mapping)
-            for index, argv in enumerate(manifest["verification"]):
-                _integration_command(record, state, f"verification-{index}", argv, worktree)
+            _verify(record, state, manifest["verification"], worktree)
             state["phase"] = "awaiting-validation"
             _save(path, record)
         if state["phase"] == "awaiting-validation":
-            if args.accept_rebased_head != state["new_head"]:
+            if args.restart_review or args.accept_rebased_head != state["new_head"]:
                 return dict(
                     state,
                     record_path=str(path),
@@ -834,8 +877,7 @@ def integrate(args: argparse.Namespace, session_id: str) -> dict[str, typing.Any
             state["phase"] = "verified"
             _save(path, record)
         if state["phase"] == "verified" or (state["phase"] == "prepared" and args.no_merge):
-            for index, argv in enumerate(manifest.get("verification", [])):
-                _integration_command(record, state, f"verification-{index}", argv, worktree)
+            _verify(record, state, manifest.get("verification", []), worktree)
             _assert_integration_tree(record, target, args.target_branch)
             if not args.no_merge:
                 if _git(worktree, "rev-parse", "HEAD") != state["new_head"]:
@@ -849,7 +891,12 @@ def integrate(args: argparse.Namespace, session_id: str) -> dict[str, typing.Any
                 for row in manifest[group]:
                     for index, argv in enumerate(row["commands"]):
                         _integration_command(
-                            record, state, f"{group}:{row['name']}:{index}", argv, worktree if group == "plans" else target
+                            record,
+                            state,
+                            f"{group}:{row['name']}:{index}",
+                            argv,
+                            worktree if group == "plans" else target,
+                            timeout=record["procedure_timeout"],
                         )
             _integration_input(args, record)
             selected = pathlib.Path(record["selection_file"])
@@ -870,6 +917,7 @@ def integrate(args: argparse.Namespace, session_id: str) -> dict[str, typing.Any
                     str(target),
                 ),
                 target,
+                timeout=record["procedure_timeout"],
             )
             state["phase"] = "finalized"
             _save(path, record)
@@ -891,7 +939,10 @@ def build_parser(parser: argparse.ArgumentParser) -> None:
     create_parser.add_argument("--commands-file", type=pathlib.Path, help="create・prepare・deleteのargvを持つJSON。")
     create_parser.add_argument("--reuse-record", type=pathlib.Path, help="終端済みの担当が使っていた資源のrecord_path。")
     create_parser.add_argument(
-        "--timeout", type=_positive_timeout, default=600, help="各固有手順の正の上限秒数。省略すると600秒。"
+        "--timeout",
+        type=_positive_timeout,
+        default=600,
+        help="固有手順・timeoutの無いhook・統合の最終化操作の正の上限秒数。省略すると600秒。",
     )
     create_parser.add_argument("--session-id", help="所有session。省略すると実行環境から解決する。")
     delete_parser = help_text.add_command(children, "delete", **help_text.HELP["atk lane delete"])
@@ -914,7 +965,9 @@ def build_parser(parser: argparse.ArgumentParser) -> None:
     integrate_parser.add_argument("--no-merge", action="store_true", help="Gitを変更せず計画保存・WI終端だけ行う。")
     integrate_parser.add_argument("--accept-rebased-head", help="対応表と再検証の診断を受理したHEADの完全なOID。")
     integrate_parser.add_argument(
-        "--restart-review", action="store_true", help="Git統合前の是正を再レビューした現在HEADから再開する。"
+        "--restart-review",
+        action="store_true",
+        help="Git統合前の入力是正から再開する。HEAD不変のrebase結果は再検証して検収待ちへ戻る。",
     )
     integrate_parser.add_argument("--session-id", help="現在の書込所有session。")
     integrate_parser.add_argument(

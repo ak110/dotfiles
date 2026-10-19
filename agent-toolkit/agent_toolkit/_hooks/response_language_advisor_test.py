@@ -50,6 +50,26 @@ def test_unavailable_or_other_host_input_is_not_blocked(payload):
     assert response_language_advisor.evaluate(json.dumps(payload)) == ("", "")
 
 
+@pytest.mark.parametrize("actor", ["main", "subagent", "delegated", "owner", "codex"])
+def test_recovery_preserves_delegated_return_contract(actor, monkeypatch):
+    """最終本文の受取先ごとに、画面の終了と委譲の返却を保つ回復操作を選ぶ。"""
+    monkeypatch.delenv("AGENT_TOOLKIT_DELEGATED_SESSION", raising=False)
+    monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)
+    payload = {"last_assistant_message": "The task completed successfully."}
+    if actor == "subagent":
+        payload["agent_id"] = "child"
+    elif actor == "delegated":
+        monkeypatch.setenv("AGENT_TOOLKIT_DELEGATED_SESSION", "1")
+    elif actor == "owner":
+        monkeypatch.setenv("AGENT_TOOLKIT_OWNER_SESSION", "parent")
+    elif actor == "codex":
+        payload["turn_id"] = "turn"
+    decision, reason = response_language_advisor.evaluate(json.dumps(payload))
+    assert decision == "block"
+    assert ("`…`だけを出力して停止" in reason) is (actor == "main")
+    assert ("そのまま再出力して停止" in reason) is (actor != "main")
+
+
 @pytest.mark.parametrize("delegated", ["0", "1"])
 @pytest.mark.parametrize("child", [False, True])
 def test_claude_english_completion_rewrites_once(delegated, child, monkeypatch, capsys):

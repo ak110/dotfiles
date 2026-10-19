@@ -40,6 +40,7 @@ from agent_toolkit._atk.wi import sync as _wi_sync
 from agent_toolkit._common import markdown_headings, requirement_units
 from agent_toolkit._common import next_action as _next_action
 from agent_toolkit._git import command as _git_command
+from agent_toolkit._git import worktrees as _git_worktrees
 from agent_toolkit._plan import bundle_kinds, commit_mapping
 from agent_toolkit._plan.structure.markdown import extract_tables, markdown_body_text
 
@@ -456,6 +457,20 @@ def _path_clue(candidate: str, repository: pathlib.Path, head: str) -> bool:
     return any(pathlib.Path(entry["path"]).name == first for entry in managed_temp.list_managed_temp() if entry["path"])
 
 
+def _belongs_to_repository(path: pathlib.Path, repository: pathlib.Path) -> bool:
+    """参照先が対象worktreeに属するかを、登録済みの入れ子も含めて判定する。"""
+    owner = _git_worktrees.owning_worktree(path, _git_worktrees.list_worktrees(repository, timeout=30))
+    return owner is not None and owner.path.resolve() == repository.resolve()
+
+
+def _repository_relative(path: pathlib.Path, repository: pathlib.Path) -> str:
+    """所属確認済みの参照をGit相対パスへ変換し、root外のリンクは解決先を使う。"""
+    try:
+        return path.relative_to(repository).as_posix()
+    except ValueError:
+        return path.resolve().relative_to(repository.resolve()).as_posix()
+
+
 def _is_untracked_file(candidate: str, repository: pathlib.Path) -> bool:
     """作業ツリーにファイルとして実在するが、Gitで追跡されていないリポジトリ内の候補かを返す。
 
@@ -464,10 +479,10 @@ def _is_untracked_file(candidate: str, repository: pathlib.Path) -> bool:
     追跡の判定のサブプロセスは、作業ツリーに実在する候補にだけ実行する。
     """
     path = pathlib.Path(os.path.abspath(repository / candidate))
-    if not path.is_relative_to(repository) or not _is_file(path):
+    if not _is_file(path) or not _belongs_to_repository(path, repository):
         return False
     result = _git_command.run(
-        ["-C", str(repository), "ls-files", "--error-unmatch", "--", path.relative_to(repository).as_posix()],
+        ["-C", str(repository), "ls-files", "--error-unmatch", "--", _repository_relative(path, repository)],
         capture_output=True,
         text=True,
         check=False,
@@ -502,9 +517,9 @@ def _reference_group(match: re.Match[str], name: str) -> str | None:
 
 def _reference_content(path: pathlib.Path, repository: pathlib.Path, head: str) -> bytes:
     """worktree内の参照は対象commitのblob、外部参照は現在の実ファイルから読む。"""
-    if not path.is_relative_to(repository):
+    if not _belongs_to_repository(path, repository):
         return path.read_bytes()
-    relative = path.relative_to(repository).as_posix()
+    relative = _repository_relative(path, repository)
     result = _git_command.run(
         ["-C", str(repository), "cat-file", "blob", f"{head}:{relative}"], capture_output=True, check=False, timeout=30
     )
@@ -584,7 +599,7 @@ def _repository_reference(
     try:
         return _reference_content(path, repository, head)
     except ValueError as error:
-        if pathlib.Path(candidate).is_absolute() or not path.is_relative_to(repository):
+        if pathlib.Path(candidate).is_absolute() or not _belongs_to_repository(path, repository):
             return f"{error}。実際に読んだ対象版の箇所へ参照を訂正するか、観測が不足する行を証拠不足へ再判定する"
     if not tracked:
         tracked.extend(_tracked_files(repository, head))
@@ -631,7 +646,7 @@ class ReferenceCheck:
         for match in _file_references(body, base, head):
             candidate, location = _reference_parts(match)
             is_wi = WI_FILENAME.fullmatch(candidate) is not None
-            # abspathは..を整理するが、現在のリンク先で対象commitのパスを変えない。
+            # 字面上の内部パスを保ち、root外のリンクは所属確認後に解決する。
             path = pathlib.Path(os.path.abspath(base / candidate))
             key = (head, path)
             if key not in self._contents:
@@ -676,7 +691,7 @@ class ReferenceCheck:
             isinstance(resolved, str)
             and self.worktree
             and repository is not None
-            and path.is_relative_to(repository)
+            and _belongs_to_repository(path, repository)
             and _is_file(path)
         ):
             return path.read_bytes()

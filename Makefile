@@ -78,7 +78,8 @@ setup-pwsh:
 
 # リポジトリ直下とagent-toolkitの仮想環境を、ロックファイルが選ぶパッケージ集合とCIの基準Python版へそろえる。
 # `uv sync`は余分なパッケージを除き、`--python`は版の異なる既存の仮想環境を削除して指定の版で構築する。
-# `uv run`の自動同期は余分なパッケージを残し既存の仮想環境のPython版も保つため、この同期に代えない。
+# `uv run`の自動同期は余分なパッケージを残すため、この同期に代えない。
+# `.python-version`を持たないagent-toolkitと、`UV_PYTHON`などで別の版を指定した環境では、既存の仮想環境のPython版も保つ（uv 0.13.1で確認）。
 sync:
 	uv sync --all-groups --all-extras --python "$$(cat .python-version)"
 	uv sync --project agent-toolkit --all-groups --all-extras --python "$$(cat .python-version)"

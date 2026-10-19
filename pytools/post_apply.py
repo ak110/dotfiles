@@ -21,6 +21,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import platformdirs
+from agent_toolkit._atk.environment import is_human_terminal
 
 from pytools import update_ssh_config
 from pytools._internal import (
@@ -877,6 +878,13 @@ def run(
                     emitted += 1
                 if not running:
                     break
+                if is_human_terminal():
+                    names = "、".join(effective_steps[index].name for index in sorted(running.values()))
+                    print(
+                        f"  post-apply実行中: 完了 {len(outcomes)}/{total}、実行中の工程: {names}",
+                        file=sys.stderr,
+                        flush=True,
+                    )
                 done, _ = wait(running, return_when=FIRST_COMPLETED)
                 for future in done:
                     outcomes[running.pop(future)] = future.result()

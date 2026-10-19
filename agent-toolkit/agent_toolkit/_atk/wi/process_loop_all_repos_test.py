@@ -2,6 +2,8 @@
 
 import argparse
 import asyncio
+import dataclasses
+import datetime
 import json
 import os
 import pathlib
@@ -18,6 +20,7 @@ from agent_toolkit._atk.wi import process_loop_ownership as ownership
 from agent_toolkit._atk.wi import process_loop_session as session
 from agent_toolkit._atk.wi import process_loop_update as update_module
 from agent_toolkit._atk.wi import process_loop_watch as watch
+from agent_toolkit._common import session_registry, state_paths
 from agent_toolkit._testing import git_repository as git
 from agent_toolkit._testing.agents_server_support import (
     AssistantMessage,
@@ -25,6 +28,7 @@ from agent_toolkit._testing.agents_server_support import (
     ResultMessage,
     SystemMessage,
     install_backend,
+    resume_waits,
     server_manager,
 )
 from agent_toolkit._testing.agents_server_support import (
@@ -56,6 +60,7 @@ async def test_repository_orchestrator_follows_mode(
 
     def factory(options: Any) -> FakeClaudeClient:
         options_seen.append(options)
+        (notes / "inbox/task.md").unlink()
         return FakeClaudeClient([[SystemMessage("repository-orchestrator"), AssistantMessage("作業"), ResultMessage("完了")]])
 
     manager = server_manager.AgentsServerManager()
@@ -82,6 +87,9 @@ def _repositories(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> tu
         git.init_repository(tmp_path / name, origin=f"https://example.test/team/{name}.git") for name in ("one", "two", "empty")
     ]
     monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_PROCESS_LOOP_REPOSITORIES", json.dumps([str(path) for path in paths]))
+    monkeypatch.setenv(
+        "AGENT_TOOLKIT_PRIVATE_NOTES", str(tmp_path / ("private-notes" if (tmp_path / "private-notes").exists() else "notes"))
+    )
     return config.resolve_configured_repositories()
 
 
@@ -170,7 +178,7 @@ def test_processing_candidates_and_lane_limit(tmp_path: pathlib.Path, monkeypatc
     assert len(snapshot.candidates) == 11
     assert snapshot.lane_limit == 2
     records = snapshot.candidate_records()
-    assert len(records) == 13
+    assert len(records) == 11
     assert all(
         {"filename", "target_repo", "ready", "blocked_reason", "source", "summary", "body", "staleness"} <= record.keys()
         for record in records
@@ -190,6 +198,9 @@ class _Manager:
         self.fail_repo = fail_repo
         self.closed = False
         self.activated = False
+        self.sent: list[tuple[str, str]] = []
+        self.killed: list[str] = []
+        self.finish_work = True
 
     async def activate_async(self) -> None:
         await asyncio.sleep(0)
@@ -207,7 +218,30 @@ class _Manager:
 
     async def wait(self) -> dict[str, Any]:
         await asyncio.sleep(0)
-        return self.pending.pop(0)
+        result = self.pending.pop(0)
+        if self.finish_work:
+            notes = pathlib.Path(os.environ["AGENT_TOOLKIT_PRIVATE_NOTES"])
+            repo_name = result["session_id"].removeprefix("session-")
+            for directory in ("inbox", "processing"):
+                for path in (notes / directory).glob("*.md"):
+                    if f"target_repo: example.test/team/{repo_name}\n" in path.read_text(encoding="utf-8"):
+                        (notes / "adopted").mkdir(exist_ok=True)
+                        path.rename(notes / "adopted" / path.name)
+        return result
+
+    async def send_message(self, session_id: str, prompt: str) -> dict[str, Any]:
+        self.sent.append((session_id, prompt))
+        self.pending.append({"session_id": session_id, "status": "completed", "agent_message": "完了"})
+        return {"delivery": "reply_started"}
+
+    async def show_session(self, session_id: str, *, verbose: bool = False) -> dict[str, Any]:
+        del verbose
+        return {"session_id": session_id, "status": "running", "started_at": datetime.datetime.now(datetime.UTC).isoformat()}
+
+    async def kill(self, session_id: str, timeout: float = 270, stop: bool = False) -> dict[str, Any]:
+        del timeout, stop
+        self.killed.append(session_id)
+        return {"session_id": session_id, "status": "interrupted"}
 
     async def close(self) -> None:
         self.closed = True
@@ -476,3 +510,222 @@ def test_session_finished_before_restart(tmp_path: pathlib.Path, monkeypatch: py
             on_session_finished=notifications.append,
         )
     assert notifications == [True, False]
+
+
+def _run_delegates(manager: _Manager, snapshots: tuple[listing.RepositorySnapshot, ...]) -> dict[str, dict[str, Any]]:
+    return asyncio.run(
+        asyncio.wait_for(
+            all_repos.run_repository_delegates(
+                argparse.Namespace(resume=None, worktree=None),
+                snapshots,
+                manager=cast(all_repos.RepositoryDelegateManager, manager),
+            ),
+            timeout=5,
+        )
+    )
+
+
+@pytest.mark.parametrize("remaining", ["processing", "inbox", "lane", "held-result"])
+def test_incomplete_delegate_is_continued(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    remaining: str,
+) -> None:
+    """残る各客観条件と保留結果の確定で同じ担当へ続行し、所有を維持する。"""
+    repositories = _repositories(tmp_path, monkeypatch)
+    notes = tmp_path / "notes"
+    task = _write(notes, "task.md", repositories[0].repo_id)
+    snapshots = listing.configured_repo_snapshot(notes, repositories)
+    if remaining == "processing":
+        (notes / "processing").mkdir()
+        task = task.rename(notes / "processing/task.md")
+    elif remaining in {"lane", "held-result"}:
+        task.unlink()
+
+    class ContinuingManager(_Manager):
+        def __init__(self) -> None:
+            super().__init__()
+            self.lane_path = tmp_path / "unused-lane.json"
+
+        async def start(self, model_type: str, prompt: str, cwd: str, **kwargs: Any) -> dict[str, Any]:
+            response = await super().start(model_type, prompt, cwd, **kwargs)
+            payload = json.loads(next(line for line in prompt.splitlines() if line.startswith("{")))
+            directory = state_paths.state_dir() / "lanes" / payload["lane_session_id"]
+            self.lane_path = directory / "lane-01.json"
+            if remaining == "lane":
+                directory.mkdir(parents=True)
+                git.commit_all(pathlib.Path(cwd), "初期状態")
+                # lane.createの登録形式を使い、HEADは実Gitのbranchから照会させる。
+                branch = git.run_git(pathlib.Path(cwd), "branch", "--show-current").stdout.strip()
+                self.lane_path.write_text(json.dumps({"repo": cwd, "branch": branch, "lane": "lane-01"}), encoding="utf-8")
+            if remaining == "held-result":
+                self.pending[-1]["error"] = {"heldResultFinalized": True}
+            return response
+
+        async def send_message(self, session_id: str, prompt: str) -> dict[str, Any]:
+            records = [
+                json.loads(path.read_text(encoding="utf-8"))
+                for path in ownership.ownership_directory().glob("*.json")
+                if not path.name.endswith(".result.json")
+            ]
+            assert len(records) == 1 and not records[0]["released"]
+            assert (
+                "task.md" in prompt
+                if remaining in {"processing", "inbox"}
+                else "lane-01" in prompt
+                if remaining == "lane"
+                else True
+            )
+            task.unlink(missing_ok=True)
+            self.lane_path.unlink(missing_ok=True)
+            return await super().send_message(session_id, prompt)
+
+    manager = ContinuingManager()
+    manager.finish_work = False
+    _run_delegates(manager, snapshots)
+    assert len(manager.sent) == 1 and manager.sent[0][0] == "session-one"
+    assert not ownership.unfinished_repository_ids((repositories[0].repo_id,))
+
+
+def test_completed_delegate_releases_ownership(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """候補の終端とprocessing・未統合レーンの空集合で完遂を確定する。"""
+    repositories = _repositories(tmp_path, monkeypatch)
+    notes = tmp_path / "notes"
+    _write(notes, "task.md", repositories[0].repo_id)
+    manager = _Manager()
+    _run_delegates(manager, listing.configured_repo_snapshot(notes, repositories))
+    record = json.loads(
+        next(
+            path for path in ownership.ownership_directory().glob("*.json") if not path.name.endswith(".result.json")
+        ).read_text(encoding="utf-8")
+    )
+    assert record["completed"] and record["released"]
+    assert not manager.sent
+
+
+def test_no_progress_continuation_is_abandoned(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """最初の続行を基準とし、2回連続で同じ写しなら再開情報を保持して閉じる。"""
+    repositories = _repositories(tmp_path, monkeypatch)
+    notes = tmp_path / "notes"
+    _write(notes, "task.md", repositories[0].repo_id)
+    monkeypatch.setenv("AGENT_TOOLKIT_PROCESS_LOOP_SESSION", "1")
+    manager = _Manager()
+    manager.finish_work = False
+    _run_delegates(manager, listing.configured_repo_snapshot(notes, repositories))
+    assert len(manager.sent) == 2
+    assert "打ち切った" in capsys.readouterr().out
+    assert "repository_no_progress" in loop_log.log_path().read_text(encoding="utf-8")
+    acquired = ownership.try_acquire(repositories[0].repo_id, worktree=repositories[0].worktree)
+    assert acquired is not None and acquired.previous is not None
+    assert acquired.previous["session_id"] == "session-one"
+    ownership.release(acquired)
+
+
+@pytest.mark.parametrize("output", [True, False])
+def test_stalled_delegate_is_killed(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, output: bool) -> None:
+    """最終出力または起動時刻から閾値を超えた担当を停止し、他担当を回収する。"""
+    repositories = _repositories(tmp_path, monkeypatch)
+    notes = tmp_path / "notes"
+    for repository in repositories[:2]:
+        _write(notes, repository.worktree.name + ".md", repository.repo_id)
+
+    class StalledManager(_Manager):
+        async def wait(self) -> dict[str, Any]:
+            self.pending = [item for item in self.pending if item["session_id"] != "session-one"]
+            if self.pending:
+                return await super().wait()
+            await asyncio.Event().wait()
+            raise AssertionError("待機は停止の観測で取り消される")
+
+        async def show_session(self, session_id: str, *, verbose: bool = False) -> dict[str, Any]:
+            assert verbose
+            if session_id == "session-two":
+                return await super().show_session(session_id, verbose=verbose)
+            now = datetime.datetime.now(datetime.UTC)
+            old = (now - datetime.timedelta(seconds=all_repos.STALL_THRESHOLD_SECONDS + 1)).isoformat()
+            return {"status": "running", "started_at": old, "output_updated_at": old if output else None}
+
+    manager = StalledManager()
+    results = _run_delegates(manager, listing.configured_repo_snapshot(notes, repositories))
+    assert manager.killed == ["session-one"]
+    assert results[repositories[1].repo_id]["status"] == "completed"
+    assert ownership.unfinished_repository_ids(tuple(repo.repo_id for repo in repositories)) == {repositories[0].repo_id}
+
+
+def test_stall_threshold_constant() -> None:
+    """停止検知の猶予は自動再開の期限より長く保つ。"""
+    assert all_repos.STALL_THRESHOLD_SECONDS == resume_waits.AUTO_RESUME_DEADLINE_SECONDS + 1800
+
+
+@pytest.mark.parametrize("failures", [1, 3])
+def test_wait_exception_is_retried(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, failures: int) -> None:
+    """待機例外は反復ごとに隔離し、1回なら回復、連続3回なら停止して再開情報を保つ。"""
+    repositories = _repositories(tmp_path, monkeypatch)
+    notes = tmp_path / "notes"
+    for repository in repositories[:2]:
+        _write(notes, repository.worktree.name + ".md", repository.repo_id)
+
+    class FailingWaitManager(_Manager):
+        calls = 0
+
+        async def wait(self) -> dict[str, Any]:
+            self.calls += 1
+            if self.calls <= failures:
+                raise RuntimeError("待機の障害")
+            return await super().wait()
+
+    manager = FailingWaitManager()
+    _run_delegates(manager, listing.configured_repo_snapshot(notes, repositories))
+    assert len(manager.killed) == (2 if failures == 3 else 0)
+    assert bool(ownership.unfinished_repository_ids(tuple(repo.repo_id for repo in repositories))) is (failures == 3)
+    assert manager.closed
+
+
+def test_repeated_wait_exceptions_stop_round(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """3回連続の待機例外で担当を停止し、再開情報を保持する。"""
+    test_wait_exception_is_retried(tmp_path, monkeypatch, 3)
+
+
+@pytest.mark.parametrize("kill_failure", ["exception", "running"])
+@pytest.mark.parametrize(
+    "resolution",
+    [session_registry.Resolution.RUNNING, session_registry.Resolution.UNREADABLE, session_registry.Resolution.TERMINAL],
+)
+def test_held_ownership_after_kill_failure(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    kill_failure: str,
+    resolution: session_registry.Resolution,
+) -> None:
+    """停止の確認失敗後も所有を保持し、次の反復のsession照会で再起動の可否を決める。"""
+    repositories = _repositories(tmp_path, monkeypatch)
+    notes = tmp_path / "notes"
+    _write(notes, "task.md", repositories[0].repo_id)
+    snapshots = listing.configured_repo_snapshot(notes, repositories)
+
+    class HeldManager(_Manager):
+        async def wait(self) -> dict[str, Any]:
+            raise RuntimeError("待機の障害")
+
+        async def kill(self, session_id: str, timeout: float = 270, stop: bool = False) -> dict[str, Any]:
+            if kill_failure == "exception":
+                raise RuntimeError("停止の障害")
+            return {"status": "running"}
+
+    _run_delegates(HeldManager(), snapshots)
+    path = next(ownership.ownership_directory().glob("*.json"))
+    record = json.loads(path.read_text(encoding="utf-8"))
+    assert record["held"] and not record["released"]
+    original = session_registry.resolve("missing")
+    monkeypatch.setattr(session_registry, "resolve", lambda *_args, **_kwargs: dataclasses.replace(original, state=resolution))
+    next_manager = _Manager()
+    results = _run_delegates(next_manager, snapshots)
+    if resolution in {session_registry.Resolution.RUNNING, session_registry.Resolution.UNREADABLE}:
+        assert not next_manager.started
+        assert results[repositories[0].repo_id]["status"] == "owner_wait"
+    else:
+        assert len(next_manager.started) == 0 and len(next_manager.sent) == 1

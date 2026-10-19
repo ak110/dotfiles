@@ -13,31 +13,49 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from agent_toolkit._agents_server import launch_requests, mcp_tools, session_handoff
+from agent_toolkit._agents_server import launch_requests, mcp_tools, plugin_root, session_handoff
 from agent_toolkit._agents_server.state import SessionState
 
 pytestmark = pytest.mark.usefixtures("agents_server_isolation")
 
 
-@pytest.mark.parametrize("declares_handoff", [False, True])
+@pytest.mark.parametrize("handoff_input", [None, "auto", "新規", "継続"])
 def test_normal_task_gets_one_record_path(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
-    declares_handoff: bool,
+    handoff_input: str | None,
 ) -> None:
-    """入力宣言の有無によらず通常taskへ専用パスを注入し、宣言済みでは既存補完と同じ値を使う。"""
-    document = tmp_path / "task.subagent.md"
-    names = "対象,引き継ぎ記録先" if declares_handoff else "対象"
+    """別rootの資料を入力の宣言・指定方法によらず1回配送し、記録先と新規・継続を保つ。"""
+    root = tmp_path / "retained-plugin"
+    document = root / "share/task.subagent.md"
+    document.parent.mkdir(parents=True)
+    references = [root / "share/work-contract.md", root / "skills/delegation/references/handoff-record.md"]
+    for reference in references:
+        reference.parent.mkdir(parents=True, exist_ok=True)
+        reference.write_text(f"資料本文: {reference.name}\n", encoding="utf-8")
+    cwd = tmp_path / "project"
+    cwd.mkdir()
+    monkeypatch.chdir(cwd)
+    names = "対象,引き継ぎ記録先" if handoff_input is not None else "対象"
     document.write_text(f"# 担当\n\n## 入力\n\n```text\n必須入力名: {names}\n```\n", encoding="utf-8")
     monkeypatch.setattr(launch_requests, "resolve_task_document_path", lambda *_args: document)
     monkeypatch.setattr(launch_requests, "_is_agent_toolkit_task_document", lambda *_args: True)
     monkeypatch.setitem(launch_requests._TASK_MODEL_TYPES, document.name, "high_tier")
     handoff = tmp_path / "handoff.md"
     monkeypatch.setattr(launch_requests, "_default_handoff_path", lambda: handoff)
-    _model, _usage, prompt, kind, path = launch_requests.task_document_request(str(document), {"対象": "A全体"})
+    params = {"対象": "A全体"}
+    explicit = handoff_input in {"新規", "継続"}
+    if explicit:
+        params["引き継ぎ記録先"] = f"{handoff}（{handoff_input}）"
+    _model, _usage, prompt, kind, path = launch_requests.task_document_request(str(document), params)
     assert kind == "delegate"
-    assert path == handoff
-    assert prompt.count(f"引き継ぎ記録先: {handoff}（新規）") == 1
+    assert path == (None if explicit else handoff)
+    designation = handoff_input if explicit else "新規"
+    assert prompt.count(f"引き継ぎ記録先: {handoff}（{designation}）") == 1
+    for reference in references:
+        assert reference.is_absolute() and reference.is_file()
+        assert prompt.count(str(reference)) == 1
+        assert reference.read_text(encoding="utf-8") not in prompt
     assert not handoff.exists()
 
 
@@ -57,6 +75,12 @@ async def test_delegate_preserves_original_and_returns_same_record(
     assert delivered.startswith(original + "\n\n")
     assert f"引き継ぎ記録先: {path}（新規）" in delivered
     assert response["handoff_record_path"] == str(path)
+    for relative in ("share/work-contract.md", "skills/delegation/references/handoff-record.md"):
+        reference = plugin_root.SERVER_PLUGIN_ROOT / relative
+        assert reference.is_absolute() and reference.is_file()
+        assert reference.parent != tmp_path
+        assert delivered.count(str(reference)) == 1
+        assert reference.read_text(encoding="utf-8") not in delivered
     assert not path.exists()
 
 
@@ -83,6 +107,29 @@ async def test_lightweight_start_does_not_allocate_record(
     response = await mcp_tools.start(str(tmp_path), mode=mode, **inputs)
     assert "handoff_record_path" not in response
     allocate.assert_not_called()
+
+
+@pytest.mark.parametrize("kind", ["explore", "shell", "write"])
+def test_lightweight_task_does_not_deliver_contract_materials(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    kind: str,
+) -> None:
+    """軽量な役割指定taskは全体契約の確認と専用記録・資料の配送を経由しない。"""
+    document = tmp_path / "task.subagent.md"
+    document.write_text(f"# 担当\n\n## 入力\n\n```text\n必須入力名: 対象\nmode: {kind}\n```\n", encoding="utf-8")
+    monkeypatch.setattr(launch_requests, "resolve_task_document_path", lambda *_args: document)
+    monkeypatch.setattr(launch_requests, "_is_agent_toolkit_task_document", lambda *_args: True)
+    monkeypatch.setitem(launch_requests._TASK_MODEL_TYPES, document.name, "high_tier")
+    monkeypatch.setattr(launch_requests, "_HANDOFF_SESSION", ("whole-session",))
+    monkeypatch.setattr(launch_requests._managed_temp, "find_session_temp", lambda *_args, **_kwargs: tmp_path)
+    _model, _usage, prompt, actual_kind, path = launch_requests.task_document_request(str(document), {"対象": "調査"})
+    assert actual_kind == kind
+    assert path is None
+    assert "引き継ぎ記録先:" not in prompt
+    assert "全体作業契約:" not in prompt
+    assert "share/work-contract.md" not in prompt
+    assert "skills/delegation/references/handoff-record.md" not in prompt
 
 
 def test_successor_reads_same_record_after_followup(tmp_path: pathlib.Path) -> None:

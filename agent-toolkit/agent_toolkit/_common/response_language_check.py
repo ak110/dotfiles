@@ -44,7 +44,7 @@ _INLINE_CODE_PATTERN = re.compile(r"`[^`\n]*`")
 # HTTP/HTTPS URL。
 _URL_PATTERN = re.compile(r"https?://\S+")
 
-# 裸の機械識別子。パス、UUID、Git commit IDおよびsnake_case識別子は、
+# 裸の機械識別子。パス、UUID、Git commit ID、区切り文字で連結した字句と英大文字・数字だけの字句は、
 # 日本語の地の文へ値として埋め込まれても英語の散文量を表さないため、語数比の計数から除外する。
 # 通常の英単語まで除外しないよう、パスは区切り文字、commit IDは数字を必須とする。
 _MACHINE_IDENTIFIER_PATTERN = re.compile(
@@ -53,7 +53,8 @@ _MACHINE_IDENTIFIER_PATTERN = re.compile(
     r"|\b[A-Za-z0-9_.-]+(?:/[A-Za-z0-9_.-]+)+\b"
     r"|\b[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}\b"
     r"|\b(?=[0-9a-fA-F]{7,64}\b)(?=[0-9a-fA-F]*[0-9])[0-9a-fA-F]+\b"
-    r"|\b[a-z][a-z0-9]*(?:_[a-z0-9]+)+\b"
+    r"|(?<![A-Za-z0-9_])-{0,2}[A-Za-z0-9]+(?:[_.-][A-Za-z0-9]+)+(?![A-Za-z0-9_])"
+    r"|(?<![A-Za-z0-9_])[A-Z0-9]+(?![A-Za-z0-9_])"
     r")"
 )
 

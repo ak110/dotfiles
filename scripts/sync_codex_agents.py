@@ -1,7 +1,7 @@
 #!/usr/bin/env -S uv run --script
 # /// script
 # requires-python = ">=3.15"
-# dependencies = ["pytilpack[quart]>=1.47.0"]
+# dependencies = ["psutil", "pytilpack[quart]>=1.47.0"]
 # ///
 """Codex向けAGENTS.mdをベース記述とagent-toolkit rulesから生成する。"""
 

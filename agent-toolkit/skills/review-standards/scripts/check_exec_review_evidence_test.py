@@ -7,6 +7,7 @@ import json
 import os
 import pathlib
 import re
+import shutil
 import subprocess
 import typing
 
@@ -17,6 +18,7 @@ from agent_toolkit._atk import review_table, run_script
 from agent_toolkit._atk.wi import entries as wi_entries
 from agent_toolkit._atk.wi import repo as wi_repo
 from agent_toolkit._atk.wi import sync as wi_sync
+from agent_toolkit._git import worktrees as git_worktrees
 from agent_toolkit._testing import git_repository
 
 FIRST_WI = "20260928-192559-001.md"
@@ -113,10 +115,50 @@ def _mock_wi(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, bodies: di
         return selected, missing
 
     monkeypatch.setattr(subprocess, "run", fake_run)
+    monkeypatch.setattr(
+        git_worktrees,
+        "list_worktrees",
+        lambda *_args, **_kwargs: [git_worktrees.Worktree(tmp_path, None, None, False, False, False, False)],
+    )
     monkeypatch.setattr(wi_sync, "ensure_environment", lambda _home: tmp_path)
     monkeypatch.setattr(wi_repo, "resolve_repo_id", lambda _repo: "example")
     monkeypatch.setattr(wi_entries, "read_named_entries", read_named)
     return requested
+
+
+@pytest.mark.parametrize("worktree", [False, True])
+def test_reference_in_nested_worktree_is_outside_repository(tmp_path: pathlib.Path, worktree: bool) -> None:
+    """入れ子の参照は実ファイルを読み、対象自身の参照はcommitの行数で確かめる。"""
+    repository = git_repository.init_repository(
+        tmp_path / "repo",
+        files={"proof.md": "基準\n", ".claude/worktrees/nested/proof.md": "外側のcommitの1行\n"},
+        commit_message="基準",
+    )
+    nested = repository / ".claude/worktrees/nested"
+    shutil.rmtree(nested)
+    git_repository.run_git(repository, "worktree", "add", "-b", "nested", str(nested))
+    (nested / "proof.md").write_text("別worktreeの根拠\n2行目\n", encoding="utf-8")
+    head = git_repository.git_output(repository, "rev-parse", "HEAD")
+    check = check_exec_review_evidence.ReferenceCheck(repository, {}, worktree=worktree)
+    row = {**_condition(FIRST_WI, "参照を確かめる"), "evidence": f"観測した根拠: {nested / 'proof.md'}:2"}
+    assert not check.row_errors(row, "wi_conditions", "condition", head)
+    row["evidence"] = f"対象版の根拠: {repository / 'proof.md'}:2"
+    assert check.row_errors(row, "wi_conditions", "condition", head)
+
+
+@pytest.mark.parametrize("worktree", [False, True])
+@pytest.mark.parametrize("located", [False, True])
+def test_reference_via_external_symlink_uses_repository_content(tmp_path: pathlib.Path, worktree: bool, located: bool) -> None:
+    """root外のリンクから対象worktreeへ解決した参照も対象commitの内容で確かめる。"""
+    repository = git_repository.init_repository(tmp_path / "repo", files={"proof.md": "基準\n2行目\n"}, commit_message="基準")
+    head = git_repository.git_output(repository, "rev-parse", "HEAD")
+    (repository / "proof.md").write_text("作業中の1行\n", encoding="utf-8")
+    alias = tmp_path / "alias"
+    alias.symlink_to(repository, target_is_directory=True)
+    check = check_exec_review_evidence.ReferenceCheck(repository, {}, worktree=worktree)
+    suffix = ":2" if located else ""
+    row = {**_condition(FIRST_WI, "所属する対象版を読む"), "evidence": f"観測した根拠: {alias / 'proof.md'}{suffix}"}
+    assert not check.row_errors(row, "wi_conditions", "condition", head)
 
 
 def _review_options(head: str, table: pathlib.Path, round_value: int = 2) -> list[str]:

@@ -216,7 +216,7 @@ class TestMiseLatestRefresh:
             calls.append((command, kwargs))
             return subprocess.CompletedProcess(command, 0, "", "")
 
-        monkeypatch.setattr(subprocess, "run", fake_run)
+        monkeypatch.setattr(_pl_mise.process_tree, "run_with_timeout", fake_run)
 
         assert _pl_mise.refresh_mise_tools(tmp_path)  # pylint: disable=protected-access  # noqa: SLF001
         command, kwargs = calls[0]
@@ -246,7 +246,7 @@ class TestMiseLatestRefresh:
                 raise subprocess.TimeoutExpired(command, 600, stderr="途中出力")
             return subprocess.CompletedProcess(command, 7, "", "registry error")
 
-        monkeypatch.setattr(subprocess, "run", fake_run)
+        monkeypatch.setattr(_pl_mise.process_tree, "run_with_timeout", fake_run)
 
         assert not _pl_mise.refresh_mise_tools(tmp_path)  # pylint: disable=protected-access  # noqa: SLF001
         warning = capsys.readouterr().err

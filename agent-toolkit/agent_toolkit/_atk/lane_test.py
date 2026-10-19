@@ -1084,25 +1084,8 @@ def test_integrate_restarts_after_reviewed_correction(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """Git統合前の検証失敗は記録を残し、是正後の独立文脈レビュー入力で公開操作から再開する。"""
-    repo, selected, record = _create(tmp_path, monkeypatch, capsys)
-    _integration_selection(selected, monkeypatch, repo)
+    repo, record, manifest, value, _original = _rebased_integration(tmp_path, monkeypatch, capsys, failed=True)
     worktree = pathlib.Path(record["worktree"])
-    (worktree / "feature").write_text("成果", encoding="utf-8")
-    reviewed = git_repository.commit_all(worktree, "成果")
-    (repo / "upstream").write_text("先行統合", encoding="utf-8")
-    git_repository.commit_all(repo, "先行統合")
-    handoff = tmp_path / "handoff.md"
-    handoff.touch()
-    manifest = tmp_path / "integration.json"
-    value = {
-        "plans": [],
-        "wis": [{"name": "awi.md", "commands": []}],
-        "handoff": str(handoff),
-        "verification": [[sys.executable, "-c", "raise SystemExit(3)"]],
-    }
-    manifest.write_text(json.dumps(value), encoding="utf-8")
-    code, _result, stderr = _invoke(capsys, *_integration_args(record, repo, manifest, reviewed))
-    assert code == 2 and "verification-0" in stderr
     (worktree / "feature").write_text("是正済み", encoding="utf-8")
     reviewed = git_repository.commit_all(worktree, "是正")
     value["verification"] = [[sys.executable, "-c", "pass"]]
@@ -1147,3 +1130,237 @@ def test_integrate_uses_reviewed_oid_when_branch_advances_before_merge(
     assert code == 0 and result["integrated_head"] == head, stderr
     assert not (repo / "unreviewed").exists()
     assert (worktree / "unreviewed").exists()
+
+
+def test_integrate_ignores_session_in_nested_lane_worktree(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """統合先配下の別レーンの担当を所有へ含めずに統合を完了できる。"""
+    repo, selected, record = _create(tmp_path, monkeypatch, capsys)
+    _integration_selection(selected, monkeypatch, repo)
+    nested = repo / ".claude/worktrees/other"
+    git_repository.run_git(repo, "worktree", "add", "-b", "other", str(nested))
+    session_registry.publish("other-writer", terminal=False, cwd=str(nested))
+    handoff = tmp_path / "handoff.md"
+    handoff.touch()
+    manifest = tmp_path / "integration.json"
+    manifest.write_text(
+        json.dumps({"plans": [], "wis": [{"name": "awi.md", "commands": []}], "handoff": str(handoff)}),
+        encoding="utf-8",
+    )
+    code, result, stderr = _invoke(capsys, *_integration_args(record, repo, manifest, record["initial_head"]))
+    assert code == 0 and result["phase"] == "finalized", stderr
+
+
+@pytest.mark.parametrize("relative", [".", "direct"])
+def test_integrate_rejects_session_in_target_outside_nested_worktree(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], relative: str
+) -> None:
+    """統合先の直下と通常の子ディレクトリを使う合意外の担当を検出する。"""
+    repo, _selected, record = _create(tmp_path, monkeypatch, capsys)
+    session_registry.publish("target-writer", terminal=False, cwd=str(repo / relative))
+    code, _result, stderr = _invoke(capsys, *_integration_args(record, repo, tmp_path / "unused", record["initial_head"]))
+    assert code == 2 and "現在の書込所有に含まれない担当が稼働中" in stderr
+
+
+def test_worktree_activity_ignores_nested_worktree(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """解放対象の選別と再走査で、入れ子の別worktreeの担当を区別する。"""
+    _repo, _selected, record = _create(tmp_path, monkeypatch, capsys)
+    worktree = pathlib.Path(record["worktree"])
+    nested = worktree / ".claude/worktrees/nested"
+    git_repository.run_git(worktree, "worktree", "add", "-b", "nested", str(nested))
+    session_registry.publish("nested-writer", terminal=False, cwd=str(nested))
+    assert lane._worktree_activity(worktree) is None  # pylint: disable=protected-access
+    session_registry.publish("direct-writer", terminal=False, cwd=str(worktree))
+    assert "direct-writer" in (lane._worktree_activity(worktree) or "")  # pylint: disable=protected-access
+
+
+@pytest.mark.parametrize("source", ["cwd", "argv"])
+def test_process_activity_ignores_nested_worktree(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], source: str
+) -> None:
+    """プロセスのcwdと絶対引数の双方で入れ子の別worktreeを区別する。"""
+    _repo, _selected, record = _create(tmp_path, monkeypatch, capsys)
+    worktree = pathlib.Path(record["worktree"])
+    nested = worktree / ".claude/worktrees/nested"
+    git_repository.run_git(worktree, "worktree", "add", "-b", "nested", str(nested))
+    location = nested
+
+    class Process:
+        """外部プロセスの照会を決定論的なパスへ向ける。"""
+
+        pid = 12345
+        info = {"username": lane.psutil.Process().username()}
+
+        def cwd(self) -> str:
+            """照会対象のcwdを返す。"""
+            return str(location if source == "cwd" else tmp_path)
+
+        def cmdline(self) -> list[str]:
+            """照会対象の絶対引数を返す。"""
+            return ["program", f"--file={location / 'file'}"] if source == "argv" else ["program"]
+
+    monkeypatch.setattr(lane.psutil, "process_iter", lambda *_args, **_kwargs: [Process()])
+    assert lane._process_activity(worktree) is None  # pylint: disable=protected-access
+    location = worktree
+    assert lane._process_activity(worktree)  # pylint: disable=protected-access
+
+
+def _rebased_integration(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], *, failed: bool = False
+) -> tuple[pathlib.Path, dict[str, Any], pathlib.Path, dict[str, Any], dict[str, Any]]:
+    repo, selected, record = _create(tmp_path, monkeypatch, capsys)
+    _integration_selection(selected, monkeypatch, repo)
+    worktree = pathlib.Path(record["worktree"])
+    (worktree / "feature").write_text("成果", encoding="utf-8")
+    reviewed = git_repository.commit_all(worktree, "成果")
+    (repo / "upstream").write_text("先行統合", encoding="utf-8")
+    git_repository.commit_all(repo, "先行統合")
+    handoff = tmp_path / "handoff.md"
+    handoff.touch()
+    manifest = tmp_path / "integration.json"
+    value: dict[str, Any] = {
+        "plans": [],
+        "wis": [{"name": "awi.md", "commands": []}],
+        "handoff": str(handoff),
+        "verification": [[sys.executable, "-c", "raise SystemExit(3)" if failed else "pass"]],
+    }
+    manifest.write_text(json.dumps(value), encoding="utf-8")
+    code, _result, stderr = _invoke(capsys, *_integration_args(record, repo, manifest, reviewed))
+    assert code == (2 if failed else 1), stderr
+    if failed:
+        assert "verification-0" in stderr
+    state = json.loads(pathlib.Path(record["record_path"]).read_text(encoding="utf-8"))["integration"]
+    return repo, record, manifest, value, state
+
+
+@pytest.mark.parametrize("phase", ["rebased", "awaiting-validation", "verified"])
+@pytest.mark.parametrize("changed", ["verification", "plans", "wis", "handoff"])
+@pytest.mark.parametrize("reviewed_key", ["old_head", "new_head"])
+def test_integrate_restart_review_keeps_rebase_validation(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    phase: str,
+    changed: str,
+    reviewed_key: str,
+) -> None:
+    """全ての工程と入力是正で、同じrebase結果を再検証・検収してから統合する。"""
+    repo, record, manifest, value, original = _rebased_integration(tmp_path, monkeypatch, capsys)
+    record_path = pathlib.Path(record["record_path"])
+    stored = json.loads(record_path.read_text(encoding="utf-8"))
+    # Git統合前の永続状態を再現する。verifiedは受理後・ff前の中断に相当する。
+    stored["integration"]["phase"] = phase
+    record_path.write_text(json.dumps(stored), encoding="utf-8")
+    if changed == "verification":
+        value[changed] = [[sys.executable, "-c", "assert True"]]
+    elif changed in {"plans", "wis"}:
+        value[changed] = [{"name": "plan.md" if changed == "plans" else "awi.md", "commands": [[sys.executable, "-c", "pass"]]}]
+    else:
+        handoff = tmp_path / "corrected-handoff.md"
+        handoff.touch()
+        value[changed] = str(handoff)
+    manifest.write_text(json.dumps(value), encoding="utf-8")
+    args = _integration_args(record, repo, manifest, original[reviewed_key])
+    code, pending, stderr = _invoke(capsys, *args, "--restart-review")
+    assert code == 1 and pending["phase"] == "awaiting-validation", stderr
+    assert pending["new_head"] == original["new_head"] and pending["rewrite_map"] == original["rewrite_map"]
+    previous = json.loads(record_path.read_text(encoding="utf-8"))["previous_integration"]
+    assert previous == stored["integration"]
+    assert pending["results"]["history-compare"] == original["results"]["history-compare"]
+    assert pending["results"]["verification-0"]["record_path"] != original["results"]["verification-0"]["record_path"]
+    assert git_repository.git_output(repo, "rev-parse", "HEAD") == original["new_base"]
+    code, final, stderr = _invoke(capsys, *args, "--accept-rebased-head", original["new_head"])
+    assert code == 0 and final["phase"] == "finalized", stderr
+    assert git_repository.git_output(repo, "rev-parse", "HEAD") == original["new_head"]
+
+
+def test_integrate_restart_review_after_failed_rebased_verification(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """検証失敗後、argvだけの是正をrebase前のレビューHEADで再開し検収を経る。"""
+    repo, record, manifest, value, original = _rebased_integration(tmp_path, monkeypatch, capsys, failed=True)
+    value["verification"] = [[sys.executable, "-c", "pass"]]
+    manifest.write_text(json.dumps(value), encoding="utf-8")
+    args = _integration_args(record, repo, manifest, original["old_head"])
+    code, pending, stderr = _invoke(capsys, *args, "--restart-review", "--accept-rebased-head", original["new_head"])
+    assert code == 1 and pending["new_head"] == original["new_head"], stderr
+    assert pending["phase"] == "awaiting-validation"
+    code, final, stderr = _invoke(capsys, *args, "--accept-rebased-head", pending["new_head"])
+    assert code == 0 and final["phase"] == "finalized", stderr
+
+
+def test_integrate_rejects_changed_input_with_restart_guidance(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    record_property: Callable[[str, object], None],
+) -> None:
+    """manifest是正だけの再開が、検収へ戻る操作を拒否文から選べる。"""
+    repo, record, manifest, value, original = _rebased_integration(tmp_path, monkeypatch, capsys)
+    value["verification"] = [[sys.executable, "-c", "assert True"]]
+    manifest.write_text(json.dumps(value), encoding="utf-8")
+    code, _result, stderr = _invoke(capsys, *_integration_args(record, repo, manifest, original["old_head"]))
+    record_property("restart_diagnostic", stderr)
+    assert code == 2
+    assert all(word in stderr for word in ("--restart-review", "検証argv", "最終化argv", "handoff", "検収待ち"))
+
+
+def _timed_integration(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], *, rebased: bool
+) -> tuple[pathlib.Path, dict[str, Any], pathlib.Path, str]:
+    # 統合の操作より短い固有手順の上限で所有登録を作成する。
+    # history-compareは同じ上限で動くため、負荷の揺れを吸収する余裕を残す。
+    repo, selected, record = _create(tmp_path, monkeypatch, capsys, "--timeout", "5")
+    _integration_selection(selected, monkeypatch, repo)
+    worktree = pathlib.Path(record["worktree"])
+    (worktree / "feature").write_text("成果", encoding="utf-8")
+    head = git_repository.commit_all(worktree, "成果")
+    if rebased:
+        (repo / "upstream").write_text("先行統合", encoding="utf-8")
+        git_repository.commit_all(repo, "先行統合")
+    handoff = tmp_path / "handoff.md"
+    handoff.touch()
+    return repo, record, handoff, head
+
+
+_SLOW_ARGV = [sys.executable, "-c", "import time;time.sleep(6)"]
+
+
+@pytest.mark.parametrize("rebased", [False, True])
+def test_integrate_verification_is_not_limited_by_procedure_timeout(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], rebased: bool
+) -> None:
+    """検証argvは自身の上限で終わり、固有手順向けのprocedure_timeoutで打ち切られずに統合が進む。"""
+    repo, record, handoff, head = _timed_integration(tmp_path, monkeypatch, capsys, rebased=rebased)
+    manifest = tmp_path / "integration.json"
+    manifest.write_text(
+        json.dumps(
+            {"plans": [], "wis": [{"name": "awi.md", "commands": []}], "handoff": str(handoff), "verification": [_SLOW_ARGV]}
+        ),
+        encoding="utf-8",
+    )
+    code, result, stderr = _invoke(capsys, *_integration_args(record, repo, manifest, head))
+    if rebased:
+        assert code == 1 and result["phase"] == "awaiting-validation", stderr
+    else:
+        assert code == 0 and result["phase"] == "finalized", stderr
+    assert "verification-0" in result["completed"]
+
+
+def test_integrate_finalization_keeps_procedure_timeout(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """自身の上限を持たない最終化argvは、従来どおりprocedure_timeoutで打ち切られる。"""
+    repo, record, handoff, head = _timed_integration(tmp_path, monkeypatch, capsys, rebased=False)
+    manifest = tmp_path / "integration.json"
+    manifest.write_text(
+        json.dumps(
+            {"plans": [], "wis": [{"name": "awi.md", "commands": [_SLOW_ARGV]}], "handoff": str(handoff), "verification": []}
+        ),
+        encoding="utf-8",
+    )
+    code, _result, stderr = _invoke(capsys, *_integration_args(record, repo, manifest, head))
+    assert code == 2 and "wis:awi.md:0が終了124" in stderr, stderr

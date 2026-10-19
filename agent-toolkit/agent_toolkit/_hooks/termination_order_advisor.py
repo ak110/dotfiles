@@ -5,7 +5,7 @@ r"""成果作業で`agent-toolkit:completion-report`の起動を忘れた終了�
 有効なプロジェクト規範による省略も無い場合は、初回のStopから遮断し、起動と残工程への続行を案内する。
 起動証拠はClaude Codeでは成功したSkill呼び出し、Codexでは実際の入力と結果が示す`SKILL.md`の読取とし、
 `termination_evidence`が観測した記録だけを使う。報告本文の見出し・区切り・区分・候補IDは判定に使わない。
-起動済みの成果作業は、同じ作業・人間入力につき一度だけ終了判断の点検へ戻す。
+起動済みの成果作業は、最終報告を届けた場合を除き、同じ作業・人間入力につき一度だけ終了判断の点検へ戻す。
 工程の完遂と報告の送達・内容は、メインが元要求と実際の結果から判断する。
 
 中止・置換・技術的不成立と記録した作業と、確認の回答や委譲先の結果を待つ作業は遮断しない。
@@ -27,6 +27,7 @@ from agent_toolkit._hooks.notice import block_formatter as _block_notice_formatt
 # 関数の実行時にだけ使う依存は、使用時まで読み込まない。
 lazy from agent_toolkit._atk import run_script as _run_script
 lazy from agent_toolkit._common import transcript
+lazy from agent_toolkit._common.session_state import read_state
 lazy from agent_toolkit._common.shell_segments import extract_execution_segments
 lazy from agent_toolkit._common.shell_tokens import ATK_SHELL_TOOLS, is_atk_command
 lazy from agent_toolkit._hooks import termination_evidence
@@ -37,6 +38,9 @@ lazy from agent_toolkit._hooks.stop_session import append_stop_log
 lazy from agent_toolkit._hooks.stop_session import parse_stop_session as _parse_stop_session
 
 _HOOK_ID = "termination_order_advisor"
+
+# 固定文の定義元: skills/completion-report/SKILL.mdの最終報告。
+_FINAL_REPORT_ENDING = "以上で、このセッションの作業は全て終わりました"
 
 _block_notice = _block_notice_formatter(_HOOK_ID)
 
@@ -141,6 +145,37 @@ def _waiting_work_ids(payload: dict, session_id: str, transcript_path: str, work
     return waiting
 
 
+def _final_report_work_ids(payload: dict, pending: dict, work_ids: set[str]) -> set[str]:
+    """作業と最新の人間入力の後の最後の可視本文が最終報告である作業を返す。"""
+    if is_codex_payload(payload):
+        text = payload.get("last_assistant_message")
+        return work_ids if isinstance(text, str) and text.rstrip().rstrip("。").endswith(_FINAL_REPORT_ENDING) else set()
+    data = read_state(payload["session_id"]).get(termination_evidence.STATE_KEY, {})
+    reference = data.get("inputs", {}).get(data.get("last_human_input"), {})
+    input_offset = reference.get("offset", 0)
+    finished: set[str] = set()
+    for work_id in work_ids:
+        offset = max(pending[work_id].get("offset", 0), input_offset)
+        raw = transcript.read_transcript_bytes(payload.get("transcript_path", ""), offset=offset)
+        if raw is None:
+            continue
+        last = ""
+        for line in raw.decode("utf-8", errors="replace").splitlines():
+            try:
+                entry = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if not isinstance(entry, dict) or entry.get("isSidechain") or entry.get("type") != "assistant":
+                continue
+            text = transcript.visible_assistant_text(entry.get("message"))
+            # send_to_user後にClaudeのターンを終える`…`は報告本文へ数えない。
+            if text.strip().strip("…").strip():
+                last = text
+        if last.rstrip().rstrip("。").endswith(_FINAL_REPORT_ENDING):
+            finished.add(work_id)
+    return finished
+
+
 def evaluate(payload_text: str) -> tuple[str, str]:
     """completion-reportの起動証拠の判定結果と、遮断する場合の理由を返す。"""
     resolved = _parse_stop_session(payload_text, lambda: None)
@@ -169,7 +204,11 @@ def evaluate(payload_text: str) -> tuple[str, str]:
     waiting = _waiting_work_ids(payload, session_id, transcript_path, set(missing) | review_ids)
     remaining = {work_id: kinds for work_id, kinds in missing.items() if work_id not in waiting}
     if not remaining:
-        review = termination_evidence.claim_stop_review(payload, review_ids - waiting) if review_ids - waiting else []
+        final_reports = _final_report_work_ids(payload, pending, review_ids - waiting)
+        if final_reports:
+            append_stop_log(session_id, "approve_final_report_delivered", {"work_ids": ",".join(sorted(final_reports))})
+        candidates = review_ids - waiting - final_reports
+        review = termination_evidence.claim_stop_review(payload, candidates) if candidates else []
         if review:
             return "block", _block_notice(
                 "起動済みの完了処理について、終了時点の送達と残工程を点検する。対象: " + "、".join(review),

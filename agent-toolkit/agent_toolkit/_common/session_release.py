@@ -11,7 +11,7 @@ import uuid
 from collections.abc import Awaitable, Callable, Mapping
 from typing import Any, Protocol
 
-from agent_toolkit._common import atomic_file, session_registry
+from agent_toolkit._common import atomic_file, path_ownership, session_registry
 
 
 class OwnedSession(Protocol):
@@ -44,7 +44,12 @@ def _save(path: pathlib.Path, value: dict[str, Any]) -> None:
 
 
 def request_release(
-    session_id: str, worktree: pathlib.Path, *, deadline: float, state_root: pathlib.Path | None = None
+    session_id: str,
+    worktree: pathlib.Path,
+    *,
+    deadline: float,
+    state_root: pathlib.Path | None = None,
+    worktree_paths: tuple[pathlib.Path, ...] | None = None,
 ) -> str | None:
     """終端済みの資源の解放応答を期限まで待ち、保持が必要なら理由を返す。
 
@@ -69,6 +74,7 @@ def request_release(
                 "record_digest": digest,
                 "deadline": deadline,
                 "owner": {"pid": processes[0].pid, "create_time": processes[0].create_time},
+                **({"worktree_paths": [str(path) for path in worktree_paths]} if worktree_paths is not None else {}),
             },
         )
         while True:
@@ -138,7 +144,11 @@ async def process_requests(
                 not session.terminal
                 or resolution.state is not session_registry.Resolution.TERMINAL
                 or digest != payload["record_digest"]
-                or not pathlib.Path(session.cwd).resolve().is_relative_to(pathlib.Path(payload["worktree"]))
+                or path_ownership.owning_root(
+                    pathlib.Path(session.cwd),
+                    (pathlib.Path(value) for value in payload.get("worktree_paths", [payload["worktree"]])),
+                )
+                != pathlib.Path(payload["worktree"]).resolve()
             ):
                 response["error"] = "要求後に所有または終端状態が変わった"
             else:

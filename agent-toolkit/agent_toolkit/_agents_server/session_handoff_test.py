@@ -41,7 +41,7 @@ def _record_extractor(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -
         return subprocess.CompletedProcess(command, 0, "会話本文", "")
 
     monkeypatch.setattr(record_paths, "find_session_record", find_record)
-    monkeypatch.setattr(session_handoff.subprocess, "run", extract)
+    monkeypatch.setattr(session_handoff.process_tree, "run_with_timeout", extract)
     return record
 
 

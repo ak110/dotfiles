@@ -156,3 +156,46 @@ def _still_holding_resources(descendants: list[psutil.Process]) -> list[int]:
         except psutil.Error, OSError:
             continue
     return holding
+
+
+def test_run_with_timeout_stops_descendants(monkeypatch, tmp_path):
+    """孫の準備後に計時し、時間切れの報告より先に子と孫が解放される。"""
+    marker = tmp_path / "ready"
+    started: list[psutil.Process] = []
+
+    class ReadyPopen(subprocess.Popen):
+        def communicate(self, input=None, timeout=None):
+            if timeout is not None:
+                _wait_for_ready_marker(marker)
+                started.extend([psutil.Process(self.pid), *process_tree.collect_descendants(self.pid)])
+            return super().communicate(input, timeout=timeout)
+
+    child = f"import pathlib, time; pathlib.Path({str(marker)!r}).touch(); time.sleep(120)"
+    monkeypatch.setattr(subprocess, "Popen", ReadyPopen)
+    try:
+        with pytest.raises(subprocess.TimeoutExpired):
+            process_tree.run_with_timeout([sys.executable, "-c", _parent_source(child)], timeout=0.05, capture_output=True)
+        assert started and not _still_holding_resources(started)
+    finally:
+        process_tree.reclaim_descendants(started, timeout=0.1)
+
+
+def test_stop_process_tree_reports_residual(monkeypatch, spawn_parent):
+    """回収失敗の応答を、停止前のPIDと起動コマンドで返す。"""
+    parent = spawn_parent()
+    target = process_tree.collect_descendants(parent.pid)[0]
+    expected = process_tree.describe(target)
+
+    def fail_to_reclaim(targets, **kwargs):
+        del kwargs
+        assert target in targets
+        parent.kill()
+        return [target]
+
+    monkeypatch.setattr(process_tree, "reclaim_processes", fail_to_reclaim)
+    try:
+        assert process_tree.stop_process_tree(parent) == [expected]
+    finally:
+        with contextlib.suppress(psutil.Error, OSError):
+            target.kill()
+            target.wait(timeout=5)

@@ -140,7 +140,7 @@ class TestAutoDisablePlugins:
                 )
             return _FakeResult(returncode=0)
 
-        monkeypatch.setattr(_common.subprocess, "run", fake_run)
+        monkeypatch.setattr(_common, "run_subprocess", fake_run)
         return calls
 
     def test_disable_called_when_installed_and_not_disabled(self, monkeypatch: pytest.MonkeyPatch):
@@ -219,7 +219,7 @@ class TestAutoDisablePlugins:
                 return _FakeResult(returncode=1, stderr="boom")
             return _FakeResult(returncode=0)
 
-        monkeypatch.setattr(_common.subprocess, "run", fake_run_with_disable_failure)
+        monkeypatch.setattr(_common, "run_subprocess", fake_run_with_disable_failure)
 
         # disable 失敗でも例外は出ない (changed は False: 成功件数 0)
         changed = _install_claude_plugins.run().changed
@@ -273,7 +273,7 @@ class TestRunAutoDisable:
                 )
             return _FakeResult(returncode=0)
 
-        monkeypatch.setattr(_common.subprocess, "run", fake_run)
+        monkeypatch.setattr(_common, "run_subprocess", fake_run)
 
         outcome = _install_claude_plugins.run()
 
@@ -319,7 +319,7 @@ class TestRunNoAutomaticStateChange:
         calls: list[list[str]] = []
         fake_run = make_installed_two_plugin_fake(calls)
 
-        monkeypatch.setattr(_common.subprocess, "run", fake_run)
+        monkeypatch.setattr(_common, "run_subprocess", fake_run)
 
         outcome = _install_claude_plugins.run()
 
@@ -378,7 +378,7 @@ class TestExternalMarketplaces:
                 installed_plugin_ids.add(cmd[3])
             return _FakeResult(returncode=0)
 
-        monkeypatch.setattr(_common.subprocess, "run", fake_run)
+        monkeypatch.setattr(_common, "run_subprocess", fake_run)
         return calls
 
     def test_registers_and_installs_when_absent(self, monkeypatch: pytest.MonkeyPatch) -> None:
