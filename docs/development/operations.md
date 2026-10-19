@@ -258,6 +258,15 @@ lockedモードの`install`が失敗しても、lockを書き戻すlockedなし�
 `mise.toml`にあってlockに無いツールによる失敗はlockの更新不足であり、`make update-mise-locks`で解消する。
 `update-dotfiles`はgit pull工程の前にルート`mise.lock`の差分を破棄してHEADの内容へ戻し、それ以外の未コミット差分だけを退避して復元する。
 
+`update-dotfiles`の各段は、後続の段の前提になる段と、失敗しても後続の段の前提を壊さない段に分ける。
+前提になる段は、ロックの取得、git timeout設定の検証、dotfiles自身のGit更新、`chezmoi init`、`chezmoi apply`である。
+これらが失敗したときは、ソースの状態が不確定なまま配備しないよう、その時点で止める。
+前提を壊さない段は、過去の退避データの整理、`mise.lock`の差分の破棄、プラグインのpull、`chezmoi status`、`chezmoi diff`、
+Codex管理daemonの一時停止と再起動、永続ログの開始である。
+これらが失敗したときは、失敗を記録して後続の段を続ける。
+最後に失敗した段と次の操作の一覧を標準エラーへ表示し、終了コード1で終える。
+分類の詳細は`libexec/update_dotfiles.py`のモジュールdocstringにある。
+
 ## 対話シェル起動時のbash補完のキャッシュ
 
 対話シェルは補完定義を得るためにコマンドごとの子プロセスを起動する。

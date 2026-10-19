@@ -25,9 +25,16 @@ exit code 1で終了し、他プロセスの完了を待って再実行するよ
 （`libexec/update_dotfiles.py`）から`Path(__file__)`起点で解決する
 （`Path.home()`起点は`$HOME`と実チェックアウト先の不一致を招くため使わない）。
 
-各段の失敗はexit codeをそのまま伝播し以降の段を実行しない。`chezmoi status`段
-（表示専用）も含め全段をfail-fast対象とし、既存bash実装が`set -euo pipefail`で
-持っていた「いずれかの段が失敗すれば中断する」挙動をそのまま踏襲する。
+各段は、後続の段の前提になる段と、失敗しても後続の段の前提を壊さない段に分ける。
+前提になる段は、ロックの取得、git timeout設定の検証、dotfiles自身のGit更新（所有の確認・index管理・
+退避・pull・競合回復）、`chezmoi init`、`chezmoi apply`であり、失敗したexit codeをそのまま伝播して以降の段を実行しない。
+ソースの状態が不確定なまま`chezmoi init`・`chezmoi apply`へ進むと不確定な内容を配備するためである。
+前提を壊さない段は、失敗を記録して後続の段を続け、全段の実行後に失敗した段と次の操作の一覧を標準エラーへ表示して終了コード1で終える。
+該当する段は、過去の退避データの整理（旧形式の参照は残り、今回の退避は新しい参照へ保存される）、
+`mise.lock`の差分の破棄（破棄できなかった差分は未コミット内容として退避・復元される）、
+`plugins/`配下の各リポジトリのpull、`chezmoi status`（表示専用）、`chezmoi diff`（表示と記録専用）、
+Codex管理daemonの一時停止と再起動、永続ログの開始（開始できない場合は標準出力・標準エラーだけで続ける）である。
+段を追加するときは、失敗した状態で後続の段へ進むと不確定な内容を配備するかで分類する。
 Gitが進捗を標準エラー出力へ書く場合も、Git更新段が正常終了した場合は
 `update-dotfiles`の標準出力へ転送する。失敗時はGitの標準エラー出力を維持する。
 各段のサブプロセスへ`MISE_AUTO_INSTALL=0`を渡し、miseのshimが呼び出したコマンドと
@@ -105,7 +112,23 @@ _current_run_id: str | None = None
 _persistent_log_ready = False
 _current_stage_title: str | None = None
 _last_stderr_tail: str | None = None
+_continued_failures: list[_ContinuedFailure] = []
 _update_index: pathlib.Path | None = None
+
+
+@dataclasses.dataclass(frozen=True)
+class _ContinuedFailure:
+    """失敗しても後続の段を続けた段と、その段の次の操作。"""
+
+    title: str
+    action: str
+    detail: str | None
+
+
+def _continue_after_failure(title: str, action: str, detail: str | None = None) -> None:
+    """後続の段の前提を壊さない段の失敗を記録し、呼び出し側が後続の段を続けられるようにする。"""
+    logger.error("stage失敗のまま続行: %s", title)
+    _continued_failures.append(_ContinuedFailure(title, action, detail))
 
 
 def _configure_persistent_log(run_id: str) -> logging.Handler | None:
@@ -141,6 +164,8 @@ def _finish(returncode: int) -> int:
     同期結果の構造化記録も本関数だけが確定させる。全ての終了経路が本関数を通るため、
     記録の欠落と、成功した段を失敗として残す書き分けの誤りを避けられる。
     """
+    if _continued_failures:
+        returncode = _report_continued_failures(returncode)
     logger.info("update-dotfiles終了: exit=%d", returncode)
     if _current_run_id is not None:
         sync_report.write_finish(
@@ -154,6 +179,26 @@ def _finish(returncode: int) -> int:
     if returncode != 0 and _persistent_log_ready:
         print(f"永続ログ: {_LOG_PATH}", file=sys.stderr)
         print("失敗の詳細は update-dotfiles logs で直近1回の実行ログを表示して確認できる。", file=sys.stderr)
+    return returncode
+
+
+def _report_continued_failures(returncode: int) -> int:
+    """続行した段の失敗の一覧を標準エラーへ表示し、同期記録へ残す内容を整える。
+
+    続行した失敗だけで終えた場合は終了コード1にし、記録する段と標準エラーの末尾を続行した失敗の一覧から作成する。
+    後続の前提になる段が失敗した場合は、その段の記録を保ち、一覧は標準エラーと永続ログへ残す。
+    """
+    global _current_stage_title, _last_stderr_tail  # noqa: PLW0603
+    lines = ["失敗しても後続の段を続けた段:"]
+    for failure in _continued_failures:
+        lines.append(f"- {failure.title}: {failure.action}")
+    print("\n".join(lines), file=sys.stderr)
+    logger.error("続行した失敗: %s", " / ".join(failure.title for failure in _continued_failures))
+    if returncode == 0:
+        details = [f"{failure.title}: {failure.detail}" if failure.detail else failure.title for failure in _continued_failures]
+        _current_stage_title = " / ".join(failure.title for failure in _continued_failures)
+        _last_stderr_tail = sync_report.truncate_tail("\n".join(details))
+        return 1
     return returncode
 
 
@@ -667,10 +712,14 @@ def _run_worktree_stash(*arguments: str) -> subprocess.CompletedProcess[str] | N
                 stdout, stderr = process.communicate(timeout=_GIT_OUTPUT_RECOVERY_TIMEOUT_SEC)
             except subprocess.TimeoutExpired:
                 stdout, stderr = "", ""
+            outcome = (
+                "子孫プロセスを終了しました。"
+                if arguments[0] == "protect-old"
+                else "子孫プロセスを終了して更新を中止しました。"
+            )
             message = (
                 f"{display_title}が{_WORKTREE_STASH_TIMEOUT_SEC}秒以内に完了しなかったため、"
-                "子孫プロセスを終了して更新を中止しました。"
-                "update-dotfiles logsで停止した操作と退避先を確認してください。"
+                f"{outcome}update-dotfiles logsで停止した操作と退避先を確認してください。"
             )
             _last_stderr_tail = sync_report.truncate_tail(f"{stdout}\n{stderr}\n{message}")
             logger.error(
@@ -817,15 +866,26 @@ def _update_owned_git(step_no: int, total: int, *, timeout: int | None) -> int:
     if _update_index is None:
         raise RuntimeError("Git更新にはindexの所有が必要です")
     if not _protect_old_worktree_stashes():
-        return 1
-    if not _discard_mise_lock_changes():
         print(
-            "mise.lockの差分を破棄できなかったため、更新を中止します。"
-            "git status --short -- mise.lockで状態を確認し、Gitのエラーと書込権限の問題を解消して"
-            "update-dotfilesを再実行してください。",
+            "過去の退避データを確認できませんでしたが、更新を続けます。旧形式の参照は変更されず残り、今回の退避は新しい参照へ保存されます。",
             file=sys.stderr,
         )
-        return 1
+        _continue_after_failure(
+            "過去の退避データの整理",
+            "git statusとupdate-dotfiles logsで原因を確かめ、解消しない場合はログを添えて報告してください。",
+            _last_stderr_tail,
+        )
+    if not _discard_mise_lock_changes():
+        print(
+            "mise.lockの差分を破棄できませんでしたが、更新を続けます。破棄できなかった差分は未コミット内容として退避・復元されます。",
+            file=sys.stderr,
+        )
+        _continue_after_failure(
+            "mise.lockの差分の破棄",
+            "git status --short -- mise.lockで状態を確認し、Gitのエラーと書込権限の問題を解消して"
+            "update-dotfilesを再実行してください。",
+            _last_stderr_tail,
+        )
     branch = _git_value("symbolic-ref", "--quiet", "--short", "HEAD")
     upstream = _git_value("rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{upstream}")
     original_head = _git_value("rev-parse", "HEAD")
@@ -1021,13 +1081,17 @@ def main(argv: list[str] | None = None) -> int:
     _current_run_id = f"{time.time_ns()}-{os.getpid()}"
     _current_stage_title = None
     _last_stderr_tail = None
+    _continued_failures.clear()
     log_handler = _configure_persistent_log(_current_run_id)
     sync_report.write_start(_current_run_id, sync_report.now_text())
     logger.info("update-dotfiles開始: root=%s", _DOTFILES_ROOT)
     try:
         if log_handler is None:
-            _last_stderr_tail = "永続ログを開始できない"
-            return _finish(1)
+            _continue_after_failure(
+                "永続ログの開始",
+                f"{_LOG_PATH.parent}の書込権限と空き容量を確認してupdate-dotfilesを再実行してください。",
+                "永続ログを開始できない",
+            )
         try:
             git_timeout = _git_timeout()
         except ValueError as error:
@@ -1050,7 +1114,11 @@ def main(argv: list[str] | None = None) -> int:
                     if plugin.is_dir() and (plugin / ".git").exists():
                         returncode = _run_git_pull(1, total, timeout=git_timeout, plugin=plugin)
                         if returncode != 0:
-                            return _finish(returncode)
+                            _continue_after_failure(
+                                _current_stage_title or f"dotfilesプラグイン {plugin.name}: git pull",
+                                f"{plugin}で git status と git pull --rebase を実行して原因を確かめてください。",
+                                _last_stderr_tail,
+                            )
 
                 returncode, _ = _run_step(
                     2,
@@ -1069,7 +1137,11 @@ def main(argv: list[str] | None = None) -> int:
                     capture=True,
                 )
                 if returncode != 0:
-                    return _finish(returncode)
+                    _continue_after_failure(
+                        "chezmoi status (apply予定のファイル)",
+                        "表示専用の段であり、chezmoi applyは続けます。chezmoi statusを単独で実行して原因を確かめてください。",
+                        _last_stderr_tail,
+                    )
                 for line in _filter_apply_pending(status_output):
                     print(line)
 
@@ -1083,7 +1155,12 @@ def main(argv: list[str] | None = None) -> int:
                 )
                 logger.info("chezmoi diffの出力:\n%s", diff_output)
                 if returncode != 0:
-                    return _finish(returncode)
+                    _continue_after_failure(
+                        "chezmoi diff (上書き前の差分)",
+                        "差分の記録だけの段であり、chezmoi applyは続けます。"
+                        "chezmoi diffを単独で実行して原因を確かめてください。",
+                        _last_stderr_tail,
+                    )
 
                 daemon_pause = _pause_codex_daemon()
                 try:
@@ -1101,9 +1178,11 @@ def main(argv: list[str] | None = None) -> int:
                 stop_error = None if daemon_pause is None else daemon_pause.stop_error
                 daemon_errors = [error for error in (stop_error, resume_error) if error is not None]
                 if daemon_errors:
-                    _current_stage_title = _CODEX_DAEMON_STAGE_TITLE
-                    _last_stderr_tail = sync_report.truncate_tail("\n".join(daemon_errors))
-                    return _finish(1)
+                    _continue_after_failure(
+                        _CODEX_DAEMON_STAGE_TITLE,
+                        "Codex管理daemonの状態を確認し、停止していれば codex app-server daemon start を実行してください。",
+                        "\n".join(daemon_errors),
+                    )
         except filelock.Timeout:
             logger.exception("update-dotfilesロック取得失敗")
             lock_message = (
@@ -1122,6 +1201,7 @@ def main(argv: list[str] | None = None) -> int:
         _persistent_log_ready = False
         _current_stage_title = None
         _last_stderr_tail = None
+        _continued_failures.clear()
 
 
 if __name__ == "__main__":
