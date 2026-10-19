@@ -84,17 +84,18 @@ fi
 exit 0
 """
 
-# 開発機で動く他のCodexを稼働判定へ混ぜないため、`PS_STUB_PIDS`へ空白区切りで列挙したpidの行だけを実際の`ps`の出力から返す。
+# 開発機で動く他のCodexを稼働判定へ混ぜないため、`PS_STUB_PIDS`へ空白区切りで列挙したpidの行だけを返す。
+# 行はインストーラーが指定する`-o pid= -o stat= -o args=`の形で`/proc`から組み立てる。
+# `ps`の無い環境（CIのcontainerなど）でも同じ出力にするためである。
 # 未指定なら稼働中のプロセスが無い状態として何も出力しない。
 _PS_STUB = """#!/bin/sh
 [ -n "$PS_STUB_PIDS" ] || exit 0
-for candidate in /usr/bin/ps /bin/ps; do
-    if [ -x "$candidate" ]; then
-        "$candidate" "$@" | awk -v pids=" $PS_STUB_PIDS " 'index(pids, " " $1 " ") > 0'
-        exit 0
-    fi
+for pid in $PS_STUB_PIDS; do
+    [ -r "/proc/$pid/stat" ] || continue
+    state=$(sed 's/^.*) //' "/proc/$pid/stat" | cut -d ' ' -f 1) || exit 1
+    args=$(tr '\\000' ' ' < "/proc/$pid/cmdline") || exit 1
+    printf '%s %s %s\\n' "$pid" "$state" "$args"
 done
-exit 1
 """
 
 

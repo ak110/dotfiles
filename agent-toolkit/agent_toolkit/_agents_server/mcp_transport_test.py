@@ -245,10 +245,11 @@ class _LaunchedServer:
     ) -> None:
         # 起動用の依存環境と依存のキャッシュは実行ホストの値を使い、状態ディレクトリと一時領域だけを分離する。
         # 依存環境を分離すると、作業者ごとに数百MBのコピーを一時領域へ作るためである。
+        # `UV_FROZEN`は起動形の`--locked`と重なるとuvが無視する旨の警告を標準エラーへ出力するため、CIのjob環境から引き継がない。
         env = {
             key: value
             for key, value in host_environment.items()
-            if key not in {"AGENT_TOOLKIT_OWNER_SESSION", "CLAUDE_CODE_SESSION_ID", "VIRTUAL_ENV", "CLAUDECODE"}
+            if key not in {"AGENT_TOOLKIT_OWNER_SESSION", "CLAUDE_CODE_SESSION_ID", "VIRTUAL_ENV", "CLAUDECODE", "UV_FROZEN"}
         }
         env.update(
             XDG_STATE_HOME=str(tmp_path),
@@ -373,6 +374,10 @@ def test_launcher_records_stdin_close_exit(tmp_path: pathlib.Path, host_environ:
 
 def test_launcher_check_dependencies_exits_silently(tmp_path: pathlib.Path, host_environ: Callable[[], dict[str, str]]) -> None:
     """起動単位を持たない正常終了は、診断ファイルの所在を受け取れなかった旨を標準エラーへ出力しない。"""
+    # ランチャーは子の標準エラーを中継する。依存環境を初めて作成するuvの進行表示を
+    # 判定対象の標準エラーへ含めないよう、先に作成を済ませる。
+    warmup = _LaunchedServer(tmp_path / "warmup", host_environ(), arguments=("--check-dependencies",))
+    assert warmup.wait() == 0, warmup.stderr
     server = _LaunchedServer(tmp_path, host_environ(), arguments=("--check-dependencies",))
 
     assert server.wait() == 0

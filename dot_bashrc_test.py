@@ -3,6 +3,7 @@
 import os
 import pathlib
 import subprocess
+import sys
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parent
 BASHRC = REPO_ROOT / ".chezmoi-source" / "dot_bashrc"
@@ -488,15 +489,17 @@ def test_non_interactive_shell_points_tmpdir_to_cache(tmp_path: pathlib.Path) ->
         env = {"HOME": str(home), "PATH": "/usr/bin:/bin"}
         if cache_home is not None:
             env["XDG_CACHE_HOME"] = str(cache_home)
+        # 固定したPATHに`python3`が無い環境（CIのcontainerなど）でも検証できるよう、テストを実行中のPythonを絶対パスで渡す。
         completed = subprocess.run(
             [
                 "/bin/bash",
                 "--noprofile",
                 "--norc",
                 "-c",
-                '. "$1"\nprintenv TMPDIR\npython3 -c "import tempfile; print(tempfile.gettempdir())"',
+                '. "$1"\nprintenv TMPDIR\n"$2" -c "import tempfile; print(tempfile.gettempdir())"',
                 "bash",
                 str(BASHRC),
+                sys.executable,
             ],
             capture_output=True,
             text=True,
