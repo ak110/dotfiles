@@ -501,12 +501,12 @@ PreToolUseで通知する案は、当時の、規範の想起を目的とする�
 | Claude CodeのAgentツールのサブエージェント | Skill起動。使えなければ`SKILL.md`のRead。参照資料はRead | PostToolUse(Skill)か、同じ`agent_id`のReadが全文を返したこと |
 | Claude Codeのメイン会話とtask・delegateのClaude委譲先 | Skill起動。参照資料はRead | PostToolUse(Skill)。参照資料はReadが全文を返したこと |
 
-軽量委譲先の判別には、agents_serverが全起動区分で委譲先の環境へ渡す`AGENT_TOOLKIT_DELEGATED_LAUNCH_KIND`を使う。既存の委譲の印は軽量起動と通常委譲を区別できず、session登録簿の`launch_kind`は委譲先のhookから照会できないためである。軽量起動は`start`の公開説明でスキルを使える保証が無いと定めており、取得を求めると委譲元が`prompt`へ書いた指示と異なる基準を読ませることになる。
+軽量委譲先の判別には、agents_serverが全起動区分で委譲先の環境へ渡す`AGENT_TOOLKIT_DELEGATED_LAUNCH_KIND`を使う。既存の委譲の印（`AGENT_TOOLKIT_DELEGATED_SESSION`と`AGENT_TOOLKIT_OWNER_SESSION`）は軽量起動と通常委譲を区別できず、session登録簿の`launch_kind`は委譲先のhookから照会できないためである。軽量起動は`start`の公開説明でスキルを使える保証が無いと定めており、取得を求めると委譲元が`prompt`へ書いた指示と異なる基準を読ませることになる。
 
 以前の版は`SKILL.md`の生の本文を遮断の応答へ載せ、配送した時点で取得済みとして記録していた。この配送はClaude CodeのSkill起動がホスト側で生む効果を持たない。Skill起動は起動済みスキルを登録して会話圧縮後に本文を復元し、`${CLAUDE_PLUGIN_ROOT}`を展開し、`references/`の基点を示す行を付ける。代替配送を受けた主体は、参照先を開けないか、圧縮後に基準を失った。このため本文の受け渡しをやめ、ホストの取得手段そのものを求める。
 警告だけを返して取得済みへ進める旧方式は、基準を読まないまま次の操作が通った。現行の方式は取得を観測するまで同じ操作を止めるため、この欠陥は生じない。読取の観測は、completion-reportの起動証拠と共通の判定（`document_reads.py`）を使い、読了申告の台帳を加えない。部分取得（範囲指定のRead、`head`など）は記録しない。
 
-操作の判定はツール名と既存のシェル・編集入力解析を使う。検索はパイプラインの先頭区間を対象にし、後段の標準入力の検索を除く。writing-standardsは`Write`・`Edit`・`MultiEdit`と`apply_patch`の本文を作成・更新する入力を対象にし、内容変更を伴う移動も含める。読取・削除・純粋な移動は本文執筆の契機から除く。Bashは静的に確定したエージェント向け文書の書込先を用いる。テスト・通常コード・一般文書は同じ共通解析を使い、名前や言語による分類を持たない。check-executionの対象は`plan-verify`、pyfltrの実行系のサブコマンドとMCPの`run`、pytest、主要なtest runner、`atk run-command`が包む同じ実行である。タスクランナーでは`test`・`check`・`lint`・`format`・`verify`と、`test-`・`test:`で始まるターゲットを対象にする。ヘルプ・版表示・保存ログと一覧の表示・設定照会は対象から外す。対象の集合は実装の登録表が持ち、追加時には正例・負例の検証も行う。
+操作の判定はツール名と既存のシェル・編集入力解析を使う。検索はパイプラインの先頭区間を対象にし、後段の標準入力の検索を除く。writing-standardsは`Write`・`Edit`・`MultiEdit`と`apply_patch`の本文を作成・更新する入力を対象にし、内容変更を伴う移動も含める。読取・削除・純粋な移動は本文執筆の契機から除く。Bashは静的に確定したエージェント向け文書の書込先を用いる。テスト・通常コード・一般文書は同じ共通解析を使い、名前や言語による分類を持たない。check-executionの対象は`plan-verify`、pyfltrの実行系のサブコマンドとMCPの`run`、pytest・`py.test`・`vitest`、`playwright test`・`cargo test`・`dotnet test`、`atk run-command`が包む同じ実行である。タスクランナーでは`test`・`check`・`lint`・`format`・`verify`と、`test-`・`test:`で始まるターゲットを対象にする。ヘルプ・版表示・保存ログと一覧の表示・設定照会は対象から外す。対象は閉じた集合で、定義元は`operation_skills.py`の`_is_verification_tokens`である。追加時には正例・負例の検証も行う。
 
 `agent_id`で主体を分け、メインとAgentのサブエージェントを別の文脈とする。agents_serverの委譲先は独立したセッション状態を使う。取得の観測だけを`operation_skill_delivered_agents`へ必須資料ごとの識別子で記録し、clear・compactでメインの記録を削除する。Claude Codeの圧縮後の復元は1件5000トークンで切り詰めるため、圧縮後の最初の該当操作で再び取得を求める。旧版の警告済み状態は取得の証拠にしない。他の遮断が先に成立した操作では案内も記録もしない。
 
