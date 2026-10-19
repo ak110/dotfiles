@@ -1134,3 +1134,16 @@ def test_explicit_resume_bypasses_skip(tmp_path: pathlib.Path, monkeypatch: pyte
     _run_loop_rounds(monkeypatch, notes, manager, **options)
     # 保持したall-repos担当へ再開を配送し、記録による見送りを適用しない。
     assert not manager.started and "repository-delegate" in manager.sent[0][1]
+
+
+def test_diagnostic_only_repository_is_skipped(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """対処を要する診断だけを持つ対象も、担当が続行できずに返した後は同じ診断の間は起動しない。"""
+    repositories = _repositories(tmp_path, monkeypatch)
+    notes = tmp_path / "notes"
+    _write(notes, "broken.md", repositories[0].repo_id, extra="depends_on:\n- missing.md\n")
+    snapshot = listing.configured_repo_snapshot(notes, repositories)[0]
+    assert not snapshot.candidates and snapshot.readiness.actionable_count
+    manager = _UnresolvedManager(blocked=True)
+    recorded = _run_loop_rounds(monkeypatch, notes, manager, on_wait=(lambda: None,))
+    assert [pathlib.Path(cwd).name for cwd, _prompt in manager.started] == ["one"]
+    assert [fields["target_repo"] for fields in _events(recorded, "launch_skipped_no_progress")] == [repositories[0].repo_id]
