@@ -279,9 +279,9 @@ Remote Controlは、手元で動くClaude Codeの会話へブラウザーやClau
 | `codex_high_tier_model` | Codexの上位モデル（未設定時は`sol/medium`） |
 | `codex_medium_tier_model` | Codexの中位モデル（未設定時は`terra/medium`） |
 | `codex_low_tier_model` | Codexの軽量モデル（未設定時は`luna/medium`） |
-| `base_engine` | 一般の実装・修正・新しい候補や評価軸を導く調査と案出し・AWI投入・公開工程の終端・自動コードレビュー監査（上位）、プロンプト評価（中位）、`atk commit`（省略時は中位）のengine順 |
+| `base_engine` | 設計判断を伴う実装・修正・新しい候補や評価軸を導く調査と案出し・AWI投入・公開工程の終端・自動コードレビュー監査（上位）、プロンプト評価（中位）、`atk commit`（省略時は中位）のengine順 |
 | `execute_engine` | レーンの計画・実装・変更範囲検証と同じexecによる修正（上位）のengine順 |
-| `review_engine` | 実行レビュー・ユーザビリティレビュー・専念型の投入前レビューと再発防止セルフチェック（中位）のengine順 |
+| `review_engine` | 実行レビュー・ユーザビリティレビュー・専念型の投入前レビューと再発防止セルフチェック、計画・設計判断で内容の確定した書込作業（`delegate`の`medium_tier`）（中位）のengine順 |
 | `chores_engine` | 一括置換後レビュー・外部書込レビュー・読者適合レビュー・WI説明・`start`の`explore`と`shell`（省略時は軽量）のengine順 |
 | `orchestrate_engine` | `atk wi process-loop`・`atk run-skill`とWI作成専用セッションの要求別担当（上位）のengine順 |
 | `write_model` | `start`の`write`。日本語の文章力で選ぶ候補列で、段位と配分に属さない |
@@ -293,7 +293,7 @@ Remote Controlは、手元で動くClaude Codeの会話へブラウザーやClau
 段位のモデルはengine名を付けない`<model>[/<effort>]`で1つだけ書き、effortを省略すると`medium`を使う。
 engine順は`codex`と`claude`の一方または両方を重複なしでASCIIカンマ区切りに並べる。
 `write_model`は`<engine>:<model>[/<effort>]`をASCIIカンマで区切った候補列で書く。
-段位は作業の部分ごとに選ぶ。判定基準を言語化して渡せる多数の対象の走査（所在・値・件数の確認、該当候補の抽出と非該当の判定）は、極力`explore`の指定省略時の軽量段位へ分け、対象が多ければ重複のない群へ分けて並列に委ねる。観点・評価軸・判定基準の選定、新しい候補の案出し、走査が返した候補の判定と結論の統合は、`mode`が`explore`でも`delegate`でも`model_type="high_tier"`を明示する（`base_engine`の上位を使う）。両者を含む依頼も全体を`high_tier`にせず、走査を分けてから上位段位で判定する。工程別の割当（実装などの上位、実行レビューの中位）は変えない。
+段位は作業の部分ごとに選ぶ。判定基準を言語化して渡せる多数の対象の走査（所在・値・件数の確認、該当候補の抽出と非該当の判定）は、極力`explore`の指定省略時の軽量段位へ分け、対象が多ければ重複のない群へ分けて並列に委ねる。観点・評価軸・判定基準の選定、新しい候補の案出し、走査が返した候補の判定と結論の統合は、`mode`が`explore`でも`delegate`でも`model_type="high_tier"`を明示する（`base_engine`の上位を使う）。両者を含む依頼も全体を`high_tier`にせず、走査を分けてから上位段位で判定する。書込作業も同じく、計画・設計判断・原因分析は上位段位の担当自身が行い、内容の確定した単位（単発のコーディング、確定済みの修正など）は`delegate`の`medium_tier`（`review_engine`の中位）へ任せる。自ら行う方が総費用で安い場合だけ自ら行う。役割の段位（レーン担当の`exec`の上位、実行レビューの中位など）は変えない。
 
 `atk config show`はパス4行、モデルと配分の11行、`write_model`、速度、API provider列とClaudeのAPI用envファイルのパスを各1行で表示する。`atk config get`は指定したキーの値を指定した順に返し、provider列では前後空白と重複を除く。
 `atk config set codex_fast_mode true`でfast modeを有効にし、`false`で標準速度へ戻す。設定は次のturnから反映され、MCPサーバーの再起動は不要である。Codexのモデル表示には`@fast`を付け、effortがあれば`codex:<model>/<effort>@fast`とする。
