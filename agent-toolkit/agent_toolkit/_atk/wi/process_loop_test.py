@@ -8,7 +8,12 @@ from typing import Any, NoReturn
 import pytest
 
 from agent_toolkit import atk
+from agent_toolkit._atk import lane as _lane
+from agent_toolkit._atk import review_audit as _review_audit
+from agent_toolkit._atk.wi import alerts as _wi_alerts
 from agent_toolkit._atk.wi import process_loop as _process_loop
+from agent_toolkit._atk.wi import process_loop_launch_gate as _pl_gate
+from agent_toolkit._atk.wi import process_loop_log as _loop_log
 from agent_toolkit._atk.wi import process_loop_session as _pl_session
 from agent_toolkit._atk.wi import process_loop_watch as _pl_watch
 from agent_toolkit._atk.wi import process_loop_worktree as _pl_worktree
@@ -594,3 +599,176 @@ def test_grace_abort_and_output(
     assert "活動" in output and "期限" in output and "延長" in output
     if not abort:
         assert "委譲" in output
+
+
+@pytest.mark.parametrize("returncode", [0, 1])
+@pytest.mark.parametrize("outcome", ["retained", "error"])
+def test_session_end_uses_common_lane_cleanup(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+    returncode: int,
+    outcome: str,
+) -> None:
+    """単一起動の子終了後も、all-reposと同じ共通の終了後処理で回収・記録・再回収の案内を行い、終了判定より前に済ませる。"""
+    notes = _setup_notes(tmp_path)
+    myrepo = tmp_path / "myrepo"
+    myrepo.mkdir()
+    ready = notes / "inbox" / "ready.md"
+    ready.write_text("---\ntarget_repo: github.com/example/myrepo\ntype: awi\n---\n\n本文\n", encoding="utf-8")
+    base_fake_run = fake_run_with_remote_url(myrepo, [], returncode)
+
+    def fake_run(cmd: list[str], *args: Any, **kwargs: Any) -> subprocess.CompletedProcess[Any]:
+        if cmd[:1] == ["claude"] and "-p" not in cmd:
+            ready.unlink(missing_ok=True)
+        return base_fake_run(cmd, *args, **kwargs)
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    judged: list[str | None] = []
+
+    def cleanup(session_id: str | None, **_kwargs: Any) -> dict[str, Any]:
+        judged.append(session_id)
+        if outcome == "error":
+            raise OSError("回収先へ書けない")
+        return {"session_id": session_id, "removed": [], "retained": [{"reason": "未統合"}], "recovered": []}
+
+    monkeypatch.setattr(_lane, "cleanup_session", cleanup)
+    recorded: list[tuple[str, dict[str, Any]]] = []
+    original_append = _loop_log.append
+
+    def append(event: str, *, session_id: str | None = None, **fields: Any) -> None:
+        recorded.append((event, fields))
+        original_append(event, session_id=session_id, **fields)
+
+    monkeypatch.setattr(_loop_log, "append", append)
+
+    def stop_wait(*_args: object, **_kwargs: object) -> NoReturn:
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(_pl_watch, "wait_for_changes", stop_wait)
+    with pytest.raises(SystemExit) as ended:
+        atk.main(["wi", "process-loop", "--target-repo", str(myrepo), "--no-update", "--no-alerts"], home=tmp_path)
+    assert ended.value.code == returncode
+    assert len(judged) == 1 and judged[0]
+    cleanups = [fields for event, fields in recorded if event == "lane_cleanup"]
+    assert len(cleanups) == 1 and cleanups[0]["lane_session_id"] == judged[0] and "target_repo" not in cleanups[0]
+    assert ("error" in cleanups[0]) is (outcome == "error")
+    assert f"atk lane delete --session-id {judged[0]}" in capsys.readouterr().err
+    events = [event for event, _fields in recorded]
+    assert events.index("lane_cleanup") < events.index("session_classified")
+
+
+_TARGET = "github.com/example/myrepo"
+
+
+def _awi(notes: pathlib.Path, name: str, body: str = "本文", *, state: str = "inbox") -> pathlib.Path:
+    path = notes / state / name
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(f"---\ntarget_repo: {_TARGET}\ntype: awi\n---\n\n{body}\n", encoding="utf-8")
+    return path
+
+
+def _run_single_loop(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    on_child: Any = None,
+    on_wait: tuple[Any, ...] = (),
+    extra_argv: tuple[str, ...] = ("--no-alerts",),
+) -> list[dict[str, Any]]:
+    """公開CLIの単一起動を`--no-update`で回し、変更待機ごとに`on_wait`を順に適用し、尽きたら終了させる。"""
+    myrepo = tmp_path / "myrepo"
+    myrepo.mkdir(exist_ok=True)
+    child_calls: list[dict[str, Any]] = []
+    base_fake_run = fake_run_with_remote_url(myrepo, child_calls, 0)
+
+    def fake_run(cmd: list[str], *args: Any, **kwargs: Any) -> subprocess.CompletedProcess[Any]:
+        result = base_fake_run(cmd, *args, **kwargs)
+        if cmd[:1] == ["claude"] and "-p" not in cmd and on_child is not None:
+            on_child(len(child_calls))
+        return result
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    waits = iter(on_wait)
+
+    def fake_wait(*_args: object, **_kwargs: object) -> bool:
+        action = next(waits, None)
+        if action is None:
+            raise KeyboardInterrupt
+        action()
+        return True
+
+    monkeypatch.setattr(_pl_watch, "wait_for_changes", fake_wait)
+    with pytest.raises(SystemExit) as ended:
+        atk.main(["wi", "process-loop", "--target-repo", str(myrepo), "--no-update", *extra_argv], home=tmp_path)
+    assert ended.value.code == 0
+    return child_calls
+
+
+@pytest.mark.parametrize("resolution", ["none", "partial"])
+def test_unresolved_session_skips_relaunch(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], resolution: str
+) -> None:
+    """正常終了した子セッションが候補を1件も解消しなければ、同じ入力の間は次のセッションを起動しない。"""
+    notes = _setup_notes(tmp_path)
+    first = _awi(notes, "first.md")
+    _awi(notes, "second.md")
+
+    def child(call: int) -> None:
+        if resolution == "partial" and call == 1:
+            first.unlink()
+
+    calls = _run_single_loop(tmp_path, monkeypatch, on_child=child)
+    # 一部を解消した回は記録せずに次の反復で起動し、その次の無進捗の回で見送りへ移る。
+    assert len(calls) == (2 if resolution == "partial" else 1)
+    out = capsys.readouterr().out
+    assert "担当の起動を見送ります" in out and "新しいWIの到着" in out
+    assert "起動を見送ったため変更検知を待機します。" in out
+
+
+@pytest.mark.parametrize("change", ["new-wi", "body", "state", "new-alert"])
+def test_skipped_target_relaunches_on_change(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, change: str) -> None:
+    """見送り中に起動入力が変われば次の反復で起動し、起動した時点で記録を削除する。"""
+    notes = _setup_notes(tmp_path)
+    task = _awi(notes, "task.md")
+    alerts: list[dict[str, Any]] = [{"number": 1}]
+    monkeypatch.setattr(_wi_alerts, "check_and_submit_alerts", lambda *_a, **_k: _wi_alerts.AlertCheckResult(0, ()))
+    monkeypatch.setattr(_review_audit, "dependabot_pending", lambda _repository: {"status": "available", "alerts": alerts})
+
+    def apply() -> None:
+        if change == "new-wi":
+            _awi(notes, "added.md")
+        elif change == "body":
+            task.write_text(task.read_text(encoding="utf-8") + "\n## ユーザーコメント\n\n回答\n", encoding="utf-8")
+        elif change == "state":
+            (notes / "processing").mkdir(exist_ok=True)
+            task.rename(notes / "processing" / task.name)
+        else:
+            alerts.append({"number": 2})
+
+    # 1回目の子は何も解消せず、見送りの待機中に入力が変わり、2回目の子の後は再び見送る。
+    calls = _run_single_loop(tmp_path, monkeypatch, on_wait=(apply,), extra_argv=("--alert-interval=0",))
+    assert len(calls) == 2
+
+
+def test_wi_added_during_session_is_launched_next(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
+    """子セッションの稼働中に加わったWIは記録に含めず、次の反復の起動対象にする。"""
+    notes = _setup_notes(tmp_path)
+    _awi(notes, "task.md")
+
+    def child(call: int) -> None:
+        if call == 1:
+            _awi(notes, "arrived.md")
+
+    assert len(_run_single_loop(tmp_path, monkeypatch, on_child=child)) == 2
+
+
+def test_resume_bypasses_skip(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
+    """無進捗記録があっても`--resume`の指定は起動する。"""
+    notes = _setup_notes(tmp_path)
+    _awi(notes, "task.md")
+    current = _pl_gate.target_input(notes, _TARGET, None)
+    _pl_gate.record_no_progress(_TARGET, current, current)
+    assert not _pl_gate.decide(_TARGET, current).launch
+    calls = _run_single_loop(tmp_path, monkeypatch, extra_argv=("--no-alerts", "--resume"))
+    assert len(calls) == 1 and "--resume" in calls[0]["cmd"]

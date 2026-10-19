@@ -1,5 +1,6 @@
 """`atk wi process-loop`のアラートの確認のテスト。"""
 
+import argparse
 import pathlib
 import subprocess
 import time
@@ -10,8 +11,10 @@ import pytest
 from agent_toolkit import atk
 from agent_toolkit._atk import review_audit as _review_audit_module
 from agent_toolkit._atk.wi import alerts as _wi_alerts
+from agent_toolkit._atk.wi import process_loop_alerts as _pl_alerts
 from agent_toolkit._atk.wi import process_loop_watch as _pl_watch
 from agent_toolkit._atk.wi import readiness as _wi_readiness
+from agent_toolkit._common import next_action as _next_action
 from agent_toolkit._testing.process_loop_support import fake_run_with_remote_url, isolate_process_loop_commands
 from agent_toolkit.atk_test import _setup_notes
 
@@ -151,7 +154,8 @@ class TestAlertMonitoring:
         """キューに項目がある間も、セッションの開始前にCI失敗を確認して投入し、数え直した件数で起動する。
 
         確認が件数0の間だけだと、セッションが続く期間に起きた失敗はキューが空になるまでAWIへ入らない。
-        この確認ではDependabotアラートを数えない（起動するセッションの監査が扱う）。
+        この確認ではDependabotアラートを起動判定に数えない（起動するセッションの監査が扱う）。
+        起動時には無進捗記録の基準とするため未判定アラートの番号を1回だけ取得する。
         """
         _setup_notes(tmp_path)
         myrepo = tmp_path / "myrepo"
@@ -173,18 +177,22 @@ class TestAlertMonitoring:
             fake_check,
         )
 
-        def fail_dependabot(_repository: str) -> dict[str, Any]:
-            raise AssertionError("セッション開始前の確認ではDependabotアラートを数えないはず")
+        observed: list[str] = []
+
+        def record_dependabot(repository: str) -> dict[str, Any]:
+            observed.append(repository)
+            return {"status": "available", "alerts": [{"number": 7}]}
 
         monkeypatch.setattr(  # pylint: disable=protected-access
             _review_audit_module,  # pylint: disable=protected-access
             "dependabot_pending",
-            fail_dependabot,
+            record_dependabot,
         )
         with pytest.raises(SystemExit):
             atk.main(["wi", "process-loop", f"--target-repo={myrepo}", "--no-update"], home=tmp_path)
         assert calls == ["checked"]
         assert len(claude_calls) == 1
+        assert observed == ["example/myrepo"]
         log = (tmp_path / "state" / "agent-toolkit" / "process-wi.log").read_text(encoding="utf-8")
         assert "event=alert_check submitted=1 dependabot_pending=0 session_started=False" in log
         assert "event=loop_iter_start count=2" in log
@@ -290,3 +298,24 @@ class TestAlertMonitoring:
         with pytest.raises(SystemExit):
             atk.main(["wi", "process-loop", f"--target-repo={myrepo}", "--no-update"], home=tmp_path)
         assert not claude_calls
+
+
+@pytest.mark.parametrize("case", ["observed", "failed", "interval", "no-alerts", "not-counted"])
+def test_dependabot_observation_distinguishes_unobserved(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, case: str
+) -> None:
+    """取得に成功した反復だけが番号集合を返し、失敗・確認間隔内・無効化・数えない呼び出しは未観測を返す。"""
+    monkeypatch.setattr(_wi_alerts, "check_and_submit_alerts", lambda *_a, **_k: _wi_alerts.AlertCheckResult(0, ()))
+
+    def pending(_repository: str) -> dict[str, Any]:
+        if case == "failed":
+            raise _next_action.ActionableError("APIの応答が不正", next_action="再試行する")
+        return {"status": "available", "alerts": [{"number": 3}, {"number": 9}]}
+
+    monkeypatch.setattr(_review_audit_module, "dependabot_pending", pending)
+    args = argparse.Namespace(no_alerts=case == "no-alerts", alert_interval=3600, alert_forge="github")
+    last = time.monotonic() if case == "interval" else None
+    _checked, _submitted, observed = _pl_alerts.check_process_loop_alerts(
+        args, tmp_path, "github.com/owner/repo", tmp_path, last, count_dependabot=case != "not-counted"
+    )
+    assert observed == (frozenset({3, 9}) if case == "observed" else None)
