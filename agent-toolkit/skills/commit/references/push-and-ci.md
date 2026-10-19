@@ -66,8 +66,8 @@ baseline作成と監視・再開では同じ指定を使う。
 2. push成功後、各baselineに対して`wait_ci.py --baseline`を実行する（CI通過をこのセッションで判定しない場合は実行せず後始末へ進む）
    - 起動と結果回収は`agent-toolkit:delegation`の`references/waiting-and-monitoring.md`「待機区間の構成」に従う。完了通知で同じセッションへ再開する監視は背景で起動し、別の独立待機より先に届いた通知を処理する。同じbaselineの起動済み監視を回収し、重複起動しない
    - ホストから背景監視の停止通知を受けた場合は、同スキルの`references/wait-anomalies.md`「ホストによる背景待機の停止後」に従う。元の監視プロセスと出力を回収し、観測の再開には同じSHAとbaselineまたは待機専用記録を使う。実ジョブの再起動は含めない
-   - 総待機時間は、GitHub Actionsでは対象workflowの直近の成功runの`updatedAt - startedAt`へ登録猶予と変動分の余裕を加えて決め、取得・算出できなければ270秒とする。`gh`の入出力形式は実行直前のヘルプで確かめる
-   - 終了コード6と2では同じ引数で呼び直し、それ以外を待機の終端とする
+   - 総待機時間は、判定対象のrunと同じジョブ構成・実行形態（実行されるジョブ、パス条件による省略、matrix、軽量実行かなど）の成功runの所要（GitHub Actionsでは`updatedAt - startedAt`）へ登録猶予と変動分の余裕を加え、有限の`--timeout`で渡す。直近の成功runが軽量実行や一部ジョブだけの実行なら、通常実行の仕事量を覆う成功runまで遡って選ぶ。所要は`gh run view <run ID> --json startedAt,updatedAt,jobs`などでジョブ構成と併せて確かめ、取得・算出できなければ270秒とする。`gh`の入出力形式は実行直前のヘルプで確かめる
+   - 終了コード6では同じ引数で呼び直す。終了コード2（timeout）では同じSHAとbaselineまたは待機専用記録を保持したまま、その時点のジョブ状態と経過時間から残りの仕事量を見積もり、`--timeout`を増やして呼び直す。それ以外を待機の終端とする
    - 背景実行では、ホストがコマンドを時間で停止する上限を総待機時間より長くする。先に止められるとスクリプトは判定結果を返せなくなる。実行ハンドルのyield・再開がある場合は60秒未満の間隔で同一processへ再接続し、processを短い`--timeout`へ分割したりplugin root更新を契機に置き換えたりしない
    - push前のbaselineが無い場合（公開後のRelease workflowの完了確認を含む）と別の主体がpushしたcommitを待つ場合は、40桁の完全長SHAを`--wait-sha`へ、managed-temp内の待機専用JSONを`--failure-record`へ渡す。この形は対象SHAの全実行を判定し、baseline方式は自身のpushで新しく登録された実行だけを判定する
    - GitLabでは同一projectのbridgeが再帰的に指すdownstream pipelineとジョブも判定対象とし、別projectのdownstreamは対象外とする
