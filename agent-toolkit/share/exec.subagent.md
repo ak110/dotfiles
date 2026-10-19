@@ -16,6 +16,7 @@
 | 初回実装（`CI修正担当`では修正）に着手する直前と、変更範囲の検証（履歴統合後の再検証を含む）を実行した後 | `agent-toolkit:check-execution`の`references/diagnostics.md` |
 | 変更範囲の検証が失敗したとき | `agent-toolkit:process-wi`の[references/lane-verification-failure.md](../skills/process-wi/references/lane-verification-failure.md) |
 | `実装なし`またはレビュー収束後にメインから統合指示を受領したとき | `${CLAUDE_PLUGIN_ROOT}/share/lane-integration.subagent.md` |
+| ユーザーが直接記入した質問への回答下書きを作る直前 | `agent-toolkit:wi-standards`の`SKILL.md`（語の基準） |
 
 ## 入力
 
@@ -101,7 +102,7 @@
   5. 検証の実行後、手順2・3で選んだ消費側の試験ごとに保存済み結果の合否を対応付ける。結果に無い試験は加えて再実行し、対応を手順4の保存物へ加える。入力パスから試験を選ぶツールの成功とテスト総数は対応付けの代わりにしない
 
   検索は語ごとに`atk run-command --cwd <対象worktreeの絶対パス> --timeout <有限秒数> -- git grep -n -F -e '<検索語>' -- .`（Git追跡外は子argvを`rg -n -F -- '<検索語>' <対象の絶対パス>`）で保存する。exit 1は不一致、起動失敗・timeout・保存失敗・その他の非0は検索失敗であり、不在の根拠にしない
-- ユーザーがAWIの`## ユーザーコメント`かUWIの`## 回答`へ処理側に宛てて直接記入した質問（AWI本文へ転記された質問は対象外）は、回答本文と根拠を下書きへ保存して絶対パスをメインへ通知し、`検証結果`にも記す。レビューの指摘は下書きへ反映する。メインが回答UWIを保存して返したファイル名を進捗ログ（計画なしでは引き継ぎ記録）へ追記する。回答完了の判定は保存後に限る
+- ユーザーがAWIの`## ユーザーコメント`かUWIの`## 回答`へ処理側に宛てて直接記入した質問（AWI本文へ転記された質問は対象外）は、回答本文（語は`agent-toolkit:wi-standards`冒頭の語の基準に従う）と根拠を下書きへ保存して絶対パスをメインへ通知し、`検証結果`にも記す。レビューの指摘は下書きへ反映する。メインが回答UWIを保存して返したファイル名を進捗ログ（計画なしでは引き継ぎ記録）へ追記する。回答完了の判定は保存後に限る
 - 計画の変更範囲の検証は`atk run-script plan-verify -- --plan <計画の絶対パス> --worktree <対象worktreeの絶対パス> --timeout <正の有限秒数> --summary-only`で実行する。訂正済み検証表があれば`--verification-plan <訂正済み検証表の絶対パス>`を加える。列挙・実行・結果の検収は`agent-toolkit:check-execution`「統合実行ツール経由の起動」に従う。実行後は保存された結果まとめの`results_path`を`atk run-command --records-file <絶対パス>`へ渡し、全件の`record_path`・両出力と子・wrapperの終了状態を読む。計画なしでは引き継ぎ記録で確定したコマンドを実行し、`--record <record_path>`の反復で保存済み結果を読む。読むのは保存済み結果だけとし、旧記録の未記録値と保存・読取失敗を成功と扱わない
 - commit直前に`agent-toolkit:commit`へ従う。計画を持つ場合は、そのcommitの実装単位に属する`### 恒久化`と`### リファクタリング`の行を差分と比べて不足を同じcommitへ含め、最後の実装commitの前には両表の全行がいずれかのcommitに対応することを確かめる。各commitの前後のHEADを`atk run-script plan-progress --`へ渡して進捗ログと同じstemの対応記録へ記録する（commit失敗時は記録しない。最初の記録では専用worktreeの絶対パスとbranch名を`--result`へ渡す）。実装・レビュー修正・CI修正の各commitで、`agent-toolkit:commit`の`SKILL.md`「WI実装commitの対応」の記録を残す
 

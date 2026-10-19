@@ -104,7 +104,8 @@ WI処理の機構を設計した理由（却下した代替案など）は、[de
 
 ## AWI・UWIの本文と投入
 
-- ユーザーがWIを読むのは、UWIへの回答、AWIの内容の確認、処理後の結果の確認の3場面である。人向けの要点を先頭へ、エージェント向けの詳細を後へ置く。AWIは問題・直し方・類似見直しの観点と範囲・再発防止策、UWIは問い・理由・答え方、処理後は何をどう直したかを示す。原因分析の表と行は保持する（2026年10月16日、ユーザー指示）。現行の規定は`agent-toolkit:wi-standards`冒頭と`references/awi-body.md`・`references/uwi-format.md`、`agent-toolkit:completion-report`の`references/report-formats.md`にある
+- ユーザーがWIを読むのは、UWIへの回答、AWIの内容の確認、処理後の結果の確認の3場面である。人向けの要点を先頭へ、エージェント向けの詳細を後へ置く。AWIは問題・直し方・類似見直しの観点と範囲・再発防止策、UWIは問い・理由・答え方、処理後は何をどう直したかを示す。原因分析の表と行は保持する（2026年10月16日、ユーザー指示）。現行の規定は`agent-toolkit:wi-standards`冒頭と`references/awi-body.md`・`references/uwi-format.md`、`agent-toolkit:completion-report`の`references/report-formats.md`にある。
+  2026年10月19日のユーザーコメント「説明が長いわりに分かりにくすぎる。改善して」の指摘から、ユーザーが読む部分（AWIのタイトルとH1直下、UWIの本文、`adopt`・`reject`のメモ、報告用UWIの冒頭）の語の基準を`agent-toolkit:wi-standards`冒頭の1か所へ集めた。この部分はユーザーの語で書き、保存前に起草の文脈を持たない読者別探索担当へユーザーの立場で読ませて確かめる方針とした。基準の所在は`agent-toolkit:wi-standards`冒頭、保存前の確認の所在は`references/draft-semantic-review.md`と`agent-toolkit/share/reader-fit-review.subagent.md`「観点」にある
 
 AWIはユーザーとエージェントが非同期に共有する人間向けの未完了作業要求である。
 UWIはユーザーの判断・資料・操作が次の作業に必要な場面などの未完了事項と、手順が定める完了報告を扱う。

@@ -12,6 +12,7 @@
 | 版数更新、生成物、push前のチェック、push、CI確認または公開状態の判定に着手する前 | `agent-toolkit:commit`の`references/publish.md` |
 | 全体検証かCIが失敗したとき | `agent-toolkit:process-wi`の`references/termination-ci-failure.md` |
 | CI定義判定、baseline作成、CI監視または公開後の操作を前提不足で完了できないとき | `agent-toolkit:commit`の`references/push-and-ci.md` |
+| `adopt`のメモを書く直前 | `agent-toolkit:wi-standards`の`SKILL.md`（語の基準）と`references/states-and-dependencies.md`「終端」 |
 
 ## 入力
 
@@ -37,6 +38,7 @@
 
 ## 延期adoptの終端
 
+`adopt`のメモの先頭の1文は`agent-toolkit:wi-standards`の`references/states-and-dependencies.md`「終端」の基準（語は同スキル冒頭の語の基準）で、commitの記録より前に書く。ユーザーの立場の確認を経たAWIのH1直下の直し方を、実施した結果に合わせて書く。
 先行工程の成功後に、受領したAWIファイル名と実装commitのOIDで`adopt`する。プロジェクト固有の公開後の操作で新しい実装commitが生じた場合は、AWIの要求を実際に反映したOIDを選び直す。実装差分が無い項目は`--commit`を省き、充足の根拠を`--note`か`--note-file`へ記録する。commitを記録する場合は対象リポジトリのworktreeの絶対パスを`--target-repo`へ渡す（`agent-toolkit:wi-standards`「状態と依存」の共通前提）。
 
 残る完成条件はエージェントが到達できる環境を探して観測する（観測主体が人と書かれていても、`agent-toolkit:wi-standards`の`references/awi-body.md`の観測主体の規定に従う）。次の項目は`adopt`せず`processing`のまま残し、`実行した終端工程`へ記す（扱いは`agent-toolkit:process-wi`の`references/run-lanes.md`「採否の確定と終端区分」）。

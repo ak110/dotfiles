@@ -13,6 +13,7 @@
 | 「マージありの統合」でrebaseが競合で停止したとき、またはrebase後の変更範囲の検証が失敗したとき | `agent-toolkit:process-wi`の[references/lane-integration-failure.md](../skills/process-wi/references/lane-integration-failure.md) |
 | `マージあり`の統合を開始する時（統合時の完成条件判定を行う時） | `agent-toolkit:review-standards`の`references/exec-review-recording.md`「統合時の完成条件判定」 |
 | 「マージありの統合」の検証を実行した後 | `agent-toolkit:check-execution`の`references/diagnostics.md` |
+| `adopt`・`reject`のメモを書く直前 | `agent-toolkit:wi-standards`の`SKILL.md`（語の基準）と`references/states-and-dependencies.md`「終端」 |
 
 ## 入力
 
@@ -108,6 +109,7 @@ rebaseした場合は、`history-compare`の対応表を`agent-toolkit:commit`�
 
 計画または引き継ぎ記録に確定した採否と、受領した終端区分を適用する。
 
+- メモの先頭の1文は`agent-toolkit:wi-standards`の`references/states-and-dependencies.md`「終端」の基準（語は同スキル冒頭の語の基準）で書く。`adopt`では、ユーザーの立場の確認を経たAWIのH1直下の直し方を、実施した結果に合わせて書く
 - 採用と充足済みは`atk wi adopt`、不採用は`atk wi reject`で終端する。adoptのcommit対応付けは`agent-toolkit:wi-standards`「状態と依存」の遷移表に従い、開始時や統合時のHEADを全項目へ機械的に複製しない。複数commitのメモは`--note-file`へ記録する
 - 対応commitは`agent-toolkit:commit`の`SKILL.md`「WI実装commitの対応」の取得の手段で、計画または引き継ぎ記録と同じstemの対応記録ファイルから取得し、`--worktree`へ統合後のworktreeを渡す
 - commitを記録する採否操作では、統合先worktreeの絶対パスを`--target-repo`へ渡す（同節の共通前提）
