@@ -119,7 +119,7 @@
 
 - 生成: `atk run-script verification-record -- --output <記録の絶対パス> --plan <計画の絶対パス> --list`で原文と出所の雛形を保存し、配列・1始まりの行番号・出所も同じ操作で得る。WI直渡しでは`--plan`の代わりに`--wi <WIファイル名>`を反復する。対象リポジトリは計画メタ情報の値を使い、WI直渡しと対象を持たない既存計画だけcwdを使う。計画だけのユーザー指示も変更履歴の逐語発言から生成される。既存記録を読むだけなら`--output <同じパス> --list`
 - 根拠の記入: `--output <同じパス> --select-row <配列:N> --evidence-file <根拠のUTF-8ファイルの絶対パス> --mode replace`で、その要求単位の現在の根拠へ更新する。`--mode append`は同じ要求単位の現在の根拠に不足する観測の補完に使う
-- 行別の記入: 選択した行ごとに異なる根拠を渡す場合は`--row-evidence-file <配列:N> <根拠の絶対パス>`を反復する。行別の試験・診断は`--row-result-test <配列:N> <完全テスト名>`・`--row-result-diagnostic <配列:N> <診断識別子>`を反復する。`--evidence-file`・`--result-test`・`--result-diagnostic`は全選択行への共通指定で、同じ種類の行別指定と分けて使う。単一値の入力を異なる値で反復すると拒否されるため、モード・取得版などが異なる更新は呼び出しを分割し、行別の詳細は既存の`--updates-file`でも渡せる
+- 行別の記入: 選択した行ごとに異なる根拠を渡す場合は`--row-evidence-file <配列:N> <根拠の絶対パス>`を反復する。行別の試験・診断は`--row-result-test <配列:N> <完全テスト名>`・`--row-result-diagnostic <配列:N> <診断識別子>`を反復する。行別指定だけで更新する場合は`--select-row`を省略でき、行別指定に書いた行が更新先になる。`--evidence-file`・`--result-test`・`--result-diagnostic`は全選択行への共通指定で、同じ種類の行別指定と分けて使い、共通指定だけで更新する場合は`--select-row`で行を選ぶ。`--select-row`を明示した場合は、選んだ行の外への行別指定が拒否される。単一値の入力を異なる値で反復すると拒否されるため、モード・取得版などが異なる更新は呼び出しを分割し、行別の詳細は既存の`--updates-file`でも渡せる
 - 構造化結果の取得: 試験は`atk run-command -- ... pytest -v -o junit_family=xunit1 --junitxml=<XMLの絶対パス> <対象...>`で実行時にXML・実行記録・両出力を保存する。診断はpyfltrのrunのJSON Lines全体（header・command・summaryを事前に除く必要はない）、`show-run --commands <対象> --output-format=jsonl`かMCPの構造化結果を保存する。取得版・対象範囲・オプション・依存版・並列度・実行環境と必要な保存時本文を対応付ける
 - pytest以外の構造化試験: 各プロジェクトの試験コマンドへ次の指定を加え、`atk run-command`で結果ファイルと実行記録を保存する
   - vitestは`--reporter=json --outputFile=<結果の絶対パス>`を指定する

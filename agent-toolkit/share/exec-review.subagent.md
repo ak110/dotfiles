@@ -144,6 +144,7 @@ atk run-script reader-fit-prepare -- --repository <対象worktree> --review-star
 複数行の根拠更新では、`--evidence-file`・`--result-test`・`--result-diagnostic`を全選択行への共通指定に使う。
 行ごとに異なる値は`--row-evidence-file <配列:N> <根拠の絶対パス>`・`--row-result-test <配列:N> <完全テスト名>`・`--row-result-diagnostic <配列:N> <診断識別子>`を反復して対応付ける。
 同じ種類の共通指定と行別指定は分けて使い、詳しい行別入力は`--updates-file`でも渡せる。
+`--select-row`を省略すると、行別指定と`--row-outcome`・`--row-source`・`--verification-row`・`--accepted-row`の第1要素の行が選択行になる。共通指定だけで更新する場合は`--select-row`で行を選び、明示した場合はその外の行への行別指定が拒否される。
 単一値の入力を異なる値で反復すると拒否されるため、モード・レビュー対象HEADなどが異なる更新は呼び出しを分割する。
 
 1. `完成条件証拠`を`exec-review-recording.md`「JSONの形式と返却前の確認」の`--list`で読み、未記入行（再レビューでは全行）を原文と検証資料から本担当が判定する。記入は同節の`--select-row`と保存物の直接指定、`--row-outcome`・`--reviewed-head`・`--mode`で行う（構造化結果でも説明ファイルだけでも同じ公開操作を使う）。更新配列を直接記入する場合は同節のJSON例と`--updates-file`を使い、一覧の現行`source`で選択し、新しい所在は許された判定に限り`new_source`へ置く。結果ファイルを要しない手動観測では結果指定を省略でき、訂正・再レビューも同じ操作で更新する。`--select-row`ではsourceは処理側が取得し、失効・割当外・背景の判断根拠の所在へ変える場合だけ`--row-source`を明示する。未判定記録からは同じ要求単位の行だけを`--verification-row`で選ぶ。保存済みの実行は`atk run-command --record <record_path>`の反復か`--records-file <plan-verifyの結果まとめ>`で子を再実行せずに読み、取得版・Git状態・子とwrapperの終了状態・両出力を判定する。未記録・破損・読取失敗を成功と扱わず、取得版・条件・原文の対応を確かめ、達成は結果から自動生成しない。保存先は未判定記録と別ファイルとし、未選択行を保ったまま更新後の証拠を再読取する。空欄と参照の不整合は本担当が補い、レビューイーへの指摘に置き換えない

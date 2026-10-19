@@ -41,6 +41,9 @@ SCHEMA = (
     "--evidence-file・--result-test・--result-diagnosticは全選択行で共通に使う値。"
     "行別には--row-evidence-file SECTION:N PATH・--row-result-test SECTION:N NAME・"
     "--row-result-diagnostic SECTION:N IDを反復する。"
+    "--select-rowを省略した更新は、行別指定（レビュー更新では--row-outcome・--row-source・"
+    "--verification-rowと--accepted-rowの第1要素を含む）の更新先の行を重複なく選ぶ。"
+    "共通値だけの更新は--select-rowで行を選ぶ。--select-rowを明示した場合は、その集合外の行別指定を拒否する。"
     "同じ種類の共通指定と行別指定は別々に使う。単一値オプションの異なる値での反復は拒否する。"
     "モードや取得版が異なる更新は呼び出しを分割し、行別の詳細な入力は--updates-fileでも渡せる。"
 )
@@ -84,7 +87,8 @@ def add_arguments(parser: argparse.ArgumentParser, *, reviewing: bool = False) -
             action="append",
             nargs=2,
             metavar=("SECTION:N", value),
-            help="選択行と、その行だけへ関連付ける根拠・結果の対応。反復可。共通指定と分けて使う",
+            help="更新する行と、その行だけへ関連付ける根拠・結果の対応。反復可。"
+            "--select-rowの省略時はこの行を選ぶ。同じ種類の共通指定と分けて使う",
         )
     parser.add_argument("--results-file", type=pathlib.Path, metavar="PATH", help="保存した結果の組を持つJSONの絶対パス")
     parser.add_argument("--list-results", action="store_true", help="テスト完全名・状態・版・所在と基準版との差を表示")
@@ -106,11 +110,14 @@ def add_arguments(parser: argparse.ArgumentParser, *, reviewing: bool = False) -
     parser.add_argument(
         "--updates-file", type=pathlib.Path, metavar="PATH", help="出所と選択した根拠を持つ更新配列JSONの絶対パス"
     )
+    targets = "・".join(f"--{option.replace('_', '-')}" for option in _row_target_options(reviewing=reviewing))
     parser.add_argument(
         "--select-row",
         action="append",
         metavar="SECTION:N",
-        help="根拠を保存する配列と1始まり行番号。反復可。sourceは処理が取得する",
+        help="根拠を保存する配列と1始まり行番号。反復可。sourceは処理が取得する。"
+        f"省略すると{targets}の更新先（第1要素）を重複なく選ぶ。"
+        "共通値だけの更新では必須。明示した場合は集合外の行別指定を拒否する",
     )
     for prefix in ("junit", "baseline-junit"):
         parser.add_argument(
@@ -157,7 +164,7 @@ def add_arguments(parser: argparse.ArgumentParser, *, reviewing: bool = False) -
             action="append",
             nargs=2,
             metavar=("SECTION:N", "OUTCOME"),
-            help="選んだ各行の明示判定。全選択行へ反復指定する",
+            help="更新する各行の明示判定。全選択行へ反復指定する。--select-rowの省略時はこの行も選ぶ",
         )
         parser.add_argument("--reviewed-head", help="全選択行を判定した対象版の完全OID")
         parser.add_argument(
@@ -165,14 +172,14 @@ def add_arguments(parser: argparse.ArgumentParser, *, reviewing: bool = False) -
             action="append",
             nargs=2,
             metavar=("SECTION:N", "SOURCE"),
-            help="失効・割当外・背景の判断根拠の所在へ選択行のsourceを変更する。反復可",
+            help="失効・割当外・背景の判断根拠の所在へ選択行のsourceを変更する。反復可。--select-rowの省略時はこの行も選ぶ",
         )
         parser.add_argument(
             "--verification-row",
             action="append",
             nargs=2,
             metavar=("TARGET", "PENDING"),
-            help="選択行SECTION:Nと未判定記録のSECTION:Nの対応。反復可",
+            help="選択行SECTION:Nと未判定記録のSECTION:Nの対応。反復可。--select-rowの省略時は第1要素の行も選ぶ",
         )
         parser.add_argument(
             "--verification-record", type=pathlib.Path, metavar="PATH", help="選択できる未判定検証記録の絶対パス"
@@ -188,8 +195,8 @@ def add_arguments(parser: argparse.ArgumentParser, *, reviewing: bool = False) -
             action="append",
             nargs=2,
             metavar=("TARGET", "ACCEPTED"),
-            help="選択行SECTION:Nと同じ配列の受理済み行SECTION:Nの対応。"
-            "--accepted-evidence・--evidence-file・--mode replaceと指定する",
+            help="選択行SECTION:Nと同じ配列の受理済み行SECTION:Nの対応。--select-rowの省略時は第1要素の行も選ぶ。"
+            "--accepted-evidence・--evidence-file（または同じ行の--row-evidence-file）・--mode replaceと指定する",
         )
         parser.add_argument(
             "--output", type=pathlib.Path, metavar="PATH", help="未判定記録と異なる完成条件証拠の絶対パス。入力証拠を更新できる"
@@ -510,6 +517,26 @@ def has_result_specification(args: argparse.Namespace) -> bool:
     )
 
 
+def _row_target_options(*, reviewing: bool) -> tuple[str, ...]:
+    """更新先の行を第1要素に持つ行別指定の属性名を返す。レビュー更新の第2要素（継承元・受理済み行）は更新先ではない。"""
+    options = ("row_evidence_file", "row_result_test", "row_result_diagnostic")
+    return options + (("row_outcome", "row_source", "verification_row", "accepted_row") if reviewing else ())
+
+
+def selected_rows(args: argparse.Namespace) -> list[str]:
+    """両公開操作の更新先の行選択を解決する。
+
+    `--select-row`を明示した場合は重複の有無を確かめる前の値をそのまま返し、省略した場合は行別指定の更新先を
+    オプションごとの指定順に重複なく並べて返す。どちらも無ければ空リストを返す。
+    表示・更新の判定と更新配列の組み立ては、この結果だけから行を選ぶ。
+    """
+    if getattr(args, "select_row", None):
+        return list(args.select_row)
+    return list(
+        dict.fromkeys(pair[0] for option in _row_target_options(reviewing=True) for pair in getattr(args, option, None) or [])
+    )
+
+
 def _row_selector(payload: dict[str, Any], value: str) -> tuple[str, int]:
     section, separator, raw = value.partition(":")
     if not separator or section not in {"wi_conditions", "user_requirements"} or not raw.isdecimal():
@@ -528,11 +555,18 @@ def updates_for_arguments(
     pending: dict[str, Any] | None = None,
 ) -> list[dict[str, Any]]:
     """選んだ行の原文・出所を現在の記録から取得し、選択した結果へ対応付ける。"""
-    selectors = args.select_row or []
-    if not selectors or len(selectors) != len(set(selectors)) or args.mode not in {"append", "replace"}:
-        raise ValueError("重複のない--select-rowと--modeを指定する")
+    selectors = selected_rows(args)
+    if not selectors:
+        raise ValueError("更新する行を行別指定（--row-evidence-fileなど）か--select-rowで指定する")
+    if len(selectors) != len(set(selectors)):
+        raise ValueError("--select-rowは重複なく指定する")
+    if args.mode not in {"append", "replace"}:
+        raise ValueError("選択行の更新には--modeを指定する")
     if args.updates_file is not None:
-        raise ValueError("--select-rowと--updates-fileは別々に使う")
+        raise ValueError("行選択（--select-rowか行別指定）と--updates-fileは別々に使う")
+    # 不正な行を判定の不足などの派生した診断より先に、その行の値として示す。
+    for selector in selectors:
+        _row_selector(payload, selector)
     row_files: dict[str, str] = {}
     row_tests: dict[str, list[str]] = collections.defaultdict(list)
     row_diagnostics: dict[str, list[str]] = collections.defaultdict(list)
@@ -547,7 +581,9 @@ def updates_for_arguments(
         seen_pairs: set[tuple[str, str]] = set()
         for selector, value in pairs:
             if selector not in selectors or (selector, value) in seen_pairs:
-                raise ValueError(f"--{option.replace('_', '-')}は選択行へ重複なく指定する")
+                raise ValueError(
+                    f"--{option.replace('_', '-')}は選択行（--select-rowを明示した場合はその集合）へ重複なく指定する"
+                )
             seen_pairs.add((selector, value))
             if option == "row_evidence_file":
                 if selector in row_files:
@@ -567,7 +603,7 @@ def updates_for_arguments(
     accepted = dict(accepted_pairs)
     accepted_path = getattr(args, "accepted_evidence", None)
     if len(accepted) != len(accepted_pairs) or set(accepted) - set(selectors):
-        raise ValueError("--accepted-rowは選択行へ重複なく指定する")
+        raise ValueError("--accepted-rowは選択行（--select-rowを明示した場合はその集合）へ重複なく指定する")
     if bool(accepted) != (accepted_path is not None):
         raise ValueError("--accepted-rowと--accepted-evidenceは組で指定する")
     if accepted and (
@@ -579,7 +615,10 @@ def updates_for_arguments(
     if len(outcomes) != len(outcome_pairs) or len(inherited) != len(inherited_pairs) or len(sources) != len(source_pairs):
         raise ValueError("行の判定と未判定行への対応は重複なく指定する")
     if reviewing and set(outcomes) != set(selectors):
-        raise ValueError("--row-outcomeで全選択行の判定を明示する")
+        raise ValueError(
+            f"--row-outcomeで全選択行の判定を明示する: 判定の無い行={sorted(set(selectors) - set(outcomes))}。"
+            "選択行は--select-rowか、省略時は行別指定の更新先で決まる"
+        )
     if set(inherited) - set(selectors):
         raise ValueError("--verification-rowの対応先は--select-rowで選んだ行を指定する")
     if set(sources) - set(selectors):
@@ -622,14 +661,12 @@ def updates_for_arguments(
 def validate_display(args: argparse.Namespace) -> None:
     """表示の選択を更新へ混入させず、要約と詳細の用途を分ける。"""
     selecting = bool(args.result_test or args.result_diagnostic)
-    direct = bool(getattr(args, "select_row", None))
-    if (
-        any(getattr(args, name, None) for name in ("row_evidence_file", "row_result_test", "row_result_diagnostic"))
-        and not direct
-    ):
-        raise ValueError("行別の根拠・結果は--select-rowで選んだ行へ指定する")
+    direct = bool(selected_rows(args))
     if args.results_summary and not args.list_results or selecting and not (args.list_results or direct):
-        raise ValueError("--results-summary・--result-test・--result-diagnosticは--list-resultsと指定する")
+        raise ValueError(
+            "--results-summary・--result-test・--result-diagnosticは--list-resultsと指定する。"
+            "--result-test・--result-diagnosticを全選択行の共通値として保存する場合は--select-rowで行を選ぶ"
+        )
     if args.results_summary and selecting:
         raise ValueError("要約と指定結果の詳細は別々に表示する")
     if args.list_results and direct:

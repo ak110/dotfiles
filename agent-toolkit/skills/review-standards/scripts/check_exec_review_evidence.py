@@ -2531,8 +2531,11 @@ def main(argv: list[str] | None = None) -> int:
                     raise ValueError("結果一覧には--results-fileだけを指定し、更新とは別に実行する")
                 verification_results.list_results(results, args)
                 return 0
-            if args.evidence is None or not (args.updates_file or args.select_row) or args.output is None:
-                raise ValueError("レビュー更新は入力証拠・--select-row（または--updates-file）・--outputを指定する")
+            selected = verification_results.selected_rows(args)
+            if args.evidence is None or not (args.updates_file or selected) or args.output is None:
+                raise ValueError(
+                    "レビュー更新は入力証拠・行選択（--select-rowか行別指定。または--updates-file）・--outputを指定する"
+                )
             if args.verification_record and args.output.resolve() == args.verification_record.resolve():
                 raise ValueError("レビュー出力は未判定記録と別ファイルへ保存する")
             if args.accepted_evidence and args.output.resolve() == args.accepted_evidence.resolve():
@@ -2545,9 +2548,7 @@ def main(argv: list[str] | None = None) -> int:
             if errors:
                 raise ValueError("。".join(errors))
             updates = (
-                verification_results.updates_for_arguments(payload, args, reviewing=True, pending=pending)
-                if args.select_row
-                else None
+                verification_results.updates_for_arguments(payload, args, reviewing=True, pending=pending) if selected else None
             )
             references = saving_reference_check(repository_root)
 

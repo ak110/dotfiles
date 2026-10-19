@@ -43,7 +43,7 @@ atk run-script exec-review-evidence-check -- <完成条件証拠の絶対パス>
 atk run-script exec-review-evidence-check -- <完成条件証拠の絶対パス> --list --section user_requirements --row 1 --row 3
 ```
 
-記入は表示された配列名と1始まりの行番号を`--select-row <配列:N>`へ渡して行う（sourceは処理側が現行行から取る）。各選択行へ`--row-outcome`を明示し、`--reviewed-head`へ本担当が判定した完全OID、`--evidence-file`へその行を直接満たす説明を渡し、`--mode`のappendかreplaceで根拠を追記・置換する。失効・割当外・背景で判断根拠の所在へsourceを変える場合だけ`--row-source <配列:N> <所在>`も渡す（受理条件は本書の各判定値の規定による）。
+記入は表示された配列名と1始まりの行番号を`--select-row <配列:N>`へ渡して行う（sourceは処理側が現行行から取る）。`--select-row`を省略した場合は、`--row-outcome`などの行別指定に書いた行（`--verification-row`と`--accepted-row`では第1要素の行）が選択行になる。各選択行へ`--row-outcome`を明示し、`--reviewed-head`へ本担当が判定した完全OID、`--evidence-file`へその行を直接満たす説明を渡し、`--mode`のappendかreplaceで根拠を追記・置換する。失効・割当外・背景で判断根拠の所在へsourceを変える場合だけ`--row-source <配列:N> <所在>`も渡す（受理条件は本書の各判定値の規定による）。
 
 ```text
 atk run-script exec-review-evidence-check -- <完成条件証拠の絶対パス> --select-row user_requirements:1 --row-outcome user_requirements:1 達成 --reviewed-head <レビューした完全OID> --evidence-file <説明の絶対パス> --mode replace --output <同じ完成条件証拠の絶対パス>
