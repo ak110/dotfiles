@@ -110,8 +110,12 @@ PLAIN_REFERENCE = re.compile(
     r"(?P<plain>[^\s`\[\]（）「」、。:#]*?\.[A-Za-z][A-Za-z0-9_-]*(?![A-Za-z0-9_/\\-]|\.[A-Za-z0-9_])"
     r"(?::[!-~]+|#[^\s`\[\]「」、。]+)?)"
 )
-# 名前の本体（ピリオド以外の文字）を持ち、`.<英字>…`で終わるファイル名。`.env`は本体を持たず、拡張子なしとする。
-NAMED_EXTENSION = re.compile(r"\.*[^.]+.*\.[A-Za-z][A-Za-z0-9_-]*")
+# 拡張子で終わるパスを持たない語の行位置付き参照（`Makefile:3で確認`）。行位置は`PLAIN_REFERENCE`と同じく
+# `:`に続くASCIIの並びとし、最初の非ASCII文字か空白で終える。
+LOCATED_NAME = re.compile(r"(?P<plain>[^\s`\[\]（）「」、。:#]+:[+-]?\d[!-~]*)")
+# 名前の本体（ピリオド以外の文字）を持ち、`.<英字>…`で終わるファイル名と、その最後の拡張子（グループ1）。
+# `.env`は本体を持たず、拡張子なしとする。
+NAMED_EXTENSION = re.compile(r"\.*[^.]+.*(\.[A-Za-z][A-Za-z0-9_-]*)")
 # 共用の比較で除く条件文・要求原文の再掲の境界。区切りは語の境界とし、ファイル名の`.`と`/`は含めない。
 # ラベルはコロンで終わる短い語（`確認対象: `など）とし、パスを飲み込まないよう`/`と区切りを含めない。
 RESTATEMENT_SEPARATORS = r"\s、。，,;；|・"
@@ -314,8 +318,10 @@ def _unit_markers(source: str) -> tuple[str, str]:
 def _file_references(evidence: str, repository: pathlib.Path, head: str = "HEAD") -> list[re.Match[str]]:
     """根拠から明示されたファイル参照を取り出し、不在の参照も対象版で確認する。
 
-    明示された参照は、Markdownリンク、WI名、実在するファイル、拡張子付きのパス、行・見出し位置付きのファイル名とする。
-    画面やAPIのパス（`/settings`、`/api/items`）と製品名（`Node.js`、`ASP.NET`）はファイルを指さないため候補にしない。
+    明示された参照は、Markdownリンク、WI名、実在するファイル、拡張子付きのパス、見出し位置付きのファイル名と、
+    対象版のファイルの語彙と一致する行位置付きの名前とする。
+    画面やAPIのパス（`/settings`、`/api/items`）、製品名（`Node.js`、`ASP.NET`）、モデル識別子やホストとポート
+    （`amazon.nova-lite-v1:0`、`example.com:443`）はファイルを指さないため候補にしない。
     これらを候補にすると、正当な達成根拠が不在ファイルへの参照として拒否される。
     """
     matches = []
@@ -354,7 +360,8 @@ def _plain_references(evidence: str, word: re.Match[str], repository: pathlib.Pa
     参照の始まりは語の先頭とし、先頭からのパスが実在せず、その途中に日本語の直後から始まるパスがある場合は
     その位置とする（`原因をdocs/record.md:1で確認`）。日本語でつないだ2件目以降の参照（`A.md:1・B.md:2が`）も
     日本語の直後から同じ規則で切り出し、全ての参照の所在を確かめる。
-    拡張子で終わるパスを持たない語は、語全体を候補として返す。
+    拡張子で終わるパスを持たない語は、行位置を添えていれば行位置の終わりまで（`LOCATED_NAME`）、
+    添えていなければ語全体を候補として返す。
     """
     start, end = word.span("plain")
     # 保存結果のラベルと引用符は参照の外側として扱い、返すspanもパスから始める。
@@ -391,7 +398,10 @@ def _plain_references(evidence: str, word: re.Match[str], repository: pathlib.Pa
             break
         references.append(reference)
         position = reference.end()
-    return references or [word]
+    if references:
+        return references
+    # 拡張子で終わるパスを持たない語も、行位置を添えた場合は行位置の後ろの和文を参照に含めない。
+    return [LOCATED_NAME.match(evidence, start, end) or word]
 
 
 def _is_explicit_reference(match: re.Match[str], evidence: str, repository: pathlib.Path, head: str) -> bool:
@@ -422,11 +432,15 @@ def _is_explicit_reference(match: re.Match[str], evidence: str, repository: path
     # 拡張子は名前の本体を持つファイル名の`.<英字>…`とし、`.env`のように先頭がピリオドで本体の無い名前は拡張子を持たない。
     # 見出し位置はファイルの節を指すため、拡張子を持つ名前に添えた場合だけ所在とする。
     # `pytest-dev/pytest#14635`のようなIssueの参照は区切りと`#`を持つが、ファイルを指さない。
-    # 行位置を添えた名前（`.gitignore:9`、`scripts/.env:1`）は、根拠の所在を示すため候補として確かめる。
+    # 行位置を添えた名前は、区切りと拡張子を持つパスでなければ、
+    # 対象版の追跡ファイルの名前・拡張子と比べて参照かを決める（`_names_file`）。
     has_separator = "/" in candidate or "\\" in candidate
-    has_extension = NAMED_EXTENSION.fullmatch(re.split(r"[/\\]", candidate)[-1]) is not None
+    name = re.split(r"[/\\]", candidate)[-1]
+    has_extension = NAMED_EXTENSION.fullmatch(name) is not None
     if location.startswith("#"):
         located = has_extension
+    elif location.startswith(":") and not location.startswith("::"):
+        located = (has_separator and has_extension) or _names_file(candidate, name, repository, head)
     else:
         located = bool(location) and (has_separator or re.search(r"\.[A-Za-z][A-Za-z0-9_-]*$", candidate) is not None)
     explicit = (
@@ -442,6 +456,32 @@ def _is_explicit_reference(match: re.Match[str], evidence: str, repository: path
     ):
         return False
     return explicit or _is_file(repository / candidate)
+
+
+def _names_file(candidate: str, name: str, repository: pathlib.Path, head: str) -> bool:
+    """行位置を添えた候補が、対象版のファイルの語彙でファイルを指すかを返す。
+
+    絶対パス、実在するファイル、先頭がピリオドの名前（`.gitignore:9`、`scripts/.env:1`）と、
+    最後のパス要素が対象版の追跡ファイルのいずれかと同じファイル名か同じ拡張子を持つ候補をファイル参照とする。
+    行位置の書式だけで参照とすると、モデル識別子（`amazon.nova-lite-v1:0`）、ホストとポート（`example.com:443`）、
+    イメージの参照（`ghcr.io/astral-sh/uv:0.9`）を不在ファイルとして拒否し、語彙を観測するたびに除外を足すことになる。
+    追跡ファイルを列挙できない場合（リポジトリを特定できない保存操作）は、区切りか拡張子の形を持つ候補を参照とし、
+    リポジトリを特定できない理由を参照の解決で示す。
+    """
+    if (
+        name.startswith(".")
+        or pathlib.Path(candidate).is_absolute()
+        or re.match(r"[A-Za-z]:[\\/]", candidate)
+        or _is_file(repository / candidate)
+    ):
+        return True
+    try:
+        tracked = [pathlib.PurePosixPath(path).name for path in _tracked_files(repository, head)]
+    except OSError, subprocess.SubprocessError, ValueError:
+        return "/" in candidate or "\\" in candidate or re.search(r"\.[A-Za-z][A-Za-z0-9_-]*$", candidate) is not None
+    extension = NAMED_EXTENSION.fullmatch(name)
+    extensions = {found[1] for tracked_name in tracked if (found := NAMED_EXTENSION.fullmatch(tracked_name))}
+    return name in tracked or (extension is not None and extension[1] in extensions)
 
 
 def _path_clue(candidate: str, repository: pathlib.Path, head: str) -> bool:

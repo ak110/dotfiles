@@ -773,6 +773,16 @@ def test_public_update_accepts_resolved_references(
     assert json.loads(record.read_text(encoding="utf-8"))["user_requirements"][0]["evidence"] == text.format(saved=saved)
 
 
+def test_updates_file_accepts_model_identifier_evidence(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """行位置付きのモデル識別子は追跡ファイルの名前・拡張子と一致せず、`--updates-file`の保存で参照として拒否しない。"""
+    record, source, _ = _reference_record(tmp_path, monkeypatch)
+    evidence = tmp_path / "evidence.txt"
+    text = "amazon.nova-lite-v1:0の料金はdocs/tracked.md:2 の表で確認した"
+    evidence.write_text(text, encoding="utf-8")
+    assert _run(*_update_route("updates-file", record, source, evidence)) == 0
+    assert json.loads(record.read_text(encoding="utf-8"))["user_requirements"][0]["evidence"] == text
+
+
 @pytest.mark.parametrize("cwd_kind", ["outside", "other"])
 @pytest.mark.parametrize("mode", ["plan-wi", "plan-user", "mixed"])
 def test_public_generation_uses_plan_repository_from_other_cwd(
