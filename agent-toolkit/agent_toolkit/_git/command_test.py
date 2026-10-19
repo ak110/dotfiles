@@ -3,6 +3,7 @@
 import os
 import pathlib
 import subprocess
+import sys
 
 import pytest
 
@@ -110,3 +111,36 @@ def test_optional_helpers_return_none_on_failure(tmp_path: pathlib.Path) -> None
 def test_command_line_prefixes_git() -> None:
     """例外と記録へ載せるコマンドは`git`で始まる引数列であること。"""
     assert subject.command_line(["status", "--porcelain"]) == ["git", "status", "--porcelain"]
+
+
+def test_run_passes_text_input_without_newline_conversion(tmp_path: pathlib.Path) -> None:
+    """`text=True`の文字列の入力は、改行を変えずにUTF-8のバイト列として子プロセスへ届く。"""
+    received = tmp_path / "received.bin"
+    script = tmp_path / "read_stdin.py"
+    script.write_text(
+        "import pathlib, sys\npathlib.Path(sys.argv[1]).write_bytes(sys.stdin.buffer.read())\n",
+        encoding="utf-8",
+    )
+    shell_command = f'"{pathlib.Path(sys.executable).as_posix()}" "{script.as_posix()}" "{received.as_posix()}"'
+
+    result = subject.run(["-c", f"alias.dump=!{shell_command}", "dump"], tmp_path, text=True, input="a\nb\n日本語\n")
+
+    assert result.returncode == 0
+    assert received.read_bytes() == "a\nb\n日本語\n".encode()
+
+
+def test_run_hands_text_input_to_subprocess_as_bytes(monkeypatch: pytest.MonkeyPatch) -> None:
+    """文字列の入力は`subprocess`のテキストモードを経由せず、バイト列で渡す（Windowsの改行変換を避ける）。"""
+    captured: dict[str, object] = {}
+
+    def fake_run(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[bytes]:
+        captured.update(kwargs)
+        return subprocess.CompletedProcess(command, 0, b"out\r\nline\n", b"")
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+
+    result = subject.run(["hash-object", "--stdin"], text=True, capture_output=True, input="a\nb\n")
+
+    assert captured["input"] == b"a\nb\n"
+    assert not captured.get("text")
+    assert result.stdout == "out\nline\n"

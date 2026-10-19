@@ -65,26 +65,47 @@ def run(
     stdout: _Stream = None,
     stderr: _Stream = None,
 ) -> subprocess.CompletedProcess[str] | subprocess.CompletedProcess[bytes]:
-    """`git`へ引数列を渡して起動し、完了した結果を返す。
+    r"""`git`へ引数列を渡して起動し、完了した結果を返す。
 
     `cwd`を省略すると呼び出し元の作業ディレクトリで起動する。
-    `check`・`timeout`・`input`・`env`・`stdout`・`stderr`は`subprocess.run`へそのまま渡し、
+    `check`・`timeout`・`input`・`env`・`stdout`・`stderr`は`subprocess.run`と同じ意味で、
     終了コードの扱いと時間切れの例外は呼び出し側が決める。
+
+    `text=True`で`input`に文字列を渡すと、子プロセスの標準入力へその文字列のUTF-8のバイト列を、全OSで改行を変えずに渡す。
+    `subprocess`のテキストモードはWindowsで`\\n`を`\\r\\n`へ変えるため、本関数は子プロセスをバイト列で起動して出力だけを復号する。
+    `text=True`の出力は、UTF-8として復号して改行を`\\n`へ正規化した文字列で返す。
     """
-    return subprocess.run(
-        command_line(args),
-        cwd=cwd,
-        check=check,
-        capture_output=capture_output,
-        text=text,
-        encoding="utf-8" if text else None,
-        errors="replace" if text else None,
-        timeout=timeout,
-        input=input,
-        env=env,
-        stdout=stdout,
-        stderr=stderr,
-    )
+    raw_input = input.encode("utf-8") if isinstance(input, str) else input
+    try:
+        result = subprocess.run(
+            command_line(args),
+            cwd=cwd,
+            check=False,
+            capture_output=capture_output,
+            timeout=timeout,
+            input=raw_input,
+            env=env,
+            stdout=stdout,
+            stderr=stderr,
+        )
+    except subprocess.TimeoutExpired as e:
+        if text:
+            raise subprocess.TimeoutExpired(e.cmd, e.timeout, output=_decode(e.output), stderr=_decode(e.stderr)) from e
+        raise
+    if text:
+        result = subprocess.CompletedProcess(result.args, result.returncode, _decode(result.stdout), _decode(result.stderr))
+    if check:
+        result.check_returncode()
+    return result
+
+
+def _decode(data: bytes | str | None) -> str | None:
+    r"""子プロセスの出力をUTF-8として復号し、改行を`\\n`へ正規化する。"""
+    if data is None:
+        return None
+    if isinstance(data, bytes):
+        data = data.decode("utf-8", errors="replace")
+    return data.replace("\r\n", "\n").replace("\r", "\n")
 
 
 def run_quiet(
