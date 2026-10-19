@@ -2027,7 +2027,7 @@ def test_accepts_covered_selection_and_skips_out_of_scope_decisions(
 def test_legacy_write_scope_reasons_are_dropped(
     env: tuple[pathlib.Path, pathlib.Path], tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], legacy: bool
 ) -> None:
-    """旧版が保存した`書込範囲の理由`は読取時に捨て、記録の過不足を判定せず、保存時にも出力しない。
+    """旧版が保存した`書込範囲の理由`は読取時に破棄し、記録の過不足を判定せず、保存時にも出力しない。
 
     同欄は重なりの判定と配分に寄与しないため撤去した。新しく書く追加入力の同欄は未知の欄として拒否する。
     """
