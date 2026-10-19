@@ -141,3 +141,39 @@ def test_prepare_lists_compactions_per_record(
         assert evidence.main([str(threads.transcript), "--detail", locator]) == 0
         output = capsys.readouterr().out
         assert "compacted" in output
+
+
+@pytest.mark.parametrize("conversation_only", [False, True])
+def test_prepare_reader_ranges_join_whole_ranges_within_limit(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], *, conversation_only: bool
+) -> None:
+    """担当範囲は読取範囲を分割・合成せず連続で全範囲を覆い、各担当範囲の本文量は上限以下になる。
+
+    本文は4,000字ごとの見出しで読取範囲へ分かれるため、`main()`の出力では単独で上限を超える読取範囲は生じない。
+    """
+    limit = 400_000
+    entries = [support.timestamped_entry(f"2026-10-19T00:{index:02}:00Z", "本文" * 5000) for index in range(40)]
+    entries.insert(20, support.assistant_text("長い返却" * 40_000))
+    parent = tmp_path / "parent.jsonl"
+    support.write_jsonl(parent, entries)
+    work = tmp_path / "work"
+    work.mkdir()
+    arguments = ["--transcript", str(parent), "--work-dir", str(work)]
+    assert prepare.main([*arguments, "--conversation-only"] if conversation_only else arguments) == 0
+    result = json.loads(capsys.readouterr().out)
+    ranges = result["conversation_ranges"]
+    readers = result["reader_ranges"]
+
+    assert len(readers) >= 3
+    assert readers[0]["first_range_index"] == 0
+    assert readers[-1]["last_range_index"] == len(ranges) - 1
+    for previous, current in zip(readers, readers[1:], strict=False):
+        assert current["first_range_index"] == previous["last_range_index"] + 1
+        # 次の要素を加えると上限を超える位置でだけ次の担当範囲へ移る。
+        assert previous["utf8_bytes"] + ranges[current["first_range_index"]]["utf8_bytes"] > limit
+    for reader in readers:
+        members = ranges[reader["first_range_index"] : reader["last_range_index"] + 1]
+        assert reader["start_line"] == members[0]["start_line"]
+        assert reader["end_line"] == members[-1]["end_line"]
+        assert reader["utf8_bytes"] == sum(item["utf8_bytes"] for item in members)
+        assert reader["utf8_bytes"] <= limit
