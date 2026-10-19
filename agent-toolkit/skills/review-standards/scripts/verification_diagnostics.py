@@ -9,6 +9,7 @@ import pathlib
 import re
 from typing import Any
 
+from agent_toolkit._common import next_action
 from agent_toolkit._git import command as git_command
 
 
@@ -50,14 +51,30 @@ def run_record(value: object) -> tuple[pathlib.Path, dict[str, Any]]:
 
 
 def worktree_root(record: dict[str, Any]) -> pathlib.Path:
-    """記録cwdからGit境界の所在だけを読み、結果の取得版と現在のHEADを混同しない。"""
-    root = _git(record["cwd"], "rev-parse", "--show-toplevel").strip()
-    if not pathlib.Path(root).is_absolute():
-        raise ValueError("実行記録cwdの対象worktreeを特定できません。対象worktreeでrun-commandを再実行する")
+    """結果のファイル名の起点とする対象worktreeのルートを、記録cwdのGit境界から読む。
+
+    取込みが生成するファイル名は、参照の所在確認と同じworktreeのルートを起点にする。
+    Git境界の所在だけを読み、結果の取得版と現在のHEADを混同しない。
+    """
+    rerun = "対象worktreeが残る間に取り込むか、対象worktreeでrun-commandを再実行する"
+    try:
+        root = _git(record["cwd"], "rev-parse", "--show-toplevel").strip()
+    except ValueError as error:
+        raise next_action.ActionableError(
+            f"実行記録cwd {record['cwd']} の対象worktreeを特定できません: {error}", next_action=rerun
+        ) from error
     result = pathlib.Path(root)
-    if not pathlib.Path(record["cwd"]).resolve().is_relative_to(result.resolve()):
-        raise ValueError("実行記録cwdと対象worktreeが対応しません。対象worktreeでrun-commandを再実行する")
+    if not result.is_absolute() or not pathlib.Path(record["cwd"]).resolve().is_relative_to(result.resolve()):
+        raise next_action.ActionableError(f"実行記録cwd {record['cwd']} と対象worktreeが対応しません", next_action=rerun)
     return result
+
+
+def _worktree_file(filename: str, cwd: str, worktree: pathlib.Path) -> str:
+    """記録cwdからの相対パスか絶対パスの診断fileを、worktreeのルートからの相対パスへそろえる。"""
+    try:
+        return (pathlib.Path(cwd) / filename).resolve().relative_to(worktree.resolve()).as_posix()
+    except ValueError as error:
+        raise ValueError(f"診断fileが対象worktree {worktree} の外です: {filename}") from error
 
 
 def _load(spec: object) -> tuple[dict[str, Any], list[dict[str, Any]]]:
@@ -92,7 +109,7 @@ def _load(spec: object) -> tuple[dict[str, Any], list[dict[str, Any]]]:
             "診断条件はscope・optionsの文字列配列、dependencies・environmentのオブジェクトと正のparallelismを指定する"
         )
     if not isinstance(spec["sources"], dict) or any(not isinstance(key, str) for key in spec["sources"]):
-        raise ValueError("sourcesは相対ファイルから保存時本文の絶対パスへのオブジェクトが必要です")
+        raise ValueError("sourcesはworktreeのルートからの相対ファイルから保存時本文の絶対パスへのオブジェクトが必要です")
     sources = {name: path_value(value).read_text(encoding="utf-8") for name, value in spec["sources"].items()}
     text = path.read_text(encoding="utf-8")
     try:
@@ -105,6 +122,8 @@ def _load(spec: object) -> tuple[dict[str, Any], list[dict[str, Any]]]:
     if not isinstance(entries, list):
         raise ValueError(f"構造化診断配列が必要です: {path}")
     diagnostics = []
+    # 位置を持つ診断があるときだけGit境界を読み、位置なし警告だけの記録は従来どおり受理する。
+    worktree: pathlib.Path | None = None
     for position, entry in enumerate(entries, 1):
         if not isinstance(entry, dict):
             raise ValueError(f"構造化診断の行が不正です: {path}: {position}")
@@ -127,14 +146,9 @@ def _load(spec: object) -> tuple[dict[str, Any], list[dict[str, Any]]]:
             if filename is not None and not isinstance(filename, str):
                 raise ValueError("診断fileは文字列かnullを指定する")
             if filename:
-                file_path = pathlib.Path(filename)
-                if file_path.is_absolute():
-                    try:
-                        filename = file_path.relative_to(record["cwd"]).as_posix()
-                    except ValueError as error:
-                        raise ValueError(f"診断fileが実行cwdの外です: {filename}") from error
-                if ".." in pathlib.Path(filename).parts:
-                    raise ValueError(f"診断fileが実行cwdの外です: {filename}")
+                # 改名の対応（git diff）と保存時本文の対応と同じ、worktreeのルートからの名前にする。
+                worktree = worktree or worktree_root(record)
+                filename = _worktree_file(filename, record["cwd"], worktree)
             line = message.get("line")
             if line is not None and (not isinstance(line, int) or isinstance(line, bool) or line < 1):
                 raise ValueError("診断lineは正の整数かnullを指定する")

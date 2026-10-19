@@ -1211,6 +1211,31 @@ def test_public_diagnostics_comparison_distinguishes_movement_multiplicity_and_i
             assert any(group["change"] == "incomparable" for group in groups)
 
 
+def test_diagnostics_from_subproject_follow_renames(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
+    """サブプロジェクトを作業ディレクトリとした診断を、worktree起点の改名と保存時本文へ対応付ける。"""
+    text = "\n".join(f"value_{number} = {number}" for number in range(5)) + "\n"
+    repository = git_repository.init_repository(tmp_path / "repo", files={"sub/old.py": text}, commit_message="基準")
+    subproject = repository / "sub"
+
+    def entry(file: str) -> dict:
+        message = {"line": 2, "col": 1, "severity": "warning", "rule": "W001", "msg": "同じ診断"}
+        return {"kind": "diagnostic", "command": "lint", "file": file, "messages": [message]}
+
+    before = _saved_diagnostics(subproject, [entry("old.py")], {"sub/old.py": text}, "before")
+    _git(repository, "mv", "sub/old.py", "sub/new.py")
+    _git(repository, "-c", "user.name=試験担当", "-c", "user.email=test@example.invalid", "commit", "--no-verify", "-m", "改名")
+    # 絶対パスの診断fileも、相対パスと同じworktree起点の名前へそろう。
+    after = _saved_diagnostics(subproject, [entry(str(subproject / "new.py"))], {"sub/new.py": text}, "after")
+    results = _json(tmp_path / "results.json", {"diagnostics": after, "baseline_diagnostics": before})
+    output = tmp_path / "record.json"
+    assert _run("--output", str(output), "--plan", str(_plan(repository, "plan-user"))) == 0
+    capsys.readouterr()
+    assert _run("--output", str(output), "--results-file", str(results), "--list-results") == 0, capsys.readouterr().err
+    listed = json.loads(capsys.readouterr().out)["diagnostics"]
+    assert list(listed) == ["unchanged:1"]
+    assert (listed["unchanged:1"]["before"]["file"], listed["unchanged:1"]["after"]["file"]) == ("sub/old.py", "sub/new.py")
+
+
 @pytest.mark.parametrize("invalid", ["missing-history", "missing-fence", "empty-utterance"])
 def test_public_record_rejects_invalid_plan_without_write(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], invalid: str
@@ -1954,26 +1979,20 @@ def _list_junit(record: pathlib.Path, spec: dict[str, str]) -> int:
 def test_junit_accepts_pyfltr_run_record(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """pyfltr経由の記録とXMLの組を、直接起動の記録と同じ完全テスト名と状態で取り込む。"""
-    monkeypatch.chdir(tmp_path)
+    """pyfltr経由の記録とXMLの組を、直接起動の取込みと同じ形の完全テスト名と状態で取り込む。
+
+    直接起動の名前の形は`test_public_import_uses_junit_states_and_updates_selected_rows`が確かめる。
+    """
     text = "import pytest\n@pytest.mark.parametrize('value', [1, 2])\ndef test_value(value):\n    assert value == 1\n"
-    direct = _saved_trial(tmp_path, text, "direct")
-    via_pyfltr, _ = _saved_pyfltr_trial(tmp_path, monkeypatch, "pyfltr", "--output-format=jsonl")
+    git_repository.init_repository(tmp_path, files={"trial_test.py": text}, commit_message="基準")
+    monkeypatch.chdir(tmp_path)
+    spec, _ = _saved_pyfltr_trial(tmp_path, monkeypatch, "pyfltr", "--output-format=jsonl")
     record = tmp_path / "record.json"
     assert _run("--output", str(record), "--plan", str(_plan(tmp_path, "plan-user"))) == 0
-    listed = {}
-    for label, spec in (("direct", direct), ("pyfltr", via_pyfltr)):
-        capsys.readouterr()
-        assert _list_junit(record, spec) == 0, capsys.readouterr().err
-        listed[label] = {name: value["status"] for name, value in json.loads(capsys.readouterr().out)["tests"].items()}
-    assert (
-        listed["pyfltr"]
-        == listed["direct"]
-        == {
-            "trial_test.py::test_value[1]": "passed",
-            "trial_test.py::test_value[2]": "failed",
-        }
-    )
+    capsys.readouterr()
+    assert _list_junit(record, spec) == 0, capsys.readouterr().err
+    listed = {name: value["status"] for name, value in json.loads(capsys.readouterr().out)["tests"].items()}
+    assert listed == {"trial_test.py::test_value[1]": "passed", "trial_test.py::test_value[2]": "failed"}
 
 
 @pytest.mark.parametrize("invalid", ["no-archive", "text-output"])
@@ -1981,8 +2000,10 @@ def test_junit_rejects_missing_pyfltr_record_with_next_action(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], invalid: str
 ) -> None:
     """pyfltrの実行記録を読めない組を、受理する起動の形と再実行の操作を示して拒否する。"""
+    git_repository.init_repository(
+        tmp_path, files={"trial_test.py": "def test_one():\n    assert True\n"}, commit_message="基準"
+    )
     monkeypatch.chdir(tmp_path)
-    _saved_trial(tmp_path, "def test_one():\n    assert True\n", "direct")
     options = ["--output-format=jsonl", "--no-archive"] if invalid == "no-archive" else ["--output-format=text"]
     spec, _ = _saved_pyfltr_trial(tmp_path, monkeypatch, "pyfltr", *options)
     assert pathlib.Path(spec["xml"]).is_file()
@@ -2001,14 +2022,120 @@ def test_junit_rejects_unmatched_junitxml_with_next_action(
     """実行argvの--junitxmlと対応しないXMLを、受理する起動の形と再実行の操作を示して拒否する。"""
     monkeypatch.chdir(tmp_path)
     first = _saved_trial(tmp_path, "def test_one():\n    assert True\n", "first")
-    second = _saved_trial(tmp_path, "def test_one():\n    assert True\n", "second")
+    # 同じ内容で、実行argvの--junitxmlが指していないXMLを用意する。
+    other = tmp_path / "other.xml"
+    other.write_bytes(pathlib.Path(first["xml"]).read_bytes())
     record = tmp_path / "record.json"
     assert _run("--output", str(record), "--plan", str(_plan(tmp_path, "plan-user"))) == 0
     capsys.readouterr()
-    assert _list_junit(record, {"xml": second["xml"], "run_record": first["run_record"]}) == 1
+    assert _list_junit(record, {"xml": str(other), "run_record": first["run_record"]}) == 1
     error = capsys.readouterr().err
     assert "--junitxml" in error and "pyfltr" in error
     assert "pytest -v -o junit_family=xunit1 --junitxml=<XMLの絶対パス>" in error
+
+
+def _subproject_repository(tmp_path: pathlib.Path) -> pathlib.Path:
+    """同名の試験ファイルを2つのサブプロジェクトへ置き、ファイル名だけでは1件に決まらないリポジトリを用意する。"""
+    text = "def test_saved():\n    assert True\n"
+    return git_repository.init_repository(
+        tmp_path / "repo",
+        files={"alpha/same_test.py": text, "beta/same_test.py": text},
+        commit_message="基準",
+    )
+
+
+def _subproject_trial(repository: pathlib.Path, name: str, *pytest_args: str) -> dict[str, str]:
+    """サブプロジェクトを作業ディレクトリとして実pytestを起動し、公開run-commandの記録とXMLを受け取る。"""
+    xml = repository.parent / f"{name}.xml"
+    result = _saved_command(
+        repository / "alpha",
+        "pytest",
+        "-v",
+        "-p",
+        "no:cacheprovider",
+        "-o",
+        "junit_family=xunit1",
+        f"--junitxml={xml}",
+        *pytest_args,
+        "same_test.py",
+    )
+    assert result.returncode == 0, result.stderr
+    saved = json.loads(result.stdout[result.stdout.index("{") :])
+    assert saved["child_exit_code"] == 0
+    return {"xml": str(xml), "run_record": saved["record_path"]}
+
+
+def _listed_tests(record: pathlib.Path, spec: dict[str, str], capsys: pytest.CaptureFixture[str]) -> dict[str, str]:
+    capsys.readouterr()
+    assert _list_junit(record, spec) == 0, capsys.readouterr().err
+    return {name: value["status"] for name, value in json.loads(capsys.readouterr().out)["tests"].items()}
+
+
+def test_junit_names_from_subproject_and_root_rootdir_match(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """サブプロジェクトで実行した組と、rootdirにworktreeのルートを指定した組が同じworktree起点の名前になる。"""
+    repository = _subproject_repository(tmp_path)
+    monkeypatch.chdir(repository)
+    subproject = _subproject_trial(repository, "subproject")
+    root = _subproject_trial(repository, "root", f"--rootdir={repository}")
+    record = repository / "record.json"
+    assert _run("--output", str(record), "--plan", str(_plan(repository, "plan-user"))) == 0
+    expected = {"alpha/same_test.py::test_saved": "passed"}
+    assert _listed_tests(record, subproject, capsys) == expected
+    assert _listed_tests(record, root, capsys) == expected
+
+
+def test_junit_subproject_names_pass_reference_check(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """サブプロジェクトで取り込んだ名前を根拠へ保存し、保存時の参照の所在確認を通す。"""
+    repository = _subproject_repository(tmp_path)
+    monkeypatch.chdir(repository)
+    spec = _subproject_trial(repository, "subproject")
+    record = repository / "record.json"
+    assert _run("--output", str(record), "--plan", str(_plan(repository, "plan-user"))) == 0
+    payload = json.loads(record.read_text(encoding="utf-8"))
+    name = "alpha/same_test.py::test_saved"
+    updates = _json(
+        tmp_path / "updates.json",
+        [
+            {"section": "user_requirements", "row": index, "source": row["source"], "tests": [name], "mode": "replace"}
+            for index, row in enumerate(payload["user_requirements"], 1)
+        ],
+    )
+    capsys.readouterr()
+    assert (
+        _run(
+            "--output",
+            str(record),
+            "--junit-xml",
+            spec["xml"],
+            "--junit-record",
+            spec["run_record"],
+            "--updates-file",
+            str(updates),
+        )
+        == 0
+    ), capsys.readouterr().err
+    for row in json.loads(record.read_text(encoding="utf-8"))["user_requirements"]:
+        assert f"`{name}` passed" in row["evidence"]
+
+
+def test_junit_rejects_rootdir_outside_worktree(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """worktreeの外のrootdirを持つ組を、起点とrootdirを示して拒否する。"""
+    repository = _subproject_repository(tmp_path)
+    monkeypatch.chdir(repository)
+    spec = _subproject_trial(repository, "outside", f"--rootdir={tmp_path}")
+    record = repository / "record.json"
+    assert _run("--output", str(record), "--plan", str(_plan(repository, "plan-user"))) == 0
+    capsys.readouterr()
+    assert _list_junit(record, spec) == 1
+    error = capsys.readouterr().err
+    # worktreeのパスはtmp_pathを接頭辞に持つため、rootdirの表示は出現回数で区別する。
+    assert str(repository) in error and error.count(str(tmp_path)) >= 2
 
 
 @pytest.mark.parametrize("invalid", ["xml", "file", "duplicate", "head", "exit", "argv", "source", "row"])

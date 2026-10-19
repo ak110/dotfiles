@@ -31,7 +31,7 @@ SCHEMA = (
     '結果JSON: {"junit":{"xml":"/絶対/XML","run_record":"/絶対/record.json"},'
     '"baseline_junit":{同形式},"diagnostics":{"path":"/絶対/JSONL","run_record":"/絶対/record.json",'
     '"head":"完全OID","conditions":{"scope":[],"options":[],"dependencies":{},"parallelism":1,"environment":{}},'
-    '"sources":{"相対ファイル":"/絶対/保存時本文"}},"baseline_diagnostics":{同形式}}。'
+    '"sources":{"worktreeのルートからの相対ファイル":"/絶対/保存時本文"}},"baseline_diagnostics":{同形式}}。'
     '不要な組は省略できる。更新JSONは配列: [{"section":"wi_conditions","row":1,"source":"一覧の完全一致値",'
     '"tests":["相対file::Class::test[param]"],"diagnostics":["added:1"],'
     '"evidence_file":"/絶対/説明.txt","mode":"append"}]。'
@@ -161,7 +161,7 @@ def add_arguments(parser: argparse.ArgumentParser, *, reviewing: bool = False) -
             action="append",
             nargs=2,
             metavar=("FILE", "SNAPSHOT"),
-            help="相対ファイルと保存時本文の絶対パス。反復可",
+            help="worktreeのルートからの相対ファイルと保存時本文の絶対パス。反復可",
         )
     if reviewing:
         parser.add_argument(
@@ -315,10 +315,15 @@ def _junit(spec: object) -> dict[str, dict[str, Any]]:
         raise _junit_rejection(f"XMLと実行argvの--junitxmlが対応しません: {xml}, {record_path}")
     if "junit_family=xunit1" not in argv:
         raise _junit_rejection(f"file属性を保存するjunit_family=xunit1の指定が実行argvにありません: {record_path}")
+    # 完全テスト名のファイル部分は、参照の所在確認と同じworktreeのルートを起点にする。
+    worktree = verification_diagnostics.worktree_root(record)
     try:
-        prefix = pathlib.Path(rootdir).relative_to(record["cwd"])
+        prefix = pathlib.Path(rootdir).resolve().relative_to(worktree.resolve())
     except ValueError as error:
-        raise ValueError(f"pytest実行rootが記録cwdの外です: {rootdir}") from error
+        raise next_action.ActionableError(
+            f"pytest実行root {rootdir} が対象worktree {worktree} の外です",
+            next_action="--rootdirを省くか対象worktree内のディレクトリを指定してpytestを再実行し、そのXMLと記録を指定する",
+        ) from error
     try:
         root = ET.parse(xml).getroot()
     except ET.ParseError as error:
