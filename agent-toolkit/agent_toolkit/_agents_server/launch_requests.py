@@ -443,7 +443,9 @@ def _material_error(name: str, reason: str) -> ActionableError:
             '`{"比較元本文":"/保存先/旧本文.md","今回差分":"/保存先/差分.patch","現行本文":"/成果物.md"}`'
             "とする。複数成果物では同じ3項目のオブジェクト配列を渡す。"
             "新規成果物だけ比較元本文へ`新規`、今回差分へ`全文`を指定できる。"
-            "再レビューの`未解決事項`は保存ファイルの絶対パスか`なし`を渡す"
+            "Git管理下では`reader-fit-prepare`の出力の`before`・`patch`・`current`を3項目へ、"
+            "`scope_patch`を任意の`判定範囲差分`へ渡す（Git識別子の形式ではpathsの各パスから保存ファイルへの対応で渡す）。"
+            "再レビューの`未解決事項`は保存ファイルの絶対パス、その絶対パスのJSON配列か`なし`だけを渡し、説明は保存物へ書く"
         ),
     )
 
@@ -481,10 +483,114 @@ def _material_paths(name: str, value: str) -> list[pathlib.Path]:
 
 
 def _check_reader_unresolved(params: Mapping[str, str], review_kind: str) -> None:
-    """再レビューで必要な未解決事項の保存物を確かめる。"""
-    unresolved = params.get("未解決事項", "なし" if review_kind == "初回レビュー" else "")
-    if unresolved != "なし":
-        _material_paths("未解決事項", unresolved)
+    """再レビューで必要な未解決事項の保存物を、パスだけの値として確かめる。
+
+    パスに説明を連結した値は、説明の対象が別の成果物でも探索担当が今回の資料の範囲と誤認するため受理しない。
+    """
+    unresolved = params.get("未解決事項", "なし" if review_kind == "初回レビュー" else "").strip()
+    if unresolved == "なし":
+        return
+    if not unresolved.startswith("[") and not (pathlib.Path(unresolved).is_absolute() and pathlib.Path(unresolved).is_file()):
+        raise _material_error(
+            "未解決事項", "値は保存ファイルの絶対パス、その絶対パスのJSON配列か`なし`だけにし、説明は保存物へ書く"
+        )
+    _material_paths("未解決事項", unresolved)
+
+
+_HUNK_HEADER = re.compile(r"@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@")
+
+
+def _apply_unified_diff(before: str, patch: str) -> str | None:
+    """1ファイル分の統一差分を比較元本文へ適用した本文を返し、適用できない差分ではNoneを返す。
+
+    行位置を持たない帰属限定差分、複数ファイルの差分、比較元と文脈が一致しない差分は適用できない。
+    """
+    lines = patch.splitlines(keepends=True)
+    if sum(1 for line in lines if line.startswith("+++ ")) > 1:
+        return None
+    entries: list[tuple[str, str]] = []
+    for line in lines:
+        if line.startswith("\\"):
+            if not entries:
+                return None
+            tag, text = entries[-1]
+            entries[-1] = (tag, text.removesuffix("\n"))
+        else:
+            entries.append((line[:1], line[1:]))
+    source = before.splitlines(keepends=True)
+    result: list[str] = []
+    position = 0
+    index = 0
+    while index < len(entries) and not (entries[index][0] == "@" and entries[index][1].startswith("@ ")):
+        if entries[index][0] == "@":
+            return None
+        index += 1
+    while index < len(entries):
+        header = _HUNK_HEADER.match("@" + entries[index][1])
+        if header is None:
+            return None
+        old_start, old_count = int(header[1]), int(header[2] if header[2] is not None else 1)
+        new_count = int(header[4] if header[4] is not None else 1)
+        anchor = old_start if old_count == 0 else old_start - 1
+        if anchor < position or anchor > len(source):
+            return None
+        result.extend(source[position:anchor])
+        position = anchor
+        index += 1
+        while old_count or new_count:
+            if index >= len(entries):
+                return None
+            tag, text = entries[index]
+            if tag in {" ", "-"}:
+                if position >= len(source) or source[position] != text or old_count == 0:
+                    return None
+                position += 1
+                old_count -= 1
+            if tag in {" ", "+"}:
+                if new_count == 0:
+                    return None
+                result.append(text)
+                new_count -= 1
+            if tag not in {" ", "-", "+"}:
+                return None
+            index += 1
+    result.extend(source[position:])
+    return "".join(result)
+
+
+def _patch_target_error(patch: str, current: pathlib.Path) -> str | None:
+    """差分の新しい側のファイル見出しが現行本文と異なるファイルを指す場合に理由を返す。"""
+    for line in patch.splitlines():
+        if not line.startswith("+++ "):
+            continue
+        target = line[4:].split("\t", 1)[0].strip()
+        if target == "/dev/null":
+            return None
+        relative = target.removeprefix("b/") if not pathlib.Path(target).is_absolute() else target
+        if pathlib.Path(relative).is_absolute():
+            matched = pathlib.Path(relative) == current
+        else:
+            matched = current.as_posix().endswith("/" + relative.lstrip("/"))
+        return None if matched else f"差分の対象`{target}`が現行本文`{current}`と異なる成果物を指す"
+    return None
+
+
+def _check_patch_consistency(name: str, before: str, patch_path: pathlib.Path, current: pathlib.Path) -> None:
+    """比較元本文へ今回差分を適用した結果が現行本文と一致するかを確かめる。
+
+    別成果物の差分、計画別の判定範囲だけの差分、レビューHEADと異なる現行本文は、いずれもこの一致が崩れる。
+    """
+    patch = patch_path.read_text(encoding="utf-8")
+    if error := _patch_target_error(patch, current):
+        raise _material_error(name, error)
+    expected = current.read_text(encoding="utf-8")
+    applied = _apply_unified_diff(before, patch) if patch else before
+    if applied != expected:
+        raise _material_error(
+            name,
+            "比較元本文へ今回差分を適用した結果が現行本文と一致しない。今回差分は比較元と現行本文の本文間の完全な差分にし、"
+            "計画別の差分は`判定範囲差分`へ分ける。現行本文はレビューHEADの同じ版を渡す",
+        )
 
 
 def _check_reader_materials(params: Mapping[str, str]) -> None:
@@ -500,7 +606,7 @@ def _check_reader_materials(params: Mapping[str, str]) -> None:
             materials = json.loads(params["比較資料"])
         except json.JSONDecodeError as error:
             raise _material_error("比較資料", "JSONオブジェクトまたはその配列を読めない") from error
-        if isinstance(materials, dict) and set(materials) == {"repository", "base", "head", "paths"}:
+        if isinstance(materials, dict) and set(materials) - {"判定範囲差分"} == {"repository", "base", "head", "paths"}:
             _check_git_reader_materials(materials, current)
             _check_reader_unresolved(params, review_kind)
             return
@@ -513,10 +619,10 @@ def _check_reader_materials(params: Mapping[str, str]) -> None:
         for material in materials:
             if (
                 not isinstance(material, dict)
-                or set(material) != keys
+                or set(material) - {"判定範囲差分"} != keys
                 or any(not isinstance(value, str) for value in material.values())
             ):
-                raise _material_error("比較資料", "比較元本文・今回差分・現行本文の3項目が必要")
+                raise _material_error("比較資料", "比較元本文・今回差分・現行本文の3項目（任意で判定範囲差分）が必要")
             actual = _material_paths("現行本文", material["現行本文"])
             if len(actual) != 1 or actual[0] not in current:
                 raise _material_error("現行本文", "成果物のいずれか1件と同じパスが必要")
@@ -526,10 +632,20 @@ def _check_reader_materials(params: Mapping[str, str]) -> None:
             is_new = material["比較元本文"] == "新規"
             if review_kind != "初回レビュー" and is_new:
                 raise _material_error("比較元本文", "再レビューでは前回確認版の本文が必要")
+            before = ""
             if not is_new:
-                _material_paths("比較元本文", material["比較元本文"])
+                before = _material_paths("比較元本文", material["比較元本文"])[0].read_text(encoding="utf-8")
             if not (is_new and material["今回差分"] == "全文"):
-                _material_paths("今回差分", material["今回差分"])
+                patch_paths = _material_paths("今回差分", material["今回差分"])
+                if len(patch_paths) != 1:
+                    raise _material_error("今回差分", "成果物ごとに1件の差分ファイルが必要")
+                _check_patch_consistency("今回差分", before, patch_paths[0], actual[0])
+            if "判定範囲差分" in material:
+                scope_paths = _material_paths("判定範囲差分", material["判定範囲差分"])
+                if len(scope_paths) != 1:
+                    raise _material_error("判定範囲差分", "成果物ごとに1件の差分ファイルが必要")
+                if error := _patch_target_error(scope_paths[0].read_text(encoding="utf-8"), actual[0]):
+                    raise _material_error("判定範囲差分", error)
         if covered != set(current):
             raise _material_error("比較資料", "全成果物に比較資料を1件ずつ対応付ける必要がある")
     else:
@@ -540,8 +656,16 @@ def _check_reader_materials(params: Mapping[str, str]) -> None:
         is_new = scope.startswith("新規") and "全文" in scope
         if not is_new:
             paths = _material_paths("修正範囲（比較元本文・今回差分）", scope)
-            if len({path for path in paths if path != current[0]}) < 2:
+            saved = list(dict.fromkeys(path for path in paths if path != current[0]))
+            if len(saved) < 2:
                 raise _material_error("比較資料", "比較元本文と今回差分の保存物が必要")
+            # 旧形式は役割を名前で示さないため、差分の形を持つファイルを1件に識別できる場合だけ同じ対応を確かめる。
+            patches = [path for path in saved if path.read_text(encoding="utf-8").startswith(("diff --git ", "--- "))]
+            if len(patches) == 1 and len(saved) == 2:
+                before_path = next(path for path in saved if path != patches[0])
+                _check_patch_consistency(
+                    "修正範囲（比較元本文・今回差分）", before_path.read_text(encoding="utf-8"), patches[0], current[0]
+                )
         if review_kind != "初回レビュー" and is_new:
             raise _material_error("比較元本文", "再レビューでは前回確認版の本文が必要")
     _check_reader_unresolved(params, review_kind)
@@ -576,6 +700,19 @@ def _check_git_reader_materials(materials: dict[str, Any], current: list[pathlib
         raise _material_error("比較資料", "pathsに空でないリポジトリ相対パス配列が必要")
     if len(paths) != len(current) or {pathlib.Path(repository) / path for path in paths} != set(current):
         raise _material_error("比較資料", "pathsが成果物の集合と一致しない")
+    # 計画別の判定範囲は、保存資料の形式と同じ`reader-fit-prepare`の`scope_patch`をパスごとに受け取る。
+    # 探索担当は読み取り専用のため、契約から帰属を計算させず、計算済みの差分で走査範囲を1通りに決める。
+    scopes = materials.get("判定範囲差分", {})
+    if not isinstance(scopes, dict) or set(scopes) - set(paths) or any(not isinstance(value, str) for value in scopes.values()):
+        raise _material_error(
+            "比較資料", "判定範囲差分にはpathsのリポジトリ相対パスから保存ファイルの絶対パスへのオブジェクトが必要"
+        )
+    for path, scope in scopes.items():
+        scope_paths = _material_paths("判定範囲差分", scope)
+        if len(scope_paths) != 1:
+            raise _material_error("判定範囲差分", "成果物ごとに1件の差分ファイルが必要")
+        if error := _patch_target_error(scope_paths[0].read_text(encoding="utf-8"), pathlib.Path(repository) / path):
+            raise _material_error("判定範囲差分", error)
     for key in ("base", "head"):
         revision = materials[key]
         if not isinstance(revision, str) or not re.fullmatch(r"[0-9a-fA-F]{7,40}", revision):

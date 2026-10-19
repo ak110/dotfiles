@@ -8,6 +8,7 @@ import pathlib
 
 import pytest
 import reader_fit_declaration
+import yaml
 
 from agent_toolkit._agents_server import launch_requests
 from agent_toolkit._atk import run_script
@@ -15,9 +16,11 @@ from agent_toolkit._testing import git_repository as git
 
 
 def _assert_reader_launch(item: dict[str, str], repository: pathlib.Path, review_kind: str) -> None:
-    """公開prepareの保存先を文書どおり渡し、起動側が通常ファイルとして読めることを確かめる。"""
+    """公開prepareの保存先を文書どおり渡し、起動側が本文・差分・現行本文の対応を確かめて受理することを確かめる。"""
     assert pathlib.Path(item["current"]) == repository / item["path"]
     materials = {"比較元本文": item["before"], "今回差分": item["patch"], "現行本文": item["current"]}
+    if "scope_patch" in item:
+        materials["判定範囲差分"] = item["scope_patch"]
     _model, _usage, _prompt, launch_kind, _handoff = launch_requests.task_document_request(
         "reader-fit-review",
         {
@@ -31,6 +34,49 @@ def _assert_reader_launch(item: dict[str, str], repository: pathlib.Path, review
         },
     )
     assert launch_kind == "explore"
+
+
+def test_prepare_separates_full_and_scope_patch_for_other_plan_changes(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """他計画が自計画の行を上書きし、計画別の今回差分が空で省略も成立しない再レビューでも、起動できる資料を返す。
+
+    完全差分と判定範囲差分を区別し、changeで計画外の変更だけであることを示す。省略の既存条件は変えない。
+    """
+    repo = git.init_repository(tmp_path / "repo", files={"shared.md": "元A\n元B\n"}, commit_message="開始")
+    start = git.git_output(repo, "rev-parse", "HEAD")
+    (repo / "shared.md").write_text("自A\n自B\n", encoding="utf-8")
+    previous = git.commit_all(repo, "自計画")
+    (repo / "shared.md").write_text("他A\n自B\n", encoding="utf-8")
+    head = git.commit_all(repo, "他計画が同じ行を上書き")
+    contract = tmp_path / "contract.yaml"
+    contract.write_text(
+        yaml.safe_dump(
+            {"version": 1, "clauses": [{"clause": "別計画の認可: 他", "content": f"対象commit: {head}。", "source": "要求"}]},
+            allow_unicode=True,
+        ),
+        encoding="utf-8",
+    )
+    args = argparse.Namespace(
+        script_name="reader-fit-prepare",
+        script_args=[
+            *("--repository", str(repo), "--review-start", start, "--review-head", head),
+            *("--previous-review-start", start, "--previous-review-head", previous),
+            *("--review-contract", str(contract), "--output-dir", str(tmp_path / "output")),
+        ],
+    )
+    assert run_script.dispatch(args) == 0
+    output = json.loads(capsys.readouterr().out)
+    assert (output["repository"], output["base"], output["head"]) == (str(repo), previous, head)
+    [item] = output["files"]
+    assert pathlib.Path(item["patch"]).read_text(encoding="utf-8") == git.git_output(repo, "diff", previous, head) + "\n"
+    assert not pathlib.Path(item["scope_patch"]).read_text(encoding="utf-8")
+    assert item["change"] == "計画外の変更のみ"
+    assert "omission" not in item
+    _assert_reader_launch(item, repo, "再レビュー")
+    (repo / "shared.md").write_text("未commitの版\n", encoding="utf-8")
+    assert run_script.dispatch(args) == 2
+    assert "review_head" in capsys.readouterr().err
 
 
 def test_public_prepare_saves_first_and_repeat_review_inputs(

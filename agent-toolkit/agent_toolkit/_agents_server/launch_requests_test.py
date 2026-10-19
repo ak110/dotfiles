@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import difflib
 import importlib.util
 
 # テストでは共有状態とバックエンドの内部境界も直接検証する。
@@ -1073,21 +1074,13 @@ async def test_start_accepts_saved_reader_materials(
     """管理内外の本文・差分・前回指摘を、同じ起動境界で受理する。"""
     params = _observed_input_params("reader-fit-review.subagent.md", tmp_path)
     current = tmp_path / ("回答 下書き.md" if external else "guide.md")
-    current.write_text("現行本文\n", encoding="utf-8")
     findings = tmp_path / "findings.md"
     findings.write_text("前回指摘と応答・検証証拠\n", encoding="utf-8")
     params.update(
         {
             "成果物": str(current),
             "レビュー種別": review_kind,
-            "比較資料": json.dumps(
-                {
-                    "比較元本文": str(tmp_path / "before.md"),
-                    "今回差分": str(tmp_path / "diff.patch"),
-                    "現行本文": str(current),
-                },
-                ensure_ascii=False,
-            ),
+            "比較資料": json.dumps(_saved_reader_materials(tmp_path, current), ensure_ascii=False),
             "未解決事項": str(findings),
         }
     )
@@ -1110,11 +1103,7 @@ async def test_public_start_reader_material_collection(
     """複数成果物の1対1の資料対応を公開startで確認し、不備を起動前に拒否する。"""
     params = _observed_input_params("reader-fit-review.subagent.md", tmp_path)
     paths = [tmp_path / "guide.md", tmp_path / "second.md"]
-    paths[1].write_text("第二の成果物\n", encoding="utf-8")
-    materials = [
-        {"比較元本文": str(tmp_path / "before.md"), "今回差分": str(tmp_path / "diff.patch"), "現行本文": str(path)}
-        for path in paths
-    ]
+    materials = [_saved_reader_materials(tmp_path, path) for path in paths]
     params["成果物"] = json.dumps([str(path) for path in paths])
     if defect == "missing":
         materials.pop()
@@ -1127,7 +1116,7 @@ async def test_public_start_reader_material_collection(
     elif defect == "unreadable":
         materials[1]["今回差分"] = str(tmp_path / "missing.patch")
     elif defect == "mismatch":
-        materials[1]["現行本文"] = str(tmp_path / "before.md")
+        materials[1]["現行本文"] = materials[1]["比較元本文"]
     elif defect == "new-rereview":
         params.update({"レビュー種別": "再レビュー", "未解決事項": "なし"})
         materials[1].update({"比較元本文": "新規", "今回差分": "全文"})
@@ -1163,6 +1152,158 @@ async def test_start_accepts_new_reader_artifact_full_text(
 
     await mcp_tools.start(str(tmp_path), subagent_md_path="reader-fit-review", extra_params=params)
 
+    manager.start.assert_awaited_once()
+
+
+def _saved_reader_materials(
+    root: pathlib.Path, current: pathlib.Path, *, before_text: str = "旧本文\n", current_text: str = "現行本文\n"
+) -> dict[str, str]:
+    """比較元本文・現行本文と、両者の本文間の完全な統一差分を保存し、比較資料の3項目を返す。"""
+    current.write_text(current_text, encoding="utf-8")
+    before = root / f"{current.stem}-before.md"
+    before.write_text(before_text, encoding="utf-8")
+    patch = root / f"{current.stem}.patch"
+    patch.write_text(
+        "".join(
+            difflib.unified_diff(
+                before_text.splitlines(keepends=True),
+                current_text.splitlines(keepends=True),
+                f"a/{current.name}",
+                f"b/{current.name}",
+            )
+        ),
+        encoding="utf-8",
+    )
+    return {"比較元本文": str(before), "今回差分": str(patch), "現行本文": str(current)}
+
+
+@pytest.mark.parametrize("defect", ["other-artifact", "scope-as-full", "stale-current", "described-findings"])
+@pytest.mark.asyncio
+async def test_reader_fit_start_rejects_mismatched_materials(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, defect: str
+) -> None:
+    """別成果物の差分、全差分として渡した判定範囲差分、異なる版の現行本文、説明の混在した未解決事項を起動前に拒否する。"""
+    params = _observed_input_params("reader-fit-review.subagent.md", tmp_path)
+    current = tmp_path / "guide.md"
+    materials = _saved_reader_materials(tmp_path, current, before_text="一\n二\n三\n", current_text="一\n改\n三\n")
+    findings = tmp_path / "findings.md"
+    findings.write_text("前回指摘\n", encoding="utf-8")
+    params.update({"成果物": str(current), "レビュー種別": "再レビュー", "未解決事項": str(findings)})
+    if defect == "other-artifact":
+        other = _saved_reader_materials(
+            tmp_path, tmp_path / "other.md", before_text="一\n二\n三\n", current_text="一\n改\n三\n"
+        )
+        current.write_text("一\n改\n三\n", encoding="utf-8")
+        materials["今回差分"] = other["今回差分"]
+    elif defect == "scope-as-full":
+        # reader-fit-prepareの帰属限定差分の形（行位置を持たない@@）を全差分として渡す。
+        pathlib.Path(materials["今回差分"]).write_text("--- a/guide.md\n+++ b/guide.md\n@@\n-二\n+改\n", encoding="utf-8")
+    elif defect == "stale-current":
+        current.write_text("一\n未commitの別の版\n三\n", encoding="utf-8")
+    else:
+        params["未解決事項"] = f"{findings}（前回指摘2件。修正範囲はsecond.md）"
+    params["比較資料"] = json.dumps(materials, ensure_ascii=False)
+    manager = TaskManager(start=AsyncMock(return_value={"session_id": "unexpected", "status": "running", "label": "reader"}))
+    monkeypatch.setattr(mcp_tools, "_MANAGER", manager)
+
+    with pytest.raises(ActionableError) as raised:
+        await mcp_tools.start(str(tmp_path), subagent_md_path="reader-fit-review", extra_params=params)
+
+    message = _actionable_message(raised.value)
+    assert "再発行" in message
+    expected = {"other-artifact": "異なる成果物", "scope-as-full": "判定範囲差分", "stale-current": "現行本文と一致しない"}
+    assert expected.get(defect, "説明は保存物へ書く") in message
+    manager.start.assert_not_awaited()
+
+
+@pytest.mark.parametrize("defect", ["outside-paths", "other-artifact"])
+@pytest.mark.asyncio
+async def test_reader_fit_start_rejects_git_scope_not_matching_paths(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, defect: str
+) -> None:
+    """Git識別子の形式の判定範囲差分が、pathsに無い成果物や別の成果物の差分を指す場合は起動前に拒否する。"""
+    params = _observed_input_params("reader-fit-review.subagent.md", tmp_path)
+    repository = init_repository(tmp_path / "repo", files={"guide.md": "旧本文\n"}, commit_message="比較元")
+    base = git_output(repository, "rev-parse", "HEAD")
+    (repository / "guide.md").write_text("現行本文\n", encoding="utf-8")
+    head = commit_all(repository, "本文を更新")
+    scope = tmp_path / "scope.diff"
+    target = "other.md"
+    scope.write_text(f"--- a/{target}\n+++ b/{target}\n@@\n-旧\n+新\n", encoding="utf-8")
+    key = "other.md" if defect == "outside-paths" else "guide.md"
+    comparison = {
+        "repository": str(repository),
+        "base": base,
+        "head": head,
+        "paths": ["guide.md"],
+        "判定範囲差分": {key: str(scope)},
+    }
+    params.update({"成果物": str(repository / "guide.md"), "比較資料": json.dumps(comparison, ensure_ascii=False)})
+    manager = TaskManager(start=AsyncMock(return_value={"session_id": "unexpected", "status": "running", "label": "reader"}))
+    monkeypatch.setattr(mcp_tools, "_MANAGER", manager)
+
+    with pytest.raises(ActionableError) as raised:
+        await mcp_tools.start(str(repository), subagent_md_path="reader-fit-review", extra_params=params)
+
+    assert "判定範囲差分" in _actionable_message(raised.value)
+    manager.start.assert_not_awaited()
+
+
+@pytest.mark.parametrize("form", ["single", "scope", "collection", "legacy", "external", "git", "git-scope"])
+@pytest.mark.asyncio
+async def test_reader_fit_start_accepts_consistent_material_forms(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, form: str
+) -> None:
+    """本文・差分・現行本文が対応する単一・判定範囲付き・集約・旧形式・Git管理外・Git識別子の比較を受理する。"""
+    params = _observed_input_params("reader-fit-review.subagent.md", tmp_path)
+    cwd = tmp_path
+    if form in {"git", "git-scope"}:
+        repository = init_repository(tmp_path / "repo", files={"guide.md": "旧本文\n"}, commit_message="比較元")
+        base = git_output(repository, "rev-parse", "HEAD")
+        (repository / "guide.md").write_text("現行本文\n", encoding="utf-8")
+        head = commit_all(repository, "本文を更新")
+        comparison: Any = {"repository": str(repository), "base": base, "head": head, "paths": ["guide.md"]}
+        if form == "git-scope":
+            scope = tmp_path / "guide-scope.diff"
+            scope.write_text("--- a/guide.md\n+++ b/guide.md\n@@\n-旧本文\n+現行本文\n", encoding="utf-8")
+            comparison["判定範囲差分"] = {"guide.md": str(scope)}
+        params["成果物"] = str(repository / "guide.md")
+        cwd = repository
+    elif form == "collection":
+        paths = [tmp_path / "guide.md", tmp_path / "second.md"]
+        comparison = [_saved_reader_materials(tmp_path, path) for path in paths]
+        params["成果物"] = json.dumps([str(path) for path in paths])
+    elif form == "external":
+        # Git管理外の回答下書きは、managed-tempの旧本文とdiff -uの絶対パスの見出しで比べる。
+        current = tmp_path / "回答 下書き.md"
+        comparison = _saved_reader_materials(tmp_path, current)
+        patch = pathlib.Path(comparison["今回差分"])
+        patch.write_text(
+            patch.read_text(encoding="utf-8")
+            .replace(f"--- a/{current.name}", f"--- {comparison['比較元本文']}\t2026-10-19 00:00:00")
+            .replace(f"+++ b/{current.name}", f"+++ {current}\t2026-10-19 00:00:00"),
+            encoding="utf-8",
+        )
+        params["成果物"] = str(current)
+    else:
+        current = tmp_path / "guide.md"
+        comparison = _saved_reader_materials(tmp_path, current)
+        params["成果物"] = str(current)
+        if form == "scope":
+            scope = tmp_path / "scope.diff"
+            scope.write_text("", encoding="utf-8")
+            comparison["判定範囲差分"] = str(scope)
+        if form == "legacy":
+            params["修正範囲"] = json.dumps([comparison["比較元本文"], comparison["今回差分"]], ensure_ascii=False)
+            comparison = None
+    if comparison is not None:
+        params["比較資料"] = json.dumps(comparison, ensure_ascii=False)
+    manager = TaskManager(start=AsyncMock(return_value={"session_id": "reader", "status": "running", "label": "reader"}))
+    monkeypatch.setattr(mcp_tools, "_MANAGER", manager)
+
+    response = await mcp_tools.start(str(cwd), subagent_md_path="reader-fit-review", extra_params=params)
+
+    assert response["session_id"] == "reader"
     manager.start.assert_awaited_once()
 
 
