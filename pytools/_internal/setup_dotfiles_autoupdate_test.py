@@ -119,3 +119,22 @@ def test_timer_preserves_configured_codex_home(prepared, monkeypatch: pytest.Mon
     monkeypatch.setattr(systemd_user_unit, "setup_timer", setup_timer)
     setup_dotfiles_autoupdate.run()
     assert 'Environment="CODEX_HOME=/custom/codex home%%u/\\"quoted\\""\n' in received["service_unit_content"]
+
+
+def test_run_returns_failure_with_recovery_when_user_manager_unavailable(
+    prepared: tuple[pathlib.Path, pathlib.Path, pathlib.Path],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """ユーザーマネージャー停止は例外ではなく、復旧手順を次の操作とする失敗として返す。"""
+    del prepared
+
+    def fail(**kwargs: typing.Any) -> bool:
+        del kwargs
+        raise systemd_user_unit.UserManagerUnavailableError(
+            "ユーザーマネージャーが停止", "sudo systemctl start user@1000.service"
+        )
+
+    monkeypatch.setattr(systemd_user_unit, "setup_timer", fail)
+    outcome = setup_dotfiles_autoupdate.run()
+    assert outcome.failure is not None and "ユーザーマネージャーが停止" in outcome.failure
+    assert outcome.next_action == "sudo systemctl start user@1000.service"

@@ -58,6 +58,7 @@ def run() -> post_apply_outcome.PostApplyOutcome:
 
     対象ホストで状態を確認した場合は変更あり、ホスト不一致や uv・dotfiles ルートを解決できず何もしなかった場合は変更なしを返す。
     旧unitの撤去の失敗は失敗と数え、ランチャーとunitの配置は続ける。
+    ユーザーマネージャーへ接続できない場合は、復旧手順を次の操作とする失敗として返す。
 
     Raises:
         systemd_user_unit.SetupError: restart 後にサービスが常駐状態へ至らない場合に送出する。
@@ -100,15 +101,20 @@ def run() -> post_apply_outcome.PostApplyOutcome:
     plugin_version = json.loads(plugin_manifest.read_text(encoding="utf-8"))["version"]
     # 配布版の変更をunit本文へ反映し、稼働中プロセスも新しいplugin実装へ切り替える。
     unit_content = f"{_UNIT_CONTENT}# agent-toolkit version: {plugin_version}\n"
-    changed = systemd_user_unit.setup(
-        unit_path=_unit_path(),
-        executable_path=launcher,
-        unit_content=unit_content,
-        log_tag="atk-serve",
-        service_name=_SERVICE_UNIT,
-        restart_needed=launcher_changed,
-        journal_identifier="atk-serve-setup",
-    )
+    try:
+        changed = systemd_user_unit.setup(
+            unit_path=_unit_path(),
+            executable_path=launcher,
+            unit_content=unit_content,
+            log_tag="atk-serve",
+            service_name=_SERVICE_UNIT,
+            restart_needed=launcher_changed,
+            journal_identifier="atk-serve-setup",
+        )
+    except systemd_user_unit.UserManagerUnavailableError as error:
+        # 環境の異常のため、汎用の例外経路ではなく復旧手順を次の操作として返す。
+        failure = str(error) if legacy_failure is None else f"{legacy_failure} / {error}"
+        return post_apply_outcome.PostApplyOutcome(failure=failure, next_action=error.next_action)
     return post_apply_outcome.PostApplyOutcome(
         changed=changed,
         failure=legacy_failure,

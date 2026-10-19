@@ -26,6 +26,8 @@ def _fake_run(
     remote_commit: str = "b" * 40,
     local_commit: str = "a" * 40,
     remote_returncode: int = 0,
+    remote_stderr: str = "",
+    branch_failure_stderr: str | None = None,
     update_returncode: int = 0,
     working_directories: list[pathlib.Path] | None = None,
 ) -> typing.Callable[..., subprocess.CompletedProcess[str]]:
@@ -42,10 +44,12 @@ def _fake_run(
             return subprocess.CompletedProcess(command, update_returncode, "", "")
         if "ls-remote" in command:
             stdout = f"{remote_commit}\trefs/heads/develop\n" if remote_commit else ""
-            return subprocess.CompletedProcess(command, remote_returncode, stdout, "")
+            return subprocess.CompletedProcess(command, remote_returncode, stdout, remote_stderr)
         if "--symbolic-full-name" in command:
             return subprocess.CompletedProcess(command, 0, f"refs/remotes/{upstream}\n", "")
         if "symbolic-ref" in command:
+            if branch_failure_stderr is not None:
+                return subprocess.CompletedProcess(command, 128, "", branch_failure_stderr)
             return subprocess.CompletedProcess(command, 0, f"refs/heads/{branch}\n", "")
         return subprocess.CompletedProcess(command, 0, f"{local_commit}\n", "")
 
@@ -330,6 +334,36 @@ def test_remote_lookup_failure_or_empty_output_skips_update(
 
     assert upstream_update.main([]) == 1
     assert [str(update_dotfiles)] not in calls
+
+
+def test_remote_lookup_failure_message_includes_stderr(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """ls-remoteの失敗表示に子プロセスの標準エラーを含める。"""
+    _prepare_root(monkeypatch, tmp_path)
+    monkeypatch.setattr(
+        subprocess,
+        "run",
+        _fake_run([], remote_returncode=128, remote_stderr="fatal: Could not read from remote repository"),
+    )
+
+    assert upstream_update.main([]) == 1
+    assert "fatal: Could not read from remote repository" in capsys.readouterr().err
+
+
+def test_git_output_failure_message_includes_stderr(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """gitコマンドの取得失敗の表示に子プロセスの標準エラーを含める。"""
+    _prepare_root(monkeypatch, tmp_path)
+    monkeypatch.setattr(subprocess, "run", _fake_run([], branch_failure_stderr="fatal: ref HEAD is not a symbolic ref"))
+
+    assert upstream_update.main([]) == 1
+    assert "fatal: ref HEAD is not a symbolic ref" in capsys.readouterr().err
 
 
 def test_git_calls_do_not_modify_worktree(

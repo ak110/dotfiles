@@ -37,6 +37,7 @@ description: >
 - 非ASCIIを標準出力・標準エラーへ書くPython CLIは、開始時に両ストリームを`io.TextIOWrapper`でUTF-8・`errors="replace"`へ再構成する（英語版Windowsなどでロケール既定のエンコーディングに頼ると最初の日本語出力で停止する）
 - 再構成を経由しないログと標準出力のメッセージは、`str.encode("cp932")`が成功する範囲に収める（U+20BB7のような一部の漢字、em dash・en dash・`✓`・`•`は符号化できない）
 - `pytools/post_apply.py`のステップの`run`は`PostApplyOutcome`だけを返す。失敗をスキップと失敗のどちらに数えるかは`pytools/_internal/post_apply_outcome.py`の`PostApplyOutcome`のdocstringに従う。対象OSは`_StepSpec.platforms`だけで宣言する
+- 外部コマンドの失敗を失敗メッセージ・例外・警告へ変換するときは、`pytools/_internal/common.py`の`format_cli_error()`の結果を含める。同関数は捕捉済みの標準エラーと標準出力を併記し、両方が空なら終了コードを、実行できなかった場合はその旨を返す。終了コードだけを伝えると、原因と次の操作がdotfilesユーザーへ届かない。接続不能など環境の異常（例: `systemctl --user`がユーザーマネージャーへ接続できない）は対象の状態（未有効・非稼働）として解釈せず、区別して復旧の次の操作を書く
 - post_applyのステップが外部ツールの不在でステップ全体をスキップする場合は、そのツールを同じか先行するステップが導入するか、`README.md`が復旧手順を持つようにする（dotfilesユーザーが導入先を選ぶアプリケーションは除く）
 - post_applyの工程が配置するファイル（ランチャー、フラグファイル、unitなど）はchezmoiの管理外であり、登録しないと旧生成物が配布先に残る。配置先の改名と工程の廃止では、同じ変更で旧パスを`_REMOVED_PATHS`（dotfilesユーザーが編集し得るファイルは`_REMOVED_PATHS_IF_CONTENT`）へ登録する。撤去表（この2つと`update_claude_settings.py`の除去表）の項目には登録日を書き、6か月を過ぎたら外す。規則は`pytools/_internal/removal_registry.py`、期限切れの検出は`pytools/removed_paths_invariant_test.py`が持つ
 - `rust/`配下は`rust/<クレート名>/`のCargoクレート単位で置き、作法は`agent-toolkit:writing-standards`の`references/rust.md`に従う。`make test`は`rust/`を対象にしないため、変更したクレートで`cargo fmt --check`、`cargo clippy`、`cargo test`を変更範囲の検証として実行する（CIでは`rust-lint` job）。版数の更新は`dotfiles-release`を参照する

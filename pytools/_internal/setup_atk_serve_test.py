@@ -263,6 +263,25 @@ def test_run_propagates_setup_error(
         setup_atk_serve.run()
 
 
+def test_run_returns_failure_with_recovery_when_user_manager_unavailable(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+) -> None:
+    """ユーザーマネージャー停止は例外ではなく、復旧手順を次の操作とする失敗として返す。"""
+    _run_linux_euryale(monkeypatch, tmp_path)
+
+    def fail(**kwargs: object) -> bool:
+        del kwargs
+        raise systemd_user_unit.UserManagerUnavailableError(
+            "ユーザーマネージャーが停止", "sudo systemctl start user@1000.service"
+        )
+
+    monkeypatch.setattr(systemd_user_unit, "setup", fail)
+    outcome = setup_atk_serve.run()
+    assert outcome.failure is not None and "ユーザーマネージャーが停止" in outcome.failure
+    assert outcome.next_action == "sudo systemctl start user@1000.service"
+
+
 class TestLegacyPlansViewerUnit:
     """旧計画ビューアーのsystemd unitの停止・無効化と削除。"""
 

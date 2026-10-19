@@ -759,14 +759,15 @@ def test_plugin_update_auto_restart_failure_keeps_notice_and_logs_exit_code(
     monkeypatch.setattr(
         install_codex_plugins.common,
         "run_subprocess",
-        lambda *_args, **_kwargs: _FakeResult(returncode=9),
+        lambda *_args, **_kwargs: _FakeResult(returncode=9, stderr="daemon restart detail"),
     )
     caplog.set_level(logging.WARNING, logger=install_codex_plugins.__name__)
 
     outcome = install_codex_plugins.run()
 
     assert [notice.command for notice in outcome.notices] == ["/hooks", "codex app-server daemon restart"]
-    assert "自動再起動に失敗 (exit 9)" in caplog.text
+    assert "自動再起動に失敗 (exit 9" in caplog.text
+    assert "daemon restart detail" in caplog.text
 
 
 def test_plugin_update_does_not_restart_stopped_daemon_when_enabled(

@@ -291,7 +291,8 @@ def _restart_daemon_after_plugin_update(notices: list[post_apply_outcome.PostApp
     logger.warning(
         log_format.format_status(
             "codex plugins",
-            f"app-server daemonの自動再起動に失敗 (exit {exit_code if exit_code is not None else 'codeなし'})。"
+            f"app-server daemonの自動再起動に失敗 (exit {exit_code if exit_code is not None else 'codeなし'}: "
+            f"{common.format_cli_error(result)})。"
             "実行中のCodexセッションを終了し、codex app-server daemon restartを実行してください。",
         )
     )
