@@ -8,7 +8,9 @@ from typing import Any, NoReturn
 import pytest
 
 from agent_toolkit import atk
+from agent_toolkit._atk import lane as _lane
 from agent_toolkit._atk.wi import process_loop as _process_loop
+from agent_toolkit._atk.wi import process_loop_log as _loop_log
 from agent_toolkit._atk.wi import process_loop_session as _pl_session
 from agent_toolkit._atk.wi import process_loop_watch as _pl_watch
 from agent_toolkit._atk.wi import process_loop_worktree as _pl_worktree
@@ -594,3 +596,60 @@ def test_grace_abort_and_output(
     assert "活動" in output and "期限" in output and "延長" in output
     if not abort:
         assert "委譲" in output
+
+
+@pytest.mark.parametrize("returncode", [0, 1])
+@pytest.mark.parametrize("outcome", ["retained", "error"])
+def test_session_end_uses_common_lane_cleanup(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+    returncode: int,
+    outcome: str,
+) -> None:
+    """単一起動の子終了後も、all-reposと同じ共通の終了後処理で回収・記録・再回収の案内を行い、終了判定より前に済ませる。"""
+    notes = _setup_notes(tmp_path)
+    myrepo = tmp_path / "myrepo"
+    myrepo.mkdir()
+    ready = notes / "inbox" / "ready.md"
+    ready.write_text("---\ntarget_repo: github.com/example/myrepo\ntype: awi\n---\n\n本文\n", encoding="utf-8")
+    base_fake_run = fake_run_with_remote_url(myrepo, [], returncode)
+
+    def fake_run(cmd: list[str], *args: Any, **kwargs: Any) -> subprocess.CompletedProcess[Any]:
+        if cmd[:1] == ["claude"] and "-p" not in cmd:
+            ready.unlink(missing_ok=True)
+        return base_fake_run(cmd, *args, **kwargs)
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    judged: list[str | None] = []
+
+    def cleanup(session_id: str | None, **_kwargs: Any) -> dict[str, Any]:
+        judged.append(session_id)
+        if outcome == "error":
+            raise OSError("回収先へ書けない")
+        return {"session_id": session_id, "removed": [], "retained": [{"reason": "未統合"}], "recovered": []}
+
+    monkeypatch.setattr(_lane, "cleanup_session", cleanup)
+    recorded: list[tuple[str, dict[str, Any]]] = []
+    original_append = _loop_log.append
+
+    def append(event: str, *, session_id: str | None = None, **fields: Any) -> None:
+        recorded.append((event, fields))
+        original_append(event, session_id=session_id, **fields)
+
+    monkeypatch.setattr(_loop_log, "append", append)
+
+    def stop_wait(*_args: object, **_kwargs: object) -> NoReturn:
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(_pl_watch, "wait_for_changes", stop_wait)
+    with pytest.raises(SystemExit) as ended:
+        atk.main(["wi", "process-loop", "--target-repo", str(myrepo), "--no-update", "--no-alerts"], home=tmp_path)
+    assert ended.value.code == returncode
+    assert len(judged) == 1 and judged[0]
+    cleanups = [fields for event, fields in recorded if event == "lane_cleanup"]
+    assert len(cleanups) == 1 and cleanups[0]["lane_session_id"] == judged[0] and "target_repo" not in cleanups[0]
+    assert ("error" in cleanups[0]) is (outcome == "error")
+    assert f"atk lane delete --session-id {judged[0]}" in capsys.readouterr().err
+    events = [event for event, _fields in recorded]
+    assert events.index("lane_cleanup") < events.index("session_classified")

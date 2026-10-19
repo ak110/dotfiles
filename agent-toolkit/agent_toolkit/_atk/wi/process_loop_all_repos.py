@@ -117,12 +117,22 @@ def _report(event: str, ownership: _ownership.Ownership, detail: str) -> None:
     print(f"{ownership.repo_id}: {detail}", flush=True)
 
 
+def _finish_repository(ownership: _ownership.Ownership, *, completed: bool) -> None:
+    """続行の予定が無くなった担当の所有を解放し、その担当のレーン所有sessionの資源を回収する。
+
+    停止を確認できない担当と続行を配送する担当はここへ到達させない。回収の可否は`lane.cleanup_session`の
+    成果保全条件が決め、未統合の資源は次の反復の再開（同じレーン所有session）へ残る。
+    """
+    _ownership.release(ownership, completed=completed)
+    _session.cleanup_lane_session(ownership.lane_session_id, target_repo=ownership.repo_id)
+
+
 async def _stop_repository(manager: RepositoryDelegateManager, ownership: _ownership.Ownership) -> dict[str, Any]:
     try:
         assert ownership.session_id is not None
         result = await manager.kill(ownership.session_id)
         if result.get("status") in _TERMINAL_STATUSES:
-            _ownership.release(ownership, completed=False)
+            _finish_repository(ownership, completed=False)
             return result
         detail = str(result)
     except Exception as error:
@@ -353,7 +363,7 @@ async def run_repository_delegates(
                     owners.pop(session_id)
                     continue
             owners.pop(session_id)
-            _ownership.release(ownership, completed=completed)
+            _finish_repository(ownership, completed=completed)
             _log.append(
                 "repository_session_end",
                 target_repo=ownership.repo_id,
