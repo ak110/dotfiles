@@ -114,7 +114,13 @@ POSIXでは前景の制御端末を`select`で、Windowsでは対話コンソー
 開始前の活動・UWI条件は登録集合全体へ作用し、開始前更新・自己再起動は全体で1回だけ行う。
 
 `process_loop_all_repos.py`は取得済み候補・readiness・対象別上限・所有記録を各対象cwdの通常delegateへ渡す。
-その担当がプロジェクト規範とprepare、選定・監査・実装・Git・CI・公開を担い、ホームのオーケストレーターは中継を担う。
+その担当がプロジェクト規範とprepare、選定・監査・実装・Git・CI・公開を担い、ホームの常駐プログラムは起動・所有・完遂判定・続行指示を担う。
+常駐プログラムはエージェントではなく、担当の返却を記録して`続行できない理由:`の行だけを判定する。
+このため担当は対象リポジトリのprocess-wiのメインとして、完了報告・振り返り・WI投入・UWIによる確認を自ら行う。
+担当はagents_serverの通常委譲として委譲先向けの配送文を受けるため、`agents-server-delegate.md`が、最初の入力が`source="process-loop"`の`atk-auto`要素である会話をこの役割へ切り替える。
+起動区分（`launch_kind`）を増やして別の配送文を渡す案は、Claude・Codex・Antigravityの各backendと、状態の保存・再開の処理をすべて改修する必要があるため採らない。
+委譲プロンプトの標識は生成側（`process_loop_session.build_repository_delegate_prompt`）と同じ定数で判定でき、`launch_prompts_test.py`が値の一致を確かめる。
+2026年10月19日のall-reposの実行で各担当が委譲先として完了報告と振り返りを省き、ユーザーが是正したことによる。
 ホームの規範だけで全対象を直接編集する案は、対象規範とworktree設定が届かないため採らない。
 通常起動と同じoriginの所有を共有し、短い排他の後は担当sessionと登録記録で処理を保持する。
 回答待ちや長い処理の間にロックを保持する案は、別担当の進行を妨げるため採らない。
@@ -215,6 +221,7 @@ Linuxでremote-controlを使わない直接CLIを終了対象として確認で�
 次の反復は可用性判定で解除を待ち、新しい会話でprocess-wiを起動する。
 親の`process_loop_session.py`は子の終了後に`lane.cleanup_session`で回収を試み、未統合・dirty・稼働中などのレーンは所有登録と成果を保持する。
 レーンのbranch・worktree・選定原本・旧所有sessionは、`lane.py`が状態ディレクトリの`lanes/<旧所有session>/lane-*.json`へ保存する所有登録が持つ。
+所有登録は選定原本から写したレーンのWI集合と統合状態、rebase後の対応表と検証記録も持つため、managed-tempにある選定原本が失効した後の再開と回収も同じ所有登録から判定する。
 状態ディレクトリの絶対パスは`atk config get state_dir`で取得する。
 WIの本文と`processing`の状態はprivate-notesのキュー、計画と進捗ログは`~/.claude/plans`が保持する。
 新しい会話のprocess-wiは[選定手順](../../agent-toolkit/skills/process-wi/references/selection-procedure.md)に従い、`atk lane delete --list`で残存登録と回収結果を読み、WIに対応する計画を`atk plans list`から解決する。

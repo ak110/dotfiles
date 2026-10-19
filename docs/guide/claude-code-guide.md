@@ -445,6 +445,7 @@ claude-plugins-officialのプラグインは次の方針で扱う。
 `/agent-toolkit:process-wi`を会話から起動する場合も、`atk wi process-loop`から起動する場合も、初期選定が1レーンなら、専用worktreeを持つ1人の担当エージェントが計画・実装・独立した実行レビューの調整・統合を続ける。
 `all-repos`で複数リポジトリを扱う場合は、リポジトリごとにこの担当を置く。
 ユーザーと会話する起動元のエージェントが、判断を要する事項と最終結果をユーザーへ届ける。
+`all-repos`では起動元がエージェントではないprocess-loop（`atk wi process-loop`）のため、各リポジトリ担当がその役を担い、確認のUWIと完了報告・振り返りの報告用UWIでユーザーへ届ける。
 各利用形態で、エージェントは実装前に使う操作・入力・期待する結果を決め、実装担当がその操作で結果を確かめる。
 実装担当は確認できた結果と未確認事項、要求が変わった場合の判断を、実装を担当していないレビュー担当へ渡す。
 未確認事項は、起動元のエージェントが担当者と作業を再開する方法を整理して次の担当へ引き継ぐ。
@@ -480,7 +481,7 @@ holdとrun-skill由来もこの判定へ含め、回答後にadoptedへ移った
 選定はClaude CodeとCodexのどちらもメインが直接行い、別の選定担当は起動しない。候補本文から分類・割当・モデル・配置根拠を判断し、取得済み候補と意味判断をpick-wi-checkへ渡して定型欄の生成・確認・保存を1回で行う。意味判断と要求の被覆、レーン数上限、同じ担当thread、単一writer、実行レビューと直列統合は維持する。
 圧縮ツールが提供されるClaude Codeでは、各段階の全初期通常レーンの初回起動後と、終端担当の起動後の長時間待機前に会話圧縮を予約する。独立した工程を先に開始し、セッションのmanaged-temp直下のparent-handoff.mdへ再開状態を保存する。引数なしで予約し、背景待機を始めてターンを終える。受付は圧縮完了と区別し、通知後に保存記録から同じ工程へ戻る。ツールが無い環境では、その旨を記録して通常の待機へ進む。Codex、通常0件、処理中の追加レーン起動と実行レビュー待機は予約の対象外とする。
 
-レーン資源は`atk lane create`が専用worktree・branchと所有session、準備・撤去手順を登録し、準備後に担当を起動する。process-wiは対象リポジトリごとに1つだけ起動する前提で、専用worktreeは対象リポジトリの`.claude/worktrees/process-wi-lane-NN`に固定され、実行を繰り返してもパスは増えない。統合後も追加に備えて同じ資源を保持する。通常終了の`atk agents-exit-session`とprocess-loopの子終了後が`atk lane delete`と同じ安全条件で回収する。未統合・dirty・稼働中・不明・途中失敗の資源は保持し、次回の開始時に`atk lane delete --list`から理由と残る操作を読む。セッションのmanaged-tempと検証の証拠は専用資源とともに削除しない。
+レーン資源は`atk lane create`が専用worktree・branchと所有session、準備・撤去手順を登録し、準備後に担当を起動する。process-wiは対象リポジトリごとに1つだけ起動する前提で、専用worktreeは対象リポジトリの`.claude/worktrees/process-wi-lane-NN`に固定され、実行を繰り返してもパスは増えない。統合後も追加に備えて同じ資源を保持する。通常終了の`atk agents-exit-session`とprocess-loopの子終了後が`atk lane delete`と同じ安全条件で回収する。未統合・dirty・稼働中・不明・途中失敗の資源は保持し、次回の開始時に`atk lane delete --list`から理由と残る操作を読む。セッションのmanaged-tempと検証の証拠は専用資源とともに削除しない。選定結果の一時ファイルが失効しても、所有登録が写した選定情報で統合と回収を続ける。選定情報を持たない古い登録は`atk lane recover --session-id <所有session>`で元のbranchを残して専用worktreeを解放する。
 要件を本文だけで説明できる作業に向く。
 1レーンの場合も隔離と独立文脈レビューを保ち、`atk lane integrate`が統合・計画保存・WI終端・統合済み記録をまとめて行う。
 途中失敗は進行記録と成果を残し、同じ入力で未完了の工程から再開する。
@@ -528,7 +529,8 @@ atk wi process-loop all-repos
 登録先を解決できない場合は表示された対象を直して再実行する。
 同じoriginの登録は先頭へまとめ、登録変更は次の取得へ反映する。
 
-all-reposは一括取得した候補を各対象cwdの通常delegateへ渡し、担当とユーザーの間を中継する。
+all-reposは一括取得した候補を各対象cwdの通常delegateへ渡し、担当の起動・所有・完遂判定・続行指示を行う。
+各担当は対象リポジトリのprocess-wiのメインとして、ユーザーへの確認、完了報告と振り返りまで自ら行う。
 対象の規範・準備・監査・実装・Git・公開は各担当が扱い、レーン上限もリポジトリごとの候補数から求める。
 開始前の猶予は登録対象全体に作用し、開始後は1担当の失敗や所有待ちで別担当を止めない。
 通常起動と同じoriginの処理所有を共有し、対象のWorktreeCreate/Removeがあれば作成先と撤去へ反映する。
@@ -851,9 +853,10 @@ pushを行わずローカルcommitまでで止める場合は`--skip-push`を指
 - `agent-toolkit:gitlab-ci-usage`: `.gitlab-ci.yml`編集時のキーワード仕様・典型パターンのリファレンス
 - `atk agents-exit-session`: ユーザー指示時または自律モードのスキル完遂時に、現在のClaude CodeまたはCodexの対話セッションへ終了を要求するCLI。管理設定の`CLAUDE_CODE_ENABLE_FUNCTION_HOOKS=1`が有効でagent-toolkitのFunction hooks moduleを読み込んだClaude Codeでは、ターンの完了後に`/exit`を実行してセッション記録の末尾まで残す。moduleが読み込まれていないClaude CodeとCodexでは従来のプロセス停止方式を使う。
   （本体を一意に識別できない実行環境では停止せず、終了理由と対話CLIの終了案内を最終応答としてターンを完了する）
+  `all-repos`のリポジトリ担当は実行せず、常駐側への最終返却でターンを終える。常駐側が返却を受け取る前に担当を止めないためである
 - `compact_conversation`: Function hooks moduleを読み込んだClaude Codeのメインが会話圧縮を予約するツール。完全名は`mcp__agent-toolkit__compact_conversation`で、引数は取らず追加指示なしでcompactを予約する。必要な再開状態はセッションのmanaged-temp直下のparent-handoff.mdへ保存し、圧縮後の領域通知からその記録を読む。対話UIと非対話の`claude -p`に対応し、Codexと委譲先では使わない。受付応答は圧縮完了を示さない。予約後は現在のターンを終え、ホストの圧縮成功表示を確認する。未完了の予約を重ねても実行は増えず、成功・失敗後は再予約できる。失敗は同じ会話へ原因と再予約可能である旨が通知される。バックグラウンドタスクを待つ場合は予約後に背景待機を開始してターンを終え、通知後に同じ担当と保存結果から継続する
 - `send_to_user`: 管理設定の`CLAUDE_CODE_ENABLE_FUNCTION_HOOKS=1`が有効でagent-toolkitのFunction hooks moduleを読み込んだClaude Codeで、メインが使えるツール。途中報告と最後の回答を運び、画面へMarkdownとして表示する。完全名は`mcp__agent-toolkit__send_to_user`で、初回から読み込む定義を登録する。遅延一覧にだけ現れる場合は`ToolSearch`の`select:mcp__agent-toolkit__send_to_user`で読み込む。ツール呼び出しより前の地の文は要約に置き換わることがあるため、このツールで送る。確認質問には既存の質問手段を使う。moduleを読み込まないClaude CodeとCodexでは、ターンを終える本文へ書く
-- `agent-toolkit:completion-report`: メインの作業完了時に、成果と振り返り結果を固定形式で報告する。対策のAWIを投入する場合は`## 振り返り結果の予告`で予告し、投入後にAWI投入結果を報告する。投入が無い場合は振り返り結果を報告する。最後の報告だけを「以上で、このセッションの作業は全て終わりました」で結ぶ。適用するプロジェクト規範が本スキルを不要と定める場合は、スキルを起動せず`references/termination-evidence.md`を読む。`atk run-script termination-evidence -- --decision-file <判断JSONの絶対パス>`へ`omit-completion`の根拠を記録する。省略は指定した作業だけへ作用し、別作業の起動不足と、process-loopの会話が終了時に`atk agents-exit-session`を実行する義務は保つ。有効な省略も起動証拠も無い成果作業の停止はStopフックが遮断して起動を促す。起動後の工程の完遂と報告の内容は本スキルの規範に従ってエージェントが確かめ、Stopフックは報告本文を判定しない。ユーザーの中止・置換の指示は、その指示が作用する作業だけを止める
+- `agent-toolkit:completion-report`: メインの作業完了時に、成果と振り返り結果を固定形式で報告する。対策のAWIを投入する場合は`## 振り返り結果の予告`で予告し、投入後にAWI投入結果を報告する。投入が無い場合は振り返り結果を報告する。最後の報告だけを「以上で、このセッションの作業は全て終わりました」で結ぶ。適用するプロジェクト規範が本スキルを不要と定める場合は、スキルを起動せず`references/termination-evidence.md`を読む。`atk run-script termination-evidence -- --decision-file <判断JSONの絶対パス>`へ`omit-completion`の根拠を記録する。省略は指定した作業だけへ作用し、別作業の起動不足と、process-loopの会話が終了時に`atk agents-exit-session`を実行する義務（`all-repos`のリポジトリ担当を除く）は保つ。有効な省略も起動証拠も無い成果作業の停止はStopフックが遮断して起動を促す。起動後の工程の完遂と報告の内容は本スキルの規範に従ってエージェントが確かめ、Stopフックは報告本文を判定しない。ユーザーの中止・置換の指示は、その指示が作用する作業だけを止める
 - `agent-toolkit:export-session`: `atk agents logs`でClaude CodeとCodexの記録をmarkdownへ出力し、一括変換も行う
 - `agent-toolkit:session-review`: セッションで交わされた会話の流れと問題候補を調べ、原因と恒久対策を確定して、対策を作業依頼（AWI）として投入する。手動または`agent-toolkit:completion-report`から起動し、メインが同じセッション内で分析する
 

@@ -21,9 +21,11 @@
 | 作業ディレクトリのプロジェクト規範（`AGENTS.md`など） | 届く | 届く | 届く（親のメモリー階層。組み込み`Explore`・`Plan`を除く） | 届く（プロジェクト設定の読込元） | 届く | 届く | 届かない | 届かない（`project_doc_max_bytes=0`） | 届く | 届く |
 | agent-toolkitのスキル | 届く | 届く | 未確認 | 届く | 届く | 届かない | 届かない（`skills=[]`） | `write`・`shell`へ届く。`explore`へは届かない（プラグイン無効） | 未確認 | 未確認 |
 
-Codexの列の`rules/`配下と`share/rules-common.codex.md`の値は`~/.codex/AGENTS.md`を配置した環境に限る（Codex単体のインストーラーはこのファイルを配置しない）。
+Codexの列の`rules/`配下と`share/rules-common.codex.md`の値は`~/.codex/AGENTS.md`を配置した環境に限る（このファイルはCodex単体のインストーラーの配置対象外である）。
 Antigravityの委譲先は対応する起動区分で`~/.gemini/GEMINI.md`と作業ディレクトリの`AGENTS.md`を読む。
 表のAntigravityの軽量起動列は`explore`・`write`・`shell`へ適用する。
+`atk wi process-loop all-repos`のリポジトリ担当は`task`・`delegate`の列の配送を受ける。
+担当は対象リポジトリのメインを担うため、`share/rules-main.md`とホスト別の`rules-main.*.md`を着手時に明示的に読む（`agent-toolkit:process-wi`の`references/all-repos-orchestration.md`「担当の役割」）。
 全backendのexploreは通常の読取コマンドと読取MCPを使い、変更禁止の責務を共通プロンプトで伝える。
 Codexはプラグイン由来のスキルを非配送に保ち、pyfltr MCPを配布定義から直接のMCP設定へ渡す。
 Codex・Claudeの`explore`・`write`・`shell`への開始と再開の指示には、serverが使う実在するPython 3の起動情報も添える（標準ライブラリだけの短い照会用で、実行権限は追加しない。通常の`delegate`とAntigravityは対象外）。

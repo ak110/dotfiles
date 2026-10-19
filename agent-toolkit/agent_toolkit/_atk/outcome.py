@@ -84,6 +84,7 @@ VALUE_OUTPUT_COMMANDS = frozenset(
         "atk lane create",
         "atk lane delete",
         "atk lane integrate",
+        "atk lane recover",
     }
 )
 """値出力型のリーフサブコマンド。標準出力は値と構造化データのままとし、成功行を標準エラーへ書く。"""

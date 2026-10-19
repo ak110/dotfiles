@@ -38,8 +38,8 @@
 | `~/pytilpack` | Pythonライブラリ | Python | Linux | 実行はWindowsも考慮 |
 | `~/smpr` | Python CLIツール（非公開・個人用） | Python | Linux | 実行はWindowsも考慮 |
 | `~/glatasks` | TypeScript Webシステム | TypeScript + Python | Linux | pnpm使用 |
-| `~/gv` | Windows用画像ビューアー | Rust | Windows | このPCでは開発できない（ドキュメント修正等は可能）。文書生成・文書lintでpnpm併用 |
-| `~/lc` | Windows用コマンドラインランチャー | C# (.NET) | Windows | このPCでは開発できない（ドキュメント修正等は可能）。文書生成・文書lintでpnpm併用 |
+| `~/gv` | Windows用画像ビューアー | Rust | Windows・Linux | このPCでは`mise run setup-linux`でクロスビルド環境を構築し、`mise run test`（テストはコンパイルまで）と`mise run build`を実行できる（LinuxビルドはRAR展開を除外）。テスト実行はWindows CIで行う。文書生成・文書lintでpnpm併用 |
+| `~/lc` | Windows用コマンドラインランチャー | C# (.NET) | Windows・Linux | このPCでは`mise run setup-linux`で環境を構築し、`mise run test`（dotnet-testを除く）と`mise run build`を実行できる。テスト実行はWindows CIで行う。文書生成・文書lintでpnpm併用 |
 
 {{- end }}
 </atk-auto>

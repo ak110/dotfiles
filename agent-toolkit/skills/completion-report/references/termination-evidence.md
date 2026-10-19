@@ -33,6 +33,7 @@ Claude Codeでは`atk run-script termination-evidence -- --context`からも現�
 規範の意味と優先順位はメインが判断する。
 規範の内容変更、次の判断、新しい人間入力の後の成果作業では、古い省略を流用せず改めて判断する。
 省略は指定した作業の起動不足だけへ作用し、別作業の不足とprocess-loopの`atk agents-exit-session`の義務は残る。
+all-reposのリポジトリ担当は`agent-toolkit:process-wi`の`references/all-repos-orchestration.md`「担当の役割」に従い、同コマンドの代わりに最終返却でターンを終える。
 振り返りを起動するかは、適用するプロジェクト規範が振り返りについて定める内容に従う（起動しない条件は`SKILL.md`「工程」手順6の列挙）。
 
 ## 中止・置換・待機・技術的不成立
