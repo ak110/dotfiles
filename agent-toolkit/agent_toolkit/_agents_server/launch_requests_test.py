@@ -93,6 +93,9 @@ class TaskManager(_SimpleNamespace):
         """起動入力を比較するテストでは、委譲元の記録が未解決であることを明示する。"""
         return {"status": "unresolved"}
 
+    def launcher_session_id(self) -> None:
+        """委譲元を解決しない。全体作業契約は起動時に保持した会話から解決する。"""
+
 
 @pytest.mark.parametrize("placement", ["root-version", "ancestor-version", "checkout"])
 @pytest.mark.parametrize("form", ["role-name", "absolute-path"])
@@ -143,8 +146,11 @@ def test_imported_server_keeps_role_documents_after_distribution_removal(
     else:
         assert stable != source
         shutil.rmtree(source)
+    # 読み込み直したモジュールは共通fixtureの差し替えを受けないため、全体作業契約を明示する。
+    whole = tmp_path / "work-contract.md"
+    whole.write_text("目的: 配布物の消失後の解決を確かめる\n", encoding="utf-8")
     model_type, _usage, prompt, _kind, _handoff = requests.task_document_request(
-        "declared" if form == "role-name" else str(task), {"対象": "値"}
+        "declared" if form == "role-name" else str(task), {"対象": "値"}, whole_contract_path=str(whole)
     )
     assert model_type == "high_tier"
     assert str(stable / "share" / task.name) in prompt

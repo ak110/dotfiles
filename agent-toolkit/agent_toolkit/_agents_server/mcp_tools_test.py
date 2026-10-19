@@ -97,14 +97,9 @@ async def test_new_request_and_handoff_preserve_required_context(
         await manager.close()
 
 
-@pytest.fixture(autouse=True)
-def _isolate_handoff_session(monkeypatch: pytest.MonkeyPatch) -> None:
-    """サーバー起動時のsnapshotを各テストの環境へ対応させる。"""
-    monkeypatch.setattr(launch_requests, "_HANDOFF_SESSION", None, raising=False)
-
-
 def test_main_strips_conversation_context_before_backend_start(monkeypatch: pytest.MonkeyPatch) -> None:
     """MCP起動は全backendの継承元を整え、接続設定と引き継ぎ元snapshotを保持する。"""
+    monkeypatch.setattr(launch_requests, "_HANDOFF_SESSION", None, raising=False)
     for name in mcp_environment._NON_INHERITABLE_NAMES:
         monkeypatch.setenv(name.upper(), "parent-session")
     monkeypatch.setenv("ANTHROPIC_AUTH_TOKEN", "test-token")
@@ -213,6 +208,7 @@ def test_public_tools_expose_single_start_with_modes() -> None:
         "label",
         "model_type",
         "handoff_from",
+        "whole_contract_path",
     }
     assert {"engine", "model", "effort"}.isdisjoint(properties)
     assert tuple(properties["mode"]["anyOf"][0]["enum"]) == tool_names.START_MODES
@@ -411,6 +407,7 @@ async def test_public_start_variants_and_send_message_return_minimal_responses(
         "label": "担当",
     }
     manager = SimpleNamespace(
+        launcher_session_id=lambda: None,
         start=AsyncMock(return_value=response),
         start_explore=AsyncMock(return_value=response),
         start_write=AsyncMock(return_value=response),
@@ -683,7 +680,10 @@ async def test_start_response_adds_next_action_only_for_failed_start(
     tmp_path: pathlib.Path,
 ) -> None:
     """起動直後に失敗で終端した応答だけが、結果の受領と別候補での再起動を`next_action`で示す。"""
-    manager = SimpleNamespace(start=AsyncMock(return_value={"session_id": "session", "status": status, "label": "担当"}))
+    manager = SimpleNamespace(
+        launcher_session_id=lambda: None,
+        start=AsyncMock(return_value={"session_id": "session", "status": status, "label": "担当"}),
+    )
     monkeypatch.setattr(mcp_tools, "_MANAGER", manager)
 
     response = await mcp_tools.start(str(tmp_path), mode="delegate", prompt="調査", model_type="high_tier")

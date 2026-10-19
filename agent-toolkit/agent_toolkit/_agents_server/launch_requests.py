@@ -25,7 +25,8 @@ from agent_toolkit._agents_server.state import (
 )
 from agent_toolkit._agents_server.tool_descriptions import START_MODE_EXAMPLES, START_MODE_INPUTS
 from agent_toolkit._atk import managed_temp as _managed_temp
-from agent_toolkit._common.message_format import auto_message
+from agent_toolkit._common import session_registry
+from agent_toolkit._common.message_format import AUTO_INSERTED_ELEMENT, auto_message, opening_tag
 from agent_toolkit._common.next_action import ActionableError
 from agent_toolkit._git import command as git_command
 
@@ -620,21 +621,42 @@ def capture_handoff_session() -> None:
         _HANDOFF_SESSION = ((shared_roots.resolve_root_session_id(os.environ) or os.environ.get("CODEX_THREAD_ID")),)
 
 
-def _default_handoff_path() -> pathlib.Path | None:
-    """`（新規）`の引き継ぎ記録先として、委譲元のセッションのmanaged-temp直下の未使用のファイルパスを返す。
+def _owner_conversation(launcher_session_id: str | None) -> str | None:
+    """全体記録と専用記録先を置く会話の識別子を返す。
 
-    会話を特定できる場合はセッションのmanaged-tempを直接解決して再利用する。
-    会話を特定できないMCP起動では、個別のhandoff領域を作成する。
-    どちらも得られない場合は`None`を返し、呼び出し元は従来どおり欠落として拒否する。
-    ファイル自体は作成しない。`（新規）`の記録先は委譲先が作成するためである。
+    起動時に保持した識別子が会話を表す場合はそれを使う。
+    プロセス専用ルート（`mcp-`形式）か識別子なしの場合は、Managerが解決した実際の委譲元会話を使う。
+    共有状態の名前空間は会話と一致しないことがあるため、名前空間の識別子を会話の代わりに使わない。
     """
-    directory: pathlib.Path | None = None
-    session_id = (
+    captured = (
         _HANDOFF_SESSION[0]
         if _HANDOFF_SESSION is not None
         else (shared_roots.resolve_root_session_id(os.environ) or os.environ.get("CODEX_THREAD_ID"))
     )
-    if session_id is not None and not session_id.startswith("mcp-"):
+    for candidate in (captured, launcher_session_id):
+        if candidate and not candidate.startswith(shared_roots.PROCESS_ROOT_PREFIX):
+            return candidate
+    return None
+
+
+def _conversation_temp(session_id: str) -> pathlib.Path | None:
+    """会話の既存managed-tempを作成せずに返す。解決できなければ`None`を返す。"""
+    with contextlib.suppress(_managed_temp.ManagedTempError, OSError):
+        return _managed_temp.find_session_temp(session_id)
+    return None
+
+
+def _default_handoff_path(launcher_session_id: str | None = None) -> pathlib.Path | None:
+    """`（新規）`の引き継ぎ記録先として、委譲元のセッションのmanaged-temp直下の未使用のファイルパスを返す。
+
+    所有会話（`_owner_conversation`）を特定できる場合はそのmanaged-tempを直接解決して再利用する。
+    会話を特定できない起動では、個別のhandoff領域を作成する。
+    どちらも得られない場合は`None`を返し、呼び出し元は従来どおり欠落として拒否する。
+    ファイル自体は作成しない。`（新規）`の記録先は委譲先が作成するためである。
+    """
+    directory: pathlib.Path | None = None
+    session_id = _owner_conversation(launcher_session_id)
+    if session_id is not None:
         with contextlib.suppress(_managed_temp.ManagedTempError, OSError):
             directory = _managed_temp.resolve_session_temp(session_id)
     if directory is None:
@@ -649,10 +671,15 @@ def _default_handoff_path() -> pathlib.Path | None:
             return candidate
 
 
-def delegate_request(prompt: str) -> tuple[str, pathlib.Path]:
-    """自由本文を保ち、通常委譲へ専用の現行記録先を配送する。"""
-    whole_contract = whole_contract_reference()
-    path = _default_handoff_path()
+def delegate_request(
+    prompt: str,
+    *,
+    whole_contract_path: str | None = None,
+    launcher_session_id: str | None = None,
+) -> tuple[str, pathlib.Path]:
+    """自由本文を保ち、通常委譲へ専用の現行記録先と全体作業契約の参照を配送する。"""
+    whole_contract = whole_contract_reference(whole_contract_path=whole_contract_path, launcher_session_id=launcher_session_id)
+    path = _default_handoff_path(launcher_session_id)
     if path is None:
         raise ActionableError(
             "通常委譲の作業記録先を用意できません。委譲先は起動していない。",
@@ -661,35 +688,118 @@ def delegate_request(prompt: str) -> tuple[str, pathlib.Path]:
     return prompt + "\n\n" + handoff_notice(path, plugin_root.SERVER_PLUGIN_ROOT) + "\n\n" + whole_contract, path
 
 
-def whole_contract_reference() -> str:
-    """所有する全体会話の現行記録への参照を、本文の複製をせず配送する。"""
-    session_id = (
-        _HANDOFF_SESSION[0]
-        if _HANDOFF_SESSION is not None
-        else (shared_roots.resolve_root_session_id(os.environ) or os.environ.get("CODEX_THREAD_ID"))
-    )
-    directory: pathlib.Path | None = None
-    if session_id is not None and not session_id.startswith("mcp-"):
-        with contextlib.suppress(_managed_temp.ManagedTempError, OSError):
-            directory = _managed_temp.find_session_temp(session_id)
-    path = directory / "work-contract.md" if directory is not None else None
-    if path is not None and not path.is_file():
-        raise ActionableError(
-            f"全体作業契約が未作成です: {path}。委譲先は起動していない。",
-            next_action="`share/work-contract.md`に従って期待パスへ全体作業契約を作成し、`start`を再発行する",
-        )
-    if path is not None:
-        body = (
-            f"全体作業契約: {path}\n"
-            "担当工程の開始時に読み、割当が全体の要求を満たす範囲と、維持する成果・検収に使う証拠を確かめる。"
-            "全体記録の更新は委譲元が所有し、委譲先は自身の引き継ぎ記録へ判断を残す。"
-        )
+_WHOLE_CONTRACT_KIND = "work-contract-reference"
+_WHOLE_CONTRACT_LINE_PREFIX = "全体作業契約: "
+_WHOLE_CONTRACT_OPENING = opening_tag(AUTO_INSERTED_ELEMENT, {"source": "agents-server", "kind": _WHOLE_CONTRACT_KIND})
+
+
+_WHOLE_CONTRACT_REISSUE = "`whole_contract_path`へ既存の全体作業契約の絶対パスを指定して`start`を再発行する"
+
+
+def _delivered_whole_contract(prompt: str) -> pathlib.Path | None:
+    """配送済みの起動本文から、サーバーが加えた全体作業契約の絶対パスを取り出す。
+
+    依頼本文が同じ語を含んでも取り違えないよう、サーバーが付けた要素の内側だけを読む。
+    旧形式の未解決の通知と要素の不在は`None`とする。
+    """
+    start = prompt.rfind(_WHOLE_CONTRACT_OPENING)
+    if start < 0:
+        return None
+    first_line = prompt[start + len(_WHOLE_CONTRACT_OPENING) :].lstrip("\n").split("\n", 1)[0]
+    if not first_line.startswith(_WHOLE_CONTRACT_LINE_PREFIX):
+        return None
+    path = pathlib.Path(first_line.removeprefix(_WHOLE_CONTRACT_LINE_PREFIX).strip())
+    return path if path.is_absolute() else None
+
+
+def _inherited_whole_contract(launcher_session_id: str | None) -> pathlib.Path | None:
+    """直接の委譲元sessionが起動時に受領した全体作業契約の参照を、session登録簿の起動本文から返す。
+
+    委譲先自身の保存領域は全体記録を所有しないため、孫へは委譲元が受領した同じ全体記録を渡す。
+    資源を解放した記録は`handoff_info`の起動本文を読む。
+    """
+    if launcher_session_id is None:
+        return None
+    try:
+        resolution = session_registry.resolve(launcher_session_id)
+    except ValueError, OSError:
+        return None
+    for info in (resolution.resume_info, resolution.handoff_info):
+        if info is not None and (path := _delivered_whole_contract(info.launch_info.prompt)) is not None:
+            return path
+    return None
+
+
+def _explicit_whole_contract(value: str) -> pathlib.Path:
+    """明示された全体作業契約のパスを、起動前に読める通常ファイルであることを確かめて返す。"""
+    path = pathlib.Path(value)
+    reason: str | None = None
+    if not path.is_absolute():
+        reason = "絶対パスではない"
+    elif not path.exists():
+        reason = "存在しない"
+    elif not path.is_file():
+        reason = "通常ファイルではない"
     else:
-        body = (
-            "全体作業契約: 未解決。担当の成果が全体の要求を満たすことを確認する工程では、"
-            "委譲元へ記録の所在を返却・通知で求め、取得した記録の要求と担当の成果を比べる。"
+        try:
+            path.read_text(encoding="utf-8")
+        except (OSError, UnicodeError) as error:
+            reason = f"UTF-8で読めない（{error}）"
+    if reason is not None:
+        raise ActionableError(
+            f"whole_contract_pathの全体作業契約を使えません: {value}: {reason}。委譲先は起動していない。",
+            next_action=(
+                "既存の全体作業契約の絶対パスを`whole_contract_path`へ指定するか、"
+                "`share/work-contract.md`に従ってそのパスへ記録を作成し、同じ入力で`start`を再発行する"
+            ),
         )
-    return auto_message(body, source="agents-server", kind="work-contract-reference")
+    return path
+
+
+def _resolve_whole_contract(whole_contract_path: str | None, launcher_session_id: str | None) -> pathlib.Path:
+    """全体作業契約を、明示入力、委譲元の受領済み参照、所有会話の`work-contract.md`の順に解決する。
+
+    いずれも成立しない場合と、期待パスが確定して未作成の場合は起動前に拒否する。
+    未解決のまま担当を起動すると、担当が委譲元へ所在を照会する往復が生じるためである。
+    """
+    if whole_contract_path is not None:
+        return _explicit_whole_contract(whole_contract_path)
+    expected = _inherited_whole_contract(launcher_session_id)
+    if expected is None:
+        owner = _owner_conversation(launcher_session_id)
+        directory = _conversation_temp(owner) if owner is not None else None
+        if directory is None:
+            reason = (
+                "全体作業契約を所有する会話を特定できません"
+                if owner is None
+                else f"全体作業契約を所有する会話の保存領域を解決できません: {owner}"
+            )
+            raise ActionableError(f"{reason}。委譲先は起動していない。", next_action=_WHOLE_CONTRACT_REISSUE)
+        expected = directory / "work-contract.md"
+    if not expected.is_file():
+        raise ActionableError(
+            f"全体作業契約が未作成です: {expected}。委譲先は起動していない。",
+            next_action=(
+                f"`share/work-contract.md`に従って期待パスへ全体作業契約を作成し、`start`を再発行する。"
+                f"別の記録を使う場合は{_WHOLE_CONTRACT_REISSUE}"
+            ),
+        )
+    return expected
+
+
+def whole_contract_reference(
+    *,
+    whole_contract_path: str | None = None,
+    launcher_session_id: str | None = None,
+) -> str:
+    """全体作業契約を解決し、本文を複製せずその参照を配送する本文を返す。"""
+    path = _resolve_whole_contract(whole_contract_path, launcher_session_id)
+    body = (
+        f"{_WHOLE_CONTRACT_LINE_PREFIX}{path}\n"
+        "担当工程の開始時に読み、割当が全体の要求を満たす範囲と、維持する成果・検収に使う証拠を確かめる。"
+        "全体記録の更新は委譲元が所有し、委譲先は自身の引き継ぎ記録へ判断を残す。"
+    )
+    return auto_message(body, source="agents-server", kind=_WHOLE_CONTRACT_KIND)
 
 
 def handoff_notice(path: pathlib.Path | None, root: pathlib.Path) -> str:
@@ -707,6 +817,9 @@ def handoff_notice(path: pathlib.Path | None, root: pathlib.Path) -> str:
 def task_document_request(
     subagent_md_path: str,
     extra_params: Mapping[str, str],
+    *,
+    whole_contract_path: str | None = None,
+    launcher_session_id: str | None = None,
 ) -> tuple[str, str | None, str, LaunchKind, pathlib.Path | None]:
     """`<役割名>.subagent.md`と名前付き入力からmodel種別、用途、委譲プロンプト、`mode:`の値およびサーバーが用意した引き継ぎ記録先を返す。
 
@@ -715,6 +828,7 @@ def task_document_request(
     拒否せずに`（新規）`の記録先を用意して委譲プロンプトへ加え、その絶対パスを5要素目で返す。
     宣言しない通常起動にも共通入力として専用の記録先を加え、5要素目で返す。
     委譲元が値を渡した場合と軽量起動の5要素目は`None`とする。
+    `whole_contract_path`と`launcher_session_id`は通常起動の全体作業契約の解決（`whole_contract_reference`）へ渡す。
     """
     task_document = resolve_task_document_path(subagent_md_path).resolve()
     if not task_document.is_file() or not task_document.name.endswith(".subagent.md"):
@@ -756,14 +870,24 @@ def task_document_request(
     document_text = document_text.replace(_PLUGIN_ROOT_VARIABLE, str(task_document.parent.parent))
     declaration = _task_document_declaration(task_document, document_text)
     launch_kind: LaunchKind = declaration.launch_kind if not isinstance(declaration, str) else "delegate"
+    if launch_kind != "delegate" and whole_contract_path is not None:
+        raise ActionableError(
+            f"軽量起動（mode: {launch_kind}）の役割はwhole_contract_pathを受理しません: {task_document.name}。"
+            "委譲先は起動していない。",
+            next_action="`whole_contract_path`を外して`start`を再発行する",
+        )
     # 共通前提の不足は記録先の生成より先に起動元へ返す。
-    whole_contract = whole_contract_reference() if launch_kind == "delegate" else None
+    whole_contract = (
+        whole_contract_reference(whole_contract_path=whole_contract_path, launcher_session_id=launcher_session_id)
+        if launch_kind == "delegate"
+        else None
+    )
     handoff_path: pathlib.Path | None = None
     if isinstance(declaration, str):
         _LOG.warning("%s", declaration)
     else:
         if _HANDOFF_INPUT_NAME in declaration.required and _HANDOFF_INPUT_NAME not in extra_params:
-            handoff_path = _default_handoff_path()
+            handoff_path = _default_handoff_path(launcher_session_id)
             if handoff_path is not None:
                 extra_params = {**extra_params, _HANDOFF_INPUT_NAME: f"{handoff_path}（新規）"}
         _check_declared_inputs(task_document, declaration, extra_params)
@@ -771,7 +895,7 @@ def task_document_request(
     # 宣言された入力の検証を終えてから、サーバー所有の共通入力を加える。
     # 軽量起動のtaskは独自の記録を持たない。
     if launch_kind == "delegate" and _HANDOFF_INPUT_NAME not in extra_params:
-        handoff_path = _default_handoff_path()
+        handoff_path = _default_handoff_path(launcher_session_id)
         if handoff_path is None:
             raise ActionableError(
                 "通常委譲の作業記録先を用意できません。委譲先は起動していない。",

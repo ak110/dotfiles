@@ -170,6 +170,17 @@ PROMPT_DESCRIPTION = parameter_description(
 )
 
 
+WHOLE_CONTRACT_PATH_DESCRIPTION = parameter_description(
+    "task・delegateの通常起動だけで受理し、軽量起動（explore・write・shellと`mode:`が軽量の役割）とhandoff_fromでは指定しない。"
+    "担当へ参照を配送する全体作業契約（`share/work-contract.md`の記録）の絶対パス。"
+    "省略時はサーバーが、直接の委譲元が受領済みの参照、委譲元の会話のmanaged-tempの`work-contract.md`の順に解決する。"
+    "委譲先がさらに委譲する場合も受領済みの参照を継承するため、通常は指定しない。"
+    "委譲元の会話を特定できず解決元が無いと起動前に拒否されるため、そのときと自動解決が別の記録を指すときに指定する。"
+    "期待パスの記録が未作成で拒否されたときは、指定せずに期待パスへ記録を作成して再発行する。"
+    "指定時は自動解決より優先し、不在・ディレクトリ・UTF-8で読めないパスは起動前に拒否する。"
+)
+
+
 COMMAND_DESCRIPTION = parameter_description("shellで必須、他のmodeでは指定しない。委譲先がシェルで実行するコマンド。")
 
 
@@ -221,8 +232,8 @@ MODEL_TYPE_DESCRIPTION = parameter_description(
 
 # modeごとの必須の入力と受理する入力。`model_type`と`label`は全modeで受理するため含めない。
 START_MODE_INPUTS: dict[str, tuple[tuple[str, ...], frozenset[str]]] = {
-    "task": (("subagent_md_path",), frozenset({"subagent_md_path", "extra_params"})),
-    "delegate": (("prompt", "model_type"), frozenset({"prompt"})),
+    "task": (("subagent_md_path",), frozenset({"subagent_md_path", "extra_params", "whole_contract_path"})),
+    "delegate": (("prompt", "model_type"), frozenset({"prompt", "whole_contract_path"})),
     "explore": (("prompt",), frozenset({"prompt"})),
     "write": (("prompt",), frozenset({"prompt"})),
     "shell": (("command", "summary_policy"), frozenset({"command", "summary_policy"})),

@@ -39,6 +39,7 @@ from agent_toolkit._agents_server.tool_descriptions import (
     START_DESCRIPTION,
     SUBAGENT_MD_PATH_DESCRIPTION,
     SUMMARY_POLICY_DESCRIPTION,
+    WHOLE_CONTRACT_PATH_DESCRIPTION,
     StartMode,
     parameter_description,
     schema_text,
@@ -114,6 +115,7 @@ async def start(  # noqa: PLR0913 -- 公開入力をmodeごとの平坦な引数
     label: Annotated[str | None, Field(description=LABEL_DESCRIPTION)] = None,
     model_type: Annotated[str | None, Field(description=MODEL_TYPE_DESCRIPTION)] = None,
     handoff_from: Annotated[str | None, Field(description=HANDOFF_FROM_DESCRIPTION)] = None,
+    whole_contract_path: Annotated[str | None, Field(description=WHOLE_CONTRACT_PATH_DESCRIPTION)] = None,
 ) -> dict[str, Any]:
     """`mode`ごとの入力を確かめ、同じ起動処理へ渡して委譲先turnを開始する。公開説明は`START_DESCRIPTION`が持つ。"""
     if handoff_from is not None:
@@ -128,6 +130,7 @@ async def start(  # noqa: PLR0913 -- 公開入力をmodeごとの平坦な引数
             summary_policy=summary_policy,
             label=label,
             model_type=model_type,
+            whole_contract_path=whole_contract_path,
         )
         response = await _MANAGER.start_handoff(handoff_from)
         public = public_start_response(response)
@@ -146,12 +149,18 @@ async def start(  # noqa: PLR0913 -- 公開入力をmodeごとの平坦な引数
         command=command,
         summary_policy=summary_policy,
         model_type=model_type,
+        whole_contract_path=whole_contract_path,
     )
     if mode == "task":
         assert subagent_md_path is not None
         params = extra_params or {}
+        launcher = await run_file_operation(_MANAGER.launcher_session_id)
         task_model_type, task_usage, task_prompt, launch_kind, handoff_path = await run_file_operation(
-            task_document_request, subagent_md_path, params
+            task_document_request,
+            subagent_md_path,
+            params,
+            whole_contract_path=whole_contract_path,
+            launcher_session_id=launcher,
         )
         context = await run_file_operation(_MANAGER.launcher_record_context)
         task_prompt = launch_requests.with_launcher_record(task_prompt, context)
@@ -169,7 +178,13 @@ async def start(  # noqa: PLR0913 -- 公開入力をmodeごとの平坦な引数
             return public
     elif mode == "delegate":
         assert prompt is not None and model_type is not None
-        delegate_prompt, handoff_path = await run_file_operation(launch_requests.delegate_request, prompt)
+        launcher = await run_file_operation(_MANAGER.launcher_session_id)
+        delegate_prompt, handoff_path = await run_file_operation(
+            launch_requests.delegate_request,
+            prompt,
+            whole_contract_path=whole_contract_path,
+            launcher_session_id=launcher,
+        )
         response = await _MANAGER.start(model_type, delegate_prompt, cwd, label=label)
         public = public_start_response(response)
         public["handoff_record_path"] = str(handoff_path)

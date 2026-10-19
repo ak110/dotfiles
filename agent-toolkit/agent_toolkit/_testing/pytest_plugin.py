@@ -135,6 +135,38 @@ def _fixed_terminal_size(request: pytest.FixtureRequest, monkeypatch: pytest.Mon
     monkeypatch.setattr("shutil.get_terminal_size", lambda *_a, **_kw: fixed)
 
 
+_TEST_WHOLE_CONTRACT_SESSION = "test-whole-contract-session"
+
+
+@pytest.fixture(autouse=True)
+def _resolvable_whole_contract(
+    request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch, tmp_path_factory: pytest.TempPathFactory
+) -> None:
+    """公開`start`の通常起動が、テスト用の会話の全体作業契約へ解決できる状態から始める。
+
+    通常起動は全体作業契約を解決できなければ起動前に拒否する。隔離下では実行環境の会話の保存領域へ届かないため、
+    起動時に保持する会話をテスト用の値へ固定し、その会話の保存領域と契約を最初の参照時に一時領域へ作成する。
+    実行環境の`CLAUDE_CODE_SESSION_ID`などへ結果が依存しないようにする効果もある。
+    解決順や拒否を検証するテストは、`launch_requests._HANDOFF_SESSION`か保存領域の解決を改めて差し替える。
+    """
+    if not request.path.is_relative_to(_PACKAGE_ROOT):
+        return
+    original = launch_requests._conversation_temp  # pylint: disable=protected-access
+    created: list[pathlib.Path] = []
+
+    def conversation_temp(session_id: str) -> pathlib.Path | None:
+        if session_id != _TEST_WHOLE_CONTRACT_SESSION:
+            return original(session_id)
+        if not created:
+            directory = tmp_path_factory.mktemp("whole-contract")
+            (directory / "work-contract.md").write_text("目的: テスト用の全体要求\n", encoding="utf-8")
+            created.append(directory)
+        return created[0]
+
+    monkeypatch.setattr(launch_requests, "_HANDOFF_SESSION", (_TEST_WHOLE_CONTRACT_SESSION,))
+    monkeypatch.setattr(launch_requests, "_conversation_temp", conversation_temp)
+
+
 @pytest.fixture(name="real_end_turn_wait")
 def _real_end_turn_wait(request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch) -> None:
     """自動fixtureの差し替えを外し、対象内で実物の待機を使わせる。"""
