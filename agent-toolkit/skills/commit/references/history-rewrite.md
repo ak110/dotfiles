@@ -44,6 +44,12 @@ autosquash成功後は`git rev-parse --short=7 HEAD`で書換え後HEADを取得
   atk run-script history-compare -- --operation autosquash --work-dir <worktreeの絶対パス> --old-base <保持した親OID> --old-head <autosquash直前HEAD> --new-base <保持した親OID> --new-head <書換え後HEAD> --output <managed-temp内の対応表JSONの絶対パス>
   ```
 
+- amend後は、amendの直前に保持したHEADとその親OIDを使って次を実行する。同操作は旧新が同じ親の直上の異なる1commitどうしであることを検収し、旧新HEADの1件の対応を持つ対応表を生成する（amendは内容を変えるため、treeとpatchの一致は検収しない）。非0なら`## 失敗時の扱い`に従う
+
+  ```text
+  atk run-script history-compare -- --operation amend --work-dir <worktreeの絶対パス> --old-base <保持した親OID> --old-head <amend直前HEAD> --new-base <保持した親OID> --new-head <amend後HEAD> --output <managed-temp内の対応表JSONの絶対パス>
+  ```
+
 - 書き換え後は各中間`HEAD`で変更範囲の検証を再実行し、`git log -1 --format=%B <統合後sha>`で最終メッセージと`Co-Authored-By:`を、stage状態と`git show HEAD:<path>`で未反映差分が無いことを確かめる。中間版への切替と検証後の復帰にはそれぞれ`git -c submodule.recurse=false checkout <参照>`を使う
 
 ## fixupの実行上の制約
@@ -76,7 +82,7 @@ autosquashが内容競合で停止した場合は、競合箇所が採用済み�
 
 対応表のJSONは1対1・多対1の`{"oldOID":"newOID"}`とする。commit分割は`{"oldOID":[{"commit":"newOID-A","awi":["WI-A.md"]},{"commit":"newOID-B","awi":["WI-B.md"]}]}`でAWI割当を明示する。
 WIは保存ファイル名、OIDはGitで一意に解決できる値で書く。同じAWIを複数の新commitへ割り当ててよく、各旧commitの全AWIを割当で被覆する。旧scalar・保存済みrewriteイベント・本文コメントも引き続き読める。
-対応表は`atk run-script history-compare`の検収成功時に保存された完全OIDの旧新対応表を使う（rebaseは`--operation rebase`、autosquashは`--operation autosquash`で、両系列のbaseを除くheadまでを指定する）。WI対応を持たないcommitも含め、fixupと元commitが同じ新commitへ統合される場合は両方の旧OIDを含む。amendでは検収した旧新HEADの1対1対応を保存する。
+対応表は`atk run-script history-compare`の検収成功時に保存された完全OIDの旧新対応表を使う。rebaseは`--operation rebase`、autosquashは`--operation autosquash`、amendは`--operation amend`で、両系列のbaseを除くheadまでを指定する（autosquashとamendの起動形は「操作前後の確認」にある）。WI対応を持たないcommitも含め、fixupと元commitが同じ新commitへ統合される場合は両方の旧OIDを含む。amendの対応表は旧新HEADの1対1対応の1件になる。
 検収済みの同じ対応表を、後掲の`atk run-script plan-rewrite --`へ渡す（個別記録の更新では`atk run-script plan-progress --`の`--rewrite-map`）。
 未判定検証記録は実装担当が、完成条件証拠は実行レビュー担当が次の操作で参照を更新する。
 

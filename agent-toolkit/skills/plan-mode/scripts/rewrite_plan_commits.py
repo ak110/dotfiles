@@ -19,8 +19,9 @@ from agent_toolkit._plan import commit_mapping
 from agent_toolkit._plan import structure as _plan_format
 
 _CURRENT_OMISSION_ACTION = (
-    "rebase/autosquashの対応表は`atk run-script history-compare`で範囲を検収して再生成する。"
-    "amendは`agent-toolkit:commit`の`references/history-rewrite.md`に従って1対1の対応を検収・保存し、同じ引数で再実行する"
+    "対応表は`atk run-script history-compare -- --operation <rebase|autosquash|amend> --work-dir <worktreeの絶対パス>"
+    " --old-base <書換え前のbase> --old-head <書換え前のHEAD> --new-base <書換え後のbase> --new-head <書換え後のHEAD>"
+    " --output <対応表の絶対パス>`で検収して再生成し、同じ引数で再実行する。amendの両baseはamend前HEADの親とする"
 )
 _PAST_OMISSION_ACTION = (
     "過去の書換えの未追記は、その記録へ当時の書換えの対応を`atk run-script plan-progress -- <記録> --rewrite-map <対応表>`で"

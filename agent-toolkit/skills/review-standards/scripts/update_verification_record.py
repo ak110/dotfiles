@@ -44,7 +44,8 @@ def _parser() -> argparse.ArgumentParser:
         "--rewrite-map",
         type=pathlib.Path,
         metavar="PATH",
-        help="未判定検証記録のevidenceにあるcommit:参照だけを検収済み旧新OID対応表で更新する。ほかの操作と分けて実行する",
+        help="未判定検証記録のevidenceにあるcommit:参照だけを検収済み旧新OID対応表で更新する。"
+        "取得版をcommit:で書いた行は更新で取得版が変わるため、取得版は観測ファイルと裸のOIDで書く。ほかの操作と分けて実行する",
     )
     verification_results.add_arguments(parser)
     return parser

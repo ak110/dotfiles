@@ -506,7 +506,8 @@ HELP["atk worktree-stash"]["description"] += (
 HELP["atk run-script"]["description"] += (
     "\n多ターン試行はmulti-turn-trialsの--listで固定課題を選び、prepareで公開素材だけを複製し、"
     "gradeで保存対話と提出物を採点する。機能合否、隠した要件の達成、対話判定を別々に結果JSONへ保存する。"
-    "\n履歴の検収はhistory-compareでrebaseとautosquashを分け、検収済み完全OID対応表をplan-rewriteへ渡す。"
+    "\n履歴の検収はhistory-compareの--operationでrebase・autosquash・amendを分け、"
+    "amendは`history-compare --operation amend`で旧新HEADの1対1対応を検収する。検収済み完全OID対応表をplan-rewriteへ渡す。"
     "未判定記録は`atk run-script verification-record -- --output <記録の絶対パス> --rewrite-map <対応表の絶対パス>`、"
     "完成条件証拠は`atk run-script exec-review-evidence-check -- <証拠の絶対パス> --rewrite-map <対応表の絶対パス>`で参照を更新する。"
     "verification-recordとexec-review-evidence-checkは--results-fileでJUnit・実行記録・構造化診断を読み、"

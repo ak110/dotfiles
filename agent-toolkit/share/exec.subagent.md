@@ -130,6 +130,7 @@
 - 構造化結果からの記入: 入力形式は`atk run-script verification-record -- --help`で取得する。試験は`--junit-xml <保存XML> --junit-record <実行記録>`で直接指定する。診断は`--diagnostics-file <保存JSONL> --diagnostics-record <実行記録> --diagnostics-conditions <取得時の条件JSON>`と必要な`--diagnostics-source <相対ファイル> <保存時本文>`の反復で直接指定する。基準比較は同じ組の`--baseline-junit-*`・`--baseline-diagnostics-*`へ保存物を指定する。`--output <初回記録の絶対パス> --list-results --results-summary`で状態・基準版との差、診断のまとまり・重複数・全識別子から必要な結果を選ぶ。続けて`--results-summary`を`--result-test <完全テスト名>`か`--result-diagnostic <診断識別子>`の反復へ替え、詳細・取得版・所在を読む（表示の追加指定を省けば全詳細）。代表の1件で全件の意味を判断せず、比較不能は不足として補う。記入では`--list-results`を外し、`--select-row <配列:N>`の反復と各要求を直接満たす完全テスト名・診断識別子を渡す。必要なら`--evidence-file`と`--mode append|replace`も渡し、同じ保存物から更新する（sourceは処理側が現行行から取得する）。不正な行が1件でもあれば全保存が拒否される。既存のJSON入力の契約も保持され、未選択行は変わらない
 
 各`evidence`には受入シナリオの公開入口・入力・期待結果に対応する実結果として、テスト完全名と成功結果の所在、または保存済み観測の入力・操作・期待結果・観測結果の箇所を書く。pytestのテスト名は、同じ版の保存済み出力（`-v`付き）にその名前と結果の行があることを確かめる。点表示と総数は個別の合否の根拠にならない。後続工程や不採用・割当の行には、検証済みの範囲と採否・後続工程を記録した箇所を書く。計画確定時に決まった後続工程は計画の`## 実施内容`、実装中に作成した後続工程は対象AWIへの追記先、同じセッション内で読まれるものは引き継ぎ記録を示す。`outcome`と`reviewed_head`は空欄を保つ（判定は実行レビュー担当だけが書く）。
+観測を取得した版（実行記録の`git_head`など）は観測ファイルの参照と裸のOIDで書き、`commit:<OID>`は現行成果物を指す参照だけに使う。`--rewrite-map`は履歴書換えで`commit:`標識だけを新しいOIDへ更新するため、取得版をこの標識で書くと実行していない版へ変わる。書き分けの詳細は`agent-toolkit:review-standards`の`references/exec-review-recording.md`「根拠の書き方」に従う。
 各行へ保存するのは、その要求単位に直接必要な観測と現在の成果物へ適用できる理由とする。
 旧取得版の観測が現在も必要なら、取得版と適用理由を保持し、失効した説明や別要求の経緯は置換する。
 修正ラウンドの経緯・応答・履歴統合はレビュー指摘管理表と観測記録へ残し、各行には判定に必要な所在と観測内容を対応付ける。
@@ -153,7 +154,7 @@
 
 - 書換えの前に、対象worktreeがclean、rewrite対象が未push、操作直前に解決したrewrite対象のOID集合がそのレーンのcommitだけであることを確かめ、別の呼び出しで同書「履歴確認の起動形」の`git log`を実行する
 - autosquashは同書「fixupの実行上の制約」の起動形で実行し、競合と失敗は同書「失敗時の扱い」に従う。同じ指摘の履歴統合の再試行は委譲元の判断を得てから行う
-- 書換え前後のOID、tree、親OID、件名を保持して`rewrite_guard`の要求に合うか確かめ、同書「操作前後の確認」の`atk run-script history-compare -- --operation autosquash`で終了コード0と検収済み対応表の保存を確かめる。amendの検収も同書に従う
+- 書換え前後のOID、tree、親OID、件名を保持して`rewrite_guard`の要求に合うか確かめる。続けて同書「操作前後の確認」の起動形で、終了コード0と検収済み対応表の保存を確かめる（autosquashは`atk run-script history-compare -- --operation autosquash`、amendは`--operation amend`）
 - レビュー指摘管理表へ、指摘、採否、修正commit、検証結果、書換え前後の7文字以上の一意な短縮OIDの対応、一致確認結果、対応表の絶対パスを残す。この完全OID対応表を`atk run-script plan-rewrite --`へ同書の起動形で渡し、AWI集合を現在の実装commitへ継承する。未判定検証記録は`atk run-script verification-record -- --output <未判定検証記録の絶対パス> --rewrite-map <対応表の絶対パス>`で参照を更新する。完成条件証拠は、委譲元が`rewrite_map`を追送した実行レビュー担当が`exec-review.subagent.md`「再レビュー」のコマンドで更新する
 - 履歴統合後の変更範囲の検証は`diagnostics.md`で、記録済みの基準版と累積差分から判定し、`atk run-script plan-progress --`で進捗ログへ追記する
 - 取得版がレビュー対象の祖先から外れた検証記録は、結果に作用する差がある行と取得版を特定できない行だけを取り直す。他の行は`exec-review-recording.md`「根拠の書き方」に従って取得版を保持する観測ファイルの参照と適用理由を`evidence`へ書く。`--rewrite-map`で更新するのは現行成果物を指す`commit:<OID>`の参照だけであり、裸のOID、取得版のHEAD・git_head・比較元、観測ファイルと判定欄、既存自由文の形式は保持される。分割した対応先も各`commit:`参照として次回更新へ渡す
