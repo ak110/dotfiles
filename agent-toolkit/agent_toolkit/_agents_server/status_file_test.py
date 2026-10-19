@@ -278,8 +278,8 @@ async def test_writer_removes_session_at_retention_deadline(tmp_path: pathlib.Pa
     assert result["turn_seq"] == 1
     datetime.datetime.fromisoformat(result["finalized_at"])
     assert writer._retention_handle is not None
-    await asyncio.sleep(0.05)
-    assert not json.loads(writer.path.read_text(encoding="utf-8"))["sessions"]
+    # 期限で予約した保存はファイル操作のスレッドを経て完了するため、固定時間でなく状態ファイルの反映を待つ。
+    await _until(lambda: not json.loads(writer.path.read_text(encoding="utf-8"))["sessions"])
     assert result_path.exists()
     writer.deactivate()
     assert result_path.exists()
@@ -627,10 +627,9 @@ async def test_manager_refreshes_heartbeat_until_close(monkeypatch: pytest.Monke
     manager.activate()
     initial = json.loads(writer.path.read_text(encoding="utf-8"))["heartbeat_at"]
 
-    await asyncio.sleep(0.03)
+    # 定期更新の保存はファイル操作のスレッドを経て完了するため、固定時間でなく生存の印の更新を待つ。
+    await _until(lambda: json.loads(writer.path.read_text(encoding="utf-8"))["heartbeat_at"] > initial)
 
-    refreshed = json.loads(writer.path.read_text(encoding="utf-8"))["heartbeat_at"]
-    assert refreshed > initial
     await manager.close()
     assert manager._heartbeat_task is None
 
