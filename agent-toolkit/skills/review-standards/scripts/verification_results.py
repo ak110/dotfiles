@@ -7,8 +7,11 @@ import collections
 import collections.abc
 import copy
 import json
+import os
 import pathlib
 import re
+import subprocess
+import sys
 import xml.etree.ElementTree as ET
 from typing import Any
 
@@ -16,6 +19,7 @@ import accepted_review_evidence
 import verification_diagnostics
 from verification_diagnostics import path_value, run_record
 
+from agent_toolkit._common import next_action, process_tree
 from agent_toolkit._common.atomic_file import atomic_write
 
 SCHEMA = (
@@ -123,7 +127,12 @@ def add_arguments(parser: argparse.ArgumentParser, *, reviewing: bool = False) -
         parser.add_argument(
             f"--{prefix}-xml", type=pathlib.Path, metavar="PATH", help="保存したJUnit XML。対応する-recordと指定する"
         )
-        parser.add_argument(f"--{prefix}-record", type=pathlib.Path, metavar="PATH", help="JUnitを取得したrun-commandの記録")
+        parser.add_argument(
+            f"--{prefix}-record",
+            type=pathlib.Path,
+            metavar="PATH",
+            help="JUnitを取得したrun-commandの記録。pytestの直接起動か、--output-format=jsonlのpyfltr経由の起動を受理する",
+        )
     for prefix in ("test", "baseline-test"):
         parser.add_argument(f"--{prefix}-format", choices=("vitest", "playwright", "trx"), help="試験結果の生成形式")
         parser.add_argument(f"--{prefix}-file", type=pathlib.Path, metavar="PATH", help="構造化試験結果の絶対パス")
@@ -208,26 +217,108 @@ def load_json(path: pathlib.Path) -> Any:
     return json.loads(path_value(str(path)).read_text(encoding="utf-8"))
 
 
+# JUnitの取得条件を読めない組へ示す、受理する起動の形と再実行の操作。
+_JUNIT_RERUN = (
+    "受理する起動はpytestの直接起動か、--output-format=jsonlで実行アーカイブを有効にしたpyfltr経由"
+    "（run・run-for-agent・ci・fast）である。"
+    "atk run-command -- ... pytest -v -o junit_family=xunit1 --junitxml=<XMLの絶対パス> <対象...>で再実行し、"
+    "そのXMLと記録を指定する"
+)
+_PYFLTR_RUNS = {"run", "run-for-agent", "ci", "fast"}
+
+
+def _junit_rejection(reason: str) -> next_action.ActionableError:
+    return next_action.ActionableError(reason, next_action=_JUNIT_RERUN)
+
+
+def _pyfltr_show(run_id: str, *options: str) -> dict[str, Any]:
+    """pyfltrの公開操作show-runで実行記録を読む。pyfltrはagent-toolkitの依存として同じ実行環境にある。"""
+    try:
+        result = process_tree.run_with_timeout(
+            [sys.executable, "-m", "pyfltr", "show-run", run_id, *options, "--output-format=json"],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            env={**os.environ, "PYTHONUTF8": "1"},
+            check=False,
+            timeout=60,
+        )
+    except (OSError, subprocess.TimeoutExpired) as error:
+        raise _junit_rejection(f"pyfltrの実行記録{run_id}の読取を完了できません: {error}") from error
+    if result.returncode:
+        raise _junit_rejection(
+            f"pyfltrの実行記録{run_id}を読めません（--no-archiveでの実行か保持期間の経過）: {result.stderr.strip()}"
+        )
+    shown = json.loads(result.stdout)
+    if not isinstance(shown, dict):
+        raise _junit_rejection(f"pyfltrの実行記録{run_id}の形式が不正です")
+    return shown
+
+
+def _junit_origin(record: dict[str, Any], record_path: pathlib.Path) -> tuple[list[str], list[tuple[pathlib.Path, str]]]:
+    """XMLを書いたpytestの起動引数と、作業ディレクトリごとのrootdirを、その実行主体の記録から読む。
+
+    直接起動ではrun-commandの記録、pyfltr経由ではpyfltrの実行記録を読む。
+    pyfltr経由の記録はトップレベルのargvと標準出力がpyfltr自身のものであり、pytestの取得条件を含まないためである。
+    記録のargvから組み立てたコマンドは実行しない。
+    """
+    argv, cwd = record["argv"], pathlib.Path(record["cwd"])
+    stdout = path_value(record["stdout_path"]).read_text(encoding="utf-8")
+    launcher = next((i for i, value in enumerate(argv[:-1]) if pathlib.Path(value).stem == "pyfltr"), None)
+    if launcher is None or argv[launcher + 1] not in _PYFLTR_RUNS:
+        return argv, [(cwd, root) for root in re.findall(r"^rootdir: (.+)$", stdout, re.MULTILINE)]
+    try:
+        header = json.loads(stdout.splitlines()[0]) if stdout.strip() else None
+    except json.JSONDecodeError:
+        header = None
+    run_id = header.get("run_id") if isinstance(header, dict) and header.get("kind") == "header" else None
+    if not isinstance(run_id, str) or not run_id:
+        raise _junit_rejection(f"pyfltrの標準出力の先頭にJSON Linesのheaderが無く、実行記録を特定できません: {record_path}")
+    meta = _pyfltr_show(run_id).get("meta")
+    if (
+        not isinstance(meta, dict)
+        or not isinstance(meta.get("cwd"), str)
+        or pathlib.Path(meta["cwd"]).resolve() != cwd.resolve()
+    ):
+        raise _junit_rejection(f"pyfltrの実行記録{run_id}のcwdが記録cwdと一致しません: {record_path}")
+    command = _pyfltr_show(run_id, "--commands", "pytest").get("command")
+    commandline = command.get("commandline") if isinstance(command, dict) else None
+    output = _pyfltr_show(run_id, "--commands", "pytest", "--output").get("output")
+    if not isinstance(commandline, list) or any(not isinstance(v, str) for v in commandline) or not isinstance(output, str):
+        raise _junit_rejection(f"pyfltrの実行記録{run_id}にpytestのcommandlineと生出力がありません")
+    # サブプロジェクトごとの実行は生出力を`# subproject: <相対>`で区切り、各区間のpytestはその配下で起動する。
+    roots: list[tuple[pathlib.Path, str]] = []
+    section = cwd
+    for line in output.splitlines():
+        if header_match := re.fullmatch(r"# subproject: (.+)", line):
+            section = cwd / header_match[1]
+        elif root_match := re.fullmatch(r"rootdir: (.+)", line):
+            roots.append((section, root_match[1]))
+    return commandline, roots
+
+
 def _junit(spec: object) -> dict[str, dict[str, Any]]:
     if not isinstance(spec, dict) or set(spec) != {"xml", "run_record"}:
         raise ValueError("JUnitの組にはxmlとrun_recordを指定する")
     xml = path_value(spec["xml"])
     record_path, record = run_record(spec["run_record"])
-    argv = record["argv"]
+    argv, roots = _junit_origin(record, record_path)
+    if len(roots) != 1 or not pathlib.Path(roots[0][1]).is_absolute():
+        raise _junit_rejection(
+            f"保存出力のpytest実行rootを一意に特定できません（pyfltrの複数サブプロジェクトの実行を含む）: {record_path}"
+        )
+    pytest_cwd, rootdir = roots[0]
     xml_args = [v.split("=", 1)[1] for v in argv if v.startswith("--junitxml=")]
     xml_args.extend(argv[i + 1] for i, v in enumerate(argv[:-1]) if v == "--junitxml")
-    if len(xml_args) != 1 or (pathlib.Path(record["cwd"]) / xml_args[0]).resolve() != xml.resolve():
-        raise ValueError(f"XMLと実行argvの--junitxmlが対応しません: {xml}, {record_path}")
+    if len(xml_args) != 1 or (pytest_cwd / xml_args[0]).resolve() != xml.resolve():
+        raise _junit_rejection(f"XMLと実行argvの--junitxmlが対応しません: {xml}, {record_path}")
     if "junit_family=xunit1" not in argv:
-        raise ValueError(f"file属性を保存するjunit_family=xunit1で再実行する: {record_path}")
-    stdout = path_value(record["stdout_path"]).read_text(encoding="utf-8")
-    roots = re.findall(r"^rootdir: (.+)$", stdout, re.MULTILINE)
-    if len(roots) != 1 or not pathlib.Path(roots[0]).is_absolute():
-        raise ValueError(f"保存出力のpytest実行rootを一意に特定できません: {record_path}")
+        raise _junit_rejection(f"file属性を保存するjunit_family=xunit1の指定が実行argvにありません: {record_path}")
     try:
-        prefix = pathlib.Path(roots[0]).relative_to(record["cwd"])
+        prefix = pathlib.Path(rootdir).relative_to(record["cwd"])
     except ValueError as error:
-        raise ValueError(f"pytest実行rootが記録cwdの外です: {roots[0]}") from error
+        raise ValueError(f"pytest実行rootが記録cwdの外です: {rootdir}") from error
     try:
         root = ET.parse(xml).getroot()
     except ET.ParseError as error:

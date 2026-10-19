@@ -181,6 +181,9 @@ TRXは引数値を含むUnitTestResultのtestNameを使い、完全名が重複�
 cargo 1.99.0のstable構成のcargo testは構造化出力を持たないため、この取込みの対象に含めない。
 
 構造化結果の取得・選択・保存は[変更範囲の検証の対象選定](../../agent-toolkit/skills/check-execution/references/verification-scope.md)「実行のしかた」の両公開操作へ集約する。原文とsourceは現行行から処理側が取得するため、結果指定JSONと更新配列の手製転記を要しない。既存の`--results-file`・`--updates-file`も受理し、sourceの不一致と不正行は全保存を拒否する。JUnitと`atk run-command`の実行記録を対応付ける[verification_results.py](../../agent-toolkit/skills/review-standards/scripts/verification_results.py)が使うのは実行rootからのファイル・クラス・パラメーターとXMLの状態要素である。名前の状態語と総数から個別結果を推定しない。[verification_diagnostics.py](../../agent-toolkit/skills/review-standards/scripts/verification_diagnostics.py)はpyfltrの構造化診断をGitの改名・保存時本文の対応行と発生条件へ対応付け、多重集合の差を返す。重複数、同件数の別内容、位置なし警告の実行固有値を区別し、対応不能は一致にしない。
+
+JUnitの取得条件（`--junitxml`、`junit_family=xunit1`、`rootdir:`）はXMLを書いた実行主体の記録から読む。pytestの直接起動ではrun-commandの記録のargvと標準出力を読む。pyfltr経由（`run`・`run-for-agent`・`ci`・`fast`）では記録の標準出力の先頭のheaderが示す`run_id`の実行記録を`pyfltr show-run`で読み、pytestのcommandlineと生出力を使う。pyfltr経由の記録のトップレベルのargvと標準出力はpyfltr自身のものであり、`--junitxml`は`--pytest-args`の値の内側に、`rootdir:`は実行記録の生出力にだけ現れるためである。2026年10月16日にpyfltrでpytestを起動したプロジェクトでは、XMLの保存とpytestの成功が確かな記録がこの取込みに拒否された。
+headerを持たない出力形式、`--no-archive`や保持期間の経過で実行記録を読めない場合、記録のcwdと実行記録のcwdが異なる場合、生出力の`# subproject:`区切りから`rootdir:`を一意に決められない場合は、受理する起動の形とpytestの直接起動での再実行を示して拒否する。XMLと`--junitxml`の対応付けをやめる案は別の実行のXMLを取り込めるようにし、直接起動への統一だけを案内する案はpyfltrでpytestを起動するプロジェクトに試験を2回実行させ続けるため採らない。記録のargvから組み立てたコマンドは、保存ファイルの内容を起動することになるため実行しない。
 原文と出所は従来の要求抽出が所有し、更新配列の不正が1件でもあれば全行の保存を拒否する。実装側の判定欄は空で、レビュー側は未判定根拠も選択できるが、各行の判定とHEADを明示し別の完成条件証拠へ保存する。手動根拠ファイルの更新と返却前確認を保持する。個別のJUnit解析・診断集計・JSON編集コードを担当へ戻す案と、新しい独立コマンドや判定自動化を加える案は、反復作業と知識境界の混同を残すため採らない。
 
 未判定検証記録の参照更新も所有コマンドの`verification-record --rewrite-map`で完結させる。

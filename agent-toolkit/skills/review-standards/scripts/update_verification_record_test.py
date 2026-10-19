@@ -1920,6 +1920,97 @@ def test_public_import_roundtrip_reaches_return_result(
     assert "読者別探索: 文章成果物なし" in returned
 
 
+def _saved_pyfltr_trial(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, name: str, *options: str
+) -> tuple[dict[str, str], subprocess.CompletedProcess[str]]:
+    """実pyfltrでpytestを起動し、公開run-commandの記録とXMLを受け取る。
+
+    `PYFLTR_CACHE_DIR`でpyfltrの実行記録をテストの一時領域へ書き、テスト外のキャッシュに依存しない。
+    """
+    monkeypatch.setenv("PYFLTR_CACHE_DIR", str(tmp_path / "pyfltr-cache"))
+    pytest_path = pathlib.Path(sys.executable).parent / "pytest"
+    (tmp_path / "pyproject.toml").write_text(
+        "[tool.pyfltr]\npytest = true\npytest-path = " + json.dumps(str(pytest_path)) + "\n", encoding="utf-8"
+    )
+    xml = tmp_path / f"{name}.xml"
+    result = _saved_command(
+        tmp_path,
+        "pyfltr",
+        "run-for-agent",
+        "--commands=pytest",
+        *options,
+        f"--pytest-args=-v -p no:cacheprovider -o junit_family=xunit1 --junitxml={xml}",
+        "trial_test.py",
+    )
+    assert result.returncode in {0, 1}, result.stderr
+    saved = json.loads(result.stdout[result.stdout.index("{") :])
+    return {"xml": str(xml), "run_record": saved["record_path"]}, result
+
+
+def _list_junit(record: pathlib.Path, spec: dict[str, str]) -> int:
+    return _run("--output", str(record), "--junit-xml", spec["xml"], "--junit-record", spec["run_record"], "--list-results")
+
+
+def test_junit_accepts_pyfltr_run_record(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """pyfltr経由の記録とXMLの組を、直接起動の記録と同じ完全テスト名と状態で取り込む。"""
+    monkeypatch.chdir(tmp_path)
+    text = "import pytest\n@pytest.mark.parametrize('value', [1, 2])\ndef test_value(value):\n    assert value == 1\n"
+    direct = _saved_trial(tmp_path, text, "direct")
+    via_pyfltr, _ = _saved_pyfltr_trial(tmp_path, monkeypatch, "pyfltr", "--output-format=jsonl")
+    record = tmp_path / "record.json"
+    assert _run("--output", str(record), "--plan", str(_plan(tmp_path, "plan-user"))) == 0
+    listed = {}
+    for label, spec in (("direct", direct), ("pyfltr", via_pyfltr)):
+        capsys.readouterr()
+        assert _list_junit(record, spec) == 0, capsys.readouterr().err
+        listed[label] = {name: value["status"] for name, value in json.loads(capsys.readouterr().out)["tests"].items()}
+    assert (
+        listed["pyfltr"]
+        == listed["direct"]
+        == {
+            "trial_test.py::test_value[1]": "passed",
+            "trial_test.py::test_value[2]": "failed",
+        }
+    )
+
+
+@pytest.mark.parametrize("invalid", ["no-archive", "text-output"])
+def test_junit_rejects_missing_pyfltr_record_with_next_action(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], invalid: str
+) -> None:
+    """pyfltrの実行記録を読めない組を、受理する起動の形と再実行の操作を示して拒否する。"""
+    monkeypatch.chdir(tmp_path)
+    _saved_trial(tmp_path, "def test_one():\n    assert True\n", "direct")
+    options = ["--output-format=jsonl", "--no-archive"] if invalid == "no-archive" else ["--output-format=text"]
+    spec, _ = _saved_pyfltr_trial(tmp_path, monkeypatch, "pyfltr", *options)
+    assert pathlib.Path(spec["xml"]).is_file()
+    record = tmp_path / "record.json"
+    assert _run("--output", str(record), "--plan", str(_plan(tmp_path, "plan-user"))) == 0
+    capsys.readouterr()
+    assert _list_junit(record, spec) == 1
+    error = capsys.readouterr().err
+    assert "pyfltr" in error and "--output-format=jsonl" in error
+    assert "pytest -v -o junit_family=xunit1 --junitxml=<XMLの絶対パス>" in error
+
+
+def test_junit_rejects_unmatched_junitxml_with_next_action(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """実行argvの--junitxmlと対応しないXMLを、受理する起動の形と再実行の操作を示して拒否する。"""
+    monkeypatch.chdir(tmp_path)
+    first = _saved_trial(tmp_path, "def test_one():\n    assert True\n", "first")
+    second = _saved_trial(tmp_path, "def test_one():\n    assert True\n", "second")
+    record = tmp_path / "record.json"
+    assert _run("--output", str(record), "--plan", str(_plan(tmp_path, "plan-user"))) == 0
+    capsys.readouterr()
+    assert _list_junit(record, {"xml": second["xml"], "run_record": first["run_record"]}) == 1
+    error = capsys.readouterr().err
+    assert "--junitxml" in error and "pyfltr" in error
+    assert "pytest -v -o junit_family=xunit1 --junitxml=<XMLの絶対パス>" in error
+
+
 @pytest.mark.parametrize("invalid", ["xml", "file", "duplicate", "head", "exit", "argv", "source", "row"])
 def test_public_import_rejects_ambiguous_or_incomplete_results(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], invalid: str
