@@ -4,7 +4,10 @@
 
 ## gv / lc（Windows用プロジェクト）の特殊事情
 
-- Linuxでの検証はlint系（textlint / markdownlint / prettier）のみ確認可能
+- Linuxでの検証範囲はプロジェクトごとに異なる。正式な手順は各リポジトリの`AGENTS.md`と`docs/development/development.md`が定める
+  - `~/gv`: lint系（textlint / markdownlint / prettier）のみ確認できる。Rustコードの制約は後述する
+  - `~/lc`: `mise run setup-linux`で環境を構築すると、`mise run test`（`dotnet-test`を除く全チェック）と、配布用exeを出力する`mise run build`を実行できる。
+    `dotnet-test`はWindows CIで確かめる
 - `mise.toml`のタスクを使用する。prekフレームワークは`uvx prek`で呼び出す
 - cargo-denyの導入は`taiki-e/install-action@v2`と`with: tool: cargo-deny`を用い、
   actionをpinactのハッシュピン対象にする。
