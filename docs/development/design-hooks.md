@@ -597,6 +597,7 @@ Remote Controlを無効にする案はユーザーの遠隔操作を失わせる
 2026年10月7日、`agents_server`の`start`での定期再確認の装着を、モデルが起動前に行う手順からClaude Codeのmod（`agent-toolkit/hooks/periodic_recheck.ts`）が`start`の処理の中で行う方式へ改めた。
 ユーザーが`<役割名>.parent.md`による起動までの手順の多さを指摘し、`start`の後の自動化を求めたためである。
 modはメインが定期再確認のtaskを持たない場合に一覧取得・作成・削除の許可を確認し、`atk wait-schedule`と同じcron式で`CronCreate`を作成して、task IDを`start`の結果の後に届ける。装着できない場合は、理由と許可・公開状態の確認、完了通知による待機を案内する。
+装着は成功した`start`ごとに評価し直し、許可や公開状態が回復した後の`start`で自動作成する。装着失敗の通知は会話（`$.session.id()`）ごとに最後に届けた本文と比べ、同じ本文なら`start`の結果へ加えない。一覧取得、`atk wait-schedule`の取得、`CronDelete`の能力確認、作成の許可判定・拒否・失敗と装着の例外は全て同じ通知本文の生成を経由するため、どの分岐でも理由が変わった時点の通知が届く。作成に成功した場合と既にtaskを持つ場合は既往を破棄し、正常化の後に生じた失敗は再び届ける。既往はmodのプロセス内の変数に限り、再読込後の最初の失敗は届ける。会話を識別できない場合は抑止しない。成功した`start`ごとに同じ警告を追加すると、許可が回復するまで会話へ同じ本文が積み上がり、読む費用だけが増えるためである。通常回収の通知（`session_exit.ts`）も同じ失敗の反復を抑える。
 装着がモデルの遵守に依存しなくなり、起動前の`atk wait-schedule`、`ToolSearch`と`CronCreate`の呼び出しが不要になる。「委譲手段の選択と待機の装着の手掛かり」が`start`の公開説明に置いた手掛かりは、装着できなかった場合と`Agent`ツールの委譲の手順への案内へ改めた。
 定期promptの共通本文は`agent-toolkit/agent_toolkit/_common/periodic_recheck.py`だけが持ち、`atk wait-schedule --format json`がcron式とともに出力する。modとモデルが自ら装着する手順は、どちらもこの出力を使う。
 当初は本文をTypeScriptの`periodic_recheck_prompt.ts`に置いたが、modを読み込まない環境でモデルが自ら装着する手順は、plugin rootを解決してTypeScriptの文字列を連結する必要があった。メインのシェルがplugin rootを解決できなかった事象と同じ前提に依存するため、シェルから同じ定義へ到達できるPythonの出力へ移した。定義元を1つに保つ目的は変えていない。
