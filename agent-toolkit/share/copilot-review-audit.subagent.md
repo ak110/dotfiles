@@ -17,6 +17,7 @@
 
 ```text
 必須入力名: pending取得結果,引き継ぎ記録先
+作業ツリーへの書込: なし
 ```
 
 - `pending取得結果`: `atk review-audit pending --repo <OWNER>/<REPO>`の標準出力のJSONを持つファイルの絶対パス。`なし`の場合は同書の代替取得の手順で監査対象を取得する

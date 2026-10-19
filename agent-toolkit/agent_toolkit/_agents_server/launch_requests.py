@@ -18,14 +18,13 @@ from agent_toolkit._agents_server import (
     launch_prompts,
     plugin_root,
     shared_roots,
-    task_documents,
 )
 from agent_toolkit._agents_server.state import (
     LaunchKind,
 )
 from agent_toolkit._agents_server.tool_descriptions import START_MODE_EXAMPLES, START_MODE_INPUTS
 from agent_toolkit._atk import managed_temp as _managed_temp
-from agent_toolkit._common import session_registry
+from agent_toolkit._common import session_registry, task_documents
 from agent_toolkit._common.message_format import AUTO_INSERTED_ELEMENT, auto_message, opening_tag
 from agent_toolkit._common.next_action import ActionableError
 from agent_toolkit._git import command as git_command
@@ -891,7 +890,7 @@ def task_document_request(
             if handoff_path is not None:
                 extra_params = {**extra_params, _HANDOFF_INPUT_NAME: f"{handoff_path}（新規）"}
         _check_declared_inputs(task_document, declaration, extra_params)
-    prompt_lines = [f"次の文書の手順を実行せよ（出所: {task_document}）。", document_text]
+    prompt_lines = [task_documents.task_prompt_header(task_document), document_text]
     # 宣言された入力の検証を終えてから、サーバー所有の共通入力を加える。
     # 軽量起動のtaskは独自の記録を持たない。
     if launch_kind == "delegate" and _HANDOFF_INPUT_NAME not in extra_params:

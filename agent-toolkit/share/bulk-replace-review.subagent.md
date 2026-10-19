@@ -10,6 +10,7 @@
 ```text
 必須入力名: 差分ファイル
 mode: explore
+作業ツリーへの書込: なし
 ```
 
 - `差分ファイル`: `git diff --word-diff=plain --word-diff-regex=.`の出力を保存したファイルの絶対パス。`[-…-]`が削除、`{+…+}`が追加を示す

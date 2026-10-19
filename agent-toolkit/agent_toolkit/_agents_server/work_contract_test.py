@@ -38,7 +38,7 @@ def test_normal_task_gets_one_record_path(
     cwd.mkdir()
     monkeypatch.chdir(cwd)
     names = "対象,引き継ぎ記録先" if handoff_input is not None else "対象"
-    document.write_text(f"# 担当\n\n## 入力\n\n```text\n必須入力名: {names}\n```\n", encoding="utf-8")
+    document.write_text(f"# 担当\n\n## 入力\n\n```text\n必須入力名: {names}\n作業ツリーへの書込: あり\n```\n", encoding="utf-8")
     monkeypatch.setattr(launch_requests, "resolve_task_document_path", lambda *_args: document)
     monkeypatch.setattr(launch_requests, "_is_agent_toolkit_task_document", lambda *_args: True)
     monkeypatch.setitem(launch_requests._TASK_MODEL_TYPES, document.name, "high_tier")
@@ -121,7 +121,9 @@ def test_lightweight_task_does_not_deliver_contract_materials(
 ) -> None:
     """軽量な役割指定taskは全体契約の確認と専用記録・資料の配送を経由しない。"""
     document = tmp_path / "task.subagent.md"
-    document.write_text(f"# 担当\n\n## 入力\n\n```text\n必須入力名: 対象\nmode: {kind}\n```\n", encoding="utf-8")
+    document.write_text(
+        f"# 担当\n\n## 入力\n\n```text\n必須入力名: 対象\nmode: {kind}\n作業ツリーへの書込: あり\n```\n", encoding="utf-8"
+    )
     monkeypatch.setattr(launch_requests, "resolve_task_document_path", lambda *_args: document)
     monkeypatch.setattr(launch_requests, "_is_agent_toolkit_task_document", lambda *_args: True)
     monkeypatch.setitem(launch_requests._TASK_MODEL_TYPES, document.name, "high_tier")
@@ -160,7 +162,9 @@ async def test_whole_contract_path_rejected_outside_normal_start(
         inputs["handoff_from"] = "prior"
     elif target == "lightweight-task":
         document = tmp_path / "task.subagent.md"
-        document.write_text("# 担当\n\n## 入力\n\n```text\n必須入力名: 対象\nmode: explore\n```\n", encoding="utf-8")
+        document.write_text(
+            "# 担当\n\n## 入力\n\n```text\n必須入力名: 対象\nmode: explore\n作業ツリーへの書込: なし\n```\n", encoding="utf-8"
+        )
         monkeypatch.setattr(launch_requests, "resolve_task_document_path", lambda *_args: document)
         monkeypatch.setattr(launch_requests, "_is_agent_toolkit_task_document", lambda *_args: True)
         monkeypatch.setitem(launch_requests._TASK_MODEL_TYPES, document.name, "high_tier")

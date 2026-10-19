@@ -26,6 +26,7 @@
 ```text
 必須入力名: レビュー基準,引き継ぎ記録先,未判定検証記録,完成条件証拠
 任意入力名: 計画,CI記録,WI記録,review_contract,修正系列の開始時のHEAD,原因commitOID,開始時のHEAD,レーン識別子,レビュー種別,round,対象ファイル限定,Git管理外の変更,前回確認版,担当モデル,rewrite_map,受理済みの完成条件証拠
+作業ツリーへの書込: なし
 継続入力: {"instruction":"再レビューせよ","required":["round"],"optional":["review_contract","rewrite_map"],"paths":["rewrite_map"],"references":["review_contract"],"condition":"計画外の認可が更新された場合はreview_contract、前回レビュー後の履歴書換えではrewrite_mapを渡す"}
 ```
 

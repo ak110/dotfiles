@@ -1,9 +1,11 @@
-"""agent-toolkitの`share/<役割名>.subagent.md`が宣言する入力と`mode:`を読む。
+"""agent-toolkitの`share/<役割名>.subagent.md`が宣言する入力、`mode:`と作業ツリーへの書込を読む。
 
 `<役割名>.subagent.md`は`## 入力`直後の`text`コードブロックへ、1行目の`必須入力名:`に続けて任意の`任意入力名:`と
-`mode:`を置く。`mode:`の値は`agents_server`の`start`の`mode`と同じ語を使う。`agents_server`の`start`と、`Agent`ツール・自由本文の起動を確認するPreToolUseフックが
-同じ宣言を読むため、解析を本モジュールへ集約する。解析が2箇所へ分かれると、一方だけが新しい行を受理し、
+`mode:`、必須の`作業ツリーへの書込:`を置く。`mode:`の値は`agents_server`の`start`の`mode`と同じ語を使う。
+`agents_server`の`start`、`Agent`ツール・自由本文の起動を確認するPreToolUseフック、`atk lane integrate`の稼働判定が
+同じ宣言を読むため、解析を本モジュールへ集約する。解析が複数箇所へ分かれると、一方だけが新しい行を受理し、
 同じ委譲プロンプトがサーバーでは拒否されフックでは通る（またはその逆の）不一致が生じる。
+`atk lane integrate`（`_atk`）からも読むため、共通層へ置く。
 """
 
 import dataclasses
@@ -20,6 +22,11 @@ LAUNCH_KIND_PREFIX = "mode: "
 # `mode:`へ改める前の宣言行。旧形式の`<役割名>.subagent.md`を同じ意味で読む読み取り互換に限って使う。
 _LEGACY_LAUNCH_KIND_PREFIX = "起動種別: "
 CONTINUATION_PREFIX = "継続入力: "
+WORKTREE_WRITE_PREFIX = "作業ツリーへの書込: "
+_WORKTREE_WRITE_VALUES = {"あり": True, "なし": False}
+# `agents_server`の`start`の`task`が委譲プロンプトの1行目へ置く見出し。session登録簿の起動本文から役割文書を特定する側も使う。
+_TASK_PROMPT_HEADER_PREFIX = "次の文書の手順を実行せよ（出所: "
+_TASK_PROMPT_HEADER_SUFFIX = "）。"
 INPUT_NAME_PATTERN = re.compile(r"^[^`\s:，、](?:[^`\s，、]*[^`\s:，、])?$")
 TASK_DOCUMENT_SUFFIX = ".subagent.md"
 
@@ -50,11 +57,15 @@ class ContinuationDeclaration:
 
 @dataclasses.dataclass(frozen=True)
 class TaskDocumentDeclaration:
-    """`<役割名>.subagent.md`が`## 入力`で宣言した入力名と`mode:`の値。"""
+    """`<役割名>.subagent.md`が`## 入力`で宣言した入力名、`mode:`と作業ツリーへの書込の値。
+
+    `writes_worktree`は起動時のcwdが属する作業ツリーへ書き込む役割かを表す。
+    """
 
     required: tuple[str, ...]
     optional: tuple[str, ...]
     launch_kind: LaunchKind
+    writes_worktree: bool
     continuations: tuple[ContinuationDeclaration, ...] = ()
 
     @property
@@ -108,6 +119,7 @@ def read_declaration_unchecked(
         return f"必須入力を確認できません: 必須入力名の書式が不正です: {task_document}"
     optional: tuple[str, ...] = ()
     launch_kind: LaunchKind = "delegate"
+    writes_worktree: bool | None = None
     continuations: list[ContinuationDeclaration] = []
     for line in block[1:]:
         if line.startswith(OPTIONAL_INPUT_PREFIX):
@@ -121,6 +133,14 @@ def read_declaration_unchecked(
             if value not in LAUNCH_KINDS:
                 return f"必須入力を確認できません: `mode:`の値が不正です: {value}: {task_document}"
             launch_kind = value
+        elif line.startswith(WORKTREE_WRITE_PREFIX):
+            value = line.removeprefix(WORKTREE_WRITE_PREFIX).strip()
+            if value not in _WORKTREE_WRITE_VALUES:
+                return (
+                    f"必須入力を確認できません: `作業ツリーへの書込:`の値が不正です: {value}: {task_document}。"
+                    "受理する値は`あり`か`なし`で、`作業ツリーへの書込: <あり|なし>`の形に直す"
+                )
+            writes_worktree = _WORKTREE_WRITE_VALUES[value]
         elif line.startswith(CONTINUATION_PREFIX):
             try:
                 entry = json.loads(line.removeprefix(CONTINUATION_PREFIX))
@@ -154,9 +174,36 @@ def read_declaration_unchecked(
                 )
             except (TypeError, ValueError) as error:
                 return f"必須入力を確認できません: 継続入力の書式が不正です: {task_document}: {error}"
+    if writes_worktree is None:
+        # 新しい役割の作成者に書込先をその時点で決めさせるため、省略時の値を置かない。
+        return (
+            f"必須入力を確認できません: `作業ツリーへの書込:`の行がありません: {task_document}。"
+            "`## 入力`のtextコードブロックへ`作業ツリーへの書込: <あり|なし>`の行を追加する"
+        )
     return TaskDocumentDeclaration(
-        required=required, optional=optional, launch_kind=launch_kind, continuations=tuple(continuations)
+        required=required,
+        optional=optional,
+        launch_kind=launch_kind,
+        writes_worktree=writes_worktree,
+        continuations=tuple(continuations),
     )
+
+
+def task_prompt_header(task_document: pathlib.Path) -> str:
+    """`start`の`task`が委譲プロンプトの1行目へ置く見出しを返す。"""
+    return f"{_TASK_PROMPT_HEADER_PREFIX}{task_document}{_TASK_PROMPT_HEADER_SUFFIX}"
+
+
+def launched_task_document(launch_prompt: str) -> pathlib.Path | None:
+    """起動本文の1行目が`task`の見出しなら、その`<役割名>.subagent.md`の絶対パスを返す。
+
+    文書を参照するだけの自由本文を役割の起動と取り違えないよう、見出しの完全一致に限る。
+    """
+    first = launch_prompt.split("\n", 1)[0]
+    if not first.startswith(_TASK_PROMPT_HEADER_PREFIX) or not first.endswith(_TASK_PROMPT_HEADER_SUFFIX):
+        return None
+    path = pathlib.Path(first.removeprefix(_TASK_PROMPT_HEADER_PREFIX).removesuffix(_TASK_PROMPT_HEADER_SUFFIX))
+    return path if path.is_absolute() and path.name.endswith(TASK_DOCUMENT_SUFFIX) else None
 
 
 def find_task_documents(text: str) -> list[pathlib.Path]:

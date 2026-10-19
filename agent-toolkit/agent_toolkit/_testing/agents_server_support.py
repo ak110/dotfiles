@@ -431,6 +431,9 @@ def _write_declared_task_document(tmp_path: pathlib.Path, input_block: str) -> p
     manifest.write_text('{"name":"agent-toolkit"}', encoding="utf-8")
     task_document = plugin_root / "share" / "declared.subagent.md"
     task_document.parent.mkdir()
+    if "作業ツリーへの書込: " not in input_block:
+        # 書込宣言は必須行のため、宣言の他の行を確かめる試験では書き込む役割として補う。
+        input_block += "\n作業ツリーへの書込: あり"
     task_document.write_text(f"# 担当\n\n## 入力\n\n```text\n{input_block}\n```\n\n## 出力\n\n結果を返す。\n", encoding="utf-8")
     return task_document
 

@@ -425,7 +425,7 @@ pluginの安全境界と読めた必須入力宣言に対する実際の値欠�
 機械判定は宣言・定型指示・既存履歴から一意に確定できる範囲へ限り、新要求の意味上の必要性は送信側が判断する。
 制御値と更新参照を保ち、同じパスの内容更新を文字列の一致から除かない。
 組み込み委譲は`atk run-script delegation-prompt`で同じ宣言から最小本文を生成する。
-宣言の解析は`agent_toolkit/_agents_server/task_documents.py`へ置き、`start`の`task`と、`delegate`・`explore`・`write`の本文と`Agent`ツールの本文を判定するPreToolUseフックが共有する。
+宣言の解析は`agent_toolkit/_common/task_documents.py`へ置き、`start`の`task`と、`delegate`・`explore`・`write`の本文と`Agent`ツールの本文を判定するPreToolUseフック、`atk lane integrate`の稼働判定が共有する。`_atk`から読むため共通層へ置く。
 自由本文のhookは、文書パスの参照と、その文書の手順を実行する命令を分ける。
 パス抽出は参照先の実在と所属を確かめ、hookが引用の外の定型命令を確認した場合だけ起動形式の判定へ進む。
 文書の読解・比較と命令例の引用は、役割の手順を実行する依頼ではないため通す。

@@ -35,7 +35,7 @@ def _start_inputs(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, mode:
     if mode == "delegate":
         return {"prompt": "Aを実装・検収する", "model_type": "high_tier"}
     document = tmp_path / "task.subagent.md"
-    document.write_text("# 担当\n\n## 入力\n\n```text\n必須入力名: 対象\n```\n", encoding="utf-8")
+    document.write_text("# 担当\n\n## 入力\n\n```text\n必須入力名: 対象\n作業ツリーへの書込: あり\n```\n", encoding="utf-8")
     monkeypatch.setattr(launch_requests, "resolve_task_document_path", lambda *_args: document)
     monkeypatch.setattr(launch_requests, "_is_agent_toolkit_task_document", lambda *_args: True)
     monkeypatch.setitem(launch_requests._TASK_MODEL_TYPES, document.name, "high_tier")
@@ -71,7 +71,9 @@ async def test_public_start_delivers_whole_contract_reference(
     if mode == "task":
         document = tmp_path / "task.subagent.md"
         names = "対象,引き継ぎ記録先" if handoff_input is not None else "対象"
-        document.write_text(f"# 担当\n\n## 入力\n\n```text\n必須入力名: {names}\n```\n", encoding="utf-8")
+        document.write_text(
+            f"# 担当\n\n## 入力\n\n```text\n必須入力名: {names}\n作業ツリーへの書込: あり\n```\n", encoding="utf-8"
+        )
         monkeypatch.setattr(launch_requests, "resolve_task_document_path", lambda *_args: document)
         monkeypatch.setattr(launch_requests, "_is_agent_toolkit_task_document", lambda *_args: True)
         monkeypatch.setitem(launch_requests._TASK_MODEL_TYPES, document.name, "high_tier")

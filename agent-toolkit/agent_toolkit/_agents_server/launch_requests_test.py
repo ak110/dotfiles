@@ -115,7 +115,8 @@ def test_imported_server_keeps_role_documents_after_distribution_removal(
     task = source / "share" / "declared.subagent.md"
     task.parent.mkdir()
     task.write_text(
-        "# 担当\n\n## 入力\n\n```text\n必須入力名: 対象\n```\n\n${CLAUDE_PLUGIN_ROOT}/skills/sample/SKILL.md\n",
+        "# 担当\n\n## 入力\n\n```text\n必須入力名: 対象\n作業ツリーへの書込: あり\n```\n\n"
+        "${CLAUDE_PLUGIN_ROOT}/skills/sample/SKILL.md\n",
         encoding="utf-8",
     )
     skill = source / "skills" / "sample" / "SKILL.md"
@@ -169,7 +170,7 @@ async def test_start_rejects_prompt_missing_required_input(
     (tmp_path / ".claude-plugin" / "plugin.json").write_text('{"name":"agent-toolkit"}', encoding="utf-8")
     task_document.parent.mkdir()
     task_document.write_text(
-        "# タスク\n\n## 入力\n\n```text\n必須入力名: 対象,目的\n```\n",
+        "# タスク\n\n## 入力\n\n```text\n必須入力名: 対象,目的\n作業ツリーへの書込: あり\n```\n",
         encoding="utf-8",
     )
     called = False
@@ -627,7 +628,9 @@ async def test_dedicated_wi_owner_uses_orchestrate_candidates(
 
 def test_required_inputs_ignore_heading_inside_code_fence(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
     task_document = tmp_path / "task.subagent.md"
-    task_document.write_text("````text\n## 入力\n````\n\n## 入力\n\n```text\n必須入力名: 対象\n```\n", encoding="utf-8")
+    task_document.write_text(
+        "````text\n## 入力\n````\n\n## 入力\n\n```text\n必須入力名: 対象\n作業ツリーへの書込: あり\n```\n", encoding="utf-8"
+    )
     monkeypatch.setattr(launch_requests, "_is_agent_toolkit_task_document", lambda _path: True)
 
     assert launch_requests._validate_required_prompt_inputs(task_document, {"対象": "value"}) is None
@@ -797,7 +800,7 @@ async def test_start_validates_required_input_for_task_document_from_other_plugi
     manifest.parent.mkdir(parents=True)
     manifest.write_text('{"name":"agent-toolkit"}', encoding="utf-8")
     task_document.parent.mkdir()
-    task_document.write_text("## 入力\n\n```text\n必須入力名: 対象\n```\n", encoding="utf-8")
+    task_document.write_text("## 入力\n\n```text\n必須入力名: 対象\n作業ツリーへの書込: あり\n```\n", encoding="utf-8")
 
     async def fake_start(*_args: object, **_kwargs: object) -> dict[str, Any]:
         return {"status": "running"}
@@ -825,7 +828,7 @@ async def test_start_accepts_task_document_path_with_spaces(
     manifest.parent.mkdir(parents=True)
     manifest.write_text('{"name":"agent-toolkit"}', encoding="utf-8")
     task_document.parent.mkdir()
-    task_document.write_text("## 入力\n\n```text\n必須入力名: 対象\n```\n", encoding="utf-8")
+    task_document.write_text("## 入力\n\n```text\n必須入力名: 対象\n作業ツリーへの書込: あり\n```\n", encoding="utf-8")
     manager = TaskManager(start=AsyncMock(return_value={"session_id": "session", "status": "running", "label": "担当"}))
     monkeypatch.setattr(mcp_tools, "_MANAGER", manager)
     monkeypatch.setitem(launch_requests._TASK_MODEL_TYPES, task_document.name, "high_tier")
