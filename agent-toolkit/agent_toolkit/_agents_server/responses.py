@@ -256,11 +256,15 @@ class ManagerResponses(manager_base.ManagerBase):
             resolution = await run_file_operation(session_registry.resolve, session_id)
         if resolution.state is session_registry.Resolution.RELEASED:
             reason = "retention expired" if resolution.released_reason == "retention_expired" else "stopped"
-            return ActionableError(
+            message = (
                 f"unknown {label}: {session_id}; released by the owning agents_server ({reason}, {resolution.released_at}); "
-                "its result is no longer retained",
-                next_action=UNKNOWN_SESSION_NEXT_ACTION,
+                "its result is no longer retained"
             )
+            if resolution.interrupted_turns:
+                # 解放後も、過去に中断したturnの終了診断へ到達できるようにする。
+                turns = result_projection.interrupted_turns_projection(resolution.interrupted_turns)
+                message += "; interrupted_turns=" + json.dumps(turns, ensure_ascii=False)
+            return ActionableError(message, next_action=UNKNOWN_SESSION_NEXT_ACTION)
         return ActionableError(
             f"unknown {label}: {session_id}; no agents_server on this host has a record of this session",
             next_action=UNKNOWN_SESSION_NEXT_ACTION,

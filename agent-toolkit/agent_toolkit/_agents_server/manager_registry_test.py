@@ -18,6 +18,7 @@ import agent_toolkit._agents_server.commands as atk_agents
 from agent_toolkit import atk
 from agent_toolkit._agents_server import (
     agents_wait,
+    logging_config,
     manager_base,
     responses,
     resume_waits,
@@ -32,7 +33,7 @@ from agent_toolkit._agents_server import claude as claude_backend
 from agent_toolkit._agents_server import manager as server_manager
 from agent_toolkit._atk import config as _atk_config
 from agent_toolkit._common import session_registry, state_paths
-from agent_toolkit._common.next_action import NEXT_ACTION_PREFIX
+from agent_toolkit._common.next_action import NEXT_ACTION_PREFIX, ActionableError
 from agent_toolkit._testing.agents_server_support import (
     BlockingResumeBackend,
     FakeBackend,
@@ -1509,3 +1510,138 @@ async def test_record_with_a_live_recorded_process_keeps_running_on_every_path(
     assert session_registry.resolve(_ORPHANED_SESSION_ID).state is session_registry.Resolution.RUNNING
     assert not backend.resume_calls
     await manager.close()
+
+
+_DEAD_SERVER = "20261018T111410000000Z-4242-0a0b0c0d"
+_NEXT_SERVER = "20261018T120000000000Z-4343-1a1b1c1d"
+
+
+def _record_dead_server_diagnostics(tmp_path: pathlib.Path) -> pathlib.Path:
+    """停止前にSIGTERMを受けた起動単位の終了診断を作成する。"""
+    path = logging_config.instance_path(_DEAD_SERVER, tmp_path)
+    logging_config.append_instance_event(path, writer="server", event="started", pid=4242)
+    logging_config.append_instance_event(path, writer="server", event="signal_received", signal="SIGTERM")
+    return path
+
+
+def _publish_dead_owner_record(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, engine: str) -> None:
+    """起動単位を持つ所有者が終端を公開せずに終わった`running`の記録を残し、照会側を別の起動単位にする。"""
+    monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
+    monkeypatch.setattr(session_registry, "_OWNER_SERVER_INSTANCE", _DEAD_SERVER)
+    session_registry.publish(
+        _ORPHANED_SESSION_ID,
+        terminal=False,
+        engine=engine,
+        cwd=str(tmp_path),
+        turn_seq=2,
+        status="running",
+        processes=(exited_process_identity(), exited_process_identity()),
+        launch_info=session_registry.LaunchInfo(label="worker", prompt="作業する"),
+    )
+    monkeypatch.setattr(session_registry, "_OWNER_SERVER_INSTANCE", _NEXT_SERVER)
+
+
+def _cli_show(capsys: pytest.CaptureFixture[str]) -> dict[str, Any]:
+    with pytest.raises(SystemExit, match="0"):
+        atk.main(["agents", "show", _ORPHANED_SESSION_ID])
+    return json.loads(capsys.readouterr().out)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("engine", ["claude", "codex", "agy"])
+async def test_interrupted_show_references_server_diagnostics(
+    engine: str, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """所有者消失の中断を返すMCPの`show`と`atk agents show`は、中断turnを所有した起動単位の終了診断を同じ参照で返す。"""
+    diagnostics_path = _record_dead_server_diagnostics(tmp_path)
+    _publish_dead_owner_record(monkeypatch, tmp_path, engine)
+    expected = {
+        "server_instance": _DEAD_SERVER,
+        "turn_seq": 2,
+        "path": str(diagnostics_path),
+        "status": "collected",
+    }
+
+    by_cli = _cli_show(capsys)["error"]
+    assert by_cli["interruptionReason"] == session_registry.OWNER_PROCESSES_EXITED
+    assert {key: by_cli["diagnostics"][key] for key in expected} == expected
+    assert f"atk read-file -- {diagnostics_path}" in by_cli["diagnostics"]["next_action"]
+
+    manager = server_manager.AgentsServerManager(None)
+    backend = ThreadReadBackend(manager.sessions, None) if engine == "codex" else FakeBackend(manager.sessions, engine)
+    _install_backend(manager, engine, backend)
+    by_mcp = (await _show_through_tool(monkeypatch, manager, _ORPHANED_SESSION_ID))["error"]
+    assert by_mcp["interruptionReason"] == session_registry.OWNER_PROCESSES_EXITED
+    assert {key: by_mcp["diagnostics"][key] for key in expected} == expected
+    await manager.close()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("engine", ["claude", "codex", "agy"])
+async def test_interrupted_turn_reference_survives_resume_and_release(
+    engine: str, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """別の起動単位が引き継ぎ・再開・解放した後も、`show`は元の中断turnと元の起動単位の参照を返す。"""
+    diagnostics_path = _record_dead_server_diagnostics(tmp_path)
+    _publish_dead_owner_record(monkeypatch, tmp_path, engine)
+    expected = [{"turn_seq": 2, "interruptionReason": "owner_processes_exited", "server_instance": _DEAD_SERVER}]
+
+    def summary(turns: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        return [
+            {
+                "turn_seq": turn["turn_seq"],
+                "interruptionReason": turn["interruptionReason"],
+                "server_instance": turn["diagnostics"]["server_instance"],
+            }
+            for turn in turns
+        ]
+
+    manager = server_manager.AgentsServerManager(None)
+    backend = ThreadReadBackend(manager.sessions, None) if engine == "codex" else FakeBackend(manager.sessions, engine)
+    backend.publish_registry = True
+    _install_backend(manager, engine, backend)
+    await _show_through_tool(monkeypatch, manager, _ORPHANED_SESSION_ID)
+    response = await manager.send_message(_ORPHANED_SESSION_ID, "続行")
+    assert response["delivery"] == "reply_started"
+    resumed = manager.sessions[_ORPHANED_SESSION_ID]
+    await resumed.drain_registration()
+    assert session_registry.resolve(_ORPHANED_SESSION_ID).server_instance == _NEXT_SERVER
+
+    shown = await _show_through_tool(monkeypatch, manager, _ORPHANED_SESSION_ID)
+    assert summary(shown["interrupted_turns"]) == expected
+    assert shown["interrupted_turns"][0]["diagnostics"]["path"] == str(diagnostics_path)
+    assert summary(_cli_show(capsys)["interrupted_turns"]) == expected
+
+    _complete(resumed, message="再開後の結果")
+    resumed.touch()
+    await resumed.drain_registration()
+    await manager.stop(_ORPHANED_SESSION_ID)
+    assert session_registry.resolve(_ORPHANED_SESSION_ID).state is session_registry.Resolution.RELEASED
+    assert summary(_cli_show(capsys)["interrupted_turns"]) == expected
+
+    restarted = server_manager.AgentsServerManager(None)
+    with pytest.raises(ActionableError) as exc_info:
+        await _show_through_tool(monkeypatch, restarted, _ORPHANED_SESSION_ID)
+    message = str(exc_info.value)
+    assert "interrupted_turns=" in message
+    assert _DEAD_SERVER in message and str(diagnostics_path) in message
+    await manager.close()
+    await restarted.close()
+
+
+@pytest.mark.asyncio
+async def test_legacy_interruption_reports_not_collected(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """起動単位を持たない旧記録の中断は`not_collected`を返し、記録が残るが終了を示さない`incomplete`と区別する。"""
+    monkeypatch.setattr(session_registry, "_OWNER_SERVER_INSTANCE", None)
+    _publish_record_with_processes(monkeypatch, tmp_path, "claude", (exited_process_identity(),))
+    legacy = _cli_show(capsys)["error"]["diagnostics"]
+    assert legacy["status"] == "not_collected"
+    assert legacy["server_instance"] is None and legacy["path"] is None
+
+    logging_config.append_instance_event(
+        logging_config.instance_path(_DEAD_SERVER, tmp_path), writer="server", event="started", pid=1
+    )
+    _publish_dead_owner_record(monkeypatch, tmp_path, "claude")
+    assert _cli_show(capsys)["error"]["diagnostics"]["status"] == "incomplete"

@@ -1,13 +1,14 @@
-"""共有状態ディレクトリから、保持期限を過ぎたルート、session登録簿とコンパクションの計測記録を除く掃引。"""
+"""共有状態ディレクトリから、保持期限を過ぎたルート、session登録簿、コンパクションの計測記録と起動単位の終了診断を除く掃引。"""
 
 from __future__ import annotations
 
 import datetime
+import json
 import logging
 import pathlib
 import shutil
 
-from agent_toolkit._agents_server import compaction_metrics
+from agent_toolkit._agents_server import compaction_metrics, logging_config
 from agent_toolkit._agents_server.shared_layout import RESERVED_DIRECTORY_NAMES, valid_session_id
 from agent_toolkit._common import session_registry
 from agent_toolkit._common import state_paths as _state_paths
@@ -20,8 +21,12 @@ def sweep_stale_shared_state(
     keep_root_session_id: str | None,
     state_root: pathlib.Path | None = None,
     now: float | None = None,
+    instance_max_bytes: int = logging_config.INSTANCE_DIRECTORY_MAX_BYTES,
 ) -> None:
-    """7日を超えて更新されていない共有状態を個別失敗で停止せず回収する。"""
+    """7日を超えて更新されていない共有状態を個別失敗で停止せず回収する。
+
+    起動単位の終了診断は、登録簿と終端結果の掃引の後に残る参照元が指すものを保持する。
+    """
     root = _state_paths.state_dir() if state_root is None else state_root
     cutoff = datetime.datetime.now(datetime.UTC).timestamp() if now is None else now
     cutoff -= STALE_SHARED_STATE_SECONDS
@@ -47,6 +52,30 @@ def sweep_stale_shared_state(
             _LOG.warning("stale root状態を回収できませんでした: path=%s error=%s", directory, exc)
     _sweep_stale_files(session_registry.registry_directory(root), cutoff)
     _sweep_stale_compaction(compaction_metrics.record_directory(root), cutoff)
+    referenced = session_registry.recorded_server_instances(root) | _result_server_instances(base)
+    logging_config.sweep_instance_diagnostics(
+        state_root=root, cutoff=cutoff, referenced=referenced, max_total_bytes=instance_max_bytes
+    )
+
+
+def _result_server_instances(base: pathlib.Path) -> set[str]:
+    """各rootの終端結果ファイルが中断の診断参照で指す起動単位を返す。読めないファイルは除く。"""
+    instances: set[str] = set()
+    try:
+        paths = tuple(base.glob("*/results/*.json"))
+    except OSError:
+        return instances
+    for path in paths:
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+        except OSError, UnicodeError, json.JSONDecodeError:
+            continue
+        error = payload.get("error") if isinstance(payload, dict) else None
+        diagnostics = error.get("diagnostics") if isinstance(error, dict) else None
+        instance = diagnostics.get("server_instance") if isinstance(diagnostics, dict) else None
+        if isinstance(instance, str) and instance:
+            instances.add(instance)
+    return instances
 
 
 def _sweep_stale_files(directory: pathlib.Path, cutoff: float) -> None:

@@ -45,7 +45,7 @@ from agent_toolkit._agents_server.tool_descriptions import (
     schema_text,
 )
 from agent_toolkit._common import inherited_venv as _inherited_venv
-from agent_toolkit._common import mcp_environment
+from agent_toolkit._common import mcp_environment, session_registry
 
 _LOG = logging.getLogger("agent-toolkit.agents-server.mcp")
 
@@ -63,6 +63,8 @@ async def _mcp_lifespan(_server: MCPServer[None]) -> AsyncGenerator[None]:
         await run_file_operation(logging_config.flush_logging)
         raise
     _LOG.info("manager activateが完了しました")
+    root_session_id, owner_status_file = _MANAGER.status_owner()
+    logging_config.record_instance_event("bound", root_session_id=root_session_id, owner_status_file=owner_status_file)
     try:
         yield
     finally:
@@ -404,6 +406,11 @@ async def show_session(
     共有の登録簿だけから復元したsessionは`error`を保持しないため返さず、原因は`atk agents wait`の終端行で受け取る。
     ただし所有するagents_serverが終端を公開せずに終了し、turnを実行するプロセスも存在しないsessionは、
     `status`を`interrupted`とし、`error`の`interruptionReason`が`owner_processes_exited`を示す。
+    所有するagents_serverの停止で中断したturnは`interruptionReason`が`owner_server_stopped`を示す。
+    中断の`error`は`diagnostics`へ、そのturnを所有したサーバー起動単位の終了診断への参照を持つ。
+    `diagnostics.status`は`collected`（終了の記録あり）、`incomplete`（記録はあるが終了を示す記録が無く原因を判断できない）、
+    `not_collected`（終了診断の導入前の記録）、`missing`、`unreadable`のいずれかで、`next_action`が読み取り操作を示す。
+    過去に中断したturnがあるsessionは、再開・解放の後も`interrupted_turns`へturn番号・理由・`diagnostics`の組を返す。
     `verbose=True`はengine、model、effort、開始・更新時刻、turn番号および解決可能なroot sessionも加える。
     終端結果本文は返さないため、受領には`atk agents wait`を使う。
     """
@@ -421,6 +428,8 @@ def _prepare_child_environment() -> None:
     launch_requests.capture_handoff_session()
     _inherited_venv.strip_inherited_venv(os.environ)
     mcp_environment.strip_conversation_context(os.environ)
+    # 起動ランチャーとの合流ファイルはこのプロセスだけが使い、委譲先の内側のagents_serverへ継承させない。
+    os.environ.pop(logging_config.LAUNCH_RECORD_ENV, None)
 
 
 def _configure_logging() -> pathlib.Path:
@@ -429,20 +438,47 @@ def _configure_logging() -> pathlib.Path:
 
 
 def serve(*, check_dependencies: bool = False) -> int:
-    """委譲先の環境を整え、依存の確認またはMCP stdio transportの起動を行う。"""
+    """委譲先の環境を整え、依存の確認またはMCP stdio transportの起動を行う。
+
+    stdio起動では起動単位を開始し、正常・例外の終了を起動単位の終了診断へ記録する。
+    """
+    environment = dict(os.environ)
     _prepare_child_environment()
     log_path = _configure_logging()
     mode = "check-dependencies" if check_dependencies else "stdio"
-    _LOG.info("agents_serverを起動します: mode=%s log=%s", mode, log_path)
+    instance = None if check_dependencies else logging_config.start_server_instance(environment=environment)
+    if instance is not None:
+        session_registry.set_owner_server_instance(instance.instance_id)
+    _LOG.info(
+        "agents_serverを起動します: mode=%s log=%s server_instance=%s",
+        mode,
+        log_path,
+        instance.instance_id if instance is not None else "none",
+    )
     try:
         if check_dependencies:
             claude_backend.check_dependencies()
         else:
             mcp.run(transport="stdio")
-    except BaseException:
+    except BaseException as exc:
         _LOG.exception("agents_serverが異常終了しました: mode=%s", mode)
+        logging_config.record_instance_event(
+            "exited",
+            outcome="exception",
+            exception_type=type(exc).__name__,
+            message=str(exc)[: logging_config.MESSAGE_LIMIT],
+        )
+        _end_server_instance()
         logging_config.close_logging()
         raise
     _LOG.info("agents_serverが正常終了しました: mode=%s", mode)
+    logging_config.record_instance_event("exited", outcome="normal", exception_type=None, message=None)
+    _end_server_instance()
     logging_config.close_logging()
     return 0
+
+
+def _end_server_instance() -> None:
+    """起動単位を終え、同じプロセスで続く処理（テストなど）が終えた起動単位を記録へ書かないようにする。"""
+    logging_config.end_server_instance()
+    session_registry.set_owner_server_instance(None)

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 # テストでは共有状態とバックエンドの内部境界も直接検証する。
 # pylint: disable=protected-access
+import json
 import logging
 import os
 import pathlib
@@ -33,7 +34,7 @@ from agent_toolkit._agents_server import (
 from agent_toolkit._agents_server import manager as server_manager
 from agent_toolkit._atk import config as _atk_config
 from agent_toolkit._atk import managed_temp as _managed_temp
-from agent_toolkit._common import mcp_environment, state_paths
+from agent_toolkit._common import mcp_environment, session_registry, state_paths
 from agent_toolkit._common.next_action import NEXT_ACTION_PREFIX
 from agent_toolkit._testing.agents_server_support import (
     _MODE_INPUT_CASES,
@@ -1091,3 +1092,34 @@ async def test_declared_role_continuations_keep_required_inputs(
                 assert session.followup_prompts == history
     finally:
         await manager.close()
+
+
+def test_serve_records_exception_exit(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
+    """stdio起動が例外で終わると、起動単位の終了診断へ例外型とメッセージを記録し、例外を呼出元へ伝える。"""
+    monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
+    monkeypatch.setattr(logging_config, "_CURRENT_INSTANCE", None)
+    monkeypatch.setattr(session_registry, "_OWNER_SERVER_INSTANCE", None)
+    for name in ("CLAUDE_CODE_SESSION_ID", logging_config.LAUNCH_RECORD_ENV):
+        monkeypatch.delenv(name, raising=False)
+
+    def fail(**_kwargs: Any) -> None:
+        raise RuntimeError("transport broke")
+
+    monkeypatch.setattr(mcp_tools.mcp, "run", fail)
+    with pytest.raises(RuntimeError, match="transport broke"):
+        mcp_tools.serve()
+
+    [path] = logging_config.instance_directory(tmp_path).glob("*.jsonl")
+    events = [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines()]
+    assert [event["event"] for event in events] == ["started", "exited"]
+    assert events[1] | {"at": None} == {
+        "at": None,
+        "event": "exited",
+        "writer": "server",
+        "outcome": "exception",
+        "exception_type": "RuntimeError",
+        "message": "transport broke",
+    }
+    # 終えた起動単位は同じプロセスの後続の記録へ書かない。
+    assert logging_config.current_server_instance() is None
+    assert session_registry.owner_server_instance() is None

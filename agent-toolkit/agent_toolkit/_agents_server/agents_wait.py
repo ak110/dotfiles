@@ -155,11 +155,15 @@ def _saved_wait_recovery(run_path: pathlib.Path | None) -> dict[str, Any]:
     }
 
 
-def _absent_wait_result(owner: str, current_run_path: pathlib.Path | None) -> int:
+def _absent_wait_result(
+    owner: str, current_run_path: pathlib.Path | None, interrupted_sessions: list[dict[str, Any]] | None = None
+) -> int:
     recovery = _saved_wait_recovery(current_run_path)
     message = _absent_targets_message(owner)
     if current_run_path is not None:
         message += "; 先行waitの保存結果: " + json.dumps(recovery, ensure_ascii=False)
+    if interrupted_sessions:
+        message += "; " + _interrupted_sessions_text(interrupted_sessions)
     next_action = _SAVED_RESULT_NEXT_ACTION if recovery["status"] == "available" else _ABSENT_TARGETS_NEXT_ACTION
     if recovery["status"] == "unreadable":
         next_action = "保存runの読取失敗の原因を解消し、同じ`run_path`を読む。必要な結果を不在と扱わない"
@@ -286,14 +290,38 @@ def _with_result_next_action(result: dict[str, Any]) -> dict[str, Any]:
     return result
 
 
+def _interrupted_sessions_text(interrupted_sessions: list[dict[str, Any]]) -> str:
+    """中断と解決して解放した待機対象を、終了診断への参照とともに診断本文の一部へ変換する。"""
+    return "中断で終端した待機対象: interrupted_sessions=" + json.dumps(interrupted_sessions, ensure_ascii=False)
+
+
+def _interrupted_session(
+    session_id: str, resolution: session_registry.SessionResolution, state_root: pathlib.Path | None
+) -> dict[str, Any] | None:
+    """登録簿が中断を示す待機対象の識別子・turn・理由・診断参照を返す。中断でなければ`None`を返す。"""
+    error = result_projection.resolution_interruption_error(resolution, state_root=state_root)
+    if error is None:
+        return None
+    return {
+        "session_id": session_id,
+        "turn_seq": error["diagnostics"]["turn_seq"],
+        "interruptionReason": error["interruptionReason"],
+        "diagnostics": error["diagnostics"],
+    }
+
+
 def _target_origins(
     own_status_path: pathlib.Path,
     result_directory: pathlib.Path,
     root_session_id: str,
     owner_status_file: str,
     state_root: pathlib.Path | None,
+    interrupted_sessions: list[dict[str, Any]] | None = None,
 ) -> tuple[dict[str, set[str]], tuple[str, int, str] | None]:
-    """現行の待機対象と由来を返し、解釈不能な入力は理由・終了コード・次の操作の診断へ変換する。"""
+    """現行の待機対象と由来を返し、解釈不能な入力は理由・終了コード・次の操作の診断へ変換する。
+
+    登録簿が中断と解決したため解放した待機対象は、`interrupted_sessions`へ診断参照とともに加える。
+    """
     listed = _read_sessions(own_status_path)
     invalid = [session["session_id"] for session in listed or () if not shared_layout.valid_session_id(session["session_id"])]
     if invalid:
@@ -311,9 +339,13 @@ def _target_origins(
         session_registry.Resolution.TERMINAL,
     }
     for session_id in set(registered_ids) - listed_ids - result_ids:
-        if session_registry.resolve(session_id, state_root=state_root).state in releasable:
+        resolution = session_registry.resolve(session_id, state_root=state_root)
+        if resolution.state in releasable:
             wait_targets.release_wait_target(root_session_id, owner_status_file, session_id, state_root)
             registered_ids.remove(session_id)
+            interrupted = _interrupted_session(session_id, resolution, state_root)
+            if interrupted is not None and interrupted_sessions is not None:
+                interrupted_sessions.append(interrupted)
     origins: dict[str, set[str]] = {}
     for origin, identifiers in (
         ("status", listed_ids),
@@ -383,12 +415,14 @@ def _wait_for_result(
     own_status_path = shared_layout.status_directory(root_session_id, state_root) / identity.file_name
     result_directory = shared_layout.results_directory(root_session_id, state_root)
     run_directory = _wait_run_directory(root_session_id, identity.file_name, state_root)
+    released_interruptions: list[dict[str, Any]] = []
     origins, target_error = _target_origins(
         own_status_path,
         result_directory,
         root_session_id,
         identity.file_name,
         state_root,
+        released_interruptions,
     )
     if target_error is not None:
         message, code, next_action = target_error
@@ -426,7 +460,7 @@ def _wait_for_result(
         if root_resolution is not None and not root_resolution.mapping_confirmed:
             reason, next_action = shared_roots.unconfirmed_root_recovery(root_resolution, "atk agents wait")
             return _fail(reason, 4, next_action=next_action)
-        return _absent_wait_result(identity.file_name, current_run_path)
+        return _absent_wait_result(identity.file_name, current_run_path, released_interruptions)
     if current_run_error is not None:
         raise current_run_error
     _LOG.info(
@@ -524,6 +558,7 @@ def _wait_for_result(
                 root_session_id,
                 identity.file_name,
                 state_root,
+                released_interruptions,
             )
             if target_error is not None:
                 message, code, next_action = target_error
@@ -540,9 +575,26 @@ def _wait_for_result(
                 )
             ):
                 _LOG.info("wait_return reason=absent owner=%s", identity.file_name)
+                absent_message = _absent_targets_message(identity.file_name)
+                interrupted_sessions = [
+                    *released_interruptions,
+                    *(
+                        item
+                        for session_id in ordered_ids
+                        if session_id not in {entry["session_id"] for entry in released_interruptions}
+                        and (
+                            item := _interrupted_session(
+                                session_id, session_registry.resolve(session_id, state_root=state_root), state_root
+                            )
+                        )
+                        is not None
+                    ),
+                ]
+                if interrupted_sessions:
+                    absent_message += "; " + _interrupted_sessions_text(interrupted_sessions)
                 return _publish_wait_result(
                     run_path,
-                    with_next_action(_absent_targets_message(identity.file_name), _ABSENT_TARGETS_NEXT_ACTION),
+                    with_next_action(absent_message, _ABSENT_TARGETS_NEXT_ACTION),
                     10,
                     stream="stderr",
                 )

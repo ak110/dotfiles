@@ -1,14 +1,28 @@
-"""標準ライブラリだけで起動し、配布root外の依存環境から指定スクリプトを実行する。"""
+"""標準ライブラリだけで起動し、配布root外の依存環境から指定スクリプトを実行する。
+
+agents_serverのMCPサーバーだけは子プロセスとして起動して終了を待ち、終了状態と標準エラー末尾を
+サーバーが報告した起動単位の終了診断へ追記する。サーバー自身が記録できない終了も観測するためである。
+"""
 
 import argparse
+import datetime
 import os
 import shutil
+import signal
 import subprocess
 import sys
+import tempfile
+import threading
 from pathlib import Path
+from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from agent_toolkit._agents_server import logging_config  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 from agent_toolkit._common import next_action, plugin_environment  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+
+_AGENTS_SERVER_TARGET = Path("agent_toolkit") / "agents_server_mcp.py"
+_STDERR_TAIL_BYTES = 16 * 1024
+_FORWARDED_SIGNALS = ("SIGINT", "SIGTERM", "SIGHUP")
 
 
 def main() -> int:
@@ -46,11 +60,83 @@ def main() -> int:
         )
         return 127
     arguments = [uv, "run", "--project", str(root), "--locked", "--no-default-groups", str(target), *options.arguments]
+    if target == root / _AGENTS_SERVER_TARGET:
+        return _run_agents_server(arguments, environment)
     if os.name == "nt":
         # Windowsのexecveは子の終了を待たず、呼出元へ終了状態を渡せない。
         return subprocess.run(arguments, env=environment, check=False).returncode
     os.execve(uv, arguments, environment)
     return 1
+
+
+def _run_agents_server(arguments: list[str], environment: dict[str, str]) -> int:
+    """MCPサーバーを子として起動し、終了状態・受信シグナル・標準エラー末尾を終了診断へ追記する。
+
+    標準入力と標準出力は継承してMCPのstdio通信を中継しない。呼出元へは子と同じ終了状態を返す。
+    """
+    handle, record = tempfile.mkstemp(prefix="agent-toolkit-agents-server-launch-", suffix=".json")
+    os.close(handle)
+    record_path = Path(record)
+    environment = {**environment, logging_config.LAUNCH_RECORD_ENV: str(record_path)}
+    received: list[dict[str, str]] = []
+    try:
+        process = subprocess.Popen(arguments, env=environment, stderr=subprocess.PIPE)  # pylint: disable=consider-using-with
+        if os.name != "nt":
+            for name in _FORWARDED_SIGNALS:
+                signal.signal(getattr(signal, name), _forwarding_handler(process, received))
+        assert process.stderr is not None
+        tail = bytearray()
+        reader = threading.Thread(target=_tee_stderr, args=(process.stderr, tail), daemon=True)
+        reader.start()
+        returncode = process.wait()
+        reader.join()
+        process.stderr.close()
+        diagnostics = logging_config.read_launch_record(record_path)
+        terminated_by = signal.Signals(-returncode).name if returncode < 0 else None
+        if diagnostics is None:
+            # 起動単位を持たない正常終了（--check-dependenciesなど）は所在が無いのが通常であり、何も出力しない。
+            if returncode != 0:
+                next_action.report(
+                    "診断ファイルの所在を受け取る前にagents_serverが異常終了したため、終了診断ファイルは未作成である:"
+                    f" returncode={returncode} signal={terminated_by}",
+                    next_action="この行より前の標準エラーと、親CLIのMCP接続記録の同じ時刻の記録を確認してください。",
+                )
+        else:
+            logging_config.append_instance_event(
+                diagnostics,
+                writer="launcher",
+                event="process_exited",
+                returncode=returncode,
+                signal=terminated_by,
+                launcher_signals=received,
+                stderr_tail=bytes(tail).decode("utf-8", errors="replace"),
+            )
+    finally:
+        record_path.unlink(missing_ok=True)
+    if returncode < 0:
+        # シグナルで終わった子と同じ終了状態を呼出元へ返す。
+        signal.signal(-returncode, signal.SIG_DFL)
+        os.kill(os.getpid(), -returncode)
+        return 128 - returncode
+    return returncode
+
+
+def _forwarding_handler(process: subprocess.Popen[bytes], received: list[dict[str, str]]) -> Any:
+    def handler(signum: int, _frame: Any) -> None:
+        received.append({"signal": signal.Signals(signum).name, "at": datetime.datetime.now(datetime.UTC).isoformat()})
+        if process.poll() is None:
+            process.send_signal(signum)
+
+    return handler
+
+
+def _tee_stderr(stream: Any, tail: bytearray) -> None:
+    """子の標準エラーを受け取った順に自身の標準エラーへ出力し、末尾16KiBを保持する。"""
+    while chunk := stream.read1(65536):
+        sys.stderr.buffer.write(chunk)
+        sys.stderr.buffer.flush()
+        tail.extend(chunk)
+        del tail[:-_STDERR_TAIL_BYTES]
 
 
 if __name__ == "__main__":
