@@ -600,7 +600,7 @@ def _call_hook_in_process(
 def test_repeated_calls_in_one_process_follow_input_and_session_state(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
 ) -> None:
-    """依存を読み込んだ後の反復呼び出しでも、本文配送と未配送通知の判定が入力と状態に従う。"""
+    """依存を読み込んだ後の反復呼び出しでも、スキルの取得の判定と未配送通知の判定が入力と状態に従う。"""
     monkeypatch.setattr(tempfile, "tempdir", str(tmp_path))
     monkeypatch.setenv("TMPDIR", str(tmp_path))
     monkeypatch.delenv("AGENT_TOOLKIT_DELEGATED_SESSION", raising=False)
@@ -622,10 +622,13 @@ def test_repeated_calls_in_one_process_follow_input_and_session_state(
             expected_code=expected_code,
         )
 
-    # 初回配送は操作を止め、同じセッションの再発行を通す。別セッションには再び本文を届ける。
+    # 取得の観測までは同じ操作を止め、Skill起動の観測の後は同じセッションの再発行を通す。別セッションは再び止める。
     context = pretooluse("repeat-session", "grep -rn needle .", expected_code=2)
     assert auto_message_opening_attributes(context) == {"source": "pretooluse", "kind": "block"}
     assert not pretooluse("repeat-session", "ls")
+    assert pretooluse("repeat-session", "grep -rn needle .", expected_code=2) == context
+    skill = {"session_id": "repeat-session", "tool_name": "Skill", "tool_input": {"skill": "agent-toolkit:search"}}
+    _call_hook_in_process(monkeypatch, "posttooluse", {"hook_event_name": "PostToolUse", **skill})
     assert not pretooluse("repeat-session", "grep -rn needle .")
     assert pretooluse("other-session", "grep -rn needle .", expected_code=2) == context
 

@@ -120,7 +120,7 @@ def backend_with_client(monkeypatch, client, root=None):
     backend = codex.AppServerManager(root.sessions if root else {}, root._condition if root else asyncio.Condition())
     client.backend = backend
 
-    async def ensure_client():
+    async def ensure_client(*_args, **_kwargs):
         return client
 
     monkeypatch.setattr(backend, "_ensure_client", ensure_client)

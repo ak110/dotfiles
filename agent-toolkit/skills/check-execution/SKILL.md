@@ -3,7 +3,8 @@ name: check-execution
 user-invocable: false
 description: >
   変更に着手する直前（検証の基準版を記録する時点）、formatter、linter、testerまたはプロジェクト固有の
-  チェックツールを起動する直前と、変更範囲の検証の対象を選ぶ時点（計画の検証コマンドを書くときを含む）に起動する。
+  チェックツールを起動する直前と、変更範囲の検証の対象を選ぶ時点（計画の検証コマンドを書くとき、
+  既存の検証コマンドを再利用して実行する直前を含む）に起動する。
 ---
 
 # formatter・linter・testerの実行
@@ -20,7 +21,7 @@ description: >
 | 時点または条件 | 全文読む資料 |
 | --- | --- |
 | 実装に着手する直前（基準版を記録する時点）と、検証を実行した後に結果を判定する前 | `references/diagnostics.md` |
-| 変更範囲の検証で動かすチェックとテストを選ぶ前（計画の検証コマンドを書くとき、実装後に検証する前、実行レビューで直接影響範囲を求めるとき） | `references/verification-scope.md` |
+| 変更範囲の検証で動かすチェックとテストを選ぶ前（計画の検証コマンドを書くとき、実装後に検証する前、計画の検証行・前回の実行・CI記録の検証コマンドを再利用して実行する前、実行レビューで直接影響範囲を求めるとき） | `references/verification-scope.md` |
 | Claude Codeのシェルから完了までに時間を要するCLIを直接起動する前 | `agent-toolkit:delegation`の`references/waiting-and-monitoring.md` |
 | 受入シナリオ検証を実施する前（文書の試行、操作・故障注入・自動終了失敗が使う資源の所有と共有範囲を判定する時、本番の起動単位からの公開前観測を含む） | `references/acceptance-scenarios.md` |
 

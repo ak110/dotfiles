@@ -1,17 +1,19 @@
-"""操作の直前に、必要なスキルの全文を配送する。
+"""操作の直前に、必要なスキルの取得をホスト本来の手段で求める。
 
-Skill起動も配送も記録されていない主体の最初の操作を止め、稼働版の本文と再発行の案内を返す。
-取得を後続の自発的な読取へ残すと、警告だけを受けた主体が未読で続行できるためである。
-配送自体を本文の取得とし、取得できない資料は記録せずに操作を止める。
+Skill起動も読取も観測されていない主体の最初の操作を止め、必須資料の絶対パスと取得手段、同じ操作の再発行を案内する。
+Claude Codeはツール`Skill`での起動、Codexと`Skill`を使えないサブエージェントは`SKILL.md`の読取を取得手段とする。
+遮断の応答へ本文を載せない。Skill起動が持つ圧縮後の復元や`${CLAUDE_PLUGIN_ROOT}`の展開を代替できないためである。
+取得はPostToolUse（`posttooluse.py`）が観測して記録し、遮断の時点では記録しない。
+agents_serverの軽量委譲先（explore・shell・write）はスキルを使わない前提で起動するため遮断しない。
 
 主体は`agent_id.resolve_hook_agent_id`で区別する。agents_serverの委譲先は独立した会話の状態を使う。
-Claude CodeとCodexで同じ契約を使い、手動読取の有無は推定しない。
 表へスキルを加える場合は、操作の判定関数と正例・負例のテストを同時に加える。
 """
 
 from __future__ import annotations
 
 import dataclasses
+import os
 import pathlib
 import re
 
@@ -19,6 +21,7 @@ import re
 lazy from collections.abc import Callable, Sequence
 
 from agent_toolkit._hooks.pretooluse.notices import _block_notice
+lazy from agent_toolkit._common import delegated_session as _delegated_session
 lazy from agent_toolkit._common import shell_cwd
 lazy from agent_toolkit._common import shell_segments as _shell_segments
 lazy from agent_toolkit._common.bash_invocations import STATIC_UNKNOWN, extract_bash_invocations
@@ -27,8 +30,11 @@ lazy from agent_toolkit._common.session_state import read_state, update_state
 lazy from agent_toolkit._common.shell_tokens import is_atk_command
 lazy from agent_toolkit._common.uv_arguments import is_python_token
 lazy from agent_toolkit._hooks import agent_id as _agent_id
+lazy from agent_toolkit._hooks import document_reads as _document_reads
+lazy from agent_toolkit._hooks import plugin_resources as _plugin_resources
 lazy from agent_toolkit._hooks import rules_context as _rules_context
 lazy from agent_toolkit._hooks import tool_input as _tool_input
+lazy from agent_toolkit._hooks.host import is_codex_payload
 lazy from agent_toolkit._hooks.pretooluse import shell_checks as _shell_checks
 lazy from agent_toolkit._hooks.pretooluse.agent_checks import AGENTS_SERVER_HOOK_TOOL_NAMES
 lazy from agent_toolkit._hooks.pretooluse.large_reads import python_file_paths
@@ -43,14 +49,30 @@ _GREP_SHORT_OPTIONS_WITH_VALUE = frozenset("efmABCDd")
 """値を取る`grep`の短縮オプション。束ねた短縮オプションの中でこの文字より後ろは値として読む。"""
 
 
+SKILL_DOCUMENT = "SKILL.md"
+
+SUBJECT_LIGHTWEIGHT = "lightweight"
+SUBJECT_CODEX = "codex"
+SUBJECT_SUBAGENT = "subagent"
+SUBJECT_MAIN = "main"
+"""主体の区分。メインはClaude Codeのメイン会話とagents_serverのtask・delegateのClaude委譲先を含む。"""
+
+
 @dataclasses.dataclass(frozen=True)
 class OperationSkill:
-    """操作を起動の契機とするスキルと、その操作の判定関数の組。"""
+    """操作を起動の契機とするスキルと、その操作の判定関数、必須の参照資料の組。"""
 
     skill_name: str
     short_name: str
     operation: str
     matches: Callable[[str, dict], bool]
+    references: tuple[str, ...] = ()
+    """`SKILL.md`に加えて取得を求める、スキルのディレクトリからの相対パス。"""
+
+    @property
+    def documents(self) -> tuple[str, ...]:
+        """取得を求める全資料の相対パス。"""
+        return (SKILL_DOCUMENT, *self.references)
 
 
 def _grep_is_recursive(arguments: Sequence[str]) -> bool:
@@ -431,84 +453,232 @@ def _is_delegation_operation(tool_name: str, _tool_input: dict) -> bool:
     return tool_name in AGENT_TOOL_NAMES | AGENTS_SERVER_HOOK_TOOL_NAMES
 
 
+_VERIFICATION_MCP_TOOL_NAMES = frozenset({"mcp__plugin_agent-toolkit_pyfltr__run", "mcp__pyfltr__run"})
+"""検証を実行するpyfltrのMCPツール。Claude Codeの配布プラグインと、Codex・委譲先の`pyfltr`サーバーの綴りを含む。"""
+
+_PYFLTR_RUN_SUBCOMMANDS = frozenset({"run", "fast", "ci", "run-for-agent"})
+_TASK_TARGETS = frozenset({"test", "check", "lint", "format", "verify"})
+_QUERY_OPTIONS = frozenset({"--help", "-h", "--version", "--collect-only", "--co"})
+"""検証を実行せずに照会だけを行うオプション。"""
+_UV_VALUE_OPTIONS = frozenset(
+    {"--with", "--with-editable", "--with-requirements", "--python", "-p", "--project", "--directory", "--package"}
+    | {"--extra", "--group", "--env-file", "--from", "--index", "-w"}
+)
+"""`uv run`・`uvx`の値を取るオプション。実行するコマンドの位置を求めるときは、直後の値もオプションの一部として除く。"""
+
+
+def _skip_runner_options(tokens: Sequence[str]) -> Sequence[str]:
+    """`uv run`・`uvx`・`npx`のオプションとその値を除き、実行するコマンドからのトークン列を返す。"""
+    index = 0
+    while index < len(tokens) and tokens[index].startswith("-"):
+        index += 2 if tokens[index] in _UV_VALUE_OPTIONS else 1
+    return tokens[index:]
+
+
+def _is_task_target(target: str) -> bool:
+    return target in _TASK_TARGETS or target.startswith(("test-", "test:"))
+
+
+def _is_verification_tokens(tokens: Sequence[str]) -> bool:
+    """1つの実行位置のトークン列が、変更範囲の検証を実行するかを返す。ヘルプ・版表示・一覧などの照会は除く。"""
+    if not tokens or _QUERY_OPTIONS.intersection(tokens):
+        return False
+    name = pathlib.PurePath(tokens[0]).name
+    rest = tokens[1:]
+    if is_atk_command(tokens):
+        if tuple(rest[:2]) == ("run-script", "plan-verify"):
+            return True
+        return tuple(rest[:1]) == ("run-command",) and "--" in rest and _is_verification_tokens(rest[rest.index("--") + 1 :])
+    if name == "uv" and tuple(rest[:1]) == ("run",):
+        return _is_verification_tokens(_skip_runner_options(rest[1:]))
+    if name in {"uvx", "npx", "pnpx"}:
+        return _is_verification_tokens(_skip_runner_options(rest))
+    if is_python_token(name) and tuple(rest[:1]) == ("-m",):
+        return _is_verification_tokens(rest[1:])
+    if name in {"npm", "pnpm", "yarn"}:
+        if tuple(rest[:1]) == ("exec",):
+            return _is_verification_tokens(rest[1:])
+        targets = rest[1:] if tuple(rest[:1]) == ("run",) else rest
+        return bool(targets) and _is_task_target(targets[0])
+    if name == "make" or name == "mise" and tuple(rest[:1]) == ("run",):
+        targets = rest[1:] if name == "mise" else rest
+        return any(_is_task_target(target) for target in targets if not target.startswith("-") and "=" not in target)
+    if name == "pyfltr":
+        return bool(rest) and rest[0] in _PYFLTR_RUN_SUBCOMMANDS
+    if name in {"pytest", "py.test", "vitest"}:
+        return True
+    return name in {"playwright", "cargo", "dotnet"} and tuple(rest[:1]) == ("test",)
+
+
+def _is_verification_operation(tool_name: str, tool_input: dict) -> bool:
+    """`agent-toolkit:check-execution`の起動の契機とする検証の実行かを返す。
+
+    複合文と置換の内側も共通のBash解析から実行位置を得て判定する。保存ログの表示と状態の照会は対象外とする。
+    """
+    if tool_name in _VERIFICATION_MCP_TOOL_NAMES:
+        return True
+    if tool_name != "Bash":
+        return False
+    command = tool_input.get("command")
+    if not isinstance(command, str):
+        return False
+    return any(_is_verification_tokens(invocation.segment.tokens) for invocation in extract_bash_invocations(command))
+
+
 OPERATION_SKILLS: tuple[OperationSkill, ...] = (
     OperationSkill("agent-toolkit:delegation", "delegation", "委譲操作", _is_delegation_operation),
     OperationSkill("agent-toolkit:search", "search", "検索", _is_search_operation),
     OperationSkill("agent-toolkit:bugfix", "bugfix", "原因分析の記述", _is_root_cause_writing),
     OperationSkill("agent-toolkit:managed-temp", "managed-temp", "個別のmanaged-temp領域の作成", _is_managed_temp_create),
     OperationSkill("agent-toolkit:writing-standards", "writing-standards", "本文の作成・更新", _is_body_writing),
+    OperationSkill(
+        "agent-toolkit:check-execution",
+        "check-execution",
+        "検証の実行",
+        _is_verification_operation,
+        references=("references/verification-scope.md",),
+    ),
 )
 """操作を起動の契機とするスキルの表。"""
 
 
 def canonical_skill_name(skill_name: object) -> str | None:
     """Skill起動の名前が表のスキルを指す場合に、その完全名を返す。"""
+    entry = _entry(skill_name)
+    return entry.skill_name if entry is not None else None
+
+
+def _entry(skill_name: object) -> OperationSkill | None:
     if not isinstance(skill_name, str):
         return None
-    for entry in OPERATION_SKILLS:
-        if skill_name in {entry.skill_name, entry.short_name}:
-            return entry.skill_name
-    return None
+    return next((entry for entry in OPERATION_SKILLS if skill_name in {entry.skill_name, entry.short_name}), None)
 
 
-def _mark_ready(skill_name: str, agent: str) -> Callable[[dict], dict | None]:
+def document_id(entry: OperationSkill, relative_path: str) -> str:
+    """取得の記録に使う資料の識別子。`SKILL.md`はスキルの完全名、参照資料は`<完全名>:<相対パス>`とする。"""
+    return entry.skill_name if relative_path == SKILL_DOCUMENT else f"{entry.skill_name}:{relative_path}"
+
+
+def _mark_ready(identifier: str, agent: str) -> Callable[[dict], dict | None]:
     def _mutator(state: dict) -> dict | None:
         recorded = state.get(_rules_context.OPERATION_SKILL_READY_KEY)
         recorded = dict(recorded) if isinstance(recorded, dict) else {}
-        agents = recorded.get(skill_name)
+        agents = recorded.get(identifier)
         agents = list(agents) if isinstance(agents, list) else []
         if agent in agents:
             return None
-        recorded[skill_name] = [*agents, agent]
+        recorded[identifier] = [*agents, agent]
         state[_rules_context.OPERATION_SKILL_READY_KEY] = recorded
         return state
 
     return _mutator
 
 
-def _is_ready(session_id: str, skill_name: str, agent: str) -> bool:
-    recorded = read_state(session_id).get(_rules_context.OPERATION_SKILL_READY_KEY)
-    if not isinstance(recorded, dict):
-        return False
-    agents = recorded.get(skill_name)
-    return isinstance(agents, list) and agent in agents
+def _missing_documents(recorded: object, entry: OperationSkill, agent: str) -> list[str]:
+    """主体の取得が記録されていない必須資料の相対パスを返す。"""
+    records = recorded if isinstance(recorded, dict) else {}
+    missing = []
+    for relative in entry.documents:
+        agents = records.get(document_id(entry, relative))
+        if not isinstance(agents, list) or agent not in agents:
+            missing.append(relative)
+    return missing
 
 
 def record_skill_ready(session_id: str, skill_name: object, agent: str) -> None:
-    """表のスキルの起動を、呼び出し主体の文脈について起動済みとして記録する。"""
-    canonical = canonical_skill_name(skill_name)
-    if canonical is None or not session_id:
+    """表のスキルのSkill起動を、呼び出し主体の`SKILL.md`の取得として記録する。"""
+    entry = _entry(skill_name)
+    if entry is None or not session_id:
         return
-    update_state(session_id, _mark_ready(canonical, agent))
+    update_state(session_id, _mark_ready(document_id(entry, SKILL_DOCUMENT), agent))
+
+
+def record_document_read(session_id: str, read: _document_reads.DocumentRead, agent: str) -> None:
+    """表のスキルの必須資料の全文の読取を、呼び出し主体の取得として記録する。部分取得は記録しない。"""
+    entry = _entry(read.skill)
+    if entry is None or not session_id or read.partial or read.relative_path not in entry.documents:
+        return
+    update_state(session_id, _mark_ready(document_id(entry, read.relative_path), agent))
+
+
+def _subject(payload: dict) -> str:
+    """主体の区分を返す。区分ごとの取得手段と記録する観測は`docs/development/design-hooks.md`の該当節が定める。"""
+    if _delegated_session.is_lightweight_delegated(os.environ):
+        return SUBJECT_LIGHTWEIGHT
+    if is_codex_payload(payload):
+        return SUBJECT_CODEX
+    if _agent_id.resolve_hook_agent_id(payload) != _agent_id.MAIN_AGENT_ID:
+        return SUBJECT_SUBAGENT
+    return SUBJECT_MAIN
+
+
+def _document_problem(path: pathlib.Path) -> str | None:
+    """案内する資料を取得できない理由を返す。取得できる場合は`None`を返す。"""
+    try:
+        if not path.read_text(encoding="utf-8").strip():
+            return "本文が空"
+    except (OSError, UnicodeError) as exc:
+        return str(exc)
+    return None
+
+
+def _acquisition_steps(subject: str, entry: OperationSkill, missing: list[str]) -> list[str]:
+    """区分ごとに、未取得の資料をホスト本来の手段で取得する操作を返す。"""
+    steps = []
+    for relative in missing:
+        path = _plugin_resources.skill_document_path(entry.short_name, relative)
+        if subject == SUBJECT_CODEX:
+            steps.append(f"`{path}`の全文を読む（`cat`など。`head`や範囲指定の読取は取得にならない）")
+        elif relative != SKILL_DOCUMENT:
+            steps.append(f"`{path}`をReadで全文読む（`offset`・`limit`を付けない）")
+        elif subject == SUBJECT_SUBAGENT:
+            steps.append(f"`Skill`で`{entry.skill_name}`を起動する。`Skill`を使えない場合は`{path}`をReadで全文読む")
+        else:
+            steps.append(f"`Skill`で`{entry.skill_name}`を起動する")
+    return steps
 
 
 def operation_skill_delivery(payload: dict, tool_name: str, tool_input: dict, session_id: str) -> list[str]:
-    """最初の該当操作を止め、必要なスキルの全文と同じ操作の再発行を案内する。"""
+    """必須資料を取得していない主体の該当操作を止め、ホスト本来の取得手段と同じ操作の再発行を案内する。
+
+    遮断の応答は資料の本文を含まず、遮断の時点では取得を記録しない。軽量委譲先は遮断しない。
+    """
     if not session_id:
         return []
+    subject = _subject(payload)
+    if subject == SUBJECT_LIGHTWEIGHT:
+        return []
     agent = _agent_id.resolve_hook_agent_id(payload)
-    deliveries: list[str] = []
-    for entry in OPERATION_SKILLS:
-        if _is_ready(session_id, entry.skill_name, agent) or not entry.matches(tool_name, tool_input):
-            continue
-        skill_path = pathlib.Path(__file__).resolve().parents[3] / "skills" / entry.short_name / "SKILL.md"
-        try:
-            body = skill_path.read_text(encoding="utf-8")
-            if not body.strip():
-                raise ValueError("本文が空")
-        except (OSError, UnicodeError, ValueError) as exc:
-            deliveries.append(
-                _block_notice(
-                    f"`{skill_path}`の本文を取得できず、{entry.operation}を実行していない。診断: {exc}",
-                    fix="資料の読取失敗を委譲元またはユーザーへ報告し、資料の復旧後に同じ操作を再発行する。",
-                )
+    recorded = read_state(session_id).get(_rules_context.OPERATION_SKILL_READY_KEY)
+    pending = [
+        (entry, missing)
+        for entry in OPERATION_SKILLS
+        if (missing := _missing_documents(recorded, entry, agent)) and entry.matches(tool_name, tool_input)
+    ]
+    if not pending:
+        return []
+    failures = [
+        f"`{path}`（{problem}）"
+        for entry, missing in pending
+        for relative in missing
+        if (problem := _document_problem(path := _plugin_resources.skill_document_path(entry.short_name, relative)))
+    ]
+    if failures:
+        operations = "・".join(entry.operation for entry, _ in pending)
+        return [
+            _block_notice(
+                f"{operations}に必要な資料を取得できず、操作を実行していない。資料: {'、'.join(failures)}",
+                fix="資料の読取失敗を委譲元またはユーザーへ報告し、資料の復旧後に同じ操作を再発行する。",
             )
-            continue
-        delivery = _block_notice(
-            f"{entry.operation}の実行前に`{entry.skill_name}`の本文を配送する。\n\n{body}",
-            fix="この本文をスキルの取得として扱い、基準を適用して同じ操作を再発行する。追加の本文取得は要らない。",
+        ]
+    lines = [
+        f"{entry.operation}の実行前に`{entry.skill_name}`の基準を取得する: "
+        + "。".join(_acquisition_steps(subject, entry, missing))
+        for entry, missing in pending
+    ]
+    return [
+        _block_notice(
+            "\n".join(lines),
+            fix="上記の資料を取得し、基準を適用してから同じ操作を再発行する。取得を観測するまで同じ操作は止まる。",
         )
-        # 書込失敗でも本文は配送し、次の操作で再配送する。並行する呼出にも各々本文を届ける。
-        update_state(session_id, _mark_ready(entry.skill_name, agent))
-        deliveries.append(delivery)
-    return deliveries
+    ]

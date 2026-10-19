@@ -61,6 +61,7 @@ Codexのシェル実行と統合実行（`exec_command`）はmatcher上で`Bash`
 - `AGENT_TOOLKIT_RESTART_SPEC`: AWI処理の常駐実行で、次に起動するセッションの指定を起動側の処理へ渡す一時ファイルのパス
 - `AGENT_TOOLKIT_DELEGATED_SESSION`: Claude Code（backend）の委譲先として起動したセッションの印（値`1`）。委譲先かの判定（`is_delegated`）は、この印か次項の識別子のどちらかを持つ場合を委譲先とし、常駐実行の終了保証を最上位セッションへ限定する判定などに使う
 - `AGENT_TOOLKIT_OWNER_SESSION`: 委譲先が取得または作成した計画バンドルの所有として記録する委譲元セッションの識別子。`agents_server`が起動した子だけが持つため、Codex backendの委譲先を含めてメイン向け規範の追加を省く判定にも使う
+- `AGENT_TOOLKIT_DELEGATED_LAUNCH_KIND`: `agents_server`がClaude backendとCodex backendの委譲先へ渡す起動区分（`delegate`・`explore`・`shell`・`write`）。軽量起動の判定（`is_lightweight_delegated`）が読み、操作を起動の契機とするスキルの取得を軽量委譲先へ求めない判定に使う。Function hooks moduleは読まない
 - `AGENT_TOOLKIT_PROCESS_LOOP_SESSION`: AWI処理の常駐実行が起動したセッションの印（値`1`）。次項のIDがある場合は、hook入力の会話IDとの一致も確認する
 - `AGENT_TOOLKIT_PROCESS_LOOP_SESSION_ID`: process-loopがClaude会話の新規起動またはID指定再開で子へ渡す会話ID。hook入力の`session_id`と比べ、環境印を継承した入れ子の別会話を自律終了、空転ガード、計画保存通知、セッション名および観測ログの対象から外す
 - `AGENT_TOOLKIT_PROCESS_LOOP_INSTRUCTION`: 常駐実行がセッション起動時に渡す追加指示の本文。`rules_context`が委譲先を除くメインのセッション開始時の文脈へ置く

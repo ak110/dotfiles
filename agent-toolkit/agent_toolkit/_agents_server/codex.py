@@ -261,11 +261,13 @@ class JsonRpcProcess:
         on_failure: Callable[[BaseException], Awaitable[None]] | None = None,
         *,
         root_session_id: str | None = None,
+        launch_kind: LaunchKind | None = None,
     ) -> None:
         self._on_notification = on_notification
         self._on_server_request = on_server_request
         self._on_failure = on_failure
         self._root_session_id = root_session_id
+        self._launch_kind = launch_kind
         self.process: asyncio.subprocess.Process | None = None
         self.parent_environment: Mapping[str, str] | None = None
         self._reader_task: asyncio.Task[None] | None = None
@@ -299,6 +301,10 @@ class JsonRpcProcess:
             environment = plugin_environment.cli_environment(plugin_roots.SERVER_PLUGIN_ROOT, os.environ)
             inherited_venv.strip_inherited_venv(environment)
             environment.pop(_delegated_session.DELEGATED_SESSION_ENV, None)
+            # 委譲先のhookが軽量起動を判別する。turnを実行しない照会用の接続は起動区分を持たない。
+            environment.pop(_delegated_session.LAUNCH_KIND_ENV, None)
+            if self._launch_kind is not None:
+                environment[_delegated_session.LAUNCH_KIND_ENV] = self._launch_kind
             owner_session_id = self._root_session_id
             if owner_session_id is not None:
                 environment[_delegated_session.OWNER_SESSION_ENV] = owner_session_id
@@ -742,8 +748,10 @@ class AppServerManager:
         self._background_tasks.add(task)
         task.add_done_callback(self._background_tasks.discard)
 
-    async def _ensure_client(self) -> JsonRpcProcess:
+    async def _ensure_client(self, launch_kind: LaunchKind | None = None) -> JsonRpcProcess:
         """新しいApp Serverを起動して初期化した接続を返す。
+
+        `launch_kind`はturnを実行するsessionの起動区分で、App Serverの子環境を通じて委譲先のhookへ届く。
 
         接続は呼び出し元が所有し、sessionへ登録するか、用途を終えた時点で`_discard_client`で終了させる。
         サーバー要求への応答と接続障害の反映は、この接続が所有するsessionだけを対象にする。
@@ -763,6 +771,7 @@ class AppServerManager:
             on_server_request,
             on_failure,
             root_session_id=self._root_session_id,
+            launch_kind=launch_kind,
         )
         await client.start()
         return client
@@ -779,7 +788,7 @@ class AppServerManager:
             return None
         return client
 
-    async def _acquire_owned_client(self, session_id: str) -> JsonRpcProcess:
+    async def _acquire_owned_client(self, session_id: str, launch_kind: LaunchKind) -> JsonRpcProcess:
         """sessionが所有する生存中の接続を返し、無ければ新しいApp Serverを起動して所有させる。
 
         接続が失われていた場合は、その接続の残りの資源を回収してから起動し直す。回収できなければ
@@ -790,7 +799,7 @@ class AppServerManager:
             return client
         if client is not None:
             await self._release_owned_client(session_id)
-        client = await self._ensure_client()
+        client = await self._ensure_client(launch_kind)
         self._clients[session_id] = client
         return client
 
@@ -851,7 +860,7 @@ class AppServerManager:
         validate_prompt(prompt)
         validate_cwd(cwd)
         validate_model_effort(model, effort)
-        client = await self._ensure_client()
+        client = await self._ensure_client(launch_kind)
         try:
             thread_response, selection, attempted, owner_session_id, writer_session_id = await self._start_thread(
                 client, cwd, model, launch_kind
@@ -984,7 +993,7 @@ class AppServerManager:
         """保存済みthreadを再開して新しいturnを開始する。"""
         validate_cwd(cwd)
         validate_model_effort(model, effort)
-        client = await self._acquire_owned_client(session_id)
+        client = await self._acquire_owned_client(session_id, launch_kind)
         session = SessionState(
             session_id=session_id,
             cwd=cwd,
@@ -1169,7 +1178,7 @@ class AppServerManager:
                 # cold resumeも追送の排他区間に含まれるため、kill/stopへ終端結果として渡さない。
                 session.status = "starting"
                 session.touch()
-            client = await self._acquire_owned_client(session.session_id)
+            client = await self._acquire_owned_client(session.session_id, session.launch_kind)
             if switch_needed:
                 switched = await self._switch_provider(session, client)
                 if not switched or session.interrupt_requested:
@@ -1481,7 +1490,7 @@ class AppServerManager:
 
     async def _start_turn(self, session: SessionState, prompt: str, client: JsonRpcProcess | None = None) -> None:
         if client is None:
-            client = await self._acquire_owned_client(session.session_id)
+            client = await self._acquire_owned_client(session.session_id, session.launch_kind)
         # 再起動したApp Serverでturnを始める場合も、実行するプロセスの識別を登録簿へ反映する。
         await session.attach_executor_async(_client_pid(client))
         params: dict[str, Any] = {

@@ -1,4 +1,8 @@
-"""実物のSKILL.md全文を操作前に配送する契約を検証する。"""
+"""操作を起動の契機とするスキルの取得の契約を、表の全項目と主体の全区分の組で検証する。
+
+遮断の応答は資料の本文を含まず、ホスト本来の取得手段を案内し、取得の観測までは記録せずに同じ操作を止める。
+agents_serverの軽量委譲先は遮断しない。表へ項目を加えると、`_POSITIVE_OPERATIONS`へ正例が無い限り`test_positive_operations_cover_every_entry`が失敗する。
+"""
 
 from __future__ import annotations
 
@@ -10,95 +14,175 @@ from typing import Any
 import pytest
 
 from agent_toolkit._agents_server import claude as claude_backend
-from agent_toolkit._agents_server import claude_settings
+from agent_toolkit._agents_server import claude_settings, launch_prompts
+from agent_toolkit._agents_server import codex as codex_backend
+from agent_toolkit._common import delegated_session
 from agent_toolkit._common.session_state import read_state
-from agent_toolkit._hooks import rules_context
-from agent_toolkit._hooks.pretooluse import dispatch
-from agent_toolkit._testing.pretooluse_support import _additional_context, _plan_file_state_env, _run
+from agent_toolkit._hooks import plugin_resources, rules_context
+from agent_toolkit._hooks.pretooluse import dispatch, operation_skills
+from agent_toolkit._testing.pretooluse_support import _additional_context, _plan_file_state_env, _run, _run_posttooluse
 
-_SEARCH_SKILL_MD = pathlib.Path(__file__).resolve().parents[3] / "skills" / "search" / "SKILL.md"
-_WARN_OPENING = '<atk-auto source="pretooluse" kind="block">'
+_POSITIVE_OPERATIONS: dict[str, tuple[str, dict]] = {
+    "delegation": ("Agent", {"prompt": "調査する"}),
+    "search": ("Grep", {"pattern": "x"}),
+    "bugfix": ("Bash", {"command": "cat > /tmp/awi.md <<'EOF'\n## 原因分析\nEOF"}),
+    "managed-temp": ("Bash", {"command": "atk managed-temp create --prefix example"}),
+    "writing-standards": ("Write", {"file_path": "/work/notes.md", "content": "# 見出し\n"}),
+    "check-execution": ("Bash", {"command": "uv run --frozen pytest a_test.py"}),
+}
+"""各項目の正例の操作。他の項目へ同時に当たらない入力を選ぶ。"""
+
+_LAUNCH_KIND = delegated_session.LAUNCH_KIND_ENV
+_SUBJECTS: dict[str, tuple[dict[str, str], dict[str, str]]] = {
+    "main": ({}, {}),
+    "claude-delegate": ({"AGENT_TOOLKIT_DELEGATED_SESSION": "1", _LAUNCH_KIND: "delegate"}, {}),
+    "subagent": ({}, {"agent_id": "child"}),
+    "codex": ({}, {"turn_id": "turn-1"}),
+    "codex-delegate": ({"AGENT_TOOLKIT_OWNER_SESSION": "owner", _LAUNCH_KIND: "delegate"}, {"turn_id": "turn-1"}),
+    **{
+        f"claude-{kind}": ({"AGENT_TOOLKIT_DELEGATED_SESSION": "1", _LAUNCH_KIND: kind}, {})
+        for kind in sorted(delegated_session.LIGHTWEIGHT_LAUNCH_KINDS)
+    },
+    **{
+        f"codex-{kind}": ({"AGENT_TOOLKIT_OWNER_SESSION": "owner", _LAUNCH_KIND: kind}, {"turn_id": "turn-1"})
+        for kind in sorted(delegated_session.LIGHTWEIGHT_LAUNCH_KINDS)
+    },
+}
+"""主体の区分ごとの環境変数とhook入力の追加項目。軽量区分はagents_serverが委譲先へ渡す起動区分で表す。"""
 
 
-def _search_warning(payload: dict, env: dict[str, str]) -> str:
-    result = _run(payload, env)
-    assert result.returncode in {0, 2}
-    return result.stderr if result.returncode == 2 else _additional_context(result)
+def _read_payload(path: pathlib.Path, extra: dict[str, str]) -> dict:
+    """ホスト本来の読取のPostToolUse入力を返す。
 
-
-_LIGHTWEIGHT_SEARCH_PAYLOADS = [
-    ("explore", {"tool_name": "Grep", "tool_input": {"pattern": "x"}}),
-    ("explore", {"tool_name": "Glob", "tool_input": {"pattern": "**/*.py"}}),
-    ("shell", {"tool_name": "Bash", "tool_input": {"command": "git grep -n -F x"}}),
-    ("write", {"tool_name": "Grep", "tool_input": {"pattern": "x"}}),
-    ("write", {"tool_name": "Glob", "tool_input": {"pattern": "*.md"}}),
-]
-
-
-@pytest.mark.parametrize(
-    ("launch_kind", "payload"),
-    _LIGHTWEIGHT_SEARCH_PAYLOADS,
-    ids=[f"{kind}-{payload['tool_name']}" for kind, payload in _LIGHTWEIGHT_SEARCH_PAYLOADS],
-)
-def test_claude_warning_offers_skill_md_read_for_sessions_without_skill(
-    tmp_path: pathlib.Path, launch_kind: claude_backend.LaunchKind, payload: dict
-) -> None:
-    """Claudeの警告は`Skill`の起動と、`Skill`を使えない主体が実在する`SKILL.md`を`Read`で読む操作を併記する。
-
-    `agents_server`の軽量起動の委譲先は`Skill`を使えずスキルの一覧も届かないため、`Skill`だけを示す警告では
-    起動の失敗を報告するだけで検索の基準へ到達できない。案内する`Read`が各modeの許可ツールにあることも確かめる。
+    Claude CodeのReadの`tool_response`はClaude Code 2.1.303の本体の結果（`type`・`file`）から、
+    CodexのBashは出力文字列をそのまま渡す形から写した。
     """
-    allowed_tools = claude_backend._LAUNCH_ALLOWED_TOOLS[launch_kind]  # pylint: disable=protected-access
-    assert "Read" in allowed_tools
-    options = claude_backend._build_options(str(tmp_path), None, None, launch_kind=launch_kind)  # pylint: disable=protected-access
-    assert "Skill" in options.disallowed_tools
-    claude_settings.cleanup_settings(options)
-    assert payload["tool_name"] in allowed_tools
-    env = {**_plan_file_state_env(tmp_path), "AGENT_TOOLKIT_DELEGATED_SESSION": "1"}
-
-    warning = _search_warning({**payload, "session_id": f"light-{launch_kind}"}, env)
-
-    assert warning.startswith(_WARN_OPENING)
-    assert _SEARCH_SKILL_MD.read_text(encoding="utf-8") in warning
-    assert "同じ操作を再発行" in warning
-    assert _run({**payload, "session_id": f"light-{launch_kind}"}, env).returncode == 0
+    text = path.read_text(encoding="utf-8")
+    if "turn_id" in extra:
+        return {"tool_name": "Bash", "tool_input": {"command": f"cat {path}"}, "tool_response": text}
+    lines = len(text.splitlines())
+    file = {"filePath": str(path), "content": text, "numLines": lines, "startLine": 1, "totalLines": lines}
+    return {"tool_name": "Read", "tool_input": {"file_path": str(path)}, "tool_response": {"type": "text", "file": file}}
 
 
-@pytest.mark.parametrize(
-    "skill,tool,inputs",
-    [
-        ("delegation", "Agent", {"prompt": "調査する"}),
-        ("search", "Grep", {"pattern": "x"}),
-        ("bugfix", "Write", {"file_path": "/work/analysis.md", "content": "## 原因分析\n"}),
-        ("managed-temp", "Bash", {"command": "atk managed-temp create --prefix example"}),
-        ("writing-standards", "Write", {"file_path": "/work/AGENTS.md", "content": "# 規範\n"}),
-    ],
-)
-def test_first_operation_delivers_entire_skill_before_retry(
-    tmp_path: pathlib.Path, skill: str, tool: str, inputs: dict
+def _acquire(env: dict[str, str], entry: operation_skills.OperationSkill, subject: str, session_id: str, extra: dict) -> None:
+    """区分ごとのホスト本来の手段で全必須資料を取得し、PostToolUseへ観測させる。"""
+    for relative in entry.documents:
+        if relative == operation_skills.SKILL_DOCUMENT and subject in {"main", "claude-delegate"}:
+            payload: dict[str, Any] = {"tool_name": "Skill", "tool_input": {"skill": entry.skill_name}}
+        else:
+            payload = _read_payload(plugin_resources.skill_document_path(entry.short_name, relative), extra)
+        event = {"hook_event_name": "PostToolUse", "session_id": session_id, **payload, **extra}
+        assert _run_posttooluse(event, env).returncode == 0
+
+
+def test_positive_operations_cover_every_entry() -> None:
+    """表の全項目が正例を持ち、各正例は自身の項目だけに当たる。"""
+    assert set(_POSITIVE_OPERATIONS) == {entry.short_name for entry in operation_skills.OPERATION_SKILLS}
+    for entry in operation_skills.OPERATION_SKILLS:
+        tool, tool_input = _POSITIVE_OPERATIONS[entry.short_name]
+        matched = [other.short_name for other in operation_skills.OPERATION_SKILLS if other.matches(tool, tool_input)]
+        assert matched == [entry.short_name]
+
+
+def test_lightweight_launch_kinds_match_agents_server() -> None:
+    """hookが読む軽量起動の写しは、agents_serverが軽量起動として扱う区分と一致する。"""
+    assert delegated_session.LIGHTWEIGHT_LAUNCH_KINDS == launch_prompts.LIGHTWEIGHT_LAUNCH_KINDS
+
+
+@pytest.mark.parametrize("subject", list(_SUBJECTS))
+@pytest.mark.parametrize("entry", operation_skills.OPERATION_SKILLS, ids=lambda entry: entry.short_name)
+def test_operation_skill_contract_for_every_entry_and_subject(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, entry: operation_skills.OperationSkill, subject: str
 ) -> None:
-    """5スキルの全文が実応答へ届き、同じ主体の再発行を通す。"""
-    env = _plan_file_state_env(tmp_path)
-    payload = {"tool_name": tool, "tool_input": inputs, "session_id": "full-delivery"}
+    """全項目と全区分の組で、遮断の有無・案内・本文を含まないこと・取得の観測前に記録しないことを確かめる。"""
+    monkeypatch.setattr(tempfile, "tempdir", str(tmp_path))
+    environ, extra = _SUBJECTS[subject]
+    env = {**_plan_file_state_env(tmp_path), **environ}
+    session_id = f"{entry.short_name}-{subject}"
+    tool, tool_input = _POSITIVE_OPERATIONS[entry.short_name]
+    payload = {"tool_name": tool, "tool_input": tool_input, "session_id": session_id, **extra}
+    paths = [plugin_resources.skill_document_path(entry.short_name, relative) for relative in entry.documents]
+
     result = _run(payload, env)
-    body = (_SEARCH_SKILL_MD.parent.parent / skill / "SKILL.md").read_text(encoding="utf-8")
+    output = result.stderr + _additional_context(result)
+    for path in paths:
+        assert path.read_text(encoding="utf-8") not in output
+    if environ.get(_LAUNCH_KIND) in delegated_session.LIGHTWEIGHT_LAUNCH_KINDS:
+        assert entry.skill_name not in output
+        assert rules_context.OPERATION_SKILL_READY_KEY not in read_state(session_id)
+        return
+
     assert result.returncode == 2
-    assert body in result.stderr
     assert "同じ操作を再発行" in result.stderr
-    assert _run(payload, env).returncode == 0
+    skill_md, *references = paths
+    for path in references:
+        assert str(path) in result.stderr
+    if subject.startswith("codex"):
+        assert str(skill_md) in result.stderr
+        assert "`Skill`で" not in result.stderr
+    else:
+        assert f"`Skill`で`{entry.skill_name}`を起動する" in result.stderr
+        assert (str(skill_md) in result.stderr) is (subject == "subagent")
+    assert _run(payload, env).returncode == 2
+    assert rules_context.OPERATION_SKILL_READY_KEY not in read_state(session_id)
+
+    _acquire(env, entry, subject, session_id, extra)
+    after = _run(payload, env)
+    assert after.returncode == 0
+    assert entry.skill_name not in after.stderr + _additional_context(after)
 
 
-def test_delivery_failure_keeps_operation_blocked_without_ready_state(
+@pytest.mark.parametrize("launch_kind", ["delegate", "explore", "shell", "write"])
+def test_backends_pass_launch_kind_to_delegate_environment(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, launch_kind: claude_backend.LaunchKind
+) -> None:
+    """Claude backendは委譲先の環境へ起動区分を設定し、継承した値を上書きする。"""
+    monkeypatch.setenv(_LAUNCH_KIND, "explore" if launch_kind == "delegate" else "delegate")
+    options = claude_backend._build_options(str(tmp_path), None, None, launch_kind=launch_kind)  # pylint: disable=protected-access
+    claude_settings.cleanup_settings(options)
+    assert options.env[_LAUNCH_KIND] == launch_kind
+    assert delegated_session.is_lightweight_delegated(options.env) is (launch_kind != "delegate")
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("launch_kind", ["delegate", "explore", None])
+async def test_codex_app_server_environment_carries_launch_kind(
+    monkeypatch: pytest.MonkeyPatch, launch_kind: codex_backend.LaunchKind | None
+) -> None:
+    """Codex backendはsessionのApp Serverの子環境へ起動区分を設定し、照会用の接続では継承した値を除く。
+
+    所有接続の取得（開始・再開）は起動区分を渡し、モデル一覧などの照会用の接続は起動区分を持たない。
+    """
+    captured: list[dict[str, str]] = []
+
+    async def fake_exec(*_args: Any, env: dict[str, str], **_kwargs: Any) -> Any:
+        captured.append(env)
+        raise OSError("起動しない")
+
+    monkeypatch.setenv(_LAUNCH_KIND, "shell")
+    monkeypatch.setattr(codex_backend.asyncio, "create_subprocess_exec", fake_exec)
+    manager = codex_backend.AppServerManager()
+    with pytest.raises(codex_backend.AppServerError):
+        if launch_kind is None:
+            await manager._ensure_client()  # pylint: disable=protected-access
+        else:
+            await manager._acquire_owned_client("session", launch_kind)  # pylint: disable=protected-access
+    assert captured[0].get(_LAUNCH_KIND) == launch_kind
+
+
+def test_missing_skill_document_keeps_operation_blocked_without_record(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """本文の取得失敗では記録せず、復旧した同じ操作で全文を配送する。"""
+    """案内する資料を取得できない間は診断付きで遮断し記録しない。復旧後は取得の案内で遮断する。"""
     monkeypatch.setattr(tempfile, "tempdir", str(tmp_path))
+    skill_md = plugin_resources.skill_document_path("search", "SKILL.md")
     original = pathlib.Path.read_text
 
     def fail_skill(path: pathlib.Path, *args: Any, **kwargs: Any) -> str:
-        if path == _SEARCH_SKILL_MD:
+        if path == skill_md:
             raise OSError("資料を取得できない")
         return original(path, *args, **kwargs)
 
@@ -110,5 +194,6 @@ def test_delivery_failure_keeps_operation_blocked_without_ready_state(
             assert "資料を取得できない" in capsys.readouterr().err
             assert rules_context.OPERATION_SKILL_READY_KEY not in read_state("failure")
     assert dispatch.main(payload) == 2
-    assert original(_SEARCH_SKILL_MD, encoding="utf-8") in capsys.readouterr().err
-    assert dispatch.main(payload) == 0
+    recovered = capsys.readouterr().err
+    assert "`Skill`で`agent-toolkit:search`を起動する" in recovered
+    assert original(skill_md, encoding="utf-8") not in recovered

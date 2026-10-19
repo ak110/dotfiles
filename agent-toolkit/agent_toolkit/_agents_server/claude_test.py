@@ -622,6 +622,7 @@ async def test_claude_options_use_claude_code_preset(tmp_path: pathlib.Path, mon
     assert options.permission_mode == "auto"
     assert options.env == {
         "AGENT_TOOLKIT_DELEGATED_SESSION": "1",
+        "AGENT_TOOLKIT_DELEGATED_LAUNCH_KIND": "delegate",
         "PATH": str(claude.plugin_roots.SERVER_PLUGIN_ROOT / "scripts") + os.pathsep + os.environ["PATH"],
         plugin_environment.RUNTIME_DATA_ENV: str(plugin_environment.runtime_data(os.environ)),
         "CLAUDE_CODE_EMIT_SESSION_STATE_EVENTS": "1",
@@ -766,10 +767,11 @@ def test_explore_mcp_uses_plugin_definition_on_start_and_resume(tmp_path: pathli
     assert options.disallowed_tools == ["Skill"]
 
 
-def _lightweight_environment() -> dict[str, str]:
-    """軽量起動の委譲先へ渡す、保持済みrootのCLIとデータ領域を含む環境を返す。"""
+def _lightweight_environment(launch_kind: str) -> dict[str, str]:
+    """軽量起動の委譲先へ渡す、起動区分と保持済みrootのCLIとデータ領域を含む環境を返す。"""
     return {
         "AGENT_TOOLKIT_DELEGATED_SESSION": "1",
+        "AGENT_TOOLKIT_DELEGATED_LAUNCH_KIND": launch_kind,
         "PATH": str(claude.plugin_roots.SERVER_PLUGIN_ROOT / "scripts") + os.pathsep + os.environ["PATH"],
         plugin_environment.RUNTIME_DATA_ENV: str(plugin_environment.runtime_data(os.environ)),
         "CLAUDE_CODE_EMIT_SESSION_STATE_EVENTS": "1",
@@ -791,7 +793,7 @@ def test_claude_explore_options_reduce_instruction_sources_and_keep_tools(
     options = claude._build_options(str(tmp_path), "model", "high", launch_kind="explore")
     assert options.setting_sources == ["user"]
     assert options.skills == []
-    assert options.env == _lightweight_environment()
+    assert options.env == _lightweight_environment("explore")
     assert options.system_prompt == (
         f"{launch_prompts.CLAUDE_EXPLORE_SYSTEM_PROMPT}\n{launch_prompts.AUTO_RESUME_NOTICE}\n"
         f"{launch_prompts.python_runtime_instructions()}\n"
@@ -828,7 +830,7 @@ def test_claude_shell_options_share_lightweight_launch_with_command_tools(
     options = claude._build_options(str(tmp_path), "model", "high", launch_kind="shell")
     assert options.setting_sources == ["user"]
     assert options.skills == []
-    assert options.env == _lightweight_environment()
+    assert options.env == _lightweight_environment("shell")
     assert options.system_prompt == (
         f"{launch_prompts.SHELL_SYSTEM_PROMPT}\n{launch_prompts.AUTO_RESUME_NOTICE}\n"
         f"{launch_prompts.python_runtime_instructions()}\n"

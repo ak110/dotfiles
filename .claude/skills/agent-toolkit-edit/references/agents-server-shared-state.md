@@ -35,6 +35,7 @@ atk自身のuv同期先はlauncherが固定し、子へは呼出元の`UV_PROJEC
 除去は`_common/mcp_environment.py`の`strip_conversation_context`へ集約し、MCPサーバーの環境整備、`atk wi`のall-reposでのManager生成と`_atk/orchestrator.py`の`child_env`が使う。
 除去する名前は内側MCPの`env_vars`と同じ`_NON_INHERITABLE_NAMES`で定め、全backendは整備後の環境を継承する。
 ルート、書込主体、委譲元の記録情報と引き継ぎ記録先は除去前の値から確定し、各backendが明示するownerと委譲の印は除去後に設定する。
+起動区分の印（`AGENT_TOOLKIT_DELEGATED_LAUNCH_KIND`）も同じく除去後に設定する。Claude backendはSDKのenvへ全起動区分で、Codex backendはsessionごとのApp Serverの子環境へ開始時の起動区分と再開時の`SessionState.launch_kind`で設定し、モデル一覧と`thread/read`の照会用のApp Serverからは除く。委譲先のhookが軽量起動を判別するために読む。
 Claudeの`inherit`接続でも、この会話contextの除去を適用し、認証・接続設定は通常の継承契約に従う。
 観測の根拠は`docs/development/audit-records.md`の「.claude/skills/agent-toolkit-edit/references/agents-server-shared-state.md：実行主体：2026年10月18日」にある。
 配送するルートはManagerが持つ`StatusFileWriter.root_session_id`である。環境にownerが無くManagerが生成したルートも、Codex App Serverの子環境、threadの開始・再開のMCP環境とhost索引、Claude SDKの新規・再開環境、Antigravityの子環境へ同じ入力として渡す。backendはこの入力から通知先の所有者を決める。Antigravityではルート配送だけを保証し、固有の通知元識別子の解決と通知成功は別の課題として扱う。計画の所有記録とUWIの投入元の解決はこの配送と別の契約であり、Managerが生成したプロセス専用のroot（`mcp-`で始まる識別子）は会話を表さないため、所有会話と投入元の記録から除く。判定は`agent-toolkit/agent_toolkit/_plan/owner_records.py`の`resolve_conversation_session_id`が持つ。

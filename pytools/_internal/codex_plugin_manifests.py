@@ -127,7 +127,7 @@ CODEX_HOOK_ALLOWLIST: dict[str, CodexHookProjection] = {
     "PreToolUse": CodexHookProjection(
         (CODEX_PRE_TOOL_USE_COMMAND,),
         output_command=_codex_hook_command("pretooluse"),
-        matcher="Bash|Edit|Write|mcp__agents_server__start|mcp__agents_server__send_message|mcp__agents_server__kill|mcp__agents_server__list|mcp__agents_server__show",
+        matcher="Bash|Edit|Write|mcp__agents_server__start|mcp__agents_server__send_message|mcp__agents_server__kill|mcp__agents_server__list|mcp__agents_server__show|mcp__pyfltr__run",
     ),
     "PostToolUse": CodexHookProjection(
         (CODEX_POST_TOOL_USE_COMMAND,),

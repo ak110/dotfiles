@@ -20,3 +20,12 @@ def test_pretooluse_matcher_covers_agents_server_tool_names() -> None:
     for tool_name in agent_checks.AGENTS_SERVER_HOOK_TOOL_NAMES:
         if tool_name.startswith("mcp__agents_server__"):
             assert codex_matcher == "*" or re.fullmatch(codex_matcher, tool_name), tool_name
+
+
+def test_codex_pretooluse_matcher_covers_verification_mcp_tool() -> None:
+    """Codexのpyfltrのチェック実行MCPツールの呼び出しへ、検証実行の取得を求めるPreToolUseが届く。"""
+    codex_matcher = json.loads((_PLUGIN_ROOT / "hooks/hooks.codex.json").read_text(encoding="utf-8"))["hooks"]["PreToolUse"][0][
+        "matcher"
+    ]
+    assert re.fullmatch(codex_matcher, "mcp__pyfltr__run")
+    assert not re.fullmatch(codex_matcher, "mcp__pyfltr__show_run")
