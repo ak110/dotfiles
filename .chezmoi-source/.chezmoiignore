@@ -6,6 +6,7 @@
 .bashrc
 .inputrc
 .tmux.conf
+.config/user-tmpfiles.d
 {{ end }}
 
 # run scripts: OS別に除外（ターゲットパスはプレフィックス除去後の名前）

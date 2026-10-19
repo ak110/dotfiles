@@ -99,7 +99,7 @@ HELP: dict[str, dict[str, str]] = {
     "atk wi add": {
         "summary": "エントリをinboxへ投入する",
         "description": "目的: AWIまたはUWIをinboxへ1件以上投入する。\n利用場面: 改善要求、不具合、確認事項を後続のセッションへ引き継ぐとき。投入と同じ入力を副作用なしで検証するとき。\n対象と出力: private-notesリポジトリのinboxへファイルを追加してcommitとpushを行う。書き込み前に確定した本文と保存結果から読み直した本文が一致するかを確かめ、不一致では非0で終了して差異の特定に必要な内容を標準エラーへ書く。`--dry-run`では検証だけを行い、private-notes、remoteおよび対象リポジトリのいずれも変更せず、検証が成立したことだけを標準出力へ書く。\n前提: 本文を`--body-file`または$EDITORで与える。対象リポジトリは省略時にカレントworktreeから解決する。\n復元・後始末: 投入した項目は`atk wi rm`で削除でき、削除後もprivate-notesのGit履歴から復元できる。`--dry-run`は状態を残さないため後始末を要さない。",
-        "epilog": "実行例:\n\n  atk wi add --body-file=/tmp/awi-body.md",
+        "epilog": "実行例:\n\n  atk wi add --body-file=/home/aki/.cache/agent-toolkit/tmp/awi-body.md",
     },
     "atk wi list": {
         "summary": "エントリを1件1行で一覧表示する",
@@ -154,7 +154,7 @@ HELP: dict[str, dict[str, str]] = {
     "atk wi edit": {
         "summary": "エントリの本文とメタデータを編集する",
         "description": "目的: 既存項目の本文とメタデータを、非対話または$EDITORで編集する。\n利用場面: 投入済みの要求へ情報を補うとき。記述の誤りを直すとき。再処理抑制期限を設定または解除するとき。更新原稿を保存前に確かめるとき（`--dry-run`）。\n対象と出力: private-notesの対象ファイルを書き換え、commitとpushを行う。書き込み前に確定した本文と保存結果から読み直した本文が一致するかを確かめ、不一致では非0で終了して差異の特定に必要な内容を標準エラーへ書く。エージェントの実行環境から起動した場合は、`## ユーザーコメント`節を編集の対象から外し、保存済みの内容をそのまま残す。\n前提: 対象はinbox・processing・holdのいずれかにあり、編集で保存状態は変わらない。FILENAMEを省略した場合は、inbox配下でファイル名順が最大の項目を$EDITORで開く。非対話の本文編集には`--body-file`を使う。`--cooldown-until`はinbox・holdのAWIへタイムゾーン付きISO 8601日時を渡して期限を設定し、空文字列で期限を解除する。UWIへの日時の指定は拒否し、保存済みの期限は空文字列で解除できる。本文frontmatterからの同キーの変更は受理しない。`--append`は`--body-file`の本文を追記し、UWIを対象にしない。エージェントの実行環境から起動した場合、本文へ`## ユーザーコメント`節を含めると編集を拒否する。エージェントの実行環境から起動した場合、processingの項目の本文置換を拒否する。--appendによる追記は拒否しない。`--dry-run`はFILENAMEと`--body-file`による本文置換を保存と同じ取り込みと検証にかけ、成立したら保存せずに成功の1行を書いて終了する。拒否では保存と同じ終了コード、理由および次の操作を返す。未pushのcommitの送信、対象ファイルの書き換え、commitとpushを行わず、private-notesとremoteを変えない。\n復元・後始末: 編集前の内容はprivate-notesのGit履歴に残る。",
-        "epilog": "実行例:\n\n  atk wi edit 20260901-072734-001.md --body-file=/tmp/awi-body.md",
+        "epilog": "実行例:\n\n  atk wi edit 20260901-072734-001.md --body-file=/home/aki/.cache/agent-toolkit/tmp/awi-body.md",
     },
     "atk wi set-dependencies": {
         "summary": "AWIの明示依存だけを更新する",
@@ -375,7 +375,7 @@ HELP: dict[str, dict[str, str]] = {
     "atk managed-temp cleanup": {
         "summary": "managed-tempのディレクトリを後始末する",
         "description": "目的: 指定したmanaged-tempのディレクトリを検証したうえで削除し、対応する登録も除去する。\n利用場面: 作成した領域を使い終えたとき。中断した後始末を再開するとき。\n対象と出力: `--path`が指すディレクトリと配下の内容を削除し、状態ディレクトリの登録を除去する。\n前提: `--path`は作成時に返された絶対パスで指定する。`--path`を省略した場合は、現在の管理対象の絶対パスを作成時刻の昇順で示して終了コード2で終わる。実体と管理情報の双方が作成時の内容と一致することを検証する。`--session-root`で作成したmanaged-temp直下の作業ディレクトリのように個別の管理情報を持たない対象は、祖先に登録済みのmanaged-tempのディレクトリが実在する場合に限り検証を省略して削除し、省略したことを標準エラーへ書く。\n復元・後始末: 削除した内容は復元できない。登録だけを失った領域は、`--recover-registry`を指定した場合に限り実体側の管理情報から登録を復元して後始末する。通常の後始末が検証に失敗した領域は、`--force-remove`を指定した場合に限り、一時rootの直下にあり実行中のOSアカウントが所有するディレクトリであることだけを確認して実体と登録を回収する。",
-        "epilog": "実行例:\n\n  atk managed-temp cleanup --path=/tmp/wi-show-abcd1234",
+        "epilog": "実行例:\n\n  atk managed-temp cleanup --path=/home/aki/.cache/agent-toolkit/managed-temp/wi-show-abcd1234",
     },
     "atk managed-temp list": {
         "summary": "managed-tempのディレクトリを列挙する",
@@ -422,12 +422,12 @@ HELP: dict[str, dict[str, str]] = {
     "atk review-table add": {
         "summary": "レビュー担当の指摘を追加する",
         "description": "目的: レビュー担当の指摘を1行追加する。\n利用場面: レビューで実在の指摘を確定したとき。\n対象と出力: 指定した表をロックして1行を追加する。各セルはJSON文字列として保存し、保存済みの表から読み直した指摘箇所と指摘内容が、それぞれ送信した本文と一致するかを確かめる。保存本文そのものは書かない。不一致では非0で終了し、差異の特定に必要な内容を標準エラーへ書く。\n前提: `--round`、`--track`および`--level`を指定し、指摘箇所と指摘内容を`--location-file`と`--issue-file`で与える。\n復元・後始末: 追加した行の応答は`atk review-table respond`で更新する。",
-        "epilog": "実行例:\n\n  atk review-table add /home/aki/.claude/plans/2026/09/01-example-1a2b.exec-review.tsv --round=1 --track=exec-review --level=詳細 --location-file=/tmp/location.txt --issue-file=/tmp/issue.md",
+        "epilog": "実行例:\n\n  atk review-table add /home/aki/.claude/plans/2026/09/01-example-1a2b.exec-review.tsv --round=1 --track=exec-review --level=詳細 --location-file=/home/aki/.cache/agent-toolkit/tmp/location.txt --issue-file=/home/aki/.cache/agent-toolkit/tmp/issue.md",
     },
     "atk review-table respond": {
         "summary": "レビューイーの応答を更新する",
         "description": "目的: `show`が出力した`row-id`で応答対象を一意に指定し、レビューイーの対応内容または対応不要理由を記録する。\n利用場面: 指摘への採否を確定し、`show`で確認した短い`row-id`を使って対応内容か対応不要理由を記録するとき。\n対象と出力: 指定した表をロックして該当する行を更新する。保存済みの表から読み直した対応内容と対応不要理由のうち更新した方が、送信した本文と一致するかを確かめる。不一致では非0で終了し、差異の特定に必要な内容を標準エラーへ書く。特定できる行が無い場合と複数ある場合は失敗する。\n前提: 応答対象は`show`が出力した`row-id`で指定する。従来の`round`、`track`、`location`、`issue`による部分複合キー指定も互換の指定方法として利用できる。本文は対応するファイル指定オプションで渡し、`--response-file`と`--no-response-reason-file`のいずれか一方だけを指定する。`--response-file`の本文は`違反を確認した規定:`・`同じ規定の検索:`・`採用する修正範囲:`・`採用しない修正方針:`を、`--no-response-reason-file`の本文は`根拠の所在:`を、それぞれ行頭に置き、同じ行のラベルの後へ空でない内容を書く。ラベルが欠けた本文と内容が空のラベルを持つ本文は、表を変更せず非0で終了する。各ラベルに書く内容は`agent-toolkit:review-standards`の`references/reviewee.md`「レビュー指摘管理表への応答」が定める。\n復元・後始末: 誤った更新は、同じコマンドで正しい値へ上書きする。",
-        "epilog": "実行例:\n\n  atk review-table respond /home/aki/.claude/plans/2026/09/01-example-1a2b.exec-review.tsv --row-id=1 --response-file=/tmp/response.md",
+        "epilog": "実行例:\n\n  atk review-table respond /home/aki/.claude/plans/2026/09/01-example-1a2b.exec-review.tsv --row-id=1 --response-file=/home/aki/.cache/agent-toolkit/tmp/response.md",
     },
     "atk review-table show": {
         "summary": "レビュー指摘管理表を表示する",

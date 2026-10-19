@@ -14,6 +14,18 @@ export PATH=${PATH//;/:}
 export PYTHONDONTWRITEBYTECODE=1
 export MPLBACKEND=Agg
 
+# /tmpがメモリ上のtmpfsのホストで一時ファイルでメモリが尽きないよう、一時ディレクトリをディスク上へ向ける。
+# 指すディレクトリが無いとPythonのtempfileは警告なしに/tmpへ戻るため、作成できた場合だけ設定する。
+case "$OSTYPE" in
+linux*)
+    _dotfiles_tmpdir="${XDG_CACHE_HOME:-$HOME/.cache}/agent-toolkit/tmp"
+    if (umask 077 && mkdir -p "$_dotfiles_tmpdir") && [ -d "$_dotfiles_tmpdir" ]; then
+        export TMPDIR="$_dotfiles_tmpdir"
+    fi
+    unset _dotfiles_tmpdir
+    ;;
+esac
+
 # 環境変数
 path_prepend() {
     if [ -d "$1" ]; then

@@ -19,6 +19,31 @@ mypyがキャッシュの型情報を復元する途中で内部エラーを返�
 作業ディレクトリごとの分離と自動リトライは行わない。
 保存済み情報と新規解析の成否差だけでは、キャッシュの共有や同時更新がその情報を不整合にした原因だとは確定できない。
 
+## Linuxの一時ディレクトリのディスク上への移動と経過削除
+
+このホストの`/tmp`はメモリー上のtmpfsであり、エージェントの作業とテストの一時ファイルが標準でそこへ溜まるとメモリーとswapの空きが無くなる。
+容量不足による検証の失敗、バックグラウンドタスクとユーザーのsystemdマネージャーの強制終了、`/tmp`に置いたhookのセッション状態ファイルの消失が実際に起きた。
+
+`.bashrc`は非対話シェルでも、Linuxに限り`TMPDIR`を`${XDG_CACHE_HOME:-$HOME/.cache}/agent-toolkit/tmp`へ設定する。
+XDGのキャッシュディレクトリはアプリケーションごとに分けるため、managed-temp（`agent-toolkit/managed-temp`）と同じ`agent-toolkit`配下に置く。
+Pythonの`tempfile`、pytest、Node、Rust、Claude Code本体とhookは`TMPDIR`を一時ディレクトリの置き場所として使うため、プログラムごとの設定なしにディスク上へ移る。
+ディレクトリは権限0700で作成する。作成できない場合は`TMPDIR`を設定しない。指すディレクトリが無いとPythonの`tempfile`は警告なしに`/tmp`へ戻るためである。
+Windowsは一時ディレクトリがディスク上にあるため対象外であり、`.bashrc`はWindowsへ配布しない。
+
+ディスク上の一時領域はtmpfsと違って再起動で空にならないため、`~/.config/user-tmpfiles.d/dotfiles-tmp.conf`の`d %C/agent-toolkit/tmp 0700 - - 7d`が古い項目を削除する。
+削除するのは、最終更新・最終アクセス・状態変更（ディレクトリは最終更新と最終アクセス）の全てが7日より古い項目である（`man 5 tmpfiles.d`）。
+読み取るだけの項目が最終アクセスによって残るのは、最終アクセスの時刻を更新するマウントの場合に限る（`noatime`のマウントでは最終更新と状態変更だけで判定される）。
+7日はmanaged-tempの自動削除の期限に合わせた値である。対象は`agent-toolkit/tmp`配下だけで、兄弟のmanaged-tempは自身の自動削除が扱う。
+削除はユーザーの`systemd-tmpfiles-clean.timer`が実行する。`setup_dotfiles_autoupdate.py`は役割によらず全Linuxホストでこのタイマーを有効化する。
+`systemctl`が無い環境、またはユーザーのsystemdマネージャーへ接続できない環境では理由と次の操作を示して見送り、systemdのユーザーセッションがある環境で`update-dotfiles`を再実行する。
+
+テストの環境隔離（`agent_toolkit/_testing/isolation.py`）は`MISE_CEILING_PATHS`を各テストの`tmp_path`へ設定する。
+HOMEを差し替えたテストの子プロセスがmiseのshimを起動すると、miseは作業ディレクトリの祖先を順に探す。
+一時領域が実ホーム配下にあると、祖先の`~/.config/mise/config.toml`を未信頼のプロジェクト設定として読んで終了コード1になる。
+この失敗のため、エージェントは一時領域を実ホーム配下へ置いたテストの失敗を避けようとして`/tmp`を選んでいた。
+探索をテスト領域で止めることで、一時領域の置き場所によらずテストが成功する。
+ホストの設定を使うテストは`host_environ`と`restore_host_environment`で、`MISE_CEILING_PATHS`もホストの値へ戻す。
+
 ## 生成物の一括同期（`sync_generated_files.py`）
 
 生成物の一括同期は`uv run python scripts/sync_generated_files.py`で起動する。

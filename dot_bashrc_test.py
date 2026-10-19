@@ -475,3 +475,52 @@ tmux_executable=$(_dotfiles_tmux_executable)
     )
 
     assert call_log.read_text(encoding="utf-8").splitlines() == ["stale-check"]
+
+
+def test_non_interactive_shell_points_tmpdir_to_cache(tmp_path: pathlib.Path) -> None:
+    """非対話シェルでも`TMPDIR`がディスク上のキャッシュ配下を指し、Pythonの一時ディレクトリが同じ場所になる。"""
+    home = tmp_path / "home"
+    home.mkdir()
+    for cache_home, expected in (
+        (None, home / ".cache" / "agent-toolkit" / "tmp"),
+        (tmp_path / "xdg", tmp_path / "xdg" / "agent-toolkit" / "tmp"),
+    ):
+        env = {"HOME": str(home), "PATH": "/usr/bin:/bin"}
+        if cache_home is not None:
+            env["XDG_CACHE_HOME"] = str(cache_home)
+        completed = subprocess.run(
+            [
+                "/bin/bash",
+                "--noprofile",
+                "--norc",
+                "-c",
+                '. "$1"\nprintenv TMPDIR\npython3 -c "import tempfile; print(tempfile.gettempdir())"',
+                "bash",
+                str(BASHRC),
+            ],
+            capture_output=True,
+            text=True,
+            env=env,
+            check=False,
+        )
+
+        assert completed.returncode == 0, completed.stderr
+        assert completed.stdout.splitlines() == [str(expected), str(expected)]
+        assert expected.stat().st_mode & 0o777 == 0o700
+
+
+def test_tmpdir_is_not_set_when_directory_cannot_be_created(tmp_path: pathlib.Path) -> None:
+    """ディレクトリを作成できない場合は`TMPDIR`を設定せず、存在しない場所を指さない。"""
+    home = tmp_path / "home"
+    home.mkdir()
+    (home / ".cache").write_text("file", encoding="utf-8")
+
+    completed = subprocess.run(
+        ["/bin/bash", "--noprofile", "--norc", "-c", '. "$1"\nprintf "%s" "${TMPDIR-unset}"', "bash", str(BASHRC)],
+        capture_output=True,
+        text=True,
+        env={"HOME": str(home), "PATH": "/usr/bin:/bin"},
+        check=False,
+    )
+
+    assert completed.stdout == "unset"
