@@ -10,6 +10,7 @@ import math
 import os
 import pathlib
 import re
+import shutil
 import subprocess
 import sys
 import time
@@ -119,7 +120,7 @@ def _release_fixed(worktree: pathlib.Path, session_id: str) -> None:
         except OSError, UnicodeError, ValueError:
             # 読めない登録は所有を判定できない。作成先の実体の有無で上書きを防ぐ。
             continue
-        if owner == session_id or not isinstance(record, dict) or record.get("worktree") != str(worktree):
+        if owner == session_id or not isinstance(record, dict) or record.get("worktree") != str(worktree) or _recovered(record):
             continue
         result = cleanup_session(owner, only=path)
         if path.exists():
@@ -129,6 +130,95 @@ def _release_fixed(worktree: pathlib.Path, session_id: str) -> None:
                 f"成果を引き継ぐ場合は--reuse-record {path}を指定し、"
                 f"回収する場合は理由を解消して`atk lane delete --session-id {owner}`を実行してから再実行する"
             )
+
+
+def _read_selection(record: dict[str, typing.Any]) -> dict[str, typing.Any] | None:
+    """選定原本からこのレーンのWI集合と統合状態を読む。原本が存在しなければNoneを返す。"""
+    try:
+        text = pathlib.Path(record["selection_file"]).read_text(encoding="utf-8")
+    except FileNotFoundError:
+        return None
+    document = yaml.safe_load(text)
+    return {
+        "lane_wis": sorted(
+            str(row[selection.WI_KEY])
+            for row in selection.decisions(document) or []
+            if isinstance(row, dict) and row.get(selection.LANE_KEY) == record["lane"] and selection.WI_KEY in row
+        ),
+        "integrated": record["lane"] in selection.integrated_lanes(document),
+    }
+
+
+def _selection_state(record: dict[str, typing.Any]) -> dict[str, typing.Any]:
+    """選定原本が読めれば所有登録の保持値を更新して返し、失効していれば保持値を返す。
+
+    選定原本はmanaged-tempの7日保持へ委ねられ、所有登録は資源の回収まで残る。
+    再開と回収の判定を原本の存続へ依存させないため、読めた時点の内容を所有登録へ写して保持する。
+    """
+    current = _read_selection(record)
+    if current is not None:
+        record["selection"] = current
+        return current
+    held = record.get("selection")
+    if not isinstance(held, dict):
+        raise ValueError(
+            f"選定原本{record['selection_file']}が失効し、所有登録に選定情報が無い。"
+            "成果のbranchを保持して作成先を解放するには"
+            f"`atk lane recover --session-id {record['session_id']} --lane {record['lane']}`を実行する"
+        )
+    return held
+
+
+def _require_selection(record: dict[str, typing.Any]) -> None:
+    """今回渡された選定原本から保持値を再生成する。再利用でも前回の選定を引き継がない。"""
+    current = _read_selection(record)
+    if current is None:
+        raise ValueError(f"選定YAMLが存在しない: {record['selection_file']}。選定結果の出力先を指定する")
+    record["selection"] = current
+
+
+def _recovered(record: dict[str, typing.Any]) -> bool:
+    recovery = record.get("recovery")
+    return isinstance(recovery, dict) and recovery.get("phase") == "done"
+
+
+def _integration_directory(record: dict[str, typing.Any]) -> pathlib.Path:
+    """統合の対応表と実行記録を、所有登録と同じ寿命の状態ディレクトリへ置く。"""
+    return pathlib.Path(record["record_path"]).with_name(f"{record['lane']}-integration")
+
+
+def _persist_observed(record: dict[str, typing.Any], key: str, observed: dict[str, typing.Any]) -> dict[str, typing.Any]:
+    """実行記録と両出力を状態ディレクトリへ複製し、複製先を指す記録を返す。
+
+    run_commandの保存先はmanaged-tempの7日保持であり、検収待ちの間に失効し得る。
+    """
+    name = re.sub(r"[^A-Za-z0-9_.-]", "_", key) + "-" + hashlib.sha256(key.encode("utf-8")).hexdigest()[:8]
+    directory = _integration_directory(record) / name
+    directory.mkdir(parents=True, exist_ok=True)
+    persisted = dict(observed)
+    for field in ("record_path", "stdout_path", "stderr_path"):
+        source = observed.get(field)
+        if isinstance(source, str) and pathlib.Path(source).is_file():
+            # 実行ごとの保存先の名前を保ち、再実行の記録を前回の記録と区別する。
+            destination = directory / pathlib.Path(source).parent.name / pathlib.Path(source).name
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(source, destination)
+            persisted[field] = str(destination)
+    return persisted
+
+
+def _materials_missing(state: dict[str, typing.Any]) -> bool:
+    """検収待ちの対応表か検証記録が失われているかを返す。"""
+    mapping = state.get("rewrite_map")
+    if not isinstance(mapping, str) or not pathlib.Path(mapping).is_file():
+        return True
+    for key, observed in state.get("results", {}).items():
+        if key.startswith("verification-") and isinstance(observed, dict):
+            for field in ("record_path", "stdout_path", "stderr_path"):
+                value = observed.get(field)
+                if isinstance(value, str) and not pathlib.Path(value).is_file():
+                    return True
+    return False
 
 
 def _commands(path: pathlib.Path | None) -> dict[str, list[str]]:
@@ -245,6 +335,7 @@ def _transfer(source: pathlib.Path, destination: pathlib.Path, args: argparse.Na
     if activity:
         raise ValueError(f"再利用元はまだ使用中: {activity}。担当と外部プロセスの終端を待つ")
     record.update(session_id=session_id, record_path=str(destination), selection_file=str(args.selection_file.resolve()))
+    _require_selection(record)
     _save(source, record)
     # 本文を新所有者へ更新してからrenameする。中断しても同じreuse-recordで再開でき、二重登録を生じさせない。
     os.replace(source, destination)
@@ -291,6 +382,7 @@ def create(args: argparse.Namespace, session_id: str) -> dict[str, typing.Any]:
             if existing["common_dir"] != common or existing["base_branch"] != args.base_branch:
                 raise ValueError("既存レーンのrepoまたは統合先が入力と異なる。登録の入力で再実行する")
             existing["selection_file"] = str(args.selection_file.resolve())
+            _require_selection(existing)
             if args.commands_file is not None:
                 existing["commands"] = commands
             if not existing.get("ready"):
@@ -338,6 +430,7 @@ def create(args: argparse.Namespace, session_id: str) -> dict[str, typing.Any]:
             "project_hook": project_hook,
             "hook_name": f"process-wi-{args.lane}",
         }
+        _require_selection(record)
         _save(path, record)
         _prepare(record, path)
         return dict(record, record_path=str(path), reused=False)
@@ -452,8 +545,7 @@ def _eligible(record: dict[str, typing.Any]) -> str | None:
         return "repoのGit共通ディレクトリが所有記録と異なる"
     if not record.get("ready"):
         return "作成または環境準備が未完了"
-    document = yaml.safe_load(pathlib.Path(record["selection_file"]).read_text(encoding="utf-8"))
-    if record["lane"] not in selection.integrated_lanes(document):
+    if not _selection_state(record)["integrated"]:
         return "選定の統合状態が未統合"
     activity = _worktree_activity(worktree)
     if activity:
@@ -477,7 +569,7 @@ def cleanup_session(session_id: str | None, *, only: pathlib.Path | None = None)
 
     onlyを指定すると、その登録だけを同じ条件で判定・回収する。
     """
-    result: dict[str, typing.Any] = {"session_id": session_id, "removed": [], "retained": []}
+    result: dict[str, typing.Any] = {"session_id": session_id, "removed": [], "retained": [], "recovered": []}
     if session_id is None or not _directory(session_id).exists():
         return result
     with _locked(session_id) as directory:
@@ -489,7 +581,14 @@ def cleanup_session(session_id: str | None, *, only: pathlib.Path | None = None)
                 record = json.loads(path.read_text(encoding="utf-8"))
                 if record["session_id"] != session_id or path.stem != record["lane"]:
                     raise ValueError("登録の所有sessionまたはlaneが異なる")
+                if _recovered(record):
+                    # 回復で作業ツリーを解放し、成果のbranchを残した登録。所在を結果へ示し、回収しない。
+                    result["recovered"].append({"record_path": str(path), **record["recovery"]})
+                    continue
+                held = record.get("selection")
                 reason = _eligible(record)
+                if record.get("selection") != held:
+                    _save(path, record)
                 if reason:
                     result["retained"].append({"record_path": str(path), "reason": reason})
                 else:
@@ -539,6 +638,12 @@ def cleanup_session(session_id: str | None, *, only: pathlib.Path | None = None)
                     _git(repo, "branch", "-D", record["branch"])
                 if record["managed_temp"]:
                     managed_temp.cleanup_managed_temp(pathlib.Path(record["managed_temp"]))
+                integration_directory = _integration_directory(record)
+                if integration_directory.exists():
+                    # 統合の対応表と検証記録は証拠として回収結果と同じ期限付き領域へ移し、状態ディレクトリから外す。
+                    moved = result_path.parent / integration_directory.name
+                    shutil.move(integration_directory, moved)
+                    result.setdefault("integration_materials", {})[record["lane"]] = str(moved)
                 path.unlink()
                 result["removed"].append(record["lane"])
             except (OSError, ValueError, KeyError, subprocess.SubprocessError, managed_temp.ManagedTempError) as error:
@@ -548,6 +653,83 @@ def cleanup_session(session_id: str | None, *, only: pathlib.Path | None = None)
         for retained in result["retained"]:
             retained["next_action"] = "理由を解消し、所有登録の入力で作成を再開するか同じlane deleteで残る回収を実行する"
         _save(result_path, result)
+    return result
+
+
+def _recover(record: dict[str, typing.Any], path: pathlib.Path) -> None:
+    """成果のbranchを残して作業ツリーの占有を解放し、到達点を所有登録へ記録する。"""
+    if record.get("recovery") is None and (_read_selection(record) is not None or record.get("selection") is not None):
+        raise ValueError("選定情報が残る登録は回復の対象外。統合と`atk lane delete`か、--reuse-recordによる再利用で扱う")
+    repo = pathlib.Path(record["repo"])
+    worktree = pathlib.Path(record["worktree"])
+    if _common(repo) != record["common_dir"]:
+        raise ValueError("repoのGit共通ディレクトリが所有記録と異なる")
+    trees = _worktrees(repo)
+    registered = str(worktree) in trees
+    if registered:
+        if trees[str(worktree)] != record["branch"]:
+            raise ValueError("worktreeの登録が所有記録と異なる")
+        if worktree.exists():
+            if _common(worktree) != record["common_dir"]:
+                raise ValueError("worktreeのGit共通ディレクトリが所有記録と異なる")
+            activity = _worktree_activity(worktree)
+            if activity:
+                raise ValueError(activity)
+            if _git(worktree, "status", "--porcelain=v1", "--untracked-files=all"):
+                raise ValueError("未commitまたは未追跡の変更がある。成果をcommitしてから再実行する")
+    elif worktree.exists():
+        raise ValueError("登録の無いworktreeが残っている。内容とGit登録を確認する")
+    if record["branch"] not in _branches(repo):
+        raise ValueError(f"元のbranchが無い: {record['branch']}。成果の所在を確認する")
+    head = _git(repo, "rev-parse", "--verify", f"refs/heads/{record['branch']}")
+    recovery = record.setdefault("recovery", {"phase": "started", "branch": record["branch"], "head": head})
+    if recovery["head"] != head:
+        raise ValueError("回復の開始後に元branchのHEADが変わった。成果を確認して同じ操作を再実行する")
+    _save(path, record)
+    if registered:
+        if worktree.exists() and record.get("project_hook") and worktree_hooks.configured(repo, "WorktreeRemove"):
+            worktree_hooks.remove(
+                repo,
+                worktree,
+                record["session_id"],
+                record["procedure_timeout"],
+                diagnostics_directory=_hook_diagnostics(record, "WorktreeRemove"),
+            )
+        elif worktree.exists():
+            _git(repo, "worktree", "remove", str(worktree))
+        else:
+            # 実体の無い登録は、その作業ツリーだけをGit登録から外す。
+            _git(repo, "worktree", "remove", "--force", str(worktree))
+    recovery["phase"] = "done"
+    _save(path, record)
+
+
+def recover(session_id: str, lanes: list[str] | None = None) -> dict[str, typing.Any]:
+    """選定情報を失った旧登録の作業ツリーを、成果のbranchを残して解放する。"""
+    for lane_id in lanes or []:
+        if not _LANE.fullmatch(lane_id):
+            raise ValueError("レーンはlane-NNで指定する")
+    directory = _directory(session_id)
+    if not directory.is_dir():
+        raise ValueError(f"所有sessionの登録が無い: {session_id}。`atk lane delete --list`で所有sessionを確認する")
+    result: dict[str, typing.Any] = {"session_id": session_id, "recovered": [], "retained": []}
+    with _locked(session_id):
+        paths = sorted(directory.glob("lane-*.json"))
+        if lanes:
+            missing = sorted(set(lanes) - {path.stem for path in paths})
+            if missing:
+                raise ValueError(f"指定したレーンの登録が無い: {', '.join(missing)}")
+            paths = [path for path in paths if path.stem in lanes]
+        for path in paths:
+            try:
+                record = json.loads(path.read_text(encoding="utf-8"))
+                if record["session_id"] != session_id or path.stem != record["lane"]:
+                    raise ValueError("登録の所有sessionまたはlaneが異なる")
+                if not _recovered(record):
+                    _recover(record, path)
+                result["recovered"].append({"record_path": str(path), "worktree": record["worktree"], **record["recovery"]})
+            except (OSError, ValueError, KeyError, TypeError, subprocess.SubprocessError, psutil.Error) as error:
+                result["retained"].append({"record_path": str(path), "reason": str(error)})
     return result
 
 
@@ -623,12 +805,7 @@ def _integration_input(args: argparse.Namespace, record: dict[str, typing.Any]) 
         handoff = pathlib.Path(manifest.get("handoff", ""))
         if not handoff.is_absolute() or not handoff.is_file():
             raise ValueError("計画なしでは既存の引き継ぎ記録をhandoffへ絶対パスで指定する")
-    document = yaml.safe_load(pathlib.Path(record["selection_file"]).read_text(encoding="utf-8"))
-    expected = {
-        row[selection.WI_KEY]
-        for row in selection.decisions(document) or []
-        if isinstance(row, dict) and row.get(selection.LANE_KEY) == record["lane"]
-    }
+    expected = set(_selection_state(record)["lane_wis"])
     if expected and expected != {row["name"] for row in manifest["wis"]}:
         raise ValueError("manifestのWI集合が選定の今回のレーン集合と一致しない")
     return manifest
@@ -646,6 +823,7 @@ def _integration_command(
     if key in state["completed"]:
         return
     observed, code, failure = run_command.execute(argv, cwd, timeout)
+    observed = _persist_observed(record, key, observed)
     state.setdefault("results", {})[key] = observed
     if code == 0:
         state["completed"].append(key)
@@ -828,12 +1006,22 @@ def integrate(args: argparse.Namespace, session_id: str) -> dict[str, typing.Any
         if state["phase"] == "rebasing":
             state.update(phase="rebased", new_head=_git(worktree, "rev-parse", "HEAD"))
             _save(path, record)
+        if state["phase"] == "awaiting-validation" and _materials_missing(state):
+            # 旧状態の対応表・検証記録が期限付き領域から失われた。保存済みの両系列から再生成して検収待ちへ戻る。
+            state.update(
+                phase="rebased",
+                completed=[
+                    key for key in state["completed"] if key != "history-compare" and not key.startswith("verification-")
+                ],
+            )
+            _save(path, record)
         if state["phase"] == "rebased":
-            if "rewrite_map" not in state:
-                directory = managed_temp.create_managed_temp("lane-integration")
-                state["rewrite_map"] = str(directory / "rewrite-map.json")
+            mapping = _integration_directory(record) / "rewrite-map.json"
+            if state.get("rewrite_map") != str(mapping):
+                state["completed"] = [key for key in state["completed"] if key != "history-compare"]
+                state["rewrite_map"] = str(mapping)
                 _save(path, record)
-            mapping = pathlib.Path(state["rewrite_map"])
+            mapping.parent.mkdir(parents=True, exist_ok=True)
             _integration_command(
                 record,
                 state,
@@ -900,6 +1088,10 @@ def integrate(args: argparse.Namespace, session_id: str) -> dict[str, typing.Any
                         )
             _integration_input(args, record)
             selected = pathlib.Path(record["selection_file"])
+            if not selected.exists() and "selection-mark" not in state["completed"]:
+                # 選定原本は失効した。統合済みの事実を所有登録の選定情報へ記録して回収判定へ渡す。
+                state["completed"].append("selection-mark")
+                state.setdefault("results", {})["selection-mark"] = {"skipped": "選定原本が失効したため所有登録へ記録した"}
             _integration_command(
                 record,
                 state,
@@ -919,6 +1111,7 @@ def integrate(args: argparse.Namespace, session_id: str) -> dict[str, typing.Any
                 target,
                 timeout=record["procedure_timeout"],
             )
+            record["selection"] = {**_selection_state(record), "integrated": True}
             state["phase"] = "finalized"
             _save(path, record)
         return dict(state, record_path=str(path))
@@ -948,6 +1141,9 @@ def build_parser(parser: argparse.ArgumentParser) -> None:
     delete_parser = help_text.add_command(children, "delete", **help_text.HELP["atk lane delete"])
     delete_parser.add_argument("--session-id", help="回収する所有session。省略すると実行環境から解決する。")
     delete_parser.add_argument("--list", action="store_true", help="全sessionの登録と前回結果を読み、削除しない。")
+    recover_parser = help_text.add_command(children, "recover", **help_text.HELP["atk lane recover"])
+    recover_parser.add_argument("--session-id", required=True, help="回復する旧登録の所有session。")
+    recover_parser.add_argument("--lane", action="append", default=None, help="対象のlane-NN。省略すると全登録。複数指定可能。")
     integrate_parser = help_text.add_command(children, "integrate", **help_text.HELP["atk lane integrate"])
     integrate_parser.add_argument("--record", type=pathlib.Path, required=True, help="所有登録の絶対パス。")
     integrate_parser.add_argument("--reviewed-head", required=True, help="受理済みレビュー対象HEAD。")
@@ -995,6 +1191,8 @@ def dispatch(args: argparse.Namespace) -> int:
             result = create(args, session_id)
         elif args.lane_subcommand == "integrate":
             result = integrate(args, session_id)
+        elif args.lane_subcommand == "recover":
+            result = recover(session_id, args.lane)
         else:
             result = cleanup_session(session_id)
         print(json.dumps(result, ensure_ascii=False))
@@ -1002,9 +1200,14 @@ def dispatch(args: argparse.Namespace) -> int:
             outcome.report_warning("rebase後の検収を待っている", next_action=result["next_action"])
             return 1
         if result.get("retained"):
-            outcome.report_warning(
-                "未回収のレーン資源を保持した", next_action="result_pathの理由を解消し同じlane deleteを再実行する"
-            )
+            if args.lane_subcommand == "recover":
+                outcome.report_warning(
+                    "回復できない登録を保持した", next_action="retainedの理由を解消し同じlane recoverを再実行する"
+                )
+            else:
+                outcome.report_warning(
+                    "未回収のレーン資源を保持した", next_action="result_pathの理由を解消し同じlane deleteを再実行する"
+                )
             return 1
         outcome.report_success("レーン資源の操作が完了した", outcome.ResultKind.VALUE_OUTPUT)
         return 0

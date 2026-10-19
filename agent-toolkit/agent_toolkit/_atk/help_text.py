@@ -357,6 +357,11 @@ HELP: dict[str, dict[str, str]] = {
         "description": "目的: 記録された所有sessionのレーン資源を安全条件で回収する。\n利用場面: sessionの最後と、終了処理が保持した対象の再回収。\n対象と出力: 全登録を先に判定し、removedとretainedの理由・残る操作、result_pathをJSONで返す。--listでは全sessionの登録と前回結果を読み、--session-idで1所有sessionへ限定できる。読取は作成と削除を行わない。未回収がある場合は終了1、入力不正は2。\n前提: Git登録と所有記録が一致し、担当と外部プロセスが終了し、worktreeがcleanで、branchが統合先へ到達し、選定の統合状態が統合済みであること。終端済み・未解放でcwdが対象worktree配下の委譲sessionは、所有agents_serverへ解放を要求してから使用中を再判定する。実行中・所有側無応答・解放後の残存資源は保持し、session_idと公開stop後の同じlane deleteの再実行を案内する。確認不能は保持する。\n復元・後始末: 固有delete手順、worktree、branch、旧配置の登録が持つ個別managed-tempの順で回収する。部分失敗は登録を保持し、同じ操作で残る処理から続ける。主作業ツリー、他sessionの登録、証拠とsessionのmanaged-tempは削除しない。",
         "epilog": "実行例:\n\n  atk lane delete --session-id <作成した所有session>",
     },
+    "atk lane recover": {
+        "summary": "選定情報を失った旧レーン登録の作業ツリーを、成果のbranchを残して解放する",
+        "description": "目的: 選定YAMLが失効し所有登録にも選定情報が無い旧登録が固定作成先を占有し続ける状態を、成果を失わずに解消する。\n利用場面: `atk lane delete`や`atk lane create`が「選定原本が失効し、所有登録に選定情報が無い」と返したとき。\n対象と出力: --session-idの所有sessionの登録（--laneで限定）ごとに、元branchとHEADを登録の`recovery`へ記録してから作業ツリーを解放し、recoveredとretainedの理由をJSONで返す。branchと所有登録は残し、回復済みの登録は固定作成先の所有判定と`atk lane delete`の回収対象から外れる。保持した登録がある場合は終了1、入力不正は2。\n前提: 選定原本も所有登録の選定情報も無い登録に限る。所有一致、Git共通ディレクトリの一致、担当と外部プロセスの終了、未commit・未追跡の変更が無いことを確かめ、成立しない登録は保持する。\n復元・後始末: 途中で失敗した登録は到達点を保持し、同じlane recoverで残る工程から続ける。残したbranchは`atk lane delete --list`の登録本文と本操作の結果から読める。",
+        "epilog": "実行例:\n\n  atk lane recover --session-id <旧登録の所有session> --lane lane-01",
+    },
     "atk managed-temp": {
         "summary": "managed-tempのディレクトリを作成・列挙・後始末する",
         "description": "目的: agent-toolkitが所有権を持つ一時ディレクトリを作成し、列挙し、後始末する。\n利用場面: 一時ファイルはSessionStartが通知するセッション単位の領域へ置くことを基本とし、本コマンドはその通知が無い場合、別のnamespaceから同じパスへ到達させる場合、Git worktreeなど`.git`を含む領域を置く場合に使う。残存した領域を確認するとき。\n対象と出力: agent-toolkitのデータディレクトリ配下の一時領域と登録簿を読み書きする。サブコマンドを指定しない場合はサブコマンド一覧を標準出力へ書き、何も変更しない。\n前提: 登録済み領域は最終更新から7日を超えると`atk`の実行時に自動削除する。`.git`を含む登録済み領域は自動削除の対象外とする。一時rootを指定しない場合に使う場所の直下で登録を失った領域も、最終更新から7日を超えると自動削除する。ただし、git worktreeとして登録が残る`.git`を含む領域は使用中として残す。\n復元・後始末: 早く削除したい領域と`.git`を含む領域は`atk managed-temp cleanup`で削除する。残存した領域は`atk managed-temp list`で確認する。",

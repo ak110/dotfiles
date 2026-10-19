@@ -221,6 +221,7 @@ Linuxでremote-controlを使わない直接CLIを終了対象として確認で�
 次の反復は可用性判定で解除を待ち、新しい会話でprocess-wiを起動する。
 親の`process_loop_session.py`は子の終了後に`lane.cleanup_session`で回収を試み、未統合・dirty・稼働中などのレーンは所有登録と成果を保持する。
 レーンのbranch・worktree・選定原本・旧所有sessionは、`lane.py`が状態ディレクトリの`lanes/<旧所有session>/lane-*.json`へ保存する所有登録が持つ。
+所有登録は選定原本から写したレーンのWI集合と統合状態、rebase後の対応表と検証記録も持つため、managed-tempにある選定原本が失効した後の再開と回収も同じ所有登録から判定する。
 状態ディレクトリの絶対パスは`atk config get state_dir`で取得する。
 WIの本文と`processing`の状態はprivate-notesのキュー、計画と進捗ログは`~/.claude/plans`が保持する。
 新しい会話のprocess-wiは[選定手順](../../agent-toolkit/skills/process-wi/references/selection-procedure.md)に従い、`atk lane delete --list`で残存登録と回収結果を読み、WIに対応する計画を`atk plans list`から解決する。

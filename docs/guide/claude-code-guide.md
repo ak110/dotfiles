@@ -481,7 +481,7 @@ holdとrun-skill由来もこの判定へ含め、回答後にadoptedへ移った
 選定はClaude CodeとCodexのどちらもメインが直接行い、別の選定担当は起動しない。候補本文から分類・割当・モデル・配置根拠を判断し、取得済み候補と意味判断をpick-wi-checkへ渡して定型欄の生成・確認・保存を1回で行う。意味判断と要求の被覆、レーン数上限、同じ担当thread、単一writer、実行レビューと直列統合は維持する。
 圧縮ツールが提供されるClaude Codeでは、各段階の全初期通常レーンの初回起動後と、終端担当の起動後の長時間待機前に会話圧縮を予約する。独立した工程を先に開始し、セッションのmanaged-temp直下のparent-handoff.mdへ再開状態を保存する。引数なしで予約し、背景待機を始めてターンを終える。受付は圧縮完了と区別し、通知後に保存記録から同じ工程へ戻る。ツールが無い環境では、その旨を記録して通常の待機へ進む。Codex、通常0件、処理中の追加レーン起動と実行レビュー待機は予約の対象外とする。
 
-レーン資源は`atk lane create`が専用worktree・branchと所有session、準備・撤去手順を登録し、準備後に担当を起動する。process-wiは対象リポジトリごとに1つだけ起動する前提で、専用worktreeは対象リポジトリの`.claude/worktrees/process-wi-lane-NN`に固定され、実行を繰り返してもパスは増えない。統合後も追加に備えて同じ資源を保持する。通常終了の`atk agents-exit-session`とprocess-loopの子終了後が`atk lane delete`と同じ安全条件で回収する。未統合・dirty・稼働中・不明・途中失敗の資源は保持し、次回の開始時に`atk lane delete --list`から理由と残る操作を読む。セッションのmanaged-tempと検証の証拠は専用資源とともに削除しない。
+レーン資源は`atk lane create`が専用worktree・branchと所有session、準備・撤去手順を登録し、準備後に担当を起動する。process-wiは対象リポジトリごとに1つだけ起動する前提で、専用worktreeは対象リポジトリの`.claude/worktrees/process-wi-lane-NN`に固定され、実行を繰り返してもパスは増えない。統合後も追加に備えて同じ資源を保持する。通常終了の`atk agents-exit-session`とprocess-loopの子終了後が`atk lane delete`と同じ安全条件で回収する。未統合・dirty・稼働中・不明・途中失敗の資源は保持し、次回の開始時に`atk lane delete --list`から理由と残る操作を読む。セッションのmanaged-tempと検証の証拠は専用資源とともに削除しない。選定結果の一時ファイルが失効しても、所有登録が写した選定情報で統合と回収を続ける。選定情報を持たない古い登録は`atk lane recover --session-id <所有session>`で元のbranchを残して専用worktreeを解放する。
 要件を本文だけで説明できる作業に向く。
 1レーンの場合も隔離と独立文脈レビューを保ち、`atk lane integrate`が統合・計画保存・WI終端・統合済み記録をまとめて行う。
 途中失敗は進行記録と成果を残し、同じ入力で未完了の工程から再開する。
