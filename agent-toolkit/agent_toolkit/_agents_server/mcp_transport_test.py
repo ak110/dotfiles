@@ -236,9 +236,15 @@ class _LaunchedServer:
     """起動ランチャーまたは変更前の起動形でagents_serverを起動し、JSON-RPCを1行ずつ送受信する。"""
 
     def __init__(
-        self, tmp_path: pathlib.Path, host_environment: dict[str, str], runtime: pathlib.Path, *, direct: bool = False
+        self,
+        tmp_path: pathlib.Path,
+        host_environment: dict[str, str],
+        *,
+        direct: bool = False,
+        arguments: tuple[str, ...] = (),
     ) -> None:
-        # 依存のキャッシュは実行ホストの値を使い、状態ディレクトリ・一時領域・起動用の依存環境だけを分離する。
+        # 起動用の依存環境と依存のキャッシュは実行ホストの値を使い、状態ディレクトリと一時領域だけを分離する。
+        # 依存環境を分離すると、作業者ごとに数百MBのコピーを一時領域へ作るためである。
         env = {
             key: value
             for key, value in host_environment.items()
@@ -248,7 +254,6 @@ class _LaunchedServer:
             XDG_STATE_HOME=str(tmp_path),
             LOCALAPPDATA=str(tmp_path),
             TMPDIR=str(tmp_path / "tmp"),
-            AGENT_TOOLKIT_RUNTIME_DATA=str(runtime),
         )
         (tmp_path / "tmp").mkdir(parents=True, exist_ok=True)
         search_path = os.pathsep.join(directory for directory in os.get_exec_path() if pathlib.Path(directory).name != "shims")
@@ -257,9 +262,9 @@ class _LaunchedServer:
         assert uv is not None
         target = str(_PLUGIN_ROOT / "agent_toolkit" / "agents_server_mcp.py")
         command = (
-            [uv, "run", "--project", str(_PLUGIN_ROOT), "--locked", "--no-default-groups", target]
+            [uv, "run", "--project", str(_PLUGIN_ROOT), "--locked", "--no-default-groups", target, *arguments]
             if direct
-            else [sys.executable, str(_PLUGIN_ROOT / "scripts" / "launch.py"), "agent_toolkit/agents_server_mcp.py"]
+            else [sys.executable, str(_PLUGIN_ROOT / "scripts" / "launch.py"), "agent_toolkit/agents_server_mcp.py", *arguments]
         )
         self.state_dir = tmp_path / "agent-toolkit"
         self.temporary = tmp_path / "tmp"
@@ -345,17 +350,9 @@ class _LaunchedServer:
         return next(event["pid"] for event in self.events() if event["event"] == "started")
 
 
-@pytest.fixture(name="launcher_runtime", scope="module")
-def _launcher_runtime(tmp_path_factory: pytest.TempPathFactory) -> pathlib.Path:
-    """ランチャーが起動に使う依存環境の置き場を、このモジュールの全テストで共有して構築を1回にする。"""
-    return tmp_path_factory.mktemp("launcher-runtime")
-
-
-def test_launcher_records_stdin_close_exit(
-    tmp_path: pathlib.Path, host_environ: Callable[[], dict[str, str]], launcher_runtime: pathlib.Path
-) -> None:
+def test_launcher_records_stdin_close_exit(tmp_path: pathlib.Path, host_environ: Callable[[], dict[str, str]]) -> None:
     """親が標準入力を閉じた正常終了を、サーバーとランチャーの双方が時刻付きで記録し、tools/listと終了コード0を保つ。"""
-    server = _LaunchedServer(tmp_path, host_environ(), launcher_runtime)
+    server = _LaunchedServer(tmp_path, host_environ())
     server.initialize()
     tools = server.request(2, "tools/list", {})["result"]["tools"]
     assert {tool["name"] for tool in tools} == {"start", "send_message", "kill", "stop", "list", "show"}
@@ -374,13 +371,21 @@ def test_launcher_records_stdin_close_exit(
     assert not list(server.temporary.glob("agent-toolkit-agents-server-launch-*"))
 
 
+def test_launcher_check_dependencies_exits_silently(tmp_path: pathlib.Path, host_environ: Callable[[], dict[str, str]]) -> None:
+    """起動単位を持たない正常終了は、診断ファイルの所在を受け取れなかった旨を標準エラーへ出力しない。"""
+    server = _LaunchedServer(tmp_path, host_environ(), arguments=("--check-dependencies",))
+
+    assert server.wait() == 0
+    assert server.stderr == b"", server.stderr
+    assert not list((server.state_dir / logging_config.INSTANCE_DIRECTORY_NAME).glob("*.jsonl"))
+
+
 @pytest.mark.skipif(os.name == "nt", reason="POSIXのシグナル転送と終了状態を検証する")
 @pytest.mark.parametrize("signum", [signal.SIGTERM, signal.SIGINT], ids=["SIGTERM", "SIGINT"])
 def test_launcher_preserves_signal_exit_status(
     tmp_path: pathlib.Path,
     signum: signal.Signals,
     host_environ: Callable[[], dict[str, str]],
-    launcher_runtime: pathlib.Path,
 ) -> None:
     """ランチャーが受けたシグナルを記録し、変更前の起動形と同じ終了状態を呼出元へ返す。
 
@@ -396,8 +401,8 @@ def test_launcher_preserves_signal_exit_status(
             launched.process.stdin.close()
 
     # 起動の待ち時間を重ねるため、対照とランチャーを同時に起動する。
-    control = _LaunchedServer(tmp_path / "control", host_environ(), launcher_runtime, direct=True)
-    server = _LaunchedServer(tmp_path / "launcher", host_environ(), launcher_runtime)
+    control = _LaunchedServer(tmp_path / "control", host_environ(), direct=True)
+    server = _LaunchedServer(tmp_path / "launcher", host_environ())
     for launched in (control, server):
         launched.initialize()
     for launched in (control, server):
@@ -413,11 +418,9 @@ def test_launcher_preserves_signal_exit_status(
 
 
 @pytest.mark.skipif(os.name == "nt", reason="POSIXのSIGKILLを使う")
-def test_launcher_records_server_kill(
-    tmp_path: pathlib.Path, host_environ: Callable[[], dict[str, str]], launcher_runtime: pathlib.Path
-) -> None:
+def test_launcher_records_server_kill(tmp_path: pathlib.Path, host_environ: Callable[[], dict[str, str]]) -> None:
     """サーバーだけが記録できずに終わった場合も、ランチャーが終了状態と標準エラー末尾を記録する。"""
-    server = _LaunchedServer(tmp_path, host_environ(), launcher_runtime)
+    server = _LaunchedServer(tmp_path, host_environ())
     server.initialize()
     os.kill(server.server_pid(), signal.SIGKILL)
     server.wait()
@@ -431,11 +434,9 @@ def test_launcher_records_server_kill(
 
 
 @pytest.mark.skipif(os.name == "nt", reason="POSIXのSIGKILLを使う")
-def test_launcher_and_server_kill_is_incomplete(
-    tmp_path: pathlib.Path, host_environ: Callable[[], dict[str, str]], launcher_runtime: pathlib.Path
-) -> None:
+def test_launcher_and_server_kill_is_incomplete(tmp_path: pathlib.Path, host_environ: Callable[[], dict[str, str]]) -> None:
     """ランチャーとサーバーがともに記録できずに終わった診断は`incomplete`として返し、終了状態を補わない。"""
-    server = _LaunchedServer(tmp_path, host_environ(), launcher_runtime)
+    server = _LaunchedServer(tmp_path, host_environ())
     server.initialize()
     server_pid = server.server_pid()
     # ランチャーを先に止め、サーバーの終了を観測する主体を残さない。サーバーが標準出力を保持するため、両方を止めてから待つ。
