@@ -159,7 +159,7 @@ def _configure_persistent_log(run_id: str) -> logging.Handler | None:
 
 
 def _finish(returncode: int) -> int:
-    """実行終了を記録し、失敗時は診断ログの位置と表示コマンドを案内する。
+    """実行終了を記録し、失敗時は次の操作と診断ログの位置・表示コマンドを1回だけ案内する。
 
     同期結果の構造化記録も本関数だけが確定させる。全ての終了経路が本関数を通るため、
     記録の欠落と、成功した段を失敗として残す書き分けの誤りを避けられる。
@@ -176,9 +176,12 @@ def _finish(returncode: int) -> int:
             stderr_tail=None if returncode == 0 else _last_stderr_tail,
             finished_at=sync_report.now_text(),
         )
-    if returncode != 0 and _persistent_log_ready:
-        print(f"永続ログ: {_LOG_PATH}", file=sys.stderr)
-        print("失敗の詳細は update-dotfiles logs で直近1回の実行ログを表示して確認できる。", file=sys.stderr)
+    if returncode != 0:
+        # post-applyは`update-dotfiles`経由の実行では失敗後の案内を出さないため、次の操作はここで1回だけ示す。
+        print("次の操作: 失敗理由を確認し、update-dotfilesを再実行してください。", file=sys.stderr)
+        if _persistent_log_ready:
+            print(f"永続ログ: {_LOG_PATH}", file=sys.stderr)
+            print("失敗の詳細は update-dotfiles logs で直近1回の実行ログを表示して確認できる。", file=sys.stderr)
     return returncode
 
 

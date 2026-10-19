@@ -11,10 +11,12 @@ import io
 import logging
 import logging.handlers
 import os
+import shutil
 import sys
 import threading
 import time
 import traceback
+import unicodedata
 from collections.abc import Callable, Sequence
 from concurrent.futures import FIRST_COMPLETED, Future, ThreadPoolExecutor, wait
 from dataclasses import dataclass
@@ -111,6 +113,7 @@ def _configure_logging() -> tuple[list[logging.Handler], int, bool]:
     stdout_handler.setFormatter(formatter)
     stderr_handler = logging.StreamHandler(sys.stderr)
     stderr_handler.setLevel(logging.WARNING)
+    stderr_handler.addFilter(_ScreenFilter())
     stderr_handler.setFormatter(formatter)
     run_id = _run_id()
     handlers: list[logging.Handler] = [stdout_handler, stderr_handler]
@@ -557,9 +560,11 @@ def main(
         _print_plugin_recommendations(recommendations)
         if failed:
             logger.error("失敗したステップ: %s", ", ".join(r.name for r in failed))
-            logger.error("次の操作: %s", _post_apply_recovery_action())
-            if persistent_log_ready:
-                logger.error("永続ログ: %s（末尾の失敗理由を確認してください）", _UPDATE_LOG_PATH)
+            # `update-dotfiles`経由の実行では、`update-dotfiles`の終了時の案内が1回だけ次の操作と永続ログの所在を示す。
+            if _UPDATE_RUN_ID_ENV not in os.environ:
+                logger.error("次の操作: %s", _post_apply_recovery_action())
+                if persistent_log_ready:
+                    logger.error("永続ログ: %s（末尾の失敗理由を確認してください）", _UPDATE_LOG_PATH)
         _print_post_apply_notices(notices)
         logger.info("post-apply終了: exit=%d", 1 if failed else 0)
         sys.exit(1 if failed else 0)
@@ -582,7 +587,7 @@ def _record_deferred_updates(results: list[_StepResult]) -> list[_StepResult]:
     try:
         path = deferred_updates.write(steps)
     except OSError as error:
-        logger.error("    延期記録: 失敗: %s。次の操作: %s", error, _post_apply_recovery_action())
+        logger.error("    延期記録: 失敗: %s", error)
         return [_StepResult(name="延期記録", ok=False, changed=False, reason=f"{type(error).__name__}: {error}")]
     if steps and path is not None:
         logger.info("    延期した更新を記録した: %s（%s）", ", ".join(steps), path)
@@ -715,7 +720,9 @@ def _execute_step(step: _StepSpec) -> tuple[_StepResult, list[str], float]:
     try:
         ret = step.run()
     except Exception as error:  # noqa: BLE001 -- 他ステップを止めないため広く捕捉する
-        logger.exception("    %s: 失敗。次の操作: %s", step.name, _post_apply_recovery_action())
+        # 画面へは1行の理由だけを出力し、Tracebackは永続ログだけへ残す。案内は実行の最後に1回だけ出力する。
+        logger.error("    %s: 失敗: %s: %s", step.name, type(error).__name__, error)
+        logger.error("    %s: Traceback", step.name, exc_info=True, extra=log_format.LOG_ONLY)
         failure = _StepResult(
             name=step.name,
             ok=False,
@@ -727,7 +734,8 @@ def _execute_step(step: _StepSpec) -> tuple[_StepResult, list[str], float]:
     if not isinstance(ret, post_apply_outcome.PostApplyOutcome):
         # 型注釈は実行時に検査されないため、契約に反する戻り値を工程の失敗として扱い、後続の集計を止めない。
         ret = post_apply_outcome.PostApplyOutcome(
-            failure=f"戻り値が PostApplyOutcome ではない: {ret!r}", next_action=_post_apply_recovery_action()
+            failure=f"戻り値が PostApplyOutcome ではない: {ret!r}",
+            next_action="工程の実装が返す値をPostApplyOutcomeへ直してください。",
         )
     if ret.failure is not None:
         logger.error("    %s: 失敗: %s。次の操作: %s", step.name, ret.failure, ret.next_action)
@@ -829,6 +837,48 @@ def _emit_outcome(label: str, outcome: _StepOutcome) -> None:
         root_logger.handle(record)
 
 
+class _ProgressLine:
+    r"""標準エラーの1行を書き換えて進捗を示す。人が使う端末だけで出力する。
+
+    `\r`と空白による上書きだけを使うため、ANSIエスケープを解釈しないWindowsの端末でも同じ表示になる。
+    端末幅を超えると折り返して書き換えられなくなるため、1行を端末幅未満の長さへ省略する。
+    """
+
+    def __init__(self) -> None:
+        self._width = 0
+
+    def show(self, text: str) -> None:
+        """進捗の行を書き換える。"""
+        limit = max(shutil.get_terminal_size().columns - 1, 1)
+        text = _truncate_display(text, limit)
+        padding = " " * max(self._width - _display_width(text), 0)
+        print(f"\r{text}{padding}", end="", file=sys.stderr, flush=True)
+        self._width = _display_width(text)
+
+    def clear(self) -> None:
+        """進捗の行を消去し、後続の出力と混ざらないようにする。"""
+        if self._width:
+            print(f"\r{' ' * self._width}\r", end="", file=sys.stderr, flush=True)
+            self._width = 0
+
+
+def _display_width(text: str) -> int:
+    """端末で占める桁数を返す。全角文字は2桁として数える。"""
+    return sum(2 if unicodedata.east_asian_width(char) in "WF" else 1 for char in text)
+
+
+def _truncate_display(text: str, limit: int) -> str:
+    """端末の桁数が`limit`以下になるよう末尾を省略する。"""
+    if _display_width(text) <= limit:
+        return text
+    result = ""
+    for char in text:
+        if _display_width(result + char + "…") > limit:
+            break
+        result += char
+    return result + "…"
+
+
 def run(
     steps: Sequence[_StepSpec | tuple[str, Callable[[], post_apply_outcome.PostApplyOutcome]]] | None = None,
 ) -> tuple[list[_StepResult], list[str]]:
@@ -854,6 +904,8 @@ def run(
     outcomes: dict[int, _StepOutcome] = {}
     started: set[int] = set()
     running: dict[Future[_StepOutcome], int] = {}
+    started_at: dict[int, float] = {}
+    progress = _ProgressLine()
     emitted = 0
     try:
         with ThreadPoolExecutor(max_workers=max(total, 1)) as executor:
@@ -868,27 +920,29 @@ def run(
                         reason = _skip_reason(step, home_substituted=home_substituted)
                         if reason is None:
                             running[executor.submit(_execute_captured_step, labels[index], step)] = index
+                            started_at[index] = time.monotonic()
                             continue
                         # 実行しないステップは`run`を呼ばず、成功かつ変更なしとして扱う。
                         result = _StepResult(name=step.name, ok=True, changed=False)
                         outcomes[index] = _StepOutcome(result, [], 0.0, [], skip_reason=reason)
                         progressed = True
                 while emitted < total and emitted in outcomes:
+                    progress.clear()
                     _emit_outcome(labels[emitted], outcomes[emitted])
                     emitted += 1
                 if not running:
                     break
                 if is_human_terminal():
-                    names = "、".join(effective_steps[index].name for index in sorted(running.values()))
-                    print(
-                        f"  post-apply実行中: 完了 {len(outcomes)}/{total}、実行中の工程: {names}",
-                        file=sys.stderr,
-                        flush=True,
+                    longest = min(running.values(), key=lambda index: started_at[index])
+                    progress.show(
+                        f"  post-apply実行中: 完了 {len(outcomes)}/{total}、"
+                        f"実行中 {len(running)}件（最長: {effective_steps[longest].name}）"
                     )
                 done, _ = wait(running, return_when=FIRST_COMPLETED)
                 for future in done:
                     outcomes[running.pop(future)] = future.result()
     finally:
+        progress.clear()
         root_logger.removeHandler(capture)
         for handler in original_handlers:
             handler.removeFilter(exclusion)

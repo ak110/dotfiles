@@ -1015,6 +1015,45 @@ class TestStepFailureStopsExecution:
         assert "失敗しても後続の段を続けた段:" in err
         assert f"chezmoi {failed_command}" in err
 
+    def test_failure_guidance_follows_continued_failure_list_once(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """失敗の案内は続行した段の一覧の後に1回だけ出る。"""
+        calls: list[list[str]] = []
+        monkeypatch.setattr(subprocess, "Popen", _fake_popen({}, calls))
+        monkeypatch.setattr(subprocess, "run", _fake_run({"status": 2, "diff": 7}, calls))
+        monkeypatch.setattr(update_dotfiles, "_LOCK_PATH", tmp_path / "locks" / "update-dotfiles.lock")
+
+        assert update_dotfiles.main() == 1
+        err = capsys.readouterr().err
+        assert err.count("次の操作:") == 1
+        assert err.count("永続ログ:") == 1
+        assert err.count("失敗の詳細は update-dotfiles logs") == 1
+        assert err.index("失敗しても後続の段を続けた段:") < err.index("次の操作:") < err.index("永続ログ:")
+
+    def test_post_apply_failure_shows_next_action_once(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """post-applyの失敗で`chezmoi apply`が失敗した実行でも、次の操作と永続ログの所在が画面に各1回出る。
+
+        post-applyは`update-dotfiles`経由では失敗後の案内を出さないため、終了時の案内が唯一の次の操作になる。
+        """
+        calls: list[list[str]] = []
+        monkeypatch.setattr(subprocess, "Popen", _fake_popen({}, calls))
+        monkeypatch.setattr(subprocess, "run", _fake_run({"apply": 1}, calls))
+        monkeypatch.setattr(update_dotfiles, "_LOCK_PATH", tmp_path / "locks" / "update-dotfiles.lock")
+
+        assert update_dotfiles.main() == 1
+        err = capsys.readouterr().err
+        assert err.count("次の操作:") == 1
+        assert err.count("永続ログ:") == 1
+
     def test_multiple_continued_failures_are_all_listed(
         self,
         monkeypatch: pytest.MonkeyPatch,
@@ -1223,7 +1262,8 @@ class TestCapturedStderr:
         captured = capsys.readouterr()
         assert "fatal: pull failed" not in captured.out
         assert captured.err == (
-            f"fatal: pull failed\n永続ログ: {update_dotfiles._LOG_PATH}\n"  # noqa: SLF001
+            "fatal: pull failed\n次の操作: 失敗理由を確認し、update-dotfilesを再実行してください。\n"
+            f"永続ログ: {update_dotfiles._LOG_PATH}\n"  # noqa: SLF001
             "失敗の詳細は update-dotfiles logs で直近1回の実行ログを表示して確認できる。\n"
         )
         assert len(calls) == 1

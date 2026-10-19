@@ -152,7 +152,11 @@ chezmoiの`post_apply`を使うdotfiles導入がある。既存の外部参照�
   HOMEが実行ユーザーのパスワードデータベース上のホームと異なる実行（手動観測やテスト）では、この工程を実行せず成功かつ変更なしとし、理由を画面へ出力する。
   `systemctl --user`は`XDG_RUNTIME_DIR`とD-Busで実機のユーザーマネージャーへ接続するため、HOMEの差し替えでは隔離できない。
   工程を追加する場合も同じ基準で付ける
-- `post_apply.py`の画面には工程ごとの出力を列挙順にまとめて表示し、開始行、ロガー`httpx`のINFO、`claude` CLIの実行記録、実行中のOSを対象外とする工程の行は永続ログ（`update-dotfiles.log`）にだけ残す
+- `post_apply.py`は工程ごとの出力を列挙順にまとめて画面へ表示する
+- 進捗の表示は、標準エラーが端末でエージェント環境でない場合（`is_human_terminal()`が真）に限り、標準エラーの1行を書き換える形で出す。パイプへの出力とエージェント環境では進捗を出さない
+- 工程の例外は「工程名: 失敗: 例外の型: メッセージ」の1行だけを画面へ出力し、Tracebackは永続ログに残す。工程が`PostApplyOutcome`の`next_action`を返した失敗は、その工程の行に工程固有の次の操作を出す
+- 実行全体の失敗後の次の操作と永続ログの所在は1回だけ出力する。環境変数`UPDATE_DOTFILES_RUN_ID`がある`update-dotfiles`経由の実行では、`update-dotfiles`の終了時に出す。この環境変数が無い`dotfiles-post-apply`の単独実行では、post-applyの集計の行（`完了: 更新 N 件 / スキップ N 件 / 失敗 N 件`）の後に出す
+- 開始行、ロガー`httpx`のINFO、`claude` CLIの実行記録、実行中のOSを対象外とする工程の行は永続ログ（`update-dotfiles.log`）にだけ残す
 
 ### agents_server MCPの配置と寿命
 
