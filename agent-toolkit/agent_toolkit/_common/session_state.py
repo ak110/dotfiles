@@ -6,10 +6,8 @@
 （先発プロセスの追加キーが後発プロセスの書き込みで消失する事象を防ぐ）。
 
 ロック取得・解放は`file_lock.py`（POSIX: `fcntl.flock`、Windows: `msvcrt.locking`）へ委譲する。
-ロックファイルを削除する処理はない。内容を持たない空ファイルであり、
-一時ディレクトリの通常の回収に委ねる（削除する処理がないため、取得開始と削除の
-直列化も不要になる）。書き込みは同一ディレクトリの一時ファイル経由`os.replace`で
-アトミックに反映する。
+状態ディレクトリの固定1個のロックで、短いJSONの更新と回収を直列化する。
+ロックは削除せず、書き込みは同一ディレクトリの一時ファイル経由`os.replace`で反映する。
 
 パス規則は`agent-toolkit/skills/writing-standards/references/session-state-and-flags.md`の
 「状態ファイルの設計」節に記載がある。
@@ -25,8 +23,8 @@ import sys
 import tempfile
 import time
 from collections.abc import Callable, Generator
-from typing import TextIO
 
+from agent_toolkit._common import state_paths
 from agent_toolkit._common import transcript as _transcript
 from agent_toolkit._common.atomic_file import atomic_write as _atomic_write
 from agent_toolkit._common.file_lock import acquire_lock as _acquire_lock
@@ -50,30 +48,24 @@ STALE_STATE_MAX_AGE_SECONDS = 14 * 24 * 60 * 60
 
 def state_path(session_id: str) -> pathlib.Path:
     """セッション状態ファイルのパスを返す。"""
-    return pathlib.Path(tempfile.gettempdir()) / f"{_FILENAME_PREFIX}{session_id}{_FILENAME_SUFFIX}"
+    return state_paths.state_dir() / "hook-sessions" / f"{_FILENAME_PREFIX}{session_id}{_FILENAME_SUFFIX}"
 
 
 def _lock_path(path: pathlib.Path) -> pathlib.Path:
-    """状態ファイルに対応するロックファイルのパスを返す。"""
-    return path.with_name(path.name + _LOCK_SUFFIX)
+    """状態rootで共有する固定lockのパスを返す。"""
+    return path.parent / ".state.lock"
 
 
 @contextlib.contextmanager
 def _locked_state(path: pathlib.Path) -> Generator[None]:
-    """状態ファイルと同じセッション別ロックを取得して処理を実行する。"""
-    lock_file: TextIO
+    """状態rootの共有ロックを取得し、JSONの更新区間を実行する。"""
     path.parent.mkdir(parents=True, exist_ok=True)
-    lock_file = _lock_path(path).open("a+", encoding="utf-8")
-    try:
+    with _lock_path(path).open("a+", encoding="utf-8") as lock_file:
         _acquire_lock(lock_file)
-    except OSError:
-        lock_file.close()
-        raise
-    try:
-        yield
-    finally:
-        _release_lock(lock_file)
-        lock_file.close()
+        try:
+            yield
+        finally:
+            _release_lock(lock_file)
 
 
 def sweep_stale_states(
@@ -90,11 +82,11 @@ def sweep_stale_states(
     更新時刻は最後の記録時点のままとなり、長く記録が無いだけで削除されうるため。
 
     更新時刻が期限を超えた場合に削除する。
-    どの処理もロックファイルを削除せず、一時ディレクトリの通常の回収に委ねる。
+    固定1個の共有ロックは保持する。
 
     個別の削除失敗は無視して走査を継続する。
     """
-    directory = pathlib.Path(tempfile.gettempdir())
+    directory = state_path("unused").parent
     threshold = (time.time() if now is None else now) - max_age_seconds
     kept_state_name = state_path(keep_session_id).name if keep_session_id else None
     removed = 0
@@ -108,16 +100,11 @@ def sweep_stale_states(
 
 def _collect_stale_state(path: pathlib.Path, threshold: float) -> bool:
     """期限切れ状態を、ロックを使うプロセスがいない間に回収する。対応するロックは削除しない。"""
-    lock_path = _lock_path(path)
     try:
-        with lock_path.open("a+", encoding="utf-8") as lock_file:
-            _acquire_lock(lock_file)
-            try:
-                if not _is_stale(path, threshold):
-                    return False
-                return _unlink_quietly(path)
-            finally:
-                _release_lock(lock_file)
+        with _locked_state(path):
+            if not _is_stale(path, threshold):
+                return False
+            return _unlink_quietly(path)
     except OSError:
         return False
 
@@ -143,8 +130,12 @@ def read_state(session_id: str) -> dict:
     """セッション状態を読む。session_idが無効・不在・破損時は空辞書を返す。"""
     if not isinstance(session_id, str) or not session_id:
         return {}
+    path = state_path(session_id)
     try:
-        data = json.loads(state_path(session_id).read_text(encoding="utf-8"))
+        if not path.exists() and (pathlib.Path(tempfile.gettempdir()) / path.name).exists():
+            with _locked_state(path):
+                _migrate_legacy_state(path)
+        data = json.loads(path.read_text(encoding="utf-8"))
     except OSError, json.JSONDecodeError, ValueError:
         return {}
     return data if isinstance(data, dict) else {}
@@ -164,37 +155,42 @@ def inherit_state_from_transcript(session_id: str, transcript_path: str) -> bool
         return False
 
     try:
-        with _locked_state(target):
+        if (pathlib.Path(tempfile.gettempdir()) / target.name).exists():
+            read_state(session_id)
             if target.exists():
                 return False
-            candidates: dict[str, dict] = {}
-            for line in _transcript.read_transcript_lines(transcript_path) or []:
-                try:
-                    entry = json.loads(line)
-                except json.JSONDecodeError, ValueError:
-                    continue
-                if not isinstance(entry, dict):
-                    continue
-                predecessor = next(
-                    (
-                        value
-                        for key in _TRANSCRIPT_SESSION_ID_KEYS
-                        if isinstance((value := entry.get(key)), str) and value and value != session_id
-                    ),
-                    None,
-                )
-                if predecessor is None or predecessor in candidates:
-                    continue
-                predecessor_path = state_path(predecessor)
-                if predecessor_path.parent != pathlib.Path(tempfile.gettempdir()):
-                    continue
-                try:
-                    inherited = json.loads(predecessor_path.read_text(encoding="utf-8"))
-                except OSError, json.JSONDecodeError, ValueError:
-                    continue
-                if isinstance(inherited, dict):
-                    candidates[predecessor] = inherited
-            if len(candidates) != 1:
+        candidates: dict[str, dict] = {}
+        for line in _transcript.read_transcript_lines(transcript_path) or []:
+            try:
+                entry = json.loads(line)
+            except json.JSONDecodeError, ValueError:
+                continue
+            if not isinstance(entry, dict):
+                continue
+            predecessor = next(
+                (
+                    value
+                    for key in _TRANSCRIPT_SESSION_ID_KEYS
+                    if isinstance((value := entry.get(key)), str) and value and value != session_id
+                ),
+                None,
+            )
+            if predecessor is None or predecessor in candidates:
+                continue
+            predecessor_path = state_path(predecessor)
+            if predecessor_path.parent != target.parent:
+                continue
+            try:
+                inherited = json.loads(predecessor_path.read_text(encoding="utf-8"))
+            except OSError, json.JSONDecodeError, ValueError:
+                continue
+            if isinstance(inherited, dict):
+                candidates[predecessor] = inherited
+        if len(candidates) != 1:
+            return False
+        with _locked_state(target):
+            _migrate_legacy_state(target)
+            if target.exists():
                 return False
             predecessor, inherited = next(iter(candidates.items()))
             updated = {**inherited, _INHERITED_FROM_SESSION_KEY: predecessor}
@@ -256,7 +252,8 @@ def delete_state(session_id: str) -> bool:
     """有効なセッションの通常状態を安全に削除する。対応するロックは削除しない。"""
     if not isinstance(session_id, str) or not session_id:
         return False
-    return _delete_state_paths((state_path(session_id),))
+    path = state_path(session_id)
+    return _delete_state_paths((path, pathlib.Path(tempfile.gettempdir()) / path.name))
 
 
 def clear_session_state(session_id: str) -> bool:
@@ -269,29 +266,48 @@ def clear_session_state(session_id: str) -> bool:
 def _delete_state_paths(paths: tuple[pathlib.Path, ...]) -> bool:
     """指定状態を、ロックを使うプロセスがいない間に削除する。対応するロックは削除しない。"""
     succeeded = True
-    for path in paths:
-        if not path.exists():
-            continue
-        lock_path = _lock_path(path)
-        try:
-            with lock_path.open("a+", encoding="utf-8") as lock_file:
-                _acquire_lock(lock_file)
+    try:
+        with _locked_state(paths[0]):
+            for path in paths:
                 try:
                     path.unlink(missing_ok=True)
-                finally:
-                    _release_lock(lock_file)
-        except OSError:
-            succeeded = False
+                except OSError:
+                    succeeded = False
+    except OSError:
+        succeeded = False
     return succeeded
 
 
 def _read_locked(path: pathlib.Path) -> dict:
     """ロック取得後に状態ファイルを読み込む。不在・破損時は空辞書を返す。"""
+    _migrate_legacy_state(path)
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
     except OSError, json.JSONDecodeError, ValueError:
         return {}
     return data if isinstance(data, dict) else {}
+
+
+def _migrate_legacy_state(path: pathlib.Path) -> None:
+    """現行状態が無い場合だけ、同じsessionの旧JSONを排他下で移す。"""
+    if path.exists():
+        return
+    legacy = pathlib.Path(tempfile.gettempdir()) / path.name
+    if not legacy.exists():
+        return
+    with legacy.with_name(legacy.name + _LOCK_SUFFIX).open("a+", encoding="utf-8") as legacy_lock:
+        _acquire_lock(legacy_lock)
+        try:
+            try:
+                content = legacy.read_text(encoding="utf-8")
+                value = json.loads(content)
+            except FileNotFoundError, json.JSONDecodeError, ValueError:
+                return
+            if isinstance(value, dict):
+                _atomic_write(path, content)
+                legacy.unlink(missing_ok=True)
+        finally:
+            _release_lock(legacy_lock)
 
 
 def main(argv: list[str] | None = None) -> int:

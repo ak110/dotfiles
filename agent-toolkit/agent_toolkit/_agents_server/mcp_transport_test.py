@@ -16,7 +16,7 @@ import subprocess
 import sys
 import threading
 import time
-from collections.abc import AsyncGenerator, Callable
+from collections.abc import AsyncGenerator, Callable, Generator
 from types import SimpleNamespace
 from typing import Any
 from unittest.mock import AsyncMock
@@ -38,7 +38,7 @@ from agent_toolkit._agents_server import (
     mcp_transport,
     session_errors,
 )
-from agent_toolkit._common import state_paths
+from agent_toolkit._common import process_tree, state_paths
 from agent_toolkit._common.next_action import NEXT_ACTION_PREFIX, ActionableError
 
 pytestmark = pytest.mark.usefixtures("agents_server_isolation")
@@ -270,22 +270,55 @@ class _LaunchedServer:
         self.state_dir = tmp_path / "agent-toolkit"
         self.temporary = tmp_path / "tmp"
         # テストを実行する端末のCtrl-Cが子へ届かないよう、独立したセッションで起動する。
-        self.process = subprocess.Popen(  # pylint: disable=consider-using-with
-            command,
-            env=env,
-            stdin=subprocess.PIPE,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            start_new_session=os.name != "nt",
-        )
+        self._owner = contextlib.ExitStack()
+        self._closed = False
         self._lines: queue.Queue[bytes] = queue.Queue()
         self.stderr = b""
-        self._readers = [
-            threading.Thread(target=self._read_stdout, daemon=True),
-            threading.Thread(target=self._drain_stderr, daemon=True),
-        ]
-        for reader in self._readers:
-            reader.start()
+        self._readers: list[threading.Thread] = []
+        self.process = self._owner.enter_context(
+            process_tree.process_scope(
+                command,
+                env=env,
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                start_new_session=os.name != "nt",
+                close_streams=False,
+            )
+        )
+        try:
+            for target in (self._read_stdout, self._drain_stderr):
+                reader = threading.Thread(target=target, daemon=True)
+                self._readers.append(reader)
+                reader.start()
+        except BaseException:
+            self.close()
+            raise
+
+    def __enter__(self) -> _LaunchedServer:
+        return self
+
+    def __exit__(self, *_exc: object) -> None:
+        self.close()
+
+    def close(self) -> None:
+        """子の停止、開始済みreaderのjoin、全パイプのcloseを全件実行する。"""
+        if self._closed:
+            return
+        self._closed = True
+        with contextlib.ExitStack() as cleanup:
+            for stream in (self.process.stdin, self.process.stdout, self.process.stderr):
+                if stream is not None:
+                    cleanup.callback(stream.close)
+            for reader in self._readers:
+                if reader.ident is not None:
+                    cleanup.callback(self._join_reader, reader)
+            self._owner.close()
+
+    @staticmethod
+    def _join_reader(reader: threading.Thread) -> None:
+        reader.join(timeout=_LAUNCH_TIMEOUT)
+        assert not reader.is_alive(), "サーバーの読取threadが終了しませんでした"
 
     def _read_stdout(self) -> None:
         assert self.process.stdout is not None
@@ -321,12 +354,7 @@ class _LaunchedServer:
     def wait(self) -> int:
         """終了を待ち、読取threadを回収してから全パイプを閉じる。"""
         returncode = self.process.wait(timeout=_LAUNCH_TIMEOUT)
-        for reader in self._readers:
-            reader.join(timeout=_LAUNCH_TIMEOUT)
-        for stream in (self.process.stdin, self.process.stdout, self.process.stderr):
-            if stream is not None:
-                with contextlib.suppress(OSError):
-                    stream.close()
+        self.close()
         return returncode
 
     def events(self) -> list[dict[str, Any]]:
@@ -353,36 +381,35 @@ class _LaunchedServer:
 
 def test_launcher_records_stdin_close_exit(tmp_path: pathlib.Path, host_environ: Callable[[], dict[str, str]]) -> None:
     """親が標準入力を閉じた正常終了を、サーバーとランチャーの双方が時刻付きで記録し、tools/listと終了コード0を保つ。"""
-    server = _LaunchedServer(tmp_path, host_environ())
-    server.initialize()
-    tools = server.request(2, "tools/list", {})["result"]["tools"]
-    assert {tool["name"] for tool in tools} == {"start", "send_message", "kill", "stop", "list", "show"}
-    assert server.process.stdin is not None
-    server.process.stdin.close()
+    with _LaunchedServer(tmp_path, host_environ()) as server:
+        server.initialize()
+        tools = server.request(2, "tools/list", {})["result"]["tools"]
+        assert {tool["name"] for tool in tools} == {"start", "send_message", "kill", "stop", "list", "show"}
+        assert server.process.stdin is not None
+        server.process.stdin.close()
 
-    assert server.wait() == 0
-    events = server.events()
-    names = [event["event"] for event in events]
-    assert names[:2] == ["started", "bound"]
-    assert {"stdin_closed", "exited", "process_exited"} <= set(names)
-    assert next(event for event in events if event["event"] == "exited")["outcome"] == "normal"
-    exited = next(event for event in events if event["event"] == "process_exited")
-    assert exited["writer"] == "launcher" and exited["returncode"] == 0 and exited["signal"] is None
-    assert all(event["at"] for event in events)
-    assert not list(server.temporary.glob("agent-toolkit-agents-server-launch-*"))
+        assert server.wait() == 0
+        events = server.events()
+        names = [event["event"] for event in events]
+        assert names[:2] == ["started", "bound"]
+        assert {"stdin_closed", "exited", "process_exited"} <= set(names)
+        assert next(event for event in events if event["event"] == "exited")["outcome"] == "normal"
+        exited = next(event for event in events if event["event"] == "process_exited")
+        assert exited["writer"] == "launcher" and exited["returncode"] == 0 and exited["signal"] is None
+        assert all(event["at"] for event in events)
+        assert not list(server.temporary.glob("agent-toolkit-agents-server-launch-*"))
 
 
 def test_launcher_check_dependencies_exits_silently(tmp_path: pathlib.Path, host_environ: Callable[[], dict[str, str]]) -> None:
     """起動単位を持たない正常終了は、診断ファイルの所在を受け取れなかった旨を標準エラーへ出力しない。"""
     # ランチャーは子の標準エラーを中継する。依存環境を初めて作成するuvの進行表示を
     # 判定対象の標準エラーへ含めないよう、先に作成を済ませる。
-    warmup = _LaunchedServer(tmp_path / "warmup", host_environ(), arguments=("--check-dependencies",))
-    assert warmup.wait() == 0, warmup.stderr
-    server = _LaunchedServer(tmp_path, host_environ(), arguments=("--check-dependencies",))
-
-    assert server.wait() == 0
-    assert server.stderr == b"", server.stderr
-    assert not list((server.state_dir / logging_config.INSTANCE_DIRECTORY_NAME).glob("*.jsonl"))
+    with _LaunchedServer(tmp_path / "warmup", host_environ(), arguments=("--check-dependencies",)) as warmup:
+        assert warmup.wait() == 0, warmup.stderr
+        with _LaunchedServer(tmp_path, host_environ(), arguments=("--check-dependencies",)) as server:
+            assert server.wait() == 0
+            assert server.stderr == b"", server.stderr
+            assert not list((server.state_dir / logging_config.INSTANCE_DIRECTORY_NAME).glob("*.jsonl"))
 
 
 @pytest.mark.skipif(os.name == "nt", reason="POSIXのシグナル転送と終了状態を検証する")
@@ -406,56 +433,106 @@ def test_launcher_preserves_signal_exit_status(
             launched.process.stdin.close()
 
     # 起動の待ち時間を重ねるため、対照とランチャーを同時に起動する。
-    control = _LaunchedServer(tmp_path / "control", host_environ(), direct=True)
-    server = _LaunchedServer(tmp_path / "launcher", host_environ())
-    for launched in (control, server):
-        launched.initialize()
-    for launched in (control, server):
-        deliver(launched)
+    with (
+        _LaunchedServer(tmp_path / "control", host_environ(), direct=True) as control,
+        _LaunchedServer(tmp_path / "launcher", host_environ()) as server,
+    ):
+        for launched in (control, server):
+            launched.initialize()
+        for launched in (control, server):
+            deliver(launched)
 
-    assert server.wait() == control.wait()
-    events = server.events()
-    assert {"event": "signal_received", "signal": signum.name} in [
-        {"event": event["event"], "signal": event.get("signal")} for event in events
-    ]
-    exited = next(event for event in events if event["event"] == "process_exited")
-    assert [item["signal"] for item in exited["launcher_signals"]] == [signum.name]
+        assert server.wait() == control.wait()
+        events = server.events()
+        assert {"event": "signal_received", "signal": signum.name} in [
+            {"event": event["event"], "signal": event.get("signal")} for event in events
+        ]
+        exited = next(event for event in events if event["event"] == "process_exited")
+        assert [item["signal"] for item in exited["launcher_signals"]] == [signum.name]
 
 
 @pytest.mark.skipif(os.name == "nt", reason="POSIXのSIGKILLを使う")
 def test_launcher_records_server_kill(tmp_path: pathlib.Path, host_environ: Callable[[], dict[str, str]]) -> None:
     """サーバーだけが記録できずに終わった場合も、ランチャーが終了状態と標準エラー末尾を記録する。"""
-    server = _LaunchedServer(tmp_path, host_environ())
-    server.initialize()
-    os.kill(server.server_pid(), signal.SIGKILL)
-    server.wait()
+    with _LaunchedServer(tmp_path, host_environ()) as server:
+        server.initialize()
+        os.kill(server.server_pid(), signal.SIGKILL)
+        server.wait()
 
-    names = [event["event"] for event in server.events()]
-    assert "exited" not in names
-    exited = next(event for event in server.events() if event["event"] == "process_exited")
-    assert exited["returncode"] != 0
-    assert "stderr_tail" in exited
-    assert server.diagnostics_status() == "collected"
+        names = [event["event"] for event in server.events()]
+        assert "exited" not in names
+        exited = next(event for event in server.events() if event["event"] == "process_exited")
+        assert exited["returncode"] != 0
+        assert "stderr_tail" in exited
+        assert server.diagnostics_status() == "collected"
 
 
 @pytest.mark.skipif(os.name == "nt", reason="POSIXのSIGKILLを使う")
 def test_launcher_and_server_kill_is_incomplete(tmp_path: pathlib.Path, host_environ: Callable[[], dict[str, str]]) -> None:
     """ランチャーとサーバーがともに記録できずに終わった診断は`incomplete`として返し、終了状態を補わない。"""
-    server = _LaunchedServer(tmp_path, host_environ())
-    server.initialize()
-    server_pid = server.server_pid()
-    # ランチャーを先に止め、サーバーの終了を観測する主体を残さない。サーバーが標準出力を保持するため、両方を止めてから待つ。
-    server.process.kill()
-    os.kill(server_pid, signal.SIGKILL)
-    server.wait()
-    deadline = time.monotonic() + _LAUNCH_TIMEOUT
-    while time.monotonic() < deadline:
-        try:
-            os.kill(server_pid, 0)
-        except ProcessLookupError:
-            break
-        time.sleep(0.05)
+    with _LaunchedServer(tmp_path, host_environ()) as server:
+        server.initialize()
+        server_pid = server.server_pid()
+        # ランチャーを先に止め、サーバーの終了を観測する主体を残さない。サーバーが標準出力を保持するため、両方を止めてから待つ。
+        server.process.kill()
+        os.kill(server_pid, signal.SIGKILL)
+        server.wait()
+        deadline = time.monotonic() + _LAUNCH_TIMEOUT
+        while time.monotonic() < deadline:
+            try:
+                os.kill(server_pid, 0)
+            except ProcessLookupError:
+                break
+            time.sleep(0.05)
 
-    names = {event["event"] for event in server.events()}
-    assert not names & logging_config.TERMINATION_EVENTS
-    assert server.diagnostics_status() == "incomplete"
+        names = {event["event"] for event in server.events()}
+        assert not names & logging_config.TERMINATION_EVENTS
+        assert server.diagnostics_status() == "incomplete"
+
+
+@pytest.mark.parametrize("failure", ["start-reader", "body", "wait"])
+def test_launched_server_reclaims_resources_on_failure(
+    failure: str,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+    host_environ: Callable[[], dict[str, str]],
+) -> None:
+    """reader開始途中、本文、待機の失敗でも獲得済み子・thread・全pipeを回収する。"""
+    original_scope = process_tree.process_scope
+    original_start = threading.Thread.start
+    processes: list[subprocess.Popen] = []
+    readers: list[threading.Thread] = []
+
+    @contextlib.contextmanager
+    def sleeping_process(_command: list[str], **kwargs: Any) -> Generator[subprocess.Popen]:
+        with original_scope([sys.executable, "-c", "import time; time.sleep(120)"], **kwargs) as process:
+            processes.append(process)
+            yield process
+
+    def start(reader: threading.Thread) -> None:
+        readers.append(reader)
+        if failure == "start-reader" and len(readers) == 2:
+            raise RuntimeError("reader開始失敗")
+        original_start(reader)
+
+    monkeypatch.setattr(process_tree, "process_scope", sleeping_process)
+    monkeypatch.setattr(threading.Thread, "start", start)
+    expected = subprocess.TimeoutExpired if failure == "wait" else RuntimeError
+    with pytest.raises(expected), _LaunchedServer(tmp_path, host_environ()) as server:
+        if failure == "wait":
+            original_wait = server.process.wait
+
+            def wait(timeout: float | None = None) -> int:
+                if timeout == _LAUNCH_TIMEOUT:
+                    raise subprocess.TimeoutExpired(server.process.args, _LAUNCH_TIMEOUT)
+                return original_wait(timeout=timeout)
+
+            monkeypatch.setattr(server.process, "wait", wait)
+            server.wait()
+        raise RuntimeError("本文失敗")
+
+    assert len(processes) == 1 and processes[0].poll() is not None
+    assert all(not reader.is_alive() for reader in readers)
+    assert all(
+        stream is not None and stream.closed for stream in (processes[0].stdin, processes[0].stdout, processes[0].stderr)
+    )

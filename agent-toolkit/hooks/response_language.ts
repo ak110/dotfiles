@@ -1,4 +1,4 @@
-import type { On, ProcessRunResult, SessionMessage, ToolCallResult } from "claude-code";
+import type { On, ProcessRunResult, ToolCallResult } from "claude-code";
 import { automatedMessage } from "./automated_message.ts";
 
 // Function hooksから同じPythonの判定CLIを起動する。本文は単一の値引数として渡す。
@@ -58,15 +58,19 @@ export function withNotice(result: ToolCallResult, note: string | undefined): To
 }
 
 // 直近の可視本文だけを取得する。本文の無い呼出は遡り、send_to_userの入力も表示する本文として扱う。
-export function latestVisibleText(messages: readonly SessionMessage[], sendTool: string): string | undefined {
+export function latestVisibleText(messages: readonly { role: string; content: unknown }[], sendTool: string): string | undefined {
   for (let index = messages.length - 1; index >= 0; index--) {
     const message = messages[index]!;
     if (message.role !== "assistant") continue;
-    for (let toolIndex = message.toolUses.length - 1; toolIndex >= 0; toolIndex--) {
-      const call = message.toolUses[toolIndex]!;
-      if (call.tool === sendTool && typeof call.input.message === "string" && call.input.message.trim()) return call.input.message;
+    if (typeof message.content === "string" && message.content.trim()) return message.content;
+    if (!Array.isArray(message.content)) continue;
+    const texts: string[] = [];
+    for (const block of message.content) {
+      if (block.type === "text" && typeof block.text === "string") texts.push(block.text);
+      if (block.type === "tool_use" && block.name === sendTool && typeof block.input?.message === "string") texts.push(block.input.message);
     }
-    if (message.text.trim()) return message.text;
+    const text = texts.join("");
+    if (text.trim()) return text;
   }
   return undefined;
 }
@@ -84,7 +88,7 @@ export function register(on: On): void {
     lastPassed = undefined;
     let text: string | undefined;
     try {
-      text = latestVisibleText(await $.session.messages(), sendTool);
+      text = latestVisibleText(await $.session.messages({ as: "api" }), sendTool);
     } catch {
       return withNotice(await next(e), deliverOnce(delivered, undefined, languageCheckUnavailable("応答本文の取得で例外が発生")));
     }

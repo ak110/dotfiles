@@ -12,6 +12,8 @@ import pytest
 
 from agent_toolkit import atk
 from agent_toolkit._atk import git_sync as _atk_git_sync
+from agent_toolkit._atk.wi import entries as _wi_entries
+from agent_toolkit._atk.wi import frontmatter as _frontmatter
 from agent_toolkit._atk.wi import sync as _wi_sync
 from agent_toolkit._common import file_lock as _file_lock
 from agent_toolkit._common import private_notes as _private_notes
@@ -53,13 +55,10 @@ class TestRepoLock:
         target = tmp_path / "private-notes"
         target.mkdir()
         lock1 = _wi_sync.repo_lock(target)  # pylint: disable=protected-access  # noqa: SLF001
-        lock1.acquire()
-        try:
+        with lock1:
             lock2 = _wi_sync.repo_lock(target)  # pylint: disable=protected-access  # noqa: SLF001
             with pytest.raises(filelock.Timeout):
                 lock2.acquire(timeout=0.2)
-        finally:
-            lock1.release()
 
     def test_constructor_timeout_bounds_plain_with_statement(self, tmp_path: pathlib.Path) -> None:
         """`_repo_lock(..., timeout=...)`のコンストラクタで設定した値が`with lock:`（引数無し取得）へ伝搬する。
@@ -70,15 +69,12 @@ class TestRepoLock:
         target = tmp_path / "private-notes"
         target.mkdir()
         lock1 = _wi_sync.repo_lock(target)  # pylint: disable=protected-access  # noqa: SLF001
-        lock1.acquire()
-        try:
-            with (
-                pytest.raises(filelock.Timeout),
-                _wi_sync.repo_lock(target, timeout=0.2),  # pylint: disable=protected-access  # noqa: SLF001
-            ):
-                pass
-        finally:
-            lock1.release()
+        with (
+            lock1,
+            pytest.raises(filelock.Timeout),
+            _wi_sync.repo_lock(target, timeout=0.2),  # pylint: disable=protected-access  # noqa: SLF001
+        ):
+            pass
 
     def test_second_acquire_succeeds_after_release(self, tmp_path: pathlib.Path) -> None:
         """1つ目のロック解放後は、別インスタンスからの2つ目の取得が成功する。"""
@@ -434,7 +430,7 @@ class TestPrivateNotesAutoCreate:
             "adopted",
         )
         for name in expected_state_dirs:
-            assert (root / name).is_dir()
+            assert not (root / name).exists()
         exclude = (root / ".git" / "info" / "exclude").read_text(encoding="utf-8")
         assert exclude.splitlines().count(_file_lock.PLAN_LOCK_IGNORE_PATTERN) == 1
         assert not (root / ".gitignore").exists()
@@ -513,7 +509,7 @@ class TestPrivateNotesAutoCreate:
             _wi_sync.init_local_private_notes_repo(home / "private-notes")
         else:
             root = _wi_sync.ensure_environment(home)
-            target = root / "inbox" / "item.md" if condition == "existing-wi" else root / "plans" / "2026" / "10" / "p.md"
+            target = root / "2026" / "10" / "item.md" if condition == "existing-wi" else root / "plans" / "2026" / "10" / "p.md"
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_text("# 項目\n", encoding="utf-8")
         capfd.readouterr()
@@ -624,15 +620,20 @@ class TestMigrateLegacyLayout:
 
         assert not (root / "feedback").exists()
         assert not (root / "tbd").exists()
-        assert (root / "inbox" / filename).read_text(encoding="utf-8") == (
-            "---\ntarget_repo: github.com/example/repo\ntype: awi\n---\n\n本文\n"
-        )
-        assert (root / "adopted" / f"done-{filename}").read_text(encoding="utf-8").splitlines()[2] == "type: awi"
-        assert (root / "inbox" / "20260102-000000-001.md").read_text(encoding="utf-8").splitlines()[1:4] == [
-            "target_repo: github.com/example/repo",
-            "type: uwi",
-            "question_type: free-form",
-        ]
+        first = _wi_entries.entry_path(root, filename)
+        parsed = _frontmatter.parse_frontmatter(first.read_text(encoding="utf-8"))
+        assert parsed == ({"target_repo": "github.com/example/repo", "type": "awi", "state": "inbox"}, "\n本文\n")
+        done = _wi_entries.entry_path(root, f"done-{filename}")
+        assert _wi_entries.entry_state_of(done) == "adopted"
+        second = _wi_entries.entry_path(root, "20260102-000000-001.md")
+        parsed_second = _frontmatter.parse_frontmatter(second.read_text(encoding="utf-8"))
+        assert parsed_second is not None
+        assert parsed_second[0] == {
+            "target_repo": "github.com/example/repo",
+            "type": "uwi",
+            "question_type": "free-form",
+            "state": "inbox",
+        }
         assert "3件を平坦レイアウトへ移行" in capsys.readouterr().err
         assert not git_repository.git_output(root, "status", "--porcelain")
 
@@ -647,10 +648,30 @@ class TestMigrateLegacyLayout:
 
         assert git_repository.git_output(root, "rev-parse", "HEAD") == head
 
+    def test_startup_migration_does_not_reacquire_held_repo_lock(
+        self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """起動時のpullが同じキューの移行へ到達しても同じロックを再取得しない。"""
+        root = tmp_path / "private-notes"
+        filename = "20260101-000000-001.md"
+        _init_legacy_repo(root, {f"inbox/{filename}": _LEGACY_AWI.replace("---\n\n", "type: awi\n---\n\n")})
+        original_lock = _wi_sync.repo_lock
+
+        def bounded_lock(path: pathlib.Path, *, timeout: float = -1) -> filelock.FileLock:
+            del timeout
+            return original_lock(path, timeout=0.2)
+
+        monkeypatch.setattr(_wi_sync, "repo_lock", bounded_lock)
+        _wi_sync.ensure_environment(tmp_path)
+        assert _wi_entries.entry_state_of(_wi_entries.entry_path(root, filename)) == "inbox"
+        assert git_repository.git_output(root, "rev-list", "--count", "HEAD") == "2"
+
     def test_removes_empty_legacy_dirs_without_commit(self, tmp_path: pathlib.Path) -> None:
         """エントリを含まない旧ディレクトリだけがある場合は削除のみで完結する。"""
         root = tmp_path / "private-notes"
-        _init_legacy_repo(root, {"inbox/20260101-000000-001.md": "---\ntarget_repo: r\ntype: awi\n---\n\n本文\n"})
+        _init_legacy_repo(
+            root, {"2026/01/20260101-000000-001.md": "---\ntarget_repo: r\ntype: awi\nstate: inbox\n---\n\n本文\n"}
+        )
         (root / "feedback" / "inbox").mkdir(parents=True)
         head = git_repository.git_output(root, "rev-parse", "HEAD")
 

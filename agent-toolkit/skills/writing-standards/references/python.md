@@ -26,7 +26,28 @@
 - セキュリティの一般作法は`implementation-time.md`の「セキュリティ・ロギング・エラー処理」が定める。Pythonでは評価系の`eval`・`exec`、安全でない復元の`pickle`・`yaml.load`、shellによる実行、文字列で組み立てたSQL、予測可能な一時ファイルパスとセキュリティ用途の`random`の使用を避ける。外部入力は引数、SQLはパラメーターで渡し、一時ファイルは安全な生成API、セキュリティ用途の乱数はCSPRNGを使う
 - PEP 750テンプレート文字列（`t"..."`、Python 3.14+）の安全性は後段のレンダラに依存するため、SQL・HTML生成では対応するレンダラと組み合わせる
 
+### 資源の寿命
+
+資源は獲得直後から`with`・`async with`で寿命を閉じ、例外・中断が生じても解放する。
+寿命が関数・呼出元・fixtureへまたがる場合は、`contextlib.contextmanager`・`ExitStack`・fixtureの`yield`などで所有と解放を渡す。
+資源を所有する自作クラスには`__enter__`・`__exit__`か非同期の対応メソッドを持たせ、利用側が文脈マネージャーとして受け取れる形にする。
+複数段の後始末では、前段の例外と`KeyboardInterrupt`・`CancelledError`でも後段の解放へ到達できる構造にする。
+
+`consider-using-with`と`SIM115`の行内抑止は、常駐起動などで資源をプロセスの寿命を超えて手放す場合か、`__exit__`が要求に反する場合に限り、理由をコメントへ書く。
+関数をまたぐ寿命は、前掲の文脈マネージャーなどで表す。
+
 ### 実行環境
+
+Windowsでも実行・静的解析するコードとテストは、Windowsで結果が変わる前提を執筆時に確かめる。
+手元のLinuxでの検証は、その差を観測できない。
+
+<例>
+他OSに存在しない標準モジュール: `fcntl`・`pwd`・`pty`・`msvcrt`・`winreg`など。
+仮想環境の`python.exe`の中継と、起動側・子側のPIDの違い。
+ドライブ付きパスとパス区切り。
+拡張子付き実行ファイル名と`.cmd`形式の起動。
+テキストモードの`subprocess`の標準入力の改行変換（「標準ライブラリとログ」を参照）。
+</例>
 
 - PEP 723 uv script（`#!/usr/bin/env -S uv run --script`と`# /// script`ブロック）の注意点
   - `pyproject.toml`があるディレクトリ配下で`uv run`を呼ぶとプロジェクトをインストール対象として扱う。プロジェクトへ依存しないスクリプトは`uv run --no-project --script <path>`で実行する
@@ -52,6 +73,11 @@
 - 意図的な関数内importでは`# noqa: PLC0415  # pylint: disable=import-outside-toplevel`と併記する
 - `ty`と`mypy`の両方が有効な場合、型不一致の抑制は`# type: ignore[<mypy-code>]  # ty: ignore[<ty-rule>]`と同一行に併記する
 
+他OSに存在しない標準モジュールのimportには、OS分岐の全ての側と、特定OS専用のモジュール・試験内でも`# pylint: disable=import-error`と理由を付ける。
+pylintは`sys.platform`・`os.name`の分岐をimport失敗の無視条件に使わず、実行したOSで存在しない側だけを診断する。
+片側にだけ抑止を付けた場合、他OSでのpylint実行で初めて診断が出る。
+監査記録は`docs/development/audit-records.md`の「agent-toolkit/skills/writing-standards/references/python.md：静的解析の誤検出と抑制：2026年10月20日」にある。
+
 ## テストコード（pytest）
 
 - テストファイルの配置はプロジェクト方針に従う。方針が無い場合は、同居方式（`<name>.py`と同じディレクトリの`<name>_test.py`。配布除外の設定が要る）と集約方式（`tests/<module>_test.py`）から規模と配布形態で選ぶ
@@ -59,6 +85,12 @@
 - 同じ操作の入力差には`parametrize`、副作用だけを使うfixtureには`usefixtures`を選ぶ。デコレーター順序は外側から`parametrize` → `asyncio` → `usefixtures`とする
 - 空コレクションの比較は`assert not x`と書く。pylintの`use-implicit-booleaness-not-comparison`は空のリストとの等値比較より真偽値による判定を求める
 - 大規模テストスイートでは`pyfltr`の`command-timeout`を延伸する。具体値は計測結果に基づいて各プロジェクトの`pyproject.toml`の`[tool.pyfltr]`節へ記録する。省略時の値と挙動は<https://ak110.github.io/pyfltr/llms.txt>から現行版を確認する
+
+Windowsの仮想環境の`python.exe`はPython本体を子プロセスとして起動する中継役である。
+この中継により`subprocess.Popen([sys.executable, ...]).pid`と子が`os.getpid()`などで得たPIDは異なる。
+子自身が得たPIDと比べる試験は、標準出力やファイルで子に自己申告させたPIDを使う。
+プロセスの木の根として停止・生存確認に使う場合は、`Popen.pid`を使える。
+監査記録は`docs/development/audit-records.md`の「agent-toolkit/skills/writing-standards/references/python.md：テストコード（pytest）：2026年10月20日」にある。
 
 ### Fixtureのコーディングルール
 

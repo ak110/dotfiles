@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import argparse
+import asyncio
 import concurrent.futures
 import hashlib
 import os
@@ -12,6 +13,7 @@ import pathlib
 import stat
 import subprocess
 import sys
+from typing import Any
 
 import pytest
 
@@ -22,6 +24,43 @@ from agent_toolkit._testing.managed_temp_support import _isolated_cli_environmen
 
 _SCRIPT = pathlib.Path(__file__).resolve().parents[2] / "_managed_temp.py"
 _MARKER_NAME = ".agent-toolkit-managed-temp.json"
+
+
+@pytest.mark.parametrize("child", [False, True])
+@pytest.mark.parametrize("error_type", [RuntimeError, KeyboardInterrupt, asyncio.CancelledError])
+def test_creation_reclaims_unpublished_directory_on_every_exception(
+    monkeypatch: pytest.MonkeyPatch, child: bool, error_type: type[BaseException]
+) -> None:
+    """作成後の例外と中断で、未公開の実体と登録を撤去して元の例外を再送出する。"""
+    parent = subject.create_managed_temp("session", session_id="creation-interrupted")
+    root = parent if child else parent.parent
+    before = set(root.iterdir())
+    registrations = set(registry_subject._state_root().glob("*.json"))
+    target_name = "_validate_posix" if child and os.name == "posix" else "_validate_windows" if child else "_write_marker"
+    original = getattr(creation_subject, target_name)
+    calls = 0
+
+    def fail(*args: Any, **kwargs: Any) -> Any:
+        nonlocal calls
+        calls += 1
+        if child and calls == 1:
+            return original(*args, **kwargs)
+        assert set(root.iterdir()) != before
+        raise error_type("作成途中の失敗")
+
+    try:
+        with monkeypatch.context() as patch:
+            patch.setattr(creation_subject, target_name, fail)
+            with pytest.raises(error_type, match="作成途中の失敗"):
+                if child:
+                    subject.create_session_temp("interrupted", parent)
+                else:
+                    subject.create_managed_temp("interrupted")
+        assert calls == (2 if child else 1)
+        assert set(root.iterdir()) == before
+        assert set(registry_subject._state_root().glob("*.json")) == registrations
+    finally:
+        subject.cleanup_managed_temp(parent)
 
 
 def test_create_parser_passes_repeated_awi_names(

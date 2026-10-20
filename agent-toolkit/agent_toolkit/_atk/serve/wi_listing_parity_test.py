@@ -24,7 +24,7 @@ def _write(
     notes: pathlib.Path, state: str, filename: str, *, kind: str, target_repo: str, source: str | None, answered: bool
 ) -> None:
     """限定条件の各値を持つ項目を書く。"""
-    lines = ["---", f"type: {kind}", f"target_repo: {target_repo}"]
+    lines = ["---", f"state: {state}", f"type: {kind}", f"target_repo: {target_repo}"]
     if source is not None:
         lines.append(f"source: {source}")
     if kind == "uwi":
@@ -35,8 +35,9 @@ def _write(
         lines.extend(["## 質問", "", "続けるか", "", "## 回答", "", "<!-- ユーザーはこの行以降に回答を追記する -->", answer])
     else:
         lines.extend(["本文", ""])
-    (notes / state).mkdir(parents=True, exist_ok=True)
-    (notes / state / filename).write_text("\n".join(lines), encoding="utf-8")
+    directory = notes / filename[:4] / filename[4:6]
+    directory.mkdir(parents=True, exist_ok=True)
+    (directory / filename).write_text("\n".join(lines), encoding="utf-8")
 
 
 @pytest.fixture(name="notes")
@@ -130,7 +131,7 @@ async def test_bom_preserves_cli_and_web_summaries(
     notes = tmp_path / "notes"
     name = "20260101-000000-001.md"
     _write(notes, "inbox", name, kind=kind, target_repo=_REPO, source=None, answered=False)
-    path = notes / "inbox" / name
+    path = notes / "2026" / "01" / name
     original = path.read_text(encoding="utf-8")
     monkeypatch.setattr(_wi_sync, "ensure_environment", lambda _home: notes)
     outputs: list[list[str]] = []

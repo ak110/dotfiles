@@ -162,13 +162,13 @@ async def test_codex_app_server_environment_carries_launch_kind(
 
     monkeypatch.setenv(_LAUNCH_KIND, "shell")
     monkeypatch.setattr(codex_backend.asyncio, "create_subprocess_exec", fake_exec)
-    manager = codex_backend.AppServerManager()
-    with pytest.raises(codex_backend.AppServerError):
-        if launch_kind is None:
-            await manager._ensure_client()  # pylint: disable=protected-access
-        else:
-            await manager._acquire_owned_client("session", launch_kind)  # pylint: disable=protected-access
-    assert captured[0].get(_LAUNCH_KIND) == launch_kind
+    async with codex_backend.AppServerManager() as manager:
+        with pytest.raises(codex_backend.AppServerError):
+            if launch_kind is None:
+                await manager._ensure_client()  # pylint: disable=protected-access
+            else:
+                await manager._acquire_owned_client("session", launch_kind)  # pylint: disable=protected-access
+        assert captured[0].get(_LAUNCH_KIND) == launch_kind
 
 
 def test_missing_skill_document_keeps_operation_blocked_without_record(

@@ -89,11 +89,9 @@ def create_hook_debug_log(env: dict[str, str]) -> pathlib.Path:
     debug_dir = config_dir / "debug"
     debug_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
     descriptor, name = tempfile.mkstemp(prefix="process-loop-", suffix=".log", dir=debug_dir)
-    try:
+    with os.fdopen(descriptor, "wb") as debug_log:
         if os.name != "nt":
-            os.fchmod(descriptor, 0o600)
-    finally:
-        os.close(descriptor)
+            os.fchmod(debug_log.fileno(), 0o600)
     return pathlib.Path(name).resolve()
 
 

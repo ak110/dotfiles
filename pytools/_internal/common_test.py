@@ -2,11 +2,13 @@
 
 # pylint: disable=protected-access  # 内部ヘルパー関数の単体テスト目的で `_` プレフィックス関数へアクセスする
 
+import io
 import json
 import os
 import subprocess
 import sys
 import time
+import types
 import typing
 from pathlib import Path
 
@@ -14,6 +16,22 @@ import psutil
 import pytest
 
 from pytools._internal import common
+
+
+def test_process_scope_reports_residual_identifier_and_recovery(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    """停止不能な子の識別子と、受信側が実行できる次操作・報告先を同じ警告へ残す。"""
+    process = types.SimpleNamespace(stdin=None, stdout=io.BytesIO(), stderr=io.BytesIO(), poll=lambda: None)
+    monkeypatch.setattr(subprocess, "Popen", lambda *_args, **_kwargs: process)
+    monkeypatch.setattr(common, "stop_process_tree", lambda _process: ["12345: fixture-command --child"])
+    with common.process_scope(["fixture-command"]):
+        pass
+    assert process.stdout.closed and process.stderr.closed
+    assert "12345: fixture-command --child" in caplog.text
+    assert "表示されたPIDと起動コマンドを確認" in caplog.text
+    assert "終了してから呼出元を再実行" in caplog.text
+    assert "dotfilesの管理者へ報告" in caplog.text
 
 
 class TestResolveUvPath:

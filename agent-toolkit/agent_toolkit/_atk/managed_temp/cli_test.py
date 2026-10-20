@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import datetime
 import json
 import os
@@ -12,6 +13,7 @@ import subprocess
 import sys
 import threading
 import types
+import typing
 from collections.abc import Callable
 
 import pytest
@@ -23,7 +25,7 @@ from agent_toolkit._atk.managed_temp import registry as managed_temp_registry
 from agent_toolkit._atk.managed_temp import windows_security as managed_temp_windows_security
 from agent_toolkit._atk.managed_temp.long_tree_test_support import create_long_posix_tree
 from agent_toolkit._common import plugin_root_leases as lease_subject
-from agent_toolkit._common import state_paths
+from agent_toolkit._common import process_tree, state_paths
 from agent_toolkit._testing.git_repository import commit_all, git_output, run_git
 from agent_toolkit._testing.managed_temp_support import (
     _install_windows_security_doubles,
@@ -536,23 +538,28 @@ def _lock_paths(area: pathlib.Path) -> dict[str, pathlib.Path]:
     return {"outer": registry_path.with_name(f"{registry_path.name}.cleanup.lock"), "inner": inner}
 
 
-def _hold_lock(path: pathlib.Path) -> subprocess.Popen[str]:
+@contextlib.contextmanager
+def _hold_lock(path: pathlib.Path) -> typing.Generator[None]:
     """別processにロックを保持させ、取得の完了を待ってから返す。"""
-    holder = subprocess.Popen(  # pylint: disable=consider-using-with
+    with subprocess.Popen(
         [sys.executable, "-c", _HOLD_LOCK_CODE, str(path)],
         stdin=subprocess.PIPE,
         stdout=subprocess.PIPE,
         text=True,
         encoding="utf-8",
-    )
-    assert holder.stdout is not None
-    assert holder.stdout.readline().strip() == "locked"
-    return holder
-
-
-def _release(holder: subprocess.Popen[str]) -> None:
-    holder.communicate("\n", timeout=10)
-    assert holder.returncode == 0
+    ) as holder:
+        try:
+            assert holder.stdout is not None
+            assert holder.stdout.readline().strip() == "locked"
+            yield
+        finally:
+            try:
+                holder.communicate("\n", timeout=10)
+            except subprocess.TimeoutExpired:
+                process_tree.log_residual(process_tree.stop_process_tree(holder), context="managed-temp lock test")
+                holder.communicate(timeout=10)
+                raise
+            assert holder.returncode == 0
 
 
 def _run_atk_within(argv: list[str], now: datetime.datetime, timeout: float) -> int | None:
@@ -584,15 +591,12 @@ def test_sweep_skips_inner_lock_conflict_without_waiting(
     target = tmp_path / "read-target.txt"
     target.write_text("本文の行\n", encoding="utf-8")
     now = datetime.datetime.now(datetime.UTC) + datetime.timedelta(days=8)
-    holder = _hold_lock(_lock_paths(area)[held])
-    try:
+    with _hold_lock(_lock_paths(area)[held]):
         assert _run_atk_within(["read-file", "--", str(target)], now, timeout=20) == 0
         assert "本文の行" in capsys.readouterr().out
         assert _run_atk_within(["config", "show"], now, timeout=20) == 0
         assert (area / "payload").read_text(encoding="utf-8") == "保持"
         assert inventory_subject._registry_path(area).exists()  # pylint: disable=protected-access
-    finally:
-        _release(holder)
 
 
 def test_conflicted_area_is_retained_then_collected() -> None:
@@ -600,12 +604,9 @@ def test_conflicted_area_is_retained_then_collected() -> None:
     area = subject.create_managed_temp("sweep-retained")
     (area / "payload").write_text("保持", encoding="utf-8")
     now = datetime.datetime.now(datetime.UTC) + datetime.timedelta(days=8)
-    holder = _hold_lock(_lock_paths(area)["inner"])
-    try:
+    with _hold_lock(_lock_paths(area)["inner"]):
         assert area not in subject.sweep_expired_managed_temp(now=now)
         assert (area / "payload").is_file()
-    finally:
-        _release(holder)
     assert area in subject.sweep_expired_managed_temp(now=now)
     assert not area.exists()
 
@@ -771,15 +772,12 @@ def test_list_and_sweep_skip_concurrent_cleanup(
     registry.replace(consuming)
     if quarantined:
         area.rename(quarantine)
-    holder = _hold_lock(_lock_paths(area)["outer"])
-    try:
+    with _hold_lock(_lock_paths(area)["outer"]):
         assert subject.main(["list"]) == 1
         result = subject.sweep_managed_temp(now=datetime.datetime.now(datetime.UTC))
         assert not result.deleted
         assert not result.stale_unregistered
         assert "警告:" not in capsys.readouterr().err
-    finally:
-        _release(holder)
     assert subject.main(["list"]) == 1
     error = capsys.readouterr().err
     assert str(area) in error

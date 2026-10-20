@@ -54,9 +54,9 @@ def _fake_target_info(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 @pytest.fixture(autouse=True)
-def _empty_external_marketplaces(monkeypatch: pytest.MonkeyPatch) -> None:
-    """外部マーケットプレイスの専用テスト以外では対象を空にし、開発機のプロセスを参照判定へ混ぜない。"""
-    monkeypatch.setattr(_install_claude_plugins, "_EXTERNAL_MARKETPLACES", ())
+def _isolate_plugin_cleanup(monkeypatch: pytest.MonkeyPatch) -> None:
+    """旧pluginの削除は専用テストへ分け、開発機のプロセスを参照判定へ混ぜない。"""
+    monkeypatch.setattr(_install_claude_plugins, "_remove_unused_plugins", lambda: False)
     monkeypatch.setattr(_install_claude_plugins, "_verify_target_plugins", lambda _targets, _failed=(): None)
     monkeypatch.setattr(_claude_plugin_references, "scan", lambda: ())
 
@@ -88,7 +88,7 @@ def test_installed_plugins_are_read_after_marketplace_is_ensured(
     """marketplace修復前の導入一覧を後続判定へ再利用しない。"""
     events: list[str] = []
     monkeypatch.setattr(_install_claude_plugins, "_prerequisites_ok", lambda: True)
-    monkeypatch.setattr(_install_claude_plugins, "_install_external_marketplaces", lambda: False)
+    monkeypatch.setattr(_install_claude_plugins, "_remove_unused_plugins", lambda: False)
     monkeypatch.setattr(_common, "find_dotfiles_root", lambda: tmp_path)
     monkeypatch.setattr(_install_claude_plugins, "_read_target_info", lambda _root: ({}, {"legacy"}))
 
@@ -614,12 +614,11 @@ class TestEnsurePluginCacheComplete:
             return True
 
         monkeypatch.setattr(_install_claude_plugins, "_install_plugin", fake_install)
-        residents = ResidentProcesses(tmp_path, monkeypatch)
-        if holder == "mcp-cwd":
-            process = residents.start("python3", cwd=cache_dir / "agent_toolkit")
-        else:
-            process = residents.start("claude", cwd=tmp_path)
-        try:
+        with ResidentProcesses(tmp_path, monkeypatch) as residents:
+            if holder == "mcp-cwd":
+                residents.start("python3", cwd=cache_dir / "agent_toolkit")
+            else:
+                residents.start("claude", cwd=tmp_path)
             with caplog.at_level(logging.WARNING):
                 assert _install_claude_plugins._ensure_plugin_cache_complete(self._NAME) == "deferred"
             assert not calls
@@ -628,8 +627,6 @@ class TestEnsurePluginCacheComplete:
             assert str(cache_dir.relative_to(tmp_path)) in caplog.text
             expected = "操作は不要です" if retry_timer else "`update-dotfiles`を再実行してください"
             assert expected in caplog.text
-        finally:
-            residents.stop(process)
 
         assert _install_claude_plugins._ensure_plugin_cache_complete(self._NAME) == "repaired"
         assert calls == [self._NAME]

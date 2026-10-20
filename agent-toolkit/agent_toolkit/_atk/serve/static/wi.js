@@ -59,16 +59,16 @@ let noticeOrigin = null;
 let lastFocusedElement = null;
 
 const byId = id => document.getElementById(id);
-const entryKey = entry => entry ? `${entry.state}/${entry.filename}` : '';
+const entryKey = entry => entry ? entry.filename : '';
 const isPlainPrimaryClick = event =>
   event.button === 0 && !event.metaKey && !event.ctrlKey && !event.shiftKey && !event.altKey;
 const deleteEntrySnapshot = entry => entry ? JSON.stringify([
-  entryKey(entry), entry.content, entry.target_repo || '', entry.summary || ''
+  entryKey(entry), entry.state, entry.content, entry.target_repo || '', entry.summary || ''
 ]) : '';
 
 async function api(path, options = {}) {
   const route = path.split('?')[0];
-  const entryMatch = route.match(/^\/api\/entries\/([^/]+)\/([^/]+)$/);
+  const entryMatch = route.match(/^\/api\/entries\/([^/]+\.md)$/);
   const operation = {
     '/api/entries': options.method ? '項目登録' : '一覧取得',
     '/api/repos': '対象リポジトリ一覧取得',
@@ -76,6 +76,7 @@ async function api(path, options = {}) {
     '/api/entries/batch': '一括登録',
     '/api/entries/answer': '回答保存',
     '/api/entries/user-comment': 'ユーザーコメント保存',
+    '/api/entries/important': '重要設定・解除',
     '/api/entries/remove': '削除',
     '/api/entries/adopt': '採用',
     '/api/entries/reject': '却下',
@@ -297,6 +298,7 @@ function updateEntryStateDisplay(entry, button, badge) {
     'aria-label',
     [entry.filename, entry.target_repo || '対象なし', KIND_LABELS[entry.kind] || KIND_LABELS.unknown,
       label, badge.title, entry.plan ? 'plan' : '',
+      entry.important === true ? '重要' : '',
       entry.kind === 'uwi' && entry.answered === false ? '未回答' : '', entry.summary || '要約なし']
       .filter(Boolean).join('、')
   );
@@ -340,7 +342,7 @@ function targetRepoDisplay(value) {
 }
 
 function entryPageUrl(entry) {
-  const query = new URLSearchParams({state: entry.state, filename: entry.filename});
+  const query = new URLSearchParams({filename: entry.filename});
   return `${BASE_PATH}/?${query.toString()}`;
 }
 
@@ -348,9 +350,8 @@ function entrySelectionFromUrl() {
   const currentLocation = globalThis.location;
   if (!currentLocation || currentLocation.pathname !== `${BASE_PATH}/`) return null;
   const query = new URLSearchParams(currentLocation.search);
-  const state = query.get('state');
   const filename = query.get('filename');
-  return state && filename ? {state, filename} : null;
+  return filename ? {filename} : null;
 }
 
 // 一覧は再読込のたびに全行を再生成するため、コピー直後の表示は項目の識別子に対応付けて保持する。
@@ -386,6 +387,12 @@ function renderEntry(entry) {
   badge.dataset.needsVerify = String(entry.needs_verify === true);
   badge.textContent = displayStateLabel(entry);
   status.append(badge);
+  if (entry.important === true) {
+    const important = document.createElement('span');
+    important.className = 'attention-badge important-badge';
+    important.textContent = '重要';
+    status.append(important);
+  }
   if (entry.plan) {
     const plan = document.createElement('span');
     plan.className = 'plan-badge';
@@ -445,6 +452,7 @@ function hasNonStateFilters() {
   return byId('search-input').value !== '' ||
     byId('kind-filter').value !== 'all' ||
     byId('answer-filter').value !== 'all' ||
+    byId('important-filter').value !== 'all' ||
     byId('target-filter').value !== '' ||
     byId('source-filter').value !== '';
 }
@@ -512,6 +520,7 @@ function buildQuery(page = currentPage) {
   parameters.set('status', byId('state-filter').value);
   parameters.set('answered', byId('answer-filter').value);
   parameters.set('period', byId('period-filter').value);
+  if (byId('important-filter').value !== 'all') parameters.set('important', byId('important-filter').value);
   const values = {
     target_repo: byId('target-filter').value,
     source_kind: byId('source-filter').value,
@@ -522,10 +531,34 @@ function buildQuery(page = currentPage) {
   return parameters;
 }
 
+async function copyAllEntries() {
+  if (pendingOperations.has('copy-all')) return;
+  const query = buildQuery();
+  query.delete('page');
+  setTextMessage('copy-all-status', '現在のフィルターに一致する全ページを取得中');
+  try {
+    await runPending('copy-all', {
+      container: byId('copy-all-button').parentElement, button: byId('copy-all-button'), busyLabel: '取得中'
+    }, async () => {
+      const payload = await api(`/api/entries?${query.toString()}`);
+      const selected = payload.entries;
+      if (!selected.length) {
+        setTextMessage('copy-all-status', '現在のフィルターに一致する項目は0件です。条件を変更してください。');
+        return;
+      }
+      await navigator.clipboard.writeText(selected.map(entry => `${entry.filename} ${entry.summary || ''}`).join('\n'));
+      setTextMessage('copy-all-status', `${selected.length}件をコピーしました。`);
+    });
+  } catch (error) {
+    setTextMessage('copy-all-status', '全てコピーに失敗しました。');
+    setGlobalError(`全てコピーに失敗しました。 ${error.message} ブラウザーのクリップボード権限と接続を確認し、再度実行してください。`);
+  }
+}
+
 function hasSearchFallbackFilters(query) {
   return query.get('type') !== 'all' || query.get('status') !== 'all' ||
     query.get('answered') !== 'all' || query.get('period') !== 'all' ||
-    query.has('target_repo') || query.has('source_kind');
+    query.has('target_repo') || query.has('source_kind') || query.has('important');
 }
 
 function captureListLoadingView() {
@@ -773,6 +806,7 @@ async function clearFilters() {
   byId('state-filter').value = 'active';
   byId('period-filter').value = DEFAULT_PERIOD;
   byId('answer-filter').value = 'all';
+  byId('important-filter').value = 'all';
   byId('target-filter').value = '';
   byId('source-filter').value = '';
   currentPage = 1;
@@ -886,6 +920,8 @@ function setDetailMode(mode) {
   byId('decision-panel').dataset.action = decisionAction;
   if (decisionAction) byId('decision-heading').textContent = decisionAction === 'adopt' ? '採用' : '却下';
   byId('edit-button').hidden = mutating || !mutable;
+  byId('important-button').hidden = mutating || !currentEntry;
+  byId('important-button').textContent = currentEntry?.important === true ? '重要解除' : '重要設定';
   byId('answer-button').hidden = mutating || !currentEntry ||
     currentEntry.kind !== 'uwi' || !mutable;
   byId('user-comment-button').hidden = mutating || currentEntry?.user_comment_editable !== true;
@@ -911,7 +947,7 @@ function setDetailMode(mode) {
 
 function syncDetailMutationAvailability() {
   for (const id of [
-    'edit-button', 'answer-button', 'user-comment-button', 'delete-button',
+    'edit-button', 'answer-button', 'user-comment-button', 'delete-button', 'important-button',
     'save-entry-button', 'save-answer-button', 'save-user-comment-button',
     'adopt-button', 'reject-button', 'hold-button', 'unhold-button', 'return-to-inbox-button',
     'confirm-adopt-button', 'confirm-reject-button'
@@ -981,7 +1017,7 @@ async function selectEntry(entry, origin = null, {ignoreNotFound = false} = {}) 
     pendingRow.setAttribute('aria-busy', 'true');
   }
   try {
-    const payload = await api(`/api/entries/${encodeURIComponent(entry.state)}/${encodeURIComponent(entry.filename)}`);
+    const payload = await api(`/api/entries/${encodeURIComponent(entry.filename)}`);
     if (!requestIsCurrent()) return;
     displayEntry(payload.entry);
     openDetailDialog(detailOrigin);
@@ -1102,7 +1138,6 @@ async function reloadOpenDetailFromExternalChange() {
   if (detailOriginKey !== entryKey(currentEntry)) return;
   if (deferDetailReloadWhileMutating()) return;
   const sessionGeneration = detailSessionGeneration;
-  const originalState = currentEntry.state;
   const filename = currentEntry.filename;
   const requestGeneration = ++detailRequestGeneration;
   // 送信の開始前に始まった再読込も、応答を待つ間に結果を反映せず保留へ回す。
@@ -1116,7 +1151,7 @@ async function reloadOpenDetailFromExternalChange() {
   }
   let resolvedEntry = null;
   try {
-    const payload = await api(`/api/entries/${encodeURIComponent(originalState)}/${encodeURIComponent(filename)}`);
+    const payload = await api(`/api/entries/${encodeURIComponent(filename)}`);
     if (!requestIsCurrent()) return;
     resolvedEntry = payload.entry;
   } catch (error) {
@@ -1128,34 +1163,11 @@ async function reloadOpenDetailFromExternalChange() {
     deleteConfirmationInvalidated = invalidateDeleteConfirmation() || deleteConfirmationInvalidated;
   }
   if (!resolvedEntry) {
-    const candidates = [];
-    for (const state of Object.keys(STATE_LABELS).filter(state => state !== originalState)) {
-      try {
-        const payload = await api(`/api/entries/${encodeURIComponent(state)}/${encodeURIComponent(filename)}`);
-        if (!requestIsCurrent()) return;
-        candidates.push(payload.entry);
-      } catch (error) {
-        if (!requestIsCurrent()) return;
-        if (error.status !== 404) {
-          reportExternalDetailFailure(error, deleteConfirmationInvalidated);
-          return;
-        }
-      }
-    }
-    if (candidates.length > 1) {
-      closeDetailDialog();
-      setGlobalError(diagnostic('WI', SERVE_HOST, `${WI_ROOT} / ${originalState}/${filename}`,
-        `${filename}の移動先を一意に特定できません。詳細を開き直してください。`));
-      return;
-    }
-    resolvedEntry = candidates[0] || null;
-  }
-  if (!resolvedEntry) {
     closeDetailDialog({force: true});
     reportDeletedEntry(filename, {reloadList: false});
     return;
   }
-  const detailChanged = entryKey(resolvedEntry) !== entryKey(currentEntry) ||
+  const detailChanged = resolvedEntry.state !== currentEntry.state ||
     resolvedEntry.content !== currentEntry.content;
   if (byId('delete-dialog').open && deleteEntrySnapshot(resolvedEntry) !== deleteDialogEntrySnapshot) {
     deleteConfirmationInvalidated = invalidateDeleteConfirmation() || deleteConfirmationInvalidated;
@@ -1218,11 +1230,10 @@ function enterDecision(action) {
 }
 
 async function reloadUserCommentAfterConflict(key, sessionGeneration) {
-  const state = currentEntry?.state;
   const filename = currentEntry?.filename;
-  if (!state || !filename) return false;
+  if (!filename) return false;
   try {
-    const refreshed = await api(`/api/entries/${encodeURIComponent(state)}/${encodeURIComponent(filename)}`);
+    const refreshed = await api(`/api/entries/${encodeURIComponent(filename)}`);
     if (!byId('detail-dialog').open || entryKey(currentEntry) !== key ||
         sessionGeneration !== detailSessionGeneration || refreshed.entry.user_comment_editable !== true) return false;
     refreshUserCommentMode(
@@ -1293,7 +1304,7 @@ async function saveEntry() {
   setFieldError(byId('edit-content'), byId('edit-content-error'), content.trim() ? '' : 'ファイル全体を入力してください。');
   if (firstInvalid([byId('edit-content')])) return;
   const key = entryKey(currentEntry);
-  const path = `/api/entries/${encodeURIComponent(currentEntry.state)}/${encodeURIComponent(currentEntry.filename)}`;
+  const path = `/api/entries/${encodeURIComponent(currentEntry.filename)}`;
   const payload = {content, expected_content: currentEntry.content};
   clearDialogMessages('detail');
   try {
@@ -1304,6 +1315,22 @@ async function saveEntry() {
     const failure = `${key}を保存できませんでした。 ${error.message}`;
     deliverOperationMessage(mutationFailureMessage(key, failure, error), true);
     if (byId('detail-dialog').open && entryKey(currentEntry) === key) byId('edit-content').focus();
+  }
+}
+
+async function toggleImportant() {
+  if (!currentEntry || detailRefreshRequired) return;
+  const key = entryKey(currentEntry);
+  const important = currentEntry.important !== true;
+  const label = important ? '重要設定' : '重要解除';
+  const payload = {filename: currentEntry.filename, important, expected_content: currentEntry.content};
+  clearDialogMessages('detail');
+  try {
+    await runDetailMutation('important', {
+      container: byId('detail-shell'), button: byId('important-button'), busyLabel: '保存中'
+    }, () => api('/api/entries/important', {method: 'POST', body: JSON.stringify(payload)}), `${key}を${label}しました。`);
+  } catch (error) {
+    deliverOperationMessage(mutationFailureMessage(key, `${key}を${label}できませんでした。 ${error.message}`, error), true);
   }
 }
 
@@ -1653,6 +1680,7 @@ function bindEvents() {
   globalThis.addEventListener?.('popstate', () => { void restoreEntryFromUrl(); });
   byId('operation-notice-close-button').addEventListener('click', closeOperationNotice);
   byId('previous-page-button').addEventListener('click', () => { void movePage(-1); });
+  byId('copy-all-button').addEventListener('click', () => { void copyAllEntries(); });
   byId('next-page-button').addEventListener('click', () => { void movePage(1); });
   byId('refresh-button').addEventListener('click', synchronizeAndLoad);
   byId('notification-button').addEventListener('click', () => { void enableNotifications(); });
@@ -1672,6 +1700,7 @@ function bindEvents() {
   byId('state-filter').addEventListener('change', () => { void handleFilterChange({reloadRepos: true}); });
   byId('period-filter').addEventListener('change', () => { void handleFilterChange(); });
   byId('answer-filter').addEventListener('change', () => { void handleFilterChange(); });
+  byId('important-filter').addEventListener('change', () => { void handleFilterChange(); });
   byId('target-filter').addEventListener('change', () => { void handleFilterChange(); });
   byId('source-filter').addEventListener('change', () => { void handleFilterChange(); });
   byId('search-input').addEventListener('input', () => {
@@ -1685,6 +1714,7 @@ function bindEvents() {
     }, 250);
   });
   byId('edit-button').addEventListener('click', enterEdit);
+  byId('important-button').addEventListener('click', () => { void toggleImportant(); });
   byId('answer-button').addEventListener('click', enterAnswer);
   byId('user-comment-button').addEventListener('click', enterUserComment);
   byId('save-entry-button').addEventListener('click', saveEntry);

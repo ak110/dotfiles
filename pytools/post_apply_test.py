@@ -420,19 +420,11 @@ def test_configure_logging_preserves_cp932_record_with_unencodable_character(
     stderr = io.TextIOWrapper(stderr_buffer, encoding="cp932")
     monkeypatch.setattr(post_apply.sys, "stdout", stdout)
     monkeypatch.setattr(post_apply.sys, "stderr", stderr)
-    root_logger = logging.getLogger()
-    previous_handlers, previous_level, persistent_log_ready = post_apply._configure_logging()  # noqa: SLF001
-    try:
+    with post_apply._configure_logging() as persistent_log_ready:  # noqa: SLF001
         logging.getLogger("cp932-test").info("符号化不能文字: ✓")
         stdout.flush()
         stderr.flush()
         output = stdout_buffer.getvalue().decode("cp932") + stderr_buffer.getvalue().decode("cp932")
-    finally:
-        current_handlers = root_logger.handlers.copy()
-        root_logger.handlers[:] = previous_handlers
-        root_logger.setLevel(previous_level)
-        for handler in current_handlers:
-            handler.close()
 
     assert stdout.encoding == "cp932"
     assert persistent_log_ready
@@ -462,19 +454,41 @@ def test_main_records_steps_and_failure_in_persistent_log() -> None:
 def test_persistent_log_uses_size_limited_rotation() -> None:
     """永続ログの総容量を固定世代数で制限する。"""
     root_logger = logging.getLogger()
-    previous_handlers, previous_level, persistent_log_ready = post_apply._configure_logging()  # noqa: SLF001
-    current_handlers = root_logger.handlers.copy()
-    try:
+    with post_apply._configure_logging() as persistent_log_ready:  # noqa: SLF001
+        current_handlers = root_logger.handlers.copy()
         file_handlers = [handler for handler in current_handlers if isinstance(handler, logging.handlers.RotatingFileHandler)]
         assert persistent_log_ready
         assert len(file_handlers) == 1
         assert file_handlers[0].maxBytes == post_apply._UPDATE_LOG_MAX_BYTES  # noqa: SLF001
         assert file_handlers[0].backupCount == post_apply._UPDATE_LOG_BACKUP_COUNT  # noqa: SLF001
-    finally:
-        root_logger.handlers[:] = previous_handlers
-        root_logger.setLevel(previous_level)
-        for handler in current_handlers:
-            handler.close()
+
+
+def test_logging_scope_restores_logger_and_closes_all_handlers_after_close_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """後始末の1件が失敗しても、loggerを復元して残るハンドラも全て閉じる。"""
+    root_logger = logging.getLogger()
+    previous_handlers = root_logger.handlers.copy()
+    previous_level = root_logger.level
+    closed: list[str] = []
+    labels: dict[logging.Handler, str] = {}
+    original_close = logging.Handler.close
+
+    def close(handler: logging.Handler) -> None:
+        original_close(handler)
+        if handler in labels:
+            label = labels[handler]
+            closed.append(label)
+            if label == "stderr":
+                raise OSError("stderr close failed")
+
+    monkeypatch.setattr(logging.Handler, "close", close)
+    with pytest.raises(OSError, match="stderr close failed"), post_apply._configure_logging():  # noqa: SLF001
+        handlers = root_logger.handlers.copy()
+        labels.update(zip(handlers, ("stdout", "stderr", "file"), strict=True))
+    assert set(closed) == {"stdout", "stderr", "file"}
+    assert root_logger.handlers == previous_handlers
+    assert root_logger.level == previous_level
 
 
 def _registered_paths(base: Path) -> list[Path]:
@@ -1294,7 +1308,7 @@ class TestSubstitutedHome:
             assert not post_apply.log_format.is_log_only(record)
 
     def test_actual_home_runs_host_resource_steps(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        import pwd  # noqa: PLC0415  # pylint: disable=import-outside-toplevel
+        import pwd  # noqa: PLC0415  # pylint: disable=import-outside-toplevel,import-error  # POSIX専用でありWindowsには存在しない。
 
         monkeypatch.setattr(post_apply.sys, "platform", "linux")
         monkeypatch.setenv("HOME", pwd.getpwuid(os.getuid()).pw_dir)

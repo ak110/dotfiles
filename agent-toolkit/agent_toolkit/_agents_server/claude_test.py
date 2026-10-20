@@ -1,6 +1,7 @@
 """Claude backendと共有する自動再開状態の契約を検証する。"""
 
 import asyncio
+import contextlib
 import json
 
 # テストでは共有状態とバックエンドの内部境界も直接検証する。
@@ -12,16 +13,18 @@ import shutil
 import subprocess
 import sys
 import types
-from collections.abc import AsyncIterator, Callable
+from collections.abc import AsyncGenerator, AsyncIterator, Callable
 from types import SimpleNamespace
 from typing import Any
 
+import claude_agent_sdk
 import pytest
 from claude_agent_sdk import ToolResultBlock, UserMessage
 
 from agent_toolkit._agents_server import (
     claude,
     launch_prompts,
+    responses,
     resume_waits,
     session_errors,
     state,
@@ -233,16 +236,13 @@ async def test_settings_file_lives_until_backend_disconnect(
             raise RuntimeError("factory failed")
         return client
 
-    manager = claude.ClaudeServerManager(client_factory=factory)
-    try:
+    async with claude.ClaudeServerManager(client_factory=factory) as manager:
         if failure is None:
             await manager.start("調査", str(tmp_path))
             assert paths[0].exists()
         else:
             with pytest.raises(RuntimeError, match=f"{failure} failed"):
                 await manager.start("調査", str(tmp_path))
-    finally:
-        await manager.close()
     assert not paths[0].exists()
     assert parent.exists()
 
@@ -255,6 +255,79 @@ def test_dependency_check_reclaims_its_settings_file(monkeypatch: pytest.MonkeyP
     monkeypatch.setattr(claude_settings, "state_dir", lambda: tmp_path / "state")
     claude.check_dependencies()
     assert not list((tmp_path / "state").rglob("settings-*.json"))
+    assert parent.exists()
+
+
+@pytest.mark.parametrize("failed", [False, True])
+@pytest.mark.asyncio
+async def test_explore_options_construction_owns_settings_until_handoff(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, failed: bool
+) -> None:
+    """探索のMCP定義読取後にoptions生成が失敗しても、生成したsettingsを回収する。"""
+    parent = tmp_path / "parent.json"
+    parent.write_text("{}", encoding="utf-8")
+    monkeypatch.setattr(claude, "_parent_settings", lambda: str(parent))
+    paths: list[pathlib.Path] = []
+    original_options = claude_agent_sdk.ClaudeAgentOptions
+
+    def options(**kwargs: Any) -> Any:
+        assert "pyfltr" in kwargs["mcp_servers"]
+        assert isinstance(kwargs["settings"], claude_settings.SettingsFile)
+        paths.append(pathlib.Path(kwargs["settings"]))
+        assert paths[-1].exists()
+        if failed:
+            raise RuntimeError("options生成失敗")
+        return original_options(**kwargs)
+
+    monkeypatch.setattr(claude_agent_sdk, "ClaudeAgentOptions", options)
+    client = FakeClaudeClient([[SystemMessage("settings-handoff"), ResultMessage("完了")]])
+    expected = pytest.raises(RuntimeError, match="options生成失敗") if failed else contextlib.nullcontext()
+    with expected:
+        async with claude.ClaudeServerManager(client_factory=lambda _options: client) as backend:
+            await backend.start("探索の寿命確認", str(tmp_path), launch_kind="explore")
+    assert len(paths) == 1 and not paths[0].exists()
+    assert parent.exists()
+    if not failed:
+        assert client.disconnected
+
+
+@pytest.mark.parametrize("registration_failure", [False, True])
+@pytest.mark.asyncio
+async def test_registration_drain_keeps_channel_and_settings_cleanup(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, registration_failure: bool
+) -> None:
+    """停止時の登録保存が失敗しても、SDK切断、要求チャネル閉鎖とsettings回収へ到達する。"""
+    parent = tmp_path / "parent.json"
+    parent.write_text("{}", encoding="utf-8")
+    monkeypatch.setattr(claude, "_parent_settings", lambda: str(parent))
+    paths: list[pathlib.Path] = []
+    client = QueueClaudeClient([[SystemMessage("drain-cleanup"), AssistantMessage("作業中")]])
+
+    def factory(options: Any) -> QueueClaudeClient:
+        paths.append(pathlib.Path(options.settings))
+        return client
+
+    async with claude.ClaudeServerManager(client_factory=factory) as backend:
+        session = await backend.start("登録保存の寿命確認", str(tmp_path))
+        channel = backend._channels[session.session_id]
+        original_drain = session.drain_registration
+        calls = 0
+
+        async def drain() -> None:
+            nonlocal calls
+            calls += 1
+            if registration_failure and calls == 1:
+                raise OSError("登録保存失敗")
+            await original_drain()
+
+        monkeypatch.setattr(session, "drain_registration", drain)
+        await backend.close()
+        assert calls >= 1
+        assert client.disconnected and client.readers == 0
+        with pytest.raises(session_errors.SessionOwnerGoneError):
+            channel.send("prompt", "停止後の要求").cancel()
+        assert session.session_id not in backend._channels
+        assert len(paths) == 1 and not paths[0].exists()
     assert parent.exists()
 
 
@@ -474,14 +547,13 @@ async def test_start_aborts_when_init_message_never_arrives(
     monkeypatch.setattr(state, "SESSION_INITIALIZATION_TIMEOUT", 0.05)
     monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
     client = _SilentClient()
-    manager = claude.ClaudeServerManager(client_factory=lambda _options: client)
+    async with claude.ClaudeServerManager(client_factory=lambda _options: client) as manager:
+        with pytest.raises(session_errors.SessionInitializationTimeoutError):
+            await manager.start("調査する", str(tmp_path))
 
-    with pytest.raises(session_errors.SessionInitializationTimeoutError):
-        await manager.start("調査する", str(tmp_path))
-
-    assert not manager.sessions
-    await manager.close()
-    assert client.terminated is True
+        assert not manager.sessions
+        await manager.close()
+        assert client.terminated is True
 
 
 @pytest.mark.asyncio
@@ -522,27 +594,27 @@ async def test_claude_command_channel_resolves_pending_requests_when_closed() ->
 async def test_claude_command_classification_uses_state_when_dequeued(tmp_path: pathlib.Path) -> None:
     """投入後に終端した継続入力をreplyとして処理し、直前結果を退避する。"""
     client = FakeClaudeClient([[AssistantMessage("reply中"), ResultMessage("reply結果")]])
-    manager = claude.ClaudeServerManager(client_factory=lambda _options: client)
-    session = state.SessionState("claude-race", str(tmp_path), engine="claude")
-    channel = claude._CommandChannel()
-    manager.sessions[session.session_id] = session
-    manager._channels[session.session_id] = channel
+    async with claude.ClaudeServerManager(client_factory=lambda _options: client) as manager:
+        session = state.SessionState("claude-race", str(tmp_path), engine="claude")
+        channel = claude._CommandChannel()
+        manager.sessions[session.session_id] = session
+        manager._channels[session.session_id] = channel
 
-    send_task = asyncio.create_task(manager.send_message(session, "続行"))
-    command = await channel.get()
-    _complete(session, message="直前結果")
-    iterator = await manager._handle_command(client, session, command, None)
-    response = await send_task
+        send_task = asyncio.create_task(manager.send_message(session, "続行"))
+        command = await channel.get()
+        _complete(session, message="直前結果")
+        iterator = await manager._handle_command(client, session, command, None)
+        response = await send_task
 
-    assert response == {
-        "delivery": "reply_started",
-        "previous_result": {
-            "status": "completed",
-            "agent_message": "直前結果",
-        },
-    }
-    assert iterator is not None
-    assert client.queries == ["続行"]
+        assert response == {
+            "delivery": "reply_started",
+            "previous_result": {
+                "status": "completed",
+                "agent_message": "直前結果",
+            },
+        }
+        assert iterator is not None
+        assert client.queries == ["続行"]
 
 
 @pytest.mark.usefixtures("agents_server_isolation")
@@ -550,8 +622,7 @@ async def test_claude_command_classification_uses_state_when_dequeued(tmp_path: 
 async def test_claude_message_stream_failure_resolves_retrieved_command(tmp_path: pathlib.Path) -> None:
     """message streamの例外と同じ待機バッチに入った継続要求を、所有タスクの終了として解決する。"""
     client = SynchronizedFailingClaudeClient()
-    manager = claude.ClaudeServerManager(client_factory=lambda _options: client)
-    try:
+    async with claude.ClaudeServerManager(client_factory=lambda _options: client) as manager:
         session = await manager.start("調査", str(tmp_path))
         await asyncio.wait_for(client.message_waiting.wait(), timeout=0.1)
         channel = manager._channels[session.session_id]
@@ -560,8 +631,6 @@ async def test_claude_message_stream_failure_resolves_retrieved_command(tmp_path
 
         with pytest.raises(session_errors.SessionOwnerGoneError, match="session owner task has ended"):
             await asyncio.wait_for(future, timeout=0.1)
-    finally:
-        await manager.close()
 
 
 @pytest.mark.usefixtures("agents_server_isolation")
@@ -569,16 +638,16 @@ async def test_claude_message_stream_failure_resolves_retrieved_command(tmp_path
 async def test_claude_owner_cancellation_resolves_active_command(tmp_path: pathlib.Path) -> None:
     """所有タスクを取り消したときに処理中の継続要求を、所有タスクの終了として解決する。"""
     client = BlockingContinuationClaudeClient()
-    manager = claude.ClaudeServerManager(client_factory=lambda _options: client)
-    session = await manager.start("調査", str(tmp_path))
-    await asyncio.wait_for(client.message_waiting.wait(), timeout=0.1)
-    send_task = asyncio.create_task(manager.send_message(session, "継続"))
-    await asyncio.wait_for(client.query_started.wait(), timeout=0.1)
+    async with claude.ClaudeServerManager(client_factory=lambda _options: client) as manager:
+        session = await manager.start("調査", str(tmp_path))
+        await asyncio.wait_for(client.message_waiting.wait(), timeout=0.1)
+        send_task = asyncio.create_task(manager.send_message(session, "継続"))
+        await asyncio.wait_for(client.query_started.wait(), timeout=0.1)
 
-    await manager.close()
+        await manager.close()
 
-    with pytest.raises(session_errors.SessionOwnerGoneError, match="session owner task has ended"):
-        await asyncio.wait_for(send_task, timeout=0.1)
+        with pytest.raises(session_errors.SessionOwnerGoneError, match="session owner task has ended"):
+            await asyncio.wait_for(send_task, timeout=0.1)
 
 
 @pytest.mark.usefixtures("agents_server_isolation")
@@ -586,19 +655,19 @@ async def test_claude_owner_cancellation_resolves_active_command(tmp_path: pathl
 async def test_claude_timed_out_queued_prompt_is_not_delivered(tmp_path: pathlib.Path) -> None:
     """打ち切り済みで未処理の継続要求を所有タスクが後から配送しない。"""
     client = FakeClaudeClient([])
-    manager = claude.ClaudeServerManager(client_factory=lambda _options: client)
-    session = state.SessionState("claude-queued", str(tmp_path), engine="claude")
-    channel = claude._CommandChannel()
-    manager.sessions[session.session_id] = session
-    manager._channels[session.session_id] = channel
+    async with claude.ClaudeServerManager(client_factory=lambda _options: client) as manager:
+        session = state.SessionState("claude-queued", str(tmp_path), engine="claude")
+        channel = claude._CommandChannel()
+        manager.sessions[session.session_id] = session
+        manager._channels[session.session_id] = channel
 
-    with pytest.raises(TimeoutError):
-        await asyncio.wait_for(manager.send_message(session, "打ち切り"), timeout=0.01)
+        with pytest.raises(TimeoutError):
+            await asyncio.wait_for(manager.send_message(session, "打ち切り"), timeout=0.01)
 
-    command = await channel.get()
-    await manager._handle_command(client, session, command, None)
+        command = await channel.get()
+        await manager._handle_command(client, session, command, None)
 
-    assert not client.queries
+        assert not client.queries
 
 
 @pytest.mark.usefixtures("agents_server_isolation")
@@ -683,12 +752,9 @@ async def test_sdk_start_and_resume_deliver_executable_cli_without_old_path(
         options_seen.append(options)
         return FakeClaudeClient([[SystemMessage("cli-session"), ResultMessage("完了")]])
 
-    manager = claude.ClaudeServerManager(client_factory=factory, root_session_id="explicit-owner")
-    try:
+    async with claude.ClaudeServerManager(client_factory=factory, root_session_id="explicit-owner") as manager:
         await manager.start("開始", str(tmp_path), launch_kind=launch_kind)
         await manager.resume("cli-session", state.ResumePrompt("再開"), str(tmp_path), launch_kind=launch_kind)
-    finally:
-        await manager.close()
     assert len(options_seen) == 2
     root = claude.plugin_roots.SERVER_PLUGIN_ROOT
     for options in options_seen:
@@ -871,14 +937,11 @@ async def test_claude_start_records_owner_and_cli_processes(monkeypatch: pytest.
     assert owner is not None
     client = _TransportClient([[SystemMessage("claude-recorded"), ResultMessage("完了")]], pid=owner.pid)
     options = SimpleNamespace(system_prompt={"type": "preset", "preset": "claude_code"})
-    manager = claude.ClaudeServerManager(client_factory=lambda _options: client, publish_registry=True)
-    monkeypatch.setattr(claude, "_build_options", lambda *_args, **_kwargs: options)
-    try:
+    async with claude.ClaudeServerManager(client_factory=lambda _options: client, publish_registry=True) as manager:
+        monkeypatch.setattr(claude, "_build_options", lambda *_args, **_kwargs: options)
         session = await manager.start("調査", str(tmp_path))
         record = session_registry.registry_directory() / f"{session.session_id}.json"
         processes = json.loads(record.read_text(encoding="utf-8"))["processes"]
-    finally:
-        await manager.close()
     assert processes == [{"pid": owner.pid, "create_time": owner.create_time}] * 2
 
 
@@ -893,9 +956,8 @@ async def test_claude_start_result_wait_and_reply(monkeypatch: pytest.MonkeyPatc
         ]
     )
     options = SimpleNamespace(system_prompt={"type": "preset", "preset": "claude_code"})
-    manager = claude.ClaudeServerManager(client_factory=lambda _options: client)
-    monkeypatch.setattr(claude, "_build_options", lambda *_args, **_kwargs: options)
-    try:
+    async with claude.ClaudeServerManager(client_factory=lambda _options: client) as manager:
+        monkeypatch.setattr(claude, "_build_options", lambda *_args, **_kwargs: options)
         session = await manager.start("調査", str(tmp_path), "model", "high")
         for _ in range(20):
             if session.result_available:
@@ -910,8 +972,6 @@ async def test_claude_start_result_wait_and_reply(monkeypatch: pytest.MonkeyPatc
         assert reply["previous_result"]["agent_message"] == "Claude結果"
         _assert_no_forbidden_keys(reply)
         assert client.queries == ["調査", "続行"]
-    finally:
-        await manager.close()
     assert client.connected is True
     assert client.disconnected is True
 
@@ -930,9 +990,8 @@ async def test_claude_resources_remain_identical_when_init_is_resent_per_turn(
             [SystemMessage("claude-stable"), ResultMessage("2回目のreply結果")],
         ]
     )
-    manager = claude.ClaudeServerManager(client_factory=lambda _options: client)
-    monkeypatch.setattr(claude, "_build_options", lambda *_args, **_kwargs: SimpleNamespace())
-    try:
+    async with claude.ClaudeServerManager(client_factory=lambda _options: client) as manager:
+        monkeypatch.setattr(claude, "_build_options", lambda *_args, **_kwargs: SimpleNamespace())
         session = await manager.start("調査", str(tmp_path))
         channel = manager._channels[session.session_id]
         for prompt, expected in (("続行1", "1回目のreply結果"), ("続行2", "2回目のreply結果")):
@@ -950,8 +1009,6 @@ async def test_claude_resources_remain_identical_when_init_is_resent_per_turn(
             assert session.agent_message == expected
             assert manager._channels[session.session_id] is channel
             assert manager.sessions[session.session_id] is session
-    finally:
-        await manager.close()
 
 
 @pytest.mark.usefixtures("agents_server_isolation")
@@ -962,23 +1019,27 @@ async def test_claude_kill_uses_owner_task_interrupt_and_maps_terminal_reason(
 ) -> None:
     """Claudeのkillは所有タスクからinterruptを呼び、中断理由を状態へ写像する。"""
     client = InterruptAwareClaudeClient()
-    manager = server_manager.AgentsServerManager()
-    backend = claude.ClaudeServerManager(manager.sessions, manager._condition, client_factory=lambda _options: client)
-    install_backend(manager, "claude", backend)
-    monkeypatch.setattr(claude, "_build_options", lambda *_args, **_kwargs: SimpleNamespace())
+    async with (
+        server_manager.AgentsServerManager() as manager,
+        claude.ClaudeServerManager(manager.sessions, manager._condition, client_factory=lambda _options: client) as backend,
+    ):
+        install_backend(manager, "claude", backend)
+        monkeypatch.setattr(claude, "_build_options", lambda *_args, **_kwargs: SimpleNamespace())
 
-    try:
-        monkeypatch.setattr(
-            _atk_config, "parse_unresolved_model_candidates", lambda _model_type, **_kwargs: [("claude", "model", "high")]
-        )
-        start_response = await manager.start("plan", "調査", str(tmp_path))
-        response = await manager.kill(start_response["session_id"], timeout=1)
-        assert response["status"] == "interrupted"
-        assert response["kill_requested"] is True
-        assert response["agent_message"] == "中断結果"
-        assert client.interrupts == 1
-    finally:
-        await manager.close()
+        try:
+            monkeypatch.setattr(
+                _atk_config,
+                "parse_unresolved_model_candidates",
+                lambda _model_type, **_kwargs: [("claude", "model", "high")],
+            )
+            start_response = await manager.start("plan", "調査", str(tmp_path))
+            response = await manager.kill(start_response["session_id"], timeout=1)
+            assert response["status"] == "interrupted"
+            assert response["kill_requested"] is True
+            assert response["agent_message"] == "中断結果"
+            assert client.interrupts == 1
+        finally:
+            await manager.close()
 
 
 @pytest.mark.usefixtures("agents_server_isolation")
@@ -986,9 +1047,8 @@ async def test_claude_kill_uses_owner_task_interrupt_and_maps_terminal_reason(
 async def test_claude_message_gap_does_not_cancel_stream(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
     """通常のメッセージ間隔が旧poll間隔を超えてもstreamを失敗扱いにしない。"""
     client = DelayedClaudeClient([[SystemMessage("claude-delayed"), AssistantMessage("途中"), ResultMessage("完了")]])
-    manager = claude.ClaudeServerManager(client_factory=lambda _options: client)
-    monkeypatch.setattr(claude, "_build_options", lambda *_args, **_kwargs: SimpleNamespace())
-    try:
+    async with claude.ClaudeServerManager(client_factory=lambda _options: client) as manager:
+        monkeypatch.setattr(claude, "_build_options", lambda *_args, **_kwargs: SimpleNamespace())
         session = await manager.start("調査", str(tmp_path))
         for _ in range(40):
             if session.result_available:
@@ -997,8 +1057,6 @@ async def test_claude_message_gap_does_not_cancel_stream(monkeypatch: pytest.Mon
         assert session.status == "completed"
         assert session.agent_message == "完了"
         assert session.progress == "途中"
-    finally:
-        await manager.close()
     assert client.disconnected is True
 
 
@@ -1038,17 +1096,14 @@ async def test_claude_concatenates_multiple_text_blocks(monkeypatch: pytest.Monk
     assistant_message = AssistantMessage("一")
     assistant_message.content = MultipleBlockAssistantMessage("一", "二").content
     client = FakeClaudeClient([[SystemMessage("claude-blocks"), assistant_message, ResultMessage("完了")]])
-    manager = claude.ClaudeServerManager(client_factory=lambda _options: client)
-    monkeypatch.setattr(claude, "_build_options", lambda *_args, **_kwargs: SimpleNamespace())
-    try:
+    async with claude.ClaudeServerManager(client_factory=lambda _options: client) as manager:
+        monkeypatch.setattr(claude, "_build_options", lambda *_args, **_kwargs: SimpleNamespace())
         session = await manager.start("調査", str(tmp_path))
         for _ in range(20):
             if session.result_available:
                 break
             await asyncio.sleep(0.01)
         assert session.progress == "一 二"
-    finally:
-        await manager.close()
 
 
 @pytest.mark.usefixtures("agents_server_isolation")
@@ -1060,20 +1115,20 @@ async def test_claude_task_exception_disconnects_and_retains_failure(
     """message taskの例外時に切断し、failedの結果を共有sessionへ保持する。"""
     client = FailingClaudeClient([])
     sessions: dict[str, state.SessionState] = {}
-    manager = claude.ClaudeServerManager(sessions, client_factory=lambda _options: client)
-    monkeypatch.setattr(claude, "_build_options", lambda *_args, **_kwargs: SimpleNamespace())
-    session = await manager.start("調査", str(tmp_path))
-    for _ in range(20):
-        if client.disconnected:
-            break
-        await asyncio.sleep(0.01)
-    assert client.disconnected is True
-    assert sessions[session.session_id] is session
-    assert session.status == "failed"
-    # 初期化の完了後の失敗は、原因の特定に要する診断を終端結果へ添える。
-    assert session.error["message"] == "stream failed"
-    assert set(session.error) == {"message", "engine", "model", "stderr", "childPid", "debugFile"}
-    assert session.error["engine"] == "claude"
+    async with claude.ClaudeServerManager(sessions, client_factory=lambda _options: client) as manager:
+        monkeypatch.setattr(claude, "_build_options", lambda *_args, **_kwargs: SimpleNamespace())
+        session = await manager.start("調査", str(tmp_path))
+        for _ in range(20):
+            if client.disconnected:
+                break
+            await asyncio.sleep(0.01)
+        assert client.disconnected is True
+        assert sessions[session.session_id] is session
+        assert session.status == "failed"
+        # 初期化の完了後の失敗は、原因の特定に要する診断を終端結果へ添える。
+        assert session.error["message"] == "stream failed"
+        assert set(session.error) == {"message", "engine", "model", "stderr", "childPid", "debugFile"}
+        assert session.error["engine"] == "claude"
 
 
 @pytest.mark.usefixtures("agents_server_isolation")
@@ -1086,9 +1141,8 @@ async def test_claude_failure_keeps_last_nonempty_assistant_message(
     result = ResultMessage("")
     result.is_error = True
     client = FakeClaudeClient([[SystemMessage("claude-failed"), AssistantMessage("途中経過"), AssistantMessage(""), result]])
-    manager = claude.ClaudeServerManager(client_factory=lambda _options: client)
-    monkeypatch.setattr(claude, "_build_options", lambda *_args, **_kwargs: SimpleNamespace())
-    try:
+    async with claude.ClaudeServerManager(client_factory=lambda _options: client) as manager:
+        monkeypatch.setattr(claude, "_build_options", lambda *_args, **_kwargs: SimpleNamespace())
         session = await manager.start("調査", str(tmp_path))
         for _ in range(20):
             if session.result_available:
@@ -1097,8 +1151,6 @@ async def test_claude_failure_keeps_last_nonempty_assistant_message(
         assert session.status == "failed"
         assert session.agent_message == "途中経過"
         assert session.progress == "途中経過"
-    finally:
-        await manager.close()
 
 
 @pytest.mark.usefixtures("agents_server_isolation")
@@ -1109,9 +1161,8 @@ async def test_claude_empty_result_is_not_completed(
 ) -> None:
     """非空assistant本文を伴わないResultMessageは正常完了にしない。"""
     client = FakeClaudeClient([[SystemMessage("claude-empty"), AssistantMessage(""), ResultMessage("")]])
-    manager = claude.ClaudeServerManager(client_factory=lambda _options: client)
-    monkeypatch.setattr(claude, "_build_options", lambda *_args, **_kwargs: SimpleNamespace())
-    try:
+    async with claude.ClaudeServerManager(client_factory=lambda _options: client) as manager:
+        monkeypatch.setattr(claude, "_build_options", lambda *_args, **_kwargs: SimpleNamespace())
         session = await manager.start("調査", str(tmp_path))
         for _ in range(20):
             if session.result_available:
@@ -1119,8 +1170,6 @@ async def test_claude_empty_result_is_not_completed(
             await asyncio.sleep(0.01)
         assert session.status == "failed"
         assert session.error == {"message": "Claude Agent SDK returned no assistant output"}
-    finally:
-        await manager.close()
 
 
 @pytest.mark.usefixtures("agents_server_isolation")
@@ -1133,47 +1182,47 @@ async def test_claude_retention_expiry_disconnects_and_retains_result_record(
     monkeypatch.setattr(state, "RESULT_RETENTION_SECONDS", 0.01)
     client = FakeClaudeClient([[SystemMessage("claude-expired"), ResultMessage("完了")]])
     sessions: dict[str, state.SessionState] = {}
-    manager = server_manager.AgentsServerManager()
-    manager.sessions = sessions
-    backend = claude.ClaudeServerManager(
-        sessions,
-        manager._condition,
-        client_factory=lambda _options: client,
-        expire_session=manager._expire_session,
-    )
-    monkeypatch.setattr(claude, "_build_options", lambda *_args, **_kwargs: SimpleNamespace())
-    session = await backend.start("調査", str(tmp_path))
-    for _ in range(20):
-        if client.disconnected and session.session_id not in sessions:
-            break
-        await asyncio.sleep(0.01)
-    assert client.disconnected is True
-    assert session.session_id not in sessions
-    assert manager.expired_sessions == {
-        session.session_id: state.SessionResumeState(
-            session_id=session.session_id,
-            cwd=str(tmp_path),
-            model=None,
-            effort=None,
-            engine="claude",
-            claude_connection="inherit",
-            claude_role="delegate",
-            label=session.label,
-            created_at=session.created_at,
-            started_at=session.started_at,
-            updated_at=session.updated_at,
-            turn_seq=session.turn_seq,
-            status="completed",
-            agent_message="完了",
-            final_responses=((1, "完了"),),
-            finalized_at=session.finalized_at,
-            result_delivered=False,
-            retention_deadline=session.retention_deadline,
-        )
-    }
-    response = await manager.wait()
-    assert response == {"session_id": session.session_id, "status": "completed", "agent_message": "完了"}
-    assert await manager.wait() == {"status": "expired"}
+    async with server_manager.AgentsServerManager() as manager:
+        manager.sessions = sessions
+        async with claude.ClaudeServerManager(
+            sessions,
+            manager._condition,
+            client_factory=lambda _options: client,
+            expire_session=manager._expire_session,
+        ) as backend:
+            monkeypatch.setattr(claude, "_build_options", lambda *_args, **_kwargs: SimpleNamespace())
+            session = await backend.start("調査", str(tmp_path))
+            for _ in range(20):
+                if client.disconnected and session.session_id not in sessions:
+                    break
+                await asyncio.sleep(0.01)
+            assert client.disconnected is True
+            assert session.session_id not in sessions
+            assert manager.expired_sessions == {
+                session.session_id: state.SessionResumeState(
+                    session_id=session.session_id,
+                    cwd=str(tmp_path),
+                    model=None,
+                    effort=None,
+                    engine="claude",
+                    claude_connection="inherit",
+                    claude_role="delegate",
+                    label=session.label,
+                    created_at=session.created_at,
+                    started_at=session.started_at,
+                    updated_at=session.updated_at,
+                    turn_seq=session.turn_seq,
+                    status="completed",
+                    agent_message="完了",
+                    final_responses=((1, "完了"),),
+                    finalized_at=session.finalized_at,
+                    result_delivered=False,
+                    retention_deadline=session.retention_deadline,
+                )
+            }
+            response = await manager.wait()
+            assert response == {"session_id": session.session_id, "status": "completed", "agent_message": "完了"}
+            assert await manager.wait() == {"status": "expired"}
 
 
 @pytest.mark.usefixtures("agents_server_isolation")
@@ -1185,63 +1234,63 @@ async def test_claude_server_close_disconnects_and_retains_result(
     """サーバー終了時にSDKを切断し、取得済みの結果recordは保持する。"""
     client = FakeClaudeClient([[SystemMessage("claude-close"), ResultMessage("完了")]])
     sessions: dict[str, state.SessionState] = {}
-    backend = claude.ClaudeServerManager(sessions, client_factory=lambda _options: client)
-    monkeypatch.setattr(claude, "_build_options", lambda *_args, **_kwargs: SimpleNamespace())
-    session = await backend.start("調査", str(tmp_path))
-    for _ in range(20):
-        if session.result_available:
-            break
-        await asyncio.sleep(0.01)
-    await backend.close()
-    assert client.disconnected is True
-    assert sessions[session.session_id].agent_message == "完了"
+    async with claude.ClaudeServerManager(sessions, client_factory=lambda _options: client) as backend:
+        monkeypatch.setattr(claude, "_build_options", lambda *_args, **_kwargs: SimpleNamespace())
+        session = await backend.start("調査", str(tmp_path))
+        for _ in range(20):
+            if session.result_available:
+                break
+            await asyncio.sleep(0.01)
+        await backend.close()
+        assert client.disconnected is True
+        assert sessions[session.session_id].agent_message == "完了"
 
 
+@contextlib.asynccontextmanager
 async def _finished_failed_claude_session(
     tmp_path: pathlib.Path,
-) -> tuple[server_manager.AgentsServerManager, claude.ClaudeServerManager, state.SessionState]:
+) -> AsyncGenerator[tuple[server_manager.AgentsServerManager, claude.ClaudeServerManager, state.SessionState]]:
     """所有タスクが失敗で終わったClaude sessionと、そのbackendを保持するmanagerを返す。
 
     同じsessionへの次のturnは、失敗しないクライアントで始まる。
     """
-    manager = server_manager.AgentsServerManager()
-    continuation = BlockingContinuationClaudeClient()
-    continuation.streams = [[SystemMessage("claude-failed")]]
-    clients = [FailingClaudeClient([]), continuation]
+    async with server_manager.AgentsServerManager() as manager:
+        continuation = BlockingContinuationClaudeClient()
+        continuation.streams = [[SystemMessage("claude-failed")]]
+        clients = [FailingClaudeClient([]), continuation]
 
-    def client_factory(_options: Any) -> FakeClaudeClient:
-        return clients.pop(0)
+        def client_factory(_options: Any) -> FakeClaudeClient:
+            return clients.pop(0)
 
-    backend = claude.ClaudeServerManager(
-        manager.sessions,
-        manager._condition,
-        client_factory=client_factory,
-        expire_session=manager._expire_session,
-    )
-    install_backend(manager, "claude", backend)
-    session = await backend.start("調査", str(tmp_path))
-    for _ in range(20):
-        if session.result_available and session.session_id not in backend._channels:
-            break
-        await asyncio.sleep(0.01)
-    return manager, backend, session
+        async with claude.ClaudeServerManager(
+            manager.sessions,
+            manager._condition,
+            client_factory=client_factory,
+            expire_session=manager._expire_session,
+        ) as backend:
+            install_backend(manager, "claude", backend)
+            session = await backend.start("調査", str(tmp_path))
+            for _ in range(20):
+                if session.result_available and session.session_id not in backend._channels:
+                    break
+                await asyncio.sleep(0.01)
+            yield manager, backend, session
 
 
 @pytest.mark.usefixtures("agents_server_isolation")
 @pytest.mark.asyncio
 async def test_claude_finished_task_send_message_omits_previous_result_after_wait(tmp_path: pathlib.Path) -> None:
     """所有タスク終了後もwaitで回収済みの結果本文を再送しない。"""
-    manager, backend, session = await _finished_failed_claude_session(tmp_path)
+    async with _finished_failed_claude_session(tmp_path) as (manager, backend, session):
+        result = await manager.wait()
+        assert result["error"]["message"] == "stream failed"
+        assert result["error"]["engine"] == "claude"
+        response = await manager.send_message(session.session_id, "続行")
 
-    result = await manager.wait()
-    assert result["error"]["message"] == "stream failed"
-    assert result["error"]["engine"] == "claude"
-    response = await manager.send_message(session.session_id, "続行")
-
-    assert _without_root(response) == {"delivery": "reply_started", "label": ""}
-    assert not manager.expired_sessions
-    assert manager.sessions[session.session_id].status == "running"
-    await backend.close()
+        assert _without_root(response) == {"delivery": "reply_started", "label": ""}
+        assert not manager.expired_sessions
+        assert manager.sessions[session.session_id].status == "running"
+        await backend.close()
 
 
 @pytest.mark.usefixtures("agents_server_isolation")
@@ -1258,43 +1307,42 @@ async def test_claude_reply_drains_old_events_before_new_query(
             [AssistantMessage("新指示"), ResultMessage("新指示完了")],
         ]
     )
-    manager = server_manager.AgentsServerManager()
-    backend = claude.ClaudeServerManager(manager.sessions, manager._condition, client_factory=lambda _options: client)
-    monkeypatch.setattr(claude, "_build_options", lambda *_args, **_kwargs: SimpleNamespace())
-    install_backend(manager, "claude", backend)
-    manager._wait_timeouts["main"] = 1
-    try:
-        session = await backend.start("初回", str(tmp_path))
-        initial = await asyncio.wait_for(manager.wait(), timeout=2)
-        assert initial["agent_message"] == "初回完了"
-        idle = SystemMessage("claude-queue")
-        idle.subtype = "session_state_changed"
-        idle.data = {"state": "idle"}
-        events_by_kind: dict[str, list[Any]] = {
-            "none": [],
-            "result": [ResultMessage("旧完了")],
-            "assistant_result": [AssistantMessage("旧後始末"), ResultMessage("旧完了")],
-            "idle_result": [idle, ResultMessage("旧完了")],
-            "result_idle": [ResultMessage("旧完了"), idle],
-        }
-        events = events_by_kind[old_events]
-        for event in events:
-            client.messages.put_nowait(event)
-        reply = await asyncio.wait_for(manager.send_message(session.session_id, prompt), timeout=2)
-        assert reply["delivery"] == "reply_started"
-        result = await asyncio.wait_for(manager.wait(), timeout=2)
-        assert result["agent_message"] == "新指示完了"
-        assert session.turn_seq == 2
-        assert len(client.queries) == 2
-        assert client.queries[0] == "初回"
-        assert f"\n{prompt}\n" in client.queries[1]
-        assert client.messages.empty()
-        assert client.receive_calls == 1
-        assert session.result_delivered
-    finally:
-        await backend.close()
-    assert client.readers == 0
-    assert client.disconnected
+    async with server_manager.AgentsServerManager() as manager:
+        async with claude.ClaudeServerManager(
+            manager.sessions, manager._condition, client_factory=lambda _options: client
+        ) as backend:
+            monkeypatch.setattr(claude, "_build_options", lambda *_args, **_kwargs: SimpleNamespace())
+            install_backend(manager, "claude", backend)
+            manager._wait_timeouts["main"] = 1
+            session = await backend.start("初回", str(tmp_path))
+            initial = await asyncio.wait_for(manager.wait(), timeout=2)
+            assert initial["agent_message"] == "初回完了"
+            idle = SystemMessage("claude-queue")
+            idle.subtype = "session_state_changed"
+            idle.data = {"state": "idle"}
+            events_by_kind: dict[str, list[Any]] = {
+                "none": [],
+                "result": [ResultMessage("旧完了")],
+                "assistant_result": [AssistantMessage("旧後始末"), ResultMessage("旧完了")],
+                "idle_result": [idle, ResultMessage("旧完了")],
+                "result_idle": [ResultMessage("旧完了"), idle],
+            }
+            events = events_by_kind[old_events]
+            for event in events:
+                client.messages.put_nowait(event)
+            reply = await asyncio.wait_for(manager.send_message(session.session_id, prompt), timeout=2)
+            assert reply["delivery"] == "reply_started"
+            result = await asyncio.wait_for(manager.wait(), timeout=2)
+            assert result["agent_message"] == "新指示完了"
+            assert session.turn_seq == 2
+            assert len(client.queries) == 2
+            assert client.queries[0] == "初回"
+            assert f"\n{prompt}\n" in client.queries[1]
+            assert client.messages.empty()
+            assert client.receive_calls == 1
+            assert session.result_delivered
+        assert client.readers == 0
+        assert client.disconnected
 
 
 @pytest.mark.usefixtures("agents_server_isolation")
@@ -1309,25 +1357,24 @@ async def test_usage_limit_idle_keeps_shared_stream_result_pending(
     client = QueueClaudeClient(
         [_rejected_stream("seven_day", None, before_init=False, session_id="claude-limited-queue") + [idle]]
     )
-    manager = server_manager.AgentsServerManager()
-    backend = claude.ClaudeServerManager(manager.sessions, manager._condition, client_factory=lambda _options: client)
-    monkeypatch.setattr(claude, "_build_options", lambda *_args, **_kwargs: SimpleNamespace())
-    install_backend(manager, "claude", backend)
+    async with server_manager.AgentsServerManager() as manager:
+        async with claude.ClaudeServerManager(
+            manager.sessions, manager._condition, client_factory=lambda _options: client
+        ) as backend:
+            monkeypatch.setattr(claude, "_build_options", lambda *_args, **_kwargs: SimpleNamespace())
+            install_backend(manager, "claude", backend)
 
-    async def wait_for_idle() -> None:
-        while session.cli_turn_state != "idle":
-            await asyncio.sleep(0)
+            async def wait_for_idle() -> None:
+                while session.cli_turn_state != "idle":
+                    await asyncio.sleep(0)
 
-    try:
-        session = await backend.start("初回", str(tmp_path))
-        await asyncio.wait_for(wait_for_idle(), timeout=2)
-        assert session.awaiting_auto_resume
-        assert session.usage_limit_resume_at is not None
-        assert not session.result_available
-        assert client.messages.empty()
-    finally:
-        await backend.close()
-    assert client.disconnected and client.readers == 0
+            session = await backend.start("初回", str(tmp_path))
+            await asyncio.wait_for(wait_for_idle(), timeout=2)
+            assert session.awaiting_auto_resume
+            assert session.usage_limit_resume_at is not None
+            assert not session.result_available
+            assert client.messages.empty()
+        assert client.disconnected and client.readers == 0
 
 
 @pytest.mark.usefixtures("agents_server_isolation")
@@ -1347,77 +1394,80 @@ async def test_send_message_reactivated_child_holds_claude_result_until_terminal
             [AssistantMessage("子の結果を確認した"), ResultMessage("子を確認した最終結果")],
         ]
     )
-    manager = server_manager.AgentsServerManager(None)
-    backend = claude.ClaudeServerManager(manager.sessions, manager._condition, client_factory=lambda _options: client)
-    monkeypatch.setattr(claude, "_build_options", lambda *_args, **_kwargs: SimpleNamespace())
-    install_backend(manager, "claude", backend)
-    session_registry.publish("child", terminal=False, cwd=str(tmp_path))
-    try:
-        started = await manager.start("high_tier", "親の作業", str(tmp_path))
-        session = manager.sessions[started["session_id"]]
-        session.terminal_child_session_ids.add("child")
-        session.auto_resume_consumed = True
-        tool_use = AssistantMessage("")
-        tool_use.content = [
-            SimpleNamespace(
-                id="reply-child",
-                name="mcp__agents_server__send_message",
-                input={"session_id": "child", "prompt": "残作業を続ける"},
+    async with (
+        server_manager.AgentsServerManager(None) as manager,
+        claude.ClaudeServerManager(manager.sessions, manager._condition, client_factory=lambda _options: client) as backend,
+    ):
+        monkeypatch.setattr(claude, "_build_options", lambda *_args, **_kwargs: SimpleNamespace())
+        install_backend(manager, "claude", backend)
+        session_registry.publish("child", terminal=False, cwd=str(tmp_path))
+        try:
+            started = await manager.start("high_tier", "親の作業", str(tmp_path))
+            session = manager.sessions[started["session_id"]]
+            session.terminal_child_session_ids.add("child")
+            session.auto_resume_consumed = True
+            tool_use = AssistantMessage("")
+            tool_use.content = [
+                SimpleNamespace(
+                    id="reply-child",
+                    name="mcp__agents_server__send_message",
+                    input={"session_id": "child", "prompt": "残作業を続ける"},
+                )
+            ]
+            client.messages.put_nowait(tool_use)
+            # SDKのUserMessage/ToolResultBlockの実型を通して構造化応答のJSONを配送する。
+            client.messages.put_nowait(
+                UserMessage(
+                    content=[
+                        ToolResultBlock(
+                            tool_use_id="reply-child",
+                            content=json.dumps(
+                                responses.public_send_message_response({"delivery": "reply_started", "label": "子の担当"})
+                            ),
+                        )
+                    ]
+                )
             )
-        ]
-        client.messages.put_nowait(tool_use)
-        # SDKのUserMessage/ToolResultBlockの実型を通して構造化応答のJSONを配送する。
-        client.messages.put_nowait(
-            UserMessage(
-                content=[
-                    ToolResultBlock(
-                        tool_use_id="reply-child",
-                        content=json.dumps({"session_id": "child", "delivery": "reply_started", "status": "running"}),
-                    )
-                ]
-            )
-        )
-        client.messages.put_nowait(ResultMessage("親のturnの結果", is_error=failed))
-        async with manager._condition:
-            await asyncio.wait_for(manager._condition.wait_for(lambda: session.awaiting_auto_resume), 2)
-        shown = await manager.show_session(session.session_id)
-        assert shown["status"] == "running" and shown["result_held"]
-        assert shown["live_child_sessions"] == [{"session_id": "child", "cwd": str(tmp_path)}]
-        assert session.pending_result is not None
-        assert session.pending_result["status"] == ("failed" if failed else "completed")
-        session_registry.publish("child", terminal=True, status="completed", cwd=str(tmp_path))
-        result = await asyncio.wait_for(manager.wait(), 2)
-        if result["status"] == "running":
+            client.messages.put_nowait(ResultMessage("親のturnの結果", is_error=failed))
             async with manager._condition:
-                await asyncio.wait_for(manager._condition.wait_for(lambda: session.result_available), 2)
+                await asyncio.wait_for(manager._condition.wait_for(lambda: session.awaiting_auto_resume), 2)
+            shown = await manager.show_session(session.session_id)
+            assert shown["status"] == "running" and shown["result_held"]
+            assert shown["live_child_sessions"] == [{"session_id": "child", "cwd": str(tmp_path)}]
+            assert session.pending_result is not None
+            assert session.pending_result["status"] == ("failed" if failed else "completed")
+            session_registry.publish("child", terminal=True, status="completed", cwd=str(tmp_path))
             result = await asyncio.wait_for(manager.wait(), 2)
-        assert result["status"] == "completed"
-        assert result["agent_message"] == "子を確認した最終結果"
-        assert session.auto_resume_consumed and len(client.queries) == 2
-    finally:
-        await manager.close()
-    assert client.disconnected and client.readers == 0
+            if result["status"] == "running":
+                async with manager._condition:
+                    await asyncio.wait_for(manager._condition.wait_for(lambda: session.result_available), 2)
+                result = await asyncio.wait_for(manager.wait(), 2)
+            assert result["status"] == "completed"
+            assert result["agent_message"] == "子を確認した最終結果"
+            assert session.auto_resume_consumed and len(client.queries) == 2
+        finally:
+            await manager.close()
+        assert client.disconnected and client.readers == 0
 
 
 @pytest.mark.usefixtures("agents_server_isolation")
 @pytest.mark.asyncio
 async def test_claude_finished_task_send_message_keeps_previous_result_without_wait(tmp_path: pathlib.Path) -> None:
     """所有タスク終了後も未回収の結果本文を退避して会話を再開する。"""
-    manager, backend, session = await _finished_failed_claude_session(tmp_path)
+    async with _finished_failed_claude_session(tmp_path) as (manager, backend, session):
+        response = await manager.send_message(session.session_id, "続行")
 
-    response = await manager.send_message(session.session_id, "続行")
-
-    previous_error = response["previous_result"].pop("error")
-    assert previous_error["message"] == "stream failed"
-    assert previous_error["engine"] == "claude"
-    assert _without_root(response) == {
-        "delivery": "reply_started",
-        "label": "",
-        "previous_result": {
-            "status": "failed",
-            "agent_message": "",
-        },
-    }
-    assert not manager.expired_sessions
-    assert manager.sessions[session.session_id].status == "running"
-    await backend.close()
+        previous_error = response["previous_result"].pop("error")
+        assert previous_error["message"] == "stream failed"
+        assert previous_error["engine"] == "claude"
+        assert _without_root(response) == {
+            "delivery": "reply_started",
+            "label": "",
+            "previous_result": {
+                "status": "failed",
+                "agent_message": "",
+            },
+        }
+        assert not manager.expired_sessions
+        assert manager.sessions[session.session_id].status == "running"
+        await backend.close()

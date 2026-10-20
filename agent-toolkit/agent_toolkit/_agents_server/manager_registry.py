@@ -534,6 +534,10 @@ class ManagerRegistry(responses.ManagerResponses):
             api_error=getattr(session, "api_error", None) if status == "running" else None,
         )
         response.update(activity)
+        if isinstance(session, SessionState):
+            diagnostics = session.claude_connection_diagnostics + session.claude_mcp_diagnostics
+            if diagnostics:
+                response["warnings"] = list(diagnostics)
         if status in TERMINAL_STATUSES and result_projection.nonempty_error(session.error):
             # 失敗で終端したsessionの原因を、結果の回収とは別に照会できるようにする。
             response["error"] = result_projection.refresh_error_diagnostics(session.error)

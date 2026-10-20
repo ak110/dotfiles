@@ -497,10 +497,10 @@ def test_start_conditions_release_together(
 ) -> None:
     """活動による抑止と未回答UWIによる抑止のどちらかが成立する間は開始せず、期限は残り時間の長い方とし、順次加算しない。"""
     case = pathlib.Path(tempfile.mkdtemp(dir=tmp_path))
-    inbox = case / "inbox"
-    inbox.mkdir()
+    inbox = case / "2026" / "10"
+    inbox.mkdir(parents=True)
     question = inbox / "question.md"
-    text = "---\ntype: uwi\ntarget_repo: github.com/example/project\n---\n\n質問\n"
+    text = "---\nstate: inbox\ntype: uwi\ntarget_repo: github.com/example/project\n---\n\n質問\n"
     if answered:
         text += "\n## 回答\n承認\n"
     question.write_text(text, encoding="utf-8")

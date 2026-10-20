@@ -479,14 +479,30 @@ class RecordWatch:
 
     def stop(self) -> None:
         """監視スレッドを終了させる。"""
-        self.tracker.stop()
+        errors: list[BaseException] = []
+        try:
+            self.tracker.stop()
+        except BaseException as error:
+            errors.append(error)
         observer = self._observer
-        if observer is None:
-            return
-        observer.stop()
-        if observer.ident is not None:
-            observer.join()
-        self._observer = None
+        if observer is not None:
+            observer_errors: list[BaseException] = []
+            try:
+                observer.stop()
+            except BaseException as error:
+                observer_errors.append(error)
+            if observer.ident is not None:
+                try:
+                    observer.join()
+                except BaseException as error:
+                    observer_errors.append(error)
+            if not observer_errors:
+                self._observer = None
+            errors.extend(observer_errors)
+        if len(errors) == 1:
+            raise errors[0]
+        if errors:
+            raise BaseExceptionGroup("セッション記録の監視資源の回収に失敗した", errors)
 
     def _schedule_roots(self) -> None:
         """各rootを再帰で、存在しないrootは最も近い祖先を非再帰で監視へ登録し、不要になった祖先の監視を外す。"""

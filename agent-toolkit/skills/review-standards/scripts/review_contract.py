@@ -95,8 +95,6 @@ def _generation_input(path: pathlib.Path, repository: pathlib.Path) -> list[dict
         metadata, errors = structure.parse_plan_metadata(text)
         if metadata is None or errors:
             raise ValueError(f"計画メタ情報を取得できません: {plan}: {errors}")
-        if pathlib.Path(metadata.values.get("対象リポジトリ", "")).resolve() != repository:
-            raise ValueError(f"計画の対象リポジトリが現在のworktreeと異なります: {plan}")
         mapping = commit_mapping.read_mapping(
             repository, commit_mapping.read_events(plan, text), {name for name, _ in metadata.related_wi}
         )
@@ -163,7 +161,12 @@ def main(argv: list[str] | None = None) -> int:
         _next_action.report(error.reason, next_action=error.next_action)
         return 2
     except commit_mapping.CommitMappingError as error:
-        _next_action.report(error.reason, next_action=error.next_action)
+        _next_action.report(
+            error.reason,
+            next_action=f"照会したcwd: {pathlib.Path.cwd().resolve()}。"
+            "全計画の実装commitを現在のHEADに含むworktreeをcwdにして、"
+            "同じ引数で再実行する。統合やrebase後なら`atk run-script plan-rewrite`で計画の対応記録を更新してから再実行する",
+        )
         return 2
     except (OSError, ValueError, yaml.YAMLError, subprocess.SubprocessError) as error:
         _next_action.report(str(error), next_action=_FIX_FORMAT)

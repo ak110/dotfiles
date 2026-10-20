@@ -473,228 +473,227 @@ def _wait_for_result(
         print(f"終端結果・通知を待機中: {', '.join(ordered_ids) or identity.file_name}", file=sys.stderr, flush=True)
     lock_directory.mkdir(parents=True, exist_ok=True)
     lock_path = lock_directory / f"{identity.file_name}.lock"
-    lock_file = lock_path.open("a+b")
-    owns_lock = False
-    run_path: pathlib.Path | None = None
-    # 排他の取得と結果の回収は同じ一回の待機期限を消費する。
-    deadline = time.monotonic() + get_cli_wait_timeout("main")
-    try:
+    with lock_path.open("a+b") as lock_file:
+        owns_lock = False
+        run_path: pathlib.Path | None = None
+        # 排他の取得と結果の回収は同じ一回の待機期限を消費する。
+        deadline = time.monotonic() + get_cli_wait_timeout("main")
         try:
-            acquire_lock(lock_file, blocking=False)
-            owns_lock = True
-        except OSError:
-            _LOG.info("wait_lock_failed owner=%s targets=%s", identity.file_name, ",".join(ordered_ids) or "none")
-            if is_human_terminal():
-                print(
-                    f"先行する待機の終了を待機中: {', '.join(ordered_ids) or identity.file_name}",
-                    file=sys.stderr,
-                    flush=True,
-                )
-            run_directory = _wait_run_directory(root_session_id, identity.file_name, state_root)
-            current = _read_json(run_directory / "current.json")
-            run_id = current.get("run_id") if current is not None else None
-            if not isinstance(run_id, str):
-                return _fail(
-                    "同じ書込主体の旧形式の待機がlockを保持しています: "
-                    f"owner={identity.file_name}, targets={','.join(ordered_ids) or 'none'}",
-                    8,
-                    next_action=_PRECEDING_WAIT_NEXT_ACTION,
-                )
-            run_path = run_directory / f"{run_id}.json"
-            while not owns_lock:
-                remaining = deadline - time.monotonic()
-                if remaining <= 0:
+            try:
+                acquire_lock(lock_file, blocking=False)
+                owns_lock = True
+            except OSError:
+                _LOG.info("wait_lock_failed owner=%s targets=%s", identity.file_name, ",".join(ordered_ids) or "none")
+                if is_human_terminal():
+                    print(
+                        f"先行する待機の終了を待機中: {', '.join(ordered_ids) or identity.file_name}",
+                        file=sys.stderr,
+                        flush=True,
+                    )
+                run_directory = _wait_run_directory(root_session_id, identity.file_name, state_root)
+                current = _read_json(run_directory / "current.json")
+                run_id = current.get("run_id") if current is not None else None
+                if not isinstance(run_id, str):
                     return _fail(
-                        "先行する待機との競合が待機期限まで続いています: "
-                        f"owner={identity.file_name}, run_id={run_id}, "
-                        f"targets={','.join(ordered_ids) or 'none'}, run_path={run_path.resolve()}",
+                        "同じ書込主体の旧形式の待機がlockを保持しています: "
+                        f"owner={identity.file_name}, targets={','.join(ordered_ids) or 'none'}",
                         8,
                         next_action=_PRECEDING_WAIT_NEXT_ACTION,
                     )
-                time.sleep(min(1.0, remaining))
-                try:
-                    acquire_lock(lock_file, blocking=False)
-                    owns_lock = True
-                except OSError:
-                    pass
-        current_run_path = run_path if run_path is not None else _matching_current_wait_run(run_directory, ordered_ids)
-        if current_run_path is not None:
-            recorded = _read_json(current_run_path)
-            if recorded is not None and recorded.get("status") == "running":
-                if run_path is not None:
-                    recorded_targets = recorded.get("targets")
-                    if not isinstance(recorded_targets, list) or any(
-                        not isinstance(session_id, str) or not shared_layout.valid_session_id(session_id)
-                        for session_id in recorded_targets
-                    ):
-                        return _consume_wait_result(current_run_path)
-                    ordered_ids = sorted(set(ordered_ids) | set(recorded_targets) | _stashed_wait_targets(current_run_path))
-                run_path = current_run_path
-            else:
-                return _consume_wait_result(current_run_path)
-        else:
-            run_id = uuid.uuid4().hex
-            run_path = run_directory / f"{run_id}.json"
-            _write_json(
-                run_path,
-                {
-                    "run_id": run_id,
-                    "status": "running",
-                    "targets": ordered_ids,
-                    "started_at": datetime.datetime.now(datetime.UTC).isoformat(),
-                },
-            )
-            _write_json(run_directory / "current.json", {"run_id": run_id})
-        wait_targets.retain_wait_targets(root_session_id, identity.file_name, ordered_ids, state_root)
-
-        # 上限はMCPの`wait`と同じ保持期間とホストの判定から導出する。CLIはMCPのツール呼び出しを経由しないため、
-        # 委譲先セッションでもMCPクライアントの上限に由来する短縮を適用しない（`get_cli_wait_timeout`）。
-        # 委譲元がメイン会話かサブエージェントかを判定できないため、MCPと同じくmainのbucketを用いる。
-        body_writer = _BodyFileWriter()
-        while True:
-            current_origins, target_error = _target_origins(
-                own_status_path,
-                result_directory,
-                root_session_id,
-                identity.file_name,
-                state_root,
-                released_interruptions,
-            )
-            if target_error is not None:
-                message, code, next_action = target_error
-                return _publish_wait_result(run_path, with_next_action(message, next_action), code, stream="stderr")
-            # 待機中の対象不在は、全対象の登録簿が終端を示す場合だけ確定する。
-            # 状態投影の消失と登録簿の不在は待機開始後にsessionを喪失した根拠にならないため、その場合は待機上限まで待つ。
-            if (
-                ordered_ids
-                and not current_origins
-                and not _stashed_wait_targets(run_path)
-                and all(
-                    session_registry.resolve(session_id, state_root=state_root).state is session_registry.Resolution.TERMINAL
-                    for session_id in ordered_ids
-                )
-            ):
-                _LOG.info("wait_return reason=absent owner=%s", identity.file_name)
-                absent_message = _absent_targets_message(identity.file_name)
-                interrupted_sessions = [
-                    *released_interruptions,
-                    *(
-                        item
-                        for session_id in ordered_ids
-                        if session_id not in {entry["session_id"] for entry in released_interruptions}
-                        and (
-                            item := _interrupted_session(
-                                session_id, session_registry.resolve(session_id, state_root=state_root), state_root
-                            )
+                run_path = run_directory / f"{run_id}.json"
+                while not owns_lock:
+                    remaining = deadline - time.monotonic()
+                    if remaining <= 0:
+                        return _fail(
+                            "先行する待機との競合が待機期限まで続いています: "
+                            f"owner={identity.file_name}, run_id={run_id}, "
+                            f"targets={','.join(ordered_ids) or 'none'}, run_path={run_path.resolve()}",
+                            8,
+                            next_action=_PRECEDING_WAIT_NEXT_ACTION,
                         )
-                        is not None
-                    ),
-                ]
-                if interrupted_sessions:
-                    absent_message += "; " + _interrupted_sessions_text(interrupted_sessions)
-                return _publish_wait_result(
+                    time.sleep(min(1.0, remaining))
+                    try:
+                        acquire_lock(lock_file, blocking=False)
+                        owns_lock = True
+                    except OSError:
+                        pass
+            current_run_path = run_path if run_path is not None else _matching_current_wait_run(run_directory, ordered_ids)
+            if current_run_path is not None:
+                recorded = _read_json(current_run_path)
+                if recorded is not None and recorded.get("status") == "running":
+                    if run_path is not None:
+                        recorded_targets = recorded.get("targets")
+                        if not isinstance(recorded_targets, list) or any(
+                            not isinstance(session_id, str) or not shared_layout.valid_session_id(session_id)
+                            for session_id in recorded_targets
+                        ):
+                            return _consume_wait_result(current_run_path)
+                        ordered_ids = sorted(set(ordered_ids) | set(recorded_targets) | _stashed_wait_targets(current_run_path))
+                    run_path = current_run_path
+                else:
+                    return _consume_wait_result(current_run_path)
+            else:
+                run_id = uuid.uuid4().hex
+                run_path = run_directory / f"{run_id}.json"
+                _write_json(
                     run_path,
-                    with_next_action(absent_message, _ABSENT_TARGETS_NEXT_ACTION),
-                    10,
-                    stream="stderr",
+                    {
+                        "run_id": run_id,
+                        "status": "running",
+                        "targets": ordered_ids,
+                        "started_at": datetime.datetime.now(datetime.UTC).isoformat(),
+                    },
                 )
-            for session_id in sorted(set(current_origins) - set(ordered_ids)):
-                ordered_ids.append(session_id)
-                ordered_ids.sort()
-                if is_human_terminal():
-                    print(f"終端結果・通知の待機対象を追加: {session_id}", file=sys.stderr, flush=True)
-                wait_targets.retain_wait_targets(root_session_id, identity.file_name, [session_id], state_root)
-                recorded = _read_json(run_path) or {}
-                recorded["targets"] = ordered_ids
-                _write_json(run_path, recorded)
-                _LOG.info(
-                    "wait_target_added session_id=%s origins=%s",
-                    session_id,
-                    ",".join(sorted(current_origins[session_id])),
-                )
-            status_paths = shared_layout.list_status_files(root_session_id, state_root)
-            collected: list[dict[str, Any]] = []
-            read_failure: str | None = None
-            for session_id in ordered_ids:
-                result_path = result_directory / f"{session_id}.json"
-                result, read_error = retained_results.take_result(
-                    root_session_id,
-                    session_id,
-                    identity.file_name,
-                    collector="atk-agents-wait",
-                    state_root=state_root,
-                    stash_path=run_path.with_suffix("") / "results" / f"{session_id}.json",
-                )
-                if read_error is not None:
-                    read_failure = f"終端結果ファイルを読めません: {result_path}: {read_error}"
-                    break
-                notices = notice_inbox.take_notices(
-                    root_session_id,
-                    session_id,
-                    state_root,
-                    stash_directory=run_path.with_suffix("") / "notices",
-                )
-                if result is not None:
-                    result["session_id"] = session_id
-                    if isinstance(result.get("agent_message"), str):
-                        # 書込に失敗した場合は配送前に終え、run別の退避物と待機対象の登録を残して次の待機で再配送する。
-                        try:
-                            result["agent_message_path"] = str(body_writer.write(session_id, result))
-                        except (_managed_temp.ManagedTempError, OSError) as error:
-                            return _fail(
-                                f"結果本文のファイルを書けません: session_id={session_id}: {error}",
-                                11,
-                                next_action=_BODY_FILE_NEXT_ACTION,
-                                session_id=session_id,
-                            )
-                    if notices:
-                        result["notices"] = notices
-                    collected.append(_with_result_next_action(result))
-                    wait_targets.release_wait_target(root_session_id, identity.file_name, session_id, state_root)
-                    continue
-                if notices:
-                    response = _running_response(session_id, _session_output_activity(status_paths, session_id))
-                    _add_session_label(response, status_paths, session_id)
-                    response["notices"] = notices
-                    response["next_action"] = _NOTICE_NEXT_ACTION
-                    collected.append(response)
-            if collected:
-                output = "\n".join(json.dumps(item, ensure_ascii=False, separators=(",", ":")) for item in collected)
-                _LOG.info(
-                    "wait_return reason=collected count=%d session_ids=%s",
-                    len(collected),
-                    ",".join(str(item["session_id"]) for item in collected),
-                )
-                continuable = all(item.get("status") == "running" for item in collected)
-                return _publish_wait_result(run_path, output, 0, continuable=continuable)
-            if read_failure is not None:
-                return _publish_wait_result(
-                    run_path, with_next_action(read_failure, _READ_FAILURE_NEXT_ACTION), 6, stream="stderr"
-                )
+                _write_json(run_directory / "current.json", {"run_id": run_id})
+            wait_targets.retain_wait_targets(root_session_id, identity.file_name, ordered_ids, state_root)
 
-            now = time.monotonic()
-            retained = {session_id: _session_is_retained(status_paths, session_id) for session_id in ordered_ids}
-            selected = next((session_id for session_id in ordered_ids if retained[session_id] is not False), None)
-            if selected is None and ordered_ids:
-                selected = ordered_ids[0]
-            response = _running_response(
-                selected,
-                {} if selected is None else _session_output_activity(status_paths, selected),
-            )
-            if selected is not None:
-                _add_session_label(response, status_paths, selected)
-            remaining = deadline - now
-            if remaining <= 0:
-                response["next_action"] = _RERUN_WAIT_NEXT_ACTION
-                output = json.dumps(response, ensure_ascii=False, separators=(",", ":"))
-                _LOG.info("wait_return reason=timeout session_id=%s", selected or "none")
-                return _publish_wait_result(run_path, output, 3, continuable=True)
-            time.sleep(min(1.0, remaining))
-    finally:
-        if owns_lock and not lock_file.closed:
-            release_lock(lock_file)
-        if not lock_file.closed:
-            lock_file.close()
+            # 上限はMCPの`wait`と同じ保持期間とホストの判定から導出する。CLIはMCPのツール呼び出しを経由しないため、
+            # 委譲先セッションでもMCPクライアントの上限に由来する短縮を適用しない（`get_cli_wait_timeout`）。
+            # 委譲元がメイン会話かサブエージェントかを判定できないため、MCPと同じくmainのbucketを用いる。
+            body_writer = _BodyFileWriter()
+            while True:
+                current_origins, target_error = _target_origins(
+                    own_status_path,
+                    result_directory,
+                    root_session_id,
+                    identity.file_name,
+                    state_root,
+                    released_interruptions,
+                )
+                if target_error is not None:
+                    message, code, next_action = target_error
+                    return _publish_wait_result(run_path, with_next_action(message, next_action), code, stream="stderr")
+                # 待機中の対象不在は、全対象の登録簿が終端を示す場合だけ確定する。
+                # 状態投影の消失と登録簿の不在は待機開始後にsessionを喪失した根拠にならないため、その場合は待機上限まで待つ。
+                if (
+                    ordered_ids
+                    and not current_origins
+                    and not _stashed_wait_targets(run_path)
+                    and all(
+                        session_registry.resolve(session_id, state_root=state_root).state
+                        is session_registry.Resolution.TERMINAL
+                        for session_id in ordered_ids
+                    )
+                ):
+                    _LOG.info("wait_return reason=absent owner=%s", identity.file_name)
+                    absent_message = _absent_targets_message(identity.file_name)
+                    interrupted_sessions = [
+                        *released_interruptions,
+                        *(
+                            item
+                            for session_id in ordered_ids
+                            if session_id not in {entry["session_id"] for entry in released_interruptions}
+                            and (
+                                item := _interrupted_session(
+                                    session_id, session_registry.resolve(session_id, state_root=state_root), state_root
+                                )
+                            )
+                            is not None
+                        ),
+                    ]
+                    if interrupted_sessions:
+                        absent_message += "; " + _interrupted_sessions_text(interrupted_sessions)
+                    return _publish_wait_result(
+                        run_path,
+                        with_next_action(absent_message, _ABSENT_TARGETS_NEXT_ACTION),
+                        10,
+                        stream="stderr",
+                    )
+                for session_id in sorted(set(current_origins) - set(ordered_ids)):
+                    ordered_ids.append(session_id)
+                    ordered_ids.sort()
+                    if is_human_terminal():
+                        print(f"終端結果・通知の待機対象を追加: {session_id}", file=sys.stderr, flush=True)
+                    wait_targets.retain_wait_targets(root_session_id, identity.file_name, [session_id], state_root)
+                    recorded = _read_json(run_path) or {}
+                    recorded["targets"] = ordered_ids
+                    _write_json(run_path, recorded)
+                    _LOG.info(
+                        "wait_target_added session_id=%s origins=%s",
+                        session_id,
+                        ",".join(sorted(current_origins[session_id])),
+                    )
+                status_paths = shared_layout.list_status_files(root_session_id, state_root)
+                collected: list[dict[str, Any]] = []
+                read_failure: str | None = None
+                for session_id in ordered_ids:
+                    result_path = result_directory / f"{session_id}.json"
+                    result, read_error = retained_results.take_result(
+                        root_session_id,
+                        session_id,
+                        identity.file_name,
+                        collector="atk-agents-wait",
+                        state_root=state_root,
+                        stash_path=run_path.with_suffix("") / "results" / f"{session_id}.json",
+                    )
+                    if read_error is not None:
+                        read_failure = f"終端結果ファイルを読めません: {result_path}: {read_error}"
+                        break
+                    notices = notice_inbox.take_notices(
+                        root_session_id,
+                        session_id,
+                        state_root,
+                        stash_directory=run_path.with_suffix("") / "notices",
+                    )
+                    if result is not None:
+                        result["session_id"] = session_id
+                        if isinstance(result.get("agent_message"), str):
+                            # 書込に失敗した場合は配送前に終え、run別の退避物と待機対象の登録を残して次の待機で再配送する。
+                            try:
+                                result["agent_message_path"] = str(body_writer.write(session_id, result))
+                            except (_managed_temp.ManagedTempError, OSError) as error:
+                                return _fail(
+                                    f"結果本文のファイルを書けません: session_id={session_id}: {error}",
+                                    11,
+                                    next_action=_BODY_FILE_NEXT_ACTION,
+                                    session_id=session_id,
+                                )
+                        if notices:
+                            result["notices"] = notices
+                        collected.append(_with_result_next_action(result))
+                        wait_targets.release_wait_target(root_session_id, identity.file_name, session_id, state_root)
+                        continue
+                    if notices:
+                        response = _running_response(session_id, _session_output_activity(status_paths, session_id))
+                        _add_session_label(response, status_paths, session_id)
+                        response["notices"] = notices
+                        response["next_action"] = _NOTICE_NEXT_ACTION
+                        collected.append(response)
+                if collected:
+                    output = "\n".join(json.dumps(item, ensure_ascii=False, separators=(",", ":")) for item in collected)
+                    _LOG.info(
+                        "wait_return reason=collected count=%d session_ids=%s",
+                        len(collected),
+                        ",".join(str(item["session_id"]) for item in collected),
+                    )
+                    continuable = all(item.get("status") == "running" for item in collected)
+                    return _publish_wait_result(run_path, output, 0, continuable=continuable)
+                if read_failure is not None:
+                    return _publish_wait_result(
+                        run_path, with_next_action(read_failure, _READ_FAILURE_NEXT_ACTION), 6, stream="stderr"
+                    )
+
+                now = time.monotonic()
+                retained = {session_id: _session_is_retained(status_paths, session_id) for session_id in ordered_ids}
+                selected = next((session_id for session_id in ordered_ids if retained[session_id] is not False), None)
+                if selected is None and ordered_ids:
+                    selected = ordered_ids[0]
+                response = _running_response(
+                    selected,
+                    {} if selected is None else _session_output_activity(status_paths, selected),
+                )
+                if selected is not None:
+                    _add_session_label(response, status_paths, selected)
+                remaining = deadline - now
+                if remaining <= 0:
+                    response["next_action"] = _RERUN_WAIT_NEXT_ACTION
+                    output = json.dumps(response, ensure_ascii=False, separators=(",", ":"))
+                    _LOG.info("wait_return reason=timeout session_id=%s", selected or "none")
+                    return _publish_wait_result(run_path, output, 3, continuable=True)
+                time.sleep(min(1.0, remaining))
+        finally:
+            if owns_lock and not lock_file.closed:
+                release_lock(lock_file)
 
 
 def _retained_result_session_ids(result_directory: pathlib.Path, *, owner_status_file: str) -> set[str]:

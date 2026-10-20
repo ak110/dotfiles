@@ -15,7 +15,7 @@ from agent_toolkit._atk import outcome as _outcome
 from agent_toolkit._atk.wi import entries as _wi_entries
 from agent_toolkit._atk.wi import readiness as _wi_readiness
 from agent_toolkit._atk.wi import sync as _wi_sync
-from agent_toolkit._atk.wi.constants import BULK_ACTION_LABELS, WI_STATE_PROCESSING, WI_STATES, WI_TYPES, bulk_source_states
+from agent_toolkit._atk.wi.constants import BULK_ACTION_LABELS, WI_STATE_PROCESSING, WI_TYPES, bulk_source_states
 from agent_toolkit._atk.wi.listing import print_entries
 from agent_toolkit._atk.wi.repo import resolve_repo_id
 
@@ -106,15 +106,13 @@ def _remove_candidates(
     """ロック保持下で候補を削除し、単一commit・pushへまとめる。"""
     for path, _repo, _text, _state, _type in candidates:
         path.unlink()
-    for state_name in WI_STATES:
-        _wi_entries.subdir(private_notes, state_name)
     count = len(candidates)
     item_word = "entry" if count == 1 else "entries"
     note_suffix = f" (理由: {note})" if note else ""
     _wi_sync.commit_and_push(
         private_notes,
         f"chore: remove {count} {item_word}{note_suffix}",
-        list(WI_STATES),
+        [str(path.relative_to(private_notes)) for path, *_ in candidates],
     )
     return [path.name for path, _repo, _text, _state, _type in candidates]
 

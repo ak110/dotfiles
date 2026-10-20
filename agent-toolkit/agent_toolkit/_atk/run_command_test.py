@@ -152,6 +152,24 @@ def test_public_command_strips_inherited_venv(tmp_path: pathlib.Path) -> None:
     assert env["VIRTUAL_ENV"] == str(venv)
 
 
+@pytest.mark.parametrize("verification", [False, True])
+def test_public_verification_owns_shared_slot_and_child_inherits(tmp_path: pathlib.Path, verification: bool) -> None:
+    """検証指定だけが共有枠を所有し、子の入れ子APIは同じ所有者で終了する。"""
+    script = (
+        "import json,os; from pyfltr.command import execution_slot; "
+        "owner=execution_slot.read_owner(); "
+        "print(json.dumps({'owner': owner.pid if owner else None, 'parent': os.getppid()})); "
+        "exec('with execution_slot.hold(label=\"nested\"):\\n assert execution_slot.read_owner() is not None')"
+    )
+    environment = {**os.environ, "PYFLTR_CACHE_DIR": str(tmp_path / "pyfltr")}
+    options = ["--verification"] if verification else []
+    result, metadata = _public_command([*options, "--timeout", "15", "--", sys.executable, "-c", script], tmp_path, environment)
+    assert result.returncode == 0, result.stderr
+    observed = json.loads(pathlib.Path(metadata["stdout_path"]).read_text(encoding="utf-8"))
+    assert observed["owner"] == (observed["parent"] if verification else None)
+    assert not (tmp_path / "pyfltr" / "locks" / "execution.owner.json").read_text(encoding="utf-8")
+
+
 @pytest.mark.parametrize("exit_code", [0, 7])
 def test_public_command_records_exit_modes(tmp_path: pathlib.Path, exit_code: int) -> None:
     """公開コマンドでも終了値と両streamを保存する。"""

@@ -36,6 +36,18 @@ block・warn・noticeの本文の整形（整形関数、`fix`の要否、種別
 
 警告専用のPreToolUse出力は`hookSpecificOutput.additionalContext`だけを返し、`permissionDecision`を省略する（通常の権限フローが適用される）。
 
+### 出力上限
+
+[公式HooksリファレンスのJSON output](https://code.claude.com/docs/en/hooks#json-output)は`additionalContext`・`systemMessage`・`initialUserMessage`の各文字列と、通常の標準出力に10,000文字の上限を定める。
+JSONはフィールドの値ごと、通常の標準出力は全体を測り、同じイベントで動く複数hookの値も個別に測る。
+超過するとClaude Codeは全文をセッション内のファイルへ保存し、ファイルパスと最大2,000文字の冒頭プレビューへ置き換える。
+Claude Code自身はモデルにファイルの読取を求めないため、必ず届く必要がある情報は上限内に収める。
+
+公式資料の10,000文字制限は、PreToolUseが終了コード2で返す標準エラーを対象に含めていない。
+標準エラー44,224文字が、接頭辞込み44,346文字のツール結果として全文届いた観測がある。
+この値は一条件の配送量であり、標準エラーの上限を保証する値ではない。
+監査記録は`docs/development/audit-records.md`の「agent-toolkit/skills/writing-standards/references/claude-hooks-output.md：出力上限：2026年10月20日」にある。
+
 ### PermissionRequest
 
 確認ダイアログ表示時に発火し、ユーザーに代わって許可・拒否を決める。PreToolUseと異なり`hookSpecificOutput`直下に`decision`オブジェクトを置き、`hookEventName`は`"PermissionRequest"`とする。
@@ -50,10 +62,14 @@ block・warn・noticeの本文の整形（整形関数、`fix`の要否、種別
 
 ### UserPromptSubmit
 
-`hookSpecificOutput.additionalContext`をそのターンの応答生成前にユーザー発話へ前置注入する誘導に使い、受理する出力はそこまでとする。
+`hookSpecificOutput.additionalContext`をそのターンの応答生成前にユーザー発話へ前置注入する誘導に使う。
 Claude Codeでは`decision`と独立に注入でき、stdoutのプレーン出力もコンテキストへ加わる。Codexでは`hookSpecificOutput.hookEventName`を`UserPromptSubmit`として`additionalContext`を返す。
 
-Claude CodeのUserPromptSubmit payloadは現在名`session_title`を持つ。名前の設定はFunction hooks moduleの`classic.UserPromptSubmit`がフラットな`sessionTitle`を返して行う。現在名が空か前回自動設定した名前と同じ場合だけ更新し、手動で付けた名前を保つ。Pythonのコマンドhookは注記を`additionalContext`へ返す。Codexでは名前を設定しない。
+Claude CodeのUserPromptSubmit payloadは現在名`session_title`を持つ。
+Pythonのコマンドhookは`hookSpecificOutput.sessionTitle`で名前を設定し、注記を同じオブジェクトの`additionalContext`へ返す。
+現在名が空か前回自動設定した名前と同じ場合だけ更新し、手動で付けた名前を保つ。
+命名用の種別はPostToolUse(Skill)と手動起動時のUserPromptSubmitが通常状態へ記録し、process-loopの環境印と計画名から名前を選ぶ。
+Codexでは名前を設定しない。
 
 応答契約を注入する注記は、本文の種別で頻度を分ける。
 
@@ -63,3 +79,16 @@ Claude CodeのUserPromptSubmit payloadは現在名`session_title`を持つ。名
 対象の通常発話はユーザーが入力したスラッシュコマンドを含み、ハーネスが挿入した通知と機械注入のターンは対象外とする。成立した注記は1つの`additionalContext`へ結合し、Codex payloadでも同じく返す。
 
 ユーザーが書いた文は、Claude Codeの`AskUserQuestion`の回答（提示した`label`と一致しない`answers`の値、`response`、`annotations`の`notes`）としてPostToolUseにも届く。発話の内容を判定材料とする注記は両hookで同じ定義の本文を使い、`AskUserQuestion`の自由記述へは、1回の質問につき1回しか生じないため閾値を適用せず毎回返す。
+
+## 組織向け設定
+
+Claude Code 2.1.304以降の`cc-plugin-sec-default`が有効な管理設定・Team・Enterpriseの環境では、ユーザーが入れたプラグインの一部のFunction hooksの実行が省かれる。
+全配布先で必要な処理は、`hooks.json`のコマンドhookか、実行が省かれないFunction hooksのイベントへ置く。
+実行が省かれる対象は次のとおりで、これらへのFunction hooksの登録を避ける。
+
+- `classic.`で始まるイベント
+- `prompt.section`・`prompt.context`・`prompt.attachment`・`prompt.compose`・`skill.prompt`・`attribution.text`・`session.compact`・`settings.read`
+- doorが`attachment`・`hook-context`・`compaction`の`session.append`
+
+利用上限の`rate_limit`はStopFailureのコマンドhookが記録し、`turn.complete`が消費して既存の再開予約へ接続する。
+監査記録は`docs/development/audit-records.md`の「agent-toolkit/skills/writing-standards/references/claude-hooks-output.md：組織向け設定：2026年10月20日」にある。

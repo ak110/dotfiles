@@ -27,8 +27,9 @@ def _setup(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> tuple[pat
     monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_PROCESS_LOOP_REPOSITORIES", json.dumps([str(worktree)]))
     notes = tmp_path / "notes"
     monkeypatch.setenv("AGENT_TOOLKIT_PRIVATE_NOTES", str(notes))
-    (notes / "inbox").mkdir(parents=True)
-    (notes / "inbox" / "task.md").write_text(f"---\ntype: awi\ntarget_repo: {_REPO}\n---\n\n# 要求\n", encoding="utf-8")
+    directory = notes / "2026" / "10"
+    directory.mkdir(parents=True)
+    (directory / "task.md").write_text(f"---\nstate: inbox\ntype: awi\ntarget_repo: {_REPO}\n---\n\n# 要求\n", encoding="utf-8")
     return notes, config.resolve_configured_repositories()[0]
 
 
@@ -68,7 +69,7 @@ class _Manager:
 
     async def wait(self) -> dict[str, Any]:
         await asyncio.sleep(0)
-        for path in self.notes.glob("*/task.md"):
+        for path in self.notes.glob("[0-9][0-9][0-9][0-9]/[0-9][0-9]/task.md"):
             path.unlink()
         return {"session_id": "session-one", "status": "completed", "agent_message": "完了"}
 

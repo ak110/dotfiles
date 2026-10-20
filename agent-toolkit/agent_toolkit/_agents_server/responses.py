@@ -128,6 +128,8 @@ def public_start_response(response: Mapping[str, Any]) -> dict[str, Any]:
         public["observed_identity"] = None
     if "root_session_id" in response:
         public["root_session_id"] = response["root_session_id"]
+    if response.get("warnings"):
+        public["warnings"] = response["warnings"]
     if response.get("excluded_candidates"):
         public["excluded_candidates"] = response["excluded_candidates"]
         public["engine"] = response["engine"]
@@ -142,6 +144,20 @@ def public_start_response(response: Mapping[str, Any]) -> dict[str, Any]:
             "sessionは開始済みです。同じ`session_id`の`show`・`send_message`で状態確認と追送を行い、"
             "保存の失敗原因を解消してから`atk agents wait`で終端結果を受け取る。保存失敗だけを理由に新しい委譲先を起動しない"
         )
+    return public
+
+
+def public_send_message_response(response: Mapping[str, Any]) -> dict[str, Any]:
+    """追送の配送結果を公開項目へ射影する。"""
+    public: dict[str, Any] = {"delivery": response["delivery"], "label": response["label"]}
+    if "root_session_id" in response:
+        public["root_session_id"] = response["root_session_id"]
+    previous_result = response.get("previous_result")
+    if previous_result:
+        public["previous_result"] = result_projection.public_result(previous_result)
+    next_action = REPLY_NEXT_ACTIONS.get(response["delivery"])
+    if next_action is not None:
+        public["next_action"] = next_action
     return public
 
 

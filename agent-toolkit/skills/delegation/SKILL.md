@@ -62,7 +62,8 @@ user-invocable: false
 ### 軽量起動のホスト別待機
 
 Codexでは、`functions.exec`内の起動応答が返した`root_session_id`を保持し、ランタイム間の識別子の受渡しとして`atk agents wait`の`--root-session-id`へ渡す（待機対象のsession集合の指定とは別物である）。
-待機CLIと外側の実行セルは別々に回収する。CLIへ待機対象やtimeoutを指定せず、外側のcell IDは`functions.wait`、exec_commandのsession IDは`write_stdin`で同じターンに回収する。外側がyieldした間は同じCLIを再発行せず、CLI自身が上限で`running`を返した後に次の待機を発行する（codex-runtime.md「agents_serverの二層待機」）。
+待機CLIと外側の実行セルの回収、yield中の再発行・代替起動・巻き取りの扱いは`references/codex-runtime.md`「agents_serverの二層待機」に従う。
+CLIへ待機対象やtimeoutを指定せず、CLI自身が上限で`running`を返した後に次の待機を発行する。
 
 Claude Codeが会話イベントの処理を登録するために読み込むプラグインのモジュールをFunction hooks module（以下「mod」）と呼ぶ。Claude Codeのメインは、最初の`start`でmodが装着した定期再確認のtask IDを保持する。modは自身の一覧取得・作成・削除能力を確認して装着し、全待機対象の終端と結果回収後に共通promptのtaskを自動回収する。モデルに`CronDelete`が公開されていることは自動回収の条件に含めない。装着失敗の通知では理由と次の操作に従う。modの装着通知も`CronList`の該当taskも無い場合は、`CronCreate`・`CronList`・`CronDelete`を使えるときだけ自ら装着する。
 

@@ -19,11 +19,13 @@ from pytools._internal import install_claude_plugins as _install_claude_plugins
 
 from ._test_helpers import _FakeResult, _plugin_list_json, command_matches, make_installed_two_plugin_fake
 
+_REAL_REMOVE_UNUSED_PLUGINS = _install_claude_plugins._remove_unused_plugins  # noqa: SLF001  # pylint: disable=protected-access
+
 
 @pytest.fixture(autouse=True)
-def _empty_external_marketplaces(monkeypatch: pytest.MonkeyPatch) -> None:
-    """専用テストで明示した対象以外の外部導入を無効にする。"""
-    monkeypatch.setattr(_install_claude_plugins, "_EXTERNAL_MARKETPLACES", ())
+def _isolate_plugin_cleanup(monkeypatch: pytest.MonkeyPatch) -> None:
+    """旧pluginの削除は専用テストへ分ける。"""
+    monkeypatch.setattr(_install_claude_plugins, "_remove_unused_plugins", lambda: False)
 
 
 class TestComputeRecommendedCommands:
@@ -337,103 +339,61 @@ class TestRunNoAutomaticStateChange:
         assert recommendations == [f"claude plugin install {target_enable} --scope=user"]
 
 
-class TestExternalMarketplaces:
-    """外部マーケットプレイスの登録とプラグイン導入を検証する。"""
+class TestUnusedPlugins:
+    """廃止したpluginの削除と、失敗後の管理対象の処理を公開runから検証する。"""
 
-    _TARGET = ("compact-plus", "u-ichi/compact-plus", "compact-plus@compact-plus")
-
-    def _setup_run(
+    @pytest.mark.parametrize("installed,registered", [(False, False), (False, True), (True, True)])
+    @pytest.mark.parametrize("failed_operation", [None, "uninstall", "remove"])
+    def test_removes_only_present_resources_and_continues(
         self,
         monkeypatch: pytest.MonkeyPatch,
-        *,
-        registered: bool,
+        caplog: pytest.LogCaptureFixture,
         installed: bool,
-        add_succeeds: bool = True,
-        registered_source: str | None = None,
-    ) -> list[list[str]]:
-        monkeypatch.setattr(_common, "resolve_executable", lambda name, **_kwargs: pathlib.Path(name))
-        monkeypatch.setattr(_install_claude_plugins, "_EXTERNAL_MARKETPLACES", (self._TARGET,))
-        monkeypatch.setattr(_install_claude_plugins, "_read_target_info", lambda _root: ({}, set()))
-        calls: list[list[str]] = []
-        marketplace_added = False
-        installed_plugin_ids = {self._TARGET[2]} if installed else set()
-
-        def fake_run(cmd, **_kwargs):  # noqa: ANN001
-            nonlocal marketplace_added
-            calls.append(cmd)
-            if command_matches(cmd, ["claude", "plugin", "marketplace", "list"]):
-                source = registered_source or self._TARGET[1]
-                marketplaces = (
-                    [{"name": self._TARGET[0], "source": "github", "repo": source}] if registered or marketplace_added else []
-                )
-                return _FakeResult(returncode=0, stdout=json.dumps(marketplaces))
-            if command_matches(cmd, ["claude", "plugin", "list"]):
-                # 導入後の版の検証を通すため、実CLIと同じく導入済みの版を返す。
-                plugins = [{"id": plugin_id, "scope": "user", "version": "1.0.0"} for plugin_id in sorted(installed_plugin_ids)]
-                return _FakeResult(returncode=0, stdout=json.dumps(plugins))
-            if command_matches(cmd, ["claude", "plugin", "marketplace", "add"]):
-                marketplace_added = add_succeeds
-                return _FakeResult(returncode=0 if add_succeeds else 1, stderr="登録失敗")
-            if command_matches(cmd, ["claude", "plugin", "install"]):
-                installed_plugin_ids.add(cmd[3])
-            return _FakeResult(returncode=0)
-
-        monkeypatch.setattr(_common, "run_subprocess", fake_run)
-        return calls
-
-    def test_registers_and_installs_when_absent(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        calls = self._setup_run(monkeypatch, registered=False, installed=False)
-
-        changed = _install_claude_plugins.run().changed
-
-        assert changed is True
-        assert ["claude", "plugin", "marketplace", "add", self._TARGET[1], "--scope=user"] in calls
-        assert ["claude", "plugin", "install", self._TARGET[2], "--scope=user", "-y"] in calls
-        assert sum(command_matches(call, ["claude", "plugin", "marketplace", "list"]) for call in calls) == 2
-
-    def test_skips_when_already_installed(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        calls = self._setup_run(monkeypatch, registered=True, installed=True)
-
-        changed = _install_claude_plugins.run().changed
-
-        assert changed is False
-        assert not any(command_matches(call, ["claude", "plugin", "marketplace", "add"]) for call in calls)
-        assert not any(command_matches(call, ["claude", "plugin", "install"]) for call in calls)
-
-    def test_rejects_same_name_from_different_source(
-        self, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+        registered: bool,
+        failed_operation: str | None,
     ) -> None:
-        calls = self._setup_run(
-            monkeypatch,
-            registered=True,
-            installed=False,
-            registered_source="attacker/compact-plus",
-        )
-
-        changed = _install_claude_plugins.run().changed
-
-        assert changed is False
-        assert not any(command_matches(call, ["claude", "plugin", "marketplace", "add"]) for call in calls)
-        assert not any(command_matches(call, ["claude", "plugin", "install"]) for call in calls)
-        assert "marketplace取得元が一致しないためスキップ" in caplog.text
-
-    def test_continues_when_cli_fails(self, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture) -> None:
-        calls = self._setup_run(monkeypatch, registered=False, installed=False, add_succeeds=False)
+        monkeypatch.setattr(_common, "resolve_executable", lambda name, **_kwargs: pathlib.Path(name))
+        monkeypatch.setattr(_install_claude_plugins, "_remove_unused_plugins", _REAL_REMOVE_UNUSED_PLUGINS)
         monkeypatch.setattr(_install_claude_plugins, "_read_target_info", lambda _root: ({"dummy": "1.0.0"}, set()))
         monkeypatch.setattr(_install_claude_plugins, "_read_installed_plugins_from_file", lambda: None)
         monkeypatch.setattr(_claude_marketplace, "ensure_marketplace", lambda: True)
         monkeypatch.setattr(_claude_marketplace, "is_directory_type_registered", lambda: False)
         monkeypatch.setattr(_install_claude_plugins, "_auto_disable_plugins", lambda _raw, _enabled: (0, 0))
         monkeypatch.setattr(_install_claude_plugins, "compute_recommended_commands", lambda _raw, _enabled: [])
-        monkeypatch.setattr(
-            _install_claude_plugins,
-            "_read_enabled_plugins_from_file",
-            lambda: {"dummy@ak110-dotfiles": True},
-        )
+        monkeypatch.setattr(_install_claude_plugins, "_read_enabled_plugins_from_file", lambda: {"dummy@ak110-dotfiles": True})
+        plugin_ids = {"compact-plus@compact-plus"} if installed else set()
+        calls: list[list[str]] = []
 
-        changed = _install_claude_plugins.run().changed
+        def fake_run(cmd: list[str], **_kwargs: object) -> _FakeResult:
+            calls.append(cmd)
+            if command_matches(cmd, ["claude", "plugin", "list"]):
+                return _FakeResult(
+                    returncode=0,
+                    stdout=json.dumps([{"id": name, "scope": "user", "version": "1.0.0"} for name in sorted(plugin_ids)]),
+                )
+            if command_matches(cmd, ["claude", "plugin", "marketplace", "list"]):
+                return _FakeResult(returncode=0, stdout=json.dumps([{"name": "compact-plus"}] if registered else []))
+            if command_matches(cmd, ["claude", "plugin", "uninstall"]):
+                if failed_operation == "uninstall":
+                    return _FakeResult(returncode=1, stderr="uninstall failed")
+                plugin_ids.remove("compact-plus@compact-plus")
+            if command_matches(cmd, ["claude", "plugin", "marketplace", "remove"]) and failed_operation == "remove":
+                return _FakeResult(returncode=1, stderr="remove failed")
+            if command_matches(cmd, ["claude", "plugin", "install"]):
+                plugin_ids.add(cmd[3])
+            return _FakeResult(returncode=0)
 
-        assert changed is True
-        assert ["claude", "plugin", "marketplace", "add", self._TARGET[1], "--scope=user"] in calls
+        monkeypatch.setattr(_common, "run_subprocess", fake_run)
+        assert _install_claude_plugins.run().changed is True
+        uninstall = ["claude", "plugin", "uninstall", "compact-plus@compact-plus", "--scope=user", "--keep-data"]
+        remove = ["claude", "plugin", "marketplace", "remove", "compact-plus"]
+        assert (uninstall in calls) is installed
+        assert (remove in calls) is (registered and not (installed and failed_operation == "uninstall"))
         assert ["claude", "plugin", "install", "dummy@ak110-dotfiles", "--scope=user", "-y"] in calls
-        assert "marketplace登録に失敗したためスキップ" in caplog.text
+        assert not any(
+            "compact-plus@compact-plus" in cmd for cmd in calls if command_matches(cmd, ["claude", "plugin", "install"])
+        )
+        failed = (installed and failed_operation == "uninstall") or (remove in calls and failed_operation == "remove")
+        if failed:
+            assert "update-dotfilesを再実行する" in caplog.text
+            assert f"{failed_operation} failed" in caplog.text

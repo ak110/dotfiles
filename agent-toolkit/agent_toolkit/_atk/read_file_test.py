@@ -21,7 +21,7 @@ def _read_chunks(path: pathlib.Path, budget: int | None, capsys: pytest.CaptureF
             atk.main([*arguments, "--", str(path)])
         captured = capsys.readouterr()
         assert not captured.err
-        assert len(captured.out.encode("utf-8")) <= (4096 if budget is None else budget)
+        assert len(captured.out.encode("utf-8")) <= (16384 if budget is None else budget)
         response = json.loads(captured.out)
         assert response["start"] == position
         assert response["end"] == position + len(response["text"])
@@ -33,7 +33,9 @@ def _read_chunks(path: pathlib.Path, budget: int | None, capsys: pytest.CaptureF
         position = response["next"]
 
 
-@pytest.mark.parametrize("budget", [None, 12000, AUTO_SAVE_THRESHOLD_BYTES], ids=["default", "larger", "save-boundary"])
+@pytest.mark.parametrize(
+    "budget", [None, 4096, 12000, AUTO_SAVE_THRESHOLD_BYTES], ids=["default", "smaller", "explicit", "save-boundary"]
+)
 @pytest.mark.parametrize(
     "text",
     ["日本語\r\n" * 3000, '{"値":"' + "長" * 12000 + '"}', '\x00\t"\\\n' * 3000, "", "\ufeff本文"],
@@ -53,7 +55,7 @@ def test_read_file_cli_roundtrips_utf8_with_bounded_complete_responses(
     assert json.loads(capsys.readouterr().out)["text"] == ""
 
 
-def test_larger_budget_reduces_cli_invocations_without_losing_text(
+def test_default_budget_reduces_cli_invocations_without_losing_text(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """同じ日本語本文を読む公開CLIの起動数を、予算だけ変えた対照で比較する。"""
@@ -61,7 +63,7 @@ def test_larger_budget_reduces_cli_invocations_without_losing_text(
     text = "日本語の本文\r\n" * 1400
     path.write_bytes(text.encode("utf-8"))
     counts: list[int] = []
-    for budget in (None, 12000):
+    for budget in (4096, None):
         responses = list(_read_chunks(path, budget, capsys))
         assert "".join(response["text"] for response in responses).encode("utf-8") == path.read_bytes()
         counts.append(len(responses))
@@ -102,7 +104,7 @@ def test_start_beyond_end_is_eof(
         assert not captured.err
         assert json.loads(captured.out) == expected
         size = len(captured.out.encode("utf-8"))
-        assert size <= (4096 if budget is None else budget)
+        assert size <= (16384 if budget is None else budget)
         for invalid_budget in (size - 1, 16385):
             with pytest.raises(SystemExit, match="2"):
                 atk.main(["read-file", "--start", str(position), "--max-bytes", str(invalid_budget), "--", str(path)])

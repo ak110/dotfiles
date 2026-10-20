@@ -10,9 +10,9 @@ import sys
 
 from agent_toolkit._atk import outcome
 
-RESPONSE_BYTES = 4096
 MAX_RESPONSE_BYTES = 16 * 1024
 """返却全体が通常出力の自動保存の対象にならない最大の予算。"""
+RESPONSE_BYTES = MAX_RESPONSE_BYTES
 
 
 def first_read_command(path: pathlib.Path) -> str:

@@ -1,10 +1,12 @@
 """API接続への移行と、接続設定を保持した同じ会話の再開を検証する。"""
 
 import asyncio
+import contextlib
 import json
 import os
 import pathlib
 import types
+from collections.abc import AsyncGenerator
 from types import SimpleNamespace
 from typing import Any
 
@@ -59,8 +61,7 @@ async def test_subscription_launch_drops_parent_api_auth(
         seen.append(options)
         return FakeClaudeClient([[SystemMessage("isolated-auth"), AssistantMessage("応答"), ResultMessage("完了")]])
 
-    backend = claude.ClaudeServerManager(client_factory=factory)
-    try:
+    async with claude.ClaudeServerManager(client_factory=factory) as backend:
         await backend.start("作業", str(tmp_path))
         options = seen[0]
         assert not options.env.get("ANTHROPIC_API_KEY") and not options.env.get("ANTHROPIC_AUTH_TOKEN")
@@ -68,8 +69,6 @@ async def test_subscription_launch_drops_parent_api_auth(
         assert not settings["env"]["ANTHROPIC_API_KEY"] and not settings["env"]["ANTHROPIC_AUTH_TOKEN"]
         assert settings["env"]["CUSTOM"] == "kept"
         assert not settings["apiKeyHelper"]
-    finally:
-        await backend.close()
 
 
 @pytest.mark.asyncio
@@ -103,30 +102,24 @@ async def test_unconfigured_start_and_cold_resume_preserve_parent_auth(
         assert settings["env"]["ANTHROPIC_AUTH_TOKEN"] == "settings-token"
         return FakeClaudeClient([[SystemMessage("inherited-auth"), AssistantMessage("応答"), ResultMessage("完了")]])
 
-    manager = server_manager.AgentsServerManager()
-    install_backend(
-        manager, "claude", claude.ClaudeServerManager(manager.sessions, client_factory=factory, publish_registry=True)
-    )
-    try:
+    async with server_manager.AgentsServerManager() as manager:
+        install_backend(
+            manager, "claude", claude.ClaudeServerManager(manager.sessions, client_factory=factory, publish_registry=True)
+        )
         started = await manager.start("claude:sonnet/high", "作業", str(tmp_path))
         assert started["session_id"] == "inherited-auth"
         await manager.stop("inherited-auth")
         info = session_registry.resolve("inherited-auth").resume_info
         assert info is not None and info.claude_connection == "inherit"
-    finally:
-        await manager.close()
     api = tmp_path / "later.env"
     api.write_text("ANTHROPIC_API_KEY=later-key\n", encoding="utf-8")
     monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CLAUDE_API_ENV_FILE", str(api))
-    manager = server_manager.AgentsServerManager()
-    install_backend(
-        manager, "claude", claude.ClaudeServerManager(manager.sessions, client_factory=factory, publish_registry=True)
-    )
-    try:
+    async with server_manager.AgentsServerManager() as manager:
+        install_backend(
+            manager, "claude", claude.ClaudeServerManager(manager.sessions, client_factory=factory, publish_registry=True)
+        )
         await manager.send_message("inherited-auth", "継続")
         assert len(seen) == 2 and seen[-1].resume == "inherited-auth"
-    finally:
-        await manager.close()
 
 
 @pytest.mark.asyncio
@@ -162,15 +155,18 @@ async def test_usage_limit_api_migration_and_cold_resume(
             settings_seen.append(path.read_text(encoding="utf-8"))
         return client
 
-    async def open_manager() -> server_manager.AgentsServerManager:
-        manager = server_manager.AgentsServerManager()
-        backend = claude.ClaudeServerManager(
-            manager.sessions,
-            client_factory=factory,
-            publish_registry=True,
-        )
-        install_backend(manager, "claude", backend)
-        return manager
+    @contextlib.asynccontextmanager
+    async def open_manager() -> AsyncGenerator[server_manager.AgentsServerManager]:
+        async with (
+            server_manager.AgentsServerManager() as manager,
+            claude.ClaudeServerManager(
+                manager.sessions,
+                client_factory=factory,
+                publish_registry=True,
+            ) as backend,
+        ):
+            install_backend(manager, "claude", backend)
+            yield manager
 
     async def terminal(manager: server_manager.AgentsServerManager, identifier: str) -> dict[str, Any]:
         for _ in range(200):
@@ -181,15 +177,14 @@ async def test_usage_limit_api_migration_and_cold_resume(
             await asyncio.sleep(0)
         pytest.fail("会話が終端しない")
 
-    manager = await open_manager()
-    try:
+    async with open_manager() as manager:
         started = await manager.start("claude:sonnet/high", "作業する", str(tmp_path), launch_kind=launch_kind)
         result = await terminal(manager, "api-session")
         assert started["session_id"] == "api-session"
         assert result["status"] == "completed"
         assert len(options_seen) == 2
         assert options_seen[0].resume is None
-        assert "ANTHROPIC_AUTH_TOKEN" not in options_seen[0].env
+        assert not options_seen[0].env.get("ANTHROPIC_AUTH_TOKEN")
         assert options_seen[1].resume == "api-session"
         assert options_seen[1].model == "sonnet" and options_seen[1].effort == "high"
         assert options_seen[1].env["ANTHROPIC_AUTH_TOKEN"] == "dummy-secret"
@@ -211,14 +206,17 @@ async def test_usage_limit_api_migration_and_cold_resume(
         assert not pathlib.Path(options_seen[1].settings).exists()
         info = session_registry.resolve("api-session").resume_info
         assert info is not None and info.claude_api_env_file == str(env_file)
-        assert caplog.text.count("claude_api_switch session_id=api-session limit_type=seven_day") == 1
+        switches = [
+            record.getMessage()
+            for record in caplog.records
+            if record.getMessage().startswith("claude_api_switch session_id=api-session ")
+        ]
+        assert len(switches) == 1
+        assert "previous=subscription selected=api reason=usage_limit limit_type=seven_day" in switches[0]
         assert "dummy-secret" not in caplog.text
-    finally:
-        await manager.close()
 
     env_file.write_text("ANTHROPIC_AUTH_TOKEN=rotated-secret\n", encoding="utf-8")
-    manager = await open_manager()
-    try:
+    async with open_manager() as manager:
         await manager.send_message("api-session", "残作業を続ける")
         assert (await terminal(manager, "api-session"))["status"] == "completed"
         assert options_seen[-1].env["ANTHROPIC_AUTH_TOKEN"] == "rotated-secret"
@@ -229,12 +227,10 @@ async def test_usage_limit_api_migration_and_cold_resume(
         assert options_seen[-1].env["ANTHROPIC_AUTH_TOKEN"] == "expiry-secret"
         fresh = await manager.start("claude:sonnet/high", "新規", str(tmp_path), launch_kind=launch_kind)
         await terminal(manager, fresh["session_id"])
-        assert "ANTHROPIC_AUTH_TOKEN" not in options_seen[-1].env
+        assert not options_seen[-1].env.get("ANTHROPIC_AUTH_TOKEN")
         for path in session_registry.registry_directory().glob("*.json"):
             content = path.read_text(encoding="utf-8")
             assert "dummy-secret" not in content and "rotated-secret" not in content
-    finally:
-        await manager.close()
     for options in options_seen:
         if isinstance(options.settings, claude_settings.SettingsFile):
             assert not pathlib.Path(options.settings).exists()
@@ -252,15 +248,15 @@ async def test_api_settings_cleanup_on_connect_failure(tmp_path: pathlib.Path) -
         settings.append(pathlib.Path(options.settings))
         raise RuntimeError("接続失敗")
 
-    backend = claude.ClaudeServerManager(client_factory=fail)
-    prompt = ResumePrompt("再開")
-    try:
-        with pytest.raises(RuntimeError, match="接続失敗"):
-            await backend.resume("api-session", prompt, str(tmp_path), api_env_file=str(env_file))
-        assert settings and all(not path.exists() for path in settings)
-    finally:
-        prompt.close()
-        await backend.close()
+    async with claude.ClaudeServerManager(client_factory=fail) as backend:
+        prompt = ResumePrompt("再開")
+        try:
+            with pytest.raises(RuntimeError, match="接続失敗"):
+                await backend.resume("api-session", prompt, str(tmp_path), api_env_file=str(env_file))
+            assert settings and all(not path.exists() for path in settings)
+        finally:
+            prompt.close()
+            await backend.close()
 
 
 @pytest.mark.asyncio
@@ -287,28 +283,30 @@ async def test_api_migration_holds_result_until_old_connection_closes(
             return Client([_rejected_stream("five_hour", None, before_init=False, session_id="migration")])
         return FakeClaudeClient([[SystemMessage("migration"), AssistantMessage("再開"), ResultMessage("完了")]])
 
-    manager = server_manager.AgentsServerManager()
-    backend = claude.ClaudeServerManager(manager.sessions, client_factory=factory)
-    install_backend(manager, "claude", backend)
-    manager.activate()
-    waiting: asyncio.Task[dict[str, Any]] | None = None
-    try:
-        await manager.start("claude:sonnet/high", "作業する", str(tmp_path))
-        await asyncio.wait_for(disconnecting.wait(), timeout=3)
-        shown = await manager.show_session("migration")
-        assert shown["status"] == "running" and shown["result_held"]
-        waiting = asyncio.create_task(manager.wait())
-        await asyncio.sleep(0)
-        assert not waiting.done()
-        release.set()
-        result = await asyncio.wait_for(waiting, timeout=3)
-        assert result["status"] == "completed" and result["agent_message"] == "完了"
-    finally:
-        release.set()
-        if waiting is not None and not waiting.done():
-            waiting.cancel()
-            await asyncio.gather(waiting, return_exceptions=True)
-        await manager.close()
+    async with (
+        server_manager.AgentsServerManager() as manager,
+        claude.ClaudeServerManager(manager.sessions, client_factory=factory) as backend,
+    ):
+        install_backend(manager, "claude", backend)
+        manager.activate()
+        waiting: asyncio.Task[dict[str, Any]] | None = None
+        try:
+            await manager.start("claude:sonnet/high", "作業する", str(tmp_path))
+            await asyncio.wait_for(disconnecting.wait(), timeout=3)
+            shown = await manager.show_session("migration")
+            assert shown["status"] == "running" and shown["result_held"]
+            waiting = asyncio.create_task(manager.wait())
+            await asyncio.sleep(0)
+            assert not waiting.done()
+            release.set()
+            result = await asyncio.wait_for(waiting, timeout=3)
+            assert result["status"] == "completed" and result["agent_message"] == "完了"
+        finally:
+            release.set()
+            if waiting is not None and not waiting.done():
+                waiting.cancel()
+                await asyncio.gather(waiting, return_exceptions=True)
+            await manager.close()
 
 
 def _pay_as_you_go_with_clock(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> dict[str, float]:
@@ -356,11 +354,10 @@ async def test_api_switched_delegate_returns_to_subscription_after_reset(
             await asyncio.sleep(0)
         pytest.fail("会話が終端しない")
 
-    manager = server_manager.AgentsServerManager()
-    install_backend(
-        manager, "claude", claude.ClaudeServerManager(manager.sessions, client_factory=factory, publish_registry=True)
-    )
-    try:
+    async with server_manager.AgentsServerManager() as manager:
+        install_backend(
+            manager, "claude", claude.ClaudeServerManager(manager.sessions, client_factory=factory, publish_registry=True)
+        )
         await manager.start("claude:sonnet/high", "作業する", str(tmp_path))
         assert (await terminal(manager))["status"] == "completed"
         assert len(options_seen) == 2
@@ -381,8 +378,6 @@ async def test_api_switched_delegate_returns_to_subscription_after_reset(
         assert options_seen[2].resume == "return-session"
         assert not options_seen[2].env.get("ANTHROPIC_AUTH_TOKEN")
         assert manager.sessions["return-session"].claude_connection == "subscription"
-    finally:
-        await manager.close()
 
 
 async def _until(condition: Any, timeout: float = 5.0) -> None:
@@ -433,60 +428,64 @@ async def test_api_switched_delegate_auto_resume_returns_to_subscription_after_r
         final = "再びAPIの最終結果" if mode == "still-limited" else "サブスクの最終結果"
         return FakeClaudeClient([[SystemMessage("auto-session"), AssistantMessage("子の結果を確認した"), ResultMessage(final)]])
 
-    manager = server_manager.AgentsServerManager()
-    condition = manager._condition  # pylint: disable=protected-access  # noqa: SLF001
-    backend = claude.ClaudeServerManager(manager.sessions, condition, client_factory=factory, publish_registry=True)
-    install_backend(manager, "claude", backend)
-    session_registry.publish("child", terminal=False, cwd=str(tmp_path))
-    # 公開待機に依存せず、上限からのAPI移行と孫sessionの終端による自動再開を常駐監視で進める。
-    manager.activate()
-    try:
-        await manager.start("claude:sonnet/high", "作業する", str(tmp_path))
-        await _until(lambda: len(options_seen) == 2 and "auto-session" in manager.sessions and bool(api_client.queries))
-        session = manager.sessions["auto-session"]
-        assert session.claude_connection == "api"
-        tool_use = AssistantMessage("")
-        tool_use.content = [
-            SimpleNamespace(
-                id="reply-child", name="mcp__agents_server__send_message", input={"session_id": "child", "prompt": "続ける"}
-            )
-        ]
-        api_client.messages.put_nowait(tool_use)
-        api_client.messages.put_nowait(
-            UserMessage(
-                content=[
-                    ToolResultBlock(
-                        tool_use_id="reply-child",
-                        content=json.dumps({"session_id": "child", "delivery": "reply_started", "status": "running"}),
+    async with server_manager.AgentsServerManager() as manager:
+        condition = manager._condition  # pylint: disable=protected-access  # noqa: SLF001
+        async with claude.ClaudeServerManager(
+            manager.sessions, condition, client_factory=factory, publish_registry=True
+        ) as backend:
+            install_backend(manager, "claude", backend)
+            session_registry.publish("child", terminal=False, cwd=str(tmp_path))
+            # 公開待機に依存せず、上限からのAPI移行と孫sessionの終端による自動再開を常駐監視で進める。
+            manager.activate()
+            try:
+                await manager.start("claude:sonnet/high", "作業する", str(tmp_path))
+                await _until(lambda: len(options_seen) == 2 and "auto-session" in manager.sessions and bool(api_client.queries))
+                session = manager.sessions["auto-session"]
+                assert session.claude_connection == "api"
+                tool_use = AssistantMessage("")
+                tool_use.content = [
+                    SimpleNamespace(
+                        id="reply-child",
+                        name="mcp__agents_server__send_message",
+                        input={"session_id": "child", "prompt": "続ける"},
                     )
                 ]
-            )
-        )
-        api_client.messages.put_nowait(ResultMessage("孫を待つ"))
-        await _until(lambda: session.awaiting_auto_resume)
-        if after_reset:
-            clock["now"] += 150
-        session_registry.publish("child", terminal=True, status="completed", cwd=str(tmp_path))
-        result = await asyncio.wait_for(manager.wait(), 3)
-        while result["status"] == "running":
-            result = await asyncio.wait_for(manager.wait(), 3)
-        assert result["status"] == "completed"
-        if mode == "after-reset":
-            assert result["agent_message"] == "サブスクの最終結果"
-            assert len(options_seen) == 3
-            assert options_seen[2].resume == "auto-session"
-            assert not options_seen[2].env.get("ANTHROPIC_AUTH_TOKEN")
-            assert session.claude_connection == "subscription"
-        elif mode == "still-limited":
-            assert result["agent_message"] == "再びAPIの最終結果"
-            assert len(options_seen) == 4
-            assert options_seen[2].resume == "auto-session" and not options_seen[2].env.get("ANTHROPIC_AUTH_TOKEN")
-            assert options_seen[3].resume == "auto-session"
-            assert options_seen[3].env["ANTHROPIC_AUTH_TOKEN"] == "dummy-secret"
-            assert session.claude_connection == "api"
-        else:
-            assert result["agent_message"] == "APIの最終結果"
-            assert len(options_seen) == 2
-            assert session.claude_connection == "api"
-    finally:
-        await manager.close()
+                api_client.messages.put_nowait(tool_use)
+                api_client.messages.put_nowait(
+                    UserMessage(
+                        content=[
+                            ToolResultBlock(
+                                tool_use_id="reply-child",
+                                content=json.dumps({"session_id": "child", "delivery": "reply_started", "status": "running"}),
+                            )
+                        ]
+                    )
+                )
+                api_client.messages.put_nowait(ResultMessage("孫を待つ"))
+                await _until(lambda: session.awaiting_auto_resume)
+                if after_reset:
+                    clock["now"] += 150
+                session_registry.publish("child", terminal=True, status="completed", cwd=str(tmp_path))
+                result = await asyncio.wait_for(manager.wait(), 3)
+                while result["status"] == "running":
+                    result = await asyncio.wait_for(manager.wait(), 3)
+                assert result["status"] == "completed"
+                if mode == "after-reset":
+                    assert result["agent_message"] == "サブスクの最終結果"
+                    assert len(options_seen) == 3
+                    assert options_seen[2].resume == "auto-session"
+                    assert not options_seen[2].env.get("ANTHROPIC_AUTH_TOKEN")
+                    assert session.claude_connection == "subscription"
+                elif mode == "still-limited":
+                    assert result["agent_message"] == "再びAPIの最終結果"
+                    assert len(options_seen) == 4
+                    assert options_seen[2].resume == "auto-session" and not options_seen[2].env.get("ANTHROPIC_AUTH_TOKEN")
+                    assert options_seen[3].resume == "auto-session"
+                    assert options_seen[3].env["ANTHROPIC_AUTH_TOKEN"] == "dummy-secret"
+                    assert session.claude_connection == "api"
+                else:
+                    assert result["agent_message"] == "APIの最終結果"
+                    assert len(options_seen) == 2
+                    assert session.claude_connection == "api"
+            finally:
+                await manager.close()

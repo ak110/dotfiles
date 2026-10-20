@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import dataclasses
+import os
 import pathlib
 from collections.abc import Mapping
 
@@ -13,6 +14,7 @@ AUTH_ENV = settings.AUTH_ENV
 Connection = settings.Connection
 clean_environment = settings.clean_environment
 connection_environment = settings.connection_environment
+connection_overrides = settings.connection_overrides
 subscription_available = settings.subscription_available
 
 
@@ -57,7 +59,14 @@ def candidates(role: str, *, env: Mapping[str, str] | None = None) -> Candidates
             )
     else:
         diagnostic.append("API: atk config set claude_api_env_file <パス>で認証環境を設定する")
-    subscription = subscription_available(env)
+    subscription_env = env
+    isolation_keys = AUTH_ENV
+    if api:
+        overrides = connection_overrides(Connection("subscription", isolation_env_file=path))
+        inherited = os.environ if env is None else env
+        subscription_env = {**inherited, **overrides}
+        isolation_keys = frozenset(overrides)
+    subscription = subscription_available(subscription_env, isolation_keys=isolation_keys)
     if not subscription:
         diagnostic.append("subscription: claude auth loginでサブスクリプションへログインする")
     available = {"api": api, "subscription": subscription}
@@ -69,6 +78,15 @@ def candidates(role: str, *, env: Mapping[str, str] | None = None) -> Candidates
     else:
         order = ("api", "subscription")
     return Candidates(
-        tuple(Connection(kind, path if kind == "api" else None) for kind in order if available[kind]),
+        tuple(Connection(kind, path if kind == "api" else None, path if api else None) for kind in order if available[kind]),
         tuple(diagnostic),
     )
+
+
+def with_current_isolation(connection: Connection, *, env: Mapping[str, str] | None = None) -> Connection:
+    """保存済みsubscriptionの選択を保ち、現行のAPI専用キー集合だけを補う。"""
+    if connection.kind != "subscription" or connection.isolation_env_file is not None:
+        return connection
+    choices = candidates("delegate", env=env)
+    path = next((item.isolation_env_file for item in choices.connections if item.isolation_env_file), None)
+    return dataclasses.replace(connection, isolation_env_file=path)

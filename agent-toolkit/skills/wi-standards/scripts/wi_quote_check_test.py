@@ -82,6 +82,7 @@ def test_public_import_uses_saved_source_and_checks_result(tmp_path: pathlib.Pat
     assert after.partition("## ユーザー指摘の逐語引用")[0] == before.partition("## ユーザー指摘の逐語引用")[0]
     assert after.partition("## 次の節")[2] == before.partition("## 次の節")[2]
     assert f"record={event['record']} line={event['line']}" in after
+    assert str(events) not in after
     assert f"```text\n{_UTTERANCE}\n```" in after
     assert [unit for _, _, _, unit in _positions(output)] == [
         "検索画面の表示を直して。",
@@ -89,6 +90,28 @@ def test_public_import_uses_saved_source_and_checks_result(tmp_path: pathlib.Pat
         "手順を簡潔にして。",
     ]
     assert _run(body, events) == 0
+
+
+def test_duplicate_quote_reports_all_sources_but_import_uses_selected_event(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """引用と一致する全位置を示し、選択importは同じ引用でもフェンスごとの元イベントを保つ。"""
+    events = tmp_path / "events.jsonl"
+    values = [
+        {"kind": "user", "text": text, "record": "claude:example", "line": line, "sequence": sequence}
+        for text, line, sequence in (("前置き。同じ要求。", 1, 1), ("同じ要求。", 2, 2), ("同じ要求。", 2, 3))
+    ]
+    events.write_text("".join(json.dumps(value, ensure_ascii=False) + "\n" for value in values), encoding="utf-8")
+    body = tmp_path / "body.md"
+    body.write_text(_body("同じ要求。"), encoding="utf-8")
+    assert _run(body, events) == 0
+    output = capsys.readouterr().out
+    assert all(f"line={value['line']} sequence={value['sequence']}" in output for value in values)
+    spec = _spec(tmp_path, {"source": str(events), "record": "claude:example", "line": 2, "sequence": 3})
+    assert _run(body, import_spec=spec) == 0
+    output = capsys.readouterr().out
+    assert "line=2 sequence=3" in output and "line=1" not in output and "sequence=2" not in output
+    assert str(events) not in body.read_text(encoding="utf-8")
 
 
 def test_import_preserves_source_modes_and_answer_context(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
@@ -139,6 +162,45 @@ def test_import_preserves_source_modes_and_answer_context(tmp_path: pathlib.Path
     assert any(number == 3 and unit == "夜間だけ止めて。" for number, _, _, unit in positions)
     assert not any("一時障害" in unit or "現状を保ちます" in unit for _, _, _, unit in positions)
     assert _run(body, extra, events) == 0
+
+
+@pytest.mark.parametrize("same_line", [False, True], ids=["substring", "same-line-sequences"])
+def test_two_imported_fences_keep_selected_locations_and_source_lists_candidates(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], same_line: bool
+) -> None:
+    """2引用の選択位置を保ち、保存後の比較ではフェンスごとに一致する全候補を示す。"""
+    events = tmp_path / "events.jsonl"
+    values: list[dict[str, object]] = [
+        {"kind": "user", "text": text, "record": "claude:example", "line": line, "sequence": sequence}
+        for text, line, sequence in (("前置き。同じ要求。", 1, 1), ("同じ要求。", 1 if same_line else 2, 2))
+    ]
+    events.write_text("".join(json.dumps(value, ensure_ascii=False) + "\n" for value in values), encoding="utf-8")
+    body = tmp_path / "body.md"
+    body.write_text(_body("旧引用"), encoding="utf-8")
+    spec = _spec(
+        tmp_path, *({"source": str(events), **{key: value[key] for key in ("record", "line", "sequence")}} for value in values)
+    )
+    assert _run(body, import_spec=spec) == 0
+    selected = capsys.readouterr()
+    assert not selected.err
+    matches = [line for line in selected.out.splitlines() if "本文: 一致" in line]
+    assert matches == [
+        f"text[{number}] 本文: 一致 出所={events} record=claude:example line={value['line']} sequence={value['sequence']}"
+        for number, value in enumerate(values, 1)
+    ]
+    saved = body.read_text(encoding="utf-8")
+    assert str(events) not in saved
+    for value in values:
+        assert f"record=claude:example line={value['line']} sequence={value['sequence']}\n" in saved
+    assert _run(body, events) == 0
+    checked = capsys.readouterr()
+    assert not checked.err
+    assert [line for line in checked.out.splitlines() if "本文: 一致" in line] == [
+        matches[0],
+        matches[0].replace("text[1]", "text[2]"),
+        matches[1],
+    ]
+    assert _positions(checked.out) == _positions(selected.out)
 
 
 @pytest.mark.parametrize("failure", ["missing", "ambiguous", "range", "invalid-json", "invalid-answer", "invalid-sequence"])

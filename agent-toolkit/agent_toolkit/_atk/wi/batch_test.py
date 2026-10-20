@@ -20,19 +20,18 @@ from agent_toolkit._atk.wi import batch
 from agent_toolkit._atk.wi import filenames as _wi_filenames
 from agent_toolkit._atk.wi import show as show_module
 from agent_toolkit._atk.wi import sync as _wi_sync
-from agent_toolkit._atk.wi.constants import WI_STATES
 from agent_toolkit._atk.wi.web_input import WebInputError
 from agent_toolkit._testing.wi_bodies import AGENT_AWI_BODY
 
 _FIXED_DT = datetime.datetime(2024, 1, 15, 10, 30, 0)
 _FIXED_TIMESTAMP = _FIXED_DT.strftime("%Y%m%d-%H%M%S")
+_EXISTING_TEXT = "---\nstate: adopted\ntarget_repo: github.com/example/foo\ntype: awi\n---\n\n既存\n"
 
 
 def _setup_notes(tmp_path: pathlib.Path, name: str = "private-notes") -> pathlib.Path:
-    """全ての状態フォルダを持つ管理repoの一時ディレクトリを作成する。"""
+    """年月固定配置の管理repoの一時ディレクトリを作成する。"""
     notes = tmp_path / name
-    for state in WI_STATES:
-        (notes / state).mkdir(parents=True)
+    (notes / "2024" / "01").mkdir(parents=True)
     return notes
 
 
@@ -62,7 +61,7 @@ def _assume_case_insensitive(monkeypatch: pytest.MonkeyPatch) -> None:
 
 def _entry_text(name: str, *, target_repo: str = "github.com/example/foo", body: str = "本文") -> str:
     """`show`形式の1エントリ分（見出し＋全文＋区切り空行）を組み立てる。"""
-    return f"### {name} [inbox]\n---\ntarget_repo: {target_repo}\ntype: awi\n---\n\n{body}\n\n"
+    return f"### {name} [inbox]\n---\ntarget_repo: {target_repo}\ntype: awi\nstate: inbox\n---\n\n{body}\n\n"
 
 
 def _batch_args(tmp_path: pathlib.Path, text: str) -> argparse.Namespace:
@@ -82,8 +81,8 @@ def test_batch_cli_omits_queue_overview_in_both_environments(
     """一括投入も両環境で結果を先に示し、無関係なキュー件数を付けない。"""
     notes = _setup_notes(tmp_path)
     _patch_repo_operations(monkeypatch)
-    existing = notes / "inbox" / "existing.md"
-    existing.write_text("---\ntype: awi\ntarget_repo: github.com/example/foo\n---\n\n既存\n", encoding="utf-8")
+    existing = notes / "2024" / "01" / "existing.md"
+    existing.write_text("---\nstate: inbox\ntype: awi\ntarget_repo: github.com/example/foo\n---\n\n既存\n", encoding="utf-8")
     body = tmp_path / "batch.md"
     body.write_text(_entry_text("imported.md"), encoding="utf-8")
     if agent_environment:
@@ -96,7 +95,7 @@ def test_batch_cli_omits_queue_overview_in_both_environments(
     assert "編集する場合:" not in captured.out
     assert not captured.err
     assert existing.is_file()
-    assert (notes / "inbox" / "imported.md").is_file()
+    assert (notes / "2024" / "01" / "imported.md").is_file()
 
 
 def test_add_batch_rejects_reserved_user_comment_heading_in_agent_environment(
@@ -114,7 +113,7 @@ def test_add_batch_rejects_reserved_user_comment_heading_in_agent_environment(
         batch.cmd_add_batch(_batch_args(tmp_path, text), notes, _FIXED_DT, tmp_path)
 
     assert exc_info.value.code == 1
-    assert not list((notes / "inbox").iterdir())
+    assert not list(notes.glob("[0-9][0-9][0-9][0-9]/[0-9][0-9]/*.md"))
     stderr = capsys.readouterr().err
     assert "ユーザーコメント節を含む本文を投入できません" in stderr
     assert "\n次の操作: " in stderr
@@ -133,7 +132,7 @@ def test_add_batch_accepts_reserved_user_comment_heading_outside_agent_environme
 
     batch.cmd_add_batch(_batch_args(tmp_path, text), notes, _FIXED_DT, tmp_path)
 
-    assert "## ユーザーコメント" in (notes / "inbox" / "awi.md").read_text(encoding="utf-8")
+    assert "## ユーザーコメント" in (notes / "2024" / "01" / "awi.md").read_text(encoding="utf-8")
 
 
 def test_parse_collects_entries_and_ignores_structural_headings() -> None:
@@ -143,7 +142,7 @@ def test_parse_collects_entries_and_ignores_structural_headings() -> None:
     entries = batch.parse_show_batch(text)
 
     assert [entry.original_name for entry in entries] == ["a.md", "b.md"]
-    assert entries[0].raw_text == "---\ntarget_repo: github.com/example/foo\ntype: awi\n---\n\n本文\n"
+    assert entries[0].raw_text == "---\ntarget_repo: github.com/example/foo\ntype: awi\nstate: inbox\n---\n\n本文\n"
     assert entries[1].raw_text.endswith("\n\n本文2\n")
 
 
@@ -168,7 +167,7 @@ def test_parse_accepts_crlf_line_endings() -> None:
     entries = batch.parse_show_batch(text)
 
     assert [entry.original_name for entry in entries] == ["a.md"]
-    assert entries[0].raw_text == "---\ntarget_repo: github.com/example/foo\ntype: awi\n---\n\n本文\n"
+    assert entries[0].raw_text == "---\ntarget_repo: github.com/example/foo\ntype: awi\nstate: inbox\n---\n\n本文\n"
 
 
 @pytest.mark.parametrize("kind", ["awi", "uwi"])
@@ -191,12 +190,13 @@ def test_batch_cli_bom_matches_plain_import(
     # 閉じる区切りは構造の先頭ではない。
     changed = changed.replace(f"type: {kind}\n\ufeff---", f"type: {kind}\n---")
     changed = changed.replace("- dep.md\n\ufeff---", "- dep.md\n---")
+    changed = changed.replace("state: inbox\n\ufeff---", "state: inbox\n---")
     changed = ("\ufeff" if file_bom else "") + changed
     assert batch.is_show_batch_format(changed)
     saved = []
     for index, text in enumerate((plain, changed)):
         notes = _setup_notes(tmp_path, f"notes-{index}")
-        (notes / "inbox" / "dep.md").write_text("既存\n", encoding="utf-8")
+        (notes / "2024" / "01" / "dep.md").write_text(_EXISTING_TEXT, encoding="utf-8")
         monkeypatch.setattr(_wi_sync, "ensure_environment", lambda _home, _notes=notes, **_kwargs: _notes)
         source = tmp_path / f"batch-{index}.md"
         source.write_text(text, encoding="utf-8")
@@ -204,7 +204,7 @@ def test_batch_cli_bom_matches_plain_import(
             atk.main(["wi", "add", "--batch", "--body-file", str(source)], home=tmp_path, now=_FIXED_DT)
         assert raised.value.code == 0
         assert not capsys.readouterr().err
-        saved.append({path.name: path.read_bytes() for path in (notes / "inbox").iterdir()})
+        saved.append({path.name: path.read_bytes() for path in notes.glob("[0-9][0-9][0-9][0-9]/[0-9][0-9]/*.md")})
     assert saved[0] == saved[1]
     assert f"- {_FIXED_TIMESTAMP}-001.md\n".encode() in saved[1]["plan.md"]
     assert "表\ufeff題".encode() in saved[1]["plan.md"]
@@ -274,7 +274,7 @@ def test_import_keeps_original_names_and_raw_text(
 
     assert mapping == [("keep.md", "keep.md")]
     assert not warnings
-    assert (notes / "inbox" / "keep.md").read_text(encoding="utf-8") == raw
+    assert (notes / "2024" / "01" / "keep.md").read_text(encoding="utf-8") == "---\nstate: inbox\n" + raw[4:]
     assert messages == ["chore: add 1 imported item"]
 
 
@@ -300,24 +300,24 @@ def test_batch_restore_keeps_free_form_question_type(
     mapping, _skipped, _warnings = batch.add_batch_entries(notes, texts=[text], now=_FIXED_DT)
 
     assert mapping == [("legacy.md", "legacy.md")]
-    assert (notes / "inbox" / "legacy.md").read_text(encoding="utf-8") == raw
+    assert (notes / "2024" / "01" / "legacy.md").read_text(encoding="utf-8") == "---\nstate: inbox\n" + raw[4:]
 
 
 def test_import_renumbers_only_colliding_names(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """状態フォルダの既存項目と同名のエントリだけを再採番し、他は元名を維持する。"""
+    """年月配置の既存項目と同名のエントリだけを再採番し、他は元名を維持する。"""
     notes = _setup_notes(tmp_path)
     _patch_repo_operations(monkeypatch)
-    (notes / "adopted" / "clash.md").write_text("既存\n", encoding="utf-8")
+    (notes / "2024" / "01" / "clash.md").write_text(_EXISTING_TEXT, encoding="utf-8")
     text = _entry_text("clash.md") + _entry_text("keep.md")
 
     mapping, _skipped, _warnings = batch.add_batch_entries(notes, texts=[text], now=_FIXED_DT)
 
     assert mapping == [("clash.md", f"{_FIXED_TIMESTAMP}-001.md"), ("keep.md", "keep.md")]
-    assert (notes / "adopted" / "clash.md").read_text(encoding="utf-8") == "既存\n"
-    assert (notes / "inbox" / f"{_FIXED_TIMESTAMP}-001.md").is_file()
+    assert (notes / "2024" / "01" / "clash.md").read_text(encoding="utf-8") == _EXISTING_TEXT
+    assert (notes / "2024" / "01" / f"{_FIXED_TIMESTAMP}-001.md").is_file()
 
 
 def test_import_avoids_renumbering_onto_kept_original_name(
@@ -328,23 +328,27 @@ def test_import_avoids_renumbering_onto_kept_original_name(
     notes = _setup_notes(tmp_path)
     _patch_repo_operations(monkeypatch)
     kept = f"{_FIXED_TIMESTAMP}-001.md"
-    (notes / "inbox" / "clash.md").write_text("既存\n", encoding="utf-8")
+    (notes / "2024" / "01" / "clash.md").write_text(_EXISTING_TEXT, encoding="utf-8")
     text = _entry_text("clash.md") + _entry_text(kept)
 
     mapping, _skipped, _warnings = batch.add_batch_entries(notes, texts=[text], now=_FIXED_DT)
 
     assert mapping == [("clash.md", f"{_FIXED_TIMESTAMP}-002.md"), (kept, kept)]
-    assert (notes / "inbox" / kept).read_text(encoding="utf-8").endswith("本文\n")
+    assert (notes / "2024" / "01" / kept).read_text(encoding="utf-8").endswith("本文\n")
 
 
+@pytest.mark.parametrize("includes_state", [False, True])
 def test_import_skips_entry_matching_existing_name_and_body(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
+    includes_state: bool,
 ) -> None:
-    """ファイル名と本文がともに既存項目と一致するエントリは書き込まず、commitも追加しない。"""
+    """新旧のshow出力で同じ項目を再投入すると、名前と本文の一致から追加保存を省く。"""
     notes = _setup_notes(tmp_path)
     commits = _patch_repo_operations(monkeypatch)
     text = _entry_text("same.md")
+    if not includes_state:
+        text = text.replace("state: inbox\n", "")
     batch.add_batch_entries(notes, texts=[text], now=_FIXED_DT)
 
     mapping, skipped, warnings = batch.add_batch_entries(notes, texts=[text], now=_FIXED_DT)
@@ -353,7 +357,7 @@ def test_import_skips_entry_matching_existing_name_and_body(
     assert skipped == ["same.md"]
     assert not warnings
     assert len(commits) == 1
-    assert sorted(path.name for path in (notes / "inbox").iterdir()) == ["same.md"]
+    assert sorted(path.name for path in notes.glob("[0-9][0-9][0-9][0-9]/[0-9][0-9]/*.md")) == ["same.md"]
 
 
 def test_import_renumbers_entry_matching_existing_name_with_different_body(
@@ -382,7 +386,7 @@ def test_import_keeps_names_differing_only_by_case_on_case_sensitive_filesystem(
     """大文字小文字を区別するファイルシステムでは、大小差だけの名前を衝突と判定せず元名を維持する。"""
     notes = _setup_notes(tmp_path)
     _patch_repo_operations(monkeypatch)
-    (notes / "adopted" / "Clash.md").write_text("既存\n", encoding="utf-8")
+    (notes / "2024" / "01" / "Clash.md").write_text(_EXISTING_TEXT, encoding="utf-8")
 
     mapping, _skipped, _warnings = batch.add_batch_entries(
         notes,
@@ -391,7 +395,7 @@ def test_import_keeps_names_differing_only_by_case_on_case_sensitive_filesystem(
     )
 
     assert mapping == [("clash.md", "clash.md"), ("Same.md", "Same.md"), ("same.md", "same.md")]
-    assert (notes / "adopted" / "Clash.md").read_text(encoding="utf-8") == "既存\n"
+    assert (notes / "2024" / "01" / "Clash.md").read_text(encoding="utf-8") == _EXISTING_TEXT
 
 
 def test_import_renumbers_name_colliding_only_by_case(
@@ -402,13 +406,13 @@ def test_import_renumbers_name_colliding_only_by_case(
     notes = _setup_notes(tmp_path)
     _patch_repo_operations(monkeypatch)
     _assume_case_insensitive(monkeypatch)
-    (notes / "adopted" / "Clash.md").write_text("既存\n", encoding="utf-8")
+    (notes / "2024" / "01" / "Clash.md").write_text(_EXISTING_TEXT, encoding="utf-8")
 
     mapping, _skipped, _warnings = batch.add_batch_entries(notes, texts=[_entry_text("clash.md")], now=_FIXED_DT)
 
     assert mapping == [("clash.md", f"{_FIXED_TIMESTAMP}-001.md")]
-    assert not (notes / "inbox" / "clash.md").exists()
-    assert (notes / "adopted" / "Clash.md").read_text(encoding="utf-8") == "既存\n"
+    assert not (notes / "2024" / "01" / "clash.md").exists()
+    assert (notes / "2024" / "01" / "Clash.md").read_text(encoding="utf-8") == _EXISTING_TEXT
 
 
 def test_import_rejects_original_names_duplicated_only_by_case(
@@ -423,7 +427,7 @@ def test_import_rejects_original_names_duplicated_only_by_case(
     with pytest.raises(WebInputError):
         batch.add_batch_entries(notes, texts=[_entry_text("Same.md"), _entry_text("same.md")], now=_FIXED_DT)
 
-    assert not list((notes / "inbox").iterdir())
+    assert not list(notes.glob("[0-9][0-9][0-9][0-9]/[0-9][0-9]/*.md"))
 
 
 def test_import_rejects_duplicated_original_names_across_texts(
@@ -439,7 +443,7 @@ def test_import_rejects_duplicated_original_names_across_texts(
 
     assert "重複した見出し" in error_info.value.next_action
 
-    assert not list((notes / "inbox").iterdir())
+    assert not list(notes.glob("[0-9][0-9][0-9][0-9]/[0-9][0-9]/*.md"))
 
 
 def test_import_rejects_invalid_original_name(
@@ -461,8 +465,8 @@ def test_import_rewrites_only_renamed_depends_on_element_lines(
     """再採番された参照の要素行だけを差し替え、他の行の字面を保持する。"""
     notes = _setup_notes(tmp_path)
     _patch_repo_operations(monkeypatch)
-    (notes / "inbox" / "dep.md").write_text("既存\n", encoding="utf-8")
-    (notes / "inbox" / "outside.md").write_text("既存\n", encoding="utf-8")
+    (notes / "2024" / "01" / "dep.md").write_text(_EXISTING_TEXT, encoding="utf-8")
+    (notes / "2024" / "01" / "outside.md").write_text(_EXISTING_TEXT, encoding="utf-8")
     dependent = (
         "### plan.md [inbox]\n"
         "---\n"
@@ -479,7 +483,7 @@ def test_import_rewrites_only_renamed_depends_on_element_lines(
     mapping, _skipped, warnings = batch.add_batch_entries(notes, texts=[text], now=_FIXED_DT)
 
     renamed = dict(mapping)["dep.md"]
-    saved = (notes / "inbox" / "plan.md").read_text(encoding="utf-8")
+    saved = (notes / "2024" / "01" / "plan.md").read_text(encoding="utf-8")
     assert renamed == f"{_FIXED_TIMESTAMP}-001.md"
     assert f"- {renamed}\n" in saved
     assert '- "outside.md"\n' in saved
@@ -495,7 +499,7 @@ def test_import_keeps_trailing_comment_of_rewritten_depends_on_element(
     """読み替えた要素行の値だけを差し替え、行末のコメントを字面ごと残す。"""
     notes = _setup_notes(tmp_path)
     _patch_repo_operations(monkeypatch)
-    (notes / "inbox" / "dep.md").write_text("既存\n", encoding="utf-8")
+    (notes / "2024" / "01" / "dep.md").write_text(_EXISTING_TEXT, encoding="utf-8")
     dependent = (
         "### plan.md [inbox]\n"
         "---\n"
@@ -509,7 +513,7 @@ def test_import_keeps_trailing_comment_of_rewritten_depends_on_element(
     mapping, _skipped, _warnings = batch.add_batch_entries(notes, texts=[_entry_text("dep.md") + dependent], now=_FIXED_DT)
 
     renamed = dict(mapping)["dep.md"]
-    assert f"- {renamed}  # 依存の由来\n" in (notes / "inbox" / "plan.md").read_text(encoding="utf-8")
+    assert f"- {renamed}  # 依存の由来\n" in (notes / "2024" / "01" / "plan.md").read_text(encoding="utf-8")
 
 
 def test_import_rewrites_depends_on_with_commented_heading_line(
@@ -519,7 +523,7 @@ def test_import_rewrites_depends_on_with_commented_heading_line(
     """`depends_on:`見出し行に行末コメントがあっても後続のブロック形式を読み替える。"""
     notes = _setup_notes(tmp_path)
     _patch_repo_operations(monkeypatch)
-    (notes / "inbox" / "dep.md").write_text("既存\n", encoding="utf-8")
+    (notes / "2024" / "01" / "dep.md").write_text(_EXISTING_TEXT, encoding="utf-8")
     dependent = (
         "### plan.md [inbox]\n"
         "---\n"
@@ -533,7 +537,7 @@ def test_import_rewrites_depends_on_with_commented_heading_line(
     mapping, _skipped, _warnings = batch.add_batch_entries(notes, texts=[_entry_text("dep.md") + dependent], now=_FIXED_DT)
 
     renamed = dict(mapping)["dep.md"]
-    saved = (notes / "inbox" / "plan.md").read_text(encoding="utf-8")
+    saved = (notes / "2024" / "01" / "plan.md").read_text(encoding="utf-8")
     assert f"depends_on:  # 依存の由来\n- {renamed}\n" in saved
 
 
@@ -544,7 +548,7 @@ def test_import_rejects_quoted_depends_on_element_needing_rewrite(
     """値とコメントの境界を一意に特定できない引用符付き要素行の読み替えは全件拒否する。"""
     notes = _setup_notes(tmp_path)
     _patch_repo_operations(monkeypatch)
-    (notes / "inbox" / "dep.md").write_text("既存\n", encoding="utf-8")
+    (notes / "2024" / "01" / "dep.md").write_text(_EXISTING_TEXT, encoding="utf-8")
     dependent = (
         '### plan.md [inbox]\n---\ntarget_repo: github.com/example/foo\ntype: awi\ndepends_on:\n- "dep.md"\n---\n\n本文\n\n'
     )
@@ -552,7 +556,7 @@ def test_import_rejects_quoted_depends_on_element_needing_rewrite(
     with pytest.raises(WebInputError):
         batch.add_batch_entries(notes, texts=[_entry_text("dep.md") + dependent], now=_FIXED_DT)
 
-    assert not (notes / "inbox" / "plan.md").exists()
+    assert not (notes / "2024" / "01" / "plan.md").exists()
 
 
 def test_import_rejects_non_canonical_depends_on_needing_rewrite(
@@ -562,7 +566,7 @@ def test_import_rejects_non_canonical_depends_on_needing_rewrite(
     """flow形式の`depends_on`を読み替える必要がある場合は全件拒否する。"""
     notes = _setup_notes(tmp_path)
     _patch_repo_operations(monkeypatch)
-    (notes / "inbox" / "dep.md").write_text("既存\n", encoding="utf-8")
+    (notes / "2024" / "01" / "dep.md").write_text(_EXISTING_TEXT, encoding="utf-8")
     dependent = (
         "### plan.md [inbox]\n---\ntarget_repo: github.com/example/foo\ntype: awi\ndepends_on: [dep.md]\n---\n\n本文\n\n"
     )
@@ -574,7 +578,7 @@ def test_import_rejects_non_canonical_depends_on_needing_rewrite(
     assert "`- <ファイル名>`" in error_info.value.next_action
     assert "ブロック形式で書き直して再投入する" in error_info.value.next_action
 
-    assert not (notes / "inbox" / "plan.md").exists()
+    assert not (notes / "2024" / "01" / "plan.md").exists()
 
 
 def test_import_warns_for_missing_external_dependency(
@@ -617,7 +621,7 @@ def test_import_does_not_warn_for_dependency_differing_only_by_case(
     notes = _setup_notes(tmp_path)
     _patch_repo_operations(monkeypatch)
     _assume_case_insensitive(monkeypatch)
-    (notes / "adopted" / "dep.md").write_text("既存\n", encoding="utf-8")
+    (notes / "2024" / "01" / "dep.md").write_text(_EXISTING_TEXT, encoding="utf-8")
     dependent = (
         "### plan.md [inbox]\n---\ntarget_repo: github.com/example/foo\ntype: awi\ndepends_on:\n- Dep.md\n---\n\n本文\n\n"
     )
@@ -625,7 +629,7 @@ def test_import_does_not_warn_for_dependency_differing_only_by_case(
     _mapping, _skipped, warnings = batch.add_batch_entries(notes, texts=[dependent], now=_FIXED_DT)
 
     assert not warnings
-    assert "- Dep.md\n" in (notes / "inbox" / "plan.md").read_text(encoding="utf-8")
+    assert "- Dep.md\n" in (notes / "2024" / "01" / "plan.md").read_text(encoding="utf-8")
 
 
 def test_import_does_not_warn_for_dependency_on_renumbered_name(
@@ -635,7 +639,7 @@ def test_import_does_not_warn_for_dependency_on_renumbered_name(
     """再採番で確定した保存名を直接参照する依存先を警告しない。"""
     notes = _setup_notes(tmp_path)
     _patch_repo_operations(monkeypatch)
-    (notes / "inbox" / "clash.md").write_text("既存\n", encoding="utf-8")
+    (notes / "2024" / "01" / "clash.md").write_text(_EXISTING_TEXT, encoding="utf-8")
     renumbered = f"{_FIXED_TIMESTAMP}-001.md"
     dependent = (
         "### plan.md [inbox]\n"
@@ -651,7 +655,7 @@ def test_import_does_not_warn_for_dependency_on_renumbered_name(
 
     assert dict(mapping)["clash.md"] == renumbered
     assert not warnings
-    assert f"- {renumbered}\n" in (notes / "inbox" / "plan.md").read_text(encoding="utf-8")
+    assert f"- {renumbered}\n" in (notes / "2024" / "01" / "plan.md").read_text(encoding="utf-8")
 
 
 def test_import_keeps_unresolvable_legacy_target_repo(
@@ -665,7 +669,7 @@ def test_import_keeps_unresolvable_legacy_target_repo(
 
     batch.add_batch_entries(notes, texts=[text], now=_FIXED_DT)
 
-    assert "target_repo: /home/other/absent-repo\n" in (notes / "inbox" / "legacy.md").read_text(encoding="utf-8")
+    assert "target_repo: /home/other/absent-repo\n" in (notes / "2024" / "01" / "legacy.md").read_text(encoding="utf-8")
 
 
 @pytest.mark.parametrize(
@@ -687,7 +691,7 @@ def test_import_keeps_plan_file_verbatim(
 
     batch.add_batch_entries(notes, texts=[text], now=_FIXED_DT)
 
-    stored = (notes / "inbox/imported.md").read_text(encoding="utf-8")
+    stored = (notes / "2024/01/imported.md").read_text(encoding="utf-8")
     assert f"plan_file: {plan_file}\n" in stored
 
 
@@ -701,14 +705,17 @@ def test_import_skips_entry_matching_existing_after_plan_file_normalization(
     plan = notes / "plans/2026/08/30-計画保存先移行-d4f9.md"
     plan.parent.mkdir(parents=True)
     plan.write_text("# 計画\n", encoding="utf-8")
-    absolute = f"### same.md [inbox]\n---\ntarget_repo: github.com/example/foo\ntype: awi\nplan_file: {plan}\n---\n\n本文\n\n"
+    absolute = (
+        "### same.md [inbox]\n---\ntarget_repo: github.com/example/foo\ntype: awi\nstate: inbox\n"
+        f"plan_file: {plan}\n---\n\n本文\n\n"
+    )
     batch.add_batch_entries(notes, texts=[absolute], now=_FIXED_DT)
 
     mapping, skipped, _warnings = batch.add_batch_entries(notes, texts=[absolute], now=_FIXED_DT)
 
     assert not mapping
     assert skipped == ["same.md"]
-    assert sorted(path.name for path in (notes / "inbox").iterdir()) == ["same.md"]
+    assert sorted(path.name for path in notes.glob("[0-9][0-9][0-9][0-9]/[0-9][0-9]/*.md")) == ["same.md"]
 
 
 def _show_all_output(notes: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> str:
@@ -748,7 +755,7 @@ def test_show_all_output_round_trips_into_another_repository(
         now=_FIXED_DT,
         target_commit="b" * 40,
     )
-    originals = {name: (source_notes / "inbox" / name).read_text(encoding="utf-8") for name in generated}
+    originals = {name: (source_notes / "2024" / "01" / name).read_text(encoding="utf-8") for name in generated}
 
     mapping, _skipped, warnings = batch.add_batch_entries(
         target_notes,
@@ -759,4 +766,4 @@ def test_show_all_output_round_trips_into_another_repository(
     assert [original for original, _saved in mapping] == generated
     assert not warnings
     for original, saved in mapping:
-        assert (target_notes / "inbox" / saved).read_text(encoding="utf-8") == originals[original]
+        assert (target_notes / "2024" / "01" / saved).read_text(encoding="utf-8") == originals[original]

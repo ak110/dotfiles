@@ -4,6 +4,7 @@ import argparse
 import json
 import pathlib
 import re
+import shlex
 
 import create_plan_files
 import pytest
@@ -12,10 +13,39 @@ from create_plan_files_test import (  # pylint: disable=import-error,unused-impo
     _source,
 )
 
+from agent_toolkit import atk
 from agent_toolkit._atk import run_script
 from agent_toolkit._testing import git_repository
 
 _DOCUMENTED_BUG_REFERENCE_PATTERN = re.compile(r"計画ファイル（バグ）: `([^`]+)`")
+
+
+def test_lane_planning_document_command_creates_plan_from_another_worktree(
+    repo: pathlib.Path, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """起草手順4の実物の書式へ案件値を指定すると、異なるcwdから対象repoの計画を作成できる。"""
+    source, _ = _source(repo, tmp_path)
+    guide = pathlib.Path(__file__).resolve().parents[3] / "skills/process-wi/references/lane-planning.md"
+    matched = re.search(r"`(atk run-script plan-create -- [^`]+)`", guide.read_text(encoding="utf-8"))
+    assert matched is not None
+    command = matched[1]
+    for placeholder, value in {
+        "<計画本文の絶対パス>": str(source),
+        "<レーン識別子>": "lane-01",
+        "<計画メタ情報の対象リポジトリ>": str(repo),
+    }.items():
+        assert placeholder in command
+        command = command.replace(placeholder, shlex.quote(value))
+    other = tmp_path / "other"
+    other.mkdir()
+    git_repository.init_repository(other)
+    monkeypatch.chdir(other)
+    with pytest.raises(SystemExit, match="0"):
+        atk.main(shlex.split(command)[1:])
+    output = capsys.readouterr()
+    assert not output.err
+    created = pathlib.Path(output.out.strip())
+    assert created.is_file() and f"`{repo.resolve()}`" in created.read_text(encoding="utf-8")
 
 
 @pytest.fixture(name="repo")

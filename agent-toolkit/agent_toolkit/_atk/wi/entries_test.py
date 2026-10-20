@@ -107,8 +107,10 @@ def test_broken_entry_next_action_can_show_saved_content(
 ) -> None:
     """不正な管理情報の項目でも、公開showが同じ保存本文を表示する。"""
     monkeypatch.setenv("AGENT_TOOLKIT_PRIVATE_NOTES", str(tmp_path))
-    directory = tmp_path / state
-    directory.mkdir()
+    directory = tmp_path / "2026" / "10"
+    directory.mkdir(parents=True)
+    if content.startswith("---\n"):
+        content = content.replace("---\n", f"---\nstate: {state}\n", 1)
     filename = "20261013-000000-001.md"
     (directory / filename).write_text(content, encoding="utf-8")
     if "target_repo: [" in content or "target_repo:" not in content:
@@ -142,18 +144,18 @@ def test_unparsable_frontmatter_guides_to_report_instead_of_edit(
     assert "書式を直す" not in next_action
 
 
-def test_named_read_preserves_request_order_filters_and_state_priority(tmp_path: pathlib.Path) -> None:
-    """明示名の共通読取は要求順と状態順を保ち、条件外の項目を不在へ分ける。"""
+def test_named_read_preserves_request_order_filters_and_stored_state(tmp_path: pathlib.Path) -> None:
+    """明示名の共通読取は要求順と保存状態を保ち、条件外の項目を不在へ分ける。"""
     first, second, absent = (f"20261008-000000-00{index}.md" for index in (1, 2, 3))
-    for state in _wi_constants.WI_STATES:
-        (tmp_path / state).mkdir()
-    for index, state in enumerate(_wi_constants.WI_STATES[:2]):
-        (tmp_path / state / first).write_text(
-            f"---\ntarget_repo: github.com/example/foo\ntype: awi\nsource: agent\n---\n# 候補{index}\n",
-            encoding="utf-8",
-        )
-    (tmp_path / _wi_constants.WI_STATES[-1] / second).write_text(
-        "---\ntarget_repo: github.com/example/bar\ntype: uwi\nsource: user\n---\n# 別項目\n",
+    directory = tmp_path / "2026" / "10"
+    directory.mkdir(parents=True)
+    (directory / first).write_text(
+        "---\nstate: inbox\ntarget_repo: github.com/example/foo\ntype: awi\nsource: agent\n---\n# 候補\n",
+        encoding="utf-8",
+    )
+    (directory / second).write_text(
+        f"---\nstate: {_wi_constants.WI_STATES[-1]}\ntarget_repo: github.com/example/bar\n"
+        "type: uwi\nsource: user\n---\n# 別項目\n",
         encoding="utf-8",
     )
     names = _wi_entries.validate_named_filenames(tmp_path, [second, first, first, absent])
@@ -174,9 +176,9 @@ def test_named_read_preserves_request_order_filters_and_state_priority(tmp_path:
 @pytest.mark.parametrize("operation", ["select", "named"])
 def test_entry_metadata_is_parsed_once_per_acquisition(tmp_path: pathlib.Path, operation: str) -> None:
     """属性の抽出と消費を共有し、別操作では本文を読み直す。"""
-    path = tmp_path / "inbox" / "20261018-000000-001.md"
-    path.parent.mkdir()
-    text = "\ufeff---\ntarget_repo: github.com/example/repo\ntype: awi\nsource: 001\n---\n\n要約\n"
+    path = tmp_path / "2026" / "10" / "20261018-000000-001.md"
+    path.parent.mkdir(parents=True)
+    text = "\ufeff---\nstate: inbox\ntarget_repo: github.com/example/repo\ntype: awi\nsource: 001\n---\n\n要約\n"
     path.write_text(text, encoding="utf-8")
 
     def acquire() -> list[_wi_entries.EntryRecord]:
@@ -212,22 +214,22 @@ def test_entry_metadata_is_parsed_once_per_acquisition(tmp_path: pathlib.Path, o
 )
 def test_named_read_preserves_special_input_values(tmp_path: pathlib.Path, text: str, kind: str | None, repo: str) -> None:
     """指定名読取は破損と不正種別を表示可能な値として保つ。"""
-    path = tmp_path / "inbox" / "20261018-000000-001.md"
-    path.parent.mkdir()
+    path = tmp_path / "2026" / "10" / "20261018-000000-001.md"
+    path.parent.mkdir(parents=True)
     path.write_text(text, encoding="utf-8")
     with mock.patch.object(frontmatter, "parse_frontmatter", wraps=frontmatter.parse_frontmatter) as parser:
         selected, missing = _wi_entries.read_named_entries(tmp_path, [(path.name, path.name)], target_repo=None)
         assert not missing
-        assert selected[0][1:] == (repo, text, "inbox", kind)
+        assert selected[0][1:] == (repo, text, "unknown", kind)
         assert parser.call_count == 1
 
 
 def test_acquired_text_preserves_literal_scalars_and_typed_schedule(tmp_path: pathlib.Path) -> None:
     """解析結果を受け取る消費側で字面とqueue_scheduleの型を保持する。"""
-    path = tmp_path / "inbox" / "entry.md"
-    path.parent.mkdir()
+    path = tmp_path / "2026" / "10" / "entry.md"
+    path.parent.mkdir(parents=True)
     path.write_text(
-        "---\ntype: awi\ntarget_repo: github.com/example/repo\nsource: false\ntarget_commit: 001\n"
+        "---\nstate: inbox\ntype: awi\ntarget_repo: github.com/example/repo\nsource: false\ntarget_commit: 001\n"
         "queue_schedule:\n  carry_count: 2\n  enabled: true\n---\n\n本文\n",
         encoding="utf-8",
     )
@@ -235,6 +237,7 @@ def test_acquired_text_preserves_literal_scalars_and_typed_schedule(tmp_path: pa
     parsed = entry_text.parse_frontmatter(selected[0][2])
     assert parsed == (
         {
+            "state": "inbox",
             "type": "awi",
             "target_repo": "github.com/example/repo",
             "source": "false",

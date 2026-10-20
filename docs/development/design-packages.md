@@ -127,6 +127,17 @@ aridの検出条件は両側で共有するが、既存負債の受容データ�
 
 ## テストの実行環境の隔離
 
+pytest-asyncioのfixtureとtestの既定loop scopeはfunctionとし、テストごとの非同期処理の寿命を一致させる。
+ブラウザーテストは共有ブラウザーの寿命に合わせてsession scopeを明示する。
+session scopeを全テストへ適用する案は、先行テストの遅延処理が後続テストの登録簿へ書く問題を残すため採用しない。
+リポジトリ直下、`agent-toolkit/`全体、`agent_toolkit/`と`skills/`の4起動範囲で同じ隔離を確認する。
+
+run-command、plan検証、lane検証と全てのpytest起動は、pyfltrのホスト共有実行APIへ接続する。
+pytestのbasetempは実行単位で分離し、controllerとworkerの終了後に正常・失敗・中断のどの場合も回収する。
+明示basetempとJUnit・traceなどの保存証拠、serveとwatcherはそれぞれの所有主体が必要な寿命まで保持する。
+資源所有クラスは文脈マネージャーで獲得直後から解放を保証し、再入可能なcloseと起動途中の所有移譲を扱う。
+呼び出し元へ手動closeを分散する案は、例外が発生した場合と複数の後始末が失敗した場合に資源が残るため採用しない。
+
 テストを開発機だけにある状態から切り離す隔離は、`agent-toolkit/agent_toolkit/_testing/isolation.py`の1箇所に定義する。
 対象の次元は、ホームと設定ディレクトリ、private-notes、一時ディレクトリ、Gitのglobal・system設定、開発セッションの環境変数、PATH上の開発機専用のエージェントCLI（`codex`・`claude`・`agy`）の6つである。
 リポジトリ直下の`conftest.py`（`pytools/`・`scripts/`）と`agent-toolkit/conftest.py`（`agent_toolkit/`・`skills/`）が同じ定義をautouseで適用する。

@@ -140,6 +140,7 @@ def _ensure_server() -> subprocess.Popen[bytes]:
         _close_server(_SERVER)
         _SERVER = None
     try:
+        # 同じテストprocess内の後続要求も使うserverであり、atexitの_terminate_serverが寿命を所有する。
         server = subprocess.Popen(  # noqa: S603 -- 自モジュールの再起動でありユーザー入力を経由しない  # pylint: disable=consider-using-with
             [sys.executable, str(Path(__file__).resolve())],
             stdin=subprocess.PIPE,
@@ -302,6 +303,7 @@ def _run_child(request: dict) -> None:
     os.dup2(stderr_fd, 2)
     # サーバーが差し替えたsys.stdin/stdout/stderrオブジェクトを再接続後のfdへ再束縛する
     # （fd差し替えのみでは対象スクリプトのsys.stdin.read()・printが一時ファイルへ到達しない）
+    # forkした子の標準streamとしてos._exitまで使い、fdはprocess終了時にOSが回収する。
     sys.stdin = open(0, encoding="utf-8", closefd=False)  # noqa: SIM115  # pylint: disable=consider-using-with
     sys.stdout = open(1, "w", encoding="utf-8", closefd=False)  # noqa: SIM115  # pylint: disable=consider-using-with
     sys.stderr = open(2, "w", encoding="utf-8", closefd=False)  # noqa: SIM115  # pylint: disable=consider-using-with

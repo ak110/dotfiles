@@ -177,23 +177,23 @@ async def test_antigravity_uses_latest_response_step_and_retains_terminal_usage(
     )
     monkeypatch.setattr(antigravity, "build_command", lambda *_args: [sys.executable, str(script)])
     monkeypatch.setattr(antigravity, "_child_env", lambda _root: host_environ())
-    backend = antigravity.AntigravityManager()
-    terminal = asyncio.Event()
+    async with antigravity.AntigravityManager() as backend:
+        terminal = asyncio.Event()
 
-    def on_terminal(_session: state.SessionState) -> None:
-        terminal.set()
+        def on_terminal(_session: state.SessionState) -> None:
+            terminal.set()
 
-    state.add_terminal_listener(on_terminal)
-    try:
-        async with asyncio.timeout(3):
-            session = await backend.start("調査", str(tmp_path))
-            await terminal.wait()
-        assert session.context_tokens == 3500
-        assert session.context_window is None
-        assert session.agent_message == "完了"
-    finally:
-        await backend.close()
-        state.remove_terminal_listener(on_terminal)
+        state.add_terminal_listener(on_terminal)
+        try:
+            async with asyncio.timeout(3):
+                session = await backend.start("調査", str(tmp_path))
+                await terminal.wait()
+            assert session.context_tokens == 3500
+            assert session.context_window is None
+            assert session.agent_message == "完了"
+        finally:
+            await backend.close()
+            state.remove_terminal_listener(on_terminal)
 
 
 @pytest.mark.asyncio
@@ -264,53 +264,53 @@ async def test_claude_context_usage_updates_init_response_compaction_and_termina
             return self.usage
 
     client = Client([[SystemMessage("context-session")], [SystemMessage("context-session")]])
-    backend = claude.ClaudeServerManager(client_factory=lambda _options: client)
-    changed = asyncio.Event()
-    state.add_touch_listener(changed.set)
+    async with claude.ClaudeServerManager(client_factory=lambda _options: client) as backend:
+        changed = asyncio.Event()
+        state.add_touch_listener(changed.set)
 
-    async def await_value(session: state.SessionState, expected: int | None, message: str | None = None) -> None:
-        async with asyncio.timeout(2):
-            while (
-                session.context_tokens != expected
-                or not client.observed.is_set()
-                or (message is not None and session.agent_message != message)
-            ):
-                changed.clear()
-                await changed.wait()
+        async def await_value(session: state.SessionState, expected: int | None, message: str | None = None) -> None:
+            async with asyncio.timeout(2):
+                while (
+                    session.context_tokens != expected
+                    or not client.observed.is_set()
+                    or (message is not None and session.agent_message != message)
+                ):
+                    changed.clear()
+                    await changed.wait()
 
-    try:
-        session = await backend.start("調査", str(tmp_path), "model", "high")
-        await await_value(session, 53500)
-        assert session.context_window == 1000000
-        client.usage = {"totalTokens": 54000, "rawMaxTokens": 1000000}
-        client.messages.put_nowait(AssistantMessage("応答"))
-        await await_value(session, 54000, "応答")
-        compact = SystemMessage(session.session_id)
-        compact.subtype = "compact_boundary"
-        client.usage = {"totalTokens": 1250, "rawMaxTokens": 1000000}
-        client.messages.put_nowait(compact)
-        await await_value(session, 1250)
-        activity = session.updated_at
-        assert session.output_updated_at is not None
-        client.usage = {"totalTokens": 0, "rawMaxTokens": 1000000}
-        client.messages.put_nowait(ResultMessage("完了"))
-        await await_value(session, 0, "完了")
-        assert session.result_available
-        assert state.SessionResumeState.from_session(session).context_tokens == 0
-        await backend.send_message(session, "続行")
-        client.usage = {"totalTokens": 2500, "rawMaxTokens": 100000}
-        client.messages.put_nowait(AssistantMessage("再開応答"))
-        await await_value(session, 2500, "再開応答")
-        assert session.updated_at != activity
-        client.usage = RuntimeError("unsupported context request")
-        client.messages.put_nowait(AssistantMessage("照会失敗後も応答"))
-        await await_value(session, None, "照会失敗後も応答")
-        assert session.agent_message == "照会失敗後も応答"
-        assert session.status == "running"
-    finally:
-        await backend.close()
-        state.remove_touch_listener(changed.set)
-    assert client.disconnected
+        try:
+            session = await backend.start("調査", str(tmp_path), "model", "high")
+            await await_value(session, 53500)
+            assert session.context_window == 1000000
+            client.usage = {"totalTokens": 54000, "rawMaxTokens": 1000000}
+            client.messages.put_nowait(AssistantMessage("応答"))
+            await await_value(session, 54000, "応答")
+            compact = SystemMessage(session.session_id)
+            compact.subtype = "compact_boundary"
+            client.usage = {"totalTokens": 1250, "rawMaxTokens": 1000000}
+            client.messages.put_nowait(compact)
+            await await_value(session, 1250)
+            activity = session.updated_at
+            assert session.output_updated_at is not None
+            client.usage = {"totalTokens": 0, "rawMaxTokens": 1000000}
+            client.messages.put_nowait(ResultMessage("完了"))
+            await await_value(session, 0, "完了")
+            assert session.result_available
+            assert state.SessionResumeState.from_session(session).context_tokens == 0
+            await backend.send_message(session, "続行")
+            client.usage = {"totalTokens": 2500, "rawMaxTokens": 100000}
+            client.messages.put_nowait(AssistantMessage("再開応答"))
+            await await_value(session, 2500, "再開応答")
+            assert session.updated_at != activity
+            client.usage = RuntimeError("unsupported context request")
+            client.messages.put_nowait(AssistantMessage("照会失敗後も応答"))
+            await await_value(session, None, "照会失敗後も応答")
+            assert session.agent_message == "照会失敗後も応答"
+            assert session.status == "running"
+        finally:
+            await backend.close()
+            state.remove_touch_listener(changed.set)
+        assert client.disconnected
 
 
 @pytest.mark.asyncio
@@ -329,20 +329,20 @@ async def test_claude_slow_context_request_keeps_receiver_and_closes_owned_task(
                 self.finished.set()
 
     client = Client([[SystemMessage("slow-context"), AssistantMessage("応答"), ResultMessage("完了")]])
-    backend = claude.ClaudeServerManager(client_factory=lambda _options: client)
-    changed = asyncio.Event()
-    state.add_touch_listener(changed.set)
-    try:
-        async with asyncio.timeout(2):
-            session = await backend.start("調査", str(tmp_path))
-            await client.started.wait()
-            while not session.result_available:
-                changed.clear()
-                await changed.wait()
-        assert session.agent_message == "完了"
-        assert session.context_tokens is None
-    finally:
-        await backend.close()
-        state.remove_touch_listener(changed.set)
-    assert client.finished.is_set()
-    assert client.disconnected
+    async with claude.ClaudeServerManager(client_factory=lambda _options: client) as backend:
+        changed = asyncio.Event()
+        state.add_touch_listener(changed.set)
+        try:
+            async with asyncio.timeout(2):
+                session = await backend.start("調査", str(tmp_path))
+                await client.started.wait()
+                while not session.result_available:
+                    changed.clear()
+                    await changed.wait()
+            assert session.agent_message == "完了"
+            assert session.context_tokens is None
+        finally:
+            await backend.close()
+            state.remove_touch_listener(changed.set)
+        assert client.finished.is_set()
+        assert client.disconnected

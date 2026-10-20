@@ -122,6 +122,7 @@ def check(
     previous_head: str | None = None,
     external_artifacts: list[pathlib.Path] | None = None,
     review_contract: pathlib.Path | None = None,
+    previous_review_contract: pathlib.Path | None = None,
 ) -> str:
     """不足・規定外の省略を拒否し、受理した申告を1行の形式で返す。
 
@@ -188,7 +189,9 @@ def check(
         elif path in paths and set(item) == {"omission"} and item["omission"] == "再点検対象なし":
             if round_value < 2 or previous_start is None or previous_head is None:
                 errors.append(f"{path}: 再点検対象なしにはroundが2以上と前回の開始時点・HEADが必要")
-            elif not same_changes(repository, start, head, previous_start, previous_head, path, review_contract):
+            elif not same_changes(
+                repository, start, head, previous_start, previous_head, path, review_contract, previous_review_contract
+            ):
                 errors.append(f"{path}: 前回確認版から変更内容が異なる")
         else:
             errors.append(f"{path}: sessionsかomissionの再点検対象なしを指定する")
@@ -205,8 +208,9 @@ def same_changes(
     previous_head: str,
     path: str,
     review_contract: pathlib.Path | None = None,
+    previous_review_contract: pathlib.Path | None = None,
 ) -> bool:
     """申告の受理と資料準備で共通の、行位置を除いた変更内容の同一性を返す。"""
     return _patch(repository, start, head, path, review_contract) == _patch(
-        repository, previous_start, previous_head, path, review_contract
+        repository, previous_start, previous_head, path, previous_review_contract or review_contract
     )

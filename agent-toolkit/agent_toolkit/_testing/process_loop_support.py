@@ -52,8 +52,9 @@ def set_orchestrate_environment(monkeypatch: pytest.MonkeyPatch, value: str) -> 
 
 def hook_debug_log(command: list[str]) -> pathlib.Path:
     """Claude起動コマンドからhook診断ログを取得し、共通契約を検証する。"""
-    assert command[:3] == ["claude", "--debug=hooks", "--debug-file"]
-    debug_log = pathlib.Path(command[3])
+    assert command[0] == "claude"
+    assert "--debug=hooks" in command
+    debug_log = pathlib.Path(command[command.index("--debug-file") + 1])
     assert debug_log.is_absolute()
     assert debug_log.is_file()
     return debug_log

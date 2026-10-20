@@ -13,6 +13,7 @@ Stopの条件にするhookを有効にし、自ら最終応答で終わる非対
 from __future__ import annotations
 
 import argparse
+import contextlib
 import dataclasses
 import datetime
 import hashlib
@@ -128,22 +129,20 @@ def dispatch(args: argparse.Namespace) -> int:
         progress.message(f"ログ: {log_path.resolve()}")
         _write_header(log, repo_root=repo_root, args=args)
         lock = filelock.FileLock(str(_lock_path(repo_root, args.skill)))
-        try:
-            lock.acquire(timeout=0)
-        except filelock.Timeout:
-            _log_line(log, "終了状態: 同じ対象リポジトリと同じスキルの実行が進行中のため起動しなかった")
-            _outcome.report_failure(
-                f"同じ対象リポジトリと同じスキルの実行が進行中のため起動しなかった（ログ: {log_path}）",
-                next_action="進行中の実行の終了を待つ。次回の定期実行で改めて起動されるため、操作は不要",
-            )
-            return CONCURRENT_EXIT_CODE
-        try:
+        with contextlib.ExitStack() as resources:
+            try:
+                resources.enter_context(lock.acquire(timeout=0))
+            except filelock.Timeout:
+                _log_line(log, "終了状態: 同じ対象リポジトリと同じスキルの実行が進行中のため起動しなかった")
+                _outcome.report_failure(
+                    f"同じ対象リポジトリと同じスキルの実行が進行中のため起動しなかった（ログ: {log_path}）",
+                    next_action="進行中の実行の終了を待つ。次回の定期実行で改めて起動されるため、操作は不要",
+                )
+                return CONCURRENT_EXIT_CODE
             with _console_title.console_title(_TITLE):
                 return _run_locked(
                     args, repo_root=repo_root, candidates=candidates, log=log, log_path=log_path, progress=progress
                 )
-        finally:
-            lock.release()
 
 
 def build_goal(skill: str, skill_args: str | None) -> str:
@@ -235,35 +234,42 @@ def _run_locked(
         argv = ["codex", "exec", "--model", model, "-c", f"model_reasoning_effort={effort}", goal]
         argv.insert(-1, "--json")
     log.flush()
+    codex_home = _host_homes.codex_home(env)
     remaining = float(args.timeout)
     while True:
         output = _SessionOutput()
         started_at = time.monotonic()
-        try:
-            process = subprocess.Popen(  # pylint: disable=consider-using-with
-                argv,
-                cwd=repo_root,
-                env=_orchestrator.session_env(env, orchestrator),
-                stdin=subprocess.DEVNULL,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
+        with contextlib.ExitStack() as resources:
+            try:
+                process = resources.enter_context(
+                    _process_tree.process_scope(
+                        argv,
+                        cwd=repo_root,
+                        env=_orchestrator.session_env(env, orchestrator),
+                        stdin=subprocess.DEVNULL,
+                        stdout=subprocess.PIPE,
+                        stderr=subprocess.PIPE,
+                        close_streams=False,
+                    )
+                )
+            except OSError as error:
+                _log_line(log, f"終了状態: {orchestrator}を起動できなかった（{error}）")
+                _outcome.report_failure(
+                    f"{orchestrator}を起動できなかった: {error}（ログ: {log_path}）", next_action=_PATH_ACTION
+                )
+                return 1
+            code = _wait_session(
+                process,
+                orchestrator=orchestrator,
+                timeout=remaining,
+                log=log,
+                log_path=log_path,
+                progress=progress,
+                output=output,
+                codex_home=codex_home,
+                run_id=run_id,
+                skill=args.skill,
             )
-        except OSError as error:
-            _log_line(log, f"終了状態: {orchestrator}を起動できなかった（{error}）")
-            _outcome.report_failure(f"{orchestrator}を起動できなかった: {error}（ログ: {log_path}）", next_action=_PATH_ACTION)
-            return 1
-        code = _wait_session(
-            process,
-            orchestrator=orchestrator,
-            timeout=remaining,
-            log=log,
-            log_path=log_path,
-            progress=progress,
-            output=output,
-            codex_home=_host_homes.codex_home(env),
-            run_id=run_id,
-            skill=args.skill,
-        )
         remaining = max(0.0, remaining - (time.monotonic() - started_at))
         if code == TIMEOUT_EXIT_CODE or output.usage_limit is None:
             return code
@@ -329,6 +335,45 @@ class _SessionOutput:
             self.usage_limit = state if state.is_wait_target else None
 
 
+@contextlib.contextmanager
+def _session_readers(
+    process: subprocess.Popen[bytes],
+    *,
+    orchestrator: str,
+    log: typing.TextIO,
+    progress: Progress,
+    output: _SessionOutput,
+) -> typing.Generator[tuple[threading.Lock, list[threading.Thread]]]:
+    """読取スレッドを起動し、準備失敗と中断でも子とパイプを回収する。"""
+    lock = threading.Lock()
+    readers: list[threading.Thread] = []
+    streams = (process.stdout, process.stderr)
+    try:
+        assert process.stdout is not None and process.stderr is not None
+        readers = [
+            threading.Thread(
+                target=_copy_stream, args=(process.stdout, "stdout", log, lock, progress, orchestrator, output), daemon=True
+            ),
+            threading.Thread(target=_copy_stream, args=(process.stderr, "stderr", log, lock), daemon=True),
+        ]
+        for reader in readers:
+            reader.start()
+        yield lock, readers
+    except BaseException:
+        try:
+            if process.poll() is None:
+                _process_tree.log_residual(_process_tree.stop_process_tree(process), context="run-skill")
+        finally:
+            _drain_output([reader for reader in readers if reader.ident is not None], log, lock)
+        raise
+    finally:
+        # 起動した読取スレッドがパイプを閉じる。未起動の側だけを主スレッドが閉じる。
+        with contextlib.ExitStack() as cleanup:
+            for index, stream in enumerate(streams):
+                if stream is not None and (index >= len(readers) or readers[index].ident is None):
+                    cleanup.callback(stream.close)
+
+
 def _wait_session(
     process: subprocess.Popen[bytes],
     *,
@@ -343,63 +388,54 @@ def _wait_session(
     skill: str,
 ) -> int:
     """子セッションの終了か時間上限を待ち、結果行を出力して終了コードを返す。"""
-    lock = threading.Lock()
-    assert process.stdout is not None and process.stderr is not None
-    readers = [
-        threading.Thread(
-            target=_copy_stream, args=(process.stdout, "stdout", log, lock, progress, orchestrator, output), daemon=True
-        ),
-        threading.Thread(target=_copy_stream, args=(process.stderr, "stderr", log, lock), daemon=True),
-    ]
-    for reader in readers:
-        reader.start()
-    try:
-        returncode = process.wait(timeout=timeout)
-    except subprocess.TimeoutExpired:
-        residual = _process_tree.stop_process_tree(process)
+    with _session_readers(process, orchestrator=orchestrator, log=log, progress=progress, output=output) as (lock, readers):
+        try:
+            returncode = process.wait(timeout=timeout)
+        except subprocess.TimeoutExpired:
+            residual = _process_tree.stop_process_tree(process)
+            _drain_output(readers, log, lock)
+            with lock:
+                _log_line(log, f"終了状態: 時間上限（{timeout:g}秒）を超えたため終了させた")
+                if residual:
+                    _log_line(log, f"終了させられなかったプロセス: {residual}")
+            _outcome.report_failure(
+                f"セッションが時間上限（{timeout:g}秒）を超えたため終了させた（ログ: {log_path}）",
+                next_action="ログで進行状況を確かめ、必要なら`--timeout`を延ばして次回の定期実行を待つ",
+            )
+            return TIMEOUT_EXIT_CODE
         _drain_output(readers, log, lock)
         with lock:
-            _log_line(log, f"終了状態: 時間上限（{timeout:g}秒）を超えたため終了させた")
-            if residual:
-                _log_line(log, f"終了させられなかったプロセス: {residual}")
+            _log_line(log, f"終了状態: exit code {returncode}")
+            if orchestrator == "codex" and returncode != 0:
+                output.usage_limit = _codex_usage_limit.from_thread(output.thread_id, codex_home=codex_home)
+            if output.usage_limit is not None:
+                return returncode
+        if _orchestrator.is_normal_session_exit(orchestrator, returncode):
+            try:
+                saved = _wi_add.has_synced_run_report(_private_notes.default_private_notes(), run_id=run_id, skill=skill)
+            except (OSError, subprocess.SubprocessError) as error:
+                saved = False
+                _log_line(log, f"報告の保存確認に失敗した: {error}")
+            if not saved:
+                _outcome.report_failure(
+                    f"報告用UWIの保存が同期契約へ到達していない（ログ: {log_path}）",
+                    next_action=(
+                        "ログの実行識別子に対応する報告用UWIを確認し、同じ会話を再開してcompletion-reportで保存する。"
+                        "保存済みの場合はWI保存先のcommit・pushを完了してから次回の実行を待つ"
+                    ),
+                )
+                return 1
+            _outcome.report_success(f"スキルを実行した（ログ: {log_path}）")
+            return 0
+        exit_code = returncode if returncode > 0 else 128 - returncode
         _outcome.report_failure(
-            f"セッションが時間上限（{timeout:g}秒）を超えたため終了させた（ログ: {log_path}）",
-            next_action="ログで進行状況を確かめ、必要なら`--timeout`を延ばして次回の定期実行を待つ",
+            f"{orchestrator}のセッションがexit code {returncode}で異常終了した（ログ: {log_path}）",
+            next_action=(
+                "ログとセッション記録（Claude Codeは`~/.claude/projects`配下、Codexは`~/.codex/sessions`配下）で原因を確かめ、"
+                "解消してから次回の定期実行を待つ"
+            ),
         )
-        return TIMEOUT_EXIT_CODE
-    _drain_output(readers, log, lock)
-    with lock:
-        _log_line(log, f"終了状態: exit code {returncode}")
-        if orchestrator == "codex" and returncode != 0:
-            output.usage_limit = _codex_usage_limit.from_thread(output.thread_id, codex_home=codex_home)
-        if output.usage_limit is not None:
-            return returncode
-    if _orchestrator.is_normal_session_exit(orchestrator, returncode):
-        try:
-            saved = _wi_add.has_synced_run_report(_private_notes.default_private_notes(), run_id=run_id, skill=skill)
-        except (OSError, subprocess.SubprocessError) as error:
-            saved = False
-            _log_line(log, f"報告の保存確認に失敗した: {error}")
-        if not saved:
-            _outcome.report_failure(
-                f"報告用UWIの保存が同期契約へ到達していない（ログ: {log_path}）",
-                next_action=(
-                    "ログの実行識別子に対応する報告用UWIを確認し、同じ会話を再開してcompletion-reportで保存する。"
-                    "保存済みの場合はWI保存先のcommit・pushを完了してから次回の実行を待つ"
-                ),
-            )
-            return 1
-        _outcome.report_success(f"スキルを実行した（ログ: {log_path}）")
-        return 0
-    exit_code = returncode if returncode > 0 else 128 - returncode
-    _outcome.report_failure(
-        f"{orchestrator}のセッションがexit code {returncode}で異常終了した（ログ: {log_path}）",
-        next_action=(
-            "ログとセッション記録（Claude Codeは`~/.claude/projects`配下、Codexは`~/.codex/sessions`配下）で原因を確かめ、"
-            "解消してから次回の定期実行を待つ"
-        ),
-    )
-    return exit_code
+        return exit_code
 
 
 def _drain_output(readers: list[threading.Thread], log: typing.TextIO, lock: threading.Lock) -> None:

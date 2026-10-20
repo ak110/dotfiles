@@ -27,6 +27,7 @@ from agent_toolkit._plan import (  # noqa: E402  # pylint: disable=wrong-import-
 )
 
 _PLUGIN_DIR = pathlib.Path(locations.__file__).resolve().parents[2]
+TARGET_REPO_NEXT_ACTION = "計画の対象worktreeから再実行するか、--work-dirへ計画の対象worktreeの絶対パスを指定して再実行する"
 
 _FENCE_RE = re.compile(r"^\s*(`{3,}|~{3,})(.*)$", re.MULTILINE)
 _INLINE_CODE_RE = re.compile(r"`([^`\n]+)`")
@@ -125,7 +126,13 @@ def _check_wi_selection(
             errors.extend(f"先行計画{prior_plan}: {error}" for error in prior_errors or ["計画メタ情報がない"])
             continue
         if prior_metadata.values.get("対象リポジトリ") != str(work_dir.resolve()):
-            errors.append(f"先行計画の対象リポジトリが異なる: {prior_plan}")
+            errors.append(
+                f"先行計画の対象リポジトリが異なる: {prior_plan}。"
+                f"宣言={prior_metadata.values.get('対象リポジトリ')}、--work-dir={work_dir.resolve()}。"
+                "先行計画の選択が違う場合は--prior-planへ同じ対象の計画を指定する。"
+                "実行場所が違う場合は--work-dirへ対象worktreeを指定する。"
+                "宣言自体が誤っている場合は先行計画の対象リポジトリを修正して再実行する"
+            )
         related.extend(prior_metadata.related_wi)
     filenames = [filename for filename, _summary in related]
     duplicates = sorted({filename for filename in filenames if filenames.count(filename) > 1})
@@ -227,7 +234,8 @@ def _check_target_repo(declared_value: str | None, work_dir: pathlib.Path) -> li
         return [error]
     if declared_root != actual_root:
         return [
-            f"計画メタ情報の対象リポジトリが作業ディレクトリのGitルートと一致しない: 計画={declared_root}, 実際={actual_root}"
+            f"計画メタ情報の対象リポジトリが作業ディレクトリのGitルートと一致しない: 計画={declared_root}, 実際={actual_root}。"
+            + _next_action.next_action_line(TARGET_REPO_NEXT_ACTION)
         ]
     return []
 
@@ -955,6 +963,11 @@ def main(argv: list[str] | None = None) -> int:
     if (next_action := _origin_skip_next_action(warning_details)) is not None:
         print(_next_action.next_action_line(next_action), file=sys.stderr)
     if errors:
+        if all(
+            "対象リポジトリが作業ディレクトリのGitルートと一致しない" in error or "先行計画の対象リポジトリが異なる:" in error
+            for error in errors
+        ):
+            return 1
         print(
             _next_action.next_action_line(
                 "各行が示す規定のとおりに計画ファイルを直し、同じコマンドでもう一度確かめる"

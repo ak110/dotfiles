@@ -46,8 +46,13 @@ forkを選ぶときは`spawn_agent`の`fork_turns`を省略するか`"all"`に�
 
 ## agents_serverの二層待機
 
+外側セルの`cell_id`と内側コマンドの`session_id`のいずれかが未回収なら、`share/rules-common.codex.md`「Codex固有の入出力」の手段で同じ実行を回収する。
+外側セルか`exec_command`のyieldは同じ実行の継続区間として扱い、代替起動・中断・巻き取りは「後続操作の共通先行条件」が成立した場合に限る。
 `functions.exec`の内側で`agents_server`を起動し、`PostToolUse`がMCP応答を直接観測できない場合は、起動応答の`root_session_id`を保持して`atk agents wait --root-session-id <値>`へ渡す。CLIは状態ディレクトリの実在と確認済みのルートsessionとの一致を検証する。
 
-`functions.exec`のような遅延実行ツールから`atk agents wait`を起動する場合は、内側のCLIと外側の実行セルを別々の待機として扱う。CLIへタスク固有timeoutを渡さず、外側が`cell_id`を返したら同じ識別子を`functions.wait`へ渡す。CLI自身が待機上限へ達し対象が未終端なら、その結果を確かめてから新しい待機を始める。逐次待機とlock競合した後発待機の回収は`references/waiting-and-monitoring.md`「`atk agents wait`の応答の扱い」に従う。
+`functions.exec`から`atk agents wait`を起動する場合も、`share/rules-common.codex.md`「Codex固有の入出力」のコマンド回収契約に従い、外側の`cell_id`を`functions.wait`へ渡す。
+CLIへタスク固有timeoutを渡さず、CLI自身が待機上限へ達し対象が未終端なら、その結果を確かめてから新しい待機を始める。
+逐次待機とlock競合した後発待機の回収は`references/waiting-and-monitoring.md`「`atk agents wait`の応答の扱い」に従う。
+監査記録は`docs/development/audit-records.md`の「agent-toolkit/share/rules-common.codex.md：Codex固有の入出力：2026年10月19日」にある。
 
 委譲先の成果物側だけを補助観測するときは`atk watch --worktree [<ラベル>=]<絶対パス> --file [<ラベル>=]<絶対パス>`を単独で使い、session自体の稼働確認には起動手段の状態を使う。

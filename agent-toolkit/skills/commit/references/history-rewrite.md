@@ -83,6 +83,8 @@ autosquashが内容競合で停止した場合は、競合箇所が採用済み�
 対応表のJSONは1対1・多対1の`{"oldOID":"newOID"}`とする。commit分割は`{"oldOID":[{"commit":"newOID-A","awi":["WI-A.md"]},{"commit":"newOID-B","awi":["WI-B.md"]}]}`でAWI割当を明示する。
 WIは保存ファイル名、OIDはGitで一意に解決できる値で書く。同じAWIを複数の新commitへ割り当ててよく、各旧commitの全AWIを割当で被覆する。旧scalar・保存済みrewriteイベント・本文コメントも引き続き読める。
 対応表は`atk run-script history-compare`の検収成功時に保存された完全OIDの旧新対応表を使う。rebaseは`--operation rebase`、autosquashは`--operation autosquash`、amendは`--operation amend`で、両系列のbaseを除くheadまでを指定する（autosquashとamendの起動形は「操作前後の確認」にある）。WI対応を持たないcommitも含め、fixupと元commitが同じ新commitへ統合される場合は両方の旧OIDを含む。amendの対応表は旧新HEADの1対1対応の1件になる。
+rebaseの競合解消で内容が変わった旧commitは、`history-compare`へ`--resolved-conflict <旧OID>`を反復指定する。
+同コマンドは件名、相対順と変更パス集合から一意な対応を検収し、指定の不足・不正と曖昧な対応では保存せず次の操作を示す。
 検収済みの同じ対応表を、後掲の`atk run-script plan-rewrite --`へ渡す（個別記録の更新では`atk run-script plan-progress --`の`--rewrite-map`）。
 未判定検証記録は実装担当が、完成条件証拠は実行レビュー担当が次の操作で参照を更新する。
 
@@ -93,13 +95,16 @@ atk run-script exec-review-evidence-check -- <完成条件証拠の絶対パス>
 
 `exec-review-evidence-check --rewrite-map`と`verification-record --rewrite-map`が各記録のevidenceで書き換えるのは、現行成果物への`commit:<OID>`参照だけである（分割時は全対応先をそれぞれ`commit:`標識で残す）。裸のOID、過去の取得版（HEAD・git_head・比較元）、観測ファイル、判定とreviewed_headは保持する。既存の自由文を推測して標識へ移さず、曖昧・不正な入力は部分保存せず拒否する。OIDの対応だけで観測を新しい版へ適用せず、結果に作用する内容と条件が変わった行だけを再観測する。根拠共用のCOMMIT_REFERENCEはこの更新とは別の責務として維持する。
 
-書換え直前のHEADと対応表を、書換え範囲のcommitを作成したレーンの計画と計画なしの引き継ぎ記録の全てとともに、次の形で1回だけ渡す（記録・worktree・対応表は絶対パス、`--rewrite-map`はファイルパス）。同じ修正系列で書換えを繰り返す間は毎回同じ記録の集合を渡す。
+書換え直前のHEADと対応表を、書換え範囲のcommitを参照する作業中・保存済みの計画と計画なしの引き継ぎ記録の全てとともに、次の形で1回だけ渡す（記録・worktree・対応表は絶対パス、`--rewrite-map`はファイルパス）。同じ修正系列で書換えを繰り返す間は毎回同じ記録の集合を渡す。
 
 ```text
 atk run-script plan-rewrite -- --worktree <worktree> --previous-head <書換え前のHEAD> --rewrite-map <対応表のJSONファイルの絶対パス> --completed-step <工程> --result <結果> --plan <計画>... --handoff <引き継ぎ記録>...
 ```
 
 同コマンドは全記録を検証してから書き込み、記録済みOIDの欠落（今回の不足と過去の未追記を区別して示す）や対応表の誤りがあればどの記録も変えずに失敗するので、生成側で補う。現在の対応の取得は`agent-toolkit:commit`の`SKILL.md`「WI実装commitの対応」に従う。
+書換え範囲に属する未指定の記録があれば、書込前に全件を示して拒否する。
+複数の対応表を処理する場合は、`--rewrite-map`を書換え順に反復指定する。
+合成した最終OIDが現在HEADに含まれることを確かめる。
 
 保存済み計画を`atk plans checkout`で取得して履歴へ追随させた担当は、その工程の末尾に更新した全計画バンドル（未終端のWIや延期adoptを持つ計画を含む）を`atk plans commit`で再保存し、終了コードと警告で成功を確かめる。保存先と時点の共通契約は`agent-toolkit:plan-mode`の`references/plan-file-storage.md`に従い、レーン・観測のみ・CIの既存の保存時点を保つ。
 

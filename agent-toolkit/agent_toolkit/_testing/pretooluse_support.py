@@ -13,9 +13,9 @@ import pytest
 
 from agent_toolkit._atk import managed_temp as _managed_temp
 from agent_toolkit._common import message_format as _message_format
+from agent_toolkit._common.session_state import state_path
 from agent_toolkit._testing import fork_runner as _fork_runner
 from agent_toolkit._testing import git_repository
-from agent_toolkit._testing.helpers import SESSION_STATE_FILENAME_TEMPLATE
 
 _SCRIPT = pathlib.Path(__file__).resolve().parents[1] / "hook.py"
 
@@ -150,12 +150,17 @@ def _stderr_warn_offenders(source: str) -> list[int]:
 
 
 def _write_session_state(state_dir: pathlib.Path, session_id: str, state: dict) -> None:
-    path = state_dir / SESSION_STATE_FILENAME_TEMPLATE.format(session_id=session_id)
+    """隔離した実行環境が解決する固定保存先へ状態を準備する。"""
+    del state_dir
+    path = state_path(session_id)
+    path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(state, ensure_ascii=False), encoding="utf-8")
 
 
 def _read_session_state(state_dir: pathlib.Path, session_id: str) -> dict:
-    path = state_dir / SESSION_STATE_FILENAME_TEMPLATE.format(session_id=session_id)
+    """hookと同じ固定保存先から状態を取得する。"""
+    del state_dir
+    path = state_path(session_id)
     return json.loads(path.read_text(encoding="utf-8"))
 
 

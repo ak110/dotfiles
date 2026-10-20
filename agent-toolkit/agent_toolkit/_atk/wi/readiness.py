@@ -3,7 +3,7 @@
 import dataclasses
 import datetime
 import pathlib
-from collections.abc import Iterable, Iterator
+from collections.abc import Iterable
 from typing import Literal
 
 from agent_toolkit._atk import outcome as _outcome
@@ -12,6 +12,7 @@ from agent_toolkit._atk.wi.constants import (
     WI_PROCESSABLE_STATES,
     WI_STATE_ADOPTED,
     WI_STATE_REJECTED,
+    WI_STATES,
     WI_TYPE_AWI,
     WI_TYPE_UWI,
     WI_TYPES,
@@ -19,7 +20,6 @@ from agent_toolkit._atk.wi.constants import (
     unrepairable_entry_next_action,
 )
 from agent_toolkit._atk.wi.entry_text import EntryText, EntryTexts, parse_frontmatter
-from agent_toolkit._atk.wi.formatters import parse_target_repo
 from agent_toolkit._atk.wi.uwi_scan import is_uwi_answered as _is_uwi_answered
 from agent_toolkit._common import automated_prompt as _automated_prompt
 from agent_toolkit._git import remote as _git_remote
@@ -96,28 +96,6 @@ def _require_type(path: pathlib.Path, text: str) -> str | None:
     return entry_type
 
 
-def _iter_entries(
-    private_notes: pathlib.Path,
-    states: Iterable[str],
-    filter_repo: str | None,
-    texts: EntryTexts,
-) -> Iterator[tuple[pathlib.Path, str, str, str, str | None]]:
-    """指定状態のエントリを着手可否判定用に列挙する。"""
-    for state in states:
-        state_dir = private_notes / state
-        if not state_dir.exists():
-            continue
-        for path in sorted(state_dir.iterdir()):
-            if path.suffix != ".md":
-                continue
-            text = texts.read(path)
-            entry_repo = parse_target_repo(text)
-            entry_type = _require_type(path, text)
-            if filter_repo is not None and entry_type is not None and entry_repo != filter_repo:
-                continue
-            yield path, entry_repo, text, state, entry_type
-
-
 def _normalized_repo_or_none(
     value: str | None,
     resolver_cache: dict[str, str | None] | None = None,
@@ -142,22 +120,6 @@ def count_pending_entries(
 ) -> int:
     """指定された対象リポジトリでこのセッションが着手可能な項目数を返す。"""
     return calculate_readiness(private_notes, target_repo).actionable_count
-
-
-def _load_queue_entries(
-    private_notes: pathlib.Path,
-    target_repo: str | None,
-    states: tuple[str, ...],
-    resolver_cache: dict[str, str | None] | None = None,
-    texts: EntryTexts | None = None,
-) -> tuple[QueueEntry, ...]:
-    """指定状態のAWI・UWIを着手可否判定用表現へ変換する。"""
-    return tuple(
-        _queue_entry(path, entry_repo, text, entry_type, resolver_cache)
-        for path, entry_repo, text, _state, entry_type in _iter_entries(
-            private_notes, states, target_repo, texts if texts is not None else EntryTexts()
-        )
-    )
 
 
 def _queue_entry(
@@ -197,32 +159,6 @@ def _queue_entry(
         repair_kind=repair_kind,
         source=data.get("source") if isinstance(data.get("source"), str) else None,
     )
-
-
-def _load_referenced_terminal_entries(
-    private_notes: pathlib.Path,
-    dependency_names: set[str],
-    resolver_cache: dict[str, str | None] | None = None,
-    texts: EntryTexts | None = None,
-) -> tuple[QueueEntry, ...]:
-    """active項目が安全なbasenameで参照する終端項目だけを読み込む。"""
-    safe_names = {
-        name
-        for name in dependency_names
-        if pathlib.Path(name).name == name and "/" not in name and "\\" not in name and name.endswith(".md")
-    }
-    entries: list[QueueEntry] = []
-    texts = texts if texts is not None else EntryTexts()
-    for state in (WI_STATE_ADOPTED, WI_STATE_REJECTED):
-        state_dir = private_notes / state
-        for name in sorted(safe_names):
-            path = state_dir / name
-            if not path.is_file():
-                continue
-            text = texts.read(path)
-            entry_type = _require_type(path, text)
-            entries.append(_queue_entry(path, parse_target_repo(text), text, entry_type, resolver_cache))
-    return tuple(entries)
 
 
 def _effective_dependencies(
@@ -417,17 +353,15 @@ def calculate_readiness(
         now = datetime.datetime.now(datetime.UTC)
     if now.tzinfo is None:
         raise ValueError("nowはタイムゾーン付き日時で指定してください")
+    if snapshot is None:
+        snapshot = tuple(_wi_entries.iter_entries(private_notes, WI_STATES, None, texts=texts))
     now_utc = now.astimezone(datetime.UTC)
     resolver_cache: dict[str, str | None] = {}
     canonical_target = _normalized_repo_or_none(target_repo, resolver_cache)
-    all_active = (
-        _load_queue_entries(private_notes, None, WI_PROCESSABLE_STATES, resolver_cache, texts)
-        if snapshot is None
-        else tuple(
-            _queue_entry(path, repo, text, kind, resolver_cache)
-            for path, repo, text, state, kind in snapshot
-            if state in WI_PROCESSABLE_STATES
-        )
+    all_active = tuple(
+        _queue_entry(path, repo, text, kind, resolver_cache)
+        for path, repo, text, state, kind in snapshot
+        if state in WI_PROCESSABLE_STATES
     )
     active = (
         all_active
@@ -444,14 +378,10 @@ def calculate_readiness(
     dependency_names = {
         dependency for dependencies in all_dependency_map.values() if dependencies is not None for dependency in dependencies
     }
-    terminal = (
-        _load_referenced_terminal_entries(private_notes, dependency_names, resolver_cache, texts)
-        if snapshot is None
-        else tuple(
-            _queue_entry(path, repo, text, kind, resolver_cache)
-            for path, repo, text, state, kind in snapshot
-            if state in (WI_STATE_ADOPTED, WI_STATE_REJECTED) and path.name in dependency_names
-        )
+    terminal = tuple(
+        _queue_entry(path, repo, text, kind, resolver_cache)
+        for path, repo, text, state, kind in snapshot
+        if state in (WI_STATE_ADOPTED, WI_STATE_REJECTED) and path.name in dependency_names
     )
     existing_repairs = {
         (entry.repair_target_filename, entry.repair_kind)

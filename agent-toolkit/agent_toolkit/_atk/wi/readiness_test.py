@@ -79,7 +79,7 @@ class TestReadiness:
     def test_uwi_cooldown_is_invalid_instead_of_suppressing_user_decision(self, tmp_path: pathlib.Path) -> None:
         """外部編集でUWIへ設定された期限はユーザー判断待ちへ適用しない。"""
         write_uwi(tmp_path, "uwi.md")
-        path = tmp_path / "inbox/uwi.md"
+        path = tmp_path / "2026/10/uwi.md"
         path.write_text(
             path.read_text(encoding="utf-8").replace(
                 "type: uwi\n",
@@ -106,7 +106,7 @@ class TestReadiness:
         deadline = "2099-01-02T00:00:10+00:00"
         write_awi(tmp_path, "awi.md", cooldown_until=deadline)
         write_uwi(tmp_path, "uwi.md")
-        uwi_path = tmp_path / "inbox/uwi.md"
+        uwi_path = tmp_path / "2026/10/uwi.md"
         uwi_path.write_text(
             uwi_path.read_text(encoding="utf-8").replace("type: uwi\n", f"type: uwi\ncooldown_until: '{deadline}'\n"),
             encoding="utf-8",
@@ -397,9 +397,10 @@ class TestReadiness:
         assert active.ready == ("answer.md",)
         assert active.blocked == ("awi.md",)
 
-        terminal_dir = tmp_path / terminal_state
-        terminal_dir.mkdir()
-        (tmp_path / "inbox" / "answer.md").rename(terminal_dir / "answer.md")
+        answer = tmp_path / "2026/10/answer.md"
+        answer.write_text(
+            answer.read_text(encoding="utf-8").replace("state: inbox", f"state: {terminal_state}"), encoding="utf-8"
+        )
 
         terminal = _wi_readiness.calculate_readiness(tmp_path, "github.com/example/repo")
 
@@ -410,15 +411,11 @@ class TestReadiness:
         """終端依存先をprocessingへ戻した再試行では依存元を再びblockedにする。"""
         write_uwi(tmp_path, "answer.md", answer="回答済み")
         write_awi(tmp_path, "awi.md", depends_on=("answer.md",))
-        adopted = tmp_path / "adopted"
-        adopted.mkdir()
-        answer = adopted / "answer.md"
-        (tmp_path / "inbox" / "answer.md").rename(answer)
+        answer = tmp_path / "2026/10/answer.md"
+        answer.write_text(answer.read_text(encoding="utf-8").replace("state: inbox", "state: adopted"), encoding="utf-8")
         assert "awi.md" in _wi_readiness.calculate_readiness(tmp_path, "github.com/example/repo").ready
 
-        processing = tmp_path / "processing"
-        processing.mkdir()
-        answer.rename(processing / "answer.md")
+        answer.write_text(answer.read_text(encoding="utf-8").replace("state: adopted", "state: processing"), encoding="utf-8")
 
         retried = _wi_readiness.calculate_readiness(tmp_path, "github.com/example/repo")
 
@@ -493,24 +490,20 @@ class TestReadiness:
         assert second.cyclic_dependencies == ("second.md",)
         assert first.actionable_count == second.actionable_count == 1
 
-    def test_readiness_reads_active_once_and_only_referenced_terminal_entries(
+    def test_readiness_reads_each_fixed_entry_once(
         self,
         tmp_path: pathlib.Path,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """activeは1回だけ読み、未参照の終端項目はfrontmatter解析から除外する。"""
+        """固定配置の各項目は状態と依存の判定を共有し、本文を1回だけ読む。"""
         active_path = write_awi(tmp_path, "awi.md", depends_on=("done.md",))
         referenced = write_awi(tmp_path, "done.md", state="adopted")
-        unreferenced = tmp_path / "rejected" / "unused.md"
-        unreferenced.parent.mkdir(parents=True)
-        unreferenced.write_text("frontmatterではない\n", encoding="utf-8")
+        unreferenced = write_awi(tmp_path, "unused.md", state="rejected")
         original_read_text = pathlib.Path.read_text
         reads: list[pathlib.Path] = []
 
         def read_text(path: pathlib.Path, *args: Any, **kwargs: Any) -> str:
             reads.append(path)
-            if path == unreferenced:
-                raise AssertionError("未参照の終端項目を読み込んだ")
             return original_read_text(path, *args, **kwargs)
 
         monkeypatch.setattr(pathlib.Path, "read_text", read_text)
@@ -520,7 +513,7 @@ class TestReadiness:
         assert result.ready == ("awi.md",)
         assert reads.count(active_path) == 1
         assert reads.count(referenced) == 1
-        assert unreferenced not in reads
+        assert reads.count(unreferenced) == 1
 
 
 @pytest.mark.parametrize("snapshot", [False, True])
@@ -555,13 +548,15 @@ def test_readiness_refreshes_changed_body_within_operation(tmp_path: pathlib.Pat
         assert parser.call_count == 2
 
 
-@pytest.mark.parametrize("text", ["\ufeff---\ntype: unexpected\n---\n本文\n", "---\ntype: [awi, uwi]\n---\n本文\n"])
+@pytest.mark.parametrize(
+    "text", ["\ufeff---\nstate: inbox\ntype: unexpected\n---\n本文\n", "---\nstate: inbox\ntype: [awi, uwi]\n---\n本文\n"]
+)
 def test_readiness_preserves_invalid_type_diagnostic(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], text: str
 ) -> None:
     """解析可能な不正種別は終了コード2と対象名を含む診断で返す。"""
-    path = tmp_path / "inbox" / "invalid.md"
-    path.parent.mkdir()
+    path = tmp_path / "2026" / "10" / "invalid.md"
+    path.parent.mkdir(parents=True)
     path.write_text(text, encoding="utf-8")
     with mock.patch.object(frontmatter, "parse_frontmatter", wraps=frontmatter.parse_frontmatter) as parser:
         with pytest.raises(SystemExit) as failure:
@@ -585,17 +580,17 @@ class TestUpstreamCrossRepoDependency:
         assert readiness.blocked == ("downstream.md",)
         assert not readiness.missing_dependencies
 
-        (tmp_path / "adopted").mkdir(exist_ok=True)
-        (tmp_path / "inbox" / "upstream.md").rename(tmp_path / "adopted" / "upstream.md")
+        upstream = tmp_path / "2026/10/upstream.md"
+        upstream.write_text(upstream.read_text(encoding="utf-8").replace("state: inbox", "state: adopted"), encoding="utf-8")
         readiness = _wi_readiness.calculate_readiness(tmp_path, "github.com/example/downstream")
         assert readiness.ready == ("downstream.md",)
         assert not readiness.blocked
 
-    def test_terminal_entry_in_other_repo_does_not_release_wait(self, tmp_path: pathlib.Path) -> None:
-        """同じtarget_repoの依存先が未終端の間は、別target_repoの同名項目が終端していても待機する。"""
+    def test_unreferenced_terminal_entry_in_other_repo_does_not_release_wait(self, tmp_path: pathlib.Path) -> None:
+        """別リポジトリの未参照項目の終端は、指定した依存先の待機へ作用しない。"""
         write_awi(tmp_path, "downstream.md", depends_on=("upstream.md",), target_repo="github.com/example/downstream")
         write_awi(tmp_path, "upstream.md", target_repo="github.com/example/downstream")
-        write_awi(tmp_path, "upstream.md", state="adopted", target_repo="github.com/example/other")
+        write_awi(tmp_path, "other.md", state="adopted", target_repo="github.com/example/other")
 
         readiness = _wi_readiness.calculate_readiness(tmp_path, "github.com/example/downstream")
 
@@ -603,11 +598,11 @@ class TestUpstreamCrossRepoDependency:
         assert readiness.blocked == ("downstream.md",)
         assert not readiness.missing_dependencies
 
-    def test_active_entry_in_other_repo_does_not_block_resolved_dependency(self, tmp_path: pathlib.Path) -> None:
-        """同じtarget_repoの依存先が終端していれば、別target_repoの同名項目が未終端でも着手できる。"""
+    def test_unreferenced_active_entry_in_other_repo_does_not_block_resolved_dependency(self, tmp_path: pathlib.Path) -> None:
+        """指定した依存先が終端していれば、別リポジトリの未参照項目が未終端でも着手できる。"""
         write_awi(tmp_path, "downstream.md", depends_on=("upstream.md",), target_repo="github.com/example/downstream")
         write_awi(tmp_path, "upstream.md", state="adopted", target_repo="github.com/example/downstream")
-        write_awi(tmp_path, "upstream.md", target_repo="github.com/example/other")
+        write_awi(tmp_path, "other.md", target_repo="github.com/example/other")
 
         readiness = _wi_readiness.calculate_readiness(tmp_path, "github.com/example/downstream")
 

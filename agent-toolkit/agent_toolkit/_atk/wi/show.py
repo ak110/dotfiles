@@ -141,6 +141,7 @@ def cmd_show(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
         entry_type=args.type,
         answered=args.answered,
         source=args.source,
+        important=getattr(args, "important", "all"),
     )
     for header_type in WI_TYPES:
         entries: dict[str, list[tuple[str, str, str]]] = {}

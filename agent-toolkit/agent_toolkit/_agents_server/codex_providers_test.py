@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 from typing import Any
 
@@ -115,17 +116,20 @@ def configure_provider_environment(monkeypatch):
     monkeypatch.delenv("UNSET_PROVIDER_KEY", raising=False)
 
 
-def backend_with_client(monkeypatch, client, root=None):
+@contextlib.asynccontextmanager
+async def backend_with_client(monkeypatch, client, root=None):
     """接続先のRPCと探索環境の事前実行を隔離し、実backendで接続先を選ぶ。"""
-    backend = codex.AppServerManager(root.sessions if root else {}, root._condition if root else asyncio.Condition())
-    client.backend = backend
+    async with codex.AppServerManager(
+        root.sessions if root else {}, root._condition if root else asyncio.Condition()
+    ) as backend:
+        client.backend = backend
 
-    async def ensure_client(*_args, **_kwargs):
-        return client
+        async def ensure_client(*_args, **_kwargs):
+            return client
 
-    monkeypatch.setattr(backend, "_ensure_client", ensure_client)
-    # ここでは接続先の選択だけを扱う。
-    return backend
+        monkeypatch.setattr(backend, "_ensure_client", ensure_client)
+        # ここでは接続先の選択だけを扱う。
+        yield backend
 
 
 async def complete(backend, session, error=None):
@@ -182,8 +186,7 @@ async def test_provider_environment_start(
     monkeypatch.setenv(
         config._config_env_name("codex_model_providers"), f"{primary},missing,no-auth,shared-token,paid-a,paid-b"
     )
-    backend = backend_with_client(monkeypatch, client)
-    try:
+    async with backend_with_client(monkeypatch, client) as backend:
         session = await backend.start("元の作業", str(tmp_path), None, None, launch_kind=launch_kind)
         assert session.codex_model_provider == expected
         assert client.connection == expected
@@ -193,8 +196,6 @@ async def test_provider_environment_start(
         if primary == "openai" and account == "chatgpt" and allowed is False:
             assert not any(method == "thread/resume" for method, _ in client.requests)
             assert [params["modelProvider"] for method, params in client.requests if method == "thread/start"] == ["paid-a"]
-    finally:
-        await backend.close()
 
 
 @pytest.mark.asyncio
@@ -204,44 +205,56 @@ async def test_manager_turn_start_failure_finishes_without_provider_details(
 ):
     """RPC拒否を実監視から継続し、各API候補を一度だけ試して安全な終端を回収する。"""
     del provider_environment
-    root = manager.AgentsServerManager()
-    client = ProviderClient()
-    client.allowed = subscription
-    backend = backend_with_client(monkeypatch, client, root)
-    install_backend(root, "codex", backend)
-    original_request = client.request
-    attempted_turns = []
+    async with manager.AgentsServerManager() as root:
+        client = ProviderClient()
+        client.allowed = subscription
+        async with backend_with_client(monkeypatch, client, root) as backend:
+            install_backend(root, "codex", backend)
+            original_request = client.request
+            attempted_turns = []
 
-    async def request(method, params=None, **kwargs):
-        if method == "turn/start":
-            attempted_turns.append(client.connection)
-            info = "usageLimitExceeded" if client.connection == "openai" else {"httpConnectionFailed": {"httpStatusCode": 401}}
-            raise codex.JsonRpcResponseError(
-                method,
-                -32600,
-                f"provider {client.connection} rejected the request",
-                {"codexErrorInfo": info, "modelProvider": client.connection, "providerDetails": {"token": "private-value"}},
-            )
-        return await original_request(method, params, **kwargs)
+            async def request(method, params=None, **kwargs):
+                if method == "turn/start":
+                    attempted_turns.append(client.connection)
+                    info = (
+                        "usageLimitExceeded"
+                        if client.connection == "openai"
+                        else {"httpConnectionFailed": {"httpStatusCode": 401}}
+                    )
+                    raise codex.JsonRpcResponseError(
+                        method,
+                        -32600,
+                        f"provider {client.connection} rejected the request",
+                        {
+                            "codexErrorInfo": info,
+                            "modelProvider": client.connection,
+                            "providerDetails": {"token": "private-value"},
+                        },
+                    )
+                return await original_request(method, params, **kwargs)
 
-    monkeypatch.setattr(client, "request", request)
-    monkeypatch.setattr(manager, "START_AVAILABILITY_TIMEOUT", 0.01)
-    root.activate()
-    try:
-        started = await asyncio.wait_for(root.start("codex:gpt-6-sol/high", "元の作業", str(tmp_path)), 5)
-        root._wait_timeouts["main"] = 3
-        result = await asyncio.wait_for(root.wait(), 5)
-        assert result["status"] == "failed"
-        assert attempted_turns == (["openai", "paid-a", "paid-b"] if subscription else ["paid-a", "paid-b"])
-        session = root.sessions["thread-codex"]
-        assert not session.codex_provider_resume_pending
-        assert not session.awaiting_auto_resume and session.pending_result is None
-        public = json.dumps([started, result, (await root.list_sessions()), (await root.show_session(session.session_id))])
-        assert "modelProvider" not in public and "providerDetails" not in public
-        assert "private-value" not in public and "paid-a" not in public and "paid-b" not in public
-        assert all(params["threadId"] == session.session_id for method, params in client.requests if method == "thread/resume")
-    finally:
-        await root.close()
+            monkeypatch.setattr(client, "request", request)
+            monkeypatch.setattr(manager, "START_AVAILABILITY_TIMEOUT", 0.01)
+            root.activate()
+            try:
+                started = await asyncio.wait_for(root.start("codex:gpt-6-sol/high", "元の作業", str(tmp_path)), 5)
+                root._wait_timeouts["main"] = 3
+                result = await asyncio.wait_for(root.wait(), 5)
+                assert result["status"] == "failed"
+                assert attempted_turns == (["openai", "paid-a", "paid-b"] if subscription else ["paid-a", "paid-b"])
+                session = root.sessions["thread-codex"]
+                assert not session.codex_provider_resume_pending
+                assert not session.awaiting_auto_resume and session.pending_result is None
+                public = json.dumps(
+                    [started, result, (await root.list_sessions()), (await root.show_session(session.session_id))]
+                )
+                assert "modelProvider" not in public and "providerDetails" not in public
+                assert "private-value" not in public and "paid-a" not in public and "paid-b" not in public
+                assert all(
+                    params["threadId"] == session.session_id for method, params in client.requests if method == "thread/resume"
+                )
+            finally:
+                await root.close()
 
 
 @pytest.mark.asyncio
@@ -279,8 +292,7 @@ async def test_provider_failover_sequence(monkeypatch, tmp_path, provider_enviro
     del provider_environment
     client = ProviderClient()
     client.reject.add("paid-a")
-    backend = backend_with_client(monkeypatch, client)
-    try:
+    async with backend_with_client(monkeypatch, client) as backend:
         session = await fail_subscription(backend, tmp_path)
         assert session.status == "running" and session.pending_result is not None
         response = await backend.send_message(session, codex_providers.CONTINUE_PROMPT)
@@ -297,22 +309,17 @@ async def test_provider_failover_sequence(monkeypatch, tmp_path, provider_enviro
         turns = [params["input"] for method, params in client.requests if method == "turn/start"]
         assert len(turns) == 2
         assert "元の作業" not in json.dumps(turns[1], ensure_ascii=False)
-    finally:
-        await backend.close()
 
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("error", ["rateLimitExceeded", "serverOverloaded", "unauthorized"])
 async def test_subscription_non_usage_failure_does_not_switch(monkeypatch, tmp_path, provider_environment, error):
     del provider_environment
-    backend = backend_with_client(monkeypatch, ProviderClient())
-    try:
+    async with backend_with_client(monkeypatch, ProviderClient()) as backend:
         session = await backend.start("元の作業", str(tmp_path), None, None)
         await complete(backend, session, {"codexErrorInfo": error})
         assert not session.codex_provider_resume_pending
         assert session.codex_model_provider == "openai"
-    finally:
-        await backend.close()
 
 
 @pytest.mark.asyncio
@@ -320,8 +327,7 @@ async def test_subscription_non_usage_failure_does_not_switch(monkeypatch, tmp_p
 async def test_resume_confirmation_mismatch_prevents_turn(monkeypatch, tmp_path, provider_environment, failure):
     del provider_environment
     client = ProviderClient()
-    backend = backend_with_client(monkeypatch, client)
-    try:
+    async with backend_with_client(monkeypatch, client) as backend:
         session = await fail_subscription(backend, tmp_path)
         client.mismatch = failure == "provider_mismatch"
         client.notify_closed = failure != "missing_closure"
@@ -337,16 +343,13 @@ async def test_resume_confirmation_mismatch_prevents_turn(monkeypatch, tmp_path,
             assert session.turn_start_ambiguous
             assert not await backend._switch_provider(session, client)
             assert len([1 for method, _ in client.requests if method == "turn/start"]) == turns
-    finally:
-        await backend.close()
 
 
 @pytest.mark.asyncio
 async def test_interrupt_during_provider_resume_prevents_turn(monkeypatch, tmp_path, provider_environment):
     del provider_environment
     client = ProviderClient()
-    backend = backend_with_client(monkeypatch, client)
-    try:
+    async with backend_with_client(monkeypatch, client) as backend:
         session = await fail_subscription(backend, tmp_path)
         client.resume_started, client.resume_release = asyncio.Event(), asyncio.Event()
         task = asyncio.create_task(backend.send_message(session, codex_providers.CONTINUE_PROMPT))
@@ -358,8 +361,6 @@ async def test_interrupt_during_provider_resume_prevents_turn(monkeypatch, tmp_p
             client.resume_release.set()
             await asyncio.wait_for(task, 1)
         assert len([1 for method, _ in client.requests if method == "turn/start"]) == 1
-    finally:
-        await backend.close()
 
 
 @pytest.mark.asyncio
@@ -370,70 +371,67 @@ async def test_provider_registry_lifecycle_and_public_projection(monkeypatch, tm
     for release in (None, "retention_expired", "stopped"):
         if release:
             session_registry.release("provider-thread", reason=release)
-        root = manager.AgentsServerManager()
-        try:
+        async with manager.AgentsServerManager() as root:
             restored = await root._restore_registry_session("provider-thread")
             assert restored is not None
             assert restored.codex_model_provider == "paid-b"
             assert restored.codex_subscription_provider == "openai"
             public = json.dumps((await root.show_session("provider-thread")), ensure_ascii=False)
             assert "paid-b" not in public and "codex_model_provider" not in public
-        finally:
-            await root.close()
 
 
 @pytest.mark.asyncio
 async def test_provider_failover_result_collection(monkeypatch, tmp_path, provider_environment, caplog):
     """公開startとwaitが内部失敗を返さず、監視後の最終結果だけを回収する。"""
     del provider_environment
-    root = manager.AgentsServerManager()
-    client = ProviderClient()
-    backend = backend_with_client(monkeypatch, client, root)
-    install_backend(root, "codex", backend)
-    pending = []
-    original_request = client.request
+    async with manager.AgentsServerManager() as root:
+        client = ProviderClient()
+        async with backend_with_client(monkeypatch, client, root) as backend:
+            install_backend(root, "codex", backend)
+            pending = []
+            original_request = client.request
 
-    async def finish_turn():
-        await asyncio.sleep(0)
-        session = backend.sessions["thread-codex"]
-        if client.connection == "openai":
-            await complete(backend, session, {"codexErrorInfo": "usageLimitExceeded"})
-        else:
-            await backend._handle_notification(
-                {
-                    "method": "item/completed",
-                    "params": {
-                        "threadId": session.session_id,
-                        "turnId": session.turn_id,
-                        "item": {"type": "agentMessage", "id": "answer", "text": "継続後の結果"},
-                    },
-                }
-            )
-            await complete(backend, session)
+            async def finish_turn():
+                await asyncio.sleep(0)
+                session = backend.sessions["thread-codex"]
+                if client.connection == "openai":
+                    await complete(backend, session, {"codexErrorInfo": "usageLimitExceeded"})
+                else:
+                    await backend._handle_notification(
+                        {
+                            "method": "item/completed",
+                            "params": {
+                                "threadId": session.session_id,
+                                "turnId": session.turn_id,
+                                "item": {"type": "agentMessage", "id": "answer", "text": "継続後の結果"},
+                            },
+                        }
+                    )
+                    await complete(backend, session)
 
-    async def request(method, params=None, **kwargs):
-        response = await original_request(method, params, **kwargs)
-        if method == "turn/start":
-            pending.append(asyncio.create_task(finish_turn()))
-        return response
+            async def request(method, params=None, **kwargs):
+                response = await original_request(method, params, **kwargs)
+                if method == "turn/start":
+                    pending.append(asyncio.create_task(finish_turn()))
+                return response
 
-    monkeypatch.setattr(client, "request", request)
-    monkeypatch.setattr(manager, "START_AVAILABILITY_TIMEOUT", 0.01)
-    root.activate()
-    try:
-        started = await asyncio.wait_for(root.start("codex:gpt-6-sol/high", "元の作業", str(tmp_path)), 5)
-        root._wait_timeouts["main"] = 3
-        result = await asyncio.wait_for(root.wait(), 5)
-        assert result["status"] == "completed"
-        assert result["agent_message"] == "継続後の結果"
-        public = json.dumps([started, result, (await root.list_sessions()), (await root.show_session("thread-codex"))])
-        assert "paid-a" not in public and "codex_model_provider" not in public
-        assert "isolated-fake-api-key" not in caplog.text
-        assert "provider=paid-a" in caplog.text
-        assert len([1 for method, _ in client.requests if method == "thread/start"]) == 1
-    finally:
-        await root.close()
-        await asyncio.gather(*pending)
+            monkeypatch.setattr(client, "request", request)
+            monkeypatch.setattr(manager, "START_AVAILABILITY_TIMEOUT", 0.01)
+            root.activate()
+            try:
+                started = await asyncio.wait_for(root.start("codex:gpt-6-sol/high", "元の作業", str(tmp_path)), 5)
+                root._wait_timeouts["main"] = 3
+                result = await asyncio.wait_for(root.wait(), 5)
+                assert result["status"] == "completed"
+                assert result["agent_message"] == "継続後の結果"
+                public = json.dumps([started, result, (await root.list_sessions()), (await root.show_session("thread-codex"))])
+                assert "paid-a" not in public and "codex_model_provider" not in public
+                assert "isolated-fake-api-key" not in caplog.text
+                assert "provider=paid-a" in caplog.text
+                assert len([1 for method, _ in client.requests if method == "thread/start"]) == 1
+            finally:
+                await root.close()
+                await asyncio.gather(*pending)
 
 
 @pytest.mark.asyncio
@@ -444,27 +442,28 @@ async def test_restored_api_provider_ignores_changed_configuration(monkeypatch, 
     publish_api_session(tmp_path)
     session_registry.release("provider-thread", reason="stopped")
     monkeypatch.setenv(config._config_env_name("codex_model_providers"), "")
-    root = manager.AgentsServerManager()
-    client = ProviderClient()
-    backend = backend_with_client(monkeypatch, client, root)
-    install_backend(root, "codex", backend)
-    try:
-        response = await root.send_message("provider-thread", "未完了の続き")
-        assert response["delivery"] == "reply_started"
-        assert client.connection == "paid-b"
-        assert all(params["modelProvider"] == "paid-b" for method, params in client.requests if method == "thread/resume")
-        assert not any(method == "account/rateLimits/read" for method, _ in client.requests)
-        assert "paid-b" not in json.dumps(response)
-    finally:
-        await root.close()
+    async with manager.AgentsServerManager() as root:
+        client = ProviderClient()
+        async with backend_with_client(monkeypatch, client, root) as backend:
+            install_backend(root, "codex", backend)
+            try:
+                response = await root.send_message("provider-thread", "未完了の続き")
+                assert response["delivery"] == "reply_started"
+                assert client.connection == "paid-b"
+                assert all(
+                    params["modelProvider"] == "paid-b" for method, params in client.requests if method == "thread/resume"
+                )
+                assert not any(method == "account/rateLimits/read" for method, _ in client.requests)
+                assert "paid-b" not in json.dumps(response)
+            finally:
+                await root.close()
 
 
 @pytest.mark.asyncio
 async def test_provider_transition_preserves_pending_children(monkeypatch, tmp_path, provider_environment):
     """上限失敗が孫の保留を解除せず、移行後の次turnも追跡を維持する。"""
     del provider_environment
-    backend = backend_with_client(monkeypatch, ProviderClient())
-    try:
+    async with backend_with_client(monkeypatch, ProviderClient()) as backend:
         session = await backend.start("孫の結果を待つ作業", str(tmp_path))
         session.live_child_session_ids.add("child-thread")
         await complete(backend, session, {"codexErrorInfo": "usageLimitExceeded"})
@@ -475,8 +474,6 @@ async def test_provider_transition_preserves_pending_children(monkeypatch, tmp_p
         assert session.live_child_session_ids == {"child-thread"}
         assert session.codex_model_provider == "paid-a"
         assert not session.codex_provider_resume_pending
-    finally:
-        await backend.close()
 
 
 @pytest.mark.asyncio
@@ -484,8 +481,7 @@ async def test_cancel_before_api_resume_keeps_provider(monkeypatch, tmp_path):
     """再開の起動前にkillしても、次の追送へAPI接続先を保持する。"""
     monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
     publish_api_session(tmp_path)
-    root = manager.AgentsServerManager()
-    try:
+    async with manager.AgentsServerManager() as root:
         restored = await root._restore_registry_session("provider-thread")
         assert restored is not None
         pending, _ = root._start_resume(restored, "未完了の続き", None)
@@ -493,8 +489,6 @@ async def test_cancel_before_api_resume_keeps_provider(monkeypatch, tmp_path):
         assert not accepted and session.status == "interrupted"
         assert session.codex_model_provider == "paid-b"
         assert session.codex_subscription_provider == "openai"
-    finally:
-        await root.close()
 
 
 @pytest.mark.asyncio
@@ -515,8 +509,7 @@ async def test_empty_provider_configuration_keeps_current_resume_settings(
         return response
 
     monkeypatch.setattr(client, "request", request)
-    backend = backend_with_client(monkeypatch, client)
-    try:
+    async with backend_with_client(monkeypatch, client) as backend:
         session = await backend.start("通常の作業", str(tmp_path))
         assert session.codex_model_provider is None
         assert session.codex_subscription_provider is None
@@ -526,8 +519,6 @@ async def test_empty_provider_configuration_keeps_current_resume_settings(
         assert response["delivery"] == "reply_started"
         assert client.connection == "paid-b"
         assert all("modelProvider" not in params for method, params in client.requests if method == "thread/resume")
-    finally:
-        await backend.close()
 
 
 @pytest.mark.asyncio
@@ -551,8 +542,7 @@ async def test_turn_start_failure_keeps_provider_details_private(monkeypatch, tm
         return await original_request(method, params, **kwargs)
 
     monkeypatch.setattr(client, "request", request)
-    backend = backend_with_client(monkeypatch, client)
-    try:
+    async with backend_with_client(monkeypatch, client) as backend:
         session = await backend.start("元の作業", str(tmp_path))
         assert session.codex_provider_resume_pending
         for _ in range(3):
@@ -564,8 +554,6 @@ async def test_turn_start_failure_keeps_provider_details_private(monkeypatch, tm
         public = json.dumps([session.public_status(), session.previous_result()])
         assert "modelProvider" not in public and "providerDetails" not in public
         assert "private-value" not in public and "paid-a" not in public and "paid-b" not in public
-    finally:
-        await backend.close()
 
 
 @pytest.mark.asyncio
@@ -574,8 +562,7 @@ async def test_provider_order_overrides_codex_default(monkeypatch, tmp_path, pro
     del provider_environment
     client = ProviderClient()
     client.primary = "paid-b"
-    backend = backend_with_client(monkeypatch, client)
-    try:
+    async with backend_with_client(monkeypatch, client) as backend:
         session = await backend.start("優先順の作業", str(tmp_path))
         assert client.connection == "openai"
         assert session.codex_subscription_provider == "openai"
@@ -584,8 +571,6 @@ async def test_provider_order_overrides_codex_default(monkeypatch, tmp_path, pro
         assert response["delivery"] == "reply_started"
         assert client.connection == "paid-a"
         assert session.session_id == "thread-codex"
-    finally:
-        await backend.close()
 
 
 @pytest.mark.asyncio
@@ -595,8 +580,7 @@ async def test_api_primary_uses_ordered_api_candidates(monkeypatch, tmp_path, pr
     del provider_environment
     monkeypatch.setenv(config._config_env_name("codex_model_providers"), "paid-a,openai,paid-b")
     client = ProviderClient()
-    backend = backend_with_client(monkeypatch, client)
-    try:
+    async with backend_with_client(monkeypatch, client) as backend:
         session = await backend.start("API優先の作業", str(tmp_path))
         assert client.connection == "paid-a" and session.codex_subscription_provider is None
         assert not any(method == "account/rateLimits/read" for method, _ in client.requests)
@@ -606,8 +590,6 @@ async def test_api_primary_uses_ordered_api_candidates(monkeypatch, tmp_path, pr
         response = await backend.send_message(session, "続き")
         assert response["delivery"] == "reply_started" and client.connection == "paid-b"
         assert [params["modelProvider"] for method, params in client.requests if method == "thread/resume"] == ["paid-b"]
-    finally:
-        await backend.close()
 
 
 @pytest.mark.asyncio
@@ -618,8 +600,7 @@ async def test_api_primary_start_rejection_is_finite(monkeypatch, tmp_path, prov
     monkeypatch.setenv(config._config_env_name("codex_model_providers"), order)
     client = ProviderClient()
     client.reject.add("paid-a")
-    backend = backend_with_client(monkeypatch, client)
-    try:
+    async with backend_with_client(monkeypatch, client) as backend:
         if order == "paid-a":
             with pytest.raises(codex.AppServerError, match="candidates were rejected"):
                 await backend.start("拒否するAPI", str(tmp_path))
@@ -629,8 +610,6 @@ async def test_api_primary_start_rejection_is_finite(monkeypatch, tmp_path, prov
         assert [params["modelProvider"] for method, params in client.requests if method == "thread/start"] == (
             ["paid-a"] if order == "paid-a" else ["paid-a", "paid-b"]
         )
-    finally:
-        await backend.close()
 
 
 @pytest.mark.asyncio
@@ -642,14 +621,14 @@ async def test_api_primary_registry_restores_after_release(monkeypatch, tmp_path
         "provider-thread", terminal=True, engine="codex", cwd=str(tmp_path), codex_model_provider="paid-b", status="completed"
     )
     session_registry.release("provider-thread", reason=reason)
-    root = manager.AgentsServerManager()
-    client = ProviderClient()
-    backend = backend_with_client(monkeypatch, client, root)
-    install_backend(root, "codex", backend)
-    try:
-        response = await root.send_message("provider-thread", "APIの続き")
-        assert response["delivery"] == "reply_started"
-        assert client.connection == "paid-b"
-        assert root.sessions["provider-thread"].codex_subscription_provider is None
-    finally:
-        await root.close()
+    async with manager.AgentsServerManager() as root:
+        client = ProviderClient()
+        async with backend_with_client(monkeypatch, client, root) as backend:
+            install_backend(root, "codex", backend)
+            try:
+                response = await root.send_message("provider-thread", "APIの続き")
+                assert response["delivery"] == "reply_started"
+                assert client.connection == "paid-b"
+                assert root.sessions["provider-thread"].codex_subscription_provider is None
+            finally:
+                await root.close()

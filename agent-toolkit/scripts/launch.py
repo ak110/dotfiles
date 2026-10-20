@@ -5,6 +5,7 @@ agents_serverのMCPサーバーだけは子プロセスとして起動して終�
 """
 
 import argparse
+import contextlib
 import datetime
 import os
 import shutil
@@ -13,6 +14,7 @@ import subprocess
 import sys
 import tempfile
 import threading
+from collections.abc import Generator
 from pathlib import Path
 from typing import Any
 
@@ -23,6 +25,7 @@ from agent_toolkit._common import next_action, plugin_environment  # noqa: E402 
 _AGENTS_SERVER_TARGET = Path("agent_toolkit") / "agents_server_mcp.py"
 _STDERR_TAIL_BYTES = 16 * 1024
 _FORWARDED_SIGNALS = ("SIGINT", "SIGTERM", "SIGHUP")
+_STOP_TIMEOUT = 5.0
 
 
 def main() -> int:
@@ -74,23 +77,15 @@ def _run_agents_server(arguments: list[str], environment: dict[str, str]) -> int
 
     標準入力と標準出力は継承してMCPのstdio通信を中継しない。呼出元へは子と同じ終了状態を返す。
     """
-    handle, record = tempfile.mkstemp(prefix="agent-toolkit-agents-server-launch-", suffix=".json")
-    os.close(handle)
-    record_path = Path(record)
-    environment = {**environment, logging_config.LAUNCH_RECORD_ENV: str(record_path)}
-    received: list[dict[str, str]] = []
-    try:
-        process = subprocess.Popen(arguments, env=environment, stderr=subprocess.PIPE)  # pylint: disable=consider-using-with
-        if os.name != "nt":
-            for name in _FORWARDED_SIGNALS:
-                signal.signal(getattr(signal, name), _forwarding_handler(process, received))
-        assert process.stderr is not None
+    with contextlib.ExitStack() as lifetime:
+        with tempfile.NamedTemporaryFile(prefix="agent-toolkit-agents-server-launch-", suffix=".json", delete=False) as record:
+            record_path = Path(record.name)
+            lifetime.callback(record_path.unlink, missing_ok=True)
+        environment = {**environment, logging_config.LAUNCH_RECORD_ENV: str(record_path)}
+        received: list[dict[str, str]] = []
         tail = bytearray()
-        reader = threading.Thread(target=_tee_stderr, args=(process.stderr, tail), daemon=True)
-        reader.start()
-        returncode = process.wait()
-        reader.join()
-        process.stderr.close()
+        with _server_lifetime(arguments, environment, received, tail) as process:
+            returncode = process.wait()
         diagnostics = logging_config.read_launch_record(record_path)
         terminated_by = signal.Signals(-returncode).name if returncode < 0 else None
         if diagnostics is None:
@@ -111,14 +106,76 @@ def _run_agents_server(arguments: list[str], environment: dict[str, str]) -> int
                 launcher_signals=received,
                 stderr_tail=bytes(tail).decode("utf-8", errors="replace"),
             )
-    finally:
-        record_path.unlink(missing_ok=True)
     if returncode < 0:
         # シグナルで終わった子と同じ終了状態を呼出元へ返す。
         signal.signal(-returncode, signal.SIG_DFL)
         os.kill(os.getpid(), -returncode)
         return 128 - returncode
     return returncode
+
+
+@contextlib.contextmanager
+def _server_lifetime(
+    arguments: list[str], environment: dict[str, str], received: list[dict[str, str]], tail: bytearray
+) -> Generator[subprocess.Popen[bytes]]:
+    """stdlibだけでbootstrapの子・reader・pipe・signal handlerを所有する。"""
+    # Popen.__exit__の無期限waitを避け、bootstrap自身の有限なprocess group回収を使う。
+    process = subprocess.Popen(  # pylint: disable=consider-using-with
+        arguments, env=environment, stderr=subprocess.PIPE, start_new_session=os.name != "nt"
+    )
+    with contextlib.ExitStack() as cleanup:
+        assert process.stderr is not None
+        cleanup.callback(process.stderr.close)
+        try:
+            if os.name != "nt":
+                for name in _FORWARDED_SIGNALS:
+                    signum = getattr(signal, name)
+                    previous = signal.signal(signum, _forwarding_handler(process, received))
+                    cleanup.callback(signal.signal, signum, previous)
+            reader = threading.Thread(target=_tee_stderr, args=(process.stderr, tail), daemon=True)
+            cleanup.callback(_join_reader, reader)
+            reader.start()
+            yield process
+        finally:
+            _stop_server_process(process)
+
+
+def _join_reader(reader: threading.Thread) -> None:
+    if reader.ident is not None:
+        reader.join(timeout=_STOP_TIMEOUT)
+        if reader.is_alive():
+            raise TimeoutError("agents_serverの標準エラーreaderを終了できませんでした")
+
+
+def _stop_server_process(process: subprocess.Popen[bytes]) -> None:
+    """自ら起動したbootstrap子のprocess groupを有限時間で回収する。"""
+    if os.name == "nt":
+        if process.poll() is not None:
+            return
+        # stdlib起動段階にはpsutilが無い。自ら起動したPIDの子孫だけをWindows標準のtaskkillへ渡す。
+        try:
+            subprocess.run(
+                ["taskkill", "/PID", str(process.pid), "/T", "/F"],
+                check=False,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                timeout=_STOP_TIMEOUT,
+            )
+        finally:
+            if process.poll() is None:
+                process.kill()
+            process.wait(timeout=_STOP_TIMEOUT)
+        return
+    with contextlib.suppress(ProcessLookupError):
+        os.killpg(process.pid, signal.SIGTERM)
+    try:
+        process.wait(timeout=_STOP_TIMEOUT)
+    finally:
+        # 親が先に終了しても同じ所有groupに残る子孫と、そのstderr writerを回収する。
+        with contextlib.suppress(ProcessLookupError):
+            os.killpg(process.pid, signal.SIGKILL)
+        if process.poll() is None:
+            process.wait(timeout=_STOP_TIMEOUT)
 
 
 def _forwarding_handler(process: subprocess.Popen[bytes], received: list[dict[str, str]]) -> Any:

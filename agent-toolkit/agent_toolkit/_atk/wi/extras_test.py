@@ -12,7 +12,7 @@ from typing import Any
 import pytest
 
 from agent_toolkit import atk  # noqa: E402  # pylint: disable=wrong-import-position
-from agent_toolkit._testing import wi_bodies  # noqa: E402  # pylint: disable=wrong-import-position
+from agent_toolkit._testing import git_repository, wi_bodies  # noqa: E402  # pylint: disable=wrong-import-position
 from agent_toolkit._testing.git_fakes import _FIXED_HEAD_COMMIT  # noqa: E402  # pylint: disable=wrong-import-position
 
 # pylint: disable-next=wrong-import-position,import-error
@@ -87,7 +87,7 @@ class TestAddSourceOption:
             )
 
         assert exc_info.value.code == 0
-        content = next((notes / "inbox").iterdir()).read_text(encoding="utf-8")
+        content = next(notes.glob("[0-9][0-9][0-9][0-9]/[0-9][0-9]/*.md")).read_text(encoding="utf-8")
         assert "source: session-review" in content
 
     def test_source_absent_when_not_given(
@@ -112,7 +112,7 @@ class TestAddSourceOption:
             )
 
         assert exc_info.value.code == 0
-        content = next((notes / "inbox").iterdir()).read_text(encoding="utf-8")
+        content = next(notes.glob("[0-9][0-9][0-9][0-9]/[0-9][0-9]/*.md")).read_text(encoding="utf-8")
         assert "source:" not in content
 
 
@@ -289,10 +289,11 @@ def test_commit_reports_sent_count_then_zero_and_pull_syncs(
 def test_local_only_commit_and_pull_report_skipped_remote_operations(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
-    make_clean_repo: typing.Callable[..., pathlib.Path],
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """remoteなしの初回・外部編集・同期で、行っていないpushや同期を完了と書かない。"""
-    notes = make_clean_repo(tmp_path, "private-notes")
+    notes = git_repository.init_repository(tmp_path / "private-notes")
+    monkeypatch.setenv("AGENT_TOOLKIT_PRIVATE_NOTES", str(notes))
     setup = notes / "setup.txt"
     setup.write_text("初期状態\n", encoding="utf-8")
     subprocess.run(["git", "-C", str(notes), "add", setup.name], check=True, capture_output=True)
@@ -323,11 +324,11 @@ def _write_processing_file(
     body: str = "処理中本文",
 ) -> pathlib.Path:
     """processing配下に1ファイルを書き込み、絶対パスを返す。"""
-    processing_dir = notes / "processing"
+    processing_dir = notes / "2026" / "10"
     processing_dir.mkdir(parents=True, exist_ok=True)
     path = processing_dir / filename
     path.write_text(
-        f"---\ntype: awi\ntarget_repo: {target_repo}\n---\n\n{body}\n",
+        f"---\nstate: processing\ntype: awi\ntarget_repo: {target_repo}\n---\n\n{body}\n",
         encoding="utf-8",
     )
     return path
@@ -340,11 +341,11 @@ def _write_adopted_file(
     body: str = "採用済み本文",
 ) -> pathlib.Path:
     """adopted配下にファイルを書き込み、絶対パスを返す。"""
-    adopted_dir = notes / "adopted"
+    adopted_dir = notes / "2026" / "10"
     adopted_dir.mkdir(parents=True, exist_ok=True)
     path = adopted_dir / filename
     path.write_text(
-        f"---\ntype: awi\ntarget_repo: {target_repo}\n---\n\n{body}\n\n## 処理結果\n\n- 採否: adopted\n",
+        f"---\nstate: adopted\ntype: awi\ntarget_repo: {target_repo}\n---\n\n{body}\n\n## 処理結果\n\n- 採否: adopted\n",
         encoding="utf-8",
     )
     return path
@@ -461,17 +462,17 @@ class TestListAwiStatusActive:
         notes = _setup_notes(tmp_path)
         _write_awi_file(notes, "fb-inbox.md", body="in-body")
         _write_processing_file(notes, "fb-proc.md", body="proc-body")
-        hold_dir = notes / "hold"
+        hold_dir = notes / "2026" / "10"
         hold_dir.mkdir(parents=True, exist_ok=True)
         (hold_dir / "fb-hold.md").write_text(
-            "---\ntype: awi\ntarget_repo: github.com/example/foo\n---\n\nhold-body\n",
+            "---\nstate: hold\ntype: awi\ntarget_repo: github.com/example/foo\n---\n\nhold-body\n",
             encoding="utf-8",
         )
         _write_adopted_file(notes, "fb-adopted.md", body="adopted-body")
-        rejected_dir = notes / "rejected"
+        rejected_dir = notes / "2026" / "10"
         rejected_dir.mkdir(parents=True, exist_ok=True)
         (rejected_dir / "fb-rejected.md").write_text(
-            "---\ntype: awi\ntarget_repo: github.com/example/foo\n---\n\nrejected-body\n",
+            "---\nstate: rejected\ntype: awi\ntarget_repo: github.com/example/foo\n---\n\nrejected-body\n",
             encoding="utf-8",
         )
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
@@ -496,10 +497,10 @@ class TestListAwiStatusActive:
         """`--status`省略時、AWI側は`adopted`配下を除外し、`uwi`側は未回答を除外する（`--status=active`と同じ結果）。"""
         notes = _setup_notes(tmp_path)
         _write_awi_file(notes, "fb-inbox.md", body="inbox本文")
-        hold_dir = notes / "hold"
+        hold_dir = notes / "2026" / "10"
         hold_dir.mkdir(parents=True, exist_ok=True)
         (hold_dir / "fb-hold.md").write_text(
-            "---\ntype: awi\ntarget_repo: github.com/example/foo\n---\n\nhold本文\n",
+            "---\nstate: hold\ntype: awi\ntarget_repo: github.com/example/foo\n---\n\nhold本文\n",
             encoding="utf-8",
         )
         _write_adopted_file(notes, "fb-adopted.md", body="adopted本文")
@@ -537,10 +538,10 @@ class TestListAwiStatusRejected:
         """`--status=rejected`指定時、AWI側は`rejected`配下のみ出力する。"""
         notes = _setup_notes(tmp_path)
         _write_awi_file(notes, "fb-inbox.md", body="in-body")
-        rejected_dir = notes / "rejected"
+        rejected_dir = notes / "2026" / "10"
         rejected_dir.mkdir(parents=True, exist_ok=True)
         (rejected_dir / "fb-rejected.md").write_text(
-            "---\ntype: awi\ntarget_repo: github.com/example/foo\n---\n\nrejected-body\n",
+            "---\nstate: rejected\ntype: awi\ntarget_repo: github.com/example/foo\n---\n\nrejected-body\n",
             encoding="utf-8",
         )
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
@@ -561,7 +562,6 @@ class TestListAwiStatusRejected:
     ) -> None:
         """却下一覧へinboxのUWIを混ぜず、明示したinbox照会では取得できる。"""
         notes = _setup_notes(tmp_path)
-        (notes / "inbox").mkdir(parents=True, exist_ok=True)
         _write_uwi_file(notes, f"{_FIXED_TIMESTAMP}-001.md", question="q1", answer="")
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
@@ -647,7 +647,7 @@ class TestAddViaEditor:
             atk.main(["wi", "add"], home=tmp_path, now=_FIXED_DT)
 
         assert exc_info.value.code == 0
-        files = list((notes / "inbox").iterdir())
+        files = list(notes.glob("[0-9][0-9][0-9][0-9]/[0-9][0-9]/*.md"))
         assert len(files) == 1
         content = files[0].read_text(encoding="utf-8")
         assert "エディター経由の本文" in content
@@ -680,7 +680,7 @@ class TestAddViaEditor:
         assert exc_info.value.code == 1
         captured = capsys.readouterr()
         assert "本文が空" in captured.err
-        assert not list((notes / "inbox").iterdir())
+        assert not list(notes.glob("[0-9][0-9][0-9][0-9]/[0-9][0-9]/*.md"))
 
     def test_editor_missing_env_exits(
         self,
@@ -730,7 +730,7 @@ class TestAddViaEditor:
         assert exc_info.value.code == 1
         captured = capsys.readouterr()
         assert "終了コード2" in captured.err
-        assert not list((notes / "inbox").iterdir())
+        assert not list(notes.glob("[0-9][0-9][0-9][0-9]/[0-9][0-9]/*.md"))
 
 
 class TestAddTargetRepoOption:
@@ -751,7 +751,7 @@ class TestAddTargetRepoOption:
         monkeypatch.setattr(subprocess, "run", _make_git_remote_fake(cwd_repo))
 
         _add_with_target_repo(tmp_path, body_file)
-        content = next((notes / "inbox").iterdir()).read_text(encoding="utf-8")
+        content = next(notes.glob("[0-9][0-9][0-9][0-9]/[0-9][0-9]/*.md")).read_text(encoding="utf-8")
         assert "target_repo: github.com/example/otherrepo" in content
 
     def test_frontmatter_target_repo_overrides_cli_option(
@@ -770,7 +770,7 @@ class TestAddTargetRepoOption:
         frontmatter_body = "---\ntarget_repo: github.com/example/fmrepo\n---\n\n本文"
         body_file.write_text(frontmatter_body, encoding="utf-8")
         _add_with_target_repo(tmp_path, body_file)
-        content = next((notes / "inbox").iterdir()).read_text(encoding="utf-8")
+        content = next(notes.glob("[0-9][0-9][0-9][0-9]/[0-9][0-9]/*.md")).read_text(encoding="utf-8")
         assert "target_repo: github.com/example/fmrepo" in content
 
 
@@ -807,7 +807,7 @@ class TestUwiAddTargetRepoOption:
             )
         assert exc_info.value.code == 0
 
-        files = sorted((notes / "inbox").iterdir())
+        files = sorted(notes.glob("[0-9][0-9][0-9][0-9]/[0-9][0-9]/*.md"))
         content = files[0].read_text(encoding="utf-8")
         assert "target_repo: github.com/example/otherrepo" in content
 
@@ -842,6 +842,6 @@ class TestUwiAddTargetRepoOption:
             )
         assert exc_info.value.code == 0
 
-        files = sorted((notes / "inbox").iterdir())
+        files = sorted(notes.glob("[0-9][0-9][0-9][0-9]/[0-9][0-9]/*.md"))
         content = files[0].read_text(encoding="utf-8")
         assert "target_repo: github.com/example/myrepo" in content

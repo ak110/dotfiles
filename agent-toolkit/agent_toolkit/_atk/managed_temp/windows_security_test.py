@@ -110,7 +110,7 @@ def test_windows_long_tree_cleanup(
             patch.setattr(inventory_subject, "_cleanup_windows", interrupt)
             assert subject.main(["cleanup", "--path", str(target)]) == 2
         assert registry.is_file()
-    rejected = state in ("external", "invalid", "replacement")
+    rejected = state in ("invalid", "replacement")
     assert subject.main(["cleanup", "--path", str(target)]) == (2 if rejected else 0)
     assert target.exists() is rejected
     if rejected:

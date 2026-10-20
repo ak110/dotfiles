@@ -666,6 +666,18 @@ Antigravityの`explore`と`delegate`はどちらも作業ディレクトリの`A
 
 2026年9月4日、Claude Code 2.1.260の実行ファイルと公式のHooksリファレンスで確認した。再検証ではこの2つの資料を読み、対象の文字列がどちらに由来するか確認する。
 
+## agent-toolkit/skills/writing-standards/references/claude-hooks-output.md：出力上限：2026年10月20日
+
+- 観測日: 2026年10月20日に[公式Hooksリファレンス](https://code.claude.com/docs/en/hooks#json-output)を再取得した。10,000文字の制限は各JSON文字列と通常の標準出力へ個別に適用され、超過時はセッション内の保存ファイルと最大2,000文字のプレビューへ置き換わる。標準エラー44,224文字が接頭辞込み44,346文字で全文届いた結果は、2026年10月19日05:33 UTCの既存調査記録に由来し、今回は再現していない
+- 観測した版数: 標準エラー配送の既存観測はClaude Code 2.1.303。公式ページの再取得は2026年10月20日時点の公開内容
+- 再検証手段: 固定したBash操作のPreToolUseへ、連番本文と末尾の`END-MARK-QZX`を標準エラーへ出力して終了2を返すhookを装着する。stream-jsonのツール結果との全文一致とモデルが回答した末尾を比べる。JSON各値と通常の標準出力は10,000文字の前後で保存先とプレビューを確認する。標準エラーの単一条件の成功から、配送量が無制限とは判断しない
+
+## agent-toolkit/skills/writing-standards/references/claude-hooks-output.md：組織向け設定：2026年10月20日
+
+- 観測日: 2026年10月20日の起草時調査記録にある、本体の読解と組織設定のユーザー表示の観測による。今回の文書追随では本体の読解を再実行していない
+- 観測した版数: Claude Code 2.1.304。既存記録は2.1.302と2.1.303で該当通知が0件だった比較を含む
+- 再検証手段: 対象版の`PASSED_OVER_EVENTS`・`PASSED_OVER_DOORS`・`passedOverPatterns`を公開仕様と比べ、全Function hooks登録へ同じ判定を適用する不変条件テストを実行する。組織設定下でセッション名の自動設定、手動名の保持と`rate_limit`後の再開予約を確認する
+
 ## agent-toolkit/skills/writing-standards/references/claude-hooks-stop.md：入力：2026年9月4日
 
 2026年9月4日、Claude Code公式ドキュメント<https://code.claude.com/docs/en/hooks.md>の`Common input fields`節、`Stop`節および`SubagentStop`節で前段の入力仕様を確認した。同日、Claude Code 2.1.260のStopフックへ渡る入力を捕捉した。`run_in_background`で起動したBashジョブが、`type`を`shell`、`status`を`running`とする要素として`background_tasks`へ現れた。再検証は同3節を読み、Stopフックへ渡る入力を捕捉して`background_tasks`の有無と要素の構造を確認する。
@@ -684,7 +696,12 @@ Antigravityの`explore`と`delegate`はどちらも作業ディレクトリの`A
 
 ## agent-toolkit/skills/writing-standards/references/claude-hooks.md：hookスクリプトの基本プロトコル：2026年9月8日
 
-2026年9月8日、Claude Code 2.1.263で次を確認した。存在しないリポジトリを指す`git -C /tmp log --oneline -1`は終了コード128で終わり、セッションの状態ファイルの`git_log_checked`は未設定のままだった。続けて実在するworktreeを指す同じ形の`git log`を実行すると、そのcwdのキーが真になった。再検証はこの2つのコマンドを単独で順に実行し、`{tempdir}/claude-agent-toolkit-<session_id>.json`の`git_log_checked`を前後で比較する。
+2026年9月8日、Claude Code 2.1.263で次を確認した。
+存在しないリポジトリを指す`git -C /tmp log --oneline -1`は終了コード128で終わり、セッションの状態ファイルの`git_log_checked`は未設定のままだった。
+続けて実在するworktreeを指す同じ形の`git log`を実行すると、そのcwdのキーが真になった。
+再検証はこの2つのコマンドを単独で順に実行し、`session_state.state_path`が返す現行JSONの`git_log_checked`を前後で比較する。
+当時の保存先は`{tempdir}/claude-agent-toolkit-<session_id>.json`だった。
+現行の再検証では`state_dir()/hook-sessions`のJSONと固定の`.state.lock`を使い、clear・期限回収後もlockが同じパスへ残ることを確認する。
 
 ## agent-toolkit/skills/writing-standards/references/claude-hooks.md：hookスクリプトの基本プロトコル：2026年10月7日
 
@@ -823,6 +840,18 @@ agents_serverは全説明とinstructionsを初期送信の4,096文字以内に�
 
 2026年8月17日、Linux・uv 0.12.3で、依存メタデータが同一でパスだけが異なるPEP 723スクリプトを`uv run --script`で実行すると、スクリプトごとにvenvを再構築することを確認した。パッケージと解決結果のキャッシュは共有され、ウォーム状態での再構築は1秒未満だった。再検証は同じ`# /// script`ブロックを持つスクリプトを2つのパスへ置き、`uv --version`を記録したうえで順に実行し、uvのキャッシュディレクトリ配下の環境の数と所要時間を比べる。
 
+## agent-toolkit/skills/writing-standards/references/python.md：静的解析の誤検出と抑制：2026年10月20日
+
+- 観測日: 既存調査記録を2026年10月20日に確認した。元の観測日は未確認。同記録はLinuxで`sys.platform`による`msvcrt`と`fcntl`の分岐importを抑止なしで解析し、`msvcrt`だけに診断1件が出たと報告している。今回の文書追随では同じ解析を再実行していない
+- 観測した版数: pylint 4.1.3、astroid 4.3.4
+- 再検証手段: 同じ分岐importを一時Pythonファイルへ保存し、対象プロジェクトの`uv run --frozen pyfltr run --commands=pylint --no-fix <絶対パス>`で解析する。Windowsでは`fcntl`側の診断を対照取得する。pylintの`checkers/imports.py`にある`_ignore_import_failure`がOS分岐を除外しないことも確認する
+
+## agent-toolkit/skills/writing-standards/references/python.md：テストコード（pytest）：2026年10月20日
+
+- 観測日: 既存調査記録を2026年10月20日に確認した。元の観測日は未確認。同記録はpyfltrのWindows CI実行39222530624で`Popen.pid`と子の自己申告PIDの不一致を観測したと報告している。修正commit `60161d7`後の実行39227766095は成功とされる。今回の文書追随ではWindows上で再現していない
+- 観測した版数: uvが作成したWindows runnerの仮想環境。観測したPythonの正確な版は未確認。Python公式`Doc/library/venv.rst`の3.7.2の変更記録はredirectorの仕様の根拠であり、観測版とは区別する
+- 再検証手段: Windows仮想環境の`sys.executable`で子を起動し、`Popen.pid`と子の`os.getpid()`の標準出力を比べる。子の自己申告PIDとの一致を求める試験と、`Popen.pid`をプロセスの木の根として停止・生存確認に使う試験を分けて確認する
+
 ## agent-toolkit/skills/writing-standards/references/session-records.md：H1直下：2026年9月2日
 
 2026年9月2日に`~/.claude/projects`配下と`~/.codex/sessions`配下の記録で確認した。再検証は両ディレクトリの記録から対象のキーを検索する。
@@ -900,6 +929,24 @@ agents_serverは全説明とinstructionsを初期送信の4,096文字以内に�
 `rules_context`はこの入力の`session_id`と`transcript_path`をClaude Codeのメインへの通知に使う。`agent-toolkit/agent_toolkit/_hooks/rules_context_test.py`が、会話ごと・切替ごとの入力と出力の対応と、managed-tempの作成失敗時の通知を確かめる。
 
 再検証は同じ資料の2節を取得して項目名とmatcherの値を比べ、制御したSessionStart入力をhook handlerへ渡して`additionalContext`の値を確かめる。項目名か値が変わった場合は`rules_context.py`の通知、`agent-toolkit/share/rules-main.claude-code.md`「自身の会話の記録」と同テストを改める。
+
+## docs/development/design-hooks.md：通知の整形と反復検出：2026年10月20日
+
+2026年10月20日、Claude Code 2.1.304での観測がAWI `20261020-131324-001.md`へ記録された。開始時と別のディレクトリで再開すると、SessionStart入力の`transcript_path`が再開時のディレクトリに対応する実在しないパスを示した。同じ会話のPreToolUse入力63件は、開始時のworktree側にある実在する記録を示した。
+今回の文書追随では同WIを読み、元ホストでの再現は行っていない。再検証では専用会話を開始時と別のディレクトリで再開し、SessionStartと同じ会話のPreToolUseの`transcript_path`およびファイルの実在を比べる。通知は同じsession IDの完全一致で1件へ解決し、0件では新規会話の未作成を許容して入力値を保ち、複数件と探索失敗ではID指定による取得を案内する。
+
+## docs/development/design-agents-runtime.md：MCP接続失敗の再接続：2026年10月20日
+
+2026年10月20日、LinuxのPython 3.15でMCP再接続の契約を検証した。
+対象は`agent-toolkit/agent_toolkit/_agents_server/claude_connections_test.py`の`test_mcp_reconnect_is_once_per_new_and_resumed_process`である。managerの公開start/showとSDKクライアントのテストダブルを組み合わせ、接続失敗のキャッシュによる省略と`CONNECT_TIMEOUT`、再接続の回復成功と失敗の4条件で、新規起動と再開の各プロセスの再接続が1回であることを確認した。
+未回復のサーバー名と初期エラーはstart/showのwarningsと`claude_mcp_recovery_failed`のロガー出力へ残り、回復成功時はwarningsが消える。同じ4条件で再接続をno-opへ差し替えた対照は4件とも失敗し、正常な処理では4件とも成功した。
+再検証は同テストと`test_slow_mcp_recovery_keeps_start_budget_and_updates_show`をpytestで実行し、新規・再開の呼出回数、未回復warnings、回復後のshowとログを比較する。ログの保存先は`agent-toolkit/agent_toolkit/_agents_server/logging_config.py`と`mcp_tools_test.py`の起動・終了診断の試験で確かめる。この観測はテストダブルによる契約検証であり、実Claude CLIと外部MCPサーバーの接続障害を再現したものではない。
+
+## agent-toolkit/share/rules-common.codex.md：Codex固有の入出力：2026年10月19日
+
+2026年10月19日、Codex CLI 0.163.0での観測がAWI `20261020-131339-001.md`へ記録された。今回の文書追随では同WI本文と既存監査記録を比較し、実機での再現は行っていない。
+記録`codex:01a1547c-57e6-70c2-94cd-647f9d361f26:380`と`codex:01a1547c-8239-7f70-b8fc-f48eb3d6336f:847`では戻り値の一部だけの表示により識別子を失い、待機を重ねた。記録`01a1547b`では戻り値全体を表示し、`write_stdin`で1つの待機を回収した。
+再検証は同WIの「実現性」に記録された原記録の取得先とlocatorを使う。長時間コマンドのyield結果が`session_id`を持ち`exit_code`を持たないこと、`text(r)`で両欄と本文が保持されること、同じ識別子で終端を回収できることを比べる。原記録の所在は同WIの値を使い、この監査の作成時に取得していないパスは補わない。
 
 ## docs/development/design-hosts.md：Claude CodeとCodexの規範配置：2026年9月13日
 

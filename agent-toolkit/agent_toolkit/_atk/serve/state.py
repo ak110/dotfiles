@@ -11,7 +11,6 @@ import typing
 import watchdog.events
 import watchdog.observers
 
-from agent_toolkit._atk.wi import constants as _wi_constants
 from agent_toolkit._common.async_operations import run_sync_operation
 
 _TimerFactory = collections.abc.Callable[[float, collections.abc.Callable[..., None], tuple[typing.Any, ...]], threading.Timer]
@@ -55,6 +54,15 @@ class ServeState(watchdog.events.FileSystemEventHandler):
         # 同じ停止要求をスレッドで動く読み取り専用の走査から参照するための写し。
         self.stop_requested = threading.Event()
 
+    async def __aenter__(self) -> ServeState:
+        """監視を開始し、開始途中の失敗でも資源を回収する。"""
+        await self.start_async(asyncio.get_running_loop())
+        return self
+
+    async def __aexit__(self, *_exception: object) -> None:
+        """全ての終了経路で監視と通知タイマーを回収する。"""
+        await self.stop_async()
+
     def request_shutdown(self) -> None:
         """停止要求を設定する。
 
@@ -69,20 +77,26 @@ class ServeState(watchdog.events.FileSystemEventHandler):
         """監視を開始する。"""
         self._loop = loop
         self._stopped = False
-        self._start_observer()
+        try:
+            self._start_observer()
+        except BaseException:
+            self.stop()
+            raise
 
     def _start_observer(self) -> None:
-        for relative in _wi_constants.WI_STATES:
-            path = self.root / relative
-            path.mkdir(parents=True, exist_ok=True)
-            self.observer.schedule(self, str(path), recursive=False)
+        self.root.mkdir(parents=True, exist_ok=True)
+        self.observer.schedule(self, str(self.root), recursive=True)
         self.observer.start()
 
     async def start_async(self, loop: asyncio.AbstractEventLoop) -> None:
         """loopの参照を保持し、監視の登録・準備完了をworkerで待つ。"""
         self._loop = loop
         self._stopped = False
-        await run_sync_operation(self._start_observer)
+        try:
+            await run_sync_operation(self._start_observer)
+        except BaseException:
+            await self.stop_async()
+            raise
 
     async def stop_async(self) -> None:
         """監視終了とthreadの回収が完了するまで待つ。"""
@@ -98,11 +112,17 @@ class ServeState(watchdog.events.FileSystemEventHandler):
                 self._pending_notification = None
             self._pending_started_at = None
             self._pending_generation += 1
-        if isinstance(pending, threading.Thread) and pending.ident is not None and pending is not threading.current_thread():
-            pending.join()
-        self.observer.stop()
-        if self.observer.ident is not None:
-            self.observer.join()
+        try:
+            if (
+                isinstance(pending, threading.Thread)
+                and pending.ident is not None
+                and pending is not threading.current_thread()
+            ):
+                pending.join()
+        finally:
+            self.observer.stop()
+            if self.observer.ident is not None:
+                self.observer.join()
 
     def _publish_pending(self, generation: int) -> None:
         """静穏期間の経過後または最大待機時間の到達後に保留通知を1回だけ発行する。"""

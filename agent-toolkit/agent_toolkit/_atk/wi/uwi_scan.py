@@ -12,7 +12,9 @@ import typing
 
 from agent_toolkit._atk.wi.constants import WI_PROCESSABLE_STATES, WI_TYPE_UWI, normalized_wi_type
 from agent_toolkit._atk.wi.frontmatter import parse_frontmatter
+from agent_toolkit._atk.wi.layout import entry_state_of, iter_entry_paths
 from agent_toolkit._common import private_notes as _private_notes
+from agent_toolkit._common.next_action import ActionableError
 from agent_toolkit._git import remote as _git_remote
 
 _ANSWER_HEADING = "\n## 回答\n"
@@ -79,18 +81,13 @@ def active_fingerprint(root: pathlib.Path) -> str | None:
     """
     digest = hashlib.sha256()
     try:
-        for state in WI_PROCESSABLE_STATES:
-            state_dir = root / state
-            if not state_dir.is_dir():
-                continue
-            for path in sorted(state_dir.iterdir()):
-                if path.suffix != ".md":
-                    continue
+        for path in iter_entry_paths(root):
+            if path.is_file():
                 try:
                     stat_result = path.stat()
                 except OSError:
                     return None
-                digest.update(f"{state}/{path.name}\t{stat_result.st_mtime_ns}\t{stat_result.st_size}\n".encode())
+                digest.update(f"{path.relative_to(root)}\t{stat_result.st_mtime_ns}\t{stat_result.st_size}\n".encode())
     except OSError:
         return None
     return digest.hexdigest()
@@ -106,18 +103,12 @@ def scan_active_uwis(root: pathlib.Path, target_repo: str) -> ActiveUwiScan:
     complete = True
     resolver_cache: dict[str, str | None] = {}
     canonical_target = _git_remote.canonical_repo(target_repo, resolver_cache)
-    for state in WI_PROCESSABLE_STATES:
-        state_dir = root / state
-        try:
-            if not state_dir.is_dir():
-                continue
-            paths = sorted(state_dir.iterdir())
-        except OSError:
-            complete = False
-            continue
-        for path in paths:
-            if path.suffix != ".md":
-                continue
+    try:
+        paths = list(iter_entry_paths(root))
+    except OSError:
+        return ActiveUwiScan(entries=[], complete=False)
+    for path in paths:
+        if path.is_file():
             try:
                 text = path.read_text(encoding="utf-8")
             except OSError, UnicodeDecodeError:
@@ -128,6 +119,13 @@ def scan_active_uwis(root: pathlib.Path, target_repo: str) -> ActiveUwiScan:
                 complete = False
                 continue
             frontmatter, _body = parsed
+            try:
+                state = entry_state_of(path, text)
+            except ActionableError:
+                complete = False
+                continue
+            if state not in WI_PROCESSABLE_STATES:
+                continue
             entry_type = normalized_wi_type(frontmatter.get("type"))
             entry_repo = frontmatter.get("target_repo")
             if entry_type is None or not isinstance(entry_repo, str):

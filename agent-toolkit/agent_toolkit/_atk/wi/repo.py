@@ -6,7 +6,8 @@ import sys
 import typing
 
 from agent_toolkit._atk import outcome as _outcome
-from agent_toolkit._atk.wi.constants import unrepairable_entry_next_action
+from agent_toolkit._atk.wi.constants import WI_STATES, unrepairable_entry_next_action
+from agent_toolkit._atk.wi.layout import entry_state_of, iter_entry_paths
 from agent_toolkit._git import command as _git_command
 from agent_toolkit._git import remote as _git_remote
 
@@ -23,6 +24,21 @@ TARGET_REPO_ALL = "all"
 """`--target-repo`へ指定すると対象リポジトリを限定しない値。"""
 
 _TARGET_REPO_NEXT_ACTION = "`--target-repo`へローカルworktreeのパスかremote URLを指定して再実行する"
+
+
+def _entry_in_directory(private_notes: pathlib.Path, directory: pathlib.Path, filename: str) -> pathlib.Path:
+    """状態の指定を実パスへ解決する。"""
+    normalized = _wi_filenames.validate_filename(filename, directory).name
+    if directory.name in WI_STATES:
+        return next(
+            (
+                path
+                for path in iter_entry_paths(private_notes)
+                if path.name == normalized and entry_state_of(path) == directory.name
+            ),
+            directory / normalized,
+        )
+    return directory / normalized
 
 
 def resolve_local_worktree(value: str | None) -> pathlib.Path:
@@ -260,7 +276,7 @@ def edit_entry(
         if not skip_remote_sync:
             _wi_sync.push_pending_commits(private_notes)
             _wi_sync.pull(private_notes)
-        path = _wi_filenames.validate_filename(filename, directory)
+        path = _entry_in_directory(private_notes, directory, filename)
         if not path.is_file():
             raise FileNotFoundError(filename)
         previous = _frontmatter.decode_entry_text(path.read_bytes())
@@ -287,6 +303,8 @@ def edit_entry(
                 next_action="frontmatterのtypeを元の値へ戻して再実行する",
             )
             sys.exit(2)
+        if path.parent.name not in WI_STATES:
+            entry_state_of(path, content)
         _frontmatter.write_entry_text(path, content)
         _wi_sync.commit_and_push(
             private_notes, commit_message, [str(path.relative_to(private_notes))], skip_push=skip_remote_sync
@@ -313,7 +331,7 @@ def append_entry(
     """
     with _wi_sync.repo_lock(private_notes, timeout=lock_timeout):
         _wi_sync.pull(private_notes)
-        path = _wi_filenames.validate_filename(filename, directory)
+        path = _entry_in_directory(private_notes, directory, filename)
         if not path.is_file():
             raise FileNotFoundError(filename)
         previous_bytes = path.read_bytes()

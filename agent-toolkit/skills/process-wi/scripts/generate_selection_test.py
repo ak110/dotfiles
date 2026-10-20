@@ -15,6 +15,7 @@ import pytest
 import yaml
 
 from agent_toolkit._atk import run_script
+from agent_toolkit._atk.wi.layout import entry_path, entry_state_of
 from agent_toolkit._testing import git_repository
 
 
@@ -29,14 +30,16 @@ def _environment(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> tup
     (repo / "src/model.py").write_text("pass\n", encoding="utf-8")
     git_repository.init_repository(repo, origin="https://github.com/test/repo.git")
     notes = tmp_path / "notes"
-    (notes / "processing").mkdir(parents=True)
+    (notes / "2026" / "10").mkdir(parents=True)
     monkeypatch.setenv("AGENT_TOOLKIT_PRIVATE_NOTES", str(notes))
     return repo, notes
 
 
 def _wi(notes: pathlib.Path, name: str, dependencies: list[str] | None = None) -> None:
-    header = yaml.safe_dump({"type": "awi", "target_repo": "github.com/test/repo", "depends_on": dependencies or []})
-    (notes / "processing" / name).write_text(
+    header = yaml.safe_dump(
+        {"type": "awi", "state": "processing", "target_repo": "github.com/test/repo", "depends_on": dependencies or []}
+    )
+    (notes / "2026" / "10" / name).write_text(
         f"---\n{header}---\n# 要求\n\n## 反映内容と反映先\n\n`src/model.py`を変更する\n",
         encoding="utf-8",
     )
@@ -148,7 +151,7 @@ def test_public_generation_checks_repository_before_saving(
     args = [str(judgments), "--candidate-file", str(facts), "--output", str(output), "--work-dir", str(repo)]
     assert _dispatch(*args) == 1
     assert output.read_text(encoding="utf-8") == "既存の保存物"
-    source = notes / "processing/first.md"
+    source = entry_path(notes, "first.md")
     source.write_text(
         source.read_text(encoding="utf-8").replace("github.com/test/repo", "moved.example/team/project"),
         encoding="utf-8",
@@ -168,15 +171,14 @@ def test_repository_migration_cli_edit_list_start_and_verification(
     repo, notes = environment
     git_repository.commit_all(repo, "対象の初期状態")
     filename = "20261013-101220-001.md"
-    (notes / "inbox").mkdir()
     body = (
-        f"---\ntype: awi\ntarget_repo: {old_address}\ntarget_commit: "
+        f"---\ntype: awi\nstate: inbox\ntarget_repo: {old_address}\ntarget_commit: "
         + git_repository.git_output(repo, "rev-parse", "HEAD")
         + f"\n---\n\n# 住所移転のテストコード\n\n操作先: {old_address}\n\n"
         "## 反映内容と反映先\n\n`src/model.py`を変更する。\n\n"
         "## 完成条件\n\n- 保存した結果を取得できる。\n"
     )
-    source = notes / "inbox" / filename
+    source = entry_path(notes, filename)
     source.write_text(body, encoding="utf-8")
     git_repository.init_repository(notes, commit_message="旧住所の要求")
     child_env = host_environ()
@@ -228,7 +230,7 @@ def test_repository_migration_cli_edit_list_start_and_verification(
     assert [row["filename"] for row in listed()] == [filename]
     started = cli("wi", "start-processing", filename, "--target-repo", str(repo))
     assert started.returncode == 0, started.stderr
-    assert (notes / "processing" / filename).is_file()
+    assert source.is_file() and entry_state_of(source) == "processing"
     after = cli(*record_args)
     assert after.returncode == 0, after.stderr
     payload = json.loads(output.read_text(encoding="utf-8"))

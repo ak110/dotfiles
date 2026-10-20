@@ -270,6 +270,8 @@ default branchで実行しているかと未コミット変更の有無を確認
 以下の差異はプロジェクト間で意図的に異なる設定としている。
 統一対象外として扱う。
 
+- 非同期テストのloopとfixture寿命: dotfilesと同梱agent-toolkitはfunction単位で隔離し、テスト間の未完了taskや状態の混入を防ぐ。姉妹プロジェクトのsession単位の設定は各プロジェクトの要件として維持する。ブラウザーなどsession寿命を明示したfixtureは、その宣言した寿命を使う
+
 - `textlint-rule-prh`（dotfilesのみ）: Claude Codeのコンテキスト汚染を防ぐためtextlint系を特に厳しくする方針
 - Python対応・CI版集合（dotfilesと同梱agent-toolkit）: ユーザーが過去のPython版をサポートしないと決めたため、対応する版を1つ（現在は3.15）に限り、CIも同じ版で実行する。他プロジェクトのPython版matrixへそろえず、版宣言は将来版を許容する下限で表す
 - pytilpackの`docs.yaml`に`paths:`なし（pytilpackのみ）: mkdocstringsがPythonソースから

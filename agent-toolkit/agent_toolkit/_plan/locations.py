@@ -21,6 +21,7 @@ import subprocess
 
 from agent_toolkit._common import host_homes as _host_homes
 from agent_toolkit._common import private_notes as _private_notes
+from agent_toolkit._common import wi_layout as _wi_layout
 from agent_toolkit._common.next_action import ActionableError
 from agent_toolkit._plan import bundle_kinds as _bundle_kinds
 
@@ -77,14 +78,15 @@ def private_notes_root(
 def find_wi_source(name: str, root: pathlib.Path) -> pathlib.Path | None:
     """private-notesのルート配下からWIファイルを探す。
 
-    状態ディレクトリ名を固定せず1階層下だけを走査するため、キューの状態が増減しても追随する。
-    計画構造の自動チェックと選定結果の検証が同じ探索を使い、状態ディレクトリの扱いを1箇所に保つ。
+    年月固定配置を共通のパス境界から探索し、移行前の1階層配置も読み取る。
+    計画構造の自動チェックと選定結果の検証が同じ探索を使う。
     """
-    for candidate in sorted(root.iterdir()):
-        source = candidate / name
-        if candidate.is_dir() and source.is_file():
-            return source
-    return None
+    fixed = next((path for path in _wi_layout.iter_entry_paths(root) if path.name == name), None)
+    if fixed is not None:
+        return fixed
+    return next(
+        (directory / name for directory in sorted(root.iterdir()) if directory.is_dir() and (directory / name).is_file()), None
+    )
 
 
 def new_plans_root(private_notes: pathlib.Path | str | None = None) -> pathlib.Path:

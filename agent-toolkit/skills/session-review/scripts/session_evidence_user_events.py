@@ -20,11 +20,13 @@ from session_evidence_extract import (
     _finalize,
     _generated_user_event,
     _is_subagent_record,
+    _load_records,
     _parse_timestamp,
     _PendingQuestion,
+    _Record,
     _record_timestamp,
 )
-from session_evidence_records import _codex_record_thread_id
+from session_evidence_records import _codex_record_thread_id, _collect_records
 from session_evidence_tool_calls import (
     _conversation_tool_calls,
 )
@@ -172,6 +174,39 @@ def _query_user_events(
 def _conversation_events(collected: list[_CollectedRecord]) -> list[dict[str, Any]]:
     """収集できた全担当の発話・操作・結果を、記録別の前後関係と全文を保って返す。"""
     return [event for item in collected for event in _record_conversation_events(item)]
+
+
+def last_compaction_line(records: list[_Record]) -> int:
+    """最後の圧縮境界の元記録行を返し、圧縮が無い場合は0を返す。"""
+    return max(
+        (
+            record.line
+            for record in records
+            if record.entry.get("type") == "compacted"
+            or (record.entry.get("type") == "system" and record.entry.get("subtype") == "compact_boundary")
+        ),
+        default=0,
+    )
+
+
+def extract_session_context(path: Path) -> dict[str, Any]:
+    """実transcriptから人間の発話と、最後の圧縮以後の会話を全文・元記録位置付きで取得する。
+
+    圧縮再開の消費側はこの公開処理を使い、発話や生成本文の除外規則を共有する。
+    付随する記録は走査せず、指定された1記録だけを読む。
+    """
+    records = _load_records(str(path))
+    if records is None:
+        raise ValueError(f"セッション記録を読み込めない: {path}。実在する絶対パスのUTF-8 JSONLを指定する")
+    collected, _ = _collect_records(str(path), records, main_only=True)
+    item = collected[0]
+    boundary = last_compaction_line(records)
+    return {
+        "record": item.record_id,
+        "last_compaction_line": boundary,
+        "user_events": _query_user_events(item, None, None, None),
+        "conversation_events": [event for event in _record_conversation_events(item) if event["line"] > boundary],
+    }
 
 
 def _record_conversation_events(main_record: _CollectedRecord) -> list[dict[str, Any]]:

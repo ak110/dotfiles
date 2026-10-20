@@ -1,6 +1,5 @@
 """`uwi_completion.py`のUWI回答ファイル差分通知を検証する。"""
 
-import json
 import pathlib
 import subprocess
 import tempfile
@@ -8,8 +7,8 @@ import tempfile
 import pytest
 
 from agent_toolkit._atk.wi import uwi_scan as _uwi_scan
+from agent_toolkit._common import session_state
 from agent_toolkit._hooks import uwi_completion as _uwi_completion
-from agent_toolkit._testing.helpers import SESSION_STATE_FILENAME_TEMPLATE
 
 _REPO = "github.com/ak110/dotfiles"
 
@@ -77,8 +76,7 @@ class TestBuildNotice:
     ) -> None:
         _make_private_notes(tmp_path, monkeypatch, unanswered=2, answered=0)
         assert _uwi_completion.build_notice("initial", "/dummy") is None
-        state_path = tmp_path / SESSION_STATE_FILENAME_TEMPLATE.format(session_id="initial")
-        state = json.loads(state_path.read_text(encoding="utf-8"))
+        state = session_state.read_state("initial")
         assert state[_uwi_completion.STATE_KEY_ANSWERED] == {"main": {_REPO: []}}
 
     def test_notifies_new_answer_while_another_uwi_remains_unanswered(
@@ -184,8 +182,7 @@ class TestBuildNotice:
     def test_ignores_other_repositories(self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
         _make_private_notes(tmp_path, monkeypatch, unanswered=1, answered=0, other_repo=2)
         assert _uwi_completion.build_notice("other", "/dummy") is None
-        state_path = tmp_path / SESSION_STATE_FILENAME_TEMPLATE.format(session_id="other")
-        state = json.loads(state_path.read_text(encoding="utf-8"))
+        state = session_state.read_state("other")
         assert state[_uwi_completion.STATE_KEY_ANSWERED] == {"main": {_REPO: []}}
 
     def test_legacy_state_keys_are_carried_over_without_losing_a_notice(
@@ -194,31 +191,30 @@ class TestBuildNotice:
         """改名前のキーで基準値を持つセッションでも、新しい回答を1回目から通知する。"""
         root = _make_private_notes(tmp_path, monkeypatch, unanswered=1, answered=0)
         assert _uwi_completion.build_notice("legacy", "/dummy") is None
-        state_path = tmp_path / SESSION_STATE_FILENAME_TEMPLATE.format(session_id="legacy")
-        state = json.loads(state_path.read_text(encoding="utf-8"))
+        state = session_state.read_state("legacy")
         state["tbd_answered_by_repo"] = state.pop(_uwi_completion.STATE_KEY_ANSWERED)
         state["tbd_fingerprint_by_repo"] = state.pop(_uwi_completion.STATE_KEY_FINGERPRINT)
-        state_path.write_text(json.dumps(state, ensure_ascii=False), encoding="utf-8")
+        assert session_state.update_state("legacy", lambda _previous: state)
         _answer_all(root)
 
         notice = _uwi_completion.build_notice("legacy", "/dummy")
 
         assert notice is not None
         assert "unanswered-0.md" in notice
-        updated = json.loads(state_path.read_text(encoding="utf-8"))
+        updated = session_state.read_state("legacy")
         assert updated[_uwi_completion.STATE_KEY_ANSWERED] == {"main": {_REPO: ["unanswered-0.md"]}}
         assert updated["tbd_answered_by_repo"] == {"main": {_REPO: []}}
 
-    def test_missing_root_does_not_write_state(self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_missing_root_does_not_write_state(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setattr(_uwi_scan, "private_notes_root", lambda: None)
         assert _uwi_completion.build_notice("missing-root", "/dummy") is None
-        assert not (tmp_path / SESSION_STATE_FILENAME_TEMPLATE.format(session_id="missing-root")).exists()
+        assert not session_state.state_path("missing-root").exists()
 
     def test_unresolved_repository_does_not_write_state(self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
         _make_private_notes(tmp_path, monkeypatch, unanswered=1, answered=0)
         monkeypatch.setattr(_uwi_completion, "resolve_target_repo", lambda _cwd: None)
         assert _uwi_completion.build_notice("missing-repo", "/dummy") is None
-        assert not (tmp_path / SESSION_STATE_FILENAME_TEMPLATE.format(session_id="missing-repo")).exists()
+        assert not session_state.state_path("missing-repo").exists()
 
     def test_incomplete_scan_does_not_update_state_or_notify(
         self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
@@ -230,7 +226,7 @@ class TestBuildNotice:
             lambda _root, _repo: _uwi_scan.ActiveUwiScan([_uwi_scan.ActiveUwi("answered.md", True)], False),
         )
         assert _uwi_completion.build_notice("incomplete", "/dummy") is None
-        assert not (tmp_path / SESSION_STATE_FILENAME_TEMPLATE.format(session_id="incomplete")).exists()
+        assert not session_state.state_path("incomplete").exists()
 
     def test_state_write_failure_suppresses_notification(self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """新規回答があっても通知状態を保存できなければ通知しない。
@@ -250,7 +246,7 @@ class TestBuildNotice:
         """作業ディレクトリを取得できないpayloadでは走査も状態記録も行わない。"""
         _make_private_notes(tmp_path, monkeypatch, unanswered=1, answered=0)
         assert _uwi_completion.build_notice("missing-cwd", "") is None
-        assert not (tmp_path / SESSION_STATE_FILENAME_TEMPLATE.format(session_id="missing-cwd")).exists()
+        assert not session_state.state_path("missing-cwd").exists()
 
     def test_subagent_call_does_not_consume_main_transition(
         self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch

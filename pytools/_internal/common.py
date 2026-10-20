@@ -10,7 +10,7 @@ import sys
 import tempfile
 import time
 import typing
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Generator, Mapping, Sequence
 from pathlib import Path
 from typing import cast
 
@@ -87,6 +87,33 @@ def safe_resolve(path: Path) -> Path:
         return path.resolve()
     except OSError:
         return path.absolute()
+
+
+@contextlib.contextmanager
+def process_scope(
+    *popenargs: typing.Any, close_streams: bool = True, **kwargs: typing.Any
+) -> Generator[subprocess.Popen[typing.Any]]:
+    """PEP 723スクリプトでも使える、上限付き回収を伴う子プロセスの所有境界。"""
+    # Popen.__exit__の無期限waitを避け、既存の子孫回収と残存診断を保つ。
+    process = subprocess.Popen(*popenargs, **kwargs)  # pylint: disable=consider-using-with
+    try:
+        yield process
+    finally:
+        try:
+            if process.poll() is None:
+                for residual in stop_process_tree(process):
+                    logger.warning(
+                        "子プロセスが残存: %s。表示されたPIDと起動コマンドを確認し、"
+                        "この実行が起動したプロセスなら終了してから呼出元を再実行する。"
+                        "終了できない場合は、この診断をdotfilesの管理者へ報告する",
+                        residual,
+                    )
+        finally:
+            if close_streams:
+                with contextlib.ExitStack() as cleanup:
+                    for stream in (process.stdin, process.stdout, process.stderr):
+                        if stream is not None:
+                            cleanup.callback(stream.close)
 
 
 def mise_shim_directories() -> set[Path]:
@@ -200,7 +227,7 @@ def run_subprocess(
         env = os.environ.copy()
         env.update(env_overrides)
     try:
-        process = subprocess.Popen(  # pylint: disable=consider-using-with
+        with process_scope(
             cmd,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
@@ -210,19 +237,9 @@ def run_subprocess(
             cwd=cwd,
             stdin=subprocess.DEVNULL,
             env=env,
-        )
-        try:
+        ) as process:
             stdout, stderr = process.communicate(timeout=timeout)
-        except BaseException:
-            residual = stop_process_tree(process)
-            if residual:
-                logger.warning("子孫プロセスを回収できない: %s", residual)
-            raise
-        finally:
-            for stream in (process.stdout, process.stderr):
-                if stream is not None:
-                    stream.close()
-        return subprocess.CompletedProcess(cmd, process.returncode, stdout, stderr)
+            return subprocess.CompletedProcess(cmd, process.returncode, stdout, stderr)
     except (OSError, subprocess.SubprocessError) as e:
         label = tag or cmd[0]
         rest = " ".join(cmd[1:])

@@ -23,9 +23,10 @@ from agent_toolkit._atk.wi import style_diagnostics as _style_diagnostics
 from agent_toolkit._atk.wi import sync as _wi_sync
 from agent_toolkit._atk.wi import user_comment as _user_comment
 from agent_toolkit._atk.wi import uwi as _uwi
-from agent_toolkit._atk.wi.constants import WI_STATE_INBOX, WI_STATES, WI_TYPE_AWI, WI_TYPE_UWI
+from agent_toolkit._atk.wi.constants import WI_STATE_INBOX, WI_TYPE_AWI, WI_TYPE_UWI
 from agent_toolkit._atk.wi.filenames import MISSING_DEPENDENCY_NEXT_ACTION
 from agent_toolkit._atk.wi.formatters import shorten_home
+from agent_toolkit._atk.wi.layout import iter_entry_paths
 from agent_toolkit._atk.wi.repo import resolve_add_target, resolve_head_commit, resolve_repo_id_or_raise
 from agent_toolkit._atk.wi.web_input import WebInputError
 from agent_toolkit._common import body_match as _body_match
@@ -80,8 +81,8 @@ def has_synced_run_report(private_notes: pathlib.Path, *, run_id: str, skill: st
                     text=True,
                     timeout=30,
                 )
-        for state in WI_STATES:
-            for path in (private_notes / state).glob("*.md"):
+        for path in iter_entry_paths(private_notes):
+            if path.is_file():
                 content = path.read_text(encoding="utf-8")
                 parsed = _frontmatter.parse_frontmatter(content)
                 if parsed is None:
@@ -422,6 +423,7 @@ def _verify_frontmatter_target_repos(parsed_messages: list[tuple[dict[str, objec
 
 
 _RESERVED_ADD_KEY_NEXT_ACTIONS = {
+    "state": "新規項目はinboxとして保存する。状態の変更には状態遷移コマンドを使う",
     "type": "--typeで指定する",
     "scope": "--scopeで指定する",
     "question_type": "--question-typeで指定する",
@@ -505,7 +507,6 @@ def _add_entries_locked(
     ):
         raise ValueError("repair_targetとrepair_kindは同時に指定してください")
     timestamp = now.strftime("%Y%m%d-%H%M%S")
-    inbox_dir = _wi_entries.subdir(private_notes, WI_STATE_INBOX)
     counter = _wi_filenames.max_existing_seq(private_notes, timestamp) + 1
     generated: list[tuple[str, str]] = []
     for (frontmatter, body), repair_target, repair_kind in zip(
@@ -526,10 +527,10 @@ def _add_entries_locked(
             raise _target_repo_error(raw_target_repo, error) from error
         item_source = raw_source if isinstance(raw_source, str) else source
         filename = f"{timestamp}-{counter:03d}.md"
-        while any((private_notes / state / filename).exists() for state in WI_STATES):
+        while filename in _wi_filenames.existing_entry_filenames(private_notes):
             counter += 1
             filename = f"{timestamp}-{counter:03d}.md"
-        frontmatter_data: dict[str, object] = {"target_repo": item_target_repo, "type": entry_type}
+        frontmatter_data: dict[str, object] = {"target_repo": item_target_repo, "type": entry_type, "state": WI_STATE_INBOX}
         if target_commit is not None and item_target_repo == target_repo:
             frontmatter_data["target_commit"] = target_commit
         if item_source:
@@ -556,7 +557,9 @@ def _add_entries_locked(
             if cooldown_until is not None:
                 frontmatter_data["cooldown_until"] = cooldown_until
         content = _frontmatter.normalize_newlines(_frontmatter.serialize_frontmatter(frontmatter_data, logical_body))
-        _frontmatter.write_entry_text(inbox_dir / filename, content)
+        path = _wi_entries.entry_path(private_notes, filename)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        _frontmatter.write_entry_text(path, content)
         if entry_type != WI_TYPE_AWI:
             _uwi.warn_question_quality(filename, body, question_type)
         generated.append((filename, content))
@@ -626,14 +629,14 @@ def add_entries(
         _wi_sync.commit_and_push(
             private_notes,
             f"chore: add {count} {entry_type} {'item' if count == 1 else 'items'}",
-            [WI_STATE_INBOX],
+            [str(_wi_entries.entry_path(private_notes, filename).relative_to(private_notes)) for filename in generated],
             skip_push=skip_remote_sync,
         )
         if saved_details is not None:
             saved_details.update(
                 (
                     filename,
-                    read_saved_entry_details(private_notes / WI_STATE_INBOX / filename, expected_body=content),
+                    read_saved_entry_details(_wi_entries.entry_path(private_notes, filename), expected_body=content),
                 )
                 for filename, content in written
             )
@@ -905,10 +908,10 @@ def cmd_add(
             print(message, file=sys.stderr)
         sys.exit(1)
     count = len(generated)
-    inbox_dir = _wi_entries.subdir(private_notes, WI_STATE_INBOX)
+    inbox_dir = private_notes
     for warning in _missing_dependency_warnings(private_notes, inbox_dir, generated, canonical_dependencies):
         _outcome.report_warning(warning, next_action=MISSING_DEPENDENCY_NEXT_ACTION)
     _outcome.report_success(f"{count}件をinboxへ投入した")
     for filename in generated:
-        print(f"  {shorten_home(inbox_dir / filename, home)}")
+        print(f"  {shorten_home(_wi_entries.entry_path(private_notes, filename), home)}")
         print_entry_details(saved_details[filename])

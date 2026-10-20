@@ -70,10 +70,10 @@ def test_hold_entries_accept_processing_terminal_removal_and_content_operations(
         content="\n追記\n".encode(),
     )
 
-    assert (notes / "processing/process.md").is_file()
-    assert (notes / "adopted/adopt.md").is_file()
-    assert (notes / "rejected/reject.md").is_file()
-    assert not (notes / "hold/remove.md").exists()
+    assert "state: processing\n" in (notes / "2026/10/process.md").read_text(encoding="utf-8")
+    assert "state: adopted\n" in (notes / "2026/10/adopt.md").read_text(encoding="utf-8")
+    assert "state: rejected\n" in (notes / "2026/10/reject.md").read_text(encoding="utf-8")
+    assert not (notes / "2026/10/remove.md").exists()
     assert calls == [("edit", notes / "hold"), ("append", notes / "hold")]
 
 
@@ -124,10 +124,9 @@ def test_set_dependencies_updates_held_entry_and_keeps_hold_state(
     mutation_dependencies.set_entry_dependencies(notes, filename="held.md", depends_on=("first.md",))
 
     assert held.exists()
-    assert not (notes / "inbox" / "held.md").exists()
-    assert not (notes / "processing" / "held.md").exists()
     parsed = frontmatter_parser.parse_frontmatter(held.read_text(encoding="utf-8"))
     assert parsed is not None
+    assert parsed[0]["state"] == "hold"
     assert parsed[0]["depends_on"] == ["first.md"]
 
 
@@ -158,7 +157,7 @@ def test_cooldown_return_rejects_uwi_without_frontmatter_changes(
     _write_uwi_entry(notes, "uwi.md")
     _disable_transition_git(monkeypatch)
     mutation_transitions.transition_entries(notes, action="start-processing", filenames=["uwi.md"], now=_FIXED_DT)
-    path = notes / "processing/uwi.md"
+    path = notes / "2026/10/uwi.md"
     original = path.read_text(encoding="utf-8")
 
     with pytest.raises(_wi_web_input.WebInputError, match="AWI専用"):
@@ -171,7 +170,7 @@ def test_cooldown_return_rejects_uwi_without_frontmatter_changes(
         )
 
     assert path.read_text(encoding="utf-8") == original
-    assert not (notes / "inbox/uwi.md").exists()
+    assert "state: processing\n" in original
 
 
 class TestAdoptStampWithNote:
@@ -195,7 +194,7 @@ class TestAdoptStampWithNote:
             )
 
         assert exc_info.value.code == 0
-        adopted_text = (notes / "adopted" / "fb-001.md").read_text(encoding="utf-8")
+        adopted_text = (notes / "2026" / "10" / "fb-001.md").read_text(encoding="utf-8")
         assert "## 処理結果" in adopted_text
         assert "- 採否: adopted" in adopted_text
         assert "- 処理日時: " in adopted_text
@@ -221,12 +220,8 @@ class TestRejectMultiple:
             atk.main(["wi", "reject", "fb-001.md", "fb-002.md"], home=tmp_path)
 
         assert exc_info.value.code == 0
-        inbox = notes / "inbox"
-        assert not (inbox / "fb-001.md").exists()
-        assert not (inbox / "fb-002.md").exists()
-        rejected = notes / "rejected"
-        assert (rejected / "fb-001.md").exists()
-        assert (rejected / "fb-002.md").exists()
+        for filename in ("fb-001.md", "fb-002.md"):
+            assert "state: rejected\n" in (notes / "2026" / "10" / filename).read_text(encoding="utf-8")
         commit_cmds = [c["cmd"] for c in git_calls if "commit" in c["cmd"]]
         assert len(commit_cmds) == 1
         assert "chore: process 2 entries (rejected)" in commit_cmds[0]
@@ -311,7 +306,7 @@ def test_agent_environment_rejects_add_with_user_comment(
         )
 
     assert exc_info.value.code == 1
-    assert not list((notes / "inbox").glob("*.md"))
+    assert not list(notes.glob("[0-9][0-9][0-9][0-9]/[0-9][0-9]/*.md"))
 
 
 @pytest.mark.parametrize("route", ("message", "editor", "append"))
@@ -497,8 +492,7 @@ class TestStartProcessingSingle:
             atk.main(["wi", "start-processing", "fb-001.md"], home=tmp_path)
 
         assert exc_info.value.code == 0
-        assert not (notes / "inbox" / "fb-001.md").exists()
-        assert (notes / "processing" / "fb-001.md").exists()
+        assert "state: processing\n" in (notes / "2026/10/fb-001.md").read_text(encoding="utf-8")
         commit_cmd = [c["cmd"] for c in git_calls if "commit" in c["cmd"]][0]
         assert "chore: start processing 1 entry" in commit_cmd
 
@@ -534,10 +528,10 @@ class TestRejectFromProcessing:
     ) -> None:
         """processing/配下のファイルがreject対象に含まれrejected/へ移動する。"""
         notes = _setup_notes(tmp_path)
-        processing = notes / "processing"
+        processing = notes / "2026" / "10"
         processing.mkdir(parents=True, exist_ok=True)
         (processing / "fb-p.md").write_text(
-            "---\ntype: awi\ntarget_repo: github.com/example/foo\n---\n\n本文\n",
+            "---\nstate: processing\ntype: awi\ntarget_repo: github.com/example/foo\n---\n\n本文\n",
             encoding="utf-8",
         )
         git_calls: list[_GitCall] = []
@@ -547,8 +541,7 @@ class TestRejectFromProcessing:
             atk.main(["wi", "reject", "fb-p.md"], home=tmp_path)
 
         assert exc_info.value.code == 0
-        assert not (processing / "fb-p.md").exists()
-        assert (notes / "rejected" / "fb-p.md").exists()
+        assert "state: rejected\n" in (processing / "fb-p.md").read_text(encoding="utf-8")
 
 
 def _replace_edit_message_with_body_file(command: list[str], tmp_path: pathlib.Path) -> list[str]:
@@ -623,9 +616,9 @@ class TestTargetRepoVerification:
         local_repo = tmp_path / "target-repo"
         local_repo.mkdir()
         path = _write_awi_file(notes, "fb-001.md", target_repo=str(local_repo))
-        processing = notes / "processing"
-        processing.mkdir()
-        path.replace(processing / path.name)
+        processing = notes / "2026" / "10"
+        processing.mkdir(parents=True, exist_ok=True)
+        path.write_text(path.read_text(encoding="utf-8").replace("state: inbox", "state: processing"), encoding="utf-8")
         target_repo = {
             "legacy-path": str(local_repo),
             "canonical-url": "github.com/example/repo",
@@ -698,9 +691,9 @@ class TestTargetRepoVerification:
         local_repo = tmp_path / "target-repo"
         local_repo.mkdir()
         path = _write_awi_file(notes, "fb-001.md", target_repo=str(local_repo))
-        processing = notes / "processing"
-        processing.mkdir()
-        path.replace(processing / path.name)
+        processing = notes / "2026" / "10"
+        processing.mkdir(parents=True, exist_ok=True)
+        path.write_text(path.read_text(encoding="utf-8").replace("state: inbox", "state: processing"), encoding="utf-8")
         fallback = _make_subprocess_fake([])
 
         def fake_run(cmd: list[str], *args: object, **kwargs: object) -> subprocess.CompletedProcess[object]:
@@ -752,21 +745,21 @@ class TestTargetRepoVerification:
         ],
         ids=["adopt", "reject", "remove"],
     )
-    def test_resolved_processing_entry_is_verified_when_same_name_exists_in_inbox(
+    def test_resolved_processing_entry_is_verified_with_other_inbox_entry(
         self,
         command: list[str],
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """同名併存時は実際の操作対象であるprocessing側を検証する。"""
+        """別のinbox項目が併存していても実際の操作対象のtarget_repoを検証する。"""
         notes = _setup_notes(tmp_path)
-        _write_awi_file(notes, "fb-dup.md", target_repo="github.com/example/foo")
-        processing = notes / "processing"
+        _write_awi_file(notes, "inbox-other.md", target_repo="github.com/example/foo")
+        processing = notes / "2026" / "10"
         processing.mkdir(parents=True, exist_ok=True)
         processing_path = processing / "fb-dup.md"
         processing_path.write_text(
-            "---\ntarget_repo: github.com/example/other\ntype: awi\n---\n\nprocessing本文\n",
+            "---\nstate: processing\ntarget_repo: github.com/example/other\ntype: awi\n---\n\nprocessing本文\n",
             encoding="utf-8",
         )
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
@@ -778,7 +771,7 @@ class TestTargetRepoVerification:
         assert "target_repoが一致しない" in capsys.readouterr().err
         assert processing_path.exists()
 
-    def test_edit_verifies_resolved_processing_entry_when_same_name_exists_in_inbox(
+    def test_edit_verifies_resolved_processing_entry_with_other_inbox_entry(
         self,
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
@@ -786,12 +779,12 @@ class TestTargetRepoVerification:
     ) -> None:
         """editの事前の確認も解決済みprocessing実体へ適用する。"""
         notes = _setup_notes(tmp_path)
-        _write_awi_file(notes, "fb-dup.md", target_repo="github.com/example/foo")
-        processing = notes / "processing"
+        _write_awi_file(notes, "inbox-other.md", target_repo="github.com/example/foo")
+        processing = notes / "2026" / "10"
         processing.mkdir(parents=True, exist_ok=True)
         processing_path = processing / "fb-dup.md"
         processing_path.write_text(
-            "---\ntarget_repo: github.com/example/other\ntype: awi\n---\n\nprocessing本文\n",
+            "---\nstate: processing\ntarget_repo: github.com/example/other\ntype: awi\n---\n\nprocessing本文\n",
             encoding="utf-8",
         )
         monkeypatch.setenv("EDITOR", "fake-editor")
@@ -830,8 +823,8 @@ class TestTargetRepoVerification:
         assert exc_info.value.code == 2
         captured = capsys.readouterr()
         assert "target_repoが一致しない" in captured.err
-        assert (notes / "inbox" / "fb-001.md").exists()
-        assert not (notes / "adopted" / "fb-001.md").exists()
+        assert (notes / "2026/10/fb-001.md").exists()
+        assert "state: inbox\n" in (notes / "2026/10/fb-001.md").read_text(encoding="utf-8")
 
     def test_adopt_match_succeeds(
         self,
@@ -847,7 +840,7 @@ class TestTargetRepoVerification:
             atk.main(["wi", "adopt", "fb-001.md", "--target-repo", "github.com/example/foo"], home=tmp_path)
 
         assert exc_info.value.code == 0
-        assert (notes / "adopted" / "fb-001.md").exists()
+        assert "state: adopted\n" in (notes / "2026/10/fb-001.md").read_text(encoding="utf-8")
 
     def test_reject_mismatch_exits_2(
         self,
@@ -863,7 +856,7 @@ class TestTargetRepoVerification:
             atk.main(["wi", "reject", "fb-001.md", "--target-repo", "github.com/other/repo"], home=tmp_path)
 
         assert exc_info.value.code == 2
-        assert (notes / "inbox" / "fb-001.md").exists()
+        assert (notes / "2026/10/fb-001.md").exists()
 
     def test_rm_mismatch_exits_2(
         self,
@@ -879,7 +872,7 @@ class TestTargetRepoVerification:
             atk.main(["wi", "rm", "fb-001.md", "--target-repo", "github.com/other/repo"], home=tmp_path)
 
         assert exc_info.value.code == 2
-        assert (notes / "inbox" / "fb-001.md").exists()
+        assert (notes / "2026/10/fb-001.md").exists()
 
     def test_start_processing_mismatch_exits_2(
         self,
@@ -898,7 +891,7 @@ class TestTargetRepoVerification:
             )
 
         assert exc_info.value.code == 2
-        assert (notes / "inbox" / "fb-001.md").exists()
+        assert (notes / "2026/10/fb-001.md").exists()
 
     def test_edit_mismatch_exits_2(
         self,
@@ -938,7 +931,7 @@ class TestTargetRepoVerification:
             atk.main(["wi", "adopt", "fb-001.md"], home=tmp_path)
 
         assert exc_info.value.code == 0
-        assert (notes / "adopted" / "fb-001.md").exists()
+        assert "state: adopted\n" in (notes / "2026/10/fb-001.md").read_text(encoding="utf-8")
 
     def test_adopt_bare_stem_mismatch_exits_2(
         self,
@@ -952,4 +945,4 @@ class TestTargetRepoVerification:
         with pytest.raises(SystemExit) as exc_info:
             atk.main(["wi", "adopt", "fb-001", "--target-repo", "github.com/other/repo"], home=tmp_path)
         assert exc_info.value.code == 2
-        assert not (notes / "adopted" / "fb-001.md").exists()
+        assert "state: inbox\n" in (notes / "2026/10/fb-001.md").read_text(encoding="utf-8")

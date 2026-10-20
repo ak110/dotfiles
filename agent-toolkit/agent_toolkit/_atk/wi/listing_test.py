@@ -21,6 +21,7 @@ from agent_toolkit import atk  # noqa: E402  # pylint: disable=wrong-import-posi
 from agent_toolkit._atk import config
 from agent_toolkit._atk.wi import frontmatter, listing  # noqa: E402  # pylint: disable=wrong-import-position
 from agent_toolkit._atk.wi import legacy as legacy_module  # noqa: E402  # pylint: disable=wrong-import-position
+from agent_toolkit._atk.wi.layout import entry_path, entry_state_of
 from agent_toolkit._common.next_action import ActionableError  # noqa: E402  # pylint: disable=wrong-import-position
 from agent_toolkit._testing import git_repository
 
@@ -40,6 +41,29 @@ from agent_toolkit.atk_test import (  # pylint: disable=wrong-import-position
 _AGENT_ENVIRONMENT_VARIABLES = ("AI_AGENT", "CODEX_CI", "CLAUDECODE", "CURSOR_AGENT")
 
 
+@pytest.mark.parametrize(
+    ("important", "expected"),
+    [("all", {"important.md", "normal.md"}), ("yes", {"important.md"}), ("no", {"normal.md"})],
+)
+def test_list_filters_important_entries(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    important: str,
+    expected: set[str],
+) -> None:
+    """年月配置の重要項目と通常項目を公開JSONLフィルターで選択する。"""
+    notes = _setup_notes(tmp_path)
+    marked = _write_awi_file(notes, "important.md")
+    marked.write_text(marked.read_text(encoding="utf-8").replace("type: awi", "important: true\ntype: awi"), encoding="utf-8")
+    _write_awi_file(notes, "normal.md")
+    monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+    with pytest.raises(SystemExit) as result:
+        atk.main(["wi", "list", "--jsonl", "--skip-pull", f"--important={important}"], home=tmp_path)
+    assert result.value.code == 0
+    assert {json.loads(line)["filename"] for line in capsys.readouterr().out.splitlines()} == expected
+
+
 def test_candidate_records_match_filtered_candidates(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """依存待ち・未回答・run-skillの本文を除き、候補件数と同じ集合を引き渡す。"""
     notes = _setup_notes(tmp_path)
@@ -56,7 +80,7 @@ def test_candidate_records_match_filtered_candidates(tmp_path: pathlib.Path, mon
     records = snapshot.candidate_records()
     assert {record["filename"] for record in records} == {"ready.md"}
     assert len(records) == len(snapshot.candidates) and snapshot.lane_limit == 1
-    assert records[0]["body"] == (notes / "inbox/ready.md").read_text(encoding="utf-8")
+    assert records[0]["body"] == entry_path(notes, "ready.md").read_text(encoding="utf-8")
 
 
 @pytest.mark.parametrize("output", ["--jsonl", "--no-jsonl", "--summary-only", "--count"])
@@ -109,7 +133,7 @@ def test_repeatable_filters_use_or_within_kind_and_and_across_kinds(
         answer="承認する",
         source="human",
     )
-    held.rename(notes / "hold/bar.md")
+    held.write_text(held.read_text(encoding="utf-8").replace("state: inbox", "state: hold"), encoding="utf-8")
     _write_awi_file(notes, "excluded.md", target_repo="github.com/example/baz", source="agent")
     monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
@@ -251,11 +275,16 @@ class TestLegacyReservationMigration:
         *,
         reservation: str,
         state: str = "processing",
+        legacy_layout: bool = False,
     ) -> pathlib.Path:
-        path = notes / state / "main.md"
+        path = (
+            notes / state / "main.md"
+            if legacy_layout
+            else entry_path(notes, "main.md", fallback_date=datetime.date(2026, 10, 1))
+        )
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(
-            "---\ntarget_repo: github.com/example/foo\ntype: awi\n"
+            f"---\nstate: {state}\ntarget_repo: github.com/example/foo\ntype: awi\n"
             "depends_on: [companion.md, normal.md]\n"
             f"reservation: {reservation}\n"
             "target_commit_history: [abc123]\n---\n\nユーザー本文\n",
@@ -269,9 +298,10 @@ class TestLegacyReservationMigration:
         filename: str = "companion.md",
         target_filename: str = "main.md",
     ) -> pathlib.Path:
-        path = notes / "inbox" / filename
+        path = entry_path(notes, filename, fallback_date=datetime.date(2026, 10, 1))
+        path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(
-            "---\ntarget_repo: internal/agent-toolkit/reservations\ntype: awi\n"
+            "---\nstate: inbox\ntarget_repo: internal/agent-toolkit/reservations\ntype: awi\n"
             "reservation_companion: {target_repo: github.com/example/foo, "
             f"target_filename: {target_filename}, token_hash: {'a' * 64}}}\n---\n\n内部項目\n",
             encoding="utf-8",
@@ -314,16 +344,17 @@ class TestLegacyReservationMigration:
                 atk.main(["wi", "list"], home=tmp_path)
             assert exc_info.value.code == 0
 
-        migrated = notes / "inbox/main.md"
+        migrated = entry_path(notes, "main.md")
         parsed = frontmatter.parse_frontmatter(migrated.read_text(encoding="utf-8"))
         assert parsed is not None
         metadata, body = parsed
+        assert metadata["state"] == "inbox"
         assert "reservation" not in metadata
         assert "target_commit_history" not in metadata
         assert metadata["depends_on"] == ["normal.md"]
         assert "ユーザー本文" in body
         assert not (notes / "processing/main.md").exists()
-        assert not (notes / "inbox/companion.md").exists()
+        assert not list(notes.glob("[0-9][0-9][0-9][0-9]/[0-9][0-9]/companion.md"))
         migration_commits = [
             call
             for call in git_calls
@@ -333,8 +364,8 @@ class TestLegacyReservationMigration:
 
     def test_conflicting_inbox_entry_stops_migration_with_manual_steps(self, tmp_path: pathlib.Path) -> None:
         """移行先inboxに同名項目がある場合は何も変えず、比較と削除の手順を次の操作として返す。"""
-        notes = _setup_notes(tmp_path)
-        main = self._write_legacy_main(notes, reservation="broken")
+        notes = _setup_notes(tmp_path, legacy_layout=True)
+        main = self._write_legacy_main(notes, reservation="broken", legacy_layout=True)
         self._write_companion(notes)
         conflict = notes / "inbox/main.md"
         conflict.write_text("---\ntarget_repo: github.com/example/foo\ntype: awi\n---\n\n別本文\n", encoding="utf-8")
@@ -364,10 +395,10 @@ class TestLegacyReservationMigration:
             atk.main(["wi", "list"], home=tmp_path)
 
         assert exc_info.value.code == 0
-        parsed = frontmatter.parse_frontmatter((notes / "inbox/main.md").read_text(encoding="utf-8"))
+        parsed = frontmatter.parse_frontmatter(entry_path(notes, "main.md").read_text(encoding="utf-8"))
         assert parsed is not None
         assert parsed[0]["depends_on"] == ["normal.md"]
-        assert not (notes / "inbox/companion.md").exists()
+        assert not list(notes.glob("[0-9][0-9][0-9][0-9]/[0-9][0-9]/companion.md"))
 
     def test_orphan_companion_and_only_its_dependencies_are_removed(
         self,
@@ -394,7 +425,7 @@ class TestLegacyReservationMigration:
         parsed = frontmatter.parse_frontmatter(dependent.read_text(encoding="utf-8"))
         assert parsed is not None
         assert parsed[0]["depends_on"] == ["normal.md"]
-        assert not (notes / "inbox/orphan.md").exists()
+        assert not list(notes.glob("[0-9][0-9][0-9][0-9]/[0-9][0-9]/orphan.md"))
 
     def test_companion_like_user_metadata_is_unchanged(
         self,
@@ -427,10 +458,7 @@ class TestLegacyReservationMigration:
         """旧companionが無いユーザーmetadataは移行対象にしない。"""
         notes = _setup_notes(tmp_path)
         path = _write_awi_file(notes, "user.md", body="ユーザー本文")
-        processing_path = notes / "processing" / path.name
-        processing_path.parent.mkdir()
-        path.rename(processing_path)
-        path = processing_path
+        path.write_text(path.read_text(encoding="utf-8").replace("state: inbox", "state: processing"), encoding="utf-8")
         original = path.read_text(encoding="utf-8").replace(
             "type: awi\n",
             "type: awi\nreservation: {owner: user, purpose: custom}\ntarget_commit_history: [custom]\n",
@@ -453,7 +481,8 @@ class TestLegacyReservationMigration:
     ) -> None:
         """frontmatterを解析できない項目は移行せず、既存の修復処理で扱えるよう元の内容のまま残す。"""
         notes = _setup_notes(tmp_path)
-        path = notes / "inbox/broken.md"
+        path = entry_path(notes, "broken.md", fallback_date=datetime.date(2026, 10, 1))
+        path.parent.mkdir(parents=True, exist_ok=True)
         original = "---\ntarget_repo: [broken\nreservation: forged\n---\n本文\n"
         path.write_text(original, encoding="utf-8")
         git_calls: list[_GitCall] = []
@@ -490,7 +519,8 @@ class TestLegacyReservationMigration:
             atk.main(["wi", "list", "--target-repo=all"], home=tmp_path)
 
         assert normal_exit.value.code == 0
-        assert (notes / "inbox/main.md").is_file()
+        assert entry_path(notes, "main.md") == legacy
+        assert entry_state_of(legacy) == "inbox"
         assert not companion.exists()
 
 
@@ -576,7 +606,7 @@ class TestListMalformedFrontmatter:
         [
             ("本文のみ\n", "frontmatterなし", 0),
             ("---\ncreated: 2024\n本文\n", "閉じ区切りなし", 0),
-            ("---\ncreated: 2024\n---\n\n本文\n", "target_repo欠落", 2),
+            ("---\nstate: inbox\ncreated: 2024\n---\n\n本文\n", "target_repo欠落", 2),
         ],
     )
     def test_malformed_frontmatter_falls_back_to_unknown(
@@ -591,7 +621,9 @@ class TestListMalformedFrontmatter:
         """typeを確定できない異常frontmatter形式は拒否される。"""
         del label  # parametrize idのみ
         notes = _setup_notes(tmp_path)
-        (notes / "inbox" / "malformed.md").write_text(content, encoding="utf-8")
+        path = entry_path(notes, "malformed.md", fallback_date=datetime.date(2026, 10, 1))
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(content, encoding="utf-8")
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
         with pytest.raises(SystemExit) as exc_info:
@@ -619,7 +651,9 @@ class TestListMalformedFrontmatter:
         content: str,
     ) -> None:
         notes = _setup_notes(tmp_path)
-        (notes / "inbox" / "malformed.md").write_text(content, encoding="utf-8")
+        path = entry_path(notes, "malformed.md", fallback_date=datetime.date(2026, 10, 1))
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(content, encoding="utf-8")
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
         with pytest.raises(SystemExit) as exc_info:
@@ -667,11 +701,14 @@ class TestListMultipleRepos:
         notes = _setup_notes(tmp_path)
         _write_awi_file(notes, "z-awi.md", body="AWI")
         awi_processing = _write_awi_file(notes, "a-awi.md", body="処理中AWI")
-        (notes / "processing").mkdir()
-        awi_processing.replace(notes / "processing" / awi_processing.name)
+        awi_processing.write_text(
+            awi_processing.read_text(encoding="utf-8").replace("state: inbox", "state: processing"), encoding="utf-8"
+        )
         _write_uwi_file(notes, "z-uwi.md", question="未回答", answer="")
         uwi_processing = _write_uwi_file(notes, "a-uwi.md", question="回答済み", answer="回答")
-        uwi_processing.replace(notes / "processing" / uwi_processing.name)
+        uwi_processing.write_text(
+            uwi_processing.read_text(encoding="utf-8").replace("state: inbox", "state: processing"), encoding="utf-8"
+        )
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
         with pytest.raises(SystemExit) as exc_info:
@@ -949,12 +986,14 @@ class TestListLegacyTypeValues:
     ) -> None:
         """旧値のfeedback・tbdを持つ項目が、現行の種別の項目として一覧へ現れる。"""
         notes = _setup_notes(tmp_path)
-        (notes / "inbox" / "fb-001.md").write_text(
-            "---\ntarget_repo: github.com/example/foo\ntype: feedback\n---\n\n本文1\n",
+        path = _write_awi_file(notes, "fb-001.md")
+        path.write_text(
+            "---\nstate: inbox\ntarget_repo: github.com/example/foo\ntype: feedback\n---\n\n本文1\n",
             encoding="utf-8",
         )
-        (notes / "inbox" / f"{_FIXED_TIMESTAMP}-001.md").write_text(
-            "---\ntarget_repo: github.com/example/foo\ntype: tbd\n---\n\nq1\n",
+        path = _write_uwi_file(notes, f"{_FIXED_TIMESTAMP}-001.md")
+        path.write_text(
+            "---\nstate: inbox\ntarget_repo: github.com/example/foo\ntype: tbd\n---\n\nq1\n",
             encoding="utf-8",
         )
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
@@ -977,8 +1016,9 @@ class TestListLegacyTypeValues:
     ) -> None:
         """`--type=uwi`が旧値のtbdを持つ項目を選び、旧値は受理値に加わらない。"""
         notes = _setup_notes(tmp_path)
-        (notes / "inbox" / f"{_FIXED_TIMESTAMP}-001.md").write_text(
-            "---\ntarget_repo: github.com/example/foo\ntype: tbd\n---\n\nq1\n",
+        path = _write_uwi_file(notes, f"{_FIXED_TIMESTAMP}-001.md")
+        path.write_text(
+            "---\nstate: inbox\ntarget_repo: github.com/example/foo\ntype: tbd\n---\n\nq1\n",
             encoding="utf-8",
         )
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
@@ -1222,14 +1262,14 @@ class TestListStatusFilter:
     ) -> None:
         """--status=activeがawiとUWIのどちらでもholdを含む3状態を返す。"""
         notes = _setup_notes(tmp_path)
-        hold_dir = notes / "hold"
+        hold_dir = entry_path(notes, "fb-hold.md", fallback_date=datetime.date(2026, 10, 1)).parent
         hold_dir.mkdir(parents=True, exist_ok=True)
         (hold_dir / "fb-hold.md").write_text(
-            "---\ntype: awi\ntarget_repo: github.com/example/foo\n---\n\nhold本文\n",
+            "---\nstate: hold\ntype: awi\ntarget_repo: github.com/example/foo\n---\n\nhold本文\n",
             encoding="utf-8",
         )
         (hold_dir / "uwi-hold.md").write_text(
-            "---\ntype: uwi\ntarget_repo: github.com/example/foo\n---\n\n## 質問\n\nhold質問\n",
+            "---\nstate: hold\ntype: uwi\ntarget_repo: github.com/example/foo\n---\n\n## 質問\n\nhold質問\n",
             encoding="utf-8",
         )
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
@@ -1614,10 +1654,10 @@ class TestMultipleFiltersCombinedAsAnd:
         # typeのみ不一致（`--answered=all`のためAWIも回答状況フィルターでは除外されない）。
         _write_awi_file(notes, "fb-other-type.md", target_repo=matching_repo, source="session-review")
         # statusのみ不一致（processing配下、--status=inboxで除外される）。
-        processing_dir = notes / "processing"
+        processing_dir = entry_path(notes, "uwi-other-status.md", fallback_date=datetime.date(2026, 10, 1)).parent
         processing_dir.mkdir(parents=True, exist_ok=True)
         (processing_dir / "uwi-other-status.md").write_text(
-            f"---\ntarget_repo: {matching_repo}\ntype: uwi\nquestion_type: free-form\n"
+            f"---\nstate: processing\ntarget_repo: {matching_repo}\ntype: uwi\nquestion_type: free-form\n"
             "source: session-review\n---\n\n## 質問\n\n本文\n\n## 回答\n\n",
             encoding="utf-8",
         )
@@ -1863,9 +1903,10 @@ def test_list_with_staleness_judges_history_in_local_worktree(
     notes = _setup_notes(tmp_path)
     repository = tmp_path / "repository"
     base = _git_repository_with_old_later_commit(repository)
-    path = notes / "inbox" / "20260101-000000-001.md"
+    path = entry_path(notes, "20260101-000000-001.md")
+    path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(
-        f"---\ntarget_repo: github.com/example/stale\ntype: awi\ntarget_commit: {base}\n---\n\n# item\n",
+        f"---\nstate: inbox\ntarget_repo: github.com/example/stale\ntype: awi\ntarget_commit: {base}\n---\n\n# item\n",
         encoding="utf-8",
     )
     monkeypatch.chdir(repository)

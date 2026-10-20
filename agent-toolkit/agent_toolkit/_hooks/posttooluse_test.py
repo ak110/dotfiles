@@ -23,10 +23,10 @@ from agent_toolkit._agents_server import agents_wait, shared_layout, shared_root
 from agent_toolkit._agents_server import manager as server_manager
 from agent_toolkit._agents_server import tool_names as _agents_server_tool_names
 from agent_toolkit._agents_server.state import SessionState
-from agent_toolkit._common import state_paths
+from agent_toolkit._common import session_state, state_paths
 from agent_toolkit._hooks import agents_server_observations as _agents_server_observations
 from agent_toolkit._testing import fork_runner as _fork_runner
-from agent_toolkit._testing.helpers import SESSION_STATE_FILENAME_TEMPLATE, _read_state, auto_message_opening_attributes
+from agent_toolkit._testing.helpers import _read_state, auto_message_opening_attributes
 from agent_toolkit._testing.hook_output_contract import validate_hook_output
 
 _SCRIPT = pathlib.Path(__file__).resolve().parents[1] / "hook.py"
@@ -535,11 +535,10 @@ def test_windows_atk_cmd_wait_clears_pending_observation(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, tool_name: str, command: str
 ) -> None:
     """Windows向け起動形の回収後はStopの未観測警告を解消する。"""
-    from agent_toolkit._common import session_state  # noqa: PLC0415  # pylint: disable=import-outside-toplevel
     from agent_toolkit._hooks import agents_server_session_advisor  # noqa: PLC0415  # pylint: disable=import-outside-toplevel
 
     sid, child = "windows-wait-parent", "windows-wait-child"
-    path = tmp_path / SESSION_STATE_FILENAME_TEMPLATE.format(session_id=sid)
+    path = _state_path(sid)
     path.write_text(
         json.dumps(
             {
@@ -569,6 +568,13 @@ def test_windows_atk_cmd_wait_clears_pending_observation(
     assert agents_server_session_advisor.evaluate(json.dumps({"session_id": sid}))[0] == "approve"
 
 
+def _state_path(session_id: str) -> pathlib.Path:
+    """試験用のJSONを現行の公開パスへ準備する。"""
+    path = session_state.state_path(session_id)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    return path
+
+
 def _run(
     payload: dict | str,
     *,
@@ -590,7 +596,7 @@ def _run(
         sid = payload.get("session_id", "")
         if isinstance(sid, str) and sid:
             state_dir.mkdir(parents=True, exist_ok=True)
-            (state_dir / SESSION_STATE_FILENAME_TEMPLATE.format(session_id=sid)).write_text(
+            _state_path(sid).write_text(
                 json.dumps({"plan_mode_skill_invoked": True}, ensure_ascii=False),
                 encoding="utf-8",
             )
@@ -770,7 +776,7 @@ def test_free_text_answer_receives_the_same_notice_as_user_prompt(tmp_path: path
     片方のhookだけ本文を改訂すると、同じ文にhookごとに異なる手順が届く。
     """
     session_id = "ask-user-question-free-text"
-    state_path = tmp_path / SESSION_STATE_FILENAME_TEMPLATE.format(session_id=session_id)
+    state_path = _state_path(session_id)
     state_path.write_text(json.dumps({"last_user_prompt_at": 0.0}), encoding="utf-8")
     env = os.environ.copy()
     env.update({"TMPDIR": str(tmp_path), "TEMP": str(tmp_path), "TMP": str(tmp_path)})
@@ -925,13 +931,9 @@ def test_shell_output_without_persisted_path_is_left_unchanged(
 def test_registered_task_stop_consumes_only_successful_target(tmp_path: pathlib.Path, event: str, id_field: str) -> None:
     """登録の選択から停止対象の消費までを検証し、失敗・拒否と別対象を保持する。"""
     session_id = "task-stop-consume"
-    state_path = tmp_path / SESSION_STATE_FILENAME_TEMPLATE.format(session_id=session_id)
-    state_path.write_text(
-        json.dumps(
-            {"stall_detection_completed_at_by_task": {"task-1": 1.0, "task-2": 2.0}},
-            ensure_ascii=False,
-        ),
-        encoding="utf-8",
+    assert session_state.update_state(
+        session_id,
+        lambda _previous: {"stall_detection_completed_at_by_task": {"task-1": 1.0, "task-2": 2.0}},
     )
     if "TaskStop" in _registered_posttooluse_names(event):
         result = _run(
@@ -1479,7 +1481,7 @@ class TestExitSessionResetsProcessAwisFlag:
     def test_reset_when_exit_session_invoked(self, tmp_path: pathlib.Path) -> None:
         sid = "exit-cli"
         # 事前に自動振り返り起点フラグを立てる。
-        (tmp_path / SESSION_STATE_FILENAME_TEMPLATE.format(session_id=sid)).write_text(
+        _state_path(sid).write_text(
             json.dumps(
                 {
                     "process_wi_skill_invoked": True,
@@ -1496,7 +1498,7 @@ class TestExitSessionResetsProcessAwisFlag:
     def test_reset_idempotent_when_already_false(self, tmp_path: pathlib.Path) -> None:
         """既に偽の状態でも終了CLIの記録だけを追加する。"""
         sid = "exit-idem"
-        (tmp_path / SESSION_STATE_FILENAME_TEMPLATE.format(session_id=sid)).write_text(
+        _state_path(sid).write_text(
             json.dumps({"process_wi_skill_invoked": False}, ensure_ascii=False),
             encoding="utf-8",
         )
@@ -1508,7 +1510,8 @@ class TestExitSessionResetsProcessAwisFlag:
     def test_no_rewrite_when_exit_and_reset_state_is_already_complete(self, tmp_path: pathlib.Path) -> None:
         """終了CLI記録とリセット済み状態がそろう場合は再書き込みしない。"""
         sid = "exit-no-rewrite"
-        path = tmp_path / SESSION_STATE_FILENAME_TEMPLATE.format(session_id=sid)
+        path = session_state.state_path(sid)
+        path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(
             json.dumps(
                 {
@@ -1698,7 +1701,7 @@ class TestAgentsServerSessionState:
         if tool_name == "kill":
             response["kill_requested"] = True
         if tool_name not in start_tools:
-            (tmp_path / SESSION_STATE_FILENAME_TEMPLATE.format(session_id=sid)).write_text(
+            _state_path(sid).write_text(
                 json.dumps(
                     {
                         "agents_server_cwd_by_session": {remote_session_id: str(tmp_path)},
@@ -1822,9 +1825,7 @@ class TestAgentsServerSessionState:
         sid = f"continuation-cwd-{tool_name}"
         remote_session_id = "thread-continuation"
         state: dict[str, object] = {"agents_server_cwd_by_session": {remote_session_id: str(tmp_path)}}
-        (tmp_path / SESSION_STATE_FILENAME_TEMPLATE.format(session_id=sid)).write_text(
-            json.dumps(state, ensure_ascii=False), encoding="utf-8"
-        )
+        _state_path(sid).write_text(json.dumps(state, ensure_ascii=False), encoding="utf-8")
         tool_input: dict[str, object] = {"session_id": remote_session_id}
         if tool_name == "send_message":
             tool_input["prompt"] = "続行"
@@ -1841,9 +1842,7 @@ class TestAgentsServerSessionState:
                     "pending_observation": True,
                 }
             }
-            (tmp_path / SESSION_STATE_FILENAME_TEMPLATE.format(session_id=sid)).write_text(
-                json.dumps(state, ensure_ascii=False), encoding="utf-8"
-            )
+            _state_path(sid).write_text(json.dumps(state, ensure_ascii=False), encoding="utf-8")
         result = _run(
             {
                 "session_id": sid,
@@ -1875,9 +1874,7 @@ class TestAgentsServerSessionState:
                 }
             },
         }
-        (tmp_path / SESSION_STATE_FILENAME_TEMPLATE.format(session_id=sid)).write_text(
-            json.dumps(state, ensure_ascii=False), encoding="utf-8"
-        )
+        _state_path(sid).write_text(json.dumps(state, ensure_ascii=False), encoding="utf-8")
 
         result = _run(
             {
@@ -2037,29 +2034,29 @@ class TestAgentsServerSessionState:
         )
         assert started.returncode == 0
 
-        manager = server_manager.AgentsServerManager()
-        session = SessionState(remote_session_id, str(tmp_path), engine="codex")
-        session.status = "completed"
-        session.turn_completed = True
-        session.touch()
-        session.retention_deadline = asyncio.get_running_loop().time() - 1
-        manager.sessions[remote_session_id] = session
-        response = await manager.kill(remote_session_id, timeout=0)
-        killed = _run(
-            {
-                "session_id": sid,
-                "tool_name": "mcp__plugin_agent-toolkit_agents_server__kill",
-                "tool_input": {"session_id": remote_session_id},
-                "tool_response": {"structuredContent": response},
-            },
-            state_dir=tmp_path,
-        )
-        assert killed.returncode == 0
+        async with server_manager.AgentsServerManager() as manager:
+            session = SessionState(remote_session_id, str(tmp_path), engine="codex")
+            session.status = "completed"
+            session.turn_completed = True
+            session.touch()
+            session.retention_deadline = asyncio.get_running_loop().time() - 1
+            manager.sessions[remote_session_id] = session
+            response = await manager.kill(remote_session_id, timeout=0)
+            killed = _run(
+                {
+                    "session_id": sid,
+                    "tool_name": "mcp__plugin_agent-toolkit_agents_server__kill",
+                    "tool_input": {"session_id": remote_session_id},
+                    "tool_response": {"structuredContent": response},
+                },
+                state_dir=tmp_path,
+            )
+            assert killed.returncode == 0
 
-        record = _read_state(tmp_path, sid)["agents_server_sessions"][remote_session_id]
-        assert record["status"] == "expired"
-        assert record["kill_requested"] is False
-        assert record["pending_observation"] is False
+            record = _read_state(tmp_path, sid)["agents_server_sessions"][remote_session_id]
+            assert record["status"] == "expired"
+            assert record["kill_requested"] is False
+            assert record["pending_observation"] is False
 
     def test_start_shell_records_pending_observation(self, tmp_path: pathlib.Path) -> None:
         """シェル実行委譲も観測を試みていない作業として記録する。"""
@@ -2430,8 +2427,7 @@ def test_read_records_operation_skill_acquisition_only_for_full_body(
         **({"agent_id": agent_id} if agent_id else {}),
     }
     assert _run(payload, state_dir=tmp_path).returncode == 0
-    state_file = tmp_path / SESSION_STATE_FILENAME_TEMPLATE.format(session_id="read-acquisition")
-    state = _read_state(tmp_path, "read-acquisition") if state_file.exists() else {}
+    state = _read_state(tmp_path, "read-acquisition")
     assert state.get("operation_skill_delivered_agents") == expected
 
 
@@ -2459,6 +2455,5 @@ def test_codex_bash_read_records_operation_skill_acquisition(
         "tool_response": output,
     }
     assert _run(payload, state_dir=tmp_path).returncode == 0
-    state_file = tmp_path / SESSION_STATE_FILENAME_TEMPLATE.format(session_id="codex-read")
-    state = _read_state(tmp_path, "codex-read") if state_file.exists() else {}
+    state = _read_state(tmp_path, "codex-read")
     assert state.get("operation_skill_delivered_agents") == expected

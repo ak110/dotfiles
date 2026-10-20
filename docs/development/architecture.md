@@ -125,8 +125,8 @@ Codex 0.154.0はプラグイン導入時にsourceをsnapshotするため、`agen
 Codex hookはホストが渡す`${PLUGIN_ROOT}/scripts/launch.py`から起動し、その版のイベント名、標準入出力および終了状態をhook本体へ渡す。
 個人binに配置する`atk-hook`は旧定義からの呼出しを維持するため、`codex plugin list --json`に示された有効な導入版を解決する。
 インストーラーは`codex plugin add`より先にこの互換ラッパーを配置し、導入後に現行版のhook実体を確認する。
-初回切替時に限り、更新前の版付きhookコマンドを保持したセッションのために旧キャッシュを一時退避し、CLIが削除した場合は復元する。以降の更新に旧版保存台帳は設けない。
-プラグインの通常のversion別cache管理はCodex公式CLIへ委ねる。
+更新前の全通常versionディレクトリを複製し、CLIが削除した旧versionは同じ絶対パスへ復元する。
+現行versionの導入と有効状態の管理はCodex公式CLIへ委ね、旧版保存台帳は設けない。
 
 agent-toolkitには、公開互換インストーラーである`install-claude.sh`・`install-claude.ps1`を使う単体導入と、
 chezmoiの`post_apply`を使うdotfiles導入がある。既存の外部参照を維持するため、インストーラーと

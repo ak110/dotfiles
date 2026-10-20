@@ -3,6 +3,7 @@
 ターンがAPIエラーで終了したときに発火する観測専用イベント`StopFailure`のフック。
 出力と終了コードは無視されるため、通知やブロックはできない。発火内容をログへ追記し、
 実機の発火イベントと`error type`の種別を確定する材料とする。
+メインのrate_limitは、Function hooksのturn.completeへ1回限りの再開予約要求を渡す。
 
 ログはセッション横断の追記式JSONLで、一時ディレクトリ規則に従う固定パスへ出力する。
 """
@@ -11,8 +12,11 @@
 import json
 import pathlib
 lazy import datetime
+lazy import os
+lazy import re
 lazy import tempfile
 
+lazy from agent_toolkit._common import delegated_session, host_homes
 lazy from agent_toolkit._common.file_lock import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
     locked_rotate_and_append as _locked_rotate_and_append,
 )
@@ -65,5 +69,16 @@ def main(payload_text: str) -> int:
         return 0
     if not isinstance(payload, dict):
         return 0
+    session_id = payload.get("session_id")
+    if (
+        payload.get("error") == "rate_limit"
+        and not payload.get("agent_id")
+        and not delegated_session.is_delegated(os.environ)
+        and isinstance(session_id, str)
+        and re.fullmatch(r"[A-Za-z0-9_-]+", session_id)
+    ):
+        request = host_homes.claude_config_dir() / "agent-toolkit-function-hooks" / f"rate-limit-{session_id}.txt"
+        request.parent.mkdir(parents=True, exist_ok=True)
+        request.write_text("requested", encoding="utf-8")
     append_log(payload, log_path=_log_path(), now=datetime.datetime.now(datetime.UTC))
     return 0

@@ -299,7 +299,10 @@ def main(argv: list[str] | None = None, *, description: str | None = None, retri
         append_progress_log(args.plan_file, args.completed_step, args.result)
     except _next_action.ActionableError as error:
         # 保存済み計画の直接更新（`_plan.locations`）もこの型で次の操作を持って届く。
-        _next_action.report(f"{failure_title}: {error.reason}", next_action=error.next_action)
+        action = error.next_action
+        if isinstance(error, commit_mapping.CommitGitError):
+            action += "。--worktreeが対象作業ツリーを指すか確かめ、同じ引数で再実行する"
+        _next_action.report(f"{failure_title}: {error.reason}", next_action=action)
         return 1
     except (OSError, ValueError) as error:
         _next_action.report(

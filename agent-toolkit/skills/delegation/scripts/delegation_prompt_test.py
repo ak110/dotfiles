@@ -25,6 +25,7 @@ def test_start_and_builtin_prompt_share_input_contract(tmp_path: pathlib.Path, c
     params = {
         "担当種別": "レーン担当",
         "引き継ぎ記録先": str(tmp_path / "引継ぎ 記録.md"),
+        "書込担当一覧": '["session-main"]',
         "再開位置": r"C:\資料 フォルダー\計画.md",
         "固有指示": "最初の要求\n\n追加の条件",
     }

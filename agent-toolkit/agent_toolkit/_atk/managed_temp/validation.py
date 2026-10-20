@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import contextlib
 import os
 import pathlib
 import stat
 import typing
 
+from agent_toolkit._atk.managed_temp import permissions
 from agent_toolkit._atk.managed_temp.errors import ManagedTempError
 from agent_toolkit._atk.managed_temp.registry import (
     _MARKER_NAME,
@@ -38,6 +40,13 @@ def _validate_path_shape(path_arg: pathlib.Path) -> tuple[pathlib.Path, pathlib.
 
 
 def _validate_posix(path_arg: pathlib.Path | str, *, registry_fallback: bool = False) -> _ValidatedTemp:
+    with contextlib.ExitStack() as stack:
+        return _validate_posix_scoped(path_arg, stack, registry_fallback=registry_fallback)
+
+
+def _validate_posix_scoped(
+    path_arg: pathlib.Path | str, stack: contextlib.ExitStack, *, registry_fallback: bool
+) -> _ValidatedTemp:
     if os.name != "posix":
         raise ManagedTempError(
             "POSIXの所有者・権限の検証はWindowsでは実行できない。Windowsの所有者・ACLはWindows用の検証で確かめる",
@@ -48,7 +57,7 @@ def _validate_posix(path_arg: pathlib.Path | str, *, registry_fallback: bool = F
     root_descriptor: int | None = None
     target_descriptor: int | None = None
     try:
-        root_descriptor = os.open(root, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+        root_descriptor = stack.enter_context(permissions.descriptor(root, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW))
         opened_root = os.fstat(root_descriptor)
         opened_root_state = _ValidatedRoot(
             opened_root.st_dev,
@@ -69,10 +78,12 @@ def _validate_posix(path_arg: pathlib.Path | str, *, registry_fallback: bool = F
             raise ManagedTempError(
                 f"管理対象の所有者・権限またはroot直下の条件が不正: {path}", next_action=ManagedTempError.PERMISSION_NEXT_ACTION
             )
-        target_descriptor = os.open(
-            path.name,
-            os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW,
-            dir_fd=root_descriptor,
+        target_descriptor = stack.enter_context(
+            permissions.descriptor(
+                path.name,
+                os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW,
+                dir_fd=root_descriptor,
+            )
         )
         opened = os.fstat(target_descriptor)
         if (before.st_dev, before.st_ino) != (opened.st_dev, opened.st_ino):
@@ -93,11 +104,6 @@ def _validate_posix(path_arg: pathlib.Path | str, *, registry_fallback: bool = F
             raise ManagedTempError(f"管理対象が検証中に置換された: {path}", next_action=ManagedTempError.REPLACED_NEXT_ACTION)
     except OSError as error:
         raise ManagedTempError(f"管理対象を検証できない: {path}: {error}") from error
-    finally:
-        if target_descriptor is not None:
-            os.close(target_descriptor)
-        if root_descriptor is not None:
-            os.close(root_descriptor)
     registry_path = _registry_path(path)
     recovered_from_marker = registry_fallback and not os.path.lexists(registry_path)
     registry = marker if recovered_from_marker else _load_private_json(registry_path)

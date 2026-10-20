@@ -27,6 +27,10 @@ from session_evidence_stats import (
 from agent_toolkit._agents_server import tool_names as _agents_server_tool_names
 
 _APPLY_PATCH_FILE = re.compile(r"^\*\*\* (?:Add|Update|Delete) File: (.+)$", re.MULTILINE)
+_SHELL_ABSOLUTE_PATH = re.compile(
+    r"""(?P<quote>['"])(?P<quoted>(?:/|[A-Za-z]:[\\/]|\\\\)[^'"]*)(?P=quote)|"""
+    r"""(?<![\w:/\\])(?P<bare>(?:/|[A-Za-z]:[\\/]|\\\\)[^\s"'`;&|()<>{}\[\]]+)"""
+)
 
 
 def _conversation_tool_calls(records: list[_Record]) -> list[dict[str, Any]]:
@@ -138,10 +142,126 @@ def comparison_material_events(collected: list[_CollectedRecord]) -> list[dict[s
                 "input_form": "file-reference" if delegate and paths else "direct-body" if body is not None else "command",
                 "observed_body_characters": len(body) if body is not None else None,
                 "recorded_result_characters": len(result) if result is not None else None,
+                "recorded_result_utf8_bytes": len(result.encode("utf-8")) if result is not None else None,
+                "read_range": {key: inputs[key] for key in ("offset", "limit", "start", "max_bytes") if key in inputs},
                 "summary": call.text,
             }
             events.append(event)
     return events
+
+
+def resource_usage_events(collected: list[_CollectedRecord]) -> list[dict[str, Any]]:
+    """担当ごとの読込・Skill・反復・結果量を、欠陥の判定を加えず集計する。
+
+    shellとJavaScriptの入力は命令文字列のまま残し、ファイルの読了件数へ換算しない。
+    結果上位は各担当から選ぶため、非律速の担当の大量出力にも到達できる。
+    """
+    events: list[dict[str, Any]] = []
+    for item in collected:
+        entries = {record.line: record.entry for record in item.records}
+        calls = _record_tool_calls(item.records)
+        reads: list[dict[str, Any]] = []
+        skills: list[dict[str, Any]] = []
+        shell_paths: list[dict[str, Any]] = []
+        results: list[dict[str, Any]] = []
+        repeats: dict[tuple[str, str], list[str]] = {}
+        for call in calls:
+            name = call.tool.rsplit("__", 1)[-1]
+            inputs = _recorded_input(entries[call.line], call.call_id)
+            locator = f"{item.record_id}:{call.line}"
+            result = _recorded_result(entries[call.result_line], call.call_id) if call.result_line is not None else None
+            result_metrics = {
+                "result_location": f"{item.record_id}:{call.result_line}" if call.result_line is not None else None,
+                "characters": len(result) if result is not None else None,
+                "utf8_bytes": len(result.encode("utf-8")) if result is not None else None,
+            }
+            if call.text:
+                repeats.setdefault((call.tool, call.text), []).append(locator)
+            if name in {"Read", "read_file", "Skill"}:
+                row = {
+                    "location": locator,
+                    "tool": call.tool,
+                    "target": inputs.get("skill") if name == "Skill" else inputs.get("file_path", inputs.get("path")),
+                    "range": {key: inputs[key] for key in ("offset", "limit", "start", "max_bytes") if key in inputs},
+                    **result_metrics,
+                }
+                (skills if name == "Skill" else reads).append(row)
+            if name in {"Bash", "exec_command", "functions.exec_command", "CommandExecution"}:
+                command = inputs.get("command", inputs.get("cmd", call.text))
+                if isinstance(command, str):
+                    shell_paths.extend(
+                        {"location": locator, "tool": call.tool, "target": match["quoted"] or match["bare"]}
+                        for match in _SHELL_ABSOLUTE_PATH.finditer(command)
+                    )
+            if result is not None:
+                results.append(
+                    {
+                        "location": locator,
+                        "result_location": f"{item.record_id}:{call.result_line}",
+                        "tool": call.tool,
+                        "characters": len(result),
+                        "utf8_bytes": len(result.encode("utf-8")),
+                    }
+                )
+        events.append(
+            {
+                "kind": "stats-resource-usage",
+                "record": item.record_id,
+                "role": item.role,
+                "tool_calls": len(calls),
+                "reads": reads,
+                "skills": skills,
+                "shell_paths": shell_paths,
+                "recorded_result_characters": sum(row["characters"] for row in results),
+                "recorded_result_utf8_bytes": sum(row["utf8_bytes"] for row in results),
+                "largest_results": sorted(results, key=lambda row: (-row["utf8_bytes"], row["location"]))[:10],
+                "omitted_largest_result_count": max(0, len(results) - 10),
+                "repeats": [
+                    {"tool": tool, "input": text, "locations": locations, "count": len(locations)}
+                    for (tool, text), locations in sorted(repeats.items(), key=lambda row: (-len(row[1]), row[0]))
+                    if len(locations) > 1
+                ][:10],
+                "omitted_repeat_count": max(0, sum(len(locations) > 1 for locations in repeats.values()) - 10),
+            }
+        )
+    return [
+        *events,
+        {
+            "kind": "stats-resource-summary",
+            "reads_by_target": _resource_target_groups(events, "reads"),
+            "skills_by_name": _resource_target_groups(events, "skills"),
+            "shell_paths_by_target": _resource_target_groups(events, "shell_paths"),
+        },
+    ]
+
+
+def _resource_target_groups(events: list[dict[str, Any]], field: str) -> list[dict[str, Any]]:
+    """同じ明示対象を担当横断でまとめ、担当内の回数と観測できた結果量を保持する。"""
+    groups: dict[str, dict[str, Any]] = {}
+    for event in events:
+        for row in event[field]:
+            target = row["target"]
+            if not isinstance(target, str):
+                continue
+            group = groups.setdefault(
+                target,
+                {"target": target, "count": 0, "observed_result_count": 0, "characters": 0, "utf8_bytes": 0, "by_record": {}},
+            )
+            record = group["by_record"].setdefault(
+                event["record"],
+                {"count": 0, "observed_result_count": 0, "characters": 0, "utf8_bytes": 0, "locations": []},
+            )
+            group["count"] += 1
+            record["count"] += 1
+            record["locations"].append(row["location"])
+            if row.get("characters") is not None:
+                group["observed_result_count"] += 1
+                group["characters"] += row["characters"]
+                group["utf8_bytes"] += row["utf8_bytes"]
+                record["observed_result_count"] += 1
+                record["characters"] += row["characters"]
+                record["utf8_bytes"] += row["utf8_bytes"]
+    return sorted(groups.values(), key=lambda group: (-group["count"], group["target"]))
 
 
 def _recorded_input(entry: dict[str, Any], call_id: str | None) -> dict[str, Any]:

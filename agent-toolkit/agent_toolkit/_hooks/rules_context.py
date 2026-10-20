@@ -6,8 +6,8 @@
 `forwarded-user-input`で囲む。読み手のエージェントが区分ごとに生成主体と種別を
 判別できるようにするためであり、区分ごとに囲んだ本文を全体で重ねて囲まない。
 
-Claude Codeはhook 1件の出力を10,000文字で切り詰める。条文の欠落を防ぐため、
-最大構成を同じ上限へ収める契約テストを置く。
+Claude CodeはJSONのadditionalContextを10,000文字で保存先とプレビューへ置き換える。
+条文をそのまま届けるため、最大構成の追加文脈を同じ上限へ収める契約テストを置く。
 """
 
 from __future__ import annotations
@@ -15,6 +15,10 @@ from __future__ import annotations
 import json
 import os
 import pathlib
+lazy import re
+lazy import shlex
+lazy import subprocess
+lazy import sys
 
 # 関数の実行時にだけ使う依存は、使用時まで読み込まない。
 lazy import urllib.parse
@@ -23,6 +27,7 @@ lazy from typing import Any
 from agent_toolkit._atk import managed_temp
 from agent_toolkit._common import message_format, plugin_environment
 from agent_toolkit._hooks.notice import formatter as _notice_formatter
+lazy from agent_toolkit._common import host_homes, process_tree
 lazy from agent_toolkit._common.delegated_session import is_delegated
 lazy from agent_toolkit._common.session_state import update_state
 lazy from agent_toolkit._hooks import work_contract
@@ -173,6 +178,28 @@ def session_temp_notice(session_temp: pathlib.Path | str) -> str:
     )
 
 
+def _resolve_transcript(session_id: object, transcript_path: object) -> str | None:
+    """入力値の実在か同じIDのメイン記録の一意性からClaude記録を解決する。"""
+    if not isinstance(transcript_path, str) or not (
+        pathlib.PurePosixPath(transcript_path).is_absolute() or pathlib.PureWindowsPath(transcript_path).is_absolute()
+    ):
+        return None
+    try:
+        if pathlib.Path(transcript_path).is_file():
+            return transcript_path
+        if not isinstance(session_id, str) or re.fullmatch(r"[A-Za-z0-9_-]+", session_id) is None:
+            return transcript_path
+        projects = host_homes.claude_config_dir() / "projects"
+        candidates = (
+            [path for project in projects.iterdir() if project.is_dir() and (path := project / f"{session_id}.jsonl").is_file()]
+            if projects.is_dir()
+            else []
+        )
+        return str(candidates[0]) if len(candidates) == 1 else transcript_path if not candidates else None
+    except OSError:
+        return None
+
+
 def _conversation_identity_notice(session_id: object, transcript_path: object) -> str:
     """Claudeメイン自身の会話の所在を、SessionStartの入力値から通知する。"""
     lines = [
@@ -180,10 +207,9 @@ def _conversation_identity_notice(session_id: object, transcript_path: object) -
         if isinstance(session_id, str) and session_id
         else "この会話のセッションID: 入力から取得できません。シェルのCLAUDE_CODE_SESSION_IDを使える場合はその値を使う。"
     ]
-    if isinstance(transcript_path, str) and (
-        pathlib.PurePosixPath(transcript_path).is_absolute() or pathlib.PureWindowsPath(transcript_path).is_absolute()
-    ):
-        lines.append(f"この会話のtranscript: {transcript_path}")
+    resolved = _resolve_transcript(session_id, transcript_path)
+    if resolved is not None:
+        lines.append(f"この会話のtranscript: {resolved}")
     else:
         lines.append(
             "この会話のtranscript: 絶対パスを入力から取得できません。特定済みIDをsession-review-evidenceの"
@@ -205,6 +231,75 @@ def _existing_session_temp(session_id: object) -> str | None:
     except managed_temp.ManagedTempError, OSError:
         return None
     return str(path) if path is not None else None
+
+
+def _compaction_notice(session_id: str, transcript_path: object, session_temp: pathlib.Path | None, *, delegated: bool) -> str:
+    """既存の証拠抽出CLIで全人間入力を保存し、会話の流れの取得先も通知する。"""
+    resolved = _resolve_transcript(session_id, transcript_path)
+    if resolved is None:
+        return "圧縮後の原文を抽出できない。特定済みIDをsession-review-evidenceの--claude-session-idへ渡して記録を解決する。"
+    command = [
+        str(SHARE_DIR.parent / "scripts" / "atk"),
+        "run-script",
+        "session-review-evidence",
+        "--",
+        "--transcript",
+        resolved,
+        "--user-events",
+    ]
+    conversation = shlex.join(
+        [
+            str(SHARE_DIR.parent / "scripts" / "atk"),
+            "run-script",
+            "session-review-prepare",
+            "--",
+            "--transcript",
+            resolved,
+            "--conversation-only",
+        ]
+    )
+    lines = [f"会話全体の流れが必要な場合は`{conversation}`でconversation.mdとconversation_rangesを取得する。"]
+    if delegated:
+        return "\n".join(lines)
+    output = session_temp / "compaction-user-events.jsonl" if session_temp is not None else None
+    try:
+        if output is None:
+            raise ValueError("セッションのmanaged-tempを取得できない")
+        # 同じ依存環境のPythonで公開スクリプトを呼び、起動ごとの環境解決を重ねない。
+        result = process_tree.run_with_timeout(
+            [
+                sys.executable,
+                str(SHARE_DIR.parent / "skills/session-review/scripts/session_review_evidence.py"),
+                "--transcript",
+                resolved,
+                "--user-events",
+            ],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=15,
+            check=True,
+        )
+        users = [
+            event
+            for line in result.stdout.splitlines()
+            if isinstance(event := json.loads(line), dict) and event.get("kind") == "user"
+        ]
+        data = "".join(json.dumps(event, ensure_ascii=False) + "\n" for event in users)
+        output.write_text(data, encoding="utf-8")
+        lines.append(
+            f"ユーザー発話の原文{len(users)}件: {output}。圧縮の要約で文言や範囲が変わり得るため、"
+            "ユーザーの要求と判断はこのファイルの原文で確かめる。"
+        )
+    except (OSError, ValueError, subprocess.SubprocessError) as error:
+        if output is not None:
+            try:
+                output.unlink(missing_ok=True)
+            except OSError:
+                lines.append("前回の抽出ファイルを削除できないため、そのファイルは使用しない。手動で原文を再取得する。")
+        lines.append(f"ユーザー発話の抽出に失敗した（{type(error).__name__}）。手動で`{shlex.join(command)}`を実行する。")
+    return "\n".join(lines)
 
 
 def _subagent_temp_notice(session_temp: str, agent_id: object) -> str:
@@ -259,6 +354,7 @@ def main(payload_text: str, *, host: str = "claude") -> int:
             identity_context = _llm_notice(_conversation_identity_notice(session_id, payload.get("transcript_path")))
             content = f"{content}\n\n{identity_context}" if content else identity_context
         if isinstance(session_id, str) and session_id:
+            session_temp = None
             if source in _OPERATION_SKILL_RESET_SOURCES:
                 reset_main_operation_skill_ready(session_id)
             if not delegated and source in _CONTEXT_LOSING_SOURCES:
@@ -277,6 +373,11 @@ def main(payload_text: str, *, host: str = "claude") -> int:
                     contract_notice = work_contract.notice(session_id)
                     if contract_notice is not None:
                         content += f"\n\n{_llm_notice(contract_notice)}"
+            if source == "compact" and host == "claude":
+                compact = _llm_notice(
+                    _compaction_notice(session_id, payload.get("transcript_path"), session_temp, delegated=delegated)
+                )
+                content = f"{content}\n\n{compact}" if content else compact
     elif event_name == "SubagentStart":
         content = compose_subagent_start(host=host)
         session_temp = _existing_session_temp(payload.get("session_id"))

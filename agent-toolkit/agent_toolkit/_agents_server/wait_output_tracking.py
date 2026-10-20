@@ -113,7 +113,7 @@ def consume_agents_server_tool_result(
     if operation in {"activate", "resume"}:
         if operation == "resume" and result.get("delivery") == "reply_failed":
             return
-        session_id = result.get("session_id")
+        session_id = arguments.get("session_id") if operation == "resume" else result.get("session_id")
         if isinstance(session_id, str) and session_id:
             if session_id not in session.live_child_session_ids:
                 # 新しい委譲は前の完了通知と別の待機単位であり、その終端でも一度だけ再開できる。
@@ -277,7 +277,7 @@ def _structured_tool_result(value: Any) -> dict[str, Any] | None:
         structured = value.get("structuredContent")
         if isinstance(structured, Mapping):
             return dict(structured)
-        if isinstance(value.get("session_id"), str) or "status" in value:
+        if isinstance(value.get("session_id"), str) or "status" in value or "delivery" in value:
             return dict(value)
         for key in ("content", "result"):
             nested = _structured_tool_result(value.get(key))

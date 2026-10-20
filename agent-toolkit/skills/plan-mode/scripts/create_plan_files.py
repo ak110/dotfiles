@@ -249,7 +249,9 @@ def _check_structure(
             "計画の構造が基準を満たしていません: "
             + " / ".join(errors)
             + " / 判定条件を定める文書: agent-toolkit/skills/plan-mode/references/plan-file-standards.md",
-            next_action="列挙した各違反を計画本文の入力ファイルで直し、同じ引数で再実行する",
+            next_action=check_plan_file.TARGET_REPO_NEXT_ACTION
+            if all("対象リポジトリが作業ディレクトリのGitルートと一致しない" in error for error in errors)
+            else "列挙した構造の違反を計画本文で直し、対象worktreeの不一致は--work-dirを指定して再実行する",
         )
 
 

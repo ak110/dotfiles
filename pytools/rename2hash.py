@@ -6,6 +6,7 @@
 """
 
 import argparse
+import contextlib
 import hashlib
 import io
 import logging
@@ -28,8 +29,7 @@ def main() -> None:
     enable_completion(parser)
     args = parser.parse_args()
     setup_logging()
-    log_fp = args.log_file.open("a", encoding="utf-8") if args.log_file else None
-    try:
+    with args.log_file.open("a", encoding="utf-8") if args.log_file else contextlib.nullcontext() as log_fp:
         rename_to_hash(
             args.path,
             pattern=args.pattern,
@@ -37,9 +37,6 @@ def main() -> None:
             dry_run=args.dry_run,
             log_fp=log_fp,
         )
-    finally:
-        if log_fp is not None:
-            log_fp.close()
     sys.exit(0)
 
 

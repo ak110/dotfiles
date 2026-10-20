@@ -1,6 +1,7 @@
 """`atk wi process-loop`のプロンプトとオーケストレーターの選択と、1回のセッションの起動。"""
 
 import argparse
+import contextlib
 import dataclasses
 import json
 import os
@@ -184,28 +185,22 @@ def _build_session_argv(
             for diagnostic in choices.warnings:
                 print(diagnostic, file=sys.stderr)
             connection = choices.require_first()
+        connection = _connection.with_current_isolation(connection, env=env)
         prepared = _connection.connection_environment(env, connection)
         # 対話起動は未承認の環境APIキーで確認画面を表示するため、helperから取得する。
         if connection.kind != "inherit":
             prepared.pop("ANTHROPIC_API_KEY", None)
         env.clear()
         env.update(prepared)
-        settings = _claude_settings.merge_settings(
-            _pl_env.dialog_timeout_settings(),
-            {key: prepared[key] for key in _connection.AUTH_ENV if key in prepared and connection.kind != "inherit"},
-            None,
-            force_file=bool(connection.api_env_file),
-            key_helper_command=_claude_settings.api_key_helper(connection.api_env_file) if connection.api_env_file else None,
-            isolate_auth=connection.kind != "inherit",
-        )
+        overrides = _connection.connection_overrides(connection)
+        if connection.kind != "inherit":
+            overrides["ANTHROPIC_API_KEY"] = ""
         hook_debug_log = _pl_env.create_hook_debug_log(env)
         argv = [
             "claude",
             "--debug=hooks",
             "--debug-file",
             str(hook_debug_log),
-            "--settings",
-            settings,
         ]
         if resume_pending:
             argv.extend(("--model", model, "--effort", effort))
@@ -217,21 +212,35 @@ def _build_session_argv(
             env[_pl_env.PROCESS_LOOP_SESSION_ID_ENV] = session_id
             argv.extend(("--session-id", session_id))
             argv.extend(("--permission-mode=auto", "--model", model, "--effort", effort, prompt))
-        if identifier := env.get(_pl_env.PROCESS_LOOP_SESSION_ID_ENV):
-            _registry.publish(
-                identifier,
-                terminal=False,
-                engine="claude",
-                cwd=str(cwd),
-                model=model,
-                effort=effort,
-                model_type="orchestrate",
-                claude_api_env_file=connection.api_env_file,
-                claude_connection=connection.kind,
-                claude_role="orchestrator",
-                processes=tuple(value for value in (_registry.owner_process(),) if value is not None),
-            )
-        return argv, hook_debug_log
+        settings = _claude_settings.merge_settings(
+            _pl_env.dialog_timeout_settings(),
+            overrides,
+            None,
+            force_file=bool(connection.api_env_file),
+            key_helper_command=_claude_settings.api_key_helper(connection.api_env_file) if connection.api_env_file else None,
+            isolate_auth=connection.kind != "inherit",
+        )
+        with contextlib.ExitStack() as settings_owner:
+            if isinstance(settings, _claude_settings.SettingsFile):
+                settings_owner.enter_context(settings)
+            if identifier := env.get(_pl_env.PROCESS_LOOP_SESSION_ID_ENV):
+                _registry.publish(
+                    identifier,
+                    terminal=False,
+                    engine="claude",
+                    cwd=str(cwd),
+                    model=model,
+                    effort=effort,
+                    model_type="orchestrate",
+                    claude_api_env_file=connection.api_env_file,
+                    claude_connection=connection.kind,
+                    claude_role="orchestrator",
+                    processes=tuple(value for value in (_registry.owner_process(),) if value is not None),
+                )
+            argv[4:4] = ["--settings", settings]
+            result = argv, hook_debug_log
+            settings_owner.pop_all()
+            return result
 
     argv = ["codex"]
     if resume_pending:
@@ -304,21 +313,53 @@ def _run_process_session(
     dotfiles_root: pathlib.Path | None,
     on_session_finished: Callable[[bool], None],
 ) -> bool:
+    """起動引数が作成した設定の寿命を、準備・実行・終了処理の全体へ結び付ける。"""
+    with contextlib.ExitStack() as settings_owner:
+        session_argv, hook_debug_log = _build_session_argv(
+            args,
+            session_prompt,
+            env,
+            orchestrator=orchestrator,
+            model=model,
+            effort=effort,
+            resume_pending=resume_pending,
+            cwd=session_path,
+        )
+        for argument in session_argv:
+            if isinstance(argument, _claude_settings.SettingsFile):
+                settings_owner.enter_context(argument)
+        return _run_started_process_session(
+            args,
+            session_path,
+            env,
+            session_argv=session_argv,
+            hook_debug_log=hook_debug_log,
+            orchestrator=orchestrator,
+            model=model,
+            effort=effort,
+            dotfiles_root=dotfiles_root,
+            on_session_finished=on_session_finished,
+        )
+
+
+def _run_started_process_session(
+    args: argparse.Namespace,
+    session_path: pathlib.Path,
+    env: dict[str, str],
+    *,
+    session_argv: list[str],
+    hook_debug_log: pathlib.Path | None,
+    orchestrator: str,
+    model: str,
+    effort: str,
+    dotfiles_root: pathlib.Path | None,
+    on_session_finished: Callable[[bool], None],
+) -> bool:
     """子セッションを1回実行し、process-loopを終了すべきかを返す。
 
     中断要求の判定は`_pl_update.restart_process_loop`の呼び出しより前に置く。同関数は呼び出し元へ
     戻らないため、後段へ置いた判定は`--no-update`を省略して起動した場合には実行されない。
     """
-    session_argv, hook_debug_log = _build_session_argv(
-        args,
-        session_prompt,
-        env,
-        orchestrator=orchestrator,
-        model=model,
-        effort=effort,
-        resume_pending=resume_pending,
-        cwd=session_path,
-    )
     if hook_debug_log is not None:
         print(f"Claude hook診断ログ: {hook_debug_log}")
     _process_loop_log.append("session_start")
@@ -346,10 +387,6 @@ def _run_process_session(
     except OSError as error:
         _process_loop_log.append("session_launch_failed", error=type(error).__name__, detail=str(error))
         raise
-    finally:
-        for argument in session_argv:
-            if isinstance(argument, _claude_settings.SettingsFile):
-                argument.cleanup()
     if orchestrator == "claude" and (identifier := env.get(_pl_env.PROCESS_LOOP_SESSION_ID_ENV)):
         info = _registry.resolve(identifier).resume_info
         if info is not None:

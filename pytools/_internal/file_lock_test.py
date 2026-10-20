@@ -1,5 +1,6 @@
 """pytools._internal.file_lock のテスト。"""
 
+import contextlib
 import os
 import subprocess
 import sys
@@ -7,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from pytools._internal import file_lock
+from pytools._internal import common, file_lock
 
 # 別プロセスからロックを取得してマーカーファイルを作成する子プロセス用スクリプト。
 _CHILD_SCRIPT = """
@@ -59,21 +60,19 @@ class TestExclusiveFileLock:
         # 子プロセスから`pytools`をimportできるよう、現在の探索パスを引き継ぐ。
         env = dict(os.environ, PYTHONPATH=os.pathsep.join(sys.path))
 
-        proc: subprocess.Popen[bytes] | None = None
-        try:
+        with contextlib.ExitStack() as resources:
             # 先にロックを保持してから子プロセスを起動し、取得順序を確定させる。
             with file_lock.exclusive_file_lock(lock_path):
-                proc = subprocess.Popen(  # noqa: S603  # pylint: disable=consider-using-with
-                    [sys.executable, "-c", _CHILD_SCRIPT, str(lock_path), str(marker)],
-                    env=env,
+                proc = resources.enter_context(
+                    common.process_scope(
+                        [sys.executable, "-c", _CHILD_SCRIPT, str(lock_path), str(marker)],
+                        env=env,
+                    )
                 )
                 # 子プロセスがロック待ちで完了しないこと（進入できれば`wait`が即座に返る）。
                 with pytest.raises(subprocess.TimeoutExpired):
                     proc.wait(timeout=_BLOCKED_OBSERVATION_SEC)
                 assert not marker.exists()
             assert proc.wait(timeout=_CHILD_COMPLETION_TIMEOUT_SEC) == 0
-        finally:
-            if proc is not None:
-                proc.kill()
 
         assert marker.read_text(encoding="utf-8") == "acquired"

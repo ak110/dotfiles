@@ -6,6 +6,7 @@ import argparse
 import ast
 import json
 import pathlib
+import shlex
 from collections.abc import Iterator
 
 import pytest
@@ -92,6 +93,8 @@ def test_every_command_has_summary_and_description() -> None:
 def test_every_command_describes_purpose_scene_effect_precondition_and_recovery() -> None:
     for command, parser, _summary in _walk_commands():
         assert parser.description is not None, command
+        first_line = parser.description.splitlines()[0]
+        assert first_line and not first_line.startswith(_DESCRIPTION_MARKERS), command
         for marker in _DESCRIPTION_MARKERS:
             assert marker in parser.description, (command, marker)
         assert parser.epilog is not None, command
@@ -110,11 +113,11 @@ def test_help_examples_match_real_command_parsers() -> None:
             cli_examples.validate_example(example, source=f"{command} --help:{line}", parsers=parsers)
 
 
-def test_help_example_choice_and_separator_mutations_are_detected(monkeypatch: pytest.MonkeyPatch) -> None:
-    """ヘルプ実物の選択肢変更と区切りの移動を、受理側に接続して検出する。"""
+def test_help_example_invalid_inputs_are_detected(monkeypatch: pytest.MonkeyPatch) -> None:
+    """ヘルプ実物の不正な選択肢・未知オプション・必須値の欠落を実parserで検出する。"""
     for epilog in (
         "実行例:\n\n  atk wi list --type unsupported-choice",
-        "実行例:\n\n  atk read-file -- /absolute/file --max-bytes 16000",
+        "実行例:\n\n  atk read-file -- /absolute/file --unknown-option 16000",
         "実行例:\n\n  atk plans checkout",
     ):
         with monkeypatch.context() as patch:
@@ -240,29 +243,39 @@ def test_every_subcommand_rejects_unsupported_argument_with_accepted_options(
         assert f"解釈できない引数: --unsupported。{target.prog}が受理するオプションは{accepted}" in error, command
 
 
-@pytest.mark.parametrize("option", [["--max-bytes", "16000"], ["--max-bytes=16000"], ["--start", "0"]])
-def test_misplaced_option_cli_guides_to_success(
+@pytest.mark.parametrize(
+    ("option", "expected_text"),
+    [
+        (["--max-bytes", "16000"], "本文\n"),
+        (["--max-bytes=16000"], "本文\n"),
+        (["--start", "0"], "本文\n"),
+        (["--start", "1", "--max-bytes", "16000"], "文\n"),
+    ],
+)
+def test_trailing_option_cli_matches_leading_option(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
     option: list[str],
+    expected_text: str,
 ) -> None:
-    """配置を直す案内から、同じファイルと値を使う公開CLIの成功へ進める。"""
+    """パス後方へ追加した登録済みオプションが同じ本文と継続位置を返す。"""
     source = tmp_path / "本文.txt"
     source.write_text("本文\n", encoding="utf-8")
-    with pytest.raises(SystemExit) as rejected:
+    with pytest.raises(SystemExit) as trailing:
         atk.main(["read-file", "--", str(source), *option], _output_capture_active=True)
-    assert rejected.value.code == 2
-    error = capsys.readouterr().err
-    assert option[0] in error and "区切り記号`--`の前へ移して" in error
+    assert trailing.value.code == 0
+    trailing_output = capsys.readouterr()
+    assert not trailing_output.err
     with pytest.raises(SystemExit) as accepted:
         atk.main(["read-file", *option, "--", str(source)], _output_capture_active=True)
     assert accepted.value.code == 0
     result = json.loads(capsys.readouterr().out)
-    assert result["text"] == "本文\n" and result["eof"] is True
+    assert result == json.loads(trailing_output.out)
+    assert result["text"] == expected_text and result["eof"] is True
 
 
-def test_subcommand_misplaced_options_use_registered_actions(capsys: pytest.CaptureFixture[str]) -> None:
-    """コマンド木の値なしオプションでも、位置による拒否を未知名と区別する。"""
+def test_subcommand_trailing_options_use_registered_actions(capsys: pytest.CaptureFixture[str]) -> None:
+    """固定位置引数の後にある登録済みフラグをコマンド木全体で受理する。"""
     checked = 0
     for command, parser, _summary in _walk_commands():
         if command == "atk":
@@ -281,24 +294,22 @@ def test_subcommand_misplaced_options_use_registered_actions(capsys: pytest.Capt
         if not flags:
             continue
         for action in target._actions:  # pylint: disable=protected-access
-            if not action.option_strings and action.nargs == "?" and action.choices:
-                arguments.append(str(next(iter(action.choices))))
-        try:
-            parser.parse_args([*arguments, "--", flags[0]])
-        except SystemExit as error:
-            assert error.code == 2, command
-            diagnostic = capsys.readouterr().err
-            assert "区切り記号`--`の前へ移して" in diagnostic, (command, diagnostic)
+            if not action.option_strings and action.nargs == "?":
+                arguments.append(
+                    str(next(iter(action.choices))) if action.choices else "1" if action.type in (int, float) else "value"
+                )
+        parsed = parser.parse_args([*arguments, "--", flags[0]])
+        assert not capsys.readouterr().err
+        # 可変個の位置引数とREMAINDERが消費する文字列は従来の意味を保つ。
+        if not any(action.nargs in ("*", "+", argparse.REMAINDER) for action in target._actions):  # pylint: disable=protected-access
+            expected = parser.parse_args([*arguments, flags[0]])
+            assert vars(parsed) == vars(expected), command
             checked += 1
-        else:
-            # 可変個数の位置引数やREMAINDERが受理した文字列は、配置の誤りではない。
-            assert not capsys.readouterr().err
     assert checked > 5
     for argv in (["agents", "logs", "--", "sample", "--follow"], ["serve", "logs", "--", "--follow"]):
-        with pytest.raises(SystemExit) as rejected:
-            atk._build_parser().parse_args(argv)  # pylint: disable=protected-access
-        assert rejected.value.code == 2
-        assert "--followを区切り記号`--`の前へ移して" in capsys.readouterr().err
+        parsed = atk._build_parser().parse_args(argv)  # pylint: disable=protected-access
+        assert parsed.follow is True
+        assert not capsys.readouterr().err
 
 
 def test_consumed_and_forwarded_options_keep_their_meaning(capsys: pytest.CaptureFixture[str]) -> None:
@@ -312,16 +323,32 @@ def test_consumed_and_forwarded_options_keep_their_meaning(capsys: pytest.Captur
     with pytest.raises(SystemExit):
         parser.parse_args(["read-file", "--", "/example", "--unknown"])
     assert "位置が誤っています" not in capsys.readouterr().err
+    with pytest.raises(SystemExit) as extra:
+        parser.parse_args(["read-file", "--", "/example", "--start", "0", "extra-positional"])
+    assert extra.value.code == 2
+    capsys.readouterr()
 
 
-def test_separator_before_help_is_reported_as_misplaced_flag(capsys: pytest.CaptureFixture[str]) -> None:
-    """先頭に未消費の区切りがある値なしの登録名も、位置引数化を説明する。"""
-    with pytest.raises(SystemExit) as rejected:
+def test_separator_before_help_displays_help(capsys: pytest.CaptureFixture[str]) -> None:
+    """位置引数を取らないコマンドは後置したhelpでも正常に案内する。"""
+    with pytest.raises(SystemExit) as accepted:
         atk._build_parser().parse_args(["info", "--", "--help"])  # pylint: disable=protected-access
-    assert rejected.value.code == 2
-    diagnostic = capsys.readouterr().err
-    assert "位置引数として扱われる" in diagnostic
-    assert "--helpを区切り記号`--`の前へ移して" in diagnostic
+    assert accepted.value.code == 0
+    output = capsys.readouterr()
+    assert "使い方: atk info" in output.out
+    assert not output.err
+
+
+def test_trailing_options_preserve_repeatable_arguments_and_supplied_namespace() -> None:
+    """再解析でも既に指定したappend値と呼び出し元のnamespaceを保つ。"""
+    parser = _atk_help.GuidedSubcommandParser()
+    parser.add_argument("path")
+    parser.add_argument("--tag", action="append")
+    namespace = argparse.Namespace(existing="keep")
+    result = parser.parse_args(["--tag", "first", "--", "path", "--tag", "second"], namespace)
+    assert result is namespace
+    assert result.tag == ["first", "second"]
+    assert result.existing == "keep"
 
 
 def test_wrapped_help_keeps_identifiers_intact(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -459,6 +486,39 @@ def test_lane_integrate_help_has_no_resource_side_effects(
     assert ended.value.code == 0
     assert not capsys.readouterr().err
     assert set(tmp_path.rglob("*")) == before
+
+
+def test_lane_integrate_help_passes_complete_writer_set_initially_and_on_resume(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """初回・再開の案内が所有sessionと現在の書込担当全件を区別し、複数IDを実parserへ渡せる。"""
+    with pytest.raises(SystemExit, match="0"):
+        atk.main(["lane", "integrate", "--help"])
+    output = capsys.readouterr()
+    assert not output.err
+    text = "".join(output.out.split())
+    assert "初回と再開の両方" in text and "実sessionID全要素" in text
+    assert "追加・交代後" in text and "更新後の全要素" in text
+    examples = list(cli_examples.examples(_atk_help.HELP["atk lane integrate"]["epilog"]))
+    assert len(examples) == 2
+    for _line, example in examples:
+        parsed = atk._build_parser().parse_args(shlex.split(example)[1:])  # pylint: disable=protected-access
+        assert parsed.session_id == "lane-owner"
+        assert parsed.writer_session == ["agreed-writer-1", "agreed-writer-2"]
+
+
+def test_run_script_help_explains_plan_rewrite_record_discovery_and_order(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """共通ヘルプから未指定記録の取得と書換え順の複数表指定へ到達できる。"""
+    with pytest.raises(SystemExit, match="0"):
+        atk.main(["run-script", "--help"])
+    output = capsys.readouterr()
+    assert not output.err
+    text = "".join(output.out.split())
+    assert "plan-rewriteは作業中・保存済み計画と引き継ぎ記録から未指定の対象記録を検出" in text
+    assert "書込前に全件を示して拒否" in text and "atkplanscheckout" in text
+    assert "--rewrite-mapを書換え順に反復指定" in text and "--previous-head" in text
 
 
 def test_bulk_transition_commands_accept_the_same_filter_options() -> None:

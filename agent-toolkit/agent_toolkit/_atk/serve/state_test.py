@@ -16,7 +16,9 @@ import watchdog.events
 from agent_toolkit._atk.serve import app as serve_app
 from agent_toolkit._atk.serve import assets, config, state, wi_operations
 from agent_toolkit._atk.serve import cli as serve
+from agent_toolkit._atk.wi import entries as wi_entries
 from agent_toolkit._atk.wi import sync as _wi_sync
+from agent_toolkit._testing import wi_entry_files as wi_files
 from agent_toolkit._testing.serve_support import (
     _BlockingSync,
     _disable_wi_git,
@@ -24,7 +26,6 @@ from agent_toolkit._testing.serve_support import (
     _patch_comment_edit_dependencies,
     _recorder,
     _run_node_ui,
-    _session_review_awi,
     _stub_state,
     _sync_app,
     _write_detail_entry,
@@ -83,21 +84,15 @@ fetchHandler = async () => ({
 });
 await selectEntry({state: 'inbox', filename: 'detail.md'}, new Element('detail-origin', 'BUTTON'));
 failures.push(elements['operation-notice-message'].textContent);
-const ambiguous = {
-  kind: 'awi', state: 'processing', filename: 'ambiguous.md', content: '本文', body_html: '<p>本文</p>',
+const removed = {
+  kind: 'awi', state: 'processing', filename: 'entry.md', content: '本文', body_html: '<p>本文</p>',
   frontmatter_entries: []
 };
-displayEntry(ambiguous);
-detailOriginKey = entryKey(ambiguous);
+displayEntry(removed);
+detailOriginKey = entryKey(removed);
 elements['detail-dialog'].open = true;
 fetchHandler = async url => {
-  if (url.includes('/processing/')) {
-    return {ok: false, status: 404, statusText: 'Not Found', json: async () => ({error: 'not found'})};
-  }
-  if (url.includes('/inbox/') || url.includes('/adopted/')) {
-    const state = url.includes('/inbox/') ? 'inbox' : 'adopted';
-    return {ok: true, status: 200, statusText: 'OK', json: async () => ({entry: {...ambiguous, state}})};
-  }
+  if (url !== '/atk/api/entries/entry.md') throw new Error('想定外のURL: ' + url);
   return {ok: false, status: 404, statusText: 'Not Found', json: async () => ({error: 'not found'})};
 };
 await reloadOpenDetailFromExternalChange();
@@ -129,9 +124,8 @@ process.stdout.write(JSON.stringify({shown, cleared, redisplayed, failures}));
         "failures": [
             "［WI / node-test / /notes / 一覧取得］一覧取得失敗",
             "［WI / node-test / /notes / 対象リポジトリ一覧取得］対象取得失敗",
-            "［WI / node-test / /notes / inbox/detail.md］詳細取得失敗",
-            "［WI / node-test / /notes / processing/ambiguous.md］"
-            "ambiguous.mdの移動先を一意に特定できません。詳細を開き直してください。",
+            "［WI / node-test / /notes / detail.md］詳細取得失敗",
+            "entry.mdは削除されたため表示できません。一覧を更新しました。",
             "［WI / node-test / /notes / 操作］SSE更新失敗",
             "［WI / node-test / /notes / 操作］ダイアログ外失敗",
             "［WI / node-test / /notes / 操作］初期化失敗",
@@ -757,25 +751,19 @@ def test_operations_sort_entries_by_filename_across_kinds(tmp_path: pathlib.Path
 
 
 def test_serve_state_watches_all_queue_states(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """状態監視は7状態フォルダを対象とし、旧feedback/tbd階層を生成しない。"""
+    """状態監視は年月配置を含むキューrootを再帰監視する。"""
     current = state.ServeState(tmp_path)
-    scheduled: list[str] = []
+    scheduled: list[tuple[str, bool]] = []
     monkeypatch.setattr(
         current.observer,
         "schedule",
-        lambda _handler, path, recursive=False: scheduled.append(path),
+        lambda _handler, path, recursive=False: scheduled.append((path, recursive)),
     )
     monkeypatch.setattr(current.observer, "start", lambda: None)
     loop = asyncio.new_event_loop()
     try:
         current.start(loop)
-        assert sorted(pathlib.Path(p).name for p in scheduled) == [
-            "adopted",
-            "hold",
-            "inbox",
-            "processing",
-            "rejected",
-        ]
+        assert scheduled == [(str(tmp_path), True)]
         assert not (tmp_path / "awi").exists()
         assert not (tmp_path / "uwi").exists()
     finally:
@@ -790,12 +778,7 @@ async def test_web_transition_mutations_allow_omitted_target_repo(
     """状態遷移系APIはfilenameで対象を一意に特定できるためtarget_repo省略を許容する。"""
 
     _disable_wi_git(monkeypatch)
-    inbox = tmp_path / "inbox"
-    inbox.mkdir(parents=True)
-    (inbox / "entry.md").write_text(
-        "---\ntype: awi\ntarget_repo: github.com/example/foo\n---\n\n本文\n",
-        encoding="utf-8",
-    )
+    path = wi_files.write_awi(tmp_path, "entry.md", target_repo="github.com/example/foo")
     app = serve_app.create_app(
         tmp_path,
         config.ServeConfig("127.0.0.1", 28766),
@@ -803,8 +786,8 @@ async def test_web_transition_mutations_allow_omitted_target_repo(
     )
     response = await app.test_client().post("/api/entries/adopt", json={"filenames": ["entry.md"]})
     assert response.status_code == 200
-    assert (tmp_path / "adopted" / "entry.md").is_file()
-    assert not (inbox / "entry.md").exists()
+    assert path.is_file()
+    assert wi_entries.entry_state_of(path) == "adopted"
 
 
 @pytest.mark.asyncio
@@ -1073,7 +1056,7 @@ async def test_add_api_accepts_omitted_target_repo_with_frontmatter(
 
     assert response.status_code == 201
     body = await response.get_json()
-    content = (tmp_path / "inbox" / body["filenames"][0]).read_text(encoding="utf-8")
+    content = wi_files.entry_path(tmp_path, body["filenames"][0]).read_text(encoding="utf-8")
     assert "target_repo: github.com/example/repo" in content
     assert "source:" not in content
 
@@ -1128,11 +1111,10 @@ async def test_remove_api_accepts_terminal_states_and_preserves_protected_states
 ) -> None:
     """終端状態とholdは削除し、processingの保護を維持する。"""
     _patch_comment_edit_dependencies(monkeypatch)
-    content = _session_review_awi("本文\n")
+    contents: dict[str, str] = {}
     for state_name in ("adopted", "rejected", "hold", "processing"):
-        directory = tmp_path / state_name
-        directory.mkdir()
-        (directory / f"{state_name}.md").write_text(content, encoding="utf-8")
+        path = wi_files.write_awi(tmp_path, f"{state_name}.md", state=state_name)
+        contents[state_name] = path.read_text(encoding="utf-8")
     app = serve_app.create_app(
         tmp_path,
         config.ServeConfig("127.0.0.1", 28766),
@@ -1146,12 +1128,12 @@ async def test_remove_api_accepts_terminal_states_and_preserves_protected_states
             json={
                 "filenames": [f"{state_name}.md"],
                 "state": state_name,
-                "expected_content": content,
+                "expected_content": contents[state_name],
                 "force": False,
             },
         )
         assert response.status_code == 200
-        assert not (tmp_path / state_name / f"{state_name}.md").exists()
+        assert not wi_files.entry_path(tmp_path, f"{state_name}.md").exists()
 
     for state_name in ("processing",):
         response = await client.post(
@@ -1159,9 +1141,9 @@ async def test_remove_api_accepts_terminal_states_and_preserves_protected_states
             json={
                 "filenames": [f"{state_name}.md"],
                 "state": state_name,
-                "expected_content": content,
+                "expected_content": contents[state_name],
                 "force": False,
             },
         )
         assert response.status_code == 400
-        assert (tmp_path / state_name / f"{state_name}.md").is_file()
+        assert wi_files.entry_path(tmp_path, f"{state_name}.md").is_file()

@@ -60,7 +60,7 @@ def test_prepare_conversation_ranges_cover_atomic_blocks(
             assert oversize
             assert "気付いた改善点:" in "".join(selected)
         if item["start_line"] > 1:
-            assert selected[0].startswith(("## ユーザー（", "## アシスタント（", "- ツール呼び出し（"))
+            assert selected[0].startswith(("## ユーザー（", "## アシスタント（", "## ツール呼び出し（", "- ツール結果（"))
             assert "fake:" not in selected[0]
         assert not selected[0].startswith("  - 失敗")
     assert "agent-child" in document
@@ -163,6 +163,12 @@ def test_prepare_reader_ranges_join_whole_ranges_within_limit(
     result = json.loads(capsys.readouterr().out)
     ranges = result["conversation_ranges"]
     readers = result["reader_ranges"]
+
+    if not conversation_only:
+        assert not readers
+        assert all(item["main_known"] for item in ranges)
+        assert result["main_known_scope"] == {"record": "claude:parent", "after_line": 0}
+        return
 
     assert len(readers) >= 3
     assert readers[0]["first_range_index"] == 0

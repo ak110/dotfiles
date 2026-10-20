@@ -5,10 +5,10 @@ import os
 import pathlib
 import re
 
+from agent_toolkit._common import session_state, state_paths
 from agent_toolkit._common.file_lock import acquire_lock, release_lock
 from agent_toolkit._testing import fork_runner as _fork_runner
 from agent_toolkit._testing import stop_check_runner as _stop_check_runner
-from agent_toolkit._testing.helpers import SESSION_STATE_FILENAME_TEMPLATE
 
 _HOOK = pathlib.Path(__file__).resolve().parents[1] / "hook.py"
 _STOP_CHECK_RUNNER = pathlib.Path(_stop_check_runner.__file__)
@@ -20,7 +20,13 @@ _NEXT_ACTION_PATTERN = re.compile(r"\n次の操作: [^\n]*`atk agents wait`[^\n]
 def _environment(state_directory: pathlib.Path) -> dict[str, str]:
     """セッション状態をテストごとに分離する環境を返す。"""
     env = os.environ.copy()
-    env.update({"TMPDIR": str(state_directory), "TEMP": str(state_directory), "TMP": str(state_directory)})
+    env.update(
+        {
+            "TMPDIR": str(state_directory),
+            "TEMP": str(state_directory),
+            "TMP": str(state_directory),
+        }
+    )
     return env
 
 
@@ -76,7 +82,6 @@ def _run_stop(
         payload["last_assistant_message"] = last_assistant_message
     environment = _environment(state_directory)
     environment["CLAUDE_CODE_SESSION_ID"] = local_session_id
-    environment["XDG_STATE_HOME"] = str(state_directory)
     result = _fork_runner.run_script(
         _STOP_CHECK_RUNNER,
         argv=("agents_server_session_advisor",),
@@ -131,7 +136,8 @@ def _record_bash(state_directory: pathlib.Path, local_session_id: str, command: 
 def test_pending_observation_emits_stop_hook_event_and_additional_context(tmp_path: pathlib.Path) -> None:
     """未観測作業の警告はStop用additionalContextだけを返す。"""
     local_session_id = "pending-output"
-    state_path = tmp_path / SESSION_STATE_FILENAME_TEMPLATE.format(session_id=local_session_id)
+    state_path = session_state.state_path(local_session_id)
+    state_path.parent.mkdir(parents=True, exist_ok=True)
     state_path.write_text(
         json.dumps(
             {
@@ -278,7 +284,8 @@ def test_agents_wait_resolves_pending_observation_for_all_owned_sessions(tmp_pat
 
 def _status_directory(state_directory: pathlib.Path, local_session_id: str) -> pathlib.Path:
     """そのルートsessionの状態ディレクトリを返す。"""
-    return state_directory / "agent-toolkit" / "agents-server" / local_session_id
+    del state_directory
+    return state_paths.state_dir() / "agents-server" / local_session_id
 
 
 def _register_wait_target(state_directory: pathlib.Path, local_session_id: str, owner: str, remote_session_id: str) -> None:
@@ -405,7 +412,8 @@ def test_agents_wait_bash_clears_expired_session_without_result(tmp_path: pathli
     """保持期限切れで結果のないsessionもagents waitの実行後は警告しない。"""
     local_session_id = "agents-wait-expired"
     remote_session_id = "remote-expired"
-    state_path = tmp_path / SESSION_STATE_FILENAME_TEMPLATE.format(session_id=local_session_id)
+    state_path = session_state.state_path(local_session_id)
+    state_path.parent.mkdir(parents=True, exist_ok=True)
     state_path.write_text(
         json.dumps(
             {
@@ -442,7 +450,8 @@ def test_no_pending_observation_emits_nothing(tmp_path: pathlib.Path) -> None:
     """記録不在、偽の記録および責任主体を確定できない旧記録では何も出力しない。"""
     assert _run_stop(tmp_path, "no-state") == ""
     local_session_id = "all-observed"
-    state_path = tmp_path / SESSION_STATE_FILENAME_TEMPLATE.format(session_id=local_session_id)
+    state_path = session_state.state_path(local_session_id)
+    state_path.parent.mkdir(parents=True, exist_ok=True)
     state_path.write_text(
         json.dumps(
             {

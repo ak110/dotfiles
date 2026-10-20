@@ -13,11 +13,22 @@ import pytest
 from platformdirs import windows
 
 from agent_toolkit._testing import isolation
+from agent_toolkit._testing.loop_isolation_support import assert_loop_scope_isolation
 
 
 def test_development_state_isolated_by_default(tmp_path: pathlib.Path) -> None:
     """この起動範囲のテストは、何も設定しなくても開発機の状態から隔離される。"""
     isolation.assert_development_state_isolated(tmp_path)
+
+
+@pytest.mark.parametrize("scope", [None, "session"])
+@pytest.mark.parametrize("configuration", ["pyproject.toml", "agent-toolkit/pyproject.toml"])
+def test_function_loop_scope_prevents_environment_leak_between_tests(
+    tmp_path: pathlib.Path, configuration: str, scope: str | None
+) -> None:
+    """両設定の実値で成功し、sessionへ戻す対照でテスト間の環境波及を検出する。"""
+    root = pathlib.Path(__file__).resolve().parents[3]
+    assert_loop_scope_isolation(tmp_path, configuration=root / configuration, scope=scope)
 
 
 def test_windows_known_folders_use_isolated_overrides(monkeypatch: pytest.MonkeyPatch) -> None:

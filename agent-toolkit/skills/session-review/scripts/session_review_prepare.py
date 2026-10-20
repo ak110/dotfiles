@@ -272,17 +272,31 @@ def _full_body_lines(text: str, *, title: str) -> list[str]:
     return lines
 
 
-def _conversation_ranges(text: str, events: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def _conversation_ranges(
+    text: str, events: list[dict[str, Any]], known_scope: dict[str, Any] | None = None
+) -> list[dict[str, Any]]:
     """発話と呼び出し・失敗を分断しない、全行を覆う読取範囲を返す。"""
     lines = text.splitlines(keepends=True)
     timestamps = {f"{event['record']}:{event['line']}": event.get("timestamp") for event in events}
     boundaries = [0]
+    owners: dict[int, tuple[str | None, bool]] = {0: (None, False)}
+    owner: tuple[str | None, bool] = (None, False)
     fence_length = 0
     sizes = [0]
     for index, line in enumerate(lines):
         sizes.append(sizes[-1] + len(line.encode("utf-8")))
-        if not fence_length and index and line.startswith("## "):
-            boundaries.append(index)
+        if not fence_length:
+            heading = re.match(r"^## [^（]+（[^、]+、([^）]+)）", line)
+            tool_result = re.match(r"^- ツール結果（([^）]+)）", line)
+            locator = heading[1] if heading else tool_result[1] if tool_result else None
+            if locator is not None:
+                record, _, raw_line = locator.rpartition(":")
+                known = bool(known_scope and record == known_scope["record"] and int(raw_line) > known_scope["after_line"])
+                next_owner = (record, known)
+                if index and (heading or next_owner != owner):
+                    boundaries.append(index)
+                owner = next_owner
+                owners[index] = owner
         fence = re.match(r"^(`{3,})([^`]*)$", line.rstrip("\n"))
         if fence is not None:
             if not fence_length:
@@ -291,17 +305,19 @@ def _conversation_ranges(text: str, events: list[dict[str, Any]]) -> list[dict[s
                 fence_length = 0
     boundaries.append(len(lines))
     spans: list[tuple[int, int]] = []
-    start = 0
-    for end in boundaries[1:]:
-        previous = spans[-1][1] if spans else 0
-        if sizes[end] - sizes[start] > _CONVERSATION_RANGE_BYTES and previous > start:
-            spans[-1] = (start, previous)
-            start = previous
-            spans.append((start, end))
-        elif spans:
-            spans[-1] = (start, end)
+    previous_owner: tuple[str | None, bool] = (None, False)
+    for start, end in zip(boundaries, boundaries[1:], strict=False):
+        block_owner = owners.get(start, previous_owner)
+        # 文書冒頭の説明は最初の記録の原子的範囲へ含める。
+        if (
+            spans
+            and (previous_owner[0] is None or block_owner == previous_owner)
+            and sizes[end] - sizes[spans[-1][0]] <= _CONVERSATION_RANGE_BYTES
+        ):
+            spans[-1] = (spans[-1][0], end)
         else:
             spans.append((start, end))
+        previous_owner = block_owner
     result: list[dict[str, Any]] = []
     for start, end in spans:
         locators: list[str] = []
@@ -331,6 +347,13 @@ def _conversation_ranges(text: str, events: list[dict[str, Any]]) -> list[dict[s
                 "last_locator": locators[-1] if locators else None,
                 "first_timestamp": timestamps.get(locators[0]) if locators else None,
                 "last_timestamp": timestamps.get(locators[-1]) if locators else None,
+                "record": locators[0].rpartition(":")[0] if locators else None,
+                "main_known": bool(
+                    known_scope
+                    and locators
+                    and locators[0].rpartition(":")[0] == known_scope["record"]
+                    and int(locators[0].rpartition(":")[2]) > known_scope["after_line"]
+                ),
             }
         )
     return result
@@ -341,7 +364,14 @@ def _reader_ranges(ranges: list[dict[str, Any]]) -> list[dict[str, Any]]:
     groups: list[list[int]] = []
     total = 0
     for index, item in enumerate(ranges):
-        if groups and total + item["utf8_bytes"] <= _READER_RANGE_BYTES:
+        if item.get("main_known"):
+            continue
+        if (
+            groups
+            and groups[-1][-1] == index - 1
+            and ranges[groups[-1][-1]].get("record") == item.get("record")
+            and total + item["utf8_bytes"] <= _READER_RANGE_BYTES
+        ):
             groups[-1].append(index)
             total += item["utf8_bytes"]
         else:
@@ -869,7 +899,72 @@ def _stats_document(stats: list[dict[str, Any]]) -> str:
     if critical is not None:
         for segment in critical.get("segments", []):
             lines.extend(_thread_breakdown_lines(segment, threads, by_kind))
+    lines.extend(
+        [
+            "",
+            "## 全担当の読込・反復・結果量",
+            "",
+            "全記録が母集団であり、量と反復は比較材料として示す。問題の有無は目的と前後の操作から判断する。",
+        ]
+    )
+    for item in by_kind.get("stats-resource-usage", []):
+        lines.extend(
+            [
+                "",
+                f"### {item['record']}（{item['role']}）",
+                "",
+                f"- 明示的なファイル読取: {len(item['reads'])}回、Skill呼出: {len(item['skills'])}回、"
+                f"ツール呼出: {item['tool_calls']}回、記録の結果本文: {item['recorded_result_characters']}字・"
+                f"{item['recorded_result_utf8_bytes']}バイト",
+            ]
+        )
+        for row in [*item["reads"], *item["skills"]]:
+            lines.append(
+                f"- {row['tool']} 対象={row['target']}、範囲={json.dumps(row['range'], ensure_ascii=False)}、{row['location']}"
+            )
+        for row in item["repeats"]:
+            lines.append(
+                f"- 反復: {row['tool']} {row['count']}回、{'、'.join(row['locations'])}、入力={_one_line(row['input'])}"
+            )
+        for row in item["largest_results"]:
+            lines.append(
+                f"- 結果量上位: {row['tool']} {row['characters']}字・{row['utf8_bytes']}バイト、"
+                f"入力={row['location']}、結果={row['result_location']}"
+            )
+        lines.append(f"- 上位一覧の省略: 結果{item['omitted_largest_result_count']}件、反復{item['omitted_repeat_count']}組")
+    for item in by_kind.get("stats-resource-summary", []):
+        lines.extend(_resource_summary_lines(item))
+    for item in by_kind.get("stats-token-peak", []):
+        lines.append(f"- メインのtoken上位: {json.dumps(item, ensure_ascii=False)}")
     return "\n".join(lines) + "\n"
+
+
+def _resource_summary_lines(summary: dict[str, Any]) -> list[str]:
+    """担当横断の明示対象別集計と、読了を表さないシェル文字列の出現集計を描画する。"""
+    lines = [
+        "",
+        "## 対象別の担当横断集計",
+        "",
+        "読取とSkillは明示ツールの呼出回数を数える。結果量は記録で観測できた返却本文の合計である。",
+        "シェル内の絶対パスは入力文字列の出現を別に数える。実行・読取・読了の推定には使わない。",
+    ]
+    for field, label in (
+        ("reads_by_target", "ファイル読取"),
+        ("skills_by_name", "Skill"),
+        ("shell_paths_by_target", "シェル内の絶対パス出現"),
+    ):
+        lines.extend(["", f"### {label}", ""])
+        for group in summary[field]:
+            lines.append(
+                f"- {group['target']}: 合計{group['count']}回、観測結果{group['observed_result_count']}件・"
+                f"{group['characters']}字・{group['utf8_bytes']}バイト"
+            )
+            for record, values in group["by_record"].items():
+                lines.append(
+                    f"  - {record}: {values['count']}回、観測結果{values['observed_result_count']}件・"
+                    f"{values['characters']}字・{values['utf8_bytes']}バイト、{'、'.join(values['locations'])}"
+                )
+    return lines
 
 
 def _thread_breakdown_lines(
@@ -953,6 +1048,7 @@ def main(argv: list[str] | None = None, *, now: datetime.datetime | None = None)
     try:
         candidate_rows = _read_jsonl(bundle_dir / "candidates.jsonl")
         stats = _read_jsonl(bundle_dir / "stats.jsonl")
+        stats.extend(_read_jsonl(bundle_dir / "resource-usage.jsonl"))
         timeline = _read_jsonl(bundle_dir / "timeline.jsonl")
         conversation = _read_jsonl(bundle_dir / "conversation.jsonl")
         comparison = _read_jsonl(bundle_dir / "comparison-materials.jsonl")
@@ -978,7 +1074,26 @@ def main(argv: list[str] | None = None, *, now: datetime.datetime | None = None)
     comparison_path = work_dir / COMPARISON_FILENAME
     conversation_text = _conversation_document(conversation, detail_command)
     conversation_path.write_text(conversation_text, encoding="utf-8")
-    conversation_ranges = _conversation_ranges(conversation_text, conversation)
+    main_record = next(
+        (item.get("record") for item in timeline if item.get("kind") == "record-provenance" and item.get("role") == "main"),
+        None,
+    )
+    main_known_scope = (
+        {
+            "record": main_record,
+            "after_line": max(
+                (
+                    int(item["line"])
+                    for item in stats
+                    if item.get("kind") == "stats-compaction" and item.get("record") == main_record
+                ),
+                default=0,
+            ),
+        }
+        if main_record is not None and not args.conversation_only
+        else None
+    )
+    conversation_ranges = _conversation_ranges(conversation_text, conversation, main_known_scope)
     reader_ranges = _reader_ranges(conversation_ranges)
     if args.conversation_only:
         print(
@@ -988,6 +1103,7 @@ def main(argv: list[str] | None = None, *, now: datetime.datetime | None = None)
                     "conversation_path": str(conversation_path),
                     "conversation_ranges": conversation_ranges,
                     "reader_ranges": reader_ranges,
+                    "main_known_scope": None,
                     "unconfirmed_scope": unresolved,
                 },
                 ensure_ascii=False,
@@ -1034,6 +1150,7 @@ def main(argv: list[str] | None = None, *, now: datetime.datetime | None = None)
         "conversation_path": str(conversation_path),
         "conversation_ranges": conversation_ranges,
         "reader_ranges": reader_ranges,
+        "main_known_scope": main_known_scope,
         "comparison_materials_path": str(comparison_path),
         "candidates_path": str(candidates_path),
         "stats_path": str(stats_path),

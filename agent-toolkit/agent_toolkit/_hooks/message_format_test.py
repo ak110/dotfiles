@@ -164,49 +164,49 @@ async def test_start_followup_and_auto_resume_generated_deliveries_reach_shared_
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """開始・追送・子孫終端・過負荷・利用上限の各生成元の送出値を、backend境界で取得する。"""
-    owner = manager.AgentsServerManager()
-    bodies: list[str] = []
+    async with manager.AgentsServerManager() as owner:
+        bodies: list[str] = []
 
-    async def candidates(*_args: object, **_kwargs: object) -> tuple[list[tuple[str, str, str]], dict]:
-        return [("codex", "gpt-6.1-sol", "medium")], {}
+        async def candidates(*_args: object, **_kwargs: object) -> tuple[list[tuple[str, str, str]], dict]:
+            return [("codex", "gpt-6.1-sol", "medium")], {}
 
-    async def initialize(engine: str, body: str, cwd: str, *_args: object, **_kwargs: object) -> SessionState:
-        bodies.append(body)
-        session = SessionState("contract-session", cwd, engine=engine)
-        session.status = "running"
-        session.model_output_observed = True
-        owner.sessions[session.session_id] = session
-        return session
+        async def initialize(engine: str, body: str, cwd: str, *_args: object, **_kwargs: object) -> SessionState:
+            bodies.append(body)
+            session = SessionState("contract-session", cwd, engine=engine)
+            session.status = "running"
+            session.model_output_observed = True
+            owner.sessions[session.session_id] = session
+            return session
 
-    async def deliver(_session: SessionState, body: str, **_kwargs: object) -> dict[str, str]:
-        bodies.append(body)
-        return {"delivery": "steered"}
+        async def deliver(_session: SessionState, body: str, **_kwargs: object) -> dict[str, str]:
+            bodies.append(body)
+            return {"delivery": "steered"}
 
-    # 候補解決とモデル起動・配送の外部I/Oを代替し、各操作自身による本文生成を通す。
-    monkeypatch.setattr(owner, "_resolve_start_candidates", candidates)
-    monkeypatch.setattr(owner, "_start_until_initialized", initialize)
-    monkeypatch.setattr(owner, "_backend", lambda _engine: types.SimpleNamespace(send_message=deliver))
-    started = await owner.start("high_tier", "開始本文", str(tmp_path))
-    assert started["status"] == "running"
-    await owner.send_message("contract-session", "追送本文")
-    session = owner.sessions["contract-session"]
-    for operation in ("children", "overload", "usage-limit"):
-        session.pending_result = {
-            "status": "completed",
-            "agent_message": "待機中",
-            "error": {"message": "失敗", "usageLimit": {"type": "five_hour"}},
-        }
-        session.awaiting_auto_resume = True
-        if operation == "children":
-            session.terminal_child_session_ids.add("child-session")
-            await owner._advance_child_session_wait(session)  # noqa: SLF001  # pylint: disable=protected-access
-        elif operation == "overload":
-            await owner._resume_after_overload(session)  # noqa: SLF001  # pylint: disable=protected-access
-        else:
-            await owner._resume_after_usage_limit(session)  # noqa: SLF001  # pylint: disable=protected-access
-    assert len(bodies) == 5
-    for body in bodies:
-        _assert_machine_boundary(body)
+        # 候補解決とモデル起動・配送の外部I/Oを代替し、各操作自身による本文生成を通す。
+        monkeypatch.setattr(owner, "_resolve_start_candidates", candidates)
+        monkeypatch.setattr(owner, "_start_until_initialized", initialize)
+        monkeypatch.setattr(owner, "_backend", lambda _engine: types.SimpleNamespace(send_message=deliver))
+        started = await owner.start("high_tier", "開始本文", str(tmp_path))
+        assert started["status"] == "running"
+        await owner.send_message("contract-session", "追送本文")
+        session = owner.sessions["contract-session"]
+        for operation in ("children", "overload", "usage-limit"):
+            session.pending_result = {
+                "status": "completed",
+                "agent_message": "待機中",
+                "error": {"message": "失敗", "usageLimit": {"type": "five_hour"}},
+            }
+            session.awaiting_auto_resume = True
+            if operation == "children":
+                session.terminal_child_session_ids.add("child-session")
+                await owner._advance_child_session_wait(session)  # noqa: SLF001  # pylint: disable=protected-access
+            elif operation == "overload":
+                await owner._resume_after_overload(session)  # noqa: SLF001  # pylint: disable=protected-access
+            else:
+                await owner._resume_after_usage_limit(session)  # noqa: SLF001  # pylint: disable=protected-access
+        assert len(bodies) == 5
+        for body in bodies:
+            _assert_machine_boundary(body)
 
 
 def test_notify_saved_delivery_reaches_shared_receiver(tmp_path: pathlib.Path) -> None:

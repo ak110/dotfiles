@@ -21,6 +21,7 @@ from agent_toolkit._atk.serve import cli as serve
 from agent_toolkit._atk.serve import plans as serve_plans
 from agent_toolkit._atk.serve import sessions as serve_sessions
 from agent_toolkit._atk.wi import sync as _wi_sync
+from agent_toolkit._testing import wi_entry_files
 
 # UI検証で起動する`node`は、CIの実行環境ではmiseのshimとして提供され、版と信頼設定の解決に
 # 実行環境のホーム・設定ディレクトリを参照する。conftestが適用する隔離（`agent_toolkit._testing.isolation`）が差し替えた環境を
@@ -339,21 +340,22 @@ def stale_fallback_search_script(declaration: str, pending_promise: str) -> str:
 
 
 UNANSWERED_UWI_TEXT = (
-    "---\ntype: uwi\ntarget_repo: example/repo\n---\n\n## 質問\n\n質問？\n\n## 回答\n\n"
+    "---\nstate: inbox\ntype: uwi\ntarget_repo: example/repo\n---\n\n## 質問\n\n質問？\n\n## 回答\n\n"
     "<!-- ユーザーはこの行以降に回答を追記する -->\n"
 )
 """回答欄が空のUWIの本文。"""
 
-AWI_TEXT = "---\ntype: awi\ntarget_repo: example/repo\n---\n\n本文\n"
+AWI_TEXT = "---\nstate: inbox\ntype: awi\ntarget_repo: example/repo\n---\n\n本文\n"
 """最小のAWIの本文。"""
 
 
-def make_inbox_and_processing(private_notes: pathlib.Path) -> tuple[pathlib.Path, pathlib.Path]:
-    """private-notesへinboxとprocessingの状態フォルダを作成し、その順に返す。"""
-    inbox = private_notes / "inbox"
-    processing = private_notes / "processing"
-    inbox.mkdir()
-    processing.mkdir()
+def make_inbox_and_processing(private_notes: pathlib.Path, *, legacy_layout: bool = False) -> tuple[pathlib.Path, pathlib.Path]:
+    """固定配置の共有ディレクトリを返す。各本文のstateでinboxとprocessingを指定する。
+
+    移行だけを検証する場合はlegacy_layoutを指定し、旧状態ディレクトリを生成する。
+    """
+    inbox = wi_entry_files.entry_path(private_notes, "entry.md", legacy_layout=legacy_layout).parent
+    processing = wi_entry_files.entry_path(private_notes, "entry.md", state="processing", legacy_layout=legacy_layout).parent
     return inbox, processing
 
 
@@ -397,11 +399,10 @@ def _sync_app(tmp_path: pathlib.Path, operations: wi_operations.Operations) -> t
     )
 
 
-def _write_detail_entry(tmp_path: pathlib.Path, text: str) -> None:
+def _write_detail_entry(tmp_path: pathlib.Path, text: str, *, legacy_layout: bool = False) -> None:
     """詳細表示テスト用の入力ファイルを作成する。"""
-    inbox = tmp_path / "inbox"
-    inbox.mkdir()
-    (inbox / "entry.md").write_text(text, encoding="utf-8")
+    path = wi_entry_files.entry_path(tmp_path, "entry.md", legacy_layout=legacy_layout)
+    path.write_text(text, encoding="utf-8")
 
 
 def _stub_state(
@@ -426,19 +427,21 @@ def _recorder(calls: list[str], label: str, *, result: object) -> typing.Callabl
     return record
 
 
-def _write_repo_entry(root: pathlib.Path, state_name: str, filename: str, target_repo: str) -> None:
+def _write_repo_entry(
+    root: pathlib.Path, state_name: str, filename: str, target_repo: str, *, legacy_layout: bool = False
+) -> None:
     """対象リポジトリを持つエントリを配置する。"""
-    directory = root / state_name
-    directory.mkdir(parents=True, exist_ok=True)
-    (directory / filename).write_text(
-        f"---\ntarget_repo: {target_repo}\ntype: awi\n---\n\n本文\n",
+    path = wi_entry_files.entry_path(root, filename, state=state_name, legacy_layout=legacy_layout)
+    state_line = "" if legacy_layout else f"state: {state_name}\n"
+    path.write_text(
+        f"---\n{state_line}target_repo: {target_repo}\ntype: awi\n---\n\n本文\n",
         encoding="utf-8",
     )
 
 
 _BATCH_TEXT = (
     "# awi\n## target_repo: github.com/example/foo\n"
-    "### keep.md [inbox]\n---\ntarget_repo: github.com/example/foo\ntype: awi\n---\n\n取り込む本文\n\n"
+    "### keep.md [inbox]\n---\nstate: inbox\ntarget_repo: github.com/example/foo\ntype: awi\n---\n\n取り込む本文\n\n"
 )
 
 
@@ -462,7 +465,7 @@ def _session_review_awi(
 ) -> str:
     """ユーザーコメント操作テスト用のawi本文を組み立てる。"""
     source_line = f"source: {source}\n" if source is not None else ""
-    return f"---\ntype: {entry_type}\ntarget_repo: example/repo\n{source_line}---\n\n{body}"
+    return f"---\nstate: inbox\ntype: {entry_type}\ntarget_repo: example/repo\n{source_line}---\n\n{body}"
 
 
 def _patch_comment_edit_dependencies(monkeypatch: pytest.MonkeyPatch) -> None:

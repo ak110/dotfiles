@@ -19,6 +19,8 @@ textフェンスの番号付け、文字範囲の数え方、確認回答の記�
 modeはfull、range（1始まり・両端を含むstart/end）、command-args、answerから選び、省略時はfullを使う。
 answerはassistant_contextの質問と全選択肢、user_responseの回答と自由記述を区別して生成する。
 全選択を検証してから引用節を更新し、一致と引用位置を返す。入力不成立と不一致では原稿を変更しない。
+引用節に保存する出所はrecord・line・任意のsequenceである。sourceは取り込み時の読取先として使う。
+取り込みの一致表示は各フェンスに選択したイベントの位置を示す。`--source`との比較は各フェンスに一致する全候補を示す。
 """
 
 from __future__ import annotations
@@ -55,12 +57,18 @@ class Original:
     path: pathlib.Path
     record: str | None = None
     line: int | None = None
+    sequence: int | None = None
+    fence: int | None = None
 
     def location(self) -> str:
         """出力へ書く所在を返す。"""
         if self.record is None:
             return f"出所={self.path}"
-        return f"出所={self.path} record={self.record} line={self.line}"
+        return f"出所={self.path} " + self.record_location()
+
+    def record_location(self) -> str:
+        """保存する引用へセッション記録上の位置を返す。"""
+        return f"record={self.record} line={self.line}" + (f" sequence={self.sequence}" if self.sequence is not None else "")
 
 
 @dataclasses.dataclass(frozen=True)
@@ -189,11 +197,11 @@ def _import_quotes(body: str, spec_path: pathlib.Path) -> tuple[str, list[Origin
             )
         event = matches[0]
         content = _selected_text(selection, event)
-        original = Original(event.text, path, event.record, event.line)
+        original = Original(event.text, path, event.record, event.line, event.sequence, len(originals) + 1)
         originals.append(original)
         # 原文に含まれるフェンスが引用を途中で閉じない長さにする。
         fence = "`" * max(3, max((len(run) + 1 for run in re.findall(r"`+", content)), default=0))
-        location = original.location() + (f" sequence={event.sequence}" if event.sequence is not None else "")
+        location = original.record_location()
         blocks.append(f"{location}\n\n{fence}text\n{content}\n{fence}")
     start, end = _quote_section(body)
     return body[:start] + "\n" + "\n\n".join(blocks) + "\n\n" + body[end:], originals
@@ -270,7 +278,7 @@ def _originals(path: pathlib.Path) -> list[Original]:
     if not events or not all(isinstance(event, dict) for event in events):
         return [Original(text, path)]
     originals = [
-        Original(event["text"], path, str(event.get("record")), event.get("line"))
+        Original(event["text"], path, str(event.get("record")), event.get("line"), event.get("sequence"))
         for event in events
         if isinstance(event, dict) and event.get("kind") == "user" and isinstance(event.get("text"), str)
     ]
@@ -332,13 +340,16 @@ def check(body: str, originals: list[Original]) -> tuple[list[str], list[str], s
     for number, content in enumerate(_quote_fences(body), start=1):
         parts = _parts(content)
         for part in parts:
-            matched = next((original for original in originals if part.text in original.text), None)
-            if matched is None:
-                matched = next((original for original in originals if part.text.replace("\r\n", "\n") in original.text), None)
-            if matched is None:
+            matched = [
+                original
+                for original in originals
+                if original.fence in (None, number)
+                and (part.text in original.text or part.text.replace("\r\n", "\n") in original.text)
+            ]
+            if not matched:
                 errors.append(f"text[{number}]の{part.label}が出所のどの原文の部分文字列でもありません")
             else:
-                output.append(f"text[{number}] {part.label}: 一致 {matched.location()}")
+                output.extend(f"text[{number}] {part.label}: 一致 {original.location()}" for original in matched)
         if errors:
             continue
         units = [span for part in parts for span in _unit_spans(content, part)]
@@ -373,7 +384,7 @@ def main(argv: list[str] | None = None) -> int:
         action="append",
         default=None,
         help="原文を保持するファイルの絶対パス。`atk run-script session-review-evidence -- ... --user-events`の出力か、"
-        "原文そのものを持つファイル。複数の出所は反復して指定する",
+        "原文そのものを持つファイル。複数の出所は反復して指定する。各フェンスに一致する全候補の位置を表示する",
     )
     parser.add_argument(
         "--import-spec",
@@ -381,7 +392,8 @@ def main(argv: list[str] | None = None) -> int:
         metavar="PATH",
         help="引用節を更新する選択JSON配列の絶対パス。各要素はsource（保存済みuser-eventsの絶対パス）、"
         "record、line、任意のsequence、mode（full/range/command-args/answer）を持ち、mode省略時はfullを使う。"
-        "rangeは1始まり・両端を含むstart/endも指定する。配列順で取り込み、全件が原文と一致することを確かめて保存する",
+        "rangeは1始まり・両端を含むstart/endも指定する。配列順で取り込み、全件の一致を確かめて保存する。"
+        "引用節の出所はrecord・line・任意のsequenceを保存し、一致表示は各フェンスに選択したイベントの位置を示す",
     )
     args = parser.parse_args(argv)
     if not args.source and args.import_spec is None:

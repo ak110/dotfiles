@@ -3,26 +3,31 @@
 import argparse
 import contextlib
 import datetime
+import http.server
 import json
 import os
 import pathlib
 import shlex
+import shutil
 import subprocess
+import threading
 from collections.abc import Callable
 from typing import Any
 
 import pytest
 
-from agent_toolkit import atk
+from agent_toolkit import atk, wait_ci
 from agent_toolkit._atk.wi import (
     alerts,  # noqa: E402  # pylint: disable=wrong-import-position
     process_loop_alerts,
 )
+from agent_toolkit._atk.wi import entries as _wi_entries
 from agent_toolkit._atk.wi import sync as _wi_sync
 from agent_toolkit._atk.wi.constants import WI_STATES
 from agent_toolkit._common import json_command as _json_command  # noqa: E402  # pylint: disable=wrong-import-position
 from agent_toolkit._git import forge_cli
 from agent_toolkit._testing import git_repository
+from agent_toolkit._testing.isolation import restore_host_environment
 
 _github_head = alerts._github_head  # pylint: disable=protected-access
 _gitlab_head = alerts._gitlab_head  # pylint: disable=protected-access
@@ -259,8 +264,7 @@ def _prepare_alert_submission(monkeypatch: pytest.MonkeyPatch, notes: pathlib.Pa
 def _saved_awis_by_heading(notes: pathlib.Path) -> dict[str, str]:
     """保存された通常AWIをH1ごとに返す。"""
     awis: dict[str, str] = {}
-    for path in (notes / "inbox").iterdir():
-        content = path.read_text(encoding="utf-8")
+    for _path, _repo, content, _state, _kind in _wi_entries.iter_entries(notes, ("inbox",), None, "awi"):
         heading = next(line for line in content.splitlines() if line.startswith("# "))
         awis[heading] = content
     return awis
@@ -286,7 +290,7 @@ def test_check_and_submit_alerts_invokes_add_entries(monkeypatch: pytest.MonkeyP
         run_list_fn=lambda _r, _b: runs,
     )
     assert count.submitted == 1
-    content = next((notes / "inbox").iterdir()).read_text(encoding="utf-8")
+    content = next(iter(_saved_awis_by_heading(notes).values()))
     assert "alert_keys: github-run:21" in content
     assert "source: alert-monitor" in content
     assert "# ワークフローCI失敗" in content
@@ -499,7 +503,7 @@ def test_local_origin_preserves_monitor_api_endpoint(
     repo, notes = _prepare_alert_cli(monkeypatch, tmp_path, forge="gitlab")
     origin = f"http://{authority}/owner/repo.git"
     git_repository.run_git(repo, "remote", "set-url", "origin", origin)
-    for name in ("GITLAB_HOST", "GITLAB_URI", "GITLAB_URL", "GITLAB_API_HOST", "GLAB_API_PROTOCOL", "API_PROTOCOL"):
+    for name in ("GITLAB_HOST", "GITLAB_URI", "GL_HOST", "GITLAB_API_HOST", "GLAB_API_PROTOCOL", "API_PROTOCOL"):
         monkeypatch.delenv(name, raising=False)
     real_run = subprocess.run
     endpoints: list[str] = []
@@ -759,12 +763,12 @@ def test_successful_collection_does_not_fetch_head() -> None:
 
 
 @pytest.mark.usefixtures("api_branch_heads")
-@pytest.mark.parametrize("variable", ["GITLAB_HOST", "GITLAB_URI", "GITLAB_URL"])
+@pytest.mark.parametrize("variable", ["GITLAB_HOST", "GITLAB_URI", "GL_HOST"])
 def test_alerts_preserve_public_endpoint_override(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, variable: str
 ) -> None:
     """通知のブランチ・スケジュール・HEAD取得は公開環境指定を優先し、親環境を保つ。"""
-    for name in ("GITLAB_HOST", "GITLAB_URI", "GITLAB_URL"):
+    for name in ("GITLAB_HOST", "GITLAB_URI", "GL_HOST"):
         monkeypatch.delenv(name, raising=False)
     monkeypatch.setenv(variable, "api.example.net:9443")
     parent_environment = os.environ.copy()
@@ -864,3 +868,125 @@ def test_alert_log_guidance_uses_shared_commands(monkeypatch: pytest.MonkeyPatch
     collector = alerts.collect_github_ci_failures if forge == "github" else alerts.collect_gitlab_ci_failures
     result = collector(repository, "main")
     assert forge_cli.failure_next_action(forge, repository, "24", prefer_environment=True) in result[0].body
+
+
+@pytest.mark.usefixtures("api_branch_heads")
+@pytest.mark.parametrize("selection", ["identifier", "ssh", "environment", "explicit", "override"])
+def test_real_glab_resolves_configuration_through_ci_and_failure_logs(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+    host_environ: Callable[[], dict[str, str]],
+    capsys: pytest.CaptureFixture[str],
+    selection: str,
+) -> None:
+    """実glabでbaseline・待機・通知・失敗ログを取得し、ホスト別API設定と認証を確かめる。"""
+    # glab 1.122.0のconfig --helpにあるホスト別api_host/api_protocol/tokenと
+    # https://docs.gitlab.com/api/pipelines/ 、jobs/ の応答を使う。
+    runtime_environment = host_environ()
+    executable = shutil.which("glab", path=runtime_environment["PATH"])
+    if executable is None:
+        pytest.skip("実glabの結合試験にはglabの導入が必要")
+    restore_host_environment(monkeypatch)
+    config = tmp_path / "glab-config"
+    config.mkdir()
+    monkeypatch.setenv("GLAB_CONFIG_DIR", str(config))
+    for name in (
+        "GITLAB_HOST",
+        "GITLAB_URI",
+        "GL_HOST",
+        "GITLAB_API_HOST",
+        "GLAB_API_PROTOCOL",
+        "API_PROTOCOL",
+        "GITLAB_TOKEN",
+        "GITLAB_ACCESS_TOKEN",
+        "OAUTH_TOKEN",
+        "GITLAB_CI",
+        "GLAB_ENABLE_CI_AUTOLOGIN",
+    ):
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setenv("GLAB_CHECK_UPDATE", "false")
+    monkeypatch.setenv("NO_PROXY", "127.0.0.1,localhost")
+    requests: list[tuple[str, str | None]] = []
+    phase = "baseline"
+
+    class Handler(http.server.BaseHTTPRequestHandler):
+        def do_GET(self) -> None:  # noqa: N802
+            requests.append((self.path, self.headers.get("PRIVATE-TOKEN")))
+            pipeline = {"id": 1 if phase == "baseline" else 2, "status": "failed", "sha": "a" * 40}
+            if "/jobs/9/trace" in self.path:
+                data = b"test failure log\n"
+            else:
+                job = {"id": 9, "name": "test", "status": "failed", "allow_failure": False}
+                payload: Any
+                if "/repository/branches/" in self.path:
+                    payload = {"commit": {"id": "a" * 40}}
+                elif "/pipeline_schedules" in self.path:
+                    payload = []
+                elif self.path.endswith("/jobs/9"):
+                    payload = job
+                elif "/jobs" in self.path:
+                    payload = [job]
+                elif self.path.endswith("/pipelines/2"):
+                    payload = pipeline
+                else:
+                    payload = [pipeline]
+                data = json.dumps(payload).encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(data)))
+            self.end_headers()
+            self.wfile.write(data)
+
+        def log_message(self, format: str, *args: object) -> None:
+            del format, args
+
+    with http.server.ThreadingHTTPServer(("127.0.0.1", 0), Handler) as server:
+        authority = f"127.0.0.1:{server.server_port}"
+        host_key = authority if selection == "explicit" else "configured.example.org"
+        api_host = "unused.example.org:1" if selection == "explicit" else authority
+        api_protocol = "https" if selection == "explicit" else "http"
+        (config / "config.yml").write_text(
+            f"hosts:\n  {host_key}:\n    api_host: {api_host}\n    api_protocol: {api_protocol}\n    token: test-host-token\n",
+            encoding="utf-8",
+        )
+        (config / "config.yml").chmod(0o600)
+        repository = {
+            "identifier": f"{host_key}/group/repo",
+            "ssh": f"ssh://git@{host_key}:2222/group/repo.git",
+            "environment": "group/repo",
+            "explicit": f"http://{authority}/group/repo",
+            "override": "http://unused.example.org:1/group/repo",
+        }[selection]
+        if selection in {"environment", "override"}:
+            monkeypatch.setenv("GL_HOST", host_key)
+        prefer_environment = selection == "override"
+        thread = threading.Thread(target=server.serve_forever)
+        thread.start()
+        try:
+            options = ["--repo", repository, "--forge=gitlab", "--ref=main", "--source-ref=HEAD", "--registration-grace=0"]
+            baseline = tmp_path / "baseline.json"
+            monkeypatch.setattr(wait_ci, "_resolve_sha", lambda *_args: "a" * 40)
+            monkeypatch.setattr(wait_ci, "_install_signal_handlers", lambda: None)
+            if not prefer_environment:
+                assert wait_ci.main(["--write-baseline", str(baseline), *options]) == 0
+                phase = "failure"
+                assert wait_ci.main(["--baseline", str(baseline), *options]) == 1
+                assert "ci trace" in capsys.readouterr().err
+            phase = "failure"
+            assert alerts.collect_gitlab_ci_failures(repository, "main")
+            command = forge_cli.failure_log_commands("gitlab", repository, "2", prefer_environment=prefer_environment)[0]
+            result = subprocess.run(command, env=os.environ.copy(), capture_output=True, timeout=10, check=False)
+            assert result.returncode == 0, result.stderr
+            assert [job["id"] for job in json.loads(result.stdout)["jobs"]] == [9]
+            command = forge_cli.failure_log_commands(
+                "gitlab", repository, "9", job=True, prefer_environment=prefer_environment
+            )[0]
+            result = subprocess.run(command, env=os.environ.copy(), capture_output=True, timeout=10, check=False)
+            assert result.returncode == 0, result.stderr
+            assert b"test failure log\n" in result.stdout
+        finally:
+            server.shutdown()
+            thread.join(timeout=5)
+            assert not thread.is_alive()
+    assert requests and all(token == "test-host-token" for _path, token in requests)
+    assert any("/jobs/9/trace" in path for path, _token in requests)

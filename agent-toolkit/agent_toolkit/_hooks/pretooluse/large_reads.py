@@ -17,6 +17,7 @@ from dataclasses import dataclass
 # 関数の実行時にだけ使う依存は、使用時まで読み込まない。
 lazy import ast
 lazy import re
+lazy import shlex
 lazy import stat
 lazy from collections.abc import Iterator, Sequence
 
@@ -165,7 +166,10 @@ def _read_operands(tokens: Sequence[str], *, include_partial: bool) -> tuple[str
             return (tokens[2],)
     if include_partial and is_atk_command(tokens) and tokens[1:2] == ("read-file",) and "--" in tokens:
         separator = tokens.index("--")
-        options = tokens[2:separator]
+        if separator + 1 >= len(tokens):
+            return ()
+        operand = tokens[separator + 1]
+        options = (*tokens[2:separator], *tokens[separator + 2 :])
         index = 0
         while index < len(options):
             option, equals, value = options[index].partition("=")
@@ -177,7 +181,7 @@ def _read_operands(tokens: Sequence[str], *, include_partial: bool) -> tuple[str
             if not value.isdigit():
                 return ()
             index += 1
-        return tuple(tokens[separator + 1 :]) if len(tokens) == separator + 2 else ()
+        return (operand,)
     return ()
 
 
@@ -437,7 +441,8 @@ def _large_read_notice(path: pathlib.Path, plan: _ReadPlan, byte_threshold: int)
         f"{plan.line_count}行、{plan.byte_count}バイトのファイルの全文取得を遮断した（閾値: {byte_threshold}バイト）: {path}",
         fix=(
             f"コマンドを使え、実行が許可される担当は`{read_file.first_read_command(path)}`で取得し、`text`を連結する。"
-            "`next`を`--start`へ渡し、`eof`が`true`になるまで続ける。"
+            f"継続は`atk read-file --start <next> -- {shlex.quote(str(path))}`の`<next>`へ直前の値を指定し、"
+            "`eof`が`true`になるまで同じファイルの`text`を連結する。"
             "コマンドを使えないか実行が制限される担当は、対象パス・必要な取得範囲を委譲元へ返し、分割取得した資料を受け取る。"
         ),
     )
@@ -455,13 +460,14 @@ def _large_multi_read_notice(path_counts: Sequence[tuple[pathlib.Path, _ReadPlan
         )
     total_bytes = sum(plan.byte_count for _path, plan in path_counts)
     details = "、".join(
-        f"`{path}`: {plan.line_count}行、{plan.byte_count}バイト、`{read_file.first_read_command(path)}`"
+        f"`{path}`: {plan.line_count}行、{plan.byte_count}バイト、初回`{read_file.first_read_command(path)}`、"
+        f"継続`atk read-file --start <next> -- {shlex.quote(str(path))}`"
         for path, plan in path_counts
     )
     return _block_notice(
         f"複数ファイルの全文取得を遮断した（合計: {total_bytes}バイト、閾値: {byte_threshold}バイト）: {details}",
         fix="コマンドを使え、実行が許可される担当はファイルごとに示したコマンドで取得し、`text`を連結する。"
-        "`next`を`--start`へ渡し、`eof`が`true`になるまで続ける。"
+        "継続コマンドの`<next>`へ同じファイルの直前の値を指定し、`eof`が`true`になるまで続ける。"
         "コマンドを使えないか実行が制限される担当は、対象パス・必要な取得範囲を委譲元へ返し、分割取得した資料を受け取る。",
     )
 

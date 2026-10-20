@@ -2,10 +2,12 @@
 
 import pathlib
 
+from agent_toolkit._atk.wi import frontmatter as wi_frontmatter
 from agent_toolkit._plan import structure as _plan_format
 from agent_toolkit._plan.structure import constants as plan_constants
 from agent_toolkit._plan.structure import sections as plan_sections
 from agent_toolkit._testing import plan_fixture as _plan_fixture
+from agent_toolkit._testing import wi_entry_files
 
 _BASE = _plan_fixture.BASE_COMMIT
 
@@ -67,7 +69,7 @@ def _canonical_human_main_content() -> str:
 
 def _wi_source(*, source: bool, trailing_user_comment: bool = False, answer: bool = False) -> str:
     """WIファイルへ保存する本文を組み立てる。"""
-    frontmatter = ["---", "status: inbox"]
+    frontmatter = ["---", "state: inbox"]
     if source:
         frontmatter.append(f"{_plan_format.PLAN_WI_SOURCE_KEY}: agent-toolkit:session-review")
     frontmatter.append("---")
@@ -89,8 +91,13 @@ def _origin_check(private_notes: pathlib.Path, content: str = _HUMAN_MAIN_CONTEN
     return errors, notices, skips
 
 
-def _write_wi(private_notes: pathlib.Path, body: str, name: str = _plan_fixture.WI_FILES[0][0]) -> None:
-    """private-notesの状態ディレクトリへWIファイルを作成する。"""
-    inbox = private_notes / "inbox"
-    inbox.mkdir(parents=True, exist_ok=True)
-    (inbox / name).write_text(body, encoding="utf-8")
+def _write_wi(
+    private_notes: pathlib.Path, body: str, name: str = _plan_fixture.WI_FILES[0][0], *, legacy_layout: bool = False
+) -> None:
+    """private-notesへWIを作成し、移行専用の検証では旧配置を明示する。"""
+    path = wi_entry_files.entry_path(private_notes, name, legacy_layout=legacy_layout)
+    if not legacy_layout:
+        parsed = wi_frontmatter.parse_frontmatter(body)
+        metadata, content = parsed if parsed is not None else ({}, body)
+        body = wi_frontmatter.serialize_frontmatter({**metadata, "state": metadata.get("state", "inbox")}, content)
+    path.write_text(body, encoding="utf-8")

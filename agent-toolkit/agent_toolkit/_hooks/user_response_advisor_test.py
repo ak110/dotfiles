@@ -18,6 +18,18 @@ def _assistant(text: str) -> dict:
     return {"type": "assistant", "message": {"content": [{"type": "text", "text": text}]}}
 
 
+@pytest.mark.parametrize("api_error,model", [(True, "claude"), (False, "<synthetic>")])
+def test_synthetic_api_notice_does_not_answer_human(
+    api_error: bool, model: str, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Claude Code 2.1.303のAPI失敗エントリは人間への回答へ数えない。"""
+    message = {"model": model, "content": [{"type": "text", "text": "Credit balance is too low"}]}
+    synthetic = {"type": "assistant", "message": message, "isApiErrorMessage": api_error}
+    output = _stop([_HUMAN, synthetic], tmp_path, capsys)
+    assert output["decision"] == "block"
+    assert 'source="user_response_advisor"' in output["reason"]
+
+
 def _stop(entries: list[dict], tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], **extra: str) -> dict:
     path = tmp_path / "transcript.jsonl"
     path.write_text("\n".join(json.dumps(entry, ensure_ascii=False) for entry in entries), encoding="utf-8")

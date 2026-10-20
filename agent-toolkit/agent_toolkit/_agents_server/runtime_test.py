@@ -56,30 +56,32 @@ async def test_blocking_waits_do_not_stall_event_loop(
 
     heartbeat_task = asyncio.create_task(heartbeat())
     writer = status_file.StatusFileWriter({}, StatusFileIdentity("root", "writer.json", None), state_root=tmp_path)
-    server = manager.AgentsServerManager(status_writer=None)
-    try:
-        if operation == "activate":
-            monkeypatch.setattr(status_file, "sweep_stale_shared_state", blocking)
-            await writer.activate_async()
-        elif operation == "claim":
-            monkeypatch.setattr(status_file, "take_result", blocking)
-            await writer.take_result_async("child", collector="test")
-        elif operation == "notices":
-            monkeypatch.setattr(status_file, "take_notices", blocking)
-            await writer.take_notices_async("child")
-        elif operation == "candidates":
-            monkeypatch.setattr(config, "parse_unresolved_model_candidates", lambda *_args, **_kwargs: [("claude", None, None)])
-            monkeypatch.setattr(unavailable_candidates, "load_unavailable_candidates", blocking)
-            await server._resolve_start_candidates("plan", launch_kind="delegate")  # noqa: SLF001  # pylint: disable=protected-access
-        else:
-            monkeypatch.setattr(session_registry, "resolve", blocking)
-            with pytest.raises(AttributeError):
-                await server.show_session("child")
-        await heartbeat_task
-        assert observed == [True]
-    finally:
-        release.set()
-        await asyncio.to_thread(worker.join)
-        await asyncio.to_thread(controller_thread.join)
-        await server.close()
-        await writer.deactivate_async()
+    async with manager.AgentsServerManager(status_writer=None) as server:
+        try:
+            if operation == "activate":
+                monkeypatch.setattr(status_file, "sweep_stale_shared_state", blocking)
+                await writer.activate_async()
+            elif operation == "claim":
+                monkeypatch.setattr(status_file, "take_result", blocking)
+                await writer.take_result_async("child", collector="test")
+            elif operation == "notices":
+                monkeypatch.setattr(status_file, "take_notices", blocking)
+                await writer.take_notices_async("child")
+            elif operation == "candidates":
+                monkeypatch.setattr(
+                    config, "parse_unresolved_model_candidates", lambda *_args, **_kwargs: [("claude", None, None)]
+                )
+                monkeypatch.setattr(unavailable_candidates, "load_unavailable_candidates", blocking)
+                await server._resolve_start_candidates("plan", launch_kind="delegate")  # noqa: SLF001  # pylint: disable=protected-access
+            else:
+                monkeypatch.setattr(session_registry, "resolve", blocking)
+                with pytest.raises(AttributeError):
+                    await server.show_session("child")
+            await heartbeat_task
+            assert observed == [True]
+        finally:
+            release.set()
+            await asyncio.to_thread(worker.join)
+            await asyncio.to_thread(controller_thread.join)
+            await server.close()
+            await writer.deactivate_async()

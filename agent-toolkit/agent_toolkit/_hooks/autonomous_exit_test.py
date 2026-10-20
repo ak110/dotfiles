@@ -11,9 +11,10 @@ import subprocess
 
 import pytest
 
+from agent_toolkit._common import session_state
 from agent_toolkit._testing import fork_runner as _fork_runner
 from agent_toolkit._testing import stop_check_runner as _stop_check_runner
-from agent_toolkit._testing.helpers import SESSION_STATE_FILENAME_TEMPLATE, _write_transcript
+from agent_toolkit._testing.helpers import _write_transcript
 
 _SCRIPT = pathlib.Path(_stop_check_runner.__file__)
 
@@ -23,8 +24,8 @@ _ENV_DELEGATED_SESSION = "AGENT_TOOLKIT_DELEGATED_SESSION"
 
 
 def _write_state(state_dir: pathlib.Path, session_id: str, state: dict) -> None:
-    path = state_dir / SESSION_STATE_FILENAME_TEMPLATE.format(session_id=session_id)
-    path.write_text(json.dumps(state, ensure_ascii=False), encoding="utf-8")
+    del state_dir
+    assert session_state.update_state(session_id, lambda _previous: state)
 
 
 def _assistant_with_async_tool(tool_name: str) -> dict:
@@ -297,8 +298,8 @@ def _write_exit_request(state_dir: pathlib.Path, session_id: str, content: str) 
 
 
 def _read_state(state_dir: pathlib.Path, session_id: str) -> dict:
-    path = state_dir / SESSION_STATE_FILENAME_TEMPLATE.format(session_id=session_id)
-    return json.loads(path.read_text(encoding="utf-8"))
+    del state_dir
+    return session_state.read_state(session_id)
 
 
 _RUNNING_TASKS = [

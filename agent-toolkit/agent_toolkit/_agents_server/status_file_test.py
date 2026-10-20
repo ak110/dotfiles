@@ -309,14 +309,14 @@ async def test_writer_removes_waited_result_at_retention_deadline(tmp_path: path
     """waitで回収済みになった結果を次のflushで削除する。"""
     session = _completed_with_retention_deadline("waited", tmp_path, turn_seq=1)
     writer = _root_writer({session.session_id: session}, tmp_path)
-    manager = server_manager.AgentsServerManager(writer)
-    writer.activate()
+    async with server_manager.AgentsServerManager(writer) as manager:
+        writer.activate()
 
-    result_path = shared_layout.results_directory("root", tmp_path) / "waited.json"
-    assert (await _wait_now(manager))["agent_message"] == "完了"
-    writer.flush()
-    assert not result_path.exists()
-    await manager.close()
+        result_path = shared_layout.results_directory("root", tmp_path) / "waited.json"
+        assert (await _wait_now(manager))["agent_message"] == "完了"
+        writer.flush()
+        assert not result_path.exists()
+        await manager.close()
 
 
 @pytest.mark.asyncio
@@ -623,15 +623,15 @@ async def test_manager_refreshes_heartbeat_until_close(monkeypatch: pytest.Monke
         state_root=tmp_path,
         aggregate_seconds=0,
     )
-    manager = server_manager.AgentsServerManager(writer)
-    manager.activate()
-    initial = json.loads(writer.path.read_text(encoding="utf-8"))["heartbeat_at"]
+    async with server_manager.AgentsServerManager(writer) as manager:
+        manager.activate()
+        initial = json.loads(writer.path.read_text(encoding="utf-8"))["heartbeat_at"]
 
-    # 定期更新の保存はファイル操作のスレッドを経て完了するため、固定時間でなく生存の印の更新を待つ。
-    await _until(lambda: json.loads(writer.path.read_text(encoding="utf-8"))["heartbeat_at"] > initial)
+        # 定期更新の保存はファイル操作のスレッドを経て完了するため、固定時間でなく生存の印の更新を待つ。
+        await _until(lambda: json.loads(writer.path.read_text(encoding="utf-8"))["heartbeat_at"] > initial)
 
-    await manager.close()
-    assert manager._heartbeat_task is None
+        await manager.close()
+        assert manager._heartbeat_task is None
 
 
 @pytest.mark.asyncio
@@ -669,35 +669,35 @@ async def test_manager_writes_three_launch_kinds_and_removes_waited_result(
         state_root=tmp_path,
         aggregate_seconds=0,
     )
-    manager = server_manager.AgentsServerManager(writer)
-    backend = _FakeStatusBackend(manager.sessions)
-    install_backend(manager, "codex", backend)
-    _use_candidates(monkeypatch, ("codex", "gpt-5.6-terra", "medium"))
-    monkeypatch.setattr(manager, "_await_start_outcome", lambda _session: asyncio.sleep(0))
-    writer.activate()
+    async with server_manager.AgentsServerManager(writer) as manager:
+        backend = _FakeStatusBackend(manager.sessions)
+        install_backend(manager, "codex", backend)
+        _use_candidates(monkeypatch, ("codex", "gpt-5.6-terra", "medium"))
+        monkeypatch.setattr(manager, "_await_start_outcome", lambda _session: asyncio.sleep(0))
+        writer.activate()
 
-    started = await manager.start("high_tier", "\n  実装を開始\n続き", str(tmp_path))
-    await manager.start_explore("調査する", str(tmp_path))
-    await manager.start_shell("pytest -q", str(tmp_path), "結果を要約")
-    writer.flush()
-    payload = json.loads(writer.path.read_text(encoding="utf-8"))
-    assert [item["launch_kind"] for item in payload["sessions"]] == ["delegate", "explore", "shell"]
-    assert [item["label"] for item in payload["sessions"]] == ["実装を開始", "explore", "shell-pytest"]
+        started = await manager.start("high_tier", "\n  実装を開始\n続き", str(tmp_path))
+        await manager.start_explore("調査する", str(tmp_path))
+        await manager.start_shell("pytest -q", str(tmp_path), "結果を要約")
+        writer.flush()
+        payload = json.loads(writer.path.read_text(encoding="utf-8"))
+        assert [item["launch_kind"] for item in payload["sessions"]] == ["delegate", "explore", "shell"]
+        assert [item["label"] for item in payload["sessions"]] == ["実装を開始", "explore", "shell-pytest"]
 
-    session = manager.sessions[started["session_id"]]
-    session.status = "completed"
-    session.agent_message = "完了"
-    session.turn_completed = True
-    session.touch()
-    await _wait_now(manager)
-    writer.flush()
-    result_path = shared_layout.results_directory("root", tmp_path) / f"{session.session_id}.json"
-    assert not result_path.exists()
-    remaining = json.loads(writer.path.read_text(encoding="utf-8"))["sessions"]
-    assert session.session_id not in {item["session_id"] for item in remaining}
-    await manager.close()
-    # 公開済み結果を回収した場合は共有claim lockが残るため、自身の射影の削除を判定する。
-    assert not writer.path.exists()
+        session = manager.sessions[started["session_id"]]
+        session.status = "completed"
+        session.agent_message = "完了"
+        session.turn_completed = True
+        session.touch()
+        await _wait_now(manager)
+        writer.flush()
+        result_path = shared_layout.results_directory("root", tmp_path) / f"{session.session_id}.json"
+        assert not result_path.exists()
+        remaining = json.loads(writer.path.read_text(encoding="utf-8"))["sessions"]
+        assert session.session_id not in {item["session_id"] for item in remaining}
+        await manager.close()
+        # 公開済み結果を回収した場合は共有claim lockが残るため、自身の射影の削除を判定する。
+        assert not writer.path.exists()
 
 
 @pytest.mark.asyncio
@@ -707,26 +707,26 @@ async def test_manager_removes_previous_result_when_new_turn_starts(
 ) -> None:
     """同じsessionの新しいturnを開始した時点で前の結果を削除する。"""
     writer = _status_writer(tmp_path)
-    manager = server_manager.AgentsServerManager(writer)
-    backend = _FakeStatusBackend(manager.sessions)
-    install_backend(manager, "codex", backend)
-    _use_candidates(monkeypatch, ("codex", "model", "medium"))
-    monkeypatch.setattr(manager, "_await_start_outcome", lambda _session: asyncio.sleep(0))
-    writer.activate()
-    started = await manager.start("high_tier", "実装", str(tmp_path))
-    session = manager.sessions[started["session_id"]]
-    session.status = "completed"
-    session.agent_message = "前の結果"
-    session.turn_completed = True
-    session.touch()
-    writer.flush()
-    result_path = shared_layout.results_directory("root", tmp_path) / f"{session.session_id}.json"
-    assert result_path.exists()
+    async with server_manager.AgentsServerManager(writer) as manager:
+        backend = _FakeStatusBackend(manager.sessions)
+        install_backend(manager, "codex", backend)
+        _use_candidates(monkeypatch, ("codex", "model", "medium"))
+        monkeypatch.setattr(manager, "_await_start_outcome", lambda _session: asyncio.sleep(0))
+        writer.activate()
+        started = await manager.start("high_tier", "実装", str(tmp_path))
+        session = manager.sessions[started["session_id"]]
+        session.status = "completed"
+        session.agent_message = "前の結果"
+        session.turn_completed = True
+        session.touch()
+        writer.flush()
+        result_path = shared_layout.results_directory("root", tmp_path) / f"{session.session_id}.json"
+        assert result_path.exists()
 
-    await manager.send_message(session.session_id, "続行")
+        await manager.send_message(session.session_id, "続行")
 
-    assert not result_path.exists()
-    await manager.close()
+        assert not result_path.exists()
+        await manager.close()
 
 
 @pytest.mark.asyncio
@@ -738,29 +738,29 @@ async def test_manager_writes_only_announced_candidate_after_fallback(
 ) -> None:
     """候補切替で除外した試行を隠し、委譲元へ返したsessionだけを書く。"""
     writer = _status_writer(tmp_path)
-    manager = server_manager.AgentsServerManager(writer)
-    backend: _FakeStatusBackend = (
-        _DelayedUnavailableStatusBackend(
-            manager.sessions,
-            condition=manager._condition,
-            unavailable_models={"first"},
+    async with server_manager.AgentsServerManager(writer) as manager:
+        backend: _FakeStatusBackend = (
+            _DelayedUnavailableStatusBackend(
+                manager.sessions,
+                condition=manager._condition,
+                unavailable_models={"first"},
+            )
+            if delayed
+            else _UnavailableStatusBackend(manager.sessions, unavailable_models={"first"})
         )
-        if delayed
-        else _UnavailableStatusBackend(manager.sessions, unavailable_models={"first"})
-    )
-    install_backend(manager, "codex", backend)
-    _use_candidates(monkeypatch, ("codex", "first", "high"), ("codex", "second", "high"))
-    monkeypatch.setattr(server_manager, "START_AVAILABILITY_TIMEOUT", 0.01)
-    writer.activate()
+        install_backend(manager, "codex", backend)
+        _use_candidates(monkeypatch, ("codex", "first", "high"), ("codex", "second", "high"))
+        monkeypatch.setattr(server_manager, "START_AVAILABILITY_TIMEOUT", 0.01)
+        writer.activate()
 
-    response = await manager.start("high_tier", "実装", str(tmp_path))
-    writer.flush()
+        response = await manager.start("high_tier", "実装", str(tmp_path))
+        writer.flush()
 
-    sessions = json.loads(writer.path.read_text(encoding="utf-8"))["sessions"]
-    assert [item["session_id"] for item in sessions] == [response["session_id"]]
-    assert sessions[0]["model"] == "second"
-    assert backend.release_calls == ["session-1"]
-    await manager.close()
+        sessions = json.loads(writer.path.read_text(encoding="utf-8"))["sessions"]
+        assert [item["session_id"] for item in sessions] == [response["session_id"]]
+        assert sessions[0]["model"] == "second"
+        assert backend.release_calls == ["session-1"]
+        await manager.close()
 
 
 @pytest.mark.asyncio
@@ -769,22 +769,22 @@ async def test_manager_writes_only_last_failure_when_all_candidates_are_unavaila
 ) -> None:
     """全候補が利用不能なら、応答へ載せた最後の失敗sessionだけを書く。"""
     writer = _status_writer(tmp_path)
-    manager = server_manager.AgentsServerManager(writer)
-    backend = _UnavailableStatusBackend(manager.sessions, unavailable_models={"first", "second"})
-    install_backend(manager, "codex", backend)
-    _use_candidates(monkeypatch, ("codex", "first", "high"), ("codex", "second", "high"))
-    monkeypatch.setattr(manager, "_await_start_outcome", lambda _session: asyncio.sleep(0))
-    writer.activate()
+    async with server_manager.AgentsServerManager(writer) as manager:
+        backend = _UnavailableStatusBackend(manager.sessions, unavailable_models={"first", "second"})
+        install_backend(manager, "codex", backend)
+        _use_candidates(monkeypatch, ("codex", "first", "high"), ("codex", "second", "high"))
+        monkeypatch.setattr(manager, "_await_start_outcome", lambda _session: asyncio.sleep(0))
+        writer.activate()
 
-    response = await manager.start("high_tier", "実装", str(tmp_path))
-    writer.flush()
+        response = await manager.start("high_tier", "実装", str(tmp_path))
+        writer.flush()
 
-    sessions = json.loads(writer.path.read_text(encoding="utf-8"))["sessions"]
-    assert [item["session_id"] for item in sessions] == [response["session_id"]]
-    assert sessions[0]["model"] == "second"
-    assert sessions[0]["status"] == "failed"
-    assert backend.release_calls == ["session-1"]
-    await manager.close()
+        sessions = json.loads(writer.path.read_text(encoding="utf-8"))["sessions"]
+        assert [item["session_id"] for item in sessions] == [response["session_id"]]
+        assert sessions[0]["model"] == "second"
+        assert sessions[0]["status"] == "failed"
+        assert backend.release_calls == ["session-1"]
+        await manager.close()
 
 
 @pytest.mark.asyncio
@@ -793,31 +793,31 @@ async def test_manager_removes_kill_result_but_keeps_uncollected_result(
 ) -> None:
     """killで返した結果だけを除き、未回収の終端結果は表示に残す。"""
     writer = _status_writer(tmp_path)
-    manager = server_manager.AgentsServerManager(writer)
-    backend = _FakeStatusBackend(manager.sessions)
-    install_backend(manager, "codex", backend)
-    _use_candidates(monkeypatch, ("codex", "model", "medium"))
-    monkeypatch.setattr(manager, "_await_start_outcome", lambda _session: asyncio.sleep(0))
-    writer.activate()
-    killed = await manager.start("high_tier", "kill対象", str(tmp_path))
-    uncollected = await manager.start("high_tier", "未回収", str(tmp_path))
-    for session_id in (killed["session_id"], uncollected["session_id"]):
-        session = manager.sessions[session_id]
-        session.status = "completed"
-        session.agent_message = "完了"
-        session.turn_completed = True
-        session.touch()
+    async with server_manager.AgentsServerManager(writer) as manager:
+        backend = _FakeStatusBackend(manager.sessions)
+        install_backend(manager, "codex", backend)
+        _use_candidates(monkeypatch, ("codex", "model", "medium"))
+        monkeypatch.setattr(manager, "_await_start_outcome", lambda _session: asyncio.sleep(0))
+        writer.activate()
+        killed = await manager.start("high_tier", "kill対象", str(tmp_path))
+        uncollected = await manager.start("high_tier", "未回収", str(tmp_path))
+        for session_id in (killed["session_id"], uncollected["session_id"]):
+            session = manager.sessions[session_id]
+            session.status = "completed"
+            session.agent_message = "完了"
+            session.turn_completed = True
+            session.touch()
 
-    response = await manager.kill(killed["session_id"], timeout=0)
-    writer.flush()
+        response = await manager.kill(killed["session_id"], timeout=0)
+        writer.flush()
 
-    assert response["agent_message"] == "完了"
-    results = shared_layout.results_directory("root", tmp_path)
-    assert not (results / f"{killed['session_id']}.json").exists()
-    assert (results / f"{uncollected['session_id']}.json").exists()
-    sessions = json.loads(writer.path.read_text(encoding="utf-8"))["sessions"]
-    assert [item["session_id"] for item in sessions] == [uncollected["session_id"]]
-    await manager.close()
+        assert response["agent_message"] == "完了"
+        results = shared_layout.results_directory("root", tmp_path)
+        assert not (results / f"{killed['session_id']}.json").exists()
+        assert (results / f"{uncollected['session_id']}.json").exists()
+        sessions = json.loads(writer.path.read_text(encoding="utf-8"))["sessions"]
+        assert [item["session_id"] for item in sessions] == [uncollected["session_id"]]
+        await manager.close()
 
 
 @pytest.mark.asyncio
@@ -825,15 +825,15 @@ async def test_manager_without_writer_does_not_create_status_files(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
 ) -> None:
     """書込主体が無効なmanagerはsession開始後も状態ファイルを作成しない。"""
-    manager = server_manager.AgentsServerManager(None)
-    install_backend(manager, "codex", _FakeStatusBackend(manager.sessions))
-    _use_candidates(monkeypatch, ("codex", "model", "medium"))
-    monkeypatch.setattr(manager, "_await_start_outcome", lambda _session: asyncio.sleep(0))
+    async with server_manager.AgentsServerManager(None) as manager:
+        install_backend(manager, "codex", _FakeStatusBackend(manager.sessions))
+        _use_candidates(monkeypatch, ("codex", "model", "medium"))
+        monkeypatch.setattr(manager, "_await_start_outcome", lambda _session: asyncio.sleep(0))
 
-    await manager.start("high_tier", "実装", str(tmp_path))
+        await manager.start("high_tier", "実装", str(tmp_path))
 
-    assert not list(tmp_path.rglob("*.json"))
-    await manager.close()
+        assert not list(tmp_path.rglob("*.json"))
+        await manager.close()
 
 
 def _use_candidates(monkeypatch: pytest.MonkeyPatch, *candidates: tuple[str, str, str]) -> None:
@@ -1045,35 +1045,35 @@ async def test_flush_failures_preserve_diagnostics_and_heartbeat(
         state_root=tmp_path,
         aggregate_seconds=0,
     )
-    manager = server_manager.AgentsServerManager(writer)
-    session = state.SessionState("session-1", str(tmp_path))
-    session.status = "running"
-    session.announced = True
-    manager.sessions[session.session_id] = session
-    manager.activate()
-    before = json.loads(writer.path.read_text(encoding="utf-8"))["heartbeat_at"]
-    refusal = _ReplaceRefusal(monkeypatch, writer.path)
-    try:
-        writer.schedule()
-        messages = ("予約した共有状態の保存に失敗しました", "heartbeatの保存に失敗しました")
-        await _until(lambda: all(message in diagnostic_log.read_text(encoding="utf-8") for message in messages))
-        heartbeat_task = manager._heartbeat_task
-        assert heartbeat_task is not None and not heartbeat_task.done()
-        assert json.loads(writer.path.read_text(encoding="utf-8"))["heartbeat_at"] == before
-        log_text = diagnostic_log.read_text(encoding="utf-8")
-        for message in messages:
-            line = next(line for line in log_text.splitlines() if message in line)
-            assert f"writer={writer.path}" in line and "session-1" in line
-        assert "Traceback (most recent call last)" in log_text
-        assert _replace_failure_logged(log_text, writer.path)
+    async with server_manager.AgentsServerManager(writer) as manager:
+        session = state.SessionState("session-1", str(tmp_path))
+        session.status = "running"
+        session.announced = True
+        manager.sessions[session.session_id] = session
+        manager.activate()
+        before = json.loads(writer.path.read_text(encoding="utf-8"))["heartbeat_at"]
+        refusal = _ReplaceRefusal(monkeypatch, writer.path)
+        try:
+            writer.schedule()
+            messages = ("予約した共有状態の保存に失敗しました", "heartbeatの保存に失敗しました")
+            await _until(lambda: all(message in diagnostic_log.read_text(encoding="utf-8") for message in messages))
+            heartbeat_task = manager._heartbeat_task
+            assert heartbeat_task is not None and not heartbeat_task.done()
+            assert json.loads(writer.path.read_text(encoding="utf-8"))["heartbeat_at"] == before
+            log_text = diagnostic_log.read_text(encoding="utf-8")
+            for message in messages:
+                line = next(line for line in log_text.splitlines() if message in line)
+                assert f"writer={writer.path}" in line and "session-1" in line
+            assert "Traceback (most recent call last)" in log_text
+            assert _replace_failure_logged(log_text, writer.path)
 
-        refusal.active = False
-        await _until(lambda: json.loads(writer.path.read_text(encoding="utf-8"))["heartbeat_at"] > before)
-        assert not heartbeat_task.done()
-        assert not list(writer.path.parent.glob(f".{writer.path.name}.*.tmp"))
-    finally:
-        refusal.active = False
-        await manager.close()
+            refusal.active = False
+            await _until(lambda: json.loads(writer.path.read_text(encoding="utf-8"))["heartbeat_at"] > before)
+            assert not heartbeat_task.done()
+            assert not list(writer.path.parent.glob(f".{writer.path.name}.*.tmp"))
+        finally:
+            refusal.active = False
+            await manager.close()
 
 
 class _TerminalBeforeResponseBackend(FakeBackend):
@@ -1100,33 +1100,33 @@ async def test_terminal_result_write_failure_is_not_reported_as_projection_failu
         state_root=tmp_path,
         aggregate_seconds=0,
     )
-    manager = server_manager.AgentsServerManager(writer)
-    install_backend(manager, "claude", _TerminalBeforeResponseBackend(manager.sessions, "claude"))
-    monkeypatch.setattr(mcp_tools, "_MANAGER", manager)
-    writer.activate()
-    result_path = shared_layout.results_directory("root-session", tmp_path) / "claude-session.json"
-    refusal = _ReplaceRefusal(monkeypatch, result_path)
-    try:
-        started = await mcp_tools.start(mode="delegate", cwd=str(tmp_path), prompt="処理", model_type="claude:test/medium")
-        assert started["session_id"] == "claude-session" and started["status"] == "completed"
-        scopes = {warning["scope"] for warning in started["persistence_warnings"]}
-        assert "shared-state" in scopes and "projection" not in scopes
-        assert not result_path.exists()
+    async with server_manager.AgentsServerManager(writer) as manager:
+        install_backend(manager, "claude", _TerminalBeforeResponseBackend(manager.sessions, "claude"))
+        monkeypatch.setattr(mcp_tools, "_MANAGER", manager)
+        writer.activate()
+        result_path = shared_layout.results_directory("root-session", tmp_path) / "claude-session.json"
+        refusal = _ReplaceRefusal(monkeypatch, result_path)
+        try:
+            started = await mcp_tools.start(mode="delegate", cwd=str(tmp_path), prompt="処理", model_type="claude:test/medium")
+            assert started["session_id"] == "claude-session" and started["status"] == "completed"
+            scopes = {warning["scope"] for warning in started["persistence_warnings"]}
+            assert "shared-state" in scopes and "projection" not in scopes
+            assert not result_path.exists()
 
-        with pytest.raises(OSError) as raised:
+            with pytest.raises(OSError) as raised:
+                writer.flush()
+            assert not isinstance(raised.value, subject.ProjectionWriteError)
+            writer.schedule()
+            await _until(lambda: "予約した共有状態の保存に失敗しました" in diagnostic_log.read_text(encoding="utf-8"))
+            log_text = diagnostic_log.read_text(encoding="utf-8")
+            line = next(line for line in log_text.splitlines() if "開始済みsessionの結果・共有状態保存に失敗" in line)
+            assert "session_id=claude-session" in line and f"writer={writer.path}" in line
+            assert _replace_failure_logged(log_text, result_path)
+
+            refusal.active = False
             writer.flush()
-        assert not isinstance(raised.value, subject.ProjectionWriteError)
-        writer.schedule()
-        await _until(lambda: "予約した共有状態の保存に失敗しました" in diagnostic_log.read_text(encoding="utf-8"))
-        log_text = diagnostic_log.read_text(encoding="utf-8")
-        line = next(line for line in log_text.splitlines() if "開始済みsessionの結果・共有状態保存に失敗" in line)
-        assert "session_id=claude-session" in line and f"writer={writer.path}" in line
-        assert _replace_failure_logged(log_text, result_path)
-
-        refusal.active = False
-        writer.flush()
-        saved = json.loads(result_path.read_text(encoding="utf-8"))
-        assert saved["status"] == "completed" and saved["owner_status_file"] == "root.json"
-    finally:
-        refusal.active = False
-        await manager.close()
+            saved = json.loads(result_path.read_text(encoding="utf-8"))
+            assert saved["status"] == "completed" and saved["owner_status_file"] == "root.json"
+        finally:
+            refusal.active = False
+            await manager.close()

@@ -2331,33 +2331,33 @@ async def test_wait_returns_stopped_interruption_diagnostics(
     instance = logging_config.start_server_instance(environment={}, state_root=tmp_path)
     monkeypatch.setattr(session_registry, "_OWNER_SERVER_INSTANCE", instance.instance_id)
     writer = status_file.StatusFileWriter({}, shared_roots.StatusFileIdentity("root-session", "root.json", None))
-    manager = server_manager.AgentsServerManager(writer)
-    _install_backend(manager, "claude", FakeBackend(manager.sessions, "claude"))
-    writer.activate()
-    session_id = "c0ffee00-0000-4000-8000-000000000001"
-    running = state.SessionState(session_id, str(tmp_path), engine="claude", turn_seq=1, publish_registry=True)
-    state.initialize_turn(running)
-    running.announced = True
-    manager.sessions[session_id] = running
-    running.touch()
-    await running.drain_registration()
+    async with server_manager.AgentsServerManager(writer) as manager:
+        _install_backend(manager, "claude", FakeBackend(manager.sessions, "claude"))
+        writer.activate()
+        session_id = "c0ffee00-0000-4000-8000-000000000001"
+        running = state.SessionState(session_id, str(tmp_path), engine="claude", turn_seq=1, publish_registry=True)
+        state.initialize_turn(running)
+        running.announced = True
+        manager.sessions[session_id] = running
+        running.touch()
+        await running.drain_registration()
 
-    await manager.close()
-    logging_config.record_instance_event("exited", outcome="normal", exception_type=None, message=None)
+        await manager.close()
+        logging_config.record_instance_event("exited", outcome="normal", exception_type=None, message=None)
 
-    assert agents_wait.wait_for_result(environment={"CLAUDE_CODE_SESSION_ID": "root-session"}, state_root=tmp_path) == 0
-    [row] = [json.loads(line) for line in capsys.readouterr().out.splitlines() if line.strip()]
-    assert row["status"] == "interrupted"
-    assert row["error"]["interruptionReason"] == session_registry.OWNER_SERVER_STOPPED
-    assert row["error"]["diagnostics"]["server_instance"] == instance.instance_id
-    # 停止の時点では終了の記録が無くても、表示時点の診断ファイルから状態を求め直す。
-    assert row["error"]["diagnostics"]["status"] == "collected"
-    events = [json.loads(line)["event"] for line in instance.path.read_text(encoding="utf-8").splitlines()]
-    assert "sessions_interrupted" in events
+        assert agents_wait.wait_for_result(environment={"CLAUDE_CODE_SESSION_ID": "root-session"}, state_root=tmp_path) == 0
+        [row] = [json.loads(line) for line in capsys.readouterr().out.splitlines() if line.strip()]
+        assert row["status"] == "interrupted"
+        assert row["error"]["interruptionReason"] == session_registry.OWNER_SERVER_STOPPED
+        assert row["error"]["diagnostics"]["server_instance"] == instance.instance_id
+        # 停止の時点では終了の記録が無くても、表示時点の診断ファイルから状態を求め直す。
+        assert row["error"]["diagnostics"]["status"] == "collected"
+        events = [json.loads(line)["event"] for line in instance.path.read_text(encoding="utf-8").splitlines()]
+        assert "sessions_interrupted" in events
 
-    with pytest.raises(SystemExit, match="0"):
-        atk.main(["agents", "show", session_id])
-    [turn] = json.loads(capsys.readouterr().out)["interrupted_turns"]
-    assert turn["turn_seq"] == 1
-    assert turn["interruptionReason"] == session_registry.OWNER_SERVER_STOPPED
-    assert turn["diagnostics"]["path"] == str(instance.path)
+        with pytest.raises(SystemExit, match="0"):
+            atk.main(["agents", "show", session_id])
+        [turn] = json.loads(capsys.readouterr().out)["interrupted_turns"]
+        assert turn["turn_seq"] == 1
+        assert turn["interruptionReason"] == session_registry.OWNER_SERVER_STOPPED
+        assert turn["diagnostics"]["path"] == str(instance.path)

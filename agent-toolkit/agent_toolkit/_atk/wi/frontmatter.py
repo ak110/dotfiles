@@ -75,12 +75,10 @@ def parse_frontmatter(text: str) -> tuple[dict[str, typing.Any], str] | None:
     frontmatter区切り（先頭`---\\n`と閉じ`\\n---\\n`）が無い場合、YAML構文が不正な場合、
     トップレベルがマッピングでない場合はNoneを返す。空のfrontmatter（`---\\n---\\n`）は
     空dictとして扱う。
-    `queue_schedule`以外の値は`_LiteralScalarLoader`で解析し、暗黙の型推論を経ない
+    `queue_schedule`と`important`以外の値は`_LiteralScalarLoader`で解析し、暗黙の型推論を経ない
     字面のままの`str`として保持する（マッピング・シーケンスの構造自体はそのまま保つ）。
-    `queue_schedule`だけは選択した安全な基底ローダーで別途解析し、`carry_count`等の
-    ネイティブ型を保つ。frontmatter全文を2種のローダーでそれぞれ1回ずつ解析する
-    （`queue_schedule`は`carry_count`のような整数を必要とするため、字面保持ローダーの
-    対象から除く）。
+    `queue_schedule`と`important`は選択した安全な基底ローダーで別途解析し、
+    `carry_count`等の整数と重要フラグのbool型を保つ。frontmatter全文を2種のローダーでそれぞれ1回ずつ解析する。
     本文は区切り直後から末尾までを一切加工せず（先頭改行の除去も末尾改行の追加もせず）返す
     （本文が変化しないことは、`serialize_frontmatter`との往復後の本文文字列を直接比較して確認する）。
     """
@@ -109,7 +107,7 @@ def parse_frontmatter(text: str) -> tuple[dict[str, typing.Any], str] | None:
         literal, typed = {}, {}
     if not isinstance(literal, dict) or not isinstance(typed, dict):
         return None
-    data = {key: (typed.get("queue_schedule") if key == "queue_schedule" else value) for key, value in literal.items()}
+    data = {key: (typed.get(key) if key in {"queue_schedule", "important"} else value) for key, value in literal.items()}
     body = text[end + len("\n---\n") :]
     return data, body
 

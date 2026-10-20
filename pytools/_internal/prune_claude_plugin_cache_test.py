@@ -181,16 +181,13 @@ def test_keeps_expired_version_while_a_process_refers_to_it(
     old = _make_version(plugins_root, "mkt", "tool", "1.0.0", 30)
     current = _make_version(plugins_root, "mkt", "tool", "2.0.0", 20)
     _write_installed(plugins_root, {"tool@mkt": [current]})
-    residents = ResidentProcesses(tmp_path, monkeypatch)
-    if reference == "cwd":
-        server = residents.start("python3", cwd=old / ".venv")
-    else:
-        server = residents.start("python3", env={"CLAUDE_PLUGIN_ROOT": str(old)})
-    try:
+    with ResidentProcesses(tmp_path, monkeypatch) as residents:
+        if reference == "cwd":
+            residents.start("python3", cwd=old / ".venv")
+        else:
+            residents.start("python3", env={"CLAUDE_PLUGIN_ROOT": str(old)})
         assert prune_claude_plugin_cache.run().changed is False
         assert old.is_dir()
-    finally:
-        residents.stop(server)
 
     assert prune_claude_plugin_cache.run().changed is True
     assert not old.exists()
@@ -213,14 +210,11 @@ def test_keeps_expired_version_used_by_session_started_while_it_was_current(
     current = _make_version(plugins_root, "mkt", "tool", "2.0.0", -1 / 24)
     older = _make_version(plugins_root, "mkt", "tool", "0.9.0", 3)
     _write_installed(plugins_root, {"tool@mkt": [current]})
-    residents = ResidentProcesses(tmp_path, monkeypatch)
-    session = residents.start("claude", cwd=tmp_path)
-    try:
+    with ResidentProcesses(tmp_path, monkeypatch) as residents:
+        residents.start("claude", cwd=tmp_path)
         assert prune_claude_plugin_cache.run().changed is True
         assert old.is_dir()
         assert not older.exists()
-    finally:
-        residents.stop(session)
 
     assert prune_claude_plugin_cache.run().changed is True
     assert not old.exists()

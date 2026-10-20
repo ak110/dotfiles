@@ -41,7 +41,7 @@ Git管理下の比較には、`比較資料`へ`{"repository":"/repo","base":"<�
 成果物とその参照する実装・文書・CLIの存否と挙動は、受領する絶対パスと対象worktreeまたは保存版で判定する。
 担当自身が使うスキルと実行基盤（agent-toolkitの配布物）の置き場所は対象版の判定に使わず、そこでの不在を対象版の不在の根拠にしない。
 
-Git管理下の資料は`reader-fit-prepare`の公開操作へ`--repository`・`--review-start`・`--review-head`・`--output-dir`を渡し、1回の実行で準備する。再レビューでは`--previous-review-start`・`--previous-review-head`を加える。必要に応じて`--review-contract`を指定する。対象を限定する場合は`--markdown <リポジトリ相対パス>`を反復する。省略時の対象は、開始時点からレビューHEADまでに追加・変更した全ての`.md`・`.md.tmpl`（`--review-contract`の指定時はそのうち判定範囲の変更を持つもの）である。起動形は次のとおり。
+Git管理下の資料は`reader-fit-prepare`の公開操作へ`--repository`・`--review-start`・`--review-head`・`--output-dir`を渡し、1回の実行で準備する。再レビューでは`--previous-review-start`・`--previous-review-head`を加える。必要に応じて今回の`--review-contract`と前回の`--previous-review-contract`を別々に指定する。対象を限定する場合は`--markdown <リポジトリ相対パス>`を反復する。省略時の対象は、開始時点からレビューHEADまでに追加・変更した全ての`.md`・`.md.tmpl`（`--review-contract`の指定時はそのうち判定範囲の変更を持つもの）である。起動形は次のとおり。
 
 ```text
 atk run-script reader-fit-prepare -- --repository <対象worktree> --review-start <今回の開始時点> --review-head <レビュー対象HEAD> --output-dir <managed-temp内の出力先>
@@ -50,7 +50,10 @@ atk run-script reader-fit-prepare -- --repository <対象worktree> --review-star
 レビュー対象HEADをcheckoutした作業ツリーで実行する（作業ツリーの本文がHEADと異なる対象があれば終了コード2で終わる）。出力の`files`の各項目にある`current`を`成果物`へ渡し、`before`・`patch`・`current`をそれぞれ比較資料の`比較元本文`・`今回差分`・`現行本文`へ、`--review-contract`を指定した場合の`scope_patch`を`判定範囲差分`へ渡す。`change`の値（`本文変更なし`・`計画外の変更のみ`・`判定範囲の変更あり`）は`修正範囲`へ示し、`計画外の変更のみ`の対象も省略の条件を満たさなければ起動する。`path`は対象識別用のリポジトリ相対パスであり、読者別探索の申告にも使う。初回の新規成果物も、空の比較元本文と追加差分の保存ファイルで起動できる。
 `比較資料`の省略時は旧形式の`修正範囲`へ比較元本文と今回差分の保存ファイルの絶対パスを個別に指定する。パスはJSON配列、バッククォート囲み、または改行で区切る。初回の新規成果物は`修正範囲`を`新規`で始めて`全文`を明記する。起動側は新旧どちらの指定でも、同じ処理で指定形式と保存物の読取可能性を確かめる。欠落や参照不能なら補完と`start`の再発行を案内する。
 
-再レビューでは、前回と今回の開始時点からそれぞれのレビューHEADまでのファイル別差分を比べ、差分が同一のファイルだけ`再点検対象なし`として再起動を省ける。rebaseで開始時点が変わった場合も両方の差分を比べ、空白を含む変更があるファイルは起動する。再点検対象がある読者には次も渡す。
+再レビューでは、前回と今回の開始時点からそれぞれのレビューHEADまでのファイル別差分を、それぞれの`review_contract`の判定範囲で比べる。
+差分と契約境界が同一のファイルだけ`再点検対象なし`として再起動を省ける。
+前回契約が無い旧入力は従来の比較を使い、契約境界が変わった箇所は再点検する。
+rebaseで開始時点が変わった場合も両方の差分を比べ、空白を含む変更があるファイルは起動する。再点検対象がある読者には次も渡す。
 
 - `レビュー種別`: `再レビュー`
 - `修正範囲`: 前回確認版（Gitでは前回レビューしたcommit、Git管理外ではmanaged-tempへ複製した前回本文）と現行版の差分へ更新し、そのうち前回未走査または証拠不足だった範囲も示す。Git管理下では前掲の公開操作1回で前回確認版の本文と今回差分を保存して渡す
@@ -60,7 +63,7 @@ atk run-script reader-fit-prepare -- --repository <対象worktree> --review-star
 実行レビューの返却では、ファイルごとに起動結果の識別子の配列か再点検の省略をJSONで申告する。
 識別子は`agents_server`の`session_id`（UUID）、Claude Codeの`Agent`ツールのagent ID（16進列、`agent-`付き16進列）、Codexの組み込み委譲`spawn_agent`が返す`task_name`（`/root/<名前>`のagentのパス）を受理する。組み込み委譲で起動した場合は返却の`task_name`をそのまま申告する。集約起動では各ファイルへ同じ起動結果の識別子を記す。
 形式とGit差分との対応は`exec-review-evidence-check --help`の`--reader-fit-review`、`--review-start`と前回確認版の入力に従う。
-受領した`review_contract`も同じコマンドへ渡し、複数計画の境界を確かめる。
+受領した今回の`review_contract`と、再レビューで保持する前回の契約を同じコマンドへそれぞれ渡し、複数計画の境界を確かめる。
 Git管理外では、回答下書きの絶対パスと`Git管理外の変更`の元ファイルのうち`.md`・`.md.tmpl`の絶対パスを、反復指定の`--external-artifact`で対象集合として渡す。`--batch`では各組の`external_artifacts`に同じ集合を配列で渡し、対象が無い場合も`[]`を指定する。申告の`external`は対象集合の絶対パスごとに`{"sessions":["<起動結果の識別子>"]}`または`{"omission":"再点検対象なし","previous":"/前回本文の複製.md"}`を持つオブジェクトとする。後者はround 2以上で、前回本文の複製と現行本文のバイト列が一致する場合だけ受理される。対象集合と申告に欠落・過剰があれば、返却の生成は失敗する。`文章成果物なし`はGit差分の対象とGit管理外の対象集合がともに空の場合に限る。
 
 ## 受領

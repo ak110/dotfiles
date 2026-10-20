@@ -8,7 +8,7 @@ import datetime
 import json
 import logging
 from collections.abc import Mapping
-from typing import Any
+from typing import Any, Self
 
 from agent_toolkit._agents_server import (
     backends,
@@ -73,17 +73,19 @@ DEFAULT_SEND_MESSAGE_TIMEOUT = 270.0
 REPLY_DELIVERIES = frozenset({"reply_started", "reply_failed", "reply_ambiguous"})
 
 
-# 起動直後の可用性失敗を確定するために`start`が終端を待つ上限秒数。
-# Codex CLI 0.152.0で利用上限に達した状態のturnは、backendの起動応答から3.84〜4.27秒後に
-# `turn/completed`で失敗した（2026-09-02、`explore_fast`候補`gpt-5.6-terra/medium`で3回測定）。
-# 再検証は同じ失敗状態で`AppServerManager.start`を呼び、応答から終端までの経過を測る。
-# 可用性失敗は最初のモデル出力より前に生じるため、正常起動ではモデル出力の観測で上限を待たずに打ち切る。
-# Claudeでは、失敗した要求では始まらないAPIの応答開始（`message_start`）をモデル出力の観測として扱う。
-START_AVAILABILITY_TIMEOUT = 15.0
+START_AVAILABILITY_TIMEOUT = state.START_AVAILABILITY_TIMEOUT
 
 
 class AgentsServerManager(manager_wait.ManagerWait):
     """エンジン別バックエンドと共有session状態を管理する。"""
+
+    _close_task: asyncio.Task[None] | None = None
+
+    async def __aenter__(self) -> Self:
+        return self
+
+    async def __aexit__(self, *_exception: object) -> None:
+        await self.close()
 
     def activate(self) -> None:
         """状態ファイル出力を有効化する。"""
@@ -271,8 +273,9 @@ class AgentsServerManager(manager_wait.ManagerWait):
                 "effort": effort,
             }
             response.update(state.fast_mode_fields(session.engine, session.fast_mode))
-            if session.claude_connection_diagnostics:
-                response["warnings"] = list(session.claude_connection_diagnostics)
+            diagnostics = session.claude_connection_diagnostics + session.claude_mcp_diagnostics
+            if diagnostics:
+                response["warnings"] = list(diagnostics)
             if excluded:
                 response["excluded_candidates"] = excluded_candidate_payload(excluded, excluded_session_ids)
             if self._status_writer is not None:
@@ -883,7 +886,10 @@ class AgentsServerManager(manager_wait.ManagerWait):
 
     async def close(self) -> None:
         """初期化済みバックエンドを停止する。"""
-        await finish_task(asyncio.create_task(self._close()))
+        task = self._close_task
+        if task is None or task.done() and (task.cancelled() or task.exception() is not None):
+            task = self._close_task = asyncio.create_task(self._close())
+        await finish_task(task)
 
     async def _close(self) -> None:
         remove_terminal_listener(self._schedule_session_expiry)
@@ -891,10 +897,10 @@ class AgentsServerManager(manager_wait.ManagerWait):
         for timer in self._retention_timers.values():
             timer.cancel()
         self._retention_timers.clear()
-        release_error: OSError | None = None
+        errors: list[Exception] = []
         if self._resource_release_tasks:
             outcomes = await asyncio.gather(*self._resource_release_tasks.values(), return_exceptions=True)
-            release_error = next((outcome for outcome in outcomes if isinstance(outcome, OSError)), None)
+            errors.extend(outcome for outcome in outcomes if isinstance(outcome, Exception))
             self._resource_release_tasks.clear()
         if self._auto_resume_task is not None:
             self._auto_resume_task.cancel()
@@ -913,9 +919,6 @@ class AgentsServerManager(manager_wait.ManagerWait):
                 task.cancel()
         if resume_tasks:
             await asyncio.gather(*resume_tasks, return_exceptions=True)
-        errors: list[Exception] = []
-        if release_error is not None:
-            errors.append(release_error)
         try:
             # 1つのbackendの停止失敗で、他のbackendの停止と後段の結果公開・listener解除・writer停止を止めない。
             for backend in tuple(self._backends.values()):
@@ -934,7 +937,10 @@ class AgentsServerManager(manager_wait.ManagerWait):
             remove_terminal_listener(self._carry_over_unavailable_candidate)
             remove_terminal_listener(self._record_pending_unobserved_child_sessions)
             remove_lifecycle_listener(self._record_resources)
-            await self._drain_diagnostics()
+            try:
+                await self._drain_diagnostics()
+            except Exception as error:
+                errors.append(error)
             try:
                 await self._drain_candidate_records()
             except Exception as error:

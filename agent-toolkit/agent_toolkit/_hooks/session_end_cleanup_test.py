@@ -11,12 +11,19 @@ import time
 
 import pytest
 
+from agent_toolkit._common import session_state
 from agent_toolkit._testing import fork_runner as _fork_runner
-from agent_toolkit._testing.helpers import SESSION_STATE_FILENAME_TEMPLATE
 
 _SCRIPT = pathlib.Path(__file__).resolve().parents[1] / "hook.py"
 _MANAGED_TEMP_SCRIPT = pathlib.Path(__file__).resolve().parents[1] / "_managed_temp.py"
 _STALE_AGE_SECONDS = 15 * 24 * 60 * 60
+
+
+@pytest.fixture(autouse=True)
+def _isolated_state_root(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """親の状態準備とSessionEnd子プロセスが使う固定保存先をそろえる。"""
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path / "state"))
 
 
 def _run(payload_text: str, state_dir: pathlib.Path) -> subprocess.CompletedProcess[str]:
@@ -39,15 +46,17 @@ def _run(payload_text: str, state_dir: pathlib.Path) -> subprocess.CompletedProc
 
 
 def _write_state(state_dir: pathlib.Path, session_id: str, *, age_seconds: float = 0.0) -> pathlib.Path:
-    path = state_dir / SESSION_STATE_FILENAME_TEMPLATE.format(session_id=session_id)
-    path.write_text('{"active": true}', encoding="utf-8")
+    del state_dir
+    assert session_state.update_state(session_id, lambda _previous: {"active": True})
+    path = session_state.state_path(session_id)
     _set_age(path, age_seconds)
     return path
 
 
-def _write_lock(state_dir: pathlib.Path, session_id: str, *, age_seconds: float = 0.0) -> pathlib.Path:
-    filename = SESSION_STATE_FILENAME_TEMPLATE.format(session_id=session_id)
-    path = state_dir / f"{filename}.lock"
+def _write_lock(*, age_seconds: float = 0.0) -> pathlib.Path:
+    """全セッションが共有し、状態の有無と期限によらず残す固定lockを作成する。"""
+    path = session_state.state_path("unused").parent / ".state.lock"
+    path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text("", encoding="utf-8")
     _set_age(path, age_seconds)
     return path
@@ -90,9 +99,9 @@ def test_state_is_preserved_when_reason_is_absent(tmp_path: pathlib.Path) -> Non
 
 
 def test_state_is_deleted_when_conversation_is_cleared(tmp_path: pathlib.Path) -> None:
-    """会話破棄時は自セッションの状態を削除するが対応するロックは残し、他セッションを残す。"""
+    """会話破棄時は自セッションの状態を削除し、共有ロックと他セッションの状態を残す。"""
     target = _write_state(tmp_path, "target")
-    target_lock = _write_lock(tmp_path, "target")
+    target_lock = _write_lock()
     other = _write_state(tmp_path, "other")
 
     result = _run(_session_end("target", reason="clear"), tmp_path)
@@ -106,19 +115,17 @@ def test_state_is_deleted_when_conversation_is_cleared(tmp_path: pathlib.Path) -
 
 
 def test_stale_state_is_collected_but_its_lock_is_kept(tmp_path: pathlib.Path) -> None:
-    """期限を過ぎた状態ファイルは回収するが、対応するロックは削除しない。"""
+    """期限を過ぎた状態ファイルを回収し、固定の共有ロックと新しい状態を残す。"""
     stale = _write_state(tmp_path, "stale", age_seconds=_STALE_AGE_SECONDS)
-    stale_lock = _write_lock(tmp_path, "stale", age_seconds=_STALE_AGE_SECONDS)
+    shared_lock = _write_lock(age_seconds=_STALE_AGE_SECONDS)
     fresh = _write_state(tmp_path, "fresh")
-    fresh_lock = _write_lock(tmp_path, "fresh")
 
     result = _run(_session_end("other", reason="logout"), tmp_path)
 
     assert result.returncode == 0
     assert not stale.exists()
-    assert stale_lock.exists()
+    assert shared_lock.exists()
     assert fresh.exists()
-    assert fresh_lock.exists()
 
 
 def test_function_hook_requests_are_collected_without_breaking_resume(tmp_path: pathlib.Path) -> None:
@@ -150,9 +157,9 @@ def test_function_hook_requests_are_collected_without_breaking_resume(tmp_path: 
 
 
 def test_fresh_state_keeps_its_old_lock(tmp_path: pathlib.Path) -> None:
-    """状態ファイルが期限内なら、対のロックが古くても残す。"""
+    """期限内の状態と古い共有ロックを保持する。"""
     fresh = _write_state(tmp_path, "resumed")
-    old_lock = _write_lock(tmp_path, "resumed", age_seconds=_STALE_AGE_SECONDS)
+    old_lock = _write_lock(age_seconds=_STALE_AGE_SECONDS)
 
     result = _run(_session_end("other", reason="logout"), tmp_path)
 
@@ -161,16 +168,14 @@ def test_fresh_state_keeps_its_old_lock(tmp_path: pathlib.Path) -> None:
     assert old_lock.exists()
 
 
-def test_orphan_lock_is_never_collected(tmp_path: pathlib.Path) -> None:
-    """状態ファイルの無いロックは、期限をいくら過ぎても回収しない。"""
-    starting = _write_lock(tmp_path, "starting")
-    abandoned = _write_lock(tmp_path, "abandoned", age_seconds=_STALE_AGE_SECONDS)
+def test_shared_lock_is_preserved_without_any_state(tmp_path: pathlib.Path) -> None:
+    """共有ロックは状態JSONが存在せず、期限を過ぎても回収しない。"""
+    shared_lock = _write_lock(age_seconds=_STALE_AGE_SECONDS)
 
     result = _run(_session_end("other", reason="logout"), tmp_path)
 
     assert result.returncode == 0
-    assert starting.exists()
-    assert abandoned.exists()
+    assert shared_lock.exists()
 
 
 def _run_codex_session_end_without_output(tmp_path: pathlib.Path) -> None:
@@ -195,17 +200,17 @@ def test_codex_other_reason_collects_stale_and_keeps_own_state(tmp_path: pathlib
     """Codexの`reason: other`では期限切れ状態だけを回収し、自セッションの状態は残す。"""
     own = _write_state(tmp_path, "codex-session")
     stale = _write_state(tmp_path, "stale", age_seconds=_STALE_AGE_SECONDS)
-    stale_lock = _write_lock(tmp_path, "stale", age_seconds=_STALE_AGE_SECONDS)
+    shared_lock = _write_lock(age_seconds=_STALE_AGE_SECONDS)
     _run_codex_session_end_without_output(tmp_path)
     assert own.exists()
     assert not stale.exists()
-    assert stale_lock.exists()
+    assert shared_lock.exists()
 
 
 def test_codex_other_reason_keeps_own_expired_state(tmp_path: pathlib.Path) -> None:
     """自セッションの状態は期限を過ぎていても残し、別セッションの期限切れは回収する。"""
     own = _write_state(tmp_path, "codex-session", age_seconds=_STALE_AGE_SECONDS)
-    own_lock = _write_lock(tmp_path, "codex-session", age_seconds=_STALE_AGE_SECONDS)
+    own_lock = _write_lock(age_seconds=_STALE_AGE_SECONDS)
     stale = _write_state(tmp_path, "stale", age_seconds=_STALE_AGE_SECONDS)
     _run_codex_session_end_without_output(tmp_path)
     assert own.exists()
@@ -251,8 +256,8 @@ def test_invalid_payload_is_ignored(tmp_path: pathlib.Path, payload_text: str) -
 
 def test_delete_failure_is_reported_and_fails_open(tmp_path: pathlib.Path) -> None:
     # 状態パスをディレクトリにしてunlinkを失敗させる。
-    state_path = tmp_path / SESSION_STATE_FILENAME_TEMPLATE.format(session_id="sid")
-    state_path.mkdir()
+    state_path = session_state.state_path("sid")
+    state_path.mkdir(parents=True)
     result = _run(_session_end("sid", reason="clear"), tmp_path)
     assert result.returncode == 0
     assert not result.stdout

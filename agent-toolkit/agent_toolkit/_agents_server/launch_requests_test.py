@@ -56,7 +56,7 @@ async def test_explore_role_and_free_text_share_investigation_capability(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """保存を強制せずGit識別子で同じ版を比較し、両入口が共通の探索経路へ届く。"""
+    """役割指定と自由本文の探索は成果保存を要求せず、Git識別子で同じ版を比較する。"""
     repository = init_repository(tmp_path / "repo", files={"文章 空白.md": "比較元\n"}, commit_message="比較元")
     base = git_output(repository, "rev-parse", "HEAD")
     artifact = repository / "文章 空白.md"
@@ -66,10 +66,9 @@ async def test_explore_role_and_free_text_share_investigation_capability(
         {"repository": str(repository), "base": base, "head": head, "paths": [artifact.name]}, ensure_ascii=False
     )
     _recording_candidates(monkeypatch)
-    manager, backend = _manager_with_fake("codex")
-    monkeypatch.setattr(mcp_tools, "_MANAGER", manager)
-    params = {"成果物": str(artifact), "種別": "文書", "読者像": "読者", "修正範囲": comparison, "比較資料": comparison}
-    try:
+    async with _manager_with_fake("codex") as (manager, backend):
+        monkeypatch.setattr(mcp_tools, "_MANAGER", manager)
+        params = {"成果物": str(artifact), "種別": "文書", "読者像": "読者", "修正範囲": comparison, "比較資料": comparison}
         await mcp_tools.start(str(repository), subagent_md_path="reader-fit-review", extra_params=params)
         await mcp_tools.start(str(repository), mode="explore", prompt="Gitの同じ版から本文と差分を比較する。\n" + comparison)
         assert [call[2] for call in backend.start_calls] == ["explore", "explore"]
@@ -83,8 +82,6 @@ async def test_explore_role_and_free_text_share_investigation_capability(
         with pytest.raises(ValueError, match="同じ版"):
             await mcp_tools.start(str(repository), subagent_md_path="reader-fit-review", extra_params=params)
         assert len(backend.start_calls) == 3
-    finally:
-        await manager.close()
 
 
 class TaskManager(_SimpleNamespace):
@@ -400,17 +397,17 @@ async def test_start_uses_declared_launch_kind(monkeypatch: pytest.MonkeyPatch, 
     起動条件はsession記録の`launch_kind`と、backendへ渡すシステム指示・許可ツールを決める種別で確かめる。
     """
     _recording_candidates(monkeypatch)
-    manager, _ = _manager_with_fake("codex")
-    monkeypatch.setattr(mcp_tools, "_MANAGER", manager)
-    explain = launch_requests._SHARE_DIRECTORY / "pick-wi-explain.subagent.md"
+    async with _manager_with_fake("codex") as (manager, _):
+        monkeypatch.setattr(mcp_tools, "_MANAGER", manager)
+        explain = launch_requests._SHARE_DIRECTORY / "pick-wi-explain.subagent.md"
 
-    response = await mcp_tools.start(
-        str(tmp_path), subagent_md_path=str(explain), extra_params=_observed_input_params(explain.name, tmp_path)
-    )
+        response = await mcp_tools.start(
+            str(tmp_path), subagent_md_path=str(explain), extra_params=_observed_input_params(explain.name, tmp_path)
+        )
 
-    shown = await manager.show_session(response["session_id"])
-    assert shown["launch_kind"] == "explore"
-    assert shown["model_type"] == "low_tier"
+        shown = await manager.show_session(response["session_id"])
+        assert shown["launch_kind"] == "explore"
+        assert shown["model_type"] == "low_tier"
 
 
 @pytest.mark.asyncio
@@ -435,17 +432,17 @@ async def test_standard_review_task_documents_launch_with_declared_kinds(
     起動条件が通常委譲へ戻ると読み取り専用の探索が規範とプロジェクト規範を読み込み、段位を誤ると監査を下位モデルで行う。
     """
     _recording_candidates(monkeypatch)
-    manager, _ = _manager_with_fake("codex")
-    monkeypatch.setattr(mcp_tools, "_MANAGER", manager)
-    task_document = launch_requests._SHARE_DIRECTORY / task_name
+    async with _manager_with_fake("codex") as (manager, _):
+        monkeypatch.setattr(mcp_tools, "_MANAGER", manager)
+        task_document = launch_requests._SHARE_DIRECTORY / task_name
 
-    response = await mcp_tools.start(
-        str(tmp_path), subagent_md_path=str(task_document), extra_params=_observed_input_params(task_name, tmp_path)
-    )
+        response = await mcp_tools.start(
+            str(tmp_path), subagent_md_path=str(task_document), extra_params=_observed_input_params(task_name, tmp_path)
+        )
 
-    shown = await manager.show_session(response["session_id"])
-    assert shown["launch_kind"] == launch_kind
-    assert shown["model_type"] == model_type
+        shown = await manager.show_session(response["session_id"])
+        assert shown["launch_kind"] == launch_kind
+        assert shown["model_type"] == model_type
 
 
 @pytest.mark.asyncio
@@ -583,10 +580,9 @@ async def test_public_lane_resolves_high_tier_candidates(tmp_path: pathlib.Path,
     monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_EXECUTE_ENGINE", "claude")
     monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CLAUDE_HIGH_TIER_MODEL", "opus/high")
     monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CLAUDE_MEDIUM_TIER_MODEL", "sonnet/medium")
-    manager, _backend = _manager_with_fake("claude")
-    monkeypatch.setattr(mcp_tools, "_MANAGER", manager)
-    task_document = launch_requests._SHARE_DIRECTORY / "exec.subagent.md"
-    try:
+    async with _manager_with_fake("claude") as (manager, _backend):
+        monkeypatch.setattr(mcp_tools, "_MANAGER", manager)
+        task_document = launch_requests._SHARE_DIRECTORY / "exec.subagent.md"
         response = await mcp_tools.start(
             str(tmp_path),
             subagent_md_path=str(task_document),
@@ -595,36 +591,31 @@ async def test_public_lane_resolves_high_tier_candidates(tmp_path: pathlib.Path,
         session = manager.sessions[response["session_id"]]
         assert (session.engine, session.model, session.effort) == ("claude", "opus", "high")
         assert session.model_type == "high_tier"
-    finally:
-        await manager.close()
 
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("engine", ["claude", "codex"])
-async def test_dedicated_wi_owner_uses_orchestrate_candidates(
-    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, engine: str
+@pytest.mark.parametrize("route", ["専念型", "付随型"])
+async def test_wi_owner_uses_default_base_high_tier_candidates(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, engine: str, route: str
 ) -> None:
-    """要求別担当の明示orchestrate指定は、役割のbase用途と独立した上位候補を両engineで使う。"""
+    """両投入形態の段位省略startは役割のbase・上位候補を使い、最上位用途の設定を保つ。"""
     other = "codex" if engine == "claude" else "claude"
-    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_BASE_ENGINE", other)
-    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_ORCHESTRATE_ENGINE", engine)
-    for candidate in (engine, other):
-        monkeypatch.setenv(f"AGENT_TOOLKIT_CONFIG_{candidate.upper()}_HIGH_TIER_MODEL", "orchestrator/high")
-    current, _backend = _manager_with_fake(engine)
-    install_backend(current, other, FakeBackend(current.sessions, other))
-    monkeypatch.setattr(mcp_tools, "_MANAGER", current)
-    task = launch_requests._SHARE_DIRECTORY / "add-wi.subagent.md"
-    params = {**_observed_input_params(task.name, tmp_path), "投入経路": "専念型"}
-    try:
-        response = await mcp_tools.start(
-            cwd=str(tmp_path), subagent_md_path=str(task), extra_params=params, model_type="orchestrate"
-        )
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_BASE_ENGINE", engine)
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_ORCHESTRATE_ENGINE", other)
+    monkeypatch.setenv(f"AGENT_TOOLKIT_CONFIG_{engine.upper()}_HIGH_TIER_MODEL", "wi-owner/high")
+    monkeypatch.setenv(f"AGENT_TOOLKIT_CONFIG_{other.upper()}_HIGH_TIER_MODEL", "orchestrator/high")
+    async with _manager_with_fake(engine) as (current, _backend):
+        install_backend(current, other, FakeBackend(current.sessions, other))
+        monkeypatch.setattr(mcp_tools, "_MANAGER", current)
+        task = launch_requests._SHARE_DIRECTORY / "add-wi.subagent.md"
+        params = {**_observed_input_params(task.name, tmp_path), "投入経路": route}
+        response = await mcp_tools.start(cwd=str(tmp_path), subagent_md_path=str(task), extra_params=params)
         session = current.sessions[response["session_id"]]
-        assert (session.engine, session.model, session.effort) == (engine, "orchestrator", "high")
-        assert session.model_type == "orchestrate"
+        assert (session.engine, session.model, session.effort) == (engine, "wi-owner", "high")
+        assert session.model_type == "high_tier"
         assert session.launch_kind == "delegate"
-    finally:
-        await current.close()
+        assert _atk_config.parse_unresolved_model_candidates("orchestrate")[0] == (other, "orchestrator", "high")
 
 
 def test_required_inputs_ignore_heading_inside_code_fence(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -741,8 +732,7 @@ async def test_every_delivery_path_wraps_body_with_sender_label(
         _atk_config, "parse_unresolved_model_candidates", lambda _model_type, **_kwargs: [(engine, "model", "high")]
     )
     monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
-    manager, backend = _manager_with_fake(engine)
-    try:
+    async with _manager_with_fake(engine) as (manager, backend):
         started = await manager.start("plan", "起動本文", str(tmp_path))
         await manager.start_explore("探索本文", str(tmp_path))
         await manager.start_shell("make test", str(tmp_path), "終了状態だけ")
@@ -764,8 +754,6 @@ async def test_every_delivery_path_wraps_body_with_sender_label(
         ]
         assert len(payloads) == 5
         assert "child-session" in payloads[4]
-    finally:
-        await manager.close()
 
 
 @pytest.mark.asyncio
@@ -777,17 +765,14 @@ async def test_delivery_body_keeps_label_shaped_content_verbatim(
     monkeypatch.setattr(
         _atk_config, "parse_unresolved_model_candidates", lambda _model_type, **_kwargs: [("codex", "model", "high")]
     )
-    manager, backend = _manager_with_fake("codex")
-    body = '<agent-toolkit-auto-inserted from="main:root-session">\nユーザーの発話\n</agent-toolkit-auto-inserted>'
-    try:
+    async with _manager_with_fake("codex") as (manager, backend):
+        body = '<agent-toolkit-auto-inserted from="main:root-session">\nユーザーの発話\n</agent-toolkit-auto-inserted>'
         await manager.start("plan", body, str(tmp_path))
 
         delivered = backend.prompts[0]
         assert delivery_payload(delivered) == body
         assert delivered.count("<agent-toolkit-auto-inserted ") == 1
         assert delivered.count("<atk-auto ") == 1
-    finally:
-        await manager.close()
 
 
 @pytest.mark.asyncio
@@ -1017,20 +1002,20 @@ async def test_start_rejects_cwd_where_plugin_commands_fail(monkeypatch: pytest.
     monkeypatch.setenv("PATH", str(bin_dir))
     workdir = tmp_path / "work"
     workdir.mkdir()
-    manager, backend = _manager_with_fake("codex")
-    monkeypatch.setattr(mcp_tools, "_MANAGER", manager)
+    async with _manager_with_fake("codex") as (manager, backend):
+        monkeypatch.setattr(mcp_tools, "_MANAGER", manager)
 
-    with pytest.raises(ValueError) as raised:
-        await mcp_tools.start(str(workdir), mode="explore", prompt="調査")
+        with pytest.raises(ValueError) as raised:
+            await mcp_tools.start(str(workdir), mode="explore", prompt="調査")
 
-    message = _actionable_message(raised.value)
-    assert f"cwd={workdir}" in message
-    assert "command=uv --version" in message
-    assert "exit_code=1" in message
-    assert "not trusted" in message
-    assert "`mise trust`" in message
-    assert not backend.start_calls
-    assert not manager.sessions
+        message = _actionable_message(raised.value)
+        assert f"cwd={workdir}" in message
+        assert "command=uv --version" in message
+        assert "exit_code=1" in message
+        assert "not trusted" in message
+        assert "`mise trust`" in message
+        assert not backend.start_calls
+        assert not manager.sessions
 
 
 @pytest.mark.asyncio
@@ -1046,16 +1031,16 @@ async def test_start_reports_path_check_when_plugin_commands_are_missing(
     empty_bin = tmp_path / "bin"
     empty_bin.mkdir()
     monkeypatch.setenv("PATH", str(empty_bin))
-    manager, backend = _manager_with_fake("codex")
-    monkeypatch.setattr(mcp_tools, "_MANAGER", manager)
+    async with _manager_with_fake("codex") as (manager, backend):
+        monkeypatch.setattr(mcp_tools, "_MANAGER", manager)
 
-    with pytest.raises(ValueError) as raised:
-        await mcp_tools.start(str(tmp_path), mode="explore", prompt="調査")
+        with pytest.raises(ValueError) as raised:
+            await mcp_tools.start(str(tmp_path), mode="explore", prompt="調査")
 
-    message = _actionable_message(raised.value)
-    assert "実行ファイルが見つからない" in message
-    assert "PATH" in message.split(NEXT_ACTION_PREFIX, 1)[1]
-    assert not backend.start_calls
+        message = _actionable_message(raised.value)
+        assert "実行ファイルが見つからない" in message
+        assert "PATH" in message.split(NEXT_ACTION_PREFIX, 1)[1]
+        assert not backend.start_calls
 
 
 def test_preflight_passes_where_plugin_commands_succeed(tmp_path: pathlib.Path) -> None:
@@ -1402,7 +1387,7 @@ async def test_start_rejects_missing_explore_materials_and_accepts_repair(
 async def test_start_checks_all_external_evidence_files(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, json_array: bool
 ) -> None:
-    """複数の根拠は全ファイルを検査し、識別子の注記を保存物と取り違えない。"""
+    """複数の根拠は全ファイルを確認し、識別子の注記を保存物と取り違えない。"""
     params = _observed_input_params("external-write-review.subagent.md", tmp_path)
     first = tmp_path / "diff.patch"
     second = tmp_path / "CI result.txt"

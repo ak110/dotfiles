@@ -64,14 +64,47 @@ def _repo(tmp_path: pathlib.Path) -> pathlib.Path:
     return repo
 
 
-def _compare(repo: pathlib.Path, output: pathlib.Path, operation: str, bases: tuple[str, str, str, str]) -> int:
+def _compare(repo: pathlib.Path, output: pathlib.Path, operation: str, bases: tuple[str, str, str, str], *extra: str) -> int:
     argv = ["run-script", "history-compare", "--", "--operation", operation, "--work-dir", str(repo), "--output", str(output)]
     for name, value in zip(("old-base", "old-head", "new-base", "new-head"), bases, strict=True):
         argv.extend((f"--{name}", value))
+    argv.extend(extra)
     with pytest.raises(SystemExit) as raised:
         atk.main(argv)
     assert isinstance(raised.value.code, int)
     return raised.value.code
+
+
+@pytest.mark.parametrize("violation", ["none", "unspecified", "unchanged", "outside", "subject", "paths", "order"])
+def test_conflict_resolution_requires_explicit_and_unique_mapping(
+    repo: pathlib.Path, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], violation: str
+) -> None:
+    """競合解消で変わったcommitだけを明示し、件名・変更パス・相対順の対応を公開入口で検収する。"""
+    base = _git(repo, "rev-parse", "HEAD")
+    first = _commit(repo, "first.txt", "旧変更", "一つ目")
+    old_head = _commit(repo, "second.txt", "通常変更", "二つ目")
+    _git(repo, "checkout", "-b", "resolved", base)
+    new_base = _commit(repo, "upstream.txt", "上流", "上流")
+    if violation == "order":
+        _commit(repo, "second.txt", "通常変更", "二つ目")
+    target = _commit(
+        repo, "other.txt" if violation == "paths" else "first.txt", "解消変更", "別件" if violation == "subject" else "一つ目"
+    )
+    if violation != "order":
+        _commit(repo, "second.txt", "別の変更" if violation == "unspecified" else "通常変更", "二つ目")
+    head = _git(repo, "rev-parse", "HEAD")
+    output = tmp_path / "resolved.json"
+    if violation == "none":
+        assert _compare(repo, output, "rebase", (base, old_head, new_base, head)) == 1
+        assert not output.exists()
+        assert first in capsys.readouterr().err
+    selected = old_head if violation == "unchanged" else base if violation == "outside" else first
+    result = _compare(repo, output, "rebase", (base, old_head, new_base, head), "--resolved-conflict", selected[:12])
+    assert result == (0 if violation == "none" else 1)
+    if violation == "none":
+        assert json.loads(output.read_text(encoding="utf-8")) == {first: target, old_head: head}
+    else:
+        assert not output.exists()
 
 
 @pytest.mark.parametrize("no_prefix", [False, True])
@@ -275,7 +308,7 @@ def test_amend_rejects_invalid_series(
     assert "次の操作:" in error and "--old-head" in error.split("次の操作:", 1)[1]
 
 
-@pytest.mark.parametrize("operation", ["rebase", "autosquash"])
+@pytest.mark.parametrize("operation", ["rebase", "rebase-conflict", "autosquash"])
 def test_generated_mapping_is_consumed_by_public_record_commands(
     repo: pathlib.Path,
     tmp_path: pathlib.Path,
@@ -299,7 +332,42 @@ def test_generated_mapping_is_consumed_by_public_record_commands(
     old_head = _commit(repo, "first.txt", "前\n一修正\n後\n", "fixup! 一つ目")
     commit_mapping.append_event(plan, commit_mapping.commit_event(repo, "HEAD", target, [wi], {wi}))
     new_base = base
-    if operation == "rebase":
+    conflict_options: list[str] = []
+    if operation == "rebase-conflict":
+        _git(repo, "checkout", "-b", "upstream", base)
+        new_base = _commit(repo, "first.txt", "前\n上流\n後\n", "競合する上流変更")
+        _git(repo, "checkout", "--detach", old_head)
+        stopped = subprocess.run(
+            ["git", "-C", str(repo), "rebase", "--onto", new_base, base],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            check=False,
+            timeout=30,
+            env={**os.environ, "GIT_EDITOR": "true"},
+        )
+        assert stopped.returncode == 1, stopped.stdout + stopped.stderr
+        assert _git(repo, "diff", "--name-only", "--diff-filter=U") == "first.txt"
+        (repo / "first.txt").write_text("前\n上流と一\n後\n", encoding="utf-8")
+        _git(repo, "add", "--", "first.txt")
+        # 後続のfixupも同じ行を変えるため、その競合まで実際のrebaseで進める。
+        continued = subprocess.run(
+            ["git", "-C", str(repo), "-c", "user.name=履歴試験", "-c", "user.email=test@example.com", "rebase", "--continue"],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            check=False,
+            timeout=30,
+            env={**os.environ, "GIT_EDITOR": "true"},
+        )
+        assert continued.returncode == 1, continued.stdout + continued.stderr
+        assert _git(repo, "diff", "--name-only", "--diff-filter=U") == "first.txt"
+        (repo / "first.txt").write_text("前\n上流と一修正\n後\n", encoding="utf-8")
+        _git(repo, "add", "--", "first.txt")
+        _git(repo, "rebase", "--continue")
+        operation = "rebase"
+        conflict_options = ["--resolved-conflict", target, "--resolved-conflict", old_head]
+    elif operation == "rebase":
         _git(repo, "checkout", "-b", "upstream", base)
         new_base = _commit(repo, "first.txt", "追加\n前改訂\n対象\n後改訂\n", "上流の文脈変更")
         _commit(repo, "first.txt", "追加\n前改訂\n一\n後改訂\n", "一つ目の説明を訂正")
@@ -308,9 +376,15 @@ def test_generated_mapping_is_consumed_by_public_record_commands(
         _autosquash(repo, base)
     new_head = _git(repo, "rev-parse", "HEAD")
     mapping = tmp_path / "mapping.json"
-    assert _compare(repo, mapping, operation, (base, old_head, new_base, new_head)) == 0
+    if conflict_options:
+        assert _compare(repo, mapping, operation, (base, old_head, new_base, new_head)) == 1
+        assert not mapping.exists()
+        error = capsys.readouterr().err
+        assert target in error and "--resolved-conflict" in error
+    assert _compare(repo, mapping, operation, (base, old_head, new_base, new_head), *conflict_options) == 0
     before = mapping.read_bytes()
     pairs = json.loads(before)
+    assert set(pairs) == {target, old_head}
     with pytest.raises(SystemExit) as raised:
         atk.main(
             [

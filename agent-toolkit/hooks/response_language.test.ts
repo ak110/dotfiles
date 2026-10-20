@@ -1,18 +1,36 @@
-import type { SessionMessage } from "claude-code";
+type ApiMessage = { role: "assistant"; content: ({ type: "text"; text: string } | { type: "tool_use"; id: string; name: string; input: Record<string, string> })[] };
 import { expect, mock, test } from "claude-code/testing";
 
-// 入力の形は公開型定義2.1.277のSessionMessage・ToolUseSummaryに従う。
+// 入力の形はClaude Code 2.1.304のAPI形式Message・ContentBlockに従う。
 const ENGLISH = "The investigation is complete and the results have been verified.";
 const JAPANESE = "調査と検証が完了したので、結果を確認する。";
 const BLOCK_ENVELOPE = /^<atk-auto source="response-language" kind="block">\n[\s\S]*\n<\/atk-auto>$/;
+
+for (const previousEnglish of [false, true]) {
+  test(`合成API失敗行を除いたAPI形式で後続操作を判定する（先行英語=${previousEnglish}）`, async ($, on) => {
+    on("session.id", () => ({ value: "synthetic-test" }));
+    on("session.messages", (_$, e) => ({ value: e.as === "api"
+      ? [...(previousEnglish ? [{ role: "assistant" as const, content: [{ type: "text" as const, text: ENGLISH }] }] : []),
+          { role: "assistant" as const, content: [{ type: "tool_use" as const, id: "t1", name: "Bash", input: { command: "ls" } }] }]
+      : [{ role: "assistant" as const, text: "Credit balance is too low", toolUses: [] }] }));
+    on("process.run", (_$, e) => {
+      expect(e.argv.at(-1)).toBe(`--text=${ENGLISH}`);
+      return { value: { exitCode: 0, stdout: JSON.stringify({ outcome: "warn", body: "英語主体の本文。", fix: "説明を日本語で書く。" }), stderr: "", isStdoutTruncated: false, isStderrTruncated: false } };
+    });
+    on("tool.call", { tool: "Bash" }, () => ({ result: "実行済み" }));
+    const result = await $.tool.call({ tool: "Bash", command: "ls" });
+    if (previousEnglish) expect(result.deny).toBeDefined();
+    else expect(result.result).toBe("実行済み");
+  });
+}
 
 for (const delegated of [false, true]) {
   test(`現在の本文への書き直しと本文無し再発行を判定する（委譲先=${delegated}）`, async ($, on) => {
     mock.env(on, delegated ? { AGENT_TOOLKIT_DELEGATED_SESSION: "1" } : {});
     on("session.id", () => ({ value: "language-test" }));
-    let messages: SessionMessage[] = [{ role: "assistant", text: ENGLISH, toolUses: [] }];
+    let messages: ApiMessage[] = [{ role: "assistant", content: [{ type: "text", text: ENGLISH }] }];
     const checked: string[] = [];
-    on("session.messages", () => ({ value: messages }));
+    on("session.messages", (_$, e) => { expect(e.as).toBe("api"); return { value: messages }; });
     on("process.run", (_$, e) => {
       const text = e.argv.at(-1)!.slice("--text=".length);
       checked.push(text);
@@ -20,12 +38,12 @@ for (const delegated of [false, true]) {
     });
     on("tool.call", { tool: "Bash" }, () => ({ result: "実行済み" }));
     expect((await $.tool.call({ tool: "Bash", command: "ls" })).deny).toContain("日本語で書き直し");
-    messages.push({ role: "assistant", text: "", toolUses: [{ tool_use_id: "toolu_1", tool: "Bash", input: { command: "ls" } }] });
+    messages.push({ role: "assistant", content: [{ type: "tool_use", id: "toolu_1", name: "Bash", input: { command: "ls" } }] });
     expect((await $.tool.call({ tool: "Bash", command: "ls" })).deny).toBeDefined();
     // 保存ファイルの英語が残っていても、実行中の新しい日本語だけを判定する。
-    messages.push({ role: "assistant", text: JAPANESE, toolUses: [] });
+    messages.push({ role: "assistant", content: [{ type: "text", text: JAPANESE }] });
     expect((await $.tool.call({ tool: "Bash", command: "ls" })).result).toBe("実行済み");
-    messages.push({ role: "assistant", text: ENGLISH, toolUses: [] });
+    messages.push({ role: "assistant", content: [{ type: "text", text: ENGLISH }] });
     expect((await $.tool.call({ tool: "Bash", command: "ls" })).deny).toBeDefined();
     expect(checked).toEqual([ENGLISH, ENGLISH, JAPANESE, ENGLISH]);
   });
@@ -34,10 +52,10 @@ for (const delegated of [false, true]) {
 test("send_to_userで書き直した最新本文を後続操作が引き継ぐ", async ($, on) => {
   mock.env(on, {});
   on("session.id", () => ({ value: "language-test" }));
-  const messages: SessionMessage[] = [
-    { role: "assistant", text: ENGLISH, toolUses: [] },
-    { role: "assistant", text: "", toolUses: [{ tool_use_id: "toolu_1", tool: "mcp__agent-toolkit__send_to_user", input: { message: JAPANESE } }] },
-    { role: "assistant", text: "", toolUses: [{ tool_use_id: "toolu_2", tool: "Bash", input: { command: "ls" } }] },
+  const messages: ApiMessage[] = [
+    { role: "assistant", content: [{ type: "text", text: ENGLISH }] },
+    { role: "assistant", content: [{ type: "tool_use", id: "toolu_1", name: "mcp__agent-toolkit__send_to_user", input: { message: JAPANESE } }] },
+    { role: "assistant", content: [{ type: "tool_use", id: "toolu_2", name: "Bash", input: { command: "ls" } }] },
   ];
   on("session.messages", () => ({ value: messages }));
   on("process.run", (_$, e) => {
@@ -61,7 +79,7 @@ for (const outcome of ["pass", "skip"]) {
     let text = JAPANESE;
     const checked: string[] = [];
     on("session.id", () => ({ value: sessionId }));
-    on("session.messages", () => ({ value: [{ role: "assistant", text, toolUses: [] }] }));
+    on("session.messages", () => ({ value: [{ role: "assistant", content: [{ type: "text", text }] }] }));
     on("process.run", (_$, e) => {
       checked.push(e.argv.at(-1)!);
       return { value: { exitCode: 0, stdout: JSON.stringify({ outcome, body: null, fix: "" }), stderr: "", isStdoutTruncated: false, isStderrTruncated: false } };
@@ -83,7 +101,7 @@ test("warnの後は同じ本文も再判定し、以前の通過本文へ戻っ�
   let text = JAPANESE;
   let calls = 0;
   on("session.id", () => ({ value: "language-test" }));
-  on("session.messages", () => ({ value: [{ role: "assistant", text, toolUses: [] }] }));
+  on("session.messages", () => ({ value: [{ role: "assistant", content: [{ type: "text", text }] }] }));
   on("process.run", () => {
     calls++;
     const rejected = text === ENGLISH;
@@ -125,7 +143,7 @@ for (const [name, failure, expected] of UNAVAILABLE) {
     });
     on("session.messages", () => {
       if (failing && failure.messages) throw new Error("本文取得の失敗");
-      return { value: [{ role: "assistant", text: JAPANESE, toolUses: [] }] };
+      return { value: [{ role: "assistant", content: [{ type: "text", text: JAPANESE }] }] };
     });
     on("process.run", () => {
       if (failing && failure.run) throw new Error("判定処理の障害");
@@ -161,7 +179,7 @@ test("判定不能が解消して判定に成功した後の同じ障害は再�
   let failing = true;
   let text = JAPANESE;
   on("session.id", () => ({ value: "language-test" }));
-  on("session.messages", () => ({ value: [{ role: "assistant", text, toolUses: [] }] }));
+  on("session.messages", () => ({ value: [{ role: "assistant", content: [{ type: "text", text }] }] }));
   on("process.run", () => ({ value: failing ? { ...OK_RESPONSE, exitCode: 7 } : OK_RESPONSE }));
   on("tool.call", { tool: "Bash" }, () => ({ result: "実行済み" }));
   expect((await $.tool.call({ tool: "Bash", command: "ls" })).context?.length).toBe(1);
@@ -176,7 +194,7 @@ test("判定不能の後の英語本文は正常な判定で書き直しを求�
   let failing = true;
   let text = JAPANESE;
   on("session.id", () => ({ value: "language-test" }));
-  on("session.messages", () => ({ value: [{ role: "assistant", text, toolUses: [] }] }));
+  on("session.messages", () => ({ value: [{ role: "assistant", content: [{ type: "text", text }] }] }));
   on("process.run", () => ({ value: failing ? { ...OK_RESPONSE, exitCode: 7 } : { ...OK_RESPONSE, stdout: JSON.stringify({ outcome: text === ENGLISH ? "warn" : "pass", body: "英語主体の本文。", fix: "日本語で書き直す。" }) } }));
   on("tool.call", { tool: "Bash" }, () => ({ result: "実行済み" }));
   expect((await $.tool.call({ tool: "Bash", command: "ls" })).result).toBe("実行済み");

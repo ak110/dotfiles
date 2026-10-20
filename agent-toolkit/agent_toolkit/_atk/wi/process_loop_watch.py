@@ -15,14 +15,16 @@ from collections.abc import Callable, Generator
 
 import watchdog.events
 import watchdog.observers
+from watchdog.observers.api import BaseObserver
 
 from agent_toolkit._atk import git_sync as _atk_git_sync
 from agent_toolkit._atk.wi import process_loop_control as _pl_control
 from agent_toolkit._atk.wi import process_loop_log as _pl_log
 from agent_toolkit._atk.wi import sync as _wi_sync
 from agent_toolkit._atk.wi import uwi_scan as _uwi_scan
-from agent_toolkit._atk.wi.constants import WI_ACTIVE_STATES, WI_STATES, WI_TYPE_UWI, normalized_wi_type
+from agent_toolkit._atk.wi.constants import WI_ACTIVE_STATES, WI_TYPE_UWI, normalized_wi_type
 from agent_toolkit._atk.wi.frontmatter import parse_frontmatter
+from agent_toolkit._atk.wi.layout import entry_state_of, iter_entry_paths
 from agent_toolkit._common import next_action as _next_action
 from agent_toolkit._common import session_activity as _session_activity
 from agent_toolkit._git import remote as _git_remote
@@ -199,7 +201,7 @@ class StartGate:
         self._activity_deadline: float | None = None
 
     def _names(self) -> set[str]:
-        return {path.name for state in WI_STATES for path in (self.private_notes / state).glob("*.md")}
+        return {path.name for path in iter_entry_paths(self.private_notes)}
 
     def started(self) -> None:
         """完了した開始判定の猶予を次のprocess-wiの1回の実行へ持ち越さない。"""
@@ -233,8 +235,8 @@ def _uwi_updates(private_notes: pathlib.Path, target_repo_ids: set[str]) -> tupl
     targets = {_git_remote.canonical_repo(repo, canonical_cache) for repo in target_repo_ids}
     unanswered = 0
     latest_update = 0.0
-    for state in WI_STATES:
-        for path in (private_notes / state).glob("*.md"):
+    for path in iter_entry_paths(private_notes):
+        if path.is_file():
             text = path.read_text(encoding="utf-8")
             parsed = parse_frontmatter(text)
             if parsed is None:
@@ -246,7 +248,7 @@ def _uwi_updates(private_notes: pathlib.Path, target_repo_ids: set[str]) -> tupl
             if not isinstance(repo, str) or _git_remote.canonical_repo(repo, canonical_cache) not in targets:
                 continue
             latest_update = max(latest_update, path.stat().st_mtime)
-            if state in WI_ACTIVE_STATES and not _uwi_scan.is_uwi_answered(text):
+            if entry_state_of(path, text) in WI_ACTIVE_STATES and not _uwi_scan.is_uwi_answered(text):
                 unanswered += 1
     return unanswered, latest_update
 
@@ -343,6 +345,20 @@ class _StateChangeHandler(watchdog.events.FileSystemEventHandler):
             self._change_event.set()
 
 
+@contextlib.contextmanager
+def _watch_observer() -> Generator[BaseObserver]:
+    """開始準備から停止・joinまでを所有し、停止失敗でもjoinへ進む。"""
+    observer = watchdog.observers.Observer()
+    try:
+        yield observer
+    finally:
+        try:
+            observer.stop()
+        finally:
+            if observer.ident is not None:
+                observer.join()
+
+
 def wait_for_changes(
     private_notes: pathlib.Path,
     target_repo_id: str | None,
@@ -365,17 +381,15 @@ def wait_for_changes(
     """
     del target_repo_id  # 現状の監視粒度ではrepo単位フィルタは行わない
     change_event = threading.Event()
-    observer = watchdog.observers.Observer()
-    handler = _ChangeHandler(change_event)
-    _ensure_inbox_dirs(private_notes)
-    for state in WI_STATES:
-        observer.schedule(handler, str(private_notes / state), recursive=False)
-    state_handler = _StateChangeHandler(change_event)
-    for directory in dict.fromkeys(state_directories):
-        if directory.is_dir():
-            observer.schedule(state_handler, str(directory), recursive=False)
-    observer.start()
-    try:
+    with _watch_observer() as observer:
+        handler = _ChangeHandler(change_event)
+        _ensure_inbox_dirs(private_notes)
+        observer.schedule(handler, str(private_notes), recursive=True)
+        state_handler = _StateChangeHandler(change_event)
+        for directory in dict.fromkeys(state_directories):
+            if directory.is_dir():
+                observer.schedule(state_handler, str(directory), recursive=False)
+        observer.start()
         if _wait_event(change_event, _POLL_INTERVAL_SEC if timeout is None else max(0.0, timeout), interrupt):
             if change_event.is_set():
                 while True:
@@ -394,9 +408,6 @@ def wait_for_changes(
                 next_action=f"対応不要（待機は継続した）。繰り返す場合は`git -C {private_notes} status`で同期状態を確認する",
             )
         return False
-    finally:
-        observer.stop()
-        observer.join()
 
 
 def _wait_event(event: threading.Event, timeout: float, interrupt: Callable[[], bool] | None) -> bool:
@@ -433,5 +444,4 @@ def pull_private_notes(private_notes: pathlib.Path) -> bool:
 
 def _ensure_inbox_dirs(private_notes: pathlib.Path) -> None:
     """watchdog監視対象のinboxディレクトリを事前作成する。"""
-    for state in WI_STATES:
-        (private_notes / state).mkdir(parents=True, exist_ok=True)
+    private_notes.mkdir(parents=True, exist_ok=True)

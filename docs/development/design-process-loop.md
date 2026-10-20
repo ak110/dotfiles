@@ -54,7 +54,8 @@ GitLabでjobが未確定の場合は、job一覧の取得と対象jobのtrace取
 収集側と待機側で同じ案内を使い、CLIの対話画面へ依存する手順の分散を防ぐ。
 
 GitLabのリポジトリ識別子とAPI接続先は別に扱う。
-SSH接続先とAPI接続先のDNS名やポートが異なる場合、baseline作成・待機・再開へ同じAPI側のrepository指定を渡す。
+SSH接続先はglabのホスト別設定を選ぶキーとし、API接続先はその設定と公開環境指定で解決する。API側を明示上書きする場合はHTTP(S) URLをポート込みでrepositoryへ指定し、baseline作成・待機・再開で同じ指定を使う。
+ホスト指定は`GITLAB_HOST`・`GITLAB_URI`・`GL_HOST`の順とし、`GITLAB_API_HOST`の上書きと明示URL・`prefer_environment`の優先関係を保つ。
 `_git/remote.py`が接続先を解析し、`_git/forge_cli.py`がglabの子環境へ渡す接続先指定を共通に所有する。
 呼び出しごとの子環境は`_common/json_command.py`が受け取り、親環境を保持する。
 この接続先を一覧、bridges、downstreamとjobの照会に使い、キュー識別子の正規化とbaselineの保存形式は維持する。

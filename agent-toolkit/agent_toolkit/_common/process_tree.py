@@ -15,6 +15,7 @@ import contextlib
 import logging
 import subprocess
 import time
+from collections.abc import Generator
 from typing import Any
 
 # 回収しない呼出し元では、プロセス管理の依存を読み込まない。
@@ -50,6 +51,29 @@ def stop_process_tree(process: subprocess.Popen[Any]) -> list[str]:
     return residual
 
 
+@contextlib.contextmanager
+def process_scope(
+    *popenargs: Any,
+    close_streams: bool = True,
+    **kwargs: Any,
+) -> Generator[subprocess.Popen[Any]]:
+    """獲得直後から子プロセスの停止とパイプの解放を所有する。"""
+    # Popen.__exit__の無期限waitを避け、停止できない子も上限付きで診断する。
+    process = subprocess.Popen(*popenargs, **kwargs)  # pylint: disable=consider-using-with
+    try:
+        yield process
+    finally:
+        try:
+            if process.poll() is None:
+                log_residual(stop_process_tree(process), context="process_scope")
+        finally:
+            if close_streams:
+                with contextlib.ExitStack() as cleanup:
+                    for stream in (process.stdin, process.stdout, process.stderr):
+                        if stream is not None:
+                            cleanup.callback(stream.close)
+
+
 def run_with_timeout(
     *popenargs: Any,
     input: Any = None,  # pylint: disable=redefined-builtin  # subprocess.runの公開引数とそろえる
@@ -67,26 +91,19 @@ def run_with_timeout(
         if kwargs.get("stdout") is not None or kwargs.get("stderr") is not None:
             raise ValueError("capture_outputとstdout・stderrは同時に指定できない")
         kwargs["stdout"] = kwargs["stderr"] = subprocess.PIPE
-    process = subprocess.Popen(*popenargs, **kwargs)  # pylint: disable=consider-using-with
-    try:
-        stdout, stderr = process.communicate(input, timeout=timeout)
-    except subprocess.TimeoutExpired as error:
-        residual = stop_process_tree(process)
-        log_residual(residual, context="run_with_timeout")
-        # 残存がパイプを保持していても、元の時間上限の報告へ戻る。
-        if not residual:
-            stdout, stderr = process.communicate()
-            encoding = kwargs.get("encoding") or "utf-8"
-            error.output = stdout.encode(encoding) if isinstance(stdout, str) else stdout
-            error.stderr = stderr.encode(encoding) if isinstance(stderr, str) else stderr
-        raise
-    except BaseException:
-        log_residual(stop_process_tree(process), context="run_with_timeout")
-        raise
-    finally:
-        for stream in (process.stdin, process.stdout, process.stderr):
-            if stream is not None:
-                stream.close()
+    with process_scope(*popenargs, **kwargs) as process:
+        try:
+            stdout, stderr = process.communicate(input, timeout=timeout)
+        except subprocess.TimeoutExpired as error:
+            residual = stop_process_tree(process)
+            log_residual(residual, context="run_with_timeout")
+            # 残存がパイプを保持していても、元の時間上限の報告へ戻る。
+            if not residual:
+                stdout, stderr = process.communicate()
+                encoding = kwargs.get("encoding") or "utf-8"
+                error.output = stdout.encode(encoding) if isinstance(stdout, str) else stdout
+                error.stderr = stderr.encode(encoding) if isinstance(stderr, str) else stderr
+            raise
     returncode = process.returncode
     assert returncode is not None
     if check and returncode:

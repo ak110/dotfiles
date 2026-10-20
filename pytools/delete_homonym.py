@@ -8,6 +8,7 @@
 """
 
 import argparse
+import contextlib
 import io
 import logging
 import pathlib
@@ -33,8 +34,7 @@ def main() -> None:
     enable_completion(parser)
     args = parser.parse_args()
     setup_logging()
-    log_fp = args.log_file.open("a", encoding="utf-8") if args.log_file else None
-    try:
+    with args.log_file.open("a", encoding="utf-8") if args.log_file else contextlib.nullcontext() as log_fp:
         delete_homonym(
             args.paths,
             pattern=args.pattern,
@@ -43,9 +43,6 @@ def main() -> None:
             dry_run=args.dry_run,
             log_fp=log_fp,
         )
-    finally:
-        if log_fp is not None:
-            log_fp.close()
     sys.exit(0)
 
 

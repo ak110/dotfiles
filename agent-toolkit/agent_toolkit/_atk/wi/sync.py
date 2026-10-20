@@ -14,6 +14,7 @@ git作業コピー（`atk wi process-loop`が上流差分を確認するdotfiles
 旧形式の移行: `ensure_environment`は毎回`migrate_legacy_layout`を、`pull`は毎回`migrate_legacy_reservations`を呼ぶ。
 """
 
+import contextlib
 import datetime
 import pathlib
 import re
@@ -27,7 +28,9 @@ import filelock
 from agent_toolkit._atk import git_sync as _atk_git_sync
 from agent_toolkit._atk import outcome as _outcome
 from agent_toolkit._atk.wi import legacy as _atk_wi_legacy
-from agent_toolkit._atk.wi.constants import WI_ACTIVE_STATES, WI_STATES
+from agent_toolkit._atk.wi.constants import WI_ACTIVE_STATES
+from agent_toolkit._atk.wi.frontmatter import parse_frontmatter
+from agent_toolkit._atk.wi.layout import iter_entry_paths
 from agent_toolkit._common import file_lock as _file_lock
 from agent_toolkit._common import private_notes as _private_notes
 from agent_toolkit._git import command as _git_command
@@ -48,10 +51,6 @@ def init_local_private_notes_repo(root: pathlib.Path) -> None:
     """
     root.mkdir(parents=True, exist_ok=True)
     run_git(["init"], cwd=root)
-    for name in WI_STATES:
-        state_dir = root / name
-        state_dir.mkdir(parents=True, exist_ok=True)
-        (state_dir / ".gitkeep").touch()
     _file_lock.ensure_plan_lock_ignored(root / "plans" / ".agent-toolkit-plan-create.lock")
     run_git(["add", "-A"], cwd=root)
     run_git(
@@ -61,6 +60,7 @@ def init_local_private_notes_repo(root: pathlib.Path) -> None:
             "-c",
             "user.name=agent-toolkit",
             "commit",
+            "--allow-empty",
             "-m",
             "chore: initialize local private-notes repository",
         ],
@@ -103,7 +103,7 @@ def ensure_environment(home: pathlib.Path) -> pathlib.Path:
 
 def _has_no_items(root: pathlib.Path) -> bool:
     """状態ディレクトリにWIの`.md`が無く、`plans/`にも計画ファイルが無いかを返す。"""
-    if any(next((root / state).glob("*.md"), None) is not None for state in WI_STATES):
+    if next(iter_entry_paths(root), None) is not None:
         return False
     plans = root / "plans"
     return not plans.is_dir() or next(plans.rglob("*.md"), None) is None
@@ -115,7 +115,7 @@ def run_git(args: list[str], cwd: pathlib.Path, *, forward_error_output: bool = 
 
 
 def migrate_legacy_layout(private_notes: pathlib.Path) -> None:
-    """旧2階層レイアウトを専用移行モジュールで平坦化する。"""
+    """旧配置を専用移行モジュールで年月固定配置へ移行する。"""
     _atk_wi_legacy.migrate_legacy_layout(
         private_notes,
         repo_lock_fn=repo_lock,
@@ -201,6 +201,30 @@ def _terminal_commit_is_redundant(private_notes: pathlib.Path, commit: str) -> b
     changes = output.removesuffix("\0").split("\0") if output else []
     if len(changes) % 2:
         return False
+    pairs = tuple(zip(changes[::2], changes[1::2], strict=True))
+    if len(pairs) == count and all(status == "M" for status, _ in pairs):
+        for _status, relative in pairs:
+            path = pathlib.PurePosixPath(relative)
+            if len(path.parts) != 3 or path.suffix != ".md":
+                return False
+            before = parse_frontmatter(_git_file_content(private_notes, f"{commit}^:{relative}"))
+            local = _git_file_content(private_notes, f"{commit}:{relative}")
+            upstream = _git_file_content(private_notes, f"@{{u}}:{relative}")
+            local_metadata = parse_frontmatter(local)
+            upstream_metadata = parse_frontmatter(upstream)
+            if (
+                before is None
+                or before[0].get("state") not in WI_ACTIVE_STATES
+                or local_metadata is None
+                or local_metadata[0].get("state") != outcome
+                or upstream_metadata is None
+                or upstream_metadata[0].get("state") != outcome
+            ):
+                return False
+            normalized = _normalized_terminal_content(local)
+            if normalized is None or normalized != _normalized_terminal_content(upstream):
+                return False
+        return True
     removed: dict[str, str] = {}
     added: dict[str, str] = {}
     for status, relative in zip(changes[::2], changes[1::2], strict=True):
@@ -258,6 +282,12 @@ def pull(private_notes: pathlib.Path) -> None:
     assert_repo_lock_held(private_notes)
     _pull_remote(private_notes)
     migrate_legacy_reservations(private_notes)
+    _atk_wi_legacy.migrate_legacy_layout(
+        private_notes,
+        repo_lock_fn=lambda _notes: contextlib.nullcontext(),
+        pull_fn=lambda _notes: None,
+        commit_fn=commit_and_push,
+    )
 
 
 def _pull_remote(private_notes: pathlib.Path) -> None:

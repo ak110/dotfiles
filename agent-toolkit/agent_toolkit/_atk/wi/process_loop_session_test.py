@@ -37,7 +37,7 @@ from agent_toolkit._common import (
 from agent_toolkit._common import inherited_venv as _inherited_venv
 from agent_toolkit._common import session_registry
 from agent_toolkit._common import wait_schedule as _wait_schedule
-from agent_toolkit._testing import git_repository
+from agent_toolkit._testing import git_repository, wi_entry_files
 from agent_toolkit._testing.managed_temp_support import setattr_in_managed_temp_modules
 from agent_toolkit._testing.process_loop_support import (
     fake_run_with_remote_url,
@@ -58,8 +58,11 @@ def test_repository_delegate_prompt_is_minimal(tmp_path: pathlib.Path, monkeypat
     repo = git_repository.init_repository(tmp_path / "repo", origin="https://example.test/team/repo.git")
     monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_PROCESS_LOOP_REPOSITORIES", json.dumps([str(repo)]))
     for name, extra in (("ready.md", ""), ("blocked.md", "depends_on: [missing.md]\n")):
-        path = notes / "inbox" / name
-        path.write_text(f"---\ntype: awi\ntarget_repo: example.test/team/repo\n{extra}---\n\n# {name}\n", encoding="utf-8")
+        path = wi_entry_files.entry_path(notes, name)
+        path.write_text(
+            f"---\nstate: inbox\ntype: awi\ntarget_repo: example.test/team/repo\n{extra}---\n\n# {name}\n",
+            encoding="utf-8",
+        )
     snapshot = listing.configured_repo_snapshot(notes)[0]
     acquired = ownership.try_acquire(snapshot.repository.repo_id, worktree=repo)
     assert acquired is not None

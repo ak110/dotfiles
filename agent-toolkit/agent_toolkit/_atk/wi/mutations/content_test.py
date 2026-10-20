@@ -17,6 +17,7 @@ from agent_toolkit._atk.wi.mutations import content as mutation_content
 from agent_toolkit._atk.wi.mutations import dependencies as mutation_dependencies
 from agent_toolkit._atk.wi.mutations import transitions as mutation_transitions
 from agent_toolkit._testing.wi_bodies import AGENT_AWI_BODY
+from agent_toolkit._testing.wi_entry_files import entry_path as _fixed_path
 from agent_toolkit._testing.wi_mutations_support import (
     _disable_convert_git,
     _disable_transition_git,
@@ -119,10 +120,10 @@ def test_hold_and_unhold_reuse_standard_transition(tmp_path: pathlib.Path, monke
     _disable_transition_git(monkeypatch)
 
     mutation_transitions.transition_entries(notes, action="hold", filenames=["entry.md"], now=_FIXED_DT)
-    assert (notes / "hold/entry.md").is_file()
+    assert "state: hold\n" in _fixed_path(notes, "entry.md").read_text(encoding="utf-8")
 
     mutation_transitions.transition_entries(notes, action="unhold", filenames=["entry.md"], now=_FIXED_DT)
-    assert (notes / "inbox/entry.md").is_file()
+    assert "state: inbox\n" in _fixed_path(notes, "entry.md").read_text(encoding="utf-8")
 
 
 def test_return_rejected_entry_to_inbox_strips_terminal_result(
@@ -134,7 +135,7 @@ def test_return_rejected_entry_to_inbox_strips_terminal_result(
     _write_awi_file(notes, "entry.md")
     _disable_transition_git(monkeypatch)
     mutation_transitions.transition_entries(notes, action="reject", filenames=["entry.md"], now=_FIXED_DT)
-    rejected = notes / "rejected/entry.md"
+    rejected = _fixed_path(notes, "entry.md")
     assert "## 処理結果" in rejected.read_text(encoding="utf-8")
 
     mutation_transitions.transition_entries(
@@ -145,49 +146,49 @@ def test_return_rejected_entry_to_inbox_strips_terminal_result(
         now=_FIXED_DT,
     )
 
-    returned = notes / "inbox/entry.md"
+    returned = _fixed_path(notes, "entry.md")
     assert returned.is_file()
     assert "## 処理結果" not in returned.read_text(encoding="utf-8")
 
 
-def test_remove_targets_explicit_state_and_keeps_legacy_priority(
+def test_remove_targets_explicit_and_stored_state(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """状態指定時は指定側を削除し、省略時はprocessing優先を維持する。"""
+    """明示した状態と保存した状態に応じて対象を削除する。"""
     notes = _setup_notes(tmp_path)
     monkeypatch.setattr(_wi_sync, "repo_lock", lambda *_args, **_kwargs: contextlib.nullcontext())
     monkeypatch.setattr(_wi_sync, "push_pending_commits", lambda _path: None)
     monkeypatch.setattr(_wi_sync, "pull", lambda _path: None)
     monkeypatch.setattr(_wi_sync, "commit_and_push", lambda *_args, **_kwargs: None)
-    content = "---\ntarget_repo: github.com/example/foo\ntype: awi\n---\n\n本文\n"
-    inbox = notes / "inbox/same.md"
-    processing = notes / "processing/same.md"
-    processing.parent.mkdir()
+    content = "---\nstate: inbox\ntarget_repo: github.com/example/foo\ntype: awi\n---\n\n本文\n"
+    inbox = _fixed_path(notes, "inbox.md")
+    processing = _fixed_path(notes, "processing.md")
     inbox.write_text(content, encoding="utf-8")
-    processing.write_text(content, encoding="utf-8")
+    processing_content = content.replace("state: inbox", "state: processing")
+    processing.write_text(processing_content, encoding="utf-8")
 
     removed = mutation_transitions.transition_entries(
         notes,
         action="remove",
-        filenames=["same.md"],
+        filenames=[inbox.name],
         now=_FIXED_DT,
         state="inbox",
         expected_content=content,
     )
-    assert removed == ["same.md"]
+    assert removed == [inbox.name]
     assert not inbox.exists()
-    assert processing.read_text(encoding="utf-8") == content
+    assert processing.read_text(encoding="utf-8") == processing_content
 
     inbox.write_text(content, encoding="utf-8")
     removed = mutation_transitions.transition_entries(
         notes,
         action="remove",
-        filenames=["same.md"],
+        filenames=[processing.name],
         now=_FIXED_DT,
         force=True,
     )
-    assert removed == ["same.md"]
+    assert removed == [processing.name]
     assert inbox.exists()
     assert not processing.exists()
 
@@ -223,8 +224,7 @@ def test_return_to_inbox_moves_processing_to_inbox(tmp_path: pathlib.Path, monke
         now=_FIXED_DT,
     )
     assert filenames == ["entry.md"]
-    assert (notes / "inbox/entry.md").is_file()
-    assert not (notes / "processing/entry.md").exists()
+    assert "state: inbox\n" in _fixed_path(notes, "entry.md").read_text(encoding="utf-8")
 
 
 def test_cooldown_return_rejects_uwi_mixture_without_changes(
@@ -237,8 +237,8 @@ def test_cooldown_return_rejects_uwi_mixture_without_changes(
     _write_uwi_entry(notes, "uwi.md")
     _disable_transition_git(monkeypatch)
     mutation_transitions.transition_entries(notes, action="start-processing", filenames=["awi.md", "uwi.md"], now=_FIXED_DT)
-    awi = notes / "processing/awi.md"
-    uwi_path = notes / "processing/uwi.md"
+    awi = _fixed_path(notes, "awi.md")
+    uwi_path = _fixed_path(notes, "uwi.md")
     original_awi = awi.read_text(encoding="utf-8")
     original_uwi = uwi_path.read_text(encoding="utf-8")
 
@@ -273,8 +273,7 @@ class TestRejectDeletes:
             atk.main(["wi", "reject", "fb-001.md"], home=tmp_path)
 
         assert exc_info.value.code == 0
-        assert not (notes / "inbox" / "fb-001.md").exists()
-        assert (notes / "rejected" / "fb-001.md").exists()
+        assert "state: rejected\n" in _fixed_path(notes, "fb-001.md").read_text(encoding="utf-8")
         commit_cmd = [c["cmd"] for c in git_calls if "commit" in c["cmd"]][0]
         assert "chore: process 1 entry (rejected)" in commit_cmd
 
@@ -444,7 +443,7 @@ class TestNoninteractiveEdit:
 
         assert exc_info.value.code == 0
         assert path.read_text(encoding="utf-8") == (
-            "---\ntarget_repo: github.com/example/foo\ntype: awi\nsource: session-review\n---\n\n編集後\n"
+            "---\nstate: inbox\ntarget_repo: github.com/example/foo\ntype: awi\nsource: session-review\n---\n\n編集後\n"
         )
 
     def test_agent_environment_rejects_edit_without_source(
@@ -501,8 +500,7 @@ class TestCooldownEdit:
         notes = _setup_notes(tmp_path)
         path = _write_awi_file(notes, "entry.md", body="本文", source="test")
         if state == "hold":
-            (notes / state).mkdir(exist_ok=True)
-            path = path.rename(notes / state / path.name)
+            path.write_text(path.read_text(encoding="utf-8").replace("state: inbox", f"state: {state}"), encoding="utf-8")
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
         with pytest.raises(SystemExit) as set_exit:
@@ -551,8 +549,7 @@ class TestCooldownEdit:
     def test_rejects_processing(self, value: str, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
         notes = _setup_notes(tmp_path)
         path = _write_awi_file(notes, "entry.md", body="本文", source="test")
-        (notes / "processing").mkdir(exist_ok=True)
-        path = path.rename(notes / "processing" / path.name)
+        path.write_text(path.read_text(encoding="utf-8").replace("state: inbox", "state: processing"), encoding="utf-8")
         original = path.read_text(encoding="utf-8")
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
@@ -569,8 +566,7 @@ class TestCooldownEdit:
         notes = _setup_notes(tmp_path)
         path = _write_awi_file(notes, "entry.md", body="本文", source="test")
         if state == "hold":
-            (notes / state).mkdir(exist_ok=True)
-            path = path.rename(notes / state / path.name)
+            path.write_text(path.read_text(encoding="utf-8").replace("state: inbox", f"state: {state}"), encoding="utf-8")
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
         with pytest.raises(SystemExit) as set_exit:
@@ -607,8 +603,7 @@ class TestCooldownEdit:
         notes = _setup_notes(tmp_path)
         path = _write_uwi_entry(notes, "question.md")
         if state == "hold":
-            (notes / state).mkdir(exist_ok=True)
-            path = path.rename(notes / state / path.name)
+            path.write_text(path.read_text(encoding="utf-8").replace("state: inbox", f"state: {state}"), encoding="utf-8")
         original = path.read_text(encoding="utf-8")
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
         args = _edit_body_args(tmp_path, "question.md", "変更後の質問") if with_body else ["wi", "edit", "question.md"]
@@ -636,15 +631,14 @@ class TestCooldownEdit:
         path = _write_uwi_entry(notes, "question.md", frontmatter=f"{frontmatter}\ncooldown_until: '{stored}'")
         expected = _write_uwi_entry(notes, "expected.md", frontmatter=frontmatter).read_text(encoding="utf-8")
         if state == "hold":
-            (notes / state).mkdir(exist_ok=True)
-            path = path.rename(notes / state / path.name)
+            path.write_text(path.read_text(encoding="utf-8").replace("state: inbox", f"state: {state}"), encoding="utf-8")
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
         with pytest.raises(SystemExit) as clear_exit:
             atk.main(["wi", "edit", "question.md", "--cooldown-until", ""], home=tmp_path)
 
         assert clear_exit.value.code == 0
-        assert path.read_text(encoding="utf-8") == expected
+        assert path.read_text(encoding="utf-8") == expected.replace("state: inbox", f"state: {state}")
 
 
 class TestEditBodyFile:
@@ -768,7 +762,7 @@ class TestEditBodyFile:
             )
 
         assert exc_info.value.code == 0
-        parsed = frontmatter_parser.parse_frontmatter((notes / "hold" / filename).read_text(encoding="utf-8"))
+        parsed = frontmatter_parser.parse_frontmatter(_fixed_path(notes, filename).read_text(encoding="utf-8"))
         assert parsed is not None
         assert parsed[1] == f"\n{message_file}\n"
 
@@ -817,9 +811,9 @@ class TestEditBodyFile:
     ) -> None:
         """明示したtarget_repoを正規化し、他の意味的なキーを保持する。"""
         notes = _setup_notes(tmp_path)
-        path = notes / "inbox" / "fb-001.md"
+        path = _fixed_path(notes, "fb-001.md")
         path.write_text(
-            "---\n# 保持するコメント\ntarget_repo: old.example/a/b\n\n"
+            "---\nstate: inbox\n# 保持するコメント\ntarget_repo: old.example/a/b\n\n"
             "target_repo: old.example/a/b\ntype: awi\nsource: manual\n---\n\n編集前\n",
             encoding="utf-8",
         )
@@ -833,6 +827,7 @@ class TestEditBodyFile:
         parsed = frontmatter_parser.parse_frontmatter(path.read_text(encoding="utf-8"))
         assert parsed is not None
         assert parsed[0] == {
+            "state": "inbox",
             "target_repo": "github.com/example/repo",
             "type": "awi",
             "source": "manual",
@@ -920,7 +915,7 @@ class TestEditBodyFile:
             )
         assert add_exit.value.code == 0
         filename = f"{_FIXED_DT:%Y%m%d-%H%M%S}-001.md"
-        assert (notes / "inbox" / filename).is_file()
+        assert _fixed_path(notes, filename).is_file()
 
         with pytest.raises(SystemExit) as edit_exit:
             atk.main(_edit_body_args(tmp_path, filename, ""), home=tmp_path)
@@ -937,11 +932,11 @@ class TestEditBodyFile:
     ) -> None:
         """`processing`配下のAWIも非対話で編集する。"""
         notes = _setup_notes(tmp_path)
-        processing = notes / "processing"
-        processing.mkdir()
+        processing = notes / "2026" / "10"
+        processing.mkdir(parents=True, exist_ok=True)
         path = processing / "fb-001.md"
         path.write_text(
-            "---\ntarget_repo: github.com/example/foo\ntype: awi\n---\n\n編集前\n",
+            "---\nstate: processing\ntarget_repo: github.com/example/foo\ntype: awi\n---\n\n編集前\n",
             encoding="utf-8",
         )
         for name in ("AI_AGENT", "CODEX_CI", "CLAUDECODE", "CURSOR_AGENT"):
@@ -962,8 +957,8 @@ class TestEditBodyFile:
         """エージェント環境でもholdの本文置換を受理する。"""
         notes = _setup_notes(tmp_path)
         inbox_path = _write_awi_file(notes, "fb-001.md", body="編集前", source="test")
-        hold = notes / "hold"
-        path = inbox_path.rename(hold / inbox_path.name)
+        path = inbox_path
+        path.write_text(path.read_text(encoding="utf-8").replace("state: inbox", "state: hold"), encoding="utf-8")
         monkeypatch.setenv("AI_AGENT", "1")
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
@@ -982,7 +977,8 @@ class TestEditBodyFile:
         """既存本文が必須節を欠く旧書式でも、原因の未確定を宣言する本文への置換を拒否し保存本文を保つ。"""
         notes = _setup_notes(tmp_path)
         inbox_path = _write_awi_file(notes, "fb-001.md", body="編集前", source="test")
-        path = inbox_path.rename(notes / "hold" / inbox_path.name)
+        path = inbox_path
+        path.write_text(path.read_text(encoding="utf-8").replace("state: inbox", "state: hold"), encoding="utf-8")
         original = path.read_text(encoding="utf-8")
         monkeypatch.setenv("AI_AGENT", "1")
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
@@ -1021,7 +1017,7 @@ class TestEditBodyFile:
         with pytest.raises(SystemExit) as replaced:
             atk.main(_edit_body_args(tmp_path, "fb-001.md", "変更後"), home=tmp_path)
         assert replaced.value.code == 0
-        saved = (notes / "hold/fb-001.md").read_text(encoding="utf-8")
+        saved = (_fixed_path(notes, "fb-001.md")).read_text(encoding="utf-8")
         assert "変更後" in saved
         assert "編集前" not in saved
         assert "held_from_state" not in saved
@@ -1029,7 +1025,7 @@ class TestEditBodyFile:
         with pytest.raises(SystemExit) as unheld:
             atk.main(["wi", "unhold", "fb-001.md"], home=tmp_path, now=_FIXED_DT)
         assert unheld.value.code == 0
-        assert "変更後" in (notes / "inbox/fb-001.md").read_text(encoding="utf-8")
+        assert "変更後" in (_fixed_path(notes, "fb-001.md")).read_text(encoding="utf-8")
 
     def test_agent_environment_rejects_processing_body_replacement(
         self,
@@ -1039,10 +1035,10 @@ class TestEditBodyFile:
     ) -> None:
         """エージェント環境からprocessingの本文を置換せず終了コード2で拒否する。"""
         notes = _setup_notes(tmp_path)
-        processing = notes / "processing"
-        processing.mkdir()
+        processing = notes / "2026" / "10"
+        processing.mkdir(parents=True, exist_ok=True)
         path = processing / "fb-001.md"
-        original = "---\ntarget_repo: github.com/example/foo\ntype: awi\n---\n\n編集前\n"
+        original = "---\nstate: processing\ntarget_repo: github.com/example/foo\ntype: awi\n---\n\n編集前\n"
         path.write_text(original, encoding="utf-8")
         monkeypatch.setenv("AI_AGENT", "1")
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
@@ -1066,11 +1062,11 @@ class TestEditBodyFile:
     ) -> None:
         """エージェント環境でもprocessingへの追記を受理する。"""
         notes = _setup_notes(tmp_path)
-        processing = notes / "processing"
-        processing.mkdir()
+        processing = notes / "2026" / "10"
+        processing.mkdir(parents=True, exist_ok=True)
         path = processing / "fb-001.md"
         path.write_text(
-            "---\ntarget_repo: github.com/example/foo\ntype: awi\n---\n\n追記前\n",
+            "---\nstate: processing\ntarget_repo: github.com/example/foo\ntype: awi\n---\n\n追記前\n",
             encoding="utf-8",
         )
         monkeypatch.setenv("AI_AGENT", "1")
@@ -1470,7 +1466,7 @@ class TestEditBodyFile:
     ) -> None:
         """frontmatter全体が破損している場合は編集を拒否する。"""
         notes = _setup_notes(tmp_path)
-        path = notes / "inbox" / "fb-001.md"
+        path = _fixed_path(notes, "fb-001.md")
         path.write_text("---\ntarget_repo: [broken\n---\n本文\n", encoding="utf-8")
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
@@ -1478,7 +1474,7 @@ class TestEditBodyFile:
             atk.main(_edit_body_args(tmp_path, "fb-001.md", "編集後"), home=tmp_path)
 
         assert exc_info.value.code == 1
-        assert "frontmatterが破損" in capsys.readouterr().err
+        assert "frontmatterのstateが不正または欠落" in capsys.readouterr().err
 
 
 def _next_action_lines(err: str) -> list[str]:
@@ -1595,9 +1591,9 @@ def test_uwi_edit_with_broken_stored_structure_points_to_show(
 ) -> None:
     """保存済みUWIの構造が壊れている場合は、確認するコマンドとユーザーへの報告を示す。"""
     notes = _setup_notes(tmp_path)
-    path = notes / "inbox" / "uwi-001.md"
+    path = _fixed_path(notes, "uwi-001.md")
     path.write_text(
-        f"---\ntarget_repo: github.com/example/foo\ntype: uwi\nquestion_type: free-form\n---\n\n"
+        f"---\nstate: inbox\ntarget_repo: github.com/example/foo\ntype: uwi\nquestion_type: free-form\n---\n\n"
         f"{uwi.QUESTION_HEADING}\n\n質問\n",
         encoding="utf-8",
     )
@@ -1827,10 +1823,10 @@ def _prepare_undetermined_cause(notes: pathlib.Path, monkeypatch: pytest.MonkeyP
 
 def _prepare_processing(notes: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> tuple[str, str]:
     monkeypatch.setenv("AI_AGENT", "1")
-    processing = notes / "processing"
-    processing.mkdir()
+    processing = notes / "2026" / "10"
+    processing.mkdir(parents=True, exist_ok=True)
     (processing / "fb-001.md").write_text(
-        "---\ntarget_repo: github.com/example/foo\ntype: awi\n---\n\n編集前\n", encoding="utf-8"
+        "---\nstate: processing\ntarget_repo: github.com/example/foo\ntype: awi\n---\n\n編集前\n", encoding="utf-8"
     )
     return "fb-001.md", "編集後"
 
@@ -1889,7 +1885,7 @@ def test_edit_dry_run_matches_save_judgement(
         notes = _setup_notes(home)
         monkeypatch.setenv("AGENT_TOOLKIT_PRIVATE_NOTES", str(notes))
         filename, message = prepare(notes, monkeypatch)
-        target = next(notes.glob(f"*/{filename}"))
+        target = _fixed_path(notes, filename)
         original = target.read_bytes()
         argv = _edit_body_args(home, filename, message)
         code, error, output = _run_edit(home, [*argv, "--dry-run"] if mode == "dry-run" else argv, capsys)

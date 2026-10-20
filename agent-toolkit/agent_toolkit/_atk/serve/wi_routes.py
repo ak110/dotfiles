@@ -137,6 +137,8 @@ def _validate_entry_filters(filters: dict[str, str]) -> None:
         raise _wi_operations.WebApiInputError("statusが不正です")
     if filters.get("answered", "all") not in _ANSWERED_FILTERS:
         raise _wi_operations.WebApiInputError("answeredが不正です")
+    if filters.get("important", "all") not in _ANSWERED_FILTERS:
+        raise _wi_operations.WebApiInputError("importantが不正です")
     if filters.get("plan", "all") not in _PLAN_FILTERS:
         raise _wi_operations.WebApiInputError("planが不正です")
     if filters.get("period", "all") not in _PERIOD_FILTERS:
@@ -179,6 +181,7 @@ def _register_query_routes(app: quart.Quart, runtime: _runtime.ServeRuntime) -> 
             "type",
             "status",
             "answered",
+            "important",
             "plan",
             "period",
             "page",
@@ -219,6 +222,10 @@ def _register_query_routes(app: quart.Quart, runtime: _runtime.ServeRuntime) -> 
             json.dumps({"entry": entry}, ensure_ascii=False, separators=(",", ":"), allow_nan=False),
             content_type="application/json",
         )
+
+    @app.get("/api/entries/<filename>")
+    async def stable_detail(filename: str) -> quart.Response:
+        return await detail(wi_constants.WI_STATE_INBOX, filename)
 
     @app.get("/api/events")
     async def events() -> quart.Response:
@@ -310,6 +317,26 @@ def _register_mutation_routes(app: quart.Quart, runtime: _runtime.ServeRuntime) 
             raise _wi_operations.WebApiInputError("contentは空でない文字列で指定してください")
         expected_content = _specified_string(data, "expected_content")
         return quart.jsonify(changed=await workers.run(ops.edit, state_name, filename, data["content"], expected_content))
+
+    @app.put("/api/entries/<filename>")
+    async def stable_edit_entry(filename: str) -> quart.Response:
+        current = await workers.run(ops.detail, wi_constants.WI_STATE_INBOX, filename)
+        return await edit_entry(str(current["state"]), filename)
+
+    @app.post("/api/entries/important")
+    async def set_important() -> quart.Response:
+        data = _json_object(
+            await _request_json(), allowed={"filename", "important", "expected_content"}, required={"filename", "important"}
+        )
+        if not isinstance(data["filename"], str) or not data["filename"].strip():
+            raise _wi_operations.WebApiInputError("filenameは空でない文字列で指定してください")
+        if not isinstance(data["important"], bool):
+            raise _wi_operations.WebApiInputError("importantはbooleanで指定してください")
+        return quart.jsonify(
+            changed=await workers.run(
+                ops.important, data["filename"], data["important"], _specified_text(data, "expected_content")
+            )
+        )
 
     @app.post("/api/entries/user-comment")
     async def save_user_comment() -> quart.Response:

@@ -31,6 +31,10 @@ command_name=$(basename "$0")
 printf '%s %s\\n' "$command_name" "$*" >> "$CLI_STUB_LOG"
 case "$command_name $*" in
     *"$STUB_FAIL_PATTERN"*)
+        if [ "$command_name $*" = "codex plugin add agent-toolkit@ak110-dotfiles --json" ] && \
+            [ "$CODEX_STUB_DELETE_CACHE_BEFORE_FAILURE" = "1" ]; then
+            rm -rf "$CODEX_PLUGIN_CACHE_ROOT"
+        fi
         printf 'stub failure: %s %s\n' "$command_name" "$*" >&2
         exit 9
         ;;
@@ -84,20 +88,6 @@ fi
 exit 0
 """
 
-# 開発機で動く他のCodexを稼働判定へ混ぜないため、`PS_STUB_PIDS`へ空白区切りで列挙したpidの行だけを返す。
-# 行はインストーラーが指定する`-o pid= -o stat= -o args=`の形で`/proc`から組み立てる。
-# `ps`の無い環境（CIのcontainerなど）でも同じ出力にするためである。
-# 未指定なら稼働中のプロセスが無い状態として何も出力しない。
-_PS_STUB = """#!/bin/sh
-[ -n "$PS_STUB_PIDS" ] || exit 0
-for pid in $PS_STUB_PIDS; do
-    [ -r "/proc/$pid/stat" ] || continue
-    state=$(sed 's/^.*) //' "/proc/$pid/stat" | cut -d ' ' -f 1) || exit 1
-    args=$(tr '\\000' ' ' < "/proc/$pid/cmdline") || exit 1
-    printf '%s %s %s\\n' "$pid" "$state" "$args"
-done
-"""
-
 
 class _QuietHandler(http.server.SimpleHTTPRequestHandler):
     def log_message(self, *args: typing.Any, **kwargs: typing.Any) -> None:
@@ -148,10 +138,6 @@ def make_command_stubs(
         stub.write_text(_COMMAND_STUB, encoding="utf-8")
         stub.chmod(stub.stat().st_mode | executable_mode)
 
-    ps_stub = bin_dir / "ps"
-    ps_stub.write_text(_PS_STUB, encoding="utf-8")
-    ps_stub.chmod(ps_stub.stat().st_mode | executable_mode)
-
     if omit != "uv":
         uv_stub = bin_dir / "uv"
         python_command = shlex.quote(sys.executable)
@@ -188,6 +174,7 @@ def run_installer(
     codex_home: pathlib.Path | None = None,
     conflict_version: str = "",
     create_cache: bool = True,
+    delete_cache_before_failure: bool = False,
     check: bool = True,
     extra_env: dict[str, str] | None = None,
     ps1_script: pathlib.Path | None = None,
@@ -270,6 +257,7 @@ def run_installer(
         "CODEX_PLUGIN_CACHE_ROOT": str(effective_codex_home / "plugins/cache/ak110-dotfiles/agent-toolkit"),
         "CODEX_STUB_CONFLICT_VERSION": conflict_version,
         "CODEX_STUB_CREATE_CACHE": "1" if create_cache else "0",
+        "CODEX_STUB_DELETE_CACHE_BEFORE_FAILURE": "1" if delete_cache_before_failure else "0",
         "STUB_MARKETPLACE_ROOT": str(marketplace_root),
         **(extra_env or {}),
     }

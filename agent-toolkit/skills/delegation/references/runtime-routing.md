@@ -35,6 +35,7 @@ forkの監査記録は`docs/development/audit-records.md`の「agent-toolkit/ski
 | レーンの計画・実装・変更範囲検証と同じexecによる修正（`exec`の`task`） | execute | high | 各担当を委譲するメイン | `agents_server` MCP |
 | 観点・判定基準の選定、新しい候補の案出し、走査が返した候補の判定と結論の統合（`explore`・`delegate`の`high_tier`） | base | high | 委譲するエージェント | `agents_server` MCP |
 | 計画・設計判断で変更内容と完成判定が確定した書込作業の単位（単発のコーディング、確定済みの修正、機械的な追随など。`delegate`の`medium_tier`） | review | medium | 作業を分けて委譲する担当 | `agents_server` MCP |
+| 確定済みコマンドの実行・結果観測、確定した根拠に基づく起草・追随 | 起動手段の公開契約に従う | medium以下 | 原因・設計・観点と統合を所有する上位担当 | 公開説明に合う`delegate`・`write`・`shell` |
 | 実装後の実行レビュー、ユーザビリティレビュー、専念型の投入前レビュー、再発防止セルフチェック（`exec-review`・`usability-review`・`wi-draft-review`・`recurrence-self-check`の`task`、`delegate`の`medium_tier`） | review | medium | 各担当を委譲するエージェント | `agents_server` MCP |
 | プロンプト評価（`refine-prompt`の`task`） | base | medium | 評価を委譲するエージェント | `agents_server` MCP |
 | 小規模なレビューと小さい作業、判定基準を渡した多数の対象の走査（`bulk-replace-review`・`external-write-review`・`reader-fit-review`・`pick-wi-explain`の`task`、`delegate`の`low_tier`、`explore`の省略時と`low_tier`・`medium_tier`指定、`shell`） | chores | 省略時はlow、明示時は指定した段位 | 調査、レビューまたはshellを委譲するエージェント | `agents_server` MCP |
@@ -64,6 +65,8 @@ forkの監査記録は`docs/development/audit-records.md`の「agent-toolkit/ski
 WI（選定結果の`担当モデル`）が担当とモデル・effortを指定した工程では、その担当を起動する委譲元が指定値を`model_type`へ渡す。同じ起動の対象WIで指定が異なる場合は、WIと指定値を示して起動を止め、起動の単位を分ける。終端結果の実際の`engine`、`model`、`effort`を指定値と比べ、WI、指定値と実際値を計画の進捗ログか引き継ぎ記録へ残す。各工程の文書は、自身が使う担当名（`担当モデル.実装担当`など）と本段落の参照を持つ。
 
 段位は作業の部分ごとに、その性質（判断を要するか、内容が確定した実行か）から選ぶ。上位段位で動く担当は計画・設計判断・原因分析・結論の統合を自ら行い、内容の確定した書込作業を分解して`delegate`の`medium_tier`の委譲先へ任せる。自ら行う方が総費用（起動、規範の自動配送、明示読取、受領レビュー、統合と再試行）で安い場合だけ自ら行う。判定基準を言語化して渡せる多数の対象の走査（所在・値・件数の確認、基準に照らした該当候補の抽出と非該当の判定）は、極力`explore`の軽量段位（`model_type`の省略時）へ分け、対象が多い場合は重複のない対象群へ分けて並列に委ねる。観点・評価軸・判定基準の選定、新しい候補の案出し、走査が返した該当候補と判定保留の対象の判定、結論の統合は上位段位で行い、`mode`が`explore`でも`delegate`でも`model_type="high_tier"`を明示する。走査と案出しが混在する依頼は、全体を`high_tier`にせず、走査を軽量段位の`explore`へ分けてから上位段位で判定する（上位段位で全量を走査すると費用が大きいため）。軽量段位では判断材料が不足する走査には`medium_tier`を指定し、軽量段位では判定できないと分かった走査を中位以上で行うことは妨げない。`explore`で指定を省略した場合の`low_tier`と、役割の`task`の段位（`launch_prompts.py`の`TASK_MODEL_TYPES`。レーン担当の`exec`は`high_tier`、実行レビューは`medium_tier`など）は維持する。
+上位工程に含まれる確定済みコマンドの実行・結果観測と、確定した根拠からの文章起草も中位以下へ分ける。
+原因確定、設計判断、観点の選定と返却の統合は上位担当に残し、工程表が定める役割全体の段位を保つ。
 
 工程別モデル設定は表の工程に限り、他の委譲には「modelとreasoning effort」を適用する。工程別モデル設定のキーを持たない名前付きagentは、その定義のfrontmatterに従って起動する。
 
@@ -96,7 +99,7 @@ WI（選定結果の`担当モデル`）が担当とモデル・effortを指定�
 - 後任へは前任の起動本文と、あれば`引き継ぎ記録先`を`（継続）`として渡す。`atk run-script session-review-prepare`の`conversation.md`と記録の両方を読み、現在の確定事項と残工程を復元し、追送と各turnの最終応答は全文を渡す。詳細照会は`atk run-script session-review-evidence -- --codex-thread-id <id>`または`--claude-session-id <id>`の`--detail <記録位置>`を示し、コマンドを実行できない後任へは記録ファイルの絶対パスを渡す。Antigravityの前任には`atk agents logs <session_id> --format markdown`の出力を渡す。後任には完了済みの操作と成果物を現物で確かめ、最新の指示と残る認可内の工程を続けるよう伝える
 - 設定値の書換えと`atk config set`の使用は禁止する。設定はユーザー単位の単一値を全セッションが共有し、並行セッションへ波及するためである
 - Claude CodeのWeekly limitと5時間の利用上限による拒否は代替起動の対象にせず、解除を待って同じClaudeで続ける（ユーザー指示。待てば確実に解除され、切替で文脈を失う方が損失が大きい）。`agents_server`は候補を切り替えず同じsessionで待ち、委譲元へは`api_error`の種別`usage_limit`で示す
-- Codexの二層待機で外側の実行セルがyieldしたことは、内側の`atk agents wait`の継続を示すだけであり、代替起動の契機にしない
+- Codexの外側セルと内側コマンドの待機中の扱いは`references/codex-runtime.md`「agents_serverの二層待機」に従う
 - 候補は「代替時の組合せの目安」の表から、失敗を観測した時点の内容で選ぶ。上位行から軽量行へ、各行で`codex`列、`claude`列の順を目安とし、最終的には観測した失敗と各組合せの可用性から判断する。組合せが表のどれに当たるかは`engine`と`model`の一致で決める。失敗した組合せが表にあれば同じ行のもう一方から試す。engineの実行機能自体を呼び出せない組合せは試さず利用不能とする。残る全てで失敗か利用不能なら打ち切り、「工程別モデル設定」の手順4へ戻る
 - 代替を試みた場合は、観測した失敗、`atk config get`の設定値、実際に用いた組合せ、対象工程、試さなかった組合せとその理由を報告へ記録する（努力目標）
 - 委譲先は自身の判断で設定と異なるengineやモデルへ切り替えず、「工程別モデル設定」の手順4のとおり返す
@@ -129,4 +132,6 @@ WI（選定結果の`担当モデル`）が担当とモデル・effortを指定�
 - 実行レビュー担当は実装担当の終端後に起動し、同じ最終HEADへ1ラウンド1回だけ割り当てる
 - 作業用の複製で起動する委譲先には、着手前に`git fetch`後の分岐元との差分を双方向で確かめ、分岐元が進んでいれば先に追随するよう指示する（努力目標）
 
-execute_engineが無くbase_engineを明示保存していた旧設定は、保存baseをexecuteの初期値へ一度引き継ぐ。明示executeと環境変数の優先を保ち、保存値から引継ぎ値を決める。旧base用環境指定をレーンへ使っていた場合はAGENT_TOOLKIT_CONFIG_EXECUTE_ENGINEへ分ける。reviewの保存値は保持する。専念型の複数要求のadd-wiだけは起動時にorchestrateを明示し、一般のadd-wiのbase用途を保つ。
+execute_engineが無くbase_engineを明示保存していた旧設定は、保存baseをexecuteの初期値へ一度引き継ぐ。明示executeと環境変数の優先を保ち、保存値から引継ぎ値を決める。旧base用環境指定をレーンへ使っていた場合はAGENT_TOOLKIT_CONFIG_EXECUTE_ENGINEへ分ける。reviewの保存値は保持する。
+add-wiは専念型・付随型とも役割定義のbase用途と上位段位を使う。
+orchestrate用途はprocess-loop、run-skillと最上位オーケストレーターへ適用する。

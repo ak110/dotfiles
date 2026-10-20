@@ -73,6 +73,8 @@ def test_python_heredoc_write_uses_invocation_cwd(tmp_path):
         "atk read-file -- large.txt",
         "atk read-file --start 0 --max-bytes 12000 -- large.txt",
         "atk read-file --max-bytes=12000 --start=0 -- large.txt",
+        "atk read-file -- large.txt --start 0 --max-bytes 12000",
+        "atk read-file -- large.txt --max-bytes=12000 --start=0",
     ],
 )
 def test_partial_delivery_keeps_large_read_trigger_unchanged(tmp_path: pathlib.Path, command: str) -> None:
@@ -231,13 +233,45 @@ def test_block_notice_leads_to_read_file(tmp_path: pathlib.Path, capsys: pytest.
             atk.main(argv[1:])
         captured = capsys.readouterr()
         assert not captured.err
-        assert len(captured.out.encode("utf-8")) <= 4096
+        assert len(captured.out.encode("utf-8")) <= 16384
         result = json.loads(captured.out)
         parts.append(result["text"])
         if result["eof"]:
             break
         argv = ["atk", "read-file", "--start", str(result["next"]), "--", str(path)]
     assert "".join(parts).encode("utf-8") == path.read_bytes()
+
+
+@pytest.mark.parametrize("multiple", [False, True])
+def test_notice_continuation_commands_roundtrip_utf8(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], multiple: bool
+) -> None:
+    """単一・複数遮断通知の完成形へnextを指定し、同じパスの日本語とCRLFを終端まで復元する。"""
+    monkeypatch.setenv("AGENT_TOOLKIT_LARGE_READ_BYTES", "100")
+    paths = [tmp_path / "file's name.txt", *([tmp_path / "second file.txt"] if multiple else [])]
+    for index, path in enumerate(paths):
+        path.write_bytes((f"本文{index}\r\n" * 3000).encode("utf-8"))
+    notice = _codex_read(shlex.join(["cat", *map(str, paths)]), tmp_path)
+    assert notice is not None
+    initial = re.findall(r"`(atk read-file -- [^`]+)`", notice)
+    continuations = re.findall(r"`(atk read-file --start <next> -- [^`]+)`", notice)
+    assert len(initial) == len(continuations) == len(paths)
+    for path, first, continuation in zip(paths, initial, continuations, strict=True):
+        assert shlex.split(continuation)[-1] == str(path)
+        argv = shlex.split(first)
+        parts: list[str] = []
+        while True:
+            with pytest.raises(SystemExit, match="0"):
+                atk.main(argv[1:])
+            result = capsys.readouterr()
+            assert not result.err
+            response = json.loads(result.out)
+            parts.append(response["text"])
+            if response["eof"]:
+                break
+            argv = shlex.split(continuation.replace("<next>", str(response["next"])))
+        assert len(parts) > 1
+        assert "".join(parts).encode("utf-8") == path.read_bytes()
 
 
 @pytest.mark.parametrize("change", ["cd", "pushd"])

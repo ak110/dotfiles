@@ -5,7 +5,6 @@ import pathlib
 import pytest
 
 from agent_toolkit import atk
-from agent_toolkit._atk.wi.constants import WI_STATES
 from agent_toolkit._testing import git_repository
 
 
@@ -27,11 +26,9 @@ def test_commit_transition_from_outside_worktree(
     for directory in (notes, target):
         directory.mkdir()
         git_repository.init_repository(directory, initial_branch="main")
-    for state in WI_STATES:
-        (notes / state).mkdir()
-        (notes / state / ".gitkeep").touch()
-    source = notes / "processing/entry.md"
-    original = "---\ntarget_repo: github.com/example/target\ntype: awi\nsource: test\n---\n\n要求\n"
+    source = notes / "2026/10/entry.md"
+    source.parent.mkdir(parents=True)
+    original = "---\nstate: processing\ntarget_repo: github.com/example/target\ntype: awi\nsource: test\n---\n\n要求\n"
     source.write_text(original, encoding="utf-8")
     git_repository.git_output(notes, "add", ".")
     git_repository.git_output(notes, "commit", "-q", "-m", "base")
@@ -51,14 +48,14 @@ def test_commit_transition_from_outside_worktree(
     output = capsys.readouterr()
     if case == "resolved":
         assert captured.value.code == 0, output
-        result = notes / ("adopted" if action == "adopt" else "rejected") / source.name
-        text = result.read_text(encoding="utf-8")
+        text = source.read_text(encoding="utf-8")
+        assert f"state: {'adopted' if action == 'adopt' else 'rejected'}\n" in text
         short = git_repository.git_output(target, "rev-parse", "--short", oid)
         assert f"- 対応commit: {short}\n" in text
         assert "- 対応commit件名: 要求を反映する" in text
         assert oid not in text
         assert "- 対応commit作成者日時:" not in text
-        assert not source.exists()
+        assert source.exists()
     else:
         assert captured.value.code == 2, output
         assert source.read_text(encoding="utf-8") == original

@@ -60,9 +60,17 @@ AWIとUWIは採否と実現方式を投入前に一案へ確定し、投入前�
 
 ## 状態と依存
 
+WIの保存先は`private-notes/<type>/yyyy/MM/<filename>`へ固定し、保存状態はfrontmatterの`state`で管理する。
+状態遷移によってファイルパス、内部キーと画面URLは変わらない。
+旧配置は公開CLIの移行へ委ね、配置の衝突がある場合は診断に従って解消してから再実行する。
+
 WIの保存状態は`inbox`、`processing`、`hold`、`adopted`、`rejected`であり、`agent-toolkit:process-wi`は`inbox`と`processing`だけを処理する。既存WIの更新・修復・採否の見直しが必要と分かった時点と、既存WIへの具体的な懸念を受けた時点では、調査や認識合わせより先に対象を保留する。
 処理中の項目の扱い: 別セッションが処理中の`processing`の項目は保留も本文の置換もせず、書き換えたい内容を新しい項目として投入する。
 状態遷移、採否操作、保留と本文修正、終端、依存と冷却時間、事前承認型UWIの元項目の保留と「回答済みUWIの取り込み」は[references/states-and-dependencies.md](references/states-and-dependencies.md)、上流リポジトリへの投入は[references/cross-repository-submission.md](references/cross-repository-submission.md)が定める。
+
+重要フラグはfrontmatterの`important: true`で表し、欠落をfalse、解除をキーの除去として扱う。
+一覧・検索・全件表示とWeb一覧は`all`・`yes`・`no`の重要フィルターを使える。
+重要フラグは通常のprocess-wiの選定、優先度と状態遷移へ影響せず、ユーザーが対象集合として明示した場合に参照する。
 
 ## 事後承認型UWI
 
@@ -78,7 +86,7 @@ WIの追跡先と本文形式を同じ工程に求めるリポジトリでは、
 依存を伴う要求は、`references/states-and-dependencies.md`の先行成果の必要性基準で確定した依存だけを後続本文と`depends_on`へ反映する。
 投入済みの項目へ着手するエージェントは、`## 反映内容と反映先`・`## 完成条件`と`## 適用範囲`の対象集合の一致を`references/drafting-completion.md`「投入前の読み直し」と同じ基準で確かめ、不一致は実装へ進まず原要求と現物から復元して本文を訂正する。
 
-1. 他作業の分析・実装の文脈を持つ主体が通常AWIを投入・更新するときは、`${CLAUDE_PLUGIN_ROOT}/share/add-wi.parent.md`の付随型として調査・起草を独立担当へ委譲し、親の意味の検収を経て同じ担当が保存する。専念型（WI作成専用の`add-awi-by-user`と、`${CLAUDE_PLUGIN_ROOT}/share/add-wi.parent.md`「起動方法」が定める場面）は、作成主体が`references/drafting-workflow.md`の共通手順と投入前レビューを経て保存まで完結する。`add-awi-by-user`は同スキルの独立要求数で作成主体を決める。既存AWIの更新では対象の`ファイル名`と取得済み証拠・要件差分を使い、状態の保留と解除は状態契約に従う。ユーザーだけが決める値は確認できるメインへ戻す。
+1. 他作業の分析・実装の文脈を持つ主体が通常AWIを投入・更新するときは、`${CLAUDE_PLUGIN_ROOT}/share/add-wi.parent.md`の付随型として調査・起草を独立担当へ委譲し、親の意味の検収を経て同じ担当が保存する。専念型の場面は`add-awi-by-user`と同書「起動方法」が定める。作成主体は`references/drafting-workflow.md`の共通手順と「直接起草と独立した検収の選択」で定まる検収を経て保存まで完結する。`add-awi-by-user`は同スキルの独立要求数で作成主体を決める。既存AWIの更新では対象の`ファイル名`と取得済み証拠・要件差分を使い、状態の保留と解除は状態契約に従う。ユーザーだけが決める値は確認できるメインへ戻す。
 2. 本文はファイルへ保存し、`atk wi add --body-file <path>`か`atk wi edit --body-file <path>`で渡す（本文をコマンドライン引数で渡す形式は無い。手元で短い本文を書く場合は`$EDITOR`を使う）。同じ対象リポジトリへ同時に確定した複数件は、`--body-file`を繰り返して1回の`atk wi add`へまとめる（努力目標。commitとpushが1回で済む）。依存する複数件は先行項目から投入し、返った正式ファイル名を後続の`depends_on`と本文へ記入する。
 3. 本文が確定した順に登録し、セッション終了時までためない。
 4. 登録するAWIの対象ファイルが現在のセッションの変更対象と重なる場合は、別の作業ツリーでの並行着手と着手の遅れを比べて登録の時機を選ぶ（努力目標）。

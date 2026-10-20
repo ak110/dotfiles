@@ -22,10 +22,9 @@ async def test_start_failure_reports_command_returncode_and_stderr(
         "import sys; sys.stderr.write('起動診断\\n'); raise SystemExit(23)",
     )
     monkeypatch.setattr(subject, "APP_SERVER_COMMAND", command)
-    client = subject.JsonRpcProcess(_ignore_message, _ignore_message)
-
-    with pytest.raises(subject.AppServerError) as raised:
-        await client.start()
+    async with subject.JsonRpcProcess(_ignore_message, _ignore_message) as client:
+        with pytest.raises(subject.AppServerError) as raised:
+            await client.start()
 
     message = str(raised.value)
     assert f"command={' '.join(command)}" in message
@@ -43,10 +42,9 @@ async def test_start_failure_bounds_reported_stderr(monkeypatch: pytest.MonkeyPa
     )
     monkeypatch.setattr(subject, "APP_SERVER_COMMAND", command)
     monkeypatch.setattr(subject, "APP_SERVER_STDERR_LIMIT_CHARS", 8)
-    client = subject.JsonRpcProcess(_ignore_message, _ignore_message)
-
-    with pytest.raises(subject.AppServerError) as raised:
-        await client.start()
+    async with subject.JsonRpcProcess(_ignore_message, _ignore_message) as client:
+        with pytest.raises(subject.AppServerError) as raised:
+            await client.start()
 
     message = str(raised.value)
     assert "stderr=aaaaaa末尾" in message

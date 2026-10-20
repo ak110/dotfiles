@@ -11,6 +11,7 @@ import pathlib
 import re
 
 from agent_toolkit._common import message_format as _message_format
+from agent_toolkit._common.session_state import state_path
 
 SESSION_STATE_FILENAME_TEMPLATE = "claude-agent-toolkit-{session_id}.json"
 
@@ -45,7 +46,8 @@ def delivery_payload(delivered: str) -> str:
 
 def _read_state(state_dir: pathlib.Path, session_id: str) -> dict:
     """テスト用一時ディレクトリからセッション状態を読み込む。"""
-    path = state_dir / SESSION_STATE_FILENAME_TEMPLATE.format(session_id=session_id)
+    del state_dir
+    path = state_path(session_id)
     if not path.exists():
         return {}
     return json.loads(path.read_text(encoding="utf-8"))

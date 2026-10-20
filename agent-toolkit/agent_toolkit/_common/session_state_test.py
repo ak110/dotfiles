@@ -11,6 +11,7 @@ import pathlib
 import sys
 import tempfile
 import threading
+import time
 from typing import Any, cast
 
 import pytest
@@ -33,6 +34,120 @@ from agent_toolkit._testing.helpers import SESSION_STATE_FILENAME_TEMPLATE
 def _redirect_tempdir(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
     """`tempfile.gettempdir()`が`tmp_path`を返すよう差し替える。"""
     monkeypatch.setattr(tempfile, "tempdir", str(tmp_path))
+    state_path("sid").parent.mkdir(parents=True, exist_ok=True)
+
+
+def _lock_path(session_id: str) -> pathlib.Path:
+    return state_path(session_id).parent / ".state.lock"
+
+
+def test_state_survives_changed_tempdir(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
+    """委譲先とスキルの記録は一時領域の切替後も同じ状態として読める。"""
+    expected = {"agents_server_cwd_by_session": {"child": "/work"}, "operation_skill_delivered_agents": {"search": ["main"]}}
+    assert update_state("resumed", lambda _current: expected)
+    original = state_path("resumed")
+    changed = tmp_path / "changed"
+    changed.mkdir()
+    monkeypatch.setattr(tempfile, "tempdir", str(changed))
+    assert state_path("resumed") == original
+    assert read_state("resumed") == expected
+    assert update_state("resumed", lambda current: {**current, "continued": True})
+    assert read_state("resumed") == {**expected, "continued": True}
+    assert not (changed / original.name).exists()
+
+
+def test_legacy_state_migrates_once(tmp_path: pathlib.Path) -> None:
+    """旧状態を読取と更新の両方から移し、移行済みの内容を優先する。"""
+    legacy = tmp_path / SESSION_STATE_FILENAME_TEMPLATE.format(session_id="legacy")
+    legacy.write_text('{"old": true}', encoding="utf-8")
+    assert read_state("legacy") == {"old": True}
+    assert state_path("legacy").is_file()
+    assert not legacy.exists()
+    legacy.write_text('{"stale": true}', encoding="utf-8")
+    assert update_state("legacy", lambda current: {**current, "new": True})
+    assert read_state("legacy") == {"old": True, "new": True}
+    assert clear_session_state("legacy")
+    assert not read_state("legacy")
+
+
+def test_same_session_updates_share_lock_across_tempdirs(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
+    """異なる一時領域を使う呼出元も、同じ状態への加算を失わない。"""
+    directories = {name: tmp_path / name for name in ("state-first", "state-second")}
+    for directory in directories.values():
+        directory.mkdir()
+    monkeypatch.setattr(tempfile, "gettempdir", lambda: str(directories.get(threading.current_thread().name, tmp_path)))
+    ready = threading.Barrier(2)
+    failures: list[str] = []
+
+    def writer() -> None:
+        ready.wait(timeout=5)
+        for _ in range(20):
+
+            def increment(current: dict) -> dict:
+                count = current.get("count", 0)
+                time.sleep(0.002)
+                return {**current, "count": count + 1}
+
+            if not update_state("shared", increment):
+                failures.append(threading.current_thread().name)
+
+    threads = [threading.Thread(target=writer, name=name) for name in directories]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(timeout=5)
+    for thread in threads:
+        assert not thread.is_alive()
+    assert not failures
+    assert read_state("shared") == {"count": 40}
+    assert {path.name for path in state_path("shared").parent.glob("*.lock")} == {".state.lock"}
+
+
+def test_state_cleanup_keeps_one_fixed_lock() -> None:
+    """会話数に比例した空lockを残さず、JSON回収後も共有lockの実体を保つ。"""
+    for index in range(10):
+        assert update_state(f"session-{index}", lambda _current: {"active": True})
+    directory = state_path("session-0").parent
+    assert {path.name for path in directory.glob("*.lock")} == {".state.lock"}
+    assert clear_session_state("session-0")
+    assert sweep_stale_states(now=time.time() + STALE_STATE_MAX_AGE_SECONDS + 60) == 9
+    assert {path.name for path in directory.iterdir()} == {".state.lock"}
+
+
+def test_transcript_preparation_keeps_shared_lock_available(monkeypatch: pytest.MonkeyPatch) -> None:
+    """前身記録の走査中にも、別会話の短い状態更新を進められる。"""
+    assert update_state("previous", lambda _current: {"inherited": True})
+    reading = threading.Event()
+    release = threading.Event()
+    mutation_done = threading.Event()
+    inherited: list[bool] = []
+
+    def read_lines(_path: str) -> list[str]:
+        reading.set()
+        assert release.wait(timeout=5)
+        return [json.dumps({"sessionId": "previous"})]
+
+    def mutate() -> None:
+        update_state("other", lambda _current: {"updated": True})
+        mutation_done.set()
+
+    monkeypatch.setattr("agent_toolkit._common.transcript.read_transcript_lines", read_lines)
+    preparation = threading.Thread(target=lambda: inherited.append(inherit_state_from_transcript("current", "record")))
+    mutation = threading.Thread(target=mutate)
+    preparation.start()
+    try:
+        assert reading.wait(timeout=5)
+        mutation.start()
+        assert mutation_done.wait(timeout=2)
+    finally:
+        release.set()
+        preparation.join(timeout=5)
+        if mutation.ident is not None:
+            mutation.join(timeout=5)
+    assert not preparation.is_alive()
+    assert not mutation.is_alive()
+    assert inherited == [True]
+    assert read_state("other") == {"updated": True}
 
 
 class TestUpdateState:
@@ -70,10 +185,10 @@ class TestUpdateState:
             update_state("sid", _bad_mutator)
         assert read_state("sid") == {"a": 1}
 
-    def test_temp_file_not_left_behind(self, tmp_path: pathlib.Path) -> None:
+    def test_temp_file_not_left_behind(self) -> None:
         """書き込み完了後に一時ファイル（`*.tmp`）が残らないこと。"""
         update_state("sid", lambda current: {**current, "a": 1})
-        residual = list(tmp_path.glob("*.tmp"))
+        residual = list(state_path("sid").parent.glob("*.tmp"))
         assert not residual
 
     def test_corrupt_state_treated_as_empty(self) -> None:
@@ -137,7 +252,7 @@ class TestPosixLock:
 
     def test_lock_file_created(self) -> None:
         update_state("posix", lambda current: {**current, "k": "v"})
-        lock_path = state_path("posix").parent / (state_path("posix").name + ".lock")
+        lock_path = _lock_path("posix")
         assert lock_path.exists()
 
 
@@ -147,7 +262,7 @@ class TestWindowsLock:
 
     def test_lock_file_created(self) -> None:
         update_state("win", lambda current: {**current, "k": "v"})
-        lock_path = state_path("win").parent / (state_path("win").name + ".lock")
+        lock_path = _lock_path("win")
         assert lock_path.exists()
 
 
@@ -205,7 +320,7 @@ class TestDeleteState:
     def test_existing_state_is_deleted_but_lock_is_kept(self) -> None:
         update_state("sid", lambda current: {**current, "a": 1})
         path = state_path("sid")
-        lock_path = path.parent / (path.name + ".lock")
+        lock_path = _lock_path("sid")
 
         assert delete_state("sid") is True
         assert not path.exists()
@@ -256,7 +371,7 @@ class TestSweepStaleStates:
         """期限内の状態ファイルと対のロックは残す。"""
         update_state("fresh", lambda current: {**current, "a": 1})
         target = state_path("fresh")
-        lock = target.parent / (target.name + ".lock")
+        lock = _lock_path("fresh")
 
         assert sweep_stale_states() == 0
         assert target.exists()
@@ -266,7 +381,7 @@ class TestSweepStaleStates:
         """期限を過ぎた状態ファイルは回収するが、対応するロックは削除しない。"""
         update_state("stale", lambda current: {**current, "a": 1})
         target = state_path("stale")
-        lock = target.parent / (target.name + ".lock")
+        lock = _lock_path("stale")
         self._age(target, STALE_STATE_MAX_AGE_SECONDS + 60)
         self._age(lock, STALE_STATE_MAX_AGE_SECONDS + 60)
 
@@ -282,7 +397,7 @@ class TestSweepStaleStates:
         """
         update_state("resumed", lambda current: {**current, "a": 1})
         target = state_path("resumed")
-        lock = target.parent / (target.name + ".lock")
+        lock = _lock_path("resumed")
         self._age(lock, STALE_STATE_MAX_AGE_SECONDS + 60)
 
         assert sweep_stale_states() == 0
@@ -313,7 +428,7 @@ class TestSweepStaleStates:
         update_state("ending", lambda current: {**current, "a": 1})
         update_state("stale", lambda current: {**current, "a": 1})
         target = state_path("ending")
-        lock = target.parent / (target.name + ".lock")
+        lock = _lock_path("ending")
         self._age(target, STALE_STATE_MAX_AGE_SECONDS + 60)
         self._age(lock, STALE_STATE_MAX_AGE_SECONDS + 60)
         self._age(state_path("stale"), STALE_STATE_MAX_AGE_SECONDS + 60)
@@ -341,7 +456,7 @@ class TestSweepStaleStates:
         session_id = "stale-refresh-race"
         update_state(session_id, lambda current: {**current, "expired": True})
         target = state_path(session_id)
-        lock = target.with_name(target.name + ".lock")
+        lock = _lock_path(session_id)
         self._age(target, STALE_STATE_MAX_AGE_SECONDS + 60)
         self._age(lock, STALE_STATE_MAX_AGE_SECONDS + 60)
 
@@ -388,7 +503,7 @@ class TestClearSessionState:
         assert clear_session_state("sid") is True
 
         assert not normal.exists()
-        assert normal.with_name(normal.name + ".lock").exists()
+        assert _lock_path("sid").exists()
 
     def test_invalid_session_ids_fail(self) -> None:
         assert clear_session_state("") is False

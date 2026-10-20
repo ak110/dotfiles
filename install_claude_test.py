@@ -22,6 +22,7 @@ from _test_helpers import (
     run_installer,
     serve_rules,
 )
+from pytools._internal import common
 
 LEGACY_CODEX_MCP_CASES = REPO_ROOT / "pytools" / "_internal" / "legacy_codex_mcp_cases.json"
 
@@ -149,10 +150,8 @@ def test_restart_notice_requires_codex_plugin_state_change(
 
 
 @pytest.mark.parametrize("kind", installer_runners())
-def test_plugin_update_preserves_previous_cache_for_first_wrapper_transition(
-    kind: str, tmp_path: pathlib.Path, rules_url: str
-) -> None:
-    """初回のラッパー配置では旧プラグイン実体を保持し、互換リンクは復元しない。"""
+def test_plugin_update_preserves_all_previous_cache_versions(kind: str, tmp_path: pathlib.Path, rules_url: str) -> None:
+    """更新時は全ての通常versionディレクトリを保持し、互換リンクは復元しない。"""
     home = tmp_path / "home"
     home.mkdir()
     codex_home = tmp_path / "custom-codex"
@@ -160,6 +159,9 @@ def test_plugin_update_preserves_previous_cache_for_first_wrapper_transition(
     old_compat = cache_root / "1.2.1"
     old_compat.parent.mkdir(parents=True)
     old_compat.symlink_to("1.2.2", target_is_directory=True)
+    older = cache_root / "1.2.0" / "scripts"
+    older.mkdir(parents=True)
+    (older / "hook.py").write_text("older hook\n", encoding="utf-8")
     stub_bin, stub_log = make_command_stubs(tmp_path)
 
     run_installer(
@@ -175,18 +177,14 @@ def test_plugin_update_preserves_previous_cache_for_first_wrapper_transition(
 
     assert not (codex_home / "plugins/cache-compat/ak110-dotfiles/agent-toolkit/versions").exists()
     assert not old_compat.is_symlink()
+    assert (cache_root / "1.2.0" / "scripts" / "hook.py").read_text(encoding="utf-8") == "older hook\n"
     assert (cache_root / "1.2.2" / "scripts" / "hook.py").read_text(encoding="utf-8") == "old hook\n"
 
 
-# インストーラーを延期と再実行の2回起動するため、1回分を見込んだ既定の上限より長くする。
-@pytest.mark.timeout(180)
 @pytest.mark.skipif(not sys.platform.startswith("linux"), reason="実行名をsymlinkで与える常駐プロセスはLinuxで起動する")
 @pytest.mark.parametrize("kind", installer_runners())
-def test_running_codex_defers_plugin_update_until_session_ends(kind: str, tmp_path: pathlib.Path, rules_url: str) -> None:
-    """既存版を使うCodexの稼働中は`codex plugin add`を呼ばず旧cacheを残し、終了後の再実行で更新する。
-
-    スタブの`codex plugin add`は公式CLIと同じく旧cacheを削除するため、延期せずに進むと旧版のhookが消える。
-    """
+def test_running_codex_updates_and_preserves_previous_cache(kind: str, tmp_path: pathlib.Path, rules_url: str) -> None:
+    """Codexセッションの稼働中も更新し、CLIが削除した旧cacheを同じ絶対パスへ戻す。"""
     home = tmp_path / "home"
     home.mkdir()
     codex_home = home / ".codex"
@@ -197,9 +195,8 @@ def test_running_codex_defers_plugin_update_until_session_ends(kind: str, tmp_pa
     session_executable = tmp_path / "resident-bin" / "codex"
     session_executable.parent.mkdir()
     session_executable.symlink_to(sleep)
-    session = subprocess.Popen([str(session_executable), "600"])  # pylint: disable=consider-using-with
-    try:
-        deferred = run_installer(
+    with common.process_scope([str(session_executable), "600"]):
+        result = run_installer(
             kind,
             home,
             rules_url,
@@ -208,33 +205,11 @@ def test_running_codex_defers_plugin_update_until_session_ends(kind: str, tmp_pa
             codex_plugin_before=("1.2.2", True),
             codex_plugin_after=("1.2.3", True),
             codex_home=codex_home,
-            extra_env={"PS_STUB_PIDS": str(session.pid)},
         )
-        assert not any("codex plugin add" in line for line in read_log_lines(stub_log))
+        assert any("codex plugin add agent-toolkit@ak110-dotfiles --json" in line for line in read_log_lines(stub_log))
         assert old_hook.read_text(encoding="utf-8") == "old hook\n"
-        assert f"稼働中: {session.pid} codex" in deferred.stderr
-        assert "保持中の版: 1.2.2（有効）。未反映の目標版: 1.2.3。" in deferred.stderr
-        assert "Codexのセッションを全て終了してから、同じインストーラーを再実行してください。" in deferred.stderr
-        assert "codex app-server daemon restart" not in deferred.stderr
-    finally:
-        session.kill()
-        session.wait(timeout=10)
-
-    # 再実行も更新前の導入状態から始めるため、スタブが返す導入状態を更新前へ戻す。
-    stub_log.with_suffix(".codex-plugin-state").unlink()
-    run_installer(
-        kind,
-        home,
-        rules_url,
-        stub_bin=stub_bin,
-        stub_log=stub_log,
-        codex_plugin_before=("1.2.2", True),
-        codex_plugin_after=("1.2.3", True),
-        codex_home=codex_home,
-        extra_env={"PS_STUB_PIDS": str(session.pid)},
-    )
-    assert any("codex plugin add agent-toolkit@ak110-dotfiles --json" in line for line in read_log_lines(stub_log))
-    assert (codex_home / "plugins/cache/ak110-dotfiles/agent-toolkit/1.2.3/agent_toolkit/hook.py").is_file()
+        assert (codex_home / "plugins/cache/ak110-dotfiles/agent-toolkit/1.2.3/agent_toolkit/hook.py").is_file()
+        assert "更新を延期" not in result.stderr
 
 
 @pytest.mark.parametrize("kind", installer_runners())
@@ -546,6 +521,44 @@ def test_propagates_required_setup_failures(
     )
 
     assert result.returncode != 0
+
+
+@pytest.mark.parametrize("kind", installer_runners())
+def test_plugin_add_failure_restores_previous_cache(kind: str, tmp_path: pathlib.Path, rules_url: str) -> None:
+    """plugin addが旧cacheを削除して失敗した場合は、更新前の全versionを復旧する。"""
+    home = tmp_path / "home"
+    home.mkdir()
+    codex_home = home / ".codex"
+    cache_root = codex_home / "plugins/cache/ak110-dotfiles/agent-toolkit"
+    older = cache_root / "1.2.1" / "scripts"
+    older.mkdir(parents=True)
+    (older / "hook.py").write_text("older hook\n", encoding="utf-8")
+    stub_bin, stub_log = make_command_stubs(tmp_path)
+
+    result = run_installer(
+        kind,
+        home,
+        rules_url,
+        stub_bin=stub_bin,
+        stub_log=stub_log,
+        fail_pattern="codex plugin add",
+        codex_plugin_before=("1.2.2", True),
+        codex_home=codex_home,
+        delete_cache_before_failure=True,
+        check=False,
+    )
+
+    assert result.returncode != 0
+    assert (older / "hook.py").read_text(encoding="utf-8") == "older hook\n"
+    assert (cache_root / "1.2.2/scripts/hook.py").read_text(encoding="utf-8") == "old hook\n"
+
+
+def test_cache_restore_failure_reports_retained_backup() -> None:
+    """両OSのインストーラーは復旧失敗時に退避先の扱いと報告先を案内する。"""
+    instruction = "退避先を変更せず、表示された内容とパスをdotfilesの作者へ報告してください。"
+
+    assert instruction in INSTALL_SH.read_text(encoding="utf-8")
+    assert instruction in INSTALL_PS1.read_text(encoding="utf-8-sig")
 
 
 @pytest.mark.parametrize("kind", installer_runners())

@@ -1,6 +1,7 @@
 """`atk wi process-loop`の待機中の変更の監視のテスト。"""
 
 import collections
+import contextlib
 import os
 import pathlib
 import select
@@ -8,7 +9,7 @@ import subprocess
 import sys
 import threading
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Generator
 from typing import Any
 
 # Windowsでは読み込めないため、POSIXだけで実行するテストが使う時点で読み込む。
@@ -30,7 +31,7 @@ from agent_toolkit._atk.wi import process_loop_worktree as _pl_worktree
 from agent_toolkit._atk.wi import readiness as _wi_readiness
 from agent_toolkit._atk.wi import sync as _wi_sync
 from agent_toolkit._atk.wi.process_loop_test import _start_entry
-from agent_toolkit._common import session_activity, session_registry
+from agent_toolkit._common import process_tree, session_activity, session_registry
 from agent_toolkit._testing.process_loop_support import fake_run_with_remote_url, isolate_process_loop_commands
 from agent_toolkit.atk_test import _setup_notes
 
@@ -85,8 +86,7 @@ class TestWaitForChanges:
     @staticmethod
     def _make_private_notes(tmp_path: pathlib.Path) -> pathlib.Path:
         private_notes = tmp_path / "private-notes"
-        (private_notes / "processing").mkdir(parents=True)
-        (private_notes / "inbox").mkdir(parents=True)
+        (private_notes / "2026" / "10").mkdir(parents=True)
         return private_notes
 
     @staticmethod
@@ -97,6 +97,8 @@ class TestWaitForChanges:
         observers: list[Any] = []
 
         class SynchronousObserver:
+            ident = None
+
             def __init__(self) -> None:
                 self._handlers: dict[pathlib.Path, watchdog.events.FileSystemEventHandler] = {}
                 observers.append(self)
@@ -112,7 +114,9 @@ class TestWaitForChanges:
                 self._handlers[pathlib.Path(path)] = handler
 
             def emit(self, path: pathlib.Path) -> None:
-                self._handlers[path.parent].on_any_event(watchdog.events.FileCreatedEvent(str(path)))
+                for directory, handler in self._handlers.items():
+                    if path.is_relative_to(directory):
+                        handler.on_any_event(watchdog.events.FileCreatedEvent(str(path)))
 
             def start(self) -> None:
                 self.emit(initial_event_path)
@@ -130,12 +134,12 @@ class TestWaitForChanges:
 
         return emit
 
-    def test_missing_inbox_dirs_are_created(
+    def test_missing_private_notes_root_is_created(
         self,
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
     ) -> None:
-        """inboxディレクトリ未作成でも監視前に作成され、タイムアウト時の処理が動作すること。"""
+        """保存先が未作成でも監視前に作成され、タイムアウト時の処理が動作すること。"""
         private_notes = tmp_path / "private-notes"
         monkeypatch.setattr(_pl_watch, "_POLL_INTERVAL_SEC", 0.1)
         monkeypatch.setattr(_pl_watch, "_DEBOUNCE_SEC", 0.1)
@@ -144,8 +148,7 @@ class TestWaitForChanges:
 
         _pl_watch.wait_for_changes(private_notes, None)  # pylint: disable=protected-access  # noqa: SLF001
 
-        assert (private_notes / "processing").is_dir()
-        assert (private_notes / "inbox").is_dir()
+        assert private_notes.is_dir()
         assert pull_calls == [private_notes]
 
     def test_timeout_triggers_pull(
@@ -205,7 +208,7 @@ class TestWaitForChanges:
     ) -> None:
         """タイムアウト前に`.md`ファイル変更を検知した場合、`pull`が呼ばれないこと。"""
         private_notes = self._make_private_notes(tmp_path)
-        inbox = private_notes / "inbox"
+        inbox = private_notes / "2026" / "10"
         entry = inbox / "entry.md"
         self._use_synchronous_observer(monkeypatch, entry)
         monkeypatch.setattr(_pl_watch, "_POLL_INTERVAL_SEC", 0.1)
@@ -224,7 +227,7 @@ class TestWaitForChanges:
     ) -> None:
         """デバウンス窓内の追加イベントが`clear`→`wait(timeout=_DEBOUNCE_SEC)`ループで1回の変更にまとめられること。"""
         private_notes = self._make_private_notes(tmp_path)
-        inbox = private_notes / "inbox"
+        inbox = private_notes / "2026" / "10"
         entry1 = inbox / "entry1.md"
         entry2 = inbox / "entry2.md"
         emit = self._use_synchronous_observer(monkeypatch, entry1)
@@ -699,20 +702,32 @@ if mode != "plain":
 """
 
 
-def _start_wait_process(tmp_path: pathlib.Path, mode: str, grace: float, stdin: Any) -> subprocess.Popen[bytes]:
+@contextlib.contextmanager
+def _start_wait_process(tmp_path: pathlib.Path, mode: str, grace: float, stdin: Any) -> Generator[subprocess.Popen[bytes]]:
     """開始前待機を別プロセスで動かし、待機の後に同じ標準入力を後段として読む。"""
     script = tmp_path / "start_wait.py"
     script.write_text(_START_WAIT_SCRIPT, encoding="utf-8")
     notes = _setup_notes(tmp_path)
     env = {**os.environ, "AGENT_TOOLKIT_PROCESS_LOOP_SESSION": "1", "PYTHONPATH": str(pathlib.Path(atk.__file__).parents[1])}
-    return subprocess.Popen(
+    with process_tree.process_scope(
         [sys.executable, str(script), mode, str(notes), str(grace)],
         stdin=stdin,
         stdout=stdin if isinstance(stdin, int) else subprocess.PIPE,
         stderr=subprocess.STDOUT,
         env=env,
         start_new_session=True,
-    )
+    ) as process:
+        yield process
+
+
+@contextlib.contextmanager
+def _pseudo_terminal() -> Generator[tuple[int, int, Callable[[], None]]]:
+    """両端を獲得直後から所有し、子へ渡したslaveだけを早期解放できるようにする。"""
+    with contextlib.ExitStack() as master_owner, contextlib.ExitStack() as slave_owner:
+        master, slave = pty.openpty()
+        master_owner.callback(os.close, master)
+        slave_owner.callback(os.close, slave)
+        yield master, slave, slave_owner.close
 
 
 def _read_until(master: int, marker: str, buffer: bytearray, *, timeout: float = 60.0) -> None:
@@ -735,10 +750,11 @@ def _read_until(master: int, marker: str, buffer: bytearray, *, timeout: float =
 @pytest.mark.skipif(os.name != "posix", reason="POSIXの擬似端末でだけ前景TTYを作成できる")
 def test_enter_on_posix_pty(tmp_path: pathlib.Path) -> None:
     """前景TTYでは案内を表示し、Enterで解除してログへ残し、後の入力を後段へ渡す。"""
-    master, slave = pty.openpty()
-    try:
-        process = _start_wait_process(tmp_path, "ctty", 600.0, slave)
-        os.close(slave)
+    with (
+        _pseudo_terminal() as (master, slave, release_slave),
+        _start_wait_process(tmp_path, "ctty", 600.0, slave) as process,
+    ):
+        release_slave()
         buffer = bytearray()
         _read_until(master, "Enterで今回の待機を解除", buffer)
         os.write(master, b"\n")
@@ -746,8 +762,6 @@ def test_enter_on_posix_pty(tmp_path: pathlib.Path) -> None:
         os.write(master, b"child-input\n")
         _read_until(master, "after:'child-input\\n'", buffer)
         assert process.wait(timeout=60) == 0
-    finally:
-        os.close(master)
     output = buffer.decode(errors="replace")
     assert "Enterの入力により開始前の待機を解除しました" in output
     assert any("event=start_wait_released trigger=enter" in line for line in _log_lines())
@@ -758,10 +772,11 @@ def test_enter_on_posix_pty(tmp_path: pathlib.Path) -> None:
 def test_enter_does_not_carry_over_to_next_start_wait(tmp_path: pathlib.Path, mode: str) -> None:
     """待機の外で届いたEnterと、1回の待機中の重ね押しの2回目を、次の開始前待機の解除に使わない。"""
     grace = 2.0
-    master, slave = pty.openpty()
-    try:
-        process = _start_wait_process(tmp_path, f"ctty-{mode}", grace, slave)
-        os.close(slave)
+    with (
+        _pseudo_terminal() as (master, slave, release_slave),
+        _start_wait_process(tmp_path, f"ctty-{mode}", grace, slave) as process,
+    ):
+        release_slave()
         buffer = bytearray()
         if mode == "early":
             _read_until(master, "ready", buffer)
@@ -776,8 +791,6 @@ def test_enter_does_not_carry_over_to_next_start_wait(tmp_path: pathlib.Path, mo
         os.write(master, b"child-input\n")
         _read_until(master, "after:'child-input\\n'", buffer)
         assert process.wait(timeout=60) == 0
-    finally:
-        os.close(master)
     output = buffer.decode(errors="replace")
     assert output.count("Enterの入力により") == (1 if mode == "twice" else 0)
     elapsed = [float(part.split()[0]) for part in output.split("elapsed=")[1:]]
@@ -790,30 +803,58 @@ def test_non_interactive_input_keeps_automatic_wait(tmp_path: pathlib.Path, mode
     """非TTY・EOF・閉鎖済み・入力不能・バックグラウンドジョブでは入力を読まず、期限で解除して入力を後段へ残す。"""
     grace = 2.0
     if mode == "pipe":
-        process = _start_wait_process(tmp_path, "pipe", grace, subprocess.PIPE)
-        stdout, _ = process.communicate(b"\n", timeout=60)
-        output = stdout.decode(errors="replace")
-        assert "after:'\\n'" in output
+        with _start_wait_process(tmp_path, "pipe", grace, subprocess.PIPE) as process:
+            stdout, _ = process.communicate(b"\n", timeout=60)
+            output = stdout.decode(errors="replace")
+            assert "after:'\\n'" in output
     else:
-        master, slave = pty.openpty()
-        try:
+        with _pseudo_terminal() as (master, slave, release_slave):
             script_mode = {"eof": "ctty", "closed": "closed", "no-controlling-terminal": "noctty", "background": "background"}
-            process = _start_wait_process(tmp_path, script_mode[mode], grace, slave)
-            os.close(slave)
-            buffer = bytearray()
-            _read_until(master, "開始前に待機します", buffer)
-            # EOFは端末の行頭でのVEOF（Ctrl-D）として送る。
-            os.write(master, b"\x04" if mode == "eof" else b"\n")
-            _read_until(master, "result=True", buffer)
-            if mode == "eof":
-                os.write(master, b"\n")
-            _read_until(master, "after:'\\n'", buffer)
-            assert process.wait(timeout=60) == 0
-        finally:
-            os.close(master)
+            with _start_wait_process(tmp_path, script_mode[mode], grace, slave) as process:
+                release_slave()
+                buffer = bytearray()
+                _read_until(master, "開始前に待機します", buffer)
+                # EOFは端末の行頭でのVEOF（Ctrl-D）として送る。
+                os.write(master, b"\x04" if mode == "eof" else b"\n")
+                _read_until(master, "result=True", buffer)
+                if mode == "eof":
+                    os.write(master, b"\n")
+                _read_until(master, "after:'\\n'", buffer)
+                assert process.wait(timeout=60) == 0
         output = buffer.decode(errors="replace")
     assert "待機条件が解除されました" in output
     assert "Enterの入力により" not in output
     assert ("Enterで今回の待機を解除" in output) is (mode == "eof")
     elapsed = float(output.split("elapsed=", 1)[1].split()[0])
     assert elapsed >= grace - 0.5
+
+
+@pytest.mark.parametrize("stage", ["prepare", "stop"])
+def test_observer_scope_releases_after_preparation_or_stop_failure(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, stage: str
+) -> None:
+    """監視準備の失敗でも停止し、stop失敗でも開始済みObserverのjoinへ進む。"""
+    calls: list[str] = []
+
+    class Observer:
+        ident = 1
+
+        def schedule(self, *_args: Any, **_kwargs: Any) -> None:
+            raise RuntimeError("監視準備の失敗")
+
+        def stop(self) -> None:
+            calls.append("stop")
+            if stage == "stop":
+                raise RuntimeError("監視停止の失敗")
+
+        def join(self) -> None:
+            calls.append("join")
+
+    monkeypatch.setattr(watchdog.observers, "Observer", Observer)
+    with pytest.raises(RuntimeError, match="監視"):
+        if stage == "prepare":
+            _pl_watch.wait_for_changes(tmp_path, "example/repo")
+        else:
+            with _pl_watch._watch_observer():  # pylint: disable=protected-access
+                pass
+    assert calls == ["stop", "join"]

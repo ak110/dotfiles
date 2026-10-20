@@ -540,6 +540,26 @@ def test_blocked_requires_actual_failure_of_same_work(tmp_path: pathlib.Path) ->
     assert termination_order_advisor.evaluate(stop_payload(tmp_path, "取得できない"))[0] == "approve"
 
 
+@pytest.mark.parametrize("action", ["blocked", "wait"])
+def test_rejected_host_stop_guides_to_continue_or_confirmation(tmp_path: pathlib.Path, action: str) -> None:
+    """通知による停止は受理条件を保ち、拒否の後の実行可能な工程へ案内する。"""
+    supply_commit(tmp_path)
+    if action == "wait":
+
+        def register(state: dict) -> dict:
+            state[termination_evidence.STATE_KEY]["works"]["work-1"]["async_targets"]["child"] = "started"
+            state["agents_server_sessions"] = {"child": {"owner_agent_id": "main", "pending_observation": False}}
+            return state
+
+        session_state.update_state("evidence-test", register)
+    document = {"session_id": "evidence-test", "work_id": "work-1", "action": action, "reason": "ホストの通知"}
+    document.update({"call_id": "commit"} if action == "blocked" else {"target_session_id": "child"})
+    code, reason = public_decision(tmp_path, document)
+    assert code == 2
+    assert "猶予通知" in reason and "同じ工程を続ける" in reason
+    assert "AskUserQuestion" in reason and "uwi_file" in reason
+
+
 @pytest.mark.parametrize(
     "action",
     ["cancel", "replace", "start", "resume", "instruction", "answer", "standing-authorization", "wait", "blocked"],
@@ -835,10 +855,10 @@ def test_public_wait_decision_uses_cli_lock_after_observation_attempt(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """委譲開始とPostToolUseの観測更新を経て、CLIの待機所有権で公開wait判断を受理する。"""
+    monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path / "state")
     supply_commit(tmp_path)
     monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "evidence-test")
     monkeypatch.delenv("CODEX_THREAD_ID", raising=False)
-    monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path / "state")
     start = {
         "session_id": "evidence-test",
         "tool_name": "mcp__plugin_agent-toolkit_agents_server__start",
@@ -1050,83 +1070,82 @@ async def test_started_session_without_projection_is_waited_by_same_work(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """表示保存に失敗した公開startのIDを同じ作業の待機対象とし、wait判断の受理から終端本文の回収まで到達する。"""
+    state_root = tmp_path / "state"
+    monkeypatch.setattr(state_paths, "state_dir", lambda: state_root)
     supply_commit(tmp_path)
     monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "evidence-test")
     monkeypatch.delenv("CODEX_THREAD_ID", raising=False)
-    state_root = tmp_path / "state"
-    monkeypatch.setattr(state_paths, "state_dir", lambda: state_root)
     writer = status_file.StatusFileWriter(
         {},
         status_file.StatusFileIdentity("evidence-test", "root.json", None),
         state_root=state_root,
         aggregate_seconds=0,
     )
-    current = manager.AgentsServerManager(writer)
-    agents_server_support.install_backend(current, "claude", _RegisteredBackend(current.sessions, "claude"))
-    monkeypatch.setattr(mcp_tools, "_MANAGER", current)
-    writer.activate()
-    writer.path.unlink(missing_ok=True)
-    original_replace = os.replace
+    async with manager.AgentsServerManager(writer) as current:
+        agents_server_support.install_backend(current, "claude", _RegisteredBackend(current.sessions, "claude"))
+        monkeypatch.setattr(mcp_tools, "_MANAGER", current)
+        writer.activate()
+        writer.path.unlink(missing_ok=True)
+        original_replace = os.replace
 
-    def refuse_projection(source: Any, target: Any) -> None:
-        if pathlib.Path(target) != writer.path:
-            original_replace(source, target)
-            return
-        error = _WindowsAccessDenied(13, "アクセスが拒否されました", str(source), None, str(target))
-        raise error
+        def refuse_projection(source: Any, target: Any) -> None:
+            if pathlib.Path(target) != writer.path:
+                original_replace(source, target)
+                return
+            error = _WindowsAccessDenied(13, "アクセスが拒否されました", str(source), None, str(target))
+            raise error
 
-    monkeypatch.setattr(atomic_file.os, "replace", refuse_projection)
-    start_input = {"mode": "delegate", "prompt": "調査する", "cwd": str(tmp_path), "model_type": "claude:test/medium"}
-    try:
-        started = await mcp_tools.start(
-            mode="delegate", prompt=start_input["prompt"], cwd=str(tmp_path), model_type="claude:test/medium"
-        )
-        child = started["session_id"]
-        assert started["persistence_warnings"] and not writer.path.exists()
-        _tool(
-            tmp_path,
-            "start-call",
-            "mcp__plugin_agent-toolkit_agents_server__start",
-            start_input,
-            {"structuredContent": started},
-            codex=False,
-        )
-        work = session_state.read_state("evidence-test")[termination_evidence.STATE_KEY]["works"]["work-1"]
-        assert work["async_targets"] == {child: "start-call"}
+        monkeypatch.setattr(atomic_file.os, "replace", refuse_projection)
+        start_input = {"mode": "delegate", "prompt": "調査する", "cwd": str(tmp_path), "model_type": "claude:test/medium"}
+        try:
+            started = await mcp_tools.start(
+                mode="delegate", prompt=start_input["prompt"], cwd=str(tmp_path), model_type="claude:test/medium"
+            )
+            child = started["session_id"]
+            assert started["persistence_warnings"] and not writer.path.exists()
+            _tool(
+                tmp_path,
+                "start-call",
+                "mcp__plugin_agent-toolkit_agents_server__start",
+                start_input,
+                {"structuredContent": started},
+                codex=False,
+            )
+            work = session_state.read_state("evidence-test")[termination_evidence.STATE_KEY]["works"]["work-1"]
+            assert work["async_targets"] == {child: "start-call"}
 
-        termination_evidence.record_decision(
-            {
-                "session_id": "evidence-test",
-                "action": "wait",
-                "work_id": "work-1",
-                "target_session_id": child,
-                "reason": "委譲結果を待つ",
-            }
-        )
-        assert termination_order_advisor.evaluate(stop_payload(tmp_path, "待機中"))[0] == "approve"
+            termination_evidence.record_decision(
+                {
+                    "session_id": "evidence-test",
+                    "action": "wait",
+                    "work_id": "work-1",
+                    "target_session_id": child,
+                    "reason": "委譲結果を待つ",
+                }
+            )
+            assert termination_order_advisor.evaluate(stop_payload(tmp_path, "待機中"))[0] == "approve"
 
-        agents_server_support._complete(current.sessions[child], message="委譲先の報告")  # pylint: disable=protected-access
-        with pytest.raises(status_file.ProjectionWriteError):
-            writer.flush()
-        capsys.readouterr()
-        code = agents_wait.wait_for_result(environment={"CLAUDE_CODE_SESSION_ID": "evidence-test"}, state_root=state_root)
-        rows = [json.loads(line) for line in capsys.readouterr().out.splitlines()]
-        assert code == 0
-        assert [(row["session_id"], row["agent_message"]) for row in rows] == [(child, "委譲先の報告")]
-        _tool(
-            tmp_path,
-            "wait-call",
-            "Bash",
-            {"command": "atk agents wait"},
-            {"stdout": "\n".join(json.dumps(row, ensure_ascii=False) for row in rows), "stderr": "", "exit_code": 0},
-            codex=False,
-        )
-        assert not agents_server_observations.pending_session_ids(session_state.read_state("evidence-test"), "main")
-        decision, reason = termination_order_advisor.evaluate(stop_payload(tmp_path, "結果を受け取った。"))
-        assert decision == "block" and "completion-report" in reason
-    finally:
-        monkeypatch.setattr(atomic_file.os, "replace", original_replace)
-        await current.close()
+            agents_server_support._complete(current.sessions[child], message="委譲先の報告")  # pylint: disable=protected-access
+            with pytest.raises(status_file.ProjectionWriteError):
+                writer.flush()
+            capsys.readouterr()
+            code = agents_wait.wait_for_result(environment={"CLAUDE_CODE_SESSION_ID": "evidence-test"}, state_root=state_root)
+            rows = [json.loads(line) for line in capsys.readouterr().out.splitlines()]
+            assert code == 0
+            assert [(row["session_id"], row["agent_message"]) for row in rows] == [(child, "委譲先の報告")]
+            _tool(
+                tmp_path,
+                "wait-call",
+                "Bash",
+                {"command": "atk agents wait"},
+                {"stdout": "\n".join(json.dumps(row, ensure_ascii=False) for row in rows), "stderr": "", "exit_code": 0},
+                codex=False,
+            )
+            assert not agents_server_observations.pending_session_ids(session_state.read_state("evidence-test"), "main")
+            decision, reason = termination_order_advisor.evaluate(stop_payload(tmp_path, "結果を受け取った。"))
+            assert decision == "block" and "completion-report" in reason
+        finally:
+            monkeypatch.setattr(atomic_file.os, "replace", original_replace)
 
 
 def test_stop_review_notice_is_a_fact_not_completion_evidence():

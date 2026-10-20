@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import pathlib
 import shlex
 import subprocess
@@ -16,6 +17,88 @@ import pytest
 
 from agent_toolkit._atk import run_command, run_script
 from agent_toolkit._testing import git_repository
+
+
+def test_public_plan_waits_for_shared_slot_before_starting_child_timeout(tmp_path: pathlib.Path) -> None:
+    """別プロセスの共有枠待機は子の実行予算を消費せず、成功とtimeoutの両出力を保存する。"""
+    env = {**os.environ, "PYFLTR_CACHE_DIR": str(tmp_path / "cache")}
+    holder_script = tmp_path / "holder.py"
+    holder_script.write_text(
+        "import sys\nfrom pyfltr.command import execution_slot\n"
+        "with execution_slot.hold(label='other-verification'):\n"
+        " print('ready', flush=True)\n sys.stdin.readline()\n",
+        encoding="utf-8",
+    )
+    marker = tmp_path / "started"
+    child = tmp_path / "child.py"
+    child.write_text(
+        "import pathlib,sys,time\nfrom pyfltr.command import execution_slot\n"
+        "pathlib.Path(sys.argv[1]).touch()\n"
+        "assert execution_slot.read_owner() is not None\n"
+        "print('saved stdout', flush=True)\nprint('saved stderr', file=sys.stderr, flush=True)\n"
+        "if len(sys.argv) > 2: time.sleep(30)\n",
+        encoding="utf-8",
+    )
+    command = shlex.join([sys.executable, str(child), str(marker)])
+    plan = _plan(tmp_path / "plan.md", f"`{command}`<br>`{command} wait`")
+    with subprocess.Popen(
+        [sys.executable, str(holder_script)],
+        env=env,
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        encoding="utf-8",
+    ) as holder:
+        assert holder.stdout is not None
+        assert holder.stdout.readline() == "ready\n"
+        try:
+            with subprocess.Popen(
+                [
+                    sys.executable,
+                    "-m",
+                    "agent_toolkit.atk",
+                    "run-script",
+                    "plan-verify",
+                    "--",
+                    "--plan",
+                    str(plan),
+                    "--worktree",
+                    str(tmp_path),
+                    "--timeout",
+                    "0.5",
+                ],
+                cwd=pathlib.Path(run_command.__file__).resolve().parents[3],
+                env=env,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                encoding="utf-8",
+            ) as verification:
+                try:
+                    # 枠を子の予算より長く保持し、待機中には子を開始していないことを直接確かめる。
+                    with pytest.raises(subprocess.TimeoutExpired):
+                        verification.communicate(timeout=1.5)
+                    assert not marker.exists()
+                    holder_out, holder_err = holder.communicate(input="release\n", timeout=10)
+                    assert holder.returncode == 0, holder_out + holder_err
+                    output, error = verification.communicate(timeout=30)
+                    assert verification.returncode == 1, output + error
+                finally:
+                    if verification.poll() is None:
+                        verification.kill()
+                        verification.communicate(timeout=10)
+        finally:
+            if holder.poll() is None:
+                holder.communicate(input="release\n", timeout=10)
+    results = json.loads(output)["results"]
+    assert [row["state"] for row in results] == ["success", "timeout"]
+    for row, timed_out in zip(results, [False, True], strict=True):
+        record = json.loads(pathlib.Path(row["record_path"]).read_text(encoding="utf-8"))
+        assert record["timed_out"] is timed_out
+        assert record["wrapper_exit_code"] == (124 if timed_out else 0)
+        assert pathlib.Path(record["stdout_path"]).read_text(encoding="utf-8") == "saved stdout\n"
+        assert pathlib.Path(record["stderr_path"]).read_text(encoding="utf-8") == "saved stderr\n"
 
 
 def _run(plan: pathlib.Path, repo: pathlib.Path, *extra: str) -> int:

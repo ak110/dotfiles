@@ -9,6 +9,7 @@ import subprocess
 
 import pytest
 
+from agent_toolkit._common import session_state
 from agent_toolkit._testing import fork_runner as _fork_runner
 from agent_toolkit._testing.helpers import _read_state
 
@@ -67,8 +68,7 @@ class TestCodexApplyPatchPlanFile:
             ("codex-plan-add", _patch(f"*** Add File: {added}\n+# 計画\n"), True),
             ("codex-plan-update", _patch(f"*** Update File: {updated}\n@@\n-# 旧\n+# 新\n"), False),
         ):
-            state_path = tmp_path / f"claude-agent-toolkit-{session_id}.json"
-            state_path.write_text(json.dumps(env_state), encoding="utf-8")
+            assert session_state.update_state(session_id, lambda _previous: env_state)
             result = _run(_codex_payload(patch_text, tmp_path, session_id), state_dir=tmp_path)
             assert ("書き込み後に計画の構造を確かめる" in result.stdout) is expected
             assert _read_state(tmp_path, session_id).get("current_plan_file_path") is not None

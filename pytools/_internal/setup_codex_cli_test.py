@@ -112,6 +112,12 @@ def test_installer_uses_common_windows_trust_source(monkeypatch: pytest.MonkeyPa
         return trust
 
     class Client:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_error: object) -> None:
+            self.close()
+
         def __init__(self, **kwargs: object) -> None:
             options.append(kwargs)
 
@@ -158,11 +164,8 @@ def test_run_installs_verifies_then_migrates_on_posix(monkeypatch, tmp_path: Pat
         _make_fake_run(calls, launcher=launcher, mise_list=_INSTALLED_LISTING),
     )
 
-    client = _make_client()
-    try:
+    with _make_client() as client:
         assert setup_codex_cli.run(client).changed
-    finally:
-        client.close()
 
     installer_command, installer_kwargs = calls[0]
     assert installer_command[0] == "sh"
@@ -215,11 +218,8 @@ def test_run_keeps_profile_unchanged_when_legacy_codex_is_on_path(monkeypatch, t
     monkeypatch.setattr(setup_codex_cli.setup_cli_common, "migrate_npm_launchers", fake_migrate)
     monkeypatch.setattr(setup_codex_cli.common, "run_subprocess", fake_run)
 
-    client = _make_client()
-    try:
+    with _make_client() as client:
         assert setup_codex_cli.run(client).changed
-    finally:
-        client.close()
 
     env_overrides = typing.cast(dict[str, str], calls[0][1]["env_overrides"])
     installer_path = env_overrides["PATH"]
@@ -264,11 +264,8 @@ def test_run_installs_with_preferred_powershell_on_windows(monkeypatch, tmp_path
     monkeypatch.setattr(setup_codex_cli.setup_cli_common, "migrate_npm_launchers", lambda *args, **kwargs: False)
     monkeypatch.setattr(setup_codex_cli.common, "run_subprocess", _make_fake_run(calls, launcher=launcher))
 
-    client = _make_client()
-    try:
+    with _make_client() as client:
         assert setup_codex_cli.run(client).changed
-    finally:
-        client.close()
 
     assert calls[0][0][:5] == ["/usr/bin/pwsh", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File"]
     assert calls[1][0] == [str(launcher), "--version"]
@@ -321,12 +318,8 @@ def test_run_selects_available_powershell(
     monkeypatch.setattr(setup_codex_cli.setup_cli_common, "migrate_npm_launchers", lambda *args, **kwargs: False)
     monkeypatch.setattr(setup_codex_cli.common, "run_subprocess", _make_fake_run(calls, launcher=launcher))
 
-    client = _make_client(requests)
-    try:
-        with expectation:
-            setup_codex_cli.run(client)
-    finally:
-        client.close()
+    with expectation, _make_client(requests) as client:
+        setup_codex_cli.run(client)
 
     assert [command[0] for command, _ in calls[:1]] == expected_command
     assert len(requests) == expected_requests
@@ -374,11 +367,8 @@ def test_run_obeys_official_installer_contract(
     monkeypatch.setattr(setup_codex_cli.setup_cli_common, "migrate_npm_launchers", lambda *args, **kwargs: False)
     monkeypatch.setattr(setup_codex_cli.common, "run_subprocess", _make_fake_run(calls, launcher=launcher))
 
-    client = _make_client(requests)
-    try:
+    with _make_client(requests) as client:
         assert setup_codex_cli.run(client).changed
-    finally:
-        client.close()
 
     installer_command, installer_kwargs = calls[0]
     installer_path = Path(installer_command[-1])
@@ -400,11 +390,8 @@ def test_run_reruns_installer_when_launcher_already_exists(monkeypatch, tmp_path
     monkeypatch.setattr(setup_codex_cli.setup_cli_common, "migrate_npm_launchers", lambda *args, **kwargs: False)
     monkeypatch.setattr(setup_codex_cli.common, "run_subprocess", _make_fake_run(calls))
 
-    client = _make_client()
-    try:
+    with _make_client() as client:
         assert setup_codex_cli.run(client).changed
-    finally:
-        client.close()
 
     assert calls[0][0][0] == "sh"
     assert calls[1][0] == [str(launcher), "--version"]
@@ -419,11 +406,8 @@ def test_run_accepts_legacy_launcher_layout(monkeypatch, tmp_path: Path, platfor
     monkeypatch.setattr(setup_codex_cli.setup_cli_common, "migrate_npm_launchers", lambda *args, **kwargs: False)
     monkeypatch.setattr(setup_codex_cli.common, "run_subprocess", _make_fake_run(calls, launcher=launcher))
 
-    client = _make_client()
-    try:
+    with _make_client() as client:
         assert setup_codex_cli.run(client).changed
-    finally:
-        client.close()
 
     assert calls[1][0] == [str(launcher), "--version"]
 
@@ -446,11 +430,8 @@ def test_run_uses_explicit_codex_home_and_install_dir(monkeypatch, tmp_path: Pat
     )
     monkeypatch.setattr(setup_codex_cli.common, "run_subprocess", _make_fake_run(calls, launcher=launcher))
 
-    client = _make_client()
-    try:
+    with _make_client() as client:
         assert setup_codex_cli.run(client).changed
-    finally:
-        client.close()
 
     installer_kwargs = calls[0][1]
     assert installer_kwargs["env_overrides"] == {
@@ -479,13 +460,10 @@ def test_run_skips_all_work_when_windows_process_is_running(monkeypatch, tmp_pat
         lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError((args, kwargs))),
     )
     _forbid_migration(monkeypatch)
-    client = httpx.Client(
+    with httpx.Client(
         transport=httpx.MockTransport(lambda request: (_ for _ in ()).throw(AssertionError("取得してはならない")))
-    )
-    try:
+    ) as client:
         assert not setup_codex_cli.run(client).changed
-    finally:
-        client.close()
 
 
 @pytest.mark.parametrize("status_code", [429, 500, 599])
@@ -505,11 +483,8 @@ def test_run_retries_transient_http_status(monkeypatch, tmp_path: Path, status_c
     monkeypatch.setattr(setup_codex_cli.setup_cli_common, "prepend_path", lambda path: None)
     monkeypatch.setattr(setup_codex_cli.setup_cli_common, "migrate_npm_launchers", lambda *args, **kwargs: False)
     monkeypatch.setattr(setup_codex_cli.common, "run_subprocess", _make_fake_run(calls, launcher=launcher))
-    client = httpx.Client(transport=httpx.MockTransport(handle_request))
-    try:
+    with httpx.Client(transport=httpx.MockTransport(handle_request)) as client:
         assert setup_codex_cli.run(client).changed
-    finally:
-        client.close()
 
     assert len(requests) == 2
 
@@ -532,11 +507,8 @@ def test_run_retries_transient_transport_error(monkeypatch, tmp_path: Path, erro
     monkeypatch.setattr(setup_codex_cli.setup_cli_common, "prepend_path", lambda path: None)
     monkeypatch.setattr(setup_codex_cli.setup_cli_common, "migrate_npm_launchers", lambda *args, **kwargs: False)
     monkeypatch.setattr(setup_codex_cli.common, "run_subprocess", _make_fake_run(calls, launcher=launcher))
-    client = httpx.Client(transport=httpx.MockTransport(handle_request))
-    try:
+    with httpx.Client(transport=httpx.MockTransport(handle_request)) as client:
         assert setup_codex_cli.run(client).changed
-    finally:
-        client.close()
 
     assert len(requests) == 2
 
@@ -550,11 +522,8 @@ def test_run_does_not_retry_permanent_http_status(monkeypatch, tmp_path: Path) -
         requests.append(request)
         return httpx.Response(400)
 
-    client = httpx.Client(transport=httpx.MockTransport(handle_request))
-    try:
+    with httpx.Client(transport=httpx.MockTransport(handle_request)) as client:
         assert setup_codex_cli.run(client) == post_apply_outcome.PostApplyOutcome()
-    finally:
-        client.close()
 
     assert len(requests) == 1
 
@@ -571,11 +540,8 @@ def test_run_stops_retrying_after_finite_attempts(monkeypatch, tmp_path: Path) -
 
     monkeypatch.setattr(setup_codex_cli.time, "sleep", delays.append)
     monkeypatch.setattr(setup_codex_cli.random, "uniform", lambda start, end: 0.0)
-    client = httpx.Client(transport=httpx.MockTransport(handle_request))
-    try:
+    with httpx.Client(transport=httpx.MockTransport(handle_request)) as client:
         assert setup_codex_cli.run(client) == post_apply_outcome.PostApplyOutcome()
-    finally:
-        client.close()
 
     assert len(requests) == 3
     assert delays == [0.25, 0.5]
@@ -597,11 +563,8 @@ def test_run_adds_jitter_to_retry_delays(monkeypatch, tmp_path: Path) -> None:
 
     monkeypatch.setattr(setup_codex_cli.time, "sleep", delays.append)
     monkeypatch.setattr(setup_codex_cli.random, "uniform", fixed_jitter)
-    client = httpx.Client(transport=httpx.MockTransport(handle_request))
-    try:
+    with httpx.Client(transport=httpx.MockTransport(handle_request)) as client:
         assert setup_codex_cli.run(client) == post_apply_outcome.PostApplyOutcome()
-    finally:
-        client.close()
 
     assert jitter_ranges == [(0, 0.25), (0, 0.25)]
     assert delays == [0.375, 0.625]
@@ -627,11 +590,8 @@ def test_run_removes_temporary_file_when_write_fails(monkeypatch, tmp_path: Path
             raise OSError("書き込み失敗")
 
     monkeypatch.setattr(setup_codex_cli.tempfile, "NamedTemporaryFile", lambda **kwargs: FailingTemporaryFile())
-    client = _make_client()
-    try:
+    with _make_client() as client:
         assert setup_codex_cli.run(client) == post_apply_outcome.PostApplyOutcome()
-    finally:
-        client.close()
 
     assert not temp_path.exists()
 
@@ -642,11 +602,8 @@ def test_run_keeps_old_versions_when_installer_fails(monkeypatch, tmp_path: Path
     _forbid_migration(monkeypatch)
     monkeypatch.setattr(setup_codex_cli.common, "run_subprocess", _make_fake_run(calls, failing="installer"))
 
-    client = _make_client()
-    try:
+    with _make_client() as client:
         assert setup_codex_cli.run(client) == post_apply_outcome.PostApplyOutcome()
-    finally:
-        client.close()
 
     assert len(calls) == 1
     assert not Path(calls[0][0][1]).exists()
@@ -658,11 +615,8 @@ def test_run_keeps_old_versions_when_launcher_is_missing(monkeypatch, tmp_path: 
     _forbid_migration(monkeypatch)
     monkeypatch.setattr(setup_codex_cli.common, "run_subprocess", _make_fake_run(calls))
 
-    client = _make_client()
-    try:
+    with _make_client() as client:
         assert setup_codex_cli.run(client) == post_apply_outcome.PostApplyOutcome()
-    finally:
-        client.close()
 
     assert len(calls) == 1
 
@@ -674,11 +628,8 @@ def test_run_keeps_old_versions_when_verification_fails(monkeypatch, tmp_path: P
     _forbid_migration(monkeypatch)
     monkeypatch.setattr(setup_codex_cli.common, "run_subprocess", _make_fake_run(calls, launcher=launcher, failing="version"))
 
-    client = _make_client()
-    try:
+    with _make_client() as client:
         assert setup_codex_cli.run(client) == post_apply_outcome.PostApplyOutcome()
-    finally:
-        client.close()
 
     assert not any("uninstall" in command for command, _ in calls)
 
@@ -691,11 +642,8 @@ def test_run_skips_mise_removal_when_no_version_is_installed(monkeypatch, tmp_pa
     monkeypatch.setattr(setup_codex_cli.setup_cli_common, "migrate_npm_launchers", lambda *args, **kwargs: False)
     monkeypatch.setattr(setup_codex_cli.common, "run_subprocess", _make_fake_run(calls, launcher=launcher))
 
-    client = _make_client()
-    try:
+    with _make_client() as client:
         assert setup_codex_cli.run(client).changed
-    finally:
-        client.close()
 
     assert not any(command[1] in {"uninstall", "reshim"} for command, _ in calls[2:])
 
@@ -712,11 +660,8 @@ def test_run_skips_mise_removal_when_listed_version_is_not_installed(monkeypatch
         _make_fake_run(calls, launcher=launcher, mise_list=_UNINSTALLED_LISTING),
     )
 
-    client = _make_client()
-    try:
+    with _make_client() as client:
         assert setup_codex_cli.run(client).changed
-    finally:
-        client.close()
 
     assert not any(command[1] in {"uninstall", "reshim"} for command, _ in calls[2:])
 
@@ -742,11 +687,8 @@ def test_run_reshims_orphaned_mise_launcher(monkeypatch, tmp_path: Path) -> None
     monkeypatch.setattr(setup_codex_cli.setup_cli_common, "migrate_npm_launchers", lambda *args, **kwargs: False)
     monkeypatch.setattr(setup_codex_cli.common, "run_subprocess", fake_run)
 
-    client = _make_client()
-    try:
+    with _make_client() as client:
         assert setup_codex_cli.run(client).changed
-    finally:
-        client.close()
 
     assert any(command[1:] == ["ls", "--json"] for command, _ in calls)
     assert calls[-1][0][1:] == ["reshim", "--force"]
@@ -774,12 +716,8 @@ def test_run_warns_without_deleting_orphaned_mise_launcher(
         _make_fake_run(calls, launcher=launcher, mise_all="{}"),
     )
 
-    client = _make_client()
-    try:
-        with caplog.at_level(logging.WARNING, logger="pytools._internal.setup_codex_cli"):
-            assert setup_codex_cli.run(client).changed
-    finally:
-        client.close()
+    with _make_client() as client, caplog.at_level(logging.WARNING, logger="pytools._internal.setup_codex_cli"):
+        assert setup_codex_cli.run(client).changed
 
     assert shim.is_file()
     assert any(f"mise管理外の中継を保持: {shim}" in message for message in caplog.messages)
@@ -794,11 +732,8 @@ def test_run_reshims_after_npm_migration_without_mise_versions(monkeypatch, tmp_
     monkeypatch.setattr(setup_codex_cli.setup_cli_common, "migrate_npm_launchers", lambda *args, **kwargs: True)
     monkeypatch.setattr(setup_codex_cli.common, "run_subprocess", _make_fake_run(calls, launcher=launcher))
 
-    client = _make_client()
-    try:
+    with _make_client() as client:
         assert setup_codex_cli.run(client).changed
-    finally:
-        client.close()
 
     assert not any(command[1] == "uninstall" for command, _ in calls[2:])
     assert calls[-1][0][1:] == ["reshim", "--force"]
@@ -817,11 +752,8 @@ def test_run_propagates_mise_failures(monkeypatch, tmp_path: Path, failing: str)
         _make_fake_run(calls, launcher=launcher, mise_list=_INSTALLED_LISTING, failing=failing),
     )
 
-    client = _make_client()
-    try:
+    with _make_client() as client:
         assert setup_codex_cli.run(client).failure is not None
-    finally:
-        client.close()
 
 
 def test_run_propagates_npm_migration_failure(monkeypatch, tmp_path: Path) -> None:
@@ -836,11 +768,8 @@ def test_run_propagates_npm_migration_failure(monkeypatch, tmp_path: Path) -> No
     )
     monkeypatch.setattr(setup_codex_cli.common, "run_subprocess", _make_fake_run(calls, launcher=launcher))
 
-    client = _make_client()
-    try:
+    with _make_client() as client:
         assert setup_codex_cli.run(client).failure is not None
-    finally:
-        client.close()
 
 
 def test_run_skips_mise_removal_when_mise_is_absent(monkeypatch, tmp_path: Path) -> None:
@@ -852,11 +781,8 @@ def test_run_skips_mise_removal_when_mise_is_absent(monkeypatch, tmp_path: Path)
     monkeypatch.setattr(setup_codex_cli.setup_cli_common, "migrate_npm_launchers", lambda *args, **kwargs: False)
     monkeypatch.setattr(setup_codex_cli.common, "run_subprocess", _make_fake_run(calls, launcher=launcher))
 
-    client = _make_client()
-    try:
+    with _make_client() as client:
         assert setup_codex_cli.run(client).changed
-    finally:
-        client.close()
 
     assert len(calls) == 2
 

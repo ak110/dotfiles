@@ -14,7 +14,8 @@ import pytest
 
 from agent_toolkit._atk import managed_temp as _managed_temp
 from agent_toolkit._atk.managed_temp import windows_security as managed_temp_windows_security
-from agent_toolkit._testing.helpers import SESSION_STATE_FILENAME_TEMPLATE, _write_transcript
+from agent_toolkit._common import session_state
+from agent_toolkit._testing.helpers import _write_transcript
 from agent_toolkit._testing.hook_output_contract import validate_hook_output
 
 _PLUGIN_ROOT = pathlib.Path(__file__).resolve().parents[2]
@@ -52,10 +53,6 @@ def _registered_hooks() -> set[tuple[str, str]]:
     }
 
 
-def _state_path(tmp_path: pathlib.Path, session_id: str) -> pathlib.Path:
-    return tmp_path / SESSION_STATE_FILENAME_TEMPLATE.format(session_id=session_id)
-
-
 def _build_fixture(
     event_name: str,
     fixture_name: str,
@@ -76,8 +73,8 @@ def _build_fixture(
         payload["agent_id"] = "agent-contract"
         payload["agent_type"] = "general-purpose"
     elif fixture_name == "pretooluse":
-        _state_path(tmp_path, session_id).write_text(
-            json.dumps({"operation_skill_delivered_agents": {"agent-toolkit:delegation": ["main"]}}), encoding="utf-8"
+        assert session_state.update_state(
+            session_id, lambda _previous: {"operation_skill_delivered_agents": {"agent-toolkit:delegation": ["main"]}}
         )
         payload.update(
             {
@@ -139,9 +136,8 @@ def _build_fixture(
         plan = home / ".claude" / "plans" / "draft.md"
         plan.parent.mkdir(parents=True)
         plan.write_text("# 計画\n", encoding="utf-8")
-        _state_path(tmp_path, session_id).write_text(
-            json.dumps({"current_plan_file_path": str(plan), "user_confirmation_skill_pending": True}),
-            encoding="utf-8",
+        assert session_state.update_state(
+            session_id, lambda _previous: {"current_plan_file_path": str(plan), "user_confirmation_skill_pending": True}
         )
         payload["prompt"] = "続行します"
         env.update({"HOME": str(home), "USERPROFILE": str(home)})
@@ -175,7 +171,7 @@ def test_registered_hook_output_matches_event_contract(
         output = json.loads(result.stdout)
         assert validate_hook_output(event_name, output) == []
         if event_name == "UserPromptSubmit":
-            assert "sessionTitle" not in output.get("hookSpecificOutput", {})
+            assert output["hookSpecificOutput"]["sessionTitle"] == "draft"
             assert not (tmp_path / "claude-agent-toolkit-session-title").exists()
 
 

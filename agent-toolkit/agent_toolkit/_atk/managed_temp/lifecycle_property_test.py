@@ -4,13 +4,14 @@
 
 from __future__ import annotations
 
+import datetime
 import json
 import os
 import pathlib
 import tempfile
 
 import pytest
-from hypothesis import HealthCheck, given, settings
+from hypothesis import HealthCheck, example, given, settings
 from hypothesis import strategies as st
 
 from agent_toolkit._atk import managed_temp
@@ -127,3 +128,71 @@ def test_interrupted_cleanup_converges_from_consuming_and_quarantine(
         assert not registry.exists()
         assert not consuming.exists()
         assert not quarantine_path.exists()
+
+
+@pytest.mark.skipif(os.name != "posix", reason="POSIXの実ファイル権限を検証する")
+@example(modes=[0], route="cleanup")
+@example(modes=[0], route="force")
+@example(modes=[0], route="recover")
+@example(modes=[0], route="sweep")
+@example(modes=[0], route="unregistered")
+@example(modes=[0], route="child")
+@example(modes=[0], route="quarantine")
+@settings(max_examples=24, deadline=None, suppress_health_check=[HealthCheck.function_scoped_fixture])
+@given(
+    modes=st.lists(st.sampled_from([0, 0o100, 0o300, 0o500, 0o555, 0o700]), min_size=1, max_size=5),
+    route=st.sampled_from(["cleanup", "force", "recover", "sweep", "unregistered", "child", "quarantine"]),
+)
+def test_restricted_trees_are_reclaimed(
+    modes: list[int], route: str, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """権限と深さを変えても、所有木の全回収経路が登録と実体を残さない。"""
+    root = _prepare_explicit_root(pathlib.Path(tempfile.mkdtemp(prefix="permissions-", dir=tmp_path)))
+    monkeypatch.setenv("XDG_CACHE_HOME", str(root / "cache"))
+    monkeypatch.setenv("XDG_STATE_HOME", str(root / "state"))
+    target = managed_temp.create_managed_temp("restricted")
+    parent = target
+    if route == "child":
+        parent = target / "child"
+        parent.mkdir(mode=0o700)
+    removed = parent
+    directories = []
+    for index, mode in enumerate(modes):
+        child = parent / f"d{index}"
+        child.mkdir()
+        payload = child / "payload"
+        payload.write_text("owned", encoding="utf-8")
+        payload.chmod(0)
+        directories.append((child, mode))
+        parent = child
+    old = 1_000_000_000
+    for child, mode in reversed(directories):
+        os.utime(child / "payload", (old, old))
+        os.utime(child, (old, old))
+        child.chmod(mode)
+    for child in target.iterdir():
+        os.utime(child, (old, old), follow_symlinks=False)
+    os.utime(target, (old, old))
+    if route == "child":
+        removed.chmod(modes[0])
+    if route == "force":
+        (target / managed_temp_registry._MARKER_NAME).unlink()
+        managed_temp.cleanup_managed_temp(target, force_remove=True)
+    elif route == "recover":
+        managed_temp_registry._registry_path(target).unlink()
+        managed_temp.cleanup_managed_temp(target, recover_registry=True)
+    elif route == "quarantine":
+        _interrupt_cleanup(target, quarantine=True)
+        managed_temp.cleanup_managed_temp(target)
+    elif route in ("sweep", "unregistered"):
+        if route == "unregistered":
+            managed_temp_registry._registry_path(target).unlink()
+        result = managed_temp.sweep_expired_managed_temp(now=datetime.datetime.now(datetime.UTC))
+        assert target in result
+    else:
+        managed_temp.cleanup_managed_temp(removed)
+    assert not removed.exists()
+    if route == "child":
+        assert target.exists()
+        managed_temp.cleanup_managed_temp(target)
+    assert not managed_temp_registry._registry_path(target).exists()

@@ -2,6 +2,7 @@
 
 # pylint: disable=protected-access
 
+import datetime
 import os
 import pathlib
 import subprocess
@@ -12,8 +13,10 @@ import pytest
 
 from agent_toolkit import atk
 from agent_toolkit._atk import git_sync as _atk_git_sync
+from agent_toolkit._atk.wi import frontmatter
 from agent_toolkit._atk.wi import mutations as _atk_wi_mutations
 from agent_toolkit._atk.wi import sync as _wi_sync
+from agent_toolkit._atk.wi.layout import entry_path, entry_state_of, iter_entry_paths
 from agent_toolkit._testing import git_repository
 from agent_toolkit._testing.wi_bodies import AGENT_AWI_BODY
 
@@ -135,9 +138,9 @@ def _init_diverged_mq_repos(
     git_repository.init_repository(seed, initial_branch="main")
     git_repository.run_git(seed, "config", "user.name", "sync-test")
     git_repository.run_git(seed, "config", "user.email", "sync-test@example.invalid")
-    source = seed / "processing" / filename
-    source.parent.mkdir()
-    source.write_text("---\ntype: awi\n---\n\n同じ項目\n", encoding="utf-8")
+    source = entry_path(seed, filename, fallback_date=datetime.date(2026, 8, 31))
+    source.parent.mkdir(parents=True)
+    source.write_text("---\ntype: awi\nstate: processing\n---\n\n同じ項目\n", encoding="utf-8")
     git_repository.run_git(seed, "add", ".")
     git_repository.run_git(seed, "commit", "-m", "base")
     git_repository.run_git(seed, "remote", "add", "origin", str(origin))
@@ -153,15 +156,15 @@ def _finish_entry(
     repo: pathlib.Path, timestamp: str, *, note: str | None = None, filename: str = "20260831-101752-001.md"
 ) -> None:
     """MQが生成する形式でprocessing項目をadoptedへ移してcommitする。"""
-    source = repo / "processing" / filename
-    destination = repo / "adopted" / source.name
-    destination.parent.mkdir()
-    body = source.read_text(encoding="utf-8")
+    source = entry_path(repo, filename)
+    parsed = frontmatter.parse_frontmatter(source.read_text(encoding="utf-8"))
+    assert parsed is not None
+    metadata, body = parsed
+    metadata["state"] = "adopted"
     body += f"\n## 処理結果\n\n- 採否: adopted\n- 処理日時: {timestamp}\n"
     if note is not None:
         body += f"- メモ: {note}\n"
-    destination.write_text(body, encoding="utf-8")
-    source.unlink()
+    source.write_text(frontmatter.serialize_frontmatter(metadata, body), encoding="utf-8")
     git_repository.run_git(repo, "add", "--all")
     git_repository.run_git(repo, "commit", "-m", "chore: process 1 entry (adopted)")
 
@@ -350,7 +353,7 @@ def test_wi_hold_defers_dirty_divergence_and_commit_recovers(
     assert "ローカルのみ1件、upstreamのみ1件" in held.err
     assert "atk wi commit" in held.err
     assert "元の`atk`操作" not in held.err
-    assert (local / "hold" / "20260831-101752-001.md").is_file()
+    assert entry_state_of(entry_path(local, "20260831-101752-001.md")) == "hold"
 
     with pytest.raises(SystemExit, match="1"):
         atk.main(["wi", "commit"], home=tmp_path)
@@ -479,7 +482,7 @@ def test_sync_recovers_matching_tree_divergence(
     local, peer = _init_diverged_mq_repos(tmp_path)
     upstream = _create_matching_tree_divergence(local, peer)
     if dirty:
-        source = local / "processing" / "20260831-101752-001.md"
+        source = entry_path(local, "20260831-101752-001.md")
         source.write_text(source.read_text(encoding="utf-8") + "\nstaged\n", encoding="utf-8")
         git_repository.run_git(local, "add", str(source.relative_to(local)))
         (local / "untracked.txt").write_text("untracked\n", encoding="utf-8")
@@ -626,7 +629,8 @@ def test_mq_pull_reports_rebase_failure_and_preserves_state(
     assert git_repository.run_git(local, "rev-parse", "ORIG_HEAD").stdout.strip() == local_head
     stderr = capsys.readouterr().err
     assert "rebaseに失敗したため、rebase状態を保持した" in stderr
-    assert f"競合ファイル: adopted/{filename}\n" in stderr
+    relative = entry_path(local, filename).relative_to(local).as_posix()
+    assert f"競合ファイル: {relative}\n" in stderr
     assert "Git履歴が分岐している" not in stderr
     assert stderr.count("失敗: ") == 1
     assert "git -c submodule.recurse=false rebase --continue" in next(
@@ -641,9 +645,9 @@ def test_conflicting_divergence_keeps_rebase_and_rejects_next_mutation(tmp_path:
     commit時に拒否し、競合の解消中の作業ツリーへ無関係な変更を残す。
     """
     local, peer = _init_diverged_mq_repos(tmp_path)
-    original = "---\ntype: awi\ntarget_repo: github.com/example/repo\n---\n\n別の項目\n"
-    other = local / "inbox" / "20260831-101800-001.md"
-    other.parent.mkdir()
+    original = "---\ntype: awi\nstate: inbox\ntarget_repo: github.com/example/repo\n---\n\n別の項目\n"
+    other = entry_path(local, "20260831-101800-001.md")
+    other.parent.mkdir(parents=True, exist_ok=True)
     other.write_text(original, encoding="utf-8")
     git_repository.run_git(local, "add", "--all")
     git_repository.run_git(local, "commit", "-m", "add other entry")
@@ -776,7 +780,7 @@ def test_notes_cli_with_upstream_states(
     invoke("wi", "add", "--source", "agent", "--body-file", str(source), "--target-repo", "github.com/example/repo")
     added = git_repository.run_git(notes, "rev-parse", "HEAD").stdout
     assert added != previous
-    (entry,) = list((notes / "inbox").glob("*.md"))
+    (entry,) = list(iter_entry_paths(notes))
     source.write_text(AGENT_AWI_BODY.replace("本文", "変更後の本文", 1), encoding="utf-8")
     invoke("wi", "edit", entry.name, "--body-file", str(source), "--target-repo", "github.com/example/repo")
     edited = git_repository.run_git(notes, "rev-parse", "HEAD").stdout

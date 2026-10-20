@@ -159,46 +159,45 @@ def _ensure_mise_installed(client: httpx.Client | None = None) -> bool:
             return False
         return True
 
-    owns_client = client is None
-    active_client: httpx.Client | None = client
     temp_path: Path | None = None
-    try:
-        active_client = active_client or httpx.Client(timeout=30.0, follow_redirects=True)
-        response = active_client.get("https://mise.run")
-        response.raise_for_status()
-        with tempfile.NamedTemporaryFile(mode="wb", suffix=".sh", delete=False) as temp:
-            temp.write(response.content)
-            temp_path = Path(temp.name)
-        result = common.run_subprocess(
-            ["sh", str(temp_path)],
-            timeout=_MISE_INSTALL_TIMEOUT,
-            tag="mise",
-            env_overrides={"MISE_INSTALL_PATH": str(Path.home() / ".local" / "bin" / "mise")},
-        )
-        if result is None or result.returncode != 0:
+    with contextlib.ExitStack() as resources:
+        try:
+            active_client = (
+                client if client is not None else resources.enter_context(httpx.Client(timeout=30.0, follow_redirects=True))
+            )
+            response = active_client.get("https://mise.run")
+            response.raise_for_status()
+            with tempfile.NamedTemporaryFile(mode="wb", suffix=".sh", delete=False) as temp:
+                temp_path = Path(temp.name)
+                temp.write(response.content)
+            result = common.run_subprocess(
+                ["sh", str(temp_path)],
+                timeout=_MISE_INSTALL_TIMEOUT,
+                tag="mise",
+                env_overrides={"MISE_INSTALL_PATH": str(Path.home() / ".local" / "bin" / "mise")},
+            )
+            if result is None or result.returncode != 0:
+                logger.warning(
+                    log_format.format_status(
+                        "mise",
+                        f"本体の導入に失敗: {common.format_cli_error(result)}。"
+                        "https://mise.jdx.dev/getting-started.html の手順でmiseを手動導入する",
+                    ),
+                )
+                return False
+            return True
+        except Exception as error:  # noqa: BLE001  # 取得・保存・実行の失敗を1件の警告へ集約する
             logger.warning(
                 log_format.format_status(
                     "mise",
-                    f"本体の導入に失敗: {common.format_cli_error(result)}。"
-                    "https://mise.jdx.dev/getting-started.html の手順でmiseを手動導入する",
+                    f"本体の導入に失敗: {error}。https://mise.jdx.dev/getting-started.html の手順でmiseを手動導入する",
                 ),
             )
             return False
-        return True
-    except Exception as error:  # noqa: BLE001  # 取得・保存・実行の失敗を1件の警告へ集約する
-        logger.warning(
-            log_format.format_status(
-                "mise",
-                f"本体の導入に失敗: {error}。https://mise.jdx.dev/getting-started.html の手順でmiseを手動導入する",
-            ),
-        )
-        return False
-    finally:
-        if temp_path is not None:
-            with contextlib.suppress(OSError):
-                temp_path.unlink()
-        if owns_client and active_client is not None:
-            active_client.close()
+        finally:
+            if temp_path is not None:
+                with contextlib.suppress(OSError):
+                    temp_path.unlink()
 
 
 def find_mise_binary() -> Path | None:

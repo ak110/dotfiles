@@ -1,5 +1,6 @@
 import type { EngineInterface, On, SessionRateLimit, Timer } from "claude-code";
 import { automatedMessage } from "./automated_message.ts";
+import { exitStatePath } from "./session_exit.ts";
 
 // Python側のclaude_usage_limit.RECHECK_SECONDSと同じ再確認間隔を使う。
 const RECHECK_MS = 300_000;
@@ -30,18 +31,22 @@ export function register(on: On, session: { delegated: boolean }): void {
   on("turn.complete", { turnId: /^/ }, async ($, e, next) => {
     const result = await next(e);
     if (session.delegated || e.agentId !== undefined) return result;
+    const configured = await $.env.get("CLAUDE_CONFIG_DIR");
+    const home = (await $.env.get("HOME")) || (await $.env.get("USERPROFILE"));
+    const path = exitStatePath(await $.session.id(), configured, home, "rate-limit");
+    let requested = false;
+    if (path !== undefined) {
+      try {
+        requested = (await $.fs.read(path)) === "requested";
+        if (requested) await $.fs.write(path, "consumed");
+      } catch { /* 初回の未作成ファイルは予約要求を持たない。 */ }
+    }
     const window = maximumWindow((await $.session.usage()).rateLimits);
-    if (window === undefined || window.percentUsed < 100) return result;
+    if (!requested && (window === undefined || window.percentUsed < 100)) return result;
     await schedule($, state);
     return result;
   });
 
-  on("classic.StopFailure", { error: "rate_limit" }, async ($, e, next) => {
-    const result = await next(e);
-    if (session.delegated || e.agent_id !== undefined) return result;
-    await schedule($, state);
-    return result;
-  });
 }
 
 type Reservation = { timer?: Timer; latestTurnAt: number; generation: number };

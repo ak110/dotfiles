@@ -77,7 +77,7 @@ async def _open_all_screens(harness: _ScreenHarness) -> None:
     )
 
 
-@pytest.mark.asyncio
+@pytest.mark.asyncio(loop_scope="session")
 async def test_navigation_switches_three_screens_in_declared_order(screen_harness: _ScreenHarness) -> None:
     """同一のベースパスから3画面へ遷移でき、ナビゲーションの表示順と表記が指定どおりである。"""
     harness = screen_harness
@@ -103,7 +103,7 @@ async def test_navigation_switches_three_screens_in_declared_order(screen_harnes
     assert harness.page.url == harness.base_url + "/"
 
 
-@pytest.mark.asyncio
+@pytest.mark.asyncio(loop_scope="session")
 async def test_navigation_does_not_reload_document(screen_harness: _ScreenHarness) -> None:
     """3画面を順に移動してもドキュメントを再読み込みせず、URLだけが切り替わる。"""
     harness = screen_harness
@@ -125,7 +125,7 @@ async def test_navigation_does_not_reload_document(screen_harness: _ScreenHarnes
     assert await page.evaluate("() => location.pathname") == "/sessions"
 
 
-@pytest.mark.asyncio
+@pytest.mark.asyncio(loop_scope="session")
 async def test_navigation_uses_one_html_document_across_all_screens(screen_harness: _ScreenHarness) -> None:
     """起動時のHTMLだけを使い、3画面の切り替えで文書を追加取得しない。"""
     harness = screen_harness
@@ -141,7 +141,7 @@ async def test_navigation_uses_one_html_document_across_all_screens(screen_harne
     assert [harness.requests.count(url) for url in screen_urls] == [1, 0, 0]
 
 
-@pytest.mark.asyncio
+@pytest.mark.asyncio(loop_scope="session")
 async def test_navigation_preserves_filters_and_screen_styles(screen_harness: _ScreenHarness) -> None:
     """3画面の入力値とワークアイテム画面の算出フォントサイズを往復後も保持する。"""
     harness = screen_harness
@@ -168,7 +168,7 @@ async def test_navigation_preserves_filters_and_screen_styles(screen_harness: _S
     assert await page.locator("#sessions-filter").input_value() == "セッション条件"
 
 
-@pytest.mark.asyncio
+@pytest.mark.asyncio(loop_scope="session")
 async def test_navigation_uses_one_stylesheet(screen_harness: _ScreenHarness) -> None:
     """図の追加スタイルがあっても3画面で有効なapp.cssを1枚だけ共有する。"""
     page = screen_harness.page
@@ -186,7 +186,7 @@ async def test_navigation_uses_one_stylesheet(screen_harness: _ScreenHarness) ->
     )
 
 
-@pytest.mark.asyncio
+@pytest.mark.asyncio(loop_scope="session")
 async def test_revisiting_screens_does_not_repeat_initial_requests(screen_harness: _ScreenHarness) -> None:
     """初期化済みの画面へ再訪しても、同期と一覧の初期要求を繰り返さない。"""
     harness = screen_harness
@@ -219,7 +219,7 @@ async def test_revisiting_screens_does_not_repeat_initial_requests(screen_harnes
     assert {suffix: sum(url.endswith(suffix) for url in harness.requests) for suffix in tracked_suffixes} == before
 
 
-@pytest.mark.asyncio
+@pytest.mark.asyncio(loop_scope="session")
 async def test_initial_screen_request_does_not_block_other_screen_prefetch(
     screen_harness: _ScreenHarness,
 ) -> None:
@@ -256,7 +256,7 @@ async def test_initial_screen_request_does_not_block_other_screen_prefetch(
         await harness.page.unroute("**/api/sessions/list", delay_sessions)
 
 
-@pytest.mark.asyncio
+@pytest.mark.asyncio(loop_scope="session")
 async def test_three_screen_bodies_use_matching_typography(screen_harness: _ScreenHarness) -> None:
     """3画面の本文コンテナーで書体、文字サイズ、行高、字間および文字色をそろえる。"""
     harness = screen_harness
@@ -288,7 +288,7 @@ async def test_three_screen_bodies_use_matching_typography(screen_harness: _Scre
     assert session_toolbar == plan_toolbar
 
 
-@pytest.mark.asyncio
+@pytest.mark.asyncio(loop_scope="session")
 async def test_plan_and_session_toolbars_have_matching_heights(screen_harness: _ScreenHarness) -> None:
     """計画とセッションの詳細ツールバーを同じ高さで描画する。"""
     page = screen_harness.page
@@ -304,7 +304,7 @@ async def test_plan_and_session_toolbars_have_matching_heights(screen_harness: _
     assert sessions_height == plans_height
 
 
-@pytest.mark.asyncio
+@pytest.mark.asyncio(loop_scope="session")
 async def test_three_screens_scroll_below_the_fixed_header(screen_harness: _ScreenHarness) -> None:
     """3画面ともヘッダー下の本文要素をスクロールする。"""
     screen_harness.plan_path.write_text(
@@ -388,7 +388,7 @@ class _DelayedResponse:
         await page.wait_for_timeout(50)
 
 
-@pytest.mark.asyncio
+@pytest.mark.asyncio(loop_scope="session")
 async def test_navigation_ignores_delayed_detail_and_search_results(
     screen_harness: _ScreenHarness,
 ) -> None:
@@ -401,14 +401,14 @@ async def test_navigation_ignores_delayed_detail_and_search_results(
 
     async def exercise_detail(succeeds: bool) -> None:
         delayed = _DelayedResponse(succeeds)
-        await page.route("**/api/entries/inbox/awi.md", delayed)
+        await page.route("**/api/entries/awi.md", delayed)
         await page.goto(harness.base_url + "/")
-        await page.locator('.entry-select[data-key="inbox/awi.md"]').click()
+        await page.locator('.entry-select[data-key="awi.md"]').click()
         await asyncio.wait_for(delayed.requested.wait(), timeout=5)
         await page.locator("nav.app-nav").get_by_role("link", name="計画ファイル").click()
         await page.locator("#preview h1", has_text="初回").wait_for(state="visible")
         await delayed.finish(page)
-        await page.unroute("**/api/entries/inbox/awi.md", delayed)
+        await page.unroute("**/api/entries/awi.md", delayed)
 
     async def exercise_search(succeeds: bool) -> None:
         delayed = _DelayedResponse(succeeds)
@@ -429,7 +429,7 @@ async def test_navigation_ignores_delayed_detail_and_search_results(
     assert not errors
 
 
-@pytest.mark.asyncio
+@pytest.mark.asyncio(loop_scope="session")
 async def test_back_navigation_restores_previous_screen(screen_harness: _ScreenHarness) -> None:
     """ブラウザーの戻る操作で直前の画面が再び描画される。"""
     harness = screen_harness
@@ -445,7 +445,7 @@ async def test_back_navigation_restores_previous_screen(screen_harness: _ScreenH
     assert await page.evaluate("() => location.pathname") == "/"
 
 
-@pytest.mark.asyncio
+@pytest.mark.asyncio(loop_scope="session")
 async def test_direct_load_of_each_screen(screen_harness: _ScreenHarness) -> None:
     """3画面のURLへ直接アクセスしても各画面が描画される。"""
     harness = screen_harness
@@ -466,14 +466,14 @@ async def test_direct_load_of_each_screen(screen_harness: _ScreenHarness) -> Non
         )
 
 
-@pytest.mark.asyncio
+@pytest.mark.asyncio(loop_scope="session")
 async def test_detail_loading_keeps_list_and_navigation_positions(browser_harness: _BrowserHarness) -> None:
     """詳細取得中のアイコンをナビゲーション内の左右列境界へ置き、リンクと一覧を動かさない。"""
     page = browser_harness.page
     await page.set_viewport_size({"width": 1440, "height": 1000})
     await page.goto(browser_harness.base_url + "/")
     await playwright.async_api.expect(page.locator("#connection-status")).to_have_attribute("data-connected", "true")
-    entry = page.locator('.entry-select[data-key="inbox/awi.md"]')
+    entry = page.locator('.entry-select[data-key="awi.md"]')
     await entry.wait_for(state="visible")
     await playwright.async_api.expect(page.locator("#entry-list")).to_have_attribute("aria-busy", "false")
     nav = page.locator("#screen-wi .app-nav a")
@@ -484,7 +484,7 @@ async def test_detail_loading_keeps_list_and_navigation_positions(browser_harnes
     assert before_row is not None
     started = asyncio.Event()
     release = asyncio.Event()
-    await page.route("**/api/entries/inbox/awi.md", functools.partial(_hold_route, started=started, release=release))
+    await page.route("**/api/entries/awi.md", functools.partial(_hold_route, started=started, release=release))
     try:
         await entry.click()
         await asyncio.wait_for(started.wait(), timeout=5)
@@ -515,7 +515,7 @@ async def test_detail_loading_keeps_list_and_navigation_positions(browser_harnes
     await playwright.async_api.expect(page.locator("#loading-indicator")).to_be_hidden()
 
 
-@pytest.mark.asyncio
+@pytest.mark.asyncio(loop_scope="session")
 async def test_slow_work_item_filter_and_plan_preview_show_loading(
     screen_harness: _ScreenHarness,
 ) -> None:
@@ -534,7 +534,7 @@ async def test_slow_work_item_filter_and_plan_preview_show_loading(
     await page.route("**/api/entries**", delay_entries)
     await page.locator("#state-filter").select_option("adopted")
     await playwright.async_api.expect(page.locator("#loading-indicator")).to_be_visible()
-    await page.locator('.entry-select[data-key="adopted/adopted.md"]').wait_for(state="visible")
+    await page.locator('.entry-select[data-key="adopted.md"]').wait_for(state="visible")
     await playwright.async_api.expect(page.locator("#loading-indicator")).to_be_hidden()
     await page.unroute("**/api/entries**", delay_entries)
 
@@ -549,7 +549,7 @@ async def test_slow_work_item_filter_and_plan_preview_show_loading(
     await playwright.async_api.expect(page.locator("#plans-loading-indicator")).to_be_hidden()
 
 
-@pytest.mark.asyncio
+@pytest.mark.asyncio(loop_scope="session")
 async def test_plan_and_session_sidebars_match_and_session_opens_first_detail(
     screen_harness: _ScreenHarness,
 ) -> None:
@@ -573,7 +573,7 @@ async def test_plan_and_session_sidebars_match_and_session_opens_first_detail(
     assert await page.locator('#sessions .session-item[aria-current="true"]').count() == 1
 
 
-@pytest.mark.asyncio
+@pytest.mark.asyncio(loop_scope="session")
 async def test_header_navigation_is_centered_on_three_screens(screen_harness: _ScreenHarness) -> None:
     """ヘッダーの子要素の数が画面ごとに異なっても、3画面ともナビゲーションを画面中央へ置く。"""
     harness = screen_harness
@@ -590,7 +590,7 @@ async def test_header_navigation_is_centered_on_three_screens(screen_harness: _S
         assert abs((box["x"] + box["width"] / 2) - viewport_width / 2) <= 1, path
 
 
-@pytest.mark.asyncio
+@pytest.mark.asyncio(loop_scope="session")
 @pytest.mark.parametrize("width", [1920, 1440, 1280, 900, 600])
 async def test_navigation_links_match_on_three_screens(screen_harness: _ScreenHarness, width: int) -> None:
     """3画面で「ワークアイテム・計画ファイル・セッション」の各リンクの位置、大きさおよび算出スタイルが一致する。
@@ -621,7 +621,7 @@ async def test_navigation_links_match_on_three_screens(screen_harness: _ScreenHa
     assert clicked == direct
 
 
-@pytest.mark.asyncio
+@pytest.mark.asyncio(loop_scope="session")
 async def test_header_layout_matches_on_three_screens(screen_harness: _ScreenHarness) -> None:
     """3画面のヘッダーの高さと文字サイズがそろい、折り返しが起きる幅でも見出しとナビゲーションの大きさと水平位置がそろう。"""
     harness = screen_harness
@@ -672,7 +672,7 @@ async def test_header_layout_matches_on_three_screens(screen_harness: _ScreenHar
     assert layouts["/sessions"] == layouts["/"]
 
 
-@pytest.mark.asyncio
+@pytest.mark.asyncio(loop_scope="session")
 async def test_panes_follow_header_height_on_narrow_width(screen_harness: _ScreenHarness) -> None:
     """ヘッダーが折り返す幅でも、主要領域の上端がヘッダーの下端と、下端がビューポートの下端と一致する。"""
     harness = screen_harness
@@ -697,7 +697,7 @@ async def test_panes_follow_header_height_on_narrow_width(screen_harness: _Scree
         assert abs((pane_box["y"] + pane_box["height"]) - viewport_height) <= 1, path
 
 
-@pytest.mark.asyncio
+@pytest.mark.asyncio(loop_scope="session")
 async def test_shell_parts_share_computed_style_across_three_screens(screen_harness: _ScreenHarness) -> None:
     """共有ヘッダーとツールバーの計算スタイルを3画面と反復遷移の前後で維持する。"""
     harness = screen_harness
@@ -743,7 +743,7 @@ async def test_shell_parts_share_computed_style_across_three_screens(screen_harn
     assert dialog_styles[1:] == dialog_styles[:-1]
 
 
-@pytest.mark.asyncio
+@pytest.mark.asyncio(loop_scope="session")
 async def test_buttons_share_the_common_style_on_three_screens(screen_harness: _ScreenHarness) -> None:
     """3画面のボタンを共通の配色・境界・角丸で表示し、無効なボタンは不透明度を下げる。"""
     harness = screen_harness
@@ -790,7 +790,7 @@ async def test_buttons_share_the_common_style_on_three_screens(screen_harness: _
     assert float(disabled) < 1
 
 
-@pytest.mark.asyncio
+@pytest.mark.asyncio(loop_scope="session")
 async def test_sidebar_items_share_style_between_plans_and_sessions(screen_harness: _ScreenHarness) -> None:
     """計画ファイル画面とセッション画面の左ペイン項目を、同じ共通クラスと算出スタイルで描画する。"""
     harness = screen_harness
@@ -842,7 +842,7 @@ async def test_sidebar_items_share_style_between_plans_and_sessions(screen_harne
     assert styles["/plans"]["item"]["borderTopLeftRadius"] == "0px"
 
 
-@pytest.mark.asyncio
+@pytest.mark.asyncio(loop_scope="session")
 async def test_plan_and_session_drawers_share_the_768px_boundary(screen_harness: _ScreenHarness) -> None:
     """700・701・768pxでは一覧をメニューで開き、769pxから通常配置へ戻す。"""
     page = screen_harness.page
@@ -878,7 +878,7 @@ async def test_plan_and_session_drawers_share_the_768px_boundary(screen_harness:
         assert not await page.locator("#screen-sessions").evaluate("element => element.classList.contains('drawer-open')")
 
 
-@pytest.mark.asyncio
+@pytest.mark.asyncio(loop_scope="session")
 async def test_attached_plan_navigation_is_symmetric(screen_harness: _ScreenHarness) -> None:
     """左一覧に付属ファイルを表示せず、右ペインから同じstemの5ファイルを相互に開ける。"""
     harness = screen_harness
@@ -920,7 +920,7 @@ async def test_attached_plan_navigation_is_symmetric(screen_harness: _ScreenHarn
     assert await harness.page.title() == "計画ファイル - atk serve"
 
 
-@pytest.mark.asyncio
+@pytest.mark.asyncio(loop_scope="session")
 async def test_mobile_drawers_labels_titles_and_reduced_motion(screen_harness: _ScreenHarness) -> None:
     """狭い画面の一覧は閉じた状態でTab移動の対象から外れ、開閉と画面切替の前後でフォーカスを保つ。"""
     page = screen_harness.page
@@ -950,7 +950,7 @@ async def test_mobile_drawers_labels_titles_and_reduced_motion(screen_harness: _
         assert duration == "0s"
 
 
-@pytest.mark.asyncio
+@pytest.mark.asyncio(loop_scope="session")
 async def test_plan_and_session_lists_expand_after_hundred_items(
     screen_harness: _ScreenHarness,
     tmp_path: Path,
@@ -979,7 +979,7 @@ async def test_plan_and_session_lists_expand_after_hundred_items(
     await playwright.async_api.expect(page.locator("#sessions .session-item")).to_have_count(112)
 
 
-@pytest.mark.asyncio
+@pytest.mark.asyncio(loop_scope="session")
 async def test_silent_sse_is_reconnected_and_lists_are_refetched(
     screen_harness: _ScreenHarness,
     monkeypatch: pytest.MonkeyPatch,
@@ -1002,7 +1002,7 @@ async def test_silent_sse_is_reconnected_and_lists_are_refetched(
         ), name
 
 
-@pytest.mark.asyncio
+@pytest.mark.asyncio(loop_scope="session")
 async def test_regular_heartbeat_keeps_sse_without_refetching(
     screen_harness: _ScreenHarness,
     monkeypatch: pytest.MonkeyPatch,
@@ -1019,7 +1019,7 @@ async def test_regular_heartbeat_keeps_sse_without_refetching(
     assert {path: _request_count(screen_harness, path) for path in before} == before
 
 
-@pytest.mark.asyncio
+@pytest.mark.asyncio(loop_scope="session")
 async def test_visible_tab_and_bfcache_restore_resynchronize_screens(screen_harness: _ScreenHarness) -> None:
     """タブが表示へ戻るとWI画面とセッション画面が一覧を取り直し、bfcacheからの復帰では再接続する。"""
     page = screen_harness.page

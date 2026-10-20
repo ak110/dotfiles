@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
+import json
 import pathlib
 
 import pytest
 
-from agent_toolkit._agents_server import resume_waits, state, wait_output_tracking
+from agent_toolkit._agents_server import responses, resume_waits, state, wait_output_tracking
 
 
 @pytest.mark.parametrize("namespace", ["mcp__plugin_agent-toolkit_agents_server__", "mcp__agents_server__", ""])
@@ -37,7 +38,16 @@ def test_child_session_is_tracked_for_every_host_tool_name_form(
     )
     wait_output_tracking.consume_claude_agents_server_message(
         session,
-        {"content": [{"tool_use_id": "toolu_1", "content": {"session_id": "child-1", "status": "running"}}]},
+        {
+            "content": [
+                {
+                    "tool_use_id": "toolu_1",
+                    "content": responses.public_start_response(
+                        {"session_id": "child-1", "status": "running", "label": "child"}
+                    ),
+                }
+            ]
+        },
     )
 
     assert session.live_child_session_ids == {"child-1"}
@@ -51,13 +61,21 @@ def _start_child(session: state.SessionState, tool_use_id: str, child_id: str) -
     )
     wait_output_tracking.consume_claude_agents_server_message(
         session,
-        {"content": [{"tool_use_id": tool_use_id, "content": {"session_id": child_id, "status": "running"}}]},
+        {
+            "content": [
+                {
+                    "tool_use_id": tool_use_id,
+                    "content": responses.public_start_response({"session_id": child_id, "status": "running", "label": "child"}),
+                }
+            ]
+        },
     )
 
 
 @pytest.mark.parametrize("namespace", ["mcp__plugin_agent-toolkit_agents_server__", "mcp__agents_server__", ""])
 @pytest.mark.parametrize("delivery", ["reply_started", "reply_ambiguous", "steered", "reply_failed"])
-def test_send_message_reactivates_terminal_child_until_observed(namespace: str, delivery: str) -> None:
+@pytest.mark.parametrize("result_form", ["structured", "text"])
+def test_send_message_reactivates_terminal_child_until_observed(namespace: str, delivery: str, result_form: str) -> None:
     """追送の配送結果で終端済みの子を再追跡し、曖昧な開始も終端観測まで保持する。"""
     session = state.SessionState("parent-1", "/work")
     session.terminal_child_session_ids.add("child-1")
@@ -66,9 +84,19 @@ def test_send_message_reactivates_terminal_child_until_observed(namespace: str, 
         session,
         {"content": [{"id": "reply", "name": f"{namespace}send_message", "input": {"session_id": "child-1"}}]},
     )
-    result = {"session_id": "child-1", "delivery": delivery, "status": "running"}
+    result = responses.public_send_message_response({"delivery": delivery, "label": "child"})
     wait_output_tracking.consume_claude_agents_server_message(
-        session, {"content": [{"tool_use_id": "reply", "content": {"structuredContent": result}}]}
+        session,
+        {
+            "content": [
+                {
+                    "tool_use_id": "reply",
+                    "content": {"structuredContent": result}
+                    if result_form == "structured"
+                    else [{"type": "text", "text": json.dumps(result)}],
+                }
+            ]
+        },
     )
     if delivery == "reply_failed":
         assert not session.live_child_session_ids
@@ -80,10 +108,10 @@ def test_send_message_reactivates_terminal_child_until_observed(namespace: str, 
     assert not session.auto_resume_consumed
     # 同じ結果をturn/completedが再掲しても、既に消費した自動再開を再予約しない。
     session.auto_resume_consumed = True
-    wait_output_tracking.consume_agents_server_tool_result(session, "send_message", {}, result)
+    wait_output_tracking.consume_agents_server_tool_result(session, "send_message", {"session_id": "child-1"}, result)
     assert session.auto_resume_consumed
     wait_output_tracking.consume_agents_server_tool_result(
-        session, "kill", {"session_id": "child-1"}, {"status": "interrupted"}
+        session, "kill", {"session_id": "child-1"}, state.SessionState("child-1", "/work", status="interrupted").public_status()
     )
     assert not session.live_child_session_ids
     assert session.terminal_child_session_ids == {"child-1"}

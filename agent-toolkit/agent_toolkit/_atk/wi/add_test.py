@@ -131,7 +131,7 @@ def test_public_add_post_approval_uses_fixed_choices(tmp_path: pathlib.Path, mon
     args = _cmd_add_args(tmp_path, "実施した対応で問題ありませんか？", source="test", entry_type="uwi")
     args.question_type = "post-approval"
     _run_public_add(args, notes, _FIXED_DT, tmp_path)
-    paths = list((notes / "inbox").glob("*.md"))
+    paths = list(notes.glob("[0-9][0-9][0-9][0-9]/[0-9][0-9]/*.md"))
     assert len(paths) == 1
     parsed = frontmatter.parse_frontmatter(paths[0].read_text(encoding="utf-8"))
     assert parsed is not None
@@ -182,7 +182,7 @@ def test_add_dry_run_rejects_invalid_input(
 
     assert exc_info.value.code == 2
     assert "--question-type=choice のときは --choices" in capsys.readouterr().err
-    assert not list((notes / "inbox").iterdir())
+    assert not list(notes.glob("[0-9][0-9][0-9][0-9]/[0-9][0-9]/*.md"))
 
 
 def test_add_dry_run_reports_all_reserved_uwi_markup(
@@ -204,7 +204,7 @@ def test_add_dry_run_reports_all_reserved_uwi_markup(
     assert "回答欄マーカー" in error
     assert "見出し（## 質問）" in error
     assert "見出し（## 回答）" in error
-    assert not list((notes / "inbox").iterdir())
+    assert not list(notes.glob("[0-9][0-9][0-9][0-9]/[0-9][0-9]/*.md"))
 
 
 def test_add_dry_run_rejects_agent_awi_without_required_sections(
@@ -234,7 +234,7 @@ def test_add_dry_run_rejects_agent_awi_without_required_sections(
     assert errors[0] == errors[1]
     for heading in ("反映内容と反映先", "適用範囲", "実現性", "完成条件"):
         assert heading in errors[0]
-    assert not list((notes / "inbox").iterdir())
+    assert not list(notes.glob("[0-9][0-9][0-9][0-9]/[0-9][0-9]/*.md"))
     after_head = git_repository.git_output(notes, "rev-parse", "HEAD")
     assert after_head == before_head
 
@@ -404,7 +404,7 @@ def test_cmd_add_rejects_agent_awi_missing_one_required_section(
     error = capsys.readouterr().err
     assert "非空の必須節がありません: 適用範囲" in error
     assert "順序" not in error
-    assert not list((notes / "inbox").iterdir())
+    assert not list(notes.glob("[0-9][0-9][0-9][0-9]/[0-9][0-9]/*.md"))
 
 
 def test_cmd_add_lists_every_missing_required_section_at_once(
@@ -426,7 +426,7 @@ def test_cmd_add_lists_every_missing_required_section_at_once(
 
     assert exc_info.value.code == 1
     assert "非空の必須節がありません: 適用範囲、完成条件" in capsys.readouterr().err
-    assert not list((notes / "inbox").iterdir())
+    assert not list(notes.glob("[0-9][0-9][0-9][0-9]/[0-9][0-9]/*.md"))
 
 
 def test_cmd_add_rejects_agent_awi_with_unordered_required_sections(
@@ -448,7 +448,7 @@ def test_cmd_add_rejects_agent_awi_with_unordered_required_sections(
     error = capsys.readouterr().err
     assert "H2の順序が規定と異なります" in error
     assert "非空の必須節がありません" not in error
-    assert not list((notes / "inbox").iterdir())
+    assert not list(notes.glob("[0-9][0-9][0-9][0-9]/[0-9][0-9]/*.md"))
 
 
 def test_cmd_add_reports_missing_and_unordered_sections_together(
@@ -470,7 +470,7 @@ def test_cmd_add_reports_missing_and_unordered_sections_together(
     error = capsys.readouterr().err
     assert "非空の必須節がありません: 実現性" in error
     assert "H2の順序が規定と異なります" in error
-    assert not list((notes / "inbox").iterdir())
+    assert not list(notes.glob("[0-9][0-9][0-9][0-9]/[0-9][0-9]/*.md"))
 
 
 def test_cmd_add_rejects_agent_awi_with_empty_required_section(
@@ -488,7 +488,7 @@ def test_cmd_add_rejects_agent_awi_with_empty_required_section(
 
     assert exc_info.value.code == 1
     assert "非空の必須節がありません: 実現性" in capsys.readouterr().err
-    assert not list((notes / "inbox").iterdir())
+    assert not list(notes.glob("[0-9][0-9][0-9][0-9]/[0-9][0-9]/*.md"))
 
 
 _CAUSE_ANALYSIS_SECTION = "## 原因分析\n直接的原因と根本原因\n\n"
@@ -507,7 +507,7 @@ def test_add_dry_run_accepts_agent_awi_with_cause_analysis(
     _run_public_add(_cmd_add_args(tmp_path, message, source="test", dry_run=True), notes, _FIXED_DT, tmp_path)
 
     assert capsys.readouterr().err == ""
-    assert not list((notes / "inbox").iterdir())
+    assert not list(notes.glob("[0-9][0-9][0-9][0-9]/[0-9][0-9]/*.md"))
 
 
 def test_add_dry_run_rejects_cause_analysis_after_scope(
@@ -567,7 +567,7 @@ def test_cmd_add_rejects_agent_awi_with_feasibility_only_in_code_fence(
 
     assert exc_info.value.code == 1
     assert "非空の必須節がありません: 実現性" in capsys.readouterr().err
-    assert not list((notes / "inbox").iterdir())
+    assert not list(notes.glob("[0-9][0-9][0-9][0-9]/[0-9][0-9]/*.md"))
 
 
 @pytest.mark.parametrize(
@@ -595,7 +595,7 @@ def test_cmd_add_does_not_close_code_fence_with_shorter_or_different_marker(
 
     assert exc_info.value.code == 1
     assert "非空の必須節がありません: 実現性" in capsys.readouterr().err
-    assert not list((notes / "inbox").iterdir())
+    assert not list(notes.glob("[0-9][0-9][0-9][0-9]/[0-9][0-9]/*.md"))
 
 
 def test_cmd_add_accepts_feasibility_after_longer_closing_code_fence(
@@ -611,7 +611,7 @@ def test_cmd_add_accepts_feasibility_after_longer_closing_code_fence(
     message = "本文\n\n" + "\n\n".join(sections)
     _run_public_add(_cmd_add_args(tmp_path, message, source="test"), notes, _FIXED_DT, tmp_path)
 
-    assert len(list((notes / "inbox").iterdir())) == 1
+    assert len(list(notes.glob("[0-9][0-9][0-9][0-9]/[0-9][0-9]/*.md"))) == 1
 
 
 def test_cmd_add_accepts_agent_awi_with_all_required_sections(
@@ -629,7 +629,7 @@ def test_cmd_add_accepts_agent_awi_with_all_required_sections(
         tmp_path,
     )
 
-    assert len(list((notes / "inbox").iterdir())) == 1
+    assert len(list(notes.glob("[0-9][0-9][0-9][0-9]/[0-9][0-9]/*.md"))) == 1
 
 
 def test_cmd_add_accepts_agent_awi_without_alignment_record(
@@ -642,7 +642,7 @@ def test_cmd_add_accepts_agent_awi_without_alignment_record(
     _patch_cmd_add_operations(monkeypatch)
 
     _run_public_add(_cmd_add_args(tmp_path, _AGENT_AWI_BODY, source="test"), notes, _FIXED_DT, tmp_path)
-    assert "scope_alignment" not in next((notes / "inbox").iterdir()).read_text(encoding="utf-8")
+    assert "scope_alignment" not in next(notes.glob("[0-9][0-9][0-9][0-9]/[0-9][0-9]/*.md")).read_text(encoding="utf-8")
     assert "1件をinboxへ投入した" in capsys.readouterr().out
 
 
@@ -656,7 +656,7 @@ def test_cmd_add_preserves_explicit_alignment_frontmatter(
     _patch_cmd_add_operations(monkeypatch)
     message = f"---\nscope_alignment: old-value\nsource: test\n---\n\n{_AGENT_AWI_BODY}"
     _run_public_add(_cmd_add_args(tmp_path, message), notes, _FIXED_DT, tmp_path)
-    saved_path = next((notes / "inbox").iterdir())
+    saved_path = next(notes.glob("[0-9][0-9][0-9][0-9]/[0-9][0-9]/*.md"))
     saved = saved_path.read_text(encoding="utf-8")
     assert "scope_alignment: old-value" in saved
     assert '"scope_alignment": "old-value"' in capsys.readouterr().out
@@ -685,7 +685,7 @@ def test_cmd_add_accepts_agent_awi_with_required_section_body_starting_with_quot
     )
     _run_public_add(_cmd_add_args(tmp_path, message, source="test"), notes, _FIXED_DT, tmp_path)
 
-    assert len(list((notes / "inbox").iterdir())) == 1
+    assert len(list(notes.glob("[0-9][0-9][0-9][0-9]/[0-9][0-9]/*.md"))) == 1
 
 
 def test_cmd_add_accepts_human_awi_without_required_sections(
@@ -698,7 +698,7 @@ def test_cmd_add_accepts_human_awi_without_required_sections(
 
     _run_public_add(_cmd_add_args(tmp_path, "本文"), notes, _FIXED_DT, tmp_path)
 
-    assert len(list((notes / "inbox").iterdir())) == 1
+    assert len(list(notes.glob("[0-9][0-9][0-9][0-9]/[0-9][0-9]/*.md"))) == 1
 
 
 def test_cmd_add_omits_origin_metadata(
@@ -710,7 +710,7 @@ def test_cmd_add_omits_origin_metadata(
     _patch_cmd_add_operations(monkeypatch)
     _run_public_add(_cmd_add_args(tmp_path, "本文"), notes, _FIXED_DT, tmp_path)
 
-    saved = next((notes / "inbox").iterdir()).read_text(encoding="utf-8")
+    saved = next(notes.glob("[0-9][0-9][0-9][0-9]/[0-9][0-9]/*.md")).read_text(encoding="utf-8")
     parsed = frontmatter.parse_frontmatter(saved)
     assert parsed is not None
     assert "origin_session" not in parsed[0]
@@ -755,7 +755,7 @@ def test_cmd_add_records_submitter_session_only_for_uwi(
 
     _run_public_add(_cmd_add_args(tmp_path, message, entry_type=entry_type), notes, _FIXED_DT, tmp_path)
 
-    parsed = frontmatter.parse_frontmatter(next((notes / "inbox").iterdir()).read_text(encoding="utf-8"))
+    parsed = frontmatter.parse_frontmatter(next(notes.glob("[0-9][0-9][0-9][0-9]/[0-9][0-9]/*.md")).read_text(encoding="utf-8"))
     assert parsed is not None
     assert parsed[0].get("submitter_session") == expected
 
@@ -774,7 +774,7 @@ def test_cmd_add_rejects_missing_source_in_agent_environment(
         _run_public_add(_cmd_add_args(tmp_path, "本文"), notes, _FIXED_DT, tmp_path)
 
     assert exc_info.value.code == 1
-    assert not list((notes / "inbox").iterdir())
+    assert not list(notes.glob("[0-9][0-9][0-9][0-9]/[0-9][0-9]/*.md"))
     assert "--source" in capsys.readouterr().err
 
 
@@ -790,7 +790,7 @@ def test_cmd_add_accepts_frontmatter_source_in_agent_environment(
 
     _run_public_add(_cmd_add_args(tmp_path, message), notes, _FIXED_DT, tmp_path)
 
-    assert len(list((notes / "inbox").iterdir())) == 1
+    assert len(list(notes.glob("[0-9][0-9][0-9][0-9]/[0-9][0-9]/*.md"))) == 1
 
 
 def test_cmd_add_accepts_uwi_without_required_sections(
@@ -808,7 +808,7 @@ def test_cmd_add_accepts_uwi_without_required_sections(
         tmp_path,
     )
 
-    assert len(list((notes / "inbox").iterdir())) == 1
+    assert len(list(notes.glob("[0-9][0-9][0-9][0-9]/[0-9][0-9]/*.md"))) == 1
 
 
 def _with_direct_cause(body: str, value: str) -> str:
@@ -856,7 +856,7 @@ def test_add_rejects_undetermined_direct_cause(
     error = capsys.readouterr().err
     assert "直接的原因が未確定のまま保存しようとした" in error
     assert "次の操作: 直接的原因を現物の観測で確定してから" in error
-    assert not list((notes / "inbox").iterdir())
+    assert not list(notes.glob("[0-9][0-9][0-9][0-9]/[0-9][0-9]/*.md"))
 
 
 def test_add_rejects_undetermined_direct_cause_in_uwi(
@@ -880,7 +880,7 @@ def test_add_rejects_undetermined_direct_cause_in_uwi(
 
     assert exc_info.value.code == 1
     assert "直接的原因が未確定のまま保存しようとした" in capsys.readouterr().err
-    assert not list((notes / "inbox").iterdir())
+    assert not list(notes.glob("[0-9][0-9][0-9][0-9]/[0-9][0-9]/*.md"))
 
 
 @pytest.mark.parametrize(
@@ -909,7 +909,7 @@ def test_add_accepts_determined_cause_variants(
 
     _run_public_add(_cmd_add_args(tmp_path, message, source="test"), notes, _FIXED_DT, tmp_path)
 
-    assert len(list((notes / "inbox").iterdir())) == 1
+    assert len(list(notes.glob("[0-9][0-9][0-9][0-9]/[0-9][0-9]/*.md"))) == 1
 
 
 def test_add_accepts_undetermined_cause_from_human(
@@ -927,13 +927,13 @@ def test_add_accepts_undetermined_cause_from_human(
         tmp_path,
     )
 
-    assert len(list((notes / "inbox").iterdir())) == 1
+    assert len(list(notes.glob("[0-9][0-9][0-9][0-9]/[0-9][0-9]/*.md"))) == 1
 
 
 def test_flat_add_operation_is_public(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """公開の`add_entries`が生成したファイル名を返し、frontmatter付きファイルを書き込む。"""
     notes = tmp_path / "private-notes"
-    (notes / "inbox").mkdir(parents=True)
+    (notes / "2024" / "01").mkdir(parents=True)
     monkeypatch.setattr(_wi_sync, "repo_lock", lambda *_args, **_kwargs: contextlib.nullcontext())
     monkeypatch.setattr(_wi_sync, "pull", lambda _path: None)
     monkeypatch.setattr(_wi_sync, "commit_and_push", lambda *_args, **_kwargs: None)
@@ -945,7 +945,7 @@ def test_flat_add_operation_is_public(tmp_path: pathlib.Path, monkeypatch: pytes
         now=_FIXED_DT,
     )
     assert generated == [f"{_FIXED_DT:%Y%m%d-%H%M%S}-001.md"]
-    content = (notes / "inbox" / generated[0]).read_text(encoding="utf-8")
+    content = (notes / "2024" / "01" / generated[0]).read_text(encoding="utf-8")
     assert "target_repo: github.com/example/repo" in content
     assert "source: test" in content
 
@@ -1033,7 +1033,7 @@ def test_flat_add_operation_records_matching_target_commit(
 ) -> None:
     """fallbackと同じtarget_repoの全メッセージへ投入時の40文字OIDを記録する。"""
     notes = tmp_path / "private-notes"
-    (notes / "inbox").mkdir(parents=True)
+    (notes / "2024" / "01").mkdir(parents=True)
     monkeypatch.setattr(_wi_sync, "repo_lock", lambda *_args, **_kwargs: contextlib.nullcontext())
     monkeypatch.setattr(_wi_sync, "pull", lambda _path: None)
     monkeypatch.setattr(_wi_sync, "commit_and_push", lambda *_args, **_kwargs: None)
@@ -1048,7 +1048,7 @@ def test_flat_add_operation_records_matching_target_commit(
     )
 
     for filename in generated:
-        content = (notes / "inbox" / filename).read_text(encoding="utf-8")
+        content = (notes / "2024" / "01" / filename).read_text(encoding="utf-8")
         assert f"target_commit: {target_commit}" in content
 
 
@@ -1058,7 +1058,7 @@ def test_flat_add_operation_omits_commit_for_frontmatter_repo_override(
 ) -> None:
     """frontmatterが別リポジトリを指定したメッセージへfallback側OIDを記録しない。"""
     notes = tmp_path / "private-notes"
-    (notes / "inbox").mkdir(parents=True)
+    (notes / "2024" / "01").mkdir(parents=True)
     monkeypatch.setattr(_wi_sync, "repo_lock", lambda *_args, **_kwargs: contextlib.nullcontext())
     monkeypatch.setattr(_wi_sync, "pull", lambda _path: None)
     monkeypatch.setattr(_wi_sync, "commit_and_push", lambda *_args, **_kwargs: None)
@@ -1073,7 +1073,7 @@ def test_flat_add_operation_omits_commit_for_frontmatter_repo_override(
         now=_FIXED_DT,
     )
 
-    content = (notes / "inbox" / generated[0]).read_text(encoding="utf-8")
+    content = (notes / "2024" / "01" / generated[0]).read_text(encoding="utf-8")
     assert "target_repo: github.com/other/repo" in content
     assert "target_commit:" not in content
 
@@ -1084,7 +1084,7 @@ def test_flat_add_operation_rejects_input_target_commit(
 ) -> None:
     """自動記録するtarget_commitの本文指定は、保存前に拒否する。"""
     notes = tmp_path / "private-notes"
-    (notes / "inbox").mkdir(parents=True)
+    (notes / "2024" / "01").mkdir(parents=True)
     monkeypatch.setattr(_wi_sync, "repo_lock", lambda *_args, **_kwargs: contextlib.nullcontext())
     monkeypatch.setattr(_wi_sync, "pull", lambda _path: None)
     monkeypatch.setattr(_wi_sync, "commit_and_push", lambda *_args, **_kwargs: None)
@@ -1099,7 +1099,7 @@ def test_flat_add_operation_rejects_input_target_commit(
             source=None,
             now=_FIXED_DT,
         )
-    assert not list((notes / "inbox").iterdir())
+    assert not list(notes.glob("[0-9][0-9][0-9][0-9]/[0-9][0-9]/*.md"))
 
 
 @pytest.mark.parametrize("invalid_commit", ["abc123", "g" * 40, "a" * 41])
@@ -1126,7 +1126,7 @@ def test_flat_add_operation_rejects_non_full_oid(
 def test_flat_add_operation_normalizes_frontmatter_target_repo(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """frontmatter由来target_repoが正規化されて保存される。"""
     notes = tmp_path / "private-notes"
-    (notes / "inbox").mkdir(parents=True)
+    (notes / "2024" / "01").mkdir(parents=True)
     monkeypatch.setattr(_wi_sync, "repo_lock", lambda *_args, **_kwargs: contextlib.nullcontext())
     monkeypatch.setattr(_wi_sync, "pull", lambda _path: None)
     monkeypatch.setattr(_wi_sync, "commit_and_push", lambda *_args, **_kwargs: None)
@@ -1139,7 +1139,7 @@ def test_flat_add_operation_normalizes_frontmatter_target_repo(tmp_path: pathlib
         source=None,
         now=_FIXED_DT,
     )
-    content = (notes / "inbox" / generated[0]).read_text(encoding="utf-8")
+    content = (notes / "2024" / "01" / generated[0]).read_text(encoding="utf-8")
     # 保存されたcontentは正規化後の値を含むべき
     assert "target_repo: github.com/example/repo" in content
     # 正規化前の値は含まれていない
@@ -1151,7 +1151,7 @@ def test_flat_add_operation_carries_over_unknown_frontmatter_keys(
 ) -> None:
     """target_repo・source以外のfrontmatterキー（alert_keys等）を入力順で引き継ぐ。"""
     notes = tmp_path / "private-notes"
-    (notes / "inbox").mkdir(parents=True)
+    (notes / "2024" / "01").mkdir(parents=True)
     monkeypatch.setattr(_wi_sync, "repo_lock", lambda *_args, **_kwargs: contextlib.nullcontext())
     monkeypatch.setattr(_wi_sync, "pull", lambda _path: None)
     monkeypatch.setattr(_wi_sync, "commit_and_push", lambda *_args, **_kwargs: None)
@@ -1167,7 +1167,7 @@ def test_flat_add_operation_carries_over_unknown_frontmatter_keys(
         source=None,
         now=_FIXED_DT,
     )
-    content = (notes / "inbox" / generated[0]).read_text(encoding="utf-8")
+    content = (notes / "2024" / "01" / generated[0]).read_text(encoding="utf-8")
     # alert_keysが引き継がれている
     assert "alert_keys: github-run:1" in content
     # target_repoが正規化されている（`.git`サフィックスが除去されている）
@@ -1182,7 +1182,7 @@ def test_flat_add_operation_preserves_nonreserved_frontmatter_for_cross_reposito
 ) -> None:
     """別リポジトリへ移管する本文が持つ非予約frontmatter（`source`・`alert_keys`）を保存時に保持する。"""
     notes = tmp_path / "private-notes"
-    (notes / "inbox").mkdir(parents=True)
+    (notes / "2024" / "01").mkdir(parents=True)
     monkeypatch.setattr(_wi_sync, "repo_lock", lambda *_args, **_kwargs: contextlib.nullcontext())
     monkeypatch.setattr(_wi_sync, "pull", lambda _path: None)
     monkeypatch.setattr(_wi_sync, "commit_and_push", lambda *_args, **_kwargs: None)
@@ -1198,7 +1198,7 @@ def test_flat_add_operation_preserves_nonreserved_frontmatter_for_cross_reposito
         now=_FIXED_DT,
     )
 
-    parsed = frontmatter.parse_frontmatter((notes / "inbox" / generated[0]).read_text(encoding="utf-8"))
+    parsed = frontmatter.parse_frontmatter((notes / "2024" / "01" / generated[0]).read_text(encoding="utf-8"))
     assert parsed is not None
     data, body = parsed
     assert data["target_repo"] == "github.com/target/repo"
@@ -1213,7 +1213,7 @@ def test_flat_add_operation_rejects_input_queue_schedule(
 ) -> None:
     """通常投入でqueue_scheduleを指定すると、保存前にbatchの利用を案内する。"""
     notes = tmp_path / "private-notes"
-    (notes / "inbox").mkdir(parents=True)
+    (notes / "2024" / "01").mkdir(parents=True)
     monkeypatch.setattr(_wi_sync, "repo_lock", lambda *_args, **_kwargs: contextlib.nullcontext())
     monkeypatch.setattr(_wi_sync, "pull", lambda _path: None)
     monkeypatch.setattr(_wi_sync, "commit_and_push", lambda *_args, **_kwargs: None)
@@ -1230,13 +1230,14 @@ def test_flat_add_operation_rejects_input_queue_schedule(
             now=_FIXED_DT,
         )
     assert "--batch" in error.value.next_action
-    assert not list((notes / "inbox").iterdir())
+    assert not list(notes.glob("[0-9][0-9][0-9][0-9]/[0-9][0-9]/*.md"))
 
 
 @pytest.mark.parametrize(
     ("reserved_key", "reserved_value"),
     [
         ("type", "awi"),
+        ("state", "processing"),
         ("scope", "agent"),
         ("question_type", "yes-no"),
         ("choices", "A,B"),
@@ -1263,7 +1264,7 @@ def test_flat_add_operation_rejects_reserved_metadata_atomically(
 ) -> None:
     """予約キーの本文指定は、複数本文のどの位置でも全件を保存前に拒否する。"""
     notes = tmp_path / "private-notes"
-    (notes / "inbox").mkdir(parents=True)
+    (notes / "2024" / "01").mkdir(parents=True)
     monkeypatch.setattr(_wi_sync, "repo_lock", lambda *_args, **_kwargs: contextlib.nullcontext())
     monkeypatch.setattr(_wi_sync, "pull", lambda _path: None)
     monkeypatch.setattr(_wi_sync, "commit_and_push", lambda *_args, **_kwargs: None)
@@ -1283,7 +1284,7 @@ def test_flat_add_operation_rejects_reserved_metadata_atomically(
                 question_type="yes-no" if entry_type == WI_TYPE_UWI else None,
             )
         assert error.value.next_action
-        assert not list((notes / "inbox").iterdir())
+        assert not list(notes.glob("[0-9][0-9][0-9][0-9]/[0-9][0-9]/*.md"))
 
 
 def test_add_operation_does_not_infer_plan_file_from_body(
@@ -1292,7 +1293,7 @@ def test_add_operation_does_not_infer_plan_file_from_body(
 ) -> None:
     """本文が実在する計画ファイルへ言及しても、`plan_file`と`queue_schedule`を自動で付けない。"""
     notes = tmp_path / "private-notes"
-    (notes / "inbox").mkdir(parents=True)
+    (notes / "2024" / "01").mkdir(parents=True)
     plan = tmp_path / "plan.md"
     plan.write_text("# plan\n", encoding="utf-8")
     monkeypatch.setattr(_wi_sync, "repo_lock", lambda *_args, **_kwargs: contextlib.nullcontext())
@@ -1307,7 +1308,7 @@ def test_add_operation_does_not_infer_plan_file_from_body(
         now=_FIXED_DT,
     )
 
-    content = (notes / "inbox" / generated[0]).read_text(encoding="utf-8")
+    content = (notes / "2024" / "01" / generated[0]).read_text(encoding="utf-8")
     parsed = frontmatter.parse_frontmatter(content)
     assert parsed is not None
     assert "queue_schedule" not in parsed[0]
@@ -1320,7 +1321,7 @@ def test_add_operation_records_top_level_dependencies(
 ) -> None:
     """depends_on指定をトップレベル配列として重複なく記録する。"""
     notes = tmp_path / "private-notes"
-    (notes / "inbox").mkdir(parents=True)
+    (notes / "2024" / "01").mkdir(parents=True)
     monkeypatch.setattr(_wi_sync, "repo_lock", lambda *_args, **_kwargs: contextlib.nullcontext())
     monkeypatch.setattr(_wi_sync, "pull", lambda _path: None)
     monkeypatch.setattr(_wi_sync, "commit_and_push", lambda *_args, **_kwargs: None)
@@ -1334,7 +1335,7 @@ def test_add_operation_records_top_level_dependencies(
         depends_on=("first.md", "second.md"),
     )
 
-    parsed = frontmatter.parse_frontmatter((notes / "inbox" / generated[0]).read_text(encoding="utf-8"))
+    parsed = frontmatter.parse_frontmatter((notes / "2024" / "01" / generated[0]).read_text(encoding="utf-8"))
     assert parsed is not None
     assert parsed[0]["depends_on"] == ["first.md", "second.md"]
 
@@ -1354,7 +1355,7 @@ def test_add_warns_for_missing_dependency_and_keeps_registering(
     _run_public_add(_cmd_add_args(tmp_path, "本文", depends_on=["absent.md"]), notes, _FIXED_DT, tmp_path)
 
     captured = capsys.readouterr()
-    generated = sorted(path.name for path in (notes / "inbox").iterdir() if path.suffix == ".md")
+    generated = sorted(path.name for path in notes.glob("[0-9][0-9][0-9][0-9]/[0-9][0-9]/*.md") if path.suffix == ".md")
     assert len(generated) == 1
     warning, next_action = captured.err.splitlines()
     assert warning == f"警告: {generated[0]}のdepends_onが参照するabsent.mdは取り込み先に実在しません"
@@ -1370,7 +1371,8 @@ def test_add_does_not_warn_for_existing_dependency(
 ) -> None:
     """依存先が取り込み先に実在する場合は警告を出力しない。"""
     notes = _setup_notes(tmp_path)
-    (notes / "inbox" / "present.md").write_text("---\ntype: awi\n---\n\n本文\n", encoding="utf-8")
+    (notes / "2024" / "01").mkdir(parents=True, exist_ok=True)
+    (notes / "2024" / "01" / "present.md").write_text("---\nstate: inbox\ntype: awi\n---\n\n本文\n", encoding="utf-8")
     monkeypatch.setattr(add_module, "resolve_add_target", lambda _value: ("github.com/example/repo", None))
     monkeypatch.setattr(_wi_sync, "repo_lock", lambda *_args, **_kwargs: contextlib.nullcontext())
     monkeypatch.setattr(_wi_sync, "pull", lambda _path: None)
@@ -1383,8 +1385,8 @@ def test_add_does_not_warn_for_existing_dependency(
 
 def test_add_cli_dependencies_are_validated_and_normalized(tmp_path: pathlib.Path) -> None:
     """`add` CLIの依存を単純ファイル名へ限定し、拡張子省略と重複を正規化する。"""
-    inbox = tmp_path / "inbox"
-    inbox.mkdir()
+    inbox = tmp_path / "2024" / "01"
+    inbox.mkdir(parents=True)
 
     assert add_module._normalize_dependencies(["first", "first.md", "second.md"], inbox) == (  # pylint: disable=protected-access  # noqa: SLF001
         "first.md",
@@ -1457,7 +1459,7 @@ def test_uwi_requires_question_type_and_rejects_free_form(
     err = capsys.readouterr().err
     assert err.startswith("失敗: ")
     assert "--question-type=choice --choices" in err
-    assert not list((notes / "inbox").iterdir())
+    assert not list(notes.glob("[0-9][0-9][0-9][0-9]/[0-9][0-9]/*.md"))
 
 
 def _choice_argv(tmp_path: pathlib.Path, choices: list[str]) -> list[str]:
@@ -1488,7 +1490,7 @@ def test_public_add_choice_variants(tmp_path: pathlib.Path, monkeypatch: pytest.
     with pytest.raises(SystemExit) as finished:
         atk.main(argv, home=tmp_path, now=_FIXED_DT)
     assert finished.value.code == 0
-    saved = next((notes / "inbox").iterdir()).read_text(encoding="utf-8")
+    saved = next(notes.glob("[0-9][0-9][0-9][0-9]/[0-9][0-9]/*.md")).read_text(encoding="utf-8")
     parsed = frontmatter.parse_frontmatter(saved)
     assert parsed is not None
     assert parsed[0]["choices"] == "A,B,C"
@@ -1513,7 +1515,7 @@ def test_public_add_choice_requires_two_options(
         atk.main(argv, home=tmp_path, now=_FIXED_DT)
     assert failed.value.code != 0
     assert "2件以上" in capsys.readouterr().err
-    assert not list((notes / "inbox").iterdir())
+    assert not list(notes.glob("[0-9][0-9][0-9][0-9]/[0-9][0-9]/*.md"))
 
 
 def test_uwi_choice_question_type_is_saved_with_choices(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -1531,7 +1533,7 @@ def test_uwi_choice_question_type_is_saved_with_choices(tmp_path: pathlib.Path, 
         choices="案A,案B",
     )
 
-    content = (notes / "inbox" / generated[0]).read_text(encoding="utf-8")
+    content = (notes / "2024" / "01" / generated[0]).read_text(encoding="utf-8")
     assert "question_type: choice" in content
     assert "案A" in content
     assert "案B" in content
@@ -1574,7 +1576,7 @@ class TestAddOrderEditorFirst:
 
         assert exc_info.value.code == 0
         assert call_order == ["editor", "head", "sync"]
-        assert list((notes / "inbox").iterdir())
+        assert list(notes.glob("[0-9][0-9][0-9][0-9]/[0-9][0-9]/*.md"))
 
     def test_message_preserved_when_remote_sync_fails(
         self,
@@ -1607,7 +1609,7 @@ class TestAddOrderEditorFirst:
         myrepo = tmp_path / "myrepo"
         myrepo.mkdir()
         git_cmds: list[list[str]] = []
-        inbox = notes / "inbox"
+        inbox = notes / "2024" / "01"
 
         def fake_run(cmd: list[str], *_args: object, **kwargs: object) -> subprocess.CompletedProcess[Any]:
             resp = _fake_git_worktree_remote_response(cmd, myrepo, kwargs)
@@ -1664,7 +1666,7 @@ class TestAddRepoPathOverrideCli:
             atk.main(["wi", "add", "--body-file", str(body_path)], home=tmp_path, now=_FIXED_DT)
 
         assert exc_info.value.code == 0
-        content = next((notes / "inbox").iterdir()).read_text(encoding="utf-8")
+        content = next(notes.glob("[0-9][0-9][0-9][0-9]/[0-9][0-9]/*.md")).read_text(encoding="utf-8")
         # _fake_git_worktree_remote_responseは固定URL（example/myrepo.git）を返すため、
         # 実際のディレクトリ名（cwdrepo）に関わらずtarget_repoはmyrepoで確定する
         assert "target_repo: github.com/example/myrepo" in content
@@ -1711,7 +1713,7 @@ class TestAddRepoPathOverrideCli:
             atk.main(["wi", "add", str(myrepo), "--body-file", str(body_path)], home=tmp_path, now=_FIXED_DT)
 
         assert exc_info.value.code == 0
-        content = next((notes / "inbox").iterdir()).read_text(encoding="utf-8")
+        content = next(notes.glob("[0-9][0-9][0-9][0-9]/[0-9][0-9]/*.md")).read_text(encoding="utf-8")
         assert "target_repo: github.com/example/myrepo" in content
         assert f"target_commit: {_FIXED_HEAD_COMMIT}" in content
         assert "本文" in content
@@ -1746,7 +1748,7 @@ class TestAddRepoPathOverrideCli:
             )
 
         assert exc_info.value.code == 0
-        content = next((notes / "inbox").iterdir()).read_text(encoding="utf-8")
+        content = next(notes.glob("[0-9][0-9][0-9][0-9]/[0-9][0-9]/*.md")).read_text(encoding="utf-8")
         assert "target_repo: github.com/example/myrepo" in content
         assert "本文" in content
         assert "source: session-review" in content
@@ -1774,7 +1776,7 @@ class TestAddRepoPathOverrideCli:
             atk.main(["wi", "add", "本文"], home=tmp_path, now=_FIXED_DT)
 
         assert exc_info.value.code == 2
-        assert not list((notes / "inbox").iterdir())
+        assert not list(notes.glob("[0-9][0-9][0-9][0-9]/[0-9][0-9]/*.md"))
 
 
 def test_cli_add_omits_target_commit_for_url_only_target(
@@ -1803,7 +1805,7 @@ def test_cli_add_omits_target_commit_for_url_only_target(
         )
 
     assert exc_info.value.code == 0
-    content = next((notes / "inbox").iterdir()).read_text(encoding="utf-8")
+    content = next(notes.glob("[0-9][0-9][0-9][0-9]/[0-9][0-9]/*.md")).read_text(encoding="utf-8")
     assert "target_repo: github.com/example/remote" in content
     assert "target_commit:" not in content
     assert not any("HEAD^{commit}" in command for command in git_commands)
@@ -1836,7 +1838,7 @@ def test_cli_add_rejects_existing_path_outside_worktree(
 
     assert exc_info.value.code == 2
     assert "ローカルworktreeではない" in capsys.readouterr().err
-    assert not list((notes / "inbox").iterdir())
+    assert not list(notes.glob("[0-9][0-9][0-9][0-9]/[0-9][0-9]/*.md"))
     assert not any(command[-3:] == ["rev-parse", "--verify", "HEAD^{commit}"] for command in git_commands)
 
 
@@ -1876,7 +1878,7 @@ def test_cli_add_rejects_unresolved_head_commit(
         atk.main(["wi", "add", str(myrepo), "--body-file", str(body_path)], home=tmp_path, now=_FIXED_DT)
 
     assert exc_info.value.code == 2
-    assert not list((notes / "inbox").iterdir())
+    assert not list(notes.glob("[0-9][0-9][0-9][0-9]/[0-9][0-9]/*.md"))
     assert "HEADコミット" in capsys.readouterr().err
 
 
@@ -1918,7 +1920,7 @@ def test_editor_body_is_preserved_when_head_resolution_fails(
     captured = capsys.readouterr()
     assert "確定済みの本文" in captured.err
     assert "失いたくない本文" in captured.err
-    assert not list((notes / "inbox").iterdir())
+    assert not list(notes.glob("[0-9][0-9][0-9][0-9]/[0-9][0-9]/*.md"))
 
 
 class TestAddEmptyBodyRejection:
@@ -2003,7 +2005,7 @@ class TestAddEmptyBodyRejection:
             atk.main(["wi", "add", str(myrepo), "--body-file", str(body_path)], home=tmp_path, now=_FIXED_DT)
 
         assert exc_info.value.code == 0
-        assert list((notes / "inbox").iterdir())
+        assert list(notes.glob("[0-9][0-9][0-9][0-9]/[0-9][0-9]/*.md"))
 
     def test_editor_confirmed_empty_body_rejected(
         self,
@@ -2029,7 +2031,7 @@ def _prepare_notes(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> p
     既存テスト（`test_flat_add_operation_is_public`等）と同じ差し替え方針に揃える。
     """
     notes = tmp_path / "private-notes"
-    (notes / "inbox").mkdir(parents=True)
+    (notes / "2024" / "01").mkdir(parents=True)
     monkeypatch.setattr(_wi_sync, "repo_lock", lambda *_args, **_kwargs: contextlib.nullcontext())
     monkeypatch.setattr(_wi_sync, "pull", lambda _path: None)
     monkeypatch.setattr(_wi_sync, "commit_and_push", lambda *_args, **_kwargs: None)
@@ -2152,7 +2154,7 @@ class TestAddBodyFile:
             atk.main(["wi", "add", "--body-file", str(body_path)], home=tmp_path, now=_FIXED_DT)
 
         assert exc_info.value.code == 0
-        content = next((notes / "inbox").iterdir()).read_text(encoding="utf-8")
+        content = next(notes.glob("[0-9][0-9][0-9][0-9]/[0-9][0-9]/*.md")).read_text(encoding="utf-8")
         assert body.strip() in content
 
     def test_body_file_repeats_for_multiple_entries(
@@ -2178,7 +2180,7 @@ class TestAddBodyFile:
             )
 
         assert exc_info.value.code == 0
-        bodies = sorted(path.read_text(encoding="utf-8") for path in (notes / "inbox").iterdir())
+        bodies = sorted(path.read_text(encoding="utf-8") for path in notes.glob("[0-9][0-9][0-9][0-9]/[0-9][0-9]/*.md"))
         assert len(bodies) == 2
         assert any("1件目の本文" in body for body in bodies)
         assert any("2件目の本文" in body for body in bodies)
@@ -2202,7 +2204,7 @@ class TestAddBodyFile:
             atk.main(["wi", "add", "--body-file", str(body_path)], home=tmp_path, now=_FIXED_DT)
 
         assert exc_info.value.code == 0
-        content = next((notes / "inbox").iterdir()).read_text(encoding="utf-8")
+        content = next(notes.glob("[0-9][0-9][0-9][0-9]/[0-9][0-9]/*.md")).read_text(encoding="utf-8")
         assert f"\n{message_file}\n" in content
 
     def test_positional_message_is_rejected(
@@ -2258,7 +2260,7 @@ def test_add_rejects_reserved_user_comment_heading_in_agent_environment(
         atk.main(argv, home=tmp_path, now=_FIXED_DT)
 
     assert exc_info.value.code == 1
-    assert not list((notes / "inbox").iterdir())
+    assert not list(notes.glob("[0-9][0-9][0-9][0-9]/[0-9][0-9]/*.md"))
     assert "ユーザーコメント節を含む本文を投入できません" in capsys.readouterr().err
 
 
@@ -2282,7 +2284,7 @@ def test_add_accepts_reserved_user_comment_heading_outside_agent_environment(
         atk.main(argv, home=tmp_path, now=_FIXED_DT)
 
     assert exc_info.value.code == 0
-    assert "## ユーザーコメント" in next((notes / "inbox").iterdir()).read_text(encoding="utf-8")
+    assert "## ユーザーコメント" in next(notes.glob("[0-9][0-9][0-9][0-9]/[0-9][0-9]/*.md")).read_text(encoding="utf-8")
 
 
 def test_add_accepts_fenced_user_comment_heading_in_agent_environment(
@@ -2309,7 +2311,7 @@ def test_add_accepts_fenced_user_comment_heading_in_agent_environment(
         )
 
     assert exc_info.value.code == 0
-    assert list((notes / "inbox").iterdir())
+    assert list(notes.glob("[0-9][0-9][0-9][0-9]/[0-9][0-9]/*.md"))
 
 
 def test_add_entries_accepts_plain_uwi_body(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -2324,7 +2326,7 @@ def test_add_entries_accepts_plain_uwi_body(tmp_path: pathlib.Path, monkeypatch:
         entry_type=WI_TYPE_UWI,
         question_type="yes-no",
     )
-    content = (notes / "inbox" / generated[0]).read_text(encoding="utf-8")
+    content = (notes / "2024" / "01" / generated[0]).read_text(encoding="utf-8")
     assert content.count(uwi_module.ANSWER_MARKER) == 1
     assert content.count(f"\n{uwi_module.ANSWER_HEADING}\n") == 1
     assert content.count(f"\n{uwi_module.QUESTION_HEADING}\n") == 1
@@ -2345,7 +2347,7 @@ def test_add_entries_uses_frontmatter_target_repo_when_omitted(
         now=_FIXED_DT,
     )
 
-    content = (notes / "inbox" / generated[0]).read_text(encoding="utf-8")
+    content = (notes / "2024" / "01" / generated[0]).read_text(encoding="utf-8")
     assert "target_repo: github.com/example/repo" in content
 
 
@@ -2375,7 +2377,7 @@ def test_add_entries_rejects_missing_or_invalid_frontmatter_target_repo(
             now=_FIXED_DT,
         )
 
-    assert not list((notes / "inbox").iterdir())
+    assert not list(notes.glob("[0-9][0-9][0-9][0-9]/[0-9][0-9]/*.md"))
 
 
 def test_add_reports_body_mismatch_when_saved_body_is_altered(
@@ -2384,7 +2386,7 @@ def test_add_reports_body_mismatch_when_saved_body_is_altered(
 ) -> None:
     """保存の処理中に本文が改変された場合、一致判定は不一致と最初の差異位置を示す。"""
     notes = tmp_path / "private-notes"
-    (notes / "inbox").mkdir(parents=True)
+    (notes / "2024" / "01").mkdir(parents=True)
     monkeypatch.setattr(_wi_sync, "repo_lock", lambda *_args, **_kwargs: contextlib.nullcontext())
     monkeypatch.setattr(_wi_sync, "pull", lambda _path: None)
     monkeypatch.setattr(_wi_sync, "commit_and_push", lambda *_args, **_kwargs: None)
@@ -2422,7 +2424,7 @@ def test_add_reports_body_match_for_trailing_newline_difference_only(
 ) -> None:
     """末尾改行の有無だけが異なる保存本文は一致と判定する。"""
     notes = tmp_path / "private-notes"
-    (notes / "inbox").mkdir(parents=True)
+    (notes / "2024" / "01").mkdir(parents=True)
     monkeypatch.setattr(_wi_sync, "repo_lock", lambda *_args, **_kwargs: contextlib.nullcontext())
     monkeypatch.setattr(_wi_sync, "pull", lambda _path: None)
     monkeypatch.setattr(_wi_sync, "commit_and_push", lambda *_args, **_kwargs: None)
@@ -2444,7 +2446,7 @@ def test_add_reports_body_match_for_trailing_newline_difference_only(
         saved_details=saved_details,
     )
 
-    assert (notes / "inbox" / generated[0]).exists()
+    assert (notes / "2024" / "01" / generated[0]).exists()
 
 
 @pytest.mark.parametrize("input_kind", ["position", "body-file"])
@@ -2474,9 +2476,9 @@ def test_add_reports_body_match_for_crlf_inputs(
         saved_details=saved_details,
     )
 
-    saved = (notes / "inbox" / generated[0]).read_bytes()
+    saved = (notes / "2024" / "01" / generated[0]).read_bytes()
     assert b"\r" not in saved
-    assert (notes / "inbox" / generated[0]).exists()
+    assert (notes / "2024" / "01" / generated[0]).exists()
 
 
 def test_cli_add_omits_body_verification_details(
@@ -2608,7 +2610,7 @@ def test_public_add_cooldown_first_save_and_readiness(
     with pytest.raises(SystemExit) as finished:
         atk.main(argv, home=tmp_path, now=_FIXED_DT)
     assert finished.value.code == 0
-    paths = sorted((notes / "inbox").glob("*.md"))
+    paths = sorted(notes.glob("[0-9][0-9][0-9][0-9]/[0-9][0-9]/*.md"))
     assert len(paths) == 2
     expected = datetime.datetime.fromisoformat(deadline).isoformat() if deadline else None
     for path in paths:
@@ -2641,7 +2643,7 @@ def test_public_add_rejects_invalid_cooldown_without_saving(
         atk.main(argv, home=tmp_path, now=_FIXED_DT)
     assert failed.value.code != 0
     assert "cooldown" in capsys.readouterr().err
-    assert not list((notes / "inbox").iterdir())
+    assert not list(notes.glob("[0-9][0-9][0-9][0-9]/[0-9][0-9]/*.md"))
 
 
 @pytest.mark.parametrize("reserved_key", ["type", "target_commit", "queue_schedule"])
@@ -2683,7 +2685,7 @@ def test_registration_rejects_reserved_metadata_before_any_save(
             atk.main(argv, home=tmp_path, now=_FIXED_DT)
         assert rejected_cli.value.code != 0
         assert reserved_key in capsys.readouterr().err
-    assert not list((notes / "inbox").iterdir())
+    assert not list(notes.glob("[0-9][0-9][0-9][0-9]/[0-9][0-9]/*.md"))
 
 
 @pytest.mark.parametrize("mode", ["uwi", "batch"])
@@ -2700,4 +2702,4 @@ def test_public_add_rejects_cooldown_for_unsupported_mode(
         atk.main(argv, home=tmp_path, now=_FIXED_DT)
     assert failed.value.code != 0
     assert "cooldown" in capsys.readouterr().err
-    assert not list((notes / "inbox").iterdir())
+    assert not list(notes.glob("[0-9][0-9][0-9][0-9]/[0-9][0-9]/*.md"))

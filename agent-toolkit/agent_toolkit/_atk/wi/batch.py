@@ -37,9 +37,10 @@ from agent_toolkit._atk.wi import sync as _wi_sync
 from agent_toolkit._atk.wi import user_comment as _user_comment
 from agent_toolkit._atk.wi import web_input as _wi_web_input
 from agent_toolkit._atk.wi.add import body_is_effectively_empty, read_body_files
-from agent_toolkit._atk.wi.constants import WI_STATE_INBOX, WI_STATES, WI_TYPE_AWI, WI_TYPES
+from agent_toolkit._atk.wi.constants import WI_STATE_INBOX, WI_TYPE_AWI, WI_TYPES
 from agent_toolkit._atk.wi.filenames import MISSING_DEPENDENCY_NEXT_ACTION
 from agent_toolkit._atk.wi.formatters import shorten_home
+from agent_toolkit._atk.wi.layout import iter_entry_paths
 from agent_toolkit._atk.wi.web_input import WebInputError
 from agent_toolkit._git import remote as _git_remote
 
@@ -194,11 +195,20 @@ def parse_show_batch(text: str) -> list[BatchEntry]:
 
 def _existing_entry_path(private_notes: pathlib.Path, name: str) -> pathlib.Path | None:
     """5状態フォルダから指定されたファイル名の実体を探し、最初に見つかったパスを返す。"""
-    for state in WI_STATES:
-        path = private_notes / state / name
-        if path.is_file():
-            return path
-    return None
+    return next((path for path in iter_entry_paths(private_notes) if path.name == name), None)
+
+
+def _inbox_content(content: str) -> str:
+    """取り込み先の保存状態をinboxへそろえ、本文の字面を保持する。"""
+    parsed = _frontmatter.parse_frontmatter(content)
+    assert parsed is not None
+    metadata, body = parsed
+    if "state" not in metadata:
+        return "---\nstate: inbox\n" + content[4:]
+    if metadata["state"] == WI_STATE_INBOX:
+        return content
+    metadata["state"] = WI_STATE_INBOX
+    return _frontmatter.serialize_frontmatter(metadata, body)
 
 
 def _duplicate_original_names(
@@ -233,7 +243,8 @@ def _duplicate_original_names(
         if stored_path is None:
             continue
         stored_text = _frontmatter.decode_entry_text(stored_path.read_bytes())
-        if stored_text == _frontmatter.normalize_newlines(entry.raw_text):
+        normalized = _frontmatter.normalize_newlines(entry.raw_text)
+        if stored_text in (normalized, _inbox_content(normalized)):
             duplicated.add(entry.original_name)
     return duplicated
 
@@ -409,7 +420,7 @@ def add_batch_entries(
     if not texts:
         raise WebInputError("取り込む本文が無い", next_action="取り込む本文を1件以上指定してください")
     entries = [entry for text in texts for entry in parse_show_batch(text)]
-    inbox_dir = _wi_entries.subdir(private_notes, WI_STATE_INBOX)
+    inbox_dir = private_notes
     for entry in entries:
         _wi_web_input.validate_filename(entry.original_name, inbox_dir)
     with _wi_sync.repo_lock(private_notes, timeout=lock_timeout):
@@ -448,7 +459,10 @@ def add_batch_entries(
             for entry in imported
         ]
         for filename, content in contents:
-            _frontmatter.write_entry_text(inbox_dir / filename, content)
+            content = _inbox_content(content)
+            path = _wi_entries.entry_path(private_notes, filename, fallback_date=now.date())
+            path.parent.mkdir(parents=True, exist_ok=True)
+            _frontmatter.write_entry_text(path, content)
         warnings = _dependency_warnings(
             imported,
             assignments=assignments,
@@ -460,7 +474,7 @@ def add_batch_entries(
             _wi_sync.commit_and_push(
                 private_notes,
                 f"chore: add {count} imported {'item' if count == 1 else 'items'}",
-                [WI_STATE_INBOX],
+                [str(_wi_entries.entry_path(private_notes, filename).relative_to(private_notes)) for filename, _ in contents],
                 skip_push=skip_remote_sync,
             )
     mapping = [(entry.original_name, assignments[entry.original_name]) for entry in imported]
@@ -518,11 +532,10 @@ def cmd_add_batch(
             print("---", file=sys.stderr)
             print(text, file=sys.stderr)
         sys.exit(1)
-    inbox_dir = _wi_entries.subdir(private_notes, WI_STATE_INBOX)
     _outcome.report_success(f"{len(mapping)}件をinboxへ取り込んだ")
     for original, saved in mapping:
         renamed = f"（{original} -> {saved}）" if original != saved else ""
-        print(f"  {shorten_home(inbox_dir / saved, home)}{renamed}")
+        print(f"  {shorten_home(_wi_entries.entry_path(private_notes, saved), home)}{renamed}")
     if skipped:
         print(f"{len(skipped)}件スキップ（ファイル名と本文が既存項目と一致）:")
         for original in skipped:

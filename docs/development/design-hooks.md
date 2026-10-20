@@ -309,6 +309,7 @@ Claude Codeのメインへ返す`SessionStart`の通知へ、入力の`session_i
 更新時刻順の正しさと会話の同一性は独立であるため、ホストが入力で渡す識別子と記録パスを消費側へ届ける。
 `startup`・`resume`・`clear`・`compact`・`fork`の各入力で現行の値を通知し、managed-tempの作成の成否と独立に結合する。入力に無い値は推測で補わず、既存の取得手段として`CLAUDE_CODE_SESSION_ID`と`session-review-evidence --claude-session-id`を案内する。委譲先とCodexは対象外とし、委譲先自身の会話と委譲元から受け取る証拠の識別子を混同させない。
 取得元の規範は`agent-toolkit/share/rules-main.claude-code.md`「自身の会話の記録」に集約し、記録を使う消費文書は同節を参照する。
+入力の記録パスが実在しない場合は、同じsession IDのメイン記録を既存の解決処理で1件へ定める。開始時と別のディレクトリでの再開により入力が実在しないパスを示した観測へ対応する。解決件数ごとの扱いは後掲「出力の配送とセッション記録の解決」に従う。
 入力項目とmatcherの典拠は[audit-records.md](audit-records.md)「docs/development/design-hooks.md：通知の整形と反復検出：2026年10月13日」にある。
 環境変数だけを案内する案はtranscriptの所在を消費側ごとの探索に残し、`UserPromptSubmit`で毎ターン配送する案は`SessionStart`が会話の切替境界を既に扱うため採らない。新しい状態ファイルや取得器は設けない。
 
@@ -586,21 +587,23 @@ CodexのPostToolUseは`persistedOutputPath`を持たず（出力は切り詰め�
 
 観測と再検証手段は`docs/development/audit-records.md`の「docs/development/design-hooks.md：利用上限後のメインの再開予約：2026年10月14日」にある。
 
-メインの利用上限では、Function hooksが解除後に同じ会話へ再開promptを投入する。
+メインの利用上限では、StopFailureのコマンドhookが再開要求を保存し、Function hooksの`turn.complete`が既存の再開予約へ接続する。
 Remote Control接続ではホストの自動継続が自動で始まらないため、起動形態に対応した再開の契機を確保する。
-`classic.StopFailure`の`error: rate_limit`と、`turn.complete`時の`five_hour`・`seven_day`の使用率100%以上を契機とする。
-最大使用窓の`resetsAt`後へ、`$.clock.after`でsessionごと1件を予約する。
+コマンドhookは`rate_limit`時にClaude configの`agent-toolkit-function-hooks/rate-limit-{session_id}.txt`へ`requested`を書く。
+`usage_limit_resume.ts`は要求を`consumed`へ変え、解除予定後に同じ会話へ継続指示を送る予約をsessionごとに1件保持する。
 予定時刻が無いか過ぎている場合は300秒後に再確認する。
-解除予定後に別turnが始まっていれば重複投入せず、予約中の`$.ui.status`は投入・取消時に除く。
+解除予定後に別turnが始まっていれば重複投入せず、予約の表示は投入・取消時に除く。
 `isDelegated`が真のsessionと`agentId`を持つturnは対象から外す。
 1行目が`atk-auto`の開始タグであるpromptは、既存のUserPromptSubmitの機械注入判定へ接続する。
 promptは再開情報を読んで最初の未完了工程から続け、完了・続行済み・ユーザー中止では終了することを伝える。
-modが再開の契機、usage-limit手順が再開後の工程、agents_serverが委譲先の解除待ちを所有する。
+コマンドhookが要求の保存、modが再開予約、usage-limit手順が再開後の工程を所有する。
+agents_serverは委譲先の解除待ちを所有する。
 解除待ちの委譲先、背景waitと定期再確認のtaskは保持する。
 猶予通知の実行中サブエージェントの説明は同じ会話のAgentを指し、独立したagents_serverの解除待ちへ当てはめない。
 猶予時にモデルがcronを予約する案は、最初から拒否されたturnでは操作機会が無く、規範の想起にも依存するため採らない。
 Remote Controlを無効にする案はユーザーの遠隔操作を失わせるため採らない。
-予約はsession内のタイマーであり、module再読込で失われる。
+組織設定で省略される`classic.*`への依存を外し、コマンドhookの要求を`turn.complete`へ渡す。
+予約のタイマーはsession内にあり、module再読込で失われる。
 ホスト挙動の典拠と未観測範囲は[audit-records.md](audit-records.md)の利用上限後の再開の項にある。
 
 ### `start`の処理の中での定期再確認の装着
@@ -686,11 +689,18 @@ Codex欄の「対応」「部分対応」「非対応」は、Codex 0.154.0の�
 
 ### セッション種別が分かる短い名前
 
-`session_title.ts`は`skill.prompt`からprocess-wi・single-lane-process・add-awi-by-userの起動を観測し、`classic.UserPromptSubmit`の`sessionTitle`で名前を設定する。先頭は`process-wi`・`single-lane`・`add-awi`とし、計画があればstemの日時接頭辞を除いた名称を続ける。process-loopの環境印と会話IDが一致する場合はprocess-wiとする。その他は計画名だけにし、計画が無ければホストの名前を保つ。
+PostToolUseのSkill観測と手動起動のUserPromptSubmitは、process-wi・single-lane-process・add-awi-by-userの種別を通常session stateへ保存する。
+UserPromptSubmitのコマンドhookは`hookSpecificOutput.sessionTitle`を返す。
+先頭は`process-wi`・`single-lane`・`add-awi`とし、計画があればstemの日時接頭辞を除いた名称を続ける。
+process-loopの環境印と会話IDが一致する場合はprocess-wiとする。
+その他は計画名だけにし、計画が無ければホストの名前を保つ。
 
-入力の現在名`session_title`が空か前回自動設定した名前と一致する場合だけ更新する。これにより、後から種別・計画が判明した場合も名前へ反映し、手動の名前を保つ。前回設定名は既存の通常状態で保持する。PythonのUserPromptSubmitは注記と既存のモード状態だけを扱い、Codexは命名しない。
+入力の現在名`session_title`が空か前回自動設定した名前と一致する場合だけ更新する。
+後から判明した種別・計画を名前へ反映し、前回設定名は既存の通常状態で保持する。
+手動の名前を保ち、Codexは命名しない。
 
-`$.session.setTitle`はClaude Code 2.1.302に無い。renameコマンドは改名の表示とターン内呼出制限があるため、flatなsessionTitleを受理するclassicイベントを選ぶ。セッション開始イベントだけに集約する案はclear後を取りこぼし、一度限りの専用記録は後から判明した種別への更新を妨げる。
+Function hooksへ命名を依存させる案は、組織向け設定で省略された場合に命名できないため採用しない。
+セッション開始イベントだけに集約する案はclear後を取りこぼし、一度限りの専用記録は後から判明した種別への更新を妨げる。
 
 ## セッション状態の共有
 
@@ -699,7 +709,16 @@ Codex欄の「対応」「部分対応」「非対応」は、Codex 0.154.0の�
 更新は排他ロック下で実行し、原子的な置換で保存する。
 この構造により、並列に発火したフックが互いの記録を失わず、再開したセッションでも必要な判定を継続できる。
 
-命名用の種別と前回設定名も通常状態へ保存する。modは`session_state.py`のCLIから既存の排他更新を使い、専用の命名記録とロックを持たない。期限切れ状態を回収し、clearでは現行状態も除く。空のロックファイルは一時ディレクトリの通常回収へ委ねる。
+命名用の種別と前回設定名も通常状態へ保存する。
+session stateのJSONは`state_dir()/hook-sessions/claude-agent-toolkit-{sid}.json`へ置く。
+通常のlockは`state_dir()/hook-sessions/.state.lock`の固定1個とし、TMPDIRが異なるプロセスも同じ排他を使う。
+clearと期限回収でもlockを削除せず、sessionごとのlockファイルを蓄積させない。
+共有排他は短いstate read-modify-writeだけを囲み、長いtranscript抽出と継承候補の準備はlockの外で行う。
+準備結果の保存時はlock内で現行状態が不在のままかを再確認する。
+旧temp lockは同じsession IDの旧JSONを移行する間だけ使う。
+同じsession IDの旧JSONだけを初回読取で移行し、clearでは旧JSONも除く。
+旧配置の読取互換と期限回収を保ち、TMPDIRが変わるホスト再起動後も同じ会話の判定を続ける。
+一時ディレクトリだけに状態を置く案は、再起動で保存先が変わると起動済み委譲先の追送を拒否するため採用しない。
 
 書き込み側のフックは観測したイベントだけを知り、読み取り側のフックは必要なフラグだけを判定材料にする。
 状態ファイルは会話本文、成果物の内容または工程全体の進捗を正式な記録として保持しない。
@@ -713,6 +732,24 @@ Codex欄の「対応」「部分対応」「非対応」は、Codex 0.154.0の�
 コマンド文字列や成果物のハッシュを多段階で同期する案も、状態と実態の不一致を新たに生むため採用しない。
 状態をセッション終了時に直ちに削除する案は、同じ識別子での再開を妨げるため、期限を過ぎた状態だけを回収する。
 回収は終了イベントを発したセッション自身を除いて実施し、会話が破棄された場合だけ終了イベントを発したセッションの状態を削除する。
+
+### 出力の配送とセッション記録の解決
+
+`additionalContext`文字列の10,000文字上限と、長い出力のファイル保存および2,000文字のプレビューは別の契約として扱う。
+観測値の保証は同じ配送方法に限り、全hook出力へ適用できる上限とは区別する。
+通知が受け取ったtranscript pathが実在しない場合は、同じClaude session IDのメイン記録を解決する。
+0件では入力値を保ち、1件なら解決した記録を使う。複数件では会話IDの明示を求め、一意性を推定しない。
+開始時と別のディレクトリでの再開時に入力が実在しない記録を示したためである。観測と再検証手段は[audit-records.md](audit-records.md)「docs/development/design-hooks.md：通知の整形と反復検出：2026年10月20日」にある。
+
+応答言語判定はSession APIの`messages({as: "api"})`から可視本文を取り出し、ホスト合成のAPI失敗行を判定対象から外す。
+send_to_userの本文、通常の英語本文と応答欠落はそれぞれの既存判定を保つ。
+終了を拒否する通知は、終了証拠、終了順序と委譲先観測の理由ごとに、実行できる続行またはユーザー確認への操作を返す。
+不適切なblocked・waitの拒否境界は維持する。
+
+圧縮再開時は既存のsession-review抽出を再利用し、メインへ全ユーザー発話の保存ファイル`compaction-user-events.jsonl`を渡す。
+原文と`record`・`line`を保持し、抽出の失敗や時間上限では古い同名ファイルを除いて手動取得を案内する。
+メインと委譲先へ会話範囲の再取得手段を通知し、原記録から要求と回答を復元できるようにする。
+新しいLLM呼び出しとPreCompact hookを設ける案は、既存の記録抽出で満たせる処理を重複させるため採用しない。
 
 ## 通知本文の仕様とエージェント向け文書の長さの追随検出
 

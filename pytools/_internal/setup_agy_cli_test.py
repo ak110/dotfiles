@@ -54,7 +54,8 @@ def test_run_installs_and_prepends_path(monkeypatch, tmp_path: Path) -> None:
     monkeypatch.setattr(setup_agy_cli.common, "run_subprocess", fake_run)
     monkeypatch.setattr(setup_agy_cli.setup_cli_common, "prepend_path", prepended.append)
 
-    assert setup_agy_cli.run(_fake_client(handler)).changed is True
+    with _fake_client(handler) as client:
+        assert setup_agy_cli.run(client).changed is True
     assert requested == ["https://antigravity.google/cli/install.sh"]
     assert commands[0][0] == "bash"
     assert commands[-1] == [str(launcher), "--version"]
@@ -86,7 +87,8 @@ def test_run_installs_with_powershell_file_on_windows(monkeypatch, tmp_path: Pat
     monkeypatch.setattr(setup_agy_cli.common, "run_subprocess", fake_run)
     monkeypatch.setattr(setup_agy_cli.setup_cli_common, "prepend_path", lambda path: None)
 
-    assert setup_agy_cli.run(_fake_client(handler)).changed is True
+    with _fake_client(handler) as client:
+        assert setup_agy_cli.run(client).changed is True
     assert requested == ["https://antigravity.google/cli/install.ps1"]
     assert commands[0][:2] == ["pwsh", "-NoProfile"]
     assert commands[0][-1].endswith(".ps1")
@@ -109,8 +111,8 @@ def test_run_warns_instead_of_raising_when_the_installer_is_unreachable(
 
     monkeypatch.setattr(setup_agy_cli.common, "run_subprocess", fail)
 
-    with caplog.at_level("WARNING"):
-        assert setup_agy_cli.run(_fake_client(handler)).changed is False
+    with caplog.at_level("WARNING"), _fake_client(handler) as client:
+        assert setup_agy_cli.run(client).changed is False
 
     assert len(caplog.records) == 1
 
@@ -139,7 +141,7 @@ def test_run_warns_when_the_verification_fails(monkeypatch, tmp_path: Path, capl
     monkeypatch.setattr(setup_agy_cli.common, "run_subprocess", fake_run)
     monkeypatch.setattr(setup_agy_cli.setup_cli_common, "prepend_path", fail_prepend)
 
-    with caplog.at_level("WARNING"):
-        assert setup_agy_cli.run(_fake_client(handler)).changed is False
+    with caplog.at_level("WARNING"), _fake_client(handler) as client:
+        assert setup_agy_cli.run(client).changed is False
 
     assert len(caplog.records) == 1

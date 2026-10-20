@@ -1,4 +1,4 @@
-"""WIの一覧を限定する条件（状態、回答状況、source、target_repo）の判定。
+"""WIの一覧を限定する条件（状態、回答状況、重要フラグ、source、target_repo）の判定。
 
 `atk wi list`・`atk wi grep`などのCLIと、`atk serve`のWI画面の一覧が同じ判定を使う。
 画面は各条件を単一値で送り、CLIは複数値を受け取る。単一値は複数値の特殊な形として同じ判定へ渡す。
@@ -9,6 +9,7 @@ from collections.abc import Iterable
 
 from agent_toolkit._atk.wi import uwi_scan as _wi_uwi_scan
 from agent_toolkit._atk.wi.constants import WI_ACTIVE_STATES, WI_PROCESSABLE_STATES, WI_STATES, WI_TYPE_UWI
+from agent_toolkit._atk.wi.entry_text import parse_frontmatter
 from agent_toolkit._git import remote as _git_remote
 
 
@@ -66,6 +67,24 @@ def source_matches_any(entry_source: str | None, filter_values: str | Iterable[s
     if filter_values is None:
         return True
     return any(source_matches(entry_source, value) for value in _values(filter_values))
+
+
+def is_important(text: str) -> bool:
+    """重要フラグの欠落をfalseとして読む。"""
+    parsed = parse_frontmatter(text)
+    return parsed is not None and parsed[0].get("important") is True
+
+
+def important_matches(text: str, filter_values: str | Iterable[str]) -> bool:
+    """重要・非重要の指定との一致を返す。"""
+    values = set(_values(filter_values))
+    return "all" in values or important_value_matches(is_important(text), values)
+
+
+def important_value_matches(important: bool, filter_values: str | Iterable[str]) -> bool:
+    """取得済みの重要フラグを一覧条件と比較する。"""
+    values = set(_values(filter_values))
+    return "all" in values or ("yes" if important else "no") in values
 
 
 class TargetRepoMatcher:

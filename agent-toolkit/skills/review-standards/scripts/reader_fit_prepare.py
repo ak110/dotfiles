@@ -32,6 +32,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--previous-review-start", help="再レビューで比較する前回の差分の基点となるcommit識別子")
     parser.add_argument("--previous-review-head", help="再レビューで比較する前回確認版のHEADのcommit識別子")
     parser.add_argument(
+        "--previous-review-contract", type=pathlib.Path, metavar="PATH", help="前回レビューの判定範囲を持つ契約の絶対パス"
+    )
+    parser.add_argument(
         "--review-contract", type=pathlib.Path, metavar="PATH", help="計画別の判定範囲を持つreview_contract YAMLの絶対パス"
     )
     parser.add_argument("--output-dir", type=pathlib.Path, required=True, metavar="DIR", help="managed-temp内の保存先絶対パス")
@@ -108,6 +111,7 @@ def main(argv: list[str] | None = None) -> int:
                 args.previous_review_head,
                 path,
                 args.review_contract,
+                args.previous_review_contract,
             ):
                 item["omission"] = "再点検対象なし"
             result.append(item)

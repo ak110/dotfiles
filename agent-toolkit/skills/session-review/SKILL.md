@@ -48,15 +48,23 @@ description: >
    - `conversation.md`は発話とツール呼び出しの入力を全文で載せ、ツール結果は本文を載せずに成否（`完了`か`失敗`）・本文量・記録位置の1行（`- ツール結果（<記録位置>）: …`）で示す。結果の本文は記録位置を`--detail`へ渡すと得られる
    - `comparison-materials.md`は委譲入力・規範読込の比較材料を記録別に示す参照資料で、対象・時点・記録位置から詳細照会の全文位置を選ぶのに使う。時系列は会話の流れから読む
    - `stats.md`は律速となったagent threadごとの内訳、メインと全担当のtokens・cache・応答回数の概要と計数定義、記録ごとの圧縮回数と各回の記録位置・時刻を持つ
+   - `stats.md`の資源使用の比較材料は、担当別のRead対象と範囲、Skill起動、結果の文字数・UTF-8量、反復上位、大量結果の位置とメインのtoken上位を持つ。必要な読込と総費用を比べる材料であり、量と反復だけでは問題と判定しない
    - `candidates.md`・`stats.md`の未確認範囲とJSONの`unconfirmed_scope`は、未解決の記録と識別子を得られない呼び出しを区別して示す。候補件数とは別の確認範囲である
 
    標準出力の1行JSONは各文書の所在（`conversation_path`、`comparison_materials_path`、`candidates_path`、`stats_path`）と`reference_document`（無ければnull）を持つ。
    ほかに`prepared_at`、`utterance_counts`、`candidate_total`・`candidate_counts`、`excluded_counts`、`failure_ledger_skipped`を持つ。
    さらに`mandatory_candidates`、`similar_records`、`elapsed_seconds`、`compaction_count`を持つ。両者の候補を振り返り結果報告でどの行に書くかは`agent-toolkit:completion-report`の`references/report-formats.md`が定める。
    `conversation_ranges`は会話の全行を重複・欠落なく覆う読取単位で、各範囲の`start_line`・`end_line`は両端を含む1始まりの行番号、`utf8_bytes`は改行込みの量、`first_locator`・`last_locator`と`first_timestamp`・`last_timestamp`は範囲内の最初と最後の位置・時刻（取得できなければnull）である。
-   `reader_ranges`は`conversation_ranges`の要素を先頭から順に束ねた担当範囲で、1担当が全文を読了できる量に収まる。各範囲は`start_line`・`end_line`・`utf8_bytes`と、束ねた要素の添字`first_range_index`・`last_range_index`を持つ。
+   各範囲は記録境界とメイン既知区間の境界で分かれ、`record`と`main_known`を持つ。
+   `main_known_scope`はメインの記録と最後の圧縮より後の開始位置を`record`・`after_line`で示し、圧縮が無ければ`after_line`は0である。
+   `reader_ranges`は`main_known`がfalseの同一記録の連続する原子的範囲だけを束ねた担当範囲である。
+   各範囲は`start_line`・`end_line`・`utf8_bytes`と、全`conversation_ranges`中の添字`first_range_index`・`last_range_index`を持つ。
    `improvement_lines`と`candidates.md`の取り込んだ改善点は、記録の全文から抽出した実際の行を持つ。
 2. `candidates.md`より先に`conversation.md`の全範囲を確認し、観点を限定せず問題と改善機会を列挙する。全範囲を覆う責任と最終判断はメインが持つ。
+   - メインが現在の文脈に持つ`main_known`の区間はメイン自身が評価し、読取担当へ渡すのは`reader_ranges`の区間とする。会話本文と統計の母集団は全記録を保つ。`--conversation-only`はメイン既知区間を除外せず、全範囲を読取対象にする。
+   - 毎回、`stats.md`の担当別の読込・Skill・結果量・反復とtoken上位から、品質を保って削減できる費用を確認する。結果は問題候補への自動昇格と区別し、振り返り結果報告へ確認結果を1行で渡す。
+   - 確認する集合は`references/analysis.md`「コストの無駄の確認」の17観点とし、集計と全担当のトークン内訳を比べる。無駄と判断した対象は工程3の原因と対策か、見送りの根拠へ対応付ける。
+   - 準備後の圧縮で既知区間が文脈から失われた場合と、`main_known`でもメインが内容を確かめられない場合は、その原子的読取単位を再読または再割当する。
    - 標識に現れない遠回り・手戻り・反復・ユーザー是正・時間の浪費を、ツール呼び出しと前後の発話から探す（コマンドの試行錯誤、資料の再読・陳腐化、設計の書き直し、規範解釈、委譲指示の不足、定義元への到達、出力の後加工と同目的のコマンド反復など）。
    - 手順書やスキルが求める作業をmanaged-tempへ作成したスクリプトで代替した箇所も探す。委譲先の分は`atk run-script session-review-evidence --`の`--grep`でmanaged-tempのスクリプトのパスを検索する。判定は`references/analysis.md`「一次選別」に従う。
    - 規範自体の適否もQCDから見直し、読込・準備が目的の操作前に積み上がった区間を`references/analysis.md`「規範適用による目的逸脱」で判定する。

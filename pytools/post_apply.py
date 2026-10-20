@@ -6,6 +6,7 @@
 """
 
 import argparse
+import contextlib
 import datetime
 import io
 import logging
@@ -17,7 +18,7 @@ import threading
 import time
 import traceback
 import unicodedata
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Generator, Sequence
 from concurrent.futures import FIRST_COMPLETED, Future, ThreadPoolExecutor, wait
 from dataclasses import dataclass
 from pathlib import Path
@@ -100,49 +101,56 @@ class _ScreenFilter(logging.Filter):
         return not (record.levelno < logging.WARNING and (record.name == "httpx" or record.name.startswith("httpx.")))
 
 
-def _configure_logging() -> tuple[list[logging.Handler], int, bool]:
+@contextlib.contextmanager
+def _configure_logging() -> Generator[bool]:
     """ログを出力先で分離し、符号化不能文字でレコードを欠落させない。"""
     for stream in (sys.stdout, sys.stderr):
         if isinstance(stream, io.TextIOWrapper):
             stream.reconfigure(errors="backslashreplace")
-    formatter = logging.Formatter("  %(message)s")
-    stdout_handler = logging.StreamHandler(sys.stdout)
-    stdout_handler.setLevel(logging.DEBUG)
-    stdout_handler.addFilter(_BelowWarningFilter())
-    stdout_handler.addFilter(_ScreenFilter())
-    stdout_handler.setFormatter(formatter)
-    stderr_handler = logging.StreamHandler(sys.stderr)
-    stderr_handler.setLevel(logging.WARNING)
-    stderr_handler.addFilter(_ScreenFilter())
-    stderr_handler.setFormatter(formatter)
-    run_id = _run_id()
-    handlers: list[logging.Handler] = [stdout_handler, stderr_handler]
-    persistent_log_ready = False
-    try:
-        _UPDATE_LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
-        file_handler = logging.handlers.RotatingFileHandler(
-            _UPDATE_LOG_PATH,
-            maxBytes=_UPDATE_LOG_MAX_BYTES,
-            backupCount=_UPDATE_LOG_BACKUP_COUNT,
-            encoding="utf-8",
-        )
-    except OSError as error:
-        print(
-            f"  永続ログを開始できませんでした: {_UPDATE_LOG_PATH}: {error}。処理は継続します。"
-            f"次の操作: {_UPDATE_LOG_PATH.parent}の書込権限を確認し、update-dotfilesを再実行してください。",
-            file=sys.stderr,
-        )
-    else:
-        file_handler.setLevel(logging.INFO)
-        file_handler.setFormatter(logging.Formatter(f"%(asctime)s run={run_id} %(levelname)s %(message)s"))
-        handlers.append(file_handler)
-        persistent_log_ready = True
-    root_logger = logging.getLogger()
-    previous_handlers = root_logger.handlers.copy()
-    previous_level = root_logger.level
-    root_logger.handlers[:] = handlers
-    root_logger.setLevel(logging.INFO)
-    return previous_handlers, previous_level, persistent_log_ready
+    with contextlib.ExitStack() as cleanup:
+        formatter = logging.Formatter("  %(message)s")
+        stdout_handler = logging.StreamHandler(sys.stdout)
+        cleanup.callback(stdout_handler.close)
+        stdout_handler.setLevel(logging.DEBUG)
+        stdout_handler.addFilter(_BelowWarningFilter())
+        stdout_handler.addFilter(_ScreenFilter())
+        stdout_handler.setFormatter(formatter)
+        stderr_handler = logging.StreamHandler(sys.stderr)
+        cleanup.callback(stderr_handler.close)
+        stderr_handler.setLevel(logging.WARNING)
+        stderr_handler.addFilter(_ScreenFilter())
+        stderr_handler.setFormatter(formatter)
+        run_id = _run_id()
+        handlers: list[logging.Handler] = [stdout_handler, stderr_handler]
+        persistent_log_ready = False
+        try:
+            _UPDATE_LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
+            file_handler = logging.handlers.RotatingFileHandler(
+                _UPDATE_LOG_PATH,
+                maxBytes=_UPDATE_LOG_MAX_BYTES,
+                backupCount=_UPDATE_LOG_BACKUP_COUNT,
+                encoding="utf-8",
+            )
+        except OSError as error:
+            print(
+                f"  永続ログを開始できませんでした: {_UPDATE_LOG_PATH}: {error}。処理は継続します。"
+                f"次の操作: {_UPDATE_LOG_PATH.parent}の書込権限を確認し、update-dotfilesを再実行してください。",
+                file=sys.stderr,
+            )
+        else:
+            cleanup.callback(file_handler.close)
+            file_handler.setLevel(logging.INFO)
+            file_handler.setFormatter(logging.Formatter(f"%(asctime)s run={run_id} %(levelname)s %(message)s"))
+            handlers.append(file_handler)
+            persistent_log_ready = True
+        root_logger = logging.getLogger()
+        previous_handlers = root_logger.handlers.copy()
+        previous_level = root_logger.level
+        cleanup.callback(root_logger.setLevel, previous_level)
+        cleanup.callback(setattr, root_logger, "handlers", previous_handlers)
+        root_logger.handlers[:] = handlers
+        root_logger.setLevel(logging.INFO)
+        yield persistent_log_ready
 
 
 # chezmoi は配布元から削除されたファイルを配布先から自動削除しないため、本テーブルで追跡する。
@@ -544,8 +552,7 @@ def main(
             )
             sys.exit(2)
     # update-dotfiles 配下の出力であることを示すため、全ログ行を 2 スペース下げる。
-    previous_handlers, previous_level, persistent_log_ready = _configure_logging()
-    try:
+    with _configure_logging() as persistent_log_ready:
         logger.info("post-apply開始")
         results, recommendations = (runner or run)()
         results = [*results, *_record_deferred_updates(results)]
@@ -568,13 +575,6 @@ def main(
         _print_post_apply_notices(notices)
         logger.info("post-apply終了: exit=%d", 1 if failed else 0)
         sys.exit(1 if failed else 0)
-    finally:
-        root_logger = logging.getLogger()
-        current_handlers = root_logger.handlers.copy()
-        root_logger.handlers[:] = previous_handlers
-        root_logger.setLevel(previous_level)
-        for handler in current_handlers:
-            handler.close()
 
 
 def _record_deferred_updates(results: list[_StepResult]) -> list[_StepResult]:
@@ -806,7 +806,7 @@ def _home_is_substituted() -> bool:
     """
     if sys.platform == "win32":
         return False
-    import pwd  # noqa: PLC0415  # pylint: disable=import-outside-toplevel  # Windowsに存在しないモジュールのため
+    import pwd  # noqa: PLC0415  # pylint: disable=import-outside-toplevel,import-error  # POSIX専用でありWindowsには存在しない。
 
     return Path.home().resolve() != Path(pwd.getpwuid(os.getuid()).pw_dir).resolve()
 

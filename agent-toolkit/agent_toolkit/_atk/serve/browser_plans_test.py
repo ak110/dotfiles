@@ -38,7 +38,7 @@ pytestmark = [
 _MERMAID_CDN_URL = "https://cdn.jsdelivr.net/npm/mermaid@12.0.0/dist/mermaid.min.js"
 
 
-@pytest.mark.asyncio
+@pytest.mark.asyncio(loop_scope="session")
 @pytest.mark.parametrize("width", [320, 1280])
 @pytest.mark.parametrize("failure", [False, True])
 async def test_plan_copy_feedback_preserves_toolbar_positions(
@@ -75,7 +75,7 @@ class _MultiRootHarness:
     base_url: str
 
 
-@pytest_asyncio.fixture(name="multi_root_harness")
+@pytest_asyncio.fixture(loop_scope="session", name="multi_root_harness")
 async def _multi_root_harness_fixture(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -122,7 +122,7 @@ async def _multi_root_harness_fixture(
         )
 
 
-@pytest.mark.asyncio
+@pytest.mark.asyncio(loop_scope="session")
 async def test_plan_filename_link_supports_get_and_shift_click(screen_harness: _ScreenHarness) -> None:
     """計画名はプレビューを復元するGET URLを持ち、Shiftクリックをブラウザーへ委ねる。"""
     harness = screen_harness
@@ -141,7 +141,7 @@ async def test_plan_filename_link_supports_get_and_shift_click(screen_harness: _
     assert not await _shift_click_default_prevented(link)
 
 
-@pytest.mark.asyncio
+@pytest.mark.asyncio(loop_scope="session")
 @pytest.mark.parametrize("delay_auto_opened_body", [False, True])
 async def test_selecting_deleted_plan_refreshes_list(screen_harness: _ScreenHarness, delay_auto_opened_body: bool) -> None:
     """一覧表示後に削除された計画ファイルを選ぶと、再試行を求めず移動または削除済みを示して一覧を更新する。
@@ -188,7 +188,7 @@ async def test_selecting_deleted_plan_refreshes_list(screen_harness: _ScreenHarn
     await playwright.async_api.expect(page.locator("#copy-btn")).to_be_disabled()
 
 
-@pytest.mark.asyncio
+@pytest.mark.asyncio(loop_scope="session")
 async def test_deleted_plan_status_remains_visible_while_choosing_next_on_mobile(
     screen_harness: _ScreenHarness, tmp_path: Path
 ) -> None:
@@ -231,7 +231,7 @@ async def test_deleted_plan_status_remains_visible_while_choosing_next_on_mobile
     await playwright.async_api.expect(sidebar_status).to_be_hidden()
 
 
-@pytest.mark.asyncio
+@pytest.mark.asyncio(loop_scope="session")
 @pytest.mark.parametrize("pending", ["list", "detail"])
 async def test_mobile_plan_drawer_keeps_user_open_during_initial_fetch(screen_harness: _ScreenHarness, pending: str) -> None:
     """狭い画面で一覧の初期取得中に開いた一覧を取得後も開いたまま保ち、項目の選択後と操作しない再読み込み後は閉じていることも確かめる。"""
@@ -277,7 +277,7 @@ async def test_mobile_plan_drawer_keeps_user_open_during_initial_fetch(screen_ha
     await playwright.async_api.expect(page.locator("#plans-app > aside")).to_have_attribute("inert", "")
 
 
-@pytest.mark.asyncio
+@pytest.mark.asyncio(loop_scope="session")
 async def test_mobile_plan_copy_buttons_stay_on_one_line(screen_harness: _ScreenHarness) -> None:
     """390px幅の計画画面で本文とパスのコピー操作を1行の高さに保つ。"""
     page = screen_harness.page
@@ -304,7 +304,7 @@ async def test_mobile_plan_copy_buttons_stay_on_one_line(screen_harness: _Screen
         assert await button.locator(".short-label").evaluate("element => element.getClientRects().length") == 1
 
 
-@pytest.mark.asyncio
+@pytest.mark.asyncio(loop_scope="session")
 async def test_multiple_roots_keep_selection_search_update_and_copy_portable_path(
     multi_root_harness: _MultiRootHarness,
 ) -> None:
@@ -356,7 +356,7 @@ async def test_multiple_roots_keep_selection_search_update_and_copy_portable_pat
     await harness.page.locator("#preview h1", has_text="旧root更新").wait_for(state="visible")
 
 
-@pytest.mark.asyncio
+@pytest.mark.asyncio(loop_scope="session")
 async def test_plan_copy_buttons_restore_labels_after_repeated_clicks(screen_harness: _ScreenHarness) -> None:
     """コピー結果の表示中に再度コピーしても、両ボタンの画面幅ごとの操作名を元に戻す。"""
     page = screen_harness.page
@@ -389,7 +389,7 @@ async def test_plan_copy_buttons_restore_labels_after_repeated_clicks(screen_har
         assert await button.locator(".short-label").inner_text() == short
 
 
-@pytest.mark.asyncio
+@pytest.mark.asyncio(loop_scope="session")
 async def test_diagrams_render_and_refresh_safely(screen_harness: _ScreenHarness) -> None:
     """MermaidとSVGを描画し、更新後も能動的な内容を実行させず、古いblob URLを解放する。"""
     harness = screen_harness
@@ -447,7 +447,46 @@ async def test_diagrams_render_and_refresh_safely(screen_harness: _ScreenHarness
     assert await harness.page.evaluate("(url) => fetch(url).then(() => true, () => false)", current_blob_url)
 
 
-@pytest.mark.asyncio
+@pytest.mark.asyncio(loop_scope="session")
+@pytest.mark.parametrize("valid", [False, True])
+async def test_delayed_svg_result_survives_same_html_resync(screen_harness: _ScreenHarness, valid: bool) -> None:
+    """同じ本文の再同期後も、表示中のSVGの描画結果とblob URLの所有を維持する。"""
+    page = screen_harness.page
+    source = '<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"></svg>' if valid else "<svg>broken"
+    screen_harness.plan_path.write_text(f"# 遅延SVG\n\n```svg\n{source}\n```\n", encoding="utf-8")
+    await page.add_init_script("""
+        const descriptor = Object.getOwnPropertyDescriptor(HTMLImageElement.prototype, 'src');
+        window.pendingSvgLoads = [];
+        Object.defineProperty(HTMLImageElement.prototype, 'src', {
+          ...descriptor,
+          set(value) {
+            if (String(value).startsWith('blob:')) {
+              window.pendingSvgLoads.push(() => descriptor.set.call(this, value));
+            } else {
+              descriptor.set.call(this, value);
+            }
+          },
+        });
+    """)
+    await page.goto(screen_harness.base_url + "/plans")
+    await playwright.async_api.expect(page.locator("#preview")).to_have_attribute("aria-busy", "false")
+    await page.wait_for_function("window.pendingSvgLoads.length > 0")
+    await page.locator("#preview .svg-output").evaluate("image => { window.originalSvg = image; }")
+    async with page.expect_response("**/api/plans/file?*"):
+        await page.evaluate("window.dispatchEvent(new Event('focus'))")
+    await playwright.async_api.expect(page.locator("#preview")).to_have_attribute("aria-busy", "false")
+    assert await page.locator("#preview .svg-output").evaluate("image => image === window.originalSvg")
+    await page.evaluate("window.pendingSvgLoads.splice(0).forEach(load => load())")
+    if valid:
+        await page.wait_for_function("window.originalSvg.complete && window.originalSvg.naturalWidth > 0")
+        source_url = await page.locator("#preview .svg-output").get_attribute("src")
+        assert source_url is not None and source_url.startswith("blob:")
+        assert await page.evaluate("url => fetch(url).then(() => true, () => false)", source_url)
+    else:
+        await playwright.async_api.expect(page.locator("#preview .diagram-error")).to_contain_text("plan.md")
+
+
+@pytest.mark.asyncio(loop_scope="session")
 async def test_same_mtime_rewrites_refresh_plan_preview(screen_harness: _ScreenHarness) -> None:
     """更新時刻を変えない連続書き換えでも、SSE通知後に新しい本文と図を表示する。"""
     harness = screen_harness
@@ -485,7 +524,7 @@ async def test_same_mtime_rewrites_refresh_plan_preview(screen_harness: _ScreenH
     assert await harness.page.evaluate("(url) => fetch(url).then(() => true, () => false)", current_blob_url)
 
 
-@pytest.mark.asyncio
+@pytest.mark.asyncio(loop_scope="session")
 async def test_review_table_uses_available_width_and_markdown_keeps_width_limit(
     screen_harness: _ScreenHarness,
 ) -> None:
@@ -522,7 +561,7 @@ async def test_review_table_uses_available_width_and_markdown_keeps_width_limit(
     assert review_widths["preview"] == pytest.approx(review_widths["main"], abs=1)
 
 
-@pytest.mark.asyncio
+@pytest.mark.asyncio(loop_scope="session")
 async def test_mermaid_strict_security_blocks_active_content(screen_harness: _ScreenHarness) -> None:
     """Mermaid図のクリック定義と埋め込みHTMLから、能動的な内容を実行させない。"""
     harness = screen_harness
@@ -571,7 +610,7 @@ async def test_mermaid_strict_security_blocks_active_content(screen_harness: _Sc
     )
 
 
-@pytest.mark.asyncio
+@pytest.mark.asyncio(loop_scope="session")
 async def test_later_file_selection_wins_when_first_response_arrives_last(
     screen_harness: _ScreenHarness,
 ) -> None:
@@ -621,7 +660,7 @@ async def test_later_file_selection_wins_when_first_response_arrives_last(
     assert not await harness.page.get_by_role("heading", name="先の選択").is_visible()
 
 
-@pytest.mark.asyncio
+@pytest.mark.asyncio(loop_scope="session")
 async def test_selection_state_survives_preview_resync(screen_harness: _ScreenHarness) -> None:
     """再同期が先行しても、選択状態とツールバーの操作可否を保つ。"""
     harness = screen_harness
@@ -681,7 +720,7 @@ async def test_selection_state_survives_preview_resync(screen_harness: _ScreenHa
     assert not (prev_disabled and next_disabled)
 
 
-@pytest.mark.asyncio
+@pytest.mark.asyncio(loop_scope="session")
 async def test_mermaid_error_stays_near_source_and_keeps_preview(screen_harness: _ScreenHarness) -> None:
     """Mermaidの構文エラーは図の位置へ表示し、本文と他の図の描画を保つ。"""
     harness = screen_harness
@@ -707,7 +746,7 @@ async def test_mermaid_error_stays_near_source_and_keeps_preview(screen_harness:
     assert await harness.page.locator("#preview .diagram-svg img").is_visible()
 
 
-@pytest.mark.asyncio
+@pytest.mark.asyncio(loop_scope="session")
 async def test_mermaid_cdn_failure_stays_near_source_and_keeps_preview(screen_harness: _ScreenHarness) -> None:
     """CDNからMermaidを取得できない場合も図の位置へエラーを表示し、本文を保つ。"""
     harness = screen_harness
@@ -725,7 +764,7 @@ async def test_mermaid_cdn_failure_stays_near_source_and_keeps_preview(screen_ha
     assert await harness.page.locator("#preview .diagram-svg img").is_visible()
 
 
-@pytest.mark.asyncio
+@pytest.mark.asyncio(loop_scope="session")
 async def test_forwarded_prefix_uses_cdn_for_mermaid(screen_harness: _ScreenHarness) -> None:
     """ベースパス配下でもMermaidは同じCDNから読み込む。"""
     harness = screen_harness
@@ -749,7 +788,7 @@ async def test_forwarded_prefix_uses_cdn_for_mermaid(screen_harness: _ScreenHarn
         await harness.page.unroute(route_pattern, add_forwarded_prefix)
 
 
-@pytest.mark.asyncio
+@pytest.mark.asyncio(loop_scope="session")
 async def test_root_warnings_distinguish_hosts_and_sources(multi_root_harness: _MultiRootHarness) -> None:
     """同じ理由でもホストと保存元で区別し、内部のsource IDを表示しない。"""
     harness = multi_root_harness
@@ -776,7 +815,7 @@ async def test_root_warnings_distinguish_hosts_and_sources(multi_root_harness: _
     assert serve_plans.NEW_SOURCE_ID not in await warnings.inner_text()
 
 
-@pytest.mark.asyncio
+@pytest.mark.asyncio(loop_scope="session")
 @pytest.mark.parametrize("failure", ["body", "clipboard", "svg"])
 async def test_plan_failures_keep_selected_source_and_browser_owner(screen_harness: _ScreenHarness, failure: str) -> None:
     """選択した計画の取得の失敗とブラウザー側の処理の失敗を区別して表示し、表示中の本文を保つ。"""
@@ -806,7 +845,7 @@ async def test_plan_failures_keep_selected_source_and_browser_owner(screen_harne
         await playwright.async_api.expect(page.locator("#preview h1")).to_have_text("初回")
 
 
-@pytest.mark.asyncio
+@pytest.mark.asyncio(loop_scope="session")
 @pytest.mark.parametrize("failure", ["list", "search"])
 async def test_plan_collection_failures_show_operation(screen_harness: _ScreenHarness, failure: str) -> None:
     """計画ファイルの一覧と検索の取得に失敗した場合は、エラー表示にserveのホストと、失敗した操作または検索条件を示す。"""

@@ -115,7 +115,7 @@ process.stdout.write(JSON.stringify({
 """
     )
     assert result == {
-        "keys": ["inbox/u.md", "inbox/x.md", "inbox/f.md"],
+        "keys": ["u.md", "x.md", "f.md"],
         "unanswered": "true",
         "unknownKind": "unknown",
         "count": "3件（未回答UWI 1件）",
@@ -240,12 +240,12 @@ process.stdout.write(JSON.stringify({
         "moved": {
             "state": "processing",
             "content": "<p>移動後本文</p>",
-            "key": "processing/entry.md",
+            "key": "entry.md",
         },
         "final": {
             "filename": "second.md",
             "content": "<p>別項目本文</p>",
-            "key": "inbox/second.md",
+            "key": "second.md",
         },
     }
 
@@ -325,18 +325,18 @@ process.stdout.write(JSON.stringify({
         assert "詳細を閉じて開き直してから保存してください" in result[name]["alert"]
         assert result[name]["disabled"] is True
         assert result[name]["mode"] == ("answer" if name.startswith("answer") else "edit")
-    assert "保存できませんでした。 ［WI / node-test / /notes / inbox/entry.md］一般失敗" in result["saveGeneral"]["alert"]
+    assert "保存できませんでした。 ［WI / node-test / /notes / entry.md］一般失敗" in result["saveGeneral"]["alert"]
     assert "回答できませんでした。 ［WI / node-test / /notes / 回答保存］一般失敗" in result["answerGeneral"]["alert"]
     assert result["saveGeneral"]["input"] == "ユーザーの保存本文"
     assert result["answerGeneral"]["input"] == "ユーザーの回答"
     assert result["savePermission"] == {
-        "alert": "inbox/entry.mdを保存できませんでした。 ［WI / node-test / /notes / inbox/entry.md］権限がありません",
+        "alert": "entry.mdを保存できませんでした。 ［WI / node-test / /notes / entry.md］権限がありません",
         "disabled": False,
         "input": "ユーザーの保存本文",
         "mode": "edit",
     }
     assert result["answerPermission"] == {
-        "alert": "inbox/question.mdへ回答できませんでした。 ［WI / node-test / /notes / 回答保存］権限がありません",
+        "alert": "question.mdへ回答できませんでした。 ［WI / node-test / /notes / 回答保存］権限がありません",
         "disabled": False,
         "input": "ユーザーの回答",
         "mode": "answer",
@@ -499,6 +499,7 @@ def test_operations_reads_local_entries_and_detail_without_pull(
         "needs_verify": False,
         "cooldown_until": None,
         "plan": False,
+        "important": False,
         "target_repo": "example/repo",
         "source": "test",
         "summary": "要約本文",

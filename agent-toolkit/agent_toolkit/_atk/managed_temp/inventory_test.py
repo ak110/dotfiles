@@ -20,6 +20,7 @@ import pytest
 
 from agent_toolkit._atk import managed_temp as subject
 from agent_toolkit._atk.managed_temp import inventory as managed_temp_inventory
+from agent_toolkit._atk.managed_temp import permissions
 from agent_toolkit._atk.managed_temp import registry as managed_temp_registry
 from agent_toolkit._atk.managed_temp import windows_security as managed_temp_windows_security
 from agent_toolkit._atk.managed_temp.long_tree_test_support import create_long_posix_tree
@@ -69,26 +70,21 @@ def test_long_tree_sweep_and_rejections_keep_contracts(
     external = tmp_path / "outside"
     external.mkdir()
     (external / "saved").write_text("保持", encoding="utf-8")
-    descriptor = os.open(target, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
-    try:
+    with contextlib.ExitStack() as stack:
+        descriptor = stack.enter_context(permissions.descriptor(target, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW))
         for part in pathlib.Path(relative).parts:
-            child = os.open(part, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=descriptor)
-            os.close(descriptor)
-            descriptor = child
+            descriptor = stack.enter_context(
+                permissions.descriptor(part, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=descriptor)
+            )
         if case == "recent":
             recent_ns = int(now.timestamp() * 1_000_000_000)
             os.utime("payload", dir_fd=descriptor, ns=(recent_ns, recent_ns))
         if case == "symlink":
             os.symlink(str(external), "link", dir_fd=descriptor)
         if case in ("unregistered-git", "unregistered-stale-git"):
-            git_file = os.open(".git", os.O_WRONLY, dir_fd=descriptor)
-            try:
+            with permissions.descriptor(".git", os.O_WRONLY, dir_fd=descriptor) as git_file:
                 git_directory = external if case == "unregistered-git" else external / "missing"
                 os.write(git_file, f"gitdir: {git_directory}\n".encode())
-            finally:
-                os.close(git_file)
-    finally:
-        os.close(descriptor)
     if case.startswith("unregistered"):
         registry.unlink()
     if case == "lease":
@@ -193,7 +189,7 @@ def test_cleanup_closes_scandir_after_snapshot_failure(monkeypatch: pytest.Monke
     monkeypatch.setattr(managed_temp_inventory, "_walk_posix", reject_walk)
     try:
         if reject:
-            with pytest.raises(OSError, match="metadata取得拒否"):
+            with pytest.raises(subject.ManagedTempError, match="metadata取得拒否"):
                 subject.cleanup_managed_temp(target)
             assert content.read_text(encoding="utf-8") == "keep"
             assert registry.exists()
@@ -217,6 +213,31 @@ def test_windows_ctypes_structures_match_sdk_layout() -> None:
     assert ctypes.sizeof(managed_temp_windows_security._Acl) == 8
     assert ctypes.sizeof(managed_temp_windows_security._AclSizeInformation) == 12
     assert ctypes.sizeof(managed_temp_windows_security._ByHandleFileInformation) == 52
+
+
+@pytest.mark.parametrize(
+    ("owner", "token_user", "default_owner", "accepted"),
+    [
+        (b"user", "user", "administrators", True),
+        (b"administrators", "user", "administrators", True),
+        (b"other", "user", "administrators", False),
+        (b"administrators", "user", "personal-default", False),
+    ],
+)
+def test_windows_readonly_owner_accepts_only_current_token_owners(
+    monkeypatch: pytest.MonkeyPatch,
+    owner: bytes,
+    token_user: str,
+    default_owner: str,
+    accepted: bool,
+) -> None:
+    """Readonlyのownerをtokenのuserとdefault ownerだけから受理する。"""
+    monkeypatch.setattr(managed_temp_windows_security, "_windows_current_sid", lambda: token_user)
+    monkeypatch.setattr(managed_temp_windows_security, "_windows_current_default_owner_sid", lambda: default_owner)
+    monkeypatch.setattr(managed_temp_windows_security, "_windows_sid_bytes", str.encode)
+    monkeypatch.setattr(managed_temp_windows_security, "_windows_equal_sids", bytes.__eq__)
+
+    assert managed_temp_windows_security._windows_owner_belongs_to_current_token(owner) is accepted
 
 
 @pytest.mark.skipif(os.name != "posix", reason="POSIX固有の所有者・権限検証")
@@ -1134,7 +1155,7 @@ class TestManagedTempWindows:
         managed_temp_windows_security._windows_secure_path(target, directory=directory)
         managed_temp_windows_security._validate_windows_security(target)
 
-    def test_reparse_child_is_rejected_and_preserved(
+    def test_cleanup_unlinks_external_reparse_child_and_preserves_target(
         self,
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
@@ -1149,10 +1170,11 @@ class TestManagedTempWindows:
         kept_file.write_text("keep", encoding="utf-8")
         junction = target / "junction"
         _make_junction(junction, outside)
-        with pytest.raises(subject.ManagedTempError, match="reparse point"):
-            subject.cleanup_managed_temp(target)
+
+        subject.cleanup_managed_temp(target)
+
         assert kept_file.read_text(encoding="utf-8") == "keep"
-        assert target.exists()
+        assert not target.exists()
 
     def test_cleanup_accepts_a_junction_within_the_managed_root(
         self,

@@ -16,7 +16,7 @@ import pytest
 from agent_toolkit._agents_server import agents_wait, shared_roots, status_file
 from agent_toolkit._agents_server import manager as server_manager
 from agent_toolkit._agents_server.state import SessionState
-from agent_toolkit._common import session_registry, state_paths
+from agent_toolkit._common import process_tree, session_registry, state_paths
 from agent_toolkit._testing.agents_server_support import FakeBackend, _complete, install_backend
 
 
@@ -58,45 +58,33 @@ async def retained_executor(
         state_root=root,
         aggregate_seconds=0,
     )
-    manager = server_manager.AgentsServerManager(writer)
-    backend = FakeBackend(manager.sessions, "claude")
-    install_backend(manager, "claude", backend)
-    executor: subprocess.Popen[str] | None = None
-    try:
-        executor = subprocess.Popen(
-            [sys.executable, "-c", "import sys;print('ready',flush=True);sys.stdin.read()"],
-            cwd=worktree,
-            stdin=subprocess.PIPE,
-            stdout=subprocess.PIPE,
-            env=environment,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-        )
-        assert executor.stdout is not None and executor.stdout.readline().strip() == "ready"
-        session = await backend.start("担当", str(worktree), None, None)
-        session.publish_registry = True
-        session.announced = True
-        session.executor_process = session_registry.ProcessIdentity.of(executor.pid)
-        _complete(session, message="回収後も受領する結果")
-        await session.drain_registration()
+    with process_tree.process_scope(
+        [sys.executable, "-c", "import sys;print('ready',flush=True);sys.stdin.read()"],
+        cwd=worktree,
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        env=environment,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+    ) as executor:
+        async with server_manager.AgentsServerManager(writer) as manager:
+            backend = FakeBackend(manager.sessions, "claude")
+            install_backend(manager, "claude", backend)
+            assert executor.stdout is not None and executor.stdout.readline().strip() == "ready"
+            session = await backend.start("担当", str(worktree), None, None)
+            session.publish_registry = True
+            session.announced = True
+            session.executor_process = session_registry.ProcessIdentity.of(executor.pid)
+            _complete(session, message="回収後も受領する結果")
+            await session.drain_registration()
 
-        async def release(owned_session: SessionState, **_kwargs: Any) -> None:
-            assert executor is not None
-            if not keep_executor:
-                await asyncio.to_thread(executor.communicate, input="", timeout=5)
-            backend.release_calls.append(owned_session.session_id)
+            async def release(owned_session: SessionState, **_kwargs: Any) -> None:
+                assert executor is not None
+                if not keep_executor:
+                    await asyncio.to_thread(executor.communicate, input="", timeout=5)
+                backend.release_calls.append(owned_session.session_id)
 
-        monkeypatch.setattr(backend, "release_session", release)
-        await manager.activate_async()
-        yield RetainedExecutor(session.session_id, root, executor, backend.release_calls, manager)
-    finally:
-        try:
-            await manager.close()
-        finally:
-            if executor is not None:
-                if executor.poll() is None:
-                    executor.communicate(input="", timeout=5)
-                for stream in (executor.stdin, executor.stdout):
-                    if stream is not None:
-                        stream.close()
+            monkeypatch.setattr(backend, "release_session", release)
+            await manager.activate_async()
+            yield RetainedExecutor(session.session_id, root, executor, backend.release_calls, manager)

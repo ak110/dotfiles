@@ -25,16 +25,15 @@ from agent_toolkit._atk.serve import sessions as serve_sessions
 from agent_toolkit._atk.serve.plans import views as serve_plan_views
 from agent_toolkit._atk.wi import sync as _wi_sync
 from agent_toolkit._atk.wi import user_comment
+from agent_toolkit._atk.wi import uwi as wi_uwi
+from agent_toolkit._testing import wi_entry_files as wi_files
 from agent_toolkit._testing.serve_support import (
-    AWI_TEXT,
-    UNANSWERED_UWI_TEXT,
     _FakeTimer,
     _patch_comment_edit_dependencies,
     _run_node_ui,
     _session_review_awi,
     _write_detail_entry,
     _write_repo_entry,
-    make_inbox_and_processing,
 )
 
 # UI検証で起動する`node`は、CIの実行環境ではmiseのshimとして提供され、版と信頼設定の解決に
@@ -229,10 +228,7 @@ openDialog(elements['detail-dialog'], origin, elements['detail-dialog-body']);
 openDeleteDialog();
 let phase = 'moved';
 fetchHandler = async url => {
-  if (url.includes('/inbox/entry.md')) {
-    return {ok: false, status: 404, statusText: 'Not Found', json: async () => ({error: 'not found'})};
-  }
-  if (phase === 'moved' && url.includes('/processing/entry.md')) {
+  if (phase === 'moved' && url === '/atk/api/entries/entry.md') {
     return {ok: true, status: 200, statusText: 'OK', json: async () => ({entry: processing})};
   }
   return {ok: false, status: 404, statusText: 'Not Found', json: async () => ({error: 'not found'})};
@@ -275,7 +271,7 @@ process.stdout.write(JSON.stringify({
         "missing": {
             "detailOpen": False,
             "deleteOpen": False,
-            "focused": "inbox/remaining.md",
+            "focused": "remaining.md",
         },
     }
 
@@ -605,7 +601,7 @@ async def test_answer_and_remove_apis_target_state_and_keep_legacy_resolution(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """状態指定時は表示対象へ作用し、省略時はprocessing優先を維持する。"""
+    """状態指定の有無にかかわらず一意なfilenameへ作用し、processingの削除を保護する。"""
 
     @contextlib.contextmanager
     def lock(_path: pathlib.Path, **_kwargs: object) -> typing.Generator[None]:
@@ -615,15 +611,16 @@ async def test_answer_and_remove_apis_target_state_and_keep_legacy_resolution(
     monkeypatch.setattr(_wi_sync, "pull", lambda _path: None)
     monkeypatch.setattr(_wi_sync, "commit_and_push", lambda *_args, **_kwargs: None)
     monkeypatch.setattr(_wi_sync, "push_pending_commits", lambda _path: None)
-    inbox, processing = make_inbox_and_processing(tmp_path)
-    uwi_content = UNANSWERED_UWI_TEXT
-    awi_content = AWI_TEXT
-    for filename in ("answer-state.md", "answer-legacy.md"):
-        (inbox / filename).write_text(uwi_content, encoding="utf-8")
-        (processing / filename).write_text(uwi_content, encoding="utf-8")
-    for filename in ("remove-state.md", "remove-legacy.md", "remove-protected.md"):
-        (inbox / filename).write_text(awi_content, encoding="utf-8")
-        (processing / filename).write_text(awi_content, encoding="utf-8")
+    wi_files.write_uwi(tmp_path, "answer-state.md", state="inbox", answer=wi_uwi.ANSWER_MARKER)
+    wi_files.write_uwi(tmp_path, "answer-legacy.md", state="processing", answer=wi_uwi.ANSWER_MARKER)
+    for filename, state_name in (
+        ("remove-state.md", "inbox"),
+        ("remove-legacy.md", "processing"),
+        ("remove-protected.md", "processing"),
+    ):
+        wi_files.write_awi(tmp_path, filename, state=state_name)
+    untouched = wi_files.write_awi(tmp_path, "other.md", state="processing")
+    untouched_content = untouched.read_text(encoding="utf-8")
 
     app = serve_app.create_app(
         tmp_path,
@@ -638,33 +635,30 @@ async def test_answer_and_remove_apis_target_state_and_keep_legacy_resolution(
             "filename": "answer-state.md",
             "state": "inbox",
             "answer": "未処理側への回答",
-            "expected_content": uwi_content,
+            "expected_content": wi_files.entry_path(tmp_path, "answer-state.md").read_text(encoding="utf-8"),
         },
     )
-    assert state_answer.status_code == 200
-    assert (inbox / "answer-state.md").read_text(encoding="utf-8").endswith("未処理側への回答\n")
-    assert (processing / "answer-state.md").read_text(encoding="utf-8") == uwi_content
+    assert state_answer.status_code == 200, await state_answer.get_json()
+    assert wi_files.entry_path(tmp_path, "answer-state.md").read_text(encoding="utf-8").endswith("未処理側への回答\n")
 
     legacy_answer = await client.post(
         "/api/entries/answer",
         json={"filename": "answer-legacy.md", "answer": "従来経路の回答"},
     )
     assert legacy_answer.status_code == 200
-    assert (inbox / "answer-legacy.md").read_text(encoding="utf-8") == uwi_content
-    assert (processing / "answer-legacy.md").read_text(encoding="utf-8").endswith("従来経路の回答\n")
+    assert wi_files.entry_path(tmp_path, "answer-legacy.md").read_text(encoding="utf-8").endswith("従来経路の回答\n")
 
     state_remove = await client.post(
         "/api/entries/remove",
         json={
             "filenames": ["remove-state.md"],
             "state": "inbox",
-            "expected_content": awi_content,
+            "expected_content": wi_files.entry_path(tmp_path, "remove-state.md").read_text(encoding="utf-8"),
             "force": False,
         },
     )
     assert state_remove.status_code == 200
-    assert not (inbox / "remove-state.md").exists()
-    assert (processing / "remove-state.md").is_file()
+    assert not wi_files.entry_path(tmp_path, "remove-state.md").exists()
 
     protected = await client.post(
         "/api/entries/remove",
@@ -678,8 +672,8 @@ async def test_answer_and_remove_apis_target_state_and_keep_legacy_resolution(
         json={"filenames": ["remove-legacy.md"], "force": True},
     )
     assert legacy_remove.status_code == 200
-    assert (inbox / "remove-legacy.md").is_file()
-    assert not (processing / "remove-legacy.md").exists()
+    assert not wi_files.entry_path(tmp_path, "remove-legacy.md").exists()
+    assert untouched.read_text(encoding="utf-8") == untouched_content
 
 
 @pytest.mark.asyncio

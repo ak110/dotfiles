@@ -1,7 +1,8 @@
 """履歴操作の検収と完全OID対応表の生成。検収しない対応は保存しない。
 
 本スクリプトは履歴を読み取るだけで、認可・公開済みの確認・操作の実行は呼出側が所有する。
-rebaseは変更内容の一意な全1対1対応、autosquashはtree・件数・制御件名・非対象patchの不変を検収する。
+rebaseは変更内容の一意な全1対1対応を検収し、明示した競合解消commitは件名・相対順・変更パスで対応付ける。
+autosquashはtree・件数・制御件名・非対象patchの不変を検収する。
 amendは内容の変更を前提とし、旧新が同じbaseの直上の異なる1commitどうしであることだけを検収する。
 """
 
@@ -19,7 +20,10 @@ from agent_toolkit._common.atomic_file import atomic_write
 from agent_toolkit._git import command as git_command
 
 _CONTROL = ("fixup! ", "squash! ", "amend! ")
-_ACTION = "エラーが示した対象と端点の指定を補って再実行する。内容が変わった履歴は検収せず、履歴操作を中止して委譲元へ返す"
+_ACTION = (
+    "エラーが示した対象と端点を確認する。rebaseの競合解消で内容が変わった旧commitだけを"
+    "--resolved-conflictへ反復指定して再実行する。それ以外の内容変化は履歴操作を中止して委譲元へ返す"
+)
 _AMEND_ACTION = (
     "--old-baseと--new-baseへamend前HEADの親、--old-headへamend直前のHEAD、--new-headへamend後のHEADを指定して再実行する。"
     "2件以上のcommitを書き換えた場合は--operation rebaseかautosquashで検収する"
@@ -99,15 +103,41 @@ def _content_id(work_dir: pathlib.Path, oid: str) -> str:
     return digest.hexdigest()
 
 
-def _rebase(work_dir: pathlib.Path, old: list[str], new: list[str]) -> dict[str, str]:
+def _rebase(work_dir: pathlib.Path, old: list[str], new: list[str], conflicts: set[str]) -> dict[str, str]:
     old_ids = [_content_id(work_dir, oid) for oid in old]
     new_ids = [_content_id(work_dir, oid) for oid in new]
     if len(set(old_ids)) != len(old) or len(set(new_ids)) != len(new):
         raise ValueError("変更内容が重複し、commitの対応が一意ではありません")
-    if set(old_ids) != set(new_ids):
-        raise ValueError(f"変更内容の全1対1対応ではありません: old={old}, new={new}")
+    if len(old) != len(new) or not conflicts <= set(old):
+        raise ValueError(f"旧新の件数または--resolved-conflictの旧commitが不正です: old={old}, new={new}")
     destinations = dict(zip(new_ids, new, strict=True))
-    return {oid: destinations[patch] for oid, patch in zip(old, old_ids, strict=True)}
+    mapping = {}
+    for oid, patch in zip(old, old_ids, strict=True):
+        if oid in conflicts:
+            if patch in destinations:
+                raise ValueError(f"--resolved-conflictに指定した旧commitの内容が変わっていません: {oid}")
+        elif patch not in destinations:
+            raise ValueError(f"変更内容が対応しない旧commit: {oid}。変更内容の全1対1対応ではありません")
+        else:
+            mapping[oid] = destinations[patch]
+    remaining = [oid for oid in new if oid not in mapping.values()]
+    for oid, target in zip((oid for oid in old if oid in conflicts), remaining, strict=True):
+        subject = _git(work_dir, "show", "-s", "--format=%s", oid)
+        paths = _git(work_dir, "diff-tree", "--no-commit-id", "--name-only", "--no-renames", "-r", "-z", oid)
+        target_paths = _git(work_dir, "diff-tree", "--no-commit-id", "--name-only", "--no-renames", "-r", "-z", target)
+        if subject != _git(work_dir, "show", "-s", "--format=%s", target) or set(paths.split("\0")) != set(
+            target_paths.split("\0")
+        ):
+            raise ValueError(f"競合解消commitの件名または変更パスが対応しません: {oid} -> {target}")
+        mapping[oid] = target
+    for oid in conflicts:
+        if any(
+            (old.index(oid) < old.index(other)) != (new.index(mapping[oid]) < new.index(target))
+            for other, target in mapping.items()
+            if other != oid
+        ):
+            raise ValueError(f"競合解消commitの相対順が対応しません: {oid}")
+    return {oid: mapping[oid] for oid in old}
 
 
 def _autosquash(work_dir: pathlib.Path, old: list[str], new: list[str]) -> dict[str, str]:
@@ -173,6 +203,13 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--output", type=pathlib.Path, metavar="PATH", required=True, help="検収済みの完全OID対応を保存するJSONの絶対パス"
     )
+    parser.add_argument(
+        "--resolved-conflict",
+        action="append",
+        default=None,
+        metavar="OID",
+        help="rebaseの競合解消で内容が変わった旧commit。件名・相対順・変更パスを検収する。反復指定",
+    )
     args = parser.parse_args(argv)
     try:
         if not args.work_dir.is_absolute() or not args.work_dir.is_dir() or not args.output.is_absolute():
@@ -183,8 +220,14 @@ def main(argv: list[str] | None = None) -> int:
         )
         old = _series(args.work_dir, old_base, old_head)
         new = _series(args.work_dir, new_base, new_head)
+        if args.resolved_conflict and args.operation != "rebase":
+            raise ValueError("--resolved-conflictは--operation rebaseだけで指定できます")
         if args.operation == "rebase":
-            mapping = _rebase(args.work_dir, old, new)
+            conflicts = {
+                _git(args.work_dir, "rev-parse", "--verify", "--end-of-options", f"{value}^{{commit}}").strip()
+                for value in args.resolved_conflict or []
+            }
+            mapping = _rebase(args.work_dir, old, new, conflicts)
         elif args.operation == "autosquash":
             mapping = _autosquash(args.work_dir, old, new)
         else:

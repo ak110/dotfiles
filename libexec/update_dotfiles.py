@@ -52,7 +52,7 @@ git pull工程は`UPDATE_DOTFILES_GIT_TIMEOUT_SEC`秒で打ち切る。未設定
 
 Linuxでは`chezmoi apply`の直前に、Codexの管理daemonだけが稼働し、利用セッションが無い場合に限り、
 公開CLI`codex app-server daemon stop`で管理daemonを一時停止する。
-post-applyのplugin更新と診断ログ復元が、利用セッションの無い管理daemonを理由に延期されないためである。
+post-applyの診断ログ復元と不要pluginの除去が、利用セッションの無い管理daemonを理由に延期されないためである。
 停止を試みた場合は`chezmoi apply`の成否にかかわらず`codex app-server daemon start`で起動状態を戻し、
 停止または再起動の失敗を終了コードと同期結果へ反映する。利用セッションが残る場合と
 `DOTFILES_CODEX_DAEMON_AUTO_RESTART=1`の場合は停止しない。
@@ -131,8 +131,9 @@ def _continue_after_failure(title: str, action: str, detail: str | None = None) 
     _continued_failures.append(_ContinuedFailure(title, action, detail))
 
 
-def _configure_persistent_log(run_id: str) -> logging.Handler | None:
-    """更新診断用のサイズ制限付きログを構成し、構成不能ならNoneを返す。"""
+@contextlib.contextmanager
+def _configure_persistent_log(run_id: str) -> Generator[logging.Handler | None]:
+    """更新診断用のログを開き、終了時に登録を外して閉じる。構成不能時はNoneを渡す。"""
     global _persistent_log_ready  # noqa: PLW0603
     try:
         _LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
@@ -149,13 +150,17 @@ def _configure_persistent_log(run_id: str) -> logging.Handler | None:
             file=sys.stderr,
         )
         _persistent_log_ready = False
-        return None
-    handler.setFormatter(logging.Formatter(f"%(asctime)s run={run_id} %(levelname)s %(message)s"))
-    logger.addHandler(handler)
-    logger.setLevel(logging.INFO)
-    logger.propagate = False
-    _persistent_log_ready = True
-    return handler
+        yield None
+        return
+    with contextlib.ExitStack() as cleanup:
+        cleanup.callback(handler.close)
+        cleanup.callback(logger.removeHandler, handler)
+        handler.setFormatter(logging.Formatter(f"%(asctime)s run={run_id} %(levelname)s %(message)s"))
+        logger.addHandler(handler)
+        logger.setLevel(logging.INFO)
+        logger.propagate = False
+        _persistent_log_ready = True
+        yield handler
 
 
 def _finish(returncode: int) -> int:
@@ -359,7 +364,7 @@ def _run_git_pull(
     print(f"=== [{step_no}/{total}] {title} ===", flush=True)
     logger.info("stage開始: %d/%d %s", step_no, _LOG_STAGE_TOTAL, title)
     started_at = time.monotonic()
-    # 上限超過時に子孫を列挙してから直接子を回収するため、プロセスを明示的に保持する。
+    # Windowsではreader threadがpipeを閉じる。主スレッドでpipeのロックを待つPopen.__exit__を避ける。
     try:
         process = subprocess.Popen(  # noqa: S603  # pylint: disable=consider-using-with
             [
@@ -447,10 +452,10 @@ def _run_git_pull(
 
     finally:
         if os.name != "nt":
-            assert process.stdout is not None
-            assert process.stderr is not None
-            process.stdout.close()
-            process.stderr.close()
+            with contextlib.ExitStack() as cleanup:
+                for stream in (process.stdout, process.stderr):
+                    if stream is not None:
+                        cleanup.callback(stream.close)
 
 
 def _git_capture(*arguments: str) -> subprocess.CompletedProcess[str]:
@@ -606,9 +611,8 @@ def _locked_git_index(index: pathlib.Path) -> Generator[None]:
     alternate: pathlib.Path | None = None
     prepared = False
     try:
-        descriptor, name = tempfile.mkstemp(prefix="update-dotfiles-index-", dir=index.parent)
-        os.close(descriptor)
-        alternate = pathlib.Path(name)
+        with tempfile.NamedTemporaryFile(prefix="update-dotfiles-index-", dir=index.parent, delete=False) as temporary:
+            alternate = pathlib.Path(temporary.name)
         if index.exists():
             shutil.copyfile(index, alternate)
         else:
@@ -687,6 +691,7 @@ def _run_worktree_stash(*arguments: str) -> subprocess.CompletedProcess[str] | N
         print(f"{display_title}を行っています。", flush=True)
     started_at = time.monotonic()
     logger.info("退避操作開始: %s", title)
+    # Windowsではreader threadへpipeの解放を任せ、Popen.__exit__による主スレッドのcloseを避ける。
     try:
         process = subprocess.Popen(  # noqa: S603  # pylint: disable=consider-using-with
             argv,
@@ -741,9 +746,10 @@ def _run_worktree_stash(*arguments: str) -> subprocess.CompletedProcess[str] | N
     finally:
         # Windowsのreader threadがpipeを保持している場合、主スレッドのcloseも待機し得る。
         if os.name != "nt":
-            assert process.stdout is not None and process.stderr is not None
-            process.stdout.close()
-            process.stderr.close()
+            with contextlib.ExitStack() as cleanup:
+                for stream in (process.stdout, process.stderr):
+                    if stream is not None:
+                        cleanup.callback(stream.close)
     result = subprocess.CompletedProcess(argv, process.returncode, stdout, stderr)
     logger.info(
         "退避操作終了: %s exit=%d duration=%.3f stdout=%s stderr=%s",
@@ -974,7 +980,7 @@ def _pause_codex_daemon() -> _CodexDaemonPause | None:
     if stop_error is not None:
         stop_error = (
             f"Codex管理daemonを停止できませんでした（{stop_error}）。"
-            "plugin更新と診断ログ復元が延期された場合は、update-dotfilesを再実行してください。"
+            "診断ログ復元または不要pluginの除去が延期された場合は、update-dotfilesを再実行してください。"
         )
         logger.error(stop_error)
         print(stop_error, file=sys.stderr)
@@ -1085,126 +1091,124 @@ def main(argv: list[str] | None = None) -> int:
     _current_stage_title = None
     _last_stderr_tail = None
     _continued_failures.clear()
-    log_handler = _configure_persistent_log(_current_run_id)
-    sync_report.write_start(_current_run_id, sync_report.now_text())
-    logger.info("update-dotfiles開始: root=%s", _DOTFILES_ROOT)
-    try:
-        if log_handler is None:
-            _continue_after_failure(
-                "永続ログの開始",
-                f"{_LOG_PATH.parent}の書込権限と空き容量を確認してupdate-dotfilesを再実行してください。",
-                "永続ログを開始できない",
-            )
+    with _configure_persistent_log(_current_run_id) as log_handler:
         try:
-            git_timeout = _git_timeout()
-        except ValueError as error:
-            logger.error("git timeout設定が不正: %s", error)
-            print(error, file=sys.stderr)
-            _last_stderr_tail = sync_report.truncate_tail(str(error))
-            return _finish(2)
-        total = 4
-        lock_dir = _LOCK_PATH.parent
-        lock_dir.mkdir(parents=True, exist_ok=True)
-        try:
-            with filelock.FileLock(str(_LOCK_PATH), timeout=_LOCK_TIMEOUT_SEC):
-                returncode = _update_git_with_recovery(1, total, timeout=git_timeout)
-                if returncode != 0:
-                    return _finish(returncode)
-
-                plugins_root = _DOTFILES_ROOT / "plugins"
-                plugins = sorted(plugins_root.iterdir(), key=lambda path: path.name) if plugins_root.exists() else []
-                for plugin in plugins:
-                    if plugin.is_dir() and (plugin / ".git").exists():
-                        returncode = _run_git_pull(1, total, timeout=git_timeout, plugin=plugin)
-                        if returncode != 0:
-                            _continue_after_failure(
-                                _current_stage_title or f"dotfilesプラグイン {plugin.name}: git pull",
-                                f"{plugin}で git status と git pull --rebase を実行して原因を確かめてください。",
-                                _last_stderr_tail,
-                            )
-
-                returncode, _ = _run_step(
-                    2,
-                    total,
-                    "chezmoi init (テンプレート再展開)",
-                    ["chezmoi", "init", f"--source={_DOTFILES_ROOT}"],
+            sync_report.write_start(_current_run_id, sync_report.now_text())
+            logger.info("update-dotfiles開始: root=%s", _DOTFILES_ROOT)
+            if log_handler is None:
+                _continue_after_failure(
+                    "永続ログの開始",
+                    f"{_LOG_PATH.parent}の書込権限と空き容量を確認してupdate-dotfilesを再実行してください。",
+                    "永続ログを開始できない",
                 )
-                if returncode != 0:
-                    return _finish(returncode)
+            try:
+                git_timeout = _git_timeout()
+            except ValueError as error:
+                logger.error("git timeout設定が不正: %s", error)
+                print(error, file=sys.stderr)
+                _last_stderr_tail = sync_report.truncate_tail(str(error))
+                return _finish(2)
+            total = 4
+            lock_dir = _LOCK_PATH.parent
+            lock_dir.mkdir(parents=True, exist_ok=True)
+            try:
+                with filelock.FileLock(str(_LOCK_PATH), timeout=_LOCK_TIMEOUT_SEC):
+                    returncode = _update_git_with_recovery(1, total, timeout=git_timeout)
+                    if returncode != 0:
+                        return _finish(returncode)
 
-                returncode, status_output = _run_step(
-                    3,
-                    total,
-                    "chezmoi status (apply予定のファイル)",
-                    ["chezmoi", "status", "-x", "scripts"],
-                    capture=True,
-                )
-                if returncode != 0:
-                    _continue_after_failure(
-                        "chezmoi status (apply予定のファイル)",
-                        "表示専用の段であり、chezmoi applyは続けます。chezmoi statusを単独で実行して原因を確かめてください。",
-                        _last_stderr_tail,
-                    )
-                for line in _filter_apply_pending(status_output):
-                    print(line)
+                    plugins_root = _DOTFILES_ROOT / "plugins"
+                    plugins = sorted(plugins_root.iterdir(), key=lambda path: path.name) if plugins_root.exists() else []
+                    for plugin in plugins:
+                        if plugin.is_dir() and (plugin / ".git").exists():
+                            returncode = _run_git_pull(1, total, timeout=git_timeout, plugin=plugin)
+                            if returncode != 0:
+                                _continue_after_failure(
+                                    _current_stage_title or f"dotfilesプラグイン {plugin.name}: git pull",
+                                    f"{plugin}で git status と git pull --rebase を実行して原因を確かめてください。",
+                                    _last_stderr_tail,
+                                )
 
-                returncode, diff_output = _run_step(
-                    4,
-                    total,
-                    "chezmoi diff (上書き前の差分)",
-                    ["chezmoi", "diff", "--no-pager"],
-                    capture=True,
-                    show_heading=False,
-                )
-                logger.info("chezmoi diffの出力:\n%s", diff_output)
-                if returncode != 0:
-                    _continue_after_failure(
-                        "chezmoi diff (上書き前の差分)",
-                        "差分の記録だけの段であり、chezmoi applyは続けます。"
-                        "chezmoi diffを単独で実行して原因を確かめてください。",
-                        _last_stderr_tail,
-                    )
-
-                daemon_pause = _pause_codex_daemon()
-                try:
                     returncode, _ = _run_step(
+                        2,
                         total,
+                        "chezmoi init (テンプレート再展開)",
+                        ["chezmoi", "init", f"--source={_DOTFILES_ROOT}"],
+                    )
+                    if returncode != 0:
+                        return _finish(returncode)
+
+                    returncode, status_output = _run_step(
+                        3,
                         total,
-                        "chezmoi apply (post-apply実行)",
-                        ["chezmoi", "apply", "--force"],
-                        log_step_no=_LOG_STAGE_TOTAL,
+                        "chezmoi status (apply予定のファイル)",
+                        ["chezmoi", "status", "-x", "scripts"],
+                        capture=True,
                     )
-                finally:
-                    resume_error = None if daemon_pause is None else _resume_codex_daemon(daemon_pause)
-                if returncode != 0:
-                    return _finish(returncode)
-                stop_error = None if daemon_pause is None else daemon_pause.stop_error
-                daemon_errors = [error for error in (stop_error, resume_error) if error is not None]
-                if daemon_errors:
-                    _continue_after_failure(
-                        _CODEX_DAEMON_STAGE_TITLE,
-                        "Codex管理daemonの状態を確認し、停止していれば codex app-server daemon start を実行してください。",
-                        "\n".join(daemon_errors),
+                    if returncode != 0:
+                        _continue_after_failure(
+                            "chezmoi status (apply予定のファイル)",
+                            "表示専用の段であり、chezmoi applyは続けます。"
+                            "chezmoi statusを単独で実行して原因を確かめてください。",
+                            _last_stderr_tail,
+                        )
+                    for line in _filter_apply_pending(status_output):
+                        print(line)
+
+                    returncode, diff_output = _run_step(
+                        4,
+                        total,
+                        "chezmoi diff (上書き前の差分)",
+                        ["chezmoi", "diff", "--no-pager"],
+                        capture=True,
+                        show_heading=False,
                     )
-        except filelock.Timeout:
-            logger.exception("update-dotfilesロック取得失敗")
-            lock_message = (
-                f"ロック取得に失敗しました（{_LOCK_TIMEOUT_SEC:.0f}秒待機後もタイムアウト）。"
-                "他のupdate-dotfiles実行の完了を待って再実行してください。"
-            )
-            print(lock_message, file=sys.stderr)
-            _last_stderr_tail = sync_report.truncate_tail(lock_message)
-            return _finish(1)
-        return _finish(0)
-    finally:
-        if log_handler is not None:
-            logger.removeHandler(log_handler)
-            log_handler.close()
-        _current_run_id = None
-        _persistent_log_ready = False
-        _current_stage_title = None
-        _last_stderr_tail = None
-        _continued_failures.clear()
+                    logger.info("chezmoi diffの出力:\n%s", diff_output)
+                    if returncode != 0:
+                        _continue_after_failure(
+                            "chezmoi diff (上書き前の差分)",
+                            "差分の記録だけの段であり、chezmoi applyは続けます。"
+                            "chezmoi diffを単独で実行して原因を確かめてください。",
+                            _last_stderr_tail,
+                        )
+
+                    daemon_pause = _pause_codex_daemon()
+                    try:
+                        returncode, _ = _run_step(
+                            total,
+                            total,
+                            "chezmoi apply (post-apply実行)",
+                            ["chezmoi", "apply", "--force"],
+                            log_step_no=_LOG_STAGE_TOTAL,
+                        )
+                    finally:
+                        resume_error = None if daemon_pause is None else _resume_codex_daemon(daemon_pause)
+                    if returncode != 0:
+                        return _finish(returncode)
+                    stop_error = None if daemon_pause is None else daemon_pause.stop_error
+                    daemon_errors = [error for error in (stop_error, resume_error) if error is not None]
+                    if daemon_errors:
+                        _continue_after_failure(
+                            _CODEX_DAEMON_STAGE_TITLE,
+                            "Codex管理daemonの状態を確認し、停止していれば codex app-server daemon start を実行してください。",
+                            "\n".join(daemon_errors),
+                        )
+            except filelock.Timeout:
+                logger.exception("update-dotfilesロック取得失敗")
+                lock_message = (
+                    f"ロック取得に失敗しました（{_LOCK_TIMEOUT_SEC:.0f}秒待機後もタイムアウト）。"
+                    "他のupdate-dotfiles実行の完了を待って再実行してください。"
+                )
+                print(lock_message, file=sys.stderr)
+                _last_stderr_tail = sync_report.truncate_tail(lock_message)
+                return _finish(1)
+            return _finish(0)
+        finally:
+            _current_run_id = None
+            _persistent_log_ready = False
+            _current_stage_title = None
+            _last_stderr_tail = None
+            _continued_failures.clear()
 
 
 if __name__ == "__main__":

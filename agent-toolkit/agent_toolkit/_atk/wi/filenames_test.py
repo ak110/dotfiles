@@ -131,8 +131,8 @@ def test_filename_completion_includes_hold_entries(
     write_awi(private_notes, "hold-awi.md", state="hold")
     write_uwi(private_notes, "inbox-uwi.md")
     write_uwi(private_notes, "hold-uwi.md")
-    (private_notes / "hold").mkdir(exist_ok=True)
-    (private_notes / "inbox" / "hold-uwi.md").replace(private_notes / "hold" / "hold-uwi.md")
+    held = private_notes / "2026" / "10" / "hold-uwi.md"
+    held.write_text(held.read_text(encoding="utf-8").replace("state: inbox", "state: hold"), encoding="utf-8")
     write_awi(private_notes, "adopted-awi.md", state="adopted")
     assert _positional_completer(command, dest)("") == expected
 

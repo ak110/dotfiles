@@ -51,9 +51,9 @@ def _fake_target_info(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 @pytest.fixture(autouse=True)
-def _empty_external_marketplaces(monkeypatch: pytest.MonkeyPatch) -> None:
-    """外部マーケットプレイスの専用テスト以外では対象を空にし、開発機のプロセスを参照判定へ混ぜない。"""
-    monkeypatch.setattr(_install_claude_plugins, "_EXTERNAL_MARKETPLACES", ())
+def _isolate_plugin_cleanup(monkeypatch: pytest.MonkeyPatch) -> None:
+    """旧pluginの削除は専用テストへ分け、開発機のプロセスを参照判定へ混ぜない。"""
+    monkeypatch.setattr(_install_claude_plugins, "_remove_unused_plugins", lambda: False)
     monkeypatch.setattr(_claude_plugin_references, "scan", lambda: ())
 
 
