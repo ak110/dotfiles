@@ -10,7 +10,7 @@ import time
 
 import pytest
 
-from agent_toolkit._testing.helpers import SESSION_STATE_FILENAME_TEMPLATE
+from agent_toolkit._common import session_state
 from agent_toolkit._testing.pretooluse_support import (
     _EXECUTE_REVIEW_TASK_NAMES,
     _agent_messages,
@@ -288,8 +288,8 @@ class TestTaskStopBlock:
         )
 
         assert recorded.returncode == 0
-        state_path = tmp_path / SESSION_STATE_FILENAME_TEMPLATE.format(session_id=session_id)
-        state = json.loads(state_path.read_text(encoding="utf-8")) if state_path.exists() else {}
+        state_file = session_state.state_path(session_id)
+        state = _read_session_state(tmp_path, session_id) if state_file.exists() else {}
         assert "quoted-task-1" not in (state.get("background_task_ids") or [])
         assert self._invoke(session_id, state_dir, {"task_id": "quoted-task-1"}).returncode == 2
 

@@ -225,11 +225,6 @@ def answer_uwi(
             _wi_sync.pull(private_notes)
         try:
             path = _resolve_active_entry(private_notes, filename, state)
-        except FileNotFoundError as error:
-            if expected_content is None:
-                raise
-            raise RuntimeError("編集中に他プロセスが対象を変更しました") from error
-        try:
             text = _frontmatter.decode_entry_text(path.read_bytes())
         except (OSError, UnicodeError) as error:
             if expected_content is None:

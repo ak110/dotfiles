@@ -8,8 +8,11 @@ import sys
 
 import pytest
 
+from agent_toolkit._atk.wi import frontmatter
+from agent_toolkit._atk.wi.layout import iter_entry_paths
 from agent_toolkit._testing import git_repository
 from agent_toolkit._testing.wi_bodies import AGENT_AWI_BODY
+from agent_toolkit._testing.wi_entry_files import entry_path
 from agent_toolkit.atk_test import _setup_notes
 
 _ORIGIN = "github.com/example/current"
@@ -80,8 +83,10 @@ def test_non_origin_target_is_saved_with_warning(
         body.write_text(f"# awi\n## target_repo: {_UPSTREAM}\n### item.md [inbox]\n{content}", encoding="utf-8")
         argv = ["wi", "add", "--batch"]
     elif mode == "edit":
-        saved = notes / "inbox" / "item.md"
-        saved.write_text(content.replace(_UPSTREAM, _ORIGIN), encoding="utf-8")
+        saved = entry_path(notes, "item.md")
+        saved.write_text(
+            content.replace(_UPSTREAM, _ORIGIN).replace("type: awi\n", "type: awi\nstate: inbox\n"), encoding="utf-8"
+        )
         git_repository.commit_all(notes, "既存WI")
         before_head = git_repository.git_output(notes, "rev-parse", "HEAD")
         body.write_text(content, encoding="utf-8")
@@ -91,7 +96,7 @@ def test_non_origin_target_is_saved_with_warning(
         argv = ["wi", "add", f"--target-repo={_ORIGIN}"]
     if dry_run:
         argv.append("--dry-run")
-    before_files = {p.name: p.read_bytes() for p in (notes / "inbox").glob("*.md")}
+    before_files = {p.relative_to(notes): p.read_bytes() for p in iter_entry_paths(notes)}
     result = _invoke(repo, notes, [*argv, "--body-file", str(body)], host_environ)
     assert result.returncode == 0, result.stdout + result.stderr
     assert "警告:" in result.stderr
@@ -99,11 +104,13 @@ def test_non_origin_target_is_saved_with_warning(
     assert _ORIGIN in result.stderr
     if dry_run:
         assert git_repository.git_output(notes, "rev-parse", "HEAD") == before_head
-        assert {p.name: p.read_bytes() for p in (notes / "inbox").glob("*.md")} == before_files
+        assert {p.relative_to(notes): p.read_bytes() for p in iter_entry_paths(notes)} == before_files
     else:
-        saved_files = list((notes / "inbox").glob("*.md"))
+        saved_files = list(iter_entry_paths(notes))
         assert len(saved_files) == 1
         assert f"target_repo: {_UPSTREAM}" in saved_files[0].read_text(encoding="utf-8")
+        parsed = frontmatter.parse_frontmatter(saved_files[0].read_text(encoding="utf-8"))
+        assert parsed is not None and parsed[0]["state"] == "inbox"
         assert git_repository.git_output(notes, "rev-parse", "HEAD") != before_head
 
 

@@ -12,6 +12,7 @@ import tempfile
 
 import pytest
 
+from agent_toolkit._common import session_state
 from agent_toolkit._hooks import plugin_resources, rules_context
 from agent_toolkit._hooks.pretooluse import operation_skills
 from agent_toolkit._testing.helpers import SESSION_STATE_FILENAME_TEMPLATE
@@ -60,7 +61,7 @@ def test_delegation_ready_and_codex_acquisition(tmp_path: pathlib.Path, tool: st
     assert "agent-toolkit:delegation" not in _additional_context(_run(payload, env))
     codex = {**payload, "session_id": "codex-delegation", "turn_id": "turn-1"}
     assert _run(codex, env).returncode == 2
-    state_file = tmp_path / SESSION_STATE_FILENAME_TEMPLATE.format(session_id="codex-delegation")
+    state_file = session_state.state_path("codex-delegation")
     state = _read_session_state(tmp_path, "codex-delegation") if state_file.exists() else {}
     assert rules_context.OPERATION_SKILL_READY_KEY not in state
     _acquire(env, codex, "delegation")
@@ -75,7 +76,7 @@ def test_blocked_delegation_does_not_consume_warning(tmp_path: pathlib.Path) -> 
     result = _run(blocked, env)
     assert result.returncode == 2
     assert "agent-toolkit:delegation" not in result.stderr
-    state_file = tmp_path / SESSION_STATE_FILENAME_TEMPLATE.format(session_id="blocked")
+    state_file = session_state.state_path("blocked")
     state = _read_session_state(tmp_path, "blocked") if state_file.exists() else {}
     assert rules_context.OPERATION_SKILL_READY_KEY not in state
     valid = {**blocked, "tool_name": _DELEGATION_TOOLS[5], "tool_input": {}}
@@ -672,6 +673,7 @@ def test_legacy_warning_and_context_reset_require_acquisition(
 ) -> None:
     """旧版の警告済み状態は取得の証拠にせず、文脈破棄の後は取得を再び求める。"""
     env = _plan_file_state_env(tmp_path)
+    # 旧版の状態JSONを旧保存先へ置き、固定保存先への移行を経て取得の扱いを確かめる。
     state_path = tmp_path / SESSION_STATE_FILENAME_TEMPLATE.format(session_id="legacy")
     state_path.write_text(json.dumps({"operation_skill_ready_agents": {_SEARCH_SKILL: ["main"]}}), encoding="utf-8")
     payload = {"tool_name": "Grep", "tool_input": {"pattern": "x"}, "session_id": "legacy"}

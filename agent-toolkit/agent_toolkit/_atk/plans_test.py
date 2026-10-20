@@ -48,11 +48,7 @@ def _init_local_notes(root: pathlib.Path) -> None:
     git_repository.run_git(root, "config", "user.name", "plans-test")
     git_repository.run_git(root, "config", "user.email", "plans-test@example.invalid")
     git_repository.run_git(root, "config", "core.quotePath", "false")
-    for state in ("inbox", "processing", "hold", "adopted", "rejected"):
-        (root / state / ".gitkeep").parent.mkdir(parents=True)
-        (root / state / ".gitkeep").touch()
-    git_repository.run_git(root, "add", ".")
-    git_repository.run_git(root, "commit", "-m", "base")
+    git_repository.run_git(root, "commit", "--allow-empty", "-m", "base")
 
 
 def _init_remote_notes(root: pathlib.Path, remote: pathlib.Path) -> None:
@@ -1255,9 +1251,9 @@ def test_rewrite_references_keeps_queue_items_unchanged(tmp_path: pathlib.Path) 
     _init_remote_notes(notes, remote)
     stem = "01-参照表記-1a2b"
     _saved_plan_with_references(notes, stem)
-    queue_item = notes / "inbox" / "20260901-000000-001.md"
+    queue_item = notes / "2026" / "09" / "20260901-000000-001.md"
     queue_item.parent.mkdir(parents=True, exist_ok=True)
-    queue_text = f"---\nstatus: inbox\n---\n\n{_plan_file.PORTABLE_PLAN_PREFIX}plans/2026/09/{stem}.md\n"
+    queue_text = f"---\ntype: awi\nstate: inbox\n---\n\n{_plan_file.PORTABLE_PLAN_PREFIX}plans/2026/09/{stem}.md\n"
     queue_item.write_text(queue_text, encoding="utf-8")
     git_repository.run_git(notes, "add", "-A")
     git_repository.run_git(notes, "commit", "-m", "add saved plan and queue item")

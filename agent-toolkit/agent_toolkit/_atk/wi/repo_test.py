@@ -9,6 +9,7 @@ from agent_toolkit import atk
 from agent_toolkit._atk.wi import repo as repo_module
 from agent_toolkit._atk.wi.web_input import WebInputError
 from agent_toolkit._testing import git_repository
+from agent_toolkit._testing.wi_entry_files import entry_path
 from agent_toolkit.atk_test import _setup_notes
 
 
@@ -53,14 +54,17 @@ def test_resolve_head_commit_without_commit_asks_to_check_history(
     assert f"`git -C {tmp_path} log -1`" in next_action
 
 
-@pytest.mark.parametrize("content", ["---\ntype: awi\n---\n\n本文\n", "---\ntarget_repo: [\n---\n\n本文\n"])
+@pytest.mark.parametrize(
+    ("content", "exit_code"),
+    [("---\ntype: awi\nstate: inbox\n---\n\n本文\n", 2), ("---\ntarget_repo: [\n---\n\n本文\n", 1)],
+)
 def test_edit_without_target_repo_guides_to_executable_show(
-    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], content: str
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], content: str, exit_code: int
 ) -> None:
     """対象repoを指定した編集の失敗から案内されたshowを実行でき、保存状態を保つ。"""
     notes = _setup_notes(tmp_path)
     git_repository.init_repository(notes, initial_branch="main")
-    path = notes / "inbox" / "20260101-000000-001.md"
+    path = entry_path(notes, "20260101-000000-001.md")
     path.write_text(content, encoding="utf-8")
     before = git_repository.commit_all(notes, "初期状態")
     replacement = tmp_path / "replacement.md"
@@ -73,11 +77,16 @@ def test_edit_without_target_repo_guides_to_executable_show(
             _output_capture_active=True,
         )
 
-    assert exc_info.value.code == 2
+    assert exc_info.value.code == exit_code
     captured = capsys.readouterr()
     _failure, next_action = _failure_and_next_action(captured.err)
-    argv = shlex.split(next_action.split("`")[1])
-    assert argv == ["atk", "wi", "show", path.name]
+    if exit_code == 2:
+        argv = shlex.split(next_action.split("`")[1])
+        assert argv == ["atk", "wi", "show", path.name]
+    else:
+        # 破損したYAMLは保存状態も読み取れず、編集対象の解決時点でstateの修復を案内する。
+        assert str(path) in next_action and "state" in next_action
+        argv = ["atk", "wi", "show", path.name]
     with pytest.raises(SystemExit) as shown:
         atk.main([*argv[1:], "--skip-pull"], home=tmp_path, _output_capture_active=True)
     assert shown.value.code == 0

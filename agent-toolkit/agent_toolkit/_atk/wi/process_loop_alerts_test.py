@@ -14,6 +14,7 @@ from agent_toolkit._atk.wi import alerts as _wi_alerts
 from agent_toolkit._atk.wi import process_loop_alerts as _pl_alerts
 from agent_toolkit._atk.wi import process_loop_watch as _pl_watch
 from agent_toolkit._atk.wi import readiness as _wi_readiness
+from agent_toolkit._atk.wi.layout import iter_entry_paths
 from agent_toolkit._common import next_action as _next_action
 from agent_toolkit._testing.process_loop_support import fake_run_with_remote_url, isolate_process_loop_commands
 from agent_toolkit.atk_test import _setup_notes
@@ -266,7 +267,7 @@ class TestAlertMonitoring:
             atk.main(["wi", "process-loop", f"--target-repo={myrepo}", "--no-update"], home=tmp_path)
         assert repositories == ["example/myrepo"]
         assert len(claude_calls) == 1
-        assert not list((notes / "inbox").iterdir())
+        assert not list(iter_entry_paths(notes))
         log = (tmp_path / "state" / "agent-toolkit" / "process-wi.log").read_text(encoding="utf-8")
         assert "event=alert_check submitted=0 dependabot_pending=1 session_started=True" in log
 

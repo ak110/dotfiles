@@ -28,7 +28,7 @@ from agent_toolkit._atk import orchestrator, run_skill
 from agent_toolkit._atk.wi import add as wi_add
 from agent_toolkit._atk.wi import frontmatter
 from agent_toolkit._common import claude_usage_limit
-from agent_toolkit._testing import git_repository
+from agent_toolkit._testing import git_repository, wi_entry_files
 from agent_toolkit._testing.process_loop_support import set_orchestrate_environment
 
 _FAKE_ENGINE = """\
@@ -80,11 +80,11 @@ if os.environ.get("FAKE_REPORT_MODE", "saved") != "missing":
     if match:
         scope_file.write_text(match[1])
     scope = scope_file.read_text()
-    (notes / "inbox").mkdir(exist_ok=True)
-    old = notes / "inbox" / (run_id + ".md")
+    (notes / "2026/10").mkdir(parents=True, exist_ok=True)
+    old = notes / "2026/10" / (run_id + ".md")
     body = old.read_text().split("\\n---\\n", 1)[1] + "\\n再開後の報告更新\\n" if old.exists() else "定期実行の報告\\n"
     saved_id = "other-run" if mode == "other" else run_id
-    old.write_text("---\\ntype: uwi\\nsource: run-skill\\nscope: " + json.dumps(scope) +
+    old.write_text("---\\nstate: inbox\\ntype: uwi\\nsource: run-skill\\nscope: " + json.dumps(scope) +
         "\\nrun_skill_report: " + ("false" if mode == "question" else "true") +
         "\\nrun_skill_run_id: " + saved_id + "\\n---\\n" + body)
     subprocess.run(["git", "-C", str(notes), "add", "."], check=True, stdout=subprocess.DEVNULL)
@@ -499,9 +499,10 @@ def test_wi_save_and_edit_bind_report_to_run(
         scope="my-skill",
         question_type="post-approval",
     )
-    path = notes / "inbox" / names[0]
+    path = notes / "2026/10" / names[0]
     saved = frontmatter.parse_frontmatter(path.read_text(encoding="utf-8"))
     assert saved is not None and saved[0]["run_skill_run_id"] == "run-1"
+    assert saved[0]["state"] == "inbox"
     assert wi_add.has_synced_run_report(notes, run_id="run-1", skill="my-skill")
     body_file = tmp_path / "report-update.md"
     body_file.write_text("更新後の実行結果を確認してください。", encoding="utf-8")
@@ -520,6 +521,7 @@ def test_wi_save_and_edit_bind_report_to_run(
     assert updated.value.code == 0, capsys.readouterr().err
     saved = frontmatter.parse_frontmatter(path.read_text(encoding="utf-8"))
     assert saved is not None and saved[0]["run_skill_run_id"] == "run-1"
+    assert saved[0]["state"] == "inbox"
     assert "更新後の実行結果" in saved[1]
     assert wi_add.has_synced_run_report(notes, run_id="run-1", skill="my-skill")
 
@@ -546,10 +548,9 @@ def test_report_sync_uses_current_branch_config_with_ref_collisions(tmp_path: pa
     elif collision == "remote-ref":
         git_repository.run_git(notes, "tag", "origin/published/reports")
         git_repository.run_git(notes, "branch", "--no-track", "origin/published/reports", "HEAD")
-    report = notes / "inbox" / "report.md"
-    report.parent.mkdir()
+    report = wi_entry_files.entry_path(notes, "report.md")
     content = (
-        "---\ntype: uwi\nsource: run-skill\nscope: my-skill\n"
+        "---\nstate: inbox\ntype: uwi\nsource: run-skill\nscope: my-skill\n"
         "run_skill_report: true\nrun_skill_run_id: run-1\n---\n\n実行の報告\n"
     )
     report.write_text(content, encoding="utf-8")
@@ -800,7 +801,7 @@ def test_usage_limit_resumes_work_conversation_outside_timeout(
     assert log.count("利用上限の解除待ち:") == 2
     run_ids = {session["env"]["AGENT_TOOLKIT_RUN_SKILL_ID"] for session in sessions}
     assert len(run_ids) == 1 and None not in run_ids
-    reports = list((pathlib.Path(os.environ["AGENT_TOOLKIT_PRIVATE_NOTES"]) / "inbox").glob("*.md"))
+    reports = list((pathlib.Path(os.environ["AGENT_TOOLKIT_PRIVATE_NOTES"]) / "2026/10").glob("*.md"))
     assert len(reports) == 1
     saved = reports[0].read_text(encoding="utf-8")
     assert next(iter(run_ids)) in saved
