@@ -794,6 +794,7 @@ def test_cache_restore_failure_is_reported(
     assert outcome.changed is False
     assert "plugin addと旧cacheの復旧に失敗" in caplog.text
     assert "injected restore failure" in caplog.text
+    assert "表示された内容とパスをdotfilesの作者へ報告してください" in caplog.text
 
 
 def test_post_install_verification_failure_keeps_legacy_link(

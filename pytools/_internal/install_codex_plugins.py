@@ -447,13 +447,19 @@ def _sync_local_plugin(
             try:
                 _restore_plugin_caches(cache_root, saved_root, saved_versions, installed_version=None)
             except OSError as error:
-                raise RuntimeError(f"Codex plugin addと旧cacheの復旧に失敗。退避先を保持: {saved_root}: {error}") from error
+                raise RuntimeError(
+                    f"Codex plugin addと旧cacheの復旧に失敗。退避先を保持: {saved_root}: {error}。"
+                    "退避先を変更せず、表示された内容とパスをdotfilesの作者へ報告してください。"
+                ) from error
             shutil.rmtree(saved_root)
             raise RuntimeError("Codex plugin addに失敗")
         try:
             _restore_plugin_caches(cache_root, saved_root, saved_versions, installed_version=version)
         except OSError as error:
-            raise RuntimeError(f"Codex plugin更新後の旧cache復旧に失敗。退避先を保持: {saved_root}: {error}") from error
+            raise RuntimeError(
+                f"Codex plugin更新後の旧cache復旧に失敗。退避先を保持: {saved_root}: {error}。"
+                "退避先を変更せず、表示された内容とパスをdotfilesの作者へ報告してください。"
+            ) from error
         shutil.rmtree(saved_root)
         _verify_expected_state(plugin_id, version)
         new_cache = _codex_home() / "plugins" / "cache" / marketplace_name / plugin_name / version

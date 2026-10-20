@@ -207,7 +207,7 @@ function Install-CodexPlugin {
             Restore-CodexPluginCacheSnapshot $savedCacheRoot '' $true
             Remove-Item -LiteralPath $savedCacheRoot -Recurse -Force
         } catch {
-            throw "Codex plugin addと旧cacheの復旧に失敗しました。退避先を保持します: $savedCacheRoot。$($_.Exception.Message)"
+            throw "Codex plugin addと旧cacheの復旧に失敗しました。退避先を保持します: $savedCacheRoot。$($_.Exception.Message) 退避先を変更せず、表示された内容とパスをdotfilesの作者へ報告してください。"
         }
         throw $addError
     }
@@ -215,7 +215,7 @@ function Install-CodexPlugin {
         Restore-CodexPluginCacheSnapshot $savedCacheRoot $expectedVersion $false
         Remove-Item -LiteralPath $savedCacheRoot -Recurse -Force
     } catch {
-        throw "Codex plugin更新後の旧cache復旧に失敗しました。退避先を保持します: $savedCacheRoot。$($_.Exception.Message)"
+        throw "Codex plugin更新後の旧cache復旧に失敗しました。退避先を保持します: $savedCacheRoot。$($_.Exception.Message) 退避先を変更せず、表示された内容とパスをdotfilesの作者へ報告してください。"
     }
     $afterState = Get-CodexPluginState
     $script:codexPluginUpdated = Test-CodexPluginStateChanged $beforeState $afterState

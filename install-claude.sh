@@ -273,6 +273,7 @@ _install_codex_plugin() {
     if ! codex plugin add "$CODEX_PLUGIN_ID" --json >/dev/null; then
         if ! _restore_codex_plugin_caches "$migration_dir" "" 1; then
             echo "Codex plugin addと旧cacheの復旧に失敗しました。退避先を保持します: $migration_dir" >&2
+            echo "退避先を変更せず、表示された内容とパスをdotfilesの作者へ報告してください。" >&2
             return 1
         fi
         rm -rf "$migration_dir"
@@ -280,6 +281,7 @@ _install_codex_plugin() {
     fi
     if ! _restore_codex_plugin_caches "$migration_dir" "$expected_version" 0; then
         echo "Codex plugin更新後の旧cache復旧に失敗しました。退避先を保持します: $migration_dir" >&2
+        echo "退避先を変更せず、表示された内容とパスをdotfilesの作者へ報告してください。" >&2
         return 1
     fi
     rm -rf "$migration_dir"

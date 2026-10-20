@@ -125,6 +125,7 @@ post-applyの延期記録は、診断ログDBの移行や不要pluginの除去�
 
 公開インストーラー（`install-claude.sh`・`install-claude.ps1`）も全通常versionを複製してから更新し、CLIが削除した旧versionを同じ実行で復旧する。
 旧versionの復旧に失敗した場合は退避先を表示して非0で終了する。
+退避先を変更せず、表示された内容とパスをdotfilesの作者へ報告する。
 
 ### プラグイン更新後のdaemonの再起動
 

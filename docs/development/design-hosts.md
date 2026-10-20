@@ -86,7 +86,7 @@ agent-toolkitの更新では旧versionを自動復旧し、Codexの稼働状態�
 | 処理 | 参照の判定 | 延期後の再開 |
 | --- | --- | --- |
 | Codexのpost-apply更新（`install_codex_plugins.py`） | 更新前の全通常versionディレクトリを複製し、CLIが削除した旧versionを同じ絶対パスへ復旧する | 同じ実行で更新と旧versionの復旧を完了する。復旧失敗は導入成功と区別して報告する |
-| 単体インストーラー（`install-claude.sh`・`install-claude.ps1`） | post-apply更新と同じく、更新前の全通常versionディレクトリを複製する | 同じ実行で更新と旧versionの復旧を完了する。復旧失敗時は退避先を表示して非0で終わる |
+| 単体インストーラー（`install-claude.sh`・`install-claude.ps1`） | post-apply更新と同じく、更新前の全通常versionディレクトリを複製する | 同じ実行で更新と旧versionの復旧を完了する。復旧失敗時は退避先と報告先を表示して非0で終わる |
 | Claude Codeの旧版cache整理（`prune_claude_plugin_cache.py`） | `claude_plugin_references.py`。その版の配下を指すプロセスと、その版が現行だった期間に起動したClaude Codeセッション | 参照の終了後の`update-dotfiles`で削除する |
 | Claude Codeの現行版cache欠落修復（`install_claude_plugins.py`） | `claude_plugin_references.py`。導入先を指すプロセスと、起動時刻を問わない稼働中のClaude Codeセッション | post-applyの`deferred`と延期記録による自動更新タイマーの再試行。タイマーを持たないホストではClaude Codeのセッションを全て終了してから`update-dotfiles`を再実行する |
 | Codexの不要pluginの除去（`install_codex_plugins.py`の`_remove_unused_plugins`） | `codex_processes.py`の役割分類。`session`を常に数え、管理daemonは`DOTFILES_CODEX_DAEMON_AUTO_RESTART=1`の指定が無い場合だけ数える | post-applyの`deferred`と延期記録による自動更新タイマーの再試行。タイマーを持たないホストではCodexの終了後に`update-dotfiles`を再実行する |

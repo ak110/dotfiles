@@ -553,6 +553,14 @@ def test_plugin_add_failure_restores_previous_cache(kind: str, tmp_path: pathlib
     assert (cache_root / "1.2.2/scripts/hook.py").read_text(encoding="utf-8") == "old hook\n"
 
 
+def test_cache_restore_failure_reports_retained_backup() -> None:
+    """両OSのインストーラーは復旧失敗時に退避先の扱いと報告先を案内する。"""
+    instruction = "退避先を変更せず、表示された内容とパスをdotfilesの作者へ報告してください。"
+
+    assert instruction in INSTALL_SH.read_text(encoding="utf-8")
+    assert instruction in INSTALL_PS1.read_text(encoding="utf-8-sig")
+
+
 @pytest.mark.parametrize("kind", installer_runners())
 @pytest.mark.parametrize(
     ("fail_pattern", "block_atk_wrapper", "expect_notice"),
