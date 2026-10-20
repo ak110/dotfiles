@@ -77,6 +77,15 @@ _WINDOWS_SE_FILE_OBJECT = 1
 _WINDOWS_SYNCHRONIZE = 0x00100000
 
 
+_WINDOWS_TOKEN_OWNER = 4
+
+
+_WINDOWS_TOKEN_QUERY = 0x0008
+
+
+_WINDOWS_TOKEN_USER = 1
+
+
 _WINDOWS_WRITE_DAC = 0x00040000
 
 
@@ -135,6 +144,18 @@ class _ByHandleFileInformation(ctypes.Structure):
         ("file_index_high", ctypes.c_uint32),
         ("file_index_low", ctypes.c_uint32),
     ]
+
+
+class _SidAndAttributes(ctypes.Structure):
+    _fields_ = [("sid", ctypes.c_void_p), ("attributes", wintypes.DWORD)]
+
+
+class _TokenOwner(ctypes.Structure):
+    _fields_ = [("owner", ctypes.c_void_p)]
+
+
+class _TokenUser(ctypes.Structure):
+    _fields_ = [("user", _SidAndAttributes)]
 
 
 class _WindowsAce(typing.NamedTuple):
@@ -277,15 +298,8 @@ def _windows_security_update_handle(
         yield handle, information, can_write_owner
 
 
-def _windows_current_sid() -> str:
-    """現在のWindows process tokenのuser SIDを文字列で返す。"""
-
-    class _SidAndAttributes(ctypes.Structure):
-        _fields_ = [("sid", ctypes.c_void_p), ("attributes", wintypes.DWORD)]
-
-    class _TokenUser(ctypes.Structure):
-        _fields_ = [("user", _SidAndAttributes)]
-
+def _windows_current_token_sid(information_class: int, label: str) -> str:
+    """現在のWindows process tokenから指定されたSIDを文字列で返す。"""
     advapi32 = _windows_dll("advapi32")
     kernel32 = _windows_dll("kernel32")
     kernel32.GetCurrentProcess.restype = wintypes.HANDLE
@@ -306,26 +320,50 @@ def _windows_current_sid() -> str:
     kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
     kernel32.CloseHandle.restype = wintypes.BOOL
     token = wintypes.HANDLE(None)
-    if not advapi32.OpenProcessToken(kernel32.GetCurrentProcess(), 0x0008, ctypes.byref(token)):
+    if not advapi32.OpenProcessToken(kernel32.GetCurrentProcess(), _WINDOWS_TOKEN_QUERY, ctypes.byref(token)):
         raise ManagedTempError("Windows process tokenを取得できない")
     try:
         size = wintypes.DWORD(0)
-        advapi32.GetTokenInformation(token, 1, None, 0, ctypes.byref(size))
+        advapi32.GetTokenInformation(token, information_class, None, 0, ctypes.byref(size))
         buffer = ctypes.create_string_buffer(size.value)
-        if not advapi32.GetTokenInformation(token, 1, buffer, size, ctypes.byref(size)):
-            raise ManagedTempError("Windows user SIDを取得できない")
-        token_user = ctypes.cast(buffer, ctypes.POINTER(_TokenUser)).contents
+        if not advapi32.GetTokenInformation(token, information_class, buffer, size, ctypes.byref(size)):
+            raise ManagedTempError(f"Windows {label} SIDを取得できない")
+        if information_class == _WINDOWS_TOKEN_USER:
+            sid = ctypes.cast(buffer, ctypes.POINTER(_TokenUser)).contents.user.sid
+        elif information_class == _WINDOWS_TOKEN_OWNER:
+            sid = ctypes.cast(buffer, ctypes.POINTER(_TokenOwner)).contents.owner
+        else:
+            raise ValueError(f"未対応のWindows token information class: {information_class}")
         string_sid = ctypes.c_wchar_p(None)
-        if not advapi32.ConvertSidToStringSidW(token_user.user.sid, ctypes.byref(string_sid)):
-            raise ManagedTempError("Windows user SIDを文字列化できない")
+        if not advapi32.ConvertSidToStringSidW(sid, ctypes.byref(string_sid)):
+            raise ManagedTempError(f"Windows {label} SIDを文字列化できない")
         try:
             if string_sid.value is None:
-                raise ManagedTempError("Windows user SIDが空である")
+                raise ManagedTempError(f"Windows {label} SIDが空である")
             return string_sid.value
         finally:
             kernel32.LocalFree(ctypes.cast(string_sid, ctypes.c_void_p))
     finally:
         kernel32.CloseHandle(token)
+
+
+def _windows_current_sid() -> str:
+    """現在のWindows process tokenのuser SIDを文字列で返す。"""
+    return _windows_current_token_sid(_WINDOWS_TOKEN_USER, "user")
+
+
+def _windows_current_default_owner_sid() -> str:
+    """現在のWindows process tokenのdefault owner SIDを文字列で返す。"""
+    return _windows_current_token_sid(_WINDOWS_TOKEN_OWNER, "default owner")
+
+
+def _windows_owner_belongs_to_current_token(owner: bytes) -> bool:
+    """ownerが現在のtokenのuserまたはdefault ownerに一致するか返す。"""
+    current_owners = (
+        _windows_sid_bytes(_windows_current_sid()),
+        _windows_sid_bytes(_windows_current_default_owner_sid()),
+    )
+    return any(_windows_equal_sids(owner, candidate) for candidate in current_owners)
 
 
 def _windows_information_identity(information: _ByHandleFileInformation) -> tuple[int, int]:

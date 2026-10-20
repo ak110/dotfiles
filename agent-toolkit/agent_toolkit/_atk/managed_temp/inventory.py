@@ -61,6 +61,7 @@ lazy from agent_toolkit._atk.managed_temp.windows_security import (
     _windows_equal_sids,
     _windows_extended_path,
     _windows_identity,
+    _windows_owner_belongs_to_current_token,
     _windows_reparse_identity,
     _windows_secure_path,
     _windows_security_descriptor,
@@ -1394,7 +1395,7 @@ def _remove_windows_quarantine(root: pathlib.Path, expected_tree: dict[str, _Tre
         if not attributes & stat.FILE_ATTRIBUTE_READONLY:
             raise error
         security = _windows_security_descriptor(path)
-        if not _windows_equal_sids(security.owner, _windows_sid_bytes(_windows_current_sid())):
+        if not _windows_owner_belongs_to_current_token(security.owner):
             raise ManagedTempError(
                 f"所有者が異なるためReadonly属性を解除できない: {path}",
                 next_action=ManagedTempError.PERMISSION_NEXT_ACTION,

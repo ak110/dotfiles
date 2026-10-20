@@ -215,6 +215,31 @@ def test_windows_ctypes_structures_match_sdk_layout() -> None:
     assert ctypes.sizeof(managed_temp_windows_security._ByHandleFileInformation) == 52
 
 
+@pytest.mark.parametrize(
+    ("owner", "token_user", "default_owner", "accepted"),
+    [
+        (b"user", "user", "administrators", True),
+        (b"administrators", "user", "administrators", True),
+        (b"other", "user", "administrators", False),
+        (b"administrators", "user", "personal-default", False),
+    ],
+)
+def test_windows_readonly_owner_accepts_only_current_token_owners(
+    monkeypatch: pytest.MonkeyPatch,
+    owner: bytes,
+    token_user: str,
+    default_owner: str,
+    accepted: bool,
+) -> None:
+    """Readonlyのownerをtokenのuserとdefault ownerだけから受理する。"""
+    monkeypatch.setattr(managed_temp_windows_security, "_windows_current_sid", lambda: token_user)
+    monkeypatch.setattr(managed_temp_windows_security, "_windows_current_default_owner_sid", lambda: default_owner)
+    monkeypatch.setattr(managed_temp_windows_security, "_windows_sid_bytes", str.encode)
+    monkeypatch.setattr(managed_temp_windows_security, "_windows_equal_sids", bytes.__eq__)
+
+    assert managed_temp_windows_security._windows_owner_belongs_to_current_token(owner) is accepted
+
+
 @pytest.mark.skipif(os.name != "posix", reason="POSIX固有の所有者・権限検証")
 def test_force_remove_cleans_target_after_permission_validation_failure(
     monkeypatch: pytest.MonkeyPatch,
