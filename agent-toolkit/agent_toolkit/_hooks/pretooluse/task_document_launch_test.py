@@ -21,7 +21,7 @@ def test_role_launch_hook_requires_same_named_inputs(tool_name: str, tmp_path: p
     result = _invoke(tool_name, prompt, tmp_path)
     assert result.returncode == 2
     assert "引き継ぎ記録先" in result.stderr
-    valid = prompt + f"引き継ぎ記録先: {tmp_path / '引継ぎ 記録.md'}\n"
+    valid = prompt + f'引き継ぎ記録先: {tmp_path / "引継ぎ 記録.md"}\n書込担当一覧: ["session-main"]\n'
     assert _invoke(tool_name, valid, tmp_path).returncode == 0
 
 
@@ -149,6 +149,7 @@ def test_agent_task_document_prompt_allows_only_declared_lines(tmp_path: pathlib
             "引き継ぎ記録先:",
             f"  {tmp_path / 'handoff.md'}（新規）",
             "  ",
+            '書込担当一覧: ["session-main"]',
             "レーン識別子: lane-01",
         ]
     )
@@ -287,6 +288,9 @@ def test_reading_and_command_examples_pass(tool_name: str, mode: str | None, pro
 
 def test_agent_accepts_spacing_variant_with_declared_inputs_only(tmp_path: pathlib.Path) -> None:
     """パスの後に空白を置いた定型の命令と宣言済みの入力だけの本文は、宣言外の指示を持たないため通す。"""
-    prompt = f"{_EXEC_DOCUMENT} の手順を実行せよ。\n担当種別: レーン担当\n引き継ぎ記録先: {tmp_path / 'handoff.md'}\n"
+    prompt = (
+        f"{_EXEC_DOCUMENT} の手順を実行せよ。\n担当種別: レーン担当\n"
+        f'引き継ぎ記録先: {tmp_path / "handoff.md"}\n書込担当一覧: ["session-main"]\n'
+    )
 
     assert _invoke("Agent", prompt, tmp_path).returncode == 0
