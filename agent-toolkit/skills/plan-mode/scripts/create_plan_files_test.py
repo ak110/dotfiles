@@ -154,6 +154,27 @@ def test_creates_single_file_with_supplied_stem(repo: pathlib.Path, tmp_path: pa
     assert path.is_file()
 
 
+def test_wrong_execution_worktree_guides_recovery_without_changing_source(
+    repo: pathlib.Path, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """対象と別の場所からの作成・確認は実行場所を案内し、その指定だけで同じ本文を作成できる。"""
+    source, _bug_source = _source(repo, tmp_path)
+    before = source.read_bytes()
+    other = tmp_path / "other"
+    other.mkdir()
+    git_repository.init_repository(other)
+    monkeypatch.chdir(other)
+    args = ["--main-source", str(source), "--name", "13-0217_対象worktree", "--home", str(tmp_path / "home")]
+    assert create_plan_files.main(args) == 1
+    error = capsys.readouterr().err
+    assert "--work-dir" in error and "列挙した各違反を計画本文" not in error
+    assert check_plan_file.main([str(source)]) == 1
+    error = capsys.readouterr().err
+    assert "--work-dir" in error and "計画ファイルを直し" not in error
+    assert source.read_bytes() == before
+    assert create_plan_files.main([*args, "--work-dir", str(repo)]) == 0
+
+
 @pytest.mark.parametrize("bom", [False, True])
 def test_cli_accepts_bom_source_and_preserves_bytes(
     repo: pathlib.Path,

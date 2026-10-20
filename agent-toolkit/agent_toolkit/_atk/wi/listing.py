@@ -253,6 +253,7 @@ def _print_json_entries(
             "ready": state in WI_PROCESSABLE_STATES and path.name in readiness.ready,
             "blocked_reason": reason,
             "source": parse_source(text),
+            "important": _wi_filters.is_important(text),
             "summary": summary,
         }
         if include_staleness:
@@ -317,6 +318,7 @@ def cmd_list(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
                 and ("all" in kinds or entry[4] in kinds)
                 and _wi_filters.answered_matches(entry[4], entry[2], args.answered)
                 and _wi_filters.source_matches_any(parse_source(entry[2]), args.source)
+                and _wi_filters.important_matches(entry[2], getattr(args, "important", "all"))
             ]
             total += len(selected)
             if args.count:
@@ -349,6 +351,7 @@ def cmd_list(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
         answered=args.answered,
         source=args.source,
         texts=texts,
+        important=getattr(args, "important", "all"),
     )
 
     if args.count:

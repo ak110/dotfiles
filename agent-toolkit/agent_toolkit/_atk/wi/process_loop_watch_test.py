@@ -85,8 +85,7 @@ class TestWaitForChanges:
     @staticmethod
     def _make_private_notes(tmp_path: pathlib.Path) -> pathlib.Path:
         private_notes = tmp_path / "private-notes"
-        (private_notes / "processing").mkdir(parents=True)
-        (private_notes / "inbox").mkdir(parents=True)
+        (private_notes / "2026" / "10").mkdir(parents=True)
         return private_notes
 
     @staticmethod
@@ -97,6 +96,8 @@ class TestWaitForChanges:
         observers: list[Any] = []
 
         class SynchronousObserver:
+            ident = None
+
             def __init__(self) -> None:
                 self._handlers: dict[pathlib.Path, watchdog.events.FileSystemEventHandler] = {}
                 observers.append(self)
@@ -112,7 +113,9 @@ class TestWaitForChanges:
                 self._handlers[pathlib.Path(path)] = handler
 
             def emit(self, path: pathlib.Path) -> None:
-                self._handlers[path.parent].on_any_event(watchdog.events.FileCreatedEvent(str(path)))
+                for directory, handler in self._handlers.items():
+                    if path.is_relative_to(directory):
+                        handler.on_any_event(watchdog.events.FileCreatedEvent(str(path)))
 
             def start(self) -> None:
                 self.emit(initial_event_path)
@@ -130,12 +133,12 @@ class TestWaitForChanges:
 
         return emit
 
-    def test_missing_inbox_dirs_are_created(
+    def test_missing_private_notes_root_is_created(
         self,
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
     ) -> None:
-        """inboxディレクトリ未作成でも監視前に作成され、タイムアウト時の処理が動作すること。"""
+        """保存先が未作成でも監視前に作成され、タイムアウト時の処理が動作すること。"""
         private_notes = tmp_path / "private-notes"
         monkeypatch.setattr(_pl_watch, "_POLL_INTERVAL_SEC", 0.1)
         monkeypatch.setattr(_pl_watch, "_DEBOUNCE_SEC", 0.1)
@@ -144,8 +147,7 @@ class TestWaitForChanges:
 
         _pl_watch.wait_for_changes(private_notes, None)  # pylint: disable=protected-access  # noqa: SLF001
 
-        assert (private_notes / "processing").is_dir()
-        assert (private_notes / "inbox").is_dir()
+        assert private_notes.is_dir()
         assert pull_calls == [private_notes]
 
     def test_timeout_triggers_pull(
@@ -205,7 +207,7 @@ class TestWaitForChanges:
     ) -> None:
         """タイムアウト前に`.md`ファイル変更を検知した場合、`pull`が呼ばれないこと。"""
         private_notes = self._make_private_notes(tmp_path)
-        inbox = private_notes / "inbox"
+        inbox = private_notes / "2026" / "10"
         entry = inbox / "entry.md"
         self._use_synchronous_observer(monkeypatch, entry)
         monkeypatch.setattr(_pl_watch, "_POLL_INTERVAL_SEC", 0.1)
@@ -224,7 +226,7 @@ class TestWaitForChanges:
     ) -> None:
         """デバウンス窓内の追加イベントが`clear`→`wait(timeout=_DEBOUNCE_SEC)`ループで1回の変更にまとめられること。"""
         private_notes = self._make_private_notes(tmp_path)
-        inbox = private_notes / "inbox"
+        inbox = private_notes / "2026" / "10"
         entry1 = inbox / "entry1.md"
         entry2 = inbox / "entry2.md"
         emit = self._use_synchronous_observer(monkeypatch, entry1)

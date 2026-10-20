@@ -9,7 +9,6 @@ import argparse
 import datetime
 import pathlib
 import re
-import shutil
 import sys
 import typing
 
@@ -29,7 +28,6 @@ from agent_toolkit._atk.wi.constants import (
     WI_STATE_INBOX,
     WI_STATE_PROCESSING,
     WI_STATE_REJECTED,
-    WI_STATES,
     WI_TYPE_AWI,
     WI_USER_REMOVABLE_STATES,
 )
@@ -39,9 +37,6 @@ from agent_toolkit._atk.wi.mutations.targets import (
     candidate_local_worktree,
     commit_values_by_path,
     entry_target_repo,
-    resolve_active_targets,
-    resolve_awi_targets,
-    resolve_processable_targets,
 )
 from agent_toolkit._atk.wi.repo import (
     resolve_repo_id,
@@ -130,62 +125,50 @@ def _resolve_transition_paths(
     actor_is_agent: bool,
 ) -> list[pathlib.Path]:
     """操作種別と明示状態から対象エントリを解決する。"""
-    inbox_dir = private_notes / WI_STATE_INBOX
-    processing_dir = _wi_entries.subdir(private_notes, WI_STATE_PROCESSING)
     removable_states = WI_AGENT_REMOVABLE_STATES if actor_is_agent else WI_USER_REMOVABLE_STATES
     if action == "remove" and state is not None and state not in removable_states:
         raise WebInputError(f"エージェント環境ではstate={state}の項目を削除できません", next_action=_AGENT_REMOVE_NEXT_ACTION)
-    if action == "remove" and state is None and actor_is_agent:
-        forbidden_states = tuple(candidate for candidate in WI_USER_REMOVABLE_STATES if candidate not in removable_states)
-        for filename in filenames:
-            if any(
-                _wi_filenames.validate_filename(filename, private_notes / candidate).is_file() for candidate in removable_states
-            ):
-                continue
-            for candidate in forbidden_states:
-                if _wi_filenames.validate_filename(filename, private_notes / candidate).is_file():
-                    raise WebInputError(
-                        f"エージェント環境ではstate={candidate}の項目を削除できません",
-                        next_action=_AGENT_REMOVE_NEXT_ACTION,
-                    )
-    if action == "hold" and state is None and actor_is_agent:
-        for filename in filenames:
-            if _wi_filenames.validate_filename(filename, inbox_dir).is_file():
-                continue
-            if _wi_filenames.validate_filename(filename, processing_dir).is_file():
-                raise WebInputError(
-                    f"エージェント環境では処理中（processing）の項目を--state=processingの指定なしに保留できません: {filename}",
-                    next_action=_AGENT_PROCESSING_HOLD_NEXT_ACTION,
-                )
-    if state is not None:
-        return resolve_awi_targets(filenames, private_notes / state, missing_is_conflict=missing_is_conflict)
-    if action == "start-processing":
-        return resolve_awi_targets(filenames, inbox_dir, missing_is_conflict=missing_is_conflict)
-    if action == "return-to-inbox":
-        return resolve_awi_targets(filenames, processing_dir, missing_is_conflict=missing_is_conflict)
-    if action == "unhold":
-        return resolve_awi_targets(
-            filenames,
-            _wi_entries.subdir(private_notes, WI_STATE_HOLD),
-            missing_is_conflict=missing_is_conflict,
+    try:
+        records, missing = _wi_entries.read_named_entries(
+            private_notes, _wi_entries.validate_named_filenames(private_notes, filenames), target_repo=None
         )
-    if action == "remove":
-        return resolve_active_targets(
-            filenames,
-            inbox_dir,
-            processing_dir,
-            missing_is_conflict=missing_is_conflict,
-            states=removable_states,
+    except (OSError, UnicodeError) as error:
+        if missing_is_conflict:
+            raise RuntimeError("編集中に他プロセスが対象を変更しました") from error
+        raise
+    for path, _, _, actual_state, _ in records:
+        if action == "remove" and actual_state not in removable_states:
+            raise WebInputError(
+                f"エージェント環境ではstate={actual_state}の項目を削除できません", next_action=_AGENT_REMOVE_NEXT_ACTION
+            )
+        if action == "hold" and state is None and actor_is_agent and actual_state == WI_STATE_PROCESSING:
+            raise WebInputError(
+                f"エージェント環境では処理中（processing）の項目を--state=processingの指定なしに保留できません: {path.name}",
+                next_action=_AGENT_PROCESSING_HOLD_NEXT_ACTION,
+            )
+    accepted = (
+        (state,)
+        if state is not None
+        else {
+            "start-processing": (WI_STATE_INBOX,),
+            "return-to-inbox": (WI_STATE_PROCESSING,),
+            "unhold": (WI_STATE_HOLD,),
+            "hold": (WI_STATE_INBOX, WI_STATE_PROCESSING),
+            "adopt": _implicit_terminal_source_states("adopt"),
+            "reject": _implicit_terminal_source_states("reject"),
+            "remove": removable_states,
+        }[action]
+    )
+    missing.extend(path.name for path, _, _, actual, _ in records if actual not in accepted)
+    if missing:
+        if missing_is_conflict:
+            raise RuntimeError("編集中に他プロセスが対象を変更しました")
+        _outcome.report_failure(
+            f"{'・'.join(accepted)}に存在しない: {', '.join(missing)}",
+            next_action="`atk wi list --state=all`でファイル名と保存状態を確認して再実行する",
         )
-    if action in {"adopt", "reject"}:
-        return resolve_active_targets(
-            filenames,
-            inbox_dir,
-            processing_dir,
-            missing_is_conflict=missing_is_conflict,
-            states=_implicit_terminal_source_states(action),
-        )
-    return resolve_processable_targets(filenames, inbox_dir, processing_dir, missing_is_conflict=missing_is_conflict)
+        sys.exit(2)
+    return [record[0] for record in records]
 
 
 def _validate_transition_targets(
@@ -239,7 +222,7 @@ def _validate_transition_targets(
                 next_action="--cooldown-daysの対象からAWI以外の項目を外して再実行する",
             )
     if action == "remove" and not force:
-        protected = [path.name for path in paths if path.parent.name == WI_STATE_PROCESSING]
+        protected = [path.name for path in paths if _wi_entries.entry_state_of(path) == WI_STATE_PROCESSING]
         if protected:
             _outcome.report_failure(
                 f"processing状態のファイルは、--forceを指定しない限り削除できない: {', '.join(protected)}",
@@ -295,7 +278,8 @@ def _apply_transition(
     commit_values: dict[pathlib.Path, CommitMetadata | None],
     cooldown_days: int | None,
 ) -> None:
-    """検証済みエントリを削除または目的状態へ移動する。"""
+    """検証済みエントリを削除するか、同じパスのstateを更新する。"""
+    del private_notes
     destination_name = {
         "start-processing": WI_STATE_PROCESSING,
         "return-to-inbox": WI_STATE_INBOX,
@@ -308,21 +292,19 @@ def _apply_transition(
         for path in paths:
             path.unlink()
         return
-    destination = _wi_entries.subdir(private_notes, destination_name)
-    conflicts = [path.name for path in paths if (destination / path.name).exists()]
-    if conflicts:
-        _outcome.report_failure(
-            f"移動先（{destination_name}）に同名エントリが既に存在する: {', '.join(conflicts)}",
-            next_action=(f"`atk wi show {conflicts[0]}`で同名の項目を比較し、不要な側を`atk wi rm`で削除してから再実行する"),
-        )
-        sys.exit(2)
     _update_transition_metadata(paths, action=action, now=now, cooldown_days=cooldown_days)
     for path in paths:
-        if action == "return-to-inbox" or (action == "hold" and path.parent.name in {WI_STATE_ADOPTED, WI_STATE_REJECTED}):
+        if action == "return-to-inbox" or (
+            action == "hold" and _wi_entries.entry_state_of(path) in {WI_STATE_ADOPTED, WI_STATE_REJECTED}
+        ):
             _strip_result_section(path)
         if action in {"adopt", "reject"}:
             _wi_entries.stamp_result(path, outcome=destination_name, now=now, commit=commit_values[path], note=note)
-        shutil.move(path, destination / path.name)
+        parsed = _frontmatter.parse_frontmatter(path.read_text(encoding="utf-8"))
+        assert parsed is not None
+        data, body = parsed
+        data["state"] = destination_name
+        atomic_write_text(path, _frontmatter.serialize_frontmatter(data, body))
 
 
 def _transition_commit_message(action: str, count: int, note: str | None) -> str:
@@ -413,12 +395,10 @@ def transition_entries(
             commit_values=commit_values,
             cooldown_days=cooldown_days,
         )
-        for state_name in WI_STATES:
-            _wi_entries.subdir(private_notes, state_name)
         _wi_sync.commit_and_push(
             private_notes,
             _transition_commit_message(action, len(paths), note),
-            list(WI_STATES),
+            [str(path.relative_to(private_notes)) for path in paths],
             skip_push=skip_push or skip_remote_sync,
         )
     return [path.name for path in paths]
@@ -475,7 +455,7 @@ def _bulk_transition(
         _wi_sync.commit_and_push(
             notes,
             _transition_commit_message(action, len(paths), note),
-            list(WI_STATES),
+            [str(path.relative_to(notes)) for path in paths],
             skip_push=skip_push,
         )
         return [path.name for path in paths]
@@ -509,7 +489,7 @@ def cmd_adopt(args: argparse.Namespace, private_notes: pathlib.Path, now: dateti
         if filenames:
             _outcome.report_success(f"{len(filenames)}件をadoptedへ移した")
             for filename in filenames:
-                print(private_notes / WI_STATE_ADOPTED / filename)
+                print(_wi_entries.entry_path(private_notes, filename))
         return
     args.filenames = _wi_filenames.dedup_positional_filenames(args.filenames, "adopt")
     local_worktree = candidate_local_worktree(_single_target_repo(args.target_repo)) if args.commit is not None else None
@@ -526,7 +506,7 @@ def cmd_adopt(args: argparse.Namespace, private_notes: pathlib.Path, now: dateti
     )
     _outcome.report_success(f"{len(filenames)}件をadoptedへ移した")
     for filename in filenames:
-        print(private_notes / WI_STATE_ADOPTED / filename)
+        print(_wi_entries.entry_path(private_notes, filename))
 
 
 def cmd_reject(args: argparse.Namespace, private_notes: pathlib.Path, now: datetime.datetime) -> None:
@@ -542,7 +522,7 @@ def cmd_reject(args: argparse.Namespace, private_notes: pathlib.Path, now: datet
         if filenames:
             _outcome.report_success(f"{len(filenames)}件をrejectedへ移した")
             for filename in filenames:
-                print(private_notes / WI_STATE_REJECTED / filename)
+                print(_wi_entries.entry_path(private_notes, filename))
         return
     args.filenames = _wi_filenames.dedup_positional_filenames(args.filenames, "reject")
     local_worktree = candidate_local_worktree(_single_target_repo(args.target_repo)) if args.commit is not None else None
@@ -560,7 +540,7 @@ def cmd_reject(args: argparse.Namespace, private_notes: pathlib.Path, now: datet
     )
     _outcome.report_success(f"{len(filenames)}件をrejectedへ移した")
     for filename in filenames:
-        print(private_notes / WI_STATE_REJECTED / filename)
+        print(_wi_entries.entry_path(private_notes, filename))
 
 
 def cmd_start_processing(args: argparse.Namespace, private_notes: pathlib.Path, now: datetime.datetime) -> None:

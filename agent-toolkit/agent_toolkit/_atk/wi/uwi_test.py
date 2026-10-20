@@ -19,6 +19,7 @@ from agent_toolkit._atk.wi.uwi import (  # noqa: E402  # pylint: disable=wrong-i
     _detect_self_containment_deficiency,
 )
 from agent_toolkit._testing.git_fakes import _FIXED_HEAD_COMMIT  # noqa: E402  # pylint: disable=wrong-import-position
+from agent_toolkit._testing.wi_entry_files import entry_path as _fixed_path
 from agent_toolkit.atk_test import (  # pylint: disable=wrong-import-position
     _FIXED_DT,
     _FIXED_TIMESTAMP,
@@ -96,7 +97,7 @@ def test_flat_uwi_operations_are_public(tmp_path: pathlib.Path, monkeypatch: pyt
         choices=None,
     )
     assert generated == [f"{_FIXED_TIMESTAMP}-001.md"]
-    content = (notes / "inbox" / generated[0]).read_text(encoding="utf-8")
+    content = _fixed_path(notes, generated[0]).read_text(encoding="utf-8")
     assert "type: uwi" in content
     assert "question_type: yes-no" in content
     assert "ユーザーはこの行以降に回答を追記する" in content
@@ -193,7 +194,7 @@ class TestUwiAdd:
 
         assert _invoke_uwi_add(tmp_path, str(myrepo), "--scope", "theme1", body="未確認の挙動").code == 0
 
-        files = sorted((notes / "inbox").iterdir())
+        files = sorted(notes.glob("[0-9][0-9][0-9][0-9]/[0-9][0-9]/*.md"))
         assert len(files) == 1
         content = files[0].read_text(encoding="utf-8")
         assert "target_repo: github.com/example/myrepo" in content
@@ -346,7 +347,7 @@ class TestUwiAddEditorBeforePull:
 
         assert exc_info.value.code == 1
         assert editor_calls
-        assert not list((notes / "inbox").iterdir())
+        assert not list(notes.glob("[0-9][0-9][0-9][0-9]/[0-9][0-9]/*.md"))
 
     def test_choice_validation_fires_before_pull(
         self,
@@ -413,7 +414,7 @@ class TestUwiAddRepoPathOverrideCli:
         monkeypatch.setattr(subprocess, "run", fake_run)
 
         assert _invoke_uwi_add(tmp_path, body="この対応でよいか").code == 0
-        content = next((notes / "inbox").iterdir()).read_text(encoding="utf-8")
+        content = next(notes.glob("[0-9][0-9][0-9][0-9]/[0-9][0-9]/*.md")).read_text(encoding="utf-8")
         assert "target_repo: github.com/example/cwdrepo" in content
 
     def test_directory_followed_by_message_uses_compat_path(
@@ -428,7 +429,7 @@ class TestUwiAddRepoPathOverrideCli:
         monkeypatch.setattr(subprocess, "run", _make_uwi_add_fake(myrepo))
 
         assert _invoke_uwi_add(tmp_path, str(myrepo), body="この対応でよいか").code == 0
-        content = next((notes / "inbox").iterdir()).read_text(encoding="utf-8")
+        content = next(notes.glob("[0-9][0-9][0-9][0-9]/[0-9][0-9]/*.md")).read_text(encoding="utf-8")
         assert "target_repo: github.com/example/myrepo" in content
         assert "この対応でよいか" in content
 
@@ -458,7 +459,7 @@ class TestUwiAddSourceOption:
         )
         assert result.code == 0
 
-        files = sorted((notes / "inbox").iterdir())
+        files = sorted(notes.glob("[0-9][0-9][0-9][0-9]/[0-9][0-9]/*.md"))
         content = files[0].read_text(encoding="utf-8")
         assert "source: session-hold" in content
 
@@ -475,7 +476,7 @@ class TestUwiAddSourceOption:
 
         assert _invoke_uwi_add(tmp_path, str(myrepo), body="疑問文を含む質問本文か").code == 0
 
-        files = sorted((notes / "inbox").iterdir())
+        files = sorted(notes.glob("[0-9][0-9][0-9][0-9]/[0-9][0-9]/*.md"))
         content = files[0].read_text(encoding="utf-8")
         assert "source:" not in content
 
@@ -530,8 +531,8 @@ class TestUwiMutationTargetRepoVerification:
             )
 
         assert exc_info.value.code == 2
-        assert (notes / "inbox" / f"{_FIXED_TIMESTAMP}-001.md").exists()
-        assert not (notes / "adopted" / f"{_FIXED_TIMESTAMP}-001.md").exists()
+        assert "state: inbox\n" in _fixed_path(notes, f"{_FIXED_TIMESTAMP}-001.md").read_text(encoding="utf-8")
+        assert "state: inbox\n" in _fixed_path(notes, f"{_FIXED_TIMESTAMP}-001.md").read_text(encoding="utf-8")
 
     def test_uwi_adopt_match_succeeds(
         self,
@@ -550,7 +551,7 @@ class TestUwiMutationTargetRepoVerification:
             )
 
         assert exc_info.value.code == 0
-        assert (notes / "adopted" / f"{_FIXED_TIMESTAMP}-001.md").exists()
+        assert "state: adopted\n" in _fixed_path(notes, f"{_FIXED_TIMESTAMP}-001.md").read_text(encoding="utf-8")
 
     def test_uwi_rm_mismatch_exits_2(
         self,
@@ -569,7 +570,7 @@ class TestUwiMutationTargetRepoVerification:
             )
 
         assert exc_info.value.code == 2
-        assert (notes / "inbox" / f"{_FIXED_TIMESTAMP}-001.md").exists()
+        assert "state: inbox\n" in _fixed_path(notes, f"{_FIXED_TIMESTAMP}-001.md").read_text(encoding="utf-8")
 
 
 class TestUwiList:
@@ -882,8 +883,7 @@ class TestUwiAdopt:
             atk.main(["wi", "adopt", f"{_FIXED_TIMESTAMP}-001.md"], home=tmp_path)
 
         assert exc_info.value.code == 0
-        assert not (notes / "inbox" / f"{_FIXED_TIMESTAMP}-001.md").exists()
-        assert (notes / "adopted" / f"{_FIXED_TIMESTAMP}-001.md").exists()
+        assert "state: adopted\n" in _fixed_path(notes, f"{_FIXED_TIMESTAMP}-001.md").read_text(encoding="utf-8")
 
         commit_cmd = [c["cmd"] for c in git_calls if "commit" in c["cmd"]][0]
         assert "chore: process 1 entry (adopted)" in commit_cmd
@@ -915,8 +915,8 @@ class TestUwiAdopt:
             )
 
         assert exc_info.value.code == 2
-        assert (notes / "inbox" / f"{_FIXED_TIMESTAMP}-001.md").exists()
-        assert not (notes / "adopted" / f"{_FIXED_TIMESTAMP}-001.md").exists()
+        assert "state: inbox\n" in _fixed_path(notes, f"{_FIXED_TIMESTAMP}-001.md").read_text(encoding="utf-8")
+        assert "state: inbox\n" in _fixed_path(notes, f"{_FIXED_TIMESTAMP}-001.md").read_text(encoding="utf-8")
         assert "対応commitを検証できる対象リポジトリ" in capsys.readouterr().err
 
     def test_short_commit_is_resolved_with_explicit_worktree(
@@ -973,7 +973,7 @@ class TestUwiAdopt:
                 home=tmp_path,
             )
         assert exc_info.value.code == 0
-        content = (notes / "adopted" / f"{_FIXED_TIMESTAMP}-001.md").read_text(encoding="utf-8")
+        content = _fixed_path(notes, f"{_FIXED_TIMESTAMP}-001.md").read_text(encoding="utf-8")
         assert "- 対応commit作成者日時:" not in content
         assert f"- 対応commit件名: {subject}" in content
         assert f"- 対応commit: {full_oid[:9]}\n" in content
@@ -1006,8 +1006,7 @@ class TestUwiAdopt:
 
         assert exc_info.value.code == 0
         for name in (f"{_FIXED_TIMESTAMP}-001.md", f"{_FIXED_TIMESTAMP}-002.md", f"{_FIXED_TIMESTAMP}-003.md"):
-            assert not (notes / "inbox" / name).exists()
-            assert (notes / "adopted" / name).exists()
+            assert "state: adopted\n" in _fixed_path(notes, name).read_text(encoding="utf-8")
 
         commit_calls = [c["cmd"] for c in git_calls if c["cmd"][:2] == ["git", "commit"]]
         assert len(commit_calls) == 1
@@ -1062,7 +1061,7 @@ class TestUwiAdopt:
 
         assert exc_info.value.code == 2
         captured = capsys.readouterr()
-        assert "processing・inbox・holdのいずれにも存在しない" in captured.err
+        assert "processing・inbox・holdに存在しない" in captured.err
 
     def test_partial_missing_file_prevents_any_move(
         self,
@@ -1081,8 +1080,8 @@ class TestUwiAdopt:
             )
 
         assert exc_info.value.code == 2
-        assert (notes / "inbox" / f"{_FIXED_TIMESTAMP}-001.md").exists()
-        assert not (notes / "adopted" / f"{_FIXED_TIMESTAMP}-001.md").exists()
+        assert "state: inbox\n" in _fixed_path(notes, f"{_FIXED_TIMESTAMP}-001.md").read_text(encoding="utf-8")
+        assert "state: inbox\n" in _fixed_path(notes, f"{_FIXED_TIMESTAMP}-001.md").read_text(encoding="utf-8")
 
     def test_duplicate_filenames_deduplicated_without_warning(
         self,
@@ -1107,8 +1106,7 @@ class TestUwiAdopt:
             )
 
         assert exc_info.value.code == 0
-        assert not (notes / "inbox" / f"{_FIXED_TIMESTAMP}-001.md").exists()
-        assert (notes / "adopted" / f"{_FIXED_TIMESTAMP}-001.md").exists()
+        assert "state: adopted\n" in _fixed_path(notes, f"{_FIXED_TIMESTAMP}-001.md").read_text(encoding="utf-8")
         stderr = capsys.readouterr().err
         assert "重複がある" not in stderr
         commit_calls = [c["cmd"] for c in git_calls if c["cmd"][:2] == ["git", "commit"]]
@@ -1132,7 +1130,7 @@ class TestUwiRm:
         with pytest.raises(SystemExit) as exc_info:
             atk.main(["wi", "rm", f"{_FIXED_TIMESTAMP}-001.md"], home=tmp_path)
         assert exc_info.value.code == 0
-        assert not (notes / "inbox" / f"{_FIXED_TIMESTAMP}-001.md").exists()
+        assert not _fixed_path(notes, f"{_FIXED_TIMESTAMP}-001.md").exists()
         commit_cmd = [c["cmd"] for c in git_calls if "commit" in c["cmd"]][0]
         assert "chore: remove 1 entry" in " ".join(commit_cmd)
 
@@ -1243,7 +1241,7 @@ class TestUwiRm:
                 home=tmp_path,
             )
         assert exc_info.value.code == 0
-        assert not (notes / "inbox" / f"{_FIXED_TIMESTAMP}-001.md").exists()
+        assert not _fixed_path(notes, f"{_FIXED_TIMESTAMP}-001.md").exists()
         stderr = capsys.readouterr().err
         assert "重複がある" not in stderr
         commit_cmd = [c["cmd"] for c in git_calls if "commit" in c["cmd"]][0]
@@ -1256,9 +1254,9 @@ def test_answer_uwi_splits_at_last_marker(tmp_path: pathlib.Path, monkeypatch: p
     monkeypatch.setattr(_wi_sync, "repo_lock", lambda *_args, **_kwargs: contextlib.nullcontext())
     monkeypatch.setattr(_wi_sync, "pull", lambda _path: None)
     monkeypatch.setattr(_wi_sync, "commit_and_push", lambda *_args, **_kwargs: None)
-    path = notes / "inbox" / "20260101-000000-001.md"
+    path = _fixed_path(notes, "20260101-000000-001.md")
     path.write_text(
-        "---\ntarget_repo: github.com/example/foo\ntype: uwi\nquestion_type: free-form\n---\n\n"
+        "---\nstate: inbox\ntarget_repo: github.com/example/foo\ntype: uwi\nquestion_type: free-form\n---\n\n"
         f"{uwi_module.QUESTION_HEADING}\n\n"
         f"前半の質問本文。\n\n{uwi_module.ANSWER_MARKER}\n\n"
         f"後半の質問本文。\n\n{uwi_module.ANSWER_HEADING}\n\n{uwi_module.ANSWER_MARKER}\n",
@@ -1278,9 +1276,9 @@ def test_answer_uwi_keeps_behavior_for_single_marker(tmp_path: pathlib.Path, mon
     monkeypatch.setattr(_wi_sync, "repo_lock", lambda *_args, **_kwargs: contextlib.nullcontext())
     monkeypatch.setattr(_wi_sync, "pull", lambda _path: None)
     monkeypatch.setattr(_wi_sync, "commit_and_push", lambda *_args, **_kwargs: None)
-    path = notes / "inbox" / "20260101-000000-002.md"
+    path = _fixed_path(notes, "20260101-000000-002.md")
     path.write_text(
-        "---\ntarget_repo: github.com/example/foo\ntype: uwi\nquestion_type: free-form\n---\n\n"
+        "---\nstate: inbox\ntarget_repo: github.com/example/foo\ntype: uwi\nquestion_type: free-form\n---\n\n"
         f"{uwi_module.QUESTION_HEADING}\n\n質問本文。\n\n{uwi_module.ANSWER_HEADING}\n\n{uwi_module.ANSWER_MARKER}\n",
         encoding="utf-8",
     )
@@ -1309,9 +1307,9 @@ def test_answer_uwi_auto_adopts_affirmative_post_approval(
         "commit_and_push",
         lambda _notes, message, paths, **_kwargs: commits.append((message, list(paths))),
     )
-    path = notes / "inbox/post-approval.md"
+    path = _fixed_path(notes, "post-approval.md")
     path.write_text(
-        f"---\ntarget_repo: github.com/example/foo\ntype: uwi\n{question_metadata}\n---\n\n"
+        f"---\nstate: inbox\ntarget_repo: github.com/example/foo\ntype: uwi\n{question_metadata}\n---\n\n"
         f"{uwi_module.QUESTION_HEADING}\n\n実施済みの対応を承認しますか。\n\n"
         f"{uwi_module.ANSWER_HEADING}\n\n{uwi_module.ANSWER_MARKER}\n",
         encoding="utf-8",
@@ -1319,13 +1317,12 @@ def test_answer_uwi_auto_adopts_affirmative_post_approval(
 
     assert uwi_module.answer_uwi(notes, filename=path.name, answer=" その対応で問題無い\n") is True
 
-    adopted = notes / "adopted/post-approval.md"
-    assert not path.exists()
-    assert adopted.exists()
-    content = adopted.read_text(encoding="utf-8")
+    assert path.exists()
+    content = path.read_text(encoding="utf-8")
+    assert "state: adopted\n" in content
     assert "その対応で問題無い" in content
     assert "- 採否: adopted" in content
-    assert commits == [("chore: answer and adopt uwi item", list(uwi_module.WI_STATES))]
+    assert commits == [("chore: answer and adopt uwi item", ["2026/10/post-approval.md"])]
 
 
 def test_answer_without_diff_reports_success_line(
@@ -1346,32 +1343,31 @@ def test_answer_without_diff_reports_success_line(
     assert f"成功: 差分なし（変更は無い）: {filename}" in capsys.readouterr().out
 
 
-def test_answer_uwi_auto_adopt_conflict_guides_comparison(
+def test_answer_uwi_auto_adopt_preserves_unrelated_terminal_entry(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """採用先に同名項目がある場合は何も変えず、比較と不要な側の削除を次の操作として返す。"""
+    """事後承認の採用は同じ保存パスで完結し、別の終端項目を保持する。"""
     notes = _setup_notes(tmp_path)
     monkeypatch.setattr(_wi_sync, "repo_lock", lambda *_args, **_kwargs: contextlib.nullcontext())
     monkeypatch.setattr(_wi_sync, "pull", lambda _path: None)
-    path = notes / "inbox/post-approval.md"
+    monkeypatch.setattr(_wi_sync, "commit_and_push", lambda *_args, **_kwargs: None)
+    path = _fixed_path(notes, "post-approval.md")
     path.write_text(
-        "---\ntarget_repo: github.com/example/foo\ntype: uwi\nquestion_type: choice\n"
+        "---\nstate: inbox\ntarget_repo: github.com/example/foo\ntype: uwi\nquestion_type: choice\n"
         "choices: [その対応で問題無い, 問題がある]\n---\n\n"
         f"{uwi_module.QUESTION_HEADING}\n\n実施済みの対応を承認しますか。\n\n"
         f"{uwi_module.ANSWER_HEADING}\n\n{uwi_module.ANSWER_MARKER}\n",
         encoding="utf-8",
     )
-    (notes / "adopted").mkdir(exist_ok=True)
-    (notes / "adopted/post-approval.md").write_text("既存\n", encoding="utf-8")
-    before = path.read_bytes()
+    other = _fixed_path(notes, "other.md")
+    other.write_text("---\nstate: adopted\ntype: awi\n---\n既存\n", encoding="utf-8")
+    before = other.read_bytes()
 
-    with pytest.raises(uwi_module.WebInputError, match="同名エントリが既に存在します") as error_info:
-        uwi_module.answer_uwi(notes, filename=path.name, answer="その対応で問題無い")
+    assert uwi_module.answer_uwi(notes, filename=path.name, answer="その対応で問題無い")
 
-    assert path.read_bytes() == before
-    assert "atk wi show post-approval.md" in error_info.value.next_action
-    assert "atk wi rm" in error_info.value.next_action
+    assert "state: adopted\n" in path.read_text(encoding="utf-8")
+    assert other.read_bytes() == before
 
 
 @pytest.mark.parametrize("answer", ["問題がある", "別の回答", "その対応で問題無い\nただし追加対応を求める"])
@@ -1387,9 +1383,9 @@ def test_answer_uwi_does_not_auto_adopt_other_answers(
     monkeypatch.setattr(_wi_sync, "repo_lock", lambda *_args, **_kwargs: contextlib.nullcontext())
     monkeypatch.setattr(_wi_sync, "pull", lambda _path: None)
     monkeypatch.setattr(_wi_sync, "commit_and_push", lambda *_args, **_kwargs: None)
-    path = notes / "inbox/post-approval-other.md"
+    path = _fixed_path(notes, "post-approval-other.md")
     path.write_text(
-        f"---\ntarget_repo: github.com/example/foo\ntype: uwi\nquestion_type: {question_type}\n"
+        f"---\nstate: inbox\ntarget_repo: github.com/example/foo\ntype: uwi\nquestion_type: {question_type}\n"
         "choices: その対応で問題無い,問題がある\n---\n\n"
         f"{uwi_module.QUESTION_HEADING}\n\n実施済みの対応を承認しますか。\n\n"
         f"{uwi_module.ANSWER_HEADING}\n\n{uwi_module.ANSWER_MARKER}\n",
@@ -1398,7 +1394,7 @@ def test_answer_uwi_does_not_auto_adopt_other_answers(
 
     assert uwi_module.answer_uwi(notes, filename=path.name, answer=answer) is True
     assert path.exists()
-    assert not (notes / "adopted" / path.name).exists()
+    assert "state: inbox\n" in _fixed_path(notes, path.name).read_text(encoding="utf-8")
 
 
 def test_answer_uwi_rejects_empty_answer_without_changing_existing_answer(
@@ -1406,9 +1402,9 @@ def test_answer_uwi_rejects_empty_answer_without_changing_existing_answer(
 ) -> None:
     """空回答は共有の実装で受け取る際に拒否し、既存回答を1バイトも変更しない。"""
     notes = _setup_notes(tmp_path)
-    path = notes / "inbox" / "20260101-000000-003.md"
+    path = _fixed_path(notes, "20260101-000000-003.md")
     path.write_text(
-        "---\ntarget_repo: github.com/example/foo\ntype: uwi\nquestion_type: free-form\n---\n\n"
+        "---\nstate: inbox\ntarget_repo: github.com/example/foo\ntype: uwi\nquestion_type: free-form\n---\n\n"
         f"{uwi_module.QUESTION_HEADING}\n\n質問本文。\n\n"
         f"{uwi_module.ANSWER_HEADING}\n\n{uwi_module.ANSWER_MARKER}\n既存回答\n",
         encoding="utf-8",
@@ -1425,9 +1421,9 @@ def test_answer_uwi_rejects_empty_answer_without_changing_existing_answer(
 def test_answer_uwi_without_marker_asks_to_report_to_user(tmp_path: pathlib.Path) -> None:
     """回答欄マーカーを失った保存済みUWIは、構造の破損としてユーザーへの報告を次の操作に返す。"""
     notes = _setup_notes(tmp_path)
-    path = notes / "inbox" / "20260101-000000-004.md"
+    path = _fixed_path(notes, "20260101-000000-004.md")
     path.write_text(
-        "---\ntarget_repo: github.com/example/foo\ntype: uwi\nquestion_type: free-form\n---\n\n"
+        "---\nstate: inbox\ntarget_repo: github.com/example/foo\ntype: uwi\nquestion_type: free-form\n---\n\n"
         f"{uwi_module.QUESTION_HEADING}\n\n質問本文。\n\n{uwi_module.ANSWER_HEADING}\n\n",
         encoding="utf-8",
     )
@@ -1440,31 +1436,31 @@ def test_answer_uwi_without_marker_asks_to_report_to_user(tmp_path: pathlib.Path
     assert "ユーザーへ報告する" in error_info.value.next_action
 
 
-def test_answer_uwi_targets_explicit_state_and_keeps_legacy_priority(
+def test_answer_uwi_targets_explicit_and_stored_state(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """状態指定時は指定側へ回答し、省略時はprocessing優先を維持する。"""
+    """状態指定と省略の両方で保存した状態のUWIへ回答する。"""
     notes = _setup_notes(tmp_path)
     monkeypatch.setattr(_wi_sync, "repo_lock", lambda *_args, **_kwargs: contextlib.nullcontext())
     monkeypatch.setattr(_wi_sync, "pull", lambda _path: None)
     monkeypatch.setattr(_wi_sync, "commit_and_push", lambda *_args, **_kwargs: None)
     content = (
-        "---\ntarget_repo: github.com/example/foo\ntype: uwi\nquestion_type: free-form\n---\n\n"
+        "---\nstate: inbox\ntarget_repo: github.com/example/foo\ntype: uwi\nquestion_type: free-form\n---\n\n"
         f"{uwi_module.QUESTION_HEADING}\n\n質問本文。\n\n"
         f"{uwi_module.ANSWER_HEADING}\n\n{uwi_module.ANSWER_MARKER}\n"
     )
-    inbox = notes / "inbox/same.md"
-    processing = notes / "processing/same.md"
-    processing.parent.mkdir()
+    inbox = _fixed_path(notes, "inbox.md")
+    processing = _fixed_path(notes, "processing.md")
     inbox.write_text(content, encoding="utf-8")
-    processing.write_text(content, encoding="utf-8")
+    processing_content = content.replace("state: inbox", "state: processing")
+    processing.write_text(processing_content, encoding="utf-8")
 
-    assert uwi_module.answer_uwi(notes, filename="same.md", state="inbox", answer="未処理側への回答") is True
+    assert uwi_module.answer_uwi(notes, filename=inbox.name, state="inbox", answer="未処理側への回答") is True
     assert inbox.read_text(encoding="utf-8").endswith("未処理側への回答\n")
-    assert processing.read_text(encoding="utf-8") == content
+    assert processing.read_text(encoding="utf-8") == processing_content
 
-    assert uwi_module.answer_uwi(notes, filename="same.md", answer="従来経路の回答") is True
+    assert uwi_module.answer_uwi(notes, filename=processing.name, answer="従来経路の回答") is True
     assert processing.read_text(encoding="utf-8").endswith("従来経路の回答\n")
 
 
@@ -1473,14 +1469,13 @@ def test_answer_uwi_accepts_explicit_hold_state(tmp_path: pathlib.Path, monkeypa
     notes = _setup_notes(tmp_path)
     held = _write_uwi_file(notes, "held.md")
     held.write_text(held.read_text(encoding="utf-8") + f"{uwi_module.ANSWER_MARKER}\n", encoding="utf-8")
-    (notes / "hold").mkdir(exist_ok=True)
-    held.rename(notes / "hold/held.md")
+    held.write_text(held.read_text(encoding="utf-8").replace("state: inbox", "state: hold"), encoding="utf-8")
     monkeypatch.setattr(_wi_sync, "repo_lock", lambda *_args, **_kwargs: contextlib.nullcontext())
     monkeypatch.setattr(_wi_sync, "pull", lambda _path: None)
     monkeypatch.setattr(_wi_sync, "commit_and_push", lambda *_args, **_kwargs: None)
 
     assert uwi_module.answer_uwi(notes, filename="held.md", state="hold", answer="回答") is True
-    assert (notes / "hold/held.md").read_text(encoding="utf-8").endswith("回答\n")
+    assert held.read_text(encoding="utf-8").endswith("回答\n")
 
 
 def test_reject_reserved_uwi_markup_allows_plain_body() -> None:

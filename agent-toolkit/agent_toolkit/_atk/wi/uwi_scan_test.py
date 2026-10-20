@@ -12,10 +12,11 @@ from agent_toolkit._atk.wi import uwi_scan as _uwi_scan
 _REPO = "github.com/ak110/dotfiles"
 
 
-def _entry(*, entry_type: str = "uwi", target_repo: str = _REPO, answer: str = "") -> str:
+def _entry(*, entry_type: str = "uwi", target_repo: str = _REPO, answer: str = "", state: str = "inbox") -> str:
     """テスト用エントリ本文を返す。"""
     return (
         "---\n"
+        f"state: {state}\n"
         f"target_repo: {target_repo}\n"
         f"type: {entry_type}\n"
         "---\n\n"
@@ -48,15 +49,15 @@ class TestScanActiveUwis:
     """active状態かつ対象リポジトリのUWIだけを走査する。"""
 
     def test_filters_and_orders_entries(self, tmp_path: pathlib.Path) -> None:
-        for state in ("inbox", "processing", "adopted", "rejected"):
-            (tmp_path / state).mkdir()
-        (tmp_path / "inbox" / "b.md").write_text(_entry(answer="回答\n"), encoding="utf-8")
-        (tmp_path / "inbox" / "a.md").write_text(_entry(), encoding="utf-8")
-        (tmp_path / "inbox" / "awi.md").write_text(_entry(entry_type="awi"), encoding="utf-8")
-        (tmp_path / "processing" / "c.md").write_text(_entry(), encoding="utf-8")
-        (tmp_path / "processing" / "other.md").write_text(_entry(target_repo="example.com/x/y"), encoding="utf-8")
-        (tmp_path / "adopted" / "done.md").write_text(_entry(), encoding="utf-8")
-        (tmp_path / "rejected" / "rejected.md").write_text(_entry(), encoding="utf-8")
+        directory = tmp_path / "2026" / "10"
+        directory.mkdir(parents=True)
+        (directory / "b.md").write_text(_entry(answer="回答\n"), encoding="utf-8")
+        (directory / "a.md").write_text(_entry(), encoding="utf-8")
+        (directory / "awi.md").write_text(_entry(entry_type="awi"), encoding="utf-8")
+        (directory / "c.md").write_text(_entry(state="processing"), encoding="utf-8")
+        (directory / "other.md").write_text(_entry(state="processing", target_repo="example.com/x/y"), encoding="utf-8")
+        (directory / "done.md").write_text(_entry(state="adopted"), encoding="utf-8")
+        (directory / "rejected.md").write_text(_entry(state="rejected"), encoding="utf-8")
 
         assert _uwi_scan.scan_active_uwis(tmp_path, _REPO) == _uwi_scan.ActiveUwiScan(
             entries=[
@@ -73,8 +74,8 @@ class TestScanActiveUwis:
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """旧パス形とURL形を同一視し、解決不能値は対象から除外する。"""
-        inbox = tmp_path / "inbox"
-        inbox.mkdir()
+        inbox = tmp_path / "2026" / "10"
+        inbox.mkdir(parents=True)
         local_repo = tmp_path / "target-repo"
         local_repo.mkdir()
         (inbox / "current.md").write_text(_entry(), encoding="utf-8")
@@ -103,8 +104,8 @@ class TestScanActiveUwis:
     def test_marks_unreadable_or_invalid_utf8_scan_incomplete(
         self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        inbox = tmp_path / "inbox"
-        inbox.mkdir()
+        inbox = tmp_path / "2026" / "10"
+        inbox.mkdir(parents=True)
         unreadable = inbox / "a.md"
         unreadable.write_text(_entry(), encoding="utf-8")
         (inbox / "b.md").write_bytes(b"\xff")
@@ -129,16 +130,10 @@ class TestScanActiveUwis:
     def test_marks_directory_iteration_failure_incomplete(
         self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        inbox = tmp_path / "inbox"
-        inbox.mkdir()
-        original_iterdir = pathlib.Path.iterdir
+        def _iter_entries(_path: pathlib.Path) -> Iterator[pathlib.Path]:
+            raise OSError("unreadable directory")
 
-        def _iterdir(path: pathlib.Path) -> Iterator[pathlib.Path]:
-            if path == inbox:
-                raise OSError("unreadable directory")
-            return original_iterdir(path)
-
-        monkeypatch.setattr(pathlib.Path, "iterdir", _iterdir)
+        monkeypatch.setattr(_uwi_scan, "iter_entry_paths", _iter_entries)
         assert _uwi_scan.scan_active_uwis(tmp_path, _REPO) == _uwi_scan.ActiveUwiScan([], False)
 
     @pytest.mark.parametrize(
@@ -149,9 +144,9 @@ class TestScanActiveUwis:
         ],
     )
     def test_uses_standard_yaml_forms(self, tmp_path: pathlib.Path, frontmatter: str) -> None:
-        inbox = tmp_path / "inbox"
-        inbox.mkdir()
-        text = f"---\n{frontmatter}\n---\n\n## 回答\n\n回答\n"
+        inbox = tmp_path / "2026" / "10"
+        inbox.mkdir(parents=True)
+        text = f"---\nstate: inbox\n{frontmatter}\n---\n\n## 回答\n\n回答\n"
         (inbox / "entry.md").write_text(text, encoding="utf-8")
         assert _uwi_scan.scan_active_uwis(tmp_path, _REPO) == _uwi_scan.ActiveUwiScan(
             [_uwi_scan.ActiveUwi("entry.md", True)], True
@@ -159,8 +154,8 @@ class TestScanActiveUwis:
 
     @pytest.mark.parametrize("text", ["type: uwi\n", "---\ntype: uwi\n", "---\n: invalid\n---\n"])
     def test_marks_invalid_frontmatter_incomplete(self, tmp_path: pathlib.Path, text: str) -> None:
-        inbox = tmp_path / "inbox"
-        inbox.mkdir()
+        inbox = tmp_path / "2026" / "10"
+        inbox.mkdir(parents=True)
         (inbox / "invalid.md").write_text(text, encoding="utf-8")
         assert _uwi_scan.scan_active_uwis(tmp_path, _REPO) == _uwi_scan.ActiveUwiScan([], False)
 
@@ -200,10 +195,12 @@ class TestPrivateNotesRoot:
 
         トップレベル`depends_on`配列と`choices:`の折り返し継続行を含むfrontmatterを検証する。
         """
-        (tmp_path / "inbox").mkdir()
+        directory = tmp_path / "2026" / "10"
+        directory.mkdir(parents=True)
         # 計画のテスト用frontmatterと同じ形式
         entry_text = (
             "---\n"
+            "state: inbox\n"
             "target_repo: github.com/ak110/dotfiles\n"
             "type: uwi\n"
             "depends_on:\n"
@@ -215,7 +212,7 @@ class TestPrivateNotesRoot:
             "## 回答\n\n"
             "<!-- ユーザーはこの行以降に回答を追記する -->\n"
         )
-        (tmp_path / "inbox" / "test.md").write_text(entry_text, encoding="utf-8")
+        (directory / "test.md").write_text(entry_text, encoding="utf-8")
 
         result = _uwi_scan.scan_active_uwis(tmp_path, "github.com/ak110/dotfiles")
         assert len(result.entries) == 1

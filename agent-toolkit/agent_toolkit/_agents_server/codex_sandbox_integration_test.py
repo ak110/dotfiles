@@ -30,32 +30,31 @@ async def test_explore_start_reaches_normal_commands(
     monkeypatch.setattr(codex, "APP_SERVER_WORKING_DIRECTORY", str(tmp_path))
     source = tmp_path / "資料 空白.txt"
     source.write_text("探索対象の日本語本文", encoding="utf-8")
-    backend = codex.AppServerManager()
-    observed = []
+    async with codex.AppServerManager() as backend:
+        observed = []
 
-    async def investigate(session, prompt, client=None):
-        del prompt
-        assert client is not None
-        result = await client.request(
-            "command/exec",
-            {
-                "command": [
-                    sys.executable,
-                    "-c",
-                    "import pathlib,sys; print(pathlib.Path(sys.argv[1]).read_text(encoding='utf-8'))",
-                    str(source),
-                ],
-                "cwd": session.cwd,
-                "sandboxPolicy": {"type": "dangerFullAccess"},
-                "timeoutMs": 5000,
-            },
-        )
-        observed.append(result)
-        session.status = "completed"
-        session.turn_completed = True
+        async def investigate(session, prompt, client=None):
+            del prompt
+            assert client is not None
+            result = await client.request(
+                "command/exec",
+                {
+                    "command": [
+                        sys.executable,
+                        "-c",
+                        "import pathlib,sys; print(pathlib.Path(sys.argv[1]).read_text(encoding='utf-8'))",
+                        str(source),
+                    ],
+                    "cwd": session.cwd,
+                    "sandboxPolicy": {"type": "dangerFullAccess"},
+                    "timeoutMs": 5000,
+                },
+            )
+            observed.append(result)
+            session.status = "completed"
+            session.turn_completed = True
 
-    monkeypatch.setattr(backend, "_start_turn", investigate)
-    try:
+        monkeypatch.setattr(backend, "_start_turn", investigate)
         session = await backend.start("同じ読取調査", str(tmp_path), launch_kind="explore")
         assert session.status == "completed", session.error
         assert len(observed) == 1
@@ -64,5 +63,3 @@ async def test_explore_start_reaches_normal_commands(
             assert result["stdout"].strip() == "探索対象の日本語本文"
             assert not result["stderr"]
         assert source.read_text(encoding="utf-8") == "探索対象の日本語本文"
-    finally:
-        await backend.close()

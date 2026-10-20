@@ -20,6 +20,7 @@ import pytest
 
 from agent_toolkit._atk import managed_temp as subject
 from agent_toolkit._atk.managed_temp import inventory as managed_temp_inventory
+from agent_toolkit._atk.managed_temp import permissions
 from agent_toolkit._atk.managed_temp import registry as managed_temp_registry
 from agent_toolkit._atk.managed_temp import windows_security as managed_temp_windows_security
 from agent_toolkit._atk.managed_temp.long_tree_test_support import create_long_posix_tree
@@ -69,26 +70,21 @@ def test_long_tree_sweep_and_rejections_keep_contracts(
     external = tmp_path / "outside"
     external.mkdir()
     (external / "saved").write_text("保持", encoding="utf-8")
-    descriptor = os.open(target, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
-    try:
+    with contextlib.ExitStack() as stack:
+        descriptor = stack.enter_context(permissions.descriptor(target, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW))
         for part in pathlib.Path(relative).parts:
-            child = os.open(part, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=descriptor)
-            os.close(descriptor)
-            descriptor = child
+            descriptor = stack.enter_context(
+                permissions.descriptor(part, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=descriptor)
+            )
         if case == "recent":
             recent_ns = int(now.timestamp() * 1_000_000_000)
             os.utime("payload", dir_fd=descriptor, ns=(recent_ns, recent_ns))
         if case == "symlink":
             os.symlink(str(external), "link", dir_fd=descriptor)
         if case in ("unregistered-git", "unregistered-stale-git"):
-            git_file = os.open(".git", os.O_WRONLY, dir_fd=descriptor)
-            try:
+            with permissions.descriptor(".git", os.O_WRONLY, dir_fd=descriptor) as git_file:
                 git_directory = external if case == "unregistered-git" else external / "missing"
                 os.write(git_file, f"gitdir: {git_directory}\n".encode())
-            finally:
-                os.close(git_file)
-    finally:
-        os.close(descriptor)
     if case.startswith("unregistered"):
         registry.unlink()
     if case == "lease":
@@ -193,7 +189,7 @@ def test_cleanup_closes_scandir_after_snapshot_failure(monkeypatch: pytest.Monke
     monkeypatch.setattr(managed_temp_inventory, "_walk_posix", reject_walk)
     try:
         if reject:
-            with pytest.raises(OSError, match="metadata取得拒否"):
+            with pytest.raises(subject.ManagedTempError, match="metadata取得拒否"):
                 subject.cleanup_managed_temp(target)
             assert content.read_text(encoding="utf-8") == "keep"
             assert registry.exists()

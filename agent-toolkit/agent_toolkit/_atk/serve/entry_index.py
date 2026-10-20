@@ -11,8 +11,8 @@
 読み直した解析結果から再利用する。追加で読み直すのは更新から2秒以内のファイルだけであり、
 変更の無いファイルを読み直さない高速化は維持する。
 
-索引は状態ディレクトリごとに保持し、走査した状態の分だけを差し替える。activeとadoptedのように
-異なる状態を交互に走査しても、走査していない状態の索引は保持する。
+索引は年月固定配置の実パスごとに保持し、保存されたstateで結果を絞り込む。
+異なる状態を交互に表示しても、変更のないファイルの解析結果を共有する。
 本文から導く値のうち計算の重いもの（終端項目の処理日時など）は、解析結果ごとの`derived`へ
 呼び出し側が保存し、ファイルが変わらない限り再計算しない。
 """
@@ -27,6 +27,8 @@ import typing
 
 from agent_toolkit._atk.wi import constants as wi_constants
 from agent_toolkit._atk.wi import frontmatter
+from agent_toolkit._atk.wi.layout import entry_state_from_metadata, iter_entry_paths
+from agent_toolkit._common.next_action import ActionableError
 
 _TRUSTED_AGE_NS = 2_000_000_000
 """解析結果を信用するために必要な、走査開始時刻と更新時刻の差。更新時刻の精度が1秒または2秒（FAT）のファイルシステムでも書き換えを区別できる値とする。"""
@@ -57,6 +59,7 @@ class _ParsedFile:
     metadata: dict[str, typing.Any]
     body: str
     kind: str | None
+    frontmatter_broken: bool
     derived: dict[str, typing.Any] = dataclasses.field(default_factory=dict)
 
 
@@ -74,12 +77,12 @@ class _CacheEntry:
 
 
 class EntryIndex:
-    """状態ディレクトリを走査し、変更されたMarkdownだけを解析する。"""
+    """年月固定配置を走査し、変更されたMarkdownだけを解析する。"""
 
     def __init__(self, private_notes: pathlib.Path) -> None:
         self._private_notes = private_notes
-        # 状態ごとに、実パスの文字列をキーとして保持する。`Path`をキーにすると比較のたびに正規化を伴う。
-        self._cache: dict[str, dict[str, _CacheEntry]] = {}
+        # 実パスの文字列をキーとして保持する。`Path`をキーにすると比較のたびに正規化を伴う。
+        self._cache: dict[str, _CacheEntry] = {}
         self._lock = threading.Lock()
 
     def scan(self, states: typing.Iterable[str]) -> tuple[list[IndexedEntry], list[dict[str, str]]]:
@@ -92,88 +95,93 @@ class EntryIndex:
         warnings: list[dict[str, str]] = []
         # ファイルのstatより前に取得し、解析結果の信用判定を保守的にする。
         scan_started_ns = time.time_ns()
-        for state in states:
-            previous_cache = self._cache.get(state, {})
-            next_cache: dict[str, _CacheEntry] = {}
-            self._cache[state] = next_cache
-            directory = self._private_notes / state
+        real_directories: dict[pathlib.Path, str] = {}
+        selected_states = set(states)
+        previous_cache = self._cache
+        next_cache: dict[str, _CacheEntry] = {}
+        for path in iter_entry_paths(self._private_notes):
+            state = "unknown"
             try:
-                with os.scandir(directory) as iterator:
-                    entries = sorted(iterator, key=lambda entry: entry.name)
-                # リンクでないファイルの実パスはディレクトリの実パスの下の名前で決まるため、
-                # 実パスの解決は走査ごとにディレクトリ1回とリンクのファイルだけで済ませる。
-                real_directory = str(directory.resolve())
+                file_stat = path.stat()
+                if path.is_symlink():
+                    real_path = str(path.resolve())
+                else:
+                    if path.parent not in real_directories:
+                        real_directories[path.parent] = str(path.parent.resolve())
+                    real_path = os.path.join(real_directories[path.parent], path.name)
             except FileNotFoundError:
                 continue
-            for directory_entry in entries:
-                path = pathlib.Path(directory_entry.path)
-                if path.suffix != ".md":
-                    continue
+            except OSError:
+                warnings.append({"state": state, "filename": path.name, "reason": "ファイル情報を読み取れません"})
+                continue
+            cached = previous_cache.get(real_path)
+            reused = (
+                cached is not None
+                and cached.trusted
+                and (cached.mtime_ns, cached.size) == (file_stat.st_mtime_ns, file_stat.st_size)
+            )
+            if not reused:
                 try:
-                    file_stat = directory_entry.stat()
-                    real_path = (
-                        str(path.resolve())
-                        if directory_entry.is_symlink()
-                        else os.path.join(real_directory, directory_entry.name)
-                    )
+                    text = path.read_text(encoding="utf-8")
+                except FileNotFoundError:
+                    continue
+                except UnicodeDecodeError:
+                    warnings.append({"state": state, "filename": path.name, "reason": "UTF-8として読み取れません"})
+                    continue
+                except OSError:
+                    warnings.append({"state": state, "filename": path.name, "reason": "ファイルを読み取れません"})
+                    continue
+                parsed_frontmatter = frontmatter.parse_frontmatter(text)
+                metadata = parsed_frontmatter[0] if parsed_frontmatter is not None else {}
+                body = parsed_frontmatter[1] if parsed_frontmatter is not None else text.removeprefix("\ufeff")
+                kind = wi_constants.normalized_wi_type(metadata.get("type"))
+                parsed = _ParsedFile(
+                    text=text,
+                    text_folded=text.casefold(),
+                    metadata=metadata,
+                    body=body,
+                    kind=kind,
+                    frontmatter_broken=parsed_frontmatter is None,
+                )
+                cached = _CacheEntry(
+                    mtime_ns=file_stat.st_mtime_ns,
+                    size=file_stat.st_size,
+                    parsed=parsed,
+                    trusted=scan_started_ns - file_stat.st_mtime_ns >= _TRUSTED_AGE_NS,
+                    updated_at=datetime.datetime.fromtimestamp(file_stat.st_mtime, tz=datetime.UTC).isoformat(),
+                )
+                # 読み取りの間に書き換わったファイルは、読んだ本文と無効化キーが対応しないため今回は除く。
+                # 解析結果を再利用したファイルは本文を読まないため、この確認を要さない。
+                try:
+                    current_stat = path.stat()
                 except FileNotFoundError:
                     continue
                 except OSError:
                     warnings.append({"state": state, "filename": path.name, "reason": "ファイル情報を読み取れません"})
                     continue
-                cached = previous_cache.get(real_path)
-                reused = (
-                    cached is not None
-                    and cached.trusted
-                    and (cached.mtime_ns, cached.size) == (file_stat.st_mtime_ns, file_stat.st_size)
+                if (current_stat.st_mtime_ns, current_stat.st_size) != (file_stat.st_mtime_ns, file_stat.st_size):
+                    continue
+            assert cached is not None
+            next_cache[real_path] = cached
+            try:
+                state = "inbox" if cached.parsed.frontmatter_broken else entry_state_from_metadata(path, cached.parsed.metadata)
+            except ActionableError as error:
+                warnings.append({"state": state, "filename": path.name, "reason": str(error)})
+                continue
+            if state not in selected_states:
+                continue
+            result.append(
+                IndexedEntry(
+                    state=state,
+                    path=path,
+                    text=cached.parsed.text,
+                    text_folded=cached.parsed.text_folded,
+                    metadata=cached.parsed.metadata,
+                    body=cached.parsed.body,
+                    kind=cached.parsed.kind,
+                    updated_at=cached.updated_at,
+                    derived=cached.parsed.derived,
                 )
-                if not reused:
-                    try:
-                        text = path.read_text(encoding="utf-8")
-                    except FileNotFoundError:
-                        continue
-                    except UnicodeDecodeError:
-                        warnings.append({"state": state, "filename": path.name, "reason": "UTF-8として読み取れません"})
-                        continue
-                    except OSError:
-                        warnings.append({"state": state, "filename": path.name, "reason": "ファイルを読み取れません"})
-                        continue
-                    parsed_frontmatter = frontmatter.parse_frontmatter(text)
-                    metadata = parsed_frontmatter[0] if parsed_frontmatter is not None else {}
-                    body = parsed_frontmatter[1] if parsed_frontmatter is not None else text.removeprefix("\ufeff")
-                    kind = wi_constants.normalized_wi_type(metadata.get("type"))
-                    parsed = _ParsedFile(text=text, text_folded=text.casefold(), metadata=metadata, body=body, kind=kind)
-                    cached = _CacheEntry(
-                        mtime_ns=file_stat.st_mtime_ns,
-                        size=file_stat.st_size,
-                        parsed=parsed,
-                        trusted=scan_started_ns - file_stat.st_mtime_ns >= _TRUSTED_AGE_NS,
-                        updated_at=datetime.datetime.fromtimestamp(file_stat.st_mtime, tz=datetime.UTC).isoformat(),
-                    )
-                    # 読み取りの間に書き換わったファイルは、読んだ本文と無効化キーが対応しないため今回は除く。
-                    # 解析結果を再利用したファイルは本文を読まないため、この確認を要さない。
-                    try:
-                        current_stat = path.stat()
-                    except FileNotFoundError:
-                        continue
-                    except OSError:
-                        warnings.append({"state": state, "filename": path.name, "reason": "ファイル情報を読み取れません"})
-                        continue
-                    if (current_stat.st_mtime_ns, current_stat.st_size) != (file_stat.st_mtime_ns, file_stat.st_size):
-                        continue
-                assert cached is not None
-                next_cache[real_path] = cached
-                result.append(
-                    IndexedEntry(
-                        state=state,
-                        path=path,
-                        text=cached.parsed.text,
-                        text_folded=cached.parsed.text_folded,
-                        metadata=cached.parsed.metadata,
-                        body=cached.parsed.body,
-                        kind=cached.parsed.kind,
-                        updated_at=cached.updated_at,
-                        derived=cached.parsed.derived,
-                    )
-                )
+            )
+        self._cache = next_cache
         return result, warnings

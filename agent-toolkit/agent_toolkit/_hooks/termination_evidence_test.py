@@ -540,6 +540,26 @@ def test_blocked_requires_actual_failure_of_same_work(tmp_path: pathlib.Path) ->
     assert termination_order_advisor.evaluate(stop_payload(tmp_path, "取得できない"))[0] == "approve"
 
 
+@pytest.mark.parametrize("action", ["blocked", "wait"])
+def test_rejected_host_stop_guides_to_continue_or_confirmation(tmp_path: pathlib.Path, action: str) -> None:
+    """通知による停止は受理条件を保ち、拒否の後の実行可能な工程へ案内する。"""
+    supply_commit(tmp_path)
+    if action == "wait":
+
+        def register(state: dict) -> dict:
+            state[termination_evidence.STATE_KEY]["works"]["work-1"]["async_targets"]["child"] = "started"
+            state["agents_server_sessions"] = {"child": {"owner_agent_id": "main", "pending_observation": False}}
+            return state
+
+        session_state.update_state("evidence-test", register)
+    document = {"session_id": "evidence-test", "work_id": "work-1", "action": action, "reason": "ホストの通知"}
+    document.update({"call_id": "commit"} if action == "blocked" else {"target_session_id": "child"})
+    code, reason = public_decision(tmp_path, document)
+    assert code == 2
+    assert "猶予通知" in reason and "同じ工程を続ける" in reason
+    assert "AskUserQuestion" in reason and "uwi_file" in reason
+
+
 @pytest.mark.parametrize(
     "action",
     ["cancel", "replace", "start", "resume", "instruction", "answer", "standing-authorization", "wait", "blocked"],
@@ -835,10 +855,10 @@ def test_public_wait_decision_uses_cli_lock_after_observation_attempt(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """委譲開始とPostToolUseの観測更新を経て、CLIの待機所有権で公開wait判断を受理する。"""
+    monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path / "state")
     supply_commit(tmp_path)
     monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "evidence-test")
     monkeypatch.delenv("CODEX_THREAD_ID", raising=False)
-    monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path / "state")
     start = {
         "session_id": "evidence-test",
         "tool_name": "mcp__plugin_agent-toolkit_agents_server__start",
@@ -1050,11 +1070,11 @@ async def test_started_session_without_projection_is_waited_by_same_work(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """表示保存に失敗した公開startのIDを同じ作業の待機対象とし、wait判断の受理から終端本文の回収まで到達する。"""
+    state_root = tmp_path / "state"
+    monkeypatch.setattr(state_paths, "state_dir", lambda: state_root)
     supply_commit(tmp_path)
     monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "evidence-test")
     monkeypatch.delenv("CODEX_THREAD_ID", raising=False)
-    state_root = tmp_path / "state"
-    monkeypatch.setattr(state_paths, "state_dir", lambda: state_root)
     writer = status_file.StatusFileWriter(
         {},
         status_file.StatusFileIdentity("evidence-test", "root.json", None),

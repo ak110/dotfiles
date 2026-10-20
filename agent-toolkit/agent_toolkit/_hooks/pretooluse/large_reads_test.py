@@ -73,6 +73,8 @@ def test_python_heredoc_write_uses_invocation_cwd(tmp_path):
         "atk read-file -- large.txt",
         "atk read-file --start 0 --max-bytes 12000 -- large.txt",
         "atk read-file --max-bytes=12000 --start=0 -- large.txt",
+        "atk read-file -- large.txt --start 0 --max-bytes 12000",
+        "atk read-file -- large.txt --max-bytes=12000 --start=0",
     ],
 )
 def test_partial_delivery_keeps_large_read_trigger_unchanged(tmp_path: pathlib.Path, command: str) -> None:
@@ -231,7 +233,7 @@ def test_block_notice_leads_to_read_file(tmp_path: pathlib.Path, capsys: pytest.
             atk.main(argv[1:])
         captured = capsys.readouterr()
         assert not captured.err
-        assert len(captured.out.encode("utf-8")) <= 4096
+        assert len(captured.out.encode("utf-8")) <= 16384
         result = json.loads(captured.out)
         parts.append(result["text"])
         if result["eof"]:

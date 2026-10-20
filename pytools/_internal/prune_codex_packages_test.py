@@ -16,7 +16,7 @@ from pytools.prune_codex_packages_test import _release
 @pytest.mark.skipif(os.name == "nt", reason="POSIXのflock競合を実物で検証する")
 def test_official_flock_blocks_pruning(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
     """別fdが保持する公式flockとの競合中は旧版を保持する。"""
-    import fcntl  # noqa: PLC0415  # pylint: disable=import-outside-toplevel
+    import fcntl  # noqa: PLC0415  # pylint: disable=import-outside-toplevel,import-error  # POSIX専用でありWindowsには存在しない。
 
     current = _release(tmp_path, "standalone", "0.162.1")
     old = _release(tmp_path, "standalone", "0.150.0")
@@ -105,7 +105,7 @@ def test_posix_lock_failure_contract(
     error_number: int,
 ) -> None:
     """非ブロック排他の競合だけを延期し、I/O失敗は保持と失敗を返す。"""
-    import fcntl  # noqa: PLC0415  # pylint: disable=import-outside-toplevel
+    import fcntl  # noqa: PLC0415  # pylint: disable=import-outside-toplevel,import-error  # POSIX専用でありWindowsには存在しない。
 
     current = _release(tmp_path, "standalone", "0.162.1")
     old = _release(tmp_path, "standalone", "0.150.0")

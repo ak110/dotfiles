@@ -49,7 +49,7 @@ def set_entry_dependencies(
     依存の更新は保存状態を変えないため、`hold`の項目は更新後も`hold`のまま残る。
     """
     inbox_dir = private_notes / WI_STATE_INBOX
-    processing_dir = _wi_entries.subdir(private_notes, WI_STATE_PROCESSING)
+    processing_dir = private_notes / WI_STATE_PROCESSING
     hold_dir = private_notes / WI_STATE_HOLD
     _wi_filenames.validate_filenames_only([filename, *depends_on], inbox_dir)
     normalized_target_repo = resolve_repo_id(target_repo) if target_repo is not None else None
@@ -126,11 +126,9 @@ def _active_dependency_graph(
     hold_dir: pathlib.Path | None = None,
 ) -> dict[str, set[str]]:
     """ロック内で取得したactiveなAWIの依存グラフを返す。"""
-    entries: dict[str, pathlib.Path] = {}
-    directories = (inbox_dir, processing_dir) if hold_dir is None else (inbox_dir, hold_dir, processing_dir)
-    for directory in directories:
-        if directory.is_dir():
-            entries.update({path.name: path for path in directory.glob("*.md") if path.is_file()})
+    del processing_dir
+    states = (WI_STATE_INBOX, WI_STATE_PROCESSING) if hold_dir is None else (WI_STATE_INBOX, WI_STATE_HOLD, WI_STATE_PROCESSING)
+    entries = {entry[0].name: entry[0] for entry in _wi_entries.iter_entries(inbox_dir.parent, states, None)}
     graph: dict[str, set[str]] = {}
     for name, entry_path in entries.items():
         entry_text = entry_path.read_text(encoding="utf-8")

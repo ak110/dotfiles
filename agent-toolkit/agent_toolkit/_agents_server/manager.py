@@ -8,7 +8,7 @@ import datetime
 import json
 import logging
 from collections.abc import Mapping
-from typing import Any
+from typing import Any, Self
 
 from agent_toolkit._agents_server import (
     backends,
@@ -84,6 +84,14 @@ START_AVAILABILITY_TIMEOUT = 15.0
 
 class AgentsServerManager(manager_wait.ManagerWait):
     """エンジン別バックエンドと共有session状態を管理する。"""
+
+    _close_task: asyncio.Task[None] | None = None
+
+    async def __aenter__(self) -> Self:
+        return self
+
+    async def __aexit__(self, *_exception: object) -> None:
+        await self.close()
 
     def activate(self) -> None:
         """状態ファイル出力を有効化する。"""
@@ -271,8 +279,9 @@ class AgentsServerManager(manager_wait.ManagerWait):
                 "effort": effort,
             }
             response.update(state.fast_mode_fields(session.engine, session.fast_mode))
-            if session.claude_connection_diagnostics:
-                response["warnings"] = list(session.claude_connection_diagnostics)
+            diagnostics = session.claude_connection_diagnostics + session.claude_mcp_diagnostics
+            if diagnostics:
+                response["warnings"] = list(diagnostics)
             if excluded:
                 response["excluded_candidates"] = excluded_candidate_payload(excluded, excluded_session_ids)
             if self._status_writer is not None:
@@ -883,7 +892,10 @@ class AgentsServerManager(manager_wait.ManagerWait):
 
     async def close(self) -> None:
         """初期化済みバックエンドを停止する。"""
-        await finish_task(asyncio.create_task(self._close()))
+        task = self._close_task
+        if task is None or task.done() and (task.cancelled() or task.exception() is not None):
+            task = self._close_task = asyncio.create_task(self._close())
+        await finish_task(task)
 
     async def _close(self) -> None:
         remove_terminal_listener(self._schedule_session_expiry)
@@ -891,10 +903,10 @@ class AgentsServerManager(manager_wait.ManagerWait):
         for timer in self._retention_timers.values():
             timer.cancel()
         self._retention_timers.clear()
-        release_error: OSError | None = None
+        errors: list[Exception] = []
         if self._resource_release_tasks:
             outcomes = await asyncio.gather(*self._resource_release_tasks.values(), return_exceptions=True)
-            release_error = next((outcome for outcome in outcomes if isinstance(outcome, OSError)), None)
+            errors.extend(outcome for outcome in outcomes if isinstance(outcome, Exception))
             self._resource_release_tasks.clear()
         if self._auto_resume_task is not None:
             self._auto_resume_task.cancel()
@@ -913,9 +925,6 @@ class AgentsServerManager(manager_wait.ManagerWait):
                 task.cancel()
         if resume_tasks:
             await asyncio.gather(*resume_tasks, return_exceptions=True)
-        errors: list[Exception] = []
-        if release_error is not None:
-            errors.append(release_error)
         try:
             # 1つのbackendの停止失敗で、他のbackendの停止と後段の結果公開・listener解除・writer停止を止めない。
             for backend in tuple(self._backends.values()):
@@ -934,7 +943,10 @@ class AgentsServerManager(manager_wait.ManagerWait):
             remove_terminal_listener(self._carry_over_unavailable_candidate)
             remove_terminal_listener(self._record_pending_unobserved_child_sessions)
             remove_lifecycle_listener(self._record_resources)
-            await self._drain_diagnostics()
+            try:
+                await self._drain_diagnostics()
+            except Exception as error:
+                errors.append(error)
             try:
                 await self._drain_candidate_records()
             except Exception as error:

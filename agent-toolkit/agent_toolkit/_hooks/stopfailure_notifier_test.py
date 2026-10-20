@@ -17,6 +17,32 @@ _SCRIPT = pathlib.Path(__file__).resolve().parents[1] / "hook.py"
 _FIXED_NOW = datetime.datetime(2026, 5, 26, 12, 0, 0, tzinfo=datetime.UTC)
 
 
+@pytest.mark.parametrize(
+    "error,delegated,agent",
+    [("rate_limit", False, None), ("server_error", False, None), ("rate_limit", True, None), ("rate_limit", False, "child")],
+)
+def test_rate_limit_command_hook_hands_request_to_turn_complete(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, error: str, delegated: bool, agent: str | None
+) -> None:
+    """StopFailureの公開errorからメインだけの再開要求を作る。"""
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(tmp_path / "claude"))
+    monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)
+    if delegated:
+        monkeypatch.setenv("AGENT_TOOLKIT_DELEGATED_SESSION", "1")
+    else:
+        monkeypatch.delenv("AGENT_TOOLKIT_DELEGATED_SESSION", raising=False)
+    assert (
+        stopfailure_notifier.main(
+            json.dumps({"hook_event_name": "StopFailure", "session_id": "limit-test", "error": error, "agent_id": agent})
+        )
+        == 0
+    )
+    request = tmp_path / "claude/agent-toolkit-function-hooks/rate-limit-limit-test.txt"
+    assert request.exists() is (error == "rate_limit" and not delegated and agent is None)
+    if request.exists():
+        assert request.read_text(encoding="utf-8") == "requested"
+
+
 def test_append_log_writes_record(tmp_path: pathlib.Path):
     """入力JSON全体とtranscript末尾要約を含む1行を追記する。"""
     transcript = tmp_path / "transcript.jsonl"

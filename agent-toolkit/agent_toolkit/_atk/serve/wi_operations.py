@@ -19,8 +19,9 @@ from agent_toolkit._atk.serve import entry_index
 from agent_toolkit._atk.wi import add as awi_add
 from agent_toolkit._atk.wi import batch as awi_batch
 from agent_toolkit._atk.wi import constants as wi_constants
+from agent_toolkit._atk.wi import entries as wi_entries
+from agent_toolkit._atk.wi import entry_text, frontmatter
 from agent_toolkit._atk.wi import filters as wi_filters
-from agent_toolkit._atk.wi import frontmatter
 from agent_toolkit._atk.wi import headings as wi_headings
 from agent_toolkit._atk.wi import mutations as awi_mutations
 from agent_toolkit._atk.wi import readiness as wi_readiness
@@ -30,7 +31,9 @@ from agent_toolkit._atk.wi import user_comment as user_comment_mutations
 from agent_toolkit._atk.wi import uwi as uwi_mutations
 from agent_toolkit._atk.wi import uwi_scan as wi_uwi_scan
 from agent_toolkit._atk.wi import web_input as wi_web_input
+from agent_toolkit._atk.wi.layout import entry_state_of, iter_entry_paths
 from agent_toolkit._common.markdown_headings import normalize_newlines, top_level_atx_headings
+from agent_toolkit._common.next_action import ActionableError
 from agent_toolkit._git import remote as _git_remote
 
 type JsonObject = dict[str, typing.Any]
@@ -174,6 +177,7 @@ def _entry(
         "kind": kind,
         "state": state,
         "filename": path.name,
+        "important": metadata.get("important") is True,
         "answered": answered,
         "needs_verify": _needs_verify(kind, state, text),
         "cooldown_until": cooldown.isoformat() if cooldown is not None else None,
@@ -394,6 +398,8 @@ class Operations:
                 continue
             if not wi_filters.answered_matches(indexed.kind, indexed.text, answered_filter):
                 continue
+            if not wi_filters.important_value_matches(metadata.get("important") is True, filters.get("important", "all")):
+                continue
             source = _json_compatible(metadata.get("source"))
             if filters.get("source_empty") == "true" and not (source is None or isinstance(source, str) and not source.strip()):
                 continue
@@ -446,17 +452,16 @@ class Operations:
     def detail(self, state: str, filename: str) -> dict[str, object]:
         if state not in _ENTRY_STATES:
             raise WebApiInputError("stateが不正です")
-        path = wi_web_input.validate_filename(filename, self.private_notes / state)
-        if not path.is_file():
-            candidates = []
-            for current_state in _ENTRY_STATES:
-                candidate = wi_web_input.validate_filename(filename, self.private_notes / current_state)
-                if candidate.is_file():
-                    candidates.append((current_state, candidate))
-            if len(candidates) == 1:
-                state, path = candidates[0]
+        normalized = wi_web_input.validate_filename(filename, self.private_notes).name
+        path = next((candidate for candidate in iter_entry_paths(self.private_notes) if candidate.name == normalized), None)
+        if path is None:
+            raise FileNotFoundError(filename)
         try:
             text = path.read_text(encoding="utf-8")
+            try:
+                state = entry_state_of(path, text)
+            except ActionableError:
+                state = "unknown"
             parsed = frontmatter.parse_frontmatter(text)
             metadata = parsed[0] if parsed is not None else {}
             body = parsed[1] if parsed is not None else text.removeprefix("\ufeff")
@@ -566,6 +571,37 @@ class Operations:
             )
         except SystemExit as error:
             raise WebApiInputError("指定したエントリを操作できません") from error
+
+    def important(self, filename: str, important: bool, expected_content: str | None = None) -> bool:
+        """保存状態を保って重要フラグだけを設定または解除する。"""
+        with wi_sync.repo_lock(self.private_notes, timeout=_WEB_LOCK_TIMEOUT):
+            wi_sync.ensure_mutation_allowed(self.private_notes)
+            records, missing = wi_entries.read_named_entries(
+                self.private_notes, wi_entries.validate_named_filenames(self.private_notes, [filename]), target_repo=None
+            )
+            if missing:
+                raise FileNotFoundError(filename)
+            path, _, text, _, _ = records[0]
+            if expected_content is not None and text != expected_content:
+                raise RuntimeError(EDIT_CONFLICT_MESSAGE)
+            parsed = entry_text.parse_frontmatter(text)
+            if parsed is None:
+                raise WebApiInputError("frontmatterを解析できません")
+            metadata, body = parsed
+            if (important and metadata.get("important") is True) or (not important and "important" not in metadata):
+                return False
+            if important:
+                metadata["important"] = True
+            else:
+                metadata.pop("important", None)
+            updated = frontmatter.serialize_frontmatter(metadata, body)
+            if updated == text:
+                return False
+            frontmatter.write_entry_text(path, updated)
+            wi_sync.commit_and_push(
+                self.private_notes, "chore: update wi importance", [str(path.relative_to(self.private_notes))], skip_push=True
+            )
+            return True
 
     def user_comment(self, state: str, filename: str, comment: str, expected_content: str) -> bool:
         """エージェント由来のinboxまたはhold項目へユーザーコメントを追記、置換または削除する。

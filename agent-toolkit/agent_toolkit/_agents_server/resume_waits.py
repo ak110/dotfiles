@@ -256,6 +256,13 @@ def begin_usage_limit_wait(session: SessionState, result: dict[str, Any]) -> boo
     original_error = result.get("error")
     role = session.claude_role or ("orchestrator" if session.model_type == "orchestrate" else "delegate")
     current = session.claude_connection or ("api" if session.claude_api_env_file else "inherit")
+    reason = "authentication" if startup_auth_error else "api_credits" if credit_error else "usage_limit"
+    _LOG.info(
+        "claude_connection_failed session_id=%s connection=%s phase=turn reason=%s",
+        session.session_id,
+        current,
+        reason,
+    )
     if current == "inherit" and startup_auth_error:
         return False
     choices = (
@@ -286,7 +293,14 @@ def begin_usage_limit_wait(session: SessionState, result: dict[str, Any]) -> boo
         session.awaiting_auto_resume = True
         session.auto_resume_deadline = None
         session.api_error = None
-        _LOG.info("claude_api_switch session_id=%s limit_type=%s", session.session_id, limit.limit_type if limit else "credits")
+        _LOG.info(
+            "claude_api_switch session_id=%s previous=%s selected=%s reason=%s limit_type=%s",
+            session.session_id,
+            current,
+            selected.kind,
+            reason,
+            limit.limit_type if limit else "credits",
+        )
         state.notify_touch_listeners()
         return True
     if (

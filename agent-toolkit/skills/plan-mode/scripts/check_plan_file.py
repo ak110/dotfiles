@@ -27,6 +27,7 @@ from agent_toolkit._plan import (  # noqa: E402  # pylint: disable=wrong-import-
 )
 
 _PLUGIN_DIR = pathlib.Path(locations.__file__).resolve().parents[2]
+TARGET_REPO_NEXT_ACTION = "計画の対象worktreeから再実行するか、--work-dirへ計画の対象worktreeの絶対パスを指定して再実行する"
 
 _FENCE_RE = re.compile(r"^\s*(`{3,}|~{3,})(.*)$", re.MULTILINE)
 _INLINE_CODE_RE = re.compile(r"`([^`\n]+)`")
@@ -227,7 +228,8 @@ def _check_target_repo(declared_value: str | None, work_dir: pathlib.Path) -> li
         return [error]
     if declared_root != actual_root:
         return [
-            f"計画メタ情報の対象リポジトリが作業ディレクトリのGitルートと一致しない: 計画={declared_root}, 実際={actual_root}"
+            f"計画メタ情報の対象リポジトリが作業ディレクトリのGitルートと一致しない: 計画={declared_root}, 実際={actual_root}。"
+            + _next_action.next_action_line(TARGET_REPO_NEXT_ACTION)
         ]
     return []
 
@@ -955,6 +957,8 @@ def main(argv: list[str] | None = None) -> int:
     if (next_action := _origin_skip_next_action(warning_details)) is not None:
         print(_next_action.next_action_line(next_action), file=sys.stderr)
     if errors:
+        if all("対象リポジトリが作業ディレクトリのGitルートと一致しない" in error for error in errors):
+            return 1
         print(
             _next_action.next_action_line(
                 "各行が示す規定のとおりに計画ファイルを直し、同じコマンドでもう一度確かめる"

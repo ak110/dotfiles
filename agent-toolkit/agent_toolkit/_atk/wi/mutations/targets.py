@@ -20,6 +20,7 @@ from agent_toolkit._atk.wi import sync as _wi_sync
 from agent_toolkit._atk.wi.constants import WI_EDITABLE_STATES, WI_STATE_HOLD, WI_STATE_INBOX, WI_STATE_PROCESSING
 from agent_toolkit._atk.wi.constants import unrepairable_entry_next_action as _unrepairable_entry_next_action
 from agent_toolkit._atk.wi.entries import CommitMetadata
+from agent_toolkit._atk.wi.layout import entry_state_of, iter_entry_paths
 from agent_toolkit._atk.wi.repo import (
     resolve_repo_id,
 )
@@ -29,6 +30,24 @@ from agent_toolkit._git import remote as _git_remote
 
 _GIT_TIMEOUT_SECONDS = 10.0
 _MISSING_TARGET_NEXT_ACTION = "`atk wi list`で実在するファイル名を確かめて指定し直す"
+
+
+def _resolve_state_targets(
+    filenames: list[str], private_notes: pathlib.Path, states: tuple[str, ...], *, missing_is_conflict: bool
+) -> list[pathlib.Path]:
+    """共通の探索境界から指定状態の名前を解決する。"""
+    candidates = {path.name: path for path in iter_entry_paths(private_notes) if entry_state_of(path) in states}
+    names = [_wi_filenames.validate_filename(name, private_notes).name for name in filenames]
+    missing = [name for name in names if name not in candidates]
+    if missing:
+        if missing_is_conflict:
+            raise RuntimeError("編集中に他プロセスが対象を変更しました")
+        for name in missing:
+            _outcome.report_failure(
+                f"{'・'.join(states)}のいずれにも存在しない: {name}", next_action=_MISSING_TARGET_NEXT_ACTION
+            )
+        sys.exit(2)
+    return [candidates[name] for name in names]
 
 
 def entry_target_repo(path: pathlib.Path, text: str) -> str:
@@ -202,15 +221,7 @@ def resolve_awi_targets(
     `awi_dir`には`start-processing`はinbox、`return-to-inbox`はprocessingが渡される。
     エラーメッセージは`awi_dir.name`から動的に状態名を組み込み、呼び出し元の状態と一致させる。
     """
-    paths = [_wi_filenames.validate_filename(f, awi_dir) for f in filenames]
-    missing = [p for p in paths if not p.exists()]
-    if missing:
-        if missing_is_conflict:
-            raise RuntimeError("編集中に他プロセスが対象を変更しました")
-        for p in missing:
-            _outcome.report_failure(f"{awi_dir.name}に存在しない: {p.name}", next_action=_MISSING_TARGET_NEXT_ACTION)
-        sys.exit(2)
-    return paths
+    return _resolve_state_targets(filenames, awi_dir.parent, (awi_dir.name,), missing_is_conflict=missing_is_conflict)
 
 
 def resolve_processable_targets(
@@ -225,26 +236,10 @@ def resolve_processable_targets(
     同一ファイルがinbox・processingの双方に存在する場合はprocessingを優先する
     （`start-processing`後の中断復帰時にprocessing側が最新状態のため）。
     """
-    resolved: list[pathlib.Path] = []
-    missing: list[str] = []
-    for name in filenames:
-        # 検証はinbox基準ディレクトリで行うが、実体はいずれか片方の状態フォルダに存在する。
-        # `_wi_filenames.validate_filename`側で拡張子`.md`の省略を正規形へ補完する。
-        inbox_path = _wi_filenames.validate_filename(name, inbox_dir)
-        processing_path = _wi_filenames.validate_filename(inbox_path.name, processing_dir)
-        if processing_path.exists():
-            resolved.append(processing_path)
-        elif inbox_path.exists():
-            resolved.append(inbox_path)
-        else:
-            missing.append(inbox_path.name)
-    if missing:
-        if missing_is_conflict:
-            raise RuntimeError("編集中に他プロセスが対象を変更しました")
-        for name in missing:
-            _outcome.report_failure(f"inbox・processingのいずれにも存在しない: {name}", next_action=_MISSING_TARGET_NEXT_ACTION)
-        sys.exit(2)
-    return resolved
+    del processing_dir
+    return _resolve_state_targets(
+        filenames, inbox_dir.parent, (WI_STATE_PROCESSING, WI_STATE_INBOX), missing_is_conflict=missing_is_conflict
+    )
 
 
 def resolve_editable_targets(
@@ -254,31 +249,7 @@ def resolve_editable_targets(
     missing_is_conflict: bool = False,
 ) -> list[pathlib.Path]:
     """編集対象を解決し、解決した保存状態のまま本文を書き戻す。"""
-    resolved: list[pathlib.Path] = []
-    missing: list[str] = []
-    for name in filenames:
-        normalized = _wi_filenames.validate_filename(name, private_notes / WI_STATE_INBOX).name
-        path = next(
-            (
-                private_notes / state_name / normalized
-                for state_name in WI_EDITABLE_STATES
-                if (private_notes / state_name / normalized).exists()
-            ),
-            None,
-        )
-        if path is None:
-            missing.append(normalized)
-        else:
-            resolved.append(path)
-    if missing:
-        if missing_is_conflict:
-            raise RuntimeError("編集中に他プロセスが対象を変更しました")
-        for name in missing:
-            _outcome.report_failure(
-                f"inbox・processing・holdのいずれにも存在しない: {name}", next_action=_MISSING_TARGET_NEXT_ACTION
-            )
-        sys.exit(2)
-    return resolved
+    return _resolve_state_targets(filenames, private_notes, WI_EDITABLE_STATES, missing_is_conflict=missing_is_conflict)
 
 
 def resolve_active_targets(
@@ -295,33 +266,8 @@ def resolve_active_targets(
     `states`省略時は従来どおりprocessing、inbox、holdの順で解決する。
     """
     state_names = states or (WI_STATE_PROCESSING, WI_STATE_INBOX, WI_STATE_HOLD)
-    resolved: list[pathlib.Path] = []
-    missing: list[str] = []
-    for name in filenames:
-        normalized = _wi_filenames.validate_filename(name, inbox_dir).name
-        candidates = (
-            tuple(inbox_dir.parent / state_name / normalized for state_name in states)
-            if states is not None
-            else (
-                processing_dir / normalized,
-                inbox_dir / normalized,
-                inbox_dir.parent / WI_STATE_HOLD / normalized,
-            )
-        )
-        path = next((candidate for candidate in candidates if candidate.exists()), None)
-        if path is None:
-            missing.append(normalized)
-        else:
-            resolved.append(path)
-    if missing:
-        if missing_is_conflict:
-            raise RuntimeError("編集中に他プロセスが対象を変更しました")
-        for name in missing:
-            _outcome.report_failure(
-                f"{'・'.join(state_names)}のいずれにも存在しない: {name}", next_action=_MISSING_TARGET_NEXT_ACTION
-            )
-        sys.exit(2)
-    return resolved
+    del processing_dir
+    return _resolve_state_targets(filenames, inbox_dir.parent, state_names, missing_is_conflict=missing_is_conflict)
 
 
 def atomic_write_text(path: pathlib.Path, content: str) -> None:

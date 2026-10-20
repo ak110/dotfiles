@@ -24,6 +24,7 @@ lazy import psutil
 lazy import yaml
 
 from agent_toolkit._atk import help_text, managed_temp, outcome, run_command
+from agent_toolkit._atk.managed_temp import permissions as temp_permissions
 from agent_toolkit._common import atomic_file, file_lock, session_launchers, session_release, state_paths, worktree_hooks
 from agent_toolkit._common.wait_schedule import get_wait_timeout
 from agent_toolkit._git import command as git_command
@@ -36,6 +37,19 @@ SESSION_ENV = "AGENT_TOOLKIT_LANE_SESSION_ID"
 _ID = re.compile(r"[A-Za-z0-9_-]+\Z")
 _LANE = re.compile(r"lane-[0-9]{2}\Z")
 _TIMEOUT = 120
+
+
+def _record_errors() -> tuple[type[BaseException], ...]:
+    """所有登録の読取・判定・回収で保持対象へ変換する例外型を返す。"""
+    return (
+        OSError,
+        ValueError,
+        KeyError,
+        TypeError,
+        subprocess.SubprocessError,
+        psutil.Error,
+        managed_temp.ManagedTempError,
+    )
 
 
 def current_session_id() -> str | None:
@@ -628,6 +642,7 @@ def _eligible(record: dict[str, typing.Any]) -> str | None:
     if str(worktree) in trees:
         if trees[str(worktree)] != record["branch"] or _common(worktree) != record["common_dir"]:
             return "worktreeの登録が所有記録と異なる"
+        temp_permissions.prepare_tree(worktree)
         if _git(worktree, "status", "--porcelain=v1", "--untracked-files=all"):
             return "未commitまたは未追跡の変更がある"
     elif worktree.exists():
@@ -667,7 +682,7 @@ def cleanup_session(session_id: str | None, *, only: pathlib.Path | None = None)
                     result["retained"].append({"record_path": str(path), "reason": reason})
                 else:
                     records.append((path, record))
-            except (OSError, ValueError, KeyError, TypeError, subprocess.SubprocessError, psutil.Error) as error:
+            except _record_errors() as error:
                 result["retained"].append({"record_path": str(path), "reason": str(error)})
         result_index = directory / "cleanup-result.json"
         result_path = managed_temp.create_managed_temp("lane-cleanup") / "cleanup-result.json"
@@ -749,6 +764,7 @@ def _recover(record: dict[str, typing.Any], path: pathlib.Path) -> None:
             activity = _worktree_activity(worktree)
             if activity:
                 raise ValueError(activity)
+            temp_permissions.prepare_tree(worktree)
             if _git(worktree, "status", "--porcelain=v1", "--untracked-files=all"):
                 raise ValueError("未commitまたは未追跡の変更がある。成果をcommitしてから再実行する")
     elif worktree.exists():
@@ -802,7 +818,7 @@ def recover(session_id: str, lanes: list[str] | None = None) -> dict[str, typing
                 if not _recovered(record):
                     _recover(record, path)
                 result["recovered"].append({"record_path": str(path), "worktree": record["worktree"], **record["recovery"]})
-            except (OSError, ValueError, KeyError, TypeError, subprocess.SubprocessError, psutil.Error) as error:
+            except _record_errors() as error:
                 result["retained"].append({"record_path": str(path), "reason": str(error)})
     return result
 
@@ -982,7 +998,7 @@ def _integration_command(
 ) -> None:
     if key in state["completed"]:
         return
-    observed, code, failure = run_command.execute(argv, cwd, timeout)
+    observed, code, failure = run_command.execute(argv, cwd, timeout, verification=key.startswith("verification-"))
     observed = _persist_observed(record, key, observed)
     state.setdefault("results", {})[key] = observed
     if code == 0:

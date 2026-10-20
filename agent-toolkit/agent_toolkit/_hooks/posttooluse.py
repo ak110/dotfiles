@@ -21,7 +21,7 @@ Codexから届く正規化済みの入力も同じ操作記録を使う。
    操作を起動の契機とするスキルの起動による`operation_skill_delivered_agents`の記録 (Skill)、
    同じスキルの必須資料を全文読んだ観測による同じ記録 (Read、CodexのBash)
 6. 現在の計画ファイルパス記録 (Write / Edit / MultiEdit / apply_patch、plan file判定時)
-   （Function hooksの命名が計画名の解決に使用）
+   （UserPromptSubmitの命名が計画名の解決に使用）
 7. Bashの背景実行、MCP呼び出しの移行通知およびAgent・Taskの背景起動が返した識別子を、
    バックグラウンドタスクの所有記録へ記録 (Bash / MCP / Agent / Task)
    PostToolUseFailure: Bashのバックグラウンドタスク識別子を同じ所有記録へ保存し、その他は変更せず終了
@@ -57,7 +57,7 @@ lazy from agent_toolkit._hooks import background_tasks as _background_tasks
 lazy from agent_toolkit._hooks import document_reads as _document_reads
 lazy from agent_toolkit._hooks import persisted_output as _persisted_output
 lazy from agent_toolkit._hooks import plugin_resources as _plugin_resources
-lazy from agent_toolkit._hooks import termination_evidence
+lazy from agent_toolkit._hooks import session_title, termination_evidence
 lazy from agent_toolkit._hooks import tool_input as _hook_tool_input
 lazy from agent_toolkit._hooks import uwi_completion as _uwi_completion
 lazy from agent_toolkit._hooks.agent_id import MAIN_AGENT_ID, is_main_agent_context, resolve_hook_agent_id
@@ -571,6 +571,9 @@ def _observe_tool(payload: dict, session_id: str, tool_name: str, tool_input: di
     elif tool_name == "Skill":
         # Skill: plan-modeスキル呼び出し検出とprocess-wi起動検出
         _record_skill_use(session_id, tool_input.get("skill"))
+        skill = tool_input.get("skill")
+        if not payload.get("agent_id") and isinstance(skill, str):
+            session_title.observe_skill(session_id, skill)
         _operation_skills.record_skill_ready(session_id, tool_input.get("skill"), resolve_hook_agent_id(payload))
     elif tool_name in ("Agent", "Task"):
         # AgentとTask: 背景起動の応答が返した`agentId`だけをバックグラウンドタスクの所有記録へ残す

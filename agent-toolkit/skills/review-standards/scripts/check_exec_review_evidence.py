@@ -2043,6 +2043,7 @@ def _list_evidence(parser: argparse.ArgumentParser, args: argparse.Namespace) ->
             args.input_record,
             args.external_artifact,
             args.review_contract,
+            args.previous_review_contract,
             args.reader_fit_review is not None,
             args.results_file,
             verification_results.has_result_specification(args),
@@ -2305,7 +2306,7 @@ def _batch_arguments(value: object) -> tuple[str, list[str]]:
         "review_start",
         "external_artifacts",
     }
-    optional = {"previous_review_start", "previous_review_head", "review_contract"}
+    optional = {"previous_review_start", "previous_review_head", "review_contract", "previous_review_contract"}
     if not isinstance(value, dict) or not fields <= set(value) or set(value) - fields - optional:
         raise ValueError(f"レビュー入力組には{', '.join(sorted(fields))}を指定する")
     for name in ("plan", "evidence", "reviewed_head", "review_table", "reader_fit_review", "review_start"):
@@ -2374,6 +2375,8 @@ def _save_return_input(
         "previous_review_start": previous_review_start,
         "previous_review_head": previous_review_head,
     }
+    if args.previous_review_contract is not None:
+        value["previous_review_contract"] = str(args.previous_review_contract)
     # 生成側も消費側と同じ変換で受理を確認し、形式の定義を一括検査へ保つ。
     _batch_arguments(value)
     path = managed_temp.create_output_temp("exec-review-input") / "reviews.json"
@@ -2503,6 +2506,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--previous-review-start", help="前回確認版の開始時点のOID。roundが2以上の返却では必須")
     parser.add_argument("--previous-review-head", help="前回確認版のHEADのOID。roundが2以上の返却では必須")
     parser.add_argument(
+        "--previous-review-contract", type=pathlib.Path, metavar="PATH", help="前回レビューの判定範囲を持つ契約の絶対パス"
+    )
+    parser.add_argument(
         "--list",
         action="store_true",
         help="判定途中でも原文・出所・判定・根拠・HEADを読む。全行と--sectionだけの指定では先に根拠を除いた`証拠の行一覧`を並べ、"
@@ -2549,7 +2555,7 @@ def main(argv: list[str] | None = None) -> int:
         )
     if args.reader_fit_review is not None and not args.return_result:
         parser.error("--reader-fit-reviewは--return-resultと指定する。batchでは各組のreader_fit_reviewへ申告を記す")
-    if (args.external_artifact or args.review_contract) and not args.return_result:
+    if (args.external_artifact or args.review_contract or args.previous_review_contract) and not args.return_result:
         parser.error("--external-artifactと--review-contractは--return-resultと指定する。batchでは各組へ記す")
     if any((args.review_start, args.previous_review_start, args.previous_review_head)) and not args.return_result:
         parser.error("レビューの開始時点と前回確認版は--return-resultと指定する。batchでは各組へ記す")
@@ -2760,6 +2766,7 @@ def main(argv: list[str] | None = None) -> int:
                 previous_head,
                 external_artifacts=args.external_artifact,
                 review_contract=args.review_contract,
+                previous_review_contract=args.previous_review_contract,
             )
         except (OSError, UnicodeError, subprocess.SubprocessError, ValueError) as error:
             errors.append(str(error))

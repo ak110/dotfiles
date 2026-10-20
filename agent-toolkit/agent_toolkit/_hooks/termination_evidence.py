@@ -57,6 +57,22 @@ class _UnresolvedRepositoryError(ValueError):
     """所属不明の作業には、省略の再申請と異なる終了操作を案内する。"""
 
 
+class _FailureEvidenceError(ValueError):
+    """実際の失敗呼び出しを欠く技術的不成立を表す。"""
+
+
+class _InactiveWaitError(ValueError):
+    """所有する委譲先への有効な待機が終わっていることを表す。"""
+
+
+_HOST_STOP_FIX = (
+    "利用上限の猶予通知とホストによる背景コマンドの停止は技術的不成立に当たらない。"
+    "猶予通知は`agent-toolkit:user-confirmation-and-report`の`references/usage-limit.md`に従い同じ工程を続ける。"
+    "ホストが再開を禁じた処理は再開の可否をユーザーへ確認する。"
+    "協調モードは`AskUserQuestion`、自律モードはUWIを投入し`wait`の`uwi_file`で記録する。"
+)
+
+
 _GIT_VALUE_OPTIONS = frozenset(
     {
         "-m",
@@ -658,7 +674,7 @@ def record_decision(document: dict[str, Any]) -> str:
                     )
                 active = agents_server_observations.actively_waited_session_ids([target])
                 if child.get("pending_observation") is not True and target not in active:
-                    raise ValueError(
+                    raise _InactiveWaitError(
                         f"対象sessionの有効なCLI待機がありません: {target}。実際の待機を開始するか回収後の残工程へ戻る"
                     )
                 evidence["target_session_id"] = target
@@ -673,7 +689,7 @@ def record_decision(document: dict[str, Any]) -> str:
                 or records[0].get("kind") != "failure"
                 or records[0].get("work_id") != document.get("work_id")
             ):
-                raise ValueError("対象作業の実際の失敗call_idを指定する")
+                raise _FailureEvidenceError("対象作業の実際の失敗call_idを指定する")
             if (
                 "quote" in document
                 and json.dumps(records[0]["response"], ensure_ascii=False, sort_keys=True) != document["quote"]
@@ -915,11 +931,22 @@ def main(argv: list[str] | None = None) -> int:
             raise ValueError("判断記録はJSONオブジェクトで渡す")
         work_id = record_decision(document)
     except (OSError, UnicodeError, ValueError) as error:
+        recovery = "原入力と対象を確かめ、判断のJSONファイルを直して同じコマンドで再実行する"
+        if isinstance(error, _UnresolvedRepositoryError):
+            recovery = _UNRESOLVED_REPOSITORY_FIX
+        elif isinstance(error, _FailureEvidenceError):
+            recovery = (
+                "受理する証拠は失敗応答を返したツール呼び出しだけである。別のcall_idでの再試行では記録できない。"
+                + _HOST_STOP_FIX
+            )
+        elif isinstance(error, _InactiveWaitError):
+            recovery = (
+                "実際の待機を開始するか回収後の残工程へ戻る。ホストが待機を停止して再開にユーザーの指示を要する場合は、"
+                + _HOST_STOP_FIX
+            )
         next_action.report(
             str(error),
-            next_action=_UNRESOLVED_REPOSITORY_FIX
-            if isinstance(error, _UnresolvedRepositoryError)
-            else "原入力と対象を確かめ、判断のJSONファイルを直して同じコマンドで再実行する",
+            next_action=recovery,
         )
         return 2
     print(json.dumps({"work_id": work_id}, ensure_ascii=False))

@@ -9,6 +9,7 @@ import json
 import os
 import pathlib
 import shlex
+import stat
 import subprocess
 import sys
 from collections.abc import Callable
@@ -116,6 +117,42 @@ def test_create_reuses_integrated_resources_then_delete_removes_only_owned_lane(
     assert code == 0 and not repeated["removed"]
     assert repeated["result_path"] != deleted["result_path"]
     assert json.loads(pathlib.Path(deleted["result_path"]).read_text(encoding="utf-8"))["removed"] == ["lane-01"]
+
+
+@pytest.mark.skipif(os.name != "posix", reason="POSIXのディレクトリ権限を実機で検証する")
+@pytest.mark.parametrize("dirty", [False, True])
+def test_delete_recovers_permissions_before_checking_untracked_work(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], dirty: bool
+) -> None:
+    """読めない木の未追跡内容を再判定し、保存済みの木だけ登録と共に撤去する。"""
+    repo, _selected, record = _create(tmp_path, monkeypatch, capsys)
+    worktree = pathlib.Path(record["worktree"])
+    locked = worktree / "locked"
+    locked.mkdir()
+    payload = locked / "payload"
+    payload.write_text("成果", encoding="utf-8")
+    if not dirty:
+        git_repository.commit_all(worktree, "保存した成果")
+        git_repository.run_git(repo, "merge", "--ff-only", record["branch"])
+    locked.chmod(0)
+    try:
+        code, _listed, stderr = _invoke(capsys, "delete", "--list")
+        assert code == 0, stderr
+        assert stat.S_IMODE(locked.stat().st_mode) == 0
+        code, result, stderr = _invoke(capsys, "delete")
+        if dirty:
+            assert code == 1, stderr
+            assert "未commitまたは未追跡" in result["retained"][0]["reason"]
+            assert payload.read_text(encoding="utf-8") == "成果"
+            assert pathlib.Path(record["record_path"]).exists()
+            assert str(worktree) in git_repository.git_output(repo, "worktree", "list", "--porcelain")
+        else:
+            assert code == 0, stderr
+            assert result["removed"] == ["lane-01"]
+            assert not worktree.exists()
+    finally:
+        if locked.exists():
+            locked.chmod(0o700)
 
 
 @pytest.mark.parametrize("condition", ["unintegrated", "dirty", "unmerged", "active-session", "identity-less-session"])

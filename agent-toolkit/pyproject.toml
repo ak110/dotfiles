@@ -16,7 +16,7 @@ dependencies = [
     "platformdirs>=4.0",
     "psutil>=6",
     "pydantic>=2",
-    "pyfltr>=3.17.7",
+    "pyfltr>=3.24.0",
     "pygments",
     "pytilpack[quart]>=1.47.0",
     "pyyaml",
@@ -41,7 +41,7 @@ dev = [
     "hypothesis>=6.168.3",
     "jsonschema>=4.26",
     "playwright>=1.61.0",
-    "pyfltr[python]>=3.22.0",
+    "pyfltr[python]>=3.24.0",
     "pytest-asyncio>=1.0",
     "pytest-timeout>=2",
     "pytest-xdist>=3.8.0",
@@ -155,7 +155,7 @@ addopts = [
     "--maxfail=5",
     "--durations=30",
     "--durations-min=0.5",
-    # 失敗・エラーに加えてskipの理由を要約へ出し、検証報告で未実行の範囲と理由を示せるようにする。
+    # 失敗・エラーに加えてskipの理由を要約へ表示し、検証報告で未実行の範囲と理由を示せるようにする。
     "-rfEs",
     "--timeout=60",
     # コア数追従（-n auto等）を採用せず固定値とする（CI環境での逆効果とメモリ消費増を避けるため）
@@ -173,5 +173,6 @@ filterwarnings = ["error::ResourceWarning", "error::pytest.PytestUnraisableExcep
 log_level = "DEBUG"
 xfail_strict = true
 asyncio_mode = "strict"
-asyncio_default_fixture_loop_scope = "session"
-asyncio_default_test_loop_scope = "session"
+# テスト単位で環境変数を隔離するため、推奨設定のsession共有から外して非同期処理の波及を防ぐ。
+asyncio_default_fixture_loop_scope = "function"
+asyncio_default_test_loop_scope = "function"

@@ -46,6 +46,7 @@ _WARNING_BODY = (
 _WARNING_FIX = (
     "実行ホストの`atk agents wait`で観測するか、結果が不要なら`kill(session_id)`で破棄してから終了する。"
     "`send_message`は新しい作業を配送するだけで観測しないため、この警告は解消しない。"
+    "ホストが待機コマンドを停止し再開にユーザーの指示を要する場合は、結果を保持して再開の可否をユーザーへ確認する。"
 )
 
 _notice = _notice_formatter(_HOOK_ID, default_tag=_WARN_TAG)

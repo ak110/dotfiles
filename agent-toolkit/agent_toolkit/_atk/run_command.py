@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import contextlib
 import json
 import math
 import os
@@ -12,6 +13,8 @@ import shlex
 import subprocess
 import sys
 from typing import Any
+
+from pyfltr.command import execution_slot
 
 from agent_toolkit._atk import managed_temp, outcome
 from agent_toolkit._atk.environment import is_human_terminal
@@ -51,6 +54,9 @@ def build_parser(parser: argparse.ArgumentParser) -> None:
     """`atk run-command`の引数を登録する。"""
     parser.add_argument("--cwd", type=_absolute_directory, metavar="DIR", help="子プロセスの作業ディレクトリの絶対パス。")
     parser.add_argument("--timeout", type=_positive_seconds, metavar="SECONDS", help="正の実行上限秒数。")
+    parser.add_argument(
+        "--verification", action="store_true", help="ホスト共有の検証実行枠を所有して実行する。待機時間はtimeoutに含めない。"
+    )
     parser.add_argument(
         "--record",
         type=pathlib.Path,
@@ -152,7 +158,16 @@ def _metadata(
     return result
 
 
-def execute(argv: list[str], cwd: pathlib.Path, timeout: float | None) -> tuple[dict[str, Any], int, str | None]:
+def execute(
+    argv: list[str], cwd: pathlib.Path, timeout: float | None, *, verification: bool = False
+) -> tuple[dict[str, Any], int, str | None]:
+    """検証用途では共有実行枠を取得し、子の終了と記録保存まで所有する。"""
+    ownership = execution_slot.hold(label=shlex.join(argv)) if verification else contextlib.nullcontext()
+    with ownership:
+        return _execute(argv, cwd, timeout)
+
+
+def _execute(argv: list[str], cwd: pathlib.Path, timeout: float | None) -> tuple[dict[str, Any], int, str | None]:
     """終了する子プロセスを実行して記録を保存し、表示とは別に結果・終了コード・保存の失敗を返す。"""
     child_env = dict(os.environ)
     strip_inherited_venv(child_env)
@@ -336,7 +351,7 @@ def dispatch(args: argparse.Namespace) -> int:
     records = getattr(args, "record", None) or []
     bundle = getattr(args, "records_file", None)
     if records or bundle:
-        if argv or args.cwd is not None or args.timeout is not None:
+        if argv or args.cwd is not None or args.timeout is not None or getattr(args, "verification", False):
             outcome.report_failure(
                 "保存済み読取と子の実行指定は混在できない", next_action="--record・--records-fileだけで再実行する"
             )
@@ -356,7 +371,9 @@ def dispatch(args: argparse.Namespace) -> int:
         )
         return _EXIT_WRAPPER_FAILURE
     cwd = args.cwd if args.cwd is not None else pathlib.Path.cwd().resolve()
-    metadata, wrapper_exit_code, failure = execute(argv[1:], cwd, args.timeout)
+    metadata, wrapper_exit_code, failure = execute(
+        argv[1:], cwd, args.timeout, verification=getattr(args, "verification", False)
+    )
     print(json.dumps(metadata, ensure_ascii=False, sort_keys=True))
     if wrapper_exit_code == 0:
         outcome.report_success("外部コマンドが終了した", outcome.ResultKind.VALUE_OUTPUT)

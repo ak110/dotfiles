@@ -54,9 +54,9 @@ def _fake_target_info(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 @pytest.fixture(autouse=True)
-def _empty_external_marketplaces(monkeypatch: pytest.MonkeyPatch) -> None:
-    """外部マーケットプレイスの専用テスト以外では対象を空にし、開発機のプロセスを参照判定へ混ぜない。"""
-    monkeypatch.setattr(_install_claude_plugins, "_EXTERNAL_MARKETPLACES", ())
+def _isolate_plugin_cleanup(monkeypatch: pytest.MonkeyPatch) -> None:
+    """旧pluginの削除は専用テストへ分け、開発機のプロセスを参照判定へ混ぜない。"""
+    monkeypatch.setattr(_install_claude_plugins, "_remove_unused_plugins", lambda: False)
     monkeypatch.setattr(_install_claude_plugins, "_verify_target_plugins", lambda _targets, _failed=(): None)
     monkeypatch.setattr(_claude_plugin_references, "scan", lambda: ())
 
@@ -88,7 +88,7 @@ def test_installed_plugins_are_read_after_marketplace_is_ensured(
     """marketplace修復前の導入一覧を後続判定へ再利用しない。"""
     events: list[str] = []
     monkeypatch.setattr(_install_claude_plugins, "_prerequisites_ok", lambda: True)
-    monkeypatch.setattr(_install_claude_plugins, "_install_external_marketplaces", lambda: False)
+    monkeypatch.setattr(_install_claude_plugins, "_remove_unused_plugins", lambda: False)
     monkeypatch.setattr(_common, "find_dotfiles_root", lambda: tmp_path)
     monkeypatch.setattr(_install_claude_plugins, "_read_target_info", lambda _root: ({}, {"legacy"}))
 

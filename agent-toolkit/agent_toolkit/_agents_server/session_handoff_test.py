@@ -62,11 +62,10 @@ async def test_start_handoff_restores_route_and_excludes_predecessor_after_recor
         return [("codex", "first", "medium"), ("claude", "second", "medium")]
 
     monkeypatch.setattr(config, "parse_unresolved_model_candidates", candidates)
-    manager, first = _manager_with_fake("codex")
-    second = FakeBackend(manager.sessions, "claude")
-    _install_backend(manager, "claude", second)
-    monkeypatch.setattr(mcp_tools, "_MANAGER", manager)
-    try:
+    async with _manager_with_fake("codex") as (manager, first):
+        second = FakeBackend(manager.sessions, "claude")
+        _install_backend(manager, "claude", second)
+        monkeypatch.setattr(mcp_tools, "_MANAGER", manager)
         started = await manager.start(
             "high_tier",
             "元の作業",
@@ -96,8 +95,6 @@ async def test_start_handoff_restores_route_and_excludes_predecessor_after_recor
         assert "第1turnの最終応答" in successor.prompt
         assert "中断までの進捗" in successor.prompt
         assert ("codex", "first", "medium") in successor.excluded_candidates
-    finally:
-        await manager.close()
 
 
 @pytest.mark.parametrize("extra", [{"cwd": "/repo"}, {"mode": "task"}, {"prompt": "変更"}, {"label": "別名"}])
@@ -115,16 +112,13 @@ async def test_start_handoff_rejects_running_predecessor_before_extracting_recor
 ) -> None:
     """実行中の前任へは終端待機・killを案内し、後任を生成しない。"""
     monkeypatch.setattr(config, "parse_unresolved_model_candidates", lambda *_args, **_kwargs: [("codex", "first", "medium")])
-    manager, backend = _manager_with_fake("codex")
-    try:
+    async with _manager_with_fake("codex") as (manager, backend):
         started = await manager.start("high_tier", "作業", str(tmp_path))
         with pytest.raises(ActionableError, match="前任は実行中") as raised:
             await manager.start_handoff(started["session_id"])
         assert "kill" in raised.value.next_action
         assert "atk agents wait" in raised.value.next_action
         assert len(backend.start_calls) == 1
-    finally:
-        await manager.close()
 
 
 @pytest.mark.asyncio
@@ -136,10 +130,9 @@ async def test_task_handoff_keeps_delivered_role_prompt_and_continues_handoff_re
     """taskで配送した役割本文・名前付き入力・用途と引き継ぎ記録の継続を後任へ渡す。"""
     del record_extractor
     monkeypatch.setattr(config, "parse_unresolved_model_candidates", lambda *_args, **_kwargs: [("codex", "first", "medium")])
-    manager, _ = _manager_with_fake("codex")
-    monkeypatch.setattr(mcp_tools, "_MANAGER", manager)
-    params = _observed_input_params("exec.subagent.md", tmp_path)
-    try:
+    async with _manager_with_fake("codex") as (manager, _):
+        monkeypatch.setattr(mcp_tools, "_MANAGER", manager)
+        params = _observed_input_params("exec.subagent.md", tmp_path)
         started = await mcp_tools.start(
             str(tmp_path),
             subagent_md_path="exec",
@@ -158,8 +151,6 @@ async def test_task_handoff_keeps_delivered_role_prompt_and_continues_handoff_re
         assert successor.label == predecessor.label
         assert "（継続）" in successor.prompt
         assert "計画に基づく進捗全文" in successor.prompt
-    finally:
-        await manager.close()
 
 
 @pytest.mark.parametrize("engine", ["codex", "claude", "agy"])

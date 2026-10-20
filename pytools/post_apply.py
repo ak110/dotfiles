@@ -806,7 +806,7 @@ def _home_is_substituted() -> bool:
     """
     if sys.platform == "win32":
         return False
-    import pwd  # noqa: PLC0415  # pylint: disable=import-outside-toplevel  # Windowsに存在しないモジュールのため
+    import pwd  # noqa: PLC0415  # pylint: disable=import-outside-toplevel,import-error  # POSIX専用でありWindowsには存在しない。
 
     return Path.home().resolve() != Path(pwd.getpwuid(os.getuid()).pw_dir).resolve()
 

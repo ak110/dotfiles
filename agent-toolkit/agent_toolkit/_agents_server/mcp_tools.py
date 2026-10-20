@@ -16,13 +16,12 @@ from agent_toolkit._agents_server import claude as claude_backend
 from agent_toolkit._agents_server import (
     launch_requests,
     logging_config,
-    result_projection,
 )
 from agent_toolkit._agents_server.file_operations import run_file_operation
 from agent_toolkit._agents_server.launch_requests import task_document_label, task_document_request, validate_start_inputs
 from agent_toolkit._agents_server.manager import DEFAULT_KILL_TIMEOUT, DEFAULT_SEND_MESSAGE_TIMEOUT, AgentsServerManager
 from agent_toolkit._agents_server.mcp_transport import AgentsServerMCP
-from agent_toolkit._agents_server.responses import REPLY_NEXT_ACTIONS, public_start_response, resolve_display_label
+from agent_toolkit._agents_server.responses import public_send_message_response, public_start_response, resolve_display_label
 from agent_toolkit._agents_server.tool_descriptions import (
     COMMAND_DESCRIPTION,
     CWD_DESCRIPTION,
@@ -277,16 +276,7 @@ async def send_message(
         response = await _MANAGER.send_message(session_id, prompt, timeout)
     else:
         response = await _MANAGER.send_message(session_id, prompt, timeout, instruction=instruction, extra_params=extra_params)
-    public: dict[str, Any] = {"delivery": response["delivery"], "label": response["label"]}
-    if "root_session_id" in response:
-        public["root_session_id"] = response["root_session_id"]
-    previous_result = response.get("previous_result")
-    if previous_result:
-        public["previous_result"] = result_projection.public_result(previous_result)
-    next_action = REPLY_NEXT_ACTIONS.get(response["delivery"])
-    if next_action is not None:
-        public["next_action"] = next_action
-    return public
+    return public_send_message_response(response)
 
 
 @mcp.tool(name="kill", structured_output=True)

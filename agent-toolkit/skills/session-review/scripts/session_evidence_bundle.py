@@ -31,7 +31,7 @@ from session_evidence_hook_notices import (
 from session_evidence_stats import (
     _stats_events,
 )
-from session_evidence_tool_calls import comparison_material_events
+from session_evidence_tool_calls import comparison_material_events, resource_usage_events
 from session_evidence_user_events import (
     _conversation_events,
 )
@@ -119,6 +119,10 @@ def _bundle_events(
     comparison = comparison_material_events(collected)
     comparison_path.write_text("".join(json.dumps(event, ensure_ascii=False) + "\n" for event in comparison), encoding="utf-8")
     events.append({"kind": "bundle-file", "path": str(comparison_path), "count": len(comparison)})
+    resource_path = resolved / "resource-usage.jsonl"
+    resources = resource_usage_events(collected)
+    resource_path.write_text("".join(json.dumps(event, ensure_ascii=False) + "\n" for event in resources), encoding="utf-8")
+    events.append({"kind": "bundle-file", "path": str(resource_path), "count": len(resources)})
     candidate_items = [item for item in candidates if item.get("kind") == "candidate"]
     events.append(
         {

@@ -55,12 +55,18 @@ class Original:
     path: pathlib.Path
     record: str | None = None
     line: int | None = None
+    sequence: int | None = None
+    fence: int | None = None
 
     def location(self) -> str:
         """出力へ書く所在を返す。"""
         if self.record is None:
             return f"出所={self.path}"
-        return f"出所={self.path} record={self.record} line={self.line}"
+        return f"出所={self.path} " + self.record_location()
+
+    def record_location(self) -> str:
+        """保存する引用へセッション記録上の位置を返す。"""
+        return f"record={self.record} line={self.line}" + (f" sequence={self.sequence}" if self.sequence is not None else "")
 
 
 @dataclasses.dataclass(frozen=True)
@@ -189,11 +195,11 @@ def _import_quotes(body: str, spec_path: pathlib.Path) -> tuple[str, list[Origin
             )
         event = matches[0]
         content = _selected_text(selection, event)
-        original = Original(event.text, path, event.record, event.line)
+        original = Original(event.text, path, event.record, event.line, event.sequence, len(originals) + 1)
         originals.append(original)
         # 原文に含まれるフェンスが引用を途中で閉じない長さにする。
         fence = "`" * max(3, max((len(run) + 1 for run in re.findall(r"`+", content)), default=0))
-        location = original.location() + (f" sequence={event.sequence}" if event.sequence is not None else "")
+        location = original.record_location()
         blocks.append(f"{location}\n\n{fence}text\n{content}\n{fence}")
     start, end = _quote_section(body)
     return body[:start] + "\n" + "\n\n".join(blocks) + "\n\n" + body[end:], originals
@@ -270,7 +276,7 @@ def _originals(path: pathlib.Path) -> list[Original]:
     if not events or not all(isinstance(event, dict) for event in events):
         return [Original(text, path)]
     originals = [
-        Original(event["text"], path, str(event.get("record")), event.get("line"))
+        Original(event["text"], path, str(event.get("record")), event.get("line"), event.get("sequence"))
         for event in events
         if isinstance(event, dict) and event.get("kind") == "user" and isinstance(event.get("text"), str)
     ]
@@ -332,13 +338,16 @@ def check(body: str, originals: list[Original]) -> tuple[list[str], list[str], s
     for number, content in enumerate(_quote_fences(body), start=1):
         parts = _parts(content)
         for part in parts:
-            matched = next((original for original in originals if part.text in original.text), None)
-            if matched is None:
-                matched = next((original for original in originals if part.text.replace("\r\n", "\n") in original.text), None)
-            if matched is None:
+            matched = [
+                original
+                for original in originals
+                if original.fence in (None, number)
+                and (part.text in original.text or part.text.replace("\r\n", "\n") in original.text)
+            ]
+            if not matched:
                 errors.append(f"text[{number}]の{part.label}が出所のどの原文の部分文字列でもありません")
             else:
-                output.append(f"text[{number}] {part.label}: 一致 {matched.location()}")
+                output.extend(f"text[{number}] {part.label}: 一致 {original.location()}" for original in matched)
         if errors:
             continue
         units = [span for part in parts for span in _unit_spans(content, part)]

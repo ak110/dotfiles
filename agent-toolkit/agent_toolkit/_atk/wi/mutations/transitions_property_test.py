@@ -11,7 +11,7 @@ import pytest
 from hypothesis import HealthCheck, given, settings
 from hypothesis import strategies as st
 
-from agent_toolkit._atk.wi import readiness
+from agent_toolkit._atk.wi import entry_text, readiness
 from agent_toolkit._atk.wi import sync as _wi_sync
 from agent_toolkit._atk.wi import web_input as _wi_web_input
 from agent_toolkit._atk.wi.mutations import transitions as mutation_transitions
@@ -45,11 +45,13 @@ def _disable_git(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def _state(notes: pathlib.Path) -> str | None:
-    locations = [
-        state for state in ("inbox", "processing", "hold", "adopted", "rejected") if (notes / state / "entry.md").exists()
-    ]
-    assert len(locations) <= 1
-    return locations[0] if locations else None
+    paths = list(notes.glob("[0-9][0-9][0-9][0-9]/[0-9][0-9]/entry.md"))
+    assert len(paths) <= 1
+    if not paths:
+        return None
+    parsed = entry_text.parse_frontmatter(paths[0].read_text(encoding="utf-8"))
+    assert parsed is not None
+    return str(parsed[0]["state"])
 
 
 @settings(max_examples=35, deadline=None, suppress_health_check=[HealthCheck.function_scoped_fixture])
@@ -59,7 +61,7 @@ def test_transition_sequences_match_reference_model(actions: list[str], monkeypa
     _disable_git(monkeypatch)
     with tempfile.TemporaryDirectory() as directory:
         notes = _setup_notes(pathlib.Path(directory))
-        _write_awi_file(notes, "entry.md")
+        original = _write_awi_file(notes, "entry.md")
         expected: str | None = "inbox"
         for action in actions:
             before = {path.relative_to(notes): path.read_bytes() for path in notes.rglob("entry.md")}
@@ -96,6 +98,7 @@ def test_transition_sequences_match_reference_model(actions: list[str], monkeypa
                 after = {path.relative_to(notes): path.read_bytes() for path in notes.rglob("entry.md")}
                 assert after == before
             assert _state(notes) == expected
+            assert original.exists() is (expected is not None)
 
 
 def test_reopening_terminal_entry_strips_previous_result(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
@@ -103,10 +106,10 @@ def test_reopening_terminal_entry_strips_previous_result(monkeypatch: pytest.Mon
     _disable_git(monkeypatch)
     notes = _setup_notes(tmp_path)
     source = _write_awi_file(notes, "entry.md")
-    terminal = notes / "adopted" / source.name
-    terminal.parent.mkdir(exist_ok=True)
-    source.replace(terminal)
-    terminal.write_text(terminal.read_text(encoding="utf-8") + "\n## 処理結果\n\n- 旧結果\n", encoding="utf-8")
+    source.write_text(
+        source.read_text(encoding="utf-8").replace("state: inbox", "state: adopted") + "\n## 処理結果\n\n- 旧結果\n",
+        encoding="utf-8",
+    )
     mutation_transitions.transition_entries(
         notes,
         action="hold",
@@ -115,7 +118,7 @@ def test_reopening_terminal_entry_strips_previous_result(monkeypatch: pytest.Mon
         now=_NOW,
         skip_remote_sync=True,
     )
-    assert "## 処理結果" not in (notes / "hold" / source.name).read_text(encoding="utf-8")
+    assert "## 処理結果" not in source.read_text(encoding="utf-8")
 
 
 def test_bulk_actor_cooldown_and_repeat_contract(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
@@ -134,7 +137,7 @@ def test_bulk_actor_cooldown_and_repeat_contract(monkeypatch: pytest.MonkeyPatch
         skip_remote_sync=True,
     ) == [first.name, second.name]
 
-    processing = notes / "processing" / first.name
+    processing = first
     with pytest.raises(_wi_web_input.WebInputError):
         mutation_transitions.transition_entries(
             notes,
@@ -144,7 +147,7 @@ def test_bulk_actor_cooldown_and_repeat_contract(monkeypatch: pytest.MonkeyPatch
             actor_is_agent=True,
             skip_remote_sync=True,
         )
-    assert processing.read_text(encoding="utf-8") == first_body
+    assert processing.read_text(encoding="utf-8") == first_body.replace("state: inbox", "state: processing")
 
     mutation_transitions.transition_entries(
         notes,
@@ -154,9 +157,9 @@ def test_bulk_actor_cooldown_and_repeat_contract(monkeypatch: pytest.MonkeyPatch
         cooldown_days=3,
         skip_remote_sync=True,
     )
-    returned = notes / "inbox" / first.name
+    returned = first
     assert "cooldown_until: '2026-10-08T00:00:00+00:00'" in returned.read_text(encoding="utf-8")
-    assert (notes / "processing" / second.name).read_text(encoding="utf-8") == second_body
+    assert second.read_text(encoding="utf-8") == second_body.replace("state: inbox", "state: processing")
 
     snapshot = returned.read_bytes()
     with pytest.raises(SystemExit):
@@ -199,10 +202,11 @@ def test_dependency_order_matches_reference_model(
                     encoding="utf-8",
                 )
         for name in names[:completed]:
-            source = notes / "inbox" / name
-            destination = notes / terminal_state / name
-            destination.parent.mkdir(exist_ok=True)
-            source.replace(destination)
+            source = notes / "2026" / "10" / name
+            source.write_text(
+                source.read_text(encoding="utf-8").replace("state: inbox", f"state: {terminal_state}"),
+                encoding="utf-8",
+            )
 
         result = readiness.calculate_readiness(notes, "github.com/example/foo", now=_NOW)
         expected_ready = (names[completed],) if completed < size else ()

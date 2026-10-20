@@ -24,6 +24,7 @@ from collections.abc import Callable
 from typing import Any, Literal, cast
 
 from agent_toolkit._agents_server import (
+    claude_mcp,
     claude_settings,
     context_usage,
     engine_availability,
@@ -54,6 +55,7 @@ from agent_toolkit._agents_server.state import (
     append_bounded,
     begin_reply,
 )
+from agent_toolkit._common import claude_connection as connection_settings
 from agent_toolkit._common import claude_usage_limit, plugin_environment, process_tree
 from agent_toolkit._common import delegated_session as _delegated_session
 from agent_toolkit._common import state_paths as _state_paths
@@ -94,6 +96,7 @@ class _InitializationDiagnostic:
         self.stderr = ""
         self.exception_type: str | None = None
         self.exception_body: str | None = None
+        self.mcp_recovery_task: asyncio.Task[None] | None = None
 
     def capture_stderr(self, text: str) -> None:
         self.stderr = append_bounded(self.stderr, text, _INITIALIZATION_STDERR_LIMIT_CHARS)
@@ -310,6 +313,7 @@ def _build_options(
     root_session_id: str | None = None,
     api_env_file: str | None = None,
     connection_kind: str = "inherit",
+    isolation_env_file: str | None = None,
 ) -> Any:
     """Claude Codeが用意するシステム指示と委譲先の印を有効にしたSDKオプションを組む。
 
@@ -384,19 +388,18 @@ def _build_options(
         options["extra_args"] = {"debug-file": str(debug_file)}
     if (cli_path := shutil.which("claude")) is not None:
         options["cli_path"] = cli_path
-    from agent_toolkit._atk import claude_connection
-
     # SDKは親環境へoptions.envを重ねるため、親にある接続変数は空値で遮断する。
     isolate_auth = connection_kind != "inherit" or api_env_file is not None
     if isolate_auth:
-        env.update({key: "" for key in claude_connection.AUTH_ENV if key in os.environ})
-    if api_env_file:
-        env.update(claude_settings.read_api_env_file(api_env_file))
-        env["CLAUDE_CODE_OAUTH_TOKEN"] = ""
-        env["CLAUDE_CODE_OAUTH_REFRESH_TOKEN"] = ""
-    options["settings"] = claude_settings.merge_settings(
-        _parent_settings(), env, root_session_id, force_file=api_env_file is not None, isolate_auth=isolate_auth
-    )
+        env.update(
+            connection_settings.connection_overrides(
+                connection_settings.Connection(
+                    "api" if api_env_file else connection_kind,
+                    api_env_file,
+                    isolation_env_file,
+                )
+            )
+        )
     if lightweight:
         options.update(
             skills=[],
@@ -410,12 +413,15 @@ def _build_options(
         mcp_config = json.loads((plugin_root / ".mcp.json").read_text(encoding="utf-8"))
         options["mcp_servers"] = {"pyfltr": mcp_config["mcpServers"]["pyfltr"]}
         options.setdefault("extra_args", {}).update({"permission-prompts": "none"})
-    try:
-        return ClaudeAgentOptions(**options)
-    except BaseException:
+    with contextlib.ExitStack() as settings_owner:
+        options["settings"] = claude_settings.merge_settings(
+            _parent_settings(), env, root_session_id, force_file=api_env_file is not None, isolate_auth=isolate_auth
+        )
         if isinstance(options["settings"], claude_settings.SettingsFile):
-            options["settings"].cleanup()
-        raise
+            settings_owner.enter_context(options["settings"])
+        result = ClaudeAgentOptions(**options)
+        settings_owner.pop_all()
+        return result
 
 
 def check_dependencies() -> None:
@@ -493,6 +499,12 @@ class ClaudeServerManager:
     ORPHAN_TAKEOVER: typing.ClassVar[bool] = False
     """所有者のいない登録簿の記録を、委譲先CLIの記録から終端として引き継がない。"""
 
+    async def __aenter__(self) -> ClaudeServerManager:
+        return self
+
+    async def __aexit__(self, *_exception: object) -> None:
+        await self.close()
+
     @staticmethod
     def unavailable_reason(session: SessionState) -> str | None:
         """終端したsessionがengineの可用性を理由に失敗した場合、その除外理由を返す。
@@ -566,6 +578,7 @@ class ClaudeServerManager:
         choices = claude_connection.candidates(role)
         failures = list(choices.diagnostics)
         for connection in choices.connections:
+            _LOG.info("claude_connection_attempt connection=%s role=%s resumed=false", connection.kind, role)
             try:
                 session = await self._start_owned_task(
                     prompt,
@@ -579,12 +592,19 @@ class ClaudeServerManager:
                     turn_seq=1,
                     api_env_file=connection.api_env_file,
                     connection_kind=connection.kind,
+                    isolation_env_file=connection.isolation_env_file,
                 )
                 session.claude_connection_diagnostics = choices.warnings
+                _LOG.info("claude_connection_selected session_id=%s connection=%s", session.session_id, connection.kind)
                 return session
             except SessionInitializationTimeoutError, session_identity.DuplicateSessionIdentityError:
                 raise
             except (OSError, ValueError, RuntimeError) as error:
+                _LOG.info(
+                    "claude_connection_failed connection=%s phase=initialization error_type=%s",
+                    connection.kind,
+                    type(error).__name__,
+                )
                 if connection.kind == "inherit":
                     raise
                 failures.append(f"{connection.kind}: {type(error).__name__}: {error}。認証と利用枠を確認する")
@@ -606,6 +626,7 @@ class ClaudeServerManager:
         api_env_file: str | None = None,
         connection_kind: str = "inherit",
         existing_session: SessionState | None = None,
+        isolation_env_file: str | None = None,
     ) -> SessionState:
         """保存済みClaude sessionを新しい所有タスクで再開する。
 
@@ -628,6 +649,7 @@ class ClaudeServerManager:
             api_env_file=api_env_file,
             connection_kind=existing_session.claude_connection or "inherit" if existing_session else connection_kind,
             existing_session=existing_session,
+            isolation_env_file=isolation_env_file,
         )
 
     async def _stop_owned_task(self, session_id: str) -> None:
@@ -659,9 +681,16 @@ class ClaudeServerManager:
         api_env_file: str | None = None,
         connection_kind: str = "inherit",
         existing_session: SessionState | None = None,
+        isolation_env_file: str | None = None,
     ) -> SessionState:
         """新規または保存済みsessionを所有する長命タスクを開始する。"""
         diagnostic = _InitializationDiagnostic()
+        if connection_kind == "subscription" and isolation_env_file is None:
+            from agent_toolkit._atk import claude_connection
+
+            isolation_env_file = claude_connection.with_current_isolation(
+                connection_settings.Connection(connection_kind)
+            ).isolation_env_file
         debug_file = await run_file_operation(_prepare_debug_file, launch_kind)
         diagnostic.debug_file = str(debug_file)
         options = await run_file_operation(
@@ -676,6 +705,7 @@ class ClaudeServerManager:
             root_session_id=self._root_session_id,
             api_env_file=api_env_file,
             connection_kind=connection_kind,
+            isolation_env_file=isolation_env_file,
         )
         loop = asyncio.get_running_loop()
         initialized: asyncio.Future[SessionState] = loop.create_future()
@@ -702,6 +732,22 @@ class ClaudeServerManager:
         task.add_done_callback(self._forget_task)
         try:
             session = await asyncio.wait_for(initialized, timeout=shared_state.SESSION_INITIALIZATION_TIMEOUT)
+            if diagnostic.mcp_recovery_task is not None:
+                from agent_toolkit._agents_server.manager import START_AVAILABILITY_TIMEOUT
+
+                # 起動の全試行と可用性確認を予約し、残予算を回復待ちと応答確定へ半分ずつ割り当てる。
+                recovery_budget = (
+                    max(
+                        0.0,
+                        shared_state.HOST_BACKGROUND_THRESHOLD_SECONDS
+                        - shared_state.SESSION_INITIALIZATION_TIMEOUT * shared_state.SESSION_INITIALIZATION_ATTEMPTS
+                        - START_AVAILABILITY_TIMEOUT,
+                    )
+                    / 2
+                )
+                completed, _ = await asyncio.wait({diagnostic.mcp_recovery_task}, timeout=recovery_budget)
+                if completed:
+                    await diagnostic.mcp_recovery_task
         except TimeoutError as exc:
             # SDKがinitを届けないまま接続を保つ場合、所有タスクが失敗してもこの待機は解消しない。
             await self._release_unstarted_task(task)
@@ -1021,6 +1067,10 @@ class ClaudeServerManager:
                                     claude_role="orchestrator" if model_type == "orchestrate" else "delegate",
                                 )
                                 self.sessions[session_id] = session
+                                session.claude_mcp_diagnostics = ()
+                                diagnostic.mcp_recovery_task = asyncio.create_task(
+                                    self._recover_mcp_connections(client, data, session)
+                                )
                                 await session.attach_executor_async(diagnostic.child_pid)
                                 session.usage_limit = early_usage_limit
                                 session.cli_turn_state = early_cli_turn_state
@@ -1131,8 +1181,12 @@ class ClaudeServerManager:
                 await self._notify_waiters()
         finally:
 
-            async def cleanup() -> None:
+            async def cleanup_runtime() -> None:
                 nonlocal retrieved
+                if diagnostic.mcp_recovery_task is not None:
+                    if not diagnostic.mcp_recovery_task.done():
+                        diagnostic.mcp_recovery_task.cancel()
+                    await asyncio.gather(diagnostic.mcp_recovery_task, return_exceptions=True)
                 for task in (message_task, command_task):
                     if task is not None and not task.done():
                         task.cancel()
@@ -1146,23 +1200,42 @@ class ClaudeServerManager:
                 if active_future is not None and not active_future.done():
                     active_future.set_exception(SessionOwnerGoneError("the Claude session owner task has ended"))
                 if client is not None:
-                    if usage_observer is not None:
-                        await usage_observer.close()
-                    # 子孫の列挙は切断より前に行う。切断で委譲先プロセスが終了すると子孫の親が変わり、
-                    # 保持しているPIDを起点に辿れなくなるためである。
-                    descendants = await run_file_operation(process_tree.collect_descendants, diagnostic.child_pid)
-                    await self._disconnect_client(client)
-                    residual = await asyncio.to_thread(process_tree.reclaim_descendants, descendants)
-                    process_tree.log_residual(
-                        residual, context=f"claude session_id={None if session is None else session.session_id}"
-                    )
-                if session is not None:
-                    await session.drain_registration()
-                    self._channels.pop(session.session_id, None)
-                channel.close()
-                await run_file_operation(claude_settings.cleanup_settings, options)
+                    try:
+                        if usage_observer is not None:
+                            await usage_observer.close()
+                    finally:
+                        # 切断より先に子孫を列挙し、親の終了後も所有資源を回収できるようにする。
+                        descendants = []
+                        try:
+                            descendants = await run_file_operation(process_tree.collect_descendants, diagnostic.child_pid)
+                        finally:
+                            try:
+                                await self._disconnect_client(client)
+                            finally:
+                                residual = await asyncio.to_thread(process_tree.reclaim_descendants, descendants)
+                                process_tree.log_residual(
+                                    residual, context=f"claude session_id={None if session is None else session.session_id}"
+                                )
+
+            async def cleanup() -> None:
+                async with contextlib.AsyncExitStack() as resources:
+                    resources.push_async_callback(run_file_operation, claude_settings.cleanup_settings, options)
+                    resources.callback(channel.close)
+                    if session is not None:
+                        resources.callback(self._channels.pop, session.session_id, None)
+                        resources.push_async_callback(session.drain_registration)
+                    await cleanup_runtime()
 
             await finish_task(asyncio.create_task(cleanup()))
+
+    @staticmethod
+    async def _recover_mcp_connections(client: Any, initialization: dict[str, Any], session: SessionState) -> None:
+        def report_pending(warnings: tuple[str, ...]) -> None:
+            session.claude_mcp_diagnostics = warnings
+
+        session.claude_mcp_diagnostics = await claude_mcp.recover_connections(
+            client, initialization, session.session_id, report_pending=report_pending
+        )
 
     async def _consume_result_message(self, session: SessionState, message: Any, held_from_task_notification: bool) -> bool:
         """turnの結果を保留または確定し、保留結果がtask完了通知のturnから届いたかを引き継ぐ。"""

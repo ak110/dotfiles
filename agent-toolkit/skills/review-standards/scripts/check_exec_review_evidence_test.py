@@ -2410,9 +2410,9 @@ def test_public_command_rejects_partly_updated_review_heads(
     )
     current = git_repository.git_output(tmp_path, "rev-parse", "HEAD")
     notes = tmp_path / "private-notes"
-    (notes / "processing").mkdir(parents=True)
-    (notes / "processing" / FIRST_WI).write_text(
-        "---\ntype: awi\nsource: agent\ntarget_repo: example\n---\n## 完成条件\n- 完成\n",
+    (notes / "2026" / "09").mkdir(parents=True)
+    (notes / "2026" / "09" / FIRST_WI).write_text(
+        "---\ntype: awi\nsource: agent\ntarget_repo: example\nstate: processing\n---\n## 完成条件\n- 完成\n",
         encoding="utf-8",
     )
     monkeypatch.setattr(wi_sync, "ensure_environment", lambda _home: notes)
@@ -2566,7 +2566,7 @@ def _reference_repository(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatc
     repository = tmp_path / "target repo"
     notes = tmp_path / "private notes"
     (repository / "docs").mkdir(parents=True)
-    (notes / "inbox").mkdir(parents=True)
+    (notes / "2026" / "09").mkdir(parents=True)
     (repository / "docs/record.md").write_text(_REFERENCE_MARKDOWN, encoding="utf-8")
     (repository / "docs/日本語名.md").write_text("# 日本語名\n", encoding="utf-8")
     (repository / "docs/.hidden").mkdir()
@@ -2593,8 +2593,8 @@ def _reference_repository(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatc
     # 作業ツリーにだけある未追跡のファイル。期待HEADに無いため、所在を添えない名前は参照の候補にしない。
     (repository / ".env").write_text("TOKEN=dummy\n", encoding="utf-8")
     (repository / ".env.local").write_text("TOKEN=dummy\n", encoding="utf-8")
-    (notes / "inbox" / FIRST_WI).write_text(
-        "---\ntarget_repo: github.com/example/foo\ntype: awi\nsource: agent\n---\n# 題\n## 完成条件\n- 完成\n",
+    (notes / "2026" / "09" / FIRST_WI).write_text(
+        "---\ntarget_repo: github.com/example/foo\ntype: awi\nsource: agent\nstate: inbox\n---\n# 題\n## 完成条件\n- 完成\n",
         encoding="utf-8",
     )
     monkeypatch.setenv("AGENT_TOOLKIT_PRIVATE_NOTES", str(notes))
@@ -3309,8 +3309,8 @@ def test_plain_reference_ends_by_one_rule_regardless_of_prefix_and_existence(
     cases = [(location, suffix) for location in _ATTACHED_LOCATIONS for suffix in _ATTACHED_SUFFIXES]
     conditions = [f"条件{index}" for index in range(1, len(cases) + 1)]
     notes = pathlib.Path(os.environ["AGENT_TOOLKIT_PRIVATE_NOTES"])
-    (notes / "inbox" / FIRST_WI).write_text(
-        "---\ntarget_repo: github.com/example/foo\ntype: awi\nsource: agent\n---\n# 題\n## 完成条件\n"
+    (notes / "2026" / "09" / FIRST_WI).write_text(
+        "---\ntarget_repo: github.com/example/foo\ntype: awi\nsource: agent\nstate: inbox\n---\n# 題\n## 完成条件\n"
         + "".join(f"- {condition}\n" for condition in conditions),
         encoding="utf-8",
     )
@@ -3877,7 +3877,7 @@ def test_public_command_reads_wi_in_process(
     root = tmp_path / "work dir"
     notes = root / "private notes"
     repository = root / "target repo"
-    (notes / "inbox").mkdir(parents=True)
+    (notes / "2026" / "09").mkdir(parents=True)
     repository.mkdir()
 
     git_repository.init_repository(repository)
@@ -3887,8 +3887,8 @@ def test_public_command_reads_wi_in_process(
     )
     head = git_repository.git_output(repository, "rev-parse", "HEAD")
     body = f"# 題\n\n{_FENCED_REQUIREMENTS[0]}\n\n{_SUPPLEMENTS['backtick-plain']}\n\n{_FENCED_REQUIREMENTS[1]}\n"
-    (notes / "inbox" / FIRST_WI).write_text(
-        f"---\ntarget_repo: github.com/example/foo\ntype: awi\n---\n\n{body}", encoding="utf-8"
+    (notes / "2026" / "09" / FIRST_WI).write_text(
+        f"---\ntarget_repo: github.com/example/foo\ntype: awi\nstate: inbox\n---\n\n{body}", encoding="utf-8"
     )
     monkeypatch.setenv("AGENT_TOOLKIT_PRIVATE_NOTES", str(notes))
     monkeypatch.chdir(repository)
@@ -3912,13 +3912,13 @@ def test_public_command_reads_wi_in_process(
     assert run_script.dispatch(args) == 1
     assert f"不足: 「{_FENCED_REQUIREMENTS[1]}」" in capsys.readouterr().err
 
-    (notes / "inbox" / FIRST_WI).write_text(
-        f"---\ntarget_repo: github.com/example/other\ntype: awi\n---\n\n{body}", encoding="utf-8"
+    (notes / "2026" / "09" / FIRST_WI).write_text(
+        f"---\ntarget_repo: github.com/example/other\ntype: awi\nstate: inbox\n---\n\n{body}", encoding="utf-8"
     )
     assert run_script.dispatch(args) == 1
     assert "WI本文を取得できません" in capsys.readouterr().err
 
-    (notes / "inbox" / FIRST_WI).unlink()
+    (notes / "2026" / "09" / FIRST_WI).unlink()
     assert run_script.dispatch(args) == 1
     assert "WI本文を取得できません" in capsys.readouterr().err
 
@@ -4400,9 +4400,10 @@ def _generated_review_setup(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPa
     )
     head = git_repository.git_output(repository, "rev-parse", "HEAD")
     notes = tmp_path / "notes"
-    (notes / "processing").mkdir(parents=True)
-    (notes / "processing" / FIRST_WI).write_text(
-        "---\ntarget_repo: github.com/example/foo\ntype: awi\n---\n# 題\n\n## 完成条件\n- 保存\n", encoding="utf-8"
+    (notes / "2026" / "09").mkdir(parents=True)
+    (notes / "2026" / "09" / FIRST_WI).write_text(
+        "---\ntarget_repo: github.com/example/foo\ntype: awi\nstate: processing\n---\n# 題\n\n## 完成条件\n- 保存\n",
+        encoding="utf-8",
     )
     monkeypatch.setenv("AGENT_TOOLKIT_PRIVATE_NOTES", str(notes))
     monkeypatch.chdir(repository)
@@ -4600,7 +4601,7 @@ def test_batch_keeps_per_review_inputs_and_does_not_write_evidence(
         )
         heads.append(git_repository.git_output(repository, "rev-parse", "HEAD"))
     notes = tmp_path / "private notes"
-    (notes / "processing").mkdir(parents=True)
+    (notes / "2026" / "09").mkdir(parents=True)
     monkeypatch.setenv("AGENT_TOOLKIT_PRIVATE_NOTES", str(notes))
     monkeypatch.chdir(repository)
     condition = "保存内容を全て読み直して実行条件と終了状態と対象ファイルの対応がそれぞれ一致することを後続担当が確認できる"
@@ -4608,8 +4609,10 @@ def test_batch_keeps_per_review_inputs_and_does_not_write_evidence(
     reviews: list[dict[str, typing.Any]] = []
     evidence_before: dict[pathlib.Path, bytes] = {}
     for index, (filename, head) in enumerate(zip((FIRST_WI, SECOND_WI), heads, strict=True), start=1):
-        (notes / "processing" / filename).write_text(
-            f"---\ntarget_repo: github.com/example/foo\ntype: awi\n---\n# 題\n\n## 完成条件\n- {condition}\n", encoding="utf-8"
+        (notes / "2026" / "09" / filename).write_text(
+            "---\ntarget_repo: github.com/example/foo\ntype: awi\nstate: processing\n---\n# 題\n\n"
+            f"## 完成条件\n- {condition}\n",
+            encoding="utf-8",
         )
         evidence, table = tmp_path / f"evidence{index}.json", tmp_path / f"review{index}.tsv"
         row = {**_condition(filename, condition), "reviewed_head": head, "outcome": "未達", "evidence": original}

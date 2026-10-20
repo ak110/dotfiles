@@ -9,7 +9,7 @@ import socket
 import threading
 from collections.abc import AsyncGenerator
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import playwright.async_api
 import pytest
@@ -21,14 +21,25 @@ from agent_toolkit._atk.serve import plans as serve_plans
 from agent_toolkit._atk.serve import sessions as serve_sessions
 from agent_toolkit._atk.serve import state as serve_state
 from agent_toolkit._atk.wi import batch as wi_batch
+from agent_toolkit._atk.wi import entries as wi_entries
 from agent_toolkit._atk.wi import frontmatter as wi_frontmatter
 from agent_toolkit._atk.wi import user_comment as user_comment_mutations
 from agent_toolkit._atk.wi import uwi as uwi_mutations
 from agent_toolkit._atk.wi import web_input as wi_web_input
 from agent_toolkit._plan import creation_times as plan_creation_times
+from agent_toolkit._testing import wi_entry_files
 
 _SERVER_START_TIMEOUT_SEC = 10.0
 _LONG_UNKNOWN_FRONTMATTER_KEY = "unknown_" + "x" * (500 - len("unknown_"))
+
+
+def _write_fixed_entry(root: Path, filename: str, state: str, content: str) -> Path:
+    """年月固定のテスト項目へ状態と本文を保存する。"""
+    parsed = wi_frontmatter.parse_frontmatter(content)
+    metadata, body = parsed if parsed is not None else ({}, content)
+    path = wi_entry_files.entry_path(root, filename)
+    path.write_text(wi_frontmatter.serialize_frontmatter({**metadata, "state": state}, body), encoding="utf-8")
+    return path
 
 
 async def _hold_route(
@@ -80,7 +91,7 @@ class _BrowserOperations(wi_operations.Operations):
             if not self.user_comment_release.wait(timeout=5):
                 raise TimeoutError("ユーザーコメント保存の解放を待機できませんでした")
             self.delay_user_comment = False
-        path = self.private_notes / state / filename
+        path = wi_entries.entry_path(self.private_notes, filename)
         current = path.read_text(encoding="utf-8")
         if current != expected_content:
             raise RuntimeError("編集中に他プロセスが対象を変更しました")
@@ -91,6 +102,25 @@ class _BrowserOperations(wi_operations.Operations):
     def background_sync(self) -> bool:
         return False
 
+    def important(self, filename: str, important: bool, expected_content: str | None = None) -> bool:
+        """Gitを使わず、状態と保存先を保って重要フラグを更新する。"""
+        path = wi_entries.entry_path(self.private_notes, filename)
+        text = path.read_text(encoding="utf-8")
+        if expected_content is not None and text != expected_content:
+            raise RuntimeError("編集中に他プロセスが対象を変更しました")
+        parsed = wi_frontmatter.parse_frontmatter(text)
+        assert parsed is not None
+        metadata, body = parsed
+        if important:
+            metadata["important"] = True
+        else:
+            metadata.pop("important", None)
+        updated = wi_frontmatter.serialize_frontmatter(metadata, body)
+        if text == updated:
+            return False
+        path.write_text(updated, encoding="utf-8")
+        return True
+
     def edit(
         self,
         state: str,
@@ -100,10 +130,10 @@ class _BrowserOperations(wi_operations.Operations):
     ) -> bool:
         self.edit_calls += 1
         if self.persist_mutations:
-            path = self.private_notes / state / filename
+            path = wi_entries.entry_path(self.private_notes, filename)
             if expected_content is not None and path.read_text(encoding="utf-8") != expected_content:
                 raise RuntimeError("編集中に他プロセスが対象を変更しました")
-            path.write_text(content, encoding="utf-8")
+            _write_fixed_entry(self.private_notes, filename, state, content)
         if self.delay_edit:
             self.edit_started.set()
             if not self.edit_release.wait(timeout=5):
@@ -119,18 +149,19 @@ class _BrowserOperations(wi_operations.Operations):
     ) -> list[str]:
         self.last_transition = (action, filenames, kwargs.get("note"))
         if action in {"hold", "unhold", "return-to-inbox"} and self.persist_mutations:
-            source = kwargs.get("state") or (
-                "hold" if action == "unhold" else "processing" if action == "return-to-inbox" else "inbox"
-            )
+            source = kwargs.get("state")
             destination = "hold" if action == "hold" else "inbox"
-            (self.private_notes / destination).mkdir(exist_ok=True)
             for filename in filenames:
-                (self.private_notes / source / filename).rename(self.private_notes / destination / filename)
+                path = wi_entries.entry_path(self.private_notes, filename)
+                assert source is None or wi_entries.entry_state_of(path) == source
+                _write_fixed_entry(self.private_notes, filename, destination, path.read_text(encoding="utf-8"))
         if action in {"adopt", "reject"} and self.persist_mutations:
-            source = kwargs.get("state") or "inbox"
+            source = kwargs.get("state")
             destination = "adopted" if action == "adopt" else "rejected"
             for filename in filenames:
-                (self.private_notes / source / filename).rename(self.private_notes / destination / filename)
+                path = wi_entries.entry_path(self.private_notes, filename)
+                assert source is None or wi_entries.entry_state_of(path) == source
+                _write_fixed_entry(self.private_notes, filename, destination, path.read_text(encoding="utf-8"))
         if action == "remove":
             self.remove_calls += 1
             if self.persist_mutations:
@@ -140,8 +171,8 @@ class _BrowserOperations(wi_operations.Operations):
                 for filename in filenames:
                     state_names = (state,) if state is not None else ("processing", "inbox")
                     for state_name in state_names:
-                        path = self.private_notes / state_name / filename
-                        if not path.exists():
+                        path = wi_entries.entry_path(self.private_notes, filename)
+                        if not path.exists() or wi_entries.entry_state_of(path) != state_name:
                             continue
                         if state_name == "processing" and not force:
                             raise wi_operations.WebApiInputError("指定したエントリを操作できません")
@@ -185,9 +216,11 @@ class _BrowserOperations(wi_operations.Operations):
                     next_action="--target-repoを指定して再実行する",
                 )
             filename = f"created-{len(self.add_calls)}-{index}.md"
-            (self.private_notes / "inbox" / filename).write_text(
+            _write_fixed_entry(
+                self.private_notes,
+                filename,
+                "inbox",
                 f"---\ntarget_repo: {repo}\ntype: {entry_type}\n---\n\n{body.strip()}\n",
-                encoding="utf-8",
             )
             filenames.append(filename)
         return filenames
@@ -197,7 +230,7 @@ class _BrowserOperations(wi_operations.Operations):
         self.batch_calls.append(text)
         entries = wi_batch.parse_show_batch(text)
         for entry in entries:
-            (self.private_notes / "inbox" / entry.original_name).write_text(entry.raw_text, encoding="utf-8")
+            _write_fixed_entry(self.private_notes, entry.original_name, "inbox", entry.raw_text)
         return {
             "filenames": [entry.original_name for entry in entries],
             "mapping": {entry.original_name: entry.original_name for entry in entries},
@@ -216,8 +249,8 @@ class _BrowserOperations(wi_operations.Operations):
             marker = "<!-- ユーザーはこの行以降に回答を追記する -->"
             state_names = (state,) if state is not None else ("processing", "inbox")
             for state_name in state_names:
-                path = self.private_notes / state_name / filename
-                if not path.exists():
+                path = wi_entries.entry_path(self.private_notes, filename)
+                if not path.exists() or wi_entries.entry_state_of(path) != state_name:
                     continue
                 content = path.read_text(encoding="utf-8")
                 if expected_content is not None and content != expected_content:
@@ -226,7 +259,7 @@ class _BrowserOperations(wi_operations.Operations):
                 path.write_text(updated, encoding="utf-8")
                 # 実装（`uwi.answer_uwi`）と同じ判定で、事後承認型UWIへの肯定回答は項目を`adopted`へ移す。
                 if uwi_mutations._is_affirmative_post_approval(content, answer):  # pylint: disable=protected-access
-                    path.rename(self.private_notes / "adopted" / filename)
+                    _write_fixed_entry(self.private_notes, filename, "adopted", updated)
                 break
         return True
 
@@ -283,15 +316,11 @@ async def _wait_for_server(port: int) -> None:
 
 
 def _write_entries(root: Path) -> None:
-    inbox = root / "inbox"
-    inbox.mkdir(parents=True)
-    adopted = root / "adopted"
-    adopted.mkdir()
-    rejected = root / "rejected"
-    rejected.mkdir()
+    inbox = wi_entry_files.entry_path(root, "question.md").parent
+    adopted = rejected = inbox
     long_body = "\n\n".join(f"段落{i} `inline-{i}`" for i in range(80))
     (inbox / "question.md").write_text(
-        "---\ntype: uwi\ntarget_repo: example/repo\nsource: session-review\npriority: high\n"
+        "---\nstate: inbox\ntype: uwi\ntarget_repo: example/repo\nsource: session-review\npriority: high\n"
         f"z_key: z\na_key: a\n{_LONG_UNKNOWN_FRONTMATTER_KEY}: long\n"
         "metadata:\n  branch: main\n  flags:\n    - one\nquestion_type: choice\nchoices: A, B\n---\n\n"
         f"## 質問\n\n{long_body}\n\n```text\n折り返す長いコード {'x' * 240}\n```\n\n"
@@ -299,44 +328,42 @@ def _write_entries(root: Path) -> None:
         encoding="utf-8",
     )
     (inbox / "awi.md").write_text(
-        "---\ntype: awi\ntarget_repo: example/repo\nsource: alert-monitor\nplan_file: /tmp/plan.md\n---\n\n編集対象の本文\n",
+        "---\nstate: inbox\ntype: awi\ntarget_repo: example/repo\nsource: alert-monitor\n"
+        "plan_file: /tmp/plan.md\n---\n\n編集対象の本文\n",
         encoding="utf-8",
     )
-    (inbox / "unknown.md").write_text("種別を判定できない本文\n", encoding="utf-8")
+    (inbox / "unknown.md").write_text("---\nstate: inbox\n---\n\n種別を判定できない本文\n", encoding="utf-8")
     (inbox / "empty.md").write_text(
-        "---\ntype: awi\ntarget_repo: example/repo\nsource: browser\n---\n",
+        "---\nstate: inbox\ntype: awi\ntarget_repo: example/repo\nsource: browser\n---\n",
         encoding="utf-8",
     )
     (inbox / "invalid.md").write_bytes(b"\xff")
     (adopted / "adopted.md").write_text(
-        "---\ntype: awi\ntarget_repo: adopted/repo\nsource: browser\n---\n\n採用済みの本文\n",
+        "---\nstate: adopted\ntype: awi\ntarget_repo: adopted/repo\nsource: browser\n---\n\n採用済みの本文\n",
         encoding="utf-8",
     )
     (rejected / "rejected.md").write_text(
-        "---\ntype: awi\ntarget_repo: rejected/repo\nsource: browser\n---\n\n不採用の本文\n",
+        "---\nstate: rejected\ntype: awi\ntarget_repo: rejected/repo\nsource: browser\n---\n\n不採用の本文\n",
         encoding="utf-8",
     )
     for index in range(6):
         (rejected / f"many-terminal-{index}.md").write_text(
-            "---\ntype: awi\ntarget_repo: rejected/repo\nsource: browser\n---\n\n多数終端検索\n",
+            "---\nstate: rejected\ntype: awi\ntarget_repo: rejected/repo\nsource: browser\n---\n\n多数終端検索\n",
             encoding="utf-8",
         )
 
 
-@pytest_asyncio.fixture(scope="session", name="browser")
+@pytest_asyncio.fixture(scope="session", loop_scope="session", name="browser")
 async def _browser_fixture() -> AsyncGenerator[playwright.async_api.Browser]:
-    playwright_instance = await playwright.async_api.async_playwright().start()
-    browser = None
-    try:
+    async with playwright.async_api.async_playwright() as playwright_instance:
         browser = await playwright_instance.chromium.launch()
-        yield browser
-    finally:
-        if browser is not None:
+        try:
+            yield browser
+        finally:
             await browser.close()
-        await playwright_instance.stop()
 
 
-@pytest_asyncio.fixture(name="browser_harness")
+@pytest_asyncio.fixture(loop_scope="session", name="browser_harness")
 async def _browser_harness_fixture(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -367,18 +394,7 @@ async def _browser_harness_fixture(
         current_state,
         operations=operations,
     )
-    port = _reserve_port()
-    shutdown = asyncio.Event()
-
-    async def shutdown_trigger() -> None:
-        await shutdown.wait()
-
-    server_task = asyncio.create_task(app.run_task("127.0.0.1", port, shutdown_trigger=shutdown_trigger))
-    context = None
-    try:
-        await _wait_for_server(port)
-        context = await browser.new_context()
-        page = await context.new_page()
+    async with _serve(app, browser) as (context, page, port):
         yield _BrowserHarness(
             page=page,
             context=context,
@@ -387,12 +403,6 @@ async def _browser_harness_fixture(
             operations=operations,
             base_url=f"http://127.0.0.1:{port}",
         )
-    finally:
-        if context is not None:
-            await context.close()
-        shutdown.set()
-        with contextlib.suppress(asyncio.CancelledError):
-            await server_task
 
 
 async def _open_question(page: playwright.async_api.Page) -> playwright.async_api.Locator:
@@ -508,11 +518,13 @@ async def _serve(
         page = await context.new_page()
         yield context, page, port
     finally:
-        if context is not None:
-            await context.close()
-        shutdown.set()
-        with contextlib.suppress(asyncio.CancelledError):
-            await server_task
+        try:
+            if context is not None:
+                await context.close()
+        finally:
+            shutdown.set()
+            with contextlib.suppress(asyncio.CancelledError):
+                await server_task
 
 
 def _browser_app(tmp_path: Path, plans_root: Path, **sessions_options: Any) -> Any:
@@ -532,7 +544,49 @@ def _browser_app(tmp_path: Path, plans_root: Path, **sessions_options: Any) -> A
     )
 
 
-@pytest_asyncio.fixture(name="screen_harness")
+@pytest.mark.asyncio
+async def test_serve_stops_server_when_browser_context_close_fails(monkeypatch: pytest.MonkeyPatch) -> None:
+    """ブラウザーの終了失敗でも、サーバーの終了待機まで完遂する。"""
+    stopped = asyncio.Event()
+
+    class Context:
+        """終了だけを失敗させるブラウザーコンテキスト。"""
+
+        async def grant_permissions(self, *_args: Any, **_kwargs: Any) -> None:
+            pass
+
+        async def new_page(self) -> Any:
+            return object()
+
+        async def close(self) -> None:
+            raise RuntimeError("context close failed")
+
+    class Browser:
+        """コンテキストを生成するブラウザーの代用。"""
+
+        async def new_context(self) -> Any:
+            return Context()
+
+    class App:
+        """停止イベントの受信と終了を記録するサーバーの代用。"""
+
+        async def run_task(self, *_args: Any, shutdown_trigger: Any, **_kwargs: Any) -> None:
+            try:
+                await shutdown_trigger()
+            finally:
+                stopped.set()
+
+    async def ready(_port: int) -> None:
+        pass
+
+    monkeypatch.setattr(f"{__name__}._wait_for_server", ready)
+    with pytest.raises(RuntimeError, match="context close failed"):
+        async with _serve(App(), cast(playwright.async_api.Browser, Browser())):
+            pass
+    assert stopped.is_set()
+
+
+@pytest_asyncio.fixture(loop_scope="session", name="screen_harness")
 async def _screen_harness_fixture(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

@@ -455,21 +455,18 @@ def start_local_watchers(context: PlansContext) -> None:
 
 def _start_local_observer(context: PlansContext) -> watchdog.observers.api.BaseObserver | None:
     observer = watchdog.observers.Observer()
-    scheduled = 0
-    for spec in context.roots:
-        if not spec.path.is_dir():
-            continue
-        observer.schedule(PlansEventHandler(spec.path, context.state, spec.source_id), str(spec.path), recursive=True)
-        scheduled += 1
-    if scheduled == 0:
-        return None
-    try:
+    with contextlib.ExitStack() as lifetime:
+        lifetime.callback(_stop_local_observer, observer)
+        scheduled = 0
+        for spec in context.roots:
+            if not spec.path.is_dir():
+                continue
+            observer.schedule(PlansEventHandler(spec.path, context.state, spec.source_id), str(spec.path), recursive=True)
+            scheduled += 1
+        if scheduled == 0:
+            return None
         observer.start()
-    except BaseException:
-        observer.stop()
-        if observer.ident is not None:
-            observer.join()
-        raise
+        lifetime.pop_all()
     return observer
 
 
@@ -492,8 +489,20 @@ async def stop_local_watchers_async(context: PlansContext) -> None:
 
 
 def _stop_local_observer(observer: watchdog.observers.api.BaseObserver) -> None:
-    observer.stop()
-    observer.join()
+    errors: list[BaseException] = []
+    try:
+        observer.stop()
+    except BaseException as error:
+        errors.append(error)
+    if observer.ident is not None:
+        try:
+            observer.join()
+        except BaseException as error:
+            errors.append(error)
+    if len(errors) == 1:
+        raise errors[0]
+    if errors:
+        raise BaseExceptionGroup("ローカル計画監視の停止に失敗した", errors)
 
 
 def stop_local_watchers(context: PlansContext) -> None:
@@ -522,7 +531,10 @@ async def stop_remote_watchers(context: PlansContext) -> None:
     """起動済みのwatchタスクをまとめて終了させる。"""
     for task in context.state.remote_tasks:
         task.cancel()
-    for task in context.state.remote_tasks:
-        with contextlib.suppress(asyncio.CancelledError):
-            await task
+    results = await asyncio.gather(*context.state.remote_tasks, return_exceptions=True)
     context.state.remote_tasks.clear()
+    errors = [
+        result for result in results if isinstance(result, BaseException) and not isinstance(result, asyncio.CancelledError)
+    ]
+    if errors:
+        raise BaseExceptionGroup("リモート計画監視の停止に失敗した", errors)

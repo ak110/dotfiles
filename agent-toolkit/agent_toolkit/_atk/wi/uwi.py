@@ -5,7 +5,6 @@ import datetime
 import os
 import pathlib
 import re
-import shutil
 import subprocess
 import sys
 
@@ -25,9 +24,9 @@ from agent_toolkit._atk.wi.constants import (
     WI_STATE_HOLD,
     WI_STATE_INBOX,
     WI_STATE_PROCESSING,
-    WI_STATES,
     WI_TYPE_UWI,
 )
+from agent_toolkit._atk.wi.layout import iter_entry_paths
 from agent_toolkit._atk.wi.repo import resolve_repo_id
 from agent_toolkit._atk.wi.web_input import WebInputError
 
@@ -148,16 +147,13 @@ def _resolve_active_entry(
     同名が複数の対象状態に存在する場合はprocessing、inbox、holdの順に優先する
     （`start-processing`後の中断復帰時にprocessing側が最新状態のため）。
     """
-    if state is not None:
-        if state not in (*WI_PROCESSABLE_STATES, WI_STATE_HOLD):
-            raise WebInputError(f"stateが不正です: {state}", next_action="stateはinbox、processingまたはholdで指定してください")
-        candidate = _wi_filenames.validate_filename(filename, private_notes / state)
-        if candidate.is_file():
-            return candidate
-        raise FileNotFoundError(filename)
-    for candidate_state in _ANSWER_TARGET_STATES:
-        candidate = _wi_filenames.validate_filename(filename, private_notes / candidate_state)
-        if candidate.is_file():
+    if state is not None and state not in (*WI_PROCESSABLE_STATES, WI_STATE_HOLD):
+        raise WebInputError(f"stateが不正です: {state}", next_action="stateはinbox、processingまたはholdで指定してください")
+    normalized = _wi_filenames.validate_filename(filename, private_notes).name
+    for candidate in iter_entry_paths(private_notes):
+        if candidate.name == normalized and _wi_entries.entry_state_of(candidate) in (
+            (state,) if state else _ANSWER_TARGET_STATES
+        ):
             return candidate
     raise FileNotFoundError(filename)
 
@@ -253,19 +249,20 @@ def answer_uwi(
         auto_adopt = _is_affirmative_post_approval(text, answer)
         if text == content and not auto_adopt:
             return False
-        destination = _wi_entries.subdir(private_notes, WI_STATE_ADOPTED) / path.name if auto_adopt else None
-        if destination is not None and destination.exists():
-            raise WebInputError(
-                f"移動先（{WI_STATE_ADOPTED}）に同名エントリが既に存在します: {path.name}",
-                next_action=f"`atk wi show {path.name}`で両者を比較し、不要な側を`atk wi rm`で削除してから再実行する",
-            )
         if text != content:
             _frontmatter.write_entry_text(path, content)
-        if destination is not None:
+        if auto_adopt:
             _wi_entries.stamp_result(path, outcome=WI_STATE_ADOPTED, now=datetime.datetime.now(datetime.UTC))
-            shutil.move(path, destination)
+            parsed = _frontmatter.parse_frontmatter(path.read_text(encoding="utf-8"))
+            assert parsed is not None
+            metadata, body = parsed
+            metadata["state"] = WI_STATE_ADOPTED
+            _frontmatter.write_entry_text(path, _frontmatter.serialize_frontmatter(metadata, body))
             _wi_sync.commit_and_push(
-                private_notes, "chore: answer and adopt uwi item", list(WI_STATES), skip_push=skip_remote_sync
+                private_notes,
+                "chore: answer and adopt uwi item",
+                [str(path.relative_to(private_notes))],
+                skip_push=skip_remote_sync,
             )
         else:
             _wi_sync.commit_and_push(

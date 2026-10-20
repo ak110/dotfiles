@@ -8,7 +8,7 @@ import contextlib
 import json
 import os
 import pathlib
-import pty
+import pty  # pylint: disable=import-error  # POSIX端末の専用ランナーでありWindowsには存在しない。
 import select
 import signal
 import sys

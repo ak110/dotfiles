@@ -72,6 +72,12 @@
               <option value="no">no</option>
               <option value="yes">yes</option>
             </select>
+            <label for="important-filter">重要</label>
+            <select id="important-filter">
+              <option value="all">all</option>
+              <option value="yes">重要</option>
+              <option value="no">非重要</option>
+            </select>
           </div>
 
           <section class="additional-filters" aria-label="追加のフィルター条件">
@@ -95,8 +101,10 @@
         <div class="entry-heading-meta">
           <span id="entry-count" class="secondary-text">0件（未回答UWI 0件）</span>
           <span id="entry-period" class="secondary-text">直近2週間に作成</span>
+          <button id="copy-all-button" class="button-secondary" type="button" title="現在のフィルターに一致する全ページをコピー">全てコピー</button>
         </div>
       </div>
+      <div id="copy-all-status" class="secondary-text" role="status" hidden></div>
       <div id="list-fallback-notice" class="list-fallback-notice" role="status" hidden></div>
       <div id="result-status" class="visually-hidden" role="status"></div>
       <div id="list-warning" class="list-warning" role="alert" hidden></div>
@@ -184,6 +192,7 @@
           <button id="return-to-inbox-button" class="button-secondary" type="button" hidden>受信へ戻す</button>
         </div>
         <div class="detail-footer-right">
+          <button id="important-button" class="button-secondary" type="button" hidden>重要設定</button>
           <button id="answer-button" class="button-primary" type="button" hidden>回答</button>
           <button id="user-comment-button" class="button-primary" type="button" hidden>ユーザーコメント</button>
           <button id="edit-button" class="button-primary" type="button">編集</button>

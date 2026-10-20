@@ -138,9 +138,72 @@ def comparison_material_events(collected: list[_CollectedRecord]) -> list[dict[s
                 "input_form": "file-reference" if delegate and paths else "direct-body" if body is not None else "command",
                 "observed_body_characters": len(body) if body is not None else None,
                 "recorded_result_characters": len(result) if result is not None else None,
+                "recorded_result_utf8_bytes": len(result.encode("utf-8")) if result is not None else None,
+                "read_range": {key: inputs[key] for key in ("offset", "limit", "start", "max_bytes") if key in inputs},
                 "summary": call.text,
             }
             events.append(event)
+    return events
+
+
+def resource_usage_events(collected: list[_CollectedRecord]) -> list[dict[str, Any]]:
+    """担当ごとの読込・Skill・反復・結果量を、欠陥の判定を加えず集計する。
+
+    shellとJavaScriptの入力は命令文字列のまま残し、ファイルの読了件数へ換算しない。
+    結果上位は各担当から選ぶため、非律速の担当の大量出力にも到達できる。
+    """
+    events: list[dict[str, Any]] = []
+    for item in collected:
+        entries = {record.line: record.entry for record in item.records}
+        calls = _record_tool_calls(item.records)
+        reads: list[dict[str, Any]] = []
+        skills: list[dict[str, Any]] = []
+        results: list[dict[str, Any]] = []
+        repeats: dict[tuple[str, str], list[str]] = {}
+        for call in calls:
+            name = call.tool.rsplit("__", 1)[-1]
+            inputs = _recorded_input(entries[call.line], call.call_id)
+            locator = f"{item.record_id}:{call.line}"
+            if call.text:
+                repeats.setdefault((call.tool, call.text), []).append(locator)
+            if name in {"Read", "read_file", "Skill"}:
+                row = {
+                    "location": locator,
+                    "tool": call.tool,
+                    "target": inputs.get("skill") if name == "Skill" else inputs.get("file_path", inputs.get("path")),
+                    "range": {key: inputs[key] for key in ("offset", "limit", "start", "max_bytes") if key in inputs},
+                }
+                (skills if name == "Skill" else reads).append(row)
+            if call.result_line is not None:
+                result = _recorded_result(entries[call.result_line], call.call_id)
+                if result is not None:
+                    results.append(
+                        {
+                            "location": locator,
+                            "result_location": f"{item.record_id}:{call.result_line}",
+                            "tool": call.tool,
+                            "characters": len(result),
+                            "utf8_bytes": len(result.encode("utf-8")),
+                        }
+                    )
+        events.append(
+            {
+                "kind": "stats-resource-usage",
+                "record": item.record_id,
+                "role": item.role,
+                "tool_calls": len(calls),
+                "reads": reads,
+                "skills": skills,
+                "recorded_result_characters": sum(row["characters"] for row in results),
+                "recorded_result_utf8_bytes": sum(row["utf8_bytes"] for row in results),
+                "largest_results": sorted(results, key=lambda row: (-row["utf8_bytes"], row["location"]))[:10],
+                "repeats": [
+                    {"tool": tool, "input": text, "locations": locations, "count": len(locations)}
+                    for (tool, text), locations in sorted(repeats.items(), key=lambda row: (-len(row[1]), row[0]))
+                    if len(locations) > 1
+                ][:10],
+            }
+        )
     return events
 
 

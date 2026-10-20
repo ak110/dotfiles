@@ -1,6 +1,5 @@
 """ワークアイテム一覧のプロセス内索引のテスト。"""
 
-import contextlib
 import datetime
 import os
 import pathlib
@@ -16,10 +15,10 @@ from agent_toolkit._atk.serve import state as serve_state
 
 
 def _write_entry(root: pathlib.Path, state: str, filename: str, body: str) -> pathlib.Path:
-    directory = root / state
-    directory.mkdir(exist_ok=True)
+    directory = root / "2026" / "10"
+    directory.mkdir(parents=True, exist_ok=True)
     path = directory / filename
-    path.write_text(f"---\ntype: awi\ntarget_repo: example/{filename}\n---\n\n{body}\n", encoding="utf-8")
+    path.write_text(f"---\nstate: {state}\ntype: awi\ntarget_repo: example/{filename}\n---\n\n{body}\n", encoding="utf-8")
     return path
 
 
@@ -86,7 +85,7 @@ def test_index_invalidates_changed_file_and_removes_deleted_file(
 
     monkeypatch.setattr(entry_index.frontmatter, "parse_frontmatter", counting_parse)
     changed.write_text(
-        "---\ntype: awi\ntarget_repo: example/changed.md\n---\n\n変更後の長い本文\n",
+        "---\nstate: inbox\ntype: awi\ntarget_repo: example/changed.md\n---\n\n変更後の長い本文\n",
         encoding="utf-8",
     )
     deleted.unlink()
@@ -105,11 +104,10 @@ def test_index_omits_file_moved_during_parse(
 ) -> None:
     """解析中に別の状態へ移動したファイルを元の状態の結果へ含めない。"""
     path = _write_entry(tmp_path, "inbox", "entry.md", "本文")
-    (tmp_path / "adopted").mkdir()
     original_parse = entry_index.frontmatter.parse_frontmatter
 
     def moving_parse(text: str) -> tuple[dict[str, typing.Any], str] | None:
-        path.rename(tmp_path / "adopted" / path.name)
+        path.write_text(text.replace("state: inbox", "state: adopted"), encoding="utf-8")
         return original_parse(text)
 
     monkeypatch.setattr(entry_index.frontmatter, "parse_frontmatter", moving_parse)
@@ -151,7 +149,6 @@ def test_index_uses_nanosecond_mtime_and_size_as_invalidation_key(
     """信用済みの解析結果でも、秒単位の更新日時が同じままナノ秒値が変われば本文を更新する。"""
     path = _write_entry(tmp_path, "inbox", "entry.md", "変更前")
     original_stat = pathlib.Path.stat
-    original_scandir = os.scandir
     file_stat = path.stat()
     # 信用判定で読み直さないよう、報告する更新時刻を信用判定の幅より前へ置く。
     reported_mtime_ns = (time.time_ns() - 10_000_000_000) // 1_000_000_000 * 1_000_000_000 + 1
@@ -168,16 +165,7 @@ def test_index_uses_nanosecond_mtime_and_size_as_invalidation_key(
             return reported_stat()
         return original_stat(candidate, *args, **kwargs)
 
-    @contextlib.contextmanager
-    def scandir(directory: pathlib.Path) -> typing.Generator[list[types.SimpleNamespace]]:
-        with original_scandir(directory) as entries:
-            yield [
-                types.SimpleNamespace(name=entry.name, path=entry.path, stat=reported_stat, is_symlink=entry.is_symlink)
-                for entry in entries
-            ]
-
     monkeypatch.setattr(pathlib.Path, "stat", path_stat)
-    monkeypatch.setattr(os, "scandir", scandir)
     index = entry_index.EntryIndex(tmp_path)
     first, _warnings = index.scan(("inbox",))
     replacement = first[0].text.replace("変更前", "変更後")
@@ -198,7 +186,6 @@ def _report_fixed_stat(
 ) -> None:
     """対象ファイルの`stat`の報告値を、書き換え後も同じ更新時刻と書き換え前のサイズへ固定する。"""
     original_stat = pathlib.Path.stat
-    original_scandir = os.scandir
     size = path.stat().st_size
 
     def reported_stat(*_args: typing.Any, **_kwargs: typing.Any) -> types.SimpleNamespace:
@@ -209,18 +196,7 @@ def _report_fixed_stat(
             return reported_stat()
         return original_stat(candidate, *args, **kwargs)
 
-    @contextlib.contextmanager
-    def scandir(directory: pathlib.Path) -> typing.Generator[list[typing.Any]]:
-        with original_scandir(directory) as entries:
-            yield [
-                types.SimpleNamespace(name=entry.name, path=entry.path, stat=reported_stat, is_symlink=entry.is_symlink)
-                if pathlib.Path(entry.path) == path
-                else entry
-                for entry in entries
-            ]
-
     monkeypatch.setattr(pathlib.Path, "stat", path_stat)
-    monkeypatch.setattr(os, "scandir", scandir)
 
 
 def test_index_rereads_same_size_rewrite_within_mtime_precision(
@@ -287,9 +263,9 @@ async def test_entries_and_repos_api_reflect_same_size_rewrite_within_mtime_prec
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """一覧・検索・対象リポジトリ候補のAPIは、時刻精度の範囲内の同サイズの書き換え後に新しい値を返す。"""
-    path = tmp_path / "inbox" / "entry.md"
-    path.parent.mkdir()
-    path.write_text("---\ntype: awi\ntarget_repo: example/aaaa\n---\n\nBEFORE\n", encoding="utf-8")
+    path = tmp_path / "2026" / "10" / "entry.md"
+    path.parent.mkdir(parents=True)
+    path.write_text("---\nstate: inbox\ntype: awi\ntarget_repo: example/aaaa\n---\n\nBEFORE\n", encoding="utf-8")
     _report_fixed_stat(monkeypatch, path, time.time_ns() // 1_000_000_000 * 1_000_000_000)
     app = serve_app.create_app(tmp_path, config.ServeConfig("127.0.0.1", 28766), serve_state.ServeState(tmp_path))
     client = app.test_client()
@@ -297,7 +273,7 @@ async def test_entries_and_repos_api_reflect_same_size_rewrite_within_mtime_prec
     first_repos = await (await client.get("/api/repos?status=inbox")).get_json()
     assert [item["target_repo"] for item in first_entries["entries"]] == ["example/aaaa"]
     assert first_repos["repos"] == ["example/aaaa"]
-    path.write_text("---\ntype: awi\ntarget_repo: example/bbbb\n---\n\nAFTER!\n", encoding="utf-8")
+    path.write_text("---\nstate: inbox\ntype: awi\ntarget_repo: example/bbbb\n---\n\nAFTER!\n", encoding="utf-8")
 
     stale_search = await (await client.get("/api/entries?status=inbox&q=before")).get_json()
     fresh_search = await (await client.get("/api/entries?status=inbox&q=after!")).get_json()
@@ -372,13 +348,11 @@ def test_target_repos_does_not_reparse_terminal_entries(
     assert len(heading_calls) == 1
 
 
-def test_warnings_distinguish_same_filename_in_different_states(tmp_path: pathlib.Path) -> None:
-    """同名の読取失敗を、走査した状態とともに返す。"""
-    for state in ("inbox", "adopted"):
-        (tmp_path / state).mkdir()
-        (tmp_path / state / "broken.md").write_bytes(b"\xff")
+def test_warnings_report_unknown_state_for_unreadable_fixed_entry(tmp_path: pathlib.Path) -> None:
+    """本文を読めない固定配置の項目は状態をunknownとして返す。"""
+    directory = tmp_path / "2026" / "10"
+    directory.mkdir(parents=True)
+    (directory / "broken.md").write_bytes(b"\xff")
     result, warnings = entry_index.EntryIndex(tmp_path).scan(("inbox", "adopted"))
     assert not result
-    assert warnings == [
-        {"state": state, "filename": "broken.md", "reason": "UTF-8として読み取れません"} for state in ("inbox", "adopted")
-    ]
+    assert warnings == [{"state": "unknown", "filename": "broken.md", "reason": "UTF-8として読み取れません"}]

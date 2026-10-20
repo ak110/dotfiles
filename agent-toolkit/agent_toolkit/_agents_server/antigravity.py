@@ -28,7 +28,7 @@ from agent_toolkit._agents_server import (
     shared_layout,
 )
 from agent_toolkit._agents_server import state as shared_state
-from agent_toolkit._agents_server.file_operations import run_file_operation
+from agent_toolkit._agents_server.file_operations import finish_task, run_file_operation
 from agent_toolkit._agents_server.input_validation import validate_prompt
 from agent_toolkit._agents_server.launch_prompts import LAUNCH_SYSTEM_PROMPTS
 from agent_toolkit._agents_server.session_errors import SessionInitializationTimeoutError, SessionOwnerGoneError
@@ -97,6 +97,12 @@ def _event_text(payload: dict[str, Any]) -> str:
 
 class AntigravityManager:
     """Antigravity CLIのturnを所有するタスクと結果メタデータを管理する。"""
+
+    async def __aenter__(self) -> typing.Self:
+        return self
+
+    async def __aexit__(self, *_exception: object) -> None:
+        await self.close()
 
     START_FAILURE_EXCLUDES_CANDIDATE: typing.ClassVar[bool] = True
     """CLIの起動の例外をその候補の可用性の失敗として扱い、次の候補へ進む。"""
@@ -243,15 +249,31 @@ class AntigravityManager:
 
     async def close(self) -> None:
         """所有中の全turnを終了する。"""
+        await finish_task(asyncio.create_task(self._close()))
+
+    async def _close(self) -> None:
         tasks = tuple(self._tasks)
         for task in tasks:
             if not task.done():
                 task.cancel()
         if tasks:
             await asyncio.gather(*tasks, return_exceptions=True)
+        errors: list[Exception] = [
+            error for task in tasks if not task.cancelled() and isinstance(error := task.exception(), Exception)
+        ]
+        for task in tasks:
+            self._tasks.discard(task)
+            self._task_sessions.pop(task, None)
         for session in tuple(self.sessions.values()):
-            if session.engine == "agy":
-                await session.drain_registration()
+            try:
+                if session.engine == "agy":
+                    await session.drain_registration()
+            except Exception as error:
+                errors.append(error)
+        if errors:
+            for error in errors[1:]:
+                errors[0].add_note(f"停止時の別の失敗: {error!r}")
+            raise errors[0]
 
     async def _stop_owned_task(self, session_id: str) -> None:
         task = next((item for item in self._tasks if self._task_sessions.get(item) == session_id), None)
@@ -259,9 +281,13 @@ class AntigravityManager:
             return
         if not task.done():
             task.cancel()
-        await asyncio.gather(task, return_exceptions=True)
+        outcomes = await asyncio.gather(task, return_exceptions=True)
+        if isinstance(outcomes[0], Exception):
+            raise outcomes[0]
 
     def _forget_task(self, task: asyncio.Task[Any]) -> None:
+        if not task.cancelled() and task.exception() is not None:
+            return
         self._tasks.discard(task)
         self._task_sessions.pop(task, None)
 
@@ -341,80 +367,84 @@ class AntigravityManager:
         stderr_text = ""
         finalized = False
         try:
-            command = build_command(prompt, model, effort, conversation_id)
-            try:
-                process = await asyncio.create_subprocess_exec(
-                    *command,
-                    cwd=cwd,
-                    env=_child_env(self._root_session_id),
-                    stdout=asyncio.subprocess.PIPE,
-                    stderr=asyncio.subprocess.PIPE,
-                )
-            except OSError as exc:
-                # CLIの未導入などの起動失敗を委譲先CLIの失敗として分類し、導入と認証の確認を次の操作として返す。
-                raise session_errors.DelegateBackendError(f"failed to start Antigravity CLI ({command[0]}): {exc}") from exc
-            assert process.stdout is not None
-            if session is not None:
-                await self._attach_session(session, process, turn_seq)
-                if not initialized.done():
-                    initialized.set_result(session)
-            async for line in process.stdout:
-                payload = decode_event(line)
-                if payload is None:
-                    continue
-                kind = payload.get("type") or payload.get("event")
-                event_body = payload.get(kind) if isinstance(kind, str) else None
-                if not isinstance(event_body, dict):
-                    event_body = payload
-                if kind == "init" and session is None:
-                    session = await self._create_session(
-                        payload,
+            async with contextlib.AsyncExitStack() as resources:
+                command = build_command(prompt, model, effort, conversation_id)
+                try:
+                    process = await asyncio.create_subprocess_exec(
+                        *command,
                         cwd=cwd,
-                        model=model,
-                        effort=effort,
-                        model_type=model_type,
-                        launch_kind=launch_kind,
-                        excluded_candidates=excluded_candidates,
-                        turn_seq=turn_seq,
-                        conversation_id=conversation_id,
+                        env=_child_env(self._root_session_id),
+                        stdout=asyncio.subprocess.PIPE,
+                        stderr=asyncio.subprocess.PIPE,
                     )
+                except OSError as exc:
+                    # CLIの未導入などの起動失敗を委譲先CLIの失敗として分類し、導入と認証の確認を次の操作として返す。
+                    raise session_errors.DelegateBackendError(f"failed to start Antigravity CLI ({command[0]}): {exc}") from exc
+                resources.push_async_callback(_terminate, process)
+                assert process.stdout is not None
+                if session is not None:
                     await self._attach_session(session, process, turn_seq)
-                    session.status = "starting"
-                    session.touch()
                     if not initialized.done():
                         initialized.set_result(session)
-                if session is not None:
-                    await run_file_operation(self._append_event, session.session_id, payload)
-                if kind == "step_update" and session is not None:
-                    if event_body.get("step_type") == "agent_response":
-                        usage = event_body.get("usage")
-                        usage = usage if isinstance(usage, dict) else {}
-                        total = context_usage.valid_number(usage.get("total_tokens"))
-                        cached = context_usage.valid_number(usage.get("cache_read_tokens"))
-                        context_usage.record_context_usage(
-                            session, total + cached if total is not None and cached is not None else None, None
+                async for line in process.stdout:
+                    payload = decode_event(line)
+                    if payload is None:
+                        continue
+                    kind = payload.get("type") or payload.get("event")
+                    event_body = payload.get(kind) if isinstance(kind, str) else None
+                    if not isinstance(event_body, dict):
+                        event_body = payload
+                    if kind == "init" and session is None:
+                        session = await self._create_session(
+                            payload,
+                            cwd=cwd,
+                            model=model,
+                            effort=effort,
+                            model_type=model_type,
+                            launch_kind=launch_kind,
+                            excluded_candidates=excluded_candidates,
+                            turn_seq=turn_seq,
+                            conversation_id=conversation_id,
                         )
-                    text = _event_text(event_body)
-                    if text:
-                        session.set_progress(text)
-                    # 実際の`agent_response`と`tool`は本文キーを持たないため、本文の有無と別に通知する。
-                    output_step = event_body.get("step_type") in _MODEL_OUTPUT_STEP_TYPES
-                    if output_step:
-                        session.model_output_observed = True
-                    if text or output_step:
+                        await self._attach_session(session, process, turn_seq)
+                        session.status = "starting"
+                        session.touch()
+                        if not initialized.done():
+                            initialized.set_result(session)
+                    if session is not None:
+                        await run_file_operation(self._append_event, session.session_id, payload)
+                    if kind == "step_update" and session is not None:
+                        if event_body.get("step_type") == "agent_response":
+                            usage = event_body.get("usage")
+                            usage = usage if isinstance(usage, dict) else {}
+                            total = context_usage.valid_number(usage.get("total_tokens"))
+                            cached = context_usage.valid_number(usage.get("cache_read_tokens"))
+                            context_usage.record_context_usage(
+                                session, total + cached if total is not None and cached is not None else None, None
+                            )
+                        text = _event_text(event_body)
+                        if text:
+                            session.set_progress(text)
+                        # 実際の`agent_response`と`tool`は本文キーを持たないため、本文の有無と別に通知する。
+                        output_step = event_body.get("step_type") in _MODEL_OUTPUT_STEP_TYPES
+                        if output_step:
+                            session.model_output_observed = True
+                        if text or output_step:
+                            await self._notify_waiters()
+                    elif kind == "result" and session is not None:
+                        _finalize_turn(session, result_values(session, event_body))
+                        finalized = True
                         await self._notify_waiters()
-                elif kind == "result" and session is not None:
-                    _finalize_turn(session, result_values(session, event_body))
-                    finalized = True
-                    await self._notify_waiters()
-            stderr_text = await _read_stderr(process)
-            await process.wait()
-            if session is None:
-                raise session_errors.DelegateBackendError(f"Antigravity CLI ended before the init event: stderr={stderr_text}")
-            if not finalized:
-                raise session_errors.DelegateBackendError(
-                    f"Antigravity CLI ended before the result event: stderr={stderr_text}"
-                )
+                stderr_text = await _read_stderr(process)
+                await process.wait()
+                if session is None:
+                    raise session_errors.DelegateBackendError(
+                        f"Antigravity CLI ended before the init event: stderr={stderr_text}"
+                    )
+                if not finalized:
+                    raise session_errors.DelegateBackendError(
+                        f"Antigravity CLI ended before the result event: stderr={stderr_text}"
+                    )
         except asyncio.CancelledError:
             raise
         except BaseException as exc:  # pylint: disable=broad-exception-caught
@@ -425,11 +455,11 @@ class AntigravityManager:
                 _record_failure(session, exc, stderr_text)
                 await self._notify_waiters()
         finally:
-            if process is not None:
-                await _terminate(process)
             if session is not None:
-                await session.drain_registration()
-                self._processes.pop(session.session_id, None)
+                try:
+                    await session.drain_registration()
+                finally:
+                    self._processes.pop(session.session_id, None)
 
     def _append_event(self, session_id: str, payload: dict[str, Any]) -> None:
         """公開stream-jsonのイベントを、状態ファイルと同じ領域へ追記する。"""
@@ -440,9 +470,13 @@ class AntigravityManager:
         try:
             self._log_directory.mkdir(mode=0o700, parents=True, exist_ok=True)
             path = self._log_directory / f"{session_id}.jsonl"
-            descriptor = os.open(path, os.O_APPEND | os.O_CREAT | os.O_WRONLY, 0o600)
-            with os.fdopen(descriptor, "a", encoding="utf-8") as stream:
-                stream.write(json.dumps(payload, ensure_ascii=False) + "\n")
+            with contextlib.ExitStack() as descriptors:
+                descriptor = os.open(path, os.O_APPEND | os.O_CREAT | os.O_WRONLY, 0o600)
+                descriptors.callback(os.close, descriptor)
+                stream = os.fdopen(descriptor, "a", encoding="utf-8")
+                descriptors.pop_all()
+                with stream:
+                    stream.write(json.dumps(payload, ensure_ascii=False) + "\n")
         except OSError:
             _LOG.warning("Antigravityイベントログへの書き込みに失敗した: %s", session_id, exc_info=True)
 
@@ -570,6 +604,10 @@ async def _read_stderr(process: asyncio.subprocess.Process) -> str:
 
 async def _terminate(process: asyncio.subprocess.Process) -> None:
     """委譲先プロセスとその子孫を終了する。"""
+    await finish_task(asyncio.create_task(_terminate_process(process)))
+
+
+async def _terminate_process(process: asyncio.subprocess.Process) -> None:
     if process.returncode is not None:
         return
     descendants = await run_file_operation(process_tree.collect_descendants, process.pid)

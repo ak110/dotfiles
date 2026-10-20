@@ -13,7 +13,28 @@ from agent_toolkit._atk.wi.constants import WI_STATES, WI_TYPES, normalized_wi_t
 from agent_toolkit._atk.wi.entry_text import EntryTexts, parse_frontmatter
 from agent_toolkit._atk.wi.formatters import parse_source, parse_target_repo
 from agent_toolkit._atk.wi.frontmatter import write_entry_text
+from agent_toolkit._atk.wi.layout import entry_path, entry_state_of, iter_entry_paths
+from agent_toolkit._common.next_action import ActionableError
 from agent_toolkit._git import remote as _git_remote
+
+__all__ = [
+    "CommitMetadata",
+    "EntryRecord",
+    "canonical_repo",
+    "count_awi",
+    "entry_path",
+    "entry_state_of",
+    "entry_type_from_metadata",
+    "entry_type_of",
+    "iter_entries",
+    "iter_inbox_entries",
+    "iter_entry_paths",
+    "read_named_entries",
+    "select_entries",
+    "stamp_result",
+    "subdir",
+    "validate_named_filenames",
+]
 
 
 @dataclasses.dataclass(frozen=True)
@@ -132,15 +153,19 @@ def iter_entries(
     matcher = _wi_filters.TargetRepoMatcher(filter_repo)
     entry_types = {entry_type} if isinstance(entry_type, str) else set(entry_type)
     texts = texts if texts is not None else EntryTexts()
-    for state in states:
-        state_dir = private_notes / state
-        for path, target_repo, text in iter_inbox_entries(state_dir, texts=texts):
-            actual_type = entry_type_of(path, text)
-            if actual_type is not None and not matcher.matches(target_repo):
-                continue
-            if "all" not in entry_types and actual_type not in entry_types:
-                continue
-            yield path, target_repo, text, state, actual_type
+    selected_states = set(states)
+    for path in iter_entry_paths(private_notes):
+        text = texts.read(path)
+        state = "inbox" if parse_frontmatter(text) is None else entry_state_of(path, text)
+        if state not in selected_states:
+            continue
+        target_repo = parse_target_repo(text)
+        actual_type = entry_type_of(path, text)
+        if actual_type is not None and not matcher.matches(target_repo):
+            continue
+        if "all" not in entry_types and actual_type not in entry_types:
+            continue
+        yield path, target_repo, text, state, actual_type
 
 
 def count_awi(awi_dir: pathlib.Path, target_repo: str | None = None) -> int:
@@ -191,21 +216,27 @@ def read_named_entries(
     selected: list[EntryRecord] = []
     missing: list[str] = []
     texts = EntryTexts()
+    candidates: dict[str, pathlib.Path] = {}
+    for path in iter_entry_paths(private_notes):
+        candidates.setdefault(path.name, path)
     for requested, normalized in filenames:
-        for state in WI_STATES:
-            path = private_notes / state / normalized
-            if not path.exists():
-                continue
+        path = candidates.get(normalized)
+        if path is not None:
             text = texts.read(path)
             parsed = parse_frontmatter(text)
             kind = normalized_wi_type(parsed[0].get("type")) if parsed is not None else None
             if "all" not in kinds and kind not in kinds:
+                missing.append(requested)
                 continue
             repo = parse_target_repo(text)
             if not matcher.matches(repo) or not _wi_filters.source_matches_any(parse_source(text), source):
+                missing.append(requested)
                 continue
+            try:
+                state = entry_state_of(path, text)
+            except ActionableError:
+                state = "unknown"
             selected.append((path, repo, text, state, kind))
-            break
         else:
             missing.append(requested)
     return selected, missing
@@ -220,14 +251,17 @@ def select_entries(
     answered: str | Iterable[str],
     source: str | Iterable[str] | None,
     texts: EntryTexts | None = None,
+    important: str | Iterable[str] = "all",
 ) -> list[EntryRecord]:
-    """状態・対象repo・種別・回答状況・sourceの5条件の積集合を返す。一覧系のサブコマンドが共有する。"""
+    """一覧の状態・対象repo・種別・回答状況・source・重要フラグの積集合を返す。"""
     selected: list[EntryRecord] = []
     for entry in iter_entries(private_notes, _wi_filters.resolve_states(status), target_repo, entry_type, texts=texts):
         _, _, text, _, actual_type = entry
         if not _wi_filters.answered_matches(actual_type, text, answered):
             continue
         if not _wi_filters.source_matches_any(parse_source(text), source):
+            continue
+        if not _wi_filters.important_matches(text, important):
             continue
         selected.append(entry)
     return selected

@@ -12,8 +12,10 @@ import pytest
 from agent_toolkit import atk  # noqa: E402  # pylint: disable=wrong-import-position
 from agent_toolkit._atk.wi import bulk as remove_all  # noqa: E402  # pylint: disable=wrong-import-position
 from agent_toolkit._atk.wi import sync as _wi_sync
+from agent_toolkit._atk.wi.layout import entry_state_of
 from agent_toolkit._testing import git_repository
 from agent_toolkit._testing.git_fakes import make_outside_worktree_fake as _make_outside_worktree_fake  # noqa: E402
+from agent_toolkit._testing.wi_entry_files import entry_path as _test_entry_path
 from agent_toolkit.atk_test import _setup_notes, _write_awi_file  # noqa: E402  # pylint: disable=wrong-import-position
 
 
@@ -34,14 +36,14 @@ def _write_entry(
     entry_type: str = "awi",
     body: str = "テスト本文",
     source: str | None = None,
+    legacy_layout: bool = False,
 ) -> pathlib.Path:
     """指定状態へテスト用エントリを書き込む。"""
-    directory = notes / state
-    directory.mkdir(parents=True, exist_ok=True)
-    path = directory / filename
+    path = _test_entry_path(notes, filename, state=state, legacy_layout=legacy_layout)
     source_line = f"source: {source}\n" if source is not None else ""
+    state_line = "" if legacy_layout else f"state: {state}\n"
     path.write_text(
-        f"---\ntarget_repo: {target_repo}\ntype: {entry_type}\n{source_line}---\n\n{body}\n",
+        f"---\ntarget_repo: {target_repo}\ntype: {entry_type}\n{state_line}{source_line}---\n\n{body}\n",
         encoding="utf-8",
     )
     return path
@@ -66,9 +68,7 @@ def _change_action(change: str, path: pathlib.Path) -> Callable[[], None]:
     """並行変更の種別（状態移動・本文変更・消失）に対応する変更操作を返す。"""
 
     def move() -> None:
-        target = path.parent.parent / "processing" / path.name
-        target.parent.mkdir(parents=True, exist_ok=True)
-        path.rename(target)
+        path.write_text(path.read_text(encoding="utf-8").replace("state: inbox", "state: processing"), encoding="utf-8")
 
     def edit() -> None:
         path.write_text(path.read_text(encoding="utf-8") + "\n更新\n", encoding="utf-8")
@@ -132,7 +132,7 @@ def test_remove_all_accepts_multiple_target_repositories(
     )
 
     assert set(removed) == {"foo.md", "bar.md"}
-    assert (notes / "inbox/keep.md").exists()
+    assert _test_entry_path(notes, "keep.md").exists()
     assert len(commits) == 1
 
 
@@ -203,9 +203,9 @@ class TestRemoveAllConfirmation:
         assert "上記2件を削除します" in captured.out
         assert "[Y/n]" in captured.out
         assert stdin.tell() == 2
-        assert not (notes / "inbox/awi.md").exists()
-        assert not (notes / "inbox/question.md").exists()
-        assert commits == [("chore: remove 2 entries", ["inbox", "processing", "hold", "adopted", "rejected"])]
+        assert not _test_entry_path(notes, "awi.md").exists()
+        assert not _test_entry_path(notes, "question.md").exists()
+        assert commits == [("chore: remove 2 entries", ["2026/10/awi.md", "2026/10/question.md"])]
 
     def test_includes_hold_entries_for_user(
         self,
@@ -233,14 +233,13 @@ class TestRemoveAllConfirmation:
         assert output.splitlines()[0].startswith("成功: ")
         assert "[hold/" not in output
 
-    def test_restores_missing_state_directories_before_commit(
+    def test_commits_only_removed_fixed_paths(
         self,
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
     ) -> None:
-        """状態ディレクトリの一部が不在でも、commit前に再作成して全状態ディレクトリをgit addできるようにする。"""
+        """一括削除は削除済みの固定パスだけをcommit対象にする。"""
         notes = _setup_notes(tmp_path)
-        (notes / "hold").rmdir()
         _write_awi_file(notes, "awi.md")
         commits: list[tuple[str, list[str]]] = []
         _patch_storage(monkeypatch, commits)
@@ -253,7 +252,7 @@ class TestRemoveAllConfirmation:
             == 0
         )
 
-        assert all((notes / state).is_dir() for state in commits[0][1])
+        assert commits[0][1] == ["2026/10/awi.md"]
 
     def test_empty_answer_removes_candidates(
         self,
@@ -524,11 +523,11 @@ class TestRemoveAllScope:
     ) -> None:
         """frontmatter破損または対象不明の項目を候補から除外する。"""
         notes = _setup_notes(tmp_path)
-        broken = notes / "inbox/broken.md"
+        broken = _test_entry_path(notes, "broken.md")
         broken.write_text("---\ntarget_repo: github.com/example/foo\n", encoding="utf-8")
-        unknown_repo = notes / "inbox/unknown-repo.md"
+        unknown_repo = _test_entry_path(notes, "unknown-repo.md")
         unknown_repo.write_text(
-            "---\ntype: awi\n---\n\n本文\n",
+            "---\nstate: inbox\ntype: awi\n---\n\n本文\n",
             encoding="utf-8",
         )
         commits: list[tuple[str, list[str]]] = []
@@ -564,15 +563,15 @@ class TestRemoveAllScope:
         # 対象0件は成功行で報告する。
         assert "成功: 対象0件のため削除しなかった（変更は無い）: github.com/example/foo" in capsys.readouterr().out
 
-    def test_removes_same_filename_from_both_active_states(
+    def test_legacy_duplicate_names_stop_before_removal(
         self,
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
     ) -> None:
-        """inboxとprocessingの同名項目を状態付き候補として両方削除する。"""
+        """旧配置の同名項目が移行先へ衝突すると削除を開始せず両方を保持する。"""
         notes = _setup_notes(tmp_path)
-        inbox = _write_entry(notes, "inbox", "same.md")
-        processing = _write_entry(notes, "processing", "same.md")
+        inbox = _write_entry(notes, "inbox", "same.md", legacy_layout=True)
+        processing = _write_entry(notes, "processing", "same.md", legacy_layout=True)
         commits: list[tuple[str, list[str]]] = []
         _patch_storage(monkeypatch, commits)
 
@@ -581,11 +580,12 @@ class TestRemoveAllScope:
                 ["wi", "rm", "--all", "--yes", "--force", "--target-repo", "github.com/example/foo"],
                 tmp_path,
             )
-            == 0
+            == 2
         )
 
-        assert not inbox.exists()
-        assert not processing.exists()
+        assert inbox.exists()
+        assert processing.exists()
+        assert not commits
 
 
 class TestRemoveAllProcessingProtection:
@@ -653,7 +653,7 @@ class TestRemoveAllConcurrentChanges:
         """確認後に追加された項目は削除対象へ加えず、確認済み項目だけを削除する。"""
         notes = _setup_notes(tmp_path)
         original = _write_entry(notes, "inbox", "original.md")
-        added = notes / "inbox/added.md"
+        added = _test_entry_path(notes, "added.md")
         commits: list[tuple[str, list[str]]] = []
 
         def add_entry() -> None:
@@ -666,7 +666,7 @@ class TestRemoveAllConcurrentChanges:
 
         assert not original.exists()
         assert added.exists()
-        assert commits == [("chore: remove 1 entry", ["inbox", "processing", "hold", "adopted", "rejected"])]
+        assert commits == [("chore: remove 1 entry", ["2026/10/original.md"])]
         assert "確認後に変更されたため削除しません" not in capsys.readouterr().out
 
     def test_removes_only_unchanged_entry_of_two(
@@ -686,8 +686,9 @@ class TestRemoveAllConcurrentChanges:
         assert _run_main(["wi", "rm", "--all", "--target-repo", "github.com/example/foo"], tmp_path) == 0
 
         assert not unchanged.exists()
-        assert (notes / "processing/changed.md").exists()
-        assert commits == [("chore: remove 1 entry", ["inbox", "processing", "hold", "adopted", "rejected"])]
+        assert _test_entry_path(notes, "changed.md").exists()
+        assert entry_state_of(_test_entry_path(notes, "changed.md")) == "processing"
+        assert commits == [("chore: remove 1 entry", ["2026/10/unchanged.md"])]
         assert "警告: 確認後に変更されたため削除しない: changed.md\n次の操作: " in capsys.readouterr().out
 
 
@@ -744,5 +745,5 @@ class TestRemoveAllSkipPull:
         assert tracker.count == 1
         assert not unchanged.exists()
         assert changed.exists()
-        assert commits == [("chore: remove 1 entry", ["inbox", "processing", "hold", "adopted", "rejected"])]
+        assert commits == [("chore: remove 1 entry", ["2026/10/unchanged.md"])]
         assert "警告: 確認後に変更されたため削除しない: changed.md\n次の操作: " in capsys.readouterr().out

@@ -2,6 +2,7 @@
 
 # 旧レイアウトの読取互換では、現行状態名を独立した定数として固定する。
 
+import datetime
 import pathlib
 import shutil
 import sys
@@ -12,6 +13,7 @@ from typing import Any
 from agent_toolkit._atk import outcome as _outcome
 from agent_toolkit._atk.wi.constants import WI_TYPE_AWI, WI_TYPE_UWI
 from agent_toolkit._atk.wi.frontmatter import parse_frontmatter, serialize_frontmatter, write_entry_text
+from agent_toolkit._atk.wi.layout import entry_path, entry_state_from_metadata, entry_state_of, iter_entry_paths
 from agent_toolkit._common.next_action import ActionableError
 from agent_toolkit._git import command as _git_command
 
@@ -20,7 +22,7 @@ WI_STATE_PLANNING = "planning"
 WI_STATE_PROCESSING = "processing"
 WI_STATE_ADOPTED = "adopted"
 WI_STATE_REJECTED = "rejected"
-WI_STATES = (WI_STATE_INBOX, WI_STATE_PROCESSING, WI_STATE_PLANNING, WI_STATE_ADOPTED, WI_STATE_REJECTED)
+WI_STATES = (WI_STATE_INBOX, WI_STATE_PROCESSING, "hold", WI_STATE_PLANNING, WI_STATE_ADOPTED, WI_STATE_REJECTED)
 """旧ディレクトリ構成を読み取るための状態名。現行の保存状態が廃止した`planning`も走査対象に残す。"""
 _LEGACY_TYPE_DIRECTORIES = {"feedback": WI_TYPE_AWI, "tbd": WI_TYPE_UWI}
 """旧2階層レイアウトの種別ディレクトリ名と、平坦レイアウトへ書き込む現行の`type`値の対応。"""
@@ -58,29 +60,46 @@ def _plan_legacy_migration(
     """
     planned: list[tuple[pathlib.Path, pathlib.Path, str]] = []
     destinations: set[pathlib.Path] = set()
+    destination_names: set[str] = set()
     errors: list[str] = []
     for legacy_dir in legacy_dirs:
-        entry_type = _LEGACY_TYPE_DIRECTORIES[legacy_dir.name]
+        entry_type = _LEGACY_TYPE_DIRECTORIES.get(legacy_dir.name)
         for path in sorted(legacy_dir.rglob("*")):
             relative = path.relative_to(legacy_dir)
             if path.is_dir():
-                if len(relative.parts) != 1 or relative.parts[0] not in WI_STATES:
+                if entry_type is None or len(relative.parts) != 1 or relative.parts[0] not in WI_STATES:
                     errors.append(f"未知のディレクトリ: {path}")
                 continue
             if path.name == ".gitkeep":
                 continue
-            if len(relative.parts) != 2 or path.suffix != ".md":
+            if legacy_dir.name == "editing":
                 errors.append(f"エントリとして解釈できないファイル: {path}")
                 continue
-            destination = private_notes / relative.parts[0] / path.name
-            if destination.exists() or destination in destinations:
+            if len(relative.parts) != (2 if entry_type is not None else 1) or path.suffix != ".md":
+                errors.append(f"エントリとして解釈できないファイル: {path}")
+                continue
+            try:
+                destination = entry_path(
+                    private_notes, path.name, fallback_date=datetime.datetime.fromtimestamp(path.stat().st_mtime).date()
+                )
+            except ActionableError as error:
+                errors.append(str(error))
+                continue
+            if destination.exists() or destination in destinations or destination.name in destination_names:
                 errors.append(f"移行先が既に存在: {destination}")
                 continue
-            migrated = _with_type_frontmatter(path.read_text(encoding="utf-8"), entry_type)
-            if migrated is None:
+            text = path.read_text(encoding="utf-8")
+            migrated = _with_type_frontmatter(text, entry_type) if entry_type is not None else text
+            parsed = parse_frontmatter(migrated) if migrated is not None else None
+            if parsed is None:
                 errors.append(f"frontmatterが不正: {path}")
                 continue
+            metadata, body = parsed
+            state = relative.parts[0] if entry_type is not None else legacy_dir.name
+            metadata["state"] = WI_STATE_PROCESSING if state == WI_STATE_PLANNING else state
+            migrated = serialize_frontmatter(metadata, body)
             destinations.add(destination)
+            destination_names.add(destination.name)
             planned.append((path, destination, migrated))
     if errors:
         _outcome.report_failure(
@@ -111,43 +130,42 @@ def migrate_legacy_layout(
     pull_fn: Callable[[pathlib.Path], None],
     commit_fn: Callable[[pathlib.Path, str, Iterable[str]], object],
 ) -> None:
-    """旧2階層レイアウトの管理repoを平坦レイアウトへ移行する。
+    """状態配置と旧種別配置を、状態を持つ年月固定配置へ一括移行する。
 
-    旧レイアウトは種別ごとのディレクトリ（`<type>/<state>/`）でエントリ種別を表現していた。
-    平坦レイアウトは状態ディレクトリ（`<state>/`）のみをrepo直下へ置き、種別は
-    frontmatterの`type`で表現する。移行では各エントリへ`type`行を補ってから状態
-    ディレクトリへ移し、旧ディレクトリを削除してcommit・pushする。
-
-    旧ディレクトリが無い場合は無動作で戻る（通常運用でのロック取得・pullを避けるため）。
-    移行前のバージョンのコマンドが並行稼働していると空の旧ディレクトリが再生成されうるため、
-    commit対象が生じない場合はcommitへ進まず削除のみで完結させる。
+    全件の衝突・書式を検証してからtypeとstateを補い、旧ディレクトリを除去する。
+    Gitリポジトリではロック下のpull後に再判定し、単一commitで保存する。
+    版管理しない既存キューはファイルの移行だけを行う。空の旧ディレクトリはcommitを作らず除去する。
     """
-    if not any((private_notes / name).is_dir() for name in _LEGACY_TYPE_DIRECTORIES):
+    legacy_names = (*_LEGACY_TYPE_DIRECTORIES, *WI_STATES, "editing")
+    if not any((private_notes / name).is_dir() for name in legacy_names):
         return
     with repo_lock_fn(private_notes):
-        pull_fn(private_notes)
+        versioned = (private_notes / ".git").exists()
+        if versioned:
+            pull_fn(private_notes)
         # 他プロセス・他端末が先に移行済みの場合があるため、pull後の状態で再判定する。
-        legacy_dirs = [private_notes / name for name in _LEGACY_TYPE_DIRECTORIES if (private_notes / name).is_dir()]
+        legacy_dirs = [private_notes / name for name in legacy_names if (private_notes / name).is_dir()]
         if not legacy_dirs:
             return
         planned = _plan_legacy_migration(private_notes, legacy_dirs)
+        legacy_names = [legacy_dir.name for legacy_dir in legacy_dirs]
+        tracked_legacy_names = _tracked_names(private_notes, legacy_names) if versioned else []
         for source, destination, migrated in planned:
             destination.parent.mkdir(parents=True, exist_ok=True)
             write_entry_text(destination, migrated)
             source.unlink()
-        legacy_names = [legacy_dir.name for legacy_dir in legacy_dirs]
-        tracked_legacy_names = _tracked_names(private_notes, legacy_names)
         for legacy_dir in legacy_dirs:
             shutil.rmtree(legacy_dir)
         count = len(planned)
         if not count and not tracked_legacy_names:
             print(f"旧レイアウトの空ディレクトリを削除した: {private_notes}", file=sys.stderr)
             return
-        commit_fn(
-            private_notes,
-            f"chore: migrate {count} {'entry' if count == 1 else 'entries'} to flat layout",
-            [*(name for name in WI_STATES if (private_notes / name).is_dir()), *tracked_legacy_names],
-        )
+        if versioned:
+            commit_fn(
+                private_notes,
+                f"chore: migrate {count} {'entry' if count == 1 else 'entries'} to flat layout",
+                [*(str(destination.relative_to(private_notes)) for _, destination, _ in planned), *tracked_legacy_names],
+            )
         print(f"旧レイアウトの{count}件を平坦レイアウトへ移行した: {private_notes}", file=sys.stderr)
 
 
@@ -233,14 +251,14 @@ def migrate_legacy_reservations(
     companion_names: set[str] = set()
     reservation_paths: set[pathlib.Path] = set()
 
-    for state_dir in (inbox_dir, processing_dir):
-        if not state_dir.is_dir():
-            continue
-        for path in sorted(state_dir.glob("*.md")):
+    for path in iter_entry_paths(private_notes):
+        if path.is_file():
             parsed = parse_frontmatter(path.read_text(encoding="utf-8"))
             if parsed is None:
                 continue
             data, body = parsed
+            if entry_state_from_metadata(path, data) not in (WI_STATE_INBOX, WI_STATE_PROCESSING):
+                continue
             parsed_entries.append((path, data, body))
             metadata = _legacy_reservation_companion(data)
             if metadata is not None:
@@ -250,15 +268,13 @@ def migrate_legacy_reservations(
             if _is_legacy_reservation(
                 data,
                 filename=path.name,
-                state=path.parent.name,
+                state=entry_state_of(path),
                 companions=tuple(companion_metadata),
             ):
                 reservation_paths.add(path)
 
     if not companion_paths and not reservation_paths:
         return 0
-
-    inbox_dir.mkdir(parents=True, exist_ok=True)
 
     move_conflicts = sorted(
         path.name for path in reservation_paths if path.parent == processing_dir and (inbox_dir / path.name).exists()
@@ -282,6 +298,8 @@ def migrate_legacy_reservations(
             data.pop("reservation", None)
             data.pop("target_commit_history", None)
             data["type"] = WI_TYPE_AWI
+            if path.parent not in (inbox_dir, processing_dir):
+                data["state"] = WI_STATE_INBOX
             changed = True
         dependencies = data.get("depends_on")
         if isinstance(dependencies, list):
@@ -296,13 +314,19 @@ def migrate_legacy_reservations(
         if path.parent != processing_dir:
             continue
         destination = inbox_dir / path.name
+        destination.parent.mkdir(parents=True, exist_ok=True)
         shutil.move(str(path), str(destination))
 
     migrated_count = len(reservation_paths) + len(companion_paths)
     commit_fn(
         private_notes,
         f"chore: migrate {migrated_count} legacy queue reservations",
-        (WI_STATE_INBOX, WI_STATE_PROCESSING),
+        [str(path.relative_to(private_notes)) for path, _, _ in parsed_entries]
+        + [
+            str((inbox_dir / path.name).relative_to(private_notes))
+            for path in reservation_paths
+            if path.parent == processing_dir
+        ],
     )
     print(f"旧予約形式の{migrated_count}件を通常inboxへ移行した。", file=sys.stderr)
     return migrated_count

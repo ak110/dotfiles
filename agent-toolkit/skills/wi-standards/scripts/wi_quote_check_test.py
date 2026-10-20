@@ -82,6 +82,7 @@ def test_public_import_uses_saved_source_and_checks_result(tmp_path: pathlib.Pat
     assert after.partition("## ユーザー指摘の逐語引用")[0] == before.partition("## ユーザー指摘の逐語引用")[0]
     assert after.partition("## 次の節")[2] == before.partition("## 次の節")[2]
     assert f"record={event['record']} line={event['line']}" in after
+    assert str(events) not in after
     assert f"```text\n{_UTTERANCE}\n```" in after
     assert [unit for _, _, _, unit in _positions(output)] == [
         "検索画面の表示を直して。",
@@ -89,6 +90,28 @@ def test_public_import_uses_saved_source_and_checks_result(tmp_path: pathlib.Pat
         "手順を簡潔にして。",
     ]
     assert _run(body, events) == 0
+
+
+def test_duplicate_quote_reports_all_sources_but_import_uses_selected_event(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """引用と一致する全位置を示し、選択importは同じ引用でもフェンスごとの元イベントを保つ。"""
+    events = tmp_path / "events.jsonl"
+    values = [
+        {"kind": "user", "text": text, "record": "claude:example", "line": line, "sequence": sequence}
+        for text, line, sequence in (("前置き。同じ要求。", 1, 1), ("同じ要求。", 2, 2), ("同じ要求。", 2, 3))
+    ]
+    events.write_text("".join(json.dumps(value, ensure_ascii=False) + "\n" for value in values), encoding="utf-8")
+    body = tmp_path / "body.md"
+    body.write_text(_body("同じ要求。"), encoding="utf-8")
+    assert _run(body, events) == 0
+    output = capsys.readouterr().out
+    assert all(f"line={value['line']} sequence={value['sequence']}" in output for value in values)
+    spec = _spec(tmp_path, {"source": str(events), "record": "claude:example", "line": 2, "sequence": 3})
+    assert _run(body, import_spec=spec) == 0
+    output = capsys.readouterr().out
+    assert "line=2 sequence=3" in output and "line=1" not in output and "sequence=2" not in output
+    assert str(events) not in body.read_text(encoding="utf-8")
 
 
 def test_import_preserves_source_modes_and_answer_context(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:

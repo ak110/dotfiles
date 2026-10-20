@@ -5,6 +5,16 @@
 
 ## managed-temp
 
+走査に必要な所有者権限が欠けるPOSIXディレクトリは、非追跡openした記述子で同一性と所有者を確認してから権限を補う。
+期限判定で一時変更したmodeは、保持すると判定した領域で復元する。
+削除対象だけへ必要な権限を残し、所有者不一致は対象と次の操作を示して失敗させる。
+Windowsはディレクトリを含む全削除処理でReadonly属性を解除する。
+自動掃引、明示cleanup、強制回収、隔離再開、子回収とレーン撤去は同じ走査・権限回復境界を使う。
+領域全体へ無条件に権限を付け直す案は、保持対象のmodeと管理外への境界を保てないため採用しない。
+掃引の署名には直下の名前集合を含め、権限回復だけで更新時刻が変わらない場合も子の追加・削除を判定する。
+親が使用中と判定された領域の保護は、配下の子を強制回収する処理にも引き継ぐ。
+子だけを使用中判定の対象にする案は、使用中の親に属する資源を除くため採用しない。
+
 一時ファイルの配置、個別領域の作成および回収に実行時に適用する規範は、[`agent-toolkit:managed-temp`](../../agent-toolkit/skills/managed-temp/SKILL.md)が定める。
 本節の`identity`はPOSIXではデバイス番号とinode番号、Windowsではボリューム識別値とファイル識別値の組を指す。実装上の定義元はPOSIX側が[`registry.py::_path_identity`](../../agent-toolkit/agent_toolkit/_atk/managed_temp/registry.py)、Windows側が[`windows_security.py::_windows_information_identity`](../../agent-toolkit/agent_toolkit/_atk/managed_temp/windows_security.py)である。
 
@@ -138,7 +148,7 @@ HEADとupstreamの木が一致する分岐は、作業ツリーとindexの状態
 木が一致する条件では作業ツリーへ書き戻す内容がなく、`--soft`はindexを変更しないため、stage済みを含む未コミット差分を保存できる。
 `reset --keep`はstage済みの差分を未stageへ戻すため、この場合は採用しない。
 MQ層はローカル側の全commitについて、`atk wi`が生成する終端commitの件名、active状態から
-`adopted`または`rejected`への同名ファイル移動、対象件数、upstream上の移動済み状態および
+`adopted`または`rejected`への状態変更、対象件数、upstream上の終端状態および
 処理日時以外のファイル内容一致を確認する。作業ツリーとindexがcleanであり、全条件を満たす場合だけ、
 ローカル側commitを冗長と判定して`reset --keep @{u}`でupstreamへ揃える。
 一般のGit同期層はMQの内容を解釈せず、呼び出し元が冗長性を証明した場合だけ`reset --keep`で回復する。

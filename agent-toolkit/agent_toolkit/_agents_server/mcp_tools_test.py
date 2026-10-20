@@ -60,24 +60,23 @@ async def test_new_request_and_handoff_preserve_required_context(
 ) -> None:
     """新要求を配送し、後任にも原要求と追送を保持したまま定型継続できる。"""
     _recording_candidates(monkeypatch)
-    manager, backend = _manager_with_fake("codex")
-    monkeypatch.setattr(mcp_tools, "_MANAGER", manager)
-    conversation = tmp_path / "conversation.md"
-    conversation.write_text("外部の会話抽出が返した記録\n", encoding="utf-8")
-    record = tmp_path / "record.jsonl"
-    record.write_text("{}\n", encoding="utf-8")
+    async with _manager_with_fake("codex") as (manager, backend):
+        monkeypatch.setattr(mcp_tools, "_MANAGER", manager)
+        conversation = tmp_path / "conversation.md"
+        conversation.write_text("外部の会話抽出が返した記録\n", encoding="utf-8")
+        record = tmp_path / "record.jsonl"
+        record.write_text("{}\n", encoding="utf-8")
 
-    def extract_context(source: state.SessionResumeState, **_kwargs: Any) -> str:
-        # 外部CLIの会話抽出だけを代替し、保持情報からの引き継ぎ本文生成は実処理を使う。
-        return session_handoff.compose_prompt(source, conversation, (record,))
+        def extract_context(source: state.SessionResumeState, **_kwargs: Any) -> str:
+            # 外部CLIの会話抽出だけを代替し、保持情報からの引き継ぎ本文生成は実処理を使う。
+            return session_handoff.compose_prompt(source, conversation, (record,))
 
-    monkeypatch.setattr(session_handoff, "prepare_prompt", extract_context)
-    started = await mcp_tools.start(
-        str(tmp_path),
-        subagent_md_path="exec-review",
-        extra_params=_observed_input_params("exec-review.subagent.md", tmp_path),
-    )
-    try:
+        monkeypatch.setattr(session_handoff, "prepare_prompt", extract_context)
+        started = await mcp_tools.start(
+            str(tmp_path),
+            subagent_md_path="exec-review",
+            extra_params=_observed_input_params("exec-review.subagent.md", tmp_path),
+        )
         await mcp_tools.send_message(started["session_id"], "追加要求: 新しい文書の差分も確認する")
         assert "新しい文書の差分" in backend.prompts[-1]
         for _ in range(2):
@@ -94,8 +93,6 @@ async def test_new_request_and_handoff_preserve_required_context(
         assert "追加要求: 新しい文書の差分も確認する" in received
         await mcp_tools.send_message(successor["session_id"], instruction="再レビューせよ", extra_params={"round": "2"})
         assert backend.prompts[-1] == launch_requests.wrap_delivery_body("再レビューせよ\nround: 2")
-    finally:
-        await manager.close()
 
 
 def test_main_strips_conversation_context_before_backend_start(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -245,26 +242,25 @@ async def test_session_label_prefers_argument_over_generated_value(
         "parse_unresolved_model_candidates",
         lambda _model_type, **_kwargs: [("codex", "model", "high")],
     )
-    manager, _ = _manager_with_fake("codex")
+    async with _manager_with_fake("codex") as (manager, _):
+        named = await manager.start("plan", "対象の調査\n詳細", str(tmp_path), label="lane-02")
+        unnamed = await manager.start("plan", "対象の調査\n詳細", str(tmp_path))
+        shell_default = await manager.start_shell("git status --short", str(tmp_path), "終了コードだけを返す")
+        shell_named = await manager.start_shell(
+            "git status --short",
+            str(tmp_path),
+            "終了コードだけを返す",
+            label="作業ツリーの差分",
+        )
 
-    named = await manager.start("plan", "対象の調査\n詳細", str(tmp_path), label="lane-02")
-    unnamed = await manager.start("plan", "対象の調査\n詳細", str(tmp_path))
-    shell_default = await manager.start_shell("git status --short", str(tmp_path), "終了コードだけを返す")
-    shell_named = await manager.start_shell(
-        "git status --short",
-        str(tmp_path),
-        "終了コードだけを返す",
-        label="作業ツリーの差分",
-    )
-
-    for response, expected in (
-        (named, "lane-02"),
-        (unnamed, "対象の調査"),
-        (shell_default, "shell-git"),
-        (shell_named, "作業ツリーの差分"),
-    ):
-        assert response["label"] == expected
-        assert (await manager.show_session(response["session_id"]))["label"] == expected
+        for response, expected in (
+            (named, "lane-02"),
+            (unnamed, "対象の調査"),
+            (shell_default, "shell-git"),
+            (shell_named, "作業ツリーの差分"),
+        ):
+            assert response["label"] == expected
+            assert (await manager.show_session(response["session_id"]))["label"] == expected
 
 
 @pytest.mark.parametrize("label", ["", "   "])
@@ -280,13 +276,12 @@ async def test_empty_session_label_falls_back_to_the_generated_value(
         "parse_unresolved_model_candidates",
         lambda _model_type, **_kwargs: [("codex", "model", "high")],
     )
-    manager, _ = _manager_with_fake("codex")
+    async with _manager_with_fake("codex") as (manager, _):
+        started = await manager.start("plan", "対象の調査\n詳細", str(tmp_path), label=label)
+        shell = await manager.start_shell("git status --short", str(tmp_path), "終了コードだけを返す", label=label)
 
-    started = await manager.start("plan", "対象の調査\n詳細", str(tmp_path), label=label)
-    shell = await manager.start_shell("git status --short", str(tmp_path), "終了コードだけを返す", label=label)
-
-    assert started["label"] == (await manager.show_session(started["session_id"]))["label"] == "対象の調査"
-    assert shell["label"] == (await manager.show_session(shell["session_id"]))["label"] == "shell-git"
+        assert started["label"] == (await manager.show_session(started["session_id"]))["label"] == "対象の調査"
+        assert shell["label"] == (await manager.show_session(shell["session_id"]))["label"] == "shell-git"
 
 
 @pytest.mark.asyncio
@@ -308,50 +303,52 @@ async def test_public_start_returns_label_of_started_session(
     monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)
     session_area = _managed_temp.create_managed_temp("session", session_id="caller-session")
     (session_area / "work-contract.md").write_text("目的: 起動したセッションのラベルの返却を確かめる\n", encoding="utf-8")
-    manager, _ = _manager_with_fake("codex")
-    monkeypatch.setattr(mcp_tools, "_MANAGER", manager)
-    cwd = str(tmp_path)
-    task_params = {
-        **dict(
-            line.split(": ", 1)
-            for line in _observed_input_lines("exec.subagent.md", tmp_path)
-            if not line.startswith("引き継ぎ記録先:")
-        ),
-        "レーン識別子": "lane-07",
-    }
+    async with _manager_with_fake("codex") as (manager, _):
+        monkeypatch.setattr(mcp_tools, "_MANAGER", manager)
+        cwd = str(tmp_path)
+        task_params = {
+            **dict(
+                line.split(": ", 1)
+                for line in _observed_input_lines("exec.subagent.md", tmp_path)
+                if not line.startswith("引き継ぎ記録先:")
+            ),
+            "レーン識別子": "lane-07",
+        }
 
-    responses = {
-        "lane-02": await mcp_tools.start(
-            cwd, mode="delegate", prompt="対象の調査\n詳細", model_type="high_tier", label="lane-02"
-        ),
-        "別の調査": await mcp_tools.start(cwd, mode="delegate", prompt="別の調査\n詳細", model_type="high_tier"),
-        "空白の調査": await mcp_tools.start(cwd, mode="delegate", prompt="空白の調査", model_type="high_tier", label="   "),
-        "explore": await mcp_tools.start(cwd, mode="explore", prompt="探索"),
-        "write-awi": await mcp_tools.start(cwd, mode="write", prompt="定型変更", label="write-awi"),
-        "shell-git": await mcp_tools.start(cwd, mode="shell", command="git status --short", summary_policy="終了コードだけ"),
-        "lane-07-exec": await mcp_tools.start(cwd, subagent_md_path="exec", extra_params=task_params),
-    }
+        responses = {
+            "lane-02": await mcp_tools.start(
+                cwd, mode="delegate", prompt="対象の調査\n詳細", model_type="high_tier", label="lane-02"
+            ),
+            "別の調査": await mcp_tools.start(cwd, mode="delegate", prompt="別の調査\n詳細", model_type="high_tier"),
+            "空白の調査": await mcp_tools.start(cwd, mode="delegate", prompt="空白の調査", model_type="high_tier", label="   "),
+            "explore": await mcp_tools.start(cwd, mode="explore", prompt="探索"),
+            "write-awi": await mcp_tools.start(cwd, mode="write", prompt="定型変更", label="write-awi"),
+            "shell-git": await mcp_tools.start(
+                cwd, mode="shell", command="git status --short", summary_policy="終了コードだけ"
+            ),
+            "lane-07-exec": await mcp_tools.start(cwd, subagent_md_path="exec", extra_params=task_params),
+        }
 
-    assert "handoff_record_path" in responses["lane-07-exec"]
-    assert len({response["session_id"] for response in responses.values()}) == len(responses)
-    for expected, response in responses.items():
-        assert response["label"] == expected
-        assert (await manager.show_session(response["session_id"]))["label"] == expected
+        assert "handoff_record_path" in responses["lane-07-exec"]
+        assert len({response["session_id"] for response in responses.values()}) == len(responses)
+        for expected, response in responses.items():
+            assert response["label"] == expected
+            assert (await manager.show_session(response["session_id"]))["label"] == expected
 
-    candidates = [("codex", "first", "high"), ("claude", "second", "medium")]
-    monkeypatch.setattr(_atk_config, "parse_unresolved_model_candidates", lambda _model_type, **_kwargs: candidates)
-    switching, claude = _manager_with_fake("claude")
-    _install_backend(switching, "codex", UnavailableStartBackend(switching.sessions, "codex"))
-    monkeypatch.setattr(mcp_tools, "_MANAGER", switching)
-    switched = await mcp_tools.start(cwd, mode="delegate", prompt="切替", model_type="high_tier", label="switched")
-    assert switched["excluded_candidates"]
-    assert switched["label"] == (await switching.show_session(switched["session_id"]))["label"] == "switched"
+        candidates = [("codex", "first", "high"), ("claude", "second", "medium")]
+        monkeypatch.setattr(_atk_config, "parse_unresolved_model_candidates", lambda _model_type, **_kwargs: candidates)
+        async with _manager_with_fake("claude") as (switching, claude):
+            _install_backend(switching, "codex", UnavailableStartBackend(switching.sessions, "codex"))
+            monkeypatch.setattr(mcp_tools, "_MANAGER", switching)
+            switched = await mcp_tools.start(cwd, mode="delegate", prompt="切替", model_type="high_tier", label="switched")
+            assert switched["excluded_candidates"]
+            assert switched["label"] == (await switching.show_session(switched["session_id"]))["label"] == "switched"
 
-    _install_backend(switching, "claude", UnavailableStartBackend(switching.sessions, "claude"))
-    del claude
-    failed = await mcp_tools.start(cwd, mode="delegate", prompt="失敗", model_type="high_tier", label="all-failed")
-    assert failed["status"] == "failed"
-    assert failed["label"] == (await switching.show_session(failed["session_id"]))["label"] == "all-failed"
+            _install_backend(switching, "claude", UnavailableStartBackend(switching.sessions, "claude"))
+            del claude
+            failed = await mcp_tools.start(cwd, mode="delegate", prompt="失敗", model_type="high_tier", label="all-failed")
+            assert failed["status"] == "failed"
+            assert failed["label"] == (await switching.show_session(failed["session_id"]))["label"] == "all-failed"
 
 
 @pytest.mark.asyncio
@@ -367,28 +364,28 @@ async def test_send_message_returns_label_of_delivered_session(
     monkeypatch.setattr(
         _atk_config, "parse_unresolved_model_candidates", lambda _model_type, **_kwargs: [("codex", "model", "high")]
     )
-    manager, _ = _manager_with_fake("codex")
-    monkeypatch.setattr(mcp_tools, "_MANAGER", manager)
-    first = await manager.start("high_tier", "i568の投入", str(tmp_path), label="add-wi-568")
-    second = await manager.start("high_tier", "i569の投入", str(tmp_path), label="add-wi-569")
-    first_id, second_id = first["session_id"], second["session_id"]
+    async with _manager_with_fake("codex") as (manager, _):
+        monkeypatch.setattr(mcp_tools, "_MANAGER", manager)
+        first = await manager.start("high_tier", "i568の投入", str(tmp_path), label="add-wi-568")
+        second = await manager.start("high_tier", "i569の投入", str(tmp_path), label="add-wi-569")
+        first_id, second_id = first["session_id"], second["session_id"]
 
-    steered = await mcp_tools.send_message(second_id, "add-wi-568への追加情報")
-    assert (steered["delivery"], steered["label"]) == ("steered", "add-wi-569")
+        steered = await mcp_tools.send_message(second_id, "add-wi-568への追加情報")
+        assert (steered["delivery"], steered["label"]) == ("steered", "add-wi-569")
 
-    _complete(manager.sessions[first_id])
-    replied = await mcp_tools.send_message(first_id, "add-wi-569への追加情報")
-    assert (replied["delivery"], replied["label"]) == ("reply_started", "add-wi-568")
+        _complete(manager.sessions[first_id])
+        replied = await mcp_tools.send_message(first_id, "add-wi-569への追加情報")
+        assert (replied["delivery"], replied["label"]) == ("reply_started", "add-wi-568")
 
-    _complete(manager.sessions[first_id])
-    manager._expire_session(first_id)
-    resumed_after_expiry = await mcp_tools.send_message(first_id, "続行")
-    assert (resumed_after_expiry["delivery"], resumed_after_expiry["label"]) == ("reply_started", "add-wi-568")
+        _complete(manager.sessions[first_id])
+        manager._expire_session(first_id)
+        resumed_after_expiry = await mcp_tools.send_message(first_id, "続行")
+        assert (resumed_after_expiry["delivery"], resumed_after_expiry["label"]) == ("reply_started", "add-wi-568")
 
-    _complete(manager.sessions[second_id])
-    await manager.stop(second_id)
-    resumed_after_stop = await mcp_tools.send_message(second_id, "続行")
-    assert (resumed_after_stop["delivery"], resumed_after_stop["label"]) == ("reply_started", "add-wi-569")
+        _complete(manager.sessions[second_id])
+        await manager.stop(second_id)
+        resumed_after_stop = await mcp_tools.send_message(second_id, "続行")
+        assert (resumed_after_stop["delivery"], resumed_after_stop["label"]) == ("reply_started", "add-wi-569")
 
 
 @pytest.mark.asyncio
@@ -477,60 +474,60 @@ async def test_success_response_key_sets_for_all_tools(
         shared_roots.StatusFileIdentity("root-session", "root.json", None),
         state_root=tmp_path,
     )
-    manager = server_manager.AgentsServerManager(writer)
-    _install_backend(manager, "codex", FakeBackend(manager.sessions, "codex"))
-    monkeypatch.setattr(
-        _atk_config, "parse_unresolved_model_candidates", lambda _model_type, **_kwargs: [("codex", "model", "high")]
-    )
+    async with server_manager.AgentsServerManager(writer) as manager:
+        _install_backend(manager, "codex", FakeBackend(manager.sessions, "codex"))
+        monkeypatch.setattr(
+            _atk_config, "parse_unresolved_model_candidates", lambda _model_type, **_kwargs: [("codex", "model", "high")]
+        )
 
-    started = await manager.start("plan", "調査", str(tmp_path))
-    explored = await manager.start_explore("探索", str(tmp_path))
-    written = await manager.start_write("定型変更", str(tmp_path))
-    shelled = await manager.start_shell("make test", str(tmp_path), "終了状態だけ")
-    start_keys = {"session_id", "status", "label", "engine", "model", "effort", "model_type", "root_session_id"}
-    assert started.keys() == start_keys
-    assert explored.keys() == start_keys
-    assert written.keys() == start_keys
-    assert written["model_type"] == "write"
-    assert shelled.keys() == start_keys
+        started = await manager.start("plan", "調査", str(tmp_path))
+        explored = await manager.start_explore("探索", str(tmp_path))
+        written = await manager.start_write("定型変更", str(tmp_path))
+        shelled = await manager.start_shell("make test", str(tmp_path), "終了状態だけ")
+        start_keys = {"session_id", "status", "label", "engine", "model", "effort", "model_type", "root_session_id"}
+        assert started.keys() == start_keys
+        assert explored.keys() == start_keys
+        assert written.keys() == start_keys
+        assert written["model_type"] == "write"
+        assert shelled.keys() == start_keys
 
-    session_id = str(started["session_id"])
-    session = manager.sessions[session_id]
-    assert (await manager.wait()).keys() == {
-        "session_id",
-        "status",
-        "progress",
-        "elapsed_seconds",
-    }
-    assert (await manager.send_message(session_id, "追加指示")).keys() == {"delivery", "label", "root_session_id"}
-    session.turn_id = "turn-1"
-    assert (await manager.kill(session_id, timeout=0)).keys() == {"status", "kill_requested"}
+        session_id = str(started["session_id"])
+        session = manager.sessions[session_id]
+        assert (await manager.wait()).keys() == {
+            "session_id",
+            "status",
+            "progress",
+            "elapsed_seconds",
+        }
+        assert (await manager.send_message(session_id, "追加指示")).keys() == {"delivery", "label", "root_session_id"}
+        session.turn_id = "turn-1"
+        assert (await manager.kill(session_id, timeout=0)).keys() == {"status", "kill_requested"}
 
-    terminal_id = str(explored["session_id"])
-    terminal = manager.sessions[terminal_id]
-    _complete(terminal, message="完了")
-    assert (await manager.wait()).keys() == {
-        "session_id",
-        "status",
-        "agent_message",
-        "engine",
-        "model",
-        "effort",
-        "model_type",
-        "launch_identity",
-        "observed_identity",
-    }
-    assert await manager.stop(terminal_id) == {}
+        terminal_id = str(explored["session_id"])
+        terminal = manager.sessions[terminal_id]
+        _complete(terminal, message="完了")
+        assert (await manager.wait()).keys() == {
+            "session_id",
+            "status",
+            "agent_message",
+            "engine",
+            "model",
+            "effort",
+            "model_type",
+            "launch_identity",
+            "observed_identity",
+        }
+        assert await manager.stop(terminal_id) == {}
 
-    listed = await manager.list_sessions(include_terminated=True)
-    assert listed.keys() == {"sessions", "root_session_id"}
-    assert listed["root_session_id"] == "root-session"
-    assert all(
-        {"session_id", "status"}
-        <= item.keys()
-        <= {"session_id", "status", "started_at", "updated_at", "seconds_since_activity"}
-        for item in listed["sessions"]
-    )
+        listed = await manager.list_sessions(include_terminated=True)
+        assert listed.keys() == {"sessions", "root_session_id"}
+        assert listed["root_session_id"] == "root-session"
+        assert all(
+            {"session_id", "status"}
+            <= item.keys()
+            <= {"session_id", "status", "started_at", "updated_at", "seconds_since_activity"}
+            for item in listed["sessions"]
+        )
 
 
 @pytest.mark.asyncio
@@ -545,17 +542,17 @@ async def test_send_message_tool_returns_same_root_as_list(monkeypatch: pytest.M
         shared_roots.StatusFileIdentity("root-session", "root.json", None),
         state_root=tmp_path,
     )
-    manager = server_manager.AgentsServerManager(writer)
-    monkeypatch.setattr(mcp_tools, "_MANAGER", manager)
-    session = state.SessionState("thread-1", str(tmp_path), engine="codex")
-    _install_backend(manager, "codex", FakeBackend(manager.sessions, "codex"))
-    _complete(session, message="計画作成完了")
-    manager.sessions[session.session_id] = session
+    async with server_manager.AgentsServerManager(writer) as manager:
+        monkeypatch.setattr(mcp_tools, "_MANAGER", manager)
+        session = state.SessionState("thread-1", str(tmp_path), engine="codex")
+        _install_backend(manager, "codex", FakeBackend(manager.sessions, "codex"))
+        _complete(session, message="計画作成完了")
+        manager.sessions[session.session_id] = session
 
-    response = await mcp_tools.send_message(session.session_id, "実装開始")
+        response = await mcp_tools.send_message(session.session_id, "実装開始")
 
-    assert response["delivery"] == "reply_started"
-    assert response["root_session_id"] == (await mcp_tools.list_sessions())["root_session_id"] == "root-session"
+        assert response["delivery"] == "reply_started"
+        assert response["root_session_id"] == (await mcp_tools.list_sessions())["root_session_id"] == "root-session"
 
 
 @pytest.mark.asyncio
@@ -566,12 +563,11 @@ async def test_list_returns_root_session_id_when_session_list_is_empty(tmp_path:
         shared_roots.StatusFileIdentity("root-session", "root.json", None),
         state_root=tmp_path,
     )
-    manager = server_manager.AgentsServerManager(writer)
-
-    assert (await manager.list_sessions()) == {
-        "sessions": [],
-        "root_session_id": "root-session",
-    }
+    async with server_manager.AgentsServerManager(writer) as manager:
+        assert (await manager.list_sessions()) == {
+            "sessions": [],
+            "root_session_id": "root-session",
+        }
 
 
 def test_main_strips_launcher_venv_from_child_environment(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -723,86 +719,88 @@ async def test_send_message_response_adds_next_action_for_unconfirmed_reply(
 async def test_start_tools_accept_model_type_override(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
     """`model_type`を渡した起動は工程別設定の代わりにその値を使い、各ツール固有の起動区分を保つ。"""
     requested = _recording_candidates(monkeypatch)
-    manager, _ = _manager_with_fake("codex")
-    monkeypatch.setattr(mcp_tools, "_MANAGER", manager)
-    override = "codex:model/high"
-    task_document = launch_requests._SHARE_DIRECTORY / "exec.subagent.md"
+    async with _manager_with_fake("codex") as (manager, _):
+        monkeypatch.setattr(mcp_tools, "_MANAGER", manager)
+        override = "codex:model/high"
+        task_document = launch_requests._SHARE_DIRECTORY / "exec.subagent.md"
 
-    responses = {
-        "delegate": await mcp_tools.start(
-            str(tmp_path),
-            subagent_md_path=str(task_document),
-            extra_params=_observed_input_params(task_document.name, tmp_path),
-            model_type=override,
-        ),
-        "explore": await mcp_tools.start(str(tmp_path), mode="explore", prompt="調査", model_type=override),
-        "shell": await mcp_tools.start(
-            str(tmp_path), mode="shell", command="make test", summary_policy="終了状態", model_type=override
-        ),
-        "write": await mcp_tools.start(str(tmp_path), mode="write", prompt="起草", model_type=override),
-    }
+        responses = {
+            "delegate": await mcp_tools.start(
+                str(tmp_path),
+                subagent_md_path=str(task_document),
+                extra_params=_observed_input_params(task_document.name, tmp_path),
+                model_type=override,
+            ),
+            "explore": await mcp_tools.start(str(tmp_path), mode="explore", prompt="調査", model_type=override),
+            "shell": await mcp_tools.start(
+                str(tmp_path), mode="shell", command="make test", summary_policy="終了状態", model_type=override
+            ),
+            "write": await mcp_tools.start(str(tmp_path), mode="write", prompt="起草", model_type=override),
+        }
 
-    assert requested == [override] * 4
-    for launch_kind, response in responses.items():
-        shown = await manager.show_session(response["session_id"])
-        assert shown["model_type"] == override
-        assert shown["launch_kind"] == launch_kind
+        assert requested == [override] * 4
+        for launch_kind, response in responses.items():
+            shown = await manager.show_session(response["session_id"])
+            assert shown["model_type"] == override
+            assert shown["launch_kind"] == launch_kind
 
 
 @pytest.mark.asyncio
 async def test_start_tools_use_task_settings_without_override(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
     """`model_type`を省略した起動は各ツールの工程別設定を使う。"""
     requested = _recording_candidates(monkeypatch)
-    manager, _ = _manager_with_fake("codex")
-    monkeypatch.setattr(mcp_tools, "_MANAGER", manager)
+    async with _manager_with_fake("codex") as (manager, _):
+        monkeypatch.setattr(mcp_tools, "_MANAGER", manager)
 
-    await mcp_tools.start(str(tmp_path), mode="explore", prompt="調査")
-    await mcp_tools.start(str(tmp_path), mode="explore", prompt="調査", model_type="medium_tier")
-    await mcp_tools.start(str(tmp_path), mode="shell", command="make test", summary_policy="終了状態")
-    await mcp_tools.start(str(tmp_path), mode="write", prompt="起草")
+        await mcp_tools.start(str(tmp_path), mode="explore", prompt="調査")
+        await mcp_tools.start(str(tmp_path), mode="explore", prompt="調査", model_type="medium_tier")
+        await mcp_tools.start(str(tmp_path), mode="shell", command="make test", summary_policy="終了状態")
+        await mcp_tools.start(str(tmp_path), mode="write", prompt="起草")
 
-    assert requested == ["low_tier", "medium_tier", "low_tier", "write"]
+        assert requested == ["low_tier", "medium_tier", "low_tier", "write"]
 
 
 @pytest.mark.asyncio
 async def test_start_label_defaults(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
     """label省略時は凡例どおりの識別名を生成し、明示したlabelはその値を使う。"""
     _recording_candidates(monkeypatch)
-    manager, _ = _manager_with_fake("codex")
-    monkeypatch.setattr(mcp_tools, "_MANAGER", manager)
-    exec_document = launch_requests._SHARE_DIRECTORY / "exec.subagent.md"
-    exec_params = {**_observed_input_params(exec_document.name, tmp_path), "レーン識別子": "lane-01"}
-    explain_document = launch_requests._SHARE_DIRECTORY / "pick-wi-explain.subagent.md"
-    explain_params = _observed_input_params(explain_document.name, tmp_path)
+    async with _manager_with_fake("codex") as (manager, _):
+        monkeypatch.setattr(mcp_tools, "_MANAGER", manager)
+        exec_document = launch_requests._SHARE_DIRECTORY / "exec.subagent.md"
+        exec_params = {**_observed_input_params(exec_document.name, tmp_path), "レーン識別子": "lane-01"}
+        explain_document = launch_requests._SHARE_DIRECTORY / "pick-wi-explain.subagent.md"
+        explain_params = _observed_input_params(explain_document.name, tmp_path)
 
-    labels = {
-        "lane": await mcp_tools.start(str(tmp_path), subagent_md_path=str(exec_document), extra_params=exec_params),
-        "explain": await mcp_tools.start(str(tmp_path), subagent_md_path=str(explain_document), extra_params=explain_params),
-        "named": await mcp_tools.start(
-            str(tmp_path), subagent_md_path=str(explain_document), extra_params=explain_params, label="選定理由の説明"
-        ),
-        "blank": await mcp_tools.start(
-            str(tmp_path), subagent_md_path=str(explain_document), extra_params=explain_params, label="   "
-        ),
-        "shell": await mcp_tools.start(str(tmp_path), mode="shell", command="make test", summary_policy="終了状態"),
-        "shell_path": await mcp_tools.start(
-            str(tmp_path), mode="shell", command="/usr/bin/git status", summary_policy="終了状態"
-        ),
-        "explore": await mcp_tools.start(str(tmp_path), mode="explore", prompt="調査\n詳細"),
-        "write": await mcp_tools.start(str(tmp_path), mode="write", prompt="起草\n詳細"),
-    }
+        labels = {
+            "lane": await mcp_tools.start(str(tmp_path), subagent_md_path=str(exec_document), extra_params=exec_params),
+            "explain": await mcp_tools.start(
+                str(tmp_path), subagent_md_path=str(explain_document), extra_params=explain_params
+            ),
+            "named": await mcp_tools.start(
+                str(tmp_path), subagent_md_path=str(explain_document), extra_params=explain_params, label="選定理由の説明"
+            ),
+            "blank": await mcp_tools.start(
+                str(tmp_path), subagent_md_path=str(explain_document), extra_params=explain_params, label="   "
+            ),
+            "shell": await mcp_tools.start(str(tmp_path), mode="shell", command="make test", summary_policy="終了状態"),
+            "shell_path": await mcp_tools.start(
+                str(tmp_path), mode="shell", command="/usr/bin/git status", summary_policy="終了状態"
+            ),
+            "explore": await mcp_tools.start(str(tmp_path), mode="explore", prompt="調査\n詳細"),
+            "write": await mcp_tools.start(str(tmp_path), mode="write", prompt="起草\n詳細"),
+        }
 
-    shown = {key: (await manager.show_session(response["session_id"]))["label"] for key, response in labels.items()}
-    assert shown == {
-        "lane": "lane-01-exec",
-        "explain": "pick-wi-explain",
-        "named": "選定理由の説明",
-        "blank": "pick-wi-explain",
-        "shell": "shell-make",
-        "shell_path": "shell-git",
-        "explore": "explore",
-        "write": "write",
-    }
+        shown = {key: (await manager.show_session(response["session_id"]))["label"] for key, response in labels.items()}
+        assert shown == {
+            "lane": "lane-01-exec",
+            "explain": "pick-wi-explain",
+            "named": "選定理由の説明",
+            "blank": "pick-wi-explain",
+            "shell": "shell-make",
+            "shell_path": "shell-git",
+            "explore": "explore",
+            "write": "write",
+        }
 
 
 @pytest.mark.parametrize(("mode", "inputs", "named"), _MODE_INPUT_CASES)
@@ -847,68 +845,71 @@ async def test_start_routes_each_mode_to_launch_kind_model_and_label(
         return [("codex", "model", "high")]
 
     monkeypatch.setattr(_atk_config, "parse_unresolved_model_candidates", candidates)
-    manager, backend = _manager_with_fake("codex")
-    monkeypatch.setattr(mcp_tools, "_MANAGER", manager)
-    task_document = launch_requests._SHARE_DIRECTORY / "exec.subagent.md"
-    calls: dict[str, dict[str, Any]] = {
-        "task": {"subagent_md_path": str(task_document), "extra_params": _observed_input_params(task_document.name, tmp_path)},
-        "delegate": {"mode": "delegate", "prompt": "監査\n詳細", "model_type": "high_tier"},
-        "explore": {"mode": "explore", "prompt": "調査", "label": "explore-対象"},
-        "write": {"mode": "write", "prompt": "起草"},
-        "shell": {"mode": "shell", "command": "make test", "summary_policy": "終了状態"},
-    }
+    async with _manager_with_fake("codex") as (manager, backend):
+        monkeypatch.setattr(mcp_tools, "_MANAGER", manager)
+        task_document = launch_requests._SHARE_DIRECTORY / "exec.subagent.md"
+        calls: dict[str, dict[str, Any]] = {
+            "task": {
+                "subagent_md_path": str(task_document),
+                "extra_params": _observed_input_params(task_document.name, tmp_path),
+            },
+            "delegate": {"mode": "delegate", "prompt": "監査\n詳細", "model_type": "high_tier"},
+            "explore": {"mode": "explore", "prompt": "調査", "label": "explore-対象"},
+            "write": {"mode": "write", "prompt": "起草"},
+            "shell": {"mode": "shell", "command": "make test", "summary_policy": "終了状態"},
+        }
 
-    shown = {}
-    for mode, arguments in calls.items():
-        response = await mcp_tools.start(str(tmp_path), **arguments)
-        shown[mode] = await manager.show_session(response["session_id"])
+        shown = {}
+        for mode, arguments in calls.items():
+            response = await mcp_tools.start(str(tmp_path), **arguments)
+            shown[mode] = await manager.show_session(response["session_id"])
 
-    assert requested == [
-        (launch_requests._TASK_MODEL_TYPES[task_document.name], "execute"),
-        ("high_tier", None),
-        ("low_tier", "chores"),
-        ("write", "base"),
-        ("low_tier", "chores"),
-    ]
-    assert [call[2] for call in backend.start_calls] == ["delegate", "delegate", "explore", "write", "shell"]
-    assert {mode: item["label"] for mode, item in shown.items()} == {
-        "task": "lane-01-exec",
-        "delegate": "監査",
-        "explore": "explore-対象",
-        "write": "write",
-        "shell": "shell-make",
-    }
+        assert requested == [
+            (launch_requests._TASK_MODEL_TYPES[task_document.name], "execute"),
+            ("high_tier", None),
+            ("low_tier", "chores"),
+            ("write", "base"),
+            ("low_tier", "chores"),
+        ]
+        assert [call[2] for call in backend.start_calls] == ["delegate", "delegate", "explore", "write", "shell"]
+        assert {mode: item["label"] for mode, item in shown.items()} == {
+            "task": "lane-01-exec",
+            "delegate": "監査",
+            "explore": "explore-対象",
+            "write": "write",
+            "shell": "shell-make",
+        }
 
 
 @pytest.mark.asyncio
 async def test_send_message_tool_returns_previous_result(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
     """未回収の結果を持つ終端済みsessionへ送ると、MCPの応答がその結果を返す。"""
-    manager, _ = _manager_with_fake("codex")
-    monkeypatch.setattr(mcp_tools, "_MANAGER", manager)
-    session = state.SessionState("thread-1", str(tmp_path), engine="codex")
-    _complete(session, message="計画作成完了")
-    manager.sessions[session.session_id] = session
+    async with _manager_with_fake("codex") as (manager, _):
+        monkeypatch.setattr(mcp_tools, "_MANAGER", manager)
+        session = state.SessionState("thread-1", str(tmp_path), engine="codex")
+        _complete(session, message="計画作成完了")
+        manager.sessions[session.session_id] = session
 
-    response = await mcp_tools.send_message(session.session_id, "実装開始")
+        response = await mcp_tools.send_message(session.session_id, "実装開始")
 
-    assert _without_root(response) == {
-        "delivery": "reply_started",
-        "label": "",
-        "previous_result": {"status": "completed", "agent_message": "計画作成完了"},
-    }
+        assert _without_root(response) == {
+            "delivery": "reply_started",
+            "label": "",
+            "previous_result": {"status": "completed", "agent_message": "計画作成完了"},
+        }
 
 
 async def _start_exec_review_session(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path):
     """実行レビュー担当の役割文書で偽のcodex sessionを公開`start`から起動し、継続入力の検証に使う。"""
     _recording_candidates(monkeypatch)
-    manager, backend = _manager_with_fake("codex")
-    monkeypatch.setattr(mcp_tools, "_MANAGER", manager)
-    started = await mcp_tools.start(
-        str(tmp_path),
-        subagent_md_path="exec-review",
-        extra_params=_observed_input_params("exec-review.subagent.md", tmp_path),
-    )
-    return manager, backend, started
+    async with _manager_with_fake("codex") as (manager, backend):
+        monkeypatch.setattr(mcp_tools, "_MANAGER", manager)
+        started = await mcp_tools.start(
+            str(tmp_path),
+            subagent_md_path="exec-review",
+            extra_params=_observed_input_params("exec-review.subagent.md", tmp_path),
+        )
+        return manager, backend, started
 
 
 @pytest.mark.asyncio
@@ -1057,14 +1058,13 @@ async def test_declared_role_continuations_keep_required_inputs(
         table.write_text("指摘の記録\n", encoding="utf-8")
         params = {**params, "レビュー指摘管理表": str(table)}
     _recording_candidates(monkeypatch)
-    manager, backend = _manager_with_fake("codex")
-    monkeypatch.setattr(mcp_tools, "_MANAGER", manager)
-    started = await mcp_tools.start(
-        str(tmp_path),
-        subagent_md_path=role,
-        extra_params=_observed_input_params(f"{role}.subagent.md", tmp_path),
-    )
-    try:
+    async with _manager_with_fake("codex") as (manager, backend):
+        monkeypatch.setattr(mcp_tools, "_MANAGER", manager)
+        started = await mcp_tools.start(
+            str(tmp_path),
+            subagent_md_path=role,
+            extra_params=_observed_input_params(f"{role}.subagent.md", tmp_path),
+        )
         await mcp_tools.mcp.call_tool(
             "send_message",
             {
@@ -1090,8 +1090,6 @@ async def test_declared_role_continuations_keep_required_inputs(
                 assert "最小の再実行形" in str(raised.value)
                 assert len(backend.prompts) == received
                 assert session.followup_prompts == history
-    finally:
-        await manager.close()
 
 
 def test_serve_records_exception_exit(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:

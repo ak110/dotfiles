@@ -416,7 +416,7 @@ async function applyPreviewHtml(html, scrollTop, generation) {
 }
 
 async function renderDiagrams(preview, generation) {
-  renderSvgDiagrams(preview.querySelectorAll(".diagram-svg"), generation);
+  renderSvgDiagrams(preview.querySelectorAll(".diagram-svg"));
   await (renderMermaidDiagrams(preview.querySelectorAll(".mermaid-output"), generation));
 }
 
@@ -473,17 +473,16 @@ function disableMermaidNavigation(node) {
   }
 }
 
-function renderSvgDiagrams(figures, generation) {
+function renderSvgDiagrams(figures) {
+  const target = fileQuery(selectedHost, selectedPath, selectedSource);
   for (const figure of figures) {
     const source = figure.querySelector(".diagram-source pre").textContent;
     const image = figure.querySelector(".svg-output");
     const url = URL.createObjectURL(new Blob([source], {type: "image/svg+xml"}));
     previewObjectUrls.add(url);
-    image.onload = () => {
-      if (generation !== previewGeneration) URL.revokeObjectURL(url);
-    };
     image.onerror = () => {
-      if (generation === previewGeneration) {
+      // 同じHTMLの再同期では画像DOMとURLを再利用し、要求の世代だけが進む。
+      if (figure.isConnected && target === fileQuery(selectedHost, selectedPath, selectedSource)) {
         showDiagramError(figure, "SVG図を描画できませんでした");
       }
     };

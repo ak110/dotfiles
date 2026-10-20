@@ -4,12 +4,14 @@ FILENAME指定表示（`--status`・`--answered`を迂回した全状態探索�
 型フィルター・状態フィルター・--skip-pullの単体テストを集約する。
 """
 
+import datetime
 import pathlib
 import subprocess
 
 import pytest
 
 from agent_toolkit import atk  # noqa: E402  # pylint: disable=wrong-import-position
+from agent_toolkit._atk.wi.layout import entry_path
 from agent_toolkit._testing.git_fakes import (  # noqa: E402  # pylint: disable=wrong-import-position
     make_current_worktree_fake as _make_current_worktree_fake,
 )
@@ -472,18 +474,8 @@ class TestShowStatusAll:
         """`--all --status=all`指定時、inbox・processing・adopted・rejectedの全件が状態ラベル付きで出力される。"""
         notes = _setup_notes(tmp_path)
         _write_awi_file(notes, "fb-inbox.md", target_repo="github.com/example/foo", body="inbox本文")
-        adopted_dir = notes / "adopted"
-        adopted_dir.mkdir(parents=True, exist_ok=True)
-        (adopted_dir / "fb-adopted.md").write_text(
-            "---\ntarget_repo: github.com/example/foo\ntype: awi\n---\n\nadopted本文\n",
-            encoding="utf-8",
-        )
-        rejected_dir = notes / "rejected"
-        rejected_dir.mkdir(parents=True, exist_ok=True)
-        (rejected_dir / "fb-rejected.md").write_text(
-            "---\ntarget_repo: github.com/example/foo\ntype: awi\n---\n\nrejected本文\n",
-            encoding="utf-8",
-        )
+        _write_awi_state_file(notes, "adopted", "fb-adopted.md", body="adopted本文")
+        _write_awi_state_file(notes, "rejected", "fb-rejected.md", body="rejected本文")
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
         with pytest.raises(SystemExit) as exc_info:
@@ -638,6 +630,30 @@ class TestShowSourceFilter:
         assert "質問2" not in captured.out
 
 
+@pytest.mark.parametrize(
+    ("important", "expected"),
+    [("all", {"important.md", "normal.md"}), ("yes", {"important.md"}), ("no", {"normal.md"})],
+)
+def test_show_filters_important_entries(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    important: str,
+    expected: set[str],
+) -> None:
+    """年月配置の重要項目と通常項目を公開フィルターで選択する。"""
+    notes = _setup_notes(tmp_path)
+    marked = _write_awi_file(notes, "important.md")
+    marked.write_text(marked.read_text(encoding="utf-8").replace("type: awi", "important: true\ntype: awi"), encoding="utf-8")
+    _write_awi_file(notes, "normal.md")
+    monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+    with pytest.raises(SystemExit) as result:
+        atk.main(["wi", "show", "--all", "--skip-pull", f"--important={important}"], home=tmp_path)
+    assert result.value.code == 0
+    output = capsys.readouterr().out
+    assert {line.split()[1] for line in output.splitlines() if line.startswith("### ")} == expected
+
+
 class TestShowStatusFilter:
     """showサブコマンド: --answeredでUWIの回答状況を限定する（--all分岐のみ有効）。"""
 
@@ -692,12 +708,11 @@ def _write_awi_state_file(
     target_repo: str = "github.com/example/foo",
     body: str = "state本文",
 ) -> pathlib.Path:
-    """指定状態配下にAWIファイルを書き込み、絶対パスを返す。"""
-    state_dir = notes / state
-    state_dir.mkdir(parents=True, exist_ok=True)
-    path = state_dir / filename
+    """年月配置へ指定stateのAWIを書き込み、絶対パスを返す。"""
+    path = entry_path(notes, filename, fallback_date=datetime.date(2026, 1, 1))
+    path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(
-        f"---\ntype: awi\ntarget_repo: {target_repo}\n---\n\n{body}\n",
+        f"---\ntype: awi\nstate: {state}\ntarget_repo: {target_repo}\n---\n\n{body}\n",
         encoding="utf-8",
     )
     return path
@@ -735,16 +750,16 @@ class TestShowProcessing:
         assert "### fb-processing.md" in captured.out
         assert "processing本文" in captured.out
 
-    def test_single_file_inbox_precedes_processing(
+    def test_single_file_follows_state_change_at_fixed_path(
         self,
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """FILENAME指定時、inbox→processingの順で探索しinbox側が優先される。"""
+        """同じ年月パスのstateを書き換えた項目を、変更後の状態で表示する。"""
         notes = _setup_notes(tmp_path)
-        _write_awi_file(notes, "fb-dup.md", body="inbox側本文")
-        _write_awi_processing_file(notes, "fb-dup.md", body="processing側本文")
+        path = _write_awi_state_file(notes, "inbox", "fb-dup.md", body="保持する本文")
+        path.write_text(path.read_text(encoding="utf-8").replace("state: inbox", "state: processing"), encoding="utf-8")
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
         with pytest.raises(SystemExit) as exc_info:
@@ -752,8 +767,9 @@ class TestShowProcessing:
 
         assert exc_info.value.code == 0
         captured = capsys.readouterr()
-        assert "inbox側本文" in captured.out
-        assert "processing側本文" not in captured.out
+        assert "### fb-dup.md [processing]" in captured.out
+        assert "保持する本文" in captured.out
+        assert entry_path(notes, path.name) == path
 
     def test_all_scans_active_states_for_both_types(
         self,
@@ -765,14 +781,10 @@ class TestShowProcessing:
         notes = _setup_notes(tmp_path)
         _write_awi_file(notes, "fb-inbox.md", body="inbox本文")
         _write_awi_processing_file(notes, "fb-processing.md", body="processing本文")
-        hold_dir = notes / "hold"
-        hold_dir.mkdir(parents=True, exist_ok=True)
-        (hold_dir / "fb-hold.md").write_text(
-            "---\ntype: awi\ntarget_repo: github.com/example/foo\n---\n\nhold本文\n",
-            encoding="utf-8",
-        )
-        (hold_dir / "uwi-hold.md").write_text(
-            "---\ntype: uwi\ntarget_repo: github.com/example/foo\n---\n\nhold UWI\n",
+        _write_awi_state_file(notes, "hold", "fb-hold.md", body="hold本文")
+        held_uwi = _write_uwi_file(notes, "uwi-hold.md", question="hold UWI")
+        held_uwi.write_text(
+            held_uwi.read_text(encoding="utf-8").replace("state: inbox", "state: hold"),
             encoding="utf-8",
         )
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))

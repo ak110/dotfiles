@@ -56,12 +56,6 @@ _AUTO_ENABLED_PLUGIN_IDS: frozenset[str] = frozenset(
     }
 )
 
-# dotfiles自身と公式以外のマーケットプレイスから導入するプラグイン。
-# (マーケットプレイス名, 登録ソース, プラグイン識別子) の組で保持する。
-_EXTERNAL_MARKETPLACES: tuple[tuple[str, str, str], ...] = (
-    ("compact-plus", "u-ichi/compact-plus", "compact-plus@compact-plus"),
-)
-
 
 def run() -> post_apply_outcome.PostApplyOutcome:
     """Claude Code pluginをインストール・更新し、ユーザーへ案内する推奨コマンドを結果へ含める。
@@ -96,7 +90,7 @@ def _install_plugins() -> tuple[bool, list[str], int, bool]:
     if not _prerequisites_ok():
         return False, [], 0, False
 
-    external_changed = _install_external_marketplaces()
+    external_changed = _remove_unused_plugins()
 
     dotfiles_root = common.find_dotfiles_root()
     if dotfiles_root is None:
@@ -235,75 +229,36 @@ def _install_plugins() -> tuple[bool, list[str], int, bool]:
     return external_changed or any_change, recommendations, disable_failed_count, cache_deferred
 
 
-def _install_external_marketplaces() -> bool:
-    """外部マーケットプレイスを登録し、未導入のプラグインを導入する。"""
+def _remove_unused_plugins() -> bool:
+    """導入済みのcompact-plusと、そのmarketplace登録を削除する。"""
     changed = False
-    for marketplace_name, source, plugin_id in _EXTERNAL_MARKETPLACES:
-        marketplace_data = _get_marketplaces_raw()
-        if marketplace_data is None:
-            logger.warning(
-                log_format.format_status(
-                    plugin_id,
-                    "marketplace一覧の取得に失敗したためスキップ。`update-dotfiles`を再実行する",
-                ),
-            )
-            continue
-        marketplace = _marketplace_entry(marketplace_data, marketplace_name)
-        if marketplace is None:
-            result = claude_common.run_claude(
-                ["plugin", "marketplace", "add", source, "--scope=user"],
-                timeout=claude_common.PLUGIN_OPERATION_TIMEOUT,
-            )
-            if result is None or result.returncode != 0:
-                logger.warning(
-                    log_format.format_status(
-                        plugin_id,
-                        f"marketplace登録に失敗したためスキップ: {common.format_cli_error(result)}。"
-                        f"`claude plugin marketplace add {source} --scope=user`を実行する",
-                    ),
-                )
-                continue
-            changed = True
-            marketplace_data = _get_marketplaces_raw()
-            marketplace = _marketplace_entry(marketplace_data, marketplace_name) if marketplace_data is not None else None
-        if marketplace is None or not _marketplace_source_matches(marketplace, source):
-            logger.error(
-                log_format.format_status(
-                    plugin_id,
-                    "marketplace取得元が一致しないためスキップ: 期待値 "
-                    f"{source}。"
-                    f"`claude plugin marketplace remove {marketplace_name}`の後に`claude "
-                    f"plugin marketplace add {source} --scope=user`を実行する",
-                ),
-            )
-            continue
-
-        installed_data = _get_installed_plugins_raw()
-        if installed_data is None:
-            logger.warning(
-                log_format.format_status(
-                    plugin_id,
-                    "plugin一覧の取得に失敗したためスキップ。`update-dotfiles`を再実行する",
-                ),
-            )
-            continue
-        if plugin_id in _user_scope_plugin_ids(installed_data):
-            continue
+    installed = _get_installed_plugins_raw()
+    if installed is None:
+        logger.warning("compact-plusの導入状態を取得できない。update-dotfilesを再実行する")
+        return False
+    if "compact-plus@compact-plus" in _user_scope_plugin_ids(installed):
         result = claude_common.run_claude(
-            ["plugin", "install", plugin_id, "--scope=user", "-y"],
+            ["plugin", "uninstall", "compact-plus@compact-plus", "--scope=user", "--keep-data"],
             timeout=claude_common.PLUGIN_OPERATION_TIMEOUT,
         )
         if result is None or result.returncode != 0:
-            logger.warning(
-                log_format.format_status(
-                    plugin_id,
-                    f"installに失敗したため続行: {common.format_cli_error(result)}。"
-                    f"`claude plugin install {plugin_id} --scope=user "
-                    "-y`を実行する",
-                ),
-            )
-            continue
+            logger.warning("compact-plusの削除に失敗: %s。update-dotfilesを再実行する", common.format_cli_error(result))
+            return False
         changed = True
+    marketplaces = _get_marketplaces_raw()
+    if marketplaces is None:
+        logger.warning("compact-plusのmarketplace登録を取得できない。update-dotfilesを再実行する")
+        return changed
+    if _marketplace_entry(marketplaces, "compact-plus") is not None:
+        result = claude_common.run_claude(
+            ["plugin", "marketplace", "remove", "compact-plus"], timeout=claude_common.PLUGIN_OPERATION_TIMEOUT
+        )
+        if result is None or result.returncode != 0:
+            logger.warning(
+                "compact-plusのmarketplace削除に失敗: %s。update-dotfilesを再実行する", common.format_cli_error(result)
+            )
+        else:
+            changed = True
     return changed
 
 
@@ -333,23 +288,6 @@ def _marketplace_entry(data: object, marketplace_name: str) -> dict[str, object]
                 if entry.get("name") == marketplace_name:
                     return entry
     return None
-
-
-def _marketplace_source_matches(entry: dict[str, object], expected_source: str) -> bool:
-    """GitHubマーケットプレイスの取得元が期待値と一致するかを返す。"""
-    repo = entry.get("repo")
-    expected = _normalize_github_source(expected_source)
-    actual = _normalize_github_source(repo) if isinstance(repo, str) else None
-    return entry.get("source") == "github" and expected is not None and actual == expected
-
-
-def _normalize_github_source(source: str) -> str | None:
-    """GitHubリポジトリ指定を小文字の`owner/repo`形式へ正規化する。"""
-    value = source.strip().strip("/").removesuffix(".git")
-    parts = value.split("/")
-    if len(parts) != 2 or not all(parts):
-        return None
-    return "/".join(part.lower() for part in parts)
 
 
 def compute_recommended_commands(raw_data: object, enabled_map: dict[str, bool] | None) -> list[str]:

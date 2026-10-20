@@ -189,6 +189,16 @@ def _add_target_repo_arg(
     )
 
 
+def _add_important_filter_arg(parser: argparse.ArgumentParser) -> None:
+    """一覧・全文表示・検索へ共通の重要フラグの限定を登録する。"""
+    parser.add_argument(
+        "--important",
+        choices=("all", "yes", "no"),
+        default="all",
+        help="重要フラグで限定する。yesは重要項目、noは非重要項目、allと省略時は全項目を対象とする。",
+    )
+
+
 def _absolute_note_path(raw_path: str) -> pathlib.Path:
     """メモファイルの絶対パスだけを受理する。"""
     path = pathlib.Path(raw_path)
@@ -381,6 +391,7 @@ def _add_mq_read_parsers(sub: Any) -> None:
         help="UWIの回答状況で限定する。省略時は全ての回答状況を含める。`yes`・`no`指定時はAWIを除外する。",
     )
     _add_source_arg(list_, multiple=True)
+    _add_important_filter_arg(list_)
     output = list_.add_mutually_exclusive_group()
     output.add_argument(
         "--count",
@@ -472,6 +483,7 @@ def _add_mq_read_parsers(sub: Any) -> None:
         help="UWIの回答状況で限定する。省略時は全ての回答状況を対象とする。--all指定時のみ有効。`yes`・`no`指定時はAWIを除外する。",
     )
     _add_source_arg(show, multiple=True)
+    _add_important_filter_arg(show)
     _add_mq_read_sync_args(show)
     show.set_defaults(subparser=show)
 
@@ -835,6 +847,7 @@ def _add_mq_search_and_answer_parsers(sub: Any) -> None:
         help="UWIの回答状況で限定する。省略時は全ての回答状況を含める。`yes`・`no`指定時はAWIを除外する。",
     )
     _add_source_arg(grep, multiple=True)
+    _add_important_filter_arg(grep)
     _add_target_repo_arg(grep, allow_all=True)
     _add_mq_read_sync_args(grep)
     grep.set_defaults(subparser=grep)

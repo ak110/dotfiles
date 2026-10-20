@@ -114,27 +114,26 @@ async def test_task_record_reaches_public_evidence(
         state_root=tmp_path / "state",
         aggregate_seconds=0,
     )
-    current = manager.AgentsServerManager(writer)
-    backend = _ObservedBackend(current.sessions, "claude")
-    agents_server_support.install_backend(current, "claude", backend)
-    monkeypatch.setattr(mcp_tools, "_MANAGER", current)
-    monkeypatch.setenv("CODEX_THREAD_ID", "self")
-    requested: list[str] = []
+    async with manager.AgentsServerManager(writer) as current:
+        backend = _ObservedBackend(current.sessions, "claude")
+        agents_server_support.install_backend(current, "claude", backend)
+        monkeypatch.setattr(mcp_tools, "_MANAGER", current)
+        monkeypatch.setenv("CODEX_THREAD_ID", "self")
+        requested: list[str] = []
 
-    def find_record(session_id: str, **_kwargs: Any) -> record_paths.SessionRecord:
-        requested.append(session_id)
-        return record_paths.SessionRecord(engine, (records[session_id],))
+        def find_record(session_id: str, **_kwargs: Any) -> record_paths.SessionRecord:
+            requested.append(session_id)
+            return record_paths.SessionRecord(engine, (records[session_id],))
 
-    monkeypatch.setattr(record_paths, "find_session_record", find_record)
-    request = "request=/repo=awi=対象発話の取得"
-    selected = "direct-parent" if source == "delivered" else "ancestor" if source == "ancestor" else "other"
-    saved_input: pathlib.Path | None = None
-    if source == "saved-position":
-        saved_input, _ = _evidence(["--transcript", str(records["other"]), "--user-events"], capsys, tmp_path)
-        request += f"\n発話: {saved_input} record={engine}:other line=2"
-    elif source != "delivered":
-        request += f"\n発話: {records[selected]}"
-    try:
+        monkeypatch.setattr(record_paths, "find_session_record", find_record)
+        request = "request=/repo=awi=対象発話の取得"
+        selected = "direct-parent" if source == "delivered" else "ancestor" if source == "ancestor" else "other"
+        saved_input: pathlib.Path | None = None
+        if source == "saved-position":
+            saved_input, _ = _evidence(["--transcript", str(records["other"]), "--user-events"], capsys, tmp_path)
+            request += f"\n発話: {saved_input} record={engine}:other line=2"
+        elif source != "delivered":
+            request += f"\n発話: {records[selected]}"
         started = await _start_task(tmp_path, request)
         assert started["session_id"] == "claude-session"
         context = _context(backend.prompts[0], tmp_path)
@@ -169,8 +168,6 @@ async def test_task_record_reaches_public_evidence(
             json.dumps({"arguments": arguments, "saved_output": str(saved), "events": events}, ensure_ascii=False),
             encoding="utf-8",
         )
-    finally:
-        await current.close()
 
 
 def _write_observation_record(directory: pathlib.Path, engine: str) -> pathlib.Path:
@@ -230,18 +227,17 @@ async def test_task_record_reaches_public_observation_evidence(
     monkeypatch.setenv("CLAUDECODE", "1")
     monkeypatch.setenv("CODEX_THREAD_ID", "observation-parent")
     transcript = _write_observation_record(tmp_path, engine)
-    current = manager.AgentsServerManager(None)
-    backend = _ObservedBackend(current.sessions, "claude")
-    agents_server_support.install_backend(current, "claude", backend)
-    monkeypatch.setattr(mcp_tools, "_MANAGER", current)
-    requested: list[str] = []
+    async with manager.AgentsServerManager(None) as current:
+        backend = _ObservedBackend(current.sessions, "claude")
+        agents_server_support.install_backend(current, "claude", backend)
+        monkeypatch.setattr(mcp_tools, "_MANAGER", current)
+        requested: list[str] = []
 
-    def find_record(session_id: str, **_kwargs: Any) -> record_paths.SessionRecord:
-        requested.append(session_id)
-        return record_paths.SessionRecord(engine, (transcript,))
+        def find_record(session_id: str, **_kwargs: Any) -> record_paths.SessionRecord:
+            requested.append(session_id)
+            return record_paths.SessionRecord(engine, (transcript,))
 
-    monkeypatch.setattr(record_paths, "find_session_record", find_record)
-    try:
+        monkeypatch.setattr(record_paths, "find_session_record", find_record)
         started = await _start_task(
             tmp_path,
             "request=/repo=awi=観測の裏付け取得\n確定済みの観測: rg --filesの結果はa.pyとb.py。入力特徴は/isolated/repo。",
@@ -259,7 +255,11 @@ async def test_task_record_reaches_public_observation_evidence(
         assert len(calls) == 1
         call = calls[0]
         expected_tool = "Bash" if engine == "claude" else "exec_command"
-        assert (call["tool"], call["call_id"], call["text"]) == (expected_tool, "observation-call", "rg --files /isolated/repo")
+        assert (call["tool"], call["call_id"], call["text"]) == (
+            expected_tool,
+            "observation-call",
+            "rg --files /isolated/repo",
+        )
         assert (call["record"], call["line"], call["result_line"]) == (f"{engine}:observation-parent", 1, 2)
         detail_arguments = [
             "--transcript",
@@ -284,7 +284,11 @@ async def test_task_record_reaches_public_observation_evidence(
             input_payload = json.loads(details[0]["text"])["payload"]
             assert json.loads(input_payload["arguments"]) == {"cmd": "rg --files /isolated/repo"}
             result_payload = json.loads(details[1]["text"])["payload"]
-            assert result_payload == {"type": "function_call_output", "call_id": "observation-call", "output": "a.py\nb.py\n"}
+            assert result_payload == {
+                "type": "function_call_output",
+                "call_id": "observation-call",
+                "output": "a.py\nb.py\n",
+            }
         assert not any(event["kind"] == "user" for event in events)
         (tmp_path / "observation-extraction.json").write_text(
             json.dumps(
@@ -300,8 +304,6 @@ async def test_task_record_reaches_public_observation_evidence(
             ),
             encoding="utf-8",
         )
-    finally:
-        await current.close()
 
 
 @pytest.mark.parametrize("engine", ("claude", "codex"))
@@ -314,22 +316,21 @@ async def test_task_starts_with_record_shortage_without_substitute(
     monkeypatch.delenv("CODEX_THREAD_ID", raising=False)
     if availability != "unresolved":
         monkeypatch.setenv("CODEX_THREAD_ID", "direct-parent")
-    current = manager.AgentsServerManager(None)
-    backend = _ObservedBackend(current.sessions, "claude")
-    agents_server_support.install_backend(current, "claude", backend)
-    monkeypatch.setattr(mcp_tools, "_MANAGER", current)
-    _write_record(tmp_path, engine, "ancestor")
-    _write_record(tmp_path, engine, "self")
-    candidates = tuple(_write_record(tmp_path, engine, f"candidate-{index}") for index in range(2))
-    requested: list[str] = []
+    async with manager.AgentsServerManager(None) as current:
+        backend = _ObservedBackend(current.sessions, "claude")
+        agents_server_support.install_backend(current, "claude", backend)
+        monkeypatch.setattr(mcp_tools, "_MANAGER", current)
+        _write_record(tmp_path, engine, "ancestor")
+        _write_record(tmp_path, engine, "self")
+        candidates = tuple(_write_record(tmp_path, engine, f"candidate-{index}") for index in range(2))
+        requested: list[str] = []
 
-    def find_record(session_id: str, **_kwargs: Any) -> record_paths.SessionRecord | None:
-        requested.append(session_id)
-        return record_paths.SessionRecord(engine, candidates) if availability == "ambiguous" else None
+        def find_record(session_id: str, **_kwargs: Any) -> record_paths.SessionRecord | None:
+            requested.append(session_id)
+            return record_paths.SessionRecord(engine, candidates) if availability == "ambiguous" else None
 
-    monkeypatch.setattr(record_paths, "find_session_record", find_record)
-    monkeypatch.delenv("CODEX_THREAD_ID", raising=False)
-    try:
+        monkeypatch.setattr(record_paths, "find_session_record", find_record)
+        monkeypatch.delenv("CODEX_THREAD_ID", raising=False)
         started = await _start_task(tmp_path, "request=/repo=awi=記録を取得しない観測")
         assert started["session_id"] == "claude-session"
         context = _context(backend.prompts[0], tmp_path)
@@ -343,5 +344,3 @@ async def test_task_starts_with_record_shortage_without_substitute(
         if availability == "ambiguous":
             assert context["record_candidates"] == [str(path) for path in candidates]
         assert len(backend.start_calls) == 1
-    finally:
-        await current.close()

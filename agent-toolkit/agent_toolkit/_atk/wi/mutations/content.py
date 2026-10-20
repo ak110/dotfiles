@@ -41,6 +41,7 @@ _EDITABLE_STATE_NEXT_ACTION = (
     "`atk wi hold <ファイル名> --state <adopted|rejected>`（現在の状態を指定）でholdへ戻してから編集する"
 )
 _RESERVED_EDIT_KEY_NEXT_ACTIONS = {
+    "state": "状態はatk wiの状態遷移コマンドで変更する",
     "depends_on": "frontmatterからdepends_onを除き、依存は`atk wi set-dependencies`で更新する",
     "target_commit": "frontmatterからtarget_commitを除いて再実行する（target_commitはatkが記録する）",
     "cooldown_until": "frontmatterからcooldown_untilを除き、期限は`atk wi edit <FILE> --cooldown-until`で設定する",
@@ -161,7 +162,10 @@ def append_entry_content(
         raise WebInputError("追記可能状態はinbox、processingまたはholdです", next_action=_EDITABLE_STATE_NEXT_ACTION)
 
     directory = private_notes / state
-    path = directory / filename
+    paths, _missing = _wi_entries.read_named_entries(
+        private_notes, _wi_entries.validate_named_filenames(private_notes, [filename]), target_repo=None
+    )
+    path = paths[0][0] if paths else directory / filename
 
     def validate(previous: str, updated: str) -> None:
         del updated
@@ -329,7 +333,7 @@ def _reject_agent_processing_edit(path: pathlib.Path) -> None:
     holdは自動処理からの除外だけを意味し、状態による編集の制限を増やすと、保留、本文置換、解除の順で
     投入済み項目を更新する手順を実行できなくなるためである。
     """
-    if not is_agent_environment() or path.parent.name != WI_STATE_PROCESSING:
+    if not is_agent_environment() or _wi_entries.entry_state_of(path) != WI_STATE_PROCESSING:
         return
     _outcome.report_failure(
         f"processingの項目はエージェント環境から編集できない: {path.name}。"
@@ -382,12 +386,11 @@ def cmd_edit(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
             _outcome.report_failure("$EDITORが未設定のため編集できない", next_action="$EDITORを設定するか--body-fileを指定する")
             sys.exit(1)
     inbox_dir = private_notes / WI_STATE_INBOX
-    _wi_entries.subdir(private_notes, WI_STATE_PROCESSING)
     with _wi_sync.repo_lock(private_notes):
         if args.filename is None:
             _wi_sync.pull(private_notes)
             candidates = sorted(
-                (p for p in inbox_dir.iterdir() if p.suffix == ".md" and p.is_file()),
+                (record[0] for record in _wi_entries.iter_entries(private_notes, (WI_STATE_INBOX,), None)),
                 key=lambda p: p.name,
             )
             if not candidates:
@@ -399,7 +402,7 @@ def cmd_edit(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
             _wi_sync.pull(private_notes)
             paths = resolve_editable_targets([args.filename], private_notes)
             path = paths[0]
-        if args.cooldown_until is not None and path.parent.name == WI_STATE_PROCESSING:
+        if args.cooldown_until is not None and _wi_entries.entry_state_of(path) == WI_STATE_PROCESSING:
             _outcome.report_failure(
                 f"processingの項目は再処理抑制期限を変更できない: {path.name}",
                 next_action="処理を終えてinboxまたはholdへ移してから指定する",
@@ -505,7 +508,7 @@ def cmd_edit(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
     try:
         edit_entry_content(
             private_notes,
-            state=path.parent.name,
+            state=_wi_entries.entry_state_of(path),
             filename=path.name,
             content=edited,
             target_repo=args.target_repo,
@@ -544,7 +547,6 @@ def cmd_append(args: argparse.Namespace, private_notes: pathlib.Path, message: s
         sys.exit(1)
 
     inbox_dir = private_notes / WI_STATE_INBOX
-    _wi_entries.subdir(private_notes, WI_STATE_PROCESSING)
     with _wi_sync.repo_lock(private_notes):
         _wi_filenames.validate_filenames_only([args.filename], inbox_dir)
         _wi_sync.pull(private_notes)
@@ -575,7 +577,7 @@ def cmd_append(args: argparse.Namespace, private_notes: pathlib.Path, message: s
     try:
         append_entry_content(
             private_notes,
-            state=path.parent.name,
+            state=_wi_entries.entry_state_of(path),
             filename=path.name,
             content=content,
             target_repo=args.target_repo,

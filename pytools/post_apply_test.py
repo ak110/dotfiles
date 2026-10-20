@@ -1294,7 +1294,7 @@ class TestSubstitutedHome:
             assert not post_apply.log_format.is_log_only(record)
 
     def test_actual_home_runs_host_resource_steps(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        import pwd  # noqa: PLC0415  # pylint: disable=import-outside-toplevel
+        import pwd  # noqa: PLC0415  # pylint: disable=import-outside-toplevel,import-error  # POSIX専用でありWindowsには存在しない。
 
         monkeypatch.setattr(post_apply.sys, "platform", "linux")
         monkeypatch.setenv("HOME", pwd.getpwuid(os.getuid()).pw_dir)

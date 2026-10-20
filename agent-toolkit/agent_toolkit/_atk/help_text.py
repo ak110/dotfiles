@@ -20,9 +20,9 @@ from typing import Any
 from agent_toolkit._atk import outcome as _outcome
 from agent_toolkit._plan import locations as _plan_locations
 
-ROOT_DESCRIPTION = "目的: agent-toolkitのWIキュー、計画ファイル、レビュー指摘管理表、managed-tempと委譲支援を1つのコマンドから操作する。\n利用場面: ユーザーとエージェントが、AWIの投入から計画、実装、保存までの一連の作業を進めるとき。\n対象と出力: サブコマンドを指定しない場合はコマンド一覧を標準出力へ書き、何も変更しない。実際の読み書きは各サブコマンドが行う。`AI_AGENT`・`CODEX_CI`・`CLAUDECODE`・`CURSOR_AGENT`のいずれかが設定されたエージェント環境では、標準出力と標準エラーを分けて保持する。UTF-8で16384バイトを超える出力は生成側が新規managed-tempへ保存し、標準出力には`保存先: <絶対パス>`・`行数: <N>`、標準エラーには`標準エラー保存先: <絶対パス>`・`標準エラー行数: <N>`を返す。結果をファイルとして受け取る呼び出し（`atk agents wait`、FILENAMEを2件以上指定するか`--all`を指定した`atk wi show`、`atk run-script session-review-evidence`の`--user-events`）は短い標準出力も保存する。保存後は、`atk agents wait`が通知・終端の内訳と本文を、`--user-events`が`kind`が`user`の行ごとに`発話: record=<record> line=<line> <本文の冒頭>`を続けて書く。それ以外の16384バイト以下の出力は直接表示する。`--help`の表示と、`atk info`のように結果を表示して終わるサブコマンドも同じ量で判定する。引数の誤りは標準エラーへ直接書き、終了コード2で終わる。WI本文の表記診断の詳細も`標準エラー保存先:`の保存先へ書く。`atk serve`、`atk wi process-loop`の常駐および`atk agents logs --follow`は対象外とし、エージェント環境でない場合は出力を変えない。保存先は最終更新から7日で自動削除される。\n前提: private-notesを扱うサブコマンドは`atk config get private_notes`が返すリポジトリを使う。\n復元・後始末: 本コマンド自身は状態を残さない。各サブコマンドの後始末はそのコマンドの`--help`に示す。"
+ROOT_DESCRIPTION = "WIキュー、計画、レビュー記録、一時領域と委譲セッションを操作する。\n\n目的: agent-toolkitのWIキュー、計画ファイル、レビュー指摘管理表、managed-tempと委譲支援を1つのコマンドから操作する。\n利用場面: ユーザーとエージェントが、AWIの投入から計画、実装、保存までの一連の作業を進めるとき。\n対象と出力: サブコマンドを指定しない場合はコマンド一覧を標準出力へ書き、何も変更しない。実際の読み書きは各サブコマンドが行う。`AI_AGENT`・`CODEX_CI`・`CLAUDECODE`・`CURSOR_AGENT`のいずれかが設定されたエージェント環境では、標準出力と標準エラーを分けて保持する。UTF-8で16384バイトを超える出力は生成側が新規managed-tempへ保存し、標準出力には`保存先: <絶対パス>`・`行数: <N>`、標準エラーには`標準エラー保存先: <絶対パス>`・`標準エラー行数: <N>`を返す。結果をファイルとして受け取る呼び出し（`atk agents wait`、FILENAMEを2件以上指定するか`--all`を指定した`atk wi show`、`atk run-script session-review-evidence`の`--user-events`）は短い標準出力も保存する。保存後は、`atk agents wait`が通知・終端の内訳と本文を、`--user-events`が`kind`が`user`の行ごとに`発話: record=<record> line=<line> <本文の冒頭>`を続けて書く。それ以外の16384バイト以下の出力は直接表示する。`--help`の表示と、`atk info`のように結果を表示して終わるサブコマンドも同じ量で判定する。引数の誤りは標準エラーへ直接書き、終了コード2で終わる。WI本文の表記診断の詳細も`標準エラー保存先:`の保存先へ書く。`atk serve`、`atk wi process-loop`の常駐および`atk agents logs --follow`は対象外とし、エージェント環境でない場合は出力を変えない。保存先は最終更新から7日で自動削除される。\n前提: private-notesを扱うサブコマンドは`atk config get private_notes`が返すリポジトリを使う。\n復元・後始末: 本コマンド自身は状態を残さない。各サブコマンドの後始末はそのコマンドの`--help`に示す。"
 ROOT_EPILOG = "各コマンドの詳細は`atk <コマンド> --help`で表示する。階層コマンドではさらに`atk <コマンド> <サブコマンド> --help`を使う。\n\n実行例:\n\n  atk wi list\n  atk config show"
-ROOT_EPILOG += "\n\n保存後の表示は、標準出力と標準エラーのそれぞれを読む最初のatk read-fileコマンドを示す。返却JSONのtextを連結し、nextを--startへ渡してeof: trueまで読む。"
+ROOT_EPILOG += "\n\n保存後の表示は、標準出力と標準エラーのそれぞれを読む最初のatk read-fileコマンドを示す。継続は`atk read-file --start <next> -- <同じ絶対パス>`で取得し、返却JSONのtextをeof: trueまで連結する。"
 ROOT_EPILOG += "\n全文を保存したatk wi showは、各項目のユーザー専用の記入欄（ユーザーコメント・回答）の有無と、保存先での開始行を全件示す。"
 
 CI_REVIEW_TABLE_NAME_FORMAT = "ci-<修正系列の開始時のHEADの7文字以上の一意な短縮OID>.exec-review.tsv"
@@ -35,288 +35,288 @@ HELP: dict[str, dict[str, str]] = {
     "atk wi process-loop all-repos": {
         "summary": "登録した全リポジトリの担当を起動する",
         "epilog": '実行例:\n\n  atk config set process_loop_repositories \'["/absolute/repository-one","/absolute/repository-two"]\'\n  atk wi list --configured-repos --with-staleness\n  atk wi process-loop all-repos\n  atk wi process-loop --no-update all-repos',
-        "description": "目的: process_loop_repositoriesで登録した対象を一括取得し、各対象cwdの通常delegateがprocess-wiの全工程を担う。\n利用場面: ホームから登録集合の処理を常駐で受け付けるとき。\n対象と出力: 対象ごとの候補・処理上限・所有session・終端記録を保持する。オーケストレーターは対象の選定・実装・Git操作を直接行わない。\n前提: `atk config set process_loop_repositories <JSON文字列配列>`で絶対パスを登録する。空配列の場合は待機し、同じoriginの登録は登録順の先頭へまとめる。不正登録は修正操作を示して停止する。共通オプションはall-reposの前へ指定する。\n復元・後始末: Ctrl+Cまたはabortで終了する。失敗した担当の成果を保持し、all-repos担当だけを再開する。status・instructなどの制御はOSアカウント共通で、追加指示は次の1起動集合で1回受領し、各担当が自分の対象に関する内容を適用する。",
+        "description": "登録した全リポジトリの担当を起動する。\n\n目的: process_loop_repositoriesで登録した対象を一括取得し、各対象cwdの通常delegateがprocess-wiの全工程を担う。\n利用場面: ホームから登録集合の処理を常駐で受け付けるとき。\n対象と出力: 対象ごとの候補・処理上限・所有session・終端記録を保持する。オーケストレーターは対象の選定・実装・Git操作を直接行わない。\n前提: `atk config set process_loop_repositories <JSON文字列配列>`で絶対パスを登録する。空配列の場合は待機し、同じoriginの登録は登録順の先頭へまとめる。不正登録は修正操作を示して停止する。共通オプションはall-reposの前へ指定する。\n復元・後始末: Ctrl+Cまたはabortで終了する。失敗した担当の成果を保持し、all-repos担当だけを再開する。status・instructなどの制御はOSアカウント共通で、追加指示は次の1起動集合で1回受領し、各担当が自分の対象に関する内容を適用する。",
     },
     "atk lane integrate": {
         "summary": "レビュー済みレーンを統合し最終化する",
         "epilog": "実行例:\n\n  atk lane integrate --record /absolute/lane-record.json --reviewed-head 0123456789abcdef --target-worktree /absolute/repository --target-branch develop --manifest /absolute/finalization.json --session-id lane-owner\n  atk lane integrate --record /absolute/lane-record.json --reviewed-head 0123456789abcdef --target-worktree /absolute/repository --target-branch develop --manifest /absolute/finalization.json --session-id lane-owner --writer-session agreed-writer",
-        "description": "目的: レビュー済みレーンのGit統合と計画保存・WI終端・選定状態の最終化を再開可能な工程として実施する。\n利用場面: レーンの独立した実行レビューと検証が完了したとき。\n対象と出力: --record ABS --reviewed-head OID --target-worktree ABS --target-branch BRANCH --manifest ABS --session-id IDを指定する。--session-idは所有登録のsession（atk lane createの所有session）とする。manifestのplansは計画名と最終化argv、wisはWI名と終端argv、verificationはrebase後検証argv、handoffは計画なし時の引継ぎ絶対パス、lane_started_atは最初のレーン開始時刻（時差付きISO 8601）を保持する。Git統合の成功後、最終化の最初の操作の前に統合後HEADの短縮OID・完了時刻・lane_started_atからの総経過秒数を1回だけ確定して所有登録へ保存し、plans・wisのargvの{{integrated_head_short}}・{{completed_at}}・{{lane_seconds}}を展開する。{{expand-file:ABS}}はテンプレート内の同じ参照を展開した複製の絶対パスへ置き換える。再開では保存した確定値を使う。verificationの各argvは自身の時間上限を持つ形（plan-verifyの--timeout、atk run-command --timeout）で渡し、CLIは上限を重ねない。最終化argvとCLIが内部で起動する操作はatk lane create --timeoutの上限で打ち切る。工程・HEAD・記録JSONを返す。\n前提: 所有登録、cleanな同一Git登録、レビュー対象HEADとの一致。統合先worktreeとレーンworktreeをcwdとする稼働中の担当のうち、書き込む役割か役割の宣言を持たない起動の担当が残る場合は全件を診断して終了2とする。呼出元とその委譲元の連鎖、explore、書き込まないと宣言した役割の担当は数えない。合意した担当は--writer-sessionで反復指定する。\n復元・後始末: 失敗時は記録と資源を保持し、同じ入力で再開する。Git統合前の検証argv・最終化argv・handoffの是正は--restart-reviewを指定する。HEADが記録のnew_headのままなら、old_headかnew_headを--reviewed-headへ渡す。rebase記録と対応表を引き継いで検証を全件やり直し、awaiting-validation（終了1）へ戻る。対応表と診断を検収後、--restart-reviewを外して--accept-rebased-headで再開する。HEADが変わる是正では再レビューを受理した現在HEADを渡す。Git統合済みなら未完了の最終化から進める。",
+        "description": "レビュー済みレーンを統合し最終化する。\n\n目的: レビュー済みレーンのGit統合と計画保存・WI終端・選定状態の最終化を再開可能な工程として実施する。\n利用場面: レーンの独立した実行レビューと検証が完了したとき。\n対象と出力: --record ABS --reviewed-head OID --target-worktree ABS --target-branch BRANCH --manifest ABS --session-id IDを指定する。--session-idは所有登録のsession（atk lane createの所有session）とする。manifestのplansは計画名と最終化argv、wisはWI名と終端argv、verificationはrebase後検証argv、handoffは計画なし時の引継ぎ絶対パス、lane_started_atは最初のレーン開始時刻（時差付きISO 8601）を保持する。Git統合の成功後、最終化の最初の操作の前に統合後HEADの短縮OID・完了時刻・lane_started_atからの総経過秒数を1回だけ確定して所有登録へ保存し、plans・wisのargvの{{integrated_head_short}}・{{completed_at}}・{{lane_seconds}}を展開する。{{expand-file:ABS}}はテンプレート内の同じ参照を展開した複製の絶対パスへ置き換える。再開では保存した確定値を使う。verificationの各argvは自身の時間上限を持つ形（plan-verifyの--timeout、atk run-command --timeout）で渡し、CLIは上限を重ねない。最終化argvとCLIが内部で起動する操作はatk lane create --timeoutの上限で打ち切る。工程・HEAD・記録JSONを返す。\n前提: 所有登録、cleanな同一Git登録、レビュー対象HEADとの一致。統合先worktreeとレーンworktreeをcwdとする稼働中の担当のうち、書き込む役割か役割の宣言を持たない起動の担当が残る場合は全件を診断して終了2とする。呼出元とその委譲元の連鎖、explore、書き込まないと宣言した役割の担当は数えない。合意した担当は--writer-sessionで反復指定する。\n復元・後始末: 失敗時は記録と資源を保持し、同じ入力で再開する。Git統合前の検証argv・最終化argv・handoffの是正は--restart-reviewを指定する。HEADが記録のnew_headのままなら、old_headかnew_headを--reviewed-headへ渡す。rebase記録と対応表を引き継いで検証を全件やり直し、awaiting-validation（終了1）へ戻る。対応表と診断を検収後、--restart-reviewを外して--accept-rebased-headで再開する。HEADが変わる是正では再レビューを受理した現在HEADを渡す。Git統合済みなら未完了の最終化から進める。",
     },
     "atk read-file": {
         "summary": "UTF-8本文を上限内で連続取得する",
         "description": (
-            "目的: 長い本文を文字と改行を保って取得する。\n"
-            "利用場面: 全文取得が出力上限で失敗した後、またはatkが返した保存先の本文を読むとき。\n"
+            "UTF-8本文を上限内で連続取得する。\n\n目的: 長い本文を文字と改行を保って取得する。\n"
+            "利用場面: 全文取得が出力上限で失敗した後、同じ版の受領済みの容量・遮断・切り詰めの診断から上限超過が分かるとき、またはatkが返した保存先の本文を読むとき。\n"
             "対象と出力: UTF-8ファイルの絶対パスを指定する。text、start、end、next、eofを持つJSONを返す。"
-            "末尾の改行とJSONのエスケープを含む一回分の返却予算は指定なしで4096 UTF-8バイト。"
+            "末尾の改行とJSONのエスケープを含む一回分の返却予算は指定なしで16384 UTF-8バイト。"
             "--max-bytesで最大16384バイトまで指定できる。"
             "位置はデコード後の文字数で、endは取得末尾を含まない。"
             "同じファイルの直前の応答でeofがtrueなら終了し、それ以外はnextを--startへ渡してtextを連結する。終端のnextはnull。"
             "非負の開始位置が末尾を超えた場合は末尾の位置へ補正する。空ファイルと末尾位置は空のtextで終端を示す。\n"
-            "前提: 通常のファイルは事前に容量を測らず全文取得から始める。"
+            "前提: 容量が未知の通常のファイルは、事前に容量を測らず全文取得から始める。上限超過が既知なら初回から分割取得する。"
             "内側のコマンドと外側の実行セルの受信予算の双方へ収まる--max-bytesを選ぶ。"
             "独立した複数ファイルは、それぞれの応答から継続し、合計出力量が受信予算内なら並列取得できる。"
             "負の位置、相対パス、不在、非UTF-8、最大予算超過とJSON全体が収まらない予算は終端でも非0で拒否する。\n"
             "復元・後始末: 読取だけを行い、取得状態を保存しないため不要。"
         ),
-        "epilog": "実行例:\n\n  atk read-file --max-bytes 12000 -- /absolute/path/to/file.txt\n\n継続時は同じパスを指定し、直前の応答のnextを--startへ渡す。位置は文字単位、--max-bytesはJSON全体のUTF-8バイト単位である。",
+        "epilog": "実行例:\n\n  atk read-file -- /absolute/path/to/file.txt\n  atk read-file --start 12000 -- /absolute/path/to/file.txt\n  atk read-file --max-bytes 4096 -- /absolute/path/to/file.txt\n\n継続は`atk read-file --start <next> -- <同じ絶対パス>`で取得し、返却JSONのtextをeof: trueまで連結する。位置は文字単位、--max-bytesはJSON全体のUTF-8バイト単位である。",
     },
     "atk info": {
         "summary": "実行環境とpluginの位置・版を表示する",
-        "description": "目的: atkが参照する実行環境を診断する。\n利用場面: 起動したディレクトリ、pluginの版または設定の所在を確かめるとき。\n対象と出力: 現在ディレクトリ、実行ファイル、plugin rootと版、設定ファイルと状態ディレクトリの所在を標準出力へ書く。\n前提: なし。\n復元・後始末: 読み取りだけを行うため不要。",
+        "description": "実行環境とpluginの位置・版を表示する。\n\n目的: atkが参照する実行環境を診断する。\n利用場面: 起動したディレクトリ、pluginの版または設定の所在を確かめるとき。\n対象と出力: 現在ディレクトリ、実行ファイル、plugin rootと版、設定ファイルと状態ディレクトリの所在を標準出力へ書く。\n前提: なし。\n復元・後始末: 読み取りだけを行うため不要。",
         "epilog": "実行例:\n\n  atk info",
     },
     "atk commit": {
         "summary": "子エージェントでGitコミットを作成する",
-        "description": "目的: 作業ツリーの差分を子エージェントに確認させてGitコミットまで行う。\n利用場面: 変更に対応するコミットメッセージの作成とコミットを任せるとき。\n対象と出力: 現在のGitリポジトリのstage・未stage・未追跡ファイルを調べ、選んだengineの子エージェントへ指示を渡す。dry-runではコミットしない。\n前提: 通常実行では変更があること。model-typeは段位名またはengine:model[/effort]の候補列を受け取る。\n復元・後始末: 作成したコミットはGit履歴で確認し、必要ならGitの通常手段で取り消す。",
+        "description": "子エージェントでGitコミットを作成する。\n\n目的: 作業ツリーの差分を子エージェントに確認させてGitコミットまで行う。\n利用場面: 変更に対応するコミットメッセージの作成とコミットを任せるとき。\n対象と出力: 現在のGitリポジトリのstage・未stage・未追跡ファイルを調べ、選んだengineの子エージェントへ指示を渡す。dry-runではコミットしない。\n前提: 通常実行では変更があること。model-typeは段位名またはengine:model[/effort]の候補列を受け取る。\n復元・後始末: 作成したコミットはGit履歴で確認し、必要ならGitの通常手段で取り消す。",
         "epilog": "実行例:\n\n  atk commit\n  atk commit --model-type claude:sonnet/high",
     },
     "atk setup-project": {
         "summary": "プロジェクト規範と共有スキルを統一する",
-        "description": "目的: Claude CodeとCodexが同じプロジェクト規範とスキルを読めるようにする。\n利用場面: プロジェクトの指示ファイルをAGENTS.mdへ統一するとき。\n対象と出力: 現在ディレクトリの指示を移行し、共有スキルのリンクを作成する。with-rulesではpluginの規範も複製し、cleanでは配置済みリンクと規範を削除する。\n前提: 予期しない指示ファイルとリンク先は変更せず失敗する。\n復元・後始末: cleanで共有リンクと複製済み規範を削除できる。移行した指示ファイルはGit履歴から復元できる。",
+        "description": "プロジェクト規範と共有スキルを統一する。\n\n目的: Claude CodeとCodexが同じプロジェクト規範とスキルを読めるようにする。\n利用場面: プロジェクトの指示ファイルをAGENTS.mdへ統一するとき。\n対象と出力: 現在ディレクトリの指示を移行し、共有スキルのリンクを作成する。with-rulesではpluginの規範も複製し、cleanでは配置済みリンクと規範を削除する。\n前提: 予期しない指示ファイルとリンク先は変更せず失敗する。\n復元・後始末: cleanで共有リンクと複製済み規範を削除できる。移行した指示ファイルはGit履歴から復元できる。",
         "epilog": "実行例:\n\n  atk setup-project\n  atk setup-project --with-rules\n  atk setup-project --clean",
     },
     "atk run-script": {
         "summary": "登録済みplugin内Pythonスクリプトを実行する",
-        "description": "目的: agent向け補助スクリプトを現在のagent-toolkit環境で実行する。\n利用場面: skillまたは規範が登録名で補助処理を起動するとき。\n対象と出力: 閉じた登録表のscriptだけを実行し、scriptの終了コードをそのまま返す。エージェント環境では、標準出力と標準エラーのそれぞれが`atk --help`の示す長さを超える場合に全量を保存し、標準出力は`保存先:`・`行数:`、標準エラーは`標準エラー保存先:`・`標準エラー行数:`だけを書く。`session-review-evidence`の`--user-events`は逐語引用の出所ファイルとして渡すため、短い標準出力も保存し、続けて`kind`が`user`の行ごとに`発話: record=<record> line=<line> <本文の冒頭（改行を空白へ置き換えた先頭60文字。切り詰めた場合は末尾に`…`）>`を保存ファイルと同じ順で1行ずつ書く（該当が無ければ`発話: 0件`）。エージェント環境でない場合は両出力をそのまま表示する。\n前提: SCRIPTは公開済みの登録名であること。scriptへ渡す引数は`--`の後へ置く。\n復元・後始末: 対象scriptが定める契約に従う。run-script自身は状態を残さない。",
+        "description": "登録済みplugin内Pythonスクリプトを実行する。\n\n目的: agent向け補助スクリプトを現在のagent-toolkit環境で実行する。\n利用場面: skillまたは規範が登録名で補助処理を起動するとき。\n対象と出力: 閉じた登録表のscriptだけを実行し、scriptの終了コードをそのまま返す。エージェント環境では、標準出力と標準エラーのそれぞれが`atk --help`の示す長さを超える場合に全量を保存し、標準出力は`保存先:`・`行数:`、標準エラーは`標準エラー保存先:`・`標準エラー行数:`だけを書く。`session-review-evidence`の`--user-events`は逐語引用の出所ファイルとして渡すため、短い標準出力も保存し、続けて`kind`が`user`の行ごとに`発話: record=<record> line=<line> <本文の冒頭（改行を空白へ置き換えた先頭60文字。切り詰めた場合は末尾に`…`）>`を保存ファイルと同じ順で1行ずつ書く（該当が無ければ`発話: 0件`）。エージェント環境でない場合は両出力をそのまま表示する。\n前提: SCRIPTは公開済みの登録名であること。scriptへ渡す引数は`--`の後へ置く。\n復元・後始末: 対象scriptが定める契約に従う。run-script自身は状態を残さない。",
         "epilog": "実行例:\n\n  atk run-script plan-check -- /absolute/path/to/plan.md",
     },
     "atk run-command": {
-        "summary": "外部コマンドの全出力と終了状態を保持する",
-        "description": "目的: MCPによる実行手段を持たない有限終了の外部コマンドについて、標準出力と標準エラーの全量および実際の終了状態を保持する。\n利用場面: formatter、linter、testerなどの実行や手動観測で、両ストリームの全量と終了状態を記録して後続担当へ渡すとき。対話型、常駐、端末制御および追従表示には使わない。\n対象と出力: `--`以後をshellで再解釈せずargvとして起動し、登録済みmanaged-tempの別ファイルへ両ストリームをバイト列のまま保存する。argv、cwd、git_head（起動直前のcwdの作業ツリーのHEAD）、git_status（同じ時点の`git status --porcelain=v1 --untracked-files=all`の行の配列。Git作業ツリーの外では両方null）、child_exit_code、wrapper_exit_code（この操作の終了コード）、failure（起動または保存失敗の理由。無ければnull）、timed_out、signal、stdout_path、stderr_pathと両ファイルの行数・バイト数を持つJSON objectを同じ領域のrecord.jsonへUTF-8で保存し、保存先の絶対パスrecord_pathを含む同じJSONを標準出力へ1件出力する。自然終了0〜255は同じ終了コード、signalは128+signal番号、timeoutは124、wrapper異常は125を返す。JSON保存失敗では125と診断を返し、record_pathはnull、子の結果と両出力パスは保持する。\n読取: --record <保存JSONの絶対パス>を反復するか、--records-file <plan-verifyの結果まとめJSON>を渡すと子を起動せずに読む。recordsには各取得版・Git状態・argv・cwd・子とwrapperの終了状態、両出力の所在と内容を返す。旧記録に無いwrapper_exit_codeとfailureはnullとunrecordedで示し、欠損・破損・保存失敗はerrorsと終了125で返す。読取と子の実行指定は混在させない。\n前提: `--cwd`は実在する絶対ディレクトリ、`--timeout`は正の秒数とする。pipelineや複数行codeはscriptへ保存し、そのscriptのargvを渡す。\n復元・後始末: 保存先は`atk managed-temp list`と`cleanup`で管理し、未回収でも保持期限後に自動削除される。",
+        "summary": "外部コマンドを実行し全出力と終了状態を保存する",
+        "description": "外部コマンドを実行し全出力と終了状態を保存する。\n\n目的: MCPによる実行手段を持たない有限終了の外部コマンドについて、標準出力と標準エラーの全量および実際の終了状態を保持する。\n利用場面: formatter、linter、testerなどの実行や手動観測で、両ストリームの全量と終了状態を記録して後続担当へ渡すとき。対話型、常駐、端末制御および追従表示には使わない。\n対象と出力: `--`以後をshellで再解釈せずargvとして起動し、登録済みmanaged-tempの別ファイルへ両ストリームをバイト列のまま保存する。argv、cwd、git_head（起動直前のcwdの作業ツリーのHEAD）、git_status（同じ時点の`git status --porcelain=v1 --untracked-files=all`の行の配列。Git作業ツリーの外では両方null）、child_exit_code、wrapper_exit_code（この操作の終了コード）、failure（起動または保存失敗の理由。無ければnull）、timed_out、signal、stdout_path、stderr_pathと両ファイルの行数・バイト数を持つJSON objectを同じ領域のrecord.jsonへUTF-8で保存し、保存先の絶対パスrecord_pathを含む同じJSONを標準出力へ1件出力する。自然終了0〜255は同じ終了コード、signalは128+signal番号、timeoutは124、wrapper異常は125を返す。JSON保存失敗では125と診断を返し、record_pathはnull、子の結果と両出力パスは保持する。\n読取: --record <保存JSONの絶対パス>を反復するか、--records-file <plan-verifyの結果まとめJSON>を渡すと子を起動せずに読む。recordsには各取得版・Git状態・argv・cwd・子とwrapperの終了状態、両出力の所在と内容を返す。旧記録に無いwrapper_exit_codeとfailureはnullとunrecordedで示し、欠損・破損・保存失敗はerrorsと終了125で返す。読取と子の実行指定は混在させない。\n前提: `--cwd`は実在する絶対ディレクトリ、`--timeout`は正の秒数とする。pipelineや複数行codeはscriptへ保存し、そのscriptのargvを渡す。\n復元・後始末: 保存先は`atk managed-temp list`と`cleanup`で管理し、未回収でも保持期限後に自動削除される。",
         "epilog": "実行例:\n\n  atk run-command --cwd /absolute/repository -- pytest -q",
     },
     "atk run-skill": {
         "summary": "定期実行から任意のスキルを自律モードで1回実行する",
-        "description": "目的: cron、systemd timer、Windowsのタスクスケジューラーなど端末を持たない定期実行から、指定した対象リポジトリで指定したスキルを自律モードの最上位セッションとして1回実行する。\n利用場面: ログの点検など、ユーザーが定期的に任せたいスキルをcronの1行から起動するとき。\n対象と出力: `orchestrate_engine`のengine順にengine別のhigh段位モデル設定を並べた候補から可用な候補を選び（Claudeの利用上限は解除まで待つ）、Claudeは`claude -p`、Codexは`codex exec`で対象リポジトリの作業ツリーのrootから起動する。セッションは結果を報告用UWIへ保存し、判断が要る対応は事前承認型UWIへ回す。これらのUWIは`source`が`run-skill`、`scope`がスキル名となり、回答すると同じ対象リポジトリと同じスキルの次回の実行が取り込む。実行ごとに`atk config get state_dir`が示す状態ディレクトリの`run-skill/`へログを1件作成し、採用した候補、Claudeのセッション識別子、セッションの標準出力と標準エラーおよび終了状態を保存する。標準エラーが端末の場合はログ作成直後に絶対パス、取得直後に子の識別子、実行中にassistantの発言とtool呼出の要約を標準エラーへ表示し、同じログに保存する。標準出力だけのリダイレクトでも表示し、端末の無い起動では追加表示しない。思考と生JSON全体は端末に表示しない。正常終了では標準出力へログの絶対パスを含む成功行を1行書き、それ以外は標準エラーへ失敗行と次の操作を書く。\n終了コード: 0は正常終了。1は同じ対象リポジトリと同じスキルの実行が進行中のため起動しなかった場合とセッションを起動できなかった場合。124は`--timeout`を超えたためセッションと子孫を終了させた場合。それ以外の値はセッションの異常終了の終了コード（シグナルによる終了は128＋シグナル番号）と、全候補の可用性判定の失敗で最後の候補が返した終了コード。2は引数と、`orchestrate_engine`または段位モデルの設定の書式の誤り。\n前提: 定期実行の環境変数`PATH`に`atk`・`claude`・`codex`の実行ファイルの場所を含めること。\n復元・後始末: 30日を超えたログは各実行の開始時に削除する。ロックは実行の終了時に解放する。",
+        "description": "定期実行から任意のスキルを自律モードで1回実行する。\n\n目的: cron、systemd timer、Windowsのタスクスケジューラーなど端末を持たない定期実行から、指定した対象リポジトリで指定したスキルを自律モードの最上位セッションとして1回実行する。\n利用場面: ログの点検など、ユーザーが定期的に任せたいスキルをcronの1行から起動するとき。\n対象と出力: `orchestrate_engine`のengine順にengine別のhigh段位モデル設定を並べた候補から可用な候補を選び（Claudeの利用上限は解除まで待つ）、Claudeは`claude -p`、Codexは`codex exec`で対象リポジトリの作業ツリーのrootから起動する。セッションは結果を報告用UWIへ保存し、判断が要る対応は事前承認型UWIへ回す。これらのUWIは`source`が`run-skill`、`scope`がスキル名となり、回答すると同じ対象リポジトリと同じスキルの次回の実行が取り込む。実行ごとに`atk config get state_dir`が示す状態ディレクトリの`run-skill/`へログを1件作成し、採用した候補、Claudeのセッション識別子、セッションの標準出力と標準エラーおよび終了状態を保存する。標準エラーが端末の場合はログ作成直後に絶対パス、取得直後に子の識別子、実行中にassistantの発言とtool呼出の要約を標準エラーへ表示し、同じログに保存する。標準出力だけのリダイレクトでも表示し、端末の無い起動では追加表示しない。思考と生JSON全体は端末に表示しない。正常終了では標準出力へログの絶対パスを含む成功行を1行書き、それ以外は標準エラーへ失敗行と次の操作を書く。\n終了コード: 0は正常終了。1は同じ対象リポジトリと同じスキルの実行が進行中のため起動しなかった場合とセッションを起動できなかった場合。124は`--timeout`を超えたためセッションと子孫を終了させた場合。それ以外の値はセッションの異常終了の終了コード（シグナルによる終了は128＋シグナル番号）と、全候補の可用性判定の失敗で最後の候補が返した終了コード。2は引数と、`orchestrate_engine`または段位モデルの設定の書式の誤り。\n前提: 定期実行の環境変数`PATH`に`atk`・`claude`・`codex`の実行ファイルの場所を含めること。\n復元・後始末: 30日を超えたログは各実行の開始時に削除する。ロックは実行の終了時に解放する。",
         "epilog": "実行例:\n\n  atk run-skill --target-repo /absolute/path/to/repo my-skill\n  atk run-skill --args '対象: web' --timeout 7200 agent-toolkit:process-wi\n\ncronへ登録する例（標準出力を破棄し、失敗行だけをcronのメール通知へ渡す）:\n\n  PATH=/home/user/.local/bin:/usr/local/bin:/usr/bin:/bin\n  0 3 */3 * * atk run-skill --target-repo /home/user/repo my-skill >/dev/null",
     },
     "atk wi": {
         "summary": "AWIとUWIのキューを操作する",
-        "description": "目的: 対象リポジトリごとのAWIとUWIを、投入、参照、状態遷移、編集、`atk wi process-loop`の各サブコマンドで扱う。\n利用場面: ユーザーが改善要求を投入するとき。エージェントが未処理のキュー項目を確認して処理するとき。\n対象と出力: private-notesのキューのファイルを読み書きする。`atk wi commit`はprivate-notesの作業ツリー全体の未コミット変更を確定する。サブコマンドを指定しない場合はサブコマンド一覧を標準出力へ書き、何も変更しない。\n前提: `atk config get private_notes`が返すリポジトリが存在すること。対象リポジトリはカレントディレクトリのGit remoteから決まる。\n復元・後始末: ファイルを変更するサブコマンドは変更をcommitする。未コミットの変更が残る場合は`atk wi commit`で確定する。",
+        "description": "AWIとUWIのキューを操作する。\n\n目的: 対象リポジトリごとのAWIとUWIを、投入、参照、状態遷移、編集、`atk wi process-loop`の各サブコマンドで扱う。\n利用場面: ユーザーが改善要求を投入するとき。エージェントが未処理のキュー項目を確認して処理するとき。\n対象と出力: private-notesのキューのファイルを読み書きする。`atk wi commit`はprivate-notesの作業ツリー全体の未コミット変更を確定する。サブコマンドを指定しない場合はサブコマンド一覧を標準出力へ書き、何も変更しない。\n前提: `atk config get private_notes`が返すリポジトリが存在すること。対象リポジトリはカレントディレクトリのGit remoteから決まる。\n復元・後始末: ファイルを変更するサブコマンドは変更をcommitする。未コミットの変更が残る場合は`atk wi commit`で確定する。",
         "epilog": "実行例:\n\n  atk wi list\n  atk wi show 20260901-072734-001",
     },
     "atk wi add": {
         "summary": "エントリをinboxへ投入する",
-        "description": "目的: AWIまたはUWIをinboxへ1件以上投入する。\n利用場面: 改善要求、不具合、確認事項を後続のセッションへ引き継ぐとき。投入と同じ入力を副作用なしで検証するとき。\n対象と出力: private-notesリポジトリのinboxへファイルを追加してcommitとpushを行う。書き込み前に確定した本文と保存結果から読み直した本文が一致するかを確かめ、不一致では非0で終了して差異の特定に必要な内容を標準エラーへ書く。`--dry-run`では検証だけを行い、private-notes、remoteおよび対象リポジトリのいずれも変更せず、検証が成立したことだけを標準出力へ書く。\n前提: 本文を`--body-file`または$EDITORで与える。対象リポジトリは省略時にカレントworktreeから解決する。\n復元・後始末: 投入した項目は`atk wi rm`で削除でき、削除後もprivate-notesのGit履歴から復元できる。`--dry-run`は状態を残さないため後始末を要さない。",
+        "description": "エントリをinboxへ投入する。\n\n目的: AWIまたはUWIをinboxへ1件以上投入する。\n利用場面: 改善要求、不具合、確認事項を後続のセッションへ引き継ぐとき。投入と同じ入力を副作用なしで検証するとき。\n対象と出力: private-notesリポジトリのinboxへファイルを追加してcommitとpushを行う。書き込み前に確定した本文と保存結果から読み直した本文が一致するかを確かめ、不一致では非0で終了して差異の特定に必要な内容を標準エラーへ書く。`--dry-run`では検証だけを行い、private-notes、remoteおよび対象リポジトリのいずれも変更せず、検証が成立したことだけを標準出力へ書く。\n前提: 本文を`--body-file`または$EDITORで与える。対象リポジトリは省略時にカレントworktreeから解決する。\n復元・後始末: 投入した項目は`atk wi rm`で削除でき、削除後もprivate-notesのGit履歴から復元できる。`--dry-run`は状態を残さないため後始末を要さない。",
         "epilog": "実行例:\n\n  atk wi add --body-file=/home/aki/.cache/agent-toolkit/tmp/awi-body.md",
     },
     "atk wi list": {
         "summary": "エントリを1件1行で一覧表示する",
-        "description": "目的: 対象リポジトリと状態で限定したキュー項目を、ファイル名、target_repo、状態ラベル、本文冒頭の要約とともに列挙する。\n利用場面: 未処理の項目を把握するとき。処理対象の件数を確認するとき。\n対象と出力: private-notesを読み取り、標準出力へ1件1行で書く。エージェント環境では1行1レコードのJSON Lines、それ以外では形式の省略時にテキストで表示する。エージェント環境の長い出力は生成側が全量を保存して保存先と行数を返す。ファイルは変更しない。\n前提: 指定が無ければremoteと同期する。同期を避ける場合は`--skip-pull`、必ず同期する場合は`--pull`を指定する。\n復元・後始末: 読み取りだけを行うため不要。",
+        "description": "エントリを1件1行で一覧表示する。\n\n目的: 対象リポジトリと状態で限定したキュー項目を、ファイル名、target_repo、状態ラベル、本文冒頭の要約とともに列挙する。\n利用場面: 未処理の項目を把握するとき。処理対象の件数を確認するとき。\n対象と出力: private-notesを読み取り、標準出力へ1件1行で書く。エージェント環境では1行1レコードのJSON Lines、それ以外では形式の省略時にテキストで表示する。エージェント環境の長い出力は生成側が全量を保存して保存先と行数を返す。ファイルは変更しない。\n前提: 指定が無ければremoteと同期する。同期を避ける場合は`--skip-pull`、必ず同期する場合は`--pull`を指定する。\n復元・後始末: 読み取りだけを行うため不要。",
         "epilog": "現在の重複確認にはactiveを、過去の存在確認にはallを指定し、本文を比べて一致を確かめる。\n\n実行例:\n\n  atk wi list --state=active\n  atk wi list --state=all",
     },
     "atk wi show": {
         "summary": "指定エントリまたは全件の本文を表示する",
-        "description": "目的: ファイル名で指定した項目、または対象範囲の全件の本文をfrontmatterとともに表示する。\n利用場面: 処理を始める前に要求の原文を確認するとき。複数件を1回の実行で取得するとき。\n対象と出力: private-notesを読み取り、標準出力へtarget_repoごとに区切って書く。各項目の見出し行は`### <ファイル名> [<状態>]`とし、`<状態>`へその項目が属する状態ディレクトリ名を書く。UWIでは状態に続けて`/answered`または`/unanswered`を書く。`--summary-only`ではtarget_repoとファイル名・状態の見出しを同じ形式で書き、その次の行へAWIはH1表題、UWIは質問本文の先頭行を省略せずに書き、frontmatterと他の本文を省く。エージェント環境では、FILENAMEを2件以上指定した場合と`--all`を指定した場合は量によらず標準出力を保存して`保存先:`・`行数:`を返す。FILENAMEが1件の場合と`--summary-only`の場合は`atk --help`が示す長さ以下なら直接表示し、超える場合は同じく保存する。長い標準エラーは`標準エラー保存先:`・`標準エラー行数:`で返す。ファイルは変更しない。\n前提: FILENAMEを1件以上指定するか`--all`を指定する。FILENAME指定時は全ての状態ディレクトリを探索し、`--target-repo`を省略した場合は対象リポジトリで限定しない。\n復元・後始末: 読み取りだけを行うため不要。",
+        "description": "指定エントリまたは全件の本文を表示する。\n\n目的: ファイル名で指定した項目、または対象範囲の全件の本文をfrontmatterとともに表示する。\n利用場面: 処理を始める前に要求の原文を確認するとき。複数件を1回の実行で取得するとき。\n対象と出力: private-notesを読み取り、標準出力へtarget_repoごとに区切って書く。各項目の見出し行は`### <ファイル名> [<状態>]`とし、`<状態>`へその項目が属する状態ディレクトリ名を書く。UWIでは状態に続けて`/answered`または`/unanswered`を書く。`--summary-only`ではtarget_repoとファイル名・状態の見出しを同じ形式で書き、その次の行へAWIはH1表題、UWIは質問本文の先頭行を省略せずに書き、frontmatterと他の本文を省く。エージェント環境では、FILENAMEを2件以上指定した場合と`--all`を指定した場合は量によらず標準出力を保存して`保存先:`・`行数:`を返す。FILENAMEが1件の場合と`--summary-only`の場合は`atk --help`が示す長さ以下なら直接表示し、超える場合は同じく保存する。長い標準エラーは`標準エラー保存先:`・`標準エラー行数:`で返す。ファイルは変更しない。\n前提: FILENAMEを1件以上指定するか`--all`を指定する。FILENAME指定時は全ての状態ディレクトリを探索し、`--target-repo`を省略した場合は対象リポジトリで限定しない。\n復元・後始末: 読み取りだけを行うため不要。",
         "epilog": "実行例:\n\n  atk wi show 20260901-072734-001.md --target-repo=github.com/ak110/dotfiles --skip-pull",
     },
     "atk wi grep": {
         "summary": "本文を正規表現か固定文字列で検索して該当行または一致した項目を列挙する",
-        "description": "目的: 対象範囲のキュー項目の本文全体をPythonの正規表現か固定文字列で検索し、該当行、または一致した項目の件数・ファイル名・要約を列挙する。\n利用場面: 同じ主題の既存項目を探すとき。特定の識別子を含む項目を洗い出すとき。キュー全体から候補を探すときは`--summary-only`で候補と表題を先に得て、本文は`atk wi show`で読む。\n対象と出力: private-notesを読み取り、標準出力へ書く。出力形式を指定しない場合は該当行ごとの`<ファイル名>:<行番号>:<該当行>`の形式である。`-c`・`--count`は一致した項目ごとに`<ファイル名>:<一致行数>`を書き、値は項目ごとの一致行数で`atk wi list --count`の総件数（整数1つ）とは異なる。`-l`・`--files-with-matches`は一致した項目のファイル名だけを書く。`--summary-only`は一致した項目ごとに`atk wi list --summary-only`と同じ`filename`・`summary`へ一致行数の`match_count`を加えた1件1行のJSON Linesを書く。3つの形式は併用できない。エージェント環境の長い出力は生成側が全量を保存して保存先と行数を返す。該当が0件のときは標準エラーへ`該当0件: `で始まる行を書き、終了コード1を返す。ファイルは変更しない。\n前提: PATTERNは、`-F`・`--fixed-strings`を指定しない場合はPythonのreモジュールが解釈できる正規表現として、指定した場合は固定文字列として解釈する。識別子、パス、本文の一部などの語を探すときは`-F`を付け、記号を正規表現として使うときだけ`-F`を付けない。\n復元・後始末: 読み取りだけを行うため不要。",
+        "description": "本文を正規表現か固定文字列で検索して該当行または一致した項目を列挙する。\n\n目的: 対象範囲のキュー項目の本文全体をPythonの正規表現か固定文字列で検索し、該当行、または一致した項目の件数・ファイル名・要約を列挙する。\n利用場面: 同じ主題の既存項目を探すとき。特定の識別子を含む項目を洗い出すとき。キュー全体から候補を探すときは`--summary-only`で候補と表題を先に得て、本文は`atk wi show`で読む。\n対象と出力: private-notesを読み取り、標準出力へ書く。出力形式を指定しない場合は該当行ごとの`<ファイル名>:<行番号>:<該当行>`の形式である。`-c`・`--count`は一致した項目ごとに`<ファイル名>:<一致行数>`を書き、値は項目ごとの一致行数で`atk wi list --count`の総件数（整数1つ）とは異なる。`-l`・`--files-with-matches`は一致した項目のファイル名だけを書く。`--summary-only`は一致した項目ごとに`atk wi list --summary-only`と同じ`filename`・`summary`へ一致行数の`match_count`を加えた1件1行のJSON Linesを書く。3つの形式は併用できない。エージェント環境の長い出力は生成側が全量を保存して保存先と行数を返す。該当が0件のときは標準エラーへ`該当0件: `で始まる行を書き、終了コード1を返す。ファイルは変更しない。\n前提: PATTERNは、`-F`・`--fixed-strings`を指定しない場合はPythonのreモジュールが解釈できる正規表現として、指定した場合は固定文字列として解釈する。識別子、パス、本文の一部などの語を探すときは`-F`を付け、記号を正規表現として使うときだけ`-F`を付けない。\n復元・後始末: 読み取りだけを行うため不要。",
         "epilog": '現在の重複確認にはactiveを、過去の存在確認にはallを指定し、`--summary-only`で得た候補の本文を`atk wi show`で比べて一致を確かめる。\n\n実行例:\n\n  atk wi grep --summary-only -F "worktree-stash" --state=active\n  atk wi grep --summary-only -F "worktree-stash" --state=all\n  atk wi grep -F "text[1] 文字" --state=all\n  atk wi grep "worktree-stash|stash-pop" --state=active',
     },
     "atk wi start-processing": {
         "summary": "AWIまたはUWIをprocessingへ移して処理中にする",
-        "description": "目的: inboxのAWIまたはUWIをprocessingへ移し、処理中であることをキュー上へ表す。\n利用場面: 選定した対象の処理を開始するとき。UWIの回答が是正または保留中の元項目での作業を求め、その作業を実施するとき。複数件を1回の実行で指定する。\n対象と出力: private-notesのinboxからprocessingへファイルを移動し、commitとpushを行う。`--all`ではholdの項目も候補にする。\n前提: ファイル名で指定する対象がinboxにあること。\n復元・後始末: `atk wi return-to-inbox`でinboxへ戻す。",
+        "description": "AWIまたはUWIをprocessingへ移して処理中にする。\n\n目的: inboxのAWIまたはUWIをprocessingへ移し、処理中であることをキュー上へ表す。\n利用場面: 選定した対象の処理を開始するとき。UWIの回答が是正または保留中の元項目での作業を求め、その作業を実施するとき。複数件を1回の実行で指定する。\n対象と出力: private-notesのinboxからprocessingへファイルを移動し、commitとpushを行う。`--all`ではholdの項目も候補にする。\n前提: ファイル名で指定する対象がinboxにあること。\n復元・後始末: `atk wi return-to-inbox`でinboxへ戻す。",
         "epilog": "実行例:\n\n  atk wi start-processing 20260901-072734-001.md --target-repo=github.com/ak110/dotfiles",
     },
     "atk wi hold": {
         "summary": "inbox・processingまたは終端した項目を保留する",
-        "description": "目的: 項目をholdへ移し、自動処理の対象から外す。\n利用場面: 外部条件が整うまで処理させないとき。誤って終端した項目を回答待ちにするとき。\n対象と出力: private-notesの該当ディレクトリからholdへファイルを移動し、commitとpushを行う。終端からの移動では旧処理結果を除く。\n前提: 対象がinboxまたはprocessingにあること。adoptedまたはrejectedから移す場合は`--state`を指定する。エージェント環境（`AI_AGENT`・`CODEX_CI`・`CLAUDECODE`・`CURSOR_AGENT`のいずれかを設定した環境）では、processingの項目の保留に`--state=processing`を要し、指定しない場合は移さずに失敗する。別セッションが処理中の要求を改訂する場合は保留せず、新しい項目の投入か`atk wi edit --append`による追記を使う。`--all`はエージェント環境ではprocessingの項目を候補に含めない。\n復元・後始末: `atk wi unhold`でinboxへ戻す。holdは自動処理からの除外だけを意味し、編集、回答、採用、不採用、削除はinboxと同じ条件で行える。",
+        "description": "inbox・processingまたは終端した項目を保留する。\n\n目的: 項目をholdへ移し、自動処理の対象から外す。\n利用場面: 外部条件が整うまで処理させないとき。誤って終端した項目を回答待ちにするとき。\n対象と出力: private-notesの該当ディレクトリからholdへファイルを移動し、commitとpushを行う。終端からの移動では旧処理結果を除く。\n前提: 対象がinboxまたはprocessingにあること。adoptedまたはrejectedから移す場合は`--state`を指定する。エージェント環境（`AI_AGENT`・`CODEX_CI`・`CLAUDECODE`・`CURSOR_AGENT`のいずれかを設定した環境）では、processingの項目の保留に`--state=processing`を要し、指定しない場合は移さずに失敗する。別セッションが処理中の要求を改訂する場合は保留せず、新しい項目の投入か`atk wi edit --append`による追記を使う。`--all`はエージェント環境ではprocessingの項目を候補に含めない。\n復元・後始末: `atk wi unhold`でinboxへ戻す。holdは自動処理からの除外だけを意味し、編集、回答、採用、不採用、削除はinboxと同じ条件で行える。",
         "epilog": "実行例:\n\n  atk wi hold 20260901-072734-001.md",
     },
     "atk wi unhold": {
         "summary": "holdの項目をinboxへ戻す",
-        "description": "目的: holdの項目をinboxへ戻し、自動処理の対象へ復帰させる。\n利用場面: 保留の理由が解消したとき。\n対象と出力: private-notesのholdからinboxへファイルを移動し、commitとpushを行う。\n前提: 対象がholdにあること。保留元がprocessingであった場合もinboxへ戻る。\n復元・後始末: 再び保留する場合は`atk wi hold`を使う。",
+        "description": "holdの項目をinboxへ戻す。\n\n目的: holdの項目をinboxへ戻し、自動処理の対象へ復帰させる。\n利用場面: 保留の理由が解消したとき。\n対象と出力: private-notesのholdからinboxへファイルを移動し、commitとpushを行う。\n前提: 対象がholdにあること。保留元がprocessingであった場合もinboxへ戻る。\n復元・後始末: 再び保留する場合は`atk wi hold`を使う。",
         "epilog": "実行例:\n\n  atk wi unhold 20260901-072734-001.md",
     },
     "atk wi return-to-inbox": {
         "summary": "processingまたは終端した項目をinboxへ戻す",
-        "description": "目的: processing・adopted・rejectedの項目をinboxへ戻し、未処理の状態へ復帰させる。\n利用場面: 処理を中断するとき。外部条件待ちで一定期間だけ再処理を避けるとき。誤って終端した項目を再処理へ戻すとき。\n対象と出力: private-notesの該当ディレクトリからinboxへファイルを移動し、終端からの移動では旧処理結果を除いてcommitとpushを行う。`--cooldown-days`を指定すると、指定した日数だけ再処理の対象から外す。\n前提: 対象がprocessingにあること。adoptedまたはrejectedから戻す場合は対応する`--state`を指定する。\n復元・後始末: 処理を再開する場合は`atk wi start-processing`を使う。",
+        "description": "processingまたは終端した項目をinboxへ戻す。\n\n目的: processing・adopted・rejectedの項目をinboxへ戻し、未処理の状態へ復帰させる。\n利用場面: 処理を中断するとき。外部条件待ちで一定期間だけ再処理を避けるとき。誤って終端した項目を再処理へ戻すとき。\n対象と出力: private-notesの該当ディレクトリからinboxへファイルを移動し、終端からの移動では旧処理結果を除いてcommitとpushを行う。`--cooldown-days`を指定すると、指定した日数だけ再処理の対象から外す。\n前提: 対象がprocessingにあること。adoptedまたはrejectedから戻す場合は対応する`--state`を指定する。\n復元・後始末: 処理を再開する場合は`atk wi start-processing`を使う。",
         "epilog": "実行例:\n\n  atk wi return-to-inbox 20260901-072734-001.md --cooldown-days=3",
     },
     "atk wi adopt": {
         "summary": "採用として終端し対応結果を記録する",
-        "description": "目的: 対応済みの項目をadoptedへ移して終端し、採否の結果と対応commitの短縮OID・件名を記録する。\n利用場面: 要求への対応を完了し、対象リポジトリへ反映したとき。引用符・改行・バッククォートを含むメモは`--note-file`でシェルのエスケープを介さず渡す。\n対象と出力: private-notesのinbox・processing・holdのいずれかからadoptedへファイルを移動する。同名の項目が複数の状態にある場合はprocessing、inbox、holdの順に優先する。`--note`または`--note-file`の内容と、`--commit`で指定したcommitの短縮OID・件名を本文末尾の`## 処理結果`節へ追記してcommitとpushを行う。終端した各項目の保存先を絶対パスで標準出力へ書く。\n前提: 対象がinbox、processing、holdのいずれかにあること。`--note-file`はUTF-8ファイルの絶対パスで指定する。`--commit`で指定するrevisionと対象リポジトリはローカル作業ツリーで解決できること。\n復元・後始末: 終端した項目はキューの一覧に現れない。取り消す場合は`atk wi return-to-inbox --state=adopted`で再処理へ戻す。連続操作の中間では`--skip-push`でpushを省略し、最後の操作では指定しない。",
+        "description": "採用として終端し対応結果を記録する。\n\n目的: 対応済みの項目をadoptedへ移して終端し、採否の結果と対応commitの短縮OID・件名を記録する。\n利用場面: 要求への対応を完了し、対象リポジトリへ反映したとき。引用符・改行・バッククォートを含むメモは`--note-file`でシェルのエスケープを介さず渡す。\n対象と出力: private-notesのinbox・processing・holdのいずれかからadoptedへファイルを移動する。同名の項目が複数の状態にある場合はprocessing、inbox、holdの順に優先する。`--note`または`--note-file`の内容と、`--commit`で指定したcommitの短縮OID・件名を本文末尾の`## 処理結果`節へ追記してcommitとpushを行う。終端した各項目の保存先を絶対パスで標準出力へ書く。\n前提: 対象がinbox、processing、holdのいずれかにあること。`--note-file`はUTF-8ファイルの絶対パスで指定する。`--commit`で指定するrevisionと対象リポジトリはローカル作業ツリーで解決できること。\n復元・後始末: 終端した項目はキューの一覧に現れない。取り消す場合は`atk wi return-to-inbox --state=adopted`で再処理へ戻す。連続操作の中間では`--skip-push`でpushを省略し、最後の操作では指定しない。",
         "epilog": '実行例:\n\n  atk wi adopt 20260901-072734-001.md --note="計画で対応済み"',
     },
     "atk wi reject": {
         "summary": "不採用として終端し理由を記録する",
-        "description": "目的: 対応しないと確定した項目をrejectedへ移して終端し、理由を記録する。\n利用場面: 要求を採用しないと判断したとき。引用符・改行・バッククォートを含むメモは`--note-file`でシェルのエスケープを介さず渡す。\n対象と出力: private-notesのinbox・processing・holdのいずれかからrejectedへファイルを移動する。同名の項目が複数の状態にある場合はprocessing、inbox、holdの順に優先する。`--note`または`--note-file`の内容を本文末尾の`## 処理結果`節へ追記してcommitとpushを行う。終端した各項目の保存先を絶対パスで標準出力へ書く。\n前提: 対象がinbox、processing、holdのいずれかにあること。`--note-file`はUTF-8ファイルの絶対パスで指定する。`--if-inbox`を指定した場合は、pullの後も全対象がinboxにあるときだけ終端する。\n復元・後始末: 終端した項目はキューの一覧に現れない。取り消す場合は`atk wi return-to-inbox --state=rejected`で再処理へ戻す。",
+        "description": "不採用として終端し理由を記録する。\n\n目的: 対応しないと確定した項目をrejectedへ移して終端し、理由を記録する。\n利用場面: 要求を採用しないと判断したとき。引用符・改行・バッククォートを含むメモは`--note-file`でシェルのエスケープを介さず渡す。\n対象と出力: private-notesのinbox・processing・holdのいずれかからrejectedへファイルを移動する。同名の項目が複数の状態にある場合はprocessing、inbox、holdの順に優先する。`--note`または`--note-file`の内容を本文末尾の`## 処理結果`節へ追記してcommitとpushを行う。終端した各項目の保存先を絶対パスで標準出力へ書く。\n前提: 対象がinbox、processing、holdのいずれかにあること。`--note-file`はUTF-8ファイルの絶対パスで指定する。`--if-inbox`を指定した場合は、pullの後も全対象がinboxにあるときだけ終端する。\n復元・後始末: 終端した項目はキューの一覧に現れない。取り消す場合は`atk wi return-to-inbox --state=rejected`で再処理へ戻す。",
         "epilog": '実行例:\n\n  atk wi reject 20260901-072734-001.md --note="現行実装で解消済み"',
     },
     "atk wi rm": {
         "summary": "指定項目またはフィルターに一致する項目を削除する",
-        "description": "目的: 指定した項目、または対象リポジトリでフィルターに一致する項目をまとめて削除する。\n利用場面: 自身の誤りで投入した項目を整理するとき。統合済みと移管済みの元項目を除去するとき。引用符・改行・バッククォートを含むメモは`--note-file`でシェルのエスケープを介さず渡す。\n対象と出力: private-notesから対象ファイルを削除し、commitとpushを行う。人間環境では全状態、エージェント環境ではinboxとholdを対象にできる。`--all`では`wi list`と同じ`--type`、`--status`、`--answered`および`--source`で候補を限定し、確認を求める場合だけ削除の前に一覧表示する。\n前提: 個別削除ではFILENAMEを1件以上、一括削除では`--all`と`--target-repo`を指定する。`--note-file`はUTF-8ファイルの絶対パスで指定する。processingの項目を削除するには`--force`を指定する。指定が無ければ削除を拒否する。\n復元・後始末: 削除した内容はprivate-notesのGit履歴に残るため、必要な場合はそのcommitから復元する。",
+        "description": "指定項目またはフィルターに一致する項目を削除する。\n\n目的: 指定した項目、または対象リポジトリでフィルターに一致する項目をまとめて削除する。\n利用場面: 自身の誤りで投入した項目を整理するとき。統合済みと移管済みの元項目を除去するとき。引用符・改行・バッククォートを含むメモは`--note-file`でシェルのエスケープを介さず渡す。\n対象と出力: private-notesから対象ファイルを削除し、commitとpushを行う。人間環境では全状態、エージェント環境ではinboxとholdを対象にできる。`--all`では`wi list`と同じ`--type`、`--status`、`--answered`および`--source`で候補を限定し、確認を求める場合だけ削除の前に一覧表示する。\n前提: 個別削除ではFILENAMEを1件以上、一括削除では`--all`と`--target-repo`を指定する。`--note-file`はUTF-8ファイルの絶対パスで指定する。processingの項目を削除するには`--force`を指定する。指定が無ければ削除を拒否する。\n復元・後始末: 削除した内容はprivate-notesのGit履歴に残るため、必要な場合はそのcommitから復元する。",
         "epilog": "実行例:\n\n  atk wi rm 20260901-072734-001.md",
     },
     "atk wi edit": {
         "summary": "エントリの本文とメタデータを編集する",
-        "description": "目的: 既存項目の本文とメタデータを、非対話または$EDITORで編集する。\n利用場面: 投入済みの要求へ情報を補うとき。記述の誤りを直すとき。再処理抑制期限を設定または解除するとき。更新原稿を保存前に確かめるとき（`--dry-run`）。\n対象と出力: private-notesの対象ファイルを書き換え、commitとpushを行う。書き込み前に確定した本文と保存結果から読み直した本文が一致するかを確かめ、不一致では非0で終了して差異の特定に必要な内容を標準エラーへ書く。エージェントの実行環境から起動した場合は、`## ユーザーコメント`節を編集の対象から外し、保存済みの内容をそのまま残す。\n前提: 対象はinbox・processing・holdのいずれかにあり、編集で保存状態は変わらない。FILENAMEを省略した場合は、inbox配下でファイル名順が最大の項目を$EDITORで開く。非対話の本文編集には`--body-file`を使う。`--cooldown-until`はinbox・holdのAWIへタイムゾーン付きISO 8601日時を渡して期限を設定し、空文字列で期限を解除する。UWIへの日時の指定は拒否し、保存済みの期限は空文字列で解除できる。本文frontmatterからの同キーの変更は受理しない。`--append`は`--body-file`の本文を追記し、UWIを対象にしない。エージェントの実行環境から起動した場合、本文へ`## ユーザーコメント`節を含めると編集を拒否する。エージェントの実行環境から起動した場合、processingの項目の本文置換を拒否する。--appendによる追記は拒否しない。`--dry-run`はFILENAMEと`--body-file`による本文置換を保存と同じ取り込みと検証にかけ、成立したら保存せずに成功の1行を書いて終了する。拒否では保存と同じ終了コード、理由および次の操作を返す。未pushのcommitの送信、対象ファイルの書き換え、commitとpushを行わず、private-notesとremoteを変えない。\n復元・後始末: 編集前の内容はprivate-notesのGit履歴に残る。",
+        "description": "エントリの本文とメタデータを編集する。\n\n目的: 既存項目の本文とメタデータを、非対話または$EDITORで編集する。\n利用場面: 投入済みの要求へ情報を補うとき。記述の誤りを直すとき。再処理抑制期限を設定または解除するとき。更新原稿を保存前に確かめるとき（`--dry-run`）。\n対象と出力: private-notesの対象ファイルを書き換え、commitとpushを行う。書き込み前に確定した本文と保存結果から読み直した本文が一致するかを確かめ、不一致では非0で終了して差異の特定に必要な内容を標準エラーへ書く。エージェントの実行環境から起動した場合は、`## ユーザーコメント`節を編集の対象から外し、保存済みの内容をそのまま残す。\n前提: 対象はinbox・processing・holdのいずれかにあり、編集で保存状態は変わらない。FILENAMEを省略した場合は、inbox配下でファイル名順が最大の項目を$EDITORで開く。非対話の本文編集には`--body-file`を使う。`--cooldown-until`はinbox・holdのAWIへタイムゾーン付きISO 8601日時を渡して期限を設定し、空文字列で期限を解除する。UWIへの日時の指定は拒否し、保存済みの期限は空文字列で解除できる。本文frontmatterからの同キーの変更は受理しない。`--append`は`--body-file`の本文を追記し、UWIを対象にしない。エージェントの実行環境から起動した場合、本文へ`## ユーザーコメント`節を含めると編集を拒否する。エージェントの実行環境から起動した場合、processingの項目の本文置換を拒否する。--appendによる追記は拒否しない。`--dry-run`はFILENAMEと`--body-file`による本文置換を保存と同じ取り込みと検証にかけ、成立したら保存せずに成功の1行を書いて終了する。拒否では保存と同じ終了コード、理由および次の操作を返す。未pushのcommitの送信、対象ファイルの書き換え、commitとpushを行わず、private-notesとremoteを変えない。\n復元・後始末: 編集前の内容はprivate-notesのGit履歴に残る。",
         "epilog": "実行例:\n\n  atk wi edit 20260901-072734-001.md --body-file=/home/aki/.cache/agent-toolkit/tmp/awi-body.md",
     },
     "atk wi set-dependencies": {
         "summary": "AWIの明示依存だけを更新する",
-        "description": "目的: 既存AWIの明示依存だけを更新する。\n利用場面: 先に終端すべき項目が判明したとき。依存を解除するとき。\n対象と出力: private-notesの対象ファイルのfrontmatterへ依存先のファイル名を記録し、commitとpushを行う。\n前提: 対象がinbox、processingまたはholdにあること。依存の更新は保存状態を変えない。`--depends-on`を省略すると依存を全て解除する。\n復元・後始末: 変更前の依存はprivate-notesのGit履歴に残る。",
+        "description": "AWIの明示依存だけを更新する。\n\n目的: 既存AWIの明示依存だけを更新する。\n利用場面: 先に終端すべき項目が判明したとき。依存を解除するとき。\n対象と出力: private-notesの対象ファイルのfrontmatterへ依存先のファイル名を記録し、commitとpushを行う。\n前提: 対象がinbox、processingまたはholdにあること。依存の更新は保存状態を変えない。`--depends-on`を省略すると依存を全て解除する。\n復元・後始末: 変更前の依存はprivate-notesのGit履歴に残る。",
         "epilog": "実行例:\n\n  atk wi set-dependencies 20260901-072734-001.md --depends-on=20260901-081315-001.md",
     },
     "atk wi answer": {
         "summary": "UWIへ回答する",
-        "description": "目的: UWIへ回答を記録し、回答待ちの依存を解除できる状態にする。\n利用場面: ユーザーが確認事項へ回答するとき。\n対象と出力: private-notesの対象UWIの回答節へ本文を書き込み、commitとpushを行う。引数を省略すると、未回答のUWIを1件ずつ表示して$EDITORで開く。\n前提: 回答欄はユーザーだけが書き込む。エージェント環境から起動した場合は書き込みを拒否する。\n復元・後始末: 記録した回答はprivate-notesのGit履歴に残る。",
+        "description": "UWIへ回答する。\n\n目的: UWIへ回答を記録し、回答待ちの依存を解除できる状態にする。\n利用場面: ユーザーが確認事項へ回答するとき。\n対象と出力: private-notesの対象UWIの回答節へ本文を書き込み、commitとpushを行う。引数を省略すると、未回答のUWIを1件ずつ表示して$EDITORで開く。\n前提: 回答欄はユーザーだけが書き込む。エージェント環境から起動した場合は書き込みを拒否する。\n復元・後始末: 記録した回答はprivate-notesのGit履歴に残る。",
         "epilog": '実行例:\n\n  atk wi answer 20260901-072734-001.md "案1を採用する"',
     },
     "atk wi commit": {
         "summary": "外部編集後の未コミット変更を確定してpushする",
-        "description": "目的: 外部のエディターなどで直接編集したprivate-notesの未コミット変更を確定し、pushする。\n利用場面: `atk`以外の手段でキューのファイルや保存済みの計画ファイルを編集した後。push待ちのローカルcommitを送信するとき。\n対象と出力: private-notesの作業ツリーの変更をcommitしてpushする。差分が無い場合も滞留しているcommitをpushする。\n前提: private-notesがrebaseの途中でないこと。\n復元・後始末: commitの後の取り消しはprivate-notesのGit履歴から行う。",
+        "description": "外部編集後の未コミット変更を確定してpushする。\n\n目的: 外部のエディターなどで直接編集したprivate-notesの未コミット変更を確定し、pushする。\n利用場面: `atk`以外の手段でキューのファイルや保存済みの計画ファイルを編集した後。push待ちのローカルcommitを送信するとき。\n対象と出力: private-notesの作業ツリーの変更をcommitしてpushする。差分が無い場合も滞留しているcommitをpushする。\n前提: private-notesがrebaseの途中でないこと。\n復元・後始末: commitの後の取り消しはprivate-notesのGit履歴から行う。",
         "epilog": "実行例:\n\n  atk wi commit",
     },
     "atk wi pull": {
         "summary": "private-notesを明示的に同期する",
-        "description": "目的: private-notesをupstreamと明示的に同期する。\n利用場面: キュー本文を表示せず、後続操作の前に最新状態だけを取得するとき。\n対象と出力: private-notesへfast-forward同期と既存のlegacy予約移行を適用し、成功時は同期対象の絶対パスを1行だけ表示する。キュー項目の本文は表示しない。\n前提: private-notesが有効なGitリポジトリで、upstreamとfast-forward同期できること。\n復元・後始末: fast-forwardで取得した履歴は通常のGit履歴として残る。失敗時は既存のGit回復手順に従う。",
+        "description": "private-notesを明示的に同期する。\n\n目的: private-notesをupstreamと明示的に同期する。\n利用場面: キュー本文を表示せず、後続操作の前に最新状態だけを取得するとき。\n対象と出力: private-notesへfast-forward同期と既存のlegacy予約移行を適用し、成功時は同期対象の絶対パスを1行だけ表示する。キュー項目の本文は表示しない。\n前提: private-notesが有効なGitリポジトリで、upstreamとfast-forward同期できること。\n復元・後始末: fast-forwardで取得した履歴は通常のGit履歴として残る。失敗時は既存のGit回復手順に従う。",
         "epilog": "実行例:\n\n  atk wi pull",
     },
     "atk wi check-alerts": {
         "summary": "CI失敗を1回確認して新規AWIを投入する",
-        "description": "目的: 常駐監視と共有するCI収集・重複除外・本文生成・保存を1回実行する。\n利用場面: エージェントがprocess-wiの実行途中などにCI失敗を確認するとき。\n対象と出力: --target-repoのローカル作業ツリー、未指定時は現在の作業ツリーを対象とする。GitHubのワークフローとイベント別の直近完了run、GitLabの最新pipelineと有効なPipeline Scheduleを確認し、未投入の失敗をsource=alert-monitor・alert_keys付きのAWIへ保存する。成功行へ投入件数を書き、0件を含め終了コード0で終わる。全体・一部の取得失敗は理由と投入件数を分けて示し、終了コード1で終わる。対象・引数の不正は終了コード2、保存失敗は非0で終わる。\n前提: private-notes、対象のorigin、追跡先またはorigin/HEADとforgeの認証が有効であること。\n復元・後始末: 実行後に終了する。保存したAWIは通常のキュー操作で扱う。process-loop・process-wi・Dependabot監査は起動せず、呼び出す時機は各環境が選ぶ。",
+        "description": "CI失敗を1回確認して新規AWIを投入する。\n\n目的: 常駐監視と共有するCI収集・重複除外・本文生成・保存を1回実行する。\n利用場面: エージェントがprocess-wiの実行途中などにCI失敗を確認するとき。\n対象と出力: --target-repoのローカル作業ツリー、未指定時は現在の作業ツリーを対象とする。GitHubのワークフローとイベント別の直近完了run、GitLabの最新pipelineと有効なPipeline Scheduleを確認し、未投入の失敗をsource=alert-monitor・alert_keys付きのAWIへ保存する。成功行へ投入件数を書き、0件を含め終了コード0で終わる。全体・一部の取得失敗は理由と投入件数を分けて示し、終了コード1で終わる。対象・引数の不正は終了コード2、保存失敗は非0で終わる。\n前提: private-notes、対象のorigin、追跡先またはorigin/HEADとforgeの認証が有効であること。\n復元・後始末: 実行後に終了する。保存したAWIは通常のキュー操作で扱う。process-loop・process-wi・Dependabot監査は起動せず、呼び出す時機は各環境が選ぶ。",
         "epilog": "実行例:\n\n  atk wi check-alerts\n  atk wi check-alerts --target-repo /home/user/repo --forge github",
     },
     "atk wi submission": {
         "summary": "add-awi-by-userの投入先と作業期間を記録する",
-        "description": "目的: 実行中のagent-toolkit:add-awi-by-userの会話と、確定した投入先の対応を記録し、process-loopの開始前の活動猶予へ渡す。\n利用場面: add-awi-by-userが投入先を確定・変更した時点と、投入作業を完了・中止した時点。\n対象と出力: OSアカウントの状態ディレクトリにある会話別の投入作業の属性を作成・置換・削除する。private-notesと対象リポジトリは変更しない。\n前提: 会話IDを`--session-id`か、Claude Codeの`CLAUDE_CODE_SESSION_ID`・Codexの`CODEX_THREAD_ID`から決められること。\n復元・後始末: 記録は`atk wi submission end`で削除する。会話を再開した場合は残る記録が再び有効になる。",
+        "description": "add-awi-by-userの投入先と作業期間を記録する。\n\n目的: 実行中のagent-toolkit:add-awi-by-userの会話と、確定した投入先の対応を記録し、process-loopの開始前の活動猶予へ渡す。\n利用場面: add-awi-by-userが投入先を確定・変更した時点と、投入作業を完了・中止した時点。\n対象と出力: OSアカウントの状態ディレクトリにある会話別の投入作業の属性を作成・置換・削除する。private-notesと対象リポジトリは変更しない。\n前提: 会話IDを`--session-id`か、Claude Codeの`CLAUDE_CODE_SESSION_ID`・Codexの`CODEX_THREAD_ID`から決められること。\n復元・後始末: 記録は`atk wi submission end`で削除する。会話を再開した場合は残る記録が再び有効になる。",
         "epilog": "実行例:\n\n  atk wi submission begin --target-repo /home/user/repo\n  atk wi submission end",
     },
     "atk wi submission begin": {
         "summary": "add-awi-by-userの投入先を記録する",
-        "description": "目的: 現在の会話を、指定した投入先へWIを投入するadd-awi-by-userの作業として記録する。\n利用場面: add-awi-by-userが要求ごとの投入先を確定した時点と、投入先を変更した時点。\n対象と出力: --target-repoの値をoriginの正規化URLへ解決し、会話別の投入作業の属性を作成するか投入先を置き換える。成功行へ会話IDと投入先を書く。解決できない投入先や会話IDがあれば何も変更せず終了コード1で終わる。\n前提: --target-repoはローカル作業ツリーのパスか正規化リモートURLとする。同じoriginの別worktreeと別表記のURLは同じ投入先になる。\n復元・後始末: 投入作業の完了・中止時に`atk wi submission end`を実行する。",
+        "description": "add-awi-by-userの投入先を記録する。\n\n目的: 現在の会話を、指定した投入先へWIを投入するadd-awi-by-userの作業として記録する。\n利用場面: add-awi-by-userが要求ごとの投入先を確定した時点と、投入先を変更した時点。\n対象と出力: --target-repoの値をoriginの正規化URLへ解決し、会話別の投入作業の属性を作成するか投入先を置き換える。成功行へ会話IDと投入先を書く。解決できない投入先や会話IDがあれば何も変更せず終了コード1で終わる。\n前提: --target-repoはローカル作業ツリーのパスか正規化リモートURLとする。同じoriginの別worktreeと別表記のURLは同じ投入先になる。\n復元・後始末: 投入作業の完了・中止時に`atk wi submission end`を実行する。",
         "epilog": "実行例:\n\n  atk wi submission begin --target-repo /home/user/repo --target-repo github.com/example/other",
     },
     "atk wi submission end": {
         "summary": "add-awi-by-userの投入作業の記録を削除する",
-        "description": "目的: 現在の会話のWI投入作業の属性を削除し、後続の別作業がprocess-loopの開始前の活動猶予を生じないようにする。\n利用場面: add-awi-by-userの投入を完了した時点と、投入作業を中止した時点。\n対象と出力: 会話別の投入作業の属性を削除し、成功行へ結果を書く。記録が無い場合も成功する。\n前提: `atk wi submission begin`と同じ会話IDを使う。\n復元・後始末: 投入作業を再び始める場合は`atk wi submission begin`を実行する。",
+        "description": "add-awi-by-userの投入作業の記録を削除する。\n\n目的: 現在の会話のWI投入作業の属性を削除し、後続の別作業がprocess-loopの開始前の活動猶予を生じないようにする。\n利用場面: add-awi-by-userの投入を完了した時点と、投入作業を中止した時点。\n対象と出力: 会話別の投入作業の属性を削除し、成功行へ結果を書く。記録が無い場合も成功する。\n前提: `atk wi submission begin`と同じ会話IDを使う。\n復元・後始末: 投入作業を再び始める場合は`atk wi submission begin`を実行する。",
         "epilog": "実行例:\n\n  atk wi submission end",
     },
     "atk wi process-loop": {
         "summary": "AWIを消化し続けるprocess-loopを開始する",
-        "description": "目的: 対象リポジトリのAWI消化を、オーケストレーターの新規セッション起動で反復実行するprocess-loopを開始する。\n利用場面: 未処理のキュー項目を無人で消化し続けるとき。\n対象と出力: `atk config`のorchestrate_engineのengine順とengine別のhigh段位モデル設定で決まるオーケストレーターを起動する。待機中はCIの失敗を検出してAWIを投入する。未判定のDependabotアラートがあればAWIを起票せずprocess-wiを1回実行させ、その実行の自動コードレビュー監査が判定する。対象リポジトリの作業ツリーは起動したセッションが変更する。`--auto-resume`指定時は、対象リポジトリでagent-toolkit:process-wiを起動した本体セッションをmtime降順に表示して確認を取り、初回のセッション起動をその再開へ差し替える。開始前の待機中は、入力可能な端末でEnterを押すと今回の待機を解除して処理可能なWIを再評価する。\n前提: 対象リポジトリの現在branchが追跡先を持つこと。`--worktree`を指定すると、対象リポジトリ配下の.claude/worktrees/<NAME>にworktreeを準備する。`--auto-resume`と`--resume`は同時指定できない。\n復元・後始末: 前景で動作するため、停止はそのプロセスの終了で行う。作成したworktreeと起動したセッションの成果物は自動では削除しない。",
+        "description": "AWIを消化し続けるprocess-loopを開始する。\n\n目的: 対象リポジトリのAWI消化を、オーケストレーターの新規セッション起動で反復実行するprocess-loopを開始する。\n利用場面: 未処理のキュー項目を無人で消化し続けるとき。\n対象と出力: `atk config`のorchestrate_engineのengine順とengine別のhigh段位モデル設定で決まるオーケストレーターを起動する。待機中はCIの失敗を検出してAWIを投入する。未判定のDependabotアラートがあればAWIを起票せずprocess-wiを1回実行させ、その実行の自動コードレビュー監査が判定する。対象リポジトリの作業ツリーは起動したセッションが変更する。`--auto-resume`指定時は、対象リポジトリでagent-toolkit:process-wiを起動した本体セッションをmtime降順に表示して確認を取り、初回のセッション起動をその再開へ差し替える。開始前の待機中は、入力可能な端末でEnterを押すと今回の待機を解除して処理可能なWIを再評価する。\n前提: 対象リポジトリの現在branchが追跡先を持つこと。`--worktree`を指定すると、対象リポジトリ配下の.claude/worktrees/<NAME>にworktreeを準備する。`--auto-resume`と`--resume`は同時指定できない。\n復元・後始末: 前景で動作するため、停止はそのプロセスの終了で行う。作成したworktreeと起動したセッションの成果物は自動では削除しない。",
         "epilog": "実行例:\n\n  atk wi process-loop --worktree",
     },
     "atk wi process-loop abort": {
         "summary": "process-loopへ1セッションの終了時点で止まるよう要求する",
-        "description": "目的: 稼働中のprocess-loopへ中断を要求し、現在のセッションが終わった時点で次の反復へ進まず終了させる。\n利用場面: process-loopを安全に止めたいが、実行中のセッションは最後まで進めたいとき。\n対象と出力: 中断要求の状態ファイルを作成し、中断要求を設定したことを標準出力へ書く。process-loopのセッションと対象リポジトリは変更しない。\n前提: process-loopと同じOSアカウントの状態ディレクトリを使う。process-loopが動いていない場合も要求だけを設定する。\n復元・後始末: 要求は`atk wi process-loop abort-cancel`で解除できる。process-loopが中断で終了した時点でも解除される。",
+        "description": "process-loopへ1セッションの終了時点で止まるよう要求する。\n\n目的: 稼働中のprocess-loopへ中断を要求し、現在のセッションが終わった時点で次の反復へ進まず終了させる。\n利用場面: process-loopを安全に止めたいが、実行中のセッションは最後まで進めたいとき。\n対象と出力: 中断要求の状態ファイルを作成し、中断要求を設定したことを標準出力へ書く。process-loopのセッションと対象リポジトリは変更しない。\n前提: process-loopと同じOSアカウントの状態ディレクトリを使う。process-loopが動いていない場合も要求だけを設定する。\n復元・後始末: 要求は`atk wi process-loop abort-cancel`で解除できる。process-loopが中断で終了した時点でも解除される。",
         "epilog": "実行例:\n\n  atk wi process-loop abort",
     },
     "atk wi process-loop abort-cancel": {
         "summary": "process-loopへの中断要求を解除する",
-        "description": "目的: 設定済みの中断要求を取り消し、process-loopが反復を続ける状態へ戻す。\n利用場面: 中断を要求した後に、process-loopの継続へ判断を変えたとき。\n対象と出力: 中断要求の状態ファイルを削除し、中断要求を解除したことを標準出力へ書く。要求が無い場合も中断要求が設定されていないことを書いて正常終了する。\n前提: process-loopと同じOSアカウントの状態ディレクトリを使う。\n復元・後始末: 解除後に再び止める場合は`atk wi process-loop abort`を実行する。",
+        "description": "process-loopへの中断要求を解除する。\n\n目的: 設定済みの中断要求を取り消し、process-loopが反復を続ける状態へ戻す。\n利用場面: 中断を要求した後に、process-loopの継続へ判断を変えたとき。\n対象と出力: 中断要求の状態ファイルを削除し、中断要求を解除したことを標準出力へ書く。要求が無い場合も中断要求が設定されていないことを書いて正常終了する。\n前提: process-loopと同じOSアカウントの状態ディレクトリを使う。\n復元・後始末: 解除後に再び止める場合は`atk wi process-loop abort`を実行する。",
         "epilog": "実行例:\n\n  atk wi process-loop abort-cancel",
     },
     "atk wi process-loop status": {
         "summary": "process-loopへの中断要求の有無を表示する",
-        "description": "目的: 中断要求が設定されているかを表示する。\n利用場面: process-loopを止める要求が有効かを確認するとき。\n対象と出力: 中断要求の状態ファイルを読み取り、要求の有無を標準出力へ書く。ファイルは変更しない。\n前提: process-loopと同じOSアカウントの状態ディレクトリを使う。\n復元・後始末: 読み取りだけを行うため不要。",
+        "description": "process-loopへの中断要求の有無を表示する。\n\n目的: 中断要求が設定されているかを表示する。\n利用場面: process-loopを止める要求が有効かを確認するとき。\n対象と出力: 中断要求の状態ファイルを読み取り、要求の有無を標準出力へ書く。ファイルは変更しない。\n前提: process-loopと同じOSアカウントの状態ディレクトリを使う。\n復元・後始末: 読み取りだけを行うため不要。",
         "epilog": "実行例:\n\n  atk wi process-loop status",
     },
     "atk wi process-loop instruct": {
         "summary": "次に起動する1セッションへ渡す追加指示を保持する",
-        "description": "目的: process-loopが次に起動する1セッションだけへ、ユーザーの追加指示を届ける。\n利用場面: 反復の合間に、そのセッションに限って方針を伝えるとき。\n対象と出力: 追加指示の状態ファイルへ本文を追記し、保持中の件数を標準出力へ書く。保持済みの本文と完全一致する投入は追記せず、追加指示が変更されなかったことを書く。\n前提: process-loopと同じOSアカウントの状態ディレクトリを使う。保持中の合計が上限を超える投入は非0で終了する。\n復元・後始末: 保持は`atk wi process-loop instruct-cancel`で破棄できる。セッションの起動時にも消費されて消える。",
+        "description": "次に起動する1セッションへ渡す追加指示を保持する。\n\n目的: process-loopが次に起動する1セッションだけへ、ユーザーの追加指示を届ける。\n利用場面: 反復の合間に、そのセッションに限って方針を伝えるとき。\n対象と出力: 追加指示の状態ファイルへ本文を追記し、保持中の件数を標準出力へ書く。保持済みの本文と完全一致する投入は追記せず、追加指示が変更されなかったことを書く。\n前提: process-loopと同じOSアカウントの状態ディレクトリを使う。保持中の合計が上限を超える投入は非0で終了する。\n復元・後始末: 保持は`atk wi process-loop instruct-cancel`で破棄できる。セッションの起動時にも消費されて消える。",
         "epilog": "実行例:\n\n  atk wi process-loop instruct 'まず既存のテストコードを読んでから実装する'",
     },
     "atk wi process-loop instruct-cancel": {
         "summary": "保持中の追加指示を破棄する",
-        "description": "目的: 次のセッションへ渡す予定の追加指示を全件取り消す。\n利用場面: 投入した追加指示を送らない判断へ変えたとき。\n対象と出力: 追加指示の状態ファイルを削除し、破棄した件数を標準出力へ書く。保持中の追加指示が無い場合も、その状態を書いて正常終了する。\n前提: process-loopと同じOSアカウントの状態ディレクトリを使う。\n復元・後始末: 破棄した本文は復元できないため、必要な場合は同じ本文を投入し直す。",
+        "description": "保持中の追加指示を破棄する。\n\n目的: 次のセッションへ渡す予定の追加指示を全件取り消す。\n利用場面: 投入した追加指示を送らない判断へ変えたとき。\n対象と出力: 追加指示の状態ファイルを削除し、破棄した件数を標準出力へ書く。保持中の追加指示が無い場合も、その状態を書いて正常終了する。\n前提: process-loopと同じOSアカウントの状態ディレクトリを使う。\n復元・後始末: 破棄した本文は復元できないため、必要な場合は同じ本文を投入し直す。",
         "epilog": "実行例:\n\n  atk wi process-loop instruct-cancel",
     },
     "atk plans": {
-        "summary": "計画ファイルの取得・保存・一覧と参照の書き換え",
-        "description": "目的: 保存済み計画を`~/.claude/plans`へ取得し、計画ファイルまたはCI対応レビュー指摘管理表をprivate-notesへ保存する。`~/.claude/plans`の計画の一覧と、保存済み計画の参照の書き換えも提供する。\n利用場面: 保存済み計画の再編集、計画バンドルの保存、CI対応レビュー指摘管理表の保存、作業中の計画の確認、保存済み計画の参照を現行の表記へ書き換えるとき。保存の契機は、計画バンドルでは`agent-toolkit:plan-mode`の`plan-file-storage.md`、CI対応レビュー指摘管理表では`agent-toolkit:bugfix`の`ci-failure-handling.md`が定める。\n対象と出力: `~/.claude/plans`配下とprivate-notesのplans配下を読み書きする。サブコマンドを指定しない場合はサブコマンド一覧を標準出力へ書き、何も変更しない。\n前提: rewrite-referencesだけはprivate-notesのremoteとupstreamを要する。その他の操作は同期相手が無ければローカルだけで完了する。\n復元・後始末: `commit`と`rewrite-references`はcommitとpushまで行う。取り消しはprivate-notesのGit履歴から行う。",
+        "summary": "計画ファイルを取得・保存・一覧表示し参照を書き換える",
+        "description": "計画ファイルを取得・保存・一覧表示し参照を書き換える。\n\n目的: 保存済み計画を`~/.claude/plans`へ取得し、計画ファイルまたはCI対応レビュー指摘管理表をprivate-notesへ保存する。`~/.claude/plans`の計画の一覧と、保存済み計画の参照の書き換えも提供する。\n利用場面: 保存済み計画の再編集、計画バンドルの保存、CI対応レビュー指摘管理表の保存、作業中の計画の確認、保存済み計画の参照を現行の表記へ書き換えるとき。保存の契機は、計画バンドルでは`agent-toolkit:plan-mode`の`plan-file-storage.md`、CI対応レビュー指摘管理表では`agent-toolkit:bugfix`の`ci-failure-handling.md`が定める。\n対象と出力: `~/.claude/plans`配下とprivate-notesのplans配下を読み書きする。サブコマンドを指定しない場合はサブコマンド一覧を標準出力へ書き、何も変更しない。\n前提: rewrite-referencesだけはprivate-notesのremoteとupstreamを要する。その他の操作は同期相手が無ければローカルだけで完了する。\n復元・後始末: `commit`と`rewrite-references`はcommitとpushまで行う。取り消しはprivate-notesのGit履歴から行う。",
         "epilog": "実行例:\n\n  atk plans commit 01-0900_example.md",
     },
     "atk plans checkout": {
         "summary": "保存済み計画バンドルまたはCI対応レビュー指摘管理表を`~/.claude/plans`へ取得する",
-        "description": "目的: 保存済みバンドルを再編集できる状態にする。\n利用場面: 保存後の計画またはCI対応レビュー指摘管理表へ追記するとき。\n対象と出力: private-notesのplans配下から`~/.claude/plans`直下へバンドルを複写し、取得時点を記録する。取得結果のパスを標準出力へ書く。\n前提: PLAN_FILEは`private-notes/plans/`からの相対パスで指定する。`~/.claude/plans`に同名ファイルがある場合は取得しない。\n復元・後始末: 取得後の変更は`atk plans commit`で保存する。取得後の作業バンドルを取り消した場合も同じコマンドで取得記録を回収する。",
+        "description": "保存済み計画バンドルまたはCI対応レビュー指摘管理表を`~/.claude/plans`へ取得する。\n\n目的: 保存済みバンドルを再編集できる状態にする。\n利用場面: 保存後の計画またはCI対応レビュー指摘管理表へ追記するとき。\n対象と出力: private-notesのplans配下から`~/.claude/plans`直下へバンドルを複写し、取得時点を記録する。取得結果のパスを標準出力へ書く。\n前提: PLAN_FILEは`private-notes/plans/`からの相対パスで指定する。`~/.claude/plans`に同名ファイルがある場合は取得しない。\n復元・後始末: 取得後の変更は`atk plans commit`で保存する。取得後の作業バンドルを取り消した場合も同じコマンドで取得記録を回収する。",
         "epilog": "実行例:\n\n  atk plans checkout 2026/09/01-0900_example.md",
     },
     "atk plans commit": {
         "summary": "作業中の計画バンドルまたはCI対応レビュー指摘管理表を保存してcommit・pushする",
-        "description": "目的: 指定した計画バンドルまたはCI対応レビュー指摘管理表を`~/.claude/plans`からprivate-notesのplans配下へ移し、対象限定commitを作成する。\n利用場面: 計画バンドルまたはCI対応レビュー指摘管理表の保存の契機に達したとき。契機は、計画バンドルでは`agent-toolkit:plan-mode`の`plan-file-storage.md`、CI対応レビュー指摘管理表では`agent-toolkit:bugfix`の`ci-failure-handling.md`が定める。\n対象と出力: 計画バンドルは年月階層へ、CI対応レビュー指摘管理表は`plans/ci/`へ移し、`--skip-push`を指定しなければpushする。取得記録がある場合は記録した保存先へ内容を書き込み、成功後に記録を回収する。保存済みの計画バンドルを指定した場合に、`~/.claude/plans`直下へ同じstemのファイルが残っているときは、保存先へ反映しないまま成功と報告せず、非0の終了コードで失敗する。\n前提: PLAN_FILEは`~/.claude/plans`直下のメイン計画ファイル名、`private-notes/plans/`からの相対のメイン計画パス、または`"
+        "description": "作業中の計画バンドルまたはCI対応レビュー指摘管理表を保存してcommit・pushする。\n\n目的: 指定した計画バンドルまたはCI対応レビュー指摘管理表を`~/.claude/plans`からprivate-notesのplans配下へ移し、対象限定commitを作成する。\n利用場面: 計画バンドルまたはCI対応レビュー指摘管理表の保存の契機に達したとき。契機は、計画バンドルでは`agent-toolkit:plan-mode`の`plan-file-storage.md`、CI対応レビュー指摘管理表では`agent-toolkit:bugfix`の`ci-failure-handling.md`が定める。\n対象と出力: 計画バンドルは年月階層へ、CI対応レビュー指摘管理表は`plans/ci/`へ移し、`--skip-push`を指定しなければpushする。取得記録がある場合は記録した保存先へ内容を書き込み、成功後に記録を回収する。保存済みの計画バンドルを指定した場合に、`~/.claude/plans`直下へ同じstemのファイルが残っているときは、保存先へ反映しないまま成功と報告せず、非0の終了コードで失敗する。\n前提: PLAN_FILEは`~/.claude/plans`直下のメイン計画ファイル名、`private-notes/plans/`からの相対のメイン計画パス、または`"
         + CI_REVIEW_TABLE_NAME_FORMAT
         + "`で指定する。\n復元・後始末: 保存元が取得時点の内容とも作業側の内容とも異なる場合は双方を変更せず失敗する。commitまたはpushに失敗した場合は作業側を保持するため、同じコマンドで再開できる。",
         "epilog": "実行例:\n\n  atk plans commit /absolute/home/.claude/plans/01-0900_example.md",
     },
     "atk plans list": {
         "summary": "`~/.claude/plans`に残る計画バンドルを一覧表示する",
-        "description": "目的: `~/.claude/plans`に残る計画ファイル（メイン）を、所有セッションと計画バンドルの最終更新時刻とともに列挙し、保存先へ未反映の計画を判別できるようにする。\n利用場面: セッション終了時の通知が対象としない、他のセッションが所有する計画と計画の所有記録を持たない計画の滞留を調べるとき。\n対象と出力: `~/.claude/plans`配下を読み取り、標準出力へ1行1レコードのTSVで書く。各行はメイン計画の絶対パス、所有セッション識別子、最終更新時刻をこの順にタブ区切りで並べ、各セルはJSON値ではない。所有記録が無い計画の所有セッションは`なし`と書く。エージェント環境の長い出力は生成側が全量を保存して保存先と行数を返す。走査の前に、旧版が`~/.claude/plans`へ残したレビュー指摘管理表のロックファイルを削除する。計画ファイルは変更しない。\n前提: なし。`~/.claude/plans`が無い場合と対象が無い場合は何も出力しない。\n復元・後始末: 読み取りだけを行うため不要。",
+        "description": "`~/.claude/plans`に残る計画バンドルを一覧表示する。\n\n目的: `~/.claude/plans`に残る計画ファイル（メイン）を、所有セッションと計画バンドルの最終更新時刻とともに列挙し、保存先へ未反映の計画を判別できるようにする。\n利用場面: セッション終了時の通知が対象としない、他のセッションが所有する計画と計画の所有記録を持たない計画の滞留を調べるとき。\n対象と出力: `~/.claude/plans`配下を読み取り、標準出力へ1行1レコードのTSVで書く。各行はメイン計画の絶対パス、所有セッション識別子、最終更新時刻をこの順にタブ区切りで並べ、各セルはJSON値ではない。所有記録が無い計画の所有セッションは`なし`と書く。エージェント環境の長い出力は生成側が全量を保存して保存先と行数を返す。走査の前に、旧版が`~/.claude/plans`へ残したレビュー指摘管理表のロックファイルを削除する。計画ファイルは変更しない。\n前提: なし。`~/.claude/plans`が無い場合と対象が無い場合は何も出力しない。\n復元・後始末: 読み取りだけを行うため不要。",
         "epilog": "実行例:\n\n  atk plans list",
     },
     "atk plans rewrite-references": {
         "summary": "保存済み計画の付属ファイル参照を`plan-file-storage.md`の表記へそろえる",
-        "description": "目的: private-notesのplans配下に保存済みの計画本文へ残る可搬表記の付属ファイル参照を、`plan-file-storage.md`が定める`~/.claude/plans/`とファイル名の表記へ書き換える。\n利用場面: 参照表記の改訂後に、保存済みの計画を現行の表記へそろえるとき。\n対象と出力: 保存済みの計画ファイル（メイン）と計画ファイル（詳細）の本文だけを読み書きし、ファイル名がその計画のstemで始まる参照だけを書き換える。書き換えた計画の件数と参照の件数を標準出力へ書き、そのファイルだけを対象にcommitして`--skip-push`を指定しなければpushする。stemが一致しない参照とキュー項目の本文は書き換えない。\n前提: private-notesにremoteとupstreamが設定され、indexと作業ツリーがcleanであること。\n復元・後始末: 書き換え対象が無い場合は何も変更せず0件を出力して終わる。commitへ到達する前に失敗した場合は変更前の状態へ戻す。書き換えた後の内容はprivate-notesのGit履歴から追跡できる。",
+        "description": "保存済み計画の付属ファイル参照を`plan-file-storage.md`の表記へそろえる。\n\n目的: private-notesのplans配下に保存済みの計画本文へ残る可搬表記の付属ファイル参照を、`plan-file-storage.md`が定める`~/.claude/plans/`とファイル名の表記へ書き換える。\n利用場面: 参照表記の改訂後に、保存済みの計画を現行の表記へそろえるとき。\n対象と出力: 保存済みの計画ファイル（メイン）と計画ファイル（詳細）の本文だけを読み書きし、ファイル名がその計画のstemで始まる参照だけを書き換える。書き換えた計画の件数と参照の件数を標準出力へ書き、そのファイルだけを対象にcommitして`--skip-push`を指定しなければpushする。stemが一致しない参照とキュー項目の本文は書き換えない。\n前提: private-notesにremoteとupstreamが設定され、indexと作業ツリーがcleanであること。\n復元・後始末: 書き換え対象が無い場合は何も変更せず0件を出力して終わる。commitへ到達する前に失敗した場合は変更前の状態へ戻す。書き換えた後の内容はprivate-notesのGit履歴から追跡できる。",
         "epilog": "実行例:\n\n  atk plans rewrite-references",
     },
     "atk serve": {
-        "summary": "atk serveを起動し、そのログを表示する",
-        "description": "目的: ワークアイテム、計画ファイル、セッションをブラウザーから扱うWebサーバーを起動し、運用ログを参照する。\n利用場面: ユーザーがAWIの投入、編集、採否、計画ファイルとセッションの閲覧をブラウザーで行うとき、または障害を調査するとき。\n対象と出力: 通常は指定したホストとポートで待機し、private-notesを読み書きする。`logs`はuser serviceのjournal直近100行を表示し、`--follow`では追従する。\n前提: 待受のホストとポートは、オプション、環境変数`AGENT_TOOLKIT_SERVE_HOST`と`AGENT_TOOLKIT_SERVE_PORT`、設定ファイルの順に解決する。ログ表示にはjournalctlが必要である。\n復元・後始末: 停止はそのプロセスの終了で行う。ブラウザーから行った変更はprivate-notesへcommitする。",
+        "summary": "WI・計画・セッションのWebサーバーを起動しログを表示する",
+        "description": "WI・計画・セッションのWebサーバーを起動しログを表示する。\n\n目的: ワークアイテム、計画ファイル、セッションをブラウザーから扱うWebサーバーを起動し、運用ログを参照する。\n利用場面: ユーザーがAWIの投入、編集、採否、計画ファイルとセッションの閲覧をブラウザーで行うとき、または障害を調査するとき。\n対象と出力: 通常は指定したホストとポートで待機し、private-notesを読み書きする。`logs`はuser serviceのjournal直近100行を表示し、`--follow`では追従する。\n前提: 待受のホストとポートは、オプション、環境変数`AGENT_TOOLKIT_SERVE_HOST`と`AGENT_TOOLKIT_SERVE_PORT`、設定ファイルの順に解決する。ログ表示にはjournalctlが必要である。\n復元・後始末: 停止はそのプロセスの終了で行う。ブラウザーから行った変更はprivate-notesへcommitする。",
         "epilog": "実行例:\n\n  atk serve --port=28766\n  atk serve logs --follow",
     },
     "atk config": {
         "summary": "XDG関連パスとモデル設定を確認・変更する",
-        "description": "目的: 設定、状態、データの各ディレクトリ、private-notesの解決結果、モデル設定（engine別・段位別のモデルと用途別のengine順）を確認し、変更できる設定を更新する。サブコマンドを省略した場合はshowと同じ動作をする。\n利用場面: 委譲先のモデルを切り替えるとき。コマンドが参照するパスを確認するとき。\n対象と出力: 設定ファイルと環境変数を読み取り、解決結果を標準出力へ書く。設定ファイルを変更するのは`set`と、プリセット名を指定した`apply-preset`である。\n前提: 設定ファイルはXDGの設定ディレクトリ配下に置く。存在しない場合は各設定の初期値を表示する。廃止した旧モデル設定（high_tier_model・medium_tier_model・low_tier_model・orchestrate_model）の保存値は、show・getと設定からの候補解決の初回に新しいキーへ一括移行する。新しいキーで表せない旧値は移行せず、競合と修正する新キーを示して停止するため、示された新キーを`set`で保存してから再実行する。\n復元・後始末: `set`または`apply-preset`で変更した値は`set`で元の値へ戻す。他のサブコマンドは状態を残さない。",
+        "description": "XDG関連パスとモデル設定を確認・変更する。\n\n目的: 設定、状態、データの各ディレクトリ、private-notesの解決結果、モデル設定（engine別・段位別のモデルと用途別のengine順）を確認し、変更できる設定を更新する。サブコマンドを省略した場合はshowと同じ動作をする。\n利用場面: 委譲先のモデルを切り替えるとき。コマンドが参照するパスを確認するとき。\n対象と出力: 設定ファイルと環境変数を読み取り、解決結果を標準出力へ書く。設定ファイルを変更するのは`set`と、プリセット名を指定した`apply-preset`である。\n前提: 設定ファイルはXDGの設定ディレクトリ配下に置く。存在しない場合は各設定の初期値を表示する。廃止した旧モデル設定（high_tier_model・medium_tier_model・low_tier_model・orchestrate_model）の保存値は、show・getと設定からの候補解決の初回に新しいキーへ一括移行する。新しいキーで表せない旧値は移行せず、競合と修正する新キーを示して停止するため、示された新キーを`set`で保存してから再実行する。\n復元・後始末: `set`または`apply-preset`で変更した値は`set`で元の値へ戻す。他のサブコマンドは状態を残さない。",
         "epilog": "実行例:\n\n  atk config show\n  atk config get private_notes",
     },
     "atk config show": {
-        "summary": "XDG関連パスとモデル設定を一覧表示する（サブコマンド省略時も同じ動作）",
-        "description": "目的: XDG関連パス、モデル設定、Codexの速度と接続先の優先順を`<キー>: <値>`で1キー1行ずつ表示する。モデル設定はClaudeのhigh・medium・low、Codexのhigh・medium・low、base・review・chores・orchestrateのengine順、write_modelの順に並べる。参考一覧外のモデル名・effortは警告する。`codex_fast_mode`の初期値は`false`、`codex_model_providers`の初期値は空である。`claude_api_env_file`が未設定（空文字列）なら親環境とClaude Codeの通常の認証解決を使い、認証検出による起動拒否・認証環境の隔離・役割別割当・接続切替を行わない。その会話と接続情報もAPIパスも持たない旧形式の会話は、後から設定しても再開時に通常の認証解決を使う。設定した場合、`claude_api_env_file`はAPI認証環境の所在、`claude_api_mode`は役割別の接続方針を表す。`pay-as-you-go`（未設定時の値）はオーケストレーターをAPIへ固定し、委譲先をサブスクリプション、APIの順にする。`api-credits`はオーケストレーターをサブスクリプションへ固定し、委譲先をAPI、サブスクリプションの順にする。一方だけの認証環境はその接続を使い、空か無効なenvファイルはAPI候補から除く。空文字列の保存でAPI設定を解除する。\n利用場面: 現在の設定値を確認するとき。サブコマンドを省略した場合も同じ動作をする。\n対象と出力: 設定ファイルと環境変数を読み取り、標準出力へ一覧、標準エラーへ警告を書く。設定は変更しない。\n前提: 設定ファイルが未作成の場合も各設定の初期値を表示する。系列名の解決は委譲の起動時に行う。\n復元・後始末: 読み取りだけを行うため不要。",
+        "summary": "XDG関連パスとモデル設定を一覧表示する",
+        "description": "XDG関連パスとモデル設定を一覧表示する。\n\n目的: XDG関連パス、モデル設定、Codexの速度と接続先の優先順を`<キー>: <値>`で1キー1行ずつ表示する。モデル設定はClaudeのhigh・medium・low、Codexのhigh・medium・low、base・review・chores・orchestrateのengine順、write_modelの順に並べる。参考一覧外のモデル名・effortは警告する。`codex_fast_mode`の初期値は`false`、`codex_model_providers`の初期値は空である。`claude_api_env_file`が未設定（空文字列）なら親環境とClaude Codeの通常の認証解決を使い、認証検出による起動拒否・認証環境の隔離・役割別割当・接続切替を行わない。その会話と接続情報もAPIパスも持たない旧形式の会話は、後から設定しても再開時に通常の認証解決を使う。設定した場合、`claude_api_env_file`はAPI認証環境の所在、`claude_api_mode`は役割別の接続方針を表す。`pay-as-you-go`（未設定時の値）はオーケストレーターをAPIへ固定し、委譲先をサブスクリプション、APIの順にする。`api-credits`はオーケストレーターをサブスクリプションへ固定し、委譲先をAPI、サブスクリプションの順にする。一方だけの認証環境はその接続を使い、空か無効なenvファイルはAPI候補から除く。空文字列の保存でAPI設定を解除する。\n利用場面: 現在の設定値を確認するとき。サブコマンドを省略した場合も同じ動作をする。\n対象と出力: 設定ファイルと環境変数を読み取り、標準出力へ一覧、標準エラーへ警告を書く。設定は変更しない。\n前提: 設定ファイルが未作成の場合も各設定の初期値を表示する。系列名の解決は委譲の起動時に行う。\n復元・後始末: 読み取りだけを行うため不要。",
         "epilog": "実行例:\n\n  atk config show",
     },
     "atk config get": {
         "summary": "1件以上の設定値を取得する",
-        "description": "目的: 指定した設定キーの値を指定順に1行ずつ出力する。モデル設定は系列名を含む設定値を返す。\n利用場面: シェルから`private_notes`などの解決値またはモデル候補の設定値を取得するとき。\n対象と出力: 設定ファイルと環境変数を読み取り、標準出力へ値だけを書く。未知のキーは終了コード2で理由を示す。\n前提: KEYは`atk config show`が出力するキーと同じ名前で指定する。系列名の解決は委譲の起動時に行う。\n復元・後始末: 読み取りだけを行うため不要。",
+        "description": "1件以上の設定値を取得する。\n\n目的: 指定した設定キーの値を指定順に1行ずつ出力する。モデル設定は系列名を含む設定値を返す。\n利用場面: シェルから`private_notes`などの解決値またはモデル候補の設定値を取得するとき。\n対象と出力: 設定ファイルと環境変数を読み取り、標準出力へ値だけを書く。未知のキーは終了コード2で理由を示す。\n前提: KEYは`atk config show`が出力するキーと同じ名前で指定する。系列名の解決は委譲の起動時に行う。\n復元・後始末: 読み取りだけを行うため不要。",
         "epilog": "実行例:\n\n  atk config get private_notes",
     },
     "atk config set": {
         "summary": "変更可能な設定値を更新する",
-        "description": "目的: 変更できる設定値を更新して設定ファイルへ保存する。\n利用場面: engine別・段位別のモデル・推論の深さ、用途別のengine順、日本語文章の起草に使うwrite_model、agents_serverのCodexの速度・接続先の優先順、ClaudeのAPI接続用envファイルを切り替えるとき。\n対象と出力: 設定ディレクトリの`config.json`を書き換える。設定はユーザー単位で共有する。\n前提: KEYは変更できるキー。`claude_api_env_file`はenvファイルのパス1つを受理し、先頭の~を展開する。空文字列は未設定を表し、親環境とClaude Codeの通常の認証解決を維持する。認証検出による起動拒否・認証環境の隔離・役割別割当・接続切替は行わない。その会話と接続情報もAPIパスも持たない旧形式の会話は、後から設定しても再開時に通常の認証解決を使う。以下の役割別接続管理はenvファイルを設定した会話に適用する。set時にはファイルの存在・内容を確かめない。`claude_api_mode`は`pay-as-you-go`（未設定時の値）または`api-credits`を受理し、API認証の所在と役割別の接続方針を分ける。前者はオーケストレーターをAPIへ固定し、委譲先をサブスクリプション、APIの順にする。後者はオーケストレーターをサブスクリプションへ固定し、委譲先をAPI、サブスクリプションの順にする。`codex_fast_mode`は`true`または`false`を受理し、初期値は`false`。`codex_model_providers`は空、または主接続先を先頭にしたCodex provider IDのASCIIカンマ区切り列。空ならCodex通常設定に従い代替試行しない。後続は独立したAPI認証を使う接続先を受理する。前後空白と重複を除き、空要素は拒否する。モデル用の警告は適用しない。`<claude|codex>_<high|medium|low>_tier_model`はengine接頭辞を付けない単一の`<モデル>[/<effort>]`を受理し、effort省略時は`medium`を使う。`<base|review|chores|orchestrate>_engine`は`codex`と`claude`の一方または両方を重複なしで並べたASCIIカンマ区切り列を受理する。`write_model`は`<claude|codex|agy>:<モデル>[/<effort>]`のASCIIカンマ区切り列を受理する。Codexの`astra`・`sol`・`terra`・`luna`は起動時に同系列の最新版へ解決し、バージョン付き完全IDは固定する。旧モデル設定の移行で停止した場合も、示された新キーをこのコマンドで保存して復旧する。\n復元・後始末: 元の値へ戻す場合は同じコマンドで以前の値を設定する。provider列と`claude_api_env_file`は空文字列を設定して解除する。Claude会話は選択済みの接続を再開時にも保持し、新規sessionは役割とモードの先頭候補から評価する。`pay-as-you-go`で利用上限によりAPIへ移った委譲先は、上限の解除予定時刻の後の最初の追送か自動再開からサブスクリプションへ戻る。provider列は新規起動と次の代替試行へ反映し、既存API会話の接続先をサブスクへ戻さない。",
+        "description": "変更可能な設定値を更新する。\n\n目的: 変更できる設定値を更新して設定ファイルへ保存する。\n利用場面: engine別・段位別のモデル・推論の深さ、用途別のengine順、日本語文章の起草に使うwrite_model、agents_serverのCodexの速度・接続先の優先順、ClaudeのAPI接続用envファイルを切り替えるとき。\n対象と出力: 設定ディレクトリの`config.json`を書き換える。設定はユーザー単位で共有する。\n前提: KEYは変更できるキー。`claude_api_env_file`はenvファイルのパス1つを受理し、先頭の~を展開する。空文字列は未設定を表し、親環境とClaude Codeの通常の認証解決を維持する。認証検出による起動拒否・認証環境の隔離・役割別割当・接続切替は行わない。その会話と接続情報もAPIパスも持たない旧形式の会話は、後から設定しても再開時に通常の認証解決を使う。以下の役割別接続管理はenvファイルを設定した会話に適用する。set時にはファイルの存在・内容を確かめない。`claude_api_mode`は`pay-as-you-go`（未設定時の値）または`api-credits`を受理し、API認証の所在と役割別の接続方針を分ける。前者はオーケストレーターをAPIへ固定し、委譲先をサブスクリプション、APIの順にする。後者はオーケストレーターをサブスクリプションへ固定し、委譲先をAPI、サブスクリプションの順にする。`codex_fast_mode`は`true`または`false`を受理し、初期値は`false`。`codex_model_providers`は空、または主接続先を先頭にしたCodex provider IDのASCIIカンマ区切り列。空ならCodex通常設定に従い代替試行しない。後続は独立したAPI認証を使う接続先を受理する。前後空白と重複を除き、空要素は拒否する。モデル用の警告は適用しない。`<claude|codex>_<high|medium|low>_tier_model`はengine接頭辞を付けない単一の`<モデル>[/<effort>]`を受理し、effort省略時は`medium`を使う。`<base|review|chores|orchestrate>_engine`は`codex`と`claude`の一方または両方を重複なしで並べたASCIIカンマ区切り列を受理する。`write_model`は`<claude|codex|agy>:<モデル>[/<effort>]`のASCIIカンマ区切り列を受理する。Codexの`astra`・`sol`・`terra`・`luna`は起動時に同系列の最新版へ解決し、バージョン付き完全IDは固定する。旧モデル設定の移行で停止した場合も、示された新キーをこのコマンドで保存して復旧する。\n復元・後始末: 元の値へ戻す場合は同じコマンドで以前の値を設定する。provider列と`claude_api_env_file`は空文字列を設定して解除する。Claude会話は選択済みの接続を再開時にも保持し、新規sessionは役割とモードの先頭候補から評価する。`pay-as-you-go`で利用上限によりAPIへ移った委譲先は、上限の解除予定時刻の後の最初の追送か自動再開からサブスクリプションへ戻る。provider列は新規起動と次の代替試行へ反映し、既存API会話の接続先をサブスクへ戻さない。",
         "epilog": "実行例:\n\n  atk config set codex_high_tier_model sol/medium\n  atk config set review_engine claude,codex",
     },
     "atk config apply-preset": {
-        "summary": "用途別engine順をプリセットから一括保存する（`show`または省略で全プリセットの値を表示する）",
-        "description": "目的: base・execute・review・chores・orchestrateの用途別engine順の5キーを1回の実行で一括保存する。engine別・段位別のモデル設定とwrite_modelは変更しない。`show`の指定時と引数の省略時は、保存せずに5プリセットの設定値を表示する。\n利用場面: 主に使うengineをcodexまたはclaudeへ切り替えるとき。切り替える前に各プリセットが保存する値を見比べるとき。\n対象と出力: プリセット名を指定した実行だけが設定ディレクトリの`config.json`へ用途別engine順を保存し、保存した各キーと値を標準出力へ表示する。`show`の指定時と引数の省略時は設定ファイルを読み書きせず、プリセットごとに`<プリセット名>:`の行と、保存対象の各キーの`<キー>: <値>`を半角空白2文字で字下げした行を標準出力へ書く。未知の名前は終了コード2で終わり、受理する値を標準エラーへ表示する。\n前提: 引数は`show`、または`codex-balanced`、`codex-near-primary`、`codex-primary`、`claude-balanced`、`claude-primary`のいずれかのプリセット名を指定するか、省略する。\n復元・後始末: 個別に元の値へ戻す場合は`atk config set`を使う。並行して稼働するセッションへも新しい値が波及する。`show`と省略時の表示は状態を残さない。",
+        "summary": "用途別engine順をプリセットで確認・一括設定する",
+        "description": "用途別engine順をプリセットで確認・一括設定する。\n\n目的: base・execute・review・chores・orchestrateの用途別engine順の5キーを1回の実行で一括保存する。engine別・段位別のモデル設定とwrite_modelは変更しない。`show`の指定時と引数の省略時は、保存せずに5プリセットの設定値を表示する。\n利用場面: 主に使うengineをcodexまたはclaudeへ切り替えるとき。切り替える前に各プリセットが保存する値を見比べるとき。\n対象と出力: プリセット名を指定した実行だけが設定ディレクトリの`config.json`へ用途別engine順を保存し、保存した各キーと値を標準出力へ表示する。`show`の指定時と引数の省略時は設定ファイルを読み書きせず、プリセットごとに`<プリセット名>:`の行と、保存対象の各キーの`<キー>: <値>`を半角空白2文字で字下げした行を標準出力へ書く。未知の名前は終了コード2で終わり、受理する値を標準エラーへ表示する。\n前提: 引数は`show`、または`codex-balanced`、`codex-near-primary`、`codex-primary`、`claude-balanced`、`claude-primary`のいずれかのプリセット名を指定するか、省略する。\n復元・後始末: 個別に元の値へ戻す場合は`atk config set`を使う。並行して稼働するセッションへも新しい値が波及する。`show`と省略時の表示は状態を残さない。",
         "epilog": "実行例:\n\n  atk config apply-preset show\n  atk config apply-preset codex-balanced",
     },
     "atk wait-schedule": {
-        "summary": "委譲待機に使うcron式を公開情報から判定し、定期再確認のpromptとともに出力できる",
-        "description": "目的: 指定したrequest bucketのプロンプトキャッシュTTLを公開情報から判定し、対応する壁時計のcron式を1行で出力する。\n利用場面: 委譲先や背景処理の完了を定期的に再確認するタスクを登録するとき。\n対象と出力: `--request-bucket`で指定した呼び出し主体のbucketを待機TTLとcron式の解決へ入力し、環境変数と`claude auth status`の出力を読み取って、標準出力へ`*/3 * * * *`か`*/30 * * * *`を書く。`--format json`では、同じcron式を`cron`、定期再確認の`CronCreate`へ渡すpromptの共通本文を`prompt`に持つJSONを1行で書く。`prompt`の1行目は定期再確認の標識である。ファイルは変更しない。\n前提: ツール側では呼び出し主体のbucketを自動解決できないため、`--request-bucket`へmainまたはsubagentを明示する。`--format`を省略した場合はtextとして扱う。\n復元・後始末: 読み取りだけを行うため不要。出力したcron式と`prompt`は変更せずそのまま登録する。promptは開始タグと終了タグで全体を囲む。経過時間起動の義務を加える場合は、測定コマンドと判定閾値の行を`prompt`の終了タグの前へ加える。",
+        "summary": "委譲待機のcron式と定期再確認のpromptを生成する",
+        "description": "委譲待機のcron式と定期再確認のpromptを生成する。\n\n目的: 指定したrequest bucketのプロンプトキャッシュTTLを公開情報から判定し、対応する壁時計のcron式を1行で出力する。\n利用場面: 委譲先や背景処理の完了を定期的に再確認するタスクを登録するとき。\n対象と出力: `--request-bucket`で指定した呼び出し主体のbucketを待機TTLとcron式の解決へ入力し、環境変数と`claude auth status`の出力を読み取って、標準出力へ`*/3 * * * *`か`*/30 * * * *`を書く。`--format json`では、同じcron式を`cron`、定期再確認の`CronCreate`へ渡すpromptの共通本文を`prompt`に持つJSONを1行で書く。`prompt`の1行目は定期再確認の標識である。ファイルは変更しない。\n前提: ツール側では呼び出し主体のbucketを自動解決できないため、`--request-bucket`へmainまたはsubagentを明示する。`--format`を省略した場合はtextとして扱う。\n復元・後始末: 読み取りだけを行うため不要。出力したcron式と`prompt`は変更せずそのまま登録する。promptは開始タグと終了タグで全体を囲む。経過時間起動の義務を加える場合は、測定コマンドと判定閾値の行を`prompt`の終了タグの前へ加える。",
         "epilog": "実行例:\n\n  atk wait-schedule --request-bucket=main\n  atk wait-schedule --request-bucket=main --format json",
     },
     "atk agents": {
         "summary": "委譲sessionの待機・通知・一覧・詳細・記録表示を行う",
-        "description": "目的: `agents_server`が保持する委譲sessionをCLIから待機、通知または診断する。\n利用場面: バックグラウンドタスクでの終端待機、委譲元への即時通知、保持中sessionの調査を行うとき。\n対象と出力: `wait`は結果を受領する正式な手段、`notify`は実行中通知、`list`と`show`は共有状態ファイルの診断の手段として動作する。\n前提: `wait`と`notify`は対象sessionと同じルートセッションで実行する。直接端末の`list`は有効な全ルートを統合し、`show`はsession IDが一意な場合に所有ルートを解決する。\n復元・後始末: `wait`が回収した結果ファイルと通知ファイルは削除される。追加の結果受領操作は不要である。",
+        "description": "委譲sessionの待機・通知・一覧・詳細・記録表示を行う。\n\n目的: `agents_server`が保持する委譲sessionをCLIから待機、通知または診断する。\n利用場面: バックグラウンドタスクでの終端待機、委譲元への即時通知、保持中sessionの調査を行うとき。\n対象と出力: `wait`は結果を受領する正式な手段、`notify`は実行中通知、`list`と`show`は共有状態ファイルの診断の手段として動作する。\n前提: `wait`と`notify`は対象sessionと同じルートセッションで実行する。直接端末の`list`は有効な全ルートを統合し、`show`はsession IDが一意な場合に所有ルートを解決する。\n復元・後始末: `wait`が回収した結果ファイルと通知ファイルは削除される。追加の結果受領操作は不要である。",
         "epilog": "実行例:\n\n  atk agents wait\n  atk agents list\n  atk agents show <session_id>\n  atk agents logs <session_id> --follow",
     },
     "atk agents wait": {
         "summary": "委譲先sessionの終端結果と実行中通知を待って回収できた全件を出力する",
-        "description": "目的: `agents_server`が出力する終端結果または実行中通知を待ち、1回の巡回で回収できた全件を標準出力へ書く。\n利用場面: 委譲先の完了を待ち、結果または実行中通知を受領するとき。完了通知で同じセッションへ再開できる待機は、goalの有無や対象の種類・件数によらずホストのバックグラウンドタスクで起動する。通知による再開が無い環境とCodexの公開回収は、delegationのreferences/waiting-and-monitoring.md「待機区間の構成」に従う。\n対象と出力: 自身の書込主体が所有する結果ファイルと通知ファイルを読み、回収できたものを1件1行のJSON Linesで書く。通知は送信時刻順に本文を返す。行は待機対象の識別子の昇順に並び、各行は`session_id`と、起動時に`label`を指定した委譲先では同じ値の`label`を持つ。終端行は`agent_message`に加えて、同じ本文をエスケープを含まないUTF-8のMarkdownとして呼び出しごとのmanaged-tempへ書いたファイルの絶対パスを`agent_message_path`に持ち、そのファイルを読めば結果本文を得られる。最初の待機で起動中sessionと未回収結果を登録簿へ固定し、再発行でも終端結果の回収まで対象ごとの待機所有権を保持する。前景へ返した本文は同じ呼び出しで受領済みとし、次の逐次待機へ再配送しない。先行待機のlockへ競合した後発プロセスだけが、先行runの本文を1回回収できる。終端結果が無く通知だけを回収した場合は`status: running`を返す。`status: running`の行、待機上限で終わった行、別の待機が受領済みの結果を示す`status: consumed`の行（終了コード8。保存runから結果本文を読める場合は`recovery`に同じ所在を持つ）、失敗または中断で終端した行は、次に行う操作を`next_action`項目に持つ。エージェント環境では出力するJSON Linesを生成側の保存先へ全量で保存し、標準出力へ保存先パスと保存した行数を書き、通知を含む場合は通知件数と送信元session IDを、終端を含む場合は終端件数と、終端行ごとに`終端行:`で始まる1行を続けて書く。この行は`session_id`、`label`、`status`、`agent_message_path`の順で始まり、終端行が持つ残りの項目（`error`と`next_action`を含み、`agent_message`と`notices`を除く）を`<項目>=<値>`で続ける。空白を含む値と文字列以外の値は改行を含まないJSONで書く。通知の行の後には通知の本文を、各終端行の直後には`agent_message_path`の本文を、`本文開始: session_id=<識別子>`と`本文終了: session_id=<識別子>`の行で囲んで続ける。本文を加えた標準出力全体（保存先と行数の行を含む）が16384バイトを超える本文と、読めない本文ファイルは表示せず、終端行の`agent_message_path`から読む。保存先を開かずに、どの依頼が終端したか、本文、失敗の原因と次の操作まで得られる。回収した本文はその保存先に残るため、後続の工程と後続のセッションの判断の入力にできる。\n前提: 待機するsessionを起動した`agents_server`と同じルートセッションで実行する。環境と別名索引からルートを解決できない入れ子MCP起動では、起動応答の`root_session_id`を`--root-session-id`へ渡す。明示値は形式、状態ディレクトリの実在および確認済みのルートsessionとの一致を検証する。待機の成立は、応答のいずれかの行が待機対象の`session_id`を持ち終端statusであることで判定する。待機対象の行が現れない応答は、その対象が未終端であることを示す。`status: running`では同じターン内に同じコマンドを再発行し、終端statusまで待機を継続する。待機対象登録が破損している場合は、その登録を解放して理由を標準エラーへ書き、非0で終了する。ルートsessionとの対応を確認できず一覧が空の場合は、CLIが解決したrootを標準エラーへ書き、MCPの`list`を1回呼び出してから同じコマンドを再実行するよう案内する。対応を確認済みで、待機対象の登録が0件かつ`starting`を含む保持中sessionも0件の場合は、理由を標準エラーへ書き、待機せず非0で終了する。保持中sessionが1件以上ある場合は待機開始から上限秒数まで待ち、上限に達しても終端を回収できなければ終了コード3で終わる。上限はプロンプトキャッシュの保持期間と実行ホストから導出し、保持期間`1h`で1740秒、`5m`で270秒、Claude Codeを確認できないホストで270秒とする。委譲先セッションでも同じ値を使う。終了コード3では同じコマンドを再発行して待機を続ける。対象不在の終了（終了コード10）では標準出力へ何も書かず、同じコマンドを再発行せずに委譲元の応答を確認する。同じ書込主体の先行waitが結果を配送済みの場合は、標準エラーの`先行waitの保存結果:`が保存runの`run_path`、対象の`session_ids`、実在する`agent_message_paths`を示す。`run_path`を`atk read-file --`へ渡せば`output`にある終端結果本文を読め、本文ファイルが消えていても読める。保存runの`status`が`missing`・`unreadable`・`no-results`の場合はその区別を示し、別の書込主体のrunは示さない。配送済みはエージェントが読んだことを意味せず、結果は再配送しない。結果本文のファイルを書けない場合は回収途中の結果を退避したまま理由を標準エラーへ書いて終了コード11で終わり、原因を解消して再発行すると同じ結果を受け取れる。本コマンドは自身の待機上限を持つため、`timeout`、パイプ、他のコマンドとの連結を付けず単独で発行する。回収は結果ファイルの削除を伴い、続行は終了コードで判定するため、パイプや連結は終了コードを覆い隠す。エージェント環境では量によらず回収結果を保存し、保存先を開いてから回収する。保存先・行数と通知・終端の内訳から全量を読む。何も回収せずに非0で終わった場合は開いた保存先を片付け、保存先と行数を書かない。\n復元・後始末: 回収した結果ファイルと通知ファイルは削除される。結果を保持しない`stop`とsession登録簿での喪失確定も待機対象登録を解放する。登録簿が終端を示し、未回収の結果も保持中の状態も無い対象も同様に解放し、待機中に全対象がこの状態になった場合は対象不在として同じく非0で終了する。終端statusでは追加の結果受領操作は不要である。",
+        "description": "委譲先sessionの終端結果と実行中通知を待って回収できた全件を出力する。\n\n目的: `agents_server`が出力する終端結果または実行中通知を待ち、1回の巡回で回収できた全件を標準出力へ書く。\n利用場面: 委譲先の完了を待ち、結果または実行中通知を受領するとき。完了通知で同じセッションへ再開できる待機は、goalの有無や対象の種類・件数によらずホストのバックグラウンドタスクで起動する。通知による再開が無い環境とCodexの公開回収は、delegationのreferences/waiting-and-monitoring.md「待機区間の構成」に従う。\n対象と出力: 自身の書込主体が所有する結果ファイルと通知ファイルを読み、回収できたものを1件1行のJSON Linesで書く。通知は送信時刻順に本文を返す。行は待機対象の識別子の昇順に並び、各行は`session_id`と、起動時に`label`を指定した委譲先では同じ値の`label`を持つ。終端行は`agent_message`に加えて、同じ本文をエスケープを含まないUTF-8のMarkdownとして呼び出しごとのmanaged-tempへ書いたファイルの絶対パスを`agent_message_path`に持ち、そのファイルを読めば結果本文を得られる。最初の待機で起動中sessionと未回収結果を登録簿へ固定し、再発行でも終端結果の回収まで対象ごとの待機所有権を保持する。前景へ返した本文は同じ呼び出しで受領済みとし、次の逐次待機へ再配送しない。先行待機のlockへ競合した後発プロセスだけが、先行runの本文を1回回収できる。終端結果が無く通知だけを回収した場合は`status: running`を返す。`status: running`の行、待機上限で終わった行、別の待機が受領済みの結果を示す`status: consumed`の行（終了コード8。保存runから結果本文を読める場合は`recovery`に同じ所在を持つ）、失敗または中断で終端した行は、次に行う操作を`next_action`項目に持つ。エージェント環境では出力するJSON Linesを生成側の保存先へ全量で保存し、標準出力へ保存先パスと保存した行数を書き、通知を含む場合は通知件数と送信元session IDを、終端を含む場合は終端件数と、終端行ごとに`終端行:`で始まる1行を続けて書く。この行は`session_id`、`label`、`status`、`agent_message_path`の順で始まり、終端行が持つ残りの項目（`error`と`next_action`を含み、`agent_message`と`notices`を除く）を`<項目>=<値>`で続ける。空白を含む値と文字列以外の値は改行を含まないJSONで書く。通知の行の後には通知の本文を、各終端行の直後には`agent_message_path`の本文を、`本文開始: session_id=<識別子>`と`本文終了: session_id=<識別子>`の行で囲んで続ける。本文を加えた標準出力全体（保存先と行数の行を含む）が16384バイトを超える本文と、読めない本文ファイルは表示せず、終端行の`agent_message_path`から読む。保存先を開かずに、どの依頼が終端したか、本文、失敗の原因と次の操作まで得られる。回収した本文はその保存先に残るため、後続の工程と後続のセッションの判断の入力にできる。\n前提: 待機するsessionを起動した`agents_server`と同じルートセッションで実行する。環境と別名索引からルートを解決できない入れ子MCP起動では、起動応答の`root_session_id`を`--root-session-id`へ渡す。明示値は形式、状態ディレクトリの実在および確認済みのルートsessionとの一致を検証する。待機の成立は、応答のいずれかの行が待機対象の`session_id`を持ち終端statusであることで判定する。待機対象の行が現れない応答は、その対象が未終端であることを示す。`status: running`では同じターン内に同じコマンドを再発行し、終端statusまで待機を継続する。待機対象登録が破損している場合は、その登録を解放して理由を標準エラーへ書き、非0で終了する。ルートsessionとの対応を確認できず一覧が空の場合は、CLIが解決したrootを標準エラーへ書き、MCPの`list`を1回呼び出してから同じコマンドを再実行するよう案内する。対応を確認済みで、待機対象の登録が0件かつ`starting`を含む保持中sessionも0件の場合は、理由を標準エラーへ書き、待機せず非0で終了する。保持中sessionが1件以上ある場合は待機開始から上限秒数まで待ち、上限に達しても終端を回収できなければ終了コード3で終わる。上限はプロンプトキャッシュの保持期間と実行ホストから導出し、保持期間`1h`で1740秒、`5m`で270秒、Claude Codeを確認できないホストで270秒とする。委譲先セッションでも同じ値を使う。終了コード3では同じコマンドを再発行して待機を続ける。対象不在の終了（終了コード10）では標準出力へ何も書かず、同じコマンドを再発行せずに委譲元の応答を確認する。同じ書込主体の先行waitが結果を配送済みの場合は、標準エラーの`先行waitの保存結果:`が保存runの`run_path`、対象の`session_ids`、実在する`agent_message_paths`を示す。`run_path`を`atk read-file --`へ渡せば`output`にある終端結果本文を読め、本文ファイルが消えていても読める。保存runの`status`が`missing`・`unreadable`・`no-results`の場合はその区別を示し、別の書込主体のrunは示さない。配送済みはエージェントが読んだことを意味せず、結果は再配送しない。結果本文のファイルを書けない場合は回収途中の結果を退避したまま理由を標準エラーへ書いて終了コード11で終わり、原因を解消して再発行すると同じ結果を受け取れる。本コマンドは自身の待機上限を持つため、`timeout`、パイプ、他のコマンドとの連結を付けず単独で発行する。回収は結果ファイルの削除を伴い、続行は終了コードで判定するため、パイプや連結は終了コードを覆い隠す。エージェント環境では量によらず回収結果を保存し、保存先を開いてから回収する。保存先・行数と通知・終端の内訳から全量を読む。何も回収せずに非0で終わった場合は開いた保存先を片付け、保存先と行数を書かない。\n復元・後始末: 回収した結果ファイルと通知ファイルは削除される。結果を保持しない`stop`とsession登録簿での喪失確定も待機対象登録を解放する。登録簿が終端を示し、未回収の結果も保持中の状態も無い対象も同様に解放し、待機中に全対象がこの状態になった場合は対象不在として同じく非0で終了する。終端statusでは追加の結果受領操作は不要である。",
         "epilog": "実行例:\n\n  atk agents wait\n  atk agents wait --root-session-id <起動応答のroot_session_id>",
     },
     "atk agents notify": {
         "summary": "委譲先から委譲元のルートセッションへ本文を1件送る",
-        "description": "目的: 委譲先が自身のturnを終端せずに委譲元へ本文を1件届ける。\n利用場面: 想定外事象、エスカレーションまたは続行できない理由を完了報告より前に通知するとき。\n対象と出力: 環境変数から通知先と送信元を解決し、通知ファイルを1件作成する。\n前提: `AGENT_TOOLKIT_OWNER_SESSION`を保持する委譲先で実行し、本文を`--body`か`--body-file`で渡す。\n復元・後始末: 委譲元が`wait`で受け取ると通知ファイルは削除される。非0で終了した場合は同じ事象を完了報告へ含める。",
+        "description": "委譲先から委譲元のルートセッションへ本文を1件送る。\n\n目的: 委譲先が自身のturnを終端せずに委譲元へ本文を1件届ける。\n利用場面: 想定外事象、エスカレーションまたは続行できない理由を完了報告より前に通知するとき。\n対象と出力: 環境変数から通知先と送信元を解決し、通知ファイルを1件作成する。\n前提: `AGENT_TOOLKIT_OWNER_SESSION`を保持する委譲先で実行し、本文を`--body`か`--body-file`で渡す。\n復元・後始末: 委譲元が`wait`で受け取ると通知ファイルは削除される。非0で終了した場合は同じ事象を完了報告へ含める。",
         "epilog": "実行例:\n\n  atk agents notify --body='チェックに使うコマンドが未導入で実行できない'",
     },
     "atk agents list": {
         "summary": "保持中の委譲sessionを識別・活動情報とともに一覧表示する",
-        "description": "目的: 委譲sessionの識別子、名前、モデル、状態と親子関係を一覧表示する。\n利用場面: 識別子を失ったsessionの回復または残作業の調査をするとき。\n対象と出力: 共有状態ファイルを読む。人の端末では、表示するsessionを持つrootだけをClaude Code・Codex識別子の見出しにしたツリーを表示し、各session IDの右側へラベルと`engine:model/effort`、直近の行動または進捗（利用上限の解除待ちとAPI再試行はその状態）、経過時間、文脈使用量と状態を並べる。文脈使用量は委譲先の直近のモデル文脈のトークン数（累計課金量ではない）で、`53.5k/5%`のように小数1桁の`k`と、上限が分かる場合は整数の使用率で示す。上限が不明なら使用量だけ、使用量が不明なら使用量を省く。端末幅が狭い場合はsession IDを省略せず右側の説明を短くする。`--watch`は人の端末で約2秒ごとに一覧を描き替え、Ctrl-Cで終了する。エージェント環境と端末以外への出力では`--watch`を拒否する。エージェント環境では同じroot配下のsessionを1行のJSONで返す。エージェント向け一覧は識別子、状態、ラベル、直近操作、結果保留、初回とturnの開始時刻、活動の経過とAPI失敗の診断を返し、観測済みの文脈使用量を`context_tokens`、上限を`context_window`の数値で返す（不明な値の項目は省く）。実行条件と委譲プロンプトは`atk agents show`が返す。\n前提: オプション省略時は未回収結果を持たない終端済みsessionを除く。エージェント環境でルートsessionとの対応を確認できず一覧が空の場合は、MCPの`list`を1回呼び出してから再実行する。\n復元・後始末: 読み取りだけを行うため不要。",
+        "description": "保持中の委譲sessionを識別・活動情報とともに一覧表示する。\n\n目的: 委譲sessionの識別子、名前、モデル、状態と親子関係を一覧表示する。\n利用場面: 識別子を失ったsessionの回復または残作業の調査をするとき。\n対象と出力: 共有状態ファイルを読む。人の端末では、表示するsessionを持つrootだけをClaude Code・Codex識別子の見出しにしたツリーを表示し、各session IDの右側へラベルと`engine:model/effort`、直近の行動または進捗（利用上限の解除待ちとAPI再試行はその状態）、経過時間、文脈使用量と状態を並べる。文脈使用量は委譲先の直近のモデル文脈のトークン数（累計課金量ではない）で、`53.5k/5%`のように小数1桁の`k`と、上限が分かる場合は整数の使用率で示す。上限が不明なら使用量だけ、使用量が不明なら使用量を省く。端末幅が狭い場合はsession IDを省略せず右側の説明を短くする。`--watch`は人の端末で約2秒ごとに一覧を描き替え、Ctrl-Cで終了する。エージェント環境と端末以外への出力では`--watch`を拒否する。エージェント環境では同じroot配下のsessionを1行のJSONで返す。エージェント向け一覧は識別子、状態、ラベル、直近操作、結果保留、初回とturnの開始時刻、活動の経過とAPI失敗の診断を返し、観測済みの文脈使用量を`context_tokens`、上限を`context_window`の数値で返す（不明な値の項目は省く）。実行条件と委譲プロンプトは`atk agents show`が返す。\n前提: オプション省略時は未回収結果を持たない終端済みsessionを除く。エージェント環境でルートsessionとの対応を確認できず一覧が空の場合は、MCPの`list`を1回呼び出してから再実行する。\n復元・後始末: 読み取りだけを行うため不要。",
         "epilog": "実行例:\n\n  atk agents list\n  atk agents list --include-terminated\n  atk agents list --watch",
     },
     "atk agents show": {
         "summary": "指定した委譲sessionの詳しい状態を表示する",
-        "description": "目的: 1件の委譲sessionの起動条件と現在状態を診断できる形で表示する。\n利用場面: 起動本文、作業場所、モデルまたは停滞状況を調査するとき。\n対象と出力: 共有状態ファイルから指定sessionを読み、単一のJSON文書として標準出力へ書く。`AI_AGENT`・`CODEX_CI`・`CLAUDECODE`・`CURSOR_AGENT`のいずれかが設定されたエージェント環境では空白を含めない1行で書き、それ以外の環境では字下げして書く。いずれの環境でも値は同じである。活動は`seconds_since_activity`、API失敗は種別、HTTP状態、経過時間を返す。観測済みの文脈使用量と上限は`context_tokens`と`context_window`で返し、不明な値の項目は省く。\n前提: 対象と同じルートセッションで実行し、完全なsession識別子を指定する。\n復元・後始末: 読み取りだけを行うため不要。",
+        "description": "指定した委譲sessionの詳しい状態を表示する。\n\n目的: 1件の委譲sessionの起動条件と現在状態を診断できる形で表示する。\n利用場面: 起動本文、作業場所、モデルまたは停滞状況を調査するとき。\n対象と出力: 共有状態ファイルから指定sessionを読み、単一のJSON文書として標準出力へ書く。`AI_AGENT`・`CODEX_CI`・`CLAUDECODE`・`CURSOR_AGENT`のいずれかが設定されたエージェント環境では空白を含めない1行で書き、それ以外の環境では字下げして書く。いずれの環境でも値は同じである。活動は`seconds_since_activity`、API失敗は種別、HTTP状態、経過時間を返す。観測済みの文脈使用量と上限は`context_tokens`と`context_window`で返し、不明な値の項目は省く。\n前提: 対象と同じルートセッションで実行し、完全なsession識別子を指定する。\n復元・後始末: 読み取りだけを行うため不要。",
         "epilog": "実行例:\n\n  atk agents show <session_id>",
     },
     "atk agents logs": {
         "summary": "Claude CodeとCodexのセッション記録を表示・markdown出力する",
         "description": (
-            "目的: 保存済みセッションの発話と操作を読み、markdownへ出力する。\n"
+            "Claude CodeとCodexのセッション記録を表示・markdown出力する。\n\n目的: 保存済みセッションの発話と操作を読み、markdownへ出力する。\n"
             "利用場面: 1件の経過を調べるか、複数の記録をまとめて保存するとき。\n"
             "対象と出力: Claude Codeの親・サブエージェント、Codex、agents_serverが保存したAntigravityの出力を扱う。"
             "形式を省略した場合は時刻・種別・本文をtextで表示する。"
@@ -339,99 +339,99 @@ HELP: dict[str, dict[str, str]] = {
     },
     "atk agents-exit-session": {
         "summary": "現在の対話CLI本体を識別して終了を要求する",
-        "description": "目的: 現在の対話CLI本体だけへ安全に終了を要求する。\n利用場面: 完了報告後にClaude CodeまたはCodexの現在のセッションを自律終了するとき。\n対象と出力: プロセス祖先、実行ファイルおよび開始情報が現在の対象と一致するかを再度確認する。Function hooksが読み込まれたClaude Codeでは`exit_requested`を返し、ターンの完了後に`/exit`を実行する。未読込のClaude CodeとCodexでは一致した単一PIDへ従来の停止方式で要求する。標準出力へ機械可読な実行記録を返す。\n前提: 呼び出し元の入力からPIDやsession識別子を受け取らず、現在の対話CLIを祖先から識別する。\n復元・後始末: 識別できない環境では停止せず、対話CLIの終了操作を案内する。",
+        "description": "現在の対話CLI本体を識別して終了を要求する。\n\n目的: 現在の対話CLI本体だけへ安全に終了を要求する。\n利用場面: 完了報告後にClaude CodeまたはCodexの現在のセッションを自律終了するとき。\n対象と出力: プロセス祖先、実行ファイルおよび開始情報が現在の対象と一致するかを再度確認する。Function hooksが読み込まれたClaude Codeでは`exit_requested`を返し、ターンの完了後に`/exit`を実行する。未読込のClaude CodeとCodexでは一致した単一PIDへ従来の停止方式で要求する。標準出力へ機械可読な実行記録を返す。\n前提: 呼び出し元の入力からPIDやsession識別子を受け取らず、現在の対話CLIを祖先から識別する。\n復元・後始末: 識別できない環境では停止せず、対話CLIの終了操作を案内する。",
         "epilog": "実行例:\n\n  atk agents-exit-session",
     },
     "atk lane": {
         "summary": "レーン資源の作成と終了時回収を管理する",
-        "description": "目的: 専用worktree・branchと所有sessionを同じ操作で登録し、session終了時に安全な資源を回収する。\n利用場面: process-wiのレーンを準備するとき、終了後の残存資源を再回収するとき。\n対象と出力: createは準備済み資源とrecord_path、deleteはremoved・retainedとresult_pathをJSONで返す。所有登録と回収結果への参照は状態ディレクトリのlanes/<session_id>/へ置く。回収結果は専用資源の外のmanaged-tempへ保存し、既存の7日保持へ委ねる。delete --listは全sessionの登録と前回結果を読み、削除しない。\n前提: 所有sessionは環境から解決し、解決できない場合は--session-idを指定する。\n復元・後始末: 統合後も資源を保持し、agents-exit-sessionと、process-loopの子セッションの終了後の処理が、deleteと同じ回収を行う。保持した対象は結果の理由を解消してdeleteを再実行する。",
+        "description": "レーン資源の作成と終了時回収を管理する。\n\n目的: 専用worktree・branchと所有sessionを同じ操作で登録し、session終了時に安全な資源を回収する。\n利用場面: process-wiのレーンを準備するとき、終了後の残存資源を再回収するとき。\n対象と出力: createは準備済み資源とrecord_path、deleteはremoved・retainedとresult_pathをJSONで返す。所有登録と回収結果への参照は状態ディレクトリのlanes/<session_id>/へ置く。回収結果は専用資源の外のmanaged-tempへ保存し、既存の7日保持へ委ねる。delete --listは全sessionの登録と前回結果を読み、削除しない。\n前提: 所有sessionは環境から解決し、解決できない場合は--session-idを指定する。\n復元・後始末: 統合後も資源を保持し、agents-exit-sessionと、process-loopの子セッションの終了後の処理が、deleteと同じ回収を行う。保持した対象は結果の理由を解消してdeleteを再実行する。",
         "epilog": "実行例:\n\n  atk lane create --repo /absolute/repo --base-branch develop --lane lane-01 --selection-file /absolute/pick-wi.yaml\n  atk lane delete",
     },
     "atk lane create": {
         "summary": "レーン専用資源を準備して所有と回収入力を登録する",
-        "description": "目的: レーンの専用worktreeとbranchを作成し、終了時回収の入力を登録する。\n利用場面: 初期レーンを起動する前、統合済みレーンを同じ資源で再開するとき。\n対象と出力: repo・base-branch・lane・selection-fileを受け取り、専用branch・worktreeと所有session、record_pathをJSONで返す。同じ登録の準備済み資源は再利用する。\n前提: --worktreeを省略すると、同じGitリポジトリの主作業ツリーの.claude/worktrees/process-wi-<lane>を作成先とし、linked worktreeから呼んでも同じパスへ解決する。固定作成先を別sessionの登録が保持する場合は、回収条件を満たせば回収してから同じパスへ再作成し、未統合・dirty・稼働中の資源と所有登録の無い資源は変更せず理由と回復操作を返して終了2とする。--commands-fileはcreate・prepare・deleteをキーとするJSON objectで、値はshellを使わないargv配列。各引数の{repo}・{worktree}・{branch}・{lane}を資源の値へ展開し、repoをcwdとして実行する。create手順は指定worktreeをGitへ登録し、prepareは必要な前提ファイルと環境を準備する。--timeoutの正の有限上限（省略600秒）は、固有手順（create・prepare・delete）、hook定義にtimeoutが無いWorktreeCreate・WorktreeRemove hook、atk lane integrateの最終化操作へ適用し、実行記録と両出力を保存する。hook定義のtimeoutとintegrateの検証argvは自身の上限で終わる。--reuse-recordは終端を確認した別sessionの登録を新所有sessionへ移して成果を再利用し、旧配置（個別managed-temp）の登録も同じ作成先のまま引き継ぐ。\n復元・後始末: 失敗時は資源と登録を保持して回復へ使う。統合後に選定の統合状態を保存し、session終了時に回収する。",
+        "description": "レーン専用資源を準備して所有と回収入力を登録する。\n\n目的: レーンの専用worktreeとbranchを作成し、終了時回収の入力を登録する。\n利用場面: 初期レーンを起動する前、統合済みレーンを同じ資源で再開するとき。\n対象と出力: repo・base-branch・lane・selection-fileを受け取り、専用branch・worktreeと所有session、record_pathをJSONで返す。同じ登録の準備済み資源は再利用する。\n前提: --worktreeを省略すると、同じGitリポジトリの主作業ツリーの.claude/worktrees/process-wi-<lane>を作成先とし、linked worktreeから呼んでも同じパスへ解決する。固定作成先を別sessionの登録が保持する場合は、回収条件を満たせば回収してから同じパスへ再作成し、未統合・dirty・稼働中の資源と所有登録の無い資源は変更せず理由と回復操作を返して終了2とする。--commands-fileはcreate・prepare・deleteをキーとするJSON objectで、値はshellを使わないargv配列。各引数の{repo}・{worktree}・{branch}・{lane}を資源の値へ展開し、repoをcwdとして実行する。create手順は指定worktreeをGitへ登録し、prepareは必要な前提ファイルと環境を準備する。--timeoutの正の有限上限（省略600秒）は、固有手順（create・prepare・delete）、hook定義にtimeoutが無いWorktreeCreate・WorktreeRemove hook、atk lane integrateの最終化操作へ適用し、実行記録と両出力を保存する。hook定義のtimeoutとintegrateの検証argvは自身の上限で終わる。--reuse-recordは終端を確認した別sessionの登録を新所有sessionへ移して成果を再利用し、旧配置（個別managed-temp）の登録も同じ作成先のまま引き継ぐ。\n復元・後始末: 失敗時は資源と登録を保持して回復へ使う。統合後に選定の統合状態を保存し、session終了時に回収する。",
         "epilog": "実行例:\n\n  atk lane create --repo /absolute/repo --base-branch develop --lane lane-01 --selection-file /absolute/pick-wi.yaml",
     },
     "atk lane delete": {
         "summary": "所有sessionの安全なレーン資源をまとめて回収する",
-        "description": "目的: 記録された所有sessionのレーン資源を安全条件で回収する。\n利用場面: sessionの最後と、終了処理が保持した対象の再回収。\n対象と出力: 全登録を先に判定し、removedとretainedの理由・残る操作、result_pathをJSONで返す。--listでは全sessionの登録と前回結果を読み、--session-idで1所有sessionへ限定できる。読取は作成と削除を行わない。未回収がある場合は終了1、入力不正は2。\n前提: Git登録と所有記録が一致し、担当と外部プロセスが終了し、worktreeがcleanで、branchが統合先へ到達し、選定の統合状態が統合済みであること。終端済み・未解放でcwdが対象worktree配下の委譲sessionは、所有agents_serverへ解放を要求してから使用中を再判定する。実行中・所有側無応答・解放後の残存資源は保持し、session_idと公開stop後の同じlane deleteの再実行を案内する。確認不能は保持する。\n復元・後始末: 固有delete手順、worktree、branch、旧配置の登録が持つ個別managed-tempの順で回収する。部分失敗は登録を保持し、同じ操作で残る処理から続ける。主作業ツリー、他sessionの登録、証拠とsessionのmanaged-tempは削除しない。",
+        "description": "所有sessionの安全なレーン資源をまとめて回収する。\n\n目的: 記録された所有sessionのレーン資源を安全条件で回収する。\n利用場面: sessionの最後と、終了処理が保持した対象の再回収。\n対象と出力: 全登録を先に判定し、removedとretainedの理由・残る操作、result_pathをJSONで返す。--listでは全sessionの登録と前回結果を読み、--session-idで1所有sessionへ限定できる。読取は作成と削除を行わない。未回収がある場合は終了1、入力不正は2。\n前提: Git登録と所有記録が一致し、担当と外部プロセスが終了し、worktreeがcleanで、branchが統合先へ到達し、選定の統合状態が統合済みであること。終端済み・未解放でcwdが対象worktree配下の委譲sessionは、所有agents_serverへ解放を要求してから使用中を再判定する。実行中・所有側無応答・解放後の残存資源は保持し、session_idと公開stop後の同じlane deleteの再実行を案内する。確認不能は保持する。\n復元・後始末: 固有delete手順、worktree、branch、旧配置の登録が持つ個別managed-tempの順で回収する。部分失敗は登録を保持し、同じ操作で残る処理から続ける。主作業ツリー、他sessionの登録、証拠とsessionのmanaged-tempは削除しない。",
         "epilog": "実行例:\n\n  atk lane delete --session-id <作成した所有session>",
     },
     "atk lane recover": {
         "summary": "選定情報を失った旧レーン登録の作業ツリーを、成果のbranchを残して解放する",
-        "description": "目的: 選定YAMLが失効し所有登録にも選定情報が無い旧登録が固定作成先を占有し続ける状態を、成果を失わずに解消する。\n利用場面: `atk lane delete`や`atk lane create`が「選定原本が失効し、所有登録に選定情報が無い」と返したとき。\n対象と出力: --session-idの所有sessionの登録（--laneで限定）ごとに、元branchとHEADを登録の`recovery`へ記録してから作業ツリーを解放し、recoveredとretainedの理由をJSONで返す。branchと所有登録は残し、回復済みの登録は固定作成先の所有判定と`atk lane delete`の回収対象から外れる。保持した登録がある場合は終了1、入力不正は2。\n前提: 選定原本も所有登録の選定情報も無い登録に限る。所有一致、Git共通ディレクトリの一致、担当と外部プロセスの終了、未commit・未追跡の変更が無いことを確かめ、成立しない登録は保持する。\n復元・後始末: 途中で失敗した登録は到達点を保持し、同じlane recoverで残る工程から続ける。残したbranchは`atk lane delete --list`の登録本文と本操作の結果から読める。",
+        "description": "選定情報を失った旧レーン登録の作業ツリーを、成果のbranchを残して解放する。\n\n目的: 選定YAMLが失効し所有登録にも選定情報が無い旧登録が固定作成先を占有し続ける状態を、成果を失わずに解消する。\n利用場面: `atk lane delete`や`atk lane create`が「選定原本が失効し、所有登録に選定情報が無い」と返したとき。\n対象と出力: --session-idの所有sessionの登録（--laneで限定）ごとに、元branchとHEADを登録の`recovery`へ記録してから作業ツリーを解放し、recoveredとretainedの理由をJSONで返す。branchと所有登録は残し、回復済みの登録は固定作成先の所有判定と`atk lane delete`の回収対象から外れる。保持した登録がある場合は終了1、入力不正は2。\n前提: 選定原本も所有登録の選定情報も無い登録に限る。所有一致、Git共通ディレクトリの一致、担当と外部プロセスの終了、未commit・未追跡の変更が無いことを確かめ、成立しない登録は保持する。\n復元・後始末: 途中で失敗した登録は到達点を保持し、同じlane recoverで残る工程から続ける。残したbranchは`atk lane delete --list`の登録本文と本操作の結果から読める。",
         "epilog": "実行例:\n\n  atk lane recover --session-id <旧登録の所有session> --lane lane-01",
     },
     "atk managed-temp": {
         "summary": "managed-tempのディレクトリを作成・列挙・後始末する",
-        "description": "目的: agent-toolkitが所有権を持つ一時ディレクトリを作成し、列挙し、後始末する。\n利用場面: 一時ファイルはSessionStartが通知するセッション単位の領域へ置くことを基本とし、本コマンドはその通知が無い場合、別のnamespaceから同じパスへ到達させる場合、Git worktreeなど`.git`を含む領域を置く場合に使う。残存した領域を確認するとき。\n対象と出力: agent-toolkitのデータディレクトリ配下の一時領域と登録簿を読み書きする。サブコマンドを指定しない場合はサブコマンド一覧を標準出力へ書き、何も変更しない。\n前提: 登録済み領域は最終更新から7日を超えると`atk`の実行時に自動削除する。`.git`を含む登録済み領域は自動削除の対象外とする。一時rootを指定しない場合に使う場所の直下で登録を失った領域も、最終更新から7日を超えると自動削除する。ただし、git worktreeとして登録が残る`.git`を含む領域は使用中として残す。\n復元・後始末: 早く削除したい領域と`.git`を含む領域は`atk managed-temp cleanup`で削除する。残存した領域は`atk managed-temp list`で確認する。",
+        "description": "managed-tempのディレクトリを作成・列挙・後始末する。\n\n目的: agent-toolkitが所有権を持つ一時ディレクトリを作成し、列挙し、後始末する。\n利用場面: 一時ファイルはSessionStartが通知するセッション単位の領域へ置くことを基本とし、本コマンドはその通知が無い場合、別のnamespaceから同じパスへ到達させる場合、Git worktreeなど`.git`を含む領域を置く場合に使う。残存した領域を確認するとき。\n対象と出力: agent-toolkitのデータディレクトリ配下の一時領域と登録簿を読み書きする。サブコマンドを指定しない場合はサブコマンド一覧を標準出力へ書き、何も変更しない。\n前提: 登録済み領域は最終更新から7日を超えると`atk`の実行時に自動削除する。`.git`を含む登録済み領域は自動削除の対象外とする。一時rootを指定しない場合に使う場所の直下で登録を失った領域も、最終更新から7日を超えると自動削除する。ただし、git worktreeとして登録が残る`.git`を含む領域は使用中として残す。\n復元・後始末: 早く削除したい領域と`.git`を含む領域は`atk managed-temp cleanup`で削除する。残存した領域は`atk managed-temp list`で確認する。",
         "epilog": "実行例:\n\n  atk managed-temp create --prefix=example\n  atk managed-temp list",
     },
     "atk managed-temp create": {
         "summary": "managed-tempのディレクトリを作成する",
-        "description": "目的: 所有者だけが読み書きできる一時ディレクトリを作成し、その絶対パスを標準出力へ書く。\n利用場面: SessionStartが通知するセッション単位の領域を使えない場合（通知を受け取っていない、別のnamespaceから同じパスへ到達させる、Git worktreeなど`.git`を含む領域を置く）に、作業ツリーを変更せずに中間結果を保存するとき。\n対象と出力: 一時rootの直下へディレクトリと管理情報ファイルを作成し、状態ディレクトリへ登録を書く。作成した絶対パスを標準出力へ書く。\n前提: `--prefix`は必須とし、受理条件はそのオプションの説明に示す。別のnamespaceへ渡す場合だけ`--root`で共有ディレクトリを指定する。\n復元・後始末: 最終更新から7日を超えた領域は`atk`の実行時に自動で削除するため、回収は不要である。早く削除したい場合と、自動削除の対象外である`.git`を含む領域は`atk managed-temp cleanup --path <絶対パス>`で削除する。",
+        "description": "managed-tempのディレクトリを作成する。\n\n目的: 所有者だけが読み書きできる一時ディレクトリを作成し、その絶対パスを標準出力へ書く。\n利用場面: SessionStartが通知するセッション単位の領域を使えない場合（通知を受け取っていない、別のnamespaceから同じパスへ到達させる、Git worktreeなど`.git`を含む領域を置く）に、作業ツリーを変更せずに中間結果を保存するとき。\n対象と出力: 一時rootの直下へディレクトリと管理情報ファイルを作成し、状態ディレクトリへ登録を書く。作成した絶対パスを標準出力へ書く。\n前提: `--prefix`は必須とし、受理条件はそのオプションの説明に示す。別のnamespaceへ渡す場合だけ`--root`で共有ディレクトリを指定する。\n復元・後始末: 最終更新から7日を超えた領域は`atk`の実行時に自動で削除するため、回収は不要である。早く削除したい場合と、自動削除の対象外である`.git`を含む領域は`atk managed-temp cleanup --path <絶対パス>`で削除する。",
         "epilog": "実行例:\n\n  atk managed-temp create --prefix=wi-show",
     },
     "atk managed-temp cleanup": {
         "summary": "managed-tempのディレクトリを後始末する",
-        "description": "目的: 指定したmanaged-tempのディレクトリを検証したうえで削除し、対応する登録も除去する。\n利用場面: 作成した領域を使い終えたとき。中断した後始末を再開するとき。\n対象と出力: `--path`が指すディレクトリと配下の内容を削除し、状態ディレクトリの登録を除去する。\n前提: `--path`は作成時に返された絶対パスで指定する。`--path`を省略した場合は、現在の管理対象の絶対パスを作成時刻の昇順で示して終了コード2で終わる。実体と管理情報の双方が作成時の内容と一致することを検証する。`--session-root`で作成したmanaged-temp直下の作業ディレクトリのように個別の管理情報を持たない対象は、祖先に登録済みのmanaged-tempのディレクトリが実在する場合に限り検証を省略して削除し、省略したことを標準エラーへ書く。\n復元・後始末: 削除した内容は復元できない。登録だけを失った領域は、`--recover-registry`を指定した場合に限り実体側の管理情報から登録を復元して後始末する。通常の後始末が検証に失敗した領域は、`--force-remove`を指定した場合に限り、一時rootの直下にあり実行中のOSアカウントが所有するディレクトリであることだけを確認して実体と登録を回収する。",
+        "description": "managed-tempのディレクトリを後始末する。\n\n目的: 指定したmanaged-tempのディレクトリを検証したうえで削除し、対応する登録も除去する。\n利用場面: 作成した領域を使い終えたとき。中断した後始末を再開するとき。\n対象と出力: `--path`が指すディレクトリと配下の内容を削除し、状態ディレクトリの登録を除去する。\n前提: `--path`は作成時に返された絶対パスで指定する。`--path`を省略した場合は、現在の管理対象の絶対パスを作成時刻の昇順で示して終了コード2で終わる。実体と管理情報の双方が作成時の内容と一致することを検証する。`--session-root`で作成したmanaged-temp直下の作業ディレクトリのように個別の管理情報を持たない対象は、祖先に登録済みのmanaged-tempのディレクトリが実在する場合に限り検証を省略して削除し、省略したことを標準エラーへ書く。\n復元・後始末: 削除した内容は復元できない。登録だけを失った領域は、`--recover-registry`を指定した場合に限り実体側の管理情報から登録を復元して後始末する。通常の後始末が検証に失敗した領域は、`--force-remove`を指定した場合に限り、一時rootの直下にあり実行中のOSアカウントが所有するディレクトリであることだけを確認して実体と登録を回収する。",
         "epilog": "実行例:\n\n  atk managed-temp cleanup --path=/home/aki/.cache/agent-toolkit/managed-temp/wi-show-abcd1234",
     },
     "atk managed-temp list": {
         "summary": "managed-tempのディレクトリを列挙する",
-        "description": "目的: 検証を通過したmanaged-tempのディレクトリを作成時刻の順に1件1行のJSONで列挙し、回収の候補を警告として報告する。\n利用場面: 残存している領域を把握するとき。登録と実体が一致しない領域の回収手順を確認するとき。\n対象と出力: 状態ディレクトリの登録と各領域を読み取り、標準出力へ1行1レコードのJSON Linesで書く。エージェント環境の長い出力は生成側が全量を保存して保存先と行数を返す。実体の消滅を確定できた登録だけを削除し、確定できない登録は保持して標準エラーへ報告する。該当が0件のときは標準エラーへ`該当0件: `で始まる行を書き、終了コード1を返す。\n前提: `--prefix`を指定すると、そのprefixの領域だけを対象にする。\n復元・後始末: 報告された領域は`atk managed-temp cleanup --path <絶対パス>`で後始末する。実体へ到達できない登録は、同じ絶対パスへ到達できる実行文脈で本コマンドを再実行すると回収する。",
+        "description": "managed-tempのディレクトリを列挙する。\n\n目的: 検証を通過したmanaged-tempのディレクトリを作成時刻の順に1件1行のJSONで列挙し、回収の候補を警告として報告する。\n利用場面: 残存している領域を把握するとき。登録と実体が一致しない領域の回収手順を確認するとき。\n対象と出力: 状態ディレクトリの登録と各領域を読み取り、標準出力へ1行1レコードのJSON Linesで書く。エージェント環境の長い出力は生成側が全量を保存して保存先と行数を返す。実体の消滅を確定できた登録だけを削除し、確定できない登録は保持して標準エラーへ報告する。該当が0件のときは標準エラーへ`該当0件: `で始まる行を書き、終了コード1を返す。\n前提: `--prefix`を指定すると、そのprefixの領域だけを対象にする。\n復元・後始末: 報告された領域は`atk managed-temp cleanup --path <絶対パス>`で後始末する。実体へ到達できない登録は、同じ絶対パスへ到達できる実行文脈で本コマンドを再実行すると回収する。",
         "epilog": "実行例:\n\n  atk managed-temp list --prefix=wi-show",
     },
     "atk worktree-stash": {
         "summary": "worktree固有refへ変更を退避する",
-        "description": "目的: 複数のworktreeが共有する`refs/stash`を直接操作せず、退避物をworktree固有のrefへ記録して安全に扱う。\n利用場面: 並行して別のworktreeが動く環境で、承認された退避が必要になったとき。\n対象と出力: 現在のworktreeの未コミット変更と未追跡ファイルを`refs/worktree/<ラベル>`へ記録し、またはそのrefを削除する。共有する`refs/stash`は変更しない。\n前提: カレントディレクトリがGitの作業ツリーであること。private-notesの作業ツリーでは実行しない。\n復元・後始末: 復元は`git stash apply --index refs/worktree/<ラベル>`で行い、不要になったrefは`atk worktree-stash drop`で削除する。",
+        "description": "worktree固有refへ変更を退避する。\n\n目的: 複数のworktreeが共有する`refs/stash`を直接操作せず、退避物をworktree固有のrefへ記録して安全に扱う。\n利用場面: 並行して別のworktreeが動く環境で、承認された退避が必要になったとき。\n対象と出力: 現在のworktreeの未コミット変更と未追跡ファイルを`refs/worktree/<ラベル>`へ記録し、またはそのrefを削除する。共有する`refs/stash`は変更しない。\n前提: カレントディレクトリがGitの作業ツリーであること。private-notesの作業ツリーでは実行しない。\n復元・後始末: 復元は`git stash apply --index refs/worktree/<ラベル>`で行い、不要になったrefは`atk worktree-stash drop`で削除する。",
         "epilog": "実行例:\n\n  atk worktree-stash save --label <ラベル>\n  git stash apply --index refs/worktree/<ラベル>\n  atk worktree-stash drop refs/worktree/<ラベル>\n\nprivate-notesリポジトリの作業ツリーは本コマンドの対象にしない。private-notesの未コミットのキュー操作は`atk wi commit`で確定する。",
     },
     "atk worktree-stash save": {
         "summary": "現在worktreeの変更をworktree固有refへ退避する",
-        "description": "目的: 現在のworktreeの未コミット変更と未追跡ファイルを、worktree固有のref`refs/worktree/<ラベル>`へ記録し、共有する`refs/stash`からは取り除く。\n利用場面: 複数のworktreeが並行する環境で退避が必要なとき。通常の`git stash push`は全worktreeが共有する`refs/stash`を動かすため用いない。\n対象と出力: Git共通ディレクトリの固定ロックを取得し、退避を作成してworktree固有refへ記録し、作成した共有stashを取り除く。記録したref名を標準出力へ書く。退避の対象が無い場合と同じ名前のrefが既にある場合は終了コード2を返す。\n前提: `--label`はrefとして有効な文字列で指定する。private-notesリポジトリの作業ツリーでは実行できない。\n復元・後始末: `git stash apply --index refs/worktree/<ラベル>`で復元し、不要になったら`atk worktree-stash drop refs/worktree/<ラベル>`で削除する。途中で失敗した場合は退避物を削除せず、復旧に使う識別子を標準エラーへ書く。",
+        "description": "現在worktreeの変更をworktree固有refへ退避する。\n\n目的: 現在のworktreeの未コミット変更と未追跡ファイルを、worktree固有のref`refs/worktree/<ラベル>`へ記録し、共有する`refs/stash`からは取り除く。\n利用場面: 複数のworktreeが並行する環境で退避が必要なとき。通常の`git stash push`は全worktreeが共有する`refs/stash`を動かすため用いない。\n対象と出力: Git共通ディレクトリの固定ロックを取得し、退避を作成してworktree固有refへ記録し、作成した共有stashを取り除く。記録したref名を標準出力へ書く。退避の対象が無い場合と同じ名前のrefが既にある場合は終了コード2を返す。\n前提: `--label`はrefとして有効な文字列で指定する。private-notesリポジトリの作業ツリーでは実行できない。\n復元・後始末: `git stash apply --index refs/worktree/<ラベル>`で復元し、不要になったら`atk worktree-stash drop refs/worktree/<ラベル>`で削除する。途中で失敗した場合は退避物を削除せず、復旧に使う識別子を標準エラーへ書く。",
         "epilog": "実行例:\n\n  atk worktree-stash save --label=before-rebase",
     },
     "atk worktree-stash protect": {
         "summary": "旧worktree退避を共有GCから保護する",
-        "description": "目的: 既存の正常なworktree固有refを共有refでも保護し、別worktreeのGCによる内容消失を防ぐ。\n利用場面: 共有保護を持たない旧退避を引き続き保持するとき。\n対象と出力: 現在worktreeのrefs/worktree/<ラベル>を固定共通ロック内で共有保護へ記録する。固有refは削除・改名せず、同じ保護を繰り返しても正常終了する。識別子を標準出力へ書く。成功時は終了コード0、不正な識別子・refの不在・private-notesでの実行は終了コード2、オブジェクト欠損・照会失敗などのGit操作の失敗は終了コード1を返す。失敗時は対象付きで診断し、refを自動削除しない。\n前提: 正常なrefs/worktree/配下のrefを指定する。private-notesでは実行できない。\n復元・後始末: git stash apply --index <ref>で復元し、不要になった退避はatk worktree-stash drop <ref>で固有refと共有保護を回収する。",
+        "description": "旧worktree退避を共有GCから保護する。\n\n目的: 既存の正常なworktree固有refを共有refでも保護し、別worktreeのGCによる内容消失を防ぐ。\n利用場面: 共有保護を持たない旧退避を引き続き保持するとき。\n対象と出力: 現在worktreeのrefs/worktree/<ラベル>を固定共通ロック内で共有保護へ記録する。固有refは削除・改名せず、同じ保護を繰り返しても正常終了する。識別子を標準出力へ書く。成功時は終了コード0、不正な識別子・refの不在・private-notesでの実行は終了コード2、オブジェクト欠損・照会失敗などのGit操作の失敗は終了コード1を返す。失敗時は対象付きで診断し、refを自動削除しない。\n前提: 正常なrefs/worktree/配下のrefを指定する。private-notesでは実行できない。\n復元・後始末: git stash apply --index <ref>で復元し、不要になった退避はatk worktree-stash drop <ref>で固有refと共有保護を回収する。",
         "epilog": "実行例:\n\n  atk worktree-stash protect refs/worktree/before-rebase",
     },
     "atk worktree-stash drop": {
-        "summary": "退避識別子が現在指すOIDを固定ロック下で解決して削除する",
-        "description": "目的: worktree固有refまたは共有stashの退避物を、固定ロック下で現在指しているOIDを解決してから削除する。\n利用場面: 復元済み、または不要と判断した退避物を取り除くとき。\n対象と出力: Git共通ディレクトリの固定ロックを取得し、指定した識別子が現在指すOIDを解決する。worktree固有refは解決したOIDを条件に削除し、その間に他の処理がrefを書き換えていた場合は削除せず失敗する。共有stashは`git stash drop`で削除する。削除した識別子を標準出力へ書く。識別子が存在しない場合は終了コード2を返す。\n前提: 識別子は`refs/worktree/<ラベル>`か`stash@{<番号>}`の形式で指定する。private-notesリポジトリの作業ツリーでは実行できない。\n復元・後始末: 削除した退避物は復元できない。復元が必要な内容は、削除の前に`git stash apply`で取り出す。",
+        "summary": "指定した退避を削除する",
+        "description": "指定した退避を削除する。\n\n目的: worktree固有refまたは共有stashの退避物を、固定ロック下で現在指しているOIDを解決してから削除する。\n利用場面: 復元済み、または不要と判断した退避物を取り除くとき。\n対象と出力: Git共通ディレクトリの固定ロックを取得し、指定した識別子が現在指すOIDを解決する。worktree固有refは解決したOIDを条件に削除し、その間に他の処理がrefを書き換えていた場合は削除せず失敗する。共有stashは`git stash drop`で削除する。削除した識別子を標準出力へ書く。識別子が存在しない場合は終了コード2を返す。\n前提: 識別子は`refs/worktree/<ラベル>`か`stash@{<番号>}`の形式で指定する。private-notesリポジトリの作業ツリーでは実行できない。\n復元・後始末: 削除した退避物は復元できない。復元が必要な内容は、削除の前に`git stash apply`で取り出す。",
         "epilog": "実行例:\n\n  atk worktree-stash drop refs/worktree/before-rebase",
     },
     "atk watch": {
         "summary": "委譲先の成果物側の状況を1行で出力する",
-        "description": "目的: 指定した作業ツリーの未コミット差分の件数とHEAD、指定したファイルの行数と最終更新からの経過秒を1行へまとめて出力する。\n利用場面: 委譲先の作業が進んでいるかを、少ないコンテキストで繰り返し観測するとき。\n対象と出力: 指定した作業ツリーとファイルを読み取り、標準出力へ1行で書く。取得できない項目がある場合は、標準エラーへ失敗行と次の操作を書いて終了コード1、指定が不正な場合は終了コード2を返す。\n前提: `--worktree`か`--file`を1件以上指定する。ラベルは対象ごとに重複させない。作業ツリーの差分の件数とHEADは、並行する他の主体の変更も含む全体の値である。\n復元・後始末: 読み取りだけを行うため不要。",
+        "description": "委譲先の成果物側の状況を1行で出力する。\n\n目的: 指定した作業ツリーの未コミット差分の件数とHEAD、指定したファイルの行数と最終更新からの経過秒を1行へまとめて出力する。\n利用場面: 委譲先の作業が進んでいるかを、少ないコンテキストで繰り返し観測するとき。\n対象と出力: 指定した作業ツリーとファイルを読み取り、標準出力へ1行で書く。取得できない項目がある場合は、標準エラーへ失敗行と次の操作を書いて終了コード1、指定が不正な場合は終了コード2を返す。\n前提: `--worktree`か`--file`を1件以上指定する。ラベルは対象ごとに重複させない。作業ツリーの差分の件数とHEADは、並行する他の主体の変更も含む全体の値である。\n復元・後始末: 読み取りだけを行うため不要。",
         "epilog": "実行例:\n\n  atk watch --worktree=lane-05=/home/aki/dotfiles/.claude/worktrees/lane-05",
     },
     "atk review-table": {
         "summary": "レビュー指摘管理表（7列TSV）を操作する",
-        "description": "目的: 実行レビューの指摘、指摘レベル、対応内容を7列のTSVへ排他的に記録し、保存済みの旧形式のレビュー指摘管理表を読み取る。\n利用場面: レビュー担当が指摘を追加するとき。レビューイーが応答を記録するとき。保存済みの旧レビュー結果を参照するとき。\n対象と出力: 現行のレビュー指摘管理表を読み書きし、保存済みの旧形式のレビュー指摘管理表は読み取り専用で扱う。保存済み計画の領域（private-notesの`plans`配下）にある表への`init`・`add`・`respond`は、表を変更せず非0で終了する。この領域の表へ追記する場合は、`atk plans checkout`で`~/.claude/plans`へ取得してから更新し、`atk plans commit`で保存する。サブコマンドを指定しない場合はサブコマンド一覧を標準出力へ書き、何も変更しない。\n前提: 表のパスは呼び出し元が指定する。同時更新は本コマンドが排他制御する。\n復元・後始末: 記録した行の取り消しは、表を保管するリポジトリのGit履歴から行う。",
+        "description": "レビュー指摘管理表（7列TSV）を操作する。\n\n目的: 実行レビューの指摘、指摘レベル、対応内容を7列のTSVへ排他的に記録し、保存済みの旧形式のレビュー指摘管理表を読み取る。\n利用場面: レビュー担当が指摘を追加するとき。レビューイーが応答を記録するとき。保存済みの旧レビュー結果を参照するとき。\n対象と出力: 現行のレビュー指摘管理表を読み書きし、保存済みの旧形式のレビュー指摘管理表は読み取り専用で扱う。保存済み計画の領域（private-notesの`plans`配下）にある表への`init`・`add`・`respond`は、表を変更せず非0で終了する。この領域の表へ追記する場合は、`atk plans checkout`で`~/.claude/plans`へ取得してから更新し、`atk plans commit`で保存する。サブコマンドを指定しない場合はサブコマンド一覧を標準出力へ書き、何も変更しない。\n前提: 表のパスは呼び出し元が指定する。同時更新は本コマンドが排他制御する。\n復元・後始末: 記録した行の取り消しは、表を保管するリポジトリのGit履歴から行う。",
         "epilog": "実行例:\n\n  atk review-table show <表のパス>\n\n列は`round`、`track`、`location`、`issue`、`level`、`response`、`no-response-reason`の順とする。対応要否は専用の列を持たず、`response`と`no-response-reason`のどちらが埋まっているかで表す。`level`は`要件`、`仕様`、`詳細`、`実装`のいずれかを指定する。新しく記録する行では`track`に`exec-review`を指定する。`plan-review`、`implementation-review`、`plan-conformance`および`independent`は保存済みの表の読み取り互換として扱い、`implementation-review`は読み込み時に`exec-review`へ正規化する。保存済みの8列形式は`response-needed`を読み込みの対象から外す。保存済みの7列形式のうち5列目が`yes`・`no`の値域を持つ行は旧形式とみなし、`level`を空として`response-needed`を読み込みの対象から外す。",
     },
     "atk review-table init": {
         "summary": "空のレビュー指摘管理表を作成する",
-        "description": "目的: 行を持たない空の実行レビュー指摘管理表を作成し、作成したパスを標準出力へ書く。\n利用場面: 実行レビューを開始する前に、計画ファイルと同じstemの表、または原因commitに対応する計画がない処理のCI対応レビュー指摘管理表を用意するとき。\n対象と出力: 指定したパスへTSVファイルを作成する。同じパスに表が既にある場合は、何も変更せずに失敗する。\n前提: pathは計画ファイルと同じディレクトリの`<計画stem>.exec-review.tsv`、または`~/.claude/plans`直下の`"
+        "description": "空のレビュー指摘管理表を作成する。\n\n目的: 行を持たない空の実行レビュー指摘管理表を作成し、作成したパスを標準出力へ書く。\n利用場面: 実行レビューを開始する前に、計画ファイルと同じstemの表、または原因commitに対応する計画がない処理のCI対応レビュー指摘管理表を用意するとき。\n対象と出力: 指定したパスへTSVファイルを作成する。同じパスに表が既にある場合は、何も変更せずに失敗する。\n前提: pathは計画ファイルと同じディレクトリの`<計画stem>.exec-review.tsv`、または`~/.claude/plans`直下の`"
         + CI_REVIEW_TABLE_NAME_FORMAT
         + "`で指定する。\n復元・後始末: 誤って作成した表は、そのファイルを削除して取り除く。",
         "epilog": "実行例:\n\n  atk review-table init /home/aki/.claude/plans/2026/09/01-example-1a2b.exec-review.tsv",
     },
     "atk review-table add": {
         "summary": "レビュー担当の指摘を追加する",
-        "description": "目的: レビュー担当の指摘を1行追加する。\n利用場面: レビューで実在の指摘を確定したとき。\n対象と出力: 指定した表をロックして1行を追加する。各セルはJSON文字列として保存し、保存済みの表から読み直した指摘箇所と指摘内容が、それぞれ送信した本文と一致するかを確かめる。保存本文そのものは書かない。不一致では非0で終了し、差異の特定に必要な内容を標準エラーへ書く。\n前提: `--round`、`--track`および`--level`を指定し、指摘箇所と指摘内容を`--location-file`と`--issue-file`で与える。\n復元・後始末: 追加した行の応答は`atk review-table respond`で更新する。",
+        "description": "レビュー担当の指摘を追加する。\n\n目的: レビュー担当の指摘を1行追加する。\n利用場面: レビューで実在の指摘を確定したとき。\n対象と出力: 指定した表をロックして1行を追加する。各セルはJSON文字列として保存し、保存済みの表から読み直した指摘箇所と指摘内容が、それぞれ送信した本文と一致するかを確かめる。保存本文そのものは書かない。不一致では非0で終了し、差異の特定に必要な内容を標準エラーへ書く。\n前提: `--round`、`--track`および`--level`を指定し、指摘箇所と指摘内容を`--location-file`と`--issue-file`で与える。\n復元・後始末: 追加した行の応答は`atk review-table respond`で更新する。",
         "epilog": "実行例:\n\n  atk review-table add /home/aki/.claude/plans/2026/09/01-example-1a2b.exec-review.tsv --round=1 --track=exec-review --level=詳細 --location-file=/home/aki/.cache/agent-toolkit/tmp/location.txt --issue-file=/home/aki/.cache/agent-toolkit/tmp/issue.md",
     },
     "atk review-table respond": {
         "summary": "レビューイーの応答を更新する",
-        "description": "目的: `show`が出力した`row-id`で応答対象を一意に指定し、レビューイーの対応内容または対応不要理由を記録する。\n利用場面: 指摘への採否を確定し、`show`で確認した短い`row-id`を使って対応内容か対応不要理由を記録するとき。\n対象と出力: 指定した表をロックして該当する行を更新する。保存済みの表から読み直した対応内容と対応不要理由のうち更新した方が、送信した本文と一致するかを確かめる。不一致では非0で終了し、差異の特定に必要な内容を標準エラーへ書く。特定できる行が無い場合と複数ある場合は失敗する。\n前提: 応答対象は`show`が出力した`row-id`で指定する。従来の`round`、`track`、`location`、`issue`による部分複合キー指定も互換の指定方法として利用できる。本文は対応するファイル指定オプションで渡し、`--response-file`と`--no-response-reason-file`のいずれか一方だけを指定する。`--response-file`の本文は`違反を確認した規定:`・`同じ規定の検索:`・`採用する修正範囲:`・`採用しない修正方針:`を、`--no-response-reason-file`の本文は`根拠の所在:`を、それぞれ行頭に置き、同じ行のラベルの後へ空でない内容を書く。ラベルが欠けた本文と内容が空のラベルを持つ本文は、表を変更せず非0で終了する。各ラベルに書く内容は`agent-toolkit:review-standards`の`references/reviewee.md`「レビュー指摘管理表への応答」が定める。\n復元・後始末: 誤った更新は、同じコマンドで正しい値へ上書きする。",
+        "description": "レビューイーの応答を更新する。\n\n目的: `show`が出力した`row-id`で応答対象を一意に指定し、レビューイーの対応内容または対応不要理由を記録する。\n利用場面: 指摘への採否を確定し、`show`で確認した短い`row-id`を使って対応内容か対応不要理由を記録するとき。\n対象と出力: 指定した表をロックして該当する行を更新する。保存済みの表から読み直した対応内容と対応不要理由のうち更新した方が、送信した本文と一致するかを確かめる。不一致では非0で終了し、差異の特定に必要な内容を標準エラーへ書く。特定できる行が無い場合と複数ある場合は失敗する。\n前提: 応答対象は`show`が出力した`row-id`で指定する。従来の`round`、`track`、`location`、`issue`による部分複合キー指定も互換の指定方法として利用できる。本文は対応するファイル指定オプションで渡し、`--response-file`と`--no-response-reason-file`のいずれか一方だけを指定する。`--response-file`の本文は`違反を確認した規定:`・`同じ規定の検索:`・`採用する修正範囲:`・`採用しない修正方針:`を、`--no-response-reason-file`の本文は`根拠の所在:`を、それぞれ行頭に置き、同じ行のラベルの後へ空でない内容を書く。ラベルが欠けた本文と内容が空のラベルを持つ本文は、表を変更せず非0で終了する。各ラベルに書く内容は`agent-toolkit:review-standards`の`references/reviewee.md`「レビュー指摘管理表への応答」が定める。\n復元・後始末: 誤った更新は、同じコマンドで正しい値へ上書きする。",
         "epilog": "実行例:\n\n  atk review-table respond /home/aki/.claude/plans/2026/09/01-example-1a2b.exec-review.tsv --row-id=1 --response-file=/home/aki/.cache/agent-toolkit/tmp/response.md",
     },
     "atk review-table show": {
         "summary": "レビュー指摘管理表を表示する",
-        "description": "目的: レビュー指摘管理表を保存順に表示するか、指定ラウンドの件数を生成する。"
+        "description": "レビュー指摘管理表を表示する。\n\n目的: レビュー指摘管理表を保存順に表示するか、指定ラウンドの件数を生成する。"
         "`--format`は`tsv`、`jsonl`、`summary`を受理する。\n"
         "利用場面: 指摘と対応の状況を確認し、レビュー返却の未解決件数を表から得るとき。\n"
         "対象と出力: 指定した表を読み取り、標準出力へ書く。"
@@ -451,27 +451,27 @@ HELP: dict[str, dict[str, str]] = {
     },
     "atk review-table validate": {
         "summary": "レビュー指摘管理表を検証する",
-        "description": "目的: レビュー指摘管理表の列数、複合キー、応答の充足を検証する。\n利用場面: レビューの収束を判定する前に、表の構造と未応答の行を確認するとき。\n対象と出力: 指定した表を読み取り、違反がある場合はその内容を標準エラーへ書いて非0の終了コードを返す。ファイルは変更しない。\n前提: `--allow-unanswered`を指定すると、未応答の行を許容して構造だけを検証する。\n復元・後始末: 読み取りだけを行うため不要。",
+        "description": "レビュー指摘管理表を検証する。\n\n目的: レビュー指摘管理表の列数、複合キー、応答の充足を検証する。\n利用場面: レビューの収束を判定する前に、表の構造と未応答の行を確認するとき。\n対象と出力: 指定した表を読み取り、違反がある場合はその内容を標準エラーへ書いて非0の終了コードを返す。ファイルは変更しない。\n前提: `--allow-unanswered`を指定すると、未応答の行を許容して構造だけを検証する。\n復元・後始末: 読み取りだけを行うため不要。",
         "epilog": "実行例:\n\n  atk review-table validate /home/aki/.claude/plans/2026/09/01-example-1a2b.exec-review.tsv",
     },
     "atk review-audit": {
         "summary": "自動コードレビュー監査の未処置対象と判定済みの識別子を扱う",
-        "description": "目的: Copilot由来reviewとDependabotアラートの未処置対象を取得し、判定を確定したreview本文とアラートの識別子を対象リポジトリごとに記録する。\n利用場面: 監査前に対象を調べるとき、分類の確定後に識別子を記録するとき。\n対象と出力: GitHub APIと状態ディレクトリの`review-audit.json`を読み、markだけが記録を更新する。対象リポジトリの作業ツリーは変更しない。サブコマンドを指定しない場合は一覧を表示する。\n前提: リポジトリを`<owner>/<repo>`形式で指定する。\n復元・後始末: 記録が失われた場合は次回の監査が同じ分類を再導出する。",
+        "description": "自動コードレビュー監査の未処置対象と判定済みの識別子を扱う。\n\n目的: Copilot由来reviewとDependabotアラートの未処置対象を取得し、判定を確定したreview本文とアラートの識別子を対象リポジトリごとに記録する。\n利用場面: 監査前に対象を調べるとき、分類の確定後に識別子を記録するとき。\n対象と出力: GitHub APIと状態ディレクトリの`review-audit.json`を読み、markだけが記録を更新する。対象リポジトリの作業ツリーは変更しない。サブコマンドを指定しない場合は一覧を表示する。\n前提: リポジトリを`<owner>/<repo>`形式で指定する。\n復元・後始末: 記録が失われた場合は次回の監査が同じ分類を再導出する。",
         "epilog": "実行例:\n\n  atk review-audit pending --repo=ak110/dotfiles\n  atk review-audit mark --repo=ak110/dotfiles 123456789",
     },
     "atk review-audit list": {
         "summary": "判定済みの識別子を列挙する",
-        "description": "目的: 指定したリポジトリについて記録済みの識別子を列挙する。review識別子を昇順で並べ、続けて`dependabot:<番号>`を番号の昇順で並べる。\n利用場面: 自動コードレビュー監査が、取得したreview本文から判定済みのものを除くとき。\n対象と出力: 状態ディレクトリの`review-audit.json`を読み取り、標準出力へ識別子を1件1行で書く。エージェント環境の長い出力は生成側が全量を保存して保存先と行数を返す。記録が無い場合は何も書かず終了コード0で終わる。ファイルは変更しない。\n前提: `--repo`へ`<owner>/<repo>`形式のリポジトリを指定する。\n復元・後始末: 読み取りだけを行うため不要。",
+        "description": "判定済みの識別子を列挙する。\n\n目的: 指定したリポジトリについて記録済みの識別子を列挙する。review識別子を昇順で並べ、続けて`dependabot:<番号>`を番号の昇順で並べる。\n利用場面: 自動コードレビュー監査が、取得したreview本文から判定済みのものを除くとき。\n対象と出力: 状態ディレクトリの`review-audit.json`を読み取り、標準出力へ識別子を1件1行で書く。エージェント環境の長い出力は生成側が全量を保存して保存先と行数を返す。記録が無い場合は何も書かず終了コード0で終わる。ファイルは変更しない。\n前提: `--repo`へ`<owner>/<repo>`形式のリポジトリを指定する。\n復元・後始末: 読み取りだけを行うため不要。",
         "epilog": "実行例:\n\n  atk review-audit list --repo=ak110/dotfiles",
     },
     "atk review-audit pending": {
         "summary": "未処置のCopilot review・未解決threadがあるPRと未判定のDependabotアラートを取得する",
-        "description": "目的: GitHub APIから未判定のCopilot由来reviewと未解決のCopilot由来review threadと、openで未判定のDependabotアラートを取得し、監査の起動要否を判定する。\n利用場面: process-wiの監査担当を起動する前、merge-prで対象PRを判定する前、またはatk wi process-loopの待機中確認。\n対象と出力: 未処置対象が0件の場合も含め、標準出力へreviews、threads、dependabot、各件数（counts.reviews・counts.threads・counts.dependabot）を持つJSONを1行で出力する。dependabotはstatus（available・disabled・unauthorized）とalertsを持ち、各アラートは番号、manifest_path、パッケージ、エコシステム、修正版（無い場合はnull）、判定区分categoryを持つ。categoryはマニフェストがGitHub APIの`default_branch`で指定されたbranchに実在しなければinaccurate（誤検知）、実在すればmanifest_presentとする。Dependabotアラート機能が無効なリポジトリはstatus=disabled、権限不足の403はstatus=unauthorizedと応答本文のmessageを出力し、いずれも件数0で終了コード0とする。その他の取得失敗、応答の不正とpagination未終端は非0で終了する。記録と対象リポジトリは変更しない。\n前提: `--repo`へ`<owner>/<repo>`形式のリポジトリを指定し、gh認証が有効であること。\n復元・後始末: 読み取りだけを行うため不要。",
+        "description": "未処置のCopilot review・未解決threadがあるPRと未判定のDependabotアラートを取得する。\n\n目的: GitHub APIから未判定のCopilot由来reviewと未解決のCopilot由来review threadと、openで未判定のDependabotアラートを取得し、監査の起動要否を判定する。\n利用場面: process-wiの監査担当を起動する前、merge-prで対象PRを判定する前、またはatk wi process-loopの待機中確認。\n対象と出力: 未処置対象が0件の場合も含め、標準出力へreviews、threads、dependabot、各件数（counts.reviews・counts.threads・counts.dependabot）を持つJSONを1行で出力する。dependabotはstatus（available・disabled・unauthorized）とalertsを持ち、各アラートは番号、manifest_path、パッケージ、エコシステム、修正版（無い場合はnull）、判定区分categoryを持つ。categoryはマニフェストがGitHub APIの`default_branch`で指定されたbranchに実在しなければinaccurate（誤検知）、実在すればmanifest_presentとする。Dependabotアラート機能が無効なリポジトリはstatus=disabled、権限不足の403はstatus=unauthorizedと応答本文のmessageを出力し、いずれも件数0で終了コード0とする。その他の取得失敗、応答の不正とpagination未終端は非0で終了する。記録と対象リポジトリは変更しない。\n前提: `--repo`へ`<owner>/<repo>`形式のリポジトリを指定し、gh認証が有効であること。\n復元・後始末: 読み取りだけを行うため不要。",
         "epilog": "実行例:\n\n  atk review-audit pending --repo=ak110/dotfiles",
     },
     "atk review-audit mark": {
         "summary": "判定済みの識別子を記録する",
-        "description": "目的: 分類を確定したreviewとDependabotアラートの識別子を記録し、次回以降の判定対象から除く。\n利用場面: 自動コードレビュー監査が、是正済みまたは根拠付き対応不要と分類したreview本文と、判定したDependabotアラートを記録するとき。\n対象と出力: 状態ディレクトリの`review-audit.json`を排他更新し、今回指定した識別子だけを重複なく、`atk review-audit list`と同じ順で標準出力へ書く。記録済みの識別子は重複させない。Dependabotアラートは`dependabot:<番号>`で記録し、reviewの識別子と区別する。\n前提: `--repo`へ`<owner>/<repo>`形式のリポジトリを、位置引数へreviewの正の整数の識別子または`dependabot:<番号>`を1件以上指定する。\n復元・後始末: 記録の削除手段は設けない。`review-audit.json`を削除すると全記録が失われ、次回の監査が全件を再判定する。",
+        "description": "判定済みの識別子を記録する。\n\n目的: 分類を確定したreviewとDependabotアラートの識別子を記録し、次回以降の判定対象から除く。\n利用場面: 自動コードレビュー監査が、是正済みまたは根拠付き対応不要と分類したreview本文と、判定したDependabotアラートを記録するとき。\n対象と出力: 状態ディレクトリの`review-audit.json`を排他更新し、今回指定した識別子だけを重複なく、`atk review-audit list`と同じ順で標準出力へ書く。記録済みの識別子は重複させない。Dependabotアラートは`dependabot:<番号>`で記録し、reviewの識別子と区別する。\n前提: `--repo`へ`<owner>/<repo>`形式のリポジトリを、位置引数へreviewの正の整数の識別子または`dependabot:<番号>`を1件以上指定する。\n復元・後始末: 記録の削除手段は設けない。`review-audit.json`を削除すると全記録が失われ、次回の監査が全件を再判定する。",
         "epilog": "実行例:\n\n  atk review-audit mark --repo=ak110/dotfiles 123456789 dependabot:48",
     },
 }
@@ -508,6 +508,7 @@ HELP["atk run-script"]["description"] += (
     "gradeで保存対話と提出物を採点する。機能合否、隠した要件の達成、対話判定を別々に結果JSONへ保存する。"
     "\n履歴の検収はhistory-compareの--operationでrebase・autosquash・amendを分け、"
     "amendは`history-compare --operation amend`で旧新HEADの1対1対応を検収する。検収済み完全OID対応表をplan-rewriteへ渡す。"
+    "競合解消で内容が変わった旧commitを--resolved-conflictへ反復指定する。受理する形式はhistory-compare --helpで確認する。"
     "未判定記録は`atk run-script verification-record -- --output <記録の絶対パス> --rewrite-map <対応表の絶対パス>`、"
     "完成条件証拠は`atk run-script exec-review-evidence-check -- <証拠の絶対パス> --rewrite-map <対応表の絶対パス>`で参照を更新する。"
     "verification-recordとexec-review-evidence-checkは--results-fileでJUnit・実行記録・構造化診断を読み、"
@@ -521,6 +522,7 @@ HELP["atk run-script"]["description"] += (
     "--list-results --results-summaryで一覧を読み、--result-testと--select-row・--modeで根拠を記入する。"
     "読者別探索の入力はreader-fit-prepareへ--repository・--review-start・--review-head・--output-dirを渡して保存する。"
     "再レビューは--previous-review-start・--previous-review-head、計画別の範囲は--review-contractを渡す。"
+    "前回の契約は--previous-review-contractへ渡す。"
     "files配列の各要素は対象識別用の相対path、現行本文の絶対current、保存資料の絶対before・patchと任意のomissionを持つ。"
     "currentを成果物と比較資料の現行本文へ同じ値で渡し、--markdownで対象の相対パスを反復指定できる。"
     "未判定記録の判定欄は空に保ち、レビューでは行ごとの判定とHEADを明示して別ファイルへ保存する。"
@@ -546,6 +548,18 @@ HELP["atk wi show"]["description"] += (
 HELP["atk wi add"]["description"] += (
     "\ntarget_repo: cwdのoriginと同値のURL、未登録のURLおよびローカルパスを受理する。"
     "cwdのorigin以外の登録remoteのURLは警告付きで受理する。"
+)
+
+for _command in ("atk wi list", "atk wi show", "atk wi grep"):
+    HELP[_command]["description"] += (
+        "\n重要フラグ: --important yesで重要項目、--important noで非重要項目へ限定する。"
+        "--important allと省略時は全項目を対象とする。"
+    )
+HELP["atk wi show"]["description"] += "重要フラグの限定は--all指定時に適用する。"
+
+HELP["atk run-command"]["description"] += (
+    "\n検証実行: --verificationは同じOSアカウントのホスト共有実行枠を所有する。"
+    "外側の検証から入れ子の起動へ所有を引き継ぎ、枠の待機は--timeoutに含めない。"
 )
 
 _STATE_CHANGE_RESULT_LINE = "状態変更が成立した実行は標準出力の1行目へ`成功: `で始まる行を書く。非0で終了する実行は標準エラーへ`失敗: `で始まる行を書く。"
@@ -639,19 +653,26 @@ class GuidedSubcommandParser(argparse.ArgumentParser):
         namespace: argparse.Namespace | None = None,
     ) -> tuple[argparse.Namespace, list[str]]:
         supplied = list(sys.argv[1:] if args is None else args)
+        initial_values = vars(namespace).copy() if namespace is not None else {}
         parsed, remaining = super().parse_known_args(supplied, namespace)
         assert parsed is not None
         if remaining:
             if "--" in supplied:
-                after_separator = supplied[supplied.index("--") + 1 :]
-                rejected = next((value for value in remaining if value != "--"), "--")
-                action = self._option_string_actions.get(rejected.partition("=")[0])
-                if action is not None and rejected in after_separator:
-                    with_value = "（値を取る場合はその値も一緒に）" if action.nargs != 0 else ""
-                    self.error(
-                        f"区切り記号`--`の後は位置引数として扱われるため、オプション{rejected}の位置が誤っています。"
-                        f"次の操作: {rejected}{with_value}を区切り記号`--`の前へ移して、同じコマンドを再実行する"
-                    )
+                separator = supplied.index("--")
+                trailing = remaining[1:] if remaining[0] == "--" else remaining
+                # 位置引数が消費した値とREMAINDERはそのまま保ち、余った末尾だけを再解析する。
+                if (
+                    trailing
+                    and supplied[-len(trailing) :] == trailing
+                    and len(trailing) <= len(supplied) - separator - 1
+                    and self._is_option_sequence(trailing)
+                ):
+                    if namespace is not None:
+                        vars(namespace).clear()
+                        vars(namespace).update(initial_values)
+                    consumed = supplied[separator + 1 : -len(trailing)]
+                    reordered = [*supplied[:separator], *trailing, *(["--", *consumed] if consumed else [])]
+                    return self.parse_known_args(reordered, namespace)
             rejected = next((value for value in remaining if value != "--"), "--")
             if not rejected.startswith("-"):
                 positionals = [
@@ -663,6 +684,24 @@ class GuidedSubcommandParser(argparse.ArgumentParser):
                 self.error(f"余った位置引数: {rejected}。{self.prog}が受け取る位置引数は{accepted}")
             self.error(f"解釈できない引数: {remaining[0]}。{self._accepted_form()}")
         return parsed, remaining
+
+    def _is_option_sequence(self, arguments: list[str]) -> bool:
+        """登録済みオプションと、それらが取る値だけの列かをargparseの受理条件で判定する。"""
+        index = 0
+        while index < len(arguments):
+            name, separator, _value = arguments[index].partition("=")
+            action = self._option_string_actions.get(name)
+            if action is None:
+                return False
+            index += 1
+            if separator:
+                continue
+            pattern = "".join("O" if self._parse_optional(value) else "A" for value in arguments[index:])
+            try:
+                index += self._match_argument(action, pattern)
+            except argparse.ArgumentError:
+                return False
+        return True
 
     def _accepted_form(self) -> str:
         """サブコマンドが受理する長いオプションを説明する。"""

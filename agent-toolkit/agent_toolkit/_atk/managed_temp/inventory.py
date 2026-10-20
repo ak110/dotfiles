@@ -9,6 +9,7 @@ import contextlib
 import datetime
 import enum
 import functools
+import hashlib
 import ntpath
 import os
 import pathlib
@@ -20,6 +21,7 @@ import sys
 import typing
 
 from agent_toolkit._atk import outcome as _outcome
+from agent_toolkit._atk.managed_temp import permissions
 from agent_toolkit._atk.managed_temp.errors import ManagedTempError
 from agent_toolkit._atk.managed_temp.registry import (
     _MARKER_NAME,
@@ -228,16 +230,13 @@ def _cleanup_quarantine(root: pathlib.Path, quarantine: pathlib.Path, identity: 
         if os.name == "posix":
             if not shutil.rmtree.avoids_symlink_attacks:
                 raise ManagedTempError("symlink attack耐性を持つ後始末手段を利用できない")
-            descriptor = os.open(quarantine, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
-            try:
+            with permissions.directory(quarantine) as descriptor:
                 opened = os.fstat(descriptor)
                 if (opened.st_dev, opened.st_ino) != identity:
                     raise ManagedTempError(
                         f"隔離先が再開時に置換された: {quarantine}", next_action=ManagedTempError.REPLACED_NEXT_ACTION
                     )
                 _clear_directory(descriptor)
-            finally:
-                os.close(descriptor)
             os.rmdir(quarantine)
         else:
             expected_tree = _tree_snapshot(quarantine)
@@ -295,11 +294,8 @@ def _marker_recovery_is_accepted(path_arg: pathlib.Path | str) -> bool:
     try:
         identity = _path_identity(path)
         if os.name == "posix":
-            directory_descriptor = os.open(path, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
-            try:
+            with permissions.descriptor(path, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW) as directory_descriptor:
                 marker = _load_marker(directory_descriptor, path)
-            finally:
-                os.close(directory_descriptor)
         else:
             marker = _load_private_json(path / _MARKER_NAME)
     except OSError, ManagedTempError:
@@ -570,17 +566,14 @@ def _latest_update_and_git_paths(path: pathlib.Path) -> tuple[int, list[pathlib.
     配下を含む最終更新を使うのは、中断後に再開した領域を古いと誤判定しないためである。
     """
     if os.name == "posix":
-        descriptor = os.open(path, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
-        try:
+        with permissions.descriptor(path, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW) as descriptor:
             latest = os.fstat(descriptor).st_mtime_ns
             posix_git_paths = []
-            for relative, metadata in _walk_posix(descriptor):
+            for relative, metadata in _walk_posix(descriptor, tree_root=path):
                 latest = max(latest, metadata.st_mtime_ns)
                 if pathlib.PurePath(relative).name == ".git":
                     posix_git_paths.append(path / relative)
             return latest, posix_git_paths
-        finally:
-            os.close(descriptor)
     original_path = path
     path = pathlib.Path(_windows_extended_path(path))
     extended_root = path
@@ -615,8 +608,10 @@ def _is_registered_git_worktree(git_path: pathlib.Path, *, tree_root: pathlib.Pa
             if parent is None:
                 first_line = pathlib.Path(name).read_text(encoding="utf-8").splitlines()[0]
             else:
-                descriptor = os.open(name, os.O_RDONLY | os.O_NOFOLLOW, dir_fd=parent)
-                with os.fdopen(descriptor, encoding="utf-8") as handle:
+                with (
+                    permissions.descriptor(name, os.O_RDONLY | os.O_NOFOLLOW, dir_fd=parent) as descriptor,
+                    os.fdopen(descriptor, encoding="utf-8", closefd=False) as handle,
+                ):
                     first_line = handle.readline().rstrip("\r\n")
     except FileNotFoundError, NotADirectoryError:
         return False
@@ -647,15 +642,11 @@ def _open_tree_parent(path: pathlib.Path, *, tree_root: pathlib.Path | None = No
     flags = os.O_RDONLY | os.O_DIRECTORY
     if tree_root is not None:
         flags |= os.O_NOFOLLOW
-    descriptor = os.open(root, flags)
-    try:
+    with contextlib.ExitStack() as stack:
+        descriptor = stack.enter_context(permissions.descriptor(root, flags))
         for part in path.relative_to(root).parts[:-1]:
-            child = os.open(part, flags, dir_fd=descriptor)
-            os.close(descriptor)
-            descriptor = child
+            descriptor = stack.enter_context(permissions.descriptor(part, flags, dir_fd=descriptor))
         yield descriptor, path.name
-    finally:
-        os.close(descriptor)
 
 
 _SWEEP_SCHEDULE_NAME = ".sweep/schedule"
@@ -852,14 +843,22 @@ def _retained_candidate_is_current(path: pathlib.Path, top_mtime_ns: int, basis:
 
 
 def _sweep_signature(state_root: pathlib.Path, temp_root: pathlib.Path) -> list[list[int]]:
-    """集合と詳細記録の変更を、候補の列挙を経ずに検出する。"""
+    """集合と詳細記録の変更を、直下の名前と属性から検出する。"""
     try:
         detail = (state_root / _SWEEP_SCHEDULE_NAME).stat()
     except FileNotFoundError:
         detail = None
     signature = [
-        [metadata.st_dev, metadata.st_ino, metadata.st_mtime_ns, metadata.st_ctime_ns, metadata.st_size, metadata.st_nlink]
-        for metadata in (state_root.stat(), temp_root.stat())
+        [
+            metadata.st_dev,
+            metadata.st_ino,
+            metadata.st_mtime_ns,
+            metadata.st_ctime_ns,
+            metadata.st_size,
+            metadata.st_nlink,
+            int.from_bytes(hashlib.sha256(os.fsencode("\0".join(sorted(os.listdir(directory))))).digest()),
+        ]
+        for directory, metadata in ((state_root, state_root.stat()), (temp_root, temp_root.stat()))
     ]
     signature.append([] if detail is None else [detail.st_dev, detail.st_ino, detail.st_mtime_ns, detail.st_ctime_ns])
     return signature
@@ -1102,7 +1101,11 @@ def sweep_managed_temp(
             retry_needed = True
             _outcome.report_persistent_warning(
                 f"managed-tempのディレクトリを自動削除できない: {path}: {error}",
-                next_action=f"本来の操作は継続した。atk managed-temp cleanup --path {path} で回収する",
+                next_action=(
+                    error.next_action
+                    if isinstance(error, ManagedTempError) and error.next_action != ManagedTempError.DEFAULT_NEXT_ACTION
+                    else f"本来の操作は継続した。atk managed-temp cleanup --path {path} で回収する"
+                ),
             )
             continue
         deleted.append(path)
@@ -1191,7 +1194,11 @@ def sweep_managed_temp(
             retry_needed = True
             _outcome.report_persistent_warning(
                 f"登録を失ったmanaged-tempのディレクトリを自動削除できない: {path}: {error}",
-                next_action=f"本来の操作は継続した。atk managed-temp cleanup --path {path} --force-remove で回収する",
+                next_action=(
+                    error.next_action
+                    if isinstance(error, ManagedTempError) and error.next_action != ManagedTempError.DEFAULT_NEXT_ACTION
+                    else f"本来の操作は継続した。atk managed-temp cleanup --path {path} --force-remove で回収する"
+                ),
             )
             if candidate_latest_ns is not None and candidate_latest_ns < cutoff_ns and os.path.lexists(path):
                 stale.append(path)
@@ -1208,21 +1215,17 @@ def sweep_managed_temp(
 
 
 @contextlib.contextmanager
-def _open_posix_child(descriptor: int, name: str, before: os.stat_result) -> typing.Generator[int]:
+def _open_posix_child(
+    descriptor: int, name: str, before: os.stat_result, *, display_path: str | None = None
+) -> typing.Generator[int]:
     """非追跡openの前後で子のidentityが一致するか確かめる。"""
-    child = os.open(name, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=descriptor)
-    try:
-        opened = os.fstat(child)
-        if (before.st_dev, before.st_ino) != (opened.st_dev, opened.st_ino):
-            raise ManagedTempError(
-                f"管理対象の子ディレクトリが後始末中に置換された: {name}", next_action=ManagedTempError.REPLACED_NEXT_ACTION
-            )
+    with permissions.directory(name, dir_fd=descriptor, expected=before, display_path=display_path) as child:
         yield child
-    finally:
-        os.close(child)
 
 
-def _walk_posix(descriptor: int, prefix: str = "") -> typing.Iterator[tuple[str, os.stat_result]]:
+def _walk_posix(
+    descriptor: int, prefix: str = "", *, tree_root: pathlib.Path | None = None
+) -> typing.Iterator[tuple[str, os.stat_result]]:
     """snapshotと保持判定で共用する、記述子相対の非追跡走査。"""
     with os.scandir(descriptor) as entries:
         for entry in entries:
@@ -1230,19 +1233,25 @@ def _walk_posix(descriptor: int, prefix: str = "") -> typing.Iterator[tuple[str,
             relative = os.path.join(prefix, entry.name)
             yield relative, metadata
             if stat.S_ISDIR(metadata.st_mode):
-                with _open_posix_child(descriptor, entry.name, metadata) as child:
-                    yield from _walk_posix(child, relative)
+                display = relative if tree_root is None else str(tree_root / relative)
+                with _open_posix_child(descriptor, entry.name, metadata, display_path=display) as child:
+                    yield from _walk_posix(child, relative, tree_root=tree_root)
 
 
 def _clear_directory(descriptor: int) -> None:
     """開いたディレクトリだけを起点に、リンク参照を避けて内容を除去する。"""
+    _clear_directory_entries(descriptor, "")
+
+
+def _clear_directory_entries(descriptor: int, prefix: str) -> None:
     for name in os.listdir(descriptor):
         before = os.stat(name, dir_fd=descriptor, follow_symlinks=False)
         if not stat.S_ISDIR(before.st_mode):
             os.unlink(name, dir_fd=descriptor)
             continue
-        with _open_posix_child(descriptor, name, before) as child_descriptor:
-            _clear_directory(child_descriptor)
+        relative = os.path.join(prefix, name)
+        with _open_posix_child(descriptor, name, before, display_path=relative) as child_descriptor:
+            _clear_directory_entries(child_descriptor, relative)
             os.rmdir(name, dir_fd=descriptor)
 
 
@@ -1302,13 +1311,10 @@ def _tree_snapshot(root: pathlib.Path | int) -> dict[str, _TreeEntry]:
     """cleanup開始前のtree identityを取得し、安全なreparse pointだけを記録する。"""
     snapshot: dict[str, _TreeEntry] = {}
     if os.name == "posix":
-        descriptor = os.dup(root) if isinstance(root, int) else os.open(root, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
-        try:
-            for relative, metadata in _walk_posix(descriptor):
+        with permissions.descriptor(root, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW) as descriptor:
+            for relative, metadata in _walk_posix(descriptor, tree_root=root if isinstance(root, pathlib.Path) else None):
                 kind = "dir" if stat.S_ISDIR(metadata.st_mode) else "leaf"
                 snapshot[relative] = (kind, metadata.st_dev, metadata.st_ino)
-        finally:
-            os.close(descriptor)
         return snapshot
     assert isinstance(root, pathlib.Path)
     root = pathlib.Path(_windows_extended_path(root))
@@ -1353,19 +1359,23 @@ def _remove_windows_quarantine(root: pathlib.Path, expected_tree: dict[str, _Tre
     root_identity = _path_identity(root)
 
     def retry_readonly_file(function: typing.Callable[..., typing.Any], raw_path: str, error: BaseException) -> None:
-        if function is not os.unlink or not isinstance(error, PermissionError) or getattr(error, "winerror", None) != 5:
+        if (
+            function not in (os.unlink, os.rmdir)
+            or not isinstance(error, PermissionError)
+            or getattr(error, "winerror", None) != 5
+        ):
             raise error
         path = pathlib.Path(raw_path)
         try:
             relative = path.relative_to(root)
         except ValueError:
             raise error from None
-        expected = expected_tree.get(str(relative))
-        if expected is None or expected[0] != "leaf" or len(expected) != 3:
+        expected = ("dir", *root_identity) if relative == pathlib.Path(".") else expected_tree.get(str(relative))
+        if expected is None or expected[0] not in ("leaf", "dir") or len(expected) != 3:
             raise error
         metadata = path.lstat()
         attributes = getattr(metadata, "st_file_attributes", 0)
-        if not stat.S_ISREG(metadata.st_mode) or attributes & _WINDOWS_REPARSE_POINT:
+        if not (stat.S_ISREG(metadata.st_mode) or stat.S_ISDIR(metadata.st_mode)) or attributes & _WINDOWS_REPARSE_POINT:
             raise error
         if _path_identity(root) != root_identity or _path_identity(path) != expected[1:]:
             raise ManagedTempError(
@@ -1383,6 +1393,12 @@ def _remove_windows_quarantine(root: pathlib.Path, expected_tree: dict[str, _Tre
                 ) from error
         if not attributes & stat.FILE_ATTRIBUTE_READONLY:
             raise error
+        security = _windows_security_descriptor(path)
+        if not _windows_equal_sids(security.owner, _windows_sid_bytes(_windows_current_sid())):
+            raise ManagedTempError(
+                f"所有者が異なるためReadonly属性を解除できない: {path}",
+                next_action=ManagedTempError.PERMISSION_NEXT_ACTION,
+            ) from error
         os.chmod(path, stat.S_IWRITE, follow_symlinks=False)
         function(raw_path)
 
@@ -1414,8 +1430,7 @@ def _restore_cleanup_marker(validated: _ValidatedTemp) -> None:
     """検証済みidentityを持つ実体へ欠落したmarkerだけを復元する。"""
     marker = validated.path / _MARKER_NAME
     if os.name == "posix":
-        descriptor = os.open(validated.path, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
-        try:
+        with permissions.descriptor(validated.path, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW) as descriptor:
             metadata = os.fstat(descriptor)
             if (metadata.st_dev, metadata.st_ino) != (validated.device, validated.inode):
                 raise ManagedTempError(
@@ -1425,8 +1440,6 @@ def _restore_cleanup_marker(validated: _ValidatedTemp) -> None:
                 os.stat(_MARKER_NAME, dir_fd=descriptor, follow_symlinks=False)
             except FileNotFoundError:
                 _write_marker(validated.path, validated.record, directory_descriptor=descriptor)
-        finally:
-            os.close(descriptor)
         return
     if _path_identity(validated.path) != (validated.device, validated.inode):
         raise ManagedTempError(
@@ -1464,6 +1477,17 @@ def _cleanup_posix(
     quarantine: pathlib.Path,
     expected_tree: dict[str, _TreeEntry],
 ) -> None:
+    with contextlib.ExitStack() as stack:
+        _cleanup_posix_scoped(root, validated, quarantine, expected_tree, stack)
+
+
+def _cleanup_posix_scoped(
+    root: pathlib.Path,
+    validated: _ValidatedTemp,
+    quarantine: pathlib.Path,
+    expected_tree: dict[str, _TreeEntry],
+    stack: contextlib.ExitStack,
+) -> None:
     expected_root = _ValidatedRoot(
         validated.root_device,
         validated.root_inode,
@@ -1474,7 +1498,7 @@ def _cleanup_posix(
     root_descriptor: int | None = None
     target_descriptor: int | None = None
     try:
-        root_descriptor = os.open(root, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+        root_descriptor = stack.enter_context(permissions.descriptor(root, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW))
         _validate_root(root, expected=expected_root)
         opened_root = os.fstat(root_descriptor)
         if (
@@ -1506,10 +1530,12 @@ def _cleanup_posix(
             raise ManagedTempError(
                 f"管理対象が隔離時に置換された: {validated.path}", next_action=ManagedTempError.REPLACED_NEXT_ACTION
             )
-        target_descriptor = os.open(
-            quarantine.name,
-            os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW,
-            dir_fd=root_descriptor,
+        target_descriptor = stack.enter_context(
+            permissions.descriptor(
+                quarantine.name,
+                os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW,
+                dir_fd=root_descriptor,
+            )
         )
         opened = os.fstat(target_descriptor)
         if (opened.st_dev, opened.st_ino) != (validated.device, validated.inode):
@@ -1536,11 +1562,6 @@ def _cleanup_posix(
         if isinstance(error, ManagedTempError):
             raise
         raise ManagedTempError(f"管理対象を後始末できない: {validated.path}: {error}") from error
-    finally:
-        if target_descriptor is not None:
-            os.close(target_descriptor)
-        if root_descriptor is not None:
-            os.close(root_descriptor)
 
 
 def _cleanup_windows(
@@ -1735,6 +1756,7 @@ def _force_remove_managed_temp(
         _, path = _validate_path_shape(pathlib.Path(path_arg))
         _validate_root(path.parent)
         metadata = path.lstat()
+        identity = _path_identity(path)
         if not stat.S_ISDIR(metadata.st_mode) or (
             os.name == "nt" and getattr(metadata, "st_file_attributes", 0) & _WINDOWS_REPARSE_POINT
         ):
@@ -1768,7 +1790,7 @@ def _force_remove_managed_temp(
                 return False
             raise
         _require_unused_plugin_root(path)
-        _force_remove_validated_temp(path, reason=reason)
+        _force_remove_validated_temp(path, reason=reason, expected_identity=identity)
     return True
 
 
@@ -1788,10 +1810,26 @@ def _require_unused_plugin_root(path: pathlib.Path) -> None:
         raise error
 
 
-def _force_remove_validated_temp(path: pathlib.Path, *, reason: str) -> None:
+def _force_remove_validated_temp(path: pathlib.Path, *, reason: str, expected_identity: tuple[int, int]) -> None:
     registry_path = _registry_path(path)
     try:
-        shutil.rmtree(_windows_extended_path(path) if os.name == "nt" else path)
+        if os.name == "posix":
+            before = path.lstat()
+            if (before.st_dev, before.st_ino) != expected_identity or before.st_uid != os.geteuid():
+                raise ManagedTempError(f"強制回収の対象が置換された: {path}", next_action=ManagedTempError.REPLACED_NEXT_ACTION)
+            with permissions.directory(path, expected=before) as opened:
+                _clear_directory(opened)
+                if _path_identity(path) != (before.st_dev, before.st_ino):
+                    raise ManagedTempError(
+                        f"強制回収の対象が置換された: {path}", next_action=ManagedTempError.REPLACED_NEXT_ACTION
+                    )
+                os.rmdir(path)
+        else:
+            if _path_identity(path) != expected_identity:
+                raise ManagedTempError(f"強制回収の対象が置換された: {path}", next_action=ManagedTempError.REPLACED_NEXT_ACTION)
+            snapshot = _tree_snapshot(path)
+            _unlink_windows_reparse_points(path, snapshot)
+            _remove_windows_quarantine(path, snapshot)
         registry_path.unlink(missing_ok=True)
         for consuming in registry_path.parent.glob(f"{registry_path.name}.consuming-*"):
             consuming.unlink(missing_ok=True)
@@ -1848,6 +1886,19 @@ def _cleanup_child_of_registered_temp(path_arg: pathlib.Path | str) -> bool:
 
 def _cleanup_session_child(path: pathlib.Path, parent: _ValidatedTemp) -> None:
     """子のidentityと隔離名を外部へ残し、失敗・中断後も同じpathで再開する。"""
+    with contextlib.ExitStack() as stack:
+        if os.name == "posix":
+            opened = stack.enter_context(permissions.directory(parent.path, recover=False))
+            for part in path.relative_to(parent.path).parts:
+                try:
+                    metadata = os.stat(part, dir_fd=opened, follow_symlinks=False)
+                except FileNotFoundError:
+                    break
+                opened = stack.enter_context(permissions.directory(part, dir_fd=opened, expected=metadata))
+        _cleanup_session_child_scoped(path, parent)
+
+
+def _cleanup_session_child_scoped(path: pathlib.Path, parent: _ValidatedTemp) -> None:
     journal = _registry_path(path).with_suffix(".child-cleanup")
     root = _validate_root(parent.path)
     directory = parent.path
@@ -1947,11 +1998,24 @@ def cleanup_managed_temp(
         path_arg = entries[0]["path"]
     if path_arg is None:
         raise ManagedTempError("pathまたはsession_idを指定する")
-    if _cleanup_child_of_registered_temp(path_arg):
-        return
     try:
+        if _cleanup_child_of_registered_temp(path_arg):
+            return
         _cleanup_managed_temp(path_arg, recover_registry=recover_registry)
-    except ManagedTempError as error:
-        if not force_remove:
+    except _PluginRootRetained:
+        # 親の使用保護も子のforce-removeへ引き継ぐ。子自身の名前だけで再判定すると保護を失う。
+        raise
+    except (ManagedTempError, OSError) as error:
+        failure = (
+            error
+            if isinstance(error, ManagedTempError)
+            else ManagedTempError(
+                f"管理対象を後始末できない: {path_arg}: {error}", next_action=ManagedTempError.PERMISSION_NEXT_ACTION
+            )
+        )
+        if force_remove:
+            _force_remove_managed_temp(path_arg, failure, reason=force_reason)
+        elif failure is error:
             raise
-        _force_remove_managed_temp(path_arg, error, reason=force_reason)
+        else:
+            raise failure from error

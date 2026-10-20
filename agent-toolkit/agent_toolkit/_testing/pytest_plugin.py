@@ -5,6 +5,7 @@ package collectorが収集順で再生成されても、fixtureの登録を失�
 """
 
 import asyncio
+import contextlib
 import os
 import pathlib
 import re
@@ -14,10 +15,12 @@ from typing import Any
 
 import pytest
 from pyfltr.colloquial import check as _colloquial_check
+from pyfltr.command import execution_slot
 
 from agent_toolkit._agents_server import launch_requests, state
 from agent_toolkit._agents_server import manager as server_manager
-from agent_toolkit._common import codex_models, plugin_environment
+from agent_toolkit._atk import managed_temp
+from agent_toolkit._common import codex_models, plugin_environment, process_tree
 from agent_toolkit._common import wait_schedule as _wait_schedule
 from agent_toolkit._hooks import notice
 from agent_toolkit._hooks import transcript_scan as _transcript_scan
@@ -51,14 +54,48 @@ _WAIT_SCHEDULE_ENVIRONMENT_NAMES = (
 )
 
 
+@pytest.hookimpl(tryfirst=True)
 def pytest_configure(config: pytest.Config) -> None:
-    """配布物のCLIを起動するテストが、隔離したHOMEでも同じ依存環境を再利用するよう保存先を固定する。
+    """共有検証の所有と一時領域をpytestの寿命へ結び、配布CLIの依存環境の保存先を固定する。
 
     HOMEやキャッシュを一時ディレクトリへ向けたテストから起動すると、未指定ではテストごとに環境を構築し直す。
     保存先そのものを検証するテストは、明示した環境の辞書か`delenv`で上書きする。
     """
-    del config
     os.environ.setdefault(plugin_environment.RUNTIME_DATA_ENV, str(plugin_environment.runtime_data(os.environ)))
+    stack = contextlib.ExitStack()
+    config.add_cleanup(stack.close)
+    worker = hasattr(config, "workerinput")
+    # workerと入れ子の実行は、共有APIが祖先の所有を検証して継承する。
+    stack.enter_context(execution_slot.hold(label="pytest"))
+    previous_children = set(process_tree.collect_descendants(os.getpid()))
+    resource_environment = {
+        name: os.environ.get(name)
+        for name in ("HOME", "USERPROFILE", "XDG_STATE_HOME", "XDG_CACHE_HOME", "LOCALAPPDATA", "APPDATA")
+    }
+    directory = None
+    if not worker and config.option.basetemp is None:
+        directory = managed_temp.create_managed_temp("pytest-fixtures")
+        # managed-tempの所有markerを維持するため、pytestの初期化対象を子ディレクトリにする。
+        config.option.basetemp = str(directory / "fixtures")
+
+    def release_resources() -> None:
+        children = [child for child in process_tree.collect_descendants(os.getpid()) if child not in previous_children]
+        residual = process_tree.reclaim_descendants(children)
+        if residual:
+            raise pytest.UsageError(
+                "pytestの子孫を回収できない: " + "; ".join(residual) + "; 対象の終了を確認してから一時領域を回収する"
+            )
+        if directory is not None:
+            # conftestやテストの隔離が保存先を変えても、作成時の外部登録簿で所有を検証する。
+            with pytest.MonkeyPatch.context() as patch:
+                for name, value in resource_environment.items():
+                    if value is None:
+                        patch.delenv(name, raising=False)
+                    else:
+                        patch.setenv(name, value)
+                managed_temp.cleanup_managed_temp(directory)
+
+    stack.callback(release_resources)
 
 
 @pytest.fixture(autouse=True)

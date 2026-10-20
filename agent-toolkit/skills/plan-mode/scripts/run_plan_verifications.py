@@ -146,7 +146,7 @@ def main(argv: list[str] | None = None) -> int:
     failed = False
     for planned_command in planned:
         record, exit_code, failure = run_command.execute(
-            planned_command["argv"], pathlib.Path(planned_command["cwd"]), planned_command["timeout"]
+            planned_command["argv"], pathlib.Path(planned_command["cwd"]), planned_command["timeout"], verification=True
         )
         state = "timeout" if record["timed_out"] else "failure" if exit_code else "success"
         completion_failure = _pyfltr_completion_failure(planned_command, record) if state == "success" else None

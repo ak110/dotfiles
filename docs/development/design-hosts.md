@@ -7,6 +7,11 @@
 
 ### 共有原本とCodex固有の上書き
 
+Codexのコマンド回収は、外側の`functions.exec`のcellと内側の`exec_command`のsessionを別の実行識別子として扱う。
+返却本文とともに`exit_code`と`session_id`を保持し、cellは`functions.wait`、sessionは`write_stdin`で同じ起動の終端まで回収する。
+`session_id`がある間に同じ待機コマンドを再発行すると、先行実行を回収する前に次の待機も開始するため採用しない。
+契約の定義元は`rules-common.codex.md`へ集約し、Codex向けAGENTSの正式生成で全主体へ届ける。
+
 hook・MCP定義などホスト別に明確に分離された資源を除き、Claude CodeとCodexに共通するルール・スキルは`agent-toolkit/`の共有原本で定義する。
 Codexだけの公開能力との差分は上書きとして置き、常時規範へCodex固有の条件を持ち込まない。Codexの全主体へ適用する差分は`agent-toolkit/share/rules-common.codex.md`へ置き、`scripts/sync_codex_agents.py`が`~/.codex/AGENTS.md`へ埋め込む。Codexのメインだけへ適用する差分は`agent-toolkit/share/rules-main.codex.md`へ置き、`SessionStart` hookがCodexのメインへ`rules-main.md`の後に加える。`~/.codex/AGENTS.md`はCodexのサブエージェントと委譲先にも届くため、メイン向けの差分を同じファイルへ置くとメイン専用の条文が全主体へ届く。
 Codex基礎指示の上書きは、確認・待機・並列化・ツール利用前説明のホスト契約をCodex側へ閉じ込め、Claude Codeの共通契約を変更しない。
@@ -98,7 +103,8 @@ daemon自動再起動の指定は管理daemonを更新後に再起動する許�
 後者を併用するのは、Codex backendがstatusline表示の判定のために子のApp Serverから前者を除くためである。
 知識境界として、条文の本文は`share/`配下の各ファイルが持ち、フックと`agents_server`は本文を読んで渡すだけで内容を判定しない。
 Codex向けAGENTS.mdの生成器は`rules/`配下の共通条文だけを埋め込み、`share/`配下の条文を埋め込まない。
-Claude Codeのフック出力は1件あたり10,000文字で切り詰められるため、メイン向け条文の合計を同上限内に保つテストを`agent-toolkit/agent_toolkit/_hooks/rules_context_test.py`へ置く。
+Claude Codeの`additionalContext`文字列は10,000文字の上限へ合わせ、メイン向け条文の合計を同上限内に保つテストを`agent-toolkit/agent_toolkit/_hooks/rules_context_test.py`へ置く。
+ファイル保存と2,000文字のプレビューは別の出力契約として扱い、それぞれの観測条件と保証範囲を監査記録へ残す。
 却下した代替案は3つある。
 Codexメイン向け条文をAGENTS.mdへ生成器で埋め込む案は、Codexのサブエージェントにもメイン向け条文が届き、両ホストで配布手段が非対称になるため採らない。
 委譲先向け条文もフックだけで届ける案は、Codex backendの委譲先でフックの信頼登録と環境変数の印に依存し、未設定の環境で条文が欠落するため採らない。

@@ -96,7 +96,7 @@ async def _remote_sessions_runner(host: str, op: str, _args: list[str]) -> str:
     return json.dumps(payload, ensure_ascii=False)
 
 
-@pytest_asyncio.fixture(name="remote_sessions_harness")
+@pytest_asyncio.fixture(loop_scope="session", name="remote_sessions_harness")
 async def _remote_sessions_harness_fixture(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -210,7 +210,7 @@ _DETAIL_DISTANCE_FROM_END_JS = (
 )
 
 
-@pytest.mark.asyncio
+@pytest.mark.asyncio(loop_scope="session")
 @pytest.mark.parametrize("pending", ["list", "detail"])
 async def test_session_drawer_keeps_user_open_during_initial_fetch(screen_harness: _ScreenHarness, pending: str) -> None:
     """一覧取得中とURLの詳細復元中の開閉操作を、初期化の完了後にも保つ。"""
@@ -242,7 +242,7 @@ async def test_session_drawer_keeps_user_open_during_initial_fetch(screen_harnes
         await page.unroute(pattern, handler)
 
 
-@pytest.mark.asyncio
+@pytest.mark.asyncio(loop_scope="session")
 async def test_session_list_omits_message_preview(screen_harness: _ScreenHarness) -> None:
     """セッション一覧には発話内容のプレビューを表示しない。"""
     page = screen_harness.page
@@ -256,7 +256,7 @@ async def test_session_list_omits_message_preview(screen_harness: _ScreenHarness
     assert child_classes == ["session-cwd pane-item-title", "session-meta pane-item-meta"]
 
 
-@pytest.mark.asyncio
+@pytest.mark.asyncio(loop_scope="session")
 async def test_session_previous_and_next_buttons_navigate_list(screen_harness: _ScreenHarness) -> None:
     """セッション詳細の前後ボタンで一覧の隣接項目へ移動する。"""
     page = screen_harness.page
@@ -271,7 +271,7 @@ async def test_session_previous_and_next_buttons_navigate_list(screen_harness: _
     assert await page.locator('#sessions .session-item[aria-current="true"]').inner_text() == names[0]
 
 
-@pytest.mark.asyncio
+@pytest.mark.asyncio(loop_scope="session")
 async def test_session_screen_lists_and_renders_both_engines(screen_harness: _ScreenHarness) -> None:
     """左ペインを内容と非表示の識別子で限定し、右ペインへ発話とツール入力を表示する。"""
     harness = screen_harness
@@ -398,7 +398,7 @@ async def test_session_screen_lists_and_renders_both_engines(screen_harness: _Sc
     assert "解析できない行が1件あります" in detail_text
 
 
-@pytest.mark.asyncio
+@pytest.mark.asyncio(loop_scope="session")
 async def test_session_details_use_exclusive_default_closed_sections(screen_harness: _ScreenHarness) -> None:
     """ツール呼び出しなどの畳む項目は初期状態では閉じ、同時に1項目だけを展開する。"""
     page = screen_harness.page
@@ -416,7 +416,7 @@ async def test_session_details_use_exclusive_default_closed_sections(screen_harn
     await playwright.async_api.expect(sections.nth(1)).to_have_attribute("open", "")
 
 
-@pytest.mark.asyncio
+@pytest.mark.asyncio(loop_scope="session")
 async def test_runtime_inserted_accordion(screen_harness: _ScreenHarness) -> None:
     """挿入本文だけを閉じ、一覧の検索値と通常発話を保つ。"""
     records_root = screen_harness.root.parent
@@ -469,7 +469,7 @@ async def test_runtime_inserted_accordion(screen_harness: _ScreenHarness) -> Non
     assert await page.locator("#detail .kind-developer").evaluate("element => element.open")
 
 
-@pytest.mark.asyncio
+@pytest.mark.asyncio(loop_scope="session")
 async def test_session_details_open_developer_by_default(screen_harness: _ScreenHarness) -> None:
     """ユーザー、アシスタントおよび開発者の本文を初期状態で開く。"""
     page = screen_harness.page
@@ -482,7 +482,7 @@ async def test_session_details_open_developer_by_default(screen_harness: _Screen
         assert await section.evaluate("element => element.open")
 
 
-@pytest.mark.asyncio
+@pytest.mark.asyncio(loop_scope="session")
 async def test_session_detail_toolbar_scrolls_with_content(screen_harness: _ScreenHarness) -> None:
     """狭い画面では右ペイン全体がスクロールし、タイトルとトークン表示も本文とともに移動する。"""
     page = screen_harness.page
@@ -507,7 +507,7 @@ async def test_session_detail_toolbar_scrolls_with_content(screen_harness: _Scre
     assert after["y"] < before["y"]
 
 
-@pytest.mark.asyncio
+@pytest.mark.asyncio(loop_scope="session")
 async def test_subagent_records_open_from_the_parent_detail(screen_harness: _ScreenHarness) -> None:
     """親セッションの詳細からサブエージェント記録を開いて委譲元へ戻り、記録本体が無い項目は選択できない表示とする。"""
     harness = screen_harness
@@ -541,7 +541,7 @@ async def test_subagent_records_open_from_the_parent_detail(screen_harness: _Scr
     assert await harness.page.locator("#detail .detail-back").count() == 0
 
 
-@pytest.mark.asyncio
+@pytest.mark.asyncio(loop_scope="session")
 async def test_remote_subagents_are_shown_or_reported_as_unavailable(
     remote_sessions_harness: _RemoteSessionsHarness,
 ) -> None:
@@ -562,7 +562,7 @@ async def test_remote_subagents_are_shown_or_reported_as_unavailable(
     assert await harness.page.locator(".subagent-item").count() == 0
 
 
-@pytest.mark.asyncio
+@pytest.mark.asyncio(loop_scope="session")
 async def test_session_assistant_markdown_rendered(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, browser: playwright.async_api.Browser
 ) -> None:
@@ -588,7 +588,7 @@ async def test_session_assistant_markdown_rendered(
             assert await page.locator("#detail .event.kind-assistant > pre").count() == 0
 
 
-@pytest.mark.asyncio
+@pytest.mark.asyncio(loop_scope="session")
 async def test_session_non_assistant_events_stay_preformatted(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, browser: playwright.async_api.Browser
 ) -> None:
@@ -626,7 +626,7 @@ async def test_session_non_assistant_events_stay_preformatted(
         await playwright.async_api.expect(page.locator("#detail .event.kind-user > pre").last).to_have_text("## ユーザー")
 
 
-@pytest.mark.asyncio
+@pytest.mark.asyncio(loop_scope="session")
 async def test_session_thinking_with_text_opens_like_assistant(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, browser: playwright.async_api.Browser
 ) -> None:
@@ -662,7 +662,7 @@ async def test_session_thinking_with_text_opens_like_assistant(
         await playwright.async_api.expect(filled).to_have_attribute("open", "")
 
 
-@pytest.mark.asyncio
+@pytest.mark.asyncio(loop_scope="session")
 async def test_session_assistant_markdown_escapes_raw_html(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, browser: playwright.async_api.Browser
 ) -> None:
@@ -682,7 +682,7 @@ async def test_session_assistant_markdown_escapes_raw_html(
         assert await page.evaluate("window.__sessionXss") is None
 
 
-@pytest.mark.asyncio
+@pytest.mark.asyncio(loop_scope="session")
 async def test_session_assistant_markdown_scrolls_wide_blocks(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, browser: playwright.async_api.Browser
 ) -> None:
@@ -718,7 +718,7 @@ async def test_session_assistant_markdown_scrolls_wide_blocks(
         assert block <= pane
 
 
-@pytest.mark.asyncio
+@pytest.mark.asyncio(loop_scope="session")
 async def test_session_tree_expands_one_branch_and_retains_keyboard_focus(screen_harness: _ScreenHarness) -> None:
     """親の展開操作で子だけを表示し、子の選択後もフォーカスを維持する。"""
     page = screen_harness.page
@@ -744,7 +744,7 @@ async def test_session_tree_expands_one_branch_and_retains_keyboard_focus(screen
     await playwright.async_api.expect(rows).to_have_count(2)
 
 
-@pytest.mark.asyncio
+@pytest.mark.asyncio(loop_scope="session")
 async def test_session_tree_places_children_of_every_launch_source_under_parents(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -785,7 +785,7 @@ async def test_session_tree_places_children_of_every_launch_source_under_parents
             await playwright.async_api.expect(child_row).to_have_attribute("aria-level", "2")
 
 
-@pytest.mark.asyncio
+@pytest.mark.asyncio(loop_scope="session")
 async def test_session_tree_aligns_rows_without_children(screen_harness: _ScreenHarness) -> None:
     """子の無い行も開閉欄の幅を持ち、操作できない「−」を表示して項目の開始位置を子のある行と揃える。"""
     page = screen_harness.page
@@ -821,7 +821,7 @@ async def test_session_tree_aligns_rows_without_children(screen_harness: _Screen
     assert "session-tree-leaf" not in focused_class
 
 
-@pytest.mark.asyncio
+@pytest.mark.asyncio(loop_scope="session")
 async def test_session_list_updates_when_records_are_added(screen_harness: _ScreenHarness, tmp_path: Path) -> None:
     """画面を開いたまま保存された新しい記録が、再読み込みせずに左ペインへ現れる。"""
     page = screen_harness.page
@@ -847,7 +847,7 @@ async def test_session_list_updates_when_records_are_added(screen_harness: _Scre
     await playwright.async_api.expect(listing).to_contain_text("/home/aki/added-codex")
 
 
-@pytest.mark.asyncio
+@pytest.mark.asyncio(loop_scope="session")
 async def test_session_list_refreshes_are_not_issued_concurrently(screen_harness: _ScreenHarness, tmp_path: Path) -> None:
     """一覧の取得中に`refresh`通知が続いても、一覧の要求を同時に2件以上発行せず、完了後に1回だけ取り直す。
 
@@ -896,7 +896,7 @@ async def test_session_list_refreshes_are_not_issued_concurrently(screen_harness
     assert concurrency["total"] <= 2
 
 
-@pytest.mark.asyncio
+@pytest.mark.asyncio(loop_scope="session")
 @pytest.mark.parametrize("opened_from", ["list", "subagent"])
 async def test_session_detail_follows_appended_events_and_keeps_view_state(
     screen_harness: _ScreenHarness,
@@ -981,7 +981,7 @@ async def test_session_detail_follows_appended_events_and_keeps_view_state(
     await playwright.async_api.expect(page.locator("#detail").get_by_text("追記されたイベント")).to_be_in_viewport()
 
 
-@pytest.mark.asyncio
+@pytest.mark.asyncio(loop_scope="session")
 async def test_session_detail_follows_the_tail_while_reading_the_latest_events(
     screen_harness: _ScreenHarness,
     tmp_path: Path,
@@ -1014,7 +1014,7 @@ async def test_session_detail_follows_the_tail_while_reading_the_latest_events(
     await playwright.async_api.expect(page.get_by_role("button", name=re.compile("新しいイベント"))).to_have_count(0)
 
 
-@pytest.mark.asyncio
+@pytest.mark.asyncio(loop_scope="session")
 async def test_session_empty_state_distinguishes_records_without_user_messages(
     screen_harness: _ScreenHarness,
     tmp_path: Path,
@@ -1032,7 +1032,7 @@ async def test_session_empty_state_distinguishes_records_without_user_messages(
     await playwright.async_api.expect(empty).to_contain_text("自動で一覧へ加わります")
 
 
-@pytest.mark.asyncio
+@pytest.mark.asyncio(loop_scope="session")
 async def test_session_without_user_message_appears_after_first_message(
     screen_harness: _ScreenHarness,
     tmp_path: Path,
@@ -1057,7 +1057,7 @@ async def test_session_without_user_message_appears_after_first_message(
     await playwright.async_api.expect(listing).to_contain_text("/home/aki/silent-codex")
 
 
-@pytest.mark.asyncio
+@pytest.mark.asyncio(loop_scope="session")
 @pytest.mark.parametrize("failure", ["list", "detail", "disappeared"])
 async def test_session_failures_preserve_host_engine_and_record(screen_harness: _ScreenHarness, failure: str) -> None:
     """一覧の取得失敗と、選択した記録の取得失敗・消失を、実ブラウザーの画面操作で起こし、区別できる表示を確かめる。"""

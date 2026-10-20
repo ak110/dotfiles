@@ -50,7 +50,7 @@ class TestGrepBasic:
 
         assert exc_info.value.code == 0
         captured = capsys.readouterr()
-        assert "fb-001.md:7:line2" in captured.out
+        assert "fb-001.md:8:line2" in captured.out
         assert not any(call["cmd"][:2] in (["git", "fetch"], ["git", "merge"], ["git", "rebase"]) for call in git_calls)
 
     def test_grep_finds_no_match_exits_1(
@@ -178,15 +178,13 @@ class TestGrepFilters:
     ) -> None:
         """終端済み振り返りの検索対象は状態・投入元・対象リポジトリの積集合となる。"""
         notes = _setup_notes(tmp_path)
-        adopted_dir = notes / "adopted"
-        adopted_dir.mkdir()
         for filename, source, repo in (
             ("matched.md", "session-review", "github.com/example/foo"),
             ("other-source.md", "manual", "github.com/example/foo"),
             ("other-repo.md", "session-review", "github.com/example/other"),
         ):
             path = _write_awi_file(notes, filename, target_repo=repo, body="shared phrase", source=source)
-            path.rename(adopted_dir / filename)
+            path.write_text(path.read_text(encoding="utf-8").replace("state: inbox", "state: adopted"), encoding="utf-8")
         _write_awi_file(notes, "active.md", body="shared phrase", source="session-review")
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
@@ -205,7 +203,7 @@ class TestGrepFilters:
             )
 
         assert exc_info.value.code == 0
-        assert capsys.readouterr().out.strip() == "matched.md:7:shared phrase"
+        assert capsys.readouterr().out.strip() == "matched.md:8:shared phrase"
 
     def test_type_filter_limits_to_awi(
         self,
@@ -277,14 +275,14 @@ class TestGrepFilters:
     ) -> None:
         """状態を指定せずactiveを使うgrepはhold配下のawiとUWIをいずれも含める。"""
         notes = _setup_notes(tmp_path)
-        hold_dir = notes / "hold"
+        hold_dir = notes / "2026" / "10"
         hold_dir.mkdir(parents=True, exist_ok=True)
         (hold_dir / "hold-awi.md").write_text(
-            "---\ntype: awi\ntarget_repo: github.com/example/foo\n---\n\nsearchword\n",
+            "---\nstate: hold\ntype: awi\ntarget_repo: github.com/example/foo\n---\n\nsearchword\n",
             encoding="utf-8",
         )
         (hold_dir / "hold-uwi.md").write_text(
-            "---\ntype: uwi\ntarget_repo: github.com/example/foo\n---\n\nsearchword\n",
+            "---\nstate: hold\ntype: uwi\ntarget_repo: github.com/example/foo\n---\n\nsearchword\n",
             encoding="utf-8",
         )
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
@@ -385,9 +383,8 @@ def _write_output_form_queue(tmp_path: pathlib.Path) -> None:
     _write_awi_file(notes, "other-repo.md", target_repo="github.com/example/other", body="# 別リポジトリ\n\nneedle")
     _write_uwi_file(notes, f"{_FIXED_TIMESTAMP}-001.md", question="needle unanswered")
     _write_uwi_file(notes, f"{_FIXED_TIMESTAMP}-002.md", question="needle answered", answer="回答あり\n")
-    adopted_dir = notes / "adopted"
-    adopted_dir.mkdir()
-    _write_awi_file(notes, "adopted.md", body="# 終端済み\n\nneedle").rename(adopted_dir / "adopted.md")
+    adopted = _write_awi_file(notes, "adopted.md", body="# 終端済み\n\nneedle")
+    adopted.write_text(adopted.read_text(encoding="utf-8").replace("state: inbox", "state: adopted"), encoding="utf-8")
 
 
 class TestGrepOutputForms:
@@ -532,7 +529,7 @@ class TestGrepFixedStrings:
         escaped_code, escaped_out, _ = _run_wi(["grep", r"text\[1\] 文字"], tmp_path, capsys)
         assert escaped_code == 0
         assert fixed_out == escaped_out
-        assert fixed_out.splitlines() == ["bracket.md:6:text[1] 文字"]
+        assert fixed_out.splitlines() == ["bracket.md:7:text[1] 文字"]
 
     def test_grep_fixed_strings_matches_literal(
         self,
@@ -546,12 +543,12 @@ class TestGrepFixedStrings:
 
         code, out, _ = _run_wi(["grep", "-F", "a|b", "--type=awi"], tmp_path, capsys)
         assert code == 0
-        assert out.splitlines() == ["pipe.md:6:a|b"]
+        assert out.splitlines() == ["pipe.md:7:a|b"]
 
         code, out, _ = _run_wi(["grep", "a|b", "--type=awi"], tmp_path, capsys)
         assert code == 0
-        assert "pipe.md:7:a only" in out.splitlines()
-        assert "pipe.md:8:b only" in out.splitlines()
+        assert "pipe.md:8:a only" in out.splitlines()
+        assert "pipe.md:9:b only" in out.splitlines()
 
     def test_grep_fixed_strings_with_ignore_case_and_filters(
         self,
@@ -565,7 +562,7 @@ class TestGrepFixedStrings:
 
         code, out, _ = _run_wi(["grep", "-F", "-i", "a|b", "--type=awi"], tmp_path, capsys)
         assert code == 0
-        assert out.splitlines() == ["pipe.md:6:a|b", "pipe.md:9:A|B"]
+        assert out.splitlines() == ["pipe.md:7:a|b", "pipe.md:10:A|B"]
 
         code, out, _ = _run_wi(["grep", "-F", "-l", "a|b", "--type=uwi"], tmp_path, capsys)
         assert code == 0
@@ -586,3 +583,37 @@ class TestGrepFixedStrings:
         assert code == 1
         assert out == ""
         assert any(line.startswith("該当0件: ") for line in err.splitlines())
+
+
+@pytest.mark.parametrize("command", ["list", "show", "grep"])
+@pytest.mark.parametrize(
+    ("important", "expected"),
+    [("all", {"important.md", "ordinary.md"}), ("yes", {"important.md"}), ("no", {"ordinary.md"})],
+)
+def test_public_read_commands_filter_important_metadata(
+    command: str,
+    important: str,
+    expected: set[str],
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """重要フラグの指定は一覧・全文表示・検索の公開出力へ同じ選択条件で作用する。"""
+    notes = _setup_notes(tmp_path)
+    marked = _write_awi_file(notes, "important.md", body="needle important")
+    marked.write_text(
+        marked.read_text(encoding="utf-8").replace("type: awi\n", "type: awi\nimportant: true\n"), encoding="utf-8"
+    )
+    _write_awi_file(notes, "ordinary.md", body="needle ordinary")
+    monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+    argv = [command, "--important", important, "--target-repo=all"]
+    if command == "show":
+        argv.append("--all")
+    elif command == "grep":
+        argv.append("needle")
+
+    code, output, error = _run_wi(argv, tmp_path, capsys)
+
+    assert code == 0
+    assert not error
+    assert {name for name in ("important.md", "ordinary.md") if name in output} == expected

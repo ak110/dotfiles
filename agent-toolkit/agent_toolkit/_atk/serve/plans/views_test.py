@@ -233,3 +233,64 @@ async def test_render_file_html_keys_cache_by_text_digest(
     assert "変更前" not in after
     assert again == after
     assert rendered_texts == ["# 変更前\n", "# 変更後\n"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("failure", ["schedule", "start", "none"])
+async def test_local_watch_acquisition_and_release_are_owned(
+    tmp_path: pathlib.Path, index_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, failure: str
+) -> None:
+    """登録途中・開始途中・正常終了で所有した監視だけを停止する。"""
+    del index_path
+    root = tmp_path / "plans"
+    root.mkdir()
+    context = _context(root)
+    observer = types.SimpleNamespace(ident=None, stopped=0, joined=0)
+
+    def schedule(*_args: typing.Any, **_kwargs: typing.Any) -> None:
+        if failure == "schedule":
+            raise OSError("登録失敗")
+
+    def start() -> None:
+        if failure == "start":
+            raise OSError("開始失敗")
+        observer.ident = 1
+
+    def stop() -> None:
+        observer.stopped += 1
+
+    def join() -> None:
+        assert observer.ident is not None
+        observer.joined += 1
+
+    observer.schedule, observer.start, observer.stop, observer.join = schedule, start, stop, join
+    monkeypatch.setattr(views.watchdog.observers, "Observer", lambda: observer)
+    if failure != "none":
+        with pytest.raises(OSError):
+            await views.start_local_watchers_async(context)
+        assert context.state.local_observer is None
+    else:
+        await views.start_local_watchers_async(context)
+        await views.stop_local_watchers_async(context)
+        assert context.state.local_observer is None
+    assert observer.stopped == 1
+    assert observer.joined == (1 if failure == "none" else 0)
+
+
+@pytest.mark.asyncio
+async def test_remote_watch_cleanup_collects_all_failures(tmp_path: pathlib.Path, index_path: pathlib.Path) -> None:
+    """終了済みの監視失敗を全件受領し、参照を回収してからまとめて返す。"""
+    del index_path
+    context = _context(tmp_path)
+
+    async def fail(error: Exception) -> None:
+        raise error
+
+    context.state.remote_tasks.extend(
+        (asyncio.create_task(fail(ValueError("一件目"))), asyncio.create_task(fail(OSError("二件目"))))
+    )
+    await asyncio.gather(*context.state.remote_tasks, return_exceptions=True)
+    with pytest.raises(BaseExceptionGroup) as failed:
+        await views.stop_remote_watchers(context)
+    assert [type(error) for error in failed.value.exceptions] == [ValueError, OSError]
+    assert not context.state.remote_tasks

@@ -20,7 +20,14 @@ _NEXT_ACTION_PATTERN = re.compile(r"\n次の操作: [^\n]*`atk agents wait`[^\n]
 def _environment(state_directory: pathlib.Path) -> dict[str, str]:
     """セッション状態をテストごとに分離する環境を返す。"""
     env = os.environ.copy()
-    env.update({"TMPDIR": str(state_directory), "TEMP": str(state_directory), "TMP": str(state_directory)})
+    env.update(
+        {
+            "TMPDIR": str(state_directory),
+            "TEMP": str(state_directory),
+            "TMP": str(state_directory),
+            "XDG_STATE_HOME": str(state_directory),
+        }
+    )
     return env
 
 

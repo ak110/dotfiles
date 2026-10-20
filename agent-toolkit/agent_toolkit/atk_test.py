@@ -33,6 +33,7 @@ from agent_toolkit._atk import worktree_stash as _worktree_stash  # noqa: E402  
 from agent_toolkit._atk.managed_temp import inventory as managed_temp_inventory
 from agent_toolkit._atk.managed_temp import registry as managed_temp_registry
 from agent_toolkit._atk.wi import add as _add  # noqa: E402  # pylint: disable=wrong-import-position
+from agent_toolkit._atk.wi import entries as _wi_entries
 from agent_toolkit._atk.wi import listing as _wi_listing
 from agent_toolkit._atk.wi import sync as _wi_sync
 from agent_toolkit._atk.wi import web_input as _wi_web_input
@@ -42,7 +43,7 @@ from agent_toolkit._common import codex_models, mcp_environment
 from agent_toolkit._common import session_state as _session_state  # noqa: E402  # pylint: disable=wrong-import-position
 from agent_toolkit._common import wait_schedule as _wait_schedule  # noqa: E402  # pylint: disable=wrong-import-position
 from agent_toolkit._hooks import user_prompt_submit  # noqa: E402  # pylint: disable=wrong-import-position
-from agent_toolkit._testing import git_repository
+from agent_toolkit._testing import git_repository, wi_entry_files
 from agent_toolkit._testing import wi_bodies as _wi_bodies  # noqa: E402  # pylint: disable=wrong-import-position
 from agent_toolkit._testing.git_fakes import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
     _FIXED_HEAD_COMMIT,
@@ -70,14 +71,25 @@ def test_persistent_warning_once_per_session(
     expired = (datetime.datetime.now(datetime.UTC) - datetime.timedelta(days=8)).timestamp()
     for path in (*area.rglob("*"), area):
         os.utime(path, (expired, expired))
-    remove = managed_temp_inventory.shutil.rmtree
+    metadata = area.stat()
+    identity = metadata.st_dev, metadata.st_ino
+    clear_directory = managed_temp_inventory._clear_directory  # pylint: disable=protected-access
+    remove_windows = managed_temp_inventory._remove_windows_quarantine  # pylint: disable=protected-access
+    windows_extended_path = managed_temp_inventory._windows_extended_path  # pylint: disable=protected-access
 
-    def fail_removal(path: str | pathlib.Path) -> None:
-        if pathlib.Path(str(path)) == area:
+    def fail_posix_removal(descriptor: int, **kwargs: Any) -> None:
+        current = os.fstat(descriptor)
+        if (current.st_dev, current.st_ino) == identity:
             raise PermissionError("persistent deletion failure")
-        remove(path, onexc=None)
+        clear_directory(descriptor, **kwargs)
 
-    monkeypatch.setattr(managed_temp_inventory.shutil, "rmtree", fail_removal)
+    def fail_windows_removal(root: pathlib.Path, expected_tree: dict, **kwargs: Any) -> None:
+        if windows_extended_path(root) == windows_extended_path(area):
+            raise PermissionError("persistent deletion failure")
+        remove_windows(root, expected_tree, **kwargs)
+
+    monkeypatch.setattr(managed_temp_inventory, "_clear_directory", fail_posix_removal)
+    monkeypatch.setattr(managed_temp_inventory, "_remove_windows_quarantine", fail_windows_removal)
     monkeypatch.setattr(_wait_schedule, "get_schedule", lambda _request_bucket: "result")
 
     def invoke() -> str:
@@ -87,6 +99,7 @@ def test_persistent_warning_once_per_session(
         output = capsys.readouterr()
         assert output.out == "result\n"
         assert area.is_dir()
+        assert (area / ".agent-toolkit-managed-temp.json").read_text(encoding="utf-8") == "{}"
         return output.err
 
     def expect_warning(expected: bool) -> None:
@@ -289,7 +302,7 @@ def test_wi_pull_fast_forwards_remote_entry_on_every_invocation(
     peer = tmp_path / "peer"
     git_repository.init_bare_repository(origin)
     git_repository.init_repository(
-        seed, initial_branch="main", origin=str(origin), files={"inbox/.gitkeep": ""}, commit_message="base"
+        seed, initial_branch="main", origin=str(origin), files={".gitkeep": ""}, commit_message="base"
     )
     git_repository.run_git(seed, "push", "-u", "origin", "main")
     git_repository.run_git(tmp_path, "clone", str(origin), str(notes))
@@ -303,7 +316,7 @@ def test_wi_pull_fast_forwards_remote_entry_on_every_invocation(
             atk.main(["wi", "pull"], home=tmp_path)
         assert exc_info.value.code == 0
 
-    assert (notes / "inbox/remote.md").exists()
+    assert (notes / "2026/10/remote.md").exists()
     assert capsys.readouterr().out == f"成功: private-notesをremoteと同期した: {notes.resolve()}\n" * 2
 
 
@@ -1099,12 +1112,13 @@ def _make_subprocess_fake(
     return fake
 
 
-def _setup_notes(tmp_path: pathlib.Path) -> pathlib.Path:
+def _setup_notes(tmp_path: pathlib.Path, *, legacy_layout: bool = False) -> pathlib.Path:
     """private-notesディレクトリを準備する。"""
     notes = tmp_path / "private-notes"
     notes.mkdir()
-    (notes / "inbox").mkdir(parents=True)
-    (notes / "hold").mkdir(exist_ok=True)
+    if legacy_layout:
+        (notes / "inbox").mkdir()
+        (notes / "hold").mkdir()
     return notes
 
 
@@ -1114,14 +1128,14 @@ def _write_awi_file(
     target_repo: str = "github.com/example/foo",
     body: str = "テスト本文",
     source: str | None = None,
+    legacy_layout: bool = False,
 ) -> pathlib.Path:
-    """inbox配下に1ファイルを書き込み、絶対パスを返す。`source`指定時はfrontmatterへ追記する。"""
-    inbox_dir = notes / "inbox"
-    inbox_dir.mkdir(parents=True, exist_ok=True)
-    path = inbox_dir / filename
+    """状態付き項目を書き込み、移行検証の明示指定時は旧配置を使う。"""
+    path = wi_entry_files.entry_path(notes, filename, legacy_layout=legacy_layout)
     source_line = f"source: {source}\n" if source is not None else ""
+    state_line = "" if legacy_layout else "state: inbox\n"
     path.write_text(
-        f"---\ntarget_repo: {target_repo}\ntype: awi\n{source_line}---\n\n{body}\n",
+        f"---\n{state_line}target_repo: {target_repo}\ntype: awi\n{source_line}---\n\n{body}\n",
         encoding="utf-8",
     )
     return path
@@ -1317,12 +1331,7 @@ class TestMutationTargetRepoParserOption:
     ) -> None:
         """mainへ注入した基準時刻から再処理抑制期限を保存する。"""
         notes = _setup_notes(tmp_path)
-        processing = notes / "processing"
-        processing.mkdir()
-        (processing / "entry.md").write_text(
-            "---\ntarget_repo: github.com/example/foo\ntype: awi\n---\n\n本文\n",
-            encoding="utf-8",
-        )
+        entry = wi_entry_files.write_awi(notes, "entry.md", state="processing", target_repo="github.com/example/foo")
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
         now = datetime.datetime(2026, 8, 12, 3, 4, 5, tzinfo=datetime.UTC)
 
@@ -1334,7 +1343,8 @@ class TestMutationTargetRepoParserOption:
             )
 
         assert exc_info.value.code == 0
-        content = (notes / "inbox/entry.md").read_text(encoding="utf-8")
+        content = entry.read_text(encoding="utf-8")
+        assert _wi_entries.entry_state_of(entry, content) == "inbox"
         assert "cooldown_until: '2026-08-15T03:04:05+00:00'" in content
 
     def test_edit_without_message_remains_interactive(self) -> None:
@@ -1393,7 +1403,7 @@ def test_note_and_note_file_are_mutually_exclusive(subcommand: str) -> None:
 def test_note_file_preserves_utf8_text(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """ファイルメモは改行とシェル制御文字を変更せず既存の採用処理へ渡す。"""
     notes = _setup_notes(tmp_path)
-    _write_awi_file(notes, "entry.md")
+    entry = _write_awi_file(notes, "entry.md")
     note_file = tmp_path / "note.txt"
     note = '1行目\n"引用"と`backtick`と$記号\n'
     note_file.write_text(note, encoding="utf-8")
@@ -1403,7 +1413,8 @@ def test_note_file_preserves_utf8_text(tmp_path: pathlib.Path, monkeypatch: pyte
         atk.main(["wi", "adopt", "entry.md", "--note-file", str(note_file)], home=tmp_path)
 
     assert exc_info.value.code == 0
-    assert f"- メモ: {note}" in (notes / "adopted/entry.md").read_text(encoding="utf-8")
+    assert f"- メモ: {note}" in entry.read_text(encoding="utf-8")
+    assert _wi_entries.entry_state_of(entry) == "adopted"
 
 
 @pytest.mark.parametrize("invalid_bytes", (None, b"\xff"))
@@ -1928,7 +1939,9 @@ def test_wi_commands_report_only_their_results_with_pending_questions(
         assert "# 未回答" + "UWI通知" not in captured.out + captured.err
         assert "pending-question.md" not in captured.err
         assert "[inbox/unanswered]" not in captured.err
-    assert (notes / "adopted/entry.md").is_file()
+    entry = notes / "2026/10/entry.md"
+    assert entry.is_file()
+    assert _wi_entries.entry_state_of(entry) == "adopted"
 
 
 class TestInboxAlwaysEnabled:
@@ -1948,7 +1961,6 @@ class TestInboxAlwaysEnabled:
         """フラグファイルを作成しなくても、private-notesが存在すれば`mq add`が成功する。"""
         notes = tmp_path / "private-notes"
         notes.mkdir()
-        (notes / "inbox").mkdir(parents=True)
         myrepo = tmp_path / "myrepo"
         myrepo.mkdir()
         body_path = tmp_path / "body.md"
@@ -2007,7 +2019,7 @@ class TestAddSingleMessage:
 
         assert exc_info.value.code == 0
 
-        inbox_dir = notes / "inbox"
+        inbox_dir = notes / "2024/01"
         files = sorted(inbox_dir.iterdir())
         assert len(files) == 1
 
@@ -2025,8 +2037,8 @@ class TestAddSingleMessage:
         assert saved_commands[:4] == [
             ["git", "fetch"],
             ["git", "merge", "--ff-only", "@{u}"],
-            ["git", "add", "--all", "--", "inbox"],
-            ["git", "commit", "-m", "chore: add 1 awi item", "--", "inbox"],
+            ["git", "add", "--all", "--", f"2024/01/{files[0].name}"],
+            ["git", "commit", "-m", "chore: add 1 awi item", "--", f"2024/01/{files[0].name}"],
         ]
         assert ["git", "push"] in saved_commands[4:]
         for call in git_calls:
@@ -2035,7 +2047,7 @@ class TestAddSingleMessage:
 
         captured = capsys.readouterr()
         assert "成功: 1件をinboxへ投入した\n" in captured.out
-        assert f"  ~/private-notes/inbox/{files[0].name}\n" in captured.out
+        assert f"  ~/private-notes/2024/01/{files[0].name}\n" in captured.out
         assert "inbox: 計" not in captured.out
         assert "編集する場合:" not in captured.out
         assert f"  atk wi edit {files[0].name}\n" not in captured.out
@@ -2072,15 +2084,16 @@ class TestMqLifecycleScenario:
         with pytest.raises(SystemExit) as exc_info:
             atk.main(["wi", "start-processing", filename], home=tmp_path)
         assert exc_info.value.code == 0
-        assert not (notes / "inbox" / filename).exists()
-        assert (notes / "processing" / filename).exists()
+        entry = notes / "2024/01" / filename
+        assert entry.is_file()
+        assert _wi_entries.entry_state_of(entry) == "processing"
 
         git_calls.clear()
         with pytest.raises(SystemExit) as exc_info:
             atk.main(["wi", "adopt", filename], home=tmp_path)
         assert exc_info.value.code == 0
-        assert not (notes / "processing" / filename).exists()
-        assert (notes / "adopted" / filename).exists()
+        assert entry.is_file()
+        assert _wi_entries.entry_state_of(entry) == "adopted"
         git_cmds = [call["cmd"] for call in git_calls]
         assert any(cmd[:2] == ["git", "add"] for cmd in git_cmds)
         assert any(cmd[:2] == ["git", "commit"] for cmd in git_cmds)
@@ -2102,10 +2115,7 @@ class TestAddCompletionNoQueueOverview:
     ) -> None:
         """人の端末とエージェントの双方で、別項目の件数を投入結果に付けない。"""
         notes = _setup_notes(tmp_path)
-        directory = notes / existing_state
-        directory.mkdir(parents=True, exist_ok=True)
-        existing = directory / "existing-001.md"
-        existing.write_text("---\ntype: awi\ntarget_repo: github.com/example/foo\n---\n\n既存項目\n", encoding="utf-8")
+        existing = wi_entry_files.write_awi(notes, "existing-001.md", state=existing_state)
         myrepo = tmp_path / "myrepo"
         myrepo.mkdir()
         monkeypatch.setattr(subprocess, "run", _make_git_remote_fake(myrepo))
@@ -2156,7 +2166,7 @@ class TestAddMultipleMessages:
 
         assert exc_info.value.code == 0
 
-        inbox_dir = notes / "inbox"
+        inbox_dir = notes / "2024/01"
         files = sorted(inbox_dir.iterdir())
         assert len(files) == 2
         assert files[0].name == f"{_FIXED_TIMESTAMP}-001.md"
@@ -2167,8 +2177,8 @@ class TestAddMultipleMessages:
 
         captured = capsys.readouterr()
         assert "成功: 2件をinboxへ投入した\n" in captured.out
-        assert f"  ~/private-notes/inbox/{files[0].name}\n" in captured.out
-        assert f"  ~/private-notes/inbox/{files[1].name}\n" in captured.out
+        assert f"  ~/private-notes/2024/01/{files[0].name}\n" in captured.out
+        assert f"  ~/private-notes/2024/01/{files[1].name}\n" in captured.out
         assert "inbox: 計" not in captured.out
         assert "編集する場合:" not in captured.out
         assert f"  atk wi edit {files[0].name}\n" not in captured.out
@@ -2197,7 +2207,7 @@ class TestAddRepoPathExpansion:
 
         assert exc_info.value.code == 0
 
-        inbox = notes / "inbox"
+        inbox = notes / "2024/01"
         files = list(inbox.iterdir())
         assert len(files) == 1
         content = files[0].read_text(encoding="utf-8")
@@ -2265,7 +2275,7 @@ class TestAddFrontmatterOverride:
             atk.main(argv, home=tmp_path, now=_FIXED_DT)
         assert exc_info.value.code == 0
 
-        files = list((notes / "inbox").iterdir())
+        files = list((notes / "2024/01").iterdir())
         assert len(files) == 1
         content = files[0].read_text(encoding="utf-8")
         assert "target_repo: github.com/other/repo" in content
@@ -2294,7 +2304,7 @@ class TestAddFrontmatterOverride:
             )
         assert exc_info.value.code == 0
 
-        inbox = notes / "inbox"
+        inbox = notes / "2024/01"
         files = sorted(inbox.iterdir())
         assert len(files) == 2
         content_first = files[0].read_text(encoding="utf-8")
@@ -2333,7 +2343,7 @@ class TestAddFrontmatterOverride:
             )
         assert exc_info.value.code == 0
 
-        inbox = notes / "inbox"
+        inbox = notes / "2024/01"
         files = list(inbox.iterdir())
         assert len(files) == 1
         content = files[0].read_text(encoding="utf-8")
@@ -2348,14 +2358,14 @@ def _write_uwi_file(
     question: str = "テスト質問",
     answer: str = "",
     source: str | None = None,
+    legacy_layout: bool = False,
 ) -> pathlib.Path:
-    """inbox配下に1ファイルを書き込み、絶対パスを返す。`source`指定時はfrontmatterへ追記する。"""
-    uwi_dir = notes / "inbox"
-    uwi_dir.mkdir(parents=True, exist_ok=True)
-    path = uwi_dir / filename
+    """状態付きUWIを書き込み、移行検証の明示指定時は旧配置を使う。"""
+    path = wi_entry_files.entry_path(notes, filename, legacy_layout=legacy_layout)
     source_line = f"source: {source}\n" if source is not None else ""
+    state_line = "" if legacy_layout else "state: inbox\n"
     path.write_text(
-        f"---\ncreated: {_FIXED_ISO}\ntarget_repo: {target_repo}\ntype: uwi\n"
+        f"---\n{state_line}created: {_FIXED_ISO}\ntarget_repo: {target_repo}\ntype: uwi\n"
         f"question_type: free-form\n{source_line}---\n\n"
         f"## 質問\n\n{question}\n\n## 回答\n\n{answer}",
         encoding="utf-8",
@@ -2403,7 +2413,8 @@ class TestAddBatchOption:
             atk.main(["wi", "add", str(myrepo), "--body-file", str(body_path)], home=tmp_path, now=_FIXED_DT)
 
         assert exc_info.value.code == 0
-        contents = [path.read_text(encoding="utf-8") for path in (notes / "inbox").iterdir()]
+        contents = [path.read_text(encoding="utf-8") for path in (notes / "2024/01").iterdir()]
+        assert len(contents) == 1
         assert all("type: awi" in content for content in contents)
 
     @pytest.mark.parametrize(
@@ -2468,7 +2479,7 @@ class TestAddBatchOption:
             atk.main(["wi", "add", "--batch", self._ENTRY], home=tmp_path, now=_FIXED_DT)
 
         assert exc_info.value.code == 2
-        assert not list((notes / "inbox").iterdir())
+        assert not list(_wi_entries.iter_entry_paths(notes))
 
     def test_imports_from_body_file(
         self,
@@ -2485,7 +2496,7 @@ class TestAddBatchOption:
             atk.main(["wi", "add", "--batch", "--body-file", str(body_path)], home=tmp_path, now=_FIXED_DT)
 
         assert exc_info.value.code == 0
-        assert (notes / "inbox" / "keep.md").is_file()
+        assert (notes / "2024/01/keep.md").is_file()
 
     @staticmethod
     def _patch_editor(monkeypatch: pytest.MonkeyPatch, saved_text: str) -> None:
@@ -2517,8 +2528,8 @@ class TestAddBatchOption:
             atk.main(["wi", "add", "--batch"], home=tmp_path, now=_FIXED_DT)
 
         assert exc_info.value.code == 0
-        assert (notes / "inbox" / "keep.md").read_text(encoding="utf-8") == (
-            "---\ntarget_repo: github.com/example/foo\ntype: awi\n---\n\n取り込む本文  \n"
+        assert (notes / "2024/01/keep.md").read_text(encoding="utf-8") == (
+            "---\nstate: inbox\ntarget_repo: github.com/example/foo\ntype: awi\n---\n\n取り込む本文  \n"
         )
         assert "成功: 1件をinboxへ取り込んだ" in capsys.readouterr().out
 
@@ -2539,7 +2550,7 @@ class TestAddBatchOption:
 
         assert exc_info.value.code == 1
         assert "投入を拒否した" in capsys.readouterr().err
-        assert not list((notes / "inbox").iterdir())
+        assert not list(_wi_entries.iter_entry_paths(notes))
 
 
 class TestMainFailureNextAction:
@@ -2602,13 +2613,12 @@ class TestMainFailureNextAction:
         tmp_path: pathlib.Path,
         monkeypatch: pytest.MonkeyPatch,
         capsys: pytest.CaptureFixture[str],
-        make_clean_repo: Callable[..., pathlib.Path],
     ) -> None:
         """rebaseの中間状態が残るWI保存リポジトリでは、`atk wi edit`が本文を変える前に拒否し、解消操作を示す。"""
-        notes = make_clean_repo(tmp_path, "notes")
-        original = "---\ntype: awi\ntarget_repo: github.com/example/repo\n---\n\n本文\n"
-        entry = notes / "inbox" / "entry.md"
-        entry.parent.mkdir()
+        notes = tmp_path / "notes"
+        git_repository.init_repository(notes)
+        original = "---\nstate: inbox\ntype: awi\ntarget_repo: github.com/example/repo\n---\n\n本文\n"
+        entry = wi_entry_files.entry_path(notes, "entry.md")
         entry.write_text(original, encoding="utf-8")
         git_repository.run_git(notes, "add", "-A")
         git_repository.run_git(notes, "commit", "-m", "setup")

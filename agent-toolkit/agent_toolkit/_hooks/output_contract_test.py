@@ -175,7 +175,7 @@ def test_registered_hook_output_matches_event_contract(
         output = json.loads(result.stdout)
         assert validate_hook_output(event_name, output) == []
         if event_name == "UserPromptSubmit":
-            assert "sessionTitle" not in output.get("hookSpecificOutput", {})
+            assert output["hookSpecificOutput"]["sessionTitle"] == "draft"
             assert not (tmp_path / "claude-agent-toolkit-session-title").exists()
 
 

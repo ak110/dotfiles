@@ -162,26 +162,26 @@ async def test_observing_wait_keeps_record_and_stop_releases_it(
     monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
     monkeypatch.setattr(_wait_schedule, "get_wait_timeout", lambda _request_bucket: 0.0)
     subject.publish("child-session", terminal=True, engine="codex", cwd=str(tmp_path))
-    manager = server_manager.AgentsServerManager(status_writer=None)
-    backend = FakeBackend(manager.sessions, "codex")
-    install_backend(manager, "codex", backend)
-    parent = state.SessionState("parent-session", str(tmp_path), engine="codex")
-    parent.live_child_session_ids.add("child-session")
-    resume_waits.begin_auto_resume_wait(parent, {"status": "completed", "agent_message": "保留本文", "error": None})
-    manager.sessions[parent.session_id] = parent
+    async with server_manager.AgentsServerManager(status_writer=None) as manager:
+        backend = FakeBackend(manager.sessions, "codex")
+        install_backend(manager, "codex", backend)
+        parent = state.SessionState("parent-session", str(tmp_path), engine="codex")
+        parent.live_child_session_ids.add("child-session")
+        resume_waits.begin_auto_resume_wait(parent, {"status": "completed", "agent_message": "保留本文", "error": None})
+        manager.sessions[parent.session_id] = parent
 
-    await manager.wait()
+        await manager.wait()
 
-    assert subject.resolve("child-session").state is subject.Resolution.TERMINAL
-    assert backend.send_calls == 1
-    assert "child-session" in backend.prompts[0]
+        assert subject.resolve("child-session").state is subject.Resolution.TERMINAL
+        assert backend.send_calls == 1
+        assert "child-session" in backend.prompts[0]
 
-    await manager.stop("child-session")
+        await manager.stop("child-session")
 
-    released = subject.resolve("child-session")
-    assert released.state is subject.Resolution.RELEASED
-    assert released.released_reason == "stopped"
-    await manager.close()
+        released = subject.resolve("child-session")
+        assert released.state is subject.Resolution.RELEASED
+        assert released.released_reason == "stopped"
+        await manager.close()
 
 
 @pytest.mark.asyncio
@@ -191,23 +191,23 @@ async def test_retention_expiry_releases_record(
 ) -> None:
     """保持期限へ到達したsessionのレコードを所有主体が解放済みへ置き換える。"""
     monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
-    manager = server_manager.AgentsServerManager(status_writer=None)
-    session = state.SessionState("expiring-session", str(tmp_path), engine="codex", publish_registry=True)
-    session.status = "completed"
-    session.turn_completed = True
-    session.touch()
-    manager.sessions[session.session_id] = session
-    await session.drain_registration()
-    assert subject.resolve("expiring-session").state is subject.Resolution.TERMINAL
+    async with server_manager.AgentsServerManager(status_writer=None) as manager:
+        session = state.SessionState("expiring-session", str(tmp_path), engine="codex", publish_registry=True)
+        session.status = "completed"
+        session.turn_completed = True
+        session.touch()
+        manager.sessions[session.session_id] = session
+        await session.drain_registration()
+        assert subject.resolve("expiring-session").state is subject.Resolution.TERMINAL
 
-    session.retention_deadline = asyncio.get_running_loop().time() - 1.0
-    manager._expire_session(session.session_id)
-    await manager._wait_for_resource_release(session.session_id)
+        session.retention_deadline = asyncio.get_running_loop().time() - 1.0
+        manager._expire_session(session.session_id)
+        await manager._wait_for_resource_release(session.session_id)
 
-    released = subject.resolve("expiring-session")
-    assert released.state is subject.Resolution.RELEASED
-    assert released.released_reason == "retention_expired"
-    await manager.close()
+        released = subject.resolve("expiring-session")
+        assert released.state is subject.Resolution.RELEASED
+        assert released.released_reason == "retention_expired"
+        await manager.close()
 
 
 @pytest.mark.parametrize("session_id", ["", "../child", "child/session"])

@@ -10,6 +10,7 @@ effort `low`を軽量起動で使う（ユーザー指示）。候補モデル�
 
 from __future__ import annotations
 
+import contextlib
 import dataclasses
 import os
 import pathlib
@@ -287,6 +288,20 @@ def _probe_candidate(
     candidate: str,
     context: ProbeContext,
 ) -> tuple[UsageLimitState | None, tuple[str, int, str] | None] | None:
+    """可用性確認で作成する設定を、確認と診断が終わるまで所有する。"""
+    with contextlib.ExitStack() as settings_owner:
+        return _probe_candidate_owned(orchestrator, probe_models, env, cwd, candidate, context, settings_owner)
+
+
+def _probe_candidate_owned(
+    orchestrator: str,
+    probe_models: dict[str, str],
+    env: dict[str, str],
+    cwd: pathlib.Path,
+    candidate: str,
+    context: ProbeContext,
+    settings_owner: contextlib.ExitStack,
+) -> tuple[UsageLimitState | None, tuple[str, int, str] | None] | None:
     """1候補の可用性を判定する。可用なら`None`、失敗なら解除待ちの対象と失敗の内容の組を返す。
 
     解除待ちと候補切替の順序は呼び出し元がengine別に選ぶ。上限を返す場合は通常の失敗案内を省く。
@@ -305,14 +320,17 @@ def _probe_candidate(
                 for diagnostic in choices.warnings:
                     _notify(context, diagnostic, "Claude接続設定を確認する")
                 connection = choices.require_first()
+            connection = _connection.with_current_isolation(connection, env=env)
             probe_env = _connection.connection_environment(probe_env, connection)
             settings = _claude_settings.merge_settings(
                 None,
-                {key: probe_env[key] for key in _connection.AUTH_ENV if key in probe_env and connection.kind != "inherit"},
+                _connection.connection_overrides(connection),
                 None,
                 force_file=bool(probe_env.get("ANTHROPIC_API_KEY") or probe_env.get("ANTHROPIC_AUTH_TOKEN")),
                 isolate_auth=connection.kind != "inherit",
             )
+            if isinstance(settings, _claude_settings.SettingsFile):
+                settings_owner.enter_context(settings)
             separator = probe_argv.index("--")
             probe_argv[separator:separator] = ["--settings", settings]
         result = subprocess.run(
@@ -334,9 +352,6 @@ def _probe_candidate(
             "`atk config set <engine>_high_tier_model <モデル>`で候補を変える",
         )
         return None, (orchestrator, 1, f"engineを起動できません: {error}")
-    finally:
-        if isinstance(settings, _claude_settings.SettingsFile):
-            settings.cleanup()
     _console_title.set_console_title(context.title)
     if result.returncode == 0:
         _notify(context, f"モデル候補の可用性判定に成功しました: {candidate}")

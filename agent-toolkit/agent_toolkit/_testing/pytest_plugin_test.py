@@ -1,12 +1,71 @@
 """実pytestの収集を通し、自動fixtureの登録とディレクトリ境界を確かめる。"""
 
+import json
 import os
 import pathlib
 import subprocess
 import sys
 import textwrap
 
+import psutil
 import pytest
+
+from agent_toolkit._testing import pytest_plugin
+
+
+@pytest.mark.parametrize("mode", ["pass", "fail", "interrupt", "xdist", "explicit"])
+def test_pytest_owns_fixture_directory_and_reclaims_children(tmp_path: pathlib.Path, mode: str) -> None:
+    """公開pytestの正常・失敗・中断とworker終了で専用領域を回収し、証拠と明示領域を保つ。"""
+    evidence = tmp_path / "evidence.json"
+    probe = tmp_path / "probe_test.py"
+    probe.write_text(
+        textwrap.dedent(f"""\
+            import json, pathlib, subprocess, sys
+            import pytest
+            from pyfltr.command import execution_slot
+
+            def test_probe(tmp_path, pytestconfig):
+                owner = execution_slot.read_owner()
+                assert owner is not None
+                child = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(120)'])
+                pathlib.Path({str(evidence)!r}).write_text(json.dumps({{
+                    'basetemp': str(pytestconfig.option.basetemp),
+                    'fixture': str(tmp_path), 'pid': child.pid,
+                }}), encoding='utf-8')
+                {"raise KeyboardInterrupt" if mode == "interrupt" else "assert False" if mode == "fail" else "assert True"}
+        """),
+        encoding="utf-8",
+    )
+    environment = dict(os.environ)
+    environment.pop("PYTEST_ADDOPTS", None)
+    environment["PYTEST_DISABLE_PLUGIN_AUTOLOAD"] = "1"
+    environment["PYFLTR_CACHE_DIR"] = str(tmp_path / "pyfltr")
+    argv = [sys.executable, "-m", "pytest", "-p", "no:cacheprovider", "-o", "addopts=", "-p", pytest_plugin.__name__]
+    if mode == "xdist":
+        argv.extend(["-p", "xdist.plugin", "-n", "2"])
+    explicit = tmp_path / "caller-owned"
+    if mode == "explicit":
+        argv.extend(["--basetemp", str(explicit)])
+    result = subprocess.run(
+        [*argv, "--junitxml", str(tmp_path / "junit.xml"), str(probe)],
+        cwd=tmp_path,
+        env=environment,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        timeout=60,
+        check=False,
+    )
+    assert result.returncode == {"fail": 1, "interrupt": 2}.get(mode, 0), result.stdout + result.stderr
+    observed = json.loads(evidence.read_text(encoding="utf-8"))
+    assert evidence.exists() and (tmp_path / "junit.xml").exists()
+    assert pathlib.Path(observed["basetemp"]).exists() == (mode == "explicit")
+    if mode != "explicit":
+        base = pathlib.Path(observed["basetemp"])
+        # xdist側ではworkerの領域が記録される。controllerが所有する最上位領域も回収される。
+        directory = next(path for path in (base, *base.parents) if path.name == "fixtures")
+        assert not directory.parent.exists()
+    assert not psutil.pid_exists(observed["pid"]) or psutil.Process(observed["pid"]).status() == psutil.STATUS_ZOMBIE
 
 
 @pytest.mark.parametrize("parent_first", [False, True])

@@ -10,7 +10,7 @@ Codexは`$agent-toolkit:<name>`・`$<name>`）で発話した手動のスキル�
 - Codexのplan-mode → `plan_mode_skill_invoked`
 - process-wi → `process_wi_skill_invoked`
 
-セッション名はFunction hooks moduleが設定する。
+セッション名はUserPromptSubmitのコマンドhookが通常状態から設定する。
 
 セッション開始後と会話圧縮後で`agent-toolkit:user-confirmation-and-report`がまだ起動されていない間は、
 実ユーザー発話へ同スキルの起動を促す注記を返す（Codexでは文脈1つにつき1回）。
@@ -72,7 +72,7 @@ lazy from agent_toolkit._common.session_state import (  # noqa: E402  # pylint: 
     read_state,
     update_state,
 )
-lazy from agent_toolkit._hooks import termination_evidence, work_contract
+lazy from agent_toolkit._hooks import session_title, termination_evidence, work_contract
 lazy from agent_toolkit._hooks.host import is_codex_payload  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 
 
@@ -197,11 +197,13 @@ def _claim_verification_notice(session_id: str, now: float) -> bool:
     return claimed
 
 
-def _emit_hook_output(*, additional_context: str | None) -> None:
+def _emit_hook_output(*, additional_context: str | None, title: str | None = None) -> None:
     """UserPromptSubmitの値を持つ応答欄を1つのJSONとして出力する。"""
     hook_specific_output: dict[str, str] = {"hookEventName": "UserPromptSubmit"}
     if additional_context is not None:
         hook_specific_output["additionalContext"] = additional_context
+    if title is not None:
+        hook_specific_output["sessionTitle"] = title
     print(json.dumps({"hookSpecificOutput": hook_specific_output}, ensure_ascii=False))
 
 
@@ -276,6 +278,8 @@ def main(payload_text: str) -> int:
         if match is not None:
             name = match.group(1)
             full_name = f"agent-toolkit:{name}"
+            if not is_codex:
+                session_title.observe_skill(session_id, full_name)
 
             # 対応スキル別にフラグを設定する。
             if is_codex and (name in _PLAN_MODE_NAMES_EXTENDED or full_name in _PLAN_MODE_SKILL_NAMES):
@@ -283,7 +287,8 @@ def main(payload_text: str) -> int:
             if name in _PROCESS_WI_NAMES_EXTENDED or full_name in _PROCESS_WI_SKILL_NAMES:
                 update_state(session_id, _set_process_wi_invoked)
 
-    if additional_context is not None:
-        _emit_hook_output(additional_context=additional_context)
+    title = None if is_codex else session_title.proposed_title(session_id, payload.get("session_title"))
+    if additional_context is not None or title is not None:
+        _emit_hook_output(additional_context=additional_context, title=title)
 
     return 0

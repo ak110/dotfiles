@@ -11,6 +11,7 @@ import secrets
 import stat
 import tempfile
 
+from agent_toolkit._atk.managed_temp import permissions
 from agent_toolkit._atk.managed_temp.errors import ManagedTempError
 from agent_toolkit._atk.managed_temp.inventory import list_managed_temp
 from agent_toolkit._atk.managed_temp.registry import (
@@ -172,6 +173,17 @@ def _create_managed_temp(
     awis: tuple[str, ...],
     session_id: str | None,
 ) -> pathlib.Path:
+    with contextlib.ExitStack() as stack:
+        return _create_managed_temp_scoped(prefix, root, awis, session_id, stack)
+
+
+def _create_managed_temp_scoped(
+    prefix: str,
+    root: pathlib.Path | str | None,
+    awis: tuple[str, ...],
+    session_id: str | None,
+    stack: contextlib.ExitStack,
+) -> pathlib.Path:
     explicit_root = root is not None
     if root is None:
         root_path = _temp_root()
@@ -189,7 +201,9 @@ def _create_managed_temp(
     registry_path: pathlib.Path | None = None
     try:
         if os.name == "posix":
-            root_descriptor = os.open(root_path, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+            root_descriptor = stack.enter_context(
+                permissions.descriptor(root_path, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+            )
             opened_root = os.fstat(root_descriptor)
             if (opened_root.st_dev, opened_root.st_ino) != (validated_root.device, validated_root.inode):
                 raise ManagedTempError(
@@ -204,10 +218,12 @@ def _create_managed_temp(
         _validate_root(root_path, explicit=explicit_root, expected=validated_root)
         if os.name == "posix":
             assert root_descriptor is not None
-            target_descriptor = os.open(
-                path.name,
-                os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW,
-                dir_fd=root_descriptor,
+            target_descriptor = stack.enter_context(
+                permissions.descriptor(
+                    path.name,
+                    os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW,
+                    dir_fd=root_descriptor,
+                )
             )
             opened_target = os.fstat(target_descriptor)
             if created_identity is None or created_identity != (opened_target.st_dev, opened_target.st_ino):
@@ -258,17 +274,15 @@ def _create_managed_temp(
         if isinstance(error, ManagedTempError):
             raise
         raise ManagedTempError(f"管理情報を作成できない: {error}") from error
-    finally:
-        if target_descriptor is not None:
-            with contextlib.suppress(OSError):
-                os.close(target_descriptor)
-        if root_descriptor is not None:
-            with contextlib.suppress(OSError):
-                os.close(root_descriptor)
 
 
 def create_session_temp(prefix: str, session_root: pathlib.Path | str) -> pathlib.Path:
     """登録済みのセッションのmanaged-temp直下へ、個別登録を持たない作業ディレクトリを作成する。"""
+    with contextlib.ExitStack() as stack:
+        return _create_session_temp_scoped(prefix, session_root, stack)
+
+
+def _create_session_temp_scoped(prefix: str, session_root: pathlib.Path | str, stack: contextlib.ExitStack) -> pathlib.Path:
     if not is_valid_prefix(prefix):
         raise _invalid_prefix_error(prefix)
     root_argument = pathlib.Path(session_root)
@@ -285,7 +299,9 @@ def create_session_temp(prefix: str, session_root: pathlib.Path | str) -> pathli
     created_identity: tuple[int, int] | None = None
     try:
         if os.name == "posix":
-            root_descriptor = os.open(validated.path, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+            root_descriptor = stack.enter_context(
+                permissions.descriptor(validated.path, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+            )
             opened_root = os.fstat(root_descriptor)
             if (opened_root.st_dev, opened_root.st_ino) != (validated.device, validated.inode):
                 raise ManagedTempError(
@@ -301,20 +317,17 @@ def create_session_temp(prefix: str, session_root: pathlib.Path | str) -> pathli
                     next_action=ManagedTempError.PERMISSION_NEXT_ACTION,
                 )
             created_identity = (created.st_dev, created.st_ino)
-            descriptor = os.open(
+            with permissions.descriptor(
                 path.name,
                 os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW,
                 dir_fd=root_descriptor,
-            )
-            try:
+            ) as descriptor:
                 opened = os.fstat(descriptor)
                 if created_identity != (opened.st_dev, opened.st_ino):
                     raise ManagedTempError(
                         f"セッション内管理対象が作成中に置換された: {path}", next_action=ManagedTempError.REPLACED_NEXT_ACTION
                     )
                 os.fchmod(descriptor, 0o700)
-            finally:
-                os.close(descriptor)
         elif os.name == "nt":
             _windows_secure_path(path, directory=True)
             created_identity = _windows_identity(path)
@@ -337,7 +350,3 @@ def create_session_temp(prefix: str, session_root: pathlib.Path | str) -> pathli
         if isinstance(error, ManagedTempError):
             raise
         raise ManagedTempError(f"セッション内管理対象を作成できない: {error}") from error
-    finally:
-        if root_descriptor is not None:
-            with contextlib.suppress(OSError):
-                os.close(root_descriptor)

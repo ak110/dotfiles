@@ -62,6 +62,7 @@ def cmd_grep(args: argparse.Namespace, private_notes: pathlib.Path) -> int:
         entry_type=args.type,
         answered=args.answered,
         source=args.source,
+        important=getattr(args, "important", "all"),
     ):
         match_count = 0
         for line_no, line in enumerate(text.splitlines(), start=1):

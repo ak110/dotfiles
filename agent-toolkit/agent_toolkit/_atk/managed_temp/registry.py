@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import datetime
 import hashlib
 import json
@@ -16,6 +17,7 @@ import unicodedata
 # ヘルプや他の処理で使わない依存は、使用時まで読み込まない。
 lazy import platformdirs
 
+from agent_toolkit._atk.managed_temp import permissions
 from agent_toolkit._atk.managed_temp.errors import ManagedTempError
 from agent_toolkit._common import state_paths as _state_paths
 lazy from agent_toolkit._atk.managed_temp.windows_security import (
@@ -263,26 +265,21 @@ def _registry_path(path: pathlib.Path) -> pathlib.Path:
 
 def _write_private_json(path: pathlib.Path, value: dict[str, typing.Any]) -> None:
     payload = (json.dumps(value, ensure_ascii=True, sort_keys=True) + "\n").encode()
-    descriptor: int | None = None
     try:
         flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
         if os.name == "posix":
             flags |= os.O_NOFOLLOW
-        descriptor = os.open(path, flags, 0o600)
-        if os.name == "posix":
-            os.fchmod(descriptor, 0o600)
-        with os.fdopen(descriptor, "wb") as output:
-            descriptor = None
-            output.write(payload)
-            output.flush()
-            os.fsync(output.fileno())
+        with permissions.descriptor(path, flags, 0o600) as descriptor:
+            if os.name == "posix":
+                os.fchmod(descriptor, 0o600)
+            with os.fdopen(descriptor, "wb", closefd=False) as output:
+                output.write(payload)
+                output.flush()
+                os.fsync(output.fileno())
         if os.name == "nt":
             _windows_secure_path(path, directory=False)
     except OSError as error:
         raise ManagedTempError(f"外部状態を書き込めない: {path}: {error}") from error
-    finally:
-        if descriptor is not None:
-            os.close(descriptor)
 
 
 def _load_private_json(path: pathlib.Path) -> dict[str, typing.Any]:
@@ -297,8 +294,10 @@ def _load_private_json(path: pathlib.Path) -> dict[str, typing.Any]:
                 raise ManagedTempError(
                     f"外部状態の所有者または権限が不正: {path}", next_action=ManagedTempError.PERMISSION_NEXT_ACTION
                 )
-            descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
-            with os.fdopen(descriptor, "r", encoding="utf-8") as source:
+            with (
+                permissions.descriptor(path, os.O_RDONLY | os.O_NOFOLLOW) as descriptor,
+                os.fdopen(descriptor, "r", encoding="utf-8", closefd=False) as source,
+            ):
                 opened = os.fstat(source.fileno())
                 value = json.load(source)
             after = path.lstat()
@@ -517,36 +516,35 @@ def _write_marker(
 ) -> None:
     marker_path = path / _MARKER_NAME
     if os.name == "posix":
-        owns_directory_descriptor = directory_descriptor is None
-        if owns_directory_descriptor:
-            directory_descriptor = os.open(path, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
-        descriptor: int | None = None
-        try:
+        with contextlib.ExitStack() as stack:
+            if directory_descriptor is None:
+                directory_descriptor = stack.enter_context(
+                    permissions.descriptor(path, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+                )
             assert directory_descriptor is not None
-            descriptor = os.open(
-                _MARKER_NAME,
-                os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW,
-                0o600,
-                dir_fd=directory_descriptor,
+            descriptor = stack.enter_context(
+                permissions.descriptor(
+                    _MARKER_NAME,
+                    os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW,
+                    0o600,
+                    dir_fd=directory_descriptor,
+                )
             )
             os.fchmod(descriptor, 0o600)
-            with os.fdopen(descriptor, "wb") as marker:
-                descriptor = None
+            with os.fdopen(descriptor, "wb", closefd=False) as marker:
                 marker.write((json.dumps(record, ensure_ascii=True, sort_keys=True) + "\n").encode())
                 marker.flush()
                 os.fsync(marker.fileno())
-        finally:
-            if descriptor is not None:
-                os.close(descriptor)
-            if owns_directory_descriptor:
-                assert directory_descriptor is not None
-                os.close(directory_descriptor)
         return
     _write_private_json(marker_path, record)
 
 
 def _load_marker(directory_descriptor: int, path: pathlib.Path) -> dict[str, typing.Any]:
-    descriptor: int | None = None
+    with contextlib.ExitStack() as stack:
+        return _load_marker_scoped(directory_descriptor, path, stack)
+
+
+def _load_marker_scoped(directory_descriptor: int, path: pathlib.Path, stack: contextlib.ExitStack) -> dict[str, typing.Any]:
     try:
         before = os.stat(_MARKER_NAME, dir_fd=directory_descriptor, follow_symlinks=False)
         if not stat.S_ISREG(before.st_mode):
@@ -557,21 +555,19 @@ def _load_marker(directory_descriptor: int, path: pathlib.Path) -> dict[str, typ
             raise ManagedTempError(
                 f"管理情報の所有者または権限が不正: {path / _MARKER_NAME}", next_action=ManagedTempError.PERMISSION_NEXT_ACTION
             )
-        descriptor = os.open(_MARKER_NAME, os.O_RDONLY | os.O_NOFOLLOW, dir_fd=directory_descriptor)
+        descriptor = stack.enter_context(
+            permissions.descriptor(_MARKER_NAME, os.O_RDONLY | os.O_NOFOLLOW, dir_fd=directory_descriptor)
+        )
         opened = os.fstat(descriptor)
         if (before.st_dev, before.st_ino) != (opened.st_dev, opened.st_ino):
             raise ManagedTempError(
                 f"管理情報が検証中に置換された: {path / _MARKER_NAME}", next_action=ManagedTempError.REPLACED_NEXT_ACTION
             )
-        with os.fdopen(descriptor, "r", encoding="utf-8") as marker:
-            descriptor = None
+        with os.fdopen(descriptor, "r", encoding="utf-8", closefd=False) as marker:
             value = json.load(marker)
         after = os.stat(_MARKER_NAME, dir_fd=directory_descriptor, follow_symlinks=False)
     except (OSError, UnicodeError, json.JSONDecodeError) as error:
         raise ManagedTempError(f"管理情報を検証できない: {path / _MARKER_NAME}: {error}") from error
-    finally:
-        if descriptor is not None:
-            os.close(descriptor)
     if (after.st_dev, after.st_ino) != (opened.st_dev, opened.st_ino):
         raise ManagedTempError(
             f"管理情報が検証中に置換された: {path / _MARKER_NAME}", next_action=ManagedTempError.REPLACED_NEXT_ACTION

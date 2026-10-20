@@ -33,6 +33,16 @@ AUTH_ENV = frozenset(
         "CLAUDE_CODE_USE_FOUNDRY",
         "ANTHROPIC_FOUNDRY_API_KEY",
         "ANTHROPIC_FOUNDRY_RESOURCE",
+        "AWS_ACCESS_KEY_ID",
+        "AWS_SECRET_ACCESS_KEY",
+        "AWS_SESSION_TOKEN",
+        "AWS_PROFILE",
+        "AWS_REGION",
+        "AWS_DEFAULT_REGION",
+        "ANTHROPIC_DEFAULT_HAIKU_MODEL",
+        "ANTHROPIC_DEFAULT_SONNET_MODEL",
+        "ANTHROPIC_DEFAULT_OPUS_MODEL",
+        "ANTHROPIC_MODEL",
     }
 )
 
@@ -43,6 +53,7 @@ class Connection:
 
     kind: str
     api_env_file: str | None = None
+    isolation_env_file: str | None = None
 
 
 class SettingsFile(str):
@@ -51,6 +62,12 @@ class SettingsFile(str):
     def cleanup(self) -> None:
         """他の起動の設定を触らず、自身のファイルを回収する。"""
         pathlib.Path(self).unlink(missing_ok=True)
+
+    def __enter__(self) -> SettingsFile:
+        return self
+
+    def __exit__(self, *_exception: object) -> None:
+        self.cleanup()
 
 
 def read_api_env_file(path: str) -> dict[str, str]:
@@ -145,7 +162,9 @@ def cleanup_settings(options: object) -> None:
         settings.cleanup()
 
 
-def subscription_available(env: Mapping[str, str] | None = None, *, platform: str = sys.platform) -> bool:
+def subscription_available(
+    env: Mapping[str, str] | None = None, *, platform: str = sys.platform, isolation_keys: frozenset[str] = AUTH_ENV
+) -> bool:
     """OAuth環境またはClaude CodeのOAuth資格情報の存在を値の公開なしに判定する。"""
     environment = os.environ if env is None else env
     if environment.get("CLAUDE_CODE_OAUTH_TOKEN"):
@@ -155,8 +174,8 @@ def subscription_available(env: Mapping[str, str] | None = None, *, platform: st
         # 公開仕様: https://code.claude.com/docs/en/cli-reference#cli-commands
         try:
             result = subprocess.run(
-                ["claude", "--settings", merge_settings(None, {}, None), "auth", "status"],
-                env=clean_environment(environment),
+                ["claude", "--settings", merge_settings(None, dict.fromkeys(isolation_keys, ""), None), "auth", "status"],
+                env=clean_environment(environment, isolation_keys=isolation_keys),
                 capture_output=True,
                 text=True,
                 encoding="utf-8",
@@ -177,17 +196,32 @@ def subscription_available(env: Mapping[str, str] | None = None, *, platform: st
     return isinstance(oauth, dict) and bool(oauth.get("accessToken") or oauth.get("refreshToken"))
 
 
-def clean_environment(env: Mapping[str, str]) -> dict[str, str]:
+def clean_environment(env: Mapping[str, str], *, isolation_keys: frozenset[str] = AUTH_ENV) -> dict[str, str]:
     """親のAPI接続変数を除去する。OAuthはサブスクリプションの認証として維持する。"""
-    return {key: value for key, value in env.items() if key not in AUTH_ENV}
+    return {key: value for key, value in env.items() if key not in isolation_keys}
+
+
+def connection_overrides(connection: Connection) -> dict[str, str]:
+    """SDKとsettingsの両方へ渡す、選択した接続の環境上書きを返す。"""
+    if connection.kind == "inherit":
+        return {}
+    path = connection.isolation_env_file or connection.api_env_file
+    isolated = read_api_env_file(path) if path else {}
+    result = dict.fromkeys(AUTH_ENV | isolated.keys(), "")
+    if connection.kind == "api" and connection.api_env_file:
+        result.update(isolated if connection.api_env_file == path else read_api_env_file(connection.api_env_file))
+        result["CLAUDE_CODE_OAUTH_TOKEN"] = ""
+        result["CLAUDE_CODE_OAUTH_REFRESH_TOKEN"] = ""
+    return result
 
 
 def connection_environment(env: Mapping[str, str], connection: Connection) -> dict[str, str]:
     """選択したAPIファイルだけを適用する。"""
     if connection.kind == "inherit":
         return dict(env)
-    result = clean_environment(env)
-    if connection.api_env_file:
+    overrides = connection_overrides(connection)
+    result = {key: value for key, value in env.items() if key not in overrides}
+    if connection.kind == "api" and connection.api_env_file:
         result.update(read_api_env_file(connection.api_env_file))
         for key in ("CLAUDE_CODE_OAUTH_TOKEN", "CLAUDE_CODE_OAUTH_REFRESH_TOKEN"):
             result.pop(key, None)

@@ -64,14 +64,47 @@ def _repo(tmp_path: pathlib.Path) -> pathlib.Path:
     return repo
 
 
-def _compare(repo: pathlib.Path, output: pathlib.Path, operation: str, bases: tuple[str, str, str, str]) -> int:
+def _compare(repo: pathlib.Path, output: pathlib.Path, operation: str, bases: tuple[str, str, str, str], *extra: str) -> int:
     argv = ["run-script", "history-compare", "--", "--operation", operation, "--work-dir", str(repo), "--output", str(output)]
     for name, value in zip(("old-base", "old-head", "new-base", "new-head"), bases, strict=True):
         argv.extend((f"--{name}", value))
+    argv.extend(extra)
     with pytest.raises(SystemExit) as raised:
         atk.main(argv)
     assert isinstance(raised.value.code, int)
     return raised.value.code
+
+
+@pytest.mark.parametrize("violation", ["none", "unspecified", "unchanged", "outside", "subject", "paths", "order"])
+def test_conflict_resolution_requires_explicit_and_unique_mapping(
+    repo: pathlib.Path, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], violation: str
+) -> None:
+    """競合解消で変わったcommitだけを明示し、件名・変更パス・相対順の対応を公開入口で検収する。"""
+    base = _git(repo, "rev-parse", "HEAD")
+    first = _commit(repo, "first.txt", "旧変更", "一つ目")
+    old_head = _commit(repo, "second.txt", "通常変更", "二つ目")
+    _git(repo, "checkout", "-b", "resolved", base)
+    new_base = _commit(repo, "upstream.txt", "上流", "上流")
+    if violation == "order":
+        _commit(repo, "second.txt", "通常変更", "二つ目")
+    target = _commit(
+        repo, "other.txt" if violation == "paths" else "first.txt", "解消変更", "別件" if violation == "subject" else "一つ目"
+    )
+    if violation != "order":
+        _commit(repo, "second.txt", "別の変更" if violation == "unspecified" else "通常変更", "二つ目")
+    head = _git(repo, "rev-parse", "HEAD")
+    output = tmp_path / "resolved.json"
+    if violation == "none":
+        assert _compare(repo, output, "rebase", (base, old_head, new_base, head)) == 1
+        assert not output.exists()
+        assert first in capsys.readouterr().err
+    selected = old_head if violation == "unchanged" else base if violation == "outside" else first
+    result = _compare(repo, output, "rebase", (base, old_head, new_base, head), "--resolved-conflict", selected[:12])
+    assert result == (0 if violation == "none" else 1)
+    if violation == "none":
+        assert json.loads(output.read_text(encoding="utf-8")) == {first: target, old_head: head}
+    else:
+        assert not output.exists()
 
 
 @pytest.mark.parametrize("no_prefix", [False, True])

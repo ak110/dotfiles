@@ -4,7 +4,7 @@ import { type Engine, expect, mock, test } from "claude-code/testing";
 // 入力はClaude Codeの型宣言SessionRateLimit、TurnCompleteInput、StopFailureHookInputに従う。
 const TURN = { answer: "", durationMs: 0, isAborted: false, turnId: "t1", reason: "answer" as const };
 
-async function engine($: Engine, on: On, windows: SessionRateLimit[], env: Record<string, string> = {}, now?: { value: number }) {
+async function engine($: Engine, on: On, windows: SessionRateLimit[], env: Record<string, string> = {}, now?: { value: number }, request?: { value: string }) {
   mock.env(on, env);
   let release: (() => void) | undefined;
   let cleared: (() => void) | undefined;
@@ -24,12 +24,11 @@ async function engine($: Engine, on: On, windows: SessionRateLimit[], env: Recor
   on("session.usage", () => ({ value: { startedAt: 0, context: { tokens: 0, window: 1, percent: 0 }, rateLimits: windows } }));
   on("session.start", (_$, e) => ({ cwd: e.cwd }));
   on("session.id", () => ({ value: "usage-test" }));
-  on("fs.write", () => ({ value: undefined }));
-  on("fs.read", () => ({ value: "consumed" }));
+  on("fs.write", (_$, e) => { if (request && e.path.includes("rate-limit-")) request.value = e.text; return { value: undefined }; });
+  on("fs.read", (_$, e) => ({ value: e.path.includes("rate-limit-") ? request?.value ?? "consumed" : "consumed" }));
   on("tool.register", (_$, e) => ({ value: { tool: e.name } }));
   on("turn.complete", () => ({ text: "" }));
   on("turn.start", (_$, e) => ({ turnId: e.turnId }));
-  on("classic.StopFailure", () => ({}));
   on("ui.status", (_$, e) => { statuses.push(e.text); if (e.text === undefined) cleared?.(); return { value: undefined }; });
   on("prompt.submit", (_$, e) => { prompts.push(e.text); return { text: "" }; });
   await $.session.start({ cwd: "/work", surface: null, isInteractive: true });
@@ -61,7 +60,7 @@ test("新しい上限の契機は予約時刻を置き換える", async ($, on) 
   const { clock, prompts } = await engine($, on, windows);
   await $.turn.complete(TURN);
   windows[0]!.resetsAt = "1970-01-01T00:00:02Z";
-  await $.classic.StopFailure({ error: "rate_limit" });
+  await $.turn.complete(TURN);
   await clock.advance(1001);
   expect(prompts).toEqual([]);
   await clock.advance(1000);
@@ -72,7 +71,7 @@ for (const resetsAt of [undefined, "1970-01-01T00:00:00Z", "invalid"]) {
   test(`解除時刻${String(resetsAt)}は300秒ごとに利用枠を確かめてから投入する`, async ($, on) => {
     const windows = [{ kind: "seven_day", percentUsed: 100, resetsAt }];
     const { clock, prompts, statuses } = await engine($, on, windows);
-    await $.classic.StopFailure({ error: "rate_limit" });
+    await $.turn.complete(TURN);
     await clock.advance(299_999);
     expect(prompts).toEqual([]);
     await clock.advance(1);
@@ -88,7 +87,7 @@ test("解除時刻後に始まったメインturnへ重複投入しない", asyn
   // timerが遅れて処理されるホストを再現し、turn.startを先に配送する。
   const now = { value: 0 };
   const { clock, prompts, statuses } = await engine($, on, [{ kind: "five_hour", percentUsed: 100, resetsAt: "1970-01-01T00:00:01Z" }], {}, now);
-  await $.classic.StopFailure({ error: "rate_limit" });
+  await $.turn.complete(TURN);
   now.value = 2000;
   await $.turn.start({ text: "続けて", turnId: "t2" });
   await clock.advance(1001);
@@ -97,10 +96,22 @@ test("解除時刻後に始まったメインturnへ重複投入しない", asyn
 });
 
 const DELEGATED_ENVS: Record<string, string>[] = [{ AGENT_TOOLKIT_DELEGATED_SESSION: "1" }, { AGENT_TOOLKIT_OWNER_SESSION: "owner" }];
+
+test("StopFailureコマンドhookの要求は使用率未反映でも予約し一度消費する", async ($, on) => {
+  const request = { value: "requested" };
+  const { clock, prompts } = await engine($, on, [], { HOME: "/home/tester" }, undefined, request);
+  await $.turn.complete(TURN);
+  expect(request.value).toBe("consumed");
+  await clock.advance(300_000);
+  expect(prompts.length).toBe(1);
+  await $.turn.complete(TURN);
+  await clock.advance(300_000);
+  expect(prompts.length).toBe(1);
+});
 for (const env of DELEGATED_ENVS) {
   test(`委譲先${JSON.stringify(env)}は予約しない`, async ($, on) => {
     const { clock, prompts, statuses } = await engine($, on, [{ kind: "five_hour", percentUsed: 100, resetsAt: "1970-01-01T00:00:01Z" }], env);
-    await $.classic.StopFailure({ error: "rate_limit" });
+    await $.turn.complete(TURN);
     await $.turn.complete(TURN);
     await clock.advance(400_000);
     expect(prompts).toEqual([]);
@@ -111,11 +122,9 @@ for (const env of DELEGATED_ENVS) {
 test("サブエージェントと通常終了は予約しない", async ($, on) => {
   const windows = [{ kind: "five_hour", percentUsed: 100, resetsAt: "1970-01-01T00:00:01Z" }];
   const { clock, prompts, statuses } = await engine($, on, windows);
-  await $.classic.StopFailure({ error: "rate_limit", agent_id: "child" });
   await $.turn.complete({ ...TURN, agentId: "child" });
   windows[0]!.percentUsed = 99.9;
   await $.turn.complete(TURN);
-  await $.classic.StopFailure({ error: "server_error" });
   await clock.advance(400_000);
   expect(prompts).toEqual([]);
   expect(statuses).toEqual([]);

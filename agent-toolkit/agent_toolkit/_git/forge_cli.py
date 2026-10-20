@@ -5,7 +5,7 @@ import shlex
 
 from agent_toolkit._git import remote
 
-_GLAB_HOST_VARIABLES = ("GITLAB_HOST", "GITLAB_URI", "GITLAB_URL")
+_GLAB_HOST_VARIABLES = ("GITLAB_HOST", "GITLAB_URI", "GL_HOST")
 
 
 def glab_environment(repository: str | remote.RemoteLocation, *, prefer_environment: bool = False) -> dict[str, str]:
@@ -21,11 +21,12 @@ def glab_environment(repository: str | remote.RemoteLocation, *, prefer_environm
         env["GITLAB_HOST"] = inherited_host
     elif authority is not None:
         env["GITLAB_HOST"] = authority
-    if authority is not None and not prefer_environment:
+    # 識別用ホストのapi_host・api_protocol・tokenはglabのホスト別設定で解決する。
+    # HTTP(S) URLだけは呼び出し元が指定したAPI接続先として扱う。
+    explicit_endpoint = target.protocol in {"http", "https"} and not (prefer_environment and inherited_host)
+    if authority is not None and explicit_endpoint:
         env["GITLAB_API_HOST"] = authority
-    if target.protocol in {"http", "https"} and (
-        not prefer_environment or not inherited_host and not (env.get("GLAB_API_PROTOCOL") or env.get("API_PROTOCOL"))
-    ):
+    if explicit_endpoint and target.protocol is not None:
         env["GLAB_API_PROTOCOL"] = target.protocol
     return env
 
@@ -64,9 +65,11 @@ def failure_log_commands(
     repo = glab_repository(repository, prefer_environment=prefer_environment)
     assignments: list[str] = []
     environment = glab_environment(repository, prefer_environment=prefer_environment)
-    if target.authority is not None and not prefer_environment:
+    inherited_host = any(os.environ.get(name) for name in _GLAB_HOST_VARIABLES)
+    explicit_endpoint = target.protocol in {"http", "https"} and not (prefer_environment and inherited_host)
+    if target.authority is not None and explicit_endpoint:
         assignments.append(f"GITLAB_API_HOST={environment['GITLAB_API_HOST']}")
-    if target.protocol in {"http", "https"}:
+    if explicit_endpoint:
         protocol = environment.get("GLAB_API_PROTOCOL") or environment.get("API_PROTOCOL")
         if protocol:
             assignments.append(f"GLAB_API_PROTOCOL={protocol}")

@@ -20,9 +20,11 @@ from agent_toolkit._atk.wi.constants import (
     TRANSITION_EXPLICIT_STATES,
     bulk_source_states,
 )
+from agent_toolkit._atk.wi.layout import entry_state_of
 from agent_toolkit._atk.wi.mutations import content as mutation_content
 from agent_toolkit._atk.wi.mutations import dependencies as mutation_dependencies
 from agent_toolkit._atk.wi.mutations import transitions as mutation_transitions
+from agent_toolkit._testing.wi_entry_files import entry_path as _test_entry_path
 from agent_toolkit._testing.wi_mutations_support import (
     _disable_convert_git,
     _disable_transition_git,
@@ -43,6 +45,16 @@ _AGENT_ENVIRONMENT_VARIABLES = ("AI_AGENT", "CODEX_CI", "CLAUDECODE", "CURSOR_AG
 _USER_COMMENT_ERROR = "失敗: " + user_comment.AGENT_USER_COMMENT_EDIT_ERROR
 
 
+def _set_state(path: pathlib.Path, state: str) -> pathlib.Path:
+    """固定パスを保ってテスト項目の状態を更新する。"""
+    parsed = frontmatter_parser.parse_frontmatter(path.read_text(encoding="utf-8"))
+    assert parsed is not None
+    metadata, body = parsed
+    metadata["state"] = state
+    path.write_text(frontmatter_parser.serialize_frontmatter(metadata, body), encoding="utf-8")
+    return path
+
+
 def _write_body_file(tmp_path: pathlib.Path, body: str) -> pathlib.Path:
     """CLIへ渡す本文ファイルを作成する。"""
     body_file = tmp_path / "body.md"
@@ -51,7 +63,7 @@ def _write_body_file(tmp_path: pathlib.Path, body: str) -> pathlib.Path:
 
 
 def test_flat_awi_operations_are_public(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """平引数遷移が戻り値とファイル移動を一貫して反映する。"""
+    """平引数遷移が固定パスを保ち、戻り値と保存状態を一貫して反映する。"""
     notes = _setup_notes(tmp_path)
     _write_awi_file(notes, "entry.md")
     monkeypatch.setattr(_wi_sync, "repo_lock", lambda *_args, **_kwargs: contextlib.nullcontext())
@@ -65,7 +77,8 @@ def test_flat_awi_operations_are_public(tmp_path: pathlib.Path, monkeypatch: pyt
         now=_FIXED_DT,
     )
     assert filenames == ["entry.md"]
-    assert (notes / "processing/entry.md").is_file()
+    assert _test_entry_path(notes, "entry.md").is_file()
+    assert entry_state_of(_test_entry_path(notes, "entry.md")) == "processing"
 
 
 @pytest.mark.parametrize("terminal_state", ["adopted", "rejected"])
@@ -80,34 +93,37 @@ def test_agent_reopens_terminal_entry_without_old_result(
     notes = _setup_notes(tmp_path)
     source = _write_awi_file(notes, "entry.md")
     source.write_text(source.read_text(encoding="utf-8") + "\n## 処理結果\n\n- 誤った終端\n", encoding="utf-8")
-    terminal = notes / terminal_state / source.name
-    terminal.parent.mkdir(exist_ok=True)
-    source.replace(terminal)
+    terminal = _set_state(source, terminal_state)
     monkeypatch.setenv("AI_AGENT", "1")
     _disable_transition_git(monkeypatch)
 
     with pytest.raises(SystemExit) as first:
         atk.main(["wi", action, source.name, f"--state={terminal_state}"], home=tmp_path)
     assert first.value.code == 0
-    destination = notes / ("hold" if action == "hold" else "inbox") / source.name
+    destination = _test_entry_path(notes, source.name)
     assert destination.is_file()
+    assert destination == source == terminal
+    assert entry_state_of(destination) == ("hold" if action == "hold" else "inbox")
     assert "## 処理結果" not in destination.read_text(encoding="utf-8")
 
     if action == "hold":
         with pytest.raises(SystemExit) as second:
             atk.main(["wi", "unhold", source.name], home=tmp_path)
         assert second.value.code == 0
-        assert (notes / "inbox" / source.name).is_file()
+        assert _test_entry_path(notes, source.name).is_file()
+        assert entry_state_of(source) == "inbox"
 
 
-def _place_awi(notes: pathlib.Path, filename: str, state: str, body: str = "テスト本文") -> pathlib.Path:
-    """AWIを指定状態のディレクトリへ置き、そのパスを返す。"""
+def _place_awi(
+    notes: pathlib.Path, filename: str, state: str, body: str = "テスト本文", *, legacy_layout: bool = False
+) -> pathlib.Path:
+    """AWIを指定状態へ設定し、旧配置の読取検証では状態ディレクトリへ置く。"""
     source = _write_awi_file(notes, filename, body=body)
-    target = notes / state / filename
-    if source != target:
-        target.parent.mkdir(exist_ok=True)
+    if legacy_layout:
+        target = _test_entry_path(notes, filename, state=state, legacy_layout=True)
         source.replace(target)
-    return target
+        return _set_state(target, state)
+    return _set_state(source, state)
 
 
 _TERMINAL_DIRECTORIES = {"adopt": "adopted", "reject": "rejected"}
@@ -135,32 +151,35 @@ def test_filename_terminal_transition_reaches_every_bulk_source_state(
         atk.main(["wi", action, "entry.md", "--note=終端する"], home=tmp_path)
 
     assert exc_info.value.code == 0
-    destination = notes / _TERMINAL_DIRECTORIES[action] / "entry.md"
+    destination = _test_entry_path(notes, "entry.md")
     assert destination.is_file()
-    assert not source.exists()
+    assert source == destination
+    assert entry_state_of(destination) == _TERMINAL_DIRECTORIES[action]
     assert "## 処理結果" in destination.read_text(encoding="utf-8")
 
 
 @pytest.mark.parametrize("action", ["adopt", "reject"])
-def test_filename_terminal_transition_prefers_processing_over_hold(
+def test_legacy_duplicate_names_stop_before_terminal_transition(
     action: str,
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """同名がprocessingとholdにある場合はprocessing側を終端し、hold側を残す。"""
+    """旧配置の同名項目が固定パスへ衝突する場合は両方の本文と状態を保持する。"""
     notes = _setup_notes(tmp_path)
-    processing = _place_awi(notes, "entry.md", "processing", body="処理中の本文")
-    held = _place_awi(notes, "entry.md", "hold", body="保留中の本文")
+    processing = _place_awi(notes, "entry.md", "processing", body="処理中の本文", legacy_layout=True)
+    held = _place_awi(notes, "entry.md", "hold", body="保留中の本文", legacy_layout=True)
     _disable_transition_git(monkeypatch)
 
     with pytest.raises(SystemExit) as exc_info:
         atk.main(["wi", action, "entry.md"], home=tmp_path)
 
-    assert exc_info.value.code == 0
-    assert not processing.exists()
+    assert exc_info.value.code == 2
+    assert processing.is_file()
     assert held.is_file()
-    destination = notes / _TERMINAL_DIRECTORIES[action] / "entry.md"
-    assert "処理中の本文" in destination.read_text(encoding="utf-8")
+    assert entry_state_of(processing) == "processing"
+    assert entry_state_of(held) == "hold"
+    assert "処理中の本文" in processing.read_text(encoding="utf-8")
+    assert "保留中の本文" in held.read_text(encoding="utf-8")
 
 
 def test_reject_if_inbox_keeps_all_targets_when_hold_is_included(
@@ -179,7 +198,8 @@ def test_reject_if_inbox_keeps_all_targets_when_hold_is_included(
     assert exc_info.value.code == 2
     assert inbox_entry.is_file()
     assert held_entry.is_file()
-    assert not (notes / "rejected").exists() or not any((notes / "rejected").iterdir())
+    assert entry_state_of(inbox_entry) == "inbox"
+    assert entry_state_of(held_entry) == "hold"
 
 
 def test_hold_does_not_resolve_held_entry(
@@ -209,10 +229,7 @@ def test_user_can_remove_individual_entry_from_every_state(
     """人間環境の個別削除は暗黙・明示指定とも全状態を対象にする。"""
     notes = _setup_notes(tmp_path)
     source = _write_awi_file(notes, "entry.md")
-    target = notes / state / source.name
-    if source != target:
-        target.parent.mkdir(exist_ok=True)
-        source.replace(target)
+    target = _set_state(source, state)
     _disable_transition_git(monkeypatch)
     args = ["wi", "rm", source.name]
     if state == "processing":
@@ -236,9 +253,7 @@ def test_agent_can_remove_individual_entry_from_allowed_state(
     """エージェント環境の個別削除はinboxとholdを対象にする。"""
     notes = _setup_notes(tmp_path)
     source = _write_awi_file(notes, "entry.md")
-    target = notes / state / source.name
-    if source != target:
-        source.replace(target)
+    target = _set_state(source, state)
     monkeypatch.setenv("AI_AGENT", "1")
     _disable_transition_git(monkeypatch)
 
@@ -261,9 +276,7 @@ def test_agent_rejects_individual_entry_from_forbidden_state(
     """エージェント環境では禁止状態を状態名付きで拒否し、対象を保持する。"""
     notes = _setup_notes(tmp_path)
     source = _write_awi_file(notes, "entry.md")
-    target = notes / state / source.name
-    target.parent.mkdir(exist_ok=True)
-    source.replace(target)
+    target = _set_state(source, state)
     monkeypatch.setenv("AI_AGENT", "1")
     _disable_transition_git(monkeypatch)
     args = ["wi", "rm", source.name]
@@ -284,20 +297,20 @@ def test_agent_rejects_individual_entry_from_forbidden_state(
     assert target.is_file()
 
 
-def test_transition_restores_missing_state_directories_before_commit(
+def test_transition_commits_fixed_path(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """任意状態ディレクトリが不在でも全状態をgit addできる状態へ戻す。"""
+    """状態遷移は変更した固定パスだけをcommit対象にする。"""
     notes = _setup_notes(tmp_path)
-    (notes / "hold").rmdir()
     _write_awi_file(notes, "entry.md")
     monkeypatch.setattr(_wi_sync, "repo_lock", lambda *_args, **_kwargs: contextlib.nullcontext())
     monkeypatch.setattr(_wi_sync, "push_pending_commits", lambda _path: None)
     monkeypatch.setattr(_wi_sync, "pull", lambda _path: None)
 
     def assert_state_paths_exist(_notes: pathlib.Path, _message: str, paths: list[str], **_kwargs: object) -> None:
-        assert all((_notes / path).is_dir() for path in paths)
+        assert paths == ["2026/10/entry.md"]
+        assert all((_notes / path).is_file() for path in paths)
 
     monkeypatch.setattr(_wi_sync, "commit_and_push", assert_state_paths_exist)
 
@@ -308,7 +321,7 @@ def test_transition_restores_missing_state_directories_before_commit(
         now=_FIXED_DT,
     )
 
-    assert (notes / "processing/entry.md").is_file()
+    assert _test_entry_path(notes, "entry.md").is_file()
 
 
 @pytest.mark.parametrize(
@@ -406,7 +419,7 @@ def test_cooldown_return_sets_one_utc_deadline_and_start_clears_it(
     for path in (first, second):
         assert "cooldown_until: '2024-01-18T01:30:00+00:00'" in path.read_text(encoding="utf-8")
     mutation_transitions.transition_entries(notes, action="start-processing", filenames=["first.md"], now=now)
-    assert "cooldown_until" not in (notes / "processing/first.md").read_text(encoding="utf-8")
+    assert "cooldown_until" not in _test_entry_path(notes, "first.md").read_text(encoding="utf-8")
 
 
 def test_hold_does_not_record_processing_origin(
@@ -420,14 +433,14 @@ def test_hold_does_not_record_processing_origin(
     notes = _setup_notes(tmp_path)
     _write_awi_file(notes, "processing.md")
     _disable_transition_git(monkeypatch)
-    original = frontmatter_parser.parse_frontmatter((notes / "inbox/processing.md").read_text(encoding="utf-8"))
+    original = frontmatter_parser.parse_frontmatter(_test_entry_path(notes, "processing.md").read_text(encoding="utf-8"))
 
     mutation_transitions.transition_entries(notes, action="start-processing", filenames=["processing.md"], now=_FIXED_DT)
     mutation_transitions.transition_entries(notes, action="hold", filenames=["processing.md"], now=_FIXED_DT)
 
-    held = frontmatter_parser.parse_frontmatter((notes / "hold/processing.md").read_text(encoding="utf-8"))
+    held = frontmatter_parser.parse_frontmatter(_test_entry_path(notes, "processing.md").read_text(encoding="utf-8"))
     assert original is not None and held is not None
-    assert held[0] == original[0]
+    assert held[0] == {**original[0], "state": "hold"}
 
 
 def test_return_to_inbox_missing_file_reports_processing_state(
@@ -483,7 +496,7 @@ class TestAdoptStampWithoutOptional:
             atk.main(["wi", "adopt", "fb-001.md"], home=tmp_path)
 
         assert exc_info.value.code == 0
-        adopted_text = (notes / "adopted" / "fb-001.md").read_text(encoding="utf-8")
+        adopted_text = _test_entry_path(notes, "fb-001.md").read_text(encoding="utf-8")
         assert "## 処理結果" in adopted_text
         assert "- 採否: adopted" in adopted_text
         assert "- 処理日時: " in adopted_text
@@ -516,7 +529,8 @@ def test_terminal_transition_prints_destination_path(
         atk.main(["wi", action, "entry.md"], home=tmp_path, now=_FIXED_DT)
 
     assert exc_info.value.code == 0
-    assert capsys.readouterr().out.splitlines() == [summary, str(notes / destination / "entry.md")]
+    assert capsys.readouterr().out.splitlines() == [summary, str(_test_entry_path(notes, "entry.md"))]
+    assert entry_state_of(_test_entry_path(notes, "entry.md")) == destination
 
 
 class TestRejectIfInbox:
@@ -540,7 +554,7 @@ class TestRejectIfInbox:
             )
 
         assert exc_info.value.code == 0
-        content = (notes / "rejected/inbox.md").read_text(encoding="utf-8")
+        content = _test_entry_path(notes, "inbox.md").read_text(encoding="utf-8")
         assert "保持する本文" in content
         assert "- メモ: 計画作成へ移管" in content
 
@@ -551,11 +565,11 @@ class TestRejectIfInbox:
     ) -> None:
         """pull後にprocessingへ移った対象は終端しない。"""
         notes = _setup_notes(tmp_path)
-        processing = notes / "processing"
+        processing = notes / "2026" / "10"
         processing.mkdir(parents=True, exist_ok=True)
         path = processing / "processing.md"
         path.write_text(
-            "---\ntarget_repo: github.com/example/foo\ntype: awi\n---\n\n処理中本文\n",
+            "---\ntarget_repo: github.com/example/foo\ntype: awi\nstate: processing\n---\n\n処理中本文\n",
             encoding="utf-8",
         )
         original = path.read_text(encoding="utf-8")
@@ -567,7 +581,7 @@ class TestRejectIfInbox:
 
         assert exc_info.value.code == 2
         assert path.read_text(encoding="utf-8") == original
-        assert not (notes / "rejected/processing.md").exists()
+        assert entry_state_of(_test_entry_path(notes, "processing.md")) == "processing"
         assert not any("commit" in call["cmd"] for call in git_calls)
 
     def test_mixed_states_stop_the_whole_batch(
@@ -578,11 +592,11 @@ class TestRejectIfInbox:
         """複数対象の一部がprocessingならinbox対象も変更しない。"""
         notes = _setup_notes(tmp_path)
         inbox = _write_awi_file(notes, "inbox.md", body="inbox本文")
-        processing_dir = notes / "processing"
+        processing_dir = notes / "2026" / "10"
         processing_dir.mkdir(parents=True, exist_ok=True)
         processing = processing_dir / "processing.md"
         processing.write_text(
-            "---\ntarget_repo: github.com/example/foo\ntype: awi\n---\n\nprocessing本文\n",
+            "---\ntarget_repo: github.com/example/foo\ntype: awi\nstate: processing\n---\n\nprocessing本文\n",
             encoding="utf-8",
         )
         inbox_original = inbox.read_text(encoding="utf-8")
@@ -600,7 +614,8 @@ class TestRejectIfInbox:
         assert exc_info.value.code == 2
         assert inbox.read_text(encoding="utf-8") == inbox_original
         assert processing.read_text(encoding="utf-8") == processing_original
-        assert not any((notes / "rejected").glob("*.md"))
+        assert entry_state_of(inbox) == "inbox"
+        assert entry_state_of(processing) == "processing"
         assert not any("commit" in call["cmd"] for call in git_calls)
 
 
@@ -612,8 +627,7 @@ def test_agent_environment_rejects_removed_plan_edit_without_changes(
     notes = _setup_notes(tmp_path)
     filename = "20260827-000000-001.md"
     path = _write_awi_file(notes, filename, body="編集前\n\n## ユーザーコメント\n\n保持する")
-    held_path = notes / "hold" / filename
-    path.replace(held_path)
+    held_path = _set_state(path, "hold")
     plan = tmp_path / "plan.md"
     plan.write_text(f"## 提示素材\n\n- {filename}\n", encoding="utf-8")
     worktree = tmp_path / "worktree"
@@ -625,7 +639,7 @@ def test_agent_environment_rejects_removed_plan_edit_without_changes(
 
     assert exc_info.value.code == 2
     assert held_path.read_text(encoding="utf-8").endswith("編集前\n\n## ユーザーコメント\n\n保持する\n")
-    assert not (notes / "inbox" / filename).exists()
+    assert entry_state_of(_test_entry_path(notes, filename)) == "hold"
 
 
 class TestEditNoChanges:
@@ -690,8 +704,10 @@ class TestAppendEdit:
     ) -> None:
         """CRLF本文の改行を変換せず、元bytesへ追記する。"""
         notes = _setup_notes(tmp_path)
-        path = notes / "inbox" / "fb-001.md"
-        path.write_bytes(b"---\r\ntarget_repo: github.com/example/foo\r\ntype: awi\r\n---\r\n\r\n" + "本文\r\n".encode())
+        path = _test_entry_path(notes, "fb-001.md")
+        path.write_bytes(
+            b"---\r\ntarget_repo: github.com/example/foo\r\ntype: awi\r\nstate: inbox\r\n---\r\n\r\n" + "本文\r\n".encode()
+        )
         original = path.read_bytes()
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
         body_file = _write_body_file(tmp_path, "追記本文")
@@ -787,8 +803,8 @@ class TestStartProcessingMultiple:
         """UWIをprocessingへ移し、続けてadoptで終端できること。"""
         notes = _setup_notes(tmp_path)
         filename = "uwi-001.md"
-        (notes / "inbox" / filename).write_text(
-            "---\ntype: uwi\ntarget_repo: github.com/example/foo\n---\n\n確認事項\n",
+        _test_entry_path(notes, filename).write_text(
+            "---\ntype: uwi\nstate: inbox\ntarget_repo: github.com/example/foo\n---\n\n確認事項\n",
             encoding="utf-8",
         )
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
@@ -797,13 +813,15 @@ class TestStartProcessingMultiple:
             atk.main(["wi", "start-processing", filename], home=tmp_path)
 
         assert start_result.value.code == 0
-        assert (notes / "processing" / filename).exists()
+        assert _test_entry_path(notes, filename).exists()
+        assert entry_state_of(_test_entry_path(notes, filename)) == "processing"
 
         with pytest.raises(SystemExit) as adopt_result:
             atk.main(["wi", "adopt", filename], home=tmp_path)
 
         assert adopt_result.value.code == 0
-        assert (notes / "adopted" / filename).exists()
+        assert _test_entry_path(notes, filename).exists()
+        assert entry_state_of(_test_entry_path(notes, filename)) == "adopted"
 
     def test_multiple_files_moved_single_commit(
         self,
@@ -821,9 +839,11 @@ class TestStartProcessingMultiple:
             atk.main(["wi", "start-processing", "fb-001.md", "fb-002.md"], home=tmp_path)
 
         assert exc_info.value.code == 0
-        processing = notes / "processing"
+        processing = notes / "2026" / "10"
         assert (processing / "fb-001.md").exists()
         assert (processing / "fb-002.md").exists()
+        assert entry_state_of(processing / "fb-001.md") == "processing"
+        assert entry_state_of(processing / "fb-002.md") == "processing"
         commit_cmds = [c["cmd"] for c in git_calls if "commit" in c["cmd"]]
         assert len(commit_cmds) == 1
         assert "chore: start processing 2 entries" in commit_cmds[0]
@@ -853,10 +873,10 @@ class TestStartProcessingMultiple:
             )
 
         assert exc_info.value.code == 2
-        assert (notes / "inbox" / "fb-001.md").exists()
-        assert (notes / "inbox" / "fb-002.md").exists()
-        assert not (notes / "processing" / "fb-001.md").exists()
-        assert not (notes / "processing" / "fb-002.md").exists()
+        assert _test_entry_path(notes, "fb-001.md").exists()
+        assert _test_entry_path(notes, "fb-002.md").exists()
+        assert entry_state_of(_test_entry_path(notes, "fb-001.md")) == "inbox"
+        assert entry_state_of(_test_entry_path(notes, "fb-002.md")) == "inbox"
 
     def test_individual_remove_accepts_multiple_target_repositories(
         self,
@@ -883,8 +903,8 @@ class TestStartProcessingMultiple:
             )
 
         assert exc_info.value.code == 0
-        assert not (notes / "inbox/foo.md").exists()
-        assert not (notes / "inbox/bar.md").exists()
+        assert not _test_entry_path(notes, "foo.md").exists()
+        assert not _test_entry_path(notes, "bar.md").exists()
 
     def test_missing_member_rejects_entire_batch_before_moving(
         self,
@@ -903,8 +923,8 @@ class TestStartProcessingMultiple:
             )
 
         assert exc_info.value.code == 2
-        assert (notes / "inbox" / "fb-001.md").exists()
-        assert not (notes / "processing" / "fb-001.md").exists()
+        assert _test_entry_path(notes, "fb-001.md").exists()
+        assert entry_state_of(_test_entry_path(notes, "fb-001.md")) == "inbox"
 
     @pytest.mark.parametrize(
         ("invalid_frontmatter", "target_args"),
@@ -935,8 +955,8 @@ class TestStartProcessingMultiple:
         """集合内の1件で必須frontmatterが不正な場合は適合項目も移動しない。"""
         notes = _setup_notes(tmp_path)
         _write_awi_file(notes, "fb-001.md", target_repo="github.com/example/foo")
-        (notes / "inbox" / "fb-002.md").write_text(
-            f"---\n{invalid_frontmatter}\n---\n\n本文\n",
+        _test_entry_path(notes, "fb-002.md").write_text(
+            f"---\nstate: inbox\n{invalid_frontmatter}\n---\n\n本文\n",
             encoding="utf-8",
         )
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
@@ -954,10 +974,12 @@ class TestStartProcessingMultiple:
             )
 
         assert exc_info.value.code == 2
-        assert (notes / "inbox" / "fb-001.md").exists()
-        assert (notes / "inbox" / "fb-002.md").exists()
-        assert not (notes / "processing" / "fb-001.md").exists()
-        assert not (notes / "processing" / "fb-002.md").exists()
+        assert _test_entry_path(notes, "fb-001.md").exists()
+        assert _test_entry_path(notes, "fb-002.md").exists()
+        assert entry_state_of(_test_entry_path(notes, "fb-001.md")) == "inbox"
+        assert _test_entry_path(notes, "fb-002.md").read_text(encoding="utf-8") == (
+            f"---\nstate: inbox\n{invalid_frontmatter}\n---\n\n本文\n"
+        )
 
 
 def test_cli_edit_reports_body_mismatch_when_saved_body_is_altered(
@@ -1012,10 +1034,8 @@ def _write_bulk_entry(
     target_repo: str = "github.com/example/foo",
 ) -> pathlib.Path:
     """一括操作の検証に使うエントリを指定状態へ書き込む。"""
-    directory = notes / state
-    directory.mkdir(parents=True, exist_ok=True)
-    path = directory / filename
-    path.write_text(f"---\ntarget_repo: {target_repo}\ntype: awi\n---\n\nテスト本文\n", encoding="utf-8")
+    path = _test_entry_path(notes, filename)
+    path.write_text(f"---\nstate: {state}\ntarget_repo: {target_repo}\ntype: awi\n---\n\nテスト本文\n", encoding="utf-8")
     return path
 
 
@@ -1066,8 +1086,8 @@ def test_bulk_transition_applies_to_filtered_candidates(
         )
 
     assert exc_info.value.code == 0
-    assert not target.exists()
-    assert (notes / destination / "target.md").is_file()
+    assert target.is_file()
+    assert entry_state_of(target) == destination
     assert other.exists()
     assert len(commits) == 1
     assert summary in capsys.readouterr().out
@@ -1213,11 +1233,9 @@ def test_bulk_transition_rejects_invalid_combinations(
 
 def _write_bulk_uwi(notes: pathlib.Path, state: str, filename: str) -> pathlib.Path:
     """一括操作の検証に使うUWIを指定状態へ作成する。"""
-    directory = notes / state
-    directory.mkdir(parents=True, exist_ok=True)
-    path = directory / filename
+    path = _test_entry_path(notes, filename)
     path.write_text(
-        "---\ntarget_repo: github.com/example/foo\ntype: uwi\n---\n\n## 質問\n\n確認事項\n\n## 回答\n",
+        f"---\nstate: {state}\ntarget_repo: github.com/example/foo\ntype: uwi\n---\n\n## 質問\n\n確認事項\n\n## 回答\n",
         encoding="utf-8",
     )
     return path
@@ -1309,8 +1327,8 @@ def test_agent_hold_rejects_processing_entry_without_explicit_state(
         atk.main(["wi", "hold", "processing.md"], home=tmp_path, now=_FIXED_DT)
 
     assert exc_info.value.code != 0
-    assert (notes / "processing/processing.md").is_file()
-    assert not (notes / "hold/processing.md").exists()
+    assert _test_entry_path(notes, "processing.md").is_file()
+    assert entry_state_of(_test_entry_path(notes, "processing.md")) == "processing"
     err = capsys.readouterr().err
     assert "失敗: " in err
     assert "`atk wi edit --append`" in err
@@ -1333,12 +1351,14 @@ def test_agent_hold_moves_processing_entry_with_explicit_state(
     with pytest.raises(SystemExit) as exc_info:
         atk.main(["wi", "hold", "--state=processing", "processing.md"], home=tmp_path, now=_FIXED_DT)
     assert exc_info.value.code == 0
-    assert (notes / "hold/processing.md").is_file()
+    assert _test_entry_path(notes, "processing.md").is_file()
+    assert entry_state_of(_test_entry_path(notes, "processing.md")) == "hold"
 
     with pytest.raises(SystemExit) as exc_info:
         atk.main(["wi", "hold", "inbox.md"], home=tmp_path, now=_FIXED_DT)
     assert exc_info.value.code == 0
-    assert (notes / "hold/inbox.md").is_file()
+    assert _test_entry_path(notes, "inbox.md").is_file()
+    assert entry_state_of(_test_entry_path(notes, "inbox.md")) == "hold"
 
 
 def test_user_hold_keeps_implicit_processing_resolution(
@@ -1356,7 +1376,8 @@ def test_user_hold_keeps_implicit_processing_resolution(
         atk.main(["wi", "hold", "processing.md"], home=tmp_path, now=_FIXED_DT)
 
     assert exc_info.value.code == 0
-    assert (notes / "hold/processing.md").is_file()
+    assert _test_entry_path(notes, "processing.md").is_file()
+    assert entry_state_of(_test_entry_path(notes, "processing.md")) == "hold"
 
 
 def test_agent_bulk_hold_excludes_processing_entries(
@@ -1379,8 +1400,9 @@ def test_agent_bulk_hold_excludes_processing_entries(
         )
 
     assert exc_info.value.code == 0
-    assert not inbox_entry.exists()
-    assert (notes / "hold/inbox.md").is_file()
+    assert entry_state_of(inbox_entry) == "hold"
+    assert _test_entry_path(notes, "inbox.md").is_file()
     assert processing_entry.is_file()
+    assert entry_state_of(processing_entry) == "processing"
     assert bulk_source_states("hold", actor_is_agent=True) == ("inbox", "rejected", "adopted")
     assert bulk_source_states("hold", actor_is_agent=False) == BULK_SOURCE_STATES["hold"]

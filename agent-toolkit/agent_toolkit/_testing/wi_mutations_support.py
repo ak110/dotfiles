@@ -8,7 +8,7 @@ import pytest
 from agent_toolkit._atk.wi import repo, user_comment, uwi
 from agent_toolkit._atk.wi import sync as _wi_sync
 from agent_toolkit._atk.wi.mutations import targets as mutation_targets
-from agent_toolkit._testing import git_repository
+from agent_toolkit._testing import git_repository, wi_entry_files
 
 _AGENT_ENVIRONMENT_VARIABLES = ("AI_AGENT", "CODEX_CI", "CLAUDECODE", "CURSOR_AGENT")
 _USER_COMMENT_ERROR = "失敗: " + user_comment.AGENT_USER_COMMENT_EDIT_ERROR
@@ -21,11 +21,13 @@ def _write_uwi_entry(
     question: str = "変更前の質問",
     answer: str = "既存回答",
     frontmatter: str = "target_repo: github.com/example/foo\ntype: uwi\nquestion_type: free-form",
+    legacy_layout: bool = False,
 ) -> pathlib.Path:
     """非対話edit用のUWIエントリを書き込む。"""
-    path = notes / "inbox" / filename
+    path = wi_entry_files.entry_path(notes, filename, legacy_layout=legacy_layout)
+    state_line = "" if legacy_layout else "state: inbox\n"
     path.write_text(
-        f"---\n{frontmatter}\n---\n\n"
+        f"---\n{state_line}{frontmatter}\n---\n\n"
         f"{uwi.QUESTION_HEADING}\n\n{question}\n\n"
         f"{uwi.ANSWER_HEADING}\n\n{uwi.ANSWER_MARKER}\n{answer}\n",
         encoding="utf-8",
@@ -83,13 +85,14 @@ def _write_convert_awi(
     target_repo: str = "github.com/example/foo",
     target_commit: str = "a" * 40,
     schedule_mapping: str = "",
+    legacy_layout: bool = False,
 ) -> pathlib.Path:
     """変換テスト用のエントリを書き込む。"""
-    directory = notes / state
-    directory.mkdir(parents=True, exist_ok=True)
-    path = directory / filename
+    path = wi_entry_files.entry_path(notes, filename, state=state, legacy_layout=legacy_layout)
+    state_line = "" if legacy_layout else f"state: {state}\n"
     path.write_text(
-        f"---\ntarget_repo: {target_repo}\ntype: {entry_type}\ntarget_commit: {target_commit}\n{schedule_mapping}---\n\n本文\n",
+        f"---\n{state_line}target_repo: {target_repo}\ntype: {entry_type}\n"
+        f"target_commit: {target_commit}\n{schedule_mapping}---\n\n本文\n",
         encoding="utf-8",
     )
     return path

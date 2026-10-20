@@ -235,7 +235,7 @@ def _install_lock(root: pathlib.Path, *, windows: bool) -> collections.abc.Gener
         finally:
             close(handle)
     else:
-        import fcntl  # noqa: PLC0415  # pylint: disable=import-outside-toplevel
+        import fcntl  # noqa: PLC0415  # pylint: disable=import-outside-toplevel,import-error  # POSIX専用でありWindowsには存在しない。
 
         with path.open("a+b") as lock:
             lock_operation = fcntl.lockf if sys.platform == "darwin" and shutil.which("lockf") else fcntl.flock

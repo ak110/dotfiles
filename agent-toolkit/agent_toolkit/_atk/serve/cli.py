@@ -56,13 +56,15 @@ async def _serve(private_notes: pathlib.Path, config: _atk_serve_config.ServeCon
     hypercornが標準で行うシグナル処理はSIGHUPを含まないため、プロセス監視ツール等からの
     SIGHUP到達時も購読中のSSE接続を片付けてから終了できるようにする。
     """
-    state = _atk_serve_state.ServeState(private_notes)
-    try:
-        await state.start_async(asyncio.get_running_loop())
-        app = await _atk_serve_app.create_app_async(private_notes, config, state)
-    except BaseException:
-        await state.stop_async()
-        raise
+    async with _atk_serve_state.ServeState(private_notes) as state:
+        await _serve_with_state(private_notes, config, state)
+
+
+async def _serve_with_state(
+    private_notes: pathlib.Path, config: _atk_serve_config.ServeConfig, state: _atk_serve_state.ServeState
+) -> None:
+    """所有済みの監視状態の内側で設定・アプリの作成から配信までを行う。"""
+    app = await _atk_serve_app.create_app_async(private_notes, config, state)
     hypercorn_config = hypercorn.config.Config()
     hypercorn_config.bind = [f"{config.host}:{config.port}"]
     # アクセスログは常駐運用で情報価値が低いため出力しない。
@@ -91,10 +93,7 @@ async def _serve(private_notes: pathlib.Path, config: _atk_serve_config.ServeCon
     async def shutdown_trigger() -> None:
         await shutdown_event.wait()
 
-    try:
-        await hypercorn.asyncio.serve(app, hypercorn_config, shutdown_trigger=shutdown_trigger)
-    finally:
-        await state.stop_async()
+    await hypercorn.asyncio.serve(app, hypercorn_config, shutdown_trigger=shutdown_trigger)
 
 
 def build_console_title() -> str:

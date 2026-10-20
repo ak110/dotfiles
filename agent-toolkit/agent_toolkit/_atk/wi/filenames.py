@@ -8,7 +8,7 @@ import tempfile
 from collections.abc import Callable, Iterable
 
 from agent_toolkit._atk import outcome as _outcome
-from agent_toolkit._atk.wi.constants import WI_STATES
+from agent_toolkit._atk.wi.layout import entry_state_of, iter_entry_paths
 from agent_toolkit._common import private_notes as _private_notes
 
 # 補完器を登録するだけの起動では本文を解析しないため、parse_typeを使用時に読み込む。
@@ -66,13 +66,7 @@ def validate_filenames_only(filenames: list[str], base_dir: pathlib.Path) -> Non
 
 def existing_entry_filenames(private_notes: pathlib.Path) -> set[str]:
     """5状態フォルダに実在する`.md`ファイル名の集合を返す。"""
-    return {
-        path.name
-        for state in WI_STATES
-        if (private_notes / state).exists()
-        for path in (private_notes / state).iterdir()
-        if path.suffix == ".md"
-    }
+    return {path.name for path in iter_entry_paths(private_notes)}
 
 
 def is_case_sensitive(directory: pathlib.Path) -> bool:
@@ -160,16 +154,14 @@ def make_filename_completer(
     def complete(prefix: str, **_: object) -> list[str]:
         private_notes = _private_notes.default_private_notes()
         candidates: list[str] = []
-        for state in states:
-            state_dir = private_notes / state
-            if not state_dir.exists():
+        for path in iter_entry_paths(private_notes):
+            if entry_state_of(path) not in states:
                 continue
-            for path in state_dir.iterdir():
-                if path.suffix != ".md" or not path.name.startswith(prefix):
-                    continue
-                if entry_type is not None and parse_type(path.read_text(encoding="utf-8")) != entry_type:
-                    continue
-                candidates.append(path.name)
+            if not path.name.startswith(prefix):
+                continue
+            if entry_type is not None and parse_type(path.read_text(encoding="utf-8")) != entry_type:
+                continue
+            candidates.append(path.name)
         return sorted(candidates)
 
     return complete
@@ -185,16 +177,12 @@ def max_existing_seq(private_notes: pathlib.Path, timestamp_prefix: str) -> int:
     5状態フォルダすべてを走査対象にする。
     """
     max_seq = 0
-    for state in WI_STATES:
-        state_dir = private_notes / state
-        if not state_dir.exists():
+    for p in iter_entry_paths(private_notes):
+        if not p.name.startswith(f"{timestamp_prefix}-"):
             continue
-        for p in state_dir.iterdir():
-            if not p.name.startswith(f"{timestamp_prefix}-"):
-                continue
-            try:
-                seq = int(p.stem.rsplit("-", 1)[-1])
-            except ValueError:
-                continue
-            max_seq = max(max_seq, seq)
+        try:
+            seq = int(p.stem.rsplit("-", 1)[-1])
+        except ValueError:
+            continue
+        max_seq = max(max_seq, seq)
     return max_seq

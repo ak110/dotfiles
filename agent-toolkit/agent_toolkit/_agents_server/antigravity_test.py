@@ -41,8 +41,7 @@ async def test_cli_inherits_prepared_conversation_environment(monkeypatch: pytes
         raise OSError("環境観測完了")
 
     monkeypatch.setattr(asyncio, "create_subprocess_exec", spawn)
-    backend = antigravity.AntigravityManager(root_session_id="selected-owner")
-    try:
+    async with antigravity.AntigravityManager(root_session_id="selected-owner") as backend:
         with pytest.raises(session_errors.DelegateBackendError, match="環境観測完了"):
             await backend.start("環境確認", str(tmp_path))
         forbidden = mcp_environment._NON_INHERITABLE_NAMES - {  # pylint: disable=protected-access
@@ -52,8 +51,6 @@ async def test_cli_inherits_prepared_conversation_environment(monkeypatch: pytes
         assert not forbidden.intersection(name.casefold() for name in captured)
         assert captured["AGENT_TOOLKIT_OWNER_SESSION"] == "selected-owner"
         assert captured["AGENT_TOOLKIT_DELEGATED_SESSION"] == "1"
-    finally:
-        await backend.close()
 
 
 def _install_fake_agy(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> pathlib.Path:
@@ -95,8 +92,7 @@ def test_build_command_omits_absent_options() -> None:
 async def test_explore_reaches_cli_on_start_and_resume(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """探索も同じCLIを開始・再開し、共通の読取責務と調査要求を届ける。"""
     _install_fake_agy(tmp_path, monkeypatch)
-    backend = antigravity.AntigravityManager()
-    try:
+    async with antigravity.AntigravityManager() as backend:
         session = await backend.start("GitとPythonと読取MCPで調査", str(tmp_path), launch_kind="explore")
         async with asyncio.timeout(10):
             while not session.terminal:
@@ -110,8 +106,6 @@ async def test_explore_reaches_cli_on_start_and_resume(tmp_path: pathlib.Path, m
                 await asyncio.sleep(0.01)
         assert resumed.session_id == session.session_id
         assert resumed.agent_message.endswith("同じ調査を継続")
-    finally:
-        await backend.close()
 
 
 @pytest.mark.parametrize(
@@ -143,14 +137,14 @@ def test_start_consumes_stream_and_finalizes_turn(tmp_path: pathlib.Path, monkey
     _install_fake_agy(tmp_path, monkeypatch)
 
     async def scenario() -> shared_state.SessionState:
-        manager = antigravity.AntigravityManager()
-        session = await manager.start("原稿を推敲して", str(tmp_path), "gemini-3.8-flash", "medium")
-        for _ in range(200):
-            if session.terminal:
-                break
-            await asyncio.sleep(0.02)
-        await manager.close()
-        return session
+        async with antigravity.AntigravityManager() as manager:
+            session = await manager.start("原稿を推敲して", str(tmp_path), "gemini-3.8-flash", "medium")
+            for _ in range(200):
+                if session.terminal:
+                    break
+                await asyncio.sleep(0.02)
+            await manager.close()
+            return session
 
     session = asyncio.run(scenario())
 
@@ -165,11 +159,8 @@ def test_start_wraps_missing_cli_as_backend_error(tmp_path: pathlib.Path, monkey
     monkeypatch.setenv("PATH", str(tmp_path / "empty-bin"))
 
     async def scenario() -> None:
-        manager = antigravity.AntigravityManager()
-        try:
+        async with antigravity.AntigravityManager() as manager:
             await manager.start("原稿を推敲して", str(tmp_path), "gemini-3.8-flash", "medium")
-        finally:
-            await manager.close()
 
     with pytest.raises(session_errors.DelegateBackendError, match="failed to start Antigravity CLI"):
         asyncio.run(scenario())
@@ -191,13 +182,13 @@ def test_delegate_prompt_carries_language_condition(tmp_path: pathlib.Path, monk
     )
 
     async def scenario() -> None:
-        manager = antigravity.AntigravityManager()
-        session = await manager.start("原稿を推敲して", str(tmp_path), "gemini-3.8-flash", "medium")
-        for _ in range(200):
-            if session.terminal:
-                break
-            await asyncio.sleep(0.02)
-        await manager.close()
+        async with antigravity.AntigravityManager() as manager:
+            session = await manager.start("原稿を推敲して", str(tmp_path), "gemini-3.8-flash", "medium")
+            for _ in range(200):
+                if session.terminal:
+                    break
+                await asyncio.sleep(0.02)
+            await manager.close()
 
     asyncio.run(scenario())
 
@@ -214,19 +205,19 @@ def test_send_message_starts_a_new_turn_on_the_same_conversation(
     _install_fake_agy(tmp_path, monkeypatch)
 
     async def scenario() -> tuple[dict[str, Any], shared_state.SessionState]:
-        manager = antigravity.AntigravityManager()
-        session = await manager.start("原稿を推敲して", str(tmp_path))
-        for _ in range(200):
-            if session.terminal:
-                break
-            await asyncio.sleep(0.02)
-        delivery = await manager.send_message(session, "続けて短くして")
-        for _ in range(200):
-            if session.terminal:
-                break
-            await asyncio.sleep(0.02)
-        await manager.close()
-        return delivery, session
+        async with antigravity.AntigravityManager() as manager:
+            session = await manager.start("原稿を推敲して", str(tmp_path))
+            for _ in range(200):
+                if session.terminal:
+                    break
+                await asyncio.sleep(0.02)
+            delivery = await manager.send_message(session, "続けて短くして")
+            for _ in range(200):
+                if session.terminal:
+                    break
+                await asyncio.sleep(0.02)
+            await manager.close()
+            return delivery, session
 
     delivery, session = asyncio.run(scenario())
 
@@ -289,20 +280,20 @@ while not (gates / str(os.getpid())).exists():
         return json.loads(path.read_text(encoding="utf-8"))["processes"]
 
     async def scenario() -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
-        manager = antigravity.AntigravityManager(publish_registry=True)
-        session = await manager.start("原稿を推敲して", str(tmp_path))
-        for _ in range(200):
-            if session.terminal:
-                break
-            await asyncio.sleep(0.02)
-        first = recorded()
-        await manager.send_message(session, "続けて短くして")
-        for _ in range(200):
-            if session.terminal:
-                break
-            await asyncio.sleep(0.02)
-        await manager.close()
-        return first, recorded()
+        async with antigravity.AntigravityManager(publish_registry=True) as manager:
+            session = await manager.start("原稿を推敲して", str(tmp_path))
+            for _ in range(200):
+                if session.terminal:
+                    break
+                await asyncio.sleep(0.02)
+            first = recorded()
+            await manager.send_message(session, "続けて短くして")
+            for _ in range(200):
+                if session.terminal:
+                    break
+                await asyncio.sleep(0.02)
+            await manager.close()
+            return first, recorded()
 
     first, second = asyncio.run(scenario())
 
@@ -318,14 +309,14 @@ def test_stream_events_are_saved_across_turns(tmp_path: pathlib.Path, monkeypatc
     log_directory = tmp_path / "logs"
 
     async def scenario() -> None:
-        manager = antigravity.AntigravityManager(log_directory=log_directory)
-        session = await manager.start("最初の依頼", str(tmp_path))
-        while not session.terminal:
-            await asyncio.sleep(0.02)
-        await manager.send_message(session, "次の依頼")
-        while not session.terminal:
-            await asyncio.sleep(0.02)
-        await manager.close()
+        async with antigravity.AntigravityManager(log_directory=log_directory) as manager:
+            session = await manager.start("最初の依頼", str(tmp_path))
+            while not session.terminal:
+                await asyncio.sleep(0.02)
+            await manager.send_message(session, "次の依頼")
+            while not session.terminal:
+                await asyncio.sleep(0.02)
+            await manager.close()
 
     asyncio.run(scenario())
 
@@ -348,8 +339,7 @@ async def test_duplicate_conversation_keeps_event_log_and_allows_explicit_resume
     log = directory / "conv-1.jsonl"
     log.write_text("既存ログ\n", encoding="utf-8")
     old = shared_state.SessionState("conv-1", str(tmp_path), engine="agy")
-    backend = antigravity.AntigravityManager({old.session_id: old}, log_directory=directory)
-    try:
+    async with antigravity.AntigravityManager({old.session_id: old}, log_directory=directory) as backend:
         with pytest.raises(ActionableError, match="duplicate session_id"):
             await backend.start("重複確認", str(tmp_path))
         assert backend.sessions[old.session_id] is old
@@ -358,8 +348,6 @@ async def test_duplicate_conversation_keeps_event_log_and_allows_explicit_resume
         resumed = await backend.resume(old.session_id, prompt, str(tmp_path))
         assert resumed.session_id == old.session_id
         assert prompt.delivery == "reply_started"
-    finally:
-        await backend.close()
 
 
 def test_event_log_write_failure_does_not_fail_session(
@@ -386,12 +374,12 @@ def test_event_log_write_failure_does_not_fail_session(
     monkeypatch.setattr(pathlib.Path, "mkdir", fail_mkdir)
 
     async def scenario() -> shared_state.SessionState:
-        manager = antigravity.AntigravityManager(log_directory=log_directory)
-        session = await manager.start("依頼", str(tmp_path))
-        while not session.terminal:
-            await asyncio.sleep(0.02)
-        await manager.close()
-        return session
+        async with antigravity.AntigravityManager(log_directory=log_directory) as manager:
+            session = await manager.start("依頼", str(tmp_path))
+            while not session.terminal:
+                await asyncio.sleep(0.02)
+            await manager.close()
+            return session
 
     with caplog.at_level("WARNING", logger="agent-toolkit.agents-server.antigravity"):
         session = asyncio.run(scenario())
@@ -405,11 +393,11 @@ def test_send_message_rejects_an_unfinished_turn() -> None:
     session = shared_state.SessionState(session_id="conv-1", cwd=".", engine="agy", status="running")
 
     async def scenario() -> None:
-        manager = antigravity.AntigravityManager()
-        with pytest.raises(ValueError, match="has not finished") as raised:
-            await manager.send_message(session, "続けて")
-        assert isinstance(raised.value, ActionableError)
-        assert f"{NEXT_ACTION_PREFIX}`atk agents wait`" in raised.value.message
+        async with antigravity.AntigravityManager() as manager:
+            with pytest.raises(ValueError, match="has not finished") as raised:
+                await manager.send_message(session, "続けて")
+            assert isinstance(raised.value, ActionableError)
+            assert f"{NEXT_ACTION_PREFIX}`atk agents wait`" in raised.value.message
 
     asyncio.run(scenario())
 
@@ -456,22 +444,22 @@ def test_model_output_step_is_observed_and_notified(tmp_path: pathlib.Path, monk
 
     async def scenario() -> tuple[bool, bool]:
         condition = asyncio.Condition()
-        manager = antigravity.AntigravityManager(condition=condition, log_directory=log_directory)
-        session = await manager.start("調査して", str(tmp_path))
-        log_file = log_directory / "conv-1.jsonl"
-        # 記録の追記とその行の処理は同じ同期区間で行われるため、4行目の出現は3件の`step_update`を処理し終えたことを示す。
-        while not log_file.exists() or len(log_file.read_text(encoding="utf-8").splitlines()) < 4:
-            await asyncio.sleep(0.01)
-        before_output = session.model_output_observed
-        (gate_dir / "output").touch()
-        async with condition:
-            await asyncio.wait_for(condition.wait_for(lambda: session.model_output_observed), timeout=10)
-        after_output = session.model_output_observed
-        (gate_dir / "finish").touch()
-        while not session.terminal:
-            await asyncio.sleep(0.02)
-        await manager.close()
-        return before_output, after_output
+        async with antigravity.AntigravityManager(condition=condition, log_directory=log_directory) as manager:
+            session = await manager.start("調査して", str(tmp_path))
+            log_file = log_directory / "conv-1.jsonl"
+            # 記録の追記とその行の処理は同じ同期区間で行われるため、4行目の出現は3件の`step_update`を処理し終えたことを示す。
+            while not log_file.exists() or len(log_file.read_text(encoding="utf-8").splitlines()) < 4:
+                await asyncio.sleep(0.01)
+            before_output = session.model_output_observed
+            (gate_dir / "output").touch()
+            async with condition:
+                await asyncio.wait_for(condition.wait_for(lambda: session.model_output_observed), timeout=10)
+            after_output = session.model_output_observed
+            (gate_dir / "finish").touch()
+            while not session.terminal:
+                await asyncio.sleep(0.02)
+            await manager.close()
+            return before_output, after_output
 
     before_output, after_output = asyncio.run(scenario())
 
@@ -503,16 +491,13 @@ def test_start_and_reply_use_manager_root(tmp_path: pathlib.Path, monkeypatch: p
     monkeypatch.setenv("AGENT_TOOLKIT_OWNER_SESSION", "other-root")
 
     async def scenario() -> None:
-        manager = antigravity.AntigravityManager(root_session_id="manager-root")
-        try:
+        async with antigravity.AntigravityManager(root_session_id="manager-root") as manager:
             session = await manager.start("最初の依頼", str(tmp_path))
             while not session.terminal:
                 await asyncio.sleep(0.02)
             await manager.send_message(session, "続行")
             while not session.terminal:
                 await asyncio.sleep(0.02)
-        finally:
-            await manager.close()
 
     asyncio.run(scenario())
     assert [json.loads(line) for line in captured.read_text(encoding="utf-8").splitlines()] == ["manager-root", "manager-root"]

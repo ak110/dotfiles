@@ -249,9 +249,13 @@ def sweep_function_hook_files(*, keep_session_id: str | None = None, clear: bool
     if directory is None or not directory.is_dir():
         return
     exit_paths = function_hook_paths(keep_session_id) if keep_session_id else None
-    own_paths = {*exit_paths, directory / f"recheck-{keep_session_id}.txt"} if exit_paths else set()
+    own_paths = (
+        {*exit_paths, directory / f"recheck-{keep_session_id}.txt", directory / f"rate-limit-{keep_session_id}.txt"}
+        if exit_paths
+        else set()
+    )
     threshold = time.time() - _STATE_MAX_AGE_SECONDS
-    for pattern in ("marker-*.txt", "request-*.txt", "recheck-*.txt"):
+    for pattern in ("marker-*.txt", "request-*.txt", "recheck-*.txt", "rate-limit-*.txt"):
         for path in directory.glob(pattern):
             if own_paths and path in own_paths:
                 if clear:

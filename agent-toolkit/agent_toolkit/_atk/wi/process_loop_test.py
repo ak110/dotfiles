@@ -21,6 +21,7 @@ from agent_toolkit._atk.wi import readiness as _wi_readiness
 from agent_toolkit._atk.wi import repo as _repo
 from agent_toolkit._atk.wi import sync as _wi_sync
 from agent_toolkit._atk.wi import uwi as _uwi
+from agent_toolkit._testing import wi_entry_files
 from agent_toolkit._testing.process_loop_support import fake_run_with_remote_url, hook_debug_log, isolate_process_loop_commands
 from agent_toolkit.atk_test import _setup_notes
 
@@ -45,19 +46,18 @@ class TestProcessLoopIncludesProcessingInCount:
         """
         _setup_notes(tmp_path)
         private_notes = tmp_path / "private-notes"
-        inbox_dir = private_notes / "inbox"
-        processing_dir = private_notes / "processing"
-        processing_dir.mkdir(parents=True)
+        inbox_dir = wi_entry_files.entry_path(private_notes, "a.md").parent
+        processing_dir = inbox_dir
         myrepo = tmp_path / "myrepo"
         myrepo.mkdir()
         # `fake_run_with_remote_url`が返す正規化後IDと一致させる。
         target_repo_id = "github.com/example/myrepo"
         (inbox_dir / "a.md").write_text(
-            f"---\ntarget_repo: {target_repo_id}\ntype: awi\n---\n\n本文A\n",
+            f"---\nstate: inbox\ntarget_repo: {target_repo_id}\ntype: awi\n---\n\n本文A\n",
             encoding="utf-8",
         )
         (processing_dir / "b.md").write_text(
-            f"---\ntarget_repo: {target_repo_id}\ntype: awi\n---\n\n本文B\n",
+            f"---\nstate: processing\ntarget_repo: {target_repo_id}\ntype: awi\n---\n\n本文B\n",
             encoding="utf-8",
         )
 
@@ -94,12 +94,13 @@ class TestProcessLoopIncludesProcessingInCount:
     ) -> None:
         """期限待ちだけなら子CLIを起動せず変更待機へ進む。"""
         notes = _setup_notes(tmp_path)
-        inbox = notes / "inbox"
+        inbox = wi_entry_files.entry_path(notes, "cooldown.md").parent
         myrepo = tmp_path / "myrepo"
         myrepo.mkdir()
         target_repo = "github.com/example/myrepo"
         (inbox / "cooldown.md").write_text(
-            f"---\ntarget_repo: {target_repo}\ntype: awi\ncooldown_until: '2999-01-01T00:00:00+00:00'\n---\n\n本文\n",
+            f"---\nstate: inbox\ntarget_repo: {target_repo}\ntype: awi\n"
+            "cooldown_until: '2999-01-01T00:00:00+00:00'\n---\n\n本文\n",
             encoding="utf-8",
         )
         child_calls: list[dict[str, Any]] = []
@@ -126,18 +127,19 @@ class TestProcessLoopIncludesProcessingInCount:
     ) -> None:
         """通常ready項目が混在すれば期限待ちを除外したまま子CLIを起動する。"""
         notes = _setup_notes(tmp_path)
-        inbox = notes / "inbox"
+        inbox = wi_entry_files.entry_path(notes, "cooldown.md").parent
         myrepo = tmp_path / "myrepo"
         myrepo.mkdir()
         target_repo = "github.com/example/myrepo"
         (inbox / "cooldown.md").write_text(
-            f"---\ntarget_repo: {target_repo}\ntype: awi\ncooldown_until: '2999-01-01T00:00:00+00:00'\n---\n\n本文\n",
+            f"---\nstate: inbox\ntarget_repo: {target_repo}\ntype: awi\n"
+            "cooldown_until: '2999-01-01T00:00:00+00:00'\n---\n\n本文\n",
             encoding="utf-8",
         )
 
         ready = inbox / "ready.md"
         ready.write_text(
-            f"---\ntarget_repo: {target_repo}\ntype: awi\n---\n\n本文\n",
+            f"---\nstate: inbox\ntarget_repo: {target_repo}\ntype: awi\n---\n\n本文\n",
             encoding="utf-8",
         )
         child_calls: list[dict[str, Any]] = []
@@ -398,10 +400,9 @@ def _start_entry(
     timestamp: float = 1000.0,
     kind: str = "uwi",
 ) -> pathlib.Path:
-    path = notes / state / name
-    path.parent.mkdir(parents=True, exist_ok=True)
+    path = wi_entry_files.entry_path(notes, name)
     body = "\n## 回答\n<!-- ユーザーはこの行以降に回答を追記する -->\n" + (answer or "") + "\n" if kind == "uwi" else ""
-    path.write_text(f"---\ntype: {kind}\ntarget_repo: {repo}\n---\n\n質問\n{body}", encoding="utf-8")
+    path.write_text(f"---\nstate: {state}\ntype: {kind}\ntarget_repo: {repo}\n---\n\n質問\n{body}", encoding="utf-8")
     os.utime(path, (timestamp, timestamp))
     return path
 
@@ -479,8 +480,7 @@ def test_uwi_updates_across_states(monkeypatch: pytest.MonkeyPatch, tmp_path: pa
     gate = _pl_watch.StartGate(notes)
     decision = gate.evaluate({"github.com/example/myrepo"}, activity=False, now=1600)
     assert decision.deadline == 1700
-    adopted = notes / "adopted" / answered.name
-    adopted.parent.mkdir(exist_ok=True)
+    adopted = answered
     answered.write_text(
         answered.read_text(encoding="utf-8").replace("type: uwi", "type: uwi\nquestion_type: post-approval"),
         encoding="utf-8",
@@ -488,7 +488,7 @@ def test_uwi_updates_across_states(monkeypatch: pytest.MonkeyPatch, tmp_path: pa
     with pytest.raises(SystemExit) as adopted_exit:
         atk.main(["wi", "answer", answered.name, "その対応で問題無い"], home=tmp_path)
     assert adopted_exit.value.code == 0
-    assert not answered.exists()
+    assert "state: adopted" in answered.read_text(encoding="utf-8")
     os.utime(adopted, (1200, 1200))
     assert gate.evaluate({"github.com/example/myrepo"}, activity=False, now=1700).deadline == 1800
     restarted = _pl_watch.StartGate(notes)
@@ -519,9 +519,8 @@ def test_grace_ignores_edits_and_recounts(tmp_path: pathlib.Path) -> None:
     gate = _pl_watch.StartGate(notes)
     gate.evaluate({"github.com/example/myrepo"}, activity=True, now=1000)
     entry.write_text(entry.read_text(encoding="utf-8") + "編集\n", encoding="utf-8")
-    moved = notes / "processing" / entry.name
-    moved.parent.mkdir(exist_ok=True)
-    entry.rename(moved)
+    moved = entry
+    moved.write_text(moved.read_text(encoding="utf-8").replace("state: inbox", "state: processing"), encoding="utf-8")
     decision = gate.evaluate({"github.com/example/myrepo"}, activity=True, now=1500)
     assert not decision.extended
     assert decision.deadline == 1600
@@ -614,8 +613,7 @@ def test_session_end_uses_common_lane_cleanup(
     notes = _setup_notes(tmp_path)
     myrepo = tmp_path / "myrepo"
     myrepo.mkdir()
-    ready = notes / "inbox" / "ready.md"
-    ready.write_text("---\ntarget_repo: github.com/example/myrepo\ntype: awi\n---\n\n本文\n", encoding="utf-8")
+    ready = _start_entry(notes, "ready.md", kind="awi")
     base_fake_run = fake_run_with_remote_url(myrepo, [], returncode)
 
     def fake_run(cmd: list[str], *args: Any, **kwargs: Any) -> subprocess.CompletedProcess[Any]:
@@ -662,9 +660,8 @@ _TARGET = "github.com/example/myrepo"
 
 
 def _awi(notes: pathlib.Path, name: str, body: str = "本文", *, state: str = "inbox") -> pathlib.Path:
-    path = notes / state / name
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(f"---\ntarget_repo: {_TARGET}\ntype: awi\n---\n\n{body}\n", encoding="utf-8")
+    path = wi_entry_files.entry_path(notes, name)
+    path.write_text(f"---\nstate: {state}\ntarget_repo: {_TARGET}\ntype: awi\n---\n\n{body}\n", encoding="utf-8")
     return path
 
 
@@ -741,8 +738,7 @@ def test_skipped_target_relaunches_on_change(monkeypatch: pytest.MonkeyPatch, tm
         elif change == "body":
             task.write_text(task.read_text(encoding="utf-8") + "\n## ユーザーコメント\n\n回答\n", encoding="utf-8")
         elif change == "state":
-            (notes / "processing").mkdir(exist_ok=True)
-            task.rename(notes / "processing" / task.name)
+            task.write_text(task.read_text(encoding="utf-8").replace("state: inbox", "state: processing"), encoding="utf-8")
         else:
             alerts.append({"number": 2})
 

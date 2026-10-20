@@ -165,7 +165,10 @@ def _read_operands(tokens: Sequence[str], *, include_partial: bool) -> tuple[str
             return (tokens[2],)
     if include_partial and is_atk_command(tokens) and tokens[1:2] == ("read-file",) and "--" in tokens:
         separator = tokens.index("--")
-        options = tokens[2:separator]
+        if separator + 1 >= len(tokens):
+            return ()
+        operand = tokens[separator + 1]
+        options = (*tokens[2:separator], *tokens[separator + 2 :])
         index = 0
         while index < len(options):
             option, equals, value = options[index].partition("=")
@@ -177,7 +180,7 @@ def _read_operands(tokens: Sequence[str], *, include_partial: bool) -> tuple[str
             if not value.isdigit():
                 return ()
             index += 1
-        return tuple(tokens[separator + 1 :]) if len(tokens) == separator + 2 else ()
+        return (operand,)
     return ()
 
 

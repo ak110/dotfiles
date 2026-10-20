@@ -264,7 +264,7 @@ if os.name == "nt":
             msvcrt.locking(fh.fileno(), msvcrt.LK_UNLCK, 1)  # type: ignore[attr-defined]
 
 else:
-    import fcntl
+    import fcntl  # pylint: disable=import-error  # POSIX専用でありWindowsの解析環境には存在しない。
 
     def _acquire_lock_impl(fh: IO, *, blocking: bool) -> None:
         """POSIX: ファイル全体への排他ロックを取得する。"""

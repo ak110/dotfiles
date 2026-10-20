@@ -5,12 +5,13 @@ from __future__ import annotations
 # テストでは共有状態とバックエンドの内部境界も直接検証する。
 # pylint: disable=protected-access
 import asyncio
+import contextlib
 import json
 import pathlib
 import subprocess
 import sys
 import typing
-from collections.abc import Callable
+from collections.abc import AsyncGenerator, Callable
 from types import SimpleNamespace
 from typing import Any, cast
 
@@ -122,6 +123,7 @@ class FakeBackend:
         self.prompts: list[str] = []
         # 実backendと同じく、再開で再生成したsessionを登録簿へ公開させる場合に真にする。
         self.publish_registry = False
+        self.pending: list[asyncio.Task[None]] = []
 
     async def list_models(self) -> list[dict[str, Any]]:
         """系列の候補を指定しない場合も、起動せずに解決できる一覧を返す。"""
@@ -226,7 +228,18 @@ class FakeBackend:
         self.release_calls.append(session.session_id)
 
     async def close(self) -> None:
-        """バックエンド終了処理のダミー。"""
+        """テスト用backendが開始した背景処理を回収する。"""
+        tasks = tuple(self.pending)
+        for task in tasks:
+            if not task.done():
+                task.cancel()
+        if tasks:
+            outcomes = await asyncio.gather(*tasks, return_exceptions=True)
+            failures = [outcome for outcome in outcomes if isinstance(outcome, Exception)]
+            if failures:
+                for failure in failures[1:]:
+                    failures[0].add_note(f"背景処理の別の失敗: {failure!r}")
+                raise failures[0]
 
 
 class UnavailableStartBackend(FakeBackend):
@@ -392,12 +405,15 @@ def _without_root(response: dict[str, Any]) -> dict[str, Any]:
     return body
 
 
-def _manager_with_fake(engine: str, delivery: str = "reply_started") -> tuple[server_manager.AgentsServerManager, FakeBackend]:
+@contextlib.asynccontextmanager
+async def _manager_with_fake(
+    engine: str, delivery: str = "reply_started"
+) -> AsyncGenerator[tuple[server_manager.AgentsServerManager, FakeBackend]]:
     """指定engineだけをFakeBackendへ差し替えた共有managerを返す。"""
-    manager = server_manager.AgentsServerManager()
-    backend = FakeBackend(manager.sessions, engine, delivery)
-    _install_backend(manager, engine, backend)
-    return manager, backend
+    async with server_manager.AgentsServerManager() as manager:
+        backend = FakeBackend(manager.sessions, engine, delivery)
+        _install_backend(manager, engine, backend)
+        yield manager, backend
 
 
 def _install_backend(
@@ -540,37 +556,39 @@ _LAUNCHER_ENVIRONMENT_NAMES = (
 )
 
 
+@contextlib.asynccontextmanager
 async def _start_late_unavailability(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
     candidates: list[tuple[str, str, str]],
-) -> tuple[server_manager.AgentsServerManager, dict[str, Any]]:
+) -> AsyncGenerator[tuple[server_manager.AgentsServerManager, dict[str, Any]]]:
     """起動応答の返却後に最初の候補を失敗させ、結果の回収前で返す。"""
     monkeypatch.setattr(_atk_config, "parse_unresolved_model_candidates", lambda _model_type, **_kwargs: candidates)
     monkeypatch.setattr(server_manager, "START_AVAILABILITY_TIMEOUT", 0.001)
-    manager = server_manager.AgentsServerManager()
-    failure_release = asyncio.Event()
-    delayed = DelayedUnavailableBackend(manager.sessions, "codex", manager._condition, failure_release=failure_release)
-    _install_backend(manager, "codex", delayed)
+    async with server_manager.AgentsServerManager() as manager:
+        failure_release = asyncio.Event()
+        delayed = DelayedUnavailableBackend(manager.sessions, "codex", manager._condition, failure_release=failure_release)
+        _install_backend(manager, "codex", delayed)
 
-    started = await manager.start("plan", "調査", str(tmp_path))
-    assert started["status"] == "running"
-    failure_release.set()
-    await asyncio.gather(*delayed.pending)
-    return manager, started
+        started = await manager.start("plan", "調査", str(tmp_path))
+        assert started["status"] == "running"
+        failure_release.set()
+        await asyncio.gather(*delayed.pending)
+        yield manager, started
 
 
+@contextlib.asynccontextmanager
 async def _carry_over_late_unavailability(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
     candidates: list[tuple[str, str, str]],
-) -> tuple[server_manager.AgentsServerManager, FakeBackend]:
+) -> AsyncGenerator[tuple[server_manager.AgentsServerManager, FakeBackend]]:
     """開始確認の上限後に候補が失敗した状態まで進め、利用できるbackendへ差し替える。"""
-    manager, _ = await _start_late_unavailability(monkeypatch, tmp_path, candidates)
-    assert (await manager.wait())["status"] == "failed"
-    available = FakeBackend(manager.sessions, "codex")
-    _install_backend(manager, "codex", available)
-    return manager, available
+    async with _start_late_unavailability(monkeypatch, tmp_path, candidates) as (manager, _):
+        assert (await manager.wait())["status"] == "failed"
+        available = FakeBackend(manager.sessions, "codex")
+        _install_backend(manager, "codex", available)
+        yield manager, available
 
 
 def _codex_model_rejected_error(param: str = "model") -> dict[str, Any]:
@@ -599,9 +617,10 @@ _LAUNCH_VALUES: dict[str, Any] = {
 """起動情報の各項目へ設定する、フィールドの初期値と異なる値。labelは`-review`で終わり、完了結果の採否確定の案内も確かめる。"""
 
 
-def _resume_test_manager(
+@contextlib.asynccontextmanager
+async def _resume_test_manager(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
-) -> tuple[server_manager.AgentsServerManager, status_file.StatusFileWriter]:
+) -> AsyncGenerator[tuple[server_manager.AgentsServerManager, status_file.StatusFileWriter]]:
     """状態ファイルと登録簿を`tmp_path`へ置き、再開後の状態を観測できるmanagerを返す。"""
     monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
     writer = status_file.StatusFileWriter(
@@ -610,12 +629,12 @@ def _resume_test_manager(
         state_root=tmp_path,
         aggregate_seconds=0,
     )
-    manager = server_manager.AgentsServerManager(writer)
-    backend = FakeBackend(manager.sessions, "claude")
-    backend.publish_registry = True
-    _install_backend(manager, "claude", backend)
-    writer.activate()
-    return manager, writer
+    async with server_manager.AgentsServerManager(writer) as manager:
+        backend = FakeBackend(manager.sessions, "claude")
+        backend.publish_registry = True
+        _install_backend(manager, "claude", backend)
+        writer.activate()
+        yield manager, writer
 
 
 def _expire_launched_session(manager: server_manager.AgentsServerManager, session: state.SessionState) -> None:
@@ -879,20 +898,21 @@ class NaturallyCompletingTurnStartClient(FakeCodexClient):
         )
 
 
-def _pending_codex_manager[PendingCodexClient: (HoldingTurnStartClient, NaturallyCompletingTurnStartClient)](
+@contextlib.asynccontextmanager
+async def _pending_codex_manager[PendingCodexClient: (HoldingTurnStartClient, NaturallyCompletingTurnStartClient)](
     monkeypatch: pytest.MonkeyPatch, client_type: type[PendingCodexClient]
-) -> tuple[server_manager.AgentsServerManager, codex_backend.AppServerManager, PendingCodexClient]:
+) -> AsyncGenerator[tuple[server_manager.AgentsServerManager, codex_backend.AppServerManager, PendingCodexClient]]:
     """保留したturn/start応答を持つCodex再開テストの共通入力を作成する。"""
-    manager = server_manager.AgentsServerManager()
-    backend = codex_backend.AppServerManager(manager.sessions, manager._condition)
-    client = client_type(backend)
+    async with server_manager.AgentsServerManager() as manager:
+        backend = codex_backend.AppServerManager(manager.sessions, manager._condition)
+        client = client_type(backend)
 
-    async def ensure_client(*_args: Any, **_kwargs: Any) -> PendingCodexClient:
-        return client
+        async def ensure_client(*_args: Any, **_kwargs: Any) -> PendingCodexClient:
+            return client
 
-    monkeypatch.setattr(backend, "_ensure_client", ensure_client)
-    install_backend(manager, "codex", backend)
-    return manager, backend, client
+        monkeypatch.setattr(backend, "_ensure_client", ensure_client)
+        install_backend(manager, "codex", backend)
+        yield manager, backend, client
 
 
 async def _start_blocked_codex_resume(
@@ -1167,20 +1187,21 @@ class BlockingResumeClaudeClient(FakeClaudeClient):
         return stream()
 
 
-def _blocking_resume_claude_manager(
+@contextlib.asynccontextmanager
+async def _blocking_resume_claude_manager(
     monkeypatch: pytest.MonkeyPatch, client: BlockingResumeClaudeClient
-) -> tuple[server_manager.AgentsServerManager, claude_backend.ClaudeServerManager]:
+) -> AsyncGenerator[tuple[server_manager.AgentsServerManager, claude_backend.ClaudeServerManager]]:
     """保留したClaude queryを持つ再開テストの共通入力を作成する。"""
-    manager = server_manager.AgentsServerManager()
-    backend = claude_backend.ClaudeServerManager(
-        manager.sessions,
-        manager._condition,
-        client_factory=lambda _options: client,
-        expire_session=manager._expire_session,
-    )
-    install_backend(manager, "claude", backend)
-    monkeypatch.setattr(claude_backend, "_build_options", lambda *_args, **_kwargs: SimpleNamespace())
-    return manager, backend
+    async with server_manager.AgentsServerManager() as manager:
+        backend = claude_backend.ClaudeServerManager(
+            manager.sessions,
+            manager._condition,
+            client_factory=lambda _options: client,
+            expire_session=manager._expire_session,
+        )
+        install_backend(manager, "claude", backend)
+        monkeypatch.setattr(claude_backend, "_build_options", lambda *_args, **_kwargs: SimpleNamespace())
+        yield manager, backend
 
 
 class BlockingResultClaudeClient(FakeClaudeClient):
@@ -1213,17 +1234,16 @@ async def _start_claude_until_available(
     )
     monkeypatch.setattr(claude_backend, "_build_options", lambda *_args, **_kwargs: SimpleNamespace())
     client = OpenStreamClaudeClient([messages])
-    manager = server_manager.AgentsServerManager()
-    backend = claude_backend.ClaudeServerManager(manager.sessions, manager._condition, client_factory=lambda _options: client)
-    _install_backend(manager, "claude", backend)
-    loop = asyncio.get_running_loop()
-    try:
+    async with server_manager.AgentsServerManager() as manager:
+        backend = claude_backend.ClaudeServerManager(
+            manager.sessions, manager._condition, client_factory=lambda _options: client
+        )
+        _install_backend(manager, "claude", backend)
+        loop = asyncio.get_running_loop()
         started = loop.time()
         response = await manager.start("plan", "調査", str(tmp_path))
         elapsed = loop.time() - started
         return response, elapsed, backend.sessions[response["session_id"]].model_output_observed
-    finally:
-        await manager.close()
 
 
 def _publish_recovered_session(
@@ -1247,7 +1267,10 @@ def _publish_recovered_session(
     )
 
 
-def _writer_backed_manager(tmp_path: pathlib.Path) -> tuple[server_manager.AgentsServerManager, status_file.StatusFileWriter]:
+@contextlib.asynccontextmanager
+async def _writer_backed_manager(
+    tmp_path: pathlib.Path,
+) -> AsyncGenerator[tuple[server_manager.AgentsServerManager, status_file.StatusFileWriter]]:
     """共有結果ファイルを公開するMCPマネージャーを既存のfake backendで組む。"""
     writer = status_file.StatusFileWriter(
         {},
@@ -1255,10 +1278,10 @@ def _writer_backed_manager(tmp_path: pathlib.Path) -> tuple[server_manager.Agent
         state_root=tmp_path,
         aggregate_seconds=0,
     )
-    manager = server_manager.AgentsServerManager(writer)
-    install_backend(manager, "codex", FakeBackend(manager.sessions, "codex"))
-    writer.activate()
-    return manager, writer
+    async with server_manager.AgentsServerManager(writer) as manager:
+        install_backend(manager, "codex", FakeBackend(manager.sessions, "codex"))
+        writer.activate()
+        yield manager, writer
 
 
 def _recording_candidates(monkeypatch: pytest.MonkeyPatch) -> list[str]:
@@ -1442,18 +1465,21 @@ def _rejected_stream(limit_type: str, resets_at: int | None, *, before_init: boo
     return [SystemMessage(session_id), event, *failure]
 
 
+@contextlib.asynccontextmanager
 async def _usage_limited_manager(
     monkeypatch: pytest.MonkeyPatch, streams: list[list[Any]]
-) -> tuple[server_manager.AgentsServerManager, FakeClaudeClient, FakeBackend]:
+) -> AsyncGenerator[tuple[server_manager.AgentsServerManager, FakeClaudeClient, FakeBackend]]:
     """先頭のClaude候補が利用上限で拒否され、後続にCodex候補を持つ起動条件のManagerを返す。"""
     candidates = [("claude", "opus", "high"), ("codex", "gpt-6.1-sol", "high")]
     monkeypatch.setattr(_atk_config, "parse_unresolved_model_candidates", lambda _m, **_kwargs: candidates)
     monkeypatch.setattr(server_manager, "START_AVAILABILITY_TIMEOUT", 5.0)
     monkeypatch.setattr(claude_backend, "_build_options", lambda *_args, **_kwargs: SimpleNamespace())
     client = FakeClaudeClient(streams)
-    manager = server_manager.AgentsServerManager()
-    backend = claude_backend.ClaudeServerManager(manager.sessions, manager._condition, client_factory=lambda _options: client)
-    _install_backend(manager, "claude", backend)
-    codex = FakeBackend(manager.sessions, "codex")
-    _install_backend(manager, "codex", codex)
-    return manager, client, codex
+    async with server_manager.AgentsServerManager() as manager:
+        backend = claude_backend.ClaudeServerManager(
+            manager.sessions, manager._condition, client_factory=lambda _options: client
+        )
+        _install_backend(manager, "claude", backend)
+        codex = FakeBackend(manager.sessions, "codex")
+        _install_backend(manager, "codex", codex)
+        yield manager, client, codex

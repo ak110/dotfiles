@@ -47,59 +47,60 @@ async def test_notifications_record_only_completed_compaction(
     """開始と完了の両通知が有効な場合だけ記録し、片側だけの保持はturn終端で破棄する。"""
     monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
     session = state.SessionState("thread-1", str(tmp_path), engine="codex", turn_id="turn-1")
-    manager = codex.AppServerManager({session.session_id: session})
+    async with codex.AppServerManager({session.session_id: session}) as manager:
+        await manager._handle_notification(  # pylint: disable=protected-access
+            {
+                "method": "item/started",
+                "params": {
+                    "threadId": session.session_id,
+                    "turnId": session.turn_id,
+                    "startedAtMs": 1000,
+                    "item": {"id": "complete", "type": "contextCompaction"},
+                },
+            }
+        )
+        await manager._handle_notification(  # pylint: disable=protected-access
+            {
+                "method": "item/completed",
+                "params": {
+                    "threadId": session.session_id,
+                    "turnId": session.turn_id,
+                    "completedAtMs": 3500,
+                    "item": {"id": "complete", "type": "contextCompaction"},
+                },
+            }
+        )
+        await manager._handle_notification(  # pylint: disable=protected-access
+            {
+                "method": "item/started",
+                "params": {
+                    "threadId": session.session_id,
+                    "turnId": session.turn_id,
+                    "startedAtMs": 4000,
+                    "item": {"id": "partial", "type": "contextCompaction"},
+                },
+            }
+        )
 
-    await manager._handle_notification(  # pylint: disable=protected-access
-        {
-            "method": "item/started",
-            "params": {
-                "threadId": session.session_id,
-                "turnId": session.turn_id,
-                "startedAtMs": 1000,
-                "item": {"id": "complete", "type": "contextCompaction"},
-            },
-        }
-    )
-    await manager._handle_notification(  # pylint: disable=protected-access
-        {
-            "method": "item/completed",
-            "params": {
-                "threadId": session.session_id,
-                "turnId": session.turn_id,
-                "completedAtMs": 3500,
-                "item": {"id": "complete", "type": "contextCompaction"},
-            },
-        }
-    )
-    await manager._handle_notification(  # pylint: disable=protected-access
-        {
-            "method": "item/started",
-            "params": {
-                "threadId": session.session_id,
-                "turnId": session.turn_id,
-                "startedAtMs": 4000,
-                "item": {"id": "partial", "type": "contextCompaction"},
-            },
-        }
-    )
+        records = [
+            json.loads(line) for line in _record_path(tmp_path, session.session_id).read_text(encoding="utf-8").splitlines()
+        ]
+        assert [record["item_id"] for record in records] == ["complete"]
+        assert records[0]["duration_seconds"] == 2.5
+        assert session.compaction_started_at_ms == {"partial": 4000}
 
-    records = [json.loads(line) for line in _record_path(tmp_path, session.session_id).read_text(encoding="utf-8").splitlines()]
-    assert [record["item_id"] for record in records] == ["complete"]
-    assert records[0]["duration_seconds"] == 2.5
-    assert session.compaction_started_at_ms == {"partial": 4000}
+        await manager._handle_notification(  # pylint: disable=protected-access
+            {
+                "method": "turn/completed",
+                "params": {
+                    "threadId": session.session_id,
+                    "turn": {"id": session.turn_id, "status": "completed", "error": None},
+                },
+            }
+        )
 
-    await manager._handle_notification(  # pylint: disable=protected-access
-        {
-            "method": "turn/completed",
-            "params": {
-                "threadId": session.session_id,
-                "turn": {"id": session.turn_id, "status": "completed", "error": None},
-            },
-        }
-    )
-
-    assert not session.compaction_started_at_ms
-    assert [
-        json.loads(line)["item_id"]
-        for line in _record_path(tmp_path, session.session_id).read_text(encoding="utf-8").splitlines()
-    ] == ["complete"]
+        assert not session.compaction_started_at_ms
+        assert [
+            json.loads(line)["item_id"]
+            for line in _record_path(tmp_path, session.session_id).read_text(encoding="utf-8").splitlines()
+        ] == ["complete"]

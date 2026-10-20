@@ -14,7 +14,7 @@ export function exitStatePath(
   sessionId: string,
   configured: string | undefined,
   home: string | undefined,
-  kind: "marker" | "request" | "recheck",
+  kind: "marker" | "request" | "recheck" | "rate-limit",
 ): string | undefined {
   if (!SESSION_ID.test(sessionId)) return undefined;
   let root: string | undefined;

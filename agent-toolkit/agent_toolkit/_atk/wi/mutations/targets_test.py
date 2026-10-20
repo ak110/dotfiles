@@ -57,36 +57,30 @@ def test_add_empty_awi_keeps_detailed_rejection(
     assert "該当メッセージの先頭: -" in captured.err
 
 
-def test_return_rejected_entry_conflict_preserves_terminal_result(
+def test_remove_rejected_entry_content_conflict_preserves_terminal_result(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
-    capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """復帰先が競合する場合は不採用項目を変更せず保持する。"""
+    """確認後に本文が変わった場合は不採用項目と処理結果を保持する。"""
     notes = _setup_notes(tmp_path)
-    _write_awi_file(notes, "entry.md")
+    rejected = _write_awi_file(notes, "entry.md")
     _disable_transition_git(monkeypatch)
     mutation_transitions.transition_entries(notes, action="reject", filenames=["entry.md"], now=_FIXED_DT)
-    rejected = notes / "rejected/entry.md"
-    before = rejected.read_bytes()
-    _write_awi_file(notes, "entry.md")
+    before = rejected.read_text(encoding="utf-8")
+    rejected.write_text(before + "\n外部追記\n", encoding="utf-8")
+    current = rejected.read_bytes()
 
-    with pytest.raises(SystemExit) as exc_info:
+    with pytest.raises(RuntimeError, match="編集中に他プロセスが対象を変更しました"):
         mutation_transitions.transition_entries(
             notes,
-            action="return-to-inbox",
+            action="remove",
             filenames=["entry.md"],
             state="rejected",
             now=_FIXED_DT,
+            expected_content=before,
         )
 
-    assert exc_info.value.code == 2
-    # 同名の項目を比較して不要な側を削除する手段を、実在するサブコマンド名で示すこと。
-    next_actions = [line for line in capsys.readouterr().err.splitlines() if line.startswith("次の操作: ")]
-    assert len(next_actions) == 1
-    assert "atk wi show entry.md" in next_actions[0]
-    assert "atk wi rm" in next_actions[0]
-    assert rejected.read_bytes() == before
+    assert rejected.read_bytes() == current
     assert "## 処理結果" in rejected.read_text(encoding="utf-8")
 
 
@@ -100,9 +94,10 @@ def test_remove_rejects_changed_and_unreadable_expected_content(
     monkeypatch.setattr(_wi_sync, "push_pending_commits", lambda _path: None)
     monkeypatch.setattr(_wi_sync, "pull", lambda _path: None)
     monkeypatch.setattr(_wi_sync, "commit_and_push", lambda *_args, **_kwargs: None)
-    original = "---\ntype: awi\n---\n\n確認時本文\n"
+    original = "---\nstate: inbox\ntype: awi\n---\n\n確認時本文\n"
 
-    changed = notes / "inbox/changed.md"
+    changed = notes / "2026/10/changed.md"
+    changed.parent.mkdir(parents=True, exist_ok=True)
     changed.write_text(original.replace("確認時", "外部更新後"), encoding="utf-8")
     with pytest.raises(RuntimeError, match="編集中に他プロセスが対象を変更しました"):
         mutation_transitions.transition_entries(
@@ -115,7 +110,7 @@ def test_remove_rejects_changed_and_unreadable_expected_content(
         )
     assert changed.exists()
 
-    pull_changed = notes / "inbox/pull-changed.md"
+    pull_changed = notes / "2026/10/pull-changed.md"
     pull_changed.write_text(original, encoding="utf-8")
 
     def update_during_pull(_path: pathlib.Path) -> None:
@@ -133,7 +128,7 @@ def test_remove_rejects_changed_and_unreadable_expected_content(
         )
     assert pull_changed.read_text(encoding="utf-8").endswith("pull後本文\n")
 
-    unreadable = notes / "inbox/unreadable.md"
+    unreadable = notes / "2026/10/unreadable.md"
     unreadable.write_bytes(b"\xff")
     monkeypatch.setattr(_wi_sync, "pull", lambda _path: None)
     with pytest.raises(RuntimeError, match="編集中に他プロセスが対象を変更しました"):
@@ -201,14 +196,8 @@ class TestAdoptMultiple:
             atk.main(["wi", "adopt", "fb-001.md", "fb-002.md", "fb-003.md"], home=tmp_path)
 
         assert exc_info.value.code == 0
-        inbox = notes / "inbox"
-        assert not (inbox / "fb-001.md").exists()
-        assert not (inbox / "fb-002.md").exists()
-        assert not (inbox / "fb-003.md").exists()
-        adopted = notes / "adopted"
-        assert (adopted / "fb-001.md").exists()
-        assert (adopted / "fb-002.md").exists()
-        assert (adopted / "fb-003.md").exists()
+        for filename in ("fb-001.md", "fb-002.md", "fb-003.md"):
+            assert "state: adopted" in (notes / "2026" / "10" / filename).read_text(encoding="utf-8")
 
         commit_cmds = [c["cmd"] for c in git_calls if "commit" in c["cmd"]]
         assert len(commit_cmds) == 1
@@ -298,13 +287,11 @@ class TestSkipPush:
     ) -> None:
         """キューがcleanでもaheadの滞留commitを`atk wi commit`でpushする。"""
         notes = _setup_notes(tmp_path)
-        for state in ("processing", "adopted", "rejected"):
-            (notes / state).mkdir()
-        (notes / "adopted" / "base.md").write_text("base\n", encoding="utf-8")
+        (notes / "base.txt").write_text("base\n", encoding="utf-8")
         remote = tmp_path / "origin.git"
         _init_notes_with_origin(notes, remote)
-        (notes / "adopted" / "pending.md").write_text("pending\n", encoding="utf-8")
-        git_repository.run_git(notes, "add", "adopted/pending.md")
+        (notes / "pending.txt").write_text("pending\n", encoding="utf-8")
+        git_repository.run_git(notes, "add", "pending.txt")
         git_repository.run_git(notes, "commit", "-m", "pending")
 
         with pytest.raises(SystemExit) as exc_info:
@@ -362,8 +349,8 @@ class TestSkipPush:
         assert local_head() == remote_head()
 
         git_repository.run_git(second_notes, "pull", "--ff-only")
-        (notes / "adopted" / "pending.md").write_text("pending\n", encoding="utf-8")
-        git_repository.run_git(notes, "add", "adopted/pending.md")
+        (notes / "pending.txt").write_text("pending\n", encoding="utf-8")
+        git_repository.run_git(notes, "add", "pending.txt")
         git_repository.run_git(notes, "commit", "-m", "pending")
         pending_head = local_head()
         remote_before_skip = remote_head()
@@ -388,8 +375,8 @@ class TestSkipPush:
             atk.main(["wi", "reject", "following.md"], home=first_home, now=_FIXED_DT)
         assert following_exit.value.code == 0
         assert local_head() == remote_head()
-        assert (notes / "adopted/skip.md").is_file()
-        assert (notes / "rejected/following.md").is_file()
+        assert "state: adopted" in (notes / "2026/10/skip.md").read_text(encoding="utf-8")
+        assert "state: rejected" in (notes / "2026/10/following.md").read_text(encoding="utf-8")
 
     def test_skip_push_without_remote_does_not_report_note(
         self,
@@ -419,7 +406,7 @@ def test_edit_cli_rejects_removed_plan_file_option_without_changes(
     notes = _setup_notes(tmp_path)
     filename = "20260827-000000-001.md"
     source = _write_awi_file(notes, filename)
-    source.replace(notes / "hold" / filename)
+    source.write_text(source.read_text(encoding="utf-8").replace("state: inbox", "state: hold"), encoding="utf-8")
     plan_base = "a" * 40
     current_head = "b" * 40
     plan = tmp_path / "main-plan.md"
@@ -448,8 +435,7 @@ def test_edit_cli_rejects_removed_plan_file_option_without_changes(
         atk.main(_edit_plan_args(tmp_path, filename, "統合本文", plan), home=tmp_path, now=_FIXED_DT)
 
     assert captured.value.code == 2
-    assert (notes / "hold" / filename).is_file()
-    assert not (notes / "inbox" / filename).exists()
+    assert "state: hold" in source.read_text(encoding="utf-8")
     assert not resolved
     assert not (notes / "processing" / filename).exists()
 
@@ -486,10 +472,11 @@ class TestStartProcessingFailureBoundaries:
             )
 
         assert transition_calls == ["transition"]
-        assert sorted(path.name for path in (notes / "processing").iterdir()) == ["fb-001.md", "fb-002.md"]
-        assert not list((notes / "inbox").iterdir())
+        assert sorted(path.name for path in (notes / "2026/10").iterdir()) == ["fb-001.md", "fb-002.md"]
+        assert all("state: processing" in path.read_text(encoding="utf-8") for path in (notes / "2026/10").iterdir())
+        assert not (notes / "inbox").exists()
 
-        status_outputs = [" M processing/fb-001.md\n M processing/fb-002.md\n", ""]
+        status_outputs = [" M 2026/10/fb-001.md\n M 2026/10/fb-002.md\n", ""]
         recovery_calls: list[tuple[object, ...]] = []
         push_calls: list[pathlib.Path] = []
 
@@ -547,8 +534,9 @@ class TestStartProcessingFailureBoundaries:
 
         assert exc_info.value.cmd == ["git", "push"]
         assert calls == ["push"]
-        assert sorted(path.name for path in (notes / "processing").iterdir()) == ["fb-001.md", "fb-002.md"]
-        assert not list((notes / "inbox").iterdir())
+        assert sorted(path.name for path in (notes / "2026/10").iterdir()) == ["fb-001.md", "fb-002.md"]
+        assert all("state: processing" in path.read_text(encoding="utf-8") for path in (notes / "2026/10").iterdir())
+        assert not (notes / "inbox").exists()
         after_head = git_repository.run_git(notes, "rev-parse", "HEAD").stdout.strip()
         assert after_head != before_head
         status = git_repository.run_git(notes, "status", "--porcelain")
@@ -627,4 +615,4 @@ def test_transition_with_multiple_target_repos_mismatch_names_recovery(
     assert next_action.startswith("次の操作: ")
     assert "--target-repo" in next_action
     assert "atk wi show entry.md" in next_action
-    assert (notes / "inbox/entry.md").is_file()
+    assert "state: inbox" in (notes / "2026/10/entry.md").read_text(encoding="utf-8")

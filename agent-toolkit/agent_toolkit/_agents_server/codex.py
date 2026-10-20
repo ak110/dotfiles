@@ -39,7 +39,7 @@ from agent_toolkit._agents_server import (
     plugin_root as plugin_roots,
 )
 from agent_toolkit._agents_server import state as shared_state  # pylint: disable=wrong-import-position
-from agent_toolkit._agents_server.file_operations import run_file_operation
+from agent_toolkit._agents_server.file_operations import finish_task, run_file_operation
 from agent_toolkit._agents_server.input_validation import validate_cwd, validate_model_effort, validate_prompt
 from agent_toolkit._agents_server.launch_prompts import (
     AUTO_RESUME_NOTICE,
@@ -254,6 +254,16 @@ def _client_pid(client: Any) -> int | None:
 class JsonRpcProcess:
     """stdio App Serverとの要求・応答を多重化するクライアント。"""
 
+    _close_task: asyncio.Task[list[str]] | None = None
+
+    async def __aenter__(self) -> typing.Self:
+        return self
+
+    async def __aexit__(self, *_exception: object) -> None:
+        residual = await self.close()
+        if residual:
+            raise ResourceReleaseError("unassigned", residual)
+
     def __init__(
         self,
         on_notification: Callable[[dict[str, Any]], Awaitable[None]],
@@ -355,7 +365,7 @@ class JsonRpcProcess:
                 f"Codex App Server did not complete initialize within {shared_state.SESSION_INITIALIZATION_TIMEOUT:.0f}s: "
                 f"command={' '.join(APP_SERVER_COMMAND)}; diagnostic={diagnostic}"
             ) from exc
-        except Exception as exc:
+        except BaseException as exc:
             _LOG.error(
                 "Codex App Server初期化失敗: exception_type=%s exception=%s diagnostic=%s",
                 type(exc).__name__,
@@ -542,6 +552,12 @@ class JsonRpcProcess:
         戻り値は資源を保持したまま残った対象（App Server自身を含む）の記述であり、空なら全て終了している。
         残った対象は保持し、同じ接続への再度の`close`で回収を再試行する。
         """
+        task = self._close_task
+        if task is None or task.done() and (task.cancelled() or task.exception() is not None or task.result()):
+            task = self._close_task = asyncio.create_task(self._close())
+        return await finish_task(task)
+
+    async def _close(self) -> list[str]:
         if self._closed and self.process is None and not self._residual:
             return []
         process = self.process
@@ -603,12 +619,20 @@ class AppServerManager:
     このためsessionの資源解放は、所有するApp Serverと子孫の終了を確認して完了とする。
     """
 
+    _close_task: asyncio.Task[None] | None = None
+
     START_FAILURE_EXCLUDES_CANDIDATE: typing.ClassVar[bool] = False
     """起動の例外は候補を変えても結果が変わらないため、次の候補へ進まずに委譲元へ返す。"""
     INTERRUPT_REQUIRES_TURN_ID: typing.ClassVar[bool] = True
     """`turn/interrupt`はturnの識別子を要するため、中断の要求はturnの開始を待ってから送る。"""
     ORPHAN_TAKEOVER: typing.ClassVar[bool] = True
     """所有者のいない`running`の登録簿の記録を、`thread/read`の結果から終端として引き継げる。"""
+
+    async def __aenter__(self) -> typing.Self:
+        return self
+
+    async def __aexit__(self, *_exception: object) -> None:
+        await self.close()
 
     @staticmethod
     def unavailable_reason(session: SessionState) -> str | None:
@@ -650,6 +674,8 @@ class AppServerManager:
     ) -> None:
         self._clients: dict[str, JsonRpcProcess] = {}
         """委譲session（親thread）の識別子から、そのsessionが所有するApp Server接続への対応。"""
+        self._unassigned_clients: dict[int, JsonRpcProcess] = {}
+        """sessionへの所有移譲前と、短命な照会中の接続。解放失敗後も再試行できるよう保持する。"""
         self.sessions = sessions if sessions is not None else {}
         self._condition = condition if condition is not None else asyncio.Condition()
         self._publish_registry = publish_registry
@@ -753,7 +779,8 @@ class AppServerManager:
 
         `launch_kind`はturnを実行するsessionの起動区分で、App Serverの子環境を通じて委譲先のhookへ届く。
 
-        接続は呼び出し元が所有し、sessionへ登録するか、用途を終えた時点で`_discard_client`で終了させる。
+        接続は生成直後からmanagerが保持し、呼び出し元の文脈でsessionへ移譲するか、
+        用途を終えた時点で`_discard_client`で終了させる。解放に失敗した接続はmanagerの停止で再試行する。
         サーバー要求への応答と接続障害の反映は、この接続が所有するsessionだけを対象にする。
         """
         client: JsonRpcProcess | None = None
@@ -773,13 +800,22 @@ class AppServerManager:
             root_session_id=self._root_session_id,
             launch_kind=launch_kind,
         )
-        await client.start()
+        self._unassigned_clients[id(client)] = client
+        async with contextlib.AsyncExitStack() as resources:
+            resources.push_async_callback(self._discard_client, client)
+            await client.start()
+            resources.pop_all()
         return client
 
-    @staticmethod
-    async def _discard_client(client: Any) -> None:
-        """sessionへ登録しなかった接続を終了させる。残った対象は`close`が診断へ記録する。"""
-        await client.close()
+    async def _discard_client(self, client: Any) -> None:
+        """sessionへ登録しなかった接続を終了し、全て回収できた場合に保持を外す。"""
+        residual = await client.close()
+        if residual:
+            raise session_errors.ActionableRuntimeError(
+                f"Codex App Server resources before session assignment are still running: {'; '.join(residual)}",
+                next_action="MCPサーバーの停止時に再度解放する。残存するPIDの終了を妨げる原因を調べる",
+            )
+        self._unassigned_clients.pop(id(client), None)
 
     def _owned_client(self, session: SessionState) -> Any:
         """sessionが所有する生存中の接続を返す。無い場合は`None`を返す。"""
@@ -801,6 +837,7 @@ class AppServerManager:
             await self._release_owned_client(session_id)
         client = await self._ensure_client(launch_kind)
         self._clients[session_id] = client
+        self._unassigned_clients.pop(id(client), None)
         return client
 
     async def _release_owned_client(self, session_id: str) -> None:
@@ -821,11 +858,10 @@ class AppServerManager:
         応答がthreadとturnの一覧を持たない場合は`AppServerError`を送出する。
         照会には専用のApp Serverを起動し、応答を得た後に終了させる。
         """
-        client = await self._ensure_client()
-        try:
+        async with contextlib.AsyncExitStack() as resources:
+            client = await self._ensure_client()
+            resources.push_async_callback(self._discard_client, client)
             response = await client.request("thread/read", {"threadId": session_id, "includeTurns": True})
-        finally:
-            await self._discard_client(client)
         thread = response.get("thread") if isinstance(response, dict) else None
         turns = thread.get("turns") if isinstance(thread, dict) else None
         if not isinstance(turns, list):
@@ -839,11 +875,10 @@ class AppServerManager:
 
     async def list_models(self) -> list[dict[str, Any]]:
         """専用のApp Server接続から表示対象の全モデルページを取得し、接続を終了させる。"""
-        client = await self._ensure_client()
-        try:
+        async with contextlib.AsyncExitStack() as resources:
+            client = await self._ensure_client()
+            resources.push_async_callback(self._discard_client, client)
             return await codex_models.fetch_catalog(client.request)
-        finally:
-            await self._discard_client(client)
 
     async def start(
         self,
@@ -860,8 +895,9 @@ class AppServerManager:
         validate_prompt(prompt)
         validate_cwd(cwd)
         validate_model_effort(model, effort)
-        client = await self._ensure_client(launch_kind)
-        try:
+        async with contextlib.AsyncExitStack() as resources:
+            client = await self._ensure_client(launch_kind)
+            resources.push_async_callback(self._discard_client, client)
             thread_response, selection, attempted, owner_session_id, writer_session_id = await self._start_thread(
                 client, cwd, model, launch_kind
             )
@@ -869,11 +905,9 @@ class AppServerManager:
             await session_identity.validate_identity(self._validate_session_id, session_id, None)
             if owner_session_id is not None and writer_session_id is not None:
                 await run_file_operation(shared_roots.write_host_alias, owner_session_id, writer_session_id, session_id)
-        except BaseException:
-            # threadを所有するsessionが成立しなかった接続は、起動した呼び出しの中で終了させる。
-            await self._discard_client(client)
-            raise
-        self._clients[session_id] = client
+            self._clients[session_id] = client
+            self._unassigned_clients.pop(id(client), None)
+            resources.pop_all()
         if writer_session_id is not None:
             self._writer_session_ids[session_id] = writer_session_id
         session = SessionState(
@@ -1943,6 +1977,12 @@ class AppServerManager:
 
         全接続の終了を試みた後、終了を確認できない対象が残れば`ResourceReleaseError`を送出する。
         """
+        task = self._close_task
+        if task is None or task.done() and (task.cancelled() or task.exception() is not None):
+            task = self._close_task = asyncio.create_task(self._close())
+        await finish_task(task)
+
+    async def _close(self) -> None:
         current_task = asyncio.current_task()
         tasks = tuple(task for task in self._background_tasks if task is not current_task)
         for task in tasks:
@@ -1950,14 +1990,22 @@ class AppServerManager:
                 task.cancel()
         if tasks:
             await asyncio.gather(*tasks, return_exceptions=True)
-        failures: list[ResourceReleaseError] = []
+        failures: list[Exception] = []
+        for client in tuple(self._unassigned_clients.values()):
+            try:
+                await self._discard_client(client)
+            except Exception as error:
+                failures.append(error)
         for session_id in tuple(self._clients):
             try:
                 await self._release_owned_client(session_id)
-            except ResourceReleaseError as error:
+            except Exception as error:
                 failures.append(error)
         for session in self._codex_sessions():
-            await session.drain_registration()
+            try:
+                await session.drain_registration()
+            except Exception as error:
+                failures.append(error)
         if failures:
             for other in failures[1:]:
                 failures[0].add_note(str(other))

@@ -236,6 +236,7 @@ class SessionState:
     claude_role: str | None = None
     claude_api_resume_pending: bool = False
     claude_connection_diagnostics: tuple[str, ...] = ()
+    claude_mcp_diagnostics: tuple[str, ...] = ()
     claude_connection_failures: dict[str, str] = dataclasses.field(default_factory=dict, repr=False)
     # 利用上限でサブスクリプションからAPIへ移した委譲先を、サブスクリプションへ戻してよい時刻（epoch秒）。
     # 所有MCPサーバーのメモリーだけに置き、解放後の再開は保存した接続を使う。

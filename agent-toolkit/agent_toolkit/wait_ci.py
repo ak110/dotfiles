@@ -1221,8 +1221,9 @@ def main(argv: list[str] | None = None) -> int:
         "--repo",
         required=True,
         help=(
-            "対象repository。SSHとAPIの接続先が異なるGitLabではAPI側のURL（ポート込み）を指定する。"
-            "baseline作成と待機は同じ値を使う。ホスト省略時はglabの公開環境指定と設定を使う"
+            "対象repository。GitLabのホスト付き識別子とSSH指定はglabのホスト別API・認証設定を使う。"
+            "明示HTTP(S) URLはscheme・authorityをAPI接続先と認証設定のホストキーに使う。"
+            "baseline作成と待機は同じ値を使う。ホスト省略時はGITLAB_HOST・GITLAB_URI・GL_HOSTとglabの設定を使う"
         ),
     )
     parser.add_argument("--ref", required=True, help="対象destination ref（例: refs/heads/main）")

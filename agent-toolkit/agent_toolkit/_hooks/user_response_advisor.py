@@ -111,6 +111,8 @@ def evaluate(payload_text: str) -> tuple[str, str]:
                 needs_response = False
         elif entry.get("type") == "assistant":
             message = entry.get("message")
+            if entry.get("isApiErrorMessage") or isinstance(message, dict) and message.get("model") == "<synthetic>":
+                continue
             text = transcript.visible_assistant_text(message)
             if any(not char.isspace() and char != "…" for char in text):
                 needs_response = False
