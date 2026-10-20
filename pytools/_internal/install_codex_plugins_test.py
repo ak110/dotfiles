@@ -10,7 +10,6 @@ import subprocess
 import sys
 from collections.abc import Callable, Iterator
 from pathlib import Path
-from types import SimpleNamespace
 from typing import Any, cast
 
 import pytest
@@ -226,7 +225,7 @@ def test_registers_and_installs_with_official_cli(plugin_env: Path, monkeypatch:
     assert ["plugin", "marketplace", "add", str(plugin_env)] in calls
     assert ["plugin", "add", "agent-toolkit@ak110-dotfiles"] in calls
     assert not destination.exists()
-    assert not cache_entry.exists()
+    assert (cache_entry / "marker").read_text(encoding="utf-8") == "keep"
 
 
 def test_first_hook_transition_preserves_previous_cache(plugin_env: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -257,27 +256,25 @@ def test_first_hook_transition_preserves_previous_cache(plugin_env: Path, monkey
 
 
 @pytest.mark.parametrize(
-    ("old_version", "enabled", "first_transition", "deferred_change"),
+    ("old_version", "enabled", "first_transition"),
     [
-        ("1.2.2", True, False, "導入版1.2.2から目標版1.2.3への更新"),
-        ("1.2.2", True, True, "導入版1.2.2から目標版1.2.3への更新"),
-        ("1.2.3", False, False, "無効から有効への切り替え"),
+        ("1.2.2", True, False),
+        ("1.2.2", True, True),
+        ("1.2.3", False, False),
     ],
 )
-def test_running_codex_preserves_cache_then_updates_after_stop(  # noqa: PLR0913 -- 延期の条件と期待する案内を組で与える
+def test_running_codex_updates_and_preserves_previous_caches(  # noqa: PLR0913 -- 更新前の条件を組で与える
     plugin_env: Path,
     monkeypatch: pytest.MonkeyPatch,
-    caplog: pytest.LogCaptureFixture,
     old_version: str,
     enabled: bool,
     first_transition: bool,
-    deferred_change: str,
 ) -> None:
-    """旧版を削除するCLIへの到達を延期して更新未完了を案内し、停止後は案内なしで更新と有効版のwarmup解決を完遂する。
-
-    延期を変更なしの成功としてだけ返すと、同期記録と完了案内の読み手は旧版のまま最新版を適用済みと扱う。
-    """
+    """Codexの稼働中も更新し、CLIが削除した全旧版を同じ絶対パスへ戻す。"""
     cache = install_codex_plugins.CODEX_HOME / "plugins/cache/ak110-dotfiles/agent-toolkit"
+    older = cache / "1.2.1"
+    (older / "skills/older").mkdir(parents=True)
+    (older / "skills/older/SKILL.md").write_text("older skill", encoding="utf-8")
     previous = cache / old_version
     (previous / "skills/coding").mkdir(parents=True)
     (previous / "skills/coding/SKILL.md").write_text("old skill", encoding="utf-8")
@@ -286,22 +283,16 @@ def test_running_codex_preserves_cache_then_updates_after_stop(  # noqa: PLR0913
     if first_transition:
         (install_codex_plugins._hook_bin() / "atk-hook").unlink()  # pylint: disable=protected-access
     current: dict[str, Any] = {"version": old_version, "enabled": enabled}
-    running = True
     calls: list[list[str]] = []
-    monkeypatch.setattr(host_roles, "is_linux_server", lambda: True)
-    monkeypatch.setattr(codex_processes, "codex_processes", lambda: (_SESSION,) if running else ())
+    monkeypatch.setattr(codex_processes, "codex_processes", lambda: (_SESSION,))
 
     def codex_json(args: list[str]) -> dict[str, Any]:
-        if running:
-            assert (previous / "skills/coding/SKILL.md").read_text(encoding="utf-8") == "old skill"
-            assert (previous / "agent_toolkit/agents_server_mcp.py").read_text(encoding="utf-8") == "old mcp"
         return _local_marketplace(plugin_env) if args[1] == "marketplace" else _installed_state(**current)
 
     def command(args: list[str]) -> bool:
         calls.append(args)
         if args[:2] == ["plugin", "add"]:
-            assert not running
-            shutil.rmtree(previous)
+            shutil.rmtree(cache)
             latest = cache / "1.2.3"
             (latest / "agent_toolkit").mkdir(parents=True, exist_ok=True)
             (latest / "agent_toolkit/hook.py").write_text("new hook", encoding="utf-8")
@@ -318,40 +309,16 @@ def test_running_codex_preserves_cache_then_updates_after_stop(  # noqa: PLR0913
     monkeypatch.setattr(install_codex_plugins, "_codex_json", codex_json)
     monkeypatch.setattr(install_codex_plugins, "_command", command)
     monkeypatch.setattr(common, "run_subprocess", run_subprocess)
-    caplog.set_level(logging.WARNING, logger=install_codex_plugins.__name__)
 
     outcome = install_codex_plugins.run()
-    assert outcome.changed is False
-    assert not calls
-    # 延期は自動更新タイマーが延期記録から再試行するため、再実行の操作を求めずに延期の結果を返す。
-    assert outcome.deferred is True
-    deferral = [notice for notice in outcome.notices if "を延期しました" in notice.message]
-    assert len(deferral) == 1
-    assert deferral[0].command is None
-    assert "agent-toolkit@ak110-dotfiles" in deferral[0].message
-    assert f"{deferred_change}を延期しました（稼働中: codex app-server (1件)）" in deferral[0].message
-    assert "自動更新タイマーが再試行し" in deferral[0].message
-    assert "操作は不要です" in deferral[0].message
-    assert "再実行してください" not in deferral[0].message
-    assert current == {"version": old_version, "enabled": enabled}
-    assert (previous / "skills/coding/SKILL.md").read_text(encoding="utf-8") == "old skill"
-    assert (previous / "agent_toolkit/agents_server_mcp.py").read_text(encoding="utf-8") == "old mcp"
-    assert "plugin更新を延期" in caplog.text and "自動更新タイマーが再試行し" in caplog.text
-    warmup = plugin_warmup.codex_plugin_script(
-        plugin_id="agent-toolkit@ak110-dotfiles",
-        plugin_name="agent-toolkit",
-        relative_path=Path("agent_toolkit/agents_server_mcp.py"),
-        tag="test",
-    )
-    assert warmup == (previous / "agent_toolkit/agents_server_mcp.py" if enabled else None)
-
-    running = False
-    updated = install_codex_plugins.run()
-    assert updated.changed is True
-    assert updated.deferred is False
-    assert not [notice for notice in updated.notices if "を延期しました" in notice.message]
+    assert outcome.changed is True
+    assert outcome.deferred is False
     assert calls.count(["plugin", "add", "agent-toolkit@ak110-dotfiles"]) == 1
     assert current == {"version": "1.2.3", "enabled": True}
+    assert (older / "skills/older/SKILL.md").read_text(encoding="utf-8") == "older skill"
+    if old_version != "1.2.3":
+        assert (previous / "skills/coding/SKILL.md").read_text(encoding="utf-8") == "old skill"
+        assert (previous / "agent_toolkit/agents_server_mcp.py").read_text(encoding="utf-8") == "old mcp"
     latest = cache / "1.2.3"
     assert (latest / "skills/coding/SKILL.md").read_text(encoding="utf-8") == "new skill"
     assert (latest / "agent_toolkit/agents_server_mcp.py").read_text(encoding="utf-8") == "new mcp"
@@ -367,22 +334,12 @@ def test_running_codex_preserves_cache_then_updates_after_stop(  # noqa: PLR0913
 
 
 @pytest.mark.skipif(sys.platform != "linux", reason="実行名をsymlinkで与える常駐プロセスはLinuxで起動する")
-@pytest.mark.parametrize("auto_restart", [False, True], ids=["no-auto-restart", "auto-restart"])
-@pytest.mark.parametrize("linux_server", [True, False], ids=["linux-server", "other-host"])
-def test_running_codex_session_keeps_old_cache_until_it_ends(  # noqa: PLR0913 -- ホスト条件と隔離用fixtureを組で与える
+def test_running_codex_session_updates_without_removing_old_cache(
     plugin_env: Path,
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
-    linux_server: bool,
-    auto_restart: bool,
 ) -> None:
-    """稼働中のCodexセッションがある間は、ホストの役割と自動再起動の指定によらず旧版を保持し、終了後の再実行で更新する。
-
-    スタブの`plugin add`は公式CLIと同じく旧版cacheを削除するため、延期を経ずに更新へ進むと旧版のhookが消える。
-    """
-    monkeypatch.setattr(host_roles, "is_linux_server", lambda: linux_server)
-    if auto_restart:
-        monkeypatch.setenv("DOTFILES_CODEX_DAEMON_AUTO_RESTART", "1")
+    """実在するCodexセッションがあっても更新し、CLIが削除した旧cacheを復旧する。"""
     monkeypatch.setattr(codex_processes, "codex_processes", _REAL_CODEX_PROCESSES)
     monkeypatch.setattr(post_apply.sync_report, "REPORT_PATH", tmp_path / "state" / "sync-report.json")
     monkeypatch.setattr(post_apply, "_UPDATE_LOG_PATH", tmp_path / "update-dotfiles.log")
@@ -419,141 +376,64 @@ def test_running_codex_session_keeps_old_cache_until_it_ends(  # noqa: PLR0913 -
 
     with ResidentProcesses(tmp_path, monkeypatch) as residents:
         residents.start("codex")
-        with pytest.raises(SystemExit) as deferred_exit:
+        with pytest.raises(SystemExit) as updated_exit:
             post_apply.main(runner=lambda: post_apply.run(steps=steps))
-        assert deferred_exit.value.code == 0
-        assert ["plugin", "add", "agent-toolkit@ak110-dotfiles"] not in calls
+        assert updated_exit.value.code == 0
+        assert ["plugin", "add", "agent-toolkit@ak110-dotfiles"] in calls
         assert (previous / "agent_toolkit/hook.py").read_text(encoding="utf-8") == "old hook"
         assert (previous / "skills/coding/SKILL.md").read_text(encoding="utf-8") == "old skill"
-        assert json.loads(record.read_text(encoding="utf-8"))["steps"] == ["Codex plugin のインストール"]
-
-    with pytest.raises(SystemExit) as updated_exit:
-        post_apply.main(runner=lambda: post_apply.run(steps=steps))
-    assert updated_exit.value.code == 0
-    assert calls.count(["plugin", "add", "agent-toolkit@ak110-dotfiles"]) == 1
-    assert current == {"version": "1.2.3", "enabled": True}
-    assert (cache / "1.2.3/agent_toolkit/hook.py").read_text(encoding="utf-8") == "new hook"
+        assert current == {"version": "1.2.3", "enabled": True}
+        assert (cache / "1.2.3/agent_toolkit/hook.py").read_text(encoding="utf-8") == "new hook"
     assert not record.exists()
 
 
-@pytest.mark.parametrize(
-    ("retry_timer", "guidance", "absent"),
-    [
-        (True, "自動更新タイマーが再試行し、利用が終わった後に反映するため、操作は不要です。", "再実行してください"),
-        (False, "Codexのセッションを全て終了してから`update-dotfiles`を再実行してください。", "自動更新タイマー"),
-    ],
-    ids=["retry-timer", "manual"],
-)
-def test_deferral_notice_distinguishes_kept_version_target_and_resume_operation(  # noqa: PLR0913 -- ホスト条件と期待する案内を組で与える
+@pytest.mark.parametrize("auto_restart", [False, True], ids=["manual-daemon-restart", "auto-daemon-restart"])
+def test_plugin_update_does_not_query_running_codex(
     plugin_env: Path,
     monkeypatch: pytest.MonkeyPatch,
-    caplog: pytest.LogCaptureFixture,
-    retry_timer: bool,
-    guidance: str,
-    absent: str,
-) -> None:
-    """延期の案内と警告は、保持中の版、未反映の目標版、ホストに応じた再開の操作を区別して示す。
-
-    自動更新タイマーを持たないホストへタイマーの再試行を案内すると、dotfilesユーザーは再実行せず旧版のまま使い続ける。
-    """
-    monkeypatch.setattr(host_roles, "is_linux_server", lambda: retry_timer)
-    monkeypatch.setattr(codex_processes, "codex_processes", lambda: (_SESSION,))
-    _set_json_responses(monkeypatch, [_local_marketplace(plugin_env), _installed_state(version="1.2.2")])
-    monkeypatch.setattr(install_codex_plugins, "_command", lambda _args: pytest.fail("延期中にCLIを呼ばない"))
-    caplog.set_level(logging.WARNING, logger=install_codex_plugins.__name__)
-
-    outcome = install_codex_plugins.run()
-
-    assert outcome.deferred is True
-    deferral = [notice.message for notice in outcome.notices if "を延期しました" in notice.message]
-    assert len(deferral) == 1
-    assert "導入版1.2.2から目標版1.2.3への更新を延期しました" in deferral[0]
-    assert "導入済みの版と有効状態を保持しており、最新版の内容はまだ反映されていません。" in deferral[0]
-    assert deferral[0].endswith(guidance)
-    assert absent not in deferral[0]
-    assert guidance in caplog.text
-
-
-_DAEMON_EXE = "/home/user/.codex/packages/app-server-daemon/current/bin/codex"
-_UPDATE_LOOP_CMDLINE = [_DAEMON_EXE, "app-server", "daemon", "pid-update-loop"]
-
-
-@pytest.mark.parametrize("linux_server", [True, False], ids=["linux-server", "other-host"])
-@pytest.mark.parametrize(
-    ("cmdlines", "auto_restart", "updated"),
-    [
-        pytest.param([_UPDATE_LOOP_CMDLINE], False, True, id="update-loop-only"),
-        pytest.param(
-            [_UPDATE_LOOP_CMDLINE, [_DAEMON_EXE, "app-server", "--listen", "unix://", "--managed-daemon"]],
-            False,
-            False,
-            id="managed-daemon",
-        ),
-        pytest.param(
-            [_UPDATE_LOOP_CMDLINE, [_DAEMON_EXE, "app-server", "--listen", "unix://", "--managed-daemon"]],
-            True,
-            True,
-            id="managed-daemon-auto-restart",
-        ),
-        pytest.param([_UPDATE_LOOP_CMDLINE, ["codex", "app-server", "--stdio"]], False, False, id="agents-server-stdio"),
-        pytest.param(
-            [_UPDATE_LOOP_CMDLINE, ["codex", "app-server", "--stdio"]], True, False, id="agents-server-stdio-auto-restart"
-        ),
-    ],
-)
-def test_update_is_deferred_only_by_codex_using_plugins(  # noqa: PLR0913 -- 稼働中の起動形とホスト条件を組で与える
-    plugin_env: Path,
-    monkeypatch: pytest.MonkeyPatch,
-    cmdlines: list[list[str]],
     auto_restart: bool,
-    updated: bool,
-    linux_server: bool,
 ) -> None:
-    """更新ループだけでは延期せず、委譲用app-serverでは旧版を保つ。管理daemonは自動再起動の指定がある場合だけ更新する。
-
-    延期の判定はホストの役割に依らない。
-    """
-    monkeypatch.setattr(host_roles, "is_linux_server", lambda: linux_server)
+    """旧cacheの復旧でセッションを守るため、更新可否をプロセス一覧へ依存させない。"""
     if auto_restart:
         monkeypatch.setenv("DOTFILES_CODEX_DAEMON_AUTO_RESTART", "1")
-    monkeypatch.setattr(codex_processes, "codex_processes", _REAL_CODEX_PROCESSES)
-    uid = 1000
-    monkeypatch.setattr(codex_processes.os, "getuid", lambda: uid, raising=False)
-    processes = [
-        SimpleNamespace(
-            pid=index + 10,
-            info={"name": "codex", "exe": cmdline[0], "cmdline": cmdline, "uids": SimpleNamespace(real=uid), "ppid": 1},
-        )
-        for index, cmdline in enumerate(cmdlines)
-    ]
-    monkeypatch.setattr(codex_processes.psutil, "process_iter", lambda *_args, **_kwargs: processes)
+    monkeypatch.setattr(codex_processes, "codex_processes", lambda: pytest.fail("更新時にプロセス一覧を参照しない"))
     _set_json_responses(monkeypatch, [_local_marketplace(plugin_env), _installed_state(version="1.2.2"), _installed_state()])
     calls: list[list[str]] = []
     monkeypatch.setattr(install_codex_plugins, "_command", _recording_success(calls, daemon_running=False))
 
     outcome = install_codex_plugins.run()
-    assert outcome.changed is updated
-    assert (["plugin", "add", "agent-toolkit@ak110-dotfiles"] in calls) is updated
-    assert outcome.deferred is not updated
-    assert any("を延期しました" in notice.message for notice in outcome.notices) is not updated
+    assert outcome.changed is True
+    assert ["plugin", "add", "agent-toolkit@ak110-dotfiles"] in calls
+    assert outcome.deferred is False
 
 
 @pytest.mark.parametrize("enabled", [True, False])
-def test_post_apply_deferral_continues_with_installed_warmup_version(
+def test_post_apply_update_continues_with_new_warmup_version(
     plugin_env: Path, monkeypatch: pytest.MonkeyPatch, enabled: bool
 ) -> None:
-    """工程を指定しない場合に実行する`_DEFAULT_STEPS`の順序で、更新延期後も後続へ進み、旧有効版をwarmupへ渡す。"""
+    """既定の工程順で更新後の有効版をwarmupへ渡す。"""
     monkeypatch.setattr(post_apply.sys, "platform", "linux")
-    state = _installed_state(version="1.2.2", enabled=enabled)
-    monkeypatch.setattr(host_roles, "is_linux_server", lambda: True)
+    current: dict[str, Any] = {"version": "1.2.2", "enabled": enabled}
     monkeypatch.setattr(codex_processes, "codex_processes", lambda: (_SESSION,))
-    monkeypatch.setattr(
-        install_codex_plugins,
-        "_codex_json",
-        lambda args: _local_marketplace(plugin_env) if args[1] == "marketplace" else state,
+    target_script = (
+        install_codex_plugins.CODEX_HOME / "plugins/cache/ak110-dotfiles/agent-toolkit/1.2.3/agent_toolkit/agents_server_mcp.py"
     )
-    monkeypatch.setattr(install_codex_plugins, "_command", lambda _args: pytest.fail("延期中にaddを呼ばない"))
-    monkeypatch.setattr(common, "run_subprocess", lambda *_args, **_kwargs: _FakeResult(stdout=json.dumps(state)))
+
+    def codex_json(args: list[str]) -> dict[str, Any]:
+        return _local_marketplace(plugin_env) if args[1] == "marketplace" else _installed_state(**current)
+
+    def command(args: list[str]) -> bool:
+        if args[:2] == ["plugin", "add"]:
+            target_script.parent.mkdir(parents=True, exist_ok=True)
+            target_script.write_text("new mcp", encoding="utf-8")
+            current.update(version="1.2.3", enabled=True)
+        return args != ["app-server", "daemon", "version"]
+
+    monkeypatch.setattr(install_codex_plugins, "_codex_json", codex_json)
+    monkeypatch.setattr(install_codex_plugins, "_command", command)
+    monkeypatch.setattr(
+        common, "run_subprocess", lambda *_args, **_kwargs: _FakeResult(stdout=json.dumps(_installed_state(**current)))
+    )
     reached: list[str] = []
     warmup_targets: list[Path | None] = []
 
@@ -594,13 +474,9 @@ def test_post_apply_deferral_continues_with_installed_warmup_version(
     results, _ = post_apply.run(steps)
     assert all(result.ok for result in results)
     codex_result = next(result for result in results if result.name == "Codex plugin のインストール")
-    assert codex_result.changed is False
-    assert codex_result.deferred is True
-    assert [notice.command for notice in codex_result.notices] == [None]
-    expected = (
-        install_codex_plugins.CODEX_HOME / "plugins/cache/ak110-dotfiles/agent-toolkit/1.2.2/agent_toolkit/agents_server_mcp.py"
-    )
-    assert warmup_targets == [expected if enabled else None]
+    assert codex_result.changed is True
+    assert codex_result.deferred is False
+    assert warmup_targets == [target_script]
     assert "Codex plugin snapshot の生成" in reached
     assert "Claude Code plugin のインストール" in reached
     assert "旧Codex User scope MCP登録の移行" in reached
@@ -859,13 +735,18 @@ def test_invalid_before_state_stops_before_plugin_add(
 def test_plugin_add_failure_keeps_legacy_link(
     plugin_env: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
 ) -> None:
-    """plugin addの失敗は導入の失敗としてスキップと数え、legacy linkを除去しない。"""
+    """plugin addの失敗は旧cacheを復旧し、導入失敗として扱ってlegacy linkを除去しない。"""
     destination = _legacy_link(plugin_env)
+    previous = install_codex_plugins.CODEX_HOME / "plugins/cache/ak110-dotfiles/agent-toolkit/1.2.2"
+    previous.mkdir(parents=True)
+    (previous / "marker").write_text("previous", encoding="utf-8")
     calls: list[list[str]] = []
     _set_json_responses(monkeypatch, [_local_marketplace(plugin_env), {"installed": []}])
 
     def command(args: list[str]) -> bool:
         calls.append(args)
+        if args[:2] == ["plugin", "add"]:
+            shutil.rmtree(previous.parent)
         return False
 
     monkeypatch.setattr(install_codex_plugins, "_command", command)
@@ -877,7 +758,42 @@ def test_plugin_add_failure_keeps_legacy_link(
     assert "plugin addに失敗" in caplog.text
 
     assert destination.is_symlink()
+    assert (previous / "marker").read_text(encoding="utf-8") == "previous"
     assert ["plugin", "add", "agent-toolkit@ak110-dotfiles"] in calls
+
+
+def test_cache_restore_failure_is_reported(
+    plugin_env: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    """CLI失敗後に旧cacheも復旧できない場合は、両方の失敗を診断する。"""
+    previous = install_codex_plugins.CODEX_HOME / "plugins/cache/ak110-dotfiles/agent-toolkit/1.2.2"
+    previous.mkdir(parents=True)
+    (previous / "marker").write_text("previous", encoding="utf-8")
+    _set_json_responses(monkeypatch, [_local_marketplace(plugin_env), _installed_state(version="1.2.2")])
+
+    def command(args: list[str]) -> bool:
+        if args[:2] == ["plugin", "add"]:
+            shutil.rmtree(previous.parent)
+            return False
+        return True
+
+    original_copytree = shutil.copytree
+
+    def copytree(*args: Any, **kwargs: Any) -> Path:
+        destination = Path(args[1])
+        if destination.is_relative_to(previous.parent):
+            raise OSError("injected restore failure")
+        return original_copytree(*args, **kwargs)
+
+    monkeypatch.setattr(install_codex_plugins, "_command", command)
+    monkeypatch.setattr(install_codex_plugins.shutil, "copytree", copytree)
+
+    with caplog.at_level("WARNING"):
+        outcome = install_codex_plugins.run()
+
+    assert outcome.changed is False
+    assert "plugin addと旧cacheの復旧に失敗" in caplog.text
+    assert "injected restore failure" in caplog.text
 
 
 def test_post_install_verification_failure_keeps_legacy_link(
@@ -1100,64 +1016,6 @@ def test_windows_junction_detection_and_removal_use_rmdir() -> None:
     assert install_codex_plugins._is_link(path) is True  # pylint: disable=protected-access
     install_codex_plugins._unlink(path)  # pylint: disable=protected-access
     assert junction.removed is True
-
-
-@pytest.mark.parametrize(
-    ("version", "enabled", "deferred_change"),
-    [
-        ("1.2.2", True, "導入版1.2.2から目標版1.2.3への更新"),
-        ("1.2.2", False, "導入版1.2.2から目標版1.2.3への更新と無効から有効への切り替え"),
-        ("1.2.3", False, "無効から有効への切り替え"),
-    ],
-)
-def test_codex_plugin_deferral_notice_reaches_sync_report_and_summary(  # noqa: PLR0913 -- 導入状態と期待する案内を組で与える
-    plugin_env: Path,
-    monkeypatch: pytest.MonkeyPatch,
-    capsys: pytest.CaptureFixture[str],
-    tmp_path: Path,
-    version: str,
-    enabled: bool,
-    deferred_change: str,
-) -> None:
-    """延期した更新の対象・差・理由・再実行の操作が、post-applyの同期記録と完了案内へ届く。
-
-    同期記録は案内の本文だけを保存するため、再実行の操作が本文に無いと記録の読み手は次の操作を得られない。
-    本テストはCodex pluginの導入状態を再現する`plugin_env`を使うため、post-applyの記録と案内の検証もここへ置く。
-    """
-    report_path = tmp_path / "state" / "sync-report.json"
-    monkeypatch.setattr(post_apply.sync_report, "REPORT_PATH", report_path)
-    monkeypatch.setattr(post_apply, "_UPDATE_LOG_PATH", tmp_path / "update-dotfiles.log")
-    state = _installed_state(version=version, enabled=enabled)
-    monkeypatch.setattr(host_roles, "is_linux_server", lambda: True)
-    monkeypatch.setattr(codex_processes, "codex_processes", lambda: (_SESSION,))
-    monkeypatch.setattr(
-        install_codex_plugins,
-        "_codex_json",
-        lambda args: _local_marketplace(plugin_env) if args[1] == "marketplace" else state,
-    )
-    monkeypatch.setattr(install_codex_plugins, "_command", lambda _args: pytest.fail("延期中にaddを呼ばない"))
-    steps: list[tuple[str, Callable[[], post_apply_outcome.PostApplyOutcome]]] = [
-        ("Codex plugin のインストール", install_codex_plugins.run)
-    ]
-
-    with pytest.raises(SystemExit) as exc_info:
-        post_apply.main(runner=lambda: post_apply.run(steps=steps))
-
-    assert exc_info.value.code == 0
-    report = json.loads(report_path.read_text(encoding="utf-8"))["post_apply"]
-    assert report["failed"] == 0
-    deferral = [message for message in report["notices"] if "を延期しました" in message]
-    stderr = capsys.readouterr().err
-    assert len(deferral) == 1
-    assert f"agent-toolkit@ak110-dotfilesの{deferred_change}を延期しました（稼働中: codex app-server (1件)）" in deferral[0]
-    assert "自動更新タイマーが再試行し" in deferral[0]
-    assert deferral[0] in stderr
-    assert stderr.splitlines()[-1] != "update-dotfiles"
-    # 自動更新タイマーが上流変更の有無によらず再試行できるよう、延期した工程を延期記録へ残す。
-    dotfiles_root = common.find_dotfiles_root()
-    assert dotfiles_root is not None
-    record = json.loads(deferred_updates.record_path(dotfiles_root).read_text(encoding="utf-8"))
-    assert record["steps"] == ["Codex plugin のインストール"]
 
 
 def test_running_codex_with_current_plugin_reports_no_deferral(plugin_env: Path, monkeypatch: pytest.MonkeyPatch) -> None:

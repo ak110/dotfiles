@@ -373,9 +373,9 @@ def _install_hook_wrapper(root: Path) -> bool:
 
 
 def _codex_processes_using_plugin() -> tuple[str, ...]:
-    """導入済みのplugin実体を参照し得る稼働中のCodexプロセスの表示ラベルを返す。
+    """除去対象のplugin実体を参照し得る稼働中のCodexプロセスの表示ラベルを返す。
 
-    `plugin add`は旧版のhook・スキル・MCP実体を回収するため、参照するプロセスが1件でもあれば更新を延期する。
+    `plugin remove`はhook・スキル・MCP実体を回収するため、参照するプロセスが1件でもあれば除去を延期する。
     参照の有無はホストの役割と無関係に、プロセスの役割だけで判定する。
     daemon自動再起動の指定は管理daemonを更新後に再起動する許可であり、通常セッションと`agents_server`の
     `codex app-server --stdio`が使う版を回収する許可を含まない。このため指定の下では管理daemonとその補助実行体を除き、
@@ -386,30 +386,41 @@ def _codex_processes_using_plugin() -> tuple[str, ...]:
     return codex_processes.running_codex_processes()
 
 
-def _deferred_update_notice(
-    plugin_id: str, current: dict[str, Any], version: str, running_text: str
-) -> post_apply_outcome.PostApplyNotice:
-    """稼働中のCodexを守るために延期した更新の内容と、反映を再開する操作を案内する。
+def _snapshot_plugin_caches(cache_root: Path, saved_root: Path) -> tuple[str, ...]:
+    """CLI更新前の通常versionディレクトリを退避する。"""
+    if not cache_root.is_dir():
+        return ()
+    versions = []
+    for path in cache_root.iterdir():
+        if not path.is_dir() or _is_link(path) or not _valid_version_name(path.name):
+            continue
+        shutil.copytree(path, saved_root / path.name, symlinks=True)
+        versions.append(path.name)
+    return tuple(versions)
 
-    延期した結果は変更なしと同じ成功になるため、案内が無いと同期記録の読み手は最新版を適用済みと扱う。
-    自動更新タイマーを持つホストではタイマーが延期記録から再試行するため操作を求めず、
-    持たないホストではCodexの終了後に`update-dotfiles`を再実行する操作を示す。
-    """
-    differences = []
-    current_version = current.get("version")
-    if current_version != version:
-        differences.append(
-            f"導入版{current_version if isinstance(current_version, str) else '不明'}から目標版{version}への更新"
-        )
-    if current.get("enabled") is not True:
-        differences.append("無効から有効への切り替え")
-    return post_apply_outcome.PostApplyNotice(
-        message=(
-            f"Codexが稼働中のため、{plugin_id}の{'と'.join(differences)}を延期しました（稼働中: {running_text}）。"
-            "利用中のセッションを守るため導入済みの版と有効状態を保持しており、最新版の内容はまだ反映されていません。"
-            + deferred_updates.retry_guidance(_MANUAL_RETRY)
-        ),
-    )
+
+def _restore_plugin_caches(
+    cache_root: Path,
+    saved_root: Path,
+    versions: tuple[str, ...],
+    *,
+    installed_version: str | None,
+) -> None:
+    """CLIが削除したversionを戻し、失敗時は退避済みの全versionを元へ戻す。"""
+    for version in versions:
+        if version == installed_version:
+            continue
+        source = saved_root / version
+        destination = cache_root / version
+        if installed_version is None and _path_exists(destination):
+            if _is_link(destination):
+                _unlink(destination)
+            else:
+                shutil.rmtree(destination)
+        elif _path_exists(destination):
+            continue
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copytree(source, destination, symlinks=True)
 
 
 def _sync_local_plugin(
@@ -420,38 +431,30 @@ def _sync_local_plugin(
     current: dict[str, Any] | None,
     notices: list[post_apply_outcome.PostApplyNotice],
 ) -> tuple[bool, bool]:
-    """Local marketplaceのpluginを目標版へ同期し、変更の有無と稼働中による延期の有無を返す。"""
+    """Local marketplaceのpluginを目標版へ同期し、変更の有無を返す。"""
     plugin_id = f"{plugin_name}@{marketplace_name}"
     needs_plugin_add = current is None or current.get("enabled") is not True or current.get("version") != version
-    # addは旧版のスキルとMCP実体も回収するため、hook入口の安定化だけでは稼働中の参照を守れない。
-    if needs_plugin_add and current is not None and (running := _codex_processes_using_plugin()):
-        running_text = codex_processes.format_running_processes(running)
-        logger.warning(
-            log_format.format_status(
-                "codex plugins",
-                f"Codexが稼働中のためplugin更新を延期: {running_text}。導入済みの版と有効状態を保持しました。"
-                + deferred_updates.retry_guidance(_MANUAL_RETRY),
-            )
-        )
-        # 同期記録はnoticeの本文だけを保存するため、再実行の操作も本文に含める。
-        notices.append(_deferred_update_notice(plugin_id, current, version, running_text))
-        return False, True
-    wrapper = _hook_bin() / ("atk-hook.cmd" if os.name == "nt" else "atk-hook")
-    first_transition = not wrapper.exists()
     wrapper_changed = _install_hook_wrapper(root)
     if needs_plugin_add:
-        old_cache = None
-        if first_transition and current is not None and isinstance(current.get("version"), str):
-            old_cache = _codex_home() / "plugins" / "cache" / marketplace_name / plugin_name / current["version"]
-        with tempfile.TemporaryDirectory(prefix="atk-hook-migration-") as temporary:
-            saved = Path(temporary) / "old-plugin"
-            if old_cache is not None and old_cache.is_dir():
-                shutil.copytree(old_cache, saved)
-            if not _command(["plugin", "add", plugin_id]):
-                raise RuntimeError("Codex plugin addに失敗")
-            if old_cache is not None and saved.is_dir() and not old_cache.exists():
-                old_cache.parent.mkdir(parents=True, exist_ok=True)
-                shutil.copytree(saved, old_cache)
+        cache_root = _codex_home() / "plugins" / "cache" / marketplace_name / plugin_name
+        saved_root = Path(tempfile.mkdtemp(prefix="codex-plugin-cache-"))
+        try:
+            saved_versions = _snapshot_plugin_caches(cache_root, saved_root)
+        except OSError:
+            shutil.rmtree(saved_root, ignore_errors=True)
+            raise
+        if not _command(["plugin", "add", plugin_id]):
+            try:
+                _restore_plugin_caches(cache_root, saved_root, saved_versions, installed_version=None)
+            except OSError as error:
+                raise RuntimeError(f"Codex plugin addと旧cacheの復旧に失敗。退避先を保持: {saved_root}: {error}") from error
+            shutil.rmtree(saved_root)
+            raise RuntimeError("Codex plugin addに失敗")
+        try:
+            _restore_plugin_caches(cache_root, saved_root, saved_versions, installed_version=version)
+        except OSError as error:
+            raise RuntimeError(f"Codex plugin更新後の旧cache復旧に失敗。退避先を保持: {saved_root}: {error}") from error
+        shutil.rmtree(saved_root)
         _verify_expected_state(plugin_id, version)
         new_cache = _codex_home() / "plugins" / "cache" / marketplace_name / plugin_name / version
         if not (new_cache / "agent_toolkit" / "hook.py").is_file():

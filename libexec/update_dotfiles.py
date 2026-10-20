@@ -52,7 +52,7 @@ git pull工程は`UPDATE_DOTFILES_GIT_TIMEOUT_SEC`秒で打ち切る。未設定
 
 Linuxでは`chezmoi apply`の直前に、Codexの管理daemonだけが稼働し、利用セッションが無い場合に限り、
 公開CLI`codex app-server daemon stop`で管理daemonを一時停止する。
-post-applyのplugin更新と診断ログ復元が、利用セッションの無い管理daemonを理由に延期されないためである。
+post-applyの診断ログ復元と不要pluginの除去が、利用セッションの無い管理daemonを理由に延期されないためである。
 停止を試みた場合は`chezmoi apply`の成否にかかわらず`codex app-server daemon start`で起動状態を戻し、
 停止または再起動の失敗を終了コードと同期結果へ反映する。利用セッションが残る場合と
 `DOTFILES_CODEX_DAEMON_AUTO_RESTART=1`の場合は停止しない。
@@ -980,7 +980,7 @@ def _pause_codex_daemon() -> _CodexDaemonPause | None:
     if stop_error is not None:
         stop_error = (
             f"Codex管理daemonを停止できませんでした（{stop_error}）。"
-            "plugin更新と診断ログ復元が延期された場合は、update-dotfilesを再実行してください。"
+            "診断ログ復元または不要pluginの除去が延期された場合は、update-dotfilesを再実行してください。"
         )
         logger.error(stop_error)
         print(stop_error, file=sys.stderr)

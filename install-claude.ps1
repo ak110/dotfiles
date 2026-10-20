@@ -159,71 +159,29 @@ function Test-CodexPluginStateChanged {
         $beforeState.Enabled -ne $afterState.Enabled
 }
 
-# 実行名（拡張子を除く）が`codex`か`codex-`で始まるもの、node系起動でentry pointが`@openai/codex`のものをCodexプロセスとして数える。
-# 管理daemonの更新ループ（`app-server daemon pid-update-loop`）はplugin実体を参照しないため数えない。
-function Test-CodexProcessCommand {
-    param([string]$name, [string[]]$arguments)
-    $stem = [IO.Path]::GetFileName(($name -replace '\\', '/')).ToLowerInvariant() -replace '\.exe$', ''
-    $rest = @($arguments)
-    if ($stem -eq 'node' -or $stem -eq 'nodejs') {
-        if ($rest.Count -lt 1 -or -not $rest[0].ToLowerInvariant().Contains('@openai/codex')) { return $false }
-        $rest = @($rest | Select-Object -Skip 1)
-    } elseif ($stem -ne 'codex' -and -not $stem.StartsWith('codex-')) {
-        return $false
+function Copy-CodexPluginCacheSnapshot {
+    param([string]$destination)
+    New-Item -ItemType Directory -Path $destination -Force | Out-Null
+    if (-not (Test-Path -LiteralPath $codexPluginCacheRoot -PathType Container)) { return }
+    foreach ($cache in @(Get-ChildItem -LiteralPath $codexPluginCacheRoot -Directory)) {
+        if ($cache.Attributes -band [IO.FileAttributes]::ReparsePoint) { continue }
+        Copy-Item -LiteralPath $cache.FullName -Destination (Join-Path $destination $cache.Name) -Recurse
     }
-    return -not ($rest.Count -ge 3 -and $rest[0] -eq 'app-server' -and $rest[1] -eq 'daemon' -and $rest[2] -eq 'pid-update-loop')
 }
 
-# 自ユーザーの稼働中のCodexプロセスを`<pid> <実行名>`の文字列で返す。プロセス一覧を取得できない場合は例外を送出する。
-# Windowsでは現在のログオンセッションのプロセス、それ以外ではpsが返す実ユーザーのプロセスを対象にする。
-function Get-RunningCodexProcess {
-    $found = [System.Collections.Generic.List[string]]::new()
-    if ([Environment]::OSVersion.Platform -eq [PlatformID]::Win32NT) {
-        $sessionId = (Get-Process -Id $PID).SessionId
-        foreach ($process in @(Get-CimInstance -ClassName Win32_Process -ErrorAction Stop)) {
-            if ($process.SessionId -ne $sessionId) { continue }
-            $tokens = @()
-            if ($process.CommandLine) {
-                $tokens = @([regex]::Matches($process.CommandLine, '"[^"]*"|\S+') | ForEach-Object { $_.Value.Trim('"') })
-            }
-            if (Test-CodexProcessCommand $process.Name @($tokens | Select-Object -Skip 1)) {
-                $found.Add("$($process.ProcessId) $($process.Name)")
-            }
+function Restore-CodexPluginCacheSnapshot {
+    param([string]$savedRoot, [string]$installedVersion, [bool]$replaceExisting)
+    foreach ($saved in @(Get-ChildItem -LiteralPath $savedRoot -Directory)) {
+        if ($saved.Name -eq $installedVersion) { continue }
+        $destination = Join-Path $codexPluginCacheRoot $saved.Name
+        if ($replaceExisting -and (Test-Path -LiteralPath $destination)) {
+            Remove-Item -LiteralPath $destination -Recurse -Force
+        } elseif (Test-Path -LiteralPath $destination) {
+            continue
         }
-    } else {
-        $lines = & ps -u (& id -u) -o pid= -o stat= -o args=
-        if ($LASTEXITCODE -ne 0) { throw 'プロセス一覧を取得できません。' }
-        foreach ($line in @($lines | Where-Object { $_ })) {
-            $fields = @($line.Trim() -split '\s+')
-            if ($fields.Count -lt 3 -or $fields[1].StartsWith('Z')) { continue }
-            $name = [IO.Path]::GetFileName($fields[2])
-            if (Test-CodexProcessCommand $name @($fields | Select-Object -Skip 3)) { $found.Add("$($fields[0]) $name") }
-        }
+        New-Item -ItemType Directory -Path $codexPluginCacheRoot -Force | Out-Null
+        Copy-Item -LiteralPath $saved.FullName -Destination $destination -Recurse
     }
-    return $found.ToArray()
-}
-
-# 更新前の導入が目標版と異なるか無効で、既存版を使うCodexが稼働中なら、`codex plugin add`による旧版の回収を延期する。
-# 延期した場合は保持中の版、未反映の目標版、再実行の案内を標準エラーへ表示して$trueを返す。
-function Test-CodexPluginUpdateDeferred {
-    param([object]$beforeState, [string]$expectedVersion)
-    if (-not $beforeState.Present -or ($beforeState.Version -eq $expectedVersion -and $beforeState.Enabled)) { return $false }
-    try {
-        $running = @(Get-RunningCodexProcess)
-    } catch {
-        $running = $null
-    }
-    if ($null -eq $running) {
-        [Console]::Error.WriteLine('Codexの稼働状況をプロセス一覧から確認できないため、agent-toolkitプラグインの更新を延期しました。')
-    } elseif ($running.Count -eq 0) {
-        return $false
-    } else {
-        [Console]::Error.WriteLine("Codexが稼働中のため、agent-toolkitプラグインの更新を延期しました（稼働中: $($running -join ', ')）。")
-    }
-    $enabledText = if ($beforeState.Enabled) { '有効' } else { '無効' }
-    [Console]::Error.WriteLine("保持中の版: $($beforeState.Version)（$enabledText）。未反映の目標版: $expectedVersion。利用中のセッションを守るため既存版と旧cacheを保持しています。")
-    [Console]::Error.WriteLine('Codexのセッションを全て終了してから、同じインストーラーを再実行してください。')
-    return $true
 }
 
 function Install-CodexPlugin {
@@ -233,29 +191,31 @@ function Install-CodexPlugin {
     $expectedVersion = Get-CodexExpectedPluginVersion
     $beforeState = Get-CodexPluginState
     if ($null -eq $beforeState) { throw 'Codex plugin更新前の状態を確認できません。' }
-    if (Test-CodexPluginUpdateDeferred $beforeState $expectedVersion) { return }
     $binDir = Join-Path $HOME '.local/bin'
     New-Item -ItemType Directory -Path $binDir -Force | Out-Null
     $hookWrapper = Join-Path $binDir 'atk-hook.cmd'
-    $firstHookTransition = -not (Test-Path -LiteralPath $hookWrapper -PathType Leaf)
     $downloadRoot = $baseUrl -replace '/agent-toolkit/rules/?$', ''
     Invoke-Download "$downloadRoot/agent-toolkit/scripts/atk-hook" (Join-Path $binDir 'atk-hook')
     Invoke-Download "$downloadRoot/agent-toolkit/scripts/atk-hook.cmd" $hookWrapper
-    $oldCache = $null
-    $savedCache = $null
-    if ($firstHookTransition -and $beforeState.Present -and $beforeState.Version) {
-        $oldCache = Join-Path $codexPluginCacheRoot $beforeState.Version
-        if (Test-Path -LiteralPath $oldCache -PathType Container) {
-            $savedCache = Join-Path ([System.IO.Path]::GetTempPath()) ("atk-hook-migration." + [IO.Path]::GetRandomFileName())
-            Copy-Item -LiteralPath $oldCache -Destination $savedCache -Recurse -Force
+    $savedCacheRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("codex-plugin-cache." + [IO.Path]::GetRandomFileName())
+    Copy-CodexPluginCacheSnapshot $savedCacheRoot
+    try {
+        Invoke-RequiredNativeCommand codex @('plugin', 'add', $codexPluginId, '--json')
+    } catch {
+        $addError = $_
+        try {
+            Restore-CodexPluginCacheSnapshot $savedCacheRoot '' $true
+            Remove-Item -LiteralPath $savedCacheRoot -Recurse -Force
+        } catch {
+            throw "Codex plugin addと旧cacheの復旧に失敗しました。退避先を保持します: $savedCacheRoot。$($_.Exception.Message)"
         }
+        throw $addError
     }
-    Invoke-RequiredNativeCommand codex @('plugin', 'add', $codexPluginId, '--json')
-    if ($savedCache) {
-        if (-not (Test-Path -LiteralPath $oldCache -PathType Container)) {
-            Copy-Item -LiteralPath $savedCache -Destination $oldCache -Recurse -Force
-        }
-        Remove-Item -LiteralPath $savedCache -Recurse -Force
+    try {
+        Restore-CodexPluginCacheSnapshot $savedCacheRoot $expectedVersion $false
+        Remove-Item -LiteralPath $savedCacheRoot -Recurse -Force
+    } catch {
+        throw "Codex plugin更新後の旧cache復旧に失敗しました。退避先を保持します: $savedCacheRoot。$($_.Exception.Message)"
     }
     $afterState = Get-CodexPluginState
     $script:codexPluginUpdated = Test-CodexPluginStateChanged $beforeState $afterState

@@ -204,59 +204,37 @@ raise SystemExit(1)
 PY
 }
 
-# 自ユーザーの稼働中のCodexプロセスを`<pid> <実行名>`の行で出力する。プロセス一覧を取得できない場合は非0で終わる。
-# 実行名（command line第1要素）が`codex`か`codex-`で始まるもの、node系起動でentry pointが`@openai/codex`のものを数える。
-# 管理daemonの更新ループ（`app-server daemon pid-update-loop`）はplugin実体を参照しないため数えない。
-_running_codex_processes() {
-    local listing=""
-    if ! listing=$(ps -u "$(id -u)" -o pid= -o stat= -o args=); then
-        return 1
-    fi
-    awk '
-        $2 ~ /^Z/ { next }
-        {
-            name = $3
-            sub(/.*\//, "", name)
-            lowered = tolower(name)
-            sub(/\.exe$/, "", lowered)
-            if (lowered == "codex" || index(lowered, "codex-") == 1) {
-                first = 4
-            } else if ((lowered == "node" || lowered == "nodejs") && index(tolower($4), "@openai/codex") > 0) {
-                first = 5
-            } else {
-                next
-            }
-            if ($first == "app-server" && $(first + 1) == "daemon" && $(first + 2) == "pid-update-loop") { next }
-            print $1 " " name
-        }
-    ' <<<"$listing"
+_snapshot_codex_plugin_caches() {
+    local destination="$1"
+    local cache=""
+    mkdir -p "$destination"
+    [ -d "$CODEX_PLUGIN_CACHE_ROOT" ] || return 0
+    for cache in "$CODEX_PLUGIN_CACHE_ROOT"/*; do
+        [ -d "$cache" ] && [ ! -L "$cache" ] || continue
+        cp -a "$cache" "$destination/"
+    done
 }
 
-# 更新前の導入が目標版と異なるか無効で、既存版を使うCodexが稼働中なら、`codex plugin add`による旧版の回収を延期する。
-# 延期した場合は保持中の版、未反映の目標版、再実行の案内を表示して0で終わり、延期しない場合は1で終わる。
-_defer_codex_plugin_update_if_running() {
-    local before_state="$1"
-    local expected_version="$2"
-    local present=""
+_restore_codex_plugin_caches() {
+    local saved_root="$1"
+    local installed_version="$2"
+    local replace_existing="$3"
+    local saved=""
     local version=""
-    local enabled=""
-    local running=""
-    present=$(_codex_state_value "$before_state" present)
-    version=$(_codex_state_value "$before_state" version)
-    enabled=$(_codex_state_value "$before_state" enabled)
-    if [ "$present" != "true" ] || { [ "$version" = "$expected_version" ] && [ "$enabled" = "true" ]; }; then
-        return 1
-    fi
-    if ! running=$(_running_codex_processes); then
-        echo "Codexの稼働状況をプロセス一覧（ps）から確認できないため、agent-toolkitプラグインの更新を延期しました。" >&2
-    elif [ -z "$running" ]; then
-        return 1
-    else
-        echo "Codexが稼働中のため、agent-toolkitプラグインの更新を延期しました（稼働中: $(printf '%s' "$running" | paste -sd ',' - | sed 's/,/, /g')）。" >&2
-    fi
-    echo "保持中の版: ${version}（$([ "$enabled" = "true" ] && echo 有効 || echo 無効)）。未反映の目標版: ${expected_version}。利用中のセッションを守るため既存版と旧cacheを保持しています。" >&2
-    echo "Codexのセッションを全て終了してから、同じインストーラーを再実行してください。" >&2
-    return 0
+    local destination=""
+    for saved in "$saved_root"/*; do
+        [ -d "$saved" ] || continue
+        version=${saved##*/}
+        [ "$version" != "$installed_version" ] || continue
+        destination="$CODEX_PLUGIN_CACHE_ROOT/$version"
+        if [ "$replace_existing" -eq 1 ] && { [ -e "$destination" ] || [ -L "$destination" ]; }; then
+            rm -rf "$destination" || return 1
+        elif [ -e "$destination" ] || [ -L "$destination" ]; then
+            continue
+        fi
+        mkdir -p "$CODEX_PLUGIN_CACHE_ROOT" || return 1
+        cp -a "$saved" "$destination" || return 1
+    done
 }
 
 # 期待する版はGitHubのmarketplace（ak110/dotfiles）を登録したCodexが取得したmanifestから読む。
@@ -272,10 +250,6 @@ _install_codex_plugin() {
     local after_enabled="false"
     local hook_wrapper="$HOME/.local/bin/atk-hook"
     local hook_stage=""
-    local first_hook_transition=0
-    local old_version=""
-    local old_cache=""
-    local saved_cache=""
     local migration_dir=""
     echo "Codex側のagent-toolkitプラグインを設定します..."
     codex plugin marketplace add ak110/dotfiles --json >/dev/null 2>&1 || true
@@ -286,12 +260,6 @@ _install_codex_plugin() {
         return 1
     fi
     before_state_known=1
-    if _defer_codex_plugin_update_if_running "$before_state" "$expected_version"; then
-        return 0
-    fi
-    if [ ! -e "$hook_wrapper" ]; then
-        first_hook_transition=1
-    fi
     mkdir -p "$HOME/.local/bin"
     hook_stage=$(mktemp "$HOME/.local/bin/atk-hook.XXXXXX")
     if ! curl -fsSL "${BASE_URL%/agent-toolkit/rules}/agent-toolkit/scripts/atk-hook" -o "$hook_stage"; then
@@ -300,22 +268,21 @@ _install_codex_plugin() {
     fi
     chmod 755 "$hook_stage"
     mv "$hook_stage" "$hook_wrapper"
-    if [ "$first_hook_transition" -eq 1 ]; then
-        old_version=$(_codex_state_value "$before_state" version)
-        if [ -n "$old_version" ] && [ -d "$CODEX_PLUGIN_CACHE_ROOT/$old_version" ]; then
-            old_cache="$CODEX_PLUGIN_CACHE_ROOT/$old_version"
-            migration_dir=$(mktemp -d)
-            saved_cache="$migration_dir/old-plugin"
-            cp -a "$old_cache" "$saved_cache"
+    migration_dir=$(mktemp -d)
+    _snapshot_codex_plugin_caches "$migration_dir"
+    if ! codex plugin add "$CODEX_PLUGIN_ID" --json >/dev/null; then
+        if ! _restore_codex_plugin_caches "$migration_dir" "" 1; then
+            echo "Codex plugin addと旧cacheの復旧に失敗しました。退避先を保持します: $migration_dir" >&2
+            return 1
         fi
-    fi
-    codex plugin add "$CODEX_PLUGIN_ID" --json >/dev/null
-    if [ -n "$saved_cache" ] && [ ! -d "$old_cache" ]; then
-        cp -a "$saved_cache" "$old_cache"
-    fi
-    if [ -n "$migration_dir" ]; then
         rm -rf "$migration_dir"
+        return 1
     fi
+    if ! _restore_codex_plugin_caches "$migration_dir" "$expected_version" 0; then
+        echo "Codex plugin更新後の旧cache復旧に失敗しました。退避先を保持します: $migration_dir" >&2
+        return 1
+    fi
+    rm -rf "$migration_dir"
     if ! after_state=$(_codex_plugin_state); then
         echo "Codex plugin更新後の状態を確認できません。" >&2
         return 1

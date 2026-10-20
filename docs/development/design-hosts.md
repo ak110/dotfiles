@@ -55,7 +55,10 @@ CLI成功後は同コマンドで`codex plugin list --json`を取得し、版数
 無変更、marketplace登録だけの変更、daemon停止中および不要pluginの除去は自動再起動の対象に含めない。
 `atk config`へ設定を追加する案は、dotfiles更新処理だけが消費する真偽値のためにagent-toolkit pluginとpytoolsの設定契約を結合するので採用しない。
 公式資料の[Plugins](https://developers.openai.com/plugins/build/plugins)はローカルpluginを`~/.codex/plugins/cache/<marketplace>/<plugin>/<version>/`へ導入し、導入先の実体をCodexが読み込むと定める。
-そのため、`install_codex_plugins.py`はcacheを直接編集せず、Codexが管理する現行versionだけを導入先として利用する。
+現行versionの導入はCodex CLIへ委ねる。
+更新処理は`plugin add`の前に通常のversionディレクトリを複製し、CLIが削除した旧versionだけを同じ絶対パスへ戻す。
+`plugin add`が失敗した場合は退避した全versionを更新前の状態へ戻す。
+目標versionはCLIが作成した内容を維持し、復元対象から外す。
 CLI導入後の検証が終わるまでlegacy skillリンクを除去せず、リンク除去に失敗した場合だけ変更前snapshotから復元する。
 `plugin add`後に失敗してもCodexの管理状態を自前で書き戻さない。
 Codex側では外部pluginを導入せず、不要な`compact-plus@compact-plus`が導入済みの場合だけ`codex plugin remove`で除去する。
@@ -63,7 +66,8 @@ Codex側では外部pluginを導入せず、不要な`compact-plus@compact-plus`
 Codex側の外部marketplace登録、外部plugin導入、取得元検証は対応先がないため撤去する。
 Claude Code側も不要な外部`compact-plus@compact-plus`を除去する。圧縮後のユーザー発話の復元はagent-toolkit自身のhookが担う。
 post-apply案内とWindowsのjunction除去処理は維持する。
-cache version台帳、全過去versionの保持、POSIXの原本接続、Windowsの原本接続とファイル同期、cache退避・置換・復元は、Codex CLIが実体導入を担当するため削除する。
+cache version台帳、POSIXの原本接続、Windowsの原本接続とファイル同期は設けない。
+旧versionの実体は、保存済みセッションが保持した絶対パスを再開後も使えるように更新処理が保持する。
 
 シンボリックリンク方式は代替案として却下する。
 Codex 0.154.0はroot直下のAgent Plugins用`plugin.json`を`.codex-plugin/plugin.json`より優先し、同一rootから導入した場合は`hooks/list`が0件となる。
@@ -73,24 +77,26 @@ Codex 0.154.0はroot直下のAgent Plugins用`plugin.json`を`.codex-plugin/plug
 
 ### plugin実体の回収と稼働中の参照
 
-更新・回収・修復でplugin実体を削除または置換する処理は、消費側の参照が終わったと判定できた実体だけを対象にする。
+更新・回収・修復でplugin実体を削除または置換する処理は、消費側が保持する絶対パスを有効なまま保つ。
 稼働中のhook・skill・MCPは起動時に解決したplugin rootの絶対パスを使い続けるため、参照中に旧版を削除すると実行中の処理が`[Errno 2]`などで失敗する。
-ホストの役割、後継版の導入からの経過時間、現行版一覧は参照の終了を表さないため、回収可能の根拠にしない。
-参照の終了を判定できない間（プロセス情報を取得できない場合を含む）は既存の実体を保持し、延期として扱う。
+保存済みセッションはプロセスとして存在しない期間も後から再開できるため、プロセス一覧は参照の終了を表さない。
+agent-toolkitの更新では旧versionを自動復旧し、Codexの稼働状態を更新可否の判定に使わない。
+実体そのものを除去する処理は、参照の終了を判定できない間、既存の実体を保持して延期する。
 
 | 処理 | 参照の判定 | 延期後の再開 |
 | --- | --- | --- |
-| Codexのpost-apply更新（`install_codex_plugins.py`） | `codex_processes.py`の役割分類。`session`（通常セッション、`codex app-server --stdio`、判定素材を取得できないプロセス）を常に数え、管理daemonは`DOTFILES_CODEX_DAEMON_AUTO_RESTART=1`の指定が無い場合だけ数える | post-applyの`deferred`と延期記録による自動更新タイマーの再試行。タイマーを持たないホストではCodexの終了後に`update-dotfiles`を再実行する |
-| 単体インストーラー（`install-claude.sh`・`install-claude.ps1`） | `ps`（WindowsはWin32_Process）が返す実行名`codex`のプロセスと、node系起動でentry pointが`@openai/codex`のプロセス | Codexの終了後に同じインストーラーを再実行する |
+| Codexのpost-apply更新（`install_codex_plugins.py`） | 更新前の全通常versionディレクトリを複製し、CLIが削除した旧versionを同じ絶対パスへ復旧する | 同じ実行で更新と旧versionの復旧を完了する。復旧失敗は導入成功と区別して報告する |
+| 単体インストーラー（`install-claude.sh`・`install-claude.ps1`） | post-apply更新と同じく、更新前の全通常versionディレクトリを複製する | 同じ実行で更新と旧versionの復旧を完了する。復旧失敗時は退避先を表示して非0で終わる |
 | Claude Codeの旧版cache整理（`prune_claude_plugin_cache.py`） | `claude_plugin_references.py`。その版の配下を指すプロセスと、その版が現行だった期間に起動したClaude Codeセッション | 参照の終了後の`update-dotfiles`で削除する |
 | Claude Codeの現行版cache欠落修復（`install_claude_plugins.py`） | `claude_plugin_references.py`。導入先を指すプロセスと、起動時刻を問わない稼働中のClaude Codeセッション | post-applyの`deferred`と延期記録による自動更新タイマーの再試行。タイマーを持たないホストではClaude Codeのセッションを全て終了してから`update-dotfiles`を再実行する |
-| Codexの不要pluginの除去（`install_codex_plugins.py`の`_remove_unused_plugins`） | Codexのpost-apply更新と同じ役割分類 | post-applyの`deferred`と延期記録による自動更新タイマーの再試行。タイマーを持たないホストではCodexの終了後に`update-dotfiles`を再実行する |
+| Codexの不要pluginの除去（`install_codex_plugins.py`の`_remove_unused_plugins`） | `codex_processes.py`の役割分類。`session`を常に数え、管理daemonは`DOTFILES_CODEX_DAEMON_AUTO_RESTART=1`の指定が無い場合だけ数える | post-applyの`deferred`と延期記録による自動更新タイマーの再試行。タイマーを持たないホストではCodexの終了後に`update-dotfiles`を再実行する |
 
-Claude Code 2.1.303の`claude plugin uninstall`とmarketplaceの削除は、plugin cacheの実体を孤立の標識（`.orphaned_at`）付きで残す。他のscopeが残らないpluginでは永続データ領域（`plugins/data/<id>/`）を削除する（いずれも隔離した設定ディレクトリでの観測）。`install_claude_plugins.py`のdeprecated pluginの除去とproject scopeの除去は、実体を削除せず、データ領域も`--keep-data`で残すため、稼働中のセッションが使う実体を削除する処理に当たらず、延期を設けない。`claude_marketplace.py`の登録修復は、marketplaceの削除で収録pluginを除去してデータ領域を削除し、同じ実行で再導入する。収録するagent-toolkitの`plugin_environment.py`の`runtime_data`は、ユーザーデータ領域（Linuxでは`XDG_DATA_HOME`配下の`agent-toolkit`）を先に選び、そこへ書き込めない場合だけデータ領域（`CLAUDE_PLUGIN_DATA`）を使う。`plugin.json`は設定項目を持たない。このため通常の環境では稼働中のセッションのhook・MCPはデータ領域を参照せず、削除しても動作は変わらないので、この修復は参照の終了を待つ延期の対象にしない。
-daemon自動再起動の指定は管理daemonを更新後に再起動する許可であり、通常セッションと`agents_server`のApp Serverが使う版を回収する許可を含まない。
-旧cacheを退避して復元する案は、退避中に元のパスから実体へ到達できないため採らない。
+Claude Code 2.1.303の`claude plugin uninstall`とmarketplaceの削除は、plugin cacheの実体を孤立の標識（`.orphaned_at`）付きで残す。他のscopeが残らないpluginでは永続データ領域（`plugins/data/<id>/`）を削除する（いずれも隔離した設定ディレクトリでの観測）。`install_claude_plugins.py`のdeprecated pluginの除去とproject scopeの除去は、実体を削除せず、データ領域も`--keep-data`で残すため、稼働中のセッションが使う実体を削除する処理に当たらず、延期を設けない。`claude_marketplace.py`の登録修復は、marketplaceの削除で収録pluginを除去してデータ領域を削除し、同じ実行で再導入する。収録するagent-toolkitの`plugin_environment.py`の`runtime_data`はユーザーデータ領域（Linuxでは`XDG_DATA_HOME`配下の`agent-toolkit`）を先に選び、そこへ書き込めない場合だけデータ領域（`CLAUDE_PLUGIN_DATA`）を使う。`plugin.json`は設定項目を持たない。このため通常の環境では稼働中のセッションのhook・MCPはデータ領域を参照せず、削除しても動作は変わらないので、この修復は参照の終了を待つ延期の対象にしない。
+daemon自動再起動の指定は管理daemonを更新後に再起動する許可であり、旧versionの保持とは独立している。
+旧cacheを移動して退避する案は、移動中に元のパスから実体へ到達できないため採らない。
+更新前の実体を残したまま複製し、CLIの完了後に削除された旧versionを復旧する。
 最新版へhookを付け替える案は、旧版のskill・MCP・遅延importを守れないため採らない。
-固定猶予の延長と回収後の再導入は、参照中の削除を防げないため採らない。
+プロセス終了まで更新を延期する案は、後から再開できる保存済みセッションを判定できず、Codexを常用する環境で更新が完了しないため採らない。
 
 ### ルールの配置と配送
 
@@ -152,7 +158,7 @@ Codexへの配送手段を追加・変更する主体は、この対応で届か
 
 `agent-toolkit:user-confirmation-and-report`「認識合わせ」は、メインが理解している目標と問題を自分の言葉で提示し、
 その理解をその場で確かめる起点を担う。質問の構成、回答の取得、無回答時の退避は同スキルの「確認要否の判定」「手段の選択」が扱い、回答後の見直しは既存のユーザー指摘の受領へ接続する。
-協調・自律の両モードを対象とし、ホストの質問機能と期限の差を共通の確認経路で扱う。
+協調・自律の両モードを対象とし、ホストの質問機能と期限の差を共通の確認手順で扱う。
 
 2026年10月6日まで、この手順は独立したスキル`agent-toolkit:realign-with-user`が持ち、自律モードの扱いを同スキルと`agent-toolkit:user-confirmation-and-report`が互いに参照し合っていた。確認規範を1つのスキルへ集約するユーザーの指示と確認回答（同日）により、手順を`agent-toolkit:user-confirmation-and-report`の節と「手段の選択」の表の認識合わせの行へ移し、スキルを廃止した。`/agent-toolkit:realign-with-user`による手動起動が無くなることは、同じ確認回答で了承済みである。
 確認の要否は同スキル「確認要否の判定」が、目的・期待結果・認可の確定と、その範囲内の手段の選択を分けて決める。2026年10月3日まで、ユーザーだけが持つ値の違いで推奨案が変わるかの1判定とし、値ごとの推奨案を書けない問いを確認不要へ閉じていた。この扱いは未特定の不確実性と、確認済みで推奨が変わらない状態を区別できず、UWI書式とホスト別規範にも同じ扱いが再掲されていた。共通の判定を一般化し、直接消費側を参照へそろえた。技術判断をユーザーへ委ねる反復を防ぐ従来の目的は、目的と認可が確定した範囲の手段を自ら決める扱いで保つ。確認を一律に増やす案と、手順の追記だけで済ませる案は採らない。
