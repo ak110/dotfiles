@@ -15,10 +15,10 @@ from collections.abc import Callable
 
 import pytest
 
-from agent_toolkit._common import automated_prompt
+from agent_toolkit._common import automated_prompt, session_state
 from agent_toolkit._hooks import posttooluse, user_prompt_submit
 from agent_toolkit._testing import fork_runner as _fork_runner
-from agent_toolkit._testing.helpers import SESSION_STATE_FILENAME_TEMPLATE, _read_state
+from agent_toolkit._testing.helpers import _read_state
 
 _SCRIPTS_DIR = pathlib.Path(__file__).resolve().parents[1]
 _SCRIPT = _SCRIPTS_DIR / "hook.py"
@@ -31,6 +31,11 @@ _NOTICE_BOUNDARY_PATTERN = re.compile(r"</?atk-auto\b[^>]*>")
 # 注記の文意は定義の読解で確かめ、ここでは通常発話へ同じ定義の本文がそのまま届くことを確かめる。
 # 本文を写した期待値は文面の変更に追随させるだけで、届いた判断の正しさを検出しないため使わない。
 _EXPECTED_VERIFICATION_NOTICE_BODY = posttooluse.VERIFICATION_NOTICE_BODY
+
+
+def _write_state(session_id: str, state: dict) -> None:
+    """hookが使う固定保存先へ、試験開始時と再設定時の状態を供給する。"""
+    assert session_state.update_state(session_id, lambda _previous: state)
 
 
 def _notice_bodies(context: str) -> list[str]:
@@ -313,8 +318,7 @@ class TestMachineInjectedTurn:
     def test_normal_prompt_after_machine_turn_receives_verification_notice(tmp_path: pathlib.Path) -> None:
         """機械注入ターンの後でも、直前の通常発話から閾値以上離れた発話は発話の内容を現物で確かめる手順を示す注記を受け取る。"""
         sid = "machine-then-user"
-        state_path = tmp_path / SESSION_STATE_FILENAME_TEMPLATE.format(session_id=sid)
-        state_path.write_text(json.dumps({"last_user_prompt_at": time.time() - 600.0}), encoding="utf-8")
+        _write_state(sid, {"last_user_prompt_at": time.time() - 600.0})
         _run(
             {"session_id": sid, "prompt": f"{user_prompt_submit.PERIODIC_RECHECK_MARKER}\n確認する。"},
             state_dir=tmp_path,
@@ -486,11 +490,7 @@ class TestNonMatchingPrompts:
 
     def test_codex_normal_prompt_keeps_unrelated_state(self, tmp_path: pathlib.Path):
         sid = "codex-normal-keeps-unrelated"
-        state_path = tmp_path / SESSION_STATE_FILENAME_TEMPLATE.format(session_id=sid)
-        state_path.write_text(
-            json.dumps({"plan_mode_skill_invoked": True}),
-            encoding="utf-8",
-        )
+        _write_state(sid, {"plan_mode_skill_invoked": True})
 
         result = _run(
             {"session_id": sid, "prompt": "通常のユーザー発話です。", "model": "gpt-5"},
@@ -502,11 +502,7 @@ class TestNonMatchingPrompts:
 
     def test_codex_process_wi_command_keeps_unrelated_state(self, tmp_path: pathlib.Path):
         sid = "codex-process-wi-keeps-unrelated"
-        state_path = tmp_path / SESSION_STATE_FILENAME_TEMPLATE.format(session_id=sid)
-        state_path.write_text(
-            json.dumps({"plan_mode_skill_invoked": True}),
-            encoding="utf-8",
-        )
+        _write_state(sid, {"plan_mode_skill_invoked": True})
 
         result = _run(
             {"session_id": sid, "prompt": "$agent-toolkit:process-wi", "model": "gpt-5"},
@@ -569,8 +565,7 @@ class TestRealignNoticeInjection:
     @pytest.mark.parametrize("host_fields", [{}, {"model": "gpt-test", "turn_id": "turn-test"}])
     def test_verification_and_realign_share_one_json(self, tmp_path: pathlib.Path, host_fields: dict) -> None:
         sid = "realign-verification"
-        state = tmp_path / SESSION_STATE_FILENAME_TEMPLATE.format(session_id=sid)
-        state.write_text(json.dumps({"last_user_prompt_at": time.time() - 200}), encoding="utf-8")
+        _write_state(sid, {"last_user_prompt_at": time.time() - 200})
         result = _run({"session_id": sid, "prompt": "理解を確かめて！！", **host_fields}, state_dir=tmp_path)
         assert result.returncode == 0
         bodies = _notice_bodies(json.loads(result.stdout)["hookSpecificOutput"]["additionalContext"])
@@ -665,11 +660,7 @@ class TestExampleInvestigationNotice:
     def test_other_notices_share_one_json(self, tmp_path: pathlib.Path, host_fields: dict) -> None:
         """同じターンで成立した他の3つの注記と1つの`additionalContext`へ結合する。"""
         sid = "example-combined"
-        state = tmp_path / SESSION_STATE_FILENAME_TEMPLATE.format(session_id=sid)
-        state.write_text(
-            json.dumps({"last_user_prompt_at": time.time() - 600, user_prompt_submit.USER_CONFIRMATION_PENDING_KEY: True}),
-            encoding="utf-8",
-        )
+        _write_state(sid, {"last_user_prompt_at": time.time() - 600, user_prompt_submit.USER_CONFIRMATION_PENDING_KEY: True})
         result = _run({"session_id": sid, "prompt": self._PROMPT + "！！", **host_fields}, state_dir=tmp_path)
         assert result.returncode == 0, result.stderr
         output = json.loads(result.stdout)
@@ -684,14 +675,9 @@ class TestExampleInvestigationNotice:
 class TestVerificationNoticeInjection:
     """通常発話へ発話の内容を現物で確かめる手順を示す注記を返す契約を検証する。"""
 
-    @staticmethod
-    def _write_state(tmp_path: pathlib.Path, session_id: str, state: dict) -> None:
-        path = tmp_path / SESSION_STATE_FILENAME_TEMPLATE.format(session_id=session_id)
-        path.write_text(json.dumps(state), encoding="utf-8")
-
     def test_injects_notice_after_interval(self, tmp_path: pathlib.Path) -> None:
         sid = "verification-after-interval"
-        self._write_state(tmp_path, sid, {"last_user_prompt_at": time.time() - 200})
+        _write_state(sid, {"last_user_prompt_at": time.time() - 200})
 
         result = _run({"session_id": sid, "prompt": "通常のユーザー発話です。"}, state_dir=tmp_path)
 
@@ -714,7 +700,7 @@ class TestVerificationNoticeInjection:
         sid = "verification-repeated"
         contexts = []
         for _ in range(3):
-            self._write_state(tmp_path, sid, {"last_user_prompt_at": time.time() - 200})
+            _write_state(sid, {"last_user_prompt_at": time.time() - 200})
             result = _run({"session_id": sid, "prompt": "通常のユーザー発話です。"}, state_dir=tmp_path)
             assert result.returncode == 0
             contexts.append(json.loads(result.stdout)["hookSpecificOutput"]["additionalContext"])
@@ -735,7 +721,7 @@ class TestVerificationNoticeInjection:
         payload: dict,
     ) -> None:
         previous = time.time() - 200
-        self._write_state(tmp_path, session_id, {"last_user_prompt_at": previous})
+        _write_state(session_id, {"last_user_prompt_at": previous})
 
         result = _run({"session_id": session_id, **payload}, state_dir=tmp_path)
 
@@ -772,7 +758,7 @@ class TestVerificationNoticeInjection:
 
     def test_does_not_inject_within_interval(self, tmp_path: pathlib.Path) -> None:
         sid = "verification-within-interval"
-        self._write_state(tmp_path, sid, {"last_user_prompt_at": time.time() - 10})
+        _write_state(sid, {"last_user_prompt_at": time.time() - 10})
 
         result = _run({"session_id": sid, "prompt": "通常のユーザー発話です。"}, state_dir=tmp_path)
 
@@ -792,7 +778,7 @@ class TestVerificationNoticeInjection:
     def test_does_not_inject_for_harness_message(self, tmp_path: pathlib.Path) -> None:
         sid = "verification-harness-message"
         previous = time.time() - 200
-        self._write_state(tmp_path, sid, {"last_user_prompt_at": previous})
+        _write_state(sid, {"last_user_prompt_at": previous})
 
         result = _run({"session_id": sid, "prompt": "<task-notification>完了</task-notification>"}, state_dir=tmp_path)
 
@@ -805,7 +791,7 @@ class TestVerificationNoticeInjection:
         """スラッシュコマンドで始まる発話もユーザー自身の入力として注記の対象にする。"""
         sid = "verification-slash-command"
         previous = time.time() - 200
-        self._write_state(tmp_path, sid, {"last_user_prompt_at": previous})
+        _write_state(sid, {"last_user_prompt_at": previous})
 
         result = _run({"session_id": sid, "prompt": "/plan-mode"}, state_dir=tmp_path)
 
@@ -820,7 +806,7 @@ class TestVerificationNoticeInjection:
 
     def test_codex_payload_receives_same_notice(self, tmp_path: pathlib.Path) -> None:
         sid = "verification-codex"
-        self._write_state(tmp_path, sid, {"last_user_prompt_at": time.time() - 200})
+        _write_state(sid, {"last_user_prompt_at": time.time() - 200})
 
         result = _run(
             {"session_id": sid, "prompt": "通常のユーザー発話です。", "model": "gpt-5"},
@@ -835,14 +821,13 @@ class TestVerificationNoticeInjection:
         ]
         assert "sessionTitle" not in hook_output
 
-    def test_plan_state_preserves_notice_without_session_title(self, tmp_path: pathlib.Path) -> None:
+    def test_plan_state_combines_session_title_and_notice(self, tmp_path: pathlib.Path) -> None:
         sid = "verification-title-and-notice"
         home = tmp_path / "home"
         plan = home / ".claude" / "plans" / "current-plan.md"
         plan.parent.mkdir(parents=True)
         plan.write_text("# 計画\n", encoding="utf-8")
-        self._write_state(
-            tmp_path,
+        _write_state(
             sid,
             {"current_plan_file_path": str(plan), "last_user_prompt_at": time.time() - 200},
         )
@@ -855,7 +840,7 @@ class TestVerificationNoticeInjection:
 
         assert result.returncode == 0
         hook_output = json.loads(result.stdout)["hookSpecificOutput"]
-        assert "sessionTitle" not in hook_output
+        assert hook_output["sessionTitle"] == "current-plan"
         assert _notice_bodies(hook_output["additionalContext"]) == [
             _EXPECTED_VERIFICATION_NOTICE_BODY,
         ]
@@ -863,16 +848,16 @@ class TestVerificationNoticeInjection:
 
 @pytest.mark.parametrize("codex", [False, True])
 @pytest.mark.parametrize("prompt", ["通常の入力", "/agent-toolkit:process-wi", "/process-wi"])
-def test_python_hook_leaves_session_title_to_mod(tmp_path: pathlib.Path, codex: bool, prompt: str) -> None:
-    """従来の命名入力でも名前と専用記録はmodが扱う。"""
-    sid = "no-python-title"
-    path = tmp_path / SESSION_STATE_FILENAME_TEMPLATE.format(session_id=sid)
-    path.write_text(json.dumps({"current_plan_file_path": "/plans/18-1921_計画.md"}), encoding="utf-8")
+def test_python_hook_names_only_claude_session(tmp_path: pathlib.Path, codex: bool, prompt: str) -> None:
+    """Claude CodeはPythonのcommand hookが種別と計画名を設定し、Codexはホストの命名を保つ。"""
+    sid = "python-title"
+    _write_state(sid, {"current_plan_file_path": "/plans/18-1921_計画.md"})
     payload = {"session_id": sid, "prompt": prompt, **({"model": "gpt-5"} if codex else {})}
     result = _run(payload, state_dir=tmp_path)
     assert result.returncode == 0
-    assert _session_title(result) is None
-    assert "last_hook_session_title" not in _read_state(tmp_path, sid)
+    expected = None if codex else "計画" if prompt == "通常の入力" else "process-wi 計画"
+    assert _session_title(result) == expected
+    assert _read_state(tmp_path, sid).get("last_hook_session_title") == expected
     assert not (tmp_path / "claude-agent-toolkit-session-title").exists()
 
 
