@@ -25,11 +25,13 @@ Claude Codeの作業ディレクトリのスラッグは、絶対パスのパス
 | 委譲先のCLIの診断ログ | 診断ログのディレクトリ直下の`delegate-debug`配下。名前はUTC時刻、session識別子、`launch_kind`をハイフンで連ねた`.log`（session識別子は初期化完了時に入るため、未到達の起動はその部分を持たない）。保持世代を超えた記録は次の起動時に削除される | SessionStart hookの完了、MCPサーバーの接続、機能フラグの取得、skillsの送信、`[engine] turn 1 start`への到達、セッション間メッセージの保留 |
 | Claude Codeが委譲先ごとに残すMCPサーバー接続ログ | Claude CLIのキャッシュディレクトリ配下の`<作業ディレクトリのスラッグ>/mcp-logs-<サーバー名>/<起動時刻>.jsonl`（Windowsのキャッシュは`%LOCALAPPDATA%\claude-cli-nodejs\Cache`） | 各MCPサーバーの接続完了時刻と接続の失敗 |
 | 委譲先のセッションのトランスクリプト | `~/.claude/projects/<作業ディレクトリのスラッグ>/<session識別子>.jsonl` | 委譲先が受け取った指示と返した応答。初期化を完了しなかった委譲先はこのファイルを作成しないため、不在が初期化未到達の証拠になる |
-| Claude CodeのMCP接続失敗の記録 | 設定ディレクトリ直下の`mcp-needs-auth-cache.json` | プラグインのstdioサーバーの接続失敗と時刻。記録がある間（15分）は同じホストの全Claude Codeプロセスが同じ設定のサーバーへ接続せず、デバッグログにも接続試行が現れない |
+| Claude CodeのMCP接続失敗の記録 | 設定ディレクトリ直下の`mcp-needs-auth-cache.json` | プラグインのstdioサーバーの接続失敗と時刻。新規起動・再開のプロセスごとに公開再接続APIを1回試し、未回復の失敗だけをstart/showの警告へ残す |
 | `atk agents wait`の配送済みrun | 状態ディレクトリの`agents-server/<ルートsession識別子>/wait-results/<書込主体>/<run_id>.json`。待機対象0件（終了コード10）と`consumed`（終了コード8）の診断が`run_path`として示す | 先行waitが配送した終端結果本文（`output`のJSON Lines）と対象session。配送済みはエージェントの読了を意味しない。`atk read-file -- <run_path>`で読む |
 | 実行ホスト上のセッション登録簿 | `~/.claude/sessions/<プロセス識別子>.json` | `sessionId`、`cwd`、`kind`、`entrypoint`、メッセージ送受信用の識別名（委譲先も登録される） |
 
 ## 切り分けの順序
+
+Claude接続の候補試行・選択・失敗は`claude_connection_attempt`・`claude_connection_selected`・`claude_connection_failed`、API切替は`claude_api_switch`を読む。MCPの再接続は`claude_mcp_recovered`と`claude_mcp_recovery_failed`で成否を確かめる。
 
 中断（`interrupted`）を調べるときは応答の`diagnostics.next_action`が示す`atk read-file`で終了診断を読み、受信シグナル・標準入力の終端・終了状態の有無からサーバーがどの契機で終わったかを確定する。親が終了を開始した理由は、親側の記録だけが保持する。`parent_connection_log.path`が指す親CLIの接続記録のうち、終了を示すイベント（`exited`・`signal_received`・`process_exited`）の`at`と同じ時刻の記録を読む。
 

@@ -12,7 +12,7 @@ import subprocess
 import sys
 import typing
 from collections.abc import AsyncGenerator, Callable
-from types import SimpleNamespace
+from types import SimpleNamespace, TracebackType
 from typing import Any, cast
 
 import claude_agent_sdk
@@ -124,6 +124,14 @@ class FakeBackend:
         # 実backendと同じく、再開で再生成したsessionを登録簿へ公開させる場合に真にする。
         self.publish_registry = False
         self.pending: list[asyncio.Task[None]] = []
+
+    async def __aenter__(self) -> FakeBackend:
+        return self
+
+    async def __aexit__(
+        self, _exc_type: type[BaseException] | None, _exc: BaseException | None, _traceback: TracebackType | None
+    ) -> None:
+        await self.close()
 
     async def list_models(self) -> list[dict[str, Any]]:
         """系列の候補を指定しない場合も、起動せずに解決できる一覧を返す。"""
@@ -468,6 +476,7 @@ def _observed_input_lines(task_name: str, root: pathlib.Path, *, rereview: bool 
     if task_name == "exec.subagent.md":
         return [
             "担当種別: レーン担当",
+            '書込担当一覧: ["root-session"]',
             f"選定結果の出力先ファイル: {root / 'selection.json'}",
             "レーン識別子: lane-01",
             handoff,
@@ -481,6 +490,7 @@ def _observed_input_lines(task_name: str, root: pathlib.Path, *, rereview: bool 
             "統合先branch: develop",
             '計画ファイル名一覧: ["plan.md"]',
             "AWI終端区分: 20260101-000000-001.md=adopt",
+            '書込担当一覧: ["root-session", "lane-session"]',
         ]
     if task_name == "session-termination.subagent.md":
         return [

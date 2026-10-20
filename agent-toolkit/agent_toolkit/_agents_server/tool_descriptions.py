@@ -76,7 +76,7 @@ EXPLORE_CAPABILITIES = EXPLORE_COMMON_CAPABILITIES + EXPLORE_BACKEND_CAPABILITIE
 
 
 DELEGATION_INPUT_GUIDANCE = (
-    "入力は委譲先が他から得られない目的・要件・制約・完了条件、ユーザー発話の逐語と出所、確認済み事実と実行時の値に絞り、"
+    "入力は委譲先が他から得られない目的・要件・制約・完了条件、ユーザー発話の逐語と出所、確認済み事実と実行時の値に限定し、"
     "参照できる記録は絶対パスと対象IDで示す。必須入力とユーザー指定の手段を保つ。"
     "調査途中の仮説、自ら選んだ実装手順やcommit件名は足さない。"
     "手段の指定はユーザー指定か、要件達成に必要と確定した根拠を伴う場合に限る。"
@@ -92,7 +92,7 @@ LIGHTWEIGHT_MODE_SELECTION = (
     "同じ担当の連続した作業はまとめ、独立した要件と独立文脈レビューは分ける。"
     "explore・shell・writeは自己完結した1回の入力と返却に使い、追加対話と要求の再構成を要する作業は通常taskかdelegateへ渡す。"
     "既存の担当が詳しい文脈を持つ調査と判断は、新しく本文を読む前にその担当へ戻す。"
-    "exploreは結論と所在で後続の判断が成立する調査、shellは終了状態と要約で足りる実行へ使う。\n"
+    "exploreは結論と所在で後続の判断が成立する調査、shellは終了状態と要約で後続の判断が成立する実行へ使う。\n"
     "段位: 上位段位で動く主体は、判定基準を渡せる多数の対象の走査を費用の差から軽量段位のexploreへ分け、"
     "自身は観点の選定と返った候補の判定に使う。計画・設計判断・原因分析は自身で行い、"
     "内容の確定した書込作業はdelegateのmedium_tierへ任せる（自身で行う方が総費用で安い場合を除く）。"
@@ -228,7 +228,8 @@ MODEL_TYPE_DESCRIPTION = parameter_description(
     "計画・設計判断で内容の確定した書込作業（単発のコーディング、確定済みの修正など）はdelegateの`medium_tier`へ任せ、"
     "計画・設計判断・原因分析は上位段位の担当自身が行う。"
     "段位名の候補は、`<役割名>.subagent.md`の役割かmodeで決まる用途のengine順に、engine別の段位のモデル設定を並べる。"
-    "`orchestrate`はorchestrate用途の上位段位を使う。"
+    "`orchestrate`はprocess-loop・run-skillなど最上位セッションのorchestrate用途の上位段位を使う。"
+    "WI投入担当のadd-wiは専念型・付随型ともmodel_typeを省略し、役割に定めたbase用途・上位段位を使う。"
     "指定した値はそのsessionだけに使い、恒常的な変更は`atk config set`で行う。"
 )
 

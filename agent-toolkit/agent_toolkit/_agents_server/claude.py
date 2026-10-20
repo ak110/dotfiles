@@ -597,7 +597,12 @@ class ClaudeServerManager:
                 session.claude_connection_diagnostics = choices.warnings
                 _LOG.info("claude_connection_selected session_id=%s connection=%s", session.session_id, connection.kind)
                 return session
-            except SessionInitializationTimeoutError, session_identity.DuplicateSessionIdentityError:
+            except (SessionInitializationTimeoutError, session_identity.DuplicateSessionIdentityError) as error:
+                _LOG.info(
+                    "claude_connection_failed connection=%s phase=initialization error_type=%s",
+                    connection.kind,
+                    type(error).__name__,
+                )
                 raise
             except (OSError, ValueError, RuntimeError) as error:
                 _LOG.info(
@@ -636,21 +641,34 @@ class ClaudeServerManager:
         await self._stop_owned_task(session_id)
         if existing_session is not None:
             begin_reply(existing_session)
-        return await self._start_owned_task(
-            prompt,
-            cwd,
-            model,
-            effort,
-            session_id=session_id,
-            model_type=model_type,
-            launch_kind=launch_kind,
-            excluded_candidates=excluded_candidates,
-            turn_seq=turn_seq + 1,
-            api_env_file=api_env_file,
-            connection_kind=existing_session.claude_connection or "inherit" if existing_session else connection_kind,
-            existing_session=existing_session,
-            isolation_env_file=isolation_env_file,
-        )
+        selected = existing_session.claude_connection or "inherit" if existing_session else connection_kind
+        role = "orchestrator" if model_type == "orchestrate" else "delegate"
+        _LOG.info("claude_connection_attempt connection=%s role=%s resumed=true", selected, role)
+        try:
+            session = await self._start_owned_task(
+                prompt,
+                cwd,
+                model,
+                effort,
+                session_id=session_id,
+                model_type=model_type,
+                launch_kind=launch_kind,
+                excluded_candidates=excluded_candidates,
+                turn_seq=turn_seq + 1,
+                api_env_file=api_env_file,
+                connection_kind=selected,
+                existing_session=existing_session,
+                isolation_env_file=isolation_env_file,
+            )
+        except (OSError, ValueError, RuntimeError, SessionInitializationTimeoutError) as error:
+            _LOG.info(
+                "claude_connection_failed connection=%s phase=initialization error_type=%s",
+                selected,
+                type(error).__name__,
+            )
+            raise
+        _LOG.info("claude_connection_selected session_id=%s connection=%s", session.session_id, selected)
+        return session
 
     async def _stop_owned_task(self, session_id: str) -> None:
         """同じsession IDを所有する旧タスクを終了し、再開時のキュー競合を防ぐ。"""

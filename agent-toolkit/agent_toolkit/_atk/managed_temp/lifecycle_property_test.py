@@ -11,7 +11,7 @@ import pathlib
 import tempfile
 
 import pytest
-from hypothesis import HealthCheck, given, settings
+from hypothesis import HealthCheck, example, given, settings
 from hypothesis import strategies as st
 
 from agent_toolkit._atk import managed_temp
@@ -131,10 +131,17 @@ def test_interrupted_cleanup_converges_from_consuming_and_quarantine(
 
 
 @pytest.mark.skipif(os.name != "posix", reason="POSIXの実ファイル権限を検証する")
+@example(modes=[0], route="cleanup")
+@example(modes=[0], route="force")
+@example(modes=[0], route="recover")
+@example(modes=[0], route="sweep")
+@example(modes=[0], route="unregistered")
+@example(modes=[0], route="child")
+@example(modes=[0], route="quarantine")
 @settings(max_examples=24, deadline=None, suppress_health_check=[HealthCheck.function_scoped_fixture])
 @given(
     modes=st.lists(st.sampled_from([0, 0o100, 0o300, 0o500, 0o555, 0o700]), min_size=1, max_size=5),
-    route=st.sampled_from(["cleanup", "force", "sweep", "unregistered", "child", "quarantine"]),
+    route=st.sampled_from(["cleanup", "force", "recover", "sweep", "unregistered", "child", "quarantine"]),
 )
 def test_restricted_trees_are_reclaimed(
     modes: list[int], route: str, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
@@ -171,6 +178,9 @@ def test_restricted_trees_are_reclaimed(
     if route == "force":
         (target / managed_temp_registry._MARKER_NAME).unlink()
         managed_temp.cleanup_managed_temp(target, force_remove=True)
+    elif route == "recover":
+        managed_temp_registry._registry_path(target).unlink()
+        managed_temp.cleanup_managed_temp(target, recover_registry=True)
     elif route == "quarantine":
         _interrupt_cleanup(target, quarantine=True)
         managed_temp.cleanup_managed_temp(target)

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import pathlib
+import re
 
 import pytest
 import session_evidence_user_events as user_events
@@ -57,6 +58,22 @@ def test_prepare_excludes_known_main_and_keeps_delegate_statistics(
     assert any(item["record"] == "claude:parent" for item in assigned) == compacted
     document = pathlib.Path(result["conversation_path"]).read_text(encoding="utf-8")
     assert "圧縮前の要求" in document and "現在覚えている要求" in document
+    lines = document.splitlines(keepends=True)
+    assert result["main_known_scope"] == {"record": "claude:parent", "after_line": 2 if compacted else 0}
+    for item in ranges:
+        section = "".join(lines[item["start_line"] - 1 : item["end_line"]])
+        locators = re.findall(r"(claude:parent(?:/agent-child)?):(\d+)", section)
+        assert locators
+        assert {record for record, _ in locators} == {item["record"]}
+        assert {record == "claude:parent" and int(line) > (2 if compacted else 0) for record, line in locators} == {
+            item["main_known"]
+        }
+    assigned_indices = [
+        index
+        for reader in result["reader_ranges"]
+        for index in range(reader["first_range_index"], reader["last_range_index"] + 1)
+    ]
+    assert assigned_indices == [index for index, item in enumerate(ranges) if not item["main_known"]]
     stats = pathlib.Path(result["stats_path"]).read_text(encoding="utf-8")
     assert "/repo/rules.md" in stats and "agent-toolkit:bugfix" in stats
     assert "2000字・6000バイト" in stats
@@ -67,6 +84,20 @@ def test_prepare_excludes_known_main_and_keeps_delegate_statistics(
     assert [event["text"] for event in context["conversation_events"]] == (
         ["現在覚えている要求"] if compacted else ["圧縮前の要求", "現在覚えている要求"]
     )
+    handoff_work = tmp_path / "handoff"
+    handoff_work.mkdir()
+    assert prepare.main(["--transcript", str(parent), "--work-dir", str(handoff_work), "--conversation-only"]) == 0
+    handoff = json.loads(capsys.readouterr().out)
+    assert handoff["main_known_scope"] is None
+    assert not any(item["main_known"] for item in handoff["conversation_ranges"])
+    assert [
+        index
+        for reader in handoff["reader_ranges"]
+        for index in range(reader["first_range_index"], reader["last_range_index"] + 1)
+    ] == list(range(len(handoff["conversation_ranges"])))
+    assert pathlib.Path(handoff["conversation_path"]).read_text(encoding="utf-8") == document
+    # 引継ぎでも統計の母集団は同じ親子の全記録である。
+    assert (handoff_work / "bundle" / "stats.jsonl").read_bytes() == (work / "bundle" / "stats.jsonl").read_bytes()
 
 
 def test_resume_context_rejects_unreadable_transcript(tmp_path: pathlib.Path) -> None:
@@ -75,7 +106,7 @@ def test_resume_context_rejects_unreadable_transcript(tmp_path: pathlib.Path) ->
         user_events.extract_session_context(tmp_path / "missing.jsonl")
 
 
-def test_codex_resume_context_uses_last_compaction_boundary(tmp_path: pathlib.Path) -> None:
+def test_codex_resume_context_uses_last_compaction_boundary(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
     """Codexの複数圧縮後も元発話を保ち、最後の境界で残る会話を選ぶ。"""
     path = tmp_path / "codex.jsonl"
     # response_itemとcompactedはCodex記録を扱う既存のuser-events/compaction試験と同じ形である。
@@ -103,3 +134,19 @@ def test_codex_resume_context_uses_last_compaction_boundary(tmp_path: pathlib.Pa
     assert context["last_compaction_line"] == 5
     assert [event["text"] for event in context["user_events"]] == ["最初の要求", "次の要求"]
     assert [(event["kind"], event["line"]) for event in context["conversation_events"]] == [("tool-call", 6)]
+    work = tmp_path / "work"
+    work.mkdir()
+    assert prepare.main(["--transcript", str(path), "--work-dir", str(work)]) == 0
+    result = json.loads(capsys.readouterr().out)
+    assert result["main_known_scope"] == {"record": context["record"], "after_line": 5}
+    assert result["compaction_count"] == 2
+    ranges = result["conversation_ranges"]
+    assigned = [
+        item
+        for reader in result["reader_ranges"]
+        for item in ranges[reader["first_range_index"] : reader["last_range_index"] + 1]
+    ]
+    assert assigned and all(not item["main_known"] for item in assigned)
+    assert assigned[-1]["last_locator"] == f"{context['record']}:4"
+    assert ranges[-1]["first_locator"] == f"{context['record']}:6"
+    assert ranges[-1]["main_known"]

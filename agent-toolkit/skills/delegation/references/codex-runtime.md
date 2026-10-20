@@ -46,6 +46,8 @@ forkを選ぶときは`spawn_agent`の`fork_turns`を省略するか`"all"`に�
 
 ## agents_serverの二層待機
 
+外側セルの`cell_id`と内側コマンドの`session_id`のいずれかが未回収なら、`share/rules-common.codex.md`「Codex固有の入出力」の手段で同じ実行を回収する。
+外側セルか`exec_command`のyieldは同じ実行の継続区間として扱い、代替起動・中断・巻き取りは「後続操作の共通先行条件」が成立した場合に限る。
 `functions.exec`の内側で`agents_server`を起動し、`PostToolUse`がMCP応答を直接観測できない場合は、起動応答の`root_session_id`を保持して`atk agents wait --root-session-id <値>`へ渡す。CLIは状態ディレクトリの実在と確認済みのルートsessionとの一致を検証する。
 
 `functions.exec`から`atk agents wait`を起動する場合も、`share/rules-common.codex.md`「Codex固有の入出力」のコマンド回収契約に従い、外側の`cell_id`を`functions.wait`へ渡す。

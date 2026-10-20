@@ -150,13 +150,15 @@ def test_generation_accepts_integrated_plan_from_same_repository_worktree(
         assert "--worktree" in capsys.readouterr().err
 
 
+@pytest.mark.parametrize("target", ["current", "linked", "missing-source"])
 def test_generate_contracts_keeps_authorization_and_rewritten_commits(
-    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], target: str
 ) -> None:
     """公開CLIから計画別の認可を生成し、rebase後は現行OIDだけを契約へ渡す。"""
     repository = git_repository.init_repository(tmp_path / "repo", initial_branch="lane", commit_message="基点")
     base = git_repository.git_output(repository, "rev-parse", "HEAD")
     plans, commits, items = [], [], []
+    declared = tmp_path / "reclaimed-worktree" if target == "missing-source" else repository
     for index in (1, 2):
         (repository / f"file{index}.txt").write_text(f"本文{index}\n", encoding="utf-8")
         commit = git_repository.commit_all(repository, f"実装{index}")
@@ -164,7 +166,7 @@ def test_generate_contracts_keeps_authorization_and_rewritten_commits(
         wi = f"20261008-000000-00{index}.md"
         plan.write_text(
             f"# 計画\n\n## 概要\n\n### 計画メタ情報\n\n- 起動経路: `agent-toolkit:process-wi`\n"
-            f"- 対象リポジトリ: `{repository}`\n- 関連WI:\n  - {wi}: 要求\n- 作業種別: 通常変更\n",
+            f"- 対象リポジトリ: `{declared}`\n- 関連WI:\n  - {wi}: 要求\n- 作業種別: 通常変更\n",
             encoding="utf-8",
         )
         commit_mapping.append_event(plan, {"commit": commit, "awi": [wi]})
@@ -178,9 +180,14 @@ def test_generate_contracts_keeps_authorization_and_rewritten_commits(
     args = argparse.Namespace(
         script_name="review-contract", script_args=["--generate", str(inputs), "--output-dir", str(outputs)]
     )
-    monkeypatch.chdir(repository)
+    execution = repository
+    if target != "current":
+        execution = tmp_path / "integrated"
+        git_repository.git_output(repository, "worktree", "add", "--detach", str(execution), "HEAD")
+    monkeypatch.chdir(execution)
     assert run_script.dispatch(args) == 0, capsys.readouterr().err
     returned = [json.loads(line) for line in capsys.readouterr().out.splitlines()]
+    assert len(returned) == 2
     for index, result in enumerate(returned):
         text = pathlib.Path(result["contract"]).read_text(encoding="utf-8")
         contract = yaml.safe_load(text)
@@ -196,8 +203,11 @@ def test_generate_contracts_keeps_authorization_and_rewritten_commits(
     rewritten = git_repository.git_output(repository, "rev-list", "--reverse", f"{upstream}..HEAD").splitlines()
     for plan, old, new in zip(plans, commits, rewritten, strict=True):
         commit_mapping.append_event(plan, {"rewrite": {old: new}})
+    if execution != repository:
+        git_repository.git_output(execution, "reset", "--hard", rewritten[-1])
     assert run_script.dispatch(args) == 0, capsys.readouterr().err
     returned = [json.loads(line) for line in capsys.readouterr().out.splitlines()]
+    assert len(returned) == 2
     for index, result in enumerate(returned):
         text = pathlib.Path(result["contract"]).read_text(encoding="utf-8")
         assert all(old not in text for old in commits)

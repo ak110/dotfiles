@@ -10,6 +10,7 @@ import get_plan_commits
 import pytest
 import rewrite_plan_commits
 
+from agent_toolkit import atk
 from agent_toolkit._atk import managed_temp, run_script
 from agent_toolkit._plan import commit_mapping
 from agent_toolkit._testing import git_repository
@@ -188,6 +189,29 @@ def test_range_map_appends_to_all_records(rebased: _Rebased, capsys: pytest.Capt
     """WI対応の無いcommitを含む範囲全体の対応表で計画と引き継ぎ記録の両方へ追記し、`plan-commits`が新OIDを返す。"""
     rewrite = rebased.range_map("a", "u", "b")
 
+    before = _snapshot([rebased.plan, rebased.handoff, rebased.unaffected])
+    assert (
+        run_script.dispatch(
+            argparse.Namespace(
+                script_name="plan-progress",
+                script_args=[
+                    str(rebased.plan),
+                    "--worktree",
+                    str(rebased.repo),
+                    "--rewrite-map",
+                    str(rewrite),
+                    "--completed-step",
+                    "範囲更新",
+                    "--result",
+                    "対応表を適用",
+                ],
+            )
+        )
+        == 1
+    )
+    assert "plan-rewrite" in capsys.readouterr().err
+    assert _snapshot([rebased.plan, rebased.handoff, rebased.unaffected]) == before
+
     assert rewrite_plan_commits.main(rebased.argv(rewrite)) == 0
     output = capsys.readouterr().out.splitlines()
     assert f"追記: {rebased.plan}（1件）" in output
@@ -358,6 +382,21 @@ def test_omitted_record_is_detected_before_any_writes(
         assert rewrite_plan_commits.main(rebased.argv(rebased.range_map("a", "u", "b"), extra=(flag, str(omitted)))) == 0
     else:
         assert "atk plans checkout" in error
+        monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(root / "checkout-config"))
+        notes = root / "private-notes"
+        git_repository.init_repository(notes, initial_branch="main")
+        git_repository.commit_all(notes, "保存済み計画")
+        with pytest.raises(SystemExit) as raised:
+            atk.main(["plans", "checkout", "2026/10/07-omitted.md"])
+        assert raised.value.code == 0
+        capsys.readouterr()
+        working = root / "checkout-config/plans/07-omitted.md"
+        assert working.read_bytes() == before[omitted]
+        assert rewrite_plan_commits.main(rebased.argv(rebased.range_map("a", "u", "b"), extra=("--plan", str(working)))) == 0
+        events = commit_mapping.read_events(working, working.read_text(encoding="utf-8"))
+        assert commit_mapping.get_commits(rebased.repo, events, [WI_A], {WI_A}) == {
+            WI_A: [commit_mapping.short_oid(rebased.repo, rebased.new["a"])]
+        }
 
 
 def test_four_maps_compose_before_head_validation(rebased: _Rebased, capsys: pytest.CaptureFixture[str]) -> None:
@@ -366,8 +405,10 @@ def test_four_maps_compose_before_head_validation(rebased: _Rebased, capsys: pyt
     stable = git_repository.git_output(rebased.repo, "rev-parse", "HEAD~4")
     previous = rebased.old
     maps = []
+    last_previous_head = rebased.previous_head
     for index in range(4):
         if index:
+            last_previous_head = previous["b"]
             git_repository.git_output(rebased.repo, "reset", "--hard", stable)
             _commit(rebased.repo, f"upstream-{index}")
             current = {name: _commit(rebased.repo, f"{name}-{index}") for name in ("a", "u", "b")}
@@ -377,6 +418,13 @@ def test_four_maps_compose_before_head_validation(rebased: _Rebased, capsys: pyt
         path.write_text(json.dumps({previous[name]: current[name] for name in previous}), encoding="utf-8")
         maps.append(path)
         previous = current
+    before = _snapshot([rebased.plan, rebased.handoff, rebased.unaffected])
+    latest_only = [arg for arg in rebased.argv(maps[-1]) if not arg.startswith("--previous-head=")]
+    assert rewrite_plan_commits.main([*latest_only, "--previous-head", last_previous_head]) == 1
+    error = capsys.readouterr().err
+    assert "過去の書換えの未追記" in error and "反復指定" in error
+    assert rebased.old["a"] in error
+    assert _snapshot([rebased.plan, rebased.handoff, rebased.unaffected]) == before
     args = rebased.argv(maps[0], extra=tuple(value for path in maps[1:] for value in ("--rewrite-map", str(path))))
     assert rewrite_plan_commits.main(args) == 0
     capsys.readouterr()

@@ -930,6 +930,17 @@ agents_serverは全説明とinstructionsを初期送信の4,096文字以内に�
 
 再検証は同じ資料の2節を取得して項目名とmatcherの値を比べ、制御したSessionStart入力をhook handlerへ渡して`additionalContext`の値を確かめる。項目名か値が変わった場合は`rules_context.py`の通知、`agent-toolkit/share/rules-main.claude-code.md`「自身の会話の記録」と同テストを改める。
 
+## docs/development/design-hooks.md：通知の整形と反復検出：2026年10月20日
+
+2026年10月20日、Claude Code 2.1.304での観測がAWI `20261020-131324-001.md`へ記録された。開始時と別のディレクトリで再開すると、SessionStart入力の`transcript_path`が再開時のディレクトリに対応する実在しないパスを示した。同じ会話のPreToolUse入力63件は、開始時のworktree側にある実在する記録を示した。
+今回の文書追随では同WIを読み、元ホストでの再現は行っていない。再検証では専用会話を開始時と別のディレクトリで再開し、SessionStartと同じ会話のPreToolUseの`transcript_path`およびファイルの実在を比べる。通知は同じsession IDの完全一致で1件へ解決し、0件では新規会話の未作成を許容して入力値を保ち、複数件と探索失敗ではID指定による取得を案内する。
+
+## agent-toolkit/share/rules-common.codex.md：Codex固有の入出力：2026年10月19日
+
+2026年10月19日、Codex CLI 0.163.0での観測がAWI `20261020-131339-001.md`へ記録された。今回の文書追随では同WI本文と既存監査記録を比較し、実機での再現は行っていない。
+記録`codex:01a1547c-57e6-70c2-94cd-647f9d361f26:380`と`codex:01a1547c-8239-7f70-b8fc-f48eb3d6336f:847`では戻り値の一部だけの表示により識別子を失い、待機を重ねた。記録`01a1547b`では戻り値全体を表示し、`write_stdin`で1つの待機を回収した。
+再検証は同WIの「実現性」に記録された原記録の取得先とlocatorを使う。長時間コマンドのyield結果が`session_id`を持ち`exit_code`を持たないこと、`text(r)`で両欄と本文が保持されること、同じ識別子で終端を回収できることを比べる。原記録の所在は同WIの値を使い、この監査の作成時に取得していないパスは補わない。
+
 ## docs/development/design-hosts.md：Claude CodeとCodexの規範配置：2026年9月13日
 
 2026年9月13日、Codex CLI 0.154.0でローカルmarketplaceを隔離`CODEX_HOME`へ導入して検証した。`agent-toolkit/`直下にAgent Plugins用`plugin.json`がある構成では、`.codex-plugin/plugin.json`のhook定義よりroot manifestが優先され、app-serverの`hooks/list`は0件を返した。root manifestを除いたwrapperから相対シンボリックリンクでhook・skill・実行資源へ接続した構成では、公式CLIのsnapshotに`.codex-plugin`だけが残り、リンク先は含まれなかった。全資源を通常ファイルとして含む`agent-toolkit-codex/`では、`hooks/list`が8イベントを返した。対象は`sessionStart`、`subagentStart`、`preToolUse`、`postToolUse`、`permissionRequest`、`userPromptSubmit`、`subagentStop`、`sessionEnd`である。project trustの有無で登録集合は変わらなかった。再検証ではCodex CLI 0.154.0で`scripts/sync_codex_plugin_manifests_test.py::test_codex_0154_registers_all_hooks_independent_of_project_trust`を実行する。隔離した2つの`CODEX_HOME`における登録集合、SessionStartの管理一時領域生成、SessionEndの回収を確認する。

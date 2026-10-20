@@ -206,7 +206,8 @@ daemon接続時もTUI終了後のagents_serverの寿命と、表示中threadへ�
 ## 委譲先の作業ディレクトリでのプラグイン起動の事前確認
 
 目的は委譲先の作業ディレクトリでagent-toolkitのMCPサーバーとhookを起動できない状態を、委譲先を起動する前に委譲元へ返すことである。
-委譲先のClaude Code・Codexは`agents_server`のプロセス環境を継承し、プラグインの起動コマンド（`uv`・`uvx`）を同じPATHと委譲先の作業ディレクトリから解決する。PATHの先頭にmiseのshimがあると、作業ディレクトリの未trustの設定でshimが失敗する。Claude Codeはプラグインのstdioサーバーの接続失敗をホスト共通の記録へ残し、同じ設定のサーバーへの接続を15分間試みない。このため1件の起動失敗が、同じホストで以後15分間に起動する全ての委譲先のMCPを止める。
+委譲先のClaude Code・Codexは`agents_server`のプロセス環境を継承し、プラグインの起動コマンド（`uv`・`uvx`）を同じPATHと委譲先の作業ディレクトリから解決する。PATHの先頭にmiseのshimがあると、作業ディレクトリの未trustの設定でshimが失敗する。
+Claude Codeはstdioサーバーの接続失敗をホスト共通の記録へ残す。新規起動・再開のプロセスごとに公開再接続APIを1回試し、未回復の失敗だけをstart/showの警告へ残す。成否は`claude_mcp_recovered`と`claude_mcp_recovery_failed`へ記録する。
 `agents_server`は`start()`（全`mode`が経由する）と終端済みsessionの再開の直前に、委譲先の作業ディレクトリで`uv --version`と`uvx --version`を実行し、失敗時は子を起動せずに`cwd`と標準エラーを含む例外を返す。process-wiはメインの選定開始前に対象リポジトリのmise trustを準備する。
 知識境界として、事前確認のコマンド集合は`agent-toolkit/agent_toolkit/_agents_server/launch_requests.py`の`PREFLIGHT_COMMANDS`が持ち、プラグインの起動コマンドを全て含むことを同モジュールのテストで確かめる。trustの判断は委譲元の手順（`agent-toolkit/skills/process-wi/references/selection-procedure.md`、`agent-toolkit/skills/process-wi/references/run-lanes.md`）が持つ。
 MCP設定の`command`を絶対パスにする案は、`uv`の配置がホストとOSで異なり全エンドユーザーで共通の設定に固定できないため採用しない。委譲先のPATHからshimを外す案は、委譲先の作業ディレクトリのツール解決を失わせるため採用しない。`agents_server`が`cwd`を自動でtrustする案は、任意の`cwd`を受け取る`agents_server`がtrustの判断を担うことになるため採用しない。

@@ -914,7 +914,7 @@ async def _start_exec_review_session(monkeypatch: pytest.MonkeyPatch, tmp_path: 
 
 @pytest.mark.asyncio
 async def test_followup_rejects_extra_lines_before_delivery(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
-    """定型追送の説明と初回入力は、公開入口から配送されず履歴も増えない。"""
+    """定型追送へ説明と初回入力を加えると、公開send_messageは配送を拒否し履歴を保つ。"""
     manager, backend, started = await _start_exec_review_session(monkeypatch, tmp_path)
     session = manager.sessions[started["session_id"]]
     count = len(backend.prompts)
@@ -1052,7 +1052,7 @@ async def test_declared_role_continuations_keep_required_inputs(
     instruction: str,
     params: dict[str, str],
 ) -> None:
-    """初回値を再掲せず、各役割の指示と対象識別子が公開入口から届く。"""
+    """各役割の継続指示は必要入力だけを配送し、書込担当一覧は起動応答の実sessionで更新する。"""
     if params.get("レビュー指摘管理表") == "@table":
         table = tmp_path / "review.tsv"
         table.write_text("指摘の記録\n", encoding="utf-8")
@@ -1065,6 +1065,25 @@ async def test_declared_role_continuations_keep_required_inputs(
             subagent_md_path=role,
             extra_params=_observed_input_params(f"{role}.subagent.md", tmp_path),
         )
+        if role == "exec":
+            initial_writers = _observed_input_params("exec.subagent.md", tmp_path)["書込担当一覧"]
+            assert f"書込担当一覧: {initial_writers}" in backend.prompts[-1]
+            writers = json.dumps([*json.loads(initial_writers), started["session_id"]])
+            await mcp_tools.send_message(started["session_id"], f"書込担当一覧: {writers}")
+            assert f"書込担当一覧: {writers}" in backend.prompts[-1]
+            if instruction == "統合開始":
+                params = {**params, "書込担当一覧": writers}
+                count = len(backend.prompts)
+                with pytest.raises(ToolError, match="書込担当一覧"):
+                    await mcp_tools.mcp.call_tool(
+                        "send_message",
+                        {
+                            "session_id": started["session_id"],
+                            "instruction": instruction,
+                            "extra_params": {key: value for key, value in params.items() if key != "書込担当一覧"},
+                        },
+                    )
+                assert len(backend.prompts) == count
         await mcp_tools.mcp.call_tool(
             "send_message",
             {

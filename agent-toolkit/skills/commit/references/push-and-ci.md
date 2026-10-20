@@ -57,7 +57,7 @@ CIを判定する場合は、push前に次のとおりbaselineを作成する。
 baseline作成と監視では`--repo`（`owner/repo`かホストを含むURL。ローカルパスではない）、`--forge <github|gitlab>`、`--ref`、`--source-ref`をすべて指定する。その他の引数は`--help`で確かめる。複数refでは組ごとにbaselineを作成し、1件が失敗しても他を続ける。
 
 GitLabのリポジトリ識別子とSSH接続先は、glabのホスト別設定を選ぶキーとして使う。
-API接続先はglabのホスト別設定と公開環境指定（`GITLAB_HOST`・`GL_HOST`・`GITLAB_URI`・`GITLAB_URL`・`GITLAB_API_HOST`）で解決する。
+ホスト選択は公開環境指定の`GITLAB_HOST`・`GITLAB_URI`・`GL_HOST`の順とglabのホスト別設定を使い、API接続先の明示上書きには`GITLAB_API_HOST`を使う。
 リポジトリ識別子やSSH接続先から`GITLAB_API_HOST`を上書きしない。
 API側を明示する場合はHTTP(S) URLをポート込みで`--repo`へ渡す。
 明示URLと環境指定の優先関係はglabの解決契約と呼び出し側の`prefer_environment`を保ち、baseline作成と監視・再開では同じ指定を使う。

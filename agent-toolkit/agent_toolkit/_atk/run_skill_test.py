@@ -16,6 +16,7 @@ import select
 import stat
 import subprocess
 import sys
+import threading
 import time
 import types
 import typing
@@ -27,7 +28,7 @@ from agent_toolkit import atk
 from agent_toolkit._atk import orchestrator, run_skill
 from agent_toolkit._atk.wi import add as wi_add
 from agent_toolkit._atk.wi import frontmatter
-from agent_toolkit._common import claude_usage_limit
+from agent_toolkit._common import claude_usage_limit, process_tree
 from agent_toolkit._testing import git_repository, wi_entry_files
 from agent_toolkit._testing.process_loop_support import set_orchestrate_environment
 
@@ -329,42 +330,85 @@ def test_tty_progress_arrives_before_child_exits(
         os.close(master)
 
 
-@pytest.mark.parametrize(("mode", "expected"), [("normal", 0), ("failed", 7), ("timeout", 124)])
+@pytest.mark.parametrize(
+    ("mode", "expected"),
+    [("normal", 0), ("failed", 7), ("timeout", 124), ("first-reader", None), ("second-reader", None), ("interrupt", None)],
+)
 def test_session_readers_close_both_pipes(
     engine_env: _Env,
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
+    request: pytest.FixtureRequest,
     mode: str,
-    expected: int,
+    expected: int | None,
 ) -> None:
     """公開CLIの正常・非0・timeoutのいずれも、読み終えた実pipeを閉じて結果とログを返す。"""
     real_popen = subprocess.Popen
     sessions: list[subprocess.Popen[typing.Any]] = []
+    rescue = contextlib.ExitStack()
+    request.addfinalizer(rescue.close)
 
     def popen(argv: list[str], **kwargs: typing.Any) -> typing.Any:
         # 被検証関数へ所有権を渡し、reader自身によるcloseを観測する。
         process = real_popen(argv, **kwargs)  # pylint: disable=consider-using-with
         if "--session-id" in argv:
             sessions.append(process)
+            for stream in (process.stdout, process.stderr):
+                if stream is not None:
+                    rescue.callback(stream.close)
+            rescue.callback(process_tree.stop_process_tree, process)
         return process
 
     monkeypatch.setattr(subprocess, "Popen", popen)
+    if mode in ("first-reader", "second-reader"):
+        original_start = threading.Thread.start
+        count = 0
+
+        def start(reader: threading.Thread, *args: typing.Any, **kwargs: typing.Any) -> None:
+            nonlocal count
+            # 対象セッションのreaderだけへ起動失敗を注入する。
+            # pylint: disable-next=protected-access
+            if getattr(reader, "_target", None) is run_skill._copy_stream:  # noqa: SLF001
+                count += 1
+                if count == (1 if mode == "first-reader" else 2):
+                    raise RuntimeError("reader start failed")
+            original_start(reader, *args, **kwargs)
+
+        monkeypatch.setattr(threading.Thread, "start", start)
+    elif mode == "interrupt":
+        original_wait = real_popen.wait
+        interrupted = False
+
+        def wait(process: subprocess.Popen[typing.Any], *args: typing.Any, **kwargs: typing.Any) -> int:
+            nonlocal interrupted
+            if isinstance(process.args, (list, tuple)) and "--session-id" in process.args and not interrupted:
+                interrupted = True
+                raise KeyboardInterrupt
+            return original_wait(process, *args, **kwargs)
+
+        monkeypatch.setattr(real_popen, "wait", wait)
     arguments = ["--target-repo", str(engine_env.repo), "pipe-skill"]
     if mode == "failed":
         monkeypatch.setenv("FAKE_SESSION_EXIT", "7")
     elif mode == "timeout":
         monkeypatch.setenv("FAKE_SESSION_HOLD_FILE", str(tmp_path / "never-release"))
         arguments[0:0] = ["--timeout", "3"]
-    code, _out, _err = _run(arguments, capsys)
-    assert code == expected
+    if expected is None:
+        with pytest.raises(KeyboardInterrupt if mode == "interrupt" else RuntimeError):
+            _run(arguments, capsys)
+    else:
+        code, _out, _err = _run(arguments, capsys)
+        assert code == expected
     assert len(sessions) == 1
     session = sessions[0]
+    assert session.poll() is not None
     assert session.stdout is not None and session.stdout.closed
     assert session.stderr is not None and session.stderr.closed
     log = _log_files(engine_env)[0].read_text(encoding="utf-8")
-    assert "session stdout line" in log
-    assert "session stderr line" in log
+    if expected is not None:
+        assert "session stdout line" in log
+        assert "session stderr line" in log
 
 
 def test_claude_session_runs_skill_with_goal_and_reports_log(engine_env: _Env, capsys: pytest.CaptureFixture[str]) -> None:
@@ -638,7 +682,7 @@ def test_same_skill_is_not_started_twice_but_other_skill_runs(
     env = {**os.environ, "FAKE_SESSION_STARTED_FILE": str(started), "FAKE_SESSION_HOLD_FILE": str(release)}
     agent_toolkit_root = pathlib.Path(run_skill.__file__).resolve().parents[2]
     env["PYTHONPATH"] = os.pathsep.join((str(agent_toolkit_root), env.get("PYTHONPATH", "")))
-    first = subprocess.Popen(  # pylint: disable=consider-using-with
+    with process_tree.process_scope(
         [
             sys.executable,
             "-c",
@@ -651,37 +695,27 @@ def test_same_skill_is_not_started_twice_but_other_skill_runs(
         env=env,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
-    )
-    try:
-        deadline = time.monotonic() + 60
-        while not started.exists():
-            assert first.poll() is None, first.communicate()
-            assert time.monotonic() < deadline, "1回目のセッションが開始しなかった"
-            time.sleep(0.05)
-
-        code, out, err = _run(["--target-repo", str(engine_env.repo), "busy-skill"], capsys)
-        assert code == run_skill.CONCURRENT_EXIT_CODE
-        assert not out
-        assert err.startswith("失敗: ")
-        assert len(_records(engine_env, "session")) == 1
-
-        release.write_text("release")
-        other_code, _other_out, other_err = _run(["--target-repo", str(engine_env.repo), "other-skill"], capsys)
-        assert other_code == 0, other_err
-        assert len(_records(engine_env, "session")) == 2
-    finally:
-        release.write_text("release")
+    ) as first:
         try:
+            deadline = time.monotonic() + 60
+            while not started.exists():
+                assert first.poll() is None, first.communicate()
+                assert time.monotonic() < deadline, "1回目のセッションが開始しなかった"
+                time.sleep(0.05)
+
+            code, out, err = _run(["--target-repo", str(engine_env.repo), "busy-skill"], capsys)
+            assert code == run_skill.CONCURRENT_EXIT_CODE
+            assert not out
+            assert err.startswith("失敗: ")
+            assert len(_records(engine_env, "session")) == 1
+
+            release.write_text("release")
+            other_code, _other_out, other_err = _run(["--target-repo", str(engine_env.repo), "other-skill"], capsys)
+            assert other_code == 0, other_err
+            assert len(_records(engine_env, "session")) == 2
+        finally:
+            release.write_text("release")
             first.communicate(timeout=60)
-        except subprocess.TimeoutExpired:
-            first.kill()
-            first.wait(timeout=60)
-            if os.name != "nt":
-                assert first.stdout is not None
-                assert first.stderr is not None
-                first.stdout.close()
-                first.stderr.close()
-            raise
     assert first.returncode == 0
 
 

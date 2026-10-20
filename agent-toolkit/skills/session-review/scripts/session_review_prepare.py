@@ -931,9 +931,40 @@ def _stats_document(stats: list[dict[str, Any]]) -> str:
                 f"- 結果量上位: {row['tool']} {row['characters']}字・{row['utf8_bytes']}バイト、"
                 f"入力={row['location']}、結果={row['result_location']}"
             )
+        lines.append(f"- 上位一覧の省略: 結果{item['omitted_largest_result_count']}件、反復{item['omitted_repeat_count']}組")
+    for item in by_kind.get("stats-resource-summary", []):
+        lines.extend(_resource_summary_lines(item))
     for item in by_kind.get("stats-token-peak", []):
         lines.append(f"- メインのtoken上位: {json.dumps(item, ensure_ascii=False)}")
     return "\n".join(lines) + "\n"
+
+
+def _resource_summary_lines(summary: dict[str, Any]) -> list[str]:
+    """担当横断の明示対象別集計と、読了を表さないシェル文字列の出現集計を描画する。"""
+    lines = [
+        "",
+        "## 対象別の担当横断集計",
+        "",
+        "読取とSkillは明示ツールの呼出回数を数える。結果量は記録で観測できた返却本文の合計である。",
+        "シェル内の絶対パスは入力文字列の出現を別に数える。実行・読取・読了の推定には使わない。",
+    ]
+    for field, label in (
+        ("reads_by_target", "ファイル読取"),
+        ("skills_by_name", "Skill"),
+        ("shell_paths_by_target", "シェル内の絶対パス出現"),
+    ):
+        lines.extend(["", f"### {label}", ""])
+        for group in summary[field]:
+            lines.append(
+                f"- {group['target']}: 合計{group['count']}回、観測結果{group['observed_result_count']}件・"
+                f"{group['characters']}字・{group['utf8_bytes']}バイト"
+            )
+            for record, values in group["by_record"].items():
+                lines.append(
+                    f"  - {record}: {values['count']}回、観測結果{values['observed_result_count']}件・"
+                    f"{values['characters']}字・{values['utf8_bytes']}バイト、{'、'.join(values['locations'])}"
+                )
+    return lines
 
 
 def _thread_breakdown_lines(
@@ -1043,7 +1074,10 @@ def main(argv: list[str] | None = None, *, now: datetime.datetime | None = None)
     comparison_path = work_dir / COMPARISON_FILENAME
     conversation_text = _conversation_document(conversation, detail_command)
     conversation_path.write_text(conversation_text, encoding="utf-8")
-    main_record = next((item.get("record") for item in stats if item.get("kind") == "stats-summary"), None)
+    main_record = next(
+        (item.get("record") for item in timeline if item.get("kind") == "record-provenance" and item.get("role") == "main"),
+        None,
+    )
     main_known_scope = (
         {
             "record": main_record,

@@ -175,6 +175,35 @@ def test_wrong_execution_worktree_guides_recovery_without_changing_source(
     assert create_plan_files.main([*args, "--work-dir", str(repo)]) == 0
 
 
+def test_prior_plan_repository_mismatch_names_values_and_recovery(
+    repo: pathlib.Path, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """先行計画だけ対象が異なる場合も、両値と入力・宣言の修正先を示す。"""
+    monkeypatch.setenv("AGENT_TOOLKIT_PRIVATE_NOTES", str(tmp_path / "absent-notes"))
+    source, _ = _source(repo, tmp_path)
+    prior = tmp_path / "prior.md"
+    other = tmp_path / "other"
+    prior.write_text(source.read_text(encoding="utf-8").replace(str(repo.resolve()), str(other)), encoding="utf-8")
+    source.write_text(
+        source.read_text(encoding="utf-8").replace("- 関連WI: なし", "- 関連WI:\n  - 20261020-000000-001.md: 対応"),
+        encoding="utf-8",
+    )
+    before = source.read_bytes(), prior.read_bytes()
+    args = [str(source), "--work-dir", str(repo), "--prior-plan", str(prior), "--expected-wi", "20261020-000000-001.md"]
+    assert check_plan_file.main(args) == 1
+    error = capsys.readouterr().err
+    assert f"先行計画の対象リポジトリが異なる: {prior}" in error
+    assert f"宣言={other}、--work-dir={repo.resolve()}" in error
+    assert "--prior-planへ同じ対象の計画" in error
+    assert "--work-dirへ対象worktree" in error
+    assert "先行計画の対象リポジトリを修正" in error
+    assert "各行が示す規定のとおりに計画ファイルを直し" not in error
+    assert (source.read_bytes(), prior.read_bytes()) == before
+    corrected = tmp_path / "correct-prior.md"
+    corrected.write_text(prior.read_text(encoding="utf-8").replace(str(other), str(repo.resolve())), encoding="utf-8")
+    assert check_plan_file.main([value if value != str(prior) else str(corrected) for value in args]) == 0
+
+
 @pytest.mark.parametrize("bom", [False, True])
 def test_cli_accepts_bom_source_and_preserves_bytes(
     repo: pathlib.Path,

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import contextlib
 import datetime
 import json
 import os
@@ -12,7 +13,8 @@ import shlex
 import stat
 import subprocess
 import sys
-from collections.abc import Callable
+import types
+from collections.abc import Callable, Generator, Iterator
 from typing import Any, Literal
 
 import pytest
@@ -121,8 +123,9 @@ def test_create_reuses_integrated_resources_then_delete_removes_only_owned_lane(
 
 @pytest.mark.skipif(os.name != "posix", reason="POSIXのディレクトリ権限を実機で検証する")
 @pytest.mark.parametrize("dirty", [False, True])
+@pytest.mark.parametrize("operation", ["delete", "recover"])
 def test_delete_recovers_permissions_before_checking_untracked_work(
-    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], dirty: bool
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], dirty: bool, operation: str
 ) -> None:
     """読めない木の未追跡内容を再判定し、保存済みの木だけ登録と共に撤去する。"""
     repo, _selected, record = _create(tmp_path, monkeypatch, capsys)
@@ -134,12 +137,14 @@ def test_delete_recovers_permissions_before_checking_untracked_work(
     if not dirty:
         git_repository.commit_all(worktree, "保存した成果")
         git_repository.run_git(repo, "merge", "--ff-only", record["branch"])
+    if operation == "recover":
+        _legacy(record)
     locked.chmod(0)
     try:
         code, _listed, stderr = _invoke(capsys, "delete", "--list")
         assert code == 0, stderr
         assert stat.S_IMODE(locked.stat().st_mode) == 0
-        code, result, stderr = _invoke(capsys, "delete")
+        code, result, stderr = _invoke(capsys, operation, "--session-id", "lane-test-session")
         if dirty:
             assert code == 1, stderr
             assert "未commitまたは未追跡" in result["retained"][0]["reason"]
@@ -148,11 +153,66 @@ def test_delete_recovers_permissions_before_checking_untracked_work(
             assert str(worktree) in git_repository.git_output(repo, "worktree", "list", "--porcelain")
         else:
             assert code == 0, stderr
-            assert result["removed"] == ["lane-01"]
+            if operation == "delete":
+                assert result["removed"] == ["lane-01"]
+                assert not pathlib.Path(record["record_path"]).exists()
+            else:
+                assert result["recovered"][0]["phase"] == "done"
             assert not worktree.exists()
+            assert str(worktree) not in git_repository.git_output(repo, "worktree", "list", "--porcelain")
     finally:
         if locked.exists():
             locked.chmod(0o700)
+
+
+@pytest.mark.skipif(os.name != "posix", reason="POSIXの所有者とmodeを検証する")
+@pytest.mark.parametrize("operation", ["delete", "recover"])
+def test_lane_keeps_foreign_os_owner_and_reports_owner_action(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], operation: str
+) -> None:
+    """所有者が異なる木はmode・内容・Git登録を保持し、所有者による回収を案内する。"""
+    repo, _selected, record = _create(tmp_path, monkeypatch, capsys)
+    worktree = pathlib.Path(record["worktree"])
+    locked = worktree / "foreign-owner"
+    locked.mkdir()
+    payload = locked / "payload"
+    payload.write_text("保持する成果", encoding="utf-8")
+    metadata = locked.lstat()
+    foreign_uid = metadata.st_uid + 1
+    locked.chmod(0)
+    if operation == "recover":
+        _legacy(record)
+    original_scandir = os.scandir
+
+    @contextlib.contextmanager
+    def foreign_owner_entries(path: Any, **kwargs: Any) -> Generator[Iterator[Any]]:
+        with original_scandir(path, **kwargs) as entries:
+
+            def entry_with_owner(entry: os.DirEntry[str]) -> Any:
+                observed = entry.stat(follow_symlinks=False)
+                if (observed.st_dev, observed.st_ino) != (metadata.st_dev, metadata.st_ino):
+                    return entry
+                fields = list(observed)
+                fields[4] = foreign_uid
+                return types.SimpleNamespace(name=entry.name, stat=lambda **_kwargs: os.stat_result(fields))
+
+            yield (entry_with_owner(entry) for entry in entries)
+
+    try:
+        with monkeypatch.context() as patch:
+            patch.setattr(os, "scandir", foreign_owner_entries)
+            code, result, stderr = _invoke(capsys, operation, "--session-id", "lane-test-session")
+        assert code == 1, stderr
+        retained = result["retained"][0]
+        assert str(locked) in retained["reason"] and f"uid={foreign_uid}" in retained["reason"]
+        assert str(locked) in retained["next_action"] and f"uid={foreign_uid}" in retained["next_action"]
+        assert "所有者" in retained["next_action"]
+        assert stat.S_IMODE(locked.stat().st_mode) == 0
+        assert pathlib.Path(record["record_path"]).exists()
+        assert str(worktree) in git_repository.git_output(repo, "worktree", "list", "--porcelain")
+    finally:
+        locked.chmod(0o700)
+    assert payload.read_text(encoding="utf-8") == "保持する成果"
 
 
 @pytest.mark.parametrize("condition", ["unintegrated", "dirty", "unmerged", "active-session", "identity-less-session"])
@@ -719,6 +779,41 @@ def _integration_selection(path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, 
         },
     }
     path.write_text(yaml.safe_dump(document, allow_unicode=True), encoding="utf-8")
+
+
+def prepare_lane_verification(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    verification_argv: list[str],
+) -> list[str]:
+    """共有検証枠の競合試験へ、公開createで準備したlane integrateのargvを渡す。"""
+    tmp_path.mkdir(parents=True, exist_ok=True)
+    repo, selected, record = _create(tmp_path, monkeypatch, capsys)
+    _integration_selection(selected, monkeypatch, repo)
+    head = git_repository.git_output(pathlib.Path(record["worktree"]), "rev-parse", "HEAD")
+    handoff = tmp_path / "handoff.md"
+    handoff.write_text("共有検証枠の観測", encoding="utf-8")
+    manifest = tmp_path / "integration.json"
+    manifest.write_text(
+        json.dumps(
+            {
+                "plans": [],
+                "wis": [{"name": "awi.md", "commands": []}],
+                "verification": [verification_argv],
+                "handoff": str(handoff),
+            }
+        ),
+        encoding="utf-8",
+    )
+    return [
+        sys.executable,
+        str(pathlib.Path(atk.__file__).resolve()),
+        "lane",
+        *_integration_args(record, repo, manifest, head),
+        "--session-id",
+        record["session_id"],
+    ]
 
 
 @pytest.mark.parametrize("planned", [False, True])

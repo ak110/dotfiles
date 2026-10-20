@@ -67,6 +67,7 @@ atk run-script plan-commits -- <引き継ぎ記録Markdownの絶対パス> --wor
 
 履歴変更: WI実装commitのOIDが履歴書換えやcommit分割で変わった場合は、`references/history-rewrite.md`「WI実装commitの対応の継承」に従う。
 検収した対応表と書換え前のHEADを、書換え範囲にWI実装commitを持つ全ての計画と引き継ぎ記録とともに1回の`atk run-script plan-rewrite`へ渡す。不足があれば同コマンドはどの記録も変えずに失敗する。
+未指定の記録は同コマンドが書込前に全件を示すため、示された記録を加えて再実行する。複数の対応表は`--rewrite-map`を書換え順に反復指定し、合成後のOIDが現在HEADに含まれることを確かめる。
 
 対象外: 実装差分なしの充足済み、WIと無関係なcommit、回答だけのUWIは対応記録の対象外とし、進捗ログか引き継ぎ記録の根拠を使ってcommitの指定を省く。公開commitのメッセージへWI識別子と内部の認可の出所を書かず、それらは同じ記録へ残す。計画は対応記録ファイルと共に`atk plans commit`で保存する。
 

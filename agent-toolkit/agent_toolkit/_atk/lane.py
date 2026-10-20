@@ -653,6 +653,13 @@ def _eligible(record: dict[str, typing.Any]) -> str | None:
     return None
 
 
+def _retained_resource(path: pathlib.Path, error: BaseException) -> dict[str, str]:
+    retained = {"record_path": str(path), "reason": str(error)}
+    if isinstance(error, managed_temp.ManagedTempError):
+        retained["next_action"] = error.next_action
+    return retained
+
+
 def cleanup_session(session_id: str | None, *, only: pathlib.Path | None = None) -> dict[str, typing.Any]:
     """全登録を先に判定し、安全な対象だけを回収する。結果は削除対象の外へ保持する。
 
@@ -683,7 +690,7 @@ def cleanup_session(session_id: str | None, *, only: pathlib.Path | None = None)
                 else:
                     records.append((path, record))
             except _record_errors() as error:
-                result["retained"].append({"record_path": str(path), "reason": str(error)})
+                result["retained"].append(_retained_resource(path, error))
         result_index = directory / "cleanup-result.json"
         result_path = managed_temp.create_managed_temp("lane-cleanup") / "cleanup-result.json"
         result["result_path"] = str(result_path)
@@ -736,11 +743,13 @@ def cleanup_session(session_id: str | None, *, only: pathlib.Path | None = None)
                 path.unlink()
                 result["removed"].append(record["lane"])
             except (OSError, ValueError, KeyError, subprocess.SubprocessError, managed_temp.ManagedTempError) as error:
-                result["retained"].append({"record_path": str(path), "reason": str(error)})
+                result["retained"].append(_retained_resource(path, error))
             result["pending"].remove(record["lane"])
             _save(result_path, result)
         for retained in result["retained"]:
-            retained["next_action"] = "理由を解消し、所有登録の入力で作成を再開するか同じlane deleteで残る回収を実行する"
+            retained.setdefault(
+                "next_action", "理由を解消し、所有登録の入力で作成を再開するか同じlane deleteで残る回収を実行する"
+            )
         _save(result_path, result)
     return result
 
@@ -819,7 +828,7 @@ def recover(session_id: str, lanes: list[str] | None = None) -> dict[str, typing
                     _recover(record, path)
                 result["recovered"].append({"record_path": str(path), "worktree": record["worktree"], **record["recovery"]})
             except _record_errors() as error:
-                result["retained"].append({"record_path": str(path), "reason": str(error)})
+                result["retained"].append(_retained_resource(path, error))
     return result
 
 

@@ -38,6 +38,9 @@ all-reposのリポジトリ担当は`agent-toolkit:process-wi`の`references/all
 
 ## 中止・置換・待機・技術的不成立
 
+ホストの猶予通知が続行を許す間は残工程を続ける。ホストが再開を禁止した場合は、状況と再開に必要な操作を`agent-toolkit:user-confirmation-and-report`でユーザーへ伝える。
+`wait`は実際に継続中の待機、`blocked`は観測した失敗で技術的に続行できない場合に記録する。
+
 ユーザーが作業の中止、別作業への置換を指示した場合、確認の回答または起動した委譲先の結果を待つ場合、技術的に続行できない場合は、`atk run-script termination-evidence -- --decision-file <判断JSONの絶対パス>`で判断を記録する。
 判断JSONは`session_id`、`action`（`cancel`・`replace`・`start`・`resume`・`wait`・`blocked`）、対象の`work_id`と`reason`を持つ。
 中止・置換・開始・再開にはユーザーの原入力の`input_id`を、確認待ちには投入した未回答UWIの`uwi_file`を、委譲先の待機には`target_session_id`を、技術的不成立には失敗した呼び出しの`call_id`を渡す。

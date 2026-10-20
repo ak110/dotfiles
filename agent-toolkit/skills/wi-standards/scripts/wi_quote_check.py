@@ -19,6 +19,8 @@ textフェンスの番号付け、文字範囲の数え方、確認回答の記�
 modeはfull、range（1始まり・両端を含むstart/end）、command-args、answerから選び、省略時はfullを使う。
 answerはassistant_contextの質問と全選択肢、user_responseの回答と自由記述を区別して生成する。
 全選択を検証してから引用節を更新し、一致と引用位置を返す。入力不成立と不一致では原稿を変更しない。
+引用節に保存する出所はrecord・line・任意のsequenceである。sourceは取り込み時の読取先として使う。
+取り込みの一致表示は各フェンスに選択したイベントの位置を示す。`--source`との比較は各フェンスに一致する全候補を示す。
 """
 
 from __future__ import annotations
@@ -382,7 +384,7 @@ def main(argv: list[str] | None = None) -> int:
         action="append",
         default=None,
         help="原文を保持するファイルの絶対パス。`atk run-script session-review-evidence -- ... --user-events`の出力か、"
-        "原文そのものを持つファイル。複数の出所は反復して指定する",
+        "原文そのものを持つファイル。複数の出所は反復して指定する。各フェンスに一致する全候補の位置を表示する",
     )
     parser.add_argument(
         "--import-spec",
@@ -390,7 +392,8 @@ def main(argv: list[str] | None = None) -> int:
         metavar="PATH",
         help="引用節を更新する選択JSON配列の絶対パス。各要素はsource（保存済みuser-eventsの絶対パス）、"
         "record、line、任意のsequence、mode（full/range/command-args/answer）を持ち、mode省略時はfullを使う。"
-        "rangeは1始まり・両端を含むstart/endも指定する。配列順で取り込み、全件が原文と一致することを確かめて保存する",
+        "rangeは1始まり・両端を含むstart/endも指定する。配列順で取り込み、全件の一致を確かめて保存する。"
+        "引用節の出所はrecord・line・任意のsequenceを保存し、一致表示は各フェンスに選択したイベントの位置を示す",
     )
     args = parser.parse_args(argv)
     if not args.source and args.import_spec is None:

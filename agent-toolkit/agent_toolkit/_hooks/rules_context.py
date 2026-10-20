@@ -294,7 +294,10 @@ def _compaction_notice(session_id: str, transcript_path: object, session_temp: p
         )
     except (OSError, ValueError, subprocess.SubprocessError) as error:
         if output is not None:
-            output.unlink(missing_ok=True)
+            try:
+                output.unlink(missing_ok=True)
+            except OSError:
+                lines.append("前回の抽出ファイルを削除できないため、そのファイルは使用しない。手動で原文を再取得する。")
         lines.append(f"ユーザー発話の抽出に失敗した（{type(error).__name__}）。手動で`{shlex.join(command)}`を実行する。")
     return "\n".join(lines)
 

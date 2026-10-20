@@ -242,11 +242,20 @@ def test_every_subcommand_rejects_unsupported_argument_with_accepted_options(
         assert f"解釈できない引数: --unsupported。{target.prog}が受理するオプションは{accepted}" in error, command
 
 
-@pytest.mark.parametrize("option", [["--max-bytes", "16000"], ["--max-bytes=16000"], ["--start", "0"]])
+@pytest.mark.parametrize(
+    ("option", "expected_text"),
+    [
+        (["--max-bytes", "16000"], "本文\n"),
+        (["--max-bytes=16000"], "本文\n"),
+        (["--start", "0"], "本文\n"),
+        (["--start", "1", "--max-bytes", "16000"], "文\n"),
+    ],
+)
 def test_trailing_option_cli_matches_leading_option(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
     option: list[str],
+    expected_text: str,
 ) -> None:
     """パス後方へ追加した登録済みオプションが同じ本文と継続位置を返す。"""
     source = tmp_path / "本文.txt"
@@ -261,7 +270,7 @@ def test_trailing_option_cli_matches_leading_option(
     assert accepted.value.code == 0
     result = json.loads(capsys.readouterr().out)
     assert result == json.loads(trailing_output.out)
-    assert result["text"] == "本文\n" and result["eof"] is True
+    assert result["text"] == expected_text and result["eof"] is True
 
 
 def test_subcommand_trailing_options_use_registered_actions(capsys: pytest.CaptureFixture[str]) -> None:

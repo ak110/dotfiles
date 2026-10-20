@@ -1,8 +1,10 @@
 """実pytestの収集を通し、自動fixtureの登録とディレクトリ境界を確かめる。"""
 
+import contextlib
 import json
 import os
 import pathlib
+import socket
 import subprocess
 import sys
 import textwrap
@@ -66,6 +68,95 @@ def test_pytest_owns_fixture_directory_and_reclaims_children(tmp_path: pathlib.P
         directory = next(path for path in (base, *base.parents) if path.name == "fixtures")
         assert not directory.parent.exists()
     assert not psutil.pid_exists(observed["pid"]) or psutil.Process(observed["pid"]).status() == psutil.STATUS_ZOMBIE
+
+
+@pytest.mark.parametrize("workers", [0, 2])
+def test_concurrent_controllers_keep_other_fixtures_and_saved_outputs(tmp_path: pathlib.Path, workers: int) -> None:
+    """別controllerが待機中の領域を残し、自分の領域だけを回収して両出力を保持する。"""
+    probe = tmp_path / "concurrent_test.py"
+    probe.write_text(
+        textwrap.dedent("""\
+            import json, os, socket
+
+            def test_probe(tmp_path, pytestconfig):
+                (tmp_path / 'payload').write_text('実行中', encoding='utf-8')
+                if os.environ.get('PROBE_PORT'):
+                    with socket.create_connection(('127.0.0.1', int(os.environ['PROBE_PORT'])), timeout=30) as peer:
+                        peer.sendall((json.dumps({'base': str(pytestconfig.option.basetemp)}) + '\\n').encode())
+                        assert peer.recv(1) == b'x'
+                print('保存する標準出力')
+                import sys
+                print('保存する標準エラー', file=sys.stderr)
+        """),
+        encoding="utf-8",
+    )
+    environment = dict(os.environ)
+    environment.pop("PYTEST_ADDOPTS", None)
+    environment["PYTEST_DISABLE_PLUGIN_AUTOLOAD"] = "1"
+    # この検証は所有領域の独立性を対象とするため、検証枠だけをcontrollerごとに分離する。
+    environment["PYFLTR_CACHE_DIR"] = str(tmp_path / "second-slot")
+    argv = [sys.executable, "-m", "pytest", "-q", "-s", "-o", "addopts=", "-p", pytest_plugin.__name__]
+    if workers:
+        argv.extend(["-p", "xdist.plugin", "-n", str(workers)])
+    argv.append(str(probe))
+    saved_paths = [(tmp_path / f"controller-{number}.stdout", tmp_path / f"controller-{number}.stderr") for number in (0, 1)]
+    with contextlib.ExitStack() as stack, socket.socket() as listener:
+        streams = [
+            (stack.enter_context(output.open("w", encoding="utf-8")), stack.enter_context(error.open("w", encoding="utf-8")))
+            for output, error in saved_paths
+        ]
+        listener.bind(("127.0.0.1", 0))
+        listener.listen()
+        listener.settimeout(30)
+        first_environment = {
+            **environment,
+            "PROBE_PORT": str(listener.getsockname()[1]),
+            "PYFLTR_CACHE_DIR": str(tmp_path / "first-slot"),
+        }
+        with subprocess.Popen(
+            argv,
+            cwd=tmp_path,
+            env=first_environment,
+            stdout=streams[0][0],
+            stderr=streams[0][1],
+            text=True,
+            encoding="utf-8",
+        ) as first:
+            try:
+                peer, _address = listener.accept()
+                with peer:
+                    peer.settimeout(30)
+                    data = b""
+                    while not data.endswith(b"\n"):
+                        part = peer.recv(4096)
+                        assert part, "最初のcontrollerが所有領域の通知前に終了した"
+                        data += part
+                    base = pathlib.Path(json.loads(data)["base"])
+                    assert base.exists()
+                    second = subprocess.run(
+                        argv,
+                        cwd=tmp_path,
+                        env=environment,
+                        stdout=streams[1][0],
+                        stderr=streams[1][1],
+                        text=True,
+                        encoding="utf-8",
+                        timeout=60,
+                        check=False,
+                    )
+                    assert second.returncode == 0, [path.read_text(encoding="utf-8") for path in saved_paths[1]]
+                    assert base.exists()
+                    peer.sendall(b"x")
+                first.wait(timeout=60)
+                assert first.returncode == 0, [path.read_text(encoding="utf-8") for path in saved_paths[0]]
+            finally:
+                if first.poll() is None:
+                    first.terminate()
+                    first.wait(timeout=30)
+    assert not base.exists()
+    for output, error in saved_paths:
+        assert "1 passed" in output.read_text(encoding="utf-8")
+        assert "保存する標準エラー" in error.read_text(encoding="utf-8")
 
 
 @pytest.mark.parametrize("parent_first", [False, True])

@@ -164,6 +164,45 @@ def test_import_preserves_source_modes_and_answer_context(tmp_path: pathlib.Path
     assert _run(body, extra, events) == 0
 
 
+@pytest.mark.parametrize("same_line", [False, True], ids=["substring", "same-line-sequences"])
+def test_two_imported_fences_keep_selected_locations_and_source_lists_candidates(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], same_line: bool
+) -> None:
+    """2引用の選択位置を保ち、保存後の比較ではフェンスごとに一致する全候補を示す。"""
+    events = tmp_path / "events.jsonl"
+    values: list[dict[str, object]] = [
+        {"kind": "user", "text": text, "record": "claude:example", "line": line, "sequence": sequence}
+        for text, line, sequence in (("前置き。同じ要求。", 1, 1), ("同じ要求。", 1 if same_line else 2, 2))
+    ]
+    events.write_text("".join(json.dumps(value, ensure_ascii=False) + "\n" for value in values), encoding="utf-8")
+    body = tmp_path / "body.md"
+    body.write_text(_body("旧引用"), encoding="utf-8")
+    spec = _spec(
+        tmp_path, *({"source": str(events), **{key: value[key] for key in ("record", "line", "sequence")}} for value in values)
+    )
+    assert _run(body, import_spec=spec) == 0
+    selected = capsys.readouterr()
+    assert not selected.err
+    matches = [line for line in selected.out.splitlines() if "本文: 一致" in line]
+    assert matches == [
+        f"text[{number}] 本文: 一致 出所={events} record=claude:example line={value['line']} sequence={value['sequence']}"
+        for number, value in enumerate(values, 1)
+    ]
+    saved = body.read_text(encoding="utf-8")
+    assert str(events) not in saved
+    for value in values:
+        assert f"record=claude:example line={value['line']} sequence={value['sequence']}\n" in saved
+    assert _run(body, events) == 0
+    checked = capsys.readouterr()
+    assert not checked.err
+    assert [line for line in checked.out.splitlines() if "本文: 一致" in line] == [
+        matches[0],
+        matches[0].replace("text[1]", "text[2]"),
+        matches[1],
+    ]
+    assert _positions(checked.out) == _positions(selected.out)
+
+
 @pytest.mark.parametrize("failure", ["missing", "ambiguous", "range", "invalid-json", "invalid-answer", "invalid-sequence"])
 def test_import_failure_keeps_draft_unchanged(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], failure: str) -> None:
     """後続の選択が不成立でも先行分を書かず、非0と入力の修正案内を返す。"""

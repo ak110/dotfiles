@@ -40,6 +40,8 @@ repositoryはGit作業ツリーの絶対パス、baseとheadは比較元とレ�
 
 ## 観点
 
+冒頭の1文が読者の最初の疑問へ答えるかを確かめる。題名と主語は`agent-toolkit:writing-standards`の`references/writing.md`の共通基準で判定する。
+
 読者への適合として、読者像の主体が文面だけから行為者と対象を特定し、判断、操作または検証へ進めるかを判定する。
 日本語の表現は`agent-toolkit:writing-standards`の`references/writing.md`「日本語の書き方」を読み、執筆と同じ基準で判定する。
 

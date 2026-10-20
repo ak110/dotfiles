@@ -82,56 +82,65 @@ def _command(args: list[str]) -> bool:
 def _hooks_list() -> dict[str, Any] | None:
     """短命app-serverから現在の作業ディレクトリに対するhook登録を取得する。"""
     try:
-        process = subprocess.Popen(  # noqa: S603  # pylint: disable=consider-using-with
+        with common.process_scope(
             [str(_CODEX_EXECUTABLE.get()), "app-server", "--stdio"],
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
             stderr=subprocess.DEVNULL,
             text=True,
-        )
+            encoding="utf-8",
+            errors="replace",
+            close_streams=False,
+        ) as process:
+            return _query_hooks(process)
     except OSError:
         return None
-    assert process.stdin is not None
-    assert process.stdout is not None
-    process_stdin = process.stdin
-    process_stdout = process.stdout
-    messages: queue.Queue[str | None] = queue.Queue()
 
-    def read_messages() -> None:
-        """stdoutは読み取りを終えた側が閉じ、主スレッドの回収を読み取り待ちで妨げない。"""
-        with process_stdout:
-            for line in process_stdout:
-                messages.put(line)
-            messages.put(None)
 
-    reader = threading.Thread(target=read_messages, daemon=True)
-    reader.start()
-
-    def send(message: dict[str, Any]) -> None:
-        process_stdin.write(json.dumps(message) + "\n")
-        process_stdin.flush()
-
-    def response(request_id: int) -> dict[str, Any] | None:
-        deadline = time.monotonic() + _TIMEOUT
-        while True:
-            remaining = deadline - time.monotonic()
-            if remaining <= 0:
-                return None
-            try:
-                line = messages.get(timeout=remaining)
-            except queue.Empty:
-                return None
-            if line is None:
-                return None
-            try:
-                message = json.loads(line)
-            except json.JSONDecodeError:
-                continue
-            if isinstance(message, dict) and message.get("id") == request_id:
-                result = message.get("result")
-                return result if isinstance(result, dict) else None
-
+def _query_hooks(process: subprocess.Popen[str]) -> dict[str, Any] | None:
+    """読取準備から応答待機までのパイプとスレッドを所有する。"""
+    reader: threading.Thread | None = None
     try:
+        assert process.stdin is not None
+        assert process.stdout is not None
+        process_stdin = process.stdin
+        process_stdout = process.stdout
+        messages: queue.Queue[str | None] = queue.Queue()
+
+        def read_messages() -> None:
+            """stdoutは読み取りを終えた側が閉じ、主スレッドの回収を読み取り待ちで妨げない。"""
+            with process_stdout:
+                for line in process_stdout:
+                    messages.put(line)
+                messages.put(None)
+
+        reader = threading.Thread(target=read_messages, daemon=True)
+        reader.start()
+
+        def send(message: dict[str, Any]) -> None:
+            process_stdin.write(json.dumps(message) + "\n")
+            process_stdin.flush()
+
+        def response(request_id: int) -> dict[str, Any] | None:
+            deadline = time.monotonic() + _TIMEOUT
+            while True:
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    return None
+                try:
+                    line = messages.get(timeout=remaining)
+                except queue.Empty:
+                    return None
+                if line is None:
+                    return None
+                try:
+                    message = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                if isinstance(message, dict) and message.get("id") == request_id:
+                    result = message.get("result")
+                    return result if isinstance(result, dict) else None
+
         send(
             {
                 "id": 1,
@@ -144,13 +153,19 @@ def _hooks_list() -> dict[str, Any] | None:
         send({"method": "initialized", "params": {}})
         send({"id": 2, "method": "hooks/list", "params": {}})
         return response(2)
+
     finally:
-        residual = common.stop_process_tree(process, stdin_grace_seconds=2)
-        if residual:
-            logger.warning("Codex App Serverの子孫を回収できない: %s", residual)
-        with contextlib.suppress(OSError):
-            process_stdin.close()
-        reader.join(timeout=2)
+        # 途中のclose失敗でも、残るパイプと読取スレッドを回収する。
+        with contextlib.ExitStack() as cleanup:
+            if reader is not None and reader.ident is not None:
+                cleanup.callback(reader.join, timeout=2)
+            elif process.stdout is not None:
+                cleanup.callback(process.stdout.close)
+            if process.stdin is not None:
+                cleanup.callback(process.stdin.close)
+            residual = common.stop_process_tree(process, stdin_grace_seconds=2)
+            if residual:
+                logger.warning("Codex App Serverの子孫を回収できない: %s", residual)
 
 
 def _hook_trust_notice_required(result: dict[str, Any] | None) -> bool:

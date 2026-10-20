@@ -4,6 +4,7 @@
 
 Claude Codeのホストが挿入する`Usage limit reached; a short grace allowance remains`で始まる注記を、利用上限の猶予通知とする。
 この通知を受けたときは`agent-toolkit:user-confirmation-and-report`を起動し、同スキルが定める状況伝達・続行・再開の手順を適用する。
+ホストが続行を許す猶予中は残工程を続け、再開を禁止した場合は同スキルでユーザーへ状況と必要な操作を伝える。終了判断の`wait`と`blocked`を実際の待機と観測した技術的不成立にそれぞれ使う。
 
 ## ツールの入出力
 

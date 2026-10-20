@@ -736,6 +736,7 @@ lintやテストの実行・横断検索・横断置換・実行履歴の参照�
 サーバーは`uvx`でpyfltrを取得して起動するため、pyfltr自体の事前インストールは要らない。
 
 agent-toolkitは以下のフックを常時有効化する。
+会話圧縮後はSessionStart hookが全ユーザー発話を`compaction-user-events.jsonl`へ保存し、原文と出所の`record`・`line`から要求と回答を復元できるよう案内する。外部のcompact-plus pluginは不要となり、dotfiles更新時に導入済みのものを除去する。
 識別子はイベント名と処理名の組で示し、`plugin`はagent-toolkitプラグインの配布分、
 `個人設定`はdotfilesユーザーの`~/.claude/settings.json`へ配布される分を指す。
 Codex欄の「対応」「部分対応」「非対応」は、Codex 0.154.0の実機検証で確認した範囲を示す。

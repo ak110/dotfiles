@@ -11,9 +11,55 @@ import typing
 
 import pytest
 
+from agent_toolkit import atk
 from agent_toolkit._atk import managed_temp
 from agent_toolkit._atk.managed_temp import inventory, permissions, registry
 from agent_toolkit._common import plugin_root_leases
+
+
+@pytest.mark.skipif(os.name != "posix", reason="POSIX所有者の拒否をCLIと起動時掃引へ通す")
+@pytest.mark.parametrize("route", ["cleanup", "startup"])
+def test_foreign_owner_diagnostic_preserves_tree_through_public_entry(
+    route: str, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """所有者の観測だけを差し替え、対象・uid・次操作を示してmodeと登録を保持する。"""
+    target = managed_temp.create_managed_temp("foreign-owner")
+    locked = target / "foreign"
+    locked.mkdir()
+    (locked / "payload").write_text("保持", encoding="utf-8")
+    older = 1_000_000_000
+    for child in (locked / "payload", locked, target / ".agent-toolkit-managed-temp.json", target):
+        os.utime(child, (older, older))
+    locked.chmod(0)
+    require_owner = permissions._require_owner  # pylint: disable=protected-access
+    foreign_uid = os.geteuid() + 1
+
+    def foreign_owner(metadata: os.stat_result, path: pathlib.Path | str) -> None:
+        if pathlib.Path(path).name == locked.name:
+            values = list(metadata)
+            values[4] = foreign_uid
+            metadata = os.stat_result(values)
+        require_owner(metadata, path)
+
+    try:
+        with monkeypatch.context() as patch:
+            patch.setattr(permissions, "_require_owner", foreign_owner)
+            if route == "cleanup":
+                assert managed_temp.main(["cleanup", "--path", str(target)]) == 2
+            else:
+                with pytest.raises(SystemExit) as completed:
+                    atk.main(["managed-temp", "list"])
+                assert completed.value.code == 0
+        error = capsys.readouterr().err
+        assert str(locked) in error and f"uid={foreign_uid}" in error
+        assert "次の操作:" in error and "所有者" in error
+        assert f"所有者uid={foreign_uid}の権限で{locked}を削除" in error
+        assert ("失敗:" if route == "cleanup" else "警告:") in error
+        assert "Traceback" not in error
+        assert stat.S_IMODE(locked.stat().st_mode) == 0
+        assert registry._registry_path(target).exists()  # pylint: disable=protected-access
+    finally:
+        managed_temp.cleanup_managed_temp(target)
 
 
 @pytest.mark.skipif(os.name != "posix", reason="POSIXの権限ビットと記述子を検証する")

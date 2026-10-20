@@ -410,5 +410,67 @@ def test_rewritten_history_uses_each_round_contract_in_return_and_batch(
     assert check.main(["--batch", batch]) == 0
     capsys.readouterr()
     current.write_text(current.read_text(encoding="utf-8").replace(head, new_own), encoding="utf-8")
+    assert reader_fit_prepare.main(prepare_args) == 0
+    [prepared] = json.loads(capsys.readouterr().out)["files"]
+    assert "omission" not in prepared
     assert check.main([*args, "--previous-review-contract", str(previous)]) == 1
+    assert "変更内容が異なる" in capsys.readouterr().err
+
+
+def test_same_commit_ids_with_changed_exclusion_require_new_reader_review(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """commit IDが同じでも前回だけ除外した変更は、今回の探索省略対象に入らない。"""
+    repo = git.init_repository(tmp_path / "repo", files={"shared.md": "元1\n元2\n"}, commit_message="開始")
+    start = git.git_output(repo, "rev-parse", "HEAD")
+    (repo / "shared.md").write_text("自計画1\n元2\n", encoding="utf-8")
+    git.commit_all(repo, "自計画")
+    (repo / "shared.md").write_text("自計画1\n他計画2\n", encoding="utf-8")
+    head = git.commit_all(repo, "他計画")
+    previous, current = tmp_path / "previous.yaml", tmp_path / "current.yaml"
+    previous.write_text(
+        yaml.safe_dump(
+            {"version": 1, "clauses": [{"clause": "別計画の認可: 他", "content": f"対象commit: {head}。", "source": "要求"}]},
+            allow_unicode=True,
+        ),
+        encoding="utf-8",
+    )
+    current.write_text(
+        yaml.safe_dump(
+            {"version": 1, "clauses": [{"clause": "対象", "content": "今回の全変更を確認する。", "source": "要求"}]},
+            allow_unicode=True,
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.chdir(repo)
+    prepare_args = [
+        "--repository",
+        str(repo),
+        "--review-start",
+        start,
+        "--review-head",
+        head,
+        "--previous-review-start",
+        start,
+        "--previous-review-head",
+        head,
+        "--review-contract",
+        str(current),
+        "--previous-review-contract",
+        str(previous),
+        "--output-dir",
+        str(tmp_path / "materials"),
+    ]
+    assert reader_fit_prepare.main(prepare_args) == 0
+    [prepared] = json.loads(capsys.readouterr().out)["files"]
+    assert "omission" not in prepared
+    declaration = json.dumps({"files": {"shared.md": {"omission": "再点検対象なし"}}})
+    args = [
+        *_args(tmp_path, start, head, declaration, previous=(start, head)),
+        "--review-contract",
+        str(current),
+        "--previous-review-contract",
+        str(previous),
+    ]
+    assert check.main(args) == 1
     assert "変更内容が異なる" in capsys.readouterr().err

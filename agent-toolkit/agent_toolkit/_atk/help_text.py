@@ -72,8 +72,8 @@ HELP: dict[str, dict[str, str]] = {
         "epilog": "実行例:\n\n  atk commit\n  atk commit --model-type claude:sonnet/high",
     },
     "atk setup-project": {
-        "summary": "プロジェクト規範と共有スキルを統一する",
-        "description": "プロジェクト規範と共有スキルを統一する。\n\n目的: Claude CodeとCodexが同じプロジェクト規範とスキルを読めるようにする。\n利用場面: プロジェクトの指示ファイルをAGENTS.mdへ統一するとき。\n対象と出力: 現在ディレクトリの指示を移行し、共有スキルのリンクを作成する。with-rulesではpluginの規範も複製し、cleanでは配置済みリンクと規範を削除する。\n前提: 予期しない指示ファイルとリンク先は変更せず失敗する。\n復元・後始末: cleanで共有リンクと複製済み規範を削除できる。移行した指示ファイルはGit履歴から復元できる。",
+        "summary": "プロジェクトの指示ファイルを移行し共有スキルをリンクする",
+        "description": "プロジェクトの指示ファイルを移行し共有スキルをリンクする。\n\n目的: Claude CodeとCodexが同じプロジェクト規範とスキルを読めるようにする。\n利用場面: プロジェクトの指示ファイルをAGENTS.mdへ統一するとき。\n対象と出力: 現在ディレクトリの指示を移行し、共有スキルのリンクを作成する。with-rulesではpluginの規範も複製し、cleanでは配置済みリンクと規範を削除する。\n前提: 予期しない指示ファイルとリンク先は変更せず失敗する。\n復元・後始末: cleanで共有リンクと複製済み規範を削除できる。移行した指示ファイルはGit履歴から復元できる。",
         "epilog": "実行例:\n\n  atk setup-project\n  atk setup-project --with-rules\n  atk setup-project --clean",
     },
     "atk run-script": {
@@ -358,8 +358,8 @@ HELP: dict[str, dict[str, str]] = {
         "epilog": "実行例:\n\n  atk lane delete --session-id <作成した所有session>",
     },
     "atk lane recover": {
-        "summary": "選定情報を失った旧レーン登録の作業ツリーを、成果のbranchを残して解放する",
-        "description": "選定情報を失った旧レーン登録の作業ツリーを、成果のbranchを残して解放する。\n\n目的: 選定YAMLが失効し所有登録にも選定情報が無い旧登録が固定作成先を占有し続ける状態を、成果を失わずに解消する。\n利用場面: `atk lane delete`や`atk lane create`が「選定原本が失効し、所有登録に選定情報が無い」と返したとき。\n対象と出力: --session-idの所有sessionの登録（--laneで限定）ごとに、元branchとHEADを登録の`recovery`へ記録してから作業ツリーを解放し、recoveredとretainedの理由をJSONで返す。branchと所有登録は残し、回復済みの登録は固定作成先の所有判定と`atk lane delete`の回収対象から外れる。保持した登録がある場合は終了1、入力不正は2。\n前提: 選定原本も所有登録の選定情報も無い登録に限る。所有一致、Git共通ディレクトリの一致、担当と外部プロセスの終了、未commit・未追跡の変更が無いことを確かめ、成立しない登録は保持する。\n復元・後始末: 途中で失敗した登録は到達点を保持し、同じlane recoverで残る工程から続ける。残したbranchは`atk lane delete --list`の登録本文と本操作の結果から読める。",
+        "summary": "旧レーンの作業ツリーを解放し成果のbranchを残す",
+        "description": "旧レーンの作業ツリーを解放し成果のbranchを残す。\n\n目的: 選定YAMLが失効し所有登録にも選定情報が無い旧登録が固定作成先を占有し続ける状態を、成果を失わずに解消する。\n利用場面: `atk lane delete`や`atk lane create`が「選定原本が失効し、所有登録に選定情報が無い」と返したとき。\n対象と出力: --session-idの所有sessionの登録（--laneで限定）ごとに、元branchとHEADを登録の`recovery`へ記録してから作業ツリーを解放し、recoveredとretainedの理由をJSONで返す。branchと所有登録は残し、回復済みの登録は固定作成先の所有判定と`atk lane delete`の回収対象から外れる。保持した登録がある場合は終了1、入力不正は2。\n前提: 選定原本も所有登録の選定情報も無い登録に限る。所有一致、Git共通ディレクトリの一致、担当と外部プロセスの終了、未commit・未追跡の変更が無いことを確かめ、成立しない登録は保持する。\n復元・後始末: 途中で失敗した登録は到達点を保持し、同じlane recoverで残る工程から続ける。残したbranchは`atk lane delete --list`の登録本文と本操作の結果から読める。",
         "epilog": "実行例:\n\n  atk lane recover --session-id <旧登録の所有session> --lane lane-01",
     },
     "atk managed-temp": {
@@ -373,8 +373,8 @@ HELP: dict[str, dict[str, str]] = {
         "epilog": "実行例:\n\n  atk managed-temp create --prefix=wi-show",
     },
     "atk managed-temp cleanup": {
-        "summary": "managed-tempのディレクトリを後始末する",
-        "description": "managed-tempのディレクトリを後始末する。\n\n目的: 指定したmanaged-tempのディレクトリを検証したうえで削除し、対応する登録も除去する。\n利用場面: 作成した領域を使い終えたとき。中断した後始末を再開するとき。\n対象と出力: `--path`が指すディレクトリと配下の内容を削除し、状態ディレクトリの登録を除去する。\n前提: `--path`は作成時に返された絶対パスで指定する。`--path`を省略した場合は、現在の管理対象の絶対パスを作成時刻の昇順で示して終了コード2で終わる。実体と管理情報の双方が作成時の内容と一致することを検証する。`--session-root`で作成したmanaged-temp直下の作業ディレクトリのように個別の管理情報を持たない対象は、祖先に登録済みのmanaged-tempのディレクトリが実在する場合に限り検証を省略して削除し、省略したことを標準エラーへ書く。\n復元・後始末: 削除した内容は復元できない。登録だけを失った領域は、`--recover-registry`を指定した場合に限り実体側の管理情報から登録を復元して後始末する。通常の後始末が検証に失敗した領域は、`--force-remove`を指定した場合に限り、一時rootの直下にあり実行中のOSアカウントが所有するディレクトリであることだけを確認して実体と登録を回収する。",
+        "summary": "managed-tempのディレクトリと登録を削除する",
+        "description": "managed-tempのディレクトリと登録を削除する。\n\n目的: 指定したmanaged-tempのディレクトリを検証したうえで削除し、対応する登録も除去する。\n利用場面: 作成した領域を使い終えたとき。中断した後始末を再開するとき。\n対象と出力: `--path`が指すディレクトリと配下の内容を削除し、状態ディレクトリの登録を除去する。\n前提: `--path`は作成時に返された絶対パスで指定する。`--path`を省略した場合は、現在の管理対象の絶対パスを作成時刻の昇順で示して終了コード2で終わる。実体と管理情報の双方が作成時の内容と一致することを検証する。`--session-root`で作成したmanaged-temp直下の作業ディレクトリのように個別の管理情報を持たない対象は、祖先に登録済みのmanaged-tempのディレクトリが実在する場合に限り検証を省略して削除し、省略したことを標準エラーへ書く。\n復元・後始末: 削除した内容は復元できない。登録だけを失った領域は、`--recover-registry`を指定した場合に限り実体側の管理情報から登録を復元して後始末する。通常の後始末が検証に失敗した領域は、`--force-remove`を指定した場合に限り、一時rootの直下にあり実行中のOSアカウントが所有するディレクトリであることだけを確認して実体と登録を回収する。",
         "epilog": "実行例:\n\n  atk managed-temp cleanup --path=/home/aki/.cache/agent-toolkit/managed-temp/wi-show-abcd1234",
     },
     "atk managed-temp list": {
@@ -455,8 +455,8 @@ HELP: dict[str, dict[str, str]] = {
         "epilog": "実行例:\n\n  atk review-table validate /home/aki/.claude/plans/2026/09/01-example-1a2b.exec-review.tsv",
     },
     "atk review-audit": {
-        "summary": "自動コードレビュー監査の未処置対象と判定済みの識別子を扱う",
-        "description": "自動コードレビュー監査の未処置対象と判定済みの識別子を扱う。\n\n目的: Copilot由来reviewとDependabotアラートの未処置対象を取得し、判定を確定したreview本文とアラートの識別子を対象リポジトリごとに記録する。\n利用場面: 監査前に対象を調べるとき、分類の確定後に識別子を記録するとき。\n対象と出力: GitHub APIと状態ディレクトリの`review-audit.json`を読み、markだけが記録を更新する。対象リポジトリの作業ツリーは変更しない。サブコマンドを指定しない場合は一覧を表示する。\n前提: リポジトリを`<owner>/<repo>`形式で指定する。\n復元・後始末: 記録が失われた場合は次回の監査が同じ分類を再導出する。",
+        "summary": "自動レビューの未処置対象を取得し判定済みの識別子を記録する",
+        "description": "自動レビューの未処置対象を取得し判定済みの識別子を記録する。\n\n目的: Copilot由来reviewとDependabotアラートの未処置対象を取得し、判定を確定したreview本文とアラートの識別子を対象リポジトリごとに記録する。\n利用場面: 監査前に対象を調べるとき、分類の確定後に識別子を記録するとき。\n対象と出力: GitHub APIと状態ディレクトリの`review-audit.json`を読み、markだけが記録を更新する。対象リポジトリの作業ツリーは変更しない。サブコマンドを指定しない場合は一覧を表示する。\n前提: リポジトリを`<owner>/<repo>`形式で指定する。\n復元・後始末: 記録が失われた場合は次回の監査が同じ分類を再導出する。",
         "epilog": "実行例:\n\n  atk review-audit pending --repo=ak110/dotfiles\n  atk review-audit mark --repo=ak110/dotfiles 123456789",
     },
     "atk review-audit list": {

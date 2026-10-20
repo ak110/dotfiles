@@ -87,7 +87,7 @@ clauses:
 ```
 
 参照先だけで内容が一意に定まる場合は`content`を`参照: <絶対パス>#<見出し>`にでき、そうでなければ契約本文を書く。commitとWIの識別子はその条項の`clause`・`content`・`source`へ書く。ASCIIのコロンと空白を含む値は引用する。
-同一worktreeの複数計画では`atk run-script review-contract -- --generate <入力JSONの絶対パス> --output-dir <出力ディレクトリの絶対パス>`で計画ごとの契約を生成する。入力は`version: 1`と`plans`配列とし、各要素へ`plan`（計画の絶対パス）、明示的な認可資料`source`、認可範囲`scope`、追加条項`clauses`（空配列可）を渡す。commit対応記録からrewrite後の現在OIDが解決される。返却JSON Linesの`plan`と`contract`を対応付け、`contract: null`は契約不要とする。認可の意味判断はメインが行い、再生成には同じ追加条項を渡し、旧OIDは生成に解決させる。
+同じリポジトリの複数計画では`atk run-script review-contract -- --generate <入力JSONの絶対パス> --output-dir <出力ディレクトリの絶対パス>`で計画ごとの契約を生成する。全計画の実装commitが現在HEADに含まれるworktreeで実行する。入力は`version: 1`と`plans`配列とし、各要素へ`plan`（計画の絶対パス）、明示的な認可資料`source`、認可範囲`scope`、追加条項`clauses`（空配列可）を渡す。commit対応記録からrewrite後の現在OIDが解決される。返却JSON Linesの`plan`と`contract`を対応付け、`contract: null`は契約不要とする。認可の意味判断はメインが行い、再生成には同じ追加条項を渡し、旧OIDは生成に解決させる。
 YAML契約は起動前に`atk run-script review-contract -- --contract <review-contract.yamlの絶対パス>`で構造を検証し、終了コード0と警告の不在を確かめる。委譲プロンプトの`review_contract`には直接契約か検証済みYAMLの絶対パスの一方だけを渡す。
 `review_contract`は永続ファイルへ追記せず、同じ実行レビュー担当のthreadへ保持する（再レビューで更新したら更新後を保持する）。threadが継続不能と確定した場合は同じ生成元から再生成して新しい担当へ渡す。初回に省略したthreadでも、別の計画で認可されたcommitが累積差分に入った場合は「レビュー修正」と同じ判定で現在のOIDの独立条項を生成する。
 
@@ -113,7 +113,7 @@ YAML契約は起動前に`atk run-script review-contract -- --contract <review-c
 atk run-script reader-fit-prepare -- --repository <対象worktree> --review-start <今回の開始時点> --review-head <レビュー対象HEAD> --output-dir <managed-temp内の出力先>
 ```
 
-再レビューは`--previous-review-start`と`--previous-review-head`、YAML契約があれば`--review-contract`を同じレビューの値で渡し、生成済みの比較資料を再利用する。メインが準備した資料で読者別探索を起動する場合は、`reader-fit-review.parent.md`「起動」に従って`scope_patch`を`判定範囲差分`へ、`change`の値を`修正範囲`へ渡す。
+再レビューは`--previous-review-start`と`--previous-review-head`、YAML契約があれば`--review-contract`を同じレビューの値で渡し、生成済みの比較資料を再利用する。前回のYAML契約は`--previous-review-contract`へ渡し、前回値を保持する。メインが準備した資料で読者別探索を起動する場合は、`reader-fit-review.parent.md`「起動」に従って`scope_patch`を`判定範囲差分`へ、`change`の値を`修正範囲`へ渡す。
 
 Git管理外の変更元と変更前複製の対がある場合は、レーンの引き継ぎ記録にある全対を任意入力`Git管理外の変更`で渡し、無ければ省く。メインが自ら実装した場合は、`exec.subagent.md`「実装」のGit管理外のファイルの項と同じ手順で最初の変更より前に複製を作成し、対を計画の`## 進捗ログ`（計画なしでは直接実装の引き継ぎ記録）へ残す。作業ツリー内の.env等は通常の全文差分として扱う。元ファイルが作業ツリー外にあり`agent-toolkit:secret-files`の対象となる対では、比較をキー名の集合とキーごとの値の一致・不一致に限る（同スキルの全文の読み取りと出力の禁止を守るため）。
 
@@ -133,6 +133,8 @@ Git管理外の変更元と変更前複製の対がある場合は、レーン�
 3. 対象worktreeで`atk run-script exec-review-evidence-check -- --batch <受領確認入力のパス>`を単独実行する。複数の返却は`--batch <生成済み入力の絶対パス>`を反復し、入力の結合・再編集をせず渡す。生成側が保存した`version: 1`・`reviews`は組ごとのWI・証拠・表・round・計画と入力記録の配列・読者別探索・今回と前回の開始時点とHEADを保持する。`external_artifacts`と、受領したYAML契約の絶対パスを持つ任意の`review_contract`も同じ組で渡す。契約のパスはメインが起動時に渡した値と比べる。再レビューや引き継ぎでも、その返却が生成した値を使い、再レビューを省いた修正やrebaseを理由に付け替えない。各組の診断を読み、1組でも非0なら全体を非0として扱う。Git管理下と管理外の対象集合と申告・省略の対応はこのコマンドが確かめ、不成立は同じ担当へ探索と再判定を求める
 4. 未解決件数が0件で、達成必須の全行が達成していること。`--show-all-rows`が先に返す`証拠の行一覧`で全行の判定・原文・`source`を行番号で対応付けてから、達成行のsource・evidence・reviewed_headと参照先の入力・観測結果を読む。個別の行の読み直しは、出力を加工せずに`atk run-script exec-review-evidence-check -- <証拠の絶対パス> --list --section <配列> --row <N>`（複数行は`--row`を反復）で行う。長い出力は保存先から末尾まで読む。コマンドの成功だけで達成を受理しない
 5. 再実行が非0の返却、または`達成以外の行`などが`--return-result`の固定形式である行ごとのJSONになっていない返却は、手で組み立てた返却として受理せず、報告されたWI名と不足内容を同じ担当へ返す。同じコマンドで返却を生成し直すよう求める
+
+再レビューの各組の`previous_review_contract`がメインの保持した前ラウンドの契約と一致することを確かめる。契約の更新後も前回値を現在値へ置き換えない。
 
 通常の返却、全行表示、`--list`での`--row`の反復のいずれも、`evidence`の代わりに`evidence_reference`がある行の根拠は同じ出力の先行行から読む。
 参照先は`display`・`section`・1始まりの`row`で特定する。

@@ -309,6 +309,7 @@ Claude Codeのメインへ返す`SessionStart`の通知へ、入力の`session_i
 更新時刻順の正しさと会話の同一性は独立であるため、ホストが入力で渡す識別子と記録パスを消費側へ届ける。
 `startup`・`resume`・`clear`・`compact`・`fork`の各入力で現行の値を通知し、managed-tempの作成の成否と独立に結合する。入力に無い値は推測で補わず、既存の取得手段として`CLAUDE_CODE_SESSION_ID`と`session-review-evidence --claude-session-id`を案内する。委譲先とCodexは対象外とし、委譲先自身の会話と委譲元から受け取る証拠の識別子を混同させない。
 取得元の規範は`agent-toolkit/share/rules-main.claude-code.md`「自身の会話の記録」に集約し、記録を使う消費文書は同節を参照する。
+入力の記録パスが実在しない場合は、同じsession IDのメイン記録を既存の解決処理で1件へ定める。開始時と別のディレクトリでの再開により入力が実在しないパスを示した観測へ対応する。解決件数ごとの扱いは後掲「出力の配送とセッション記録の解決」に従う。
 入力項目とmatcherの典拠は[audit-records.md](audit-records.md)「docs/development/design-hooks.md：通知の整形と反復検出：2026年10月13日」にある。
 環境変数だけを案内する案はtranscriptの所在を消費側ごとの探索に残し、`UserPromptSubmit`で毎ターン配送する案は`SessionStart`が会話の切替境界を既に扱うため採らない。新しい状態ファイルや取得器は設けない。
 
@@ -737,9 +738,10 @@ clearと期限回収でもlockを削除せず、sessionごとのlockファイル
 `additionalContext`文字列の10,000文字上限と、長い出力のファイル保存および2,000文字のプレビューは別の契約として扱う。
 観測値の保証は同じ配送方法に限り、全hook出力へ適用できる上限とは区別する。
 通知が受け取ったtranscript pathが実在しない場合は、同じClaude session IDのメイン記録を解決する。
-0件では入力値を、複数件では候補を示し、一意性を推定しない。
+0件では入力値を保ち、1件なら解決した記録を使う。複数件では会話IDの明示を求め、一意性を推定しない。
+開始時と別のディレクトリでの再開時に入力が実在しない記録を示したためである。観測と再検証手段は[audit-records.md](audit-records.md)「docs/development/design-hooks.md：通知の整形と反復検出：2026年10月20日」にある。
 
-応答言語判定はSession APIの行形式から可視本文を取り出し、ホスト合成のAPI失敗行を判定対象から外す。
+応答言語判定はSession APIの`messages({as: "api"})`から可視本文を取り出し、ホスト合成のAPI失敗行を判定対象から外す。
 send_to_userの本文、通常の英語本文と応答欠落はそれぞれの既存判定を保つ。
 終了を拒否する通知は、終了証拠、終了順序と委譲先観測の理由ごとに、実行できる続行またはユーザー確認への操作を返す。
 不適切なblocked・waitの拒否境界は維持する。

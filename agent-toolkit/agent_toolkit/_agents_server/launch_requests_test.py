@@ -56,7 +56,7 @@ async def test_explore_role_and_free_text_share_investigation_capability(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """保存を強制せずGit識別子で同じ版を比較し、両入口が共通の探索経路へ届く。"""
+    """役割指定と自由本文の探索は成果保存を要求せず、Git識別子で同じ版を比較する。"""
     repository = init_repository(tmp_path / "repo", files={"文章 空白.md": "比較元\n"}, commit_message="比較元")
     base = git_output(repository, "rev-parse", "HEAD")
     artifact = repository / "文章 空白.md"
@@ -595,27 +595,27 @@ async def test_public_lane_resolves_high_tier_candidates(tmp_path: pathlib.Path,
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("engine", ["claude", "codex"])
-async def test_dedicated_wi_owner_uses_orchestrate_candidates(
-    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, engine: str
+@pytest.mark.parametrize("route", ["専念型", "付随型"])
+async def test_wi_owner_uses_default_base_high_tier_candidates(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, engine: str, route: str
 ) -> None:
-    """要求別担当の明示orchestrate指定は、役割のbase用途と独立した上位候補を両engineで使う。"""
+    """両投入形態の段位省略startは役割のbase・上位候補を使い、最上位用途の設定を保つ。"""
     other = "codex" if engine == "claude" else "claude"
-    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_BASE_ENGINE", other)
-    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_ORCHESTRATE_ENGINE", engine)
-    for candidate in (engine, other):
-        monkeypatch.setenv(f"AGENT_TOOLKIT_CONFIG_{candidate.upper()}_HIGH_TIER_MODEL", "orchestrator/high")
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_BASE_ENGINE", engine)
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_ORCHESTRATE_ENGINE", other)
+    monkeypatch.setenv(f"AGENT_TOOLKIT_CONFIG_{engine.upper()}_HIGH_TIER_MODEL", "wi-owner/high")
+    monkeypatch.setenv(f"AGENT_TOOLKIT_CONFIG_{other.upper()}_HIGH_TIER_MODEL", "orchestrator/high")
     async with _manager_with_fake(engine) as (current, _backend):
         install_backend(current, other, FakeBackend(current.sessions, other))
         monkeypatch.setattr(mcp_tools, "_MANAGER", current)
         task = launch_requests._SHARE_DIRECTORY / "add-wi.subagent.md"
-        params = {**_observed_input_params(task.name, tmp_path), "投入経路": "専念型"}
-        response = await mcp_tools.start(
-            cwd=str(tmp_path), subagent_md_path=str(task), extra_params=params, model_type="orchestrate"
-        )
+        params = {**_observed_input_params(task.name, tmp_path), "投入経路": route}
+        response = await mcp_tools.start(cwd=str(tmp_path), subagent_md_path=str(task), extra_params=params)
         session = current.sessions[response["session_id"]]
-        assert (session.engine, session.model, session.effort) == (engine, "orchestrator", "high")
-        assert session.model_type == "orchestrate"
+        assert (session.engine, session.model, session.effort) == (engine, "wi-owner", "high")
+        assert session.model_type == "high_tier"
         assert session.launch_kind == "delegate"
+        assert _atk_config.parse_unresolved_model_candidates("orchestrate")[0] == (other, "orchestrator", "high")
 
 
 def test_required_inputs_ignore_heading_inside_code_fence(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -1387,7 +1387,7 @@ async def test_start_rejects_missing_explore_materials_and_accepts_repair(
 async def test_start_checks_all_external_evidence_files(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, json_array: bool
 ) -> None:
-    """複数の根拠は全ファイルを検査し、識別子の注記を保存物と取り違えない。"""
+    """複数の根拠は全ファイルを確認し、識別子の注記を保存物と取り違えない。"""
     params = _observed_input_params("external-write-review.subagent.md", tmp_path)
     first = tmp_path / "diff.patch"
     second = tmp_path / "CI result.txt"
