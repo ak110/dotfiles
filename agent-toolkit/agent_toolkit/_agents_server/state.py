@@ -44,6 +44,13 @@ HOST_BACKGROUND_THRESHOLD_SECONDS = 120.0
 # 「agent-toolkit/agent_toolkit/_agents_server/state.py：session初期化の待機上限：2026年9月11日」にある。
 SESSION_INITIALIZATION_TIMEOUT = 50.0
 SESSION_INITIALIZATION_ATTEMPTS = 2
+# 起動直後の可用性失敗を確定するために`start`が終端を待つ上限秒数。
+# Codex CLI 0.152.0で利用上限に達した状態のturnは、backendの起動応答から3.84〜4.27秒後に
+# `turn/completed`で失敗した（2026-09-02、`explore_fast`候補`gpt-5.6-terra/medium`で3回測定）。
+# 再検証は同じ失敗状態で`AppServerManager.start`を呼び、応答から終端までの経過を測る。
+# 可用性失敗は最初のモデル出力より前に生じるため、正常起動ではモデル出力の観測で上限を待たずに打ち切る。
+# Claudeでは、失敗した要求では始まらないAPIの応答開始（`message_start`）をモデル出力の観測として扱う。
+START_AVAILABILITY_TIMEOUT = 15.0
 TERMINAL_STATUSES = frozenset({"completed", "failed", "interrupted"})
 
 

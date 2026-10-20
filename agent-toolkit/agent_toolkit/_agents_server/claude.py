@@ -733,15 +733,13 @@ class ClaudeServerManager:
         try:
             session = await asyncio.wait_for(initialized, timeout=shared_state.SESSION_INITIALIZATION_TIMEOUT)
             if diagnostic.mcp_recovery_task is not None:
-                from agent_toolkit._agents_server.manager import START_AVAILABILITY_TIMEOUT
-
                 # 起動の全試行と可用性確認を予約し、残予算を回復待ちと応答確定へ半分ずつ割り当てる。
                 recovery_budget = (
                     max(
                         0.0,
                         shared_state.HOST_BACKGROUND_THRESHOLD_SECONDS
                         - shared_state.SESSION_INITIALIZATION_TIMEOUT * shared_state.SESSION_INITIALIZATION_ATTEMPTS
-                        - START_AVAILABILITY_TIMEOUT,
+                        - shared_state.START_AVAILABILITY_TIMEOUT,
                     )
                     / 2
                 )

@@ -189,11 +189,11 @@ def test_force_remove_preserves_children_of_a_live_plugin_root() -> None:
     area = managed_temp.create_managed_temp("agents-server-plugin-root-shared")
     held = area / "1.0.0"
     held.mkdir()
-    sentinel = held / "payload"
-    sentinel.write_text("使用中", encoding="utf-8")
+    protected_payload = held / "payload"
+    protected_payload.write_text("使用中", encoding="utf-8")
     with plugin_root_leases.plugin_root_lock(area):
         plugin_root_leases.register_plugin_root_use(area)
     for target in (area, held):
         with pytest.raises(managed_temp.ManagedTempError, match="使用中"):
             managed_temp.cleanup_managed_temp(target, force_remove=True)
-        assert sentinel.read_text(encoding="utf-8") == "使用中"
+        assert protected_payload.read_text(encoding="utf-8") == "使用中"

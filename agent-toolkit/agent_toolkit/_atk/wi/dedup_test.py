@@ -10,6 +10,7 @@ import subprocess
 import pytest
 
 from agent_toolkit import atk  # noqa: E402  # pylint: disable=wrong-import-position
+from agent_toolkit._atk.wi.layout import entry_state_of
 from agent_toolkit.atk_test import (  # pylint: disable=wrong-import-position
     _GitCall,
     _make_subprocess_fake,
@@ -42,7 +43,7 @@ def test_duplicate_filenames_deduplicated_without_warning(
 ) -> None:
     """重複指定を除去し、各サブコマンドで対象を1回だけ処理する。"""
     notes = _setup_notes(tmp_path)
-    _write_awi_file(notes, "fb-001.md")
+    path = _write_awi_file(notes, "fb-001.md")
     git_calls: list[_GitCall] = []
     monkeypatch.setattr(subprocess, "run", _make_subprocess_fake(git_calls))
 
@@ -52,7 +53,9 @@ def test_duplicate_filenames_deduplicated_without_warning(
     assert exc_info.value.code == 0
     assert not (notes / "inbox" / "fb-001.md").exists()
     for directory in present_directories:
-        assert (notes / directory / "fb-001.md").exists()
+        assert path.is_file() and entry_state_of(path) == directory
+    if not present_directories:
+        assert not path.exists()
     assert "重複がある" not in capsys.readouterr().err
     commit_cmds = [call["cmd"] for call in git_calls if "commit" in call["cmd"]]
     assert len(commit_cmds) == 1

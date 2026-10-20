@@ -23,7 +23,7 @@ from agent_toolkit._agents_server import agents_wait, shared_layout, shared_root
 from agent_toolkit._agents_server import manager as server_manager
 from agent_toolkit._agents_server import tool_names as _agents_server_tool_names
 from agent_toolkit._agents_server.state import SessionState
-from agent_toolkit._common import state_paths
+from agent_toolkit._common import session_state, state_paths
 from agent_toolkit._hooks import agents_server_observations as _agents_server_observations
 from agent_toolkit._testing import fork_runner as _fork_runner
 from agent_toolkit._testing.helpers import SESSION_STATE_FILENAME_TEMPLATE, _read_state, auto_message_opening_attributes
@@ -535,7 +535,6 @@ def test_windows_atk_cmd_wait_clears_pending_observation(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, tool_name: str, command: str
 ) -> None:
     """Windows向け起動形の回収後はStopの未観測警告を解消する。"""
-    from agent_toolkit._common import session_state  # noqa: PLC0415  # pylint: disable=import-outside-toplevel
     from agent_toolkit._hooks import agents_server_session_advisor  # noqa: PLC0415  # pylint: disable=import-outside-toplevel
 
     sid, child = "windows-wait-parent", "windows-wait-child"
@@ -925,13 +924,9 @@ def test_shell_output_without_persisted_path_is_left_unchanged(
 def test_registered_task_stop_consumes_only_successful_target(tmp_path: pathlib.Path, event: str, id_field: str) -> None:
     """登録の選択から停止対象の消費までを検証し、失敗・拒否と別対象を保持する。"""
     session_id = "task-stop-consume"
-    state_path = tmp_path / SESSION_STATE_FILENAME_TEMPLATE.format(session_id=session_id)
-    state_path.write_text(
-        json.dumps(
-            {"stall_detection_completed_at_by_task": {"task-1": 1.0, "task-2": 2.0}},
-            ensure_ascii=False,
-        ),
-        encoding="utf-8",
+    assert session_state.update_state(
+        session_id,
+        lambda _previous: {"stall_detection_completed_at_by_task": {"task-1": 1.0, "task-2": 2.0}},
     )
     if "TaskStop" in _registered_posttooluse_names(event):
         result = _run(
@@ -1508,7 +1503,8 @@ class TestExitSessionResetsProcessAwisFlag:
     def test_no_rewrite_when_exit_and_reset_state_is_already_complete(self, tmp_path: pathlib.Path) -> None:
         """終了CLI記録とリセット済み状態がそろう場合は再書き込みしない。"""
         sid = "exit-no-rewrite"
-        path = tmp_path / SESSION_STATE_FILENAME_TEMPLATE.format(session_id=sid)
+        path = session_state.state_path(sid)
+        path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(
             json.dumps(
                 {
@@ -2430,8 +2426,7 @@ def test_read_records_operation_skill_acquisition_only_for_full_body(
         **({"agent_id": agent_id} if agent_id else {}),
     }
     assert _run(payload, state_dir=tmp_path).returncode == 0
-    state_file = tmp_path / SESSION_STATE_FILENAME_TEMPLATE.format(session_id="read-acquisition")
-    state = _read_state(tmp_path, "read-acquisition") if state_file.exists() else {}
+    state = _read_state(tmp_path, "read-acquisition")
     assert state.get("operation_skill_delivered_agents") == expected
 
 
@@ -2459,6 +2454,5 @@ def test_codex_bash_read_records_operation_skill_acquisition(
         "tool_response": output,
     }
     assert _run(payload, state_dir=tmp_path).returncode == 0
-    state_file = tmp_path / SESSION_STATE_FILENAME_TEMPLATE.format(session_id="codex-read")
-    state = _read_state(tmp_path, "codex-read") if state_file.exists() else {}
+    state = _read_state(tmp_path, "codex-read")
     assert state.get("operation_skill_delivered_agents") == expected

@@ -63,7 +63,7 @@ def test_public_wi_add_edit_show_accepts_bom(tmp_path: pathlib.Path, capsys: pyt
     with pytest.raises(SystemExit) as added:
         atk.main(["wi", "add", "--target-repo=github.com/example/repo", "--body-file", str(body)], home=tmp_path, now=_FIXED_DT)
     assert added.value.code == 0
-    path = next((notes / "inbox").glob("*.md"))
+    path = next(entries.iter_entries(notes, ("inbox",), None))[0]
     parsed = frontmatter.parse_frontmatter(path.read_text(encoding="utf-8"))
     assert parsed is not None and parsed[0]["alert_keys"] == "before"
     body.write_text(bom + "---\nalert_keys: after\n---\n\n" + AGENT_AWI_BODY + "\n途中\ufeffの文字", encoding="utf-8")

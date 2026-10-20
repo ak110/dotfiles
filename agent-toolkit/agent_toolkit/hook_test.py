@@ -288,7 +288,9 @@ class TestStandardInputAndPayloadDump:
         shutil.copy2(source_directory / "_common/file_lock.py", tmp_path / "_common/file_lock.py")
         temp_directory = tmp_path / "temp"
         temp_directory.mkdir()
-        (temp_directory / "claude-agent-toolkit-previous.json").write_text(
+        state_directory = state_paths.state_dir() / "hook-sessions"
+        state_directory.mkdir(parents=True, exist_ok=True)
+        (state_directory / "claude-agent-toolkit-previous.json").write_text(
             json.dumps({"plan_mode_skill_invoked": True}),
             encoding="utf-8",
         )
@@ -310,10 +312,12 @@ class TestStandardInputAndPayloadDump:
         assert result.returncode == 0
         assert result.stdout == payload
         assert not result.stderr
-        assert json.loads((temp_directory / "claude-agent-toolkit-current.json").read_text(encoding="utf-8")) == {
+        assert json.loads((state_directory / "claude-agent-toolkit-current.json").read_text(encoding="utf-8")) == {
             "plan_mode_skill_invoked": True,
             "inherited_from_session_id": "previous",
         }
+        assert (state_directory / ".state.lock").exists()
+        assert not (temp_directory / "claude-agent-toolkit-current.json").exists()
 
     def test_module_import_error_uses_utf8_stderr(self, tmp_path: pathlib.Path) -> None:
         entrypoint = self._copy_entrypoint(tmp_path)

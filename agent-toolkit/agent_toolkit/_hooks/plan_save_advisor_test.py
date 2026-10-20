@@ -7,10 +7,11 @@ import subprocess
 
 import pytest
 
+from agent_toolkit._common import session_state
 from agent_toolkit._plan import owner_records as _owner_records
 from agent_toolkit._testing import fork_runner as _fork_runner
 from agent_toolkit._testing import stop_check_runner as _stop_check_runner
-from agent_toolkit._testing.helpers import SESSION_STATE_FILENAME_TEMPLATE, _write_transcript
+from agent_toolkit._testing.helpers import _write_transcript
 
 _SCRIPT = pathlib.Path(_stop_check_runner.__file__)
 # 子プロセスで起動するStopフックへはconftestの待機の差し替えが及ばないため、末尾を`end_turn`で終えるtranscriptを渡し、
@@ -21,8 +22,8 @@ _FINISHED_TURN_ENTRIES = [
 
 
 def _write_state(state_dir: pathlib.Path, session_id: str, state: dict) -> None:
-    path = state_dir / SESSION_STATE_FILENAME_TEMPLATE.format(session_id=session_id)
-    path.write_text(json.dumps(state, ensure_ascii=False), encoding="utf-8")
+    del state_dir
+    assert session_state.update_state(session_id, lambda _previous: state)
 
 
 def _run(
