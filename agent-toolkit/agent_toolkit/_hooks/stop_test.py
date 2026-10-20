@@ -6,11 +6,12 @@ import pathlib
 
 import pytest
 
+from agent_toolkit._common import session_state
 from agent_toolkit._common import transcript as _transcript
 from agent_toolkit._hooks import background_tasks as _background_tasks
 from agent_toolkit._hooks import stop
 from agent_toolkit._hooks import transcript_scan as _transcript_scan
-from agent_toolkit._testing.helpers import SESSION_STATE_FILENAME_TEMPLATE, _write_transcript
+from agent_toolkit._testing.helpers import _write_transcript
 
 _HOOKS_PATH = pathlib.Path(__file__).resolve().parents[2] / "hooks" / "hooks.json"
 
@@ -24,7 +25,10 @@ def _replace_checks(monkeypatch: pytest.MonkeyPatch, results: dict[str, tuple[st
 
 def _state_path(directory: pathlib.Path, session_id: str) -> pathlib.Path:
     """テスト用のセッション状態ファイルを返す。"""
-    return directory / SESSION_STATE_FILENAME_TEMPLATE.format(session_id=session_id)
+    del directory
+    path = session_state.state_path(session_id)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    return path
 
 
 def _read_state(directory: pathlib.Path, session_id: str) -> dict:
@@ -33,7 +37,7 @@ def _read_state(directory: pathlib.Path, session_id: str) -> dict:
 
 
 def _set_state_directory(monkeypatch: pytest.MonkeyPatch, directory: pathlib.Path) -> None:
-    """セッション状態とStop判定ログの一時ディレクトリを固定する。"""
+    """Stop判定ログの一時ディレクトリを固定する。通常状態はテストごとの状態領域を使う。"""
     monkeypatch.setenv("TMPDIR", str(directory))
     monkeypatch.setenv("TEMP", str(directory))
     monkeypatch.setenv("TMP", str(directory))

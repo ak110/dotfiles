@@ -36,6 +36,7 @@ from agent_toolkit._testing.serve_support import (
     _three_screen_app,
     _write_detail_entry,
 )
+from agent_toolkit._testing.wi_entry_files import entry_path
 
 # UI検証で起動する`node`は、CIの実行環境ではmiseのshimとして提供され、版と信頼設定の解決に
 # 実行環境のホーム・設定ディレクトリを参照する。conftestが適用する隔離（`agent_toolkit._testing.isolation`）が差し替えた環境を
@@ -251,8 +252,8 @@ process.stdout.write(JSON.stringify({view, modes, sent}));
     }
 
 
-def test_assets_sse_detail_prefers_exact_identity_and_only_tracks_unique_move() -> None:
-    """SSEを受けた詳細の再取得は状態とファイル名の組を優先し、404の後は移動先が一意な場合だけ追跡する。"""
+def test_assets_sse_detail_tracks_state_changes_by_filename_and_closes_deleted_entry() -> None:
+    """SSEの詳細再取得は同じファイル名で状態変更を追跡し、404で削除済みとして閉じる。"""
     result = _run_node_ui(
         """
 const processing = {
@@ -262,18 +263,14 @@ const processing = {
 const inbox = {
   ...processing, state: 'inbox', summary: '未処理', content: '未処理本文', body_html: '<p>未処理本文</p>'
 };
-const adopted = {
-  ...processing, state: 'adopted', summary: '採用済み', content: '採用済み本文', body_html: '<p>採用済み本文</p>'
-};
 displayEntry(processing);
 detailOriginKey = entryKey(processing);
 elements['detail-dialog'].open = true;
-entries = [inbox, processing];
+entries = [processing];
 const exactRequests = [];
 fetchHandler = async url => {
   exactRequests.push(url);
-  const entry = url.includes('/processing/') ? processing : inbox;
-  return {ok: true, status: 200, statusText: 'OK', json: async () => ({entry})};
+  return {ok: true, status: 200, statusText: 'OK', json: async () => ({entry: processing})};
 };
 await reloadOpenDetailFromExternalChange();
 const exact = {
@@ -282,39 +279,32 @@ const exact = {
   requests: exactRequests
 };
 
+const changedRequests = [];
+entries = [inbox];
 fetchHandler = async url => {
-  if (url.includes('/processing/')) {
-    return {ok: false, status: 404, statusText: 'Not Found', json: async () => ({error: 'not found'})};
-  }
-  if (url.includes('/inbox/')) {
-    return {ok: true, status: 200, statusText: 'OK', json: async () => ({entry: inbox})};
-  }
-  return {ok: false, status: 404, statusText: 'Not Found', json: async () => ({error: 'not found'})};
+  changedRequests.push(url);
+  return {ok: true, status: 200, statusText: 'OK', json: async () => ({entry: inbox})};
 };
 await reloadOpenDetailFromExternalChange();
-const uniqueMove = {state: currentEntry.state, key: detailOriginKey, open: elements['detail-dialog'].open};
+const stateChange = {
+  state: currentEntry.state, key: detailOriginKey, open: elements['detail-dialog'].open, requests: changedRequests
+};
 
-displayEntry(processing);
-detailOriginKey = entryKey(processing);
-elements['detail-dialog'].open = true;
+const deletedRequests = [];
+entries = [];
 fetchHandler = async url => {
-  if (url.includes('/processing/')) {
-    return {ok: false, status: 404, statusText: 'Not Found', json: async () => ({error: 'not found'})};
-  }
-  const entry = url.includes('/inbox/') ? inbox : adopted;
-  if (url.includes('/inbox/') || url.includes('/adopted/')) {
-    return {ok: true, status: 200, statusText: 'OK', json: async () => ({entry})};
-  }
+  deletedRequests.push(url);
   return {ok: false, status: 404, statusText: 'Not Found', json: async () => ({error: 'not found'})};
 };
 await reloadOpenDetailFromExternalChange();
 process.stdout.write(JSON.stringify({
   exact,
-  uniqueMove,
-  ambiguous: {
+  stateChange,
+  deleted: {
     detailOpen: elements['detail-dialog'].open,
     currentEntryIsNull: currentEntry === null,
-    error: elements['operation-notice-message'].textContent
+    error: elements['operation-notice-message'].textContent,
+    requests: deletedRequests
   }
 }));
 """
@@ -323,20 +313,19 @@ process.stdout.write(JSON.stringify({
         "exact": {
             "state": "processing",
             "content": "<p>処理中本文</p>",
-            "requests": ["/atk/api/entries/processing/same.md"],
+            "requests": ["/atk/api/entries/same.md"],
         },
-        "uniqueMove": {
+        "stateChange": {
             "state": "inbox",
-            "key": "inbox/same.md",
+            "key": "same.md",
             "open": True,
+            "requests": ["/atk/api/entries/same.md"],
         },
-        "ambiguous": {
+        "deleted": {
             "detailOpen": False,
             "currentEntryIsNull": True,
-            "error": (
-                "［WI / node-test / /notes / processing/same.md］"
-                "same.mdの移動先を一意に特定できません。詳細を開き直してください。"
-            ),
+            "error": "same.mdは削除されたため表示できません。一覧を更新しました。",
+            "requests": ["/atk/api/entries/same.md"],
         },
     }
 
@@ -516,17 +505,14 @@ async def test_sse_multiple_subscribers_and_cleanup(tmp_path: pathlib.Path) -> N
 
 
 @pytest.mark.asyncio
-async def test_read_routes_remain_available_during_entry_move(
+async def test_read_routes_remain_available_during_entry_removal(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """状態移動と競合した一覧はスナップショット、詳細は404を返し409にしない。"""
-    inbox = tmp_path / "inbox"
-    adopted = tmp_path / "adopted"
-    inbox.mkdir()
-    adopted.mkdir()
-    entry = inbox / "entry.md"
-    entry.write_text("---\ntype: awi\ntarget_repo: example/repo\n---\n\n本文\n", encoding="utf-8")
+    """ファイル削除と競合した一覧はスナップショット、詳細は404を返す。"""
+    entry = entry_path(tmp_path, "entry.md")
+    original = "---\ntype: awi\nstate: inbox\ntarget_repo: example/repo\n---\n\n本文\n"
+    entry.write_text(original, encoding="utf-8")
     original_normalized_wi_type = _wi_constants.normalized_wi_type
 
     async def race_request(path: str) -> typing.Any:
@@ -535,14 +521,14 @@ async def test_read_routes_remain_available_during_entry_move(
 
         def normalized_wi_type(value: object) -> str | None:
             started.set()
-            assert release.wait(timeout=5), "状態移動後の解放がありません"
+            assert release.wait(timeout=5), "ファイル削除後の解放がありません"
             return original_normalized_wi_type(value)
 
         monkeypatch.setattr(_wi_constants, "normalized_wi_type", normalized_wi_type)
         request = asyncio.create_task(app.test_client().get(path))
         try:
             assert await asyncio.to_thread(started.wait, 5), "種別判定へ到達しません"
-            entry.rename(adopted / entry.name)
+            entry.unlink()
         finally:
             release.set()
             response = await asyncio.wait_for(request, timeout=5)
@@ -557,10 +543,8 @@ async def test_read_routes_remain_available_during_entry_move(
     assert entries_response.status_code == 200
     assert await entries_response.get_json() == {"entries": [], "warnings": []}
 
-    entry = adopted / "entry.md"
-    entry.rename(inbox / entry.name)
-    entry = inbox / "entry.md"
-    detail_response = await race_request("/api/entries/inbox/entry.md")
+    entry.write_text(original, encoding="utf-8")
+    detail_response = await race_request("/api/entries/entry.md")
     assert detail_response.status_code == 404
 
 
@@ -604,7 +588,7 @@ async def test_detail_api_preserves_top_level_key_types_and_order(
         state.ServeState(tmp_path),
     )
 
-    response = await app.test_client().get("/api/entries/inbox/entry.md")
+    response = await app.test_client().get("/api/entries/entry.md")
 
     assert response.status_code == 200
     payload = json.loads(await response.get_data())
@@ -633,19 +617,17 @@ def test_operations_answered_filter_returns_only_answered_uwis(
     """`answered=yes`は回答済みUWIのみを返し、未回答UWI・AWIを除外する。"""
     monkeypatch.setattr(_wi_sync, "repo_lock", lambda *_a, **_k: contextlib.nullcontext())
     monkeypatch.setattr(_wi_sync, "pull", lambda _path: None)
-    inbox = tmp_path / "inbox"
-    inbox.mkdir(parents=True)
-    (inbox / "answered.md").write_text(
-        "---\ntype: uwi\ntarget_repo: example/repo\n---\n\n## 質問\n\n質問？\n\n## 回答\n\n回答済み\n",
+    entry_path(tmp_path, "answered.md").write_text(
+        "---\ntype: uwi\nstate: inbox\ntarget_repo: example/repo\n---\n\n## 質問\n\n質問？\n\n## 回答\n\n回答済み\n",
         encoding="utf-8",
     )
-    (inbox / "unanswered.md").write_text(
-        "---\ntype: uwi\ntarget_repo: example/repo\n---\n\n## 質問\n\n質問？\n\n## 回答\n\n"
+    entry_path(tmp_path, "unanswered.md").write_text(
+        "---\ntype: uwi\nstate: inbox\ntarget_repo: example/repo\n---\n\n## 質問\n\n質問？\n\n## 回答\n\n"
         "<!-- ユーザーはこの行以降に回答を追記する -->\n",
         encoding="utf-8",
     )
-    (inbox / "awi.md").write_text(
-        "---\ntype: awi\ntarget_repo: example/repo\n---\n\nAWI本文\n",
+    entry_path(tmp_path, "awi.md").write_text(
+        "---\ntype: awi\nstate: inbox\ntarget_repo: example/repo\n---\n\nAWI本文\n",
         encoding="utf-8",
     )
     result, warnings = wi_operations.Operations(tmp_path).entries_with_warnings({"answered": "yes"})
@@ -656,8 +638,6 @@ def test_operations_answered_filter_returns_only_answered_uwis(
 @pytest.mark.asyncio
 async def test_entries_api_filters_source_kind_and_preserves_raw_source_filters(tmp_path: pathlib.Path) -> None:
     """一覧APIは投入元分類を適用し、既存のraw投入元フィルターを維持する。"""
-    inbox = tmp_path / "inbox"
-    inbox.mkdir(parents=True)
     for filename, source in [
         ("agent.md", "agent"),
         ("alert-monitor.md", "alert-monitor"),
@@ -667,10 +647,10 @@ async def test_entries_api_filters_source_kind_and_preserves_raw_source_filters(
         ("human.md", "human"),
         ("empty.md", None),
     ]:
-        metadata = "type: awi\ntarget_repo: example/repo"
+        metadata = "type: awi\nstate: inbox\ntarget_repo: example/repo"
         if source is not None:
             metadata += f"\nsource: {source}"
-        (inbox / filename).write_text(f"---\n{metadata}\n---\n\n本文\n", encoding="utf-8")
+        entry_path(tmp_path, filename).write_text(f"---\n{metadata}\n---\n\n本文\n", encoding="utf-8")
     app = serve_app.create_app(
         tmp_path,
         config.ServeConfig("127.0.0.1", 28766),
@@ -704,12 +684,10 @@ async def test_remove_api_rejects_changed_and_unreadable_expected_content(
     """内容変更と読取り不能を409で保護し、空の確認時本文も受理する。"""
 
     _disable_wi_git(monkeypatch)
-    inbox = tmp_path / "inbox"
-    inbox.mkdir()
-    original = "---\ntype: awi\n---\n\n確認時本文\n"
-    changed = inbox / "changed.md"
+    original = "---\ntype: awi\nstate: inbox\n---\n\n確認時本文\n"
+    changed = entry_path(tmp_path, "changed.md")
     changed.write_text(original.replace("確認時", "外部更新後"), encoding="utf-8")
-    unreadable = inbox / "unreadable.md"
+    unreadable = entry_path(tmp_path, "unreadable.md")
     unreadable.write_bytes(b"\xff")
     app = serve_app.create_app(
         tmp_path,
@@ -733,9 +711,10 @@ async def test_remove_api_rejects_changed_and_unreadable_expected_content(
             "code": "edit_conflict",
             "error": "編集中に他プロセスが対象を変更しました",
         }
-        assert (inbox / filename).exists()
+        assert entry_path(tmp_path, filename).exists()
 
-    empty = inbox / "empty.md"
+    # 空本文にはstateを保存できないため、旧配置由来の状態を使う互換入力として確認する。
+    empty = entry_path(tmp_path, "empty.md", legacy_layout=True)
     empty.write_text("", encoding="utf-8")
     empty_response = await client.post(
         "/api/entries/remove",
@@ -757,6 +736,7 @@ async def test_unrelated_runtime_error_is_not_classified_as_edit_conflict(
 ) -> None:
     """競合以外のRuntimeErrorを409へ誤分類しない。"""
     operations = wi_operations.Operations(tmp_path)
+    entry_path(tmp_path, "entry.md").write_text("---\ntype: awi\nstate: inbox\n---\n\n本文\n", encoding="utf-8")
 
     def fail(
         _state: str,
@@ -774,7 +754,7 @@ async def test_unrelated_runtime_error_is_not_classified_as_edit_conflict(
         operations=operations,
     )
     response = await app.test_client().put(
-        "/api/entries/inbox/entry.md",
+        "/api/entries/entry.md",
         json={"content": "本文"},
     )
     assert response.status_code == 500
@@ -785,11 +765,9 @@ async def test_entries_api_omits_pagination_without_explicit_page_and_clamps_fin
     tmp_path: pathlib.Path,
 ) -> None:
     """ページ省略時の既存payloadを維持し、最終ページを超える指定を末尾へ正規化する。"""
-    inbox = tmp_path / "inbox"
-    inbox.mkdir()
     for index in range(101):
-        (inbox / f"entry-{index:03d}.md").write_text(
-            "---\ntype: awi\ntarget_repo: example/repo\n---\n\n本文\n",
+        entry_path(tmp_path, f"entry-{index:03d}.md").write_text(
+            "---\ntype: awi\nstate: inbox\ntarget_repo: example/repo\n---\n\n本文\n",
             encoding="utf-8",
         )
     app = serve_app.create_app(
@@ -821,10 +799,8 @@ def test_entries_reports_os_error_without_treating_unknown_kind_as_warning(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """OS読取り失敗だけを警告へ分離し、種別不明のMarkdownは一覧へ残す。"""
-    inbox = tmp_path / "inbox"
-    inbox.mkdir()
-    (inbox / "unknown.md").write_text("種別を判定できない本文\n", encoding="utf-8")
-    failed_path = inbox / "os-error.md"
+    entry_path(tmp_path, "unknown.md").write_text("---\nstate: inbox\n---\n\n種別を判定できない本文\n", encoding="utf-8")
+    failed_path = entry_path(tmp_path, "os-error.md")
     failed_path.touch()
     original_read_text = pathlib.Path.read_text
 
@@ -842,7 +818,7 @@ def test_entries_reports_os_error_without_treating_unknown_kind_as_warning(
     entries, warnings = wi_operations.Operations(tmp_path).entries_with_warnings({"status": "inbox"})
 
     assert [(entry["filename"], entry["kind"]) for entry in entries] == [("unknown.md", "unknown")]
-    assert warnings == [{"state": "inbox", "filename": "os-error.md", "reason": "ファイルを読み取れません"}]
+    assert warnings == [{"state": "unknown", "filename": "os-error.md", "reason": "ファイルを読み取れません"}]
 
 
 @pytest.mark.asyncio
@@ -875,6 +851,7 @@ async def test_lock_timeout_returns_conflict(tmp_path: pathlib.Path, monkeypatch
         raise filelock.Timeout("locked")
 
     operations = wi_operations.Operations(tmp_path)
+    entry_path(tmp_path, "entry.md").write_text("---\ntype: awi\nstate: inbox\n---\n\n本文\n", encoding="utf-8")
     monkeypatch.setattr(operations, "edit", edit)
     app = serve_app.create_app(
         tmp_path,
@@ -883,7 +860,7 @@ async def test_lock_timeout_returns_conflict(tmp_path: pathlib.Path, monkeypatch
         operations=operations,
     )
     response = await app.test_client().put(
-        "/api/entries/inbox/entry.md",
+        "/api/entries/entry.md",
         json={"content": "本文"},
     )
     assert response.status_code == 409
@@ -1144,8 +1121,9 @@ async def test_batch_api_imports_crlf_text(tmp_path: pathlib.Path, monkeypatch: 
 
     assert response.status_code == 201
     assert (await response.get_json())["filenames"] == ["keep.md"]
-    assert (tmp_path / "inbox" / "keep.md").read_text(encoding="utf-8") == (
-        "---\ntarget_repo: github.com/example/foo\ntype: awi\n---\n\n取り込む本文\n"
+    saved_path = entry_path(tmp_path, "keep.md")
+    assert saved_path.read_bytes() == (
+        "---\nstate: inbox\ntarget_repo: github.com/example/foo\ntype: awi\n---\n\n取り込む本文\n".encode()
     )
 
 
@@ -1205,18 +1183,16 @@ async def test_user_comment_api_returns_edit_conflict_without_losing_latest_cont
 ) -> None:
     """期待本文と現行本文が異なる場合は409として最新本文を保持する。"""
     _patch_comment_edit_dependencies(monkeypatch)
-    inbox = tmp_path / "inbox"
-    inbox.mkdir()
-    original = _session_review_awi("取得時本文\n")
-    latest = _session_review_awi("外部更新後の本文\n")
-    path = inbox / "awi.md"
+    original = _session_review_awi("取得時本文\n").replace("---\n", "---\nstate: inbox\n", 1)
+    latest = _session_review_awi("外部更新後の本文\n").replace("---\n", "---\nstate: inbox\n", 1)
+    path = entry_path(tmp_path, "awi.md")
     path.write_text(original, encoding="utf-8")
     app = serve_app.create_app(
         tmp_path,
         config.ServeConfig("127.0.0.1", 28766),
         state.ServeState(tmp_path),
     )
-    detail = await (await app.test_client().get("/api/entries/inbox/awi.md")).get_json()
+    detail = await (await app.test_client().get("/api/entries/awi.md")).get_json()
     path.write_text(latest, encoding="utf-8")
 
     response = await app.test_client().post(
