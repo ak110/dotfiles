@@ -43,6 +43,7 @@ def test_plugin_update_reclaims_hook_process_after_reader_start_failure(
 
     def popen(_args: list[str], **kwargs: Any) -> subprocess.Popen[str]:
         # 呼出元の文脈マネージャーへ所有を渡し、回収後の実pipeを検査する。
+        # pipeのEOFを待つ子を被検証側へ渡す。返却前にwaitするPopen.__exit__は使わず、失敗時はfixtureも回収する。
         child = real_popen([sys.executable, "-c", "import sys; sys.stdin.read()"], **kwargs)  # pylint: disable=consider-using-with
         children.append(child)
         for stream in (child.stdin, child.stdout):

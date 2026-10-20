@@ -39,7 +39,7 @@ HELP: dict[str, dict[str, str]] = {
     },
     "atk lane integrate": {
         "summary": "レビュー済みレーンを統合し最終化する",
-        "epilog": "実行例:\n\n  atk lane integrate --record /absolute/lane-record.json --reviewed-head 0123456789abcdef --target-worktree /absolute/repository --target-branch develop --manifest /absolute/finalization.json --session-id lane-owner\n  atk lane integrate --record /absolute/lane-record.json --reviewed-head 0123456789abcdef --target-worktree /absolute/repository --target-branch develop --manifest /absolute/finalization.json --session-id lane-owner --writer-session agreed-writer",
+        "epilog": "実行例:\n\n  atk lane integrate --record /absolute/lane-record.json --reviewed-head 0123456789abcdef --target-worktree /absolute/repository --target-branch develop --manifest /absolute/finalization.json --session-id lane-owner --writer-session agreed-writer-1 --writer-session agreed-writer-2\n  atk lane integrate --record /absolute/lane-record.json --reviewed-head 0123456789abcdef --target-worktree /absolute/repository --target-branch develop --manifest /absolute/finalization.json --session-id lane-owner --writer-session agreed-writer-1 --writer-session agreed-writer-2 --accept-rebased-head 0123456789abcdef0123456789abcdef01234567",
         "description": "レビュー済みレーンを統合し最終化する。\n\n目的: レビュー済みレーンのGit統合と計画保存・WI終端・選定状態の最終化を再開可能な工程として実施する。\n利用場面: レーンの独立した実行レビューと検証が完了したとき。\n対象と出力: --record ABS --reviewed-head OID --target-worktree ABS --target-branch BRANCH --manifest ABS --session-id IDを指定する。--session-idは所有登録のsession（atk lane createの所有session）とする。manifestのplansは計画名と最終化argv、wisはWI名と終端argv、verificationはrebase後検証argv、handoffは計画なし時の引継ぎ絶対パス、lane_started_atは最初のレーン開始時刻（時差付きISO 8601）を保持する。Git統合の成功後、最終化の最初の操作の前に統合後HEADの短縮OID・完了時刻・lane_started_atからの総経過秒数を1回だけ確定して所有登録へ保存し、plans・wisのargvの{{integrated_head_short}}・{{completed_at}}・{{lane_seconds}}を展開する。{{expand-file:ABS}}はテンプレート内の同じ参照を展開した複製の絶対パスへ置き換える。再開では保存した確定値を使う。verificationの各argvは自身の時間上限を持つ形（plan-verifyの--timeout、atk run-command --timeout）で渡し、CLIは上限を重ねない。最終化argvとCLIが内部で起動する操作はatk lane create --timeoutの上限で打ち切る。工程・HEAD・記録JSONを返す。\n前提: 所有登録、cleanな同一Git登録、レビュー対象HEADとの一致。統合先worktreeとレーンworktreeをcwdとする稼働中の担当のうち、書き込む役割か役割の宣言を持たない起動の担当が残る場合は全件を診断して終了2とする。呼出元とその委譲元の連鎖、explore、書き込まないと宣言した役割の担当は数えない。合意した担当は--writer-sessionで反復指定する。\n復元・後始末: 失敗時は記録と資源を保持し、同じ入力で再開する。Git統合前の検証argv・最終化argv・handoffの是正は--restart-reviewを指定する。HEADが記録のnew_headのままなら、old_headかnew_headを--reviewed-headへ渡す。rebase記録と対応表を引き継いで検証を全件やり直し、awaiting-validation（終了1）へ戻る。対応表と診断を検収後、--restart-reviewを外して--accept-rebased-headで再開する。HEADが変わる是正では再レビューを受理した現在HEADを渡す。Git統合済みなら未完了の最終化から進める。",
     },
     "atk read-file": {
@@ -482,6 +482,11 @@ HELP["atk agents"]["description"] += (
     "これらはCLIから実行できない。CLIはwaitで待機・回収、notifyで委譲元への通知、"
     "listで一覧、showで詳細、logsで記録の表示を行う。"
 )
+HELP["atk lane integrate"]["description"] += (
+    "\n担当集合: 初回と再開の両方で、メインが保持する現在の合意済み書込担当一覧の実session ID全要素を"
+    "--writer-sessionへ1件ずつ反復指定する。--session-idは資源の所有sessionとして別に保持する。"
+    "担当の追加・交代後は合意済み一覧を更新し、再開にも更新後の全要素を渡す。"
+)
 HELP["atk wi add"]["description"] += (
     "\n冷却期限: 通常AWIは--cooldown-untilへタイムゾーン付きISO 8601日時を指定し、"
     "初回保存から期限を持たせる。複数の--body-fileへ同じ期限を保存する。"
@@ -508,6 +513,9 @@ HELP["atk run-script"]["description"] += (
     "gradeで保存対話と提出物を採点する。機能合否、隠した要件の達成、対話判定を別々に結果JSONへ保存する。"
     "\n履歴の検収はhistory-compareの--operationでrebase・autosquash・amendを分け、"
     "amendは`history-compare --operation amend`で旧新HEADの1対1対応を検収する。検収済み完全OID対応表をplan-rewriteへ渡す。"
+    "plan-rewriteは作業中・保存済み計画と引き継ぎ記録から未指定の対象記録を検出し、書込前に全件を示して拒否する。"
+    "示された記録を入力へ加え、保存済み計画はatk plans checkoutで取得する。"
+    "複数の対応表は--rewrite-mapを書換え順に反復指定し、最初の書換え前HEADを--previous-headへ渡す。"
     "競合解消で内容が変わった旧commitを--resolved-conflictへ反復指定する。受理する形式はhistory-compare --helpで確認する。"
     "未判定記録は`atk run-script verification-record -- --output <記録の絶対パス> --rewrite-map <対応表の絶対パス>`、"
     "完成条件証拠は`atk run-script exec-review-evidence-check -- <証拠の絶対パス> --rewrite-map <対応表の絶対パス>`で参照を更新する。"

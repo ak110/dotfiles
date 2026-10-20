@@ -17,6 +17,8 @@ Codex固有の公開能力と常時規範との差分を扱う。Codexのメイ�
 - 明示指示がないOfficeファイルは原本を直接変更せずに扱う。CSVは消費側の要求に従い、要求が不明な場合はUTF-8 BOM付きで保存する
 - `apply_patch`で既存ファイルを全体置換する場合も同じパスへのUpdate操作を使う。1つのpatchで同じパスをDeleteとAddに分けると適用が失敗する
 
+コマンドの戻り値と二層待機の監査記録は、`docs/development/audit-records.md`の「agent-toolkit/share/rules-common.codex.md：Codex固有の入出力：2026年10月19日」にある。
+
 ## Codexのplugin root解決
 
 - 最初の`SKILL.md`を読む前に、自身の起動通知が示すagent-toolkitのroot、またはCLI絶対パスの`scripts/`の親から`<plugin root>`を確定し、実体と`skills/`の存在を確認する

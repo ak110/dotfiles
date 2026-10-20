@@ -337,35 +337,37 @@ def test_cli_exits_quietly_when_stdout_pipe_is_closed_early(
     """公開された出力処理は読取側の早期クローズをTracebackなしのexit 1として処理する。"""
     notes = _setup_notes(tmp_path)
     _write_awi_file(notes, "awi.md", body="searchable")
-    read_fd, write_fd = os.pipe()
-    os.close(read_fd)
-    env = _isolated_cli_environ(host_environ, tmp_path)
-    env["AGENT_TOOLKIT_PRIVATE_NOTES"] = str(notes)
-    env.update(_child_config_env())
-    # `codex`が起動されると印のファイルを書く偽の実行ファイルをPATHの先頭へ置き、起動の有無を観測する。
-    fake_bin = tmp_path / "fake-bin"
-    fake_bin.mkdir()
-    marker = tmp_path / "codex-started"
-    fake_codex = fake_bin / "codex"
-    fake_codex.write_text(f"#!/bin/sh\ntouch '{marker}'\nexit 1\n", encoding="utf-8")
-    fake_codex.chmod(0o755)
-    env["PATH"] = os.pathsep.join((str(fake_bin), env.get("PATH", "")))
-    # Gitの作業ツリー外で起動し、`--target-repo`を省略した場合も対象を限定しない状態にする。
-    with subprocess.Popen(  # noqa: S603
-        ["uv", "run", "--project", str(_PROJECT_ROOT), "--locked", "--no-default-groups", str(_ATK_PATH), *argv],
-        stdout=write_fd,
-        stderr=subprocess.PIPE,
-        env=env,
-        cwd=tmp_path,
-        text=True,
-    ) as process:
-        os.close(write_fd)
-        stderr = process.communicate()[1]
+    with contextlib.ExitStack() as descriptors, contextlib.ExitStack() as reader_owner:
+        read_fd, write_fd = os.pipe()
+        descriptors.callback(os.close, write_fd)
+        reader_owner.callback(os.close, read_fd)
+        reader_owner.close()
+        env = _isolated_cli_environ(host_environ, tmp_path)
+        env["AGENT_TOOLKIT_PRIVATE_NOTES"] = str(notes)
+        env.update(_child_config_env())
+        # `codex`が起動されると印のファイルを書く偽の実行ファイルをPATHの先頭へ置き、起動の有無を観測する。
+        fake_bin = tmp_path / "fake-bin"
+        fake_bin.mkdir()
+        marker = tmp_path / "codex-started"
+        fake_codex = fake_bin / "codex"
+        fake_codex.write_text(f"#!/bin/sh\ntouch '{marker}'\nexit 1\n", encoding="utf-8")
+        fake_codex.chmod(0o755)
+        env["PATH"] = os.pathsep.join((str(fake_bin), env.get("PATH", "")))
+        # Gitの作業ツリー外で起動し、`--target-repo`を省略した場合も対象を限定しない状態にする。
+        with subprocess.Popen(  # noqa: S603
+            ["uv", "run", "--project", str(_PROJECT_ROOT), "--locked", "--no-default-groups", str(_ATK_PATH), *argv],
+            stdout=write_fd,
+            stderr=subprocess.PIPE,
+            env=env,
+            cwd=tmp_path,
+            text=True,
+        ) as process:
+            stderr = process.communicate()[1]
 
-        assert process.returncode == 1
-    assert "Traceback" not in stderr
-    assert "Exception ignored on flushing sys.stdout" not in stderr
-    assert not marker.exists()
+            assert process.returncode == 1
+        assert "Traceback" not in stderr
+        assert "Exception ignored on flushing sys.stdout" not in stderr
+        assert not marker.exists()
 
 
 def _child_config_env() -> dict[str, str]:

@@ -62,6 +62,7 @@ from agent_toolkit._testing.agents_server_support import (
     _start_late_unavailability,
     _without_root,
     _write_notice,
+    claude_manager,
     install_backend,
 )
 
@@ -2024,17 +2025,7 @@ async def test_send_message_timeout_reports_undetermined_delivery(
 ) -> None:
     """継続要求の配送結果が確定しない場合に指定上限で打ち切る。"""
     client = BlockingContinuationClaudeClient()
-    async with (
-        server_manager.AgentsServerManager() as manager,
-        claude_backend.ClaudeServerManager(
-            manager.sessions,
-            manager._condition,
-            client_factory=lambda _options: client,
-            expire_session=manager._expire_session,
-        ) as backend,
-    ):
-        install_backend(manager, "claude", backend)
-        monkeypatch.setattr(claude_backend, "_build_options", lambda *_args, **_kwargs: SimpleNamespace())
+    async with claude_manager(monkeypatch, client) as (manager, backend):
         session = await backend.start("調査", str(tmp_path))
         await asyncio.wait_for(client.message_waiting.wait(), timeout=0.1)
 

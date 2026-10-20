@@ -1,7 +1,6 @@
 """WIのファイル名の検証、重複除去、採番と補完候補。"""
 
 import functools
-import os
 import pathlib
 import sys
 import tempfile
@@ -77,13 +76,9 @@ def is_case_sensitive(directory: pathlib.Path) -> bool:
     一意な名前の空ファイルを指定ディレクトリ内に作成し、名前の大文字小文字を反転させたパスが
     存在するかどうかで判定する。プローブ用ファイルは判定後に必ず削除する。
     """
-    handle, created = tempfile.mkstemp(prefix=".atk-case-probe-", dir=directory)
-    os.close(handle)
-    probe = pathlib.Path(created)
-    try:
+    with tempfile.NamedTemporaryFile(prefix=".atk-case-probe-", dir=directory) as temporary:
+        probe = pathlib.Path(temporary.name)
         return not probe.with_name(probe.name.swapcase()).exists()
-    finally:
-        probe.unlink()
 
 
 def comparison_key(name: str, *, case_sensitive: bool) -> str:

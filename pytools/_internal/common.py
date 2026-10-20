@@ -102,7 +102,12 @@ def process_scope(
         try:
             if process.poll() is None:
                 for residual in stop_process_tree(process):
-                    logger.warning("子プロセスが残存: %s", residual)
+                    logger.warning(
+                        "子プロセスが残存: %s。表示されたPIDと起動コマンドを確認し、"
+                        "この実行が起動したプロセスなら終了してから呼出元を再実行する。"
+                        "終了できない場合は、この診断をdotfilesの管理者へ報告する",
+                        residual,
+                    )
         finally:
             if close_streams:
                 with contextlib.ExitStack() as cleanup:

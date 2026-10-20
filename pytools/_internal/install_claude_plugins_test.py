@@ -614,12 +614,11 @@ class TestEnsurePluginCacheComplete:
             return True
 
         monkeypatch.setattr(_install_claude_plugins, "_install_plugin", fake_install)
-        residents = ResidentProcesses(tmp_path, monkeypatch)
-        if holder == "mcp-cwd":
-            process = residents.start("python3", cwd=cache_dir / "agent_toolkit")
-        else:
-            process = residents.start("claude", cwd=tmp_path)
-        try:
+        with ResidentProcesses(tmp_path, monkeypatch) as residents:
+            if holder == "mcp-cwd":
+                residents.start("python3", cwd=cache_dir / "agent_toolkit")
+            else:
+                residents.start("claude", cwd=tmp_path)
             with caplog.at_level(logging.WARNING):
                 assert _install_claude_plugins._ensure_plugin_cache_complete(self._NAME) == "deferred"
             assert not calls
@@ -628,8 +627,6 @@ class TestEnsurePluginCacheComplete:
             assert str(cache_dir.relative_to(tmp_path)) in caplog.text
             expected = "操作は不要です" if retry_timer else "`update-dotfiles`を再実行してください"
             assert expected in caplog.text
-        finally:
-            residents.stop(process)
 
         assert _install_claude_plugins._ensure_plugin_cache_complete(self._NAME) == "repaired"
         assert calls == [self._NAME]

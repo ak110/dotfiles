@@ -111,6 +111,7 @@ Claude SDKの初期化応答がMCP接続失敗を示す場合、新規起動・�
 SDK 0.2.168の`get_mcp_status`と`reconnect_mcp_server`を使い、未回復のサーバーだけをstart・showのwarningsへ返す。
 ログは`claude_mcp_recovered`と`claude_mcp_recovery_failed`で回復の成否を示す。
 再接続の反復を独自に増やす案は、SDKの回復境界へ別の待機を重ねるため採用しない。
+監査記録と再検証手段は`audit-records.md`の「docs/development/design-agents-runtime.md：MCP接続失敗の再接続：2026年10月20日」にある。
 
 接続選択のログは`claude_connection_attempt`・`claude_connection_selected`・`claude_connection_failed`を使う。
 `phase`は`initialization`または`turn`とし、turnの理由は`authentication`・`api_credits`・`usage_limit`で区別する。

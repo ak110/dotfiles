@@ -94,11 +94,8 @@ def test_run_installs_with_powershell_file(monkeypatch, tmp_path: Path) -> None:
         return subprocess.CompletedProcess(command, 0, "ok", "")
 
     monkeypatch.setattr(setup_claude_cli.common, "run_subprocess", fake_run)
-    client = httpx.Client(transport=httpx.MockTransport(lambda request: httpx.Response(200, content=b"installer")))
-    try:
+    with httpx.Client(transport=httpx.MockTransport(lambda request: httpx.Response(200, content=b"installer"))) as client:
         assert setup_claude_cli.run(client).changed
-    finally:
-        client.close()
     assert calls[0][:5] == ["pwsh", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File"]
     assert calls[1] == [str(launcher), "--version"]
 
@@ -122,11 +119,8 @@ def test_windows_install_prepends_canonical_path_before_noncanonical(monkeypatch
         return subprocess.CompletedProcess(command, 0, "", "")
 
     monkeypatch.setattr(setup_claude_cli.common, "run_subprocess", fake_run)
-    client = httpx.Client(transport=httpx.MockTransport(lambda request: httpx.Response(200, content=b"installer")))
-    try:
+    with httpx.Client(transport=httpx.MockTransport(lambda request: httpx.Response(200, content=b"installer"))) as client:
         assert setup_claude_cli.run(client).changed
-    finally:
-        client.close()
 
     assert os.environ["PATH"].split(os.pathsep)[0] == str(launcher.parent)
 
@@ -169,11 +163,8 @@ def test_run_handles_http_failure(monkeypatch, tmp_path: Path) -> None:
     monkeypatch.setattr(Path, "home", lambda: tmp_path)
     monkeypatch.setattr(setup_claude_cli.sys, "platform", "linux")
     monkeypatch.setattr(setup_claude_cli.setup_cli_common, "is_windows_cli_running", lambda *args: False)
-    client = httpx.Client(transport=httpx.MockTransport(lambda request: httpx.Response(500, request=request)))
-    try:
+    with httpx.Client(transport=httpx.MockTransport(lambda request: httpx.Response(500, request=request))) as client:
         assert setup_claude_cli.run(client) == post_apply_outcome.PostApplyOutcome()
-    finally:
-        client.close()
 
 
 def test_run_handles_installer_failure(monkeypatch, tmp_path: Path) -> None:
@@ -185,11 +176,8 @@ def test_run_handles_installer_failure(monkeypatch, tmp_path: Path) -> None:
         "run_subprocess",
         lambda command, **kwargs: subprocess.CompletedProcess(command, 1, "", "installer failed"),
     )
-    client = httpx.Client(transport=httpx.MockTransport(lambda request: httpx.Response(200, content=b"installer")))
-    try:
+    with httpx.Client(transport=httpx.MockTransport(lambda request: httpx.Response(200, content=b"installer"))) as client:
         assert setup_claude_cli.run(client) == post_apply_outcome.PostApplyOutcome()
-    finally:
-        client.close()
 
 
 def test_run_handles_native_update_failure_and_keeps_legacy_path(monkeypatch, tmp_path: Path) -> None:

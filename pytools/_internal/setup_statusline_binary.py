@@ -5,6 +5,7 @@
 Rustバイナリ直接起動へ置き換える。
 """
 
+import contextlib
 import logging
 import os
 import pathlib
@@ -176,36 +177,34 @@ def _download_release(client: httpx.Client | None = None) -> bool:
     Returns:
         新規ダウンロードを行った場合True。304（未更新）または失敗時はFalse。
     """
-    owns_client = client is None
-    active_client = client or httpx.Client(timeout=_HTTP_TIMEOUT, follow_redirects=True)
-    try:
-        _INSTALL_DIR.mkdir(parents=True, exist_ok=True)
-        headers = {}
-        prev_etag = _ETAG_PATH.read_text(encoding="utf-8").strip() if _ETAG_PATH.exists() else None
-        if prev_etag and _INSTALL_PATH.exists():
-            headers["If-None-Match"] = prev_etag
-        download_url = os.environ.get(_DOWNLOAD_URL_ENV) or _DOWNLOAD_URL
-        response = active_client.get(download_url, headers=headers)
-        if response.status_code == 304:
-            logger.info(log_format.format_status("statusline", f"最新版を利用中 ({_INSTALL_PATH})"))
+    with (
+        contextlib.nullcontext(client) if client is not None else httpx.Client(timeout=_HTTP_TIMEOUT, follow_redirects=True)
+    ) as active_client:
+        try:
+            _INSTALL_DIR.mkdir(parents=True, exist_ok=True)
+            headers = {}
+            prev_etag = _ETAG_PATH.read_text(encoding="utf-8").strip() if _ETAG_PATH.exists() else None
+            if prev_etag and _INSTALL_PATH.exists():
+                headers["If-None-Match"] = prev_etag
+            download_url = os.environ.get(_DOWNLOAD_URL_ENV) or _DOWNLOAD_URL
+            response = active_client.get(download_url, headers=headers)
+            if response.status_code == 304:
+                logger.info(log_format.format_status("statusline", f"最新版を利用中 ({_INSTALL_PATH})"))
+                return False
+            response.raise_for_status()
+            mode = None if sys.platform == "win32" else 0o755
+            if not common.atomic_write_bytes(_INSTALL_PATH, response.content, mode=mode, tag="statusline"):
+                return False
+            etag = response.headers.get("etag")
+            if etag:
+                common.atomic_write_text(_ETAG_PATH, etag, tag="statusline")
+            logger.info(log_format.format_status("statusline", f"インストール完了: {_INSTALL_PATH}"))
+            return True
+        except Exception as e:  # noqa: BLE001
+            logger.warning(
+                log_format.format_status(
+                    "statusline",
+                    f"バイナリ取得に失敗（statusLineは空表示になる）: {e}。`update-dotfiles`を再実行する",
+                ),
+            )
             return False
-        response.raise_for_status()
-        mode = None if sys.platform == "win32" else 0o755
-        if not common.atomic_write_bytes(_INSTALL_PATH, response.content, mode=mode, tag="statusline"):
-            return False
-        etag = response.headers.get("etag")
-        if etag:
-            common.atomic_write_text(_ETAG_PATH, etag, tag="statusline")
-        logger.info(log_format.format_status("statusline", f"インストール完了: {_INSTALL_PATH}"))
-        return True
-    except Exception as e:  # noqa: BLE001
-        logger.warning(
-            log_format.format_status(
-                "statusline",
-                f"バイナリ取得に失敗（statusLineは空表示になる）: {e}。`update-dotfiles`を再実行する",
-            ),
-        )
-        return False
-    finally:
-        if owns_client:
-            active_client.close()

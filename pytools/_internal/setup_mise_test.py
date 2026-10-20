@@ -180,6 +180,12 @@ class TestRunMiseInstallation:
         monkeypatch.setattr(_setup_mise, "find_mise_binary", lambda: None)
 
         class _FailingClient:
+            def __enter__(self) -> typing.Self:
+                return self
+
+            def __exit__(self, *_error: object) -> None:
+                self.close()
+
             def get(self, _url: str) -> typing.NoReturn:
                 raise httpx.ConnectError("offline")
 

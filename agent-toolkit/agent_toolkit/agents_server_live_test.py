@@ -196,84 +196,92 @@ async def test_live_explore_common_investigation(engine: str, tmp_path: pathlib.
         ),
         file_json=json.dumps(str(source), ensure_ascii=False),
     )
-    manager = server_manager.AgentsServerManager()
-    monkeypatch.setattr(mcp_tools, "_MANAGER", manager)
-    observed: dict[str, Any] = {"engine": engine, "model_type": models[engine], "prompt": prompt, "before": before, "turns": []}
-    destination = (
-        pathlib.Path(os.environ.get("AGENT_TOOLKIT_LIVE_EVIDENCE_DIR", str(tmp_path))) / f"investigation-{engine}.json"
-    )
-    session_id = None
-    try:
-        for turn in (1, 2):
-            async with asyncio.timeout(360):
-                if turn == 1:
-                    response = await mcp_tools.start(str(repository), mode="explore", prompt=prompt, model_type=models[engine])
-                    session_id = response["session_id"]
-                else:
-                    assert session_id is not None
-                    response = await mcp_tools.send_message(session_id, prompt=prompt)
-                    assert response["delivery"] == "reply_started", response
-                observed["session_id"] = session_id
-                observed["last_response"] = response
-                result = await _wait_terminal(manager)
-            entry: dict[str, Any] = {"turn": turn, "session_id": session_id, "response": response, "result": result}
-            observed["turns"].append(entry)
-            assert result["status"] == "completed", result
-            assert session_id is not None
-            session = manager.sessions[session_id]
-            assert session.engine == engine
-            entry["turn_seq"] = session.turn_seq
-            if turn == 2:
-                assert session.turn_seq == observed["turns"][0]["turn_seq"] + 1
-            entry["record_paths"], entry["tool_events"] = _investigation_events(session_id)
-            prior_count = observed["turns"][0].get("event_count", 0) if turn == 2 else 0
-            entry["event_count"] = len(entry["tool_events"])
-            actual_events = entry["tool_events"][prior_count:]
-            tool_text = json.dumps(actual_events, ensure_ascii=False)
-            for command in ("git", "rg", "read-file", "python", "pyfltr"):
-                assert command in tool_text, (command, actual_events)
-            # CLIが引数を省略した実記録でも、MCPの実返却値で件数を確認する。
-            assert "mcp" in tool_text.lower(), actual_events
-            tool_outputs = [
-                event.get("text") or event.get("step_update", {}).get("tool_info", {}).get("output", "")
-                for event in actual_events
-            ]
-            entry["mcp_results"] = [
-                output
-                for output in tool_outputs
-                if '"transport":"stdio"' in "".join(output.replace("\\", "").split())
-                and '"total_matches":2' in "".join(output.replace("\\", "").split())
-            ]
-            assert entry["mcp_results"], actual_events
-            assert "P4_READ_ALPHA" in tool_text and "P4_READ_BETA" in tool_text
-            assert text.splitlines()[1] in tool_text
-            response_text = result["agent_message"].strip()
-            if response_text.startswith("```json\n") and response_text.endswith("\n```"):
-                response_text = response_text[len("```json\n") : -len("\n```")]
-            value = json.loads(response_text)
-            assert value == {
-                "head": before["head"],
-                "git_status": "",
-                "rg_lines": ["1:P4_READ_ALPHA", "3:P4_READ_BETA"],
-                "python_text": text,
-                "atk_text": text,
-                "mcp_count": 2,
-            }, value
-            entry["after"] = _investigation_snapshot(repository)
-            assert entry["after"] == before
-    except BaseException as error:
-        observed["error"] = f"{type(error).__name__}: {error}"
-        raise
-    finally:
-        observed["states_before_close"] = {
-            key: {"engine": value.engine, "status": value.status, "turn_seq": value.turn_seq, "error": value.error}
-            for key, value in manager.sessions.items()
+    async with server_manager.AgentsServerManager() as manager:
+        monkeypatch.setattr(mcp_tools, "_MANAGER", manager)
+        observed: dict[str, Any] = {
+            "engine": engine,
+            "model_type": models[engine],
+            "prompt": prompt,
+            "before": before,
+            "turns": [],
         }
-        await manager.close()
-        observed["after_close"] = _investigation_snapshot(repository)
-        observed["closed"] = True
-        destination.write_text(json.dumps(observed, ensure_ascii=False, indent=2), encoding="utf-8")
-        print(f"実backend受入記録: {destination}")
+        destination = (
+            pathlib.Path(os.environ.get("AGENT_TOOLKIT_LIVE_EVIDENCE_DIR", str(tmp_path))) / f"investigation-{engine}.json"
+        )
+        session_id = None
+        try:
+            for turn in (1, 2):
+                async with asyncio.timeout(360):
+                    if turn == 1:
+                        response = await mcp_tools.start(
+                            str(repository), mode="explore", prompt=prompt, model_type=models[engine]
+                        )
+                        session_id = response["session_id"]
+                    else:
+                        assert session_id is not None
+                        response = await mcp_tools.send_message(session_id, prompt=prompt)
+                        assert response["delivery"] == "reply_started", response
+                    observed["session_id"] = session_id
+                    observed["last_response"] = response
+                    result = await _wait_terminal(manager)
+                entry: dict[str, Any] = {"turn": turn, "session_id": session_id, "response": response, "result": result}
+                observed["turns"].append(entry)
+                assert result["status"] == "completed", result
+                assert session_id is not None
+                session = manager.sessions[session_id]
+                assert session.engine == engine
+                entry["turn_seq"] = session.turn_seq
+                if turn == 2:
+                    assert session.turn_seq == observed["turns"][0]["turn_seq"] + 1
+                entry["record_paths"], entry["tool_events"] = _investigation_events(session_id)
+                prior_count = observed["turns"][0].get("event_count", 0) if turn == 2 else 0
+                entry["event_count"] = len(entry["tool_events"])
+                actual_events = entry["tool_events"][prior_count:]
+                tool_text = json.dumps(actual_events, ensure_ascii=False)
+                for command in ("git", "rg", "read-file", "python", "pyfltr"):
+                    assert command in tool_text, (command, actual_events)
+                # CLIが引数を省略した実記録でも、MCPの実返却値で件数を確認する。
+                assert "mcp" in tool_text.lower(), actual_events
+                tool_outputs = [
+                    event.get("text") or event.get("step_update", {}).get("tool_info", {}).get("output", "")
+                    for event in actual_events
+                ]
+                entry["mcp_results"] = [
+                    output
+                    for output in tool_outputs
+                    if '"transport":"stdio"' in "".join(output.replace("\\", "").split())
+                    and '"total_matches":2' in "".join(output.replace("\\", "").split())
+                ]
+                assert entry["mcp_results"], actual_events
+                assert "P4_READ_ALPHA" in tool_text and "P4_READ_BETA" in tool_text
+                assert text.splitlines()[1] in tool_text
+                response_text = result["agent_message"].strip()
+                if response_text.startswith("```json\n") and response_text.endswith("\n```"):
+                    response_text = response_text[len("```json\n") : -len("\n```")]
+                value = json.loads(response_text)
+                assert value == {
+                    "head": before["head"],
+                    "git_status": "",
+                    "rg_lines": ["1:P4_READ_ALPHA", "3:P4_READ_BETA"],
+                    "python_text": text,
+                    "atk_text": text,
+                    "mcp_count": 2,
+                }, value
+                entry["after"] = _investigation_snapshot(repository)
+                assert entry["after"] == before
+        except BaseException as error:
+            observed["error"] = f"{type(error).__name__}: {error}"
+            raise
+        finally:
+            observed["states_before_close"] = {
+                key: {"engine": value.engine, "status": value.status, "turn_seq": value.turn_seq, "error": value.error}
+                for key, value in manager.sessions.items()
+            }
+            await manager.close()
+            observed["after_close"] = _investigation_snapshot(repository)
+            observed["closed"] = True
+            destination.write_text(json.dumps(observed, ensure_ascii=False, indent=2), encoding="utf-8")
+            print(f"実backend受入記録: {destination}")
 
 
 async def _wait_terminal(manager: server_manager.AgentsServerManager) -> dict[str, Any]:
@@ -293,18 +301,17 @@ async def test_live_launch_waits_for_automatic_resume(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Bashを公開する起動ツール`start`のmodeが、再開指示なしでバックグラウンドタスク完了後の結果を返す。"""
-    manager = server_manager.AgentsServerManager()
-    monkeypatch.setattr(mcp_tools, "_MANAGER", manager)
-    cwd = str(pathlib.Path(__file__).parents[2])
-    # 委譲先CLIが認証と設定を読み、PATHから起動できるよう、ホームと設定ディレクトリとPATHを戻す。
-    isolation.restore_host_environment(monkeypatch)
-    monkeypatch.setattr(
-        _atk_config,
-        "parse_unresolved_model_candidates",
-        lambda _model_type, **_kwargs: [("claude", "sonnet[1m]", "medium")],
-    )
-    live_input = BACKGROUND_RESUME_INPUTS[mode]
-    try:
+    async with server_manager.AgentsServerManager() as manager:
+        monkeypatch.setattr(mcp_tools, "_MANAGER", manager)
+        cwd = str(pathlib.Path(__file__).parents[2])
+        # 委譲先CLIが認証と設定を読み、PATHから起動できるよう、ホームと設定ディレクトリとPATHを戻す。
+        isolation.restore_host_environment(monkeypatch)
+        monkeypatch.setattr(
+            _atk_config,
+            "parse_unresolved_model_candidates",
+            lambda _model_type, **_kwargs: [("claude", "sonnet[1m]", "medium")],
+        )
+        live_input = BACKGROUND_RESUME_INPUTS[mode]
         if mode == "delegate":
             await mcp_tools.start(cwd, mode="delegate", prompt=live_input.texts[0], model_type="low_tier")
         else:
@@ -314,8 +321,6 @@ async def test_live_launch_waits_for_automatic_resume(
 
         assert result["status"] == "completed", result
         assert result["agent_message"].strip() == "AUTO_RESUME_COMPLETED"
-    finally:
-        await manager.close()
 
 
 @pytest.mark.asyncio
@@ -324,22 +329,21 @@ async def test_live_explore_reads_file_and_continues_same_session(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """探索起動が既知のファイルを読んで内容を返し、同じsessionへの継続でも別のファイルを読んで返す。"""
-    manager = server_manager.AgentsServerManager()
-    monkeypatch.setattr(mcp_tools, "_MANAGER", manager)
-    # 作業ディレクトリの外の読取は権限確認を要するため、読ませるファイルを置く一時ディレクトリをcwdにする。
-    first = tmp_path / "first.txt"
-    first.write_text("EXPLORE_FIRST_CONTENT\n", encoding="utf-8")
-    second = tmp_path / "second.txt"
-    second.write_text("EXPLORE_CONTINUED_CONTENT\n", encoding="utf-8")
-    # 委譲先CLIが認証と設定を読み、PATHから起動できるよう、ホームと設定ディレクトリとPATHを戻す。
-    isolation.restore_host_environment(monkeypatch)
-    monkeypatch.setattr(
-        _atk_config,
-        "parse_unresolved_model_candidates",
-        lambda _model_type, **_kwargs: [("claude", "sonnet[1m]", "medium")],
-    )
-    start_text, continue_text = EXPLORE_READ_INPUT.texts
-    try:
+    async with server_manager.AgentsServerManager() as manager:
+        monkeypatch.setattr(mcp_tools, "_MANAGER", manager)
+        # 作業ディレクトリの外の読取は権限確認を要するため、読ませるファイルを置く一時ディレクトリをcwdにする。
+        first = tmp_path / "first.txt"
+        first.write_text("EXPLORE_FIRST_CONTENT\n", encoding="utf-8")
+        second = tmp_path / "second.txt"
+        second.write_text("EXPLORE_CONTINUED_CONTENT\n", encoding="utf-8")
+        # 委譲先CLIが認証と設定を読み、PATHから起動できるよう、ホームと設定ディレクトリとPATHを戻す。
+        isolation.restore_host_environment(monkeypatch)
+        monkeypatch.setattr(
+            _atk_config,
+            "parse_unresolved_model_candidates",
+            lambda _model_type, **_kwargs: [("claude", "sonnet[1m]", "medium")],
+        )
+        start_text, continue_text = EXPLORE_READ_INPUT.texts
         started = await mcp_tools.start(str(tmp_path), mode="explore", prompt=start_text.format(path=first))
         session = manager.sessions[started["session_id"]]
 
@@ -354,12 +358,11 @@ async def test_live_explore_reads_file_and_continues_same_session(
         assert result["status"] == "completed", result
         assert result["agent_message"].strip() == "EXPLORE_CONTINUED_CONTENT", result
         assert session.turn_seq == 2
-    finally:
-        await manager.close()
+
+    # 孫sessionの終端による自動再開を確かめる入力。MCPの起動ツールと`atk agents wait`の実行を要求するため、
+    # 組込ツールとMCPを制限しない通常起動へ渡す。
 
 
-# 孫sessionの終端による自動再開を確かめる入力。MCPの起動ツールと`atk agents wait`の実行を要求するため、
-# 組込ツールとMCPを制限しない通常起動へ渡す。
 GRANDCHILD_INPUT = LiveInput(
     "delegate",
     (
@@ -382,13 +385,12 @@ async def test_live_grandchild_wait_resumes_same_session(
 
     待機表明の行を完了報告として配送せず、再開したturnの結果だけを委譲元へ返すことを確かめる。
     """
-    manager = server_manager.AgentsServerManager()
-    monkeypatch.setattr(mcp_tools, "_MANAGER", manager)
-    cwd = str(pathlib.Path(__file__).parents[2])
-    # 委譲先CLIが認証と設定を読み、PATHから起動できるよう、ホームと設定ディレクトリとPATHを戻す。
-    isolation.restore_host_environment(monkeypatch)
-    monkeypatch.setattr(_atk_config, "parse_unresolved_model_candidates", lambda _model_type, **_kwargs: [candidate])
-    try:
+    async with server_manager.AgentsServerManager() as manager:
+        monkeypatch.setattr(mcp_tools, "_MANAGER", manager)
+        cwd = str(pathlib.Path(__file__).parents[2])
+        # 委譲先CLIが認証と設定を読み、PATHから起動できるよう、ホームと設定ディレクトリとPATHを戻す。
+        isolation.restore_host_environment(monkeypatch)
+        monkeypatch.setattr(_atk_config, "parse_unresolved_model_candidates", lambda _model_type, **_kwargs: [candidate])
         started = await mcp_tools.start(cwd, mode="delegate", prompt=GRANDCHILD_INPUT.texts[0], model_type="high_tier")
         session = manager.sessions[started["session_id"]]
 
@@ -398,12 +400,11 @@ async def test_live_grandchild_wait_resumes_same_session(
         assert result["agent_message"].strip() == "AUTO_RESUME_COMPLETED", result
         assert "unobservedSessions" not in (result.get("error") or {}), result
         assert session.turn_seq == 2
-    finally:
-        await manager.close()
+
+    # 擬似APIの接続先名とテスト用のAPIキーの環境変数。後続候補の判定（`codex_providers.independent_api_auth`）は
+    # `env_key`の環境変数が設定済みであることを独立したAPI認証として扱う。
 
 
-# 擬似APIの接続先名とテスト用のAPIキーの環境変数。後続候補の判定（`codex_providers.independent_api_auth`）は
-# `env_key`の環境変数が設定済みであることを独立したAPI認証として扱う。
 _PRIMARY_PROVIDER = "pseudo_primary"
 _FALLBACK_PROVIDER = "pseudo_fallback"
 _PSEUDO_API_KEY_ENV = "AGENT_TOOLKIT_LIVE_TEST_PSEUDO_API_KEY"
@@ -586,9 +587,8 @@ stream_max_retries = 0
         monkeypatch.setattr(
             _atk_config, "parse_unresolved_model_candidates", lambda _model_type, **_kwargs: [("codex", "gpt-5.4", "low")]
         )
-        manager = server_manager.AgentsServerManager()
-        monkeypatch.setattr(mcp_tools, "_MANAGER", manager)
-        try:
+        async with server_manager.AgentsServerManager() as manager:
+            monkeypatch.setattr(mcp_tools, "_MANAGER", manager)
             await mcp_tools.start(
                 str(work),
                 mode="delegate",
@@ -601,10 +601,8 @@ stream_max_retries = 0
                 if result["status"] != "running":
                     break
                 result = await manager.wait()
-        finally:
-            await manager.close()
-        primary = api.bodies(_PRIMARY_PROVIDER)
-        fallback = api.bodies(_FALLBACK_PROVIDER)
+            primary = api.bodies(_PRIMARY_PROVIDER)
+            fallback = api.bodies(_FALLBACK_PROVIDER)
 
     assert result["status"] == "completed", result
     assert result["agent_message"].strip() == _SWITCH_COMPLETED, result

@@ -67,14 +67,16 @@ async def test_repository_orchestrator_follows_mode(
         (notes / "inbox/task.md").unlink()
         return FakeClaudeClient([[SystemMessage("repository-orchestrator"), AssistantMessage("作業"), ResultMessage("完了")]])
 
-    manager = server_manager.AgentsServerManager()
-    backend = claude.ClaudeServerManager(manager.sessions, client_factory=factory)
-    install_backend(manager, "claude", backend)
-    results = await all_repos.run_repository_delegates(
-        argparse.Namespace(worktree=None, resume=None),
-        listing.configured_repo_snapshot(notes, repositories),
-        manager=manager,
-    )
+    async with (
+        server_manager.AgentsServerManager() as manager,
+        claude.ClaudeServerManager(manager.sessions, client_factory=factory) as backend,
+    ):
+        install_backend(manager, "claude", backend)
+        results = await all_repos.run_repository_delegates(
+            argparse.Namespace(worktree=None, resume=None),
+            listing.configured_repo_snapshot(notes, repositories),
+            manager=manager,
+        )
     assert results[repositories[0].repo_id]["status"] == "completed"
     assert bool(options_seen[0].env.get("ANTHROPIC_API_KEY")) is api
 
@@ -249,6 +251,68 @@ class _Manager:
 
     async def close(self) -> None:
         self.closed = True
+
+
+@pytest.mark.asyncio
+async def test_launch_cancellation_releases_acquired_repository(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """担当起動の取消でも取得済み所有記録を解放し、次の取得を妨げない。"""
+    repositories = _repositories(tmp_path, monkeypatch)
+    notes = tmp_path / "notes"
+    _write(notes, "task.md", repositories[0].repo_id)
+    snapshot = listing.configured_repo_snapshot(notes, repositories)[0]
+
+    class CancelledManager(_Manager):
+        async def start(self, *_args: Any, **_kwargs: Any) -> dict[str, Any]:
+            raise asyncio.CancelledError
+
+    with pytest.raises(asyncio.CancelledError):
+        await all_repos._launch_repository(  # pylint: disable=protected-access
+            cast(all_repos.RepositoryDelegateManager, CancelledManager()),
+            snapshot,
+            argparse.Namespace(resume=None, worktree=None),
+            lambda: "担当指示",
+            None,
+        )
+    acquired = ownership.try_acquire(repositories[0].repo_id, worktree=repositories[0].worktree)
+    assert acquired is not None
+    ownership.release(acquired)
+
+
+@pytest.mark.asyncio
+async def test_wait_cancellation_stops_every_owner_and_closes_manager_after_cleanup_failure(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """待機取消後の最初の停止が失敗しても、残り全担当の停止とmanager.closeへ進む。"""
+    repositories = _repositories(tmp_path, monkeypatch)
+    notes = tmp_path / "notes"
+    for repository in repositories[:2]:
+        _write(notes, repository.worktree.name + ".md", repository.repo_id)
+    snapshots = listing.configured_repo_snapshot(notes, repositories)
+    attempted: list[str] = []
+    original_stop = all_repos._stop_repository  # pylint: disable=protected-access
+
+    class CancelledManager(_Manager):
+        async def wait(self) -> dict[str, Any]:
+            raise asyncio.CancelledError
+
+    async def stop(*args: Any, **kwargs: Any) -> dict[str, Any]:
+        attempted.append(args[1].repo_id)
+        if len(attempted) == 1:
+            raise RuntimeError("最初の担当の停止失敗")
+        return await original_stop(*args, **kwargs)
+
+    current = CancelledManager()
+    monkeypatch.setattr(all_repos, "_stop_repository", stop)
+    with pytest.raises(RuntimeError, match="最初の担当の停止失敗"):
+        await all_repos.run_repository_delegates(
+            argparse.Namespace(resume=None, worktree=None),
+            snapshots,
+            manager=cast(all_repos.RepositoryDelegateManager, current),
+        )
+    assert attempted == [repository.repo_id for repository in repositories[:2]]
+    assert current.closed
 
 
 def test_repository_delegates(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:

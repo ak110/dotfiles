@@ -13,6 +13,7 @@ import time
 import urllib.error
 import urllib.request
 from collections.abc import Callable, Generator
+from unittest import mock
 
 import pytest
 
@@ -62,16 +63,36 @@ def _process(argv: list[str], environment: dict[str, str], cwd: pathlib.Path) ->
         encoding="utf-8",
         errors="replace",
     )
-    try:
-        yield process
-    finally:
+    with contextlib.ExitStack() as streams:
+        for stream in (process.stdout, process.stderr):
+            if stream is not None:
+                streams.callback(stream.close)
         try:
-            residual = process_tree.stop_process_tree(process) if process.poll() is None else []
+            yield process
         finally:
-            for stream in (process.stdout, process.stderr):
-                if stream is not None:
-                    stream.close()
-        assert not residual, residual
+            residual = process_tree.stop_process_tree(process) if process.poll() is None else []
+            assert not residual, residual
+
+
+@pytest.mark.parametrize("failing_stream", ["stdout", "stderr"])
+@pytest.mark.parametrize("stop_failure", [False, True])
+def test_process_closes_both_streams_after_close_failure(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, failing_stream: str, stop_failure: bool
+) -> None:
+    """停止と片方のcloseが失敗しても、両ストリームのcloseを実行する。"""
+    process = mock.Mock()
+    process.poll.return_value = None
+    getattr(process, failing_stream).close.side_effect = OSError("ストリーム回収失敗")
+    monkeypatch.setattr(subprocess, "Popen", mock.Mock(return_value=process))
+    stop = mock.Mock(return_value=[], side_effect=RuntimeError("停止失敗") if stop_failure else None)
+    monkeypatch.setattr(process_tree, "stop_process_tree", stop)
+
+    with pytest.raises(OSError, match="ストリーム回収失敗"), _process([], {}, tmp_path):
+        pass
+
+    stop.assert_called_once_with(process)
+    process.stdout.close.assert_called_once_with()
+    process.stderr.close.assert_called_once_with()
 
 
 def _environment(root: pathlib.Path) -> dict[str, str]:

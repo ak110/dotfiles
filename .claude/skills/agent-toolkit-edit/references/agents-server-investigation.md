@@ -32,6 +32,7 @@ Claude Codeの作業ディレクトリのスラッグは、絶対パスのパス
 ## 切り分けの順序
 
 Claude接続の候補試行・選択・失敗は`claude_connection_attempt`・`claude_connection_selected`・`claude_connection_failed`、API切替は`claude_api_switch`を読む。MCPの再接続は`claude_mcp_recovered`と`claude_mcp_recovery_failed`で成否を確かめる。
+MCP再接続の監査記録は`docs/development/audit-records.md`の「docs/development/design-agents-runtime.md：MCP接続失敗の再接続：2026年10月20日」にある。
 
 中断（`interrupted`）を調べるときは応答の`diagnostics.next_action`が示す`atk read-file`で終了診断を読み、受信シグナル・標準入力の終端・終了状態の有無からサーバーがどの契機で終わったかを確定する。親が終了を開始した理由は、親側の記録だけが保持する。`parent_connection_log.path`が指す親CLIの接続記録のうち、終了を示すイベント（`exited`・`signal_received`・`process_exited`）の`at`と同じ時刻の記録を読む。
 

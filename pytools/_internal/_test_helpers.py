@@ -1,5 +1,6 @@
 """テスト用の共通ヘルパー。"""
 
+import contextlib
 import json
 import os
 import pathlib
@@ -274,6 +275,7 @@ class ResidentProcesses:
         self._sleep = sleep
         self._bin = tmp_path / "resident-bin"
         self._processes: list[subprocess.Popen[bytes]] = []
+        self._resources = contextlib.ExitStack()
         real_process_iter = psutil.process_iter
 
         def own_processes(*args: typing.Any, **kwargs: typing.Any) -> list[typing.Any]:
@@ -282,14 +284,20 @@ class ResidentProcesses:
 
         monkeypatch.setattr(psutil, "process_iter", own_processes)
 
+    def __enter__(self) -> typing.Self:
+        return self
+
+    def __exit__(self, *_error: object) -> None:
+        self.stop_all()
+
     def start(self, name: str, *, cwd: Path | None = None, env: dict[str, str] | None = None) -> subprocess.Popen[bytes]:
         """実行名`name`の常駐プロセスを起動する。"""
         link = self._bin / name
         if not link.exists():
             link.parent.mkdir(parents=True, exist_ok=True)
             link.symlink_to(self._sleep)
-        process = subprocess.Popen(  # noqa: S603  # pylint: disable=consider-using-with
-            [str(link), "600"], cwd=cwd, env=None if env is None else {**os.environ, **env}
+        process = self._resources.enter_context(
+            _common.process_scope([str(link), "600"], cwd=cwd, env=None if env is None else {**os.environ, **env})
         )
         self._processes.append(process)
         return process
@@ -301,6 +309,4 @@ class ResidentProcesses:
 
     def stop_all(self) -> None:
         """起動した全てのプロセスを終了させて回収する。"""
-        for process in self._processes:
-            if process.poll() is None:
-                self.stop(process)
+        self._resources.close()

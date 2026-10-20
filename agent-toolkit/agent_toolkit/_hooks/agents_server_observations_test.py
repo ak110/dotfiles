@@ -60,6 +60,33 @@ def _acquire_delegation(payload: dict[str, Any]) -> None:
 
 
 @pytest.mark.asyncio
+async def test_projection_probe_preparation_failure_closes_manager(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """投影失敗の準備で例外が起きても、生成済みmanagerの解放を完了する。"""
+    acquired = []
+    closed = []
+
+    class TrackedManager(manager.AgentsServerManager):
+        def __init__(self, *args: Any, **kwargs: Any) -> None:
+            super().__init__(*args, **kwargs)
+            acquired.append(self)
+
+        async def close(self) -> None:
+            await super().close()
+            closed.append(self)
+
+    def fail(*_args: Any, **_kwargs: Any) -> Callable[..., None]:
+        raise RuntimeError("投影試験の準備失敗")
+
+    monkeypatch.setattr(manager, "AgentsServerManager", TrackedManager)
+    monkeypatch.setitem(globals(), "_refuse_replace_into", fail)
+    with pytest.raises(RuntimeError, match="投影試験の準備失敗"):
+        await test_public_start_after_projection_failure_reaches_hook_records_and_send_message(tmp_path, monkeypatch)
+    assert acquired and closed == acquired
+
+
+@pytest.mark.asyncio
 async def test_public_start_after_projection_failure_reaches_hook_records_and_send_message(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -74,58 +101,57 @@ async def test_public_start_after_projection_failure_reaches_hook_records_and_se
         state_root=tmp_path,
         aggregate_seconds=0,
     )
-    current = manager.AgentsServerManager(writer)
-    backend = _RegisteredBackend(current.sessions, "claude")
-    agents_server_support.install_backend(current, "claude", backend)
-    monkeypatch.setattr(mcp_tools, "_MANAGER", current)
-    writer.activate()
-    writer.path.unlink(missing_ok=True)
-    original_replace = _refuse_replace_into(monkeypatch, writer.path)
-    tool_name = "mcp__plugin_agent-toolkit_agents_server__start"
-    start_input = {"mode": "delegate", "prompt": "処理", "cwd": str(tmp_path), "model_type": "claude:test/medium"}
-    try:
-        started = await mcp_tools.start(
-            mode="delegate", prompt=start_input["prompt"], cwd=str(tmp_path), model_type="claude:test/medium"
-        )
-        assert started["persistence_warnings"] and not writer.path.exists()
-        child = started["session_id"]
-        payload = {
-            "session_id": "observed-root",
-            "tool_name": tool_name,
-            "tool_use_id": "start-call",
-            "transcript_path": str(tmp_path / "transcript.jsonl"),
-            "cwd": str(tmp_path),
-            "tool_input": start_input,
-        }
-        assert _hook(pretooluse.main, payload) == 2
-        _acquire_delegation(payload)
-        assert _hook(pretooluse.main, payload) == 0
-        assert _hook(posttooluse.main, {**payload, "tool_response": {"structuredContent": started}}) == 0
+    async with manager.AgentsServerManager(writer) as current:
+        backend = _RegisteredBackend(current.sessions, "claude")
+        agents_server_support.install_backend(current, "claude", backend)
+        monkeypatch.setattr(mcp_tools, "_MANAGER", current)
+        writer.activate()
+        writer.path.unlink(missing_ok=True)
+        original_replace = _refuse_replace_into(monkeypatch, writer.path)
+        tool_name = "mcp__plugin_agent-toolkit_agents_server__start"
+        start_input = {"mode": "delegate", "prompt": "処理", "cwd": str(tmp_path), "model_type": "claude:test/medium"}
+        try:
+            started = await mcp_tools.start(
+                mode="delegate", prompt=start_input["prompt"], cwd=str(tmp_path), model_type="claude:test/medium"
+            )
+            assert started["persistence_warnings"] and not writer.path.exists()
+            child = started["session_id"]
+            payload = {
+                "session_id": "observed-root",
+                "tool_name": tool_name,
+                "tool_use_id": "start-call",
+                "transcript_path": str(tmp_path / "transcript.jsonl"),
+                "cwd": str(tmp_path),
+                "tool_input": start_input,
+            }
+            assert _hook(pretooluse.main, payload) == 2
+            _acquire_delegation(payload)
+            assert _hook(pretooluse.main, payload) == 0
+            assert _hook(posttooluse.main, {**payload, "tool_response": {"structuredContent": started}}) == 0
 
-        recorded = session_state.read_state("observed-root")
-        assert agents_server_observations.session_cwd(recorded, child) == str(tmp_path)
-        record = agents_server_observations.session_record(recorded, child)
-        assert record is not None and record["owner_agent_id"] == "main" and record["pending_observation"] is True
-        assert agents_server_observations.pending_session_ids(recorded, "main") == [child]
-        assert (shared_layout.wait_targets_directory("observed-root", "root.json", tmp_path) / f"{child}.json").is_file()
+            recorded = session_state.read_state("observed-root")
+            assert agents_server_observations.session_cwd(recorded, child) == str(tmp_path)
+            record = agents_server_observations.session_record(recorded, child)
+            assert record is not None and record["owner_agent_id"] == "main" and record["pending_observation"] is True
+            assert agents_server_observations.pending_session_ids(recorded, "main") == [child]
+            assert (shared_layout.wait_targets_directory("observed-root", "root.json", tmp_path) / f"{child}.json").is_file()
 
-        send_input = {"session_id": child, "prompt": "続ける"}
-        send_payload = {
-            **payload,
-            "tool_name": "mcp__plugin_agent-toolkit_agents_server__send_message",
-            "tool_use_id": "send-call",
-            "tool_input": send_input,
-        }
-        assert _hook(pretooluse.main, send_payload) == 0
-        sent = await mcp_tools.send_message(child, "続ける")
-        assert sent["delivery"] == "steered" and backend.send_calls == 1
-        assert _hook(posttooluse.main, {**send_payload, "tool_response": {"structuredContent": sent}}) == 0
-        after_send = agents_server_observations.session_record(session_state.read_state("observed-root"), child)
-        assert after_send is not None and after_send["status"] == "running"
-        assert len(backend.start_calls) == 1
-    finally:
-        monkeypatch.setattr(atomic_file.os, "replace", original_replace)
-        await current.close()
+            send_input = {"session_id": child, "prompt": "続ける"}
+            send_payload = {
+                **payload,
+                "tool_name": "mcp__plugin_agent-toolkit_agents_server__send_message",
+                "tool_use_id": "send-call",
+                "tool_input": send_input,
+            }
+            assert _hook(pretooluse.main, send_payload) == 0
+            sent = await mcp_tools.send_message(child, "続ける")
+            assert sent["delivery"] == "steered" and backend.send_calls == 1
+            assert _hook(posttooluse.main, {**send_payload, "tool_response": {"structuredContent": sent}}) == 0
+            after_send = agents_server_observations.session_record(session_state.read_state("observed-root"), child)
+            assert after_send is not None and after_send["status"] == "running"
+            assert len(backend.start_calls) == 1
+        finally:
+            monkeypatch.setattr(atomic_file.os, "replace", original_replace)
 
 
 def test_kill_observation_attempt_clears_only_the_requested_session(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -248,12 +274,11 @@ async def test_public_handoff_start_registers_successor_for_wait_and_followup(
         state_root=tmp_path,
         aggregate_seconds=0,
     )
-    current = manager.AgentsServerManager(writer)
-    backend = _RegisteredBackend(current.sessions, "claude")
-    agents_server_support.install_backend(current, "claude", backend)
-    monkeypatch.setattr(mcp_tools, "_MANAGER", current)
-    writer.activate()
-    try:
+    async with manager.AgentsServerManager(writer) as current:
+        backend = _RegisteredBackend(current.sessions, "claude")
+        agents_server_support.install_backend(current, "claude", backend)
+        monkeypatch.setattr(mcp_tools, "_MANAGER", current)
+        writer.activate()
         started = await mcp_tools.start(
             str(tmp_path),
             mode="delegate",
@@ -299,8 +324,6 @@ async def test_public_handoff_start_registers_successor_for_wait_and_followup(
         assert _hook(pretooluse.main, send) == 0
         assert (await mcp_tools.send_message(successor, "残工程を続ける"))["delivery"] == "steered"
         assert backend.send_calls == 1
-    finally:
-        await current.close()
 
 
 @pytest.mark.parametrize("handoff", [False, True])

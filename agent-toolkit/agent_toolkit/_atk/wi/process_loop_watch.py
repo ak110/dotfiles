@@ -15,6 +15,7 @@ from collections.abc import Callable, Generator
 
 import watchdog.events
 import watchdog.observers
+from watchdog.observers.api import BaseObserver
 
 from agent_toolkit._atk import git_sync as _atk_git_sync
 from agent_toolkit._atk.wi import process_loop_control as _pl_control
@@ -344,6 +345,20 @@ class _StateChangeHandler(watchdog.events.FileSystemEventHandler):
             self._change_event.set()
 
 
+@contextlib.contextmanager
+def _watch_observer() -> Generator[BaseObserver]:
+    """開始準備から停止・joinまでを所有し、停止失敗でもjoinへ進む。"""
+    observer = watchdog.observers.Observer()
+    try:
+        yield observer
+    finally:
+        try:
+            observer.stop()
+        finally:
+            if observer.ident is not None:
+                observer.join()
+
+
 def wait_for_changes(
     private_notes: pathlib.Path,
     target_repo_id: str | None,
@@ -366,15 +381,14 @@ def wait_for_changes(
     """
     del target_repo_id  # 現状の監視粒度ではrepo単位フィルタは行わない
     change_event = threading.Event()
-    observer = watchdog.observers.Observer()
-    handler = _ChangeHandler(change_event)
-    _ensure_inbox_dirs(private_notes)
-    observer.schedule(handler, str(private_notes), recursive=True)
-    state_handler = _StateChangeHandler(change_event)
-    for directory in dict.fromkeys(state_directories):
-        if directory.is_dir():
-            observer.schedule(state_handler, str(directory), recursive=False)
-    try:
+    with _watch_observer() as observer:
+        handler = _ChangeHandler(change_event)
+        _ensure_inbox_dirs(private_notes)
+        observer.schedule(handler, str(private_notes), recursive=True)
+        state_handler = _StateChangeHandler(change_event)
+        for directory in dict.fromkeys(state_directories):
+            if directory.is_dir():
+                observer.schedule(state_handler, str(directory), recursive=False)
         observer.start()
         if _wait_event(change_event, _POLL_INTERVAL_SEC if timeout is None else max(0.0, timeout), interrupt):
             if change_event.is_set():
@@ -394,10 +408,6 @@ def wait_for_changes(
                 next_action=f"対応不要（待機は継続した）。繰り返す場合は`git -C {private_notes} status`で同期状態を確認する",
             )
         return False
-    finally:
-        observer.stop()
-        if observer.ident is not None:
-            observer.join()
 
 
 def _wait_event(event: threading.Event, timeout: float, interrupt: Callable[[], bool] | None) -> bool:

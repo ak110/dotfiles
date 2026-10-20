@@ -42,6 +42,25 @@ def install_backend(manager: server_manager.AgentsServerManager, engine: str, ba
     manager._backends[engine] = typing.cast(backends.Backend, backend)  # pylint: disable=protected-access
 
 
+@contextlib.asynccontextmanager
+async def claude_manager(
+    monkeypatch: pytest.MonkeyPatch, client: Any
+) -> AsyncGenerator[tuple[server_manager.AgentsServerManager, claude_backend.ClaudeServerManager]]:
+    """指定clientを使うClaude backendとManagerを生成直後から所有する。"""
+    async with (
+        server_manager.AgentsServerManager() as manager,
+        claude_backend.ClaudeServerManager(
+            manager.sessions,
+            manager._condition,
+            client_factory=lambda _options: client,
+            expire_session=manager._expire_session,
+        ) as backend,
+    ):
+        install_backend(manager, "claude", backend)
+        monkeypatch.setattr(claude_backend, "_build_options", lambda *_args, **_kwargs: SimpleNamespace())
+        yield manager, backend
+
+
 _FORBIDDEN_PUBLIC_KEYS = {"turn_id", "result_available"}
 
 
@@ -1202,15 +1221,7 @@ async def _blocking_resume_claude_manager(
     monkeypatch: pytest.MonkeyPatch, client: BlockingResumeClaudeClient
 ) -> AsyncGenerator[tuple[server_manager.AgentsServerManager, claude_backend.ClaudeServerManager]]:
     """保留したClaude queryを持つ再開テストの共通入力を作成する。"""
-    async with server_manager.AgentsServerManager() as manager:
-        backend = claude_backend.ClaudeServerManager(
-            manager.sessions,
-            manager._condition,
-            client_factory=lambda _options: client,
-            expire_session=manager._expire_session,
-        )
-        install_backend(manager, "claude", backend)
-        monkeypatch.setattr(claude_backend, "_build_options", lambda *_args, **_kwargs: SimpleNamespace())
+    async with claude_manager(monkeypatch, client) as (manager, backend):
         yield manager, backend
 
 

@@ -6,6 +6,7 @@ import argparse
 import ast
 import json
 import pathlib
+import shlex
 from collections.abc import Iterator
 
 import pytest
@@ -485,6 +486,39 @@ def test_lane_integrate_help_has_no_resource_side_effects(
     assert ended.value.code == 0
     assert not capsys.readouterr().err
     assert set(tmp_path.rglob("*")) == before
+
+
+def test_lane_integrate_help_passes_complete_writer_set_initially_and_on_resume(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """初回・再開の案内が所有sessionと現在の書込担当全件を区別し、複数IDを実parserへ渡せる。"""
+    with pytest.raises(SystemExit, match="0"):
+        atk.main(["lane", "integrate", "--help"])
+    output = capsys.readouterr()
+    assert not output.err
+    text = "".join(output.out.split())
+    assert "初回と再開の両方" in text and "実sessionID全要素" in text
+    assert "追加・交代後" in text and "更新後の全要素" in text
+    examples = list(cli_examples.examples(_atk_help.HELP["atk lane integrate"]["epilog"]))
+    assert len(examples) == 2
+    for _line, example in examples:
+        parsed = atk._build_parser().parse_args(shlex.split(example)[1:])  # pylint: disable=protected-access
+        assert parsed.session_id == "lane-owner"
+        assert parsed.writer_session == ["agreed-writer-1", "agreed-writer-2"]
+
+
+def test_run_script_help_explains_plan_rewrite_record_discovery_and_order(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """共通ヘルプから未指定記録の取得と書換え順の複数表指定へ到達できる。"""
+    with pytest.raises(SystemExit, match="0"):
+        atk.main(["run-script", "--help"])
+    output = capsys.readouterr()
+    assert not output.err
+    text = "".join(output.out.split())
+    assert "plan-rewriteは作業中・保存済み計画と引き継ぎ記録から未指定の対象記録を検出" in text
+    assert "書込前に全件を示して拒否" in text and "atkplanscheckout" in text
+    assert "--rewrite-mapを書換え順に反復指定" in text and "--previous-head" in text
 
 
 def test_bulk_transition_commands_accept_the_same_filter_options() -> None:

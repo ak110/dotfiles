@@ -935,6 +935,13 @@ agents_serverは全説明とinstructionsを初期送信の4,096文字以内に�
 2026年10月20日、Claude Code 2.1.304での観測がAWI `20261020-131324-001.md`へ記録された。開始時と別のディレクトリで再開すると、SessionStart入力の`transcript_path`が再開時のディレクトリに対応する実在しないパスを示した。同じ会話のPreToolUse入力63件は、開始時のworktree側にある実在する記録を示した。
 今回の文書追随では同WIを読み、元ホストでの再現は行っていない。再検証では専用会話を開始時と別のディレクトリで再開し、SessionStartと同じ会話のPreToolUseの`transcript_path`およびファイルの実在を比べる。通知は同じsession IDの完全一致で1件へ解決し、0件では新規会話の未作成を許容して入力値を保ち、複数件と探索失敗ではID指定による取得を案内する。
 
+## docs/development/design-agents-runtime.md：MCP接続失敗の再接続：2026年10月20日
+
+2026年10月20日、LinuxのPython 3.15でMCP再接続の契約を検証した。
+対象は`agent-toolkit/agent_toolkit/_agents_server/claude_connections_test.py`の`test_mcp_reconnect_is_once_per_new_and_resumed_process`である。managerの公開start/showとSDKクライアントのテストダブルを組み合わせ、接続失敗のキャッシュによる省略と`CONNECT_TIMEOUT`、再接続の回復成功と失敗の4条件で、新規起動と再開の各プロセスの再接続が1回であることを確認した。
+未回復のサーバー名と初期エラーはstart/showのwarningsと`claude_mcp_recovery_failed`のロガー出力へ残り、回復成功時はwarningsが消える。同じ4条件で再接続をno-opへ差し替えた対照は4件とも失敗し、正常な処理では4件とも成功した。
+再検証は同テストと`test_slow_mcp_recovery_keeps_start_budget_and_updates_show`をpytestで実行し、新規・再開の呼出回数、未回復warnings、回復後のshowとログを比較する。ログの保存先は`agent-toolkit/agent_toolkit/_agents_server/logging_config.py`と`mcp_tools_test.py`の起動・終了診断の試験で確かめる。この観測はテストダブルによる契約検証であり、実Claude CLIと外部MCPサーバーの接続障害を再現したものではない。
+
 ## agent-toolkit/share/rules-common.codex.md：Codex固有の入出力：2026年10月19日
 
 2026年10月19日、Codex CLI 0.163.0での観測がAWI `20261020-131339-001.md`へ記録された。今回の文書追随では同WI本文と既存監査記録を比較し、実機での再現は行っていない。

@@ -264,7 +264,8 @@ def test_crawl_single_pattern(tmp_path: Path):
         base_url=base,
         link_patterns=[r"/img/.*\.jpg"],
     )
-    download_custom_sites([site], _client(handler))
+    with _client(handler) as client:
+        download_custom_sites([site], client)
 
     assert (dl / "img" / "a.jpg").read_bytes() == b"JPEGDATA"
     assert not (dl / "b.jpg").exists()
@@ -290,7 +291,8 @@ def test_crawl_two_patterns(tmp_path: Path):
         base_url=base,
         link_patterns=[r"/page/.*\.html", r"/img/.*\.jpg"],
     )
-    download_custom_sites([site], _client(handler))
+    with _client(handler) as client:
+        download_custom_sites([site], client)
 
     assert (dl / "img" / "x.jpg").read_bytes() == b"IMG"
 
@@ -313,7 +315,8 @@ def test_crawl_exclude_pattern(tmp_path: Path):
         link_patterns=[r"\.(jpg|avi)$"],
         exclude_patterns=[r"\.avi$"],
     )
-    download_custom_sites([site], _client(handler))
+    with _client(handler) as client:
+        download_custom_sites([site], client)
 
     assert (dl / "a.jpg").exists()
     assert not (dl / "skip.avi").exists()
@@ -336,7 +339,8 @@ def test_crawl_flat_directory(tmp_path: Path):
         link_patterns=[r"\.jpg$"],
         flat_directory=True,
     )
-    download_custom_sites([site], _client(handler))
+    with _client(handler) as client:
+        download_custom_sites([site], client)
 
     assert (dl / "sub_deep_a.jpg").exists()
 
@@ -362,7 +366,8 @@ def test_crawl_skips_existing_file(tmp_path: Path):
         base_url=base,
         link_patterns=[r"\.jpg$"],
     )
-    download_custom_sites([site], _client(handler))
+    with _client(handler) as client:
+        download_custom_sites([site], client)
 
     assert existing.read_bytes() == b"OLD"
     assert "/a.jpg" not in requested

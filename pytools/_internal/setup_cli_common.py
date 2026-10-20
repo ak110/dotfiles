@@ -62,42 +62,43 @@ def run_official_installer(
     失敗の扱い（例外にするか警告に留めるか）は呼び出し側で決める。
     """
     windows = sys.platform == "win32"
-    owns_client = client is None
-    active_client = client
     temp_path: Path | None = None
-    try:
-        if active_client is None:
-            # 明示CAはHTTPXの環境変数処理へ渡し、それ以外のWindowsではOSの信頼済みCAを使う。
-            active_client = httpx.Client(
-                timeout=http_timeout, follow_redirects=True, verify=installer_ssl_verify(windows=windows)
-            )
-        response = active_client.get(windows_url if windows else posix_url)
-        response.raise_for_status()
-        with tempfile.NamedTemporaryFile(mode="wb", suffix=".ps1" if windows else ".sh", delete=False) as temp:
-            temp.write(response.content)
-            temp_path = Path(temp.name)
-        if windows:
-            powershell = find_powershell()
-            command = [powershell, "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", str(temp_path)]
-            # Windows PowerShell 5.1の出力はロケールのコードページで受け取る。
-            output_encoding = locale.getpreferredencoding(False) if Path(powershell).stem.lower() == "powershell" else "utf-8"
-        else:
-            command = ["bash", str(temp_path)]
-            output_encoding = "utf-8"
-        return common.run_subprocess(
-            command, timeout=timeout, tag=tag, env_overrides=env_overrides, encoding=output_encoding
-        ), ""
-    except (httpx.HTTPError, OSError) as error:
-        reason = f"公式インストーラーの取得に失敗: {error}"
-        if windows and "CERTIFICATE_VERIFY_FAILED" in str(error):
-            reason += "。Windowsの信頼済みルート証明書またはSSL_CERT_FILE/SSL_CERT_DIRを確認してください"
-        return None, reason
-    finally:
-        if temp_path is not None:
-            with contextlib.suppress(OSError):
-                temp_path.unlink()
-        if owns_client and active_client is not None:
-            active_client.close()
+    with contextlib.ExitStack() as resources:
+        try:
+            if client is None:
+                # 明示CAはHTTPXの環境変数処理へ渡し、それ以外のWindowsではOSの信頼済みCAを使う。
+                active_client = resources.enter_context(
+                    httpx.Client(timeout=http_timeout, follow_redirects=True, verify=installer_ssl_verify(windows=windows))
+                )
+            else:
+                active_client = client
+            response = active_client.get(windows_url if windows else posix_url)
+            response.raise_for_status()
+            with tempfile.NamedTemporaryFile(mode="wb", suffix=".ps1" if windows else ".sh", delete=False) as temp:
+                temp_path = Path(temp.name)
+                temp.write(response.content)
+            if windows:
+                powershell = find_powershell()
+                command = [powershell, "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", str(temp_path)]
+                # Windows PowerShell 5.1の出力はロケールのコードページで受け取る。
+                output_encoding = (
+                    locale.getpreferredencoding(False) if Path(powershell).stem.lower() == "powershell" else "utf-8"
+                )
+            else:
+                command = ["bash", str(temp_path)]
+                output_encoding = "utf-8"
+            return common.run_subprocess(
+                command, timeout=timeout, tag=tag, env_overrides=env_overrides, encoding=output_encoding
+            ), ""
+        except (httpx.HTTPError, OSError) as error:
+            reason = f"公式インストーラーの取得に失敗: {error}"
+            if windows and "CERTIFICATE_VERIFY_FAILED" in str(error):
+                reason += "。Windowsの信頼済みルート証明書またはSSL_CERT_FILE/SSL_CERT_DIRを確認してください"
+            return None, reason
+        finally:
+            if temp_path is not None:
+                with contextlib.suppress(OSError):
+                    temp_path.unlink()
 
 
 def prepend_path(path: Path) -> None:

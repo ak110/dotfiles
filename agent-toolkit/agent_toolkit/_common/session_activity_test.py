@@ -1,20 +1,22 @@
 """活動の生成と開始判定へ渡す読取結果を、隔離した会話と実PIDで検証する。"""
 
 import concurrent.futures
+import contextlib
 import dataclasses
+import inspect
 import json
 import os
 import pathlib
 import subprocess
 import sys
 import threading
-from collections.abc import Iterator
+from collections.abc import Generator, Iterator
 from typing import Any
 
 import pytest
 
 from agent_toolkit import atk
-from agent_toolkit._common import session_activity, session_registry, state_paths
+from agent_toolkit._common import process_tree, session_activity, session_registry, state_paths
 from agent_toolkit._testing.git_repository import init_repository, run_git
 
 _TARGET = "github.com/example/target"
@@ -325,18 +327,56 @@ def test_open_codex_record_without_hook(tmp_path: pathlib.Path) -> None:
 @pytest.fixture(name="daemons")
 def _daemons() -> Iterator[list[session_activity.HostProcess]]:
     """会話を開かずに生存する2つの実プロセスを、ホストと同じ実行系名で渡す。"""
-    processes = [subprocess.Popen([sys.executable, "-c", "import time; time.sleep(120)"]) for _ in range(2)]  # pylint: disable=consider-using-with
-    try:
+    with contextlib.ExitStack() as stack:
+        processes = [
+            stack.enter_context(process_tree.process_scope([sys.executable, "-c", "import time; time.sleep(120)"]))
+            for _ in range(2)
+        ]
         hosts = []
         for process in processes:
             identity = session_registry.ProcessIdentity.of(process.pid)
             assert identity is not None
             hosts.append(session_activity.HostProcess("codex", identity))
         yield hosts
-    finally:
-        for process in processes:
-            process.kill()
-            process.wait(timeout=30)
+
+
+@pytest.mark.parametrize("stage", ["acquire-second", "body", "release-one"])
+def test_daemons_reclaims_every_acquired_process_on_failure(monkeypatch: pytest.MonkeyPatch, stage: str) -> None:
+    """2件目の獲得・利用・前段の解放で失敗しても、獲得済み全件の終了を確認する。"""
+    acquired: list[subprocess.Popen[Any]] = []
+    real_scope = process_tree.process_scope
+    real_stop = process_tree.stop_process_tree
+
+    @contextlib.contextmanager
+    def scope(*args: Any, **kwargs: Any) -> Generator[subprocess.Popen[Any]]:
+        if stage == "acquire-second" and acquired:
+            raise RuntimeError("2件目の生成失敗")
+        with real_scope(*args, **kwargs) as process:
+            acquired.append(process)
+            yield process
+
+    def stop(process: subprocess.Popen[Any]) -> list[str]:
+        result = real_stop(process)
+        if stage == "release-one" and process is acquired[-1]:
+            raise RuntimeError("前段の解放失敗")
+        return result
+
+    monkeypatch.setattr(process_tree, "process_scope", scope)
+    monkeypatch.setattr(process_tree, "stop_process_tree", stop)
+    lifetime = inspect.unwrap(_daemons)()
+    if stage == "acquire-second":
+        with pytest.raises(RuntimeError, match="2件目の生成失敗"):
+            next(lifetime)
+    else:
+        next(lifetime)
+        if stage == "body":
+            with pytest.raises(AssertionError, match="利用中の失敗"):
+                lifetime.throw(AssertionError("利用中の失敗"))
+        else:
+            with pytest.raises(RuntimeError, match="前段の解放失敗"):
+                lifetime.close()
+    assert len(acquired) == (1 if stage == "acquire-second" else 2)
+    assert all(process.poll() is not None for process in acquired)
 
 
 def _begin(*arguments: str) -> None:

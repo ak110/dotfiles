@@ -117,49 +117,53 @@ def _run_installer(client: httpx.Client | None) -> subprocess.CompletedProcess[s
     """
     windows = sys.platform == "win32"
     executable = setup_cli_common.find_powershell() if windows else "sh"
-    owns_client = client is None
-    active_client = client or httpx.Client(
-        timeout=_HTTP_TIMEOUT,
-        follow_redirects=True,
-        verify=setup_cli_common.installer_ssl_verify(windows=windows),
-    )
     suffix = ".ps1" if sys.platform == "win32" else ".sh"
     url = "https://chatgpt.com/codex/install.ps1" if sys.platform == "win32" else "https://chatgpt.com/codex/install.sh"
     temp_path: Path | None = None
-    try:
-        response = _get_installer(active_client, url)
-        with tempfile.NamedTemporaryFile(mode="wb", suffix=suffix, delete=False) as temp:
-            temp_path = Path(temp.name)
-            temp.write(response.content)
-        command = (
-            [executable, "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", str(temp_path)]
-            if sys.platform == "win32"
-            else [executable, str(temp_path)]
-        )
-        # 公式マニュアルはスクリプト化した導入と更新に`CODEX_NON_INTERACTIVE=1`を使うと定める。
-        env_overrides = {"CODEX_NON_INTERACTIVE": "1"}
-        if sys.platform != "win32":
-            env_overrides["PATH"] = _installer_path()
-        return common.run_subprocess(
-            command,
-            timeout=_COMMAND_TIMEOUT,
-            tag="codex",
-            env_overrides=env_overrides,
-        )
-    except (httpx.HTTPError, OSError) as error:
-        logger.warning(
-            log_format.format_status(
-                "codex",
-                f"公式インストーラーの取得に失敗: {error}。`update-dotfiles`を再実行する",
-            ),
-        )
-        return None
-    finally:
-        if temp_path is not None:
-            with contextlib.suppress(OSError):
-                temp_path.unlink()
-        if owns_client:
-            active_client.close()
+    with contextlib.ExitStack() as resources:
+        try:
+            active_client = (
+                client
+                if client is not None
+                else resources.enter_context(
+                    httpx.Client(
+                        timeout=_HTTP_TIMEOUT,
+                        follow_redirects=True,
+                        verify=setup_cli_common.installer_ssl_verify(windows=windows),
+                    )
+                )
+            )
+            response = _get_installer(active_client, url)
+            with tempfile.NamedTemporaryFile(mode="wb", suffix=suffix, delete=False) as temp:
+                temp_path = Path(temp.name)
+                temp.write(response.content)
+            command = (
+                [executable, "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", str(temp_path)]
+                if sys.platform == "win32"
+                else [executable, str(temp_path)]
+            )
+            # 公式マニュアルはスクリプト化した導入と更新に`CODEX_NON_INTERACTIVE=1`を使うと定める。
+            env_overrides = {"CODEX_NON_INTERACTIVE": "1"}
+            if sys.platform != "win32":
+                env_overrides["PATH"] = _installer_path()
+            return common.run_subprocess(
+                command,
+                timeout=_COMMAND_TIMEOUT,
+                tag="codex",
+                env_overrides=env_overrides,
+            )
+        except (httpx.HTTPError, OSError) as error:
+            logger.warning(
+                log_format.format_status(
+                    "codex",
+                    f"公式インストーラーの取得に失敗: {error}。`update-dotfiles`を再実行する",
+                ),
+            )
+            return None
+        finally:
+            if temp_path is not None:
+                with contextlib.suppress(OSError):
+                    temp_path.unlink()
 
 
 def _installer_path() -> str:

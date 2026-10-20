@@ -72,6 +72,58 @@ from agent_toolkit._testing.isolation import CONFIG_DIRECTORY_ENVIRONMENT_NAMES,
 from agent_toolkit._testing.managed_temp_support import setattr_in_managed_temp_modules
 
 
+@contextlib.asynccontextmanager
+async def _owned_async_child(*args: Any, **kwargs: Any) -> AsyncGenerator[asyncio.subprocess.Process]:
+    """子の獲得直後からpipeと終了を所有し、正常終了待ちの失敗でもkillして回収する。"""
+    process = await asyncio.create_subprocess_exec(*args, **kwargs)
+    try:
+        yield process
+    finally:
+        try:
+            if process.stdin is not None:
+                process.stdin.close()
+            await asyncio.wait_for(process.communicate(), timeout=5)
+        except BaseException:
+            if process.returncode is None:
+                process.kill()
+            await asyncio.wait_for(process.communicate(), timeout=5)
+            raise
+
+
+@pytest.mark.parametrize("failure", ["body", "graceful-close"])
+@pytest.mark.asyncio
+async def test_owned_async_child_reclaims_process_on_failure(monkeypatch: pytest.MonkeyPatch, failure: str) -> None:
+    """利用失敗と正常終了待ちの失敗で、所有済みasyncio子とpipeを残さない。"""
+    error_type = RuntimeError if failure == "body" else TimeoutError
+    script = "import sys; sys.stdin.read()" if failure == "body" else "import time; time.sleep(120)"
+    acquired: list[asyncio.subprocess.Process] = []
+    with pytest.raises(error_type, match="検証中の失敗"):
+        async with _owned_async_child(
+            sys.executable,
+            "-c",
+            script,
+            stdin=asyncio.subprocess.PIPE,
+            stdout=asyncio.subprocess.PIPE,
+        ) as process:
+            acquired.append(process)
+            if failure == "body":
+                raise RuntimeError("検証中の失敗")
+            communicate = process.communicate
+            attempts = 0
+
+            async def fail_once(*args: Any, **kwargs: Any) -> tuple[bytes, bytes]:
+                nonlocal attempts
+                attempts += 1
+                if attempts == 1:
+                    raise TimeoutError("検証中の失敗")
+                return await communicate(*args, **kwargs)
+
+            monkeypatch.setattr(process, "communicate", fail_once)
+    assert len(acquired) == 1
+    assert acquired[0].returncode is not None
+    assert acquired[0].stdin is not None and acquired[0].stdin.is_closing()
+
+
 class _ThreadStartClient:
     """thread/startの入力を保持して固定threadを返すスタブ。"""
 
@@ -785,7 +837,7 @@ async def test_inner_mcp_uses_actual_app_server_parent_environment(
         child_environment = {name: client.parent_environment[name] for name in server["env_vars"]}
         child_environment.update(server["env"])
         keys = [*supplied, "MISSING_CUSTOM_SETTING"]
-        process = await asyncio.create_subprocess_exec(
+        async with _owned_async_child(
             sys.executable,
             "-c",
             "import json, os, sys; print(json.dumps({key: os.environ.get(key) for key in sys.argv[1:]}))",
@@ -793,8 +845,7 @@ async def test_inner_mcp_uses_actual_app_server_parent_environment(
             env=child_environment,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
-        )
-        try:
+        ) as process:
             stdout, stderr = await asyncio.wait_for(process.communicate(), 5)
             assert process.returncode == 0 and not stderr
             received = json.loads(stdout)
@@ -806,11 +857,6 @@ async def test_inner_mcp_uses_actual_app_server_parent_environment(
             }
             encoded = json.dumps(server)
             assert all(value not in encoded for value in supplied.values() if value and len(value) > 1)
-        finally:
-            if process.returncode is None:
-                process.kill()
-            await process.wait()
-            await manager.close()
 
 
 @pytest.mark.parametrize("cancelled", [False, True])
@@ -1233,7 +1279,6 @@ async def test_legacy_plugin_root_real_mcp_lifecycle(
     owned: dict[int, psutil.Process] = {}
     observation: dict[str, Any] = {}
     area: pathlib.Path | None = None
-    parallel: asyncio.subprocess.Process | None = None
     parallel_script = tmp_path / "parallel" / "agent_toolkit" / "agents_server_mcp.py"
     parallel_script.parent.mkdir(parents=True)
     parallel_script.write_text('import sys\nprint("ready", flush=True)\nsys.stdin.read()\n', encoding="utf-8")
@@ -1284,130 +1329,129 @@ runpy.run_path(sys.argv[0], run_name="__main__")
             check=False,
         )
 
-    try:
-        # この試験が所有する別主体で、名前空間の帰属を確定できない並行MCPを再現する。
-        parallel = await asyncio.create_subprocess_exec(
-            sys.executable,
-            str(parallel_script),
-            stdin=asyncio.subprocess.PIPE,
-            stdout=asyncio.subprocess.PIPE,
-            env=environment,
-        )
-        assert parallel.stdout is not None
-        assert (await asyncio.wait_for(parallel.stdout.readline(), timeout=5)).rstrip() == b"ready"
-        # Windowsで約40秒を要したcold導入と、実MCP操作の予算を確保する。
-        with log.open("w", encoding="utf-8") as errors, anyio.fail_after(90):
-            async with contextlib.AsyncExitStack() as stack:
-                streams = await stack.enter_async_context(
-                    stdio_client(StdioServerParameters(command=uv, args=command[1:], env=environment), errlog=errors)
-                )
-                client = await stack.enter_async_context(ClientSession(*streams))
-                initialized = await client.initialize()
-                assert initialized.server_info.name == "agents_server"
-                tools = {tool.name for tool in (await client.list_tools()).tools}
-                assert "start" in tools
-                entrypoint = source / "agent_toolkit/agents_server_mcp.py"
-                servers = []
-                ancestor_pids: set[int] = set()
-                for process in psutil.Process().children(recursive=True):
-                    arguments = process.cmdline()
-                    if len(arguments) > 1 and pathlib.Path(arguments[1]) == entrypoint:
-                        servers.append(process)
-                        ancestors = process.parents()
-                        ancestor_pids.update(parent.pid for parent in ancestors)
-                        parent_index = next(i for i, parent in enumerate(ancestors) if parent.pid == os.getpid())
-                        for member in (process, *ancestors[:parent_index]):
-                            owned[member.pid] = member
-                process_diagnostics = [
-                    {
-                        "pid": process.pid,
-                        "ppid": process.ppid(),
-                        "exe": process.exe(),
-                        "cmdline": process.cmdline(),
-                        "created_at": process.create_time(),
-                    }
-                    for process in owned.values()
-                ]
-                print("旧形式MCP起動プロセス: " + json.dumps(process_diagnostics, ensure_ascii=False))
-                # venv redirector等の祖先を所有したまま、単一系列の末端を実MCPの観測主体にする。
-                # 複数系列から同じscriptが起動した場合は末端が複数となり失敗する。
-                runtime_processes = [process for process in servers if process.pid not in ancestor_pids]
-                assert len(runtime_processes) == 1, process_diagnostics
-                server = runtime_processes[0]
-                cache_base = "LOCALAPPDATA" if sys.platform == "win32" else "XDG_CACHE_HOME"
-                temp_root = pathlib.Path(environment[cache_base]) / "agent-toolkit/managed-temp"
-                areas = list(temp_root.glob("agents-server-plugin-root-*"))
-                assert len(areas) == 1
-                area = areas[0]
-                assert (area / version / "agent_toolkit/agents_server_mcp.py").is_file()
-                assert not (area / ".agent-toolkit-plugin-root.json").exists()
-                leases = tmp_path / "runtime-state/agent-toolkit/plugin-root-leases"
-                assert not list(leases.glob("*.json"))
-                arguments = server.cmdline()
-                assert pathlib.Path(arguments[1]).parts[-2:] == ("agent_toolkit", "agents_server_mcp.py")
-                assert not pathlib.Path(arguments[1]).is_relative_to(area)
-                assert server.username() == psutil.Process().username()
-                try:
-                    opened = [entry._asdict() for entry in server.open_files()]
-                    open_files_error = None
-                except psutil.Error as error:
-                    opened = []
-                    open_files_error = type(error).__name__
-                # 実MCPを1台に限定したOS観測でも共通判定へ届くことを確認する。
-                # インベントリーの対象だけを限定し、PID/argv/username/open_filesは実OSから得る。
-                with monkeypatch.context() as probe:
-                    probe.setattr(psutil, "process_iter", lambda: [server])
-                    probe.setattr(state_paths, "state_dir", lambda: leases.parent)
-                    with plugin_roots.plugin_root_leases.plugin_root_lock(area):
-                        assert plugin_roots.plugin_root_leases.plugin_root_in_use(area)
-                protected = cleanup(area)
-                assert protected.returncode == 2, protected.stderr
-                assert area.exists()
-                assert "使用中または使用状態を確認できない配布物を保持した" in protected.stderr
-                assert {tool.name for tool in (await client.list_tools()).tools} == tools
-                observation = {
-                    "fixture_origin": "90cad03:plugin_root.pyの版別root正常系保持生成",
-                    "runtime": "現行MCPと現行launcher。旧版全体の再実行には当たらない",
-                    "platform": sys.platform,
-                    "launch_processes": process_diagnostics,
-                    "pid": server.pid,
-                    "created_at": server.create_time(),
-                    "cmdline": arguments,
-                    "open_files": opened,
-                    "open_files_error": open_files_error,
-                    "single_real_process_probe": True,
-                    "source": str(source),
-                    "area": str(area),
-                    "live_cleanup": {"exit_code": protected.returncode, "stdout": protected.stdout, "stderr": protected.stderr},
-                }
-        _wait_mcp_processes(owned, timeout=5)
-        assert area is not None
-        parallel_process = psutil.Process(parallel.pid)
-        unknown_protected = cleanup(area, {parallel.pid: parallel_process})
-        assert unknown_protected.returncode == 2, unknown_protected.stderr
-        assert f"pid={parallel.pid}" in unknown_protected.stderr
-        assert area.exists() and parallel.returncode is None
-        cleaned = cleanup(area)
-        assert cleaned.returncode == 0, cleaned.stderr
-        assert not area.exists()
-        assert parallel.returncode is None
-        observation.update(
-            terminated_processes=sorted(owned),
-            stopped_cleanup={"exit_code": cleaned.returncode, "stdout": cleaned.stdout, "stderr": cleaned.stderr},
-            parallel_process={"pid": parallel.pid, "created_at": parallel_process.create_time(), "alive": True},
-            unknown_process_cleanup={"exit_code": unknown_protected.returncode, "stderr": unknown_protected.stderr},
-            root_removed=True,
-        )
-        print("旧形式MCP観測: " + json.dumps(observation, ensure_ascii=False))
-    finally:
+    async with _owned_async_child(
+        sys.executable,
+        str(parallel_script),
+        stdin=asyncio.subprocess.PIPE,
+        stdout=asyncio.subprocess.PIPE,
+        env=environment,
+    ) as parallel:
         try:
+            assert parallel.stdout is not None
+            assert (await asyncio.wait_for(parallel.stdout.readline(), timeout=5)).rstrip() == b"ready"
+            # Windowsで約40秒を要したcold導入と、実MCP操作の予算を確保する。
+            with log.open("w", encoding="utf-8") as errors, anyio.fail_after(90):
+                async with contextlib.AsyncExitStack() as stack:
+                    streams = await stack.enter_async_context(
+                        stdio_client(StdioServerParameters(command=uv, args=command[1:], env=environment), errlog=errors)
+                    )
+                    client = await stack.enter_async_context(ClientSession(*streams))
+                    initialized = await client.initialize()
+                    assert initialized.server_info.name == "agents_server"
+                    tools = {tool.name for tool in (await client.list_tools()).tools}
+                    assert "start" in tools
+                    entrypoint = source / "agent_toolkit/agents_server_mcp.py"
+                    servers = []
+                    ancestor_pids: set[int] = set()
+                    for process in psutil.Process().children(recursive=True):
+                        arguments = process.cmdline()
+                        if len(arguments) > 1 and pathlib.Path(arguments[1]) == entrypoint:
+                            servers.append(process)
+                            ancestors = process.parents()
+                            ancestor_pids.update(parent.pid for parent in ancestors)
+                            parent_index = next(i for i, parent in enumerate(ancestors) if parent.pid == os.getpid())
+                            for member in (process, *ancestors[:parent_index]):
+                                owned[member.pid] = member
+                    process_diagnostics = [
+                        {
+                            "pid": process.pid,
+                            "ppid": process.ppid(),
+                            "exe": process.exe(),
+                            "cmdline": process.cmdline(),
+                            "created_at": process.create_time(),
+                        }
+                        for process in owned.values()
+                    ]
+                    print("旧形式MCP起動プロセス: " + json.dumps(process_diagnostics, ensure_ascii=False))
+                    # venv redirector等の祖先を所有したまま、単一系列の末端を実MCPの観測主体にする。
+                    # 複数系列から同じscriptが起動した場合は末端が複数となり失敗する。
+                    runtime_processes = [process for process in servers if process.pid not in ancestor_pids]
+                    assert len(runtime_processes) == 1, process_diagnostics
+                    server = runtime_processes[0]
+                    cache_base = "LOCALAPPDATA" if sys.platform == "win32" else "XDG_CACHE_HOME"
+                    temp_root = pathlib.Path(environment[cache_base]) / "agent-toolkit/managed-temp"
+                    areas = list(temp_root.glob("agents-server-plugin-root-*"))
+                    assert len(areas) == 1
+                    area = areas[0]
+                    assert (area / version / "agent_toolkit/agents_server_mcp.py").is_file()
+                    assert not (area / ".agent-toolkit-plugin-root.json").exists()
+                    leases = tmp_path / "runtime-state/agent-toolkit/plugin-root-leases"
+                    assert not list(leases.glob("*.json"))
+                    arguments = server.cmdline()
+                    assert pathlib.Path(arguments[1]).parts[-2:] == ("agent_toolkit", "agents_server_mcp.py")
+                    assert not pathlib.Path(arguments[1]).is_relative_to(area)
+                    assert server.username() == psutil.Process().username()
+                    try:
+                        opened = [entry._asdict() for entry in server.open_files()]
+                        open_files_error = None
+                    except psutil.Error as error:
+                        opened = []
+                        open_files_error = type(error).__name__
+                    # 実MCPを1台に限定したOS観測でも共通判定へ届くことを確認する。
+                    # インベントリーの対象だけを限定し、PID/argv/username/open_filesは実OSから得る。
+                    with monkeypatch.context() as probe:
+                        probe.setattr(psutil, "process_iter", lambda: [server])
+                        probe.setattr(state_paths, "state_dir", lambda: leases.parent)
+                        with plugin_roots.plugin_root_leases.plugin_root_lock(area):
+                            assert plugin_roots.plugin_root_leases.plugin_root_in_use(area)
+                    protected = cleanup(area)
+                    assert protected.returncode == 2, protected.stderr
+                    assert area.exists()
+                    assert "使用中または使用状態を確認できない配布物を保持した" in protected.stderr
+                    assert {tool.name for tool in (await client.list_tools()).tools} == tools
+                    observation = {
+                        "fixture_origin": "90cad03:plugin_root.pyの版別root正常系保持生成",
+                        "runtime": "現行MCPと現行launcher。旧版全体の再実行には当たらない",
+                        "platform": sys.platform,
+                        "launch_processes": process_diagnostics,
+                        "pid": server.pid,
+                        "created_at": server.create_time(),
+                        "cmdline": arguments,
+                        "open_files": opened,
+                        "open_files_error": open_files_error,
+                        "single_real_process_probe": True,
+                        "source": str(source),
+                        "area": str(area),
+                        "live_cleanup": {
+                            "exit_code": protected.returncode,
+                            "stdout": protected.stdout,
+                            "stderr": protected.stderr,
+                        },
+                    }
             _wait_mcp_processes(owned, timeout=5)
+            assert area is not None
+            parallel_process = psutil.Process(parallel.pid)
+            unknown_protected = cleanup(area, {parallel.pid: parallel_process})
+            assert unknown_protected.returncode == 2, unknown_protected.stderr
+            assert f"pid={parallel.pid}" in unknown_protected.stderr
+            assert area.exists() and parallel.returncode is None
+            cleaned = cleanup(area)
+            assert cleaned.returncode == 0, cleaned.stderr
+            assert not area.exists()
+            assert parallel.returncode is None
+            observation.update(
+                terminated_processes=sorted(owned),
+                stopped_cleanup={"exit_code": cleaned.returncode, "stdout": cleaned.stdout, "stderr": cleaned.stderr},
+                parallel_process={"pid": parallel.pid, "created_at": parallel_process.create_time(), "alive": True},
+                unknown_process_cleanup={"exit_code": unknown_protected.returncode, "stderr": unknown_protected.stderr},
+                root_removed=True,
+            )
+            print("旧形式MCP観測: " + json.dumps(observation, ensure_ascii=False))
         finally:
-            if parallel is not None:
-                assert parallel.stdin is not None
-                parallel.stdin.close()
-                await asyncio.wait_for(parallel.wait(), timeout=5)
-        print("旧形式MCP診断:\n" + log.read_text(encoding="utf-8"))
+            try:
+                _wait_mcp_processes(owned, timeout=5)
+            finally:
+                print("旧形式MCP診断:\\n" + log.read_text(encoding="utf-8"))
 
 
 @pytest.mark.parametrize("legacy_server_present", [False, True])

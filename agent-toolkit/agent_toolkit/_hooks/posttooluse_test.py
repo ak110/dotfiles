@@ -2034,29 +2034,29 @@ class TestAgentsServerSessionState:
         )
         assert started.returncode == 0
 
-        manager = server_manager.AgentsServerManager()
-        session = SessionState(remote_session_id, str(tmp_path), engine="codex")
-        session.status = "completed"
-        session.turn_completed = True
-        session.touch()
-        session.retention_deadline = asyncio.get_running_loop().time() - 1
-        manager.sessions[remote_session_id] = session
-        response = await manager.kill(remote_session_id, timeout=0)
-        killed = _run(
-            {
-                "session_id": sid,
-                "tool_name": "mcp__plugin_agent-toolkit_agents_server__kill",
-                "tool_input": {"session_id": remote_session_id},
-                "tool_response": {"structuredContent": response},
-            },
-            state_dir=tmp_path,
-        )
-        assert killed.returncode == 0
+        async with server_manager.AgentsServerManager() as manager:
+            session = SessionState(remote_session_id, str(tmp_path), engine="codex")
+            session.status = "completed"
+            session.turn_completed = True
+            session.touch()
+            session.retention_deadline = asyncio.get_running_loop().time() - 1
+            manager.sessions[remote_session_id] = session
+            response = await manager.kill(remote_session_id, timeout=0)
+            killed = _run(
+                {
+                    "session_id": sid,
+                    "tool_name": "mcp__plugin_agent-toolkit_agents_server__kill",
+                    "tool_input": {"session_id": remote_session_id},
+                    "tool_response": {"structuredContent": response},
+                },
+                state_dir=tmp_path,
+            )
+            assert killed.returncode == 0
 
-        record = _read_state(tmp_path, sid)["agents_server_sessions"][remote_session_id]
-        assert record["status"] == "expired"
-        assert record["kill_requested"] is False
-        assert record["pending_observation"] is False
+            record = _read_state(tmp_path, sid)["agents_server_sessions"][remote_session_id]
+            assert record["status"] == "expired"
+            assert record["kill_requested"] is False
+            assert record["pending_observation"] is False
 
     def test_start_shell_records_pending_observation(self, tmp_path: pathlib.Path) -> None:
         """シェル実行委譲も観測を試みていない作業として記録する。"""

@@ -17,6 +17,7 @@ from dataclasses import dataclass
 # 関数の実行時にだけ使う依存は、使用時まで読み込まない。
 lazy import ast
 lazy import re
+lazy import shlex
 lazy import stat
 lazy from collections.abc import Iterator, Sequence
 
@@ -440,7 +441,8 @@ def _large_read_notice(path: pathlib.Path, plan: _ReadPlan, byte_threshold: int)
         f"{plan.line_count}行、{plan.byte_count}バイトのファイルの全文取得を遮断した（閾値: {byte_threshold}バイト）: {path}",
         fix=(
             f"コマンドを使え、実行が許可される担当は`{read_file.first_read_command(path)}`で取得し、`text`を連結する。"
-            "`next`を`--start`へ渡し、`eof`が`true`になるまで続ける。"
+            f"継続は`atk read-file --start <next> -- {shlex.quote(str(path))}`の`<next>`へ直前の値を指定し、"
+            "`eof`が`true`になるまで同じファイルの`text`を連結する。"
             "コマンドを使えないか実行が制限される担当は、対象パス・必要な取得範囲を委譲元へ返し、分割取得した資料を受け取る。"
         ),
     )
@@ -458,13 +460,14 @@ def _large_multi_read_notice(path_counts: Sequence[tuple[pathlib.Path, _ReadPlan
         )
     total_bytes = sum(plan.byte_count for _path, plan in path_counts)
     details = "、".join(
-        f"`{path}`: {plan.line_count}行、{plan.byte_count}バイト、`{read_file.first_read_command(path)}`"
+        f"`{path}`: {plan.line_count}行、{plan.byte_count}バイト、初回`{read_file.first_read_command(path)}`、"
+        f"継続`atk read-file --start <next> -- {shlex.quote(str(path))}`"
         for path, plan in path_counts
     )
     return _block_notice(
         f"複数ファイルの全文取得を遮断した（合計: {total_bytes}バイト、閾値: {byte_threshold}バイト）: {details}",
         fix="コマンドを使え、実行が許可される担当はファイルごとに示したコマンドで取得し、`text`を連結する。"
-        "`next`を`--start`へ渡し、`eof`が`true`になるまで続ける。"
+        "継続コマンドの`<next>`へ同じファイルの直前の値を指定し、`eof`が`true`になるまで続ける。"
         "コマンドを使えないか実行が制限される担当は、対象パス・必要な取得範囲を委譲元へ返し、分割取得した資料を受け取る。",
     )
 

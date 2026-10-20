@@ -269,18 +269,26 @@ async def test_mcp_reconnect_is_once_per_new_and_resumed_process(
 @pytest.mark.usefixtures("agents_server_isolation")
 @pytest.mark.asyncio
 @pytest.mark.parametrize("launch_kind", ["delegate", "explore", "write", "shell"])
+@pytest.mark.parametrize("injection", ["environment-and-settings", "settings-only"])
 async def test_subscription_sdk_and_settings_isolate_custom_api_keys_on_resume(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, launch_kind: state.LaunchKind
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, launch_kind: state.LaunchKind, injection: str
 ) -> None:
-    """全起動区分とsubscription再開で、親環境とsettingsからAPI専用の任意キーを隔離する。"""
+    """全起動区分の新規・再開で、親settingsだけの注入も同じ接続キー集合で隔離する。"""
     path = tmp_path / "api.env"
-    path.write_text("CUSTOM_CONNECTION=api-only\nAWS_PROFILE=api-profile\n", encoding="utf-8")
+    path.write_text(
+        "CUSTOM_CONNECTION=api-only\nAWS_PROFILE=api-profile\nANTHROPIC_DEFAULT_SONNET_MODEL=api-model\n", encoding="utf-8"
+    )
     connection = claude_connection.Connection("subscription", isolation_env_file=str(path))
     monkeypatch.setattr(claude_connection, "candidates", lambda *_args, **_kwargs: claude_connection.Candidates((connection,)))
-    monkeypatch.setenv("CUSTOM_CONNECTION", "parent")
+    keys = ("CUSTOM_CONNECTION", "AWS_PROFILE", "ANTHROPIC_DEFAULT_SONNET_MODEL")
+    for key in keys:
+        if injection == "settings-only":
+            monkeypatch.delenv(key, raising=False)
+        else:
+            monkeypatch.setenv(key, "parent-environment")
     monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", "oauth")
     monkeypatch.setattr(
-        claude, "_parent_settings", lambda: json.dumps({"env": {"CUSTOM_CONNECTION": "settings", "UNRELATED": "kept"}})
+        claude, "_parent_settings", lambda: json.dumps({"env": {**dict.fromkeys(keys, "parent-settings"), "UNRELATED": "kept"}})
     )
     options: list[Any] = []
 
@@ -297,9 +305,11 @@ async def test_subscription_sdk_and_settings_isolate_custom_api_keys_on_resume(
             await backend.resume(session.session_id, prompt, str(tmp_path), launch_kind=launch_kind, existing_session=session)
         finally:
             prompt.close()
+        assert len(options) == 2
         for value in options:
-            assert value.env["CUSTOM_CONNECTION"] == value.env["AWS_PROFILE"] == ""
             settings = json.loads(value.settings)
-            assert settings["env"]["CUSTOM_CONNECTION"] == settings["env"]["AWS_PROFILE"] == ""
+            for key in keys:
+                assert settings["env"][key] == ""
+                assert value.env[key] == ""
             assert settings["env"]["UNRELATED"] == "kept"
             assert "CLAUDE_CODE_OAUTH_TOKEN" not in value.env

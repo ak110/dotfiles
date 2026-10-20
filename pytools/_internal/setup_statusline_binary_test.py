@@ -203,7 +203,8 @@ def test_develop_without_statusline_diff_uses_release_download(monkeypatch: pyte
     monkeypatch.setenv("CHEZMOI_WORKING_TREE", str(repo))
     monkeypatch.setattr(mod.setup_mise, "find_mise_binary", lambda: pytest.fail("miseを呼び出している"))
 
-    assert mod.run(client=_client(handler)).changed is True
+    with _client(handler) as client:
+        assert mod.run(client=client).changed is True
 
     assert install_path.read_bytes() == b"RELEASE"
     assert requested_urls
@@ -225,7 +226,8 @@ def test_develop_without_mise_uses_release_download(
     monkeypatch.setenv("CHEZMOI_WORKING_TREE", str(repo))
     monkeypatch.setattr(mod.setup_mise, "find_mise_binary", lambda: None)
 
-    assert mod.run(client=_client(handler)).changed is True
+    with _client(handler) as client:
+        assert mod.run(client=client).changed is True
 
     assert install_path.read_bytes() == b"RELEASE"
     assert "開発版のビルドに必要なmiseが見つからないため、リリース版を取得します" in caplog.text
@@ -247,7 +249,8 @@ def test_ignored_untracked_file_uses_release_download(monkeypatch: pytest.Monkey
     monkeypatch.setenv("CHEZMOI_WORKING_TREE", str(repo))
     monkeypatch.setattr(mod.setup_mise, "find_mise_binary", lambda: pytest.fail("miseを呼び出している"))
 
-    assert mod.run(client=_client(handler)).changed is True
+    with _client(handler) as client:
+        assert mod.run(client=client).changed is True
     assert install_path.read_bytes() == b"RELEASE"
 
 
@@ -263,7 +266,8 @@ def test_non_develop_branch_uses_release_download(monkeypatch: pytest.MonkeyPatc
     monkeypatch.setenv("CHEZMOI_WORKING_TREE", str(repo))
     monkeypatch.setattr(mod.setup_mise, "find_mise_binary", lambda: pytest.fail("miseを呼び出している"))
 
-    assert mod.run(client=_client(handler)).changed is True
+    with _client(handler) as client:
+        assert mod.run(client=client).changed is True
     assert install_path.read_bytes() == b"RELEASE"
 
 
@@ -279,7 +283,8 @@ def test_non_git_working_tree_uses_release_download(monkeypatch: pytest.MonkeyPa
     monkeypatch.setenv("CHEZMOI_WORKING_TREE", str(working_tree))
     monkeypatch.setattr(mod.setup_mise, "find_mise_binary", lambda: pytest.fail("miseを呼び出している"))
 
-    assert mod.run(client=_client(handler)).changed is True
+    with _client(handler) as client:
+        assert mod.run(client=client).changed is True
     assert install_path.read_bytes() == b"RELEASE"
 
 
@@ -381,7 +386,8 @@ class TestRun:
         def handler(_request: httpx.Request) -> httpx.Response:
             return httpx.Response(200, content=b"BINARY", headers={"etag": '"abc123"'})
 
-        assert mod.run(client=_client(handler)).changed is True
+        with _client(handler) as client:
+            assert mod.run(client=client).changed is True
         assert (install_dir / "claude-statusline").read_bytes() == b"BINARY"
         assert (install_dir / ".claude-statusline.etag").read_text(encoding="utf-8") == '"abc123"'
 
@@ -400,7 +406,8 @@ class TestRun:
             assert request.headers.get("if-none-match") == '"abc123"'
             return httpx.Response(304)
 
-        assert mod.run(client=_client(handler)).changed is False
+        with _client(handler) as client:
+            assert mod.run(client=client).changed is False
         assert binary_path.read_bytes() == b"OLD"
 
     def test_network_failure_returns_false_without_raising(self, tmp_path, monkeypatch: pytest.MonkeyPatch):
@@ -412,7 +419,8 @@ class TestRun:
         def handler(request: httpx.Request) -> httpx.Response:
             raise httpx.ConnectError("boom", request=request)
 
-        assert mod.run(client=_client(handler)).changed is False
+        with _client(handler) as client:
+            assert mod.run(client=client).changed is False
 
 
 class TestDownloadUrlOverride:
@@ -430,5 +438,6 @@ class TestDownloadUrlOverride:
             requested_urls.append(str(request.url))
             return httpx.Response(200, content=b"BINARY")
 
-        assert mod.run(client=_client(handler)).changed is True
+        with _client(handler) as client:
+            assert mod.run(client=client).changed is True
         assert requested_urls == ["http://127.0.0.1:9/override"]

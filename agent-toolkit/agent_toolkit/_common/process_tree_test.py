@@ -10,6 +10,7 @@ import pathlib
 import subprocess
 import sys
 import time
+from collections.abc import Generator
 
 import psutil
 import pytest
@@ -36,43 +37,30 @@ def _parent_source(child_source: str) -> str:
     return f"import subprocess, sys, time; subprocess.Popen([sys.executable, '-c', {child_source!r}]); time.sleep(120)"
 
 
-def _spawn_parent(child_source: str) -> subprocess.Popen:
+@contextlib.contextmanager
+def _spawn_parent(child_source: str) -> Generator[subprocess.Popen]:
     """子プロセスの起動を確認できたところで起点プロセスを返す。"""
-    process = subprocess.Popen([sys.executable, "-c", _parent_source(child_source)])  # pylint: disable=consider-using-with
-    deadline = time.monotonic() + 30.0
-    while time.monotonic() < deadline:
-        with contextlib.suppress(psutil.Error, OSError):
-            if psutil.Process(process.pid).children(recursive=True):
-                return process
-        time.sleep(0.05)
-    _force_stop(process)
-    raise AssertionError("起点プロセスの子プロセス起動を確認できませんでした")
-
-
-def _force_stop(process: subprocess.Popen) -> None:
-    """テストの後始末として、起点プロセスとその時点の子孫を終了させる。"""
-    with contextlib.suppress(psutil.Error, OSError):
-        for child in psutil.Process(process.pid).children(recursive=True):
+    with process_tree.process_scope([sys.executable, "-c", _parent_source(child_source)]) as process:
+        deadline = time.monotonic() + 30.0
+        while time.monotonic() < deadline:
+            ready = False
             with contextlib.suppress(psutil.Error, OSError):
-                child.kill()
-    with contextlib.suppress(OSError):
-        process.kill()
-    with contextlib.suppress(subprocess.TimeoutExpired):
-        process.wait(timeout=30)
+                ready = bool(psutil.Process(process.pid).children(recursive=True))
+            if ready:
+                yield process
+                return
+            time.sleep(0.05)
+        raise AssertionError("起点プロセスの子プロセス起動を確認できませんでした")
 
 
 @pytest.fixture(name="spawn_parent")
 def _spawn_parent_fixture():
-    started: list[subprocess.Popen] = []
+    with contextlib.ExitStack() as owned:
 
-    def factory(child_source: str = _CHILD_SOURCE) -> subprocess.Popen:
-        process = _spawn_parent(child_source)
-        started.append(process)
-        return process
+        def factory(child_source: str = _CHILD_SOURCE) -> subprocess.Popen:
+            return owned.enter_context(_spawn_parent(child_source))
 
-    yield factory
-    for process in started:
-        _force_stop(process)
+        yield factory
 
 
 def test_descendants_are_reclaimed_after_the_starting_point_ends(spawn_parent):

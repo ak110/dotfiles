@@ -46,7 +46,13 @@ def test_prepare_aggregates_targets_across_owners_without_promoting_cost_to_cand
 
     expanded = list(initial)
     for index in range(12):
-        expanded.extend(_read_entries(f"read-{index}", "親", offset=1))
+        reads = _read_entries(f"read-{index}", "親", offset=1)
+        # usageはsession_evidence_stats_test.pyと同じClaudeの応答記録形式を使う。
+        reads[0]["message"].update(
+            id=f"response-{index}",
+            usage={"input_tokens": index + 1, "output_tokens": 2},
+        )
+        expanded.extend(reads)
     for index in range(2):
         expanded.append(
             support.claude_call("2026-10-10T00:00:03Z", f"skill-{index}", "Skill", {"skill": "agent-toolkit:bugfix"})
@@ -94,6 +100,14 @@ def test_prepare_aggregates_targets_across_owners_without_promoting_cost_to_cand
     assert "/repo/rules.md: 合計13回、観測結果13件・14字・42バイト" in stats
     assert "agent-toolkit:bugfix: 合計3回" in stats
     assert "上位一覧の省略: 結果2件、反復3組" in stats
+    assert '範囲={"offset": 1, "limit": 8}、claude:parent:2' in stats
+    assert '範囲={"offset": 2, "limit": 8}、claude:parent/agent-child:1' in stats
+    assert "反復: Read 12回" in stats
+    assert "結果量上位: Read 1字・3バイト、入力=claude:parent:2、結果=claude:parent:3" in stats
+    assert "結果量上位: Read 2字・6バイト、入力=claude:parent/agent-child:1、結果=claude:parent/agent-child:2" in stats
+    prefix = "- メインのtoken上位: "
+    peaks = [json.loads(line.removeprefix(prefix)) for line in stats.splitlines() if line.startswith(prefix)]
+    assert any(peak["input_tokens"] == 12 and peak["output_tokens"] == 2 and peak["line"] == 24 for peak in peaks)
     for key in ("candidate_total", "candidate_counts", "excluded_counts"):
         assert result[key] == baseline[key]
     assert pathlib.Path(result["candidates_path"]).read_text(encoding="utf-8") == baseline_candidates

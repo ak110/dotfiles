@@ -77,33 +77,30 @@ def open_image_with_exif(path: pathlib.Path) -> tuple[PIL.Image.Image, bool]:
         `(image, used_truncated_fallback)`のタプル。第2要素が`True`のとき、
         Pillowが通常モードで読み込みに失敗し寛容モードへフォールバックしたことを示す。
     """
-    used_fallback = False
-    try:
-        img = PIL.Image.open(path)
-    except PIL.UnidentifiedImageError:
-        # シグネチャ判定で非画像と判定された場合でも寛容モードでは読み込める入力があるため再試行する。
-        # 寛容モードでも回復しない場合は UnidentifiedImageError をそのまま伝播させる。
-        with _truncated_images_enabled():
-            img = PIL.Image.open(path)
-            img.load()
-        used_fallback = True
-    else:
+    with contextlib.ExitStack() as images:
+        used_fallback = False
+        img: PIL.Image.Image | None = None
         try:
-            img.load()
-        except OSError, SyntaxError:
-            # シグネチャ判定は通過したが本体読み込みで失敗した場合は寛容モードで再試行する。
-            # 寛容モードでも失敗した場合は元の例外型のまま伝播させる。
-            with _truncated_images_enabled():
-                img = PIL.Image.open(path)
-                img.load()
+            img = images.enter_context(PIL.Image.open(path))
+        except PIL.UnidentifiedImageError:
             used_fallback = True
-
-    try:
-        result = PIL.ImageOps.exif_transpose(img)
-    except Exception as e:  # noqa: BLE001
-        warnings.warn(f"{type(e).__name__}: {e}。画像の向きを確認し、誤っている場合は回転して保存し直す", stacklevel=2)
-        result = img.copy()
-    return result, used_fallback
+        else:
+            try:
+                img.load()
+            except OSError, SyntaxError:
+                images.close()
+                used_fallback = True
+        if used_fallback:
+            with _truncated_images_enabled():
+                img = images.enter_context(PIL.Image.open(path))
+                img.load()
+        assert img is not None
+        try:
+            result = PIL.ImageOps.exif_transpose(img)
+        except Exception as e:  # noqa: BLE001
+            warnings.warn(f"{type(e).__name__}: {e}。画像の向きを確認し、誤っている場合は回転して保存し直す", stacklevel=2)
+            result = img.copy()
+        return result, used_fallback
 
 
 @contextlib.contextmanager
@@ -275,14 +272,13 @@ def convert_paths(
     """
     suffix = _TYPE_SUFFIXES[output_type]
     sorted_paths = list(natsort.natsorted(paths))
-    pbar = (
-        progress
-        if progress is not None
-        else tqdm.tqdm(total=len(sorted_paths), desc="convert", unit="file", ascii=True, ncols=100)
-    )
     events: list[ConvertEvent] = []
     success_count = 0
-    try:
+    with (
+        contextlib.nullcontext(progress)
+        if progress is not None
+        else tqdm.tqdm(total=len(sorted_paths), desc="convert", unit="file", ascii=True, ncols=100)
+    ) as pbar:
         for path in sorted_paths:
             event, ok = _convert_one(
                 path,
@@ -300,9 +296,6 @@ def convert_paths(
             if ok:
                 success_count += 1
             pbar.update(1)
-    finally:
-        if progress is None:
-            pbar.close()
     return ConvertSummary(events=events, success_count=success_count)
 
 
@@ -362,12 +355,16 @@ def _convert_one(
             img, used_fallback = open_image_with_exif(path)
         except PIL.UnidentifiedImageError:
             return None, False
-        with img:
-            img = _normalize_mode(img, output_type)
+        with contextlib.ExitStack() as images:
+            images.enter_context(img)
+            normalized = _normalize_mode(img, output_type)
+            if normalized is not img:
+                images.enter_context(normalized)
+            img = normalized
             if img.width >= max_width or img.height >= max_height:
                 r = min(max_width / img.width, max_height / img.height)
                 size = int(img.width * r), int(img.height * r)
-                img = img.resize(size, resample=PIL.Image.Resampling.LANCZOS)
+                img = images.enter_context(img.resize(size, resample=PIL.Image.Resampling.LANCZOS))
             # メタデータを削除して保存する
             with PIL.Image.fromarray(np.asarray(img)) as img2:
                 temp_path = path.parent / f"{secrets.token_urlsafe(8)}{suffix}"

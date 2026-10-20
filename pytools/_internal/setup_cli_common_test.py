@@ -39,6 +39,12 @@ def test_official_installer_uses_platform_trust_and_explicit_ca(
     requested: list[str] = []
 
     class Client:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_error: object) -> None:
+            self.close()
+
         def __init__(self, **kwargs: object) -> None:
             options.append(kwargs)
 

@@ -104,6 +104,48 @@ def test_open_image_with_exif_unidentified_propagates(tmp_path: pathlib.Path) ->
         imageconverter.open_image_with_exif(path)
 
 
+@pytest.mark.parametrize("interrupt_retry", [False, True])
+def test_open_image_closes_failed_load_before_retry(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, request: pytest.FixtureRequest, interrupt_retry: bool
+) -> None:
+    """再open前に失敗した画像を閉じ、再試行の中断でも開いたファイルを残さない。"""
+    path = tmp_path / "retry.png"
+    _make_png(path)
+    real_open = PIL.Image.open
+    opened: list[PIL.Image.Image] = []
+
+    def open_image(*args, **kwargs):
+        if opened:
+            assert getattr(opened[0], "fp", None) is None
+        image = real_open(*args, **kwargs)
+        request.addfinalizer(image.close)
+        opened.append(image)
+        if len(opened) == 1:
+
+            def fail_load():
+                raise OSError("本体の読取失敗")
+
+            monkeypatch.setattr(image, "load", fail_load)
+        elif interrupt_retry:
+
+            def interrupt_load():
+                raise KeyboardInterrupt
+
+            monkeypatch.setattr(image, "load", interrupt_load)
+        return image
+
+    monkeypatch.setattr(PIL.Image, "open", open_image)
+    if interrupt_retry:
+        with pytest.raises(KeyboardInterrupt):
+            imageconverter.open_image_with_exif(path)
+    else:
+        result, fallback = imageconverter.open_image_with_exif(path)
+        with result:
+            assert fallback and result.size == (100, 100)
+    assert len(opened) == 2
+    assert all(getattr(image, "fp", None) is None for image in opened)
+
+
 def test_convert_directory_to_jpeg(tmp_path: pathlib.Path) -> None:
     _make_png(tmp_path / "a.png")
     _make_png(tmp_path / "b.png")

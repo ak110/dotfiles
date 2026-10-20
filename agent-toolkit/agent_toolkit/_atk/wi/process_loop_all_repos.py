@@ -220,7 +220,7 @@ async def _launch_repository(
         ownership = _ownership.update_session(ownership, session_id)
         _log.append("repository_session_start", target_repo=repository.repo_id, session_id=session_id)
         return ownership, session_id
-    except Exception:
+    except BaseException:
         _ownership.release(ownership, completed=False)
         raise
 
@@ -262,6 +262,22 @@ async def run_repository_delegates(
         if manager_factory is None:
             raise ValueError("all-reposの担当起動には公開atk CLIのmanager factoryが必要")
         active_manager = manager_factory()
+    async with contextlib.AsyncExitStack() as lifetime:
+        lifetime.push_async_callback(active_manager.close)
+        return await _run_repository_delegates_owned(
+            args, snapshots, active_manager, audit_repositories=audit_repositories, launch_inputs=launch_inputs
+        )
+
+
+async def _run_repository_delegates_owned(
+    args: argparse.Namespace,
+    snapshots: tuple[_listing.RepositorySnapshot, ...],
+    active_manager: RepositoryDelegateManager,
+    *,
+    audit_repositories: set[str] | None,
+    launch_inputs: dict[str, _gate.LaunchInput] | None,
+) -> dict[str, dict[str, Any]]:
+    """managerの寿命の内側で担当を所有し、全停止の後に呼出元へ戻る。"""
     owners: dict[str, _ownership.Ownership] = {}
     results: dict[str, dict[str, Any]] = {}
     shared_instruction: str | None = None
@@ -407,13 +423,13 @@ async def run_repository_delegates(
             results["abort"] = {"status": "aborted"}
         return results
     finally:
-        if wait_task is not None and not wait_task.done():
-            wait_task.cancel()
-            with contextlib.suppress(asyncio.CancelledError):
-                await wait_task
-        for owner in tuple(owners.values()):
-            await _stop_repository(active_manager, owner)
-        await active_manager.close()
+        async with contextlib.AsyncExitStack() as cleanup:
+            for owner in reversed(tuple(owners.values())):
+                cleanup.push_async_callback(_stop_repository, active_manager, owner)
+            if wait_task is not None and not wait_task.done():
+                wait_task.cancel()
+                with contextlib.suppress(asyncio.CancelledError):
+                    await wait_task
 
 
 def _print_work(snapshots: tuple[_listing.RepositorySnapshot, ...]) -> None:

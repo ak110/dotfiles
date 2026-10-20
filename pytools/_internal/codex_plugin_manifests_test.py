@@ -1,6 +1,7 @@
 """pytools._internal.codex_plugin_manifests のテスト。"""
 
 import asyncio
+import contextlib
 import http.server
 import json
 import os
@@ -399,12 +400,9 @@ async def _codex_hooks(codex_home: Path, root: Path, monkeypatch: pytest.MonkeyP
 
     monkeypatch.setenv("CODEX_HOME", str(codex_home))
     monkeypatch.setattr(codex_backend, "APP_SERVER_WORKING_DIRECTORY", str(root))
-    client = codex_backend.JsonRpcProcess(ignore, ignore)
-    await client.start()
-    try:
+    async with codex_backend.JsonRpcProcess(ignore, ignore) as client:
+        await client.start()
         return await client.request("hooks/list")
-    finally:
-        await client.close()
 
 
 @pytest.mark.asyncio
@@ -808,7 +806,8 @@ def test_atomic_write_failure_is_reported(manifest_root: Path, monkeypatch: pyte
         subject.sync(manifest_root)
 
 
-def test_proxy_contract_is_shared_with_codex_backend(manifest_root: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+@pytest.mark.asyncio
+async def test_proxy_contract_is_shared_with_codex_backend(manifest_root: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """静的な共通名の追加と動的な親環境の配送を分け、生成物の環境非依存を保つ。"""
     names = (*mcp_environment.PROXY_ENVIRONMENT_VARIABLES, "TEST_PROXY")
     monkeypatch.setattr(mcp_environment, "PROXY_ENVIRONMENT_VARIABLES", names)
@@ -826,7 +825,8 @@ def test_proxy_contract_is_shared_with_codex_backend(manifest_root: Path, monkey
     monkeypatch.setenv("TEST_PROXY", "synthetic-proxy")
     monkeypatch.setenv("UNKNOWN_VENDOR_API_KEY", "synthetic-credential")
     monkeypatch.setenv("ANTHROPIC_AUTH_TOKEN", "synthetic-token")
-    backend = codex_backend.AppServerManager()._agents_server_config("owner", "writer")  # pylint: disable=protected-access
+    async with codex_backend.AppServerManager() as manager:
+        backend = manager._agents_server_config("owner", "writer")  # pylint: disable=protected-access
     runtime_names = backend["mcp_servers"]["agents_server"]["env_vars"]
     assert {"TEST_PROXY", "UNKNOWN_VENDOR_API_KEY", "ANTHROPIC_AUTH_TOKEN"} <= set(runtime_names)
     assert "UNKNOWN_VENDOR_API_KEY" not in expected_names
@@ -853,15 +853,12 @@ def _proxy_endpoint() -> Iterator[tuple[str, list[str]]]:
         def log_message(self, format: str, *args: Any) -> None:  # noqa: A002  # pylint: disable=redefined-builtin
             del format, args  # noqa
 
-    proxy = http.server.ThreadingHTTPServer(("127.0.0.1", 0), ProxyHandler)
-    proxy_thread = threading.Thread(target=proxy.serve_forever, daemon=True)
-    proxy_thread.start()
-    try:
+    with http.server.ThreadingHTTPServer(("127.0.0.1", 0), ProxyHandler) as proxy, contextlib.ExitStack() as cleanup:
+        proxy_thread = threading.Thread(target=proxy.serve_forever, daemon=True)
+        proxy_thread.start()
+        cleanup.callback(proxy_thread.join, timeout=5)
+        cleanup.callback(proxy.shutdown)
         yield f"http://127.0.0.1:{proxy.server_port}", requests
-    finally:
-        proxy.shutdown()
-        proxy.server_close()
-        proxy_thread.join(timeout=5)
     assert not proxy_thread.is_alive()
 
 
@@ -944,11 +941,12 @@ async def test_codex_stdio_inherits_proxy_environment(
     )
     subject.sync(manifest_root)
     plugin_servers = json.loads((manifest_root / subject.MCP_CODEX_TARGET).read_text(encoding="utf-8"))["mcpServers"]
-    backend = codex_backend.AppServerManager()._agents_server_config("owner", "writer")["mcp_servers"]["agents_server"]  # pylint: disable=protected-access
+    async with codex_backend.AppServerManager() as manager:
+        backend = manager._agents_server_config("owner", "writer")["mcp_servers"]["agents_server"]  # pylint: disable=protected-access
     configurations = [plugin_servers["agents_server"], plugin_servers["pyfltr"], backend]
-    client = _ProxyCodexClient(_ignore_proxy_notification, _ignore_proxy_notification)
     processes: list[asyncio.subprocess.Process] = []
-    try:
+    async with contextlib.AsyncExitStack() as resources:
+        client = await resources.enter_async_context(_ProxyCodexClient(_ignore_proxy_notification, _ignore_proxy_notification))
         async with asyncio.timeout(60):
             await client.start()
             assert client.process is not None
@@ -997,7 +995,9 @@ async def test_codex_stdio_inherits_proxy_environment(
             )
             await client.close()
             output.unlink()
-            client = _ProxyCodexClient(_ignore_proxy_notification, _ignore_proxy_notification)
+            client = await resources.enter_async_context(
+                _ProxyCodexClient(_ignore_proxy_notification, _ignore_proxy_notification)
+            )
             await client.start()
             assert client.process is not None
             processes.append(client.process)
@@ -1019,8 +1019,6 @@ async def test_codex_stdio_inherits_proxy_environment(
                 "response": "proxy-observed",
             }
             await client.request("thread/unsubscribe", {"threadId": thread_id})
-    finally:
-        await client.close()
     assert processes and all(process.returncode is not None for process in processes)
     assert requests.count("http://proxy-probe.invalid/resource") == 2
 

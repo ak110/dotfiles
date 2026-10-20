@@ -177,6 +177,7 @@ for line in sys.stdin:
 
     def popen(_argv: list[str], **kwargs: Any) -> subprocess.Popen[str]:
         # 被検証関数がcloseと子の回収を担うことを観測する。
+        # app-serverはpipeの要求を待つため、返却前にwaitするPopen.__exit__を使わない。
         process = real_popen(  # pylint: disable=consider-using-with
             [sys.executable, "-c", child_code, str(int(respond))], **kwargs
         )
@@ -416,9 +417,8 @@ def test_running_codex_session_keeps_old_cache_until_it_ends(  # noqa: PLR0913 -
     assert dotfiles_root is not None
     record = deferred_updates.record_path(dotfiles_root)
 
-    residents = ResidentProcesses(tmp_path, monkeypatch)
-    session = residents.start("codex")
-    try:
+    with ResidentProcesses(tmp_path, monkeypatch) as residents:
+        residents.start("codex")
         with pytest.raises(SystemExit) as deferred_exit:
             post_apply.main(runner=lambda: post_apply.run(steps=steps))
         assert deferred_exit.value.code == 0
@@ -426,8 +426,6 @@ def test_running_codex_session_keeps_old_cache_until_it_ends(  # noqa: PLR0913 -
         assert (previous / "agent_toolkit/hook.py").read_text(encoding="utf-8") == "old hook"
         assert (previous / "skills/coding/SKILL.md").read_text(encoding="utf-8") == "old skill"
         assert json.loads(record.read_text(encoding="utf-8"))["steps"] == ["Codex plugin のインストール"]
-    finally:
-        residents.stop(session)
 
     with pytest.raises(SystemExit) as updated_exit:
         post_apply.main(runner=lambda: post_apply.run(steps=steps))

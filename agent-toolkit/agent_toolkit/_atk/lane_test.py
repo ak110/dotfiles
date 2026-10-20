@@ -1820,6 +1820,48 @@ def test_integrate_does_not_count_non_writers_or_caller_chain(
     assert ("lane-01" in deleted.get("removed", [])) is (case in {"non-writer-role", "explore"}), stderr
 
 
+def test_integrate_first_call_accepts_all_agreed_distinct_sessions(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """所有者・レーン担当・メインが別sessionでも、初回の全要素指定でGit統合と最終化を完了する。"""
+    repo, selected, record = _create(tmp_path, monkeypatch, capsys)
+    _integration_selection(selected, monkeypatch, repo)
+    worktree = pathlib.Path(record["worktree"])
+    (worktree / "feature.txt").write_text("統合する成果", encoding="utf-8")
+    head = git_repository.commit_all(worktree, "統合する成果")
+    sessions = [record["session_id"], "lane-writer", "integration-main"]
+    assert len(set(sessions)) == 3
+    _caller(monkeypatch)
+    _running(sessions[0], worktree)
+    _running(sessions[1], worktree, role="exec")
+    _running(sessions[2], repo)
+    assert all(session_registry.resolve(identity).state is session_registry.Resolution.RUNNING for identity in sessions)
+    finalized = tmp_path / "finalized"
+    manifest = _finalization_manifest(tmp_path)
+    value = json.loads(manifest.read_text(encoding="utf-8"))
+    value["wis"][0]["commands"] = [
+        [sys.executable, "-c", "import pathlib,sys; pathlib.Path(sys.argv[1]).write_text('finalized')", str(finalized)]
+    ]
+    manifest.write_text(json.dumps(value), encoding="utf-8")
+    writer_input = json.dumps(sessions)
+    writers = [argument for identity in json.loads(writer_input) for argument in ("--writer-session", identity)]
+    assert "integration" not in json.loads(pathlib.Path(record["record_path"]).read_text(encoding="utf-8"))
+
+    code, result, stderr = _invoke(
+        capsys, *_integration_args(record, repo, manifest, head), "--session-id", record["session_id"], *writers
+    )
+
+    assert code == 0, stderr
+    assert result["phase"] == "finalized" and result["integrated_head"] == head
+    assert git_repository.git_output(repo, "rev-parse", "HEAD") == head
+    assert (repo / "feature.txt").read_text(encoding="utf-8") == "統合する成果"
+    assert finalized.read_text(encoding="utf-8") == "finalized"
+    assert "統合済み" in selected.read_text(encoding="utf-8")
+    persisted = json.loads(pathlib.Path(record["record_path"]).read_text(encoding="utf-8"))
+    assert persisted["session_id"] == sessions[0]
+    assert persisted["integration"]["phase"] == "finalized"
+
+
 @pytest.mark.parametrize("no_merge", [False, True])
 @pytest.mark.parametrize("spread", [False, True])
 def test_integrate_reports_all_unowned_writers_then_resumes_with_agreement(

@@ -257,7 +257,7 @@ def _create_managed_temp_scoped(
         _validate_root(root_path, explicit=explicit_root, expected=validated_root)
         validate_managed_temp(path)
         return path
-    except (ManagedTempError, OSError) as error:
+    except BaseException as error:
         if registry_path is not None:
             with contextlib.suppress(OSError):
                 registry_path.unlink()
@@ -271,9 +271,9 @@ def _create_managed_temp_scoped(
                 target_descriptor=target_descriptor,
                 created_identity=created_identity,
             )
-        if isinstance(error, ManagedTempError):
-            raise
-        raise ManagedTempError(f"管理情報を作成できない: {error}") from error
+        if isinstance(error, OSError):
+            raise ManagedTempError(f"管理情報を作成できない: {error}") from error
+        raise
 
 
 def create_session_temp(prefix: str, session_root: pathlib.Path | str) -> pathlib.Path:
@@ -339,7 +339,7 @@ def _create_session_temp_scoped(prefix: str, session_root: pathlib.Path | str, s
                 f"session_rootが作成中に置換された: {validated.path}", next_action=ManagedTempError.REPLACED_NEXT_ACTION
             )
         return path
-    except (ManagedTempError, OSError) as error:
+    except BaseException as error:
         if path is not None:
             _remove_created_target(
                 path,
@@ -347,6 +347,6 @@ def _create_session_temp_scoped(prefix: str, session_root: pathlib.Path | str, s
                 target_descriptor=None,
                 created_identity=created_identity,
             )
-        if isinstance(error, ManagedTempError):
-            raise
-        raise ManagedTempError(f"セッション内管理対象を作成できない: {error}") from error
+        if isinstance(error, OSError):
+            raise ManagedTempError(f"セッション内管理対象を作成できない: {error}") from error
+        raise

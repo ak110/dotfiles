@@ -242,6 +242,38 @@ def test_block_notice_leads_to_read_file(tmp_path: pathlib.Path, capsys: pytest.
     assert "".join(parts).encode("utf-8") == path.read_bytes()
 
 
+@pytest.mark.parametrize("multiple", [False, True])
+def test_notice_continuation_commands_roundtrip_utf8(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], multiple: bool
+) -> None:
+    """単一・複数遮断通知の完成形へnextを指定し、同じパスの日本語とCRLFを終端まで復元する。"""
+    monkeypatch.setenv("AGENT_TOOLKIT_LARGE_READ_BYTES", "100")
+    paths = [tmp_path / "file's name.txt", *([tmp_path / "second file.txt"] if multiple else [])]
+    for index, path in enumerate(paths):
+        path.write_bytes((f"本文{index}\r\n" * 3000).encode("utf-8"))
+    notice = _codex_read(shlex.join(["cat", *map(str, paths)]), tmp_path)
+    assert notice is not None
+    initial = re.findall(r"`(atk read-file -- [^`]+)`", notice)
+    continuations = re.findall(r"`(atk read-file --start <next> -- [^`]+)`", notice)
+    assert len(initial) == len(continuations) == len(paths)
+    for path, first, continuation in zip(paths, initial, continuations, strict=True):
+        assert shlex.split(continuation)[-1] == str(path)
+        argv = shlex.split(first)
+        parts: list[str] = []
+        while True:
+            with pytest.raises(SystemExit, match="0"):
+                atk.main(argv[1:])
+            result = capsys.readouterr()
+            assert not result.err
+            response = json.loads(result.out)
+            parts.append(response["text"])
+            if response["eof"]:
+                break
+            argv = shlex.split(continuation.replace("<next>", str(response["next"])))
+        assert len(parts) > 1
+        assert "".join(parts).encode("utf-8") == path.read_bytes()
+
+
 @pytest.mark.parametrize("change", ["cd", "pushd"])
 @pytest.mark.parametrize("separator", ["&&", ";"])
 def test_codex_resolves_relative_path_after_cwd_change(tmp_path: pathlib.Path, change: str, separator: str) -> None:

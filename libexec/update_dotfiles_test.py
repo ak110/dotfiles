@@ -5,9 +5,11 @@
 
 # pylint: disable=protected-access
 
+import contextlib
 import ctypes
 import io
 import json
+import logging
 import os
 import pathlib
 import shlex
@@ -27,6 +29,8 @@ from agent_toolkit._testing.isolation import restore_host_environment
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 
 import update_dotfiles  # noqa: E402  # pylint: disable=wrong-import-position
+
+from pytools._internal import common  # noqa: E402  # pylint: disable=wrong-import-position
 
 _REAL_UPDATE_GIT_WITH_RECOVERY = update_dotfiles._update_git_with_recovery  # pylint: disable=protected-access
 _REPOSITORY_ATK_BIN = pathlib.Path(__file__).resolve().parents[1] / "agent-toolkit" / "scripts"
@@ -468,21 +472,37 @@ def test_git_pull_closes_real_pipes_after_detached_descendant_timeout(
     libc = ctypes.CDLL(None, use_errno=True)
     previous = ctypes.c_int(0)
     assert libc.prctl(37, ctypes.byref(previous), 0, 0, 0) == 0  # PR_GET_CHILD_SUBREAPER
-    assert libc.prctl(36, 1, 0, 0, 0) == 0  # PR_SET_CHILD_SUBREAPER
     pid_path = tmp_path / "holder.pid"
     child_code = (
         "import pathlib, subprocess, sys; "
         "child = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(60)'], start_new_session=True); "
         "pathlib.Path(sys.argv[1]).write_text(str(child.pid))"
     )
-    process = subprocess.Popen(  # pylint: disable=consider-using-with
-        [sys.executable, "-c", child_code, str(pid_path)],
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        encoding="utf-8",
-    )
     holder_pid: int | None = None
-    try:
+
+    def restore_subreaper() -> None:
+        assert libc.prctl(36, previous.value, 0, 0, 0) == 0
+
+    def reclaim_holder() -> None:
+        nonlocal holder_pid
+        if holder_pid is None and pid_path.exists():
+            holder_pid = int(pid_path.read_text(encoding="utf-8"))
+        if holder_pid is not None:
+            os.kill(holder_pid, 9)
+            os.waitpid(holder_pid, 0)
+
+    with contextlib.ExitStack() as cleanup:
+        assert libc.prctl(36, 1, 0, 0, 0) == 0  # PR_SET_CHILD_SUBREAPER
+        cleanup.callback(restore_subreaper)
+        process = cleanup.enter_context(
+            common.process_scope(
+                [sys.executable, "-c", child_code, str(pid_path)],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                encoding="utf-8",
+            )
+        )
+        cleanup.callback(reclaim_holder)
         process.wait(timeout=10)
         holder_pid = int(pid_path.read_text(encoding="utf-8"))
         monkeypatch.setattr(subprocess, "Popen", lambda *_args, **_kwargs: process)
@@ -490,20 +510,59 @@ def test_git_pull_closes_real_pipes_after_detached_descendant_timeout(
         assert update_dotfiles._run_git_pull(1, 4, timeout=1) == 1
         assert process.stdout is not None and process.stdout.closed
         assert process.stderr is not None and process.stderr.closed
-    finally:
-        if holder_pid is None and pid_path.exists():
-            holder_pid = int(pid_path.read_text(encoding="utf-8"))
-        if holder_pid is not None:
-            os.kill(holder_pid, 9)
-            os.waitpid(holder_pid, 0)
-        if process.poll() is None:
-            process.kill()
-        process.wait(timeout=10)
-        assert process.stdout is not None and process.stderr is not None
-        process.stdout.close()
-        process.stderr.close()
-        assert libc.prctl(36, previous.value, 0, 0, 0) == 0
     assert holder_pid is not None and not psutil.pid_exists(holder_pid)
+
+
+def test_main_closes_persistent_log_when_start_record_is_interrupted(
+    monkeypatch: pytest.MonkeyPatch, request: pytest.FixtureRequest
+) -> None:
+    """開始記録が中断されても、獲得済みのログファイルを閉じて登録を外す。"""
+    original_handlers = update_dotfiles.logger.handlers.copy()
+    created: list[logging.FileHandler] = []
+    real_handler = update_dotfiles.logging.handlers.RotatingFileHandler
+
+    def handler(*args: Any, **kwargs: Any):
+        instance = real_handler(*args, **kwargs)
+        # 被検証側の終了後を観測し、旧版の失敗対照でもfixtureが残存資源を回収する。
+        request.addfinalizer(instance.close)
+        request.addfinalizer(lambda: update_dotfiles.logger.removeHandler(instance))
+        created.append(instance)
+        return instance
+
+    def interrupt(*_args: object) -> None:
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(update_dotfiles.logging.handlers, "RotatingFileHandler", handler)
+    monkeypatch.setattr(update_dotfiles.sync_report, "write_start", interrupt)
+    with pytest.raises(KeyboardInterrupt):
+        update_dotfiles.main([])
+    assert len(created) == 1
+    assert created[0].stream is None
+    assert update_dotfiles.logger.handlers == original_handlers
+
+
+@pytest.mark.parametrize("operation", ["pull", "stash"])
+def test_git_subprocess_closes_both_pipes_when_one_close_fails(monkeypatch: pytest.MonkeyPatch, operation: str) -> None:
+    """POSIXのpipe解放の片側が失敗しても、残る側を閉じて元の例外を返す。"""
+
+    class FailingClose(io.StringIO):
+        def close(self) -> None:
+            if not self.closed:
+                super().close()
+                raise OSError("pipe close failed")
+
+    process = _FakePopen(["test"], [])
+    process.stdout.close()
+    process.stdout = FailingClose()
+    monkeypatch.setattr(subprocess, "Popen", lambda *_args, **_kwargs: process)
+    monkeypatch.setattr(update_dotfiles, "_git_env", lambda: {})
+    monkeypatch.setattr(update_dotfiles, "os", type("Platform", (), {"name": "posix"}))
+    with pytest.raises(OSError, match="pipe close failed"):
+        if operation == "pull":
+            update_dotfiles._run_git_pull(1, 4, timeout=1)
+        else:
+            update_dotfiles._run_worktree_stash("save")
+    assert process.stdout.closed and process.stderr.closed
 
 
 def test_run_step_disables_mise_auto_install(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -958,7 +1017,7 @@ def test_missing_persistent_log_continues_updates(
 ) -> None:
     """永続ログを開始できなくても更新を続け、終了コード1と失敗した段を残す。"""
     calls: list[list[str]] = []
-    monkeypatch.setattr(update_dotfiles, "_configure_persistent_log", lambda _run_id: None)
+    monkeypatch.setattr(update_dotfiles, "_configure_persistent_log", lambda _run_id: contextlib.nullcontext(None))
     monkeypatch.setattr(subprocess, "Popen", _fake_popen({}, calls))
     monkeypatch.setattr(subprocess, "run", _fake_run({}, calls))
     monkeypatch.setattr(update_dotfiles, "_LOCK_PATH", tmp_path / "locks" / "update-dotfiles.lock")
@@ -2017,7 +2076,6 @@ def test_update_recovers_index_after_interrupted_git_change(
     other_lock.write_bytes(b"other owner")
     before_other = _dirty_snapshot(other)
     monkeypatch.setattr(update_dotfiles, "_DOTFILES_ROOT", local)
-    handler = update_dotfiles._configure_persistent_log("test")
 
     def change(*_args: object, **_kwargs: object) -> int:
         assert update_dotfiles._run_git_change("add", "tracked.txt")
@@ -2047,7 +2105,7 @@ def test_update_recovers_index_after_interrupted_git_change(
         return 0
 
     monkeypatch.setattr(update_dotfiles, "_update_owned_git", change)
-    try:
+    with update_dotfiles._configure_persistent_log("test"):
         if outcome == "interrupt":
             with pytest.raises(KeyboardInterrupt):
                 _REAL_UPDATE_GIT_WITH_RECOVERY(1, 4, timeout=5)
@@ -2065,10 +2123,6 @@ def test_update_recovers_index_after_interrupted_git_change(
             log = update_dotfiles._LOG_PATH.read_text(encoding="utf-8")
             assert "git restore -- missing-file: exit=1" in log
             assert "pathspec" in log
-    finally:
-        if handler is not None:
-            update_dotfiles.logger.removeHandler(handler)
-            handler.close()
 
 
 @pytest.mark.parametrize("race", ["started-before-lock", "foreign-lock", "copy-interrupt"])

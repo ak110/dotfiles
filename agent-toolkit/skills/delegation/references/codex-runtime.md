@@ -53,5 +53,6 @@ forkを選ぶときは`spawn_agent`の`fork_turns`を省略するか`"all"`に�
 `functions.exec`から`atk agents wait`を起動する場合も、`share/rules-common.codex.md`「Codex固有の入出力」のコマンド回収契約に従い、外側の`cell_id`を`functions.wait`へ渡す。
 CLIへタスク固有timeoutを渡さず、CLI自身が待機上限へ達し対象が未終端なら、その結果を確かめてから新しい待機を始める。
 逐次待機とlock競合した後発待機の回収は`references/waiting-and-monitoring.md`「`atk agents wait`の応答の扱い」に従う。
+監査記録は`docs/development/audit-records.md`の「agent-toolkit/share/rules-common.codex.md：Codex固有の入出力：2026年10月19日」にある。
 
 委譲先の成果物側だけを補助観測するときは`atk watch --worktree [<ラベル>=]<絶対パス> --file [<ラベル>=]<絶対パス>`を単独で使い、session自体の稼働確認には起動手段の状態を使う。

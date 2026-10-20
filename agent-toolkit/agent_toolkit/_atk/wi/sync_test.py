@@ -55,13 +55,10 @@ class TestRepoLock:
         target = tmp_path / "private-notes"
         target.mkdir()
         lock1 = _wi_sync.repo_lock(target)  # pylint: disable=protected-access  # noqa: SLF001
-        lock1.acquire()
-        try:
+        with lock1:
             lock2 = _wi_sync.repo_lock(target)  # pylint: disable=protected-access  # noqa: SLF001
             with pytest.raises(filelock.Timeout):
                 lock2.acquire(timeout=0.2)
-        finally:
-            lock1.release()
 
     def test_constructor_timeout_bounds_plain_with_statement(self, tmp_path: pathlib.Path) -> None:
         """`_repo_lock(..., timeout=...)`のコンストラクタで設定した値が`with lock:`（引数無し取得）へ伝搬する。
@@ -72,15 +69,12 @@ class TestRepoLock:
         target = tmp_path / "private-notes"
         target.mkdir()
         lock1 = _wi_sync.repo_lock(target)  # pylint: disable=protected-access  # noqa: SLF001
-        lock1.acquire()
-        try:
-            with (
-                pytest.raises(filelock.Timeout),
-                _wi_sync.repo_lock(target, timeout=0.2),  # pylint: disable=protected-access  # noqa: SLF001
-            ):
-                pass
-        finally:
-            lock1.release()
+        with (
+            lock1,
+            pytest.raises(filelock.Timeout),
+            _wi_sync.repo_lock(target, timeout=0.2),  # pylint: disable=protected-access  # noqa: SLF001
+        ):
+            pass
 
     def test_second_acquire_succeeds_after_release(self, tmp_path: pathlib.Path) -> None:
         """1つ目のロック解放後は、別インスタンスからの2つ目の取得が成功する。"""
