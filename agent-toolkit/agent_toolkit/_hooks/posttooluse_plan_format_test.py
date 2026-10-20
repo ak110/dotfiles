@@ -7,11 +7,12 @@ import subprocess
 
 import pytest
 
+from agent_toolkit._common import session_state
 from agent_toolkit._hooks.rules_context import QUALITY_CHECKPOINT_NOTICE
 from agent_toolkit._plan import structure as _plan_format
 from agent_toolkit._testing import fork_runner as _fork_runner
 from agent_toolkit._testing import plan_fixture as _plan_fixture
-from agent_toolkit._testing.helpers import SESSION_STATE_FILENAME_TEMPLATE, _read_state
+from agent_toolkit._testing.helpers import _read_state
 
 _SCRIPT = pathlib.Path(__file__).resolve().parents[1] / "hook.py"
 
@@ -36,10 +37,7 @@ def _run(
     if plan_mode_skill_invoked and state_dir is not None and isinstance(payload, dict):
         sid = payload.get("session_id", "")
         if isinstance(sid, str) and sid:
-            (state_dir / SESSION_STATE_FILENAME_TEMPLATE.format(session_id=sid)).write_text(
-                json.dumps({"plan_mode_skill_invoked": True}, ensure_ascii=False),
-                encoding="utf-8",
-            )
+            assert session_state.update_state(sid, lambda state: {**state, "plan_mode_skill_invoked": True})
     return _fork_runner.run_script(_SCRIPT, argv=("posttooluse",), input=text, env=env)
 
 

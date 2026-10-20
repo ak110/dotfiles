@@ -26,7 +26,7 @@ from agent_toolkit._agents_server.state import SessionState
 from agent_toolkit._common import session_state, state_paths
 from agent_toolkit._hooks import agents_server_observations as _agents_server_observations
 from agent_toolkit._testing import fork_runner as _fork_runner
-from agent_toolkit._testing.helpers import SESSION_STATE_FILENAME_TEMPLATE, _read_state, auto_message_opening_attributes
+from agent_toolkit._testing.helpers import _read_state, auto_message_opening_attributes
 from agent_toolkit._testing.hook_output_contract import validate_hook_output
 
 _SCRIPT = pathlib.Path(__file__).resolve().parents[1] / "hook.py"
@@ -538,7 +538,7 @@ def test_windows_atk_cmd_wait_clears_pending_observation(
     from agent_toolkit._hooks import agents_server_session_advisor  # noqa: PLC0415  # pylint: disable=import-outside-toplevel
 
     sid, child = "windows-wait-parent", "windows-wait-child"
-    path = tmp_path / SESSION_STATE_FILENAME_TEMPLATE.format(session_id=sid)
+    path = _state_path(sid)
     path.write_text(
         json.dumps(
             {
@@ -568,6 +568,13 @@ def test_windows_atk_cmd_wait_clears_pending_observation(
     assert agents_server_session_advisor.evaluate(json.dumps({"session_id": sid}))[0] == "approve"
 
 
+def _state_path(session_id: str) -> pathlib.Path:
+    """試験用のJSONを現行の公開パスへ準備する。"""
+    path = session_state.state_path(session_id)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    return path
+
+
 def _run(
     payload: dict | str,
     *,
@@ -589,7 +596,7 @@ def _run(
         sid = payload.get("session_id", "")
         if isinstance(sid, str) and sid:
             state_dir.mkdir(parents=True, exist_ok=True)
-            (state_dir / SESSION_STATE_FILENAME_TEMPLATE.format(session_id=sid)).write_text(
+            _state_path(sid).write_text(
                 json.dumps({"plan_mode_skill_invoked": True}, ensure_ascii=False),
                 encoding="utf-8",
             )
@@ -769,7 +776,7 @@ def test_free_text_answer_receives_the_same_notice_as_user_prompt(tmp_path: path
     片方のhookだけ本文を改訂すると、同じ文にhookごとに異なる手順が届く。
     """
     session_id = "ask-user-question-free-text"
-    state_path = tmp_path / SESSION_STATE_FILENAME_TEMPLATE.format(session_id=session_id)
+    state_path = _state_path(session_id)
     state_path.write_text(json.dumps({"last_user_prompt_at": 0.0}), encoding="utf-8")
     env = os.environ.copy()
     env.update({"TMPDIR": str(tmp_path), "TEMP": str(tmp_path), "TMP": str(tmp_path)})
@@ -1474,7 +1481,7 @@ class TestExitSessionResetsProcessAwisFlag:
     def test_reset_when_exit_session_invoked(self, tmp_path: pathlib.Path) -> None:
         sid = "exit-cli"
         # 事前に自動振り返り起点フラグを立てる。
-        (tmp_path / SESSION_STATE_FILENAME_TEMPLATE.format(session_id=sid)).write_text(
+        _state_path(sid).write_text(
             json.dumps(
                 {
                     "process_wi_skill_invoked": True,
@@ -1491,7 +1498,7 @@ class TestExitSessionResetsProcessAwisFlag:
     def test_reset_idempotent_when_already_false(self, tmp_path: pathlib.Path) -> None:
         """既に偽の状態でも終了CLIの記録だけを追加する。"""
         sid = "exit-idem"
-        (tmp_path / SESSION_STATE_FILENAME_TEMPLATE.format(session_id=sid)).write_text(
+        _state_path(sid).write_text(
             json.dumps({"process_wi_skill_invoked": False}, ensure_ascii=False),
             encoding="utf-8",
         )
@@ -1694,7 +1701,7 @@ class TestAgentsServerSessionState:
         if tool_name == "kill":
             response["kill_requested"] = True
         if tool_name not in start_tools:
-            (tmp_path / SESSION_STATE_FILENAME_TEMPLATE.format(session_id=sid)).write_text(
+            _state_path(sid).write_text(
                 json.dumps(
                     {
                         "agents_server_cwd_by_session": {remote_session_id: str(tmp_path)},
@@ -1818,9 +1825,7 @@ class TestAgentsServerSessionState:
         sid = f"continuation-cwd-{tool_name}"
         remote_session_id = "thread-continuation"
         state: dict[str, object] = {"agents_server_cwd_by_session": {remote_session_id: str(tmp_path)}}
-        (tmp_path / SESSION_STATE_FILENAME_TEMPLATE.format(session_id=sid)).write_text(
-            json.dumps(state, ensure_ascii=False), encoding="utf-8"
-        )
+        _state_path(sid).write_text(json.dumps(state, ensure_ascii=False), encoding="utf-8")
         tool_input: dict[str, object] = {"session_id": remote_session_id}
         if tool_name == "send_message":
             tool_input["prompt"] = "続行"
@@ -1837,9 +1842,7 @@ class TestAgentsServerSessionState:
                     "pending_observation": True,
                 }
             }
-            (tmp_path / SESSION_STATE_FILENAME_TEMPLATE.format(session_id=sid)).write_text(
-                json.dumps(state, ensure_ascii=False), encoding="utf-8"
-            )
+            _state_path(sid).write_text(json.dumps(state, ensure_ascii=False), encoding="utf-8")
         result = _run(
             {
                 "session_id": sid,
@@ -1871,9 +1874,7 @@ class TestAgentsServerSessionState:
                 }
             },
         }
-        (tmp_path / SESSION_STATE_FILENAME_TEMPLATE.format(session_id=sid)).write_text(
-            json.dumps(state, ensure_ascii=False), encoding="utf-8"
-        )
+        _state_path(sid).write_text(json.dumps(state, ensure_ascii=False), encoding="utf-8")
 
         result = _run(
             {

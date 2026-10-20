@@ -10,8 +10,8 @@ import time
 
 import pytest
 
+from agent_toolkit._common import session_state
 from agent_toolkit._testing import fork_runner as _fork_runner
-from agent_toolkit._testing.helpers import SESSION_STATE_FILENAME_TEMPLATE
 
 _SCRIPT = pathlib.Path(__file__).resolve().parents[1] / "hook.py"
 _ALLOWED_BARE_IDENTIFIERS = frozenset(
@@ -255,8 +255,7 @@ def test_direct_response_language_block_is_japanese(tmp_path: pathlib.Path, repe
 
 def test_user_prompt_verification_notice_is_japanese(tmp_path: pathlib.Path) -> None:
     sid = "japanese-verification-notice"
-    state_path = tmp_path / SESSION_STATE_FILENAME_TEMPLATE.format(session_id=sid)
-    state_path.write_text(json.dumps({"last_user_prompt_at": time.time() - 200}), encoding="utf-8")
+    assert session_state.update_state(sid, lambda _previous: {"last_user_prompt_at": time.time() - 200})
 
     result = _run_user_prompt_submit({"session_id": sid, "prompt": "通常のユーザー発話です。"}, tmp_path)
 
