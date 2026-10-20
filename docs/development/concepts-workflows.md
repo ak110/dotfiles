@@ -23,7 +23,7 @@ branchとリリースの設計の理由は[design-release.md](design-release.md#
 
 通常の開発先は`develop`とし、リリース先およびGitHubのdefault branchは`master`とする。
 `master`は直接更新せず、必須CIを通過したPRのマージコミットだけで更新する。
-`agent-toolkit:process-wi`の終端では`origin/develop`と`origin/master`に差分がある限り、`develop`から`master`へのリリースPRを作成してマージまで実施する（2026年9月、ユーザー指示）。
+`agent-toolkit:process-wi`の終端では`origin/develop`と`origin/master`に差分がある限り、`develop`から`master`へのリリースPRを作成してマージまで実施する（2026年9月、ユーザー指示）。同じ最上位セッションで実施するリリースPRのマージは1件までとし、マージ後に生じた差分は`develop`へのpushとCI成功まで進め、次のセッションの1件のPRへまとめる（2026年10月21日、ユーザー指示）。
 実施可否の判定はWIキューの状態を参照しない（2026年9月16日、ユーザー指示）。
 キューの残件はそのセッションの成果と因果関係がない。処理回の進行中に項目が投入されると、セッションの成果とは無関係にリリースが止まるためである。
 差分が無い場合や`agent-toolkit:process-wi`以外から起動した場合は、PRの作成とマージ依頼を手動で行う。

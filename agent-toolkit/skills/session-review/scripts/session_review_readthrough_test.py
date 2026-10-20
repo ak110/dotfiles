@@ -1,4 +1,4 @@
-"""公開の準備から全担当の発話・長い入力・結果の記録位置を通読できる契約を検証する。"""
+"""公開の準備から全体像と詳細の記録位置へ到達できる契約を検証する。"""
 
 import json
 import pathlib
@@ -10,8 +10,8 @@ from agent_toolkit._testing.helpers import _write_transcript
 from agent_toolkit._testing.session_evidence_support import write_subagent
 
 
-def test_prepare_keeps_all_records_inputs_and_read_ranges(tmp_path: pathlib.Path, capsys) -> None:
-    """候補に依存せず委譲先の正常操作と長い複合入力へ到達し、結果は本文を載せず成否で示す。"""
+def test_prepare_keeps_all_records_as_compact_flow(tmp_path: pathlib.Path, capsys) -> None:
+    """候補に依存せずメインと委譲先の目的・操作量・失敗を概要へ残す。"""
     command = "echo " + "x" * 2500 + "中間の操作" + "y" * 6500 + "末尾の操作"
     output = "z" * 3999 + "\n保存先: /results/success.txt"
     transcript = _write_transcript(
@@ -97,23 +97,20 @@ def test_prepare_keeps_all_records_inputs_and_read_ranges(tmp_path: pathlib.Path
     assert prepare.main(["--transcript", str(transcript), "--work-dir", str(work)]) == 0
     record = json.loads(capsys.readouterr().out)
     text = pathlib.Path(record["conversation_path"]).read_text(encoding="utf-8")
-    for marker in (
+    for marker in ("目的", "委譲の目的", "agent-child", "Bash×2", "失敗1件"):
+        assert marker in text
+    for result_body in (
         "中間の操作",
         "末尾の操作",
-        "委譲の目的",
         "unique-normal-operation",
-        "agent-child",
         "blocked-operation",
+        "保存先: /results/success.txt",
+        "正常結果の全内容",
+        "遮断の理由",
     ):
-        assert marker in text
-    for result_body in ("保存先: /results/success.txt", "正常結果の全内容", "遮断の理由"):
         assert result_body not in text
-    assert ": 失敗" in text
-    ranges = record["conversation_ranges"]
-    assert ranges[0]["start_line"] == 1
-    assert ranges[-1]["end_line"] == len(text.splitlines())
-    assert all(left["end_line"] + 1 == right["start_line"] for left, right in zip(ranges, ranges[1:], strict=False))
-    assert all(item["utf8_bytes"] <= 32000 for item in ranges)
+    assert record["conversation_utf8_bytes"] == len(text.encode("utf-8"))
+    assert len(text.encode("utf-8")) <= record["conversation_limit_bytes"]
 
 
 @pytest.mark.parametrize(
@@ -147,13 +144,13 @@ def test_prepare_keeps_all_records_inputs_and_read_ranges(tmp_path: pathlib.Path
         ],
     ],
 )
-def test_prepare_keeps_native_and_agy_successful_operations(tmp_path: pathlib.Path, capsys, entries) -> None:
-    """通常のツール結果以外の実行記録も操作を通読へ渡し、結果の本文は載せない。"""
+def test_prepare_summarizes_native_and_agy_successful_operations(tmp_path: pathlib.Path, capsys, entries) -> None:
+    """通常のツール結果以外の実行記録も種類と量へ縮約し、結果の本文は載せない。"""
     transcript = _write_transcript(tmp_path, entries)
     work = tmp_path / "work"
     work.mkdir()
     assert prepare.main(["--transcript", str(transcript), "--work-dir", str(work)]) == 0
     result = json.loads(capsys.readouterr().out)
     text = pathlib.Path(result["conversation_path"]).read_text(encoding="utf-8")
-    assert "normal-operation" in text and "normal-result" not in text
-    assert "- ツール結果（" in text
+    assert "normal-operation" not in text and "normal-result" not in text
+    assert "呼出1件" in text

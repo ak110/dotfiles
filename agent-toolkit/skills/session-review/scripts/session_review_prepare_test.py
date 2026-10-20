@@ -10,7 +10,6 @@ import datetime
 import json
 import os
 import pathlib
-import re
 import subprocess
 import sys
 from typing import Any
@@ -573,9 +572,8 @@ def test_prepare_writes_conversation_candidates_and_stats_without_queue_changes(
     assert "初期要求" in conversation
     assert "I will run the linter now." in conversation
     assert "agent-toolkit-auto-inserted" not in conversation
-    assert "ツール呼び出し（2026-09-06T12:00:10Z、claude:" in conversation
-    assert "make lint" in conversation and "Error: 検査に失敗した" not in conversation
-    assert re.search(r"^- ツール結果（claude:[^）]+）: 失敗 Bash call_id=toolu_fail、", conversation, flags=re.MULTILINE)
+    assert "Bash×1" in conversation and "失敗1件" in conversation
+    assert "make lint" not in conversation and "Error: 検査に失敗した" not in conversation
     assert "hook_additional_context" not in conversation
     assert _LONG_INTERVENTION in conversation
     assert f"claude:{transcript.stem}:5" in conversation
@@ -841,10 +839,11 @@ def test_prepare_keeps_improvement_lines_in_omitted_middle(tmp_path: pathlib.Pat
 
     assert prepare.main(["--transcript", str(transcript), "--work-dir", str(_work_dir(tmp_path))], now=_FIXED_NOW) == 0
 
-    conversation = pathlib.Path(json.loads(capsys.readouterr().out)["conversation_path"]).read_text(encoding="utf-8")
-    assert report in conversation
-    assert first_note in conversation and second_note.strip() in conversation
-    assert filler in conversation
+    result = json.loads(capsys.readouterr().out)
+    conversation = pathlib.Path(result["conversation_path"]).read_text(encoding="utf-8")
+    assert report not in conversation
+    assert result["improvement_lines"] == [first_note, second_note.strip()]
+    assert filler not in conversation
     assert _LONG_INTERVENTION in conversation
 
 
@@ -915,10 +914,10 @@ def test_prepare_reads_codex_thread(
     assert record["utterance_counts"] == {"user": 1, "assistant": 0}
     conversation = pathlib.Path(record["conversation_path"]).read_text(encoding="utf-8")
     assert f"--codex-thread-id {thread_id} --detail <記録位置>" in conversation
-    assert "exec_command" in conversation and "ls docs" in conversation
-    assert "apply_patch" in conversation and "docs/a.md" in conversation
+    assert "exec_command×1" in conversation and "CommandExecution×1" in conversation
+    assert "apply_patch×1" in conversation
     assert "rg: 失敗" not in conversation and "成功した出力の本文" not in conversation
-    assert "）: 失敗 CommandExecution" in conversation
+    assert "失敗1件" in conversation
     assert "候補として残す問題は無かった。" in pathlib.Path(record["candidates_path"]).read_text(encoding="utf-8")
 
 
@@ -1416,9 +1415,10 @@ def test_prepare_conversation_only_preserves_failure_ledger(
     )
 
     record = json.loads(capsys.readouterr().out)
-    assert record["conversation_ranges"]
     conversation = pathlib.Path(record["conversation_path"]).read_text(encoding="utf-8")
-    assert "初期要求" in conversation and "make lint" in conversation
+    assert "初期要求" in conversation and "Bash×1" in conversation
+    assert record["conversation_utf8_bytes"] == len(conversation.encode("utf-8"))
+    assert record["conversation_limit_bytes"] == 100_000
     assert not (work / "candidates.md").exists()
     assert not (work / "stats.md").exists()
     assert not (work / "comparison-materials.md").exists()
@@ -1432,15 +1432,10 @@ def _file_body(name: str) -> str:
     return "\n".join(f"{name}-line-{index}" for index in range(20))
 
 
-def _result_lines(conversation: str) -> list[str]:
-    """会話の流れのツール結果の行を返す。"""
-    return re.findall(r"^- ツール結果（.*$", conversation, flags=re.MULTILINE)
-
-
 def test_prepare_omits_tool_result_bodies_in_claude_conversation(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """ツール結果は本文を載せず成否・量・記録位置の1行で示し、入力は全文で載せる。
+    """ツール結果と長い入力は本文を載せず、種類・量・失敗と記録位置を示す。
 
     会話の流れは作業の流れを振り返る入力であり、結果の本文は記録位置から照会する。
     ファイル表示、パイプを含む加工、失敗、ホストの長文保存の通知のいずれの結果も本文を載せない。
@@ -1465,24 +1460,22 @@ def test_prepare_omits_tool_result_bodies_in_claude_conversation(
 
     conversation = pathlib.Path(json.loads(capsys.readouterr().out)["conversation_path"]).read_text(encoding="utf-8")
     assert "依頼" in conversation
-    for _call_id, _name, tool_input, _content, _is_error in calls:
-        assert json.dumps(tool_input, ensure_ascii=False) in conversation
+    assert "呼出4件" in conversation
+    assert "Read×2" in conversation and "Bash×2" in conversation
+    assert "失敗1件" in conversation
     for name in ("read", "pipe", "failed", "saved"):
         assert f"{name}-line-" not in conversation
     assert "Output too large" not in conversation
-    results = _result_lines(conversation)
-    assert [line.split("）: ", 1)[1].split(" ", 1)[0] for line in results] == ["完了", "完了", "失敗", "完了"]
-    assert "本文249文字・249バイト" in results[0]
-    locators = [line.removeprefix("- ツール結果（").split("）", 1)[0] for line in results]
-    assert locators == [f"claude:{transcript.stem}:{line}" for line in (3, 5, 7, 9)]
-    assert evidence.main([str(transcript), "--detail", locators[0]]) == 0
+    locator = f"claude:{transcript.stem}:3"
+    assert locator in conversation
+    assert evidence.main([str(transcript), "--detail", locator]) == 0
     assert "read-line-19" in capsys.readouterr().out
 
 
-def test_prepare_omits_tool_result_bodies_in_codex_conversation(
+def test_prepare_summarizes_codex_tool_activity(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """CodexのCommandExecutionと`exec_command`の結果も本文を載せず、非0終了を失敗として示す。
+    """CodexのCommandExecutionと`exec_command`も種類・量・非0終了へ縮約する。
 
     CommandExecutionの`item_completed`の形と、`exec_command`の結果の先頭の`Chunk ID:`から`Output:`までの行の形は、
     2026年10月19日のCodex CLI 0.163.0の記録を写す。
@@ -1535,10 +1528,9 @@ def test_prepare_omits_tool_result_bodies_in_codex_conversation(
     assert prepare.main(["--codex-thread-id", thread_id, "--work-dir", str(_work_dir(tmp_path))], now=_FIXED_NOW) == 0
 
     conversation = pathlib.Path(json.loads(capsys.readouterr().out)["conversation_path"]).read_text(encoding="utf-8")
-    for command in ("sed -n '1,40p' /repo/sed.md", "make check", "rg -n needle /repo", "make lint"):
-        assert command in conversation
+    assert "呼出4件" in conversation
+    assert "CommandExecution×2" in conversation and "exec_command×2" in conversation
+    assert "失敗2件" in conversation
     for name in ("sed", "checked", "found", "linted"):
         assert f"{name}-line-" not in conversation
     assert "Chunk ID: abc" not in conversation
-    states = [line.split("）: ", 1)[1].split(" ", 1)[0] for line in _result_lines(conversation)]
-    assert states == ["完了", "失敗", "完了", "失敗"]

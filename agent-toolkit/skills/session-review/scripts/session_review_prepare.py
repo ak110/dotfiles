@@ -1,8 +1,8 @@
 """セッション振り返りの入力を抽出し、会話・比較材料・候補・統計を作業ディレクトリへ書く。
 
-1回の実行で証拠bundleを抽出し、会話の流れ・比較材料・問題候補・統計を書いて、所在と読取範囲を1行のJSONで返す。
-会話の流れは全収集記録の発話とツール呼び出しの入力を記録別に並べ、結果を成否・量・記録位置の1行で示した文書であり、
-メインが最初に全範囲を通読する。
+1回の実行で証拠bundleを抽出し、会話の流れ・比較材料・問題候補・統計を書いて、所在を1行のJSONで返す。
+会話の流れはメインのユーザー発話ごとの時系列と委譲先ごとの活動概要を、詳細の記録位置とともに示した文書であり、
+メインが最初に全体を通読する。
 原因と対策の確定、AWIの起草と投入はメインが自身のコンテキストで行うため、本スクリプトはキューを変更しない。
 `candidates.md`は1候補を1行の要約と、記録の由来（役割文書、起動mode、起動元）を添えた記録位置で示す。全文が要る候補だけを、
 メインが`atk run-script session-review-evidence`の`--detail`で照会する。
@@ -44,20 +44,12 @@ CANDIDATES_FILENAME = "candidates.md"
 STATS_FILENAME = "stats.md"
 COMPARISON_FILENAME = "comparison-materials.md"
 
-_CONVERSATION_RANGE_BYTES = 32_000
-"""1回の読取でホストが加える行番号とJSONの引用符を含めても、ホストが1回に返す量の上限へ収まる本文量。
+_CONVERSATION_MAX_BYTES = 100_000
+"""1エージェントがセッション全体の流れを保持して通読する文書の原則上限。"""
 
-2026年10月10日のCodex CLI 0.162.1は40,000バイト相当の10,000推定トークンで切り詰めた。
-Claude Code 2.1.296のReadは25,000トークンで拒否し、行番号を含む高密度の記録は
-1トークンあたり2.06バイトだった。行番号とJSONの引用符の分に余裕を残す量を選んでいる。
-"""
-
-_READER_RANGE_BYTES = 400_000
-"""1担当へ渡す担当範囲（`reader_ranges`）の本文量の上限。
-
-2026年10月19日の通読の再依頼65件のうち、449,390バイト以下を渡した55件は未読範囲を残さず全文を読了した。
-観測はCodexの読取専用の担当で行った。観測で読了できた最大量より小さい値を選んでいる。
-"""
+_CONVERSATION_MAIN_BYTES = 48_000
+_CONVERSATION_DELEGATE_BYTES = 46_000
+"""文書の固定説明を除き、メインの時系列と委譲先の概要へ割り当てる量。"""
 
 
 _CODEX_EXIT_CODE = re.compile(r"^Process exited with code (\d+)$", re.MULTILINE)
@@ -207,49 +199,138 @@ def _one_line(text: str, limit: int = _SUMMARY_LENGTH) -> str:
     return normalized if len(normalized) <= limit else normalized[:limit] + "…"
 
 
-def _conversation_document(events: list[dict[str, Any]], detail_command: str) -> str:
-    """全担当の発話とツール呼び出しの入力を記録別・行順に並べ、結果は成否・量・記録位置の1行で示す。
+def _clip_utf8(text: str, limit: int) -> str:
+    """UTF-8の文字境界を保ち、本文を指定バイト数以内へ縮める。"""
+    encoded = text.encode("utf-8")
+    if len(encoded) <= limit:
+        return text
+    marker = "…"
+    body = encoded[: max(0, limit - len(marker.encode("utf-8")))].decode("utf-8", errors="ignore")
+    return body + marker
 
-    会話の流れは作業の流れ（遠回り、手戻り、試行錯誤、同じ論点の反復）を振り返る入力であり、
-    流れは発話と呼び出しの入力から読める。結果の本文は記録から再取得できるため載せない。
-    失敗の有無は試行錯誤をたどるのに要るため、結果の行へ残す。
-    """
+
+def _conversation_excerpt(text: str, limit: int) -> str:
+    """詳細照会を前提に、発話または入力の概要を1行で返す。"""
+    return _clip_utf8(" ".join(text.split()), limit)
+
+
+def _activity_summary(events: list[dict[str, Any]]) -> str:
+    """ツール呼び出しの種類・量・失敗と記録位置を1行へ集約する。"""
+    calls = [item for item in events if item.get("kind") == "tool-call"]
+    results = [item for item in events if item.get("kind") in {"tool-result", "tool-failure"}]
+    failures = {
+        (item["record"], item["line"])
+        for item in results
+        if item.get("kind") == "tool-failure" or _codex_failed(str(item.get("text", "")))
+    }
+    tools = collections.Counter(str(item.get("tool") or "unknown") for item in calls)
+    tool_text = "、".join(f"{name}×{count}" for name, count in tools.most_common(6)) or "なし"
+    if len(tools) > 6:
+        tool_text += f"、他{len(tools) - 6}種"
+    input_bytes = sum(len(str(item.get("text", "")).encode("utf-8")) for item in calls)
+    if calls:
+        first = f"{calls[0]['record']}:{calls[0]['line']}"
+        last = f"{calls[-1]['record']}:{calls[-1]['line']}"
+        locations = first if first == last else f"{first}〜{last}"
+    else:
+        locations = "なし"
+    result_locations = [f"{item['record']}:{item['line']}" for item in results]
+    if result_locations:
+        result_range = result_locations[0] if len(result_locations) == 1 else f"{result_locations[0]}〜{result_locations[-1]}"
+    else:
+        result_range = "なし"
+    return (
+        f"呼出{len(calls)}件（{tool_text}）、失敗{len(failures)}件、入力{input_bytes}バイト、"
+        f"呼出記録{locations}、結果記録{result_range}"
+    )
+
+
+def _main_turns(events: list[dict[str, Any]]) -> list[list[dict[str, Any]]]:
+    """メイン記録を実ユーザー発話から次の実ユーザー発話までの区間へ分ける。"""
+    turns: list[list[dict[str, Any]]] = []
+    current: list[dict[str, Any]] = []
+    for event in events:
+        if event.get("kind") == "utterance" and event.get("role") == "user" and current:
+            turns.append(current)
+            current = []
+        current.append(event)
+    if current:
+        turns.append(current)
+    return turns
+
+
+def _main_turn_summary(events: list[dict[str, Any]], limit: int) -> str:
+    """ユーザー発話1件と、その後の判断・操作・結果を同じ区間の概要にする。"""
+    utterances = [item for item in events if item.get("kind") == "utterance"]
+    user = next((item for item in utterances if item.get("role") == "user"), None)
+    assistants = [item for item in utterances if item.get("role") == "assistant"]
+    parts: list[str] = []
+    if user is not None:
+        locator = f"{user['record']}:{user['line']}"
+        parts.append(
+            f"ユーザー {user.get('timestamp') or '時刻なし'} {locator}: "
+            f"{_conversation_excerpt(str(user.get('text', '')), max(80, limit // 2))}"
+        )
+    if assistants:
+        first = _conversation_excerpt(str(assistants[0].get("text", "")), max(40, limit // 8))
+        last = _conversation_excerpt(str(assistants[-1].get("text", "")), max(40, limit // 8))
+        location = f"{assistants[0]['record']}:{assistants[0]['line']}〜{assistants[-1]['record']}:{assistants[-1]['line']}"
+        parts.append(f"アシスタント{len(assistants)}発話（{location}）: 冒頭={first} / 末尾={last}")
+    parts.append(_activity_summary(events))
+    return _clip_utf8("\n".join(f"- {part}" for part in parts), limit)
+
+
+def _delegate_summary(record: str, events: list[dict[str, Any]], limit: int) -> str:
+    """委譲先1記録の目的・返却・操作量を1行にする。"""
+    utterances = [item for item in events if item.get("kind") == "utterance"]
+    users = [item for item in utterances if item.get("role") == "user"]
+    assistants = [item for item in utterances if item.get("role") == "assistant"]
+    task = _conversation_excerpt(str(users[0].get("text", "")), max(30, limit // 4)) if users else "なし"
+    result = _conversation_excerpt(str(assistants[-1].get("text", "")), max(30, limit // 4)) if assistants else "なし"
+    first = events[0].get("timestamp") or "時刻なし"
+    last = events[-1].get("timestamp") or "時刻なし"
+    summary = (
+        f"- {record}（{first}〜{last}）: 依頼={task}; 返却={result}; "
+        f"アシスタント{len(assistants)}発話; {_activity_summary(events)}"
+    )
+    return _clip_utf8(summary, limit)
+
+
+def _conversation_document(events: list[dict[str, Any]], detail_command: str, main_record: str | None) -> str:
+    """セッション全体の目的・判断・操作と手戻りを、1エージェントが通読できる量で示す。"""
+    by_record: dict[str, list[dict[str, Any]]] = collections.defaultdict(list)
+    for event in events:
+        by_record[str(event["record"])].append(event)
+    if main_record is None and by_record:
+        main_record = next(iter(by_record))
     lines = [
         "# 会話の流れ",
         "",
-        "収集できた全担当の発話とツール呼び出しの入力を、記録別に元の行順で示す。"
-        "記録をまたぐ時系列ではない。本文は文字位置付きの連続区間へ分けて全量を保持する。"
-        "ツール結果は本文を載せず、成否・本文量・記録位置の1行で示す。"
-        f"結果の本文と元の記録は`{detail_command} --detail <記録位置>`から照会できる。",
+        "セッション全体の目的、判断、主要な操作、分担、待機、再読、失敗と手戻りを、"
+        "1エージェントが一続きで見直すための概要である。自動挿入本文と詳細本文の写しは含めない。"
+        f"全文は`{detail_command} --detail <記録位置>`から取得する。",
+        "",
+        "## メインの流れ",
+        "",
     ]
-    if not events:
-        lines.extend(["", "発話とツール呼び出しは0件である。"])
-    result_lines = {(item["record"], item["line"]) for item in events if item.get("kind") == "tool-result"}
-    failed_lines = {(item["record"], item["line"]) for item in events if item.get("kind") == "tool-failure"}
-    for item in events:
-        locator = f"{item['record']}:{item['line']}"
-        kind = item.get("kind", "utterance")
-        text = str(item["text"])
-        if kind in {"tool-result", "tool-failure"}:
-            if kind == "tool-failure" and (item["record"], item["line"]) in result_lines:
-                continue
-            failed = (item["record"], item["line"]) in failed_lines or _codex_failed(text)
-            state = "失敗" if failed else "完了"
-            call = f" {item.get('tool')} call_id={item.get('call_id')}" if kind == "tool-result" else ""
-            lines.extend(
-                [
-                    "",
-                    f"- ツール結果（{locator}）: {state}{call}、"
-                    f"本文{len(text)}文字・{len(text.encode('utf-8'))}バイト（{item.get('timestamp') or '時刻なし'}）",
-                ]
-            )
-            continue
-        label = ("ユーザー" if item["role"] == "user" else "アシスタント") if kind == "utterance" else "ツール呼び出し"
-        title = f"{label}（{item.get('timestamp') or '時刻なし'}、{locator}）"
-        if kind != "utterance":
-            title += f" {item.get('tool') or ''} call_id={item.get('call_id')}"
-        lines.extend(_full_body_lines(text, title=title))
-    return "\n".join(lines) + "\n"
+    main_events = by_record.pop(str(main_record), []) if main_record is not None else []
+    turns = _main_turns(main_events)
+    if not turns:
+        lines.append("- メイン記録の発話と操作は0件である。")
+    else:
+        per_turn = max(240, _CONVERSATION_MAIN_BYTES // len(turns))
+        lines.extend(_main_turn_summary(turn, per_turn) for turn in turns)
+    lines.extend(["", "## 委譲先の流れ", ""])
+    delegates = sorted(by_record.items(), key=lambda item: str(item[1][0].get("timestamp") or ""))
+    if not delegates:
+        lines.append("- 委譲先記録は0件である。")
+    else:
+        per_delegate = max(100, _CONVERSATION_DELEGATE_BYTES // len(delegates))
+        lines.extend(_delegate_summary(record, record_events, per_delegate) for record, record_events in delegates)
+    document = "\n".join(lines) + "\n"
+    if len(document.encode("utf-8")) > _CONVERSATION_MAX_BYTES:
+        raise ValueError("会話の流れを原則上限の100000バイト以下へ縮約できなかった")
+    return document
 
 
 def _codex_failed(result: str) -> bool:
@@ -270,123 +351,6 @@ def _full_body_lines(text: str, *, title: str) -> list[str]:
         body = text[start : start + 4000]
         lines.extend(["", f"## {title}（文字{start + 1}〜{start + len(body)}）", "", *_fence(body)])
     return lines
-
-
-def _conversation_ranges(
-    text: str, events: list[dict[str, Any]], known_scope: dict[str, Any] | None = None
-) -> list[dict[str, Any]]:
-    """発話と呼び出し・失敗を分断しない、全行を覆う読取範囲を返す。"""
-    lines = text.splitlines(keepends=True)
-    timestamps = {f"{event['record']}:{event['line']}": event.get("timestamp") for event in events}
-    boundaries = [0]
-    owners: dict[int, tuple[str | None, bool]] = {0: (None, False)}
-    owner: tuple[str | None, bool] = (None, False)
-    fence_length = 0
-    sizes = [0]
-    for index, line in enumerate(lines):
-        sizes.append(sizes[-1] + len(line.encode("utf-8")))
-        if not fence_length:
-            heading = re.match(r"^## [^（]+（[^、]+、([^）]+)）", line)
-            tool_result = re.match(r"^- ツール結果（([^）]+)）", line)
-            locator = heading[1] if heading else tool_result[1] if tool_result else None
-            if locator is not None:
-                record, _, raw_line = locator.rpartition(":")
-                known = bool(known_scope and record == known_scope["record"] and int(raw_line) > known_scope["after_line"])
-                next_owner = (record, known)
-                if index and (heading or next_owner != owner):
-                    boundaries.append(index)
-                owner = next_owner
-                owners[index] = owner
-        fence = re.match(r"^(`{3,})([^`]*)$", line.rstrip("\n"))
-        if fence is not None:
-            if not fence_length:
-                fence_length = len(fence[1])
-            elif len(fence[1]) >= fence_length and not fence[2].strip():
-                fence_length = 0
-    boundaries.append(len(lines))
-    spans: list[tuple[int, int]] = []
-    previous_owner: tuple[str | None, bool] = (None, False)
-    for start, end in zip(boundaries, boundaries[1:], strict=False):
-        block_owner = owners.get(start, previous_owner)
-        # 文書冒頭の説明は最初の記録の原子的範囲へ含める。
-        if (
-            spans
-            and (previous_owner[0] is None or block_owner == previous_owner)
-            and sizes[end] - sizes[spans[-1][0]] <= _CONVERSATION_RANGE_BYTES
-        ):
-            spans[-1] = (spans[-1][0], end)
-        else:
-            spans.append((start, end))
-        previous_owner = block_owner
-    result: list[dict[str, Any]] = []
-    for start, end in spans:
-        locators: list[str] = []
-        in_fence = 0
-        for line in lines[start:end]:
-            fence = re.match(r"^(`{3,})([^`]*)$", line.rstrip("\n"))
-            if fence is not None:
-                if not in_fence:
-                    in_fence = len(fence[1])
-                elif len(fence[1]) >= in_fence and not fence[2].strip():
-                    in_fence = 0
-                continue
-            if in_fence:
-                continue
-            utterance = re.match(r"^## [^（]+（([^、]+)、([^）]+)）", line)
-            call = re.match(r"^- ツール結果（([^）]+)）", line)
-            if utterance:
-                locators.append(utterance[2])
-            elif call:
-                locators.append(call[1])
-        result.append(
-            {
-                "start_line": start + 1,
-                "end_line": end,
-                "utf8_bytes": sizes[end] - sizes[start],
-                "first_locator": locators[0] if locators else None,
-                "last_locator": locators[-1] if locators else None,
-                "first_timestamp": timestamps.get(locators[0]) if locators else None,
-                "last_timestamp": timestamps.get(locators[-1]) if locators else None,
-                "record": locators[0].rpartition(":")[0] if locators else None,
-                "main_known": bool(
-                    known_scope
-                    and locators
-                    and locators[0].rpartition(":")[0] == known_scope["record"]
-                    and int(locators[0].rpartition(":")[2]) > known_scope["after_line"]
-                ),
-            }
-        )
-    return result
-
-
-def _reader_ranges(ranges: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """読取範囲を分割・合成せず先頭から連続して束ね、1担当が全文を読了できる量の担当範囲を返す。"""
-    groups: list[list[int]] = []
-    total = 0
-    for index, item in enumerate(ranges):
-        if item.get("main_known"):
-            continue
-        if (
-            groups
-            and groups[-1][-1] == index - 1
-            and ranges[groups[-1][-1]].get("record") == item.get("record")
-            and total + item["utf8_bytes"] <= _READER_RANGE_BYTES
-        ):
-            groups[-1].append(index)
-            total += item["utf8_bytes"]
-        else:
-            groups.append([index])
-            total = item["utf8_bytes"]
-    return [
-        {
-            "start_line": ranges[group[0]]["start_line"],
-            "end_line": ranges[group[-1]]["end_line"],
-            "utf8_bytes": sum(ranges[index]["utf8_bytes"] for index in group),
-            "first_range_index": group[0],
-            "last_range_index": group[-1],
-        }
-        for group in groups
-    ]
 
 
 def _readable_entry_text(text: str) -> str:
@@ -1072,38 +1036,24 @@ def main(argv: list[str] | None = None, *, now: datetime.datetime | None = None)
     candidates_path = work_dir / CANDIDATES_FILENAME
     stats_path = work_dir / STATS_FILENAME
     comparison_path = work_dir / COMPARISON_FILENAME
-    conversation_text = _conversation_document(conversation, detail_command)
-    conversation_path.write_text(conversation_text, encoding="utf-8")
     main_record = next(
         (item.get("record") for item in timeline if item.get("kind") == "record-provenance" and item.get("role") == "main"),
         None,
     )
-    main_known_scope = (
-        {
-            "record": main_record,
-            "after_line": max(
-                (
-                    int(item["line"])
-                    for item in stats
-                    if item.get("kind") == "stats-compaction" and item.get("record") == main_record
-                ),
-                default=0,
-            ),
-        }
-        if main_record is not None and not args.conversation_only
-        else None
-    )
-    conversation_ranges = _conversation_ranges(conversation_text, conversation, main_known_scope)
-    reader_ranges = _reader_ranges(conversation_ranges)
+    try:
+        conversation_text = _conversation_document(conversation, detail_command, str(main_record) if main_record else None)
+    except ValueError as error:
+        return _missing("bundle", str(error))
+    conversation_path.write_text(conversation_text, encoding="utf-8")
+    conversation_bytes = len(conversation_text.encode("utf-8"))
     if args.conversation_only:
         print(
             json.dumps(
                 {
                     "work_dir": str(work_dir),
                     "conversation_path": str(conversation_path),
-                    "conversation_ranges": conversation_ranges,
-                    "reader_ranges": reader_ranges,
-                    "main_known_scope": None,
+                    "conversation_utf8_bytes": conversation_bytes,
+                    "conversation_limit_bytes": _CONVERSATION_MAX_BYTES,
                     "unconfirmed_scope": unresolved,
                 },
                 ensure_ascii=False,
@@ -1148,9 +1098,8 @@ def main(argv: list[str] | None = None, *, now: datetime.datetime | None = None)
     record = {
         "work_dir": str(work_dir),
         "conversation_path": str(conversation_path),
-        "conversation_ranges": conversation_ranges,
-        "reader_ranges": reader_ranges,
-        "main_known_scope": main_known_scope,
+        "conversation_utf8_bytes": conversation_bytes,
+        "conversation_limit_bytes": _CONVERSATION_MAX_BYTES,
         "comparison_materials_path": str(comparison_path),
         "candidates_path": str(candidates_path),
         "stats_path": str(stats_path),
