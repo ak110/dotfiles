@@ -22,6 +22,7 @@ from _test_helpers import (
     run_installer,
     serve_rules,
 )
+from pytools._internal import common
 
 LEGACY_CODEX_MCP_CASES = REPO_ROOT / "pytools" / "_internal" / "legacy_codex_mcp_cases.json"
 
@@ -197,8 +198,7 @@ def test_running_codex_defers_plugin_update_until_session_ends(kind: str, tmp_pa
     session_executable = tmp_path / "resident-bin" / "codex"
     session_executable.parent.mkdir()
     session_executable.symlink_to(sleep)
-    session = subprocess.Popen([str(session_executable), "600"])  # pylint: disable=consider-using-with
-    try:
+    with common.process_scope([str(session_executable), "600"]) as session:
         deferred = run_installer(
             kind,
             home,
@@ -216,9 +216,6 @@ def test_running_codex_defers_plugin_update_until_session_ends(kind: str, tmp_pa
         assert "保持中の版: 1.2.2（有効）。未反映の目標版: 1.2.3。" in deferred.stderr
         assert "Codexのセッションを全て終了してから、同じインストーラーを再実行してください。" in deferred.stderr
         assert "codex app-server daemon restart" not in deferred.stderr
-    finally:
-        session.kill()
-        session.wait(timeout=10)
 
     # 再実行も更新前の導入状態から始めるため、スタブが返す導入状態を更新前へ戻す。
     stub_log.with_suffix(".codex-plugin-state").unlink()

@@ -7,6 +7,10 @@ import subprocess
 # キーは追跡ファイルと関数。停止・時間上限を許可する理由を箇所ごとに残す。
 _ALLOWED: dict[tuple[str, str], str] = {
     (
+        "agent-toolkit/scripts/launch.py",
+        "_stop_server_process",
+    ): "stdlibだけのbootstrapで、独立sessionとして起動した子のprocess groupを有限時間で回収する",
+    (
         "agent-toolkit/agent_toolkit/_atk/wi/process_loop_all_repos.py",
         "_stop_repository",
     ): "agents_serverのsession停止。子プロセスを直接止めず、終了の所有はkillの実装側にある",
@@ -100,3 +104,11 @@ def test_timeouts_and_kills_use_process_tree_helpers():
         if path.suffix == ".py" and not path.name.endswith("_test.py") and "_testing" not in path.parts:
             failures.extend(_violations(path, (root / path).read_text(encoding="utf-8")))
     assert not failures, "共通関数を経由しない停止・時間上限:\n" + "\n".join(failures)
+
+
+def test_bootstrap_stop_exception_is_limited_to_its_owned_helper():
+    """bootstrap固有の許可は同じファイルの一般呼出側や別ファイルへ広がらない。"""
+    source = "def _stop_server_process(process):\n    process.kill()\n"
+    assert not _violations(pathlib.Path("agent-toolkit/scripts/launch.py"), source)
+    assert _violations(pathlib.Path("agent-toolkit/agent_toolkit/atk.py"), source)
+    assert _violations(pathlib.Path("agent-toolkit/scripts/launch.py"), source.replace("_stop_server_process", "main"))

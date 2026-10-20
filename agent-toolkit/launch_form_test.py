@@ -1,15 +1,145 @@
 """agent-toolkitのuvプロジェクト指定が作業ディレクトリを保持することを検証する。"""
 
+# bootstrapの所有境界へ故障を注入し、解放状態も直接検証する。
+# pylint: disable=protected-access
+
+import contextlib
+import importlib.util
 import json
+import os
 import pathlib
 import subprocess
 import sys
+import threading
+import time
 import venv
 from collections.abc import Callable
+from types import ModuleType
+from typing import Any
 
+import psutil
 import pytest
 
+from agent_toolkit._common import process_tree
+
 _PROJECT_ROOT = pathlib.Path(__file__).resolve().parent
+
+
+@pytest.fixture(name="launcher")
+def _launcher(monkeypatch: pytest.MonkeyPatch) -> ModuleType:
+    """公開bootstrapの実装を、sys.pathの変更も試験内へ分離して読み込む。"""
+    monkeypatch.setattr(sys, "path", sys.path.copy())
+    spec = importlib.util.spec_from_file_location("tested_launch", _PROJECT_ROOT / "scripts" / "launch.py")
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+@pytest.mark.parametrize("stage", ["signal", "reader", "wait", "stop"])
+def test_agents_server_launcher_reclaims_resources_on_failure(
+    stage: str,
+    launcher: ModuleType,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+    request: pytest.FixtureRequest,
+) -> None:
+    """準備・待機・停止の失敗でも子、開始済みreader、stderr、一時記録とsignal設定を回収する。"""
+    if stage == "signal" and os.name == "nt":
+        pytest.skip("POSIXのsignal handler準備の故障を注入する")
+    rescue = contextlib.ExitStack()
+    request.addfinalizer(rescue.close)
+    processes: list[subprocess.Popen] = []
+    readers: list[threading.Thread] = []
+    original_start = threading.Thread.start
+    original_signal = launcher.signal.signal
+    original_stop = launcher._stop_server_process
+    previous = {
+        name: launcher.signal.getsignal(getattr(launcher.signal, name))
+        for name in launcher._FORWARDED_SIGNALS
+        if hasattr(launcher.signal, name)
+    }
+
+    class ObservedProcess(subprocess.Popen):
+        def __init__(self, *args: Any, **kwargs: Any) -> None:
+            super().__init__(*args, **kwargs)
+            processes.append(self)
+            assert self.stderr is not None
+            rescue.callback(self.stderr.close)
+            rescue.callback(process_tree.stop_process_tree, self)
+
+        def wait(self, timeout: float | None = None) -> int:
+            if stage == "wait" and timeout is None:
+                raise RuntimeError("wait失敗")
+            return super().wait(timeout=timeout)
+
+    def start(reader: threading.Thread) -> None:
+        readers.append(reader)
+        if stage == "reader":
+            raise RuntimeError("reader失敗")
+        original_start(reader)
+
+    def set_signal(signum: int, handler: Any) -> Any:
+        if stage == "signal" and signum == launcher.signal.SIGTERM and callable(handler):
+            raise RuntimeError("signal失敗")
+        return original_signal(signum, handler)
+
+    def stop(process: subprocess.Popen) -> None:
+        original_stop(process)
+        if stage == "stop":
+            raise RuntimeError("stop失敗")
+
+    monkeypatch.setattr(launcher.subprocess, "Popen", ObservedProcess)
+    monkeypatch.setattr(launcher.threading.Thread, "start", start)
+    monkeypatch.setattr(launcher.signal, "signal", set_signal)
+    monkeypatch.setattr(launcher, "_stop_server_process", stop)
+    monkeypatch.setattr(launcher.tempfile, "tempdir", str(tmp_path))
+    command = [sys.executable, "-c", "import time; time.sleep(120)"]
+    if stage == "stop":
+        command = [sys.executable, "-c", "pass"]
+    with pytest.raises(RuntimeError, match=stage):
+        launcher._run_agents_server(command, dict(os.environ))
+    assert len(processes) == 1 and processes[0].poll() is not None
+    assert processes[0].stderr is not None and processes[0].stderr.closed
+    assert all(not reader.is_alive() for reader in readers)
+    assert not list(tmp_path.glob("agent-toolkit-agents-server-launch-*.json"))
+    assert previous == {name: launcher.signal.getsignal(getattr(launcher.signal, name)) for name in previous}
+
+
+@pytest.mark.skipif(os.name == "nt", reason="独立POSIX groupとSIGTERM無視を実processで検証する")
+@pytest.mark.parametrize("orphaned", [False, True])
+def test_launcher_stops_stubborn_group_with_bounded_wait(
+    orphaned: bool, launcher: ModuleType, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+) -> None:
+    """有限wait後の強制終了と、親終了後にstderrを保持する同じgroupの子孫回収を確かめる。"""
+    marker = tmp_path / "ready"
+    source = (
+        "import os,pathlib,signal,time; signal.signal(signal.SIGTERM, signal.SIG_IGN); "
+        f"pathlib.Path({str(marker)!r}).write_text(str(os.getpid())); time.sleep(120)"
+    )
+    if orphaned:
+        source = f"import subprocess,sys; subprocess.Popen([sys.executable, '-c', {source!r}])"
+    monkeypatch.setattr(launcher, "_STOP_TIMEOUT", 0.1)
+    outcome = contextlib.nullcontext() if orphaned else pytest.raises(subprocess.TimeoutExpired)
+    acquired: list[subprocess.Popen] = []
+    children: list[psutil.Process] = []
+    with contextlib.ExitStack() as rescue:
+        with outcome, launcher._server_lifetime([sys.executable, "-c", source], dict(os.environ), [], bytearray()) as process:
+            acquired.append(process)
+            deadline = time.monotonic() + 5
+            while not marker.exists():
+                assert time.monotonic() < deadline, "子のsignal設定が完了しませんでした"
+                time.sleep(0.01)
+            child = psutil.Process(int(marker.read_text(encoding="utf-8")))
+            children.append(child)
+            rescue.callback(process_tree.reclaim_descendants, [child])
+            if orphaned:
+                assert process.wait(timeout=5) == 0
+        assert len(acquired) == len(children) == 1
+        assert acquired[0].poll() is not None
+        assert acquired[0].stderr is not None and acquired[0].stderr.closed
+        with contextlib.suppress(psutil.NoSuchProcess):
+            assert children[0].status() == psutil.STATUS_ZOMBIE
 
 
 @pytest.mark.usefixtures("share_package_caches")
