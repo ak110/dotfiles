@@ -138,8 +138,15 @@ def test_launcher_stops_stubborn_group_with_bounded_wait(
         assert len(acquired) == len(children) == 1
         assert acquired[0].poll() is not None
         assert acquired[0].stderr is not None and acquired[0].stderr.closed
-        with contextlib.suppress(psutil.NoSuchProcess):
-            assert children[0].status() == psutil.STATUS_ZOMBIE
+        deadline = time.monotonic() + 5
+        while True:
+            try:
+                if children[0].status() == psutil.STATUS_ZOMBIE:
+                    break
+            except psutil.NoSuchProcess:
+                break
+            assert time.monotonic() < deadline, "子プロセスの終了状態へ到達しませんでした"
+            time.sleep(0.01)
 
 
 @pytest.mark.usefixtures("share_package_caches")

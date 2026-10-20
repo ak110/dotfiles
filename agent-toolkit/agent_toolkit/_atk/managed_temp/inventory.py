@@ -10,7 +10,6 @@ import datetime
 import enum
 import functools
 import hashlib
-import ntpath
 import os
 import pathlib
 import re
@@ -1272,21 +1271,11 @@ def _restore_posix_quarantine(
         os.rename(quarantine.name, target_name, src_dir_fd=root_descriptor, dst_dir_fd=root_descriptor)
 
 
-def _windows_stored_path(path: str) -> pathlib.PureWindowsPath:
-    """Windows namespace接頭辞を除き、格納値を字句比較できる形にする。"""
-    if path.startswith("\\\\?\\UNC\\"):
-        path = f"\\\\{path[8:]}"
-    elif path.startswith("\\\\?\\"):
-        path = path[4:]
-    return pathlib.PureWindowsPath(ntpath.normpath(path))
-
-
 def _windows_reparse_entry(
     path: pathlib.Path,
     metadata: os.stat_result,
-    managed_root: pathlib.Path,
 ) -> _TreeEntry:
-    """受理できるreparse pointの種別、identityおよび格納値を返す。"""
+    """非追跡で解除できるreparse pointの種別、identityおよび格納値を返す。"""
     tag = getattr(metadata, "st_reparse_tag", None)
     if tag == _WINDOWS_MOUNT_POINT_REPARSE_TAG:
         kind = "junction"
@@ -1298,12 +1287,8 @@ def _windows_reparse_entry(
         raise ManagedTempError(f"Windows reparse pointは後始末できない: {path}")
     try:
         stored_target = os.readlink(_windows_extended_path(path))
-        target = _windows_stored_path(stored_target)
-        root = _windows_stored_path(str(managed_root))
     except OSError, ValueError:
         raise ManagedTempError(f"Windows reparse pointは後始末できない: {path}") from None
-    if not target.is_absolute() or not target.is_relative_to(root):
-        raise ManagedTempError(f"Windows reparse pointは後始末できない: {path}")
     device, inode = _windows_reparse_identity(path)
     return kind, device, inode, stored_target
 
@@ -1327,7 +1312,7 @@ def _tree_snapshot(root: pathlib.Path | int) -> dict[str, _TreeEntry]:
                 path = pathlib.Path(entry.path)
                 metadata = path.lstat()
                 if os.name == "nt" and getattr(metadata, "st_file_attributes", 0) & _WINDOWS_REPARSE_POINT:
-                    snapshot[str(path.relative_to(root))] = _windows_reparse_entry(path, metadata, root.parent)
+                    snapshot[str(path.relative_to(root))] = _windows_reparse_entry(path, metadata)
                     continue
                 kind = "dir" if stat.S_ISDIR(metadata.st_mode) else "leaf"
                 device, inode = _path_identity(path)
@@ -1344,7 +1329,7 @@ def _unlink_windows_reparse_points(root: pathlib.Path, expected_tree: dict[str, 
     for relative, expected in sorted(links, key=lambda item: len(pathlib.PurePath(item[0]).parts), reverse=True):
         path = pathlib.Path(_windows_extended_path(root / relative))
         metadata = path.lstat()
-        if _windows_reparse_entry(path, metadata, root.parent) != expected:
+        if _windows_reparse_entry(path, metadata) != expected:
             raise ManagedTempError(
                 f"Windows reparse pointが後始末中に置換された: {path}", next_action=ManagedTempError.REPLACED_NEXT_ACTION
             )

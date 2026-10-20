@@ -1155,7 +1155,7 @@ class TestManagedTempWindows:
         managed_temp_windows_security._windows_secure_path(target, directory=directory)
         managed_temp_windows_security._validate_windows_security(target)
 
-    def test_reparse_child_is_rejected_and_preserved(
+    def test_cleanup_unlinks_external_reparse_child_and_preserves_target(
         self,
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
@@ -1170,10 +1170,11 @@ class TestManagedTempWindows:
         kept_file.write_text("keep", encoding="utf-8")
         junction = target / "junction"
         _make_junction(junction, outside)
-        with pytest.raises(subject.ManagedTempError, match="reparse point"):
-            subject.cleanup_managed_temp(target)
+
+        subject.cleanup_managed_temp(target)
+
         assert kept_file.read_text(encoding="utf-8") == "keep"
-        assert target.exists()
+        assert not target.exists()
 
     def test_cleanup_accepts_a_junction_within_the_managed_root(
         self,
