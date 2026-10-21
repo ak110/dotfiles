@@ -78,7 +78,7 @@ Codex向けのプラグインは`update-dotfiles`が生成して導入する。�
 
 `update-dotfiles`は未導入、disabled、version不一致のいずれかの場合に`codex plugin add`を実行し、導入後のversionと有効状態を再確認する。
 更新前にagent-toolkitの全通常versionディレクトリを複製する。
-`codex plugin add`が削除した旧versionは、導入後の状態確認を含む最後のCodex CLI呼出後に同じ絶対パスへ戻すため、保存済みセッションを終了せずに更新できる。
+`codex plugin add`が削除した旧versionは、導入後の状態確認とdaemon処理を含む更新関数内のCodex CLI呼出が全て終了した後に同じ絶対パスへ戻すため、保存済みセッションを終了せずに更新できる。
 別のCodex App Serverがlocal marketplaceを自動更新して旧versionを削除した場合、dotfiles向けhookの起動コマンドはClaude Code側に残る同versionを使う。
 削除された旧versionのCodex plugin cache rootと同じ絶対パスへ復旧してからhookを起動する。
 同versionが残っていない場合は、Claude Codeの現行導入版からhookを起動する。

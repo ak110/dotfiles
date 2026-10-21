@@ -127,7 +127,7 @@ dotfilesが生成する`agent-toolkit-codex/`のhook定義は、個人binの`atk
 インストーラーは`codex plugin add`より先にこのコマンドを配置する。
 `atk-hook`はlive sessionが保持する`PLUGIN_ROOT`を優先し、その変数が指す版付きCodex cacheが欠落した場合は、Claude Code側に残る同版cacheを同じCodex絶対パスへ原子的に復旧する。
 同版が無い場合はClaude Codeの現行導入版からhookを起動し、編集途中のdotfiles作業ツリーは自動fallbackに使わない。
-更新前の全通常versionディレクトリを複製し、導入後の状態確認を含む最後のCodex CLI呼出後に、CLIが削除した旧versionを同じ絶対パスへ復元する。
+更新前の全通常versionディレクトリを複製し、導入後の状態確認とdaemon処理を含む更新関数内のCodex CLI呼出が全て終了した後に、CLIが削除した旧versionを同じ絶対パスへ復元する。
 現行versionの導入と有効状態の管理はCodex公式CLIへ委ね、旧版保存台帳は設けない。
 
 agent-toolkitには、公開互換インストーラーである`install-claude.sh`・`install-claude.ps1`を使う単体導入と、
