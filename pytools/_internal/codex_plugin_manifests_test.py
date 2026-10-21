@@ -230,15 +230,19 @@ def test_sync_is_deterministic(manifest_root: Path) -> None:
     assert not (codex_root / ".ruff_cache").exists()
     assert not (codex_root / "plugin.json").exists()
     assert not (codex_root / "mcp.json").exists()
-    for relative in (
-        Path(".codex-plugin/plugin.json"),
-        Path(".mcp.codex.json"),
-        Path("hooks/hooks.codex.json"),
-    ):
+    for relative in (Path(".codex-plugin/plugin.json"), Path(".mcp.codex.json")):
         projected = codex_root / relative
         assert projected.is_file()
         assert not projected.is_symlink()
         assert projected.read_text(encoding="utf-8") == (manifest_root / "agent-toolkit" / relative).read_text(encoding="utf-8")
+    portable_hooks = json.loads((manifest_root / subject.HOOKS_TARGET).read_text(encoding="utf-8"))["hooks"]
+    local_hooks = json.loads((codex_root / "hooks/hooks.codex.json").read_text(encoding="utf-8"))["hooks"]
+    portable_commands = [hook["command"] for groups in portable_hooks.values() for group in groups for hook in group["hooks"]]
+    local_commands = [hook["command"] for groups in local_hooks.values() for group in groups for hook in group["hooks"]]
+    assert all(command.startswith(_CODEX_HOOK_PREFIX) for command in portable_commands)
+    assert {command.removeprefix("atk-hook ") for command in local_commands} == {
+        command.rsplit(" ", maxsplit=1)[-1] for command in portable_commands
+    }
     agent_plugin_text = (manifest_root / subject.AGENT_PLUGIN_TARGET).read_text(encoding="utf-8")
     agent_plugin = json.loads(agent_plugin_text)
     assert agent_plugin == {"$schema": subject.AGENT_PLUGIN_SCHEMA, **_plugin_data()}

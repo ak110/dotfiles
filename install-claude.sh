@@ -295,7 +295,7 @@ _install_codex_plugin() {
             post_add_error="Codex plugin更新後のhook実体を確認できません。"
         fi
     fi
-    # 状態確認のCodex CLI呼出も旧cacheを回収し得るため、復旧は最後の呼出後に行う。
+    # 既存セッションが参照する全旧パスを関数の終了時に成立させるため、復旧は保護区間の終端で行う。
     if ! _restore_codex_plugin_caches "$migration_dir" "$expected_version" 0; then
         echo "Codex plugin更新後の旧cache復旧に失敗しました。退避先を保持します: $migration_dir" >&2
         echo "退避先を変更せず、表示された内容とパスをdotfilesの作者へ報告してください。" >&2

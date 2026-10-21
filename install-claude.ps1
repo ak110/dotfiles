@@ -222,7 +222,7 @@ function Install-CodexPlugin {
         }
     } finally {
         try {
-            # 状態確認のCodex CLI呼出も旧cacheを回収し得るため、復旧は最後の呼出後に行う。
+            # 既存セッションが参照する全旧パスを関数の終了時に成立させるため、復旧は保護区間の終端で行う。
             Restore-CodexPluginCacheSnapshot $savedCacheRoot $expectedVersion $false
             Remove-Item -LiteralPath $savedCacheRoot -Recurse -Force
         } catch {

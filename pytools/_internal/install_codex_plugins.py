@@ -463,7 +463,7 @@ def _sync_local_plugin(
             _restart_daemon_after_plugin_update(notices)
         finally:
             try:
-                # 状態確認などのCodex CLI呼出も旧cacheを回収し得るため、復旧は最後の呼出後に行う。
+                # 既存セッションが参照する全旧パスを関数の終了時に成立させるため、復旧は保護区間の終端で行う。
                 _restore_plugin_caches(cache_root, saved_root, saved_versions, installed_version=version)
             except OSError as error:
                 raise RuntimeError(
