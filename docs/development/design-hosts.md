@@ -61,7 +61,7 @@ CLI成功後は同コマンドで`codex plugin list --json`を取得し、版数
 Codex 0.163.0では、App Serverの`plugin/list` RPCもlocal marketplaceの新versionを自動導入し、更新関数の外で全旧cacheを削除する。
 この上流のcache寿命不整合は[openai/codex#31383](https://github.com/openai/codex/issues/31383)で複数版・複数OSから報告され、live hookの再読込も[openai/codex#36605](https://github.com/openai/codex/issues/36605)などで未解決である。
 dotfiles向けの生成済みhook定義は、版付きcacheの外へ先に配置する`atk-hook`を使う。
-版付き`PLUGIN_ROOT`が欠落した場合、同版のClaude Code plugin cacheを検証して元のCodex pathへ原子的に復旧する。
+`PLUGIN_ROOT`が指す版付きCodex cacheが欠落した場合、同版のClaude Code plugin cacheを検証して元のCodex pathへ原子的に復旧する。
 同版が無い場合はClaude Codeの現行導入版からhookだけを起動し、編集途中の作業ツリーは使わない。
 共有配布物のhook定義は、dotfilesとClaude Code cacheを前提にできないため`${PLUGIN_ROOT}`から起動する可搬契約を維持する。
 `plugin add`が失敗した場合は退避した全versionを更新前の状態へ戻す。

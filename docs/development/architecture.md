@@ -125,7 +125,7 @@ Codex 0.154.0はプラグイン導入時にsourceをsnapshotするため、`agen
 共有するCodex hook定義は、ホストが渡す`${PLUGIN_ROOT}/scripts/launch.py`からその版のhookを起動する。
 dotfilesが生成する`agent-toolkit-codex/`のhook定義は、個人binの`atk-hook`を安定した起動コマンドにする。
 インストーラーは`codex plugin add`より先にこのコマンドを配置する。
-`atk-hook`はlive sessionが保持する`PLUGIN_ROOT`を優先し、欠落時はClaude Code側に残る同版cacheを同じCodex絶対パスへ原子的に復旧する。
+`atk-hook`はlive sessionが保持する`PLUGIN_ROOT`を優先し、その変数が指す版付きCodex cacheが欠落した場合は、Claude Code側に残る同版cacheを同じCodex絶対パスへ原子的に復旧する。
 同版が無い場合はClaude Codeの現行導入版からhookを起動し、編集途中のdotfiles作業ツリーは自動fallbackに使わない。
 更新前の全通常versionディレクトリを複製し、導入後の状態確認を含む最後のCodex CLI呼出後に、CLIが削除した旧versionを同じ絶対パスへ復元する。
 現行versionの導入と有効状態の管理はCodex公式CLIへ委ね、旧版保存台帳は設けない。
