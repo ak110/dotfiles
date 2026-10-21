@@ -13,6 +13,7 @@ import pytest
 from agent_toolkit._agents_server import manager as server_manager
 from agent_toolkit._agents_server import mcp_tools, opencode, session_errors
 from agent_toolkit._agents_server.state import SessionState
+from agent_toolkit._atk import config
 from agent_toolkit._common import state_paths
 from agent_toolkit._testing import agents_server_support
 from agent_toolkit._testing.isolation import restore_host_environment
@@ -71,11 +72,23 @@ async def _finished(manager: opencode.OpenCodeManager, session: SessionState) ->
 
 
 @pytest.mark.asyncio
-async def test_cli_start_reply_and_raw_record(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+@pytest.mark.parametrize(
+    ("configured", "model", "effort"),
+    [
+        ("local/qwen@high", "local/qwen", "high"),
+        ("provider/family/medium", "provider/family/medium", "medium"),
+        ("provider/family/medium@high", "provider/family/medium", "high"),
+    ],
+)
+async def test_cli_start_reply_and_raw_record(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, configured: str, model: str, effort: str
+) -> None:
     """同じIDで継続し、モデルとvariantを分離して渡し、元のイベントを両turnとも保存する。"""
     capture = _install_cli(tmp_path, monkeypatch)
+    engine, selected_model, selected_effort = config.parse_stage_model_candidates(f"opencode:{configured}")[0]
+    assert engine == "opencode"
     async with opencode.OpenCodeManager(log_directory=tmp_path / "logs") as manager:
-        session = await manager.start("最初の依頼を処理", str(tmp_path), "local/qwen", "high")
+        session = await manager.start("最初の依頼を処理", str(tmp_path), selected_model, selected_effort)
         await _finished(manager, session)
         assert session.status == "completed"
         assert session.engine == "opencode"
@@ -90,14 +103,14 @@ async def test_cli_start_reply_and_raw_record(tmp_path: pathlib.Path, monkeypatc
     assert "--session" not in commands[0]
     assert commands[1][commands[1].index("--session") + 1] == "ses_example"
     for command in commands:
-        assert command[command.index("--model") + 1] == "local/qwen"
-        assert command[command.index("--variant") + 1] == "high"
+        assert command[command.index("--model") + 1] == model
+        assert command[command.index("--variant") + 1] == effort
         assert command[command.index("--format") + 1] == "json"
         assert "--auto" in command
     records = [json.loads(line) for line in (tmp_path / "logs" / "ses_example.jsonl").read_text(encoding="utf-8").splitlines()]
     assert [record["type"] for record in records] == ["agent_toolkit_input", "step_start", "text", "step_finish"] * 2
     assert all(record["sessionID"] == "ses_example" for record in records if record["type"] != "agent_toolkit_input")
-    assert records[0]["model"] == "local/qwen"
+    assert records[0]["model"] == model
     assert records[0]["prompt"].endswith("最初の依頼を処理")
     assert records[4]["prompt"].endswith("継続の依頼を処理")
 

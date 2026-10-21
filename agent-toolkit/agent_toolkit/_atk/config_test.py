@@ -66,7 +66,7 @@ def test_opencode_empty_model_and_provider_model_effort(
     assert capsys.readouterr().out == "\n"
     assert _main(tmp_path, "config", "set", "review_engine", "opencode,claude") == 0
     assert config_module.parse_unresolved_model_candidates(f"{tier}_tier", usage="review")[0][0] == "claude"
-    for value, effort in (("local/qwen", "medium"), ("local/qwen/high", "high")):
+    for value, effort in (("local/qwen", "medium"), ("local/qwen@high", "high")):
         assert _main(tmp_path, "config", "set", key, value) == 0
         assert config_module.parse_unresolved_model_candidates(f"{tier}_tier", usage="review")[0] == (
             "opencode",
@@ -107,12 +107,13 @@ def test_opencode_does_not_expand_write_model_scope(
     [
         ("local/Qwen/Qwen3.8-27B", "local/Qwen/Qwen3.8-27B", "medium"),
         ("local/Qwen/Qwen3.8-27B@thinking", "local/Qwen/Qwen3.8-27B", "thinking"),
-        ("local/Qwen/Qwen3.8-27B/high", "local/Qwen/Qwen3.8-27B", "high"),
+        ("local/Qwen/Qwen3.8-27B/high", "local/Qwen/Qwen3.8-27B/high", "medium"),
+        ("local/org/medium", "local/org/medium", "medium"),
         ("local/org/medium@low", "local/org/medium", "low"),
     ],
 )
 def test_opencode_keeps_model_path_separate_from_variant(tmp_path: pathlib.Path, value: str, model: str, effort: str) -> None:
-    """名前空間を含むモデルIDを保ち、明示variantと既知effortのslash指定を分離する。"""
+    """名前空間と推論量に一致する末尾を含むモデルIDを保ち、@で明示したvariantを分離する。"""
     assert _main(tmp_path, "config", "set", "opencode_high_tier_model", value) == 0
     assert _main(tmp_path, "config", "set", "base_engine", "opencode") == 0
     assert config_module.parse_unresolved_model_candidates("high_tier") == [("opencode", model, effort)]

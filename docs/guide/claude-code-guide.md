@@ -300,7 +300,7 @@ Remote Controlは、手元で動くClaude Codeの会話へブラウザーやClau
 
 ClaudeとCodexの段位モデルはengine名を付けない`<model>[/<effort>]`で1つだけ書き、effortを省略すると`medium`を使う。
 OpenCodeは`<provider>/<model>[@<effort>]`で、最初の`/`でproviderとmodelを分け、末尾の`@`より後をvariantとして読む。model内の`/`は保持する。省略時は`medium`を渡す。
-末尾へ既知のeffortを`/high`などで書く指定も受理する。名前空間を含むモデルと任意のvariantには`local/Qwen/Qwen3.8-27B@thinking`の形を使う。
+名前空間を含むモデルと任意のvariantには`local/Qwen/Qwen3.8-27B@thinking`の形を使う。
 用途のengine順は`codex`・`claude`・`opencode`を重複なしでASCIIカンマ区切りに並べる。`orchestrate_engine`はClaudeとCodexだけを受理する。
 OpenCode本体の導入とprovider定義、Qwenの設定例は[READMEのOpenCodeの委譲先](../../README.md#opencodeの委譲先)を参照する。
 空の段位モデルはOpenCodeの候補から外れ、全候補が空なら設定を案内するエラーになる。

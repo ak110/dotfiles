@@ -620,9 +620,6 @@ def _parse_stage_model(value: str) -> tuple[str, str, str | None]:
         model, explicit, effort = rest.rpartition("@")
         if explicit:
             return engine, model, effort
-        model, separator, effort = rest.rpartition("/")
-        if model.count("/") >= 1 and separator and effort in _KNOWN_EFFORTS:
-            return engine, model, effort
         return engine, rest, None
     model, effort_sep, effort = rest.partition("/")
     return engine, model, effort if effort_sep else None

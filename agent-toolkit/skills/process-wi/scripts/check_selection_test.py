@@ -2349,7 +2349,8 @@ def test_reports_missing_body_as_violation(
 
 
 @pytest.mark.parametrize(
-    "model", ["claude:opus[1m]/medium", "opencode:local/Qwen/Qwen3.8-27B@thinking", "opencode:local/Qwen/Qwen3.8-27B/high"]
+    "model",
+    ["claude:opus[1m]/medium", "opencode:local/Qwen/Qwen3.8-27B@thinking", "opencode:local/Qwen/Qwen3.8-27B/high@medium"],
 )
 def test_selection_values_with_yaml_syntax_characters_round_trip(
     tmp_path: pathlib.Path, env: tuple[pathlib.Path, pathlib.Path], capsys: pytest.CaptureFixture[str], model: str
