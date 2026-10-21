@@ -393,7 +393,7 @@ async def test_session_screen_lists_and_renders_both_engines(screen_harness: _Sc
     assert any("Bash" in summary and "ls" in summary and "pwd" not in summary for summary in tool_summaries)
     assert any("Read" in summary and "/tmp/input.md" in summary for summary in tool_summaries)
     assert any("Search" in summary and "needle" in summary for summary in tool_summaries)
-    assert "入力: 12" in await harness.page.locator("#detail-usage").inner_text()
+    assert "入力: 12" in await harness.page.locator("#detail > .secondary-text").first.inner_text()
     # 破損した行は該当セッションの警告として示し、他の発話を失わせない。
     assert "解析できない行が1件あります" in detail_text
 

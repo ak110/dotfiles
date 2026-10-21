@@ -53,6 +53,60 @@ async def _hold_route(
     await route.continue_()
 
 
+async def _observe_screen_requests(page: playwright.async_api.Page) -> None:
+    """遷移前に、実SSEの確立と一覧・リポジトリ応答本文の消費を観測する。"""
+    await page.add_init_script(
+        """(() => {
+          const probe = window.__screenRequests = {pending: 0, completed: {}, opened: {}, heartbeats: {}};
+          const observed = new Set(['/api/entries', '/api/repos', '/api/sessions/list', '/api/plans/files']);
+          const originalFetch = window.fetch.bind(window);
+          window.fetch = async (...args) => {
+            const path = new URL(args[0]?.url || args[0], location.href).pathname;
+            if (!observed.has(path)) return originalFetch(...args);
+            probe.pending++;
+            let finished = false;
+            const finish = () => { if (!finished) { finished = true; probe.pending--; } };
+            try {
+              const response = await originalFetch(...args);
+              for (const method of ['json', 'text']) {
+                const consume = response[method].bind(response);
+                response[method] = async (...params) => {
+                  try {
+                    const value = await consume(...params);
+                    probe.completed[path] = (probe.completed[path] || 0) + 1;
+                    return value;
+                  } finally { finish(); }
+                };
+              }
+              return response;
+            } catch (error) { finish(); throw error; }
+          };
+          const NativeEventSource = window.EventSource;
+          window.EventSource = class extends NativeEventSource {
+            constructor(url, options) {
+              super(url, options);
+              const path = new URL(url, location.href).pathname;
+              this.addEventListener('open', () => { probe.opened[path] = (probe.opened[path] || 0) + 1; });
+              this.addEventListener('heartbeat', () => {
+                probe.heartbeats[path] = (probe.heartbeats[path] || 0) + 1;
+              });
+            }
+          };
+        })();"""
+    )
+
+
+async def _wait_screen_requests_consumed(page: playwright.async_api.Page, streams: tuple[str, ...]) -> None:
+    """初期SSE接続と、それに伴う取得の本文消費が終わってから観測区間を始める。"""
+    await page.wait_for_function(
+        """paths => {
+          const probe = window.__screenRequests;
+          return probe && paths.every(path => probe.opened[path] > 0) && probe.pending === 0;
+        }""",
+        arg=list(streams),
+    )
+
+
 class _BrowserOperations(wi_operations.Operations):
     """Gitを使わず、更新処理の待機を同期イベントで制御する。"""
 
@@ -473,6 +527,7 @@ class _ScreenHarness:
     base_url: str
     requests: list[str]
     responses: list[tuple[str, int]]
+    sessions_context: serve_sessions.SessionsContext
 
     async def notify_file_update(self, markdown: str) -> None:
         """計画ファイルを書き換え、更新通知を配信する。"""
@@ -616,6 +671,7 @@ async def _screen_harness_fixture(
             base_url=f"http://127.0.0.1:{port}",
             requests=requests,
             responses=responses,
+            sessions_context=app.config["SESSIONS_CONTEXT"],
         )
 
 
