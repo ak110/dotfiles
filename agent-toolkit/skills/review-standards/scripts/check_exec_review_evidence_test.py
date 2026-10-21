@@ -3122,6 +3122,40 @@ def test_public_reference_check_keeps_backtick_pairs_across_other_notation(
     assert "docs/missing.md" in error, error
 
 
+@pytest.mark.parametrize(
+    "prefix",
+    ["`test_save[p]`", '--name="a `b"`', "[記録 `a](docs/record.md)`"],
+    ids=["nodeid", "quoted", "link"],
+)
+def test_public_verification_save_rejects_missing_reference_after_other_notation(
+    reference_repository: tuple[pathlib.Path, str, pathlib.Path],
+    capsys: pytest.CaptureFixture[str],
+    prefix: str,
+) -> None:
+    """保存の公開操作でも、別記法に続く不在参照を拒否して未判定の原本を保つ。"""
+    repository, _, evidence = reference_repository
+    before = json.dumps(_pending_row(), ensure_ascii=False)
+    evidence.write_text(before, encoding="utf-8")
+    explanation = repository.parent / "missing-reference.txt"
+    explanation.write_text(f"{prefix} `x` 後 docs/missing.md を確認、`y`", encoding="utf-8")
+    args = argparse.Namespace(
+        script_name="verification-record",
+        script_args=[
+            "--output",
+            str(evidence),
+            "--select-row",
+            "wi_conditions:1",
+            "--evidence-file",
+            str(explanation),
+            "--mode",
+            "replace",
+        ],
+    )
+    assert run_script.dispatch(args) == 1
+    assert "docs/missing.md" in capsys.readouterr().err
+    assert evidence.read_text(encoding="utf-8") == before
+
+
 def test_public_verification_append_preserves_reference_boundaries(
     reference_repository: tuple[pathlib.Path, str, pathlib.Path],
     capsys: pytest.CaptureFixture[str],

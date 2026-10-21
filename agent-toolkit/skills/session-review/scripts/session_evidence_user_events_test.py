@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import argparse
 import json
 import pathlib
 
 import pytest
 import session_review_evidence as evidence
 
+from agent_toolkit._atk import run_script
 from agent_toolkit._testing.helpers import _write_transcript
 from agent_toolkit._testing.session_evidence_support import (
     local_time_transcript,
@@ -266,7 +268,8 @@ def test_codex_async_answers_keep_identity_context_and_candidate_kind(
     entries.append(_codex_user_record(unmatched, "2026-10-21T00:00:11Z"))
     transcript = _write_transcript(tmp_path, entries)
     assert evidence.main([str(transcript), "--user-events"]) == 0
-    users = [event for event in read_jsonl(capsys) if event["kind"] == "user"]
+    extracted = capsys.readouterr().out
+    users = [event for line in extracted.splitlines() if (event := json.loads(line))["kind"] == "user"]
     answers = users[1:4]
     assert [event["text"] for event in users] == [
         "最初の依頼",
@@ -288,6 +291,33 @@ def test_codex_async_answers_keep_identity_context_and_candidate_kind(
     assert [event["user_response"] for event in answers] == [
         [{"answers": [answer]}] for answer in ("今回", "現在の案を見直して", "全体")
     ]
+    # 抽出した出力を変換せず引用の公開操作へ渡し、質問・選択肢・自由回答と原記録の位置を保つ。
+    source = tmp_path / "async-user-events.jsonl"
+    source.write_text(extracted, encoding="utf-8")
+    body = tmp_path / "draft.md"
+    body.write_text("# 題\n\n## ユーザー指摘の逐語引用\n\n旧引用\n", encoding="utf-8")
+    selection = tmp_path / "answer-selection.json"
+    selection.write_text(
+        json.dumps(
+            [{"source": str(source), "record": event["record"], "line": event["line"], "mode": "answer"} for event in answers],
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    assert (
+        run_script.dispatch(
+            argparse.Namespace(script_name="wi-quote-check", script_args=[str(body), "--import-spec", str(selection)])
+        )
+        == 0
+    )
+    imported = body.read_text(encoding="utf-8")
+    assert "質問: 対象範囲\n選択肢: 次回\n選択肢: 今回\n回答: 今回" in imported
+    assert "質問: 方法\n回答: 現在の案を見直して" in imported
+    assert "質問: 対象範囲\n選択肢: 全体\n選択肢: 一部\n回答: 全体" in imported
+    for event in answers:
+        assert f"record={event['record']} line={event['line']}" in imported
+    assert "初期選択" not in imported and "対応不明" not in imported
+    capsys.readouterr()
     bundle = tmp_path / "bundle"
     bundle.mkdir()
     assert evidence.main([str(transcript), "--bundle", str(bundle)]) == 0
