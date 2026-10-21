@@ -957,7 +957,8 @@ def _saved_diagnostics(tmp_path: pathlib.Path, diagnostics: list[dict], sources:
         check=True,
         timeout=60,
     )
-    saved = json.loads(result.stdout[result.stdout.index("{") :])
+    summary = json.loads(result.stdout[result.stdout.index("{") :])
+    saved = json.loads(pathlib.Path(summary["record_path"]).read_text(encoding="utf-8"))
     paths = {}
     for index, (filename, content) in enumerate(sources.items()):
         snapshot = tmp_path / f"{name}_{index}.txt"
@@ -1022,7 +1023,8 @@ def _saved_pyfltr(tmp_path: pathlib.Path) -> dict:
         "bad.py",
     )
     assert result.returncode == 1, (result.stdout, result.stderr)
-    saved = json.loads(result.stdout[result.stdout.index("{") :])
+    summary = json.loads(result.stdout[result.stdout.index("{") :])
+    saved = json.loads(pathlib.Path(summary["record_path"]).read_text(encoding="utf-8"))
     snapshot = tmp_path / "bad-source.txt"
     snapshot.write_text(text, encoding="utf-8")
     return {

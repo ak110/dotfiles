@@ -12,6 +12,7 @@ from agent_toolkit._common import next_action as _next_action
 
 PLUGIN_ROOT = pathlib.Path(__file__).resolve().parents[2]
 SCRIPT_PATHS = {
+    "wait-ci": pathlib.Path("agent_toolkit/wait_ci.py"),
     "cost-metrics": pathlib.Path("skills/session-review/scripts/cost_metrics.py"),
     "delegation-prompt": pathlib.Path("skills/delegation/scripts/delegation_prompt.py"),
     "history-compare": pathlib.Path("skills/commit/scripts/compare_history.py"),

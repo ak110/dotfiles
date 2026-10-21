@@ -42,9 +42,9 @@ root・data・環境の導出は`agent_toolkit/_common/plugin_environment.py`が
 
 ## 有限終了コマンドの出力と終了状態の保持
 
-`atk run-command`はMCPによる実行手段を持たない有限終了の外部チェックについて、argv境界、実行時の作業ディレクトリ、標準出力・標準エラーの全量と終了状態を1回の公開呼び出しで保持する。shellを介さず`--`以後をargvとして起動し、子の起動前に登録済みmanaged-tempを作成して両streamを別のbinary fileへ直結する。標準出力のJSONは、保存先・行数・バイト数と、自然終了、signal、timeout、wrapper異常を区別できる値を返す。
+`atk run-command`はMCPによる実行手段を持たない有限終了の外部チェックについて、argv境界、実行時の作業ディレクトリ、標準出力・標準エラーの全量と終了状態を1回の公開呼び出しで保持する。shellを介さず`--`以後をargvとして起動し、子の起動前に登録済みmanaged-tempを作成して両streamを別のbinary fileへ直結する。標準出力のJSONは、記録と両出力の保存先・バイト数および子とwrapperの終了状態を返す。signal、timeout、起動・保存失敗の理由は発生時だけ加える。
 
-同じJSONを両出力と同じ領域の`record.json`へ保存し、`record_path`で絶対パスを返す。短いコマンド結果でも、後続担当は保存JSONだけから実行条件と両出力を取得できる。JSON保存に失敗した場合はwrapper異常125と診断を返し、`record_path`をnullにする。子の終了状態と取得済み出力は残す。stdoutだけへ返す方式では呼出側が記録ファイルを再作成する必要があり、別の記録CLIでは同じ項目の所有が分かれるため、既存のmetadata生成へ保存を加えた。
+完全な実行条件・取得版・Git状態・行数を含むJSONを、両出力と同じ領域の`record.json`へ保存し、`record_path`で絶対パスを返す。短いコマンド結果でも、後続担当は保存JSONだけから実行条件と両出力を取得できる。通常の受領では次の判断に必要な値だけを読み、取得版やargvを確認する工程では保存済み読取を使う。JSON保存に失敗した場合はwrapper異常125と診断を返し、`record_path`をnullにして、回復に要る完全な実行条件・子の終了状態・取得済み出力の情報を返す。保存と通常表示を分けることで、実行ごとのargvとGit状態の反復読込を減らし、異常時の回復情報は保持する。
 
 保存JSONは子のchild_exit_codeとは別にwrapper_exit_codeとfailureを持つ。自然終了、timeout、signal、起動失敗、保存不能を後続担当が同じ記録から区別するためであり、保存不能では返却値だけに125とfailureを保持して保存済みと主張しない。
 終了済み結果は同じrun-commandの`--record`の反復、またはplan-verifyが保存する`results_path`を`--records-file`へ渡して読む。子を再実行せず、各argv・cwd・取得版・Git状態・両終了状態・出力パスと全文を返す。旧記録に無い値はunrecordedとして扱い、欠損・破損と読取失敗はerrorsと非0で区別する。plan-verifyは実行順とコマンド・保存先の対応を1つの結果まとめへ原子的に保存する。読取のための検証再実行、独立した読取CLI、呼び出し側の手製解析は、取得版の取り違えと反復加工を残すため採らない。
