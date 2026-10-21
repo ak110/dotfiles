@@ -1354,7 +1354,11 @@ runpy.run_path(sys.argv[0], run_name="__main__")
                     servers = []
                     ancestor_pids: set[int] = set()
                     for process in psutil.Process().children(recursive=True):
-                        arguments = process.cmdline()
+                        try:
+                            arguments = process.cmdline()
+                        except psutil.NoSuchProcess:
+                            # 列挙後に終了した補助プロセスは、稼働中のMCPの候補から外す。
+                            continue
                         if len(arguments) > 1 and pathlib.Path(arguments[1]) == entrypoint:
                             servers.append(process)
                             ancestors = process.parents()
