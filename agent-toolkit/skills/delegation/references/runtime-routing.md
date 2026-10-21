@@ -47,12 +47,16 @@ forkの監査記録は`docs/development/audit-records.md`の「agent-toolkit/ski
 設定は`atk config`のキーで持ち、各キーは独立に変えられる。
 
 - 段位のモデル: `claude_high_tier_model`・`claude_medium_tier_model`・`claude_low_tier_model`・`codex_high_tier_model`・`codex_medium_tier_model`・`codex_low_tier_model`。値はengine接頭辞を付けない単一の`<model>[/<effort>]`で、effort省略時は`medium`とする。1個を変えると、そのengineと段位を使う工程のモデルだけが変わる
-- 用途のengine順: `base_engine`・`execute_engine`・`review_engine`・`chores_engine`・`orchestrate_engine`。値は`codex`と`claude`の一方または両方を重複なしで並べたASCIIカンマ区切りで、先頭のengineから試す。ClaudeとCodexはモデル実行環境の可用性に起因する失敗で次のengineへ進む
+- OpenCodeの段位モデル: `opencode_high_tier_model`・`opencode_medium_tier_model`・`opencode_low_tier_model`。初期値は空で、その段位の候補から外れる。値は`<provider>/<model>[@<effort>]`とし、最初の`/`でproviderとmodelを分け、末尾の`@`より後をvariantとして読む。model内の`/`は保持する。省略時のeffortは`medium`。全候補が空なら設定するキーを示して終了する
+- 用途のengine順: `base_engine`・`execute_engine`・`review_engine`・`chores_engine`は`codex`・`claude`・`opencode`を重複なしで並べたASCIIカンマ区切りで、先頭から試す。`orchestrate_engine`は`codex`と`claude`だけを受理する。可用性に起因する失敗で次の候補へ進み、OpenCodeのCLI不在・未設定モデル・接続と認証の失敗も可用性の失敗として扱う
 - `write_model`: 日本語文章の起草に使う候補列で、段位と用途に属さない。書式は`<engine>:<model>[/<effort>]`（`engine`は`claude`、`codex`、`agy`）のASCIIカンマ区切りで、agyは起動・turnの失敗で次の候補へ進む
 - `atk config apply-preset <プリセット名>`は用途のengine順の5キーだけを保存し、段位のモデルと`write_model`を保持する。プリセットは`codex-balanced`・`codex-near-primary`・`codex-primary`・`claude-balanced`・`claude-primary`で、balancedのexecute用途はClaude、review用途はCodexを先頭にする。near-primaryはorchestrateだけClaude優先、primary系は全用途で名前のengineを優先する。未設定時は`codex-balanced`のengine順を使う
+- `opencode-balanced`・`opencode-near-primary`もengine順だけを保存する。両方ともbase・review・choresはopencode→codex→claude、orchestrateはclaude→codex。executeはbalancedがclaude→codex、near-primaryがopencode→codex→claude。空の段位モデルがあれば、保存後にキーと設定方法を警告する。既存5プリセットと初期設定へopencodeは加えない
 - `codex`の段位モデルの`astra`、`sol`、`terra`、`luna`は起動時にCodex App Serverの`model/list`から同系列の最新の完全IDへ解決する。`write_model`の`codex:<系列名>`も同じとする。指定effortを受理しない、系列が無い、一覧取得に失敗した場合は理由を示して停止する（推測したIDや旧版への置換は禁止）。バージョン付きのCodex完全IDは固定指定として扱い、Claudeとagyの候補の受理可否は各engineへ委ねる
 - `AGENT_TOOLKIT_CONFIG_<キー名の大文字>`の環境変数が空でない間は、保存済みの設定より優先し、その値は保存しない。`atk config set`は保存先だけを更新し、参考一覧に無い値も警告付きで受理する。`atk config show`は値が参考一覧に無い場合に標準エラーへ警告を書く
+- OpenCodeの段位モデルは空の環境変数も優先し、その段位のOpenCodeを候補から外す。モデル名・variantの参考一覧は持たず、provider側の指定をそのまま渡す
 - `model_type`へは`high_tier`・`medium_tier`・`low_tier`・`orchestrate`・`write`のほか、`write_model`と同じ書式の候補列を直接渡せる（`delegate`では必須、他の`mode`では省略可）。`task`で段位を明示した場合は役割の用途を保って段位だけを変える。候補列を直接渡すとサーバーは設定を読まずその候補列を使う。起動区分は各`mode`（`task`では`<役割名>.subagent.md`の`mode:`）のままとする。恒常的な変更は`atk config set`で行う
+- OpenCodeを明示する候補は`opencode:<provider>/<model>[@<effort>]`とする。各turnは`opencode run --format json --auto`で実行し、モデルを`--model`、effortを`--variant`、継続するIDを`--session`へ渡す。共通規範・委譲先規範・ユーザー規範とplugin rootを本文へ届け、必要なスキルを同rootから読む。実行中turnへの追送は終端を待って同じIDへ送る
 - 廃止した旧キー（`high_tier_model`・`medium_tier_model`・`low_tier_model`・`orchestrate_model`）の保存値は、`atk config show`・`get`と設定からの候補解決の初回に新しいキーへ一括移行する。新しいキーで表せない旧値（agyの候補、同じengineの複数候補、同じengineと段位へ対応する異なるモデル）があると移行せずに停止し、競合した旧キー・候補と修正する新キーを示す。示された新キーを`atk config set`で保存してから再実行する。旧キーの環境変数が空でない間は設定からの起動が止まるため、新キーの環境変数へ置き換える
 
 起動と確認は次のとおりとする。

@@ -12,15 +12,17 @@ process-wiの判定（`session_records`）、振り返りの証拠抽出とSSH�
 from __future__ import annotations
 
 import dataclasses
+import datetime
 import json
 import pathlib
 import typing
 from collections.abc import Iterator
 
+from agent_toolkit._common import session_record_paths as _record_paths
 from agent_toolkit._common.runtime_inserted import is_runtime_generated, is_runtime_inserted_text
 
-RECORD_SUFFIX = ".jsonl"
-CODEX_ROLLOUT_PREFIX = "rollout-"
+RECORD_SUFFIX = _record_paths.RECORD_SUFFIX
+CODEX_ROLLOUT_PREFIX = _record_paths.CODEX_ROLLOUT_PREFIX
 
 SUMMARY_TEXT_LIMIT = 2000
 """会話の流れを要約する表示で1件の本文に残す文字数。
@@ -359,13 +361,8 @@ def codex_metadata(records: typing.Iterable[dict[str, typing.Any]]) -> dict[str,
 
 
 def codex_session_id(path: pathlib.Path) -> str:
-    """ロールアウトのファイル名からthread IDを取り出す。
-
-    ファイル名は`rollout-<日時>-<thread-id>`の形であり、thread IDはUUIDの5区画で末尾に置かれる。
-    """
-    stem = path.name[len(CODEX_ROLLOUT_PREFIX) : -len(RECORD_SUFFIX)]
-    parts = stem.split("-")
-    return "-".join(parts[-5:]) if len(parts) >= 5 else stem
+    """ロールアウトの識別子を、記録解決と共通の保存規約で取り出す。"""
+    return _record_paths.codex_session_id(path)
 
 
 def parse_records(text: str) -> tuple[list[dict[str, typing.Any]], int]:
@@ -397,6 +394,8 @@ def record_events(engine: str, records: typing.Iterable[dict[str, typing.Any]]) 
         return claude_events(records)[0]
     if engine == "codex":
         return codex_events(records)[0]
+    if engine == "opencode":
+        return opencode_events(records)
     if engine == "agy":
         events = []
         for record in records:
@@ -419,3 +418,70 @@ def record_events(engine: str, records: typing.Iterable[dict[str, typing.Any]]) 
             events.append(SessionEvent(kind=kind, timestamp=None, text=detail))
         return events
     raise ValueError(f"unsupported engine: {engine}")
+
+
+def opencode_events(records: typing.Iterable[dict[str, typing.Any]]) -> list[SessionEvent]:
+    """OpenCodeの公開JSONと補ったturn入力を、本文・ツール・使用量へ変換する。"""
+    events: list[SessionEvent] = []
+    for record in records:
+        raw_time = record.get("timestamp")
+        timestamp = raw_time if isinstance(raw_time, str) else None
+        if isinstance(raw_time, (int, float)) and not isinstance(raw_time, bool):
+            timestamp = datetime.datetime.fromtimestamp(raw_time / 1000, datetime.UTC).isoformat()
+        kind = record.get("type")
+        part = record.get("part")
+        part = part if isinstance(part, dict) else {}
+        if kind == "agent_toolkit_input":
+            events.append(
+                SessionEvent(
+                    kind="user",
+                    timestamp=timestamp,
+                    text=as_text(record.get("prompt")),
+                    detail={"model": record.get("model"), "cwd": record.get("cwd")},
+                )
+            )
+        elif kind in {"text", "reasoning"}:
+            events.append(
+                SessionEvent(
+                    kind="assistant" if kind == "text" else "thinking", timestamp=timestamp, text=as_text(part.get("text"))
+                )
+            )
+        elif kind == "tool_use":
+            state = part.get("state")
+            state = state if isinstance(state, dict) else {}
+            call_id = part.get("callID")
+            call_id = call_id if isinstance(call_id, str) else None
+            events.append(
+                SessionEvent(
+                    kind="tool_call",
+                    timestamp=timestamp,
+                    name=as_text(part.get("tool")),
+                    detail={"input": state.get("input")},
+                    call_id=call_id,
+                )
+            )
+            events.append(
+                SessionEvent(
+                    kind="tool_result",
+                    timestamp=timestamp,
+                    text=as_text(state.get("output")) or as_text(state.get("error")),
+                    detail={"is_error": state.get("status") == "error"},
+                    call_id=call_id,
+                )
+            )
+        elif kind == "step_finish":
+            tokens = part.get("tokens")
+            if isinstance(tokens, dict):
+                cache = tokens.get("cache")
+                cache = cache if isinstance(cache, dict) else {}
+                usage = {
+                    "input_tokens": tokens.get("input"),
+                    "output_tokens": tokens.get("output"),
+                    "cache_read_input_tokens": cache.get("read"),
+                    "cache_creation_input_tokens": cache.get("write"),
+                    "cost_usd": part.get("cost"),
+                }
+                events.append(SessionEvent(kind="usage", timestamp=timestamp, usage=usage))
+        elif kind == "error":
+            events.append(SessionEvent(kind="error", timestamp=timestamp, text=_stringify(record.get("error"))))
+    return events

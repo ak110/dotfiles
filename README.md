@@ -138,6 +138,45 @@ agy models
 statuslineをClaude Codeと同じ体裁で表示する場合は、Antigravity CLIのstatuslineコマンドへ
 `claude-statusline agy-statusline`を設定する。
 
+### OpenCodeの委譲先
+
+`update-dotfiles`は未導入のOpenCode 1を`npm install --global opencode-ai`で導入する。
+導入に失敗した場合は警告の原因を解消して再実行し、`opencode --version`で確認する。
+OpenCodeは`agents_server`の委譲先として使い、作業全体を統括するorchestratorには使わない。
+
+Qwen3.8-27BなどのOpenAI互換エンドポイントは、[OpenCodeのprovider設定](https://opencode.ai/docs/providers/#custom-provider)へ定義する。
+次は`opencode.json`の例であり、URLとモデルIDを実際の接続先へ合わせる。
+認証が必要な場合はOpenCode側で設定する。
+
+```json
+{
+  "$schema": "https://opencode.ai/config.json",
+  "provider": {
+    "local": {
+      "npm": "@ai-sdk/openai-compatible",
+      "name": "ローカルのQwen",
+      "options": {"baseURL": "http://127.0.0.1:8000/v1"},
+      "models": {"qwen3.8-27b": {"name": "Qwen3.8-27B"}}
+    }
+  }
+}
+```
+
+agent-toolkit側では段位ごとの`provider/model`を設定し、プリセットを適用する。
+値は`provider/model[@effort]`で、モデル内の`/`を保持し、`@`より後がOpenCodeの`--variant`へ渡る。
+
+```bash
+atk config set opencode_high_tier_model local/qwen3.8-27b
+atk config set opencode_medium_tier_model local/qwen3.8-27b
+atk config set opencode_low_tier_model local/qwen3.8-27b
+atk config apply-preset opencode-balanced
+```
+
+`opencode-balanced`は実装をClaude、レビューをOpenCodeから試す。
+`opencode-near-primary`は実装もOpenCodeから試し、両方ともorchestratorはClaude・Codexを使う。
+空の段位モデルはOpenCodeの候補から外れ、次のengineへ進む。
+既存5プリセットと初期設定は従来のままで、[工程別モデル設定](docs/guide/claude-code-guide.md#工程別モデル設定)から配分を確認できる。
+
 ### dotfilesプラグイン
 
 リポジトリ直下の`plugins/<名前>/`に、自分用の配布物と後処理を追加できる。

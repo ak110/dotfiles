@@ -104,6 +104,7 @@
   - 担当がさらに分ける作業の段位は、作業の性質で選ぶ。上位段位の担当（レーン担当など）は計画・設計判断・原因分析を自ら行い、仕事を分解して内容の確定した書込作業（単発のコーディングなど）を中位段位（`medium_tier`）の委譲先へ割り振り、自ら行う方が安い場合だけ自ら行う。計画などの判断を分けるのは独立が明らかな複数タスクに限る（2026年10月19日、ユーザー指示。レーンから起動した委譲先が全て上位段位で動いていた観測に由来する）。現行の規定は`agent-toolkit:delegation`の`references/runtime-routing.md`「工程別モデル設定」の段位の段落と`references/routing.md`「委譲単位の確定」にある
   - 段位はモデルの選定とClaude・Codexの配分を独立に変えられるよう、engine別・段位別のモデル（`<engine>_<段位>_tier_model`）と用途別のengine順（`<用途>_engine`）へ分ける。プリセットはengine順だけを書き換え、balancedのプリセットではレビューを作業と別のengineで先に試す。日本語の文章力だけで選ぶ`write_model`は段位に属さず現状を保ち、上限待機と可用性の処理は変えない（2026年10月11日、ユーザー指示）。現行の規定は`agent-toolkit:delegation`の`references/runtime-routing.md`「工程別モデル設定」にある
 - モデル指定時は推論の深さ（effort）も必ず併記する。`agents_server`を呼び出せず`Agent`ツールへ切り替えた委譲はeffortを渡せないため例外とし、渡せなかった設定値を報告へ記録する（2026年9月30日、ユーザー回答）
+- OpenCodeは一般の委譲先として使い、orchestratorには使わない。段位モデル3キーの初期値は空で、空の段位は候補から外す。既存5プリセットと初期設定は保ち、opencode-balanced・opencode-near-primary、手動のengine順と明示候補から利用できる。プリセットはengine順だけを保存する。OpenCode本体もupdate-dotfilesが未導入時に導入する（2026年10月20日、ユーザー指示）。現行の規定は`agent-toolkit:delegation`の`references/runtime-routing.md`「工程別モデル設定」、構造の理由は`design-agents-server.md`「OpenCode CLI backend」にある
 - 計画は要求の調査と計画ファイルの起草までを指し、計画を作成する主体が担う。計画ファイルは人間の承認を要しない内部資料とする
 - 実行は確定済み計画の変更作成、検証、実行レビュー、統合、キュー終端および資源回収までを指し、メインが調整する
 - 実装は実行の配下で成果物の変更作成とコミットを担う下位担当だけを指す

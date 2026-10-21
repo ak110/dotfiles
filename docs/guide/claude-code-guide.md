@@ -250,9 +250,9 @@ Codexのreasoning_output_tokensは出力に内包される。
 計画・実装・レビューの配分は、実効の用途別engine順と各engineの段位モデルで決まる。
 契約している実行系と利用枠・解除待ち、APIの従量料金と手戻りを合わせてプリセットを選ぶ。
 
-モデルの選定とClaude・Codexの配分は別々のキーで設定する。
-engineごとの段位のモデル（6キー）を変えると、そのengineと段位を使う起動のモデルだけが変わる。
-用途ごとのengine順（5キー）を変えると、モデルを変えずにClaudeとCodexのどちらを先に使うかだけが変わる。
+モデルの選定とClaude・Codex・OpenCodeの配分は別々のキーで設定する。
+engineごとの段位のモデル（9キー）を変えると、そのengineと段位を使う起動のモデルだけが変わる。
+用途ごとのengine順（5キー）を変えると、モデルを変えずにどのengineを先に使うかが変わる。
 起動時は用途のengine順に従って各engineの段位のモデルを並べ、先頭の候補から順に起動を試す。
 モデル実行環境の可用性に起因する失敗を観測した場合だけ次の候補へ進む。
 Claude CodeのWeekly limitと5時間の利用上限では、解除まで待って同じClaudeで作業を続ける。
@@ -278,6 +278,9 @@ Remote Controlは、手元で動くClaude Codeの会話へブラウザーやClau
 | `codex_high_tier_model` | Codexの上位モデル（未設定時は`sol/medium`） |
 | `codex_medium_tier_model` | Codexの中位モデル（未設定時は`terra/medium`） |
 | `codex_low_tier_model` | Codexの軽量モデル（未設定時は`luna/medium`） |
+| `opencode_high_tier_model` | OpenCodeの上位モデル（未設定時は空で候補から除外） |
+| `opencode_medium_tier_model` | OpenCodeの中位モデル（未設定時は空で候補から除外） |
+| `opencode_low_tier_model` | OpenCodeの軽量モデル（未設定時は空で候補から除外） |
 | `base_engine` | 設計判断を伴う実装・修正・新しい候補や評価軸を導く調査と案出し・AWI投入・公開工程の終端・自動コードレビュー監査（上位）、プロンプト評価（中位）、`atk commit`（省略時は中位）のengine順 |
 | `execute_engine` | レーンの計画・実装・変更範囲検証と同じexecによる修正（上位）のengine順 |
 | `review_engine` | 実行レビュー・ユーザビリティレビュー・専念型の投入前レビューと再発防止セルフチェック、計画・設計判断で内容の確定した書込作業（`delegate`の`medium_tier`）（中位）のengine順 |
@@ -289,16 +292,21 @@ Remote Controlは、手元で動くClaude Codeの会話へブラウザーやClau
 | `claude_api_env_file` | ClaudeのAPI接続用envファイルのパス。空文字列で解除する |
 | `claude_api_mode` | 役割別の接続方針。`pay-as-you-go`（既定）または`api-credits` |
 
-段位のモデルはengine名を付けない`<model>[/<effort>]`で1つだけ書き、effortを省略すると`medium`を使う。
-engine順は`codex`と`claude`の一方または両方を重複なしでASCIIカンマ区切りに並べる。
+ClaudeとCodexの段位モデルはengine名を付けない`<model>[/<effort>]`で1つだけ書き、effortを省略すると`medium`を使う。
+OpenCodeは`<provider>/<model>[@<effort>]`で、最初の`/`でproviderとmodelを分け、末尾の`@`より後をvariantとして読む。model内の`/`は保持する。省略時は`medium`を渡す。
+末尾へ既知のeffortを`/high`などで書く指定も受理する。名前空間を含むモデルと任意のvariantには`local/Qwen/Qwen3.8-27B@thinking`の形を使う。
+用途のengine順は`codex`・`claude`・`opencode`を重複なしでASCIIカンマ区切りに並べる。`orchestrate_engine`はClaudeとCodexだけを受理する。
+OpenCode本体の導入とprovider定義、Qwenの設定例は[READMEのOpenCodeの委譲先](../../README.md#opencodeの委譲先)を参照する。
+空の段位モデルはOpenCodeの候補から外れ、全候補が空なら設定を案内するエラーになる。
 `write_model`は`<engine>:<model>[/<effort>]`をASCIIカンマで区切った候補列で書く。
 段位は作業の部分ごとに選ぶ。判定基準を言語化して渡せる多数の対象の走査（所在・値・件数の確認、該当候補の抽出と非該当の判定）は、極力`explore`の指定省略時の軽量段位へ分け、対象が多ければ重複のない群へ分けて並列に委ねる。観点・評価軸・判定基準の選定、新しい候補の案出し、走査が返した候補の判定と結論の統合は、`mode`が`explore`でも`delegate`でも`model_type="high_tier"`を明示する（`base_engine`の上位を使う）。両者を含む依頼も全体を`high_tier`にせず、走査を分けてから上位段位で判定する。書込作業も同じく、計画・設計判断・原因分析は上位段位の担当自身が行い、内容の確定した単位（単発のコーディング、確定済みの修正など）は`delegate`の`medium_tier`（`review_engine`の中位）へ任せる。自ら行う方が総費用で安い場合だけ自ら行う。役割の段位（レーン担当の`exec`の上位、実行レビューの中位など）は変えない。
 
-`atk config show`はパス4行、モデルと配分の11行、`write_model`、速度、API provider列とClaudeのAPI用envファイルのパスを各1行で表示する。`atk config get`は指定したキーの値を指定した順に返し、provider列では前後空白と重複を除く。
+`atk config show`はパス、段位モデル、用途別engine順とその他の設定を1キー1行で表示する。`atk config get`は指定したキーの値を指定した順に返し、provider列では前後空白と重複を除く。
 `atk config set codex_fast_mode true`でfast modeを有効にし、`false`で標準速度へ戻す。設定は次のturnから反映され、MCPサーバーの再起動は不要である。Codexのモデル表示には`@fast`を付け、effortがあれば`codex:<model>/<effort>@fast`とする。
 Codex系列名は委譲の起動時にモデルIDへ解決され、採用値は`agents_server`の`show`で確認できる。
 `AGENT_TOOLKIT_CONFIG_<キー名の大文字>`の環境変数に空でない値を設定すると、`atk config show`と`atk config get`は環境変数の値を返す。
 委譲の起動にもこの値を使う。環境変数は保存済みの設定より優先し、変数を解除すると保存済みの設定へ戻る。
+OpenCodeの段位モデルは空の環境変数も優先し、対応する段位のOpenCodeを候補から外す。
 `atk config set`は保存先だけを更新するため、同名の環境変数がある間は設定した値が実効値にならない。
 `atk config apply-preset <プリセット名>`は`base_engine`・`execute_engine`・`review_engine`・`chores_engine`・`orchestrate_engine`の5キーを1回の実行で一括保存する。段位のモデル、`write_model`・`codex_fast_mode`・`codex_model_providers`・`claude_api_env_file`は変更しない。
 
@@ -309,12 +317,16 @@ Codex系列名は委譲の起動時にモデルIDへ解決され、採用値は`
 | `codex-primary` | `codex,claude` | `codex,claude` | `codex,claude` | `codex,claude` | `codex,claude` |
 | `claude-balanced` | `claude,codex` | `claude,codex` | `codex,claude` | `codex,claude` | `claude,codex` |
 | `claude-primary` | `claude,codex` | `claude,codex` | `claude,codex` | `claude,codex` | `claude,codex` |
+| `opencode-balanced` | `opencode,codex,claude` | `claude,codex` | `opencode,codex,claude` | `opencode,codex,claude` | `claude,codex` |
+| `opencode-near-primary` | `opencode,codex,claude` | `opencode,codex,claude` | `opencode,codex,claude` | `opencode,codex,claude` | `claude,codex` |
 
-balanced系はレーン実行をClaude、レビューをCodexへ配分する。codex-balancedのbaseはCodex、claude-balancedのbaseはClaudeが先頭になる。
+codex-balanced・claude-balancedはレーン実行をClaude、レビューをCodexへ配分する。codex-balancedのbaseはCodex、claude-balancedのbaseはClaudeが先頭になる。
+opencode-balancedはレビューをOpenCode、実装をClaudeから試し、opencode-near-primaryは実装もOpenCodeから試す。両方ともorchestratorはClaude・Codexを使う。
+opencode用プリセットは空の段位モデルがあれば、保存後にキー名と設定方法を警告する。既存5プリセットと初期設定はOpenCodeを候補へ加えない。
 codex-near-primaryはClaudeの利用上限が迫ったときに、orchestrateだけClaude優先にして極力Codexを使う。
 primary系は他方のengineを使えない場合に全用途で名前のengineを優先する。レビューと実行を逆系統にする基本と、near-primary・primaryの例外を表で選べる。
 
-`atk config apply-preset show`または引数を付けない`atk config apply-preset`を実行すると、設定ファイルを変更せずに5プリセットそれぞれが保存する5キーの値を表示する。設定を保存するのはプリセット名を指定した実行だけである。
+`atk config apply-preset show`または引数を付けない`atk config apply-preset`を実行すると、設定ファイルを変更せずに7プリセットそれぞれが保存する5キーの値を表示する。設定を保存するのはプリセット名を指定した実行だけである。
 未知の名前を指定した実行は終了コード2で終わり、受理する値を表示する。
 設定を保存していない環境では`codex-balanced`と同じengine順を使う。
 

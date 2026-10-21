@@ -28,7 +28,7 @@ from agent_toolkit._git import remote as _git_remote
 
 _CONFIG_FILENAME = "config.json"
 
-ENGINES = ("claude", "codex")
+ENGINES = ("claude", "codex", "opencode")
 """段位モデルと用途別engine順が扱うengine。"""
 
 TIERS = ("high", "medium", "low")
@@ -50,6 +50,9 @@ _TIER_MODEL_DEFAULTS = {
     "codex_high_tier_model": "sol/medium",
     "codex_medium_tier_model": "terra/medium",
     "codex_low_tier_model": "luna/medium",
+    "opencode_high_tier_model": "",
+    "opencode_medium_tier_model": "",
+    "opencode_low_tier_model": "",
 }
 
 # プリセットは用途別engine順だけを持ち、段位モデルとwrite_modelを書き換えない。
@@ -89,6 +92,20 @@ _PRESET_ENGINE_ORDERS = {
         "chores_engine": "claude,codex",
         "orchestrate_engine": "claude,codex",
     },
+    "opencode-balanced": {
+        "base_engine": "opencode,codex,claude",
+        "execute_engine": "claude,codex",
+        "review_engine": "opencode,codex,claude",
+        "chores_engine": "opencode,codex,claude",
+        "orchestrate_engine": "claude,codex",
+    },
+    "opencode-near-primary": {
+        "base_engine": "opencode,codex,claude",
+        "execute_engine": "opencode,codex,claude",
+        "review_engine": "opencode,codex,claude",
+        "chores_engine": "opencode,codex,claude",
+        "orchestrate_engine": "claude,codex",
+    },
 }
 
 # apply-presetの位置引数でプリセット名の代わりに受理し、全プリセットの値を表示する値。
@@ -116,8 +133,9 @@ _LEGACY_MODEL_KEYS = {
 }
 
 _STAGE_MODEL_PATTERN = re.compile(r"^(?:claude|codex|agy):[^/,\s]+(?:/[^/,\s]+)?$")
+_OPENCODE_MODEL_PATTERN = re.compile(r"^[^/:,@\s]+/[^/,@\s]+(?:/[^/,@\s]+)*(?:@[^/,@\s]+)?$")
 _TIER_MODEL_PATTERN = re.compile(r"^[^/,\s]+(?:/[^/,\s]+)?$")
-_ENGINE_PREFIX_PATTERN = re.compile(r"^(?:claude|codex|agy):")
+_ENGINE_PREFIX_PATTERN = re.compile(r"^(?:claude|codex|agy|opencode):")
 _CONFIG_ENV_PREFIX = "AGENT_TOOLKIT_CONFIG_"
 # 主に使うモデル名・effortの参考一覧。受理可否の判定には使わず、一覧外は警告のみで受理する。
 _KNOWN_MODELS = {
@@ -192,8 +210,15 @@ def tier_model_key(engine: str, tier: str) -> str:
 def _validate_stage_model_candidates(value: str) -> None:
     """候補列の各候補を検証し、書式不正なら`ValueError`を送出する。"""
     candidates = value.split(",")
-    if not candidates or any(_STAGE_MODEL_PATTERN.fullmatch(candidate) is None for candidate in candidates):
-        raise ValueError("受理可能書式: <claude|codex|agy>:<model>[/<effort>]（複数候補はASCIIカンマ区切り）")
+    if not candidates or any(
+        _STAGE_MODEL_PATTERN.fullmatch(candidate) is None
+        and not (candidate.startswith("opencode:") and _OPENCODE_MODEL_PATTERN.fullmatch(candidate.removeprefix("opencode:")))
+        for candidate in candidates
+    ):
+        raise ValueError(
+            "受理可能書式: <claude|codex|agy>:<model>[/<effort>]、"
+            "opencode:<provider>/<model>[@<effort>]（複数候補はASCIIカンマ区切り）"
+        )
 
 
 def _validate_tier_model(value: str) -> None:
@@ -206,7 +231,7 @@ def parse_engine_order(value: str) -> tuple[str, ...]:
     """用途別engine順を検証して分解し、書式不正なら`ValueError`を送出する。"""
     engines = tuple(value.split(","))
     if any(engine not in ENGINES for engine in engines) or len(set(engines)) != len(engines):
-        raise ValueError("受理可能書式: codexとclaudeの一方または両方を重複なしで並べたASCIIカンマ区切り")
+        raise ValueError("受理可能書式: codex・claude・opencodeを重複なしで並べたASCIIカンマ区切り")
     return engines
 
 
@@ -225,10 +250,18 @@ def _validate_mutable_setting(key: str, value: str) -> None:
             raise ValueError("受理可能値: true, false")
     elif key == "codex_model_providers":
         parse_codex_provider_candidates(value)
+    elif key.startswith("opencode_") and key in _TIER_MODEL_DEFAULTS:
+        if value and _OPENCODE_MODEL_PATTERN.fullmatch(value) is None:
+            raise ValueError("受理可能書式: <provider>/<model>[@<effort>]、または空文字列")
     elif key in _TIER_MODEL_DEFAULTS:
         _validate_tier_model(value)
     elif key.endswith("_engine"):
-        parse_engine_order(value)
+        engines = parse_engine_order(value)
+        if key == "orchestrate_engine" and "opencode" in engines:
+            raise ValueError("受理可能書式: orchestrate_engineはcodexとclaudeを重複なしのASCIIカンマ区切りで指定する")
+    elif key == "write_model":
+        if any(_STAGE_MODEL_PATTERN.fullmatch(candidate) is None for candidate in value.split(",")):
+            raise ValueError("受理可能書式: <claude|codex|agy>:<model>[/<effort>]（複数候補はASCIIカンマ区切り）")
     else:
         _validate_stage_model_candidates(value)
 
@@ -319,6 +352,8 @@ def mutable_setting_default(key: str) -> str:
 def raw_mutable_setting(key: str) -> str:
     """変更可能な設定の検証前の値を、環境変数、保存値、初期値の順に解決して返す。未知のキーは`KeyError`を送出する。"""
     default = mutable_setting_default(key)
+    if key.startswith("opencode_") and (value := os.environ.get(_config_env_name(key))) is not None:
+        return value
     return os.environ.get(_config_env_name(key), "") or _load_config().get(key, default)
 
 
@@ -459,6 +494,8 @@ _UNKNOWN_CANDIDATE_NEXT_ACTION = "意図した名前か確認し、誤記なら�
 def _stage_model_candidate_warnings(key: str, value: str) -> list[str]:
     """参考一覧外のモデル候補を警告の本文へ変換する。接頭辞は`report_warning`が付ける。"""
     warnings: list[str] = []
+    if key.startswith("opencode_"):
+        return warnings
     if key in _TIER_MODEL_DEFAULTS:
         candidates = [f"{key.partition('_')[0]}:{value}"]
     elif key == "write_model":
@@ -540,7 +577,7 @@ def _cmd_config_set(args: argparse.Namespace) -> None:
     _save_config(config)
     _outcome.report_success(f"設定を更新した: {args.key}={value}")
     env_name = _config_env_name(args.key)
-    if os.environ.get(env_name, ""):
+    if os.environ.get(env_name, "") or args.key.startswith("opencode_") and env_name in os.environ:
         _outcome.report_warning(
             f"環境変数{env_name}が優先されるため、解除するまで更新値は実効値にならない",
             next_action=f"保存した値を使う場合は環境変数{env_name}を解除する。環境変数の値を使い続ける場合は対応不要",
@@ -565,11 +602,28 @@ def _cmd_config_apply_preset(args: argparse.Namespace) -> None:
     _outcome.report_success(f"用途別engine設定をpreset「{args.preset}」で一括保存した: {len(settings)}件")
     for key, value in settings.items():
         print(f"{key}: {value}")
+    if args.preset.startswith("opencode-"):
+        missing = [
+            tier_model_key("opencode", tier) for tier in TIERS if not resolve_mutable_setting(tier_model_key("opencode", tier))
+        ]
+        if missing:
+            _outcome.report_warning(
+                f"opencodeのモデル未設定の段位は候補から外れる: {', '.join(missing)}",
+                next_action="各キーを`atk config set <KEY> <provider>/<model>[@<effort>]`で設定する",
+            )
 
 
 def _parse_stage_model(value: str) -> tuple[str, str, str | None]:
     """検証済み設定値をengine・model・effort（未指定はNone）へ分解する。"""
     engine, _, rest = value.partition(":")
+    if engine == "opencode":
+        model, explicit, effort = rest.rpartition("@")
+        if explicit:
+            return engine, model, effort
+        model, separator, effort = rest.rpartition("/")
+        if model.count("/") >= 1 and separator and effort in _KNOWN_EFFORTS:
+            return engine, model, effort
+        return engine, rest, None
     model, effort_sep, effort = rest.partition("/")
     return engine, model, effort if effort_sep else None
 
@@ -589,8 +643,15 @@ def _usage_candidates(usage: str, tier: str) -> list[tuple[str, str, str]]:
     migrate_legacy_settings()
     candidates: list[tuple[str, str, str]] = []
     for engine in parse_engine_order(resolve_mutable_setting(f"{usage}_engine")):
-        model, _, effort = resolve_mutable_setting(tier_model_key(engine, tier)).partition("/")
+        value = resolve_mutable_setting(tier_model_key(engine, tier))
+        if engine == "opencode" and not value:
+            continue
+        _, model, effort = _parse_stage_model(f"{engine}:{value}")
         candidates.append((engine, model, effort or "medium"))
+    if not candidates:
+        raise ValueError(
+            f"用途{usage}・段位{tier}のモデル候補がない。opencode_{tier}_tier_modelを設定するかengine順へcodexまたはclaudeを加える"
+        )
     return candidates
 
 

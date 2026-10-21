@@ -17,7 +17,7 @@ _ALLOWED: dict[tuple[str, str], str] = {
     ("agent-toolkit/agent_toolkit/_common/process_tree.py", "reclaim_processes"): "子孫回収の共通実装",
     ("pytools/_internal/common.py", "stop_process_tree"): "pytoolsの子孫回収の共通実装",
     (
-        "agent-toolkit/agent_toolkit/_agents_server/antigravity.py",
+        "agent-toolkit/agent_toolkit/_agents_server/cli_turn.py",
         "_terminate_process",
     ): "停止前に列挙して子孫も回収する既存実装",
     ("agent-toolkit/agent_toolkit/_agents_server/codex.py", "_close"): "停止前に列挙して子孫も回収する既存実装",

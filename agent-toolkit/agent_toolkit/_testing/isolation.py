@@ -40,7 +40,7 @@ from collections.abc import Callable, Mapping
 import platformdirs
 import pytest
 
-AGENT_CLI_NAMES = ("codex", "claude", "agy")
+AGENT_CLI_NAMES = ("codex", "claude", "agy", "opencode")
 # 実Gitを起動するテストが使うGitの実行ファイル。未設定ならPATH上のGitを使う。
 TEST_GIT_ENVIRONMENT_NAME = "AGENT_TOOLKIT_TEST_GIT"
 HOME_ENVIRONMENT_NAMES = ("HOME", "USERPROFILE")

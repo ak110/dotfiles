@@ -38,6 +38,7 @@ from pytools._internal import (
     setup_herdr_cli,
     setup_media_remote,
     setup_mise,
+    setup_opencode_cli,
     setup_registry,
     setup_sendto_shortcuts,
     setup_statusline_binary,
@@ -92,6 +93,13 @@ def _claude_cli_installer_fails(monkeypatch: pytest.MonkeyPatch, tmp_path: Path)
 def _agy_cli_installer_fails(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     monkeypatch.setattr(setup_agy_cli, "_launcher_path", lambda: tmp_path / "agy")
     monkeypatch.setattr(setup_cli_common, "run_official_installer", lambda *_args, **_kwargs: (None, "取得に失敗"))
+
+
+def _opencode_cli_installer_fails(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    monkeypatch.setattr(
+        setup_opencode_cli.common, "resolve_executable", lambda name: None if name == "opencode" else tmp_path / name
+    )
+    monkeypatch.setattr(common, "run_subprocess", lambda *_args, **_kwargs: _completed(1, stderr="registry unreachable"))
 
 
 def _herdr_cli_installer_fails(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
@@ -378,6 +386,7 @@ _SIMULATIONS: dict[str, list[tuple[_Simulation, int]]] = {
     "Codex の Claude MCP 登録削除": [(_codex_claude_mcp_removal_fails, 1)],
     "Claude Code CLI の導入と更新": [(_claude_cli_installer_fails, 0)],
     "Antigravity CLI の導入": [(_agy_cli_installer_fails, 0)],
+    "OpenCode CLI の導入": [(_opencode_cli_installer_fails, 0)],
     "Herdr CLI の導入と更新": [(_herdr_cli_installer_fails, 0)],
     "agent-toolkit ルールの同期": [(_rules_write_fails, 1)],
     "Codex リンクの同期": [(_codex_link_blocked, 1)],

@@ -23,6 +23,9 @@ _SETTING_KEYS = [
     "codex_high_tier_model",
     "codex_medium_tier_model",
     "codex_low_tier_model",
+    "opencode_high_tier_model",
+    "opencode_medium_tier_model",
+    "opencode_low_tier_model",
     "base_engine",
     "execute_engine",
     "review_engine",
@@ -35,8 +38,115 @@ _PRESETS = {
     "codex-primary": ("codex,claude", "codex,claude", "codex,claude", "codex,claude", "codex,claude"),
     "claude-balanced": ("claude,codex", "claude,codex", "codex,claude", "codex,claude", "claude,codex"),
     "claude-primary": ("claude,codex", "claude,codex", "claude,codex", "claude,codex", "claude,codex"),
+    "opencode-balanced": (
+        "opencode,codex,claude",
+        "claude,codex",
+        "opencode,codex,claude",
+        "opencode,codex,claude",
+        "claude,codex",
+    ),
+    "opencode-near-primary": (
+        "opencode,codex,claude",
+        "opencode,codex,claude",
+        "opencode,codex,claude",
+        "opencode,codex,claude",
+        "claude,codex",
+    ),
 }
 _ENGINE_KEYS = ("base_engine", "execute_engine", "review_engine", "chores_engine", "orchestrate_engine")
+
+
+@pytest.mark.parametrize("tier", config_module.TIERS)
+def test_opencode_empty_model_and_provider_model_effort(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch, tier: str
+) -> None:
+    """未設定段位を外し、provider/modelとeffortを分離し、空の環境上書きでも無効にする。"""
+    key = f"opencode_{tier}_tier_model"
+    assert _main(tmp_path, "config", "get", key) == 0
+    assert capsys.readouterr().out == "\n"
+    assert _main(tmp_path, "config", "set", "review_engine", "opencode,claude") == 0
+    assert config_module.parse_unresolved_model_candidates(f"{tier}_tier", usage="review")[0][0] == "claude"
+    for value, effort in (("local/qwen", "medium"), ("local/qwen/high", "high")):
+        assert _main(tmp_path, "config", "set", key, value) == 0
+        assert config_module.parse_unresolved_model_candidates(f"{tier}_tier", usage="review")[0] == (
+            "opencode",
+            "local/qwen",
+            effort,
+        )
+        assert config_module.parse_unresolved_model_candidates(f"opencode:{value}") == [("opencode", "local/qwen", effort)]
+    monkeypatch.setenv(f"AGENT_TOOLKIT_CONFIG_{key.upper()}", "")
+    assert config_module.parse_unresolved_model_candidates(f"{tier}_tier", usage="review")[0][0] == "claude"
+    assert _main(tmp_path, "config", "set", key, "") == 0
+
+
+def test_opencode_orchestrator_rejected_from_set_and_environment(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """設定CLIと環境変数のどちらもorchestrator用opencodeを拒否する。"""
+    assert _main(tmp_path, "config", "set", "orchestrate_engine", "opencode,claude") == 2
+    assert "受理可能書式" in capsys.readouterr().err
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_ORCHESTRATE_ENGINE", "opencode,claude")
+    assert _main(tmp_path, "config", "get", "orchestrate_engine") == 2
+    assert "受理可能書式" in capsys.readouterr().err
+
+
+def test_opencode_does_not_expand_write_model_scope(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """段位の追加はwrite_modelの既存のengine集合を変えず、保存と環境指定で同じ区分を使う。"""
+    value = "opencode:local/Qwen/Qwen3.8-27B@thinking"
+    assert _main(tmp_path, "config", "set", "write_model", value) == 2
+    assert "<claude|codex|agy>" in capsys.readouterr().err
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_WRITE_MODEL", value)
+    assert _main(tmp_path, "config", "get", "write_model") == 2
+    assert "<claude|codex|agy>" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize(
+    ("value", "model", "effort"),
+    [
+        ("local/Qwen/Qwen3.8-27B", "local/Qwen/Qwen3.8-27B", "medium"),
+        ("local/Qwen/Qwen3.8-27B@thinking", "local/Qwen/Qwen3.8-27B", "thinking"),
+        ("local/Qwen/Qwen3.8-27B/high", "local/Qwen/Qwen3.8-27B", "high"),
+        ("local/org/medium@low", "local/org/medium", "low"),
+    ],
+)
+def test_opencode_keeps_model_path_separate_from_variant(tmp_path: pathlib.Path, value: str, model: str, effort: str) -> None:
+    """名前空間を含むモデルIDを保ち、明示variantと既知effortのslash指定を分離する。"""
+    assert _main(tmp_path, "config", "set", "opencode_high_tier_model", value) == 0
+    assert _main(tmp_path, "config", "set", "base_engine", "opencode") == 0
+    assert config_module.parse_unresolved_model_candidates("high_tier") == [("opencode", model, effort)]
+    assert config_module.parse_unresolved_model_candidates(f"opencode:{value}") == [("opencode", model, effort)]
+
+
+def test_opencode_preset_warns_after_saving_and_empty_only_order_fails(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """プリセットを保存してから未設定キーを案内し、候補ゼロの原因も示す。"""
+    assert _main(tmp_path, "config", "apply-preset", "opencode-balanced") == 0
+    result = capsys.readouterr()
+    for tier in config_module.TIERS:
+        assert f"opencode_{tier}_tier_model" in result.err
+    assert "atk config set" in result.err
+    assert _saved(tmp_path)["base_engine"] == "opencode,codex,claude"
+    assert _main(tmp_path, "config", "set", "base_engine", "opencode") == 0
+    with pytest.raises(ValueError, match="モデル候補がない"):
+        config_module.parse_unresolved_model_candidates("high_tier")
+
+
+@pytest.mark.parametrize("preset", [None, *[name for name in _PRESETS if not name.startswith("opencode-")]])
+def test_existing_presets_never_select_configured_opencode(tmp_path: pathlib.Path, preset: str | None) -> None:
+    """初期設定と既存5プリセットはopencodeの全段位が設定済みでも選択しない。"""
+    for tier in config_module.TIERS:
+        assert _main(tmp_path, "config", "set", f"opencode_{tier}_tier_model", "local/qwen/high") == 0
+    if preset is not None:
+        assert _main(tmp_path, "config", "apply-preset", preset) == 0
+    for usage in config_module.USAGES:
+        for tier in config_module.TIERS:
+            assert all(
+                engine != "opencode"
+                for engine, _, _ in config_module.parse_unresolved_model_candidates(f"{tier}_tier", usage=usage)
+            )
 
 
 def test_claude_api_mode_accepts_two_values_and_env_override(
@@ -413,6 +523,9 @@ class TestConfigGet:
             "codex_high_tier_model": "sol/medium",
             "codex_medium_tier_model": "terra/medium",
             "codex_low_tier_model": "luna/medium",
+            "opencode_high_tier_model": "",
+            "opencode_medium_tier_model": "",
+            "opencode_low_tier_model": "",
             "base_engine": "codex,claude",
             "execute_engine": "claude,codex",
             "review_engine": "codex,claude",
@@ -578,7 +691,7 @@ class TestConfigGet:
 
 
 class TestConfigApplyPreset:
-    """`atk config apply-preset`の5プリセットと入力検証を検証する。"""
+    """`atk config apply-preset`のプリセットと入力検証を検証する。"""
 
     @pytest.mark.parametrize("preset", list(_PRESETS))
     def test_apply_preset_saves_only_engine_settings(
@@ -593,6 +706,7 @@ class TestConfigApplyPreset:
             "write_model": "claude:claude-opus-5-5/medium",
             "codex_high_tier_model": "gpt-6-sol/high",
             "claude_low_tier_model": "sonnet/low",
+            **{f"opencode_{tier}_tier_model": "local/qwen/low" for tier in config_module.TIERS},
         }
         _write_config(tmp_path, kept)
         expected = dict(zip(_ENGINE_KEYS, _PRESETS[preset], strict=True))
@@ -694,7 +808,7 @@ class TestConfigSet:
     ) -> None:
         """codexとclaude以外、重複、空要素、空白を含むengine順を拒否する。"""
         assert _main(tmp_path, "config", "set", "chores_engine", value) == 2
-        assert "codexとclaudeの一方または両方" in capsys.readouterr().err
+        assert "codex・claude・opencodeを重複なし" in capsys.readouterr().err
         assert not _config_file(tmp_path).exists()
 
     @pytest.mark.parametrize(

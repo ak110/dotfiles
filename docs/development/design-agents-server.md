@@ -471,9 +471,9 @@ Claude Codeからの委譲手段は`agent-toolkit/rules/01-agent.md`「委譲の
 
 ## Antigravity CLI backendの用途限定の追加
 
-`agents_server`は3つ目のengineとしてAntigravity CLI（`agy`）を持つ。
-`_agents_server/antigravity.py`が`start`・`resume`・`send_message`・`release_session`・`interrupt`・`close`を
-他の2backendと同じ引数の並びで提供する。
+`agents_server`はengineとしてAntigravity CLI（`agy`）を持つ。
+`_agents_server/antigravity.py`は共通の`cli_turn.py`を通して`start`・`resume`・`send_message`・`release_session`・`interrupt`・`close`を
+他backendと同じ引数の並びで提供する。
 Antigravity CLIの非対話モードは常駐プロトコルを持たず、`-p`で渡した1件の指示を処理して終わるため、
 turnごとにプロセスを起動し、継続は`--conversation <会話識別子>`を付けた新しい実行とする。
 session識別子は`--output-format stream-json`が返す`init`イベントの会話識別子とする。
@@ -482,7 +482,7 @@ session識別子は`--output-format stream-json`が返す`init`イベントの�
 `_atk/config.py`の`_STAGE_MODEL_PATTERN`と`_KNOWN_MODELS`だけを広げ、
 段位モデルと用途別engine順の設定（`_TIER_MODEL_DEFAULTS`・`_PRESET_ENGINE_ORDERS`）は変えない。
 Antigravity CLIは日本語の技術文書の推敲だけを担い、Claude CodeとCodexと同格の常用engineとして扱わないためである。
-Antigravity CLIは工程別モデル設定の候補列に入らない。委譲先が失敗で終端した場合は、`agent-toolkit/agent_toolkit/_agents_server/antigravity.py`の`unavailable_reason`が標準エラー出力か失敗の本文を除外理由として返し、記録した除外理由は全てそのengineを除外する根拠になる。
+Antigravity CLIは工程別モデル設定の候補列に入らない。この用途限定はAntigravityに対する判断であり、OpenCodeの段位モデル追加とは両立する。委譲先が失敗で終端した場合は、共通の`cli_turn.py`から継承する`unavailable_reason`が標準エラー出力か失敗の本文を除外理由として返し、記録した除外理由は全てそのengineを除外する根拠になる。
 
 Antigravityのexploreも通常の候補選択と開始・再開経路を使う。読取責務は他backendと同じ共通プロンプトへ置き、実際の可用性失敗だけを候補切替へ使う。
 
@@ -491,7 +491,7 @@ Antigravityのexploreも通常の候補選択と開始・再開経路を使う�
 agent-toolkitのhookによる遮断もAntigravity CLIへ及ばないためである。
 この判断はユーザーが確定した。Antigravity CLIの権限を見直す作業は、この記録を根拠として扱う。
 
-導入のステップ（`pytools/_internal/setup_agy_cli.py`）は失敗を警告1行に留めて`False`を返す。
+導入のステップ（`pytools/_internal/setup_agy_cli.py`）は取得・導入の失敗を警告に留め、失敗を持たない`PostApplyOutcome`を返す。
 公式インストーラーはバイナリ本体を`*.run.app`のエンドポイントから取得するため、バイナリの取得先ホストを遮断するネットワークでは導入できない。
 他のステップと同じく例外で終えると、取得先ホストへ接続できない環境では`update-dotfiles`が毎回終了コード1になり、他のステップの失敗が埋もれる。
 この判断もユーザーが確定した。導入のステップを見直す作業は、この記録を根拠として扱う。
@@ -501,6 +501,40 @@ statuslineは`claude-statusline`の`agy-statusline`モードが担う。
 Antigravity CLIが渡すJSONはClaude CodeのstatusLine入力と項目が完全には重ならないため、
 受け取れる項目だけを同じ区切りと日本語ラベルへ射影する。
 配布アセットを1個に保つため、モードを増やす形で既存のバイナリへ同居させる。
+
+## OpenCode CLI backend
+
+OpenCode 1を一般の委譲先engineとして追加し、モデル段位と用途別のengine順へ参加させる。
+ユーザーが求めたQwenなどの利用を、既存のClaude・Codexのモデル設定と独立して切り替えるためである。
+既存5プリセットと初期値は保ち、新しい2プリセットか明示したengine順・モデル候補で選ぶ。
+`orchestrate_engine`は保存と環境変数の両経路でopencodeを拒否する。
+プリセット適用時の空モデル警告は、設定保存後に候補除外の理由をユーザーへ届ける。
+
+`opencode.py`がコマンドとイベント解釈を所有し、Antigravityと共通のプロセス所有・継続・停止・ログ追記は`cli_turn.py`へ集約する。
+同じライフサイクルを別実装へ複製する案は、停止・再開の修正を両方へ繰り返すため採らなかった。
+engine別のJSONを共通実行処理へ埋め込む案も、イベント仕様の変更理由が異なるため採らない。
+各backendのコマンド、開始ID、イベント反映、CLI終了の検収と規範配送だけを分ける。
+Antigravityの既存試験を共通化の回帰試験として使う。
+
+`opencode run`へ`--model provider/model`・`--format json`・`--auto`を渡し、effortを`--variant`、継続IDを`--session`へ渡す。
+設定の`provider/model[@effort]`はモデル内の`/`を保持し、末尾の`@`でvariantを分ける。既知のeffortを末尾の`/`へ書く形も受理する。担当モデルの検査は共通のモデル候補パーサーへ委ね、個別の正規表現は持たない。
+OpenCode 1.19.3の[公開ソース](https://github.com/anomalyco/opencode/blob/v1.19.3/packages/opencode/src/cli/cmd/run.ts)で、各イベントの`sessionID`、本文・ツール・step使用量の`part`と、idleでCLIが終わる契約を確認した。
+終了コード0とアシスタント本文で完了を確定し、errorイベント・非0終了・本文なしは失敗とする。
+OpenCodeには実行時間上限の指定が無いため共通実行処理で3600秒を持ち、独自の上限を持つAntigravityには重ねない。
+
+共通規範・委譲先規範・ユーザー規範を開始と再開の本文へ連結する。
+スキルをホストへ自動登録する機構は追加せず、plugin rootから明示的に読めるようにする。
+配送範囲は`delivery-scope.md`と`start`の説明へ同じ内容を載せる。
+CLI自身によるプロジェクト規範の読込は未確認として扱う。
+
+ログは`logs/opencode/<session-id>.jsonl`へ置き、Antigravityの既存配置を保ったままengineを一意に解決する。
+ネイティブイベントはそのまま保持し、CLIが出力しないturn入力・cwd・要求モデルは`agent_toolkit_input`行で補う。
+この要求モデルを実行先で観測したモデルとはみなさない。
+`session_record_format.py`の共通表示モデルを通してログ表示と証拠抽出を接続し、使用量・ツール・失敗・返却を既存の集計へ渡す。
+起動・継続の偽CLI試験と、親からのログ表示・証拠抽出・統計の公開経路試験で検収する。
+
+導入は両OSで公式に提供するnpm手段を使い、既存の工程依存でNode.js準備と他CLIのnpm移行の後に実行する。
+未導入時だけ導入し、失敗は他の取得工程と同じく警告へ留める。
 
 ## `atk agents logs`による記録の表示
 
