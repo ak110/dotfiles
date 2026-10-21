@@ -19,8 +19,8 @@ from session_evidence_records import _agents_server_call_ids, _collect_records, 
 from session_evidence_stats import _add_tokens, _codex_normalized_tokens, _parse_cli_timestamp, _stats_summary_data
 
 from agent_toolkit._agents_server import record_paths
-from agent_toolkit._atk import review_table
-from agent_toolkit._common import private_notes
+from agent_toolkit._atk import review_table, session_record_format
+from agent_toolkit._common import model_pricing, private_notes, session_cost
 from agent_toolkit._git import command as git_command
 
 _TOKEN_KEYS = ("input_tokens", "cache_creation_input_tokens", "cache_read_input_tokens", "output_tokens")
@@ -162,6 +162,8 @@ def _scan_sessions(
                 continue
             try:
                 if path.stat().st_mtime < since.timestamp():
+                    identity = session_record_format.codex_session_id(path) if runtime == "codex" else path.stem
+                    paths[identity].append((path, "codex" if runtime == "codex" else "claude"))
                     continue
                 records = _load_records(str(path))
             except OSError:
@@ -200,23 +202,25 @@ def _scan_sessions(
 
 def _session_metrics(
     roots: dict[str, Path], weeks: dict[str, dict[str, Any]], since: datetime.datetime, until: datetime.datetime
-) -> dict[str, Any]:
+) -> tuple[dict[str, Any], list[dict[str, Any]]]:
     sessions, candidates, coverage = _scan_sessions(roots, since)
-    agy_resolved: set[str] = set()
-    agy_unreadable: set[str] = set()
+    cli_resolved: dict[str, _Runtime] = {}
+    cli_unreadable: dict[_Runtime, set[str]] = collections.defaultdict(set)
 
     def resolve(session_id: str) -> tuple[Path, _Runtime] | None:
         if session_id in candidates:
             return candidates[session_id]
         found = record_paths.find_session_record(session_id)
-        if found is not None and found.engine == "agy" and len(found.paths) == 1:
-            agy_resolved.add(session_id)
-            return found.paths[0], "agy"
+        if found is not None and found.engine in {"agy", "opencode"} and len(found.paths) == 1:
+            runtime: _Runtime = "opencode" if found.engine == "opencode" else "agy"
+            cli_resolved[session_id] = runtime
+            return found.paths[0], runtime
         return None
 
     seen: set[Path] = set()
     unresolved: set[tuple[str, int, str]] = set()
     unreadable: set[Path] = set()
+    session_rows: list[dict[str, Any]] = []
     for session in sorted(sessions, key=lambda value: (value.start or until, str(value.item.path))):
         if session.start is None or not since <= session.start <= until:
             continue
@@ -224,10 +228,47 @@ def _session_metrics(
         if records is None:
             unreadable.add(session.item.path)
             continue
-        family, missing = _collect_records(str(session.item.path), records, session_resolver=resolve, modified_since=since)
+        family, missing = _collect_records(str(session.item.path), records, session_resolver=resolve)
         unresolved.update((item.record_id, item.line, item.kind) for item in missing)
-        agy_unreadable.update(item.record_id for item in missing if item.record_id in agy_resolved)
+        for item in missing:
+            if item.record_id in cli_resolved:
+                cli_unreadable[cli_resolved[item.record_id]].add(item.record_id)
         week = weeks[_week(session.start)]
+        amounts = session_cost.estimate_family(
+            [
+                session_cost.CostRecord(
+                    item.record_id,
+                    item.runtime or "unknown",
+                    [record.entry for record in item.records],
+                    item.role,
+                    item.source_record,
+                )
+                for item in family
+            ],
+            incomplete=bool(missing),
+        )
+        amounts.pop("pricing")
+        cwd = next(
+            (
+                entry.get("cwd") if isinstance(entry.get("cwd"), str) else entry["payload"].get("cwd")
+                for record in records
+                if isinstance((entry := record.entry).get("cwd"), str)
+                or entry.get("type") == "session_meta"
+                and isinstance(entry.get("payload"), dict)
+                and isinstance(entry["payload"].get("cwd"), str)
+            ),
+            None,
+        )
+        session_rows.append(
+            {
+                "kind": "cost-metrics-session",
+                "engine": session.item.runtime,
+                "session_id": session.item.record_id.partition(":")[2],
+                "started_at": session.start.isoformat(),
+                "cwd": cwd,
+                **amounts,
+            }
+        )
         workflow, _ = _workflow_evidence(family[0])
         scopes = ("all", "process-wi") if workflow == "process-wi" else ("all",)
         for scope in scopes:
@@ -256,9 +297,10 @@ def _session_metrics(
                 _add_tokens(target["by_runtime"].setdefault(item.runtime, _empty_tokens()), tokens)
     coverage["unresolved_delegate_count"] = len(unresolved)
     coverage["records_lost_during_collection_count"] = len(unreadable)
-    if agy_unreadable:
-        coverage["by_runtime"].setdefault("agy", {"oldest_record_at": None})["unreadable_record_count"] = len(agy_unreadable)
-    return coverage
+    for runtime, unreadable_ids in cli_unreadable.items():
+        coverage["by_runtime"].setdefault(runtime, {"oldest_record_at": None})["unreadable_record_count"] = len(unreadable_ids)
+    coverage["pricing"] = model_pricing.pricing_metadata()
+    return coverage, session_rows
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -296,7 +338,7 @@ def main(argv: list[str] | None = None) -> int:
             "codex": args.codex_sessions_dir or Path.home() / ".codex" / "sessions",
         }
         roots = {key: value.expanduser().resolve() for key, value in roots.items()}
-        coverage = _session_metrics(roots, weeks, since, until)
+        coverage, session_rows = _session_metrics(roots, weeks, since, until)
         notes = (args.private_notes or private_notes.default_private_notes()).expanduser().resolve()
         coverage.update(_queue_metrics(notes, weeks, since, until))
     except (ValueError, OSError, yaml.YAMLError, subprocess.CalledProcessError) as error:
@@ -330,6 +372,8 @@ def main(argv: list[str] | None = None) -> int:
             for runtime, info in coverage["by_runtime"].items()
         }
         print(json.dumps(week, ensure_ascii=False))
+    for row in session_rows:
+        print(json.dumps(row, ensure_ascii=False))
     print(
         json.dumps(
             {

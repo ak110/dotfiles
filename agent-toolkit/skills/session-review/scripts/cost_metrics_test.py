@@ -139,7 +139,8 @@ def _run(dataset: tuple[Path, Path, Path], capsys: pytest.CaptureFixture[str], *
 def test_weekly_metrics(dataset: tuple[Path, Path, Path], capsys: pytest.CaptureFixture[str]) -> None:
     """任意の所在、週境界、開始だけの指定を登録済みCLIが受理する。"""
     events = _run(dataset, capsys, "--since", "2026-10-05", "--until", "2026-10-13")
-    first, second, coverage = events
+    first, second = [event for event in events if event["kind"] == "cost-metrics-week"]
+    coverage = events[-1]
     assert [first["week"], second["week"]] == ["2026-10-05", "2026-10-12"]
     assert first["adopted_awi_count"] == 1
     assert first["root_session_count"] == {"all": 2, "process-wi": 1}
@@ -174,6 +175,53 @@ def test_tokens_match_stats_total(
         json.loads(line)["tokens"] for line in capsys.readouterr().out.splitlines() if json.loads(line)["kind"] == "stats-total"
     )
     assert events[0]["tokens"]["process-wi"]["total"] == total
+
+
+def test_session_usd_rows_use_reported_parent_and_priced_delegate(
+    dataset: tuple[Path, Path, Path], capsys: pytest.CaptureFixture[str]
+) -> None:
+    """公開CLIで親cost-stateとの重複を除き、古いmtimeの委譲先も料金へ含める。"""
+    claude, codex, _ = dataset
+    parent = _claude("2026-10-06T12:00:00Z", child=_CHILD)
+    parent[0]["cwd"] = "/work"
+    parent.append({"type": "cost-state", "timestamp": "2026-10-06T12:01:00Z", "totalCostUSD": 14.5})
+    parent.extend(
+        [
+            {
+                "type": "api-request-blob",
+                "timestamp": "2026-10-06T12:02:00Z",
+                "message": {
+                    "id": "request-copy",
+                    "model": "claude-opus-5-5",
+                    "usage": {"input_tokens": 1000, "output_tokens": 100},
+                },
+            },
+            {
+                "type": "api-request-blob",
+                "message": {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "start", "content": "写し"}]},
+                "toolUseResult": {"session_id": "not-a-launched-session"},
+            },
+        ]
+    )
+    write_jsonl(claude / "project-a/parent.jsonl", parent)
+    child_path = codex / f"2026/10/06/rollout-child-{_CHILD}.jsonl"
+    child = _codex("2026-10-06T12:00:01Z", _CHILD)
+    child.insert(1, {"type": "turn_context", "timestamp": "2026-10-06T12:00:01Z", "payload": {"model": "gpt-6-sol"}})
+    write_jsonl(child_path, child)
+    os.utime(child_path, (0, 0))
+    events = _run(dataset, capsys, "--since", "2026-10-05", "--until", "2026-10-12")
+    sessions = {event["session_id"]: event for event in events if event["kind"] == "cost-metrics-session"}
+    assert set(sessions) == {"parent", "other"}
+    assert sessions["parent"]["estimated_usd"] == pytest.approx(14.500655)
+    assert sessions["parent"]["breakdown"]["claude_subagents"]["known_usd"] == 0
+    assert sessions["parent"]["breakdown"]["delegates"]["known_usd"] == pytest.approx(0.000655)
+    assert sessions["parent"]["cwd"] == "/work"
+    assert not sessions["parent"]["incomplete"]
+    assert sessions["other"]["estimated_usd"] is None
+    assert sessions["other"]["unknown_responses"] == 1
+    assert events[-1]["pricing"]["as_of"]
+    assert events[-1]["pricing"]["sources"]
+    assert events[-1]["pricing"]["formula"]
 
 
 def test_review_metrics_exec_review_only(dataset: tuple[Path, Path, Path], capsys: pytest.CaptureFixture[str]) -> None:

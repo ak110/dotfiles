@@ -3,6 +3,8 @@
 import json
 import typing
 
+from agent_toolkit._common.session_family import _analysis_entry
+
 
 class DelegationCollector:
     """記録の行を順に受け取り、起動ツールの結果に記録された子セッションIDを集める。
@@ -55,6 +57,7 @@ class DelegationCollector:
         """`wants`が真を返した行を解析した値を受け取る。"""
         if not isinstance(record, dict):
             return
+        record = _analysis_entry(record)
         if self.engine == "claude":
             self._feed_claude(record)
         else:

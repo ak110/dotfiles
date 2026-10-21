@@ -258,12 +258,14 @@ def _catalog_agy_child(session_id: str) -> _CollectedRecord | None:
     ClaudeとCodexの子は指定root内だけの比較一覧という前提を保つため、走査rootの記録からだけ引く。
     """
     found = _record_paths.find_session_record(session_id)
-    if found is None or found.engine != "agy":
+    if found is None or found.engine not in {"agy", "opencode"}:
         return None
     records = _load_records(str(found.paths[0]))
     if records is None:
         return None
-    return _CollectedRecord(session_id, found.paths[0], records, "agy", None, None, None, "session")
+    return _CollectedRecord(
+        session_id, found.paths[0], records, "opencode" if found.engine == "opencode" else "agy", None, None, None, "session"
+    )
 
 
 class _CatalogParent(NamedTuple):

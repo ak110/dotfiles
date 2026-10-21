@@ -31,6 +31,7 @@ from agent_toolkit._atk.serve import (  # noqa: E402  # pylint: disable=wrong-im
 )
 from agent_toolkit._common import (  # noqa: E402  # pylint: disable=wrong-import-position
     host_homes,
+    session_cost_records,  # noqa: E402  # pylint: disable=wrong-import-position
     session_launchers,
     state_paths,
 )
@@ -181,12 +182,21 @@ def _read_payload(path_b64: str) -> dict[str, typing.Any]:
     data = path.read_bytes()
     if len(data) > MAX_RECORD_BYTES:
         raise ValueError(f"record too large: {len(data)} bytes")
+    records, broken = session_record_format.parse_records(data.decode("utf-8", errors="replace"))
+    engine = "codex" if path.resolve().is_relative_to((host_homes.codex_home() / "sessions").resolve()) else "claude"
     return {
         "data": base64.b64encode(data).decode("ascii"),
         "mtime_epoch": path.stat().st_mtime,
         # サブエージェント記録が無い場合も空のリストを返す。応答が本欄を持つこと自体を、
         # 本欄を返さない旧版のヘルパーとサーバー側が区別する根拠とするためである。
         "subagents": session_record_format.claude_subagents(path) or [],
+        "cost": session_cost_records.estimate_detail_cost(
+            engine,
+            path,
+            records,
+            include_descendants=True,
+            broken_lines=broken,
+        ),
     }
 
 

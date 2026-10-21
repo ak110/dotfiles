@@ -166,7 +166,7 @@ _TRANSIENT_CLASSIFIER_ERROR = "The server-side auto mode classifier gave no verd
 _FAILURE_PATH = re.compile(r"(?<!\w)(?:~?/|[A-Za-z]:[\\/])[^\s'\"`]+")
 
 
-_FAILURE_RECORD_ID = re.compile(r"\b(?:codex|claude|agy):[A-Za-z0-9_-]+(?::\d+)?")
+_FAILURE_RECORD_ID = re.compile(r"\b(?:codex|claude|agy|opencode):[A-Za-z0-9_-]+(?::\d+)?")
 _FAILURE_UUID = re.compile(r"\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b", re.IGNORECASE)
 
 
@@ -189,7 +189,17 @@ _ADHOC_SHELL_TOOLS = frozenset({"bash", "exec", "exec_command", "shell", "local_
 """シェルのコマンドを実行するツール名の末尾部分。Codexの`exec`はJavaScript本文から`exec_command`を呼ぶ形でコマンドを渡す。"""
 
 
-_CANDIDATE_CONTEXT_FIELDS = ("assistant_context", "user_response", "wi_file", "wi_state", "wi_section")
+_CANDIDATE_CONTEXT_FIELDS = (
+    "assistant_context",
+    "user_response",
+    "wi_file",
+    "wi_state",
+    "wi_section",
+    "question_line",
+    "answer_line",
+    "question_call_id",
+    "question_index",
+)
 """候補へ写す判断材料の項目。確認の質問・選択肢・回答と、記入元のWIの所在を候補一覧へ載せるために使う。"""
 
 FAILURE_CANDIDATE_KINDS = frozenset({"command-failure", "tool-failure"})
@@ -568,6 +578,11 @@ def _candidate_events(
         for field in _CANDIDATE_CONTEXT_FIELDS:
             if field in events[0]:
                 candidate[field] = events[0][field]
+        question_locators = [
+            {"record": str(event["record"]), "line": event["question_line"]} for event in events if "question_line" in event
+        ]
+        if question_locators:
+            candidate["question_locators"] = question_locators
         if key and key[0] in FAILURE_CANDIDATE_KINDS:
             candidate["failure_signature"] = events[0]["failure_signature"]
             candidate["failure_summary"] = events[0]["failure_summary"]

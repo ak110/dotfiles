@@ -13,6 +13,7 @@ from session_evidence_extract import (
     _CollectedRecord,
     _fallback,
     _json_object,
+    _opencode_records,
     _parse_timestamp,
     _Record,
     _record_timestamp,
@@ -259,6 +260,8 @@ def _turn_completion_data(
 
 
 def _stats_summary_data(records: list[_Record], runtime: _Runtime) -> dict[str, Any]:
+    if runtime == "opencode":
+        return _stats_summary_data(_opencode_records(records), "claude")
     timestamps = [(record, timestamp) for record in records if (timestamp := _record_timestamp(record)) is not None]
     summary: dict[str, Any] = {}
     identities = [identity.public() for identity in _distinct_identities(records, runtime)]
@@ -353,6 +356,8 @@ def _stats_call_entries(records: list[_Record], runtime: _Runtime) -> list[dict[
     分けて持つ。切り詰め後の値で反復を判定すると、上限まで前方一致するだけの別内容の呼び出しが
     同じ反復組へ集約されるためである（記録の確認結果: 上限2000文字の一致で内容の異なる組が実記録に存在する）。
     """
+    if runtime == "opencode":
+        return _stats_call_entries(_opencode_records(records), "claude")
     calls: dict[str, tuple[str, str | None, int, datetime.datetime]] = {}
     results: dict[str, list[datetime.datetime]] = {}
     for record in records:
@@ -403,6 +408,8 @@ def _stats_call_entries(records: list[_Record], runtime: _Runtime) -> list[dict[
 
 
 def _stats_token_peaks(records: list[_Record], runtime: _Runtime) -> list[dict[str, Any]]:
+    if runtime == "opencode":
+        return _stats_token_peaks(_opencode_records(records), "claude")
     candidates: list[dict[str, Any]] = []
     if runtime in {"claude", "agy"}:
         usages = _latest_claude_usages(records) if runtime == "claude" else _agy_token_usages(records)

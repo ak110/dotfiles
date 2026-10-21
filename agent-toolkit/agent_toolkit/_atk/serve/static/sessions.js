@@ -278,6 +278,30 @@ function usageText(usage) {
   return parts.join(" / ");
 }
 
+function detailCost(detail) {
+  const family = detail.cost;
+  if (!family) return null;
+  const listed = sessions.find(item => isSelected({host: detail.host, engine: detail.engine, path: detail.path}, item));
+  const own = parentTrail.length > 0 || Boolean(listed?.parent_path);
+  const amount = own ? family.breakdown?.self : family;
+  return amount && Number.isFinite(amount.known_usd) ? {amount, own, pricing: family.pricing} : null;
+}
+
+function costText(cost) {
+  if (!cost) return "推定費用: 取得不能";
+  const amount = cost.amount;
+  const unknown = amount.unknown_responses || 0;
+  if (!amount.known_usd && (unknown || amount.incomplete)) {
+    return unknown ? `推定費用: 単価不明 ${unknown.toLocaleString()}件` : "推定費用: 一部未算出";
+  }
+  const value = amount.known_usd > 0 && amount.known_usd < 0.0001 ? "<$0.0001"
+    : new Intl.NumberFormat("ja-JP", {style: "currency", currency: "USD", maximumFractionDigits: 4}).format(amount.known_usd);
+  const parts = [`推定${unknown || amount.incomplete ? "（既知分）" : ""} ${value} USD`];
+  if (unknown) parts.push(`単価不明 ${unknown.toLocaleString()}件`);
+  if (amount.incomplete) parts.push("一部未算出");
+  return parts.join(" / ");
+}
+
 function appendUnavailable(parent, label) {
   const span = document.createElement("span");
   span.className = "unavailable";
@@ -420,7 +444,8 @@ function captureDetailState() {
 function renderDetail(detail, preserved = null) {
   currentDetail = detail;
   detailTitleEl.textContent = `${ENGINE_LABELS[detail.engine] || detail.engine} / ${detail.host} / ${detail.project || "(プロジェクト不明)"}`;
-  detailUsageEl.textContent = usageText(detail.usage);
+  const cost = detailCost(detail);
+  detailUsageEl.textContent = costText(cost);
   // 子要素だけを差し替えるため、本文装飾を担う`#detail`自身のmarkdown-bodyクラスは保持される。
   detailEl.replaceChildren();
 
@@ -430,8 +455,14 @@ function renderDetail(detail, preserved = null) {
 
   const meta = document.createElement("div");
   meta.className = "secondary-text";
-  meta.textContent = `識別子: ${detail.session_id} / 開始: ${detail.started_at ? formatTime(detail.started_at) : "取得不能"}`;
+  meta.textContent = `識別子: ${detail.session_id} / 開始: ${detail.started_at ? formatTime(detail.started_at) : "取得不能"} / ${usageText(detail.usage)}`;
   detailEl.append(meta);
+  if (cost) {
+    const pricing = document.createElement("div");
+    pricing.className = "secondary-text";
+    pricing.textContent = `推定費用（API料金換算）: ${cost.own ? "この記録" : "子孫を含む"} / 料金表基準日: ${cost.pricing?.as_of || "取得不能"}`;
+    detailEl.append(pricing);
+  }
 
   if (Array.isArray(detail.subagents) && detail.subagents.length > 0) {
     detailEl.append(renderSubagents(detail));
@@ -553,12 +584,27 @@ async function openSession(host, engine, path, trail = [], updateUrl = true, clo
 }
 
 // 通知は2種類ある。`refresh`は一覧の再取得を促し、選択中の記録も取り直す。
-// `record`は記録1件の更新を示し、選択中の記録と一致する場合だけ右ペインを取り直す。
+// `record`は記録1件の更新を示す。選択中の記録自身と、親の集計へ含める子孫の更新を取り込む。
 // JSONとして解析できない本文と他の種類は処理しない。
+function changesSelectedFamily(message) {
+  if (!selected || parentTrail.length > 0) return false;
+  const current = sessions.find(item => isSelected(selected, item));
+  if (!current || current.parent_path) return false;
+  let changed = sessions.find(item => isSelected({host: message.host, engine: message.engine, path: message.path}, item));
+  const seen = new Set();
+  while (changed?.parent_path && !seen.has(changed.path)) {
+    if (changed.host === selected.host && changed.parent_path === selected.path) return true;
+    seen.add(changed.path);
+    changed = sessions.find(item => item.host === changed.host && item.path === changed.parent_path);
+  }
+  return false;
+}
+
+const refreshFromRecord = coalesced(refreshSelectedDetail);
 const SSE_MESSAGE_HANDLERS = {
   refresh: () => { void resyncFromServer(); },
   record: (message) => {
-    if (isSelected(selected, message)) void refreshSelectedDetail();
+    if (isSelected(selected, message) || changesSelectedFamily(message)) void refreshFromRecord();
   },
 };
 

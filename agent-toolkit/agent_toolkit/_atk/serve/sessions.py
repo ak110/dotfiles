@@ -25,7 +25,7 @@ from agent_toolkit._atk import session_record_format
 from agent_toolkit._atk.serve import remote as _atk_serve_remote
 from agent_toolkit._atk.serve import session_parents, session_watch
 from agent_toolkit._common import host_homes as _host_homes
-from agent_toolkit._common import session_launchers, stream_lines
+from agent_toolkit._common import session_cost_records, session_launchers, stream_lines
 from agent_toolkit._common import state_paths as _state_paths
 from agent_toolkit._common.async_operations import run_sync_operation
 
@@ -358,6 +358,16 @@ def read_local_detail(context: SessionsContext, engine: str, raw_path: str) -> d
     detail["path"] = raw_path
     detail["started_at"] = _started_at(engine, records)
     detail["project"] = _detail_project(engine, records, path)
+    detail["cost"] = session_cost_records.estimate_detail_cost(
+        engine,
+        path,
+        records,
+        include_descendants=True,
+        claude_home=context.claude_home,
+        codex_home=context.codex_home,
+        state_root=context.state_dir,
+        broken_lines=broken,
+    )
     return detail
 
 
@@ -694,6 +704,8 @@ async def session_detail(context: SessionsContext, engine: str, host: str, path:
     detail["path"] = path
     detail["started_at"] = _started_at(engine, records)
     detail["project"] = _detail_project(engine, records, pure_path)
+    # 算出は記録があるホストで行う。子孫の本文を画面サーバーへ転送しない。
+    detail["cost"] = payload.get("cost")
     return detail
 
 
