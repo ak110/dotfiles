@@ -1274,6 +1274,18 @@ def _acceptance_header_row(header: tuple[str, ...]) -> str:
     return f"| {' | '.join(header)} |"
 
 
+def _legacy_acceptance_plan(work_dir: pathlib.Path, legacy: tuple[str, ...]) -> str:
+    """利用目的の列が無い保存済み計画を作成する。"""
+    lines = _plan_fixture.current_plan(repo=work_dir.resolve()).splitlines()
+    index = lines.index(_acceptance_header_row(_plan_format.PLAN_ACCEPTANCE_TABLE_HEADER))
+    lines[index] = _acceptance_header_row(legacy)
+    lines[index + 1] = _acceptance_header_row(tuple("---" for _ in legacy))
+    cells = [cell.strip() for cell in lines[index + 2].strip("|").split("|")]
+    del cells[3]
+    lines[index + 2] = _acceptance_header_row(tuple(cells))
+    return "\n".join(lines) + "\n"
+
+
 def test_current_plan_acceptance_table_accepts_new_header(repo: tuple[pathlib.Path, str]) -> None:
     """現行の列名を持つ受入シナリオ表は新規作成・改訂として判定しても移行警告の対象にならない。"""
     work_dir, _base = repo
@@ -1295,9 +1307,8 @@ def test_current_plan_legacy_acceptance_header_is_migration_only(
 ) -> None:
     """改名前の列名を持つ受入シナリオ表は読取時に警告して受理し、新規作成・改訂では拒否する。"""
     work_dir, _base = repo
-    new_header = _acceptance_header_row(_plan_format.PLAN_ACCEPTANCE_TABLE_HEADER)
     legacy_header = _acceptance_header_row(legacy)
-    content = _plan_fixture.current_plan(repo=work_dir.resolve()).replace(new_header, legacy_header, 1)
+    content = _legacy_acceptance_plan(work_dir, legacy)
     path = work_dir / "legacy-acceptance.md"
     path.write_text(content, encoding="utf-8")
 
@@ -1316,9 +1327,8 @@ def test_current_plan_legacy_acceptance_table_still_requires_filled_cells(
 ) -> None:
     """改名前の列名の表も現行の表と同じく空セルを拒否する。"""
     work_dir, _base = repo
-    new_header = _acceptance_header_row(_plan_format.PLAN_ACCEPTANCE_TABLE_HEADER)
     legacy_header = _acceptance_header_row(legacy)
-    content = _plan_fixture.current_plan(repo=work_dir.resolve()).replace(new_header, legacy_header, 1)
+    content = _legacy_acceptance_plan(work_dir, legacy)
     lines = content.splitlines(keepends=True)
     row_index = next(index for index, line in enumerate(lines) if line.startswith(legacy_header)) + 2
     cells = lines[row_index].rstrip("\n").split(" | ")

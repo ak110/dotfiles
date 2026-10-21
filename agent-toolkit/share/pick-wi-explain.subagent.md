@@ -1,3 +1,15 @@
+---
+mode: explore
+model_type: low_tier
+usage: chores
+required_inputs:
+- 説明対象の選定結果の出力先ファイル
+- activeなWI本文の保存先
+- 選定理由への質問
+optional_inputs: []
+writes_worktree: false
+---
+
 # 選定理由の説明タスク
 
 `agent-toolkit:process-wi`の選定工程で固定した選定結果について、包含、除外または構成の理由を尋ねる質問へ答える。
@@ -14,12 +26,6 @@
 | 着手時（説明に使う選定の規定の所在） | `${CLAUDE_PLUGIN_ROOT}/skills/process-wi/references/selection-procedure.md`と`${CLAUDE_PLUGIN_ROOT}/skills/process-wi/references/selection-format.md` |
 
 ## 入力
-
-```text
-必須入力名: 説明対象の選定結果の出力先ファイル,activeなWI本文の保存先,選定理由への質問
-mode: explore
-作業ツリーへの書込: なし
-```
 
 - `説明対象の選定結果の出力先ファイル`: メインが保存した`選定結果の出力先ファイル`の絶対パス。`選定`（AWIごとの`WI`、`レーン`、`鮮度`、`プロジェクト規範の指定`など）と`レーンの所要時間`（レーンごとの見込みと理由）を持つ
 - `activeなWI本文の保存先`: 起動時にメインが対象リポジトリのactiveなWIの本文を保存したファイルの絶対パス。各WIは`### <ファイル名> [<状態>]`の見出しに続けてfrontmatterと本文を持つ

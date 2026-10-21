@@ -27,7 +27,15 @@ def test_launch_identifiers_roundtrip_return_and_batch(
     _roundtrip(tmp_path, monkeypatch, capsys, identifier)
 
 
-@pytest.mark.parametrize("identifier", ["/root/reader_review", "/root/recurrence_check_r2"])
+@pytest.mark.parametrize(
+    "identifier",
+    [
+        "/root/reader_review",
+        "/root/recurrence_check_r2",
+        "/root/reviewer/reader_review",
+        "/root/reviewer/group_a/reader_review_r2",
+    ],
+)
 def test_accepts_codex_spawn_agent_path(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], identifier: str
 ) -> None:
@@ -70,9 +78,14 @@ def _roundtrip(
     )
     assert check.main([*_args(tmp_path, start, head, declaration), "--external-artifact", str(draft)]) == 0
     output = capsys.readouterr().out
+    reported = next(line.removeprefix("読者別探索: ") for line in output.splitlines() if line.startswith("読者別探索: "))
+    assert json.loads(reported) == json.loads(declaration)
     batch = next(
         line.removeprefix("受領確認入力のパス: ") for line in output.splitlines() if line.startswith("受領確認入力のパス: ")
     )
+    saved = json.loads(pathlib.Path(batch).read_text(encoding="utf-8"))
+    assert len(saved["reviews"]) == 1
+    assert json.loads(saved["reviews"][0]["reader_fit_review"]) == json.loads(declaration)
     assert check.main(["--batch", batch]) == 0
     capsys.readouterr()
 

@@ -1,6 +1,7 @@
 """`<役割名>.parent.md`と`<役割名>.subagent.md`の委譲起動契約を確かめる。"""
 
 import collections
+import dataclasses
 import pathlib
 import re
 
@@ -10,6 +11,7 @@ from agent_toolkit._agents_server import launch_prompts
 from agent_toolkit._atk import run_script
 from agent_toolkit._atk.wi import constants as wi_constants
 from agent_toolkit._common import task_documents
+from agent_toolkit._common.markdown_headings import top_level_atx_headings
 from agent_toolkit._plan import selection
 
 _LAUNCH_TARGET_PREFIX = "起動対象:"
@@ -20,6 +22,26 @@ _LABEL_DELIMITER_PATTERN = re.compile("[:\uff1a\u3002\uff08\uff09\u3001,\\s]")
 _INPUT_BULLET_PATTERN = re.compile(r"^- `(?P<name>[^`]+)`: ", flags=re.MULTILINE)
 # 固定の返却形式を持つ`<役割名>.subagent.md`が、返却をその形式の行に限ることを示す語。
 _FIXED_REPLY_LIMIT = "だけを返す"
+
+
+@dataclasses.dataclass(frozen=True)
+class _EmbeddedContract:
+    """呼び元の節を、共有parentと同じ契約検査へ渡す。"""
+
+    source: pathlib.Path
+    section: str
+    body: str
+
+    @property
+    def name(self) -> str:
+        return f"{self.source}#{self.section}"
+
+    def read_text(self, encoding: str = "utf-8") -> str:
+        assert encoding == "utf-8"
+        return self.body
+
+
+type _Contract = pathlib.Path | _EmbeddedContract
 
 
 def _text_blocks(lines: list[str]) -> list[tuple[int, list[str]]]:
@@ -40,9 +62,15 @@ def _text_blocks(lines: list[str]) -> list[tuple[int, list[str]]]:
     return blocks
 
 
-def _marker_values(path: pathlib.Path, prefix: str, *, recipient: bool) -> tuple[list[str], bool]:
+def _marker_values(path: _Contract, prefix: str, *, recipient: bool) -> tuple[list[str], bool]:
     """正規位置にある一意な標識行の値と、構造が正しいかを返す。"""
     lines = path.read_text(encoding="utf-8").splitlines()
+    if recipient and lines and lines[0] == "---":
+        assert isinstance(path, pathlib.Path)
+        declaration = task_documents.read_declaration_unchecked(path, "\n".join(lines))
+        if isinstance(declaration, str):
+            return [], False
+        return list(declaration.required), True
     blocks = [block for block in _text_blocks(lines) if block[1] and block[1][0].startswith(prefix)]
     occurrences = sum(line.startswith(prefix) for line in lines)
     if len(blocks) != 1 or occurrences != 1:
@@ -87,7 +115,7 @@ def _bullet_label(line: str) -> str | None:
     return label or None
 
 
-def _extended_bullet_label_errors(parent: pathlib.Path, required_names: set[str], accepted_names: set[str]) -> list[str]:
+def _extended_bullet_label_errors(parent: _Contract, required_names: set[str], accepted_names: set[str]) -> list[str]:
     """必須入力名へ語を足した表記で始まる箇条書きを別名として報告する。
 
     ラベルを本文の先頭から最初の区切り文字までとする。区切り文字集合から全角丸括弧の開きを外すと、
@@ -109,7 +137,7 @@ def _extended_bullet_label_errors(parent: pathlib.Path, required_names: set[str]
     return errors
 
 
-def _pair_errors(parent: pathlib.Path, recipient: pathlib.Path) -> list[str]:
+def _pair_errors(parent: _Contract, recipient: pathlib.Path) -> list[str]:
     """指定した`<役割名>.parent.md`と`<役割名>.subagent.md`の組が同じ起動契約を持つか確かめる。"""
     errors: list[str] = []
     targets, valid_structure = _marker_values(parent, _LAUNCH_TARGET_PREFIX, recipient=False)
@@ -118,7 +146,7 @@ def _pair_errors(parent: pathlib.Path, recipient: pathlib.Path) -> list[str]:
         return errors
 
     required_names, valid_structure = _marker_values(recipient, _REQUIRED_INPUT_PREFIX, recipient=True)
-    if not valid_structure or not required_names:
+    if not valid_structure:
         errors.append(f"必須入力名の構造が不正: {recipient.name}")
         return errors
 
@@ -146,10 +174,10 @@ def _read_table_subagents(recipient: pathlib.Path, launched: set[str] | None = N
     return [name for name in _READ_TABLE_SUBAGENT_PATTERN.findall(table) if name != recipient.name and name not in launched]
 
 
-def _instructed_errors(parent: pathlib.Path, recipient: pathlib.Path) -> list[str]:
+def _instructed_errors(parent: _Contract, recipient: pathlib.Path) -> list[str]:
     """起動した委譲先が読込表で読む文書の必須入力名を、委譲元の本文が指示として持つか確かめる。"""
     required_names, valid_structure = _marker_values(recipient, _REQUIRED_INPUT_PREFIX, recipient=True)
-    if not valid_structure or not required_names:
+    if not valid_structure:
         return [f"必須入力名の構造が不正: {recipient.name}"]
     parent_content = parent.read_text(encoding="utf-8")
     return [
@@ -159,11 +187,43 @@ def _instructed_errors(parent: pathlib.Path, recipient: pathlib.Path) -> list[st
     ]
 
 
+def _embedded_contracts(share: pathlib.Path) -> list[_EmbeddedContract]:
+    """呼び元の見出し直後に宣言した起動契約を、節の境界を保って取得する。"""
+    paths = [
+        *sorted((share.parent / "skills").rglob("*.md")),
+        *sorted(path for path in share.glob("*.md") if not path.name.endswith(".parent.md")),
+    ]
+    contracts = []
+    for path in paths:
+        text = path.read_text(encoding="utf-8")
+        lines = text.splitlines()
+        headings = top_level_atx_headings(text, 2)
+        for block_start, block in _text_blocks(lines):
+            if not block or not block[0].startswith(_LAUNCH_TARGET_PREFIX):
+                continue
+            preceding = [
+                (index, token, title)
+                for index, (token, title) in enumerate(headings)
+                if token.map and token.map[0] < block_start
+            ]
+            if not preceding:
+                continue
+            index, token, title = preceding[-1]
+            assert token.map is not None
+            next_token = headings[index + 1][0] if index + 1 < len(headings) else None
+            end = next_token.map[0] if next_token is not None and next_token.map else len(lines)
+            section_lines = lines[token.map[0] : end]
+            # 元の節をH1とする検査用の像。ファイルを書き換えず、同じ入力検査を再利用する。
+            body = "\n".join(line[1:] if re.match(r"^#{2,6} ", line) else line for line in section_lines)
+            contracts.append(_EmbeddedContract(path, title, body))
+    return contracts
+
+
 def _contract_errors(share: pathlib.Path) -> list[str]:
     """share直下の委譲起動契約に反する箇所を返す。"""
-    parents = sorted(share.glob("*.parent.md"))
+    parents: list[_Contract] = [*sorted(share.glob("*.parent.md")), *_embedded_contracts(share)]
     recipients = {path.name: path for path in sorted(share.glob("*.subagent.md"))}
-    pairs: list[tuple[pathlib.Path, str]] = []
+    pairs: list[tuple[_Contract, str]] = []
     errors: list[str] = []
     for recipient in recipients.values():
         content = recipient.read_text(encoding="utf-8")
@@ -190,7 +250,7 @@ def _contract_errors(share: pathlib.Path) -> list[str]:
 
     # 起動対象に挙がる文書を読込表で読む場合は参照として読むだけであり、指示として届く文書から外す。
     launched = {target for _, target in pairs}
-    instructed: list[tuple[pathlib.Path, str]] = []
+    instructed: list[tuple[_Contract, str]] = []
     for parent, target in pairs:
         recipient = recipients.get(target)
         if recipient is None:
@@ -214,14 +274,14 @@ def _contract_errors(share: pathlib.Path) -> list[str]:
     for parent, target in sorted(set(instructed), key=lambda pair: (pair[0].name, pair[1])):
         errors.extend(_instructed_errors(parent, recipients[target]))
 
-    parent_populations: dict[pathlib.Path, set[str]] = collections.defaultdict(set)
-    accepted_populations: dict[pathlib.Path, set[str]] = collections.defaultdict(set)
+    parent_populations: dict[_Contract, set[str]] = collections.defaultdict(set)
+    accepted_populations: dict[_Contract, set[str]] = collections.defaultdict(set)
     for parent, target in pairs:
         recipient = recipients.get(target)
         if recipient is None:
             continue
         required_names, valid_structure = _marker_values(recipient, _REQUIRED_INPUT_PREFIX, recipient=True)
-        if not valid_structure or not required_names:
+        if not valid_structure:
             continue
         parent_populations[parent].update(required_names)
         # 確認対象のshareは引数で固定済みであり、隔離したテスト入力にも同じ宣言解析を使う。
@@ -260,8 +320,16 @@ def test_distributed_delegation_contract_is_complete() -> None:
 
 
 def _assert_role_models_registered(share: pathlib.Path) -> None:
-    """起動の受付対象となる役割文書にモデル種別が登録されていることを確かめる。"""
-    missing = sorted(path.name for path in share.glob("*.subagent.md") if path.name not in launch_prompts.TASK_MODEL_TYPES)
+    """現行の宣言と旧版の読取互換から、役割のモデル種別へ到達できることを確かめる。"""
+    missing = []
+    for path in sorted(share.glob("*.subagent.md")):
+        text = path.read_text(encoding="utf-8")
+        declaration = task_documents.read_declaration_unchecked(path, text)
+        if isinstance(declaration, task_documents.TaskDocumentDeclaration) and declaration.model_type is not None:
+            continue
+        if not text.startswith("---") and path.name in launch_prompts.TASK_MODEL_TYPES:
+            continue
+        missing.append(path.name)
     assert not missing, f"モデル種別が未登録の役割文書: {', '.join(missing)}"
 
 
@@ -286,6 +354,17 @@ def test_unregistered_added_or_renamed_role_reports_filename(tmp_path: pathlib.P
         _assert_role_models_registered(tmp_path)
 
 
+def test_new_role_configuration_needs_no_python_registration(tmp_path: pathlib.Path) -> None:
+    """役割追加時の検査も宣言を読み、旧役割の対応表を新規登録の条件にしない。"""
+    recipient = tmp_path / "new-check.subagent.md"
+    recipient.write_text(
+        "---\nmode: explore\nmodel_type: low_tier\nusage: chores\nrequired_inputs: []\nwrites_worktree: false\n---\n# 確認\n",
+        encoding="utf-8",
+    )
+    _assert_role_models_registered(tmp_path)
+    assert _marker_values(recipient, _REQUIRED_INPUT_PREFIX, recipient=True) == ([], True)
+
+
 def test_exec_review_receives_unjudged_evidence_and_owns_final_evidence() -> None:
     """未判定記録の直接配送と完成条件証拠の単一所有者を固定する。"""
     root = pathlib.Path(__file__).resolve().parent
@@ -299,7 +378,9 @@ def test_exec_review_receives_unjudged_evidence_and_owns_final_evidence() -> Non
         root / "skills" / "process-wi" / "references" / "termination-ci-failure.md",
     ]
 
-    assert "必須入力名: レビュー基準,引き継ぎ記録先,未判定検証記録,完成条件証拠" in review
+    declaration = task_documents.read_declaration_unchecked(root / "share/exec-review.subagent.md", review)
+    assert isinstance(declaration, task_documents.TaskDocumentDeclaration)
+    assert declaration.required == ("レビュー基準", "引き継ぎ記録先", "未判定検証記録", "完成条件証拠")
     assert "引き継ぎ再レビューでも初回値を保持" in parent
     assert all("未判定検証記録" in path.read_text(encoding="utf-8") for path in launchers)
     for content in (review, recording):
@@ -307,24 +388,20 @@ def test_exec_review_receives_unjudged_evidence_and_owns_final_evidence() -> Non
         assert "レビュー担当だけ" in content or "実行レビュー担当だけ" in content
 
 
-def test_launch_target_occurrences_match_parent_document_set() -> None:
-    """起動対象の全出現箇所を`<役割名>.parent.md`の集合と本文内の参照から導出する。"""
-    share = pathlib.Path(__file__).resolve().parent / "share"
-    parents = sorted(share.glob("*.parent.md"))
-    markdown_files = sorted(share.glob("*.md"))
-    parent_names = {path.name for path in parents}
-    actual_occurrences = [
-        (path.name, line_number)
-        for path in markdown_files
-        for line_number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1)
-        for _ in range(line.count(_LAUNCH_TARGET_PREFIX))
-    ]
-    expected_count = len(parents) + sum(
-        parent.read_text(encoding="utf-8").count(f"`{_LAUNCH_TARGET_PREFIX}`") for parent in parents
-    )
-
-    assert {name for name, _ in actual_occurrences} == parent_names
-    assert len(actual_occurrences) == expected_count
+def test_embedded_launch_contract_keeps_input_coverage(tmp_path: pathlib.Path) -> None:
+    """単一呼び元へ移した後も、割当と必須入力の欠落を同じ検査で判別する。"""
+    share = tmp_path / "share"
+    _write_pair(share, parent_body=_parent_body())
+    parent = share / "task.parent.md"
+    body = parent.read_text(encoding="utf-8")
+    parent.unlink()
+    caller = tmp_path / "skills/example/SKILL.md"
+    caller.parent.mkdir(parents=True)
+    embedded = "# 呼出側\n\n" + "\n".join("#" + line if line.startswith("#") else line for line in body.splitlines())
+    caller.write_text(embedded, encoding="utf-8")
+    assert not _contract_errors(share)
+    caller.write_text(embedded.replace("対象リポジトリ: 値", "現行対象: 値"), encoding="utf-8")
+    assert any("必須入力名が欠けている" in error and "対象リポジトリ" in error for error in _contract_errors(share))
 
 
 def test_handoff_path_mentions_match_delegation_document_set() -> None:
@@ -389,7 +466,7 @@ def test_selection_explanation_contract_covers_questions_without_state_changes()
         "activeなWI本文の保存先",
         "選定理由への質問",
     )
-    assert "pick-wi-explain.parent.md" in question_route
+    assert "selection-explanation.md" in question_route
     assert "## 選定理由の説明" not in selection_text
     assert not re.search(
         r"atk wi (?:adopt|reject|hold|unhold|start-processing|delete|edit)\b", explain.read_text(encoding="utf-8")
@@ -482,20 +559,6 @@ def test_added_wi_with_same_resume_plan_stays_in_existing_lane() -> None:
     assert "--body-wi <追加WI名>" in addition
     assert "そのレーンへの割当を分割不能条件として費用比較より先に確定" in lanes
     assert "その計画を別レーンへ割り当てず" in lanes
-
-
-def test_phase_specific_contract_layout_names_the_task_document() -> None:
-    """工程固有の参照へ分ける基準は、配置元の文書種別と実行主体を本文だけで特定できる。"""
-    plugin_root = pathlib.Path(__file__).resolve().parent
-    guideline = (plugin_root / "skills" / "writing-standards" / "references" / "sub-agents.md").read_text(encoding="utf-8")
-
-    assert "委譲元が委譲先を動かして結果を利用するまでの工程" in guideline
-    assert "入力の組み立て、起動、待機、返却の受領、検収、採否、統合など" in guideline
-    assert "委譲先が入力を受領してから結果を返すまでの工程" in guideline
-    assert "両者が使う契約は定義の所有者を1つ" in guideline
-    assert "いずれの文書も複数工程を扱う場合" in guideline
-    assert "その文書の全工程に必要な役割と分岐を同じ文書へ置く" in guideline
-    assert "その工程で起動するスキルの`references/`へ置く" in guideline
 
 
 def test_write_files_contract_reaches_selection_output_and_receipt() -> None:

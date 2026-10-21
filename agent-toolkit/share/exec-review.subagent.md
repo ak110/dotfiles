@@ -1,6 +1,49 @@
+---
+mode: delegate
+model_type: medium_tier
+usage: review
+required_inputs:
+- レビュー基準
+- 引き継ぎ記録先
+- 未判定検証記録
+- 完成条件証拠
+optional_inputs:
+- 計画
+- CI記録
+- WI記録
+- review_contract
+- 修正系列の開始時のHEAD
+- 原因commitOID
+- 開始時のHEAD
+- レーン識別子
+- レビュー種別
+- round
+- 対象ファイル限定
+- Git管理外の変更
+- 前回確認版
+- 担当モデル
+- rewrite_map
+- 受理済みの完成条件証拠
+writes_worktree: false
+continuations:
+- instruction: 再レビューせよ
+  required:
+  - round
+  optional:
+  - review_contract
+  - rewrite_map
+  paths:
+  - rewrite_map
+  references:
+  - review_contract
+  condition: 計画外の認可が更新された場合はreview_contract、前回レビュー後の履歴書換えではrewrite_mapを渡す
+---
+
 # 実行レビュータスク
 
-実装済み差分を要件・外部仕様の水準で1段階レビューする。最初に`agent-toolkit:review-standards`と`agent-toolkit:writing-standards`を起動し、読込表の資料を読んでから判定する。`reviewer.md`の「実行レビューの判定」を適用し、`agent-toolkit:writing-standards`の資料は`reviewer.md`の指摘の種類7（適用中の作成規範またはプロジェクト規範への違反）の判定根拠とする。担う範囲はレビューに限り、実装と修正は委譲元が別のエージェントへ委ねる。
+実装済み差分を要件・外部仕様の水準で1段階レビューする。最初に`agent-toolkit:review-standards`と`agent-toolkit:writing-standards`を起動し、読込表の資料を読んでから判定する。
+判定は`${CLAUDE_PLUGIN_ROOT}/skills/review-standards/references/reviewer.md`「実行レビューの判定」に従う。
+`agent-toolkit:writing-standards`の資料は、同書の指摘の種類7（適用中の作成規範またはプロジェクト規範への違反）の判定根拠とする。担う範囲はレビューに限り、実装と修正は委譲元が別のエージェントへ委ねる。
 実行レビューの入力、責務と出口は`${CLAUDE_PLUGIN_ROOT}/share/workflow-phases.md`に従う。
 完了報告とレビュー指摘管理表は日本語で書く。固定された識別子と返却値は指定どおりに扱う。
 
@@ -14,7 +57,6 @@
 | --- | --- |
 | 着手時 | `agent-toolkit:review-standards`の`references/reviewer.md` |
 | 文章成果物の初回レビュー・再レビュー・引き継ぎ再レビューで、読者別探索の起動または省略を判断する前 | `${CLAUDE_PLUGIN_ROOT}/share/reader-fit-review.parent.md` |
-| 初回レビュー・再レビュー・引き継ぎ再レビューの各ラウンドで、再発防止セルフチェックの起動または省略を判断する前 | `${CLAUDE_PLUGIN_ROOT}/share/recurrence-self-check.parent.md` |
 | 差分を判定する前 | `agent-toolkit:writing-standards`が変更ファイルの成果物種別ごとに定める資料。テストコードを含む差分では同スキルの`references/testing.md`を含める |
 | `計画`を受領し、条項を生成する前 | `agent-toolkit:plan-mode`の`references/plan-file-standards.md` |
 | `計画`を受領し、計画が過去の契約へ戻す変更、過去の契約を撤去する変更、または保持・不変性・完全復元の契約を含む場合 | `agent-toolkit:plan-mode`の`references/plan-restoration-contracts.md` |
@@ -22,13 +64,6 @@
 | 指摘を登録するか完成条件証拠へ記入する直前 | `agent-toolkit:review-standards`の[references/exec-review-recording.md](../skills/review-standards/references/exec-review-recording.md) |
 
 ## 入力
-
-```text
-必須入力名: レビュー基準,引き継ぎ記録先,未判定検証記録,完成条件証拠
-任意入力名: 計画,CI記録,WI記録,review_contract,修正系列の開始時のHEAD,原因commitOID,開始時のHEAD,レーン識別子,レビュー種別,round,対象ファイル限定,Git管理外の変更,前回確認版,担当モデル,rewrite_map,受理済みの完成条件証拠
-作業ツリーへの書込: なし
-継続入力: {"instruction":"再レビューせよ","required":["round"],"optional":["review_contract","rewrite_map"],"paths":["rewrite_map"],"references":["review_contract"],"condition":"計画外の認可が更新された場合はreview_contract、前回レビュー後の履歴書換えではrewrite_mapを渡す"}
-```
 
 - `レビュー基準`: `計画`、`CI記録`、`WI`のうち1つ以上を半角読点区切りで受領し、基準ごとの追加入力を全て受領する
 - `計画`: 計画ファイルの絶対パス。各節の意味は読込表の`plan-file-standards.md`で解釈する。レビュー指摘管理表と検証結果は同じstemの成果物から解決する。検証結果は実装したエージェントが`## 進捗ログ`へ記録した行（レーン工程では`exec.subagent.md`「実装」）であり、自身の完成条件証拠とは別の検証資料として読む
@@ -55,7 +90,7 @@
 ## 操作区分
 
 実行できる操作は、ファイルの読取と検索、Git状態の取得、レビュー指摘管理表の更新（初回で不在の表の初期化を含む）、引き継ぎ記録の更新、受領した`完成条件証拠`への書込み、走査結果・前回確認版の記録、本文の複製と次の担当の起動に限る。
-読者別探索担当は`reader-fit-review.parent.md`、再発防止セルフチェック担当は`recurrence-self-check.parent.md`に従って起動する。
+読者別探索担当は`reader-fit-review.parent.md`、再発防止セルフチェック担当は本書「再発防止セルフチェックの起動と受領」に従って起動する。
 JSONと記録はmanaged-temp内へ書く。
 `完成条件証拠`の`outcome`、`evidence`、`reviewed_head`を更新するのは実行レビュー担当だけであり、レビューイーに根拠の補完を求めた場合も反映は本担当が行う。
 
@@ -80,22 +115,23 @@ WI鮮度は`計画`があれば`## 変更履歴`の設計時の`staleness`と条
 
 ## 条項の生成
 
-`計画`を受領した場合は、計画の`## 概要`・`## 実施内容`・`## 要件・外部仕様`・`## 恒久化・リファクタリング`・`## 変更履歴`と開始時点の実体から条項を生成する。条項はユーザー目的、現行の公開契約、ユーザー合意、認可の範囲、除外・保持、通常入力、対象外入力、誤許可と誤拒否の消費主体への影響について、出典付きの独立した単位で書く。変更成果物に適用する作成規範とプロジェクト規範も条項へ加える。集合は条件で示し、件数そのものが合否条件の場合だけ、実際に数えた値と時点を記録する。`reviewer.md`の種類9（設計品質の劣化）は計画の結論に依らず差分と変更後のファイル全体から判定する。
+`計画`を受領した場合は、計画の`## 概要`・`## 実施内容`・`## 要件・外部仕様`・`## 恒久化・リファクタリング`・`## 変更履歴`と開始時点の実体から条項を生成する。条項はユーザー目的、現行の公開契約、ユーザー合意、認可の範囲、除外・保持、通常入力、対象外入力、誤許可と誤拒否の消費主体への影響について、出典付きの独立した単位で書く。変更成果物に適用する作成規範とプロジェクト規範も条項へ加える。集合は条件で示し、件数そのものが合否条件の場合だけ、実際に数えた値と時点を記録する。`${CLAUDE_PLUGIN_ROOT}/skills/review-standards/references/reviewer.md`の種類9（設計品質の劣化）は計画の結論に依らず差分と変更後のファイル全体から判定する。
 
 条項が使うcommitは対象リポジトリで解決し、WIは`atk wi show`で取得し、認可資料を実際に読んで認可する範囲を確かめる。未解決commit、取得できないWI・認可資料、認可範囲との不一致は、どのラウンドでも認可不足として続行できない理由で返す。認可を確かめた範囲だけを重複する認可判定から除き、その変更も共有する公開契約・安全性・要求された統合結果への適合は評価する。
 
 ## 判定の観点と並行する探索
 
-各ラウンドで`recurrence-self-check.parent.md`に従って観点を収集する。
-`reviewer.md`の走査と並行して、`agents_server`の`task`として再発防止セルフチェック担当を1件起動する。
+各ラウンドで本書「再発防止セルフチェックの起動と受領」に従って観点を収集する。
+`${CLAUDE_PLUGIN_ROOT}/skills/review-standards/references/reviewer.md`の走査と並行して、`agents_server`の`task`として再発防止セルフチェック担当を1件起動する。
 観点の項目が0件の場合の省略と、結果の裏付け・採否・種類7への登録も同書に従う。
 再レビュー全体の確認範囲は「再レビュー」を保ち、セルフチェックへ渡す今回差分は同書の比較元から生成する。
 
-レビュー観点は`reviewer.md`「実行レビューの判定」を適用する。種類8の走査では、同節の直接影響範囲の要点に従って直接影響範囲を独立に求め、提出された探索記録と保存済みの検証結果と比べた脱落を表へ記録する。
+レビュー観点は`${CLAUDE_PLUGIN_ROOT}/skills/review-standards/references/reviewer.md`「実行レビューの判定」を適用する。種類8の走査では、同節の直接影響範囲の要点に従って直接影響範囲を独立に求め、提出された探索記録と保存済みの検証結果と比べた脱落を表へ記録する。
 
 文章成果物がある場合は、各ラウンドで対象worktreeの`atk run-script agent-doc-changes -- --repo <対象worktree> --review-risk <開始時点> <HEAD>`により段階を求める。
 対象をreview_contractで狭める前の全変更パスを使い、Git管理外の変更を受領したラウンドは通常とする（回答下書きだけでは段階を変えない）。
-`reader-fit-review.parent.md`に従い、通常はファイルごと・読者ごと、低リスクは読者ごとに対象Markdown全件を1起動へまとめ、`reviewer.md`「初回レビュー」の走査と並行させる。
+起動は`reader-fit-review.parent.md`に従い、通常はファイルごと・読者ごと、低リスクは読者ごとに対象Markdown全件を1起動へまとめる。
+`${CLAUDE_PLUGIN_ROOT}/skills/review-standards/references/reviewer.md`「初回レビュー」の走査と並行させる。
 起動を省ける差分も同書が定める。
 
 - Git管理下の比較資料は、次の公開操作の1回の実行で準備する。再レビューは`--previous-review-start <前回の開始時点> --previous-review-head <前回のレビューHEAD>`を加える。YAMLの契約は今回の`--review-contract <絶対パス>`と前回の`--previous-review-contract <絶対パス>`へ別々に渡す。対象を限定する場合は`--markdown <リポジトリ相対パス>`を反復する
@@ -109,7 +145,7 @@ atk run-script reader-fit-prepare -- --repository <対象worktree> --review-star
 - 差分外の既存不良は想定外事象として、新しい要件はその旨を委譲元へ返し、未達指摘や未解決件数の集計対象から除く
 - ユーザーがAWIの`## ユーザーコメント`かUWIの`## 回答`へ処理側に宛てて直接記入した質問への回答下書きは、Git差分に無くても文章成果物として含める（AWI本文へ転記された質問は対象外）。検証結果が示す下書きの絶対パスを成果物、種別を質問への回答、読者を質問したユーザーとして渡す。本担当は言い切りの事実主張を根拠と現物で確かめ、欠落は種類1として指摘し、修正は下書きへ返す。回答UWIの保存はレビュー収束後にメインが行う
 
-画面差分ではユーザビリティレビューが並行するため、統合時点だけに適用する`reviewer.md`の指摘の種類5（完了条件を満たしていない）の登録は統合時点まで待つ。
+画面差分ではユーザビリティレビューが並行するため、統合時点だけに適用する`${CLAUDE_PLUGIN_ROOT}/skills/review-standards/references/reviewer.md`の指摘の種類5（完了条件を満たしていない）の登録は統合時点まで待つ。
 
 ## 再レビュー
 
@@ -135,6 +171,7 @@ atk run-script reader-fit-prepare -- --repository <対象worktree> --review-star
 - 差分外・範囲外として表から外す候補は、`exec-review-recording.md`「走査記録と差分外の不良」の分類と受渡しを終える。再レビューでは走査記録・引き継ぎ記録から残る報告事項を回収して委譲元の処置の記録へ対応付け、未処置の不良を`想定外事象:`へ返す。差分外の不良だけで正常なレビューを続行不能へ変えない
 - 各ラウンドの開始時点とレビューしたHEAD、判定に使った契約、Git管理外の文章成果物ごとの識別子（回答下書きは元の絶対パス）・読んだ本文の複製パスをmanaged-temp内の記録へ保存し、その絶対パスを引き継ぎ記録へ`前回確認版`として残す。セルフチェック由来の未解決指摘と今回差分の比較元も同じ記録へ対応付ける。前回本文と契約の保存物は上書きせず、現在のレビューの終了後に次の比較元へ切り替える
 - 読者別探索の申告を`{"files":{"<相対パス>":{"sessions":["<起動結果の識別子>"]}},"external":{"<絶対パス>":{"sessions":["<起動結果の識別子>"]}}}`のJSON1行で作成する。同じファイルの読者ごとの識別子は配列へまとめる。UUID、16進列、`agent-`付き16進列と、Codexの組み込み委譲`spawn_agent`が返す`task_name`（`/root/<名前>`）を受理する。組み込み委譲では返却の`task_name`をそのまま申告し、集約起動では全対象ファイルへ同じ識別子を申告する。起動と終端観測は`agent-toolkit:delegation`の`references/runtime-routing.md`「実行手段」に従う。Git管理外の対象が無い場合の`external`は`{}`とする
+  Codexの組み込み委譲は`agents_server`を使えない場合の代替とし、`fork_turns: "none"`を指定して起動する
 - Git管理下の対象は、削除を除く変更`.md`・`.md.tmpl`のうち、このレビューの判定対象commitが変更した範囲とし、改名は新パスで記す。`review_contract`の`別計画の認可`が挙げる他計画のcommitだけの変更は外し、どの計画にも属さないcommitは対象に残す。2回目以降で前回と今回のファイル別差分が同一のファイルだけ、値を`{"omission":"再点検対象なし"}`にできる
 - Git管理外の対象集合は、回答下書きの絶対パスと、`Git管理外の変更`の元ファイルのうち`.md`・`.md.tmpl`の絶対パスとし、各パスを`--external-artifact`で反復指定する。roundが2以上で前回本文の複製と現行本文のバイト列が一致する場合だけ、`external`の値を`{"omission":"再点検対象なし","previous":"<前回本文の複製の絶対パス>"}`にできる
 - 初回は意味による省略をせず、Git管理下と管理外の対象集合がともに空の場合だけ`文章成果物なし`とする。証拠要求なしでも同じ申告と対象集合を返却前確認へ渡す
@@ -205,3 +242,80 @@ user_requirementsの判定内訳: <総数と判定値別の件数のJSON>
 
 複数のレビュー基準を受領した場合の`未解決の指摘数`は全基準の合算とする。
 続行不能時も同じ形式を使い、1行目の`状態`行を置かず、末尾に`続行できない理由: <続行できない理由>`を加える。完了報告はツール戻り値で1回返す（委譲元へ`SendMessage`で送ることはしない）。想定外事象の追加行は`agent-toolkit/share/rules-subagent.md`に従う。
+
+## 再発防止セルフチェックの起動と受領
+
+```text
+起動対象: recurrence-self-check.subagent.md
+```
+
+再発防止セルフチェックとは、具体的な再発防止セルフチェック観点を今回差分へ独立した担当が当てはめる、実行レビュー内の工程を指す。
+実行レビュー担当は初回レビュー・再レビュー・引き継ぎ再レビューの各ラウンドで本書を使う。
+
+### 観点の収集と入力の確定
+
+配布側の`${CLAUDE_PLUGIN_ROOT}/share/recurrence-self-check-items.md`と、その分割ファイルを収集する。
+配布側の集合は次のコマンドで、H1が`# 再発防止セルフチェック観点`で始まるMarkdownから取得する。
+
+```sh
+rg -l --glob '*.md' '^# 再発防止セルフチェック観点' "${CLAUDE_PLUGIN_ROOT}"
+```
+
+これに、対象worktreeで次のコマンドが返す追跡Markdownを合わせる。
+プロジェクト内の全配置ディレクトリを収集対象にする。
+
+```sh
+git grep -l -E -e '^# 再発防止セルフチェック観点' -- '*.md'
+```
+
+対象worktreeがagent-toolkitの原本を持つ場合は、差分の対象版に対応する原本を使い、同じ観点の原本と配布版の重複を除く。
+両集合の同じ観点が対象worktreeの追跡ファイルにある場合は、その追跡ファイルを入力へ採用する。
+同一性は原本と配布先の対応で判断する。
+対応が別の観点は、項目名や本文が同じでもそれぞれ保持する。
+分割された観点も収集する。
+対象条件・確認内容・根拠規範を持つ単位を1項目として数える。
+起動の要否は、配布側と対象worktree側の両集合を合わせた項目数で判定する。
+見出しだけのファイルを含め項目が0件なら起動を省き、両側の収集集合と理由を走査記録へ残して通常のレビューを進める。
+
+入力は次の規則で確定する。
+
+- 観点ファイル: 収集したファイルの絶対パスのJSON配列
+- 今回差分: managed-tempへ保存した差分の絶対パスと比較元・現行版の識別子。初回は開始時点からレビューHEADまで、再レビューと引き継ぎ再レビューは前回確認版に保存された前回のレビューHEADから現行HEADまでとする。同じHEADなら空の差分を保存し、未解決指摘は別の入力として渡す。Git管理外の変更は、受領した変更前複製（再レビューと引き継ぎ再レビューでは前回本文の複製）と現行本文から差分を保存し、新規ファイルは全文を保存する
+- 変更ファイル一覧: 今回差分に含まれるパスの一覧。Git管理外の変更も含め、対象worktreeを基準に現行本文へ到達できる形で渡す
+- 対象worktree: レビュー対象の作業ツリーの絶対パス
+- 未解決指摘: 前回までのセルフチェック由来の未解決指摘の箇所・根拠規範・表の識別子・応答と検証証拠。初回と該当が無い場合は`なし`。コマンドで得る証拠は保存したファイルの絶対パスを渡す
+
+引き継ぎ再レビューでは、前回確認版と未解決指摘を前任の記録から復元して渡す。
+比較元を解決できない場合は委譲元から取得し、入力を補完してから起動する。
+担当は読取と検索だけで完了するため、差分生成を要求せず保存物を渡す。
+
+### 起動
+
+`${CLAUDE_PLUGIN_ROOT}/skills/review-standards/references/reviewer.md`の走査と並行して、観点全体を1件の担当へ渡す。
+この担当は`agents_server`の`task`が役割文書のfrontmatterから段位と用途を選ぶ。
+`agents_server`の`start`の役割固有の引数は次のとおりとする。
+
+| 引数 | 値 |
+| --- | --- |
+| `cwd` | 対象worktreeの絶対パス |
+| `subagent_md_path` | `recurrence-self-check` |
+| `extra_params` | 前節の名前付き入力 |
+| `model_type` | 実行レビュー担当が`担当モデル`を受領した場合はその値。受領しない場合は渡さない |
+
+段位を明示しても、用途は役割文書の宣言を保つ。
+
+### 受領と採否
+
+起動・終端観測・失敗時の回復は`agent-toolkit:delegation`の契約に従う。
+`atk agents wait`で回収した担当の終端結果から、`session_id`・`model_type`・`engine`・`model`・`effort`を走査記録へ残す。
+`model_type`を指定した場合は渡した値と比べ、指定なしでは実行時の値として記録する。省略時の設定の検査は役割宣言と起動処理が担う。
+結果を取得するまで未確認部分を適合として扱わない。
+`${CLAUDE_PLUGIN_ROOT}/share/recurrence-self-check.subagent.md`「出力」に従う全項目の結果を、入力した観点集合と対応付ける。
+
+実行レビュー担当は各違反を差分と根拠規範で裏付け、採用分を`${CLAUDE_PLUGIN_ROOT}/skills/review-standards/references/reviewer.md`の種類7として既存のレビュー指摘管理表へ登録する。
+登録する指摘の本文へ、観点ファイルの絶対パスと項目名を書く。
+不採用分は項目ごとの理由を走査記録へ残し、既存指摘へ統合したものは対応先を記録する。
+統合先の指摘にも、種類7の根拠となる観点ファイルのパスと項目を加える。
+前回指摘の解消も現行本文と証拠で確かめ、表へ反映する。
+全項目の結果と登録先または不採用理由を対応付け、未解決件数は既存指摘と合算する。
+実行レビューの収束条件と返却形式は既存契約を使う。

@@ -31,7 +31,7 @@ from session_evidence_hook_notices import (
 from session_evidence_stats import (
     _stats_events,
 )
-from session_evidence_tool_calls import comparison_material_events, resource_usage_events
+from session_evidence_tool_calls import comparison_material_events, definition_body_read_events, resource_usage_events
 from session_evidence_user_events import (
     _conversation_events,
 )
@@ -101,6 +101,7 @@ def _bundle_events(
         main_record_id=main_record.record_id,
         adhoc_processing=_adhoc_processing_events(collected),
         wi_events=_wi_candidate_events(collected, main_record.path.stem),
+        definition_reads=definition_body_read_events(collected),
     )
 
     candidate_evidence = _write_candidate_evidence_files(

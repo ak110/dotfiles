@@ -51,7 +51,7 @@ Codexは各`token_count.info.last_token_usage`と直前の`turn_context.model`�
 セッション記録から集計したトークン量、リクエスト数、所要時間を成果物やユーザーへの提示に書く場合は、`atk run-script session-review-evidence -- <引数>`の出力を典拠とし、自作の集計は典拠にしない。
 トークン量とリクエスト数には`--stats`、所要時間には`--elapsed-until <ISO 8601の時刻>`を付ける。振り返りの全候補は`--bundle`が生成する`candidates.jsonl`から取り、`atk run-script session-review-prepare`がこれを`candidates.md`へ整形する。
 
-別セッションを含む担当別の費用の要約は`--stats --summary-only`で取得する。総量・親・Claudeサブエージェント・agent threadの要約と由来・未解決診断を保持する表示選択であり、トークンの定義と合算方法は全量表示と同じである。bundleと準備文書は詳細内訳を使うため全量を保持する。
+別セッションを含む担当別の費用の要約は`--stats --summary-only`で取得する。総量・親・Claudeサブエージェント・agent threadの要約と由来・未解決診断を保持する表示選択であり、トークンの定義と合算方法は全量表示と同じである。bundleは全量の内訳を保持し、準備文書は初回に読む索引・総量・上位・詳細照会先へ縮約する。全候補ID・必須性・詳細の対応は`bundle/review-index.jsonl`、担当別・対象別の全量は`bundle/stats.jsonl`と`bundle/resource-usage.jsonl`から取得する。毎回の全量通読と証拠保持を分け、選別・原因確定・17観点の費用確認に必要な詳細だけを追加取得する。
 
 - Claude Codeの記録では1回のAPI応答が同じ`usage`を持つ複数のレコードへ分かれる。同コマンドは同一`message.id`を最後の`usage`へ畳み込んだ値を返す
 - `--elapsed-until`の`elapsed_seconds`はセッションの最初のレコードから指定時刻までの差であり、その後の工程を含まない

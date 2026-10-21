@@ -387,11 +387,12 @@ def _candidate_events(
     main_record_id: str = "main",
     adhoc_processing: list[dict[str, Any]] | None = None,
     wi_events: list[dict[str, Any]] | None = None,
+    definition_reads: list[dict[str, Any]] | None = None,
 ) -> list[dict[str, Any]]:
     """決定的に除外できる入力を省き、同種の候補を全位置付きで集約する。
 
     母集団はhook通知、ユーザー介入、ユーザー確認、WIの記入欄の是正、失敗したツール実行、警告、工程の返却値
-    およびその場のコードによる加工とする。
+    およびその場のコードによる加工、定義本文の取得とする。
     ユーザー確認（`confirmation-request`）は、提示した選択肢をそのまま選んだ確認への回答と、
     対象セッションが投入したUWI（`wi_events`のうち`submitted-uwi`）とする。確認が必要だったかは振り返りが判定するため、
     回答の形からは除外しない。WIの記入欄の是正（`wi-user-response`）は`_wi_candidate_events`が定める。
@@ -450,6 +451,7 @@ def _candidate_events(
             (event for event in timeline if _is_delegate_return(event, main_record_id=main_record_id)),
         ),
         ("adhoc-processing", iter(adhoc_processing or ())),
+        ("definition-body-read", iter(definition_reads or ())),
         ("confirmation-request", (event for event in wi_events or () if event.get("kind") == "submitted-uwi")),
         ("wi-user-response", (event for event in wi_events or () if event.get("kind") == "wi-user-response")),
     )
@@ -590,12 +592,26 @@ def _candidate_events(
         if _is_bounded_hook_group(key):
             candidate["occurrence_count"] = occurrence_count
             candidate["omitted_locator_count"] = omitted_locator_count
-        if key and key[0] == "adhoc-processing":
+        if key and key[0] in {"adhoc-processing", "definition-body-read"}:
             ordered = sorted(events, key=lambda event: (str(event["record"]), int(event["line"])))
             candidate["calls"] = [
                 {"record": str(event["record"]), "line": int(event["line"]), "text": str(event.get("text", ""))}
                 for event in ordered
             ]
+            if key[0] == "definition-body-read":
+                fields = (
+                    "role",
+                    "role_document",
+                    "tool",
+                    "targets",
+                    "read_range",
+                    "result_line",
+                    "result_observation",
+                    "purpose",
+                    "related_operations",
+                )
+                for row, event in zip(candidate["calls"], ordered, strict=True):
+                    row.update({field: event[field] for field in fields})
         candidates.append(candidate)
     included_locators.sort(key=lambda locator: (locator["record"], locator["line"]))
     return [
@@ -710,6 +726,8 @@ def _candidate_evidence_events(
             "text_limit": None if untruncated else _CANDIDATE_EVIDENCE_LENGTH,
             "events": details,
         }
+        if candidate["candidate_kind"] == "definition-body-read":
+            item["definition_reads"] = candidate["calls"]
         if budget.omitted:
             item["omitted"] = True
         evidence.append(item)
@@ -1821,7 +1839,7 @@ def _candidate_key(candidate_kind: str, event: dict[str, Any], normalized_text: 
         return candidate_kind, failure_signature(candidate_kind, event)[0]
     if candidate_kind == "escalation":
         return candidate_kind, _normalize_candidate_kind_text(normalized_text), _candidate_mechanism(candidate_kind, event)
-    if candidate_kind == "adhoc-processing":
+    if candidate_kind in {"adhoc-processing", "definition-body-read"}:
         # 記録（thread）ごとに1件へまとめ、委譲先が多い実行でも候補の件数が呼び出しの件数に比例しないようにする。
         return candidate_kind, str(event["record"])
     if candidate_kind in {"confirmation-request", "wi-user-response"}:

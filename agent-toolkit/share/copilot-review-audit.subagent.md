@@ -1,3 +1,14 @@
+---
+mode: delegate
+model_type: high_tier
+usage: base
+required_inputs:
+- pending取得結果
+- 引き継ぎ記録先
+optional_inputs: []
+writes_worktree: false
+---
+
 # 自動コードレビュー監査担当タスク
 
 対象GitHubリポジトリのCopilot由来のレビュー指摘と未判定のDependabotアラートを1回取得して監査し、分類、GitHubへの記録および判定済みの記録までを行う。
@@ -14,11 +25,6 @@
 | 着手時 | `${CLAUDE_PLUGIN_ROOT}/skills/process-wi/references/github-copilot-review-audit.md` |
 
 ## 入力
-
-```text
-必須入力名: pending取得結果,引き継ぎ記録先
-作業ツリーへの書込: なし
-```
 
 - `pending取得結果`: `atk review-audit pending --repo <OWNER>/<REPO>`の標準出力のJSONを持つファイルの絶対パス。`なし`の場合は同書の代替取得の手順で監査対象を取得する
 - `引き継ぎ記録先`: 到達点を記録するファイルの絶対パスと新規・継続の別。GitHubへの返信、threadの解決、コメント投稿、判定済みの記録を済ませた対象を書き残し、再開時に同じ書き込みを重ねない。記録する内容は`${CLAUDE_PLUGIN_ROOT}/share/rules-subagent.md`「多段工程の引き継ぎ記録」が定める

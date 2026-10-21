@@ -44,6 +44,12 @@ def _work_dir(tmp_path: pathlib.Path) -> pathlib.Path:
     return work_dir
 
 
+def _bundle_rows(record: dict[str, Any], filename: str) -> list[dict[str, Any]]:
+    """準備結果が案内する保存証拠を読む。"""
+    path = pathlib.Path(record["work_dir"]) / "bundle" / filename
+    return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines()]
+
+
 def _write_claude_transcript(tmp_path: pathlib.Path) -> pathlib.Path:
     """初期要求、英語の状況説明と`pretooluse`の警告通知、失敗したコマンド、2000文字を超えるユーザー介入を持つtranscriptを書き込む。"""
     entries = [
@@ -142,7 +148,7 @@ def test_response_language_notices_are_excluded_from_candidates(
     candidates = pathlib.Path(record["candidates_path"]).read_text(encoding="utf-8")
     assert "response-language-notice 2件" in candidates
     assert "未完了のバックグラウンドタスクが書き込む出力ファイルを読み取った" in candidates
-    assert "  - 記録位置: claude:22222222-3333-4444-5555-666666666666:6" in candidates
+    assert "r1:6" in candidates and "claude:22222222-3333-4444-5555-666666666666=メイン" in candidates
     assert "累計2回以上" not in candidates
 
 
@@ -581,13 +587,15 @@ def test_prepare_writes_conversation_candidates_and_stats_without_queue_changes(
 
     candidates = pathlib.Path(record["candidates_path"]).read_text(encoding="utf-8")
     assert "- 候補: 2件（hook-notice 1件、user-intervention 1件）" in candidates
-    assert "  - 記録位置: claude:11111111-2222-3333-4444-555555555555:3" in candidates
-    assert "## 単発の失敗（件数のみ）" in candidates
-    assert "make lint" in candidates
-    # hook通知の是非は通知が判定した応答を読まないと判断できないため、直前のアシスタント発話を添える。
-    assert "  - 直前のアシスタント発話: I will run the linter now." in candidates
-    # ユーザーの是正は要約すると趣旨が変わるため全文を載せる。
-    assert _LONG_INTERVENTION in candidates
+    assert "r1:3" in candidates and "claude:11111111-2222-3333-4444-555555555555=メイン" in candidates
+    assert "単発の失敗1件" in candidates
+    index = _bundle_rows(record, "review-index.jsonl")
+    assert len(index) == 3 and sum(item["mandatory"] for item in index) == 1
+    details = [json.loads((work_dir / "bundle" / item["evidence_path"]).read_text(encoding="utf-8")) for item in index]
+    assert any("make lint" in json.dumps(item, ensure_ascii=False) for item in details)
+    # 是正の全文と判定の前後関係は保存証拠から取得し、初回表示へ展開しない。
+    assert _LONG_INTERVENTION not in candidates
+    assert any(_LONG_INTERVENTION in json.dumps(item, ensure_ascii=False) for item in details)
     assert "直前と直後のユーザー発話" not in candidates
 
     stats = pathlib.Path(record["stats_path"]).read_text(encoding="utf-8")
@@ -648,10 +656,11 @@ def test_prepare_lists_offered_answer_as_mandatory_confirmation(
     assert record["mandatory_candidates"] == ["c0001"]
     candidates = pathlib.Path(record["candidates_path"]).read_text(encoding="utf-8")
     assert "- c0001 confirmation-request（発生1件、評価が必須）: 方針" in candidates
-    assert "- 評価が必須の候補: c0001" in candidates
-    assert "探索の深さと再発防止策の要否・終了はbugfixの重大度判断に従う" in candidates
-    assert "  - 選択肢: 既存機構へ統合 / 新機構を追加" in candidates
-    assert "  - 回答: 既存機構へ統合" in candidates
+    assert "評価が必須: 1件" in candidates
+    candidate = next(item for item in _bundle_rows(record, "candidates.jsonl") if item.get("kind") == "candidate")
+    assert [option["label"] for option in candidate["assistant_context"][0]["options"]] == ["既存機構へ統合", "新機構を追加"]
+    assert candidate["user_response"] == [{"answers": ["既存機構へ統合"]}]
+    assert _bundle_rows(record, "review-index.jsonl")[0]["mandatory"] is True
 
 
 def _write_wi(root: pathlib.Path, state: str, name: str, frontmatter: dict[str, str], body: str) -> None:
@@ -740,13 +749,14 @@ def test_prepare_marks_wi_candidates_and_similar_past_records(
 
     record = json.loads(capsys.readouterr().out)
     candidates = pathlib.Path(record["candidates_path"]).read_text(encoding="utf-8")
-    confirmations = [line for line in candidates.splitlines() if "  - WI: " in line and "`## " not in line]
-    responses = [line for line in candidates.splitlines() if "  - WI: " in line and "`## " in line]
-    assert [line.split("WI: ")[1].split("（")[0] for line in confirmations] == [
+    saved = _bundle_rows(record, "candidates.jsonl")
+    confirmations = [item for item in saved if item.get("candidate_kind") == "confirmation-request"]
+    responses = [item for item in saved if item.get("candidate_kind") == "wi-user-response"]
+    assert [item["wi_file"] for item in confirmations] == [
         "20261006-100000-001.md",
         "20261006-100000-002.md",
     ]
-    assert [line.split("WI: ")[1].split("（")[0] for line in responses] == [
+    assert [item["wi_file"] for item in responses] == [
         "20261006-100000-002.md",
         "20261006-100000-005.md",
         "20261006-100000-006.md",
@@ -769,8 +779,9 @@ def test_prepare_marks_wi_candidates_and_similar_past_records(
     assert record["similar_records"][intervention_id] == ["20261001-163353-001.md", "20261006-100000-002.md"]
     assert record["similar_records"][response_id] == ["20261001-163353-001.md"]
     assert record["similar_records"][reset_id] == []
-    assert "  - 過去の同種記録: 一致なし" in candidates
-    assert "    - 20261001-163353-001.md（adopted）: 過去の同種の是正への対策" in candidates
+    saved_similar = {item["candidate_id"]: item["similar_records"] for item in _bundle_rows(record, "review-index.jsonl")}
+    assert saved_similar[reset_id] == []
+    assert saved_similar[response_id] == [["20261001-163353-001.md", "adopted", "過去の同種の是正への対策"]]
 
 
 @pytest.mark.parametrize(
@@ -981,12 +992,12 @@ def test_prepare_lists_adhoc_processing_per_record_without_failure_selection(
     assert record["excluded_counts"]["single-session-failure"] == 1
     candidates = pathlib.Path(record["candidates_path"]).read_text(encoding="utf-8")
     record_id = "claude:11111111-2222-3333-4444-555555555555"
-    assert (
-        f"- c0001 adhoc-processing（発生2件）: 記録{record_id}のその場のコードによる加工\n"
-        f"  - 記録の由来: {record_id}=メイン\n"
-        f"  - {record_id}:2: sed -n 2p {saved_output}\n"
-        f"  - {record_id}:4: python3 -c 'import sys; sys.exit(3)'\n"
-    ) in candidates
+    assert "- c0001 adhoc-processing（発生2件）:" in candidates
+    candidate = next(item for item in _bundle_rows(record, "candidates.jsonl") if item.get("candidate_id") == "c0001")
+    assert [(call["record"], call["line"], call["text"]) for call in candidate["calls"]] == [
+        (record_id, 2, f"sed -n 2p {saved_output}"),
+        (record_id, 4, "python3 -c 'import sys; sys.exit(3)'"),
+    ]
 
 
 def test_prepare_writes_breakdown_of_rate_limiting_threads(
@@ -1358,9 +1369,8 @@ def test_prepare_adds_record_provenance_to_candidate_locations(
     record = json.loads(capsys.readouterr().out)
     candidates = pathlib.Path(record["candidates_path"]).read_text(encoding="utf-8")
     delegate = f"codex:{support.TOOL_CALL_THREAD}"
-    heading = next(line for line in candidates.splitlines() if f"記録{delegate}のその場のコードによる加工" in line)
-    provenance = candidates.splitlines()[candidates.splitlines().index(heading) + 1]
-    assert provenance.startswith(f"  - 記録の由来: {delegate}=役割文書exec・mode task・起動元claude:parent-session:")
+    provenance = next(line for line in candidates.splitlines() if f"由来: {delegate}=" in line)
+    assert provenance.startswith(f"- r1: 由来: {delegate}=役割文書exec・mode task・起動元claude:parent-session:")
     assert provenance.endswith("（メイン）")
 
 
@@ -1381,7 +1391,7 @@ def test_prepare_marks_candidate_locations_without_provenance(
     assert exit_code == 0, capsys.readouterr().err
     record = json.loads(capsys.readouterr().out)
     candidates = pathlib.Path(record["candidates_path"]).read_text(encoding="utf-8")
-    assert f"  - 記録の由来: codex:{support.TOOL_CALL_THREAD}=由来を取得できなかった" in candidates
+    assert f"由来: codex:{support.TOOL_CALL_THREAD}=由来を取得できなかった" in candidates
 
 
 @pytest.mark.parametrize("existing_ledger", [False, True])

@@ -3104,6 +3104,57 @@ def test_reference_boundary_matrix_for_nodeids_and_paths(
     assert _judge_first_row(evidence, head, "--evidence-file", str(explanation)) == code, capsys.readouterr().err
 
 
+@pytest.mark.parametrize(
+    "prefix",
+    ["`test_save[p]`", '--name="a `b"`', "[記録 `a](docs/record.md)`"],
+    ids=["nodeid", "quoted", "link"],
+)
+def test_public_reference_check_keeps_backtick_pairs_across_other_notation(
+    reference_repository: tuple[pathlib.Path, str, pathlib.Path],
+    capsys: pytest.CaptureFixture[str],
+    prefix: str,
+) -> None:
+    """別記法が片側だけを消費しても、後続の不在参照が検査を免れない。"""
+    _, head, evidence = reference_repository
+    text = f"{prefix} `x` 後 docs/missing.md を確認、`y`"
+    code, error = _check_reference_text(evidence, head, text, capsys)
+    assert code == 1, error
+    assert "docs/missing.md" in error, error
+
+
+def test_public_verification_append_preserves_reference_boundaries(
+    reference_repository: tuple[pathlib.Path, str, pathlib.Path],
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """単独で正しい根拠を連結して保存し、同じ根拠を返却前にも受理できる。"""
+    repository, head, evidence = reference_repository
+    initial = "`test_save[p]` と `docs/record.md` docs/record.md#重複"
+    appended = "追加 `docs/record.md` の結果を確認"
+    for text in (initial, appended, initial + "\n" + appended):
+        code, error = _check_reference_text(evidence, head, text, capsys)
+        assert code == 0, error
+    evidence.write_text(json.dumps(_pending_row(initial), ensure_ascii=False), encoding="utf-8")
+    extra = repository.parent / "append.txt"
+    extra.write_text(appended, encoding="utf-8")
+    args = argparse.Namespace(
+        script_name="verification-record",
+        script_args=[
+            "--output",
+            str(evidence),
+            "--select-row",
+            "wi_conditions:1",
+            "--evidence-file",
+            str(extra),
+            "--mode",
+            "append",
+        ],
+    )
+    assert run_script.dispatch(args) == 0, capsys.readouterr().err
+    saved = json.loads(evidence.read_text(encoding="utf-8"))["wi_conditions"][0]
+    assert initial in saved["evidence"] and appended in saved["evidence"]
+    assert not saved["outcome"] and not saved["reviewed_head"]
+
+
 # 地の文の参照の区切り規則から期待値を導く組み合わせ。パスは拡張子で終わり、行位置は`:`に続くASCIIの並びとし、
 # 最初の非ASCII文字か空白で参照を終える。参照の終わりは前置きの有無と語の先頭の実在で変えない。
 _OLD_FULL = "1" * 40

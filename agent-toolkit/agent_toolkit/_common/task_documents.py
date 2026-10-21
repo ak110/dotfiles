@@ -1,7 +1,7 @@
-"""agent-toolkitの`share/<役割名>.subagent.md`が宣言する入力、`mode:`と作業ツリーへの書込を読む。
+"""agent-toolkitの`share/<役割名>.subagent.md`が宣言する起動設定を読む。
 
-`<役割名>.subagent.md`は`## 入力`直後の`text`コードブロックへ、1行目の`必須入力名:`に続けて任意の`任意入力名:`と
-`mode:`、必須の`作業ツリーへの書込:`を置く。`mode:`の値は`agents_server`の`start`の`mode`と同じ語を使う。
+現行形式は先頭のYAML frontmatterで、mode・モデル段位・用途・入力・継続・書込を宣言する。
+旧版の`## 入力`直後の`text`コードブロックにある宣言行は、保持された役割文書とsessionの読取互換として扱う。
 `agents_server`の`start`、`Agent`ツール・自由本文の起動を確認するPreToolUseフック、`atk lane integrate`の稼働判定が
 同じ宣言を読むため、解析を本モジュールへ集約する。解析が複数箇所へ分かれると、一方だけが新しい行を受理し、
 同じ委譲プロンプトがサーバーでは拒否されフックでは通る（またはその逆の）不一致が生じる。
@@ -13,6 +13,8 @@ import json
 import pathlib
 import re
 import typing
+
+import yaml
 
 from agent_toolkit._common.markdown_headings import top_level_atx_headings
 
@@ -57,7 +59,7 @@ class ContinuationDeclaration:
 
 @dataclasses.dataclass(frozen=True)
 class TaskDocumentDeclaration:
-    """`<役割名>.subagent.md`が`## 入力`で宣言した入力名、`mode:`と作業ツリーへの書込の値。
+    """役割文書が宣言する入力名・mode・モデル段位・用途・書込の値。
 
     `writes_worktree`は起動時のcwdが属する作業ツリーへ書き込む役割かを表す。
     """
@@ -67,6 +69,8 @@ class TaskDocumentDeclaration:
     launch_kind: LaunchKind
     writes_worktree: bool
     continuations: tuple[ContinuationDeclaration, ...] = ()
+    model_type: str | None = None
+    usage: str | None = None
 
     @property
     def accepted(self) -> frozenset[str]:
@@ -109,6 +113,8 @@ def read_declaration_unchecked(
             document_text = task_document.read_text(encoding="utf-8")
         except (OSError, UnicodeError) as error:
             return f"必須入力を確認できません: `<役割名>.subagent.md`をUTF-8で読めません: {task_document}: {error}"
+    if document_text.startswith("---\n") or document_text.startswith("---\r\n"):
+        return _frontmatter_declaration(task_document, document_text)
     block = _input_code_block(document_text)
     if isinstance(block, str):
         return f"必須入力を確認できません: {block}: {task_document}"
@@ -187,6 +193,40 @@ def read_declaration_unchecked(
         writes_worktree=writes_worktree,
         continuations=tuple(continuations),
     )
+
+
+def _frontmatter_declaration(task_document: pathlib.Path, document_text: str) -> TaskDocumentDeclaration | str:
+    """実行に必要な設定を読み取る。定義の静的整合性は配布前の試験で保証する。"""
+    try:
+        lines = document_text.splitlines()
+        end = lines.index("---", 1)
+        values = yaml.safe_load("\n".join(lines[1:end]))
+        # 起動条件と書込主体を決める値は、既知の値を明示して受け取る。
+        mode = values["mode"]
+        writes = values["writes_worktree"]
+        if mode not in LAUNCH_KINDS or not isinstance(writes, bool):
+            raise ValueError("modeまたはwrites_worktreeの値が不正です")
+        return TaskDocumentDeclaration(
+            required=tuple(values["required_inputs"]),
+            optional=tuple(values.get("optional_inputs", [])),
+            launch_kind=mode,
+            writes_worktree=writes,
+            model_type=values["model_type"],
+            usage=values["usage"],
+            continuations=tuple(
+                ContinuationDeclaration(
+                    instruction=entry["instruction"],
+                    required=tuple(entry.get("required", [])),
+                    optional=tuple(entry.get("optional", [])),
+                    paths=tuple(entry.get("paths", [])),
+                    references=tuple(entry.get("references", [])),
+                    condition=entry.get("condition", ""),
+                )
+                for entry in values.get("continuations", [])
+            ),
+        )
+    except (KeyError, TypeError, ValueError, yaml.YAMLError) as error:
+        return f"必須入力を確認できません: frontmatterが不正です: {task_document}: {error}"
 
 
 def task_prompt_header(task_document: pathlib.Path) -> str:

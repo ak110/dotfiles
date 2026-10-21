@@ -43,7 +43,7 @@
 | レビュー修正担当 | レーン担当の担当種別 | `agent-toolkit/skills/process-wi/SKILL.md`「用語」 |
 | CI修正担当 | レーン担当の担当種別 | `agent-toolkit/skills/process-wi/SKILL.md`「用語」 |
 | 終端担当 | 公開工程の担当 | `agent-toolkit/skills/process-wi/SKILL.md`「用語」 |
-| 監査担当 | 自動コードレビュー監査の委譲先 | `agent-toolkit/skills/process-wi/SKILL.md`「自動コードレビュー監査」 |
+| 監査担当 | 自動コードレビュー監査の委譲先 | `agent-toolkit/skills/process-wi/references/review-audit-launch.md`「自動コードレビュー監査」 |
 | 自動コードレビュー | 外部サービスのレビュー | `agent-toolkit/skills/process-wi/SKILL.md`「自動コードレビュー監査」 |
 | WI作成 | 作業の工程 | `agent-toolkit/share/workflow-phases.md`「工程表」 |
 | 計画 | 作業の工程 | `agent-toolkit/share/workflow-phases.md`「工程表」 |
@@ -70,11 +70,11 @@
 | 投稿前レビュー担当 | 外部投稿の委譲先 | `agent-toolkit/share/external-write-review.subagent.md` |
 | 調査担当 | 原因調査の委譲先 | `agent-toolkit/share/defect-investigation.subagent.md` |
 | 読者別探索担当 | 読者適合の委譲先 | `agent-toolkit/share/reader-fit-review.subagent.md` |
-| 再発防止セルフチェック | 具体的な再発防止観点を差分へ当てはめる工程 | `agent-toolkit/share/recurrence-self-check.parent.md`冒頭 |
+| 再発防止セルフチェック | 具体的な再発防止観点を差分へ当てはめる工程 | `agent-toolkit/share/exec-review.subagent.md`冒頭 |
 | 再発防止セルフチェック担当 | 再発防止観点の判定の委譲先 | `agent-toolkit/share/recurrence-self-check.subagent.md`冒頭 |
 | 再発防止セルフチェック観点 | レビュー時に差分へ当てはめる項目 | `agent-toolkit/share/recurrence-self-check-items.md`冒頭 |
 | プロンプト評価担当 | refine-promptの委譲先 | `agent-toolkit/share/refine-prompt.subagent.md`冒頭 |
-| 説明担当 | 選定結果の説明の委譲先 | `agent-toolkit/share/pick-wi-explain.parent.md` |
+| 説明担当 | 選定結果の説明の委譲先 | `agent-toolkit/skills/process-wi/references/selection-explanation.md` |
 | ユーザー確認 | ユーザーへの行為 | `agent-toolkit/rules/01-agent.md`「役割分担」 |
 | ユーザーへの報告 | ユーザーへの行為 | `agent-toolkit/rules/01-agent.md`「役割分担」 |
 | 要件・意図の曖昧さ | 確認を要する事項 | `agent-toolkit/skills/user-confirmation-and-report/SKILL.md`「確認要否の判定」 |

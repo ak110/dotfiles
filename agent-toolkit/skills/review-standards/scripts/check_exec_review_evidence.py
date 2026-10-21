@@ -94,9 +94,10 @@ FILE_REFERENCE_FORM = (
 ELLIPSIS = re.compile(r"…+|\.{3,}")
 WHITESPACE = re.compile(r"\s+")
 EVIDENCE_REFERENCE = re.compile(
-    r"(?P<test>`?(?:[^\s`\[\]（）「」、。]+::)?test_\w+\[[^\n]*\])|"
-    r"\[[^\]]*\]\((?P<link>[^)]+)\)|`(?P<code>[^`]+)`|"
-    r"(?P<quoted>(?:[\w-]+=)?\"[^\"\n]+\"|(?:[\w-]+=)?'[^'\n]+')|"
+    r"(?P<test>`?(?:[^\s`\[\]（）「」、。]+::)?test_\w+\[[^\n]*\]`?)|"
+    r"\[(?:[^\]`]|`[^\]`]*`)*\]\((?P<link>(?:[^)`]|`[^)`]*`)+)\)|`(?P<code>[^`]+)`|"
+    r"(?P<quoted>(?:[\w-]+=)?\"[^\"`\n]*(?:`[^\"`\n]*`[^\"`\n]*)*\"|"
+    r"(?:[\w-]+=)?'[^'`\n]*(?:`[^'`\n]*`[^'`\n]*)*')|"
     r"(?P<plain>[^\s`\[\]（）「」、。#]+(?:#[^\s`\[\]「」、。]+)?)"
 )
 JAPANESE_ASCII_PATH_BOUNDARY = re.compile(r"(?<=[\u3040-\u30ff\u3400-\u9fff])(?=[A-Za-z0-9_-]+(?:[/\\.]|$)|/)")
@@ -350,7 +351,11 @@ def _evidence_words(evidence: str) -> typing.Iterator[re.Match[str]]:
                 elif evidence[index] == "]":
                     depth -= 1
                     if depth == 0:
-                        complete = EVIDENCE_REFERENCE.match(evidence, word.start(), index + 1)
+                        end = index + 1
+                        # nodeidを囲む区切りの片側を残すと、後続のコードと地の文の解釈が逆になる。
+                        if evidence.startswith("`", word.start()) and evidence[end : end + 1] == "`":
+                            end += 1
+                        complete = EVIDENCE_REFERENCE.match(evidence, word.start(), end)
                         assert complete is not None
                         word = complete
                         break

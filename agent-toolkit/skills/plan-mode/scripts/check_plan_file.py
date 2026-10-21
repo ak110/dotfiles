@@ -435,7 +435,7 @@ def _legacy_acceptance_warnings(text: str) -> list[_ClassifiedWarning]:
     if not structure.has_legacy_acceptance_table(text):
         return []
     header = "`, `".join(structure.PLAN_ACCEPTANCE_TABLE_HEADER)
-    return [("migration", f"受入シナリオ表の列名が旧形式である。新規作成・改訂では`{header}`の6列表へ移行する")]
+    return [("migration", f"受入シナリオ表の列名が旧形式である。新規作成・改訂では`{header}`の7列表へ移行する")]
 
 
 def _legacy_h2_warnings(text: str) -> list[_ClassifiedWarning]:
