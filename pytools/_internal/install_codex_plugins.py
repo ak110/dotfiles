@@ -454,20 +454,24 @@ def _sync_local_plugin(
             shutil.rmtree(saved_root)
             raise RuntimeError("Codex plugin addに失敗")
         try:
-            _restore_plugin_caches(cache_root, saved_root, saved_versions, installed_version=version)
-        except OSError as error:
-            raise RuntimeError(
-                f"Codex plugin更新後の旧cache復旧に失敗。退避先を保持: {saved_root}: {error}。"
-                "退避先を変更せず、表示された内容とパスをdotfilesの作者へ報告してください。"
-            ) from error
-        shutil.rmtree(saved_root)
-        _verify_expected_state(plugin_id, version)
-        new_cache = _codex_home() / "plugins" / "cache" / marketplace_name / plugin_name / version
-        if not (new_cache / "agent_toolkit" / "hook.py").is_file():
-            raise RuntimeError("Codex plugin更新後のhook実体を確認できない")
-        if _hook_trust_notice_required(_hooks_list()):
-            notices.insert(0, _CODEX_HOOK_TRUST_NOTICE)
-        _restart_daemon_after_plugin_update(notices)
+            _verify_expected_state(plugin_id, version)
+            new_cache = _codex_home() / "plugins" / "cache" / marketplace_name / plugin_name / version
+            if not (new_cache / "agent_toolkit" / "hook.py").is_file():
+                raise RuntimeError("Codex plugin更新後のhook実体を確認できない")
+            if _hook_trust_notice_required(_hooks_list()):
+                notices.insert(0, _CODEX_HOOK_TRUST_NOTICE)
+            _restart_daemon_after_plugin_update(notices)
+        finally:
+            try:
+                # 状態確認などのCodex CLI呼出も旧cacheを回収し得るため、復旧は最後の呼出後に行う。
+                _restore_plugin_caches(cache_root, saved_root, saved_versions, installed_version=version)
+            except OSError as error:
+                raise RuntimeError(
+                    f"Codex plugin更新後の旧cache復旧に失敗。退避先を保持: {saved_root}: {error}。"
+                    "退避先を変更せず、表示された内容とパスをdotfilesの作者へ報告してください。"
+                ) from error
+            else:
+                shutil.rmtree(saved_root)
     removed_legacy_links = _remove_legacy_links(root)
     return needs_plugin_add or wrapper_changed or removed_legacy_links, False
 

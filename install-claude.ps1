@@ -212,18 +212,22 @@ function Install-CodexPlugin {
         throw $addError
     }
     try {
-        Restore-CodexPluginCacheSnapshot $savedCacheRoot $expectedVersion $false
-        Remove-Item -LiteralPath $savedCacheRoot -Recurse -Force
-    } catch {
-        throw "Codex plugin更新後の旧cache復旧に失敗しました。退避先を保持します: $savedCacheRoot。$($_.Exception.Message) 退避先を変更せず、表示された内容とパスをdotfilesの作者へ報告してください。"
-    }
-    $afterState = Get-CodexPluginState
-    $script:codexPluginUpdated = Test-CodexPluginStateChanged $beforeState $afterState
-    if ($null -eq $afterState -or -not $afterState.Present -or -not $afterState.Enabled -or $afterState.Version -ne $expectedVersion) {
-        throw 'Codex plugin更新後の状態が期待値と一致しません。'
-    }
-    if (-not (Test-Path -LiteralPath (Join-Path $codexPluginCacheRoot "$expectedVersion/agent_toolkit/hook.py") -PathType Leaf)) {
-        throw 'Codex plugin更新後のhook実体を確認できません。'
+        $afterState = Get-CodexPluginState
+        $script:codexPluginUpdated = Test-CodexPluginStateChanged $beforeState $afterState
+        if ($null -eq $afterState -or -not $afterState.Present -or -not $afterState.Enabled -or $afterState.Version -ne $expectedVersion) {
+            throw 'Codex plugin更新後の状態が期待値と一致しません。'
+        }
+        if (-not (Test-Path -LiteralPath (Join-Path $codexPluginCacheRoot "$expectedVersion/agent_toolkit/hook.py") -PathType Leaf)) {
+            throw 'Codex plugin更新後のhook実体を確認できません。'
+        }
+    } finally {
+        try {
+            # 状態確認のCodex CLI呼出も旧cacheを回収し得るため、復旧は最後の呼出後に行う。
+            Restore-CodexPluginCacheSnapshot $savedCacheRoot $expectedVersion $false
+            Remove-Item -LiteralPath $savedCacheRoot -Recurse -Force
+        } catch {
+            throw "Codex plugin更新後の旧cache復旧に失敗しました。退避先を保持します: $savedCacheRoot。$($_.Exception.Message) 退避先を変更せず、表示された内容とパスをdotfilesの作者へ報告してください。"
+        }
     }
     Write-Output 'Codex側のagent-toolkitプラグインを設定しました。'
 }

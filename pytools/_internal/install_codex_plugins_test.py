@@ -304,6 +304,10 @@ def test_running_codex_updates_and_preserves_previous_caches(  # noqa: PLR0913 -
 
     def run_subprocess(args: list[str], **_kwargs: object) -> _FakeResult:
         assert args[1:] == ["plugin", "list", "--json"]
+        if current["version"] == "1.2.3":
+            shutil.rmtree(older, ignore_errors=True)
+            if old_version != "1.2.3":
+                shutil.rmtree(previous, ignore_errors=True)
         return _FakeResult(stdout=json.dumps(_installed_state(**current)))
 
     monkeypatch.setattr(install_codex_plugins, "_codex_json", codex_json)

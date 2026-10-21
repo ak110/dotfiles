@@ -78,7 +78,7 @@ Codex向けのプラグインは`update-dotfiles`が生成して導入する。�
 
 `update-dotfiles`は未導入、disabled、version不一致のいずれかの場合に`codex plugin add`を実行し、導入後のversionと有効状態を再確認する。
 更新前にagent-toolkitの全通常versionディレクトリを複製する。
-`codex plugin add`が削除した旧versionは同じ絶対パスへ戻すため、保存済みセッションを終了せずに更新できる。
+`codex plugin add`が削除した旧versionは、導入後の状態確認を含む最後のCodex CLI呼出後に同じ絶対パスへ戻すため、保存済みセッションを終了せずに更新できる。
 CLIが導入した目標versionは復元対象から外し、導入後の内容を維持する。
 更新または旧versionの復旧に失敗した場合、`update-dotfiles`は両者を区別して診断する。
 Linuxでは、過去の設定で診断ログDBを共有メモリー（`/dev/shm/codex-<UID>-logs_2.sqlite`と、その`-wal`・`-shm`ファイル）へ移していた場合、`update-dotfiles`が通常の保存先`~/.codex/`へ戻す。`<UID>`はOSのユーザーIDを指す。

@@ -56,7 +56,7 @@ CLI成功後は同コマンドで`codex plugin list --json`を取得し、版数
 `atk config`へ設定を追加する案は、dotfiles更新処理だけが消費する真偽値のためにagent-toolkit pluginとpytoolsの設定契約を結合するので採用しない。
 公式資料の[Plugins](https://developers.openai.com/plugins/build/plugins)はローカルpluginを`~/.codex/plugins/cache/<marketplace>/<plugin>/<version>/`へ導入し、導入先の実体をCodexが読み込むと定める。
 現行versionの導入はCodex CLIへ委ねる。
-更新処理は`plugin add`の前に通常のversionディレクトリを複製し、CLIが削除した旧versionだけを同じ絶対パスへ戻す。
+更新処理は`plugin add`の前に通常のversionディレクトリを複製し、導入後の状態確認とdaemon処理を含む最後のCodex CLI呼出後に、CLIが削除した旧versionだけを同じ絶対パスへ戻す。
 `plugin add`が失敗した場合は退避した全versionを更新前の状態へ戻す。
 目標versionはCLIが作成した内容を維持し、復元対象から外す。
 CLI導入後の検証が終わるまでlegacy skillリンクを除去せず、リンク除去に失敗した場合だけ変更前snapshotから復元する。
