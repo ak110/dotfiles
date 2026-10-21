@@ -104,5 +104,5 @@ Plan modeの外で実行する（Claude Codeでは`ExitPlanMode`で抜ける）�
 結果は引数なしの`atk agents wait`で受け取る。返却が`${CLAUDE_PLUGIN_ROOT}/share/refine-prompt.subagent.md`「出力」の形式に合わない場合は、同じ入力で1回だけ新しい担当を起動し直す。
 指摘の統廃合、取捨選択と改善案の作成は`agent-toolkit:refine-prompt`「指摘の集約と改善案作成」に従う。
 
-多ターン試行では同参照文書の自由本文の委譲を使い、両役の終端、全対話、提出物と採点結果を受領する。
+多ターン試行では`references/multi-turn-trials.md`「両役の入力と返却」の自由本文の委譲を使い、両役の終端、全対話、提出物と採点結果を受領する。
 既存のプロンプト評価担当の指摘リストへ多ターンの結果を混ぜず、機能、隠した要件、対話の判定を事例別に読む。

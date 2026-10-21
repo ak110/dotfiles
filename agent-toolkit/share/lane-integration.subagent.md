@@ -57,8 +57,8 @@ atk lane integrate --record <所有登録の絶対パス> --reviewed-head <統�
 ```
 
 `--session-id`へは所有登録の`session_id`（`atk lane create`の所有session）を渡し、統合する担当のsessionへ置き換えない。
-統合前の稼働判定は統合先worktreeとレーンworktreeをcwdとする稼働中の担当のうち、書き込む役割（役割文書の`作業ツリーへの書込: あり`）、役割文書を特定できない起動（自由本文の`delegate`・`shell`・`write`）および宣言を読めない担当を数える。
-所有sessionと統合する担当の委譲元連鎖、`explore`、`作業ツリーへの書込: なし`の役割の担当は指定しなくても数えない。
+統合前の稼働判定は統合先worktreeとレーンworktreeをcwdとする稼働中の担当のうち、書き込む役割（役割文書の`writes_worktree: true`）、役割文書を特定できない起動（自由本文の`delegate`・`shell`・`write`）および宣言を読めない担当を数える。
+所有sessionと統合する担当の委譲元連鎖、`explore`、`writes_worktree: false`の役割の担当は指定しなくても数えない。
 初回から保持し更新した`書込担当一覧`の合意済みsession IDを、`--writer-session <session_id>`へ反復指定する。
 最初の統合呼出しから一覧の全要素を指定し、初回の入力で許可集合を完成させる。
 一覧外の実書込担当が残れば、CLIは全件のsession ID・label・役割文書・cwd・所属worktreeを示し、Git変更前に終了コード2で止まる。

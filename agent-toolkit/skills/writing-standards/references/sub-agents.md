@@ -16,7 +16,7 @@
 
 - `<役割名>.subagent.md`と、共有する場合の同名の`<役割名>.parent.md`をプラグインの`share/`配下へ置き、`${CLAUDE_PLUGIN_ROOT}/share/<ファイル名>`で参照する。単一呼び元の契約は呼び元の節へ置き、呼び元へ入力の確定と検収に必要な情報をそろえる
 - `<役割名>.parent.md`の起動を述べる節には、`agents_server`の`start`の各引数（`cwd`・`subagent_md_path`・`extra_params`・`mode`・`model_type`）へ渡す役割固有の値を書く（`subagent_md_path`は役割名）。起動の定型と共通の義務は`agent-toolkit:delegation`のSKILL.mdの「`<役割名>.parent.md`を持つ委譲の起動」が持つため、そちらへ委ねる。全役割に共通する省略時の値（`mode`を指定しないこと、`model_type`省略時にサーバーが工程別設定を使うこと）と、その定型に従う旨も書かない
-- 委譲先の恒常手順が`agents/`配下の定義として既にある場合は、定義本文が`<役割名>.subagent.md`を兼ねるため`<役割名>.parent.md`だけを置き、`起動対象:`行へその定義のスコープ付き識別子を書き、`必須入力名:`行はその定義本文へ同じ書式で置く
+- 委譲先の恒常手順がClaude Codeの`agents/`配下の定義として既にある場合は、定義本文が`<役割名>.subagent.md`を兼ねるため`<役割名>.parent.md`だけを置く。`起動対象:`行へその定義のスコープ付き識別子を書く。Claude Code用frontmatterと分け、定義本文の`## 入力`のtextコードブロックへ`必須入力名: 対象, 観点`のように入力名をASCIIカンマ区切りで宣言する。agents_server用の`share/*.subagent.md`は後掲のYAMLの`required_inputs`を使う
 
 委譲元の契約（統合先の節または`<役割名>.parent.md`）は、委譲元が結果を利用するまでの入力確定・起動・待機・受領・検収・採否・統合を持つ。`<役割名>.subagent.md`は委譲先が入力を受領してから結果を返すまでの工程を持つ。以降のparentの記述基準は統合先の節にも適用する。
 

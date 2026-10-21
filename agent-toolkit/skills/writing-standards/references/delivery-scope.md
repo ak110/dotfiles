@@ -23,7 +23,7 @@ Codexの生成本文には`scripts/sync_codex_agents.py`も使う。表と実装
 | 作業ディレクトリのプロジェクト規範（`AGENTS.md`など） | 届く | 届く | 届く（親のメモリー階層。組み込み`Explore`・`Plan`を除く） | 届く（プロジェクト設定の読込元） | 届く | 届く | 届かない | 届かない（`project_doc_max_bytes=0`） | 届く | 届く |
 | agent-toolkitのスキル | 届く | 届く | 未確認 | 届く | 届く | 届かない | 届かない（`skills=[]`） | `write`・`shell`へ届く。`explore`へは届かない（プラグイン無効） | 未確認 | 未確認 |
 
-OpenCodeの配送範囲は次の表とする。`task`は役割のmodeを使い、それぞれ対応する列に属する。
+OpenCodeの配送範囲は次の表とする。通常起動と軽量起動の区分は`agent-toolkit:delegation`の`references/runtime-routing.md`「実行手段」に従う。`task`は役割のmodeを使い、それぞれ対応する列に属する。
 
 | 文書 | OpenCodeの通常起動 | OpenCodeの軽量起動 |
 | --- | --- | --- |

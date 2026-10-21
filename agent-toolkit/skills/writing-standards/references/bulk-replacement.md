@@ -13,7 +13,7 @@
 起動対象: bulk-replace-review.subagent.md
 ```
 
-`agent-toolkit:writing-standards`の`references/notation-rules.md`「表記の一括置換」で候補置換を適用したエージェントが、本書に従って一括置換後レビュー担当を起動し、結果を受領する。
+本書の冒頭の基準で候補置換を適用したエージェントが、次の手順で一括置換後レビュー担当を起動し、結果を受領する。
 レビュー担当の観点と返却形式は`${CLAUDE_PLUGIN_ROOT}/share/bulk-replace-review.subagent.md`が定める。
 
 ### 起動
@@ -32,4 +32,4 @@
 
 ### 受領
 
-結果は引数なしの`atk agents wait`で受け取る。問題が報告された文と候補外の文は、`agent-toolkit:writing-standards`の`references/notation-rules.md`「表記の一括置換」の、問題が報告された文と候補外の文を書き直す段落に従って書き直す。
+結果は引数なしの`atk agents wait`で受け取る。問題が報告された文と候補外の文は、本書の冒頭の書き直しの基準に従って書き直す。
