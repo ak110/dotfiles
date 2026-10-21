@@ -18,7 +18,7 @@ from pytools import post_apply
 from pytools._internal import common, host_roles, install_codex_plugins
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "libexec"))
-import update_dotfiles  # noqa: E402  # pylint: disable=wrong-import-position,wrong-import-order,import-error
+import update_dotfiles  # noqa: E402  # pyright: ignore[reportMissingImports]  # pylint: disable=wrong-import-position,wrong-import-order,import-error
 
 
 def _write_plugin(root: Path, version: str) -> None:
