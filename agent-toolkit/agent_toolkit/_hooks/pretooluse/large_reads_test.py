@@ -208,6 +208,13 @@ def _codex_read(command: str, cwd: pathlib.Path) -> str | None:
     return check_large_bash_read(command, str(cwd), is_codex=True)
 
 
+def _read_file_response(output: str) -> tuple[dict, str]:
+    """read-fileのメタデータと無加工本文を分ける。"""
+    metadata, separator, body = output.partition("\n")
+    assert separator
+    return json.loads(metadata), body
+
+
 def test_codex_byte_threshold_boundary(tmp_path: pathlib.Path) -> None:
     """48KiB以下の全文取得は通し、1バイトでも超えると遮断する。"""
     within = _sized_file(tmp_path, _THRESHOLD, "within.md")
@@ -234,8 +241,8 @@ def test_block_notice_leads_to_read_file(tmp_path: pathlib.Path, capsys: pytest.
         captured = capsys.readouterr()
         assert not captured.err
         assert len(captured.out.encode("utf-8")) <= 16384
-        result = json.loads(captured.out)
-        parts.append(result["text"])
+        result, body = _read_file_response(captured.out)
+        parts.append(body)
         if result["eof"]:
             break
         argv = ["atk", "read-file", "--start", str(result["next"]), "--", str(path)]
@@ -265,8 +272,8 @@ def test_notice_continuation_commands_roundtrip_utf8(
                 atk.main(argv[1:])
             result = capsys.readouterr()
             assert not result.err
-            response = json.loads(result.out)
-            parts.append(response["text"])
+            response, body = _read_file_response(result.out)
+            parts.append(body)
             if response["eof"]:
                 break
             argv = shlex.split(continuation.replace("<next>", str(response["next"])))

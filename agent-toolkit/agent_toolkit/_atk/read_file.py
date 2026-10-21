@@ -1,4 +1,4 @@
-"""UTF-8本文を、位置情報を含むJSON全体の表示予算内で取得する。"""
+"""UTF-8本文を、位置情報と本文を分けた表示予算内で取得する。"""
 
 from __future__ import annotations
 
@@ -27,21 +27,19 @@ def build_parser(parser: argparse.ArgumentParser) -> None:
         "--max-bytes",
         type=int,
         default=RESPONSE_BYTES,
-        help=f"JSONと末尾改行を含む返却全体のUTF-8バイト予算。省略時は{RESPONSE_BYTES}、最大{MAX_RESPONSE_BYTES}。",
+        help=f"メタデータ、区切りのLFと本文を含む返却全体のUTF-8バイト予算。省略時は{RESPONSE_BYTES}、最大{MAX_RESPONSE_BYTES}。",
     )
     parser.add_argument("path", type=pathlib.Path, help="UTF-8ファイルの絶対パス。")
 
 
 def _response(text: str, start: int, end: int) -> str:
     eof = end == len(text)
-    return (
-        json.dumps(
-            {"text": text[start:end], "start": start, "end": end, "next": None if eof else end, "eof": eof},
-            ensure_ascii=False,
-            separators=(",", ":"),
-        )
-        + "\n"
+    metadata = json.dumps(
+        {"start": start, "end": end, "next": None if eof else end, "eof": eof},
+        ensure_ascii=False,
+        separators=(",", ":"),
     )
+    return f"{metadata}\n{text[start:end]}"
 
 
 def dispatch(args: argparse.Namespace) -> int:
@@ -73,5 +71,5 @@ def dispatch(args: argparse.Namespace) -> int:
             low = middle
         else:
             high = middle - 1
-    sys.stdout.write(_response(text, start, low))
+    sys.stdout.buffer.write(_response(text, start, low).encode("utf-8"))
     return 0

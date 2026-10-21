@@ -29,8 +29,8 @@ def test_saved_streams_lead_to_read_file(tmp_path: pathlib.Path, capsys: pytest.
         while True:
             code, body, error = run_atk(argv[1:], capsys)
             assert code == 0 and not error
-            response = json.loads(body)
-            parts.append(response["text"])
+            response, text = _read_file_response(body)
+            parts.append(text)
             if response["eof"]:
                 break
             argv = ["atk", "read-file", "--start", str(response["next"]), "--", argv[-1]]
@@ -128,6 +128,13 @@ def run_atk(argv: list[str], capsys: pytest.CaptureFixture[str]) -> tuple[object
         code = 0
     captured = capsys.readouterr()
     return code, captured.out, captured.err
+
+
+def _read_file_response(output: str) -> tuple[dict, str]:
+    """read-fileのメタデータと無加工本文を分ける。"""
+    metadata, separator, body = output.partition("\n")
+    assert separator
+    return json.loads(metadata), body
 
 
 @pytest.mark.parametrize("agent", [False, True])

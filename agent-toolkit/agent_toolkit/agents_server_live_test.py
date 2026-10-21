@@ -93,7 +93,7 @@ COMMON_INVESTIGATION_INPUT = LiveInput(
 1. コマンド {git} を実行し、HEADとGit状態を取得する。
 2. コマンド {rg} を実行し、該当行番号と本文を取得する。
 3. コマンド {python} を実行し、Python標準ライブラリで分割取得した本文を得る。
-4. コマンド {atk} を実行し、read-fileのtextをeofまで取得する。
+4. コマンド {atk} を実行し、read-fileの1行目のJSONにあるnextを使い、eofまで最初のLFより後ろの本文を連結する。
 5. 読取MCPクライアントのコマンド {mcp} を実行する。
 入力資料のクライアントはpyfltr MCPサーバーとstdioで接続する。
 grepへpaths=[{file_json}]、pattern=P4_READ_、fixed_strings=true、summary_mode=count、no_exclude=trueを渡す。

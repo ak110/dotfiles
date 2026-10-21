@@ -22,7 +22,7 @@ from agent_toolkit._plan import locations as _plan_locations
 
 ROOT_DESCRIPTION = "WIキュー、計画、レビュー記録、一時領域と委譲セッションを操作する。\n\n目的: agent-toolkitのWIキュー、計画ファイル、レビュー指摘管理表、managed-tempと委譲支援を1つのコマンドから操作する。\n利用場面: ユーザーとエージェントが、AWIの投入から計画、実装、保存までの一連の作業を進めるとき。\n対象と出力: サブコマンドを指定しない場合はコマンド一覧を標準出力へ書き、何も変更しない。実際の読み書きは各サブコマンドが行う。`AI_AGENT`・`CODEX_CI`・`CLAUDECODE`・`CURSOR_AGENT`のいずれかが設定されたエージェント環境では、標準出力と標準エラーを分けて保持する。UTF-8で16384バイトを超える出力は生成側が新規managed-tempへ保存し、標準出力には`保存先: <絶対パス>`・`行数: <N>`、標準エラーには`標準エラー保存先: <絶対パス>`・`標準エラー行数: <N>`を返す。結果をファイルとして受け取る呼び出し（`atk agents wait`、FILENAMEを2件以上指定するか`--all`を指定した`atk wi show`、`atk run-script session-review-evidence`の`--user-events`）は短い標準出力も保存する。保存後は、`atk agents wait`が通知・終端の内訳と本文を、`--user-events`が`kind`が`user`の行ごとに`発話: record=<record> line=<line> <本文の冒頭>`を続けて書く。それ以外の16384バイト以下の出力は直接表示する。`--help`の表示と、`atk info`のように結果を表示して終わるサブコマンドも同じ量で判定する。引数の誤りは標準エラーへ直接書き、終了コード2で終わる。WI本文の表記診断の詳細も`標準エラー保存先:`の保存先へ書く。`atk serve`、`atk wi process-loop`の常駐および`atk agents logs --follow`は対象外とし、エージェント環境でない場合は出力を変えない。保存先は最終更新から7日で自動削除される。\n前提: private-notesを扱うサブコマンドは`atk config get private_notes`が返すリポジトリを使う。\n復元・後始末: 本コマンド自身は状態を残さない。各サブコマンドの後始末はそのコマンドの`--help`に示す。"
 ROOT_EPILOG = "各コマンドの詳細は`atk <コマンド> --help`で表示する。階層コマンドではさらに`atk <コマンド> <サブコマンド> --help`を使う。\n\n実行例:\n\n  atk wi list\n  atk config show"
-ROOT_EPILOG += "\n\n保存後の表示は、標準出力と標準エラーのそれぞれを読む最初のatk read-fileコマンドを示す。継続は`atk read-file --start <next> -- <同じ絶対パス>`で取得し、返却JSONのtextをeof: trueまで連結する。"
+ROOT_EPILOG += "\n\n保存後の表示は、標準出力と標準エラーのそれぞれを読む最初のatk read-fileコマンドを示す。継続は`atk read-file --start <next> -- <同じ絶対パス>`で取得し、1行目のJSONでeof: trueになるまで最初のLFより後ろの本文を連結する。"
 ROOT_EPILOG += "\n全文を保存したatk wi showは、各項目のユーザー専用の記入欄（ユーザーコメント・回答）の有無と、保存先での開始行を全件示す。"
 
 CI_REVIEW_TABLE_NAME_FORMAT = "ci-<修正系列の開始時のHEADの7文字以上の一意な短縮OID>.exec-review.tsv"
@@ -47,19 +47,19 @@ HELP: dict[str, dict[str, str]] = {
         "description": (
             "UTF-8本文を上限内で連続取得する。\n\n目的: 長い本文を文字と改行を保って取得する。\n"
             "利用場面: 全文取得が出力上限で失敗した後、同じ版の受領済みの容量・遮断・切り詰めの診断から上限超過が分かるとき、またはatkが返した保存先の本文を読むとき。\n"
-            "対象と出力: UTF-8ファイルの絶対パスを指定する。text、start、end、next、eofを持つJSONを返す。"
-            "末尾の改行とJSONのエスケープを含む一回分の返却予算は指定なしで16384 UTF-8バイト。"
+            "対象と出力: UTF-8ファイルの絶対パスを指定する。1行目にstart、end、next、eofを持つJSONを返し、最初のLFより後ろに取得本文を無加工で返す。"
+            "メタデータ、区切りのLFと本文を含む一回分の返却予算は指定なしで16384 UTF-8バイト。"
             "--max-bytesで最大16384バイトまで指定できる。"
             "位置はデコード後の文字数で、endは取得末尾を含まない。"
-            "同じファイルの直前の応答でeofがtrueなら終了し、それ以外はnextを--startへ渡してtextを連結する。終端のnextはnull。"
-            "非負の開始位置が末尾を超えた場合は末尾の位置へ補正する。空ファイルと末尾位置は空のtextで終端を示す。\n"
+            "同じファイルの直前のメタデータでeofがtrueなら終了し、それ以外はnextを--startへ渡して本文を連結する。終端のnextはnull。"
+            "非負の開始位置が末尾を超えた場合は末尾の位置へ補正する。空ファイルと末尾位置は空の本文で終端を示す。\n"
             "前提: 容量が未知の通常のファイルは、事前に容量を測らず全文取得から始める。上限超過が既知なら初回から分割取得する。"
             "内側のコマンドと外側の実行セルの受信予算の双方へ収まる--max-bytesを選ぶ。"
             "独立した複数ファイルは、それぞれの応答から継続し、合計出力量が受信予算内なら並列取得できる。"
-            "負の位置、相対パス、不在、非UTF-8、最大予算超過とJSON全体が収まらない予算は終端でも非0で拒否する。\n"
+            "負の位置、相対パス、不在、非UTF-8、最大予算超過とメタデータ・区切り・本文の最小応答が収まらない予算は終端でも非0で拒否する。\n"
             "復元・後始末: 読取だけを行い、取得状態を保存しないため不要。"
         ),
-        "epilog": "実行例:\n\n  atk read-file -- /absolute/path/to/file.txt\n  atk read-file --start 12000 -- /absolute/path/to/file.txt\n  atk read-file --max-bytes 4096 -- /absolute/path/to/file.txt\n\n継続は`atk read-file --start <next> -- <同じ絶対パス>`で取得し、返却JSONのtextをeof: trueまで連結する。位置は文字単位、--max-bytesはJSON全体のUTF-8バイト単位である。",
+        "epilog": "実行例:\n\n  atk read-file -- /absolute/path/to/file.txt\n  atk read-file --start 12000 -- /absolute/path/to/file.txt\n  atk read-file --max-bytes 4096 -- /absolute/path/to/file.txt\n\n継続は`atk read-file --start <next> -- <同じ絶対パス>`で取得し、1行目のJSONでeof: trueになるまで最初のLFより後ろの本文を連結する。位置は文字単位、--max-bytesはメタデータ・区切りのLF・本文を含むUTF-8バイト単位である。",
     },
     "atk info": {
         "summary": "実行環境とpluginの位置・版を表示する",

@@ -10,6 +10,13 @@ from agent_toolkit import atk
 from agent_toolkit._hooks.pretooluse import confirmation_reads, dispatch, large_reads
 
 
+def _read_file_response(output: str) -> tuple[dict, str]:
+    """read-fileのメタデータと無加工本文を分ける。"""
+    metadata, separator, body = output.partition("\n")
+    assert separator
+    return json.loads(metadata), body
+
+
 def test_public_read_file_accepts_both_trailing_options(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
     """startとmax-bytesを同時に後置しても、前置と同じ範囲・JSONを返す。"""
     path = tmp_path / "with space.md"
@@ -23,10 +30,11 @@ def test_public_read_file_accepts_both_trailing_options(tmp_path: pathlib.Path, 
             atk.main(arguments)
         result = capsys.readouterr()
         assert not result.err
-        outputs.append(json.loads(result.out))
+        outputs.append(_read_file_response(result.out))
     assert outputs[0] == outputs[1]
-    assert outputs[1]["start"] == 3 and outputs[1]["next"] > 3
-    assert not outputs[1]["eof"]
+    metadata, _body = outputs[1]
+    assert metadata["start"] == 3 and metadata["next"] > 3
+    assert not metadata["eof"]
 
 
 @pytest.mark.parametrize("trailing", [False, True])

@@ -254,6 +254,9 @@ def _auto_saves_output(args: argparse.Namespace) -> bool:
     """
     if not is_agent_environment():
         return False
+    if args.command == "read-file":
+        # read-fileは自身の返却予算内で原文のバイト列を直接出力し、共通の文字列捕捉による改行変換を避ける。
+        return False
     if args.command == "serve":
         return False
     if (
