@@ -105,7 +105,11 @@ _llm_notice = _notice_formatter("user_prompt_submit")
 _USER_CONFIRMATION_NOTICE_BODY = (
     "この発話は、セッション開始後か会話圧縮後で、`agent-toolkit:user-confirmation-and-report`の内容が文脈に無い状態で届いた。"
 )
-_USER_CONFIRMATION_NOTICE_FIX = "応答と作業の着手より前に`agent-toolkit:user-confirmation-and-report`をスキル機能で起動する。"
+_USER_CONFIRMATION_NOTICE_FIX = (
+    "応答と作業の着手より前に`agent-toolkit:user-confirmation-and-report`をスキル機能で起動する。"
+    "不具合の有無・原因・直し方を回答や確認の案へ含める場合は、診断より前に`agent-toolkit:bugfix`を起動する。"
+    "説明の補足や委譲・AWIの方針も対象とする。是正の認可は`agent-toolkit:user-confirmation-and-report`の「起動契機」から「認可を要する操作」へ進んで判定する。"
+)
 
 
 def _is_harness_message(prompt: str) -> bool:

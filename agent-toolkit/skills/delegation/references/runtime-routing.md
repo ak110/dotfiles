@@ -47,24 +47,28 @@ forkの監査記録は`docs/development/audit-records.md`の「agent-toolkit/ski
 設定は`atk config`のキーで持ち、各キーは独立に変えられる。
 
 - 段位のモデル: `claude_high_tier_model`・`claude_medium_tier_model`・`claude_low_tier_model`・`codex_high_tier_model`・`codex_medium_tier_model`・`codex_low_tier_model`。値はengine接頭辞を付けない単一の`<model>[/<effort>]`で、effort省略時は`medium`とする。1個を変えると、そのengineと段位を使う工程のモデルだけが変わる
-- 用途のengine順: `base_engine`・`execute_engine`・`review_engine`・`chores_engine`・`orchestrate_engine`。値は`codex`と`claude`の一方または両方を重複なしで並べたASCIIカンマ区切りで、先頭のengineから試す。ClaudeとCodexはモデル実行環境の可用性に起因する失敗で次のengineへ進む
+- OpenCodeの段位モデル: `opencode_high_tier_model`・`opencode_medium_tier_model`・`opencode_low_tier_model`。初期値は空で、その段位の候補から外れる。値は`<provider>/<model>[@<effort>]`とし、最初の`/`でproviderとmodelを分け、末尾の`@`より後をvariantとして読む。model内の`/`は保持する。省略時のeffortは`medium`。全候補が空なら設定するキーを示して終了する
+- 用途のengine順: `base_engine`・`execute_engine`・`review_engine`・`chores_engine`は`codex`・`claude`・`opencode`を重複なしで並べたASCIIカンマ区切りで、先頭から試す。`orchestrate_engine`は`codex`と`claude`だけを受理する。可用性に起因する失敗で次の候補へ進み、OpenCodeのCLI不在・未設定モデル・接続と認証の失敗も可用性の失敗として扱う
 - `write_model`: 日本語文章の起草に使う候補列で、段位と用途に属さない。書式は`<engine>:<model>[/<effort>]`（`engine`は`claude`、`codex`、`agy`）のASCIIカンマ区切りで、agyは起動・turnの失敗で次の候補へ進む
 - `atk config apply-preset <プリセット名>`は用途のengine順の5キーだけを保存し、段位のモデルと`write_model`を保持する。プリセットは`codex-balanced`・`codex-near-primary`・`codex-primary`・`claude-balanced`・`claude-primary`で、balancedのexecute用途はClaude、review用途はCodexを先頭にする。near-primaryはorchestrateだけClaude優先、primary系は全用途で名前のengineを優先する。未設定時は`codex-balanced`のengine順を使う
+- `opencode-balanced`・`opencode-near-primary`もengine順だけを保存する。両方ともbase・review・choresはopencode→codex→claude、orchestrateはclaude→codex。executeはbalancedがclaude→codex、near-primaryがopencode→codex→claude。空の段位モデルがあれば、保存後にキーと設定方法を警告する。既存5プリセットと初期設定へopencodeは加えない
 - `codex`の段位モデルの`astra`、`sol`、`terra`、`luna`は起動時にCodex App Serverの`model/list`から同系列の最新の完全IDへ解決する。`write_model`の`codex:<系列名>`も同じとする。指定effortを受理しない、系列が無い、一覧取得に失敗した場合は理由を示して停止する（推測したIDや旧版への置換は禁止）。バージョン付きのCodex完全IDは固定指定として扱い、Claudeとagyの候補の受理可否は各engineへ委ねる
 - `AGENT_TOOLKIT_CONFIG_<キー名の大文字>`の環境変数が空でない間は、保存済みの設定より優先し、その値は保存しない。`atk config set`は保存先だけを更新し、参考一覧に無い値も警告付きで受理する。`atk config show`は値が参考一覧に無い場合に標準エラーへ警告を書く
+- OpenCodeの段位モデルは空の環境変数も優先し、その段位のOpenCodeを候補から外す。モデル名・variantの参考一覧は持たず、provider側の指定をそのまま渡す
 - `model_type`へは`high_tier`・`medium_tier`・`low_tier`・`orchestrate`・`write`のほか、`write_model`と同じ書式の候補列を直接渡せる（`delegate`では必須、他の`mode`では省略可）。`task`で段位を明示した場合は役割の用途を保って段位だけを変える。候補列を直接渡すとサーバーは設定を読まずその候補列を使う。起動区分は各`mode`（`task`では`<役割名>.subagent.md`の`mode:`）のままとする。恒常的な変更は`atk config set`で行う
+- OpenCodeを明示する候補は`opencode:<provider>/<model>[@<effort>]`とする。各turnは`opencode run --format json --auto`で実行し、モデルを`--model`、effortを`--variant`、継続するIDを`--session`へ渡す。共通規範・委譲先規範・ユーザー規範とplugin rootを本文へ届け、必要なスキルを同rootから読む。実行中turnへの追送は終端を待って同じIDへ送る
 - 廃止した旧キー（`high_tier_model`・`medium_tier_model`・`low_tier_model`・`orchestrate_model`）の保存値は、`atk config show`・`get`と設定からの候補解決の初回に新しいキーへ一括移行する。新しいキーで表せない旧値（agyの候補、同じengineの複数候補、同じengineと段位へ対応する異なるモデル）があると移行せずに停止し、競合した旧キー・候補と修正する新キーを示す。示された新キーを`atk config set`で保存してから再実行する。旧キーの環境変数が空でない間は設定からの起動が止まるため、新キーの環境変数へ置き換える
 
 起動と確認は次のとおりとする。
 
-1. `agents_server`では`<役割名>.subagent.md`を`start`の`task`へ、自由本文と種別か候補列を`start`の`delegate`へ渡す。役割の段位は`agent_toolkit/_agents_server/launch_prompts.py`の`TASK_MODEL_TYPES`、用途は同ファイルの`TASK_USAGES`が決め、設定の読込と候補の選択はサーバーが行う
+1. `agents_server`では`<役割名>.subagent.md`を`start`の`task`へ、自由本文と種別か候補列を`start`の`delegate`へ渡す。役割のmode・段位・用途・入力・書込は役割文書のfrontmatterが所有する。共通の`agent_toolkit/_common/task_documents.py`が読み、設定の読込と候補の選択はサーバーが行う。旧対応表は保持された旧文書の読取互換だけに使う
 2. `Agent`ツールを使う場合は、起動直前に`atk config get <用途>_engine`で先頭のengineを取得する。続けて`atk config get <engine>_<段位>_tier_model`でそのengineのモデルとeffortを取得する（文章起草は`write_model`の先頭候補を分解する）。`engine`が`claude`でなければ未完了として返すか続行できない理由を返す。分解した値は表の`対応工程`を実行する委譲先の起動にだけ渡す（定義がモデルを固定する委譲先へ`model`を渡すと遮断される）
 3. 起動応答は`session_id`と`status`を含み、候補を切り替えた場合は除外理由と採用候補も含む。終端時に`wait`の結果から`model_type`、`engine`、`model`、`effort`を確かめる。保持期限後の`show`を検収の前提にしない
 4. サーバーが候補列を使い尽くした場合は、設定外のengineへ自動で切り替えず、未完了として返すか続行できない理由を返す
 
 WI（選定結果の`担当モデル`）が担当とモデル・effortを指定した工程では、その担当を起動する委譲元が指定値を`model_type`へ渡す。同じ起動の対象WIで指定が異なる場合は、WIと指定値を示して起動を止め、起動の単位を分ける。終端結果の実際の`engine`、`model`、`effort`を指定値と比べ、WI、指定値と実際値を計画の進捗ログか引き継ぎ記録へ残す。各工程の文書は、自身が使う担当名（`担当モデル.実装担当`など）と本段落の参照を持つ。
 
-段位は作業の部分ごとに、その性質（判断を要するか、内容が確定した実行か）から選ぶ。上位段位で動く担当は計画・設計判断・原因分析・結論の統合を自ら行い、内容の確定した書込作業を分解して`delegate`の`medium_tier`の委譲先へ任せる。自ら行う方が総費用（起動、規範の自動配送、明示読取、受領レビュー、統合と再試行）で安い場合だけ自ら行う。判定基準を言語化して渡せる多数の対象の走査（所在・値・件数の確認、基準に照らした該当候補の抽出と非該当の判定）は、極力`explore`の軽量段位（`model_type`の省略時）へ分け、対象が多い場合は重複のない対象群へ分けて並列に委ねる。観点・評価軸・判定基準の選定、新しい候補の案出し、走査が返した該当候補と判定保留の対象の判定、結論の統合は上位段位で行い、`mode`が`explore`でも`delegate`でも`model_type="high_tier"`を明示する。走査と案出しが混在する依頼は、全体を`high_tier`にせず、走査を軽量段位の`explore`へ分けてから上位段位で判定する（上位段位で全量を走査すると費用が大きいため）。軽量段位では判断材料が不足する走査には`medium_tier`を指定し、軽量段位では判定できないと分かった走査を中位以上で行うことは妨げない。`explore`で指定を省略した場合の`low_tier`と、役割の`task`の段位（`launch_prompts.py`の`TASK_MODEL_TYPES`。レーン担当の`exec`は`high_tier`、実行レビューは`medium_tier`など）は維持する。
+段位は作業の部分ごとに、その性質（判断を要するか、内容が確定した実行か）から選ぶ。上位段位で動く担当は計画・設計判断・原因分析・結論の統合を自ら行い、内容の確定した書込作業を分解して`delegate`の`medium_tier`の委譲先へ任せる。自ら行う方が総費用（起動、規範の自動配送、明示読取、受領レビュー、統合と再試行）で安い場合だけ自ら行う。判定基準を言語化して渡せる多数の対象の走査（所在・値・件数の確認、基準に照らした該当候補の抽出と非該当の判定）は、極力`explore`の軽量段位（`model_type`の省略時）へ分け、対象が多い場合は重複のない対象群へ分けて並列に委ねる。観点・評価軸・判定基準の選定、新しい候補の案出し、走査が返した該当候補と判定保留の対象の判定、結論の統合は上位段位で行い、`mode`が`explore`でも`delegate`でも`model_type="high_tier"`を明示する。走査と案出しが混在する依頼は、全体を`high_tier`にせず、走査を軽量段位の`explore`へ分けてから上位段位で判定する（上位段位で全量を走査すると費用が大きいため）。軽量段位では判断材料が不足する走査には`medium_tier`を指定し、軽量段位では判定できないと分かった走査を中位以上で行うことは妨げない。`explore`で指定を省略した場合の`low_tier`と、役割の`task`の段位（役割文書のfrontmatter。レーン担当の`exec`は`high_tier`、実行レビューは`medium_tier`など）は維持する。
 上位工程に含まれる確定済みコマンドの実行・結果観測と、確定した根拠からの文章起草も中位以下へ分ける。
 原因確定、設計判断、観点の選定と返却の統合は上位担当に残し、工程表が定める役割全体の段位を保つ。
 

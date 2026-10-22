@@ -22,12 +22,12 @@ user-invocable: false
 | 時点または条件 | 全文読む資料 |
 | --- | --- |
 | Codexで委譲、待機、状態確認または中断へ着手する前（agents_serverのexplore・shellの起動から受領までを除く） | `references/codex-runtime.md` |
-| `<役割名>.parent.md`が起動手順を定めない委譲（`start`の`delegate`・`write`、`Agent`ツール、Codexの組み込み委譲）を開始する前 | `references/base-contract.md`、`references/mandatory-rules.md`、`references/sending.md` |
+| 呼び元の起動契約が手順を定めない委譲（`start`の`delegate`・`write`、`Agent`ツール、Codexの組み込み委譲）を開始する前 | `references/base-contract.md`、`references/mandatory-rules.md`、`references/sending.md` |
 | 作業へ着手する前に、担当範囲の一部を委譲先へ分けるかと委譲単位を判定する時（計画の起草前、独立した複数の作業単位か長い工程を含む作業の着手前） | `references/routing.md` |
-| `<役割名>.parent.md`が起動手順と必須入力を定めていない委譲を開始する前（explore・shellを除く）と、確定した委譲単位の構成を変更する前 | `references/routing.md` |
+| 呼び元の起動契約が手順と必須入力を定めていない委譲を開始する前（explore・shellを除く）と、確定した委譲単位の構成を変更する前 | `references/routing.md` |
 | agents_serverのexplore・shellを起動する前 | 本書「explore・shellの起動」 |
-| `<役割名>.parent.md`を持つ委譲を起動する前 | 起動する`${CLAUDE_PLUGIN_ROOT}/share/<役割名>.parent.md`と、同書の読込表が条件付きで挙げる資料 |
-| 委譲先とモデルを選ぶ時点（explore・shellと、`<役割名>.parent.md`を持つ起動で`model_type`を指定しない場合を除く） | `references/runtime-routing.md` |
+| 役割文書を持つ委譲を起動する前 | 呼び元の起動・受領契約。共有契約は`${CLAUDE_PLUGIN_ROOT}/share/<役割名>.parent.md`、単一呼び元へ統合した契約はその呼び元が示す節と、条件付きで挙げる資料 |
+| 委譲先とモデルを選ぶ時点（explore・shellと、役割文書を持つ起動で`model_type`を指定しない場合を除く） | `references/runtime-routing.md` |
 | Claude Codeで`Agent`ツールの委譲先かバックグラウンドタスクを最初に起動する前、定期再確認を自ら装着する前、装着・回収の失敗通知に対処する時、およびClaude Code固有の手順を確定する時（explore・shellの起動から受領までの操作は除き、本書の同名節に従う） | `references/claude-code-runtime.md` |
 | 完了通知および待機・停滞を確定する時 | `references/waiting-and-monitoring.md` |
 | `atk agents wait`が終了コード4・8・10または待機対象0件の非0で終わった時、待機の呼び出しがホストの上限で失敗した時、ホストから背景待機の停止通知を受けた時、委譲先か自身のツール呼び出しが終端statusを返さずに終わった時、`agents_server`のMCPサーバーが再起動した後 | `references/wait-anomalies.md` |
@@ -41,8 +41,12 @@ user-invocable: false
 
 ## 送信
 
-委譲は`<役割名>.parent.md`と`<役割名>.subagent.md`のペアで定め、ペアがある委譲はペアで起動する。自由本文の起動（`start`の`mode`が`delegate`・`explore`・`write`・`shell`）はペアの無い単発の作業に使う。
-ペアの委譲では観点、判定基準、手順と返却形式を`<役割名>.subagent.md`が持ち、委譲元は対象と実行時の値だけを渡す。
+定型の委譲は呼び元の起動・受領契約と`<役割名>.subagent.md`で定める。単一呼び元の契約は呼び元の規範へ統合し、複数の呼び元が共有する契約は`<役割名>.parent.md`を保持できる。
+観点、判定基準、手順と返却形式は役割文書が持ち、委譲元は呼び元の契約から対象と実行時の値だけを渡す。自由本文の起動は役割文書の無い単発作業に使う。
+委譲元は起動準備のために`<役割名>.subagent.md`の本文を取得しない。起動設定と必須入力の機械検査はサーバーへ委ねる。編集のための読取、委譲先自身の読取、返却後の書式確認と区別する。
+役割文書を渡す委譲は、委譲元の会話履歴を引き継がない手段で起動する。
+Codexで`agents_server`を使えず組み込み委譲へ代替する場合は、`spawn_agent`へ`fork_turns: "none"`を明示する。
+forkを選べる条件は`references/routing.md`「会話を引き継ぐ委譲」に従う。
 
 委譲プロンプトは1行目の命令と必須入力の列挙の2要素とし、構成と列挙書式は`references/sending.md`「委譲プロンプトの構成」に従う。載せてよい要素は`references/base-contract.md`の入力の適格性が定める。explore・shellは次節に従う。
 
@@ -75,12 +79,12 @@ Claude Codeが会話イベントの処理を登録するために読み込むプ
 
 ## `<役割名>.parent.md`を持つ委譲の起動
 
-`${CLAUDE_PLUGIN_ROOT}/share/`配下の`<役割名>.parent.md`が起動を定める委譲は次の定型で起動する。委譲元は起動前にその`<役割名>.parent.md`を全文読み、同書の起動前の前提、入力の値の確定規則および受領と検収に従う。`<役割名>.parent.md`は役割ごとに異なる引数の値だけを書く。
+呼び元の契約が起動を定める委譲は次の定型で起動する。本節は共有する`<役割名>.parent.md`と、単一呼び元の規範へ統合した契約に適用する。委譲元は起動前にその契約を読み、起動前の前提、入力の値の確定規則および受領と検収に従う。各契約は役割ごとに異なる引数の値だけを持つ。
 
-- `agents_server`の`start`を呼び、`cwd`へ`<役割名>.parent.md`が定める作業ディレクトリの絶対パスを渡す
+- `agents_server`の`start`を呼び、`cwd`へ起動契約が定める作業ディレクトリの絶対パスを渡す
 - `subagent_md_path`へ役割名（例: `add-wi`）を渡す。サーバーが自身のplugin rootの`share/<役割名>.subagent.md`へ解決する
-- `extra_params`へ`<役割名>.parent.md`が列挙する入力名と値を渡す
-- `mode`は指定しない。`model_type`は`<役割名>.parent.md`が値の決め方を定める場合だけ指定する（指定しなければサーバーが工程別設定を使う）
+- `extra_params`へ起動契約が列挙する入力名と値を渡す
+- `mode`は指定しない。`model_type`は起動契約が値の決め方を定める場合だけ指定する。省略時のmode・段位・用途は役割文書のfrontmatterからサーバーが解決する
 - `引き継ぎ記録先`の扱いは`references/base-contract.md`「引き継ぎ記録先」が定める
 - 起動後は`session_id`を`atk agents wait`で観測する。Claude Codeでは最初の`start`の処理の中でagent-toolkitのmodが定期再確認を装着し、その結果が`start`の結果の後に届く
 

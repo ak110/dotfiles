@@ -2,7 +2,9 @@
 
 本書は規範と資料がどの起動区分のエージェントへ届くかを示す配送範囲表を提供する。常時規範の定義と置き場所の分類は`agent-documents-basics.md`「置き場所と配送」が定める。
 
-配送範囲表は、常時規範、配送文（`agents_server`が委譲先の起動時に渡す`share/agents-server-*.md`）、作業ディレクトリのプロジェクト規範およびagent-toolkitのスキルがどのエージェントへ届くかを示す次の表である。値は実装から取る。取得元は`agent_toolkit/`配下の`_hooks/rules_context.py`と`_agents_server/`の`launch_prompts.py`・`claude.py`・`codex.py`・`antigravity.py`と、`scripts/sync_codex_agents.py`である。表と実装が一致しない場合は実装を正として表を直す
+配送範囲表は、常時規範、配送文（`agents_server`が委譲先の起動時に渡す`share/agents-server-*.md`）、作業ディレクトリのプロジェクト規範およびagent-toolkitのスキルがどのエージェントへ届くかを示す次の表である。
+値は実装から取る。取得元は`agent_toolkit/`配下の`_hooks/rules_context.py`と`_agents_server/`の各backendと`launch_prompts.py`である。
+Codexの生成本文には`scripts/sync_codex_agents.py`も使う。表と実装が一致しない場合は実装を正として表を直す。
 
 | 文書 | Claude Codeのメイン | Codexのメイン | `Agent`ツールのサブエージェント | `agents_server`の`task`・`delegate`（Claude） | `agents_server`の`task`・`delegate`（Codex） | `agents_server`の`task`・`delegate`（Antigravity） | `explore`・`write`・`shell`（Claude） | `explore`・`write`・`shell`（Codex） | `explore`・`write`・`shell`（Antigravity） | Codexの組み込み委譲先 |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -20,6 +22,19 @@
 | `share/agents-server-auto-resume.md` | 届かない | 届かない | 届かない | 届く | 届く | 届かない | 届く | 届く | 届かない | 届かない |
 | 作業ディレクトリのプロジェクト規範（`AGENTS.md`など） | 届く | 届く | 届く（親のメモリー階層。組み込み`Explore`・`Plan`を除く） | 届く（プロジェクト設定の読込元） | 届く | 届く | 届かない | 届かない（`project_doc_max_bytes=0`） | 届く | 届く |
 | agent-toolkitのスキル | 届く | 届く | 未確認 | 届く | 届く | 届かない | 届かない（`skills=[]`） | `write`・`shell`へ届く。`explore`へは届かない（プラグイン無効） | 未確認 | 未確認 |
+
+OpenCodeの配送範囲は次の表とする。通常起動と軽量起動の区分は`agent-toolkit:delegation`の`references/runtime-routing.md`「実行手段」に従う。`task`は役割のmodeを使い、それぞれ対応する列に属する。
+
+| 文書 | OpenCodeの通常起動 | OpenCodeの軽量起動 |
+| --- | --- | --- |
+| `rules/`配下・ユーザーが`~/.claude/rules/`に置いた規範・`share/rules-subagent.md` | 届く（指示の先頭） | 届く（指示の先頭） |
+| `share/rules-main.md`とホスト別の`rules-main.*.md`・`rules-common.codex.md`・`rules-subagent.claude-code.md` | 届かない | 届かない |
+| `share/agents-server-delegate-notice.md` | 届く | 届く |
+| `share/agents-server-delegate.md` | 届く | 届かない |
+| `share/agents-server-explore.md`・`agents-server-write.md`・`agents-server-shell.md` | 届かない | 届く（同名のmodeだけ） |
+| `share/agents-server-auto-resume.md` | 届かない | 届かない |
+| 作業ディレクトリのプロジェクト規範 | CLI自身の読込は未確認。必要な本文は委譲入力へ含める | 同左 |
+| agent-toolkitのスキル | 自動登録しない。必要なスキルは配送されたplugin rootの`skills/`から明示的に読む | 同左 |
 
 Codexの列の`rules/`配下と`share/rules-common.codex.md`の値は`~/.codex/AGENTS.md`を配置した環境に限る（このファイルはCodex単体のインストーラーの配置対象外である）。
 Antigravityの委譲先は対応する起動区分で`~/.gemini/GEMINI.md`と作業ディレクトリの`AGENTS.md`を読む。

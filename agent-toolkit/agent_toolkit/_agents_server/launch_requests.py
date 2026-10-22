@@ -79,7 +79,8 @@ _TASK_DOCUMENT_DEFECT_NEXT_ACTION = (
 
 
 MODEL_TYPE_NEXT_ACTION = (
-    "`model_type`へ段位名（例: `high_tier`）か`<claude|codex|agy>:<model>[/<effort>]`の候補列を指定する。"
+    "`model_type`へ段位名（例: `high_tier`）か`<claude|codex|agy>:<model>[/<effort>]`、"
+    "`opencode:<provider>/<model>[@<effort>]`の候補列を指定する。"
     "段位名に対応するモデルは`atk config get <engine>_<段位名>_model`（例: `claude_high_tier_model`）、"
     "engine順は`atk config show`で確かめる"
 )
@@ -265,7 +266,16 @@ def _task_document_declaration(
     """`<役割名>.subagent.md`の宣言を読む。共有規則の判定は`_is_agent_toolkit_task_document`を経由する。"""
     if not _is_agent_toolkit_task_document(task_document):
         return f"必須入力を確認できません: `<役割名>.subagent.md`がshare配下ではありません: {task_document}"
-    return task_documents.read_declaration_unchecked(task_document, document_text)
+    declaration = task_documents.read_declaration_unchecked(task_document, document_text)
+    if isinstance(declaration, str):
+        with contextlib.suppress(OSError, UnicodeError):
+            body = document_text if document_text is not None else task_document.read_text(encoding="utf-8")
+            if body.startswith("---"):
+                raise ActionableError(
+                    declaration,
+                    next_action="役割文書のfrontmatterを直して同じstartを再発行する。委譲先は起動していない",
+                )
+    return declaration
 
 
 def _check_declared_inputs(
@@ -388,7 +398,7 @@ def continuation_prompt(
                         next_action="新しい要求と変更した入力だけをpromptへ渡す。参照先の更新は定型継続の名前付き入力で指定する",
                     )
         # 同文の自由な指示も新しい操作になり得る。意味上の必要性は送信側へ残す。
-        if documents and text.lstrip().startswith("#"):
+        if documents and text.lstrip().startswith(("#", "---")):
             with contextlib.suppress(OSError, UnicodeError):
                 root = str(documents[0].parent.parent)
                 body = documents[0].read_text(encoding="utf-8").replace(_PLUGIN_ROOT_VARIABLE, root)
@@ -977,12 +987,6 @@ def task_document_request(
             f"subagent_md_path is not an agent-toolkit task document: {task_document}",
             next_action=_TASK_DOCUMENT_PATH_NEXT_ACTION,
         )
-    model_type = _TASK_MODEL_TYPES.get(task_document.name)
-    if model_type is None:
-        raise ActionableError(
-            f"subagent task has no model_type mapping: {task_document.name}",
-            next_action=_TASK_DOCUMENT_DEFECT_NEXT_ACTION,
-        )
     if any(not isinstance(name, str) or not _REQUIRED_INPUT_NAME_PATTERN.fullmatch(name) for name in extra_params):
         raise ActionableError(
             "extra_params contains an invalid input name",
@@ -1005,6 +1009,17 @@ def task_document_request(
     # 未展開のまま渡すと、委譲先は変数の値を推測して参照先を探す。
     document_text = document_text.replace(_PLUGIN_ROOT_VARIABLE, str(task_document.parent.parent))
     declaration = _task_document_declaration(task_document, document_text)
+    model_type = declaration.model_type if isinstance(declaration, task_documents.TaskDocumentDeclaration) else None
+    usage = declaration.usage if isinstance(declaration, task_documents.TaskDocumentDeclaration) else None
+    # 旧版の文書と保存済みsessionだけは、移行前の役割設定で継続できるようにする。
+    if model_type is None:
+        model_type = _TASK_MODEL_TYPES.get(task_document.name)
+        usage = _TASK_USAGES.get(task_document.name)
+    if model_type is None:
+        raise ActionableError(
+            f"subagent task has no model_type declaration: {task_document.name}",
+            next_action="役割文書のfrontmatterへmodel_typeとusageを宣言して同じstartを再発行する",
+        )
     launch_kind: LaunchKind = declaration.launch_kind if not isinstance(declaration, str) else "delegate"
     if launch_kind != "delegate" and whole_contract_path is not None:
         raise ActionableError(
@@ -1045,4 +1060,4 @@ def task_document_request(
     if extra_params:
         prompt_lines.append("入力:")
         prompt_lines.extend(named_input_lines(extra_params))
-    return model_type, _TASK_USAGES.get(task_document.name), "\n".join(prompt_lines), launch_kind, handoff_path
+    return model_type, usage, "\n".join(prompt_lines), launch_kind, handoff_path

@@ -163,7 +163,7 @@ Stop hookの無進捗停止（`busy_loop_guard.py`）の終了要求は、Stop�
 - `agents_server_cwd_by_session`: `session_id`ごとの絶対`cwd`。`send_message`と`kill`の事前判定および各ツールのPostToolUse状態更新に使う。`show`の応答が返す稼働中の子sessionの識別子と`cwd`の対も記録し、委譲元がその子sessionへ追送と打ち切りを発行できるようにする
 - `agents_server_sessions`: `session_id`ごとの公開状態と内部状態。寿命はセッション状態ファイルと同じとする
   - 記録する値: 公開状態は`session_id`・`status`・`kill_requested`・`pending_observation`・`owner_agent_id`・`model_type`・`error`・`agent_message`、内部状態は`turn_id`とする。`pending_observation`は観測を試みていない作業の有無、`owner_agent_id`はその作業を発生させた主体を示し、`error`と`agent_message`は終端時の値とする
-  - `model_type`の解決: 起動入力の`model_type`を優先し、省略時は`start`の`task`では`<役割名>.subagent.md`のファイル名、他の`mode`では`mode`ごとの省略時の種別とする。統合前の旧名で記録された開始は対応する`mode`として扱う
+  - `model_type`の解決: 起動入力の`model_type`を優先し、省略時は`start`の`task`では共通パーサーが読む役割文書のfrontmatter、他の`mode`では`mode`ごとの省略時の種別とする。ファイル名の対応表は旧文書の読取互換だけに使う。統合前の旧名で記録された開始は対応する`mode`として扱う
   - 生成と更新: `start`の成功応答で生成し、`send_message`・`kill`・`wait`の応答境界と、Bash経由の`atk agents wait`実行時に更新する
   - `pending_observation`を真にする契機: 各開始操作の成功応答と、`delivery`が`reply_started`または`reply_ambiguous`の`send_message`の応答。`steered`は実行中のturnへ追加指示を配送するだけで`turn_seq`を変えないため対象外とする。呼出主体をhook payloadの`agent_id`（無いメイン会話は`main`）から`owner_agent_id`へ記録する。`transcript_path`で呼出主体を判別しない（`claude-hooks.md`「hookスクリプトの基本プロトコル」）
   - `pending_observation`を偽にする契機: `kill`の成功応答、Bash経由の`atk agents wait`完了時、Stop時に直前の応答の`待機中:`表明がそのsessionを指す場合。CLIの`atk agents wait`は入力sessionを取らず、呼出主体が所有する既存の記録を持つ全sessionを観測済みにする。偽は現時点で未観測の作業が無いことを示すため、新しい作業を配送すれば再び真になる。`owner_agent_id`は次の作業発生まで保持する

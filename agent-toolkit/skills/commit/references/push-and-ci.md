@@ -48,10 +48,11 @@ CIを判定する場合は、push前に次のとおりbaselineを作成する。
 
 1. セッションのmanaged-temp（`agent-toolkit:managed-temp`）にpushごとの別ディレクトリを作成する
 2. 削除refを除く更新refごとに、確定したrefspecの左辺`<source>`をそのまま`--source-ref`へ渡す（右辺、destination ref、remote-tracking refは別の値）。補助スクリプトはsource refをcommitまで再帰的にpeelし（annotated・lightweight tagとも）、完全長commit SHAを保存する。commitへpeelできないrefではbaseline作成が失敗する
-3. 読み込んだ本文書の絶対パスからplugin rootを確定する。`(destination ref, source ref)`ごとに次を実行する（`wait_ci.py`の所在は`<plugin-root>/agent_toolkit/`であり、`<plugin-root>/skills/commit/scripts/`とは別）
+3. `(destination ref, source ref)`ごとに次を実行する。以降のCI監視も同じ`atk run-script wait-ci --`から起動する
 
    ```text
-   uv run --no-config --no-project --python 3.15 python <plugin-root>/scripts/launch.py agent_toolkit/wait_ci.py --write-baseline <手順1の領域>/<更新refごとに一意なファイル名>.json
+   atk run-script wait-ci -- --repo <owner/repo> --forge github --ref <destination-ref> --source-ref <source-ref> \
+     --write-baseline <手順1の領域>/<更新refごとに一意なファイル名>.json
    ```
 
 baseline作成と監視では`--repo`（`owner/repo`かホストを含むURL。ローカルパスではない）、`--forge <github|gitlab>`、`--ref`、`--source-ref`をすべて指定する。その他の引数は`--help`で確かめる。複数refでは組ごとにbaselineを作成し、1件が失敗しても他を続ける。
@@ -65,7 +66,7 @@ API側を明示する場合はHTTP(S) URLをポート込みで`--repo`へ渡す�
 ## pushと監視
 
 1. 引数なし方式では`git push`を単独で実行し、明示方式では成功したdry-runから`--dry-run --porcelain`だけを除いた同じ引数でpushする
-2. push成功後、各baselineに対して`wait_ci.py --baseline`を実行する（CI通過をこのセッションで判定しない場合は実行せず後始末へ進む）
+2. push成功後、各baselineに対して`atk run-script wait-ci -- --baseline <baselineの絶対パス>`を実行する（CI通過をこのセッションで判定しない場合は実行せず後始末へ進む）
    - 起動と結果回収は`agent-toolkit:delegation`の`references/waiting-and-monitoring.md`「待機区間の構成」に従う。完了通知で同じセッションへ再開する監視は背景で起動し、別の独立待機より先に届いた通知を処理する。同じbaselineの起動済み監視を回収し、重複起動しない
    - ホストから背景監視の停止通知を受けた場合は、同スキルの`references/wait-anomalies.md`「ホストによる背景待機の停止後」に従う。元の監視プロセスと出力を回収し、観測の再開には同じSHAとbaselineまたは待機専用記録を使う。実ジョブの再起動は含めない
    - 総待機時間は、判定対象のrunと同じジョブ構成・実行形態（実行されるジョブ、パス条件による省略、matrix、軽量実行かなど）の成功runの所要（GitHub Actionsでは`updatedAt - startedAt`）へ登録猶予と変動分の余裕を加え、有限の`--timeout`で渡す。直近の成功runが軽量実行や一部ジョブだけの実行なら、通常実行の仕事量を覆う成功runまで遡って選ぶ。所要は`gh run view <run ID> --json startedAt,updatedAt,jobs`などでジョブ構成と併せて確かめ、取得・算出できなければ270秒とする。`gh`の入出力形式は実行直前のヘルプで確かめる
@@ -86,7 +87,7 @@ API側を明示する場合はHTTP(S) URLをポート込みで`--repo`へ渡す�
      - 操作直前の`git fetch --all --prune`後、書き換える最古のcommitに対する`git for-each-ref --contains=<そのcommit> refs/heads/ refs/remotes/`の出力がpush先のlocal branchとその追跡refだけである
    - 通常commitを使う区分: 前項のいずれかが成立しない場合（ベースbranchへ直接pushする運用を含む）は、同じbranchへ通常commitを追加し、force pushを避ける。forgeの保護設定でforce pushが拒否された場合も通常commitで修正し直す
    - 取り込む区分でも`## push前`のdry-runを同じ明示形で実行し、強制更新のstatus lineは3条件を満たす承認済みdestinationへの更新である場合だけ承認済みとする。CI記録には書き換え前後のOID、tree・親・件名の対応、`git range-diff`の結果と是正した原因の対応を残す
-6. 診断のために対象jobを再実行した後も、同じbaselineで`wait_ci.py --baseline`を再起動して待機を任せる（自作の待機ループはbaselineの判定対象を再現できないため避ける）。許容された再実行後も失敗が残る場合はCI未通過を終端状態とし、未通過と帰属判定を完了報告、採否記録、`atk run-script plan-progress --`で計画の`## 進捗ログ`へ記録する。対象workflowが同一concurrency groupで`cancel-in-progress: true`の場合、再実行の終端前に新しくpushすると先行runが`cancelled`になり判定根拠を失うため、終端を確定してから次のpushを行う
+6. 診断のために対象jobを再実行した後も、同じbaselineで`atk run-script wait-ci -- --baseline <baselineの絶対パス>`を再起動して待機を任せる（自作の待機ループはbaselineの判定対象を再現できないため避ける）。許容された再実行後も失敗が残る場合はCI未通過を終端状態とし、未通過と帰属判定を完了報告、採否記録、`atk run-script plan-progress --`で計画の`## 進捗ログ`へ記録する。対象workflowが同一concurrency groupで`cancel-in-progress: true`の場合、再実行の終端前に新しくpushすると先行runが`cancelled`になり判定根拠を失うため、終端を確定してから次のpushを行う
 
 `--baseline`による判定が終わるまで、同じコミットに対する`gh workflow run`などの手動起動は待つ。`wait_ci.py`はbaselineに無い同一コミットの実行も判定対象に含めるため、手動起動の失敗がCI失敗として返る。リリースや配備のworkflowはCI通過の確定後に起動する。
 

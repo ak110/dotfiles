@@ -70,11 +70,7 @@ WI作成、計画、実行および実行レビューの責務と受渡しは`${
 
 ## 自動コードレビュー監査
 
-自動コードレビュー監査とは、選定と並行してGitHub CopilotのレビューとDependabotアラートを取得し、必要な処置を確定する工程を指す。監査担当は対象リポジトリの成果物を読み取りだけで扱う。
-
-選定の開始前に、対象がGitHub上にあれば`atk review-audit pending --repo <OWNER>/<REPO>`を実行する。終了コード0で`counts.reviews`、`counts.threads`、`counts.dependabot`がいずれも0なら監査担当を起動せず、3件数を監査省略の根拠として完了報告へ渡す。それ以外（1件以上、非0終了、JSONや件数を解釈できない場合）は`${CLAUDE_PLUGIN_ROOT}/share/copilot-review-audit.parent.md`に従って監査担当を起動し、選定と並行させる。`dependabot.status`が`disabled`か`unauthorized`なら、その状態を完了報告へ渡す。監査の処置と公開工程の開始の関係は`references/finish-session.md`冒頭が定め、新しいレビューの到着は次の実行の監査で扱う。
-
-`atk wi process-loop`はキューが空でも未判定のDependabotアラートがあればAWIを起票せずにprocess-wiを起動する。このときの候補0件の選定結果は正常として保存し、レーンを起動せずに監査の処置を確定して、`references/finish-session.md`「公開対象が無い場合の短絡」を経て終端する。要修正を同じセッションで直す場合は「即時対応」に従う。
+選定の前に、対象がGitHub上にあれば`references/review-audit-launch.md`を全文読む。同書に従ってpendingを判定し、必要な監査を起動して結果を受領する。
 
 ## 同一主題の追加指示
 

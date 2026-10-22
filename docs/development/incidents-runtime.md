@@ -323,3 +323,9 @@
 - 2026年9月: Windowsのpytools再導入が2026年8月10日以降毎回延期され、`sonnet`・`opus`・`fable`が導入されなかった。
   直接原因: 常駐プロセスの復元可否分類を正規の起動手順が生成しないプロセス属性で記述し、延期を終了コード0の通常出力で終端していた。
   対策: 分類条件を正規の起動手順から導出し、延期と失敗を`update-dotfiles`の最終出力へ表示する
+
+- 2026年10月21日: Codex pluginを2.222.3へ更新した後、実行中セッションが参照する2.222.2のcache rootが消え、PreToolUse hookが全操作を遮断した。
+  直接原因: pre-commitの生成処理が登録済みlocal marketplace sourceを新versionへ更新し、別のCodex App Serverが`plugin/list` RPCで新versionを自動導入して全旧cacheを削除した。この処理は`install_codex_plugins.run`の退避・復旧を通らなかった。
+  背景原因: （作り込み要因）外部コマンドとApp Serverの副作用を実機で確かめず、提供元Issueと上流実装も調べないまま、cacheを削除する主体を明示的な`plugin add`と更新関数内の後続呼出しへ限定した。（見逃し要因）既存試験は内部`run()`と単体インストーラーへ削除を注入し、`git commit`、生成処理、別App Serverの自動導入、live hook消費を一続きで通さなかった。（根本原因）外部挙動を確認しない設計と内部単位だけの試験を、実用シナリオ全体の保証として受理できた。
+  調査の経過: Codex 0.163.0の隔離対照では、新versionに対するApp Serverの`plugin/list` RPCとCLIの`plugin add`が旧cacheを削除した。同versionのRPC、CLIの`plugin list --json`、daemon照会と`codex exec`は旧cacheを保持した。[openai/codex#31383](https://github.com/openai/codex/issues/31383)は0.142.5から0.162.0までの複数環境で同じcache寿命不整合を報告している。
+  対策: 更新処理内の全旧version退避・復旧を維持する。dotfiles向けの生成済みhookはcache外の`atk-hook`から起動し、旧`PLUGIN_ROOT`欠落時はClaude Code側の同版cacheを同じ絶対パスへ原子的に復旧する。同版が無い場合はClaude Codeの現行導入版からhookを起動する。commitと`update-dotfiles`の実用シナリオで、外部主体の削除からhook消費までを検証する

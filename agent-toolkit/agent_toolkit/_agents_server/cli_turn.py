@@ -1,0 +1,571 @@
+"""turnごとにCLIを起動するbackendの、プロセス所有・継続・記録・終了処理。"""
+
+from __future__ import annotations
+
+import asyncio
+import contextlib
+import json
+import logging
+import os
+import pathlib
+import typing
+from typing import Any
+
+from agent_toolkit._agents_server import (
+    engine_availability,
+    result_projection,
+    session_errors,
+    session_identity,
+    shared_layout,
+)
+from agent_toolkit._agents_server import state as shared_state
+from agent_toolkit._agents_server.file_operations import finish_task, run_file_operation
+from agent_toolkit._agents_server.input_validation import validate_prompt
+from agent_toolkit._agents_server.session_errors import SessionInitializationTimeoutError
+from agent_toolkit._agents_server.state import LaunchKind, ModelCandidate, ResumePrompt, SessionState, initialize_turn, utc_now
+from agent_toolkit._common import delegated_session as _delegated_session
+from agent_toolkit._common import process_tree
+from agent_toolkit._common.next_action import ActionableError
+
+_LOG = logging.getLogger("agent-toolkit.agents-server.cli-turn")
+_STDERR_LIMIT_CHARS = 4000
+
+
+def _child_env(root_session_id: str | None) -> dict[str, str]:
+    """委譲先の印とManagerが所有するrootを配送する。"""
+    env = dict(os.environ)
+    env[_delegated_session.DELEGATED_SESSION_ENV] = "1"
+    if root_session_id is not None:
+        env[_delegated_session.OWNER_SESSION_ENV] = root_session_id
+    return env
+
+
+class CliTurnManager:
+    """wire形式ごとの解釈を各backendへ渡し、turnの実行資源を所有する。"""
+
+    ENGINE: typing.ClassVar[str]
+    NAME: typing.ClassVar[str]
+    LOG: typing.ClassVar[logging.Logger]
+    RUN_TIMEOUT: typing.ClassVar[float | None] = None
+    RECORD_INPUT: typing.ClassVar[bool] = False
+
+    @staticmethod
+    def build_command(prompt: str, model: str | None, effort: str | None, conversation_id: str | None) -> list[str]:
+        """CLI固有の起動引数を組み立てる。"""
+        raise NotImplementedError
+
+    @staticmethod
+    def system_prompt(launch_kind: LaunchKind) -> str:
+        """CLI固有の配送手段に合わせた規範本文を返す。"""
+        raise NotImplementedError
+
+    @staticmethod
+    def event_session_id(payload: dict[str, Any]) -> str | None:
+        """最初のイベントからセッション識別子を取得する。"""
+        raise NotImplementedError
+
+    async def process_event(self, session: SessionState, payload: dict[str, Any]) -> bool:
+        """イベントを反映し、イベント自身で終端した場合に真を返す。"""
+        raise NotImplementedError
+
+    def finish_process(self, session: SessionState, returncode: int | None, stderr: str, finalized: bool) -> None:
+        """CLI終了時の公開契約を検収する。"""
+        del session, returncode
+        if not finalized:
+            raise session_errors.DelegateBackendError(f"{self.NAME} ended before the result event: stderr={stderr}")
+
+    async def __aenter__(self) -> typing.Self:
+        return self
+
+    async def __aexit__(self, *_exception: object) -> None:
+        await self.close()
+
+    START_FAILURE_EXCLUDES_CANDIDATE: typing.ClassVar[bool] = True
+    """CLIの起動の例外をその候補の可用性の失敗として扱い、次の候補へ進む。"""
+    INTERRUPT_REQUIRES_TURN_ID: typing.ClassVar[bool] = False
+    """中断の要求にturnの識別子を使わない。"""
+    ORPHAN_TAKEOVER: typing.ClassVar[bool] = False
+    """所有者のいない登録簿の記録を、委譲先CLIの記録から終端として引き継がない。"""
+
+    @staticmethod
+    def unavailable_reason(session: SessionState) -> str | None:
+        """失敗で終端したsessionの除外理由として、CLIの標準エラー出力か失敗の本文を返す。"""
+        error = engine_availability.failure_error(session)
+        if error is None:
+            return None
+        return str(error.get("stderr") or error.get("message") or f"{session.engine} CLI failed")
+
+    @staticmethod
+    def excludes_with_recorded_reason(reason: str) -> bool:
+        """記録済みの除外理由は全て候補を除外する根拠になる。"""
+        del reason
+        return True
+
+    def __init__(
+        self,
+        sessions: dict[str, SessionState] | None = None,
+        condition: asyncio.Condition | None = None,
+        publish_registry: bool = False,
+        log_directory: pathlib.Path | None = None,
+        *,
+        root_session_id: str | None = None,
+        validate_session_id: session_identity.IdentityValidator | None = None,
+    ) -> None:
+        self.sessions = sessions if sessions is not None else {}
+        self._condition = condition if condition is not None else asyncio.Condition()
+        self._publish_registry = publish_registry
+        self._log_directory = log_directory
+        self._root_session_id = root_session_id
+        self._validate_session_id = validate_session_id or session_identity.identity_validator(self.sessions, root_session_id)
+        self._tasks: set[asyncio.Task[Any]] = set()
+        self._task_sessions: dict[asyncio.Task[Any], str] = {}
+        self._processes: dict[str, asyncio.subprocess.Process] = {}
+
+    async def start(
+        self,
+        prompt: str,
+        cwd: str,
+        model: str | None = None,
+        effort: str | None = None,
+        *,
+        model_type: str | None = None,
+        launch_kind: LaunchKind = "delegate",
+        excluded_candidates: frozenset[ModelCandidate] = frozenset(),
+    ) -> SessionState:
+        """新しい会話を開始し、`init`イベントで会話識別子を確定したsessionを返す。"""
+        return await self._start_turn(
+            prompt,
+            cwd,
+            model,
+            effort,
+            session=None,
+            conversation_id=None,
+            model_type=model_type,
+            launch_kind=launch_kind,
+            excluded_candidates=excluded_candidates,
+            turn_seq=1,
+        )
+
+    async def resume(
+        self,
+        session_id: str,
+        prompt: ResumePrompt | str,
+        cwd: str,
+        model: str | None = None,
+        effort: str | None = None,
+        *,
+        model_type: str | None = None,
+        launch_kind: LaunchKind = "delegate",
+        excluded_candidates: frozenset[ModelCandidate] = frozenset(),
+        turn_seq: int = 0,
+        fast_mode: bool | None = None,
+    ) -> SessionState:
+        """保存済みの会話識別子へ新しいturnを開始する。
+
+        `fast_mode`はCodexの速度の指定であり、本backendは受け取って使わない。
+        """
+        del fast_mode
+        await self._stop_owned_task(session_id)
+        resume_text = await _resume_text(prompt)
+        return await self._start_turn(
+            resume_text,
+            cwd,
+            model,
+            effort,
+            session=None,
+            conversation_id=session_id,
+            model_type=model_type,
+            launch_kind=launch_kind,
+            excluded_candidates=excluded_candidates,
+            turn_seq=turn_seq + 1,
+        )
+
+    async def send_message(self, session: SessionState, prompt: str) -> dict[str, Any]:
+        """終端済みturnの後続として、同じ会話識別子で新しいturnを開始する。"""
+        validate_prompt(prompt)
+        async with session.turn_control_lock:
+            if not session.terminal:
+                raise ActionableError(
+                    f"the active {self.NAME} turn has not finished", next_action=result_projection.RESEND_AFTER_WAIT_NEXT_ACTION
+                )
+            previous_result = result_projection.with_result_next_action(
+                {"status": session.status, "agent_message": session.agent_message, "error": session.error}, session.label
+            )
+            await self._stop_owned_task(session.session_id)
+            await self._start_turn(
+                prompt,
+                session.cwd,
+                session.model,
+                session.effort,
+                session=session,
+                conversation_id=session.session_id,
+                model_type=session.model_type,
+                launch_kind=session.launch_kind,
+                excluded_candidates=session.excluded_candidates,
+                turn_seq=session.turn_seq + 1,
+            )
+        return {"delivery": "reply_started", "previous_result": previous_result}
+
+    async def interrupt(self, session: SessionState) -> None:
+        """実行中のturnのプロセスを終了して中断を確定する。"""
+        if session.terminal:
+            return
+        session.interrupt_requested = True
+        session.touch()
+        await self._stop_owned_task(session.session_id)
+        if not session.terminal:
+            finalize_turn(session, {"status": "interrupted", "agent_message": session.agent_message, "error": None})
+        session.interrupt_requested = False
+        await self._notify_waiters()
+
+    async def release_session(self, session: SessionState) -> None:
+        """対象のsessionを所有するタスクとプロセスを終了する。"""
+        await self._stop_owned_task(session.session_id)
+        await session.drain_registration()
+
+    async def close(self) -> None:
+        """所有中の全turnを終了する。"""
+        await finish_task(asyncio.create_task(self._close()))
+
+    async def _close(self) -> None:
+        tasks = tuple(self._tasks)
+        for task in tasks:
+            if not task.done():
+                task.cancel()
+        if tasks:
+            await asyncio.gather(*tasks, return_exceptions=True)
+        errors: list[Exception] = [
+            error for task in tasks if not task.cancelled() and isinstance(error := task.exception(), Exception)
+        ]
+        for task in tasks:
+            self._tasks.discard(task)
+            self._task_sessions.pop(task, None)
+        for session in tuple(self.sessions.values()):
+            try:
+                if session.engine == self.ENGINE:
+                    await session.drain_registration()
+            except Exception as error:
+                errors.append(error)
+        if errors:
+            for error in errors[1:]:
+                errors[0].add_note(f"停止時の別の失敗: {error!r}")
+            raise errors[0]
+
+    async def _stop_owned_task(self, session_id: str) -> None:
+        task = next((item for item in self._tasks if self._task_sessions.get(item) == session_id), None)
+        if task is None:
+            return
+        if not task.done():
+            task.cancel()
+        outcomes = await asyncio.gather(task, return_exceptions=True)
+        if isinstance(outcomes[0], Exception):
+            raise outcomes[0]
+
+    def _forget_task(self, task: asyncio.Task[Any]) -> None:
+        if not task.cancelled() and task.exception() is not None:
+            return
+        self._tasks.discard(task)
+        self._task_sessions.pop(task, None)
+
+    async def _notify_waiters(self) -> None:
+        async with self._condition:
+            self._condition.notify_all()
+
+    async def _start_turn(
+        self,
+        prompt: str,
+        cwd: str,
+        model: str | None,
+        effort: str | None,
+        *,
+        session: SessionState | None,
+        conversation_id: str | None,
+        model_type: str | None,
+        launch_kind: LaunchKind,
+        excluded_candidates: frozenset[ModelCandidate],
+        turn_seq: int,
+    ) -> SessionState:
+        loop = asyncio.get_running_loop()
+        initialized: asyncio.Future[SessionState] = loop.create_future()
+        task: asyncio.Task[Any] = asyncio.create_task(
+            self._run(
+                f"{self.system_prompt(launch_kind)}\n\n{prompt}",
+                cwd,
+                model,
+                effort,
+                initialized,
+                session=session,
+                conversation_id=conversation_id,
+                model_type=model_type,
+                launch_kind=launch_kind,
+                excluded_candidates=excluded_candidates,
+                turn_seq=turn_seq,
+            )
+        )
+        self._tasks.add(task)
+        task.add_done_callback(self._forget_task)
+        try:
+            initialized_session = await asyncio.wait_for(initialized, timeout=shared_state.SESSION_INITIALIZATION_TIMEOUT)
+            await initialized_session.drain_registration()
+            return initialized_session
+        except TimeoutError as exc:
+            await self._release_unstarted_task(task)
+            raise SessionInitializationTimeoutError(
+                f"{self.NAME} did not reach init within {shared_state.SESSION_INITIALIZATION_TIMEOUT:.0f}s: "
+                f"cwd={cwd}, launch_kind={launch_kind}, model={model}"
+            ) from exc
+        except BaseException:
+            await self._release_unstarted_task(task)
+            raise
+
+    async def _release_unstarted_task(self, task: asyncio.Task[Any]) -> None:
+        if not task.done():
+            task.cancel()
+        await asyncio.gather(task, return_exceptions=True)
+        self._forget_task(task)
+
+    async def _run(
+        self,
+        prompt: str,
+        cwd: str,
+        model: str | None,
+        effort: str | None,
+        initialized: asyncio.Future[SessionState],
+        *,
+        session: SessionState | None,
+        conversation_id: str | None,
+        model_type: str | None,
+        launch_kind: LaunchKind,
+        excluded_candidates: frozenset[ModelCandidate],
+        turn_seq: int,
+    ) -> None:
+        process: asyncio.subprocess.Process | None = None
+        stderr_text = ""
+        finalized = False
+        input_recorded = False
+        try:
+            async with contextlib.AsyncExitStack() as resources, asyncio.timeout(self.RUN_TIMEOUT):
+                command = self.build_command(prompt, model, effort, conversation_id)
+                try:
+                    process = await asyncio.create_subprocess_exec(
+                        *command,
+                        cwd=cwd,
+                        env=_child_env(self._root_session_id),
+                        stdout=asyncio.subprocess.PIPE,
+                        stderr=asyncio.subprocess.PIPE,
+                    )
+                except OSError as exc:
+                    # CLIの未導入などの起動失敗を委譲先CLIの失敗として分類し、導入と認証の確認を次の操作として返す。
+                    raise session_errors.DelegateBackendError(f"failed to start {self.NAME} ({command[0]}): {exc}") from exc
+                resources.push_async_callback(_terminate, process)
+                assert process.stdout is not None
+                if session is not None:
+                    await self._attach_session(session, process, turn_seq)
+                    if not initialized.done():
+                        initialized.set_result(session)
+                async for line in process.stdout:
+                    payload = decode_event(line)
+                    if payload is None:
+                        continue
+                    if self.event_session_id(payload) is not None and session is None:
+                        session = await self._create_session(
+                            payload,
+                            cwd=cwd,
+                            model=model,
+                            effort=effort,
+                            model_type=model_type,
+                            launch_kind=launch_kind,
+                            excluded_candidates=excluded_candidates,
+                            turn_seq=turn_seq,
+                            conversation_id=conversation_id,
+                        )
+                        await self._attach_session(session, process, turn_seq)
+                        session.status = "starting"
+                        session.touch()
+                        if not initialized.done():
+                            initialized.set_result(session)
+                    if session is not None:
+                        if self.RECORD_INPUT and not input_recorded:
+                            await run_file_operation(
+                                self._append_event,
+                                session.session_id,
+                                {
+                                    "type": "agent_toolkit_input",
+                                    "timestamp": utc_now(),
+                                    "session_id": session.session_id,
+                                    "prompt": prompt,
+                                    "cwd": cwd,
+                                    "model": model,
+                                    "effort": effort,
+                                },
+                            )
+                            input_recorded = True
+                        await run_file_operation(self._append_event, session.session_id, payload)
+                        finalized = await self.process_event(session, payload) or finalized
+                stderr_text = await _read_stderr(process)
+                await process.wait()
+                if session is None:
+                    raise session_errors.DelegateBackendError(f"{self.NAME} ended before the init event: stderr={stderr_text}")
+                self.finish_process(session, process.returncode, stderr_text, finalized)
+                await self._notify_waiters()
+        except asyncio.CancelledError:
+            raise
+        except BaseException as exc:  # pylint: disable=broad-exception-caught
+            if session is None:
+                if not initialized.done():
+                    initialized.set_exception(exc)
+            elif not finalized:
+                _record_failure(session, exc, stderr_text)
+                await self._notify_waiters()
+        finally:
+            if session is not None:
+                try:
+                    await session.drain_registration()
+                finally:
+                    self._processes.pop(session.session_id, None)
+
+    def _append_event(self, session_id: str, payload: dict[str, Any]) -> None:
+        """公開stream-jsonのイベントを、状態ファイルと同じ領域へ追記する。"""
+        if self._log_directory is None:
+            return
+        if not shared_layout.valid_session_id(session_id):
+            raise ValueError(f"invalid {self.ENGINE} session_id: {session_id}")
+        try:
+            self._log_directory.mkdir(mode=0o700, parents=True, exist_ok=True)
+            path = self._log_directory / f"{session_id}.jsonl"
+            with contextlib.ExitStack() as descriptors:
+                descriptor = os.open(path, os.O_APPEND | os.O_CREAT | os.O_WRONLY, 0o600)
+                descriptors.callback(os.close, descriptor)
+                stream = os.fdopen(descriptor, "a", encoding="utf-8")
+                descriptors.pop_all()
+                with stream:
+                    stream.write(json.dumps(payload, ensure_ascii=False) + "\n")
+        except OSError:
+            self.LOG.warning("イベントログへの書き込みに失敗: %s", session_id, exc_info=True)
+
+    async def _attach_session(self, session: SessionState, process: asyncio.subprocess.Process, turn_seq: int) -> None:
+        self.sessions[session.session_id] = session
+        self._processes[session.session_id] = process
+        await session.attach_executor_async(process.pid)
+        current_task = asyncio.current_task()
+        if current_task is not None:
+            self._task_sessions[current_task] = session.session_id
+        session.turn_seq = turn_seq
+        initialize_turn(session)
+
+    async def _create_session(
+        self,
+        payload: dict[str, Any],
+        *,
+        cwd: str,
+        model: str | None,
+        effort: str | None,
+        model_type: str | None,
+        launch_kind: LaunchKind,
+        excluded_candidates: frozenset[ModelCandidate],
+        turn_seq: int,
+        conversation_id: str | None,
+    ) -> SessionState:
+        session_id = self.event_session_id(payload)
+        if not isinstance(session_id, str) or not session_id:
+            raise session_errors.DelegateBackendError(f"{self.NAME} event did not contain session_id")
+        if conversation_id is not None and session_id != conversation_id:
+            raise session_errors.DelegateBackendError(f"{self.NAME} resume returned an unexpected session_id")
+        await session_identity.validate_identity(self._validate_session_id, session_id, conversation_id)
+        return SessionState(
+            session_id=session_id,
+            cwd=cwd,
+            model_type=model_type,
+            launch_kind=launch_kind,
+            excluded_candidates=excluded_candidates,
+            model=model,
+            effort=effort,
+            engine=self.ENGINE,
+            turn_seq=turn_seq,
+            publish_registry=self._publish_registry,
+        )
+
+
+async def _resume_text(prompt: ResumePrompt | str) -> str:
+    """再開の入力を1つの本文へそろえる。
+
+    `ResumePrompt`は配送先のコルーチンへ1件だけ渡す形を取る。
+    委譲先CLIはプロセスの起動時に本文を確定するため、この配送で本文だけを受け取る。
+    """
+    if isinstance(prompt, str):
+        return prompt
+    captured: list[str] = []
+
+    async def capture(text: str) -> None:
+        captured.append(text)
+
+    await prompt.deliver(capture)
+    return captured[0]
+
+
+def decode_event(line: bytes) -> dict[str, Any] | None:
+    """`stream-json`の1行をイベントへ変換する。解釈できない行は無視する。"""
+    text = line.decode("utf-8", errors="replace").strip()
+    if not text:
+        return None
+    try:
+        payload = json.loads(text)
+    except json.JSONDecodeError:
+        _LOG.debug("CLIの非JSON出力を無視: %s", text[:200])
+        return None
+    return payload if isinstance(payload, dict) else None
+
+
+def finalize_turn(session: SessionState, result: dict[str, Any]) -> None:
+    """最新turnの終端結果を確定する。"""
+    session.pending_result = None
+    session.status = result["status"]
+    session.agent_message = result["agent_message"]
+    session.error = result["error"]
+    session.turn_completed = True
+    session.turn_start_ambiguous = False
+    session.touch()
+
+
+def _record_failure(session: SessionState, error: BaseException, stderr_text: str) -> None:
+    """失敗を終端結果へ確定し、原因の特定に要する標準エラーを添える。"""
+    failure: dict[str, Any] = {
+        "message": str(error) or error.__class__.__name__,
+        "engine": session.engine,
+        "model": session.model,
+        "stderr": stderr_text.strip()[:_STDERR_LIMIT_CHARS],
+    }
+    _LOG.error("cli_session_failure session_id=%s model=%s stderr=%s", session.session_id, session.model, stderr_text)
+    finalize_turn(session, {"status": "failed", "agent_message": session.agent_message, "error": failure})
+
+
+async def _read_stderr(process: asyncio.subprocess.Process) -> str:
+    """標準エラーを先頭から`_STDERR_LIMIT_CHARS`バイトまで読み取る。"""
+    if process.stderr is None:
+        return ""
+    with contextlib.suppress(Exception):
+        data = await process.stderr.read(_STDERR_LIMIT_CHARS)
+        return data.decode("utf-8", errors="replace")
+    return ""
+
+
+async def _terminate(process: asyncio.subprocess.Process) -> None:
+    """委譲先プロセスとその子孫を終了する。"""
+    await finish_task(asyncio.create_task(_terminate_process(process)))
+
+
+async def _terminate_process(process: asyncio.subprocess.Process) -> None:
+    if process.returncode is not None:
+        return
+    descendants = await run_file_operation(process_tree.collect_descendants, process.pid)
+    with contextlib.suppress(ProcessLookupError):
+        process.terminate()
+    with contextlib.suppress(Exception):
+        await asyncio.wait_for(process.wait(), timeout=5.0)
+    if process.returncode is None:
+        with contextlib.suppress(ProcessLookupError):
+            process.kill()
+        with contextlib.suppress(Exception):
+            await process.wait()
+    residual = await asyncio.to_thread(process_tree.reclaim_descendants, descendants)
+    process_tree.log_residual(residual, context=f"CLI pid={process.pid}")

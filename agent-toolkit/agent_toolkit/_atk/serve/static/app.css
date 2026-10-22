@@ -1584,6 +1584,10 @@ main > .toolbar {
   white-space: nowrap;
   font-weight: 600;
 }
+#screen-sessions #detail-usage {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
 #screen-sessions .secondary-text {
   color: var(--color-secondary-text);
   font-size: calc(var(--font-size-base) * 0.95);

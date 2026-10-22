@@ -3,10 +3,10 @@
 from __future__ import annotations
 
 import copy
-import re
 import typing
 from collections.abc import Callable
 
+from agent_toolkit._atk import config as _model_config
 from agent_toolkit._common import next_action as _next_action
 from agent_toolkit._plan import selection as _selection
 
@@ -83,7 +83,20 @@ _NEXT_EDGE_FAILURE = (
 _NEXT_COMPONENT_LINK = "不可分成分の構成WIを有効な結合条件で連結させるか、初回選定の記録から成分を分け直す"
 _NEXT_COMPONENT_LANE = "不可分成分の全WIを同じ初回レーンへ割り当てる"
 _NEXT_LANE_BOUND = "統合済み・後段を含めて上限内のレーンへまとめ、複数成分は同じレーンで順に扱う"
-_MODEL_TYPE_RE = re.compile(r"(?:claude|codex|agy):[^,/\s]+/[^,/\s]+")
+
+
+def _explicit_model(value: object) -> bool:
+    """モデル候補の共通パーサーを使い、単一候補でeffortが明記されているかを返す。"""
+    if not isinstance(value, str):
+        return False
+    try:
+        candidates = _model_config.parse_stage_model_candidates(value)
+    except ValueError:
+        return False
+    if len(candidates) != 1:
+        return False
+    engine, model, effort = candidates[0]
+    return value == f"{engine}:{model}/{effort}" or engine == "opencode" and value == f"{engine}:{model}@{effort}"
 
 
 def generate_selection(
@@ -280,11 +293,11 @@ def structure_errors(selection: object) -> tuple[list[str], list[str]]:
             errors.append(f"{label}: `{_UPSTREAM_TARGETS_KEY}`が文字列の列ではない: {upstream_targets!r}")
         model_types = item.get(_selection.MODEL_TYPES_KEY, {})
         if not isinstance(model_types, dict) or any(
-            role not in _MODEL_ROLES or not isinstance(value, str) or not _MODEL_TYPE_RE.fullmatch(value)
-            for role, value in model_types.items()
+            role not in _MODEL_ROLES or not _explicit_model(value) for role, value in model_types.items()
         ):
             model_errors.append(
-                f"{label}: `{_selection.MODEL_TYPES_KEY}`が担当別のengine:model/effortではない: {model_types!r}"
+                f"{label}: `{_selection.MODEL_TYPES_KEY}`が担当別のengine:model/effortではない"
+                f"（opencodeはprovider/model@effort）: {model_types!r}"
             )
     costs = _selection.lane_costs(selection)
     if costs is None:

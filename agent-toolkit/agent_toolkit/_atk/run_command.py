@@ -132,7 +132,7 @@ def _metadata(
     stdout_path: pathlib.Path | None,
     stderr_path: pathlib.Path | None,
 ) -> dict[str, Any]:
-    """公開JSONを構築する。"""
+    """保存する完全な実行記録を構築する。"""
     result: dict[str, Any] = {
         "argv": argv,
         "cwd": str(cwd),
@@ -374,7 +374,26 @@ def dispatch(args: argparse.Namespace) -> int:
     metadata, wrapper_exit_code, failure = execute(
         argv[1:], cwd, args.timeout, verification=getattr(args, "verification", False)
     )
-    print(json.dumps(metadata, ensure_ascii=False, sort_keys=True))
+    # 保存できた通常実行では次の判断に要る結果と所在だけを返す。
+    # 保存失敗では実行条件の回復先が無いため、取得できた全情報を返す。
+    summary = metadata
+    if metadata["record_path"] is not None:
+        summary = {
+            key: metadata[key]
+            for key in (
+                "record_path",
+                "child_exit_code",
+                "wrapper_exit_code",
+                "stdout_path",
+                "stderr_path",
+                "stdout_bytes",
+                "stderr_bytes",
+            )
+        }
+        for key in ("timed_out", "signal", "failure"):
+            if metadata[key]:
+                summary[key] = metadata[key]
+    print(json.dumps(summary, ensure_ascii=False, sort_keys=True))
     if wrapper_exit_code == 0:
         outcome.report_success("外部コマンドが終了した", outcome.ResultKind.VALUE_OUTPUT)
     else:

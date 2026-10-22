@@ -99,11 +99,11 @@ def test_prepare_aggregates_targets_across_owners_without_promoting_cost_to_cand
     stats = pathlib.Path(result["stats_path"]).read_text(encoding="utf-8")
     assert "/repo/rules.md: 合計13回、観測結果13件・14字・42バイト" in stats
     assert "agent-toolkit:bugfix: 合計3回" in stats
-    assert "上位一覧の省略: 結果2件、反復3組" in stats
+    assert "上位一覧の省略: 結果7件、反復8組" in stats
     assert '範囲={"offset": 1, "limit": 8}、claude:parent:2' in stats
     assert '範囲={"offset": 2, "limit": 8}、claude:parent/agent-child:1' in stats
     assert "反復: Read 12回" in stats
-    assert "結果量上位: Read 1字・3バイト、入力=claude:parent:2、結果=claude:parent:3" in stats
+    assert "結果量上位: Read 1字・3バイト、入力=claude:parent:" in stats
     assert "結果量上位: Read 2字・6バイト、入力=claude:parent/agent-child:1、結果=claude:parent/agent-child:2" in stats
     prefix = "- メインのtoken上位: "
     peaks = [json.loads(line.removeprefix(prefix)) for line in stats.splitlines() if line.startswith(prefix)]
@@ -111,6 +111,91 @@ def test_prepare_aggregates_targets_across_owners_without_promoting_cost_to_cand
     for key in ("candidate_total", "candidate_counts", "excluded_counts"):
         assert result[key] == baseline[key]
     assert pathlib.Path(result["candidates_path"]).read_text(encoding="utf-8") == baseline_candidates
+
+
+@pytest.mark.parametrize("owners, targets", [(2, 3), (64, 40)])
+def test_prepare_bounds_initial_documents_and_keeps_full_evidence(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], owners: int, targets: int
+) -> None:
+    """長い入力、多数担当・対象でも、初回予算と保存証拠への全件対応が同時に成立する。"""
+    parent = tmp_path / "parent.jsonl"
+    support.write_jsonl(parent, [support.timestamped_entry("2026-10-10T00:00:00Z", "対象を整える")])
+    command = "python3 -c '" + "print(1);" * 1500 + "'"
+    for owner in range(owners):
+        entries = []
+        for target in range(targets):
+            identity = f"read-{target}"
+            entries.extend(
+                [
+                    support.claude_call(
+                        "2026-10-10T00:00:01Z", identity, "Read", {"file_path": f"/repo/owner-{owner}/file-{target}.md"}
+                    ),
+                    {
+                        "type": "user",
+                        "message": {
+                            "role": "user",
+                            "content": [
+                                {
+                                    "type": "tool_result",
+                                    "tool_use_id": identity,
+                                    "content": "読" * 4000 if target < 12 else "本文",
+                                }
+                            ],
+                        },
+                    },
+                ]
+            )
+        entries.extend(
+            [
+                support.claude_call("2026-10-10T00:00:02Z", "command", "Bash", {"command": command}),
+                {
+                    "type": "user",
+                    "message": {
+                        "role": "user",
+                        "content": [
+                            {
+                                "type": "tool_result",
+                                "tool_use_id": "command",
+                                "content": "x" * (8200 + owner),
+                            }
+                        ],
+                    },
+                },
+            ]
+        )
+        support.write_subagent(parent.with_suffix("") / "subagents", f"agent-owner-{owner}", entries)
+    work = tmp_path / "work"
+    work.mkdir()
+    assert prepare.main(["--transcript", str(parent), "--work-dir", str(work)]) == 0
+    result = json.loads(capsys.readouterr().out)
+    assert pathlib.Path(result["conversation_path"]).stat().st_size <= 100_000
+    assert pathlib.Path(result["candidates_path"]).stat().st_size <= 70_000
+    assert pathlib.Path(result["stats_path"]).stat().st_size <= 30_000
+    index = [json.loads(line) for line in pathlib.Path(result["review_index_path"]).read_text(encoding="utf-8").splitlines()]
+    candidates = {
+        row["candidate_id"]: row
+        for row in [json.loads(line) for line in (work / "bundle/candidates.jsonl").read_text(encoding="utf-8").splitlines()]
+        if row.get("kind") == "candidate"
+    }
+    assert len(index) == owners and result["candidate_total"] == owners
+    assert len({row["candidate_id"] for row in index}) == owners
+    for row in index:
+        assert row["locators"] and row["evidence_path"]
+        evidence = json.loads((work / "bundle" / row["evidence_path"]).read_text(encoding="utf-8"))
+        assert evidence["locators"] == row["locators"]
+        assert candidates[row["candidate_id"]]["calls"][0]["text"] == command
+    resources = [json.loads(line) for line in (work / "bundle/resource-usage.jsonl").read_text(encoding="utf-8").splitlines()]
+    resource_owners = [row for row in resources if row["kind"] == "stats-resource-usage" and row["role"] != "main"]
+    assert len(resource_owners) == owners
+    assert all(len(row["reads"]) == targets for row in resource_owners)
+    assert sum(row["large_output_review_count"] for row in resource_owners) == owners
+    assert all(row["expected_large_read_count"] == min(12, targets) for row in resource_owners)
+    stats = pathlib.Path(result["stats_path"]).read_text(encoding="utf-8")
+    ranking = stats.split("## 大出力の点検上位", 1)[1].split("## 集計の母集団と詳細", 1)[0]
+    assert ranking.count("入力=") == min(10, owners)
+    assert f"{8200 + owners - 1}バイト" in ranking
+    assert "12000バイト" not in ranking
+    assert "費用確認17観点" in stats and "非律速担当" in stats
 
 
 @pytest.mark.parametrize(

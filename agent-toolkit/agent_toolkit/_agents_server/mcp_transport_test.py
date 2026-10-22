@@ -45,17 +45,20 @@ pytestmark = pytest.mark.usefixtures("agents_server_isolation")
 
 
 @contextlib.asynccontextmanager
-async def _stdio_client(tmp_path: pathlib.Path) -> AsyncGenerator[ClientSession]:
+async def _stdio_client(tmp_path: pathlib.Path, host_environment: dict[str, str]) -> AsyncGenerator[ClientSession]:
     """pluginと同じlocked起動を、専用の状態領域へ分離する。"""
     plugin_root = pathlib.Path(__file__).resolve().parents[2]
     env = {
         key: value
-        for key, value in os.environ.items()
+        for key, value in host_environment.items()
         if key not in {"AGENT_TOOLKIT_OWNER_SESSION", "CLAUDE_CODE_SESSION_ID", "VIRTUAL_ENV"}
     }
     env.update(XDG_STATE_HOME=str(tmp_path), LOCALAPPDATA=str(tmp_path))
     # 分離HOMEではmiseのshimが親のtrust状態を読めないため、uv本体を選ぶ。
-    search_path = os.pathsep.join(directory for directory in os.get_exec_path() if pathlib.Path(directory).name != "shims")
+    search_path = os.pathsep.join(
+        directory for directory in os.get_exec_path(host_environment) if pathlib.Path(directory).name != "shims"
+    )
+    env["PATH"] = search_path
     command = shutil.which("uv", path=search_path)
     assert command is not None
     params = StdioServerParameters(
@@ -80,9 +83,9 @@ async def _stdio_client(tmp_path: pathlib.Path) -> AsyncGenerator[ClientSession]
 
 
 @pytest.mark.asyncio
-async def test_stdio_initializes_and_lists_tools(tmp_path: pathlib.Path) -> None:
+async def test_stdio_initializes_and_lists_tools(tmp_path: pathlib.Path, host_environ: Callable[[], dict[str, str]]) -> None:
     """公開stdioで登録schemaを取得でき、終了時の診断とManager.closeの完了がログへ残る。"""
-    async with _stdio_client(tmp_path) as client:
+    async with _stdio_client(tmp_path, host_environ()) as client:
         tools = {tool.name: tool for tool in (await client.list_tools()).tools}
         assert set(tools) == {"start", "send_message", "kill", "stop", "list", "show"}
         for tool in tools.values():
@@ -99,9 +102,9 @@ async def test_stdio_initializes_and_lists_tools(tmp_path: pathlib.Path) -> None
 
 
 @pytest.mark.asyncio
-async def test_stdio_tool_results(tmp_path: pathlib.Path) -> None:
+async def test_stdio_tool_results(tmp_path: pathlib.Path, host_environ: Callable[[], dict[str, str]]) -> None:
     """SDK経由の接続で、成功時は構造化された結果を返し、呼び出し側が修正できる入力の不備はエラーとして返す。"""
-    async with _stdio_client(tmp_path) as client:
+    async with _stdio_client(tmp_path, host_environ()) as client:
         result = await client.call_tool("list", {})
         assert not result.is_error
         assert result.structured_content is not None
@@ -257,7 +260,9 @@ class _LaunchedServer:
             TMPDIR=str(tmp_path / "tmp"),
         )
         (tmp_path / "tmp").mkdir(parents=True, exist_ok=True)
-        search_path = os.pathsep.join(directory for directory in os.get_exec_path() if pathlib.Path(directory).name != "shims")
+        search_path = os.pathsep.join(
+            directory for directory in os.get_exec_path(host_environment) if pathlib.Path(directory).name != "shims"
+        )
         env["PATH"] = search_path
         uv = shutil.which("uv", path=search_path)
         assert uv is not None

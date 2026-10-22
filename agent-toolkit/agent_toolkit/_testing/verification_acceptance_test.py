@@ -291,7 +291,8 @@ def test_shared_wait_longer_than_child_timeout_keeps_exit_and_outputs(
         assert waiting.returncode == 7, (stdout, stderr)
     metadata = json.loads(stdout)
     assert metadata["child_exit_code"] == metadata["wrapper_exit_code"] == 7
-    assert not metadata["timed_out"] and time.monotonic() - started > 1
+    record = json.loads(pathlib.Path(metadata["record_path"]).read_text(encoding="utf-8"))
+    assert not record["timed_out"] and time.monotonic() - started > 1
     output = pathlib.Path(metadata["stdout_path"]).read_text(encoding="utf-8")
     diagnostic = pathlib.Path(metadata["stderr_path"]).read_text(encoding="utf-8")
     assert output == "retained-out\n" and diagnostic == "retained-err\n"

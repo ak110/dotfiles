@@ -269,9 +269,17 @@ def test_trailing_option_cli_matches_leading_option(
     with pytest.raises(SystemExit) as accepted:
         atk.main(["read-file", *option, "--", str(source)], _output_capture_active=True)
     assert accepted.value.code == 0
-    result = json.loads(capsys.readouterr().out)
-    assert result == json.loads(trailing_output.out)
-    assert result["text"] == expected_text and result["eof"] is True
+    result, body = _read_file_response(capsys.readouterr().out)
+    trailing_result, trailing_body = _read_file_response(trailing_output.out)
+    assert result == trailing_result and body == trailing_body
+    assert body == expected_text and result["eof"] is True
+
+
+def _read_file_response(output: str) -> tuple[dict, str]:
+    """read-fileのメタデータと無加工本文を分ける。"""
+    metadata, separator, body = output.partition("\n")
+    assert separator
+    return json.loads(metadata), body
 
 
 def test_subcommand_trailing_options_use_registered_actions(capsys: pytest.CaptureFixture[str]) -> None:

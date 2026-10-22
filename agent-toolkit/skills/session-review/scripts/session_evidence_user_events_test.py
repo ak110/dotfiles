@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import argparse
 import json
 import pathlib
 
 import pytest
 import session_review_evidence as evidence
 
+from agent_toolkit._atk import run_script
 from agent_toolkit._testing.helpers import _write_transcript
 from agent_toolkit._testing.session_evidence_support import (
     local_time_transcript,
@@ -201,6 +203,133 @@ _CODEX_SUBAGENT_NOTIFICATION = '<subagent_notification>\n{"agent_path":"01a0280f
 _CODEX_QUESTION_REPLY = (
     '<send_user_message_question_reply>\n[{"answer":"選択後の1回だけ有効（推奨）","question":"どの状態ですか"}]'
 )
+
+
+def test_codex_async_answers_keep_identity_context_and_candidate_kind(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """実記録の遅延回答形式を使い、複数call・質問の順序差と未回答を消費側まで確かめる。
+
+    request_user_input_asyncのtitle・文字列options、accepted応答、後続XMLのquestionItemIdは
+    WI 20261021-122551-001.mdの調査記録と、同112847-001.mdの逐語引用に基づく。本文と識別子を短縮した。
+    """
+    entries: list[dict] = [_codex_user_record("最初の依頼", "2026-10-21T00:00:00Z")]
+    for call_id, questions in (
+        ("call-one", [{"title": "対象範囲", "options": ["全体", "一部"]}, {"title": "方法"}]),
+        ("call-two", [{"title": "対象範囲", "options": ["次回", "今回"]}]),
+        ("call-unanswered", [{"title": "未回答", "options": ["初期選択", "別案"]}]),
+    ):
+        entries.extend(
+            [
+                {
+                    "type": "response_item",
+                    "payload": {
+                        "type": "function_call",
+                        "name": "request_user_input_async",
+                        "call_id": call_id,
+                        "arguments": json.dumps({"questions": questions}, ensure_ascii=False),
+                    },
+                },
+                {
+                    "type": "response_item",
+                    "payload": {
+                        "type": "function_call_output",
+                        "call_id": call_id,
+                        "output": '{"accepted":true}',
+                    },
+                },
+            ]
+        )
+    for call_id, index, answer in (
+        ("call-two", 0, "今回"),
+        ("call-one", 1, "現在の案を見直して"),
+        ("call-one", 0, "全体"),
+    ):
+        text = (
+            "<send_user_message_question_reply>\n"
+            + json.dumps(
+                [
+                    {
+                        "answer": answer,
+                        "question": "回答側の質問文へ置き換えない",
+                        "questionItemId": json.dumps(["request_user_input_async", call_id, index]),
+                    }
+                ],
+                ensure_ascii=False,
+            )
+            + "\n</send_user_message_question_reply>"
+        )
+        entries.append(_codex_user_record(text, f"2026-10-21T00:00:{len(entries):02d}Z"))
+    unmatched = (
+        '<send_user_message_question_reply>\n[{"answer":"対応不明",'
+        '"questionItemId":"[\\"request_user_input_async\\",\\"unknown\\",0]"}]'
+        "\n</send_user_message_question_reply>"
+    )
+    entries.append(_codex_user_record(unmatched, "2026-10-21T00:00:11Z"))
+    transcript = _write_transcript(tmp_path, entries)
+    assert evidence.main([str(transcript), "--user-events"]) == 0
+    extracted = capsys.readouterr().out
+    users = [event for line in extracted.splitlines() if (event := json.loads(line))["kind"] == "user"]
+    answers = users[1:4]
+    assert [event["text"] for event in users] == [
+        "最初の依頼",
+        "今回",
+        "現在の案を見直して",
+        "全体",
+        unmatched,
+    ]
+    assert [event["assistant_context"] for event in answers] == [
+        [{"question": "対象範囲", "options": [{"label": "次回", "description": ""}, {"label": "今回", "description": ""}]}],
+        [{"question": "方法", "options": []}],
+        [{"question": "対象範囲", "options": [{"label": "全体", "description": ""}, {"label": "一部", "description": ""}]}],
+    ]
+    assert [(event["question_line"], event["answer_line"], event["line"]) for event in answers] == [
+        (4, 8, 8),
+        (2, 9, 9),
+        (2, 10, 10),
+    ]
+    assert [event["user_response"] for event in answers] == [
+        [{"answers": [answer]}] for answer in ("今回", "現在の案を見直して", "全体")
+    ]
+    # 抽出した出力を変換せず引用の公開操作へ渡し、質問・選択肢・自由回答と原記録の位置を保つ。
+    source = tmp_path / "async-user-events.jsonl"
+    source.write_text(extracted, encoding="utf-8")
+    body = tmp_path / "draft.md"
+    body.write_text("# 題\n\n## ユーザー指摘の逐語引用\n\n旧引用\n", encoding="utf-8")
+    selection = tmp_path / "answer-selection.json"
+    selection.write_text(
+        json.dumps(
+            [{"source": str(source), "record": event["record"], "line": event["line"], "mode": "answer"} for event in answers],
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    assert (
+        run_script.dispatch(
+            argparse.Namespace(script_name="wi-quote-check", script_args=[str(body), "--import-spec", str(selection)])
+        )
+        == 0
+    )
+    imported = body.read_text(encoding="utf-8")
+    assert "質問: 対象範囲\n選択肢: 次回\n選択肢: 今回\n回答: 今回" in imported
+    assert "質問: 方法\n回答: 現在の案を見直して" in imported
+    assert "質問: 対象範囲\n選択肢: 全体\n選択肢: 一部\n回答: 全体" in imported
+    for event in answers:
+        assert f"record={event['record']} line={event['line']}" in imported
+    assert "初期選択" not in imported and "対応不明" not in imported
+    capsys.readouterr()
+    bundle = tmp_path / "bundle"
+    bundle.mkdir()
+    assert evidence.main([str(transcript), "--bundle", str(bundle)]) == 0
+    capsys.readouterr()
+    candidates = [json.loads(line) for line in (bundle / "candidates.jsonl").read_text(encoding="utf-8").splitlines()]
+    answer_candidates = {event["text"]: event for event in candidates if "question_call_id" in event}
+    assert {text: event["candidate_kind"] for text, event in answer_candidates.items()} == {
+        "今回": "confirmation-request",
+        "全体": "confirmation-request",
+        "現在の案を見直して": "user-intervention",
+    }
+    assert answer_candidates["今回"]["question_locators"] == [{"record": "codex:transcript", "line": 4}]
 
 
 @pytest.mark.parametrize("host", ["claude", "codex"])

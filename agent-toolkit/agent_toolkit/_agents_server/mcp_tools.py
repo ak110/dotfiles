@@ -81,7 +81,7 @@ async def _mcp_lifespan(_server: MCPServer[None]) -> AsyncGenerator[None]:
 mcp = AgentsServerMCP(
     "agents_server",
     instructions=schema_text(
-        "Codex、ClaudeまたはAntigravityへの非同期委譲。承認操作は公開しない。\n"
+        "Codex、Claude、AntigravityまたはOpenCodeへの非同期委譲。承認操作は公開しない。\n"
         "Claude Codeからの委譲は本サーバーを標準とする。"
         "`Agent`ツールを使う場合は`agent-toolkit:delegation`の`references/runtime-routing.md`「実行手段」が定める。\n"
         "`start`がsessionを開始し、`mode`で`<役割名>.subagent.md`の定型作業、自由本文の委譲、読み取り専用の探索、"

@@ -1,14 +1,22 @@
+---
+mode: delegate
+model_type: medium_tier
+usage: review
+required_inputs:
+- 原稿
+- 要求と出所
+- 成立性の証拠
+- 引き継ぎ記録先
+optional_inputs: []
+writes_worktree: false
+---
+
 # WI原稿の投入前レビュータスク
 
 作成者と独立した文脈で、保存前の原稿の要求被覆・採用案・反映先・成立性を確認する。対象リポジトリとキューの本文は読取専用とする。書込権限は引き継ぎ記録とmanaged-temp内のレビュー用資料に限る。
 最初にreview-standardsとwriting-standards、wi-standardsを起動し、各読込表と`${CLAUDE_PLUGIN_ROOT}/skills/wi-standards/references/draft-semantic-review.md`を適用する。欠陥の原因・対策を評価する場合はbugfixも起動する。
 
 ## 入力
-
-```text
-必須入力名: 原稿,要求と出所,成立性の証拠,引き継ぎ記録先
-作業ツリーへの書込: なし
-```
 
 3つの入力ファイルを読み、共通の意味の確認基準を原文と対象リポジトリに照らす。取得済み観測を再利用し、根拠の不足と矛盾を独立に確かめる。読者別探索はreview-standardsの共通契約に従い、探索結果の検収と最終判定を本担当が所有する。引用・構造チェックの結果に加えて、意味を独立に確認する。
 初回は入力時点で判断できる成立性の論点をまとめて返す。同じ担当への再判定では、委譲元が渡した現行原稿と差分を、共通基準の再判定の項に従って確かめる。

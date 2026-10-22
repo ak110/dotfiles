@@ -53,7 +53,7 @@ Claude Codeでは、各段階（複数段階では途中の段階も含む）の
 `上流要求だけ`（`レーン`が`なし`）の項目は次のとおり扱う。
 
 - `completed`の要求がある場合: レーンを起こさず、全`ファイル名`を`atk wi set-dependencies`で元項目の`depends_on`へ加え、`atk wi return-to-inbox`で`inbox`へ戻す
-- 全要求が`condition_not_met`の場合: 依存を加えず、条件不成立を外部操作の観測結果として確かめて元項目を終端する
+- 全要求が`condition_not_met`の場合: 依存を加えず、不成立の条件または調査で確定した不投入の結論を、根拠と証拠の所在から確かめる。人間由来要求の不投入は`agent-toolkit:wi-standards`の`references/origin-and-approval.md`「承認」に従って確定してから元項目を終端する
 
 `混在`の項目では投入結果（要求、投入先、`ファイル名`、`結果`）を`exec.parent.md`の`上流投入結果`として渡す。`completed`の要求がある項目は統合指示の`AWI終端区分`を`終端しない`とし、統合の検収後にメインが全`ファイル名`を`depends_on`へ加えて`inbox`へ戻す。全要求が`condition_not_met`なら通常の終端を適用する。
 
@@ -84,7 +84,8 @@ Claude Codeでは、各段階（複数段階では途中の段階も含む）の
 
 メインは選定時にAWI・UWIの元本文を読み、その後は主に選定の構造化出力、計画の`## 概要`と`## 実施内容`、工程境界の出力、レビュー指摘管理表の状態、統合結果を読む（努力目標。メインのコンテキストを保護する）。計画の他の節と実装差分は、エスカレーション、ユーザー介入、レビュー収束の判断で要る場合に読む。統合結果の`変更したエージェント向け文書`の再取得は`${CLAUDE_PLUGIN_ROOT}/share/exec.parent.md`「統合の指示と受領」に従う。
 
-処理対象WIへの包含理由、除外理由またはその構成を尋ねるユーザーの質問は、`selection-procedure.md`の読込表が示す`${CLAUDE_PLUGIN_ROOT}/share/pick-wi-explain.parent.md`の説明手順へ渡し、返された根拠と限界をユーザーへ伝える。
+処理対象WIへの包含理由、除外理由またはその構成を尋ねるユーザーの質問は、`selection-procedure.md`の読込表が示す説明手順へ渡す。
+説明手順は`${CLAUDE_PLUGIN_ROOT}/skills/process-wi/references/selection-explanation.md`にあり、返された根拠と限界をユーザーへ伝える。
 
 ## 採否の確定と終端区分
 

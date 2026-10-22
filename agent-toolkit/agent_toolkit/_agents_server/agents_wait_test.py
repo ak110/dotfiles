@@ -1079,7 +1079,9 @@ def test_agents_wait_contention_diagnostic_recovers_collected_body(
             check=False,
         )
         assert read.returncode == 0, read.stderr
-        return json.loads(read.stdout)["text"]
+        metadata_text, separator, body = read.stdout.partition("\n")
+        assert separator and json.loads(metadata_text)["eof"] is True
+        return body
 
     record = json.loads(read_file(str(run_path)))
     terminal = json.loads(record["output"])

@@ -173,7 +173,11 @@ class TestUserConfirmationSkillPrompt:
     def test_claude_repeats_until_skill_invoked(self, source: str, tmp_path: pathlib.Path) -> None:
         """Claude Codeでは同スキルの起動まで実ユーザー発話ごとに注記を返し、起動後は返さない。"""
         self._session_start(source, tmp_path)
-        assert self._has_notice(self._prompt("画面を直して", tmp_path))
+        context = self._prompt("表示が変わった原因は何か", tmp_path)
+        assert self._has_notice(context)
+        assert "診断より前に`agent-toolkit:bugfix`を起動する" in context
+        assert "説明の補足や委譲・AWIの方針も対象" in context
+        assert "「起動契機」から「認可を要する操作」" in context
         assert self._has_notice(self._prompt("続けて", tmp_path))
         self._invoke_skill(tmp_path)
         assert not self._has_notice(self._prompt("次の依頼", tmp_path))
@@ -193,6 +197,7 @@ class TestUserConfirmationSkillPrompt:
         self._session_start(source, tmp_path)
         assert not self._has_notice(self._prompt("続けて", tmp_path))
 
+    @pytest.mark.parametrize("host", ["claude", "codex"])
     @pytest.mark.parametrize(
         "prompt",
         [
@@ -201,11 +206,13 @@ class TestUserConfirmationSkillPrompt:
             f"{user_prompt_submit.PERIODIC_RECHECK_MARKER}\n稼働状況を確認する。",
         ],
     )
-    def test_machine_injected_turn_neither_receives_nor_consumes(self, prompt: str, tmp_path: pathlib.Path) -> None:
+    def test_machine_injected_turn_neither_receives_nor_consumes(self, prompt: str, tmp_path: pathlib.Path, host: str) -> None:
         """機械注入のターンには注記を返さず、その後の最初の実ユーザー発話には返す。"""
-        self._session_start("startup", tmp_path)
-        assert not self._has_notice(self._prompt(prompt, tmp_path))
-        assert self._has_notice(self._prompt("依頼", tmp_path))
+        self._session_start("startup", tmp_path, host=host)
+        assert not self._has_notice(self._prompt(prompt, tmp_path, host=host))
+        context = self._prompt("依頼", tmp_path, host=host)
+        assert self._has_notice(context)
+        assert "診断より前に`agent-toolkit:bugfix`を起動する" in context
 
     def test_usage_limit_resume_prompt_is_machine_injected(
         self, tmp_path: pathlib.Path, host_environ: Callable[[], dict[str, str]]
@@ -250,7 +257,10 @@ class TestUserConfirmationSkillPrompt:
     def test_codex_notifies_once_per_context(self, source: str, tmp_path: pathlib.Path) -> None:
         """CodexではSkillの起動を観測できないため、文脈1つにつき最初の実ユーザー発話へ1回だけ返す。"""
         self._session_start(source, tmp_path, host="codex")
-        assert self._has_notice(self._prompt("依頼", tmp_path, host="codex"))
+        context = self._prompt("表示が変わった原因は何か", tmp_path, host="codex")
+        assert self._has_notice(context)
+        assert "診断より前に`agent-toolkit:bugfix`を起動する" in context
+        assert "説明の補足や委譲・AWIの方針も対象" in context
         assert not self._has_notice(self._prompt("続けて", tmp_path, host="codex"))
 
 

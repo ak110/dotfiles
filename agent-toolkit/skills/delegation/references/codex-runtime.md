@@ -6,7 +6,7 @@ agent-toolkitの文書に現れるClaude Codeのツール名は、Codexで次の
 
 | Claude Code | Codex相当 |
 | --- | --- |
-| `Agent` | `routing.md`「会話を引き継ぐ委譲」がforkを選ぶ場合は`spawn_agent`、それ以外は`runtime-routing.md`に従い`agents_server`へ委譲する |
+| `Agent` | `routing.md`「会話を引き継ぐ委譲」がforkを選ぶ場合は`spawn_agent`、それ以外は`runtime-routing.md`に従い`agents_server`へ委譲する。後者を使えない場合の組み込み代替は`fork_turns: "none"`を指定する |
 | `SendMessage` | 起動手段が返した識別子と継続操作を使う |
 | `TaskStop` | 起動手段の中断操作を使い、同じ識別子で停止を確認する |
 | `ToolSearch` | 公開ツール一覧または検索機能から利用可能な能力へ分解し、必須能力がなければ差し戻す |
@@ -22,6 +22,7 @@ agent-toolkitの文書に現れるClaude Codeのツール名は、Codexで次の
 Codexネイティブ委譲は`spawn_agent`で起動し、`send_message`は稼働中の入力追加、`followup_task`は待機中か終端後の同一エージェントの継続、`wait_agent`は終端待機、`interrupt_agent`は自身が起動したエージェントの処理の中断に使う。`fork_turns`で渡す会話履歴と、`SubagentStart` hookが追加する`rules-subagent.md`は別の入力であり、forkしない場合も共通委譲先規範はhookから、`AGENTS.md`は対象worktreeの自動読込から届く。Codex固有の委譲先規範が必要になれば、共通規範と別ファイルに置き同じhook生成でCodexだけへ追加する。監査記録は`docs/development/audit-records.md`の「agent-toolkit/skills/delegation/references/codex-runtime.md：ツール名の読み替え：2026年9月21日」にある。
 
 forkを選ぶときは`spawn_agent`の`fork_turns`を省略するか`"all"`にする。全履歴を渡す起動は親のモデルとreasoning effortを継承し、上書きを受け付けない。監査記録は`docs/development/audit-records.md`の「agent-toolkit/skills/delegation/references/codex-runtime.md：ツール名の読み替え：2026年9月27日」にある。
+forkを選ばない組み込み代替では`fork_turns: "none"`を明示し、必要な委譲入力を渡す。
 
 ## agents_serverの起動
 

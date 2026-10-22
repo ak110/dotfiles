@@ -66,7 +66,7 @@ EXPLORE_BACKEND_CAPABILITIES = {
         "対象成果物・委譲入力・ユーザーデータの作成・変更・削除は禁止。"
         "実行環境が管理するキャッシュ・状態・保存出力はこの変更禁止対象と区別する。"
     )
-    for engine in ("claude", "codex", "agy")
+    for engine in ("claude", "codex", "agy", "opencode")
 }
 """各backendの起動へ選択して配送する調査手段。"""
 
@@ -216,7 +216,7 @@ SESSION_ID_DESCRIPTION = parameter_description(
 
 MODEL_TYPE_DESCRIPTION = parameter_description(
     "委譲先のモデルを選ぶ。モデル段位の種別（例: `high_tier`、`medium_tier`、`low_tier`、`write`、`orchestrate`）か、"
-    "ASCIIカンマ区切りの`<claude|codex|agy>:<model>[/<effort>]`の候補列"
+    "ASCIIカンマ区切りの`<claude|codex|agy>:<model>[/<effort>]`か`opencode:<provider>/<model>[@<effort>]`の候補列"
     "（例: `agy:gemini-3.8-flash/medium,claude:opus[1m]/medium`）を指定する。"
     "候補は先頭から試し、起動できない候補を除いて次の候補へ切り替える。"
     "delegateでは必須。他のmodeでは省略してよく、省略時はtaskが`<役割名>.subagent.md`に対応する工程別設定、"
@@ -275,6 +275,9 @@ START_DESCRIPTION = "\n".join(
         "`<役割名>.subagent.md`の`mode:`、対応する工程別設定 |",
         "| `delegate` | `<役割名>.subagent.md`の無い単発作業 | `prompt`・`model_type` | "
         "通常起動。委譲先規範が届き、ClaudeとCodexはスキルを使える。"
+        "OpenCodeへは共通規範・委譲先規範・ユーザー規範が全modeで届く。"
+        "スキルは自動登録せず配送したplugin rootの`skills/`から明示読取する。"
+        "プロジェクト規範のCLI読込は未確認で、必要な本文は委譲入力へ含める。"
         "Antigravityへは`rules/`配下とagent-toolkitのスキルが届かない |",
         "| `explore` | 読み取り専用の調査とレビュー | `prompt` | 軽量起動、`low_tier` |",
         "| `write` | 確定した文章の起草と小規模な定型書込 | `prompt` | 軽量起動、`write` |",

@@ -251,6 +251,7 @@ _install_codex_plugin() {
     local hook_wrapper="$HOME/.local/bin/atk-hook"
     local hook_stage=""
     local migration_dir=""
+    local post_add_error=""
     echo "Codex側のagent-toolkitプラグインを設定します..."
     codex plugin marketplace add ak110/dotfiles --json >/dev/null 2>&1 || true
     codex plugin marketplace upgrade ak110-dotfiles --json >/dev/null
@@ -279,28 +280,30 @@ _install_codex_plugin() {
         rm -rf "$migration_dir"
         return 1
     fi
+    if ! after_state=$(_codex_plugin_state); then
+        post_add_error="Codex plugin更新後の状態を確認できません。"
+    else
+        after_present=$(_codex_state_value "$after_state" present)
+        after_version=$(_codex_state_value "$after_state" version)
+        after_enabled=$(_codex_state_value "$after_state" enabled)
+        if [ "$before_state_known" -eq 1 ] && [ "$before_state" != "$after_state" ]; then
+            CODEX_PLUGIN_UPDATED=1
+        fi
+        if [ "$after_present" != "true" ] || [ "$after_enabled" != "true" ] || [ "$after_version" != "$expected_version" ]; then
+            post_add_error="Codex plugin更新後の状態が期待値と一致しません。"
+        elif [ ! -f "$CODEX_PLUGIN_CACHE_ROOT/$expected_version/agent_toolkit/hook.py" ]; then
+            post_add_error="Codex plugin更新後のhook実体を確認できません。"
+        fi
+    fi
+    # 既存セッションが参照する全旧パスを関数の終了時に成立させるため、復旧は保護区間の終端で行う。
     if ! _restore_codex_plugin_caches "$migration_dir" "$expected_version" 0; then
         echo "Codex plugin更新後の旧cache復旧に失敗しました。退避先を保持します: $migration_dir" >&2
         echo "退避先を変更せず、表示された内容とパスをdotfilesの作者へ報告してください。" >&2
         return 1
     fi
     rm -rf "$migration_dir"
-    if ! after_state=$(_codex_plugin_state); then
-        echo "Codex plugin更新後の状態を確認できません。" >&2
-        return 1
-    fi
-    after_present=$(_codex_state_value "$after_state" present)
-    after_version=$(_codex_state_value "$after_state" version)
-    after_enabled=$(_codex_state_value "$after_state" enabled)
-    if [ "$before_state_known" -eq 1 ] && [ "$before_state" != "$after_state" ]; then
-        CODEX_PLUGIN_UPDATED=1
-    fi
-    if [ "$after_present" != "true" ] || [ "$after_enabled" != "true" ] || [ "$after_version" != "$expected_version" ]; then
-        echo "Codex plugin更新後の状態が期待値と一致しません。" >&2
-        return 1
-    fi
-    if [ ! -f "$CODEX_PLUGIN_CACHE_ROOT/$expected_version/agent_toolkit/hook.py" ]; then
-        echo "Codex plugin更新後のhook実体を確認できません。" >&2
+    if [ -n "$post_add_error" ]; then
+        echo "$post_add_error" >&2
         return 1
     fi
     echo "Codex側のagent-toolkitプラグインを設定しました。"

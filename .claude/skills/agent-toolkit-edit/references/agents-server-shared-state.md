@@ -79,6 +79,7 @@ sessionの資源解放（`stop`、保持期限の経過、起動候補の断念�
 | 委譲先CLI自身の診断ログ | `<診断ログのディレクトリ>/delegate-debug/<起動時刻>-<session識別子>-<起動区分>.log` | 初期化失敗を事後に調べる主体 | Claude backend（作成、初期化完了後の改名と、保持世代を超えた記録の削除） |
 | Claude起動別の合成settings | `<状態ディレクトリ>/<ルートsession識別子>/claude-settings/settings-<一意な値>.json`。rootを受領しない直接構築では`settings-<一意な値>`をrootとして使う | 当該起動のClaude CLI | Claude backendの`claude_settings.py`。親設定がファイルの場合とAPI envを合成する場合に、所有者のみ読める起動別ファイルを作成する。各起動は自分のファイルだけを接続終了・起動失敗・依存確認終了で回収する |
 | Antigravityの公開イベントログ | `<状態ディレクトリ>/<ルートsession識別子>/logs/<session_id>.jsonl` | `atk agents logs`、`atk run-script session-review-evidence`、セッションのイベント経過を調べる主体 | Antigravity backend（公開stream-jsonイベントの追記） |
+| OpenCodeの公開イベントログ | `<状態ディレクトリ>/<ルートsession識別子>/logs/opencode/<session_id>.jsonl` | `atk agents logs`、`atk run-script session-review-evidence`、推定費用の集計 | OpenCode backendと共通の`cli_turn.py`。公開JSONイベントと、入力・要求モデルを示す`agent_toolkit_input`を追記する。要求モデルは実モデルの観測値と分ける |
 | engineの可用性を理由に除外した候補（解除待ちの対象のClaude利用上限は記録せず、旧版の理由`429`のClaude候補は読み込み時に除外の根拠から外す） | `<状態ディレクトリ>/unavailable-candidates.json` | 起動の候補列を解決するMCPサーバー | その状態ディレクトリを共有する各MCPサーバー（ファイルロック下の読み書き） |
 
 process-loop、レーン操作と配布物保持が共有する状態は、前表のagents-server領域と同じ`state_dir`の下で次のように保持する。
@@ -163,7 +164,7 @@ Codexの接続先選択順は`codex_model_providers`が持つ。先頭APIの不�
 レーン資源の所有登録と回収結果への参照は、同じ`state_dir`配下の`lanes/<所有session>/`へ別に置く。`_atk/lane.py`が作成・明示再利用・回収を所有し、通常終了とprocess-loopの子終了後も同じ処理を使う。レーン管理はsession登録簿を`_common/session_registry.py`の`resolve`の解決結果（実行中かとcwd）で読むだけとし、状態と終端登録の更新はMCPサーバーが所有する。回収結果は専用worktreeの外のmanaged-tempへ保存し、その既存保持期限へ委ねる。未解決の資源登録は保持し、回収処理が除くのは解決済みのレーン登録だけとする。
 内部の保存項目と公開応答の項目は別に扱う。活動は`seconds_since_activity`、API失敗は種別・HTTP状態・経過時間（利用上限の解除待ちでは種類と解除予定時刻も）を公開し、集計回数と初回時刻は内部の保持に使う。CLI一覧は識別子・状態・ラベル・直近操作・結果保留・開始時刻・文脈使用量と活動診断へ限定する。MCPの通常応答には絶対活動時刻を載せず、`show(verbose=True)`で更新・出力時刻と実行条件を示す。結果のturn番号と確定時刻、通知の送信時刻は保存と整列に残し、回収する公開応答から除く。用途別の射影で内部追加の流入を防ぎ、所有者確認と耐久退避は従来の入力を使う。
 診断ログのディレクトリは`agents-server.log`を置く階層とし、`agent-toolkit/agent_toolkit/_agents_server/logging_config.py`の`state_dir`が解決する。
-Antigravityのイベント処理を調査するときは、上表の公開イベントログを参照する。書き込みに失敗した場合はbackendの警告ログを参照し、イベント処理の終端状態はsession状態から判定する。
+AntigravityとOpenCodeのイベント処理を調査するときは、上表の公開イベントログを参照する。書き込みに失敗した場合はbackendの警告ログを参照し、イベント処理の終端状態はsession状態から判定する。
 
 索引を読むのは、現行のsession識別子からルートsession識別子を解決する主体だけである。
 MCPサーバーは`start`、`send_message`、`list`の応答へ、自身の状態ファイル書込先である`root_session_id`を明示する。`list`はsession一覧が空でも同じ項目を返す。PostToolUseフックは`root_session_id`を持つ応答であれば操作名によらずその項目を索引へ直接書き、子session識別子から状態ディレクトリを逆引きしない。`claude --resume`で起動した会話でもMCPサーバーと会話側の識別子が分かれ、最初のMCP操作が`send_message`になり得るためである。

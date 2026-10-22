@@ -19,6 +19,7 @@ from typing import Any
 from agent_toolkit._agents_server import antigravity as antigravity_backend
 from agent_toolkit._agents_server import claude as claude_backend
 from agent_toolkit._agents_server import codex as codex_backend
+from agent_toolkit._agents_server import opencode as opencode_backend
 from agent_toolkit._agents_server.launch_requests import MODEL_TYPE_NEXT_ACTION
 from agent_toolkit._agents_server.session_identity import IdentityValidator
 from agent_toolkit._agents_server.state import LaunchKind, ModelCandidate, ResumePrompt, SessionState
@@ -133,6 +134,7 @@ _BACKEND_CLASSES: dict[str, type[Backend]] = {
     "claude": claude_backend.ClaudeServerManager,
     CODEX_ENGINE: codex_backend.AppServerManager,
     "agy": antigravity_backend.AntigravityManager,
+    "opencode": opencode_backend.OpenCodeManager,
 }
 
 SUPPORTED_ENGINES = frozenset(_BACKEND_CLASSES)
@@ -181,6 +183,15 @@ def create_backend(
             condition,
             publish_registry=True,
             log_directory=log_directory,
+            root_session_id=root_session_id,
+            validate_session_id=validate_session_id,
+        )
+    if engine == "opencode":
+        return opencode_backend.OpenCodeManager(
+            sessions,
+            condition,
+            publish_registry=True,
+            log_directory=log_directory / "opencode" if log_directory is not None else None,
             root_session_id=root_session_id,
             validate_session_id=validate_session_id,
         )

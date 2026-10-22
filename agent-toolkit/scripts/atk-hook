@@ -1,13 +1,24 @@
 #!/usr/bin/env -S uv run --no-config --no-project --python 3.15 python
-"""配布物内からの呼出しでは自身のroot、個人のbinへ複製した旧来の呼出し用では導入済みのrootからhookを起動する。"""
+"""配布物内では自身のroot、個人binでは保持版を復旧できる安定したrootからhookを起動する。"""
 
 import json
 import os
+import shutil
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 _PLUGIN_ID = "agent-toolkit@ak110-dotfiles"
+_CACHE_RELATIVE = Path("plugins/cache/ak110-dotfiles/agent-toolkit")
+_COPY_IGNORE = shutil.ignore_patterns(
+    ".hypothesis",
+    ".mypy_cache",
+    ".pytest_cache",
+    ".ruff_cache",
+    ".venv",
+    "__pycache__",
+)
 
 
 def _installed_root() -> Path:
@@ -29,6 +40,96 @@ def _installed_root() -> Path:
     )
 
 
+def _plugin_version(root: Path) -> str | None:
+    """配布物のmanifestからversionを返す。"""
+    for relative in (Path(".codex-plugin/plugin.json"), Path(".claude-plugin/plugin.json")):
+        try:
+            value = json.loads((root / relative).read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        version = value.get("version") if isinstance(value, dict) else None
+        if isinstance(version, str):
+            return version
+    return None
+
+
+def _usable_root(root: Path, *, version: str | None = None) -> bool:
+    """hookを起動でき、必要ならversionが一致する配布物かを返す。"""
+    if not (root / "agent_toolkit/hook.py").is_file():
+        return False
+    if not ((root / "scripts/launch.py").is_file() or (root / "pyproject.toml").is_file()):
+        return False
+    return version is None or _plugin_version(root) == version
+
+
+def _claude_cache_root(version: str) -> Path:
+    return Path.home() / ".claude" / _CACHE_RELATIVE / version
+
+
+def _current_claude_root() -> Path | None:
+    """Claude Codeが現在導入しているagent-toolkitの配布物を返す。"""
+    registry = Path.home() / ".claude/plugins/installed_plugins.json"
+    try:
+        value = json.loads(registry.read_text(encoding="utf-8"))
+        entries = value["plugins"][_PLUGIN_ID]
+    except (OSError, json.JSONDecodeError, KeyError, TypeError):
+        return None
+    if not isinstance(entries, list):
+        return None
+    ordered = sorted(
+        (entry for entry in entries if isinstance(entry, dict)),
+        key=lambda entry: str(entry.get("lastUpdated", "")),
+        reverse=True,
+    )
+    for entry in ordered:
+        install_path = entry.get("installPath")
+        if isinstance(install_path, str) and _usable_root(root := Path(install_path)):
+            return root
+    return None
+
+
+def _expected_codex_root(root: Path) -> bool:
+    """復旧先がagent-toolkitのCodex cache直下かを返す。"""
+    expected_parent = Path(os.environ.get("CODEX_HOME") or Path.home() / ".codex") / _CACHE_RELATIVE
+    return root.parent.resolve(strict=False) == expected_parent.resolve(strict=False) and root.name not in {"", ".", ".."}
+
+
+def _restore_from_claude_cache(root: Path) -> Path | None:
+    """同版のClaude Code cacheを欠落したCodex cacheへ原子的に復旧する。"""
+    if not _expected_codex_root(root):
+        return None
+    source = _claude_cache_root(root.name)
+    if not _usable_root(source, version=root.name):
+        return None
+    root.parent.mkdir(parents=True, exist_ok=True)
+    temporary = Path(tempfile.mkdtemp(prefix=f".{root.name}-restore-", dir=root.parent))
+    staged = temporary / root.name
+    try:
+        shutil.copytree(source, staged, symlinks=True, ignore=_COPY_IGNORE)
+        if _usable_root(root, version=root.name):
+            return root
+        if root.exists() or root.is_symlink():
+            return None
+        staged.replace(root)
+        return root if _usable_root(root, version=root.name) else None
+    except OSError:
+        return root if _usable_root(root, version=root.name) else None
+    finally:
+        shutil.rmtree(temporary, ignore_errors=True)
+
+
+def _external_root() -> Path:
+    """個人binから、保持版または独立した配布cacheを解決する。"""
+    pinned_value = os.environ.get("PLUGIN_ROOT")
+    if pinned_value:
+        pinned = Path(pinned_value)
+        if _usable_root(pinned) or _restore_from_claude_cache(pinned) is not None:
+            return pinned
+    if (claude := _current_claude_root()) is not None:
+        return claude
+    return _installed_root()
+
+
 def main() -> int:
     """配布内の直接呼出しと、プラグイン外へ複製した互換呼出しの配置を区別する。"""
     if len(sys.argv) != 2:
@@ -38,7 +139,7 @@ def main() -> int:
     source = Path(__file__).resolve()
     try:
         bundled = source.parent.name == "scripts"
-        root = source.parent.parent if bundled else _installed_root()
+        root = source.parent.parent if bundled else _external_root()
         launcher = root / "scripts" / "launch.py"
         # プラグイン外の旧呼出し用shimは、更新失敗・延期中の導入済み旧版も起動する。
         # 新しい配布内の直接呼出しは、この互換の起動方法を使わず自身のlaunch.pyを必須とする。

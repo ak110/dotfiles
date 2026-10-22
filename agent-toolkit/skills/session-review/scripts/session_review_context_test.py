@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 import pathlib
-import re
 
 import pytest
 import session_evidence_user_events as user_events
@@ -14,10 +13,10 @@ from agent_toolkit._testing import session_evidence_support as support
 
 
 @pytest.mark.parametrize("compacted", [False, True])
-def test_prepare_excludes_known_main_and_keeps_delegate_statistics(
+def test_prepare_keeps_whole_flow_and_delegate_statistics(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], *, compacted: bool
 ) -> None:
-    """メインの最後の圧縮以後を再読から外し、子の費用と会話全量を保持する。"""
+    """圧縮の有無によらず全体像を1文書へまとめ、子の費用を統計へ保持する。"""
     parent = tmp_path / "parent.jsonl"
     entries = [support.timestamped_entry("2026-10-10T00:00:00Z", "圧縮前の要求")]
     if compacted:
@@ -47,33 +46,11 @@ def test_prepare_excludes_known_main_and_keeps_delegate_statistics(
     work.mkdir()
     assert prepare.main(["--transcript", str(parent), "--work-dir", str(work)]) == 0
     result = json.loads(capsys.readouterr().out)
-    ranges = result["conversation_ranges"]
-    assigned = [
-        item
-        for reader in result["reader_ranges"]
-        for item in ranges[reader["first_range_index"] : reader["last_range_index"] + 1]
-    ]
-    assert all(not item["main_known"] for item in assigned)
-    assert any("agent-child" in item["record"] for item in assigned)
-    assert any(item["record"] == "claude:parent" for item in assigned) == compacted
     document = pathlib.Path(result["conversation_path"]).read_text(encoding="utf-8")
     assert "圧縮前の要求" in document and "現在覚えている要求" in document
-    lines = document.splitlines(keepends=True)
-    assert result["main_known_scope"] == {"record": "claude:parent", "after_line": 2 if compacted else 0}
-    for item in ranges:
-        section = "".join(lines[item["start_line"] - 1 : item["end_line"]])
-        locators = re.findall(r"(claude:parent(?:/agent-child)?):(\d+)", section)
-        assert locators
-        assert {record for record, _ in locators} == {item["record"]}
-        assert {record == "claude:parent" and int(line) > (2 if compacted else 0) for record, line in locators} == {
-            item["main_known"]
-        }
-    assigned_indices = [
-        index
-        for reader in result["reader_ranges"]
-        for index in range(reader["first_range_index"], reader["last_range_index"] + 1)
-    ]
-    assert assigned_indices == [index for index, item in enumerate(ranges) if not item["main_known"]]
+    assert "agent-child" in document
+    assert result["conversation_utf8_bytes"] == len(document.encode("utf-8"))
+    assert "reader_ranges" not in result and "conversation_ranges" not in result and "main_known_scope" not in result
     stats = pathlib.Path(result["stats_path"]).read_text(encoding="utf-8")
     assert "/repo/rules.md" in stats and "agent-toolkit:bugfix" in stats
     assert "2000字・6000バイト" in stats
@@ -88,14 +65,8 @@ def test_prepare_excludes_known_main_and_keeps_delegate_statistics(
     handoff_work.mkdir()
     assert prepare.main(["--transcript", str(parent), "--work-dir", str(handoff_work), "--conversation-only"]) == 0
     handoff = json.loads(capsys.readouterr().out)
-    assert handoff["main_known_scope"] is None
-    assert not any(item["main_known"] for item in handoff["conversation_ranges"])
-    assert [
-        index
-        for reader in handoff["reader_ranges"]
-        for index in range(reader["first_range_index"], reader["last_range_index"] + 1)
-    ] == list(range(len(handoff["conversation_ranges"])))
     assert pathlib.Path(handoff["conversation_path"]).read_text(encoding="utf-8") == document
+    assert handoff["conversation_utf8_bytes"] == result["conversation_utf8_bytes"]
     # 引継ぎでも統計の母集団は同じ親子の全記録である。
     assert (handoff_work / "bundle" / "stats.jsonl").read_bytes() == (work / "bundle" / "stats.jsonl").read_bytes()
 
@@ -138,15 +109,8 @@ def test_codex_resume_context_uses_last_compaction_boundary(tmp_path: pathlib.Pa
     work.mkdir()
     assert prepare.main(["--transcript", str(path), "--work-dir", str(work)]) == 0
     result = json.loads(capsys.readouterr().out)
-    assert result["main_known_scope"] == {"record": context["record"], "after_line": 5}
     assert result["compaction_count"] == 2
-    ranges = result["conversation_ranges"]
-    assigned = [
-        item
-        for reader in result["reader_ranges"]
-        for item in ranges[reader["first_range_index"] : reader["last_range_index"] + 1]
-    ]
-    assert assigned and all(not item["main_known"] for item in assigned)
-    assert assigned[-1]["last_locator"] == f"{context['record']}:4"
-    assert ranges[-1]["first_locator"] == f"{context['record']}:6"
-    assert ranges[-1]["main_known"]
+    document = pathlib.Path(result["conversation_path"]).read_text(encoding="utf-8")
+    assert "最初の要求" in document and "次の要求" in document
+    assert f"{context['record']}:6" in document
+    assert result["conversation_utf8_bytes"] <= result["conversation_limit_bytes"]

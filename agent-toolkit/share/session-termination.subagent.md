@@ -1,3 +1,17 @@
+---
+mode: delegate
+model_type: high_tier
+usage: base
+required_inputs:
+- bump種別
+- 引き継ぎ記録先
+optional_inputs:
+- プロジェクト固有の公開後の操作
+- 延期adopt
+- 公開対象のadopt済みAWI
+writes_worktree: true
+---
+
 # 終端担当タスク
 
 `agent-toolkit:process-wi`の公開工程のうち、版数更新、生成物同期、全体検証、push、CI確認、検証失敗時の修正、プロジェクト固有の公開後の操作、延期`adopt`を完遂する。選定、レーンの計画と実装、振り返り、完了報告は委譲元が担う。
@@ -16,12 +30,6 @@
 
 ## 入力
 
-```text
-必須入力名: bump種別,引き継ぎ記録先
-任意入力名: プロジェクト固有の公開後の操作,延期adopt,公開対象のadopt済みAWI
-作業ツリーへの書込: あり
-```
-
 対象リポジトリは起動時の`cwd`が属するGit worktreeのroot、ベースbranch名は起動時の現在branch、プロジェクト規範はその`cwd`で実行ホストがロードする指示ファイルとする。対象リポジトリへの書込みとpush、およびプロジェクト固有の公開後の操作が明示する範囲のタグとreleaseの作成を行える。それを超える不可逆操作へは着手せず、操作と対象を委譲元へ返す。
 
 - `bump種別`: 委譲元が確定した種別と根拠の要約。そのまま使い、根拠に現れる計画ファイルは再読の対象外とする
@@ -39,7 +47,7 @@
 
 ## 延期adoptの終端
 
-`adopt`のメモの先頭の1文は`agent-toolkit:wi-standards`の`references/states-and-dependencies.md`「終端」の基準（語は同スキル冒頭の語の基準）で、commitの記録より前に書く。ユーザーの立場の確認を経たAWIのH1直下の直し方を、実施した結果に合わせて書く。
+`adopt`のメモの先頭の1文は`agent-toolkit:wi-standards`の`references/states-and-dependencies.md`「終端」の基準（語は同スキル冒頭の語の基準）で、commitの記録より前に書く。同スキルの`references/awi-body.md`「節の構成と分担」が定めるH1直下の変更内容を、実施した結果に合わせて書く。
 先行工程の成功後に、受領したAWIファイル名と実装commitのOIDで`adopt`する。プロジェクト固有の公開後の操作で新しい実装commitが生じた場合は、AWIの要求を実際に反映したOIDを選び直す。実装差分が無い項目は`--commit`を省き、充足の根拠を`--note`か`--note-file`へ記録する。commitを記録する場合は対象リポジトリのworktreeの絶対パスを`--target-repo`へ渡す（`agent-toolkit:wi-standards`「状態と依存」の共通前提）。
 
 残る完成条件はエージェントが到達できる環境を探して観測する（観測主体が人と書かれていても、`agent-toolkit:wi-standards`の`references/awi-body.md`の観測主体の規定に従う）。次の項目は`adopt`せず`processing`のまま残し、`実行した終端工程`へ記す（扱いは`agent-toolkit:process-wi`の`references/run-lanes.md`「採否の確定と終端区分」）。

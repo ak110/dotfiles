@@ -29,7 +29,7 @@ TASK_MODEL_TYPES = {
     "usability-review.subagent.md": "medium_tier",
     "wi-draft-review.subagent.md": "medium_tier",
 }
-"""`<役割名>.subagent.md`の役割名とモデル段位の対応。"""
+"""frontmatterを持たない旧版の役割文書だけに使うモデル段位の読取互換。新しい役割は追加しない。"""
 
 
 TASK_USAGES = {
@@ -49,7 +49,7 @@ TASK_USAGES = {
     "usability-review.subagent.md": "review",
     "wi-draft-review.subagent.md": "review",
 }
-"""`<役割名>.subagent.md`の役割名と用途（engine順を選ぶ設定）の対応。段位を明示した起動でも用途は保つ。"""
+"""旧版の役割文書だけに使う用途の読取互換。現行の用途はfrontmatterが所有する。"""
 
 
 SHARE_DIR = pathlib.Path(__file__).resolve().parents[2] / "share"

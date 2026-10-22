@@ -1,8 +1,8 @@
 """セッション振り返りの入力を抽出し、会話・比較材料・候補・統計を作業ディレクトリへ書く。
 
-1回の実行で証拠bundleを抽出し、会話の流れ・比較材料・問題候補・統計を書いて、所在と読取範囲を1行のJSONで返す。
-会話の流れは全収集記録の発話とツール呼び出しの入力を記録別に並べ、結果を成否・量・記録位置の1行で示した文書であり、
-メインが最初に全範囲を通読する。
+1回の実行で証拠bundleを抽出し、会話の流れ・比較材料・問題候補・統計を書いて、所在を1行のJSONで返す。
+会話の流れはメインのユーザー発話ごとの時系列と委譲先ごとの活動概要を、詳細の記録位置とともに示した文書であり、
+メインが最初に全体を通読する。
 原因と対策の確定、AWIの起草と投入はメインが自身のコンテキストで行うため、本スクリプトはキューを変更しない。
 `candidates.md`は1候補を1行の要約と、記録の由来（役割文書、起動mode、起動元）を添えた記録位置で示す。全文が要る候補だけを、
 メインが`atk run-script session-review-evidence`の`--detail`で照会する。
@@ -44,20 +44,16 @@ CANDIDATES_FILENAME = "candidates.md"
 STATS_FILENAME = "stats.md"
 COMPARISON_FILENAME = "comparison-materials.md"
 
-_CONVERSATION_RANGE_BYTES = 32_000
-"""1回の読取でホストが加える行番号とJSONの引用符を含めても、ホストが1回に返す量の上限へ収まる本文量。
+_CONVERSATION_MAX_BYTES = 100_000
+"""1エージェントがセッション全体の流れを保持して通読する文書の原則上限。"""
 
-2026年10月10日のCodex CLI 0.162.1は40,000バイト相当の10,000推定トークンで切り詰めた。
-Claude Code 2.1.296のReadは25,000トークンで拒否し、行番号を含む高密度の記録は
-1トークンあたり2.06バイトだった。行番号とJSONの引用符の分に余裕を残す量を選んでいる。
-"""
+_CANDIDATES_MAX_BYTES = 70_000
+_STATS_MAX_BYTES = 30_000
+_SUMMARY_TOP_COUNT = 10
 
-_READER_RANGE_BYTES = 400_000
-"""1担当へ渡す担当範囲（`reader_ranges`）の本文量の上限。
-
-2026年10月19日の通読の再依頼65件のうち、449,390バイト以下を渡した55件は未読範囲を残さず全文を読了した。
-観測はCodexの読取専用の担当で行った。観測で読了できた最大量より小さい値を選んでいる。
-"""
+_CONVERSATION_MAIN_BYTES = 48_000
+_CONVERSATION_DELEGATE_BYTES = 46_000
+"""文書の固定説明を除き、メインの時系列と委譲先の概要へ割り当てる量。"""
 
 
 _CODEX_EXIT_CODE = re.compile(r"^Process exited with code (\d+)$", re.MULTILINE)
@@ -65,9 +61,7 @@ _CODEX_EXIT_CODE = re.compile(r"^Process exited with code (\d+)$", re.MULTILINE)
 _SUMMARY_LENGTH = 200
 """候補の概要へ載せる文字数。通読の本文と操作入力の全文は別に保持する。"""
 _SLOW_CALL_LIMIT = 10
-_FULL_TEXT_KINDS = frozenset({"user-intervention", "wi-user-response", "escalation"})
-"""`candidates.md`へ本文の全文を載せる候補種別。ユーザーの是正と上位判断の要求は要約すると趣旨が変わるため全文を載せる。"""
-MANDATORY_KINDS = frozenset({"user-intervention", "confirmation-request", "wi-user-response"})
+MANDATORY_KINDS = frozenset({"user-intervention", "confirmation-request", "wi-user-response", "definition-body-read"})
 """評価を必須とする候補種別。
 
 ユーザー介入、ユーザー確認（選択肢どおりの回答と投入したUWI）、WIの記入欄の是正は、
@@ -189,7 +183,8 @@ def _unconfirmed_lines(events: list[dict[str, Any]]) -> list[str]:
         return [*lines, "未解決の対象は無い。", ""]
     return [
         *lines,
-        *(f"- {event['kind']}: {json.dumps(event, ensure_ascii=False)}" for event in events),
+        f"未解決{len(events)}件。全件はbundle/unconfirmed.jsonlへ保持する。以下は先頭10件の概要である。",
+        *(f"- {event['kind']}: {_clip_utf8(json.dumps(event, ensure_ascii=False), 200)}" for event in events[:10]),
         "",
     ]
 
@@ -207,49 +202,138 @@ def _one_line(text: str, limit: int = _SUMMARY_LENGTH) -> str:
     return normalized if len(normalized) <= limit else normalized[:limit] + "…"
 
 
-def _conversation_document(events: list[dict[str, Any]], detail_command: str) -> str:
-    """全担当の発話とツール呼び出しの入力を記録別・行順に並べ、結果は成否・量・記録位置の1行で示す。
+def _clip_utf8(text: str, limit: int) -> str:
+    """UTF-8の文字境界を保ち、本文を指定バイト数以内へ縮める。"""
+    encoded = text.encode("utf-8")
+    if len(encoded) <= limit:
+        return text
+    marker = "…"
+    body = encoded[: max(0, limit - len(marker.encode("utf-8")))].decode("utf-8", errors="ignore")
+    return body + marker
 
-    会話の流れは作業の流れ（遠回り、手戻り、試行錯誤、同じ論点の反復）を振り返る入力であり、
-    流れは発話と呼び出しの入力から読める。結果の本文は記録から再取得できるため載せない。
-    失敗の有無は試行錯誤をたどるのに要るため、結果の行へ残す。
-    """
+
+def _conversation_excerpt(text: str, limit: int) -> str:
+    """詳細照会を前提に、発話または入力の概要を1行で返す。"""
+    return _clip_utf8(" ".join(text.split()), limit)
+
+
+def _activity_summary(events: list[dict[str, Any]]) -> str:
+    """ツール呼び出しの種類・量・失敗と記録位置を1行へ集約する。"""
+    calls = [item for item in events if item.get("kind") == "tool-call"]
+    results = [item for item in events if item.get("kind") in {"tool-result", "tool-failure"}]
+    failures = {
+        (item["record"], item["line"])
+        for item in results
+        if item.get("kind") == "tool-failure" or _codex_failed(str(item.get("text", "")))
+    }
+    tools = collections.Counter(str(item.get("tool") or "unknown") for item in calls)
+    tool_text = "、".join(f"{name}×{count}" for name, count in tools.most_common(6)) or "なし"
+    if len(tools) > 6:
+        tool_text += f"、他{len(tools) - 6}種"
+    input_bytes = sum(len(str(item.get("text", "")).encode("utf-8")) for item in calls)
+    if calls:
+        first = f"{calls[0]['record']}:{calls[0]['line']}"
+        last = f"{calls[-1]['record']}:{calls[-1]['line']}"
+        locations = first if first == last else f"{first}〜{last}"
+    else:
+        locations = "なし"
+    result_locations = [f"{item['record']}:{item['line']}" for item in results]
+    if result_locations:
+        result_range = result_locations[0] if len(result_locations) == 1 else f"{result_locations[0]}〜{result_locations[-1]}"
+    else:
+        result_range = "なし"
+    return (
+        f"呼出{len(calls)}件（{tool_text}）、失敗{len(failures)}件、入力{input_bytes}バイト、"
+        f"呼出記録{locations}、結果記録{result_range}"
+    )
+
+
+def _main_turns(events: list[dict[str, Any]]) -> list[list[dict[str, Any]]]:
+    """メイン記録を実ユーザー発話から次の実ユーザー発話までの区間へ分ける。"""
+    turns: list[list[dict[str, Any]]] = []
+    current: list[dict[str, Any]] = []
+    for event in events:
+        if event.get("kind") == "utterance" and event.get("role") == "user" and current:
+            turns.append(current)
+            current = []
+        current.append(event)
+    if current:
+        turns.append(current)
+    return turns
+
+
+def _main_turn_summary(events: list[dict[str, Any]], limit: int) -> str:
+    """ユーザー発話1件と、その後の判断・操作・結果を同じ区間の概要にする。"""
+    utterances = [item for item in events if item.get("kind") == "utterance"]
+    user = next((item for item in utterances if item.get("role") == "user"), None)
+    assistants = [item for item in utterances if item.get("role") == "assistant"]
+    parts: list[str] = []
+    if user is not None:
+        locator = f"{user['record']}:{user['line']}"
+        parts.append(
+            f"ユーザー {user.get('timestamp') or '時刻なし'} {locator}: "
+            f"{_conversation_excerpt(str(user.get('text', '')), max(80, limit // 2))}"
+        )
+    if assistants:
+        first = _conversation_excerpt(str(assistants[0].get("text", "")), max(40, limit // 8))
+        last = _conversation_excerpt(str(assistants[-1].get("text", "")), max(40, limit // 8))
+        location = f"{assistants[0]['record']}:{assistants[0]['line']}〜{assistants[-1]['record']}:{assistants[-1]['line']}"
+        parts.append(f"アシスタント{len(assistants)}発話（{location}）: 冒頭={first} / 末尾={last}")
+    parts.append(_activity_summary(events))
+    return _clip_utf8("\n".join(f"- {part}" for part in parts), limit)
+
+
+def _delegate_summary(record: str, events: list[dict[str, Any]], limit: int) -> str:
+    """委譲先1記録の目的・返却・操作量を1行にする。"""
+    utterances = [item for item in events if item.get("kind") == "utterance"]
+    users = [item for item in utterances if item.get("role") == "user"]
+    assistants = [item for item in utterances if item.get("role") == "assistant"]
+    task = _conversation_excerpt(str(users[0].get("text", "")), max(30, limit // 4)) if users else "なし"
+    result = _conversation_excerpt(str(assistants[-1].get("text", "")), max(30, limit // 4)) if assistants else "なし"
+    first = events[0].get("timestamp") or "時刻なし"
+    last = events[-1].get("timestamp") or "時刻なし"
+    summary = (
+        f"- {record}（{first}〜{last}）: 依頼={task}; 返却={result}; "
+        f"アシスタント{len(assistants)}発話; {_activity_summary(events)}"
+    )
+    return _clip_utf8(summary, limit)
+
+
+def _conversation_document(events: list[dict[str, Any]], detail_command: str, main_record: str | None) -> str:
+    """セッション全体の目的・判断・操作と手戻りを、1エージェントが通読できる量で示す。"""
+    by_record: dict[str, list[dict[str, Any]]] = collections.defaultdict(list)
+    for event in events:
+        by_record[str(event["record"])].append(event)
+    if main_record is None and by_record:
+        main_record = next(iter(by_record))
     lines = [
         "# 会話の流れ",
         "",
-        "収集できた全担当の発話とツール呼び出しの入力を、記録別に元の行順で示す。"
-        "記録をまたぐ時系列ではない。本文は文字位置付きの連続区間へ分けて全量を保持する。"
-        "ツール結果は本文を載せず、成否・本文量・記録位置の1行で示す。"
-        f"結果の本文と元の記録は`{detail_command} --detail <記録位置>`から照会できる。",
+        "セッション全体の目的、判断、主要な操作、分担、待機、再読、失敗と手戻りを、"
+        "1エージェントが一続きで見直すための概要である。自動挿入本文と詳細本文の写しは含めない。"
+        f"全文は`{detail_command} --detail <記録位置>`から取得する。",
+        "",
+        "## メインの流れ",
+        "",
     ]
-    if not events:
-        lines.extend(["", "発話とツール呼び出しは0件である。"])
-    result_lines = {(item["record"], item["line"]) for item in events if item.get("kind") == "tool-result"}
-    failed_lines = {(item["record"], item["line"]) for item in events if item.get("kind") == "tool-failure"}
-    for item in events:
-        locator = f"{item['record']}:{item['line']}"
-        kind = item.get("kind", "utterance")
-        text = str(item["text"])
-        if kind in {"tool-result", "tool-failure"}:
-            if kind == "tool-failure" and (item["record"], item["line"]) in result_lines:
-                continue
-            failed = (item["record"], item["line"]) in failed_lines or _codex_failed(text)
-            state = "失敗" if failed else "完了"
-            call = f" {item.get('tool')} call_id={item.get('call_id')}" if kind == "tool-result" else ""
-            lines.extend(
-                [
-                    "",
-                    f"- ツール結果（{locator}）: {state}{call}、"
-                    f"本文{len(text)}文字・{len(text.encode('utf-8'))}バイト（{item.get('timestamp') or '時刻なし'}）",
-                ]
-            )
-            continue
-        label = ("ユーザー" if item["role"] == "user" else "アシスタント") if kind == "utterance" else "ツール呼び出し"
-        title = f"{label}（{item.get('timestamp') or '時刻なし'}、{locator}）"
-        if kind != "utterance":
-            title += f" {item.get('tool') or ''} call_id={item.get('call_id')}"
-        lines.extend(_full_body_lines(text, title=title))
-    return "\n".join(lines) + "\n"
+    main_events = by_record.pop(str(main_record), []) if main_record is not None else []
+    turns = _main_turns(main_events)
+    if not turns:
+        lines.append("- メイン記録の発話と操作は0件である。")
+    else:
+        per_turn = max(240, _CONVERSATION_MAIN_BYTES // len(turns))
+        lines.extend(_main_turn_summary(turn, per_turn) for turn in turns)
+    lines.extend(["", "## 委譲先の流れ", ""])
+    delegates = sorted(by_record.items(), key=lambda item: str(item[1][0].get("timestamp") or ""))
+    if not delegates:
+        lines.append("- 委譲先記録は0件である。")
+    else:
+        per_delegate = max(100, _CONVERSATION_DELEGATE_BYTES // len(delegates))
+        lines.extend(_delegate_summary(record, record_events, per_delegate) for record, record_events in delegates)
+    document = "\n".join(lines) + "\n"
+    if len(document.encode("utf-8")) > _CONVERSATION_MAX_BYTES:
+        raise ValueError("会話の流れを原則上限の100000バイト以下へ縮約できなかった")
+    return document
 
 
 def _codex_failed(result: str) -> bool:
@@ -270,123 +354,6 @@ def _full_body_lines(text: str, *, title: str) -> list[str]:
         body = text[start : start + 4000]
         lines.extend(["", f"## {title}（文字{start + 1}〜{start + len(body)}）", "", *_fence(body)])
     return lines
-
-
-def _conversation_ranges(
-    text: str, events: list[dict[str, Any]], known_scope: dict[str, Any] | None = None
-) -> list[dict[str, Any]]:
-    """発話と呼び出し・失敗を分断しない、全行を覆う読取範囲を返す。"""
-    lines = text.splitlines(keepends=True)
-    timestamps = {f"{event['record']}:{event['line']}": event.get("timestamp") for event in events}
-    boundaries = [0]
-    owners: dict[int, tuple[str | None, bool]] = {0: (None, False)}
-    owner: tuple[str | None, bool] = (None, False)
-    fence_length = 0
-    sizes = [0]
-    for index, line in enumerate(lines):
-        sizes.append(sizes[-1] + len(line.encode("utf-8")))
-        if not fence_length:
-            heading = re.match(r"^## [^（]+（[^、]+、([^）]+)）", line)
-            tool_result = re.match(r"^- ツール結果（([^）]+)）", line)
-            locator = heading[1] if heading else tool_result[1] if tool_result else None
-            if locator is not None:
-                record, _, raw_line = locator.rpartition(":")
-                known = bool(known_scope and record == known_scope["record"] and int(raw_line) > known_scope["after_line"])
-                next_owner = (record, known)
-                if index and (heading or next_owner != owner):
-                    boundaries.append(index)
-                owner = next_owner
-                owners[index] = owner
-        fence = re.match(r"^(`{3,})([^`]*)$", line.rstrip("\n"))
-        if fence is not None:
-            if not fence_length:
-                fence_length = len(fence[1])
-            elif len(fence[1]) >= fence_length and not fence[2].strip():
-                fence_length = 0
-    boundaries.append(len(lines))
-    spans: list[tuple[int, int]] = []
-    previous_owner: tuple[str | None, bool] = (None, False)
-    for start, end in zip(boundaries, boundaries[1:], strict=False):
-        block_owner = owners.get(start, previous_owner)
-        # 文書冒頭の説明は最初の記録の原子的範囲へ含める。
-        if (
-            spans
-            and (previous_owner[0] is None or block_owner == previous_owner)
-            and sizes[end] - sizes[spans[-1][0]] <= _CONVERSATION_RANGE_BYTES
-        ):
-            spans[-1] = (spans[-1][0], end)
-        else:
-            spans.append((start, end))
-        previous_owner = block_owner
-    result: list[dict[str, Any]] = []
-    for start, end in spans:
-        locators: list[str] = []
-        in_fence = 0
-        for line in lines[start:end]:
-            fence = re.match(r"^(`{3,})([^`]*)$", line.rstrip("\n"))
-            if fence is not None:
-                if not in_fence:
-                    in_fence = len(fence[1])
-                elif len(fence[1]) >= in_fence and not fence[2].strip():
-                    in_fence = 0
-                continue
-            if in_fence:
-                continue
-            utterance = re.match(r"^## [^（]+（([^、]+)、([^）]+)）", line)
-            call = re.match(r"^- ツール結果（([^）]+)）", line)
-            if utterance:
-                locators.append(utterance[2])
-            elif call:
-                locators.append(call[1])
-        result.append(
-            {
-                "start_line": start + 1,
-                "end_line": end,
-                "utf8_bytes": sizes[end] - sizes[start],
-                "first_locator": locators[0] if locators else None,
-                "last_locator": locators[-1] if locators else None,
-                "first_timestamp": timestamps.get(locators[0]) if locators else None,
-                "last_timestamp": timestamps.get(locators[-1]) if locators else None,
-                "record": locators[0].rpartition(":")[0] if locators else None,
-                "main_known": bool(
-                    known_scope
-                    and locators
-                    and locators[0].rpartition(":")[0] == known_scope["record"]
-                    and int(locators[0].rpartition(":")[2]) > known_scope["after_line"]
-                ),
-            }
-        )
-    return result
-
-
-def _reader_ranges(ranges: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """読取範囲を分割・合成せず先頭から連続して束ね、1担当が全文を読了できる量の担当範囲を返す。"""
-    groups: list[list[int]] = []
-    total = 0
-    for index, item in enumerate(ranges):
-        if item.get("main_known"):
-            continue
-        if (
-            groups
-            and groups[-1][-1] == index - 1
-            and ranges[groups[-1][-1]].get("record") == item.get("record")
-            and total + item["utf8_bytes"] <= _READER_RANGE_BYTES
-        ):
-            groups[-1].append(index)
-            total += item["utf8_bytes"]
-        else:
-            groups.append([index])
-            total = item["utf8_bytes"]
-    return [
-        {
-            "start_line": ranges[group[0]]["start_line"],
-            "end_line": ranges[group[-1]]["end_line"],
-            "utf8_bytes": sum(ranges[index]["utf8_bytes"] for index in group),
-            "first_range_index": group[0],
-            "last_range_index": group[-1],
-        }
-        for group in groups
-    ]
 
 
 def _readable_entry_text(text: str) -> str:
@@ -427,30 +394,6 @@ def _text_parts(value: Any) -> list[str]:
                     parts.extend(_text_parts(item.get(key)))
         return parts
     return []
-
-
-def _tool_use_summary(event: dict[str, Any]) -> str:
-    """対象のツール呼び出しを、ツール名と入力の要約1行で表す。"""
-    tool_input = event.get("input")
-    if isinstance(tool_input, dict) and isinstance(tool_input.get("command"), str):
-        summary = tool_input["command"]
-    else:
-        summary = json.dumps(tool_input, ensure_ascii=False)
-    return f"{event.get('name', '')} {_one_line(summary)}"
-
-
-def _preceding_assistant_text(timeline: list[dict[str, Any]], record: str, line: int) -> str | None:
-    """同じ記録で指定行以前にある最後のアシスタント発話を返す。"""
-    preceding = [
-        event
-        for event in timeline
-        if event.get("kind") in {"assistant", "final-result"}
-        and event.get("record") == record
-        and isinstance(event.get("line"), int)
-        and int(event["line"]) <= line
-        and isinstance(event.get("text"), str)
-    ]
-    return str(max(preceding, key=lambda event: int(event["line"]))["text"]) if preceding else None
 
 
 def _candidate_bodies(candidate: dict[str, Any], evidence: dict[str, Any]) -> tuple[list[str], str]:
@@ -496,98 +439,6 @@ def _provenance_text(records: list[str], timeline: list[dict[str, Any]]) -> str:
         )
 
     return "由来: " + "; ".join(describe(record) for record in dict.fromkeys(records))
-
-
-def _candidate_lines(
-    candidate: dict[str, Any],
-    evidence: dict[str, Any],
-    timeline: list[dict[str, Any]],
-    similar: list[tuple[str, str, str]] | None = None,
-) -> list[str]:
-    """候補1件を、1行の要約、記録位置および判断に要る補足で組み立てる。
-
-    hook通知は通知が判定した入力を読まないと是非を判断できないため、直前のアシスタント発話を添える。
-    その場のコードによる加工は、記録ごとの件数と、呼び出しごとの記録位置と代表入力の一覧で示す。
-    加工の目的と反復は呼び出しの列を見比べて判定するため、代表の1件だけでは判断できない。
-    """
-    kind = str(candidate["candidate_kind"])
-    occurrence = candidate.get("occurrence_count", candidate.get("count", 1))
-    if kind == "adhoc-processing":
-        record = candidate["locators"][0]["record"]
-        lines = [
-            f"- {candidate['candidate_id']} {kind}（発生{occurrence}件）: 記録{record}のその場のコードによる加工",
-            f"  - 記録の{_provenance_text([str(record)], timeline)}",
-        ]
-        lines.extend(
-            f"  - {call['record']}:{call['line']}: {_one_line(str(call.get('text', ''))) or '（入力なし）'}"
-            for call in candidate.get("calls", [])
-        )
-        for call in candidate.get("calls", []):
-            text = str(call.get("text", ""))
-            if len(text) > _SUMMARY_LENGTH or "\n" in text:
-                lines.extend(_full_body_lines(text, title=f"操作 {call['record']}:{call['line']}"))
-        return lines
-    events = evidence.get("events", [])
-    bodies, text = _candidate_bodies(candidate, evidence)
-    readable = candidate.get("failure_summary") if kind in _FAILURE_KINDS else text
-    contexts = candidate.get("assistant_context")
-    if isinstance(contexts, list) and contexts and isinstance(contexts[0], dict):
-        # 確認への回答は回答の文字列（選択肢のlabelなど）だけでは何を問うたか分からないため、質問を要約に使う。
-        readable = str(contexts[0].get("question", "")) or readable
-    sessions = candidate.get("failure_session_count")
-    session_count = f"、{sessions}セッション" if isinstance(sessions, int) else ""
-    mandatory = "、評価が必須" if kind in MANDATORY_KINDS else ""
-    heading = f"- {candidate['candidate_id']} {kind}（発生{occurrence}件{session_count}{mandatory}）: "
-    lines = [heading + (_one_line(str(readable)) or "（本文なし）")]
-    if isinstance(candidate.get("wi_file"), str):
-        section = f"の`## {candidate['wi_section']}`" if isinstance(candidate.get("wi_section"), str) else ""
-        lines.append(
-            f"  - WI: {candidate['wi_file']}（{candidate.get('wi_state')}）{section}。"
-            f"全文は`atk wi show --skip-pull {candidate['wi_file']}`で取得する"
-        )
-    else:
-        locators = ", ".join(f"{locator['record']}:{locator['line']}" for locator in candidate["locators"])
-        omitted = candidate.get("omitted_locator_count", 0)
-        lines.append(
-            f"  - 記録位置: {locators}"
-            + (f"（同じ種類の{omitted}件は省略）" if omitted else "")
-            + f"。{_provenance_text([str(locator['record']) for locator in candidate['locators']], timeline)}"
-        )
-    lines.extend(_question_answer_lines(candidate))
-    lines.extend(f"  - 対象: {_tool_use_summary(event)}" for event in events if event.get("kind") == "tool-use")
-    if kind == "hook-notice":
-        first = candidate["locators"][0]
-        preceding = _preceding_assistant_text(timeline, str(first["record"]), int(first["line"]))
-        lines.append(f"  - 直前のアシスタント発話: {_one_line(preceding) if preceding else '（なし）'}")
-    if similar is not None:
-        lines.append("  - 過去の同種記録:" + ("" if similar else " 一致なし"))
-        lines.extend(f"    - {filename}（{state}）: {title or '（タイトルなし）'}" for filename, state, title in similar)
-    if kind in _FULL_TEXT_KINDS:
-        lines.extend(["", *("  " + line if line else "" for line in _fence("\n\n".join(bodies) if bodies else text)), ""])
-    return lines
-
-
-def _question_answer_lines(candidate: dict[str, Any]) -> list[str]:
-    """確認への回答の候補へ、質問、提示した選択肢、選んだ回答を添える。"""
-    contexts = candidate.get("assistant_context")
-    responses = candidate.get("user_response")
-    if not isinstance(contexts, list) or not isinstance(responses, list):
-        return []
-    lines: list[str] = []
-    for context, response in zip(contexts, responses, strict=False):
-        if not isinstance(context, dict) or not isinstance(response, dict):
-            continue
-        options = " / ".join(str(option.get("label", "")) for option in context.get("options", []) if isinstance(option, dict))
-        answers = "、".join(str(answer) for answer in response.get("answers", []))
-        lines.extend(
-            [
-                f"  - 質問: {_one_line(str(context.get('question', '')))}",
-                f"  - 選択肢: {options or '（なし）'}",
-                f"  - 回答: {answers or '（なし）'}"
-                + (f"（自由記述: {_one_line(str(response['notes']))}）" if response.get("notes") else ""),
-            ]
-        )
-    return lines
 
 
 def _normalize_for_similarity(text: str) -> str:
@@ -648,48 +499,85 @@ def _similar_records(
 def _candidates_document(
     candidates: list[dict[str, Any]],
     summary: dict[str, Any],
-    evidence_by_id: dict[str, dict[str, Any]],
     timeline: list[dict[str, Any]],
     detail_command: str,
     single_failures: list[dict[str, Any]],
-    similar_by_id: dict[str, list[tuple[str, str, str]]] | None = None,
 ) -> str:
-    """`candidates.md`の本文を組み立てる。"""
+    """候補の全量を保存索引へ委ね、初回には種別・必須性・代表位置と短い概要を示す。"""
     counts = collections.Counter(str(item["candidate_kind"]) for item in candidates)
-    mandatory = [str(item["candidate_id"]) for item in candidates if item["candidate_kind"] in MANDATORY_KINDS]
-    count_text = "、".join(f"{kind} {count}件" for kind, count in sorted(counts.items())) or "なし"
-    excluded = summary.get("excluded", {})
-    excluded_text = "、".join(f"{name} {count}件" for name, count in sorted(excluded.items())) or "なし"
+    mandatory = [item for item in candidates if item["candidate_kind"] in MANDATORY_KINDS]
     lines = [
         "# 問題候補",
         "",
-        f"- 候補: {len(candidates)}件（{count_text}）",
-        f"- 候補から除いた件数: {excluded_text}",
-        f"- 記録位置の全文は`{detail_command} --detail <記録位置>`で取得する",
-        "- 探索の深さと再発防止策の要否・終了はbugfixの重大度判断に従う。"
-        "軽微な問題は探索範囲・限界・許容する残存リスクを記録する",
-        f"- 評価が必須の候補: {', '.join(mandatory) or 'なし'}",
+        f"- 候補: {len(candidates)}件（"
+        + ("、".join(f"{kind} {count}件" for kind, count in sorted(counts.items())) or "なし")
+        + "）",
+        f"- 評価が必須: {len(mandatory)}件。全IDは保存索引のmandatory=trueで確認する。",
+        "全候補ID・必須性・詳細への対応・過去の同種記録はbundle/review-index.jsonlに保持する。"
+        "候補の全欄はbundle/candidates.jsonl、全文証拠の対応はbundle/candidate-evidence.jsonlを使う。",
+        "各候補の表示は代表位置と概要であり、全発生位置・質問と選択肢・実回答・操作入力・由来は保存証拠で確認する。",
+        f"原記録の全文は`{detail_command} --detail <記録位置>`で取得する。",
+        "表示から省いた候補も全件対応付け、必須候補は全て評価する。"
+        "探索の深さと対策の要否はbugfixの重大度判断に従う。"
+        "definition-body-readの分類と、起動準備の違反への対策必須化はsession-reviewのanalysis.mdに従う。",
+        "",
+        "## 記録の由来",
         "",
     ]
+    records = sorted({str(locator["record"]) for item in candidates for locator in item.get("locators", [])})
+    aliases = {record: f"r{index}" for index, record in enumerate(records, 1)}
+    for record in records[:_SUMMARY_TOP_COUNT]:
+        lines.append(f"- {aliases[record]}: {_clip_utf8(_provenance_text([record], timeline), 350)}")
+    if len(records) > _SUMMARY_TOP_COUNT:
+        lines.append(f"他{len(records) - _SUMMARY_TOP_COUNT}記録の由来はbundle/timeline.jsonlのrecord-provenanceを参照する。")
+    lines.extend(["", "## 候補索引", ""])
+    # 件数に応じて概要を短くする。位置や識別子だけでも収まらない範囲は保存索引で全件を識別する。
+    per_candidate = min(400, max(70, 55_000 // max(1, len(candidates))))
+    omitted: collections.Counter[str] = collections.Counter()
+    budget = 58_000
+    used = len("\n".join(lines).encode("utf-8"))
+    for candidate in candidates:
+        kind = str(candidate["candidate_kind"])
+        first: dict[str, Any] = next(iter(candidate.get("locators", [])), {})
+        record = str(first.get("record", ""))
+        location = f"{aliases.get(record, record)}:{first.get('line', '?')}"
+        readable = candidate.get("failure_summary", candidate.get("text", ""))
+        contexts = candidate.get("assistant_context")
+        if isinstance(contexts, list) and contexts and isinstance(contexts[0], dict):
+            readable = contexts[0].get("question", readable)
+        required = "、評価が必須" if kind in MANDATORY_KINDS else ""
+        sessions = f"、{candidate['failure_session_count']}セッション" if "failure_session_count" in candidate else ""
+        prefix = (
+            f"- {candidate['candidate_id']} {kind}（発生"
+            f"{candidate.get('occurrence_count', candidate.get('count', 1))}件{sessions}{required}）: "
+        )
+        row = prefix + _clip_utf8(_one_line(str(readable)), max(0, per_candidate - len(prefix.encode("utf-8"))))
+        row += f"（{location}）"
+        size = len(row.encode("utf-8")) + 1
+        if used + size > budget:
+            omitted[kind] += 1
+            continue
+        lines.append(row)
+        used += size
+    if omitted:
+        lines.extend(
+            [
+                "",
+                "表示から省いた候補（全IDと詳細はbundle/review-index.jsonl）: "
+                + "、".join(f"{kind} {count}件" for kind, count in sorted(omitted.items())),
+            ]
+        )
     if not candidates:
         lines.append("候補として残す問題は無かった。")
-    for candidate in candidates:
-        candidate_id = str(candidate["candidate_id"])
-        lines.extend(
-            _candidate_lines(candidate, evidence_by_id.get(candidate_id, {}), timeline, (similar_by_id or {}).get(candidate_id))
-        )
-    if single_failures:
-        lines.extend(
-            ["", "## 単発の失敗（件数のみ）", "", "| 失敗署名の要約 | 今回の発生件数 | 代表の記録位置 |", "| --- | --- | --- |"]
-        )
-        for candidate in single_failures:
-            first = candidate["locators"][0]
-            summary_text = str(candidate.get("failure_summary", "診断なし")).replace("|", "\\|")
-            lines.append(
-                f"| {_one_line(summary_text)} | {candidate.get('occurrence_count', candidate.get('count', 1))} | "
-                f"{first['record']}:{first['line']} |"
-            )
-    return "\n".join(lines).rstrip("\n") + "\n"
+    excluded = "、".join(f"{name} {count}件" for name, count in sorted(summary.get("excluded", {}).items())) or "なし"
+    lines.extend(
+        [
+            "",
+            f"単発の失敗{len(single_failures)}件は同じ索引のsingle-failureとして保持する。",
+            "候補から除いた件数: " + _clip_utf8(excluded, 1200),
+        ]
+    )
+    return "\n".join(lines) + "\n"
 
 
 def _failure_ledger(candidates: list[dict[str, Any]], session_id: str, now: datetime.datetime) -> tuple[dict[str, int], int]:
@@ -816,6 +704,128 @@ def _select_repeated_failures(
 
 
 def _stats_document(stats: list[dict[str, Any]]) -> str:
+    """総量と上位だけを初回表示し、全担当・全対象の原始集計への参照を保つ。"""
+    by_kind: dict[str, list[dict[str, Any]]] = collections.defaultdict(list)
+    for item in stats:
+        by_kind[str(item.get("kind"))].append(item)
+
+    def token_volume(item: dict[str, Any]) -> int:
+        tokens = item.get("tokens")
+        if not isinstance(tokens, dict):
+            return 0
+        # reasoningとcache readは実行系によって総成分に含まれるため、順位にも重ねて足さない。
+        keys = ["input_tokens", "output_tokens", "cache_creation_input_tokens"]
+        if item.get("engine") != "codex":
+            keys.append("cache_read_input_tokens")
+        return sum(int(tokens.get(key, 0)) for key in keys)
+
+    owners = sorted([*by_kind["stats-subagent"], *by_kind["stats-agent-thread"]], key=token_volume, reverse=True)[
+        :_SUMMARY_TOP_COUNT
+    ]
+    selected: list[dict[str, Any]] = [*by_kind["stats-total"], *by_kind["stats-summary"], *owners]
+    for kind in ("stats-critical-path", "stats-compaction-total"):
+        for item in by_kind[kind]:
+            row = dict(item)
+            if kind == "stats-critical-path":
+                row["segments"] = sorted(
+                    item.get("segments", []), key=lambda segment: -float(segment.get("exclusive_seconds", 0))
+                )[:10]
+                row["unmeasured_threads"] = item.get("unmeasured_threads", [])[:10]
+            else:
+                row["by_record"] = dict(sorted(item.get("by_record", {}).items(), key=lambda pair: -pair[1])[:10])
+            selected.append(row)
+    for kind in ("stats-compaction", "stats-slow-call", "stats-token-peak"):
+        selected.extend(by_kind[kind][:_SUMMARY_TOP_COUNT])
+    for kind in ("stats-thread-tool", "stats-thread-gap", "stats-thread-repeat", "stats-thread-slow-call"):
+        threads: dict[str, list[dict[str, Any]]] = collections.defaultdict(list)
+        for item in by_kind[kind]:
+            threads[str(item.get("thread"))].append(item)
+        for items in threads.values():
+            selected.extend(items[:5])
+    resources = sorted(by_kind["stats-resource-usage"], key=lambda item: -int(item.get("recorded_result_utf8_bytes", 0)))
+    for item in resources[:10]:
+        row = dict(item)
+        row["read_count"] = len(item.get("reads", []))
+        row["skill_count"] = len(item.get("skills", []))
+        for field in ("reads", "skills", "repeats", "largest_results"):
+            row[field] = item.get(field, [])[:5]
+        row["omitted_largest_result_count"] = item.get("omitted_largest_result_count", 0) + max(
+            0, len(item["largest_results"]) - 5
+        )
+        row["omitted_repeat_count"] = item.get("omitted_repeat_count", 0) + max(0, len(item["repeats"]) - 5)
+        selected.append(row)
+    for item in by_kind["stats-resource-summary"]:
+        row = dict(item)
+        for field in ("reads_by_target", "skills_by_name", "shell_paths_by_target"):
+            groups = sorted(
+                item.get(field, []), key=lambda group: (-int(group.get("count", 0)), -int(group.get("utf8_bytes", 0)))
+            )
+            row[field] = [dict(group, by_record=dict(list(group["by_record"].items())[:3])) for group in groups[:10]]
+        selected.append(row)
+    total = next(iter(by_kind["stats-total"]), {})
+    text = _stats_detail_document(selected)
+    text = _clip_utf8(text, 16_000)
+    large_results = sorted(
+        [row for item in resources for row in item.get("large_output_reviews", [])],
+        key=lambda row: (-int(row["utf8_bytes"]), row["location"]),
+    )[:10]
+    large_total = sum(item.get("large_output_review_count", 0) for item in resources)
+    text += (
+        "\n## 大出力の点検上位\n\n"
+        f"記録の返却本文8192バイト以上を、単独の明示本文取得を除き大きい順に最大10件表示する。対象{large_total}件、"
+        f"上位外{max(0, large_total - len(large_results))}件。想定内本文取得の除外は"
+        f"{sum(item.get('expected_large_read_count', 0) for item in resources)}件。"
+        "複合コマンドや解釈できない入力は点検対象へ残す。バイト数は記録された本文だけを数える。\n"
+    )
+    for row in large_results:
+        text += (
+            f"- {row['utf8_bytes']}バイト {row['tool']} 入力={row['location']} 結果={row['result_location']}: "
+            + _clip_utf8(str(row.get("input_summary", "")), 240)
+            + "\n"
+        )
+    pointers = [
+        "",
+        "## 集計の母集団と詳細",
+        "",
+        "母集団はメイン・全担当の収集済み記録である。初回表示は担当・対象の上位10件、担当内の各内訳は先頭5件まで。"
+        "全量と表示外の非律速担当はbundle/stats.jsonlとbundle/resource-usage.jsonlへ保持する。"
+        "以下の省略件数は表示の省略であり、未解決記録とは別である。",
+        f"- 共通4成分の総量: {json.dumps(total.get('tokens', '未確認'), ensure_ascii=False)}",
+        "- 担当別tokensの表示外: "
+        f"{max(0, len(by_kind['stats-subagent']) + len(by_kind['stats-agent-thread']) - len(owners))}件",
+        f"- 読込・反復・結果量の担当別詳細の表示外: {max(0, len(resources) - 10)}件",
+        f"- 未計測threadの総数: {sum(len(item.get('unmeasured_threads', [])) for item in by_kind['stats-critical-path'])}件",
+        "- 担当内・対象別の表示外の件数と粒度は各全量配列から確認できる。原記録は候補文書の詳細照会を使う。",
+        "",
+        "## 費用確認17観点の照会先",
+        "",
+        "観点はsession-review/references/analysis.md「コストの無駄の確認」に従う。"
+        "初回の上位と会話の流れを比較し、目的・契約の判断に足りない範囲だけ次を照会する。",
+    ]
+    for label, source in (
+        ("同じファイルの重複読込", "対象別集計・resource-usage.jsonlのreads_by_targetとreads"),
+        ("同じ記録内の再取得・再実行", "担当別のrepeats"),
+        ("大量結果の直接取込み", "担当別のlargest_resultsと大出力点検"),
+        ("スキルと規範の累積読込", "skills_by_nameと担当別skills"),
+        ("委譲入力の過剰・冗長", "comparison-materials.jsonlの直接本文と参照位置"),
+        ("複数担当の重複調査", "対象別のby_recordと担当別reads"),
+        ("モデル段位の不適合", "stats-agent-threadのobserved_identitiesとtokens"),
+        ("委譲の総費用", "全担当のtokens・api_messagesと会話の成果"),
+        ("キャッシュ効率", "全担当のtokensのcache成分と応答間隔"),
+        ("会話圧縮と読み直し", "stats-compactionと担当別readsの記録位置"),
+        ("照会・待機の反復", "repeatsとstats-thread-gap"),
+        ("振り返り自身の費用", "会話の準備・照会と担当別repeats"),
+        ("レビューの往復・後出し", "会話と全担当のtokens・再読位置"),
+        ("重複した検証", "stats-slow-callと会話・CIの範囲"),
+        ("入力形式の誤りによる再試行", "会話とrepeats"),
+        ("出力トークンの過大", "stats-token-peakと報告位置"),
+        ("使われなかった取得・返却", "会話とreads・結果位置の後続消費"),
+    ):
+        pointers.append(f"- {label}: {source}（bundle内）")
+    return text + "\n".join(pointers) + "\n"
+
+
+def _stats_detail_document(stats: list[dict[str, Any]]) -> str:
     """セッション統計を組み立てる。"""
     by_kind: dict[str, list[dict[str, Any]]] = collections.defaultdict(list)
     for event in stats:
@@ -913,7 +923,8 @@ def _stats_document(stats: list[dict[str, Any]]) -> str:
                 "",
                 f"### {item['record']}（{item['role']}）",
                 "",
-                f"- 明示的なファイル読取: {len(item['reads'])}回、Skill呼出: {len(item['skills'])}回、"
+                f"- 明示的なファイル読取: {item.get('read_count', len(item['reads']))}回、"
+                f"Skill呼出: {item.get('skill_count', len(item['skills']))}回、"
                 f"ツール呼出: {item['tool_calls']}回、記録の結果本文: {item['recorded_result_characters']}字・"
                 f"{item['recorded_result_utf8_bytes']}バイト",
             ]
@@ -1054,12 +1065,12 @@ def main(argv: list[str] | None = None, *, now: datetime.datetime | None = None)
         comparison = _read_jsonl(bundle_dir / "comparison-materials.jsonl")
         candidates = [row for row in candidate_rows if row.get("kind") == "candidate"]
         summary = next((row for row in candidate_rows if row.get("kind") == "candidate-summary"), {})
-        evidence_by_id = {
-            str(row["candidate_id"]): json.loads((bundle_dir / row["path"]).read_text(encoding="utf-8"))
-            for row in _read_jsonl(bundle_dir / "candidate-evidence.jsonl")
-        }
+        evidence_index = _read_jsonl(bundle_dir / "candidate-evidence.jsonl")
     except (OSError, ValueError, KeyError) as error:
         return _missing("bundle", str(error))
+    (bundle_dir / "unconfirmed.jsonl").write_text(
+        "".join(json.dumps(item, ensure_ascii=False) + "\n" for item in unresolved), encoding="utf-8"
+    )
 
     # `atk run-script session-review-evidence`の`--transcript`と`--codex-thread-id`へそのまま渡せる形を、
     # 全文を照会するコマンドとして示す。
@@ -1072,38 +1083,24 @@ def main(argv: list[str] | None = None, *, now: datetime.datetime | None = None)
     candidates_path = work_dir / CANDIDATES_FILENAME
     stats_path = work_dir / STATS_FILENAME
     comparison_path = work_dir / COMPARISON_FILENAME
-    conversation_text = _conversation_document(conversation, detail_command)
-    conversation_path.write_text(conversation_text, encoding="utf-8")
     main_record = next(
         (item.get("record") for item in timeline if item.get("kind") == "record-provenance" and item.get("role") == "main"),
         None,
     )
-    main_known_scope = (
-        {
-            "record": main_record,
-            "after_line": max(
-                (
-                    int(item["line"])
-                    for item in stats
-                    if item.get("kind") == "stats-compaction" and item.get("record") == main_record
-                ),
-                default=0,
-            ),
-        }
-        if main_record is not None and not args.conversation_only
-        else None
-    )
-    conversation_ranges = _conversation_ranges(conversation_text, conversation, main_known_scope)
-    reader_ranges = _reader_ranges(conversation_ranges)
+    try:
+        conversation_text = _conversation_document(conversation, detail_command, str(main_record) if main_record else None)
+    except ValueError as error:
+        return _missing("bundle", str(error))
+    conversation_path.write_text(conversation_text, encoding="utf-8")
+    conversation_bytes = len(conversation_text.encode("utf-8"))
     if args.conversation_only:
         print(
             json.dumps(
                 {
                     "work_dir": str(work_dir),
                     "conversation_path": str(conversation_path),
-                    "conversation_ranges": conversation_ranges,
-                    "reader_ranges": reader_ranges,
-                    "main_known_scope": None,
+                    "conversation_utf8_bytes": conversation_bytes,
+                    "conversation_limit_bytes": _CONVERSATION_MAX_BYTES,
                     "unconfirmed_scope": unresolved,
                 },
                 ensure_ascii=False,
@@ -1116,6 +1113,15 @@ def main(argv: list[str] | None = None, *, now: datetime.datetime | None = None)
     session_id = transcript_path.stem if transcript_path is not None else str(args.codex_thread_id)
     candidates, single_failures, summary, ledger_skipped = _select_repeated_failures(candidates, summary, session_id, current)
     similar_targets = [item for item in candidates if item["candidate_kind"] in _SIMILAR_RECORD_KINDS]
+    similar_ids = {str(item["candidate_id"]) for item in similar_targets}
+    try:
+        evidence_by_id = {
+            str(row["candidate_id"]): json.loads((bundle_dir / row["path"]).read_text(encoding="utf-8"))
+            for row in evidence_index
+            if str(row["candidate_id"]) in similar_ids
+        }
+    except (OSError, ValueError, KeyError) as error:
+        return _missing("bundle", str(error))
     past = _past_wi_sections() if similar_targets else []
     similar_by_id = {
         str(item["candidate_id"]): _similar_records(
@@ -1126,18 +1132,50 @@ def main(argv: list[str] | None = None, *, now: datetime.datetime | None = None)
         )
         for item in similar_targets
     }
+    evidence_paths = {str(item["candidate_id"]): item["path"] for item in evidence_index}
+    (bundle_dir / "review-index.jsonl").write_text(
+        "".join(
+            json.dumps(
+                {
+                    "candidate_id": item["candidate_id"],
+                    "candidate_kind": item["candidate_kind"],
+                    "mandatory": item["candidate_kind"] in MANDATORY_KINDS,
+                    "state": state,
+                    "locators": item.get("locators", []),
+                    "evidence_path": evidence_paths.get(str(item["candidate_id"])),
+                    "failure_session_count": item.get("failure_session_count"),
+                    "occurrence_count": item.get("occurrence_count", item.get("count", 1)),
+                    "similar_records": similar_by_id.get(str(item["candidate_id"]), []),
+                },
+                ensure_ascii=False,
+            )
+            + "\n"
+            for state, items in (("candidate", candidates), ("single-failure", single_failures))
+            for item in items
+        ),
+        encoding="utf-8",
+    )
     unconfirmed_text = "\n".join(_unconfirmed_lines(unresolved))
     improvement_rows = [
         f"- {event['record']}:{event['line']}: {line}" for event in timeline for line in event.get("reported_improvements", [])
     ]
-    improvement_text = "\n## 取り込んだ改善点\n\n" + "\n".join(improvement_rows) + "\n" if improvement_rows else ""
-    candidates_path.write_text(
-        _candidates_document(candidates, summary, evidence_by_id, timeline, detail_command, single_failures, similar_by_id)
-        + unconfirmed_text
-        + improvement_text,
-        encoding="utf-8",
+    improvement_text = (
+        f"\n## 取り込んだ改善点\n\n{len(improvement_rows)}件。全量はbundle/timeline.jsonlのreported_improvements。\n"
+        + "\n".join(_clip_utf8(row, 150) for row in improvement_rows[:10])
+        + "\n"
+        if improvement_rows
+        else ""
     )
-    stats_path.write_text(_stats_document(stats) + unconfirmed_text, encoding="utf-8")
+    candidate_text = (
+        _candidates_document(candidates, summary, timeline, detail_command, single_failures)
+        + unconfirmed_text
+        + improvement_text
+    )
+    stats_text = _stats_document(stats) + unconfirmed_text
+    if len(candidate_text.encode("utf-8")) > _CANDIDATES_MAX_BYTES or len(stats_text.encode("utf-8")) > _STATS_MAX_BYTES:
+        return _missing("bundle", "候補または統計の初回表示が表示予算を超えた。全量の証拠はbundleへ保持した。")
+    candidates_path.write_text(candidate_text, encoding="utf-8")
+    stats_path.write_text(stats_text, encoding="utf-8")
 
     reference_document = _reference_document(target_repo, codex=args.codex_thread_id is not None)
     total = next((event for event in stats if event.get("kind") == "stats-total"), {})
@@ -1148,12 +1186,14 @@ def main(argv: list[str] | None = None, *, now: datetime.datetime | None = None)
     record = {
         "work_dir": str(work_dir),
         "conversation_path": str(conversation_path),
-        "conversation_ranges": conversation_ranges,
-        "reader_ranges": reader_ranges,
-        "main_known_scope": main_known_scope,
+        "conversation_utf8_bytes": conversation_bytes,
+        "conversation_limit_bytes": _CONVERSATION_MAX_BYTES,
         "comparison_materials_path": str(comparison_path),
         "candidates_path": str(candidates_path),
         "stats_path": str(stats_path),
+        "candidates_utf8_bytes": len(candidate_text.encode("utf-8")),
+        "stats_utf8_bytes": len(stats_text.encode("utf-8")),
+        "review_index_path": str(bundle_dir / "review-index.jsonl"),
         "reference_document": str(reference_document) if reference_document is not None else None,
         "prepared_at": current.astimezone(datetime.UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
         "utterance_counts": {"user": role_counts.get("user", 0), "assistant": role_counts.get("assistant", 0)},

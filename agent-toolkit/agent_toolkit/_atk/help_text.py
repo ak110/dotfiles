@@ -22,7 +22,7 @@ from agent_toolkit._plan import locations as _plan_locations
 
 ROOT_DESCRIPTION = "WIキュー、計画、レビュー記録、一時領域と委譲セッションを操作する。\n\n目的: agent-toolkitのWIキュー、計画ファイル、レビュー指摘管理表、managed-tempと委譲支援を1つのコマンドから操作する。\n利用場面: ユーザーとエージェントが、AWIの投入から計画、実装、保存までの一連の作業を進めるとき。\n対象と出力: サブコマンドを指定しない場合はコマンド一覧を標準出力へ書き、何も変更しない。実際の読み書きは各サブコマンドが行う。`AI_AGENT`・`CODEX_CI`・`CLAUDECODE`・`CURSOR_AGENT`のいずれかが設定されたエージェント環境では、標準出力と標準エラーを分けて保持する。UTF-8で16384バイトを超える出力は生成側が新規managed-tempへ保存し、標準出力には`保存先: <絶対パス>`・`行数: <N>`、標準エラーには`標準エラー保存先: <絶対パス>`・`標準エラー行数: <N>`を返す。結果をファイルとして受け取る呼び出し（`atk agents wait`、FILENAMEを2件以上指定するか`--all`を指定した`atk wi show`、`atk run-script session-review-evidence`の`--user-events`）は短い標準出力も保存する。保存後は、`atk agents wait`が通知・終端の内訳と本文を、`--user-events`が`kind`が`user`の行ごとに`発話: record=<record> line=<line> <本文の冒頭>`を続けて書く。それ以外の16384バイト以下の出力は直接表示する。`--help`の表示と、`atk info`のように結果を表示して終わるサブコマンドも同じ量で判定する。引数の誤りは標準エラーへ直接書き、終了コード2で終わる。WI本文の表記診断の詳細も`標準エラー保存先:`の保存先へ書く。`atk serve`、`atk wi process-loop`の常駐および`atk agents logs --follow`は対象外とし、エージェント環境でない場合は出力を変えない。保存先は最終更新から7日で自動削除される。\n前提: private-notesを扱うサブコマンドは`atk config get private_notes`が返すリポジトリを使う。\n復元・後始末: 本コマンド自身は状態を残さない。各サブコマンドの後始末はそのコマンドの`--help`に示す。"
 ROOT_EPILOG = "各コマンドの詳細は`atk <コマンド> --help`で表示する。階層コマンドではさらに`atk <コマンド> <サブコマンド> --help`を使う。\n\n実行例:\n\n  atk wi list\n  atk config show"
-ROOT_EPILOG += "\n\n保存後の表示は、標準出力と標準エラーのそれぞれを読む最初のatk read-fileコマンドを示す。継続は`atk read-file --start <next> -- <同じ絶対パス>`で取得し、返却JSONのtextをeof: trueまで連結する。"
+ROOT_EPILOG += "\n\n保存後の表示は、標準出力と標準エラーのそれぞれを読む最初のatk read-fileコマンドを示す。継続は`atk read-file --start <next> -- <同じ絶対パス>`で取得し、1行目のJSONでeof: trueになるまで最初のLFより後ろの本文を連結する。"
 ROOT_EPILOG += "\n全文を保存したatk wi showは、各項目のユーザー専用の記入欄（ユーザーコメント・回答）の有無と、保存先での開始行を全件示す。"
 
 CI_REVIEW_TABLE_NAME_FORMAT = "ci-<修正系列の開始時のHEADの7文字以上の一意な短縮OID>.exec-review.tsv"
@@ -47,19 +47,19 @@ HELP: dict[str, dict[str, str]] = {
         "description": (
             "UTF-8本文を上限内で連続取得する。\n\n目的: 長い本文を文字と改行を保って取得する。\n"
             "利用場面: 全文取得が出力上限で失敗した後、同じ版の受領済みの容量・遮断・切り詰めの診断から上限超過が分かるとき、またはatkが返した保存先の本文を読むとき。\n"
-            "対象と出力: UTF-8ファイルの絶対パスを指定する。text、start、end、next、eofを持つJSONを返す。"
-            "末尾の改行とJSONのエスケープを含む一回分の返却予算は指定なしで16384 UTF-8バイト。"
+            "対象と出力: UTF-8ファイルの絶対パスを指定する。1行目にstart、end、next、eofを持つJSONを返し、最初のLFより後ろに取得本文を無加工で返す。"
+            "メタデータ、区切りのLFと本文を含む一回分の返却予算は指定なしで16384 UTF-8バイト。"
             "--max-bytesで最大16384バイトまで指定できる。"
             "位置はデコード後の文字数で、endは取得末尾を含まない。"
-            "同じファイルの直前の応答でeofがtrueなら終了し、それ以外はnextを--startへ渡してtextを連結する。終端のnextはnull。"
-            "非負の開始位置が末尾を超えた場合は末尾の位置へ補正する。空ファイルと末尾位置は空のtextで終端を示す。\n"
+            "同じファイルの直前のメタデータでeofがtrueなら終了し、それ以外はnextを--startへ渡して本文を連結する。終端のnextはnull。"
+            "非負の開始位置が末尾を超えた場合は末尾の位置へ補正する。空ファイルと末尾位置は空の本文で終端を示す。\n"
             "前提: 容量が未知の通常のファイルは、事前に容量を測らず全文取得から始める。上限超過が既知なら初回から分割取得する。"
             "内側のコマンドと外側の実行セルの受信予算の双方へ収まる--max-bytesを選ぶ。"
             "独立した複数ファイルは、それぞれの応答から継続し、合計出力量が受信予算内なら並列取得できる。"
-            "負の位置、相対パス、不在、非UTF-8、最大予算超過とJSON全体が収まらない予算は終端でも非0で拒否する。\n"
+            "負の位置、相対パス、不在、非UTF-8、最大予算超過とメタデータ・区切り・本文の最小応答が収まらない予算は終端でも非0で拒否する。\n"
             "復元・後始末: 読取だけを行い、取得状態を保存しないため不要。"
         ),
-        "epilog": "実行例:\n\n  atk read-file -- /absolute/path/to/file.txt\n  atk read-file --start 12000 -- /absolute/path/to/file.txt\n  atk read-file --max-bytes 4096 -- /absolute/path/to/file.txt\n\n継続は`atk read-file --start <next> -- <同じ絶対パス>`で取得し、返却JSONのtextをeof: trueまで連結する。位置は文字単位、--max-bytesはJSON全体のUTF-8バイト単位である。",
+        "epilog": "実行例:\n\n  atk read-file -- /absolute/path/to/file.txt\n  atk read-file --start 12000 -- /absolute/path/to/file.txt\n  atk read-file --max-bytes 4096 -- /absolute/path/to/file.txt\n\n継続は`atk read-file --start <next> -- <同じ絶対パス>`で取得し、1行目のJSONでeof: trueになるまで最初のLFより後ろの本文を連結する。位置は文字単位、--max-bytesはメタデータ・区切りのLF・本文を含むUTF-8バイト単位である。",
     },
     "atk info": {
         "summary": "実行環境とpluginの位置・版を表示する",
@@ -83,7 +83,7 @@ HELP: dict[str, dict[str, str]] = {
     },
     "atk run-command": {
         "summary": "外部コマンドを実行し全出力と終了状態を保存する",
-        "description": "外部コマンドを実行し全出力と終了状態を保存する。\n\n目的: MCPによる実行手段を持たない有限終了の外部コマンドについて、標準出力と標準エラーの全量および実際の終了状態を保持する。\n利用場面: formatter、linter、testerなどの実行や手動観測で、両ストリームの全量と終了状態を記録して後続担当へ渡すとき。対話型、常駐、端末制御および追従表示には使わない。\n対象と出力: `--`以後をshellで再解釈せずargvとして起動し、登録済みmanaged-tempの別ファイルへ両ストリームをバイト列のまま保存する。argv、cwd、git_head（起動直前のcwdの作業ツリーのHEAD）、git_status（同じ時点の`git status --porcelain=v1 --untracked-files=all`の行の配列。Git作業ツリーの外では両方null）、child_exit_code、wrapper_exit_code（この操作の終了コード）、failure（起動または保存失敗の理由。無ければnull）、timed_out、signal、stdout_path、stderr_pathと両ファイルの行数・バイト数を持つJSON objectを同じ領域のrecord.jsonへUTF-8で保存し、保存先の絶対パスrecord_pathを含む同じJSONを標準出力へ1件出力する。自然終了0〜255は同じ終了コード、signalは128+signal番号、timeoutは124、wrapper異常は125を返す。JSON保存失敗では125と診断を返し、record_pathはnull、子の結果と両出力パスは保持する。\n読取: --record <保存JSONの絶対パス>を反復するか、--records-file <plan-verifyの結果まとめJSON>を渡すと子を起動せずに読む。recordsには各取得版・Git状態・argv・cwd・子とwrapperの終了状態、両出力の所在と内容を返す。旧記録に無いwrapper_exit_codeとfailureはnullとunrecordedで示し、欠損・破損・保存失敗はerrorsと終了125で返す。読取と子の実行指定は混在させない。\n前提: `--cwd`は実在する絶対ディレクトリ、`--timeout`は正の秒数とする。pipelineや複数行codeはscriptへ保存し、そのscriptのargvを渡す。\n復元・後始末: 保存先は`atk managed-temp list`と`cleanup`で管理し、未回収でも保持期限後に自動削除される。",
+        "description": "外部コマンドを実行し全出力と終了状態を保存する。\n\n目的: MCPによる実行手段を持たない有限終了の外部コマンドについて、標準出力と標準エラーの全量および実際の終了状態を保持する。\n利用場面: formatter、linter、testerなどの実行や手動観測で、両ストリームの全量と終了状態を記録して後続担当へ渡すとき。対話型、常駐、端末制御および追従表示には使わない。\n対象と出力: `--`以後をshellで再解釈せずargvとして起動し、登録済みmanaged-tempの別ファイルへ両ストリームをバイト列のまま保存する。argv、cwd、git_head（起動直前のcwdの作業ツリーのHEAD）、git_status（同じ時点の`git status --porcelain=v1 --untracked-files=all`の行の配列。Git作業ツリーの外では両方null）、child_exit_code、wrapper_exit_code（この操作の終了コード）、failure（起動または保存失敗の理由。無ければnull）、timed_out、signal、stdout_path、stderr_pathと両ファイルの行数・バイト数を持つJSON objectを同じ領域のrecord.jsonへUTF-8で保存し、標準出力にはrecord_path、child_exit_code、wrapper_exit_code、stdout_path、stderr_pathと両ファイルのバイト数だけを返す。timed_out、signal、failureは発生した場合だけ加える。実行条件・取得版・Git状態・行数を含む完全な記録はrecord.jsonと保存済み読取から取得できる。自然終了0〜255は同じ終了コード、signalは128+signal番号、timeoutは124、wrapper異常は125を返す。JSON保存失敗では125と診断を返し、record_pathはnull、回復に使う実行条件・子の結果・両出力パスを含む全情報を返す。\n読取: --record <保存JSONの絶対パス>を反復するか、--records-file <plan-verifyの結果まとめJSON>を渡すと子を起動せずに読む。recordsには各取得版・Git状態・argv・cwd・子とwrapperの終了状態、両出力の所在と内容を返す。旧記録に無いwrapper_exit_codeとfailureはnullとunrecordedで示し、欠損・破損・保存失敗はerrorsと終了125で返す。読取と子の実行指定は混在させない。\n前提: `--cwd`は実在する絶対ディレクトリ、`--timeout`は正の秒数とする。pipelineや複数行codeはscriptへ保存し、そのscriptのargvを渡す。\n復元・後始末: 保存先は`atk managed-temp list`と`cleanup`で管理し、未回収でも保持期限後に自動削除される。",
         "epilog": "実行例:\n\n  atk run-command --cwd /absolute/repository -- pytest -q",
     },
     "atk run-skill": {
@@ -275,12 +275,12 @@ HELP: dict[str, dict[str, str]] = {
     },
     "atk config set": {
         "summary": "変更可能な設定値を更新する",
-        "description": "変更可能な設定値を更新する。\n\n目的: 変更できる設定値を更新して設定ファイルへ保存する。\n利用場面: engine別・段位別のモデル・推論の深さ、用途別のengine順、日本語文章の起草に使うwrite_model、agents_serverのCodexの速度・接続先の優先順、ClaudeのAPI接続用envファイルを切り替えるとき。\n対象と出力: 設定ディレクトリの`config.json`を書き換える。設定はユーザー単位で共有する。\n前提: KEYは変更できるキー。`claude_api_env_file`はenvファイルのパス1つを受理し、先頭の~を展開する。空文字列は未設定を表し、親環境とClaude Codeの通常の認証解決を維持する。認証検出による起動拒否・認証環境の隔離・役割別割当・接続切替は行わない。その会話と接続情報もAPIパスも持たない旧形式の会話は、後から設定しても再開時に通常の認証解決を使う。以下の役割別接続管理はenvファイルを設定した会話に適用する。set時にはファイルの存在・内容を確かめない。`claude_api_mode`は`pay-as-you-go`（未設定時の値）または`api-credits`を受理し、API認証の所在と役割別の接続方針を分ける。前者はオーケストレーターをAPIへ固定し、委譲先をサブスクリプション、APIの順にする。後者はオーケストレーターをサブスクリプションへ固定し、委譲先をAPI、サブスクリプションの順にする。`codex_fast_mode`は`true`または`false`を受理し、初期値は`false`。`codex_model_providers`は空、または主接続先を先頭にしたCodex provider IDのASCIIカンマ区切り列。空ならCodex通常設定に従い代替試行しない。後続は独立したAPI認証を使う接続先を受理する。前後空白と重複を除き、空要素は拒否する。モデル用の警告は適用しない。`<claude|codex>_<high|medium|low>_tier_model`はengine接頭辞を付けない単一の`<モデル>[/<effort>]`を受理し、effort省略時は`medium`を使う。`<base|review|chores|orchestrate>_engine`は`codex`と`claude`の一方または両方を重複なしで並べたASCIIカンマ区切り列を受理する。`write_model`は`<claude|codex|agy>:<モデル>[/<effort>]`のASCIIカンマ区切り列を受理する。Codexの`astra`・`sol`・`terra`・`luna`は起動時に同系列の最新版へ解決し、バージョン付き完全IDは固定する。旧モデル設定の移行で停止した場合も、示された新キーをこのコマンドで保存して復旧する。\n復元・後始末: 元の値へ戻す場合は同じコマンドで以前の値を設定する。provider列と`claude_api_env_file`は空文字列を設定して解除する。Claude会話は選択済みの接続を再開時にも保持し、新規sessionは役割とモードの先頭候補から評価する。`pay-as-you-go`で利用上限によりAPIへ移った委譲先は、上限の解除予定時刻の後の最初の追送か自動再開からサブスクリプションへ戻る。provider列は新規起動と次の代替試行へ反映し、既存API会話の接続先をサブスクへ戻さない。",
+        "description": "変更可能な設定値を更新する。\n\n目的: 変更できる設定値を更新して設定ファイルへ保存する。\n利用場面: engine別・段位別のモデル・推論の深さ、用途別のengine順、日本語文章の起草に使うwrite_model、agents_serverのCodexの速度・接続先の優先順、ClaudeのAPI接続用envファイルを切り替えるとき。\n対象と出力: 設定ディレクトリの`config.json`を書き換える。設定はユーザー単位で共有する。\n前提: KEYは変更できるキー。`claude_api_env_file`はenvファイルのパス1つを受理し、先頭の~を展開する。空文字列は未設定を表し、親環境とClaude Codeの通常の認証解決を維持する。認証検出による起動拒否・認証環境の隔離・役割別割当・接続切替は行わない。その会話と接続情報もAPIパスも持たない旧形式の会話は、後から設定しても再開時に通常の認証解決を使う。以下の役割別接続管理はenvファイルを設定した会話に適用する。set時にはファイルの存在・内容を確かめない。`claude_api_mode`は`pay-as-you-go`（未設定時の値）または`api-credits`を受理し、API認証の所在と役割別の接続方針を分ける。前者はオーケストレーターをAPIへ固定し、委譲先をサブスクリプション、APIの順にする。後者はオーケストレーターをサブスクリプションへ固定し、委譲先をAPI、サブスクリプションの順にする。`codex_fast_mode`は`true`または`false`を受理し、初期値は`false`。`codex_model_providers`は空、または主接続先を先頭にしたCodex provider IDのASCIIカンマ区切り列。空ならCodex通常設定に従い代替試行しない。後続は独立したAPI認証を使う接続先を受理する。前後空白と重複を除き、空要素は拒否する。モデル用の警告は適用しない。`<claude|codex>_<high|medium|low>_tier_model`はengine接頭辞を付けない単一の`<モデル>[/<effort>]`を受理し、effort省略時は`medium`を使う。`opencode_<high|medium|low>_tier_model`は空文字列、または`<provider>/<model>[@<effort>]`を受理する。最初の/でproviderとmodelを分け、末尾の@より後がvariantである。model内の/を保持する。空の段位は候補から外れ、全候補が空ならエラーになる。`<base|execute|review|chores>_engine`は`codex`・`claude`・`opencode`を重複なしで並べたASCIIカンマ区切り列を受理する。`orchestrate_engine`は`codex`と`claude`だけを受理する。`write_model`は`<claude|codex|agy>:<モデル>[/<effort>]`のASCIIカンマ区切り列を受理する。Codexの`astra`・`sol`・`terra`・`luna`は起動時に同系列の最新版へ解決し、バージョン付き完全IDは固定する。旧モデル設定の移行で停止した場合も、示された新キーをこのコマンドで保存して復旧する。\n復元・後始末: 元の値へ戻す場合は同じコマンドで以前の値を設定する。provider列と`claude_api_env_file`は空文字列を設定して解除する。Claude会話は選択済みの接続を再開時にも保持し、新規sessionは役割とモードの先頭候補から評価する。`pay-as-you-go`で利用上限によりAPIへ移った委譲先は、上限の解除予定時刻の後の最初の追送か自動再開からサブスクリプションへ戻る。provider列は新規起動と次の代替試行へ反映し、既存API会話の接続先をサブスクへ戻さない。",
         "epilog": "実行例:\n\n  atk config set codex_high_tier_model sol/medium\n  atk config set review_engine claude,codex",
     },
     "atk config apply-preset": {
         "summary": "用途別engine順をプリセットで確認・一括設定する",
-        "description": "用途別engine順をプリセットで確認・一括設定する。\n\n目的: base・execute・review・chores・orchestrateの用途別engine順の5キーを1回の実行で一括保存する。engine別・段位別のモデル設定とwrite_modelは変更しない。`show`の指定時と引数の省略時は、保存せずに5プリセットの設定値を表示する。\n利用場面: 主に使うengineをcodexまたはclaudeへ切り替えるとき。切り替える前に各プリセットが保存する値を見比べるとき。\n対象と出力: プリセット名を指定した実行だけが設定ディレクトリの`config.json`へ用途別engine順を保存し、保存した各キーと値を標準出力へ表示する。`show`の指定時と引数の省略時は設定ファイルを読み書きせず、プリセットごとに`<プリセット名>:`の行と、保存対象の各キーの`<キー>: <値>`を半角空白2文字で字下げした行を標準出力へ書く。未知の名前は終了コード2で終わり、受理する値を標準エラーへ表示する。\n前提: 引数は`show`、または`codex-balanced`、`codex-near-primary`、`codex-primary`、`claude-balanced`、`claude-primary`のいずれかのプリセット名を指定するか、省略する。\n復元・後始末: 個別に元の値へ戻す場合は`atk config set`を使う。並行して稼働するセッションへも新しい値が波及する。`show`と省略時の表示は状態を残さない。",
+        "description": "用途別engine順をプリセットで確認・一括設定する。\n\n目的: base・execute・review・chores・orchestrateの用途別engine順の5キーを1回の実行で一括保存する。engine別・段位別のモデル設定とwrite_modelは変更しない。`show`の指定時と引数の省略時は、保存せずに7プリセットの設定値を表示する。\n利用場面: 主に使うengineをcodex・claude・opencodeへ切り替えるとき。切り替える前に各プリセットが保存する値を見比べるとき。\n対象と出力: プリセット名を指定した実行だけが設定ディレクトリの`config.json`へ用途別engine順を保存し、保存した各キーと値を標準出力へ表示する。`show`の指定時と引数の省略時は設定ファイルを読み書きせず、opencode用プリセットは空の段位モデルがあれば保存後にキー名と設定方法を警告する。プリセットごとに`<プリセット名>:`の行と、保存対象の各キーの`<キー>: <値>`を半角空白2文字で字下げした行を標準出力へ書く。未知の名前は終了コード2で終わり、受理する値を標準エラーへ表示する。\n前提: 引数は`show`、または`codex-balanced`、`codex-near-primary`、`codex-primary`、`claude-balanced`、`claude-primary`、`opencode-balanced`、`opencode-near-primary`のいずれかのプリセット名を指定するか、省略する。\n復元・後始末: 個別に元の値へ戻す場合は`atk config set`を使う。並行して稼働するセッションへも新しい値が波及する。`show`と省略時の表示は状態を残さない。",
         "epilog": "実行例:\n\n  atk config apply-preset show\n  atk config apply-preset codex-balanced",
     },
     "atk wait-schedule": {
@@ -318,7 +318,7 @@ HELP: dict[str, dict[str, str]] = {
         "description": (
             "Claude CodeとCodexのセッション記録を表示・markdown出力する。\n\n目的: 保存済みセッションの発話と操作を読み、markdownへ出力する。\n"
             "利用場面: 1件の経過を調べるか、複数の記録をまとめて保存するとき。\n"
-            "対象と出力: Claude Codeの親・サブエージェント、Codex、agents_serverが保存したAntigravityの出力を扱う。"
+            "対象と出力: Claude Codeの親・サブエージェント、Codex、agents_serverが保存したAntigravity・OpenCodeの出力を扱う。"
             "形式を省略した場合は時刻・種別・本文をtextで表示する。"
             "text表示は`--verbose`を付けない場合に会話の流れを要約し、ツール呼び出し・成功したツール結果・思考を除いて各本文を2000文字で切り詰める。"
             "`--verbose`は全イベントを全文で表示する。どちらも項目の間に空行を1行置く。`--format markdown`では会話とツールの詳細を描画する。"

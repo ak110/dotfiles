@@ -158,7 +158,7 @@ def _record_command(repository: pathlib.Path, *arguments: str) -> dict:
     )
     saved = json.loads(completed.stdout[completed.stdout.index("{") :])
     assert saved["child_exit_code"] == 0
-    return saved
+    return json.loads(pathlib.Path(saved["record_path"]).read_text(encoding="utf-8"))
 
 
 def _trial(repository: pathlib.Path, name: str, *, tracked: bool = False) -> dict[str, str]:

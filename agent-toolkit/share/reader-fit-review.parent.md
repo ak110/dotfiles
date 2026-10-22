@@ -17,6 +17,7 @@
 review_contractで狭める前の全変更パスを使い、Git管理外の変更を受領したラウンドは通常とする（回答下書きだけでは段階を変えない）。
 通常はファイルごと・読者ごと、低リスクは読者ごとに再点検対象のMarkdown全件を1起動へまとめ、並行させる。
 起動と終端観測は`agent-toolkit:delegation`の`references/runtime-routing.md`「実行手段」に従う。
+`agents_server`を使えない場合のCodex組み込み代替は、`spawn_agent`へ`fork_turns: "none"`を指定して独立した文脈で起動する。
 `agents_server`では`start`を次の引数で呼ぶ。
 
 | 引数 | 値 |

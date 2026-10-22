@@ -60,6 +60,23 @@ def _codex_hook_command(name: str) -> str:
     )
 
 
+def _local_codex_hook_manifest(content: str) -> str:
+    """dotfilesが個人binへ置く安定入口を使うlocal plugin用manifestを返す。"""
+    value = json.loads(content)
+    for groups in value["hooks"].values():
+        for group in groups:
+            for hook in group["hooks"]:
+                command = hook["command"]
+                if not isinstance(command, str) or " agent_toolkit/hook.py " not in command:
+                    raise ValueError(
+                        f"Codex hookの起動コマンドをlocal用へ変換できません: {command!r}。"
+                        "agent-toolkit/hooks/hooks.jsonのcommandを確認し、"
+                        "scripts/sync_codex_plugin_manifests.pyを再実行してください"
+                    )
+                hook["command"] = f"atk-hook {command.rsplit(' ', maxsplit=1)[-1]}"
+    return json.dumps(value, ensure_ascii=False, indent=2) + "\n"
+
+
 CODEX_PERMISSION_REQUEST_COMMAND = _hook_command("permissionrequest_codex")
 CODEX_USER_PROMPT_SUBMIT_COMMAND = _hook_command("user_prompt_submit")
 CODEX_PRE_TOOL_USE_COMMAND = _hook_command("pretooluse")
@@ -440,6 +457,8 @@ def _codex_root_outputs(root: Path, generated: dict[Path, str]) -> dict[Path, tu
         if source_relative in OPTIONAL_TARGETS and source_relative not in generated:
             continue
         generated_content = generated_by_relative.get(relative)
+        if relative == HOOKS_TARGET.relative_to("agent-toolkit") and generated_content is not None:
+            generated_content = _local_codex_hook_manifest(generated_content)
         content = generated_content.encode() if generated_content is not None else source.read_bytes()
         outputs[relative] = (content, stat.S_IMODE(source.stat().st_mode))
     outputs[Path("GENERATED.md")] = (CODEX_ROOT_NOTICE.encode(), 0o644)

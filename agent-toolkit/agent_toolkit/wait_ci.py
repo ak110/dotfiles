@@ -1209,12 +1209,13 @@ def main(argv: list[str] | None = None) -> int:
     _install_signal_handlers()
     parser = argparse.ArgumentParser(description=__doc__)
     mode = parser.add_mutually_exclusive_group(required=True)
-    mode.add_argument("--write-baseline", type=pathlib.Path, help="push前の実行IDを保存するJSONパス")
-    mode.add_argument("--baseline", type=pathlib.Path, help="push前に保存したbaseline JSONパス")
+    mode.add_argument("--write-baseline", type=pathlib.Path, metavar="PATH", help="push前の実行IDを保存するJSONパス")
+    mode.add_argument("--baseline", type=pathlib.Path, metavar="PATH", help="push前に保存したbaseline JSONパス")
     mode.add_argument("--wait-sha", type=_full_sha, help="baselineを使わず全実行を待つ完全長commit SHA")
     parser.add_argument(
         "--failure-record",
         type=pathlib.Path,
+        metavar="PATH",
         help="--wait-shaの報告済み失敗を保存するJSON。同じ引数で終了コード6から待機を再開する",
     )
     parser.add_argument(

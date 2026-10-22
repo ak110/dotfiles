@@ -45,11 +45,15 @@ async def test_backends_satisfy_protocol(tmp_path: pathlib.Path) -> None:
     )
     assert created["claude"].unavailable_reason(_failed("claude", {"message": rejected})) is None
     assert created["agy"].unavailable_reason(_failed("agy", {"stderr": "boom"})) == "boom"
+    assert (
+        created["opencode"].unavailable_reason(_failed("opencode", {"stderr": "authentication failed"}))
+        == "authentication failed"
+    )
     assert not backends.excludes_with_recorded_reason("claude", engine_availability.LEGACY_CLAUDE_RATE_LIMIT_REASON)
     assert backends.excludes_with_recorded_reason("codex", engine_availability.LEGACY_CLAUDE_RATE_LIMIT_REASON)
     assert backends.interrupt_requires_turn_id("codex")
     assert not backends.interrupt_requires_turn_id("claude")
-    assert [engine for engine in sorted(created) if created[engine].START_FAILURE_EXCLUDES_CANDIDATE] == ["agy"]
+    assert [engine for engine in sorted(created) if created[engine].START_FAILURE_EXCLUDES_CANDIDATE] == ["agy", "opencode"]
     assert [engine for engine in sorted(created) if created[engine].ORPHAN_TAKEOVER] == ["codex"]
 
 

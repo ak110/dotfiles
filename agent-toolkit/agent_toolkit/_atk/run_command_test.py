@@ -129,8 +129,10 @@ def _public_command(argv: list[str], cwd: pathlib.Path, env: dict[str, str]) -> 
         timeout=60,
         check=False,
     )
-    metadata = json.loads(result.stdout)
-    assert json.loads(pathlib.Path(metadata["record_path"]).read_text(encoding="utf-8")) == metadata
+    summary = json.loads(result.stdout)
+    metadata = json.loads(pathlib.Path(summary["record_path"]).read_text(encoding="utf-8"))
+    assert all(metadata[key] == value for key, value in summary.items())
+    assert not {"argv", "cwd", "git_head", "git_status", "stdout_lines", "stderr_lines"} & summary.keys()
     return result, metadata
 
 
@@ -252,11 +254,13 @@ def _run(
     args = argparse.Namespace(command_argv=["--", *argv], cwd=(cwd or tmp_path).resolve(), timeout=timeout)
     result = run_command.dispatch(args)
     captured = capsys.readouterr()
-    metadata = json.loads(captured.out)
-    record = pathlib.Path(metadata["record_path"])
+    summary = json.loads(captured.out)
+    record = pathlib.Path(summary["record_path"])
     assert record.is_absolute()
     assert record.parent == directory
-    assert json.loads(record.read_text(encoding="utf-8")) == metadata
+    metadata = json.loads(record.read_text(encoding="utf-8"))
+    assert all(metadata[key] == value for key, value in summary.items())
+    assert not {"argv", "cwd", "git_head", "git_status", "stdout_lines", "stderr_lines"} & summary.keys()
     return result, metadata, captured.err
 
 
@@ -452,10 +456,11 @@ def test_stream_preparation_failure_returns_saved_wrapper_failure(
     (tmp_path / f"{stream}.bin").mkdir()
     args = argparse.Namespace(command_argv=["--", sys.executable, "-c", "print('child')"], cwd=tmp_path, timeout=30)
     assert run_command.dispatch(args) == 125
-    metadata = json.loads(capsys.readouterr().out)
+    summary = json.loads(capsys.readouterr().out)
+    metadata = json.loads(pathlib.Path(summary["record_path"]).read_text(encoding="utf-8"))
     assert metadata["child_exit_code"] is None and metadata["wrapper_exit_code"] == 125
     assert metadata["failure"] and metadata[f"{stream}_lines"] is None and metadata[f"{stream}_bytes"] is None
-    assert json.loads(pathlib.Path(metadata["record_path"]).read_text(encoding="utf-8")) == metadata
+    assert all(metadata[key] == value for key, value in summary.items())
 
 
 def test_command_without_separator_is_wrapper_failure(

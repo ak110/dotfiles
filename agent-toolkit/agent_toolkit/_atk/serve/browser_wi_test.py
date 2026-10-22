@@ -24,11 +24,13 @@ from agent_toolkit._atk.serve.browser_support_test import (  # noqa: F401  # pyl
     _browser_harness_fixture,
     _BrowserHarness,
     _hold_route,
+    _observe_screen_requests,
     _open_filters,
     _open_question,
     _screen_harness_fixture,
     _ScreenHarness,
     _shift_click_default_prevented,
+    _wait_screen_requests_consumed,
 )
 from agent_toolkit._atk.wi import entries as wi_entries
 from agent_toolkit._atk.wi import frontmatter as wi_frontmatter
@@ -1712,13 +1714,16 @@ async def test_user_filter_announcement_survives_same_state_sse_repo_request(
     """同じ状態の対象リポジトリ候補の要求がSSEで後から発行されても、エンドユーザーの操作による件数通知を完了する。"""
     harness = browser_harness
     page = harness.page
+    await _observe_screen_requests(page)
     await page.goto(harness.base_url + "/")
     await playwright.async_api.expect(page.locator("#result-status")).to_have_text("")
     await playwright.async_api.expect(page.locator('#target-filter option[value="example/repo"]')).to_have_count(1)
+    await _wait_screen_requests_consumed(page, ("/api/events",))
     await _open_filters(page)
     first_started = asyncio.Event()
     second_started = asyncio.Event()
     release_first = asyncio.Event()
+    release_background = asyncio.Event()
     request_count = 0
 
     async def delay_first_repo_request(route: playwright.async_api.Route) -> None:
@@ -1729,6 +1734,7 @@ async def test_user_filter_announcement_survives_same_state_sse_repo_request(
             await release_first.wait()
         else:
             second_started.set()
+            await release_background.wait()
         await route.continue_()
 
     await page.route("**/api/repos?status=active", delay_first_repo_request)
@@ -1739,12 +1745,21 @@ async def test_user_filter_announcement_survives_same_state_sse_repo_request(
     await asyncio.wait_for(first_started.wait(), timeout=5)
     try:
         harness.current_state.publish()
+        release_first.set()
+        await playwright.async_api.expect(page.locator("#result-status")).to_have_text("2件を表示")
         await playwright.async_api.expect(page.locator("#entry-list .entry-select[data-kind=awi]")).to_have_count(2)
+        await asyncio.wait_for(second_started.wait(), timeout=5)
+        release_background.set()
+        await _wait_screen_requests_consumed(page, ("/api/events",))
+        await playwright.async_api.expect(page.locator("#result-status")).to_have_text("2件を表示")
+        async with page.expect_response("**/api/repos?status=active") as response:
+            await page.evaluate("window.dispatchEvent(new Event('focus'))")
+        await (await response.value).finished()
+        await _wait_screen_requests_consumed(page, ("/api/events",))
+        await playwright.async_api.expect(page.locator("#result-status")).to_have_text("2件を表示")
     finally:
         release_first.set()
-    await playwright.async_api.expect(page.locator("#result-status")).to_have_text("2件を表示")
-    await asyncio.wait_for(second_started.wait(), timeout=5)
-    assert request_count == 2
+        release_background.set()
 
 
 @pytest.mark.asyncio(loop_scope="session")

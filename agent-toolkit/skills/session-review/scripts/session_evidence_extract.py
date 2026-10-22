@@ -7,13 +7,11 @@
 from __future__ import annotations
 
 import contextvars
-import datetime
 import json
 import re
 import shlex
 from collections.abc import Callable
-from pathlib import Path
-from typing import Any, Literal, NamedTuple
+from typing import Any, NamedTuple
 
 from agent_toolkit._agents_server import tool_names as _agents_server_tool_names
 from agent_toolkit._atk import session_record_format as _session_record_format
@@ -23,6 +21,20 @@ from agent_toolkit._common import transcript as _transcript
 from agent_toolkit._common.runtime_inserted import IMPROVEMENT_MARKER as _IMPROVEMENT_MARKER
 from agent_toolkit._common.runtime_inserted import is_runtime_generated as _is_runtime_generated
 from agent_toolkit._common.runtime_inserted import is_runtime_inserted_text as _is_runtime_inserted_text
+from agent_toolkit._common.session_family import (
+    _codex_text_blocks,
+    _CollectedRecord,
+    _detect_runtime,
+    _json_object,
+    _load_records,
+    _parse_timestamp,
+    _Record,
+    _record_timestamp,
+    _Runtime,
+    _started_after_boundary,
+    _text_blocks,
+    _UnresolvedRecord,
+)
 
 # 本文の上限と省略の標識は、`--verbose`を付けない`atk agents logs`のtext表示と共有する。
 _MAX_TEXT_LENGTH = _session_record_format.SUMMARY_TEXT_LIMIT
@@ -176,44 +188,6 @@ _BODY_KEYS = frozenset(
 )
 
 
-_Runtime = Literal["claude", "codex", "agy"]
-
-
-class _Record(NamedTuple):
-    """transcriptの1エントリと、その由来行の1始まり行番号・原文。"""
-
-    line: int
-    text: str
-    entry: dict[str, Any]
-
-    @property
-    def raw_entry(self) -> dict[str, Any]:
-        """行の生の内容を、明示的な本文・構造照会へ返す。"""
-        return json.loads(self.text)
-
-
-class _CollectedRecord(NamedTuple):
-    """全照会モードが共有する、由来と識別子を持つ1記録。"""
-
-    record_id: str
-    path: Path
-    records: list[_Record]
-    runtime: _Runtime | None
-    source_record: str | None
-    source_line: int | None
-    agent_type: str | None
-    role: Literal["main", "subagent", "session"]
-    aliases: tuple[str, ...] = ()
-
-
-class _UnresolvedRecord(NamedTuple):
-    """解決できない委譲または委譲先記録を機械可読イベントへ渡す。"""
-
-    record_id: str
-    line: int
-    kind: Literal["unresolved-record", "unresolved-delegation"] = "unresolved-record"
-
-
 _TEXT_LIMIT: contextvars.ContextVar[int | None] = contextvars.ContextVar("_TEXT_LIMIT", default=_MAX_TEXT_LENGTH)
 """`_clip`が上限を省略された場合に使う本文の上限。`None`は切り詰めないことを表す。
 
@@ -285,34 +259,6 @@ class _DetailBudget:
         return clipped
 
 
-def _text_blocks(content: Any) -> list[str]:
-    """Message contentから可視テキストを取得する。"""
-    if isinstance(content, str):
-        return [content]
-    if not isinstance(content, list):
-        return []
-    return [
-        block["text"]
-        for block in content
-        if isinstance(block, dict) and block.get("type") == "text" and isinstance(block.get("text"), str)
-    ]
-
-
-def _codex_text_blocks(content: Any) -> list[str]:
-    """Codex message contentから可視テキストを取得する。"""
-    if isinstance(content, str):
-        return [content]
-    if not isinstance(content, list):
-        return []
-    result: list[str] = []
-    for block in content:
-        if not isinstance(block, dict):
-            continue
-        if block.get("type") in {"input_text", "output_text", "text"} and isinstance(block.get("text"), str):
-            result.append(block["text"])
-    return result
-
-
 def _event(kind: str, text: str, *, tool: str | None = None) -> dict[str, Any] | None:
     """共通イベントを生成し、アシスタント本文の省略区間の改善点を候補判定まで保つ。"""
     runtime_inserted = kind == "user" and _is_runtime_inserted_text(text)
@@ -341,7 +287,7 @@ _OfferedOption = tuple[str, str]
 
 
 _CodexPendingQuestions = dict[str, tuple[int, dict[str, tuple[str, list[_OfferedOption]]]]]
-"""Codexの`request_user_input`のcall_idごとの、質問側の行番号と質問IDごとの質問文・提示した選択肢。"""
+"""Codexのcall_idごとの質問行と質問文・選択肢。非同期質問のキーはquestionItemIdのJSON配列とする。"""
 
 
 class _AnsweredQuestion(NamedTuple):
@@ -712,22 +658,12 @@ def _codex_agent_message(payload: dict[str, Any]) -> str:
     return "\n".join(_codex_text_blocks(payload.get("content")))
 
 
-def _json_object(raw: Any) -> dict[str, Any] | None:
-    """JSON文字列がobjectなら返し、破損または別の値なら`None`を返す。"""
-    if not isinstance(raw, str):
-        return None
-    try:
-        parsed = json.loads(raw)
-    except json.JSONDecodeError, ValueError:
-        return None
-    return parsed if isinstance(parsed, dict) else None
-
-
 def _codex_question_call(
     payload: dict[str, Any],
 ) -> tuple[str, dict[str, tuple[str, list[_OfferedOption]]]] | None:
-    """request_user_inputからcall_idごとの質問IDと、質問文・提示した選択肢を取得する。"""
-    if payload.get("name") != "request_user_input":
+    """同期・非同期の質問定義から、回答が参照する識別子と質問文・選択肢を取得する。"""
+    name = payload.get("name")
+    if name not in {"request_user_input", "request_user_input_async"}:
         return None
     call_id = payload.get("call_id")
     arguments = _json_object(payload.get("arguments"))
@@ -737,13 +673,20 @@ def _codex_question_call(
     if not isinstance(raw_questions, list):
         return None
     questions: dict[str, tuple[str, list[_OfferedOption]]] = {}
-    for raw_question in raw_questions:
+    for index, raw_question in enumerate(raw_questions):
         if not isinstance(raw_question, dict):
             continue
-        question_id = raw_question.get("id")
-        question = raw_question.get("question")
+        asynchronous = name == "request_user_input_async"
+        question_id = json.dumps([name, call_id, index]) if asynchronous else raw_question.get("id")
+        question = raw_question.get("title" if asynchronous else "question")
         if isinstance(question_id, str) and isinstance(question, str):
-            questions.setdefault(question_id, (question, _offered_options(raw_question.get("options"))))
+            raw_options = raw_question.get("options")
+            options = (
+                [(option, "") for option in raw_options if isinstance(option, str)]
+                if asynchronous and isinstance(raw_options, list)
+                else _offered_options(raw_options)
+            )
+            questions.setdefault(question_id, (question, options))
     return (call_id, questions) if questions else None
 
 
@@ -758,7 +701,7 @@ def _codex_question_output_event(
     call_id = payload.get("call_id")
     if not isinstance(call_id, str):
         return None
-    pending = pending_questions.pop(call_id, None)
+    pending = pending_questions.get(call_id)
     output = _json_object(payload.get("output"))
     if pending is None or output is None:
         return None
@@ -766,6 +709,7 @@ def _codex_question_output_event(
     raw_answers = output.get("answers")
     if not isinstance(raw_answers, dict):
         return None
+    pending_questions.pop(call_id)
     pairs: list[_AnsweredQuestion] = []
     for question_id, (question, offered) in questions.items():
         answer_data = raw_answers.get(question_id)
@@ -781,6 +725,73 @@ def _codex_question_output_event(
     if event is not None:
         event["line"] = question_line
     return event
+
+
+def _codex_async_reply_events(text: str, line: int, pending_questions: _CodexPendingQuestions) -> list[dict[str, Any]] | None:
+    """後続の回答を呼出しIDと質問番号へ結び付け、対応しない回答は原文として残す。"""
+    opening = "<send_user_message_question_reply>"
+    closing = "</send_user_message_question_reply>"
+    stripped = text.strip()
+    if not stripped.startswith(opening) or not stripped.endswith(closing):
+        return None
+    try:
+        replies = json.loads(stripped[len(opening) : -len(closing)])
+    except json.JSONDecodeError, ValueError:
+        return None
+    if not isinstance(replies, list) or not replies:
+        return None
+    events: list[dict[str, Any]] = []
+    unmatched: list[Any] = []
+    for reply in replies:
+        item_id = reply.get("questionItemId") if isinstance(reply, dict) else None
+        answer = reply.get("answer") if isinstance(reply, dict) else None
+        try:
+            identity = json.loads(item_id) if isinstance(item_id, str) else None
+        except json.JSONDecodeError, ValueError:
+            identity = None
+        if (
+            not isinstance(identity, list)
+            or len(identity) != 3
+            or identity[0] != "request_user_input_async"
+            or not isinstance(identity[1], str)
+            or not isinstance(identity[2], int)
+            or isinstance(identity[2], bool)
+            or not isinstance(answer, str)
+        ):
+            unmatched.append(reply)
+            continue
+        pending = pending_questions.get(identity[1])
+        key = json.dumps(identity)
+        definition = pending[1].get(key) if pending else None
+        if pending is None or definition is None:
+            unmatched.append(reply)
+            continue
+        question, options = definition
+        event = _question_answers_event([_AnsweredQuestion(question, options, [answer], "")])
+        if event is None:
+            unmatched.append(reply)
+            continue
+        if not options:
+            # 非同期APIでoptionsを省いた質問は自由記述であり、候補から選択回答として除かない。
+            event["answer_intervention"] = True
+        event.update(
+            line=line,
+            question_line=pending[0],
+            answer_line=line,
+            question_call_id=identity[1],
+            question_index=identity[2],
+        )
+        events.append(event)
+        del pending[1][key]
+        if not pending[1]:
+            del pending_questions[identity[1]]
+    if not events:
+        return None
+    if unmatched:
+        event = _event("user", opening + "\n" + json.dumps(unmatched, ensure_ascii=False) + "\n" + closing)
+        if event is not None:
+            events.append(event)
+    return events
 
 
 def _codex_command_output(item: dict[str, Any]) -> str:
@@ -830,6 +841,11 @@ def _codex_entry_events(
         kind = "user" if role == "user" else "assistant" if role == "assistant" else None
         if kind is not None:
             for text in _codex_text_blocks(payload.get("content")):
+                if kind == "user":
+                    replies = _codex_async_reply_events(text, line, pending_questions)
+                    if replies is not None:
+                        events.extend(replies)
+                        continue
                 event = _event(kind, text)
                 if event:
                     if kind == "user" and _is_runtime_generated(entry):
@@ -855,7 +871,6 @@ def _codex_entry_events(
 
 
 # Antigravity（agy）の委譲先ログは、agents_serverが公開JSONイベントを1行ずつ保存したものである。
-_AGY_EVENT_TYPES = frozenset({"init", "step_update", "result"})
 
 
 def _extract_agy(entries: list[dict[str, Any]], lines: list[int]) -> list[dict[str, Any]]:
@@ -927,10 +942,56 @@ def _agy_entry_events(entry: dict[str, Any]) -> list[dict[str, Any]]:
     return events
 
 
+def _opencode_records(records: list[_Record]) -> list[_Record]:
+    """OpenCodeの共通表示イベントを既存の発話・ツール・使用量の抽出契約へ接続する。"""
+    converted: list[_Record] = []
+    for record in records:
+        for index, event in enumerate(_session_record_format.opencode_events([record.entry])):
+            entry: dict[str, Any] = {"timestamp": event.timestamp}
+            content: list[dict[str, Any]] = []
+            role = "assistant"
+            if event.kind == "tool_call":
+                content = [
+                    {"type": "tool_use", "id": event.call_id, "name": event.name, "input": (event.detail or {}).get("input")}
+                ]
+            elif event.kind == "tool_result":
+                role = "user"
+                content = [
+                    {
+                        "type": "tool_result",
+                        "tool_use_id": event.call_id,
+                        "content": event.text or "",
+                        "is_error": (event.detail or {}).get("is_error", False),
+                    }
+                ]
+            elif event.kind == "error":
+                role = "user"
+                content = [
+                    {"type": "tool_result", "tool_use_id": "opencode-error", "content": event.text or "", "is_error": True}
+                ]
+            elif event.kind == "thinking":
+                content = [{"type": "thinking", "thinking": event.text or ""}]
+            elif event.kind in {"user", "assistant"}:
+                role = event.kind
+                content = [{"type": "text", "text": event.text or ""}]
+            entry.update(type=role, message={"id": f"opencode-{record.line}-{index}", "role": role, "content": content})
+            if event.usage is not None:
+                entry["message"]["usage"] = event.usage
+            converted.append(_Record(record.line, record.text, entry))
+    return converted
+
+
+def _extract_opencode(entries: list[dict[str, Any]], lines: list[int]) -> list[dict[str, Any]]:
+    """元の行番号を保持して、OpenCodeへ既存の証拠抽出を適用する。"""
+    records = _opencode_records([_Record(line, "", entry) for line, entry in zip(lines, entries, strict=True)])
+    return _extract_claude([record.entry for record in records], [record.line for record in records])
+
+
 RUNTIME_EXTRACTORS: dict[str, Callable[[list[dict[str, Any]], list[int]], list[dict[str, Any]]]] = {
     "claude": _extract_claude,
     "codex": _extract_codex,
     "agy": _extract_agy,
+    "opencode": _extract_opencode,
 }
 """実行系ごとの時系列への変換。キーの集合は本スクリプトが変換できる実行系を表す。"""
 
@@ -1026,6 +1087,14 @@ def extract(entries: list[dict[str, Any]], lines: list[int] | None = None) -> li
 
 def _turn_finished(entry: dict[str, Any], runtime: _Runtime) -> bool:
     """既存のホストの終端記録を使い、後続turnの作業を先行返却の分類から切り離す。"""
+    if runtime == "opencode":
+        part = entry.get("part")
+        return (
+            entry.get("type") == "error"
+            or entry.get("type") == "step_finish"
+            and isinstance(part, dict)
+            and part.get("reason") == "stop"
+        )
     if runtime == "codex":
         payload = entry.get("payload")
         return entry.get("type") == "event_msg" and isinstance(payload, dict) and payload.get("type") == "task_complete"
@@ -1033,20 +1102,6 @@ def _turn_finished(entry: dict[str, Any], runtime: _Runtime) -> bool:
         message = entry.get("message")
         return entry.get("type") == "assistant" and isinstance(message, dict) and message.get("stop_reason") == "end_turn"
     return entry.get("event") == "result"
-
-
-def _detect_runtime(entries: list[dict[str, Any]]) -> _Runtime | None:
-    """transcriptのエントリ形式から、記録を書いた実行系を判定して返す。"""
-    if entries and all(entry.get("event") in _AGY_EVENT_TYPES for entry in entries):
-        return "agy"
-    entry_types = {entry.get("type") for entry in entries}
-    if entry_types & {"response_item", "event_msg"}:
-        return "codex"
-    if entry_types & {"user", "assistant", "interrupt", "attachment", "queue-operation"} or any(
-        entry.get("isSidechain") is True or "toolUseResult" in entry for entry in entries
-    ):
-        return "claude"
-    return None
 
 
 def _extract_for_runtime(
@@ -1063,33 +1118,6 @@ def _fallback() -> list[dict[str, Any]]:
     return [{"sequence": 1, "kind": "fallback", "text": _FALLBACK_TEXT}]
 
 
-def _load_records(raw_path: str | None) -> list[_Record] | None:
-    """絶対パスのJSONLを行番号付きで読み、失敗時は`None`を返す。"""
-    if not raw_path:
-        return None
-    path = Path(raw_path)
-    if not path.is_absolute():
-        return None
-    try:
-        text = path.read_text(encoding="utf-8")
-    except OSError, UnicodeError:
-        return None
-
-    records: list[_Record] = []
-    try:
-        for number, line in enumerate(text.splitlines(), start=1):
-            if not line.strip():
-                continue
-            parsed = json.loads(line)
-            if isinstance(parsed, dict):
-                if parsed.get("type") not in {"user", "assistant"} and "message" in parsed:
-                    parsed = {key: value for key, value in parsed.items() if key != "message"}
-                records.append(_Record(number, line, parsed))
-    except json.JSONDecodeError, ValueError:
-        return None
-    return records
-
-
 def load_and_extract(raw_path: str) -> list[dict[str, Any]]:
     """絶対パスのJSONLを一度読み、抽出結果を返す。"""
     records = _load_records(raw_path)
@@ -1103,33 +1131,6 @@ def _extract_records(records: list[_Record]) -> list[dict[str, Any]]:
     return extract([record.entry for record in records], [record.line for record in records])
 
 
-def _parse_timestamp(value: str) -> datetime.datetime:
-    """記録の`timestamp`などの内部データのISO 8601の時刻を解析し、タイムゾーン無しの値をUTCとして返す。
-
-    ホストは記録の時刻を`Z`付きのUTCで書くため、タイムゾーン無しの値もUTCとみなす。
-    CLI引数で受け取る時刻は`_parse_cli_timestamp`で解析する。
-    """
-    parsed = datetime.datetime.fromisoformat(value.replace("Z", "+00:00"))
-    return parsed if parsed.tzinfo is not None else parsed.replace(tzinfo=datetime.UTC)
-
-
-def _record_timestamp(record: _Record) -> datetime.datetime | None:
-    value = record.entry.get("timestamp")
-    if not isinstance(value, str):
-        return None
-    try:
-        return _parse_timestamp(value)
-    except ValueError:
-        return None
-
-
-def _started_after_boundary(records: list[_Record], boundary: datetime.datetime) -> bool:
-    """記録の最初の時刻が観測境界より後かを返す。"""
-    timestamps = [_record_timestamp(record) for record in records]
-    known = [timestamp for timestamp in timestamps if timestamp is not None]
-    return bool(known) and min(known) > boundary
-
-
 def _unresolved_events(unresolved: list[_UnresolvedRecord]) -> list[dict[str, Any]]:
     """解決できなかった委譲先を機械可読イベントへ変換する。"""
     return [{"kind": item.kind, "record": item.record_id, "line": item.line} for item in unresolved]
@@ -1141,7 +1142,9 @@ def _role_document(item: _CollectedRecord) -> str | None:
         message = record.entry.get("message")
         payload = record.entry.get("payload")
         texts: list[str] = []
-        if record.entry.get("type") == "user" and isinstance(message, dict):
+        if record.entry.get("type") == "agent_toolkit_input" and isinstance(record.entry.get("prompt"), str):
+            texts = [record.entry["prompt"]]
+        elif record.entry.get("type") == "user" and isinstance(message, dict):
             texts = _text_blocks(message.get("content"))
         elif isinstance(payload, dict) and payload.get("type") == "message" and payload.get("role") == "user":
             texts = _codex_text_blocks(payload.get("content"))
@@ -1435,3 +1438,21 @@ def _default_events(collected: list[_CollectedRecord], unresolved: list[_Unresol
         events.extend(_events_with_record(_extract_records(item.records), item.record_id))
     events.extend(_collection_events(collected, unresolved))
     return events
+
+
+__all__ = [
+    "_CollectedRecord",
+    "_Record",
+    "_Runtime",
+    "_UnresolvedRecord",
+    "_codex_text_blocks",
+    "_detect_runtime",
+    "_json_object",
+    "_load_records",
+    "_parse_timestamp",
+    "_record_timestamp",
+    "_started_after_boundary",
+    "_text_blocks",
+    "extract",
+    "load_and_extract",
+]

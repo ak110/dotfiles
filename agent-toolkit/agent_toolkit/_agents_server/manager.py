@@ -249,7 +249,7 @@ class AgentsServerManager(manager_wait.ManagerWait):
                 excluded[candidate] = reason
                 unavailable_response = None
                 unavailable_session = None
-                _LOG.warning("agy_start_failed model_type=%s model=%s reason=%s", model_type, model, reason)
+                _LOG.warning("cli_start_failed engine=%s model_type=%s model=%s reason=%s", engine, model_type, model, reason)
                 continue
             session.engine = engine
             session.usage = usage

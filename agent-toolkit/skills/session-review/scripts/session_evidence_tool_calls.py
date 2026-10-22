@@ -7,6 +7,7 @@ import datetime
 import json
 import pathlib
 import re
+import shlex
 from typing import Any, NamedTuple
 
 from session_evidence_detail import _tool_result_body
@@ -31,6 +32,113 @@ _SHELL_ABSOLUTE_PATH = re.compile(
     r"""(?P<quote>['"])(?P<quoted>(?:/|[A-Za-z]:[\\/]|\\\\)[^'"]*)(?P=quote)|"""
     r"""(?<![\w:/\\])(?P<bare>(?:/|[A-Za-z]:[\\/]|\\\\)[^\s"'`;&|()<>{}\[\]]+)"""
 )
+
+_LARGE_OUTPUT_MIN_BYTES = 8_192
+
+_ROLE_DOCUMENT_PATH = re.compile(r"""(?:[A-Za-z]:)?[^\s\"'`<>;|(){},=]*\.subagent\.md""")
+_BODY_READ_COMMAND = re.compile(
+    r"(?:^|[^\w-])(?:cat|head|tail|more|less|sed|awk|grep|rg|read-file|Get-Content)(?:\s|[\"'])", re.IGNORECASE
+)
+
+
+def _definition_read_targets(tool: str, inputs: dict[str, Any], text: str) -> list[str]:
+    """本文取得の明示入力と、本文取得を含むshell・Codex複合呼出しから定義の参照を拾う。"""
+    name = tool.rsplit("__", 1)[-1].rsplit(".", 1)[-1]
+    if name in {"Read", "read_file"}:
+        path = inputs.get("file_path", inputs.get("path"))
+        return [path] if isinstance(path, str) and path.endswith(".subagent.md") else []
+    if name not in {"Bash", "exec", "exec_command", "CommandExecution"}:
+        return []
+    command = inputs.get("command", inputs.get("cmd", text))
+    if not isinstance(command, str) or ".subagent.md" not in command:
+        return []
+    # ファイル名・存在だけの照会を本文取得へ数えない。複合入力の意味と目的は原記録で判定する。
+    try:
+        argv = shlex.split(command)
+    except ValueError:
+        argv = []
+    if argv:
+        executable = pathlib.PurePosixPath(argv[0]).name
+        simple = not any(operator in command for operator in ";&|")
+        if simple and executable in {"test", "ls", "find", "stat"}:
+            return []
+        if (
+            simple
+            and executable in {"rg", "grep"}
+            and any(arg in {"--files", "-l", "--files-with-matches", "-c", "--count", "-q", "--quiet"} for arg in argv)
+        ):
+            return []
+    if not _BODY_READ_COMMAND.search(command) and not re.search(
+        r"read_text\s*\(|readFile(?:Sync)?\s*\(|read_file\s*\(|\.read\s*\(", command
+    ):
+        return []
+    targets = [arg for arg in argv if arg.endswith(".subagent.md")]
+    return list(dict.fromkeys(targets or [match.group() for match in _ROLE_DOCUMENT_PATH.finditer(command)]))
+
+
+def definition_body_read_events(collected: list[_CollectedRecord]) -> list[dict[str, Any]]:
+    """正常終了も含む定義本文の取得を、目的未判定の材料と前後の起動・編集の位置付きで返す。"""
+    events: list[dict[str, Any]] = []
+    for item in collected:
+        entries = {record.line: record.entry for record in item.records}
+        calls = _record_tool_calls(item.records)
+        role_document = _role_document(item)
+        related = []
+        for call in calls:
+            name = call.tool.rsplit("__", 1)[-1].rsplit(".", 1)[-1]
+            if name in {"Agent", "Task", "spawn_agent", "start", "Edit", "Write", "apply_patch"} or (
+                name == "exec" and re.search(r"(?:start|spawn_agent|apply_patch)\s*\(", call.text)
+            ):
+                related.append(call)
+        for call in calls:
+            inputs = _recorded_input(entries[call.line], call.call_id)
+            targets = _definition_read_targets(call.tool, inputs, call.text)
+            if not targets:
+                continue
+            before = [other for other in related if other.line < call.line]
+            after = [other for other in related if other.line > call.line]
+            neighbors = [*(before[-1:]), *(after[:1])]
+            events.append(
+                {
+                    "kind": "definition-body-read",
+                    "record": item.record_id,
+                    "role": item.role,
+                    "role_document": role_document,
+                    "line": call.line,
+                    "timestamp": call.timestamp,
+                    "tool": call.tool,
+                    "targets": targets,
+                    "read_range": {key: inputs[key] for key in ("offset", "limit", "start", "max_bytes") if key in inputs},
+                    "text": call.text,
+                    "result_line": call.result_line,
+                    "result_observation": "記録あり・成否は原記録で判定" if call.result_line is not None else "結果記録なし",
+                    "purpose": "未判定",
+                    "related_operations": [
+                        {"line": other.line, "tool": other.tool, "result_line": other.result_line} for other in neighbors
+                    ],
+                }
+            )
+    return events
+
+
+def _expected_body_read(tool: str, inputs: dict[str, Any]) -> bool:
+    """本文取得と明示された単独操作だけを、大出力の点検上位から除く。"""
+    name = tool.rsplit("__", 1)[-1].rsplit(".", 1)[-1]
+    if name in {"Read", "read_file", "Skill"}:
+        return True
+    if name not in {"Bash", "exec_command", "CommandExecution"}:
+        return False
+    command = inputs.get("command", inputs.get("cmd"))
+    if not isinstance(command, str) or any(operator in command for operator in ";&|<>"):
+        return False
+    try:
+        argv = shlex.split(command)
+    except ValueError:
+        return False
+    if not argv:
+        return False
+    executable = pathlib.PurePosixPath(argv[0]).name
+    return executable == "cat" or executable in {"atk", "atk.cmd"} and argv[1:2] == ["read-file"]
 
 
 def _conversation_tool_calls(records: list[_Record]) -> list[dict[str, Any]]:
@@ -164,6 +272,8 @@ def resource_usage_events(collected: list[_CollectedRecord]) -> list[dict[str, A
         skills: list[dict[str, Any]] = []
         shell_paths: list[dict[str, Any]] = []
         results: list[dict[str, Any]] = []
+        large_reviews: list[dict[str, Any]] = []
+        expected_large_reads = 0
         repeats: dict[tuple[str, str], list[str]] = {}
         for call in calls:
             name = call.tool.rsplit("__", 1)[-1]
@@ -194,15 +304,19 @@ def resource_usage_events(collected: list[_CollectedRecord]) -> list[dict[str, A
                         for match in _SHELL_ABSOLUTE_PATH.finditer(command)
                     )
             if result is not None:
-                results.append(
-                    {
-                        "location": locator,
-                        "result_location": f"{item.record_id}:{call.result_line}",
-                        "tool": call.tool,
-                        "characters": len(result),
-                        "utf8_bytes": len(result.encode("utf-8")),
-                    }
-                )
+                result_row: dict[str, Any] = {
+                    "location": locator,
+                    "result_location": f"{item.record_id}:{call.result_line}",
+                    "tool": call.tool,
+                    "characters": len(result),
+                    "utf8_bytes": len(result.encode("utf-8")),
+                }
+                results.append(result_row)
+                if result_row["utf8_bytes"] >= _LARGE_OUTPUT_MIN_BYTES:
+                    if _expected_body_read(call.tool, inputs):
+                        expected_large_reads += 1
+                    else:
+                        large_reviews.append({**result_row, "input_summary": " ".join(call.text.split())[:300]})
         events.append(
             {
                 "kind": "stats-resource-usage",
@@ -216,6 +330,9 @@ def resource_usage_events(collected: list[_CollectedRecord]) -> list[dict[str, A
                 "recorded_result_utf8_bytes": sum(row["utf8_bytes"] for row in results),
                 "largest_results": sorted(results, key=lambda row: (-row["utf8_bytes"], row["location"]))[:10],
                 "omitted_largest_result_count": max(0, len(results) - 10),
+                "large_output_reviews": sorted(large_reviews, key=lambda row: (-row["utf8_bytes"], row["location"]))[:10],
+                "large_output_review_count": len(large_reviews),
+                "expected_large_read_count": expected_large_reads,
                 "repeats": [
                     {"tool": tool, "input": text, "locations": locations, "count": len(locations)}
                     for (tool, text), locations in sorted(repeats.items(), key=lambda row: (-len(row[1]), row[0]))
@@ -275,6 +392,9 @@ def _recorded_input(entry: dict[str, Any], call_id: str | None) -> dict[str, Any
     payload = entry.get("payload", {})
     if isinstance(payload, dict):
         raw = payload.get("arguments", payload.get("input"))
+        item = payload.get("item")
+        if raw is None and isinstance(item, dict) and item.get("type") == "McpToolCall":
+            raw = item.get("arguments")
         if isinstance(raw, dict):
             return raw
         if isinstance(raw, str):

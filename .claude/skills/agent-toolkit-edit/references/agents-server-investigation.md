@@ -17,6 +17,7 @@ Claude Codeの作業ディレクトリのスラッグは、絶対パスのパス
 - 開始後の保存失敗（agents_serverのsession登録簿`<状態ディレクトリ>/agents-server/sessions/<session_id>.json`、待機対象、状態ファイル）: `manager.py`と`state.py`。予約した保存とheartbeatの失敗は`status_file.py`と`manager_base.py`が、書込主体の状態ファイルとsession識別子の一覧とともに記録する。いずれもスタックを含み、置換元と置換先のパスは例外の`add_note`による注記にある。共通の置換（`_common/atomic_file.py`）はWindowsのWinError 5・32を1秒未満の有限回で再試行し、上限後と対象外のエラーでは旧本文を残して失敗を返す
 - sessionの状態遷移（`session_transition`）: `manager.py`・`manager_registry.py`・`manager_resume.py`・`state.py`
 - 開始・終端の資源記録（`resource_snapshot`）: `resource_snapshot.py`
+- AntigravityとOpenCodeの子プロセス・イベント保存・終了: `cli_turn.py`。wire形式の解釈は`antigravity.py`と`opencode.py`。OpenCodeは`opencode run --format json --auto --model <provider/model> --variant <effort>`を使い、継続には`--session`を渡す。起動候補のモデルと、イベントから観測できた識別を分ける
 
 | 記録 | 所在 | 読み取れる事実 |
 | --- | --- | --- |
@@ -25,6 +26,7 @@ Claude Codeの作業ディレクトリのスラッグは、絶対パスのパス
 | 委譲先のCLIの診断ログ | 診断ログのディレクトリ直下の`delegate-debug`配下。名前はUTC時刻、session識別子、`launch_kind`をハイフンで連ねた`.log`（session識別子は初期化完了時に入るため、未到達の起動はその部分を持たない）。保持世代を超えた記録は次の起動時に削除される | SessionStart hookの完了、MCPサーバーの接続、機能フラグの取得、skillsの送信、`[engine] turn 1 start`への到達、セッション間メッセージの保留 |
 | Claude Codeが委譲先ごとに残すMCPサーバー接続ログ | Claude CLIのキャッシュディレクトリ配下の`<作業ディレクトリのスラッグ>/mcp-logs-<サーバー名>/<起動時刻>.jsonl`（Windowsのキャッシュは`%LOCALAPPDATA%\claude-cli-nodejs\Cache`） | 各MCPサーバーの接続完了時刻と接続の失敗 |
 | 委譲先のセッションのトランスクリプト | `~/.claude/projects/<作業ディレクトリのスラッグ>/<session識別子>.jsonl` | 委譲先が受け取った指示と返した応答。初期化を完了しなかった委譲先はこのファイルを作成しないため、不在が初期化未到達の証拠になる |
+| Antigravity・OpenCodeの公開イベント | 状態ディレクトリの`agents-server/<ルートsession識別子>/logs/<session_id>.jsonl`（Antigravity）と`logs/opencode/<session_id>.jsonl`（OpenCode） | 開始・本文・ツール・使用量・失敗のイベント。OpenCodeの`agent_toolkit_input`は渡した入力と要求モデルの補助記録で、実モデルの観測を保証しない。閲覧は`atk agents logs`で行う |
 | Claude CodeのMCP接続失敗の記録 | 設定ディレクトリ直下の`mcp-needs-auth-cache.json` | プラグインのstdioサーバーの接続失敗と時刻。新規起動・再開のプロセスごとに公開再接続APIを1回試し、未回復の失敗だけをstart/showの警告へ残す |
 | `atk agents wait`の配送済みrun | 状態ディレクトリの`agents-server/<ルートsession識別子>/wait-results/<書込主体>/<run_id>.json`。待機対象0件（終了コード10）と`consumed`（終了コード8）の診断が`run_path`として示す | 先行waitが配送した終端結果本文（`output`のJSON Lines）と対象session。配送済みはエージェントの読了を意味しない。`atk read-file -- <run_path>`で読む |
 | 実行ホスト上のセッション登録簿 | `~/.claude/sessions/<プロセス識別子>.json` | `sessionId`、`cwd`、`kind`、`entrypoint`、メッセージ送受信用の識別名（委譲先も登録される） |

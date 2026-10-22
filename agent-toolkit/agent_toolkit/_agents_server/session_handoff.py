@@ -59,7 +59,7 @@ def prepare_prompt(session: SessionState | SessionResumeState) -> str:
         )
     directory = managed_temp.create_managed_temp("session-handoff")
     entry = plugin_root.SERVER_PLUGIN_ROOT / "agent_toolkit" / "atk.py"
-    if session.engine == "agy":
+    if session.engine in {"agy", "opencode"}:
         command = [sys.executable, str(entry), "agents", "logs", session.session_id, "--format", "markdown"]
         conversation = directory / "conversation.md"
     else:
@@ -96,7 +96,7 @@ def prepare_prompt(session: SessionState | SessionResumeState) -> str:
             f"exit_code={completed.returncode}, 診断={directory}",
             next_action="保存したprepare.stderrとprepare.stdoutを読み、抽出が成立してから引き継ぎ起動を再発行する",
         )
-    if session.engine == "agy":
+    if session.engine in {"agy", "opencode"}:
         conversation.write_text(completed.stdout, encoding="utf-8")
     if not conversation.is_file():
         raise ActionableError(
@@ -143,7 +143,7 @@ def compose_prompt(
     for turn, message in responses.items():
         lines += [f"#### turn {turn}", message]
     selector = "--codex-thread-id" if session.engine == "codex" else "--claude-session-id"
-    if session.engine != "agy":
+    if session.engine not in {"agy", "opencode"}:
         lines += [
             "",
             "詳細照会: "

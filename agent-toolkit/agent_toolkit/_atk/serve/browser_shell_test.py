@@ -5,7 +5,6 @@ import functools
 import json
 import urllib.parse
 from pathlib import Path
-from typing import Any
 
 import playwright.async_api
 import pytest
@@ -18,10 +17,12 @@ from agent_toolkit._atk.serve.browser_support_test import (  # noqa: F401  # pyl
     _browser_harness_fixture,
     _BrowserHarness,
     _hold_route,
+    _observe_screen_requests,
     _open_filters,
     _open_question,
     _screen_harness_fixture,
     _ScreenHarness,
+    _wait_screen_requests_consumed,
 )
 
 pytestmark = [
@@ -55,26 +56,92 @@ def _request_count(harness: _ScreenHarness, path: str) -> int:
     return sum(1 for url in harness.requests if urllib.parse.urlsplit(url).path == path)
 
 
-async def _wait_until(predicate: Any, timeout: float = 10.0) -> bool:
-    """条件が成立するまで短い間隔で待つ。"""
-    deadline = asyncio.get_running_loop().time() + timeout
-    while asyncio.get_running_loop().time() < deadline:
-        if predicate():
-            return True
-        await asyncio.sleep(0.05)
-    return bool(predicate())
-
-
 async def _open_all_screens(harness: _ScreenHarness) -> None:
     """3画面を初期化し、各画面のSSE購読と初期取得が済むまで待つ。"""
+    await _observe_screen_requests(harness.page)
     await harness.page.goto(harness.base_url + "/sessions")
     await playwright.async_api.expect(harness.page.locator("#sessions .session-item")).to_have_count(2)
-    assert await _wait_until(
-        lambda: all(
-            _request_count(harness, events) >= 1 and _request_count(harness, listing) >= 1
-            for events, listing in _SCREEN_STREAMS.values()
-        )
+    await _wait_screen_requests_consumed(harness.page, tuple(events for events, _ in _SCREEN_STREAMS.values()))
+    await playwright.async_api.expect(harness.page.locator("#entry-list .entry-select").first).to_have_count(1)
+    await playwright.async_api.expect(harness.page.locator("#files .file").first).to_have_count(1)
+
+
+async def _resynchronize_visible(page: playwright.async_api.Page, *, timeout: float = 10_000) -> None:
+    """可視化の操作後に、WI・セッション双方の取得本文が消費されることを確かめる。"""
+    paths = [_SCREEN_STREAMS[name][1] for name in ("wi", "sessions")]
+    before = await page.evaluate(
+        "paths => Object.fromEntries(paths.map(path => [path, window.__screenRequests.completed[path] || 0]))", paths
     )
+    await page.evaluate(
+        """() => {
+            Object.defineProperty(document, "visibilityState", {value: "visible", configurable: true});
+            document.dispatchEvent(new Event("visibilitychange"));
+        }"""
+    )
+    await page.wait_for_function(
+        "before => Object.entries(before).every(([path, count]) => window.__screenRequests.completed[path] > count)",
+        arg=before,
+        timeout=timeout,
+    )
+
+
+@pytest.mark.asyncio(loop_scope="session")
+@pytest.mark.parametrize("delayed_path", ["/api/events", "/api/entries"])
+async def test_initial_screen_acquisition_is_consumed_before_observation(
+    screen_harness: _ScreenHarness,
+    delayed_path: str,
+) -> None:
+    """初期接続または初期取得を保留している間は測定へ進まず、解放後の可視化更新を検証できる。"""
+    page = screen_harness.page
+    started = asyncio.Event()
+    release = asyncio.Event()
+
+    async def delay_first(route: playwright.async_api.Route) -> None:
+        if started.is_set():
+            await route.continue_()
+        else:
+            await _hold_route(route, started=started, release=release)
+
+    await page.route(lambda url: urllib.parse.urlsplit(url).path == delayed_path, delay_first)
+    ready = asyncio.create_task(_open_all_screens(screen_harness))
+    try:
+        await asyncio.wait_for(started.wait(), timeout=5)
+        await playwright.async_api.expect(page.locator("#sessions .session-item")).to_have_count(2)
+        await page.wait_for_function(
+            """delayed => {
+              const probe = window.__screenRequests;
+              return probe.opened['/api/plans/events'] > 0 && probe.opened['/api/sessions/events'] > 0 &&
+                (delayed === '/api/events' ? probe.completed['/api/entries'] > 0 : probe.opened['/api/events'] > 0);
+            }""",
+            arg=delayed_path,
+        )
+        assert not ready.done(), "初期処理の消費前に観測区間へ進んだ"
+    finally:
+        release.set()
+        await ready
+    await _resynchronize_visible(page)
+
+
+@pytest.mark.asyncio(loop_scope="session")
+@pytest.mark.parametrize("screen", ["wi", "sessions"])
+async def test_visibility_observation_rejects_a_disabled_update_path(
+    screen_harness: _ScreenHarness,
+    screen: str,
+) -> None:
+    """対象画面の可視化経路を無効にすると、別画面や初期取得の成功だけでは更新を受理しない。"""
+    page = screen_harness.page
+
+    async def disable_visibility(route: playwright.async_api.Route) -> None:
+        response = await route.fetch()
+        source = await response.text()
+        marker = "  resyncWhenVisible("
+        assert source.count(marker) == 1
+        await route.fulfill(response=response, body=source.replace(marker, "  (() => {})("))
+
+    await page.route(f"**/static/{screen}.js", disable_visibility)
+    await _open_all_screens(screen_harness)
+    with pytest.raises(playwright.async_api.TimeoutError):
+        await _resynchronize_visible(page, timeout=1_000)
 
 
 @pytest.mark.asyncio(loop_scope="session")
@@ -191,30 +258,14 @@ async def test_revisiting_screens_does_not_repeat_initial_requests(screen_harnes
     """初期化済みの画面へ再訪しても、同期と一覧の初期要求を繰り返さない。"""
     harness = screen_harness
     page = harness.page
-    plans_resynced = asyncio.Event()
-    plans_request_count = 0
-
-    def record_initial_plan_requests(request: playwright.async_api.Request) -> None:
-        nonlocal plans_request_count
-        if request.url.endswith("/api/plans/files"):
-            plans_request_count += 1
-            if plans_request_count >= 2:
-                plans_resynced.set()
-
-    page.on("request", record_initial_plan_requests)
-    await page.goto(harness.base_url + "/")
-    await page.locator("#entry-list .entry-select").first.wait_for(state="visible")
-    await page.locator("nav.app-nav").get_by_role("link", name="計画ファイル").click()
-    await page.locator("#files .file").first.wait_for(state="visible")
-    await page.locator("nav.app-nav").get_by_role("link", name="セッション").click()
-    await page.locator("#sessions .session-item").first.wait_for(state="visible")
-    await asyncio.wait_for(plans_resynced.wait(), timeout=5)
+    await _open_all_screens(harness)
     tracked_suffixes = ("/api/sync", "/api/plans/files", "/api/sessions/list")
     before = {suffix: sum(url.endswith(suffix) for url in harness.requests) for suffix in tracked_suffixes}
 
     await page.locator("nav.app-nav").get_by_role("link", name="ワークアイテム").click()
     await page.locator("nav.app-nav").get_by_role("link", name="計画ファイル").click()
     await page.locator("nav.app-nav").get_by_role("link", name="セッション").click()
+    await _wait_screen_requests_consumed(page, tuple(events for events, _ in _SCREEN_STREAMS.values()))
 
     assert {suffix: sum(url.endswith(suffix) for url in harness.requests) for suffix in tracked_suffixes} == before
 
@@ -994,12 +1045,14 @@ async def test_silent_sse_is_reconnected_and_lists_are_refetched(
     }
 
     for name, (events, listing) in _SCREEN_STREAMS.items():
-        assert await _wait_until(
-            lambda events=events, listing=listing, name=name: (
-                _request_count(screen_harness, events) > before[name][0]
-                and _request_count(screen_harness, listing) > before[name][1]
-            )
-        ), name
+        await screen_harness.page.wait_for_function(
+            """expected => {
+                const probe = window.__screenRequests;
+                return probe.opened[expected.events] > expected.opened &&
+                  probe.completed[expected.listing] > expected.completed;
+            }""",
+            arg={"events": events, "listing": listing, "opened": before[name][0], "completed": before[name][1]},
+        )
 
 
 @pytest.mark.asyncio(loop_scope="session")
@@ -1011,10 +1064,12 @@ async def test_regular_heartbeat_keeps_sse_without_refetching(
     monkeypatch.setattr(serve_runtime, "SSE_HEARTBEAT_SEC", 0.2)
     monkeypatch.setattr(serve_runtime, "SSE_STALL_SEC", 1.0)
     await _open_all_screens(screen_harness)
-    await asyncio.sleep(0.5)
     before = {path: _request_count(screen_harness, path) for pair in _SCREEN_STREAMS.values() for path in pair}
-
-    await asyncio.sleep(3.0)
+    heartbeats = await screen_harness.page.evaluate("window.__screenRequests.heartbeats")
+    await screen_harness.page.wait_for_function(
+        "expected => Object.keys(expected).every(path => window.__screenRequests.heartbeats[path] >= expected[path] + 15)",
+        arg={stream: heartbeats.get(stream, 0) for stream, _ in _SCREEN_STREAMS.values()},
+    )
 
     assert {path: _request_count(screen_harness, path) for path in before} == before
 
@@ -1024,22 +1079,9 @@ async def test_visible_tab_and_bfcache_restore_resynchronize_screens(screen_harn
     """タブが表示へ戻るとWI画面とセッション画面が一覧を取り直し、bfcacheからの復帰では再接続する。"""
     page = screen_harness.page
     await _open_all_screens(screen_harness)
-    await asyncio.sleep(0.5)
-    lists = {name: _request_count(screen_harness, _SCREEN_STREAMS[name][1]) for name in ("wi", "sessions")}
-
-    await page.evaluate(
-        """() => {
-            Object.defineProperty(document, "visibilityState", {value: "visible", configurable: true});
-            document.dispatchEvent(new Event("visibilitychange"));
-        }"""
-    )
-
-    for name, count in lists.items():
-        assert await _wait_until(
-            lambda name=name, count=count: _request_count(screen_harness, _SCREEN_STREAMS[name][1]) > count
-        ), name
-
-    events = {name: _request_count(screen_harness, stream) for name, (stream, _listing) in _SCREEN_STREAMS.items()}
+    await _resynchronize_visible(page)
+    await _wait_screen_requests_consumed(page, tuple(events for events, _ in _SCREEN_STREAMS.values()))
+    before = await page.evaluate("window.__screenRequests.opened")
     await page.evaluate(
         """() => {
             window.dispatchEvent(new PageTransitionEvent("pagehide", {persisted: true}));
@@ -1047,7 +1089,8 @@ async def test_visible_tab_and_bfcache_restore_resynchronize_screens(screen_harn
         }"""
     )
 
-    for name, count in events.items():
-        assert await _wait_until(
-            lambda name=name, count=count: _request_count(screen_harness, _SCREEN_STREAMS[name][0]) > count
-        ), name
+    await page.wait_for_function(
+        "expected => Object.entries(expected).every(([path, count]) => window.__screenRequests.opened[path] > count)",
+        arg=before,
+    )
+    await _wait_screen_requests_consumed(page, tuple(events for events, _ in _SCREEN_STREAMS.values()))

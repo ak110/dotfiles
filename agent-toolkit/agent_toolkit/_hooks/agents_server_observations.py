@@ -16,6 +16,7 @@ import pathlib
 from agent_toolkit._agents_server import launch_prompts, shared_layout, shared_roots, wait_targets
 from agent_toolkit._agents_server import state as _agents_server_state
 from agent_toolkit._agents_server import tool_names as _agents_server_tool_names
+from agent_toolkit._common import task_documents
 
 # 関数の実行時にだけ使う依存は、使用時まで読み込まない。
 lazy from agent_toolkit._atk.wi import process_loop_log as _process_loop_log
@@ -143,7 +144,16 @@ def _agents_server_model_type(tool_input: dict, operation: str) -> str | None:
     mode = _agents_server_tool_names.start_mode(operation, tool_input)
     if mode == "task":
         task_path = tool_input.get("subagent_md_path")
-        return launch_prompts.TASK_MODEL_TYPES.get(pathlib.PurePath(task_path).name) if isinstance(task_path, str) else None
+        if not isinstance(task_path, str):
+            return None
+        path = pathlib.Path(task_path)
+        if not path.is_absolute():
+            path = launch_prompts.SHARE_DIR / f"{task_path}{task_documents.TASK_DOCUMENT_SUFFIX}"
+        declaration = task_documents.read_declaration(path)
+        if isinstance(declaration, task_documents.TaskDocumentDeclaration) and declaration.model_type is not None:
+            return declaration.model_type
+        # 現行設定は役割文書が所有し、ファイル名の対応は旧文書の記録だけへ使う。
+        return launch_prompts.TASK_MODEL_TYPES.get(path.name)
     if mode is None:
         return None
     return _agents_server_tool_names.START_MODE_MODEL_TYPES.get(mode)

@@ -135,7 +135,10 @@ _FIX_YAML = (
     "選定結果のYAML構文を直す。文字列の値を単一引用符で囲み、値の中の`'`は`''`と重ねて書き直してから、同じコマンドを再実行する"
 )
 _FIX_CONTENT = "選定結果の該当する欄を`selection-format.md`「選定結果の書式」の欄名と型へ直してから、同じコマンドを再実行する"
-_FIX_MODEL = "`担当モデル`は`実装担当`か`実行レビュー担当`のキーごとに`<claude|codex|agy>:<model>/<effort>`の値へ直す"
+_FIX_MODEL = (
+    "`担当モデル`は`実装担当`か`実行レビュー担当`のキーごとに"
+    "`<claude|codex|agy>:<model>/<effort>`か`opencode:<provider>/<model>@<effort>`の値へ直す"
+)
 
 
 class InputError(_next_action.ActionableError):

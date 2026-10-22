@@ -1,10 +1,23 @@
-"""返却形式の書式例がコードブロック内に置かれていることを確かめる。"""
+"""配布する役割定義の設定と返却形式の静的整合性を確かめる。"""
 
 from __future__ import annotations
 
 import re
+from pathlib import Path
 
+import pytest
+
+from agent_toolkit._common import task_documents
 from agent_toolkit._hooks import rules_context
+from agent_toolkit._testing.task_document_contract import validate_frontmatter
+
+
+@pytest.mark.parametrize("path", sorted(rules_context.SHARE_DIR.glob("*.subagent.md")), ids=lambda path: path.name)
+def test_distributed_frontmatter_is_valid(path: Path) -> None:
+    """新しい定義もファイル追加だけで静的整合性の試験へ含める。"""
+    result = validate_frontmatter(path, path.read_text(encoding="utf-8"))
+    assert isinstance(result, task_documents.TaskDocumentDeclaration), result
+    assert result == task_documents.read_declaration(path)
 
 
 def test_share_task_documents_have_no_bare_return_line_examples() -> None:
@@ -17,7 +30,15 @@ def test_share_task_documents_have_no_bare_return_line_examples() -> None:
     offending: list[str] = []
     for path in sorted(rules_context.SHARE_DIR.glob("*.md")):
         in_fence = False
+        in_frontmatter = False
         for lineno, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
+            if lineno == 1 and line == "---":
+                in_frontmatter = True
+                continue
+            if in_frontmatter:
+                if line == "---":
+                    in_frontmatter = False
+                continue
             if line.lstrip().startswith("```"):
                 in_fence = not in_fence
                 continue

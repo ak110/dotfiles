@@ -1413,6 +1413,7 @@ class TestDefaultSteps:
         "Codex 診断ログの通常ストレージ復元 (Linux)": {"Codex リンクの同期"},
         "Codex の Claude MCP 登録削除": {"Codex CLI の導入と更新"},
         "Claude Code CLI の導入と更新": {"mise セットアップ"},
+        "OpenCode CLI の導入": {"mise セットアップ", "Codex CLI の導入と更新", "Claude Code CLI の導入と更新"},
         "Codex plugin snapshot の生成": {"Claude Code plugin のインストール"},
         "Codex plugin のインストール": {
             "Codex の Claude MCP 登録削除",

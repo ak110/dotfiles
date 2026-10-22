@@ -19,6 +19,7 @@ import pytest
 
 from agent_toolkit._atk.serve import remote as _atk_serve_remote
 from agent_toolkit._atk.serve import sessions
+from agent_toolkit._common import process_tree
 from agent_toolkit._testing import session_tree
 
 
@@ -841,6 +842,129 @@ def _load_remote_helper() -> typing.Any:
     helper = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(helper)
     return helper
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("unknown", [False, True])
+async def test_local_and_remote_detail_use_same_family_cost(
+    tmp_path: pathlib.Path, host_environ: typing.Callable[[], dict[str, str]], unknown: bool
+) -> None:
+    """実際のremote helperのreadを経由し、親算出額・native子・委譲先・未知単価を同じ式で返す。"""
+    parent = tmp_path / ".claude/projects/proj/parent.jsonl"
+    identity = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+    records = [
+        {"type": "user", "timestamp": "2026-10-20T12:00:00Z", "cwd": "/work", "message": {"role": "user", "content": "依頼"}},
+        {
+            "type": "assistant",
+            "message": {
+                "role": "assistant",
+                "content": [{"type": "tool_use", "id": "launch", "name": "mcp__agents_server__start", "input": {}}],
+            },
+        },
+        {
+            "type": "user",
+            "message": {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "launch", "content": "完了"}]},
+            "toolUseResult": {"session_id": identity},
+        },
+        {"type": "cost-state", "timestamp": "2026-10-20T12:01:00Z", "totalCostUSD": 5},
+    ]
+    records.extend(
+        [
+            {
+                "type": "api-request-blob",
+                "timestamp": "2026-10-20T12:01:01Z",
+                "message": {
+                    "id": "request-copy",
+                    "model": "claude-opus-5-5",
+                    "usage": {"input_tokens": 1000, "output_tokens": 100},
+                },
+            },
+            {
+                "type": "api-request-blob",
+                "message": {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "launch", "content": "写し"}]},
+                "toolUseResult": {"session_id": "not-a-launched-session"},
+            },
+        ]
+    )
+    if unknown:
+        records.append(
+            {
+                "type": "assistant",
+                "timestamp": "2026-10-20T12:02:00Z",
+                "message": {"id": "future", "model": "future-model", "usage": {"input_tokens": 10, "output_tokens": 20}},
+            }
+        )
+    _write(parent, records)
+    _write(
+        parent.with_suffix("") / "subagents/agent-sub.jsonl",
+        [
+            {
+                "type": "assistant",
+                "timestamp": "2026-10-20T12:00:01Z",
+                "message": {"id": "sub", "model": "claude-opus-5-5", "usage": {"input_tokens": 1000, "output_tokens": 100}},
+            },
+        ],
+    )
+    _write(
+        tmp_path / f"codex/sessions/2026/10/20/rollout-child-{identity}.jsonl",
+        [
+            {"type": "session_meta", "payload": {"id": identity}},
+            {"type": "turn_context", "payload": {"model": "gpt-6-sol"}},
+            {
+                "type": "event_msg",
+                "payload": {
+                    "type": "token_count",
+                    "info": {
+                        "last_token_usage": {"input_tokens": 100, "output_tokens": 50},
+                        "total_token_usage": {"total_tokens": 150},
+                    },
+                },
+            },
+        ],
+    )
+    environment = host_environ()
+    environment.update(
+        {
+            "HOME": str(tmp_path),
+            "USERPROFILE": str(tmp_path),
+            "CODEX_HOME": str(tmp_path / "codex"),
+            "XDG_STATE_HOME": str(tmp_path / "state"),
+            "LOCALAPPDATA": str(tmp_path / "state"),
+        }
+    )
+    helper = pathlib.Path(__file__).resolve().parents[3] / "scripts" / "atk_serve_sessions_remote_helper.py"
+
+    async def runner(_host: str, op: str, args: list[str]) -> str:
+        assert op == "read"
+        completed = await asyncio.to_thread(
+            process_tree.run_with_timeout,
+            [sys.executable, str(helper), op, *args],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            check=True,
+            timeout=30,
+            env=environment,
+        )
+        return completed.stdout
+
+    context = sessions.create_context(
+        hostname="local",
+        claude_home=tmp_path / ".claude",
+        codex_home=tmp_path / "codex",
+        state_dir=tmp_path / "state/agent-toolkit",
+        remote_hosts=["remote"],
+        ssh_runner=runner,
+    )
+    local = sessions.read_local_detail(context, "claude", str(parent))
+    remote = await sessions.session_detail(context, "claude", "remote", str(parent))
+    assert remote["cost"] == local["cost"]
+    assert local["cost"]["known_usd"] == pytest.approx(5.0007)
+    assert not local["cost"]["incomplete"]
+    assert local["cost"]["estimated_usd"] == (None if unknown else pytest.approx(5.0007))
+    assert local["cost"]["unknown_responses"] == int(unknown)
+    assert local["cost"]["breakdown"]["claude_subagents"]["known_usd"] == 0
 
 
 def test_local_and_remote_listing_link_children_from_every_launch_source(

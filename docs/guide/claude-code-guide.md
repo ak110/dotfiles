@@ -234,14 +234,20 @@ JSON Linesの`cost-metrics-week`は月曜0時から始まる週ごとの次の�
 
 各記録は1回だけ数え、委譲先はルートの開始週へ合算する。
 Codexのreasoning_output_tokensは出力に内包される。
-トークンの金額換算や重み付けは行わない。
+週の`tokens`はトークンのまま示し、金額は`cost-metrics-session`の別行へ出す。
 レビュー表の旧trackであるimplementation-reviewはexec-reviewとして読み、他のtrackは対象外とする。
 `~/.claude/plans`だけにある未保存の表は集計から除き、`unsaved_table_count`で件数を示す。
 
 末尾の`cost-metrics-coverage`はruntimeごとの読めた最古の記録時刻、読めなかった記録・表、特定できなかった委譲先の件数を示す。
+同じ出力の`cost-metrics-session`は、期間内に開始したルートごとに、engine・session_id・開始時刻・cwdと子孫を含む推定費用（USD）を返す。
+`estimated_usd`は単価不明や記録不足がある場合にnullとなり、`known_usd`が算出できた部分、`unknown_responses`と`unknown_tokens`が単価不明の応答数と使用量を表す。
+`breakdown.self`はその記録のClaude累積額を含み、`claude_subagents`はその額に含まれない追加分、`delegates`は別プロセスの委譲先からの追加分である。
+親の算出額へ含まれる子の追加分が0でも、子自身の費用が無料という意味ではない。
+Claudeの最新の算出額を優先し、残りはモデルごとのトークン単価で補う。実際の支払額とは区別する。
+料金表のURL・基準日・区分・算出式と、TTL不明時の仮定は末尾の`pricing`に含まれる。
 最古の記録より前に始まる週は`missing_token_records`がtrueとなり、トークンの記録が欠けた週として扱う。
 記録が欠けた週の0は、使用量0の証拠にはならない。
-更新時刻が開始より前の記録は読込前に除くため、最古の時刻は今回の走査で読めた範囲を示す。
+ルート候補の本文は更新時刻が開始より前なら読込前に除くため、最古の時刻は今回の走査で読めた範囲を示す。選んだルートの子孫は更新時刻で除外せず、同じ家族の費用へ含める。
 `--claude-projects-dir`・`--codex-sessions-dir`・`--private-notes`で各入力のディレクトリを上書きできる。
 指定を省くと`~/.claude/projects`・`~/.codex/sessions`・`atk config get private_notes`と同じ値を使う。
 
@@ -250,9 +256,9 @@ Codexのreasoning_output_tokensは出力に内包される。
 計画・実装・レビューの配分は、実効の用途別engine順と各engineの段位モデルで決まる。
 契約している実行系と利用枠・解除待ち、APIの従量料金と手戻りを合わせてプリセットを選ぶ。
 
-モデルの選定とClaude・Codexの配分は別々のキーで設定する。
-engineごとの段位のモデル（6キー）を変えると、そのengineと段位を使う起動のモデルだけが変わる。
-用途ごとのengine順（5キー）を変えると、モデルを変えずにClaudeとCodexのどちらを先に使うかだけが変わる。
+モデルの選定とClaude・Codex・OpenCodeの配分は別々のキーで設定する。
+engineごとの段位のモデル（9キー）を変えると、そのengineと段位を使う起動のモデルだけが変わる。
+用途ごとのengine順（5キー）を変えると、モデルを変えずにどのengineを先に使うかが変わる。
 起動時は用途のengine順に従って各engineの段位のモデルを並べ、先頭の候補から順に起動を試す。
 モデル実行環境の可用性に起因する失敗を観測した場合だけ次の候補へ進む。
 Claude CodeのWeekly limitと5時間の利用上限では、解除まで待って同じClaudeで作業を続ける。
@@ -278,6 +284,9 @@ Remote Controlは、手元で動くClaude Codeの会話へブラウザーやClau
 | `codex_high_tier_model` | Codexの上位モデル（未設定時は`sol/medium`） |
 | `codex_medium_tier_model` | Codexの中位モデル（未設定時は`terra/medium`） |
 | `codex_low_tier_model` | Codexの軽量モデル（未設定時は`luna/medium`） |
+| `opencode_high_tier_model` | OpenCodeの上位モデル（未設定時は空で候補から除外） |
+| `opencode_medium_tier_model` | OpenCodeの中位モデル（未設定時は空で候補から除外） |
+| `opencode_low_tier_model` | OpenCodeの軽量モデル（未設定時は空で候補から除外） |
 | `base_engine` | 設計判断を伴う実装・修正・新しい候補や評価軸を導く調査と案出し・AWI投入・公開工程の終端・自動コードレビュー監査（上位）、プロンプト評価（中位）、`atk commit`（省略時は中位）のengine順 |
 | `execute_engine` | レーンの計画・実装・変更範囲検証と同じexecによる修正（上位）のengine順 |
 | `review_engine` | 実行レビュー・ユーザビリティレビュー・専念型の投入前レビューと再発防止セルフチェック、計画・設計判断で内容の確定した書込作業（`delegate`の`medium_tier`）（中位）のengine順 |
@@ -289,16 +298,21 @@ Remote Controlは、手元で動くClaude Codeの会話へブラウザーやClau
 | `claude_api_env_file` | ClaudeのAPI接続用envファイルのパス。空文字列で解除する |
 | `claude_api_mode` | 役割別の接続方針。`pay-as-you-go`（既定）または`api-credits` |
 
-段位のモデルはengine名を付けない`<model>[/<effort>]`で1つだけ書き、effortを省略すると`medium`を使う。
-engine順は`codex`と`claude`の一方または両方を重複なしでASCIIカンマ区切りに並べる。
+ClaudeとCodexの段位モデルはengine名を付けない`<model>[/<effort>]`で1つだけ書き、effortを省略すると`medium`を使う。
+OpenCodeは`<provider>/<model>[@<effort>]`で、最初の`/`でproviderとmodelを分け、末尾の`@`より後をvariantとして読む。model内の`/`は保持する。省略時は`medium`を渡す。
+名前空間を含むモデルと任意のvariantには`local/Qwen/Qwen3.8-27B@thinking`の形を使う。
+用途のengine順は`codex`・`claude`・`opencode`を重複なしでASCIIカンマ区切りに並べる。`orchestrate_engine`はClaudeとCodexだけを受理する。
+OpenCode本体の導入とprovider定義、Qwenの設定例は[READMEのOpenCodeの委譲先](../../README.md#opencodeの委譲先)を参照する。
+空の段位モデルはOpenCodeの候補から外れ、全候補が空なら設定を案内するエラーになる。
 `write_model`は`<engine>:<model>[/<effort>]`をASCIIカンマで区切った候補列で書く。
 段位は作業の部分ごとに選ぶ。判定基準を言語化して渡せる多数の対象の走査（所在・値・件数の確認、該当候補の抽出と非該当の判定）は、極力`explore`の指定省略時の軽量段位へ分け、対象が多ければ重複のない群へ分けて並列に委ねる。観点・評価軸・判定基準の選定、新しい候補の案出し、走査が返した候補の判定と結論の統合は、`mode`が`explore`でも`delegate`でも`model_type="high_tier"`を明示する（`base_engine`の上位を使う）。両者を含む依頼も全体を`high_tier`にせず、走査を分けてから上位段位で判定する。書込作業も同じく、計画・設計判断・原因分析は上位段位の担当自身が行い、内容の確定した単位（単発のコーディング、確定済みの修正など）は`delegate`の`medium_tier`（`review_engine`の中位）へ任せる。自ら行う方が総費用で安い場合だけ自ら行う。役割の段位（レーン担当の`exec`の上位、実行レビューの中位など）は変えない。
 
-`atk config show`はパス4行、モデルと配分の11行、`write_model`、速度、API provider列とClaudeのAPI用envファイルのパスを各1行で表示する。`atk config get`は指定したキーの値を指定した順に返し、provider列では前後空白と重複を除く。
+`atk config show`はパス、段位モデル、用途別engine順とその他の設定を1キー1行で表示する。`atk config get`は指定したキーの値を指定した順に返し、provider列では前後空白と重複を除く。
 `atk config set codex_fast_mode true`でfast modeを有効にし、`false`で標準速度へ戻す。設定は次のturnから反映され、MCPサーバーの再起動は不要である。Codexのモデル表示には`@fast`を付け、effortがあれば`codex:<model>/<effort>@fast`とする。
 Codex系列名は委譲の起動時にモデルIDへ解決され、採用値は`agents_server`の`show`で確認できる。
 `AGENT_TOOLKIT_CONFIG_<キー名の大文字>`の環境変数に空でない値を設定すると、`atk config show`と`atk config get`は環境変数の値を返す。
 委譲の起動にもこの値を使う。環境変数は保存済みの設定より優先し、変数を解除すると保存済みの設定へ戻る。
+OpenCodeの段位モデルは空の環境変数も優先し、対応する段位のOpenCodeを候補から外す。
 `atk config set`は保存先だけを更新するため、同名の環境変数がある間は設定した値が実効値にならない。
 `atk config apply-preset <プリセット名>`は`base_engine`・`execute_engine`・`review_engine`・`chores_engine`・`orchestrate_engine`の5キーを1回の実行で一括保存する。段位のモデル、`write_model`・`codex_fast_mode`・`codex_model_providers`・`claude_api_env_file`は変更しない。
 
@@ -309,12 +323,16 @@ Codex系列名は委譲の起動時にモデルIDへ解決され、採用値は`
 | `codex-primary` | `codex,claude` | `codex,claude` | `codex,claude` | `codex,claude` | `codex,claude` |
 | `claude-balanced` | `claude,codex` | `claude,codex` | `codex,claude` | `codex,claude` | `claude,codex` |
 | `claude-primary` | `claude,codex` | `claude,codex` | `claude,codex` | `claude,codex` | `claude,codex` |
+| `opencode-balanced` | `opencode,codex,claude` | `claude,codex` | `opencode,codex,claude` | `opencode,codex,claude` | `claude,codex` |
+| `opencode-near-primary` | `opencode,codex,claude` | `opencode,codex,claude` | `opencode,codex,claude` | `opencode,codex,claude` | `claude,codex` |
 
-balanced系はレーン実行をClaude、レビューをCodexへ配分する。codex-balancedのbaseはCodex、claude-balancedのbaseはClaudeが先頭になる。
+codex-balanced・claude-balancedはレーン実行をClaude、レビューをCodexへ配分する。codex-balancedのbaseはCodex、claude-balancedのbaseはClaudeが先頭になる。
+opencode-balancedはレビューをOpenCode、実装をClaudeから試し、opencode-near-primaryは実装もOpenCodeから試す。両方ともorchestratorはClaude・Codexを使う。
+opencode用プリセットは空の段位モデルがあれば、保存後にキー名と設定方法を警告する。既存5プリセットと初期設定はOpenCodeを候補へ加えない。
 codex-near-primaryはClaudeの利用上限が迫ったときに、orchestrateだけClaude優先にして極力Codexを使う。
 primary系は他方のengineを使えない場合に全用途で名前のengineを優先する。レビューと実行を逆系統にする基本と、near-primary・primaryの例外を表で選べる。
 
-`atk config apply-preset show`または引数を付けない`atk config apply-preset`を実行すると、設定ファイルを変更せずに5プリセットそれぞれが保存する5キーの値を表示する。設定を保存するのはプリセット名を指定した実行だけである。
+`atk config apply-preset show`または引数を付けない`atk config apply-preset`を実行すると、設定ファイルを変更せずに7プリセットそれぞれが保存する5キーの値を表示する。設定を保存するのはプリセット名を指定した実行だけである。
 未知の名前を指定した実行は終了コード2で終わり、受理する値を表示する。
 設定を保存していない環境では`codex-balanced`と同じengine順を使う。
 
@@ -492,7 +510,7 @@ holdとrun-skill由来もこの判定へ含め、回答後にadoptedへ移った
 ユーザーの判断・資料・操作が次の作業に必要な場面などは個別UWIとして記録され、回答に依存する部分だけを保留して他の作業を続ける。
 自明な取得・再実行の案内と環境制約による未確認範囲は、実施した検証の結果とともに完了報告で伝える。
 process-wiなど手順が定める完了報告用UWIは保存され、ユーザーが確認する。
-関連作業の完了後に行う任意の対応（会話に貼り付けたトークンを必要なら失効させる、など）は、その作業の完了後にUWIとして届く。
+作業中に資格情報が見つかった場合は、値を再掲せず、同じ所在の報告UWIが無い場合に所在ごと1件の報告UWIを届ける。報告だけで扱った対応の可否を回答できる。
 `atk wi process-loop`から起動したセッションでは、事前に承認を要する事項が回答期限付きの質問として表示されることもあり、期限内に回答が無ければUWIへ移る。
 UWIの確認と回答は後述の「UWIへの回答と状態確認」の操作で行う。
 
@@ -614,8 +632,8 @@ PATH=/home/user/.local/bin:/usr/local/bin:/usr/bin:/bin
 show形式の構造とは、直後にfrontmatterが続く`### <ファイル名>.md`の行を持ち、その行より前が空行と`# awi`・`# uwi`・`## target_repo: ...`の見出しだけで構成される本文を指す。
 このときtarget-repo欄とUWI用の入力欄の値は使わない。
 
-単一で定型的な要求は、add-awi-by-userのメインが本文を起草し、意味・構造・表記・重複を確認して保存する。
-原因分析、複数要求、対象・由来の分類、公開契約、複数リポジトリ、部分採用または未確定事項を含む場合は、独立した起草と投入前レビューを使う。
+add-awi-by-userでは、件数や原因分析の有無によらず、メインが調査・方針の確定・起草・検収・保存まで担当するのを原則とする。
+本来の作業に付随する別件の投入など、文脈を分ける意味がある場合はWI投入担当へ委譲する。独立した投入前レビューの要否は要求の性質から選び、基準付きの大量走査は軽量な読取探索を使える。
 WI投入担当は`base_engine`の上位を使う。
 委譲の粒度は起動・自動配送・明示読取・親の検収・統合と再試行の総費用で選ぶ。同じ要求の取得済み証拠を再利用し、独立要求と独立文脈レビューの文脈、単一writerは保つ。
 
@@ -675,6 +693,9 @@ WI画面で状態が`needs-verify`と表示される項目は、反映後の観�
 CLIでは`atk wi add --cooldown-until '2026-10-11T12:00:00+09:00' --body-file <本文ファイル>`でAWIの初回保存から期限を設定できる。複数本文には同じ期限を適用する。空・不正日時・タイムゾーンなし、UWI・batchとの併用と通常本文のfrontmatterによる期限指定は拒否する。`inbox`または`hold`のAWIの期限は`atk wi edit <ファイル名> --cooldown-until <日時>`で変更し、この編集だけは空文字列で解除できる。`processing`では設定と解除の双方を拒否する。
 
 セッション画面を開いたままでも、ローカルと設定済みリモートホストで新しいセッションの記録が保存されると一覧へ自動で加わり、表示中の記録へ追記されたイベントも再読み込みせずに右ペインへ現れる。右ペインは記録の先頭100件を描画し、末尾までスクロールすると続きを自動で描画して、記録の最後のイベントまで読み進められる。右ペインの更新では、開いたイベント、描画した件数およびスクロール位置を保つ。末尾を表示している間は追記に合わせて末尾へ進み、それより上を読んでいる間は位置を保ち、末尾まで読み進めた時点で追記したイベントが現れる。
+右ペインの見出しにはAPI料金換算の推定費用（USD）を表示し、本文に料金表の基準日とトークン数を残す。
+親を開くと子孫込み、子や委譲先を開くとその記録自身の額になる。単価不明や読み取れない記録がある場合は、既知分と不明の表示を区別する。
+親の費用は、一覧で子孫と確定した記録の更新通知でも更新する。リモートの費用算出にはリモートホスト側のdotfiles更新が必要で、未対応のヘルパーからは費用を取得できない旨を示す。
 一覧への掲載は、記録にユーザーのロールを持つ行が1件でもあるかで決める。ユーザーのロールを持つ行が無い記録（Codexを起動しただけで入力しなかった記録など）は一覧に出ず、その行が保存されると一覧へ加わる。実行環境の挿入本文だけを持つ記録は一覧に残るが、最初の発話の検索値は空になる。リモートホストの自動更新には、リモートホスト側のdotfilesの更新が必要である。
 
 ### エージェント由来AWIへのユーザーコメント
@@ -720,6 +741,21 @@ Claude CodeのSessionStartは、`CLAUDE_ENV_FILE`が提供される場合に、C
 CLI移設前に起動した`update-dotfiles`はpullと未コミット内容の復元後、旧`agent-toolkit/bin/atk`の不在により退避の回収で終了1となる場合がある。「復元は成功しましたが退避の回収は未完了です」と表示された場合は、更新したリポジトリで作業内容とindexが復元済みであることを保存refの内容と比べて確かめる。その実行が表示した完全なrefだけを`./agent-toolkit/scripts/atk worktree-stash drop <ref>`で回収し、`./bin/update-dotfiles`を再実行する。Windowsではそれぞれ`agent-toolkit\scripts\atk.cmd`と`bin\update-dotfiles.cmd`を使う。復元を確認できない場合はrefを保持して原因を調べる。これは開始済みの旧プロセスからの移行操作であり、再実行後の終了状態まで確認する。
 
 ## 構成と機能
+
+### 定型の委譲を追加する場合
+
+agent-toolkitの定型チェックは、`share/<役割名>.subagent.md`の先頭のYAML frontmatterへmode・モデル段位・用途・入力・継続・書込を宣言し、本文へ観点・手順・返却形式を書く。
+読取専用の軽量チェックは`mode: explore`と`model_type: low_tier`で定義でき、役割名別のPython対応表への登録を要しない。
+起動と受領に必要な入力の決め方・検収は呼び元の規範が持つ。呼び元が1カ所ならその工程へ統合し、複数から共有する場合は`<役割名>.parent.md`を保持できる。
+たとえば`quick-check`を定義した後は、MCPの`start`へ次の形で渡す。
+
+```json
+{"cwd": "/repo", "subagent_md_path": "quick-check", "extra_params": {"対象": "/repo/report.md"}}
+```
+
+静的な設定の整合性は配布対象全件のテストで保証する。起動時は設定を読み、実行に必要な条件と呼出し入力を確かめる。モデルの明示上書きと既存sessionの継続を保つ。
+委譲元は起動準備のために定義本文を取得せず、呼び元の契約から値を決める。
+設定項目と作成基準は[サブエージェントの記述基準](../../agent-toolkit/skills/writing-standards/references/sub-agents.md#agents_serverのfrontmatter)を参照する。
 
 ### 常時有効な仕組み
 
@@ -770,7 +806,7 @@ commitされていないことだけを理由にcommitを求めない。
 
 Claude CodeとCodexでは、`git rev-parse --short HEAD HEAD~1`のように、`--short`や`--verify`の後へリビジョンを複数並べると、PreToolUseが実行前に遮断する。通知に従い、同じオプションを付けたままリビジョンを1つずつ実行する。
 
-PreToolUseは、未取得のdelegationを委譲操作の前に、未取得のwriting-standardsを本文の作成・更新の前に全文で配送し、同じ操作の再発行を案内する。本文編集は`Write`・`Edit`・`MultiEdit`と`apply_patch`を言語やファイル名によらず対象にし、Bashでは書込先を確定できるエージェント向け文書の編集を対象にする。親子の取得済み記録は分け、Codexにも同じ配送契約を適用する。
+PreToolUseは、未取得のdelegationを委譲操作の前に、未取得のwriting-standardsを本文の作成・更新の前に全文で取得するよう案内し、取得後に同じ操作を再発行させる。本文編集は`Write`・`Edit`・`MultiEdit`と`apply_patch`を言語やファイル名によらず対象にし、Bashでは書込先を確定できるエージェント向け文書の編集を対象にする。親子の取得済み記録は分け、Codexにも同じ取得契約を適用する。
 commit・push後のPostToolUseの案内は、成果報告へ進むメインへcompletion-reportの適用条件を示す。Claude CodeではSkillの起動、Codexでは通知されたSKILL.mdの読取へ進む。失敗・背景・dry-run・help・委譲先は対象外で、後続の該当操作にも案内する。
 
 plugin `PreToolUse/pretooluse`がatkの呼び出しを遮断するのは、静的に分かるatkの実行位置と出力の接続先に限る。

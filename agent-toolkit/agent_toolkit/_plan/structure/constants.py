@@ -117,23 +117,29 @@ PLAN_ACCEPTANCE_TABLE_HEADER: tuple[str, ...] = (
     "シナリオ",
     "由来",
     "消費主体と入口",
+    "利用目的と後続行動",
     "操作",
     "期待結果",
     "テスト",
 )
-"""受入シナリオ表の列構成。第3列は人以外の消費主体も記すため「消費主体と入口」とする。"""
+"""受入シナリオ表の列構成。利用目的と後続の判断・行動から期待結果を導く。"""
+_PLAN_PREVIOUS_CURRENT_ACCEPTANCE_TABLE_HEADER: tuple[str, ...] = (
+    *PLAN_ACCEPTANCE_TABLE_HEADER[:3],
+    *PLAN_ACCEPTANCE_TABLE_HEADER[4:],
+)
 _PLAN_PREVIOUS_ACCEPTANCE_TABLE_HEADER: tuple[str, ...] = (
-    *PLAN_ACCEPTANCE_TABLE_HEADER[:2],
+    *_PLAN_PREVIOUS_CURRENT_ACCEPTANCE_TABLE_HEADER[:2],
     "利用者と入口",
-    *PLAN_ACCEPTANCE_TABLE_HEADER[3:],
+    *_PLAN_PREVIOUS_CURRENT_ACCEPTANCE_TABLE_HEADER[3:],
 )
 PLAN_LEGACY_ACCEPTANCE_TABLE_HEADERS: tuple[tuple[str, ...], ...] = (
+    _PLAN_PREVIOUS_CURRENT_ACCEPTANCE_TABLE_HEADER,
     _PLAN_PREVIOUS_ACCEPTANCE_TABLE_HEADER,
     (*_PLAN_PREVIOUS_ACCEPTANCE_TABLE_HEADER[:-1], "\u691c\u4f53"),
 )
 """改名前の受入シナリオ表の列構成。保存済み計画の読み取りでだけ受理し、新規作成・改訂では移行警告を拒否する。
 
-第3列の旧名「利用者と入口」と、さらに古い最終列の旧名を持つ2形式を受理する。
+利用目的の列を持たない形式と、第3列の旧名「利用者と入口」、さらに古い最終列の旧名を持つ3形式を受理する。
 最終列の旧名は、作業ツリーから旧名を一掃した状態を文字列検索で確かめられるようにUnicodeエスケープで保持する。
 """
 

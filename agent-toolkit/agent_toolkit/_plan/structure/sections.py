@@ -1572,7 +1572,7 @@ def check_plan_single_file_structure(
                 errors.append(f"`### {PLAN_ACCEPTANCE_H3}`には{list(PLAN_ACCEPTANCE_TABLE_HEADER)}の表が必要")
             else:
                 for row_index, row in enumerate(table.rows):
-                    if len(row) != len(PLAN_ACCEPTANCE_TABLE_HEADER) or any(not cell for cell in row):
+                    if len(row) != len(table.header) or any(not cell for cell in row):
                         errors.append(
                             f"`### {PLAN_ACCEPTANCE_H3}`に空セルまたは列数不一致がある: {table.row_location(row_index)}。"
                             f"{_EMPTY_CELL_FIX}"

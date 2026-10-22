@@ -63,7 +63,7 @@ description: >
 スキル・サブエージェントの編集では次を守る。
 
 - 名前付きサブエージェントの定義と委譲プロンプトには`agent-toolkit:writing-standards`の`references/agent-skills.md`を適用する
-- 委譲元の参照文書（起動契約）とagent定義（委譲先の恒常手順）は組で更新し、委譲元からagent定義をReadさせない
+- 委譲元の起動・受領契約とagent定義は組で更新する。単一呼び元はその工程の規範へ統合し、共有する起動契約は`<役割名>.parent.md`を保持できる。起動設定は`<役割名>.subagent.md`のfrontmatterが所有し、委譲元は起動準備のために定義本文を取得しない
 - 独立に読み込まれる文書間の重複の採否は`agent-toolkit:writing-standards`の`references/agent-documents-basics.md`「定義の所有者」に従う
 - 実行レビューの契約を変更する場合は、`agent-toolkit:process-wi`側と`agent-toolkit:plan-mode`でメインが委譲元となる側を同じ変更単位で更新する（両系統は共通化していない）
 

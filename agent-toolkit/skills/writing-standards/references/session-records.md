@@ -34,15 +34,24 @@ Codexでは、`type`が`response_item`、`payload.type`が`message`、`payload.r
 
 ## 集計値の典拠
 
-期間を指定した週ごとの費用と実行レビューの指標は、`atk run-script cost-metrics -- --since <開始日> --until <終了日>`の出力を典拠にする。
+期間を指定した週ごとの消費量・実行レビューの指標と、セッション別の推定費用は、`atk run-script cost-metrics -- --since <開始日> --until <終了日>`の出力を典拠にする。
 月曜0時からのローカル週ごとに、採用AWI件数、全ルートとprocess-wiの4成分のトークン・AWIあたりの値、レビューのラウンド・レベル・修正せずに応答した率を返す。
 `--until`省略時は実行時刻まで集計する。
 `cost-metrics-coverage`の走査root・期間・最古の読取記録・読取不能件数・未解決委譲件数と、各週の`missing_token_records`を併記し、被覆が欠けた週の値を完全な総量と扱わない。
 
+`cost-metrics-session`は期間内に開始したルートごとに、子孫を含むAPI料金換算のUSD推定額を返す。
+Claudeは最新の`type: cost-state`レコードの`totalCostUSD`を優先し、その後の応答と累積額の無い記録を、同一`message.id`の最後のusage・モデルの単価で補う。
+親の算出額に含まれるClaudeサブエージェント分を重ねず、別プロセスの委譲先を加える。
+内訳の`breakdown.self`はその記録の累積額を含み、`breakdown.claude_subagents`はそこへ含まれない追加分である。
+Codexは各`token_count.info.last_token_usage`と直前の`turn_context.model`を使い、キャッシュ読取と推論出力を二重計上しない。
+単価不明は`unknown_responses`と`unknown_tokens`へ残し、合計の`estimated_usd`をnull、算出できた部分を`known_usd`とする。
+料金表の出所・基準日・区分・算出式とTTL不明時の仮定は、`cost-metrics-coverage.pricing`を併記する。
+`atk serve`の費用表示も同じ記録収集と計算を使う。実支払額との区別は「複数セッションの比較結果」に従う。
+
 セッション記録から集計したトークン量、リクエスト数、所要時間を成果物やユーザーへの提示に書く場合は、`atk run-script session-review-evidence -- <引数>`の出力を典拠とし、自作の集計は典拠にしない。
 トークン量とリクエスト数には`--stats`、所要時間には`--elapsed-until <ISO 8601の時刻>`を付ける。振り返りの全候補は`--bundle`が生成する`candidates.jsonl`から取り、`atk run-script session-review-prepare`がこれを`candidates.md`へ整形する。
 
-別セッションを含む担当別の費用の要約は`--stats --summary-only`で取得する。総量・親・Claudeサブエージェント・agent threadの要約と由来・未解決診断を保持する表示選択であり、トークンの定義と合算方法は全量表示と同じである。bundleと準備文書は詳細内訳を使うため全量を保持する。
+別セッションを含む担当別の費用の要約は`--stats --summary-only`で取得する。総量・親・Claudeサブエージェント・agent threadの要約と由来・未解決診断を保持する表示選択であり、トークンの定義と合算方法は全量表示と同じである。bundleは全量の内訳を保持し、準備文書は初回に読む索引・総量・上位・詳細照会先へ縮約する。全候補ID・必須性・詳細の対応は`bundle/review-index.jsonl`、担当別・対象別の全量は`bundle/stats.jsonl`と`bundle/resource-usage.jsonl`から取得する。毎回の全量通読と証拠保持を分け、選別・原因確定と、`agent-toolkit:session-review`の`references/analysis.md`「コストの無駄の確認」が定める17観点の費用確認に必要な詳細だけを追加取得する。
 
 - Claude Codeの記録では1回のAPI応答が同じ`usage`を持つ複数のレコードへ分かれる。同コマンドは同一`message.id`を最後の`usage`へ畳み込んだ値を返す
 - `--elapsed-until`の`elapsed_seconds`はセッションの最初のレコードから指定時刻までの差であり、その後の工程を含まない
@@ -70,7 +79,7 @@ Codexでは、`type`が`response_item`、`payload.type`が`message`、`payload.r
 
 WIの処理件数は、成功結果まで記録された直接の`atk wi`操作を数え、操作ごとにセッション識別子と記録行のlocatorを残す。workflow名、cwd、branch、時刻、トークンまたは処理件数を記録から確定できない場合は`unknown`とする。
 
-費用を記載する場合は、請求書または決済記録から確認した実支払額と、API利用量へ公開単価を掛けた見積額を別の値として表示する。見積額には価格表の出所、価格の基準日、認証済み入力とキャッシュ入力などの区分、および算出式を併記する。契約プランの定額料金は実支払額の区分へ置く。
+費用を記載する場合は、請求書または決済記録から確認した実支払額と、API利用量へ公開単価を掛けた見積額を別の値として表示する。見積額には価格表の出所、価格の基準日、入力・キャッシュ書込・キャッシュ読取・出力の区分、および算出式を併記する。契約プランの定額料金は実支払額の区分へ置く。
 
 改善前後の差を因果効果として述べる場合は、変更した変数、比較対象で固定した条件および反実仮想を明示する。期間、runtime、対象workflow、処理したWIの由来または並列度が異なる比較は相関として記載し、変更の効果は追加の対照比較から確定する。
 

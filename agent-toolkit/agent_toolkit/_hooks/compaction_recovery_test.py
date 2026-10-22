@@ -203,5 +203,7 @@ def test_resolved_resume_notice_path_is_accepted_by_prepare(
         == 0
     )
     prepared = json.loads(capsys.readouterr().out)
-    assert prepared["conversation_ranges"]
-    assert "この会話の原文を保持する" in pathlib.Path(prepared["conversation_path"]).read_text(encoding="utf-8")
+    conversation = pathlib.Path(prepared["conversation_path"]).read_text(encoding="utf-8")
+    assert prepared["conversation_utf8_bytes"] == len(conversation.encode("utf-8"))
+    assert prepared["conversation_limit_bytes"] == 100_000
+    assert "この会話の原文を保持する" in conversation

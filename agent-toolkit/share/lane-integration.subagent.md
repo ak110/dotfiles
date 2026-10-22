@@ -1,3 +1,22 @@
+---
+mode: delegate
+model_type: high_tier
+usage: base
+required_inputs:
+- 統合区分
+- 実行レビュー済みHEAD
+- 統合先worktree
+- 統合先branch
+- 計画ファイル名一覧
+- AWI終端区分
+- レーン開始時刻
+- 書込担当一覧
+optional_inputs:
+- 完成条件証拠
+- プロジェクト固有の公開後の操作の順序
+writes_worktree: true
+---
+
 # レーン統合タスク
 
 計画の起草と実装を担当したレーン担当threadが、専用branchの統合、作成した計画の最終化およびAWIの終端を行う。pushは委譲元が担う。専用worktreeとbranchは統合後も追加に備えて保持し、回収は、全工程と外部プロセスの終了後に所有登録から資源を回収する通常の終了処理と、process-loopの子の終了後の処理に任せる。
@@ -16,12 +35,6 @@
 | `adopt`・`reject`のメモを書く直前 | `agent-toolkit:wi-standards`の`SKILL.md`（語の基準）と`references/states-and-dependencies.md`「終端」 |
 
 ## 入力
-
-```text
-必須入力名: 統合区分,実行レビュー済みHEAD,統合先worktree,統合先branch,計画ファイル名一覧,AWI終端区分,レーン開始時刻,書込担当一覧
-任意入力名: 完成条件証拠,プロジェクト固有の公開後の操作の順序
-作業ツリーへの書込: あり
-```
 
 - `実行レビュー済みHEAD`: `マージあり`では統合入力HEAD（実行レビューが収束したラウンドの対象HEAD、または収束後に再レビューを省いた修正の後のHEAD）の7文字以上の一意な短縮OID。`マージなし`では`なし`
 - `完成条件証拠`: `マージあり`で受領する、計画ファイル名（計画なしは`なし`）、対応AWI集合、実行レビューが返した`完成条件証拠のパス`の絶対パスを持つ順序付きJSON配列。統合開始時に全証拠を読み、採用予定AWIの集合を重複も欠落もなく覆うことを確かめ、統合時の完成条件判定を各AWIへ適用する
@@ -44,8 +57,8 @@ atk lane integrate --record <所有登録の絶対パス> --reviewed-head <統�
 ```
 
 `--session-id`へは所有登録の`session_id`（`atk lane create`の所有session）を渡し、統合する担当のsessionへ置き換えない。
-統合前の稼働判定は統合先worktreeとレーンworktreeをcwdとする稼働中の担当のうち、書き込む役割（役割文書の`作業ツリーへの書込: あり`）、役割文書を特定できない起動（自由本文の`delegate`・`shell`・`write`）および宣言を読めない担当を数える。
-所有sessionと統合する担当の委譲元連鎖、`explore`、`作業ツリーへの書込: なし`の役割の担当は指定しなくても数えない。
+統合前の稼働判定は統合先worktreeとレーンworktreeをcwdとする稼働中の担当のうち、書き込む役割（役割文書の`writes_worktree: true`）、役割文書を特定できない起動（自由本文の`delegate`・`shell`・`write`）および宣言を読めない担当を数える。
+所有sessionと統合する担当の委譲元連鎖、`explore`、`writes_worktree: false`の役割の担当は指定しなくても数えない。
 初回から保持し更新した`書込担当一覧`の合意済みsession IDを、`--writer-session <session_id>`へ反復指定する。
 最初の統合呼出しから一覧の全要素を指定し、初回の入力で許可集合を完成させる。
 一覧外の実書込担当が残れば、CLIは全件のsession ID・label・役割文書・cwd・所属worktreeを示し、Git変更前に終了コード2で止まる。
@@ -124,7 +137,7 @@ rebaseした場合は、`history-compare`の対応表を`agent-toolkit:commit`�
 
 計画または引き継ぎ記録に確定した採否と、受領した終端区分を適用する。
 
-- メモの先頭の1文は`agent-toolkit:wi-standards`の`references/states-and-dependencies.md`「終端」の基準（語は同スキル冒頭の語の基準）で書く。`adopt`では、ユーザーの立場の確認を経たAWIのH1直下の直し方を、実施した結果に合わせて書く
+- メモの先頭の1文は`agent-toolkit:wi-standards`の`references/states-and-dependencies.md`「終端」の基準（語は同スキル冒頭の語の基準）で書く。`adopt`では、同スキルの`references/awi-body.md`「節の構成と分担」が定めるH1直下の変更内容を、実施した結果に合わせて書く
 - 採用と充足済みは`atk wi adopt`、不採用は`atk wi reject`で終端する。adoptのcommit対応付けは`agent-toolkit:wi-standards`「状態と依存」の遷移表に従い、開始時や統合時のHEADを全項目へ機械的に複製しない。複数commitのメモは`--note-file`へ記録する
 - 対応commitは`agent-toolkit:commit`の`SKILL.md`「WI実装commitの対応」の取得の手段で、計画または引き継ぎ記録と同じstemの対応記録ファイルから取得し、`--worktree`へ統合後のworktreeを渡す
 - commitを記録する採否操作では、統合先worktreeの絶対パスを`--target-repo`へ渡す（同節の共通前提）

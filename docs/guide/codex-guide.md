@@ -78,7 +78,10 @@ Codex向けのプラグインは`update-dotfiles`が生成して導入する。�
 
 `update-dotfiles`は未導入、disabled、version不一致のいずれかの場合に`codex plugin add`を実行し、導入後のversionと有効状態を再確認する。
 更新前にagent-toolkitの全通常versionディレクトリを複製する。
-`codex plugin add`が削除した旧versionは同じ絶対パスへ戻すため、保存済みセッションを終了せずに更新できる。
+`codex plugin add`が削除した旧versionは、導入後の状態確認とdaemon処理を含む更新関数内のCodex CLI呼出が全て終了した後に同じ絶対パスへ戻すため、保存済みセッションを終了せずに更新できる。
+別のCodex App Serverがlocal marketplaceを自動更新して旧versionを削除した場合、dotfiles向けhookの起動コマンドはClaude Code側に残る同versionを使う。
+削除された旧versionのCodex plugin cache rootと同じ絶対パスへ復旧してからhookを起動する。
+同versionが残っていない場合は、Claude Codeの現行導入版からhookを起動する。
 CLIが導入した目標versionは復元対象から外し、導入後の内容を維持する。
 更新または旧versionの復旧に失敗した場合、`update-dotfiles`は両者を区別して診断する。
 Linuxでは、過去の設定で診断ログDBを共有メモリー（`/dev/shm/codex-<UID>-logs_2.sqlite`と、その`-wal`・`-shm`ファイル）へ移していた場合、`update-dotfiles`が通常の保存先`~/.codex/`へ戻す。`<UID>`はOSのユーザーIDを指す。
@@ -117,6 +120,7 @@ codex app-server daemon start
 Codexのセッションまたは`agents_server`の委譲が残る場合も、agent-toolkitを目標versionへ更新する。
 旧versionの複製は元の実体を残したまま行い、`plugin add`の完了後に削除されたversionだけを復旧する。
 更新中に使っていたセッションは旧versionを参照し続け、新しく始めたセッションは目標versionを使う。
+保存済みセッションの旧pathが別processに削除された場合も、次のhookイベントでClaude Code側の同版cacheから復旧する。
 ウォームアップは更新後の有効版を使う。
 
 post-applyの延期記録は、診断ログDBの移行や不要pluginの除去など、実体の除去を伴う工程がCodexの終了を待つ場合に使う。

@@ -14,7 +14,7 @@ from typing import Any
 import pytest
 
 from agent_toolkit import atk
-from agent_toolkit._agents_server import antigravity, claude, commands, context_usage, state, status_file
+from agent_toolkit._agents_server import antigravity, claude, cli_turn, commands, context_usage, state, status_file
 from agent_toolkit._common import state_paths
 from agent_toolkit._testing.agents_server_support import (
     AssistantMessage,
@@ -175,8 +175,10 @@ async def test_antigravity_uses_latest_response_step_and_retains_terminal_usage(
         + "for event in events:\n    print(json.dumps(event), flush=True)\n",
         encoding="utf-8",
     )
-    monkeypatch.setattr(antigravity, "build_command", lambda *_args: [sys.executable, str(script)])
-    monkeypatch.setattr(antigravity, "_child_env", lambda _root: host_environ())
+    monkeypatch.setattr(
+        antigravity.AntigravityManager, "build_command", staticmethod(lambda *_args: [sys.executable, str(script)])
+    )
+    monkeypatch.setattr(cli_turn, "_child_env", lambda _root: host_environ())
     async with antigravity.AntigravityManager() as backend:
         terminal = asyncio.Event()
 

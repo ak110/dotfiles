@@ -54,6 +54,7 @@ from pytools._internal import (
     setup_media_remote,
     setup_mise,
     setup_msys_env,
+    setup_opencode_cli,
     setup_registry,
     setup_sendto_shortcuts,
     setup_statusline_binary,
@@ -448,6 +449,7 @@ _DEFAULT_STEPS: list[_StepSpec] = [
     # 旧npm版の除去がmise管理のNode配下のnpmを使う。
     _StepSpec(_CLAUDE_CLI, setup_claude_cli.run, after=(_MISE,)),
     _StepSpec("Antigravity CLI の導入", setup_agy_cli.run),
+    _StepSpec("OpenCode CLI の導入", setup_opencode_cli.run, after=(_MISE, _CODEX_CLI, _CLAUDE_CLI)),
     _StepSpec("Herdr CLI の導入と更新", setup_herdr_cli.run),
     # 旧配布物の削除と同じ配布先ディレクトリの旧ファイルを削除する。
     _StepSpec("agent-toolkit ルールの同期", sync_agent_toolkit_rules.run, after=(_CLEANUP,)),

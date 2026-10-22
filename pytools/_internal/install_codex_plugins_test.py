@@ -304,6 +304,10 @@ def test_running_codex_updates_and_preserves_previous_caches(  # noqa: PLR0913 -
 
     def run_subprocess(args: list[str], **_kwargs: object) -> _FakeResult:
         assert args[1:] == ["plugin", "list", "--json"]
+        if current["version"] == "1.2.3":
+            shutil.rmtree(older, ignore_errors=True)
+            if old_version != "1.2.3":
+                shutil.rmtree(previous, ignore_errors=True)
         return _FakeResult(stdout=json.dumps(_installed_state(**current)))
 
     monkeypatch.setattr(install_codex_plugins, "_codex_json", codex_json)
@@ -555,6 +559,100 @@ def test_hook_wrapper_forwards_event_and_exit(plugin_env: Path, monkeypatch: pyt
         ]
     else:
         assert calls[-1] == [sys.executable, str(root / "scripts/launch.py"), "agent_toolkit/hook.py", "pretooluse"]
+
+
+def _write_claude_plugin_root(root: Path, version: str) -> None:
+    """安定した起動コマンドの復旧元になる最小のClaude Code plugin cacheを作成する。"""
+    (root / ".codex-plugin").mkdir(parents=True)
+    (root / ".codex-plugin/plugin.json").write_text(json.dumps({"name": "agent-toolkit", "version": version}), encoding="utf-8")
+    (root / "scripts").mkdir()
+    (root / "scripts/launch.py").write_text("# launcher\n", encoding="utf-8")
+    (root / "agent_toolkit").mkdir()
+    (root / "agent_toolkit/hook.py").write_text("# hook\n", encoding="utf-8")
+    (root / "marker").write_text(version, encoding="utf-8")
+
+
+def test_hook_wrapper_restores_missing_pinned_root_from_same_claude_version(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """commit中の自動更新で旧cacheが消えても、独立した同版cacheからhook入口を復旧する。"""
+    home = tmp_path / "home"
+    wrapper = home / ".local/bin/atk-hook"
+    wrapper.parent.mkdir(parents=True)
+    shutil.copyfile(Path(__file__).resolve().parents[2] / "agent-toolkit/scripts/atk-hook", wrapper)
+    version = "1.2.2"
+    claude_root = home / ".claude/plugins/cache/ak110-dotfiles/agent-toolkit" / version
+    _write_claude_plugin_root(claude_root, version)
+    (claude_root / ".venv").mkdir()
+    pinned = home / ".codex/plugins/cache/ak110-dotfiles/agent-toolkit" / version
+    calls: list[list[str]] = []
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("CODEX_HOME", str(home / ".codex"))
+    monkeypatch.setenv("PLUGIN_ROOT", str(pinned))
+    monkeypatch.setattr(sys, "argv", [str(wrapper), "pretooluse"])
+
+    def execute(_executable: str, args: list[str]) -> None:
+        calls.append(args)
+        raise SystemExit(0)
+
+    monkeypatch.setattr(os, "execv", execute)
+    monkeypatch.setattr(subprocess, "run", lambda *_args, **_kwargs: pytest.fail("同版Claude cacheで復旧できる"))
+
+    with pytest.raises(SystemExit, match="0"):
+        runpy.run_path(str(wrapper), run_name="__main__")
+
+    assert (pinned / "marker").read_text(encoding="utf-8") == version
+    assert not (pinned / ".venv").exists()
+    assert calls == [[sys.executable, str(pinned / "scripts/launch.py"), "agent_toolkit/hook.py", "pretooluse"]]
+
+
+def test_hook_wrapper_uses_current_claude_install_when_same_version_is_unavailable(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """同版cacheが無い場合も、編集中の作業ツリーを避けて現行Claude配布物からhookを起動する。"""
+    home = tmp_path / "home"
+    wrapper = home / ".local/bin/atk-hook"
+    wrapper.parent.mkdir(parents=True)
+    shutil.copyfile(Path(__file__).resolve().parents[2] / "agent-toolkit/scripts/atk-hook", wrapper)
+    current = home / ".claude/plugins/cache/ak110-dotfiles/agent-toolkit/1.2.3"
+    _write_claude_plugin_root(current, "1.2.3")
+    registry = home / ".claude/plugins/installed_plugins.json"
+    registry.parent.mkdir(parents=True, exist_ok=True)
+    registry.write_text(
+        json.dumps(
+            {
+                "plugins": {
+                    "agent-toolkit@ak110-dotfiles": [
+                        {
+                            "installPath": str(current),
+                            "version": "1.2.3",
+                            "lastUpdated": "2026-10-21T00:00:00Z",
+                        }
+                    ]
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    pinned = home / ".codex/plugins/cache/ak110-dotfiles/agent-toolkit/1.2.2"
+    calls: list[list[str]] = []
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("CODEX_HOME", str(home / ".codex"))
+    monkeypatch.setenv("PLUGIN_ROOT", str(pinned))
+    monkeypatch.setattr(sys, "argv", [str(wrapper), "pretooluse"])
+
+    def execute(_executable: str, args: list[str]) -> None:
+        calls.append(args)
+        raise SystemExit(0)
+
+    monkeypatch.setattr(os, "execv", execute)
+    monkeypatch.setattr(subprocess, "run", lambda *_args, **_kwargs: pytest.fail("現行Claude配布物を使える"))
+
+    with pytest.raises(SystemExit, match="0"):
+        runpy.run_path(str(wrapper), run_name="__main__")
+
+    assert not pinned.exists()
+    assert calls == [[sys.executable, str(current / "scripts/launch.py"), "agent_toolkit/hook.py", "pretooluse"]]
 
 
 @pytest.mark.parametrize(

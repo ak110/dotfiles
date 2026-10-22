@@ -1,3 +1,13 @@
+---
+mode: explore
+model_type: low_tier
+usage: chores
+required_inputs:
+- 差分ファイル
+optional_inputs: []
+writes_worktree: false
+---
+
 # 一括置換後レビュー担当タスク
 
 多数の箇所で語を置き換えた文字単位差分を全件読み、置換によって元の意味や対応関係が変わった箇所を返す。
@@ -6,12 +16,6 @@
 完了報告は日本語で書く。
 
 ## 入力
-
-```text
-必須入力名: 差分ファイル
-mode: explore
-作業ツリーへの書込: なし
-```
 
 - `差分ファイル`: `git diff --word-diff=plain --word-diff-regex=.`の出力を保存したファイルの絶対パス。`[-…-]`が削除、`{+…+}`が追加を示す
 

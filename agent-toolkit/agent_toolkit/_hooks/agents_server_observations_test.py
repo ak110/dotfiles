@@ -257,6 +257,31 @@ def test_agents_server_model_type_matches_server_defaults(operation: str, tool_i
     assert model_type == expected
 
 
+def test_new_role_model_type_comes_from_same_declaration_as_server(tmp_path: pathlib.Path) -> None:
+    """役割名対応表の無い定義でも、起動時と観測時の段位が一致する。"""
+    from agent_toolkit._agents_server import launch_requests  # pylint: disable=import-outside-toplevel
+
+    manifest = tmp_path / ".claude-plugin/plugin.json"
+    manifest.parent.mkdir()
+    manifest.write_text('{"name":"agent-toolkit"}', encoding="utf-8")
+    document = tmp_path / "share/new-check.subagent.md"
+    document.parent.mkdir()
+    document.write_text(
+        "---\nmode: explore\nmodel_type: low_tier\nusage: chores\n"
+        "required_inputs: []\nwrites_worktree: false\n---\n# 読取確認\n",
+        encoding="utf-8",
+    )
+    model_type, _usage, _prompt, _mode, _handoff = launch_requests.task_document_request(str(document), {})
+    inputs = {"subagent_md_path": str(document)}
+    assert agents_server_observations._agents_server_model_type(inputs, "start") == model_type  # pylint: disable=protected-access
+    assert (
+        agents_server_observations._agents_server_model_type(  # pylint: disable=protected-access
+            {**inputs, "model_type": "high_tier"}, "start"
+        )
+        == "high_tier"
+    )
+
+
 @pytest.mark.asyncio
 async def test_public_handoff_start_registers_successor_for_wait_and_followup(
     tmp_path: pathlib.Path,

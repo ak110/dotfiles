@@ -2348,8 +2348,12 @@ def test_reports_missing_body_as_violation(
     assert "absent.md: 本文を特定できない" in capsys.readouterr().err
 
 
+@pytest.mark.parametrize(
+    "model",
+    ["claude:opus[1m]/medium", "opencode:local/Qwen/Qwen3.8-27B@thinking", "opencode:local/Qwen/Qwen3.8-27B/high@medium"],
+)
 def test_selection_values_with_yaml_syntax_characters_round_trip(
-    tmp_path: pathlib.Path, env: tuple[pathlib.Path, pathlib.Path], capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, env: tuple[pathlib.Path, pathlib.Path], capsys: pytest.CaptureFixture[str], model: str
 ) -> None:
     """書式例どおり単一引用符で囲んだ値は、コロン・括弧・引用符・改行を含んでも同じ構造で読める。
 
@@ -2365,7 +2369,7 @@ def test_selection_values_with_yaml_syntax_characters_round_trip(
         "  レーン: 'lane-01'\n"
         "  鮮度: {status: current, later_commit_count: 0}\n"
         "  書込対象: ['src/model.py']\n"
-        "  担当モデル: {実装担当: 'claude:opus[1m]/medium'}\n"
+        f"  担当モデル: {{実装担当: '{model}'}}\n"
         "  プロジェクト規範の指定: '観点群: 実装漏れと横展開 # 見出し, [括弧] {波括弧} と ''引用符'' の値'\n"
         "レーンの所要時間:\n"
         "- レーン: 'lane-01'\n"
@@ -2387,7 +2391,7 @@ def test_selection_values_with_yaml_syntax_characters_round_trip(
     assert _dispatch("--work-dir", str(repo), str(selection)) == 0, capsys.readouterr().err
     loaded = check_selection.load_selection(selection)
     decision = typing.cast(list[dict[str, object]], loaded["選定"])[0]
-    assert decision["担当モデル"] == {"実装担当": "claude:opus[1m]/medium"}
+    assert decision["担当モデル"] == {"実装担当": model}
     assert decision["プロジェクト規範の指定"] == "観点群: 実装漏れと横展開 # 見出し, [括弧] {波括弧} と '引用符' の値"
     assert typing.cast(list[dict[str, object]], loaded["レーンの所要時間"])[0]["根拠"] == "同一レーン案: 3000秒\n分割案: 2000秒"
 
@@ -2411,7 +2415,7 @@ _FIX_ARGUMENTS = "`--work-dir`へ対象リポジトリの絶対パスを渡し�
             "  担当モデル: {実装担当: 'agents_server:claude:opus[1m]/medium'}\n"
             "レーンの所要時間:\n- レーン: 'lane-01'\n  実装秒数: 1\n  統合秒数: 1\n  根拠: '根拠'\n",
             "agents_server:claude:opus[1m]/medium",
-            "`<claude|codex|agy>:<model>/<effort>`の値へ直す",
+            "`<claude|codex|agy>:<model>/<effort>`か`opencode:<provider>/<model>@<effort>`の値へ直す",
             id="model-type",
         ),
         pytest.param(
@@ -2419,7 +2423,7 @@ _FIX_ARGUMENTS = "`--work-dir`へ対象リポジトリの絶対パスを渡し�
             "  担当モデル: {計画担当: 'claude:opus/high'}\n"
             "レーンの所要時間:\n- レーン: 'lane-01'\n  実装秒数: 1\n  統合秒数: 1\n  根拠: '根拠'\n",
             "計画担当",
-            "`<claude|codex|agy>:<model>/<effort>`の値へ直す",
+            "`<claude|codex|agy>:<model>/<effort>`か`opencode:<provider>/<model>@<effort>`の値へ直す",
             id="unknown-model-role",
         ),
         pytest.param(
@@ -2470,15 +2474,16 @@ def test_content_errors_guide_selection_fix(
     assert "Traceback" not in err
 
 
+@pytest.mark.parametrize("model", ["claude:opus", "opencode:local/medium"])
 def test_field_type_errors_are_reported_together(
-    tmp_path: pathlib.Path, env: tuple[pathlib.Path, pathlib.Path], capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, env: tuple[pathlib.Path, pathlib.Path], capsys: pytest.CaptureFixture[str], model: str
 ) -> None:
     """1回の実行で全ての内容の誤りを返し、直すたびに次の誤りが現れる往復を生じさせない。"""
     repo, _notes = env
     selection = tmp_path / "selection.yaml"
     selection.write_text(
         "選定:\n- WI: 'a.md'\n  レーン: 'lane-01'\n  鮮度: {status: current}\n  書込対象: 'src/model.py'\n"
-        "  担当モデル: {実装担当: 'claude:opus'}\n"
+        f"  担当モデル: {{実装担当: '{model}'}}\n"
         "レーンの所要時間:\n- レーン: 'lane-01'\n  段階: 0\n  実装秒数: -1\n  統合秒数: 1\n  根拠: ''\n",
         encoding="utf-8",
     )

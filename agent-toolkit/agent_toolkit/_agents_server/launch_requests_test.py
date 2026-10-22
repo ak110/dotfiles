@@ -326,22 +326,26 @@ async def test_start_rejects_unresolvable_role_name_with_accepted_roles(
 
 
 @pytest.mark.asyncio
-async def test_start_reports_missing_model_type_mapping_as_defect(
+async def test_start_reports_missing_model_type_declaration_as_defect(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
 ) -> None:
-    """工程別設定の対応が無い`<役割名>.subagent.md`は、欠陥の報告と自由本文の`delegate`への切替を次の操作で示す。"""
+    """新形式のモデル段位が欠けていれば、旧対応表を使わず起動前に定義の修正を案内する。"""
     manager = TaskManager(start=AsyncMock(return_value={"session_id": "session", "status": "running", "label": "担当"}))
     monkeypatch.setattr(mcp_tools, "_MANAGER", manager)
-    monkeypatch.delitem(launch_requests._TASK_MODEL_TYPES, "exec.subagent.md")
+    (tmp_path / ".claude-plugin").mkdir()
+    (tmp_path / ".claude-plugin/plugin.json").write_text('{"name":"agent-toolkit"}', encoding="utf-8")
+    task_document = tmp_path / "share/exec.subagent.md"
+    task_document.parent.mkdir()
+    task_document.write_text(
+        "---\nmode: explore\nusage: chores\nrequired_inputs: []\nwrites_worktree: false\n---\n# タスク\n",
+        encoding="utf-8",
+    )
 
-    with pytest.raises(ValueError, match="no model_type mapping") as raised:
-        await mcp_tools.start(
-            str(tmp_path), subagent_md_path=str(launch_requests._SHARE_DIRECTORY / "exec.subagent.md"), extra_params={}
-        )
+    with pytest.raises(ValueError, match="model_type") as raised:
+        await mcp_tools.start(str(tmp_path), subagent_md_path=str(task_document), extra_params={})
 
     next_action = _actionable_message(raised.value).split(NEXT_ACTION_PREFIX, 1)[1]
-    assert "`delegate`" in next_action
-    assert "報告" in next_action
+    assert "frontmatter" in next_action and "start" in next_action
     manager.start.assert_not_awaited()
 
 
