@@ -1,7 +1,7 @@
 """プロセス間の排他ファイルロック。
 
 POSIXの`fcntl.flock`とWindowsの`msvcrt.locking`の差異を吸収し、
-`with`構文で保持できる単一の入口を提供する。
+`with`構文でロックを保持する単一のコンテキストマネージャーを提供する。
 `agent-toolkit/agent_toolkit/_common/file_lock.py`は同等の機構を持つが別配布物のため参照しない。
 """
 

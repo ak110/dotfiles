@@ -12,6 +12,11 @@ import pathlib
 _PLUGIN_ROOT = pathlib.Path(__file__).resolve().parents[2]
 
 
+def plugin_root() -> pathlib.Path:
+    """hookが使用する配布物rootを返す。"""
+    return _PLUGIN_ROOT
+
+
 def skill_document_path(skill_name: str, relative_path: str) -> pathlib.Path:
     """スキル配下の資料の、稼働版のplugin rootから解決した絶対パスを返す。実在は確かめない。"""
     return _PLUGIN_ROOT / "skills" / skill_name / relative_path

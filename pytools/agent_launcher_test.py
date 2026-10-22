@@ -10,7 +10,7 @@ import pytest
 
 from pytools import agent_launcher
 
-# 計画で指定された分岐条件を、外部プロセスに依存せず直接検証する。
+# 計画で指定された分岐条件を、外部プロセスを起動せず直接検証する。
 # pylint: disable=protected-access
 
 type Entrypoint = Callable[..., NoReturn]

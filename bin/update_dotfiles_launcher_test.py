@@ -84,6 +84,16 @@ def _make_path(tmp_path: pathlib.Path, *, with_uv: bool) -> pathlib.Path:
     return path_dir
 
 
+@pytest.fixture(name="real_uv")
+def _real_uv(host_environ: Callable[[], dict[str, str]]) -> str:
+    """隔離前のPATHからmise shimを除いて実uvを返す。"""
+    environment = host_environ()
+    native_path = os.pathsep.join(part for part in environment["PATH"].split(os.pathsep) if pathlib.Path(part).name != "shims")
+    uv = shutil.which("uv", path=native_path)
+    assert uv is not None
+    return uv
+
+
 def _run_launcher(
     tmp_path: pathlib.Path,
     *,
@@ -219,19 +229,15 @@ def test_logs_launcher_skips_self_update(tmp_path: pathlib.Path, run_exit: int) 
     assert result.stderr == "uv run stderr\n"
 
 
+@pytest.mark.usefixtures("share_package_caches")
 def test_logs_public_launcher_reads_saved_log_without_writing_state(
-    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, real_uv: str
 ) -> None:
     """両OSの公開ランチャーから実Pythonへ到達し、保存ログだけを読む。"""
-    # mise shimを複製すると隔離した設定先で再解決されるため、実体だけを選ぶ。
-    native_path = os.pathsep.join(part for part in os.environ["PATH"].split(os.pathsep) if pathlib.Path(part).name != "shims")
-    uv = shutil.which("uv", path=native_path)
-    assert uv is not None
-    cache = subprocess.run([uv, "cache", "dir"], check=True, capture_output=True, encoding="utf-8", timeout=30).stdout.strip()
     home = tmp_path / "home"
     native_uv = home / ".local" / "bin" / ("uv.exe" if os.name == "nt" else "uv")
     native_uv.parent.mkdir(parents=True)
-    shutil.copy2(uv, native_uv)
+    shutil.copy2(real_uv, native_uv)
     for variable in ("HOME", "USERPROFILE"):
         monkeypatch.setenv(variable, str(home))
     for variable in (
@@ -246,7 +252,6 @@ def test_logs_public_launcher_reads_saved_log_without_writing_state(
         monkeypatch.setenv(variable, str(tmp_path / variable))
     # WindowsのKnownFolder APIも子へ継承する公開overrideで隔離する。
     monkeypatch.setenv("WIN_PD_OVERRIDE_LOCAL_APPDATA", os.environ["LOCALAPPDATA"])
-    monkeypatch.setenv("UV_CACHE_DIR", cache)
     monkeypatch.setenv("UV_PYTHON", sys.executable)
     monkeypatch.delenv("AGENT_TOOLKIT_PROCESS_LOOP_SESSION", raising=False)
     state_dir = pathlib.Path(platformdirs.user_state_dir("agent-toolkit", appauthor=False))
@@ -275,17 +280,14 @@ def test_logs_public_launcher_reads_saved_log_without_writing_state(
     ],
 )
 def test_launcher_replacement_preserves_update_exit(
-    tmp_path: pathlib.Path, version: str, run_exit: int, host_environ: Callable[[], dict[str, str]]
+    tmp_path: pathlib.Path, version: str, run_exit: int, real_uv: str, host_environ: Callable[[], dict[str, str]]
 ) -> None:
     """更新中の自身の書換え後も、新旧ランチャーが更新処理の終了コードを返す。"""
     environment = host_environ()
-    native_path = os.pathsep.join(part for part in environment["PATH"].split(os.pathsep) if pathlib.Path(part).name != "shims")
-    uv = shutil.which("uv", path=native_path)
-    assert uv is not None
     home = tmp_path / "home"
     native_uv = home / ".local" / "bin" / ("uv.exe" if os.name == "nt" else "uv")
     native_uv.parent.mkdir(parents=True)
-    shutil.copy2(uv, native_uv)
+    shutil.copy2(real_uv, native_uv)
     launcher = tmp_path / "bin" / ("update-dotfiles.cmd" if os.name == "nt" else "update-dotfiles")
     launcher.parent.mkdir()
     current = (_WINDOWS_LAUNCHER if os.name == "nt" else _LAUNCHER).read_bytes()

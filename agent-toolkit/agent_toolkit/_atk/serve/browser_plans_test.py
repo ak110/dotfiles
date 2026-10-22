@@ -496,7 +496,7 @@ async def test_same_mtime_rewrites_refresh_plan_preview(screen_harness: _ScreenH
     fixed_stat = harness.plan_path.stat()
 
     async def rewrite_keeping_mtime(markdown: str) -> None:
-        # 同じ時刻刻み内の連続書き換えを、実行速度に依存せず再現するため更新時刻を初回の値へ戻す。
+        # 同じ時刻刻み内の連続書き換えを、実行速度によらず再現するため更新時刻を初回の値へ戻す。
         harness.plan_path.write_text(markdown, encoding="utf-8")
         os.utime(harness.plan_path, ns=(fixed_stat.st_atime_ns, fixed_stat.st_mtime_ns))
         assert harness.plan_path.stat().st_mtime_ns == fixed_stat.st_mtime_ns

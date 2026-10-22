@@ -1,6 +1,6 @@
 """Codexのmanaged-tempのcleanupだけを承認するPermissionRequest hook。
 
-対象を、登録済みpathの親rootも検証する共通処理へ渡し、現在の一時rootに依存しない。
+対象を、登録済みpathの親rootも検証する共通処理へ渡し、現在の一時rootを前提としない。
 """
 
 from __future__ import annotations

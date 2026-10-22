@@ -44,7 +44,7 @@ WI_STATES = (
     WI_STATE_ADOPTED,
     WI_STATE_REJECTED,
 )
-"""管理repoのroot直下に置く状態フォルダー名の全体。"""
+"""frontmatterの`state`で受理する保存状態の全体。"""
 
 WI_ACTIVE_STATES = (WI_STATE_INBOX, WI_STATE_PROCESSING, WI_STATE_HOLD)
 """未終端の項目を表示する一覧集合。項目の種別によらず同じ集合とする。"""

@@ -10,14 +10,22 @@ description: >
 
 設定の検討には対象版の公式資料とYAMLの読取、最終確認には対象GitLabのlintへ到達する手段が必要である。GitLabやCLIへ到達できない環境では、提示された設定の検討結果と本体lintへ渡す入力を返し、通過判定はGitLabへ接続できるClaude CodeまたはCodexで確かめる。読み手へ伝える説明には[文章の品質基準](references/quality-standards.md)を使う。
 
+## 名指し参照の読込方法
+
+本文の各参照の適用条件を保ち、選んだ資料の指定範囲を取得してから、その基準を使う具体的な判断へ進む。起動時の行の資料は起動本文とともに届く。
+
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `references/quality-standards.md` | 判断 | `read:agent-toolkit:*/skills/gitlab-ci-usage/references/quality-standards.md` |
+
 ## 読込表
 
 次の時点または条件が成立したら、その操作の前に同じ行の資料を全文読む。
 
-| 時点または条件 | 全文読む資料 |
-| --- | --- |
-| 自己署名のTLS証明書のGitLab私設ホストで`glab`がTLS証明書検証エラーを返したとき | `references/self-hosted-tls.md` |
-| 私設GitLabのCI通過確認を行う前 | `agent-toolkit:commit`の`references/push-and-ci.md` |
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 | 資料選択子 |
+| --- | --- | --- | --- | --- |
+| 自己署名のTLS証明書のGitLab私設ホストで`glab`がTLS証明書検証エラーを返したとき | `references/self-hosted-tls.md` | 判断 | `read:agent-toolkit:*/skills/gitlab-ci-usage/references/self-hosted-tls.md` | |
+| 私設GitLabのCI通過確認を行う前 | `agent-toolkit:commit`の`references/push-and-ci.md` | 判断 | `read:agent-toolkit:*/skills/commit/references/push-and-ci.md` | |
 
 ## 基本方針
 

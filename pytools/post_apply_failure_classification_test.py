@@ -16,6 +16,7 @@ import pytest
 
 from pytools import post_apply
 from pytools._internal import (
+    antigravity_plugin,
     apply_dotfiles_plugins,
     claude_common,
     claude_plugin_references,
@@ -275,6 +276,12 @@ def _claude_settings_write_fails(monkeypatch: pytest.MonkeyPatch, tmp_path: Path
     monkeypatch.setattr(common, "write_settings_hybrid", lambda *_args, **_kwargs: False)
 
 
+def _agy_plugin_write_fails(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    monkeypatch.setattr(common, "resolve_executable", lambda _name, **_kwargs: tmp_path / "agy")
+    monkeypatch.setattr(common, "find_dotfiles_root", lambda: tmp_path)
+    monkeypatch.setattr(antigravity_plugin, "sync", _raise(OSError("配布ファイルの書き込みに失敗")))
+
+
 def _gemini_settings_write_fails(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     monkeypatch.setattr(Path, "home", lambda: tmp_path)
     monkeypatch.setattr(common, "write_settings_hybrid", lambda *_args, **_kwargs: False)
@@ -401,6 +408,7 @@ _SIMULATIONS: dict[str, list[tuple[_Simulation, int]]] = {
     "旧Codex User scope MCP登録の移行": [(_legacy_codex_mcp_removal_fails, 1)],
     "Claude 設定": [(_claude_settings_write_fails, 1)],
     "Gemini 設定": [(_gemini_settings_write_fails, 1)],
+    "Antigravity plugin の生成と登録": [(_agy_plugin_write_fails, 1)],
     "libarchive (Windows)": [(_libarchive_download_fails, 0)],
     "claude-statusline バイナリの取得": [(_statusline_build_fails, 0)],
     "atk serve 自動起動セットアップ (Linux)": [(_atk_serve_launcher_write_fails, 1)],

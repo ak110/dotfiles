@@ -1,6 +1,6 @@
 """Claude向け品質資源とAgent Plugins・Codex向け配布物を生成し、生成物との差を検査する。
 
-生成器の入口`scripts/sync_codex_plugin_manifests.py`と、post-applyの「Codex plugin snapshot の生成」工程が使う。
+生成器の起動スクリプト`scripts/sync_codex_plugin_manifests.py`と、post-applyの「Codex plugin snapshot の生成」工程が使う。
 """
 
 import contextlib
@@ -16,17 +16,20 @@ from agent_toolkit._common import mcp_environment
 from pytools._internal import common
 
 PLUGIN_SOURCE = Path("agent-toolkit/.claude-plugin/plugin.json")
+BASICS_PLUGIN_SOURCE = Path("agent-basics/.claude-plugin/plugin.json")
 MARKETPLACE_SOURCE = Path(".claude-plugin/marketplace.json")
 HOOKS_SOURCE = Path("agent-toolkit/hooks/hooks.json")
 MCP_SOURCE = Path("agent-toolkit/.mcp.json")
 MCP_CODEX_TARGET = Path("agent-toolkit/.mcp.codex.json")
 AGENT_PLUGIN_TARGET = Path("agent-toolkit/plugin.json")
+BASICS_AGENT_PLUGIN_TARGET = Path("agent-basics/plugin.json")
 AGENT_MCP_TARGET = Path("agent-toolkit/mcp.json")
 PLUGIN_TARGET = Path("agent-toolkit/.codex-plugin/plugin.json")
+BASICS_PLUGIN_TARGET = Path("agent-basics/.codex-plugin/plugin.json")
 MARKETPLACE_TARGET = Path(".agents/plugins/marketplace.json")
 HOOKS_TARGET = Path("agent-toolkit/hooks/hooks.codex.json")
 CODEX_PLUGIN_ROOT_TARGET = Path("agent-toolkit-codex")
-QUALITY_SOURCE = Path("agent-toolkit/skills/writing-standards/references/writing.md")
+QUALITY_SOURCE = Path("agent-basics/skills/writing-standards/references/writing.md")
 QUALITY_START = "<!-- portable-quality:start -->"
 QUALITY_END = "<!-- portable-quality:end -->"
 QUALITY_FILENAME = "references/quality-standards.md"
@@ -41,7 +44,7 @@ CODEX_ROOT_NOTICE = (
 SHARED_MCP_SERVER_NAMES = frozenset({"pyfltr", "agents_server"})
 
 
-# 依存導入前の起動入口scripts/launch.pyを、プロジェクト設定を読まずに起動するuvの引数。
+# 依存導入前の起動スクリプトscripts/launch.pyを、プロジェクト設定を読まずに起動するuvの引数。
 _UV_LAUNCH_ARGS = ("run", "--no-config", "--no-project", "--python", "3.15", "python")
 
 
@@ -61,7 +64,7 @@ def _codex_hook_command(name: str) -> str:
 
 
 def _local_codex_hook_manifest(content: str) -> str:
-    """dotfilesが個人binへ置く安定入口を使うlocal plugin用manifestを返す。"""
+    """dotfilesが個人binへ置く固定の起動コマンドを使うlocal plugin用manifestを返す。"""
     value = json.loads(content)
     for groups in value["hooks"].values():
         for group in groups:
@@ -294,9 +297,6 @@ def _codex_mcp(source: dict[str, Any]) -> dict[str, Any]:
 
 def _quality_outputs(root: Path) -> dict[Path, str]:
     """スキルフォルダーだけを配布するホストへ、同じ原本の品質基準を届ける。"""
-    skills = tuple(sorted((root / "agent-toolkit/skills").glob("*/SKILL.md")))
-    if not skills:
-        return {}
     source = (root / QUALITY_SOURCE).read_text(encoding="utf-8")
     if source.count(QUALITY_START) != 1 or source.count(QUALITY_END) != 1:
         raise ValueError("品質基準の生成範囲は開始と終了の標識を各1件持つ必要がある")
@@ -306,23 +306,25 @@ def _quality_outputs(root: Path) -> dict[Path, str]:
     if not end or not body.startswith("## "):
         raise ValueError("品質基準の生成範囲はH2から始まり、終了の標識へ続く必要がある")
     content = QUALITY_NOTICE + body.removeprefix("#") + "\n"
-    return {
-        skill.parent.relative_to(root) / QUALITY_FILENAME: content
-        for skill in skills
-        if skill.parent.name != "writing-standards"
-    }
+    outputs: dict[Path, str] = {}
+    for distribution in ("agent-toolkit", "agent-basics"):
+        for skill in sorted((root / distribution / "skills").glob("*/SKILL.md")):
+            if skill.parent.name != "writing-standards":
+                outputs[skill.parent.relative_to(root) / QUALITY_FILENAME] = content
+    return outputs
 
 
 def _outputs(root: Path) -> dict[Path, str]:
     plugin = _load(root, PLUGIN_SOURCE)
+    basics_plugin = _load(root, BASICS_PLUGIN_SOURCE)
     marketplace = _load(root, MARKETPLACE_SOURCE)
-    entries = [item for item in marketplace.get("plugins", []) if item.get("name") == plugin.get("name")]
-    if len(entries) != 1:
-        raise ValueError("Claude Codeのmarketplaceのagent-toolkitエントリは1件である必要がある")
-    entry = entries[0]
-    for key in ("version", "description"):
-        if entry.get(key) != plugin.get(key):
-            raise ValueError(f"plugin.jsonとmarketplace.jsonで{key}が一致しない")
+    for source_plugin in (plugin, basics_plugin):
+        entries = [item for item in marketplace.get("plugins", []) if item.get("name") == source_plugin.get("name")]
+        if len(entries) != 1:
+            raise ValueError(f"Claude Codeのmarketplaceの{source_plugin.get('name')}エントリは1件である必要がある")
+        for key in ("version", "description"):
+            if entries[0].get(key) != source_plugin.get(key):
+                raise ValueError(f"{source_plugin.get('name')}のplugin.jsonとmarketplace.jsonで{key}が一致しない")
 
     selected: dict[str, list[dict[str, Any]]] = {}
     if (root / HOOKS_SOURCE).exists():
@@ -344,7 +346,9 @@ def _outputs(root: Path) -> dict[Path, str]:
         selected.update(CODEX_ONLY_HOOKS)
 
     metadata = {key: plugin[key] for key in PLUGIN_METADATA_FIELDS}
+    basics_metadata = {key: basics_plugin[key] for key in PLUGIN_METADATA_FIELDS}
     agent_plugin = {"$schema": AGENT_PLUGIN_SCHEMA, **metadata}
+    basics_agent_plugin = {"$schema": AGENT_PLUGIN_SCHEMA, **basics_metadata}
     codex_plugin = dict(metadata)
     codex_plugin["skills"] = "./skills/"
     codex_plugin["hooks"] = "./hooks/hooks.codex.json" if selected else {"hooks": {}}
@@ -352,11 +356,8 @@ def _outputs(root: Path) -> dict[Path, str]:
         codex_plugin["mcpServers"] = "./.mcp.codex.json"
     codex_plugin["interface"] = {
         "displayName": "agent-toolkit",
-        "shortDescription": "コード、文書、計画、レビューの作業指針",
-        "longDescription": (
-            "コード、文書、計画、レビューの各工程に共通の作業指針を提供する。"
-            "計画の起草から実装、レビュー、AWI処理までを一貫した手順として扱う。"
-        ),
+        "shortDescription": "WI・委譲・承認・記録・完了報告の運用",
+        "longDescription": ("WI・委譲・承認・記録・完了報告の運用を提供する。成果物の品質判断にはagent-basicsを使う。"),
         "developerName": "aki",
         "category": "Developer Tools",
         "capabilities": ["Skills"],
@@ -366,21 +367,41 @@ def _outputs(root: Path) -> dict[Path, str]:
             "溜まっているAWIを処理して",
         ],
     }
+    basics_codex_plugin = {
+        **basics_metadata,
+        "skills": "./skills/",
+        "interface": {
+            "displayName": "agent-basics",
+            "shortDescription": "コード、文書、設計、テスト、レビューの品質基準",
+            "longDescription": "コード、文書、設計、テスト、レビューの品質基準を提供する。",
+            "developerName": "aki",
+            "category": "Developer Tools",
+            "capabilities": ["Skills"],
+        },
+    }
     codex_marketplace = {
         "name": marketplace["name"],
         "interface": {"displayName": "ak110 dotfiles"},
         "plugins": [
             {
+                "name": basics_plugin["name"],
+                "source": {"source": "local", "path": "./agent-basics"},
+                "policy": {"installation": "AVAILABLE", "authentication": "ON_INSTALL"},
+                "category": "Developer Tools",
+            },
+            {
                 "name": plugin["name"],
                 "source": {"source": "local", "path": "./agent-toolkit-codex"},
                 "policy": {"installation": "AVAILABLE", "authentication": "ON_INSTALL"},
                 "category": "Developer Tools",
-            }
+            },
         ],
     }
     result = {
         AGENT_PLUGIN_TARGET: json.dumps(agent_plugin, ensure_ascii=False, indent=2) + "\n",
+        BASICS_AGENT_PLUGIN_TARGET: json.dumps(basics_agent_plugin, ensure_ascii=False, indent=2) + "\n",
         PLUGIN_TARGET: json.dumps(codex_plugin, ensure_ascii=False, indent=2) + "\n",
+        BASICS_PLUGIN_TARGET: json.dumps(basics_codex_plugin, ensure_ascii=False, indent=2) + "\n",
         MARKETPLACE_TARGET: json.dumps(codex_marketplace, ensure_ascii=False, indent=2) + "\n",
     }
     if (root / MCP_SOURCE).exists():
@@ -404,7 +425,9 @@ def _outputs(root: Path) -> dict[Path, str]:
 def _existing_outputs(root: Path, expected: dict[Path, str]) -> dict[Path, str]:
     """既知の派生JSONのうち、現存する内容を返す。"""
     quality_paths = {
-        path.relative_to(root) for path in (root / "agent-toolkit/skills").glob("*/references/quality-standards.md")
+        path.relative_to(root)
+        for distribution in ("agent-toolkit", "agent-basics")
+        for path in (root / distribution / "skills").glob("*/references/quality-standards.md")
     }
     paths = set(expected) | OPTIONAL_TARGETS | quality_paths
     return {path: (root / path).read_text(encoding="utf-8") for path in paths if (root / path).exists()}

@@ -121,12 +121,21 @@ def test_explore_capabilities_are_shared_with_public_schema() -> None:
 
 def test_explore_contract_covers_complete_reading_and_tool_managed_output() -> None:
     """保存結果の完全取得と成果物の読取専用境界を各backendへ配送する。"""
-    for prompt in (launch_prompts.EXPLORE_SYSTEM_PROMPT, launch_prompts.CLAUDE_EXPLORE_SYSTEM_PROMPT):
+    for backend in tool_descriptions.EXPLORE_BACKEND_CAPABILITIES:
+        # 生成された最終本文で、軽量設定が省く規範を読まずに継続と終端を判断できることを確かめる。
+        prompt = launch_prompts._explore_system_prompt(backend)  # pylint: disable=protected-access
         assert _shared_document_body("agents-server-explore.md") in prompt
         assert "対象成果物・委譲入力・ユーザーデータ" in prompt
-        assert "自身の成果ファイルは作成しない" in prompt
+        assert "自身による成果ファイルの作成を禁止する" in prompt
         assert "キャッシュ・状態・保存出力" in prompt
         assert "省略や未読" in prompt
+        for operation in ("read-file --", "--start <next>", "eof: true", "--max-bytes"):
+            assert operation in prompt, (backend, operation)
+        assert "文字単位" in prompt
+        assert "内側コマンドと外側セル" in prompt
+        assert "完成条件" in prompt
+        assert "担当内で完了" in prompt
+        assert "自身で解消できない" in prompt
     assert "atk read-file" in tool_descriptions.EXPLORE_BACKEND_CAPABILITIES["claude"]
     assert "pyfltr grep" in tool_descriptions.EXPLORE_BACKEND_CAPABILITIES["claude"]
 
@@ -134,7 +143,7 @@ def test_explore_contract_covers_complete_reading_and_tool_managed_output() -> N
 def test_all_launch_system_prompts_include_language_condition() -> None:
     """全modeのシステム指示が完了報告の言語を定め、通常委譲は英語の挿入指示を引き継がない条件も持つ。
 
-    委譲プロンプトから言語の指定を外しても委譲先が日本語で返すことを、委譲元の記述に依存せず保証する。
+    委譲プロンプトから言語の指定を外しても委譲先が日本語で返すことを、委譲元による言語の指定を必要とせず保証する。
     通常委譲の`agents-server-delegate.md`が条件を欠くと、`01-agent.md`「使用言語」が届かない委譲先
     （`~/.codex/AGENTS.md`を配置していないCodexと、Antigravity）では言語の条件が無くなり、
     実行環境が英語で挿入した指示に引きずられて英語で書いた応答は、応答言語を判定するPreToolUse hookに遮断される。

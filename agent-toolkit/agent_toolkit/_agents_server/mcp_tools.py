@@ -12,11 +12,12 @@ from typing import Annotated, Any
 from mcp.server.mcpserver import MCPServer
 from pydantic import Field
 
-from agent_toolkit._agents_server import claude as claude_backend
 from agent_toolkit._agents_server import (
+    child_environment,
     launch_requests,
     logging_config,
 )
+from agent_toolkit._agents_server import claude as claude_backend
 from agent_toolkit._agents_server.file_operations import run_file_operation
 from agent_toolkit._agents_server.launch_requests import task_document_label, task_document_request, validate_start_inputs
 from agent_toolkit._agents_server.manager import DEFAULT_KILL_TIMEOUT, DEFAULT_SEND_MESSAGE_TIMEOUT, AgentsServerManager
@@ -156,7 +157,7 @@ async def start(  # noqa: PLR0913 -- 公開入力をmodeごとの平坦な引数
         assert subagent_md_path is not None
         params = extra_params or {}
         launcher = await run_file_operation(_MANAGER.launcher_session_id)
-        task_model_type, task_usage, task_prompt, launch_kind, handoff_path = await run_file_operation(
+        task_model_type, task_prompt, launch_kind, handoff_path = await run_file_operation(
             task_document_request,
             subagent_md_path,
             params,
@@ -170,7 +171,6 @@ async def start(  # noqa: PLR0913 -- 公開入力をmodeごとの平坦な引数
             task_prompt,
             cwd,
             launch_kind=launch_kind,
-            usage=task_usage,
             label=resolve_display_label(label, task_document_label(subagent_md_path, params)),
         )
         if handoff_path is not None:
@@ -339,7 +339,8 @@ async def list_sessions(
 
     所有する`root_session_id`を常に返す。PostToolUseはこの値をCLI会話の別名索引へ記録する。
     各sessionの`session_id`と`status`を返し、稼働中のsessionへ最終活動時刻からの経過秒数`seconds_since_activity`を加える。
-    ClaudeのAPI失敗による再試行中は`api_error`に種別、HTTPステータスと経過秒を返し、モデル出力が止まっていることを示す。
+    ClaudeとCodexのAPI再試行中は`api_error`に種別、HTTPステータスと経過秒を返す。
+    Claudeの`api_retry`が示す次の再試行予定時刻は`retry_at`へ返す。
     Claude Codeの利用上限（Weekly limitと5時間）の解除待ちでは`api_error.type`が`usage_limit`となり、
     種類の`limit_type`と解除予定時刻の`resets_at`も返す。
     解除待ちのsessionは解除後に同じsessionで作業を続けるため、
@@ -370,7 +371,8 @@ async def show_session(
     `verbose`を指定しない場合は識別名、起動prompt、cwd、種別、model_type、status、結果の有無および進行中の停滞診断を返す。
     `model_type`は工程別設定の種別名、または起動ツールの`model_type`へ渡した候補列である。
     停滞診断の`seconds_since_activity`はツール呼び出しを含む最後の活動からの経過秒数であり、停滞の可能性はこの値で判定する。
-    ClaudeのAPI失敗による再試行中は`api_error`に種別、HTTPステータスと経過秒を返し、モデル出力が止まっていることを示す。
+    ClaudeとCodexのAPI再試行中は`api_error`に種別、HTTPステータスと経過秒を返す。
+    Claudeの`api_retry`が示す次の再試行予定時刻は`retry_at`へ返す。
     Claude Codeの利用上限（Weekly limitと5時間）の解除待ちでは`api_error.type`が`usage_limit`となり、
     種類の`limit_type`と解除予定時刻の`resets_at`も返す。
     解除待ちのsessionは解除後に同じsessionで作業を続けるため、
@@ -416,6 +418,7 @@ def _prepare_child_environment() -> None:
     このため両方の処理を起動する本プロセスの環境を、起動時に1回だけ整える。
     """
     launch_requests.capture_handoff_session()
+    child_environment.prepare(os.environ)
     _inherited_venv.strip_inherited_venv(os.environ)
     mcp_environment.strip_conversation_context(os.environ)
     # 起動ランチャーとの合流ファイルはこのプロセスだけが使い、委譲先の内側のagents_serverへ継承させない。

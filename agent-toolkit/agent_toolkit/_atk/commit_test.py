@@ -133,20 +133,20 @@ def test_format_instructions_follow_repository_priority(tmp_path: Path) -> None:
     assert commit._format_instructions(repository) == commit._DEFAULT_FORMAT  # pylint: disable=protected-access
 
 
-def test_default_model_type_reaches_candidate_resolver_with_base_usage(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_default_model_type_reaches_candidate_resolver_as_chores(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     repository = _repo(tmp_path)
     monkeypatch.chdir(repository)
-    received: list[tuple[str, str | None]] = []
+    received: list[str] = []
 
-    def resolve(model_type: str, *, usage: str | None = None) -> list[tuple[str, str, str]]:
-        received.append((model_type, usage))
+    def resolve(model_type: str) -> list[tuple[str, str, str]]:
+        received.append(model_type)
         return []
 
     monkeypatch.setattr(commit.config, "resolve_model_candidates", resolve)
     with pytest.raises(SystemExit, match="1"):
         atk.main(["commit"])
 
-    assert received == [("medium_tier", "base")]
+    assert received == ["chores"]
 
 
 @pytest.mark.parametrize(
@@ -184,7 +184,7 @@ def test_candidates_skip_only_before_git_state_changes(
         return original_run(command, check=kwargs.pop("check", False), **kwargs)
 
     monkeypatch.setattr(commit.subprocess, "run", run)
-    args = atk._build_parser().parse_args(["commit", "--model-type", "medium_tier"])  # pylint: disable=protected-access
+    args = atk._build_parser().parse_args(["commit", "--model-type", "chores"])  # pylint: disable=protected-access
     assert commit.dispatch(args) == (9 if change_state else 0)
     assert calls == expected_calls
 

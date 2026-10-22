@@ -5,17 +5,24 @@
 """
 
 import hashlib
+import json
 import os
+import platform
 import shlex
 import sys
-from collections.abc import Mapping
+import sysconfig
+import tomllib
+from collections.abc import Generator, Mapping
+from contextlib import contextmanager
 from pathlib import Path
+from typing import BinaryIO
 
 from agent_toolkit._common import inherited_venv
 from agent_toolkit._common.shell_tokens import atk_launcher_name
 
 RUNTIME_DATA_ENV = "AGENT_TOOLKIT_RUNTIME_DATA"
 RUNTIME_ENVIRONMENT_ENV = inherited_venv.PLUGIN_RUNTIME_ENVIRONMENT_KEY
+_READY_FILE = ".agent-toolkit-dependencies-ready"
 
 
 def runtime_data(environment: Mapping[str, str]) -> Path:
@@ -52,17 +59,42 @@ def _writable_directory(path: Path) -> bool:
 
 
 def project_environment(root: Path, environment: Mapping[str, str]) -> Path:
-    """root・依存宣言・lockfile・配布版が一致する実行だけが共有する環境を返す。"""
+    """依存解決とPython実行条件が一致する実行だけが共有する環境を返す。"""
     root = root.resolve()
-    digest = hashlib.sha256(os.fsencode(root))
-    for relative in ("pyproject.toml", "uv.lock", ".claude-plugin/plugin.json"):
-        digest.update(relative.encode("utf-8"))
-        digest.update((root / relative).read_bytes())
+    payload = {
+        "dependency_project": _dependency_project(root / "pyproject.toml"),
+        "lock": hashlib.sha256((root / "uv.lock").read_bytes()).hexdigest(),
+        "python": {
+            "implementation": sys.implementation.name,
+            "version": list(sys.version_info),
+            "implementation_version": list(sys.implementation.version),
+            "abi": sysconfig.get_config_var("SOABI"),
+        },
+        "platform": {"os": sys.platform, "machine": platform.machine()},
+    }
+    encoded = json.dumps(payload, ensure_ascii=True, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    digest = hashlib.sha256(encoded)
     return runtime_data(environment) / "environments" / digest.hexdigest()
 
 
+def _dependency_project(path: Path) -> dict[str, object]:
+    """依存導入に影響するpyprojectだけを、JSON化できる形で取り出す。"""
+    parsed = tomllib.loads(path.read_text(encoding="utf-8"))
+    project = parsed.get("project", {})
+    build_system = parsed.get("build-system", {})
+    tool = parsed.get("tool", {})
+    return {
+        "project": {
+            key: project[key] for key in ("requires-python", "dependencies", "optional-dependencies") if key in project
+        },
+        "dependency-groups": parsed.get("dependency-groups", {}),
+        "build-system": {key: build_system[key] for key in ("requires", "build-backend") if key in build_system},
+        "uv": tool.get("uv", {}) if isinstance(tool, dict) else {},
+    }
+
+
 def launch_environment(root: Path, environment: Mapping[str, str]) -> dict[str, str]:
-    """uv子プロセスの環境を組み立て、呼出元の環境とPATHを保持する。"""
+    """準備・直接起動の子プロセス環境を組み立てる。"""
     result = dict(environment)
     inherited_venv.strip_inherited_venv(result)
     if "UV_PROJECT_ENVIRONMENT" in result:
@@ -72,6 +104,75 @@ def launch_environment(root: Path, environment: Mapping[str, str]) -> dict[str, 
     result[RUNTIME_ENVIRONMENT_ENV] = selected
     result["UV_PROJECT_ENVIRONMENT"] = selected
     return result
+
+
+def python_path(environment: Path) -> Path:
+    """共有依存環境のPython実行ファイルを返す。"""
+    return environment / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
+
+
+def prepared_python(root: Path, environment: Mapping[str, str]) -> Path | None:
+    """完了を公開済みの共有環境のPythonだけを返す。"""
+    selected = project_environment(root, environment)
+    executable = python_path(selected)
+    if (selected / _READY_FILE).is_file() and executable.is_file():
+        return executable
+    return None
+
+
+def direct_environment(root: Path, environment: Mapping[str, str]) -> dict[str, str]:
+    """rootのコードを共有依存環境のPythonで解決する環境を返す。"""
+    result = launch_environment(root, environment)
+    root_text = str(root.resolve())
+    previous = result.get("PYTHONPATH")
+    result["PYTHONPATH"] = root_text + (os.pathsep + previous if previous else "")
+    return result
+
+
+@contextmanager
+def prepare_lock(environment: Path) -> Generator[None]:
+    """OSファイルロックで同一共有環境のprepareを直列化する。"""
+    lock = environment.with_name(environment.name + ".prepare-lock")
+    lock.parent.mkdir(parents=True, exist_ok=True)
+    with lock.open("a+b") as stream:
+        _lock_file(stream)
+        try:
+            yield
+        finally:
+            _unlock_file(stream)
+
+
+def _lock_file(stream: BinaryIO) -> None:
+    """POSIXとWindowsでプロセス終了時にも解放される排他ロックを取得する。"""
+    if os.name == "nt":
+        import msvcrt  # noqa: PLC0415  # pylint: disable=import-outside-toplevel,import-error
+
+        msvcrt.locking(stream.fileno(), msvcrt.LK_LOCK, 1)  # type: ignore[attr-defined]
+        return
+    import fcntl  # noqa: PLC0415  # pylint: disable=import-outside-toplevel,import-error
+
+    fcntl.flock(stream.fileno(), fcntl.LOCK_EX)
+
+
+def _unlock_file(stream: BinaryIO) -> None:
+    if os.name == "nt":
+        import msvcrt  # noqa: PLC0415  # pylint: disable=import-outside-toplevel,import-error
+
+        stream.seek(0)
+        msvcrt.locking(stream.fileno(), msvcrt.LK_UNLCK, 1)  # type: ignore[attr-defined]
+        return
+    import fcntl  # noqa: PLC0415  # pylint: disable=import-outside-toplevel,import-error
+
+    fcntl.flock(stream.fileno(), fcntl.LOCK_UN)
+
+
+def publish_prepared_environment(root: Path, environment: Mapping[str, str]) -> Path:
+    """最終パスの同期完了をready markerの原子的配置で公開する。"""
+    target = project_environment(root, environment)
+    temporary = target / f"{_READY_FILE}.tmp-{os.getpid()}"
+    temporary.write_text("ready\n", encoding="utf-8")
+    temporary.replace(target / _READY_FILE)
+    return target
 
 
 def launch_command(root: Path, target: Path) -> list[str]:

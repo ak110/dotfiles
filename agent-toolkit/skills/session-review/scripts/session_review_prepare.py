@@ -61,13 +61,15 @@ _CODEX_EXIT_CODE = re.compile(r"^Process exited with code (\d+)$", re.MULTILINE)
 _SUMMARY_LENGTH = 200
 """候補の概要へ載せる文字数。通読の本文と操作入力の全文は別に保持する。"""
 _SLOW_CALL_LIMIT = 10
-MANDATORY_KINDS = frozenset({"user-intervention", "confirmation-request", "wi-user-response", "definition-body-read"})
+MANDATORY_KINDS = frozenset(
+    {"user-intervention", "confirmation-request", "wi-user-response", "definition-body-read", "definition-read-unresolved"}
+)
 """評価を必須とする候補種別。
 
 ユーザー介入、ユーザー確認（選択肢どおりの回答と投入したUWI）、WIの記入欄の是正は、
 前例の有無によらず評価を要し、除外区分は`agent-toolkit:bugfix`の
 `references/root-cause-analysis.md`「ユーザー介入と確認の判定」で確かめる。探索の深さと再発防止策の要否・終了は同書「QとC・Dの区別」の重大度判断に従う。
-必須であることを参照資料の読込に依存させないよう候補一覧と1行JSONへ示し、
+参照資料を読み込まなくても必須だと分かるよう候補一覧と1行JSONへ示し、
 振り返り結果報告は各候補の扱いを候補IDで示す（書式は`agent-toolkit:completion-report`の`references/report-formats.md`）。
 """
 _SIMILAR_RECORD_KINDS = frozenset({"user-intervention", "wi-user-response"})
@@ -519,7 +521,7 @@ def _candidates_document(
         f"原記録の全文は`{detail_command} --detail <記録位置>`で取得する。",
         "表示から省いた候補も全件対応付け、必須候補は全て評価する。"
         "探索の深さと対策の要否はbugfixの重大度判断に従う。"
-        "definition-body-readの分類と、起動準備の違反への対策必須化はsession-reviewのanalysis.mdに従う。",
+        "definition-body-readとdefinition-read-unresolvedは取得の有無・目的・結果の成否を別々に判定する。分類と起動準備の違反への対策必須化はsession-reviewのanalysis.mdに従う。",
         "",
         "## 記録の由来",
         "",

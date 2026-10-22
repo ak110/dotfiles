@@ -334,7 +334,7 @@ def _user_non_monitor_task_id_entry(tool_use_id: str, task_id: str) -> dict:
 
     `success`・`updatedFields`・`statusChange`キーを伴う形で観測された、
     Monitor以外の`toolUseResult.taskId`使用例を再現する。対応するassistant tool_useを
-    `name == "Monitor"`以外にすることで、キーの存在だけに依存する誤判定が
+    `name == "Monitor"`以外にすることで、キーの存在だけで真とする誤判定が
     再発した場合にテストが失敗するようにする。
     """
     return {

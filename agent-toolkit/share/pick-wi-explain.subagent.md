@@ -1,7 +1,6 @@
 ---
 mode: explore
-model_type: low_tier
-usage: chores
+model_type: chores_fast
 required_inputs:
 - 説明対象の選定結果の出力先ファイル
 - activeなWI本文の保存先
@@ -12,18 +11,28 @@ writes_worktree: false
 
 # 選定理由の説明タスク
 
+<!-- parent-read-source: agent-toolkit:/skills/process-wi/references/selection-explanation.md#選定理由の説明担当の起動と受領 -->
+
 `agent-toolkit:process-wi`の選定工程で固定した選定結果について、包含、除外または構成の理由を尋ねる質問へ答える。
 読み取りだけで説明を組み立て、選定結果、WIの状態およびレーン割当を保つ。
-最初に読込表の資料を全文読み、続けて`説明対象の選定結果の出力先ファイル`と質問を読む。
+最初に読込表が指定する節を読み、続けて`説明対象の選定結果の出力先ファイル`と質問を読む。
 完了報告は日本語で書く。
+
+## 名指し参照の読込方法
+
+本文の各参照の適用条件を保ち、選んだ資料の指定範囲を取得してから、その基準を使う具体的な判断へ進む。起動時の行の資料は起動本文とともに届く。
+
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/process-wi/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/SKILL.md` |
 
 ## 読込表
 
 次の時点または条件が成立したら、対象の操作の前に同じ行の資料を全文読む。
 
-| 時点または条件 | 全文読む資料 |
-| --- | --- |
-| 着手時（説明に使う選定の規定の所在） | `${CLAUDE_PLUGIN_ROOT}/skills/process-wi/references/selection-procedure.md`と`${CLAUDE_PLUGIN_ROOT}/skills/process-wi/references/selection-format.md` |
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 | 資料選択子 |
+| --- | --- | --- | --- | --- |
+| 着手時（説明に使う選定の規定の所在） | `${CLAUDE_PLUGIN_ROOT}/skills/process-wi/references/selection-procedure.md`の「対象と保存先」「処理対象の決定」「調査とレーン分け」「反映先と上流投入」「プロジェクト規範の指定」「保存後の意味検収」。`${CLAUDE_PLUGIN_ROOT}/skills/process-wi/references/selection-format.md` | 起動時 | `role:pick-wi-explain` | |
 
 ## 入力
 

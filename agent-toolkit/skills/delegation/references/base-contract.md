@@ -1,5 +1,22 @@
 # 基本委譲契約
 
+## 名指し参照の読込方法
+
+本文の各参照の適用条件を保ち、選んだ資料の指定範囲を取得してから、その基準を使う具体的な判断へ進む。起動時の行の資料は起動本文とともに届く。
+
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `routing.md#「会話を引き継ぐ委譲」` | 判断 | `section:agent-toolkit:*/skills/delegation/references/routing.md#「会話を引き継ぐ委譲」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:writing-standards/references/sub-agents.md#%E3%80%8C%60%3C%E5%BD%B9%E5%89%B2%E5%90%8D%3E.parent.md%60%E3%81%A8%60%3C%E5%BD%B9%E5%89%B2%E5%90%8D%3E.subagent.md%60%E3%81%AE%E8%87%AA%E5%B7%B1%E5%AE%8C%E7%B5%90%EF%BC%88%E5%8F%8C%E6%96%B9%E5%90%91%EF%BC%89%E3%80%8D` | 判断 | `section:agent-basics:*/skills/writing-standards/references/sub-agents.md#%E3%80%8C%60%3C%E5%BD%B9%E5%89%B2%E5%90%8D%3E.parent.md%60%E3%81%A8%60%3C%E5%BD%B9%E5%89%B2%E5%90%8D%3E.subagent.md%60%E3%81%AE%E8%87%AA%E5%B7%B1%E5%AE%8C%E7%B5%90%EF%BC%88%E5%8F%8C%E6%96%B9%E5%90%91%EF%BC%89%E3%80%8D` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `routing.md#「コンテキスト消費が大きい調査の切り出し」` | 判断 | `section:agent-toolkit:*/skills/delegation/references/routing.md#「コンテキスト消費が大きい調査の切り出し」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../SKILL.md#%E3%80%8C%60%3C%E5%BD%B9%E5%89%B2%E5%90%8D%3E.parent.md%60%E3%82%92%E6%8C%81%E3%81%A4%E5%A7%94%E8%AD%B2%E3%81%AE%E8%B5%B7%E5%8B%95%E3%80%8D` | 判断 | `section:agent-toolkit:*/skills/delegation/SKILL.md#%E3%80%8C%60%3C%E5%BD%B9%E5%89%B2%E5%90%8D%3E.parent.md%60%E3%82%92%E6%8C%81%E3%81%A4%E5%A7%94%E8%AD%B2%E3%81%AE%E8%B5%B7%E5%8B%95%E3%80%8D` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../commit/references/git-identifier.md` | 判断 | `read:agent-toolkit:*/skills/commit/references/git-identifier.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `sending.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/sending.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../writing-standards/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/writing-standards/SKILL.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:writing-standards/references/writing.md#「読み手別の追加注意点」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/writing.md#「読み手別の追加注意点」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../managed-temp/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/managed-temp/SKILL.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `handoff-record.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/handoff-record.md` |
+
 ## 用語
 
 - 委譲プロンプト: 委譲先を起動するときに渡す指示の本文（`agents_server`の`start`の`prompt`、`Agent`ツールの`prompt`）。
@@ -7,7 +24,7 @@
 - `<役割名>.subagent.md`を指定する起動: `agents_server`の`start`へ`subagent_md_path`、`extra_params`、`cwd`を渡す起動。`subagent_md_path`は役割名か同じplugin rootの`share/<役割名>.subagent.md`の絶対パス、`extra_params`は同書が宣言した入力、`cwd`は委譲先が解決の起点とする作業ツリーの絶対パスとする。
 
 委譲先が引き継ぐ入力は委譲プロンプトだけであり、委譲元の会話履歴、読んだファイル、起動したスキルはその外側にある。例外は`routing.md`「会話を引き継ぐ委譲」でホスト標準のforkを選んだ場合で、fork先は起動時点までの会話履歴も受け取る。
-取り決めを置く文書の選び方は`agent-toolkit:writing-standards`の`references/sub-agents.md`「`<役割名>.parent.md`と`<役割名>.subagent.md`の自己完結（双方向）」が定める。
+取り決めを置く文書の選び方は`agent-basics:writing-standards/references/sub-agents.md`「`<役割名>.parent.md`と`<役割名>.subagent.md`の自己完結（双方向）」が定める。
 監査記録は`docs/development/audit-records.md`の「agent-toolkit/skills/delegation/references/base-contract.md：基本委譲契約：2026年9月27日」にある。
 
 ## 起動前の確認
@@ -19,6 +36,7 @@
 
 - `<役割名>.subagent.md`が要求する必須入力がそろい、絶対パスで示す既存の入力と、委譲先が自ら解決して読むplugin配下の資源が実在すること
 - 委譲プロンプトが名指しするファイルは全て絶対パスで書く（相対パスは委譲先が任意の基準で解決する）。委譲先が本文を読む対象には、行数か取得範囲（`offset`と`limit`）を添える（努力目標。最初の取得が切り詰めで終わる往復を防ぐ）。コマンド出力を読ませる場合は委譲元がmanaged-tempへ全量を保存して同様に渡す
+- 全体点検では`routing.md`「コンテキスト消費が大きい調査の切り出し」で確定した全対象を保持し、各群へ完成条件・根拠の所在・担当内の完了範囲を対応付ける。通常探索と軽量探索で同じ対象集合を使う
 - 出力上限を超え得る対象の読み取り専用調査では、実在ファイルの絶対パスと範囲指定での本文取得を指定する。一致件数や候補ファイルを先に限定するだけでは本文取得で同じ切り詰めが生じ、網羅性を要する判断へ欠けた本文が入る
 - 参照させる比較基準と取り決めが起動時点の実体と一致し、委譲先が自ら解決するPATH上のコマンドとplugin配下の資源の版が委譲元の前提と一致すること。plugin rootの解決は委譲元の確認の内側に留め、委譲先は引き続き自ら解決する
 - 起動から消費までに別主体が変え得る値（統合中のベースbranchの到達点、rebase起点のOIDなど）は、取得手段と取得時点を渡し、消費直前の再取得を求める
@@ -47,8 +65,8 @@
 process-wiのWI要求を境界とする書込判断は`share/exec.subagent.md`「実装」に従い、メインのファイル名指し工程を追加しない。
 現行の作業契約を持つ委譲元は、起動・追送の前と返却の受領時に自身の記録を参照し、`share/work-contract.md`に従って割当と当初の目的・現行要求を比べる。保持対象と残る完成条件を担当へ渡し、通常の`task`・`delegate`が返す`handoff_record_path`を終端後に読んで検収する。自身の記録への書込は、要求や元の未完了作業への戻り先が変わった場合に行う。自身の作業契約を持たない軽量起動の委譲先は、起動入力と、その入力が参照させる資料を作業の基準にする。
 
-通常の`task`・`delegate`では、`agents_server`が全体作業契約の参照を担当へ配送する。参照先は直接の委譲元が起動時に受領した参照、委譲元の会話のmanaged-tempにある`work-contract.md`の順に解決されるため、委譲先がさらに委譲する場合も同じ全体記録が孫へ届き、受領した参照を委譲プロンプトへ転記する必要は無い。
-次の2つの起動は担当を起動せずに拒否され、委譲元の対処が異なる。委譲元の会話を特定できず解決元が無い拒否では、`start`の`whole_contract_path`へ全体作業契約の絶対パスを指定して再発行する。期待パスが確定して記録が未作成の拒否では、`share/work-contract.md`に従って期待パスへ記録を作成してから同じ入力で再発行する。未作成の期待パスを`whole_contract_path`へ指定した再発行は、不在として同じく拒否される。自動解決が委譲元の全体作業契約と別の記録を指す場合も、`whole_contract_path`へ正しい記録の絶対パスを指定する。
+通常の`task`・`delegate`では、初回を含めて`start`の`whole_contract_path`へ、委譲元が保持する現行の全体作業契約の絶対パスを渡す。`agents_server`はその参照を担当へ配送する。委譲先がさらに委譲する場合も、受領済みの参照が継承される。
+`whole_contract_path`を省略した既存の起動は、互換のため直接の委譲元が起動時に受領した参照、委譲元の会話のmanaged-tempにある`work-contract.md`の順に解決する。明示した参照はこの自動解決より優先する。次の2つの省略起動は担当を起動せずに拒否され、委譲元の対処が異なる。委譲元の会話を特定できず解決元が無い拒否では、正しい全体作業契約の絶対パスを指定して再発行する。期待パスが確定して記録が未作成の拒否では、`share/work-contract.md`に従って期待パスへ記録を作成してから同じ入力で再発行する。未作成の期待パスを`whole_contract_path`へ指定した再発行は、不在として同じく拒否される。
 
 初回の委譲プロンプトと稼働中の委譲先への追送は、載せる要素ごとに本節で判定する。`agent-toolkit:delegation`「送信」、`references/sending.md`および追送を中継する各工程の文書は、許容する入力を本節に委ねる。
 載せてよいのは、委譲先が他の入力から得られない次の要素とする。`<役割名>.subagent.md`、agent定義、基準となる記録が持つ内容は、転記せず記録を参照させる。
@@ -71,7 +89,7 @@ pushしてよいか
 </例>
 
 手段を書くのは、ユーザーが手段を指定した場合と、目的・要件・制約の達成にその手段が必要であることを実装、公式仕様または実機結果から確定した場合（根拠を併記する）に限る。委譲元自身が選んだだけの実装手段を固定すると、委譲先の調査と単純な設計の選択が狭まる。
-詳しさは`agent-toolkit:writing-standards`の`references/writing.md`「読み手別の追加注意点」のエージェント向け文書の項に従う。必須入力の形式とユーザーが指定した手段は省かずに渡す。
+詳しさは`agent-toolkit:writing-standards`の`agent-basics:writing-standards/references/writing.md`「読み手別の追加注意点」のエージェント向け文書の項に従う。必須入力の形式とユーザーが指定した手段は省かずに渡す。
 
 操作の許可または禁止は、対象リポジトリと操作を組にして示す。対象リポジトリとWI・計画を保存するprivate-notesは別の対象として扱う。
 人間由来の要求を渡す場合は、採用した要求の原文と出所を`forwarded-user-input`標識の内側へ置き、起動前に原文と標識の双方が一致することを確かめる。自然文の引用だけでは、委譲先にとって出所が判定不能になる。
@@ -105,6 +123,6 @@ pushしてよいか
 
 ## 分離実行の受領物
 
-委譲元の分岐が分離先の判別に依存する検証では、判別の結論に代えて、分岐が依存する観測値を逐語で返させる（結論だけでは分離先の誤りが観測不能になる）。コマンド実行では終了コード、終了シグナル、標準エラーの該当行（抽出条件は判別に用いる文字列で示す）を、読み取り専用の調査では一致件数、走査した対象、打ち切りの有無のうち分岐が依存するものを返させる。指定先は実行時の公開スキーマで確かめる（コマンド実行は要約方針、読み取り専用の調査は委譲プロンプト）。
+分離先の判別結果で委譲元の処理を分ける検証では、判別の結論に代えて、分岐を決める観測値を逐語で返させる（結論だけでは分離先の誤りが観測不能になる）。コマンド実行では終了コード、終了シグナル、標準エラーの該当行（抽出条件は判別に用いる文字列で示す）を、読み取り専用の調査では一致件数、走査した対象、打ち切りの有無のうち分岐を決めるものを返させる。指定先は実行時の公開スキーマで確かめる（コマンド実行は要約方針、読み取り専用の調査は委譲プロンプト）。
 
 実行上限を超える見込みの複数コマンドの連結は、コマンドごとに終了コードを別ファイルへ保存する形で`command`を組み、その内容を返すよう`summary_policy`へ指定する（連結が上限で強制終了すると後続の終了コードを失う）。上限を確定できなければ10分超の見込みを目安とする。複数の対象を受理する同一コマンドの1回の実行は対象外とする。

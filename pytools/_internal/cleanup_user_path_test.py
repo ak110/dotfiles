@@ -279,7 +279,7 @@ class TestFindMissingPaths:
         existing = tmp_path / "bin"
         existing.mkdir()
         # プレースホルダー化で変換されないよう Linux パス形式（tmp_path）をそのまま使う。
-        # ただし run() は win32 環境を想定するため、存在チェックは path.exists() で通る。
+        # ただし run() は win32 環境を想定するため、存在チェックは path.exists() で成功する。
         _stub_winutils(
             monkeypatch,
             user_value=str(existing),

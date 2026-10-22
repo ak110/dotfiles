@@ -122,7 +122,7 @@ class LaunchInfo:
     """同じsessionの再開と引き継ぎに使う起動情報、追送と各turnの終端応答。
 
     再開で`SessionState`を再生成する処理と、session登録簿の書込・復元は、この定義の項目を走査して値を写す。
-    項目を個別に列挙すると、項目を足したときに一部の処理が値を写さなくなり、型やテストでは検出されないためである。
+    項目を個別に列挙すると、項目を追加したときに一部の処理が値を写さなくなり、型やテストでは検出されないためである。
     `SessionState`と`SessionResumeState`は同名の属性を持つ。
     """
 
@@ -130,7 +130,6 @@ class LaunchInfo:
     prompt: str = ""
     # 項目を持たない旧形式の登録簿から復元したsessionでは開始時刻が不明なため`None`とする。
     created_at: str | None = None
-    usage: str | None = None
     followup_prompts: tuple[str, ...] = ()
     final_responses: tuple[tuple[int, str], ...] = ()
     terminal_error: str | None = None

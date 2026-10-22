@@ -1,6 +1,6 @@
 """`atk agents notify`が置いた上り通知（`notices/`）の回収。
 
-上り通知の配送媒体は共有状態ディレクトリ（`shared_layout.notices_directory`）とする。Codexの委譲先にはagents_server系のMCPツールもフックの発火機構も公開されず、Claudeの委譲先へ公開されるagents_server系のMCPツールは委譲元のsession登録簿を共有しないため、engineに依存しない媒体が他に無い。2026年9月6日に両engineの委譲先を1件ずつ起動して確かめた。この前提が成立しなくなった場合は、片方のengineの委譲先から送った通知が委譲元へ届かない事象として現れる。
+上り通知の配送媒体は共有状態ディレクトリ（`shared_layout.notices_directory`）とする。Codexの委譲先にはagents_server系のMCPツールもフックの発火機構も公開されず、Claudeの委譲先へ公開されるagents_server系のMCPツールは委譲元のsession登録簿を共有しないため、engineを問わず使える媒体が他に無い。2026年9月6日に両engineの委譲先を1件ずつ起動して確かめた。この前提が成立しなくなった場合は、片方のengineの委譲先から送った通知が委譲元へ届かない事象として現れる。
 """
 
 from __future__ import annotations

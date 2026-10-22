@@ -6,6 +6,28 @@
 
 入力はpick-wi-checkが確認・保存した完成済み選定YAMLとレーン識別子から読む（メインの生成入力、候補JSONLと定型欄は委譲プロンプトへ転記されない）。選定の分類と要求の採否は別の判断として扱う。鮮度・省略値・担当モデルが一致しなければ同じ担当の引き継ぎからメインへ返す。準備済み資源の所有登録はatk lane createが保持するため、担当はcwdのworktreeへだけ書き、統合後も資源を回収せず同じthreadで追加を受ける。
 
+## 名指し参照の読込方法
+
+本文の各参照の適用条件を保ち、選んだ資料の指定範囲を取得してから、その基準を使う具体的な判断へ進む。起動時の行の資料は起動本文とともに届く。
+
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../plan-mode/SKILL.md#「計画ファイルの作成要否」` | 判断 | `section:agent-toolkit:*/skills/plan-mode/SKILL.md#「計画ファイルの作成要否」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../../share/exec.subagent.md#「実装」` | 判断 | `section:agent-toolkit:*/share/exec.subagent.md#「実装」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../plan-mode/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/plan-mode/SKILL.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:writing-standards/references/design-heuristics.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/design-heuristics.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../plan-mode/references/plan-file-standards.md#「恒久化・リファクタリング」` | 判断 | `section:agent-toolkit:*/skills/plan-mode/references/plan-file-standards.md#「恒久化・リファクタリング」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../review-standards/references/reviewer.md#「初回レビュー」` | 判断 | `section:agent-toolkit:*/skills/review-standards/references/reviewer.md#「初回レビュー」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../delegation/references/routing.md#「要否判定」「委譲単位の確定」` | 判断 | `section:agent-toolkit:*/skills/delegation/references/routing.md#「要否判定」「委譲単位の確定」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../delegation/references/runtime-routing.md#「工程別モデル設定」` | 判断 | `section:agent-toolkit:*/skills/delegation/references/runtime-routing.md#「工程別モデル設定」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../writing-standards/references/investigation.md#「実行結果の検証」` | 判断 | `section:agent-toolkit:*/skills/writing-standards/references/investigation.md#「実行結果の検証」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../check-execution/references/verification-scope.md` | 判断 | `read:agent-toolkit:*/skills/check-execution/references/verification-scope.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../plan-mode/references/plan-file-standards.md#「初回起草の雛形」` | 判断 | `section:agent-toolkit:*/skills/plan-mode/references/plan-file-standards.md#「初回起草の雛形」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../plan-mode/references/plan-structure-check.md` | 判断 | `read:agent-toolkit:*/skills/plan-mode/references/plan-structure-check.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `finish-session.md#「延期adoptと反映後の観測」` | 判断 | `section:agent-toolkit:*/skills/process-wi/references/finish-session.md#「延期adoptと反映後の観測」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../../share/lane-integration.subagent.md#「計画最終化」` | 判断 | `section:agent-toolkit:*/share/lane-integration.subagent.md#「計画最終化」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `run-lanes.md#「採否の確定と終端区分」` | 判断 | `section:agent-toolkit:*/skills/process-wi/references/run-lanes.md#「採否の確定と終端区分」` |
+
 ## 作成要否と計画なしの準備
 
 全AWIが作成を省く条件に当たる場合は、`atk wi show`で要求と完成条件を読み、由来・採否、AWI集合、最も近い既存実装、直接影響範囲、変更範囲の検証コマンド、統合区分（採用する要求を実装するなら`マージあり`、不要なら`マージなし`）を引き継ぎ記録先へ書く。ユーザーの依頼かWIが明示した禁止条件を持つ場合は、禁止条件と採用手段も同じ記録へ書き、次の形式だけを返してメインの`実装開始`または`実装なし`を待つ。
@@ -24,7 +46,7 @@ AWI: <AWIファイル名のASCIIカンマ区切り>
    - 対象実装を読む前に、要求と公開契約から比較対象とする最も近い既存実装を選ぶ。境界候補は入力値、時間経過、操作順、保持状態、反復、権限や環境の差などの軸から選ぶ。
    - 調査後は採用案の前提を反証する観点から、変更箇所が責務を負う必要性、既存機構への統合、上流のツールや共有設定への移管、機構の削除・簡素化を比べて計画へ反映する。AWIの`## 実現性`が結論を示した観点は、記述との食い違いを観測しない限り比べ直さない。「設計品質の劣化確認」（`agent-toolkit:writing-standards`の`references/design-heuristics.md`）は常に行う。評価の条件は`agent-toolkit:plan-mode`の`references/plan-file-standards.md`「恒久化・リファクタリング」と同じとする。不具合対策では`agent-toolkit:review-standards`の`references/reviewer.md`「初回レビュー」の「前提を疑う観点」に従い、観測した害の消滅と呼び出す側の修正案も比べる。
    - `選定`の各項目の`鮮度`を計画の`## 変更履歴`へ記録する。`鮮度`が`notice`であるだけでは作業を止めず、現行内容との不一致、既存実装による充足済み、巻戻しの危険のいずれかを観測した項目だけ関連履歴を確認し、観測条件、確認した履歴、採否への影響を同じ記録へ残す。
-   - レーン担当はレーン数によらず自レーンの分担を`agent-toolkit:delegation`の`references/routing.md`「要否判定」「委譲単位の確定」で比べる。自身が実施する単位と自身が起動する委譲先へ分ける単位を、理由とともに`## 実施内容`（計画なしでは引き継ぎ記録）へ残す。計画はレーン担当自身が起草し、計画の起草と設計判断を内部群の担当へ委ねるのは独立が明らかな複数タスクに限る。分担には、内容の確定した書込作業の単位ごとに委譲先の段位か自ら行う理由を書く（段位は同スキルの`references/runtime-routing.md`「工程別モデル設定」の段位の段落）。
+   - レーン担当はレーン数によらず自レーンの分担を`agent-toolkit:delegation`の`references/routing.md`「要否判定」「委譲単位の確定」で比べる。自身が実施する単位と自身が起動する委譲先へ分ける単位を、理由とともに`## 実施内容`（計画なしでは引き継ぎ記録）へ残す。計画はレーン担当自身が起草し、計画の起草と設計判断を内部群の担当へ委ねるのは独立が明らかな複数タスクに限る。分担には内容の確定した書込作業の単位ごとに委譲先の工程か自ら行う理由を書く（工程は同スキルの`references/runtime-routing.md`「工程別モデル設定」の工程分担の段落）。
    - 多数の対象へ同じ作業をする要求では`plan-file-standards.md`「実施内容」の実施方式も比べ、採った方式と理由を残す。
    - 長い比較調査（独立した複製での対照実験など）は、入力と版を固定でき独立した複製へ出力できるなら、`agent-toolkit:writing-standards`の`references/investigation.md`「実行結果の検証」の準備確認の後に通常修正と並行して始める。結果を待つ工程だけを直列にする。順序は先行成果、書込先、観測資源の競合から決め、`## 実施内容`へ書く。
    - 検証コマンドを確定する前に`agent-toolkit:check-execution`を起動し、`references/verification-scope.md`の類型で変更範囲の検証の対象を確定して`## 検証`の`変更範囲の検証`へ加える。加えない対象は理由を`## 要件・外部仕様`の追随範囲へ書く。
@@ -32,7 +54,7 @@ AWI: <AWIファイル名のASCIIカンマ区切り>
    - 採否を確定する前に、変更対象パスに対応する必須スキル（対応表はプロジェクト規範が示す）を起動し、変更対象の成立条件と禁止条件を定める節を検索で特定して読み、要求と比べる。衝突する要求は`## 実施内容`で不採用または手段変更とし、人間由来なら手順2で通知する。編集の段階で衝突に気付くと、判断要請と実装済み差分の取り消しを招く。
    - `上流投入結果`を受領した場合は、`結果`が`completed`の要求を採用範囲へ含めず、`移管`として投入先の`ファイル名`とともに記録する。
 2. 人間由来の要求を不採用または部分採用にする判断は、`agent-toolkit/share/rules-subagent.md`「確認事項の即時通知」で計画の確定前にメインへ通知する。計画確定前にエージェント由来の完成条件を外すメインの技術判断を受領した場合は、`review-loop-coordination.md`「技術判断で外せる完成条件」の境界を保ち、実施内容の根拠欄へ対象AWI・対象条件・`メインの技術判断`・外す根拠を記録する。実装着手後の判断は計画凍結に従いレビュー指摘管理表へ記録する。
-3. 通知した確認事項の回答を全て受領して採否へ反映するまでは、回答に依存しない調査と下書きに限って進める。
+3. 通知した確認事項の回答を全て受領して採否へ反映するまでは、回答を待たずに進められる調査と下書きに限って進める。
 4. `agent-toolkit:plan-mode`の`references/plan-file-standards.md`「初回起草の雛形」に案件の値を記入し、同書に従って計画本文を起草してmanaged-tempのファイルへ保存する。単一の計画では`plan-check`の行数の警告（1200行）を避けられない見込みなら、実装着手前に分析の単位と依存順で自己完結した複数の計画へ分け、全計画を同じレーン・専用worktree・書込所有者のまま扱う（凍結済み計画の事後分割とレーンの再配分はしない）。計画ファイル（バグ）を作成する場合（同書「バグ調査」）は本文を別のファイルへ保存する。各計画は`atk run-script plan-create -- --main-source <計画本文の絶対パス> --lane <レーン識別子> --work-dir <計画メタ情報の対象リポジトリ>`で`~/.claude/plans`に作成する。計画ファイル（バグ）があれば`--bugs-source <計画ファイル（バグ）の本文の絶対パス>`も渡す。stemは同処理が生成した値を使う。
 5. 計画全体から編集・新設・移動するエージェント向け文書の集合を確定し、全パスをリポジトリ相対パスで計画本文へ明記する。この集合は書込の認可の境界（WIの要求）の内側で着手時に見込んだ書込先の記録であり、実装中の追加は`${CLAUDE_PLUGIN_ROOT}/share/exec.subagent.md`「実装」に従う。確認には次のコマンドを単独実行し、集合の全パスを`--agent-rule-path <リポジトリ相対パス>`で反復指定する。
 

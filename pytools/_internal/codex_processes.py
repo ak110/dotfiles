@@ -145,7 +145,7 @@ def _is_codex_process_value(value: str) -> bool:
     """実行体を表す値がCodex launcher/packageを示すか判定する。
 
     適用対象は実行名、実行ファイルパス、command line第1要素に限る。
-    `bin/codex-medium`のようなラッパー起動を拾うため`codex-`接頭辞の前方一致を含める。
+    `bin/codex-medium`のようなラッパー起動を検出するため`codex-`接頭辞の前方一致を含める。
     """
     normalized = value.replace("\\", "/").lower()
     stem = _executable_name(normalized)

@@ -31,24 +31,8 @@ START_MODES: tuple[str, ...] = ("task", "delegate", "explore", "write", "shell")
 
 DEFAULT_START_MODE = START_MODES[0]
 
-START_MODE_MODEL_TYPES: Mapping[str, str] = {"explore": "low_tier", "write": "write", "shell": "low_tier"}
-"""`model_type`を省略した起動で使うモデル段位の種別。taskは`<役割名>.subagent.md`から、delegateは必須の指定から決める。"""
-
-
-def start_mode_usage(mode: str, model_type: str) -> str | None:
-    """explore・shell・writeの起動で、段位名の候補を並べる用途を返す。
-
-    exploreは新しい候補・評価軸を導く`high_tier`だけをbase、それ以外をchores、shellはchores、
-    writeへ段位を明示した場合はbaseとする。`None`は段位ごとの用途（delegateと同じく上位はbase、中位はreview、軽量はchores）を使うことを表す。
-    `write`・`orchestrate`・候補列の`model_type`は用途を参照しない。
-    """
-    if mode == "explore":
-        return "base" if model_type == "high_tier" else "chores"
-    if mode == "shell":
-        return "chores"
-    if mode == "write":
-        return "base"
-    return None
+START_MODE_MODEL_TYPES: Mapping[str, str] = {"explore": "chores_fast", "write": "write", "shell": "chores_fast"}
+"""省略時に使う工程。taskは役割文書から、delegateは必須の指定から決める。"""
 
 
 LEGACY_START_MODES: Mapping[str, str] = {

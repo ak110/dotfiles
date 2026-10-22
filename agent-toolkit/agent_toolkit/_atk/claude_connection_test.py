@@ -101,7 +101,7 @@ def test_subscription_login_without_environment_token(
         calls.append(argv)
         assert kwargs["env"]["CLAUDE_CONFIG_DIR"] == str(tmp_path)
         assert "CUSTOM_CONNECTION" not in kwargs["env"]
-        assert json.loads(argv[argv.index("--settings") + 1])["env"]["CUSTOM_CONNECTION"] == ""
+        assert "CUSTOM_CONNECTION" not in json.loads(argv[argv.index("--settings") + 1])["env"]
         return subprocess.CompletedProcess(argv, 0, json.dumps({"authMethod": "claude.ai", "loggedIn": True}))
 
     monkeypatch.setattr(subprocess, "run", status)

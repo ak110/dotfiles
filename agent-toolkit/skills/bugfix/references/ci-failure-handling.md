@@ -3,87 +3,48 @@
 CI失敗の原因箇所、セッション帰属、再現性を実際の観測で分類し、原因に作用する対処を選ぶ。
 push先、更新ref、run監視、証拠の一時保存と後始末は`agent-toolkit:commit`のpushとCIの規定に従う。
 
-失敗ログから自セッションが導入した自明な単純失敗（lint違反、formatter未適用、単純な期待値の未追随など）と確定できる場合は、「失敗の性質による分類」と「分類判定の補助」の競合仮説の評価を省いてよい。`SKILL.md`「初動と拡張原因分析の判定」による拡張原因分析の要否判定は省かない（自セッション帰属のpush後のCI失敗は条件の例に当たる）。修正commitが要る場合の修正者は「修正commitが必要なCI失敗を修正するエージェント」で決める。
+失敗ログから自セッションが導入した自明な単純失敗（lint違反、formatter未適用、単純な期待値の未追随など）と確定できる場合は、「失敗の性質による分類」と「分類判定の補助」の競合仮説の評価を省いてよい。`agent-basics:bugfix`の`SKILL.md`「初動と拡張原因分析の判定」による拡張原因分析の要否判定は省かない（自セッション帰属のpush後のCI失敗は条件の例に当たる）。修正commitが要る場合の修正者は「修正commitが必要なCI失敗を修正するエージェント」で決める。
+
+## 名指し参照の読込方法
+
+本文の各参照の適用条件を保ち、選んだ資料の指定範囲を取得してから、その基準を使う具体的な判断へ進む。起動時の行の資料は起動本文とともに届く。
+
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../commit/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/commit/SKILL.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/SKILL.md#「初動と拡張原因分析の判定」` | 判断 | `section:agent-basics:*/skills/bugfix/SKILL.md#「初動と拡張原因分析の判定」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../commit/references/push-and-ci.md#「pushと監視」` | 判断 | `section:agent-toolkit:*/skills/commit/references/push-and-ci.md#「pushと監視」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/references/ci-failure-handling.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/ci-failure-handling.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../process-wi/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/SKILL.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/references/root-cause-analysis.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-analysis.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../../share/exec.parent.md` | 判断 | `read:agent-toolkit:*/share/exec.parent.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../review-standards/references/exec-review-recording.md#「受理済み判定への参照」` | 判断 | `section:agent-toolkit:*/skills/review-standards/references/exec-review-recording.md#「受理済み判定への参照」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../../share/session-termination.subagent.md` | 判断 | `read:agent-toolkit:*/share/session-termination.subagent.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/references/ci-failure-handling.md#「失敗の性質による分類」` | 判断 | `section:agent-basics:*/skills/bugfix/references/ci-failure-handling.md#「失敗の性質による分類」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/references/ci-failure-handling.md#「対処選択肢と判定基準」` | 判断 | `section:agent-basics:*/skills/bugfix/references/ci-failure-handling.md#「対処選択肢と判定基準」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/references/ci-failure-handling.md#「分類判定の補助」` | 判断 | `section:agent-basics:*/skills/bugfix/references/ci-failure-handling.md#「分類判定の補助」` |
 
 ## 失敗ログとartifactの取得
 
 - 監視で得たrun ID（GitLabではpipeline ID）とjob IDを引き継ぎ、全体の状態を確かめてから失敗jobのログを取得する。`gh`と`glab`の受理形式は実行直前のヘルプで確かめる
   - GitHubでrun進行中に対象jobが完了済みなら、`gh api repos/<OWNER>/<REPO>/actions/jobs/<job ID>/logs --allow-escape-sequences`で全jobログをmanaged-tempへ暫定保存する。端末エスケープを含む応答はこの指定が無いと拒否される。取得できない場合とjob進行中は、annotationや失敗テスト名など取得できる証拠で先行分析する
-  - run終端後は`gh run view <run ID> --repo <OWNER>/<REPO> --job <job ID> --log-failed`で失敗ステップを取得し、全失敗jobは`--job`を省いたrun単位で確かめる。run単位の取得は`wait_ci.py`を呼び直して全体終端の返却を受けてから行う。待機の再開は、終了コード6では同じ引数で、2では`agent-toolkit:commit`の`references/push-and-ci.md`「pushと監視」の終了コード2の箇条に従う（1は終端のCI失敗、3は待機手段の失敗）。同箇条は、同じSHAとbaselineまたは待機専用記録を保ったまま`--timeout`を増やして呼び直すことを定める
+  - run終端後は`gh run view <run ID> --repo <OWNER>/<REPO> --job <job ID> --log-failed`で失敗ステップを取得し、全失敗jobは`--job`を省いたrun単位で確かめる。run単位の取得は`wait_ci.py`を呼び直して全体終端の返却を受けてから行う。待機の再開は、終了コード6では同じ引数で、2では`agent-toolkit:commit`の`references/push-and-ci.md`「pushと監視」の終了コード2の箇条に従う（1は終端のCI失敗、3は待機手段の失敗）。同箇条は同じSHAとbaselineまたは待機専用記録を保ったまま`--timeout`を増やして呼び直すことを定める
   - 観測結果と再検証手段は`docs/development/audit-records.md`の「agent-toolkit/skills/bugfix/references/ci-failure-handling.md：GitHubの状態別ログ取得：2026年10月1日」にある
 - VRT差分画像やtest-resultsなどのartifactも取得する。artifactの無い失敗はログの失敗テスト名・ステップ・エラーメッセージで分類する
 - 同一SHAでローカル再現を試す
 
-## 失敗の性質による分類
+## 品質の分類
 
-原因箇所・セッション帰属・再現性を独立に分類し、VRTでは差分の形態も加える。原因箇所と帰属を確定してから恒久的な対処を選ぶ。
-
-### 原因箇所
-
-| 原因箇所 | 特徴 | 代表的な観測方法 |
-| --- | --- | --- |
-| 実装コード欠陥 | 変更コードが公開契約やテスト期待値と矛盾する | 失敗ログ、変更ファイルと失敗テストの対応関係 |
-| テストコード欠陥 | テスト側の期待値・待機条件・fixtureが実装変更に追随していない | 失敗テストの差分、実装側の意図との比較 |
-| 環境起因 | 実行環境・依存・外部サービスが失敗を生じさせる | ローカルでの同一SHA再現、CI環境のイメージdigest、外部サービスの応答 |
-
-競合状態や待機条件の不備を含む実装・テストの欠陥は、原因箇所を実装コードまたはテストコード、帰属を自セッションとする。非決定的でも修正対象に残る。
-
-### セッション帰属
-
-| セッション帰属 | 特徴 | 代表的な観測方法 |
-| --- | --- | --- |
-| 自セッション帰属 | 変更ファイルや設定変更が失敗箇所へ影響する | 変更差分、失敗ジョブ、呼び出し構造の対応関係 |
-| 自セッションと無関係 | 変更ファイルと失敗箇所に依存関係がない | 失敗ジョブ名・エラー内容・変更ファイルとの非関連性 |
-
-### 再現性
-
-| 再現性 | 特徴 | 代表的な観測方法 |
-| --- | --- | --- |
-| 非決定性を確認できない | 成功と失敗の変動を観測していない | 初回失敗ログ、同一箇所での再失敗 |
-| 非決定性の疑い | ログにネットワーク断・runner枯渇・タイムアウトなどの一時的な障害が現れる | 初回失敗ログ、実行環境の状態 |
-| 非決定的 | 同一SHAと同一実行条件で成功と失敗が変動する | 原因単位で一度限りの対象ジョブ再実行、実行時刻ごとのログ差分 |
-
-- 非決定性の疑いでは、同一原因につき対象jobを1回だけ再実行する。結果が変われば非決定的と確定し、同一箇所で再失敗すれば再実行を打ち切って原因調査へ進む。両試行のログとartifactを残す
-- 再実行は再現性の診断であり、完了判定は原因の除去と帰属の確定で行う。再実行で成功した場合は回数と外部帰属の判定を記録する
-- ログがrunner、アクション取得、外部サービスの応答異常（HTTP 429・503など）を示す場合は、再実行の前に提供者の公式ステータスを確かめる。GitHubでは`curl -sS https://www.githubstatus.com/api/v2/components.json`の`components`から対象（Actionsのジョブ実行とアクション取得では`Actions`）の`status`を読む。`status`の受理値は`operational`、`degraded_performance`、`partial_outage`、`major_outage`であり、`operational`以外の3値を広域障害とする（出典: <https://www.githubstatus.com/api/>）。取得や解析ができない場合は広域障害と判定せず、再実行回数を保ったまま通常の手順へ進む
-- 広域障害の期間の失敗は再現性の判定から外し、固定時間の待機と再実行の反復に代えて、対象の`status`が`operational`へ戻るまで待つ。復旧後の実行を同一原因の初回試行とする。CI runの監視は`agent-toolkit:commit`の手順で行う
-
-### VRT固有差分分類
-
-artifactの差分画像で形態を分類し、3観点はログ・変更差分・同一SHA再現から別途確定する。
-
-| VRT差分分類 | 特徴 | 3観点の確定に必要な追加観測 |
-| --- | --- | --- |
-| 実装意図UI変更 | レイアウト変更 | 意図・公開契約・画面差分から実装とテストの欠陥を区別 |
-| データ差分 | 表の行数・件数・順序・値 | データ処理・初期データ・先行テストの副作用・並列順 |
-| 描画微差 | フォント・アンチエイリアス・線幅・スクロールバー幅 | ブラウザー・フォント・OS・描画設定とコード差分 |
-| 静的アセット配信不良 | スタイル未適用、ワイヤーフレーム状の表示 | ビルドログ・HTTP応答・生成物・配信設定・実行環境 |
-
-## 対処選択肢と判定基準
-
-| 対処選択肢 | 適用可能な3観点 | 適用不可の条件 | 上位対策の検討 |
-| --- | --- | --- | --- |
-| 実装コード修正 | 実装コード欠陥。セッション帰属と再現性は問わない | 該当なし | `agent-toolkit:bugfix`の原因分析で確定した原因に対応する修正として適用する |
-| テストコード修正 | テストコード欠陥。セッション帰属と再現性は問わない | 該当なし | fixture汚染・先行テストの副作用・並列実行順が原因の場合は、テスト設計を是正する |
-| CI環境・依存・外部連携の修正 | 環境起因かつ自セッション帰属。再現性は問わない | 自セッションと無関係 | CIイメージ・環境変数・配信設定・依存・外部サービス連携を原因に応じて修正する |
-| VRTベースライン再生成 | テストコード欠陥で、VRT固有分類が実装意図UI変更に該当する。セッション帰属は問わない | その他の分類 | 環境起因ではローカル環境をCIと一致させる。データ差分では初期データを固定する |
-| マスク追加 | テストコード欠陥で、VRT固有分類が動的値のデータ差分に該当する。セッション帰属は問わない | 実装コード欠陥・環境起因の主要領域 | 初期データの固定を優先する |
-| 失敗ジョブの再実行 | 非決定性の疑い。同一原因の対象ジョブにつき1回に限る | 非決定性の疑いがない失敗 | plan mode開始前の診断として再現性を観測する。独立した原因ごとに要否を判定する。自セッション帰属なら成否によらず原因箇所を修正する。広域障害では「再現性」の待機を先に適用する |
-| `rules:changes`によるジョブ除外 | 適用可能な分類なし | すべての分類 | 対象ファイル変更時に品質検証が欠落するため適用しない |
-| specまたはtestの`.skip`・`xfail` | 適用可能な分類なし | すべての分類 | テスト修正または実装修正を適用する |
-| `allow_failure`による失敗許容化 | 適用可能な分類なし | すべての分類 | 原因を除去する |
-| 依存バージョンピン | 環境起因で、ライブラリのバージョン差が原因と実際に確認できた場合に限る | その他の分類 | 仕様変更へ追随する案と比較する。`agent-toolkit:user-confirmation-and-report`「確認要否の判定」で、既存認可で確定できる修正は自ら行う |
-| 変更差分がない`CI trigger`空コミットの再push | 適用可能な分類なし | すべての分類 | 非決定性の疑いがある場合は提供CLIで対象jobを1回だけ再実行する |
-
-CI設定側の抑制（ジョブ除外・テスト除外・失敗許容化）は、失敗が自セッションと無関係と判明し、根拠を示してユーザーの明示合意を得た場合だけ使える。
-セッション帰属は競合仮説と拡張原因分析の要否に使い、帰属だけを理由にユーザー確認を求めない。実装・テストの欠陥は帰属を問わず同じ作業内で直す。
+失敗の性質による分類、対処選択肢と判定基準、分類判定の補助は`agent-basics:bugfix`の`references/ci-failure-handling.md`を全文読んで適用する。
 
 ## 選択の流れ
+
+非決定性の疑いを診断するための対象jobの再実行は、plan mode開始前に行う。
 
 1. 失敗jobを検出したら、plan mode開始前に取得できる証拠を暫定保存し、全体の終端を待たずにローカル再現、帰属判定、原因仮説の検討を始める（努力目標。待機時間を分析へ充てるため）。`wait_ci.py`の再開には同じbaseline、SHA待機では同じ`--failure-record`を使い、全体終端後に失敗集合全体のログとartifactを先行分析へ統合する
 2. 初回ログと同一SHAの再現結果から再現性を暫定分類する
 3. 全失敗集合を確かめてから修正範囲を確定し、plan modeで新しい計画ファイル（バグ）の調査工程として3観点（VRTでは差分分類も）を記録する。`agent-toolkit:process-wi`の公開工程では、公開工程が保持する原因分析結果へ記録する
-4. 自セッション帰属か帰属を否定できない場合は、自明な単純失敗を除き、初回ログの見え方を問わず競合仮説の支持・反証・判別実験を記録し、`SKILL.md`「初動と拡張原因分析の判定」と`references/root-cause-analysis.md`に従って原因、類似見直し、処置の階層を確定する
+4. 自セッション帰属か帰属を否定できない場合は、自明な単純失敗を除き、初回ログの見え方を問わず競合仮説の支持・反証・判別実験を記録する。そのうえで`agent-basics:bugfix`の`SKILL.md`「初動と拡張原因分析の判定」と`references/root-cause-analysis.md`に従って原因、類似見直し、処置の階層を確定する
 5. 環境起因か自セッションと無関係と分類した場合は、`atk wi list --type=awi --status=active`で同じ事象を扱うAWIを探し、あれば`atk wi show <filename> --skip-pull`で本文の緩和策を前掲の対処選択肢と同じ階層で比べる
 6. 選んだ対処と、基準情報、CIの生の観測事実、分析結果を引き継いで計画ファイル（バグ）の初版を起草する。公開工程では終端担当が同じ情報をCI記録として保持し、CI修正担当へ渡して主作業ツリーで修正させる
 
@@ -126,18 +87,14 @@ CI設定側の抑制（ジョブ除外・テスト除外・失敗許容化）は
 全体検証の失敗も同じ修正系列に数え、`exec-review`の起動条件と起動しない修正の前提は「修正系列」と同じとする。
 各修正commitの後に版数とmanifestを再判定して再push、CI確認へ戻り、再push後の失敗では新しい原因commitについて対応する計画の有無を判定し直す。
 
+## 失敗の性質による分類
+
+品質の定義は`agent-basics:bugfix`の`references/ci-failure-handling.md`「失敗の性質による分類」を適用する。
+
+## 対処選択肢と判定基準
+
+品質の定義は`agent-basics:bugfix`の`references/ci-failure-handling.md`「対処選択肢と判定基準」を適用する。
+
 ## 分類判定の補助
 
-自セッション帰属か帰属を否定できない失敗では、初回ログが決定的に見えてもタイミング依存を含めて次の層を競合仮説として評価する。帰属と原因を観測から即断できる失敗（自明な単純失敗と、確認済みの無関係な外部基盤障害）は対象外とする。
-
-- 実装: 競合状態、実行順序、共有状態、時刻依存、待機条件、eventual consistencyなど
-- テスト: fixture汚染、テスト順序、並列実行、固定されていないデータ・時刻・乱数など
-- CI環境: 設定、キャッシュ、資源制約、依存・runtime差、コンテナーまたはOS差、Runnerと実行器、Runnerがjobのscriptを包んで生成するシェル、サービスコンテナーなど
-- 外部要因: runner、ネットワーク、DNS、外部サービスなど
-
-仮説ごとに支持・反証の事実と、仮説間で結果が変わる判別実験を記録する。非該当の層も反証で除く。同一SHAの再実行成功が示すのは非決定性であり、帰属は別に判定する。分類が2つ以上残る場合は複数原因として、確定できる原因から対処する。
-
-- ローカル再現が候補の層を含まない（Runnerと実行器、生成されるシェル、サービスコンテナーなど）場合は、その層を含めて再現する。GitLabではjobと同じイメージdigestとRunnerの版で`gitlab-runner run-single`を動かし、Runnerが報告する終了状態を比べられる。観測記録は`docs/development/audit-records.md`の「agent-toolkit/skills/bugfix/references/ci-failure-handling.md：分類判定の補助：2026年10月7日」にある。再現できない層を原因とする結論は推定として扱う
-- 過去の同じ失敗を`git log --grep`で探す
-- テスト対象を意図的に壊し、そのテストが失敗するかを確かめる
-- VRTで不足するartifactが必要なら、plan modeを終えて取得・実在確認してから再開する
+品質の定義は`agent-basics:bugfix`の`references/ci-failure-handling.md`「分類判定の補助」を適用する。

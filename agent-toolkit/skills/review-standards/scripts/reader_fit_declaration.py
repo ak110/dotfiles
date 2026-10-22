@@ -126,7 +126,7 @@ def check(
 ) -> str:
     """不足・規定外の省略を拒否し、受理した申告を1行の形式で返す。
 
-    sessionの形式と差分の被覆を確かめる。セッションの終了状態の保持期間には依存しない。
+    sessionの形式と差分の被覆を確かめる。セッションの終了状態の保持期間は問わない。
     """
     paths = changed_markdown(repository, start, head, review_contract)
     external_paths = [str(path) for path in external_artifacts or []]

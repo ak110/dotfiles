@@ -7,6 +7,15 @@
 既存計画に残る旧綴りの固定記法（計画メタ情報の`実装詳細`行、`- バグ調査ファイル:`で始まる参照行、`~/.claude/plans`（`LEGACY_PORTABLE_ROOT`）の参照と旧絶対パス、`<計画stem>.tsv`のレビュー指摘管理表）は読み取り互換として受理する。
 既存のID、系統名および表は現在の値のまま保ち、新規計画では現行書式の値を使う。計画構造の自動チェックは旧形式を受理し、現行書式への移行をwarningで案内する。
 
+## 名指し参照の読込方法
+
+本文の各参照の適用条件を保ち、選んだ資料の指定範囲を取得してから、その基準を使う具体的な判断へ進む。起動時の行の資料は起動本文とともに届く。
+
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `plan-file-standards.md` | 判断 | `read:agent-toolkit:*/skills/plan-mode/references/plan-file-standards.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../user-confirmation-and-report/SKILL.md#「ユーザー発話の解釈」` | 判断 | `section:agent-toolkit:*/skills/user-confirmation-and-report/SKILL.md#「ユーザー発話の解釈」` |
+
 ## 旧形式の判別
 
 対応する`<stem>.detail.md`の実在により、旧二ファイル形式と旧単一ファイル形式を分ける。

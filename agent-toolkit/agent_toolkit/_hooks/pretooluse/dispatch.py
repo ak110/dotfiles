@@ -97,7 +97,7 @@ lazy from agent_toolkit._hooks import (
 lazy from agent_toolkit._hooks import (
     tool_input as _hook_tool_input,
 )
-lazy from agent_toolkit._hooks.host import is_codex_payload
+lazy from agent_toolkit._hooks.host import is_antigravity_payload, is_codex_payload
 lazy from agent_toolkit._hooks.notice import _WARN_TAG, consume_warning_blocks, set_warning_session_id
 lazy from agent_toolkit._hooks.pretooluse.agent_checks import (
     _AGENTS_SERVER_KILL_TOOLS,
@@ -109,7 +109,6 @@ lazy from agent_toolkit._hooks.pretooluse.agent_checks import (
     _clear_current_plan_file_path,
     _record_iss_sidechain_probe,
 )
-lazy from agent_toolkit._hooks.pretooluse.confirmation_reads import unread_reference_warning
 lazy from agent_toolkit._hooks.pretooluse.content_checks import _collect_edit_operation_warnings, _warn_mojibake
 lazy from agent_toolkit._hooks.pretooluse.decision import Decision
 lazy from agent_toolkit._hooks.pretooluse.large_reads import (
@@ -118,7 +117,7 @@ lazy from agent_toolkit._hooks.pretooluse.large_reads import (
     session_record_reference_warning,
 )
 lazy from agent_toolkit._hooks.pretooluse.notices import _HOOK_ID, _block_notice, _llm_notice
-lazy from agent_toolkit._hooks.pretooluse.operation_skills import operation_skill_delivery
+lazy from agent_toolkit._hooks.pretooluse.read_delivery import deliver as read_delivery
 lazy from agent_toolkit._hooks.pretooluse.shell_checks import (
     _check_bash_atk_output_loss,
     _check_bash_option_after_terminator,
@@ -203,12 +202,14 @@ def main(payload_text: str) -> int:
     pending_notices: list[str] = []
     decision = _decide(payload, tool_name, tool_input, session_id, is_codex=is_codex)
     if decision.block is None:
-        deliveries = operation_skill_delivery(payload, tool_name, tool_input, session_id)
-        if deliveries:
+        delivery = read_delivery(payload, tool_name, tool_input, session_id)
+        if delivery.block is not None:
             pending_notices.extend(decision.notices)
             if decision.context:
                 pending_notices.append(decision.context)
-            decision = Decision(block="\n\n".join(deliveries))
+            decision = delivery
+        elif delivery.notices:
+            decision = dataclasses.replace(decision, notices=decision.notices + delivery.notices)
     return _emit(decision, pending_notices, is_codex=is_codex)
 
 
@@ -383,7 +384,7 @@ def _hook_observed_identity(payload: dict, *, is_codex: bool) -> RuntimeIdentity
     記録を一意に解決できない場合は判定しない。Codexはhook入力の`model`と`reasoning_effort`を優先し、
     両方が無い場合は記録の`turn_context`の最後の観測値を使う。
     """
-    runtime = "codex" if is_codex else "claude"
+    runtime = "agy" if is_antigravity_payload(payload) else "codex" if is_codex else "claude"
     model = payload.get("model")
     effort_input = payload.get("effort")
     effort = effort_input.get("level") if isinstance(effort_input, dict) else effort_input or payload.get("reasoning_effort")
@@ -458,7 +459,7 @@ def _user_facing_text_fields(tool_name: str, tool_input: dict) -> list[tuple[str
     return fields
 
 
-def _decide_user_facing_text_tool(payload: dict, tool_name: str, tool_input: dict) -> Decision:
+def _decide_user_facing_text_tool(_payload: dict, tool_name: str, tool_input: dict) -> Decision:
     """質問・計画本文の文字化けと、確認の前に読む資料の未読を確かめ、警告として返す。
 
     ユーザーへ直接到達する本文はユーザー自身が読んで誤りを指摘できるため、復元できない結果に当たらない。
@@ -476,14 +477,7 @@ def _decide_user_facing_text_tool(payload: dict, tool_name: str, tool_input: dic
                     fix=_response_language_check.WARNING_FIX,
                 )
             )
-    warnings = [
-        warning
-        for warning in (
-            _warn_mojibake(tool_name, fields),
-            unread_reference_warning(payload, tool_name),
-        )
-        if warning is not None
-    ]
+    warnings = [warning for warning in (_warn_mojibake(tool_name, fields),) if warning is not None]
     return Decision(context=format_warning_context(warnings) if warnings else None)
 
 

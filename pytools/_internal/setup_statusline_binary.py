@@ -12,6 +12,8 @@ import pathlib
 import subprocess
 import sys
 
+from agent_toolkit._common import dotfiles_mode
+
 # ヘルプや他の処理で使わない依存は、使用時まで読み込まない。
 lazy import httpx
 
@@ -52,6 +54,8 @@ def run(client: httpx.Client | None = None) -> post_apply_outcome.PostApplyOutco
     それ以外の場合はGitHub Releaseから取得する。
     いずれもバイナリの取得と導入に当たるため、判定・ビルド・取得・配置の失敗は警告を出力してスキップと数える。
     """
+    if dotfiles_mode.is_minimal():
+        return post_apply_outcome.PostApplyOutcome()
     try:
         development_tree = _find_development_tree()
         if development_tree is not None:

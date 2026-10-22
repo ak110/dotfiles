@@ -3,6 +3,15 @@
 `.claude/skills/agent-toolkit-edit/SKILL.md`「バージョン更新」節の詳細を集約する。
 `.chezmoi-source/`配下のchezmoi配布物、`bin/`配下のCLIラッパー、`scripts/`配下のヘルパースクリプトだけの変更は対象外とし、版数を据え置く。
 
+## 名指し参照の読込方法
+
+本文の各参照の適用条件を保ち、選んだ資料の指定範囲を取得してから、その基準を使う具体的な判断へ進む。起動時の行の資料は起動本文とともに届く。
+
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:commit/references/publish.md#「版数と生成物」` | 判断 | `section:agent-toolkit:*/skills/commit/references/publish.md#「版数と生成物」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:process-wi/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/SKILL.md` |
+
 ## 判定基準
 
 エンドユーザーに届く振る舞いが変わるものは必ずbumpし、迷う場合もbumpする。
@@ -49,5 +58,5 @@ plugin cache directory配下の新versionのrootを解決し、そのrootの`ski
 
 ## 新規CLI公開時の疎通確認
 
-配布物プラグインで新規CLI・コマンド・ラッパースクリプトを公開する計画では、`## 要件・外部仕様`にエンドユーザー環境で起動できるまでの導入手順（インストールスクリプト、post-apply処理、PATH配置、bash補完登録、Windowsペアファイル）を含める。基準は、プラグイン単体のエンドユーザーがPATH追加・環境変数設定以外の追加設定なしで起動できることである。
+配布物プラグインで新規CLI・コマンド・ラッパースクリプトを公開する計画では、`## 要件・外部仕様`にエンドユーザー環境で起動できるまでの導入手順（インストールスクリプト、post-apply処理、PATH配置、bash補完登録、Windowsペアファイル）を含める。基準はプラグイン単体のエンドユーザーがPATH追加・環境変数設定以外の追加設定なしで起動できることである。
 プラグインの`bin/`の実配置先はバージョン付きcache directoryになる。dotfilesのエンドユーザーは`.bashrc`のPATH追加、プラグイン単体のエンドユーザーは`install-claude.sh`/`install-claude.ps1`が置く動的解決ラッパーでこれを吸収する。

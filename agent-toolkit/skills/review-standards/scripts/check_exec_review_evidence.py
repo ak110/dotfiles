@@ -191,7 +191,7 @@ class WiOutputs(dict[str, str]):
         except SystemExit as error:
             raise ValueError(f"{filename}: WI本文を取得できません（保存先または入力の診断を確認する）") from error
         if missing:
-            raise ValueError(f"{filename}: WI本文を取得できません: 対象リポジトリの全状態フォルダに存在しない")
+            raise ValueError(f"{filename}: WI本文を取得できません: 対象リポジトリの年月配置に存在しない")
         path, repo, text, state, _kind = selected[0]
         output = f"## target_repo: {repo}\n### {path.name} [{state}]\n{text}"
         self[filename] = output
@@ -467,7 +467,7 @@ def _is_explicit_reference(match: re.Match[str], evidence: str, repository: path
     ):
         return False
     # 自由文の単語、パスのないテスト名、拡張子のない画面・APIのパス、製品名は候補にしない。
-    # 明示された参照は実在に依存させず、不在なら対象版の確認で拒否する。
+    # 明示された参照は実在を抽出の条件とせず、不在なら対象版の確認で拒否する。
     # 拡張子は名前の本体を持つファイル名の`.<英字>…`とし、`.env`のように先頭がピリオドで本体の無い名前は拡張子を持たない。
     # 見出し位置はファイルの節を指すため、拡張子を持つ名前に添えた場合だけ所在とする。
     # `pytest-dev/pytest#14635`のようなIssueの参照は区切りと`#`を持つが、ファイルを指さない。
@@ -503,7 +503,7 @@ def _names_file(candidate: str, name: str, repository: pathlib.Path, head: str) 
     絶対パス、実在するファイル、先頭がピリオドの名前（`.gitignore:9`、`scripts/.env:1`）と、
     最後のパス要素が対象版の追跡ファイルのいずれかと同じファイル名か同じ拡張子を持つ候補をファイル参照とする。
     行位置の書式だけで参照とすると、モデル識別子（`amazon.nova-lite-v1:0`）、ホストとポート（`example.com:443`）、
-    イメージの参照（`ghcr.io/astral-sh/uv:0.9`）を不在ファイルとして拒否し、語彙を観測するたびに除外を足すことになる。
+    イメージの参照（`ghcr.io/astral-sh/uv:0.9`）を不在ファイルとして拒否し、語彙を観測するたびに除外を追加することになる。
     追跡ファイルを列挙できない場合（リポジトリを特定できない保存操作）は、区切りか拡張子の形を持つ候補を参照とし、
     リポジトリを特定できない理由を参照の解決で示す。
     """
@@ -845,7 +845,7 @@ def _evidence_body(row: dict[str, str], field: str) -> str:
         # 原文の全文を使うので、原文内の閉じ括弧・引用符で途中を切り出さない。
         wrapped = rf"(?:（\s*{marker}\s*）|\(\s*{marker}\s*\)|{marker}(?=$|[\s、,;；。|）)]))"
         evidence = re.sub(rf"[\s、,;；|]*{wrapped}[\s、,;；|]*", " ", evidence)
-    # 条件番号だけを行別の識別標識として末尾へ足した根拠も、同じ本文として比較する。
+    # 条件番号だけを行別の識別標識として末尾へ追加した根拠も、同じ本文として比較する。
     # その他の整数の正規化は、参照領域を区別できる共用比較側で行う。
     evidence = re.sub(r"[\s。．]*(?:（\s*条件\d+\s*）|\(\s*条件\d+\s*\))\s*[。．]?\s*$", "", evidence)
     return evidence.strip()
@@ -1961,6 +1961,42 @@ def check_return_result(
     return errors, unanswered
 
 
+def _format_evidence_lines(lines: list[str]) -> list[str]:
+    """同じ出力内の共有段落を辞書と順序付き参照へまとめる。"""
+    dictionary_parts: dict[str, str] = {}
+    rows = []
+    counts: collections.Counter[str] = collections.Counter()
+    for line in lines:
+        if not line.startswith(("証拠の全行: ", "達成以外の行: ")):
+            continue
+        label, text = line.split(": ", 1)
+        row = json.loads(text)
+        evidence = row.get("evidence", "")
+        # 空行の前後の空白も独立した断片として保持し、文字列を完全復元する。
+        parts = [part for part in re.split(r"((?:(?:\r\n|\r|\n)[^\S\r\n]*){2,})", evidence) if part]
+        rows.append((line, label, row, parts))
+        # 辞書化の便益は本文の共有から判定し、区切りは復元用に保持する。
+        counts.update(part for part in parts if part.strip())
+    replacements = {}
+    for line, label, row, parts in rows:
+        if not any(counts[part] > 1 for part in parts):
+            continue
+        refs = []
+        for part in parts:
+            if part not in dictionary_parts:
+                dictionary_parts[part] = f"p{len(dictionary_parts) + 1}"
+            refs.append(dictionary_parts[part])
+        row.pop("evidence")
+        row["evidence_parts"] = refs
+        replacements[line] = label + ": " + json.dumps(row, ensure_ascii=False)
+    dictionary = {identity: part for part, identity in dictionary_parts.items()}
+    result = [replacements.get(line, line) for line in lines]
+    if dictionary:
+        position = next(index for index, line in enumerate(result) if line.startswith(("証拠の全行: ", "達成以外の行: ")))
+        result.insert(position, "証拠の根拠辞書: " + json.dumps(dictionary, ensure_ascii=False))
+    return result
+
+
 def _display_row(
     value: dict[str, typing.Any],
     section: str,
@@ -1986,6 +2022,8 @@ def evidence_rows(
     row_numbers: list[int] | None = None,
     *,
     seen: dict[str, dict[str, typing.Any]] | None = None,
+    rows_only: bool = False,
+    format_parts: bool = True,
 ) -> list[str]:
     """返却と途中読取で、更新入力と同じ配列・1始まりの番号を表示する。
 
@@ -1999,12 +2037,13 @@ def evidence_rows(
     references = seen if seen is not None else {}
     if row_numbers is not None:
         assert section is not None
-        return [
+        lines = [
             _display_row(
                 {"配列": section, "行番号": number, **payload[section][number - 1]}, section, number, "証拠の全行", references
             )
             for number in dict.fromkeys(row_numbers)
         ]
+        return _format_evidence_lines(lines) if format_parts else lines
     index_lines = [
         "証拠の行一覧: "
         + json.dumps(
@@ -2021,7 +2060,9 @@ def evidence_rows(
         for name in sections
         for index, row in enumerate(payload[name], start=1)
     ]
-    return [
+    if rows_only:
+        return index_lines
+    lines = [
         *index_lines,
         *(
             _display_row({"配列": name, "行番号": index, **row}, name, index, "証拠の全行", references)
@@ -2029,6 +2070,7 @@ def evidence_rows(
             for index, row in enumerate(payload[name], start=1)
         ),
     ]
+    return _format_evidence_lines(lines) if format_parts else lines
 
 
 def _list_evidence(parser: argparse.ArgumentParser, args: argparse.Namespace) -> int:
@@ -2061,6 +2103,11 @@ def _list_evidence(parser: argparse.ArgumentParser, args: argparse.Namespace) ->
             args.verification_row,
             args.list_results,
             args.results_summary,
+            args.results_counts,
+            args.results_identifiers,
+            args.result_status,
+            args.result_change,
+            args.result_diagnostic_group,
             args.result_test,
             args.result_diagnostic,
             args.row_evidence_file,
@@ -2076,14 +2123,16 @@ def _list_evidence(parser: argparse.ArgumentParser, args: argparse.Namespace) ->
             args.previous_review_head,
         )
     ):
-        parser.error("--listは証拠パス・--section・--rowだけと指定する。更新と返却生成は別に実行する")
+        parser.error("--listは証拠パス・--section・--row・--rows-onlyだけと指定する。更新と返却生成は別に実行する")
     try:
         if args.evidence is None or not args.evidence.is_absolute():
             raise ValueError("--listには完成条件証拠の絶対パスを指定する")
         payload, errors = validate_structure(verification_results.load_json(args.evidence))
         if errors:
             raise ValueError("。".join(errors))
-        lines = evidence_rows(payload, args.section, args.row)
+        if args.rows_only and args.row:
+            raise ValueError("--rows-onlyと--rowは別々に指定する")
+        lines = evidence_rows(payload, args.section, args.row, rows_only=args.rows_only)
     except (OSError, UnicodeError, ValueError) as error:
         _next_action.report(
             str(error), next_action="証拠の構造と--section・--rowを直し、--listを再実行する。記録は変更していない"
@@ -2141,7 +2190,9 @@ def return_lines(
         rows.extend(
             _display_row(
                 {
+                    **row,
                     "配列": section,
+                    "行番号": index + 1,
                     "添字": index,
                     "WI": row["awi"],
                     "判定": row["outcome"],
@@ -2157,7 +2208,9 @@ def return_lines(
             for index, row in enumerate(payload[section])
             if row["outcome"] != "達成"
         )
-    return [*lines, *rows, *(evidence_rows(payload, seen=seen) if show_all_rows else [])]
+    return _format_evidence_lines(
+        [*lines, *rows, *(evidence_rows(payload, seen=seen, format_parts=False) if show_all_rows else [])]
+    )
 
 
 def write_template(
@@ -2479,7 +2532,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--return-result",
         action="store_true",
-        help="表と証拠の整合を確かめ、completedの固定形式の返却を生成する。同一根拠は先行行をevidence_referenceで示す",
+        help="表と証拠の整合を確かめ、completedの固定形式の返却を生成する。同一根拠は先行行をevidence_reference、共有段落は同出力の根拠辞書とevidence_partsで示す",
     )
     parser.add_argument(
         "--external-artifact",
@@ -2519,6 +2572,9 @@ def main(argv: list[str] | None = None) -> int:
         help="判定途中でも原文・出所・判定・根拠・HEADを読む。全行と--sectionだけの指定では先に根拠を除いた`証拠の行一覧`を並べ、"
         "同一根拠は先行表示を指す。--rowの反復でも同じ規則で指定行を返す",
     )
+    parser.add_argument(
+        "--rows-only", action="store_true", help="--listで根拠を除いた行一覧だけを読む。--sectionで配列を選べる"
+    )
     parser.add_argument("--section", choices=list(REQUIRED_FIELDS), help="--listで読む配列")
     parser.add_argument(
         "--row",
@@ -2546,7 +2602,7 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     if args.list:
         return _list_evidence(parser, args)
-    if args.section is not None or args.row is not None:
+    if args.section is not None or args.row is not None or args.rows_only:
         parser.error("--sectionと--rowは--listと指定する")
     if args.return_result and (
         not args.reader_fit_review
@@ -2590,6 +2646,11 @@ def main(argv: list[str] | None = None) -> int:
         or args.verification_record
         or args.output
         or args.results_summary
+        or args.results_counts
+        or args.results_identifiers
+        or args.result_status
+        or args.result_change
+        or args.result_diagnostic_group
         or args.result_test
         or args.result_diagnostic
         or args.row_evidence_file
@@ -2654,6 +2715,9 @@ def main(argv: list[str] | None = None) -> int:
                 row_check=row_check,
             )
             verification_results.save(args.output, payload)
+        except _next_action.ActionableError as error:
+            _next_action.report(error.reason, next_action=error.next_action)
+            return 1
         except (OSError, UnicodeError, ValueError, subprocess.SubprocessError) as error:
             _next_action.report(
                 str(error),

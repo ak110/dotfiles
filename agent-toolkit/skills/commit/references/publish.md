@@ -2,6 +2,28 @@
 
 「公開工程」はcommitから版数更新・push・CI・公開状態・プロジェクト固有の公開後の確認までを指し、本書を定義元とする。起動形態を問わず、ユーザー指示・確認回答・自律モードのスキル契約から認可範囲を確定して適用する。pushとCI監視は`references/push-and-ci.md`に従う。
 
+## 名指し参照の読込方法
+
+本文の各参照の適用条件を保ち、選んだ資料の指定範囲を取得してから、その基準を使う具体的な判断へ進む。起動時の行の資料は起動本文とともに届く。
+
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `push-and-ci.md` | 判断 | `read:agent-toolkit:*/skills/commit/references/push-and-ci.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../user-confirmation-and-report/references/publish-scope.md#「公開範囲の確認」` | 判断 | `section:agent-toolkit:*/skills/user-confirmation-and-report/references/publish-scope.md#「公開範囲の確認」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../process-wi/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/SKILL.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../single-lane-process/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/single-lane-process/SKILL.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../user-confirmation-and-report/SKILL.md#「認可を要する操作」` | 判断 | `section:agent-toolkit:*/skills/user-confirmation-and-report/SKILL.md#「認可を要する操作」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `push-and-ci.md#「公開先に対応するCI定義の判定」` | 判断 | `section:agent-toolkit:*/skills/commit/references/push-and-ci.md#「公開先に対応するCI定義の判定」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../bugfix/SKILL.md#「問題を見つけたときの対処」` | 判断 | `section:agent-toolkit:*/skills/bugfix/SKILL.md#「問題を見つけたときの対処」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../bugfix/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/bugfix/SKILL.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../process-wi/references/termination-ci-failure.md#「検証またはCIの失敗」` | 判断 | `section:agent-toolkit:*/skills/process-wi/references/termination-ci-failure.md#「検証またはCIの失敗」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `push-and-ci.md#「公開工程の続行不能の受渡し」` | 判断 | `section:agent-toolkit:*/skills/commit/references/push-and-ci.md#「公開工程の続行不能の受渡し」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../user-confirmation-and-report/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/SKILL.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../wi-standards/SKILL.md#「状態と依存」` | 判断 | `section:agent-toolkit:*/skills/wi-standards/SKILL.md#「状態と依存」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../wi-standards/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/SKILL.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../user-confirmation-and-report/references/answer-transitions.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/references/answer-transitions.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../wi-standards/references/states-and-dependencies.md#「回答済みUWIの取り込み」` | 判断 | `section:agent-toolkit:*/skills/wi-standards/references/states-and-dependencies.md#「回答済みUWIの取り込み」` |
+
 ## 公開範囲
 
 協調モードの選択肢は`agent-toolkit:user-confirmation-and-report`の`references/publish-scope.md`「公開範囲の確認」が定める。元の依頼がPR、release、tagを個別に求める場合は、それをプロジェクト固有の公開後の操作として扱う。
@@ -56,11 +78,11 @@ pushとCI確認の後、同書「公開状態の4項目」を現在のGit状態�
 ターンやセッションの終了後も操作が残る場合は同スキル「手段の選択」の個別UWIを保存し、既存の同じ確認は再利用する。
 UWIには対象公開先・commit、確認済み工程、必要な操作と返してほしい結果を含め、資格情報の値の転記を求めない。
 
-回答に依存する未終端の元項目だけを、UWI保存の成功後に`agent-toolkit:wi-standards`「状態と依存」で保留する。
+回答を必要とする未終端の元項目だけを、UWI保存の成功後に`agent-toolkit:wi-standards`「状態と依存」で保留する。
 既に終端した実装要求は状態を保つ。残る公開工程の再開記録は計画の進捗ログへ保存し、計画が無い場合は公開工程を扱う未終端AWIの本文へ残す。該当AWIが無ければ`agent-toolkit:wi-standards`の通常の投入手順で登録し、個別UWIと対応付ける。引き継ぎ記録は同じセッション内の受渡しに使い、次のセッションが読む再開記録と必要な証拠は、作成時に計画かAWI本文へ保存する。
 再開記録には公開先・commit・ref、成功済み工程と成功済みの公開後の操作、CI結果（未判定ならその旨）、失敗した操作と対象、baseline・保存出力とUWIの所在、欠ける前提と再開位置を残す。
 回答後は`agent-toolkit:user-confirmation-and-report`の`references/answer-transitions.md`に従い、同じ担当sessionを保持していれば配送する。無ければ記録から未完了工程だけを再開する。成功済みの版数更新・push・公開後の操作は繰り返さない。
-process-wiの元項目の取り込みは`agent-toolkit:wi-standards`「回答済みUWIの取り込み」に従う。
+process-wiの元項目の取り込みは`agent-toolkit:wi-standards/references/states-and-dependencies.md`「回答済みUWIの取り込み」に従う。
 独立した有効な証拠でCI定義の不在を確定できた場合は「CI定義なし」を終端状態とする通常の工程へ戻り、全体検証の失敗は別の未完了として是正する。
 
 ## プロジェクト固有の公開後の操作とリリース

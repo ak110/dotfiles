@@ -1,31 +1,28 @@
-# 検証結果の診断と警告の判定
+# 診断の品質基準と基準版
 
-本書は検証したエージェントが、診断本文と警告を基準版との差で判定し、結果と不足を報告先へ返す基準を定める。
-報告先は委譲されたエージェントでは委譲元、メインではユーザー（`agent-toolkit:user-confirmation-and-report`の「手段の選択」に従う）とする。
+品質の定義元は`agent-basics:check-execution`の`references/diagnostics.md`である。呼出元が指定した条件と読込範囲を、同名の正式な品質資料へ引き継ぐ。節指定がある場合は移設先の実見出しへ接続し、指定がない場合は従来の全文読込契約を保つ。取得済みの同版本文は再取得せず使う。
+
+基準版は通常の変更では実装着手直前HEAD、レーンでは初回実装前HEAD（担当切替と履歴統合後も同じ基準からの累積差分）、CI修正では修正前の版、統合では統合前HEADとする。是正を要する既存不良の扱いは`agent-toolkit/rules/01-agent.md`「完遂と先送り」に従い、委譲先は対象と方向を委譲元へ返す。
+
+## 名指し参照の読込方法
+
+本文の各参照の適用条件を保ち、選んだ資料の指定範囲を取得してから、その基準を使う具体的な判断へ進む。起動時の行の資料は起動本文とともに届く。
+
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:check-execution/references/diagnostics.md` | 判断 | `read:agent-basics:*/skills/check-execution/references/diagnostics.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:check-execution/references/diagnostics.md#「読む出力」` | 判断 | `section:agent-basics:*/skills/check-execution/references/diagnostics.md#「読む出力」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:check-execution/references/diagnostics.md#「基準版と変更行への帰属」` | 判断 | `section:agent-basics:*/skills/check-execution/references/diagnostics.md#「基準版と変更行への帰属」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:check-execution/references/diagnostics.md#「合否」` | 判断 | `section:agent-basics:*/skills/check-execution/references/diagnostics.md#「合否」` |
 
 ## 読む出力
 
-終了コードと要約だけで判定せず、診断本文、実行時警告、未到達・未適用・未完了を示す出力を読む。
-pyfltrの`commands_summary.needs_action.warning`はコマンド結果の区分の件数であり、個々の診断のwarning件数とは別の値である。0でも診断本文から変更行への指摘の有無を確かめる。
-出力契約の確認記録は`docs/development/audit-records.md`の「agent-toolkit/skills/check-execution/references/diagnostics.md：検証結果の診断と警告の判定：2026年10月3日」にある。
-
-試験は成功時も既存の所要出力（pytestのduration、pyfltrの`slow_tests`など）を読み、setup・本体・後始末の所要を保証する契約と必要な仕事量へ対応付ける。妥当性の判定と原因調査は`agent-toolkit:bugfix`を起動して`agent-toolkit:bugfix`の`SKILL.md`「所要の原因調査」に従い、単独再実行の成功は仕事量の妥当性の根拠から外す。速度と時間上限の選定は`agent-toolkit:writing-standards`の`references/testing.md`「速度」に従い、観測した所要、保証する契約、妥当性と対処の判断を検証結果へ残す。
+品質の定義は`agent-basics:check-execution`の`references/diagnostics.md`「読む出力」を適用する。
 
 ## 基準版と変更行への帰属
 
-変更行への帰属を判定する基準版と検証対象版を、検証結果・進捗ログまたは引き継ぎ記録へ残す。
-基準版は通常の変更では実装に着手する直前のHEAD、レーンでは初回実装前のHEAD（担当種別の切替と履歴統合の後も同じ基準からの累積差分を使う）、CI修正では修正前の版、統合では統合前HEADとする。
-
-診断はファイル・行範囲・ruleをGit差分の追加・変更行へ対応付け、位置のない警告は発生元・種別・内容・発動条件から帰属を判定する。
-変更行への指摘は結果区分にかかわらず解消するか、意味・影響・残す理由を記録する。位置・帰属が不明なら保留し、不足条件を報告先へ返す。
-
-既存か新規かを確かめる必要がある警告は、その検証だけを対象範囲・オプション・依存版・並列度・実行環境をそろえて基準版で比べる。同じ版と条件の保存結果があれば再利用する。比較は診断のファイル・対応行・rule・内容で行い、改名・行移動・重複を対応付ける。同件数でも内容の変化は差とし、行番号だけの移動は既存とする。PID・絶対パスなど実行固有値は比較から除く。
+品質の定義は`agent-basics:check-execution`の`references/diagnostics.md`「基準版と変更行への帰属」を適用する。
 
 ## 合否
 
-- 未到達・未適用・未完了の出力は、既存か新規かにかかわらず阻害として扱う。比較不能と、意味・影響・帰属の未確定も阻害とし、残す理由の記録だけでは受理せず、理由と不足する条件を報告先へ返す
-- 欠陥を示す診断は是正し、権限や入力が不足する場合は報告先へ返す。警告の意味の判定は`agent-toolkit:bugfix`の`SKILL.md`「問題を見つけたときの対処」に従う
-- 処理が成立し欠陥を示さず、意味・影響・帰属・比較した版・残す理由を確定できた警告は、それらと診断本文を検証結果と進捗ログ（または引き継ぎ記録）へ残して続行する
-- 是正を要する既存不良は、メインが`agent-toolkit/rules/01-agent.md`「完遂と先送り」に従って扱う。委譲されたエージェントは観測した出力、直接的原因、修正の対象と方向を委譲元へ返し、是正の要否と時機は委譲元が決める
-- 統合時は実装で警告を残した理由が統合後の入力と実行条件でも成立するかを確かめ、成立しなくなった理由と統合で初めて生じた欠陥を同じ基準で扱う
-- 警告の抑制と検証範囲の縮小は、警告の意味を確定した後に理由を検証記録へ残して選ぶ。意味と由来の確認や是正の代わりには使えない手段として扱う
+品質の定義は`agent-basics:check-execution`の`references/diagnostics.md`「合否」を適用する。

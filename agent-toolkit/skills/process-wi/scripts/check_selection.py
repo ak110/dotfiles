@@ -800,7 +800,7 @@ def check(
     """指定した集合の本文と選定全体の関係を確かめ、違反を返す。省略時は全本文を対象とする。
 
     統合済みの項目（項目か所属レーンの`統合状態`が`統合済み`の項目と、`integrating`が示す同じ呼び出しで
-    統合状態を記録するレーンの項目）には、作業ツリーに依存する項目ごとの判定を適用しない。
+    統合状態を記録するレーンの項目）には、作業ツリーの状態を前提とする項目ごとの判定を適用しない。
     """
     if selection is None:
         selection = load_selection(selection_file)
@@ -1284,7 +1284,7 @@ def _string_list(decision: dict[str, object], key: str) -> list[str]:
 
 
 def summary_lines(selection: dict[str, object], body_wis: set[str] | None = None) -> list[str]:
-    """確認を通った選定結果から、レーン構成の要約行を返す。
+    """確認に合格した選定結果から、レーン構成の要約行を返す。
 
     WIファイル名は入力順に全件を示す。段階と先行レーンの省略は読み取り契約の省略時の値（1と空の列）で示し、
     秒数は旧欄名（`implementation_seconds`・`integration_seconds`）の値も読む。根拠と書込対象は再掲しない。
@@ -1364,7 +1364,9 @@ def main(argv: list[str] | None = None) -> int:
         "--mark-integrated",
         action="append",
         metavar="LANE",
-        help=("検収済みレーンと所属項目の統合状態を記録する。その項目には作業ツリーに依存する判定を適用しない。反復指定可"),
+        help=(
+            "検収済みレーンと所属項目の統合状態を記録する。その項目には作業ツリーの状態を前提とする判定を適用しない。反復指定可"
+        ),
     )
     parser.add_argument(
         "--lane-cost-updates", type=pathlib.Path, metavar="PATH", help="最終レーンの確定した秒数と根拠のJSON（統合時だけ）"

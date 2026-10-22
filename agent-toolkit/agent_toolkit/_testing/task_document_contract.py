@@ -29,7 +29,7 @@ def validate_frontmatter(task_document: pathlib.Path, document_text: str) -> Tas
         if len(set(keys)) != len(keys):
             raise ValueError("frontmatterのキーが重複しています")
         values = yaml.safe_load(body)
-        required_fields = {"mode", "model_type", "usage", "required_inputs", "writes_worktree"}
+        required_fields = {"mode", "model_type", "required_inputs", "writes_worktree"}
         allowed_fields = required_fields | {"optional_inputs", "continuations"}
         if set(values) - allowed_fields or required_fields - set(values):
             raise ValueError(
@@ -40,11 +40,8 @@ def validate_frontmatter(task_document: pathlib.Path, document_text: str) -> Tas
         if mode not in LAUNCH_KINDS:
             raise ValueError(f"modeは{LAUNCH_KINDS}から指定する")
         model_type = values["model_type"]
-        if model_type not in ("low_tier", "medium_tier", "high_tier"):
-            raise ValueError("model_typeはlow_tier・medium_tier・high_tierから指定する")
-        usage = values["usage"]
-        if usage not in ("base", "chores", "execute", "review"):
-            raise ValueError("usageはbase・chores・execute・reviewから指定する")
+        if model_type not in ("execute", "review", "review_fast", "chores", "chores_fast", "orchestrate", "write"):
+            raise ValueError("model_typeは工程別モデル種別から指定する")
         writes = values["writes_worktree"]
         if not isinstance(writes, bool):
             raise ValueError("writes_worktreeはtrueかfalseで指定する")
@@ -72,13 +69,21 @@ def validate_frontmatter(task_document: pathlib.Path, document_text: str) -> Tas
                 raise ValueError("継続指示には空でない文字列が必要")
             if not isinstance(continuation.condition, str):
                 raise ValueError("継続条件は文字列で指定する")
-            for items in (continuation.required, continuation.optional, continuation.paths, continuation.references):
+            for items in (
+                continuation.required,
+                continuation.optional,
+                continuation.paths,
+                continuation.path_lists,
+                continuation.references,
+            ):
                 if not isinstance(items, (list, tuple)) or any(
                     not isinstance(item, str) or not INPUT_NAME_PATTERN.fullmatch(item) for item in items
                 ):
                     raise ValueError("継続入力名は配列で指定する")
             if (
                 not set(continuation.paths) <= continuation.accepted
+                or not set(continuation.path_lists) <= continuation.accepted
+                or bool(set(continuation.paths) & set(continuation.path_lists))
                 or not set(continuation.references) <= continuation.accepted
                 or any(item.instruction == continuation.instruction for item in continuations)
             ):
@@ -89,6 +94,7 @@ def validate_frontmatter(task_document: pathlib.Path, document_text: str) -> Tas
                     required=tuple(continuation.required),
                     optional=tuple(continuation.optional),
                     paths=tuple(continuation.paths),
+                    path_lists=tuple(continuation.path_lists),
                     references=tuple(continuation.references),
                 )
             )
@@ -99,7 +105,6 @@ def validate_frontmatter(task_document: pathlib.Path, document_text: str) -> Tas
             writes_worktree=writes,
             continuations=tuple(continuations),
             model_type=model_type,
-            usage=usage,
         )
     except (TypeError, ValueError, yaml.YAMLError) as error:
         return f"必須入力を確認できません: frontmatterが不正です: {task_document}: {error}"

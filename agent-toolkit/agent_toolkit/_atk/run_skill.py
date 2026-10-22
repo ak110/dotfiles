@@ -35,6 +35,7 @@ from agent_toolkit._atk import outcome as _outcome
 from agent_toolkit._atk.run_skill_progress import Progress
 from agent_toolkit._atk.wi import add as _wi_add
 from agent_toolkit._atk.wi.repo import resolve_local_worktree
+from agent_toolkit._common import antigravity_cli as _antigravity
 from agent_toolkit._common import automated_prompt as _automated_prompt
 from agent_toolkit._common import claude_usage_limit as _claude_usage_limit
 from agent_toolkit._common import codex_usage_limit as _codex_usage_limit
@@ -80,7 +81,7 @@ _LOG_DIRNAME = "run-skill"
 _PATH_ACTION = (
     "定期実行の環境変数`PATH`へ`atk`・`claude`・`codex`の実行ファイルの場所を加える（crontabでは`PATH=...`の行を置く）。"
     "PATHに問題が無い場合は`atk config set orchestrate_engine <engine順>`か"
-    "`atk config set <engine>_high_tier_model <モデル>`で候補を変える"
+    "`atk config set <engine>_execute_model <モデル>`で候補を変える"
 )
 
 
@@ -229,6 +230,8 @@ def _run_locked(
             f"/goal {goal}",
         ]
         argv[-1:-1] = ["--output-format", "stream-json", "--verbose"]
+    elif orchestrator == "agy":
+        argv = _antigravity.build_command(goal, model, effort, None, timeout=args.timeout)
     else:
         # Codexの非対話起動は`/goal`を目標として扱わず通常の入力として残すため、目的文だけを渡す。
         argv = ["codex", "exec", "--model", model, "-c", f"model_reasoning_effort={effort}", goal]
@@ -298,6 +301,11 @@ def _run_locked(
                 "--verbose",
                 _USAGE_LIMIT_RESUME_PROMPT,
             ]
+        elif orchestrator == "agy":
+            assert output.thread_id is not None
+            argv = _antigravity.build_command(
+                _USAGE_LIMIT_RESUME_PROMPT, model, effort, output.thread_id, timeout=max(1, int(remaining))
+            )
         else:
             assert output.thread_id is not None
             argv = [
@@ -330,6 +338,11 @@ class _SessionOutput:
             event = json.loads(line)
         except ValueError:
             return
+        if not isinstance(event, dict):
+            return
+        conversation = _antigravity.event_session_id(event)
+        if conversation is not None:
+            self.thread_id = conversation
         state = _claude_usage_limit.from_event(event)
         if state is not None:
             self.usage_limit = state if state.is_wait_target else None

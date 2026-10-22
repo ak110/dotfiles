@@ -3,6 +3,14 @@
 `agents_server`の状態はMCPサーバーのメモリー、状態ディレクトリのファイル、フックが記録するセッション状態およびstatuslineが読む射影の4つの表現に分かれる。
 実行主体ごとに更新できる範囲が異なるため、挙動を確定する際は関係する全ての処理の流れを読む（単一の処理だけを読むと、別の処理が同じ状態を更新しない事実を見逃す）。
 
+## 名指し参照の読込方法
+
+本文の各参照の適用条件を保ち、選んだ資料の指定範囲を取得してから、その基準を使う具体的な判断へ進む。起動時の行の資料は起動本文とともに届く。
+
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:delegation/references/runtime-routing.md#「工程別モデル設定」` | 判断 | `section:agent-toolkit:*/skills/delegation/references/runtime-routing.md#「工程別モデル設定」` |
+
 ## 実行主体
 
 | 実行主体 | 実体 | 寿命 |
@@ -15,14 +23,14 @@
 `CLAUDE_CODE_SESSION_ID`は子プロセスの起動時に現行のsession識別子が注入される値である。
 Claude Codeが同一プロセスのままsession識別子を切り替えた場合、切替後に起動する短命プロセスは新しい値を得る一方、長命なMCPサーバーは起動時の値を保持し続ける。
 このため`start`の`task`が起動本文へ添える委譲元の記録情報（`atk-auto`の`kind="launcher-record"`。`ManagerBase.launcher_record_context`が組み立てる）も、会話の切替後は古い会話を指し得る。消費側は明示された出所と取得済みの`record`・`line`を優先し、対象発話との一致を確かめる。
-`session-review-evidence`の`--delegation-record parent`と`--delegation-record root`は、委譲先自身を起点に直接の委譲元と最上位の会話を解決する。
+`session-review-evidence`の`--delegation-record parent`と`--delegation-record root`は委譲先自身を起点に直接の委譲元と最上位の会話を解決する。
 親子判定は`_common/session_parents.py`を共有し、記録に残る起動結果を登録簿の作成時点の委譲元より優先する。
 MCPサーバープロセスには`CLAUDE_PID`が渡らないため、Claude Codeプロセスを指す識別子を環境変数から解決できない。
 
 Codex CLIはstdio MCPサーバーへ親環境を限定して渡す。届くのはCodexの既定の許可リストにある変数、`env_vars`に列挙した名前のうち親環境に値がある変数、`env`で明示した値である。
 外側の`agents_server`は`thread/start`・`thread/resume`の`config.mcp_servers.agents_server`へ、`env`でルートsession識別子と書込主体識別子を配送し、`env_vars`で保存先・公開設定・proxy設定の変数名を渡す。
 変数名と除外条件は`agent_toolkit/_common/mcp_environment.py`が持つ。静的な配布設定は`environment_variable_names`、内側MCPの開始・再開は`runtime_environment_variable_names`を使う。
-静的な集合は認証・接続先・モデル設定、保存先、通信、ロケール、keyring接続などの公開名を含み、生成元の環境には依存しない。
+静的な集合は認証・接続先・モデル設定、保存先、通信、ロケール、keyring接続などの公開名を含み、生成元の環境によらず共通とする。
 公開設定の`AGENT_TOOLKIT_CONFIG_`名は`_atk/config.py`の`config_environment_variable_names`が現行キーと旧キーから返す。旧キーも子へ配送して拒否と置換案内を保つ。
 動的な集合は実際の親環境の全名前から起動元の会話・端末・プロセスのcontextと上流の継承禁止名を除く。除外は大文字・小文字を区別せず、TOKEN・KEYという名前だけで認証名を除外しない。
 miseの設定・信頼状態・導入先・キャッシュの所在は`MISE_CONFIG_DIR`・`MISE_STATE_DIR`・`MISE_DATA_DIR`・`MISE_CACHE_DIR`の公開名で引き継ぎ、XDGを変更しても呼出元が選んだmiseの所在と信頼設定を保つ。
@@ -138,7 +146,7 @@ CLIは登録済みsessionか既存の起動・セッション記録への参照�
 `handoff_from`を使うstartは前任のcwdとmodel_typeを復元して応答へ返し、PostToolUseフックは引き継ぎ起動時だけ両値を応答から取得し、後任の待機対象と工程種別を記録する。通常のstartでは入力cwdとmodel_typeを検収する。
 引き継ぎ用の会話抽出はsession-reviewの`--conversation-only`を使う。既存bundleの抽出物を生成し、候補文書・比較材料・統計の生成とfailure ledgerの更新を省く。生成物の保存先はmanaged-tempの保持期限へ委ねる。
 
-ClaudeのAPI失敗が連続する間と、Codexの過負荷（`serverOverloaded`）による自動継続を待つ間の`api_error`はいずれもMCPサーバーの`SessionState`を正とし、同じ書込主体が状態ファイルへ射影する。過負荷の待機中の記録は待機を予定したCodex backendの終端処理が作成し、MCPサーバーが継続のturnを送った時点で削除する。待機の予定時刻と連鎖の回数もMCPサーバーのメモリーだけに置き、状態ファイルへは`api_error`の形でだけ射影する。API失敗の合成メッセージは活動時刻を進めず、状態ファイルの更新だけを通知する。`show`・`list`とCLIは共通の活動射影から失敗の経過を算出し、正常なassistantメッセージで記録を削除する。生のエラー本文は共有状態へ保存しない。
+API失敗状態はいずれもMCPサーバーの`SessionState`を正とし、同じ書込主体が状態ファイルへ射影する。対象はClaudeの合成assistantメッセージと`SystemMessage(api_retry)`、Codexの`willRetry: true`の`error`通知による再試行中と、Codexの過負荷（`serverOverloaded`）による自動継続を待つ間の`api_error`である。過負荷の待機中の記録は待機を予定したCodex backendの終端処理が作成し、MCPサーバーが継続のturnを送った時点で削除する。待機の予定時刻と連鎖の回数もMCPサーバーのメモリーだけに置き、状態ファイルへは`api_error`の形でだけ射影する。API失敗の合成メッセージは活動時刻を進めず、状態ファイルの更新だけを通知する。`show`・`list`とCLIは共通の活動射影から失敗の経過を算出し、正常なassistantメッセージで記録を削除する。Claudeの`api_retry`は`error`の種別・`error_status`と、受信時刻に`retry_delay_ms`を加えたUTCの`retry_at`を記録し、`count`は同じ通知の反復でも`attempt`の値とする。Codexの再試行通知は同じthread・turnの`codexErrorInfo`の種別と、存在する`httpStatusCode`を記録し、後続のモデル活動とturn終端で削除する。`retry_at`も共通の公開項目へ射影する。生のエラー本文は共有状態へ保存しない。
 
 委譲sessionの文脈使用量（`context_tokens`と`context_window`）もMCPサーバーの`SessionState`を正とし、同じ書込主体が状態ファイルへ任意の数値として射影する。値は累計課金量ではなく直近のモデル文脈の観測値であり、当該sessionのengineを所有するbackendが`_agents_server/context_usage.py`の`record_context_usage`で置き換える。
 情報源はengineごとに次のとおりである。
@@ -150,7 +158,7 @@ ClaudeのAPI失敗が連続する間と、Codexの過負荷（`serverOverloaded`
 有限かつ非負の数値だけを受理し、未知の値は項目ごと省く。この更新は活動時刻を進めず、表示更新の通知だけを送る。終端後の再開情報（`SessionResumeState`）は表示のため最後の観測値を保持し、値は同じsessionの表示だけに使う。
 statuslineと`atk agents list`は`subagent.rs`の`format_tokens`と`context_usage.format_tokens`で同じ書式（小数1桁の`k`と整数の`%`）に描く。Rustのテストとリポジトリrootの`claude_statusline_invariant_test.py`が`rust/claude-statusline/testdata/agents_server_state.json`の同じ数値例を読む。
 
-Claude CodeのWeekly limitと5時間の利用上限の解除待ちもMCPサーバーの`SessionState`を正とする。Claudeが報告した最後の利用枠（`usage_limit`）はClaude backendが`RateLimitEvent`から記録し、初期化より前に届いた報告もsessionの作成時に引き継ぐ。turnが待機対象の拒否で終わると、Claude backendが結果を保留し、`api_error`へ種別`usage_limit`、利用枠の種類（`limit_type`）と解除予定時刻（`resets_at`）を記録する。次の継続の時刻と待機の回数はメモリーだけに置く。MCPサーバーの常駐監視が予定時刻に同じsessionへ継続を送り、正常なモデル出力で利用枠の記録と`api_error`を削除する。保留中の結果は`auto_resume_deadline`と保持期限の対象にしない。状態ファイルと`show`・`list`・CLIへは`limit_type`と`resets_at`を`api_error`の公開項目として射影する。
+Claude CodeのWeekly limitと5時間の利用上限の解除待ちもMCPサーバーの`SessionState`を正とする。Claudeが報告した最後の利用枠（`usage_limit`）はClaude backendが`RateLimitEvent`から記録し、初期化より前に届いた報告もsessionの作成時に引き継ぐ。turnが待機対象の拒否で終わると、Claude backendが結果を保留し、`api_error`へ種別`usage_limit`、利用枠の種類（`limit_type`）と解除予定時刻（`resets_at`）を記録する。turn内の429の`api_retry`も、最後の`RateLimitEvent`が待機対象の拒否を示す場合は同じ種別・種類・解除予定時刻を記録し、解除時刻が無ければ`retry_at`を使う。その後の429以外の再試行は通常のAPI再試行へ置き換える。次の継続の時刻と待機の回数はメモリーだけに置く。MCPサーバーの常駐監視が予定時刻に同じsessionへ継続を送り、正常なモデル出力で利用枠の記録と`api_error`を削除する。保留中の結果は`auto_resume_deadline`と保持期限の対象にしない。状態ファイルと`show`・`list`・CLIへは`limit_type`と`resets_at`を`api_error`の公開項目として射影する。
 委譲先の候補順は、`claude_api_mode`が`pay-as-you-go`ならサブスクリプション、APIの順、`api-credits`ならAPI、サブスクリプションの順とする。
 候補順に後続の接続が残る場合は、同じ利用上限かAPIクレジットの不足の契機で結果を保留し、`claude_api_resume_pending`を常駐監視が消費して同じsessionを後続の接続で再開する。
 この予定はメモリーだけに置き、選択した接続とAPI接続のパスを既存の内部再開情報へ保存する。移行後の会話は設定変更・解除や資源解放の後も保持した接続を使い、新規sessionは候補順の先頭から始める。利用上限でサブスクリプションから移した委譲先だけは、サブスクリプションが先頭候補のままなら解除予定時刻の後の最初のturn（追送と自動再開）で同じ会話をサブスクリプションで再開する。CLIが自ら次のturnを始め得る待機（バックグラウンドタスクなど）の間は所有タスクを止めない。資源解放の後は戻す時刻を持たないため保持した接続を使う。
@@ -158,7 +166,7 @@ Claude CodeのWeekly limitと5時間の利用上限の解除待ちもMCPサー�
 
 Codexの接続先選択順は`codex_model_providers`が持つ。先頭APIの不受理やサブスク利用上限で後続APIへ移す間も、既存の結果保留と監視を使う。空設定の会話は通常のCodex設定に従う。選択済みproviderは同じ会話の再開へ渡し、主接続先の設定変更と利用枠の回復は新規起動だけへ適用し、後続候補は次の代替試行で現行列から選ぶ。現在アカウントの利用可否は永続台帳へ記録せず、新規起動ごとにApp Serverへ照会する。人向けログへは候補の診断だけを記録する。接続先の設定とcold resumeの契約は`docs/guide/codex-guide.md`と`docs/development/design-agents-server.md`にある。
 
-モデル候補の設定は`atk config get config_dir`が返すディレクトリ配下の`config.json`が持ち、MCPサーバーは起動ごとに読む。旧モデル設定（`high_tier_model`など4キー）が保存されている場合は、候補解決か`atk config show`・`get`を最初に行った主体（MCPサーバーまたは`atk`のCLI）が同じファイルを一括移行で書き換える。移行結果は保存値だけから決まるため、複数の主体が同時に移行しても同じ内容になる。
+モデル候補の設定は`atk config get config_dir`が返すディレクトリ配下の`config.json`が持ち、MCPサーバーは起動ごとに読む。旧段位9キーまたは用途別engine順5キーが保存されている場合は、候補解決か`atk config show`・`get`を最初に行った主体（MCPサーバーまたは`atk`のCLI）が6工程の候補列へ合成し、廃止キーを除いて同じファイルを一括で書き換える。移行結果は保存値だけから決まるため、複数の主体が同時に移行しても同じ内容になる。移行の詳細は`agent-toolkit:delegation`の`references/runtime-routing.md`「工程別モデル設定」に従う。
 
 状態ディレクトリは`atk config get state_dir`が返すディレクトリ配下の`agents-server`とする。
 レーン資源の所有登録と回収結果への参照は、同じ`state_dir`配下の`lanes/<所有session>/`へ別に置く。`_atk/lane.py`が作成・明示再利用・回収を所有し、通常終了とprocess-loopの子終了後も同じ処理を使う。レーン管理はsession登録簿を`_common/session_registry.py`の`resolve`の解決結果（実行中かとcwd）で読むだけとし、状態と終端登録の更新はMCPサーバーが所有する。回収結果は専用worktreeの外のmanaged-tempへ保存し、その既存保持期限へ委ねる。未解決の資源登録は保持し、回収処理が除くのは解決済みのレーン登録だけとする。

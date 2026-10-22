@@ -111,11 +111,14 @@ _CONTEXT_LOSING_SOURCES = frozenset({"startup", "clear", "compact"})
 OPERATION_SKILL_READY_KEY = "operation_skill_delivered_agents"
 """操作を起動の契機とするスキルの必須資料の識別子から、取得済みの呼び出し主体の一覧への対応を持つセッション状態のキー。
 
-PostToolUseがSkill起動と必須資料の全文の読取を観測した時点で記録し、PreToolUseの遮断の時点では記録しない。
-キー名は旧契約（本文を配送した時点で記録した）の名前を読み取り側との契約として保つ。旧版の警告済みキーは読まない。
+共通経路が本文を配送した時点と、PostToolUseが成功したSkill起動・必須範囲の読取を観測した時点で記録する。
+本文識別は実体・内容hash・指定範囲と主体に結び付ける。選択した資料、入力と文脈境界も同じ対応表へ保持する。
+キー名は既存の読み取り側との互換を保つ。本文を返さない未取得警告は取得済みとして記録しない。
 """
 _OPERATION_SKILL_RESET_SOURCES = frozenset({"clear", "compact"})
 """メイン会話の起動済みの記録を除くSessionStartの`source`。新しいセッションの`startup`は記録を持たない。"""
+READ_CONTEXT_RESET_KEY = "startup-context-reset"
+"""最初の操作より前の圧縮でも、履歴上の起動本文の取得を再計上しないための主体識別子。"""
 
 
 def reset_main_operation_skill_ready(session_id: str) -> None:
@@ -128,11 +131,30 @@ def reset_main_operation_skill_ready(session_id: str) -> None:
     def _reset(current: dict) -> dict | None:
         recorded = current.get(OPERATION_SKILL_READY_KEY)
         if not isinstance(recorded, dict):
-            return None
+            recorded = {}
         updated = {
-            name: [agent for agent in agents if agent != MAIN_AGENT_ID] if isinstance(agents, list) else agents
+            name: (
+                [agent for agent in agents if agent != MAIN_AGENT_ID]
+                if isinstance(agents, list)
+                and not name.startswith(
+                    (
+                        "modified-agent-document:",
+                        "review-reference:",
+                        "read-trigger-role:",
+                        "selected-read-target:",
+                        "startup-input-target:",
+                        "startup-context-observed",
+                        "resolved-project-skill:",
+                        "review-output:",
+                        "review-output-parsed:",
+                    )
+                )
+                else agents
+            )
             for name, agents in recorded.items()
         }
+        # 最初の操作より前に圧縮された場合も、旧起動本文を取得済みへ戻さない。
+        updated[READ_CONTEXT_RESET_KEY] = [MAIN_AGENT_ID]
         if updated == recorded:
             return None
         current[OPERATION_SKILL_READY_KEY] = updated

@@ -1,32 +1,29 @@
-# 再発防止観点の追加と保守
+# 再発防止観点の配置と収集
 
-[root-cause-analysis.md](root-cause-analysis.md)「再発防止策」の最終ラインの採用条件を全て満たす場合に、観点を追加する。
-段1〜6の定義も同節を使う。
-採用判断と未適用規範の原因への処置は同書が所有する。
+品質の定義元は`agent-basics:bugfix`の`references/recurrence-self-check.md`である。呼出元が指定した条件と読込範囲を、同名の正式な品質資料へ引き継ぐ。節指定がある場合は移設先の実見出しへ接続し、指定がない場合は従来の全文読込契約を保つ。取得済みの同版本文は再取得せず使う。
+
+agent-toolkitの観点は`${CLAUDE_PLUGIN_ROOT}/share/recurrence-self-check-items.md`へ置く。観点ファイルのH1は`# 再発防止セルフチェック観点`で始め、この宣言は観点ファイルだけで使う。分割先も同じH1宣言を持つ。実行レビューの収集は配置ディレクトリによらず同じ手順で行う。
+
+## 名指し参照の読込方法
+
+本文の各参照の適用条件を保ち、選んだ資料の指定範囲を取得してから、その基準を使う具体的な判断へ進む。起動時の行の資料は起動本文とともに届く。
+
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/references/recurrence-self-check.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/recurrence-self-check.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../../share/recurrence-self-check-items.md` | 判断 | `read:agent-toolkit:*/share/recurrence-self-check-items.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/references/recurrence-self-check.md#「書き方」` | 判断 | `section:agent-basics:*/skills/bugfix/references/recurrence-self-check.md#「書き方」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/references/recurrence-self-check.md#「配置と分割」` | 判断 | `section:agent-basics:*/skills/bugfix/references/recurrence-self-check.md#「配置と分割」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/references/recurrence-self-check.md#「除去」` | 判断 | `section:agent-basics:*/skills/bugfix/references/recurrence-self-check.md#「除去」` |
 
 ## 書き方
 
-1項目ごとに、差分へ当てはめる対象条件、確認内容、根拠規範の所在を具体的かつ簡潔に書く。
-根拠規範には、観点ファイルから読取可能な相対パスまたは絶対パスと節を示す。
-配布物の項目はagent-toolkit内の規範を根拠とし、個人キューの識別子を含めない。
-対象条件で任意のプロジェクトの差分へ適用できる項目を配布物へ置く。
+品質の定義は`agent-basics:bugfix`の`references/recurrence-self-check.md`「書き方」を適用する。
 
 ## 配置と分割
 
-agent-toolkitの観点は`${CLAUDE_PLUGIN_ROOT}/share/recurrence-self-check-items.md`へ置く。
-プロジェクト固有の項目は、既存のレビュー系スキルの`references/`、それがなければ開発手順のスキルの`references/`へ置く。
-双方が無ければ適切なスキルを新設する。
-各プロジェクトの既存スキルから配置先を選ぶ。
-
-観点ファイルのH1は`# 再発防止セルフチェック観点`で始め、このH1宣言は観点ファイルだけで使う。
-肥大化した場合は対象箇所などの単位で分け、分割先も同じH1宣言を持つ。
-実行レビューの収集は配置ディレクトリに依存しない。
-
-観点はレビュー時だけ読む。
-作成時の読込表と常時規範から項目を読ませる参照を追加しない。
-観点ファイルへの参照は起動・担当手順、本書、設計記録と名前の一覧へ置く。
+品質の定義は`agent-basics:bugfix`の`references/recurrence-self-check.md`「配置と分割」を適用する。
 
 ## 除去
 
-根拠規範が撤去された項目と、段1〜4の処置が同じ誤りを防ぐようになった項目を除く。
-保守時も根拠規範、対象条件と検出できる誤りの対応を確かめる。
+品質の定義は`agent-basics:bugfix`の`references/recurrence-self-check.md`「除去」を適用する。

@@ -54,7 +54,7 @@ def test_invalid_host(host: object) -> None:
 
 
 def test_assets_are_self_contained() -> None:
-    """UI資産は外部配信元へ依存せず、HTMLとして解釈する本文の代入を1箇所へ限る。"""
+    """UI資産は外部配信元から取得せず、HTMLとして解釈する本文の代入を1箇所へ限る。"""
     combined = assets.HTML + assets.CSS + assets.SCRIPTS["wi.js"]
     assert "https://" not in combined
     assert "http://" not in combined

@@ -73,7 +73,7 @@ lazy from agent_toolkit._common.session_state import (  # noqa: E402  # pylint: 
     update_state,
 )
 lazy from agent_toolkit._hooks import session_title, termination_evidence, work_contract
-lazy from agent_toolkit._hooks.host import is_codex_payload  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+lazy from agent_toolkit._hooks.host import is_antigravity_payload, is_codex_payload  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 
 
 def _extend_with_short_names(names: frozenset[str]) -> frozenset[str]:
@@ -107,8 +107,11 @@ _USER_CONFIRMATION_NOTICE_BODY = (
 )
 _USER_CONFIRMATION_NOTICE_FIX = (
     "応答と作業の着手より前に`agent-toolkit:user-confirmation-and-report`をスキル機能で起動する。"
+    "是正の認可は`agent-toolkit:user-confirmation-and-report`の「起動契機」から「認可を要する操作」へ進んで判定する。"
+)
+_BUGFIX_NOTICE_FIX = (
     "不具合の有無・原因・直し方を回答や確認の案へ含める場合は、診断より前に`agent-toolkit:bugfix`を起動する。"
-    "説明の補足や委譲・AWIの方針も対象とする。是正の認可は`agent-toolkit:user-confirmation-and-report`の「起動契機」から「認可を要する操作」へ進んで判定する。"
+    "説明の補足や委譲・AWIの方針も対象とする。"
 )
 
 
@@ -180,9 +183,10 @@ def _claim_user_confirmation_notice(session_id: str, *, is_codex: bool) -> bool:
     return True
 
 
-def _user_confirmation_notice() -> str:
+def _user_confirmation_notice(*, include_bugfix: bool = True) -> str:
     """`agent-toolkit:user-confirmation-and-report`の起動を促す注記を整形する。"""
-    return _llm_notice(_USER_CONFIRMATION_NOTICE_BODY, tag="notice", fix=_USER_CONFIRMATION_NOTICE_FIX)
+    fix = _USER_CONFIRMATION_NOTICE_FIX + (_BUGFIX_NOTICE_FIX if include_bugfix else "")
+    return _llm_notice(_USER_CONFIRMATION_NOTICE_BODY, tag="notice", fix=fix)
 
 
 def _claim_verification_notice(session_id: str, now: float) -> bool:
@@ -262,9 +266,10 @@ def main(payload_text: str) -> int:
         if command and command[0] in USER_CONFIRMATION_SKILL_NAMES:
             # ユーザー自身がスキルを起動した発話では、その起動で内容が文脈へ入る。
             update_state(session_id, clear_user_confirmation_pending)
+    verification_due = is_normal_prompt and _claim_verification_notice(session_id, time.time())
     if is_normal_prompt and _claim_user_confirmation_notice(session_id, is_codex=is_codex):
-        notices.append(_user_confirmation_notice())
-    if is_normal_prompt and _claim_verification_notice(session_id, time.time()):
+        notices.append(_user_confirmation_notice(include_bugfix=not verification_due))
+    if verification_due:
         notices.append(_llm_notice(VERIFICATION_NOTICE_BODY, tag=_VERIFICATION_NOTICE_TAG))
     if is_normal_prompt:
         try:
@@ -286,7 +291,9 @@ def main(payload_text: str) -> int:
                 session_title.observe_skill(session_id, full_name)
 
             # 対応スキル別にフラグを設定する。
-            if is_codex and (name in _PLAN_MODE_NAMES_EXTENDED or full_name in _PLAN_MODE_SKILL_NAMES):
+            if (is_codex or is_antigravity_payload(payload)) and (
+                name in _PLAN_MODE_NAMES_EXTENDED or full_name in _PLAN_MODE_SKILL_NAMES
+            ):
                 update_state(session_id, _set_plan_mode_invoked)
             if name in _PROCESS_WI_NAMES_EXTENDED or full_name in _PROCESS_WI_SKILL_NAMES:
                 update_state(session_id, _set_process_wi_invoked)

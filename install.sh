@@ -1,6 +1,28 @@
 #!/bin/bash
 set -eu
 
+mode_args=()
+while [ "$#" -gt 0 ]; do
+    case "$1" in
+    --mode)
+        [ "$#" -ge 2 ] || {
+            echo '--modeにはfullまたはminimalを指定してください。' >&2
+            exit 2
+        }
+        case "$2" in full | minimal) mode_args=(--mode "$2") ;; *)
+            echo 'モードはfullまたはminimalを指定してください。' >&2
+            exit 2
+            ;;
+        esac
+        shift 2
+        ;;
+    *)
+        echo "不明な引数です: $1" >&2
+        exit 2
+        ;;
+    esac
+done
+
 # 前提条件チェック（README の「前提条件(要インストール)」セクション参照）
 missing=()
 command -v git >/dev/null 2>&1 || missing+=(git)
@@ -35,6 +57,10 @@ fi
 if [ ! -d ~/dotfiles ]; then
     git clone https://github.com/ak110/dotfiles.git ~/dotfiles
 fi
+
+# 初回のテンプレート評価より前に、依存不要の共通設定入口で保存する。
+AGENT_TOOLKIT_CONFIG_DOTFILES_MODE=$(uv run --no-project --no-config --python 3.15 python "$HOME/dotfiles/agent-toolkit/agent_toolkit/_common/dotfiles_mode.py" "${mode_args[@]}")
+export AGENT_TOOLKIT_CONFIG_DOTFILES_MODE
 
 # chezmoi 管理対象の既存ファイルをバックアップする
 backup_existing_dotfiles() {

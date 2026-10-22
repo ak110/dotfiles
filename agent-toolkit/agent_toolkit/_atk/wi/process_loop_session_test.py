@@ -222,8 +222,8 @@ def test_subscription_orchestrator_drops_inherited_api_auth(tmp_path: pathlib.Pa
     observed, settings = _connection_launch(tmp_path, monkeypatch, "api-credits")
     assert "ANTHROPIC_API_KEY" not in observed["env"]
     assert "ANTHROPIC_AUTH_TOKEN" not in observed["env"]
-    assert not settings["env"]["ANTHROPIC_API_KEY"]
-    assert not settings["env"]["ANTHROPIC_AUTH_TOKEN"]
+    assert "ANTHROPIC_API_KEY" not in settings["env"]
+    assert "ANTHROPIC_AUTH_TOKEN" not in settings["env"]
 
 
 def test_orchestrator_resume_probe_keeps_selected_connection(
@@ -385,7 +385,7 @@ class TestProcessLoopPromptAndEnv:
         prompt = claude_calls[0]["cmd"][-1]
         assert prompt.startswith("/goal ")
         assert "agent-toolkit:process-wi" in prompt
-        # cwdをmyrepoへ固定し、claudeセッション内のcwd依存コマンドの解決先を対象リポジトリへ揃える。
+        # cwdをmyrepoへ固定し、claudeセッション内のcwdで解決先が変わるコマンドの解決先を対象リポジトリへ揃える。
         assert claude_calls[0]["cwd"] == myrepo
         command = claude_calls[0]["cmd"]
         debug_log = hook_debug_log(command)
@@ -1147,7 +1147,7 @@ class TestProcessLoopPromptAndEnv:
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """候補の実行ファイルを起動できない場合も残る候補を判定する。"""
-        monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CODEX_LOW_TIER_MODEL", "gpt-6-luna/medium")
+        monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CHORES_FAST_MODEL", "codex:gpt-6-luna/medium,claude:haiku/medium")
         calls: list[list[str]] = []
 
         def fake_run(cmd: list[str], *_args: object, **_kwargs: object) -> subprocess.CompletedProcess[str]:
@@ -1173,7 +1173,7 @@ class TestProcessLoopPromptAndEnv:
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """全候補の実行機能を起動できない場合は既存の異常終了へ戻る。"""
-        monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CODEX_LOW_TIER_MODEL", "gpt-6-luna/medium")
+        monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CHORES_FAST_MODEL", "codex:gpt-6-luna/medium,claude:haiku/medium")
         calls: list[list[str]] = []
 
         def fail_start(cmd: list[str], *_args: object, **_kwargs: object) -> subprocess.CompletedProcess[str]:
@@ -1268,7 +1268,7 @@ class TestProcessLoopPromptAndEnv:
         _setup_notes(tmp_path)
         config_file = tmp_path / "config" / "config.json"
         config_file.parent.mkdir(parents=True)
-        config_file.write_text('{"orchestrate_engine": "invalid"}\n', encoding="utf-8")
+        config_file.write_text('{"orchestrate_model": "invalid"}\n', encoding="utf-8")
         myrepo = tmp_path / "myrepo"
         myrepo.mkdir()
         session_calls: list[list[str]] = []
@@ -1285,8 +1285,8 @@ class TestProcessLoopPromptAndEnv:
         assert exc_info.value.code == 2
         assert not session_calls
         stderr = capsys.readouterr().err
-        assert "設定キーorchestrate_engineの値が不正です（値: invalid）" in stderr
-        assert "atk config set orchestrate_engine <VALUE>" in stderr
+        assert "設定キーorchestrate_modelの値が不正です（値: invalid）" in stderr
+        assert "atk config set orchestrate_model <VALUE>" in stderr
 
     def test_resume_applied_to_first_session_only(
         self,

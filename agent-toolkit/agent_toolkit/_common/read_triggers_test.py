@@ -1,0 +1,254 @@
+"""自然文の節指定と、起動時の判断前配送を確かめる。"""
+
+import pathlib
+
+import pytest
+
+from agent_toolkit._common import read_triggers
+
+
+def test_external_reading_table_keeps_targets_and_scope(tmp_path):
+    owner = tmp_path / "SKILL.md"
+    table = tmp_path / "reading-references.md"
+    target = tmp_path / "rule.md"
+    target.write_text("# 資料\n## 対象\n判断基準\n## 別節\n別用途\n", encoding="utf-8")
+    table.write_text(
+        "| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |\n"
+        "| --- | --- | --- | --- |\n"
+        "| 選択時 | `rule.md#対象` | 判断 | `read:*/rule.md` |\n",
+        encoding="utf-8",
+    )
+    owner.write_text("# 本体\n<!-- read-table-source: reading-references.md -->\n", encoding="utf-8")
+    rows = read_triggers.parse_tables(owner, tmp_path, strict=True)
+    assert len(rows) == 1
+    assert rows[0].source == table
+    assert rows[0].documents == (target,)
+    assert rows[0].headings == ("対象",)
+    assert "判断基準" in rows[0].targets[0].body()
+    assert "別用途" not in rows[0].targets[0].body()
+    read_triggers.validate_reference_routes(owner, tmp_path, rows)
+    table.write_text("<!-- read-table-source: SKILL.md -->\n", encoding="utf-8")
+    with pytest.raises(ValueError, match="循環"):
+        read_triggers.parse_tables(owner, tmp_path, strict=True)
+
+
+def test_external_reading_table_missing_target_is_diagnosed(tmp_path):
+    owner = tmp_path / "SKILL.md"
+    owner.write_text("<!-- read-table-source: missing.md -->\n", encoding="utf-8")
+    with pytest.raises((ValueError, OSError), match="missing"):
+        read_triggers.parse_tables(owner, tmp_path, strict=True)
+
+
+def test_dynamic_document_identity_is_canonical(tmp_path):
+    directory = tmp_path / "directory"
+    directory.mkdir()
+    path = tmp_path / "rule.md"
+    path.write_text("# 基準\n", encoding="utf-8")
+    target = read_triggers.ReadTarget(directory / "../rule.md")
+    assert target.path == path
+    assert target == read_triggers.ReadTarget(path)
+
+
+def test_nested_fence_keeps_search_headings_and_tables_outside_contract(tmp_path):
+    path = tmp_path / "rule.md"
+    text = (
+        "# 基準\n## 対象\n本文\n````md\n```text\n## 偽境界\n```\n"
+        "| 条件 | 全文読む資料 |\n| 例 | `missing.md` |\n````\n## 後段\n後段本文\n"
+    )
+    path.write_text(text, encoding="utf-8")
+    assert "偽境界" in read_triggers.ReadTarget(path, "対象").body()
+    assert "後段本文" not in read_triggers.ReadTarget(path, "対象").body()
+    assert not read_triggers.parse_tables(path, tmp_path, strict=True)
+
+
+def test_scope_with_inline_code_is_one_document_target(tmp_path):
+    target = tmp_path / "references/rule.md"
+    target.parent.mkdir()
+    heading = "`<役割名>.parent.md`と`<役割名>.subagent.md`の自己完結"
+    target.write_text("# 基準\n## " + heading + "\n対象本文\n## 後段\n後段本文\n", encoding="utf-8")
+    targets = read_triggers.material_targets("`references/rule.md`の「" + heading + "」", tmp_path / "SKILL.md", tmp_path)
+    assert len(targets) == 1
+    assert targets[0].heading == "「" + heading + "」"
+    assert "対象本文" in targets[0].body()
+    assert "後段本文" not in targets[0].body()
+
+
+def test_heading_symbol_scope_keeps_only_the_named_section(tmp_path):
+    path = tmp_path / "references/rule.md"
+    path.parent.mkdir()
+    path.write_text("# 基準\n## 対象\n対象本文\n## 後段\n後段本文\n", encoding="utf-8")
+    targets = read_triggers.material_targets("`references/rule.md`の`## 対象`", tmp_path / "SKILL.md", tmp_path)
+    assert len(targets) == 1
+    assert targets[0].heading == "「対象」"
+    assert "対象本文" in targets[0].body()
+    assert "後段本文" not in targets[0].body()
+
+
+def test_heading_containing_preamble_word_keeps_its_scope(tmp_path):
+    path = tmp_path / "rule.md"
+    path.write_text("# 資料\n前置き\n## 冒頭の責務と目的\n対象節\n## 後段\n後段本文\n", encoding="utf-8")
+    assert (
+        read_triggers.material_targets("`rule.md`の「冒頭の責務と目的」", path, tmp_path)[0].heading == "「冒頭の責務と目的」"
+    )
+    body = read_triggers.ReadTarget(path, "「冒頭の責務と目的」").body()
+    assert "対象節" in body
+    assert "前置き" not in body
+    assert "後段本文" not in body
+
+
+@pytest.mark.parametrize(
+    "header,row,diagnostic",
+    [
+        ("| 条件 | 全文読む資料 |", "| 条件 | `rule.md` |", "契機と配送操作"),
+        ("| 条件 | 全文読む資料 | 契機 | 配送操作 |", "| 条件 | `rule.md` | 不明 | `tool:Do` |", "不明な契機"),
+        ("| 条件 | 全文読む資料 | 契機 | 配送操作 |", "| 条件 | `rule.md` | 判断 | |", "配送操作が無い"),
+        ("| 条件 | 全文読む資料 | 契機 | 配送操作 |", "| 条件 | `rule.md` | 操作 | `unknown:Do` |", "未登録の配送操作"),
+        ("| 条件 | 全文読む資料 | 契機 | 配送操作 |", "| 条件 | `missing.md` | 操作 | `tool:Do` |", "資料が存在しない"),
+    ],
+)
+def test_invalid_table_rows_fail_the_ci_parser(tmp_path, header, row, diagnostic):
+    reference = tmp_path / "rule.md"
+    reference.write_text("# 基準\n", encoding="utf-8")
+    source = tmp_path / "SKILL.md"
+    source.write_text(header + "\n" + row + "\n", encoding="utf-8")
+    with pytest.raises(ValueError, match=diagnostic):
+        read_triggers.parse_tables(source, tmp_path, strict=True)
+
+
+def test_named_reference_without_route_fails_ci(tmp_path):
+    source = tmp_path / "SKILL.md"
+    reference = tmp_path / "references/rule.md"
+    reference.parent.mkdir()
+    reference.write_text("# 基準\n", encoding="utf-8")
+    source.write_text("判定は`references/rule.md`に従う。\n", encoding="utf-8")
+    with pytest.raises(ValueError, match="参照先へ届く経路が無い"):
+        read_triggers.validate_reference_routes(source, tmp_path, [])
+
+
+def test_make_target_scope_includes_children_and_shared_variables(tmp_path):
+    path = tmp_path / "Makefile"
+    path.write_text(
+        "VAR := shared\n\nhelp:\n\t@cat Makefile\nupdate: sync\n\t$(MAKE) test\n"
+        "sync:\n\tuv sync\ntest:\n\tpytest\nother:\n\techo other\n",
+        encoding="utf-8",
+    )
+    body = read_triggers.ReadTarget(path, "make:update").body()
+    assert all(value in body for value in ("VAR := shared", "update:", "sync:", "test:"))
+    assert "@cat Makefile" not in body
+    assert "echo other" not in body
+    with pytest.raises(ValueError, match="targetが存在しない"):
+        read_triggers.ReadTarget(path, "make:missing").body()
+
+
+@pytest.fixture(name="source")
+def _source(tmp_path: pathlib.Path) -> pathlib.Path:
+    path = tmp_path / "reference.md"
+    path.write_text(
+        "# 基準\n前置き\n\n## 共通\n共通本文\n```md\n## 偽境界\n```\n"
+        "\n### 下位\n下位本文\n\n## API設計\nAPI本文\n\n## 後段\n後段本文\n",
+        encoding="utf-8",
+    )
+    return path
+
+
+@pytest.mark.parametrize(
+    "selector,expected,excluded",
+    [
+        ("共通", ("共通本文", "下位本文", "偽境界"), ("API本文", "後段本文")),
+        ("の「共通」「API設計」", ("共通本文", "API本文"), ("後段本文", "前置き")),
+        ("の「共通」から「API設計」まで", ("共通本文", "API本文"), ("後段本文",)),
+        ("冒頭", ("前置き",), ("共通本文", "API本文")),
+    ],
+)
+def test_section_union_range_preamble_and_fences(source, selector, expected, excluded):
+    body = read_triggers.ReadTarget(source, selector).body()
+    assert all(text in body for text in expected)
+    assert all(text not in body for text in excluded)
+
+
+def test_material_qualifier_and_japanese_selector(tmp_path):
+    skill = tmp_path / "skills/search"
+    skill.mkdir(parents=True)
+    (skill / "SKILL.md").write_text("# skill\n", encoding="utf-8")
+    (skill / "references").mkdir()
+    reference = skill / "references/rule.md"
+    reference.write_text("# 基準\n\n## 前段\n前段本文\n\n## 後段\n後段本文\n", encoding="utf-8")
+    targets = read_triggers.material_targets(
+        "`agent-toolkit:search`の`references/rule.md`の「前段」", tmp_path / "caller.md", tmp_path
+    )
+    assert len(targets) == 1
+    assert targets[0].path == reference
+    assert "後段本文" not in targets[0].body()
+
+
+def test_startup_delivery_is_part_of_role_reception(tmp_path):
+    source = tmp_path / "search.subagent.md"
+    reference = tmp_path / "rule.md"
+    reference.write_text("# 初動\n判断前の必須基準\n", encoding="utf-8")
+    source.write_text(
+        "| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |\n| --- | --- | --- | --- |\n"
+        "| 受領時 | `rule.md` | 起動時 | `role:search` |\n",
+        encoding="utf-8",
+    )
+    context = read_triggers.startup_context(source, tmp_path, {})
+    assert "判断前の必須基準" in context
+    assert str(reference) in context
+    assert "相対参照の基点" in context
+
+
+def test_duplicate_heading_does_not_fallback_to_whole_document(tmp_path):
+    path = tmp_path / "duplicate.md"
+    path.write_text("# 基準\n## 共通\nA\n## 共通\nB\n", encoding="utf-8")
+    with pytest.raises(ValueError, match="一意"):
+        read_triggers.ReadTarget(path, "共通").body()
+
+
+def test_body_reference_scope_stops_before_other_concepts(tmp_path):
+    skill = tmp_path / "skills/search"
+    (skill / "references").mkdir(parents=True)
+    (skill / "SKILL.md").write_text("# skill\n", encoding="utf-8")
+    reference = skill / "references/rule.md"
+    reference.write_text("# 規定\n## 共通\n基準\n", encoding="utf-8")
+    targets = read_triggers.material_targets(
+        "`agent-toolkit:search`の`references/rule.md`「共通」に従う。その後の「対象」は元の文書が定める。",
+        tmp_path / "caller.md",
+        tmp_path,
+        references_only=True,
+    )
+    assert len(targets) == 1 and targets[0].heading == "「共通」"
+
+
+def test_pure_compatibility_alias_preserves_actual_section(tmp_path):
+    toolkit = tmp_path / "agent-toolkit"
+    basics = tmp_path / "agent-basics"
+    (basics / ".claude-plugin").mkdir(parents=True)
+    (basics / ".claude-plugin/plugin.json").write_text('{"name":"agent-basics"}', encoding="utf-8")
+    actual = basics / "skills/writing-standards/references/rule.md"
+    actual.parent.mkdir(parents=True)
+    actual.write_text("# 品質\n## 共通\n共通本文\n## 後段\n後段本文\n", encoding="utf-8")
+    wrapper = toolkit / "skills/writing-standards/references/rule.md"
+    wrapper.parent.mkdir(parents=True)
+    wrapper.write_text(
+        "# 互換入口\n\n<!-- read-source: agent-basics:writing-standards/references/rule.md -->\n\n条件と節指定を引き継ぐ。\n",
+        encoding="utf-8",
+    )
+    resolved = read_triggers.resolve_document("references/rule.md", wrapper.parent.parent / "SKILL.md", toolkit)
+    assert resolved is not None
+    assert resolved == actual
+    assert "後段本文" not in read_triggers.ReadTarget(resolved, "共通").body()
+
+
+def test_mixed_compatibility_document_is_not_unconditionally_redirected(tmp_path):
+    wrapper = tmp_path / "mixed.md"
+    wrapper.write_text("# 混在入口\n\n正式資料はagent-basicsにある。\n\n## 運用条件\n保持する本文\n", encoding="utf-8")
+    assert read_triggers.resolve_read_source(wrapper, tmp_path) == wrapper
+
+
+def test_redirect_cycle_is_actionable_error(tmp_path):
+    directory = tmp_path / "skills/search/references"
+    directory.mkdir(parents=True)
+    first, second = directory / "first.md", directory / "second.md"
+    first.write_text("<!-- read-source: agent-toolkit:search/references/second.md -->\n", encoding="utf-8")
+    second.write_text("<!-- read-source: agent-toolkit:search/references/first.md -->\n", encoding="utf-8")
+    with pytest.raises(ValueError, match="循環"):
+        read_triggers.resolve_read_source(first, tmp_path)

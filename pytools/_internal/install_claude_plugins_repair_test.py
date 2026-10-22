@@ -40,7 +40,7 @@ def _marketplace_paths(
     """known_marketplaces.json と settings.json のパスを tmp_path へ差し替える。
 
     2 ファイルを同時に点検・修復するため、両方をテスト専用パスへ差し替えて
-    実環境の ``~/.claude/settings.json`` に依存しない状態を構築する。
+    実環境の ``~/.claude/settings.json`` を参照しない状態を構築する。
     """
     known = tmp_path / "known_marketplaces.json"
     settings = tmp_path / "settings.json"

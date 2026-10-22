@@ -1,7 +1,7 @@
 """`atk config`サブコマンド。
 
 XDG関連パス（設定・状態・データ各ディレクトリ、private-notesの解決結果）の確認と、
-モデル設定（engine別・段位別のモデルと用途別のengine順）の確認・変更を提供する。
+工程ごとのモデル候補列の確認・変更を提供する。
 """
 
 import argparse
@@ -28,22 +28,64 @@ from agent_toolkit._git import remote as _git_remote
 
 _CONFIG_FILENAME = "config.json"
 
-ENGINES = ("claude", "codex", "opencode")
-"""段位モデルと用途別engine順が扱うengine。"""
+MODEL_TYPES = ("execute", "review", "review_fast", "chores", "chores_fast", "orchestrate", "write")
+"""工程ごとに直接解決するモデル候補列の種別。"""
 
-TIERS = ("high", "medium", "low")
-"""段位。"""
+_MODEL_DEFAULTS = {
+    "execute_model": "claude:opus[1m]/medium,codex:sol/medium",
+    "review_model": "codex:terra/medium,claude:sonnet[1m]/medium",
+    "review_fast_model": "codex:luna/medium,claude:haiku/medium",
+    "chores_model": "codex:terra/medium,claude:sonnet[1m]/medium",
+    "chores_fast_model": "codex:luna/medium,claude:haiku/medium",
+    "orchestrate_model": "claude:opus[1m]/medium,codex:sol/medium",
+    "write_model": "agy:gemini-3.8-flash/medium,claude:claude-opus-5-5/medium",
+}
 
-USAGES = ("base", "execute", "review", "chores", "orchestrate")
-"""用途。各用途はengine順を1つ持ち、そのengine順に段位のモデルを並べて候補列とする。"""
+# write_modelはプリセットによる変更対象から外す。
+_PRESET_MODELS = {
+    "codex-balanced": {
+        **{key: value for key, value in _MODEL_DEFAULTS.items() if key != "write_model"},
+    },
+    "codex-near-primary": {
+        **{key: value for key, value in _MODEL_DEFAULTS.items() if key != "write_model"},
+        "execute_model": "codex:sol/medium,claude:opus[1m]/medium",
+    },
+    "codex-primary": {
+        **{key: value for key, value in _MODEL_DEFAULTS.items() if key != "write_model"},
+        "execute_model": "codex:sol/medium,claude:opus[1m]/medium",
+        "orchestrate_model": "codex:sol/medium,claude:opus[1m]/medium",
+    },
+    "claude-balanced": {
+        **{key: value for key, value in _MODEL_DEFAULTS.items() if key != "write_model"},
+        "chores_model": "claude:sonnet[1m]/medium,codex:terra/medium",
+        "chores_fast_model": "claude:haiku/medium,codex:luna/medium",
+    },
+    "claude-primary": {
+        **{key: value for key, value in _MODEL_DEFAULTS.items() if key != "write_model"},
+        "review_model": "claude:sonnet[1m]/medium,codex:terra/medium",
+        "review_fast_model": "claude:haiku/medium,codex:luna/medium",
+        "chores_model": "claude:sonnet[1m]/medium,codex:terra/medium",
+        "chores_fast_model": "claude:haiku/medium,codex:luna/medium",
+    },
+}
 
-TIER_MODEL_TYPES = {"high_tier": "high", "medium_tier": "medium", "low_tier": "low"}
-"""`model_type`の段位名と段位の対応。"""
+# apply-presetの位置引数でプリセット名の代わりに受理し、全プリセットの値を表示する値。
+_APPLY_PRESET_SHOW = "show"
 
-_TIER_DEFAULT_USAGES = {"high_tier": "base", "medium_tier": "review", "low_tier": "chores"}
-"""呼び出し元が用途を指定しない段位名の用途（delegateの対応）。"""
 
-_TIER_MODEL_DEFAULTS = {
+# 挿入順は`atk config show`の表示順とキー案内の順を兼ねる。
+_MUTABLE_KEY_DEFAULTS = {
+    **_MODEL_DEFAULTS,
+    "codex_fast_mode": "false",
+    "codex_model_providers": "",
+    "claude_api_env_file": "",
+    "claude_api_mode": "pay-as-you-go",
+    "process_loop_repositories": "[]",
+    "dotfiles_mode": "full",
+}
+
+# 旧キーは段位とengine順を1つの候補列で持っていた。保存値は移行先へ一括で移し、新しいget・setの対象から除く。
+_LEGACY_TIER_DEFAULTS = {
     "claude_high_tier_model": "opus[1m]/medium",
     "claude_medium_tier_model": "sonnet[1m]/medium",
     "claude_low_tier_model": "haiku/medium",
@@ -54,88 +96,33 @@ _TIER_MODEL_DEFAULTS = {
     "opencode_medium_tier_model": "",
     "opencode_low_tier_model": "",
 }
-
-# プリセットは用途別engine順だけを持ち、段位モデルとwrite_modelを書き換えない。
-_PRESET_ENGINE_ORDERS = {
-    "codex-balanced": {
-        "base_engine": "codex,claude",
-        "execute_engine": "claude,codex",
-        "review_engine": "codex,claude",
-        "chores_engine": "codex,claude",
-        "orchestrate_engine": "claude,codex",
-    },
-    "codex-near-primary": {
-        "base_engine": "codex,claude",
-        "execute_engine": "codex,claude",
-        "review_engine": "codex,claude",
-        "chores_engine": "codex,claude",
-        "orchestrate_engine": "claude,codex",
-    },
-    "codex-primary": {
-        "base_engine": "codex,claude",
-        "execute_engine": "codex,claude",
-        "review_engine": "codex,claude",
-        "chores_engine": "codex,claude",
-        "orchestrate_engine": "codex,claude",
-    },
-    "claude-balanced": {
-        "base_engine": "claude,codex",
-        "execute_engine": "claude,codex",
-        "review_engine": "codex,claude",
-        "chores_engine": "codex,claude",
-        "orchestrate_engine": "claude,codex",
-    },
-    "claude-primary": {
-        "base_engine": "claude,codex",
-        "execute_engine": "claude,codex",
-        "review_engine": "claude,codex",
-        "chores_engine": "claude,codex",
-        "orchestrate_engine": "claude,codex",
-    },
-    "opencode-balanced": {
-        "base_engine": "opencode,codex,claude",
-        "execute_engine": "claude,codex",
-        "review_engine": "opencode,codex,claude",
-        "chores_engine": "opencode,codex,claude",
-        "orchestrate_engine": "claude,codex",
-    },
-    "opencode-near-primary": {
-        "base_engine": "opencode,codex,claude",
-        "execute_engine": "opencode,codex,claude",
-        "review_engine": "opencode,codex,claude",
-        "chores_engine": "opencode,codex,claude",
-        "orchestrate_engine": "claude,codex",
-    },
+_LEGACY_ENGINE_DEFAULTS = {
+    "base_engine": "codex,claude",
+    "execute_engine": "claude,codex",
+    "review_engine": "codex,claude",
+    "chores_engine": "codex,claude",
+    "orchestrate_engine": "claude,codex",
 }
+_RETIRED_MODEL_KEYS = frozenset(
+    {
+        *_LEGACY_TIER_DEFAULTS,
+        *_LEGACY_ENGINE_DEFAULTS,
+        "execute_fast_model",
+        "execute_review_model",
+        "explore_model",
+        "explore_fast_model",
+        "pick_wi_model",
+        "plan_model",
+        "plan_review_model",
+        "session_review_model",
+        "high_tier_model",
+        "medium_tier_model",
+        "low_tier_model",
+    }
+)
 
-# apply-presetの位置引数でプリセット名の代わりに受理し、全プリセットの値を表示する値。
-_APPLY_PRESET_SHOW = "show"
-
-
-# 挿入順は`atk config show`の表示順とキー案内の順を兼ねる。
-_MUTABLE_KEY_DEFAULTS = {
-    **_TIER_MODEL_DEFAULTS,
-    **_PRESET_ENGINE_ORDERS["codex-balanced"],
-    "write_model": "agy:gemini-3.8-flash/medium,claude:claude-opus-5-5/medium",
-    "codex_fast_mode": "false",
-    "codex_model_providers": "",
-    "claude_api_env_file": "",
-    "claude_api_mode": "pay-as-you-go",
-    "process_loop_repositories": "[]",
-}
-
-# 旧キーは段位とengine順を1つの候補列で持っていた。保存値は移行先へ一括で移し、新しいget・setの対象から除く。
-_LEGACY_MODEL_KEYS = {
-    "high_tier_model": ("high", "base_engine"),
-    "medium_tier_model": ("medium", "review_engine"),
-    "low_tier_model": ("low", "chores_engine"),
-    "orchestrate_model": ("high", "orchestrate_engine"),
-}
-
-_STAGE_MODEL_PATTERN = re.compile(r"^(?:claude|codex|agy):[^/,\s]+(?:/[^/,\s]+)?$")
+_STAGE_MODEL_PATTERN = re.compile(r"^(?:claude|codex|agy):[^/:,，\s]+(?:/[^/:,，\s]+)?$")
 _OPENCODE_MODEL_PATTERN = re.compile(r"^[^/:,@\s]+/[^/,@\s]+(?:/[^/,@\s]+)*(?:@[^/,@\s]+)?$")
-_TIER_MODEL_PATTERN = re.compile(r"^[^/,\s]+(?:/[^/,\s]+)?$")
-_ENGINE_PREFIX_PATTERN = re.compile(r"^(?:claude|codex|agy|opencode):")
 _CONFIG_ENV_PREFIX = "AGENT_TOOLKIT_CONFIG_"
 # 主に使うモデル名・effortの参考一覧。受理可否の判定には使わず、一覧外は警告のみで受理する。
 _KNOWN_MODELS = {
@@ -147,8 +134,7 @@ _KNOWN_MODELS = {
     # 深さを除いたベース名の双方を受理する。本ツールは深さを`--effort`で別に渡すためベース名を置く。
     # 実物を確認した日付と再検証手段は`docs/development/audit-records.md`の
     # 「agent-toolkit/agent_toolkit/_atk/config.py：Antigravity CLIのモデル指定：2026年9月18日」が持つ。
-    # 日本語文書の推敲へ用途を限定するため、一覧はこの用途で使う1件だけとする。
-    "agy": frozenset({"gemini-3.8-flash"}),
+    "agy": frozenset({"gemini-4-argon", "gemini-3.8-flash", "claude-opus-5-5", "claude-sonnet-5-5", "gpt-oss-120b"}),
 }
 _KNOWN_EFFORTS = frozenset({"low", "medium", "high", "xhigh", "max"})
 
@@ -199,12 +185,7 @@ def _config_env_name(key: str) -> str:
 
 def config_environment_variable_names() -> tuple[str, ...]:
     """現行設定と、置換案内の対象である旧設定の環境変数名を返す。"""
-    return tuple(_config_env_name(key) for key in (*_MUTABLE_KEY_DEFAULTS, *_LEGACY_MODEL_KEYS))
-
-
-def tier_model_key(engine: str, tier: str) -> str:
-    """engineと段位に対応するモデル設定キーを返す。"""
-    return f"{engine}_{tier}_tier_model"
+    return tuple(_config_env_name(key) for key in (*_MUTABLE_KEY_DEFAULTS, *sorted(_RETIRED_MODEL_KEYS)))
 
 
 def _validate_stage_model_candidates(value: str) -> None:
@@ -221,28 +202,25 @@ def _validate_stage_model_candidates(value: str) -> None:
         )
 
 
-def _validate_tier_model(value: str) -> None:
-    """engine接頭辞を持たない単一のモデル値を検証し、書式不正なら`ValueError`を送出する。"""
-    if _TIER_MODEL_PATTERN.fullmatch(value) is None or _ENGINE_PREFIX_PATTERN.match(value):
-        raise ValueError("受理可能書式: <model>[/<effort>]（engine接頭辞を付けない単一のモデル）")
-
-
 def parse_engine_order(value: str) -> tuple[str, ...]:
     """用途別engine順を検証して分解し、書式不正なら`ValueError`を送出する。"""
     engines = tuple(value.split(","))
-    if any(engine not in ENGINES for engine in engines) or len(set(engines)) != len(engines):
+    if any(engine not in {"claude", "codex", "opencode"} for engine in engines) or len(set(engines)) != len(engines):
         raise ValueError("受理可能書式: codex・claude・opencodeを重複なしで並べたASCIIカンマ区切り")
     return engines
 
 
 def _validate_mutable_setting(key: str, value: str) -> None:
-    """速度、接続先列、段位モデル、engine順、モデル候補をそれぞれの受理形式で確かめる。"""
-    if key == "claude_api_env_file":
+    """速度、接続先列、工程別モデル候補をそれぞれの受理形式で確かめる。"""
+    if key == "dotfiles_mode":
+        if value not in {"full", "minimal"}:
+            raise ValueError("受理可能値: full, minimal")
+    elif key == "claude_api_env_file":
         if "\n" in value or "\r" in value or "\0" in value:
             raise ValueError("envファイルのパス1つ、または空文字列で指定する")
     elif key == "claude_api_mode":
-        if value not in {"pay-as-you-go", "api-credits"}:
-            raise ValueError("受理可能値: pay-as-you-go, api-credits")
+        if value not in {"pay-as-you-go", "api-credits", "api-only"}:
+            raise ValueError("受理可能値: pay-as-you-go, api-credits, api-only")
     elif key == "process_loop_repositories":
         parse_process_loop_repositories(value)
     elif key == "codex_fast_mode":
@@ -250,18 +228,10 @@ def _validate_mutable_setting(key: str, value: str) -> None:
             raise ValueError("受理可能値: true, false")
     elif key == "codex_model_providers":
         parse_codex_provider_candidates(value)
-    elif key.startswith("opencode_") and key in _TIER_MODEL_DEFAULTS:
-        if value and _OPENCODE_MODEL_PATTERN.fullmatch(value) is None:
-            raise ValueError("受理可能書式: <provider>/<model>[@<effort>]、または空文字列")
-    elif key in _TIER_MODEL_DEFAULTS:
-        _validate_tier_model(value)
-    elif key.endswith("_engine"):
-        engines = parse_engine_order(value)
-        if key == "orchestrate_engine" and "opencode" in engines:
-            raise ValueError("受理可能書式: orchestrate_engineはcodexとclaudeを重複なしのASCIIカンマ区切りで指定する")
-    elif key == "write_model":
-        if any(_STAGE_MODEL_PATTERN.fullmatch(candidate) is None for candidate in value.split(",")):
-            raise ValueError("受理可能書式: <claude|codex|agy>:<model>[/<effort>]（複数候補はASCIIカンマ区切り）")
+    elif key in _MODEL_DEFAULTS:
+        _validate_stage_model_candidates(value)
+        if key == "orchestrate_model" and any(candidate.startswith("opencode:") for candidate in value.split(",")):
+            raise ValueError("受理可能書式: orchestrate_modelはclaude、codex、agyの候補だけをASCIIカンマ区切りで指定する")
     else:
         _validate_stage_model_candidates(value)
 
@@ -352,8 +322,6 @@ def mutable_setting_default(key: str) -> str:
 def raw_mutable_setting(key: str) -> str:
     """変更可能な設定の検証前の値を、環境変数、保存値、初期値の順に解決して返す。未知のキーは`KeyError`を送出する。"""
     default = mutable_setting_default(key)
-    if key.startswith("opencode_") and (value := os.environ.get(_config_env_name(key))) is not None:
-        return value
     return os.environ.get(_config_env_name(key), "") or _load_config().get(key, default)
 
 
@@ -361,6 +329,8 @@ def resolve_mutable_setting(key: str) -> str:
     """変更可能な設定は環境変数を優先し、無ければ保存値、どちらも無ければ初期値を使う。"""
     if key not in _MUTABLE_KEY_DEFAULTS:
         raise KeyError(key)
+    _check_legacy_environment()
+    migrate_legacy_settings()
     env_name = _config_env_name(key)
     env_value = os.environ.get(env_name, "")
     value = raw_mutable_setting(key)
@@ -381,101 +351,97 @@ def resolve_mutable_setting(key: str) -> str:
     return ",".join(parse_codex_provider_candidates(value)) if key == "codex_model_providers" else value
 
 
-def _legacy_targets(legacy_key: str) -> list[str]:
-    """旧キーの移行先となる新キーを、engine順の設定、段位モデルの順で返す。"""
-    tier, engine_key = _LEGACY_MODEL_KEYS[legacy_key]
-    return [engine_key, *(tier_model_key(engine, tier) for engine in ENGINES)]
+def _plan_legacy_migration(config: dict[str, str], *, updates: dict[str, str] | None = None) -> dict[str, str]:
+    """旧設定を合成し、明示保存値を同じ原子的更新へまとめる。
 
-
-def _plan_legacy_migration(config: dict[str, str]) -> tuple[dict[str, str], list[str]]:
-    """保存済みの旧キーから新キーへの保存値と、新構成で表現できない競合の説明を返す。
-
-    新キーが既に保存されている場合はその値を優先し、旧キーの対応する値を移さない。
-    engine順で表せない旧候補（agy、同じengineの重複、書式不正）は用途のengine設定が保存済みなら解消済みとし、
-    同じengine・段位へ異なるモデルが対応する場合はその段位モデル設定が保存済みなら解消済みとする。
+    読取時は全工程を検証する。明示保存では候補未設定の他工程を空のまま保持し、
+    その後のsetで修復できるようにする。新しいCLI値として空候補は受理しない。
     """
-    updates: dict[str, str] = {}
-    conflicts: list[str] = []
-    slot_values: dict[str, dict[str, list[str]]] = {}
-    for legacy_key, (tier, engine_key) in _LEGACY_MODEL_KEYS.items():
-        value = config.get(legacy_key)
-        if value is None:
-            continue
-        try:
-            candidates = parse_stage_model_candidates(value)
-        except ValueError:
-            if engine_key not in config:
-                conflicts.append(f"{legacy_key}の値`{value}`は旧書式として読めません（修正する新キー: {engine_key}）")
-            continue
-        engines = [engine for engine, _model, _effort in candidates]
-        unrepresentable = [
-            f"{engine}:{model}/{effort}"
-            for engine, model, effort in candidates
-            if engine not in ENGINES or engines.count(engine) > 1
-        ]
-        if unrepresentable and engine_key not in config:
-            conflicts.append(
-                f"{legacy_key}の候補{', '.join(f'`{item}`' for item in unrepresentable)}はengine順で表せません"
-                f"（修正する新キー: {engine_key}）"
-            )
-        elif engine_key not in config:
-            updates[engine_key] = ",".join(engines)
-        for engine, model, effort in candidates:
-            if engine in ENGINES:
-                slot_values.setdefault(tier_model_key(engine, tier), {}).setdefault(f"{model}/{effort}", []).append(legacy_key)
-    for model_key, values in slot_values.items():
-        if model_key in config:
-            continue
-        if len(values) > 1:
-            listed = "、".join(f"{', '.join(keys)}の`{model}`" for model, keys in values.items())
-            conflicts.append(f"{model_key}へ異なる旧モデルが対応します: {listed}（修正する新キー: {model_key}）")
-            continue
-        updates[model_key] = next(iter(values))
-    return updates, conflicts
+    migrated = {**config, **(updates or {})}
+    if not any(key in config for key in _RETIRED_MODEL_KEYS):
+        return migrated
+    stages = {
+        "execute": ("execute", "high"),
+        "review": ("review", "medium"),
+        "review_fast": ("review", "low"),
+        "chores": ("chores", "medium"),
+        "chores_fast": ("chores", "low"),
+        "orchestrate": ("orchestrate", "high"),
+    }
+    if any(key in config for key in (*_LEGACY_TIER_DEFAULTS, *_LEGACY_ENGINE_DEFAULTS)):
+        for stage, (usage, tier) in stages.items():
+            target = f"{stage}_model"
+            if updates is not None and target in updates:
+                continue
+            engine_key = f"{usage}_engine"
+            default_order = _LEGACY_ENGINE_DEFAULTS[engine_key]
+            if stage == "execute" and "base_engine" in config:
+                default_order = config["base_engine"]
+            engines = parse_engine_order(config.get(engine_key, default_order))
+            candidates = []
+            for engine in engines:
+                key = f"{engine}_{tier}_tier_model"
+                value = config.get(key, _LEGACY_TIER_DEFAULTS[key])
+                if engine == "opencode" and not value:
+                    continue
+                if not value:
+                    raise ValueError(f"旧設定{key}が空です。移行前に候補モデルを指定する")
+                candidates.append(f"{engine}:{value}")
+            migrated[target] = ",".join(candidates)
+            if not candidates:
+                if updates is not None:
+                    continue
+                raise _next_action.ActionableError(
+                    f"旧設定から{target}へ合成するモデル候補がありません。受理可能書式の候補列が必要です",
+                    next_action=(
+                        f"`atk config set {target} <候補列>`で候補を明示するか、"
+                        "`atk config apply-preset <プリセット名>`で6工程を一括設定して再実行する"
+                    ),
+                )
+            _validate_mutable_setting(target, migrated[target])
+    return {key: value for key, value in migrated.items() if key not in _RETIRED_MODEL_KEYS}
 
 
 def migrate_legacy_settings() -> None:
-    """旧モデル設定を一括移行し、execute未設定の保存済みbaseを実行用途へ引き継ぐ。
-
-    環境変数の値は移行しない。新構成で表現できない旧値があれば何も保存せず、
-    競合した旧キー・候補と修正する新キーを示す`ActionableError`を送出する。
-    """
+    """旧保存値を工程別候補列へ一括移行する。環境変数は保存しない。"""
     config = _load_config()
-    needs_execute = "base_engine" in config and "execute_engine" not in config
-    if not any(key in config for key in _LEGACY_MODEL_KEYS) and not needs_execute:
+    if not any(key in config for key in _RETIRED_MODEL_KEYS):
         return
-    updates, conflicts = _plan_legacy_migration(config)
-    if conflicts:
-        raise _next_action.ActionableError(
-            "旧モデル設定を新しい設定へ移行できません（旧保存値は変更していません）: " + "; ".join(conflicts),
-            next_action=(
-                "示された新キーを`atk config set <KEY> <VALUE>`で保存してから再実行する"
-                "（保存した新キーの値が旧保存値より優先され、残りの旧保存値は自動で移行される）"
-            ),
-        )
-    migrated = {key: value for key, value in config.items() if key not in _LEGACY_MODEL_KEYS}
-    migrated.update(updates)
-    if "execute_engine" not in migrated and "base_engine" in migrated:
-        migrated["execute_engine"] = migrated["base_engine"]
-    _save_config(migrated)
+    _save_config(_plan_legacy_migration(config))
 
 
 def _check_legacy_environment() -> None:
-    """旧キーの環境変数が空でなければ、新キーへの置き換えを示す`ActionableError`を送出する。"""
-    found = [key for key in _LEGACY_MODEL_KEYS if os.environ.get(_config_env_name(key), "")]
+    """廃止キーの環境変数があれば、対応する工程別環境変数を案内する。"""
+    found = sorted(key for key in _RETIRED_MODEL_KEYS if _config_env_name(key) in os.environ)
     if found:
-        replacements = "; ".join(
-            f"{_config_env_name(key)} → {', '.join(_config_env_name(target) for target in _legacy_targets(key))}"
-            for key in found
-        )
+        replacements = []
+        for key in found:
+            if "orchestrate" in key:
+                stages = ("orchestrate",)
+            elif "medium" in key:
+                stages = ("review", "chores")
+            elif "low" in key:
+                stages = ("review_fast", "chores_fast")
+            elif key == "review_engine":
+                stages = ("review", "review_fast")
+            elif key == "chores_engine":
+                stages = ("chores", "chores_fast")
+            elif "high" in key:
+                stages = ("execute", "orchestrate")
+            else:
+                stages = ("execute",)
+            replacements.append(
+                f"{_config_env_name(key)} → {', '.join(_config_env_name(f'{stage}_model') for stage in stages)}"
+            )
         raise _next_action.ActionableError(
             f"廃止した旧モデル設定の環境変数が設定されています: {', '.join(_config_env_name(key) for key in found)}",
-            next_action=f"旧環境変数を解除し、必要なら新しい環境変数へ置き換えて再実行する（{replacements}）",
+            next_action="旧環境変数を解除し、工程別の環境変数へ置き換えて再実行する: " + "; ".join(replacements),
         )
 
 
 def _resolved_settings(home: pathlib.Path) -> dict[str, str]:
     """XDG関連パスの導出値と変更可能設定をまとめて返す（表示・`get`共通の解決結果）。"""
+    _check_legacy_environment()
     migrate_legacy_settings()
     # Windowsでappnameがappauthorとしても付与される二重階層を防ぐ。
     return {
@@ -494,17 +460,14 @@ _UNKNOWN_CANDIDATE_NEXT_ACTION = "意図した名前か確認し、誤記なら�
 def _stage_model_candidate_warnings(key: str, value: str) -> list[str]:
     """参考一覧外のモデル候補を警告の本文へ変換する。接頭辞は`report_warning`が付ける。"""
     warnings: list[str] = []
-    if key.startswith("opencode_"):
+    if key not in _MODEL_DEFAULTS:
         return warnings
-    if key in _TIER_MODEL_DEFAULTS:
-        candidates = [f"{key.partition('_')[0]}:{value}"]
-    elif key == "write_model":
-        candidates = value.split(",")
-    else:
-        return warnings
+    candidates = value.split(",")
     for candidate in candidates:
         engine, model, effort = _parse_stage_model(candidate)
-        shown = value if key in _TIER_MODEL_DEFAULTS else candidate
+        shown = candidate
+        if engine == "opencode":
+            continue
         models = ", ".join(sorted(_KNOWN_MODELS[engine]))
         if model not in _KNOWN_MODELS[engine]:
             warnings.append(f"設定キー`{key}`の候補`{shown}`のモデル名`{model}`は主に使うモデルの一覧（{models}）にありません")
@@ -530,10 +493,10 @@ def _report_candidate_warnings(warnings: list[str]) -> None:
 
 def _legacy_key_guidance(keys: list[str]) -> str:
     """旧モデル設定キーを指定した場合に、置き換える新キーを示す文を返す。"""
-    legacy = [key for key in keys if key in _LEGACY_MODEL_KEYS]
+    legacy = [key for key in keys if key in _RETIRED_MODEL_KEYS]
     if not legacy:
         return ""
-    return "。旧モデル設定キーは廃止した（" + "; ".join(f"{key} → {', '.join(_legacy_targets(key))}" for key in legacy) + "）"
+    return "。旧モデル設定キーは廃止した。対応する工程別の`*_model`キーを指定する"
 
 
 def _cmd_config_get(args: argparse.Namespace, home: pathlib.Path) -> None:
@@ -554,7 +517,7 @@ def _cmd_config_get(args: argparse.Namespace, home: pathlib.Path) -> None:
 def _cmd_config_set(args: argparse.Namespace) -> None:
     """setサブコマンド: 変更可能設定を更新する。対象外キーはexit 2。
 
-    旧モデル設定の自動移行の成否に依存せずに保存し、移行で停止した場合の新キーの明示保存を受け付ける。
+    旧モデルの候補未設定が残る場合も明示値を保存し、未設定の各工程をsetで順に修復できる。
     """
     if args.key not in _MUTABLE_KEY_DEFAULTS:
         _outcome.report_failure(
@@ -571,13 +534,12 @@ def _cmd_config_set(args: argparse.Namespace) -> None:
         )
         sys.exit(2)
     _report_candidate_warnings(_stage_model_candidate_warnings(args.key, args.value))
-    config = _load_config()
     value = ",".join(parse_codex_provider_candidates(args.value)) if args.key == "codex_model_providers" else args.value
-    config[args.key] = value
+    config = _plan_legacy_migration(_load_config(), updates={args.key: value})
     _save_config(config)
     _outcome.report_success(f"設定を更新した: {args.key}={value}")
     env_name = _config_env_name(args.key)
-    if os.environ.get(env_name, "") or args.key.startswith("opencode_") and env_name in os.environ:
+    if os.environ.get(env_name, ""):
         _outcome.report_warning(
             f"環境変数{env_name}が優先されるため、解除するまで更新値は実効値にならない",
             next_action=f"保存した値を使う場合は環境変数{env_name}を解除する。環境変数の値を使い続ける場合は対応不要",
@@ -585,32 +547,22 @@ def _cmd_config_set(args: argparse.Namespace) -> None:
 
 
 def _cmd_config_apply_preset(args: argparse.Namespace) -> None:
-    """apply-presetサブコマンド: 用途別engine順の5設定を一括保存し、段位モデルとwrite_modelを保持する。
+    """apply-presetサブコマンド: 工程別の6設定を一括保存し、write_modelを保持する。
 
     `show`の指定時とプリセット名の省略時は、設定ファイルを読み書きせずに全プリセットの値を表示する。
     """
     if args.preset in (None, _APPLY_PRESET_SHOW):
-        for preset, preset_settings in _PRESET_ENGINE_ORDERS.items():
+        for preset, preset_settings in _PRESET_MODELS.items():
             print(f"{preset}:")
             for key, value in preset_settings.items():
                 print(f"  {key}: {value}")
         return
-    settings = _PRESET_ENGINE_ORDERS[args.preset]
-    config = _load_config()
-    config.update(settings)
+    settings = _PRESET_MODELS[args.preset]
+    config = _plan_legacy_migration(_load_config(), updates=settings)
     _save_config(config)
-    _outcome.report_success(f"用途別engine設定をpreset「{args.preset}」で一括保存した: {len(settings)}件")
+    _outcome.report_success(f"工程別モデル設定をpreset「{args.preset}」で一括保存した: {len(settings)}件")
     for key, value in settings.items():
         print(f"{key}: {value}")
-    if args.preset.startswith("opencode-"):
-        missing = [
-            tier_model_key("opencode", tier) for tier in TIERS if not resolve_mutable_setting(tier_model_key("opencode", tier))
-        ]
-        if missing:
-            _outcome.report_warning(
-                f"opencodeのモデル未設定の段位は候補から外れる: {', '.join(missing)}",
-                next_action="各キーを`atk config set <KEY> <provider>/<model>[@<effort>]`で設定する",
-            )
 
 
 def _parse_stage_model(value: str) -> tuple[str, str, str | None]:
@@ -634,45 +586,14 @@ def parse_stage_model_candidates(value: str) -> list[tuple[str, str, str]]:
     ]
 
 
-def _usage_candidates(usage: str, tier: str) -> list[tuple[str, str, str]]:
-    """用途のengine順と段位モデル設定から候補の3つ組を合成する。"""
-    _check_legacy_environment()
-    migrate_legacy_settings()
-    candidates: list[tuple[str, str, str]] = []
-    for engine in parse_engine_order(resolve_mutable_setting(f"{usage}_engine")):
-        value = resolve_mutable_setting(tier_model_key(engine, tier))
-        if engine == "opencode" and not value:
-            continue
-        _, model, effort = _parse_stage_model(f"{engine}:{value}")
-        candidates.append((engine, model, effort or "medium"))
-    if not candidates:
-        raise ValueError(
-            f"用途{usage}・段位{tier}のモデル候補がない。opencode_{tier}_tier_modelを設定するかengine順へcodexまたはclaudeを加える"
-        )
-    return candidates
-
-
-def parse_unresolved_model_candidates(model_type: str, *, usage: str | None = None) -> list[tuple[str, str, str]]:
-    """model_typeと用途に対応する設定から候補の3つ組を返す。
-
-    段位名（`high_tier`など）は`usage`のengine順と段位モデル設定から候補を合成し、
-    `usage`の省略時は段位ごとの用途（high→base、medium→review、low→chores）を使う。
-    `orchestrate`はorchestrateのengine順とhigh段位、`write`は`write_model`を使い、`usage`を参照しない。
-    設定値と同じ書式の候補列を受け取った場合は設定を読まず、その候補列をそのまま分解して返す。
-    """
-    if usage is not None and usage not in USAGES:
-        raise ValueError(f"unknown usage: {usage} (available: {', '.join(USAGES)})")
-    if model_type == "write":
-        return parse_stage_model_candidates(resolve_mutable_setting("write_model"))
-    if model_type == "orchestrate":
-        return _usage_candidates("orchestrate", "high")
-    tier = TIER_MODEL_TYPES.get(model_type)
-    if tier is not None:
-        return _usage_candidates(usage or _TIER_DEFAULT_USAGES[model_type], tier)
+def parse_unresolved_model_candidates(model_type: str) -> list[tuple[str, str, str]]:
+    """工程名または直接候補列から候補の3つ組を返す。"""
+    if model_type in MODEL_TYPES:
+        return parse_stage_model_candidates(resolve_mutable_setting(f"{model_type}_model"))
     try:
         return parse_stage_model_candidates(model_type)
     except ValueError as error:
-        available = [*TIER_MODEL_TYPES, "orchestrate", "write"]
+        available = list(MODEL_TYPES)
         raise ValueError(
             f"unknown model_type: {model_type} "
             f"(available: {', '.join(available)}; or pass candidates like codex:gpt-6-sol/medium)"
@@ -689,11 +610,9 @@ def resolve_catalog(
     return candidates
 
 
-def resolve_model_candidates(
-    model_type: str, *, usage: str | None = None, catalog: list[dict[str, Any]] | None = None
-) -> list[tuple[str, str, str]]:
-    """Codex系列名を実行時の完全IDへ解決して用途・段位別の候補を返す。"""
-    return resolve_catalog(parse_unresolved_model_candidates(model_type, usage=usage), catalog=catalog)
+def resolve_model_candidates(model_type: str, *, catalog: list[dict[str, Any]] | None = None) -> list[tuple[str, str, str]]:
+    """Codex系列名を実行時の完全IDへ解決して工程別の候補を返す。"""
+    return resolve_catalog(parse_unresolved_model_candidates(model_type), catalog=catalog)
 
 
 def build_parser(config: argparse.ArgumentParser) -> None:
@@ -704,14 +623,12 @@ def build_parser(config: argparse.ArgumentParser) -> None:
     get.add_argument("key", metavar="KEY", nargs="+", help="取得する1件以上のキー（config showの出力キーと同一）。")
     set_ = _atk_help.add_command(sub, "set", **_atk_help.HELP["atk config set"])
     set_.add_argument("key", metavar="KEY", help=f"変更可能なキー: {', '.join(_MUTABLE_KEY_DEFAULTS)}")
-    set_.add_argument(
-        "value", metavar="VALUE", help="設定する値。write_modelの複数候補とengine順はASCIIカンマ区切りで指定する。"
-    )
+    set_.add_argument("value", metavar="VALUE", help="設定する値。モデルの複数候補はASCIIカンマ区切りで指定する。")
     apply_preset = _atk_help.add_command(sub, "apply-preset", **_atk_help.HELP["atk config apply-preset"])
     apply_preset.add_argument(
         "preset",
         nargs="?",
-        choices=(_APPLY_PRESET_SHOW, *_PRESET_ENGINE_ORDERS),
+        choices=(_APPLY_PRESET_SHOW, *_PRESET_MODELS),
         help=f"適用するプリセット名。`{_APPLY_PRESET_SHOW}`または省略で全プリセットの値を保存せずに表示する。",
     )
 

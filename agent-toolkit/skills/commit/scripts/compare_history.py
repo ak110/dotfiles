@@ -2,7 +2,7 @@
 
 本スクリプトは履歴を読み取るだけで、認可・公開済みの確認・操作の実行は呼出側が所有する。
 rebaseは変更内容の一意な全1対1対応を検収し、明示した競合解消commitは件名・相対順・変更パスで対応付ける。
-autosquashはtree・件数・制御件名・非対象patchの不変を検収する。
+autosquashはtree・件数・制御件名・fixup対象以外の変更内容の不変を検収する。
 amendは内容の変更を前提とし、旧新が同じbaseの直上の異なる1commitどうしであることだけを検収する。
 """
 
@@ -11,9 +11,11 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
 import pathlib
 import re
 import subprocess
+import tempfile
 
 from agent_toolkit._atk import outcome
 from agent_toolkit._common.atomic_file import atomic_write
@@ -49,12 +51,6 @@ def _series(work_dir: pathlib.Path, base: str, head: str) -> list[str]:
     if not commits or commits[-1] != head:
         raise ValueError(f"空またはheadに到達しない系列です: {base}..{head}")
     return commits
-
-
-def _patch_id(work_dir: pathlib.Path, oid: str) -> str:
-    patch = _git(work_dir, "show", "--format=", "--binary", "--no-ext-diff", "--no-textconv", oid)
-    output = _git(work_dir, "patch-id", "--stable", data=patch).split()
-    return output[0] if output else "empty"
 
 
 def _content_id(work_dir: pathlib.Path, oid: str) -> str:
@@ -103,6 +99,58 @@ def _content_id(work_dir: pathlib.Path, oid: str) -> str:
     return digest.hexdigest()
 
 
+def _same_content(work_dir: pathlib.Path, old_oid: str, new_oid: str) -> bool:
+    """旧commitの変更を新しい親へ適用した結果を含め、変更内容の同一性を判定する。"""
+    if _content_id(work_dir, old_oid) == _content_id(work_dir, new_oid):
+        return True
+    patch = _git(
+        work_dir,
+        "diff",
+        "--binary",
+        "--full-index",
+        "--no-ext-diff",
+        "--no-textconv",
+        "--src-prefix=a/",
+        "--dst-prefix=b/",
+        f"{old_oid}^",
+        old_oid,
+    )
+    with tempfile.TemporaryDirectory() as directory:
+        environment = {**os.environ, "GIT_INDEX_FILE": str(pathlib.Path(directory) / "index")}
+        read_tree = git_command.run(
+            ["--no-pager", "-C", str(work_dir), "read-tree", f"{new_oid}^"],
+            capture_output=True,
+            text=True,
+            timeout=60,
+            check=False,
+            env=environment,
+        )
+        if read_tree.returncode:
+            raise ValueError(f"一時indexへの親treeの読込に失敗: {new_oid}")
+        applied = git_command.run(
+            ["--no-pager", "-C", str(work_dir), "apply", "--cached", "--3way"],
+            input=patch,
+            capture_output=True,
+            text=True,
+            timeout=60,
+            check=False,
+            env=environment,
+        )
+        if applied.returncode:
+            return False
+        written = git_command.run(
+            ["--no-pager", "-C", str(work_dir), "write-tree"],
+            capture_output=True,
+            text=True,
+            timeout=60,
+            check=False,
+            env=environment,
+        )
+        if written.returncode:
+            raise ValueError(f"一時indexのtree書込に失敗: {old_oid} -> {new_oid}")
+    return written.stdout.strip() == _git(work_dir, "rev-parse", f"{new_oid}^{{tree}}").strip()
+
+
 def _rebase(work_dir: pathlib.Path, old: list[str], new: list[str], conflicts: set[str]) -> dict[str, str]:
     old_ids = [_content_id(work_dir, oid) for oid in old]
     new_ids = [_content_id(work_dir, oid) for oid in new]
@@ -113,20 +161,24 @@ def _rebase(work_dir: pathlib.Path, old: list[str], new: list[str], conflicts: s
     destinations = dict(zip(new_ids, new, strict=True))
     mapping = {}
     for oid, patch in zip(old, old_ids, strict=True):
-        if oid in conflicts:
-            if patch in destinations:
-                raise ValueError(f"--resolved-conflictに指定した旧commitの内容が変わっていません: {oid}")
-        elif patch not in destinations:
-            raise ValueError(f"変更内容が対応しない旧commit: {oid}。変更内容の全1対1対応ではありません")
-        else:
-            mapping[oid] = destinations[patch]
-    remaining = [oid for oid in new if oid not in mapping.values()]
-    for oid, target in zip((oid for oid in old if oid in conflicts), remaining, strict=True):
+        if oid in conflicts or patch not in destinations:
+            continue
+        mapping[oid] = destinations[patch]
+    remaining_old = [oid for oid in old if oid not in mapping]
+    remaining_new = [oid for oid in new if oid not in mapping.values()]
+    if len(remaining_old) != len(remaining_new):
+        raise ValueError("変更内容の全1対1対応ではありません")
+    for oid, target in zip(remaining_old, remaining_new, strict=True):
+        if oid in conflicts and _same_content(work_dir, oid, target):
+            raise ValueError(f"--resolved-conflictに指定した旧commitの内容が変わっていません: {oid}")
+        if oid not in conflicts and not _same_content(work_dir, oid, target):
+            raise ValueError(f"変更内容が対応しない旧commit: {oid} -> {target}。変更内容の全1対1対応ではありません")
         subject = _git(work_dir, "show", "-s", "--format=%s", oid)
         paths = _git(work_dir, "diff-tree", "--no-commit-id", "--name-only", "--no-renames", "-r", "-z", oid)
         target_paths = _git(work_dir, "diff-tree", "--no-commit-id", "--name-only", "--no-renames", "-r", "-z", target)
-        if subject != _git(work_dir, "show", "-s", "--format=%s", target) or set(paths.split("\0")) != set(
-            target_paths.split("\0")
+        if oid in conflicts and (
+            subject != _git(work_dir, "show", "-s", "--format=%s", target)
+            or set(paths.split("\0")) != set(target_paths.split("\0"))
         ):
             raise ValueError(f"競合解消commitの件名または変更パスが対応しません: {oid} -> {target}")
         mapping[oid] = target
@@ -175,8 +227,8 @@ def _autosquash(work_dir: pathlib.Path, old: list[str], new: list[str]) -> dict[
     for old_oid, new_oid in mapping.items():
         if old_oid not in amended and subjects[old_oid] != _git(work_dir, "show", "-s", "--format=%s", new_oid).strip():
             raise ValueError(f"元commitの順序または件名が対応しません: {old_oid} -> {new_oid}")
-        if old_oid not in roots.values() and _patch_id(work_dir, old_oid) != _patch_id(work_dir, new_oid):
-            raise ValueError(f"fixup対象以外のpatch-idが変わりました: {old_oid} -> {new_oid}")
+        if old_oid not in roots.values() and not _same_content(work_dir, old_oid, new_oid):
+            raise ValueError(f"fixup対象以外の変更内容が変わりました: {old_oid} -> {new_oid}")
     mapping.update({oid: mapping[root] for oid, root in roots.items()})
     return mapping
 

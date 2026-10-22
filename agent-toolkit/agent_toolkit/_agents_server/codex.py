@@ -24,6 +24,7 @@ from pathlib import Path
 from typing import Any
 
 from agent_toolkit._agents_server import (
+    child_environment,
     codex_providers,
     compaction_metrics,  # pylint: disable=wrong-import-position
     context_usage,
@@ -272,12 +273,14 @@ class JsonRpcProcess:
         *,
         root_session_id: str | None = None,
         launch_kind: LaunchKind | None = None,
+        handoff_prompt: str = "",
     ) -> None:
         self._on_notification = on_notification
         self._on_server_request = on_server_request
         self._on_failure = on_failure
         self._root_session_id = root_session_id
         self._launch_kind = launch_kind
+        self._handoff_prompt = handoff_prompt
         self.process: asyncio.subprocess.Process | None = None
         self.parent_environment: Mapping[str, str] | None = None
         self._reader_task: asyncio.Task[None] | None = None
@@ -308,13 +311,15 @@ class JsonRpcProcess:
             return
         self._initialization_stage = "starting_process"
         try:
-            environment = plugin_environment.cli_environment(plugin_roots.SERVER_PLUGIN_ROOT, os.environ)
+            environment = plugin_environment.cli_environment(plugin_roots.SERVER_PLUGIN_ROOT, child_environment.inherited())
             inherited_venv.strip_inherited_venv(environment)
             environment.pop(_delegated_session.DELEGATED_SESSION_ENV, None)
             # 委譲先のhookが軽量起動を判別する。turnを実行しない照会用の接続は起動区分を持たない。
             environment.pop(_delegated_session.LAUNCH_KIND_ENV, None)
             if self._launch_kind is not None:
                 environment[_delegated_session.LAUNCH_KIND_ENV] = self._launch_kind
+            environment.pop(_delegated_session.HANDOFF_PATH_ENV, None)
+            environment.update(_delegated_session.handoff_environment(self._handoff_prompt))
             owner_session_id = self._root_session_id
             if owner_session_id is not None:
                 environment[_delegated_session.OWNER_SESSION_ENV] = owner_session_id
@@ -729,7 +734,7 @@ class AppServerManager:
         `bypass_hook_trust`は、hookの定義が変わった後もcodexが承認済みの記録を要求せずにhookを実行するために渡す。
         `agents_server`が開始する委譲先は対話UIを持たず、承認要求へ応答する主体が存在しないため、
         このキーが無いとプラグインの更新のたびに委譲先が起動しない。
-        この制約は`launch_kind`に依存しないため、軽量起動と通常の委譲で分けない。
+        この制約は`launch_kind`によらず同じであるため、軽量起動と通常の委譲で分けない。
         `bypass_hook_trust`は`codex app-server`のコマンドラインオプションとしても`-c`による設定上書きとしても受理されず、
         `thread/start`系リクエストの`config`だけが受理する。
         """
@@ -759,6 +764,7 @@ class AppServerManager:
         """スキル非配送を保ち、読取MCPの定義を直接の設定として渡す。"""
         root = plugin_roots.SERVER_PLUGIN_ROOT
         pyfltr = json.loads((root / ".mcp.json").read_text(encoding="utf-8"))["mcpServers"]["pyfltr"]
+        pyfltr["args"] = [arg.replace("${CLAUDE_PLUGIN_ROOT}", str(root)) for arg in pyfltr.get("args", [])]
         environment = getattr(client, "parent_environment", None) or os.environ
         pyfltr["env_vars"] = list(mcp_environment.runtime_environment_variable_names(environment))
         pyfltr["default_tools_approval_mode"] = "approve"
@@ -774,7 +780,7 @@ class AppServerManager:
         self._background_tasks.add(task)
         task.add_done_callback(self._background_tasks.discard)
 
-    async def _ensure_client(self, launch_kind: LaunchKind | None = None) -> JsonRpcProcess:
+    async def _ensure_client(self, launch_kind: LaunchKind | None = None, handoff_prompt: str = "") -> JsonRpcProcess:
         """新しいApp Serverを起動して初期化した接続を返す。
 
         `launch_kind`はturnを実行するsessionの起動区分で、App Serverの子環境を通じて委譲先のhookへ届く。
@@ -799,6 +805,7 @@ class AppServerManager:
             on_failure,
             root_session_id=self._root_session_id,
             launch_kind=launch_kind,
+            handoff_prompt=handoff_prompt,
         )
         self._unassigned_clients[id(client)] = client
         async with contextlib.AsyncExitStack() as resources:
@@ -824,7 +831,7 @@ class AppServerManager:
             return None
         return client
 
-    async def _acquire_owned_client(self, session_id: str, launch_kind: LaunchKind) -> JsonRpcProcess:
+    async def _acquire_owned_client(self, session_id: str, launch_kind: LaunchKind, handoff_prompt: str = "") -> JsonRpcProcess:
         """sessionが所有する生存中の接続を返し、無ければ新しいApp Serverを起動して所有させる。
 
         接続が失われていた場合は、その接続の残りの資源を回収してから起動し直す。回収できなければ
@@ -835,7 +842,8 @@ class AppServerManager:
             return client
         if client is not None:
             await self._release_owned_client(session_id)
-        client = await self._ensure_client(launch_kind)
+        original = self.sessions.get(session_id)
+        client = await self._ensure_client(launch_kind, original.prompt if original else handoff_prompt)
         self._clients[session_id] = client
         self._unassigned_clients.pop(id(client), None)
         return client
@@ -896,7 +904,7 @@ class AppServerManager:
         validate_cwd(cwd)
         validate_model_effort(model, effort)
         async with contextlib.AsyncExitStack() as resources:
-            client = await self._ensure_client(launch_kind)
+            client = await self._ensure_client(launch_kind, prompt)
             resources.push_async_callback(self._discard_client, client)
             thread_response, selection, attempted, owner_session_id, writer_session_id = await self._start_thread(
                 client, cwd, model, launch_kind
@@ -1023,11 +1031,12 @@ class AppServerManager:
         fast_mode: bool | None = None,
         model_provider: str | None = None,
         subscription_provider: str | None = None,
+        handoff_prompt: str = "",
     ) -> SessionState:
         """保存済みthreadを再開して新しいturnを開始する。"""
         validate_cwd(cwd)
         validate_model_effort(model, effort)
-        client = await self._acquire_owned_client(session_id, launch_kind)
+        client = await self._acquire_owned_client(session_id, launch_kind, handoff_prompt)
         session = SessionState(
             session_id=session_id,
             cwd=cwd,
@@ -1622,15 +1631,59 @@ class AppServerManager:
             # 子孫threadの通知は子孫の追跡だけに使い、親のstatusや進捗へ混ぜない。
             owner = self._find_thread_owner(_thread_id_from(params))
             if owner is not None:
-                self._track_subagent_thread(owner, params.get("item"))
+                child_thread_id = _thread_id_from(params)
+                if method == "turn/completed" and isinstance(child_thread_id, str):
+                    owner.codex_live_subagent_thread_ids.discard(child_thread_id)
+                    owner.codex_terminal_subagent_thread_ids.add(child_thread_id)
+                self._track_subagent_thread(
+                    owner,
+                    params.get("item"),
+                    source_thread_id=child_thread_id,
+                    source_turn_id=self._notification_turn_id(params),
+                )
                 turn = params.get("turn")
                 if isinstance(turn, dict) and isinstance(turn.get("items"), list):
                     for item in turn["items"]:
-                        self._track_subagent_thread(owner, item)
+                        self._track_subagent_thread(
+                            owner,
+                            item,
+                            source_thread_id=child_thread_id,
+                            source_turn_id=self._notification_turn_id(params),
+                        )
             return
         notification_turn_id = self._notification_turn_id(params)
         if notification_turn_id is not None and session.turn_id and notification_turn_id != session.turn_id:
             return
+        if method == "error":
+            if params.get("willRetry") is True:
+                error = params.get("error")
+                info = error.get("codexErrorInfo") if isinstance(error, dict) else None
+                error_type = next(iter(info), "api_error") if isinstance(info, dict) else str(info or "api_error")
+                detail = info.get(error_type) if isinstance(info, dict) else None
+                status = detail.get("httpStatusCode") if isinstance(detail, dict) else None
+                session.record_api_error(
+                    error_type, status if isinstance(status, int) and not isinstance(status, bool) else None
+                )
+                await self._notify_waiters()
+            return
+        item = params.get("item")
+        if (
+            method
+            in {
+                "turn/completed",
+                "item/agentMessage/delta",
+                "item/reasoning/textDelta",
+                "item/reasoning/summaryTextDelta",
+            }
+            or (
+                method == "item/started"
+                and isinstance(item, dict)
+                and item.get("type") not in _NON_MODEL_OUTPUT_ITEM_TYPES
+                and item.get("type") != "subAgentActivity"
+            )
+            or (method == "item/completed" and isinstance(item, dict) and item.get("type") in {"agentMessage", "reasoning"})
+        ):
+            session.api_error = None
         turn = params.get("turn")
         if method == "turn/started":
             session.turn_start_sent = True
@@ -1669,7 +1722,9 @@ class AppServerManager:
                 session.status = "failed"
             if session.status == "completed":
                 session.codex_attempted_provider_ids = {session.codex_model_provider} if session.codex_model_provider else set()
-            if resume_waits.has_pending_auto_resume_targets(session) and not session.auto_resume_consumed:
+            if (resume_waits.has_pending_auto_resume_targets(session) and not session.auto_resume_consumed) or (
+                session.codex_self_message_observed and not session.codex_self_message_repair_consumed
+            ):
                 # 未観測の孫sessionが残るturnは、待機表明を完了報告として公開せずに結果を保留する。
                 # 監査記録は`docs/development/audit-records.md`の
                 # 「agent-toolkit/agent_toolkit/_agents_server/codex.py：孫sessionの待機表明と自動再開：2026年10月1日」にある。
@@ -1849,9 +1904,15 @@ class AppServerManager:
         changed = False
         for session in self._client_sessions(client):
             if not session.terminal or session.failure_pending_completion:
+                if session.awaiting_auto_resume and session.pending_result is not None:
+                    resume_waits.finalize_pending_result(session, touch=False)
                 session.status = "failed"
                 if not session.failure_pending_completion:
-                    session.error = {"message": f"Codex App Server stopped: {detail}"}
+                    session.error = {
+                        **(session.error if isinstance(session.error, dict) else {}),
+                        "message": f"Codex App Server stopped: {detail}",
+                    }
+                session.api_error = None
                 session.interrupt_requested = False
                 session.turn_start_ambiguous = False
                 session.turn_completed = True
@@ -1883,12 +1944,43 @@ class AppServerManager:
         )
 
     @staticmethod
-    def _track_subagent_thread(session: SessionState, item: Any) -> None:
+    def _track_subagent_thread(
+        session: SessionState,
+        item: Any,
+        *,
+        source_thread_id: str | None = None,
+        source_turn_id: str | None = None,
+    ) -> None:
         """開始・再操作で観測したsubagentのthreadを記録し、そのthreadの通知を所有sessionへ対応付ける。"""
-        if isinstance(item, dict) and item.get("type") == "subAgentActivity":
-            thread_id = item.get("agentThreadId")
-            if isinstance(thread_id, str) and thread_id and thread_id != session.session_id:
-                session.codex_subagent_thread_ids.add(thread_id)
+        if not isinstance(item, dict) or item.get("type") != "subAgentActivity":
+            return
+        thread_id = item.get("agentThreadId")
+        if not isinstance(thread_id, str) or not thread_id:
+            return
+        activity_id = item.get("id")
+        kind = item.get("kind")
+        if isinstance(activity_id, str):
+            activity_key = (
+                source_thread_id or session.session_id,
+                source_turn_id or session.turn_id,
+                activity_id,
+                str(kind),
+            )
+            if activity_key in session.codex_subagent_activity_ids:
+                return
+            session.codex_subagent_activity_ids.add(activity_key)
+        if thread_id == session.session_id:
+            if kind == "interacted" and source_thread_id in {None, session.session_id}:
+                session.codex_self_message_observed = True
+            return
+        session.codex_subagent_thread_ids.add(thread_id)
+        if kind == "started":
+            session.codex_live_subagent_thread_ids.add(thread_id)
+            session.codex_terminal_subagent_thread_ids.discard(thread_id)
+            session.auto_resume_consumed = False
+        elif kind in {"completed", "interrupted"}:
+            session.codex_live_subagent_thread_ids.discard(thread_id)
+            session.codex_terminal_subagent_thread_ids.add(thread_id)
 
     def _find_session(self, params: Any) -> SessionState | None:
         thread_id = _thread_id_from(params)

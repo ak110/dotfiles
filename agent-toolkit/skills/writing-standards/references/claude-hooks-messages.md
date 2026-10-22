@@ -1,11 +1,18 @@
 # エージェント宛てメッセージ
 
-本書はhookとhook以外の生成元がエージェントへ直接渡す本文の記述言語、`atk-auto`の標識と、hookの通知本文の整形を定める。
+品質基準の正式な提供元は`agent-basics:writing-standards`の`references/claude-hooks-messages.md`である。呼出元が指定した条件と読込範囲を、同名の正式な品質資料へ引き継ぐ。節指定がある場合は移設先の実見出しへ接続し、指定がない場合は従来の全文読込契約を保つ。
 
-## メッセージの記述言語
+以下はagent-toolkitが所有する運用条件である。呼出元の条件と読込範囲に従い、ここに残る運用節を補う。
 
-エージェントに直接渡る出力（`reason` / `additionalContext` / exit 2のstderr）は日本語で書く。日本語以外の文が会話へ挿入されると、モデルの以後の発話言語がその言語へ引きずられる。
-原本ファイル（`01-agent.md`・`CLAUDE.md`等）の章名・節名・キーワードは、原本の改名に追従できるよう原本表記のまま引用する。
+## 名指し参照の読込方法
+
+本文の各参照の適用条件を保ち、選んだ資料の指定範囲を取得してから、その基準を使う具体的な判断へ進む。起動時の行の資料は起動本文とともに届く。
+
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:writing-standards/references/claude-hooks-messages.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/claude-hooks-messages.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `claude-hooks-block-warn.md#「遮断と警告の選択」` | 判断 | `section:agent-toolkit:*/skills/writing-standards/references/claude-hooks-block-warn.md#「遮断と警告の選択」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:writing-standards/references/writing.md#「読み手別の追加注意点」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/writing.md#「読み手別の追加注意点」` |
 
 ## エージェント宛てメッセージの標識
 
@@ -23,7 +30,7 @@ detected ...
 
 `systemMessage` / `stopReason`などエージェントに届かないフィールドと、`permissionDecision: "allow"`で追加メッセージを持たない呼び出しは付与の対象外とする。
 
-### hook以外で生成する本文の要素
+## hook以外で生成する本文の要素
 
 自動生成する本文はhook以外の生成元も`atk-auto`で囲み、`source`と`kind`で生成主体と用途を区別する。agent間の配送では、委譲先から委譲元への通知だけ`from`で送信元を示す。境界は最初の開始タグと最後の同名終了タグで確定する。保存済みの会話にある旧要素名は読み取り側が引き続き受け付ける。
 
@@ -35,7 +42,7 @@ detected ...
 機械が生成した本文は、ユーザー発話の解釈規範を再読させる注記の対象から外れる。
 スラッシュコマンドはホストが1行目の先頭でだけ解釈するため、コマンドを伴う本文では引数の位置へ標識を置く。
 
-### ヘルパー関数
+## ヘルパー関数
 
 共有formatterを発出箇所から呼び出す。
 
@@ -51,13 +58,7 @@ _llm_notice = formatter("myplugin/myhook")
 本節は`_hooks.notice`が整形するblock・warn・noticeの通知本文の構成を定める。遮断か警告かの選択と反復時の昇格は`claude-hooks-block-warn.md`「遮断と警告の選択」が定める。
 
 - block通知はblock専用の整形関数（`block_formatter`）、warn通知は同モジュールの整形関数で生成し、どちらも解消手段を`fix`へ渡す。`fix`が空か空白だけなら`ValueError`となり、整形関数は本文の後へ`次の操作: <fix>`の行を置く
-- block・warnの本文はこれらの整形関数だけで組み立て、解消手段は本文へ混ぜず`fix`へ渡す（解消手段の欠落を機械的に検出するため）。文面の基準は`writing.md`「読み手別の追加注意点」のプログラムが出力するメッセージの項目に従う
-- `notice`区分は行動の指示そのものを本文とする定型の配送であり、`fix`を任意とする
 
-遮断の解除に必要な情報は通知本文へ載せる（別の呼び出しでの取得を求めると遮断のたびに1ラウンドを消費する）。
-判定が出力の有無や形式など守る結果の代わりとなる条件だけを調べる場合は、`fix`で守る結果へ到達する操作を名指し、判定を通る最小の出力と守る結果を区別する。
-`fix`の手段を使えないエージェントがある場合は、同じ判定を通過する別の手段か、遮断が解除される条件を併記する。
-集合を本文へ列挙する場合は、判定した対象と対応づく要素に限定する（努力目標）。
+- block・warnの本文はこれらの整形関数だけで組み立て、解消手段は本文へ混ぜず`fix`へ渡す（解消手段の欠落を機械的に検出するため）。文面の基準は`agent-basics:writing-standards/references/writing.md`「読み手別の追加注意点」のプログラムが出力するメッセージの項目に従う
 
-`warn`区分の通知は、同一セッションで同じ原因が繰り返された時点から、繰り返していることと累積件数を本文へ含め、2件目以降は本文を対象と件数へ縮める。`次の操作:`の行は残す。
 閾値と記録先は`agent-toolkit/agent_toolkit/_hooks/notice.py`が持つ。

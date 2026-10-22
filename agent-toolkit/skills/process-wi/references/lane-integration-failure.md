@@ -2,6 +2,18 @@
 
 本書は`${CLAUDE_PLUGIN_ROOT}/share/lane-integration.subagent.md`「マージありの統合」で、rebaseが競合で停止した場合と、rebase後の変更範囲の検証が失敗した場合の扱いを定める。
 
+## 名指し参照の読込方法
+
+本文の各参照の適用条件を保ち、選んだ資料の指定範囲を取得してから、その基準を使う具体的な判断へ進む。起動時の行の資料は起動本文とともに届く。
+
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../../share/lane-integration.subagent.md#「マージありの統合」` | 判断 | `section:agent-toolkit:*/share/lane-integration.subagent.md#「マージありの統合」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../commit/references/history-rewrite.md#「WI実装commitの対応の継承」` | 判断 | `section:agent-toolkit:*/skills/commit/references/history-rewrite.md#「WI実装commitの対応の継承」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../commit/references/history-rewrite.md#「履歴確認の起動形」` | 判断 | `section:agent-toolkit:*/skills/commit/references/history-rewrite.md#「履歴確認の起動形」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../../share/exec.subagent.md#「レビュー修正の履歴統合」` | 判断 | `section:agent-toolkit:*/share/exec.subagent.md#「レビュー修正の履歴統合」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../bugfix/references/root-cause-analysis.md#「類似見直し」「類似見直しと再発防止の完了」` | 判断 | `section:agent-toolkit:*/skills/bugfix/references/root-cause-analysis.md#「類似見直し」「類似見直しと再発防止の完了」` |
+
 ## rebaseの競合
 
 競合解消の指示には、rebase開始前に保持した旧系列と統合先のbase・headのOIDも引き継ぐ。解消してrebaseを完了した後は、そのOIDで`history-compare --operation rebase`を実行し、内容を変えた旧commitへ`--resolved-conflict`を反復指定する。

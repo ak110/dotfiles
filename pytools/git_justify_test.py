@@ -28,7 +28,7 @@ def _refs(repository: pathlib.Path) -> str:
 def _run(
     repository: pathlib.Path, start_date: str, end_date: str, *options: str, answer: str | None
 ) -> subprocess.CompletedProcess[str]:
-    """CLIを起動する。`answer`が`None`なら標準入力を閉じる。日時の解釈がホストのタイムゾーンへ依存しないようUTCへ固定する。"""
+    """CLIを起動する。`answer`が`None`なら標準入力を閉じる。ホストのタイムゾーンによって日時の解釈が変わらないようUTCへ固定する。"""
     return subprocess.run(
         [sys.executable, "-m", "pytools.git_justify", "base", "main", start_date, end_date, *options],
         cwd=repository,

@@ -79,7 +79,7 @@ def _compare(repo: pathlib.Path, output: pathlib.Path, operation: str, bases: tu
 def test_conflict_resolution_requires_explicit_and_unique_mapping(
     repo: pathlib.Path, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], violation: str
 ) -> None:
-    """競合解消で変わったcommitだけを明示し、件名・変更パス・相対順の対応を公開入口で検収する。"""
+    """競合解消で変わったcommitだけを明示し、件名・変更パス・相対順の対応を公開された呼び出し手段で検収する。"""
     base = _git(repo, "rev-parse", "HEAD")
     first = _commit(repo, "first.txt", "旧変更", "一つ目")
     old_head = _commit(repo, "second.txt", "通常変更", "二つ目")
@@ -215,11 +215,154 @@ def test_autosquash_rejects_each_independent_violation(
         "tree": "tree",
         "count": "新件数",
         "control": "制御件名",
-        "patch": "patch-id",
+        "patch": "変更内容",
         "ambiguous": "一意",
         "outside": "一意",
     }[violation]
     assert expected in capsys.readouterr().err
+
+
+@pytest.mark.parametrize("operation", ["rebase", "autosquash"])
+def test_history_compare_accepts_same_content_after_parent_change(
+    repo: pathlib.Path, tmp_path: pathlib.Path, operation: str
+) -> None:
+    """親の変更を含む3-way適用結果が一致する履歴書換えを両操作で受理する。"""
+    base = _git(repo, "rev-parse", "HEAD")
+    (repo / "content.txt").write_text("a\nb\nc\nd\ne\n", encoding="utf-8")
+    _git(repo, "add", "--", "content.txt")
+    _git(repo, "commit", "--no-verify", "-m", "準備")
+    base = _git(repo, "rev-parse", "HEAD")
+    if operation == "rebase":
+        old_head = _commit(repo, "content.txt", "A\nb\nc\nd\nE\n", "変更")
+        _git(repo, "checkout", "-b", "rewritten", base)
+        new_base = _commit(repo, "content.txt", "A\nb\nc\nd\ne\n", "上流")
+        new_head = _commit(repo, "content.txt", "A\nb\nc\nd\nE\n", "変更")
+        expected = {old_head: new_head}
+    else:
+        target = _commit(repo, "feature.txt", "機能\n", "対象")
+        changed = _commit(repo, "content.txt", "A\nb\nc\nd\nE\n", "変更")
+        old_head = _commit(repo, "feature.txt", "機能と修正\n", "fixup! 対象")
+        _git(repo, "checkout", "-b", "rewritten", base)
+        (repo / "content.txt").write_text("A\nb\nc\nd\ne\n", encoding="utf-8")
+        (repo / "feature.txt").write_text("機能と修正\n", encoding="utf-8")
+        _git(repo, "add", "--", "content.txt", "feature.txt")
+        _git(repo, "commit", "--no-verify", "-m", "対象")
+        rewritten_target = _git(repo, "rev-parse", "HEAD")
+        new_head = _commit(repo, "content.txt", "A\nb\nc\nd\nE\n", "変更")
+        new_base = base
+        expected = {target: rewritten_target, changed: new_head, old_head: rewritten_target}
+    output = tmp_path / f"{operation}.json"
+    assert _compare(repo, output, operation, (base, old_head, new_base, new_head)) == 0
+    assert json.loads(output.read_text(encoding="utf-8")) == expected
+
+
+@pytest.mark.parametrize("operation", ["rebase", "autosquash"])
+def test_history_compare_rejects_whitespace_only_content_change(
+    repo: pathlib.Path, tmp_path: pathlib.Path, operation: str
+) -> None:
+    """最終treeが一致しても、空白だけ異なる変更内容は両操作で拒否する。"""
+    base = _git(repo, "rev-parse", "HEAD")
+    if operation == "rebase":
+        old_head = _commit(repo, "content.txt", "  value\n", "変更")
+        _git(repo, "checkout", "-b", "rewritten", base)
+        new_base = _commit(repo, "content.txt", "value \n", "上流")
+        new_head = _commit(repo, "content.txt", " value\n", "変更")
+    else:
+        _commit(repo, "content.txt", "  value\n", "対象")
+        old_head = _commit(repo, "content.txt", " value\n", "変更")
+        _commit(repo, "feature.txt", "修正\n", "amend! 対象")
+        old_head = _git(repo, "rev-parse", "HEAD")
+        _git(repo, "checkout", "-b", "rewritten", base)
+        (repo / "content.txt").write_text("value \n", encoding="utf-8")
+        (repo / "feature.txt").write_text("修正\n", encoding="utf-8")
+        _git(repo, "add", "--", "content.txt", "feature.txt")
+        _git(repo, "commit", "--no-verify", "-m", "対象")
+        new_base = base
+        new_head = _commit(repo, "content.txt", " value\n", "変更")
+    output = tmp_path / f"{operation}.json"
+    assert _compare(repo, output, operation, (base, old_head, new_base, new_head)) == 1
+    assert not output.exists()
+
+
+def test_rebase_rejects_resolved_conflict_with_same_content_after_parent_change(
+    repo: pathlib.Path, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """3-way適用で同じ内容になる競合解消commitを指定しても内容変化としては扱わない。"""
+    base = _commit(repo, "content.txt", "a\nb\nc\nd\ne\n", "準備")
+    old_head = _commit(repo, "content.txt", "A\nb\nc\nd\nE\n", "解消")
+    _git(repo, "checkout", "-b", "rewritten", base)
+    new_base = _commit(repo, "content.txt", "A\nb\nc\nd\ne\n", "上流")
+    new_head = _commit(repo, "content.txt", "A\nb\nc\nd\nE\n", "解消")
+    output = tmp_path / "resolved.json"
+    assert _compare(repo, output, "rebase", (base, old_head, new_base, new_head), "--resolved-conflict", old_head) == 1
+    assert not output.exists()
+    assert "内容が変わっていません" in capsys.readouterr().err
+
+
+def test_autosquash_accepts_fixup_near_untouched_change(repo: pathlib.Path, tmp_path: pathlib.Path) -> None:
+    """近傍へのfixupで文脈が変わっても、非対象commitの内容が同じなら受理する。"""
+    base = _commit(repo, "content.txt", "a\nb\nc\nd\ne\n", "準備")
+    target = _commit(repo, "content.txt", "A\nb\nc\nd\ne\n", "対象")
+    unchanged = _commit(repo, "content.txt", "A\nB\nc\nd\ne\n", "近傍の変更")
+    old_head = _commit(repo, "content.txt", "AA\nB\nc\nd\ne\n", "fixup! 対象")
+    _git(repo, "checkout", "-b", "rewritten", base)
+    rewritten_target = _commit(repo, "content.txt", "AA\nb\nc\nd\ne\n", "対象")
+    new_head = _commit(repo, "content.txt", "AA\nB\nc\nd\ne\n", "近傍の変更")
+    output = tmp_path / "autosquash.json"
+    assert _compare(repo, output, "autosquash", (base, old_head, base, new_head)) == 0
+    assert json.loads(output.read_text(encoding="utf-8")) == {
+        target: rewritten_target,
+        unchanged: new_head,
+        old_head: rewritten_target,
+    }
+
+
+def test_autosquash_accepts_conflict_resolved_later_change(repo: pathlib.Path, tmp_path: pathlib.Path) -> None:
+    """fixup競合の解消後も、後続commitの変更内容を保つ系列を受理する。"""
+    base = _commit(repo, "content.txt", "before\ntarget\nlater\nafter\n", "準備")
+    target = _commit(repo, "content.txt", "before\ntarget-old\nlater\nafter\n", "対象")
+    later = _commit(repo, "content.txt", "before\ntarget-old\nLATER\nafter\n", "後続の変更")
+    old_head = _commit(repo, "content.txt", "before\ntarget-fixed\nLATER\nafter\n", "fixup! 対象")
+    _git(repo, "checkout", "-b", "resolved", base)
+    rewritten_target = _commit(repo, "content.txt", "before\ntarget-fixed\nlater\nafter\n", "対象")
+    new_head = _commit(repo, "content.txt", "before\ntarget-fixed\nLATER\nafter\n", "後続の変更")
+    output = tmp_path / "resolved-autosquash.json"
+    assert _compare(repo, output, "autosquash", (base, old_head, base, new_head)) == 0
+    assert json.loads(output.read_text(encoding="utf-8")) == {
+        target: rewritten_target,
+        later: new_head,
+        old_head: rewritten_target,
+    }
+
+
+@pytest.mark.parametrize("operation", ["rebase", "autosquash"])
+def test_history_compare_accepts_blank_line_layout_change(repo: pathlib.Path, tmp_path: pathlib.Path, operation: str) -> None:
+    """親による空行配置の差を含んでも、3-way適用後のtreeが同じなら受理する。"""
+    base = _commit(repo, "content.txt", "first\nsecond\nthird\n", "準備")
+    old_layout = "first\n\nsecond\n\nthird\n"
+    parent_layout = "first\n\nsecond\nthird\n"
+    if operation == "rebase":
+        old_head = _commit(repo, "content.txt", old_layout, "空行を追加")
+        _git(repo, "checkout", "-b", "rewritten", base)
+        new_base = _commit(repo, "content.txt", parent_layout, "上流の空行")
+        new_head = _commit(repo, "content.txt", old_layout, "空行を追加")
+        expected = {old_head: new_head}
+    else:
+        target = _commit(repo, "feature.txt", "機能\n", "対象")
+        changed = _commit(repo, "content.txt", old_layout, "空行を追加")
+        old_head = _commit(repo, "feature.txt", "機能を修正\n", "fixup! 対象")
+        _git(repo, "checkout", "-b", "rewritten", base)
+        (repo / "content.txt").write_text(parent_layout, encoding="utf-8")
+        (repo / "feature.txt").write_text("機能を修正\n", encoding="utf-8")
+        _git(repo, "add", "--", "content.txt", "feature.txt")
+        _git(repo, "commit", "--no-verify", "-m", "対象")
+        rewritten_target = _git(repo, "rev-parse", "HEAD")
+        new_head = _commit(repo, "content.txt", old_layout, "空行を追加")
+        new_base = base
+        expected = {target: rewritten_target, changed: new_head, old_head: rewritten_target}
+    output = tmp_path / f"blank-{operation}.json"
+    assert _compare(repo, output, operation, (base, old_head, new_base, new_head)) == 0
+    assert json.loads(output.read_text(encoding="utf-8")) == expected
 
 
 @pytest.mark.parametrize("changed", [False, True])

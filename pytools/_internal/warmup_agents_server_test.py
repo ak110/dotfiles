@@ -19,9 +19,13 @@ _PLUGIN_ID = "agent-toolkit@ak110-dotfiles"
 
 
 def _write_script(path: pathlib.Path) -> pathlib.Path:
-    """入口スクリプトのダミーを作成してパスを返す。"""
+    """起動スクリプトのダミーを作成してパスを返す。"""
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text("", encoding="utf-8")
+    if path.name == "agents_server_mcp.py":
+        launcher = path.parents[1] / "scripts" / "launch.py"
+        launcher.parent.mkdir(parents=True, exist_ok=True)
+        launcher.write_text("", encoding="utf-8")
     return path
 
 
@@ -45,10 +49,12 @@ def _setup(
     `None`は実行自体の失敗（タイムアウト等）を表す。
     """
     monkeypatch.setattr(_common, "resolve_executable", lambda name, **_kwargs: pathlib.Path(name))
+    monkeypatch.setattr(_common, "find_dotfiles_root", lambda: None)
     monkeypatch.setenv("CODEX_HOME", str(tmp_path / "codex"))
 
     plugin_cache = tmp_path / "claude" / "plugins" / "cache" / "ak110-dotfiles" / "agent-toolkit" / "1.0.0"
     _write_script(plugin_cache / "agent_toolkit" / "agents_server_mcp.py")
+    _write_script(plugin_cache / "scripts" / "launch.py")
     installed_path = tmp_path / "installed_plugins.json"
     if installed_plugins is None:
         installed_plugins = {"version": 2, "plugins": {_PLUGIN_ID: [{"installPath": str(plugin_cache)}]}}
@@ -87,8 +93,10 @@ def _codex_script(codex_home: pathlib.Path, version: str) -> pathlib.Path:
 
 
 def _warmed(calls: list[list[str]]) -> list[str]:
-    """記録済みコマンドからウォームアップ対象パスを取り出す。末尾の引数は依存検査の指定である。"""
-    return [cmd[-2] for cmd in calls if command_matches(cmd, ["uv", "run", "--project"])]
+    """記録済みコマンドからprepare対象の入口パスを取り出す。"""
+    return [
+        cmd[-1] for cmd in calls if command_matches(cmd, ["uv", "run", "--no-config", "--no-project"]) and "--prepare" in cmd
+    ]
 
 
 class TestPrerequisites:
@@ -105,6 +113,12 @@ class TestPrerequisites:
 
         assert _warmup.run() == post_apply_outcome.PostApplyOutcome()
         assert not calls
+
+    def test_minimal_mode_skips_before_target_resolution(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """minimalモードは有効版の照会も依存準備も行わない。"""
+        monkeypatch.setattr(_warmup.dotfiles_mode, "is_minimal", lambda: True)
+        monkeypatch.setattr(_warmup, "_targets", lambda: pytest.fail("対象を解決しない"))
+        assert _warmup.run() == post_apply_outcome.PostApplyOutcome()
 
 
 class TestTargets:
@@ -260,8 +274,8 @@ class TestFailureHandling:
 class TestCoverage:
     """統合したウォームアップが温める環境の範囲。"""
 
-    def test_targets_cover_hook_plugin_root(self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
-        """`uv run --project`の対象に、hook（`agent_toolkit/hook.py`）が使う版ディレクトリが含まれる。"""
+    def test_targets_prepare_hook_plugin_root(self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
+        """hookが使う各plugin rootは公開launcherのprepare対象に含まれる。"""
         calls = _setup(monkeypatch, tmp_path)
         claude_root = tmp_path / "claude" / "plugins" / "cache" / "ak110-dotfiles" / "agent-toolkit" / "1.0.0"
         codex_root = tmp_path / "codex" / "plugins" / "cache" / "ak110-dotfiles" / "agent-toolkit" / "1.0.0"
@@ -269,13 +283,16 @@ class TestCoverage:
 
         _warmup.run()
 
-        projects = [cmd[cmd.index("--project") + 1] for cmd in calls if command_matches(cmd, ["uv", "run", "--project"])]
-        # hookはplugin rootのuvプロジェクトを`--project`で明示して起動するため、同じ版ディレクトリの環境を使う。
-        assert sorted(projects) == sorted([str(claude_root), str(codex_root)])
+        assert sorted(_warmed(calls)) == sorted(
+            [
+                str(claude_root / "agent_toolkit" / "agents_server_mcp.py"),
+                str(codex_root / "agent_toolkit" / "agents_server_mcp.py"),
+            ]
+        )
         assert all(cmd[-1] == "--check-dependencies" for cmd in calls if command_matches(cmd, ["uv", "run", "--project"]))
 
-    def test_repository_scripts_are_not_targets(self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
-        """リポジトリ内の同名スクリプトは参照先へ加えない。"""
+    def test_worktree_script_is_target(self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
+        """作業ツリーの基盤CLIとserveが使う入口もfull warmupで準備する。"""
         calls = _setup(monkeypatch, tmp_path)
         repository = tmp_path / "dotfiles"
         _write_script(repository / "agent-toolkit" / "agent_toolkit" / "agents_server_mcp.py")
@@ -283,4 +300,4 @@ class TestCoverage:
 
         _warmup.run()
 
-        assert all(str(repository) not in target for target in _warmed(calls))
+        assert str(repository / "agent-toolkit" / "agent_toolkit" / "agents_server_mcp.py") in _warmed(calls)

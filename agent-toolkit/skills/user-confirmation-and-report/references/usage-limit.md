@@ -14,6 +14,18 @@ moduleは最大使用窓の解除予定時刻後に投入し、予定時刻が�
 解除予定後に別turnが始まっていれば投入を取り消す。
 予約はsession内のタイマーであり、module再読込で失われる。
 
+## 名指し参照の読込方法
+
+本文の各参照の適用条件を保ち、選んだ資料の指定範囲を取得してから、その基準を使う具体的な判断へ進む。起動時の行の資料は起動本文とともに届く。
+
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../SKILL.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/SKILL.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../delegation/references/waiting-and-monitoring.md#「停滞の検知と巻き取り」` | 判断 | `section:agent-toolkit:*/skills/delegation/references/waiting-and-monitoring.md#「停滞の検知と巻き取り」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../plan-mode/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/plan-mode/SKILL.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../managed-temp/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/managed-temp/SKILL.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../completion-report/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/completion-report/SKILL.md` |
+
 ## 利用上限の猶予通知を受けたときの続行と再開
 
 利用上限の猶予通知は、Claude Codeが会話へ挿入する`[Usage limit reached; a short grace allowance remains`で始まる注記を指す。

@@ -29,7 +29,7 @@ def _document(tmp_path: Path, name: str, settings: dict) -> Path:
 def _settings() -> dict:
     return {
         "mode": "explore",
-        "model_type": "low_tier",
+        "model_type": "chores_fast",
         "usage": "chores",
         "required_inputs": ["対象"],
         "optional_inputs": ["観点"],
@@ -41,10 +41,10 @@ def _settings() -> dict:
 def test_new_role_launches_without_role_name_mapping(tmp_path: Path) -> None:
     """役割名の対応表を使わずに起動本文を生成し、継続指示の必須入力を確かめる。"""
     path = _document(tmp_path, "new-lightweight-check", _settings())
-    model, usage, prompt, mode, handoff = launch_requests.task_document_request(
+    model, prompt, mode, handoff = launch_requests.task_document_request(
         str(path), {"対象": "今回の成果物", "観点": "参照の到達性"}
     )
-    assert (model, usage, mode, handoff) == ("low_tier", "chores", "explore", None)
+    assert (model, mode, handoff) == ("chores_fast", "explore", None)
     assert "対象: 今回の成果物" in prompt and "観点: 参照の到達性" in prompt
     assert 'kind="work-contract"' not in prompt and "引き継ぎ記録先:" not in prompt
     assert (
@@ -108,10 +108,10 @@ def test_legacy_role_configuration_and_continuation_stay_readable(tmp_path: Path
         '継続入力: {"instruction":"追加確認","required":["対象"]}\n```\n',
         encoding="utf-8",
     )
-    model, usage, prompt, mode, handoff = launch_requests.task_document_request(
+    model, prompt, mode, handoff = launch_requests.task_document_request(
         str(path), {"対象プロンプト": "評価対象", "シナリオ": "単発評価"}
     )
-    assert (model, usage, mode, handoff) == ("medium_tier", "base", "explore", None)
+    assert (model, mode, handoff) == ("chores", "explore", None)
     assert (
         launch_requests.continuation_prompt(prompt, (), instruction="追加確認", extra_params={"対象": "追加"})
         == "追加確認\n対象: 追加"

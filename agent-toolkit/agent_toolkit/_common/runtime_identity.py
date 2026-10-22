@@ -77,6 +77,12 @@ def observed_identity(entry: dict[str, Any], runtime: str) -> RuntimeIdentity | 
         message = entry.get("message")
         model = message.get("model") if isinstance(message, dict) else None
         effort = entry.get("effort")
+    elif runtime == "agy":
+        original = entry.get("_agy_original", entry)
+        body = original.get("step_update", original)
+        if not isinstance(body, dict):
+            return None
+        model, effort = body.get("model"), body.get("effort")
     else:
         return None
     if isinstance(model, str) and model and isinstance(effort, str) and effort:
@@ -123,5 +129,13 @@ def co_author_trailer(identity: RuntimeIdentity, *, catalog: list[dict[str, Any]
     """
     if identity.source != "observed":
         raise ValueError("commit帰属にはホストが観測した実行identityが必要です")
-    domain = "openai.com" if identity.engine == "codex" else "anthropic.com" if identity.engine == "claude" else identity.engine
+    domain = (
+        "openai.com"
+        if identity.engine == "codex"
+        else "anthropic.com"
+        if identity.engine == "claude"
+        else "google.com"
+        if identity.engine == "agy"
+        else identity.engine
+    )
     return f"Co-Authored-By: {identity.display(catalog=catalog)} <noreply@{domain}>"

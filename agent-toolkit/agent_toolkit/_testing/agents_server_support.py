@@ -209,7 +209,10 @@ class FakeBackend:
         excluded_candidates: frozenset[state.ModelCandidate] = frozenset(),
         turn_seq: int = 0,
         fast_mode: bool | None = None,
+        handoff_prompt: str = "",
     ) -> state.SessionState:
+        del handoff_prompt
+
         async def accept_prompt(value: str) -> None:
             del value
 
@@ -1323,7 +1326,7 @@ _MODE_INPUT_CASES = [
     pytest.param("delegate", {"prompt": "本文"}, "model_type", id="delegate-missing-model-type"),
     pytest.param(
         "delegate",
-        {"prompt": "本文", "model_type": "high_tier", "extra_params": {}},
+        {"prompt": "本文", "model_type": "execute", "extra_params": {}},
         "extra_params",
         id="delegate-mixed-extra-params",
     ),

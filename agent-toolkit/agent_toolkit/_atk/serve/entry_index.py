@@ -52,7 +52,7 @@ class IndexedEntry:
 
 @dataclasses.dataclass(frozen=True)
 class _ParsedFile:
-    """状態ディレクトリに依存しないファイル単位の解析結果。"""
+    """状態ディレクトリによらず共通のファイル単位の解析結果。"""
 
     text: str
     text_folded: str

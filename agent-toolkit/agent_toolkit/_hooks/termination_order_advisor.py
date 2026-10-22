@@ -33,7 +33,7 @@ lazy from agent_toolkit._common.shell_tokens import ATK_SHELL_TOOLS, is_atk_comm
 lazy from agent_toolkit._hooks import termination_evidence
 lazy from agent_toolkit._hooks.agent_id import is_main_agent_context
 lazy from agent_toolkit._hooks.background_tasks import async_launch_offsets, pending_async_task_ids
-lazy from agent_toolkit._hooks.host import is_codex_payload
+lazy from agent_toolkit._hooks.host import is_antigravity_payload, is_codex_payload
 lazy from agent_toolkit._hooks.stop_session import append_stop_log
 lazy from agent_toolkit._hooks.stop_session import parse_stop_session as _parse_stop_session
 
@@ -147,7 +147,7 @@ def _waiting_work_ids(payload: dict, session_id: str, transcript_path: str, work
 
 def _final_report_work_ids(payload: dict, pending: dict, work_ids: set[str]) -> set[str]:
     """作業と最新の人間入力の後の最後の可視本文が最終報告である作業を返す。"""
-    if is_codex_payload(payload):
+    if is_codex_payload(payload) or is_antigravity_payload(payload):
         text = payload.get("last_assistant_message")
         return work_ids if isinstance(text, str) and text.rstrip().rstrip("。").endswith(_FINAL_REPORT_ENDING) else set()
     data = read_state(payload["session_id"]).get(termination_evidence.STATE_KEY, {})

@@ -18,7 +18,7 @@ function maximumWindow(windows: SessionRateLimit[]): SessionRateLimit | undefine
       maximum === undefined || window.percentUsed > maximum.percentUsed ? window : maximum, undefined);
 }
 
-// 委譲先の判定はregister.tsのsession.startが初期化する。環境変数の所有者を同じ入口に保つ。
+// 委譲先の判定はregister.tsのsession.startが初期化する。環境変数の所有者を同じ初期化処理で設定する。
 export function register(on: On, session: { delegated: boolean }): void {
   const state: Reservation = { latestTurnAt: -Infinity, generation: 0 };
 

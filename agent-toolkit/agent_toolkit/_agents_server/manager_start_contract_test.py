@@ -98,9 +98,7 @@ async def test_public_start_classifies_dependency_import_failure(
         agents_server_support.install_backend(current, engine, unavailable)
         agents_server_support.install_backend(current, next_engine, selected)
         monkeypatch.setattr(mcp_tools, "_MANAGER", current)
-        monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_REVIEW_ENGINE", f"{engine},{next_engine}")
-        monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CLAUDE_MEDIUM_TIER_MODEL", "test/medium")
-        monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CODEX_MEDIUM_TIER_MODEL", "test/medium")
+        monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_REVIEW_MODEL", f"{engine}:test/medium,{next_engine}:test/medium")
         if mismatched_runtime:
             environment = tmp_path / "recreated-venv"
             environment.mkdir()
@@ -108,10 +106,10 @@ async def test_public_start_classifies_dependency_import_failure(
             monkeypatch.setattr(sys, "prefix", str(environment))
         if engine == "codex":
             with pytest.raises(ModuleNotFoundError):
-                await mcp_tools.start(mode="delegate", cwd=str(tmp_path), prompt="処理", model_type="medium_tier")
+                await mcp_tools.start(mode="delegate", cwd=str(tmp_path), prompt="処理", model_type="review")
             assert not selected.start_calls and not current.sessions
         else:
-            response = await mcp_tools.start(mode="delegate", cwd=str(tmp_path), prompt="処理", model_type="medium_tier")
+            response = await mcp_tools.start(mode="delegate", cwd=str(tmp_path), prompt="処理", model_type="review")
             assert response["session_id"] == "codex-session"
             assert len(selected.start_calls) == 1
             assert "claude-session" not in current.sessions

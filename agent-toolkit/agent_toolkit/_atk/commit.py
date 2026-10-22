@@ -253,9 +253,9 @@ def build_parser(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--dry-run", action="store_true", help="コミットせず候補メッセージを表示する。")
     parser.add_argument(
         "--model-type",
-        default="medium_tier",
+        default="chores",
         metavar="TYPE",
-        help="モデル段位名またはengine:model[/effort]のカンマ区切り候補列。段位名はbase_engineのengine順に段位のモデルを並べる。省略時はmedium_tierを使う。",
+        help="工程別モデル種別またはengine:model[/effort]のカンマ区切り候補列。省略時はchoresを使う。",
     )
     parser.add_argument("additional_prompt", nargs="?", help="フォーマットや差分の追加指示。")
 
@@ -282,7 +282,9 @@ def dispatch(args: argparse.Namespace) -> int:
             dry_run=args.dry_run,
             additional_prompt=args.additional_prompt or "",
         )
-        candidates = config.resolve_model_candidates(args.model_type, usage="base")
+        candidates = config.resolve_model_candidates(
+            args.model_type,
+        )
     except _next_action.ActionableError as error:
         outcome.report_failure(f"commitを開始できません: {error}", next_action=error.next_action)
         return 2
@@ -325,8 +327,8 @@ def dispatch(args: argparse.Namespace) -> int:
     outcome.report_failure(
         "利用できるモデル候補がありません",
         next_action=(
-            "スキップした理由を確認し、`atk config set <engine>_<段位>_model <VALUE>`"
-            "（段位を指定しない場合は`medium_tier`、engine順は`base_engine`）で"
+            "スキップした理由を確認し、`atk config set chores_model <候補列>`"
+            "（省略時は`chores`工程）で"
             "起動できる候補を追加するか、`--model-type`に別の候補を指定して再実行する"
         ),
     )

@@ -228,7 +228,7 @@ def _check(repo: pathlib.Path, content: str) -> tuple[list[str], list[str]]:
 
 
 def _replace_action_table(content: str, rows: list[str], *, legacy: bool = False) -> str:
-    """fixtureの現行列構成に依存せず、実施内容表を指定した新旧形式へ置き換える。"""
+    """fixtureの現行列構成を前提とせず、実施内容表を指定した新旧形式へ置き換える。"""
     header = (
         f"| {' | '.join(_plan_format.PLAN_LEGACY_ACTION_TABLE_HEADER)} |\n| --- | --- | --- |"
         if legacy
@@ -728,7 +728,7 @@ def _run_plan_cli(
 ) -> tuple[int, str]:
     """計画を公開CLIへ1回渡し、終了コードと標準エラーを返す。
 
-    CLIは由来を比べるWIファイルをprivate-notesから探すため、実行環境の実物に依存しないよう
+    CLIは由来を比べるWIファイルをprivate-notesから探すため、実行環境の実物を参照しないよう
     一時のprivate-notesへ計画の人間由来行が指すWIファイルを置く。
     """
     inbox = work_dir / "private-notes" / "inbox"

@@ -64,7 +64,7 @@ def validate_filenames_only(filenames: list[str], base_dir: pathlib.Path) -> Non
 
 
 def existing_entry_filenames(private_notes: pathlib.Path) -> set[str]:
-    """5状態フォルダに実在する`.md`ファイル名の集合を返す。"""
+    """年月配置に実在する`.md`ファイル名の集合を返す。"""
     return {path.name for path in iter_entry_paths(private_notes)}
 
 
@@ -141,9 +141,9 @@ def make_filename_completer(
 ) -> Callable[..., list[str]]:
     """argcomplete用のキュー内ファイル名補完候補生成器を返す。
 
-    `states`が指す状態ディレクトリ配下の`.md`をprefix一致で列挙する。
+    `states`が指すfrontmatterの状態に一致する`.md`をprefix一致で列挙する。
     `entry_type`を指定した場合はfrontmatterの`type`が一致するものだけを返す。
-    種別を限定する場合だけ本文を読むため、限定しない場合はディレクトリ走査で完結する。
+    状態を判定するため本文を読む。種別を限定する場合は同じ本文から種別も判定する。
     """
 
     def complete(prefix: str, **_: object) -> list[str]:
@@ -163,13 +163,13 @@ def make_filename_completer(
 
 
 def max_existing_seq(private_notes: pathlib.Path, timestamp_prefix: str) -> int:
-    """同一タイムスタンププレフィックスを持つファイルの最大連番を、5状態すべてから返す。
+    """同一タイムスタンププレフィックスを持つファイルの最大連番を、年月配置全体から返す。
 
     例えば`{prefix}-001.md`と`{prefix}-003.md`が存在する場合は3を返す。
     非連続連番でも新規生成側で既存ファイルへ衝突しないよう最大値を基準にする。
-    inboxのみを走査すると、同一秒に採番したエントリが別状態へ遷移した後の再投入で
+    inboxだけを対象にすると、同一秒に採番したエントリが状態遷移した後の再投入で
     連番が再発行され、`adopted`・`rejected`等の既存エントリと同名衝突を起こすため、
-    5状態フォルダすべてを走査対象にする。
+    年月配置全体を走査対象にする。
     """
     max_seq = 0
     for p in iter_entry_paths(private_notes):

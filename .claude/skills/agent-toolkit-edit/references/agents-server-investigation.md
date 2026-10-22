@@ -4,6 +4,15 @@
 委譲先は別プロセスのCLIで内部状態を委譲元から直接観測できないため、観測手段は実装と実行環境の複数箇所へ分散する。
 共有状態ごとの保存先と読み書きの担当は`references/agents-server-shared-state.md`が扱う。
 
+## 名指し参照の読込方法
+
+本文の各参照の適用条件を保ち、選んだ資料の指定範囲を取得してから、その基準を使う具体的な判断へ進む。起動時の行の資料は起動本文とともに届く。
+
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agents-server-shared-state.md` | 判断 | `read:*/skills/agent-toolkit-edit/references/agents-server-shared-state.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:bugfix/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/bugfix/SKILL.md` |
+
 ## 観測できる記録の所在
 
 診断ログのディレクトリは`agent-toolkit/agent_toolkit/_common/state_paths.py`の`state_dir`が解決し、`atk config get state_dir`の出力と一致する。

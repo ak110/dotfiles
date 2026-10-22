@@ -2,6 +2,23 @@
 
 本書はClaude Codeから委譲するときの実装上の取り決めを定める。共通の送信・受領契約は`agent-toolkit:delegation`のSKILL.md、委譲先選定とworktreeは同スキルの`references/runtime-routing.md`「実行手段」と「実装担当とworktree」に従う。
 
+## 名指し参照の読込方法
+
+本文の各参照の適用条件を保ち、選んだ資料の指定範囲を取得してから、その基準を使う具体的な判断へ進む。起動時の行の資料は起動本文とともに届く。
+
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `runtime-routing.md#「実行手段」「実装担当とworktree」` | 判断 | `section:agent-toolkit:*/skills/delegation/references/runtime-routing.md#「実行手段」「実装担当とworktree」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `runtime-routing.md#「実行手段」` | 判断 | `section:agent-toolkit:*/skills/delegation/references/runtime-routing.md#「実行手段」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `routing.md#「会話を引き継ぐ委譲」` | 判断 | `section:agent-toolkit:*/skills/delegation/references/routing.md#「会話を引き継ぐ委譲」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../SKILL.md#「送信」` | 判断 | `section:agent-toolkit:*/skills/delegation/SKILL.md#「送信」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `waiting-and-monitoring.md#「待機区間の構成」` | 判断 | `section:agent-toolkit:*/skills/delegation/references/waiting-and-monitoring.md#「待機区間の構成」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `receiving.md#「受領手段と報告様式の選択」` | 判断 | `section:agent-toolkit:*/skills/delegation/references/receiving.md#「受領手段と報告様式の選択」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `waiting-and-monitoring.md#%E3%80%8C%60atk%20agents%20wait%60%E3%81%AE%E5%BF%9C%E7%AD%94%E3%81%AE%E6%89%B1%E3%81%84%E3%80%8D` | 判断 | `section:agent-toolkit:*/skills/delegation/references/waiting-and-monitoring.md#%E3%80%8C%60atk%20agents%20wait%60%E3%81%AE%E5%BF%9C%E7%AD%94%E3%81%AE%E6%89%B1%E3%81%84%E3%80%8D` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `wait-anomalies.md#「ホストによる背景待機の停止後」` | 判断 | `section:agent-toolkit:*/skills/delegation/references/wait-anomalies.md#「ホストによる背景待機の停止後」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `runtime-routing.md#「継続と新規起動」` | 判断 | `section:agent-toolkit:*/skills/delegation/references/runtime-routing.md#「継続と新規起動」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `waiting-and-monitoring.md#「完了通知を待ってターンを終える場合」` | 判断 | `section:agent-toolkit:*/skills/delegation/references/waiting-and-monitoring.md#「完了通知を待ってターンを終える場合」` |
+
 ## 起動パラメーター
 
 `Agent`ツールを使う条件は`references/runtime-routing.md`「実行手段」に従う。モデル、推論の深さ、背景実行と省略時の値は、起動時に公開されたスキーマと定義のfrontmatterで確定する。
@@ -28,7 +45,7 @@ toolの公開、呼び出し結果、完了通知の配送はprovider、Claude C
 | --- | --- | --- | --- |
 | 同一セッション内の親子委譲 | `Agent`の起動結果が返すagent ID | 現在のエージェントへ`SendMessage`が公開され、対象IDが同じ委譲ツリーで有効 | `### 完了通知と中継の実行順`に従う |
 | Agent Teams | team member名など機能が定める識別子 | 機能が有効で、必要なtoolの公開と呼び出しが成功する | 本文書では設定を変更せず、同一セッション内の親子委譲へ読み替えない |
-| 独立セッション間通信 | capability discoveryが返す機械可読識別子 | providerが機能を提供し、`ListAgents`と`SendMessage`の実呼び出しが成功する | 未対応providerでは依存せず、代替機構を追加しない |
+| 独立セッション間通信 | capability discoveryが返す機械可読識別子 | providerが機能を提供し、`ListAgents`と`SendMessage`の実呼び出しが成功する | 未対応providerでは利用せず、代替機構を追加しない |
 
 宛先には起動結果のagent ID、hostが明示する機械可読reply address、hostが値を提示し到達を確認できた`senderTaskId`だけを使う（`from`、`origin.from`、`name`、`subagent_type`は宛先の解決先から外す）。
 稼働中の独立セッションへの即時の依頼は、利用できる宛先列挙と通信手段で到達先を確定して送り、到達できなければ依頼元へ報告する。`atk wi process-loop instruct`は次回起動時に読む指示の保存であり、即時配送の結果とは区別する。
@@ -81,7 +98,7 @@ toolの公開、呼び出し結果、完了通知の配送はprovider、Claude C
 
 ## 稼働状態の観測と継続依頼
 
-- `ListAgents`と`TaskStop`は、自身のツール一覧に公開され呼び出しが成功する場合だけ使う
+- `ListAgents`と`TaskStop`は自身のツール一覧に公開され呼び出しが成功する場合だけ使う
 - 背景の委譲の稼働状態は`ListAgents`で観測する。進捗だけを確かめる回は、成果物パスが確定していれば`atk watch`で判定して`ListAgents`を呼ばず、停滞の判定、催促か巻き取りの要否と宛先の確定、終端の観測で呼ぶ。成果物パスも保持したプロセスも無ければ、進捗の報告を省いて完了通知を待つ。完了直後の委譲先は列挙されないことがあるため、列挙されないことは終了を支持する材料にとどめる
 - `ListAgents`か`TaskStop`が使えない場合は、起動結果の識別子を保持し、出力ファイルの末尾標識（回数上限付き）、`atk watch`、保持したプロセスの生存照会を組み合わせて判定する。更新が続く間は完了と決めつけず催促にとどめる
 - 待機の解除手段と、MCPツール呼び出しが背景へ移った場合の扱いは`references/waiting-and-monitoring.md`「待機区間の構成」、`Agent`ツールの担当の継続条件と配送不能の判定は`references/runtime-routing.md`「継続と新規起動」に従う

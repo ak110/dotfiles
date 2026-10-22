@@ -364,7 +364,7 @@ class RemoteWatcher:
                 self._fail_pending(asyncio.CancelledError("watcher cancelled"))
                 raise
             except Exception as error:  # noqa: BLE001
-                # 接続失敗・JSON解析失敗・stat不能などをまとめて拾い、ホスト単位で再接続継続する。
+                # 接続失敗・JSON解析失敗・stat不能などをまとめて捕捉し、ホスト単位で再接続継続する。
                 logger.warning("リモートwatch失敗 host=%s: %s", self.host, error)
                 await self._set_status("disconnected")
             finally:
@@ -518,7 +518,7 @@ class RemoteWatcher:
 
 
 async def _iter_stream_lines(stream: asyncio.StreamReader) -> typing.AsyncIterator[str]:
-    """transportの上限に依存せず復元した各行をUTF-8でデコードする。"""
+    """transportの上限によらず復元した各行をUTF-8でデコードする。"""
     async for chunk in stream_lines.iter_lines(stream):
         yield chunk.decode("utf-8", errors="replace")
 

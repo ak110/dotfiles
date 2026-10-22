@@ -85,7 +85,7 @@ def cmd_show(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
     `FILENAME`を2件以上指定した場合の区切りは`--all`と同じく各項目の後の空行1行とし、
     1件だけ指定した場合は従来どおり空行を付けない。
     `--type`指定時は出力対象種別（awi・uwi・all）を限定する（省略時はall）。
-    `FILENAME...`指定時は5状態フォルダすべてを探索し、指定順に表示する。
+    `FILENAME...`指定時は年月配置を探索し、指定順に表示する。
     `--type`・`--source`と明示指定の`--target-repo`の
     値で対象を限定する。`--state`・`--answered`と省略時の`--target-repo`は迂回する
     （個別ファイル指定は明示的照会のため状態・回答有無フィルタを適用しない動作であり、
@@ -94,7 +94,7 @@ def cmd_show(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
     ファイル名で一意に指定した項目を候補から外さないよう迂回する）。
     `--all`指定時のAWI・`uwi`双方の走査対象は`--state`と連動する
     （省略時の`active`はinbox・processing・hold、`processable`はinbox・processing、
-    `all`は5状態フォルダ全連結、個別状態指定はその状態のみ）。
+    `all`は全保存状態、個別状態指定はその状態のみ）。
     `--target-repo`指定時は、正規化リモートURLへ変換した値とfrontmatterの`target_repo`が
     完全一致するエントリのみを出力する。
     `--source`指定時はfrontmatterのsource一致（`!`接頭で否定、無指定エントリも対象に含む）へ限定する。
@@ -118,7 +118,7 @@ def cmd_show(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
         if missing:
             for filename in missing:
                 _outcome.report_failure(
-                    f"全状態フォルダに存在しない: {filename}",
+                    f"年月配置に存在しない: {filename}",
                     next_action="実在するファイル名を指定し直す（`atk wi list`で候補を確認できる）",
                 )
             sys.exit(2)

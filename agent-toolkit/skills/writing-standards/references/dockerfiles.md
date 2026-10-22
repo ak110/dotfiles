@@ -1,30 +1,5 @@
 # Dockerfile記述スタイル
 
-本書はDockerfileの記述スタイル基準を定める。
+<!-- read-source: agent-basics:writing-standards/references/dockerfiles.md -->
 
-## 基本
-
-- syntaxでBuildKitの安定フロントエンドを明示する
-- ベースイメージは`image:tag@sha256:...`形式でdigest pinし、RenovateやDependabotで自動更新できるよう`tag`も併記する
-- マルチステージで基盤と成果物の責務・変更頻度を分ける
-- 非rootユーザーで実行する
-
-## レイヤー設計とキャッシュ
-
-- レイヤーは変更頻度と処理の関連で分け、BuildKitのキャッシュマウントを再利用する
-- APTキャッシュでは排他共有を使い、Debian系の`/etc/apt/apt.conf.d/docker-clean`による自動削除設定を事前に除去する
-
-## サプライチェーン保護
-
-- `apt-get install`は`--no-install-recommends`を付ける
-- `dependency-management.md`「公開待機設定」をイメージ内のパッケージマネージャーでも有効にし、自リポジトリのパッケージをイメージ内で`uv tool install`等する場合は同節の対処に従う
-
-## hadolint
-
-- hadolintで静的解析し、抑制は必要な範囲に限定する
-
-## 実行時設定
-
-- `ENTRYPOINT`は配列形式（exec form）で書く
-- `HEALTHCHECK`はサーバー用途で設定し、CLIツール用途のイメージでは設定しない
-- ユーザーが設定できる項目はENVで初期値を明示する
+品質基準の正式な提供元は`agent-basics:writing-standards`の`references/dockerfiles.md`である。呼出元が指定した条件と読込範囲を、同名の正式な品質資料へ引き継ぐ。節指定がある場合は移設先の実見出しへ接続し、指定がない場合は従来の全文読込契約を保つ。

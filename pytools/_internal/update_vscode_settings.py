@@ -159,7 +159,7 @@ def _build_managed_settings(*, hostname: str | None = None, is_user_scope: bool)
         # yzane/vscode-markdown-pdf は絶対パスを正式サポートしているため絶対パスで渡す。
         # HTTPS URL 指定は PDF 出力で CSS が適用されない可能性が公式 README に示唆されており、
         # markdown.styles 側と揃えて URL 化してはならない（揃えたくなる誘惑への注意）。
-        # マシン依存のパスなので両 scope で書き込む必要がある。
+        # マシンごとに異なるパスなので両 scope で書き込む必要がある。
         share_vscode = dotfiles_root / "share" / "vscode"
         settings["markdown-pdf.styles"] = [share_vscode.joinpath("markdown-pdf.css").as_posix()]
     if is_user_scope:

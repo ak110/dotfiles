@@ -21,7 +21,7 @@ export const COMPACT_CONVERSATION_TOOL = {
 export const COMPACT_CONVERSATION_DELEGATED_DENY = "メインの会話で使うツール。";
 
 export function register(on: On): void {
-  // modはセッションごとに読み込まれる。予約中だけ状態を保持し、永続予約や解除入口は持たない。
+  // modはセッションごとに読み込まれる。予約中だけ状態を保持し、永続予約や予約解除用の呼び出し手段は持たない。
   let pending = false;
   on("tool.call", { tool: /__compact_conversation$/ }, ($, e, next) => {
     if (e.tool !== `mcp__${$.plugin.name}__${TOOL_NAME}`) return next(e);

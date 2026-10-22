@@ -19,8 +19,8 @@ import pytest
 from mcp.server.mcpserver.exceptions import ToolError
 
 import agent_toolkit.agents_server_mcp as entry_script
-from agent_toolkit._agents_server import claude as claude_backend
 from agent_toolkit._agents_server import (
+    child_environment,
     launch_requests,
     logging_config,
     mcp_tools,
@@ -31,6 +31,7 @@ from agent_toolkit._agents_server import (
     tool_descriptions,
     tool_names,
 )
+from agent_toolkit._agents_server import claude as claude_backend
 from agent_toolkit._agents_server import manager as server_manager
 from agent_toolkit._atk import config as _atk_config
 from agent_toolkit._atk import managed_temp as _managed_temp
@@ -98,6 +99,7 @@ async def test_new_request_and_handoff_preserve_required_context(
 def test_main_strips_conversation_context_before_backend_start(monkeypatch: pytest.MonkeyPatch) -> None:
     """MCP起動は全backendの継承元を整え、接続設定と引き継ぎ元snapshotを保持する。"""
     monkeypatch.setattr(launch_requests, "_HANDOFF_SESSION", None, raising=False)
+    monkeypatch.setattr(child_environment, "_INHERITED", {})
     for name in mcp_environment._NON_INHERITABLE_NAMES:
         monkeypatch.setenv(name.upper(), "parent-session")
     monkeypatch.setenv("ANTHROPIC_AUTH_TOKEN", "test-token")
@@ -109,7 +111,10 @@ def test_main_strips_conversation_context_before_backend_start(monkeypatch: pyte
     monkeypatch.setattr(claude_backend, "check_dependencies", check_dependencies)
     assert entry_script.main(["--check-dependencies"]) == 0
     assert not {name.casefold() for name in observed} & mcp_environment._NON_INHERITABLE_NAMES
-    assert observed["ANTHROPIC_AUTH_TOKEN"] == "test-token"
+    assert "ANTHROPIC_AUTH_TOKEN" not in observed
+    inherited = child_environment.inherited(observed)
+    assert inherited["ANTHROPIC_AUTH_TOKEN"] == "test-token"
+    assert not {name.casefold() for name in inherited} & mcp_environment._NON_INHERITABLE_NAMES
     assert launch_requests._HANDOFF_SESSION == ("parent-session",)
 
 
@@ -317,10 +322,10 @@ async def test_public_start_returns_label_of_started_session(
 
         responses = {
             "lane-02": await mcp_tools.start(
-                cwd, mode="delegate", prompt="対象の調査\n詳細", model_type="high_tier", label="lane-02"
+                cwd, mode="delegate", prompt="対象の調査\n詳細", model_type="execute", label="lane-02"
             ),
-            "別の調査": await mcp_tools.start(cwd, mode="delegate", prompt="別の調査\n詳細", model_type="high_tier"),
-            "空白の調査": await mcp_tools.start(cwd, mode="delegate", prompt="空白の調査", model_type="high_tier", label="   "),
+            "別の調査": await mcp_tools.start(cwd, mode="delegate", prompt="別の調査\n詳細", model_type="execute"),
+            "空白の調査": await mcp_tools.start(cwd, mode="delegate", prompt="空白の調査", model_type="execute", label="   "),
             "explore": await mcp_tools.start(cwd, mode="explore", prompt="探索"),
             "write-awi": await mcp_tools.start(cwd, mode="write", prompt="定型変更", label="write-awi"),
             "shell-git": await mcp_tools.start(
@@ -340,13 +345,13 @@ async def test_public_start_returns_label_of_started_session(
         async with _manager_with_fake("claude") as (switching, claude):
             _install_backend(switching, "codex", UnavailableStartBackend(switching.sessions, "codex"))
             monkeypatch.setattr(mcp_tools, "_MANAGER", switching)
-            switched = await mcp_tools.start(cwd, mode="delegate", prompt="切替", model_type="high_tier", label="switched")
+            switched = await mcp_tools.start(cwd, mode="delegate", prompt="切替", model_type="execute", label="switched")
             assert switched["excluded_candidates"]
             assert switched["label"] == (await switching.show_session(switched["session_id"]))["label"] == "switched"
 
             _install_backend(switching, "claude", UnavailableStartBackend(switching.sessions, "claude"))
             del claude
-            failed = await mcp_tools.start(cwd, mode="delegate", prompt="失敗", model_type="high_tier", label="all-failed")
+            failed = await mcp_tools.start(cwd, mode="delegate", prompt="失敗", model_type="execute", label="all-failed")
             assert failed["status"] == "failed"
             assert failed["label"] == (await switching.show_session(failed["session_id"]))["label"] == "all-failed"
 
@@ -366,8 +371,8 @@ async def test_send_message_returns_label_of_delivered_session(
     )
     async with _manager_with_fake("codex") as (manager, _):
         monkeypatch.setattr(mcp_tools, "_MANAGER", manager)
-        first = await manager.start("high_tier", "i568の投入", str(tmp_path), label="add-wi-568")
-        second = await manager.start("high_tier", "i569の投入", str(tmp_path), label="add-wi-569")
+        first = await manager.start("execute", "i568の投入", str(tmp_path), label="add-wi-568")
+        second = await manager.start("execute", "i569の投入", str(tmp_path), label="add-wi-569")
         first_id, second_id = first["session_id"], second["session_id"]
 
         steered = await mcp_tools.send_message(second_id, "add-wi-568への追加情報")
@@ -400,7 +405,7 @@ async def test_public_start_variants_and_send_message_return_minimal_responses(
         "engine": "codex",
         "model": "model",
         "effort": "medium",
-        "model_type": "high_tier",
+        "model_type": "execute",
         "root_session_id": "root",
         "label": "担当",
     }
@@ -426,7 +431,7 @@ async def test_public_start_variants_and_send_message_return_minimal_responses(
         "observed_identity": None,
     }
 
-    delegated = await mcp_tools.start(str(tmp_path), mode="delegate", prompt="本文", model_type="high_tier")
+    delegated = await mcp_tools.start(str(tmp_path), mode="delegate", prompt="本文", model_type="execute")
     assert pathlib.Path(delegated.pop("handoff_record_path")).is_absolute()
     assert delegated == {
         "session_id": "session",
@@ -683,7 +688,7 @@ async def test_start_response_adds_next_action_only_for_failed_start(
     )
     monkeypatch.setattr(mcp_tools, "_MANAGER", manager)
 
-    response = await mcp_tools.start(str(tmp_path), mode="delegate", prompt="調査", model_type="high_tier")
+    response = await mcp_tools.start(str(tmp_path), mode="delegate", prompt="調査", model_type="execute")
 
     if expects_next_action:
         assert "atk agents wait" in response["next_action"]
@@ -753,11 +758,11 @@ async def test_start_tools_use_task_settings_without_override(monkeypatch: pytes
         monkeypatch.setattr(mcp_tools, "_MANAGER", manager)
 
         await mcp_tools.start(str(tmp_path), mode="explore", prompt="調査")
-        await mcp_tools.start(str(tmp_path), mode="explore", prompt="調査", model_type="medium_tier")
+        await mcp_tools.start(str(tmp_path), mode="explore", prompt="調査", model_type="review")
         await mcp_tools.start(str(tmp_path), mode="shell", command="make test", summary_policy="終了状態")
         await mcp_tools.start(str(tmp_path), mode="write", prompt="起草")
 
-        assert requested == ["low_tier", "medium_tier", "low_tier", "write"]
+        assert requested == ["chores_fast", "review", "chores_fast", "write"]
 
 
 @pytest.mark.asyncio
@@ -838,10 +843,10 @@ async def test_start_routes_each_mode_to_launch_kind_model_and_label(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
 ) -> None:
     """公開境界から各modeの`launch_kind`、省略時のmodel_type、用途およびlabelがManagerへ届く。"""
-    requested: list[tuple[str, str | None]] = []
+    requested: list[str] = []
 
-    def candidates(model_type: str, *, usage: str | None = None) -> list[tuple[str, str, str]]:
-        requested.append((model_type, usage))
+    def candidates(model_type: str) -> list[tuple[str, str, str]]:
+        requested.append(model_type)
         return [("codex", "model", "high")]
 
     monkeypatch.setattr(_atk_config, "parse_unresolved_model_candidates", candidates)
@@ -853,7 +858,7 @@ async def test_start_routes_each_mode_to_launch_kind_model_and_label(
                 "subagent_md_path": str(task_document),
                 "extra_params": _observed_input_params(task_document.name, tmp_path),
             },
-            "delegate": {"mode": "delegate", "prompt": "監査\n詳細", "model_type": "high_tier"},
+            "delegate": {"mode": "delegate", "prompt": "監査\n詳細", "model_type": "execute"},
             "explore": {"mode": "explore", "prompt": "調査", "label": "explore-対象"},
             "write": {"mode": "write", "prompt": "起草"},
             "shell": {"mode": "shell", "command": "make test", "summary_policy": "終了状態"},
@@ -865,11 +870,11 @@ async def test_start_routes_each_mode_to_launch_kind_model_and_label(
             shown[mode] = await manager.show_session(response["session_id"])
 
         assert requested == [
-            (launch_requests._TASK_MODEL_TYPES[task_document.name], "execute"),
-            ("high_tier", None),
-            ("low_tier", "chores"),
-            ("write", "base"),
-            ("low_tier", "chores"),
+            launch_requests._TASK_MODEL_TYPES[task_document.name],
+            "execute",
+            "chores_fast",
+            "write",
+            "chores_fast",
         ]
         assert [call[2] for call in backend.start_calls] == ["delegate", "delegate", "explore", "write", "shell"]
         assert {mode: item["label"] for mode, item in shown.items()} == {
@@ -1027,7 +1032,8 @@ async def test_followup_preserves_required_and_updated_inputs(monkeypatch: pytes
     [
         ("exec", "実装開始", {}),
         ("exec", "実装なし", {}),
-        ("exec", "レビュー指摘の対応をせよ", {"round": "1", "レビュー指摘管理表": "@table"}),
+        ("exec", "レビュー指摘の対応をせよ", {"レビュー指摘管理表": "@table"}),
+        ("exec", "レビュー指摘の対応をせよ", {"レビュー指摘管理表": "@tables"}),
         (
             "exec",
             "統合開始",
@@ -1053,10 +1059,13 @@ async def test_declared_role_continuations_keep_required_inputs(
     params: dict[str, str],
 ) -> None:
     """各役割の継続指示は必要入力だけを配送し、書込担当一覧は起動応答の実sessionで更新する。"""
-    if params.get("レビュー指摘管理表") == "@table":
-        table = tmp_path / "review.tsv"
+    table = tmp_path / "review.tsv"
+    if params.get("レビュー指摘管理表") in ("@table", "@tables"):
         table.write_text("指摘の記録\n", encoding="utf-8")
-        params = {**params, "レビュー指摘管理表": str(table)}
+        other_table = tmp_path / "別計画の review.tsv"
+        other_table.write_text("別計画の指摘\n", encoding="utf-8")
+        value = str(table) if params["レビュー指摘管理表"] == "@table" else json.dumps([str(table), str(other_table)])
+        params = {**params, "レビュー指摘管理表": value}
     _recording_candidates(monkeypatch)
     async with _manager_with_fake("codex") as (manager, backend):
         monkeypatch.setattr(mcp_tools, "_MANAGER", manager)
@@ -1100,6 +1109,20 @@ async def test_declared_role_continuations_keep_required_inputs(
             session = manager.sessions[started["session_id"]]
             received = len(backend.prompts)
             history = session.followup_prompts
+            missing = str(tmp_path / "存在しない表.tsv")
+            for invalid_params in (
+                {**params, "レビュー指摘管理表": json.dumps([str(table), missing])},
+                {**params, "round": "1"},
+            ):
+                with pytest.raises(ToolError) as raised:
+                    await mcp_tools.mcp.call_tool(
+                        "send_message",
+                        {"session_id": started["session_id"], "instruction": instruction, "extra_params": invalid_params},
+                    )
+                assert "最小の再実行形" in str(raised.value)
+                assert missing in str(raised.value) if "round" not in invalid_params else "round" in str(raised.value)
+                assert len(backend.prompts) == received
+                assert session.followup_prompts == history
             for extra in ("検証結果: 成功", "担当別根拠を補足する"):
                 with pytest.raises(ToolError) as raised:
                     await mcp_tools.mcp.call_tool(

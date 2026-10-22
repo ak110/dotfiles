@@ -45,7 +45,7 @@ CHECK_MODULE_NAMES = (
 )
 
 # Codexでは説明言語と起動証拠を判定し、起動済みの成果作業へ終了時の点検を一度通知する。
-# 完遂・送達の意味判断はメインが担う。Claude Codeのtranscriptに依存する判定は適用しない。
+# 完遂・送達の意味判断はメインが担う。Claude Codeのtranscriptを必要とする判定は適用しない。
 CODEX_CHECK_MODULE_NAMES = ("response_language_advisor", "termination_order_advisor")
 
 # 終了要求が成立し、同じStopで継続を求めてはならない`halt`の状態。

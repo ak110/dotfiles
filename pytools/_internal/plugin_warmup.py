@@ -10,6 +10,8 @@ import time
 from collections.abc import Callable, Sequence
 from pathlib import Path
 
+from agent_toolkit._common import plugin_environment
+
 from pytools._internal import claude_common, common, install_codex_plugins, log_format, post_apply_outcome
 
 logger = logging.getLogger(__name__)
@@ -33,7 +35,7 @@ def enabled_version(installed: list[object], plugin_id: str) -> str | None:
 
 
 def codex_plugin_script(*, plugin_id: str, plugin_name: str, relative_path: Path, tag: str) -> Path | None:
-    """Codexが参照する有効版pluginキャッシュ内の入口を返す。"""
+    """Codexが参照する有効版pluginキャッシュ内の起動スクリプトのパスを返す。"""
     codex = common.resolve_executable("codex")
     if codex is None:
         logger.info(
@@ -81,7 +83,7 @@ def run(
     tag: str,
     arguments: Sequence[str] = (),
 ) -> post_apply_outcome.PostApplyOutcome:
-    """実在する入口群のuv環境を構築する。
+    """実在する起動スクリプト群のuv環境を構築する。
 
     uv環境の構築は導入に当たるため、構築できない場合は警告だけを出力してスキップと数える。
     uvのキャッシュだけへ作用し設定を変えないため、変更なしを返す。
@@ -112,7 +114,7 @@ def run(
 
 
 def existing_targets(candidates: Sequence[Path | None], *, tag: str) -> list[Path]:
-    """候補から実在する入口を重複なく列挙する。"""
+    """候補から実在する起動スクリプトのパスを重複なく列挙する。"""
     targets: list[Path] = []
     for candidate in candidates:
         if candidate is None or candidate in targets:
@@ -159,7 +161,7 @@ def claude_plugin_scripts(
     relative_path: Path,
     tag: str,
 ) -> list[Path]:
-    """Claude Codeのplugin一覧から指定した入口パスを返す。"""
+    """Claude Codeのplugin一覧から指定した起動スクリプトのパスを返す。"""
     try:
         data = json.loads(installed_plugins_path.read_text(encoding="utf-8"))
     except FileNotFoundError:
@@ -195,28 +197,23 @@ def warmup(
     tag: str,
     arguments: Sequence[str] = (),
 ) -> bool:
-    """Plugin rootのuvプロジェクトで入口を1回起動し、依存環境を構築する。構築できた場合は真を返す。"""
-    root = path.parents[1]
-    launcher = root / "scripts" / "launch.py"
-    command = (
-        [str(uv), "run", "--no-config", "--no-project", "--python", "3.15", "python", str(launcher), str(path), *arguments]
-        if launcher.is_file()
-        else [
-            str(uv),
-            "run",
-            "--project",
-            str(root),
-            "--locked",
-            "--no-default-groups",
-            str(path),
-            *arguments,
-        ]
-    )
-    return run_command(
-        command,
-        target=log_format.home_short(path),
-        tag=tag,
-    )
+    """Plugin rootのuvプロジェクトで対象スクリプトを1回起動し、依存環境を構築する。構築できた場合は真を返す。"""
+    root = next(parent.parent for parent in path.parents if parent.name == "agent_toolkit")
+    launcher = Path(plugin_environment.__file__).resolve().parents[2] / "scripts" / "launch.py"
+    bootstrap = [
+        str(uv),
+        "run",
+        "--no-config",
+        "--no-project",
+        "--python",
+        "3.15",
+        "python",
+        str(launcher),
+        "--project",
+        str(root),
+    ]
+    prepared = run_command([*bootstrap, "--prepare", str(path)], target=log_format.home_short(path), tag=tag)
+    return prepared and run_command([*bootstrap, str(path), *arguments], target=log_format.home_short(path), tag=tag)
 
 
 def run_command(cmd: Sequence[str], *, target: str, tag: str) -> bool:

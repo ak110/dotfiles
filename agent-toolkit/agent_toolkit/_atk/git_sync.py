@@ -785,11 +785,6 @@ def commit_and_push(
         return 0
     run_git(["commit", "-m", message, "--", *stage_paths], private_notes)
     if skip_push:
-        if has_remote(private_notes):
-            _next_action.report(
-                "注記: --skip-pushにより未pushのcommitをローカルへ残し、pushを省略しました。",
-                next_action="最後の操作は--skip-pushなしで実行するか、atk wi commitを実行して滞留commitをpushする",
-            )
         return 0
     return push_fn(private_notes)
 

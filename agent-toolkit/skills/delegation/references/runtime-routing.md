@@ -2,6 +2,12 @@
 
 本書は委譲先とモデルを選ぶときに、実際に利用できる実行手段の取り決めを定める。委譲先固有の作業手順は`<役割名>.subagent.md`側に置く。
 
+## 名指し参照の読込方法
+
+本文の各参照の適用条件を保ち、選んだ資料の指定範囲を取得してから、その基準を使う具体的な判断へ進む。起動時の行の資料は起動本文とともに届く。
+
+<!-- read-table-source: runtime-routing-delivery-1.md -->
+
 ## 実行手段
 
 `agents_server`の`start`のうち、`mode`が`delegate`の起動と、`mode:`を宣言しないか`delegate`を宣言した`<役割名>.subagent.md`による`task`の起動を通常起動と呼ぶ。`mode`が`explore`・`shell`・`write`の起動と、それらを宣言した`<役割名>.subagent.md`による`task`の起動を軽量起動と呼ぶ。区分は`agent_toolkit/_agents_server/launch_prompts.py`の`LIGHTWEIGHT_LAUNCH_KINDS`と一致させる。両者は読み込む設定と利用できるツールが異なるため、委譲先の判断に要るプロジェクト規範が自動で届かない起動形態では委譲プロンプトへ渡す。
@@ -10,7 +16,7 @@
 `start`へ`handoff_from`だけを指定し、前任の起動条件と記録から後任を開始する操作を引き継ぎ起動と呼ぶ。
 引き継ぎ起動は通常起動・軽量起動の区分と用途を前任から保持する。
 
-- 起動手段は、その手段が提供する終端観測手段と組で選ぶ。機能と権限が同等なら、`atk agents wait`で機械的に終端を観測できる`agents_server`を選ぶ。ホストの組み込み委譲を選んだ場合は、そのホストの委譲一覧のstatusと指定した成果物で終端を観測する
+- 起動手段はその手段が提供する終端観測手段と組で選ぶ。機能と権限が同等なら、`atk agents wait`で機械的に終端を観測できる`agents_server`を選ぶ。ホストの組み込み委譲を選んだ場合は、そのホストの委譲一覧のstatusと指定した成果物で終端を観測する
 - Claude Codeからの委譲は`agents_server`を標準とする（工程別モデル設定のeffortを渡せるため）。`Agent`ツールを使うのは次の場合に限る
   - `agents_server`のMCPツールを呼び出せない場合。切り替えた工程、本来の設定値（engine・モデル・effort）と理由を報告へ記録する
   - 専用agent定義がある作業（`agent-toolkit`は専用agent定義を配布しないため、ホスト組込とプロジェクト側の定義に限る）
@@ -27,57 +33,48 @@ forkの監査記録は`docs/development/audit-records.md`の「agent-toolkit/ski
 
 ## 工程別モデル設定
 
-次の工程では、表の用途が定めるengine順に、各engineで表の段位に設定したモデルを並べて候補とする。表の「起動直前に解決するエージェント」が指すメインは、`agent-toolkit:process-wi`のメインか`agent-toolkit:plan-mode`を起動したエージェントとする。
+各工程の`model_type`は対応する`<工程>_model`の候補列を直接参照する。表のメインは`agent-toolkit:process-wi`のメインか`agent-toolkit:plan-mode`を起動したエージェントを指す。
 
-| 対応工程（呼び出し・役割） | 用途 | 段位 | 起動直前に解決するエージェント | 起動手段 |
-| --- | --- | --- | --- | --- |
-| WIの選定とレーン分け、計画起草、設計判断を伴う実装と修正（レビュー修正、CI失敗修正、即時対応の修正のうち判断を要するもの）、変更範囲の検証、既存不良の調査、マージなしの統合、AWI投入、自動コードレビュー監査、公開工程の終端工程（`add-wi`・`copilot-review-audit`・`defect-investigation`・`lane-integration`・`session-termination`の`task`、`delegate`の`high_tier`） | base | high | 各担当を委譲するメイン | `agents_server` MCP |
-| レーンの計画・実装・変更範囲検証と同じexecによる修正（`exec`の`task`） | execute | high | 各担当を委譲するメイン | `agents_server` MCP |
-| 観点・判定基準の選定、新しい候補の案出し、走査が返した候補の判定と結論の統合（`explore`・`delegate`の`high_tier`） | base | high | 委譲するエージェント | `agents_server` MCP |
-| 計画・設計判断で変更内容と完成判定が確定した書込作業の単位（単発のコーディング、確定済みの修正、機械的な追随など。`delegate`の`medium_tier`） | review | medium | 作業を分けて委譲する担当 | `agents_server` MCP |
-| 確定済みコマンドの実行・結果観測、確定した根拠に基づく起草・追随 | 起動手段の公開契約に従う | medium以下 | 原因・設計・観点と統合を所有する上位担当 | 公開説明に合う`delegate`・`write`・`shell` |
-| 実装後の実行レビュー、ユーザビリティレビュー、専念型の投入前レビュー、再発防止セルフチェック（`exec-review`・`usability-review`・`wi-draft-review`・`recurrence-self-check`の`task`、`delegate`の`medium_tier`） | review | medium | 各担当を委譲するエージェント | `agents_server` MCP |
-| プロンプト評価（`refine-prompt`の`task`） | base | medium | 評価を委譲するエージェント | `agents_server` MCP |
-| 小規模なレビューと小さい作業、判定基準を渡した多数の対象の走査（`bulk-replace-review`・`external-write-review`・`reader-fit-review`・`pick-wi-explain`の`task`、`delegate`の`low_tier`、`explore`の省略時と`low_tier`・`medium_tier`指定、`shell`） | chores | 省略時はlow、明示時は指定した段位 | 調査、レビューまたはshellを委譲するエージェント | `agents_server` MCP |
-| `start`の`write`による文章起草（`model_type`の省略時と`write`） | - | `write_model`を直接使う | 文章を委譲するエージェント | `agents_server` MCP |
-| `start`の`write`へ段位を明示した起動 | base | 指定した段位 | 文章を委譲するエージェント | `agents_server` MCP |
-| `atk commit` | base | 省略時はmedium、明示時は指定した段位 | `atk` | `atk` |
-| `atk wi process-loop`の新しいセッション、`atk run-skill`、`model_type="orchestrate"` | orchestrate | high | process-loop、run-skillまたは委譲するエージェント | `atk`（`orchestrate`の指定は`agents_server` MCP） |
+| 対応工程・役割 | model_type | 起動直前に解決する主体 | 起動手段 |
+| --- | --- | --- | --- |
+| WI選定・レーン分け・計画・設計判断を伴う実装と修正・原因分析・観点選定・候補判定・結論の統合。`exec`・`add-wi`・`copilot-review-audit`・`defect-investigation`・`lane-integration`・`session-termination` | `execute` | 各担当を委譲するメインか工程担当 | `agents_server` |
+| 内容と完成判定が確定した単発コーディング・修正・追随、中規模走査。`refine-prompt` | `chores` | 分担を所有する担当 | `agents_server` |
+| 定型走査・軽微な作業・コマンド実行。`pick-wi-explain`、自由本文の`explore`・`shell`の省略時 | `chores_fast` | 委譲する担当 | `agents_server` |
+| 実行レビュー・ユーザビリティレビュー・投入前レビュー・再発防止セルフチェック。`exec-review`・`usability-review`・`wi-draft-review`・`recurrence-self-check` | `review` | 各レビューを委譲する担当 | `agents_server` |
+| 小規模レビュー。`bulk-replace-review`・`external-write-review`・`reader-fit-review` | `review_fast` | 各レビューを委譲する担当 | `agents_server` |
+| 最上位オーケストレーター、process-loopの新規セッション、run-skill | `orchestrate` | process-loop・run-skill・委譲する担当 | `atk`か`agents_server` |
+| 文章起草、`write`の省略時 | `write` | 委譲する担当 | `agents_server` |
+| `atk commit`の省略時 | `chores` | `atk` | `atk` |
 
-設定は`atk config`のキーで持ち、各キーは独立に変えられる。
+設定は`execute_model`・`review_model`・`review_fast_model`・`chores_model`・`chores_fast_model`・`orchestrate_model`・`write_model`の7キーで持ち、独立に変更できる。
 
-- 段位のモデル: `claude_high_tier_model`・`claude_medium_tier_model`・`claude_low_tier_model`・`codex_high_tier_model`・`codex_medium_tier_model`・`codex_low_tier_model`。値はengine接頭辞を付けない単一の`<model>[/<effort>]`で、effort省略時は`medium`とする。1個を変えると、そのengineと段位を使う工程のモデルだけが変わる
-- OpenCodeの段位モデル: `opencode_high_tier_model`・`opencode_medium_tier_model`・`opencode_low_tier_model`。初期値は空で、その段位の候補から外れる。値は`<provider>/<model>[@<effort>]`とし、最初の`/`でproviderとmodelを分け、末尾の`@`より後をvariantとして読む。model内の`/`は保持する。省略時のeffortは`medium`。全候補が空なら設定するキーを示して終了する
-- 用途のengine順: `base_engine`・`execute_engine`・`review_engine`・`chores_engine`は`codex`・`claude`・`opencode`を重複なしで並べたASCIIカンマ区切りで、先頭から試す。`orchestrate_engine`は`codex`と`claude`だけを受理する。可用性に起因する失敗で次の候補へ進み、OpenCodeのCLI不在・未設定モデル・接続と認証の失敗も可用性の失敗として扱う
-- `write_model`: 日本語文章の起草に使う候補列で、段位と用途に属さない。書式は`<engine>:<model>[/<effort>]`（`engine`は`claude`、`codex`、`agy`）のASCIIカンマ区切りで、agyは起動・turnの失敗で次の候補へ進む
-- `atk config apply-preset <プリセット名>`は用途のengine順の5キーだけを保存し、段位のモデルと`write_model`を保持する。プリセットは`codex-balanced`・`codex-near-primary`・`codex-primary`・`claude-balanced`・`claude-primary`で、balancedのexecute用途はClaude、review用途はCodexを先頭にする。near-primaryはorchestrateだけClaude優先、primary系は全用途で名前のengineを優先する。未設定時は`codex-balanced`のengine順を使う
-- `opencode-balanced`・`opencode-near-primary`もengine順だけを保存する。両方ともbase・review・choresはopencode→codex→claude、orchestrateはclaude→codex。executeはbalancedがclaude→codex、near-primaryがopencode→codex→claude。空の段位モデルがあれば、保存後にキーと設定方法を警告する。既存5プリセットと初期設定へopencodeは加えない
-- `codex`の段位モデルの`astra`、`sol`、`terra`、`luna`は起動時にCodex App Serverの`model/list`から同系列の最新の完全IDへ解決する。`write_model`の`codex:<系列名>`も同じとする。指定effortを受理しない、系列が無い、一覧取得に失敗した場合は理由を示して停止する（推測したIDや旧版への置換は禁止）。バージョン付きのCodex完全IDは固定指定として扱い、Claudeとagyの候補の受理可否は各engineへ委ねる
-- `AGENT_TOOLKIT_CONFIG_<キー名の大文字>`の環境変数が空でない間は、保存済みの設定より優先し、その値は保存しない。`atk config set`は保存先だけを更新し、参考一覧に無い値も警告付きで受理する。`atk config show`は値が参考一覧に無い場合に標準エラーへ警告を書く
-- OpenCodeの段位モデルは空の環境変数も優先し、その段位のOpenCodeを候補から外す。モデル名・variantの参考一覧は持たず、provider側の指定をそのまま渡す
-- `model_type`へは`high_tier`・`medium_tier`・`low_tier`・`orchestrate`・`write`のほか、`write_model`と同じ書式の候補列を直接渡せる（`delegate`では必須、他の`mode`では省略可）。`task`で段位を明示した場合は役割の用途を保って段位だけを変える。候補列を直接渡すとサーバーは設定を読まずその候補列を使う。起動区分は各`mode`（`task`では`<役割名>.subagent.md`の`mode:`）のままとする。恒常的な変更は`atk config set`で行う
-- OpenCodeを明示する候補は`opencode:<provider>/<model>[@<effort>]`とする。各turnは`opencode run --format json --auto`で実行し、モデルを`--model`、effortを`--variant`、継続するIDを`--session`へ渡す。共通規範・委譲先規範・ユーザー規範とplugin rootを本文へ届け、必要なスキルを同rootから読む。実行中turnへの追送は終端を待って同じIDへ送る
-- 廃止した旧キー（`high_tier_model`・`medium_tier_model`・`low_tier_model`・`orchestrate_model`）の保存値は、`atk config show`・`get`と設定からの候補解決の初回に新しいキーへ一括移行する。新しいキーで表せない旧値（agyの候補、同じengineの複数候補、同じengineと段位へ対応する異なるモデル）があると移行せずに停止し、競合した旧キー・候補と修正する新キーを示す。示された新キーを`atk config set`で保存してから再実行する。旧キーの環境変数が空でない間は設定からの起動が止まるため、新キーの環境変数へ置き換える
+- 候補列は`<claude|codex|agy>:<model>[/<effort>]`または`opencode:<provider>/<model>[@<effort>]`をASCIIカンマで区切り、先頭から試す。effortの省略時は`medium`。OpenCodeのmodel内の`/`を保持し、末尾の`@`より後をvariantとする。`orchestrate_model`はOpenCodeを受理しない
+- 可用性に起因する失敗で次の候補へ進む。OpenCodeのCLI不在・接続・認証失敗も可用性の失敗として扱う。Claudeの利用上限の待機は「代替起動」に従う
+- 初期値はexecute・orchestrateがClaude Opusを先頭、Codex solを予備とする。review・choresはCodex terraを先頭、Claude Sonnetを予備とし、review_fast・chores_fastはCodex lunaを先頭、Claude Haikuを予備とする。writeはAntigravity Gemini Flash、Claude Opusの順とする
+- `atk config apply-preset <名前>`はwriteを保ち、他の6キーを一括保存する。5プリセットは次の値とする。`codex-balanced`は初期値、`codex-near-primary`はexecuteをCodex先頭、`codex-primary`はexecuteとorchestrateをCodex先頭にする。`claude-balanced`はchoresとchores_fastもClaude先頭、`claude-primary`は全6工程をClaude先頭にする。OpenCodeは各キーへ直接指定する
+- Codexの`astra`・`sol`・`terra`・`luna`は起動時にApp Serverの`model/list`から同系列の最新の完全IDへ解決する。指定effortが使えない、系列がない、一覧取得が失敗した場合は理由を示して停止する。完全IDは固定指定として扱い、Claude・agyの候補の受理可否は各engineへ委ねる
+- `AGENT_TOOLKIT_CONFIG_<キー名の大文字>`が空でない間は保存値より優先し、その値を保存しない。setは保存先を更新し、参考一覧外のモデルとeffortを警告付きで受理する。show・getは参考一覧外の値も表示する
+- `model_type`へ7工程名か候補列を直接渡せる。delegateでは指定必須、explore・shellの省略時はchores_fast、writeの省略時はwriteを使う。taskの省略時はrole frontmatterの工程を使い、明示時は指定した工程か候補列を使う。候補列を直接指定すると保存設定を読まない。起動区分はmode（taskはroleのmode）を保持する。恒常的な変更は`atk config set`で行う
+- OpenCodeの各turnは`opencode run --format json --auto`で実行し、モデルを`--model`、effortを`--variant`、継続IDを`--session`へ渡す。共通規範・委譲先規範・ユーザー規範とplugin rootを本文へ届け、必要なスキルを同rootから読む。実行中turnへの追送は終端を待って同じIDへ送る
+- 旧段位9キーと用途別engine順5キーが保存されている場合、初回のshow・get・設定候補解決で6工程へ合成し、廃止キーを一括除去する。共存する古い工程キーより旧段位・engine順からの合成値を優先し、writeと非モデル設定を保持する。旧旧4キーから段位制への移行は撤去する。廃止キーの環境変数がある場合は、対応する工程別環境変数への置換を案内して停止する
 
 起動と確認は次のとおりとする。
 
-1. `agents_server`では`<役割名>.subagent.md`を`start`の`task`へ、自由本文と種別か候補列を`start`の`delegate`へ渡す。役割のmode・段位・用途・入力・書込は役割文書のfrontmatterが所有する。共通の`agent_toolkit/_common/task_documents.py`が読み、設定の読込と候補の選択はサーバーが行う。旧対応表は保持された旧文書の読取互換だけに使う
-2. `Agent`ツールを使う場合は、起動直前に`atk config get <用途>_engine`で先頭のengineを取得する。続けて`atk config get <engine>_<段位>_tier_model`でそのengineのモデルとeffortを取得する（文章起草は`write_model`の先頭候補を分解する）。`engine`が`claude`でなければ未完了として返すか続行できない理由を返す。分解した値は表の`対応工程`を実行する委譲先の起動にだけ渡す（定義がモデルを固定する委譲先へ`model`を渡すと遮断される）
-3. 起動応答は`session_id`と`status`を含み、候補を切り替えた場合は除外理由と採用候補も含む。終端時に`wait`の結果から`model_type`、`engine`、`model`、`effort`を確かめる。保持期限後の`show`を検収の前提にしない
-4. サーバーが候補列を使い尽くした場合は、設定外のengineへ自動で切り替えず、未完了として返すか続行できない理由を返す
+1. `agents_server`では役割文書をtask、自由本文と工程名か候補列をdelegateへ渡す。roleのmode・model_type・入力・書込はfrontmatterが所有し、`usage`は使わない。共通の`agent_toolkit/_common/task_documents.py`で読み、サーバーが候補を選択する
+2. `Agent`ツールでは起動直前に`atk config get <工程>_model`で1回取得し、先頭候補をengine・model・effortへ分解する。Claude以外のengineは実行手段を確保できなければ未完了として返すか続行できない理由を返す。値は表の工程を実行する委譲先にだけ渡し、定義がモデルを固定する委譲先へmodelを上書きしない
+3. 起動応答のsession_id・statusと、切替があれば除外理由・採用候補を受け取る。終端時のwaitでmodel_type・engine・model・effortを確認する。保持期限後のshowを検収の前提にしない
+4. 全候補を使い尽くした場合は、未完了か続行できない理由を返す
 
-WI（選定結果の`担当モデル`）が担当とモデル・effortを指定した工程では、その担当を起動する委譲元が指定値を`model_type`へ渡す。同じ起動の対象WIで指定が異なる場合は、WIと指定値を示して起動を止め、起動の単位を分ける。終端結果の実際の`engine`、`model`、`effort`を指定値と比べ、WI、指定値と実際値を計画の進捗ログか引き継ぎ記録へ残す。各工程の文書は、自身が使う担当名（`担当モデル.実装担当`など）と本段落の参照を持つ。
+WIの`担当モデル`が担当・モデル・effortを指定した工程では、委譲元が指定値をmodel_typeへ渡す。同じ起動に異なる指定があれば、WIと指定値を示して単位を分ける。終端のengine・model・effortと指定値を比べ、WI・指定・実際値を進捗ログか引き継ぎ記録へ残す。各工程は自身の担当名（`担当モデル.実装担当`など）と本段落の参照を持つ。
 
-段位は作業の部分ごとに、その性質（判断を要するか、内容が確定した実行か）から選ぶ。上位段位で動く担当は計画・設計判断・原因分析・結論の統合を自ら行い、内容の確定した書込作業を分解して`delegate`の`medium_tier`の委譲先へ任せる。自ら行う方が総費用（起動、規範の自動配送、明示読取、受領レビュー、統合と再試行）で安い場合だけ自ら行う。判定基準を言語化して渡せる多数の対象の走査（所在・値・件数の確認、基準に照らした該当候補の抽出と非該当の判定）は、極力`explore`の軽量段位（`model_type`の省略時）へ分け、対象が多い場合は重複のない対象群へ分けて並列に委ねる。観点・評価軸・判定基準の選定、新しい候補の案出し、走査が返した該当候補と判定保留の対象の判定、結論の統合は上位段位で行い、`mode`が`explore`でも`delegate`でも`model_type="high_tier"`を明示する。走査と案出しが混在する依頼は、全体を`high_tier`にせず、走査を軽量段位の`explore`へ分けてから上位段位で判定する（上位段位で全量を走査すると費用が大きいため）。軽量段位では判断材料が不足する走査には`medium_tier`を指定し、軽量段位では判定できないと分かった走査を中位以上で行うことは妨げない。`explore`で指定を省略した場合の`low_tier`と、役割の`task`の段位（役割文書のfrontmatter。レーン担当の`exec`は`high_tier`、実行レビューは`medium_tier`など）は維持する。
-上位工程に含まれる確定済みコマンドの実行・結果観測と、確定した根拠からの文章起草も中位以下へ分ける。
-原因確定、設計判断、観点の選定と返却の統合は上位担当に残し、工程表が定める役割全体の段位を保つ。
+工程は作業の部分ごとの性質から選ぶ。execute担当は計画・設計判断・原因分析・結論の統合を所有し、確定済みの書込単位はchores、定型走査・軽微な作業・コマンド実行はchores_fastへ分ける。起動・自動配送・明示読取・受領レビュー・統合・再試行を含む総費用で自身が行う方が安い場合は自身で行う。多数の走査対象は重複のない群へ分け、判定基準を渡して並列化する。観点選定・新しい候補の案出し・走査結果の判定と統合にはexecuteを明示する。走査と案出しが混在する依頼は走査を分離し、chores_fastでは材料が足りない中規模走査はchoresへ渡す。役割全体の工程指定を保持する。
 
-工程別モデル設定は表の工程に限り、他の委譲には「modelとreasoning effort」を適用する。工程別モデル設定のキーを持たない名前付きagentは、その定義のfrontmatterに従って起動する。
+工程別設定の対象外の委譲には「modelとreasoning effort」を適用し、独自の名前付きagentは自身のfrontmatterに従う。
 
 ## 継続と新規起動
 
 - レーン担当とCI修正担当は前の担当の識別子を再利用せず新規に起動する。Codexで元担当を置換する新規threadは`references/codex-runtime.md`「後続操作の共通先行条件」を適用してから起動する
-- 継続接続は、同じ担当へ同じタスクの未完了作業、指摘への対応、再レビューを返す場合だけ使う。継続直前に、現在のsessionの起動に使った`model_type`と委譲する工程の`model_type`が一致する場合だけ同じ`session_id`へ`send_message`を送る。engine、model、effortはサーバーが起動時の値を保持するため、可用性で候補が切り替わった担当や、起動後に候補列が変わった担当へも継続できる
+- 継続接続は同じ担当へ同じタスクの未完了作業、指摘への対応、再レビューを返す場合だけ使う。継続直前に、現在のsessionの起動に使った`model_type`と委譲する工程の`model_type`が一致する場合だけ同じ`session_id`へ`send_message`を送る。engine、model、effortはサーバーが起動時の値を保持するため、可用性で候補が切り替わった担当や、起動後に候補列が変わった担当へも継続できる
 - 実際の起動routeが`agents_server`なら、engineと実行ホストによらず`send_message(session_id, prompt, timeout)`を使う。サーバーが実行中turnへのsteer、終端後のreply、保持期限後の暗黙再開を選び、所有する実行主体が終了していても再開する。Claude Codeの`Agent`ツールで起動した担当だけ`SendMessage`を使う（「Agentツールの継続」）
 - `model_type`の不一致、異なる担当かタスクへの切替、中断済み、完了配送不能、前提の無効化のいずれかに当たる場合は、検収済み状態を渡して新規起動する。指摘対応ではレーン担当のsessionを継続し、継続不能の場合だけ検収済み状態とレビュー指摘の所在を渡してレビュー修正担当を新規起動する
 - 起動後の可用性失敗は「実行手段」の引き継ぎ起動で扱う。それ以外の継続不能は実際に継続手段を呼んだ結果で判定し、`agents_server`では`send_message`が`unknown session: <session_id>`を返した場合だけとする。識別子体系の相違を示すエラーと、`wait`の`session retention expired: <session_id>`は継続不能に含めない。保持識別子を失った場合は公開の一覧・個別照会で回復し、終了や失敗を推定しない
@@ -90,7 +87,7 @@ WI（選定結果の`担当モデル`）が担当とモデル・effortを指定�
 ### Agentツールの継続
 
 - 完了報告を返して停止済みの識別子でも、同じ担当へ同じタスクの未完了作業、指摘への対応、再レビューを返し、継続直前に再取得した実効`engine`・`model`・`effort`が起動時と一致する場合に限り`SendMessage`で再開してよい。継続の本文には、継続前に作成・読取したファイルも書込直前に現行本文を取得する条件を含める
-- 完了通知の配送先はproviderと構成に依存し、3階層以上での配送先は未検証である。最上位や直接の親を配送先と決めつけず、起動結果IDへの`SendMessage`の成功と、送信後に対応する完了通知を受け取れたことで継続の成立を判定し、`references/claude-code-runtime.md`「完了通知と中継の実行順」へ対応付ける。監査記録は`docs/development/audit-records.md`の「agent-toolkit/skills/delegation/references/claude-code-runtime.md：完了通知と中継の実行順：同一セッション内の再開：2026年8月」にある
+- 完了通知の配送先はproviderと構成で異なり、3階層以上での配送先は未検証である。最上位や直接の親を配送先と決めつけず、起動結果IDへの`SendMessage`の成功と、送信後に対応する完了通知を受け取れたことで継続の成立を判定し、`references/claude-code-runtime.md`「完了通知と中継の実行順」へ対応付ける。監査記録は`docs/development/audit-records.md`の「agent-toolkit/skills/delegation/references/claude-code-runtime.md：完了通知と中継の実行順：同一セッション内の再開：2026年8月」にある
 - 担当とタスクの組の相違・実効3値の不一致・完了報告の配送不能・前提の無効化・中断済みのいずれかでは、停止済みの識別子を再利用せず、必要な前提を明示的に再構成して新規起動する。参照できる記録があれば絶対パス、対象ID、未記録の差分だけを渡す
 - `SendMessage`が`No transcript found for agent ID: <識別子>`で失敗したら配送不能と判定し、同じ識別子への再開を控えて新規起動する。セッション識別子が変わった場合は、タスク出力先ディレクトリの識別子を`ls`で比べ、旧識別子配下の委譲先への失敗文面と照らす
 
@@ -135,7 +132,3 @@ WI（選定結果の`担当モデル`）が担当とモデル・effortを指定�
 - レーン担当の起動前に、上流追随済みで、staged、unstaged、non-ignored untrackedが全て空であることを確かめる。新規レビュー修正担当を起動する場合は、レーン担当の終端確認後に修正の引き継ぎ記録と現行のdirty差分を比べて渡す
 - 実行レビュー担当は実装担当の終端後に起動し、同じ最終HEADへ1ラウンド1回だけ割り当てる
 - 作業用の複製で起動する委譲先には、着手前に`git fetch`後の分岐元との差分を双方向で確かめ、分岐元が進んでいれば先に追随するよう指示する（努力目標）
-
-execute_engineが無くbase_engineを明示保存していた旧設定は、保存baseをexecuteの初期値へ一度引き継ぐ。明示executeと環境変数の優先を保ち、保存値から引継ぎ値を決める。旧base用環境指定をレーンへ使っていた場合はAGENT_TOOLKIT_CONFIG_EXECUTE_ENGINEへ分ける。reviewの保存値は保持する。
-add-wiは専念型・付随型とも役割定義のbase用途と上位段位を使う。
-orchestrate用途はprocess-loop、run-skillと最上位オーケストレーターへ適用する。

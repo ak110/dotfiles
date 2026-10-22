@@ -8,10 +8,25 @@
   },
   "plugins": [
     {
+      "name": "agent-basics",
+      "description": "コード・設計・テスト・レビュー・文章の品質基準を提供するスキル集。",
+      "version": "1.0.0",
+      "keywords": [
+        "coding-standards",
+        "design",
+        "testing",
+        "review",
+        "writing",
+        "agent-plugins"
+      ],
+      "source": "./agent-basics",
+      "category": "development"
+    },
+    {
       "name": "agent-toolkit",
       "source": "./agent-toolkit",
-      "description": "Agent Plugins、Claude Code、Codex向けの品質支援プラグイン。コードと文書を扱う作業、計画やバグ調査の指針を示し、フックで入力と操作を確かめる。",
-      "version": "2.223.0",
+      "description": "WI・委譲・承認・記録・完了報告の運用を提供するプラグイン。成果物の品質判断にはagent-basicsを使う。",
+      "version": "2.224.0",
       "category": "safety",
       "keywords": [
         "hooks",

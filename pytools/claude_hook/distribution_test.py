@@ -1,6 +1,6 @@
 """配布設定が登録する隔離実行の経路でフックが動作することを検査する。
 
-配布設定からconsole scriptのサブコマンドを抽出し、同じ入口を直接起動する。
+配布設定からconsole scriptのサブコマンドを抽出し、同じサブコマンドを直接起動する。
 """
 
 import json
@@ -84,3 +84,15 @@ class TestDistributionPath:
         )
         assert result.returncode == 0, result.stderr
         assert "Traceback" not in result.stderr
+
+
+def test_periodic_recheck_permission_checks_are_explicitly_allowed():
+    """modが許可済みを求めるツールを配布設定へそろえる。"""
+    source = (_REPO_ROOT / "agent-toolkit/hooks/periodic_recheck.ts").read_text(encoding="utf-8")
+    names = re.findall(r'\$\.tool\.check\s*\(\s*\{\s*tool:\s*"([^"]+)"', source)
+    checks = re.findall(r"\$\.tool\.check\s*\(", source)
+    assert len(names) == len(checks), "許可を要するツール名を静的に抽出できないcheckがある"
+    required = set(names)
+    assert required, "許可を要するツールの抽出結果が空"
+    settings = json.loads((_REPO_ROOT / "share/claude_settings_json_managed.json").read_text(encoding="utf-8"))
+    assert required <= set(settings["permissions"]["allow"])

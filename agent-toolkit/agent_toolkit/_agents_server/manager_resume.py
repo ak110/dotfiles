@@ -138,18 +138,33 @@ class ManagerResume(manager_registry.ManagerRegistry):
             session.terminal_child_session_ids.add(session_id)
         session.live_child_session_ids.difference_update(unobserved)
 
-        if (
-            not has_pending_auto_resume_targets(session)
-            and session.terminal_child_session_ids
+        if not has_pending_auto_resume_targets(session) and (
+            (session.terminal_child_session_ids or session.codex_terminal_subagent_thread_ids)
             and not session.auto_resume_consumed
+            or session.codex_self_message_observed
+            and not session.codex_self_message_repair_consumed
         ):
-            identifiers = sorted(session.terminal_child_session_ids)
+            identifiers = sorted(session.terminal_child_session_ids | session.codex_terminal_subagent_thread_ids)
+            repair_message = session.codex_self_message_observed and not session.codex_self_message_repair_consumed
             prompt = wrap_delivery_body(
-                "あなたが`agents_server`で起動した次のsessionは終端した。\n"
-                f"終端したsession: {', '.join(identifiers)}\n"
-                "各sessionの結果を確認し、所定の返却形式を返せ。",
+                (
+                    "あなたが起動した子は終端した。\n"
+                    f"終端したsession/thread: {', '.join(identifiers)}\n"
+                    "各子の結果を受け取り、残る工程を続けて所定の返却形式を返せ。"
+                    if identifiers
+                    else "直前のturnの返却本文を確認せよ。"
+                )
+                + (
+                    "\n`send_message`で自分宛てに送った本文は委譲元へ届いていない。"
+                    "agents_serverの委譲先の返却は最終応答の本文だけである。"
+                    "送ろうとした内容の全文を最終応答へ書いて返せ。"
+                    if repair_message
+                    else ""
+                ),
             )
             session.auto_resume_consumed = True
+            if repair_message:
+                session.codex_self_message_repair_consumed = True
             pending_result = session.pending_result
             assert pending_result is not None
             if unobserved:
@@ -158,6 +173,8 @@ class ManagerResume(manager_registry.ManagerRegistry):
                 delivery = await self._backend(session.engine).send_message(session, prompt)
                 if delivery.get("delivery") == "reply_failed":
                     session.auto_resume_consumed = False
+                    if repair_message:
+                        session.codex_self_message_repair_consumed = False
                     return
             except Exception as exc:
                 self._pending_unobserved_child_sessions.pop(session.session_id, None)
@@ -176,6 +193,7 @@ class ManagerResume(manager_registry.ManagerRegistry):
                 session.touch()
                 return
             session.terminal_child_session_ids.difference_update(identifiers)
+            session.codex_terminal_subagent_thread_ids.difference_update(identifiers)
             if self._status_writer is not None:
                 await self._status_writer.delete_result_async(session.session_id, collector="auto-resume")
             return
@@ -274,6 +292,8 @@ class ManagerResume(manager_registry.ManagerRegistry):
                     "model_provider": resume_state.codex_model_provider,
                     "subscription_provider": resume_state.codex_subscription_provider,
                 }
+            if resume_state.engine in {"claude", "codex"}:
+                provider_args["handoff_prompt"] = resume_state.prompt
             session = await backend.resume(
                 session_id,
                 prompt,

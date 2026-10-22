@@ -9,7 +9,6 @@ from agent_toolkit._common.agents_server_tools import (
     START_MODES,
     START_OPERATIONS,
     start_mode,
-    start_mode_usage,
 )
 
 __all__ = [
@@ -18,7 +17,6 @@ __all__ = [
     "START_MODES",
     "DEFAULT_START_MODE",
     "START_MODE_MODEL_TYPES",
-    "start_mode_usage",
     "LEGACY_START_MODES",
     "RECORDED_START_OPERATIONS",
     "start_mode",

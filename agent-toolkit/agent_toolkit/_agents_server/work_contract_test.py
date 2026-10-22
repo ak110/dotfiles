@@ -41,14 +41,14 @@ def test_normal_task_gets_one_record_path(
     document.write_text(f"# 担当\n\n## 入力\n\n```text\n必須入力名: {names}\n作業ツリーへの書込: あり\n```\n", encoding="utf-8")
     monkeypatch.setattr(launch_requests, "resolve_task_document_path", lambda *_args: document)
     monkeypatch.setattr(launch_requests, "_is_agent_toolkit_task_document", lambda *_args: True)
-    monkeypatch.setitem(launch_requests._TASK_MODEL_TYPES, document.name, "high_tier")
+    monkeypatch.setitem(launch_requests._TASK_MODEL_TYPES, document.name, "execute")
     handoff = tmp_path / "handoff.md"
     monkeypatch.setattr(launch_requests, "_default_handoff_path", lambda _launcher=None: handoff)
     params = {"対象": "A全体"}
     explicit = handoff_input in {"新規", "継続"}
     if explicit:
         params["引き継ぎ記録先"] = f"{handoff}（{handoff_input}）"
-    _model, _usage, prompt, kind, path = launch_requests.task_document_request(str(document), params)
+    _model, prompt, kind, path = launch_requests.task_document_request(str(document), params)
     assert kind == "delegate"
     assert path == (None if explicit else handoff)
     designation = handoff_input if explicit else "新規"
@@ -74,7 +74,7 @@ async def test_delegate_preserves_original_and_returns_same_record(
     )
     monkeypatch.setattr(mcp_tools, "_MANAGER", manager)
     original = "Aを変更する。\n追加指示の後もA全体を検収する。"
-    response = await mcp_tools.start(str(tmp_path), mode="delegate", prompt=original, model_type="high_tier")
+    response = await mcp_tools.start(str(tmp_path), mode="delegate", prompt=original, model_type="execute")
     delivered = manager.start.await_args.args[1]
     assert delivered.startswith(original + "\n\n")
     assert f"引き継ぎ記録先: {path}（新規）" in delivered
@@ -126,10 +126,10 @@ def test_lightweight_task_does_not_deliver_contract_materials(
     )
     monkeypatch.setattr(launch_requests, "resolve_task_document_path", lambda *_args: document)
     monkeypatch.setattr(launch_requests, "_is_agent_toolkit_task_document", lambda *_args: True)
-    monkeypatch.setitem(launch_requests._TASK_MODEL_TYPES, document.name, "high_tier")
+    monkeypatch.setitem(launch_requests._TASK_MODEL_TYPES, document.name, "execute")
     monkeypatch.setattr(launch_requests, "_HANDOFF_SESSION", ("whole-session",))
     monkeypatch.setattr(launch_requests._managed_temp, "find_session_temp", lambda *_args, **_kwargs: tmp_path)
-    _model, _usage, prompt, actual_kind, path = launch_requests.task_document_request(str(document), {"対象": "調査"})
+    _model, prompt, actual_kind, path = launch_requests.task_document_request(str(document), {"対象": "調査"})
     assert actual_kind == kind
     assert path is None
     assert "引き継ぎ記録先:" not in prompt
@@ -167,7 +167,7 @@ async def test_whole_contract_path_rejected_outside_normal_start(
         )
         monkeypatch.setattr(launch_requests, "resolve_task_document_path", lambda *_args: document)
         monkeypatch.setattr(launch_requests, "_is_agent_toolkit_task_document", lambda *_args: True)
-        monkeypatch.setitem(launch_requests._TASK_MODEL_TYPES, document.name, "high_tier")
+        monkeypatch.setitem(launch_requests._TASK_MODEL_TYPES, document.name, "execute")
         inputs |= {"cwd": str(tmp_path), "subagent_md_path": str(document), "extra_params": {"対象": "調査"}}
     elif target == "shell":
         inputs |= {"cwd": str(tmp_path), "mode": "shell", "command": "pwd", "summary_policy": "終了状態"}

@@ -94,7 +94,7 @@ class TestPs1DirectivesBlock:
         """chezmoi テンプレートで使われる先頭 BOM は除去してから判定する。"""
         content = "\ufeff" + self._OK_HEADER + "{{ .chezmoi.homeDir }}\r\n"
         result = _run({"tool_name": "Edit", "tool_input": {"file_path": "a.ps1.tmpl", "old_string": "x", "new_string": "y"}})
-        # Edit/MultiEdit は対象外なので無条件に通る
+        # Edit/MultiEdit は対象外なので無条件に許可される
         assert result.returncode == 0
         result = _run({"tool_name": "Write", "tool_input": {"file_path": "a.ps1.tmpl", "content": content}})
         assert result.returncode == 0

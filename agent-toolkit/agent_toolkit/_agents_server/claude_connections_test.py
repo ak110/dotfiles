@@ -4,6 +4,7 @@ import asyncio
 import contextlib
 import json
 import logging
+import os
 import pathlib
 from types import SimpleNamespace
 from typing import Any
@@ -12,7 +13,7 @@ from unittest.mock import AsyncMock
 import claude_agent_sdk
 import pytest
 
-from agent_toolkit._agents_server import claude, mcp_tools, responses, resume_waits, state
+from agent_toolkit._agents_server import child_environment, claude, mcp_tools, responses, resume_waits, state
 from agent_toolkit._agents_server import manager as server_manager
 from agent_toolkit._atk import claude_connection, config
 from agent_toolkit._common.claude_usage_limit import UsageLimitState
@@ -62,11 +63,12 @@ async def test_public_wi_owner_prefers_subscription_with_both_authentications(
     path.write_text(f"ANTHROPIC_API_KEY={secret}\nCUSTOM_CONNECTION={secret}\n", encoding="utf-8")
     monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CLAUDE_API_ENV_FILE", str(path))
     monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CLAUDE_API_MODE", "pay-as-you-go")
-    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_BASE_ENGINE", "claude")
-    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_ORCHESTRATE_ENGINE", "codex")
-    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CLAUDE_HIGH_TIER_MODEL", "opus/high")
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_EXECUTE_MODEL", "claude:opus/high")
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_ORCHESTRATE_MODEL", "codex:gpt-6-sol/medium")
     monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", "test-oauth-value-not-for-logs")
     monkeypatch.setenv("ANTHROPIC_API_KEY", secret)
+    monkeypatch.setattr(child_environment, "_INHERITED", {})
+    child_environment.prepare(os.environ)
     options: list[Any] = []
 
     def factory(value: Any) -> QueueClaudeClient:
@@ -91,11 +93,12 @@ async def test_public_wi_owner_prefers_subscription_with_both_authentications(
                 "claude",
                 "opus",
                 "high",
-                "high_tier",
+                "execute",
             )
             assert session.claude_connection == "subscription"
     assert len(options) == 1
-    assert options[0].env["ANTHROPIC_API_KEY"] == options[0].env["CUSTOM_CONNECTION"] == ""
+    assert "ANTHROPIC_API_KEY" not in options[0].env
+    assert "CUSTOM_CONNECTION" not in options[0].env
     assert "claude_connection_attempt connection=subscription role=delegate resumed=false" in caplog.text
     assert "claude_connection_selected session_id=wi-owner connection=subscription" in caplog.text
     assert secret not in caplog.text
@@ -279,6 +282,7 @@ async def test_subscription_sdk_and_settings_isolate_custom_api_keys_on_resume(
         "CUSTOM_CONNECTION=api-only\nAWS_PROFILE=api-profile\nANTHROPIC_DEFAULT_SONNET_MODEL=api-model\n", encoding="utf-8"
     )
     connection = claude_connection.Connection("subscription", isolation_env_file=str(path))
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CLAUDE_API_ENV_FILE", str(path))
     monkeypatch.setattr(claude_connection, "candidates", lambda *_args, **_kwargs: claude_connection.Candidates((connection,)))
     keys = ("CUSTOM_CONNECTION", "AWS_PROFILE", "ANTHROPIC_DEFAULT_SONNET_MODEL")
     for key in keys:
@@ -290,6 +294,8 @@ async def test_subscription_sdk_and_settings_isolate_custom_api_keys_on_resume(
     monkeypatch.setattr(
         claude, "_parent_settings", lambda: json.dumps({"env": {**dict.fromkeys(keys, "parent-settings"), "UNRELATED": "kept"}})
     )
+    monkeypatch.setattr(child_environment, "_INHERITED", {})
+    child_environment.prepare(os.environ)
     options: list[Any] = []
 
     def factory(value: Any) -> QueueClaudeClient:
@@ -309,7 +315,8 @@ async def test_subscription_sdk_and_settings_isolate_custom_api_keys_on_resume(
         for value in options:
             settings = json.loads(value.settings)
             for key in keys:
-                assert settings["env"][key] == ""
-                assert value.env[key] == ""
+                assert key not in settings["env"]
+                assert key not in value.env
+                assert key not in {**os.environ, **value.env, **settings["env"]}
             assert settings["env"]["UNRELATED"] == "kept"
-            assert "CLAUDE_CODE_OAUTH_TOKEN" not in value.env
+            assert value.env["CLAUDE_CODE_OAUTH_TOKEN"] == "oauth"

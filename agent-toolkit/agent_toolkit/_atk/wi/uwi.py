@@ -58,7 +58,7 @@ def _looks_like_question(message: str) -> bool:
 
 
 def _detect_self_containment_deficiency(message: str) -> str | None:
-    """メッセージ本文が文脈の無い一時識別子に依存するかを判定する。
+    """メッセージ本文が文脈の無い一時識別子だけで対象を指しているかを判定する。
 
     一時識別子（`fb12345`・`Q12`等）を検出し、識別子の前後30文字以内に文脈語（「〜のため」
     「〜という」「〜について」「背景」「経緯」「対象」「実装」「反映」「採否」「判定」等）が
@@ -215,7 +215,7 @@ def answer_uwi(
 ) -> bool:
     """平引数でUWI回答欄を更新する。対象はinbox・processing・holdのUWIに限る。
 
-    呼び出し元に依存せず、共有の実装で受け取る際に空回答を拒否する。
+    呼び出し元を問わず、共有の実装で受け取る際に空回答を拒否する。
     """
     if not answer.strip():
         raise WebInputError("回答本文が空です", next_action="回答を記入して再実行する")

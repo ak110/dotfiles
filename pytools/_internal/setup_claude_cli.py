@@ -5,6 +5,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+from agent_toolkit._common import dotfiles_mode
+
 # 他の処理で使わない依存は、使用時まで読み込まない。
 lazy import httpx
 
@@ -22,6 +24,8 @@ def run(client: httpx.Client | None = None) -> post_apply_outcome.PostApplyOutco
 
     取得・導入・更新と確認の失敗は警告を出力してスキップと数え、旧npm版の撤去の失敗は失敗と数える。
     """
+    if dotfiles_mode.is_minimal():
+        return post_apply_outcome.PostApplyOutcome()
     launcher = Path.home() / ".local" / "bin" / ("claude.exe" if sys.platform == "win32" else "claude")
     if setup_cli_common.is_windows_cli_running("claude", _PACKAGE, [launcher]):
         logger.info(

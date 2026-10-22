@@ -2,6 +2,17 @@
 
 本書は`.claude/skills/dotfiles-development/SKILL.md`の読込表から読む参照資料であり、変更範囲の検証で本リポジトリが使う値、push前に実行するチェックとCIだけが実行するチェック、`agent-doc-tone`の対処を持つ。
 
+## 名指し参照の読込方法
+
+本文の各参照の適用条件を保ち、選んだ資料の指定範囲を取得してから、その基準を使う具体的な判断へ進む。起動時の行の資料は起動本文とともに届く。
+
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:check-execution/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/check-execution/SKILL.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../SKILL.md#「テスト配置」` | 判断 | `section:*/skills/dotfiles-development/SKILL.md#「テスト配置」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:commit/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/commit/SKILL.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:writing-standards/SKILL.md` | 判断 | `read:agent-basics:*/skills/writing-standards/SKILL.md` |
+
 ## 変更範囲の検証の値
 
 変更範囲の検証の対象は`agent-toolkit:check-execution`の類型で選ぶ。本リポジトリでの値は次のとおり。
@@ -55,7 +66,7 @@
 - `make test`とcommit時のpre-commit（ステージした対象ファイル）が`agent-doc-tone`を実行する。単独では`uv run --frozen pyfltr run --commands=agent-doc-tone`で起動する
 - 対象はエージェントが実行時に読むMarkdown（`AGENTS.md`・`agent-toolkit/`のrules・skills・share・`.chezmoi-source/dot_claude/`・`.claude/skills/`）である。`agent-toolkit/`ではコードのコメント・docstring・表示文・注入文も語の判定の対象とする
 - 文体の密度が閾値を超えたファイルを指標付きで報告する（指標と閾値は`scripts/check_agent_doc_tone.py`のdocstring）。同スクリプトの`_DENIED_PATTERNS`が持つ既存の検出条件へ説明文が一致すると、ファイルと行を示して非0で終える（pre-commitはcommitを止める）
-- 文脈で対象と動作が伝わりにくい語（同スクリプトの`_CAUTION_PATTERNS`）は警告だけで終了コード0とする。文脈で伝わるかを確かめる補助であり、正確な専門語や承認済みの呼称はそのまま保つ。自作の正しい例と説明は通常の検査へ渡し、引用の原文、検出用データと保存形式の名称は役割を区別して保持する
+- 文脈で対象と動作が伝わりにくい語（同スクリプトの`_CAUTION_PATTERNS`）は警告だけで終了コード0とする。文脈で伝わるかを確かめる補助であり、正確な専門語や承認済みの呼称はそのまま保つ。自作の正しい例と説明は通常のチェックへ渡し、引用の原文、検出用データと保存形式の名称は役割を区別して保持する
 - 密度超過では、1行目の診断が超過した指標ごとの比率、件数と上限以下へ戻すのに必要な最少の書き換え件数を示す
 - 後続の診断は、本文で数えた否定形で終わる文と「当該」の出現を物理行と抜粋付きで全件列挙する。引用内の段落も本文として数え、コードと検出データは密度の分子と分母の対象外とする。否定形終端率は文数、「当該」の出現率は出現回数を数えるため、同じ文に複数回出た語は出現ごとに書き換える
-- 列挙された本文の位置から必要な件数の要素を選び、否定形の宣言は肯定形へ、法令調の指示語は指す対象が分かる文へ書き直す。語の再使用は`agent-toolkit:writing-standards`のtextlint指摘の修正方針に従い文全体を書き直す
+- 列挙された本文の位置から必要な件数の要素を選び、否定形の宣言は肯定形へ、法令調の指示語は指す対象が分かる文へ書き直す。語の再使用は`agent-basics:writing-standards`のtextlint指摘の修正方針に従い文全体を書き直す

@@ -141,8 +141,7 @@ def resolve_specs(*, rerun_action: str) -> list[tuple[str, str, str]]:
         _next_action.report(
             f"orchestrateのCodexモデル解決に失敗しました（候補: {_format_candidates(candidates)}）。{error}",
             next_action=(
-                "`codex`へのログインを確認するか、`atk config set codex_high_tier_model <モデル>`または"
-                f"`atk config set orchestrate_engine <engine順>`で候補を変えてから{rerun_action}"
+                f"`codex`へのログインを確認するか、`atk config set orchestrate_model <候補列>`で候補を変えてから{rerun_action}"
             ),
         )
         sys.exit(2)
@@ -193,19 +192,27 @@ def is_normal_session_exit(orchestrator: str, returncode: int, *, platform: str 
     """オーケストレーターとOS別の正常終了コードを判定する。"""
     if orchestrator == "claude":
         return returncode in _CLAUDE_NORMAL_EXIT_CODES
+    if orchestrator == "agy":
+        return returncode == 0
     if platform == "nt":
         return returncode in _CODEX_NORMAL_EXIT_CODES_WINDOWS
     return returncode in _CODEX_NORMAL_EXIT_CODES_POSIX
 
 
 def _probe_model(orchestrator: str) -> str:
-    """候補のengineの軽量段位のモデルを返す。Codexの系列名は同系列の最新版へ解決し、Claudeの別名はそのまま渡す。"""
-    model = _config.resolve_mutable_setting(_config.tier_model_key(orchestrator, "low")).partition("/")[0]
+    """軽量工程の同engine候補を可用性確認に使い、候補が無いengineは組込みモデルを使う。"""
+    for key in ("chores_fast_model", "review_fast_model"):
+        for engine, model, _effort in _config.parse_stage_model_candidates(_config.resolve_mutable_setting(key)):
+            if engine == orchestrator:
+                return _config.resolve_catalog([(engine, model, _PROBE_EFFORT)])[0][1]
+    model = {"claude": "haiku", "codex": "luna", "agy": "gemini-3.8-flash"}.get(orchestrator)
+    if model is None:
+        raise ValueError(f"軽量可用性プローブに対応しないengine: {orchestrator}")
     return _config.resolve_catalog([(orchestrator, model, _PROBE_EFFORT)])[0][1]
 
 
 def _probe_argv(orchestrator: str, model: str, prompt: str) -> list[str]:
-    """軽量段位のモデルとeffort `low`で軽量起動する、副作用のない可用性判定用argvを返す。
+    """軽量工程のモデルとeffort `low`で軽量起動する、副作用のない可用性判定用argvを返す。
 
     Claudeはセッションを保存せず、ユーザーとプロジェクトの設定・ツール・MCP・スキルを読まず、最小のシステムプロンプトで起動する。
     `--bare`はOAuth認証を読まないため使わない。
@@ -235,6 +242,21 @@ def _probe_argv(orchestrator: str, model: str, prompt: str) -> list[str]:
             _PROBE_SYSTEM_PROMPT,
             "--",
             prompt,
+        ]
+    if orchestrator == "agy":
+        return [
+            "agy",
+            "-p",
+            prompt,
+            "--model",
+            model,
+            "--effort",
+            _PROBE_EFFORT,
+            "--mode",
+            "plan",
+            "--disable-slash-commands",
+            "--output-format",
+            "stream-json",
         ]
     return [
         "codex",
@@ -266,6 +288,8 @@ def _probe_usage_limit(
     if orchestrator == "codex":
         thread_id = _codex_usage_limit.thread_id_from_stream_lines((result.stdout or "").splitlines())
         return _codex_usage_limit.from_thread(thread_id, codex_home=_host_homes.codex_home(env))
+    if orchestrator != "claude":
+        return None
     usage_limit = _claude_usage_limit.from_stream_lines((result.stdout or "").splitlines())
     return usage_limit if usage_limit is not None and usage_limit.is_wait_target else None
 
@@ -328,6 +352,8 @@ def _probe_candidate_owned(
                 None,
                 force_file=bool(probe_env.get("ANTHROPIC_API_KEY") or probe_env.get("ANTHROPIC_AUTH_TOKEN")),
                 isolate_auth=connection.kind != "inherit",
+                isolation_keys=_connection.isolation_keys(connection),
+                cwd=cwd,
             )
             if isinstance(settings, _claude_settings.SettingsFile):
                 settings_owner.enter_context(settings)
@@ -349,7 +375,7 @@ def _probe_candidate_owned(
             context,
             f"モデル候補の可用性判定に失敗しました（engineを起動できません: {error}）: {candidate}",
             "次の候補を試す。全候補が失敗した場合は`atk config set orchestrate_engine <engine順>`か"
-            "`atk config set <engine>_high_tier_model <モデル>`で候補を変える",
+            "`atk config set <engine>_execute_model <モデル>`で候補を変える",
         )
         return None, (orchestrator, 1, f"engineを起動できません: {error}")
     _console_title.set_console_title(context.title)
@@ -368,6 +394,6 @@ def _probe_candidate_owned(
         context,
         f"モデル候補の可用性判定に失敗しました（{reason}）: {candidate}",
         "次の候補を試す。全候補が失敗した場合は`atk config set orchestrate_engine <engine順>`か"
-        "`atk config set <engine>_high_tier_model <モデル>`で候補を変える",
+        "`atk config set <engine>_execute_model <モデル>`で候補を変える",
     )
     return None, (orchestrator, failure_code, reason)

@@ -1202,7 +1202,7 @@ class TestManagedTempWindows:
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
     ) -> None:
-        """多階層のJunctionを深い順に解除し、列挙順へ依存しない。"""
+        """多階層のJunctionを深い順に解除し、列挙順によらず解除できる。"""
         monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
         target = subject.create_managed_temp("windows-nested-junctions")
         first_destination = target.parent / "z-destination"

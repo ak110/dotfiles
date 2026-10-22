@@ -2,6 +2,26 @@
 
 本書は`agent-toolkit:delegation`「送信」の細則として、委譲プロンプトの構成、起動時の確認、権限と成果物の取り決め、未検証情報の扱いおよび判断材料の渡し方を定める。
 
+## 名指し参照の読込方法
+
+本文の各参照の適用条件を保ち、選んだ資料の指定範囲を取得してから、その基準を使う具体的な判断へ進む。起動時の行の資料は起動本文とともに届く。
+
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../SKILL.md#「送信」` | 判断 | `section:agent-toolkit:*/skills/delegation/SKILL.md#「送信」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../writing-standards/references/writing.md#「文章の共通規定」` | 判断 | `section:agent-toolkit:*/skills/writing-standards/references/writing.md#「文章の共通規定」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../SKILL.md#%E3%80%8C%60%3C%E5%BD%B9%E5%89%B2%E5%90%8D%3E.parent.md%60%E3%82%92%E6%8C%81%E3%81%A4%E5%A7%94%E8%AD%B2%E3%81%AE%E8%B5%B7%E5%8B%95%E3%80%8D` | 判断 | `section:agent-toolkit:*/skills/delegation/SKILL.md#%E3%80%8C%60%3C%E5%BD%B9%E5%89%B2%E5%90%8D%3E.parent.md%60%E3%82%92%E6%8C%81%E3%81%A4%E5%A7%94%E8%AD%B2%E3%81%AE%E8%B5%B7%E5%8B%95%E3%80%8D` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `base-contract.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/base-contract.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../writing-standards/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/writing-standards/SKILL.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:writing-standards/references/investigation.md#「根拠と主張の一致」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/investigation.md#「根拠と主張の一致」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../review-standards/references/reviewee.md` | 判断 | `read:agent-toolkit:*/skills/review-standards/references/reviewee.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../user-confirmation-and-report/SKILL.md#「確認要否の判定」` | 判断 | `section:agent-toolkit:*/skills/user-confirmation-and-report/SKILL.md#「確認要否の判定」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../writing-standards/references/sub-agents.md#「agents_serverのfrontmatter」「起動対象と入力の案内」` | 判断 | `section:agent-toolkit:*/skills/writing-standards/references/sub-agents.md#「agents_serverのfrontmatter」「起動対象と入力の案内」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `waiting-and-monitoring.md#「待機区間の構成」` | 判断 | `section:agent-toolkit:*/skills/delegation/references/waiting-and-monitoring.md#「待機区間の構成」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../review-standards/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/review-standards/SKILL.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../writing-standards/references/investigation.md` | 判断 | `read:agent-toolkit:*/skills/writing-standards/references/investigation.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../managed-temp/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/managed-temp/SKILL.md` |
+
 ## 委譲プロンプトの構成
 
 分量の判定は`agent-toolkit:writing-standards`の`references/writing.md`「文章の共通規定」に従う。
@@ -31,7 +51,7 @@
 - 列挙する値: `<役割名>.subagent.md`を指定する起動では、その文書が宣言した入力だけを列挙する。それ以外は`references/base-contract.md`の入力の適格性で選ぶ。汎用委譲では`通常完了の報告様式`を必須入力へ含める。新しい項目が必要になった場合は役割文書のfrontmatterと本文の入力契約へ加え、委譲プロンプトには項目名と値だけを置く
 - 省く値: `start`の`cwd`、その`cwd`からGitで解決できる値、`<役割名>.subagent.md`が定める権限と入力、他の値から一意に導出できる値、呼び出し側CLIが内部で導出する派生パス、`<役割名>.subagent.md`が定める省略時の値と一致する行
 - 値へ書かない内容: 宣言済みの欄の値はパス、識別子、実行時に確定した事実に限る（結論の文章を運ぶ欄は`<役割名>.parent.md`が値の種類を定める）。委譲先の文書と規範が定める手順、権限、検証方法、返却形式、および背景説明、経緯、判定に至る過程、委譲元の推測は値の外へ置く。委譲先の独立した判断を先回りして狭めないためである
-- 未検証の値: 自ら裏付けていない値には「未検証情報の取り扱い」の`未検証`を付し、着手前の裏取りを求める。他の主体の報告・記録・出力から得た値は、`agent-toolkit:writing-standards`の`references/investigation.md`「根拠と主張の一致」の出所へ帰属させる主張に従い、出所が明示しない部分を補った値を自ら裏付けていない値として扱う
+- 未検証の値: 自ら裏付けていない値には「未検証情報の取り扱い」の`未検証`を付し、着手前の裏取りを求める。他の主体の報告・記録・出力から得た値は、`agent-toolkit:writing-standards`の`agent-basics:writing-standards/references/investigation.md`「根拠と主張の一致」の出所へ帰属させる主張に従う。出所が明示しない部分を補った値を自ら裏付けていない値として扱う
 - 完了条件・既知の事実・報告様式: `<役割名>.subagent.md`、agent定義、基準となる記録のいずれかが持つものはその記録を参照させ、持たないものだけを書く
 
 基準となる記録で内容が一意に定まる場合は、絶対パスと対象IDだけを置き、手順、品質規範、過去応答、合意事項、調査済み事実、完了条件は転記せず記録を参照させる。複数の委譲先が使う共通資料に基準となる記録が無い場合は、反復と読取負担を比べて有効ならmanaged-tempへ1回保存し、各委譲プロンプトへ絶対パスを渡す（努力目標）。記録が無い情報は委譲プロンプト内で完結させ、対象を本文だけで一意に特定できるように書く。
@@ -49,12 +69,12 @@
 
 ## 起動と観測
 
-役割のfrontmatterと呼び元の`起動対象:`の書式は、`agent-toolkit:writing-standards`の`references/sub-agents.md`「agents_serverのfrontmatter」「起動対象と入力の案内」に従う。
-`start`は共通パーサーから入力と起動設定を読み、必須欠落・宣言外入力・不正な新形式を起動前に診断する。旧宣言行の読取と既存sessionの継続は互換経路で保つ。宣言を確認できない旧文書では従来の警告を返し、モデル段位と用途の旧対応が無い役割は起動しない。
-PreToolUseフックは役割の実行命令を持つ初回起動を、サーバーと同じ宣言で検査する。
-`send_message`は構造化・自由本文の双方をサーバーで配送前に検査する。
+役割のfrontmatterと呼び元の`起動対象:`の書式は`agent-toolkit:writing-standards`の`references/sub-agents.md`「agents_serverのfrontmatter」「起動対象と入力の案内」に従う。
+`start`は共通パーサーから入力と起動設定を読み、必須欠落・宣言外入力・不正な新形式を起動前に診断する。旧宣言行の読取と既存sessionの継続は互換処理で保つ。宣言を確認できない旧文書では従来の警告を返し、モデル工程別model_typeの旧対応が無い役割は起動しない。
+PreToolUseフックは役割の実行命令を持つ初回起動を、サーバーと同じ宣言でチェックする。
+`send_message`は構造化・自由本文の双方をサーバーで配送前にチェックする。
 宣言外の説明、必須欠落、保持済みの初回入力の再掲は、違反箇所と再実行形を確認して直す。
-自由本文の新要求の意味上の必要性は送信側が判断し、機械検査は宣言・定型指示・既存履歴から確定できる範囲へ限る。
+自由本文の新要求の意味上の必要性は送信側が判断し、機械チェックは宣言・定型指示・既存履歴から確定できる範囲へ限る。
 
 - `agents_server`の各ツールの引数、省略時の値、応答項目は起動直前にMCPツールのスキーマで確かめる。返された`session_id`と`send_message`で指示したsessionの観測と破棄の義務はMCP instructionsに従い、観測は`atk agents wait`で行う。`send_message`は配送結果だけを確定し、応答生成の完了を待たない
 - 観測が`running`を返した場合と、観測がバックグラウンドタスクへ移された場合は、いずれも観測を試みたものとして扱い、ターンを終えるかは`references/waiting-and-monitoring.md`「待機区間の構成」に従う
@@ -74,7 +94,7 @@ PreToolUseフックは役割の実行命令を持つ初回起動を、サーバ�
 
 ## 未検証情報の取り扱い
 
-`未検証`は自ら裏付けを取っていない具体値・挙動・制約に付すラベルとする。付す対象の範囲は`agent-toolkit:writing-standards`の`references/investigation.md`「根拠と主張の一致」の出所へ帰属させる主張の定義に従い、本節は委譲での扱いを定める。
+`未検証`は自ら裏付けを取っていない具体値・挙動・制約に付すラベルとする。付す対象の範囲は`agent-toolkit:writing-standards`の`agent-basics:writing-standards/references/investigation.md`「根拠と主張の一致」の出所へ帰属させる主張の定義に従い、本節は委譲での扱いを定める。
 
 - 委譲先が着手時に読む成果物（委譲プロンプト・計画ファイルなど）へ、自ら確認していない具体値や既存実装の挙動・制約を書く場合は`未検証`と明記し、着手前の裏取りを指示する。位置は行番号でなく見出しや識別子で示す（努力目標）
 - 委譲した調査の報告を受ける前に原因をユーザーへ伝える場合は、推定と明記する

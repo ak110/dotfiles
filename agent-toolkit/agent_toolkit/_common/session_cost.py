@@ -8,6 +8,7 @@ import math
 from typing import Any
 
 from agent_toolkit._common import model_pricing
+from agent_toolkit._common.agy_records import usage_tokens
 
 
 def _number(value: Any) -> int:
@@ -149,24 +150,18 @@ def _other_usages(entries: list[dict[str, Any]], engine: str) -> list[tuple[int,
     """単価を持たないengineも、応答数と既知のトークンを不明分へ残す。"""
     samples: list[tuple[int, dict[str, Any], str | None, dict[str, Any]]] = []
     for line, entry in enumerate(entries):
-        body = entry.get("step_update") if engine == "agy" else entry.get("part")
+        if engine == "agy":
+            usage = usage_tokens(entry)
+            if usage is not None:
+                original = entry.get("_agy_original", entry)
+                body = original.get("step_update", original)
+                model = body.get("model")
+                samples.append((line, entry, model if isinstance(model, str) else None, usage))
+            continue
+        body = entry.get("part")
         if not isinstance(body, dict):
             continue
-        if engine == "agy" and body.get("step_type") == "agent_response" and isinstance(body.get("usage"), dict):
-            usage = body["usage"]
-            samples.append(
-                (
-                    line,
-                    entry,
-                    None,
-                    {
-                        "input_tokens": _number(usage.get("input_tokens")),
-                        "output_tokens": _number(usage.get("output_tokens")),
-                        "cache_read_input_tokens": _number(usage.get("cache_read_tokens")),
-                    },
-                )
-            )
-        elif engine == "opencode" and entry.get("type") == "step_finish" and isinstance(body.get("tokens"), dict):
+        if engine == "opencode" and entry.get("type") == "step_finish" and isinstance(body.get("tokens"), dict):
             usage = body["tokens"]
             cache = usage.get("cache")
             cache = cache if isinstance(cache, dict) else {}

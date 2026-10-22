@@ -59,7 +59,7 @@ async def test_repository_orchestrator_follows_mode(
     monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", "test-subscription")
     monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CLAUDE_API_ENV_FILE", str(path))
     monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CLAUDE_API_MODE", mode)
-    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_ORCHESTRATE_ENGINE", "claude")
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_ORCHESTRATE_MODEL", "claude:sonnet/high")
     options_seen: list[Any] = []
 
     def factory(options: Any) -> FakeClaudeClient:

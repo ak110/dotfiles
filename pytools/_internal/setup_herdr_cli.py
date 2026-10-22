@@ -8,6 +8,8 @@ import sys
 import tempfile
 from pathlib import Path
 
+from agent_toolkit._common import dotfiles_mode
+
 # ヘルプや他の処理で使わない依存は、使用時まで読み込まない。
 lazy import httpx
 
@@ -40,6 +42,8 @@ def run(client: httpx.Client | None = None) -> post_apply_outcome.PostApplyOutco
     セッション内の自己更新拒否と、稼働中のサーバーの再起動を要するため導入しなかった更新は延期として返し、
     自動更新タイマーを持つホストでは延期記録から再試行する。
     """
+    if dotfiles_mode.is_minimal():
+        return post_apply_outcome.PostApplyOutcome()
     with _curl_env_overrides() as env_overrides:
         return _run(client, env_overrides)
 

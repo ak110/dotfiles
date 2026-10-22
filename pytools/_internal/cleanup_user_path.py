@@ -110,7 +110,7 @@ def run() -> post_apply_outcome.PostApplyOutcome:
 def _collect_userprofile_env(environ: Mapping[str, str]) -> dict[str, str]:
     """プレースホルダー化に使う環境変数を最長一致順で収集する。
 
-    `_PLACEHOLDER_VAR_ORDER` の順で `environ` を引き、空値（未定義含む）は除外した
+    `_PLACEHOLDER_VAR_ORDER` の順で `environ` から値を取得し、空値（未定義含む）は除外した
     `"%NAME%" -> 展開値` の順序付き辞書を返す。
     """
     result: dict[str, str] = {}

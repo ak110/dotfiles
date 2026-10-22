@@ -53,7 +53,7 @@ def decode_entry_text(data: bytes) -> str:
     """キュー項目のbytesをUTF-8でデコードし、改行をLFへ正規化して返す。
 
     読み取り時にテキストIOのユニバーサル改行処理を経ないため、Windowsで保存したCRLFの本文が
-    frontmatterの区切りの一致確認と読み直した本文との一致判定を通らない。デコードの時点で正規化して両者をそろえる。
+    frontmatterの区切りの一致確認と読み直した本文との一致判定に失敗する。デコードの時点で正規化して両者をそろえる。
     追記で保存bytesをそのまま保つ場合は、保存する内容の組み立てへ本関数を使わない。
     """
     return normalize_newlines(data.decode("utf-8"))

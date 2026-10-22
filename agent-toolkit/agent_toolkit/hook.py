@@ -7,7 +7,7 @@ epilogueを個別に持っていた。本スクリプトへ集約し、各モジ
 
 標準入力は各フックに共通する処理で生バイト列として一度だけ読み、UTF-8で厳密にデコードして各モジュールへ渡す。
 標準出力と標準エラーもUTF-8へ統一する。`AGENT_TOOLKIT_HOOK_PAYLOAD_DUMP`が非空の場合は、
-環境依存の入力変換をバイト単位で調査できるよう、デコード前の入力を指定ディレクトリへ保存する。
+環境によって異なる入力変換をバイト単位で調査できるよう、デコード前の入力を指定ディレクトリへ保存する。
 
 依存パッケージはplugin rootのuvプロジェクトへ集約する。全サブコマンドが同じvenvを共有し、
 サブコマンド切替時の再解決コストを生じさせない。
@@ -52,6 +52,7 @@ _SUBCOMMANDS: frozenset[str] = frozenset(
         "rules_context_codex",
         "user_prompt_submit",
         "session_activity",
+        "antigravity",
     }
 )
 
@@ -158,6 +159,10 @@ def main(argv: list[str]) -> int:
         traceback.print_exc()
         return 0
     try:
+        if argv[0] == "antigravity":
+            if len(argv) != 2:
+                raise ValueError("antigravityにはイベント名を1個渡す")
+            return module.main(payload_text, event=argv[1])
         if argv[0] in {"stop", "subagent_stop_advisor"}:
             output = io.StringIO()
             try:

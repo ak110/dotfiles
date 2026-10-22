@@ -18,6 +18,7 @@ import pytest
 
 from agent_toolkit._agents_server import (
     agents_wait,
+    child_environment,
     launch_requests,
     result_projection,
     resume_waits,
@@ -233,15 +234,20 @@ async def test_invalid_env_file_warning_reaches_start_response(
             await manager.close()
 
 
+@pytest.mark.parametrize("mode", ["pay-as-you-go", "api-credits"])
 @pytest.mark.asyncio
 async def test_single_api_connection_keeps_usage_limit_wait(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
+    mode: str,
 ) -> None:
     """API認証だけを持つ会話は残高不足の解除を待ち、接続先を変えない。"""
     path = tmp_path / "api.env"
     path.write_text("ANTHROPIC_API_KEY=test-api-key\n", encoding="utf-8")
     monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CLAUDE_API_ENV_FILE", str(path))
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CLAUDE_API_MODE", mode)
+    # 起動時に保持したOAuthも除き、他の試験でprepareした接続値を持ち越さない。
+    monkeypatch.setattr(child_environment, "_INHERITED", {})
     monkeypatch.delenv("CLAUDE_CODE_OAUTH_TOKEN", raising=False)
     monkeypatch.setattr(server_manager, "START_AVAILABILITY_TIMEOUT", 0.01)
     options_seen: list[Any] = []
@@ -257,6 +263,7 @@ async def test_single_api_connection_keeps_usage_limit_wait(
         install_backend(manager, "claude", backend)
         try:
             started = await manager.start("claude:sonnet/high", "作業", str(tmp_path))
+            assert manager.sessions[started["session_id"]].claude_connection == "api"
             assert started["status"] == "running"
             shown = await manager.show_session(started["session_id"])
             assert shown["status"] == "running" and shown["result_held"]
@@ -334,7 +341,7 @@ async def test_expired_explore_session_resumes_with_original_route_conditions(
             return session
 
         monkeypatch.setattr(backend, "start", fail_first_start)
-        second = await manager.start_explore("探索", str(tmp_path), model_type="medium_tier")
+        second = await manager.start_explore("探索", str(tmp_path), model_type="review")
         session = manager.sessions[second["session_id"]]
         _complete(session)
         session.retention_deadline = asyncio.get_running_loop().time() - 1
@@ -343,7 +350,7 @@ async def test_expired_explore_session_resumes_with_original_route_conditions(
 
         resumed = manager.sessions[session.session_id]
         assert response["delivery"] == "reply_started"
-        assert resumed.model_type == "medium_tier"
+        assert resumed.model_type == "review"
         assert resumed.launch_kind == "explore"
         assert resumed.excluded_candidates == frozenset({candidates[0]})
 
@@ -462,7 +469,6 @@ async def test_resumed_session_keeps_every_launch_info_item(
     expected_launch = {**_LAUNCH_VALUES, "label": label}
     launch_values: dict[str, Any] = {
         **expected_launch,
-        "usage": "review",
         "followup_prompts": ("先行追送",),
         "final_responses": ((1, "先行応答"),),
         "terminal_error": None,
@@ -910,7 +916,7 @@ async def test_wait_delivers_child_session_result_without_kill(
         backend = FakeBackend(manager.sessions, "claude")
         _install_backend(manager, "claude", backend)
         writer.activate()
-        started = await manager.start("high_tier", "委譲する", str(tmp_path))
+        started = await manager.start("execute", "委譲する", str(tmp_path))
         delegate = manager.sessions[started["session_id"]]
 
         # 委譲先が別プロセスのMCPサーバーへstart_exploreを発行した状態を模す。
@@ -1126,7 +1132,7 @@ async def test_overloaded_turn_resumes_same_session_and_publishes_resumed_result
         backend = OverloadingBackend(manager.sessions, manager._condition, overloads=2)
         _install_backend(manager, "codex", backend)
 
-        started = await manager.start("high_tier", "作業する", str(tmp_path))
+        started = await manager.start("execute", "作業する", str(tmp_path))
         response = await _wait_until_terminal(manager)
 
         assert started["status"] == "running"
@@ -1137,7 +1143,7 @@ async def test_overloaded_turn_resumes_same_session_and_publishes_resumed_result
         assert all("serverOverloaded" in prompt and "所定の返却形式" in prompt for prompt in backend.prompts[1:])
         assert manager.sessions[started["session_id"]].turn_seq == 3
         assert not unavailable_candidates.load_unavailable_candidates(
-            "high_tier", "delegate", now=datetime.datetime.now(datetime.UTC)
+            "execute", "delegate", now=datetime.datetime.now(datetime.UTC)
         )
         await manager.close()
 
@@ -1157,7 +1163,7 @@ async def test_overload_wait_is_visible_as_running_with_api_error(
         backend = OverloadingBackend(manager.sessions, manager._condition, overloads=1)
         _install_backend(manager, "codex", backend)
 
-        started = await manager.start("high_tier", "作業する", str(tmp_path))
+        started = await manager.start("execute", "作業する", str(tmp_path))
         await asyncio.gather(*backend.pending)
         shown = await manager.show_session(started["session_id"])
         listed = await manager.list_sessions()
@@ -1188,7 +1194,7 @@ async def test_overload_limit_publishes_last_failure_and_excludes_candidate(
         backend = OverloadingBackend(manager.sessions, manager._condition, overloads=4)
         _install_backend(manager, "codex", backend)
 
-        started = await manager.start("high_tier", "作業する", str(tmp_path))
+        started = await manager.start("execute", "作業する", str(tmp_path))
         response = await _wait_until_terminal(manager)
 
         assert response["status"] == "failed"
@@ -1197,7 +1203,7 @@ async def test_overload_limit_publishes_last_failure_and_excludes_candidate(
         assert backend.send_calls == 3
         assert manager.sessions[started["session_id"]].turn_seq == 4
         assert unavailable_candidates.load_unavailable_candidates(
-            "high_tier", "delegate", now=datetime.datetime.now(datetime.UTC)
+            "execute", "delegate", now=datetime.datetime.now(datetime.UTC)
         ) == {("codex", "gpt-6.1-sol", "high"): "serverOverloaded"}
         await manager.close()
 
@@ -1213,7 +1219,7 @@ async def test_overload_within_availability_check_switches_candidate(
     async with server_manager.AgentsServerManager() as manager:
         _install_backend(manager, "codex", UnavailableStartBackend(manager.sessions, "codex", error=dict(_OVERLOAD_ERROR)))
 
-        response = await manager.start("high_tier", "作業する", str(tmp_path))
+        response = await manager.start("execute", "作業する", str(tmp_path))
 
         assert response["status"] == "failed"
         assert [item["reason"] for item in response["excluded_candidates"]] == ["serverOverloaded", "serverOverloaded"]
@@ -1236,7 +1242,7 @@ async def test_claude_usage_limit_waits_and_resumes_same_session(
         [_rate_limit_event("allowed", limit_type), AssistantMessage("再開後"), ResultMessage("継続後の結果")],
     ]
     async with _usage_limited_manager(monkeypatch, streams) as (manager, client, codex):
-        started = await manager.start("high_tier", "作業する", str(tmp_path))
+        started = await manager.start("execute", "作業する", str(tmp_path))
         response = await _wait_until_terminal(manager)
 
         assert started["status"] == "running"
@@ -1249,7 +1255,7 @@ async def test_claude_usage_limit_waits_and_resumes_same_session(
         assert len(client.queries) == 2
         assert limit_type in client.queries[1] and "所定の返却形式" in client.queries[1]
         assert not unavailable_candidates.load_unavailable_candidates(
-            "high_tier", "delegate", now=datetime.datetime.now(datetime.UTC)
+            "execute", "delegate", now=datetime.datetime.now(datetime.UTC)
         )
 
 
@@ -1267,7 +1273,7 @@ async def test_claude_usage_limit_keeps_waiting_while_rejection_continues(
         [AssistantMessage("再開後"), ResultMessage("解除後の結果")],
     ]
     async with _usage_limited_manager(monkeypatch, streams) as (manager, client, codex):
-        await manager.start("high_tier", "作業する", str(tmp_path))
+        await manager.start("execute", "作業する", str(tmp_path))
         response = await _wait_until_terminal(manager, attempts=100)
 
         assert response["status"] == "completed"
@@ -1285,7 +1291,7 @@ async def test_claude_usage_limit_wait_is_visible_and_kill_returns_held_result(
     resets_at = int(datetime.datetime.now(datetime.UTC).timestamp()) + 3600
     streams = [_rejected_stream("seven_day_opus", resets_at, before_init=False, session_id="claude-visible")]
     async with _usage_limited_manager(monkeypatch, streams) as (manager, client, codex):
-        started = await manager.start("high_tier", "作業する", str(tmp_path))
+        started = await manager.start("execute", "作業する", str(tmp_path))
         shown = await manager.show_session(started["session_id"])
         listed = next(
             item for item in (await manager.list_sessions())["sessions"] if item["session_id"] == started["session_id"]
@@ -1308,7 +1314,7 @@ async def test_claude_usage_limit_wait_is_visible_and_kill_returns_held_result(
         assert killed["error"]["usageLimit"] == {"type": "seven_day_opus", "resetsAt": expected_reset}
         assert codex.start_calls == []
         assert not unavailable_candidates.load_unavailable_candidates(
-            "high_tier", "delegate", now=datetime.datetime.now(datetime.UTC)
+            "execute", "delegate", now=datetime.datetime.now(datetime.UTC)
         )
 
 
@@ -1324,7 +1330,7 @@ async def test_claude_usage_limit_wait_accepts_send_message_as_reply(
         [AssistantMessage("返信"), ResultMessage("返信の結果")],
     ]
     async with _usage_limited_manager(monkeypatch, streams) as (manager, client, _codex):
-        started = await manager.start("high_tier", "作業する", str(tmp_path))
+        started = await manager.start("execute", "作業する", str(tmp_path))
         await manager.send_message(started["session_id"], "続けて")
         response = await _wait_until_terminal(manager)
 
@@ -1343,7 +1349,7 @@ async def test_claude_overage_rejection_still_switches_candidate(
     async with _usage_limited_manager(monkeypatch, streams) as (manager, _client, codex):
         # 切替先のCodex候補はモデル出力を返さないため、可用性確認の上限まで待つ時間を短くする。
         monkeypatch.setattr(server_manager, "START_AVAILABILITY_TIMEOUT", 0.3)
-        response = await manager.start("high_tier", "作業する", str(tmp_path))
+        response = await manager.start("execute", "作業する", str(tmp_path))
 
         assert response["engine"] == "codex"
         assert codex.start_calls == [("gpt-6.1-sol", "high", "delegate")]
@@ -1357,11 +1363,11 @@ async def test_legacy_claude_rate_limit_record_does_not_skip_candidate(
 ) -> None:
     """旧版がClaudeの429へ記録した除外理由`429`では候補を除外せず、その候補で起動し直す。"""
     unavailable_candidates.record_unavailable_candidate(
-        "high_tier", "delegate", ("claude", "opus", "high"), "429", now=datetime.datetime.now(datetime.UTC)
+        "execute", "delegate", ("claude", "opus", "high"), "429", now=datetime.datetime.now(datetime.UTC)
     )
     streams = [[SystemMessage("claude-legacy"), AssistantMessage("進行"), ResultMessage("完了")]]
     async with _usage_limited_manager(monkeypatch, streams) as (manager, _client, codex):
-        response = await manager.start("high_tier", "作業する", str(tmp_path))
+        response = await manager.start("execute", "作業する", str(tmp_path))
 
         assert response["engine"] == "claude"
         assert "excluded_candidates" not in response
@@ -1372,7 +1378,7 @@ async def test_legacy_claude_rate_limit_record_does_not_skip_candidate(
 async def test_minimal_followup_uses_restored_launch_history(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
     """登録簿から戻した役割でも、余分な継続入力を配送前に拒否し必要なroundを保持する。"""
     async with _resume_test_manager(monkeypatch, tmp_path) as (manager, _):
-        _, _, prompt, _, _ = launch_requests.task_document_request(
+        _, prompt, _, _ = launch_requests.task_document_request(
             "exec-review",
             {
                 "レビュー基準": "計画",

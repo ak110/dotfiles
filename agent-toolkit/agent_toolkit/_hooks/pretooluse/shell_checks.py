@@ -230,7 +230,7 @@ def _has_unsafe_process_kill_match(segment: str) -> bool:
         parsed_segments = extract_execution_segments(segment)
         if len(parsed_segments) != 1 or tuple(raw_tokens) != parsed_segments[0].tokens:
             return True
-        subcommand = _git_subcommand_tokens(parsed_segments[0])
+        subcommand = git_subcommand_tokens(parsed_segments[0])
         if subcommand is None or subcommand[0] not in {"grep", "log"}:
             return True
         name, arguments = subcommand
@@ -276,7 +276,7 @@ def _check_bash_process_kill_by_pattern(command: str) -> str | None:
     )
 
 
-def _git_subcommand_tokens(segment: ExecutionSegment) -> tuple[str, tuple[str, ...]] | None:
+def git_subcommand_tokens(segment: ExecutionSegment) -> tuple[str, tuple[str, ...]] | None:
     """`git`区間のサブコマンド名と、そのサブコマンド以降の引数を返す。"""
     if not segment.resolved or not segment.tokens:
         return None
@@ -298,6 +298,10 @@ def _git_subcommand_tokens(segment: ExecutionSegment) -> tuple[str, tuple[str, .
     return None
 
 
+# 終了証跡など既存の内部importを保持し、新しい消費側は公開名を使う。
+_git_subcommand_tokens = git_subcommand_tokens
+
+
 def _git_commit_messages(command: str, *, cwd: str = "") -> Iterable[str]:
     """指定内容を確定できる通常commitのメッセージを返す。
 
@@ -311,7 +315,7 @@ def _git_commit_messages(command: str, *, cwd: str = "") -> Iterable[str]:
     for invocation, current in shell_cwd.bash_invocation_cwds(command, cwd):
         if not invocation.arguments_known:
             continue
-        parsed = _git_subcommand_tokens(invocation.segment)
+        parsed = git_subcommand_tokens(invocation.segment)
         if parsed is None or parsed[0] != "commit":
             continue
         arguments = parsed[1]
@@ -370,9 +374,21 @@ def _git_commit_messages(command: str, *, cwd: str = "") -> Iterable[str]:
         yield "\n\n".join(messages)
 
 
+_WORK_ITEM_FILENAME_PATTERN = re.compile(r"(?<![0-9A-Za-z_-])\d{8}-\d{6}-\d{3}\.md(?![0-9A-Za-z_.-])")
+
+
 def _git_commit_message_format_error(messages: Iterable[str]) -> str | None:
-    """件名の次に内容が続く通常commitで、2行目の空行欠落を返す。"""
+    """通常commitのWI名記載と件名・本文間の空行欠落を返す。"""
     for message in messages:
+        if match := _WORK_ITEM_FILENAME_PATTERN.search(message):
+            return _block_notice(
+                f"公開するコミットメッセージに作業項目のファイル名（`{match.group()}`）が含まれている。",
+                fix=(
+                    "公開するコミットへ作業項目のファイル名を書かない。実装コミットとAWIの対応は"
+                    "`atk run-script plan-progress`が記録する対応記録ファイル（`<stem>.wi-commits.jsonl`）へ残し、"
+                    "メッセージから作業項目のファイル名を含む行を除いて再実行する。"
+                ),
+            )
         lines = message.splitlines()
         if len(lines) > 1 and lines[1].strip():
             return _block_notice(
@@ -419,7 +435,7 @@ def _commit_heredoc_body(command: str) -> str | None:
             start -= 1
         declaration = masked_lines[start - 1] if start > 0 else ""
         if any(
-            (parsed := _git_subcommand_tokens(item.segment)) is not None and parsed[0] == "commit"
+            (parsed := git_subcommand_tokens(item.segment)) is not None and parsed[0] == "commit"
             for item in extract_bash_invocations(declaration)
         ):
             bodies.append("\n".join(original_lines[start:terminator]))
@@ -501,7 +517,7 @@ def _warn_git_rev_parse_short_multiple(command: str) -> str | None:
         if not invocation.arguments_known:
             continue
         segment = invocation.segment
-        subcommand = _git_subcommand_tokens(segment)
+        subcommand = git_subcommand_tokens(segment)
         if subcommand is None or subcommand[0] != "rev-parse":
             continue
         revisions = _rev_parse_short_revisions(subcommand[1])
@@ -589,7 +605,7 @@ def _check_bash_option_after_terminator(command: str) -> str | None:
             found = _options_after_terminator(arguments, excluded=_pattern_command_slot(arguments))
             label = name
         else:
-            subcommand = _git_subcommand_tokens(segment)
+            subcommand = git_subcommand_tokens(segment)
             if subcommand is None or subcommand[0] not in _OPTION_TERMINATOR_GIT_SUBCOMMANDS:
                 continue
             arguments = list(strip_redirections(subcommand[1]))
@@ -791,7 +807,7 @@ def _warn_windows_drive_letter_path(command: str, *, is_codex: bool) -> str | No
     return _llm_notice(
         f"`PATH`へドライブ文字形式の要素（{'、'.join(found)}）を加えている。"
         "`Git Bash`の`PATH`はコロン区切りのため、ドライブ文字形式の要素は`C`と`/...`の2要素に分かれ、"
-        "そのディレクトリは検索されない。コマンドは実行済みであり、`PATH`に依存した結果"
+        "そのディレクトリは検索されない。コマンドは実行済みであり、`PATH`の内容で決まった結果"
         "（`command -v`の出力、実行されたプログラム、計測値）は意図した構成のものではない。",
         tag=_WARN_TAG,
         fix="`/c/Users/...`の形で書くか、`\"$(cygpath -u '<Windows形式のパス>')\"`で変換した値を`PATH`へ加えて再実行する。",

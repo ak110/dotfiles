@@ -1,7 +1,6 @@
 ---
 mode: delegate
-model_type: high_tier
-usage: execute
+model_type: execute
 required_inputs:
 - 担当種別
 - 引き継ぎ記録先
@@ -31,10 +30,10 @@ continuations:
   condition: ''
 - instruction: レビュー指摘の対応をせよ
   required:
-  - round
   - レビュー指摘管理表
   optional: []
-  paths:
+  paths: []
+  path_lists:
   - レビュー指摘管理表
   references: []
   condition: ''
@@ -62,31 +61,35 @@ continuations:
 計画と実行工程の責務と出口は`${CLAUDE_PLUGIN_ROOT}/share/workflow-phases.md`に従う。
 本タスクの完了報告と成果物は日本語で書く。返却値は指定どおりに返す。
 
+## 名指し参照の読込方法
+
+<!-- read-table-source: exec-reading-references.md -->
+
 ## 読込表
 
 次の時点または条件が成立したら、対象の操作の前に同じ行の資料を全文読む。
 
-| 時点または条件 | 全文読む資料 |
-| --- | --- |
-| 初期選定が1レーンのレーン担当として計画または実装を始める前 | `${CLAUDE_PLUGIN_ROOT}/share/single-lane-execution.md` |
-| 計画の起草前、計画なしで実装へ着手する直前、レビュー修正担当とCI修正担当が修正へ着手する直前 | `agent-toolkit:delegation`の`references/routing.md` |
-| 計画を起草するか既存計画から再開する直前 | `agent-toolkit:process-wi`の[references/lane-planning.md](../skills/process-wi/references/lane-planning.md) |
-| 初回実装（`CI修正担当`では修正）に着手する直前と、変更範囲の検証（履歴統合後の再検証を含む）を実行した後 | `agent-toolkit:check-execution`の`references/diagnostics.md` |
-| 変更範囲の検証が失敗したとき | `agent-toolkit:process-wi`の[references/lane-verification-failure.md](../skills/process-wi/references/lane-verification-failure.md) |
-| `実装なし`またはレビュー収束後にメインから統合指示を受領したとき | `${CLAUDE_PLUGIN_ROOT}/share/lane-integration.subagent.md` |
-| ユーザーが直接記入した質問への回答下書きを作る直前 | `agent-toolkit:wi-standards`の`SKILL.md`（語の基準） |
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 | 資料選択子 |
+| --- | --- | --- | --- | --- |
+| 初期選定が1レーンのレーン担当として計画または実装を始める前 | `${CLAUDE_PLUGIN_ROOT}/share/single-lane-execution.md` | 判断 | `read:agent-toolkit:*/share/single-lane-execution.md` | |
+| 計画の起草前、計画なしで実装へ着手する直前、レビュー修正担当とCI修正担当が修正へ着手する直前 | `agent-toolkit:delegation`の`references/routing.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/routing.md` | |
+| 計画を起草するか既存計画から再開する直前 | `agent-toolkit:process-wi`の[references/lane-planning.md](../skills/process-wi/references/lane-planning.md) | 判断 | `read:agent-toolkit:*/skills/process-wi/SKILL.md`、`read:agent-toolkit:*/skills/process-wi/references/lane-planning.md` | |
+| 初回実装（`CI修正担当`では修正）に着手する直前と、変更範囲の検証（履歴統合後の再検証を含む）を実行した後 | `agent-toolkit:check-execution`の`references/diagnostics.md` | 判断 | `read:agent-toolkit:*/skills/check-execution/references/diagnostics.md` | |
+| 変更範囲の検証が失敗したとき | `agent-toolkit:process-wi`の[references/lane-verification-failure.md](../skills/process-wi/references/lane-verification-failure.md) | 判断 | `read:agent-toolkit:*/skills/process-wi/SKILL.md`、`read:agent-toolkit:*/skills/process-wi/references/lane-verification-failure.md` | |
+| `実装なし`またはレビュー収束後にメインから統合指示を受領したとき | `${CLAUDE_PLUGIN_ROOT}/share/lane-integration.subagent.md` | 判断 | `read:agent-toolkit:*/share/lane-integration.subagent.md` | |
+| ユーザーが直接記入した質問への回答下書きを作成する直前 | `agent-toolkit:wi-standards`の`SKILL.md`（語の基準） | 判断 | `read:agent-toolkit:*/skills/wi-standards/SKILL.md` | |
 
 ## 入力
 
 `レーン担当`は`選定結果の出力先ファイル`から`レーン`が`レーン識別子`と一致する`選定`の項目だけを読み、AWIファイル名、順序、`鮮度`、`担当モデル`、`プロジェクト規範の指定`、上流投入の3行、`プロジェクト固有の公開後の操作の順序`を入力とする。書式と省略時の値は`${CLAUDE_PLUGIN_ROOT}/skills/process-wi/references/selection-format.md`の`## 選定結果の書式`に従い、省略された行は省略時の値として扱う。該当項目が無い、同じAWIが重複する、必須フィールドが形式外の場合は推測せず続行できない理由を返す。
 
 計画作成と実装の前（計画なしでは本文を読んだ時点）に、AWI本文が明示した担当とモデルの組を選定結果の`担当モデル`と比べ、一致しなければ下位担当の起動で補わず、WIファイル名、本文の組、選定結果の値を`続行できない理由`で返す。
-`担当モデル.実装担当`の値は自身の担当範囲の一部を任せる下位実装担当（「操作区分」の内部群など）の`model_type`へ渡す。比較と記録は`agent-toolkit:delegation`の`references/runtime-routing.md`「工程別モデル設定」の担当モデルの段落に従う。指定が無い場合の下位実装担当の段位は同節の段位の段落に従う（内容の確定した単位は`delegate`の`medium_tier`、自ら行う方が安ければ自身が行う）。自身のレーン全体は自分のthreadで担い続ける（別の`レーン担当`へ任せない）。初期選定が1レーンの場合は単一担当の実行契約に従い、実行レビュー担当の起動と統合の検収も自身が行う。複数レーンでは実行レビュー担当の起動と`統合開始`の送付はメインが行う。
+`担当モデル.実装担当`の値は自身の担当範囲の一部を任せる下位実装担当（「操作区分」の内部群など）の`model_type`へ渡す。比較と記録は`agent-toolkit:delegation`の`references/runtime-routing.md`「工程別モデル設定」の担当モデルの段落に従う。指定が無い場合の下位実装担当の工程は同節の工程分担の段落に従う（内容の確定した単位は`delegate`の`chores`、自ら行う方が安ければ自身が行う）。自身のレーン全体は自分のthreadで担い続ける（別の`レーン担当`へ任せない）。初期選定が1レーンの場合は単一担当の実行契約に従い、実行レビュー担当の起動と統合の検収も自身が行う。複数レーンでは実行レビュー担当の起動と`統合開始`の送付はメインが行う。
 
 要求単位の由来は`agent-toolkit:wi-standards`の`## 由来と承認`に従い、計画の起草時に`atk wi show`のAWI本文とfrontmatterから判定する。判定結果は`agent-toolkit:plan-mode`の`references/plan-file-standards.md`の書式で計画の`由来`欄へ書く。計画の確定後は由来の再判定を実装と統合の対象から除く。その後は計画で確定した採否と終端区分を用いる（由来の確定時点）。
 計画を省くレーンは同じ判定の結果を引き継ぎ記録へ残す。ユーザーが報告した不具合を既存実装で充足済みとする場合は、`plan-file-standards.md`「実施内容」が定める調査（呼び出し手段、操作順、結果、報告時点との差）を行い、操作、観測結果、相違、未特定の範囲を同じ記録へ残す。
 
-`レビュー修正担当`は同じthreadの継続なら保持する選定結果を引き継ぐ。新しいthreadでは`再開位置`の計画ファイル（`計画なし`なら引き継ぎ記録）と引き継ぎ記録の全計画の進捗、`レビュー指摘管理表`を読み、両者が同じ計画に属することを確かめる。
+`レビュー修正担当`は同じthreadの継続なら保持する選定結果を引き継ぐ。`レビュー指摘管理表`は単一の絶対パスか、全計画の表の絶対パスを持つ空でないJSON配列で受け取る。計画ごとの成果物の受け渡しは`${CLAUDE_PLUGIN_ROOT}/share/exec-review.parent.md`「起動方法別のレビュー基準」に従う。各表で応答するラウンドは、`${CLAUDE_PLUGIN_ROOT}/share/review-loop-coordination.md`「ラウンド番号の保持先」が定める、その表の最大のラウンド番号とする。新しいthreadでは`再開位置`の計画ファイル（`計画なし`なら引き継ぎ記録）と引き継ぎ記録に累積した全計画の進捗を読み、受け取った各表がその計画集合のいずれかに属することを確かめる。
 `環境構築`が`レーン担当が実行`なら、対象リポジトリの開発手順が定める環境構築を実装の前に行う。その他の値と不在では準備済みとして扱い、併記された判定をそのまま用いる。
 `CI修正担当`は代わりに、原因分析結果、修正認可根拠、対象の検証結果、変更目的、対象、公開契約、入力計画の7項目を持つ`CI記録`を受領する。
 `書込担当一覧`は重複のないsession IDのJSON配列とし、現在のレーン担当と統合先メインの実session、合意済みの他の書込担当を含める。
@@ -120,6 +123,8 @@ continuations:
 同じ専用worktreeで書込を分担する場合は、`agent-toolkit:delegation`の`references/mandatory-rules.md`「作業ツリーの保護」に従う。書込先が交わらない担当を並列に、または1つの担当を直列に置き、commitと作業ツリー全体へ作用する操作はレーン担当が全担当の終端後に行う。担当種別の切替は同じthreadの継続であり、書込の所有者は変わらない。
 担当ごとのcommitや書き換えを伴う検証が要る場合と、書込先を事前に確定できない場合は、別branch・別worktreeの一時的な内部群を使う。内部群へ渡すのはレーン担当の計画で内容の確定した書込作業の単位とし、計画の起草と設計判断を内部群の担当へ委ねるのは独立が明らかな複数タスクに限る。レーン担当がファイルの所有表を確定し、レーンbranchの確定済みcommitから群ごとの別branch・別worktreeを作成する（各worktreeの書込担当は1つ）。各群の担当は自身のworktreeのcommitとGit hookの処理を所有し、hookが更新した生成物を同じcommitへ含める。群の粒度と同時起動数は固定の分割数や上限を置かず`agent-toolkit:delegation`の`references/routing.md`「委譲単位の確定」で選び、契約で結び付く出力元とテスト期待値は同じ群へ置く。レーン担当は各担当の終端、clean状態、群のcommit・差分・検証（実行した版とともに）を確かめ、レーンbranchへ順に統合し、取り込みごとに前後のHEADを`agent-toolkit:commit`の`SKILL.md`「WI実装commitの対応」の手段で記録する。レーン担当は統合後に群間で重なる生成物の差を原本から同期し、対象語の残存と直接影響範囲、変更範囲を検証してから一時worktreeとbranchを回収する。群の検証記録はOIDが変わっただけでは破棄せず、統合で結果が変わり得る行と統合で初めて成立する観測だけを取り直す。内部群は別レーンや別要求の担当にせず、計画、検収、commitの対応記録、統合とメインへの返却はレーン担当が所有する。
 
+実装単位は達成する成果、commit、対象ファイル集合および変更範囲の検証が独立する場合だけ分割する。
+
 ## 処理中の処理対象WIの追加の指示
 
 処理中に追加WIを割り当てられても、現在工程を完了させてから、turnを終えずに追加WIの計画作成要否の判定へ進む。現在工程の境界の固定形式の各行は、追加WIの最初の工程境界の本文の先頭へ置く。ただし現在工程の結果がメインの後続工程の入力になる場合（`実装完了`の後の実行レビューなど）は、追加WIへ進む前にその固定形式を`atk agents notify`で送る。
@@ -130,15 +135,15 @@ continuations:
 
 `実装開始`を受領した`レーン担当`、非待機の`計画検査完了`を通知した`レーン担当`、修正入力を受領した他の担当種別が実施する。本節が計画の進捗ログへ記録する内容は、計画なしでは引き継ぎ記録へ記録する。
 
-- 初回実装（CI修正では修正）の直前に、`agent-toolkit:check-execution`の`references/diagnostics.md`が定める基準版の一意な短縮OIDを記録し、レビュー修正と履歴統合の後も同じ基準版を使う。各検証の後は同書の共通基準で診断と警告を判定し、比較した版と、残す診断の意味・影響・帰属・理由を検証結果と進捗ログへ残す
+- 初回実装（CI修正では修正）の直前に、`agent-toolkit:check-execution`の`references/diagnostics.md`が定める基準版の一意な短縮OIDを記録し、レビュー修正と履歴統合の後も同じ基準版を使う。各検証の後は同書「読む出力」の共通基準で診断・警告と個別・全体の所要を判定し、比較した版と、残す診断の意味・影響・帰属・理由を検証結果と進捗ログへ残す
 - 実装契約: 計画を持つレーンは`## 要件・外部仕様`を契約とし、`## 実施内容`と`## 変更履歴`の対象・範囲・外部可視の結果を認可範囲の上限とする。計画なしのレーンはAWIの要求と完成条件を契約とし、引き継ぎ記録で確定した採否と対象の内側だけを変更する。計画ファイルの扱いは計画凍結（`plan-file-standards.md`）に従う
-- 実装前に、受入シナリオの消費主体・公開入口・具体的な入力と初期状態・有効な期待結果・検出する失敗を確定し、`agent-toolkit:writing-standards`の`references/testing.md`「検証単位の選定」で試験を選ぶ。計画なしとレビュー修正でも要求と完成条件から同じ対応を使う。不良を直す場合は該当入力で不良を再現してから是正し、凍結後の仕様変更は既存のレビュー指摘管理表と採否・変更記録へ接続する
+- 実装前に、受入シナリオの消費主体・公開された呼び出し手段・具体的な入力と初期状態・有効な期待結果・検出する失敗を確定する。試験は`agent-toolkit:writing-standards`の`agent-basics:writing-standards/references/testing.md`「検証単位の選定」で選ぶ。計画なしとレビュー修正でも要求と完成条件から同じ対応を使う。不良を直す場合は該当入力で不良を再現してから是正し、凍結後の仕様変更は既存のレビュー指摘管理表と採否・変更記録へ接続する
 - 変更前に作成規範を読み、担当ファイルと直接影響範囲だけを変更する。生成元を変更したら生成・配布手段を追随させる
 - `レーン担当`は版数更新コマンドを実行せず、bump種別と根拠を計画か引き継ぎ記録で公開工程へ渡す
 - 初回実装では、`lane-planning.md`「計画の起草」で選んだ最も近い既存実装との契約・構造の一致と、入力値・時間経過・操作順・保持状態・反復の境界を確かめる。採用案を`前提を疑う観点`から反証し、責務の移動、既存機構や上流への統合、削除・簡素化で満たせるなら恒常的な複雑性が小さい案を採用する。不具合対策では`agent-toolkit:review-standards`の`references/reviewer.md`「初回レビュー」の`前提を疑う観点`に従い、観測した害の消滅と呼び出す側の修正案も比べる
 - 書込の認可の境界はWIの要求（目的・対象・完成条件）とする。計画の`## 実施内容`・`## 要件・外部仕様`と、計画に明記したエージェント向け文書の集合は、境界の内側で着手時に見込んだ書込先である。境界の内側で計画に無いファイル（エージェント向け文書、新規作成先と移動先、要求の達成に必要な直接影響範囲の追随先を含む）を書く場合は、編集前にメインと往復せず、追加したパスと理由を進捗ログ（計画なしでは引き継ぎ記録）へ記録して続ける。WIの要求を超える変更は`agent-toolkit/share/rules-subagent.md`「確認事項の即時通知」でメインへ返し、判断を受けてから行う。追加の妥当性は実行レビューが差分と記録から判定する
 - 計画に無いファイルを書く場合は、選定結果を読み取り専用で読み、追加パスが未統合の他レーン（段階を問わない）の`書込対象`と同じパスか、パス要素で一方が他方を含む範囲かを確かめる。重なる場合だけ、追加パス、理由、重なるレーンと双方の定義を「確認事項の即時通知」でメインへ返し、メインが選定結果へ保存する。重ならない場合（稼働中の他レーンが無い場合を含む）は選定結果を変えず、前項の記録だけを残す。選定結果を書くのはメインと`atk lane integrate`だけであり、複数のレーンが書くと置換の間で更新が失われる
-- 実装中に要件・外部仕様水準の技術判断が生じたら、現在の結論を計画があればレビュー指摘管理表へ、なければ引き継ぎ記録へ残して実装を続ける。ユーザー選好か認可範囲の変更を要する部分だけを`agent-toolkit/share/rules-subagent.md`「確認事項の即時通知」で送り、回答に依存する単位を待つ。通知済みの事後承認の対象について、レビュー修正で実施内容が変わった場合は、変更後の内容を同じ即時通知で再びメインへ送る
+- 実装中に要件・外部仕様水準の技術判断が生じたら、現在の結論を計画があればレビュー指摘管理表へ、なければ引き継ぎ記録へ残して実装を続ける。ユーザー選好か認可範囲の変更を要する部分だけを`agent-toolkit/share/rules-subagent.md`「確認事項の即時通知」で送り、回答を必要とする単位を待つ。通知済みの事後承認の対象について、レビュー修正で実施内容が変わった場合は、変更後の内容を同じ即時通知で再びメインへ送る
 - 完成条件を変更・除外して残りをadoptする判断が要る場合は、対象条件、外す技術的根拠、否定したユーザー判断（`agent-toolkit:review-standards`の`references/exec-review-recording.md`「失効の根拠」）の有無・所在をメインへ通知する。返された判断から再開し、エージェント由来であることだけを失効の根拠にはしない。メインの技術判断を受けたら、その完成条件を扱うレビュー指摘管理表の行（無ければ`atk review-table add`で加える）へ`atk review-table respond`の`--no-response-reason-file`で記録する。記録には`根拠の所在:`ラベルの行へ`メインの技術判断`、対象AWIのファイル名と完成条件、外す根拠を書く
 - 最後の実装commitの前に、差分を`agent-toolkit:writing-standards`の`references/design-heuristics.md`「設計品質の劣化確認」で評価して観点ごとの結論を検証結果へ残し、認可内の劣化は同じcommitで構造を整理する
 - 実装完了前に、具体化した`### 受入シナリオ`を受入シナリオ検証（`workflow-phases.md`）で自己検収し、公開された呼び出し手段と入力を使い、期待結果と実結果が一致するか確かめる。計画なしでもWIの完成条件へ同じ対応を使う。文書条件は送受信の主体・入力・条件・次操作と参照先の間で、渡す値と受理する値が一致するか確かめる。`検証結果`にはシナリオ別のテスト名と合否、手動判定の保存先、検証済み・未実施・条件変更の判断を分けて記す
@@ -184,9 +189,9 @@ continuations:
   - dotnet testは`--logger "trx;LogFileName=<結果の絶対パス>"`を指定する
 - pytest以外の結果入力: `--test-format <vitest|playwright|trx> --test-file <保存結果> --test-record <実行記録>`を渡す。基準版は同じ組の`--baseline-test-format`・`--baseline-test-file`・`--baseline-test-record`へ指定する。一覧・詳細・行への記入は次の構造化結果の記入と同じ公開操作を使う
 - 保存出力の読取: 本文表示、構造化診断、試験結果の関連付けは、`agent-toolkit:check-execution`の「保存した実行出力の取得」で用途に合う公開指定を選ぶ。保存済みログの本文は`pyfltr show-run <run_id> --commands <コマンド名> --output --output-format=text`で読み、生成元に形式・対象の指定があれば保存前に選ぶ。構造化診断のJSONLと結果ファイルの関連付けは前後の取得・記入手順を使う
-- 構造化結果からの記入: 入力形式は`atk run-script verification-record -- --help`で取得する。試験は`--junit-xml <保存XML> --junit-record <実行記録>`で直接指定する。診断は`--diagnostics-file <保存JSONL> --diagnostics-record <実行記録> --diagnostics-conditions <取得時の条件JSON>`と必要な`--diagnostics-source <相対ファイル> <保存時本文>`の反復で直接指定する。相対ファイルはworktreeのルートを起点とする。基準比較は同じ組の`--baseline-junit-*`・`--baseline-diagnostics-*`へ保存物を指定する。`--output <初回記録の絶対パス> --list-results --results-summary`で状態・基準版との差、診断のまとまり・重複数・全識別子から必要な結果を選ぶ。続けて`--results-summary`を`--result-test <完全テスト名>`か`--result-diagnostic <診断識別子>`の反復へ替え、詳細・取得版・所在を読む（表示の追加指定を省けば全詳細）。代表の1件で全件の意味を判断せず、比較不能は不足として補う。記入では`--list-results`を外し、`--select-row <配列:N>`の反復と各要求を直接満たす完全テスト名・診断識別子を渡す。必要なら`--evidence-file`と`--mode append|replace`も渡し、同じ保存物から更新する（sourceは処理側が現行行から取得する）。不正な行が1件でもあれば全保存が拒否される。既存のJSON入力の契約も保持され、未選択行は変わらない
+- 構造化結果からの記入: 入力形式は`atk run-script verification-record -- --help`で取得する。試験は`--junit-xml <保存XML> --junit-record <実行記録>`で直接指定する。診断は`--diagnostics-file <保存JSONL> --diagnostics-record <実行記録> --diagnostics-conditions <取得時の条件JSON>`と必要な`--diagnostics-source <相対ファイル> <保存時本文>`の反復で直接指定する。相対ファイルはworktreeのルートを起点とする。基準比較は同じ組の`--baseline-junit-*`・`--baseline-diagnostics-*`へ保存物を指定する。`--output <初回記録の絶対パス> --list-results --results-counts`で状態・基準版との差・診断群の件数を読む。`--results-counts`を`--result-status <状態>`・`--result-change <差の種類>`・`--result-diagnostic-group <群番号>`の必要な選択へ替え、`--results-identifiers`でその群の全識別子を読む。識別子表示を外せば選択群の詳細・取得版・所在を読め、完全名による`--result-test`と診断識別子による`--result-diagnostic`の反復も使える。全詳細と、全識別子付きの`--results-summary`も選べる。代表の1件で全件の意味を判断せず、比較不能は不足として補う。記入では`--list-results`を外し、`--select-row <配列:N>`の反復と各要求を直接満たす完全テスト名・診断識別子を渡す。必要なら`--evidence-file`と`--mode append|replace`も渡し、同じ保存物から更新する（sourceは処理側が現行行から取得する）。不正な行が1件でもあれば全保存が拒否される。既存のJSON入力の契約も保持され、未選択行は変わらない
 
-各`evidence`には受入シナリオの公開入口・入力・期待結果に対応する実結果として、テスト完全名と成功結果の所在、または保存済み観測の入力・操作・期待結果・観測結果の箇所を書く。pytestのテスト名は、同じ版の保存済み出力（`-v`付き）にその名前と結果の行があることを確かめる。点表示と総数は個別の合否の根拠にならない。後続工程や不採用・割当の行には、検証済みの範囲と採否・後続工程を記録した箇所を書く。計画確定時に決まった後続工程は計画の`## 実施内容`、実装中に作成した後続工程は対象AWIへの追記先、同じセッション内で読まれるものは引き継ぎ記録を示す。`outcome`と`reviewed_head`は空欄を保つ（判定は実行レビュー担当だけが書く）。
+各`evidence`には受入シナリオの公開された呼び出し手段・入力・期待結果に対応する実結果として、テスト完全名と成功結果の所在、または保存済み観測の入力・操作・期待結果・観測結果の箇所を書く。pytestのテスト名は、同じ版の保存済み出力（`-v`付き）にその名前と結果の行があることを確かめる。点表示と総数は個別の合否の根拠にならない。後続工程や不採用・割当の行には、検証済みの範囲と採否・後続工程を記録した箇所を書く。計画確定時に決まった後続工程は計画の`## 実施内容`、実装中に作成した後続工程は対象AWIへの追記先、同じセッション内で読まれるものは引き継ぎ記録を示す。`outcome`と`reviewed_head`は空欄を保つ（判定は実行レビュー担当だけが書く）。
 観測を取得した版（実行記録の`git_head`など）は観測ファイルの参照と裸のOIDで書き、`commit:<OID>`は現行成果物を指す参照だけに使う。`--rewrite-map`は履歴書換えで`commit:`標識だけを新しいOIDへ更新するため、取得版をこの標識で書くと実行していない版へ変わる。書き分けの詳細は`agent-toolkit:review-standards`の`references/exec-review-recording.md`「根拠の書き方」に従う。
 各行へ保存するのは、その要求単位に直接必要な観測と現在の成果物へ適用できる理由とする。
 旧取得版の観測が現在も必要なら、取得版と適用理由を保持し、失効した説明や別要求の経緯は置換する。
@@ -222,7 +227,7 @@ continuations:
 | phase | 対象 |
 | --- | --- |
 | `pre_fixup` | そのラウンドの最古fixup対象から元HEADまでのfirst-parent全OID |
-| `fixup` | 指摘を対応付けた元commitの完全OID |
+| `fixup` | 指摘を対応付けた元commitの完全OID（過去単位を含む場合は元HEADも対象） |
 | `autosquash` | そのラウンドの最古fixup対象から元HEADまでのfirst-parent全OID |
 | `amend` | 書換え後HEADの完全OID |
 

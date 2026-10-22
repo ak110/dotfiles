@@ -23,6 +23,10 @@ LEGACY_DIR="$HOME/.claude/rules/agent-basics"
 # rules/ 配下に配置すると Claude Code が再帰的に読み込むため、差し替え中に二重ロードされる。
 STAGE_ROOT="$HOME/.claude/rules-stage"
 CODEX_PLUGIN_ID="agent-toolkit@ak110-dotfiles"
+BASICS_PLUGIN_ID="agent-basics@ak110-dotfiles"
+INSTALL_TOOLKIT=1
+if [ "${1:-}" = "--basics-only" ]; then INSTALL_TOOLKIT=0; fi
+CODEX_JSON_PYTHON=(uv run --no-config --no-project --python 3.15 python)
 CLAUDE_INSTALLED_PLUGINS="$HOME/.claude/plugins/installed_plugins.json"
 CODEX_HOME_DIR="${CODEX_HOME:-$HOME/.codex}"
 CODEX_PLUGIN_CACHE_ROOT="$CODEX_HOME_DIR/plugins/cache/ak110-dotfiles/agent-toolkit"
@@ -115,12 +119,20 @@ _install_agent_toolkit() {
     echo "Claude Code側のagent-toolkitプラグインを設定しました。"
 }
 
+_install_agent_basics() {
+    echo "agent-basics プラグインを user scope にインストール・更新します..."
+    claude plugin marketplace add ak110/dotfiles --scope=user >/dev/null 2>&1 || true
+    claude plugin marketplace update ak110-dotfiles >/dev/null
+    claude plugin install "$BASICS_PLUGIN_ID" --scope=user >/dev/null 2>&1 || true
+    claude plugin update "$BASICS_PLUGIN_ID" --scope=user >/dev/null
+}
+
 _codex_plugin_state() {
     local plugin_json
     if ! plugin_json=$(codex plugin list --json); then
         return 1
     fi
-    uv run --no-config --no-project --python 3.15 python - "$CODEX_PLUGIN_ID" "$plugin_json" <<'PY'
+    "${CODEX_JSON_PYTHON[@]}" - "${1:-$CODEX_PLUGIN_ID}" "$plugin_json" <<'PY'
 import json
 import sys
 
@@ -154,7 +166,7 @@ PY
 _codex_state_value() {
     local state="$1"
     local key="$2"
-    uv run --no-config --no-project --python 3.15 python - "$key" "$state" <<'PY'
+    "${CODEX_JSON_PYTHON[@]}" - "$key" "$state" <<'PY'
 import json
 import sys
 
@@ -171,7 +183,7 @@ _codex_expected_plugin_version() {
     if ! marketplace_json=$(codex plugin marketplace list --json); then
         return 1
     fi
-    uv run --no-config --no-project --python 3.15 python - "$marketplace_json" <<'PY'
+    "${CODEX_JSON_PYTHON[@]}" - "$marketplace_json" "${1:-agent-toolkit}" <<'PY'
 import json
 import pathlib
 import sys
@@ -186,14 +198,17 @@ for item in marketplaces:
         try:
             root = pathlib.Path(item["root"]).resolve()
             marketplace = json.loads((root / ".agents/plugins/marketplace.json").read_text(encoding="utf-8"))
-            entry = next(plugin for plugin in marketplace["plugins"] if plugin.get("name") == "agent-toolkit")
+            entry = next(plugin for plugin in marketplace["plugins"] if plugin.get("name") == sys.argv[2])
             source = entry["source"]
             if source.get("source") != "local" or not isinstance(source.get("path"), str):
                 raise ValueError
             plugin_root = (root / source["path"]).resolve()
             plugin_root.relative_to(root)
             manifest = plugin_root / ".codex-plugin/plugin.json"
-            version = json.loads(manifest.read_text(encoding="utf-8"))["version"]
+            data = json.loads(manifest.read_text(encoding="utf-8"))
+            if data["name"] != sys.argv[2]:
+                raise ValueError
+            version = data["version"]
         except (OSError, UnicodeError, json.JSONDecodeError, KeyError, StopIteration, TypeError, ValueError):
             raise SystemExit(1)
         if not isinstance(version, str):
@@ -241,6 +256,9 @@ _restore_codex_plugin_caches() {
 # dotfilesのpost-applyはローカルの作業ツリーをmarketplaceとして登録し、その版を期待値にする。
 # 単体インストーラーは作業ツリーを前提にできないため、配布元の違いをそのまま残す。
 _install_codex_plugin() {
+    local plugin_name="${1:-agent-toolkit}"
+    local CODEX_PLUGIN_ID="$plugin_name@ak110-dotfiles"
+    local CODEX_PLUGIN_CACHE_ROOT="$CODEX_HOME_DIR/plugins/cache/ak110-dotfiles/$plugin_name"
     local before_state=""
     local before_state_known=0
     local expected_version=""
@@ -252,23 +270,27 @@ _install_codex_plugin() {
     local hook_stage=""
     local migration_dir=""
     local post_add_error=""
-    echo "Codex側のagent-toolkitプラグインを設定します..."
+    local skill=""
+    local skills_present=0
+    echo "Codex側の$plugin_name プラグインを設定します..."
     codex plugin marketplace add ak110/dotfiles --json >/dev/null 2>&1 || true
     codex plugin marketplace upgrade ak110-dotfiles --json >/dev/null
-    expected_version=$(_codex_expected_plugin_version)
+    expected_version=$(_codex_expected_plugin_version "$plugin_name")
     if ! before_state=$(_codex_plugin_state); then
         echo "Codex plugin更新前の状態を確認できません。" >&2
         return 1
     fi
     before_state_known=1
-    mkdir -p "$HOME/.local/bin"
-    hook_stage=$(mktemp "$HOME/.local/bin/atk-hook.XXXXXX")
-    if ! curl -fsSL "${BASE_URL%/agent-toolkit/rules}/agent-toolkit/scripts/atk-hook" -o "$hook_stage"; then
-        rm -f "$hook_stage"
-        return 1
+    if [ "$plugin_name" = "agent-toolkit" ]; then
+        mkdir -p "$HOME/.local/bin"
+        hook_stage=$(mktemp "$HOME/.local/bin/atk-hook.XXXXXX")
+        if ! curl -fsSL "${BASE_URL%/agent-toolkit/rules}/agent-toolkit/scripts/atk-hook" -o "$hook_stage"; then
+            rm -f "$hook_stage"
+            return 1
+        fi
+        chmod 755 "$hook_stage"
+        mv "$hook_stage" "$hook_wrapper"
     fi
-    chmod 755 "$hook_stage"
-    mv "$hook_stage" "$hook_wrapper"
     migration_dir=$(mktemp -d)
     _snapshot_codex_plugin_caches "$migration_dir"
     if ! codex plugin add "$CODEX_PLUGIN_ID" --json >/dev/null; then
@@ -286,13 +308,23 @@ _install_codex_plugin() {
         after_present=$(_codex_state_value "$after_state" present)
         after_version=$(_codex_state_value "$after_state" version)
         after_enabled=$(_codex_state_value "$after_state" enabled)
-        if [ "$before_state_known" -eq 1 ] && [ "$before_state" != "$after_state" ]; then
+        if [ "$plugin_name" = "agent-toolkit" ] && [ "$before_state_known" -eq 1 ] && [ "$before_state" != "$after_state" ]; then
             CODEX_PLUGIN_UPDATED=1
         fi
         if [ "$after_present" != "true" ] || [ "$after_enabled" != "true" ] || [ "$after_version" != "$expected_version" ]; then
             post_add_error="Codex plugin更新後の状態が期待値と一致しません。"
-        elif [ ! -f "$CODEX_PLUGIN_CACHE_ROOT/$expected_version/agent_toolkit/hook.py" ]; then
+        elif [ "$plugin_name" = "agent-toolkit" ] && [ ! -f "$CODEX_PLUGIN_CACHE_ROOT/$expected_version/agent_toolkit/hook.py" ]; then
             post_add_error="Codex plugin更新後のhook実体を確認できません。"
+        elif [ "$plugin_name" = "agent-basics" ]; then
+            for skill in "$CODEX_PLUGIN_CACHE_ROOT/$expected_version/skills"/*/SKILL.md; do
+                if [ -f "$skill" ]; then
+                    skills_present=1
+                    break
+                fi
+            done
+            if [ "$skills_present" -eq 0 ]; then
+                post_add_error="Codex plugin更新後のskills実体を確認できません。"
+            fi
         fi
     fi
     # 既存セッションが参照する全旧パスを関数の終了時に成立させるため、復旧は保護区間の終端で行う。
@@ -306,7 +338,11 @@ _install_codex_plugin() {
         echo "$post_add_error" >&2
         return 1
     fi
-    echo "Codex側のagent-toolkitプラグインを設定しました。"
+    echo "Codex側の$plugin_name プラグインを設定しました。"
+}
+
+_install_codex_basics() {
+    _install_codex_plugin agent-basics
 }
 
 _claude_plugin_scripts() {
@@ -340,8 +376,14 @@ _warm_agents_server_path() {
         return 0
     fi
     project_root="$(dirname "$(dirname "$script_path")")"
-    if ! uv run --no-config --no-project --python 3.15 python "$project_root/scripts/launch.py" "$script_path" --check-dependencies </dev/null >/dev/null; then
+    if ! uv run --no-config --no-project --python 3.15 python "$project_root/scripts/launch.py" --prepare "$script_path" </dev/null >/dev/null; then
         echo "agents_serverのuv環境ウォームアップに失敗しました: $script_path" >&2
+        echo "次の操作: install-claude.shを再実行してください。" >&2
+        return 0
+    fi
+    if ! uv run --no-config --no-project --python 3.15 python "$project_root/scripts/launch.py" "$script_path" --check-dependencies </dev/null >/dev/null; then
+        echo "agents_serverの依存検査に失敗しました: $script_path" >&2
+        echo "次の操作: install-claude.shを再実行してください。" >&2
     fi
     return 0
 }
@@ -489,6 +531,14 @@ EOF
 main() {
     _require_command claude "Claude Code" "https://docs.anthropic.com/ja/docs/claude-code/overview"
     _require_command codex "Codex" "https://developers.openai.com/codex/cli/"
+    if [ "$INSTALL_TOOLKIT" -eq 0 ]; then
+        _require_command python3 "Python 3" "https://www.python.org/downloads/"
+        CODEX_JSON_PYTHON=(python3)
+        _install_agent_basics
+        _install_codex_basics
+        echo "Claude Code・Codexのagent-basics設定が完了しました。"
+        return 0
+    fi
     _require_command uv "uv" "https://docs.astral.sh/uv/getting-started/installation/"
 
     mkdir -p "$(dirname "$TARGET_DIR")" "$STAGE_ROOT"
@@ -524,11 +574,15 @@ main() {
         echo "削除（旧ディレクトリ）: $LEGACY_DIR"
     fi
 
-    _install_agent_toolkit
-    _install_codex_plugin
-    _warm_agents_server
-    _migrate_legacy_codex_mcp
-    _install_atk_wrapper
+    _install_agent_basics
+    _install_codex_basics
+    if [ "$INSTALL_TOOLKIT" -eq 1 ]; then
+        _install_agent_toolkit
+        _install_codex_plugin
+        _warm_agents_server
+        _migrate_legacy_codex_mcp
+        _install_atk_wrapper
+    fi
     echo "Claude Code・Codex、agent-toolkit、atkの設定が完了しました。"
 }
 

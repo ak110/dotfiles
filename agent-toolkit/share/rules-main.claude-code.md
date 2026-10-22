@@ -19,7 +19,7 @@ Claude Codeのホストが挿入する`Usage limit reached; a short grace allowa
 
 ## ユーザー確認（`AskUserQuestion`）
 
-- `AskUserQuestion`を呼ぶ前に、`agent-toolkit:user-confirmation-and-report`の読込表の`references/approval-scope.md`と`references/choice-construction.md`を全文読む（会話圧縮の後は読み直す）。各質問へ同スキル「確認要否の判定」を適用し、確認を要しない質問は発行せず、自ら確定した案と根拠を発話本文で報告する。
+- `AskUserQuestion`には共通読込表の確認資料を適用する（会話圧縮の後は再取得する）。各質問へ同スキル「確認要否の判定」を適用し、確認を要しない質問は発行せず、自ら確定した案と根拠を発話本文で報告する。
   - `AskUserQuestion`は1回に質問1〜4件、各質問の選択肢2〜4件を受け取る。自由記述の回答は質問へ対応し、一般の返答は別の`response`へ入る。
   - 呼び出し前の地の文は要約されることがあるため、判断材料と、直前の回答に含まれた問いへの答えを質問または`preview`へ含める。
   - 推奨案は`(Recommended)`を付けた第1選択肢として置く。`共通前提:`行と質問・選択肢の組み方は同スキル「確認の選択肢を組む手順」に従う。

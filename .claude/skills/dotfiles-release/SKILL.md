@@ -12,11 +12,24 @@ description: >
 本スキルは本リポジトリの`develop`と`master`のリリース運用と、日次リリースの判定手順を提供する。
 テストや整形の手順は`dotfiles-development`が扱う。
 
+## 名指し参照の読込方法
+
+本文の各参照の適用条件を保ち、選んだ資料の指定範囲を取得してから、その基準を使う具体的な判断へ進む。起動時の行の資料は起動本文とともに届く。
+
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:process-wi/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/SKILL.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../dotfiles-development/SKILL.md` | 判断 | `read:*/skills/dotfiles-development/SKILL.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:commit/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/commit/SKILL.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:external-write-review/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/external-write-review/SKILL.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:writing-standards/references/writing.md#「文章の共通規定」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/writing.md#「文章の共通規定」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../merge-pr/SKILL.md` | 判断 | `read:*/skills/merge-pr/SKILL.md` |
+
 ## 読込表
 
-| 時点または条件 | 全文読む資料 |
-| --- | --- |
-| branch初期化、GitHubの保護設定またはマージ後の詳細手順が要る時 | [developとmasterのリリース運用](../../../docs/development/concepts-workflows.md#developとmasterのリリース運用)、[branchとリリースの設計](../../../docs/development/design-release.md#developとmasterのbranchリリース設計) |
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 | 資料選択子 |
+| --- | --- | --- | --- | --- |
+| branch初期化、GitHubの保護設定またはマージ後の詳細手順が要る時 | [developとmasterのリリース運用](../../../docs/development/concepts-workflows.md#developとmasterのリリース運用)、[branchとリリースの設計](../../../docs/development/design-release.md#developとmasterのbranchリリース設計) | 判断 | `section:*/docs/development/concepts-workflows.md#developとmasterのリリース運用`、`section:*/docs/development/design-release.md#developとmasterのbranchリリース設計` | |
 
 ## developとmasterのリリース運用
 
@@ -26,7 +39,7 @@ description: >
 
 - 条件: 公開工程のpushとCI成功を確認した後、`agent-toolkit:commit`のGit識別子規定に従って解決した`origin/develop`と`origin/master`のcommitが異なること。WIキューの状態や変更の消費主体（エージェント向けの変更だけでもよい）では限定しない。不成立なら両branchが同じcommitを指すことを報告し、リリースPRの作成対象から外す
 - 同じ最上位セッションで`develop`から`master`へのリリースPRをすでに1件マージしている場合は、追加のPRを作成せず、`develop`へのpushとCI成功までで終える。累積差分は次のセッションの1件のリリースPRへ含める
-- 同じheadとbaseのopen PRが1件ならそれを再利用し、0件なら作成する。複数件なら推測せず、候補の番号とURLを報告して停止する。作成する場合はPR本文をmanaged-tempへ保存し、投稿の直前に`agent-toolkit:external-write-review`を起動する。タイトルはそのセッションの変更の主題を1文で書き、本文は`agent-toolkit:writing-standards`の`references/writing.md`「文章の共通規定」に従う
+- 同じheadとbaseのopen PRが1件ならそれを再利用し、0件なら作成する。複数件なら推測せず、候補の番号とURLを報告して停止する。作成する場合はPR本文をmanaged-tempへ保存し、投稿の直前に`agent-toolkit:external-write-review`を起動する。タイトルはそのセッションの変更の主題を1文で書き、本文は`agent-basics:writing-standards`の`references/writing.md`「文章の共通規定」に従う
 - 続けてPRの完全なURLを指定して`merge-pr`を起動し、マージ、branch同期、CI、必要なReleaseの検収まで完遂する
 - PRの作成またはマージが失敗した場合は、再試行もrollbackもせず、外部状態、失敗工程、run URL、再開点を報告する
 

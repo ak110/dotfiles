@@ -232,7 +232,7 @@ class TestCheckMarketplaceFromFile:
             encoding="utf-8",
         )
         monkeypatch.setattr(_claude_marketplace, "_KNOWN_MARKETPLACES_PATH", path)
-        # 実環境の settings.json に依存しないよう、存在しないパスへ差し替える
+        # 実環境の settings.json を参照しないよう、存在しないパスへ差し替える
         monkeypatch.setattr(_claude_marketplace, "_SETTINGS_JSON_PATH", tmp_path / "settings.json")
         assert _claude_marketplace.is_directory_type_registered() is True
 
@@ -323,7 +323,7 @@ class TestHappyPathDirectoryType:
             encoding="utf-8",
         )
         monkeypatch.setattr(_claude_marketplace, "_KNOWN_MARKETPLACES_PATH", marketplace_path)
-        # 実環境の settings.json に依存しないよう、存在しないパスへ差し替える。
+        # 実環境の settings.json を参照しないよう、存在しないパスへ差し替える。
         # `_claude_marketplace._SETTINGS_JSON_PATH` は `_check_marketplace_from_file` の参照先、
         # `_claude_common.SETTINGS_JSON_PATH` は `_read_enabled_plugins_from_file` の参照先
         monkeypatch.setattr(_claude_marketplace, "_SETTINGS_JSON_PATH", tmp_path / "settings.json")

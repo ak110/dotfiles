@@ -33,7 +33,7 @@ lazy from agent_toolkit._git import worktrees as git_worktrees
 lazy from agent_toolkit._hooks import agent_id, agents_server_observations
 lazy from agent_toolkit._hooks import document_reads as _document_reads
 lazy from agent_toolkit._hooks import tool_input as _hook_tool_input
-lazy from agent_toolkit._hooks.host import is_codex_payload
+lazy from agent_toolkit._hooks.host import is_antigravity_payload, is_codex_payload
 lazy from agent_toolkit._hooks.pretooluse.operation_skills import written_paths
 lazy from agent_toolkit._hooks.pretooluse.shell_checks import _git_subcommand_tokens
 lazy from agent_toolkit._hooks.stop_session import append_stop_log
@@ -321,7 +321,7 @@ def _invocations(payload: dict[str, Any], *, after: bool, failed: bool) -> list[
         for invocation, current in shell_cwd.bash_invocation_cwds(command, cwd if isinstance(cwd, str) else ""):
             single = shlex.join(invocation.segment.tokens)
             item_labels = [*_saved_operations(single), *([] if invocation.background else published_git_operations(single))]
-            if codex:
+            if codex or is_antigravity_payload(payload):
                 text = _document_reads.response_text(payload.get("tool_response"))
                 for skill in dict.fromkeys(_read_skills(single)):
                     if not _document_reads.body_returned(skill, "SKILL.md", text):

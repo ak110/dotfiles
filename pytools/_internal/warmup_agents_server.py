@@ -11,7 +11,9 @@ hookとMCPに同じデータ領域が提供される場合は同じ版の環境�
 
 from pathlib import Path
 
-from pytools._internal import claude_common, plugin_warmup, post_apply_outcome
+from agent_toolkit._common import dotfiles_mode
+
+from pytools._internal import claude_common, common, plugin_warmup, post_apply_outcome
 
 _TAG = "agent-toolkit warmup"
 _SCRIPT_RELATIVE = Path("agent_toolkit") / "agents_server_mcp.py"
@@ -20,6 +22,8 @@ _INSTALLED_PLUGINS_PATH = claude_common.INSTALLED_PLUGINS_PATH
 
 def run() -> post_apply_outcome.PostApplyOutcome:
     """導入済みの版を解決し、起動時のデータ領域へuv環境を構築する。"""
+    if dotfiles_mode.is_minimal():
+        return post_apply_outcome.PostApplyOutcome()
     return plugin_warmup.run(_targets, tag=_TAG, arguments=("--check-dependencies",))
 
 
@@ -29,9 +33,12 @@ def _targets() -> list[Path]:
     Codexの版はプラグイン更新が失敗した場合も実際の参照先と一致させるため、
     `codex plugin list --json`の有効なエントリから解決する。
     """
-    return plugin_warmup.agent_toolkit_targets(
+    targets = plugin_warmup.agent_toolkit_targets(
         _INSTALLED_PLUGINS_PATH,
         claude_relative=_SCRIPT_RELATIVE,
         codex_relative=_SCRIPT_RELATIVE,
         tag=_TAG,
     )
+    root = common.find_dotfiles_root()
+    worktree_target = root / "agent-toolkit" / _SCRIPT_RELATIVE if root is not None else None
+    return plugin_warmup.existing_targets([*targets, worktree_target], tag=_TAG)

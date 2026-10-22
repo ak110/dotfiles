@@ -23,6 +23,7 @@ from session_evidence_records import (
     _codex_record_thread_id,
 )
 
+from agent_toolkit._common.agy_records import normalize_entries, usage_tokens
 from agent_toolkit._common.runtime_identity import distinct_identities as _distinct_identities
 
 _CLAUDE_TOKEN_KEYS = (
@@ -43,7 +44,7 @@ _CODEX_TOKEN_KEYS = (
 )
 
 
-_CLAUDE_HINT_KEYS = ("command", "file_path", "path", "pattern", "url", "query")
+_CLAUDE_HINT_KEYS = ("command", "CommandLine", "file_path", "path", "Path", "pattern", "url", "query")
 
 
 def _parse_cli_timestamp(value: str) -> datetime.datetime:
@@ -151,26 +152,7 @@ def _agy_token_usages(records: list[_Record]) -> list[tuple[_Record, dict[str, i
     キャッシュ作成の成分は持たないため0とする。
     同じ応答の`usage`は完了した`agent_response`ステップだけが持つため、各ステップを1回ずつ数える。
     """
-    usages: list[tuple[_Record, dict[str, int]]] = []
-    for record in records:
-        step = record.entry.get("step_update")
-        if not isinstance(step, dict) or step.get("step_type") != "agent_response":
-            continue
-        usage = step.get("usage")
-        if not isinstance(usage, dict):
-            continue
-        usages.append(
-            (
-                record,
-                {
-                    "input_tokens": _token_value(usage.get("input_tokens")),
-                    "output_tokens": _token_value(usage.get("output_tokens")),
-                    "cache_creation_input_tokens": 0,
-                    "cache_read_input_tokens": _token_value(usage.get("cache_read_tokens")),
-                },
-            )
-        )
-    return usages
+    return [(record, usage) for record in records if (usage := usage_tokens(record.entry)) is not None]
 
 
 def _codex_token_usages(records: list[_Record]) -> list[tuple[_Record, dict[str, int]]]:
@@ -358,13 +340,17 @@ def _stats_call_entries(records: list[_Record], runtime: _Runtime) -> list[dict[
     """
     if runtime == "opencode":
         return _stats_call_entries(_opencode_records(records), "claude")
+    records = [
+        record._replace(entry=entry)
+        for record, entry in zip(records, normalize_entries([record.entry for record in records]), strict=True)
+    ]
     calls: dict[str, tuple[str, str | None, int, datetime.datetime]] = {}
     results: dict[str, list[datetime.datetime]] = {}
     for record in records:
         timestamp = _record_timestamp(record)
         if timestamp is None:
             continue
-        if runtime == "claude":
+        if runtime in {"claude", "agy"}:
             message = record.entry.get("message")
             content = message.get("content") if isinstance(message, dict) else None
             if not isinstance(content, list):

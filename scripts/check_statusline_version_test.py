@@ -179,7 +179,7 @@ def test_release_tag_state_reports_missing_tag(repo: pathlib.Path) -> None:
 def test_release_tag_on_non_commit_object_is_a_precondition_failure(
     repo: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """commit以外を指すタグを不在として通さず、両方のリリース入口と`main`の終了2へ伝える。"""
+    """commit以外を指すタグを不在として扱わず、両方のリリース関数と`main`の終了2へ伝える。"""
     _write(repo, "rust/claude-statusline/Cargo.toml", _MANIFEST_TEMPLATE.format(version="0.1.1"))
     head = _commit(repo, "bump")
     tree = subprocess.run(["git", "write-tree"], cwd=repo, check=True, capture_output=True, text=True).stdout.strip()

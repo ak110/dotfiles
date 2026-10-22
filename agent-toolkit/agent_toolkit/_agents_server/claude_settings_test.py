@@ -66,7 +66,7 @@ async def test_subscription_launch_drops_parent_api_auth(
         options = seen[0]
         assert not options.env.get("ANTHROPIC_API_KEY") and not options.env.get("ANTHROPIC_AUTH_TOKEN")
         settings = json.loads(options.settings)
-        assert not settings["env"]["ANTHROPIC_API_KEY"] and not settings["env"]["ANTHROPIC_AUTH_TOKEN"]
+        assert "ANTHROPIC_API_KEY" not in settings["env"] and "ANTHROPIC_AUTH_TOKEN" not in settings["env"]
         assert settings["env"]["CUSTOM"] == "kept"
         assert not settings["apiKeyHelper"]
 
@@ -435,7 +435,7 @@ async def test_api_switched_delegate_auto_resume_returns_to_subscription_after_r
         ) as backend:
             install_backend(manager, "claude", backend)
             session_registry.publish("child", terminal=False, cwd=str(tmp_path))
-            # 公開待機に依存せず、上限からのAPI移行と孫sessionの終端による自動再開を常駐監視で進める。
+            # 公開待機が呼ばれるかによらず、上限からのAPI移行と孫sessionの終端による自動再開を常駐監視で進める。
             manager.activate()
             try:
                 await manager.start("claude:sonnet/high", "作業する", str(tmp_path))

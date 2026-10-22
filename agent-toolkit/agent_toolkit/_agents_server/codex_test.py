@@ -70,6 +70,7 @@ from agent_toolkit._testing.agents_server_support import (
 from agent_toolkit._testing.helpers import delivery_payload
 from agent_toolkit._testing.isolation import CONFIG_DIRECTORY_ENVIRONMENT_NAMES, HOME_ENVIRONMENT_NAMES
 from agent_toolkit._testing.managed_temp_support import setattr_in_managed_temp_modules
+from agent_toolkit._testing.plugin_environment_support import prepare_plugin_environment
 
 
 @contextlib.asynccontextmanager
@@ -1127,6 +1128,8 @@ async def test_stable_plugin_root_shared_across_processes(
     state_base = tmp_path / "runtime-state"
     uv = shutil.which("uv", path=environment["PATH"])
     assert uv is not None
+    prepare_plugin_environment(source, environment)
+    dependency_environment = plugin_environment.project_environment(source, environment)
     lease_directory = state_base / "agent-toolkit/plugin-root-leases"
     clients: list[ClientSession] = []
     owned: dict[int, psutil.Process] = {}
@@ -1140,6 +1143,7 @@ async def test_stable_plugin_root_shared_across_processes(
             async with contextlib.AsyncExitStack() as stack:
                 for index in range(3):
                     root = source if index < 2 else area / version if area is not None else source
+                    assert plugin_environment.project_environment(root, environment) == dependency_environment
                     command = plugin_environment.launch_command(root, pathlib.Path("agent_toolkit/agents_server_mcp.py"))
                     log = tmp_path / f"mcp-{index}.stderr"
                     logs.append(log)
@@ -1273,6 +1277,7 @@ async def test_legacy_plugin_root_real_mcp_lifecycle(
     environment = _real_mcp_environment(tmp_path, tmp_path_factory, host_environ)
     uv = shutil.which("uv", path=environment["PATH"])
     assert uv is not None
+    prepare_plugin_environment(source, environment)
     command = plugin_environment.launch_command(source, pathlib.Path("agent_toolkit/agents_server_mcp.py"))
     log = tmp_path / "legacy-mcp.stderr"
     log.touch()
@@ -1918,7 +1923,9 @@ async def test_codex_explore_commands_reach_start_resume_and_followup(
                 "mcpServers"
             ]["pyfltr"]
             assert pyfltr["command"] == definition["command"]
-            assert pyfltr["args"] == definition["args"]
+            assert pyfltr["args"] == [
+                arg.replace("${CLAUDE_PLUGIN_ROOT}", str(subject.plugin_roots.SERVER_PLUGIN_ROOT)) for arg in definition["args"]
+            ]
             assert explore_thread["developerInstructions"] == subject._developer_instructions("explore")  # noqa: SLF001
             for method, params in explore_client.requests:
                 assert params["approvalPolicy"] == "never"
@@ -1973,7 +1980,10 @@ async def test_codex_resume_passes_delegate_instructions(monkeypatch: pytest.Mon
         assert explore_resume["developerInstructions"] == subject._developer_instructions("explore")  # noqa: SLF001
         assert explore_resume["config"]["project_doc_max_bytes"] == 0
         assert explore_resume["config"]["features"] == {"plugins": False}
-        assert explore_resume["config"]["mcp_servers"]["pyfltr"]["command"] == "uvx"
+        definition = json.loads((subject.plugin_roots.SERVER_PLUGIN_ROOT / ".mcp.json").read_text(encoding="utf-8"))[
+            "mcpServers"
+        ]["pyfltr"]
+        assert explore_resume["config"]["mcp_servers"]["pyfltr"]["command"] == definition["command"]
         assert shell_resume["developerInstructions"] == subject._developer_instructions("shell")  # noqa: SLF001
         assert shell_resume["config"] == {"bypass_hook_trust": True, "project_doc_max_bytes": 0}
 
@@ -2466,6 +2476,7 @@ async def test_codex_json_rpc_process_passes_stable_cwd(
 @pytest.mark.asyncio
 async def test_app_server_inherits_prepared_conversation_environment(monkeypatch: pytest.MonkeyPatch) -> None:
     """MCPの共通整備後に起動するApp Serverへ起動元contextが届かず、明示ownerだけが届く。"""
+    monkeypatch.setattr(subject.child_environment, "_INHERITED", {})
     for name in subject.mcp_environment._NON_INHERITABLE_NAMES:
         monkeypatch.setenv(name.upper(), "source-context")
     mcp_tools._prepare_child_environment()

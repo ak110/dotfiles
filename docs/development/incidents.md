@@ -17,7 +17,7 @@
 | [セキュリティ設定の弱体化](incidents-data-security.md#セキュリティ設定の弱体化) | sandbox、権限、秘匿値の保護を弱めた事例 | `incidents-data-security.md` |
 | [誤った完了報告と虚偽報告](incidents-validation.md#誤った完了報告と虚偽報告) | 未達や未観測を完了として報告した事例 | `incidents-validation.md` |
 | [WI投入とAWI起草の欠陥](incidents-validation.md#wi投入とawi起草の欠陥) | WIの投入、本文の起草、由来の判定の誤り | `incidents-validation.md` |
-| [実行レビューと証拠検査の欠陥](incidents-validation.md#実行レビューと証拠検査の欠陥) | 実行レビュー、完成条件証拠、証拠検査の誤り | `incidents-validation.md` |
+| [実行レビューと証拠検査の欠陥](incidents-validation.md#実行レビューと証拠検査の欠陥) | 実行レビュー、完成条件証拠、証拠チェックの誤り | `incidents-validation.md` |
 | [テスト、CIと検索出力の欠陥](incidents-validation.md#テストciと検索出力の欠陥) | テストの隔離、CI、検索の出力量の誤り | `incidents-validation.md` |
 | [誤判定と検証不足](incidents-validation.md#誤判定と検証不足) | 根拠の確認を欠いた判定（前記の3区分に当たらないもの） | `incidents-validation.md` |
 | [規範の消失と陳腐化](incidents-validation.md#規範の消失と陳腐化) | 規範の削除・縮小・移設で条文や参照が失われた事例 | `incidents-validation.md` |

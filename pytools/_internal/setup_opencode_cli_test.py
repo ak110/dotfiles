@@ -22,6 +22,7 @@ def test_opencode_install_only_when_absent(monkeypatch: pytest.MonkeyPatch, tmp_
         return subprocess.CompletedProcess(command, 0, "1.19.3", "")
 
     monkeypatch.setattr(common, "resolve_executable", resolve)
+    monkeypatch.setattr(setup_opencode_cli.shutil, "which", lambda name: str(resolve(name)))
     monkeypatch.setattr(common, "run_subprocess", execute)
     result = setup_opencode_cli.run()
     assert result.changed is (not installed)
@@ -51,6 +52,9 @@ def test_opencode_install_failure_is_warning(
         return subprocess.CompletedProcess(command, int(failed), "", "registry or executable failure" if failed else "")
 
     monkeypatch.setattr(common, "resolve_executable", resolve)
+    monkeypatch.setattr(
+        setup_opencode_cli.shutil, "which", lambda name: None if failure == "npm-missing" else str(tmp_path / name)
+    )
     monkeypatch.setattr(common, "run_subprocess", execute)
     with caplog.at_level(logging.WARNING):
         result = setup_opencode_cli.run()

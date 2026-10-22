@@ -332,7 +332,7 @@ class TestRunFlow:
     def test_project_scope_ignored_in_version_check(self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path):
         """project scope のエントリは install/update 判定に使われず、user scope へ移行される。
 
-        project scope の uninstall は CLI が cwd 依存の判定を行うため、
+        project scope の uninstall は CLI が cwd で結果が変わる判定を行うため、
         エントリの projectPath を cwd にして呼び出す。本テストでは tmp_path を
         projectPath として渡し、uninstall 呼び出し時の cwd が一致することを検証する。
         """
@@ -468,7 +468,7 @@ def _directory_type_env(monkeypatch: pytest.MonkeyPatch) -> None:
 class TestRunFlowDirectoryType:
     """directory 型登録が健全な環境での追加検証。
 
-    この環境では version 乖離に依存せず、毎回 ``plugin install <plugin>@<mp> --scope=user`` を
+    この環境では version 乖離の有無によらず、毎回 ``plugin install <plugin>@<mp> --scope=user`` を
     再実行してキャッシュを最新化する (dotfiles 実体からの同期経路)。
     ``plugin update`` と ``marketplace update`` は version 一致時 no-op になるため呼ばない。
     """

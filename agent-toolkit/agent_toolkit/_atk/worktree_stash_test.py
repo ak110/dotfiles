@@ -423,7 +423,7 @@ def test_same_label_main_and_linked_survive_gc_fetch_and_restore(tmp_path: pathl
         saved = _save(worktree, "same")
         assert saved.returncode == 0, saved.stderr
         assert saved.stdout.strip() == "refs/worktree/same"
-        assert saved.stderr.startswith("成功: ")
+        assert not saved.stderr
     _gc(second)
     for worktree, marker in ((repo, "main"), (first, "linked")):
         git_repository.run_git(worktree, "fetch", str(remote), "main")
@@ -444,7 +444,7 @@ def test_protect_legacy_ref_is_idempotent_and_preserves_missing_ref(tmp_path: pa
         result = _protect(first, ref)
         assert result.returncode == 0, result.stderr
         assert result.stdout.strip() == ref
-        assert result.stderr.startswith("成功: ")
+        assert not result.stderr
     _gc(second)
     _assert_restored(first, ref, "legacy")
     missing_ref = "refs/worktree/missing"

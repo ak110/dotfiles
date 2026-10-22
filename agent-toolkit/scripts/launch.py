@@ -20,7 +20,7 @@ from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from agent_toolkit._agents_server import logging_config  # noqa: E402  # pylint: disable=wrong-import-position,import-error
-from agent_toolkit._common import next_action, plugin_environment  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+from agent_toolkit._common import dotfiles_mode, next_action, plugin_environment  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 
 _AGENTS_SERVER_TARGET = Path("agent_toolkit") / "agents_server_mcp.py"
 _STDERR_TAIL_BYTES = 16 * 1024
@@ -33,6 +33,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--project", type=Path, default=Path(__file__).resolve().parents[1], help="配布rootの絶対パス")
     parser.add_argument("--persist-claude-env", action="store_true", help="SessionStartのBash環境ファイルへCLIのPATHを追記する")
+    parser.add_argument("--prepare", action="store_true", help="共有依存環境を準備して終了する")
     parser.add_argument("target", type=Path, help="root内のスクリプトの相対パスまたは絶対パス")
     parser.add_argument("arguments", nargs=argparse.REMAINDER, help="対象スクリプトへそのまま渡す引数")
     options = parser.parse_args()
@@ -62,21 +63,77 @@ def main() -> int:
             next_action="uvを導入し、同じコマンドを再実行してください。",
         )
         return 127
-    arguments = [uv, "run", "--project", str(root), "--locked", "--no-default-groups", str(target), *options.arguments]
+    if target == root / "agent_toolkit" / "atk.py":
+        dispatched = dotfiles_mode.dispatch_arguments(options.arguments)
+        if dispatched is not None:
+            return dispatched
+    if options.prepare:
+        return _prepare(root, uv, environment)
+    python = plugin_environment.prepared_python(root, os.environ)
+    if python is None:
+        next_action.report(
+            "共有依存環境が未準備のため、agent-toolkitを起動できません。",
+            next_action="`update-dotfiles`またはagent-toolkitの公開インストーラーを再実行して依存環境を準備してください。",
+        )
+        return 1
+    arguments = [str(python), str(target), *options.arguments]
+    environment = plugin_environment.direct_environment(root, os.environ)
     if target == root / _AGENTS_SERVER_TARGET:
         return _run_agents_server(arguments, environment)
+    if target == root / "agent_toolkit/_common/pyfltr_entry.py" and options.arguments[:1] == ["mcp"]:
+        return _run_agents_server(arguments, environment, record_diagnostics=False)
     if os.name == "nt":
         # Windowsのexecveは子の終了を待たず、呼出元へ終了状態を渡せない。
         return subprocess.run(arguments, env=environment, check=False).returncode
-    os.execve(uv, arguments, environment)
+    os.execve(str(python), arguments, environment)
     return 1
 
 
-def _run_agents_server(arguments: list[str], environment: dict[str, str]) -> int:
+def _prepare(root: Path, uv: str, environment: dict[str, str]) -> int:
+    """依存だけを一時環境へ同期し、完了後に共有環境として公開する。"""
+    target = plugin_environment.project_environment(root, environment)
+    try:
+        with plugin_environment.prepare_lock(target):
+            if plugin_environment.prepared_python(root, environment) is not None:
+                return 0
+            prepare_environment = dict(environment)
+            prepare_environment["UV_PROJECT_ENVIRONMENT"] = str(target)
+            result = subprocess.run(
+                [
+                    uv,
+                    "sync",
+                    "--project",
+                    str(root),
+                    "--python",
+                    sys.executable,
+                    "--locked",
+                    "--no-default-groups",
+                    "--no-install-project",
+                ],
+                env=prepare_environment,
+                check=False,
+            )
+            if result.returncode != 0:
+                return result.returncode
+            plugin_environment.publish_prepared_environment(root, environment)
+            return 0
+    except (OSError, TimeoutError) as exc:
+        next_action.report(
+            f"共有依存環境を準備できません: {exc}",
+            next_action="`update-dotfiles`またはagent-toolkitの公開インストーラーを再実行してください。",
+        )
+        return 1
+
+
+def _run_agents_server(arguments: list[str], environment: dict[str, str], *, record_diagnostics: bool = True) -> int:
     """MCPサーバーを子として起動し、終了状態・受信シグナル・標準エラー末尾を終了診断へ追記する。
 
-    標準入力と標準出力は継承してMCPのstdio通信を中継しない。呼出元へは子と同じ終了状態を返す。
+    標準入力と標準出力は継承してMCPのstdio通信を中継しない。呼出元へは従来のuv起動と同じ終了コードを返す。
     """
+    if not record_diagnostics:
+        with _server_lifetime(arguments, environment, [], bytearray()) as process:
+            returncode = process.wait()
+        return _relay_server_exit(returncode)
     with contextlib.ExitStack() as lifetime:
         with tempfile.NamedTemporaryFile(prefix="agent-toolkit-agents-server-launch-", suffix=".json", delete=False) as record:
             record_path = Path(record.name)
@@ -106,10 +163,12 @@ def _run_agents_server(arguments: list[str], environment: dict[str, str]) -> int
                 launcher_signals=received,
                 stderr_tail=bytes(tail).decode("utf-8", errors="replace"),
             )
-    if returncode < 0:
-        # シグナルで終わった子と同じ終了状態を呼出元へ返す。
-        signal.signal(-returncode, signal.SIG_DFL)
-        os.kill(os.getpid(), -returncode)
+    return _relay_server_exit(returncode)
+
+
+def _relay_server_exit(returncode: int) -> int:
+    """POSIXのシグナル終了を、従来のuv起動と同じ128+signalへ変換する。"""
+    if returncode < 0 and os.name != "nt":
         return 128 - returncode
     return returncode
 

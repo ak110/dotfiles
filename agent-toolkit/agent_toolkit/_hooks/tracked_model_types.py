@@ -4,7 +4,8 @@ from __future__ import annotations
 
 TRACKED_MODEL_TYPES: frozenset[str] = frozenset(
     {
-        "high_tier",
-        "medium_tier",
+        "execute",
+        "review",
+        "chores",
     }
 )

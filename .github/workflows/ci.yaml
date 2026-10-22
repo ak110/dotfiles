@@ -445,10 +445,6 @@ jobs:
         # statusline-version jobが所有するため無効化する。
         run: pyfltr ci --disable=pytest,claude-plugin-validate,statusline-version
 
-      - name: Python 3.15 pytest
-        if: needs.common-ci-owner.outputs.owns == 'true' && matrix.python-version == '3.15' && matrix.check == 'pytest'
-        run: pyfltr ci --commands=pytest
-
       - name: Git 2.34.1の導入
         id: minimum-git
         if: needs.common-ci-owner.outputs.owns == 'true' && matrix.python-version == '3.15' && matrix.check == 'pytest'
@@ -469,12 +465,12 @@ jobs:
           "$root/git" --version | grep -Fx "git version 2.34.1"
           echo "git=$root/git" >> "$GITHUB_OUTPUT"
 
-      - name: Git 2.34.1での実Gitテスト
+      - name: Python 3.15 pytest
         if: needs.common-ci-owner.outputs.owns == 'true' && matrix.python-version == '3.15' && matrix.check == 'pytest'
-        # agent-toolkitの全テストを対象にし、Git呼び出しを新設した経路も個別の指定なしに最低版で検収する。
         env:
           AGENT_TOOLKIT_TEST_GIT: ${{ steps.minimum-git.outputs.git }}
-        run: uv run pytest agent-toolkit/
+        # agent-toolkitの全テストを含む通常のpytestを、Git呼び出しを新設した経路も個別の指定なしに最低版で検収する。
+        run: pyfltr ci --commands=pytest
 
       - name: Prune uv cache for CI
         if: needs.common-ci-owner.outputs.owns == 'true'
@@ -553,9 +549,9 @@ jobs:
         if: needs.common-ci-owner.outputs.owns == 'true'
         with:
           fetch-depth: 0
-      - uses: jdx/mise-action@9b200bcecbfd6303e69a4a261b2e09e3757440a7 # v5.2.0
+      - uses: jdx/mise-action@fc42bcc7ddbf51124c30f95a877a0c5168a3bfde # v5.2.1
         if: needs.common-ci-owner.outputs.owns == 'true'
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         if: needs.common-ci-owner.outputs.owns == 'true'
         with:
           workspaces: rust/claude-statusline
@@ -577,7 +573,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
-      - uses: jdx/mise-action@9b200bcecbfd6303e69a4a261b2e09e3757440a7 # v5.2.0
+      - uses: jdx/mise-action@fc42bcc7ddbf51124c30f95a877a0c5168a3bfde # v5.2.1
       - name: statuslineの版数とタグを検査
         working-directory: ${{ github.workspace }}
         env:

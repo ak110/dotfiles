@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 import pathlib
-import re
 import shlex
 import subprocess
 import sys
@@ -14,7 +13,7 @@ from typing import Any
 from agent_toolkit._agents_server import backends, plugin_root, record_paths
 from agent_toolkit._agents_server.state import SessionResumeState, SessionState
 from agent_toolkit._atk import managed_temp
-from agent_toolkit._common import process_tree
+from agent_toolkit._common import delegated_session, process_tree
 from agent_toolkit._common.next_action import ActionableError
 
 
@@ -118,9 +117,8 @@ def compose_prompt(
         "## 前任からの引き継ぎ",
         "上の起動本文は前任へ配送した原文である。以下の引き継ぎ節を現在の開始条件として扱い、既存の記録を読む。",
     ]
-    handoff = re.search(r"^引き継ぎ記録先[:：]\s*(.+)$", session.prompt, re.MULTILINE)
-    if handoff is not None:
-        path = re.sub(r"[（(](?:新規|継続)[）)]\s*$", "", handoff[1]).strip()
+    path = delegated_session.prompt_handoff_path(session.prompt)
+    if path is not None:
         lines += [f"引き継ぎ記録先: {path}（継続）", "この引き継ぎ記録を最初に読み、確定事項と残工程を復元する。"]
     lines += [
         f"前任session: {session.session_id}",

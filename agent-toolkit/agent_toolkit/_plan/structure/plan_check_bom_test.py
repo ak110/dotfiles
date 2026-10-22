@@ -1,4 +1,4 @@
-"""公開plan-checkの由来通知がWI本文のBOMに依存しないことを検証する。"""
+"""公開plan-checkの由来通知がWI本文のBOMの有無によらず同じになることを検証する。"""
 
 import collections.abc
 import os

@@ -11,7 +11,7 @@ from agent_toolkit._testing.session_evidence_support import write_subagent
 
 
 def test_prepare_keeps_all_records_as_compact_flow(tmp_path: pathlib.Path, capsys) -> None:
-    """候補に依存せずメインと委譲先の目的・操作量・失敗を概要へ残す。"""
+    """候補に限定せずメインと委譲先の目的・操作量・失敗を概要へ残す。"""
     command = "echo " + "x" * 2500 + "中間の操作" + "y" * 6500 + "末尾の操作"
     output = "z" * 3999 + "\n保存先: /results/success.txt"
     transcript = _write_transcript(

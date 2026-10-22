@@ -27,6 +27,83 @@ from pytools._internal import common
 LEGACY_CODEX_MCP_CASES = REPO_ROOT / "pytools" / "_internal" / "legacy_codex_mcp_cases.json"
 
 
+@pytest.mark.parametrize("kind", installer_runners())
+def test_basics_only_preserves_rules_and_home_operations(kind: str, tmp_path: pathlib.Path) -> None:
+    """公開bootstrapの単独導入は既存規範とatkを保持し、uv・download・MCPを要求しない。"""
+    home = tmp_path / "home[standalone]"
+    home.mkdir()
+    kept = {
+        ".claude/rules/agent-toolkit/02-claude-code.md": "既存運用規範",
+        ".claude/rules/agent-basics/legacy.md": "旧規範",
+        ".local/bin/atk": "既存ラッパー",
+        ".claude.json": '{"mcpServers":{"codex":{"command":"codex","args":["mcp-server"]}}}',
+    }
+    for name, body in kept.items():
+        path = home / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(body, encoding="utf-8")
+    stub_bin, stub_log = make_command_stubs(tmp_path, omit="uv")
+    run_installer(kind, home, "http://127.0.0.1:1/never-download", stub_bin=stub_bin, stub_log=stub_log, basics_only=True)
+    for name, body in kept.items():
+        assert (home / name).read_text(encoding="utf-8") == body
+    assert not (home / ".claude/rules-stage").exists()
+    assert not (home / ".local/bin/atk-hook").exists()
+    assert not (home / ".local/bin/atk-hook.cmd").exists()
+    lines = read_log_lines(stub_log)
+    assert "codex plugin add agent-basics@ak110-dotfiles --json" in lines
+    assert lines.index("codex plugin marketplace upgrade ak110-dotfiles --json") < lines.index(
+        "codex plugin add agent-basics@ak110-dotfiles --json"
+    )
+    assert not any("agent-toolkit@" in line or line.startswith(("uv ", "claude mcp ", "codex app-server ")) for line in lines)
+
+
+@pytest.mark.parametrize("kind", installer_runners())
+def test_bootstrap_installs_basics_before_toolkit(kind: str, tmp_path: pathlib.Path, rules_url: str) -> None:
+    """公開bootstrapはClaude・Codexの両ホストで品質プラグインを先に導入する。"""
+    home = tmp_path / "home"
+    home.mkdir()
+    stub_bin, stub_log = make_command_stubs(tmp_path)
+    run_installer(kind, home, rules_url, stub_bin=stub_bin, stub_log=stub_log)
+    lines = read_log_lines(stub_log)
+    assert lines.index("codex plugin marketplace upgrade ak110-dotfiles --json") < lines.index(
+        "codex plugin add agent-basics@ak110-dotfiles --json"
+    )
+    for host, operation, suffix in (("claude", "install", "--scope=user"), ("codex", "add", "--json")):
+        assert lines.index(f"{host} plugin {operation} agent-basics@ak110-dotfiles {suffix}") < lines.index(
+            f"{host} plugin {operation} agent-toolkit@ak110-dotfiles {suffix}"
+        )
+
+
+@pytest.mark.parametrize("kind", installer_runners())
+@pytest.mark.parametrize("fault", ["", "add", "version", "enabled", "skills"])
+def test_basics_bootstrap_verifies_update_and_retains_previous_caches(kind: str, tmp_path: pathlib.Path, fault: str) -> None:
+    """basics更新の成功・失敗を検収し、CLIが削除する既存cacheを全版復旧する。"""
+    home = tmp_path / "home"
+    home.mkdir()
+    cache = home / ".codex/plugins/cache/ak110-dotfiles/agent-basics"
+    for version in ("0.8.0", "0.9.0"):
+        marker = cache / version / "marker"
+        marker.parent.mkdir(parents=True)
+        marker.write_text(version, encoding="utf-8")
+    stub_bin, stub_log = make_command_stubs(tmp_path, omit="uv")
+    result = run_installer(
+        kind,
+        home,
+        "http://127.0.0.1:1/never-download",
+        stub_bin=stub_bin,
+        stub_log=stub_log,
+        basics_only=True,
+        check=False,
+        extra_env={"CODEX_BASICS_FAULT": fault},
+    )
+    assert (result.returncode == 0) is (fault == ""), result.stderr
+    for version in ("0.8.0", "0.9.0"):
+        assert (cache / version / "marker").read_text(encoding="utf-8") == version
+    if not fault:
+        assert (cache / "1.0.0/skills/writing-standards/SKILL.md").is_file()
+    assert not any(line.startswith("codex app-server ") for line in read_log_lines(stub_log))
+
+
 @pytest.fixture(name="rules_url", scope="module")
 def rules_url_fixture() -> typing.Iterator[str]:
     """テスト用のルール配布先URLを返す。"""
@@ -80,7 +157,7 @@ def test_agents_server_warmup_closes_standard_input() -> None:
     assert '"$script_path" --check-dependencies </dev/null >/dev/null' in shell_source
     assert (
         "$null | & uv run --no-config --no-project --python 3.15 python (Join-Path $projectRoot 'scripts/launch.py') "
-        "$scriptPath --check-dependencies *> $null" in powershell_source
+        "$scriptPath --check-dependencies > $null" in powershell_source
     )
 
 
@@ -98,7 +175,9 @@ def test_warms_claude_and_codex_plugin_scripts(kind: str, tmp_path: pathlib.Path
         for line in read_log_lines(stub_log)
         if line.startswith("uv run --no-config --no-project --python 3.15 python ") and "scripts/launch.py" in line
     ]
-    assert len(warmups) == 2
+    assert len(warmups) == 4
+    assert sum("--prepare" in command for command in warmups) == 2
+    assert sum("--check-dependencies" in command for command in warmups) == 2
     assert any(str(home / "claude-plugin" / "agent_toolkit" / "agents_server_mcp.py") in line for line in warmups)
     assert any(
         str(home / ".codex" / "plugins/cache/ak110-dotfiles/agent-toolkit/1.2.3/agent_toolkit/agents_server_mcp.py") in line
@@ -144,7 +223,7 @@ def test_restart_notice_requires_codex_plugin_state_change(
     )
 
     lines = read_log_lines(stub_log)
-    assert sum("codex plugin list --json" in line for line in lines) == 2
+    assert sum("codex plugin list --json" in line for line in lines) == 4
     assert ("codex app-server daemon version" in lines) is (before_state != after_state)
     assert ("codex app-server daemon restart" in result.stderr) is expect_notice
 
@@ -231,23 +310,22 @@ def test_plugin_state_failure_stops_before_plugin_add(kind: str, tmp_path: pathl
     )
 
     assert result.returncode != 0
-    assert not any("codex plugin add" in line for line in read_log_lines(stub_log))
+    assert not any("codex plugin add agent-toolkit@" in line for line in read_log_lines(stub_log))
 
 
-@pytest.mark.skipif(shutil.which("pwsh") is None, reason="pwsh未インストール")
-@pytest.mark.parametrize("plugin_state", [{}, {"installed": None}, {"installed": "x"}])
-def test_powershell_invalid_plugin_state_stops_before_plugin_add(
+def _assert_invalid_plugin_state_stops_before_plugin_add(
+    kind: str,
     plugin_state: object,
     tmp_path: pathlib.Path,
     rules_url: str,
 ) -> None:
-    """PowerShellではinstalledが配列でない応答を取得失敗として扱う。"""
+    """plugin状態の不正応答で失敗し、更新を開始しない共通契約を確認する。"""
     home = tmp_path / "home"
     home.mkdir()
     stub_bin, stub_log = make_command_stubs(tmp_path)
 
     result = run_installer(
-        "ps1",
+        kind,
         home,
         rules_url,
         stub_bin=stub_bin,
@@ -258,7 +336,18 @@ def test_powershell_invalid_plugin_state_stops_before_plugin_add(
     )
 
     assert result.returncode != 0
-    assert not any("codex plugin add" in line for line in read_log_lines(stub_log))
+    assert not any("codex plugin add agent-toolkit@" in line for line in read_log_lines(stub_log))
+
+
+@pytest.mark.skipif(shutil.which("pwsh") is None, reason="pwsh未インストール")
+@pytest.mark.parametrize("plugin_state", [{}, {"installed": None}, {"installed": "x"}])
+def test_powershell_invalid_plugin_state_stops_before_plugin_add(
+    plugin_state: object,
+    tmp_path: pathlib.Path,
+    rules_url: str,
+) -> None:
+    """PowerShellではinstalledが配列でない応答を取得失敗として扱う。"""
+    _assert_invalid_plugin_state_stops_before_plugin_add("ps1", plugin_state, tmp_path, rules_url)
 
 
 @pytest.mark.parametrize("kind", installer_runners())
@@ -277,23 +366,7 @@ def test_invalid_target_plugin_entry_stops_before_plugin_add(
     rules_url: str,
 ) -> None:
     """対象plugin要素の必須項目が不正なら更新を中止する。"""
-    home = tmp_path / "home"
-    home.mkdir()
-    stub_bin, stub_log = make_command_stubs(tmp_path)
-
-    result = run_installer(
-        kind,
-        home,
-        rules_url,
-        stub_bin=stub_bin,
-        stub_log=stub_log,
-        codex_plugin_before=("1.2.2", True),
-        codex_plugin_before_json=json.dumps(plugin_state),
-        check=False,
-    )
-
-    assert result.returncode != 0
-    assert not any("codex plugin add" in line for line in read_log_lines(stub_log))
+    _assert_invalid_plugin_state_stops_before_plugin_add(kind, plugin_state, tmp_path, rules_url)
 
 
 @pytest.mark.parametrize("kind", installer_runners())

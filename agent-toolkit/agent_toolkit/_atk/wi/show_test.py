@@ -69,7 +69,7 @@ class TestShowSingleFile:
 
         assert exc_info.value.code == 2
         captured = capsys.readouterr()
-        assert "全状態フォルダに存在しない" in captured.err
+        assert "年月配置に存在しない" in captured.err
 
     def test_target_repo_mismatch_falls_through_and_exits(
         self,
@@ -91,7 +91,7 @@ class TestShowSingleFile:
         assert exc_info.value.code == 2
         captured = capsys.readouterr()
         assert captured.out == ""
-        assert "全状態フォルダに存在しない" in captured.err
+        assert "年月配置に存在しない" in captured.err
 
     def test_filename_lookup_ignores_the_current_repository_default(
         self,
@@ -550,7 +550,7 @@ class TestShowTypeFilter:
 
         assert exc_info.value.code == 2
         captured = capsys.readouterr()
-        assert "全状態フォルダに存在しない" in captured.err
+        assert "年月配置に存在しない" in captured.err
 
     def test_type_all_searches_awi_then_uwi(
         self,

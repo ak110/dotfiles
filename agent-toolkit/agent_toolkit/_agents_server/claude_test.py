@@ -719,7 +719,7 @@ async def test_sdk_start_and_resume_deliver_executable_cli_without_old_path(
 ) -> None:
     """SDKへ届くCLI案内とPATHが同じ配布物を選び、呼び出し元の環境と所有者を保つ。
 
-    SDKの外部モデルは代替し、実ラッパーとscripts/launch.pyを経たuvで引数・環境と終了コードを観測する。
+    SDKの外部モデルは代替し、実ラッパーとscripts/launch.pyを経た準備済みPythonで引数・環境と終了コードを観測する。
     依存導入とWindowsラッパーの実行は、この試験の観測範囲に含めない。
     """
     bash = shutil.which("bash", path=host_environ()["PATH"])
@@ -746,6 +746,13 @@ async def test_sdk_start_and_resume_deliver_executable_cli_without_old_path(
     monkeypatch.setenv("PATH", original_path)
     monkeypatch.setenv(plugin_environment.RUNTIME_DATA_ENV, str(data))
     monkeypatch.setattr(claude, "_parent_settings", lambda: None)
+    root = claude.plugin_roots.SERVER_PLUGIN_ROOT
+    prepared = plugin_environment.project_environment(root, os.environ)
+    prepared_python = plugin_environment.python_path(prepared)
+    prepared_python.parent.mkdir(parents=True)
+    prepared_python.write_text(uv.read_text(encoding="utf-8"), encoding="utf-8")
+    prepared_python.chmod(0o755)
+    (prepared / ".agent-toolkit-dependencies-ready").write_text("ready\n", encoding="utf-8")
     options_seen: list[Any] = []
 
     def factory(options: Any) -> FakeClaudeClient:
@@ -756,7 +763,6 @@ async def test_sdk_start_and_resume_deliver_executable_cli_without_old_path(
         await manager.start("開始", str(tmp_path), launch_kind=launch_kind)
         await manager.resume("cli-session", state.ResumePrompt("再開"), str(tmp_path), launch_kind=launch_kind)
     assert len(options_seen) == 2
-    root = claude.plugin_roots.SERVER_PLUGIN_ROOT
     for options in options_seen:
         assert options.resume in {None, "cli-session"}
         assert options.plugins == [{"type": "local", "path": str(root)}]
@@ -782,21 +788,14 @@ async def test_sdk_start_and_resume_deliver_executable_cli_without_old_path(
         )
         assert result.returncode == 7, result.stderr
         observed = json.loads(result.stdout)
-        assert observed["args"] == [
-            "run",
-            "--project",
-            str(root),
-            "--locked",
-            "--no-default-groups",
-            str(root / "agent_toolkit" / "atk.py"),
-            "--help",
-        ]
+        assert observed["args"] == [str(root / "agent_toolkit" / "atk.py"), "--help"]
         assert observed["data"] == str(data)
         selected_environment = pathlib.Path(observed["environment"])
         assert selected_environment.parent == data / "environments"
         assert not selected_environment.is_relative_to(root)
         assert observed["runtime"] == str(selected_environment)
-        assert not selected_environment.exists()
+        assert selected_environment == prepared
+        assert prepared_python.is_file()
         assert observed["path"] == environment["PATH"]
         assert result.stderr == "uv-observed\n"
     assert os.environ["PATH"] == original_path
@@ -824,11 +823,10 @@ def test_explore_options_keep_search_tools_and_mcp_on_resume(tmp_path: pathlib.P
 def test_explore_mcp_uses_plugin_definition_on_start_and_resume(tmp_path: pathlib.Path, session_id: str | None) -> None:
     """pyfltrの既存起動定義を使い、個別MCPツールの用途は探索プロンプトへ委ねる。"""
     options = claude._build_options(str(tmp_path), "model", "high", session_id, "explore")
-    assert options.mcp_servers == {
-        "pyfltr": json.loads((claude.plugin_roots.SERVER_PLUGIN_ROOT / ".mcp.json").read_text(encoding="utf-8"))["mcpServers"][
-            "pyfltr"
-        ]
-    }
+    root = claude.plugin_roots.SERVER_PLUGIN_ROOT
+    definition = json.loads((root / ".mcp.json").read_text(encoding="utf-8"))["mcpServers"]["pyfltr"]
+    definition["args"] = [arg.replace("${CLAUDE_PLUGIN_ROOT}", str(root)) for arg in definition["args"]]
+    assert options.mcp_servers == {"pyfltr": definition}
     assert "mcp__pyfltr__*" in options.allowed_tools
     assert options.disallowed_tools == ["Skill"]
 
@@ -1402,7 +1400,7 @@ async def test_send_message_reactivated_child_holds_claude_result_until_terminal
         install_backend(manager, "claude", backend)
         session_registry.publish("child", terminal=False, cwd=str(tmp_path))
         try:
-            started = await manager.start("high_tier", "親の作業", str(tmp_path))
+            started = await manager.start("execute", "親の作業", str(tmp_path))
             session = manager.sessions[started["session_id"]]
             session.terminal_child_session_ids.add("child")
             session.auto_resume_consumed = True

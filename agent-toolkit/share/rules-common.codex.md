@@ -5,6 +5,8 @@ Codex固有の公開能力と常時規範との差分を扱う。Codexのメイ�
 
 ## Codex固有の入出力
 
+- agent-toolkitの規範・手順・CLIが名指しするMCPツールは、Codexでは`functions.exec`の中で`tools.mcp__<サーバー名>__<ツール名>(...)`として呼ぶ。対象はagents_serverの`start`・`send_message`・`kill`・`stop`・`list`・`show`、pyfltrの`run`などである。直接の関数一覧とは別に、同じ`exec`の`ALL_TOOLS`の各要素の`name`と`description`で有無と引数を確かめる。stdio MCPサーバーは起動の数秒後に登録されることがあるため、起動直後に見つからない場合は時間をおいて別の`exec`で照会し直してから不在を判断する。観測と再検証手段は`docs/development/audit-records.md`の「agent-toolkit/share/rules-common.codex.md：Codex固有の入出力：2026年10月22日」にある
+
 - 容量が未知の通常ファイルは範囲を指定しない全文取得（`cat -- <絶対パス>`など）から始め、事前の容量計測を省く（努力目標。遮断時は次項へ移る）
 - 容量超過か出力の省略を既に把握している本文と保存された長文は、初回から`atk read-file -- <絶対パス>`で取得する。継続は`atk read-file --start <next> -- <同じ絶対パス>`を使い、1行目のJSONで`eof: true`になるまで最初のLFより後ろの本文を改行も含めて連結する。位置は文字単位で、末尾超過は末尾へ補正される。省略時の上限16384バイトはメタデータ、区切りのLFと本文を含み、内側（コマンド出力の指定）と外側（セル全体）の受信予算に収まらない場合は`--max-bytes <バイト数>`で小さくする
 - 独立した複数ファイルの全文取得は、既知の合計出力量が1セルの上限内なら並列実行し、各結果の終了状態と本文を確認する。合計が不明なら別々のセルで取得し、並列化だけを目的とする事前計測は省く
@@ -25,6 +27,14 @@ Codex固有の公開能力と常時規範との差分を扱う。Codexのメイ�
 - 導入情報からのrootは`<Codexホーム>/plugins/cache/<marketplaceName>/<name>/<version>`で解決する。Codexホームは`CODEX_HOME`が設定済みならその値、未設定なら`~/.codex`とし、実体と`skills/`の存在を確認する
 - 取得失敗、対象なし、対象が一意でない場合、無効化、実体の欠落は原因を区別して委譲元へ返す。モデルへ返す情報を対象の識別情報・解決結果・診断へ限定し、rootは前掲の実在確認で確定する
 - 確定したrootを保持し、公開サブコマンドがないplugin内部資源も同じrootから読む。導入版変更後は新しい導入情報で再解決し、全資源を同じホスト・導入版のrootから読む
+
+## agent-basicsの資源解決
+
+品質基準の正式な提供元は`agent-basics`である。`agent-basics:writing-standards`などの資料を読むときは、そのプラグイン自身のrootから解決する。
+開発用の同一checkoutでは、agent-toolkitと同じ親にある`agent-basics/.claude-plugin/plugin.json`のnameと`skills/`を確認して使う。
+配布先では`codex plugin list --json`の導入済み情報から同じマーケットプレイスの有効なagent-basicsを一意に選び、前節と同じCodexホーム・marketplace・name・versionの対応でrootを解決する。
+実体と`skills/`が取得できなければ原因を委譲元へ返す。別版のcacheを推測で選ばない。
+agent-toolkitのrootとagent-basicsのrootを別々に保持し、品質の参照先へtoolkitのrootを代入しない。
 
 ## Claude Code向けに置かれた規範の読込
 

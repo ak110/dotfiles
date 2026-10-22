@@ -5,6 +5,8 @@
 
 削除するのは、中身が採用差分か破棄差分かの帰属と、採用差分なら統合先への反映を確定した後とする。保持する場合は保持理由と削除条件を記録する。
 
+着手前からの既存未コミット差分を不採用として破棄する前には、復元可能な退避を確保する。並行worktreeでは既存の`atk worktree-stash`を使い、merge進行中は本書の別パスへの複製か別ブランチの手順を使う。private-notesの退避・差分破棄禁止は保持する。
+
 - 一時ブランチ: `git cherry -v <統合先> <対象ブランチ>`と`git diff --diff-filter=A --name-only <統合先>..<対象ブランチ>`で、統合先に同等の変更があり対象にだけあるファイルが無いことを確かめる。cherry-pickや履歴の一本化を経た統合先ではpatch-idが一致しないため、変更ファイル集合の`git diff <対象ブランチ> <統合先> -- <files>`で比べる
 - `git stash`: `git stash show --include-untracked -p <識別子>`で追跡分と未追跡分の両方を確かめ、`atk worktree-stash drop '<識別子>'`で固定ロック下でOIDを再確認して削除する。worktree固有refへの退避は`refs/worktree/<退避ラベル>`を同じ手順で扱う
 - 別パスへの複製: `diff`で複製元と比べる

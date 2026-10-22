@@ -38,7 +38,7 @@ def test_main_rejects_nondefault_arguments_before_ssh_update(
 
 
 def test_main_without_arguments_updates_ssh_config(monkeypatch: pytest.MonkeyPatch) -> None:
-    """引数なしの公開入口は既存の更新処理を実行する。"""
+    """引数なしの公開された起動コマンドは既存の更新処理を実行する。"""
     called = False
 
     def run() -> post_apply_outcome.PostApplyOutcome:

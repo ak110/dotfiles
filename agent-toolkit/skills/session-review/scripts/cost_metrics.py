@@ -158,12 +158,24 @@ def _scan_sessions(
     for runtime, root in roots.items():
         oldest: datetime.datetime | None = None
         for path in sorted(root.rglob("*.jsonl")):
+            if runtime == "agy" and (
+                path.name not in {"transcript.jsonl", "transcript_full.jsonl"}
+                or path.name == "transcript.jsonl"
+                and path.with_name("transcript_full.jsonl").is_file()
+            ):
+                continue
             if runtime == "codex" and not path.name.startswith("rollout-"):
                 continue
             try:
                 if path.stat().st_mtime < since.timestamp():
-                    identity = session_record_format.codex_session_id(path) if runtime == "codex" else path.stem
-                    paths[identity].append((path, "codex" if runtime == "codex" else "claude"))
+                    identity = (
+                        session_record_format.codex_session_id(path)
+                        if runtime == "codex"
+                        else session_record_format.agy_session_id(path)
+                        if runtime == "agy"
+                        else path.stem
+                    )
+                    paths[identity].append((path, "codex" if runtime == "codex" else "agy" if runtime == "agy" else "claude"))
                     continue
                 records = _load_records(str(path))
             except OSError:
@@ -317,6 +329,12 @@ def main(argv: list[str] | None = None) -> int:
         "--codex-sessions-dir", type=Path, metavar="DIR", help="Codex記録ディレクトリのパス。省略時は~/.codex/sessions。"
     )
     parser.add_argument(
+        "--agy-brain-dir",
+        type=Path,
+        metavar="DIR",
+        help="Antigravity対話記録のbrainディレクトリ。省略時は~/.gemini/antigravity-cli/brain。",
+    )
+    parser.add_argument(
         "--private-notes",
         type=Path,
         metavar="DIR",
@@ -336,7 +354,10 @@ def main(argv: list[str] | None = None) -> int:
         roots = {
             "claude": args.claude_projects_dir or Path.home() / ".claude" / "projects",
             "codex": args.codex_sessions_dir or Path.home() / ".codex" / "sessions",
+            "agy": args.agy_brain_dir or Path.home() / ".gemini" / "antigravity-cli" / "brain",
         }
+        if args.agy_brain_dir is None and not roots["agy"].is_dir():
+            roots.pop("agy")
         roots = {key: value.expanduser().resolve() for key, value in roots.items()}
         coverage, session_rows = _session_metrics(roots, weeks, since, until)
         notes = (args.private_notes or private_notes.default_private_notes()).expanduser().resolve()

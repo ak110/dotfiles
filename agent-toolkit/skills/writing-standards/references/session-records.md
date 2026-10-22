@@ -12,6 +12,16 @@ Claude Codeの記録は`~/.claude/projects`配下、Codexのロールアウト�
 Claude Codeでは`type`が`system`、`subtype`が`compact_boundary`のレコードとして残り、`compactMetadata`が`trigger`・`preTokens`・`postTokens`・`durationMs`を持つ。
 Codexでは`type`が`compacted`のレコードに、所要時間を除いた情報が残る。監査記録は`docs/development/audit-records.md`の「agent-toolkit/skills/writing-standards/references/session-records.md：H1直下：2026年9月2日」にある。
 
+## 名指し参照の読込方法
+
+本文の各参照の適用条件を保ち、選んだ資料の指定範囲を取得してから、その基準を使う具体的な判断へ進む。起動時の行の資料は起動本文とともに届く。
+
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../SKILL.md` | 判断 | `read:agent-toolkit:*/skills/writing-standards/SKILL.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../session-review/references/analysis.md#「コストの無駄の確認」` | 判断 | `section:agent-toolkit:*/skills/session-review/references/analysis.md#「コストの無駄の確認」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../process-wi/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/SKILL.md` |
+
 ## Claude Codeの記録
 
 会話の要素はエントリの`type`が`user`・`assistant`のものだけで判定する。Claude Code 2.1.301の`api-request-blob`はAPI要求の写しであり、同じ形の`message.content`にツール入力・結果・発話を持つため、形だけで数えると二重計数になる。生の行の本文・構造を調べる照会は写しも表示する。監査記録は`docs/development/audit-records.md`の「セッション記録のAPI要求の写し：2026年10月18日」にある。
@@ -136,7 +146,7 @@ Codexではカタログの指定を`--catalog-codex-history <履歴の絶対パ�
 単一transcriptの照会は結果の`kind`を区別できる組なら併用でき、全照会のイベントを返す。`--grep`・`--hook-notices`・`--user-events`は`summary`を共有するため、このうち複数を含む組は個別に実行する。共通の由来と未解決記録は一度だけ返す。不正なlocatorがあれば他の照会の結果も返し、終了コード2で終える。カタログ走査・保存済み発話照会・`--bundle`との組み合わせは入力形式ごとの排他条件に従う。
 
 生成側が返す`保存先:`の絶対パスから全量を読み、出所の引き渡しにも同じファイルを使う。
-JSONLファイル群への汎用CLIでの無限定の検索と、記録や`candidates.md`の標準出力への全量表示はしない（行数と1行の長さが入力に依存し、巨大な単一行へ広い正規表現を当てるとマッチングの上限に達する）。同コマンドが受理しない調査には`agent-toolkit/rules/02-agent-operations.md`「ツール・コマンド運用」の出力量の判定と分離実行の規定を適用する。
+JSONLファイル群への汎用CLIでの無限定の検索と、記録や`candidates.md`の標準出力への全量表示はしない（行数と1行の長さが入力によって変わり、巨大な単一行へ広い正規表現を当てるとマッチングの上限に達する）。同コマンドが受理しない調査には`agent-toolkit/rules/02-agent-operations.md`「ツール・コマンド運用」の出力量の判定と分離実行の規定を適用する。
 
 ## 暗号化された値
 

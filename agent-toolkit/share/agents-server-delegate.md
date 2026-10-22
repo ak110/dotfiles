@@ -5,3 +5,11 @@
 
 この会話の最初の入力が`source="process-loop"`の`atk-auto`要素である場合、起動元は`atk wi process-loop`の常駐プログラムであり、委譲元のエージェントは存在しない。返却は記録されるだけで、エージェントもユーザーも処理しない。
 この場合は前掲の位置付けと前段の適用範囲に代えて、対象リポジトリの`agent-toolkit:process-wi`のメインを担い、同スキルの`references/all-repos-orchestration.md`「担当の役割」に従う。
+
+## 名指し参照の読込方法
+
+本文の各参照の適用条件を保ち、選んだ資料の指定範囲を取得してから、その基準を使う具体的な判断へ進む。起動時の行の資料は起動本文とともに届く。
+
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/process-wi/references/all-repos-orchestration.md#「担当の役割」` | 判断 | `section:agent-toolkit:*/skills/process-wi/references/all-repos-orchestration.md#「担当の役割」` |

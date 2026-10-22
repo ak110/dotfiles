@@ -421,7 +421,7 @@ class TestProductionManagedSettings:
         assert b"\n" not in raw.replace(b"\r\n", b"")
 
     def test_windows_posttooluse_script_uses_bom_and_crlf(self):
-        """PostToolUseの互換入口のPowerShellスクリプトもBOM付きUTF-8とCRLF改行で書く。"""
+        """PostToolUseの互換起動用のPowerShellスクリプトもBOM付きUTF-8とCRLF改行で書く。"""
         raw = _PROD_POSTTOOLUSE_SCRIPT.read_bytes()
         assert raw.startswith(b"\xef\xbb\xbf")
         assert b"\r\n" in raw
@@ -509,7 +509,7 @@ sys.exit(int(os.environ["HOOK_EXIT_CODE"]))
 
     @pytest.mark.parametrize("hook_exit_code", [0, 1, 2])
     def test_windows_posttooluse_command_always_succeeds(self, tmp_path: Path, hook_exit_code: int) -> None:
-        """撤去前の設定が起動するPostToolUseの互換入口は、console scriptの有無によらず正常終了する。"""
+        """撤去前の設定が起動するPostToolUseの互換起動スクリプトは、console scriptの有無によらず正常終了する。"""
         pwsh = shutil.which("pwsh")
         if pwsh is None:
             pytest.skip("pwshを利用できないためPowerShell実行時テストを省略する")
@@ -526,7 +526,7 @@ sys.exit(int(os.environ["HOOK_EXIT_CODE"]))
         assert result.returncode == 0
 
     def test_windows_posttooluse_command_allows_missing_console_script(self, tmp_path: Path) -> None:
-        """PostToolUseの互換入口は、console scriptが存在しない場合も出力なしで正常終了する。"""
+        """PostToolUseの互換起動スクリプトは、console scriptが存在しない場合も出力なしで正常終了する。"""
         pwsh = shutil.which("pwsh")
         if pwsh is None:
             pytest.skip("pwshを利用できないためPowerShell実行時テストを省略する")
@@ -1165,7 +1165,7 @@ class TestStripRemovedHooks:
         assert result["hooks"]["PreToolUse"][0]["matcher"] == "Write"
 
     def test_legacy_windows_common_entry_is_dropped_from_existing(self, tmp_path: Path):
-        """旧Windows共通入口が既存設定に残っていても、除去対象の引数を省略した更新で除去する。"""
+        """旧Windows共通hookの起動設定が既存設定に残っていても、除去対象の引数を省略した更新で除去する。"""
         managed_path = tmp_path / "managed.json"
         managed_path.write_text("{}", encoding="utf-8")
         target_path = tmp_path / "target.json"
@@ -1188,7 +1188,7 @@ class TestStripRemovedHooks:
         tmp_path: Path,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """実ホーム絶対パスへ置換された旧Windows自律終了入口を、除去対象の引数を省略した更新で除去する。"""
+        """実ホーム絶対パスへ置換された旧Windows自律終了hookの起動設定を、除去対象の引数を省略した更新で除去する。"""
         home = Path("C:/Users/Aki User")
         monkeypatch.setattr(sys, "platform", "win32")
         monkeypatch.setattr(Path, "home", classmethod(lambda cls: home))
@@ -1255,7 +1255,7 @@ class TestStripRemovedHooks:
         monkeypatch: pytest.MonkeyPatch,
         old_command: str,
     ) -> None:
-        """配布済みの旧Windows入口とscripts/を指す`-File`入口を、libexec/を指す現行の入口1件へ移行する。"""
+        """配布済みの旧Windows hookの起動設定とscripts/を指す`-File`の起動設定を、libexec/を指す現行の起動設定1件へ移行する。"""
         home = Path("C:/Users/Aki User")
         monkeypatch.setattr(sys, "platform", "win32")
         monkeypatch.setattr(Path, "home", classmethod(lambda cls: home))
@@ -1381,7 +1381,7 @@ class TestStripRemovedHooks:
                 'if ($LASTEXITCODE -eq 2) { exit 2 } else { exit 0 } }"',
                 True,
             ),
-            # 実体をlibexec/へ移す前のscripts/を指す`-File`入口は除去し、現行の入口は保持する
+            # 実体をlibexec/へ移す前のscripts/を指す`-File`の起動設定は除去し、現行の起動設定は保持する
             (
                 "powershell -NoProfile -ExecutionPolicy Bypass -File "
                 '"C:/Users/Aki User\\dotfiles\\scripts\\claude-hook-pretooluse.ps1"',

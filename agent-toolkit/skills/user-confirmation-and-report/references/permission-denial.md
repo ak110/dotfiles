@@ -3,13 +3,28 @@
 ツール呼び出しが権限設定またはauto mode classifierに拒否された場面の手順を定める。
 auto modeのカスタムルールを追加・編集する手順は`agent-toolkit:writing-standards`の`references/auto-mode.md`が定める。
 
+## 名指し参照の読込方法
+
+本文の各参照の適用条件を保ち、選んだ資料の指定範囲を取得してから、その基準を使う具体的な判断へ進む。起動時の行の資料は起動本文とともに届く。
+
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../writing-standards/references/auto-mode.md` | 判断 | `read:agent-toolkit:*/skills/writing-standards/references/auto-mode.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../writing-standards/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/writing-standards/SKILL.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:writing-standards/references/claude-hooks-output.md#「PermissionRequest」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/claude-hooks-output.md#「PermissionRequest」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../bugfix/references/root-cause-analysis.md#「QとC・Dの区別」` | 判断 | `section:agent-toolkit:*/skills/bugfix/references/root-cause-analysis.md#「QとC・Dの区別」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../writing-standards/references/auto-mode.md#「カスタムルール追加のワークフロー」` | 判断 | `section:agent-toolkit:*/skills/writing-standards/references/auto-mode.md#「カスタムルール追加のワークフロー」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:writing-standards/references/auto-mode.md#「カスタムルール記述の注意点」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/auto-mode.md#「カスタムルール記述の注意点」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../wi-standards/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/SKILL.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `approval-scope.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/references/approval-scope.md` |
+
 ## 拒否の確認手順
 
 拒否を観測したら、別の手段で迂回する前に有効な設定ファイルを`Read`して許可・拒否のルールを確認する。対象は`/etc/claude-code/managed-settings.json`、`~/.claude/settings.json`、リポジトリ直下の`.claude/settings.json`と`.claude/settings.local.json`である。拒否本文が同じ結果の追求を禁じている場合は、設定ファイルの読み取りも拒否され得るため、読み取りを省いて「偽陽性と判断できる拒否への対応」へ進む。
 
 拒否された操作を、有効な`autoMode.allow`の各規則と、対象操作、適用条件および信頼境界の包含関係で照らす。対応するallow規則があれば、拒否本文の分類名との意味上の一致によらず、その拒否は偽陽性の可能性が高い。`hard_deny`に属する操作は偽陽性フローの対象から外す。
 
-権限評価はpermissionsルール（deny→ask→allowの順で最初の一致が確定）、作業ディレクトリ内編集等の自動承認、auto mode classifierの順に進む。PreToolUseフックの`permissionDecision: "allow"`より前にpermissions評価が確定する。このため拒否ルールに該当する対象は、拒否ルール自体の見直しで解消する。permissions設定による確認ダイアログは本書の範囲外とし、`agent-toolkit:writing-standards`の`references/claude-hooks-output.md`の「PermissionRequest」に従う。
+権限評価はpermissionsルール（deny→ask→allowの順で最初の一致が確定）、作業ディレクトリ内編集等の自動承認、auto mode classifierの順に進む。PreToolUseフックの`permissionDecision: "allow"`より前にpermissions評価が確定する。このため拒否ルールに該当する対象は、拒否ルール自体の見直しで解消する。permissions設定による確認ダイアログは本書の範囲外とする。その扱いは`agent-toolkit:writing-standards`の`agent-basics:writing-standards/references/claude-hooks-output.md`の「PermissionRequest」に従う。
 
 アクセス制御、認証、公開範囲などのセキュリティ設定をマージする操作が拒否された場合は、変更候補の作成、現行の実効値と候補の比較、候補の適用のどれが拒否されたかを特定する（1つの呼び出しが複数の操作を含んでいた場合は候補の作成が拒否されたものとする）。候補の作成が拒否された場合は、別の手段で同じ候補を生成せず、比較を未実施と明示して、拒否された操作の承認をユーザー確認で求める（委譲先は委譲元へ返す）。セキュリティ設定の変更は承認を得てから行う。比較手段が成立しない場合は、実効値が保たれると言い切らず、比較できた値と未確認の範囲を分けて示す。
 
@@ -53,8 +68,8 @@ auto mode classifierによる拒否は対象操作の実行自体を妨げる技
 4. `AskUserQuestion`が無応答のまま期限を迎えた場合は対象操作を保留し、回答を待つUWIを記録して代替手段だけを継続する
 5. 無応答の後にUWIへ回答が保存されても、classifierが観測する承認はtranscript内の確認で成立するため、transcript内で同じ操作への再確認を発行し、回答の受領後に手順1へ戻る
 6. 手順3または5の承認後に実行したメインは、同種の承認の反復を減らす許可規則を検討する。処置の要否と省略の可否は`agent-toolkit:bugfix`の`references/root-cause-analysis.md`「QとC・Dの区別」で判定する（委譲先からの拒否でもメインが担い、承認済み操作の実行を先に行う）
-   - 文面: 個別識別子を操作種別へ一般化し、`agent-toolkit:writing-standards`の`references/auto-mode.md`「カスタムルール追加のワークフロー」と「カスタムルール記述の注意点」で有効な規則と比べる。既存規則が対象を全て含めば追記を省く
-   - 環境固有（マシン構成、ローカル設定、接続先などに依存する規則）: 配布sourceの有無によらず`~/.claude/settings.json`の`autoMode.allow`へ直接追記する。sourceの管理ラベルや廃止文字列と衝突しない独自文面にする
+   - 文面: 個別識別子を操作種別へ一般化する。有効な規則との比較には次の2資料を使う。`agent-toolkit:writing-standards`の`references/auto-mode.md`「カスタムルール追加のワークフロー」と`agent-basics:writing-standards/references/auto-mode.md`「カスタムルール記述の注意点」である。既存規則が対象を全て含めば追記を省く
+   - 環境固有（マシン構成、ローカル設定、接続先などを前提とする規則）: 配布sourceの有無によらず`~/.claude/settings.json`の`autoMode.allow`へ直接追記する。sourceの管理ラベルや廃止文字列と衝突しない独自文面にする
    - 汎用: 文面、根拠および反映先`share/claude_settings_json_managed.json`を備えたdotfiles向けAWIを`agent-toolkit:wi-standards`に従って投入し、dotfilesを作業中でも管理原本をその場で編集しない
    - 今回限り: 明らかな一時条件があり同じ種別で再発しない根拠を示せる場合だけ省略する。過去に未観測であることや分類に迷うことは省略の根拠にならず、前段の判定に従って処置を確定する
    - 追加確認: 文面が承認済みの操作種別、拒否区分、副作用区分の範囲内なら、直接追記とAWI投入は追加確認なしで行う（`references/approval-scope.md`の成立した承認の適用）。範囲が広がる場合だけ、文面案、追記先、広がる範囲を事前承認として確認する

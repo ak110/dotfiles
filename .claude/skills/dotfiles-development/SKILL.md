@@ -16,14 +16,28 @@ description: >
 本スキルは本リポジトリの自動チェック、コード整形、依存更新、テスト配置、コミットメッセージ方針、ホスト本体のバイナリの検索手順および振り返りの参照文書の位置を提供する。
 リリース運用は`dotfiles-release`、配布元と配布先の対応は`dotfiles-repo-layout`が扱う。
 
+## 名指し参照の読込方法
+
+本文の各参照の適用条件を保ち、選んだ資料の指定範囲を取得してから、その基準を使う具体的な判断へ進む。起動時の行の資料は起動本文とともに届く。
+
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:session-review/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/session-review/SKILL.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../dotfiles-release/SKILL.md` | 判断 | `read:*/skills/dotfiles-release/SKILL.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../dotfiles-repo-layout/SKILL.md` | 判断 | `read:*/skills/dotfiles-repo-layout/SKILL.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:check-execution/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/check-execution/SKILL.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:writing-standards/references/investigation.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/investigation.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:bugfix/SKILL.md#「直接的原因と事象時点の確定」` | 判断 | `section:agent-toolkit:*/skills/bugfix/SKILL.md#「直接的原因と事象時点の確定」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../agent-toolkit-edit/references/distribution-and-hooks.md#「agent_toolkitパッケージの配置と層」` | 判断 | `section:*/skills/agent-toolkit-edit/references/distribution-and-hooks.md#「agent_toolkitパッケージの配置と層」` |
+
 ## 読込表
 
-| 時点または条件 | 全文読む資料 |
-| --- | --- |
-| `make update`を実行の候補にする前 | 現行`Makefile`の`update` targetと、それが呼び出す子target |
-| 変更範囲の検証の対象を選ぶ前、push前の全体検証を行う前、ローカルの`make test`が実行しないチェックを確かめる時、または`agent-doc-tone`の報告へ対処する前 | [references/verification-values.md](references/verification-values.md) |
-| コミットメッセージのtypeを判定する時 | [commit-types.md](../../../docs/development/commit-types.md)（判定例） |
-| 不変条件のテストの検証対象を探索する時 | `agent-toolkit:check-execution`の`references/verification-scope.md` |
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 | 資料選択子 |
+| --- | --- | --- | --- | --- |
+| `make update`を実行の候補にする前 | 現行`Makefile`の`update` targetと、それが呼び出す子target | 判断 | `section:*/Makefile#make:update` | |
+| 変更範囲の検証の対象を選ぶ前、push前の全体検証を行う前、ローカルの`make test`が実行しないチェックを確かめる時、または`agent-doc-tone`の報告へ対処する前 | [references/verification-values.md](references/verification-values.md) | 判断 | `read:*/skills/dotfiles-development/references/verification-values.md` | |
+| コミットメッセージのtypeを判定する時 | [commit-types.md](../../../docs/development/commit-types.md)（判定例） | 判断 | `read:*/docs/development/commit-types.md` | |
+| 不変条件のテストの検証対象を探索する時 | `agent-toolkit:check-execution`の`references/verification-scope.md` | 判断 | `read:agent-toolkit:*/skills/check-execution/references/verification-scope.md` | |
 
 ## 開発手順
 
@@ -43,9 +57,12 @@ description: >
 
 ### 自動チェックと依存更新
 
-- `make update`は、読込表のtargetの実処理の更新対象に変更対象が含まれる場合だけ候補にする。現行の対象は`uv.lock`と`agent-toolkit/uv.lock`の依存更新である。lock更新後にcontainer依存導入を検証する（`ci-deps-check`）。さらにprek autoupdate、mise lock、pinactアクション更新と全テストを実行する。`rust/claude-statusline/Cargo.lock`は対象外である。GitHub Actionsのハッシュピンだけなら`make update-actions`
+- `make update`は読込表のtargetの実処理の更新対象に変更対象が含まれる場合だけ候補にする。現行の対象は`uv.lock`と`agent-toolkit/uv.lock`の依存更新である。lock更新後にcontainer依存導入を検証する（`ci-deps-check`）。さらにprek autoupdate、mise lock、pinactアクション更新と全テストを実行する。`rust/claude-statusline/Cargo.lock`は対象外である。GitHub Actionsのハッシュピンだけなら`make update-actions`
 - 全体検証は`make test`（`uv run --frozen pyfltr run --no-fix`）。`agent-toolkit:check-execution`を起動し、標準出力と標準エラーを保存して検収できる手段（例: `agents_server`の`start`の`shell`）で実行する
   - pyfltrのformatter段（`ruff-format`・`uv-sort`・`shfmt`・`prek`・`sync-generated-files`）は`--no-fix`でもファイルを書き換え、終了コード0で終わる。コミット範囲を確定する前に`git status`で自分以外の差分を確かめる。自動修正は`make format`（`uv run --frozen pyfltr fast`）で行う
+
+pyfltrを調査・計測用途で実行する場合は`--no-fix`で自動修正を抑止する。formatter段は`--no-fix`でも書き換えるため、読取専用の用途では書き換える段を実行しない。
+
 - 特定ファイルに限定する検証は、MCPの`run`へパスを渡すか、`uv run --frozen pyfltr run <対象ファイルの絶対パス>`を使う。初回は`commands`（CLIは`--commands`）を指定せず、修正後の再実行だけ失敗したチェックへ限定する
 - デバッガ・最小再現・環境切り分けでは`pytest`を直接実行してよい。`-o`と`-p`は`pytest`のオプションで、`pyfltr run`へ渡すと終了コード2で終わる。`-o addopts=''`で`addopts`を解除する場合は`-p no:cacheprovider`を併記する
 - `.venv`を再作成し得る自動チェック（`uv run --python`による版切替、依存更新など）は、同じ仮想環境パスでは直列に実行する。並列にする場合は自動チェックごとに別の仮想環境パスを明示する
@@ -55,12 +72,12 @@ description: >
 
 - `make setup-browser`（Chromiumとシステム依存）と`make setup-pwsh`（Ubuntu/DebianのPowerShell）は、ユーザーが自分の端末で実行する初期導入である。エージェントが`make test-browser`の前提不足を検出した場合は、システム依存を導入せず、不足する前提と未実施の検証を報告する
 - `atk serve`のブラウザーUI、ブラウザーから到達するサーバー処理、静的資産、実ブラウザーテストを変更した場合は`make test-browser`を実行する
-- レビュー用に一時データで`atk serve`を起動する場合は、保存先を`AGENT_TOOLKIT_PRIVATE_NOTES=<一時領域の絶対パス>`で指定する。起動前に、起動に使うのと同じCLI・同じ環境変数で`atk config get private_notes`を実行し、結果が一時領域と一致したときだけ起動する。不一致か解決の失敗では起動せず、保存先の指定を直してから照合をやり直す（未対応の変数名で指定すると通常の保存先、つまり実データへ接続する）
+- レビュー用に一時データで`atk serve`を起動する場合は、保存先を`AGENT_TOOLKIT_PRIVATE_NOTES=<一時領域の絶対パス>`で指定する。起動前に、起動に使うのと同じCLI・同じ環境変数で`atk config get private_notes`を実行し、結果が一時領域と一致したときだけ起動する。不一致か解決の失敗では起動せず、保存先の指定を直してから取得結果と一時領域が一致するかを再確認する（未対応の変数名で指定すると通常の保存先、つまり実データへ接続する）
 - 画面の実描画には、ブラウザー操作ツールのほか、`pyproject.toml`が依存に持つPython版Playwright（`uv run --frozen python`から使う）を使える。導入済みのブラウザーは`~/.cache/ms-playwright`で確かめる
 
 ## ホスト本体のバイナリの検索
 
-本体の検索は、ホスト機能の公式ドキュメントと提供元の公開Issueトラッカーにある既知の報告の確認を補う手段である。結論と回避策の採否はそれらと合わせて決める。基準は`agent-toolkit:writing-standards`の`references/investigation.md`と`agent-toolkit:bugfix`の`SKILL.md`「直接的原因と事象時点の確定」にある。
+本体の検索は、ホスト機能の公式ドキュメントと提供元の公開Issueトラッカーにある既知の報告の確認を補う手段である。結論と回避策の採否はそれらと合わせて決める。基準は`agent-basics:writing-standards`の`references/investigation.md`と`agent-toolkit:bugfix`の`SKILL.md`「直接的原因と事象時点の確定」にある。
 
 - 実体は`B=$(readlink -f "$(command -v claude)")`、`C=$(readlink -f "$(command -v codex)")`で解決する。特定のClaude Code版は`~/.local/share/claude/versions/<版>`を指定する
 - 件数は`timeout 60 rg -a -c -F -- '<語>' "$B"`、文脈は`timeout 60 rg -a -o -- '.{0,200}<語>.{0,200}' "$B"`で得る（文脈の語は正規表現としてエスケープする）。出力はmanaged-tempへ保存してから読む。上限による打切りを該当なしと区別する

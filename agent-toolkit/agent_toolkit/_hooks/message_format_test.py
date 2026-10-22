@@ -186,7 +186,7 @@ async def test_start_followup_and_auto_resume_generated_deliveries_reach_shared_
         monkeypatch.setattr(owner, "_resolve_start_candidates", candidates)
         monkeypatch.setattr(owner, "_start_until_initialized", initialize)
         monkeypatch.setattr(owner, "_backend", lambda _engine: types.SimpleNamespace(send_message=deliver))
-        started = await owner.start("high_tier", "開始本文", str(tmp_path))
+        started = await owner.start("execute", "開始本文", str(tmp_path))
         assert started["status"] == "running"
         await owner.send_message("contract-session", "追送本文")
         session = owner.sessions["contract-session"]

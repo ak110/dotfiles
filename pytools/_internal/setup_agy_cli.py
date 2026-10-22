@@ -9,6 +9,8 @@ import os
 import sys
 from pathlib import Path
 
+from agent_toolkit._common import dotfiles_mode
+
 # ヘルプや他の処理で使わない依存は、使用時まで読み込まない。
 lazy import httpx
 
@@ -33,6 +35,8 @@ def _launcher_path() -> Path:
 
 def run(client: httpx.Client | None = None) -> post_apply_outcome.PostApplyOutcome:
     """未導入の場合だけ公式インストーラーでAntigravity CLIを導入する。"""
+    if dotfiles_mode.is_minimal():
+        return post_apply_outcome.PostApplyOutcome()
     launcher = _launcher_path()
     if launcher.is_file():
         logger.info(

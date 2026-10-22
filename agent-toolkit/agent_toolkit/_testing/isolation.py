@@ -216,7 +216,7 @@ def isolate_development_state(tmp_path: pathlib.Path, monkeypatch: pytest.Monkey
 def host_environ() -> Callable[[], dict[str, str]]:
     """ホームディレクトリ、設定ディレクトリ、PATHおよびmiseの探索範囲を隔離前の値へ戻した環境変数を組み立てるfactory。
 
-    他の次元の隔離は維持する。呼び出し時点の`os.environ`を基にするため、autouse fixtureの適用順序へ依存しない。
+    他の次元の隔離は維持する。呼び出し時点の`os.environ`を基にするため、autouse fixtureの適用順序によらず同じ結果になる。
     """
 
     def _build() -> dict[str, str]:

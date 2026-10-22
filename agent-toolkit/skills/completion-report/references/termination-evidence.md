@@ -6,6 +6,17 @@
 Stop hookが同スキルの起動不足を示して遮断した場合、起動が必要な作業を完了して終えるなら同スキルを起動し（Codexは`SKILL.md`を読む）、同スキルの`SKILL.md`「工程」の残る手順へ進む。
 報告本文の修正や全文の再送は遮断を解除しない。
 
+## 名指し参照の読込方法
+
+本文の各参照の適用条件を保ち、選んだ資料の指定範囲を取得してから、その基準を使う具体的な判断へ進む。起動時の行の資料は起動本文とともに届く。
+
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../SKILL.md` | 判断 | `read:agent-toolkit:*/skills/completion-report/SKILL.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../SKILL.md#「工程」` | 判断 | `section:agent-toolkit:*/skills/completion-report/SKILL.md#「工程」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../process-wi/references/all-repos-orchestration.md#「担当の役割」` | 判断 | `section:agent-toolkit:*/skills/process-wi/references/all-repos-orchestration.md#「担当の役割」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../user-confirmation-and-report/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/SKILL.md` |
+
 ## プロジェクト規範による省略
 
 メインは`agent-toolkit/rules/01-agent.md`「方針が衝突する場合の優先順位」から、対象作業で本スキルの起動を省くか判断する。
@@ -54,4 +65,4 @@ Claude Codeでは`atk run-script termination-evidence -- --context`からも取�
 判断は指定した作業だけへ作用し、ユーザーの割り込みと直接関係しない他の作業の起動不足は残る。
 生成されたStopの継続入力やhookの注記はユーザーの原入力として受理されず、完了の申告を記録する操作は無い。
 証拠を取得できない場合、Stop hookは遮断せず、判定できなかったことを記録する。
-自律モードの報告用UWIの保存検収と`atk agents-exit-session`は、Stop hookの判定と別に同スキルの手順8・9が定める。
+自律モードの報告用UWIの保存検収と`atk agents-exit-session`はStop hookの判定と別に同スキルの手順8・9が定める。

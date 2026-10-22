@@ -5,6 +5,24 @@ import pytest
 from agent_toolkit._atk import outcome
 
 
+def test_value_result_does_not_repeat_success(capsys: pytest.CaptureFixture[str]) -> None:
+    """値を受け取る呼出元には成功行を重ねず、標準出力の値を保持する。"""
+    print('{"status":"completed","record_path":"result.json"}')
+    outcome.report_success("外部コマンドが終了した", outcome.ResultKind.VALUE_OUTPUT)
+
+    captured = capsys.readouterr()
+    assert captured.out == '{"status":"completed","record_path":"result.json"}\n'
+    assert not captured.err
+
+
+def test_state_change_keeps_result(capsys: pytest.CaptureFixture[str]) -> None:
+    outcome.report_success("1件をadoptedへ移した")
+
+    captured = capsys.readouterr()
+    assert captured.out == "成功: 1件をadoptedへ移した\n"
+    assert not captured.err
+
+
 def test_failure_and_warning_require_next_action() -> None:
     with pytest.raises(TypeError):
         # 必須引数の欠落そのものを検証するため、静的解析による指摘を抑止する。

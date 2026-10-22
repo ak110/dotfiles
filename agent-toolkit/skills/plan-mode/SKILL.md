@@ -15,19 +15,37 @@ description: >
 
 計画バンドルの作成・検証・保存と実装への移行には、対象リポジトリ、プラグイン全体の参照資料、ファイル操作とCLIが必要である。機能が不足する環境では、提示された要件と資料から計画の原稿を返し、未確認の実装・検証・保存を明示する。正式な保存と実装はそれらの機能を使えるClaude CodeまたはCodexで続け、原稿の文には[文章の品質基準](references/quality-standards.md)を使う。
 
+## 名指し参照の読込方法
+
+本文の各参照の適用条件を保ち、選んだ資料の指定範囲を取得してから、その基準を使う具体的な判断へ進む。起動時の行の資料は起動本文とともに届く。
+
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../share/workflow-phases.md` | 判断 | `read:agent-toolkit:*/share/workflow-phases.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../wi-standards/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/SKILL.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `references/quality-standards.md` | 判断 | `read:agent-toolkit:*/skills/plan-mode/references/quality-standards.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../user-confirmation-and-report/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/SKILL.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../user-confirmation-and-report/references/grilling.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/references/grilling.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../process-wi/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/SKILL.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../process-wi/references/lane-planning.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/lane-planning.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../bugfix/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/bugfix/SKILL.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../bugfix/references/root-cause-analysis.md` | 判断 | `read:agent-toolkit:*/skills/bugfix/references/root-cause-analysis.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../user-confirmation-and-report/SKILL.md#「確認要否の判定」` | 判断 | `section:agent-toolkit:*/skills/user-confirmation-and-report/SKILL.md#「確認要否の判定」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../share/exec.subagent.md#「実装」` | 判断 | `section:agent-toolkit:*/share/exec.subagent.md#「実装」` |
+
 ## 読込表
 
 次の時点または条件が成立したら、その操作の前に同じ行の資料を全文読む。
 
-| 時点または条件 | 全文読む資料 |
-| --- | --- |
-| Codexで実行し、計画工程へ着手する前 | `references/codex-runtime.md` |
-| 計画ファイルの初版を起草する前（「進め方」手順3） | `references/plan-file-standards.md`、`references/plan-structure-check.md`、`references/plan-file-storage.md` |
-| 計画バンドルを`atk plans commit`で保存する前 | `references/plan-file-storage.md` |
-| 保持、不変性、完全復元のいずれかを計画の契約か確認の選択肢へ書く前と、過去の契約へ戻す変更か過去の契約を撤去する変更を計画する前 | `references/plan-restoration-contracts.md` |
-| `起動経路`がメインによる起動で、計画構造の検証を終えて実装へ進む前（メインが自ら実装に着手する直前） | `references/main-launch.md`、`${CLAUDE_PLUGIN_ROOT}/share/exec-review.parent.md`冒頭の`未判定検証記録`の段落と「起動」の`Git管理外の変更`の段落 |
-| 計画構造を検証する前 | `references/plan-structure-check.md` |
-| 旧単一ファイル形式または旧二ファイル形式の計画を読む前と、計画書式の読み取り互換の実装・自動チェックを変更する前 | `references/legacy-plan-file-standards.md` |
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 | 資料選択子 |
+| --- | --- | --- | --- | --- |
+| Codexで実行し、計画工程へ着手する前 | `references/codex-runtime.md` | 判断 | `read:agent-toolkit:*/skills/plan-mode/references/codex-runtime.md` | |
+| 計画ファイルの初版を起草する前（「進め方」手順3） | `references/plan-file-standards.md`、`references/plan-structure-check.md`、`references/plan-file-storage.md` | 判断 | `read:agent-toolkit:*/skills/plan-mode/references/plan-file-standards.md`、`read:agent-toolkit:*/skills/plan-mode/references/plan-structure-check.md`、`read:agent-toolkit:*/skills/plan-mode/references/plan-file-storage.md` | |
+| 計画バンドルを`atk plans commit`で保存する前 | `references/plan-file-storage.md` | 操作 | `bash:atk plans commit` | |
+| 保持、不変性、完全復元のいずれかを計画の契約か確認の選択肢へ書く前と、過去の契約へ戻す変更か過去の契約を撤去する変更を計画する前 | `references/plan-restoration-contracts.md` | 判断 | `read:agent-toolkit:*/skills/plan-mode/references/plan-restoration-contracts.md` | |
+| `起動経路`がメインによる起動で、計画構造の検証を終えて実装へ進む前（メインが自ら実装に着手する直前） | `references/main-launch.md`、`${CLAUDE_PLUGIN_ROOT}/share/exec-review.parent.md`冒頭の`未判定検証記録`の段落と「起動」の`Git管理外の変更`の段落 | 判断 | `read:agent-toolkit:*/skills/plan-mode/references/main-launch.md`、`section:agent-toolkit:*/share/exec-review.parent.md#冒頭` | |
+| 計画構造を検証する前 | `references/plan-structure-check.md` | 判断 | `read:agent-toolkit:*/skills/plan-mode/references/plan-structure-check.md` | |
+| 旧単一ファイル形式または旧二ファイル形式の計画を読む前と、計画書式の読み取り互換の実装・自動チェックを変更する前 | `references/legacy-plan-file-standards.md` | 判断 | `read:agent-toolkit:*/skills/plan-mode/references/legacy-plan-file-standards.md` | |
 
 ## 確認と起動経路
 
@@ -48,7 +66,7 @@ description: >
    - 参照する側と別発生源（`references/plan-file-standards.md`「要件・外部仕様」）をたどり、変更対象・追随範囲を`## 要件・外部仕様`へ書く
    - 出力・診断件数・分岐結果を完了条件に使う場合は、生成主体と消費先、分岐の有効化条件、是正前の状態と是正後の期待値を対応付ける。是正前後で同じ値になる条件、対象分岐が無効な条件、成功時に抑制される出力の不在は識別条件にせず、公開状態か直接の契約テストを使う
    - 依頼・WIの明示的な禁止条件と採用手段は`## 実施内容`の同じ行へ書き、比べられるようにする
-2. 変更対象や採用方針を左右する未確定判断を依存関係とともに列挙し（WIが確定した事項は除く）、`agent-toolkit:user-confirmation-and-report`「確認要否の判定」を適用する。実装中に生じた同種の判断も同じ。手段は「確認と起動経路」に従う
+2. 変更対象や採用方針を左右する未確定判断を判断間の前後関係とともに列挙し（WIが確定した事項は除く）、`agent-toolkit:user-confirmation-and-report`「確認要否の判定」を適用する。実装中に生じた同種の判断も同じ。手段は「確認と起動経路」に従う
 3. `references/plan-file-standards.md`「初回起草の雛形」に案件の値を記入し、`atk run-script plan-create --`で作成する。バグ対応で入力にWIが無いかWIの原因分析を訂正・追加する計画では、`agent-toolkit:bugfix`の`references/root-cause-analysis.md`に従って計画ファイル（バグ）を先に埋める。WIの`## 原因分析`をそのまま用いる場合は計画ファイル（バグ）を作成せずWIファイル名で参照する
 4. メインによる起動では`atk run-script plan-check -- --reject-migration-warnings <計画ファイルの絶対パス>`を単独実行する。レーン担当は`agent-toolkit:process-wi`の`references/lane-planning.md`が定める選定結果とレーン識別子付きの形で単独実行する。いずれも終了コード0を確かめる
 5. `起動経路`の値に対応する次の1行だけを実施する

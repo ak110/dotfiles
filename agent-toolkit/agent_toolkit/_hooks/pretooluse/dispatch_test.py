@@ -24,10 +24,12 @@ from agent_toolkit._testing.pretooluse_support import (
     _agent_messages,
     _make_plan_file,
     _plan_file_state_env,
-    _run,
     _stderr_warn_offenders,
     _user_facing_payload,
     _write_session_state,
+)
+from agent_toolkit._testing.pretooluse_support import (
+    run_after_read_delivery as _run,
 )
 
 _HOOKS_JSON_PATH = pathlib.Path(__file__).resolve().parents[3] / "hooks" / "hooks.json"
@@ -698,7 +700,7 @@ def test_warn_notices_are_not_written_to_stderr(module_name: str) -> None:
 
 
 def test_stderr_warn_offenders_detects_indirect_binding() -> None:
-    """warn通知を返す関数の結果を束縛してstderrへ渡す形を、定義順に依存せず検出する。"""
+    """warn通知を返す関数の結果を束縛してstderrへ渡す形を、定義順によらず検出する。"""
     source = textwrap.dedent(
         """\
         import sys
@@ -1396,7 +1398,7 @@ class TestRemovedChecksAreSilent:
                 env_overrides=_plan_file_state_env(tmp_path, home_dir=home),
             )
 
-            assert result.returncode == 0, payload
+            assert result.returncode == 0, (payload, result.stderr, result.stdout)
             assert result.stdout == "", payload
             assert result.stderr == "", payload
 

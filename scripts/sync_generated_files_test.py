@@ -31,7 +31,7 @@ def test_aggregates_failures_without_stopping(monkeypatch, capsys) -> None:
 
 @pytest.mark.parametrize("arguments,code", [(["--help"], 0), (["--check"], 2), (["--unknown"], 2), (["extra"], 2)])
 def test_input_is_handled_before_generation(monkeypatch, capsys, arguments, code) -> None:
-    """公開入口の入力検査では生成器の子プロセスを起動しない。"""
+    """公開された起動コマンドの入力検査では生成器の子プロセスを起動しない。"""
     calls = []
     monkeypatch.setattr(subject.subprocess, "run", lambda *args, **kwargs: calls.append(args))
     with pytest.raises(SystemExit) as error:

@@ -21,7 +21,7 @@ def _assert_reader_launch(item: dict[str, str], repository: pathlib.Path, review
     materials = {"比較元本文": item["before"], "今回差分": item["patch"], "現行本文": item["current"]}
     if "scope_patch" in item:
         materials["判定範囲差分"] = item["scope_patch"]
-    _model, _usage, _prompt, launch_kind, _handoff = launch_requests.task_document_request(
+    _model, _prompt, launch_kind, _handoff = launch_requests.task_document_request(
         "reader-fit-review",
         {
             "成果物": item["current"],

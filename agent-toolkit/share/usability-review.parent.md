@@ -6,6 +6,17 @@
 
 画面差分がある場合の並列画面レビュー（いずれも定義は`${CLAUDE_PLUGIN_ROOT}/share/workflow-phases.md`「用語」）で、メインがユーザビリティレビュー担当を起動し、返却を検収する手順を定める。
 
+## 名指し参照の読込方法
+
+本文の各参照の適用条件を保ち、選んだ資料の指定範囲を取得してから、その基準を使う具体的な判断へ進む。起動時の行の資料は起動本文とともに届く。
+
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `workflow-phases.md#「用語」` | 判断 | `section:agent-toolkit:*/share/workflow-phases.md#「用語」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/writing-standards/references/ui-ux.md#「完了前の実描画確認」` | 判断 | `section:agent-toolkit:*/skills/writing-standards/references/ui-ux.md#「完了前の実描画確認」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/delegation/references/base-contract.md#「引き継ぎ記録先」` | 判断 | `section:agent-toolkit:*/skills/delegation/references/base-contract.md#「引き継ぎ記録先」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/user-confirmation-and-report/SKILL.md#「認可を要する操作」` | 判断 | `section:agent-toolkit:*/skills/user-confirmation-and-report/SKILL.md#「認可を要する操作」` |
+
 ## 起動
 
 起動の前に、対象worktreeの書込主体（レーン工程ではレーン担当）へ、対象リポジトリの手順で対象HEADを再配備または起動させ、完了を確かめる。実装途中に配備済みの環境も対象HEADへ更新し、修正後の再判定でも新しい対象HEADで同じく準備する。

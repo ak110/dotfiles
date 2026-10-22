@@ -30,7 +30,7 @@ def test_mcp_setting_names_follow_public_config_keys(
             assert "旧モデル設定キー" in capsys.readouterr().err
             monkeypatch.setenv(name, "codex:gpt-6-sol/medium")
             with pytest.raises(ValueError, match=name):
-                config.parse_unresolved_model_candidates("high_tier")
+                config.parse_unresolved_model_candidates("execute")
             monkeypatch.delenv(name)
     assert not {"AGENT_TOOLKIT_CONFIG_STATE_DIR", "AGENT_TOOLKIT_CONFIG_PRIVATE_NOTES"} & set(names)
     assert proxy_environment.PROXY_ENVIRONMENT_VARIABLES is mcp_environment.PROXY_ENVIRONMENT_VARIABLES

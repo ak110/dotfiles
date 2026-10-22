@@ -1,4 +1,4 @@
-"""Agent Plugins・Codex向け派生JSONを同期または検査する生成器の入口。
+"""Agent Plugins・Codex向け派生JSONを同期または検査する生成器の起動スクリプト。
 
 `scripts/sync_generated_files.py`がプロジェクト環境で起動する。
 生成と検査の処理は`pytools/_internal/codex_plugin_manifests.py`が持ち、本ファイルは引数の解釈と終了コードだけを持つ。

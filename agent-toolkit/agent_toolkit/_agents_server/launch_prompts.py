@@ -13,43 +13,23 @@ from agent_toolkit._agents_server.tool_descriptions import EXPLORE_BACKEND_CAPAB
 from agent_toolkit._common import message_format, plugin_environment
 
 TASK_MODEL_TYPES = {
-    "add-wi.subagent.md": "high_tier",
-    "bulk-replace-review.subagent.md": "low_tier",
-    "copilot-review-audit.subagent.md": "high_tier",
-    "defect-investigation.subagent.md": "high_tier",
-    "exec-review.subagent.md": "medium_tier",
-    "exec.subagent.md": "high_tier",
-    "external-write-review.subagent.md": "low_tier",
-    "lane-integration.subagent.md": "high_tier",
-    "pick-wi-explain.subagent.md": "low_tier",
-    "reader-fit-review.subagent.md": "low_tier",
-    "recurrence-self-check.subagent.md": "medium_tier",
-    "refine-prompt.subagent.md": "medium_tier",
-    "session-termination.subagent.md": "high_tier",
-    "usability-review.subagent.md": "medium_tier",
-    "wi-draft-review.subagent.md": "medium_tier",
-}
-"""frontmatterを持たない旧版の役割文書だけに使うモデル段位の読取互換。新しい役割は追加しない。"""
-
-
-TASK_USAGES = {
-    "add-wi.subagent.md": "base",
-    "bulk-replace-review.subagent.md": "chores",
-    "copilot-review-audit.subagent.md": "base",
-    "defect-investigation.subagent.md": "base",
+    "add-wi.subagent.md": "execute",
+    "bulk-replace-review.subagent.md": "review_fast",
+    "copilot-review-audit.subagent.md": "execute",
+    "defect-investigation.subagent.md": "execute",
     "exec-review.subagent.md": "review",
     "exec.subagent.md": "execute",
-    "external-write-review.subagent.md": "chores",
-    "lane-integration.subagent.md": "base",
-    "pick-wi-explain.subagent.md": "chores",
-    "reader-fit-review.subagent.md": "chores",
+    "external-write-review.subagent.md": "review_fast",
+    "lane-integration.subagent.md": "execute",
+    "pick-wi-explain.subagent.md": "chores_fast",
+    "reader-fit-review.subagent.md": "review_fast",
     "recurrence-self-check.subagent.md": "review",
-    "refine-prompt.subagent.md": "base",
-    "session-termination.subagent.md": "base",
+    "refine-prompt.subagent.md": "chores",
+    "session-termination.subagent.md": "execute",
     "usability-review.subagent.md": "review",
     "wi-draft-review.subagent.md": "review",
 }
-"""旧版の役割文書だけに使う用途の読取互換。現行の用途はfrontmatterが所有する。"""
+"""frontmatterを持たない旧版の役割文書だけに使う工程の読取互換。新しい役割は追加しない。"""
 
 
 SHARE_DIR = pathlib.Path(__file__).resolve().parents[2] / "share"

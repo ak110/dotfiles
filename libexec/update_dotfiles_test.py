@@ -1704,7 +1704,7 @@ def _track_mise_lock(local: pathlib.Path, seed: pathlib.Path) -> None:
 
 @pytest.mark.usefixtures("real_stash_runtime")
 class TestStashLifecycle:
-    """更新の公開入口で復元・回収・旧退避保護の寿命を確認する。"""
+    """公開された更新コマンドで復元・回収・旧退避保護の寿命を確認する。"""
 
     @pytest.mark.parametrize("pull_code,cleanup_failure", [(0, False), (7, False), (0, True), (7, True)])
     def test_restored_changes_survive_cleanup_outcome(
@@ -2287,7 +2287,7 @@ def test_skipped_update_keeps_pending_for_next_timer(
     tmp_path: pathlib.Path,
     sync_report_path: pathlib.Path,
 ) -> None:
-    """自動更新入口が見送りを未完了として保持し、次の周期で再試行する。"""
+    """自動更新スクリプトが見送りを未完了として保持し、次の周期で再試行する。"""
     import update_dotfiles_if_upstream_changed as timer  # noqa: PLC0415  # pylint: disable=import-outside-toplevel
 
     local, _seed, _remote = _create_git_pair(tmp_path)

@@ -183,7 +183,7 @@ def test_review_row_options_select_rows_without_select_row(
     assert json.loads(current.read_text(encoding="utf-8")) == payload
 
 
-# 拒否の理由ごとに、診断が示す語を対にして、別の理由による拒否で通らないようにする。
+# 拒否の理由ごとに、診断が示す語を対にして、別の理由による拒否で合格しないようにする。
 _INVALID_SELECTIONS = {
     "outside": "--select-rowを明示した場合はその集合",
     "missing-row": "選択行が存在しません",
@@ -1071,6 +1071,21 @@ def test_public_run_diagnostics_roundtrip(tmp_path: pathlib.Path, capsys: pytest
     assert len(summary["diagnostics"]) == 1
     group = summary["diagnostics"][0]
     assert group["count"] == 2 and group["rule"] == "F821"
+    assert _run(*listing, *result_args, "--list-results", "--results-counts", name=name) == 0
+    counts = json.loads(capsys.readouterr().out)
+    assert counts["diagnostics"][0]["group"] == 1 and counts["diagnostics"][0]["count"] == 2
+    assert "diagnostics" not in counts["diagnostics"][0]
+    assert (
+        _run(*listing, *result_args, "--list-results", "--result-diagnostic-group", "1", "--results-identifiers", name=name)
+        == 0
+    )
+    assert json.loads(capsys.readouterr().out)["diagnostics"] == group["diagnostics"]
+    assert _run(*listing, *result_args, "--list-results", "--result-diagnostic-group", "1", name=name) == 0
+    assert list(json.loads(capsys.readouterr().out)["diagnostics"]) == group["diagnostics"]
+    before = output.read_bytes()
+    assert _run(*listing, *result_args, "--list-results", "--result-diagnostic-group", "0", name=name) == 1
+    capsys.readouterr()
+    assert output.read_bytes() == before
     selected = group["diagnostics"][1]
     assert _run(*listing, *result_args, "--list-results", "--result-diagnostic", selected, name=name) == 0
     detail = json.loads(capsys.readouterr().out)["diagnostics"]
@@ -1123,6 +1138,32 @@ def test_public_results_summary_and_selection(
     assert {item["change"] for item in summary["test_changes"]} == {"added", "deleted", "changed"}
     changed = next(item for item in summary["test_changes"] if item["change"] == "changed")
     assert (changed["before_status"], changed["after_status"]) == ("passed", "failed")
+    assert _run(*listing, "--results-file", str(results), "--list-results", "--results-counts", name=name) == 0
+    counts = json.loads(capsys.readouterr().out)
+    assert {item["status"]: item["count"] for item in counts["tests"]} == {"passed": 1, "failed": 1, "error": 1, "skipped": 1}
+    assert all("tests" not in item for item in counts["tests"] + counts["test_changes"])
+    assert (
+        _run(
+            *listing,
+            "--results-file",
+            str(results),
+            "--list-results",
+            "--result-status",
+            "failed",
+            "--result-status",
+            "error",
+            "--results-identifiers",
+            name=name,
+        )
+        == 0
+    )
+    ids = json.loads(capsys.readouterr().out)
+    assert ids["tests"] == ["trial_test.py::test_changed", "trial_test.py::test_error"]
+    assert _run(*listing, "--results-file", str(results), "--list-results", "--result-change", "deleted", name=name) == 0
+    removed = json.loads(capsys.readouterr().out)
+    assert not removed["tests"]
+    assert removed["test_changes"][0]["test"] == "trial_test.py::test_old"
+    assert removed["test_changes"][0]["before"]["xml"] == baseline["xml"]
     selected = next(item["tests"][0] for item in summary["tests"] if item["status"] == "passed")
     assert _run(*listing, "--results-file", str(results), "--list-results", "--result-test", selected, name=name) == 0
     detail = json.loads(capsys.readouterr().out)
@@ -1254,6 +1295,29 @@ def test_public_diagnostics_comparison_distinguishes_movement_multiplicity_and_i
             groups = json.loads(capsys.readouterr().out)["diagnostics"]
             assert {identity for group in groups for identity in group["diagnostics"]} == compared.keys()
             assert any(group["change"] == "incomparable" for group in groups)
+            for command in ("verification-record", "exec-review-evidence-check"):
+                listing = ["--output", str(output)] if command == "verification-record" else []
+                assert _run(*listing, "--results-file", str(results), "--list-results", "--results-counts", name=command) == 0
+                counts = json.loads(capsys.readouterr().out)
+                assert any(group["change"] == "incomparable" and group["count"] > 0 for group in counts["diagnostics"])
+                assert all("diagnostics" not in group for group in counts["diagnostics"])
+                assert (
+                    _run(
+                        *listing,
+                        "--results-file",
+                        str(results),
+                        "--list-results",
+                        "--result-change",
+                        "incomparable",
+                        name=command,
+                    )
+                    == 0
+                )
+                selected = json.loads(capsys.readouterr().out)["diagnostics"]
+                assert list(selected) == [identity for identity in compared if identity.startswith("incomparable:")]
+                assert selected == {
+                    identity: value for identity, value in compared.items() if identity.startswith("incomparable:")
+                }
 
 
 def test_diagnostics_from_subproject_follow_renames(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
@@ -1523,6 +1587,60 @@ def test_public_structured_runner_results_list_compare_select_and_reject(
         assert "次の操作:" in capsys.readouterr().err
         pathlib.Path(after["path"]).write_text(saved_text, encoding="utf-8")
         _json(pathlib.Path(after["run_record"]), original_record)
+
+
+@pytest.mark.parametrize("runner", ["vitest", "playwright", "trx"])
+@pytest.mark.parametrize("name", ["verification-record", "exec-review-evidence-check"])
+def test_public_structured_runner_accepts_duplicate_test_names_with_indexes(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], runner: str, name: str
+) -> None:
+    """公開操作が同名の構造化試験を出現順の番号で区別し、比較と詳細取得に使える。"""
+    git_repository.init_repository(tmp_path, commit_message="試験の基準")
+    monkeypatch.chdir(tmp_path)
+    before, after = _runner_fixture(tmp_path, runner, baseline=True), _runner_fixture(tmp_path, runner)
+    for spec in (before, after):
+        path = pathlib.Path(spec["path"])
+        if runner == "trx":
+            root = ET.parse(path).getroot()
+            results = next(element for element in root if element.tag.endswith("Results"))
+            original = next(element for element in results if "PASSED" in element.attrib["testName"])
+            results.append(ET.fromstring(ET.tostring(original)))
+            ET.ElementTree(root).write(path, encoding="utf-8")
+        else:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+            if runner == "vitest":
+                original = next(item for item in payload["testResults"][0]["assertionResults"] if item["title"] == "PASSED")
+                payload["testResults"][0]["assertionResults"].append(dict(original))
+            else:
+                original = payload["suites"][0]["suites"][0]["specs"][0]["tests"][0]
+                payload["suites"][0]["suites"][0]["specs"][0]["tests"].append(dict(original))
+            _json(path, payload)
+    record = tmp_path / "pending.json"
+    assert _run("--output", str(record), "--plan", str(_plan(tmp_path, "plan-user"))) == 0
+    listing = ["--output", str(record)] if name == "verification-record" else []
+    args = [
+        "--test-format",
+        runner,
+        "--test-file",
+        after["path"],
+        "--test-record",
+        after["run_record"],
+        "--baseline-test-format",
+        runner,
+        "--baseline-test-file",
+        before["path"],
+        "--baseline-test-record",
+        before["run_record"],
+    ]
+    capsys.readouterr()
+    assert _run(*listing, *args, "--list-results", name=name) == 0, capsys.readouterr().err
+    results = json.loads(capsys.readouterr().out)
+    base = next(test for test in results["tests"] if test.endswith("#1")).removesuffix("#1")
+    assert {f"{base}#1", f"{base}#2"} <= set(results["tests"])
+    assert not any(item["test"] in {f"{base}#1", f"{base}#2"} for item in results["test_changes"])
+    capsys.readouterr()
+    assert _run(*listing, *args, "--list-results", "--result-test", f"{base}#2", name=name) == 0
+    assert list(json.loads(capsys.readouterr().out)["tests"]) == [f"{base}#2"]
 
 
 @pytest.mark.parametrize("runner", ["vitest", "playwright"])
@@ -1830,7 +1948,7 @@ def test_public_repeated_rounds_replace_current_evidence_and_inherit_each_requir
     )
 
 
-def _saved_trial(tmp_path: pathlib.Path, text: str, name: str) -> dict[str, str]:
+def _saved_trial(tmp_path: pathlib.Path, text: str, name: str, *pytest_args: str) -> dict[str, str]:
     """隔離Gitで実pytestを実行し、公開run-commandの記録とXMLを受け取る。"""
     if not (tmp_path / ".git").is_dir():
         _git(tmp_path, "init", "--quiet")
@@ -1852,6 +1970,7 @@ def _saved_trial(tmp_path: pathlib.Path, text: str, name: str) -> dict[str, str]
         "-o",
         "junit_family=xunit1",
         f"--junitxml={xml}",
+        *pytest_args,
         str(trial),
     )
     assert result.returncode in {0, 1}, result.stderr
@@ -1995,7 +2114,7 @@ def _saved_pyfltr_trial(
 ) -> tuple[dict[str, str], subprocess.CompletedProcess[str]]:
     """実pyfltrでpytestを起動し、公開run-commandの記録とXMLを受け取る。
 
-    `PYFLTR_CACHE_DIR`でpyfltrの実行記録をテストの一時領域へ書き、テスト外のキャッシュに依存しない。
+    `PYFLTR_CACHE_DIR`でpyfltrの実行記録をテストの一時領域へ書き、テスト外のキャッシュを参照しない。
     """
     monkeypatch.setenv("PYFLTR_CACHE_DIR", str(tmp_path / "pyfltr-cache"))
     pytest_path = pathlib.Path(sys.executable).parent / "pytest"
@@ -2061,6 +2180,30 @@ def test_junit_rejects_missing_pyfltr_record_with_next_action(
     assert "pytest -v -o junit_family=xunit1 --junitxml=<XMLの絶対パス>" in error
 
 
+@pytest.mark.parametrize("name", ["verification-record", "exec-review-evidence-check"])
+def test_public_junit_rejects_quiet_pytest_with_header_restoring_action(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], name: str
+) -> None:
+    """公開操作が-qでrootdir見出しを抑止した記録へ、原因と見出しを復元する再実行を示す。"""
+    monkeypatch.chdir(tmp_path)
+    spec = _saved_trial(tmp_path, "def test_one():\n    assert True\n", "quiet", "-q")
+    record_path = pathlib.Path(spec["run_record"])
+    captured = json.loads(record_path.read_text(encoding="utf-8"))
+    stdout = pathlib.Path(captured["stdout_path"])
+    stdout.write_text(
+        "\n".join(line for line in stdout.read_text(encoding="utf-8").splitlines() if not line.startswith("rootdir:")) + "\n",
+        encoding="utf-8",
+    )
+    record = tmp_path / "record.json"
+    assert _run("--output", str(record), "--plan", str(_plan(tmp_path, "plan-user"))) == 0
+    args = ["--output", str(record)] if name == "verification-record" else []
+    capsys.readouterr()
+    assert _run(*args, "--junit-xml", spec["xml"], "--junit-record", spec["run_record"], "--list-results", name=name) == 1
+    error = capsys.readouterr().err
+    assert "rootdir:" in error and "-q" in error
+    assert "見出しを抑止する指定を外してpytestを再実行" in error
+
+
 def test_junit_rejects_unmatched_junitxml_with_next_action(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -2075,8 +2218,8 @@ def test_junit_rejects_unmatched_junitxml_with_next_action(
     capsys.readouterr()
     assert _list_junit(record, {"xml": str(other), "run_record": first["run_record"]}) == 1
     error = capsys.readouterr().err
-    assert "--junitxml" in error and "pyfltr" in error
-    assert "pytest -v -o junit_family=xunit1 --junitxml=<XMLの絶対パス>" in error
+    assert "--junitxml" in error and "指定し直すか、再実行する" in error
+    assert "pyfltr" not in error
 
 
 def _subproject_repository(tmp_path: pathlib.Path) -> pathlib.Path:

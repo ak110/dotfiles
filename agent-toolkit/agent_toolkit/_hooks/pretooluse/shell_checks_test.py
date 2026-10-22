@@ -350,7 +350,7 @@ class TestCodexMcpReply:
 
 
 class TestMcpLanguageBoundary:
-    """MCPの承認は保存済みtranscriptの言語に依存せず、現在の応答はmodが判定する。"""
+    """MCPの承認は保存済みtranscriptの言語を問わず、現在の応答はmodが判定する。"""
 
     _state_env = staticmethod(_plan_file_state_env)
     _write_state = staticmethod(_write_session_state)
@@ -1075,6 +1075,62 @@ def test_reserved_prefix_reaches_bash_hook_checks(command: str, expected: str, e
     assert expected in result.stderr
 
 
+@pytest.mark.parametrize("extra_payload", [{}, {"turn_id": "codex-turn"}], ids=["claude-code", "codex"])
+@pytest.mark.parametrize(
+    "command_kind",
+    ["message", "file", "heredoc"],
+)
+def test_git_commit_with_work_item_filename_is_blocked_by_public_hook(
+    tmp_path: pathlib.Path, command_kind: str, extra_payload: dict[str, str]
+) -> None:
+    """最終メッセージの各確定可能な入力経路で、WI名を持つcommitを公開hookが遮断する。"""
+    repo = git_repository.init_repository(tmp_path / "repo", commit_message="判定前の履歴")
+    message = "変更理由\n\n対応AWI: 20261020-151224-001.md"
+    if command_kind == "message":
+        command = "git commit -m '変更理由' -m '対応AWI: 20261020-151224-001.md'"
+    elif command_kind == "file":
+        message_file = repo / "message.txt"
+        message_file.write_text(message, encoding="utf-8")
+        command = f"git commit -F '{message_file}'"
+    else:
+        command = "git commit -F - <<'EOF'\n" + message + "\nEOF"
+
+    result = _run_git_commit_message_hook(repo, tmp_path, command, extra_payload)
+
+    assert result.returncode == 2
+    assert result.stdout == ""
+    assert "公開するコミットへ作業項目のファイル名を書かない" in result.stderr
+    assert "対応記録" in result.stderr and "plan-progress" in result.stderr
+    assert "ファイル名を含む行を除いて再実行" in result.stderr
+
+
+@pytest.mark.parametrize("extra_payload", [{}, {"turn_id": "codex-turn"}], ids=["claude-code", "codex"])
+@pytest.mark.parametrize(
+    "command_kind",
+    ["message", "file", "heredoc"],
+)
+def test_git_commit_without_work_item_filename_passes_public_hook(
+    tmp_path: pathlib.Path, command_kind: str, extra_payload: dict[str, str]
+) -> None:
+    """WI名のない同形メッセージは公開hookを通過する。"""
+    repo = git_repository.init_repository(tmp_path / "repo", commit_message="判定前の履歴")
+    message = "変更理由\n\n対象の動作を更新した。"
+    if command_kind == "message":
+        command = "git commit -m '変更理由' -m '対象の動作を更新した。'"
+    elif command_kind == "file":
+        message_file = repo / "message.txt"
+        message_file.write_text(message, encoding="utf-8")
+        command = f"git commit -F '{message_file}'"
+    else:
+        command = "git commit -F - <<'EOF'\n" + message + "\nEOF"
+
+    result = _run_git_commit_message_hook(repo, tmp_path, command, extra_payload)
+
+    assert result.returncode == 0
+    assert result.stdout == ""
+    assert result.stderr == ""
+
+
 class TestBashOptionAfterTerminator:
     """オプション終端`--`の後ろへCLI自身のオプションを置いたコマンドの遮断（block）。
 
@@ -1306,3 +1362,30 @@ class TestBashWindowsDriveLetterPath:
         monkeypatch.setattr(sys, "platform", "win32")
         command = 'export PATH="C:/x/bin:$PATH"'
         assert shell_checks._warn_windows_drive_letter_path(command, is_codex=True) is None  # pylint: disable=protected-access
+
+
+def _run_git_commit_message_hook(
+    repo: pathlib.Path, tmp_path: pathlib.Path, command: str, extra_payload: dict[str, str]
+) -> subprocess.CompletedProcess[str]:
+    """実Gitを持つ場所から公開hookへ渡し、判定だけで履歴や作業状態を変えないことを確認する。"""
+    head_before = git_repository.git_output(repo, "rev-parse", "HEAD")
+    status_before = git_repository.git_output(repo, "status", "--porcelain=v1")
+    payload = {"tool_name": "Bash", "tool_input": {"command": command}, "cwd": str(repo), **extra_payload}
+    result = _run(payload, env_overrides=_plan_file_state_env(tmp_path))
+    observed = {
+        "payload": payload,
+        "shell_checks_source": shell_checks.__file__,
+        "head_before": head_before,
+        "head_after": git_repository.git_output(repo, "rev-parse", "HEAD"),
+        "status_before": status_before,
+        "status_after": git_repository.git_output(repo, "status", "--porcelain=v1"),
+        "inside_worktree": git_repository.git_output(repo, "rev-parse", "--is-inside-work-tree"),
+        "returncode": result.returncode,
+        "stdout": result.stdout,
+        "stderr": result.stderr,
+    }
+    (tmp_path / "public-hook-observation.json").write_text(json.dumps(observed, ensure_ascii=False), encoding="utf-8")
+    assert observed["inside_worktree"] == "true"
+    assert observed["head_after"] == head_before
+    assert observed["status_after"] == status_before
+    return result

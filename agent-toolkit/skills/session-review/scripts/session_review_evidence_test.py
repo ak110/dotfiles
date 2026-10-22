@@ -1212,9 +1212,15 @@ def test_bundle_treats_quoted_operator_shaped_search_terms_as_data(
         (["/bin/bash", "-lc", "rg -n -F '<<<<<<<' docs > found.txt"], 2, ""),
     ]
     records = _bundle_failed_codex_commands(tmp_path, capsys, cases)
-    candidates = [item for item in records if item["kind"] == "candidate"]
+    candidates = [item for item in records if item["kind"] == "candidate" and item["candidate_kind"] == "command-failure"]
     assert {locator["line"] for item in candidates for locator in item["locators"]} == {7, 9, 10, 11, 12}
     assert records[-1]["excluded"]["normal-negative-result"] == 7
+
+    unresolved = [
+        item for item in records if item["kind"] == "candidate" and item["candidate_kind"] == "definition-read-unresolved"
+    ]
+    assert {locator["line"] for item in unresolved for locator in item["locators"]} == {4, 6}
+    assert not any(item["kind"] == "candidate" and item["candidate_kind"] == "definition-body-read" for item in records)
 
 
 def test_bundle_excludes_wait_continuations_but_keeps_real_failures(
@@ -1764,7 +1770,7 @@ def test_long_injection_is_classified_before_display_shortening(
 def test_user_events_includes_offered_options_claude(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
     """AskUserQuestionの回答イベントは、提示した全選択肢のlabelとdescriptionを質問文の直後に持つ。
 
-    確認回答に依存する対象・除外・認可は、選ばれなかった選択肢との対比で決まるため、回答だけでは判定できない。
+    確認回答で決まる対象・除外・認可は、選ばれなかった選択肢との対比で決まるため、回答だけでは判定できない。
     """
     question = "反映先をどうしますか"
     transcript = _write_transcript(

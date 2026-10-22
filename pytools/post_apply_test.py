@@ -27,7 +27,7 @@ from pytools import post_apply
 from pytools._internal import apply_dotfiles_plugins, claude_common, common, deferred_updates, post_apply_outcome
 
 # `post_apply`は削除対象の表をimport時のホームで組み立てる。テストの実行中はホームが一時ディレクトリへ隔離されるため、
-# 表を引く鍵もimport時のホームから組み立てる。
+# 表を検索するキーもimport時のホームから組み立てる。
 _IMPORT_HOME = Path.home()
 
 # 配布先cleanup契約の定数を直接検証する。
@@ -395,7 +395,7 @@ def test_deferred_record_write_failure_fails_post_apply(
 
 
 def test_sync_report_preserves_report_of_the_same_run(monkeypatch: pytest.MonkeyPatch, sync_report_path: Path) -> None:
-    """同じ実行の記録がある場合は、その記録へpost-apply段の結果を足す。"""
+    """同じ実行の記録がある場合は、その記録へpost-apply段の結果を追加する。"""
     monkeypatch.setenv("UPDATE_DOTFILES_RUN_ID", "run-1")
     post_apply.sync_report.write_start("run-1", "2026-09-22T00:00:00+00:00")
 
@@ -1415,6 +1415,7 @@ class TestDefaultSteps:
         "Claude Code CLI の導入と更新": {"mise セットアップ"},
         "OpenCode CLI の導入": {"mise セットアップ", "Codex CLI の導入と更新", "Claude Code CLI の導入と更新"},
         "Codex plugin snapshot の生成": {"Claude Code plugin のインストール"},
+        "Antigravity plugin の生成と登録": {"Antigravity CLI の導入", "Codex plugin snapshot の生成", "Gemini 設定"},
         "Codex plugin のインストール": {
             "Codex の Claude MCP 登録削除",
             "Codex plugin snapshot の生成",
@@ -1430,7 +1431,7 @@ class TestDefaultSteps:
         "Claude 設定": {"Claude Code plugin のインストール", "旧Codex User scope MCP登録の移行"},
         "claude-statusline バイナリの取得": {"Codex CLI の導入と更新"},
         "libarchive (Windows)": {"mise セットアップ"},
-        "atk serve 自動起動セットアップ (Linux)": {"Claude Code plugin のインストール"},
+        "atk serve 自動起動セットアップ (Linux)": {"Claude Code plugin のインストール", "agents_serverのuv環境ウォームアップ"},
         "dotfiles自動更新タイマー セットアップ (Linux)": {"atk serve 自動起動セットアップ (Linux)"},
     }
     _WINDOWS_STEPS = {
@@ -1704,7 +1705,7 @@ def test_normal_main_root_failure_reports_recovery_before_side_effects(
     sync_report_path: Path,
     missing_root: bool,
 ) -> None:
-    """ルート解決に失敗した通常入口は確認対象と再実行手段を示し、工程とログを開始しない。"""
+    """ルート解決に失敗した通常の起動処理は確認対象と再実行手段を示し、工程とログを開始しない。"""
     root = tmp_path / "dotfiles"
     monkeypatch.setattr(common, "find_dotfiles_root", lambda: None if missing_root else root)
 
@@ -1743,7 +1744,7 @@ def test_normal_main_reports_failure_and_runs_successor(
     log_available: bool,
     sync_report_path: Path,
 ) -> None:
-    """通常入口で失敗理由・次操作を表示し、実出力先へ記録して後続を完了する。"""
+    """通常の起動処理で失敗理由・次操作を表示し、実出力先へ記録して後続を完了する。"""
     home = tmp_path / "home"
     home.mkdir()
     monkeypatch.setenv("HOME", str(home))
@@ -1814,7 +1815,7 @@ def test_normal_main_applies_host_settings_and_preserves_user_values(
     platform: str,
     existing: bool,
 ) -> None:
-    """通常入口のClaude・Gemini工程は未作成と既存設定を管理値へ収束させ、再適用でも値を保つ。"""
+    """通常の起動処理のClaude・Gemini工程は未作成と既存設定を管理値へ収束させ、再適用でも値を保つ。"""
     home = tmp_path / "home"
     home.mkdir()
     monkeypatch.setenv("HOME", str(home))

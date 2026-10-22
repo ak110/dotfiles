@@ -2,41 +2,63 @@
 name: agent-toolkit-edit
 user-invocable: false
 description: >
-  `agent-toolkit/`配下のプラグイン（スキル・サブエージェント・フックスクリプト・marketplace記述）、
+  `agent-toolkit/`・`agent-basics/`配下のプラグイン（スキル・サブエージェント・フックスクリプト・marketplace記述）、
   `agent-toolkit/rules/`配下のルールファイル（配布先`~/.claude/rules/agent-toolkit/`）、
   `.claude-plugin/marketplace.json`を編集するときに使う。
   版数更新・marketplace管理・セッション状態フラグの扱いを含む。
 ---
 
-# agent-toolkit（Agent Plugins・Claude Code・Codex）
+# agent-toolkit（Agent Plugins・Claude Code・Codex・Antigravity）
 
 本スキルは`agent-toolkit/`配下の配布物と`.claude-plugin/marketplace.json`を編集するエージェントへ、ファイル構成と参照方向、付帯作業の扱い、版数更新、配布と同期の規約を提供する。
 エージェント向け文書の改訂に共通する手順（編集前に読む記録、規範を削除・縮小するときの消失確認など）は`dotfiles-norm-edit`が扱う。
 
+## 名指し参照の読込方法
+
+本文の各参照の適用条件を保ち、選んだ資料の指定範囲を取得してから、その基準を使う具体的な判断へ進む。起動時の行の資料は起動本文とともに届く。
+
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../dotfiles-norm-edit/SKILL.md` | 判断 | `read:*/skills/dotfiles-norm-edit/SKILL.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../dotfiles-repo-layout/SKILL.md#「ディレクトリ構造の注意」` | 判断 | `section:*/skills/dotfiles-repo-layout/SKILL.md#「ディレクトリ構造の注意」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:writing-standards/references/agent-documents-additions.md#「規範追記時の判定」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/agent-documents-additions.md#「規範追記時の判定」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:writing-standards/references/agent-documents-basics.md#「責務と構成」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/agent-documents-basics.md#「責務と構成」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:review-standards/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/review-standards/SKILL.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:writing-standards/references/investigation.md` | 判断 | `read:agent-toolkit:*/skills/writing-standards/references/investigation.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:writing-standards/references/agent-skills.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/agent-skills.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:writing-standards/references/agent-documents-basics.md#「定義の所有者」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/agent-documents-basics.md#「定義の所有者」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:process-wi/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/SKILL.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:plan-mode/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/plan-mode/SKILL.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../dotfiles-development/SKILL.md#「開発手順」` | 判断 | `section:*/skills/dotfiles-development/SKILL.md#「開発手順」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:writing-standards/references/delivery-scope.md` | 判断 | `read:agent-toolkit:*/skills/writing-standards/references/delivery-scope.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:writing-standards/references/session-state-and-flags.md` | 判断 | `read:agent-toolkit:*/skills/writing-standards/references/session-state-and-flags.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:writing-standards/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/writing-standards/SKILL.md` |
+
 ## 読込表
 
-| 時点または条件 | 全文読む資料 |
-| --- | --- |
-| WI処理の工程や運用を担うスキル、`share/`配下の`<役割名>.subagent.md`または`atk wi`の実装を編集する前 | `docs/guide/claude-code-guide.md`のうち編集対象と同期する節（少なくとも「推奨ワークフロー」）。あわせて`agent-toolkit:workflow-overview`を起動する |
-| `agent-toolkit/agent_toolkit/agents_server_mcp.py`、`agent-toolkit/agent_toolkit/_agents_server/`配下または`rust/claude-statusline/src/agents_server.rs`の実装を変更または調査する前 | `references/agents-server-shared-state.md` |
-| `agents_server`が起動した委譲先が動かない事象（起動の失敗、初期化の未到達、委譲先の無応答、結果の欠落）を調査する前 | `references/agents-server-investigation.md` |
-| `agent-toolkit/agent_toolkit/_atk/serve/static/`配下のCSS・HTML・JavaScriptを変更する前 | `references/atk-serve-static.md` |
-| 次のいずれかを変更する前と、作業ツリーで改訂した配布物の挙動を確かめる前: `agent-toolkit/agent_toolkit/`・`agent-toolkit/scripts/`の配置とimport、`atk`のサブコマンドと出力、MCPサーバー識別子とツール名、hookの実装と登録、プラグイン内の実行時パス、権限設定、marketplaceと配布の手順 | `references/distribution-and-hooks.md` |
-| `agent-toolkit/`配下を変更対象に含む計画を起草する前 | `references/version-bump.md`の「plan modeでの取り扱い」節 |
-| 全レーン後に版数を更新する時点と、`references/version-bump.md`の手順へ入る前 | `agent-toolkit/skills/process-wi/references/finish-session.md` |
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 | 資料選択子 |
+| --- | --- | --- | --- | --- |
+| WI処理の工程や運用を担うスキル、`share/`配下の`<役割名>.subagent.md`または`atk wi`の実装を編集する前 | `docs/guide/claude-code-guide.md`のうち編集対象と同期する節（少なくとも「推奨ワークフロー」）。あわせて`agent-toolkit:workflow-overview`を起動する | 判断 | `section:*/docs/guide/claude-code-guide.md#「推奨ワークフロー」`、`read:agent-toolkit:*/skills/workflow-overview/SKILL.md` | |
+| `agent-toolkit/agent_toolkit/agents_server_mcp.py`、`agent-toolkit/agent_toolkit/_agents_server/`配下または`rust/claude-statusline/src/agents_server.rs`の実装を変更または調査する前 | `references/agents-server-shared-state.md` | 判断 | `read:*/skills/agent-toolkit-edit/references/agents-server-shared-state.md` | |
+| `agents_server`が起動した委譲先が動かない事象（起動の失敗、初期化の未到達、委譲先の無応答、結果の欠落）を調査する前 | `references/agents-server-investigation.md` | 判断 | `read:*/skills/agent-toolkit-edit/references/agents-server-investigation.md` | |
+| `agent-toolkit/agent_toolkit/_atk/serve/static/`配下のCSS・HTML・JavaScriptを変更する前 | `references/atk-serve-static.md` | 判断 | `read:*/skills/agent-toolkit-edit/references/atk-serve-static.md` | |
+| 次のいずれかを変更する前と、作業ツリーで改訂した配布物の挙動を確かめる前: `agent-toolkit/agent_toolkit/`・`agent-toolkit/scripts/`の配置とimport、`atk`のサブコマンドと出力、MCPサーバー識別子とツール名、hookの実装と登録、プラグイン内の実行時パス、権限設定、marketplaceと配布の手順 | `references/distribution-and-hooks.md` | 判断 | `read:*/skills/agent-toolkit-edit/references/distribution-and-hooks.md` | |
+| `agent-toolkit/`配下を変更対象に含む計画を起草する前 | `references/version-bump.md`の「plan modeでの取り扱い」節 | 判断 | `section:*/skills/agent-toolkit-edit/references/version-bump.md#「plan modeでの取り扱い」` | |
+| 全レーン後に版数を更新する時点と、`references/version-bump.md`の手順へ入る前 | `agent-toolkit/skills/process-wi/references/finish-session.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/finish-session.md` | |
 
 ## ファイル構成と参照方向
 
 - `agent-toolkit/`: Agent Plugins・Claude Code・Codexが共有するプラグインルート
+- `agent-basics/`: 成果物の品質スキルを独立して配るプラグインルート。toolkitからbasicsへの一方向の依存とする
 - `agent-toolkit/rules/`: ルールファイル（`01-agent.md`は基本原則、`02-agent-operations.md`は製品横断の実行運用）。メイン、サブエージェント、委譲先の全てへ適用する条文だけを置き、サブディレクトリを設けない（`scripts/gen_install_files.py`は直下の`*.md`だけを配布一覧へ列挙する）。配布先と同期は`dotfiles-repo-layout`「ディレクトリ構造の注意」が扱う
 - `agent-toolkit/share/rules-main.md`・`rules-main.claude-code.md`・`rules-main.codex.md`: メイン向けの共通規範とホスト別規範
 - `agent-toolkit/share/rules-common.codex.md`: Codexの全エージェント向けの規範
-- `agent-toolkit/share/rules-subagent.md`・`rules-subagent.claude-code.md`: 委譲先向けの共通規範とClaude Code固有規範（Codex固有差分が要るときは`rules-subagent.codex.md`を追加する）。振り分けは`agent-toolkit:writing-standards`の`references/agent-documents-additions.md`「規範追記時の判定」に従う
+- `agent-toolkit/share/rules-subagent.md`・`rules-subagent.claude-code.md`: 委譲先向けの共通規範とClaude Code固有規範（Codex固有差分が要るときは`rules-subagent.codex.md`を追加する）。振り分けは`agent-basics:writing-standards`の`references/agent-documents-additions.md`「規範追記時の判定」に従う
 - 配布物完結の環境変数は`AGENT_TOOLKIT_<PURPOSE>`、個人環境完結は`DOTFILES_`を接頭辞とする。一覧は`<plugin root>/skills/writing-standards/references/claude-hooks.md`にある
 
 参照方向はdotfilesリポジトリ→プラグインと、プラグイン↔ルールファイルを許容する。
 `pytools/`はagent-toolkitを同じリポジトリからeditable導入で解決するため、`_`で始まるprivateなサブパッケージもimportしてよい。privateなモジュールを移動・改名する変更では同じ変更単位で`pytools/`のimportもそろえる。
-配置は読込時点と成立条件の依存先で決める（`agent-toolkit:writing-standards`の`references/agent-documents-basics.md`「責務と構成」）。プロジェクト固有の前提（ツール・データ・命名・CI・運用など）に依存する内容はプロジェクト側へ置き、固有要素を同種の任意要素へ置換しても判定・工程順・停止条件が成立する内容だけを配布物候補とする。
+配置は読込時点と成立に必要な条件で決める（`agent-basics:writing-standards`の`references/agent-documents-basics.md`「責務と構成」）。プロジェクト固有の前提（ツール・データ・命名・CI・運用など）を前提とする内容はプロジェクト側へ置き、固有要素を同種の任意要素へ置換しても判定・工程順・停止条件が成立する内容だけを配布物候補とする。
 
 ## 付帯作業の扱い
 
@@ -62,9 +84,9 @@ description: >
 
 スキル・サブエージェントの編集では次を守る。
 
-- 名前付きサブエージェントの定義と委譲プロンプトには`agent-toolkit:writing-standards`の`references/agent-skills.md`を適用する
+- 名前付きサブエージェントの定義と委譲プロンプトには`agent-basics:writing-standards`の`references/agent-skills.md`を適用する
 - 委譲元の起動・受領契約とagent定義は組で更新する。単一呼び元はその工程の規範へ統合し、共有する起動契約は`<役割名>.parent.md`を保持できる。起動設定は`<役割名>.subagent.md`のfrontmatterが所有し、委譲元は起動準備のために定義本文を取得しない
-- 独立に読み込まれる文書間の重複の採否は`agent-toolkit:writing-standards`の`references/agent-documents-basics.md`「定義の所有者」に従う
+- 独立に読み込まれる文書間の重複の採否は`agent-basics:writing-standards`の`references/agent-documents-basics.md`「定義の所有者」に従う
 - 実行レビューの契約を変更する場合は、`agent-toolkit:process-wi`側と`agent-toolkit:plan-mode`でメインが委譲元となる側を同じ変更単位で更新する（両系統は共通化していない）
 
 ## スキル間の連携
@@ -78,7 +100,7 @@ description: >
 
 - 版数は`scripts/agent_toolkit_bump.py {patch|minor|major}`で更新する。区分は`references/version-bump.md`「判定基準」、実行する主体と時点は同「plan modeでの取り扱い」に従う（`agent-toolkit:process-wi`のレーンは区分を計画へ記録するだけで、終端担当が全レーンのマージ後に1回実行する）。rebase・merge時の競合は同「競合解決と統合後の確認」に従う
 - `version`と`description`は2つの定義元で同一に保つ（`description`は手で同期する）。定義元は`agent-toolkit/.claude-plugin/plugin.json`と、`.claude-plugin/marketplace.json`の`plugins[]`内`name == "agent-toolkit"`のエントリである。`manifest_ssot_invariant_test.py`が検証する
-- Agent Plugins向け`plugin.json`・`mcp.json`とCodex向けmanifestは、この2ファイルと`agent-toolkit/.mcp.json`から`scripts/sync_codex_plugin_manifests.py`が生成する。生成物を手で編集しない
+- Agent Plugins向け`plugin.json`・`mcp.json`とCodex向けmanifestは、この2ファイルと`agent-toolkit/.mcp.json`から`scripts/sync_codex_plugin_manifests.py`が生成する。Antigravity向けの`agent-toolkit-agy/`と`agent-basics-agy/`は`scripts/sync_antigravity_plugin.py`が生成し、`post_apply`が`~/.gemini/config/plugins.json`へ登録する。`--plugin agent-basics`は品質プラグインだけを生成する。元の名前空間と品質本文を保持し、両配布物の長文スキルを同じ短いSKILL.md・全文資料の生成処理へ渡す。生成物は手で編集せず、生成元を編集して再生成する
 - 検証は`dotfiles-development`「開発手順」の特定ファイルに限定する実行形で、SSOTテストを含めて行う
 
 ## 同期先ドキュメント
@@ -97,3 +119,9 @@ description: >
 
 `agent-toolkit`プラグインの全フラグ一覧のSSOTは`agent-toolkit:writing-standards`の`references/session-state-and-flags.md`であり、フラグを追加・変更する際は同ファイルを更新する。
 hookの実装・編集とセッション状態の設計・変更では`agent-toolkit:writing-standards`を起動する（hook実装の基準を含む。エージェントの行動規範は役割別ルールか作業別スキルに置く）。
+
+## agent-basicsとの責務境界
+
+成果物の品質基準は`agent-basics/skills/`へ置き、toolkitは品質スキルと自分の運用契約を参照する。basicsは常時フック・MCP・ホーム向け運用規範を持たない。basicsの原本manifestは`agent-basics/.claude-plugin/plugin.json`、掲載原本は同じmarketplaceのagent-basics項目である。独立したversionとdescriptionを2箇所でそろえ、root manifestとCodex manifestは既存生成器で再生成する。toolkitのClaude依存配列をAgent Plugins root manifestへ複写しない。
+
+agent-toolkitの資源を編集する前は`agent-toolkit:writing-standards`も適用し、同スキルの読込表から配送・状態・起動・記録の運用条件を読む。品質の取得済み本文は再利用する。

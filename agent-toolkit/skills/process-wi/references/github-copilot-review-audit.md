@@ -4,6 +4,16 @@
 Pull Requestのreview threadへの返信、コメント投稿、threadの解決、Dependabotアラートの却下は成果物の変更に当たらず、本書が定める範囲で監査担当が行う。
 監査は呼び出し時点の状態を1回読んで完了し、新しいレビューの生成要求や到着の待機は監査の範囲外とする。
 
+## 名指し参照の読込方法
+
+本文の各参照の適用条件を保ち、選んだ資料の指定範囲を取得してから、その基準を使う具体的な判断へ進む。起動時の行の資料は起動本文とともに届く。
+
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../SKILL.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/SKILL.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../../share/copilot-review-audit.subagent.md` | 判断 | `read:agent-toolkit:*/share/copilot-review-audit.subagent.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../external-write-review/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/external-write-review/SKILL.md` |
+
 ## 対象
 
 状態（open・closed・merged）を問わず全Pull Requestのreviewを列挙し、判定対象に残るCopilot由来のreview本文を取得する（inline commentもthreadも伴わない本文だけのreviewがあるため、列挙は未解決threadの有無によらず行う）。
@@ -126,7 +136,7 @@ pendingのJSONを受け取れない場合は直接取得する。各応答はman
 gh api --method PATCH 'repos/<OWNER>/<REPO>/dependabot/alerts/<番号>' -f state=dismissed -f dismissed_reason=inaccurate -F dismissed_comment=@<COMMENT_FILE>
 ```
 
-`dismissed_comment`は第三者が読むため、文面を保存して送信の直前に`agent-toolkit:external-write-review`を起動し、反映した文面だけを送る。文面にはキュー項目の識別子を含めず、アラートの根拠だけを書く。非0で終わった却下は判定済みの記録から外して結果を返す（次の実行で再び拾われる）。誤って却下したアラートは`state=open`で戻せる。
+`dismissed_comment`は第三者が読むため、文面を保存して送信の直前に`agent-toolkit:external-write-review`を起動し、反映した文面だけを送る。文面にはキュー項目の識別子を含めず、アラートの根拠だけを書く。非0で終わった却下は判定済みの記録から外して結果を返す（次の実行で再び取得される）。誤って却下したアラートは`state=open`で戻せる。
 
 この却下は人間由来のWI `20260930-175957-001.md`で承認済みであり、監査ごとの確認は不要である。承認範囲は`default_branch`のbranchに実在しないマニフェストに紐づくアラートを`inaccurate`で却下することに限り、是正済みと要修正はGitHubへ書き込まない。同WIが保持するユーザー発言と確認回答は次のとおりである。
 
@@ -134,9 +144,11 @@ gh api --method PATCH 'repos/<OWNER>/<REPO>/dependabot/alerts/<番号>' -f state
 dotfiles向けDependabot alertsが出てる気がするんだけどこれって自動で対応されないんだっけ？ (対応して＆対応する仕掛け入れて）
 ```
 
+<!-- agent-doc-tone: example-mask:start -->
 ```text
 PRレビュー指摘を拾うスクリプトにそっちもチェックして拾う感じにまとめるのがいい気がする。
 ```
+<!-- agent-doc-tone: example-mask:end -->
 
 ```text
 回答: review-auditへ集約 (Recommended)

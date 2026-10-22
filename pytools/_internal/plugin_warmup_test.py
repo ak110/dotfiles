@@ -22,8 +22,8 @@ _STDOUT_BODY = "Resolved 0 packages"
 
 
 def _target(tmp_path: pathlib.Path) -> pathlib.Path:
-    """`--project` の解決に使う2階層下の入口パスを返す。"""
-    entry = tmp_path / "plugin-root" / "package" / "entry.py"
+    """`--project` の解決に使う2階層下の起動スクリプトのパスを返す。"""
+    entry = tmp_path / "plugin-root" / "agent_toolkit" / "entry.py"
     entry.parent.mkdir(parents=True)
     entry.write_text("", encoding="utf-8")
     launcher = entry.parents[1] / "scripts" / "launch.py"
@@ -33,12 +33,19 @@ def _target(tmp_path: pathlib.Path) -> pathlib.Path:
 
 
 @pytest.mark.parametrize("new_distribution", [False, True])
-def test_warmup_selects_the_installed_distribution_bootstrap(
-    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, new_distribution: bool
+@pytest.mark.parametrize("nested_entry", [False, True])
+def test_warmup_uses_current_launcher_for_each_installed_distribution(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, new_distribution: bool, nested_entry: bool
 ) -> None:
-    """新版は同じrootの共通起動スクリプト、導入済み旧版は従来の実体で構築する。"""
+    """配布版のlauncherの有無によらず現行launcherが指定rootの依存だけを準備する。"""
     path = _target(tmp_path)
-    launcher = path.parents[1] / "scripts/launch.py"
+    root = path.parents[1]
+    launcher = root / "scripts/launch.py"
+    if nested_entry:
+        nested = path.parent / "_common" / path.name
+        nested.parent.mkdir()
+        path.rename(nested)
+        path = nested
     if not new_distribution:
         launcher.unlink()
     calls = []
@@ -50,14 +57,25 @@ def test_warmup_selects_the_installed_distribution_bootstrap(
     monkeypatch.setattr(_common, "run_subprocess", run)
     assert _plugin_warmup.warmup(path, pathlib.Path("/host/uv"), tag="warmup", arguments=("--check-dependencies",))
     args, options = calls[0]
-    assert len(calls) == 1
+    assert len(calls) == 2
     assert options["timeout"] == 600.0
-    assert args[-2:] == [str(path), "--check-dependencies"]
-    if new_distribution:
-        assert args[:7] == ["/host/uv", "run", "--no-config", "--no-project", "--python", "3.15", "python"]
-        assert args[7] == str(launcher)
-    else:
-        assert args[:6] == ["/host/uv", "run", "--project", str(path.parents[1]), "--locked", "--no-default-groups"]
+    assert args[-2:] == ["--prepare", str(path)]
+    assert calls[1][0][-2:] == [str(path), "--check-dependencies"]
+    current_launcher = pathlib.Path(_plugin_warmup.plugin_environment.__file__).resolve().parents[2] / "scripts/launch.py"
+    bootstrap = [
+        "/host/uv",
+        "run",
+        "--no-config",
+        "--no-project",
+        "--python",
+        "3.15",
+        "python",
+        str(current_launcher),
+        "--project",
+        str(root),
+    ]
+    assert args == [*bootstrap, "--prepare", str(path)]
+    assert calls[1][0] == [*bootstrap, str(path), "--check-dependencies"]
 
 
 def test_nonzero_exit_reports_captured_output(

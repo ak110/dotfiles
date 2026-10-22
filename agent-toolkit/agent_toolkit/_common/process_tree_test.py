@@ -24,7 +24,7 @@ def _stubborn_child_source(ready_marker: pathlib.Path) -> str:
     """SIGTERMの無視を設定してから準備完了の印を書き、待機する子プロセスのソースを返す。
 
     印は設定の完了を示す同期点であり、テストは印を確かめてから終了を要求する。
-    設定より先に終了要求が届くと子は終了要求で終わり、強制終了の分岐を通らないまま合格するためである。
+    設定より先に終了要求が届くと子は終了要求で終わり、強制終了の分岐を実行せずに合格するためである。
     """
     return (
         "import pathlib, signal, time; signal.signal(signal.SIGTERM, signal.SIG_IGN); "

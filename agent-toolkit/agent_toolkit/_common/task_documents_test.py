@@ -1,5 +1,6 @@
 """`task_documents`の作業ツリーへの書込宣言と、起動本文からの役割文書の特定を確かめる。"""
 
+import json
 import pathlib
 
 import pytest
@@ -63,3 +64,36 @@ def test_launched_task_document_round_trips_the_task_header(tmp_path: pathlib.Pa
 def test_launched_task_document_ignores_other_first_lines(first_line: str) -> None:
     """文書へ言及するだけの自由本文、相対パス、役割文書以外は役割の起動と扱わない。"""
     assert task_documents.launched_task_document(first_line + "\n本文") is None
+
+
+@pytest.mark.parametrize("frontmatter", [False, True])
+def test_path_lists_declaration_preserves_both_document_formats(tmp_path: pathlib.Path, frontmatter: bool) -> None:
+    """frontmatterと保持された旧宣言から同じ複数パスの契約を取得する。"""
+    entry = {"instruction": "修正せよ", "required": ["表"], "path_lists": ["表"]}
+    path = _document(
+        tmp_path,
+        "必須入力名: 対象\n作業ツリーへの書込: あり\n継続入力: " + json.dumps(entry, ensure_ascii=False),
+    )
+    if frontmatter:
+        path.write_text(
+            "---\nmode: delegate\nmodel_type: high_tier\nusage: execute\nrequired_inputs: [対象]\n"
+            "writes_worktree: true\ncontinuations:\n  - " + json.dumps(entry, ensure_ascii=False) + "\n---\n",
+            encoding="utf-8",
+        )
+    declaration = task_documents.read_declaration_unchecked(path)
+    assert isinstance(declaration, task_documents.TaskDocumentDeclaration)
+    assert declaration.continuations[0].path_lists == ("表",)
+    assert not declaration.continuations[0].paths
+
+
+@pytest.mark.parametrize("path_lists", ["表", ["宣言外"]])
+def test_legacy_path_lists_reject_invalid_declaration(tmp_path: pathlib.Path, path_lists: str | list[str]) -> None:
+    """旧形式も配列の型と宣言済みの入力名を検査する。"""
+    entry = {"instruction": "修正せよ", "required": ["表"], "path_lists": path_lists}
+    path = _document(
+        tmp_path,
+        "必須入力名: 対象\n作業ツリーへの書込: あり\n継続入力: " + json.dumps(entry, ensure_ascii=False),
+    )
+    declaration = task_documents.read_declaration_unchecked(path)
+    assert isinstance(declaration, str)
+    assert "継続入力の書式が不正" in declaration

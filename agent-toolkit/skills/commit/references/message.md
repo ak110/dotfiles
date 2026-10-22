@@ -14,6 +14,15 @@
 - descriptionは日本語で、対象と変更・問題の種類が短く分かる件名にする。複数の変更は共通する目的でまとめ、必要性や個別の詳細は本文へ書く。エンドユーザーが呼び出す・設定する・目にする識別子は原表記を保ち、言い換えるのは知り得ない内部識別子に限る
 - 本文は任意で、書く場合は`agent-toolkit:writing-standards`の`references/writing.md`「文章の共通規定」に従う
 
+## 名指し参照の読込方法
+
+本文の各参照の適用条件を保ち、選んだ資料の指定範囲を取得してから、その基準を使う具体的な判断へ進む。起動時の行の資料は起動本文とともに届く。
+
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../review-standards/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/review-standards/SKILL.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../writing-standards/references/writing.md#「文章の共通規定」` | 判断 | `section:agent-toolkit:*/skills/writing-standards/references/writing.md#「文章の共通規定」` |
+
 ## `Co-Authored-By:`
 
 値はユーザーの明示指示、明文化されたプロジェクト方針、実行環境が提示する帰属の指定の順に確かめ、最初に観測できた定義で決める。空文字列の指定は帰属の明示的な無効化とする。

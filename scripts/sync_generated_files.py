@@ -18,6 +18,7 @@ GENERATORS = (
     "scripts/gen_completions.py",
     "scripts/gen_install_files.py",
     "scripts/sync_codex_agents.py",
+    "scripts/sync_antigravity_plugin.py",
 )
 
 

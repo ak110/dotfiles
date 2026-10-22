@@ -105,6 +105,52 @@ def _worktrees(repo: pathlib.Path) -> dict[str, str]:
     return {str(entry.path.resolve()): entry.branch or "" for entry in git_worktrees.list_worktrees(repo, timeout=_TIMEOUT)}
 
 
+@dataclasses.dataclass(frozen=True)
+class _ResourceState:
+    """存在する主repoから照会したレーン資源の状態。"""
+
+    worktree_path: bool
+    worktree_registered: bool
+    branch: bool
+
+    @property
+    def absent(self) -> bool:
+        """回収で守る実体が全て無いと確定したかを返す。"""
+        return not (self.worktree_path or self.worktree_registered or self.branch)
+
+
+def _resource_state(record: dict[str, typing.Any]) -> _ResourceState:
+    """消え得るworktreeを起点にせず、資源の有無を一度に照会する。"""
+    repo = pathlib.Path(record["repo"])
+    if _common(repo) != record["common_dir"]:
+        raise ValueError("repoのGit共通ディレクトリが所有記録と異なる")
+    worktree = pathlib.Path(record["worktree"])
+    registered = str(worktree) in _worktrees(repo)
+    return _ResourceState(os.path.lexists(worktree), registered, record["branch"] in _branches(repo))
+
+
+def _branch_is_integrated(record: dict[str, typing.Any], repo: pathlib.Path) -> bool:
+    """最終化時の入力HEADを保つbranchは、統合先の履歴書換え後も統合済みとして扱う。"""
+    integration = record.get("integration")
+    if isinstance(integration, dict) and integration.get("phase") == "finalized":
+        new_head = integration.get("new_head")
+        if isinstance(new_head, str) and _git(repo, "rev-parse", f"refs/heads/{record['branch']}") == new_head:
+            return True
+    result = git_command.run(
+        ["merge-base", "--is-ancestor", f"refs/heads/{record['branch']}", f"refs/heads/{record['base_branch']}"],
+        repo,
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=_TIMEOUT,
+    )
+    if result.returncode == 1:
+        raise ValueError("レーンbranchに統合先branchへ含まれないcommitがある。成果を統合してから同じlane deleteを再実行する")
+    if result.returncode:
+        raise ValueError(f"git merge-baseが終了{result.returncode}: {result.stderr.strip()}")
+    return True
+
+
 def _main_worktree(repo: pathlib.Path) -> pathlib.Path:
     """Linked worktreeから呼んでも、同じGitリポジトリの主作業ツリーへ解決する。"""
     main = git_worktrees.list_worktrees(repo, timeout=_TIMEOUT)[0]
@@ -169,7 +215,7 @@ def _selection_state(record: dict[str, typing.Any]) -> dict[str, typing.Any]:
     """選定原本が読めれば所有登録の保持値を更新して返し、失効していれば保持値を返す。
 
     選定原本はmanaged-tempの7日保持へ委ねられ、所有登録は資源の回収まで残る。
-    再開と回収の判定を原本の存続へ依存させないため、読めた時点の内容を所有登録へ写して保持する。
+    原本の消失後も再開と回収を判定できるようにするため、読めた時点の内容を所有登録へ写して保持する。
     """
     current = _read_selection(record)
     if current is not None:
@@ -345,7 +391,12 @@ def _transfer(source: pathlib.Path, destination: pathlib.Path, args: argparse.Na
     worktree = pathlib.Path(record["worktree"])
     if record["common_dir"] != _common(repo) or record["base_branch"] != args.base_branch:
         raise ValueError("再利用するrepoまたは統合先が異なる。元の入力で再実行する")
-    if _worktrees(repo).get(str(worktree)) != record["branch"]:
+    state = _resource_state(record)
+    if not state.worktree_path:
+        raise ValueError(
+            f"再利用元のworktreeが無い。`atk lane delete --session-id {record['session_id']}`で登録を回収してから作成し直す"
+        )
+    if not state.worktree_registered or _worktrees(repo).get(str(worktree)) != record["branch"]:
         raise ValueError("再利用するworktreeの登録が異なる。資源を確認する")
     activity = _worktree_activity(worktree)
     if activity:
@@ -629,27 +680,31 @@ def _worktree_activity(worktree: pathlib.Path) -> str | None:
 def _eligible(record: dict[str, typing.Any]) -> str | None:
     repo = pathlib.Path(record["repo"])
     worktree = pathlib.Path(record["worktree"])
-    if _common(repo) != record["common_dir"]:
-        return "repoのGit共通ディレクトリが所有記録と異なる"
+    state = _resource_state(record)
+    if state.absent:
+        return None
     if not record.get("ready"):
         return "作成または環境準備が未完了"
     if not _selection_state(record)["integrated"]:
         return "選定の統合状態が未統合"
-    activity = _worktree_activity(worktree)
-    if activity:
-        return activity
+    if state.worktree_path:
+        activity = _worktree_activity(worktree)
+        if activity:
+            return activity
     trees = _worktrees(repo)
-    if str(worktree) in trees:
-        if trees[str(worktree)] != record["branch"] or _common(worktree) != record["common_dir"]:
+    if state.worktree_registered:
+        if trees.get(str(worktree)) != record["branch"]:
             return "worktreeの登録が所有記録と異なる"
-        temp_permissions.prepare_tree(worktree)
-        if _git(worktree, "status", "--porcelain=v1", "--untracked-files=all"):
-            return "未commitまたは未追跡の変更がある"
-    elif worktree.exists():
+        if state.worktree_path and _common(worktree) != record["common_dir"]:
+            return "worktreeのGit共通ディレクトリが所有記録と異なる"
+        if state.worktree_path:
+            temp_permissions.prepare_tree(worktree)
+            if _git(worktree, "status", "--porcelain=v1", "--untracked-files=all"):
+                return "未commitまたは未追跡の変更がある"
+    elif state.worktree_path:
         return "登録の無いworktreeが残っている"
-    refs = _branches(repo)
-    if record["branch"] in refs:
-        _git(repo, "merge-base", "--is-ancestor", f"refs/heads/{record['branch']}", f"refs/heads/{record['base_branch']}")
+    if state.branch:
+        _branch_is_integrated(record, repo)
     return None
 
 
@@ -665,7 +720,7 @@ def cleanup_session(session_id: str | None, *, only: pathlib.Path | None = None)
 
     onlyを指定すると、その登録だけを同じ条件で判定・回収する。
     """
-    result: dict[str, typing.Any] = {"session_id": session_id, "removed": [], "retained": [], "recovered": []}
+    result: dict[str, typing.Any] = {"session_id": session_id, "removed": [], "retained": [], "recovered": [], "missing": []}
     if session_id is None or not _directory(session_id).exists():
         return result
     with _locked(session_id) as directory:
@@ -677,7 +732,8 @@ def cleanup_session(session_id: str | None, *, only: pathlib.Path | None = None)
                 record = json.loads(path.read_text(encoding="utf-8"))
                 if record["session_id"] != session_id or path.stem != record["lane"]:
                     raise ValueError("登録の所有sessionまたはlaneが異なる")
-                if _recovered(record):
+                state = _resource_state(record)
+                if _recovered(record) and not state.absent:
                     # 回復で作業ツリーを解放し、成果のbranchを残した登録。所在を結果へ示し、回収しない。
                     result["recovered"].append({"record_path": str(path), **record["recovery"]})
                     continue
@@ -688,6 +744,25 @@ def cleanup_session(session_id: str | None, *, only: pathlib.Path | None = None)
                 if reason:
                     result["retained"].append({"record_path": str(path), "reason": reason})
                 else:
+                    if not state.worktree_path:
+                        integration = record.get("integration")
+                        recovery = record.get("recovery")
+                        last_head = (
+                            integration.get("new_head")
+                            if isinstance(integration, dict) and isinstance(integration.get("new_head"), str)
+                            else recovery.get("head")
+                            if isinstance(recovery, dict) and isinstance(recovery.get("head"), str)
+                            else record.get("initial_head")
+                        )
+                        result["missing"].append(
+                            {
+                                "lane": record["lane"],
+                                "worktree": record["worktree"],
+                                "branch": record["branch"],
+                                "last_head": last_head,
+                                "skipped_procedure": "delete" if record["commands"].get("delete") else None,
+                            }
+                        )
                     records.append((path, record))
             except _record_errors() as error:
                 result["retained"].append(_retained_resource(path, error))
@@ -704,7 +779,8 @@ def cleanup_session(session_id: str | None, *, only: pathlib.Path | None = None)
                 reason = _eligible(record)
                 if reason:
                     raise ValueError(reason)
-                if not record["teardown_done"]:
+                state = _resource_state(record)
+                if not record["teardown_done"] and state.worktree_path:
                     _procedure(record, "delete")
                     record["teardown_done"] = True
                     _save(path, record)
@@ -712,7 +788,13 @@ def cleanup_session(session_id: str | None, *, only: pathlib.Path | None = None)
                 if reason:
                     raise ValueError(reason)
                 repo = pathlib.Path(record["repo"])
-                if record.get("project_hook") and worktree_hooks.configured(repo, "WorktreeRemove"):
+                state = _resource_state(record)
+                if (
+                    state.worktree_registered
+                    and record.get("project_hook")
+                    and state.worktree_path
+                    and worktree_hooks.configured(repo, "WorktreeRemove")
+                ):
                     worktree_hooks.remove(
                         repo,
                         pathlib.Path(record["worktree"]),
@@ -720,17 +802,11 @@ def cleanup_session(session_id: str | None, *, only: pathlib.Path | None = None)
                         record["procedure_timeout"],
                         diagnostics_directory=_hook_diagnostics(record, "WorktreeRemove"),
                     )
-                elif record["worktree"] in _worktrees(repo):
-                    _git(repo, "worktree", "remove", record["worktree"])
-                refs = _branches(repo)
-                if record["branch"] in refs:
-                    _git(
-                        repo,
-                        "merge-base",
-                        "--is-ancestor",
-                        f"refs/heads/{record['branch']}",
-                        f"refs/heads/{record['base_branch']}",
-                    )
+                elif state.worktree_registered:
+                    remove_args = ("--force",) if not state.worktree_path else ()
+                    _git(repo, "worktree", "remove", *remove_args, record["worktree"])
+                if _resource_state(record).branch:
+                    _branch_is_integrated(record, repo)
                     _git(repo, "branch", "-D", record["branch"])
                 if record["managed_temp"]:
                     managed_temp.cleanup_managed_temp(pathlib.Path(record["managed_temp"]))
@@ -811,7 +887,7 @@ def recover(session_id: str, lanes: list[str] | None = None) -> dict[str, typing
     directory = _directory(session_id)
     if not directory.is_dir():
         raise ValueError(f"所有sessionの登録が無い: {session_id}。`atk lane delete --list`で所有sessionを確認する")
-    result: dict[str, typing.Any] = {"session_id": session_id, "recovered": [], "retained": []}
+    result: dict[str, typing.Any] = {"session_id": session_id, "recovered": [], "removed": [], "retained": []}
     with _locked(session_id):
         paths = sorted(directory.glob("lane-*.json"))
         if lanes:
@@ -824,6 +900,10 @@ def recover(session_id: str, lanes: list[str] | None = None) -> dict[str, typing
                 record = json.loads(path.read_text(encoding="utf-8"))
                 if record["session_id"] != session_id or path.stem != record["lane"]:
                     raise ValueError("登録の所有sessionまたはlaneが異なる")
+                if _resource_state(record).absent:
+                    path.unlink()
+                    result["removed"].append(record["lane"])
+                    continue
                 if not _recovered(record):
                     _recover(record, path)
                 result["recovered"].append({"record_path": str(path), "worktree": record["worktree"], **record["recovery"]})
@@ -1436,6 +1516,11 @@ def dispatch(args: argparse.Namespace) -> int:
                     "未回収のレーン資源を保持した", next_action="result_pathの理由を解消し同じlane deleteを再実行する"
                 )
             return 1
+        for missing in result.get("missing", []):
+            outcome.report_warning(
+                f"実体の無いレーン登録を回収した: lane={missing['lane']}, last_head={missing['last_head']}",
+                next_action="消失の原因を確認し、統合されていない成果があれば記録したHEADから復元する",
+            )
         outcome.report_success("レーン資源の操作が完了した", outcome.ResultKind.VALUE_OUTPUT)
         return 0
     except (OSError, ValueError, KeyError, TypeError, subprocess.SubprocessError, managed_temp.ManagedTempError) as error:

@@ -1,6 +1,12 @@
 min_version = "2026.9.16"
 
 [tools]
+# editorconfig-checker v4以降の配布名に追随するためGitHub Release backendを使う。
+# aqua backendの旧アセット名ではv4以降を取得できない。
+"github:editorconfig-checker/editorconfig-checker" = "latest"
+git-cliff = "latest"
+shellcheck = "latest"
+shfmt = "latest"
 pinact = "latest"
 prek = "latest"
 typos = "latest"

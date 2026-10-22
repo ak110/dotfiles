@@ -1,6 +1,9 @@
 """未導入のOpenCode CLIを、両OSで公開されているnpm導入手段で配置する。"""
 
 import logging
+import shutil
+
+from agent_toolkit._common import dotfiles_mode
 
 from pytools._internal import common, log_format, post_apply_outcome
 
@@ -9,10 +12,12 @@ logger = logging.getLogger(__name__)
 
 def run() -> post_apply_outcome.PostApplyOutcome:
     """既存の導入を保持し、取得・導入の失敗は警告として返す。"""
+    if dotfiles_mode.is_minimal():
+        return post_apply_outcome.PostApplyOutcome()
     if common.resolve_executable("opencode") is not None:
         logger.info(log_format.format_status("opencode", "導入済みのため実行しない。対応不要"))
         return post_apply_outcome.PostApplyOutcome()
-    npm = common.resolve_executable("npm")
+    npm = shutil.which("npm")
     if npm is None:
         logger.warning(
             log_format.format_status("opencode", "npmが見つからない。Node.jsの導入を確認して`update-dotfiles`を再実行する")

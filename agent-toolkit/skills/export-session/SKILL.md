@@ -14,3 +14,11 @@ description: >
 現在のセッションの識別子は、Claude Codeのメインでは`rules-main.claude-code.md`「自身の会話の記録」が案内するSessionStart通知の「この会話のセッションID」の値を使う。
 Claude Codeのそれ以外のエージェントでは`CLAUDE_CODE_SESSION_ID`、Codexでは`CODEX_THREAD_ID`を使う。
 範囲と出力内容（`--latest`、`--include-thinking`、`--include-subagents`、`--output-dir`など）は`atk agents logs --help`で選ぶ。
+
+## 名指し参照の読込方法
+
+本文の各参照の適用条件を保ち、選んだ資料の指定範囲を取得してから、その基準を使う具体的な判断へ進む。起動時の行の資料は起動本文とともに届く。
+
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `references/quality-standards.md` | 判断 | `read:agent-toolkit:*/skills/export-session/references/quality-standards.md` |

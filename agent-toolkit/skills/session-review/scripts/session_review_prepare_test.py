@@ -159,7 +159,7 @@ def test_prepare_comparison_materials(tmp_path: pathlib.Path, capsys: pytest.Cap
     calls = [
         (
             "mcp__plugin_agent-toolkit_agents_server__start",
-            {"cwd": "/repo", "mode": "delegate", "model_type": "high_tier", "prompt": body},
+            {"cwd": "/repo", "mode": "delegate", "model_type": "execute", "prompt": body},
         ),
         (
             "mcp__plugin_agent-toolkit_agents_server__start",
@@ -827,7 +827,7 @@ def test_prepare_keeps_first_human_intervention_after_process_loop_start(
 def test_prepare_keeps_improvement_lines_in_omitted_middle(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
     """1000字を超える発話の省略区間にある`気付いた改善点:`の行を、会話の流れへ全て残す。
 
-    振り返りは会話の流れからこの行を全件拾うため、省略区間で行が消えると、作業中に伝えた改善の機会を振り返りが分析できない。
+    振り返りは会話の流れからこの行を全件抽出するため、省略区間で行が消えると、作業中に伝えた改善の機会を振り返りが分析できない。
     行を持たない長い発話は従来どおり先頭と末尾だけを載せ、中間の本文を残さない。
     """
     first_note = "気付いた改善点: atk agents waitの出力をjqで加工するスクリプトを3回作った（ツールの出力形式）"

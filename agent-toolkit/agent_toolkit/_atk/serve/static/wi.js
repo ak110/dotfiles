@@ -1270,7 +1270,7 @@ function finishDetailMutation(key, filename, sessionGeneration, message) {
   else showToast(message);
 }
 
-// 詳細ダイアログからの全変更操作が通る共通の処理。送信中は詳細の再読込を保留し、成功時は保留を破棄して
+// 詳細ダイアログからの全変更操作を実行する共通の処理。送信中は詳細の再読込を保留し、成功時は保留を破棄して
 // 詳細を閉じ成功を通知する。失敗時は保留した再読込を実行してから例外を呼び出し元へ返し、
 // 呼び出し元が表示する失敗の文を再読込の警告で上書きしない。
 async function runDetailMutation(pendingKey, pendingOptions, request, successMessage) {

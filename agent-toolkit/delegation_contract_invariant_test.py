@@ -10,7 +10,7 @@ import pytest
 from agent_toolkit._agents_server import launch_prompts
 from agent_toolkit._atk import run_script
 from agent_toolkit._atk.wi import constants as wi_constants
-from agent_toolkit._common import task_documents
+from agent_toolkit._common import read_triggers, task_documents
 from agent_toolkit._common.markdown_headings import top_level_atx_headings
 from agent_toolkit._plan import selection
 
@@ -167,11 +167,23 @@ def _read_table_subagents(recipient: pathlib.Path, launched: set[str] | None = N
     `start`で起動されないため起動対象に挙げない。その指示を送る委譲元は、起動した委譲先の委譲元である。
     """
     content = recipient.read_text(encoding="utf-8")
+    declared = [
+        path.name
+        for row in read_triggers.parse_tables(recipient, recipient.parent.parent)
+        for path in row.documents
+        if path.name.endswith(".subagent.md")
+    ]
     if "\n## 読込表\n" not in content:
-        return []
+        return [name for name in declared if name != recipient.name and name not in (launched or set())]
     table = content.split("\n## 読込表\n", maxsplit=1)[1].split("\n## ", maxsplit=1)[0]
     launched = launched or set()
-    return [name for name in _READ_TABLE_SUBAGENT_PATTERN.findall(table) if name != recipient.name and name not in launched]
+    return list(
+        dict.fromkeys(
+            name
+            for name in [*declared, *_READ_TABLE_SUBAGENT_PATTERN.findall(table)]
+            if name != recipient.name and name not in launched
+        )
+    )
 
 
 def _instructed_errors(parent: _Contract, recipient: pathlib.Path) -> list[str]:
@@ -194,7 +206,19 @@ def _embedded_contracts(share: pathlib.Path) -> list[_EmbeddedContract]:
         *sorted(path for path in share.glob("*.md") if not path.name.endswith(".parent.md")),
     ]
     contracts = []
+    for role in sorted(share.glob("*.subagent.md")):
+        if "<!-- parent-read-source:" not in role.read_text(encoding="utf-8"):
+            continue
+        for target in read_triggers.parent_contract_targets(role.name, share.parent):
+            if target.path.name.endswith(".parent.md"):
+                continue
+            if not target.heading:
+                raise ValueError(f"{role}: 統合した起動契約は節を明示する")
+            body = "\n".join(line[1:] if re.match(r"^#{2,6} ", line) else line for line in target.body().splitlines())
+            contracts.append(_EmbeddedContract(target.path, target.heading, body))
     for path in paths:
+        if read_triggers.resolve_read_source(path, share.parent) != path.resolve():
+            continue
         text = path.read_text(encoding="utf-8")
         lines = text.splitlines()
         headings = top_level_atx_headings(text, 2)
@@ -215,7 +239,8 @@ def _embedded_contracts(share: pathlib.Path) -> list[_EmbeddedContract]:
             section_lines = lines[token.map[0] : end]
             # 元の節をH1とする検査用の像。ファイルを書き換えず、同じ入力検査を再利用する。
             body = "\n".join(line[1:] if re.match(r"^#{2,6} ", line) else line for line in section_lines)
-            contracts.append(_EmbeddedContract(path, title, body))
+            if not any(item.source.resolve() == path.resolve() and item.section == title for item in contracts):
+                contracts.append(_EmbeddedContract(path, title, body))
     return contracts
 
 
@@ -228,11 +253,12 @@ def _contract_errors(share: pathlib.Path) -> list[str]:
     for recipient in recipients.values():
         content = recipient.read_text(encoding="utf-8")
         table = _h2_section(content, "読込表") if "\n## 読込表\n" in content else ""
+        declared = {path.name for row in read_triggers.parse_tables(recipient, share.parent) for path in row.documents}
         for line in content.splitlines():
             if "起動" not in line or line.startswith("|"):
                 continue
             for name in re.findall(r"share/([A-Za-z0-9_.-]+\.parent\.md)", line):
-                if name not in table:
+                if name not in table and name not in declared:
                     errors.append(f"起動手順の読込が欠けている: {recipient.name} -> {name}")
 
     for parent in parents:
@@ -340,7 +366,7 @@ def test_distributed_roles_have_model_types() -> None:
 
 @pytest.mark.parametrize("rename", [False, True])
 def test_unregistered_added_or_renamed_role_reports_filename(tmp_path: pathlib.Path, rename: bool) -> None:
-    """登録済みの集合は通り、文書だけの追加・改名は不足する名前を示して失敗する。"""
+    """登録済みの集合は確認に合格し、文書だけの追加・改名は不足する名前を示して失敗する。"""
     registered_name = next(iter(launch_prompts.TASK_MODEL_TYPES))
     registered = tmp_path / registered_name
     registered.write_text("# 登録済みの役割\n", encoding="utf-8")
@@ -358,7 +384,7 @@ def test_new_role_configuration_needs_no_python_registration(tmp_path: pathlib.P
     """役割追加時の検査も宣言を読み、旧役割の対応表を新規登録の条件にしない。"""
     recipient = tmp_path / "new-check.subagent.md"
     recipient.write_text(
-        "---\nmode: explore\nmodel_type: low_tier\nusage: chores\nrequired_inputs: []\nwrites_worktree: false\n---\n# 確認\n",
+        "---\nmode: explore\nmodel_type: chores_fast\nrequired_inputs: []\nwrites_worktree: false\n---\n# 確認\n",
         encoding="utf-8",
     )
     _assert_role_models_registered(tmp_path)
@@ -588,11 +614,11 @@ def test_write_files_contract_reaches_selection_output_and_receipt() -> None:
     # 選定時と受領時の双方で、反映先と`書込対象`の対応を同じ公開コマンドで確かめる。
     assert "書き込まない反映先" in fields
     assert "`書き込まない反映先`" in output
-    assert "atk run-script pick-wi-check" in _h2_section(parent, "保存後の検査")
+    assert "atk run-script pick-wi-check" in _h2_section(parent, "保存後のチェック")
     assert "pick-wi-check" in run_script.SCRIPT_PATHS
     # 検査結果はWI属性へ複製せず、構造検査と意味検収を選定主体が保持する。
     assert "書込対象の検査" not in fields
-    check = _h2_section(parent, "保存後の検査")
+    check = _h2_section(parent, "保存後のチェック")
     assert "終了コード0" in check and "終了コード2" in check and "`次の操作:`" in check
 
 
@@ -720,7 +746,7 @@ def test_upstream_lane_contract_reaches_generation_receipt_and_dispatch() -> Non
     generation = _h2_section(selection_text, "反映先と上流投入")
     receipt = _h2_section(parent, "保存後の意味検収")
     assert "selection-format.md" in generation
-    assert "組合せ条件も検収" in receipt and "修正して再検査" in receipt
+    assert "組合せ条件も検収" in receipt and "修正して再チェック" in receipt
     assert "`上流要求だけ`（`レーン`が`なし`）" in _h2_section(lanes, "上流投入")
 
     def assert_no_blanket_exclusion(text: str) -> None:

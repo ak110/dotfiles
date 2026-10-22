@@ -4,6 +4,7 @@ import json
 import pathlib
 
 import pytest
+import session_evidence_execution as execution
 import session_review_evidence as evidence
 
 from agent_toolkit._testing.helpers import _write_transcript
@@ -76,3 +77,25 @@ def test_bundle_classifies_executed_processing_only(tmp_path: pathlib.Path, caps
     calls = [json.loads(line) for line in capsys.readouterr().out.splitlines()]
     displayed = " ".join(command) if isinstance(command, list) else command
     assert [call["text"] for call in calls if call["kind"] == "tool-call"] == [displayed]
+
+
+@pytest.mark.parametrize(
+    "argument",
+    [
+        "dynamicArgs",
+        '{cmd: "cat role.subagent.md" + suffix}',
+        "{cmd: `cat ${path}`}",
+        '{cmd: "cat role.subagent.md", ...overrides}',
+        '{cmd: "cat role.subagent.md", cmd: dynamic}',
+    ],
+)
+def test_dynamic_command_is_retained_without_evaluation(argument: str) -> None:
+    """式と上書きのある入力を、静的な文字列の先頭へ切り詰めない。"""
+    cell = f"await tools.exec_command({argument});"
+    assert not execution.command_inputs("functions.exec", cell)
+    observations = execution.command_input_observations("functions.exec", cell)
+    assert len(observations) == 1
+    assert observations[0]["command"] is None and observations[0]["reason"]
+    original_input = observations[0]["input"]
+    assert original_input is not None
+    assert argument in original_input

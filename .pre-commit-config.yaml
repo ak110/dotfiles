@@ -39,6 +39,9 @@ repos:
       - id: detect-private-key
       # ファイル検証。
       - id: check-added-large-files
+        # 6,297条文の台帳と互換性の検証記録は原形で保存する。対象の5ファイルだけを許容する。
+        exclude: >-
+          ^docs/development/norm-restructure-20261022/(ledger\.tsv|mapping\.json|reverse-index\.tsv|source-manifest\.json|public-compatibility\.json)$
       - id: check-executables-have-shebangs
       - id: check-shebang-scripts-are-executable
         exclude: '\.tmpl$'

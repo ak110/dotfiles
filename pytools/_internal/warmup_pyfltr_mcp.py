@@ -1,15 +1,15 @@
-"""pyfltr MCPサーバーの`uvx`ツール環境を事前構築する。
+"""pyfltr MCPサーバーの共有依存環境を事前構築する。
 
-Claude CodeとCodexはagent-toolkit pluginのMCP定義から`uvx --from <要求指定> [uvxのオプション] pyfltr mcp`を起動する。
-ツール環境が未構築だと初回起動でパッケージの取得と環境構築が起動時間に加わり、
-MCPクライアントの起動上限を超えるとpyfltr MCPを利用できない状態でセッションが始まる。
-MCP定義の起動形の末尾`mcp`を`--version`へ置き換えて1回起動し、MCP起動が再利用する同じツール環境を構築する。
-要求指定はMCP定義から読み、本モジュールへ書き写さない。
+共有launcherを使う配布版はlockfileのpyfltrを準備し、公開CLIのversionで確認する。
+旧版のuvx定義は、その定義が指定する既存のツールキャッシュを準備する。
+起動形と要求指定は有効版のMCP定義から読み取る。
 """
 
 import json
 import logging
 from pathlib import Path
+
+from agent_toolkit._common import dotfiles_mode
 
 from pytools._internal import claude_common, common, log_format, plugin_warmup, post_apply_outcome
 
@@ -29,6 +29,8 @@ def run() -> post_apply_outcome.PostApplyOutcome:
     ツール環境の構築は導入に当たるため、構築できない場合は警告だけを出力してスキップと数える。
     uvのキャッシュだけへ作用し設定を変えないため、変更なしを返す。
     """
+    if dotfiles_mode.is_minimal():
+        return post_apply_outcome.PostApplyOutcome()
     uvx = common.resolve_executable("uvx", preferred_directories=(Path.home() / ".local" / "bin",))
     if uvx is None:
         logger.warning(
@@ -58,14 +60,30 @@ def run() -> post_apply_outcome.PostApplyOutcome:
     launches: dict[tuple[str, ...], list[Path]] = {}
     for definition in definitions:
         try:
+            data = json.loads(definition.read_text(encoding="utf-8"))
+            servers = data.get("mcpServers") if isinstance(data, dict) else None
+            server = servers.get(_SERVER_NAME) if isinstance(servers, dict) else None
+            shared_arguments = server.get("args") if isinstance(server, dict) else None
+            if (
+                isinstance(server, dict)
+                and server.get("command") == "uv"
+                and isinstance(shared_arguments, list)
+                and "agent_toolkit/_common/pyfltr_entry.py" in shared_arguments
+            ):
+                entry = definition.parent / "agent_toolkit/_common/pyfltr_entry.py"
+                if not entry.is_file():
+                    raise ValueError(f"共有pyfltr入口が存在しない: {entry}")
+                uv = common.resolve_executable("uv", preferred_directories=(Path.home() / ".local/bin",))
+                if uv is None:
+                    raise ValueError("共有pyfltr入口に必要なuvが見つからない")
+                plugin_warmup.warmup(entry, uv, tag=_TAG, arguments=("--version",))
+                continue
             arguments = _warmup_arguments(definition)
-        except ValueError as exc:
+        except (OSError, ValueError) as exc:
             logger.warning(
                 log_format.format_status(
                     _TAG,
-                    f"環境構築を開始できない: {exc}。"
-                    f"{definition}のmcpServers.pyfltrのcommandとargsを`uvx "
-                    "... mcp`の起動形へ修正して`update-dotfiles`を再実行する",
+                    f"環境構築を開始できない: {exc}。{definition}と対応する入口ファイルを確認し、`update-dotfiles`を再実行する",
                 ),
             )
             continue

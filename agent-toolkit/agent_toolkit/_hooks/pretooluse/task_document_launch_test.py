@@ -26,7 +26,7 @@ def test_role_launch_hook_requires_same_named_inputs(tool_name: str, tmp_path: p
 
 
 def _invoke(tool_name: str, prompt: str, tmp_path: pathlib.Path, mode: str | None = None) -> subprocess.CompletedProcess[str]:
-    tool_input = {"prompt": prompt, "cwd": str(tmp_path), "model_type": "high_tier"}
+    tool_input = {"prompt": prompt, "cwd": str(tmp_path), "model_type": "execute"}
     if mode is not None:
         tool_input["mode"] = mode
     session_id = f"task-document-launch-{tool_name.rsplit('__', 1)[-1].lower()}-{mode}"

@@ -1,18 +1,5 @@
 # TypeScript記述スタイル
 
-本書はTypeScriptのコードとテストコードについて、一般的な作法から導けない事項を定める。
-共通の設計と実装の基準は`implementation-time.md`が、セキュリティの一般作法は同資料の「セキュリティ・ロギング・エラー処理」が定める。
+<!-- read-source: agent-basics:writing-standards/references/typescript.md -->
 
-## 言語スタイル
-
-- 内部で扱う「値がない」は`undefined`へそろえ、APIから返された`null`は内部へ取り込む時点で`?? undefined`により変換する。JSONやDBなど`null`と未設定を区別する境界へ渡す値では`null`を保つ
-
-## 非同期処理
-
-- 戻り値の`Promise`を意図的に無視する場合は`void func()`と明示する（`await`忘れと区別し、`no-floating-promises`ルールを通すため）。例外が伝播しない設計なら`.catch(...)`も付ける
-
-## テストコード（vitest）
-
-- テストフレームワークは対象プロジェクトの採用へそろえ、新規に選ぶ場合は`vitest`を使う
-- `vi.mock()`はファイル先頭へホイスティングされるため、動的な値を参照できない
-- 時間依存はfake timersなどで決定論的に制御し、タイマーとモックを後始末する
+品質基準の正式な提供元は`agent-basics:writing-standards`の`references/typescript.md`である。呼出元が指定した条件と読込範囲を、同名の正式な品質資料へ引き継ぐ。節指定がある場合は移設先の実見出しへ接続し、指定がない場合は従来の全文読込契約を保つ。

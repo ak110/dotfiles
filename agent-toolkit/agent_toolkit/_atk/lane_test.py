@@ -10,6 +10,7 @@ import json
 import os
 import pathlib
 import shlex
+import shutil
 import stat
 import subprocess
 import sys
@@ -119,6 +120,154 @@ def test_create_reuses_integrated_resources_then_delete_removes_only_owned_lane(
     assert code == 0 and not repeated["removed"]
     assert repeated["result_path"] != deleted["result_path"]
     assert json.loads(pathlib.Path(deleted["result_path"]).read_text(encoding="utf-8"))["removed"] == ["lane-01"]
+
+
+def test_delete_recovers_finalized_lane_after_base_history_is_rewritten(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """最終化時の入力HEADを保つレーンは、統合先の書換え後も回収する。"""
+    repo, selected, record = _create(tmp_path, monkeypatch, capsys)
+    _integration_selection(selected, monkeypatch, repo)
+    worktree = pathlib.Path(record["worktree"])
+    (worktree / "feature.txt").write_text("統合済みの成果", encoding="utf-8")
+    new_head = git_repository.commit_all(worktree, "統合済みの成果")
+    handoff = tmp_path / "handoff.md"
+    handoff.write_text("検収済み", encoding="utf-8")
+    manifest = tmp_path / "integration.json"
+    manifest.write_text(
+        json.dumps({"plans": [], "wis": [{"name": "awi.md", "commands": []}], "verification": [], "handoff": str(handoff)}),
+        encoding="utf-8",
+    )
+    code, integrated, stderr = _invoke(capsys, *_integration_args(record, repo, manifest, new_head))
+    assert code == 0 and integrated["phase"] == "finalized", stderr
+    git_repository.run_git(repo, "commit", "--amend", "-m", "書換え後の統合済み成果")
+    assert git_repository.git_output(repo, "rev-parse", "HEAD") != new_head
+
+    code, deleted, stderr = _invoke(capsys, "delete")
+
+    assert code == 0, stderr
+    assert deleted["removed"] == ["lane-01"]
+    assert record["branch"] not in git_repository.git_output(repo, "branch", "--format=%(refname:short)").splitlines()
+
+
+def test_delete_keeps_finalized_lane_with_a_later_commit(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """最終化後にレーンへ追加したcommitは統合済み記録と一致せず保持する。"""
+    repo, selected, record = _create(tmp_path, monkeypatch, capsys)
+    _integration_selection(selected, monkeypatch, repo)
+    worktree = pathlib.Path(record["worktree"])
+    (worktree / "integrated.txt").write_text("統合済み", encoding="utf-8")
+    integrated_head = git_repository.commit_all(worktree, "統合済み")
+    handoff = tmp_path / "handoff.md"
+    handoff.write_text("検収済み", encoding="utf-8")
+    manifest = tmp_path / "integration.json"
+    manifest.write_text(
+        json.dumps({"plans": [], "wis": [{"name": "awi.md", "commands": []}], "verification": [], "handoff": str(handoff)}),
+        encoding="utf-8",
+    )
+    code, integrated, stderr = _invoke(capsys, *_integration_args(record, repo, manifest, integrated_head))
+    assert code == 0 and integrated["phase"] == "finalized", stderr
+    (worktree / "later.txt").write_text("未統合", encoding="utf-8")
+    git_repository.commit_all(worktree, "統合後の追加成果")
+
+    code, held, stderr = _invoke(capsys, "delete")
+
+    assert code == 1, stderr
+    assert held["retained"]
+    assert pathlib.Path(record["record_path"]).exists()
+    assert pathlib.Path(record["worktree"]).exists()
+
+
+def test_delete_recovers_missing_worktree_registration_without_delete_procedure(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """実体の無い作業ツリーは固有撤去を呼ばず、登録と残るbranchを回収する。"""
+    marker = tmp_path / "delete-ran"
+    commands = tmp_path / "commands.json"
+    commands.write_text(
+        json.dumps({"delete": [sys.executable, "-c", "import pathlib,sys;pathlib.Path(sys.argv[1]).touch()", str(marker)]}),
+        encoding="utf-8",
+    )
+    _repo, _selected, record = _create(tmp_path, monkeypatch, capsys, "--commands-file", str(commands))
+    worktree = pathlib.Path(record["worktree"])
+    shutil.rmtree(worktree)
+
+    code, deleted, stderr = _invoke(capsys, "delete")
+
+    assert "を実行できない" not in stderr
+    assert code == 0, stderr
+    assert deleted["removed"] == ["lane-01"]
+    assert deleted["missing"] == [
+        {
+            "lane": "lane-01",
+            "worktree": str(worktree),
+            "branch": record["branch"],
+            "last_head": record["initial_head"],
+            "skipped_procedure": "delete",
+        }
+    ]
+    assert not marker.exists()
+    assert "実体の無いレーン登録を回収した" in stderr
+
+
+@pytest.mark.parametrize("state", ["unregistered", "unready", "legacy", "recovered"])
+def test_delete_recovers_absent_resources_for_each_registration_state(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], state: str
+) -> None:
+    """実体が全て無い登録は準備・選定・回復済みの状態を問わず回収する。"""
+    repo, _selected, record = _create(tmp_path, monkeypatch, capsys)
+    path = pathlib.Path(record["record_path"])
+    if state in {"legacy", "recovered"}:
+        _legacy(record)
+    if state == "recovered":
+        code, recovered, stderr = _invoke(capsys, "recover", "--session-id", "lane-test-session")
+        assert code == 0 and recovered["recovered"], stderr
+    else:
+        git_repository.run_git(repo, "worktree", "remove", "--force", record["worktree"])
+    git_repository.run_git(repo, "branch", "-D", record["branch"])
+    if state == "unready":
+        stored = json.loads(path.read_text(encoding="utf-8"))
+        stored["ready"] = False
+        path.write_text(json.dumps(stored, ensure_ascii=False) + "\n", encoding="utf-8")
+
+    code, deleted, stderr = _invoke(capsys, "delete")
+
+    assert "を実行できない" not in stderr
+    assert code == 0, stderr
+    assert deleted["removed"] == ["lane-01"]
+    assert not path.exists()
+
+
+def test_fixed_creation_reclaims_missing_previous_resource(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """固定作成先を保持する消失済み登録は別sessionのcreateが回収して再利用する。"""
+    repo, selected, record = _create(tmp_path, monkeypatch, capsys)
+    shutil.rmtree(record["worktree"])
+
+    code, created, stderr = _create_in(capsys, monkeypatch, "next-session", repo, selected)
+
+    assert "を実行できない" not in stderr
+    assert code == 0, stderr
+    assert created["session_id"] == "next-session"
+    assert created["worktree"] == record["worktree"]
+
+
+def test_reuse_rejects_record_whose_worktree_is_missing(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """消えた作業ツリーの再利用は、登録の回収を案内して拒否する。"""
+    repo, selected, record = _create(tmp_path, monkeypatch, capsys)
+    shutil.rmtree(record["worktree"])
+    monkeypatch.setenv(lane.SESSION_ENV, "next-session")
+
+    code, _created, stderr = _invoke(capsys, *_create_args(repo, selected), "--reuse-record", record["record_path"])
+
+    assert "を実行できない" not in stderr
+    assert code == 2
+    assert "再利用元のworktreeが無い" in stderr
+    assert "atk lane delete --session-id lane-test-session" in stderr
 
 
 @pytest.mark.skipif(os.name != "posix", reason="POSIXのディレクトリ権限を実機で検証する")
@@ -975,7 +1124,7 @@ def test_integrate_rebase_returns_mapping_and_requires_diagnostic_acceptance(
     assert pending["phase"] == "awaiting-validation"
     mapping = pathlib.Path(pending["rewrite_map"])
     assert mapping.is_file()
-    # 対応表は所有登録と同じ状態ディレクトリへ置き、managed-tempの失効に依存しない。
+    # 対応表は所有登録と同じ状態ディレクトリへ置き、managed-tempの失効で失われないようにする。
     assert mapping.parent == pathlib.Path(record["record_path"]).with_name("lane-01-integration")
     assert git_repository.git_output(repo, "rev-parse", "HEAD") == before
     value = json.loads(manifest.read_text(encoding="utf-8"))
@@ -2111,3 +2260,86 @@ def test_integrate_rejects_invalid_finalization_references(
     if "現在時刻より後" in reason:
         assert "現在時刻=" in stderr and "起動時刻を時差付きISO 8601" in stderr
         assert "integration" not in json.loads(pathlib.Path(record["record_path"]).read_text(encoding="utf-8"))
+
+
+@pytest.mark.parametrize("registration", ["retained", "pruned"])
+@pytest.mark.parametrize("branch", ["absent", "reachable", "unmerged"])
+def test_missing_worktree_cleanup_distinguishes_branch_state(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    registration: str,
+    branch: str,
+) -> None:
+    """消失した木とGit登録の組合せで、到達性による保持と回収・最後のHEADの警告を確かめる。"""
+    repo, _selected, record = _create(tmp_path, monkeypatch, capsys)
+    worktree = pathlib.Path(record["worktree"])
+    record_path = pathlib.Path(record["record_path"])
+    if branch == "unmerged":
+        git_repository.git_output(worktree, "commit", "--allow-empty", "-m", "保持する未統合成果")
+    branch_head = git_repository.git_output(repo, "rev-parse", record["branch"])
+    original_record = record_path.read_bytes()
+    shutil.rmtree(worktree)
+    if registration == "pruned":
+        git_repository.git_output(repo, "worktree", "prune", "--expire", "now")
+    if branch == "absent":
+        git_repository.git_output(repo, "update-ref", "-d", "refs/heads/" + record["branch"])
+
+    code, result, stderr = _invoke(capsys, "delete")
+
+    assert "を実行できない" not in stderr
+    assert "を実行できない" not in json.dumps(result, ensure_ascii=False)
+    assert not worktree.exists()
+    if branch == "unmerged":
+        assert code == 1
+        assert not result["removed"]
+        assert len(result["retained"]) == 1
+        assert "統合先" in result["retained"][0]["reason"]
+        assert "含まれないcommit" in result["retained"][0]["reason"]
+        assert "再実行" in result["retained"][0]["reason"]
+        assert "終了1" not in result["retained"][0]["reason"]
+        assert record_path.read_bytes() == original_record
+        assert git_repository.git_output(repo, "rev-parse", record["branch"]) == branch_head
+    else:
+        assert code == 0, stderr
+        assert result["removed"] == ["lane-01"]
+        assert not result["retained"]
+        assert not record_path.exists()
+        assert result["missing"][0]["last_head"] == record["initial_head"]
+        assert "lane=lane-01" in stderr
+        assert record["initial_head"] in stderr
+        assert str(worktree) not in git_repository.git_output(repo, "worktree", "list", "--porcelain")
+        assert record["branch"] not in git_repository.git_output(repo, "branch", "--format=%(refname:short)").splitlines()
+
+
+def test_missing_worktree_query_error_keeps_owned_resources(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Git照会の失敗は未統合の説明へ混ぜず、所有登録と残ったbranchを保持する。"""
+    repo, _selected, record = _create(tmp_path, monkeypatch, capsys)
+    worktree = pathlib.Path(record["worktree"])
+    record_path = pathlib.Path(record["record_path"])
+    original_record = record_path.read_bytes()
+    branch_head = git_repository.git_output(repo, "rev-parse", record["branch"])
+    shutil.rmtree(worktree)
+    original_run = lane.git_command.run
+
+    def query_error(arguments: list[str], *args: Any, **kwargs: Any) -> subprocess.CompletedProcess[str]:
+        if arguments[:2] == ["merge-base", "--is-ancestor"]:
+            return subprocess.CompletedProcess(arguments, 128, "", "照会に失敗する対照")
+        return original_run(arguments, *args, **kwargs)
+
+    monkeypatch.setattr(lane.git_command, "run", query_error)
+
+    code, result, stderr = _invoke(capsys, "delete")
+
+    assert code == 1
+    assert not result["removed"]
+    reason = result["retained"][0]["reason"]
+    assert "終了128" in reason
+    assert "照会に失敗する対照" in reason
+    assert "含まれないcommit" not in reason
+    assert "を実行できない" not in reason
+    assert "を実行できない" not in stderr
+    assert record_path.read_bytes() == original_record
+    assert git_repository.git_output(repo, "rev-parse", record["branch"]) == branch_head

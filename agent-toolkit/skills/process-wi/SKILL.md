@@ -12,20 +12,45 @@ all-reposの中継として起動した場合は`references/all-repos-orchestrat
 
 レーン処理には、キュー・対象リポジトリ・プラグイン全体の参照資料、Gitと`atk`を実行するCLI、担当の起動・終端受領の手段が必要である。これらが不足する環境では、提示されたWIから要求と依存・確認事項を整理した下書きを返す。キューの状態変更、実装、検証、統合と公開は、必要機能がそろうClaude CodeまたはCodexで実行する。下書きには[文章の品質基準](references/quality-standards.md)を使う。
 
+## 名指し参照の読込方法
+
+本文の各参照の適用条件を保ち、選んだ資料の指定範囲を取得してから、その基準を使う具体的な判断へ進む。起動時の行の資料は起動本文とともに届く。
+
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../share/single-lane-execution.md` | 判断 | `read:agent-toolkit:*/share/single-lane-execution.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../user-confirmation-and-report/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/SKILL.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `references/quality-standards.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/quality-standards.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../share/workflow-phases.md` | 判断 | `read:agent-toolkit:*/share/workflow-phases.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../commit/references/publish.md#冒頭` | 判断 | `section:agent-toolkit:*/skills/commit/references/publish.md#冒頭` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../share/exec.subagent.md` | 判断 | `read:agent-toolkit:*/share/exec.subagent.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../plan-mode/SKILL.md#「計画ファイルの作成要否」` | 判断 | `section:agent-toolkit:*/skills/plan-mode/SKILL.md#「計画ファイルの作成要否」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../delegation/references/mandatory-rules.md#「作業ツリーの保護」` | 判断 | `section:agent-toolkit:*/skills/delegation/references/mandatory-rules.md#「作業ツリーの保護」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../share/exec-review.parent.md` | 判断 | `read:agent-toolkit:*/share/exec-review.parent.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../share/review-loop-coordination.md` | 判断 | `read:agent-toolkit:*/share/review-loop-coordination.md` |
+| 選定前、対象がGitHub上にある場合 | `references/review-audit-launch.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/review-audit-launch.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../delegation/SKILL.md#「継続と新規起動」` | 判断 | `section:agent-toolkit:*/skills/delegation/SKILL.md#「継続と新規起動」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../review-standards/references/reviewee.md#「指摘発生時の扱い」` | 判断 | `section:agent-toolkit:*/skills/review-standards/references/reviewee.md#「指摘発生時の扱い」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../user-confirmation-and-report/SKILL.md#「原文の保持と取り込み」` | 判断 | `section:agent-toolkit:*/skills/user-confirmation-and-report/SKILL.md#「原文の保持と取り込み」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../delegation/references/base-contract.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/base-contract.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../bugfix/references/root-cause-analysis.md#「QとC・Dの区別」「類似見直しと再発防止の完了」` | 判断 | `section:agent-toolkit:*/skills/bugfix/references/root-cause-analysis.md#「QとC・Dの区別」「類似見直しと再発防止の完了」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../share/exec-review.parent.md#「返却に含まれる既存不良の受領」` | 判断 | `section:agent-toolkit:*/share/exec-review.parent.md#「返却に含まれる既存不良の受領」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../completion-report/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/completion-report/SKILL.md` |
+
 ## 読込表
 
 次の時点または条件が成立したら、その操作の前に同じ行の資料を全文読む。
 
-| 時点または条件 | 全文読む資料 |
-| --- | --- |
-| `all-repos`の中継、またはそのリポジトリ担当として取得済み候補を受領した時 | `references/all-repos-orchestration.md` |
-| メインが対象選定を開始する前（実行順2）と、処理対象WIを追加する前 | `references/selection-procedure.md` |
-| 選定YAMLを生成または消費する前 | `references/selection-format.md` |
-| 専用worktreeとレーンを作成する前（実行順3） | `references/run-lanes.md` |
-| レーン担当を起動する前 | `${CLAUDE_PLUGIN_ROOT}/share/exec.parent.md` |
-| 不良またはユーザーの是正要求を受け取った時 | `references/immediate-fix.md` |
-| 公開工程を開始する前（実行順7） | `references/finish-session.md` |
-| 終端担当を起動する前 | `${CLAUDE_PLUGIN_ROOT}/share/session-termination.parent.md` |
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 | 資料選択子 |
+| --- | --- | --- | --- | --- |
+| `all-repos`の中継、またはそのリポジトリ担当として取得済み候補を受領した時 | `references/all-repos-orchestration.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/all-repos-orchestration.md` | |
+| メインが対象選定を開始する前（実行順2）と、処理対象WIを追加する前 | `references/selection-procedure.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/selection-procedure.md` | |
+| 選定YAMLを生成または消費する前 | `references/selection-format.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/selection-format.md` | |
+| 専用worktreeとレーンを作成する前（実行順3） | `references/run-lanes.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/run-lanes.md` | |
+| レーン担当を起動する前 | `${CLAUDE_PLUGIN_ROOT}/share/exec.parent.md` | 判断 | `read:agent-toolkit:*/share/exec.parent.md` | |
+| 不良またはユーザーの是正要求を受け取った時 | `references/immediate-fix.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/immediate-fix.md` | |
+| 公開工程を開始する前（実行順7） | `references/finish-session.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/finish-session.md` | |
+| 終端担当を起動する前 | `${CLAUDE_PLUGIN_ROOT}/share/session-termination.parent.md` | 判断 | `read:agent-toolkit:*/share/session-termination.parent.md` | |
 
 ## 用語
 
@@ -70,7 +95,7 @@ WI作成、計画、実行および実行レビューの責務と受渡しは`${
 
 ## 自動コードレビュー監査
 
-選定の前に、対象がGitHub上にあれば`references/review-audit-launch.md`を全文読む。同書に従ってpendingを判定し、必要な監査を起動して結果を受領する。
+GitHub上の対象は、読込表の監査契約に従ってpendingを判定し、必要な監査を起動して結果を受領する。
 
 ## 同一主題の追加指示
 
@@ -78,20 +103,20 @@ WI作成、計画、実行および実行レビューの責務と受渡しは`${
 
 本スキルの起動中にユーザーが追加した指示は、既存の処理条件と比べて採否を決めた差分だけを処理条件へ反映する。比較と採否は`agent-toolkit:review-standards`の`references/reviewee.md`「指摘発生時の扱い」、範囲と論理関係の解釈は`agent-toolkit:user-confirmation-and-report`の`SKILL.md`「原文の保持と取り込み」に従う。公開工程の開始前に届いた直接実装を求める表現も、同一主題である間は本スキルの処理を続ける追加条件として扱う。公開工程の開始後の指示は`references/immediate-fix.md`「対象外の不良と是正要求」に従う。主題の継続は原要求・現物・既存認可から自ら判定し、ユーザーだけが決められる目的・範囲・認可が残る場合だけ変更前に確認する。
 
-追加指示が既存の要件を変える場合は、変更前の要件で作業ツリーの外へ生成済みの成果物（キュー項目、Issue・MRの本文など）を確かめ、終端・改訂・取り消しなどの処置を決めて同じ追送へ含める。技術と既存認可で決まる処置は自ら確定して報告する。作業ツリーに依存しない外部成果物の編集はメインが中継と同時に行い、作業ツリー内の差分はレーン担当が計画と実装で追随させる。
+追加指示が既存の要件を変える場合は、変更前の要件で作業ツリーの外へ生成済みの成果物（キュー項目、Issue・MRの本文など）を確かめ、終端・改訂・取り消しなどの処置を決めて同じ追送へ含める。技術と既存認可で決まる処置は自ら確定して報告する。作業ツリーの状態によらず編集できる外部成果物の編集はメインが中継と同時に行い、作業ツリー内の差分はレーン担当が計画と実装で追随させる。
 
 追送には`agent-toolkit:delegation`の`references/base-contract.md`の入力の適格性を適用し、採用した要件差分と外部成果物の処置だけを渡す。commitの分け方、検証、pushなどレーン担当の規範が決める手段は加えない。
 
 ## 即時対応
 
-延期を判断する前に、不良が本セッションの残りの工程へ作用するかを判定する。本セッションの作業で導入した不良は同じセッションで扱う。本セッションで扱った問題と根本原因を同じくする不良は独立した既存不良とせず、その問題の類似見直しに含める（範囲・時機・完了は`agent-toolkit:bugfix`の`references/root-cause-analysis.md`「QとC・Dの区別」「類似見直しと再発防止の完了」に従う）。既存不良は、残工程を停止・遮断する場合、不良のある判断入力を使うことで要求・判断・成果物を誤る場合、および類似見直しの範囲を狭める規範欠陥のように残る振り返りの判断へ作用する場合に即時対応する。残工程へ作用せず根本原因も異なる独立した不良・改善は、持ち越すと次のセッションの選定・レーン・公開が停止・遮断されるか作業のやり直しになる場合だけ即時対応し、それ以外は次回以降へ回す。呼称・表記・誤記や成果物の品質という種類だけで対象外にせず、経過時間、実装規模、検証の作業量でも判定しない。ユーザーが時機を明示した場合はその指示に従う。
+延期を判断する前に、不良が本セッションの残りの工程へ作用するかを判定する。本セッションの作業で導入した不良は同じセッションで扱う。本セッションで扱った問題と根本原因を同じくする不良は独立した既存不良とせず、その問題の類似見直しに含める（範囲・時機・完了は`agent-toolkit:bugfix`の`references/root-cause-analysis.md`「QとC・Dの区別」「類似見直しと再発防止の完了」に従う）。既存不良は残工程を停止・遮断する場合、不良のある判断入力を使うことで要求・判断・成果物を誤る場合、および類似見直しの範囲を狭める規範欠陥のように残る振り返りの判断へ作用する場合に即時対応する。残工程へ作用せず根本原因も異なる独立した不良・改善は、持ち越すと次のセッションの選定・レーン・公開が停止・遮断されるか作業のやり直しになる場合だけ即時対応し、それ以外は次回以降へ回す。呼称・表記・誤記や成果物の品質という種類だけで対象外にせず、経過時間、実装規模、検証の作業量でも判定しない。ユーザーが時機を明示した場合はその指示に従う。
 実行レビューが返した差分外の既存不良は本節の判定基準を適用せず、`${CLAUDE_PLUGIN_ROOT}/share/exec-review.parent.md`「返却に含まれる既存不良の受領」で扱う（残りの工程を停止・遮断する不良は同節の例外として本節で扱う）。
 
 手順、レーンの変更範囲へ修正を加える認可、および対象外とした不良と是正要求の扱いは`references/immediate-fix.md`が定める。
 
 ## 終端
 
-工程境界そのものを確認理由にせず、確認要否の判定で必要な判断だけを確認待ちとして、依存しない工程を続ける。回答を得られない確認は`agent-toolkit:user-confirmation-and-report`の手順でUWIへ退避し、`processing`の元項目を`atk wi hold --state=processing <元項目のファイル名>`で保留する。
+工程境界そのものを確認理由にせず、確認要否の判定で必要な判断だけを確認待ちとして、その判断を待たずに進められる工程を続ける。回答を得られない確認は`agent-toolkit:user-confirmation-and-report`の手順でUWIへ退避し、`processing`の元項目を`atk wi hold --state=processing <元項目のファイル名>`で保留する。
 完了報告は`agent-toolkit:completion-report`に従い、本スキルの工程で生じたcommitを公開してから報告する。
 
 ### 終端工程の承認スコープ

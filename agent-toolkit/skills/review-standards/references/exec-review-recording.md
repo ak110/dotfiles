@@ -1,8 +1,14 @@
 # 実行レビューの指摘と完成条件証拠の記録
 
-本書は実行レビュー担当が、指摘をレビュー指摘管理表へ登録し、完成条件証拠を作成する方法と、判定の値と根拠の記録の仕方を定める。判定の基準は`reviewer.md`「実行レビューの判定」、返却前の工程は`${CLAUDE_PLUGIN_ROOT}/share/exec-review.subagent.md`「出力」が定める。
+本書は実行レビュー担当が、指摘をレビュー指摘管理表へ登録し、完成条件証拠を作成する方法と、判定の値と根拠の記録の仕方を定める。判定の基準は`agent-basics:review-standards`の`references/reviewer.md`「実行レビューの判定」、返却前の工程は`${CLAUDE_PLUGIN_ROOT}/share/exec-review.subagent.md`「出力」が定める。
 
 未判定検証記録は実装担当またはメインが`atk run-script verification-record --`で作成する入力であり、操作は`${CLAUDE_PLUGIN_ROOT}/share/exec.subagent.md`「実装」の「完成条件証拠の検証記録」が定める。初回は計画かWIと`--list`を渡し、保存と原文・出所・行番号の取得を同時に行う。入力なしの一覧は既存記録の読取だけに使う。完成条件証拠は実行レビュー担当が作成する判定結果である。完成条件証拠の`outcome`、`evidence`および`reviewed_head`は実行レビュー担当だけが更新し、レビューイーへ補完を求めた場合も補完後の判定と記入は本担当が行う。証拠そのものを`location`にした指摘は、`atk run-script exec-review-evidence-check`が未応答の行として拒否する。
+
+## 名指し参照の読込方法
+
+本文の各参照の適用条件を保ち、選んだ資料の指定範囲を取得してから、その基準を使う具体的な判断へ進む。起動時の行の資料は起動本文とともに届く。
+
+<!-- read-table-source: exec-review-recording-delivery-1.md -->
 
 ## レビュー指摘管理表への登録
 
@@ -36,10 +42,12 @@
 
 次は読取の操作であり、JSONを変更しない。全行表示と`--section`（配列の指定）だけの指定では、先に根拠を除いた`証拠の行一覧`（配列名・行番号・WI・判定・source・原文）を全行分並べ、続く`証拠の全行`に根拠を含む各行を並べる。`--row`は`--section`と組で1始まりの行番号を反復して指定し、指定した行だけを返す。
 複数行を返す全ての表示では、先行行と同一の空でない根拠を`evidence_reference`の`display`・`section`・1始まりの`row`で示す。
-同じ出力の先行行をたどると全行の根拠を読め、1行だけの`--row`指定は全文を返す。
+同じ出力の先行行をたどると全行の根拠を読め、1行だけの`--row`指定でも同じ出力から根拠全文に到達できる。`--list --rows-only`は根拠を除いた行一覧だけを返す。
+通常返却・全行表示・配列表示・選択読取とbatchの各組では、共通段落を同じ出力の`証拠の根拠辞書`にまとめ、各行の`evidence_parts`から順序・反復を保って読む。各IDの本文断片を順に連結すると原本の根拠全文へ完全一致する。保存JSONの配列・1始まりの行番号と表示行を対応付け、全欄と直接根拠の意味を全対象について確認する。辞書は表示ごとの参照先であり、保存原本と判定・実行終了状態を保持する。
 
 ```text
 atk run-script exec-review-evidence-check -- <完成条件証拠の絶対パス> --list
+atk run-script exec-review-evidence-check -- <完成条件証拠の絶対パス> --list --rows-only
 atk run-script exec-review-evidence-check -- <完成条件証拠の絶対パス> --list --section user_requirements --row 1 --row 3
 ```
 
@@ -50,7 +58,7 @@ atk run-script exec-review-evidence-check -- <完成条件証拠の絶対パス>
 ```
 
 構造化試験は`--junit-xml <保存XML> --junit-record <実行記録>`で指定する。診断は`--diagnostics-file <保存JSONL> --diagnostics-record <実行記録> --diagnostics-conditions <取得時の条件JSON>`と必要な`--diagnostics-source <相対ファイル> <保存時本文>`の反復で指定する。相対ファイルはworktreeのルートを起点とする。基準比較は同じ組の`--baseline-junit-*`・`--baseline-diagnostics-*`へ保存物を渡す。pyfltrのrun JSON Linesはheader・command・summaryを含む全体を使う。形式は`atk run-script exec-review-evidence-check -- --help`で読む。
-pytest以外の試験は、`--test-format <vitest|playwright|trx> --test-file <保存結果> --test-record <実行記録>`で形式と対応する保存物を渡す。
+pytest以外の試験は、`--test-format <vitest|playwright|trx> --test-file <保存結果> --test-record <実行記録>`で形式と対応する保存物を渡す。同じ完全名が複数ある結果は出現順の1始まりの`#<番号>`を完全名へ付けて区別する。
 基準版は`--baseline-test-format`・`--baseline-test-file`・`--baseline-test-record`へ同じ組で渡す。
 各runnerの取得は、対象プロジェクトの起動形へ次の指定を加えて`atk run-command`で実行し、結果ファイルと実行記録を保存する。
 
@@ -63,7 +71,7 @@ pytest以外の試験は、`--test-format <vitest|playwright|trx> --test-file <�
 
 形式ごとの状態と完全名は保存結果から読み取られ、一覧・詳細・要求行への記入・基準版との差の確認は共通の公開操作を使う。
 結果と実行記録の対応を確認できない入力は、診断の示す不足を補ってから再指定する。
-これらへ`--list-results --results-summary`を加えて状態・基準差と診断のまとまり・重複数・全識別子を読み、`--result-test <完全テスト名>`か`--result-diagnostic <診断識別子>`の反復で詳細・取得版・所在を読む。代表1件で全件の意味を判断せず、比較不能を一致と扱わず、成功件数だけから達成を生成しない。取得版と条件が行を直接満たすかは本担当が判定する。
+これらへ`--list-results --results-counts`を加えて状態・基準差・診断群の件数を読む。続けて`--results-counts`を`--result-status <状態>`・`--result-change <差の種類>`・`--result-diagnostic-group <群番号>`の必要な選択へ替え、`--results-identifiers`で選択群の全識別子を取得する。識別子表示を外せば選択群の詳細を取得でき、完全名の`--result-test <完全テスト名>`と`--result-diagnostic <診断識別子>`の反復でも詳細・取得版・所在を読める。全詳細と全識別子付き要約の`--results-summary`も使える。代表1件で全件の意味を判断せず、比較不能を一致と扱わず、成功件数だけから達成を生成しない。取得版と条件が行を直接満たすかは本担当が判定する。
 記入時は`--list-results`を外し、同じ保存物と識別子を`--select-row`・`--mode`・選択行ごとの`--row-outcome`と`--reviewed-head`へつなぐ。既存の`--results-file`・`--updates-file`も受理され、JSON入力のsource不一致は拒否される。
 
 更新配列を直接ファイルへ記入する場合は、一覧の配列名・1始まりの行番号・現行`source`を使う。例えば、`user_requirements`の1行目を手動観測で判定する更新JSONは次の形で保存する。`source`は一覧の値へ、`reviewed_head`は実際にレビューした完全OIDへ、`evidence_file`は行を直接満たす説明のUTF-8ファイルの絶対パスへ置き換える。
@@ -116,7 +124,7 @@ JSONの最上位は`{"wi_conditions": [...], "user_requirements": [...]}`とす�
 
 - `wi_conditions`の要素は`awi`、`condition`、`outcome`、`source`、`evidence`、`reviewed_head`を持つ。`condition`には`## 完成条件`の各項目の原文を逐語で置く
 - `user_requirements`の要素は`awi`、`requirement`、`origin`、`outcome`、`source`、`evidence`、`reviewed_head`を持ち、`origin`で発言の所在を示す。計画だけからの行は`awi`を空文字列とし、`origin`へ計画内の所在を置く
-- `evidence`にはその行を直接満たす根拠（ファイルと行、テスト名と結果、観測記録の所在など）だけを置き、WI単位の根拠を全行へ写す書き方は採らない。観測手段を名指しする条件は`reviewer.md`「実行レビューの判定」の名指しの観測手段に従う
+- `evidence`にはその行を直接満たす根拠（ファイルと行、テスト名と結果、観測記録の所在など）だけを置き、WI単位の根拠を全行へ写す書き方は採らない。観測手段を名指しする条件は`agent-basics:review-standards`の`references/reviewer.md`「実行レビューの判定」の名指しの観測手段に従う
 
 返す前に、対象WIの完成条件の各要求単位と`wi_conditions`、元のユーザー発言の各要求単位と`user_requirements`を原文で比べ、各単位に1行以上が対応し判定と証拠参照がそろうことを確かめる。一文に含まれる複数の要求や、例示と要件の区別は機械的な最低行数に委ねず自身で比べる。WIにも計画にも元のユーザー発言が無ければ`user_requirements`の行は空でよい。
 

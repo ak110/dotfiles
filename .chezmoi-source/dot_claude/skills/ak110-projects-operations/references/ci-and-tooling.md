@@ -29,7 +29,7 @@
     その他のプロジェクトは`uvx --exclude-newer-package pyfltr=false pyfltr fast`を呼び出す。
     公開直後のpyfltrを公開待機の対象から外して使うための作者個人の対処であり、pyfltrの推奨ガイドが示す呼び出し形はそのまま保つ。
     例外はコマンドラインで指定する。置き場所の判断と、グローバルのuv設定（`~/.config/uv/uv.toml`）へ置かない理由は、
-    `agent-toolkit:writing-standards`の`references/dependency-management.md`のパッケージ単位の除外の項に従う
+    `agent-basics:writing-standards`の`references/dependency-management.md`のパッケージ単位の除外の項に従う
 - 文書lint（textlint、markdownlint、prettier）はpyfltr経由（miseタスク、prekのhook、CI）で行い、`AGENTS.md`を含む文書をpyfltrの対象集合でチェックする
   - `package.json`の`scripts`へ、pyfltrと別に文書lintを動かすスクリプト（`lint`、`lint:fix`など）を置かない。
     起動するコマンドごとに対象集合が分かれ、一方の結果だけでは他方の対象にある警告が漏れるためである
@@ -51,7 +51,7 @@
 - `release.yaml`の`GH_TOKEN`は`${{ github.token }}`を使う（推奨構文）
 - `release.yaml`のCI待機は、対象コミットを指定してCIワークフロー（`ci.yaml`）の実行を直接照会し、
   その結論で判定する方式とする。`check-suites` APIの先頭suiteを判定に使う方式は、
-  リリースワークフロー自身のsuiteを拾い、CIが成功していても待機がタイムアウトするため、前段の直接照会を用いる。
+  リリースワークフロー自身のsuiteを取得し、CIが成功していても待機がタイムアウトするため、前段の直接照会を用いる。
   各リポジトリが用いる照会コマンドは`.github/workflows/`配下をSSOTとし、本文には所在だけを書く
 - `container:`実行ジョブのstepへ新しいコマンド呼び出しを追加する場合は、先行stepで導入されることを確認するか、
   ジョブが宣言する`image`上でそのコマンドの存在を確認する

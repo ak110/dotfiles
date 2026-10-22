@@ -354,6 +354,7 @@ def main() -> int:
                 "status": "exit_requested",
                 "host": target.host,
                 "pid": target.pid,
+                "next_action": "ターンを終えると/exitでセッションを終了する。これ以上ツールを呼ばずにターンを終える。",
                 "lane_cleanup": cleanup,
             },
             separators=(",", ":"),

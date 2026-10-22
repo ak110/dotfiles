@@ -1,4 +1,4 @@
-"""Makefileの初期導入targetと検査入口を無害なスタブで検証する。"""
+"""Makefileの初期導入targetと検査targetを無害なスタブで検証する。"""
 
 import os
 import pathlib
@@ -9,7 +9,7 @@ import pytest
 
 _REPOSITORY_ROOT = pathlib.Path(__file__).resolve().parent
 _STUB_COMMANDS = ("uv", "sudo", "apt-get", "dpkg", "wget", "pwsh", "rm")
-# 検査入口のレシピが使う実コマンド。隔離PATHへ実体へのリンクを置く。
+# 検査targetのレシピが使う実コマンド。隔離PATHへ実体へのリンクを置く。
 _LINKED_COMMANDS = ("env", "cat")
 
 
@@ -92,7 +92,7 @@ def test_check_entry_does_not_pass_parent_uv_python(tmp_path: pathlib.Path, targ
     """基準外の`UV_PYTHON`を継承しても、同期後のpyfltr起動へその指定を渡さない。
 
     同期は`--python`で基準版を選ぶが、後続の`uv run`は継承した`UV_PYTHON`で仮想環境を再作成するため、
-    検査入口がこの変数を外さないと検査が基準外の版で動く。
+    検査targetがこの変数を外さないと検査が基準外の版で動く。
     """
     result, calls = _make_stubbed_setup(tmp_path, target, environment_overrides={"UV_PYTHON": "3.13"})
     assert result.returncode == 0, result.stderr

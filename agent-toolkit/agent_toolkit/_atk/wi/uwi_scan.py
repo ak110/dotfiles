@@ -67,7 +67,7 @@ def private_notes_root() -> pathlib.Path | None:
 
 
 def active_fingerprint(root: pathlib.Path) -> str | None:
-    """active状態ディレクトリの内容変化を検出する指紋を返す。
+    """active状態のWIの内容変化を検出する指紋を返す。
 
     `.md`ファイルごとの相対パス・`st_mtime_ns`・サイズを連結したSHA-256を返す。
     走査（全件のread_textとYAML解析）より桁違いに安価な`stat`のみで、

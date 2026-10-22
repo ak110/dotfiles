@@ -283,7 +283,7 @@ def test_success_preserves_streams_and_metadata(
     assert pathlib.Path(str(metadata["stderr_path"])).read_bytes() == b"err\n"
     assert (metadata["stdout_lines"], metadata["stdout_bytes"]) == (1, 4)
     assert (metadata["stderr_lines"], metadata["stderr_bytes"]) == (1, 4)
-    assert stderr == "成功: 外部コマンドが終了した\n"
+    assert not stderr
 
 
 def test_nonzero_child_exit_code_is_propagated(
@@ -501,7 +501,7 @@ def test_records_worktree_head_and_uncommitted_state_before_running(
     assert result == 0
     assert metadata["git_head"] == head
     assert metadata["git_status"] == []
-    assert stderr == "成功: 外部コマンドが終了した\n"
+    assert not stderr
 
     (repo / "tracked.txt").write_text("changed\n", encoding="utf-8")
     (repo / "untracked.txt").write_text("input\n", encoding="utf-8")

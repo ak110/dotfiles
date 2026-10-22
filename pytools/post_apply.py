@@ -1,7 +1,7 @@
 """`chezmoi apply`後処理のエントリポイント。
 
 各ステップは独立して動作し、途中で失敗しても他のステップは継続する。
-ステップ間の順序は先行工程の宣言（`_StepSpec.after`）で表し、互いに依存しない
+ステップ間の順序は先行工程の宣言（`_StepSpec.after`）で表し、互いの成果を使わない
 ステップは同時に実行する。画面には各ステップの出力を列挙順にまとめて表示する。
 """
 
@@ -25,9 +25,11 @@ from pathlib import Path
 
 import platformdirs
 from agent_toolkit._atk.environment import is_human_terminal
+from agent_toolkit._common import dotfiles_mode
 
 from pytools import update_ssh_config
 from pytools._internal import (
+    antigravity_plugin,
     apply_dotfiles_plugins,
     cleanup_paths,
     cleanup_user_path,
@@ -40,6 +42,7 @@ from pytools._internal import (
     log_format,
     post_apply_outcome,
     prune_claude_plugin_cache,
+    prune_installation,
     remove_codex_claude_mcp,
     remove_legacy_codex_mcp_from_claude,
     restore_codex_logs,
@@ -377,6 +380,7 @@ class _StepSpec:
     after_all_preceding: bool = False
     platforms: tuple[str, ...] = ()
     host_resources: bool = False
+    full_only: bool = False
 
 
 def _cleanup_removed_paths() -> post_apply_outcome.PostApplyOutcome:
@@ -416,6 +420,8 @@ _LINUX = ("linux",)
 _MISE = "mise セットアップ"
 _CODEX_CLI = "Codex CLI の導入と更新"
 _CLAUDE_CLI = "Claude Code CLI の導入と更新"
+_AGY_CLI = "Antigravity CLI の導入"
+_GEMINI_SETTINGS = "Gemini 設定"
 _CLAUDE_PLUGIN = "Claude Code plugin のインストール"
 _CODEX_PLUGIN = "Codex plugin のインストール"
 _CODEX_LINKS = "Codex リンクの同期"
@@ -427,6 +433,7 @@ _CODEX_CLAUDE_MCP = "Codex の Claude MCP 登録削除"
 _CODEX_SNAPSHOT = "Codex plugin snapshot の生成"
 _LEGACY_CODEX_MCP = "旧Codex User scope MCP登録の移行"
 _ATK_SERVE = "atk serve 自動起動セットアップ (Linux)"
+_AGENTS_WARMUP = "agents_serverのuv環境ウォームアップ"
 
 # 先行工程は、同じ資源（設定ファイルの読み書き、プロセスとユーザーのPATH、npmとmiseの管理領域、
 # plugin cache、Claude Code pluginの複製元である`agent-toolkit/`（`.venv`を含む）、systemd、
@@ -444,58 +451,58 @@ _DEFAULT_STEPS: list[_StepSpec] = [
     # Windowsでは bin PATH 登録と同じユーザーPATHを読んで書き戻す。
     _StepSpec(_MISE, setup_mise.run, after=(_NPM_SUPPLY_CHAIN, _BIN_PATH)),
     # miseのinstalls・shimsを操作し、codexを起動するため診断ログの復元後に実行する。
-    _StepSpec(_CODEX_CLI, setup_codex_cli.run, after=(_MISE, _CODEX_LOGS)),
-    _StepSpec(_CODEX_CLAUDE_MCP, remove_codex_claude_mcp.run, after=(_CODEX_CLI,)),
+    _StepSpec(_CODEX_CLI, setup_codex_cli.run, after=(_MISE, _CODEX_LOGS), full_only=True),
+    _StepSpec(_CODEX_CLAUDE_MCP, remove_codex_claude_mcp.run, after=(_CODEX_CLI,), full_only=True),
     # 旧npm版の除去がmise管理のNode配下のnpmを使う。
-    _StepSpec(_CLAUDE_CLI, setup_claude_cli.run, after=(_MISE,)),
-    _StepSpec("Antigravity CLI の導入", setup_agy_cli.run),
-    _StepSpec("OpenCode CLI の導入", setup_opencode_cli.run, after=(_MISE, _CODEX_CLI, _CLAUDE_CLI)),
-    _StepSpec("Herdr CLI の導入と更新", setup_herdr_cli.run),
+    _StepSpec(_CLAUDE_CLI, setup_claude_cli.run, after=(_MISE,), full_only=True),
+    _StepSpec(_AGY_CLI, setup_agy_cli.run, full_only=True),
+    _StepSpec("OpenCode CLI の導入", setup_opencode_cli.run, after=(_MISE, _CODEX_CLI, _CLAUDE_CLI), full_only=True),
+    _StepSpec("Herdr CLI の導入と更新", setup_herdr_cli.run, full_only=True),
     # 旧配布物の削除と同じ配布先ディレクトリの旧ファイルを削除する。
-    _StepSpec("agent-toolkit ルールの同期", sync_agent_toolkit_rules.run, after=(_CLEANUP,)),
-    _StepSpec(_CODEX_LINKS, setup_codex_links.run),
+    _StepSpec("agent-toolkit ルールの同期", sync_agent_toolkit_rules.run, after=(_CLEANUP,), full_only=True),
+    _StepSpec(_CODEX_LINKS, setup_codex_links.run, full_only=True),
     _StepSpec(
-        _CODEX_LOGS,
-        restore_codex_logs.run,
-        after=(_CODEX_LINKS,),
-        platforms=_LINUX,
-        host_resources=True,
+        _CODEX_LOGS, restore_codex_logs.run, after=(_CODEX_LINKS,), platforms=_LINUX, host_resources=True, full_only=True
     ),
     _StepSpec("tmux プラグインの導入 (Linux)", setup_tmux_plugins.run, platforms=_LINUX),
-    _StepSpec(_CLAUDE_PLUGIN, install_claude_plugins.run, after=(_CLAUDE_CLI,)),
+    _StepSpec(_CLAUDE_PLUGIN, install_claude_plugins.run, after=(_CLAUDE_CLI,), full_only=True),
     # installed_plugins.json が更新後の版を指してから現行版を判定する。
-    _StepSpec("Claude Code plugin cache の旧版削除", prune_claude_plugin_cache.run, after=(_CLAUDE_PLUGIN,)),
+    _StepSpec("Claude Code plugin cache の旧版削除", prune_claude_plugin_cache.run, after=(_CLAUDE_PLUGIN,), full_only=True),
     # plugin導入が`agent-toolkit/`を複製する間に同じ配下の派生ファイルを書き換えない。
-    _StepSpec(_CODEX_SNAPSHOT, _sync_codex_plugin_manifests, after=(_CLAUDE_PLUGIN,)),
+    _StepSpec(_CODEX_SNAPSHOT, _sync_codex_plugin_manifests, after=(_CLAUDE_PLUGIN,), full_only=True),
     # 稼働判定の前にCodex CLI工程とMCP照会を終え、後続のwarmupのCodex照会と重ねない。
     # 診断ログの稼働判定もCodex CLI工程より先に終わるため、この順序を共有する。
     _StepSpec(
         _CODEX_PLUGIN,
         install_codex_plugins.run,
         after=(_CODEX_CLAUDE_MCP, _CODEX_SNAPSHOT, _CODEX_LINKS, _CLEANUP),
+        full_only=True,
     ),
-    _StepSpec("agents_serverのuv環境ウォームアップ", warmup_agents_server.run, after=(_CLAUDE_PLUGIN, _CODEX_PLUGIN)),
+    _StepSpec(_AGENTS_WARMUP, warmup_agents_server.run, after=(_CLAUDE_PLUGIN, _CODEX_PLUGIN), full_only=True),
     # 両pluginの導入後の参照先にあるMCP定義を読む。uvのキャッシュだけへ作用する。
-    _StepSpec("pyfltr MCPのuv環境ウォームアップ", warmup_pyfltr_mcp.run, after=(_CLAUDE_PLUGIN, _CODEX_PLUGIN)),
-    _StepSpec(
-        _LEGACY_CODEX_MCP,
-        remove_legacy_codex_mcp_from_claude.run,
-        after=(_CLAUDE_CLI, _CODEX_PLUGIN),
-    ),
+    _StepSpec("pyfltr MCPのuv環境ウォームアップ", warmup_pyfltr_mcp.run, after=(_CLAUDE_PLUGIN, _CODEX_PLUGIN), full_only=True),
+    _StepSpec(_LEGACY_CODEX_MCP, remove_legacy_codex_mcp_from_claude.run, after=(_CLAUDE_CLI, _CODEX_PLUGIN), full_only=True),
     # settings.json（plugin導入）と~/.claude.json（MCP移行）を読んでマージして書き戻す。
-    _StepSpec("Claude 設定", update_claude_settings.run, after=(_CLAUDE_PLUGIN, _LEGACY_CODEX_MCP)),
-    _StepSpec("Gemini 設定", update_gemini_settings.run),
+    _StepSpec("Claude 設定", update_claude_settings.run, after=(_CLAUDE_PLUGIN, _LEGACY_CODEX_MCP), full_only=True),
+    _StepSpec(_GEMINI_SETTINGS, update_gemini_settings.run, full_only=True),
+    _StepSpec(
+        "Antigravity plugin の生成と登録",
+        antigravity_plugin.run,
+        after=(_AGY_CLI, _CODEX_SNAPSHOT, _GEMINI_SETTINGS),
+        full_only=True,
+    ),
     _StepSpec("libarchive (Windows)", install_libarchive.run, after=(_MISE,), platforms=_WINDOWS),
     # 開発版の取得はmise経由でcargoを使うため、Codex CLI工程のmise操作の後に行う。
-    _StepSpec("claude-statusline バイナリの取得", setup_statusline_binary.run, after=(_CODEX_CLI,)),
+    _StepSpec("claude-statusline バイナリの取得", setup_statusline_binary.run, after=(_CODEX_CLI,), full_only=True),
     # サービスの再起動は`<dotfiles>/agent-toolkit/scripts/launch.py`から配布物を起動するため、
     # `claude plugin install`・`update`が同じ`agent-toolkit/`を複製し終えてから実行する。
     _StepSpec(
         _ATK_SERVE,
         setup_atk_serve.run,
-        after=(_CLAUDE_PLUGIN,),
+        after=(_CLAUDE_PLUGIN, _AGENTS_WARMUP),
         platforms=_LINUX,
         host_resources=True,
+        full_only=True,
     ),
     # 両ステップが`systemctl --user daemon-reload`と`restart`を実行する。
     _StepSpec(
@@ -526,7 +533,12 @@ def main(
         action="store_true",
         help="linked worktreeからの実行を明示的に許可する",
     )
+    parser.add_argument("--mode", choices=dotfiles_mode.MODES, help="導入モードを保存して適用する")
+    parser.add_argument("--prune", action="store_true", help="現在のモードで不要な導入済みツールとキャッシュを削除する")
     args = parser.parse_args([] if runner is not None and argv is None else argv)
+    dotfiles_mode.select(args.mode)
+    if args.prune:
+        os.environ["DOTFILES_PRUNE"] = "1"
     if runner is None:
         root = common.find_dotfiles_root()
         if root is None:
@@ -815,6 +827,8 @@ def _home_is_substituted() -> bool:
 
 def _skip_reason(step: _StepSpec, *, home_substituted: bool) -> str | None:
     """ステップを実行しない理由を返す。実行する場合は`None`を返す。"""
+    if step.full_only and dotfiles_mode.is_minimal():
+        return "minimalモードのため導入対象外"
     if step.platforms and sys.platform not in step.platforms:
         return _SKIP_OTHER_PLATFORM
     if step.host_resources and home_substituted:
@@ -890,7 +904,11 @@ def run(
     各ステップの出力はそのステップと列挙順でそれより前の全ステップが完了した時点で出力する。
     `recommendations` は各ステップが`PostApplyOutcome.recommendations`で返した推奨コマンドを列挙順に並べたもの。
     """
-    selected_steps = _DEFAULT_STEPS if steps is None else steps
+    selected_steps = list(_DEFAULT_STEPS if steps is None else steps)
+    if steps is None and os.environ.get("DOTFILES_PRUNE") == "1":
+        selected_steps.append(
+            _StepSpec("不要ツールとキャッシュの削除", prune_installation.run, after_all_preceding=True, host_resources=True)
+        )
     effective_steps = [_normalize_step(step) for step in selected_steps]
     predecessors = _resolve_predecessors(effective_steps)
     total = len(effective_steps)

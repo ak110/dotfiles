@@ -1,29 +1,16 @@
 # 名前の方針と定義済みの名前の一覧
 
-本書は名前を選ぶ方針と、agent-toolkitの規範が定義し複数の文書で使う名前の一覧を定める。一覧は名前ごとに、名前を見分ける短い見出し語と定義元を1行ずつ並べる。
-本書の読み手は名前を書く全ての主体（規範、設計文書、WI、計画、コミットメッセージおよびコードの書き手）である。
-定義そのものは定義元だけに置き、本書は名前から定義元へ至る索引とする（`agent-documents-basics.md`「主要用語の初出定義先」）。
+品質基準の正式な提供元は`agent-basics:writing-standards`の`references/defined-names.md`である。呼出元が指定した条件と読込範囲を、同名の正式な品質資料へ引き継ぐ。節指定がある場合は移設先の実見出しへ接続し、指定がない場合は従来の全文読込契約を保つ。
 
-## 命名の方針
+以下はagent-toolkitが所有する運用条件である。呼出元の条件と読込範囲に従い、ここに残る運用節を補う。
 
-ユーザーは2026年10月2日に、工程・レビュー・検証・判定・担当などの名前をその場で作成せず、定義して統一すると確定した。
-適用範囲はagent-toolkitの規範に従って書く全ての成果物とし、名前は次の方針で選ぶ。
+## 名指し参照の読込方法
 
-1. 定義を読まなくても指す対象が分かる自然な語を選ぶ
-2. 一般的な語（独立、root、固定、管理など）に独自の意味を持たせず、別々の概念に似た名前を付けない
-3. 識別子（スキル名、コマンド名、ファイル名、定数名など）がある対象は、日本語の説明的な名前を作成せず識別子で書く
-4. ユーザーが名付けた名前と、`atk serve`の画面などエンドユーザーが目にする場所で使う名前は残す
-5. 境界があいまいな名前は原要求と既存の定義を調べ、`agent-toolkit:user-confirmation-and-report`「確認要否の判定」を適用する。技術的に確定する境界は自ら決め、ユーザーだけの選好や適否が残る場合だけ確認する
-6. 返却形式の欄名も日本語名にする
-7. 名前を残す根拠から、用例の多さと既存の定義の有無を除く
+本文の各参照の適用条件を保ち、選んだ資料の指定範囲を取得してから、その基準を使う具体的な判断へ進む。起動時の行の資料は起動本文とともに届く。
 
-対象を指す時は、識別子があれば識別子を、無ければ本書の名前を使う。
-どちらも無い対象へ繰り返し参照する名前が要る場合は、自然な語を選び、定義元へ1文の定義を置いて本書へ行を加えてから使う。定義を置く前の対象は説明で書く（`agent-toolkit/share/rules-main.md`「ユーザー向け発話ルール」と`writing.md`の実在する名前の規定）。
-新しく導入する概念名と画面に新しく表示する名前（1つの文書の中だけで定義する語や、質問の説明のために作成した語を含む）は、次の点を押さえて候補を選び、方針1と方針7で順位を付ける。
-
-- 候補には本書の一覧に無い既存の呼び方も含め、候補語ごとに全追跡ファイル（変更予定の外にある設計文書、経緯記録、エンドユーザー向け文書と隠しディレクトリを含む）を固定文字列で検索する。一覧だけから選ぶと、別の意味で使われている語を新しい概念へ割り当てる
-- 別の意味の用例がある語は、既存の用例を書き換えても両方の意味に読めるため候補から外す。ユーザーが指定した語を変える案は方針5に従ってユーザー確認する
-- 画面に表示する名前は、同じ表示領域の既存ラベルの記法（言語、大文字と小文字、語の区切り）に合わせる（`ui-ux.md`「判断の順序」）。記法の異なる既存ラベルは設計記録で目的を確かめ、記録が無ければ方針4に従って残す案を推奨し、揃える案は目的が記録に無いことを添えて選択肢に載せる
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:writing-standards/references/defined-names.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/defined-names.md` |
 
 ## 一覧
 
@@ -86,12 +73,12 @@
 | 委譲先 | 委譲元が起動したエージェント | `agent-toolkit/skills/delegation/SKILL.md` |
 | 委譲プロンプト | 委譲の指示 | `agent-toolkit/skills/delegation/references/base-contract.md` |
 | 返却値 | 委譲先の出力 | `agent-toolkit/skills/delegation/references/base-contract.md` |
-| エージェント向け文書 | エージェントが直接読み込む文書の種別 | `agent-toolkit/skills/writing-standards/references/agent-documents-basics.md`冒頭 |
-| 読込表 | 文書内の表 | `agent-toolkit/skills/writing-standards/references/agent-documents-basics.md`「読込表」 |
+| エージェント向け文書 | エージェントが直接読み込む文書の種別 | `agent-basics/skills/writing-standards/references/agent-documents-basics.md`冒頭 |
+| 読込表 | 文書内の表 | `agent-basics/skills/writing-standards/references/agent-documents-basics.md`「読込表」 |
 | 配送範囲表 | 文書内の表 | `agent-toolkit/skills/writing-standards/references/delivery-scope.md`冒頭 |
-| 常時規範 | 規範の種別 | `agent-toolkit/skills/writing-standards/references/agent-documents-basics.md`「置き場所と配送」 |
-| プロジェクト規範 | 規範の種別 | `agent-toolkit/skills/writing-standards/references/agent-documents-basics.md`「置き場所と配送」 |
-| プロジェクト方針 | 方針の範囲 | `agent-toolkit/skills/writing-standards/references/agent-documents-basics.md`「置き場所と配送」 |
+| 常時規範 | 規範の種別 | `agent-basics/skills/writing-standards/references/agent-documents-basics.md`「置き場所と配送」 |
+| プロジェクト規範 | 規範の種別 | `agent-basics/skills/writing-standards/references/agent-documents-basics.md`「置き場所と配送」 |
+| プロジェクト方針 | 方針の範囲 | `agent-basics/skills/writing-standards/references/agent-documents-basics.md`「置き場所と配送」 |
 | 作成規範 | 品質基準 | `agent-toolkit/skills/review-standards/SKILL.md`「対象成果物の作成規範」 |
 | 完成条件 | WIの条件 | `agent-toolkit/skills/wi-standards/references/awi-body.md`「通常AWIの本文」 |
 | 完了条件 | 計画の条件 | `agent-toolkit/skills/plan-mode/references/plan-file-standards.md`「要件・外部仕様」 |

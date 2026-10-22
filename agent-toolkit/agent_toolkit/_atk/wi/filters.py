@@ -19,9 +19,9 @@ def _values(value: str | Iterable[str]) -> tuple[str, ...]:
 
 
 def resolve_states(statuses: str | Iterable[str]) -> tuple[str, ...]:
-    """状態の指定値（`active`・`processable`・`all`・個別の状態）を走査する状態フォルダの列へ変換する。
+    """状態の指定値（`active`・`processable`・`all`・個別の状態）をfrontmatterの状態値の列へ変換する。
 
-    結果は`WI_STATES`の順に並べ、状態フォルダに当たらない値は含めない。
+    結果は`WI_STATES`の順に並べ、保存状態に当たらない値は含めない。
     """
     selected: set[str] = set()
     for status in _values(statuses):

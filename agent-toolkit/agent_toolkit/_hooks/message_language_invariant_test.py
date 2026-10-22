@@ -205,7 +205,6 @@ def test_process_termination_block_is_japanese(tmp_path: pathlib.Path) -> None:
         (
             "pyproject.toml",
             "`Write`で`pyproject.toml`の依存の節を編集しようとしている。\n次の操作: "
-            "コマンドを使え、依存変更が許可される担当は次の処置を行う。"
             "`[project.dependencies]`・`[project.optional-dependencies]`の編集は、"
             "`uv.lock`を同期させるため`uv add`・`uv remove`を使う。"
             "`[tool.*]`と版数の編集はそのまま進めてよい。",
@@ -213,7 +212,6 @@ def test_process_termination_block_is_japanese(tmp_path: pathlib.Path) -> None:
         (
             "package.json",
             "`Write`で`package.json`の依存の節を編集しようとしている。\n次の操作: "
-            "コマンドを使え、依存変更が許可される担当は次の処置を行う。"
             "依存の編集は、`pnpm-lock.yaml`を同期させるため`pnpm add`・`pnpm remove`を使う。"
             "`scripts`とメタデータの編集はそのまま進めてよい。",
         ),

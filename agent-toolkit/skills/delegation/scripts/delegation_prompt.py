@@ -12,6 +12,7 @@ import pydantic
 
 from agent_toolkit._agents_server import launch_requests
 from agent_toolkit._common import session_registry
+from agent_toolkit._common.next_action import ActionableError
 
 
 class PromptRequest(pydantic.BaseModel):
@@ -78,7 +79,15 @@ def main(argv: list[str] | None = None) -> int:
         result = generate(request)
     except (OSError, ValueError) as error:
         print(
-            json.dumps({"error": str(error), "next_action": "違反した入力を直し、同じ生成CLIを再実行する"}, ensure_ascii=False),
+            json.dumps(
+                {
+                    "error": str(error),
+                    "next_action": error.next_action
+                    if isinstance(error, ActionableError)
+                    else "違反した入力を直し、同じ生成CLIを再実行する",
+                },
+                ensure_ascii=False,
+            ),
             file=sys.stderr,
         )
         return 1

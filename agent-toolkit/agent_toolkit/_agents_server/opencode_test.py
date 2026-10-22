@@ -165,7 +165,7 @@ async def test_cli_receives_all_plugin_and_user_rules(tmp_path: pathlib.Path, mo
 async def test_public_start_uses_configured_candidate_and_fallback(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, case: str
 ) -> None:
-    """公開startで空段位を除外し、設定済みCLIを選び、認証失敗なら次engineへ進む。"""
+    """公開startで候補の有無と順序を保ち、認証失敗なら次engineへ進む。"""
     capture = _install_cli(tmp_path, monkeypatch)
     script = capture.parent / "bin" / "opencode"
 
@@ -178,9 +178,8 @@ async def test_public_start_uses_configured_candidate_and_fallback(
 
     monkeypatch.setattr(asyncio, "create_subprocess_exec", launch_fake)
     monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path / "state")
-    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CHORES_ENGINE", "opencode,claude")
-    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_OPENCODE_LOW_TIER_MODEL", "" if case == "empty" else "local/qwen/high")
-    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CLAUDE_LOW_TIER_MODEL", "test/medium")
+    candidates = "claude:test/medium" if case == "empty" else "opencode:local/qwen/high,claude:test/medium"
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CHORES_FAST_MODEL", candidates)
 
     class ObservedBackend(agents_server_support.FakeBackend):
         async def start(self, *args: Any, **kwargs: Any) -> SessionState:

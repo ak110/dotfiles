@@ -15,6 +15,7 @@ from typing import Any, Literal, NamedTuple, cast
 
 from agent_toolkit._common import agents_server_tools as _agents_server_tool_names
 from agent_toolkit._common import session_record_paths as _record_paths
+from agent_toolkit._common.agy_records import is_agy_entry, normalize_entries
 
 _Runtime = Literal["claude", "codex", "agy", "opencode"]
 
@@ -100,7 +101,7 @@ def _detect_runtime(entries: list[dict[str, Any]]) -> _Runtime | None:
     """transcriptのエントリ形式から、記録を書いた実行系を判定して返す。"""
     if any(entry.get("type") == "agent_toolkit_input" or isinstance(entry.get("sessionID"), str) for entry in entries):
         return "opencode"
-    if entries and all(entry.get("event") in _AGY_EVENT_TYPES for entry in entries):
+    if any(is_agy_entry(entry) for entry in entries):
         return "agy"
     entry_types = {entry.get("type") for entry in entries}
     if entry_types & {"response_item", "event_msg"}:
@@ -141,7 +142,8 @@ def _load_records(raw_path: str | None) -> list[_Record] | None:
                 records.append(_Record(number, line, _analysis_entry(parsed)))
     except json.JSONDecodeError, ValueError:
         return None
-    return records
+    normalized = normalize_entries([record.entry for record in records])
+    return [record._replace(entry=entry) for record, entry in zip(records, normalized, strict=True)]
 
 
 def _parse_timestamp(value: str) -> datetime.datetime:
@@ -215,7 +217,7 @@ def _agents_server_call_ids(records: list[_Record]) -> set[str]:
                 if not isinstance(block, dict) or block.get("type") != "tool_use":
                     continue
                 call_id = block.get("id")
-                if isinstance(call_id, str) and block.get("name") in _AGENTS_SERVER_TOOL_NAMES:
+                if isinstance(call_id, str) and block.get("name") in {*_AGENTS_SERVER_TOOL_NAMES, "invoke_subagent"}:
                     call_ids.add(call_id)
 
         payload = record.entry.get("payload")
@@ -433,6 +435,10 @@ def _collect_records(
         record if (normalized := _analysis_entry(record.entry)) is record.entry else record._replace(entry=normalized)
         for record in main_records
     ]
+    main_records = [
+        record._replace(entry=entry)
+        for record, entry in zip(main_records, normalize_entries([record.entry for record in main_records]), strict=True)
+    ]
     main_path = Path(transcript_path)
     main_runtime = _detect_runtime([record.entry for record in main_records])
     main_id = _physical_record_id(main_path, main_records, main_runtime)
@@ -534,6 +540,8 @@ def _physical_record_id(path: Path, records: list[_Record], runtime: _Runtime | 
         if path.parent.name == "subagents":
             return f"claude:{path.parent.parent.name}/{path.stem}"
         return f"claude:{path.stem}"
+    if runtime == "agy" and path.name in {"transcript.jsonl", "transcript_full.jsonl"}:
+        return f"agy:{path.parents[2].name}"
     if runtime in {"agy", "opencode"}:
         return f"{runtime}:{path.stem}"
     return f"record:{path.stem}"

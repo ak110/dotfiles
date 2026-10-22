@@ -16,6 +16,7 @@ clean_environment = settings.clean_environment
 connection_environment = settings.connection_environment
 connection_overrides = settings.connection_overrides
 subscription_available = settings.subscription_available
+isolation_keys = settings.isolation_keys
 
 
 @dataclasses.dataclass(frozen=True)
@@ -40,9 +41,11 @@ class Candidates:
 def candidates(role: str, *, env: Mapping[str, str] | None = None) -> Candidates:
     """両認証があるときの役割別順序と、一方だけの環境での単独候補を返す。"""
     raw_path = config.resolve_mutable_setting("claude_api_env_file")
-    if not raw_path:
-        return Candidates((Connection("inherit"),))
     mode = config.resolve_mutable_setting("claude_api_mode")
+    if not raw_path:
+        if mode == "api-only":
+            return Candidates((), ("API: atk config set claude_api_env_file <パス>で認証環境を設定する",))
+        return Candidates((Connection("inherit"),))
     path = str(pathlib.Path(raw_path).absolute()) if raw_path else None
     diagnostic: list[str] = []
     api = False
@@ -59,14 +62,30 @@ def candidates(role: str, *, env: Mapping[str, str] | None = None) -> Candidates
             )
     else:
         diagnostic.append("API: atk config set claude_api_env_file <パス>で認証環境を設定する")
+    if mode == "api-only":
+        if api and path:
+            values = settings.read_api_env_file(path)
+            api = any(
+                values.get(key)
+                for key in (
+                    "ANTHROPIC_API_KEY",
+                    "ANTHROPIC_AUTH_TOKEN",
+                    "CLAUDE_CODE_USE_BEDROCK",
+                    "CLAUDE_CODE_USE_VERTEX",
+                    "CLAUDE_CODE_USE_FOUNDRY",
+                )
+            )
+            if not api:
+                diagnostic.append("API環境ファイルにAPI認証または接続方式を設定し、同じ会話へ再送する")
+        return Candidates((Connection("api", path, path),) if api else (), tuple(diagnostic))
     subscription_env = env
-    isolation_keys = AUTH_ENV
+    subscription_isolation_keys = AUTH_ENV
     if api:
-        overrides = connection_overrides(Connection("subscription", isolation_env_file=path))
+        selected = Connection("subscription", isolation_env_file=path)
         inherited = os.environ if env is None else env
-        subscription_env = {**inherited, **overrides}
-        isolation_keys = frozenset(overrides)
-    subscription = subscription_available(subscription_env, isolation_keys=isolation_keys)
+        subscription_env = connection_environment(inherited, selected)
+        subscription_isolation_keys = settings.isolation_keys(selected)
+    subscription = subscription_available(subscription_env, isolation_keys=subscription_isolation_keys)
     if not subscription:
         diagnostic.append("subscription: claude auth loginでサブスクリプションへログインする")
     available = {"api": api, "subscription": subscription}
@@ -85,6 +104,8 @@ def candidates(role: str, *, env: Mapping[str, str] | None = None) -> Candidates
 
 def with_current_isolation(connection: Connection, *, env: Mapping[str, str] | None = None) -> Connection:
     """保存済みsubscriptionの選択を保ち、現行のAPI専用キー集合だけを補う。"""
+    if config.resolve_mutable_setting("claude_api_mode") == "api-only":
+        return candidates("delegate", env=env).require_first()
     if connection.kind != "subscription" or connection.isolation_env_file is not None:
         return connection
     choices = candidates("delegate", env=env)

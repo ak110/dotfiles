@@ -12,7 +12,7 @@ from typing import Any
 from agent_toolkit._agents_server import state
 from agent_toolkit._agents_server.result_projection import nonempty_error
 from agent_toolkit._agents_server.state import SessionState, utc_now
-from agent_toolkit._atk import claude_connection
+from agent_toolkit._atk import claude_connection, config
 from agent_toolkit._common import claude_usage_limit
 
 # Claude CodeのBashツールが背景実行へ許す実行時間の上限（ミリ秒を秒へ換算）。Claude Code 2.1.291の
@@ -71,13 +71,21 @@ class HeldTurn:
     turn_seq: int
     turn_id: str
     started_at: str
+    codex_self_message_observed: bool
 
     @classmethod
     def capture(cls, session: SessionState) -> HeldTurn | None:
         """保留中だけ復元に必要なturn情報を退避する。"""
         if not session.awaiting_auto_resume or session.pending_result is None or session.auto_resume_deadline is None:
             return None
-        return cls(session.pending_result, session.auto_resume_deadline, session.turn_seq, session.turn_id, session.started_at)
+        return cls(
+            session.pending_result,
+            session.auto_resume_deadline,
+            session.turn_seq,
+            session.turn_id,
+            session.started_at,
+            session.codex_self_message_observed,
+        )
 
     def restore(self, session: SessionState) -> None:
         """未受理の追送を取り消し、同じ待機対象の観測を継続できる保留へ戻す。"""
@@ -87,6 +95,7 @@ class HeldTurn:
         session.turn_seq = self.turn_seq
         session.turn_id = self.turn_id
         session.started_at = self.started_at
+        session.codex_self_message_observed = self.codex_self_message_observed
         session.status = "running"
         session.turn_completed = True
         session.turn_start_ambiguous = False
@@ -111,7 +120,7 @@ def cli_turn_may_continue(session: SessionState) -> bool:
 
 
 def has_pending_auto_resume_targets(session: SessionState) -> bool:
-    """自動再開が追跡する子session、Claude taskまたはCLIの次のturnが残るかを返す。
+    """自動再開が追跡する子session、Codexの子thread、Claude taskまたはCLIの次のturnが残るかを返す。
 
     Claude・Codex backendとMCP層は、開始、解除、再開の全条件で本述語だけを使う。
     追跡集合（`live_tasks`・`live_child_session_ids`）だけでは、Stop hookの実行中などturnの最終応答から
@@ -121,7 +130,9 @@ def has_pending_auto_resume_targets(session: SessionState) -> bool:
     観測した版と順序は`docs/development/audit-records.md`
     「agent-toolkit/agent_toolkit/_agents_server/claude.py：結果の保留とturn状態の報告：2026年10月4日」にある。
     """
-    return bool(session.live_tasks or session.live_child_session_ids) or cli_turn_may_continue(session)
+    return bool(
+        session.live_tasks or session.live_child_session_ids or session.codex_live_subagent_thread_ids
+    ) or cli_turn_may_continue(session)
 
 
 def finalize_pending_result(
@@ -145,7 +156,7 @@ def finalize_pending_result(
     if result is None:
         raise RuntimeError("auto-resume wait has no pending result")
     unfinished_tasks = set(session.live_tasks)
-    unobserved = set(session.live_child_session_ids) | set(unobserved_sessions)
+    unobserved = set(session.live_child_session_ids) | set(session.codex_live_subagent_thread_ids) | set(unobserved_sessions)
     session.overload_resume_at = None
     session.claude_api_resume_pending = False
     session.usage_limit_resume_at = None
@@ -156,6 +167,7 @@ def finalize_pending_result(
     session.auto_resume_deadline = None
     session.pending_result = None
     session.live_child_session_ids.clear()
+    session.codex_live_subagent_thread_ids.clear()
     session.status = result["status"]
     session.agent_message = result["agent_message"]
     session.error = result["error"]
@@ -256,6 +268,13 @@ def begin_usage_limit_wait(session: SessionState, result: dict[str, Any]) -> boo
     original_error = result.get("error")
     role = session.claude_role or ("orchestrator" if session.model_type == "orchestrate" else "delegate")
     current = session.claude_connection or ("api" if session.claude_api_env_file else "inherit")
+    if config.resolve_mutable_setting("claude_api_mode") == "api-only" and current == "api":
+        clear_usage_limit_wait(session)
+        result["error"] = {
+            "message": "API接続が失敗した。claude_api_env_fileの認証・接続先とAPI残高を確認し、同じ会話へ再送する。",
+            "cause": original_error,
+        }
+        return False
     reason = "authentication" if startup_auth_error else "api_credits" if credit_error else "usage_limit"
     _LOG.info(
         "claude_connection_failed session_id=%s connection=%s phase=turn reason=%s",
@@ -263,11 +282,12 @@ def begin_usage_limit_wait(session: SessionState, result: dict[str, Any]) -> boo
         current,
         reason,
     )
-    if current == "inherit" and startup_auth_error:
+    api_only = config.resolve_mutable_setting("claude_api_mode") == "api-only"
+    if current == "inherit" and startup_auth_error and not api_only:
         return False
     choices = (
         claude_connection.Candidates((claude_connection.Connection("inherit"),))
-        if current == "inherit"
+        if current == "inherit" and not api_only
         else claude_connection.candidates(role)
     )
     session.claude_connection_failures[current] = str(original_error or result.get("agent_message") or "利用不能")
@@ -276,7 +296,9 @@ def begin_usage_limit_wait(session: SessionState, result: dict[str, Any]) -> boo
     following = tuple(
         choice
         for choice in following
-        if choice.kind != "inherit" and choice.kind not in session.claude_connection_failures and current != "inherit"
+        if choice.kind != "inherit"
+        and choice.kind not in session.claude_connection_failures
+        and (current != "inherit" or api_only)
     )
     if role == "delegate" and following:
         selected = following[0]

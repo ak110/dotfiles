@@ -6,6 +6,18 @@
 
 `atk wi process-loop`はキューが空でも未判定のDependabotアラートがあればAWIを起票せずにprocess-wiを起動する。このときの候補0件の選定結果は正常として保存し、レーンを起動せずに監査の処置を確定して、`${CLAUDE_PLUGIN_ROOT}/skills/process-wi/references/finish-session.md`「公開対象が無い場合の短絡」を経て終端する。要修正を同じセッションで直す場合は`${CLAUDE_PLUGIN_ROOT}/skills/process-wi/references/immediate-fix.md`「即時対応の手順」に従う。
 
+## 名指し参照の読込方法
+
+本文の各参照の適用条件を保ち、選んだ資料の指定範囲を取得してから、その基準を使う具体的な判断へ進む。起動時の行の資料は起動本文とともに届く。
+
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../SKILL.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/SKILL.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../../share/copilot-review-audit.subagent.md` | 判断 | `read:agent-toolkit:*/share/copilot-review-audit.subagent.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../managed-temp/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/managed-temp/SKILL.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../delegation/references/base-contract.md#「引き継ぎ記録先」` | 判断 | `section:agent-toolkit:*/skills/delegation/references/base-contract.md#「引き継ぎ記録先」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../../share/copilot-review-audit.subagent.md#「出力」` | 判断 | `section:agent-toolkit:*/share/copilot-review-audit.subagent.md#「出力」` |
+
 ## 自動コードレビュー監査担当の起動と受領
 
 ```text

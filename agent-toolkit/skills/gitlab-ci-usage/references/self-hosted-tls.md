@@ -17,3 +17,11 @@ curl -k -H "PRIVATE-TOKEN: ${GITLAB_TOKEN}" \
 
 どちらの設定もTLS検証をスキップしてMITM耐性を下げるため、トークンは環境変数経由で渡してコマンド履歴に残さない。
 待機の終端と、CI通過を確認しないで進めてよい条件は`agent-toolkit:commit`の`references/push-and-ci.md`が定める。
+
+## 名指し参照の読込方法
+
+本文の各参照の適用条件を保ち、選んだ資料の指定範囲を取得してから、その基準を使う具体的な判断へ進む。起動時の行の資料は起動本文とともに届く。
+
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../commit/references/push-and-ci.md` | 判断 | `read:agent-toolkit:*/skills/commit/references/push-and-ci.md` |

@@ -11,6 +11,8 @@ import dataclasses
 import json
 import pathlib
 
+lazy from agent_toolkit._common.plugin_roots import resolve_plugin_root
+
 # 関数の実行時にだけ使う依存は、使用時まで読み込まない。
 lazy from agent_toolkit._common.shell_segments import extract_execution_segments
 lazy from agent_toolkit._common.shell_tokens import is_atk_command
@@ -40,11 +42,32 @@ class DocumentRead:
     """スキルのディレクトリからの相対パス（`SKILL.md`か`references/<名前>.md`）。"""
     partial: bool
     """先頭や範囲だけを返し得る読取であるか。"""
+    plugin: str = "agent-toolkit"
+    """同名スキルを持つプラグインを区別する。"""
+    path: str = dataclasses.field(default="", compare=False)
+    """観測した実体。別ホストの導入情報で識別行を推定しないために保持する。"""
+
+
+def document_plugin(argument: str) -> str:
+    """実在するmanifestから資料の所有プラグインを識別する。"""
+    for parent in pathlib.Path(argument).expanduser().resolve().parents:
+        manifest = parent / ".claude-plugin/plugin.json"
+        if manifest.is_file():
+            data = json.loads(manifest.read_text(encoding="utf-8"))
+            return data.get("name", "agent-toolkit")
+    return "agent-toolkit"
 
 
 def skill_document(argument: str) -> tuple[str, str] | None:
     """パスの引数がスキルの`SKILL.md`か`references/`直下の資料を指す場合に、短縮名と相対パスを返す。"""
     parts = pathlib.PurePosixPath(argument.replace("\\", "/")).parts
+    if (
+        len(parts) >= 4
+        and parts[-1] == "antigravity-full-instructions.md"
+        and parts[-2] == "references"
+        and any((parent / "plugin.json").is_file() for parent in pathlib.Path(argument).parents)
+    ):
+        return parts[-3], "SKILL.md"
     if len(parts) >= 3 and parts[-1] == "SKILL.md" and parts[-3] == "skills":
         return parts[-2], "SKILL.md"
     if len(parts) >= 4 and parts[-2] == "references" and parts[-4] == "skills" and parts[-1].endswith(".md"):
@@ -75,7 +98,7 @@ def bash_document_reads(command: str) -> list[DocumentRead]:
         for argument in arguments:
             document = skill_document(argument)
             if document is not None:
-                reads.append(DocumentRead(*document, partial=partial))
+                reads.append(DocumentRead(*document, partial=partial, plugin=document_plugin(argument), path=argument))
     return reads
 
 
@@ -86,38 +109,46 @@ def bash_document_reads(command: str) -> list[DocumentRead]:
 def read_tool_document(tool_input: dict, tool_response: object) -> DocumentRead | None:
     """Claude CodeのReadの結果が、スキル配下の資料の本文を返した場合にその読取を返す。"""
     path = tool_input.get("file_path")
-    document = skill_document(path) if isinstance(path, str) else None
+    if not isinstance(path, str):
+        return None
+    document = skill_document(path)
     if document is None or not isinstance(tool_response, dict):
         return None
     ranged = tool_input.get("offset") is not None or tool_input.get("limit") is not None
     if tool_response.get("type") == "file_unchanged":
-        return DocumentRead(*document, partial=ranged)
+        return DocumentRead(*document, partial=ranged, plugin=document_plugin(path), path=path)
     file = tool_response.get("file")
     if tool_response.get("type") != "text" or not isinstance(file, dict):
         return None
     content = file.get("content")
-    if not isinstance(content, str) or not body_returned(*document, content):
+    plugin = document_plugin(path)
+    if not isinstance(content, str) or not body_returned(*document, content, plugin=plugin, path=path):
         return None
     partial = (
         file.get("startLine") != 1 or file.get("numLines") != file.get("totalLines") or bool(file.get("truncatedByTokenCap"))
     )
-    return DocumentRead(*document, partial=partial)
+    return DocumentRead(*document, partial=partial, plugin=plugin, path=path)
 
 
-def _identifying_line(skill: str, relative_path: str) -> str | None:
+def _identifying_line(skill: str, relative_path: str, plugin: str = "agent-toolkit", path: str = "") -> str | None:
     """資料の本文を返したことの判定に使う行。`SKILL.md`はfrontmatterの`name:`行、他は稼働版の先頭のH1の行とする。"""
-    if relative_path == "SKILL.md":
+    if relative_path == "SKILL.md" and not (path and pathlib.Path(path).name == "antigravity-full-instructions.md"):
         return f"name: {skill}"
     try:
-        text = plugin_resources.skill_document_path(skill, relative_path).read_text(encoding="utf-8")
-    except OSError, UnicodeError:
+        target = (
+            pathlib.Path(path)
+            if path
+            else resolve_plugin_root(plugin, plugin_resources.plugin_root()) / "skills" / skill / relative_path
+        )
+        text = target.read_text(encoding="utf-8")
+    except OSError, UnicodeError, ValueError:
         return None
     return next((line for line in text.splitlines() if line.startswith("# ")), None)
 
 
-def body_returned(skill: str, relative_path: str, text: str | None) -> bool:
+def body_returned(skill: str, relative_path: str, text: str | None, *, plugin: str = "agent-toolkit", path: str = "") -> bool:
     """読取の結果が資料の本文を返したかを返す。パスの文字列だけを根拠にしない。"""
-    line = _identifying_line(skill, relative_path)
+    line = _identifying_line(skill, relative_path, plugin, path)
     return text is not None and line is not None and line in returned_text(text)
 
 

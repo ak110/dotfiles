@@ -10,6 +10,7 @@ import re
 import shlex
 from typing import Any, NamedTuple
 
+import session_evidence_execution
 from session_evidence_detail import _tool_result_body
 from session_evidence_extract import (
     _CollectedRecord,
@@ -26,6 +27,7 @@ from session_evidence_stats import (
 )
 
 from agent_toolkit._agents_server import tool_names as _agents_server_tool_names
+from agent_toolkit._common import agy_records, shell_segments, shell_tokens
 
 _APPLY_PATCH_FILE = re.compile(r"^\*\*\* (?:Add|Update|Delete) File: (.+)$", re.MULTILINE)
 _SHELL_ABSOLUTE_PATH = re.compile(
@@ -35,45 +37,140 @@ _SHELL_ABSOLUTE_PATH = re.compile(
 
 _LARGE_OUTPUT_MIN_BYTES = 8_192
 
-_ROLE_DOCUMENT_PATH = re.compile(r"""(?:[A-Za-z]:)?[^\s\"'`<>;|(){},=]*\.subagent\.md""")
-_BODY_READ_COMMAND = re.compile(
-    r"(?:^|[^\w-])(?:cat|head|tail|more|less|sed|awk|grep|rg|read-file|Get-Content)(?:\s|[\"'])", re.IGNORECASE
-)
-
 
 def _definition_read_targets(tool: str, inputs: dict[str, Any], text: str) -> list[str]:
-    """本文取得の明示入力と、本文取得を含むshell・Codex複合呼出しから定義の参照を拾う。"""
+    """静的に読取操作へ対応付けられた定義の対象だけを返す。"""
+    reads, _unresolved = _definition_read_operations(tool, inputs, text)
+    return list(dict.fromkeys(target for row in reads for target in row["targets"]))
+
+
+def _definition_read_operations(
+    tool: str, inputs: dict[str, Any], text: str
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """共通の実行入力・区間境界から、明示読取と取得未確定の材料を分ける。"""
     name = tool.rsplit("__", 1)[-1].rsplit(".", 1)[-1]
     if name in {"Read", "read_file"}:
-        path = inputs.get("file_path", inputs.get("path"))
-        return [path] if isinstance(path, str) and path.endswith(".subagent.md") else []
-    if name not in {"Bash", "exec", "exec_command", "CommandExecution"}:
-        return []
-    command = inputs.get("command", inputs.get("cmd", text))
-    if not isinstance(command, str) or ".subagent.md" not in command:
-        return []
-    # ファイル名・存在だけの照会を本文取得へ数えない。複合入力の意味と目的は原記録で判定する。
-    try:
-        argv = shlex.split(command)
-    except ValueError:
-        argv = []
-    if argv:
-        executable = pathlib.PurePosixPath(argv[0]).name
-        simple = not any(operator in command for operator in ";&|")
-        if simple and executable in {"test", "ls", "find", "stat"}:
-            return []
-        if (
-            simple
-            and executable in {"rg", "grep"}
-            and any(arg in {"--files", "-l", "--files-with-matches", "-c", "--count", "-q", "--quiet"} for arg in argv)
-        ):
-            return []
-    if not _BODY_READ_COMMAND.search(command) and not re.search(
-        r"read_text\s*\(|readFile(?:Sync)?\s*\(|read_file\s*\(|\.read\s*\(", command
-    ):
-        return []
-    targets = [arg for arg in argv if arg.endswith(".subagent.md")]
-    return list(dict.fromkeys(targets or [match.group() for match in _ROLE_DOCUMENT_PATH.finditer(command)]))
+        path = inputs.get("file_path", inputs.get("path", inputs.get("Path")))
+        direct_reads = [{"input": inputs, "targets": [path]}] if isinstance(path, str) and path.endswith(".subagent.md") else []
+        return direct_reads, []
+    if name not in {"Bash", "exec", "exec_command", "CommandExecution", "run_command"}:
+        return [], []
+    if name in {"Bash", "exec_command", "run_command"} and not any(key in inputs for key in ("command", "cmd", "CommandLine")):
+        return [], []
+    command = inputs.get("command", inputs.get("cmd", inputs.get("CommandLine", text)))
+    if not isinstance(command, str):
+        return [], [{"input": inputs, "reason": "実行入力が文字列として記録されていない"}]
+    reads: list[dict[str, Any]] = []
+    unresolved: list[dict[str, Any]] = []
+    for operation, observation in enumerate(session_evidence_execution.command_input_observations(tool, command), 1):
+        value = observation["command"]
+        if value is None:
+            unresolved.append({"operation": operation, **observation})
+            continue
+        for position, segment in enumerate(shell_segments.extract_execution_segments(value), 1):
+            original: dict[str, Any] = {
+                "operation": operation,
+                "segment": position,
+                "input": observation["input"],
+                "command": value,
+            }
+            if not segment.resolved:
+                unresolved.append({**original, "reason": "シェル区間の実行位置を静的に確定できない"})
+                continue
+            words = shell_tokens.strip_redirections(segment.tokens)
+            if not words:
+                continue
+            executable = pathlib.PurePosixPath(words[0]).name.casefold()
+            args = words[1:]
+            if any(char in words[0] for char in "$`*?[]{}"):
+                unresolved.append({**original, "reason": "実行するコマンドに動的展開がある"})
+                continue
+            if executable in {"atk", "atk.cmd"} or executable.endswith("/atk"):
+                if args[:1] != ("read-file",):
+                    continue
+                args = args[1:]
+                targets = list(args[args.index("--") + 1 :]) if "--" in args else []
+                if not targets:
+                    unresolved.append({**original, "reason": "read-fileの対象境界を静的に確定できない"})
+            elif executable in {"cat", "head", "tail", "more", "less", "sed", "awk", "gawk", "grep", "rg"}:
+                if executable == "sed" and any(arg == "--in-place" or arg.startswith(("-i", "--in-place=")) for arg in args):
+                    continue
+                if executable in {"grep", "rg"} and any(
+                    arg
+                    in {
+                        "--files",
+                        "-l",
+                        "-L",
+                        "--files-with-matches",
+                        "--files-without-match",
+                        "-c",
+                        "--count",
+                        "--count-matches",
+                        "-q",
+                        "--quiet",
+                    }
+                    for arg in args
+                ):
+                    continue
+                targets = session_evidence_execution.command_file_inputs(executable, args)
+                for index, token in enumerate(segment.tokens):
+                    if token == "<" and index + 1 < len(segment.tokens):
+                        targets.append(segment.tokens[index + 1])
+                    elif token.startswith("<") and not token.startswith("<<"):
+                        targets.append(token[1:])
+            elif executable == "get-content":
+                targets = []
+                index = 0
+                unresolved_options = False
+                while index < len(args):
+                    arg = args[index]
+                    option = arg.casefold()
+                    if option in {
+                        "-totalcount",
+                        "-tail",
+                        "-encoding",
+                        "-readcount",
+                        "-delimiter",
+                        "-filter",
+                        "-include",
+                        "-exclude",
+                        "-credential",
+                        "-stream",
+                    }:
+                        if index + 1 >= len(args):
+                            unresolved_options = True
+                            break
+                        index += 2
+                        continue
+                    if option in {"-path", "-literalpath"}:
+                        if index + 1 >= len(args):
+                            unresolved_options = True
+                            break
+                        targets.append(args[index + 1])
+                        index += 2
+                        continue
+                    if arg.startswith("-") and option not in {"-raw", "-wait", "-force", "-asbytestream"}:
+                        unresolved_options = True
+                        break
+                    if not arg.startswith("-"):
+                        targets.append(arg)
+                    index += 1
+                if unresolved_options:
+                    unresolved.append({**original, "reason": "Get-Contentのオプションと対象の境界を静的に確定できない"})
+                    continue
+            else:
+                if ".subagent.md" in value and re.search(r"read_text|readFile|open\s*\(|\.read\s*\(", " ".join(words)):
+                    unresolved.append({**original, "reason": "コード内の読取と対象の対応は静的抽出の対象外"})
+                continue
+            static = []
+            for target in targets:
+                if any(char in target for char in "$`*?[]{}~"):
+                    unresolved.append({**original, "target_input": target, "reason": "読取対象に動的展開がある"})
+                elif target.endswith(".subagent.md"):
+                    static.append(target)
+            if static:
+                reads.append({**original, "targets": static})
+    return reads, unresolved
 
 
 def definition_body_read_events(collected: list[_CollectedRecord]) -> list[dict[str, Any]]:
@@ -92,32 +189,44 @@ def definition_body_read_events(collected: list[_CollectedRecord]) -> list[dict[
                 related.append(call)
         for call in calls:
             inputs = _recorded_input(entries[call.line], call.call_id)
-            targets = _definition_read_targets(call.tool, inputs, call.text)
-            if not targets:
+            reads, unresolved = _definition_read_operations(call.tool, inputs, call.text)
+            if not reads and not unresolved:
                 continue
             before = [other for other in related if other.line < call.line]
             after = [other for other in related if other.line > call.line]
             neighbors = [*(before[-1:]), *(after[:1])]
-            events.append(
-                {
-                    "kind": "definition-body-read",
-                    "record": item.record_id,
-                    "role": item.role,
-                    "role_document": role_document,
-                    "line": call.line,
-                    "timestamp": call.timestamp,
-                    "tool": call.tool,
-                    "targets": targets,
-                    "read_range": {key: inputs[key] for key in ("offset", "limit", "start", "max_bytes") if key in inputs},
-                    "text": call.text,
-                    "result_line": call.result_line,
-                    "result_observation": "記録あり・成否は原記録で判定" if call.result_line is not None else "結果記録なし",
-                    "purpose": "未判定",
-                    "related_operations": [
-                        {"line": other.line, "tool": other.tool, "result_line": other.result_line} for other in neighbors
-                    ],
-                }
-            )
+            for kind, operations in (("definition-body-read", reads), ("definition-read-unresolved", unresolved)):
+                if not operations:
+                    continue
+                events.append(
+                    {
+                        "kind": kind,
+                        "record": item.record_id,
+                        "role": item.role,
+                        "role_document": role_document,
+                        "line": call.line,
+                        "timestamp": call.timestamp,
+                        "tool": call.tool,
+                        "targets": list(dict.fromkeys(target for row in reads for target in row["targets"]))
+                        if kind == "definition-body-read"
+                        else [],
+                        "acquisition": "読取操作と対象を静的に対応付けた"
+                        if kind == "definition-body-read"
+                        else "取得の有無は未確定",
+                        "operations": operations,
+                        "recorded_input": inputs or call.text,
+                        "read_range": {key: inputs[key] for key in ("offset", "limit", "start", "max_bytes") if key in inputs},
+                        "text": call.text,
+                        "result_line": call.result_line,
+                        "result_observation": "記録あり・成否は原記録で判定"
+                        if call.result_line is not None
+                        else "結果記録なし",
+                        "purpose": "未判定",
+                        "related_operations": [
+                            {"line": other.line, "tool": other.tool, "result_line": other.result_line} for other in neighbors
+                        ],
+                    }
+                )
     return events
 
 
@@ -291,7 +400,9 @@ def resource_usage_events(collected: list[_CollectedRecord]) -> list[dict[str, A
                 row = {
                     "location": locator,
                     "tool": call.tool,
-                    "target": inputs.get("skill") if name == "Skill" else inputs.get("file_path", inputs.get("path")),
+                    "target": inputs.get("skill")
+                    if name == "Skill"
+                    else inputs.get("file_path", inputs.get("path", inputs.get("Path"))),
                     "range": {key: inputs[key] for key in ("offset", "limit", "start", "max_bytes") if key in inputs},
                     **result_metrics,
                 }
@@ -442,6 +553,10 @@ def _record_tool_calls(records: list[_Record]) -> list[_ToolCall]:
     結果はClaude Code形式の`tool_result`の`tool_use_id`と、Codex形式の`function_call_output`・
     `custom_tool_call_output`の`call_id`で対応付ける。
     """
+    records = [
+        record._replace(entry=entry)
+        for record, entry in zip(records, agy_records.normalize_entries([record.entry for record in records]), strict=True)
+    ]
     pending: list[tuple[int, str | None, str, str | None, str]] = []
     result_lines: dict[str, list[int]] = {}
     for record in records:

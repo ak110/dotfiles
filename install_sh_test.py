@@ -5,7 +5,7 @@
 遮断しない。install.sh 配下の `uv tool install` は PyPI へ到達できる状態を保つ。
 uvのキャッシュと検証用Pythonは親環境から再利用し、外部到達性設定（プロキシ変数）も引き継ぐ。
 
-到達先を差し替えられる分岐は、次の手段で実 GitHub・実 HTTP への依存を除く。
+到達先を差し替えられる分岐は、次の手段で実 GitHub・実 HTTP への接続を置き換える。
 
 - git clone 分岐は事前に `$FAKE_HOME/dotfiles` を用意して回避
 - chezmoi ダウンロード分岐はシステムの chezmoi バイナリを `$FAKE_HOME/.local/bin/`
@@ -68,14 +68,14 @@ def test_install_sh_deploys_rules(tmp_path: pathlib.Path):
     _write_fake_mise(local_bin / "mise")
     _write_fake_systemctl(local_bin / "systemctl")
 
-    # 3. tmuxプラグインのclone元をローカルミラーへ差し替える（実GitHub依存を回避）。
+    # 3. tmuxプラグインのclone元をローカルミラーへ差し替える（実GitHubへの接続を置き換える）。
     # 戻り値のコミットSHAは末尾のアサーションで実際のclone結果と一致するか確かめる。
     mirror_base = tmp_path / "git-mirrors"
     tpm_sha = _make_git_mirror(mirror_base, "tmux-plugins/tpm.git", tag=None)
     catppuccin_sha = _make_git_mirror(mirror_base, "catppuccin/tmux.git", tag="v2.3.0")
     tmux_cpu_sha = _make_git_mirror(mirror_base, "tmux-plugins/tmux-cpu.git", tag=None)
 
-    # 4. statuslineバイナリのダウンロード元をローカルHTTPサーバーへ差し替える（実HTTP依存を回避）。
+    # 4. statuslineバイナリのダウンロード元をローカルHTTPサーバーへ差し替える（実HTTPへの接続を置き換える）。
     class _Server(socketserver.TCPServer):
         allow_reuse_address = True
 

@@ -2,6 +2,18 @@
 
 本書は`.claude/skills/agent-toolkit-edit/SKILL.md`の読込表から読む参照資料であり、`agent-toolkit/`の実装モジュールの配置、`atk`の出力、MCPサーバーとhookの実装と登録、権限設定、配布と反映の規約を持つ。版数更新と同期先の文書は`SKILL.md`が定める。
 
+## 名指し参照の読込方法
+
+本文の各参照の適用条件を保ち、選んだ資料の指定範囲を取得してから、その基準を使う具体的な判断へ進む。起動時の行の資料は起動本文とともに届く。
+
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../SKILL.md` | 判断 | `read:*/skills/agent-toolkit-edit/SKILL.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../dotfiles-development/SKILL.md#「テスト配置」` | 判断 | `section:*/skills/dotfiles-development/SKILL.md#「テスト配置」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../SKILL.md#「バージョン更新」` | 判断 | `section:*/skills/agent-toolkit-edit/SKILL.md#「バージョン更新」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:writing-standards/SKILL.md` | 判断 | `read:agent-basics:*/skills/writing-standards/SKILL.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:writing-standards/references/claude-hooks-messages.md#「エージェント宛てメッセージの標識」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/claude-hooks-messages.md#「エージェント宛てメッセージの標識」` |
+
 ## agent_toolkitパッケージの配置と層
 
 - `agent-toolkit/agent_toolkit/`直下には配布物の外部から絶対パスで解決される公開スクリプトだけを置き、接頭辞`_`を付けずに命名する。対象は`hook.py`・`atk.py`・`agents_server_mcp.py`・`wait_ci.py`・`_managed_temp.py`である。`_managed_temp.py`は外部の許可判定がパスを解決するため名前を維持する（`script_prefix_invariant_test.py`が除外する）
@@ -41,18 +53,18 @@ Agent PluginsのMCP定義をCodexへ射影する際は、`args`・`cwd`・`env`�
 
 常駐MCPサーバー（`agents_server_mcp.py`など）は起動時に読み込んだモジュールを保持するため、`agent-toolkit/agent_toolkit/`の修正はプロセスの再起動後に反映される。修正後も同じ事象を観測した場合は、修正が無効と結論する前にプロセスが読み込んだ版を確定する。判定には起動スクリプトのパスと時刻の両方を使う（別の作業ツリーやplugin rootから起動したプロセスは、修正より後の起動でも修正を含まないことがある）。
 
-- `ps -eo pid,cmd`で起動スクリプトの絶対パスが対象の配布先であることを確かめ、`stat -c %Y /proc/<PID>`のプロセス起動時刻と、そのパス配下の対象ファイルの更新時刻を比べる（ファイルが新しければ修正前の版を保持している）。`ps -o lstart=`はロケール依存で比較に使えない
+- `ps -eo pid,cmd`で起動スクリプトの絶対パスが対象の配布先であることを確かめ、`stat -c %Y /proc/<PID>`のプロセス起動時刻と、そのパス配下の対象ファイルの更新時刻を比べる（ファイルが新しければ修正前の版を保持している）。`ps -o lstart=`はロケールで表記が変わるため比較に使えない
 - 終了済みのプロセスで当時のパスと起動時刻が無い場合は、版差を原因と決めつけず、現行の配布先での再現可否だけを結論とする
 
 ## フック実装の配置先（個人フックと配布物）
 
-PreToolUseなどのフックは、dotfiles固有の運用前提（配布先構成・個人の命名など）に依存するなら個人フック、依存しない汎用機能ならプラグインへ置き、類似チェックがある側への統合を優先する（努力目標）。
+PreToolUseなどのフックは、dotfiles固有の運用前提（配布先構成・個人の命名など）を前提とするなら個人フック、その前提を持たない汎用機能ならプラグインへ置き、類似チェックがある側への統合を優先する（努力目標）。
 
 - `pytools/claude_hook/pretooluse.py`（個人フック）: chezmoi経由で自分の`~/.claude/settings.json`にだけマージされる。新しいツール名を扱う場合は`share/claude_settings_json_managed.posix.json`と`.win32.json`の`matcher`を確認する
 - `agent-toolkit/`（プラグイン）: `.claude-plugin/marketplace.json`経由で他者にも配布されるため、`SKILL.md`「バージョン更新」に従う
 - agent-toolkitのCLI・hook・MCPは、`uv run --no-config --no-project --python 3.15 python <plugin root>/scripts/launch.py <対象>`から起動する。launch.pyは標準ライブラリだけでrootとdataを解決してから、`uv run --project <plugin root> --locked --no-default-groups`で依存を配布root外へ置く。登録済みの`skills/*/scripts/`は`atk run-script`で同じ環境内から実行する。SSH先の`atk_serve_*_remote_helper.py`だけは独立したPEP 723スクリプトとして起動し、PEP 723宣言を維持する
 - `agent-toolkit/pyproject.toml`の`dependencies`を変えたら同projectの`uv.lock`も更新する
-- `hooks.json`と`share/claude_settings_json_managed.*.json`が参照するスクリプトを改名・移動・削除する場合は、互換スクリプトを残してバージョン管理へ含める。稼働中のセッションは旧パスを参照し続けるためである（規約は`agent-toolkit:writing-standards`のhook実装の規約）。撤去は新しいエントリーポイントを含む版を配布した後の版数更新以降で、旧定義を読み込んだセッションの全終了を確認できた場合だけとする。配布先がインストールを拒否する配置は新配布物へ残さず、旧版の実体保持と更新時の移行で旧呼出しを保つ
+- `hooks.json`と`share/claude_settings_json_managed.*.json`が参照するスクリプトを改名・移動・削除する場合は、互換スクリプトを残してバージョン管理へ含める。稼働中のセッションは旧パスを参照し続けるためである（規約は`agent-basics:writing-standards`のhook実装の規約）。撤去は新しいエントリーポイントを含む版を配布した後の版数更新以降で、旧定義を読み込んだセッションの全終了を確認できた場合だけとする。配布先がインストールを拒否する配置は新配布物へ残さず、旧版の実体保持と更新時の移行で旧呼出しを保つ
 - 同じイベントへフックを追加する場合は、既存のエントリーポイントへの相乗りを推奨する（登録を並べるとツール呼び出しごとの起動が増える）。入力契約の違いで相乗りできない場合は理由を残して並べてよく、matcherが互いに素な登録はこの方針を満たすとみなす
 
 agent-toolkit配下の編集では、`pytools/claude_hook/pretooluse.py`がdotfiles固有名の混入を警告する。個人プロジェクト名の固定リストは同スクリプト内にあり、OSS公開プロジェクト名はwarningに留める。スキル名・pytoolsコマンド名・`pytools/_internal/`の複合名モジュール・`scripts/`と`libexec/`のスクリプト名は実行時にディレクトリから動的に取得する。外部CLI参照は`_EXTERNAL_CLI_ALLOWED`の登録識別子に限り、`command -v`等の存在確認を経て許容する。
@@ -69,7 +81,7 @@ agent-toolkit配下の編集では、`pytools/claude_hook/pretooluse.py`がdotfi
 
 ## 複数hook共存時の識別子
 
-`atk-auto`の`source`は、agent-toolkitでは接頭辞の無い生成元名、他の生成元なら`<所有者>/<生成元>`とする。XML境界と属性の規約は`agent-toolkit:writing-standards`の`references/claude-hooks-messages.md`「エージェント宛てメッセージの標識」に従う。
+`atk-auto`の`source`はagent-toolkitでは接頭辞の無い生成元名、他の生成元なら`<所有者>/<生成元>`とする。XML境界と属性の規約は`agent-basics:writing-standards`の`references/claude-hooks-messages.md`「エージェント宛てメッセージの標識」に従う。
 
 ## marketplace管理
 

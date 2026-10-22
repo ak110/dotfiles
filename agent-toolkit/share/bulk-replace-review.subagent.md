@@ -1,7 +1,6 @@
 ---
 mode: explore
-model_type: low_tier
-usage: chores
+model_type: review_fast
 required_inputs:
 - 差分ファイル
 optional_inputs: []
@@ -9,6 +8,8 @@ writes_worktree: false
 ---
 
 # 一括置換後レビュー担当タスク
+
+<!-- parent-read-source: agent-toolkit:/skills/writing-standards/references/bulk-replacement.md#一括置換後レビュー担当の起動と受領 -->
 
 多数の箇所で語を置き換えた文字単位差分を全件読み、置換によって元の意味や対応関係が変わった箇所を返す。
 差分の修正と書き直しは担当せず、いずれも委譲元が担う。

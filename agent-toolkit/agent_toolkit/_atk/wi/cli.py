@@ -406,7 +406,7 @@ def _add_mq_read_parsers(sub: Any) -> None:
     output.add_argument(
         "--jsonl",
         action="store_true",
-        help="端末幅に依存しない1件1行のJSON Lines形式で出力する。",
+        help="端末幅によらず同じ形の1件1行のJSON Lines形式で出力する。",
     )
     output.add_argument(
         "--no-jsonl",
@@ -426,7 +426,7 @@ def _add_mq_read_parsers(sub: Any) -> None:
         "filenames",
         metavar="FILENAME",
         nargs="*",
-        help="表示するファイル名（複数指定可。省略時は--allの指定が必要）。全状態フォルダを探索する。",
+        help="表示するファイル名（複数指定可。省略時は--allの指定が必要）。年月配置を探索し、frontmatterの状態を読む。",
     ).completer = _queue_filename_completer  # type: ignore[attr-defined]
     show.add_argument(
         "--all",
@@ -470,9 +470,9 @@ def _add_mq_read_parsers(sub: Any) -> None:
         action="append",
         default=None,
         help=(
-            "状態フォルダで表示範囲を限定する。省略時はactiveを対象とする。--all指定時のみ有効。"
+            "frontmatterの状態で表示範囲を限定する。省略時はactiveを対象とする。--all指定時のみ有効。"
             "`active`は`inbox`・`processing`・`hold`、`processable`は`inbox`・`processing`を指す。"
-            "FILENAME指定時は本オプションを適用せず全状態フォルダを探索する。"
+            "FILENAME指定時は本オプションを適用せず年月配置を探索する。"
         ),
     )
     show.add_argument(
@@ -637,12 +637,13 @@ def _add_mq_transition_parsers(sub: Any) -> None:
     adopt.add_argument(
         "--commit",
         metavar="SHA",
+        action="append",
         default=None,
         help=(
             "ローカルworktreeとrevisionを検証し、一意な長さの短縮OIDと件名を記録する。短縮OIDと完全OIDのどちらも受理する。"
             "worktreeまたはrevisionを解決できない場合は終了コード2で状態変更前に停止する。"
             "対象worktreeの絶対パスを--target-repoへ指定して再実行する。"
-            "--commit=VALUE形式で渡すことを推奨。"
+            "複数commitは--commitを反復指定する。--commit=VALUE形式で渡すことを推奨。"
         ),
     )
     adopt.add_argument(

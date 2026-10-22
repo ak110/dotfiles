@@ -1294,7 +1294,7 @@ async def test_entries_api_period_limits_by_filename_creation_time(tmp_path: pat
         _fixed_path(tmp_path, name).write_text(
             "---\nstate: inbox\ntype: awi\ntarget_repo: example/repo\n---\n\n本文\n", encoding="utf-8"
         )
-    # 更新時刻はすべて現在とし、期間の判定が更新時刻に依存しないことを確かめる。
+    # 更新時刻はすべて現在とし、更新時刻が期間の判定を変えないことを確かめる。
     client = _serve_app(tmp_path).test_client()
 
     async def filenames(query: str) -> list[str]:
@@ -1377,7 +1377,7 @@ async def test_web_add_mutations_require_target_repo(
     path: str,
     payload: dict[str, object],
 ) -> None:
-    """新規追加系APIは常駐プロセスのカレントディレクトリへ依存しないためtarget_repoを必須とする。"""
+    """新規追加系APIは常駐プロセスのカレントディレクトリを参照しないためtarget_repoを必須とする。"""
     app = serve_app.create_app(
         tmp_path,
         config.ServeConfig("127.0.0.1", 28766),

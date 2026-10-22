@@ -26,17 +26,39 @@ description: >
 
 送達は`agent-toolkit:user-confirmation-and-report`「手段の選択」に従う。Claude Codeは途中・末尾とも`mcp__agent-toolkit__send_to_user`を使う。最終報告だけ末尾に「以上で、このセッションの作業は全て終わりました」と書く。回答か委譲先の結果を待って中断した報告は最終報告に当たらず、この固定文に代えて再開の条件を書く（`references/report-formats.md`「振り返り結果報告のフォーマット」）。
 
+## 名指し参照の読込方法
+
+本文の各参照の適用条件を保ち、選んだ資料の指定範囲を取得してから、その基準を使う具体的な判断へ進む。起動時の行の資料は起動本文とともに届く。
+
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `references/quality-standards.md` | 判断 | `read:agent-toolkit:*/skills/completion-report/references/quality-standards.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../process-wi/references/all-repos-orchestration.md#「担当の役割」` | 判断 | `section:agent-toolkit:*/skills/process-wi/references/all-repos-orchestration.md#「担当の役割」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../session-review/SKILL.md#「工程」` | 判断 | `section:agent-toolkit:*/skills/session-review/SKILL.md#「工程」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../user-confirmation-and-report/SKILL.md#「手段の選択」` | 判断 | `section:agent-toolkit:*/skills/user-confirmation-and-report/SKILL.md#「手段の選択」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../session-review/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/session-review/SKILL.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../managed-temp/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/managed-temp/SKILL.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../user-confirmation-and-report/SKILL.md#「原文の保持と取り込み」` | 判断 | `section:agent-toolkit:*/skills/user-confirmation-and-report/SKILL.md#「原文の保持と取り込み」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../process-wi/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/SKILL.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../single-lane-process/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/single-lane-process/SKILL.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../user-confirmation-and-report/SKILL.md#「割り込み・訂正・中止」` | 判断 | `section:agent-toolkit:*/skills/user-confirmation-and-report/SKILL.md#「割り込み・訂正・中止」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../wi-standards/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/SKILL.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../wi-standards/SKILL.md#「投入と取得」` | 判断 | `section:agent-toolkit:*/skills/wi-standards/SKILL.md#「投入と取得」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../add-awi-by-user/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/add-awi-by-user/SKILL.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../bugfix/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/bugfix/SKILL.md` |
+
 ## 読込表
 
-| 時点または条件 | 全文読む資料 |
-| --- | --- |
-| 作業完了報告、振り返り結果報告、AWI投入結果報告または報告用UWIの本文を書く前 | `references/report-formats.md` |
-| 手順4で、協調モードの確認済みの公開範囲がcommitより先へ及ぶ場合 | `agent-toolkit:commit`の`references/publish.md` |
-| Stop hookが本スキルの起動不足を示して遮断した時と、ユーザーの中止・置換、回答や委譲先の待機、技術的不成立の判断を記録する時 | `references/termination-evidence.md` |
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 | 資料選択子 |
+| --- | --- | --- | --- | --- |
+| 通常起動時と、作業完了報告の到達水準を判定する前 | 起動のwhole_contract_pathまたはその正式な解決結果が示す現行の作業契約 | 起動時 | `skill:completion-report` | `input:作業契約` |
+| 作業完了報告、振り返り結果報告、AWI投入結果報告または報告用UWIの本文を書く前 | `references/report-formats.md` | 判断 | `read:agent-toolkit:*/skills/completion-report/references/report-formats.md` | |
+| 手順4で、協調モードの確認済みの公開範囲がcommitより先へ及ぶ場合 | `agent-toolkit:commit`の`references/publish.md` | 判断 | `read:agent-toolkit:*/skills/commit/references/publish.md` | |
+| Stop hookが本スキルの起動不足を示して遮断した時と、ユーザーの中止・置換、回答や委譲先の待機、技術的不成立の判断を記録する時 | `references/termination-evidence.md` | 判断 | `read:agent-toolkit:*/skills/completion-report/references/termination-evidence.md` | |
 
 ## 完了の到達水準
 
-作業完了報告の前に現行の作業契約を全文読み、`share/work-contract.md`の工程境界での要求と成果の確認に従って、各要求と残る完成条件を証拠・明示的な取り下げや置換・ユーザー対応が必要な未完了事項へ対応付ける。未処理の追加入力を統合し、元の未完了工程を終えてから全体を判定する。
+読込表で受け取った現行の作業契約と`share/work-contract.md`の工程境界での要求と成果の確認に従って、各要求と残る完成条件を証拠・明示的な取り下げや置換・ユーザー対応が必要な未完了事項へ対応付ける。未処理の追加入力を統合し、元の未完了工程を終えてから全体を判定する。
 
 「完了」は対象全体と既知の問題へ対応し、ユーザー操作が必須の事項だけが残る状態とする。代表箇所や一部だけの反映は途中経過として報告する。
 環境制約などで確認しきれない場合は、実施可能な検証を終え、その結果と実機確認などが未実施である範囲・理由を報告する。
@@ -45,8 +67,8 @@ description: >
 
 ## 工程
 
-番号は入力がそろう順序であり、前の手順の出力に依存しない作業は`agent-toolkit:session-review`の稼働中も含めて並行して進めてよい。
-本スキルの起動と本書の読了は工程の開始にあたり、手順5の作業完了報告から手順9の終端工程まで同じ応答で進める。中断後は、元の要求、記録済みの未完了工程と工程ごとの終了根拠を読み、最初の未完了工程から続ける。主成果物の保存や検収成功は、その工程の終了根拠として使う。登録済みAWIの検収後に残る振り返り・最終報告、既存commitの検収後に残る公開後検収、レビュー応答の保存後に残る全指摘の検収も同じ判断で引き継ぐ。
+番号は入力がそろう順序であり、前の手順の出力を使わない作業は`agent-toolkit:session-review`の稼働中も含めて並行して進めてよい。
+本スキルの起動と本書の読了は工程の開始にあたり、手順5の作業完了報告から手順9の終端工程まで同じ応答で進める。中断後は元の要求、記録済みの未完了工程と工程ごとの終了根拠を読み、最初の未完了工程から続ける。主成果物の保存や検収成功は、その工程の終了根拠として使う。登録済みAWIの検収後に残る振り返り・最終報告、既存commitの検収後に残る公開後検収、レビュー応答の保存後に残る全指摘の検収も同じ判断で引き継ぐ。
 
 1. 常時稼働サーバーへの反映: 対象プロジェクトが開発マシン上で常時稼働するサーバーを持ち、その規範またはタスクランナー定義が反映手段と稼働確認手段の双方を定める場合に行う。起動元の工程が先行して反映した結果（反映済みHEADの一意な短縮OID、反映コマンドの終了状態、稼働確認の結果）があり、報告時点の主作業ツリーで短縮OIDを解決してHEADと一致し双方成功していれば再反映を省く。それ以外は現行HEADを反映して稼働を確かめる。報告には再反映の有無と稼働確認の結果を含める。反映しない場合は理由と未反映の状態を報告し、ユーザー対応が必要な未完了事項は`agent-toolkit:user-confirmation-and-report`「手段の選択」で個別UWIの登録要否を判定する。自明な反映操作の案内は報告へ添える。
    起動元の工程が反映を先行して始められるのは、反映が対象リポジトリへ書き込まず、公開の入力を生成せず、公開操作と成果物・排他資源で競合しない場合に限る。
@@ -68,7 +90,7 @@ description: >
 
    自律モードでは、作業完了報告と振り返り結果から、ユーザーが結果を把握し是正を依頼するための事後承認型UWIを1件作る。これを「報告用UWI」と呼び、本手順を定義の所在とする。本文は`references/report-formats.md`「報告用UWIのフォーマット」、投入は`agent-toolkit:wi-standards`の事後承認型の書式に従う。保存は`atk wi add`・`atk wi edit`の成功報告と警告で検収する（`agent-toolkit:wi-standards`の`SKILL.md`「投入と取得」）。保存の検収がユーザーへの伝達の完了条件であり、可視発話の有無とは別に判定する。投入に失敗した場合は既存のWI投入失敗の処置に従う。
 
-   `atk run-skill`の実行では、報告用UWIの投入に`--source run-skill --scope <実行したスキル名>`を指定し、本文先頭のfrontmatterへ`run_skill_report: true`を置く。`atk wi add`と`atk wi edit`は起動元の実行識別子を`run_skill_run_id`へ記録する。同じ実行の再開と報告更新でもこの区分を保持する。報告本文の生成と十分性の判断は本スキルが所有し、起動元は保存済みUWIとGitの反映結果から、本文のcommitとupstream設定時のpushへの到達を確認する。保存未達は時間上限と区別した非0終了となるため、保存CLIの警告を解消し、同じ会話で報告保存を完了する。
+   `atk run-skill`の実行では報告用UWIの投入に`--source run-skill --scope <実行したスキル名>`を指定し、本文先頭のfrontmatterへ`run_skill_report: true`を置く。`atk wi add`と`atk wi edit`は起動元の実行識別子を`run_skill_run_id`へ記録する。同じ実行の再開と報告更新でもこの区分を保持する。報告本文の生成と十分性の判断は本スキルが所有し、起動元は保存済みUWIとGitの反映結果から、本文のcommitとupstream設定時のpushへの到達を確認する。保存未達は時間上限と区別した非0終了となるため、保存CLIの警告を解消し、同じ会話で報告保存を完了する。
 
    続けて最終報告を1回届ける（自律モードでは報告用UWIの保存を検収してから）。`send_to_user`が成功したら本文の送達は完了とし、要約や受領文を足さず同じ応答で手順9へ進む。ツールがない場合は最終報告自体をターン終端の本文とする。
 9. 起動元の工程が報告の完了後に実行する工程（`agent-toolkit:process-wi`の`atk agents-exit-session`など）を定める場合は、最終報告と同じ応答でその工程を実行する。別の応答へ持ち越すと工程が起動されないまま`atk wi process-loop`が停止する。新しい改善点が無ければ報告後に実行するのはこの工程だけとし、通常の作業ターンへは次の指示を受けてから戻る。

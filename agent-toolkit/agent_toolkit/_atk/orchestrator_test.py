@@ -75,7 +75,7 @@ def test_codex_probe_fallback_and_all_candidates_retry(
         "CODEX_HOME": str(tmp_path / "codex-home"),
     }
     # 系列名の解決で`codex`のモデル一覧を取得しないよう、軽量段位へ完全IDを与える。
-    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CODEX_LOW_TIER_MODEL", "gpt-6-luna/medium")
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CHORES_FAST_MODEL", "codex:gpt-6-luna/medium,claude:haiku/medium")
     sleeps: list[float] = []
     monkeypatch.setattr(orchestrator, "time", types.SimpleNamespace(time=lambda: 1000, sleep=sleeps.append))
     candidates = [("codex", "first", "high"), ("codex", "second", "low")]
@@ -110,8 +110,8 @@ def test_probe_uses_low_tier_model_and_lightweight_startup(
         encoding="utf-8",
     )
     binary.chmod(binary.stat().st_mode | stat.S_IXUSR)
-    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CLAUDE_LOW_TIER_MODEL", "haiku/medium")
-    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CODEX_LOW_TIER_MODEL", "gpt-6-luna/medium")
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_REVIEW_FAST_MODEL", "claude:haiku/medium")
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CHORES_FAST_MODEL", "codex:gpt-6-luna/medium,claude:haiku/medium")
     env = {**os.environ, "PATH": str(tmp_path) + os.pathsep + os.environ["PATH"], "CODEX_HOME": str(tmp_path / "home")}
     candidate = (engine, "opus[1m]" if engine == "claude" else "gpt-6.1-sol", "high")
     context = orchestrator.ProbeContext(title="test", prompt="可用性の確認")

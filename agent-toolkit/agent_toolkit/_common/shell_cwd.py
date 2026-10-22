@@ -26,7 +26,7 @@ def bash_invocation_cwds(command: str, cwd: str = "") -> Iterator[tuple[BashInvo
     """各呼び出しの実行位置を返す。未知の移動後は不明を保ち、絶対移動で解決を再開する。
 
     子シェル・パイプ・背景実行・置換の移動は、その作用範囲内だけで追跡する。
-    波括弧と複合文の移動は後続へ渡す。環境依存の移動を元のcwdへ代用しない。
+    波括弧と複合文の移動は後続へ渡す。実行環境によって結果が変わる移動を元のcwdへ代用しない。
     """
     initial = CwdResolution(cwd, bool(cwd))
     positions: dict[tuple[object, ...], CwdResolution] = {(): initial}

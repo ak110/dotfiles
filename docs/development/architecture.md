@@ -8,7 +8,7 @@
 - `.chezmoi-source/dot_claude/`: Claude Code用のユーザー設定。`~/.claude/`へデプロイする
 - `.chezmoi-source/dot_codex/`: Codex用のユーザー設定。`~/.codex/`へデプロイする
 - `.chezmoi-source/dot_gemini/`: Antigravity CLI用のユーザー設定（`GEMINI.md`と`antigravity-cli/skills/`）。`~/.gemini/`へデプロイする
-- `agent-toolkit/`: Agent Plugins、Claude Code、Codexが共有するagent-toolkitのプラグインルート（「agent-toolkitの3形式配布」を参照）
+- `agent-toolkit/`: Agent Plugins、Claude Code、Codexが共有するagent-toolkitのプラグインルート（「agent-toolkitのホスト別配布」を参照）
 - `agent-toolkit-codex/`: `agent-toolkit/`から生成するCodex向けプラグインルート。Gitで追跡せず、`update-dotfiles`のpost-applyが生成する
 - `plugins/`: dotfilesユーザーが置く拡張ディレクトリ（Git追跡対象外）。直下の各プラグインの`.chezmoi-source/`と`post_apply.py`を本体反映後に名前順で適用する
 - `bin/`: ユーザーのPATHへ追加して使うコマンド（「対象環境とスクリプトの配置」を参照）
@@ -96,10 +96,10 @@ uv run --frozen pyfltr fast                             # 高速ツールと生�
 - `.ps1.tmpl`は`.gitattributes`で`eol=crlf`を指定している（Windows PowerShell 5.1はLF改行だと構文解析に失敗する）
 - 全スクリプト冒頭に`Set-StrictMode -Version Latest`と`$ErrorActionPreference = 'Stop'`を記述
 
-## agent-toolkitの3形式配布
+## agent-toolkitのホスト別配布
 
 `agent-toolkit/`はAgent Plugins、Claude Code、Codexが共有するプラグインルートである。
-`skills/`の実体を3形式で共有し、形式ごとのmanifestとMCP設定だけを分ける。
+`skills/`の原本を共有し、ホストごとのmanifest、hook、MCP設定と常時規範の配置を生成する。
 
 | 対象 | 役割と生成方法 |
 | --- | --- |
@@ -144,10 +144,10 @@ chezmoiの`post_apply`を使うdotfiles導入がある。既存の外部参照�
 - `setup_codex_links.py`はdotfiles固有スキルと`docs`だけをリンクする。`agent-toolkit/rules/`は`sync_agent_toolkit_rules.py`が配布先へ同期する
 - Codex hookはイベント名、matcher、入力契約を確認した許可表へ登録したものだけを派生manifestへ含める
 
-### `post_apply.py`の工程の依存
+### `post_apply.py`の工程間の順序
 
 - dotfilesプラグインの適用は`pytools/_internal/apply_dotfiles_plugins.py`が担い、本体の後処理が終わってから実行する。プラグインごとのchezmoi永続状態を本体から分離し、本体と配布先が重なる場合は警告してプラグインの内容を上書きする。配置と失敗時の扱いは[operations.md](operations.md)の「dotfilesプラグインの適用と更新」を参照
-- `post_apply.py`は互いに依存しない工程を同時に実行し、工程間の順序を`_StepSpec`の先行工程の宣言で保つ。リンク同期、Claude Code plugin、Codex plugin、旧User scope MCPの移行の順序もこの宣言で保つ。先行工程を宣言する対象は、同じ資源を扱う工程の組と、先行工程が導入する実行ファイルを使う工程とする。
+- `post_apply.py`は互いの成果を使わない工程を同時に実行し、工程間の順序を`_StepSpec`の先行工程の宣言で保つ。リンク同期、Claude Code plugin、Codex plugin、旧User scope MCPの移行の順序もこの宣言で保つ。先行工程を宣言する対象は、同じ資源を扱う工程の組と、先行工程が導入する実行ファイルを使う工程とする。
   資源は設定ファイルの読み書き、プロセスとユーザーのPATH、npmとmiseの管理領域、plugin cache、Claude Code pluginの複製元である`agent-toolkit/`、依存環境を保存するデータ領域、systemd、codexプロセスの稼働判定を指す。
   子プロセスやサービスの再起動を経由して間接的に書き換える資源も含める。例えば`atk serve`工程が再起動したサービスは`scripts/launch.py`を経てデータ領域の依存環境を同期する。工程を追加する場合も同じ基準で宣言する
 - `post_apply.py`の工程のうち、HOMEで解決されない実機の共有資源（systemdのユーザーマネージャー、`/dev/shm`）を操作する工程には`_StepSpec`の`host_resources`を付ける。
@@ -160,10 +160,26 @@ chezmoiの`post_apply`を使うdotfiles導入がある。既存の外部参照�
 - 実行全体の失敗後の次の操作と永続ログの所在は1回だけ出力する。環境変数`UPDATE_DOTFILES_RUN_ID`がある`update-dotfiles`経由の実行では、`update-dotfiles`の終了時に出す。この環境変数が無い`dotfiles-post-apply`の単独実行では、post-applyの集計の行（`完了: 更新 N 件 / スキップ N 件 / 失敗 N 件`）の後に出す
 - 開始行、ロガー`httpx`のINFO、`claude` CLIの実行記録、実行中のOSを対象外とする工程の行は永続ログ（`update-dotfiles.log`）にだけ残す
 
+### Python依存環境の共有
+
+`plugin_environment.py`は実Pythonの実装・版・ABI・OS・アーキテクチャ、依存導入に作用するpyproject設定と`uv.lock`を正規化して共有環境を識別する。
+配布root、プラグイン版、文書・コード・lint設定の差は環境を分ける条件に含めない。
+依存だけを同期し、起動ごとのrootを`PYTHONPATH`の先頭へ置いて、その配布版のコードと資源を参照する。
+pyfltr MCPも`_common/pyfltr_entry.py`からlockfileで準備したconsole entry pointへ接続する。
+この境界でplugin専用のuv環境指定を解除し、pyfltrがチェック対象のリポジトリの依存環境を使えるようにする。
+
+準備は`launch.py --prepare`へ集約する。
+`update-dotfiles`の後処理は両ホストの実際の有効版と作業ツリー版を列挙し、公開インストーラーも同じ準備処理を使う。
+通常のCLI・hook・MCPは準備済み環境のPythonを直接起動するため、起動のたびに依存を照会しない。
+未準備時の診断は`update-dotfiles`または公開インストーラーでの再準備を案内する。
+更新後は新規起動が新しい依存キーへ切り替わり、稼働中の旧版が使う既存環境を保持する。
+共有化の更新には旧環境の自動回収を加えない。
+minimalの明示的な`--prune`は使用中保護の判定後にAI用環境を削除する。
+
 ### agents_server MCPの配置と寿命
 
 共有MCP設定の大元が`agents_server`を定義し、`${CLAUDE_PLUGIN_ROOT}/scripts/launch.py`から`agent_toolkit/agents_server_mcp.py`を起動する。
-launch.pyはplugin rootを`uv run --project`へ指定し、lockfileを固定した依存環境を配布root外のデータ領域へ置く。
+launch.pyは準備済みの共有依存環境を配布root外のデータ領域から選び、その起動が指定したplugin rootのコードを実行する。
 生成器は共有許可リストのMCPをAgent PluginsとCodexのmanifestへ射影し、Codex側ではplugin root内の作業ディレクトリからlaunch.pyを起動する。
 MCPサーバーは`start`が解決した候補のengineに従ってCodex backendまたはClaude backendを選択する。
 
@@ -175,7 +191,7 @@ MCPサーバーは`start`が解決した候補のengineに従ってCodex backend
 MCP終了時は自身が起動した子プロセスをPID指定で終了し、共有daemonや永続registryを持たない。
 
 MCP moduleの初期化時にCodex backendとClaude backendのローカルmoduleを読み込む。
-プラグイン配置の寿命に依存するローカルmoduleの遅延importは行わず、共有状態型はbackendとMCP層の共通moduleへ分離する。
+プラグイン配置の存続を前提とするローカルmoduleの遅延importは行わず、共有状態型はbackendとMCP層の共通moduleへ分離する。
 Claude Agent SDKはCodex実行時の依存と起動コストを増やさないため、Claude engineでoptionsを構築する時点まで遅延する。
 プラグイン導入後のウォームアップは、導入済み版のlaunch.pyへ`--check-dependencies`を渡し、
 PEP 723の依存importとClaudeAgentOptionsの構築だけを確認する。外部Claude/Codex sessionは開始しない。
@@ -186,3 +202,40 @@ PEP 723の依存importとClaudeAgentOptionsの構築だけを確認する。外�
 まず`chezmoi managed | grep <相対パス>`で配布対象かを確認。
 配布対象であれば`.chezmoi-source/`側を編集（直接編集は次回`chezmoi apply`で上書きされる）。
 設定の出所調査には`git config --show-origin --get <key>`も有効。
+
+### Antigravity向け配布
+
+`pytools/_internal/antigravity_plugin.py`が`agent-toolkit-agy/`と`agent-basics-agy/`を生成し、
+`scripts/sync_antigravity_plugin.py`とpost-applyが同じ同期処理を使う。
+toolkit側には`plugin.json`、`skills/`、`agents/`、`rules/AGENTS.md`と追加の常時規範ファイル、
+直下の`hooks.json`・`mcp_config.json`、Python実装とlockfileを含む。basics側は独立した品質スキル集で、
+実行基盤のhook・MCP・Python環境を含めずに利用できる。
+各manifestの名前は元の`agent-toolkit`・`agent-basics`を保持し、品質スキルの所有と名前空間を保つ。
+生成rootはGit追跡対象外で、`scripts/sync_generated_files.py`の最後に同期する。
+無指定は両方を同期し、`scripts/sync_antigravity_plugin.py --plugin agent-basics`はbasicsだけを同期する。
+生成した`agent-basics-agy/`を選べば、toolkitの有効化を伴わずに品質基準を利用できる。
+Claude Code・Codex・Agent Plugins向けの既存3形式と原本の品質本文は、この生成処理で変更しない。
+
+共通常時規範は行境界で分割し、各ファイルを24,000バイト以内に保つ。
+生成器は合計20,000トークンの予算をUTF-8の2 bytes/token換算でチェックし、
+超過時は配布前に失敗させる。追加の分割ファイルは`trigger: always_on`でロードする。
+プロジェクト独自の規範もホストの同じ予算を使うため、その総量は対象プロジェクトで確認する。
+
+6イベントのhookは同じ生成rootの`scripts/atk-hook antigravity <イベント名>`を呼ぶ。
+MCPは原本から`agents_server`・`pyfltr`を選び、root参照を絶対パスへ投影する。
+スキル本文中の実行用rootも同じ絶対パスへ投影し、環境変数展開への依存を解消する。
+
+post-applyはAntigravity CLI導入、Codex snapshotの生成とGemini設定反映の後に配布rootを同期する。
+続いて`~/.gemini/config/plugins.json`の`entries`へ
+作業ツリーの絶対パスと`include_only: ["agent-toolkit-agy", "agent-basics-agy"]`を追加する。
+旧版が作成したtoolkitだけの管理対象entryは、同じentryを両方の指定へ更新する。
+他の登録と継承設定を保持し、同じ登録は再追加しない。
+プラグインの有効/無効を記録するユーザーの`config.json`は変更しない。
+登録や更新後は新しいagyセッションで反映を確認する。
+
+Antigravityのスキル本文にも24,000バイトの読込上限があるため、両プラグインで共通の生成処理が上限を超える
+`SKILL.md`のfrontmatterを短いSKILL.mdに保持し、本文を
+`references/antigravity-full-instructions.md`へ保存する。短いSKILL.mdは起動時に全文資料を読む。
+全文資料の相対参照は元のスキルディレクトリを起点に解決し、原本の必要本文と参照先を保持する。
+`share/*.subagent.md`は入力契約を保持した原本として配送し、`agents/`に
+対応する名前と原本の読込指示を持つnative agent定義を生成する。

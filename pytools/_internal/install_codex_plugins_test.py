@@ -41,6 +41,8 @@ _EXPECTED_HOOK_EVENTS = install_codex_plugins._EXPECTED_HOOK_EVENTS  # pylint: d
 def _empty_unused_plugins(monkeypatch: pytest.MonkeyPatch) -> None:
     """ローカルpluginのテストでは不要pluginの除去を無効にする。"""
     monkeypatch.setattr(install_codex_plugins, "_UNUSED_PLUGINS", ())
+    # 既存のtoolkit固有シナリオは単一対象へ限定し、2件の導入契約は結合シナリオで検証する。
+    monkeypatch.setattr(install_codex_plugins, "_MANAGED_PLUGINS", ("agent-toolkit",))
     monkeypatch.delenv("DOTFILES_CODEX_DAEMON_AUTO_RESTART", raising=False)
     monkeypatch.setattr(host_roles, "is_linux_server", lambda: False)
     monkeypatch.setattr(codex_processes, "codex_processes", lambda: ())
@@ -64,6 +66,7 @@ def _empty_unused_plugins(monkeypatch: pytest.MonkeyPatch) -> None:
 @pytest.fixture(name="plugin_env")
 def plugin_env_fixture(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     """Codexの設定とdotfilesを一時ディレクトリへ分離する。"""
+    monkeypatch.setattr(install_codex_plugins, "_MANAGED_PLUGINS", ("agent-toolkit",))
     root = tmp_path / "dotfiles"
     (root / ".agents/plugins").mkdir(parents=True)
     (root / "agent-toolkit-codex/.codex-plugin").mkdir(parents=True)
@@ -229,7 +232,7 @@ def test_registers_and_installs_with_official_cli(plugin_env: Path, monkeypatch:
 
 
 def test_first_hook_transition_preserves_previous_cache(plugin_env: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """初回切替では入口を先に置き、CLIが除去した旧hook実体を復元する。"""
+    """初回切替ではhook起動コマンドを先に配置し、CLIが除去した旧hook実体を復元する。"""
     wrapper = install_codex_plugins._hook_bin() / "atk-hook"  # pylint: disable=protected-access
     wrapper.unlink()
     previous = install_codex_plugins.CODEX_HOME / "plugins/cache/ak110-dotfiles/agent-toolkit/1.2.2"
@@ -397,7 +400,7 @@ def test_plugin_update_does_not_query_running_codex(
     monkeypatch: pytest.MonkeyPatch,
     auto_restart: bool,
 ) -> None:
-    """旧cacheの復旧でセッションを守るため、更新可否をプロセス一覧へ依存させない。"""
+    """旧cacheの復旧でセッションを守るため、更新可否の判定にプロセス一覧を使わない。"""
     if auto_restart:
         monkeypatch.setenv("DOTFILES_CODEX_DAEMON_AUTO_RESTART", "1")
     monkeypatch.setattr(codex_processes, "codex_processes", lambda: pytest.fail("更新時にプロセス一覧を参照しない"))
@@ -575,7 +578,7 @@ def _write_claude_plugin_root(root: Path, version: str) -> None:
 def test_hook_wrapper_restores_missing_pinned_root_from_same_claude_version(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """commit中の自動更新で旧cacheが消えても、独立した同版cacheからhook入口を復旧する。"""
+    """commit中の自動更新で旧cacheが消えても、独立した同版cacheからhook起動コマンドを復旧する。"""
     home = tmp_path / "home"
     wrapper = home / ".local/bin/atk-hook"
     wrapper.parent.mkdir(parents=True)

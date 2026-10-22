@@ -168,3 +168,52 @@ def test_invalid_file_or_position_has_recovery(case: str, tmp_path: pathlib.Path
     assert not captured.out
     assert "失敗:" in captured.err
     assert "次の操作:" in captured.err
+
+
+def test_section_cli_returns_only_selected_scope(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
+    """見出しを選択した公開操作は、他領域の本文を取得しない。"""
+    path = tmp_path / "guidelines.md"
+    path.write_text("# 基準\n冒頭\n\n## 共通\n共通本文\n\n## API\nAPI本文\n", encoding="utf-8")
+    with pytest.raises(SystemExit, match="0"):
+        atk.main(["read-file", "--section", "共通", "--", str(path)])
+    captured = capsys.readouterr()
+    metadata, body = _parse_response(captured.out)
+    assert metadata["section"] == "共通"
+    assert metadata["eof"] is True
+    assert body == "## 共通\n共通本文\n\n"
+    assert not captured.err
+
+
+def test_section_cli_continuation_uses_selected_text_positions(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """選択本文の位置を継続し、他領域を混ぜず末尾へ到達する。"""
+    path = tmp_path / "long.md"
+    selected = "## 共通\n" + "共通本文\n" * 100
+    path.write_text("# 基準\n" + selected + "## 他領域\n別本文\n", encoding="utf-8")
+    position = 0
+    parts = []
+    while True:
+        with pytest.raises(SystemExit, match="0"):
+            atk.main(["read-file", "--section", "共通", "--start", str(position), "--max-bytes", "200", "--", str(path)])
+        captured = capsys.readouterr()
+        assert not captured.err
+        metadata, body = _parse_response(captured.out)
+        parts.append(body)
+        assert len(captured.out.encode()) <= 200
+        if metadata["eof"]:
+            break
+        assert metadata["next"] > position
+        position = metadata["next"]
+    assert "".join(parts) == selected
+
+
+def test_unknown_section_cli_is_actionable_error(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
+    """存在しない見出しを全体取得へ切り替えず、修復可能なエラーにする。"""
+    path = tmp_path / "guidelines.md"
+    path.write_text("# 基準\n本文\n", encoding="utf-8")
+    with pytest.raises(SystemExit, match="2"):
+        atk.main(["read-file", "--section", "不存在", "--", str(path)])
+    captured = capsys.readouterr()
+    assert not captured.out
+    assert "一意" in captured.err
