@@ -102,9 +102,14 @@ jobs:
         if: needs.common-ci-owner.outputs.owns == 'true'
         with:
           working-directory: ${{ env.DOTFILES_DIR }}
-      - name: PowerShell + PSScriptAnalyzer インストール
+      # hosted runnerの導入済みツールを使い、OSごとのAPT配布状況への依存を省く。
+      - name: PowerShell + PSScriptAnalyzer の確認
         if: needs.common-ci-owner.outputs.owns == 'true'
-        run: make -C "$HOME/dotfiles" setup-pwsh
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $PSVersionTable.PSVersion
+          Import-Module PSScriptAnalyzer -ErrorAction Stop -PassThru
       - name: 約3日前からの update-dotfiles 更新検証
         if: needs.common-ci-owner.outputs.owns == 'true'
         working-directory: ${{ env.DOTFILES_DIR }}
