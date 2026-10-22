@@ -1505,8 +1505,8 @@
       "layer": "公開CLI取得版"
     },
     "agent-toolkit/agent_toolkit/_agents_server/manager.py": {
-      "sha256": "1d1b330e13ca4c53e2036a3b8315b9b4c46f30989898e64abd6803dda48ffb2d",
-      "layer": "公開CLI取得版"
+      "sha256": "7797f6eb535f4999795d9619f4658c95117cd1294e56fd807fa6bfdc70034f06",
+      "layer": "現在の実装/試験"
     },
     "agent-toolkit/agent_toolkit/_agents_server/manager_registry.py": {
       "sha256": "4e8eeaa5fdcb9b6e86b0a45fa726c15114601856e1aafc66e502f08a0c07e841",
@@ -2225,8 +2225,8 @@
       "layer": "公開CLI取得版"
     },
     "agent-toolkit/agent_toolkit/_hooks/antigravity.py": {
-      "sha256": "83b4413dd9baa8a7f970a8b5466583f24c8ff92f90a301e96f8b085b675ec1b7",
-      "layer": "公開CLI取得版"
+      "sha256": "19d0b594041846584a0a3cc1405751e9a957836cb28ba1a7bc00b55567e0ee0f",
+      "layer": "現在の実装/試験"
     },
     "agent-toolkit/agent_toolkit/_hooks/rules_context_codex.py": {
       "sha256": "1d686b3da63d5e934f9aa3514fa0b477a24d6052be3b9d6c202bf6457008ce2d",
@@ -3349,8 +3349,8 @@
       "layer": "公開CLI取得版"
     },
     "agent-toolkit/agent_toolkit/_agents_server/antigravity.py": {
-      "sha256": "6628ec3e3d9f3a8b6bae0b655f2548a8c28e92c11dd52839dbb846f5f5d1125b",
-      "layer": "公開CLI取得版"
+      "sha256": "cb00d6dbf7911e61948a680d3d76d81d1040bfab162c6e7055a2f853a330d74e",
+      "layer": "現在の実装/試験"
     },
     "agent-toolkit/agent_toolkit/_agents_server/manager_base.py": {
       "sha256": "6f76334d8662f75e6db2d23856e24df4753c8ba4b4d20726f1784cf2a716f6e8",
@@ -3405,8 +3405,8 @@
       "layer": "公開CLI取得版"
     },
     "agent-toolkit/agent_toolkit/_agents_server/manager_resume_test.py": {
-      "sha256": "61491b46fd86365486393c5159eaef02a3b932aa75322abd005b3b4a04132c9c",
-      "layer": "runtime-late-pytest-followup適用後の試験"
+      "sha256": "c6ca6f7a3556d1c996509a273a8ff0ccde2127eef6c44ff4fde0cccb7d6b7f48",
+      "layer": "現在の実装/試験"
     },
     "agent-toolkit/agent_toolkit/_agents_server/record_paths_test.py": {
       "sha256": "a31638145b41a50eec11c2d08a102ba9f2eacdc4cf334129441c0557038c6a7a",
@@ -5107,6 +5107,14 @@
     "agent_toolkit_reference_invariant_test.py": {
       "sha256": "37de1ceaeafba1a43bd500e723dc27557722cd0cc344ca75d4974898109db236",
       "layer": "現在formatter後の参照分類試験。検査時のpatch after hashはhistorical_reference_classificationへ保持。"
+    },
+    "agent-toolkit/agent_toolkit/_agents_server/antigravity_user_rules_test.py": {
+      "sha256": "e36af40afcc6a8e0e3bb4e320f07d97b591ff76dd7d43a1bb6be86544b41ca3f",
+      "layer": "現在の実装/試験"
+    },
+    "agent-toolkit/agent_toolkit/_hooks/antigravity_transcript_test.py": {
+      "sha256": "1f7c3e3e156c0a2f14a973dde17e604d13e75db8c91f975c71658da6fb932b2d",
+      "layer": "現在の実装/試験"
     }
   },
   "normative_changes_from_v5": [
@@ -6979,7 +6987,7 @@
     "new_test_helper": "既存の公開prepareで私有runtimeを準備する試験共有helper。通常の製品起動への自動取得は戻さない。",
     "product_or_broad_tests_reexecuted": false
   },
-  "source_hash_collection_id": "e93423625567ecc3bd479e4e31269f9f4e667fd747f1c85c8c159f723341621e",
+  "source_hash_collection_id": "cadcb4bfe33b206a9924b9648e50f52d0cad32d0a1a423f51e86e498e06ab248",
   "read_delivery_static_adoption": {
     "path": "agent-toolkit/agent_toolkit/_hooks/pretooluse/read_delivery.py",
     "sha256": "49dedd1a5fe3e7e37fe195b0fe17019e1713afa3b36e2236eaa1f6ac12952b99",

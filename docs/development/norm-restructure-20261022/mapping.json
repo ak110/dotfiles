@@ -236719,7 +236719,7 @@
       "implementations": [
         {
           "path": "agent-toolkit/agent_toolkit/_agents_server/manager.py",
-          "sha256": "1d1b330e13ca4c53e2036a3b8315b9b4c46f30989898e64abd6803dda48ffb2d",
+          "sha256": "7797f6eb535f4999795d9619f4658c95117cd1294e56fd807fa6bfdc70034f06",
           "line": 548,
           "excerpt": "validate_shell_request(command, summary_policy)"
         },
@@ -250319,8 +250319,8 @@
         },
         {
           "path": "agent-toolkit/agent_toolkit/_agents_server/manager.py",
-          "sha256": "1d1b330e13ca4c53e2036a3b8315b9b4c46f30989898e64abd6803dda48ffb2d",
-          "line": 643,
+          "sha256": "7797f6eb535f4999795d9619f4658c95117cd1294e56fd807fa6bfdc70034f06",
+          "line": 646,
           "excerpt": "保持期限到達時に_expire_sessionを行い、停止状態・登録簿・expired_sessionsから再開情報を解決して_resume_and_replyへ渡す。"
         }
       ],
@@ -250464,8 +250464,8 @@
         },
         {
           "path": "agent-toolkit/agent_toolkit/_agents_server/manager.py",
-          "sha256": "1d1b330e13ca4c53e2036a3b8315b9b4c46f30989898e64abd6803dda48ffb2d",
-          "line": 682,
+          "sha256": "7797f6eb535f4999795d9619f4658c95117cd1294e56fd807fa6bfdc70034f06",
+          "line": 685,
           "excerpt": "SessionOwnerGoneErrorを受けるとprevious_resultを保持し、期限切れと同じ_resume_and_replyへ回す。"
         }
       ],
@@ -250703,13 +250703,13 @@
       "implementations": [
         {
           "path": "agent-toolkit/agent_toolkit/_agents_server/manager.py",
-          "sha256": "1d1b330e13ca4c53e2036a3b8315b9b4c46f30989898e64abd6803dda48ffb2d",
+          "sha256": "7797f6eb535f4999795d9619f4658c95117cd1294e56fd807fa6bfdc70034f06",
           "line": 259,
           "excerpt": "await self._await_start_outcome(session)"
         },
         {
           "path": "agent-toolkit/agent_toolkit/_agents_server/manager.py",
-          "sha256": "1d1b330e13ca4c53e2036a3b8315b9b4c46f30989898e64abd6803dda48ffb2d",
+          "sha256": "7797f6eb535f4999795d9619f4658c95117cd1294e56fd807fa6bfdc70034f06",
           "line": 310,
           "excerpt": "unavailable_response, unavailable_session = response, session\n            excluded[candidate] = unavailable_reason\n            if candidate_index + 1 < len(candidates):"
         },
@@ -251738,8 +251738,8 @@
       "implementations": [
         {
           "path": "agent-toolkit/agent_toolkit/_agents_server/manager.py",
-          "sha256": "1d1b330e13ca4c53e2036a3b8315b9b4c46f30989898e64abd6803dda48ffb2d",
-          "line": 921,
+          "sha256": "7797f6eb535f4999795d9619f4658c95117cd1294e56fd807fa6bfdc70034f06",
+          "line": 924,
           "excerpt": "try:\n                await self._publish_closed_sessions()"
         }
       ],
@@ -265765,7 +265765,7 @@
         },
         {
           "path": "agent-toolkit/agent_toolkit/_agents_server/manager.py",
-          "sha256": "1d1b330e13ca4c53e2036a3b8315b9b4c46f30989898e64abd6803dda48ffb2d",
+          "sha256": "7797f6eb535f4999795d9619f4658c95117cd1294e56fd807fa6bfdc70034f06",
           "line": 548,
           "excerpt": "validate_shell_request(command, summary_policy)を実行した後だけshell_promptを生成してself.startを呼ぶ。"
         },

@@ -611,6 +611,9 @@ class AgentsServerManager(manager_wait.ManagerWait):
             session.touch()
             await session.drain_registration()
         if self._status_writer is not None:
+            if session is not None:
+                # 開始時と同じbest-effort公開で、配送結果と同じsessionの待機登録を保つ。
+                await self._save_started_session(session)
             response = {**response, "root_session_id": self._status_writer.root_session_id}
         return response
 

@@ -45,7 +45,12 @@ def _system_prompt(launch_kind: LaunchKind) -> str:
         try:
             body = path.read_text(encoding="utf-8")
         except (OSError, UnicodeError) as error:
-            logging.getLogger(__name__).warning("ユーザー規範を読めません: %s: %s", path, error)
+            logging.getLogger(__name__).warning(
+                "ユーザー規範を読めません: %s: %s\n"
+                "次の操作: 対象ファイルの読取権限とUTF-8を復旧する。復旧後の追送時に規範を再取得する。",
+                path,
+                error,
+            )
             continue
         parts.append(auto_message(body, source="agents-server", kind="user-rules", attributes={"path": str(path)}))
     return "\n\n".join(parts)

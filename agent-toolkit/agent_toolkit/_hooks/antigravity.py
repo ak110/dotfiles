@@ -17,7 +17,7 @@ import re
 import sys
 from typing import Any
 
-from agent_toolkit._common import agy_records, message_format, session_activity, session_state
+from agent_toolkit._common import agy_records, message_format, next_action, session_activity, session_state
 
 EVENTS = frozenset({"SessionStart", "PreInvocation", "PreToolUse", "PostToolUse", "PostInvocation", "Stop"})
 PENDING_CONTEXTS = "antigravity_pending_contexts"
@@ -188,7 +188,10 @@ def _latest_steps(path: object) -> tuple[dict[str, Any] | None, str]:
                 elif kind == "PLANNER_RESPONSE" and isinstance(step.get("content"), str):
                     last_response = step["content"]
     except OSError as error:
-        print(f"Antigravityの原本を読めない: {error}", file=sys.stderr)
+        next_action.report(
+            f"Antigravityの原本を読めない: {error}",
+            next_action="transcriptPathが指す原本の所在と読取権限を確認する。復旧後のPreInvocationまたはStopで再読する。",
+        )
     return latest_user, last_response
 
 

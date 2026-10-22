@@ -16,6 +16,7 @@ from typing import Any
 
 import pytest
 
+from agent_toolkit import atk
 from agent_toolkit._agents_server import (
     agents_wait,
     child_environment,
@@ -72,6 +73,54 @@ from agent_toolkit._testing.agents_server_support import (
 from agent_toolkit._testing.helpers import delivery_payload
 
 pytestmark = pytest.mark.usefixtures("agents_server_isolation")
+
+
+@pytest.mark.parametrize("projection_failure", [False, True], ids=["projection-ready", "projection-failed"])
+@pytest.mark.asyncio
+async def test_cold_reply_publishes_wait_target_before_returning(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+    projection_failure: bool,
+) -> None:
+    """再開応答の直後に公開CLIで待つと、登録済みの同じsessionとして待機できる。"""
+    for name in ("CLAUDE_CODE_SESSION_ID", "CODEX_THREAD_ID", "CODEX_SESSION_ID", "AGENT_TOOLKIT_STATUS_HOST_SESSION"):
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setenv("AGENT_TOOLKIT_OWNER_SESSION", "root-session")
+    monkeypatch.setattr(agents_wait, "get_cli_wait_timeout", lambda _bucket: 0)
+    monkeypatch.setattr(agents_wait, "is_human_terminal", lambda: False)
+
+    async def ready_commands(_cwd: str) -> None:
+        """バックエンドを代用する試験ではホストCLIの準備を行わない。"""
+
+    monkeypatch.setattr(launch_requests, "check_plugin_commands", ready_commands)
+    async with _resume_test_manager(monkeypatch, tmp_path) as (manager, writer):
+        # 定期保存の時機に依存せず、公開応答自身が状態公開を完了することを確かめる。
+        monkeypatch.setattr(writer, "_aggregate_seconds", 600)
+        identifier = "cold-public-wait-session"
+        previous = state.SessionState(identifier, str(tmp_path), engine="codex", turn_seq=1)
+        _complete(previous, message="前turn")
+        previous.result_delivered = True
+        manager.expired_sessions[identifier] = state.SessionResumeState.from_session(previous)
+        backend = FakeBackend(manager.sessions, "codex")
+        backend.publish_registry = True
+        install_backend(manager, "codex", backend)
+        original_write = status_file.atomic_write
+
+        def reject_projection(path: pathlib.Path, content: str, **kwargs: Any) -> None:
+            if path == writer.path:
+                raise PermissionError("表示projectionの保存を拒否")
+            original_write(path, content, **kwargs)
+
+        with monkeypatch.context() as projection_patch:
+            if projection_failure:
+                projection_patch.setattr(status_file, "atomic_write", reject_projection)
+            response = await manager.send_message(identifier, "同じ依頼を続行せよ")
+            assert response["delivery"] == "reply_started"
+            with pytest.raises(SystemExit) as exited:
+                atk.main(["agents", "wait", "--root-session-id", response["root_session_id"]])
+            assert exited.value.code == 3
+            assert "待機対象の登録が0件" not in capsys.readouterr().err
 
 
 @pytest.mark.parametrize("origin", ["stopped", "expired", "owner-gone"])
