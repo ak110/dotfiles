@@ -123,7 +123,7 @@ _INVESTIGATION_WORDS = ("確認", "調査", "調べ", "見直", "点検", "洗�
 _QUOTED_MATERIAL_RE = re.compile(r"^[ \t]*(```|~~~)[\s\S]*?^[ \t]*\1[^\n]*$|`[^`\n]+`|^[ \t]*>[^\n]*$", re.MULTILINE)
 
 
-def _example_investigation_notice(prompt: str, source: str) -> str | None:
+def _example_investigation_notice(prompt: str, source: str, *, subject: str) -> str | None:
     """例示の語と調査を求める語を併せ持つ発話へ、範囲語と例示を併せた依頼の項の所在を示す注記を返す。
 
     該当する発話が範囲語か開放列挙を伴う調査の依頼かは受領側が判断し、本フックは字面の一致だけで返す。
@@ -139,15 +139,16 @@ def _example_investigation_notice(prompt: str, source: str) -> str | None:
         f"{utterance}「原文の保持と取り込み」の、範囲語か開放列挙と例示か理由を併せて示した依頼の項を適用する。"
         f"例示を除いた独立した調査を委ねる手段は{routing}「コンテキスト消費が大きい調査の切り出し」に従う。"
     )
-    return _notice_formatter(source)(body, tag="notice")
+    return _notice_formatter(source)(body, tag="notice", subject=subject)
 
 
-def content_notices(prompt: str, source: str) -> list[str]:
+def content_notices(prompt: str, source: str, *, subject: str = "") -> list[str]:
     """通常発話と質問への自由記述に共通の、内容に応じた注記を返す。"""
     notices: list[str] = []
+    subject = subject or prompt
     if "！！" in prompt:
-        notices.append(_notice_formatter(source)(_REALIGN_NOTICE_BODY, tag="notice"))
-    if (example := _example_investigation_notice(prompt, source)) is not None:
+        notices.append(_notice_formatter(source)(_REALIGN_NOTICE_BODY, tag="notice", subject=subject))
+    if (example := _example_investigation_notice(prompt, source, subject=subject)) is not None:
         notices.append(example)
     return notices
 
@@ -575,12 +576,19 @@ def _observe_tool(payload: dict, session_id: str, tool_name: str, tool_input: di
             notices.append(_llm_notice(uwi_notice, tag="notice"))
 
     # AskUserQuestion: ユーザーが書いた文はUserPromptSubmitを経ずにツール結果として届くため、同じ注記をここで返す。
-    # 1回の質問につき1回しか生じないため、UserPromptSubmitの経過時間の閾値は適用しない。
+    # 同じ質問・回答の再配送を抑え、別の質問または回答には改めて注記を届ける。
     if tool_name == _ASK_USER_QUESTION_TOOL:
         if answers := _free_text_answers(payload.get("tool_response")):
-            notices.append(_llm_notice(f"{VERIFICATION_NOTICE_BODY}{_FREE_TEXT_ANSWER_PROCEDURE}", tag="notice"))
+            subject = json.dumps(
+                [payload.get("tool_use_id"), tool_input, payload.get("tool_response")],
+                ensure_ascii=False,
+                sort_keys=True,
+            )
+            notices.append(
+                _llm_notice(f"{VERIFICATION_NOTICE_BODY}{_FREE_TEXT_ANSWER_PROCEDURE}", tag="notice", subject=subject)
+            )
             for answer in answers:
-                for content_notice in content_notices(answer, _HOOK_ID):
+                for content_notice in content_notices(answer, _HOOK_ID, subject=subject):
                     if content_notice not in notices:
                         notices.append(content_notice)
     elif tool_name == "Skill":

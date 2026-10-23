@@ -828,6 +828,39 @@ def test_free_text_content_notices_match_prompt(tmp_path: pathlib.Path, field: s
     assert ("範囲語か開放列挙" in context) == text.startswith("例えば")
 
 
+@pytest.mark.parametrize("changed_field", ["tool_use_id", "question", "answer"])
+def test_free_text_notices_distinguish_replays_questions_and_answers(tmp_path: pathlib.Path, changed_field: str) -> None:
+    """同一回答の再配送を抑え、別の質問・自由回答へ必要な手順と内容注記を届ける。"""
+    payload = _ask_user_question_payload("free-text-notice-target", {"response": "例えば設定を調査して！！"})
+    payload["tool_use_id"] = "question-call-1"
+    payload["tool_input"] = {"questions": payload["tool_response"]["questions"]}
+
+    def context(event: dict) -> str:
+        result = _run(event, state_dir=tmp_path)
+        assert result.returncode == 0, result.stderr
+        if not result.stdout:
+            return ""
+        return json.loads(result.stdout)["hookSpecificOutput"]["additionalContext"]
+
+    first = context(payload)
+    for marker in ("提示した選択肢と一致しない自由記述", "認識合わせ", "範囲語か開放列挙"):
+        assert marker in first
+    assert not context(payload)
+
+    changed = json.loads(json.dumps(payload))
+    if changed_field == "tool_use_id":
+        changed["tool_use_id"] = "question-call-2"
+    elif changed_field == "question":
+        question = "別の対応について回答しますか？"
+        changed["tool_input"]["questions"][0]["question"] = question
+        changed["tool_response"]["questions"][0]["question"] = question
+        changed["tool_response"]["answers"][question] = changed["tool_response"]["answers"].pop(_QUESTION)
+    else:
+        changed["tool_response"]["response"] = "例えば実装を調査して！！"
+    assert context(changed) == first
+    assert not context(changed)
+
+
 def _registered_posttooluse_names(event: str = "PostToolUse") -> set[str]:
     """現在の完全一致matcherが選択するツール集合を返す。"""
     hooks = json.loads(_HOOKS_JSON_PATH.read_text(encoding="utf-8"))["hooks"][event]

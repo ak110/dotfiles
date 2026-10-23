@@ -95,7 +95,7 @@ Claude Codeが中断時に書く`[Request interrupted by user]`と`[Request inte
 
 読取述語の終了1は診断が空なら正常な否定結果として扱う。
 述語の定義は`_common/bash_invocations.py`の`is_read_predicate`をPreToolUseと共用し、リダイレクトを持つ単独の実行位置は`extract_bash_invocations`から得る。
-`rg ... 2>/dev/null`の診断保持の不備はPreToolUseの遮断が扱い、session-reviewの失敗候補と台帳では正常な否定結果を除く。
+`rg ... 2>/dev/null`の診断保持の不備はPreToolUseが警告し、診断を保持した再取得を案内する。session-reviewの失敗候補と台帳では正常な否定結果を除く。
 標準出力だけをファイルへ保存する単独の`rg`も、診断が空で終了1なら一致0件として除く。
 終了2以上、他のコマンドの失敗、終了状態を単独の述語へ帰属できない接続は候補へ残す。
 静的に確定しない実行名・構文から正常な否定結果を推定しない。

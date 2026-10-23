@@ -43,7 +43,7 @@ mise設定がある対象で`mise trust --show`が`untrusted`を示す場合は`
 認証・到達・CLI・対象解決の不成立は技術的に回復できるものを回復し、資格情報の用意などユーザーだけの事項は`agent-toolkit:user-confirmation-and-report`へ渡す。回答を待たずに進められる作業は同スキルに従って続ける。正常、失敗、未終端、実行未登録、CI定義なし、照会不能を区別し、失敗ログの取得権限はログの実取得で確かめる。未終端と実行未登録は、失敗を示す追加の証拠を得てから既存不良かを判断する。開始時点検に加え、公開時は従来どおりbaselineを作成し、push後のCIを検収する。
 
 通常起動では`atk wi list --status=processable --target-repo=<対象リポジトリの絶対パス> --skip-pull --with-staleness`を実行する。
-all-reposのリポジトリ担当は[all-repos-orchestration.md](all-repos-orchestration.md)「取得済み候補の受領」に従い、受領した`candidates`と`readiness`を初回取得結果として扱う。
+all-reposのリポジトリ担当は[all-repos-orchestration.md](all-repos-orchestration.md)「取得済み候補の受領」に従い、受領した`candidate_file`の保存原本と`readiness`を初回取得結果として扱う。
 明示一覧がある場合にworktree指定の初回取得結果に現れない項目は、`atk wi show <WIファイル名> --target-repo=all`で保存済み`target_repo`を取得し、originとの不一致が住所の移転・パス改名か別リポジトリかを判定する。同一性と変更先はユーザーの明示指定か移転・別名対応の記録で確定する。`ls-remote`のOID一致だけでは移転の根拠が不足する。移転が確定した項目は`start-processing`前に`atk wi edit <WIファイル名> --target-repo=<保存済みtarget_repo> --body-file <原稿>`で`target_repo`と本文中の操作先を変更先へ揃える。旧住所に結び付くメタデータの更新は同コマンドへ任せる。同じworktree指定の一覧と`verification-record --list`から対象と完成条件を取得できることを確かめて候補に加える。移転の根拠が得られなければ両識別子と不足する根拠を続行できない理由へ記録する。指定が無い場合は`processing`の全項目と、`ready`が偽で`blocked_reason`が`dependency-unmet-internal`以外であるものを除いた`inbox`項目を候補とする。
 `staleness`は選定結果の`鮮度`へそのまま保存する。`notice`だけでは履歴を調べず（選定時間を短く保つため）、内容の不一致、充足済みまたは巻戻しの危険を観測した項目だけ履歴を確認する。
 

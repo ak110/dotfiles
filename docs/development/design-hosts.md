@@ -47,7 +47,8 @@ Codexの検証器を無条件の合格条件にしないのは、同梱資料が
 
 dotfilesの`post_apply`によるローカルagent-toolkit導入は、Codex CLIを準備した後に`agent-toolkit-codex/`を生成し、マーケットプレイス登録とplugin導入をCodex公式CLIへ委譲する。
 `agent-toolkit-codex/`の生成に失敗した場合は、post-applyのstep失敗として永続logへ記録し、全体を非0で終了する。
-`install_codex_plugins.py`は原本manifestの版数と`codex plugin list --json`の導入状態を比較し、未導入、無効、版数不一致のいずれかの場合だけ`codex plugin add <plugin-id>`を実行する。
+`install_codex_plugins.py`は原本manifestの版数と`codex plugin list --json`の導入状態を比較し、未導入か、有効なpluginの版数不一致の場合に`codex plugin add <plugin-id>`を実行する。
+明示的に無効なpluginは導入状態とcacheを保持し、版更新も保留する。明示的な再有効化後に通常の更新を再開する（[Codexガイド](../guide/codex-guide.md#プラグイン更新の反映)）。
 CLI成功後は同コマンドで`codex plugin list --json`を取得し、版数一致と有効状態を検証する。
 実際のaddまたはupdateとhook状態の確認を完了した後、daemonが稼働中であれば再起動方針を1回だけ適用する。
 環境変数を指定しない更新では手動再起動の案内を表示し、`DOTFILES_CODEX_DAEMON_AUTO_RESTART=1`を明示した更新だけ`codex app-server daemon restart`を自動実行する。

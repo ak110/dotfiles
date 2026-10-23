@@ -802,15 +802,15 @@ Claude Codeの背景処理が終わり、完了通知がまだ届いていない
 指定・回答・適用済みの許可から公開範囲が確定した作業、commitしないと決めた作業、背景処理の結果を正しく待っている場合は、この警告の対象外である。
 commitされていないことだけを理由にcommitを求めない。
 
-Claude CodeとCodexでは、`git rev-parse --short HEAD HEAD~1`のように、`--short`や`--verify`の後へリビジョンを複数並べると、PreToolUseが実行前に遮断する。通知に従い、同じオプションを付けたままリビジョンを1つずつ実行する。
+Claude CodeとCodexでは、`git rev-parse --short HEAD HEAD~1`のように、`--short`や`--verify`の後へリビジョンを複数並べると、PreToolUseが警告する。コマンドは実行され、複数指定によって失敗するため、同じオプションを付けたままリビジョンを1つずつ実行して結果を取得する。
 
 PreToolUseは、未取得のdelegationを委譲操作の前に、未取得のwriting-standardsを本文の作成・更新の前に全文で取得するよう案内する。本文編集は`Write`・`Edit`・`MultiEdit`と`apply_patch`を言語やファイル名によらず対象にする。Bashでは、静的に確定した書込先へのheredoc・here-string、インプレース置換、Pythonの本文書込も対象にする。managed-tempにはWIや投稿文の下書きも置くため、通常本文と同じ基準を使う。コマンドの生成出力の保存と複製は通常本文の作成から除く。親子の取得済み記録は分け、Codexにも同じ取得契約を適用する。
 commit・push後のPostToolUseの案内は、成果報告へ進むメインへcompletion-reportの適用条件を示す。Claude CodeではSkillの起動、Codexでは通知されたSKILL.mdの読取へ進む。失敗・背景・dry-run・help・委譲先は対象外で、後続の該当操作にも案内する。
 
-plugin `PreToolUse/pretooluse`がatkの呼び出しを遮断するのは、静的に分かるatkの実行位置と出力の接続先に限る。
-検索語やheredoc本文に現れたatkと、ホストが管理する背景実行は遮断しない。ただし区切り語を引用しないheredocの本文にあるコマンド置換は、`bash`が実行するため置換の中身によらず遮断する。
+plugin `PreToolUse/pretooluse`は、静的に分かるatkの実行位置と出力の接続先から、結果の受領を妨げる接続を警告する。呼び出し自体は実行される。
+検索語やheredoc本文に現れたatkと、ホストが管理する背景実行はこの警告の対象外である。ただし区切り語を引用しないheredocの本文にあるコマンド置換は、`bash`が実行するため置換の中身によらず遮断する。
 この限定と、一般の検証コマンドの出力切り詰めチェックを復元しなかった理由は、[フックの責務境界](../development/design-hooks.md#フックの責務境界)を参照。
-遮断されたときは、次の操作で同じ目的を達成できる。
+警告を受けた呼び出しの保存結果と終了状態を回収し、以後の呼び出しでは次の手順で結果を受領する。
 
 - `atk agents wait`はシェルの`&`と標準出力の破棄を外して単独で発行する。
   Claude Codeで背景で待つ場合はBashの`run_in_background`を使い、返されたtask識別子で結果を受領する。
