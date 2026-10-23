@@ -76,4 +76,4 @@
 
 ## 自動検出のホスト契約
 
-- hookの採否と遮断・警告の別は`agent-toolkit:writing-standards`の`agent-basics:writing-standards/references/claude-hooks-block-warn.md`「遮断・警告フックの成立条件」の費用比較で決める。この比較は手段の選択に使い、重大な問題で遮断・警告の案が成立しなくても`agent-basics:bugfix`の`SKILL.md`「QとC・Dの区別」に従って根本原因へ作用する別の手段を探す。不可逆性を遮断の根拠にする場合は、観測した事象の事実（パッケージ削除なら`remove`か`purge`かなど）で判定する
+- hookの採否と遮断・警告の別は`agent-basics:writing-standards/references/claude-hooks-block-warn.md`「遮断・警告フックの成立条件」の費用比較で決める。この比較は手段の選択に使い、重大な問題で遮断・警告の案が成立しなくても`agent-basics:bugfix`の`SKILL.md`「QとC・Dの区別」に従って根本原因へ作用する別の手段を探す。不可逆性を遮断の根拠にする場合は、観測した事象の事実（パッケージ削除なら`remove`か`purge`かなど）で判定する

@@ -985,7 +985,8 @@ def deliver(payload: dict, tool_name: str, tool_input: dict, session_id: str) ->
                 _llm_notice(
                     f"操作前に全文読む資料が未取得: {shown}。",
                     tag=_WARN_TAG,
-                    fix="資料を全文読み、回答や操作の結果に依存する次の操作の前に、質問の前提と選択肢を確かめ直す。",
+                    fix="まず質問の必要性と資料の読込条件を見直す。不要な質問は取り下げる。"
+                    "質問を続ける場合は、条件に該当する資料を読み、質問の前提と選択肢を確かめ直す。",
                     removable_cause=True,
                     escalate_on_repeat=False,
                 ),
@@ -1000,7 +1001,10 @@ def deliver(payload: dict, tool_name: str, tool_input: dict, session_id: str) ->
         return Decision(
             block=_block_notice(
                 f"操作前に全文読む資料: {shown}。",
-                fix="。".join(steps) + "で指定範囲を取得し、eofまで継続する。基準を適用して同じ操作を再発行する。",
+                fix="まず操作の必要性と資料の読込条件を見直す。不要な操作は中止する。"
+                "続行する場合は、条件に該当する資料の指定範囲を"
+                + "。".join(steps)
+                + "で取得し、eofまで継続する。全文必須の資料は検索だけで読了としない。基準を適用して同じ操作を再発行する。",
             )
         )
     bodies: list[str] = []

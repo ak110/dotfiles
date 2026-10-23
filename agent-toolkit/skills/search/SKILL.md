@@ -52,6 +52,6 @@ grepとrgの単語境界（`-w`・`\b`）は日本語文字を単語構成文字
 
 ## 省略された結果の扱い
 
-不在・件数・網羅性・終端の結論には、母集団を覆い本文も省略しない取得を使う。件数・行長・ファイルサイズの上限や`head`・`cut`などで省略された結果は限定観測であり、結論の前に省略のない形で取り直す（全量が大きければ分離したコンテキストで取得し要約を受け取る）。一般則は`agent-toolkit:writing-standards`の`agent-basics:writing-standards/references/investigation.md`「不在の主張」に従う。
+不在・件数・網羅性・終端の結論には、母集団を覆い本文も省略しない取得を使う。件数・行長・ファイルサイズの上限や`head`・`cut`などで省略された結果は限定観測であり、結論の前に省略のない形で取り直す（全量が大きければ分離したコンテキストで取得し要約を受け取る）。一般則は`agent-basics:writing-standards/references/investigation.md`「不在の主張」に従う。
 切り詰めと保存出力の読取は`agent-toolkit/share/agents-server-explore.md`の開始・継続・終端判定へ従い、自身で取得できる不足を担当内で補う。同書は軽量探索の起動時にも配送される。権限・到達不能・入力不足など自身で解消できない条件は、確認範囲と理由を分けて返す。
-検索で資料の節を特定しても、読込表が全文読むと定める資料は全文読む（`agent-toolkit:writing-standards`の`agent-basics:writing-standards/references/agent-documents-basics.md`「読込表」）。
+検索で資料の節を特定しても、読込表が全文読むと定める資料は全文読む（`agent-basics:writing-standards/references/agent-documents-basics.md`「読込表」）。

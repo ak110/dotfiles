@@ -18,7 +18,7 @@ agent-toolkit 2.224.0、agent-basics 1.0.0。固定時刻は2026-10-22T20:24:49.
 | source-manifest.json | 現物1,278パスのhash、切出対象と取得方法、宣言接続/条件の対照、正式生成と計量の証拠 |
 | public-compatibility.json | 基準/現在79経路の保存ヘルプと受理形、公開6スキル、追加・明示変更・旧互換経路 |
 
-基準の完全OIDから対象パスの本文を取得し、scripts/norm_restructure_clauses.pyで切り出す。Codex AGENTS.mdを含む基準6,297キーの順序・一意性と取得JSONのhashを照合する。現行版の配置を調べるときは、mapping.jsonのキー・行・file_sha256とsource-manifest.jsonの実物hashを組で使う。source hashが変わったパスは、その位置/実装を参照する行を再検収する。版未照合のcacheを基準へ代用しない。
+基準の完全OIDから対象パスの本文を取得し、scripts/norm_restructure_clauses.pyで切り出す。Codex AGENTS.mdを含む基準6,297キーの順序・一意性と取得JSONのhashを照合する。収集版の配置はmapping.jsonのキー・行・file_sha256とsource-manifest.jsonの実物hashで確認する。本資料は今回の再構築を検収するための固定記録とし、以後の変更確認はGit差分と必要な参照位置の照合で行う。通常の編集ごとに全ソースのhash・逆引き表・計量資料を同期する運用にはしない。版未照合のcacheを基準へ代用しない。
 
 前回docs/development/norm-restructure/の178ファイルは固定記録として保持し、全hashを照合した。今回の保存先とは分けている。
 

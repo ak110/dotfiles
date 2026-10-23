@@ -253,7 +253,7 @@ def test_block_notice_leads_to_read_file(tmp_path: pathlib.Path, capsys: pytest.
 def test_notice_continuation_commands_roundtrip_utf8(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], multiple: bool
 ) -> None:
-    """単一・複数遮断通知の完成形へnextを指定し、同じパスの日本語とCRLFを終端まで復元する。"""
+    """共通テンプレートにも引用した実パスを入れ、日本語とCRLFを終端まで復元する。"""
     monkeypatch.setenv("AGENT_TOOLKIT_LARGE_READ_BYTES", "100")
     paths = [tmp_path / "file's name.txt", *([tmp_path / "second file.txt"] if multiple else [])]
     for index, path in enumerate(paths):
@@ -262,6 +262,10 @@ def test_notice_continuation_commands_roundtrip_utf8(
     assert notice is not None
     initial = re.findall(r"`(atk read-file -- [^`]+)`", notice)
     continuations = re.findall(r"`(atk read-file --start <next> -- [^`]+)`", notice)
+    if multiple:
+        assert len(initial) == len(continuations) == 1
+        initial = [initial[0].replace("<必要なファイルの絶対パス>", shlex.quote(str(path))) for path in paths]
+        continuations = [continuations[0].replace("<同じファイルの絶対パス>", shlex.quote(str(path))) for path in paths]
     assert len(initial) == len(continuations) == len(paths)
     for path, first, continuation in zip(paths, initial, continuations, strict=True):
         assert shlex.split(continuation)[-1] == str(path)

@@ -433,12 +433,16 @@ def _large_read_notice(path: pathlib.Path, plan: _ReadPlan, byte_threshold: int)
     if _is_session_record(path):
         return _block_notice(
             f"原セッション記録の全文取得を遮断した（{plan.byte_count}バイト、閾値: {byte_threshold}バイト）: {path}",
-            fix="`atk run-script session-review-evidence -- --transcript <原記録の絶対パス>`に、目的に応じた照会条件を加える。"
+            fix="まず取得の必要性と範囲を見直す。目的に不要なら取得を中止する。必要な場合は、"
+            "`atk run-script session-review-evidence -- --transcript <原記録の絶対パス>`に、目的に応じた照会条件を加える。"
             "`agent-toolkit:writing-standards`の`references/session-records.md`で入力と照会モードを選ぶ。",
         )
     return _block_notice(
         f"{plan.line_count}行、{plan.byte_count}バイトのファイルの全文取得を遮断した（閾値: {byte_threshold}バイト）: {path}",
         fix=(
+            "まず取得の必要性と範囲を見直す。目的に不要なら取得を中止する。"
+            "必要な箇所の確認には、`rg`などの検索、必要な項目の抽出、行範囲を指定した取得を使う。"
+            "全文が必要な場合だけ、"
             f"`{read_file.first_read_command(path)}`で取得し、`text`を連結する。"
             f"継続は`atk read-file --start <next> -- {shlex.quote(str(path))}`の`<next>`へ直前の値を指定し、"
             "`eof`が`true`になるまで同じファイルの`text`を連結する。"
@@ -450,20 +454,19 @@ def _large_multi_read_notice(path_counts: Sequence[tuple[pathlib.Path, _ReadPlan
     if any(_is_session_record(path) for path, _plan in path_counts):
         return _block_notice(
             "原セッション記録を含む複数ファイルの全文取得を遮断した。",
-            fix="原記録を"
+            fix="まず取得の必要性と範囲を見直す。目的に不要なら取得を中止する。必要な原記録を"
             "`atk run-script session-review-evidence -- --transcript <原記録の絶対パス>`へ照会条件を渡し、"
             "通常の本文は別の呼び出しで取得する。入力の選択は`agent-toolkit:writing-standards`の`references/session-records.md`に従う。",
         )
     total_bytes = sum(plan.byte_count for _path, plan in path_counts)
-    details = "、".join(
-        f"`{path}`: {plan.line_count}行、{plan.byte_count}バイト、初回`{read_file.first_read_command(path)}`、"
-        f"継続`atk read-file --start <next> -- {shlex.quote(str(path))}`"
-        for path, plan in path_counts
-    )
+    details = "、".join(f"`{path}`: {plan.line_count}行、{plan.byte_count}バイト" for path, plan in path_counts)
     return _block_notice(
         f"複数ファイルの全文取得を遮断した（合計: {total_bytes}バイト、閾値: {byte_threshold}バイト）: {details}",
-        fix="ファイルごとに示したコマンドで取得し、`text`を連結する。"
-        "継続コマンドの`<next>`へ同じファイルの直前の値を指定し、`eof`が`true`になるまで続ける。",
+        fix="まず取得の必要性と範囲を見直す。目的に不要なら取得を中止する。"
+        "必要な箇所の確認には、`rg`などの検索、必要な項目の抽出、行範囲を指定した取得を使う。"
+        "全文が必要なファイルだけ、`atk read-file -- <必要なファイルの絶対パス>`で取得する。"
+        "継続は`atk read-file --start <next> -- <同じファイルの絶対パス>`へ直前の値を指定し、"
+        "`eof`が`true`になるまで同じファイルの`text`を連結する。",
     )
 
 

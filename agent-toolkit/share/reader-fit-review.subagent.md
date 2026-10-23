@@ -68,7 +68,7 @@ repositoryはGit作業ツリーの絶対パス、baseとheadは比較元とレ�
 冒頭の1文が読者の最初の疑問へ答えるかを確かめる。題名と主語は`agent-toolkit:writing-standards`の`references/writing.md`の共通基準で判定する。
 
 読者への適合として、読者像の主体が文面だけから行為者と対象を特定し、判断、操作または検証へ進めるかを判定する。
-日本語の表現は`agent-toolkit:writing-standards`の`agent-basics:writing-standards/references/writing.md`「日本語の書き方」を読み、執筆と同じ基準で判定する。
+日本語の表現は`agent-basics:writing-standards/references/writing.md`「日本語の書き方」を読み、執筆と同じ基準で判定する。
 
 - 既知と未知: 読者が既に知っている情報の重複を除き、知らない語、内部の呼び名、手元だけの識別子は説明を添えて使う。既存の対象を指す名詞句は、定義元の実在と、読者がその文書から到達できることを確かめる。別文書の節名・用語・例の略号の示し方は`agent-toolkit:writing-standards`の`references/writing.md`「文章の共通規定」に従う
 - 情報の充足と到達性: 判断、操作または検証に使う情報（目的、対象、条件、手順の続き、参照先）を全て持ち、出所や根拠に使う参照は読者が到達できるものに限る（個人メモ、作業中の計画ファイル、会話の経緯などは到達性を確かめる）
