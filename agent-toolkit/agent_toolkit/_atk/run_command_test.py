@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import pathlib
@@ -182,8 +183,42 @@ def test_public_command_records_exit_modes(tmp_path: pathlib.Path, exit_code: in
     assert metadata["cwd"] == str(tmp_path)
     assert metadata["child_exit_code"] == exit_code
     assert metadata["wrapper_exit_code"] == exit_code and metadata["failure"] is None
+    assert "result_files" not in metadata and "path_maps" not in metadata
     assert pathlib.Path(metadata["stdout_path"]).read_text(encoding="utf-8") == "out\n"
     assert pathlib.Path(metadata["stderr_path"]).read_text(encoding="utf-8") == "err\n"
+
+
+@pytest.mark.parametrize("existing", [False, True])
+def test_public_result_declaration_records_content_before_and_after(tmp_path: pathlib.Path, existing: bool) -> None:
+    """公開宣言が新規結果と既存結果の前後指紋を保存し、パス対応も同じ記録へ残す。"""
+    target = tmp_path / "result.json"
+    if existing:
+        target.write_bytes(b"before")
+    result, metadata = _public_command(
+        [
+            "--result-file",
+            str(target),
+            "--path-map",
+            f"/app={tmp_path}",
+            "--",
+            sys.executable,
+            "-c",
+            "import pathlib,sys; pathlib.Path(sys.argv[1]).write_bytes(b'after')",
+            str(target),
+        ],
+        tmp_path,
+        dict(os.environ),
+    )
+    assert result.returncode == 0, result.stderr
+    declaration = metadata["result_files"][0]
+    assert declaration["path"] == str(target)
+    assert declaration["before"] == {
+        "exists": existing,
+        "sha256": hashlib.sha256(b"before").hexdigest() if existing else None,
+        "bytes": 6 if existing else 0,
+    }
+    assert declaration["after"] == {"exists": True, "sha256": hashlib.sha256(b"after").hexdigest(), "bytes": 5}
+    assert metadata["path_maps"] == [{"child": "/app", "host": str(tmp_path)}]
 
 
 def test_public_command_runs_another_uv_environment(tmp_path: pathlib.Path, host_environ: Callable[[], dict[str, str]]) -> None:

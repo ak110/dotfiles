@@ -13,21 +13,26 @@ from typing import Any, NamedTuple
 import session_evidence_execution
 from session_evidence_detail import _tool_result_body
 from session_evidence_extract import (
+    _HOOK_NOTICE_MARKER,
+    _codex_text_blocks,
     _CollectedRecord,
     _json_object,
+    _launch_mode,
     _parse_timestamp,
     _Record,
     _role_document,
+    _text_blocks,
     _unresolved_events,
     _UnresolvedRecord,
 )
 from session_evidence_stats import (
     _claude_call_hint,
     _codex_call_hint,
+    _stats_summary_data,
 )
 
 from agent_toolkit._agents_server import tool_names as _agents_server_tool_names
-from agent_toolkit._common import agy_records, shell_segments, shell_tokens
+from agent_toolkit._common import agy_records, requirement_units, shell_segments, shell_tokens
 
 _APPLY_PATCH_FILE = re.compile(r"^\*\*\* (?:Add|Update|Delete) File: (.+)$", re.MULTILINE)
 _SHELL_ABSOLUTE_PATH = re.compile(
@@ -36,6 +41,68 @@ _SHELL_ABSOLUTE_PATH = re.compile(
 )
 
 _LARGE_OUTPUT_MIN_BYTES = 8_192
+
+
+def _string_values(value: Any) -> list[str]:
+    """JSONの値にある本文を取り出し、識別子・数値の置換は行わない。"""
+    if isinstance(value, str):
+        return [value]
+    if isinstance(value, dict):
+        return [text for child in value.values() for text in _string_values(child)]
+    if isinstance(value, list):
+        return [text for child in value for text in _string_values(child)]
+    return []
+
+
+def _input_component(name: str, inputs: dict[str, Any]) -> str:
+    """生成した入力の用途を、公開ツール名と入力フィールドから分類する。"""
+    if name in {"Write", "Edit", "MultiEdit", "apply_patch", "write", "edit", "patch"}:
+        return "editing"
+    if any(key in inputs for key in ("prompt", "message", "instructions")):
+        return "delegation"
+    if any(key in inputs for key in ("command", "cmd", "CommandLine")):
+        return "command"
+    return "other"
+
+
+def _partial_repetitions(item: _CollectedRecord) -> list[dict[str, Any]]:
+    """同じ記録へ新たに追加された文の一致位置を示す。APIの履歴再送量は数えない。
+
+    既存の要求単位抽出を使い、短い定型句も意味判断用の候補として残す。
+    圧縮・別担当への必要な配送と不要な再取込の区別は読者が前後関係から判断する。
+    """
+    units: dict[str, list[dict[str, Any]]] = {}
+    events = _conversation_tool_calls(item.records)
+    for record in item.records:
+        message = record.entry.get("message", record.entry.get("payload"))
+        if isinstance(message, dict):
+            extractor = _codex_text_blocks if item.runtime == "codex" else _text_blocks
+            for text in extractor(message.get("content")):
+                events.append({"text": text, "line": record.line, "kind": "message"})
+    for event in sorted(events, key=lambda event: event["line"]):
+        text = event["text"]
+        try:
+            value = json.loads(text)
+        except ValueError, TypeError:
+            value = text
+        for body_number, body in enumerate(_string_values(value), 1):
+            # フェンス内の引用・JSON文字列も比較へ含める。分割自体は共通実装を使う。
+            body = re.sub(r"^\s*```[^\n]*$", "", body, flags=re.MULTILINE)
+            for unit_number, unit in enumerate(requirement_units.requirement_units(body.splitlines()), 1):
+                row = {
+                    "location": f"{item.record_id}:{event['line']}",
+                    "component": event["kind"],
+                    "body": body_number,
+                    "unit": unit_number,
+                }
+                locations = units.setdefault(unit, [])
+                if row not in locations:
+                    locations.append(row)
+    return [
+        {"excerpt": unit[:120], "characters": len(unit), "locations": locations, "count": len(locations)}
+        for unit, locations in units.items()
+        if len(locations) > 1
+    ]
 
 
 def _definition_read_targets(tool: str, inputs: dict[str, Any], text: str) -> list[str]:
@@ -49,13 +116,15 @@ def _definition_read_operations(
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     """共通の実行入力・区間境界から、明示読取と取得未確定の材料を分ける。"""
     name = tool.rsplit("__", 1)[-1].rsplit(".", 1)[-1]
-    if name in {"Read", "read_file"}:
-        path = inputs.get("file_path", inputs.get("path", inputs.get("Path")))
+    if name in {"Read", "read_file", "read"}:
+        path = inputs.get("file_path", inputs.get("filePath", inputs.get("path", inputs.get("Path"))))
         direct_reads = [{"input": inputs, "targets": [path]}] if isinstance(path, str) and path.endswith(".subagent.md") else []
         return direct_reads, []
-    if name not in {"Bash", "exec", "exec_command", "CommandExecution", "run_command"}:
+    if name not in {"Bash", "bash", "shell", "exec", "exec_command", "CommandExecution", "run_command"}:
         return [], []
-    if name in {"Bash", "exec_command", "run_command"} and not any(key in inputs for key in ("command", "cmd", "CommandLine")):
+    if name in {"Bash", "bash", "shell", "exec_command", "run_command"} and not any(
+        key in inputs for key in ("command", "cmd", "CommandLine")
+    ):
         return [], []
     command = inputs.get("command", inputs.get("cmd", inputs.get("CommandLine", text)))
     if not isinstance(command, str):
@@ -233,9 +302,9 @@ def definition_body_read_events(collected: list[_CollectedRecord]) -> list[dict[
 def _expected_body_read(tool: str, inputs: dict[str, Any]) -> bool:
     """本文取得と明示された単独操作だけを、大出力の点検上位から除く。"""
     name = tool.rsplit("__", 1)[-1].rsplit(".", 1)[-1]
-    if name in {"Read", "read_file", "Skill"}:
+    if name in {"Read", "read_file", "Skill", "read", "skill"}:
         return True
-    if name not in {"Bash", "exec_command", "CommandExecution"}:
+    if name not in {"Bash", "bash", "shell", "exec_command", "CommandExecution"}:
         return False
     command = inputs.get("command", inputs.get("cmd"))
     if not isinstance(command, str) or any(operator in command for operator in ";&|<>"):
@@ -323,8 +392,8 @@ def comparison_material_events(collected: list[_CollectedRecord]) -> list[dict[s
             delegate = name in {"Agent", "Task", "spawn_agent", "followup_task", "send_message"} or (
                 "agents_server" in call.tool and name in {"start", "send_message"}
             )
-            explicit_read = name in {"Read", "read_file", "Skill"}
-            opaque = name in {"Bash", "exec", "exec_command", "functions.exec", "functions.exec_command"}
+            explicit_read = name in {"Read", "read_file", "Skill", "read", "skill"}
+            opaque = name in {"Bash", "bash", "shell", "exec", "exec_command", "functions.exec", "functions.exec_command"}
             if not (delegate or explicit_read or opaque):
                 continue
             inputs = _recorded_input(entries[call.line], call.call_id)
@@ -335,7 +404,9 @@ def comparison_material_events(collected: list[_CollectedRecord]) -> list[dict[s
             paths = {
                 key: value
                 for key, value in inputs.items()
-                if isinstance(value, str) and key != "subagent_md_path" and (key.endswith("file") or key.endswith("path"))
+                if isinstance(value, str)
+                and key != "subagent_md_path"
+                and (key.lower().endswith("file") or key.lower().endswith("path"))
             }
             named_inputs = inputs.get("extra_params")
             if isinstance(named_inputs, dict):
@@ -382,12 +453,27 @@ def resource_usage_events(collected: list[_CollectedRecord]) -> list[dict[str, A
         shell_paths: list[dict[str, Any]] = []
         results: list[dict[str, Any]] = []
         large_reviews: list[dict[str, Any]] = []
+        generated_inputs: list[dict[str, Any]] = []
+        hook_notices: dict[tuple[str, str, str], dict[str, Any]] = {}
         expected_large_reads = 0
         repeats: dict[tuple[str, str], list[str]] = {}
         for call in calls:
             name = call.tool.rsplit("__", 1)[-1]
             inputs = _recorded_input(entries[call.line], call.call_id)
             locator = f"{item.record_id}:{call.line}"
+            input_text = json.dumps(inputs, ensure_ascii=False) if inputs else call.text
+            generated_inputs.append(
+                {
+                    "location": locator,
+                    "component": _input_component(name, inputs),
+                    "utf8_bytes": len(input_text.encode("utf-8")),
+                    "managed_temp_paths": [
+                        match["quoted"] or match["bare"]
+                        for match in _SHELL_ABSOLUTE_PATH.finditer(input_text)
+                        if "managed-temp/" in (match["quoted"] or match["bare"])
+                    ],
+                }
+            )
             result = _recorded_result(entries[call.result_line], call.call_id) if call.result_line is not None else None
             result_metrics = {
                 "result_location": f"{item.record_id}:{call.result_line}" if call.result_line is not None else None,
@@ -396,18 +482,18 @@ def resource_usage_events(collected: list[_CollectedRecord]) -> list[dict[str, A
             }
             if call.text:
                 repeats.setdefault((call.tool, call.text), []).append(locator)
-            if name in {"Read", "read_file", "Skill"}:
+            if name in {"Read", "read_file", "Skill", "read", "skill"}:
                 row = {
                     "location": locator,
                     "tool": call.tool,
-                    "target": inputs.get("skill")
-                    if name == "Skill"
-                    else inputs.get("file_path", inputs.get("path", inputs.get("Path"))),
+                    "target": inputs.get("skill", inputs.get("name"))
+                    if name in {"Skill", "skill"}
+                    else inputs.get("file_path", inputs.get("filePath", inputs.get("path", inputs.get("Path")))),
                     "range": {key: inputs[key] for key in ("offset", "limit", "start", "max_bytes") if key in inputs},
                     **result_metrics,
                 }
-                (skills if name == "Skill" else reads).append(row)
-            if name in {"Bash", "exec_command", "functions.exec_command", "CommandExecution"}:
+                (skills if name in {"Skill", "skill"} else reads).append(row)
+            if name in {"Bash", "bash", "shell", "exec_command", "functions.exec_command", "CommandExecution"}:
                 command = inputs.get("command", inputs.get("cmd", call.text))
                 if isinstance(command, str):
                     shell_paths.extend(
@@ -415,6 +501,16 @@ def resource_usage_events(collected: list[_CollectedRecord]) -> list[dict[str, A
                         for match in _SHELL_ABSOLUTE_PATH.finditer(command)
                     )
             if result is not None:
+                for match in _HOOK_NOTICE_MARKER.finditer(result):
+                    source = match["hook_xml"] or match["hook_legacy"] or "unknown"
+                    kind = match["tag_xml"] or match["tag_legacy"] or "unknown"
+                    end = result.find("</atk-auto>", match.end())
+                    body = result[match.end() : end if end >= 0 else len(result)]
+                    notice = hook_notices.setdefault(
+                        (source, kind, body),
+                        {"source": source, "notice_kind": kind, "excerpt": body[:120], "locations": []},
+                    )
+                    notice["locations"].append(f"{item.record_id}:{call.result_line}")
                 result_row: dict[str, Any] = {
                     "location": locator,
                     "result_location": f"{item.record_id}:{call.result_line}",
@@ -433,7 +529,15 @@ def resource_usage_events(collected: list[_CollectedRecord]) -> list[dict[str, A
                 "kind": "stats-resource-usage",
                 "record": item.record_id,
                 "role": item.role,
+                "mode": _launch_mode(item, collected),
+                "observed_identities": _stats_summary_data(item.records, item.runtime).get("observed_identities", [])
+                if item.runtime is not None
+                else [],
                 "tool_calls": len(calls),
+                "generated_inputs": generated_inputs,
+                "generated_input_utf8_bytes": sum(row["utf8_bytes"] for row in generated_inputs),
+                "hook_notices": list(hook_notices.values()),
+                "partial_repetitions": _partial_repetitions(item),
                 "reads": reads,
                 "skills": skills,
                 "shell_paths": shell_paths,

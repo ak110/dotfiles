@@ -14,6 +14,7 @@ from typing import Any
 
 from agent_toolkit._agents_server import engine_availability
 from agent_toolkit._atk import config as atk_config
+from agent_toolkit._common import codex_usage_limit
 
 CONTINUE_PROMPT = "以前の会話と実行結果を確認し、完了済みの操作を繰り返さず、未完了の作業を続けて所定の返却形式を返せ。"
 _LOG = logging.getLogger("agent-toolkit.agents-server.codex")
@@ -27,6 +28,7 @@ class ProviderSelection:
     subscription: bool
     candidates: tuple[str, ...]
     ordinary_usage_allowed: bool | None = None
+    usage_limit_type: str | None = None
 
 
 def configured_candidates() -> tuple[str, ...]:
@@ -101,6 +103,7 @@ async def select(
             continue
         candidates.append(candidate)
     allowed = None
+    usage_limit_type = None
     if subscription:
         try:
             usage = await request("account/rateLimits/read", {})
@@ -114,7 +117,8 @@ async def select(
         if snapshot_id is None or active_id is not None and snapshot_id == active_id:
             value = usage.get("ordinaryUsageAllowed")
             allowed = value if isinstance(value, bool) else None
-    return ProviderSelection(selected, subscription, tuple(candidates), allowed)
+            usage_limit_type = codex_usage_limit.from_rate_limits(usage.get("rateLimits")).limit_type
+    return ProviderSelection(selected, subscription, tuple(candidates), allowed, usage_limit_type)
 
 
 def fallback_failure(error: Any, *, subscription: bool) -> bool:

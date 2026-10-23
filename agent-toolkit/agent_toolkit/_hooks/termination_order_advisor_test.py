@@ -1,6 +1,6 @@
 """agent-toolkit/agent_toolkit/_hooks/termination_order_advisor.py のテスト。
 
-成果作業でcompletion-reportの起動証拠を欠く終了の遮断と、委譲先・記録読取不能・作業が待つ非同期対象・
+成果作業でcompletion-reportの起動証拠を欠く終了の支援通知と、委譲先・記録読取不能・作業が待つ非同期対象・
 自編集の公開範囲の各条件を検証する。
 """
 
@@ -23,6 +23,7 @@ from agent_toolkit._hooks import (
 )
 from agent_toolkit._hooks import background_tasks as _background_tasks
 from agent_toolkit._hooks import transcript_scan as _transcript_scan
+from agent_toolkit._hooks.notice import notice_cycle
 from agent_toolkit._hooks.termination_evidence_test import isolated_session  # noqa: F401  # pylint: disable=unused-import
 from agent_toolkit._testing import git_repository
 from agent_toolkit._testing.helpers import _write_transcript
@@ -83,17 +84,17 @@ def test_approves_session_without_deliverable(tmp_path: pathlib.Path) -> None:
 
 
 @pytest.mark.parametrize("skill", ["agent-toolkit:process-wi", "agent-toolkit:add-awi-by-user"])
-def test_blocks_target_skill_without_completion_report_from_first_stop(tmp_path: pathlib.Path, skill: str) -> None:
-    """対象スキルの開始後にcompletion-reportの起動が無ければ、初回Stopから遮断して起動と残工程を案内する。"""
+def test_notifies_target_skill_without_completion_report_once(tmp_path: pathlib.Path, skill: str) -> None:
+    """対象スキルの起動不足は一度通知し、起動済みの作業では終了判断を求めない。"""
     trace = _write_transcript(tmp_path, [])
     _start_skill("sess-missing", trace, skill)
     decision, body = termination_order_advisor.evaluate(_payload("sess-missing", str(trace)))
-    assert decision == "block"
+    assert decision == "notify"
     assert f"{skill}の開始" in body
     assert "Skillで`agent-toolkit:completion-report`を起動し" in body
     assert "終端工程" in body
+    assert termination_order_advisor.evaluate(_payload("sess-missing", str(trace))) == ("approve", "")
     _start_skill("sess-missing", trace, "agent-toolkit:completion-report", "toolu_report")
-    assert termination_order_advisor.evaluate(_payload("sess-missing", str(trace)))[0] == "block"
     assert termination_order_advisor.evaluate(_payload("sess-missing", str(trace))) == ("approve", "")
 
 
@@ -105,7 +106,27 @@ def test_completion_before_target_restart_is_not_reused(tmp_path: pathlib.Path) 
     with contextlib.redirect_stdout(io.StringIO()):
         user_prompt_submit.main(json.dumps({"session_id": "sess-second", "turn_id": "again", "prompt": "もう一度処理する"}))
     _start_skill("sess-second", trace, "agent-toolkit:process-wi", "toolu_3")
-    assert termination_order_advisor.evaluate(_payload("sess-second", str(trace)))[0] == "block"
+    assert termination_order_advisor.evaluate(_payload("sess-second", str(trace)))[0] == "notify"
+
+
+def test_missing_completion_notice_resumes_after_condition_resolves(tmp_path):
+    """同じ不足を抑え、起動で解消した後に新しい作業で不足すれば再通知する。"""
+    trace = _write_transcript(tmp_path, [])
+    session_id = "completion-notice-cycle"
+    _commit(session_id, trace)
+    payload = _payload(session_id, str(trace))
+
+    def evaluate():
+        with notice_cycle(session_id, "stop", "main"):
+            return termination_order_advisor.evaluate(payload)
+
+    assert evaluate()[0] == "notify"
+    assert evaluate() == ("approve", "")
+    _start_skill(session_id, trace, "agent-toolkit:completion-report", "report-start")
+    assert evaluate() == ("approve", "")
+    _human_input(session_id, trace, "next", "次の作業を進める")
+    _commit(session_id, trace, "next-commit")
+    assert evaluate()[0] == "notify"
 
 
 def test_approves_delegated_session(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -179,7 +200,7 @@ def test_unrelated_background_task_does_not_exempt_missing_completion(tmp_path: 
     _commit("background-unrelated", trace)
     payload = _payload("background-unrelated", str(trace), background_tasks=[{"id": "resident", "type": "shell"}])
     decision, reason = termination_order_advisor.evaluate(payload)
-    assert decision == "block" and "commit" in reason
+    assert decision == "notify" and "commit" in reason
 
 
 def test_background_wait_of_work_allows_turn_end_until_collected(tmp_path: pathlib.Path) -> None:
@@ -205,7 +226,7 @@ def test_background_wait_of_work_allows_turn_end_until_collected(tmp_path: pathl
     payload["background_tasks"] = []
     _clear_caches()
     decision, reason = termination_order_advisor.evaluate(json.dumps(payload))
-    assert decision == "block" and "commit" in reason
+    assert decision == "notify" and "commit" in reason
 
 
 @pytest.mark.parametrize("command", ["atk serve", "npm run watch", "python3 -m http.server 8080", "uv run uvicorn app:app"])
@@ -217,7 +238,7 @@ def test_resident_background_command_does_not_exempt_completion(tmp_path: pathli
     _commit("resident-owned", trace)
     _append_entries(trace, _background_bash_entries("toolu_server", "resident", command))
     payload = _payload("resident-owned", str(trace), background_tasks=[{"id": "resident", "type": "shell"}])
-    assert termination_order_advisor.evaluate(payload)[0] == "block"
+    assert termination_order_advisor.evaluate(payload)[0] == "notify"
 
 
 @pytest.mark.parametrize("tool", ["Bash", "PowerShell"])
@@ -235,7 +256,7 @@ def test_atk_launcher_resident_detection_for_both_shell_tools(tmp_path, tool, la
     _append_entries(trace, entries)
     payload = _payload("launcher-resident", str(trace), background_tasks=[{"id": "launcher-task", "type": "shell"}])
     decision, _ = termination_order_advisor.evaluate(payload)
-    assert decision == ("block" if arguments == "serve" else "approve")
+    assert decision == ("notify" if arguments == "serve" else "approve")
 
 
 @pytest.mark.parametrize(
@@ -273,7 +294,7 @@ def test_background_command_of_work_allows_turn_end_until_notified(tmp_path: pat
     payload["background_tasks"] = []
     _clear_caches()
     decision, reason = termination_order_advisor.evaluate(json.dumps(payload))
-    assert decision == "block" and "commit" in reason
+    assert decision == "notify" and "commit" in reason
 
 
 @pytest.mark.parametrize(
@@ -295,13 +316,12 @@ def test_background_wait_command_variants_allow_turn_end(tmp_path: pathlib.Path,
 
 
 def test_background_wait_exempts_only_work_that_started_it(tmp_path: pathlib.Path) -> None:
-    """後の作業が起動した待機は後の作業だけを免除し、先の作業の不足は遮断の理由に残す。"""
+    """後の作業が起動した待機は後の作業だけを免除し、先の作業の不足は通知対象に残す。"""
     session_id = "background-two-works"
     trace = tmp_path / "trace.jsonl"
     trace.touch()
     _human_input(session_id, trace, "first", "最初の作業")
     _commit(session_id, trace, "toolu_first")
-    assert termination_order_advisor.evaluate(_payload(session_id, str(trace)))[0] == "block"
     prompt = "次の作業を始める"
     _human_input(session_id, trace, "second", prompt)
     second = termination_evidence.record_decision(
@@ -313,7 +333,7 @@ def test_background_wait_exempts_only_work_that_started_it(tmp_path: pathlib.Pat
     decision, reason = termination_order_advisor.evaluate(
         _payload(session_id, str(trace), background_tasks=[{"id": "wait-task", "type": "shell"}])
     )
-    assert decision == "block"
+    assert decision == "notify"
     assert "作業 work-1: commit" in reason
     assert f"作業 {second}" not in reason
 
@@ -356,11 +376,11 @@ def _record_self_edit(payload: dict, target: pathlib.Path, *, tool: str = "Edit"
 
 @pytest.mark.parametrize("tool", ["Edit", "Write", "Bash"])
 def test_self_edit_requires_completion_report_and_shows_unscoped_paths(tmp_path: pathlib.Path, tool: str) -> None:
-    """成功した自編集を成果作業として遮断し、公開範囲が未確定の未コミットの編集を添える。"""
+    """成功した自編集を成果作業として通知し、公開範囲が未確定の未コミットの編集を添える。"""
     payload, repository = _self_edit_setup(tmp_path)
     _record_self_edit(payload, repository / "README.md", tool=tool)
     decision, body = termination_order_advisor.evaluate(json.dumps(payload))
-    assert decision == "block"
+    assert decision == "notify"
     assert "リポジトリの編集" in body and "completion-report" in body
     assert "公開範囲が未確定" in body and str(repository / "README.md") in body
 
@@ -368,7 +388,7 @@ def test_self_edit_requires_completion_report_and_shows_unscoped_paths(tmp_path:
 @pytest.mark.parametrize("origin", ["instruction", "answer", "standing-authorization"])
 @pytest.mark.parametrize("scope", ["既存の判断基準どおり", "commitしない"])
 def test_public_scope_evidence_removes_unscoped_note(tmp_path: pathlib.Path, origin: str, scope: str) -> None:
-    """原入力または適用済み認可から確定した範囲は未確定の編集の注記を除き、起動不足の遮断は残す。"""
+    """原入力または適用済み認可から確定した範囲は未確定の編集の注記を除き、起動不足は通知する。"""
     payload, repository = _self_edit_setup(tmp_path)
     _record_self_edit(payload, repository / "README.md")
     quote = f"公開範囲は{scope}とする"
@@ -393,12 +413,12 @@ def test_public_scope_evidence_removes_unscoped_note(tmp_path: pathlib.Path, ori
     with contextlib.redirect_stdout(io.StringIO()):
         assert termination_evidence.main(["--decision-file", str(decision_file)]) == 0
     decision, body = termination_order_advisor.evaluate(json.dumps(payload))
-    assert decision == "block" and "公開範囲が未確定" not in body
+    assert decision == "notify" and "公開範囲が未確定" not in body
 
 
 @pytest.mark.parametrize("case", ["outside", "script", "failed", "completion", "delegated"])
 def test_self_edit_excludes_unowned_failed_and_completed_edits(tmp_path: pathlib.Path, case: str) -> None:
-    """担当外・失敗した編集と委譲先を除外し、起動済みの自編集は一度点検して終了できる。"""
+    """担当外・失敗した編集と委譲先を除外し、起動済みの自編集は終了できる。"""
     payload, repository = _self_edit_setup(tmp_path)
     target = tmp_path / "outside.md" if case == "outside" else repository / "README.md"
     if case == "script":
@@ -423,18 +443,15 @@ def test_self_edit_excludes_unowned_failed_and_completed_edits(tmp_path: pathlib
         )
     elif case == "delegated":
         payload["agent_id"] = "child"
-    if case == "completion":
-        assert termination_order_advisor.evaluate(json.dumps(payload))[0] == "block"
     assert termination_order_advisor.evaluate(json.dumps(payload)) == ("approve", "")
 
 
-def test_codex_self_edit_is_deliverable(tmp_path: pathlib.Path) -> None:
-    """Codexの自編集も成果作業として扱い、Codexの起動手順を案内する。"""
+def test_codex_self_edit_does_not_block_stop(tmp_path: pathlib.Path) -> None:
+    """Codexでは終了工程の支援を文書で扱い、起動不足でStopを遮断しない。"""
     payload, repository = _self_edit_setup(tmp_path)
     payload["turn_id"] = "codex-turn"
     _record_self_edit(payload, repository / "README.md")
-    decision, body = termination_order_advisor.evaluate(json.dumps(payload))
-    assert decision == "block" and "SKILL.md" in body and "公開範囲が未確定" not in body
+    assert termination_order_advisor.evaluate(json.dumps(payload)) == ("approve", "")
 
 
 def test_public_context_supplies_exact_input_for_scope_recording(
@@ -458,7 +475,7 @@ def test_public_context_supplies_exact_input_for_scope_recording(
     assert termination_evidence.main(["--decision-file", str(source)]) == 0
     _record_self_edit(payload, repository / "README.md")
     decision, body = termination_order_advisor.evaluate(json.dumps(payload))
-    assert decision == "block" and "公開範囲が未確定" not in body
+    assert decision == "notify" and "公開範囲が未確定" not in body
 
 
 def test_blocked_from_context_without_human_input(
@@ -487,7 +504,7 @@ def test_blocked_from_context_without_human_input(
         ),
         after=True,
     )
-    assert termination_order_advisor.evaluate(_payload(session_id, str(trace)))[0] == "block"
+    assert termination_order_advisor.evaluate(_payload(session_id, str(trace)))[0] == "notify"
     _human_input(session_id, trace, "continuation", '<atk-auto source="stop" kind="continuation">判断を記録する</atk-auto>')
 
     capsys.readouterr()
@@ -661,7 +678,7 @@ def test_changed_omission_policy_restores_missing_completion(
     else:
         policy.unlink()
     decision, body = termination_order_advisor.evaluate(json.dumps(payload))
-    assert decision == "block" and f"作業 {work_id}:" in body
+    assert decision == "notify" and f"作業 {work_id}:" in body
 
 
 @pytest.mark.parametrize("switch", ["input", "start"])
@@ -683,7 +700,7 @@ def test_omission_does_not_exempt_later_work(tmp_path: pathlib.Path, monkeypatch
     decision, body = termination_order_advisor.evaluate(json.dumps(payload))
     works = termination_evidence.session_works(payload)
     assert len(works) == 2
-    assert decision == "block" and f"作業 {works[-1][0]}:" in body and f"作業 {work_id}:" not in body
+    assert decision == "notify" and f"作業 {works[-1][0]}:" in body and f"作業 {work_id}:" not in body
 
 
 @pytest.mark.parametrize("action", ["resume", "cancel", "replace", "publish-scope"])
@@ -704,11 +721,11 @@ def test_next_decision_replaces_omission_without_changing_action_scope(
         document.update(scope="commitしない", origin="instruction")
     termination_evidence.record_decision(document)
     decision, _body = termination_order_advisor.evaluate(json.dumps(payload))
-    assert decision == ("approve" if action in {"cancel", "replace"} else "block")
+    assert decision == ("approve" if action in {"cancel", "replace"} else "notify")
 
 
 def test_omission_exempts_only_selected_work(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """省略した作業と、別の起動不足が共存する場合は別作業だけを遮断する。"""
+    """省略した作業と、別の起動不足が共存する場合は別作業だけを通知する。"""
     payload, repository = _self_edit_setup(tmp_path)
     _record_self_edit(payload, repository / "README.md")
     first = termination_evidence.session_works(payload)[0][0]
@@ -758,7 +775,7 @@ def test_omission_exempts_only_selected_work(tmp_path: pathlib.Path, monkeypatch
     with contextlib.redirect_stdout(io.StringIO()):
         assert termination_evidence.main(["--decision-file", str(source)]) == 0
     decision, body = termination_order_advisor.evaluate(json.dumps(payload))
-    assert decision == "block" and f"作業 {first}:" in body and f"作業 {second}:" not in body
+    assert decision == "notify" and f"作業 {first}:" in body and f"作業 {second}:" not in body
 
 
 @pytest.mark.parametrize("action", ["wait", "blocked"])
@@ -809,7 +826,7 @@ def test_omission_does_not_survive_wait_or_failure_resolution(
                 "reason": "失敗後に再開",
             }
         )
-    assert termination_order_advisor.evaluate(json.dumps(payload))[0] == "block"
+    assert termination_order_advisor.evaluate(json.dumps(payload))[0] == "notify"
 
 
 def test_omission_keeps_autonomous_exit_obligation(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -822,9 +839,10 @@ def test_omission_keeps_autonomous_exit_obligation(tmp_path: pathlib.Path, monke
 
 
 @pytest.mark.parametrize("codex", [False, True])
-def test_public_stop_reviews_delivery_once_per_human_input(tmp_path, monkeypatch, codex):
-    """両ホストで起動後の終了を一度止め、再入と回復では繰り返さず新入力で再び点検する。"""
+def test_public_stop_leaves_started_completion_to_document(tmp_path, monkeypatch, codex):
+    """両ホストで起動済み作業の送達や残工程の判断を文書へ委ねる。"""
     monkeypatch.setattr(stop, "CHECK_MODULE_NAMES", ("termination_order_advisor",))
+    monkeypatch.setattr(stop, "CODEX_CHECK_MODULE_NAMES", ("termination_order_advisor",))
     session_id = "review-codex" if codex else "review-claude"
     trace = _write_transcript(tmp_path, [])
     _human_input(session_id, trace, "request", "成果を仕上げる")
@@ -844,20 +862,14 @@ def test_public_stop_reviews_delivery_once_per_human_input(tmp_path, monkeypatch
     payload = json.loads(_payload(session_id, str(trace)))
     if codex:
         payload["turn_id"] = "request"
-    first = stop.evaluate(json.dumps(payload))
-    assert first["decision"] == "block"
-    reason = first["reason"]
-    assert isinstance(reason, str)
-    assert "送達" in reason and "session-review" in reason and "bugfix" in reason
-    assert "再出力せず終了" in reason
+    assert not stop.evaluate(json.dumps(payload))
     payload["stop_hook_active"] = True
     assert "decision" not in stop.evaluate(json.dumps(payload))
     _human_input(session_id, trace, "generated", '<atk-auto source="stop" kind="continuation">続行する</atk-auto>')
     _commit(session_id, trace, "recovery-commit")
     assert "decision" not in stop.evaluate(json.dumps(payload))
     _human_input(session_id, trace, "correction", "報告漏れの是正も進めて")
-    assert stop.evaluate(json.dumps(payload))["decision"] == "block"
-    assert "decision" not in stop.evaluate(json.dumps(payload))
+    assert not stop.evaluate(json.dumps(payload))
 
 
 @pytest.mark.parametrize("case", ["delegated", "cancel", "replace", "blocked", "unreadable", "waiting"])
@@ -902,70 +914,3 @@ def test_started_completion_review_keeps_existing_exclusions(tmp_path, case):
         _append_entries(trace, _background_bash_entries("wait-call", "wait-task"))
         payload["background_tasks"] = [{"id": "wait-task", "type": "shell"}]
     assert termination_order_advisor.evaluate(json.dumps(payload)) == ("approve", "")
-
-
-@pytest.mark.parametrize("channel", ["text", "send_to_user", "send_then_ellipsis", "codex"])
-@pytest.mark.parametrize("ending", ["", "。\n  "])
-def test_public_stop_allows_delivered_final_report(tmp_path, monkeypatch, channel, ending):
-    """最終報告を届けた作業の終了は両ホストで点検通知を省いて許可する。"""
-    monkeypatch.setattr(stop, "CHECK_MODULE_NAMES", ("termination_order_advisor",))
-    monkeypatch.setattr(stop, "CODEX_CHECK_MODULE_NAMES", ("termination_order_advisor",))
-    trace = _write_transcript(tmp_path, [])
-    session_id = "final-report"
-    _human_input(session_id, trace, "request", "成果を仕上げる")
-    _commit(session_id, trace)
-    payload = json.loads(_payload(session_id, str(trace)))
-    text = "結果を届けた。\n以上で、このセッションの作業は全て終わりました" + ending
-    if channel == "codex":
-        payload.update(turn_id="request", last_assistant_message=text)
-        termination_evidence.observe_tool(
-            json.dumps(
-                {
-                    **payload,
-                    "tool_use_id": "read-report",
-                    "tool_name": "Bash",
-                    "tool_input": {"command": "cat /plugin/skills/completion-report/SKILL.md"},
-                    "tool_response": {"stdout": "---\nname: completion-report\n---\n"},
-                }
-            ),
-            after=True,
-        )
-    else:
-        _start_skill(session_id, trace, "agent-toolkit:completion-report", "report-start")
-        block = (
-            {"type": "text", "text": text}
-            if channel == "text"
-            else {"type": "tool_use", "id": "send", "name": "mcp__agent-toolkit__send_to_user", "input": {"message": text}}
-        )
-        _append_entries(trace, [{"type": "assistant", "message": {"content": [block]}}])
-        if channel == "send_then_ellipsis":
-            _append_entries(trace, [{"type": "assistant", "message": {"content": [{"type": "text", "text": "…"}]}}])
-    assert "decision" not in stop.evaluate(json.dumps(payload))
-    log_text = (tmp_path / f"claude-agent-toolkit-stop-{session_id}.log").read_text(encoding="utf-8")
-    assert "approve_final_report_delivered" in log_text
-
-
-@pytest.mark.parametrize("case", ["supplement", "new_input", "previous_work", "quote"])
-def test_final_report_suppression_requires_current_last_body(tmp_path, monkeypatch, case):
-    """補足・新入力・別作業・引用だけの固定文では通常の点検を一度通知する。"""
-    monkeypatch.setattr(stop, "CHECK_MODULE_NAMES", ("termination_order_advisor",))
-    trace = _write_transcript(tmp_path, [])
-    session_id = "not-final-report"
-    text = "以上で、このセッションの作業は全て終わりました。"
-    if case == "previous_work":
-        _append_entries(trace, [{"type": "assistant", "message": {"content": [{"type": "text", "text": text}]}}])
-    _human_input(session_id, trace, "request", "成果を仕上げる")
-    _commit(session_id, trace)
-    _start_skill(session_id, trace, "agent-toolkit:completion-report", "report-start")
-    if case != "previous_work":
-        visible = f"「{text}」を引用した。" if case == "quote" else text
-        _append_entries(trace, [{"type": "assistant", "message": {"content": [{"type": "text", "text": visible}]}}])
-    if case == "supplement":
-        _append_entries(
-            trace, [{"type": "assistant", "message": {"content": [{"type": "text", "text": "追加の結果を伝える。"}]}}]
-        )
-    elif case == "new_input":
-        _human_input(session_id, trace, "correction", "追加の状況を確認して")
-    payload = _payload(session_id, str(trace))
-    assert stop.evaluate(payload)["decision"] == "block"
-    assert "decision" not in stop.evaluate(payload)

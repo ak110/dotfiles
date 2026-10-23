@@ -12,6 +12,9 @@ from agent_toolkit._agents_server.state import LaunchKind
 from agent_toolkit._agents_server.tool_descriptions import EXPLORE_BACKEND_CAPABILITIES, EXPLORE_COMMON_CAPABILITIES
 from agent_toolkit._common import message_format, plugin_environment
 
+# ベース指示の公開入力契約と再検証はdocs/development/audit-records.mdの
+# 「agent-toolkit/agent_toolkit/_agents_server/launch_prompts.py：委譲先のベース指示：2026年10月23日」にある。
+
 TASK_MODEL_TYPES = {
     "add-wi.subagent.md": "execute",
     "bulk-replace-review.subagent.md": "review_fast",
@@ -49,6 +52,9 @@ NORMATIVE_ELEMENT = message_format.AUTO_INSERTED_ELEMENT
 
 
 NORMATIVE_SOURCE = "agent-toolkit"
+
+
+SUBAGENT_BASE_INSTRUCTIONS = _read_prompt("agents-server-base.md")
 
 
 def _normative(body: str, *, kind: str) -> str:
@@ -106,7 +112,7 @@ SHELL_SYSTEM_PROMPT = _normative(f"{DELEGATE_NOTICE}\n{_read_prompt('agents-serv
 WRITE_SYSTEM_PROMPT = _normative(f"{DELEGATE_NOTICE}\n{_read_prompt('agents-server-write.md')}", kind="write")
 
 
-# 起動条件の種別ごとのシステム指示。Claude backendの通常委譲だけは、preset指示へ追記する形で渡す。
+# 起動条件の種別ごとの指示。ホストの基本指示の置換と、役割・規範の配送はbackendが分けて組み立てる。
 LAUNCH_SYSTEM_PROMPTS: dict[LaunchKind, str] = {
     "delegate": DELEGATE_SYSTEM_PROMPT,
     "explore": EXPLORE_SYSTEM_PROMPT,

@@ -166,6 +166,29 @@ def update_session(ownership: Ownership, session_id: str, *, lane_session_id: st
     return dataclasses.replace(ownership, session_id=session_id)
 
 
+def save_candidates(ownership: Ownership, candidates: list[dict[str, Any]]) -> pathlib.Path:
+    """凍結した候補を上書きせず保存し、担当の所有記録へ寿命を結び付ける。"""
+    with filelock.FileLock(str(ownership.path.with_suffix(".lock")), timeout=10):
+        record = _read(ownership.path)
+        if record is None or record["token"] != ownership.token:
+            raise ValueError("処理所有者が変更されたため候補を保存しなかった")
+        directory = ownership.path.parent / "inputs"
+        directory.mkdir(exist_ok=True)
+        path = directory / f"{ownership.path.stem}.{ownership.token}.{uuid.uuid4()}.candidates.json"
+        atomic_write(path, json.dumps(candidates, ensure_ascii=False) + "\n")
+        record.setdefault("candidate_files", []).append(str(path))
+        atomic_write(ownership.path, json.dumps(record, ensure_ascii=False) + "\n")
+        return path
+
+
+def _candidate_files(record: dict[str, Any]) -> list[pathlib.Path]:
+    result = [pathlib.Path(value) for value in record.get("candidate_files", [])]
+    previous = record.get("previous")
+    if isinstance(previous, dict):
+        result.extend(_candidate_files(previous))
+    return result
+
+
 def release(ownership: Ownership, *, completed: bool = True) -> None:
     """同じtokenだけを解放し、未完了なら成果と再開sessionを保持する。"""
     with filelock.FileLock(str(ownership.path.with_suffix(".lock")), timeout=10):
@@ -173,12 +196,22 @@ def release(ownership: Ownership, *, completed: bool = True) -> None:
         if record is None or record["token"] != ownership.token:
             raise ValueError("処理所有者が変更されたため解放しなかった")
         record.update(completed=completed, released=True, held=False)
+        finished_inputs = _candidate_files(record) if completed else []
         if not completed and record.get("session_id") is None and isinstance(record.get("previous"), dict):
             record["session_id"] = record["previous"].get("session_id")
             record["mode"] = record["previous"].get("mode", record["mode"])
         if completed:
             record.pop("previous", None)
+            record.pop("candidate_files", None)
         atomic_write(ownership.path, json.dumps(record, ensure_ascii=False) + "\n")
+        for path in finished_inputs:
+            # 同じoriginの生成物だけを回収し、所有記録に異常なパスがあっても範囲を広げない。
+            if (
+                path.parent == ownership.path.parent / "inputs"
+                and path.name.startswith(ownership.path.stem + ".")
+                and path.name.endswith(".candidates.json")
+            ):
+                path.unlink(missing_ok=True)
 
 
 def hold(ownership: Ownership) -> None:

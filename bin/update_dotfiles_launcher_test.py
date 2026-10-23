@@ -59,6 +59,7 @@ def _write_fake_uv(path: pathlib.Path, name: str) -> None:
 printf '\\036{name}\\000' >> "$UV_CALL_LOG"
 printf '%s\\000' "$@" >> "$UV_CALL_LOG"
 if [[ "${{1-}}" == "self" && "${{2-}}" == "update" ]]; then
+    [[ -z "${{UV_SELF_UPDATE_MESSAGE-}}" ]] || printf '%s\n' "$UV_SELF_UPDATE_MESSAGE" >&2
     exit "${{UV_SELF_UPDATE_EXIT:-0}}"
 fi
 if [[ "${{1-}}" == "run" ]]; then
@@ -75,7 +76,7 @@ def _make_path(tmp_path: pathlib.Path, *, with_uv: bool) -> pathlib.Path:
     """ランチャーが必要とするコマンドだけを持つPATHを作成する。"""
     path_dir = tmp_path / "path"
     path_dir.mkdir()
-    for command in ("bash", "dirname", "readlink"):
+    for command in ("bash", "sh", "dirname", "readlink"):
         command_path = shutil.which(command)
         assert command_path is not None
         (path_dir / command).symlink_to(command_path)
@@ -103,6 +104,8 @@ def _run_launcher(
     self_update_exit: int = 0,
     run_exit: int = 0,
     process_loop: bool = False,
+    self_update_message: str = "",
+    installer_exit: int | None = None,
 ) -> tuple[subprocess.CompletedProcess[str], list[list[str]]]:
     """隔離したHOMEとPATHでLinuxランチャーを実行する。"""
     home = tmp_path / "home"
@@ -110,6 +113,22 @@ def _run_launcher(
     if native_uv:
         _write_fake_uv(home / ".local" / "bin" / "uv", "native")
     path_dir = _make_path(tmp_path, with_uv=path_uv)
+    if installer_exit is not None:
+        installer = path_dir / "curl"
+        installer.write_text(
+            "#!/usr/bin/env bash\n"
+            '[[ "${*: -1}" == https://astral.sh/uv/install.sh ]] || exit 33\n'
+            f"[[ {installer_exit} == 0 ]] || exit {installer_exit}\n"
+            "cat <<'INSTALLER'\n"
+            'test -z "${UV_UNMANAGED_INSTALL-}" || exit 34\n'
+            'printf \'\\036installer\\000%s\\000%s\\000\' "$UV_INSTALL_DIR" "$UV_NO_MODIFY_PATH" >> "$UV_CALL_LOG"\n'
+            "INSTALLER\n",
+            encoding="utf-8",
+        )
+        installer.chmod(0o755)
+        cat = shutil.which("cat")
+        assert cat is not None
+        (path_dir / "cat").symlink_to(cat)
     call_log = tmp_path / "uv-calls"
     environment = os.environ.copy()
     environment.update(
@@ -118,6 +137,7 @@ def _run_launcher(
             "PATH": str(path_dir),
             "UV_CALL_LOG": str(call_log),
             "UV_SELF_UPDATE_EXIT": str(self_update_exit),
+            "UV_SELF_UPDATE_MESSAGE": self_update_message,
             "UV_RUN_EXIT": str(run_exit),
         }
     )
@@ -141,6 +161,31 @@ def _run_launcher(
         if call
     ]
     return result, calls
+
+
+@pytest.mark.parametrize("installer_exit", [0, 22])
+@_LINUX_ONLY
+def test_receipt_mismatch_reinstalls_at_native_location_and_preserves_run_exit(
+    tmp_path: pathlib.Path, installer_exit: int
+) -> None:
+    """receipt不一致だけを公式再導入へ送り、成功・取得失敗の双方で本処理の終了値を保つ。"""
+    message = "The current executable is at native but the standalone installer was used to install uv to old"
+    result, calls = _run_launcher(
+        tmp_path,
+        native_uv=True,
+        path_uv=True,
+        self_update_exit=1,
+        run_exit=23,
+        self_update_message=message,
+        installer_exit=installer_exit,
+    )
+    assert result.returncode == 23
+    assert calls[0] == ["native", "self", "update"]
+    assert calls[-1][0:2] == ["native", "run"]
+    repaired = [row for row in calls if row[0] == "installer"]
+    assert repaired == ([] if installer_exit else [["installer", str(tmp_path / "home/.local/bin"), "1"]])
+    assert (_UPDATE_WARNING in result.stderr) is bool(installer_exit)
+    assert (message in result.stderr) is bool(installer_exit)
 
 
 @_LINUX_ONLY
@@ -350,7 +395,7 @@ def test_windows_launcher_preserves_encoding_and_uv_contract() -> None:
     missing = 'if not exist "%UV%" goto missing_uv'
     update_state = 'set "UV_SELF_UPDATE_FAILED=0"'
     process_loop_guard = 'if not "%~1"=="logs" if not "%AGENT_TOOLKIT_PROCESS_LOOP_SESSION%"=="1" ('
-    update = '"%UV%" self update'
+    update = 'powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File "%SCRIPT_DIR%\\libexec\\update_uv.ps1" "%UV%"'
     update_failure = 'if errorlevel 1 set "UV_SELF_UPDATE_FAILED=1"'
     run = '"%UV%" run --no-project --script "%SCRIPT_DIR%\\libexec\\update_dotfiles.py" %*'
     capture_run_exit = 'call set "UPDATE_DOTFILES_EXIT=%%ERRORLEVEL%%"'

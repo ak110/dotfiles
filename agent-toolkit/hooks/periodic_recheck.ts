@@ -1,5 +1,5 @@
 import type { EngineInterface, On } from "claude-code";
-import { automatedMessage } from "./automated_message.ts";
+import { automatedMessage, changedWarning } from "./automated_message.ts";
 
 // `agents_server`の`start`の処理の中で、メインの定期再確認のtaskを`CronCreate`で装着し、結果をメインの会話へ届ける。
 // モデルが起動前に`atk wait-schedule`と`CronCreate`を呼ぶ手順は装着漏れを残し、起動までの呼び出しも増やすため、
@@ -162,9 +162,8 @@ export function register(on: On): void {
       sessionId = undefined;
     }
     if (sessionId !== undefined) {
-      if (outcome?.failed !== true) deliveredFailures.delete(sessionId);
-      else if (deliveredFailures.get(sessionId) === outcome.note) return result;
-      else deliveredFailures.set(sessionId, outcome.note);
+      const warning = changedWarning(deliveredFailures, sessionId, outcome?.failed === true ? outcome.note : undefined);
+      if (outcome?.failed === true && warning === undefined) return result;
     }
     if (outcome === undefined) return result;
     return { ...result, context: [...(result.context ?? []), outcome.note] };

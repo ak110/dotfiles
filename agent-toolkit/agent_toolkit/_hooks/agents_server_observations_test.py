@@ -124,7 +124,7 @@ async def test_public_start_after_projection_failure_reaches_hook_records_and_se
                 "cwd": str(tmp_path),
                 "tool_input": start_input,
             }
-            assert _hook(pretooluse.main, payload) == 2
+            assert _hook(pretooluse.main, payload) == 0
             _acquire_delegation(payload)
             assert _hook(pretooluse.main, payload) == 0
             assert _hook(posttooluse.main, {**payload, "tool_response": {"structuredContent": started}}) == 0
@@ -344,7 +344,7 @@ async def test_public_handoff_start_registers_successor_for_wait_and_followup(
             "tool_name": "mcp__plugin_agent-toolkit_agents_server__send_message",
             "tool_input": {"session_id": successor, "prompt": "残工程を続ける"},
         }
-        assert _hook(pretooluse.main, send) == 2
+        assert _hook(pretooluse.main, send) == 0
         _acquire_delegation(send)
         assert _hook(pretooluse.main, send) == 0
         assert (await mcp_tools.send_message(successor, "残工程を続ける"))["delivery"] == "steered"

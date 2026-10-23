@@ -28,8 +28,6 @@ writes_worktree: false
 
 ## 読込表
 
-次の時点または条件が成立したら、対象の操作の前に同じ行の資料を全文読む。
-
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 | 資料選択子 |
 | --- | --- | --- | --- | --- |
 | 着手時（説明に使う選定の規定の所在） | `${CLAUDE_PLUGIN_ROOT}/skills/process-wi/references/selection-procedure.md`の「対象と保存先」「処理対象の決定」「調査とレーン分け」「反映先と上流投入」「プロジェクト規範の指定」「保存後の意味検収」。`${CLAUDE_PLUGIN_ROOT}/skills/process-wi/references/selection-format.md` | 起動時 | `role:pick-wi-explain` | |

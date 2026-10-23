@@ -172,7 +172,7 @@ WI本文の各診断は入力元、frontmatterを除いた論理本文の行・�
 
 共通起動の持続状態の警告は`outcome.report_persistent_warning`を通し、同じ会話で同じ内容を1回だけ出力する。
 会話識別子は`AGENT_TOOLKIT_OWNER_SESSION`、`CLAUDE_CODE_SESSION_ID`、`CODEX_THREAD_ID`の順に解決し、識別子の無い端末では毎回出力する。
-委譲先では共通起動の掃引警告を出力しない。`hook.py`起動時の引数不整合（usageと未知のサブコマンド）の通知は、標準入力の`session_id`で重複を抑止する。各hookの`warn`通知の件数集約は`warn_notice_counts`が扱う。
+委譲先では共通起動の掃引警告を出力しない。`hook.py`起動時の引数不整合（usageと未知のサブコマンド）の通知は、標準入力の`session_id`で重複を抑止する。各hookの同一条件の通知は`notice_fingerprints`で重複を抑止する。
 
 不正な管理情報を持つ項目の確認先である`atk wi show <ファイル名>`は種別と`target_repo`を検証せず保存内容を表示する。
 失敗の案内が、失敗を起こした状態のまま実行できるようにするためである。
@@ -181,7 +181,7 @@ WI本文の各診断は入力元、frontmatterを除いた論理本文の行・�
 次の操作を必須とする構造は`atk`以外の発生源にも同じ形で置く。
 標識`次の操作:`、空の次の操作の拒否、理由と次の操作を持つ例外型（`ActionableError`）、標準エラーへの出力関数の4つは`agent-toolkit/agent_toolkit/_common/next_action.py`が持つ。
 同モジュールは層の順序で最も前にあり、全ての層、公開スクリプトとスキル付属スクリプトから使える。
-hookは`_hooks/notice.py`の`block_formatter`と`warn`区分の整形関数が解消手段`fix`を必須とし、反復集約の2件目以降と遮断への昇格でも同じ行を残す。
+hookは`_hooks/notice.py`の`block_formatter`と`warn`区分の整形関数が解消手段`fix`を必須とする。通知を届ける場合は同じ行を保持し、同じ条件の警告は初回だけ届ける。
 `atk`は`WebInputError`を`ActionableError`の派生とし、各サブコマンドの実行を振り分ける処理が`_atk/cli_support.py`の`report_rejected`で理由と次の操作の2行を出力する。Web APIの応答本文は`str()`が返す理由だけを使い、変えない。
 agents_serverはツール関数の登録の1箇所で例外を包み、`ActionableError`と想定外の例外を次の操作付きのエラー本文へ変える。状態値だけを返す応答（配送の失敗、期限切れsessionの中断、待機の打ち切りなど）には`next_action`項目を加える。
 `atk agents wait`、`wait_ci.py`、スキル付属スクリプトと計画ファイルの構造チェックも、非0の終了で同じ標識の行を出力する。

@@ -67,6 +67,8 @@ def observed_identity(entry: dict[str, Any], runtime: str) -> RuntimeIdentity | 
     Claude Codeの記録はassistant行の`message.model`と最上位の`effort`に、Codexの記録は最上位の`type`が
     `turn_context`の行の`payload.model`と`payload.effort`に組を持つ（Claude Code 2.1.291とCodex 0.160.1の記録で確認）。
     Claude Codeが合成した応答の行は`effort`がnullのため、組を持たない行として除く。
+    OpenCode v1.19.3のSQLite入力は原本assistantの`providerID`・`modelID`・`variant`を使い、
+    `variant`が無い場合は推論量を未確認として返さない。
     """
     if runtime == "codex":
         payload = entry.get("payload")
@@ -83,6 +85,17 @@ def observed_identity(entry: dict[str, Any], runtime: str) -> RuntimeIdentity | 
         if not isinstance(body, dict):
             return None
         model, effort = body.get("model"), body.get("effort")
+    elif runtime == "opencode":
+        source = entry.get("opencode_source")
+        if not isinstance(source, dict) or source.get("table") != "message":
+            return None
+        body = source.get("data")
+        if not isinstance(body, dict) or body.get("role") != "assistant":
+            return None
+        provider, model_id = body.get("providerID"), body.get("modelID")
+        if not isinstance(provider, str) or not provider or not isinstance(model_id, str) or not model_id:
+            return None
+        model, effort = f"{provider}/{model_id}", body.get("variant")
     else:
         return None
     if isinstance(model, str) and model and isinstance(effort, str) and effort:

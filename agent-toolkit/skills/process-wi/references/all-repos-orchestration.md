@@ -49,15 +49,16 @@ agents_serverの通常委譲として起動されるため委譲先向けの配�
 ## 取得済み候補の受領
 
 常駐側は各対象cwdで通常の`delegate`を起動し、JSONの`target_repo`・`worktree`・`common_dir`で対象を示す。
-`candidates`は初回取得済み候補、`readiness`は対象別の判定、`lane_limit`は対象別のレーン上限を表す。
+`candidate_file`は起動元が保存した初回取得済み候補JSONの絶対パス、`readiness`は対象別の判定、`lane_limit`は対象別のレーン上限を表す。
 `ownership_record`・`ownership_token`は取得済みの処理所有、`previous`は前回の成果と再開情報、`worktree_name`は隔離指定を表す。
 担当は常駐側が渡した値と取得済み所有をそのまま使う。
 `lane_session_id`は対象別のレーン所有を示し、作成・再開・終了時回収の各操作の`--session-id`へ同じ値を渡す。
 
-担当は初期一覧の再取得を省き、`candidates`を初回候補として使う。
+担当は初期一覧の再取得を省き、`candidate_file`の保存原本を初回候補として使う。
 候補の`state`と、`readiness.ready`・`readiness.internal_dependency_waits`などの名前集合から通常の着手可否へ対応付ける。
 候補レコードの`ready`と`blocked_reason`は同じreadinessから生成した対象別の判定であり、待機理由を判断するときも受領したreadinessの診断を使う。
-一覧の`filename`と`staleness`を持つ受領レコードを、自セッションのmanaged-tempへJSON配列として保存し、`pick-wi-check`の`--candidate-file`へ渡す。
+`pick-wi-check`の`--candidate-file`へ受領した絶対パスをそのまま渡す。本文と鮮度をモデルが再出力する工程は設けない。
+起動元は入力ごとに新しい保存先を確保し、所有記録から再開と検収まで保持する。担当の完了を検収して所有を解放した時に回収する。
 受領済みの本文と回答・依存情報を使い、不足する本文や依存先だけを通常のキューCLIで補う。
 回答済みUWIの元項目の扱い、状態遷移、選定完了後の状態確認は[selection-procedure.md](selection-procedure.md)に従う。
 選定YAMLは対象別に保存し、上限はその対象の候補数Nから求める`floor((N+9)/10)`とする。

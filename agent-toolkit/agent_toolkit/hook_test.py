@@ -82,7 +82,7 @@ def _copy_entrypoint(tmp_path: pathlib.Path) -> pathlib.Path:
     hooks.mkdir()
     (hooks / "__init__.py").write_text("", encoding="utf-8")
     source_hooks = _SCRIPT.parent / "_hooks"
-    for name in ("notice.py", "message_format.py"):
+    for name in ("notice.py", "message_format.py", "agent_id.py"):
         (hooks / name).write_text((source_hooks / name).read_text(encoding="utf-8"), encoding="utf-8")
     return entrypoint
 
@@ -626,21 +626,21 @@ def test_repeated_calls_in_one_process_follow_input_and_session_state(
             expected_code=expected_code,
         )
 
-    # Claudeは初回に本文を配送して取得を記録し、CodexはSkill取得の観測まで遮断する。別セッションは再び配送する。
-    context = pretooluse("repeat-session", "grep -rn needle .", expected_code=2)
-    assert auto_message_opening_attributes(context) == {"source": "pretooluse", "kind": "block"}
+    # 関係する初回操作に資料または読取の案内を届け、通常の操作を継続する。
+    context = pretooluse("repeat-session", "grep -rn needle .")
+    message = json.loads(context)["hookSpecificOutput"]["additionalContext"]
+    assert 'kind="block"' not in message
     if codex:
-        # 明示取得待ちの資料は、後続の別操作にも配送して未取得を通知する。
-        assert pretooluse("repeat-session", "ls", expected_code=2) == context
-        assert pretooluse("repeat-session", "grep -rn needle .", expected_code=2) == context
+        assert not pretooluse("repeat-session", "ls")
+        assert not pretooluse("repeat-session", "grep -rn needle .")
     else:
         assert not pretooluse("repeat-session", "ls")
-        assert '<atk-auto source="read-delivery" kind="document">' in context
+        assert '<atk-auto source="read-delivery" kind="document">' in message
         assert not pretooluse("repeat-session", "grep -rn needle .")
     skill = {"session_id": "repeat-session", "tool_name": "Skill", "tool_input": {"skill": "agent-toolkit:search"}}
     _call_hook_in_process(monkeypatch, "posttooluse", {"hook_event_name": "PostToolUse", **skill})
     assert not pretooluse("repeat-session", "grep -rn needle .")
-    assert pretooluse("other-session", "grep -rn needle .", expected_code=2) == context
+    assert pretooluse("other-session", "grep -rn needle .") == context
 
     # 未配送の完了通知が残るtranscriptでは配送のためにターンを終え、残らないtranscriptでは何も返さない。
     # キューの記録の形は`_hooks/queued_notification_advisor_test.py`の生成と同じとする。

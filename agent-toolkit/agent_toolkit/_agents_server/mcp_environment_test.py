@@ -23,7 +23,15 @@ def test_mcp_setting_names_follow_public_config_keys(
         config.resolve_mutable_setting(key)
     for name in setting_names:
         key = name.removeprefix("AGENT_TOOLKIT_CONFIG_").lower()
-        if key not in keys:
+        if key == "claude_api_mode":
+            assert name in names
+            monkeypatch.setenv(name, "api-credits")
+            with pytest.raises(SystemExit) as exited:
+                atk.main(["config", "get", key, "claude_orchestrator_api_only", "claude_worker_api_first"])
+            assert exited.value.code == 0
+            assert capsys.readouterr().out.splitlines() == ["api-credits", "false", "true"]
+            monkeypatch.delenv(name)
+        elif key not in keys:
             with pytest.raises(SystemExit) as exited:
                 atk.main(["config", "get", key])
             assert exited.value.code == 2

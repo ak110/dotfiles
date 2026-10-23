@@ -105,6 +105,31 @@ async def test_public_start_rejects_mixed_handoff_inputs(extra: dict[str, str]) 
 
 
 @pytest.mark.asyncio
+async def test_legacy_codex_disconnect_result_starts_handoff(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, record_extractor: pathlib.Path
+) -> None:
+    """旧版の汎用切断結果を回収した呼び出し元も、案内から同じ用途の後任を開始できる。"""
+    del record_extractor
+    monkeypatch.setattr(config, "parse_unresolved_model_candidates", lambda *_args, **_kwargs: [("codex", "first", "medium")])
+    async with _manager_with_fake("codex") as (manager, _backend):
+        monkeypatch.setattr(mcp_tools, "_MANAGER", manager)
+        started = await manager.start("execute", "未完了の検証を続ける", str(tmp_path))
+        predecessor = manager.sessions[started["session_id"]]
+        _complete(
+            predecessor,
+            message="編集済みの進捗全文",
+            error={"message": "Codex App Server stopped: connection lost"},
+        )
+        result = await manager.wait()
+        assert "handoff_from" in result["next_action"]
+        response = await mcp_tools.start(handoff_from=predecessor.session_id)
+        successor = manager.sessions[response["session_id"]]
+        assert "編集済みの進捗全文" in successor.prompt
+        assert successor.model_type == predecessor.model_type
+        assert not successor.excluded_candidates
+
+
+@pytest.mark.asyncio
 async def test_start_handoff_rejects_running_predecessor_before_extracting_records(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,

@@ -73,7 +73,6 @@ def test_real_user_prompt_routes_to_contract(
     path.write_text("目的: A全体\n", encoding="utf-8")
     monkeypatch.setattr(user_prompt_submit, "_is_machine_injected", lambda *_args: False)
     monkeypatch.setattr(user_prompt_submit, "_claim_user_confirmation_notice", lambda *_args, **_kwargs: False)
-    monkeypatch.setattr(user_prompt_submit, "_claim_verification_notice", lambda *_args: False)
     monkeypatch.setattr(user_prompt_submit.termination_evidence, "observe_user", lambda *_args: None)
     assert user_prompt_submit.main(json.dumps({"session_id": "session", "prompt": prompt, "source": source})) == 0
     result = json.loads(capsys.readouterr().out)
@@ -138,7 +137,6 @@ def test_state_save_failure_is_delivered_without_false_acknowledgement(
     monkeypatch.setattr(session_state, "_atomic_write", fail_write)
     monkeypatch.setattr(user_prompt_submit, "_is_machine_injected", lambda *_args: False)
     monkeypatch.setattr(user_prompt_submit, "_claim_user_confirmation_notice", lambda *_args, **_kwargs: False)
-    monkeypatch.setattr(user_prompt_submit, "_claim_verification_notice", lambda *_args: False)
     monkeypatch.setattr(user_prompt_submit.termination_evidence, "observe_user", lambda *_args: None)
     assert user_prompt_submit.main(json.dumps({"session_id": "session", "prompt": "A-bをc'へ"})) == 0
     context = json.loads(capsys.readouterr().out)["hookSpecificOutput"]["additionalContext"]

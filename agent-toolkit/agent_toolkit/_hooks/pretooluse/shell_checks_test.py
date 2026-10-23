@@ -72,14 +72,14 @@ def _run_in_ready_context(payload: dict, env_overrides: dict[str, str]) -> subpr
         "cat <({} 2>/dev/null)",
     ],
 )
-def test_read_predicate_stderr_discard_is_blocked(tmp_path, codex, predicate, shape):
+def test_read_predicate_stderr_discard_is_warned(tmp_path, codex, predicate, shape):
     """両ホストの公開PreToolUseから、全述語と実行位置の診断保持を求める。"""
     result = _run(
         {"tool_name": "Bash", "tool_input": {"command": shape.format(predicate)}, **({"turn_id": "t"} if codex else {})},
         env_overrides=_plan_file_state_env(tmp_path),
     )
-    assert result.returncode == 2
-    assert "標準エラー" in result.stderr and "再実行" in result.stderr
+    assert result.returncode == 0
+    assert "標準エラー" in _additional_context(result) and "再実行" in _additional_context(result)
 
 
 @pytest.mark.parametrize(
@@ -103,11 +103,11 @@ def test_read_predicate_diagnostic_is_preserved(tmp_path, command):
 
 
 @pytest.mark.parametrize("launcher", ["atk", "C:/tools/atk.cmd", r"'C:\tools\atk.cmd'", "atk.py"])
-def test_atk_launcher_output_loss_is_blocked(launcher):
+def test_atk_launcher_output_loss_is_warned(launcher):
     """ランチャーの表記によらず、実行位置の出力喪失を遮断する。"""
     result = _run({"tool_name": "Bash", "tool_input": {"command": f"{launcher} wi list >/dev/null"}})
-    assert result.returncode == 2
-    assert "結果と終了状態を直接受領できない入力" in result.stderr
+    assert result.returncode == 0
+    assert "結果と終了状態を直接受領できない入力" in _additional_context(result)
 
 
 def test_commit_message_is_read_after_static_cd(tmp_path):
@@ -832,7 +832,8 @@ class TestBashUnquotedHeredocSubstitution:
             assert substitution in result.stderr
         else:
             assert result.returncode == 0
-            assert _additional_context(result) == ""
+            assert "/skills/writing-standards/SKILL.md" in _additional_context(result)
+            assert result.stderr == ""
 
     @pytest.mark.parametrize(
         ("command", "substitution"),
@@ -889,15 +890,15 @@ class TestBashGitRevParseShortMultiple:
     @pytest.mark.parametrize("extra_payload", [{}, {"turn_id": "codex-turn"}])
     def test_warns_multiple_revisions(self, command: str, extra_payload: dict):
         result = _run({"tool_name": "Bash", "tool_input": {"command": command}, **extra_payload})
-        assert result.returncode == 2
-        assert "単一リビジョン検証へ2つのリビジョン" in result.stderr
-        assert "<元のオプション> <revision>" in result.stderr
-        assert "終了コード128とは限らない" in result.stderr
+        assert result.returncode == 0
+        assert "単一リビジョン検証へ2つのリビジョン" in _additional_context(result)
+        assert "<元のオプション> <revision>" in _additional_context(result)
+        assert "終了コード128とは限らない" in _additional_context(result)
 
     def test_redirection_is_not_counted_as_revision(self):
         result = _run({"tool_name": "Bash", "tool_input": {"command": "git rev-parse --short=7 HEAD~1 HEAD > /tmp/x"}})
-        assert result.returncode == 2
-        assert "2つのリビジョン（HEAD~1、HEAD）" in result.stderr
+        assert result.returncode == 0
+        assert "2つのリビジョン（HEAD~1、HEAD）" in _additional_context(result)
 
     @pytest.mark.parametrize(
         "command",
@@ -1069,10 +1070,15 @@ class TestGitCommitMessageFormat:
 )
 @pytest.mark.parametrize("extra_payload", [{}, {"turn_id": "codex-turn"}], ids=["claude-code", "codex"])
 def test_reserved_prefix_reaches_bash_hook_checks(command: str, expected: str, extra_payload: dict[str, str]) -> None:
-    """共通解析の前置分岐が、公開hookの出力・Git・オプション検査まで到達する。"""
+    """共通解析の前置分岐が、公開hookの出力接続・Git・オプションの判定まで到達する。"""
     result = _run({"tool_name": "Bash", "tool_input": {"command": command}, **extra_payload})
-    assert result.returncode == 2
-    assert expected in result.stderr
+    if expected == "空行":
+        assert result.returncode == 2
+        assert expected in result.stderr
+    else:
+        assert result.returncode == 0
+        assert not result.stderr
+        assert expected in _additional_context(result)
 
 
 @pytest.mark.parametrize("extra_payload", [{}, {"turn_id": "codex-turn"}], ids=["claude-code", "codex"])
@@ -1083,7 +1089,7 @@ def test_reserved_prefix_reaches_bash_hook_checks(command: str, expected: str, e
 def test_git_commit_with_work_item_filename_is_blocked_by_public_hook(
     tmp_path: pathlib.Path, command_kind: str, extra_payload: dict[str, str]
 ) -> None:
-    """最終メッセージの各確定可能な入力経路で、WI名を持つcommitを公開hookが遮断する。"""
+    """引数・ファイル・heredocから最終メッセージを確定し、WI名を持つcommitを公開hookが遮断する。"""
     repo = git_repository.init_repository(tmp_path / "repo", commit_message="判定前の履歴")
     message = "変更理由\n\n対応AWI: 20261020-151224-001.md"
     if command_kind == "message":
@@ -1160,12 +1166,12 @@ class TestBashOptionAfterTerminator:
         ],
     )
     @pytest.mark.parametrize("extra_payload", [{}, {"turn_id": "codex-turn"}], ids=["claude-code", "codex"])
-    def test_blocks_options_after_terminator(self, command: str, expected_token: str, extra_payload: dict[str, str]):
+    def test_warns_options_after_terminator(self, command: str, expected_token: str, extra_payload: dict[str, str]):
         result = _run({"tool_name": "Bash", "tool_input": {"command": command}, **extra_payload})
-        assert result.returncode == 2
-        assert auto_message_opening_attributes(result.stderr)["source"] == "pretooluse"
-        assert expected_token in result.stderr
-        assert "`--`より前へ移し" in result.stderr
+        assert result.returncode == 0
+        assert auto_message_opening_attributes(_additional_context(result))["source"] == "pretooluse"
+        assert expected_token in _additional_context(result)
+        assert "`--`より前へ移し" in _additional_context(result)
 
     @pytest.mark.parametrize(
         "command",
@@ -1197,7 +1203,7 @@ class TestBashOptionAfterTerminator:
     def test_allows_data_or_downstream_options(self, command: str):
         result = _run({"tool_name": "Bash", "tool_input": {"command": command}})
         assert result.returncode == 0
-        assert "オプション終端" not in result.stderr
+        assert "オプション終端" not in _additional_context(result)
 
 
 class TestBashAtkOutputLoss:
@@ -1254,15 +1260,15 @@ class TestBashAtkOutputLoss:
         ],
     )
     @pytest.mark.parametrize("extra_payload", [{}, {"turn_id": "codex-turn"}], ids=["claude-code", "codex"])
-    def test_atk_output_loss_is_blocked(self, command: str, extra_payload: dict[str, str]) -> None:
+    def test_atk_output_loss_is_warned(self, command: str, extra_payload: dict[str, str]) -> None:
         result = _run({"tool_name": "Bash", "tool_input": {"command": command}, **extra_payload})
-        assert result.returncode == 2
-        assert auto_message_opening_attributes(result.stderr)["source"] == "pretooluse"
-        assert "結果と終了状態を直接受領できない入力" in result.stderr
-        assert "run_in_background" in result.stderr
-        assert "パイプとリダイレクトを外して単独で発行し" in result.stderr
-        assert "--output-file" not in result.stderr
-        assert "別の呼び出し" in result.stderr
+        assert result.returncode == 0
+        assert auto_message_opening_attributes(_additional_context(result))["source"] == "pretooluse"
+        assert "結果と終了状態を直接受領できない入力" in _additional_context(result)
+        assert "run_in_background" in _additional_context(result)
+        assert "パイプとリダイレクトを外して単独で発行し" in _additional_context(result)
+        assert "--output-file" not in _additional_context(result)
+        assert "別の呼び出し" in _additional_context(result)
 
     @pytest.mark.parametrize(
         "command",
@@ -1303,13 +1309,13 @@ class TestBashAtkOutputLoss:
     def test_atk_literal_and_supported_outputs_are_allowed(self, command: str) -> None:
         result = _run({"tool_name": "Bash", "tool_input": {"command": command}})
         assert result.returncode == 0
-        assert "結果と終了状態を直接受領できない入力" not in result.stderr
+        assert "結果と終了状態を直接受領できない入力" not in _additional_context(result)
 
     def test_corrected_atk_invocation_is_allowed(self) -> None:
         """通知が案内するホスト管理の背景待機へ書き直すと通過する。"""
         blocked = _run({"tool_name": "Bash", "tool_input": {"command": "atk agents wait >/dev/null &"}})
-        assert blocked.returncode == 2
-        assert "単独で発行する" in blocked.stderr
+        assert blocked.returncode == 0
+        assert "単独で発行する" in _additional_context(blocked)
         allowed = _run({"tool_name": "Bash", "tool_input": {"command": "atk agents wait", "run_in_background": True}})
         assert allowed.returncode == 0
 

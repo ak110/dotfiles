@@ -28,6 +28,8 @@ SCHEMA = (
     "基準版は--baseline-test-format・--baseline-test-file・--baseline-test-record。"
     "vitestは--reporter=json --outputFile=/絶対/結果、Playwrightはenv PLAYWRIGHT_JSON_OUTPUT_NAME=/絶対/結果 "
     'playwright test --reporter=json、dotnet testは--logger "trx;LogFileName=/絶対/結果"でatk run-commandから取得する。'
+    "ラッパー・コンテナ経由ではatk run-commandの--result-fileで結果のホスト絶対パスを宣言し、"
+    "必要に応じて--path-map 子の絶対接頭辞=ホストの絶対接頭辞を指定する。"
     '結果JSON: {"junit":{"xml":"/絶対/XML","run_record":"/絶対/record.json"},'
     '"baseline_junit":{同形式},"diagnostics":{"path":"/絶対/JSONL","run_record":"/絶対/record.json",'
     '"head":"完全OID","conditions":{"scope":[],"options":[],"dependencies":{},"parallelism":1,"environment":{}},'
@@ -318,6 +320,7 @@ def _junit(spec: object) -> dict[str, dict[str, Any]]:
         raise ValueError("JUnitの組にはxmlとrun_recordを指定する")
     xml = path_value(spec["xml"])
     record_path, record = run_record(spec["run_record"])
+    declared = verification_diagnostics.declared_result(xml, record)
     argv, roots = _junit_origin(record, record_path)
     if not roots:
         raise _junit_rejection(
@@ -338,12 +341,15 @@ def _junit(spec: object) -> dict[str, dict[str, Any]]:
     pytest_cwd, rootdir = roots[0]
     xml_args = [v.split("=", 1)[1] for v in argv if v.startswith("--junitxml=")]
     xml_args.extend(argv[i + 1] for i, v in enumerate(argv[:-1]) if v == "--junitxml")
-    if len(xml_args) != 1 or (pytest_cwd / xml_args[0]).resolve() != xml.resolve():
+    if not declared and (len(xml_args) != 1 or (pytest_cwd / xml_args[0]).resolve() != xml.resolve()):
+        action = "指定したXMLが実行argvの--junitxmlと同じファイルを指すように指定し直すか、再実行する"
+        if not xml_args:
+            action += "。ラッパー・コンテナ経由では--result-fileと必要な--path-mapを指定してatk run-commandを再実行する"
         raise _junit_rejection(
             f"XMLと実行argvの--junitxmlが対応しません: {xml}, {record_path}",
-            "指定したXMLが実行argvの--junitxmlと同じファイルを指すように指定し直すか、再実行する",
+            action,
         )
-    if "junit_family=xunit1" not in argv:
+    if not declared and "junit_family=xunit1" not in argv:
         raise _junit_rejection(
             f"file属性を保存するjunit_family=xunit1の指定が実行argvにありません: {record_path}",
             "-o junit_family=xunit1を加えてpytestを再実行し、そのXMLと記録を指定する",
@@ -351,11 +357,12 @@ def _junit(spec: object) -> dict[str, dict[str, Any]]:
     # 完全テスト名のファイル部分は、参照の所在確認と同じworktreeのルートを起点にする。
     worktree = verification_diagnostics.worktree_root(record)
     try:
-        prefix = pathlib.Path(rootdir).resolve().relative_to(worktree.resolve())
+        prefix = verification_diagnostics.mapped_path(rootdir, record).resolve().relative_to(worktree.resolve())
     except ValueError as error:
         raise next_action.ActionableError(
             f"pytest実行root {rootdir} が対象worktree {worktree} の外です",
-            next_action="--rootdirを省くか対象worktree内のディレクトリを指定してpytestを再実行し、そのXMLと記録を指定する",
+            next_action="--rootdirを対象worktree内にするか、コンテナ経由では--result-fileと--path-mapを指定して"
+            "atk run-commandを再実行し、そのXMLと記録を指定する",
         ) from error
     try:
         root = ET.parse(xml).getroot()
@@ -400,13 +407,17 @@ def _junit(spec: object) -> dict[str, dict[str, Any]]:
     return results
 
 
-def _relative_file(filename: object, root: pathlib.Path, worktree: pathlib.Path) -> str:
+def _relative_file(filename: object, root: pathlib.Path, worktree: pathlib.Path, record: dict[str, Any]) -> str:
     if not isinstance(filename, str) or not filename:
         raise ValueError("試験のfileが不足しています")
     try:
-        return (root / filename).resolve().relative_to(worktree.resolve()).as_posix()
+        mapped = verification_diagnostics.mapped_path(filename, record)
+        return (root / mapped).resolve().relative_to(worktree.resolve()).as_posix()
     except ValueError as error:
-        raise ValueError(f"試験のfileが対象worktreeの外です: {filename}") from error
+        raise next_action.ActionableError(
+            f"試験のfileが対象worktreeの外です: {filename}",
+            next_action="ラッパー・コンテナ経由では--result-fileと--path-mapを指定してatk run-commandを再実行する",
+        ) from error
 
 
 def _titles(values: object) -> list[str]:
@@ -415,10 +426,10 @@ def _titles(values: object) -> list[str]:
     return values
 
 
-def _vitest(data: Any, cwd: pathlib.Path, worktree: pathlib.Path) -> list[tuple[str, str]]:
+def _vitest(data: Any, cwd: pathlib.Path, worktree: pathlib.Path, record: dict[str, Any]) -> list[tuple[str, str]]:
     cases = []
     for suite in data["testResults"]:
-        filename = _relative_file(suite["name"], cwd, worktree)
+        filename = _relative_file(suite["name"], cwd, worktree, record)
         if not suite["assertionResults"] and suite.get("status") == "failed":
             raise ValueError(f"vitestの試験収集が完了していません: {filename}。収集エラーを直して再実行する")
         for case in suite["assertionResults"]:
@@ -433,8 +444,8 @@ def _vitest(data: Any, cwd: pathlib.Path, worktree: pathlib.Path) -> list[tuple[
     return cases
 
 
-def _playwright(data: Any, cwd: pathlib.Path) -> list[tuple[str, str]]:
-    root = pathlib.Path(data["config"]["rootDir"])
+def _playwright(data: Any, cwd: pathlib.Path, record: dict[str, Any]) -> list[tuple[str, str]]:
+    root = verification_diagnostics.mapped_path(data["config"]["rootDir"], record)
     if not root.is_absolute() or data.get("errors"):
         raise ValueError("Playwrightの絶対rootDirと実行エラーのない結果が必要です")
     cases: list[tuple[str, str]] = []
@@ -444,7 +455,7 @@ def _playwright(data: Any, cwd: pathlib.Path) -> list[tuple[str, str]]:
             # 最外のsuite.titleはファイル名。fileから相対パスを確定する。
             ancestors = [*titles, *_titles([suite["title"]])] if titles else _titles([suite["title"]])
             for spec in suite.get("specs", []):
-                filename = _relative_file(spec["file"], root, cwd)
+                filename = _relative_file(spec["file"], root, cwd, record)
                 for case in spec["tests"]:
                     project = case["projectName"]
                     if not isinstance(project, str):
@@ -484,6 +495,7 @@ def _structured_tests(spec: object) -> dict[str, dict[str, Any]]:
         raise ValueError(f"未知の試験形式です: {format_name!r}。vitest・playwright・trxから指定する")
     path = path_value(spec["path"])
     record_path, record = run_record(spec["run_record"])
+    declared = verification_diagnostics.declared_result(path, record)
     argv, cwd = record["argv"], pathlib.Path(record["cwd"])
     worktree = verification_diagnostics.worktree_root(record) if format_name in {"vitest", "playwright"} else cwd
     if format_name == "vitest":
@@ -509,21 +521,23 @@ def _structured_tests(spec: object) -> dict[str, dict[str, Any]]:
             if part.startswith("LogFileName=")
         ]
         reporter = True
-    if (
+    if not declared and (
         not reporter
         or len(outputs) != 1
         or not pathlib.Path(outputs[0]).is_absolute()
         or pathlib.Path(outputs[0]).resolve() != path.resolve()
     ):
         raise ValueError(
-            f"試験結果と実行argvの出力指定が対応しません: {path}, {record_path}。絶対パスの構造化出力指定で再実行する"
+            f"試験結果と実行argvの出力指定が対応しません: {path}, {record_path}。"
+            "絶対パスの構造化出力指定で再実行する。ラッパー・コンテナ経由では"
+            "--result-fileと必要な--path-mapを指定してatk run-commandを再実行する"
         )
     try:
         if format_name == "trx":
             cases = _trx(path)
         else:
             data = load_json(path)
-            cases = _vitest(data, cwd, worktree) if format_name == "vitest" else _playwright(data, worktree)
+            cases = _vitest(data, cwd, worktree, record) if format_name == "vitest" else _playwright(data, worktree, record)
     except (KeyError, TypeError, AttributeError, ET.ParseError, json.JSONDecodeError) as error:
         raise ValueError(f"試験結果の形式・状態が不正です: {path}: {error}。選んだ形式の結果を再取得する") from error
     results = {}
@@ -1112,7 +1126,20 @@ def reference_failure(errors: list[str]) -> ValueError:
 
 
 def save(path: pathlib.Path, payload: dict[str, Any]) -> None:
-    """検証済みの全更新を一度で保存する。"""
+    """検証済みの全更新を保存し、保存先の全文が期待値と一致することを確かめる。"""
     if not path.is_absolute():
         raise ValueError("保存先は絶対パスで指定する")
-    atomic_write(path, json.dumps(payload, ensure_ascii=False, indent=2) + "\n")
+    expected = json.dumps(payload, ensure_ascii=False, indent=2) + "\n"
+    atomic_write(path, expected)
+    try:
+        actual = path.read_text(encoding="utf-8")
+    except (OSError, UnicodeError) as error:
+        raise next_action.ActionableError(
+            f"保存後の出力を読み取れません: {path}: {error}",
+            next_action=f"保存先{path}の状態と読取権限を確認し、更新入力と比較してから同じ更新を再実行する",
+        ) from error
+    if actual != expected:
+        raise next_action.ActionableError(
+            f"保存後の出力が期待した更新内容と一致しません: {path}",
+            next_action=f"保存先{path}を更新入力と比較し、同時書込みの有無を確認してから同じ更新を再実行する",
+        )

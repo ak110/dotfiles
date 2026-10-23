@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import contextlib
+import hashlib
 import json
 import math
 import os
@@ -50,12 +51,55 @@ def _absolute_directory(value: str) -> pathlib.Path:
     return resolved
 
 
+def _result_file(value: str) -> pathlib.Path:
+    path = pathlib.Path(value)
+    if not path.is_absolute():
+        raise argparse.ArgumentTypeError("--result-fileはホストの絶対パスで指定してください")
+    return path.resolve()
+
+
+def _path_map(value: str) -> dict[str, str]:
+    child, separator, host = value.partition("=")
+    if (
+        not separator
+        or not (pathlib.PurePosixPath(child).is_absolute() or pathlib.PureWindowsPath(child).is_absolute())
+        or not pathlib.Path(host).is_absolute()
+    ):
+        raise argparse.ArgumentTypeError("--path-mapは子の絶対パス=ホストの絶対パスで指定してください")
+    return {"child": child, "host": str(pathlib.Path(host).resolve())}
+
+
+def _snapshot(path: pathlib.Path) -> dict[str, Any]:
+    """指定した結果だけを読み、実行前後の内容の一致を比較できる状態にする。"""
+    try:
+        with path.open("rb") as stream:
+            digest = hashlib.file_digest(stream, "sha256").hexdigest()
+            size = os.fstat(stream.fileno()).st_size
+    except FileNotFoundError:
+        return {"exists": False, "sha256": None, "bytes": 0}
+    return {"exists": True, "sha256": digest, "bytes": size}
+
+
 def build_parser(parser: argparse.ArgumentParser) -> None:
     """`atk run-command`の引数を登録する。"""
     parser.add_argument("--cwd", type=_absolute_directory, metavar="DIR", help="子プロセスの作業ディレクトリの絶対パス。")
     parser.add_argument("--timeout", type=_positive_seconds, metavar="SECONDS", help="正の実行上限秒数。")
     parser.add_argument(
         "--verification", action="store_true", help="ホスト共有の検証実行枠を所有して実行する。待機時間はtimeoutに含めない。"
+    )
+    parser.add_argument(
+        "--result-file",
+        type=_result_file,
+        action="append",
+        metavar="PATH",
+        help="子が書く結果ファイルのホスト絶対パス。存在・SHA-256・サイズを実行前後に記録する。反復可。",
+    )
+    parser.add_argument(
+        "--path-map",
+        type=_path_map,
+        action="append",
+        metavar="CHILD=HOST",
+        help="子が結果に書く絶対パスとホストの接頭辞の対応。取込時に最長一致で変換する。反復可。",
     )
     parser.add_argument(
         "--record",
@@ -80,8 +124,8 @@ def _file_metrics(path: pathlib.Path) -> tuple[int, int]:
 def _git_state(cwd: pathlib.Path) -> tuple[str | None, list[str] | None]:
     """起動直前の作業ツリーのHEADと、未commit・未追跡の状態を返す。
 
-    実行結果を後から別の版へ適用できるかを判定するには、実行した対象の版が要る。
-    HEADだけでは未commitの差分や未追跡の入力を実行した結果を区別できないため、`git status`の行も残す。
+    HEADはcommit、`git status`は変更ファイルと変更状態を示す。
+    未commit・未追跡の本文は保持しないため、その内容の同定には取得時の本文など別の根拠が要る。
     Git作業ツリーの外では両方を`None`とする。取得に失敗した場合も子プロセスの実行は続け、警告を標準エラーへ書く。
     """
     try:
@@ -159,15 +203,28 @@ def _metadata(
 
 
 def execute(
-    argv: list[str], cwd: pathlib.Path, timeout: float | None, *, verification: bool = False
+    argv: list[str],
+    cwd: pathlib.Path,
+    timeout: float | None,
+    *,
+    verification: bool = False,
+    result_files: list[pathlib.Path] | None = None,
+    path_maps: list[dict[str, str]] | None = None,
 ) -> tuple[dict[str, Any], int, str | None]:
     """検証用途では共有実行枠を取得し、子の終了と記録保存まで所有する。"""
     ownership = execution_slot.hold(label=shlex.join(argv)) if verification else contextlib.nullcontext()
     with ownership:
-        return _execute(argv, cwd, timeout)
+        return _execute(argv, cwd, timeout, result_files=result_files, path_maps=path_maps)
 
 
-def _execute(argv: list[str], cwd: pathlib.Path, timeout: float | None) -> tuple[dict[str, Any], int, str | None]:
+def _execute(
+    argv: list[str],
+    cwd: pathlib.Path,
+    timeout: float | None,
+    *,
+    result_files: list[pathlib.Path] | None = None,
+    path_maps: list[dict[str, str]] | None = None,
+) -> tuple[dict[str, Any], int, str | None]:
     """終了する子プロセスを実行して記録を保存し、表示とは別に結果・終了コード・保存の失敗を返す。"""
     child_env = dict(os.environ)
     strip_inherited_venv(child_env)
@@ -180,12 +237,14 @@ def _execute(argv: list[str], cwd: pathlib.Path, timeout: float | None) -> tuple
     wrapper_exit_code = _EXIT_WRAPPER_FAILURE
     failure: str | None = None
     directory: pathlib.Path | None = None
+    declared: list[dict[str, Any]] = []
     try:
         directory = managed_temp.create_output_temp("atk-command")
         stdout_path = (directory / "stdout.bin").resolve()
         stderr_path = (directory / "stderr.bin").resolve()
         with stdout_path.open("xb") as stdout_stream, stderr_path.open("xb") as stderr_stream:
             try:
+                declared = [{"path": str(path), "before": _snapshot(path)} for path in dict.fromkeys(result_files or [])]
                 # 回収不能でも記録を確定するため、context managerの無期限waitを重ねない。
                 process = subprocess.Popen(  # noqa: S603  # pylint: disable=consider-using-with
                     argv, cwd=cwd, env=child_env, stdout=stdout_stream, stderr=stderr_stream
@@ -205,8 +264,10 @@ def _execute(argv: list[str], cwd: pathlib.Path, timeout: float | None) -> tuple
                     process_tree.log_residual(process_tree.stop_process_tree(process), context="run-command exception")
                     raise
                 child_exit_code = process.returncode
+                for item in declared:
+                    item["after"] = _snapshot(pathlib.Path(item["path"]))
             except (OSError, ValueError) as error:
-                failure = f"子プロセスを開始できない: {error}"
+                failure = f"子の実行または結果ファイルの状態取得に失敗した: {error}"
         if timed_out:
             wrapper_exit_code = _EXIT_TIMEOUT
         elif child_exit_code is not None:
@@ -230,6 +291,10 @@ def _execute(argv: list[str], cwd: pathlib.Path, timeout: float | None) -> tuple
         stderr_path=stderr_path,
     )
     metric_errors = metadata.pop("_metric_errors")
+    if result_files:
+        metadata["result_files"] = declared
+    if path_maps:
+        metadata["path_maps"] = path_maps
     if metric_errors:
         wrapper_exit_code = _EXIT_WRAPPER_FAILURE
         failure = "\n".join([*([failure] if failure else []), *metric_errors])
@@ -351,7 +416,13 @@ def dispatch(args: argparse.Namespace) -> int:
     records = getattr(args, "record", None) or []
     bundle = getattr(args, "records_file", None)
     if records or bundle:
-        if argv or args.cwd is not None or args.timeout is not None or getattr(args, "verification", False):
+        if (
+            argv
+            or args.cwd is not None
+            or args.timeout is not None
+            or getattr(args, "verification", False)
+            or (getattr(args, "result_file", None) or getattr(args, "path_map", None))
+        ):
             outcome.report_failure(
                 "保存済み読取と子の実行指定は混在できない", next_action="--record・--records-fileだけで再実行する"
             )
@@ -372,7 +443,12 @@ def dispatch(args: argparse.Namespace) -> int:
         return _EXIT_WRAPPER_FAILURE
     cwd = args.cwd if args.cwd is not None else pathlib.Path.cwd().resolve()
     metadata, wrapper_exit_code, failure = execute(
-        argv[1:], cwd, args.timeout, verification=getattr(args, "verification", False)
+        argv[1:],
+        cwd,
+        args.timeout,
+        verification=getattr(args, "verification", False),
+        result_files=getattr(args, "result_file", None),
+        path_maps=getattr(args, "path_map", None),
     )
     # 保存できた通常実行では次の判断に要る結果と所在だけを返す。
     # 保存失敗では実行条件の回復先が無いため、取得できた全情報を返す。

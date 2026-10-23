@@ -1,4 +1,4 @@
-r"""PreToolUse統合フックのうち、Bashコマンドを遮断する条件の判定。"""
+r"""PreToolUse統合フックのBashコマンドに対する実害保護と手順支援。"""
 
 from __future__ import annotations
 
@@ -41,11 +41,14 @@ _GLOBAL_OPTIONS_WITH_VALUE: frozenset[str] = frozenset(
 
 
 def _check_read_predicate_stderr_discard(command: str) -> str | None:
-    """静的に確定する読取述語の標準エラーの破棄を実行前に遮断する。"""
+    """読取の診断破棄を警告する。再取得で診断を復元できるため実行を続ける。"""
     for invocation in extract_bash_invocations(command):
         if is_read_predicate(invocation.segment.tokens) and invocation.outputs[1] == "/dev/null":
-            return _block_notice(
+            return _llm_notice(
                 "読取述語の標準エラーの最終接続先が`/dev/null`であり、入力・パス・権限の異常の診断を失う。",
+                tag=_WARN_TAG,
+                subject=command,
+                removable_cause=True,
                 fix="標準エラーの破棄を外して再実行する。出力量は標準出力の対象限定・保存で抑え、"
                 "標準エラーは呼び出し元へ残すか別ファイルへ保存し、別の呼び出しで読む。",
             )
@@ -507,11 +510,11 @@ def _rev_parse_short_revisions(arguments: Sequence[str]) -> list[str] | None:
 
 
 def _warn_git_rev_parse_short_multiple(command: str) -> str | None:
-    """単一revision検証へ複数revisionを渡す実行を遮断する本文を返す。
+    """単一revision検証へ複数revisionを渡す読取へ警告する。
 
     同コマンドは1回に1つのrevisionだけを受理し、複数を渡すと`fatal: Needed a single revision`で失敗する。
     条文で定めた後も同じ失敗が反復したため、実行の直前に判定する。
-    入力だけで失敗が確定し、個別の取得で是正できるため実行前に遮断する。
+    個別の取得で結果を復元できるため、警告とする。
     """
     for invocation in extract_bash_invocations(command):
         if not invocation.arguments_known:
@@ -522,10 +525,13 @@ def _warn_git_rev_parse_short_multiple(command: str) -> str | None:
             continue
         revisions = _rev_parse_short_revisions(subcommand[1])
         if revisions is not None and len(revisions) >= 2:
-            return _block_notice(
+            return _llm_notice(
                 f"`git rev-parse`の単一リビジョン検証へ{len(revisions)}つのリビジョン（{'、'.join(revisions)}）を渡している。"
                 "`--short`または`--verify`は1回に1つのリビジョンだけを受理し、複数指定は失敗する。"
                 "`--quiet`によって診断と終了コードが変わるため、終了コード128とは限らない。",
+                tag=_WARN_TAG,
+                subject=command,
+                removable_cause=True,
                 fix="元の`--short`・`--short=<長さ>`・`--verify`などのオプションを保ち、リビジョンごとに"
                 "`git rev-parse <元のオプション> <revision>`を個別に実行して入力と出力の対応を保つ。",
             )
@@ -583,14 +589,13 @@ def _pattern_command_slot(arguments: Sequence[str]) -> set[int]:
 
 
 def _check_bash_option_after_terminator(command: str) -> str | None:
-    """オプション終端`--`の後ろへCLI自身のオプションを置いたコマンドを遮断する。
+    """読取コマンドのオプション終端の後ろにあるオプションへ警告する。
 
     `--`の後ろは全てデータとして扱われるため、後ろへ置いた`--glob`などは`rg`・`grep`系・`git grep`では
     存在しないパスとして失敗し、`git log`・`git diff`・`git show`ではエラーを出力せずにパス指定として扱われ、誤った結果を返す。
     条文で配置を定めた後も同じ誤りが反復したため、実行の直前に判定する。
-    遮断とする根拠は`agent-toolkit:writing-standards`の`references/claude-hooks-block-warn.md`「遮断と警告の選択」にある。
+    読取入力を修正して再取得できるため警告し、通常の実行を続ける。
     外側に所属する既知の引数だけを判定し、置換内の語と展開結果が未確定の引数はオプションとして扱わない。
-    遮断で失うのはコマンド1回の発行だけである。
     `rg`・`grep`系と`git grep`では、`-e`・`-f`を`--`より前に置かない場合に`--`の直後を検索パターンとみなして除くため、
     `-`で始まるパターンは遮断しない。`git grep`ではその後ろのrevision・パスの区切り`--`も除く。
     下位コマンドへ`--`の後ろでオプションを渡すCLI（`uv run --`など）は対象コマンドに含めない。
@@ -617,10 +622,13 @@ def _check_bash_option_after_terminator(command: str) -> str | None:
             label = f"git {subcommand[0]}"
         if not found:
             continue
-        return _block_notice(
-            f"blocked: `{label}`のオプション終端`--`の後ろにオプション（{'、'.join(found)}）がある。"
+        return _llm_notice(
+            f"`{label}`のオプション終端`--`の後ろにオプション（{'、'.join(found)}）がある。"
             "`--`の後ろは全てデータとして扱われるため、これらはパスとして解釈され、"
             "存在しないパスとして失敗するか、エラーを出力せずに結果を限定する。",
+            tag=_WARN_TAG,
+            subject=command,
+            removable_cause=True,
             fix=(
                 "そのコマンド自身のオプションを`--`より前へ移し、`--`の後ろには検索パターンとパスだけを置いて再実行する。"
                 "`-`で始まるパスを渡す場合は`./`を前置する。"
@@ -653,7 +661,7 @@ def _is_atk_resident_display(tokens: tuple[str, ...]) -> bool:
 
 
 def _check_bash_atk_output_loss(command: str) -> str | None:
-    """静的に確定したatkの出力のパイプとリダイレクト、waitの背景化を遮断する。
+    """atkの出力接続とwaitの背景化へ、結果を受領する手段を警告する。
 
     `atk`はエージェント環境で短い出力を直接表示し、長い出力を自ら保存して保存先を示す。
     パイプかリダイレクトを介すと終了コードと警告を同じ呼び出しで観測できず、保存先の行が後段かファイルへ渡り、
@@ -661,6 +669,7 @@ def _check_bash_atk_output_loss(command: str) -> str | None:
     未確定のパスを区別せず、標準出力と標準エラーの最終的な接続先が呼び出し元から引き継いだ1と2から変わったかだけで判定する。
     常駐と追従の表示は保存の対象外のため、リダイレクトの判定から除く。
     引数のリテラルやheredoc本文、未知の実行位置は判定せず、ホストが管理する背景実行は通す。
+    保存結果や状態の再照会で受領を回復できる手順支援のため、警告とする。
     区切り語を引用しないheredocの本文にある置換は、`_check_bash_unquoted_heredoc_substitution`が実行前に遮断する。
     """
     for invocation in extract_bash_invocations(command):
@@ -678,8 +687,11 @@ def _check_bash_atk_output_loss(command: str) -> str | None:
         if not causes:
             continue
         label = "atk agents wait" if is_wait else "atk"
-        return _block_notice(
-            f"blocked: `{label}`の結果と終了状態を直接受領できない入力（{'、'.join(causes)}）を検出した。",
+        return _llm_notice(
+            f"`{label}`の結果と終了状態を直接受領できない入力（{'、'.join(causes)}）を検出した。",
+            tag=_WARN_TAG,
+            subject=command,
+            removable_cause=True,
             fix=(
                 "`atk`はパイプとリダイレクトを外して単独で発行し、長い出力は`atk`が示す保存先"
                 "（標準出力の`保存先:`と標準エラーの`標準エラー保存先:`）から読む。"
@@ -812,4 +824,5 @@ def _warn_windows_drive_letter_path(command: str, *, is_codex: bool) -> str | No
         tag=_WARN_TAG,
         fix="`/c/Users/...`の形で書くか、`\"$(cygpath -u '<Windows形式のパス>')\"`で変換した値を`PATH`へ加えて再実行する。",
         removable_cause=True,
+        subject=command,
     )

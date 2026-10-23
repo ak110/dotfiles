@@ -1,5 +1,5 @@
 import type { EngineInterface, On } from "claude-code";
-import { automatedMessage } from "./automated_message.ts";
+import { automatedMessage, changedWarning } from "./automated_message.ts";
 import { isMarked, parseSchedule } from "./periodic_recheck.ts";
 
 const SESSION_ID = /^[A-Za-z0-9_-]+$/;
@@ -36,7 +36,7 @@ function cleanupWarning(reason: string): string {
 }
 
 // Stopが同じターンの非同期判定を書き、ここで一度だけ消費する。欠落・不明は回収の許可にしない。
-async function collectPeriodicRecheck($: EngineInterface, sessionId: string, aborted: boolean): Promise<string | undefined> {
+async function collectPeriodicRecheck($: EngineInterface, sessionId: string, aborted: boolean): Promise<string | null | undefined> {
   const path = await statePath($, sessionId, "recheck");
   if (!path) return undefined;
   try {
@@ -45,14 +45,14 @@ async function collectPeriodicRecheck($: EngineInterface, sessionId: string, abo
     if (verdict !== "complete" || aborted) return undefined;
     // 軽量探索などCronListを持たない会話は、この回収機能の適用対象外である。
     // 非公開ツールをtool.checkへ渡すと例外になり、正常な返却後に不要な通知ターンが発生する。
-    if (!(await $.tool.list()).some((tool) => tool.name === "CronList")) return undefined;
+    if (!(await $.tool.list()).some((tool) => tool.name === "CronList")) return null;
     const listDecision = (await $.tool.check({ tool: "CronList", input: {} })).decision;
     if (listDecision !== "allow") return cleanupWarning(`CronList: ${listDecision}`);
     const listed = await $.tool.call({ tool: "CronList" });
     if (listed.deny !== undefined) return cleanupWarning(`CronList: ${listed.deny}`);
     if (listed.isError === true) return cleanupWarning(`CronList: ${listed.text ?? "一覧取得エラー"}`);
     const marked = listed.result.jobs.filter((job) => job.durable !== true && isMarked(job.prompt));
-    if (marked.length === 0) return undefined;
+    if (marked.length === 0) return null;
     const root = $.plugin.root;
     const schedule = await $.process.run(
       ["uv", "run", "--project", root, "--locked", "--no-default-groups", `${root}/agent_toolkit/atk.py`, "wait-schedule", "--request-bucket", "main", "--format", "json"],
@@ -75,7 +75,7 @@ async function collectPeriodicRecheck($: EngineInterface, sessionId: string, abo
         failures.push(`${job.id}: CronDelete: ${String(error)}`);
       }
     }
-    return failures.length ? cleanupWarning(failures.join("、")) : undefined;
+    return failures.length ? cleanupWarning(failures.join("、")) : null;
   } catch (error) {
     return isMissing(error) ? undefined : cleanupWarning(String(error));
   }
@@ -108,7 +108,7 @@ async function deleteSessionCrons($: EngineInterface): Promise<void> {
 }
 
 export function register(on: On): void {
-  const deliveredFailures = new Set<string>();
+  const deliveredFailures = new Map<string, string>();
   on("turn.complete", async ($, e, next) => {
     const result = await next(e);
     if (e.agentId !== undefined) return result;
@@ -123,13 +123,13 @@ export function register(on: On): void {
       else throw error;
     }
     if (content !== "requested") {
-      const note = await collectPeriodicRecheck($, sessionId, e.isAborted);
-      if (note && !deliveredFailures.has(note)) {
-        deliveredFailures.add(note);
+      const outcome = await collectPeriodicRecheck($, sessionId, e.isAborted);
+      // 未点検のturnは解消の観測に数えず、実際の成功・対象消滅で通知の既往を解く。
+      const note = outcome === undefined ? undefined : changedWarning(deliveredFailures, sessionId, outcome ?? undefined);
+      if (note) {
         // 同じ失敗による通知ターンの反復を避け、処置できる本文を会話へ一度届ける。
         $.clock.after(0, async () => { await $.prompt.submit({ text: note }); });
       }
-      if (!note) deliveredFailures.clear();
       return result;
     }
     await $.fs.write(request, "consumed");

@@ -82,6 +82,7 @@ def run(
     *,
     tag: str,
     arguments: Sequence[str] = (),
+    readiness: Callable[[Sequence[str]], bool] | None = None,
 ) -> post_apply_outcome.PostApplyOutcome:
     """実在する起動スクリプト群のuv環境を構築する。
 
@@ -108,8 +109,19 @@ def run(
             ),
         )
         return post_apply_outcome.PostApplyOutcome()
+    startup_failures: list[str] = []
     for target in resolved:
-        warmup(target, uv, tag=tag, arguments=arguments)
+        if (
+            warmup(target, uv, tag=tag, arguments=arguments)
+            and readiness is not None
+            and not readiness([*_bootstrap(target, uv), str(target)])
+        ):
+            startup_failures.append(str(target))
+    if startup_failures:
+        return post_apply_outcome.PostApplyOutcome(
+            failure="準備後の起動確認に失敗: " + ", ".join(startup_failures),
+            next_action="`update-dotfiles logs`の起動段階・標準エラーを確認し、`update-dotfiles`を再実行する",
+        )
     return post_apply_outcome.PostApplyOutcome()
 
 
@@ -198,9 +210,16 @@ def warmup(
     arguments: Sequence[str] = (),
 ) -> bool:
     """Plugin rootのuvプロジェクトで対象スクリプトを1回起動し、依存環境を構築する。構築できた場合は真を返す。"""
+    bootstrap = _bootstrap(path, uv)
+    prepared = run_command([*bootstrap, "--prepare", str(path)], target=log_format.home_short(path), tag=tag)
+    return prepared and run_command([*bootstrap, str(path), *arguments], target=log_format.home_short(path), tag=tag)
+
+
+def _bootstrap(path: Path, uv: Path) -> list[str]:
+    """依存準備と実起動が共用するlauncherを返す。"""
     root = next(parent.parent for parent in path.parents if parent.name == "agent_toolkit")
     launcher = Path(plugin_environment.__file__).resolve().parents[2] / "scripts" / "launch.py"
-    bootstrap = [
+    return [
         str(uv),
         "run",
         "--no-config",
@@ -212,8 +231,6 @@ def warmup(
         "--project",
         str(root),
     ]
-    prepared = run_command([*bootstrap, "--prepare", str(path)], target=log_format.home_short(path), tag=tag)
-    return prepared and run_command([*bootstrap, str(path), *arguments], target=log_format.home_short(path), tag=tag)
 
 
 def run_command(cmd: Sequence[str], *, target: str, tag: str) -> bool:

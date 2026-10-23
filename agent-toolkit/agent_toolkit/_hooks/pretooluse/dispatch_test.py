@@ -68,7 +68,7 @@ def test_agents_server_pass_uses_host_output_contract(tmp_path: pathlib.Path, ho
 
 
 def _assert_plain_pass(result, host: str) -> None:
-    """追加文脈を持たない通過がホスト別の公開hook契約に従うことを確かめる。"""
+    """資料取得後の通過をホストの公開契約で返す。"""
     assert result.returncode == 0, result.stderr
     assert not result.stderr
     output = json.loads(result.stdout) if result.stdout else {}
@@ -728,8 +728,8 @@ def test_stderr_warn_offenders_detects_indirect_binding() -> None:
     assert _stderr_warn_offenders(source) == [expected_lineno]
 
 
-def test_second_removable_warning_continues_with_count_and_fix(tmp_path: pathlib.Path) -> None:
-    """同一原因の2件目も、累積件数と解消手段を添えて通過させる。"""
+def test_second_removable_warning_is_suppressed(tmp_path: pathlib.Path) -> None:
+    """同じ対象・原因・対処の通知は初回に届け、継続中の2回目を抑止する。"""
     payload = {
         "tool_name": "Write",
         "tool_input": {"file_path": str(tmp_path / "uv.lock"), "content": "version = 1\n"},
@@ -747,9 +747,8 @@ def test_second_removable_warning_continues_with_count_and_fix(tmp_path: pathlib
 
     assert first.returncode == 0
     assert second.returncode == 0
-    context = _additional_context(second)
-    assert "この通知は同一セッションで2件目である" in context
-    assert "uv add" in context
+    assert "uv add" in _additional_context(first)
+    assert _additional_context(second) == ""
     assert second.stderr == ""
 
 
@@ -758,7 +757,7 @@ def test_irremovable_warning_does_not_advance_removable_repeat_count(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """除去不能警告の後も、除去可能警告の2回目だけに反復注記を付ける。"""
+    """除去可能性の区分が変わっても同じ原因・本文・対処の反復を抑止する。"""
     monkeypatch.setattr("tempfile.tempdir", str(tmp_path))
 
     def emit_controlled_warning(_tool_name: str, tool_input: dict, _cwd: str) -> Decision:
@@ -791,7 +790,8 @@ def test_irremovable_warning_does_not_advance_removable_repeat_count(
     assert irremovable == 0
     assert first_removable == 0
     assert second_removable == 0
-    assert "この通知は同一セッションで2件目である" in captured.out
+    assert "この通知は同一セッションで2件目である" not in captured.out
+    assert captured.out.count("controlled warning") == 1
     assert captured.err == ""
 
 
@@ -1442,8 +1442,8 @@ def test_bash_drive_letter_path_warning_reaches_additional_context(
 
 
 @pytest.mark.parametrize("tool", ["Read", "Grep"])
-def test_original_record_warning_offers_delegation_without_command_access(tmp_path, monkeypatch, capsys, tool):
-    """読取専用担当へも専用抽出と委譲元経由の取得を案内し、通常資料との境界を保つ。"""
+def test_original_record_warning_offers_public_extraction(tmp_path, monkeypatch, capsys, tool):
+    """原記録の抽出手段を案内し、通常資料との境界と汎用の委譲指示の不在を保つ。"""
     home = tmp_path / "claude"
     monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(home))
     record = home / "projects/project/record.jsonl"
@@ -1453,8 +1453,9 @@ def test_original_record_warning_offers_delegation_without_command_access(tmp_pa
     payload = {"tool_name": tool, "tool_input": {key: str(record)}, "cwd": str(tmp_path)}
     assert pretooluse.main(json.dumps(payload)) == 0
     notice = capsys.readouterr().out
-    assert "session-review-evidence" in notice and "委譲元へ返し" in notice
-    assert "識別子・位置・必要な照会内容" in notice
+    assert "session-review-evidence" in notice
+    assert "委譲元へ返し" not in notice
+    assert str(record) in notice
     payload["tool_input"] = {key: str(tmp_path / "AGENTS.md")}
     assert pretooluse.main(json.dumps(payload)) == 0
     assert "session-review-evidence" not in capsys.readouterr().out

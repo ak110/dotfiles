@@ -7,9 +7,10 @@
 メインが実装後のHEADを実行レビュー担当へレビューさせ、指摘への修正と履歴統合を管理する際に本書へ従う。
 実行レビュー担当自身の手順は`${CLAUDE_PLUGIN_ROOT}/share/exec-review.subagent.md`が定める。本書は起動、入力生成、レビュー修正、レビュー指摘管理表の保存を扱い、レビュー分類と判定手順は同書と`agent-toolkit:review-standards`に委ねる。
 
-全起動で名前付き入力`未判定検証記録`を渡す。証拠要求ありでは実装担当かメインが作成したJSONの実在し読取可能な絶対パス、証拠要求なしでは`なし`とする。値は起動前に確定して渡す（レビュー担当に進捗ログや引き継ぎから探させない）。引き継ぎ再レビューでも初回値を保持する。JSONの作成手順は`${CLAUDE_PLUGIN_ROOT}/share/exec.subagent.md`「実装」の「完成条件証拠の検証記録」が定め、メインが自ら実装した場合はメインが同じ手順で実装完了前に作成する。根拠にするテスト出力と手動観測は、同書「操作の直前に判定する前提」の手順で実行した版（HEADと未commit・未追跡の状態）とともに保存する。
+全起動で名前付き入力`未判定検証記録`を渡す。証拠要求ありでは実装担当かメインが作成したJSONの実在し読取可能な絶対パス、証拠要求なしでは`なし`とする。値は起動前に確定して渡す（レビュー担当に進捗ログや引き継ぎから探させない）。引き継ぎ再レビューでも初回値を保持する。JSONの作成手順は`${CLAUDE_PLUGIN_ROOT}/share/verification-evidence.md`「完成条件証拠の検証記録」が定め、メインが自ら実装した場合はメインが同じ手順で実装完了前に作成する。根拠にするテスト出力と手動観測は、同書「手動観測の保存」の手順で実行した版（HEADと未commit・未追跡の状態）とともに保存する。
 任意入力`受理済みの完成条件証拠`へは同じ計画の進捗ログに保存した受理済み証拠のうち後続担当が読めるJSONの絶対パスを渡す（省略時と行が無い場合は`なし`）。未判定検証記録とは分け、参照を使える条件と判定は`agent-toolkit:review-standards`の`references/exec-review-recording.md`「受理済み判定への参照」に従う。
 未判定検証記録では、受入シナリオの公開された呼び出し手段・入力・期待結果に対応する実結果と保存済み根拠を渡す。
+最終の検証と有限の手動観測の時機は`agent-toolkit:commit`「検証」、保存済み成功と失敗限定の結果の合成は`agent-basics:check-execution`の`references/verification-scope.md`「実行条件と再実行」に従う。
 委譲元所有の残工程は担当と再開先を接続し、検証済み・未実施・条件変更の判断を分けてレビューへ渡す。
 根拠の十分性と要件・外部仕様の達成は独立した実行レビュー担当が判定し、判定欄の書込を所有する。
 
@@ -26,6 +27,10 @@
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `exec-review.subagent.md` | 判断 | `read:agent-toolkit:*/share/exec-review.subagent.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/review-standards/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/review-standards/SKILL.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `exec.subagent.md#「実装」` | 判断 | `section:agent-toolkit:*/share/exec.subagent.md#「実装」` |
+| 未判定検証記録を作成・更新する前 | `verification-evidence.md`の「完成条件証拠の検証記録」 | 判断 | `section:agent-toolkit:*/share/verification-evidence.md#「完成条件証拠の検証記録」` |
+| 手動観測を保存する前 | `verification-evidence.md`の「手動観測の保存」 | 判断 | `section:agent-toolkit:*/share/verification-evidence.md#「手動観測の保存」` |
+| 最終の検証と有限の手動観測の時機を判断する前 | `../skills/commit/SKILL.md#「検証」` | 判断 | `section:agent-toolkit:*/skills/commit/SKILL.md#「検証」` |
+| 保存済み成功と失敗限定の結果を合成する前 | `agent-basics:check-execution`の`references/verification-scope.md#「実行条件と再実行」` | 判断 | `section:agent-basics:*/skills/check-execution/references/verification-scope.md#「実行条件と再実行」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/review-standards/references/exec-review-recording.md#「受理済み判定への参照」` | 判断 | `section:agent-toolkit:*/skills/review-standards/references/exec-review-recording.md#「受理済み判定への参照」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `workflow-phases.md#「用語」` | 判断 | `section:agent-toolkit:*/share/workflow-phases.md#「用語」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `usability-review.parent.md` | 判断 | `read:agent-toolkit:*/share/usability-review.parent.md` |
@@ -53,7 +58,7 @@
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `add-wi.parent.md#「続行できない理由の扱い」` | 判断 | `section:agent-toolkit:*/share/add-wi.parent.md#「続行できない理由の扱い」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/bugfix/references/root-cause-analysis.md#「QとC・Dの区別」「類似見直し」「類似見直しと再発防止の完了」` | 判断 | `section:agent-toolkit:*/skills/bugfix/references/root-cause-analysis.md#「QとC・Dの区別」「類似見直し」「類似見直しと再発防止の完了」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/delegation/references/sending.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/sending.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `review-loop-coordination.md` | 判断 | `read:agent-toolkit:*/share/review-loop-coordination.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `review-loop-coordination.md`の冒頭と「ラウンドの遷移」から「応答済みの判定」まで | 判断 | `section:agent-toolkit:*/share/review-loop-coordination.md#冒頭`、`section:agent-toolkit:*/share/review-loop-coordination.md#「ラウンドの遷移」から「応答済みの判定」まで` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `exec.parent.md#「入力」` | 判断 | `section:agent-toolkit:*/share/exec.parent.md#「入力」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `review-loop-coordination.md#「応答済みの判定」` | 判断 | `section:agent-toolkit:*/share/review-loop-coordination.md#「応答済みの判定」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/commit/references/history-rewrite.md#「WI実装commitの対応の継承」` | 判断 | `section:agent-toolkit:*/skills/commit/references/history-rewrite.md#「WI実装commitの対応の継承」` |
@@ -62,8 +67,6 @@
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/plan-mode/references/plan-file-storage.md#「計画ファイルの保存と参照」` | 判断 | `section:agent-toolkit:*/skills/plan-mode/references/plan-file-storage.md#「計画ファイルの保存と参照」` |
 
 ## 読込表
-
-次の時点または条件が成立したら、対象の操作の前に同じ行の資料を全文読む。
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 | 資料選択子 |
 | --- | --- | --- | --- | --- |
@@ -175,7 +178,7 @@ Git管理外の変更元と変更前複製の対がある場合は、レーン�
 
 ## 完成条件証拠の受領確認
 
-実行レビュー担当が`atk run-script exec-review-evidence-check`の`--return-result`で生成した固定形式と`受領確認入力のパス`を受け取り、次を確かめる。統合指示の前の再確認（`exec.parent.md`「統合の指示と受領」）にも同じ生成済み入力を引き継ぐ。
+実行レビュー担当が`atk run-script exec-review-evidence-check`の`--return-result`で生成した固定形式と`受領確認入力のパス`を受け取り、次を確かめる。レーン統合では、生成済み入力と受理した最後の実レビューHEADを`exec.parent.md`「統合の指示と受領」の`受領確認入力`へ引き継ぐ。Git変更前の再検査は`atk lane integrate`が行い、受領側は本節の原文・根拠の意味検収と統合時の完成条件判定を担う。
 
 1. 返却の`レビューしたHEAD`、round、表と証拠のパス、`計画のパス`、`入力記録のパス`を同じレビューの入力として保持する。未解決件数は返却値をそのまま使い、`<配列>の判定内訳`と`達成以外の行`は非達成行の所在の一覧として使う
 2. `読者別探索`のファイル別JSON申告と`レビュー開始時点`、`前回確認版の開始時点`、`前回確認版HEAD`を同じレビューの値として保持する。メイン自身が保持する回答下書きの絶対パスと、レーンの引き継ぎ記録にある`Git管理外の変更`の元ファイルのうち`.md`・`.md.tmpl`から対象集合を求め、生成済み入力の各組の必須配列`external_artifacts`（0件は`[]`）と一致することを確かめる
@@ -211,7 +214,7 @@ Git管理外の変更元と変更前複製の対がある場合は、レーン�
 
 この扱いは`agent-toolkit/rules/01-agent.md`「完遂と先送り」の、独立した既存不良を同じセッションで是正する一般則に対する例外である。先送りに要する事象・根本原因・対応案は、担当が保存するAWIが備える。
 例外として、本セッションの残りの工程（レビュー修正、統合、公開）を停止・遮断する不良は、同節の進行を妨げる欠陥としてその場で扱う。この判定は工程が停止・遮断されるという観測事実から行い、原因分析を要件にしない。
-その不良は`agent-toolkit:bugfix`と同節に従って是正する（process-wiの処理中は同スキルの「即時対応」）。Qへの影響、レビュー対象の問題と根本原因を同じくするかと処置の完了は、`agent-toolkit:bugfix`の`references/root-cause-analysis.md`「QとC・Dの区別」「類似見直し」「類似見直しと再発防止の完了」で判定する。認可が要る場合は`agent-toolkit:user-confirmation-and-report`に従う。
+その不良は`agent-toolkit:bugfix`と同節に従って是正する。process-wiの処理中は同スキルの「即時対応」に従い、進行に必要な範囲だけ修正し、正式対応を次のセッション用AWIへ渡す。通常の正式対応では、Qへの影響、レビュー対象の問題と根本原因を同じくするかと処置の完了を、`agent-toolkit:bugfix`の`references/root-cause-analysis.md`「QとC・Dの区別」「類似見直し」「類似見直しと再発防止の完了」で判定する。認可が要る場合は`agent-toolkit:user-confirmation-and-report`に従う。
 レーン担当が自レーンの検証を妨げるとして返す既存不良は実行レビューの返却に当たらず、process-wiの処理中は同スキルの「即時対応」で扱う。
 
 対象ごとに、引き渡し済みの担当、是正結果、根拠付き非該当判定、判断待ちの受渡し先のいずれかを既存の引き継ぎ記録へ対応付けてから、レビュー収束後の工程へ進む。
@@ -248,6 +251,6 @@ Git管理外の変更元と変更前複製の対がある場合は、レーン�
 
 ## レビュー指摘管理表の保存
 
-- `WI`だけの基準: 収束後に表を削除する（後から参照する主体が無く、計画バンドルの付属ファイルでもないため）。保存先はprivate-notesの外とする
+- `WI`だけの基準: レーン統合では`atk lane integrate`が`phase: finalized`を返した後、直接実装では本書の受領確認と意味検収の後に表を削除する。統合の検査とその再開が表を読むため、最終化まで保持する。保存先はprivate-notesの外とする
 - `CI記録`だけの基準: 同じ修正系列で表と`修正系列の開始時のHEAD`を継続し、系列の終端で`atk plans commit ci-<修正系列の開始時のHEAD>.exec-review.tsv`により`private-notes/plans/ci/`へ保存する。時機は`ci-failure-handling.md`の`入力計画`の段落が定め、process-wiの公開工程では終端担当が実行する
 - `計画`を含む基準: 計画を所有するエージェントが`agent-toolkit:plan-mode`の`references/plan-file-storage.md`「計画ファイルの保存と参照」に従って計画バンドルとともに保存する

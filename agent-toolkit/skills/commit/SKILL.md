@@ -15,7 +15,7 @@ description: >
 
 履歴の変更と公開にはGit、対象リポジトリおよび必要な公開先を操作できるCLIが必要である。Gitを操作できない環境では、提示された差分からメッセージ案と確認する条件を返し、commit・push・CI監視は機能を提供するClaude CodeまたはCodexで行う。メッセージ案には[文章の品質基準](references/quality-standards.md)を使う。
 
-git commitの運用とコミットメッセージの規約を定める。最初に`references/git-identifier.md`を全文読む。
+git commitの運用とコミットメッセージの規約を定める。識別子の確認、履歴操作と公開の前に`references/git-identifier.md`を読む。
 
 ## 名指し参照の読込方法
 
@@ -26,14 +26,14 @@ git commitの運用とコミットメッセージの規約を定める。最初�
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `references/quality-standards.md` | 判断 | `read:agent-toolkit:*/skills/commit/references/quality-standards.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../bugfix/references/ci-failure-handling.md` | 判断 | `read:agent-toolkit:*/skills/bugfix/references/ci-failure-handling.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../bugfix/SKILL.md#「対策の選定」` | 判断 | `section:agent-toolkit:*/skills/bugfix/SKILL.md#「対策の選定」` |
+| 保存済みの検証結果を再利用する前 | `agent-basics:check-execution/references/verification-scope.md#「実行条件と再実行」` | 判断 | `section:agent-basics:*/skills/check-execution/references/verification-scope.md#「実行条件と再実行」` |
+| 取得版の異なる結果をレビューへ渡す前 | `../review-standards/references/exec-review-recording.md#「根拠の書き方」` | 判断 | `section:agent-toolkit:*/skills/review-standards/references/exec-review-recording.md#「根拠の書き方」` |
 
 ## 読込表
 
-次の時点または条件が成立したら、その操作の前に同じ行の資料を全文読む。
-
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 | 資料選択子 |
 | --- | --- | --- | --- | --- |
-| 本スキルを起動した時点 | `references/git-identifier.md` | 起動時 | `skill:commit` | |
+| Git識別子・worktree・履歴・公開済みの状態を判定または操作する前 | `references/git-identifier.md` | 判断 | `read:agent-toolkit:*/skills/commit/references/git-identifier.md` | |
 | 公開工程またはリリース操作に着手する前 | `references/publish.md` | 判断 | `read:agent-toolkit:*/skills/commit/references/publish.md` | |
 | amend、fixup、autosquash、rebaseまたはpush済み判定の前 | `references/history-rewrite.md` | 判断 | `read:agent-toolkit:*/skills/commit/references/history-rewrite.md` | |
 | 実際にpushする前 | `references/push-and-ci.md` | 操作 | `bash:git push` | |
@@ -45,7 +45,9 @@ push後のCI失敗は`agent-toolkit:bugfix`を起動し、同スキルの`refere
 
 ## 検証
 
-全コミットの完了後に計画全体を対象に変更範囲を検証し、レビューへ進む。
+開発中の試行は必要な時点で行う。レビューへ渡す最終の試験と有限終了の手動観測は、結果へ作用する実装・試験・入力を確定し、全commitとcommit hookの書換えを完了してから取得する。計画全体の変更範囲を被覆する結果と取得版を対応付けて、レビューへ進む。
+保存済み結果の再利用は、`agent-basics:check-execution`の`references/verification-scope.md`「実行条件と再実行」で判定する。
+取得版の対応は、`agent-toolkit:review-standards`の`references/exec-review-recording.md`「根拠の書き方」に従う。内容確定後も有効な成功結果を使い、結果へ作用する変更と未確認集合だけを追加検証する。
 
 ## 通常commit
 

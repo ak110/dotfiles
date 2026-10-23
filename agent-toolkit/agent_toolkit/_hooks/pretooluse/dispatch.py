@@ -22,7 +22,7 @@ AskUserQuestion / ExitPlanMode:
 
 mcp__plugin_agent-toolkit_agents_server__start / send_message / kill / list:
 
-- `start`の自由本文のmode（`delegate`・`explore`・`write`）の本文が`share/<役割名>.subagent.md`を指す起動の遮断 (block)
+- 自由本文が役割文書の実行を指す起動の形式を案内 (warn)
 - `send_message`・`kill`の空でない`session_id`が指す対象sessionの保存済み`cwd`の欠落は
   所有を確認できないため、入力形式によらず遮断 (block)。
   入力形式（`prompt`・`instruction`・`session_id`の欠落・併用）の検証と修正案内はツールが返す
@@ -30,14 +30,14 @@ mcp__plugin_agent-toolkit_agents_server__start / send_message / kill / list:
 
 Agent / Task:
 
-- `<役割名>.subagent.md`を指す本文が1行目の命令と宣言済みの入力以外の行を含む起動の遮断 (block)
+- 宣言外の説明を含む役割起動の形式を案内 (warn)。必須入力が欠ける定型起動は契約不成立として遮断 (block)
 
 Bash:
 
-- Codexで48KiBを超える通常ファイルの静的に確定できる全文取得の遮断 (block)。通知は`atk read-file`による終端までの読取を示す
+- Codexで48KiBを超える通常ファイルの全文取得の警告 (warn)。通知は受信予算と分割取得を案内する
 - 区切り語を引用しないheredocの本文にあるコマンド置換の遮断 (block)
 - パターン一致によるプロセス終了（`pkill`・`killall`等）の遮断 (block)
-- atkの出力のパイプとリダイレクト（常駐と追従の表示を除く）と、`atk agents wait`のシェル背景化の遮断 (block)
+- 読取の引数・診断破棄、atk出力の接続とwaitの背景化の警告 (warn)
 - 未完了のバックグラウンドタスクが書き込む出力ファイルの読取の警告 (warn)
 - Codexでcommitのmessage.mdを読むとき、観測したモデルと推論量の帰属行を先行配送 (warn)
 - 操作を起動の契機とするスキル（`agent-toolkit:search`・`agent-toolkit:bugfix`）が未起動の操作の、文脈ごとに1回の警告 (warn)
@@ -69,7 +69,7 @@ Write / Edit / MultiEdit / apply_patch:
 
 - 編集入力は`_hook_tool_input`が共通の操作記録へ正規化し、各判定処理はホストを区別しない
 - 空でない文字列の`turn_id`を持つ入力をCodexと判定し、この判定はpayloadの読込直後に一度だけ行う
-- 大量読取の遮断はCodexだけへ適用し、PowerShellの改行を確かめる処理はClaudeの`Write`へ限定する
+- 大量読取の警告はCodexだけへ適用し、PowerShellの改行を確かめる処理はClaudeの`Write`へ限定する
 - 警告は1つの`hookSpecificOutput.additionalContext`へ結合し、遮断は最初の違反をexit 2とstderrで返す
 """
 
@@ -88,17 +88,16 @@ lazy from agent_toolkit._common import response_language_check as _response_lang
 lazy from agent_toolkit._common import transcript as _transcript
 lazy from agent_toolkit._common.runtime_identity import RuntimeIdentity, co_author_trailer, identity_observations
 lazy from agent_toolkit._common.session_state import read_state
+lazy from agent_toolkit._hooks import agent_id as _agent_id
 lazy from agent_toolkit._hooks import (
     background_task_outputs as _background_task_outputs,
-)
-lazy from agent_toolkit._hooks import (
-    message_format as _message_format,
 )
 lazy from agent_toolkit._hooks import (
     tool_input as _hook_tool_input,
 )
 lazy from agent_toolkit._hooks.host import is_antigravity_payload, is_codex_payload
-lazy from agent_toolkit._hooks.notice import _WARN_TAG, consume_warning_blocks, set_warning_session_id
+lazy from agent_toolkit._hooks.notice import _WARN_TAG, notice_cycle, set_warning_session_id
+lazy from agent_toolkit._hooks.pretooluse import operation_skills as _operation_skills
 lazy from agent_toolkit._hooks.pretooluse.agent_checks import (
     _AGENTS_SERVER_KILL_TOOLS,
     _AGENTS_SERVER_SEND_TOOLS,
@@ -116,7 +115,7 @@ lazy from agent_toolkit._hooks.pretooluse.large_reads import (
     check_large_bash_read,
     session_record_reference_warning,
 )
-lazy from agent_toolkit._hooks.pretooluse.notices import _HOOK_ID, _block_notice, _llm_notice
+lazy from agent_toolkit._hooks.pretooluse.notices import _block_notice, _llm_notice
 lazy from agent_toolkit._hooks.pretooluse.read_delivery import deliver as read_delivery
 lazy from agent_toolkit._hooks.pretooluse.shell_checks import (
     _check_bash_atk_output_loss,
@@ -199,18 +198,21 @@ def main(payload_text: str) -> int:
     # ホスト判定はpayload読込直後に一度だけ行い、以降の判定処理の選択と入力アダプターへ同じ値を渡す。
     is_codex = is_codex_payload(payload)
 
-    pending_notices: list[str] = []
-    decision = _decide(payload, tool_name, tool_input, session_id, is_codex=is_codex)
-    if decision.block is None:
-        delivery = read_delivery(payload, tool_name, tool_input, session_id)
-        if delivery.block is not None:
-            pending_notices.extend(decision.notices)
-            if decision.context:
-                pending_notices.append(decision.context)
-            decision = delivery
-        elif delivery.notices:
-            decision = dataclasses.replace(decision, notices=decision.notices + delivery.notices)
-    return _emit(decision, pending_notices, is_codex=is_codex)
+    operations = [entry.operation for entry in _operation_skills.OPERATION_SKILLS if entry.matches(tool_name, tool_input)]
+    scope = "pretooluse:" + str(tool_name) + ":" + ",".join(operations)
+    with notice_cycle(session_id, scope, _agent_id.resolve_hook_agent_id(payload)):
+        pending_notices: list[str] = []
+        decision = _decide(payload, tool_name, tool_input, session_id, is_codex=is_codex)
+        if decision.block is None:
+            delivery = read_delivery(payload, tool_name, tool_input, session_id)
+            if delivery.block is not None:
+                pending_notices.extend(decision.notices)
+                if decision.context:
+                    pending_notices.append(decision.context)
+                decision = delivery
+            elif delivery.notices:
+                decision = dataclasses.replace(decision, notices=decision.notices + delivery.notices)
+        return _emit(decision, pending_notices, is_codex=is_codex)
 
 
 def _decide(payload: dict, tool_name: str, tool_input: dict, session_id: str, *, is_codex: bool) -> Decision:
@@ -226,7 +228,7 @@ def _decide(payload: dict, tool_name: str, tool_input: dict, session_id: str, *,
     if tool_name in _AGENTS_SERVER_TOOL_NAMES:
         return _decide_agents_server_tool(payload, tool_name, tool_input, session_id)
     if tool_name in AGENT_TOOL_NAMES:
-        return Decision(block=check_task_document_launch(tool_name, tool_input))
+        return check_task_document_launch(tool_name, tool_input)
     if tool_name == "Bash":
         return _decide_bash_tool(payload, tool_input, session_id, is_codex=is_codex)
     if tool_name == "TaskStop":
@@ -253,7 +255,7 @@ def _emit(decision: Decision, pending_notices: list[str], *, is_codex: bool) -> 
     if force_allow:
         hook_output["permissionDecision"] = "allow"
     contexts = [decision.context] if decision.context else []
-    contexts.extend(pending_notices)
+    contexts.extend(notice for notice in pending_notices if notice)
     pending_notices.clear()
     if contexts:
         hook_output["additionalContext"] = format_warning_context(contexts)
@@ -269,15 +271,7 @@ def exit_with(code: int, pending_notices: list[str]) -> int:
     出力しないまま返すと、判定処理側のカウンタと最終パスだけが更新されるため、
     同じ入力を再試行しても通知が再生成されず失われる。
     exit 2のstderrはコーディングエージェントへ届くため、遮断理由と同じ出力先へ送る。
-    反復した警告が遮断へ昇格した場合（`consume_warning_blocks`）も同じ出力先へ送り、exit 2で終える。
     """
-    warning_blocks = consume_warning_blocks()
-    if warning_blocks:
-        if pending_notices:
-            print("\n".join(pending_notices), file=sys.stderr)
-            pending_notices.clear()
-        print("\n".join(warning_blocks), file=sys.stderr)
-        return 2
     if code == 2 and pending_notices:
         print("\n".join(pending_notices), file=sys.stderr)
         pending_notices.clear()
@@ -287,18 +281,18 @@ def exit_with(code: int, pending_notices: list[str]) -> int:
 def _decide_agents_server_tool(payload: dict, tool_name: str, tool_input: dict, session_id: str) -> Decision:
     """agents_serverの開始点と観測点の条件をそれぞれ判定する。"""
     _record_iss_sidechain_probe(session_id, tool_name, payload)
-    launch_block = check_task_document_launch(tool_name, tool_input)
-    if launch_block is not None:
-        return Decision(block=launch_block)
+    launch = check_task_document_launch(tool_name, tool_input)
+    if launch.block is not None:
+        return launch
     if tool_name in _AGENTS_SERVER_SEND_TOOLS | _AGENTS_SERVER_KILL_TOOLS:
         return _check_agents_server_continuation_target(session_id, tool_input, tool_name)
-    return Decision(allow=True)
+    return dataclasses.replace(launch, allow=True)
 
 
 def _decide_bash_tool(payload: dict, tool_input: dict, session_id: str, *, is_codex: bool) -> Decision:
     """Bashコマンドの遮断と警告を判定する。
 
-    Codexの大量読取の遮断、引用符なしheredoc本文の置換の遮断、パターン一致によるプロセス終了の遮断、
+    Codexの大量読取の警告、引用符なしheredoc本文の置換の遮断、パターン一致によるプロセス終了の遮断、
     未起動のスキルの操作の警告、未完了のバックグラウンドタスクが書き込む出力ファイルの読取の警告を扱う。
     遮断の判定は警告の判定より前に行い、遮断した呼び出しでは警告の記録（文脈ごとに1回の警告など）を進めない。
     """
@@ -308,13 +302,8 @@ def _decide_bash_tool(payload: dict, tool_input: dict, session_id: str, *, is_co
     cwd_raw = payload.get("cwd", "")
     cwd = cwd_raw if isinstance(cwd_raw, str) else ""
     for block in (
-        lambda: check_large_bash_read(command, cwd, is_codex=is_codex),
         lambda: _check_bash_unquoted_heredoc_substitution(command),
         lambda: _check_bash_process_kill_by_pattern(command),
-        lambda: _check_bash_option_after_terminator(command),
-        lambda: _check_bash_atk_output_loss(command),
-        lambda: _check_read_predicate_stderr_discard(command),
-        lambda: _warn_git_rev_parse_short_multiple(command),
     ):
         message = block()
         if message is not None:
@@ -328,8 +317,20 @@ def _decide_bash_tool(payload: dict, tool_input: dict, session_id: str, *, is_co
         if attribution_error is not None:
             return Decision(block=attribution_error)
     warnings: list[str] = []
-    if record_warning := session_record_reference_warning("Bash", tool_input, cwd):
-        warnings.append(record_warning)
+    for check in (
+        _check_bash_option_after_terminator,
+        _check_bash_atk_output_loss,
+        _check_read_predicate_stderr_discard,
+        _warn_git_rev_parse_short_multiple,
+    ):
+        if message := check(command):
+            warnings.append(message)
+    record_warning = session_record_reference_warning("Bash", tool_input, cwd)
+    if record_warning is not None:
+        if record_warning:
+            warnings.append(record_warning)
+    elif read_warning := check_large_bash_read(command, cwd, is_codex=is_codex):
+        warnings.append(read_warning)
     drive_letter_path_warning = _warn_windows_drive_letter_path(command, is_codex=is_codex)
     if drive_letter_path_warning is not None:
         warnings.append(drive_letter_path_warning)
@@ -347,6 +348,7 @@ def _decide_bash_tool(payload: dict, tool_input: dict, session_id: str, *, is_co
                         "完了通知を受けた後に同じ出力ファイルを全量読み直してから結果として使う。"
                     ),
                     removable_cause=True,
+                    subject=command,
                     # 途中経過の読取は進捗確認にも使う。反復だけでは結果の欠落を確定できない。
                     escalate_on_repeat=False,
                 )
@@ -355,11 +357,11 @@ def _decide_bash_tool(payload: dict, tool_input: dict, session_id: str, *, is_co
         identity = _hook_observed_identity(payload, is_codex=True)
         if identity is not None and identity.source == "observed":
             warnings.append(
-                _message_format.llm_notice(
+                _llm_notice(
                     "読取時点に観測したモデルと推論量の帰属行: "
                     + co_author_trailer(identity)
                     + "。明示指定と無効化の方針を先に確認する。通常commit直前にも現在の観測を確認する。",
-                    _HOOK_ID,
+                    tag="notice",
                 )
             )
     return Decision(context=format_warning_context(warnings) if warnings else None)

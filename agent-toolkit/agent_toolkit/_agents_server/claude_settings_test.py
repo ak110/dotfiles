@@ -265,6 +265,7 @@ async def test_api_migration_holds_result_until_old_connection_closes(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """常駐監視が旧接続の切断を待つ間も、公開waitへ中断前の失敗を渡さない。"""
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CLAUDE_USAGE_LIMIT_WAIT", "never")
     env_file = tmp_path / "api.env"
     env_file.write_text("TOKEN=dummy\n", encoding="utf-8")
     monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CLAUDE_API_ENV_FILE", str(env_file))
@@ -311,6 +312,7 @@ async def test_api_migration_holds_result_until_old_connection_closes(
 
 def _pay_as_you_go_with_clock(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> dict[str, float]:
     """`pay-as-you-go`の両認証環境と、解除予定時刻の判定が読む差し替え可能な時刻を用意する。"""
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CLAUDE_USAGE_LIMIT_WAIT", "never")
     env_file = tmp_path / "api.env"
     env_file.write_text("ANTHROPIC_AUTH_TOKEN=dummy-secret\n", encoding="utf-8")
     monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CLAUDE_API_ENV_FILE", str(env_file))

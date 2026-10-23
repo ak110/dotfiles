@@ -57,7 +57,7 @@ def build_repository_delegate_prompt(
         "ownership_token": ownership.token,
         "lane_session_id": ownership.lane_session_id,
         "lane_limit": snapshot.lane_limit,
-        "candidates": snapshot.candidate_records(),
+        "candidate_file": str(_ownership.save_candidates(ownership, snapshot.candidate_records())),
         "readiness": dataclasses.asdict(snapshot.readiness),
         "previous": ownership.previous,
         "worktree_name": worktree_name,
@@ -287,7 +287,7 @@ def _exit_abnormal_session(orchestrator: str, returncode: int, detail: str = "")
 
 
 def cleanup_lane_session(lane_session_id: str, *, target_repo: str | None = None) -> dict[str, Any]:
-    """担当の終了を確定した後に、そのレーン所有sessionの資源を`atk lane delete`と同じ条件で回収する。
+    """担当の終了を確定した後に、終端sessionの解放応答を待たず同じ適格判定でレーン資源を回収する。
 
     単一起動の子終了後と、all-reposで担当の所有を解放した後の両方でこの処理を実行する。
     結果はprocess-loopログの`lane_cleanup`へ残し、保持した資源と回収の失敗には同じ所有sessionで
@@ -298,7 +298,7 @@ def cleanup_lane_session(lane_session_id: str, *, target_repo: str | None = None
     scope = "" if target_repo is None else f"{target_repo}: "
     fields: dict[str, Any] = {} if target_repo is None else {"target_repo": target_repo}
     try:
-        cleanup = _lane.cleanup_session(lane_session_id)
+        cleanup = _lane.cleanup_session(lane_session_id, wait_release=False)
     except Exception as error:
         # 境界層で全例外を捕捉する。回収できなかった資源は登録とともに残り、同じ操作で再回収できる。
         _process_loop_log.append("lane_cleanup", **fields, lane_session_id=lane_session_id, error=str(error))

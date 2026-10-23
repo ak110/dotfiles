@@ -1,6 +1,6 @@
-"""大量の全文読取をPreToolUseで遮断する条件を検証する。
+"""大量の全文読取をPreToolUseで警告する条件を検証する。
 
-遮断はCodexのBash実行だけへ適用し、Claude Codeの`Read`と`Bash`は補正も遮断もしない。
+警告はCodexのBash実行だけへ適用し、Claude Codeの`Read`と`Bash`は補正も警告もしない。
 """
 
 import json
@@ -78,7 +78,7 @@ def test_python_heredoc_write_uses_invocation_cwd(tmp_path):
     ],
 )
 def test_partial_delivery_keeps_large_read_trigger_unchanged(tmp_path: pathlib.Path, command: str) -> None:
-    """帰属行の配送のために範囲取得も含めた解析は同じパスを返すが、大量読取の遮断を新たに発生させない。"""
+    """帰属行の配送のために範囲取得も含めた解析は同じパスを返すが、大量読取の警告を新たに発生させない。"""
     target = _sized_file(tmp_path / "nested", _THRESHOLD + 1)
     command = f"cd {target.parent} && {command}"
     assert list(bash_read_paths(command, str(tmp_path), include_partial=True)) == [(target,)]
@@ -105,7 +105,7 @@ def test_allowed_reads_do_not_open_regular_files(
 
 @pytest.mark.parametrize("size", [100, _THRESHOLD + 1])
 def test_zero_metadata_size_uses_content(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, size: int) -> None:
-    """サイズ0の仮想ファイルも、閾値前後の内容量で許可と遮断を決める。"""
+    """サイズ0の仮想ファイルも、閾値前後の内容量で許可と警告を決める。"""
     target = _sized_file(tmp_path, size)
     original = pathlib.Path.stat
 
@@ -139,7 +139,7 @@ def test_zero_metadata_size_uses_content(tmp_path: pathlib.Path, monkeypatch: py
     ],
 )
 def test_full_read_options_and_delivery(tmp_path: pathlib.Path, command: str) -> None:
-    """通常の表示指定でも、配送と遮断の双方が終端・cwd・合計容量を解釈する。"""
+    """通常の表示指定でも、配送と警告の双方が終端・cwd・合計容量を解釈する。"""
     first = _sized_file(tmp_path / "nested", 30 * 1024, "-first.txt")
     second = _sized_file(first.parent, 20 * 1024, "second.txt")
     # ハイフン始まりの名前には、指定済みならその終端を使う。
@@ -179,7 +179,7 @@ def test_commit_rule_delivery_uses_shared_option_parsing(tmp_path: pathlib.Path,
 def test_unavailable_content_does_not_create_a_block(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, operation: str
 ) -> None:
-    """メタデータまたは本文を取得できない対象は判定不能として扱い、遮断しない。"""
+    """メタデータまたは本文を取得できない対象は判定不能として扱い、警告しない。"""
     target = _sized_file(tmp_path, _THRESHOLD + 1)
     original = getattr(pathlib.Path, operation)
 
@@ -216,7 +216,7 @@ def _read_file_response(output: str) -> tuple[dict, str]:
 
 
 def test_codex_byte_threshold_boundary(tmp_path: pathlib.Path) -> None:
-    """48KiB以下の全文取得は通し、1バイトでも超えると遮断する。"""
+    """48KiB以下の全文取得は通し、1バイトでも超えると警告する。"""
     within = _sized_file(tmp_path, _THRESHOLD, "within.md")
     over = _sized_file(tmp_path, _THRESHOLD + 1, "over.md")
 
@@ -297,7 +297,7 @@ def test_codex_resolves_relative_path_after_cwd_change(tmp_path: pathlib.Path, c
 
 
 def test_codex_unresolved_cwd_change_keeps_read_target_unknown(tmp_path: pathlib.Path) -> None:
-    """元のcwdの同名ファイルの容量で、解決不能な移動先の読取を遮断しない。"""
+    """元のcwdの同名ファイルの容量で、解決不能な移動先の読取を警告しない。"""
     _sized_file(tmp_path, _THRESHOLD + 1)
 
     notice = _codex_read('cd "$DIR" && cat large.txt', tmp_path)
@@ -319,7 +319,7 @@ def test_codex_blocks_only_direct_static_full_reads(tmp_path: pathlib.Path) -> N
 
 @pytest.mark.parametrize("command", ["cat", "less", "more"])
 def test_codex_blocks_multiple_files_over_total_threshold(tmp_path: pathlib.Path, command: str) -> None:
-    """個別には閾値以内でも、合計が閾値を超える全文取得を遮断する。"""
+    """個別には閾値以内でも、合計が閾値を超える全文取得を警告する。"""
     first = _sized_file(tmp_path, 30 * 1024, "first.txt")
     second = _sized_file(tmp_path, 20 * 1024, "second.txt")
     within_first = _sized_file(tmp_path, 24 * 1024, "within-first.txt")
@@ -349,7 +349,7 @@ def test_codex_applies_environment_override(tmp_path: pathlib.Path, monkeypatch:
 
 @pytest.mark.parametrize("tool_name", ["Read", "Bash"])
 def test_dispatch_claude_large_read_passes_without_correction(tmp_path: pathlib.Path, capsys, tool_name: str) -> None:
-    """Claude Codeでは`Read`と`cat`の大量読取を補正も遮断もしない。
+    """Claude Codeでは`Read`と`cat`の大量読取を補正も警告もしない。
 
     ホストが上限超過を`PARTIAL view`または退避ファイルとして返し、残りを続けて取得できるためである。
     """
@@ -368,8 +368,8 @@ def test_dispatch_claude_large_read_passes_without_correction(tmp_path: pathlib.
     assert captured.err == ""
 
 
-def test_dispatch_codex_blocks_bash_full_read(tmp_path: pathlib.Path, capsys) -> None:
-    """`turn_id`を持つCodex payloadでは、相対パスの全文取得を遮断し、範囲案を示す。"""
+def test_dispatch_codex_warns_and_allows_bash_full_read(tmp_path: pathlib.Path, capsys) -> None:
+    """Codexの全文取得を継続し、出力予算と継続取得の案内を渡す。"""
     target = _sized_file(tmp_path / "nested", _THRESHOLD + 1)
     payload = {
         "tool_name": "Bash",
@@ -379,10 +379,14 @@ def test_dispatch_codex_blocks_bash_full_read(tmp_path: pathlib.Path, capsys) ->
         "turn_id": "codex-turn",
     }
 
-    assert pretooluse.main(json.dumps(payload)) == 2
-    err = capsys.readouterr().err
-    assert str(target) in err
-    assert "atk read-file -- " in err
+    assert pretooluse.main(json.dumps(payload)) == 0
+    captured = capsys.readouterr()
+    message = json.loads(captured.out)["hookSpecificOutput"]["additionalContext"]
+    assert not captured.err
+    assert str(target) in message
+    assert "atk read-file -- " in message
+    assert 'kind="warn"' in message
+    assert "内側コマンドと外側セル" in message
 
 
 @pytest.mark.parametrize("multiple", [False, True])
@@ -392,7 +396,7 @@ def test_large_original_record_is_guided_to_evidence_query(
     capsys: pytest.CaptureFixture[str],
     multiple: bool,
 ) -> None:
-    """原記録の大容量遮断では専用照会を案内し、通常本文のページ分割へ誘導しない。"""
+    """原記録の大容量警告では専用照会を案内し、通常本文のページ分割へ誘導しない。"""
     codex = tmp_path / "codex-home"
     monkeypatch.setenv("CODEX_HOME", str(codex))
     record = codex / "sessions/2026/10/10/rollout-session.jsonl"
@@ -405,18 +409,18 @@ def test_large_original_record_is_guided_to_evidence_query(
     extra = _sized_file(tmp_path, 100, "ordinary.txt")
     command = "cat " + shlex.quote(str(record)) + (" " + shlex.quote(str(extra)) if multiple else "")
     payload = {"tool_name": "Bash", "tool_input": {"command": command}, "cwd": str(tmp_path), "turn_id": "codex-turn"}
-    assert pretooluse.main(json.dumps(payload)) == 2
+    assert pretooluse.main(json.dumps(payload)) == 0
     captured = capsys.readouterr()
-    assert not captured.out
-    assert "session-review-evidence" in captured.err
-    assert "--transcript" in captured.err
-    assert "atk read-file" not in captured.err
+    assert not captured.err
+    assert "session-review-evidence" in captured.out
+    assert "--transcript" in captured.out
+    assert "atk read-file" not in captured.out
 
 
 @pytest.mark.parametrize("multiple", [False, True])
 @pytest.mark.parametrize("original", [False, True])
 def test_large_read_notice_keeps_recovery_without_generic_fallback(tmp_path, monkeypatch, multiple, original):
-    """原記録・通常資料の単体・複数遮断が具体的な取得方法を案内する。"""
+    """原記録・通常資料の単体・複数警告が具体的な取得方法を案内する。"""
     home = tmp_path / "codex"
     monkeypatch.setenv("CODEX_HOME", str(home))
     target = _sized_file(home / "sessions" if original else tmp_path, _THRESHOLD + 1, "record.jsonl")

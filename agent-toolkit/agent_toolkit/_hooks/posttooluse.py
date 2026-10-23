@@ -532,6 +532,7 @@ def _completion_report_notice(payload: dict, tool_input: dict) -> str | None:
     return _llm_notice(
         f"作業を完了してユーザーへ成果を報告するときは、報告を書く前に{operation}。途中報告・確認・待機には適用しない。",
         tag="notice",
+        subject=json.dumps([payload.get("cwd"), command, response], ensure_ascii=False, sort_keys=True),
     )
 
 
@@ -636,6 +637,7 @@ def main(payload_text: str) -> int:
     if not isinstance(payload, dict):
         payload = {}
     updated_output = _persisted_output.replacement(payload)
+    notices = [notice for notice in notices if notice]
     if notices or updated_output is not None:
         event_name = payload.get("hook_event_name", "PostToolUse")
         if event_name not in {"PostToolUse", "PostToolUseFailure"}:

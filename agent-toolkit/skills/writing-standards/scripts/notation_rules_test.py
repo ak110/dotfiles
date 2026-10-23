@@ -1,5 +1,5 @@
 # agent-doc-tone: test-data
-"""`notation-rules.md`「口語表現チェック」が定める引数と完了判定の回帰テスト。
+"""`notation-rules.md`「文章チェックの一括実行」が定める引数と完了判定の回帰テスト。
 
 規範どおりの引数でpyfltr MCPの`run`ツールの実装（`pyfltr.cli.mcp_server.tool_run`）を呼び、
 規範が定める判定条件が到達・完了した対象だけを完了と判定し、未到達・未完了を完了と判定しないことを確かめる。
@@ -24,28 +24,32 @@ _REPOSITORY_PYTHON = pathlib.Path(__file__).resolve()
 
 def _commands_for(target: pathlib.Path) -> list[str]:
     """規範が定める拡張子別のコマンドを返す。"""
-    return ["textlint", "colloquial-check"] if target.suffix == ".md" else ["colloquial-check"]
+    return ["textlint", "colloquial-check", "writing-check-dash"] if target.suffix == ".md" else ["colloquial-check"]
 
 
-def _is_completed(result: dict[str, object], commands: list[str]) -> bool:
-    """規範が定める到達・完了の条件を、MCP応答またはCLIの`summary`の共通4項目へ適用する。"""
+def _is_completed(result: dict[str, object], commands: list[str], *, target_count: int = 1) -> bool:
+    """規範が定める全対象の到達・完了条件をMCP応答またはCLIの`summary`へ適用する。"""
     completed_commands = result["completed_commands"]
     assert isinstance(completed_commands, list)
     return (
         result["completion"] == "completed"
-        and result["files_reached"] == 1
+        and result["files_reached"] == target_count
         and all(command in completed_commands for command in commands)
         and not result["incomplete_commands"]
+        and not result.get("missing_targets")
+        and not result.get("fully_excluded_files")
     )
 
 
-def _run_mcp(target: pathlib.Path, *, allow_external_paths: bool) -> dict[str, object]:
+def _run_mcp(target: pathlib.Path | list[pathlib.Path], *, allow_external_paths: bool) -> dict[str, object]:
     """規範どおりの引数でpyfltr MCPの`run`を呼び、応答を辞書で返す。"""
+    targets = [target] if isinstance(target, pathlib.Path) else target
+    commands = sorted({command for path in targets for command in _commands_for(path)})
     result = asyncio.run(
         pyfltr_mcp_server.tool_run(
-            paths=[str(target)],
+            paths=[str(path) for path in targets],
             work_dir=str(_PROJECT_ROOT),
-            commands=_commands_for(target),
+            commands=commands,
             enable=["colloquial-check"],
             no_exclude=True,
             no_fix=True,
@@ -76,6 +80,19 @@ def test_mcp_run_with_documented_arguments_is_completed(kind: str, tmp_path: pat
     assert result["run_id"]
 
 
+@pytest.mark.parametrize("include_missing", [False, True])
+def test_mcp_batch_requires_every_target_to_be_reached(tmp_path: pathlib.Path, include_missing: bool) -> None:
+    """MarkdownとPythonを同じ実行でチェックし、1件でも未到達ならバッチ全体を完了と扱わない。"""
+    targets = [_external_markdown(tmp_path), _REPOSITORY_PYTHON]
+    if include_missing:
+        targets.append(tmp_path / "missing.md")
+
+    result = _run_mcp(targets, allow_external_paths=True)
+
+    commands = ["textlint", "colloquial-check", "writing-check-dash"]
+    assert _is_completed(result, commands, target_count=len(targets)) is not include_missing
+
+
 def test_mcp_run_without_allow_external_paths_is_not_completed(tmp_path: pathlib.Path) -> None:
     """外部Markdownで許可指定を外すと未完了になり、未完了のコマンドから理由を特定できる。"""
     target = _external_markdown(tmp_path)
@@ -101,8 +118,8 @@ def test_mcp_run_for_missing_target_is_not_reached(tmp_path: pathlib.Path) -> No
 @pytest.mark.parametrize(("allow_external_paths", "expected"), [(True, True), (False, False)])
 def test_cli_summary_alone_decides_completion(tmp_path: pathlib.Path, allow_external_paths: bool, expected: bool) -> None:
     """MCPを使えない場合のCLIでは、JSONL最終行の`summary`だけでMCPと同じ判定になる。"""
-    target = _external_markdown(tmp_path)
-    commands = _commands_for(target)
+    targets = [_external_markdown(tmp_path), _REPOSITORY_PYTHON]
+    commands = ["textlint", "colloquial-check", "writing-check-dash"]
     command = [
         sys.executable,
         "-m",
@@ -116,11 +133,11 @@ def test_cli_summary_alone_decides_completion(tmp_path: pathlib.Path, allow_exte
         "--work-dir",
         str(_PROJECT_ROOT),
         *(["--allow-external-paths"] if allow_external_paths else []),
-        str(target),
+        *(str(target) for target in targets),
     ]
     process = subprocess.run(command, check=False, capture_output=True, text=True, encoding="utf-8", cwd=_PROJECT_ROOT)
 
     summary = json.loads(process.stdout.splitlines()[-1])
 
     assert summary["kind"] == "summary", process.stdout
-    assert _is_completed(summary, commands) is expected
+    assert _is_completed(summary, commands, target_count=len(targets)) is expected

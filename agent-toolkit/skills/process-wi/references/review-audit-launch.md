@@ -37,7 +37,7 @@
 | `subagent_md_path` | `copilot-review-audit` |
 | `extra_params` | 次の名前付き入力だけ |
 
-- `pending取得結果`: `atk review-audit pending`の標準出力のJSONを持つファイルの絶対パス。`atk`が`保存先:`を示した場合はその絶対パス、直接表示された場合はそのJSONをmanaged-temp（`agent-toolkit:managed-temp`）のファイルへ書いたパス。コマンドが非0で終わった場合と、JSONまたは件数を解釈できない場合は`なし`
+- `pending取得結果`: `atk review-audit pending`が`保存先:`で示した生成元のJSONファイルの絶対パス。エージェント環境では量によらず保存し、件数とDependabotの取得状態を併記する。保存先をそのまま渡し、モデルによるJSONの再保存を省く。コマンドが非0で終わった場合と、JSONまたは件数を解釈できない場合は`なし`
 - `引き継ぎ記録先`: 省略と継続の扱いは`agent-toolkit:delegation`の`references/base-contract.md`「引き継ぎ記録先」に従う
 
 ### 受領

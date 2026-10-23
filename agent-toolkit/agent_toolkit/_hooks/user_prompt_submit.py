@@ -13,8 +13,8 @@ Codexは`$agent-toolkit:<name>`・`$<name>`）で発話した手動のスキル�
 セッション名はUserPromptSubmitのコマンドhookが通常状態から設定する。
 
 セッション開始後と会話圧縮後で`agent-toolkit:user-confirmation-and-report`がまだ起動されていない間は、
-実ユーザー発話へ同スキルの起動を促す注記を返す（Codexでは文脈1つにつき1回）。
-通常発話へ返す、発話の内容を現物で確かめる手順を示す注記は、直前の通常発話からの経過時間が閾値以上の場合に返す。
+最初の実ユーザー発話へ同スキルの起動を促す注記を一度返す。
+発話の内容を現物で確かめる一般手順は同スキルが定め、経過時間による固定本文の再配送は行わない。
 全角の連続した感嘆符を含む実ユーザー発話では、経過時間によらず`agent-toolkit:user-confirmation-and-report`の「認識合わせ」を促す。
 例示の語（「例えば」「たとえば」「例として」）と調査を求める語（「確認」「調査」「見直」など）を併せ持つ
 実ユーザー発話では、経過時間と状態によらず、`agent-toolkit:user-confirmation-and-report`の
@@ -27,7 +27,7 @@ Codexは`$agent-toolkit:<name>`・`$<name>`）で発話した手動のスキル�
 
 注記の対象は、自動的なプロンプトを除く全てのユーザー発話とする。ユーザー自身が入力した発話は、
 スラッシュコマンド（Claude Codeは`/`、Codexは`$`）で始まるものも対象に含める。
-機械注入ターンでは、発話の内容を現物で確かめる手順を示す注記を返さず経過時間の記録も更新しない。
+機械注入ターンでは、実ユーザー発話向けの起動案内を返さず、配送待ちの状態も消費しない。
 機械注入ターンの判定入力は次の5系統とし、いずれかが成立したターンを対象とする。
 
 1. payloadの`source`が存在し、値が`user`以外であること
@@ -46,9 +46,6 @@ import os
 import re
 import sys
 
-# 関数の実行時にだけ使う依存は、使用時まで読み込まない。
-lazy import time
-
 # pylint: disable-next=wrong-import-position,import-error
 from agent_toolkit._hooks.notice import formatter as _notice_formatter  # noqa: E402
 from agent_toolkit._hooks.posttooluse import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
@@ -56,11 +53,13 @@ from agent_toolkit._hooks.posttooluse import (  # noqa: E402  # pylint: disable=
     _PROCESS_WI_SKILL_NAMES,
     USER_CONFIRMATION_PENDING_KEY,
     USER_CONFIRMATION_SKILL_NAMES,
-    VERIFICATION_NOTICE_BODY,
     clear_user_confirmation_pending,
     content_notices,
 )
-lazy from agent_toolkit._common import automated_prompt  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+lazy from agent_toolkit._common import (
+    automated_prompt,  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+    next_action,
+)
 lazy from agent_toolkit._common.delegated_session import (
     is_delegated,  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 )
@@ -72,7 +71,7 @@ lazy from agent_toolkit._common.session_state import (  # noqa: E402  # pylint: 
     read_state,
     update_state,
 )
-lazy from agent_toolkit._hooks import session_title, termination_evidence, work_contract
+lazy from agent_toolkit._hooks import message_format, session_title, termination_evidence, work_contract
 lazy from agent_toolkit._hooks.host import is_antigravity_payload, is_codex_payload  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 
 
@@ -98,9 +97,6 @@ _SKILL_COMMAND_PATTERN = re.compile(r"\A(?:agent-toolkit:)?([A-Za-z0-9][A-Za-z0-
 _HARNESS_MESSAGE_RE = re.compile(r"^\s*(?:\[SYSTEM NOTIFICATION - NOT USER INPUT\]\s*)?<task-notification\b")
 _USER_PROMPT_SOURCE_KEY = "source"
 _USER_PROMPT_SOURCE_USER = "user"
-_VERIFICATION_NOTICE_INTERVAL_SECONDS = 180.0
-_LAST_USER_PROMPT_AT_KEY = "last_user_prompt_at"
-_VERIFICATION_NOTICE_TAG = "notice"
 _llm_notice = _notice_formatter("user_prompt_submit")
 _USER_CONFIRMATION_NOTICE_BODY = (
     "この発話は、セッション開始後か会話圧縮後で、`agent-toolkit:user-confirmation-and-report`の内容が文脈に無い状態で届いた。"
@@ -168,41 +164,22 @@ def _set_process_wi_invoked(state: dict) -> dict | None:
     return state
 
 
-def _claim_user_confirmation_notice(session_id: str, *, is_codex: bool) -> bool:
+def _claim_user_confirmation_notice(session_id: str) -> bool:
     """`agent-toolkit:user-confirmation-and-report`の起動を促す注記を返す場合に真を返す。
 
-    SessionStartが記録した起動待ちの状態を読む。Claude CodeではPostToolUse(Skill)が同スキルの起動で
-    状態を解除するまで、後続の実ユーザー発話にも注記を返す。同スキルの起動契機は、読み損ねたまま受けた
-    後続の発話も含むためである。CodexではSkillの起動を観測できず解除の契機が無いため、
-    注記を返した時点で状態を解除し、文脈1つにつき1回だけ返す。
+    SessionStartが記録した配送待ちを消費する。両ホストで文脈1つにつき一度返し、
+    取得や起動の不足は関連操作のread_deliveryとスキルの起動契機で扱う。
     """
     if read_state(session_id).get(USER_CONFIRMATION_PENDING_KEY) is not True:
         return False
-    if is_codex:
-        update_state(session_id, clear_user_confirmation_pending)
+    update_state(session_id, clear_user_confirmation_pending)
     return True
 
 
-def _user_confirmation_notice(*, include_bugfix: bool = True) -> str:
-    """`agent-toolkit:user-confirmation-and-report`の起動を促す注記を整形する。"""
-    fix = _USER_CONFIRMATION_NOTICE_FIX + (_BUGFIX_NOTICE_FIX if include_bugfix else "")
-    return _llm_notice(_USER_CONFIRMATION_NOTICE_BODY, tag="notice", fix=fix)
-
-
-def _claim_verification_notice(session_id: str, now: float) -> bool:
-    """通常発話の時刻を更新し、発話の内容を現物で確かめる手順を示す注記を注入する場合に真を返す。"""
-    claimed = False
-
-    def update_timestamp(state: dict) -> dict:
-        nonlocal claimed
-        previous = state.get(_LAST_USER_PROMPT_AT_KEY)
-        if isinstance(previous, (int, float)) and not isinstance(previous, bool):
-            claimed = now - previous >= _VERIFICATION_NOTICE_INTERVAL_SECONDS
-        state[_LAST_USER_PROMPT_AT_KEY] = now
-        return state
-
-    update_state(session_id, update_timestamp)
-    return claimed
+def _user_confirmation_notice() -> str:
+    """文脈ごとの既存pending状態で一度だけ選んだ案内を共通の書式へ渡す。"""
+    body = next_action.with_next_action(_USER_CONFIRMATION_NOTICE_BODY, _USER_CONFIRMATION_NOTICE_FIX + _BUGFIX_NOTICE_FIX)
+    return message_format.llm_notice(body, "user_prompt_submit", tag="notice")
 
 
 def _emit_hook_output(*, additional_context: str | None, title: str | None = None) -> None:
@@ -266,11 +243,8 @@ def main(payload_text: str) -> int:
         if command and command[0] in USER_CONFIRMATION_SKILL_NAMES:
             # ユーザー自身がスキルを起動した発話では、その起動で内容が文脈へ入る。
             update_state(session_id, clear_user_confirmation_pending)
-    verification_due = is_normal_prompt and _claim_verification_notice(session_id, time.time())
-    if is_normal_prompt and _claim_user_confirmation_notice(session_id, is_codex=is_codex):
-        notices.append(_user_confirmation_notice(include_bugfix=not verification_due))
-    if verification_due:
-        notices.append(_llm_notice(VERIFICATION_NOTICE_BODY, tag=_VERIFICATION_NOTICE_TAG))
+    if is_normal_prompt and _claim_user_confirmation_notice(session_id):
+        notices.append(_user_confirmation_notice())
     if is_normal_prompt:
         try:
             contract_notice = work_contract.observe_input(session_id)
@@ -280,7 +254,7 @@ def main(payload_text: str) -> int:
             if contract_notice is not None:
                 notices.append(_llm_notice(contract_notice))
         notices.extend(content_notices(prompt, "user_prompt_submit"))
-    additional_context = "\n".join(notices) if notices else None
+    additional_context = "\n".join(notice for notice in notices if notice) or None
 
     if first_line.startswith(command_prefix):
         match = _SKILL_COMMAND_PATTERN.match(first_line[len(command_prefix) :])

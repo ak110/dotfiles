@@ -67,6 +67,7 @@ ty-args = [
     "--extra-search-path", "skills/process-wi/scripts",
     "--extra-search-path", "skills/review-standards/scripts",
     "--extra-search-path", "skills/session-review/scripts",
+    "--extra-search-path", "skills/wi-standards/scripts",
 ]
 # pyfltrは設定を省略した場合、`ruff-format`で整形する前に`ruff check --fix --unsafe-fixes`を実行する。
 # `make test`で担当範囲外のファイルを自動修正しないよう、直下と同じくlintの自動修正を無効にする。

@@ -105,13 +105,13 @@ def compose_session_start(source: str, *, delegated: bool, host: str) -> str | N
 
 
 USER_CONFIRMATION_PENDING_KEY = "user_confirmation_skill_pending"
-"""`agent-toolkit:user-confirmation-and-report`の内容が文脈に無い状態を示すセッション状態のキー。"""
+"""文脈ごとに`agent-toolkit:user-confirmation-and-report`の起動案内を一度届ける配送待ちのキー。"""
 _CONTEXT_LOSING_SOURCES = frozenset({"startup", "clear", "compact"})
 """会話の文脈を引き継がずに始まるSessionStartの`source`。`resume`と`fork`は文脈を引き継ぐため含めない。"""
 OPERATION_SKILL_READY_KEY = "operation_skill_delivered_agents"
 """操作を起動の契機とするスキルの必須資料の識別子から、取得済みの呼び出し主体の一覧への対応を持つセッション状態のキー。
 
-共通経路が本文を配送した時点と、PostToolUseが成功したSkill起動・必須範囲の読取を観測した時点で記録する。
+read_deliveryが本文を配送した時点と、PostToolUseが成功したSkill起動・必須範囲の読取を観測した時点で記録する。
 本文識別は実体・内容hash・指定範囲と主体に結び付ける。選択した資料、入力と文脈境界も同じ対応表へ保持する。
 キー名は既存の読み取り側との互換を保つ。本文を返さない未取得警告は取得済みとして記録しない。
 """
@@ -164,10 +164,10 @@ def reset_main_operation_skill_ready(session_id: str) -> None:
 
 
 def mark_user_confirmation_pending(session_id: str) -> None:
-    """`agent-toolkit:user-confirmation-and-report`の起動を待つ状態を記録する。
+    """文脈ごとの`agent-toolkit:user-confirmation-and-report`の案内待ちを記録する。
 
     同スキルは内容が文脈に無い状態で受けた実ユーザー発話の前に起動する契機を持つ。
-    UserPromptSubmitがこの状態を読んで起動を促し、PostToolUse(Skill)が同スキルの起動で解除する。
+    UserPromptSubmitが実入力へ一度案内して解除する。先行したSkill起動でも解除する。
     """
 
     def _mark(current: dict) -> dict | None:

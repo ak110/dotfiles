@@ -216,6 +216,7 @@ def test_claude_usage_limit_waits_and_resumes_same_conversation(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     """stageの後に利用上限で拒否されたClaudeは、解除まで待って同じ会話を続け、Codexを起動せずにcommitを1回だけ作成する。"""
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CLAUDE_USAGE_LIMIT_WAIT", "always")
     repository, sleeps = _claude_then_codex(tmp_path, monkeypatch)
     original_run = subprocess.run
     calls: list[list[str]] = []
@@ -259,12 +260,16 @@ def test_claude_usage_limit_waits_and_resumes_same_conversation(
     assert log.stdout.splitlines() == ["test: 変更を保存する"]
 
 
-def test_claude_overage_rejection_keeps_existing_candidate_switch(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """待機の対象外（`overage`）の拒否は待たず、Git状態を変えていなければ従来どおり次の候補へ進む。"""
+@pytest.mark.parametrize("limit_type,policy", [("overage", "always"), ("seven_day", "five-hour"), ("five_hour", "never")])
+def test_claude_nonwaiting_rejection_keeps_candidate_switch(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, limit_type: str, policy: str
+) -> None:
+    """待機対象外の上限では、Git状態を保持したまま次の候補へ進む。"""
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CLAUDE_USAGE_LIMIT_WAIT", policy)
     _repository, sleeps = _claude_then_codex(tmp_path, monkeypatch)
     original_run = subprocess.run
     calls: list[str] = []
-    overage = _stream({"type": "rate_limit_event", "rate_limit_info": {"status": "rejected", "rateLimitType": "overage"}})
+    overage = _stream({"type": "rate_limit_event", "rate_limit_info": {"status": "rejected", "rateLimitType": limit_type}})
 
     def run(command: list[str], **kwargs: Any) -> subprocess.CompletedProcess[str]:
         if command[0].startswith("/fake/"):

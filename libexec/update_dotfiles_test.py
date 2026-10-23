@@ -170,6 +170,36 @@ def _fake_run(
     return fake_run
 
 
+@pytest.mark.parametrize("mode", ["full", "minimal"])
+def test_public_mode_argument_persists_and_reaches_every_update_stage(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, mode: str
+) -> None:
+    """更新の公開入力から保存値を変え、Git・テンプレート・post-applyへ同じ実効値を渡す。"""
+    configuration = tmp_path / "config.json"
+    configuration.write_text(
+        json.dumps({"dotfiles_mode": "minimal" if mode == "full" else "full", "other": 42}), encoding="utf-8"
+    )
+    monkeypatch.setattr(update_dotfiles.dotfiles_mode, "configuration_path", lambda: configuration)
+    monkeypatch.setenv(update_dotfiles.dotfiles_mode.MODE_ENV, "full")
+    monkeypatch.setattr(update_dotfiles, "_DOTFILES_ROOT", tmp_path)
+    monkeypatch.setattr(update_dotfiles, "_LOCK_PATH", tmp_path / "update.lock")
+    calls: list[list[str]] = []
+    environments: list[dict[str, str]] = []
+    monkeypatch.setattr(subprocess, "Popen", _fake_popen({}, calls, environments=environments))
+    monkeypatch.setattr(subprocess, "run", _fake_run({}, calls, environments=environments))
+    assert update_dotfiles.main(["--mode", mode]) == 0
+    assert json.loads(configuration.read_text(encoding="utf-8")) == {"dotfiles_mode": mode, "other": 42}
+    assert environments
+    assert all(environment[update_dotfiles.dotfiles_mode.MODE_ENV] == mode for environment in environments)
+    assert [call[:2] for call in calls if call[0] == "chezmoi"] == [
+        ["chezmoi", "git"],
+        ["chezmoi", "init"],
+        ["chezmoi", "status"],
+        ["chezmoi", "diff"],
+        ["chezmoi", "apply"],
+    ]
+
+
 class _FakePopen:
     """git pull用`Popen`の最小fake。"""
 

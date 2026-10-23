@@ -45,7 +45,7 @@ COMPLETION_REPORT = "completion-report"
 """起動証拠を確かめるスキルの短縮名。"""
 
 TARGET_SKILLS = ("process-wi", "add-awi-by-user")
-"""開始した時点で成果作業となるスキルの短縮名。適用条件は`completion-report/SKILL.md`「Stop hookの判定」の成果作業に従う。"""
+"""開始した時点で成果作業となるスキルの短縮名。適用条件は`completion-report/SKILL.md`「工程」の工程9に従う。"""
 
 _UNRESOLVED_REPOSITORY_FIX = (
     "この作業では省略を記録できないため、`agent-toolkit:completion-report`を起動して終了工程を進める。"
@@ -824,38 +824,6 @@ def pending_work(payload: dict[str, Any]) -> list[tuple[str, dict[str, Any]]]:
                     continue
         pending.append((work_id, work))
     return pending
-
-
-def claim_stop_review(payload: dict[str, Any], work_ids: set[str]) -> list[str]:
-    """起動済み成果作業への点検通知を同じ人間入力につき一度だけ確保する。
-
-    記録するのはStop自身の通知事実であり、工程の完了証拠には使わない。
-    人間入力の無い自動起動では、作業を開始した参照を入力区間として保つ。
-    """
-    claimed: list[str] = []
-    session_id = payload["session_id"]
-
-    def update(state: dict[str, Any]) -> dict[str, Any]:
-        data = state.get(STATE_KEY)
-        if not isinstance(data, dict):
-            return state
-        for work_id, work in _session_works(state, session_id).items():
-            if work_id not in work_ids or not work.get("deliverables") or not work.get("completion_report"):
-                continue
-            reference = data.get("last_human_input", work.get("reference"))
-            previous = work.get("stop_review_notice")
-            if isinstance(previous, dict) and previous.get("input_id") == reference:
-                continue
-            work["stop_review_notice"] = {"input_id": reference}
-            claimed.append(work_id)
-        return state
-
-    if not session_state.update_state(session_id, update):
-        append_stop_log(session_id, "approve_review_record_unavailable", {"reason": "点検通知の事実を保存できない"})
-        return []
-    if claimed:
-        append_stop_log(session_id, "block_completion_delivery_review", {"work_ids": ",".join(claimed)})
-    return claimed
 
 
 def decision_hint(payload: dict[str, Any]) -> str:

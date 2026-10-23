@@ -156,7 +156,7 @@ def test_main_requires_exactly_one_transcript_source(
         {
             "kind": "error",
             "text": (
-                "transcript_path・--transcript・--claude-session-id・--codex-thread-id・--delegation-record・--owner-session・"
+                "transcript_path・--transcript・--claude-session-id・--codex-thread-id・--opencode-session-id・--delegation-record・--owner-session・"
                 "カタログ走査はいずれか一つだけを指定する"
             ),
         }
@@ -167,7 +167,7 @@ def test_main_requires_exactly_one_transcript_source(
         {
             "kind": "error",
             "text": (
-                "transcript_path・--transcript・--claude-session-id・--codex-thread-id・--delegation-record・--owner-session・"
+                "transcript_path・--transcript・--claude-session-id・--codex-thread-id・--opencode-session-id・--delegation-record・--owner-session・"
                 "カタログ走査はいずれか一つだけを指定する"
             ),
         }

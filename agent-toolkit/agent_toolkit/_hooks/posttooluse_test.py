@@ -621,7 +621,7 @@ def _run(
         "time -p { git commit -m message; }",
     ],
 )
-def test_git_completion_operation_notifies_each_successful_call(
+def test_git_completion_notice_distinguishes_retries_commits_and_targets(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, command: str, codex: bool
 ) -> None:
     monkeypatch.delenv("AGENT_TOOLKIT_DELEGATED_SESSION", raising=False)
@@ -635,13 +635,25 @@ def test_git_completion_operation_notifies_each_successful_call(
     }
     if codex:
         payload["turn_id"] = "codex-turn"
-    for _ in range(2):
+    for index in range(2):
         result = _run(payload, state_dir=tmp_path)
         assert result.returncode == 0
+        if index:
+            assert not result.stdout
+            continue
         body = json.loads(result.stdout)["hookSpecificOutput"]["additionalContext"]
         assert body.count("報告を書く前に") == 1
         assert "completion-report" in body
         assert ("SKILL.md" in body) is codex
+    payload["tool_response"] = {"exit_code": 0, "stdout": "[main 1234567] 次のcommit"}
+    changed_commit = _run(payload, state_dir=tmp_path)
+    assert changed_commit.returncode == 0
+    assert "completion-report" in json.loads(changed_commit.stdout)["hookSpecificOutput"]["additionalContext"]
+    assert not _run(payload, state_dir=tmp_path).stdout
+    payload["cwd"] = str(tmp_path / "other-repository")
+    changed_target = _run(payload, state_dir=tmp_path)
+    assert changed_target.returncode == 0
+    assert "completion-report" in json.loads(changed_target.stdout)["hookSpecificOutput"]["additionalContext"]
     assert not any("completion" in key for key in _read_state(tmp_path, "completion-notice"))
 
 
@@ -769,32 +781,15 @@ def _single_notice_body(result: subprocess.CompletedProcess[str], source: str) -
         ),
     ],
 )
-def test_free_text_answer_receives_the_same_notice_as_user_prompt(tmp_path: pathlib.Path, tool_response: dict) -> None:
-    """ユーザーが書いた文は、通常発話と`AskUserQuestion`のどの形で届いても同じ現物確認の注記を受ける。
-
-    PostToolUseが注記を返さないと、回答が否定した前提を確かめないまま応答が同じ前提を繰り返す。
-    片方のhookだけ本文を改訂すると、同じ文にhookごとに異なる手順が届く。
-    """
+def test_free_text_answer_receives_answer_specific_procedure(tmp_path: pathlib.Path, tool_response: dict) -> None:
+    """自由記述の回答には、選択肢との違いに応じた既存の回答手順を届ける。"""
     session_id = "ask-user-question-free-text"
-    state_path = _state_path(session_id)
-    state_path.write_text(json.dumps({"last_user_prompt_at": 0.0}), encoding="utf-8")
-    env = os.environ.copy()
-    env.update({"TMPDIR": str(tmp_path), "TEMP": str(tmp_path), "TMP": str(tmp_path)})
-    user_prompt = _fork_runner.run_script(
-        _SCRIPT,
-        argv=("user_prompt_submit",),
-        input=json.dumps({"session_id": session_id, "prompt": _FREE_TEXT}, ensure_ascii=False),
-        env=env,
-    )
-    prompt_body = _single_notice_body(user_prompt, "user_prompt_submit")
-
     answer_body = _single_notice_body(
         _run(_ask_user_question_payload(session_id, tool_response), state_dir=tmp_path), "posttooluse"
     )
 
-    # 前提を否定する回答への手順の文意は定義の読解で確かめ、ここでは共通の本文に続く手順があることだけを確かめる。
-    assert answer_body.startswith(prompt_body)
-    assert answer_body[len(prompt_body) :].strip()
+    assert "提示した選択肢と一致しない自由記述" in answer_body
+    assert "回答に沿って進める" in answer_body
 
 
 @pytest.mark.parametrize(

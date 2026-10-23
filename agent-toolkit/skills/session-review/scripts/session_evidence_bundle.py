@@ -100,7 +100,9 @@ def _bundle_events(
         _hook_notice_candidate_events(collected),
         main_record_id=main_record.record_id,
         adhoc_processing=_adhoc_processing_events(collected),
-        wi_events=_wi_candidate_events(collected, main_record.path.stem),
+        wi_events=_wi_candidate_events(
+            collected, main_record.record_id.split(":", 1)[1] if main_record.runtime == "opencode" else main_record.path.stem
+        ),
         definition_reads=definition_body_read_events(collected),
     )
 

@@ -14,12 +14,17 @@
 
 - 計画で確定した検証行は本スキルの`SKILL.md`「統合実行ツール経由の起動」の`plan-verify --summary-only`で実行し、順序・コマンド・状態・終了コード・記録参照・保存失敗と未記録集合を一覧で受領する。凍結後の訂正済み検証表を引き継いだ場合は、同節の`--verification-plan`を指定して訂正後の条件を実行する。訂正表の書式・保持・引き継ぎは`agent-toolkit:plan-mode`の`references/plan-file-standards.md`「検証と終端工程」に従う
 - 保存済みの結果は子を再実行せずに読む。plan-verifyの結果まとめは`results_path`を`atk run-command --records-file <絶対パス>`へ渡す。計画なしの保存済み実行は`--record <record_path>`の反復で渡す。どちらの方法でも順序・argv・cwd・取得版・Git状態・子とwrapperの終了状態・両出力へ到達する。旧記録の`unrecorded`は未記録として保持し、読取失敗・欠損・破損を成功と扱わない
+- 先行結果と限定再実行を合わせるときは、品質の定義元の「実行条件と再実行」で各成功集合の適用可否を判定する。各保存物を後掲の公開操作へ渡し、完全テスト名・取得版・合否を要求へ対応付ける。先行成功と追加成功の根拠は同じ要求行へ`--mode append`で保存できる
 - 保存結果の試験・診断を完成条件へ対応付けるときは、`atk run-script`の`verification-record`か`exec-review-evidence-check`で、後掲「構造化試験結果の取得と記入」の入力を使う。診断は`--diagnostics-file`・`--diagnostics-record`・`--diagnostics-conditions`と必要な`--diagnostics-source`から読む。`--list-results --results-counts`で状態・基準差・診断群の件数を読む。続いて`--result-status`・`--result-change`・`--result-diagnostic-group`の選択と`--results-identifiers`で全識別子へ進み、選択群か完全テスト名・診断識別子の詳細で全対象の意味を判定する。`--select-row <配列:N>`と`--result-test`・`--result-diagnostic`・`--evidence-file`・`--mode`で要求行へ保存する（原文・sourceの転記や手製のJSONは不要）。診断の比較条件と保存時本文は取得時の保存物を使う
 
 ### 構造化試験結果の取得と記入
 
 試験はプロジェクトの起動形に次の出力指定を加え、`atk run-command`で実行記録とともに保存する。
 結果ファイルはmanaged-temp内の絶対パスを指定し、返された`record_path`を取込みへ渡す。
+makeやコンテナーを介す場合は、`atk run-command --result-file <ホストの結果の絶対パス> --path-map <子の絶対接頭辞>=<ホストの絶対接頭辞> -- <プロジェクトの試験コマンド>`で宣言する。
+同じホストのパスを使う場合は`--path-map`を省く。
+取込みは宣言した結果が実行中に作成・更新され、終了後に変わっていないことを確かめ、結果中の絶対パスを最長一致の対応で変換する。
+JUnitは全testcaseのfile属性とrootdirの出力を必要とする。
 
 | runner | `atk run-command --cwd <worktree> --`に続ける実行形 | 両公開操作へ渡す入力 |
 | --- | --- | --- |

@@ -634,7 +634,7 @@ def _process_activity(worktree: pathlib.Path) -> str | None:
     return None
 
 
-def _worktree_activity(worktree: pathlib.Path) -> str | None:
+def _worktree_activity(worktree: pathlib.Path, *, wait_release: bool = True) -> str | None:
     """所有側へ終端資源の解放を要求してから、担当と外部プロセスの使用を再判定する。"""
     directory = session_registry.registry_directory()
     deadline: float | None = None
@@ -655,29 +655,22 @@ def _worktree_activity(worktree: pathlib.Path) -> str | None:
             )
         if resolution.state is session_registry.Resolution.TERMINAL:
             if deadline is None:
-                deadline = time.monotonic() + get_wait_timeout("main")
+                deadline = time.monotonic() + (get_wait_timeout("main") if wait_release else 0)
             reason = session_release.request_release(
                 path.stem, worktree, deadline=deadline, worktree_paths=tuple(entry.path for entry in entries)
             )
             if reason:
                 return f"session_id={path.stem}: {reason}。{instruction}"
             released.append(path.stem)
-    while True:
-        activity = _session_activity(worktree) or _process_activity(worktree)
-        if not activity:
-            return None
-        if not released or deadline is None or time.monotonic() >= deadline:
-            if released:
-                identifiers = ",".join(released)
-                return (
-                    f"{activity}。session_id={identifiers}。agents_serverのstopへ各session_idを渡し、"
-                    "同じlane deleteを再実行する"
-                )
-            return activity
-        time.sleep(min(0.05, max(0.0, deadline - time.monotonic())))
+    # 所有側の応答は要求対象の終端まで検収する。応答後の独立した使用は、その時点の保持理由にする。
+    activity = _session_activity(worktree) or _process_activity(worktree)
+    if activity and released:
+        identifiers = ",".join(released)
+        return f"{activity}。session_id={identifiers}。agents_serverのstopへ各session_idを渡し、同じlane deleteを再実行する"
+    return activity
 
 
-def _eligible(record: dict[str, typing.Any]) -> str | None:
+def _eligible(record: dict[str, typing.Any], *, wait_release: bool = True) -> str | None:
     repo = pathlib.Path(record["repo"])
     worktree = pathlib.Path(record["worktree"])
     state = _resource_state(record)
@@ -688,7 +681,7 @@ def _eligible(record: dict[str, typing.Any]) -> str | None:
     if not _selection_state(record)["integrated"]:
         return "選定の統合状態が未統合"
     if state.worktree_path:
-        activity = _worktree_activity(worktree)
+        activity = _worktree_activity(worktree, wait_release=wait_release)
         if activity:
             return activity
     trees = _worktrees(repo)
@@ -715,10 +708,13 @@ def _retained_resource(path: pathlib.Path, error: BaseException) -> dict[str, st
     return retained
 
 
-def cleanup_session(session_id: str | None, *, only: pathlib.Path | None = None) -> dict[str, typing.Any]:
+def cleanup_session(
+    session_id: str | None, *, only: pathlib.Path | None = None, wait_release: bool = True
+) -> dict[str, typing.Any]:
     """全登録を先に判定し、安全な対象だけを回収する。結果は削除対象の外へ保持する。
 
     onlyを指定すると、その登録だけを同じ条件で判定・回収する。
+    自動終了ではwait_release=Falseを渡し、終端資源の解放が未確認なら理由付きで保持する。
     """
     result: dict[str, typing.Any] = {"session_id": session_id, "removed": [], "retained": [], "recovered": [], "missing": []}
     if session_id is None or not _directory(session_id).exists():
@@ -738,7 +734,7 @@ def cleanup_session(session_id: str | None, *, only: pathlib.Path | None = None)
                     result["recovered"].append({"record_path": str(path), **record["recovery"]})
                     continue
                 held = record.get("selection")
-                reason = _eligible(record)
+                reason = _eligible(record, wait_release=wait_release)
                 if record.get("selection") != held:
                     _save(path, record)
                 if reason:
@@ -776,7 +772,7 @@ def cleanup_session(session_id: str | None, *, only: pathlib.Path | None = None)
         for path, record in records:
             try:
                 # 判定後に状態が変わった対象も、削除の直前に再判定する。
-                reason = _eligible(record)
+                reason = _eligible(record, wait_release=wait_release)
                 if reason:
                     raise ValueError(reason)
                 state = _resource_state(record)
@@ -784,7 +780,7 @@ def cleanup_session(session_id: str | None, *, only: pathlib.Path | None = None)
                     _procedure(record, "delete")
                     record["teardown_done"] = True
                     _save(path, record)
-                reason = _eligible(record)
+                reason = _eligible(record, wait_release=wait_release)
                 if reason:
                     raise ValueError(reason)
                 repo = pathlib.Path(record["repo"])
@@ -951,8 +947,15 @@ def list_resources(session_id: str | None = None) -> dict[str, typing.Any]:
 
 def _integration_input(args: argparse.Namespace, record: dict[str, typing.Any]) -> dict[str, typing.Any]:
     manifest = json.loads(args.manifest.read_text(encoding="utf-8"))
-    if not isinstance(manifest, dict) or set(manifest) - {"plans", "wis", "verification", "handoff", "lane_started_at"}:
-        raise ValueError("manifestはplans・wis・verification・handoff・lane_started_atを持つobjectで指定する")
+    if not isinstance(manifest, dict) or set(manifest) - {
+        "plans",
+        "wis",
+        "verification",
+        "handoff",
+        "lane_started_at",
+        "review_inputs",
+    }:
+        raise ValueError("manifestはplans・wis・verification・handoff・lane_started_at・review_inputsを持つobjectで指定する")
     for name in ("plans", "wis"):
         rows = manifest.get(name)
         if not isinstance(rows, list):
@@ -962,8 +965,9 @@ def _integration_input(args: argparse.Namespace, record: dict[str, typing.Any]) 
             if (
                 not isinstance(row, dict)
                 or not {"name", "commands"} <= set(row)
-                or set(row) - {"name", "commands", "saved"}
+                or set(row) - {"name", "commands", "saved", "no_merge"}
                 or not isinstance(row["name"], str)
+                or ("no_merge" in row and not isinstance(row["no_merge"], bool))
             ):
                 raise ValueError(f"{name}の各項目はnameとcommandsを持つobjectで指定する")
             if row["name"] in seen:
@@ -1009,6 +1013,116 @@ def _integration_input(args: argparse.Namespace, record: dict[str, typing.Any]) 
     if referenced and "lane_started_at" not in manifest:
         raise ValueError("最終化argvが確定値を参照する場合はmanifestのlane_started_atを指定する")
     return manifest
+
+
+def _review_targets(data: object, path: pathlib.Path, reviewed: str) -> tuple[list[str], list[str]]:
+    """生成済み入力から、実レビュー版の一致を確かめた計画・WI集合を取り出す。"""
+    if (
+        not isinstance(data, dict)
+        or set(data) != {"version", "reviews"}
+        or not isinstance(data["version"], int)
+        or isinstance(data["version"], bool)
+        or data["version"] != 1
+        or not isinstance(data["reviews"], list)
+        or not data["reviews"]
+    ):
+        raise ValueError(f"受領確認入力には生成済みのversion: 1とreviews配列を指定する: {path}")
+    plans: list[str] = []
+    wis: list[str] = []
+    for review in data["reviews"]:
+        if (
+            not isinstance(review, dict)
+            or not isinstance(review.get("wi"), list)
+            or not all(isinstance(name, str) for name in review["wi"])
+            or not isinstance(review.get("plans"), list)
+            or not all(isinstance(name, str) for name in review["plans"])
+            or review.get("reviewed_head") != reviewed
+            or review.get("plan") != (review["plans"][0] if review["plans"] else "なし")
+        ):
+            raise ValueError(f"受領確認入力のWI・計画または実レビューHEADが受理した組と一致しない: {path}")
+        plans.extend(pathlib.Path(name).name for name in review["plans"])
+        wis.extend(review["wi"])
+    return plans, wis
+
+
+def _check_review_inputs(
+    record: dict[str, typing.Any], manifest: dict[str, typing.Any], *, no_merge: bool, reviewed_head: str
+) -> None:
+    """生成済み入力の計画・WI・HEADを今回の入力と比べ、Git変更と最終化の前に既存コマンドで確かめる。"""
+    inputs = manifest.get("review_inputs", [])
+    if not isinstance(inputs, list) or (not inputs and not no_merge):
+        raise ValueError("マージありのmanifestのreview_inputsへ生成済み受領確認入力と実レビューHEADを指定する")
+    expected_plans = {row["name"] for row in manifest["plans"] if not row.get("no_merge", False)}
+    expected_wis = {row["name"] for row in manifest["wis"] if not row.get("no_merge", False)}
+    state = record.get("integration", {})
+    finalized_input = state.get("phase") == "git-integrated" or (
+        state.get("phase") == "finalized"
+        and state.get("input", {}).get("reviewed_head") == reviewed_head
+        and state.get("input", {}).get("manifest") == manifest
+    )
+    saved_payloads = record.get("review_input_payloads", {}) if finalized_input else {}
+    if finalized_input and inputs:
+        observed = record.get("review_input_check", {})
+        if (
+            state.get("input", {}).get("manifest", {}).get("review_inputs") != inputs
+            or observed.get("child_exit_code") != 0
+            or observed.get("wrapper_exit_code") != 0
+            or not all(
+                isinstance(observed.get(field), str) and pathlib.Path(observed[field]).is_file()
+                for field in ("record_path", "stdout_path", "stderr_path")
+            )
+        ):
+            raise ValueError("最終化再開の受領確認入力または保存済み検査記録が一致しない。前回の入力と実行記録を復元する")
+    seen_plans: set[str] = set()
+    seen_wis: set[str] = set()
+    paths: list[str] = []
+    payloads: dict[str, typing.Any] = {}
+    for item in inputs:
+        if (
+            not isinstance(item, dict)
+            or set(item) != {"path", "reviewed_head"}
+            or not isinstance(item["path"], str)
+            or not isinstance(item["reviewed_head"], str)
+            or not re.fullmatch(r"[0-9a-fA-F]{7,64}", item["reviewed_head"])
+        ):
+            raise ValueError("review_inputsの各項目はpathと受理したreviewed_headを持つobjectで指定する")
+        path = pathlib.Path(item["path"])
+        if not path.is_absolute() or (not path.is_file() and str(path) not in saved_payloads) or str(path) in paths:
+            raise ValueError(f"受領確認入力は重複のない実在する絶対パスで指定する: {path}")
+        data = json.loads(path.read_text(encoding="utf-8")) if path.is_file() else saved_payloads[str(path)]
+        if finalized_input and saved_payloads.get(str(path)) != data:
+            raise ValueError(f"最終化再開の受領確認入力が検査時の保存本文と一致しない: {path}。検査済みの入力を復元する")
+        payloads[str(path)] = data
+        reviewed = _git(pathlib.Path(record["worktree"]), "rev-parse", "--verify", f"{item['reviewed_head']}^{{commit}}")
+        plans, wis = _review_targets(data, path, reviewed)
+        if (
+            len(set(plans)) != len(plans)
+            or len(set(wis)) != len(wis)
+            or set(plans) & seen_plans
+            or set(wis) & seen_wis
+            or not set(plans) <= expected_plans
+            or not set(wis) <= expected_wis
+        ):
+            raise ValueError(f"受領確認入力の計画・WI集合が今回のmanifestと一致しないか重複している: {path}")
+        seen_plans.update(plans)
+        seen_wis.update(wis)
+        paths.append(str(path))
+    if inputs and (seen_plans != expected_plans or seen_wis != expected_wis):
+        raise ValueError("受領確認入力がmanifestの実装対象の計画・WI集合を欠落なく覆っていない")
+    if paths and not finalized_input:
+        argv = _atk_script("run-script", "exec-review-evidence-check", "--")
+        for path_text in paths:
+            argv.extend(("--batch", path_text))
+        observed, code, failure = run_command.execute(argv, pathlib.Path(record["worktree"]), record["procedure_timeout"])
+        observed = _persist_observed(record, "review-input-check", observed)
+        record["review_input_check"] = observed
+        record["review_input_payloads"] = payloads
+        _save(pathlib.Path(record["record_path"]), record)
+        if code:
+            raise ValueError(
+                f"受領確認入力の検査が終了{code}: {failure or observed['record_path']}。"
+                "保存済みの診断を読み、同じレビュー担当が入力を是正してから同じlane integrateで再開する"
+            )
 
 
 # 最終化argvが参照する確定値。値は最終化の最初の操作の前に1回だけ生成し、再開では保存値を使う。
@@ -1122,9 +1236,9 @@ def _amend_finalization(state: dict[str, typing.Any], identity: dict[str, typing
             "Git統合後は前回と同じレビューHEADと統合先を指定する"
         )
     old, new = previous["manifest"], identity["manifest"]
-    if any(old.get(key) != new.get(key) for key in ("verification", "handoff", "lane_started_at")):
+    if any(old.get(key) != new.get(key) for key in ("verification", "handoff", "lane_started_at", "review_inputs")):
         raise ValueError(
-            "最終化入力の補完では検証・引き継ぎ記録・レーン開始時刻を変更しない。"
+            "最終化入力の補完では検証・引き継ぎ記録・レーン開始時刻・受領確認入力を変更しない。"
             "Git統合前なら--amend-finalizationを外して--restart-reviewで是正して再開し、"
             "Git統合後は前回と同じ値のまま未完了の最終化argvだけを補完する"
         )
@@ -1134,6 +1248,8 @@ def _amend_finalization(state: dict[str, typing.Any], identity: dict[str, typing
                 "最終化入力の補完では全計画・WIの集合と順序を変更しない。前回と同じ名前と順序のmanifestへ直して再実行する"
             )
         for before, after in zip(old[group], new[group], strict=True):
+            if before.get("no_merge", False) != after.get("no_merge", False):
+                raise ValueError("最終化入力の補完では実装有無の区分を変更しない。前回と同じno_mergeの値で再実行する")
             for index, argv in enumerate(before["commands"]):
                 key = f"{group}:{before['name']}:{index}"
                 if key in state["completed"] and (index >= len(after["commands"]) or after["commands"][index] != argv):
@@ -1206,6 +1322,7 @@ def integrate(args: argparse.Namespace, session_id: str) -> dict[str, typing.Any
         if not re.fullmatch(r"[0-9a-fA-F]{7,64}", args.reviewed_head):
             raise ValueError("reviewed-headは7文字以上の一意なcommit OIDで指定する")
         reviewed = _git(worktree, "rev-parse", "--verify", f"{args.reviewed_head}^{{commit}}")
+        _check_review_inputs(record, manifest, no_merge=args.no_merge, reviewed_head=reviewed)
         identity = {
             "reviewed_head": reviewed,
             "target": str(target),
@@ -1455,6 +1572,8 @@ def build_parser(parser: argparse.ArgumentParser) -> None:
             "計画なしはplans:[]とhandoff:ABS。保存済みplansはcommands:[]とsaved:ABS、延期wisはcommands:[]。"
             "lane_started_atは最初のレーン開始時刻（時差付きISO 8601）。plans/wisのargvの"
             "{{integrated_head_short}}・{{completed_at}}・{{lane_seconds}}と{{expand-file:ABS}}を確定値で展開する。"
+            "review_inputsは生成済み受領確認入力の{path:ABS,reviewed_head:実レビューOID}配列。"
+            "実装なしのplans/wisにはno_merge:trueを指定する。マージありでは実装対象全件の入力を必須とする。"
         ),
     )
     integrate_parser.add_argument("--no-merge", action="store_true", help="Gitを変更せず計画保存・WI終端だけ行う。")

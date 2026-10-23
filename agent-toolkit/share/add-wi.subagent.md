@@ -33,8 +33,6 @@ continuations:
 
 ## 読込表
 
-次の時点または条件が成立したら、対象の操作の前に同じ行の資料を全文読む。
-
 <!-- read-table-source: add-wi.subagent-delivery-2.md -->
 
 | 時点または条件 | 取得する範囲 |

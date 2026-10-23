@@ -793,6 +793,7 @@ def test_usage_limit_resumes_work_conversation_outside_timeout(
 
     CLIイベントとrolloutは20261014-210511-001/002の実現性で観測された形を使う。
     """
+    monkeypatch.setenv(f"AGENT_TOOLKIT_CONFIG_{engine.upper()}_USAGE_LIMIT_WAIT", "always")
     set_orchestrate_environment(monkeypatch, f"{engine}:test-model/high")
     monkeypatch.setenv("FAKE_SESSION_LIMIT_COUNT", "2")
     monkeypatch.setenv("FAKE_LIMIT_TYPE", limit_type)
@@ -840,3 +841,30 @@ def test_usage_limit_resumes_work_conversation_outside_timeout(
     saved = reports[0].read_text(encoding="utf-8")
     assert next(iter(run_ids)) in saved
     assert saved.count("再開後の報告更新") == 2
+
+
+@pytest.mark.parametrize(
+    "engine,limit_type,policy",
+    [("claude", "five_hour", "never"), ("claude", "seven_day", "five-hour"), ("codex", "", "never")],
+)
+def test_usage_limit_outside_wait_policy_returns_failure(
+    engine_env: _Env,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    engine: str,
+    limit_type: str,
+    policy: str,
+) -> None:
+    """解除を待たない設定は公開CLIから元の失敗を返し、会話の自動再開を行わない。"""
+    set_orchestrate_environment(monkeypatch, f"{engine}:test-model/high")
+    monkeypatch.setenv(f"AGENT_TOOLKIT_CONFIG_{engine.upper()}_USAGE_LIMIT_WAIT", policy)
+    monkeypatch.setenv("FAKE_SESSION_LIMIT_COUNT", "1")
+    monkeypatch.setenv("FAKE_LIMIT_TYPE", limit_type)
+    monkeypatch.setenv("CODEX_HOME", str(engine_env.state / "codex"))
+    sleeps: list[float] = []
+    monkeypatch.setattr(run_skill, "time", types.SimpleNamespace(time=time.time, monotonic=time.monotonic, sleep=sleeps.append))
+    code, out, err = _run(["--target-repo", str(engine_env.repo), "nonwaiting-skill"], capsys)
+    assert code == 1 and not out
+    assert "異常終了" in err
+    assert len(_records(engine_env, "session")) == 1
+    assert not sleeps

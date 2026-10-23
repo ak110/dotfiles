@@ -26,17 +26,13 @@ Claude CodeのUserPromptSubmit payloadは現在名`session_title`を持つ。
 Pythonのコマンドhookは`hookSpecificOutput.sessionTitle`で名前を設定し、注記を同じオブジェクトの`additionalContext`へ返す。
 現在名が空か前回自動設定した名前と同じ場合だけ更新し、手動で付けた名前を保つ。
 命名用の種別はPostToolUse(Skill)と手動起動時のUserPromptSubmitが通常状態へ記録し、process-loopの環境印と計画名から名前を選ぶ。
-Codexでは名前を設定しない。
+名前の設定はClaude Codeに限る。
 
-応答契約を注入する注記は、本文の種別で頻度を分ける。
-
-- 開始・`clear`・会話圧縮で`agent-toolkit:user-confirmation-and-report`の内容が文脈から失われた後の起動案内は、実ユーザー発話へ同スキルの起動と、不具合の有無・原因・直し方を回答や確認へ含める場合の診断前の`agent-toolkit:bugfix`起動を示す。説明の補足にも同じ起動契機を適用する。Claude Codeは`agent-toolkit:user-confirmation-and-report`の起動で解除するまで、Codexは文脈1つにつき1回だけ返し、機械注入では消費しない
-- エージェント向け文書の読込だけを求める注記は、基準文書の所在だけを示す1文とし、経過時間によらず通常発話ごとに返す（介入のたびに規範の所在を想起させ、文脈へ載る量を一定に保つ）
-- 判定手順を本文へ持つ注記は、直前の通常発話からの経過時間が閾値以上の通常発話にだけ返す。初回の通常発話には返さないが、基準の時刻は初回から毎回更新する
+開始・`clear`・会話圧縮後の最初の実ユーザー発話へ、`agent-toolkit:user-confirmation-and-report`の起動と、不具合の有無・原因・直し方を回答や確認へ含める場合の診断前の`agent-toolkit:bugfix`起動を案内する。両ホストで文脈1つにつき1回配送し、機械注入では配送待ちを消費しない。発話と現物の比較手順は同スキルの「原文の保持と取り込み」と「確認要否の判定」が定める。時間経過による固定手順の再注入は行わない。
 
 対象の通常発話はユーザーが入力したスラッシュコマンドを含み、ハーネスが挿入した通知と機械注入のターンは対象外とする。成立した注記は1つの`additionalContext`へ結合し、Codex payloadでも同じく返す。
 
-ユーザーが書いた文は、Claude Codeの`AskUserQuestion`の回答（提示した`label`と一致しない`answers`の値、`response`、`annotations`の`notes`）としてPostToolUseにも届く。発話の内容を判定材料とする注記は両hookで同じ定義の本文を使い、`AskUserQuestion`の自由記述へは、1回の質問につき1回しか生じないため閾値を適用せず毎回返す。
+ユーザーが書いた文は、Claude Codeの`AskUserQuestion`の回答（提示した`label`と一致しない`answers`の値、`response`、`annotations`の`notes`）としてPostToolUseにも届く。発話の内容を判定材料とする注記は両hookで同じ定義の本文を使い、原因・対象・対処の変化に応じた共通の新規性判定で配送する。
 
 ## 組織向け設定
 

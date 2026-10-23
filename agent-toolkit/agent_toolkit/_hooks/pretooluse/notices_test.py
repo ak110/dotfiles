@@ -30,7 +30,7 @@ class TestCodexApplyPatchEditChecks:
         return _plan_file_state_env(tmp_path)
 
     def test_multiple_warnings_are_merged_into_single_json(self, tmp_path: pathlib.Path) -> None:
-        """同一入力の初回警告と反復警告を単一のJSONへまとめる。"""
+        """異なる対象の警告を単一JSONへまとめ、件数だけの反復通知を生成しない。"""
         patch_text = _patch(
             "*** Add File: one/uv.lock\n+version = 1\n",
             "*** Add File: two/uv.lock\n+version = 1\n",
@@ -41,7 +41,7 @@ class TestCodexApplyPatchEditChecks:
         assert len(result.stdout.strip().splitlines()) == 1
         context = _additional_context(result)
         assert context.count("uv add") == 2
-        assert "この通知は同一セッションで2件目である" in context
+        assert "この通知は同一セッションで2件目である" not in context
         assert result.stderr == ""
 
     def test_mojibake_in_patch_warns(self, tmp_path: pathlib.Path) -> None:

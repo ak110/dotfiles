@@ -179,6 +179,38 @@ test("削除拒否後も次の有効なStop判定で再評価できる", async (
   expect(prompts.length).toBe(1);
 });
 
+test("回収の同一失敗を省き、未点検・対象変更・解消後の再発を区別する", async ($, on) => {
+  const clock = mock.clock(on);
+  const prompts: string[] = [];
+  on("prompt.submit", (_$, e) => { prompts.push(e.text); return { text: "" }; });
+  const options: Options = { recheck: "complete", deleteResponse: "deny", jobs: [{ id: "common", prompt: COMMON_PROMPT }] };
+  const { writes } = engine(on, options);
+  await $.turn.complete(MAIN_TURN);
+  await clock.advance(1);
+  await $.turn.complete(MAIN_TURN);
+  writes.set(RECHECK_PATH, "complete");
+  await $.turn.complete(MAIN_TURN);
+  await clock.advance(1);
+  expect(prompts.length).toBe(1);
+  options.jobs = [{ id: "other", prompt: COMMON_PROMPT }];
+  writes.set(RECHECK_PATH, "complete");
+  await $.turn.complete(MAIN_TURN);
+  await clock.advance(1);
+  options.jobs = [{ id: "common", prompt: COMMON_PROMPT }];
+  writes.set(RECHECK_PATH, "complete");
+  await $.turn.complete(MAIN_TURN);
+  await clock.advance(1);
+  expect(prompts.length).toBe(3);
+  options.deleteResponse = undefined;
+  writes.set(RECHECK_PATH, "complete");
+  await $.turn.complete(MAIN_TURN);
+  options.deleteResponse = "deny";
+  writes.set(RECHECK_PATH, "complete");
+  await $.turn.complete(MAIN_TURN);
+  await clock.advance(1);
+  expect(prompts.length).toBe(4);
+});
+
 test("通常回収の削除許可がaskなら呼び出さず理由を届ける", async ($, on) => {
   const clock = mock.clock(on);
   const prompts: string[] = [];

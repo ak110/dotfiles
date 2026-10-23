@@ -198,6 +198,7 @@ class ResumeInfo:
     fast_mode: bool | None = None
     codex_model_provider: str | None = None
     codex_subscription_provider: str | None = None
+    codex_state_provider: str | None = None
     claude_api_env_file: str | None = None
     claude_connection: str | None = None
     claude_role: str | None = None
@@ -250,6 +251,7 @@ def publish(
     fast_mode: bool | None = None,
     codex_model_provider: str | None = None,
     codex_subscription_provider: str | None = None,
+    codex_state_provider: str | None = None,
     claude_api_env_file: str | None = None,
     claude_connection: str | None = None,
     claude_role: str | None = None,
@@ -317,6 +319,8 @@ def publish(
     if engine == "codex" and codex_model_provider:
         payload["codex_model_provider"] = codex_model_provider
         payload["codex_subscription_provider"] = codex_subscription_provider
+    if engine == "codex" and codex_state_provider:
+        payload["codex_state_provider"] = codex_state_provider
     if engine == "claude" and claude_api_env_file:
         payload["claude_api_env_file"] = claude_api_env_file
     if engine == "claude" and claude_connection:
@@ -460,8 +464,11 @@ def release(session_id: str, *, reason: ReleaseReason, state_root: pathlib.Path 
     if (
         info is not None
         and info.engine == "codex"
-        and info.codex_model_provider
-        and info.codex_model_provider != info.codex_subscription_provider
+        and (
+            info.codex_state_provider
+            or info.codex_model_provider
+            and info.codex_model_provider != info.codex_subscription_provider
+        )
     ):
         try:
             prior = json.loads(path.read_text(encoding="utf-8"))
@@ -614,6 +621,9 @@ def _resume_info(payload: dict[str, Any]) -> ResumeInfo | None:
         else None,
         codex_subscription_provider=payload.get("codex_subscription_provider")
         if payload["engine"] == "codex" and isinstance(payload.get("codex_subscription_provider"), str)
+        else None,
+        codex_state_provider=payload.get("codex_state_provider")
+        if payload["engine"] == "codex" and isinstance(payload.get("codex_state_provider"), str)
         else None,
         claude_api_env_file=payload.get("claude_api_env_file")
         if payload["engine"] == "claude" and isinstance(payload.get("claude_api_env_file"), str)

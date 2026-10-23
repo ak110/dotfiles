@@ -425,9 +425,16 @@ def _is_agent_document_writing(tool_name: str, tool_input: dict) -> bool:
 
 
 def _is_body_writing(tool_name: str, tool_input: dict) -> bool:
-    """本文を作成・更新する編集入力と、既存のBash文書編集を判定する。"""
+    """編集入力と、静的に確定した本文書込を同じ基準で判定する。"""
     if tool_name == "Bash":
-        return _is_agent_document_writing(tool_name, tool_input)
+        command = tool_input.get("command")
+        if not isinstance(command, str):
+            return False
+        handoff = _delegated_session.handoff_path(os.environ)
+        paths = _bash_write_paths(command)
+        if handoff and paths and all(path == handoff for path in paths):
+            return False
+        return isinstance(command, str) and (_is_agent_document_writing(tool_name, tool_input) or _bash_body_writing(command))
     operations = _tool_input.parse_operations(tool_name, tool_input, "")
     handoff = _delegated_session.handoff_path(os.environ)
     paths = [path for operation in operations or [] for path in operation.display_paths]
@@ -443,6 +450,38 @@ def _is_body_writing(tool_name: str, tool_input: dict) -> bool:
         )
         for operation in operations or []
     )
+
+
+def _bash_body_writing(command: str) -> bool:
+    """本文をコマンド内に持つ書込だけを選び、出力保存と複製を除く。"""
+    for invocation in extract_bash_invocations(command):
+        tokens = invocation.static_tokens
+        name = pathlib.PurePath(tokens[0]).name
+        if name == "sed" and _sed_write_paths(tokens[1:]):
+            return True
+        if name == "perl" and _perl_write_paths(tokens[1:]):
+            return True
+        if name == "gawk" and _gawk_write_paths(tokens[1:]):
+            return True
+        if is_python_token(name) and len(tokens) > 2 and tokens[1] == "-c" and _python_write_paths(tokens[2]):
+            return True
+        if name in {"cat", "tee"} and invocation.inline_input:
+            outputs = [target for target in invocation.static_outputs if isinstance(target, str)]
+            if name == "tee":
+                outputs.extend(_stream_write_paths(tokens[1:]))
+            if any(_static_write_path(path) is not None and path != "-" for path in outputs):
+                return True
+    for body in heredoc_bodies(command):
+        preceding = extract_bash_invocations(command[: body.start])
+        if preceding:
+            tokens = preceding[-1].segment.tokens
+            if (
+                is_python_token(pathlib.PurePath(tokens[0]).name)
+                and tokens[1:] in {(), ("-",)}
+                and _python_write_paths(command[body.start : body.end])
+            ):
+                return True
+    return False
 
 
 def _is_delegation_operation(tool_name: str, _tool_input: dict) -> bool:

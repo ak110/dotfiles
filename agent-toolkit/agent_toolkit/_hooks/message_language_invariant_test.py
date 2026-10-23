@@ -6,7 +6,6 @@ import os
 import pathlib
 import re
 import subprocess
-import time
 
 import pytest
 
@@ -251,9 +250,9 @@ def test_direct_response_language_block_is_japanese(tmp_path: pathlib.Path, repe
         assert _is_japanese_notice(result.stderr)
 
 
-def test_user_prompt_verification_notice_is_japanese(tmp_path: pathlib.Path) -> None:
-    sid = "japanese-verification-notice"
-    assert session_state.update_state(sid, lambda _previous: {"last_user_prompt_at": time.time() - 200})
+def test_user_prompt_context_notice_is_japanese(tmp_path: pathlib.Path) -> None:
+    sid = "japanese-context-notice"
+    assert session_state.update_state(sid, lambda _previous: {"user_confirmation_skill_pending": True})
 
     result = _run_user_prompt_submit({"session_id": sid, "prompt": "通常のユーザー発話です。"}, tmp_path)
 

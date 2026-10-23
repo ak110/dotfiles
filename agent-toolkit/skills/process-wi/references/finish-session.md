@@ -158,5 +158,7 @@ completion-reportが報告する前に、公開状態の4項目（`agent-toolkit
 通常終了の`atk agents-exit-session`が、所有sessionのレーン資源を`atk lane delete`と同じ条件で回収する。process-loopでは子sessionの終了後、正常・異常判定と再起動判断より前に同じ条件で回収する。返された回収結果の保存先と未回収対象を検収し、保持理由を解消できない対象は成果を保って報告へ残す。回収の失敗をホスト終了要求の成功で隠さず、次回開始時の`atk lane delete --list`へ引き継ぐ。
 all-reposのリポジトリ担当は`atk agents-exit-session`を実行せず、常駐プログラムへの最終返却でターンを終える（[all-repos-orchestration.md](all-repos-orchestration.md)「担当の役割」）。その担当のレーン資源は、常駐プログラムが担当の終了を確認して同じ担当へ続行する予定が無くなった時点で、同じ条件で`lane_session_id`ごとに回収する。保持した資源の理由と`atk lane delete --session-id <lane_session_id>`による再回収の操作は、常駐プログラムの端末出力とprocess-loopのログに残る。
 対象worktreeを保持する終端済みの委譲sessionは、所有側の`agents_server`へ結果を保持した解放を要求し、その後に使用中かを判定する。
+自動終了の回収は`lane delete`と同じ適格判定を使い、終端sessionの解放応答を待たず、未確認のsessionを保持理由と結果保存先付きで残す。
+対話の`atk lane delete`は所有側の解放応答と実行プロセスの終了を期限まで待ち、解放後の独立した使用は1回で判定する。
 実行中のsession、所有側が応答しないsession、解放後も外部プロセスが使うworktreeは保持する。
 未解放sessionのIDが返った場合は、`references/run-lanes.md`「未回収レーンの再回収」に従い、終端結果の回収後に公開MCPの`stop`へ渡し、同じ所有sessionの`atk lane delete`を再実行する。

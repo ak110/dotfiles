@@ -935,9 +935,10 @@ async def test_empty_list_limited_by_period_offers_all_periods(browser_harness: 
 
 
 @pytest.mark.asyncio(loop_scope="session")
-async def test_answer_change_terminal_read_only_and_identifier_surfaces(browser_harness: _BrowserHarness) -> None:
-    """既存回答の変更、終端状態の編集制限、削除および識別子表示を検証する。"""
+async def test_answer_change_terminal_edit_and_identifier_surfaces(browser_harness: _BrowserHarness) -> None:
+    """既存回答の変更、終端状態の本文編集、削除および識別子表示を検証する。"""
     harness = browser_harness
+    harness.operations.persist_mutations = True
     page = harness.page
     question_path = _entry_path(harness.root, "question.md")
     question_path.write_text(question_path.read_text(encoding="utf-8") + "既存回答\n", encoding="utf-8")
@@ -956,9 +957,16 @@ async def test_answer_change_terminal_read_only_and_identifier_surfaces(browser_
     await page.locator("#state-filter").select_option("all")
     await page.locator('.entry-select[data-key="adopted.md"]').click()
     await playwright.async_api.expect(detail.locator("#detail-state")).to_have_text("awi / adopted")
-    await playwright.async_api.expect(detail.locator("#readonly-notice")).to_be_visible()
-    await playwright.async_api.expect(detail.locator("#readonly-notice")).to_have_text("この項目は編集と回答の対象外です。")
-    await playwright.async_api.expect(detail.locator("#edit-button")).to_be_hidden()
+    await playwright.async_api.expect(detail.locator("#readonly-notice")).to_be_hidden()
+    await detail.locator("#edit-button").click()
+    editor = detail.locator("#edit-content")
+    original = await editor.input_value()
+    await editor.fill(original + "\n終端後の追記\n")
+    await detail.locator("#save-entry-button").click()
+    await playwright.async_api.expect(detail).to_be_hidden()
+    await page.locator('.entry-select[data-key="adopted.md"]').click()
+    await playwright.async_api.expect(detail.locator("#detail-state")).to_have_text("awi / adopted")
+    assert "終端後の追記" in _entry_path(harness.root, "adopted.md").read_text(encoding="utf-8")
     await playwright.async_api.expect(detail.locator("#answer-button")).to_be_hidden()
     await playwright.async_api.expect(detail.locator("#delete-button")).to_be_visible()
     await playwright.async_api.expect(detail.locator("#hold-button")).to_be_visible()

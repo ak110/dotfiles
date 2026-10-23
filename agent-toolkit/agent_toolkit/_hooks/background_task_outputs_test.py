@@ -154,11 +154,15 @@ def test_pretooluse_warns_reading_pending_output_of_each_background_form(
     assert "唯一の再開契機" not in context
 
     repeated = _pretooluse_bash_context(capsys, session_id, transcript, f"{read_command} {output_path}", tmp_path)
-    assert 'kind="warn"' in repeated
-    assert 'kind="block"' not in repeated
-    assert "途中経過は進捗の材料に限る" in repeated
-    assert "完了通知を受けた後に同じ出力ファイルを全量読み直してから結果として使う" in repeated
-    assert "唯一の再開契機" not in repeated
+    assert not repeated
+
+    other_path = str(tmp_path / "tasks" / "bg-2.output")
+    other_entries, other_response = _background_launch(form, "bg-2", "toolu_other", other_path)
+    _record_launch(session_id, other_response)
+    transcript = _write_transcript(tmp_path / "changed-transcript.jsonl", entries + other_entries)
+    changed = _pretooluse_bash_context(capsys, session_id, transcript, f"{read_command} {other_path}", tmp_path)
+    assert _WARNING in changed
+    assert "完了通知を受けた後に同じ出力ファイルを全量読み直してから結果として使う" in changed
 
 
 @pytest.mark.parametrize("delivery", ["queue", "user"])

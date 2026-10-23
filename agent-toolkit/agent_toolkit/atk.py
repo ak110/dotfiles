@@ -283,6 +283,13 @@ class _OutputAsFile:
 
 _OUTPUT_AS_FILE_CALLS = (
     _OutputAsFile(
+        applies=lambda args: args.command == "review-audit" and args.review_audit_subcommand == "pending",
+        # pendingの保存を使う時に監査moduleを読み込む。
+        # pylint: disable-next=unnecessary-lambda
+        after_save=lambda path: _review_audit.summarize_saved_pending(path),
+        reason="監査担当へ生成元のJSONファイルを渡す。保存後は起動判断に必要な件数と取得状態だけを表示する",
+    ),
+    _OutputAsFile(
         applies=lambda args: args.command == "agents" and args.agents_subcommand == "wait",
         after_save=lambda path: _agents.summarize_saved_wait(path),  # pylint: disable=unnecessary-lambda  # 保存対象だけ読み込む
         reason="回収前に保存先を開き、保存できない場合に未受領の結果を消費しない。保存後は通知・終端の内訳と本文を表示する",

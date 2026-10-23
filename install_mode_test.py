@@ -55,10 +55,15 @@ def test_install_entry_persists_and_transmits_mode(mode, shell, tmp_path, host_e
 
 
 @pytest.mark.parametrize("mode", ["full", "minimal"])
-def test_global_mise_template_contains_mode_target_set(mode, tmp_path, host_environ):
+@pytest.mark.parametrize("config_exists", [False, True])
+def test_global_mise_template_contains_mode_target_set(mode, config_exists, tmp_path, host_environ):
     chezmoi = shutil.which("chezmoi")
     if chezmoi is None:
         pytest.skip("chezmoiが未導入")
+    if config_exists:
+        config = tmp_path / ".config/agent-toolkit/config.json"
+        config.parent.mkdir(parents=True)
+        config.write_text('{"review_model": "codex:terra/medium"}', encoding="utf-8")
     environment = {
         **host_environ(),
         "HOME": str(tmp_path),

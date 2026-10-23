@@ -37,8 +37,6 @@ QCD、3段判定、事実と推論、硬い制約と努力目標は`agent-basics
 
 ## 読込表
 
-次の時点または条件が成立したら、その操作の前に同じ行の資料を全文読む。
-
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 | 資料選択子 |
 | --- | --- | --- | --- | --- |
 | 起動時 | `agent-basics:writing-standards/references/quality-principles.md` | 起動時 | `skill:bugfix` | |

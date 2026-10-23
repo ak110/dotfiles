@@ -12,7 +12,7 @@ description: >
 原因と対策の最終判断と統合は、元の記録を持つメインが同じセッション内で行う。事実の収集は`agent-toolkit:bugfix`の`references/investigation-delegation.md`「事象単位の並列調査委譲」の条件で独立した担当へ委譲でき、メインは取得できる証拠を渡す。
 `atk run-script session-review-prepare`は収集できた全担当の発話とツール呼び出しの入力を並べ、結果を成否・量・記録位置で示したセッション全体の流れ（会話の流れ）と、除外区分に当たる結果を機械的に除いた問題候補（`candidates.md`）を書く。候補だけを読むとどの観点にも当たらない問題が分析の入力に現れないため、会話の流れの全範囲から先に問題を探し、`candidates.md`はそこで得られない事象の補完に使う。
 
-全記録の抽出とWI投入には、元の記録・参照資料・キューへ到達するファイル操作とCLIが必要である。これらが無い環境では、提示された会話の範囲で問題候補と確認に要る証拠を整理し、対象全体の振り返りと区別する。全記録の検収と正式な投入は、最上位のメインがそれらの機能を使えるClaude CodeまたはCodexで行う。候補の説明は[文章の品質基準](references/quality-standards.md)で確かめる。
+全記録の抽出とWI投入には、元の記録・参照資料・キューへ到達するファイル操作とCLIが必要である。これらが無い環境では、提示された会話の範囲で問題候補と確認に要る証拠を整理し、対象全体の振り返りと区別する。全記録の検収と正式な投入は、最上位のメインがそれらの機能を使えるホストで行う。候補の説明は[文章の品質基準](references/quality-standards.md)で確かめる。
 
 ## 名指し参照の読込方法
 
@@ -38,7 +38,9 @@ description: >
 | --- | --- | --- | --- | --- |
 | 工程1の`atk run-script session-review-prepare`が0以外で終了したか、標準出力が1行のJSONでない場合 | `references/analysis-failure.md` | 判断 | `read:agent-toolkit:*/skills/session-review/references/analysis-failure.md` | |
 | 工程2で`atk run-script session-review-prepare`の`reference_document`が値を持つ場合 | `reference_document`が示す対象リポジトリ固有の振り返り参照文書 | 判断 | `tool:Read`、`tool:Bash` | `review-reference` |
-| 工程2で`conversation.md`の全体を確認する前（工程2の判定と工程3の選別に使う） | `references/analysis.md` | 判断 | `read:agent-toolkit:*/skills/session-review/references/analysis.md` | |
+| 工程2で`conversation.md`の全体を確認する前（工程2の判定と工程3の選別に使う） | `references/analysis.md`の冒頭と「入力と照会」から「比較して探す観点」まで | 判断 | `section:agent-toolkit:*/skills/session-review/references/analysis.md#冒頭`、`section:agent-toolkit:*/skills/session-review/references/analysis.md#「入力と照会」から「比較して探す観点」まで` | |
+| 工程3・4で原因・対策と既存AWIによる被覆を確定する前 | `references/analysis.md`の「原因と対策」「既存キュー項目との重複確認」「規範適用による目的逸脱」 | 判断 | `section:agent-toolkit:*/skills/session-review/references/analysis.md#「原因と対策」「既存キュー項目との重複確認」「規範適用による目的逸脱」` | |
+| 費用比較の採否と300秒超過の処置を確定する前 | `references/analysis.md`の「所要時間の分析と改善」 | 判断 | `section:agent-toolkit:*/skills/session-review/references/analysis.md#「所要時間の分析と改善」` | |
 | 工程3か工程4で事実の収集を委譲する前 | `agent-toolkit:bugfix`の`references/investigation-delegation.md` | 判断 | `read:agent-toolkit:*/skills/bugfix/references/investigation-delegation.md` | |
 | 工程4で問題ごとに`agent-toolkit:bugfix`を起動した時点（`references/analysis.md`「原因と対策」がユーザー介入を拡張原因分析の条件に当たるものとして扱うため） | `agent-toolkit:bugfix`の`references/root-cause-analysis.md` | 判断 | `read:agent-toolkit:*/skills/bugfix/references/root-cause-analysis.md` | |
 | 工程5で要求をWI投入担当へ渡す前 | `${CLAUDE_PLUGIN_ROOT}/share/add-wi.parent.md` | 判断 | `read:agent-toolkit:*/share/add-wi.parent.md` | |
@@ -52,12 +54,21 @@ description: >
 
 ## 工程
 
-1. 次のいずれかの形で1回実行する。出力領域は準備コマンドが対象セッションのmanaged-temp内へ実行ごとに確保する。Claude Codeでは現在のtranscriptの絶対パス（`rules-main.claude-code.md`「自身の会話の記録」の取得元の値）を、Codexでは`CODEX_THREAD_ID`を渡す。`--target-repo`は対象リポジトリを確定できた場合だけ渡す。
+1. 次のいずれかの形で1回実行する。出力領域は準備コマンドが対象セッションのmanaged-temp内へ実行ごとに確保する。Claude Codeでは現在のtranscriptの絶対パス（`rules-main.claude-code.md`「自身の会話の記録」の取得元の値）を、Codexでは`CODEX_THREAD_ID`を、OpenCodeでは対象会話の`ses_`で始まるセッションIDを渡す。`--target-repo`は対象リポジトリを確定できた場合だけ渡す。
 
    ```text
    atk run-script session-review-prepare -- --transcript <transcriptの絶対パス> --target-repo <対象リポジトリの絶対パス>
    atk run-script session-review-prepare -- --codex-thread-id <thread ID> --target-repo <対象リポジトリの絶対パス>
+   atk run-script session-review-prepare -- --opencode-session-id <session ID> --target-repo <対象リポジトリの絶対パス>
    ```
+
+   OpenCodeは`XDG_DATA_HOME`、未設定なら`~/.local/share`配下の`opencode/opencode.db`を読取専用で取得する。
+   保存先を明示する場合は`--opencode-db <SQLiteの絶対パス>`を加える。
+   対応する記録はOpenCode 1.19.3の`session`・`message`・`part`形式であり、`parent_id`から子孫を収集する。
+   記録位置のlineはセッション内のmessage・part順による論理位置で、詳細照会はテーブル名と元の行IDも返す。
+   元のDBが更新されると論理位置が変わることがあるため、準備済みの候補証拠は同じbundleから読む。
+   DBやセッションの不在、未対応schemaと取得不能は終了コード2になり、記録を持つホストで同じIDの準備を再実行する。
+   取得できない範囲は未確認として保持し、そのセッションの振り返り完了は取得・分析・報告の後に判定する。
 
    JSONの`work_dir`から確保した出力領域を取得する。生成物は準備終了後も保持し、セッションのmanaged-tempの7日保持へ委ねる。既存の絶対ディレクトリを`--work-dir`で明示した場合の保持と回収は呼出側が担う。
 
@@ -75,7 +86,7 @@ description: >
    `conversation_utf8_bytes`・`candidates_utf8_bytes`・`stats_utf8_bytes`は生成した3文書のUTF-8量、`conversation_limit_bytes`は会話の流れの原則上限100,000バイトを示す。候補と統計は合計100,000バイト以下とする。
    `improvement_lines`は記録の全文から抽出した実際の行を持つ。候補文書では先頭10件の概要と全件数を示し、全行は`bundle/timeline.jsonl`の`reported_improvements`から読む。未解決の全件は`bundle/unconfirmed.jsonl`へ保持する。
 2. `candidates.md`より先に、メインが`conversation.md`の全体を1つの流れとして通読し、観点を限定せず問題と改善機会を列挙する。メイン1エージェントが全体像の把握と最終判断を担う。
-   - 毎回、`stats.md`の担当別の読込・Skill・結果量・反復とtoken上位から、品質を保って削減できる費用を確認する。欠陥の有無の判定と費用比較の採否を分け、比較結果を工程3・4と振り返り結果報告の`費用確認`へ渡す。
+   - 毎回、`stats.md`の起動mode・実モデル・生成入力の成分・読込・結果量・hook生成元と反復・文の部分一致とtoken上位から、一連の仕事を減らす具体案を比較する。欠陥の有無の判定と費用比較の採否を分け、比較結果を工程3・4と振り返り結果報告の`費用確認`へ渡す。観点の一覧は参照先へ保ち、比較結果では対象の仕事と具体案を示す。
    - 確認する集合は`references/analysis.md`「コストの無駄の確認」の17観点とし、初回の集計・上位と各観点の追加照会先を使う。全担当・全対象の詳細の毎回通読は求めず、判断に足りない範囲を取得する。大出力点検の上位も目的・必要情報・取得後の利用から見直し、無駄と判断した対象は工程3の原因と対策か、見送りの根拠へ対応付ける。
    - 準備後の圧縮で会話の流れの判断を失った場合は、同じ生成物の全体をメインが再読する。
    - 標識に現れない遠回り・手戻り・反復・ユーザー是正・時間の浪費を、ツール呼び出しと前後の発話から探す（コマンドの試行錯誤、資料の再読・陳腐化、設計の書き直し、規範解釈、委譲指示の不足、定義元への到達、出力の後加工と同目的のコマンド反復など）。

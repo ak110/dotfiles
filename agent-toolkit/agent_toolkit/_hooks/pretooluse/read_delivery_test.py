@@ -11,7 +11,12 @@ from agent_toolkit._common.read_triggers import ReadTarget, ReadTrigger, parse_t
 from agent_toolkit._hooks import rules_context
 from agent_toolkit._hooks.pretooluse import read_delivery
 from agent_toolkit._hooks.pretooluse.decision import Decision
-from agent_toolkit._hooks.pretooluse.read_delivery import _mark, _project_skill_rows, _redundant_selection
+from agent_toolkit._hooks.pretooluse.read_delivery import (
+    _declaration_recovery_operation,
+    _mark,
+    _project_skill_rows,
+    _redundant_selection,
+)
 
 
 def test_included_table_keeps_marker_order_and_is_counted_once(tmp_path, monkeypatch):
@@ -34,9 +39,16 @@ def test_included_table_keeps_marker_order_and_is_counted_once(tmp_path, monkeyp
     assert [row.documents[0].name for row in rows] == ["before.md", "outside.md", "after.md"]
 
 
-def _blocked_body(decision: Decision) -> str:
-    assert decision.block is not None
-    return decision.block
+def _guidance(decision: Decision) -> str | None:
+    assert decision.block is None
+    return "\n".join(part for part in decision.notices if part) or None
+
+
+def _notice_body(decision: Decision) -> str:
+    assert decision.block is None
+    message = "\n".join(part for part in decision.notices if part)
+    assert message
+    return message
 
 
 @pytest.mark.parametrize("codex", [False, True])
@@ -47,11 +59,11 @@ def test_pending_documents_preserve_the_own_handoff_exemption(tmp_path, monkeypa
     handoff = tmp_path / "own-handoff.md"
     monkeypatch.setattr(read_delivery.delegated_session, "handoff_path", lambda _env: str(handoff))
     payload = {"cwd": str(tmp_path), **({"turn_id": "turn"} if codex else {})}
-    assert read_delivery.deliver(payload, "Do", {}, "test").block
-    assert not read_delivery.deliver(payload, "Write", {"file_path": str(handoff), "content": "到達点"}, "test").block
+    assert _guidance(read_delivery.deliver(payload, "Do", {}, "test"))
+    assert not _guidance(read_delivery.deliver(payload, "Write", {"file_path": str(handoff), "content": "到達点"}, "test"))
     other = tmp_path / "draft.md"
     patch = f"*** Begin Patch\n*** Add File: {handoff}\n+到達点\n*** Add File: {other}\n+原稿\n*** End Patch"
-    assert read_delivery.deliver(payload, "apply_patch", {"command": patch}, "test").block
+    assert _guidance(read_delivery.deliver(payload, "apply_patch", {"command": patch}, "test")) is None
 
 
 @pytest.mark.parametrize("codex", [False, True])
@@ -77,18 +89,18 @@ def test_whole_contract_body_and_compaction_use_the_resolved_input(tmp_path, mon
     payload = {"transcript_path": str(log), **({"turn_id": "turn"} if codex else {})}
     first = read_delivery.deliver(payload, "Judge", {}, "test")
     if form == "full":
-        assert first.block is None
+        assert _guidance(first) is None
     else:
-        assert str(contract) in _blocked_body(first)
+        assert str(contract) in _notice_body(first)
     read_delivery.observe({**payload, "tool_response": contract.read_text()}, "Read", {"file_path": str(contract)}, "test")
-    assert not read_delivery.deliver(payload, "Judge", {}, "test").block
+    assert not _guidance(read_delivery.deliver(payload, "Judge", {}, "test"))
     monkeypatch.setattr(rules_context, "update_state", lambda _session, mutate: mutate(memory))
     rules_context.reset_main_operation_skill_ready("test")
     contract.write_text("# 現行作業契約\n追加後の完成条件\n", encoding="utf-8")
     later = read_delivery.deliver(payload, "Judge", {}, "test")
-    assert str(contract) in _blocked_body(later)
+    assert str(contract) in _notice_body(later)
     if not codex:
-        assert "追加後の完成条件" in _blocked_body(later)
+        assert "追加後の完成条件" in _notice_body(later)
 
 
 @pytest.mark.parametrize("codex", [False, True])
@@ -127,23 +139,23 @@ def test_resolved_project_skill_delivers_startup_and_later_conditions(tmp_path, 
     payload = {"cwd": str(tmp_path), **({"turn_id": "turn"} if codex else {})}
     tool, inputs = ("Bash", {"command": f"cat -- {requested}"}) if shell else ("Read", {"file_path": str(requested)})
     first = read_delivery.deliver(payload, tool, inputs, "test")
-    assert str(initial) in _blocked_body(first)
+    assert str(initial) in _notice_body(first)
     assert any(str(skill) in key for key in memory[rules_context.OPERATION_SKILL_READY_KEY])
     if not codex:
-        assert "言語を選ぶ初動基準" in _blocked_body(first)
+        assert "言語を選ぶ初動基準" in _notice_body(first)
     read_delivery.observe({**payload, "tool_response": initial.read_text()}, "Read", {"file_path": str(initial)}, "test")
-    assert not read_delivery.deliver(payload, tool, inputs, "test").block
+    assert not _guidance(read_delivery.deliver(payload, tool, inputs, "test"))
     read_delivery.observe({**payload, "tool_response": skill.read_text()}, "Read", {"file_path": str(skill)}, "test")
-    assert not read_delivery.deliver(payload, tool, inputs, "test").block
+    assert not _guidance(read_delivery.deliver(payload, tool, inputs, "test"))
     operation = {"file_path": str(tmp_path / "other-repo/code.py"), "content": "value = 1\n"}
     selected = read_delivery.deliver(payload, "Write", operation, "test")
-    assert str(detail) in _blocked_body(selected)
+    assert str(detail) in _notice_body(selected)
     if not codex:
-        assert "型の基準本文" in _blocked_body(selected)
-        assert "無関係な別用途本文" not in _blocked_body(selected)
+        assert "型の基準本文" in _notice_body(selected)
+        assert "無関係な別用途本文" not in _notice_body(selected)
     monkeypatch.setattr(rules_context, "update_state", lambda _session, mutate: mutate(memory))
     rules_context.reset_main_operation_skill_ready("test")
-    assert str(detail) in _blocked_body(read_delivery.deliver(payload, "Write", operation, "test"))
+    assert str(detail) in _notice_body(read_delivery.deliver(payload, "Write", operation, "test"))
 
 
 @pytest.mark.usefixtures("memory")
@@ -154,13 +166,12 @@ def test_missing_scope_does_not_become_ready_from_a_whole_file_read(tmp_path, mo
     monkeypatch.setattr(read_delivery, "declarations", lambda _cwd, **_kwargs: rows)
     read_delivery.observe({"tool_response": path.read_text(encoding="utf-8")}, "Read", {"file_path": str(path)}, "test")
     decision = read_delivery.deliver({}, "Do", {}, "test")
-    assert "見出しを一意に解決できない" in _blocked_body(decision)
-    assert "必須基準0" not in _blocked_body(decision)
+    assert "見出しを一意に解決できない" in _notice_body(decision)
+    assert "必須基準0" not in _notice_body(decision)
     recovery = read_delivery.deliver({}, "Write", {"file_path": str(source), "content": "宣言を修正する"}, "test")
     assert recovery.block is None
-    assert recovery.notices
     rows[:] = [ReadTrigger(source, 1, "操作", ("tool:Do",), (path,), ("資料0",))]
-    assert not read_delivery.deliver({}, "Do", {}, "test").block
+    assert not _guidance(read_delivery.deliver({}, "Do", {}, "test"))
 
 
 @pytest.mark.parametrize("mode", ["direct", "saved", "partitioned"])
@@ -181,7 +192,7 @@ def test_review_reference_arrives_after_successful_prepare_result(tmp_path, monk
         "test",
     )
     if mode != "direct":
-        assert "prepare" in _blocked_body(read_delivery.deliver({}, "Do", {}, "test"))
+        assert "prepare" in _notice_body(read_delivery.deliver({}, "Do", {}, "test"))
         if mode == "saved":
             read_delivery.observe(
                 {"tool_response": {"stdout": body, "exit_code": 0}}, "Bash", {"command": f"cat -- {output}"}, "test"
@@ -196,25 +207,25 @@ def test_review_reference_arrives_after_successful_prepare_result(tmp_path, monk
                     {"command": f"atk read-file --start {start} -- {output}"},
                     "test",
                 )
-    assert "判断前の固有基準" in _blocked_body(read_delivery.deliver({}, "Do", {}, "test"))
-    assert not read_delivery.deliver({}, "Do", {}, "test").block
+    assert "判断前の固有基準" in _notice_body(read_delivery.deliver({}, "Do", {}, "test"))
+    assert not _guidance(read_delivery.deliver({}, "Do", {}, "test"))
 
 
 @pytest.mark.usefixtures("memory")
 def test_external_index_requires_the_selected_page(monkeypatch, tmp_path):
     row = ReadTrigger(tmp_path / "SKILL.md", 1, "判断", ("tool:Do",), (), selector="external-pytilpack-index")
     monkeypatch.setattr(read_delivery, "declarations", lambda _cwd, **_kwargs: [row])
-    assert read_delivery.deliver({}, "Do", {}, "test").block
+    assert _guidance(read_delivery.deliver({}, "Do", {}, "test"))
     index = "https://ak110.github.io/pytilpack/llms.txt"
     page = "https://ak110.github.io/pytilpack/api/functools/index.md"
     read_delivery.observe({"tool_response": "索引"}, "WebFetch", {"url": index}, "test")
-    assert read_delivery.deliver({}, "Do", {}, "test").block
+    assert _guidance(read_delivery.deliver({}, "Do", {}, "test"))
     read_delivery.observe({"tool_response": {"exit_code": 1}}, "WebFetch", {"url": page}, "test")
-    assert read_delivery.deliver({}, "Do", {}, "test").block
+    assert _guidance(read_delivery.deliver({}, "Do", {}, "test"))
     read_delivery.observe({"tool_response": "truncated output"}, "WebFetch", {"url": page}, "test")
-    assert read_delivery.deliver({}, "Do", {}, "test").block
+    assert _guidance(read_delivery.deliver({}, "Do", {}, "test"))
     read_delivery.observe({"tool_response": "選んだ対象ページの本文"}, "WebFetch", {"url": page}, "test")
-    assert not read_delivery.deliver({}, "Do", {}, "test").block
+    assert not _guidance(read_delivery.deliver({}, "Do", {}, "test"))
 
 
 @pytest.mark.usefixtures("memory")
@@ -227,9 +238,13 @@ def test_artifact_standards_use_the_author_declaration(monkeypatch, tmp_path):
     declared = ReadTrigger(author, 1, "操作", ("path:*.py",), (reference,))
     monkeypatch.setattr(read_delivery, "declarations", lambda _cwd, **_kwargs: [row, declared])
     targets = read_delivery.dynamic_targets(
-        row, {"cwd": str(tmp_path)}, "Read", {"file_path": str(tmp_path / "code.py")}, {}, "main"
+        row, {"cwd": str(tmp_path)}, "Write", {"file_path": str(tmp_path / "code.py"), "content": "value = 1"}, {}, "main"
     )
     assert ReadTarget(reference) in targets
+    read_targets = read_delivery.dynamic_targets(
+        row, {"cwd": str(tmp_path)}, "Read", {"file_path": str(tmp_path / "code.py")}, {}, "main"
+    )
+    assert ReadTarget(reference) not in read_targets
 
 
 def test_same_skill_name_keeps_plugin_boundary(tmp_path, monkeypatch):
@@ -273,13 +288,13 @@ def test_integrated_parent_contract_arrives_before_launch(monkeypatch, role, cod
     payload = {"turn_id": "turn"} if codex else {}
     decision = read_delivery.deliver(payload, "Launch", {"subagent_md_path": role}, "test")
     targets = read_delivery.read_triggers.parent_contract_targets(role, root)
-    assert decision.block
-    assert all(str(target.path) in _blocked_body(decision) for target in targets)
+    assert _guidance(decision)
+    assert all(str(target.path) in _notice_body(decision) for target in targets)
     if not codex:
         assert all(
-            target.body().replace("${CLAUDE_PLUGIN_ROOT}", str(root)).strip() in _blocked_body(decision) for target in targets
+            target.body().replace("${CLAUDE_PLUGIN_ROOT}", str(root)).strip() in _notice_body(decision) for target in targets
         )
-        assert not read_delivery.deliver(payload, "Launch", {"subagent_md_path": role}, "test").block
+        assert not _guidance(read_delivery.deliver(payload, "Launch", {"subagent_md_path": role}, "test"))
 
 
 @pytest.mark.parametrize("duplicate", [False, True])
@@ -323,11 +338,11 @@ def test_startup_input_target_survives_compaction(tmp_path, monkeypatch, memory,
     monkeypatch.setattr(read_delivery.plugin_resources, "_PLUGIN_ROOT", root)
     monkeypatch.setattr(read_delivery, "declarations", lambda _cwd, **_kwargs: parse_tables(source, root))
     payload = {"transcript_path": str(log)}
-    assert not read_delivery.deliver(payload, "Do", {}, "test").block
-    assert not read_delivery.deliver(payload, "Do", {}, "test").block
+    assert not _guidance(read_delivery.deliver(payload, "Do", {}, "test"))
+    assert not _guidance(read_delivery.deliver(payload, "Do", {}, "test"))
     monkeypatch.setattr(rules_context, "update_state", lambda _session, mutate: mutate(memory))
     rules_context.reset_main_operation_skill_ready("test")
-    assert "起動入力の本文" in _blocked_body(read_delivery.deliver(payload, "Do", {}, "test"))
+    assert "起動入力の本文" in _notice_body(read_delivery.deliver(payload, "Do", {}, "test"))
 
 
 @pytest.mark.parametrize("codex", [False, True])
@@ -384,15 +399,15 @@ def test_missing_full_and_partial_reads(tmp_path, monkeypatch, codex):
         payload["turn_id"] = "turn"
     operation = {"file_path": str(tmp_path / "plan.md"), "content": "## 原因分析\n"}
     decision = read_delivery.deliver(payload, "Write", operation, "test")
-    assert decision.block
-    assert str(paths[0]) in _blocked_body(decision)
+    assert _guidance(decision)
+    assert str(paths[0]) in _notice_body(decision)
     if not codex:
-        assert "必須基準0" in _blocked_body(decision)
-        assert not read_delivery.deliver(payload, "Write", operation, "test").block
+        assert "必須基準0" in _notice_body(decision)
+        assert not _guidance(read_delivery.deliver(payload, "Write", operation, "test"))
         return
     for path in paths:
         read_delivery.observe({**payload, "tool_response": "# 資料0\n"}, "Read", {"file_path": str(path), "limit": 1}, "test")
-    assert read_delivery.deliver(payload, "Write", operation, "test").block
+    assert _guidance(read_delivery.deliver(payload, "Write", operation, "test"))
     for path in paths:
         read_delivery.observe(
             {**payload, "tool_response": {"stdout": path.read_text(encoding="utf-8"), "exit_code": 0}},
@@ -400,7 +415,7 @@ def test_missing_full_and_partial_reads(tmp_path, monkeypatch, codex):
             {"command": f"cat -- {path}"},
             "test",
         )
-    assert not read_delivery.deliver(payload, "Write", operation, "test").block
+    assert not _guidance(read_delivery.deliver(payload, "Write", operation, "test"))
 
 
 def test_warning_has_all_paths_and_never_blocks(tmp_path, monkeypatch, memory):
@@ -441,17 +456,17 @@ def test_delivery_records_the_body_snapshot_hash(tmp_path, monkeypatch):
 
     monkeypatch.setattr(ReadTarget, "body", replace_after_read)
     first = read_delivery.deliver({}, "Do", {}, "test")
-    assert "必須基準0" in _blocked_body(first)
+    assert "必須基準0" in _notice_body(first)
     monkeypatch.setattr(ReadTarget, "body", original)
     second = read_delivery.deliver({}, "Do", {}, "test")
-    assert "新しい基準" in _blocked_body(second)
+    assert "新しい基準" in _notice_body(second)
 
 
 @pytest.mark.usefixtures("memory")
 def test_bounded_delivery_retries_in_declaration_order(tmp_path, monkeypatch):
     paths = _rows(tmp_path, monkeypatch, "tool:Do", count=3)
     monkeypatch.setattr(read_delivery, "CLAUDE_BODY_BUDGET", 150 + len(str(paths[0])) + len(str(tmp_path)))
-    notices = [read_delivery.deliver({}, "Do", {}, "test").block for _ in range(4)]
+    notices = [_guidance(read_delivery.deliver({}, "Do", {}, "test")) for _ in range(4)]
     assert all(notice for notice in notices[:3])
     assert notices[3] is None
     for index, notice in enumerate(notices[:3]):
@@ -462,12 +477,12 @@ def test_bounded_delivery_retries_in_declaration_order(tmp_path, monkeypatch):
 
 def test_agent_scope_and_compaction(tmp_path, monkeypatch, memory):
     _rows(tmp_path, monkeypatch, "tool:Do", count=1)
-    assert read_delivery.deliver({}, "Do", {}, "test").block
-    assert read_delivery.deliver({"agent_id": "child"}, "Do", {}, "test").block
+    assert _guidance(read_delivery.deliver({}, "Do", {}, "test"))
+    assert _guidance(read_delivery.deliver({"agent_id": "child"}, "Do", {}, "test"))
     monkeypatch.setattr(rules_context, "update_state", lambda _session, mutate: mutate(memory))
     rules_context.reset_main_operation_skill_ready("test")
-    assert read_delivery.deliver({}, "Do", {}, "test").block
-    assert not read_delivery.deliver({"agent_id": "child"}, "Do", {}, "test").block
+    assert _guidance(read_delivery.deliver({}, "Do", {}, "test"))
+    assert not _guidance(read_delivery.deliver({"agent_id": "child"}, "Do", {}, "test"))
 
 
 def test_atk_partitioned_reads_require_complete_coverage(tmp_path, monkeypatch, memory):
@@ -483,7 +498,7 @@ def test_atk_partitioned_reads_require_complete_coverage(tmp_path, monkeypatch, 
         )
         if start:
             assert not any(key == read_delivery.document_key(path) for key in memory[rules_context.OPERATION_SKILL_READY_KEY])
-    assert not read_delivery.deliver({}, "Do", {}, "test").block
+    assert not _guidance(read_delivery.deliver({}, "Do", {}, "test"))
 
 
 @pytest.mark.parametrize("failure", [{"exit_code": 1}, {"interrupted": True}])
@@ -504,11 +519,10 @@ def test_explicit_section_delivery_keeps_other_sections_out(tmp_path, monkeypatc
     path.write_text("# 基準\n\n## 共通\n共通内容\n\n## 領域\n領域内容\n", encoding="utf-8")
     row = ReadTrigger(tmp_path / "SKILL.md", 1, "操作", ("tool:Do",), (path,), ("共通",))
     monkeypatch.setattr(read_delivery, "declarations", lambda _cwd, **_kwargs: [row])
-    notice = read_delivery.deliver({}, "Do", {}, "test").block
-    assert notice is not None
+    notice = _notice_body(read_delivery.deliver({}, "Do", {}, "test"))
     assert "共通内容" in notice
     assert "領域内容" not in notice
-    assert not read_delivery.deliver({}, "Do", {}, "test").block
+    assert not _guidance(read_delivery.deliver({}, "Do", {}, "test"))
     assert ReadTarget(path, "領域").body() == "## 領域\n領域内容\n"
 
 
@@ -548,15 +562,15 @@ def test_selected_section_acquisition_can_complete_before_next_operation(tmp_pat
     monkeypatch.setattr(read_delivery, "declarations", lambda _cwd, **_kwargs: [row])
     payload = {"turn_id": "turn"}
     tool_input = {"command": f"atk read-file --section 共通 -- {path}"}
-    assert not read_delivery.deliver(payload, "Bash", tool_input, "test").block
+    assert not _guidance(read_delivery.deliver(payload, "Bash", tool_input, "test"))
     selected = target.body()
     for start, end in [(0, 4), (4, len(selected))]:
         metadata = {"start": start, "end": end, "next": None, "eof": end == len(selected), "section": "共通"}
         response = {"stdout": json.dumps(metadata) + "\n" + selected[start:end], "exit_code": 0}
         read_delivery.observe({**payload, "tool_response": response}, "Bash", tool_input, "test")
         if not start:
-            assert read_delivery.deliver(payload, "Do", {}, "test").block
-    assert not read_delivery.deliver(payload, "Do", {}, "test").block
+            assert not read_delivery.target_ready(memory[rules_context.OPERATION_SKILL_READY_KEY], target, "main")
+    assert not _guidance(read_delivery.deliver(payload, "Do", {}, "test"))
     records = memory[rules_context.OPERATION_SKILL_READY_KEY]
     assert read_delivery.document_key(path) not in records
     assert read_delivery.target_ready(records, target, "main")
@@ -565,10 +579,10 @@ def test_selected_section_acquisition_can_complete_before_next_operation(tmp_pat
 @pytest.mark.usefixtures("memory")
 def test_modified_document_invalidates_previous_acquisition(tmp_path, monkeypatch):
     path = _rows(tmp_path, monkeypatch, "tool:Do", count=1)[0]
-    assert read_delivery.deliver({}, "Do", {}, "test").block
-    assert not read_delivery.deliver({}, "Do", {}, "test").block
+    assert _guidance(read_delivery.deliver({}, "Do", {}, "test"))
+    assert not _guidance(read_delivery.deliver({}, "Do", {}, "test"))
     path.write_text("# 更新した基準\n新しい本文\n", encoding="utf-8")
-    assert read_delivery.deliver({}, "Do", {}, "test").block
+    assert _guidance(read_delivery.deliver({}, "Do", {}, "test"))
 
 
 @pytest.mark.parametrize("selector", ["「必要節」", "冒頭「必要節」"])
@@ -636,7 +650,10 @@ def test_unresolved_declarations_keep_recovery_reads_and_block_changes(monkeypat
     monkeypatch.setattr(read_delivery.delegated_session, "handoff_path", lambda _env: None)
     monkeypatch.setattr(read_delivery, "declarations", unresolved)
     result = read_delivery.deliver({"cwd": "/source"}, tool, inputs, "test")
-    assert (result.block is None) is allowed
+    assert result.block is None
+    assert (
+        _declaration_recovery_operation(tool, inputs, PluginRootError("Codexのagent-basics導入先が一意でない: 0件")) is allowed
+    )
     if allowed:
         assert result.notices
 
@@ -650,6 +667,8 @@ def test_unresolved_declarations_keep_confirmation_warning_only(monkeypatch):
     monkeypatch.setattr(read_delivery, "declarations", unresolved)
     result = read_delivery.deliver({}, "request_user_input", {}, "test")
     assert result.block is None
+    guidance = _notice_body(result)
+    assert "読込宣言を取得できない" in guidance
     assert result.notices
 
 
@@ -738,7 +757,7 @@ def test_history_restore_preserves_content_actor_failure_and_context_boundaries(
     log.write_text("".join(json.dumps(entry, ensure_ascii=False) + "\n" for entry in entries), encoding="utf-8")
     payload["transcript_path"] = str(log)
     decision = read_delivery.deliver(payload, "Do", {}, "test")
-    assert (decision.block is None) is ready
+    assert (_guidance(decision) is None) is ready
 
 
 @pytest.mark.parametrize(
@@ -777,7 +796,14 @@ def test_dependency_recovery_is_limited_to_the_existing_toolkit_marketplace(
     monkeypatch.setattr(read_delivery, "declarations", unresolved)
     monkeypatch.setattr(read_delivery.process_tree, "run_with_timeout", plugin_list)
     result = read_delivery.deliver({}, "Bash", {"command": command}, "test")
-    assert (result.block is None) is allowed
+    assert result.block is None
+    assert result.notices
+    reason = (
+        ValueError("読込表の列数が一致しない")
+        if error == "syntax"
+        else PluginRootError("Codexのagent-basics導入先が一意でない: 0件")
+    )
+    assert _declaration_recovery_operation("Bash", {"command": command}, reason) is allowed
     assert all(argv == ["codex", "plugin", "list", "--json"] for argv in calls)
     assert memory == {}
 
@@ -799,7 +825,8 @@ def test_missing_dependency_keeps_the_own_handoff_only_exemption(tmp_path, monke
         patch = f"*** Begin Patch\n*** Add File: {own}\n+到達点\n*** Add File: {other}\n+変更\n*** End Patch"
         tool, inputs = "apply_patch", {"command": patch}
     result = read_delivery.deliver({}, tool, inputs, "test")
-    assert (result.block is None) is (kind == "own")
+    assert result.block is None
+    assert bool(_guidance(result)) is (kind != "own")
     assert bool(calls) is (kind != "own")
     assert memory == {}
 
@@ -881,13 +908,13 @@ def test_explicit_foreign_skill_keeps_startup_and_followup_declarations(tmp_path
     payload = {"cwd": str(tmp_path), **({"turn_id": "turn"} if codex else {})}
     inputs = {"file_path": str(skill)}
     first = read_delivery.deliver(payload, "Read", inputs, "test")
-    assert str(initial) in _blocked_body(first)
+    assert str(initial) in _notice_body(first)
     read_delivery.observe({**payload, "tool_response": initial.read_text()}, "Read", {"file_path": str(initial)}, "test")
-    assert read_delivery.deliver(payload, "Read", inputs, "test").block is None
+    assert _guidance(read_delivery.deliver(payload, "Read", inputs, "test")) is None
     read_delivery.observe({**payload, "tool_response": skill.read_text()}, "Read", inputs, "test")
     selected = read_delivery.deliver(payload, "Do", {}, "test")
-    assert str(later) in _blocked_body(selected)
-    assert str(active) not in _blocked_body(selected)
+    assert str(later) in _notice_body(selected)
+    assert str(active) not in _notice_body(selected)
 
 
 @pytest.mark.parametrize("case", ["full", "section", "actor", "changed", "data"])
@@ -957,7 +984,8 @@ def test_missing_skill_recovery_requires_a_root_resolution_error(monkeypatch, me
 
     monkeypatch.setattr(read_delivery, "declarations", unresolved)
     result = read_delivery.deliver({"cwd": "/source"}, tool, inputs, "test")
-    assert (result.block is None) is (failure == "root")
+    assert result.block is None
+    assert result.notices
     assert memory == {}
 
 
@@ -984,7 +1012,8 @@ def test_missing_skill_recovery_keeps_confirmation_and_handoff_boundaries(tmp_pa
         tool = "apply_patch"
         inputs = {"command": f"*** Begin Patch\n*** Add File: {own}\n+記録\n*** Add File: {other}\n+本文\n*** End Patch"}
     result = read_delivery.deliver({}, tool, inputs, "test")
-    assert (result.block is None) is (operation in {"question", "own-handoff"})
+    assert result.block is None
+    assert bool(_guidance(result)) is (operation != "own-handoff")
     assert bool(calls) is (operation != "own-handoff")
     assert memory == {}
 
@@ -1004,7 +1033,7 @@ def test_missing_skill_read_failure_preserves_existing_actor_and_role_state(tmp_
 
     monkeypatch.setattr(read_delivery, "declarations", unresolved)
     result = read_delivery.deliver({}, "Grep", {"pattern": "x"}, "test")
-    assert "資料を取得できない" in _blocked_body(result)
+    assert "資料を取得できない" in _notice_body(result)
     assert memory == original
 
 

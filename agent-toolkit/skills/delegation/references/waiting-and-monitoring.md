@@ -47,16 +47,25 @@ Claude Codeでは`atk agents wait`、CI・配備状態の監視、終了条件�
 - 委譲元は自動再開の要否を判断せず、自動再開へ委ねる。`atk agents wait`は再開したturnの終端まで待って結果を返す。待機表明かどうかはこのCLIの応答で判別する（同じ文面が完了報告にも現れる）。`終端行:`に`unfinished_waits`を持つ結果（`error`の`heldResultFinalized`が真）は待機対象が残ったまま保留を打ち切った待機表明であり、再開したturnの最終返却として扱わず、残った対象の状態を確かめてから同じsessionへ続きを依頼する。`unobservedSessions`だけでは判別しない
 - `show`が返す停滞診断と子sessionの一覧、`send_message`が返す`delivery`の意味は各MCPツールの説明が定める。長時間のコマンドの実行中なら催促も巻き取りも保留する。停滞の可能性は委譲先の状況を調べる契機であり、確定と巻き取りは「停滞の検知と巻き取り」に従う
 
+子session・子thread・背景エージェントが生存する間は、待機表明の保留と終端後の自動再開を維持する。利用上限の解除を待つ子にも同じ扱いを適用する。終了上限が保証される背景コマンドは、その上限に基づく通知喪失の診断へ進み、明示中断・追跡先喪失・再開失敗は各診断から回復する。
+
 ## 長時間待機前の会話圧縮
 
 Claude Codeのメインが、他の担当かCI監視の結果を次の工程の入力として待つ時点の共通手順である。予約する時点と保存する工程状態は、呼び出す工程の手順が定める。
 独立した先行工程を先に開始し、工程状態をセッションのmanaged-temp直下の`parent-handoff.md`へ保存してから進む。圧縮後はmanaged-tempの通知からこの固定名を見つけ、担当別記録、選定、監視、保存出力はそこに書いた参照から取得する。
 
 1. `mcp__agent-toolkit__compact_conversation`が無い環境は前提不成立を引き継ぎ記録へ残して通常の待機へ進む。Codexは適用範囲外とする
-2. ツールを引数なしで1回呼ぶ。受付は圧縮完了と区別し、未完了の予約へ追加予約を重ねない。Claude CodeのFunction hooks moduleは追加指示のない`/compact`を実行するため、工程状態を予約入力へ転記しない
+2. ツールを引数なしで1回呼ぶ。受付と圧縮完了を区別し、予約はその完了まで1件に保つ。Claude CodeのFunction hooks moduleは追加指示なしの`session.compact()`をturn間で実行するため、予約入力は空のまま保つ
 3. agents_serverの結果を待つ区間は、引数なしの単独`atk agents wait`をBashバックグラウンドタスクで起動する（session_idは結果との対応付けに使い、待機コマンドへ渡さない）。CI監視を待つ区間は、起動済みの`wait_ci.py`のバックグラウンドタスクを保ち、新しい監視を起動しない
 4. Monitorで前景を占有せずに現在ターンを終え、完了通知と保存した全出力から待機の終了状態を回収する
 5. 通知後は`parent-handoff.md`を読み、保存した現物と受領結果を比べて同じ工程から続ける。圧縮が失敗してもこの記録から復元し、既存の担当と監視を継続する。予約の失敗、圧縮成功、待機結果は別々に記録する
+
+Claude Codeメインの背景Bashで単独の`atk agents wait`を起動した場合は、modが同じ予約へ接続する。
+バックグラウンドタスクが5秒以上継続し、文脈利用率が50%以上、turn間であり、現在のturnの状態を`parent-handoff.md`へ保存済みの場合だけ自動圧縮する。
+待機所有の登録と起動区分から、自分が待つexplore・shell以外の担当が残ることも確かめる。状態の照会は既存記録を一度読む`atk run-script wait-compaction-context`が担う。
+同じ背景待機は1回までとし、成功後に利用率が高いままなら新しい待機でも再圧縮しない。閾値未満を観測した後の新しい作業で再び対象にできる。
+skipと失敗は予約を解除して通常の結果回収を続け、同じ背景待機を自動では再試行しない。
+単発タイマーとturn・完了通知を使い、継続ポーリングと圧縮のためのLLM turnを追加しない。Codexはホスト標準の圧縮と同じ状態復元を使う。
 
 ## `atk agents wait`の応答の扱い
 
@@ -132,7 +141,7 @@ Claude CodeのStopで未配送の完了通知があり、他のagent-toolkitの�
 - 停滞を確定して停止する場合は、対象ごとに根拠を残してから停止する。Claude Codeでは`atk run-script record-stall-detection --`がその記録を作成し、終了コード0を返した対象だけを停止できる
 - `show`か`list`が`status: running`とともに`api_error`を返す場合は、サーバーが同じsessionで作業を続けるため、催促、巻き取り、別engineへの再委譲をせず終端まで待つ。`api_error`が消えるか終端したら通常の判定へ戻る
   - ClaudeのAPI再試行: 合成assistantメッセージと`api_retry`はモデル活動時刻を進めないため、`seconds_since_activity`の増大は停滞の根拠から除く。`retry_at`は次の再試行予定時刻を示し、429以外も同じsessionの終端まで待つ
-  - Claudeの種別`usage_limit`: Weekly limitか5時間の利用上限の解除待ちであり、`resets_at`の後に同じsessionで続く。活動停止の長さを理由にCodexへ再委譲しない（ユーザー指示）。解除待ちの作業が不要になった場合だけ`kill`で保留中の結果を受け取る
+  - Claudeの種別`usage_limit`: Weekly limitか5時間の利用上限の拒否を示す。`claude_usage_limit_wait`に従って、同じ会話で後続APIへ切り替えるか、`resets_at`の後に同じsessionで続く。設定の省略時は5時間の上限を待つ。活動停止の長さを理由にCodexへ再委譲しない（ユーザー指示）。作業が不要になった場合だけ`kill`で停止結果を受け取る
   - Codexのturn内の再試行: `willRetry: true`の通知の種別とHTTP状態を表示する。継続の追送を控え、モデル活動で`api_error`が消えるかturnが終端するまで待つ
   - Codexの種別`serverOverloaded`によるturn終端後の自動継続: 継続の`send_message`を控える。自動継続の上限に達すると失敗の終端結果が届くため、その時点で候補を変えて起動し直す
 - 停滞の可能性に気付いたら`show`を1回発行する。`active_tool_uses`があり、前回と同じ呼び出しが同じ開始時刻で続いていれば長時間のコマンドの実行中として催促も巻き取りも保留する。`result_held`が真なら、委譲先はturnを終え、バックグラウンドタスクか子sessionの終端、または利用上限の解除を待って結果を保留している。この場合は`live_background_tasks`の`seconds_since_start`と`live_child_sessions`から待機を続けるかを判断し、後の結果が不要なら`kill`で保留中の結果を受け取る。保留中のsessionの確認には`show`を使う（新しいturnが始まる）。`active_tool_uses`が無く`seconds_since_activity`が停滞の可能性がある長さに達している場合だけ次へ進む

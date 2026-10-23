@@ -5,6 +5,10 @@
 
 ## 状態ファイルの構造と寿命
 
+停止と再開はsessionの`turn_control_lock`で直列化する。
+停止は所有するSDK task、委譲先CLIの根プロセスと子孫のcleanup完了を確認してから、未終端turnを`interrupted`として公開する。
+cleanupに失敗した場合は所有handleを保持し、同じ対象の停止を再試行できるようにする。
+
 `agents_server`が`start`で起動したsessionは、Claude CodeのUIでは`atk agents wait`の応答が届くまで状態を観測できない。
 このため`agents_server`はルートセッションごとのディレクトリへ生存中のsessionの状態ファイルを出力し、`claude-statusline`の`statusline`モードがセッション行の次の行以降へ1 sessionを1行で表示する。
 
@@ -50,6 +54,9 @@ managerは開始済みのsessionについて、session登録簿と状態ファ�
 
 子sessionへ送った`send_message`の公開応答が再開対象を示す場合は、そのsessionを再び追跡対象へ登録する。
 親の待機表明は再開した子の終端まで保留する。
+子session、Codexの子thread、Claudeの`local_agent`など終了上限を持たない対象の待機は、`auto_resume_deadline=None`で保持する。
+名目7800秒の通知期限で保留結果を最終化すると、生存中の子の作業が未観測のまま失われるためである。
+有界の背景コマンドには通知欠落を検出する期限を保ち、対象自身の寿命と通知の期限を分ける。
 ClaudeとCodexの試験入力は、実際の公開応答を生成する処理から作成する。
 起動時の子だけを追跡する案は、追送で再開した子を親の終端判定から失わせるため採用しない。
 
@@ -123,7 +130,7 @@ SDK 0.2.168の`get_mcp_status`と`reconnect_mcp_server`を使い、未回復の�
 接続切替は`claude_api_switch`へ`previous`・`selected`・`reason`・`limit_type`を記録する。
 いずれも選択と診断を示す情報であり、認証値は記録しない。
 
-Codex接続先の優先順は`codex_model_providers`が持つ。先頭を主接続先とし、サブスク利用上限では後続の独立APIへ同じ会話を移す。API主接続の不受理も後続APIへ有限に進める。空設定はCodex通常設定に従い代替試行しない。
+Codex接続先の優先順は`codex_model_providers`が持つ。先頭を主接続先とし、待機対象外のサブスク利用上限では状態互換性を確認して後続の独立APIへ同じ会話を移す。API主接続の不受理も後続APIへ有限に進める。空設定はCodex通常設定に従い代替試行しない。
 終端結果は既存の保留機構へ置き、MCPの監視が終端済みthreadのcold resume後に、
 以前の会話と実行結果を確認して完了済み操作を繰り返さず未完了部分を続ける入力を送る。
 未観測の孫や背景出力が残る場合はその待機を優先し、結果の帰属を維持する。
@@ -149,30 +156,50 @@ process-loopのClaude起動はこの変数を設定し、agents_serverとその�
 `retry_at`はMCPのlist・show、CLIのlist・waitへ同じ共通射影で返す。通知の記録は活動時刻を進めない。
 Codexの`willRetry: false`は既存のturn終端処理が扱い、通知から再開予定時刻を推定しない。
 
+Claudeはturn途中の`api_retry`と`RateLimitEvent`の拒否を受信した時点で待機方針と代替接続を評価する。
+再試行通知に利用枠が無い場合は、同じ会話・起動後の元記録を照合する。
+一般の429・529は通常のAPI再試行として記録し、正常なassistant応答で解除する。
+利用上限の待機判定は`_atk/usage_limit_policy.py`の`should_wait`へ集約する。
+`claude_usage_limit_wait`と`codex_usage_limit_wait`は`never`・`five-hour`・`always`を受理し、既定値は`five-hour`とする。
+`five-hour`は`five_hour`だけを待ち、`always`は週次枠なども待つ。
+Codexは通知の`window_minutes`から`five_hour`と`seven_day`を判別する。
+
 429の再試行中は同じsessionの終端または正常なモデル出力を待つ。`seconds_since_activity`はモデル活動がない間に増えるが、`api_error`が429を示す間はその値だけで委譲先を停止しない。診断の可視化と委譲先の置換を別の判断に分けることで、利用枠の回復後に同じ実行を継続できる余地を残す。
 Codexのturnが`start`の可用性確認を終えた後にサーバー側過負荷（`codexErrorInfo`の`serverOverloaded`）で終端する場合がある。この場合は終端結果を既存の保留機構（`pending_result`と`awaiting_auto_resume`）へ保留し、待機の後に同じsessionへ継続の配送本文を新しいturnとして送る。2026年10月3日に、約4.85時間続いたレーン担当のturnが過負荷で終端し、14秒後の再送も過負荷で終わった。待機は15秒、30秒、60秒の最大3回とする（2026年10月4日、ユーザー指示）。上限に達しても解けない場合は最後の失敗を現行どおり公開する。このとき`_carry_over_unavailable_candidate`が候補を次回の起動の除外対象として記録し、委譲元の起動し直しで別のモデルへ移る。待機中は`status`を`running`に保ち、`api_error`へ種別`serverOverloaded`とHTTP状態の不明（`null`）、連鎖の最初の時刻と回数を記録する。この記録は`show`・`list`・状態ファイル・statuslineへ既存の射影で出力する。
 対象を`serverOverloaded`へ限る。利用枠超過と流量制限は解除までの時間が応答から定まらず短い待機で解ける根拠が無く、Claudeの529は観測していないためである。可用性確認の間の過負荷は、会話の履歴を失わずに次の候補で起動し直せる既存の候補切替が扱う。未観測の孫sessionが残るturnは孫の待機を優先する。孫の終端後の再開本文が作業を再開させるためである。待機中の`kill`は新しいturnを始めずに最後の失敗で終端し、委譲元の`send_message`は保留を確定して自動継続を取り消す。
 
-Claude CodeのWeekly limit（`seven_day`、`seven_day_opus`、`seven_day_sonnet`）と5時間の利用上限（`five_hour`）を、解除まで待つ対象とする。`claude_api_env_file`が未設定のとき、これらで拒否されたturnは解除まで待って同じsessionで続ける（2026年10月4日、ユーザー指示）。待てば確実に解除されるため、候補を切り替えると作業の文脈を失うだけで得るものが無い。Claude backendはClaude Agent SDKの`RateLimitEvent`から利用枠の状態・種類・解除予定時刻をsessionへ保持し、`SystemMessage(init)`より前に届いた報告もsessionの作成時に引き継ぐ。turnが失敗で終わり、最後の報告が`rejected`かつ上記の種類である場合は、結果を既存の保留機構へ保留し、`api_error`へ種別`usage_limit`、HTTP状態、最初の拒否の時刻、回数、種類（`limit_type`）と解除予定時刻（`resets_at`）を記録する。MCP層の常駐監視は解除予定時刻に同じsessionへ継続の配送本文を送り、再び拒否されれば待機へ戻る。解除予定時刻が無いか過ぎている場合は300秒ごとに確かめ直す。回数と総時間の上限を置かず、`auto_resume_deadline`と保持期限でも確定しない。正常なモデル出力で利用枠の記録と`api_error`を削除する。起動直後の可用性確認の間に解除待ちへ入った場合も候補を切り替えず、`start`は`running`を返す。待機中の`kill`は保留した結果（`error.usageLimit`に種類と解除予定時刻）で終端し、委譲元の`send_message`は保留を確定してreplyとして配送する。解除待ちの拒否は除外記録へ残さず、旧版がClaudeの429へ記録した理由`429`は候補を除外する根拠にしない。待機の対象外である`overage`などのClaudeの429は、理由を`429:<種類>`として記録し、従来どおり次の候補へ切り替える。判定にHTTP状態の429を使わないのは、429が利用上限と流量制限を区別せず、種類はClaudeが出力する利用枠情報だけが示すためである。過負荷の自動継続と回数上限を共有しないのは、過負荷が短時間で解ける見込みの事象であるのに対し、利用上限は解除予定時刻まで確実に続くためである。
-`api-only`は両役割でAPIだけを候補にする。
+Claude backendは`RateLimitEvent`から利用枠の状態・種類・解除予定時刻を保持し、初期化前の報告もsessionの作成時に引き継ぐ。
+拒否された利用枠が待機対象なら結果を保留し、`api_error`へ`usage_limit`、HTTP状態、初回時刻、回数、`limit_type`と`resets_at`を記録する。
+MCPの常駐監視は解除予定時刻に同じsessionへ継続を送り、再度の拒否では待機へ戻る。
+解除予定時刻が不明か過ぎている場合は300秒ごとに確かめ直す。
+待機には回数と総時間の上限を置かず、`auto_resume_deadline`と保持期限でも確定しない。
+正常なモデル出力で利用枠の記録と`api_error`を削除する。
+起動直後に待機へ入った場合も`start`は`running`を返す。
+待機中の`kill`は保留した結果で終端し、`send_message`は保留を確定してreplyとして配送する。
+解除待ちの拒否は除外記録へ残さず、旧版の理由`429`も除外の根拠にしない。
+待機対象外の拒否は代替接続を評価し、候補の除外が必要な場合は`429:<種類>`を使う。
+HTTP状態の429だけでは利用上限と流量制限を区別できないため、利用枠情報と待機方針で判定する。
+過負荷の有限再試行と、利用上限の解除予定時刻までの待機は別々に管理する。
+旧`claude_api_mode=api-only`は両役割でAPIだけを候補にする互換設定であり、新しいbool設定の明示保存で解除する。
 新規・追送による次turn・保存後再開で現行設定を評価し、既存のsubscription・inheritも同じ会話IDのresumeでAPIへ移す。
 API環境ファイルの未設定・空・不正は復旧案内付きの不成立とし、API認証と残高の失敗はAPIエラーとして返す。
 api-onlyの間は上限解除後もサブスクリプションへ復帰しない。
-以下の未設定時の通常認証と選択済み接続の保持は、pay-as-you-goとapi-creditsの方針である。
+旧`pay-as-you-go`と`api-credits`は役割別のbool設定へ移行する。
 
-Claudeの役割別接続候補は`_atk/claude_connection.py`へ集約し、`claude_api_env_file`を認証の所在、`claude_api_mode`を方針として分離する。
+Claudeの役割別接続候補は`_atk/claude_connection.py`へ集約し、認証の所在と役割別方針を分離する。
 `claude_api_env_file`が未設定なら`inherit`接続を選び、親環境とClaude Codeの通常の認証解決を維持する。
 認証検出による起動拒否、認証変数の除去、apiKeyHelperの上書き、役割別割当と接続切替を行わない。
 可用性プローブ・本起動・再開を同じ接続種別で扱う。
 未設定時に開始した会話と接続情報もAPIパスも持たない旧形式の会話は、後から設定しても通常の認証解決を使う。
 以下の役割別接続管理はenvファイルを設定した会話に適用する。
-既定の`pay-as-you-go`はオーケストレーターをAPIへ固定し、通常の委譲先をサブスクリプション、APIの順にする。
-`api-credits`はオーケストレーターをサブスクリプションへ固定し、通常の委譲先をAPI、サブスクリプションの順にする。
+`claude_orchestrator_api_only`は既定の`true`でオーケストレーターをAPIへ固定し、`false`でサブスクリプションへ固定する。
+`claude_worker_api_first`は既定の`false`で委譲先をサブスクリプション、APIの順にし、`true`でAPIを優先する。
 通常のprocess-loopとall-reposのリポジトリ担当は同じ役割であり、起動手段がSDKでもオーケストレーターとして扱う。
-認証手段が一方だけの場合はその接続を使い、空・不在・読取不能・形式不正のAPI環境ファイルを候補から除く。
+委譲先は利用可能な接続を使い、オーケストレーターの指定接続が無ければ起動を止める。
+空・不在・読取不能・形式不正のAPI環境ファイルを候補から除く。
 直接起動のユーザー会話、Agentとfork、run-skill、commit、Codexの接続先はこの設定の対象外である。
 オーケストレーターは接続を固定し、通常の委譲先は同じsession ID・model・effortで次の接続へ移る。
-認証手段が一方だけの場合は既存の解除待ちを保ち、両認証を持つ全候補の失敗と認証なしを終端する。
+待機対象の利用上限は解除を待ち、待機対象外で全候補が失敗した場合と認証なしを終端する。
 新規sessionは毎回先頭候補から評価し、再開する会話は登録簿に保持した接続を使う。
 利用上限でサブスクリプションからAPIへ移した委譲先は、上限の解除予定時刻（不明なら既存の待機と同じ既定の時刻）を会話の状態へ保持する。サブスクリプションが先頭候補のままなら、その時刻の後にClaude backendの`send_message`が始める最初のturnで同じ会話をサブスクリプションで再開し、なお上限なら既存の切替で再びAPIへ移る。対象のturnは追送と、孫sessionの終端・利用上限・過負荷の後の自動再開であり、いずれも同じ`send_message`が開始するため判定を1か所に置く。接続は所有タスクの起動時に決まるため、上限でAPIへ移した場合と同じ再開の処理で所有タスクを起動し直す。CLIが自ら次のturnを始め得る待機（バックグラウンドタスクなど）の間は所有タスクを止めると作業を失うため、その待機の後にCLIが始めるturnは現在の接続で続き、次に`send_message`が始めるturnで戻す。
 

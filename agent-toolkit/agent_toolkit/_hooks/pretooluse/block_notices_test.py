@@ -78,9 +78,13 @@ def test_block_notices_preserve_cause_and_next_action(
         payload["turn_id"] = "codex-turn"
     code = dispatch.main(json.dumps(payload, ensure_ascii=False))
     captured = capsys.readouterr()
-    if case == "large_read" and not codex:
+    if case in {"large_read", "atk_pipe", "options", "revisions", "free_start", "agent_prompt"}:
         assert code == 0
         assert _RESULT not in captured.err
+        if codex or case != "large_read":
+            message = json.loads(captured.out)["hookSpecificOutput"]["additionalContext"]
+            assert 'kind="warn"' in message
+            assert "次の操作:" in message
         return
     assert code == 2, captured
     blocks = re.findall(r'<atk-auto source="[^"]+" kind="block">\n(.*?)\n</atk-auto>', captured.err, re.DOTALL)
@@ -92,8 +96,8 @@ def test_block_notices_preserve_cause_and_next_action(
     assert action.strip()
 
 
-def test_escalated_warning_preserves_recovery(capsys: pytest.CaptureFixture[str]) -> None:
-    """昇格による遮断でも原因と解消手段を保持する。"""
+def test_repeated_warning_preserves_normal_operation(capsys: pytest.CaptureFixture[str]) -> None:
+    """警告の回数が増えても通常の操作を遮断しない。"""
     notice.set_warning_session_id("escalated-block")
     warning = notice.warning_formatter("pretooluse")
     for _ in range(2):
@@ -105,11 +109,9 @@ def test_escalated_warning_preserves_recovery(capsys: pytest.CaptureFixture[str]
             removable_cause=True,
             escalate_on_repeat=True,
         )
-    assert dispatch.exit_with(0, []) == 2
+    assert dispatch.exit_with(0, []) == 0
     body = capsys.readouterr().err
-    assert _RESULT not in body
-    assert body.index("失敗する操作") < body.index("次の操作:")
-    assert "次の操作: 入力を直す" in body
+    assert not body
     assert _RESULT not in notice.block_formatter("stop")("終了工程が残る", fix="工程へ戻る")
 
 

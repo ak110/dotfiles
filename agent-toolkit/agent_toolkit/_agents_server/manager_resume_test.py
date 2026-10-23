@@ -1336,7 +1336,7 @@ async def test_claude_usage_limit_wait_is_visible_and_kill_returns_held_result(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> None:
-    """解除待ちの間は`show`・`list`が`running`と種類・解除予定時刻を返し、`kill`は保留した結果で終端して候補を除外しない。"""
+    """解除待ちの種類と解除予定時刻を公開し、`kill`は保留した診断を持つ停止結果を返す。"""
     resets_at = int(datetime.datetime.now(datetime.UTC).timestamp()) + 3600
     streams = [_rejected_stream("seven_day_opus", resets_at, before_init=False, session_id="claude-visible")]
     async with _usage_limited_manager(monkeypatch, streams) as (manager, client, codex):
@@ -1359,8 +1359,9 @@ async def test_claude_usage_limit_wait_is_visible_and_kill_returns_held_result(
 
         killed = await manager.kill(started["session_id"])
 
-        assert killed["status"] == "failed"
+        assert killed["status"] == "interrupted"
         assert killed["error"]["usageLimit"] == {"type": "seven_day_opus", "resetsAt": expected_reset}
+        assert client.disconnected
         assert codex.start_calls == []
         assert not unavailable_candidates.load_unavailable_candidates(
             "execute", "delegate", now=datetime.datetime.now(datetime.UTC)

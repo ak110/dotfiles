@@ -39,6 +39,7 @@ from pytools._internal import (
     install_claude_plugins,
     install_codex_plugins,
     install_libarchive,
+    install_opencode_toolkit,
     log_format,
     post_apply_outcome,
     prune_claude_plugin_cache,
@@ -421,6 +422,7 @@ _MISE = "mise セットアップ"
 _CODEX_CLI = "Codex CLI の導入と更新"
 _CLAUDE_CLI = "Claude Code CLI の導入と更新"
 _AGY_CLI = "Antigravity CLI の導入"
+_OPENCODE_CLI = "OpenCode CLI の導入"
 _GEMINI_SETTINGS = "Gemini 設定"
 _CLAUDE_PLUGIN = "Claude Code plugin のインストール"
 _CODEX_PLUGIN = "Codex plugin のインストール"
@@ -456,7 +458,8 @@ _DEFAULT_STEPS: list[_StepSpec] = [
     # 旧npm版の除去がmise管理のNode配下のnpmを使う。
     _StepSpec(_CLAUDE_CLI, setup_claude_cli.run, after=(_MISE,), full_only=True),
     _StepSpec(_AGY_CLI, setup_agy_cli.run, full_only=True),
-    _StepSpec("OpenCode CLI の導入", setup_opencode_cli.run, after=(_MISE, _CODEX_CLI, _CLAUDE_CLI), full_only=True),
+    _StepSpec(_OPENCODE_CLI, setup_opencode_cli.run, after=(_MISE, _CODEX_CLI, _CLAUDE_CLI), full_only=True),
+    _StepSpec("OpenCode toolkit の同期", install_opencode_toolkit.run, after=(_OPENCODE_CLI,), full_only=True),
     _StepSpec("Herdr CLI の導入と更新", setup_herdr_cli.run, full_only=True),
     # 旧配布物の削除と同じ配布先ディレクトリの旧ファイルを削除する。
     _StepSpec("agent-toolkit ルールの同期", sync_agent_toolkit_rules.run, after=(_CLEANUP,), full_only=True),

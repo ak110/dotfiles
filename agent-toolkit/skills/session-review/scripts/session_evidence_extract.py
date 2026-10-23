@@ -949,6 +949,9 @@ def _opencode_records(records: list[_Record]) -> list[_Record]:
     """OpenCodeの共通表示イベントを既存の発話・ツール・使用量の抽出契約へ接続する。"""
     converted: list[_Record] = []
     for record in records:
+        if record.entry.get("_opencode_sqlite") is True:
+            converted.append(record)
+            continue
         for index, event in enumerate(_session_record_format.opencode_events([record.entry])):
             entry: dict[str, Any] = {"timestamp": event.timestamp}
             content: list[dict[str, Any]] = []
@@ -1092,6 +1095,11 @@ def extract(entries: list[dict[str, Any]], lines: list[int] | None = None) -> li
 def _turn_finished(entry: dict[str, Any], runtime: _Runtime) -> bool:
     """既存のホストの終端記録を使い、後続turnの作業を先行返却の分類から切り離す。"""
     if runtime == "opencode":
+        if entry.get("_opencode_sqlite") is True:
+            message = entry.get("message")
+            return (
+                entry.get("_opencode_error") is True or isinstance(message, dict) and message.get("stop_reason") == "end_turn"
+            )
         part = entry.get("part")
         return (
             entry.get("type") == "error"

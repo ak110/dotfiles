@@ -257,6 +257,10 @@ async def test_start_rejects_invalid_task_document_request_with_next_action(
         await mcp_tools.start(str(tmp_path), subagent_md_path=path, extra_params=extra_params)
 
     assert operation in _actionable_message(raised.value).split(NEXT_ACTION_PREFIX, 1)[1]
+    if document == "exec.subagent.md":
+        next_action = _actionable_message(raised.value).split(NEXT_ACTION_PREFIX, 1)[1]
+        assert "呼び元の起動・受領契約" in next_action
+        assert "`## 入力`" not in next_action
     manager.start.assert_not_awaited()
 
 

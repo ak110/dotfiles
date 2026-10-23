@@ -9,3 +9,4 @@
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../plan-mode/references/plan-file-standards.md#「検証と終端工程」` | 判断 | `section:agent-toolkit:*/skills/plan-mode/references/plan-file-standards.md#「検証と終端工程」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:check-execution/references/verification-scope.md#「直接影響範囲の類型」` | 判断 | `section:agent-basics:*/skills/check-execution/references/verification-scope.md#「直接影響範囲の類型」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:check-execution/references/verification-scope.md#「範囲の決め方」` | 判断 | `section:agent-basics:*/skills/check-execution/references/verification-scope.md#「範囲の決め方」` |
+| 保存済みの検証結果を再利用する前 | `agent-basics:check-execution/references/verification-scope.md#「実行条件と再実行」` | 判断 | `section:agent-basics:*/skills/check-execution/references/verification-scope.md#「実行条件と再実行」` |

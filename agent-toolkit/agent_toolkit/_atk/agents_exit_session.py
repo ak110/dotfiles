@@ -300,7 +300,7 @@ def request_termination(
 
 def main() -> int:
     """終了要求の実行証跡を出力し、現在の識別情報が一致すると確認した単一PIDだけを停止する。"""
-    cleanup = _lane.cleanup_session(_lane.current_session_id())
+    cleanup = _lane.cleanup_session(_lane.current_session_id(), wait_release=False)
     if cleanup["retained"]:
         _outcome.report_warning(
             "終了時に回収できないレーン資源を保持した",

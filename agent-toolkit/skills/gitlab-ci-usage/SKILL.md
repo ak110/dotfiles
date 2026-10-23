@@ -20,8 +20,6 @@ description: >
 
 ## 読込表
 
-次の時点または条件が成立したら、その操作の前に同じ行の資料を全文読む。
-
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 | 資料選択子 |
 | --- | --- | --- | --- | --- |
 | 自己署名のTLS証明書のGitLab私設ホストで`glab`がTLS証明書検証エラーを返したとき | `references/self-hosted-tls.md` | 判断 | `read:agent-toolkit:*/skills/gitlab-ci-usage/references/self-hosted-tls.md` | |

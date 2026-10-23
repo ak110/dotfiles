@@ -529,7 +529,7 @@ def test_claude_api_mode_accepts_values_and_env_override(
 ) -> None:
     """show・get・setと環境上書きで接続方針の保存と不正値拒否を観測する。"""
     assert _main(tmp_path, "config", "show") == 0
-    assert "claude_api_mode pay-as-you-go" in capsys.readouterr().out
+    assert "claude_orchestrator_api_only true" in capsys.readouterr().out
     for mode in ("api-credits", "pay-as-you-go", "api-only"):
         assert _main(tmp_path, "config", "set", "claude_api_mode", mode) == 0
         capsys.readouterr()
@@ -552,13 +552,48 @@ def test_claude_api_env_file_accepts_missing_path(tmp_path: pathlib.Path) -> Non
     assert config_module.resolve_mutable_setting("claude_api_env_file") == path
 
 
+@pytest.mark.parametrize("mode,expected", [("pay-as-you-go", ("true", "false")), ("api-credits", ("false", "true"))])
+def test_legacy_claude_mode_migrates_without_duplicate_state(tmp_path, capsys, mode, expected):
+    """旧接続設定を公開getで移行し、新設定の独立更新を保存する。"""
+    _write_config(tmp_path, {"claude_api_mode": mode, "write_model": "claude:sonnet"})
+    keys = ("claude_orchestrator_api_only", "claude_worker_api_first")
+    assert _main(tmp_path, "config", "get", *keys) == 0
+    assert capsys.readouterr().out.splitlines() == list(expected)
+    assert _saved(tmp_path) == {**dict(zip(keys, expected, strict=True)), "write_model": "claude:sonnet"}
+    assert _main(tmp_path, "config", "set", keys[0], "false") == 0
+    capsys.readouterr()
+    assert config_module.resolve_mutable_setting(keys[1]) == expected[1]
+
+
+def test_legacy_api_only_is_exclusive_until_new_setting_is_written(tmp_path, capsys):
+    """旧API固定は元の入力で保ち、新bool更新で通常の2設定へ切り替える。"""
+    assert _main(tmp_path, "config", "set", "claude_api_mode", "api-only") == 0
+    capsys.readouterr()
+    assert _saved(tmp_path) == {"claude_api_mode": "api-only"}
+    assert config_module.claude_legacy_api_only()
+    assert _main(tmp_path, "config", "set", "claude_worker_api_first", "false") == 0
+    capsys.readouterr()
+    assert _saved(tmp_path) == {"claude_orchestrator_api_only": "true", "claude_worker_api_first": "false"}
+    assert not config_module.claude_legacy_api_only()
+
+
+def test_new_claude_environment_overrides_legacy_mode(tmp_path, capsys, monkeypatch):
+    """新しい環境設定を旧環境入力より優先し、保存設定を変更しない。"""
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CLAUDE_API_MODE", "api-only")
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CLAUDE_WORKER_API_FIRST", "false")
+    assert _main(tmp_path, "config", "get", "claude_worker_api_first", "claude_orchestrator_api_only") == 0
+    assert capsys.readouterr().out == "false\ntrue\n"
+    assert not config_module.claude_legacy_api_only()
+    assert not _config_file(tmp_path).exists()
+
+
 @pytest.fixture(autouse=True)
 def _isolate_platformdirs(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """`platformdirs`の解決先を実環境から隔離する。"""
     monkeypatch.setattr(config_module.platformdirs, "user_config_dir", lambda _name, **_kwargs: str(tmp_path / "config"))
     monkeypatch.setattr(config_module.platformdirs, "user_state_dir", lambda _name, **_kwargs: str(tmp_path / "state"))
     monkeypatch.setattr(config_module.platformdirs, "user_data_dir", lambda _name, **_kwargs: str(tmp_path / "data"))
-    for key in (*config_module._MUTABLE_KEY_DEFAULTS, *_LEGACY_KEYS):  # pylint: disable=protected-access  # noqa: SLF001
+    for key in (*config_module._MUTABLE_KEY_DEFAULTS, "claude_api_mode", *_LEGACY_KEYS):  # pylint: disable=protected-access  # noqa: SLF001
         monkeypatch.delenv(f"AGENT_TOOLKIT_CONFIG_{key.upper()}", raising=False)
     monkeypatch.setattr(
         codex_models,

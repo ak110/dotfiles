@@ -1,11 +1,12 @@
-"""Claude CodeとCodexのtranscript、および委譲先のAntigravityログから振り返り用の時系列証拠を抽出し、照会する。
+"""Claude Code・Codex・Antigravityの記録とOpenCodeのログ・SQLiteから振り返り用の時系列証拠を抽出し、照会する。
 
 モードを指定しない場合はセッション全体の時系列イベントをJSONLで出力し、各イベントへ由来行の行番号`line`を付ける。
 `--warn`・`--grep`・`--detail`・`--stats`・`--hook-notices`・`--user-events`・`--tool-calls`の照会モードは、抽出結果に無い詳細をtranscriptから
 1コマンドで取得するためのもので、都度のワンライナーによる再解析を置き換える。
 `--bundle`の集約実行は、通常表示と`--warn`・`--stats`・`--hook-notices`の走査、問題候補および会話の流れの抽出を
 1回の記録読み込みでまとめて行い、走査ごとの全量を指定ディレクトリ配下のファイルへ書いて標準出力へは要約だけを返す。
-対象の記録はtranscriptの絶対パス、Claude Codeのセッション識別子、Codex thread IDおよびカタログ走査のいずれか1つで指定する。
+対象の記録はtranscriptの絶対パス、Claude Code・OpenCodeのセッション識別子、
+Codex thread IDおよびカタログ走査のいずれか1つで指定する。
 ユーザーイベントの由来は原文と生成標識から判定し、その結果を保持してから通常表示の本文を短縮する。
 `--user-events`は人間の発話と確認回答だけを逐語引用の原文として返す。
 本文を切り詰めず、確認回答には提示した全選択肢を含め、スキル展開、実行環境の生成本文およびClaude Codeの中断の定型文は除く。
@@ -58,6 +59,7 @@ from session_evidence_extract import (
     _referenced_provenance_events,
     _Runtime,
     _unresolved_events,
+    _UnresolvedRecord,
 )
 from session_evidence_hook_notices import (
     _hook_notice_events,
@@ -86,7 +88,9 @@ from session_evidence_warn import (
 
 from agent_toolkit._agents_server import record_paths as _record_paths
 from agent_toolkit._common import host_homes as _host_homes
+from agent_toolkit._common import opencode_records
 from agent_toolkit._common import state_paths as _state_paths
+from agent_toolkit._common.session_family import _started_after_boundary
 
 _CLAUDE_ONLY_NOTE = "集計の母集団はClaude Code形式の記録に限られ、Codex形式の記録は数えない。"
 
@@ -186,7 +190,7 @@ def _build_parser() -> argparse.ArgumentParser:
         "transcript_path",
         nargs="?",
         help="transcriptの絶対パス。読み込み失敗時はエラーイベントを出力して終了コード2を返す。"
-        "`--transcript`・`--claude-session-id`・`--codex-thread-id`・カタログ走査とは併用しない。",
+        "`--transcript`・`--claude-session-id`・`--codex-thread-id`・`--opencode-session-id`・カタログ走査とは併用しない。",
     )
     parser.add_argument(
         "--transcript",
@@ -206,6 +210,16 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Codex thread IDから親transcriptの記録ファイルを解決して抽出を開始する。"
         "保存先は`--codex-home`、空でない`CODEX_HOME`、`~/.codex`の順に解決し、"
         "`sessions`配下で完全suffix一致するrolloutが1件でない場合はエラーイベントを出力して終了コード2を返す。",
+    )
+    parser.add_argument(
+        "--opencode-session-id",
+        metavar="SESSION_ID",
+        help="OpenCodeのses_で始まるセッションIDから、SQLiteのsession・message・partを読取専用で取得する。",
+    )
+    parser.add_argument(
+        "--opencode-db",
+        metavar="PATH",
+        help="OpenCodeのSQLite記録。--opencode-session-idと併用する。省略時はXDG_DATA_HOMEか~/.local/shareのopencode/opencode.db。",
     )
     parser.add_argument(
         "--codex-home",
@@ -603,6 +617,7 @@ def main(argv: list[str] | None = None) -> int:
         args.transcript,
         args.claude_session_id,
         args.codex_thread_id,
+        args.opencode_session_id,
         args.catalog_claude_project,
         args.catalog_codex_history,
         args.delegation_record,
@@ -610,12 +625,17 @@ def main(argv: list[str] | None = None) -> int:
     )
     if sum(source is not None for source in sources) != 1:
         return _print_error(
-            "transcript_path・--transcript・--claude-session-id・--codex-thread-id・--delegation-record・--owner-session・"
+            "transcript_path・--transcript・--claude-session-id・--codex-thread-id・--opencode-session-id・--delegation-record・--owner-session・"
             "カタログ走査はいずれか一つだけを指定する",
             next_action=(
-                "対象の記録を`transcript_path`・`--transcript`・`--claude-session-id`・`--codex-thread-id`・"
+                "対象の記録を`transcript_path`・`--transcript`・`--claude-session-id`・`--codex-thread-id`・`--opencode-session-id`・"
                 "--delegation-record・--owner-session・カタログ走査のいずれか1つだけで指定して再実行する"
             ),
+        )
+    if args.opencode_db is not None and args.opencode_session_id is None:
+        return _print_error(
+            "--opencode-dbは--opencode-session-idと併用する",
+            next_action="`--opencode-session-id <session ID>`を付けるか、`--opencode-db`を外して再実行する",
         )
     if args.codex_home is not None and args.codex_thread_id is None and args.delegation_record is None:
         return _print_error(
@@ -648,7 +668,23 @@ def main(argv: list[str] | None = None) -> int:
             events, exit_code = _catalog_events(Path(catalog_root), catalog_runtime, since, catalog_boundary, catalog_selection)
         _print_events(_summary_events(events) if args.summary_only else events)
         return exit_code
-    if args.delegation_record is not None or args.owner_session:
+    opencode_collected: list[_CollectedRecord] | None = None
+    opencode_unresolved: list[_UnresolvedRecord] = []
+    if args.opencode_session_id is not None:
+        try:
+            opencode_collected, opencode_unresolved = opencode_records.collect_records(
+                args.opencode_session_id,
+                Path(args.opencode_db) if args.opencode_db is not None else None,
+                main_only=args.user_events and sum(query_modes) == 1,
+            )
+        except (OSError, UnicodeError, ValueError) as error:
+            return _print_error(
+                str(error),
+                next_action="`--opencode-session-id`と`--opencode-db`の値・読取権限・schemaを確認する。"
+                "記録を持つホストで再実行し、取得できないセッションの振り返りは未完了として扱う",
+            )
+        transcript_path = str(opencode_collected[0].path)
+    elif args.delegation_record is not None or args.owner_session:
         try:
             transcript_path = str(
                 delegation_record(args.delegation_record, args.codex_home)
@@ -685,7 +721,7 @@ def main(argv: list[str] | None = None) -> int:
     else:
         transcript_path = args.transcript or args.transcript_path
 
-    records = _load_records(transcript_path)
+    records = opencode_collected[0].records if opencode_collected is not None else _load_records(transcript_path)
     if records is None:
         return _print_error(
             f"対象記録を読み込めない: {transcript_path}",
@@ -713,9 +749,20 @@ def main(argv: list[str] | None = None) -> int:
     if boundary is not None:
         records = _apply_observation_boundary(records, boundary)
     delegate_codex_home = args.codex_home if args.codex_thread_id is not None or args.delegation_record is not None else None
-    collected, unresolved = _collect_records(
-        transcript_path, records, delegate_codex_home, boundary, main_only=args.user_events and sum(query_modes) == 1
-    )
+    if opencode_collected is not None:
+        collected = [
+            opencode_collected[0]._replace(records=records),
+            *(
+                item
+                for item in opencode_collected[1:]
+                if boundary is None or not _started_after_boundary(item.records, boundary)
+            ),
+        ]
+        unresolved = opencode_unresolved
+    else:
+        collected, unresolved = _collect_records(
+            transcript_path, records, delegate_codex_home, boundary, main_only=args.user_events and sum(query_modes) == 1
+        )
     compaction_record_dir = (
         Path(args.compaction_record_dir)
         if args.compaction_record_dir is not None

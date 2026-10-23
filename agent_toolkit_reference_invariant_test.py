@@ -9,12 +9,14 @@
 from __future__ import annotations
 
 import ast
+import json
 import pathlib
 import re
 import subprocess
 
 from agent_toolkit._common import read_triggers
 from agent_toolkit._plan.structure import is_agent_doc_target_file
+from agent_toolkit._testing.git_repository import commit_all, init_repository
 
 _PLUGIN_PREFIX = "agent-" + "toolkit"
 _REFERENCE_BOUNDARY = r"(?<![A-Za-z0-9_:-])"
@@ -36,6 +38,7 @@ _VERBATIM_REFERENCE_SOURCES = frozenset(
         "docs/development/norm-restructure-20261022/reverse-index.tsv",
     )
 )
+_SOURCE_MANIFEST = pathlib.Path("docs/development/norm-restructure-20261022/source-manifest.json")
 _INCIDENTS_RUNTIME = pathlib.Path("docs/development/incidents-runtime.md")
 _INCIDENTS_VALIDATION = pathlib.Path("docs/development/incidents-validation.md")
 _INCIDENTS_WORKFLOWS = pathlib.Path("docs/development/incidents-workflows.md")
@@ -248,11 +251,21 @@ def _reference_exists(root: pathlib.Path, reference: str) -> bool:
 def _unresolved_references(root: pathlib.Path, sources: list[pathlib.Path]) -> list[tuple[str, pathlib.Path]]:
     """実体へ解決できない参照と不足した既知の事故記録参照を返す。"""
     allowed_counts = _allowed_unresolved_reference_counts(sources)
+    captured_versions = _captured_reference_versions(root, sources)
     unresolved: list[tuple[str, pathlib.Path]] = []
     for reference, source in _collect_references(root, sources):
         if _reference_exists(root, reference):
             continue
         key = (reference, source)
+        if key in captured_versions:
+            captured = subprocess.run(
+                ["git", "cat-file", "-e", f"{captured_versions[key]}:{reference}"],
+                cwd=root,
+                check=False,
+                capture_output=True,
+            )
+            if captured.returncode == 0:
+                continue
         if allowed_counts.get(key, 0) > 0:
             allowed_counts[key] -= 1
             continue
@@ -260,6 +273,26 @@ def _unresolved_references(root: pathlib.Path, sources: list[pathlib.Path]) -> l
     for key, remaining_count in allowed_counts.items():
         unresolved.extend([key] * remaining_count)
     return unresolved
+
+
+def _captured_reference_versions(root: pathlib.Path, sources: list[pathlib.Path]) -> dict[tuple[str, pathlib.Path], str]:
+    """固定manifestの取得ソースだけを、その記録が宣言した取得版へ対応付ける。
+
+    READMEや任意のJSON、manifest内でも取得ソース一覧にない参照は現在の実体で検査する。
+    取得版の宣言だけで欠損を許可せず、呼出側がその版のGitオブジェクトの存在を確かめる。
+    """
+    if _SOURCE_MANIFEST not in sources:
+        return {}
+    manifest = json.loads((root / _SOURCE_MANIFEST).read_text(encoding="utf-8"))
+    captured_head = manifest.get("head_at_capture")
+    captured_sources = manifest.get("sources")
+    if (
+        not isinstance(captured_head, str)
+        or re.fullmatch(r"[0-9a-f]{40}|[0-9a-f]{64}", captured_head) is None
+        or not isinstance(captured_sources, dict)
+    ):
+        return {}
+    return {(reference, _SOURCE_MANIFEST): captured_head for reference in captured_sources}
 
 
 def _format_unresolved(entries: list[tuple[str, pathlib.Path]]) -> str:
@@ -293,6 +326,35 @@ def test_existing_references_resolve(tmp_path: pathlib.Path) -> None:
 
     root_test.unlink()
     assert _unresolved_references(tmp_path, [source]) == [(f"{_PLUGIN_PREFIX}/skills/contract_test.py", source)]
+
+
+def test_captured_source_manifest_resolves_only_recorded_files_at_capture_commit(tmp_path: pathlib.Path) -> None:
+    """撤去済みの取得ソースは取得版で確かめ、未取得・架空・版不明の参照は欠損として残す。"""
+    reference = f"{_PLUGIN_PREFIX}/agent_toolkit/captured_example.py"
+    repository = init_repository(tmp_path / "repo", files={reference: "# 取得時の本文\n"})
+    captured_head = commit_all(repository, "取得版")
+    (repository / reference).unlink()
+    manifest = repository / _SOURCE_MANIFEST
+    manifest.parent.mkdir(parents=True)
+    captured_sources = {reference: {"sha256": "記録値"}}
+    data = {"head_at_capture": captured_head, "sources": captured_sources}
+    manifest.write_text(json.dumps(data), encoding="utf-8")
+    current = pathlib.Path("current-notes.json")
+    (repository / current).write_text(json.dumps({"path": reference}), encoding="utf-8")
+
+    assert _unresolved_references(repository, [_SOURCE_MANIFEST, current]) == [(reference, current)]
+
+    nonexistent = f"{_PLUGIN_PREFIX}/agent_toolkit/never_captured.py"
+    captured_sources[nonexistent] = {"sha256": "記録値"}
+    manifest.write_text(json.dumps(data), encoding="utf-8")
+    assert _unresolved_references(repository, [_SOURCE_MANIFEST]) == [(nonexistent, _SOURCE_MANIFEST)]
+
+    data["head_at_capture"] = "0" * 40
+    manifest.write_text(json.dumps(data), encoding="utf-8")
+    assert _unresolved_references(repository, [_SOURCE_MANIFEST]) == [
+        (reference, _SOURCE_MANIFEST),
+        (nonexistent, _SOURCE_MANIFEST),
+    ]
 
 
 def test_codex_snapshot_requires_exact_known_legacy_references(tmp_path: pathlib.Path) -> None:

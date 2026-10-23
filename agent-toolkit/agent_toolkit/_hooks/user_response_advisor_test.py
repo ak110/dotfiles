@@ -6,6 +6,7 @@ import pathlib
 import pytest
 
 from agent_toolkit._hooks import stop
+from agent_toolkit._hooks.notice import notice_cycle
 
 _HUMAN = {"type": "user", "origin": {"kind": "human"}, "message": {"content": "進捗を報告して"}}
 _QUEUED = {
@@ -26,14 +27,15 @@ def test_synthetic_api_notice_does_not_answer_human(
     message = {"model": model, "content": [{"type": "text", "text": "Credit balance is too low"}]}
     synthetic = {"type": "assistant", "message": message, "isApiErrorMessage": api_error}
     output = _stop([_HUMAN, synthetic], tmp_path, capsys)
-    assert output["decision"] == "block"
-    assert 'source="user_response_advisor"' in output["reason"]
+    assert output.get("decision") != "block"
+    assert 'source="user_response_advisor"' in output["hookSpecificOutput"]["additionalContext"]
 
 
 def _stop(entries: list[dict], tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], **extra: str) -> dict:
     path = tmp_path / "transcript.jsonl"
     path.write_text("\n".join(json.dumps(entry, ensure_ascii=False) for entry in entries), encoding="utf-8")
-    result = stop.main(json.dumps({"session_id": "response-case", "transcript_path": str(path), **extra}))
+    with notice_cycle("response-case", "Stop", "main"):
+        result = stop.main(json.dumps({"session_id": "response-case", "transcript_path": str(path), **extra}))
     assert result == 0
     return json.loads(capsys.readouterr().out)
 
@@ -43,7 +45,7 @@ def _stop(entries: list[dict], tmp_path: pathlib.Path, capsys: pytest.CaptureFix
     [_HUMAN, _QUEUED, {**_HUMAN, "message": {"content": "<command-message>スキル起動</command-message>"}}],
 )
 @pytest.mark.parametrize("text", ["", " \n\t", "…", " … … \n"])
-def test_stop_blocks_unanswered_human_input(
+def test_stop_notifies_unanswered_human_input(
     human: dict, text: str, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """入力より前の本文や、思考・ツール結果を応答として数えない。"""
@@ -55,11 +57,11 @@ def test_stop_blocks_unanswered_human_input(
         _assistant(text),
     ]
     output = _stop(entries, tmp_path, capsys)
-    assert output["decision"] == "block"
-    assert 'source="user_response_advisor"' in output["reason"]
-    assert "mcp__agent-toolkit__send_to_user" in output["reason"]
-    assert "回答・判断・確認結果" in output["reason"]
-    assert "無い環境では応答本文" in output["reason"]
+    assert output.get("decision") != "block"
+    assert 'source="user_response_advisor"' in output["hookSpecificOutput"]["additionalContext"]
+    assert "mcp__agent-toolkit__send_to_user" in output["hookSpecificOutput"]["additionalContext"]
+    assert "回答・判断・確認結果" in output["hookSpecificOutput"]["additionalContext"]
+    assert "無い環境では応答本文" in output["hookSpecificOutput"]["additionalContext"]
 
 
 @pytest.mark.parametrize("human", [_HUMAN, _QUEUED])
@@ -142,7 +144,7 @@ def test_stop_accepts_scheduled_turn_after_machine_input(
     """Claude Code 2.1.250～2.1.295のtranscriptで観測した記録形を使う。"""
     scheduled = {"type": "user", "isMeta": True, "scheduledTaskId": "scheduled-case", "message": {"content": "再確認"}}
     output = _stop([entry, scheduled, _assistant("…")], tmp_path, capsys)
-    assert 'source="user_response_advisor"' not in output.get("reason", "")
+    assert 'source="user_response_advisor"' not in output.get("hookSpecificOutput", {}).get("additionalContext", "")
 
 
 def test_stop_does_not_require_delegate_to_answer_user(
@@ -150,16 +152,29 @@ def test_stop_does_not_require_delegate_to_answer_user(
 ) -> None:
     """Agentとagents_serverの委譲先を既存の主体判定で除く。"""
     output = _stop([_HUMAN, _assistant("…")], tmp_path, capsys, agent_id="agent-1")
-    assert 'source="user_response_advisor"' not in output.get("reason", "")
+    assert 'source="user_response_advisor"' not in output.get("hookSpecificOutput", {}).get("additionalContext", "")
     monkeypatch.setenv("AGENT_TOOLKIT_DELEGATED_SESSION", "1")
     output = _stop([_HUMAN, _assistant("…")], tmp_path, capsys)
-    assert 'source="user_response_advisor"' not in output.get("reason", "")
+    assert 'source="user_response_advisor"' not in output.get("hookSpecificOutput", {}).get("additionalContext", "")
 
 
 def test_new_human_input_requires_a_new_visible_response(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
     """前の人間の発話への回答を、途中配送された次の発話の回答へ流用しない。"""
     output = _stop([_HUMAN, _assistant("前の発話への回答"), _QUEUED, _assistant("…")], tmp_path, capsys)
-    assert output["decision"] == "block"
+    assert output.get("decision") != "block"
+    assert 'source="user_response_advisor"' in output["hookSpecificOutput"]["additionalContext"]
+
+
+def test_missing_response_notifies_again_after_resolution_or_new_input(tmp_path, capsys):
+    """同じ不足を反復せず、解消後の再発と次の人間入力には通知する。"""
+    entries = [_HUMAN, _assistant("…")]
+    first = _stop(entries, tmp_path, capsys)
+    assert "user_response_advisor" in first["hookSpecificOutput"]["additionalContext"]
+    assert not _stop(entries, tmp_path, capsys)
+    assert not _stop([*entries, _assistant("回答した。")], tmp_path, capsys)
+    assert "user_response_advisor" in _stop(entries, tmp_path, capsys)["hookSpecificOutput"]["additionalContext"]
+    next_input = [*entries, _QUEUED, _assistant("…")]
+    assert "user_response_advisor" in _stop(next_input, tmp_path, capsys)["hookSpecificOutput"]["additionalContext"]
 
 
 @pytest.mark.parametrize("queued", [False, True])
@@ -173,7 +188,9 @@ def test_human_notification_quote_still_requires_response(
         if queued
         else {**_HUMAN, "message": {"content": prompt}}
     )
-    assert _stop([entry, _assistant("…")], tmp_path, capsys)["decision"] == "block"
+    assert (
+        "user_response_advisor" in _stop([entry, _assistant("…")], tmp_path, capsys)["hookSpecificOutput"]["additionalContext"]
+    )
 
 
 def _said(prompt: str) -> dict:
@@ -213,7 +230,7 @@ def test_stop_accepts_ellipsis_after_acknowledgement(
     了承は構成規則で判定するため、`わかりました`・`OKです`のように例示した語以外の言い回しも受理する。
     """
     output = _stop([_assistant("前の回答"), human, _assistant("…")], tmp_path, capsys)
-    assert 'source="user_response_advisor"' not in output.get("reason", "")
+    assert 'source="user_response_advisor"' not in output.get("hookSpecificOutput", {}).get("additionalContext", "")
 
 
 @pytest.mark.parametrize(
@@ -227,10 +244,10 @@ def test_stop_accepts_ellipsis_after_acknowledgement(
     ],
     ids=["empty", "tool-after-ack", "question", "request-after-ack", "mixed-inputs"],
 )
-def test_stop_blocks_acknowledgement_that_still_requires_response(
+def test_stop_notifies_acknowledgement_that_still_requires_response(
     entries: list[dict], tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """本文が空、了承の後のツール呼び出し、問い・依頼を含む入力、了承でない入力の混在では本文を求める。"""
     output = _stop([_assistant("前の回答"), *entries], tmp_path, capsys)
-    assert output["decision"] == "block"
-    assert 'source="user_response_advisor"' in output["reason"]
+    assert output.get("decision") != "block"
+    assert 'source="user_response_advisor"' in output["hookSpecificOutput"]["additionalContext"]

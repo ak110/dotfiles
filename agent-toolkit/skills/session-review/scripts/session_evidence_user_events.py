@@ -139,7 +139,9 @@ def _query_user_events(
         else []
     )
     events: list[dict[str, Any]] = []
-    session_id = _codex_record_thread_id(item) or item.path.stem
+    session_id = _codex_record_thread_id(item) or (
+        item.record_id.split(":", 1)[1] if item.runtime == "opencode" else item.path.stem
+    )
     for event in users:
         if event["kind"] != "user" or (pattern is not None and pattern.search(event["text"]) is None):
             continue

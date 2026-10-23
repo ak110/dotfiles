@@ -181,7 +181,7 @@ process.stdout.write(JSON.stringify({visibility, sent}));
             },
             "rejected": {
                 "readonly": False,
-                "edit": False,
+                "edit": True,
                 "adopt": False,
                 "reject": False,
                 "remove": True,

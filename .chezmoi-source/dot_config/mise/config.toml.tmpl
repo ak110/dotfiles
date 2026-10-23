@@ -8,7 +8,7 @@
 {{- $mode := "full" -}}
 {{- $config := joinPath $base "agent-toolkit" "config.json" -}}
 {{- if stat $config -}}
-{{- $mode = (include $config | fromJson).dotfiles_mode | default "full" -}}
+{{- $mode = index (include $config | fromJson) "dotfiles_mode" | default "full" -}}
 {{- end -}}
 {{- $mode = env "AGENT_TOOLKIT_CONFIG_DOTFILES_MODE" | default $mode -}}
 {{- if not (has $mode (list "full" "minimal")) -}}

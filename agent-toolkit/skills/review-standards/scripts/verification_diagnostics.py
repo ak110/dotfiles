@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import collections
 import difflib
+import hashlib
 import json
 import pathlib
 import re
@@ -53,7 +54,8 @@ def run_record(value: object) -> tuple[pathlib.Path, dict[str, Any]]:
 def worktree_root(record: dict[str, Any]) -> pathlib.Path:
     """結果のファイル名の起点とする対象worktreeのルートを、記録cwdのGit境界から読む。
 
-    取込みが生成するファイル名は、参照の所在確認と同じworktreeのルートを起点にする。
+    取込みのファイル名と保存時の参照確認の候補は、この関数が返す同じ起点を使う。
+    保存時に追加できる候補は同じGit共通ディレクトリの作業ツリーに限り、最終確認は対象HEADだけを使う。
     Git境界の所在だけを読み、結果の取得版と現在のHEADを混同しない。
     """
     rerun = "対象worktreeが残る間に取り込むか、対象worktreeでrun-commandを再実行する"
@@ -69,10 +71,64 @@ def worktree_root(record: dict[str, Any]) -> pathlib.Path:
     return result
 
 
-def _worktree_file(filename: str, cwd: str, worktree: pathlib.Path) -> str:
+def mapped_path(filename: str, record: dict[str, Any]) -> pathlib.Path:
+    """記録のパス対応を要素境界で最長一致させ、ホストのパスを返す。"""
+    mappings = record.get("path_maps", [])
+    if not isinstance(mappings, list):
+        raise ValueError("path_mapsはchildとhostを持つ配列が必要です")
+    matches: list[tuple[int, pathlib.Path]] = []
+    for item in mappings:
+        if (
+            not isinstance(item, dict)
+            or set(item) != {"child", "host"}
+            or any(not isinstance(item[key], str) for key in ("child", "host"))
+        ):
+            raise ValueError("path_mapsの各組にはchildとhostの絶対パスが必要です")
+        child, host = item["child"], pathlib.Path(item["host"])
+        path_type = pathlib.PureWindowsPath if pathlib.PureWindowsPath(child).drive else pathlib.PurePosixPath
+        prefix, candidate = path_type(child), path_type(filename)
+        if not prefix.is_absolute() or not host.is_absolute():
+            raise ValueError("path_mapsのchildとhostは絶対パスが必要です")
+        if candidate.is_absolute() and candidate.is_relative_to(prefix):
+            matches.append((len(prefix.parts), host.joinpath(*candidate.relative_to(prefix).parts)))
+    if not matches:
+        return pathlib.Path(filename)
+    length = max(size for size, _path in matches)
+    selected = {path for size, path in matches if size == length}
+    if len(selected) != 1:
+        raise ValueError("同じ子の接頭辞に異なるホストパスが指定されています")
+    return selected.pop()
+
+
+def declared_result(path: pathlib.Path, record: dict[str, Any]) -> bool:
+    """宣言付きの記録では結果の生成・更新と終了後の内容保持を確かめる。"""
+    if "result_files" not in record:
+        return False
+    entries = record["result_files"]
+    if not isinstance(entries, list) or any(
+        not isinstance(item, dict) or not isinstance(item.get("path"), str) for item in entries
+    ):
+        raise ValueError("result_filesはpathと実行前後の状態を持つ配列が必要です")
+    selected = [item for item in entries if pathlib.Path(item["path"]).resolve() == path.resolve()]
+    action = "--result-fileで結果ファイルを宣言してatk run-commandを再実行し、終了直後に取り込む"
+    if len(selected) != 1:
+        raise next_action.ActionableError(f"結果ファイルが実行記録の宣言に一意に対応しません: {path}", next_action=action)
+    before, after = (selected[0].get(key) for key in ("before", "after"))
+    if not isinstance(before, dict) or not isinstance(after, dict) or after.get("exists") is not True:
+        raise next_action.ActionableError(f"結果ファイルの実行前後の状態が不足しています: {path}", next_action=action)
+    if (before.get("exists"), before.get("sha256")) == (after.get("exists"), after.get("sha256")):
+        raise next_action.ActionableError(f"結果ファイルは実行の間に作成・更新されていません: {path}", next_action=action)
+    with path.open("rb") as stream:
+        digest = hashlib.file_digest(stream, "sha256").hexdigest()
+    if digest != after.get("sha256"):
+        raise next_action.ActionableError(f"結果ファイルは実行終了後に変更されています: {path}", next_action=action)
+    return True
+
+
+def _worktree_file(filename: str, cwd: str, worktree: pathlib.Path, record: dict[str, Any]) -> str:
     """記録cwdからの相対パスか絶対パスの診断fileを、worktreeのルートからの相対パスへそろえる。"""
     try:
-        return (pathlib.Path(cwd) / filename).resolve().relative_to(worktree.resolve()).as_posix()
+        return (pathlib.Path(cwd) / mapped_path(filename, record)).resolve().relative_to(worktree.resolve()).as_posix()
     except ValueError as error:
         raise ValueError(f"診断fileが対象worktree {worktree} の外です: {filename}") from error
 
@@ -148,7 +204,7 @@ def _load(spec: object) -> tuple[dict[str, Any], list[dict[str, Any]]]:
             if filename:
                 # 改名の対応（git diff）と保存時本文の対応と同じ、worktreeのルートからの名前にする。
                 worktree = worktree or worktree_root(record)
-                filename = _worktree_file(filename, record["cwd"], worktree)
+                filename = _worktree_file(filename, record["cwd"], worktree, record)
             line = message.get("line")
             if line is not None and (not isinstance(line, int) or isinstance(line, bool) or line < 1):
                 raise ValueError("診断lineは正の整数かnullを指定する")

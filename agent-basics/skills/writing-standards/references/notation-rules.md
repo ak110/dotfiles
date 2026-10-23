@@ -65,35 +65,35 @@ lint設定の緩和・無効化・除外指定の追加は`lint-relax-criteria.m
 
 監査記録は`docs/development/audit-records.md`の「agent-basics/skills/writing-standards/references/notation-rules.md：逐語引用の検出範囲：2026年9月5日」にある。
 
-## 口語表現チェック
+## 文章チェックの一括実行
 
 恒久成果物は、現在のホストに公開されたserver key `pyfltr`の`run`ツールでチェックする（ツールの完全修飾名はClaude CodeとCodexで異なる）。引数は次のとおりとする。
 
-- `paths`: 対象ファイルの絶対パス1件
+- `paths`: 今回チェックする対象ファイル全件の絶対パス（重複を除く）
 - `work_dir`: チェック設定を持つプロジェクトの絶対パス
-- `commands`: Markdownでは`["textlint", "colloquial-check"]`、それ以外の対応拡張子では`["colloquial-check"]`
+- `commands`: 対象の拡張子へ到達するチェックの和集合。Markdownを含む場合は`["textlint", "colloquial-check"]`、それ以外の対応拡張子だけの場合は`["colloquial-check"]`を指定し、プロジェクトが登録したダッシュチェックなども同じ実行へ加える
 - `enable`: `["colloquial-check"]`
 - `no_exclude`と`no_fix`: `true`
 - `allow_external_paths`: 対象ファイルが`work_dir`のプロジェクトの外側にある場合だけ`true`
 
-チェック完了と判定できるのは、応答の`completion`が`completed`、`files_reached`が1、指定した全コマンドが`completed_commands`にあり、`incomplete_commands`が空の場合だけとする。`incomplete`や`not_reached`は完了と扱わず、`incomplete_commands`、`missing_targets`、`fully_excluded_files`、`skipped_reason`、`warnings`から理由を特定して対処する。
+同じ設定でチェックできる複数対象は1回の`run`へまとめる。
+チェック完了の判定には、応答の`completion`が`completed`で、`files_reached`が指定した対象ファイル数と一致することを確かめる。
+指定した全コマンドが`completed_commands`にあり、`incomplete_commands`、`missing_targets`と`fully_excluded_files`が空であることも必要とする。
+対象ごとに拡張子に対応するコマンドを選べているか確かめ、必要なチェックが全対象へ届いたことを確認する。
+`incomplete`や`not_reached`は完了と扱わず、`incomplete_commands`、`missing_targets`、`fully_excluded_files`、`skipped_reason`、`warnings`から理由を特定して対処する。
 診断件数は完了を確定した後に読み、本文が要る場合は同じ応答の`run_id`をMCPの`show_run_diagnostics`へ渡す。
 
 MCPの`run`を利用できない場合は、`agent-basics:check-execution`でCLIの起動形を確認し、同じ対象と制約を指定する（外部ファイルでは`--allow-external-paths`を加える）。完了はJSONL最終行の`summary`レコードをMCPと同じ条件で判定する。
 
 ```sh
-<pyfltrの起動形> run --commands=<対象拡張子へ到達するコマンド> --enable=colloquial-check --no-exclude --no-fix --output-format=jsonl --work-dir <チェック設定を持つプロジェクトの絶対パス> <対象ファイルの絶対パス>
+<pyfltrの起動形> run --commands=<全対象へ到達するコマンドの和集合> --enable=colloquial-check --no-exclude --no-fix --output-format=jsonl --work-dir <チェック設定を持つプロジェクトの絶対パス> <対象ファイルの絶対パス...>
 ```
 
 検出範囲は`.md`・`.py`・`.txt`・`.yaml`・`.yml`・`.toml`とし、Markdown引用ブロックとフェンス付きコードブロック内は対象外、ソースコード内のコメント行は対象とする。
-辞書の実体は`pyfltr.colloquial.check`の`DENY_PATH`と`ALLOW_PATH`が指す。`site-packages`の絶対パスを規範へ固定せず、`pyfltr`を依存に持つリポジトリでは次のコマンドで、持たない場合は同じ式を`uvx --from pyfltr python -c`へ渡して解決する。
-
-```sh
-uv run --frozen python -c 'print(__import__("pyfltr.colloquial.check", fromlist=["check"]).DENY_PATH, __import__("pyfltr.colloquial.check", fromlist=["check"]).ALLOW_PATH)'
-```
+検出語と適用理由は診断から確認する。
+辞書の改訂や誤検出の調査で実体の取得が必要になった場合に、使用中のpyfltrの公開機能と提供元資料を確かめる。
 
 警告を解消するために読者が得る情報を減らす書き換えはしない。他者の原文（記事や発表のタイトル、発言の引用、固有名詞など）にある検出は原文のまま残し、残した検出とその理由を完了報告で示す。
 
-## ダッシュチェック
-
-日本語の地の文・見出しのemダッシュ・horizontal bar・2倍ダッシュをチェックする。コードブロック・インラインコード・URL内は対象外とする。実行手段はプロジェクトが用意したチェックを使う。
+日本語の地の文・見出しのemダッシュ・horizontal bar・2倍ダッシュは、プロジェクトが用意したダッシュチェックを同じ一括実行へ含めてチェックする。
+コードブロック・インラインコード・URL内は対象外とする。

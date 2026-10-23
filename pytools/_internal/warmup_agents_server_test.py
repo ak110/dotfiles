@@ -6,12 +6,14 @@
 
 import json
 import pathlib
+import sys
 
 import pytest
 
 from pytools._internal import common as _common
 from pytools._internal import post_apply_outcome
 from pytools._internal import warmup_agents_server as _warmup
+from pytools._internal.warmup_agents_server import _check_startup as _CHECK_STARTUP
 
 from ._test_helpers import _FakeResult, command_matches
 
@@ -50,6 +52,7 @@ def _setup(
     """
     monkeypatch.setattr(_common, "resolve_executable", lambda name, **_kwargs: pathlib.Path(name))
     monkeypatch.setattr(_common, "find_dotfiles_root", lambda: None)
+    monkeypatch.setattr(_warmup, "_check_startup", lambda _command: True)
     monkeypatch.setenv("CODEX_HOME", str(tmp_path / "codex"))
 
     plugin_cache = tmp_path / "claude" / "plugins" / "cache" / "ak110-dotfiles" / "agent-toolkit" / "1.0.0"
@@ -269,6 +272,55 @@ class TestFailureHandling:
 
         assert _warmup.run() == post_apply_outcome.PostApplyOutcome()
         assert len(_warmed(calls)) == 2
+
+    def test_prepared_server_startup_failure_is_reported(self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
+        """依存準備の成功と起動失敗を区別し、残る対象を確認した後で失敗を返す。"""
+        _setup(monkeypatch, tmp_path)
+        observed = []
+
+        def fail_startup(command: list[str]) -> bool:
+            observed.append(command)
+            return False
+
+        monkeypatch.setattr(_warmup, "_check_startup", fail_startup)
+        outcome = _warmup.run()
+        assert outcome.failure and "起動確認に失敗" in outcome.failure
+        assert outcome.next_action and "update-dotfiles logs" in outcome.next_action
+        assert len(observed) == 1
+        assert "--check-dependencies" not in observed[0]
+        assert "--prepare" not in observed[0]
+
+
+@pytest.mark.parametrize("behavior", ["ready", "empty", "timeout", "exit"])
+def test_public_stdio_startup_checks_protocol_and_closes_owned_process(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture, behavior: str
+) -> None:
+    """公開MCPのinitializeとtools/listを使い、0件・停止・異常終了を起動成功へ混ぜない。"""
+    server = tmp_path / "server.py"
+    server.write_text(
+        "import json, sys, time\n"
+        f"behavior = {behavior!r}\n"
+        "for line in sys.stdin:\n"
+        "    message = json.loads(line)\n"
+        "    if 'id' not in message: continue\n"
+        "    if behavior == 'exit':\n"
+        "        print('startup failed', file=sys.stderr); sys.exit(7)\n"
+        "    if behavior == 'timeout': time.sleep(60)\n"
+        "    if message['method'] == 'initialize':\n"
+        "        result = {'protocolVersion': '2025-11-25', 'capabilities': {'tools': {}},\n"
+        "                  'serverInfo': {'name': 'startup-probe', 'version': '1'}}\n"
+        "    else:\n"
+        "        result = {'tools': [] if behavior == 'empty' else [{'name': 'ping', 'inputSchema': {'type': 'object'}}]}\n"
+        "    print(json.dumps({'jsonrpc': '2.0', 'id': message['id'], 'result': result}), flush=True)\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(_warmup, "_STARTUP_TIMEOUT", 0.5)
+    assert _CHECK_STARTUP([sys.executable, str(server)]) is (behavior == "ready")
+    if behavior != "ready":
+        assert "MCP起動確認に失敗" in caplog.text
+        assert str(server) in caplog.text
+    if behavior == "exit":
+        assert "startup failed" in caplog.text
 
 
 class TestCoverage:

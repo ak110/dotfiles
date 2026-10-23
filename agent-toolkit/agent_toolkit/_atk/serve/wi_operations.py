@@ -508,16 +508,16 @@ class Operations:
         """
         return wi_sync.synchronize(self.private_notes, lock_timeout=_WEB_LOCK_TIMEOUT)
 
-    def background_sync(self) -> bool:
+    def background_sync(self) -> bool | None:
         """定期更新としてリポジトリを同期し、実際にpullしたかを返す。
 
         直近のpullから一定時間内であれば省略する。ロックを取得できない場合は
-        その周期を見送り、次周期で再試行する。
+        その周期を見送り、Noneを返して次周期で再試行する。
         """
         try:
             return wi_sync.synchronize(self.private_notes, only_if_stale=True, lock_timeout=_BACKGROUND_SYNC_LOCK_TIMEOUT)
         except filelock.Timeout:
-            return False
+            return None
 
     def target_repos(self, status: str = "active", *, now: datetime.datetime | None = None) -> list[str]:
         """指定状態のエントリに現れる対象リポジトリを昇順で返す。
@@ -568,6 +568,7 @@ class Operations:
                 lock_timeout=_WEB_LOCK_TIMEOUT,
                 expected_content=expected_content,
                 skip_remote_sync=True,
+                allow_terminal=True,
             )
         except SystemExit as error:
             raise WebApiInputError("指定したエントリを操作できません") from error

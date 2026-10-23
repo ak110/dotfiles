@@ -34,8 +34,6 @@ user-invocable: false
 
 ## 読込表
 
-次の時点または条件が成立したら、その操作の前に同じ行の資料を全文読む。
-
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 | 資料選択子 |
 | --- | --- | --- | --- | --- |
 | 工程の責務、受渡しまたは出口を対策や説明の根拠にする前 | `${CLAUDE_PLUGIN_ROOT}/share/workflow-phases.md` | 判断 | `read:agent-toolkit:*/share/workflow-phases.md` | |
@@ -73,6 +71,8 @@ process-wiでは、対象のメインが候補本文から分類と配分を判�
 操作の入力と失敗後の再開は`${CLAUDE_PLUGIN_ROOT}/skills/process-wi/references/run-lanes.md`が定める。
 意味判断、レーン数上限、単一writer、独立した実行レビュー、直列統合は各工程に残す。
 レーンの専用worktreeは対象リポジトリの主作業ツリーの`.claude/worktrees/process-wi-<レーン識別子>`に固定され、対象リポジトリごとに1つだけ起動するprocess-wiの反復でもパスが増えない。レーンのworktreeとbranchは統合後も追加に備えて保持し、通常終了では`atk agents-exit-session`が、process-loopでは子セッションの終了後の処理が、`atk lane delete`と同じ安全条件で回収する。次回の開始時は`atk lane delete --list`から残存登録と前回結果を読み、未統合・dirty・稼働中・不明の成果を保って再判定する。選定原本が失効し所有登録にも選定情報が無い旧登録は、`atk lane recover --session-id <所有session>`で元のbranchを残して作業ツリーを解放する。セッションのmanaged-tempと証拠は専用資源の回収対象から外す。
+自動終了の回収は同じ適格判定を使い、終端sessionの解放応答を待たず、未確認の資源を保持理由と再回収操作付きで残す。
+対話の`atk lane delete`は所有側の解放応答と実行プロセスの終了を期限まで待ち、解放後の独立した使用を1回で判定する。
 
 ## 登録、回答、振り返り
 

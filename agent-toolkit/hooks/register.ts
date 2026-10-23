@@ -78,7 +78,7 @@ export const register: Register = (on) => {
     return next(e);
   });
   registerSessionExit(on);
-  registerCompactConversation(on);
+  registerCompactConversation(on, usageLimitSession);
   registerSendToUser(on);
   registerResponseLanguage(on);
   registerPeriodicRecheck(on);

@@ -99,6 +99,22 @@ Codexの委譲先（`codex:sol/medium`）とClaudeの委譲先（`claude:sonnet[
 変更前のCodex backendは、同じ待機表明を`completed`の結果として公開し、孫の識別子を`error.unobservedSessions`へ記録していた（同日の対照観測）。
 再検証は`make test-agents-live`と同じpytest引数（`-m live_agents`）を指定し、呼び出し元の会話と状態ディレクトリを分けるため別の`CLAUDE_CODE_SESSION_ID`を与えて同じテストを実行する。
 
+## agent-toolkit/agent_toolkit/_agents_server/codex_resume_state.py：会話状態の生成先：2026年10月23日
+
+Codex担当がCLI 0.164.0の同日rolloutで、先頭`session_meta.model_provider`、providerを持たない`turn_context`、`response_item`のreasoning内`encrypted_content`を観測した。対象は`rollout-2026-10-23T16-42-16-01a167b5-e496-7fd2-846b-2965d3c94ea0.jsonl`である。値を再掲せず、フィールドの所在と型を確認した。互換性検体はこの形を架空のIDと暗号文へ置換している。再確認時は当該版の実会話で生成したrolloutの`session_meta`と不透明状態を持つ応答のキーを読み、接続先選択と生成先の記録を分けて照合する。元障害の別ホストの原記録を再現したという証拠には用いない。
+
+## agent-toolkit/agent_toolkit/_agents_server/launch_prompts.py：委譲先のベース指示：2026年10月23日
+
+codex-cli 0.163.0の`codex app-server generate-json-schema --out <保存先>`でschemaを生成した。
+生成された`v2/ThreadStartParams.json`と`v2/ThreadResumeParams.json`は、どちらも`baseInstructions`と`developerInstructions`を受理する。ベース指示の差替えと既存のdeveloper指示の配送を併用できる。
+再検証は導入版を`codex --version`で確認し、同じ公開コマンドが生成する両schemaで行う。
+
+Claude Agent SDK 0.2.170を使った`claude_test.py`では、通常委譲の`system_prompt`が
+独自ベース本文・委譲先規範・自動再開通知・CLI情報を含む文字列であることと、軽量区分の設定の保持を確認した。
+`codex_test.py`では全起動区分の開始・通常再開・復元再開に同じベース本文が入ることを確認した。
+これらと`launch_prompts_test.py`、`dot_codex_config_test.py`の合計247件は成功した。
+この観測は公開リクエストとSDK引数の構築を検証するもので、外部モデルによる回答内容の実測は含まない。
+
 ## agent-toolkit/agent_toolkit/_agents_server/state.py：session初期化の待機上限：2026年9月11日
 
 2026年9月11日、`~/.claude/projects`配下の記録（Claude Code 2.1.239から2.1.268）で、`agents_server`のstart系ツールの呼び出し489件を集計した。
@@ -1051,6 +1067,16 @@ session `1e19cda7-eaf3-49dd-b96c-916c43f077d1`へ失敗原因と再予約可能�
 受付応答、ターン終了、ホストの圧縮成功を順に記録する。
 非対話はBashのバックグラウンドタスクと保存記録の再開操作を組み合わせ、圧縮後の領域通知からparent-handoff.mdへ到達し、通知から同じsessionと担当・監視対象が続行することも確かめる。任意指示で応答文字列を渡さない。
 故障と再予約は隔離した検証用プラグインだけへ例外を注入して試し、製品のプラグインを改変しない。
+
+## agent-toolkit/hooks/compact_conversation.ts：会話圧縮の予約：2026年10月23日
+
+Claude Code 2.1.309の`claude plugin test agent-toolkit`で、公開modの登録・時計・turn・背景タスク・圧縮APIを使う結合試験を実行した。
+`session.compact()`はturn間に呼び、成功のmessages、見送りのskip、例外を別の結果として扱う。
+5秒未満、利用率49%、状態未保存、委譲先とサブエージェントは自動圧縮しない。
+50%の境界、5秒後、turn完了への持越し、完了通知による取消し、失敗後の解放と自動再試行の抑止、閾値未満を経た再開を確認した。
+Python側の公開`wait-compaction-context`も、所有・mode・待機登録・保存時刻の12ケースで確認した。
+modの全136件は成功した。外部モデルによる実際の要約生成はこの試験へ含まない。
+再検証は同じ公開testコマンドと`wait_compaction_context_test.py`を使い、実際の要約生成を調べる場合は同月9日の隔離セッション手順で、予約・ホストの結果・待機の再開を分けて観測する。
 
 ## agent-toolkit/skills/user-confirmation-and-report/references/usage-limit.md：利用上限後の再開：2026年10月14日
 

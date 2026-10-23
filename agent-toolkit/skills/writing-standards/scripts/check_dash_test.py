@@ -5,8 +5,10 @@
 """
 
 import pathlib
+import re
 import runpy
 import subprocess
+import tomllib
 
 import pytest
 
@@ -67,8 +69,16 @@ class TestCheckDash:
         result = _run(str(path))
         assert result.returncode == 1
         # 列番号は4（"abc"の後）、抜粋はダブルクォートで囲まれる。
-        assert f"{path}:1:4: em-dash(U+2014)" in result.stderr
+        assert f"{path}:1:4: error: em-dash(U+2014)" in result.stderr
         assert '"' in result.stderr  # 抜粋のダブルクォートが存在する。
+        config = tomllib.loads((_SCRIPT.parents[4] / "pyproject.toml").read_text(encoding="utf-8"))
+        pattern = config["tool"]["pyfltr"]["custom-commands"]["writing-check-dash"]["error-pattern"]
+        diagnostic = re.fullmatch(pattern, result.stderr.splitlines()[0])
+        assert diagnostic is not None
+        assert diagnostic.group("severity") == "error"
+        assert diagnostic.group("file") == str(path)
+        assert diagnostic.group("line") == "1"
+        assert diagnostic.group("column") == "4"
         # 違反の後に置換先を示す次の操作の行を1行だけ置く。
         next_action = result.stderr.splitlines()[-1]
         assert next_action.startswith("次の操作: ")
@@ -80,8 +90,8 @@ class TestCheckDash:
         path = _write(tmp_path / "doc.md", content)
         result = _run(str(path))
         assert result.returncode == 1
-        # 出力形式: `path:line:col: kind "excerpt"`
-        assert ': em-dash(U+2014) "' in result.stderr
+        # 出力形式: `path:line:col: error: kind "excerpt"`
+        assert ': error: em-dash(U+2014) "' in result.stderr
 
     def test_violation_on_second_line_reports_correct_lineno(self, tmp_path: pathlib.Path) -> None:
         """2行目の違反は行番号2で報告する。"""
@@ -248,14 +258,14 @@ class TestCheckDash:
         path = _write(tmp_path / "doc.md", f"``\n{_EM_DASH}\n``\n外側{_EM_DASH}\n")
         result = _run(str(path))
         assert result.returncode == 1
-        assert f'{path}:4:3: em-dash(U+2014) "外側{_EM_DASH}"' in result.stderr
+        assert f'{path}:4:3: error: em-dash(U+2014) "外側{_EM_DASH}"' in result.stderr
 
     def test_code_span_does_not_cross_blank_line(self, tmp_path: pathlib.Path) -> None:
         """別段落のバッククォート列を閉じ区切りとして扱わない。"""
         path = _write(tmp_path / "doc.md", f"`\n{_EM_DASH}\n\n`\n")
         result = _run(str(path))
         assert result.returncode == 1
-        assert f'{path}:2:1: em-dash(U+2014) "{_EM_DASH}"' in result.stderr
+        assert f'{path}:2:1: error: em-dash(U+2014) "{_EM_DASH}"' in result.stderr
 
     @pytest.mark.parametrize(
         "body",
@@ -332,7 +342,7 @@ class TestCheckDash:
         path = _write(tmp_path / "doc.md", f"{prefix}{_EM_DASH}外側\n")
         result = _run(str(path))
         assert result.returncode == 1
-        assert f"{path}:1:{len(prefix) + 1}: em-dash(U+2014)" in result.stderr
+        assert f"{path}:1:{len(prefix) + 1}: error: em-dash(U+2014)" in result.stderr
 
     def test_url_exclusion_stops_at_japanese_text(self, tmp_path: pathlib.Path) -> None:
         """URL直後の日本語をURLに含めず、その後の禁止文字を検出する。"""
@@ -340,7 +350,7 @@ class TestCheckDash:
         path = _write(tmp_path / "doc.md", f"{prefix}{_EM_DASH}外側\n")
         result = _run(str(path))
         assert result.returncode == 1
-        assert f"{path}:1:{len(prefix) + 1}: em-dash(U+2014)" in result.stderr
+        assert f"{path}:1:{len(prefix) + 1}: error: em-dash(U+2014)" in result.stderr
 
     def test_relative_link_is_not_excluded(self, tmp_path: pathlib.Path) -> None:
         """スキームと`www.`を持たない相対リンク内は禁止文字を検出する。"""
@@ -356,7 +366,7 @@ class TestCheckDash:
         path = _write(tmp_path / "doc.md", f"{prefix}{_EM_DASH}外側\n")
         result = _run(str(path))
         assert result.returncode == 1
-        assert f"{path}:1:{len(prefix) + 1}: em-dash(U+2014)" in result.stderr
+        assert f"{path}:1:{len(prefix) + 1}: error: em-dash(U+2014)" in result.stderr
         assert result.stderr.count("em-dash(U+2014)") == 1
 
     def test_four_space_indented_fence_is_not_excluded(self, tmp_path: pathlib.Path) -> None:
@@ -369,10 +379,17 @@ class TestCheckDash:
         assert result.returncode == 1
         assert f"{path}:2:" in result.stderr
 
-    def test_missing_file_silently_skipped(self, tmp_path: pathlib.Path) -> None:
-        """存在しないファイルを渡してもexit 0（読み込み失敗は無視）。"""
-        result = _run(str(tmp_path / "nope.md"))
-        assert result.returncode == 0
+    @pytest.mark.parametrize("invalid_kind", ["missing", "invalid-utf8"])
+    def test_batch_with_unreadable_target_fails(self, tmp_path: pathlib.Path, invalid_kind: str) -> None:
+        """正常な対象と未読取の対象を同時に指定した場合は、バッチ全体の未完了を終了コードで伝える。"""
+        good = _write(tmp_path / "good.md", "正常な本文。\n")
+        invalid = tmp_path / "unreadable.md"
+        if invalid_kind == "invalid-utf8":
+            invalid.write_bytes(b"\xff")
+        result = _run(str(good), str(invalid))
+        assert result.returncode == 2
+        assert "error: 対象ファイルを読み取れない" in result.stderr
+        assert "次の操作: " in result.stderr
 
     # ---- ディレクトリ再帰 ----
 

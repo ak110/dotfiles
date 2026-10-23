@@ -79,9 +79,19 @@ _MUTABLE_KEY_DEFAULTS = {
     "codex_fast_mode": "false",
     "codex_model_providers": "",
     "claude_api_env_file": "",
-    "claude_api_mode": "pay-as-you-go",
+    "claude_orchestrator_api_only": "true",
+    "claude_worker_api_first": "false",
+    "claude_usage_limit_wait": "five-hour",
+    "codex_usage_limit_wait": "five-hour",
     "process_loop_repositories": "[]",
     "dotfiles_mode": "full",
+}
+
+_CLAUDE_CONNECTION_KEYS = ("claude_orchestrator_api_only", "claude_worker_api_first")
+_LEGACY_CLAUDE_MODES = {
+    "pay-as-you-go": ("true", "false"),
+    "api-credits": ("false", "true"),
+    "api-only": ("true", "true"),
 }
 
 # 旧キーは段位とengine順を1つの候補列で持っていた。保存値は移行先へ一括で移し、新しいget・setの対象から除く。
@@ -185,7 +195,7 @@ def _config_env_name(key: str) -> str:
 
 def config_environment_variable_names() -> tuple[str, ...]:
     """現行設定と、置換案内の対象である旧設定の環境変数名を返す。"""
-    return tuple(_config_env_name(key) for key in (*_MUTABLE_KEY_DEFAULTS, *sorted(_RETIRED_MODEL_KEYS)))
+    return tuple(_config_env_name(key) for key in (*_MUTABLE_KEY_DEFAULTS, "claude_api_mode", *sorted(_RETIRED_MODEL_KEYS)))
 
 
 def _validate_stage_model_candidates(value: str) -> None:
@@ -219,11 +229,14 @@ def _validate_mutable_setting(key: str, value: str) -> None:
         if "\n" in value or "\r" in value or "\0" in value:
             raise ValueError("envファイルのパス1つ、または空文字列で指定する")
     elif key == "claude_api_mode":
-        if value not in {"pay-as-you-go", "api-credits", "api-only"}:
+        if value not in _LEGACY_CLAUDE_MODES:
             raise ValueError("受理可能値: pay-as-you-go, api-credits, api-only")
+    elif key in {"claude_usage_limit_wait", "codex_usage_limit_wait"}:
+        if value not in {"never", "five-hour", "always"}:
+            raise ValueError("受理可能値: never, five-hour, always")
     elif key == "process_loop_repositories":
         parse_process_loop_repositories(value)
-    elif key == "codex_fast_mode":
+    elif key in {"codex_fast_mode", *_CLAUDE_CONNECTION_KEYS}:
         if value not in {"true", "false"}:
             raise ValueError("受理可能値: true, false")
     elif key == "codex_model_providers":
@@ -316,17 +329,49 @@ def parse_codex_provider_candidates(value: str) -> tuple[str, ...]:
 
 def mutable_setting_default(key: str) -> str:
     """変更可能な設定の初期値を返す。未知のキーは`KeyError`を送出する。"""
-    return _MUTABLE_KEY_DEFAULTS[key]
+    return "pay-as-you-go" if key == "claude_api_mode" else _MUTABLE_KEY_DEFAULTS[key]
 
 
 def raw_mutable_setting(key: str) -> str:
     """変更可能な設定の検証前の値を、環境変数、保存値、初期値の順に解決して返す。未知のキーは`KeyError`を送出する。"""
     default = mutable_setting_default(key)
-    return os.environ.get(_config_env_name(key), "") or _load_config().get(key, default)
+    stored = _load_config()
+    explicit = os.environ.get(_config_env_name(key), "")
+    if explicit:
+        return explicit
+    if key in _CLAUDE_CONNECTION_KEYS:
+        legacy_env = os.environ.get(_config_env_name("claude_api_mode"), "")
+        if legacy_env:
+            _validate_mutable_setting("claude_api_mode", legacy_env)
+            return _LEGACY_CLAUDE_MODES[legacy_env][_CLAUDE_CONNECTION_KEYS.index(key)]
+        if key not in stored and stored.get("claude_api_mode"):
+            mode = stored["claude_api_mode"]
+            _validate_mutable_setting("claude_api_mode", mode)
+            return _LEGACY_CLAUDE_MODES[mode][_CLAUDE_CONNECTION_KEYS.index(key)]
+    return stored.get(key, default)
+
+
+def claude_legacy_api_only() -> bool:
+    """旧API専用設定による両役割の固定だけを互換境界で判定する。"""
+    if any(os.environ.get(_config_env_name(key), "") for key in _CLAUDE_CONNECTION_KEYS):
+        return False
+    mode = os.environ.get(_config_env_name("claude_api_mode"), "")
+    if not mode:
+        stored = _load_config()
+        if any(key in stored for key in _CLAUDE_CONNECTION_KEYS):
+            return False
+        mode = stored.get("claude_api_mode", "")
+    if mode:
+        _validate_mutable_setting("claude_api_mode", mode)
+    return mode == "api-only"
 
 
 def resolve_mutable_setting(key: str) -> str:
     """変更可能な設定は環境変数を優先し、無ければ保存値、どちらも無ければ初期値を使う。"""
+    if key == "claude_api_mode":
+        if claude_legacy_api_only():
+            return "api-only"
+        return "pay-as-you-go" if resolve_mutable_setting("claude_worker_api_first") == "false" else "api-credits"
     if key not in _MUTABLE_KEY_DEFAULTS:
         raise KeyError(key)
     _check_legacy_environment()
@@ -357,8 +402,33 @@ def _plan_legacy_migration(config: dict[str, str], *, updates: dict[str, str] | 
     読取時は全工程を検証する。明示保存では候補未設定の他工程を空のまま保持し、
     その後のsetで修復できるようにする。新しいCLI値として空候補は受理しない。
     """
-    migrated = {**config, **(updates or {})}
-    if not any(key in config for key in _RETIRED_MODEL_KEYS):
+    changes = dict(updates or {})
+    migrated = dict(config)
+    if "claude_api_mode" in changes:
+        mode = changes.pop("claude_api_mode")
+        _validate_mutable_setting("claude_api_mode", mode)
+        migrated.pop("claude_api_mode", None)
+        if mode == "api-only":
+            for target in _CLAUDE_CONNECTION_KEYS:
+                migrated.pop(target, None)
+            migrated["claude_api_mode"] = mode
+        else:
+            changes.update(zip(_CLAUDE_CONNECTION_KEYS, _LEGACY_CLAUDE_MODES[mode], strict=True))
+    elif any(key in changes for key in _CLAUDE_CONNECTION_KEYS):
+        mode = migrated.get("claude_api_mode")
+        if mode in _LEGACY_CLAUDE_MODES:
+            for target, value in zip(_CLAUDE_CONNECTION_KEYS, _LEGACY_CLAUDE_MODES[mode], strict=True):
+                migrated.setdefault(target, value)
+        migrated.pop("claude_api_mode", None)
+    elif "claude_api_mode" in migrated:
+        mode = migrated["claude_api_mode"]
+        _validate_mutable_setting("claude_api_mode", mode)
+        if mode != "api-only" or any(target in migrated for target in _CLAUDE_CONNECTION_KEYS):
+            for target, value in zip(_CLAUDE_CONNECTION_KEYS, _LEGACY_CLAUDE_MODES[mode], strict=True):
+                migrated.setdefault(target, value)
+            migrated.pop("claude_api_mode")
+    migrated.update(changes)
+    if not any(key in config for key in (*_RETIRED_MODEL_KEYS, "claude_api_mode")):
         return migrated
     stages = {
         "execute": ("execute", "high"),
@@ -405,9 +475,11 @@ def _plan_legacy_migration(config: dict[str, str], *, updates: dict[str, str] | 
 def migrate_legacy_settings() -> None:
     """旧保存値を工程別候補列へ一括移行する。環境変数は保存しない。"""
     config = _load_config()
-    if not any(key in config for key in _RETIRED_MODEL_KEYS):
+    if not any(key in config for key in (*_RETIRED_MODEL_KEYS, "claude_api_mode")):
         return
-    _save_config(_plan_legacy_migration(config))
+    migrated = _plan_legacy_migration(config)
+    if migrated != config:
+        _save_config(migrated)
 
 
 def _check_legacy_environment() -> None:
@@ -444,13 +516,16 @@ def _resolved_settings(home: pathlib.Path) -> dict[str, str]:
     _check_legacy_environment()
     migrate_legacy_settings()
     # Windowsでappnameがappauthorとしても付与される二重階層を防ぐ。
-    return {
+    settings = {
         "config_dir": str(_config_dir()),
         "state_dir": str(_state_paths.state_dir()),
         "data_dir": str(pathlib.Path(platformdirs.user_data_dir("agent-toolkit", appauthor=False))),
         "private_notes": str(_private_notes.default_private_notes(home)),
         **{key: resolve_mutable_setting(key) for key in _MUTABLE_KEY_DEFAULTS},
     }
+    if claude_legacy_api_only():
+        settings["claude_api_mode"] = "api-only"
+    return settings
 
 
 _UNKNOWN_CANDIDATE_NEXT_ACTION = "意図した名前か確認し、誤記なら同じキーへ`atk config set <KEY> <VALUE>`で設定し直す"
@@ -503,6 +578,8 @@ def _cmd_config_get(args: argparse.Namespace, home: pathlib.Path) -> None:
     """getサブコマンド: 1件以上の設定値を指定した順に表示する。未知キーはexit 2。"""
     requested_keys = cast(list[str], args.key)
     settings = _resolved_settings(home)
+    if "claude_api_mode" in requested_keys:
+        settings["claude_api_mode"] = resolve_mutable_setting("claude_api_mode")
     unknown_keys = [key for key in requested_keys if key not in settings]
     if unknown_keys:
         _outcome.report_failure(
@@ -519,7 +596,7 @@ def _cmd_config_set(args: argparse.Namespace) -> None:
 
     旧モデルの候補未設定が残る場合も明示値を保存し、未設定の各工程をsetで順に修復できる。
     """
-    if args.key not in _MUTABLE_KEY_DEFAULTS:
+    if args.key not in _MUTABLE_KEY_DEFAULTS and args.key != "claude_api_mode":
         _outcome.report_failure(
             f"変更できない設定キーを指定した: {args.key}{_legacy_key_guidance([args.key])}",
             next_action=f"変更可能なキーから選び直す: {', '.join(_MUTABLE_KEY_DEFAULTS)}",
@@ -538,11 +615,14 @@ def _cmd_config_set(args: argparse.Namespace) -> None:
     config = _plan_legacy_migration(_load_config(), updates={args.key: value})
     _save_config(config)
     _outcome.report_success(f"設定を更新した: {args.key}={value}")
-    env_name = _config_env_name(args.key)
-    if os.environ.get(env_name, ""):
+    env_names = [_config_env_name(args.key)]
+    if args.key in _CLAUDE_CONNECTION_KEYS:
+        env_names.append(_config_env_name("claude_api_mode"))
+    active_env = next((name for name in env_names if os.environ.get(name, "")), None)
+    if active_env:
         _outcome.report_warning(
-            f"環境変数{env_name}が優先されるため、解除するまで更新値は実効値にならない",
-            next_action=f"保存した値を使う場合は環境変数{env_name}を解除する。環境変数の値を使い続ける場合は対応不要",
+            f"環境変数{active_env}が優先されるため、解除するまで更新値は実効値にならない",
+            next_action=f"保存した値を使う場合は環境変数{active_env}を解除する。環境変数の値を使い続ける場合は対応不要",
         )
 
 

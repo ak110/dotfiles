@@ -77,14 +77,19 @@ class _Server:
             self.models[thread_id] = _text(params.get("model"))
             self.load(thread_id, str(params["cwd"]))
             self.record({"event": "thread/start", "thread": thread_id})
-            self.send({"id": request_id, "result": {"thread": {"id": thread_id}}})
+            self.send({"id": request_id, "result": {"thread": {"id": thread_id}, "modelProvider": "openai"}})
             return [{"method": "thread/started", "params": {"thread": {"id": thread_id}}}]
         if method == "thread/resume":
             thread_id = str(params["threadId"])
             self.models.setdefault(thread_id, _text(params.get("model")))
             self.load(thread_id, str(params["cwd"]))
             self.record({"event": "thread/resume", "thread": thread_id})
-            self.send({"id": request_id, "result": {"thread": {"id": thread_id}}})
+            self.send(
+                {
+                    "id": request_id,
+                    "result": {"thread": {"id": thread_id}, "modelProvider": params.get("modelProvider", "openai")},
+                }
+            )
             return []
         if method == "thread/unsubscribe":
             thread_id = str(params["threadId"])

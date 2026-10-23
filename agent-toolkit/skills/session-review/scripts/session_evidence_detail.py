@@ -119,6 +119,10 @@ def _entry_detail_events(
                 "text": budget.clip(json.dumps(entry, ensure_ascii=False, indent=2)),
             }
         ]
+    source = entry.get("opencode_source")
+    if isinstance(source, dict):
+        for event in events:
+            event["opencode_source"] = {key: value for key, value in source.items() if key != "data"}
     if budget.omitted:
         for event in events:
             event["omitted"] = True

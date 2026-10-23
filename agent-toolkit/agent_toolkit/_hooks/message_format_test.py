@@ -89,8 +89,10 @@ def test_process_loop_commit_hook_and_periodic_generators_share_the_receive_cont
         llm_notice("別の原因", "another", tag="warn"),
         periodic_recheck.PERIODIC_RECHECK_PROMPT,
     ]
-    assert pretooluse.main(json.dumps({"tool_name": "Bash", "tool_input": {"command": "atk wi list >/dev/null"}})) == 2
-    bodies.append(capsys.readouterr().err)
+    assert pretooluse.main(json.dumps({"tool_name": "Bash", "tool_input": {"command": "atk wi list >/dev/null"}})) == 0
+    captured = capsys.readouterr()
+    assert not captured.err
+    bodies.append(json.loads(captured.out)["hookSpecificOutput"]["additionalContext"])
     for body in bodies:
         _assert_machine_boundary(body)
     lines = periodic_recheck.PERIODIC_RECHECK_PROMPT.splitlines()
@@ -240,23 +242,26 @@ const bodies = [];
 function registration() {
   const calls = [];
   const on = (event, selector, callback) => {
-    if (event === 'tool.call') calls.push(callback ?? selector);
+    if (event === 'tool.call') calls.push({selector, callback: callback ?? selector});
     return {catch() { return this; }};
   };
   return {on, calls};
 }
 const c = registration();
-compact(c.on);
+compact(c.on, {delegated: false});
 const timers = [];
 const base = {plugin: {name: 'agent-toolkit', root: '/plugin'}, env: {get: async () => undefined}};
-await c.calls[0]({...base, clock: {after: (_time, callback) => timers.push(callback)},
-  command: {run: async () => { throw new Error('圧縮の実行拒否'); }},
-  prompt: {submit: async ({text}) => bodies.push(text)}}, {tool: 'mcp__agent-toolkit__compact_conversation'}, async () => ({}));
+const compactCall = c.calls.find(({selector}) => selector.tool instanceof RegExp).callback;
+await compactCall({...base, clock: {after: (_time, callback) => timers.push(callback)},
+  session: {compact: async () => { throw new Error('圧縮の実行拒否'); }},
+  ui: {toast: (text) => bodies.push(text)}}, {tool: 'mcp__agent-toolkit__compact_conversation'}, async () => ({}));
 await timers[0]();
 for (const success of [true, false]) {
   const p = registration();
   periodic(p.on);
-  const result = await p.calls[0]({...base,
+  const startCall = p.calls.find(({selector}) =>
+    selector.tool === 'mcp__plugin_agent-toolkit_agents_server__start').callback;
+  const result = await startCall({...base,
     tool: {check: async () => ({decision: 'allow'}), call: async ({tool}) => tool === 'CronList'
       ? {result: {jobs: []}} : {result: {id: 'task-1'}}},
     process: {run: async () => ({exitCode: success ? 0 : 1, stdout: JSON.stringify(schedule), stderr: success ? '' : '失敗'})}},

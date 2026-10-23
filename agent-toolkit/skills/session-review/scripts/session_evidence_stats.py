@@ -13,6 +13,7 @@ from session_evidence_extract import (
     _CollectedRecord,
     _fallback,
     _json_object,
+    _launch_mode,
     _opencode_records,
     _parse_timestamp,
     _Record,
@@ -243,7 +244,12 @@ def _turn_completion_data(
 
 def _stats_summary_data(records: list[_Record], runtime: _Runtime) -> dict[str, Any]:
     if runtime == "opencode":
-        return _stats_summary_data(_opencode_records(records), "claude")
+        opencode_summary = _stats_summary_data(_opencode_records(records), "claude")
+        opencode_summary.pop("observed_identities", None)
+        opencode_identities = [identity.public() for identity in _distinct_identities(records, runtime)]
+        if opencode_identities:
+            opencode_summary["observed_identities"] = opencode_identities
+        return opencode_summary
     timestamps = [(record, timestamp) for record in records if (timestamp := _record_timestamp(record)) is not None]
     summary: dict[str, Any] = {}
     identities = [identity.public() for identity in _distinct_identities(records, runtime)]
@@ -641,18 +647,21 @@ def _stats_events(collected: list[_CollectedRecord], compaction_record_dir: Path
     runtime = main_record.runtime
     if runtime is None:
         return _fallback()
-    summary = _stats_summary_data(main_records, runtime)
+    summaries = {
+        item.record_id: _stats_summary_data(item.records, item.runtime) for item in collected if item.runtime is not None
+    }
+    summary = summaries[main_record.record_id]
     subagents = [item for item in collected if item.role == "subagent" and item.runtime == "claude"]
     thread_summaries: list[tuple[_CollectedRecord, _Runtime, dict[str, Any]]] = []
     for item in collected:
         if item.role == "session" and item.runtime is not None:
-            thread_summaries.append((item, item.runtime, _stats_summary_data(item.records, item.runtime)))
+            thread_summaries.append((item, item.runtime, summaries[item.record_id]))
 
     total_tokens: dict[str, int] = {}
     if isinstance(summary.get("tokens"), dict):
         _add_tokens(total_tokens, _codex_normalized_tokens(summary["tokens"]) if runtime == "codex" else summary["tokens"])
     for subagent in subagents:
-        sub_summary = _stats_summary_data(subagent.records, "claude")
+        sub_summary = summaries[subagent.record_id]
         if isinstance(sub_summary.get("tokens"), dict):
             _add_tokens(total_tokens, sub_summary["tokens"])
     for _, thread_runtime, thread_summary in thread_summaries:
@@ -674,6 +683,29 @@ def _stats_events(collected: list[_CollectedRecord], compaction_record_dir: Path
     if "elapsed_seconds" in summary:
         total_event["elapsed_seconds"] = summary["elapsed_seconds"]
     events = [total_event]
+    modes: dict[str | None, dict[str, Any]] = {}
+    for item in collected:
+        mode = "main" if item.role == "main" else _launch_mode(item, collected)
+        group = modes.setdefault(
+            mode,
+            {
+                "kind": "stats-mode",
+                "mode": mode,
+                "tokens": {},
+                "measured_records": [],
+                "unmeasured_records": [],
+                "observed_identities": {},
+            },
+        )
+        observed = summaries.get(item.record_id, {})
+        group["observed_identities"][item.record_id] = observed.get("observed_identities", [])
+        tokens = observed.get("tokens")
+        if isinstance(tokens, dict):
+            _add_tokens(group["tokens"], _codex_normalized_tokens(tokens) if item.runtime == "codex" else tokens)
+            group["measured_records"].append(item.record_id)
+        else:
+            group["unmeasured_records"].append(item.record_id)
+    events.extend(modes.values())
     events.append(
         {"kind": "stats-summary", "engine": runtime, "record": main_record.record_id, **summary}
         if summary
@@ -688,7 +720,7 @@ def _stats_events(collected: list[_CollectedRecord], compaction_record_dir: Path
         subagent_rows: list[tuple[str, str | None, dict[str, Any]]] = []
         subagent_total: dict[str, int] = {key: 0 for key in _CLAUDE_TOKEN_KEYS}
         for subagent in subagents:
-            sub_summary = _stats_summary_data(subagent.records, "claude")
+            sub_summary = summaries[subagent.record_id]
             row: dict[str, Any] = {"agent": subagent.record_id, "engine": "claude", **sub_summary}
             if subagent.agent_type:
                 row["agent_type"] = subagent.agent_type

@@ -225,7 +225,7 @@ JSON Linesの`cost-metrics-week`は月曜0時から始まる週ごとの次の�
 
 | 項目 | 定義 |
 | --- | --- |
-| `adopted_awi_count` | private-notesのGit履歴で期間内にadopted/へ追加されたtypeがawiのファイル数。全対象リポジトリを合算し、同名ファイルは週内で1件とし、UWIを除く |
+| `adopted_awi_count` | private-notesのGit履歴で期間内に採用状態へ変わったAWI数。初出から採用済みの項目も含む。状態を保つ配置移行・本文編集とUWIを除き、全対象リポジトリを合算して同名ファイルを週内で1件とする |
 | `tokens` | 開始時刻が期間内のルートと全委譲先のトークン。全ルートとprocess-wiを分け、それぞれ合計とruntime別に、非キャッシュ入力・キャッシュ作成入力・キャッシュ読取入力・出力の4成分を示す |
 | `tokens_per_awi` | 全ルートとprocess-wiそれぞれの4成分を同じ週の採用AWI数で割った値。0件の週はnull |
 | `review.rounds`・`five_or_more_ratio` | plans/配下の保存済みexec-review.tsvを最初の追加commitの週へ割り当て、exec-review行の最大roundが0・1・2・3・4・5・6以上の表数と、5以上の表の割合を示す。指摘なしは0 |
@@ -258,7 +258,7 @@ Claudeの最新の算出額を優先し、残りはモデルごとのトーク�
 実行レビューはreview、小規模レビューはreview_fastを使う。役割全体の工程指定を保ち、部分作業の分担は起動・読込・受領レビュー・統合・再試行を含む総費用で選ぶ。
 
 モデル実行環境の可用性に起因する失敗を観測した場合だけ次の候補へ進む。
-Claude CodeのWeekly limitと5時間の利用上限では、解除まで待って同じClaudeで作業を続ける。
+Claude Codeの利用上限では、`claude_usage_limit_wait`の方針に従って解除を待ち、同じ会話で作業を続ける。
 ユーザーが起動したClaude Codeのメインの会話では、agent-toolkitのコマンドhookとFunction hooksが解除後の再開を予約する。
 セッション名の自動設定と利用上限後の再開は、組織向け設定で一部のイベントが省略される環境にも対応する。
 再開予約にはagent-toolkitのFunction hooksを有効にした状態でClaude Codeを起動する。
@@ -268,8 +268,8 @@ Claude CodeのWeekly limitと5時間の利用上限では、解除まで待っ�
 Remote Controlは、手元で動くClaude Codeの会話へブラウザーやClaudeアプリから接続する機能であり、その接続中もこの再開予約が働く。
 接続する場合は会話内で`/remote-control`を実行し、ログインと接続条件は[公式のRemote Control手順](https://code.claude.com/docs/en/remote-control)を参照。
 `agents_server`、`atk wi process-loop`、`atk run-skill`と`atk commit`も再送を要さず、解除待ちの種類と予定時刻を状態表示または端末へ示す。
-`atk run-skill`は指定スキルの実行中に上限へ達した場合も同じ会話を再開する。
-`agents_server`のClaude委譲は、後述の`claude_api_mode`が定める接続順で同じ会話を継続する。
+`atk run-skill`は指定スキルの実行中に待機対象の上限へ達した場合も同じ会話を再開する。
+`agents_server`のClaude委譲は、後述の役割別接続設定と利用上限の待機方針に従って同じ会話を継続する。
 解除待ちの委譲先と背景wait・定期再確認のtaskは保持し、作業の継続が不要になった場合だけ停止する。
 変更できるモデルキーと初期値は次のとおりである。
 
@@ -323,7 +323,10 @@ write_modelと非モデル設定は保つ。旧旧4キーから段位制への�
 `codex_fast_mode`のtrueでfast mode、falseで標準速度（初期値）とする。次のturnから反映し、MCP再起動を要さない。
 Codexのモデル表示はeffortがあれば`codex:<model>/<effort>@fast`とする。
 `codex_model_providers`は主接続先を先頭にしたID列で、空なら通常設定・代替なし。前後空白・重複を除き、空要素を拒否する。
-ClaudeのAPI接続ファイルと役割別接続方針は、次の節のclaude_api_env_file・claude_api_modeで設定する。
+`claude_usage_limit_wait`と`codex_usage_limit_wait`は、それぞれの利用上限の待機方針を指定する。
+`never`は解除を待たず、`five-hour`（既定）は5時間枠だけを待ち、`always`は週次枠なども待つ。
+待機対象外の上限では、設定済みの代替接続またはモデル候補へ進む。
+ClaudeのAPI接続ファイルと役割別接続方針は、次の節で設定する。
 
 CodexのAPI移行先は工程別モデル候補とは別の設定である。サブスクのみ、サブスク＋API、APIのみの
 設定と解除、API認証と課金は[Codex利用ガイド](codex-guide.md#codexのサブスクとapi接続先)を参照する。
@@ -331,7 +334,8 @@ CodexのAPI移行先は工程別モデル候補とは別の設定である。サ
 
 ### Claudeの役割別API接続
 
-`pay-as-you-go`と`api-credits`で`claude_api_env_file`が未設定（空文字列）の場合、process-loopとagents_serverは親の環境変数とClaude Codeの通常の認証解決を使う。
+`claude_api_env_file`が未設定（空文字列）の場合、process-loopとagents_serverは親の環境変数とClaude Codeの通常の認証解決を使う。
+旧`claude_api_mode=api-only`の互換設定ではAPI用envファイルを必要とする。
 APIキー、Claude Codeの設定、Bedrock・Vertexなどをそのまま利用できる。
 この場合は認証検出による起動拒否、認証環境の隔離、役割別の接続割当や切替を行わない。
 その会話の再開も通常の認証解決を維持し、後からenvファイルを設定しても既存会話には適用しない。
@@ -342,15 +346,17 @@ envファイルを設定した場合は、以下の役割別接続管理を適�
 ユーザーが直接起動するClaude Code、組み込みAgentとfork、`atk run-skill`、`atk commit`、Codexの接続先は対象外である。
 `all-repos`のリポジトリ担当はオーケストレーターとして扱う。
 
-| `claude_api_mode` | オーケストレーター | 通常のClaude委譲先 |
+| 設定 | `true` | `false` |
 | --- | --- | --- |
-| `pay-as-you-go`（既定） | 従量課金APIに固定 | サブスクリプション、APIの順 |
-| `api-credits` | サブスクリプションに固定 | API、サブスクリプションの順 |
-| `api-only` | APIだけを使用 | APIだけを使用 |
+| `claude_orchestrator_api_only` | オーケストレーターはAPIだけを使用（既定） | オーケストレーターはサブスクリプションだけを使用 |
+| `claude_worker_api_first` | 通常のClaude委譲先はAPI、サブスクリプションの順 | 通常のClaude委譲先はサブスクリプション、APIの順（既定） |
 
-`pay-as-you-go`と`api-credits`では、認証手段が一方だけの環境でその接続だけを使う。モードの追加設定は要らない。
+委譲先は利用できる認証の候補から選ぶ。
+オーケストレーターの指定接続が使えない場合は、復旧案内を表示して起動を止める。
+旧`claude_api_mode`の`pay-as-you-go`と`api-credits`は、この2設定へ移行する。
+旧キーの`api-only`は両役割をAPIだけにする互換設定として保持し、新しいbool設定の明示保存で解除する。
 [APIクレジットの公式対象範囲](https://platform.claude.com/docs/en/about-claude/api-credits-for-subscribers)はClaude APIとClaude Agent SDKを含み、Claude Codeは対象外である。
-APIクレジットを委譲先で使う場合は`api-credits`を選び、オーケストレーターをサブスクリプションで動かす。
+APIクレジットを委譲先で使う場合は`claude_worker_api_first`を`true`、`claude_orchestrator_api_only`を`false`にする。
 API接続に使う環境変数をenvファイルへ保存し、パスを設定する。
 形式は1行1つの`KEY=VALUE`で、先頭の`export`と空白、値全体を囲む一対の引用符、空行と`#`で始まるコメント行も使える。
 AnthropicのAPIへ直接接続する場合は、[Claude ConsoleのAPI keys](https://platform.claude.com/settings/keys)で発行したAPIキーを`ANTHROPIC_API_KEY`へ記入する。
@@ -372,13 +378,12 @@ Windowsではファイルのプロパティのセキュリティ設定で、使�
 ```bash
 atk config set claude_api_env_file '~/.config/claude-api.env'
 atk config get claude_api_env_file
-atk config set claude_api_mode api-credits
+atk config set claude_worker_api_first true
+atk config set claude_orchestrator_api_only false
 # 従量課金APIをオーケストレーターへ割り当てる場合
-atk config set claude_api_mode pay-as-you-go
-# 最初からAPIだけを使う場合
-atk config set claude_api_mode api-only
+atk config set claude_orchestrator_api_only true
+atk config set claude_worker_api_first false
 # 解除する場合
-atk config set claude_api_mode pay-as-you-go
 atk config set claude_api_env_file ''
 ```
 
@@ -387,7 +392,7 @@ setは先頭の`~`を展開してパスだけを保存する。
 `AGENT_TOOLKIT_CONFIG_CLAUDE_API_ENV_FILE`の空でない値は保存値より優先するため、解除時はこの変数も外す。
 空、存在しない、読み取れない、形式が不正なファイルではAPI候補を選ばない。
 非空の無効パスは起動時に対象パスと修正・解除操作を示す。
-`AGENT_TOOLKIT_CONFIG_CLAUDE_API_MODE`でモードも一時上書きできる。
+`AGENT_TOOLKIT_CONFIG_CLAUDE_ORCHESTRATOR_API_ONLY`と`AGENT_TOOLKIT_CONFIG_CLAUDE_WORKER_API_FIRST`で役割別設定を一時上書きできる。
 `api-only`は新規起動からAPIを使い、既存のサブスクリプション・通常認証の会話も次の継続から同じ会話をAPIへ移す。
 保存後の再開やサーバー再起動後も適用され、上限解除後もAPIを使う。
 APIの料金はサブスクリプションと別に発生する。
@@ -459,6 +464,8 @@ claude-plugins-officialのプラグインは次の方針で扱う。
 実装担当は確認できた結果と未確認事項、要求が変わった場合の判断を、実装を担当していないレビュー担当へ渡す。
 未確認事項は、起動元のエージェントが担当者と作業を再開する方法を整理して次の担当へ引き継ぐ。
 ユーザーの判断や操作が必要な事項は、その内容をユーザーへ伝える。
+処理中に発見した既存不良の即時対応では、進行に必要な範囲だけ修正して安全に利用できることを確認し、テスト・独立文脈レビュー・原因分析・類似見直し・再発防止を含む正式対応を次のセッション用AWIへ登録する。
+今回の作業で導入した不良と、処理開始時の要求は、同じセッションで完成条件まで満たす。
 
 作業の進め方は次の4パターンを推奨する。要件がどこまで固まっているかと、AWIの発生頻度で選ぶ。決まったスキルを定期的に実行したい場合は定期実行型を選ぶ。
 
@@ -490,7 +497,7 @@ holdとrun-skill由来もこの判定へ含め、回答後にadoptedへ移った
 選定はClaude CodeとCodexのどちらもメインが直接行い、別の選定担当は起動しない。候補本文から分類・割当・モデル・配置根拠を判断し、取得済み候補と意味判断をpick-wi-checkへ渡して定型欄の生成・確認・保存を1回で行う。意味判断と要求の被覆、レーン数上限、同じ担当thread、単一writer、実行レビューと直列統合は維持する。
 圧縮ツールが提供されるClaude Codeでは、各段階の全初期通常レーンの初回起動後と、終端担当の起動後の長時間待機前に会話圧縮を予約する。独立した工程を先に開始し、セッションのmanaged-temp直下のparent-handoff.mdへ再開状態を保存する。引数なしで予約し、背景待機を始めてターンを終える。受付は圧縮完了と区別し、通知後に保存記録から同じ工程へ戻る。ツールが無い環境では、その旨を記録して通常の待機へ進む。Codex、通常0件、処理中の追加レーン起動と実行レビュー待機は予約の対象外とする。
 
-レーン資源は`atk lane create`が専用worktree・branchと所有session、準備・撤去手順を登録し、準備後に担当を起動する。process-wiは対象リポジトリごとに1つだけ起動する前提で、専用worktreeは対象リポジトリの`.claude/worktrees/process-wi-lane-NN`に固定され、実行を繰り返してもパスは増えない。統合後も追加に備えて同じ資源を保持する。通常終了の`atk agents-exit-session`とprocess-loopの子終了後が`atk lane delete`と同じ安全条件で回収する。未統合・dirty・稼働中・確認不能・途中失敗の資源は保持し、次回の開始時に`atk lane delete --list`から理由と残る操作を読む。worktreeパス・Git登録・branchが全て無いと確定した登録は、警告と最後に記録したHEADを残して回収する。worktreeパスが無い場合はdelete手順を実行しない。セッションのmanaged-tempと検証の証拠は専用資源とともに削除しない。選定結果の一時ファイルが失効しても、所有登録が写した選定情報で統合と回収を続ける。選定情報を持たない古い登録は`atk lane recover --session-id <所有session>`で元のbranchを残して専用worktreeを解放する。
+レーン資源は`atk lane create`が専用worktree・branchと所有session、準備・撤去手順を登録し、準備後に担当を起動する。process-wiは対象リポジトリごとに1つだけ起動する前提で、専用worktreeは対象リポジトリの`.claude/worktrees/process-wi-lane-NN`に固定され、実行を繰り返してもパスは増えない。統合後も追加に備えて同じ資源を保持する。通常終了の`atk agents-exit-session`とprocess-loopの子終了後が`atk lane delete`と同じ安全条件で回収する。自動回収は解放を待たず、その時点で適格な資源を回収する。未統合・dirty・稼働中・未解放・確認不能・途中失敗の資源は保持し、次回の開始時に`atk lane delete --list`から理由と残る操作を読む。worktreeパス・Git登録・branchが全て無いと確定した登録は、警告と最後に記録したHEADを残して回収する。worktreeパスが無い場合はdelete手順を実行しない。セッションのmanaged-tempと検証の証拠は専用資源とともに削除しない。選定結果の一時ファイルが失効しても、所有登録が写した選定情報で統合と回収を続ける。選定情報を持たない古い登録は`atk lane recover --session-id <所有session>`で元のbranchを残して専用worktreeを解放する。
 要件を本文だけで説明できる作業に向く。
 1レーンの場合も隔離と独立文脈レビューを保ち、`atk lane integrate`が統合・計画保存・WI終端・統合済み記録をまとめて行う。
 途中失敗は進行記録と成果を残し、同じ入力で未完了の工程から再開する。
@@ -776,7 +783,7 @@ Codex欄の「対応」「部分対応」「非対応」は、Codex 0.154.0の�
 | plugin `SubagentStart/rules_context` | サブエージェントの起動時に、サブエージェントと委譲先だけに適用する条文を文脈へ追加する | 対応 | 対応 |
 | plugin `SubagentStop/subagent_stop_advisor` | 空の完了報告での終了をブロックする | 対応 | 対応 |
 | plugin `SessionEnd/session_end_cleanup` | 期限を過ぎたセッション状態を回収する | 対応 | 対応 |
-| plugin `Stop/stop` | 成果作業（WI処理・AWI登録の開始、リポジトリの編集、計画・WIの保存、commit・push）の後に`agent-toolkit:completion-report`の起動も有効な省略判断も無いまま終えようとすると、起動と残りの工程への続行を案内して同じターンを続けさせる。適用するプロジェクト規範が起動を不要と定める場合は、`atk run-script termination-evidence -- --decision-file <判断JSONの絶対パス>`へ省略の根拠を記録する。報告本文は判定しない。作業内で起動した委譲先や背景のコマンドを待つ間は終了を許すため、終了しない常駐コマンド（開発サーバーなど）の実行中は起動忘れを検出しない | 対応 | 対応 |
+| plugin `Stop/stop` | Claudeでは未観測の委譲・背景処理や終了工程の記録を確認し、completion-reportの起動忘れを非遮断で通知する。報告本文の意味や固定句は判定しない。Codexでは説明言語だけを判定する | 対応 | 部分対応 |
 | plugin `UserPromptSubmit/user_prompt_submit` | 発話の内容を現物で確かめる手順や、発話に応じて適用する規範の所在を示す注記を返す | 対応 | 対応 |
 | plugin `PermissionRequest/permissionrequest_codex` | 厳密な入力一致と所有者確認が成立したmanaged-tempのcleanupだけを限定的に許可する | 非対応 | 対応 |
 | plugin `PermissionRequest/permissionrequest` | 全ツールの確認ダイアログを自動許可し、許可した要求をログへ記録する | 対応 | 非対応 |
@@ -797,7 +804,7 @@ commitされていないことだけを理由にcommitを求めない。
 
 Claude CodeとCodexでは、`git rev-parse --short HEAD HEAD~1`のように、`--short`や`--verify`の後へリビジョンを複数並べると、PreToolUseが実行前に遮断する。通知に従い、同じオプションを付けたままリビジョンを1つずつ実行する。
 
-PreToolUseは、未取得のdelegationを委譲操作の前に、未取得のwriting-standardsを本文の作成・更新の前に全文で取得するよう案内し、取得後に同じ操作を再発行させる。本文編集は`Write`・`Edit`・`MultiEdit`と`apply_patch`を言語やファイル名によらず対象にし、Bashでは書込先を確定できるエージェント向け文書の編集を対象にする。親子の取得済み記録は分け、Codexにも同じ取得契約を適用する。
+PreToolUseは、未取得のdelegationを委譲操作の前に、未取得のwriting-standardsを本文の作成・更新の前に全文で取得するよう案内する。本文編集は`Write`・`Edit`・`MultiEdit`と`apply_patch`を言語やファイル名によらず対象にする。Bashでは、静的に確定した書込先へのheredoc・here-string、インプレース置換、Pythonの本文書込も対象にする。managed-tempにはWIや投稿文の下書きも置くため、通常本文と同じ基準を使う。コマンドの生成出力の保存と複製は通常本文の作成から除く。親子の取得済み記録は分け、Codexにも同じ取得契約を適用する。
 commit・push後のPostToolUseの案内は、成果報告へ進むメインへcompletion-reportの適用条件を示す。Claude CodeではSkillの起動、Codexでは通知されたSKILL.mdの読取へ進む。失敗・背景・dry-run・help・委譲先は対象外で、後続の該当操作にも案内する。
 
 plugin `PreToolUse/pretooluse`がatkの呼び出しを遮断するのは、静的に分かるatkの実行位置と出力の接続先に限る。
@@ -896,7 +903,7 @@ pushを行わずローカルcommitまでで止める場合は`--skip-push`を指
   `all-repos`のリポジトリ担当は実行せず、常駐側への最終返却でターンを終える。常駐側が返却を受け取る前に担当を止めないためである
 - `compact_conversation`: Function hooks moduleを読み込んだClaude Codeのメインが会話圧縮を予約するツール。完全名は`mcp__agent-toolkit__compact_conversation`で、引数は取らず追加指示なしでcompactを予約する。必要な再開状態はセッションのmanaged-temp直下のparent-handoff.mdへ保存し、圧縮後の領域通知からその記録を読む。対話UIと非対話の`claude -p`に対応し、Codexと委譲先では使わない。受付応答は圧縮完了を示さない。予約後は現在のターンを終え、ホストの圧縮成功表示を確認する。未完了の予約を重ねても実行は増えず、成功・失敗後は再予約できる。失敗は同じ会話へ原因と再予約可能である旨が通知される。バックグラウンドタスクを待つ場合は予約後に背景待機を開始してターンを終え、通知後に同じ担当と保存結果から継続する
 - `send_to_user`: 管理設定の`CLAUDE_CODE_ENABLE_FUNCTION_HOOKS=1`が有効でagent-toolkitのFunction hooks moduleを読み込んだClaude Codeで、メインが使えるツール。途中報告と最後の回答を運び、画面へMarkdownとして表示する。完全名は`mcp__agent-toolkit__send_to_user`で、初回から読み込む定義を登録する。遅延一覧にだけ現れる場合は`ToolSearch`の`select:mcp__agent-toolkit__send_to_user`で読み込む。ツール呼び出しより前の地の文は要約に置き換わることがあるため、このツールで送る。確認質問には既存の質問手段を使う。moduleを読み込まないClaude CodeとCodexでは、ターンを終える本文へ書く
-- `agent-toolkit:completion-report`: メインの作業完了時に、成果と振り返り結果を固定形式で報告する。対策のAWIを投入する場合は`## 振り返り結果の予告`で予告し、投入後にAWI投入結果を報告する。投入が無い場合は振り返り結果を報告する。最後の報告だけを「以上で、このセッションの作業は全て終わりました」で結ぶ。適用するプロジェクト規範が本スキルを不要と定める場合は、スキルを起動せず`references/termination-evidence.md`を読む。`atk run-script termination-evidence -- --decision-file <判断JSONの絶対パス>`へ`omit-completion`の根拠を記録する。省略は指定した作業だけへ作用し、別作業の起動不足と、process-loopの会話が終了時に`atk agents-exit-session`を実行する義務（`all-repos`のリポジトリ担当を除く）は保つ。有効な省略も起動証拠も無い成果作業の停止はStopフックが遮断して起動を促す。起動後の工程の完遂と報告の内容は本スキルの規範に従ってエージェントが確かめ、Stopフックは報告本文を判定しない。ユーザーの中止・置換の指示は、その指示が作用する作業だけを止める
+- `agent-toolkit:completion-report`: メインの作業完了時に、成果と振り返り結果を固定形式で報告する。対策のAWIを投入する場合は`## 振り返り結果の予告`で予告し、投入後にAWI投入結果を報告する。投入が無い場合は振り返り結果を報告する。適用するプロジェクト規範が本スキルを不要と定める場合は、スキルを起動せず`references/termination-evidence.md`を読む。`atk run-script termination-evidence -- --decision-file <判断JSONの絶対パス>`へ`omit-completion`の根拠を記録する。省略は指定した作業だけへ作用し、別作業の起動不足と、process-loopの会話が終了時に`atk agents-exit-session`を実行する義務（`all-repos`のリポジトリ担当を除く）は保つ。ClaudeのStopフックは起動忘れを非遮断で通知し、CodexのStopではこの通知を扱わない。起動後の工程の完遂と報告の内容は本スキルの規範に従ってエージェントが確かめる。ユーザーの中止・置換の指示は、その指示が作用する作業だけを止める
 - `agent-toolkit:export-session`: `atk agents logs`でClaude CodeとCodexの記録をmarkdownへ出力し、一括変換も行う
 - `agent-toolkit:session-review`: セッションで交わされた会話の流れと問題候補を調べ、原因と恒久対策を確定して、対策を作業依頼（AWI）として投入する。手動または`agent-toolkit:completion-report`から起動し、メインが同じセッション内で分析する
 

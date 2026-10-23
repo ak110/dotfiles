@@ -96,10 +96,10 @@ pyfltrを調査・計測用途で実行する場合は`--no-fix`で自動修正�
 - テストは`agent-toolkit/agent_toolkit/_testing/isolation.py`の隔離の下で動き、ホームと設定ディレクトリはテストごとの一時ディレクトリを指す。実Gitの動作を確かめるテストは、履歴・tag・branch・作業状態を自身の一時リポジトリへ準備し、全てのGit呼び出しで対象リポジトリを明示する。`_testing/git_repository.py`の`init_repository`・`commit_all`・`run_git`を使える。実行元リポジトリの不変条件を調べるテストのため、全テストのcwdは実行元のまま保つ。再検証手段は`docs/development/audit-records.md`「dotfiles-development：Git動作テストの状態準備：2026年10月9日」にある
 - 実際の外部ランタイムやCLIを子プロセスで起動するテストを新設・変更するときは、同モジュールの`host_environ()`で起動に必要なホスト設定を組み立てて子の`env`へ渡す。子へ環境を渡せない起動方法では`restore_host_environment(monkeypatch)`でテストプロセス自身のHOME・設定ディレクトリ・PATHを隔離前へ戻し、テスト対象の設定と状態は別の一時領域へ明示して隔離を保つ。
   変更範囲の検証では、[CI設定](../../../.github/workflows/ci.yaml)の対象jobの実行環境が使うランチャーからも対象テストを実行する。
-  miseのshimの場所は隔離前に`mise doctor --json`の`dirs.shims`から得る。次の例はuvによるPATH変更の後にshimを先頭へ置き、対象ランタイムの解決先を確かめて同じPythonプロセスでpytestを起動する。最後の2引数を対象ランタイム名とテストのパスへ替え、修正前の失敗対照と対応付けて環境指定の不足を検出できることを確かめる。
+  次の専用CLIはuvによるPATH変更の後にmiseのshimを先頭へ置き、対象ランタイムの解決先を確かめて同じPythonプロセスでpytestを起動する。runtime名と`--`以降のpytest引数を対象へ替え、修正前の失敗対照と対応付けて環境指定の不足を検出できることを確かめる。`-v -n 0 -p no:cacheprovider`はCLIが付け、pytestの終了コードをそのまま返す。miseの照会・shimの解決に失敗した場合は診断付きの終了2で止まる。
 
   ```sh
-  uv run --frozen python -c 'import json, os, pathlib, shutil, subprocess, sys, pytest; shims = json.loads(subprocess.check_output(["mise", "doctor", "--json"], text=True, encoding="utf-8"))["dirs"]["shims"]; os.environ["PATH"] = shims + os.pathsep + os.environ["PATH"]; resolved = shutil.which(sys.argv[1]); assert resolved and pathlib.Path(resolved).parent == pathlib.Path(shims), resolved; print("runtime:", resolved); raise SystemExit(pytest.main(["-v", "-n", "0", "-p", "no:cacheprovider", *sys.argv[2:]]))' node agent-toolkit/agent_toolkit/_hooks/message_format_test.py
+  uv run --frozen python scripts/run_mise_runtime_tests.py node -- agent-toolkit/agent_toolkit/_hooks/message_format_test.py
   ```
 
 - パッケージを取得して起動する外部ツール（pnpmの`dlx`、corepackなど）を動かすテストは、同モジュールの`share_package_caches`で取得物の保存先だけをホストと共有する

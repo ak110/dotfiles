@@ -81,3 +81,26 @@ def test_codex_record_observations_keep_all_pairs_and_latest_before_line() -> No
     ]
     latest = latest_identity(records, "codex", before_line=2)
     assert latest is not None and latest[0] == 2 and latest[1].model == "gpt-6-sol"
+
+
+@pytest.mark.parametrize("variant", ["high", None, ""])
+def test_opencode_sqlite_identity_uses_only_assistant_observations(variant: str | None) -> None:
+    """OpenCode v1.19.3のAssistant保存JSONから組を得て、推論量の欠落を補完しない。"""
+    records = [
+        {"type": "agent_toolkit_input", "model": "requested/model", "variant": "high"},
+        {
+            "opencode_source": {
+                "table": "message",
+                "data": {"role": "user", "modelID": "unobserved", "providerID": "local", "variant": "high"},
+            }
+        },
+        {
+            "opencode_source": {
+                "table": "message",
+                "data": {"role": "assistant", "modelID": "qwen/27b", "providerID": "local", "variant": variant},
+            }
+        },
+    ]
+    identities = distinct_identities(records, "opencode")
+    assert [item.machine for item in identities] == (["opencode:local/qwen/27b/high"] if variant else [])
+    assert all(item.source == "observed" for item in identities)

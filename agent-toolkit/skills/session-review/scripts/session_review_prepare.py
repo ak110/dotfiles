@@ -22,6 +22,7 @@ import io
 import json
 import pathlib
 import re
+import shlex
 import sys
 import unicodedata
 from typing import Any
@@ -95,6 +96,8 @@ def _build_parser() -> argparse.ArgumentParser:
     session = parser.add_mutually_exclusive_group(required=True)
     session.add_argument("--transcript", metavar="PATH", help="Claude Codeのtranscriptパス。")
     session.add_argument("--codex-thread-id", metavar="ID", help="Codexのthread ID。")
+    session.add_argument("--opencode-session-id", metavar="ID", help="OpenCodeのses_で始まるセッションID。")
+    parser.add_argument("--opencode-db", metavar="PATH", help="OpenCodeのSQLite記録。--opencode-session-idと併用する。")
     parser.add_argument(
         "--work-dir",
         metavar="PATH",
@@ -120,10 +123,11 @@ _MISSING_NEXT_ACTIONS = {
     ),
     "work_dir": "`atk managed-temp create`で作成したディレクトリの絶対パスを`--work-dir`へ渡して再実行する",
     "transcript_path": (
-        "`--transcript`へ実在するClaude Codeのtranscriptの絶対パスを渡すか、Codexでは`--codex-thread-id`を渡して再実行する"
+        "`--transcript`へClaude Codeの記録、Codexでは`--codex-thread-id`、OpenCodeでは`--opencode-session-id`を渡す"
     ),
     "bundle": (
-        "表示した原因を確かめ、同じ引数で再実行する。記録が読めない場合は`--transcript`・`--codex-thread-id`の値を確かめる"
+        "表示した原因と入力引数を確かめ、記録を持つホストで再実行する。"
+        "OpenCodeでは`--opencode-session-id`と`--opencode-db`の値・読取権限・schemaを確認する"
     ),
 }
 """準備項目ごとの取得方法。項目名は標準エラーの`不足:`行と一致させる。"""
@@ -725,6 +729,7 @@ def _stats_document(stats: list[dict[str, Any]]) -> str:
         :_SUMMARY_TOP_COUNT
     ]
     selected: list[dict[str, Any]] = [*by_kind["stats-total"], *by_kind["stats-summary"], *owners]
+    selected.extend(by_kind["stats-mode"])
     for kind in ("stats-critical-path", "stats-compaction-total"):
         for item in by_kind[kind]:
             row = dict(item)
@@ -749,8 +754,13 @@ def _stats_document(stats: list[dict[str, Any]]) -> str:
         row = dict(item)
         row["read_count"] = len(item.get("reads", []))
         row["skill_count"] = len(item.get("skills", []))
-        for field in ("reads", "skills", "repeats", "largest_results"):
+        for field in ("reads", "skills", "repeats", "largest_results", "hook_notices", "partial_repetitions"):
             row[field] = item.get(field, [])[:5]
+        components: dict[str, int] = collections.defaultdict(int)
+        for generated in item.get("generated_inputs", []):
+            components[generated["component"]] += generated["utf8_bytes"]
+        row["input_components"] = dict(components)
+        row["generated_inputs"] = sorted(item.get("generated_inputs", []), key=lambda generated: -generated["utf8_bytes"])[:5]
         row["omitted_largest_result_count"] = item.get("omitted_largest_result_count", 0) + max(
             0, len(item["largest_results"]) - 5
         )
@@ -838,6 +848,8 @@ def _stats_detail_document(stats: list[dict[str, Any]]) -> str:
         "",
         f"- 経過秒: {total.get('elapsed_seconds', 'unknown')}秒（セッションの最初の記録から準備時点まで）",
     ]
+    for mode in by_kind.get("stats-mode", []):
+        lines.append(f"- mode別費用: {json.dumps(mode, ensure_ascii=False)}")
     lines.extend(
         [
             "",
@@ -929,8 +941,21 @@ def _stats_detail_document(stats: list[dict[str, Any]]) -> str:
                 f"Skill呼出: {item.get('skill_count', len(item['skills']))}回、"
                 f"ツール呼出: {item['tool_calls']}回、記録の結果本文: {item['recorded_result_characters']}字・"
                 f"{item['recorded_result_utf8_bytes']}バイト",
+                f"- 起動mode: {item.get('mode') or '未確認'}、実モデル: "
+                f"{json.dumps(item.get('observed_identities', []), ensure_ascii=False)}",
+                f"- 生成入力: {item.get('generated_input_utf8_bytes', 0)}バイト、成分別: "
+                f"{json.dumps(item.get('input_components', {}), ensure_ascii=False)}",
+                "- 入力量は記録されたツール入力、結果量は返却本文を数える。API履歴の再送量・"
+                "未記録の注入資料・実際の読了量・料金はこの集計から推定しない。",
             ]
         )
+        for field, label in (
+            ("generated_inputs", "生成入力"),
+            ("hook_notices", "hook生成元・同一本文"),
+            ("partial_repetitions", "文の部分一致候補"),
+        ):
+            for row in item.get(field, []):
+                lines.append(f"- {label}: {json.dumps(row, ensure_ascii=False)}")
         for row in [*item["reads"], *item["skills"]]:
             lines.append(
                 f"- {row['tool']} 対象={row['target']}、範囲={json.dumps(row['range'], ensure_ascii=False)}、{row['location']}"
@@ -1028,6 +1053,8 @@ def _thread_breakdown_lines(
 def main(argv: list[str] | None = None, *, now: datetime.datetime | None = None) -> int:
     """振り返りの入力を作業ディレクトリへ書き、所在と件数を1行のJSONで出力する。"""
     args = _build_parser().parse_args(argv)
+    if args.opencode_db is not None and args.opencode_session_id is None:
+        return _missing("bundle", "--opencode-dbは--opencode-session-idと併用する")
     local_evidence_script = pathlib.Path(__file__).resolve().with_name("session_review_evidence.py")
     try:
         evidence_script = run_script.registered_script_path("session-review-evidence")
@@ -1045,14 +1072,23 @@ def main(argv: list[str] | None = None, *, now: datetime.datetime | None = None)
         if not work_dir.is_absolute() or not work_dir.is_dir():
             return _missing("work_dir", f"既存の絶対ディレクトリではない: {work_dir}")
     else:
-        session_id = transcript_path.stem if transcript_path is not None else str(args.codex_thread_id)
+        session_id = (
+            transcript_path.stem if transcript_path is not None else str(args.codex_thread_id or args.opencode_session_id)
+        )
         try:
             session_root = managed_temp.resolve_session_temp(session_id)
             work_dir = managed_temp.create_session_temp("session-review", session_root)
         except (managed_temp.ManagedTempError, OSError) as error:
             return _missing("work_dir", str(error))
 
-    session_arguments = [str(transcript_path)] if transcript_path is not None else ["--codex-thread-id", args.codex_thread_id]
+    if transcript_path is not None:
+        session_arguments = [str(transcript_path)]
+    elif args.opencode_session_id is not None:
+        session_arguments = ["--opencode-session-id", args.opencode_session_id]
+        if args.opencode_db is not None:
+            session_arguments.extend(["--opencode-db", str(pathlib.Path(args.opencode_db).expanduser().resolve())])
+    else:
+        session_arguments = ["--codex-thread-id", args.codex_thread_id]
     bundle_dir = work_dir / "bundle"
     bundle_dir.mkdir(exist_ok=True)
     failure, unresolved = _extract_bundle(session_arguments, bundle_dir)
@@ -1074,13 +1110,9 @@ def main(argv: list[str] | None = None, *, now: datetime.datetime | None = None)
         "".join(json.dumps(item, ensure_ascii=False) + "\n" for item in unresolved), encoding="utf-8"
     )
 
-    # `atk run-script session-review-evidence`の`--transcript`と`--codex-thread-id`へそのまま渡せる形を、
+    # 準備と証拠照会で同じ入力指定を使い、
     # 全文を照会するコマンドとして示す。
-    detail_command = (
-        f"atk run-script session-review-evidence -- {transcript_path}"
-        if transcript_path is not None
-        else f"atk run-script session-review-evidence -- --codex-thread-id {args.codex_thread_id}"
-    )
+    detail_command = "atk run-script session-review-evidence -- " + shlex.join(session_arguments)
     conversation_path = work_dir / CONVERSATION_FILENAME
     candidates_path = work_dir / CANDIDATES_FILENAME
     stats_path = work_dir / STATS_FILENAME
@@ -1112,7 +1144,7 @@ def main(argv: list[str] | None = None, *, now: datetime.datetime | None = None)
         return 0
     comparison_path.write_text(_comparison_document(comparison, detail_command), encoding="utf-8")
     current = now if now is not None else datetime.datetime.now(datetime.UTC)
-    session_id = transcript_path.stem if transcript_path is not None else str(args.codex_thread_id)
+    session_id = transcript_path.stem if transcript_path is not None else str(args.codex_thread_id or args.opencode_session_id)
     candidates, single_failures, summary, ledger_skipped = _select_repeated_failures(candidates, summary, session_id, current)
     similar_targets = [item for item in candidates if item["candidate_kind"] in _SIMILAR_RECORD_KINDS]
     similar_ids = {str(item["candidate_id"]) for item in similar_targets}

@@ -140,29 +140,32 @@ class _ThreadStartClient:
         return []
 
 
-class _TierClient:
+class _TierClient(FakeCodexClient):
     """実際のbackendが送る要求と送信通知を再現し、モデルの実行を伴わずtierを確かめる。"""
 
     closed = False
     reader_failure = None
 
     def __init__(self) -> None:
-        self.requests: list[tuple[str, dict[str, Any]]] = []
+        super().__init__()
         self.parent_environment: dict[str, str] | None = None
 
-    async def request(self, method: str, params: dict[str, Any], *, on_sent: Any = None) -> dict[str, Any]:
+    async def request(self, method: str, params: dict[str, Any] | None = None, *, on_sent: Any = None) -> dict[str, Any]:
+        params = params or {}
         if method == "config/read":
             return {"config": {"mcp_servers": {"agents_server": {}, "external": {"enabled": True}}}}
+        if method == "thread/read":
+            return await super().request(method, params, on_sent=on_sent)
         self.requests.append((method, dict(params)))
         if on_sent is not None:
             on_sent()
         if method in {"thread/start", "thread/resume"}:
-            return {"thread": {"id": params.get("threadId", "tier-thread")}}
+            return {"thread": {"id": params.get("threadId", "tier-thread")}, "modelProvider": "openai"}
         assert method == "turn/start"
         return {"turn": {"id": f"turn-{len(self.requests)}"}}
 
     async def close(self) -> list[str]:
-        return []
+        return await super().close()
 
 
 @pytest.mark.usefixtures("agents_server_isolation")
@@ -322,8 +325,12 @@ async def test_config_changes_apply_to_new_reply_and_restored_turns(
                 turn_seq=session.turn_seq,
                 fast_mode=session.fast_mode,
             )
-            assert [method for method, _params in restored_client.requests] == ["thread/resume", "turn/start"]
-            assert all(params["serviceTier"] == tier for _method, params in restored_client.requests)
+            assert [method for method, _params in restored_client.requests] == ["thread/read", "thread/resume", "turn/start"]
+            assert all(
+                params["serviceTier"] == tier
+                for method, params in restored_client.requests
+                if method in {"thread/resume", "turn/start"}
+            )
             assert restored.fast_mode is initial
 
 
@@ -830,7 +837,7 @@ async def test_inner_mcp_uses_actual_app_server_parent_environment(
                 _complete(session)
                 client.requests.clear()
                 await manager.send_message(session, "続行")
-        params = next(params for method, params in client.requests if method.startswith("thread/"))
+        params = next(params for method, params in client.requests if method in {"thread/start", "thread/resume"})
         server = params["config"]["mcp_servers"]["agents_server"]
         assert "NOT_IN_APP_SERVER_ENV" not in server["env_vars"]
         assert "CLAUDE_CODE_SESSION_ID" not in server["env_vars"]
@@ -917,11 +924,14 @@ async def test_close_attempts_other_connections_after_one_connection_fails(
 ) -> None:
     """接続の停止失敗を保持して残る接続を回収し、次の停止で残存接続だけを再試行する。"""
     first, second = FakeCodexClient(), FakeCodexClient()
+    first_cleanup, second_cleanup = first.close, second.close
     first_close = AsyncMock(side_effect=[OSError("最初の接続停止失敗"), []])
     second_close = AsyncMock(return_value=[])
     monkeypatch.setattr(first, "close", first_close)
     monkeypatch.setattr(second, "close", second_close)
-    async with subject.AppServerManager() as manager:
+    async with contextlib.AsyncExitStack() as cleanup, subject.AppServerManager() as manager:
+        cleanup.push_async_callback(first_cleanup)
+        cleanup.push_async_callback(second_cleanup)
         monkeypatch.setattr(manager, "_ensure_client", AsyncMock(side_effect=[first, second]))
         first_prompt, second_prompt = state.ResumePrompt("最初の会話"), state.ResumePrompt("次の会話")
         try:
@@ -1554,6 +1564,7 @@ async def test_start_and_resume_pass_the_same_stable_plugin_root_to_all_launch_k
         resume_params = next(params for method, params in client.requests if method == "thread/resume")
 
         for params in (start_params, resume_params):
+            assert params["baseInstructions"] == subject.SUBAGENT_BASE_INSTRUCTIONS
             instructions = params["developerInstructions"]
             assert str(plugin_root) in instructions
             command = next(
@@ -2358,7 +2369,10 @@ async def test_resume_waits_for_thread_close_after_unsubscribe(
 
         async def request(method: str, params: dict[str, Any]) -> dict[str, Any]:
             nonlocal attempts
-            assert method == "thread/resume" and params == {"threadId": "thread-1"}
+            assert method == "thread/resume" and params == {
+                "threadId": "thread-1",
+                "baseInstructions": subject.SUBAGENT_BASE_INSTRUCTIONS,
+            }
             attempts += 1
             if attempts == 1:
                 if notification_first:
@@ -2656,20 +2670,22 @@ async def test_shared_manager_send_message_resumes_expired_codex_thread(
         response = await manager.send_message("thread-saved", "続行")
 
         assert _without_root(response) == {"delivery": "reply_started", "label": ""}
-        assert client.requests[0] == (
+        assert next((method, params) for method, params in client.requests if method == "thread/resume") == (
             "thread/resume",
             {
                 "threadId": "thread-saved",
+                "baseInstructions": subject.SUBAGENT_BASE_INSTRUCTIONS,
                 "cwd": str(tmp_path),
                 "approvalPolicy": "never",
                 "sandbox": "danger-full-access",
                 "serviceTier": "default",
                 "model": "gpt-test",
+                "modelProvider": "openai",
                 "config": {"bypass_hook_trust": True},
                 "developerInstructions": subject._developer_instructions("delegate"),  # noqa: SLF001
             },
         )
-        assert client.requests[1][0] == "turn/start"
+        assert client.requests[-1][0] == "turn/start"
 
 
 @pytest.mark.usefixtures("agents_server_isolation")
@@ -2713,7 +2729,7 @@ async def test_codex_resume_timeout_drops_prompt_without_duplicate_resume(
 
             client.release_resume.set()
             await asyncio.wait_for(client.resume_finished.wait(), timeout=0.1)
-            assert [method for method, _params in client.requests] == ["thread/resume"]
+            assert [method for method, _params in client.requests] == ["config/read", "thread/read", "thread/resume"]
             response = await manager.send_message(session_id, "後続指示", timeout=1)
 
             assert response["delivery"] == "reply_started"
@@ -2754,6 +2770,8 @@ async def test_codex_kill_interrupts_turn_with_pending_start_response(
         assert response["status"] == "interrupted"
         assert response["kill_requested"] is True
         assert [method for method, _params in client.requests] == [
+            "config/read",
+            "thread/read",
             "thread/resume",
             "turn/start",
             "turn/interrupt",
@@ -2796,6 +2814,8 @@ async def test_codex_kill_reports_no_request_when_pending_turn_completes_natural
         assert response["status"] == "completed"
         assert response["kill_requested"] is False
         assert [method for method, _params in client.requests] == [
+            "config/read",
+            "thread/read",
             "thread/resume",
             "turn/start",
         ]

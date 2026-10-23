@@ -39,6 +39,7 @@ def test_codex_probe_fallback_and_all_candidates_retry(
 
     可用性判定は候補によらずengineの軽量段位のモデルで起動するため、偽のCLIは呼び出し順で候補を識別する。
     """
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CODEX_USAGE_LIMIT_WAIT", "always")
     binary = tmp_path / "codex"
     calls = tmp_path / "calls"
     binary.write_text(

@@ -1,7 +1,7 @@
 """操作を起動の契機とするスキルの取得の契約を、表の全項目と主体の全区分の組で検証する。
 
 Claudeは未取得の本文を配送し、Codexは取得対象を案内して、成功した本文取得の後に同じ操作を許可する。
-agents_serverの軽量委譲先は遮断しない。表へ項目を加えると、`_POSITIVE_OPERATIONS`へ正例が無い限り`test_positive_operations_cover_every_entry`が失敗する。
+全主体で通常操作を継続する。表へ項目を加えると、`_POSITIVE_OPERATIONS`へ正例が無い限り`test_positive_operations_cover_every_entry`が失敗する。
 """
 
 from __future__ import annotations
@@ -82,7 +82,8 @@ def test_positive_operations_cover_every_entry() -> None:
     for entry in operation_skills.OPERATION_SKILLS:
         tool, tool_input = _POSITIVE_OPERATIONS[entry.short_name]
         matched = [other.short_name for other in operation_skills.OPERATION_SKILLS if other.matches(tool, tool_input)]
-        assert matched == [entry.short_name]
+        expected = [entry.short_name, "writing-standards"] if entry.short_name == "bugfix" else [entry.short_name]
+        assert matched == expected
 
 
 def test_lightweight_launch_kinds_match_agents_server() -> None:
@@ -112,8 +113,8 @@ def test_operation_skill_contract_for_every_entry_and_subject(
         assert rules_context.OPERATION_SKILL_READY_KEY not in read_state(session_id)
         return
 
-    assert result.returncode == 2
-    assert "同じ操作を再発行" in result.stderr
+    assert result.returncode == 0
+    assert 'kind="block"' not in output
     observed = [output]
     for _attempt in range(12):
         if subject.startswith("codex"):
@@ -121,7 +122,7 @@ def test_operation_skill_contract_for_every_entry_and_subject(
             targets = read_delivery.selected_targets(records, extra.get("agent_id", "main"))
             assert targets
             # 案内だけでは取得済みにならない。
-            assert _run(payload, env).returncode == 2
+            assert _run(payload, env).returncode == 0
             for target in targets:
                 event = {
                     "hook_event_name": "PostToolUse",
@@ -132,12 +133,11 @@ def test_operation_skill_contract_for_every_entry_and_subject(
                 assert _run_posttooluse(event, env).returncode == 0
         result = _run(payload, env)
         observed.append(result.stderr + _additional_context(result))
-        if result.returncode == 0:
+        assert result.returncode == 0
+        if not result.stderr and not _additional_context(result):
             break
-        assert result.returncode == 2
-        assert "操作前" in result.stderr
     else:
-        pytest.fail("宣言資料の配送・全文取得後にも操作が遮断された")
+        pytest.fail("宣言資料の配送・全文取得後にも同じ通知が続いた")
     assert result.returncode == 0
     assert not result.stderr
     assert _run(payload, env).returncode == 0
@@ -202,10 +202,11 @@ def test_missing_skill_document_keeps_operation_blocked_without_record(
     with monkeypatch.context() as patch:
         patch.setattr(pathlib.Path, "read_text", fail_skill)
         for _ in range(2):
-            assert dispatch.main(payload) == 2
-            assert "資料を取得できない" in capsys.readouterr().err
+            assert dispatch.main(payload) == 0
+            captured = capsys.readouterr()
+            if _ == 0:
+                assert "資料を取得できない" in captured.out + captured.err
             assert rules_context.OPERATION_SKILL_READY_KEY not in read_state("failure")
-    assert dispatch.main(payload) == 2
-    recovered = capsys.readouterr().err
-    assert original(skill_md, encoding="utf-8").strip() in recovered
-    assert "同じ操作を再発行" in recovered
+    assert dispatch.main(payload) == 0
+    recovered = capsys.readouterr()
+    assert "操作に関係する資料を配送する" in recovered.out + recovered.err

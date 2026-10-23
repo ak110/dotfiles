@@ -10,6 +10,7 @@ import json
 import pathlib
 import subprocess
 import sys
+import tempfile
 import typing
 from collections.abc import AsyncGenerator, Callable
 from types import SimpleNamespace, TracebackType
@@ -688,6 +689,11 @@ class FakeCodexClient:
         self.closed = False
         self.reader_failure: BaseException | None = None
         self._turn_count = 0
+        self.initial_provider: str | None = None
+        self.rollout_path: pathlib.Path | None = None
+        self._rollout_paths: dict[str, pathlib.Path] = {}
+        self._rollout_resources = contextlib.ExitStack()
+        self._rollout_directory: str | None = None
 
     async def request(
         self,
@@ -700,9 +706,36 @@ class FakeCodexClient:
         self.requests.append((method, params))
         if on_sent is not None:
             on_sent()
+        if method == "config/read":
+            return {"config": {"model_provider": getattr(self, "primary", "openai")}}
+        if method == "thread/read":
+            thread_id = params["threadId"]
+            path = self.rollout_path or self._rollout_paths.get(thread_id)
+            if path is None:
+                if self._rollout_directory is None:
+                    self._rollout_directory = self._rollout_resources.enter_context(
+                        tempfile.TemporaryDirectory(prefix="fake-codex-rollout-")
+                    )
+                path = pathlib.Path(self._rollout_directory) / f"{thread_id}.jsonl"
+                # Codex CLI 0.164.0のsession_metaを保存し、thread/readのpathとして返す。
+                path.write_text(
+                    json.dumps(
+                        {
+                            "type": "session_meta",
+                            "payload": {"id": thread_id, "model_provider": self.initial_provider or "openai"},
+                        }
+                    )
+                    + "\n",
+                    encoding="utf-8",
+                )
+                self._rollout_paths[thread_id] = path
+            return {"thread": {"id": thread_id, "path": str(path), "turns": []}}
         if method in {"thread/start", "thread/resume"}:
             thread_id = params.get("threadId", "thread-codex")
-            return {"thread": {"id": thread_id}}
+            provider = params.get("modelProvider", getattr(self, "primary", "openai"))
+            if method == "thread/start" and self.initial_provider is None:
+                self.initial_provider = provider
+            return {"thread": {"id": thread_id}, "modelProvider": provider}
         if method == "turn/start":
             self._turn_count += 1
             return {"turn": {"id": f"turn-{self._turn_count}"}}
@@ -715,6 +748,9 @@ class FakeCodexClient:
     async def close(self) -> list[str]:
         """実クライアントと同じ終了インターフェースを提供する。終了を確認できない対象は持たない。"""
         self.closed = True
+        self._rollout_resources.close()
+        self._rollout_directory = None
+        self._rollout_paths.clear()
         return []
 
 
@@ -1498,7 +1534,17 @@ async def _usage_limited_manager(
     monkeypatch.setattr(_atk_config, "parse_unresolved_model_candidates", lambda _m, **_kwargs: candidates)
     monkeypatch.setattr(server_manager, "START_AVAILABILITY_TIMEOUT", 5.0)
     monkeypatch.setattr(claude_backend, "_build_options", lambda *_args, **_kwargs: SimpleNamespace())
-    client = FakeClaudeClient(streams)
+    session_id = next(
+        (message.data["session_id"] for stream in streams for message in stream if isinstance(message, SystemMessage)), None
+    )
+    if session_id is None:
+        raise ValueError("利用上限の受信列に初期化済みsessionの識別子が必要である")
+    # 利用上限の解除後は所有CLIを交換して同じ会話をresumeするため、各接続の受信列にinitを含める。
+    owned_streams = [
+        list(stream) if any(isinstance(message, SystemMessage) for message in stream) else [SystemMessage(session_id), *stream]
+        for stream in streams
+    ]
+    client = FakeClaudeClient(owned_streams)
     async with server_manager.AgentsServerManager() as manager:
         backend = claude_backend.ClaudeServerManager(
             manager.sessions, manager._condition, client_factory=lambda _options: client

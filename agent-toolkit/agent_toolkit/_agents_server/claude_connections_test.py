@@ -151,6 +151,7 @@ async def test_connection_turn_logs_record_reason_without_failure_body(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, caplog: pytest.LogCaptureFixture, reason: str
 ) -> None:
     """初期化後の失敗理由とAPI切替を分類値で記録し、元エラーの認証値はログへ渡さない。"""
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CLAUDE_USAGE_LIMIT_WAIT", "never")
     secret = "test-turn-auth-value-not-for-logs"
     current = "api" if reason == "api_credits" else "subscription"
     following = "subscription" if current == "api" else "api"

@@ -32,6 +32,7 @@ lazy import filelock
 
 from agent_toolkit._atk import orchestrator as _orchestrator
 from agent_toolkit._atk import outcome as _outcome
+from agent_toolkit._atk import usage_limit_policy
 from agent_toolkit._atk.run_skill_progress import Progress
 from agent_toolkit._atk.wi import add as _wi_add
 from agent_toolkit._atk.wi.repo import resolve_local_worktree
@@ -421,6 +422,10 @@ def _wait_session(
             _log_line(log, f"終了状態: exit code {returncode}")
             if orchestrator == "codex" and returncode != 0:
                 output.usage_limit = _codex_usage_limit.from_thread(output.thread_id, codex_home=codex_home)
+            if output.usage_limit is not None and not usage_limit_policy.should_wait(
+                orchestrator, output.usage_limit.limit_type
+            ):
+                output.usage_limit = None
             if output.usage_limit is not None:
                 return returncode
         if _orchestrator.is_normal_session_exit(orchestrator, returncode):

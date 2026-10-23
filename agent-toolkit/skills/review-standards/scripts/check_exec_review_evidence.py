@@ -693,8 +693,9 @@ class ReferenceCheck:
 
     返却前の確認と、根拠を保存する全ての公開操作（未判定検証記録の更新と完成条件証拠の判定記入）が同じ規則を使う。
     保存操作が別の規則を持つと、保存時に受理した根拠が返却前の確認で初めて拒否され、根拠を書いた担当とは別の担当が書き直す。
-    `worktree`を真にすると、対象版で解決できないリポジトリ内の参照も作業ツリーのファイルで解決できたものとして扱う。
-    未判定検証記録は実装担当が未commitの状態で記録するためであり、対象版での解決は返却前の確認が改めて確かめる。
+    `worktree`を真にすると、対象版で解決できないリポジトリ内の参照を、対象作業ツリーと
+    `additional_worktrees`のうち同じGit共通ディレクトリの登録済み作業ツリーで解決する。
+    別作業ツリーの実装担当も統合前に記録するためであり、対象版での解決は返却前の確認が改めて確かめる。
     `repository`が`None`の場合（Git作業ツリーを特定できない保存操作）は、リポジトリ外の絶対参照だけを解決し、
     それ以外の参照には`repository_error`を理由として示す。参照を含まない根拠の保存はGitを要しない。
     """
@@ -708,11 +709,19 @@ class ReferenceCheck:
         *,
         worktree: bool = False,
         repository_error: str = "",
+        additional_worktrees: typing.Iterable[pathlib.Path] = (),
     ) -> None:
         self.repository = repository
         self.wi_outputs = wi_outputs if wi_outputs is not None else WiOutputs(repository) if repository else {}
         self.worktree = worktree
         self.repository_error = repository_error
+        self.worktrees = [repository] if worktree and repository is not None else []
+        if worktree and repository is not None:
+            # git worktree listは同じgit-common-dirへ登録された作業ツリーだけを返す。
+            registered = {entry.path.resolve() for entry in _git_worktrees.list_worktrees(repository, timeout=30)}
+            self.worktrees.extend(
+                root for root in dict.fromkeys(additional_worktrees) if root.resolve() in registered and root != repository
+            )
         self._contents: dict[tuple[str, pathlib.Path], bytes | str] = {}
         self._headings: dict[tuple[str, pathlib.Path], set[str]] = {}
         self._tracked: dict[str, list[str]] = {}
@@ -766,14 +775,11 @@ class ReferenceCheck:
             resolved = _repository_reference(candidate, path, repository, head, self._tracked.setdefault(head, []))
         except (OSError, subprocess.TimeoutExpired, ValueError) as exc:
             resolved = f"{exc}。{self.RETRY}"
-        if (
-            isinstance(resolved, str)
-            and self.worktree
-            and repository is not None
-            and _belongs_to_repository(path, repository)
-            and _is_file(path)
-        ):
-            return path.read_bytes()
+        if isinstance(resolved, str) and self.worktree:
+            for root in self.worktrees:
+                current = pathlib.Path(os.path.abspath(root / candidate))
+                if _is_file(current) and _belongs_to_repository(current, root):
+                    return current.read_bytes()
         return resolved
 
 
@@ -797,13 +803,18 @@ def _check_reference_locations(
     return errors
 
 
-def saving_reference_check(resolve: typing.Callable[[], pathlib.Path], *, worktree: bool = False) -> ReferenceCheck:
+def saving_reference_check(
+    resolve: typing.Callable[[], pathlib.Path],
+    *,
+    worktree: bool = False,
+    additional_worktrees: typing.Iterable[pathlib.Path] = (),
+) -> ReferenceCheck:
     """保存操作の参照の解決を、各操作が現在使うリポジトリの起点から組み立てる。
 
     起点を特定できなくても参照を含まない根拠は保存できるよう、失敗の理由を保持して参照の解決時にだけ示す。
     """
     try:
-        return ReferenceCheck(resolve(), worktree=worktree)
+        return ReferenceCheck(resolve(), worktree=worktree, additional_worktrees=additional_worktrees)
     except (OSError, subprocess.SubprocessError, ValueError) as error:
         return ReferenceCheck(None, worktree=worktree, repository_error=str(error))
 
@@ -2693,8 +2704,12 @@ def main(argv: list[str] | None = None) -> int:
                 errors.extend(pending_errors)
             if errors:
                 raise ValueError("。".join(errors))
+            if selected and args.updates_file:
+                raise ValueError("更新JSONと直接行選択は別々に使う")
             updates = (
-                verification_results.updates_for_arguments(payload, args, reviewing=True, pending=pending) if selected else None
+                verification_results.updates_for_arguments(payload, args, reviewing=True, pending=pending)
+                if selected
+                else verification_results.load_json(args.updates_file)
             )
             references = saving_reference_check(repository_root)
 
@@ -2706,7 +2721,7 @@ def main(argv: list[str] | None = None) -> int:
 
             payload = verification_results.updated_payload(
                 payload,
-                args.updates_file,
+                None,
                 results,
                 reviewing=True,
                 pending=pending,
@@ -2715,6 +2730,13 @@ def main(argv: list[str] | None = None) -> int:
                 row_check=row_check,
             )
             verification_results.save(args.output, payload)
+            summary = {
+                "output": str(args.output),
+                "updated_rows": [f"{update['section']}:{update['row']}" for update in updates],
+                "updated_count": len(updates),
+                "total_rows": sum(len(payload[section]) for section in ("wi_conditions", "user_requirements")),
+                "readback_matches": True,
+            }
         except _next_action.ActionableError as error:
             _next_action.report(error.reason, next_action=error.next_action)
             return 1
@@ -2725,6 +2747,7 @@ def main(argv: list[str] | None = None) -> int:
             )
             return 1
         print(f"成功: 明示した要求行の判定と根拠を保存しました: {args.output}")
+        print("保存結果: " + json.dumps(summary, ensure_ascii=False))
         return 0
     if args.batch is not None:
         if any(

@@ -17,10 +17,10 @@
 
 - `atk wi add`・`atk wi edit`の`--body-file`へ渡すWI本文は文章lintの必須対象から除く。口語表現とダッシュは保存前の診断が行番号付き警告で表示し、処置は起草者が判断する（保存の可否は構造エラーの有無で決まる）。計画とWI本文から転記する文面は転記先の基準でチェックする
 
-## 口語表現チェック
+## 文章チェックの一括実行
 
-MCPの`run`を利用できない場合だけ、`agent-toolkit:check-execution`の「pyfltrの起動形」で解決したCLIで同じ対象と制約を指定する（外部ファイルでは`--allow-external-paths`を加える）。完了はJSONL最終行の`summary`レコードの`completion`、`files_reached`、`completed_commands`、`incomplete_commands`でMCPと同じ条件で判定する。
+MCPの`run`を利用できない場合だけ、`agent-toolkit:check-execution`の「pyfltrの起動形」で解決したCLIで同じ対象と制約を指定する（外部ファイルでは`--allow-external-paths`を加える）。完了はJSONL最終行の`summary`レコードへ正式な品質資料の全対象被覆の条件を適用して判定する。
 
-## ダッシュチェック
-
-日本語の地の文・見出しにおけるemダッシュ・horizontal bar・2倍ダッシュは`atk run-script writing-check-dash -- <ファイル>`で検出する。コードブロック・インラインコード・URL内は対象外とし、詳細は`agent-toolkit/skills/writing-standards/scripts/check_dash.py`が定める。
+日本語の地の文・見出しにおけるダッシュは、プロジェクトのpyfltr設定へ`writing-check-dash`として登録し、口語表現やtextlintと同じ`run`の`commands`へ含める。
+登録する実行手段は複数対象を受け取る公開CLIの`atk run-script writing-check-dash -- <ファイル...>`を使う。
+検出範囲は正式な品質資料が定め、実装は`agent-toolkit/skills/writing-standards/scripts/check_dash.py`が持つ。

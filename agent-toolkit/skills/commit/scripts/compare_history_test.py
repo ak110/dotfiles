@@ -348,16 +348,15 @@ def test_history_compare_accepts_blank_line_layout_change(repo: pathlib.Path, tm
         new_head = _commit(repo, "content.txt", old_layout, "空行を追加")
         expected = {old_head: new_head}
     else:
-        target = _commit(repo, "feature.txt", "機能\n", "対象")
-        changed = _commit(repo, "content.txt", old_layout, "空行を追加")
-        old_head = _commit(repo, "feature.txt", "機能を修正\n", "fixup! 対象")
+        padding = "anchor0\nanchor1\nanchor2\nanchor3\nanchor4\nanchor5\n"
+        base = _commit(repo, "content.txt", "target-old\n" + padding + "first\nsecond\nthird\n", "同一ファイルの準備")
+        target = _commit(repo, "content.txt", "TARGET\n" + padding + "first\nsecond\nthird\n", "対象")
+        changed = _commit(repo, "content.txt", "TARGET\n" + padding + old_layout, "空行を追加")
+        fixed_layout = "TARGET-FIXED\n" + padding + old_layout
+        old_head = _commit(repo, "content.txt", fixed_layout, "fixup! 対象")
         _git(repo, "checkout", "-b", "rewritten", base)
-        (repo / "content.txt").write_text(parent_layout, encoding="utf-8")
-        (repo / "feature.txt").write_text("機能を修正\n", encoding="utf-8")
-        _git(repo, "add", "--", "content.txt", "feature.txt")
-        _git(repo, "commit", "--no-verify", "-m", "対象")
-        rewritten_target = _git(repo, "rev-parse", "HEAD")
-        new_head = _commit(repo, "content.txt", old_layout, "空行を追加")
+        rewritten_target = _commit(repo, "content.txt", "TARGET-FIXED\n" + padding + parent_layout, "対象")
+        new_head = _commit(repo, "content.txt", fixed_layout, "空行を追加")
         new_base = base
         expected = {target: rewritten_target, changed: new_head, old_head: rewritten_target}
     output = tmp_path / f"blank-{operation}.json"

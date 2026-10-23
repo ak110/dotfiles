@@ -67,6 +67,7 @@ def test_launch_prompts_load_shared_documents() -> None:
     notice = _shared_document_body("agents-server-delegate-notice.md")
 
     assert notice == launch_prompts.DELEGATE_NOTICE
+    assert _shared_document_body("agents-server-base.md") == launch_prompts.SUBAGENT_BASE_INSTRUCTIONS
     for kind, document in _LAUNCH_DOCUMENTS.items():
         prompt = launch_prompts.LAUNCH_SYSTEM_PROMPTS[kind]
         assert f"{notice}\n{_shared_document_body(document)}" in prompt, kind

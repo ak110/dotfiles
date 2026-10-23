@@ -64,8 +64,8 @@ sessionの資源解放（`stop`、保持期限の経過、起動候補の断念�
 | --- | --- | --- | --- |
 | session一覧と`status`・`progress` | MCPサーバーのメモリーの`SessionState` | MCPサーバー | managerと、当該sessionのengineを所有するbackend。各backendは共有一覧から自身のengineだけを検索・状態遷移の対象とし、接続障害時も他engineを変更しない |
 | 再開要求の配送結果 | 要求ごとの`ResumePrompt.delivery`。`PendingResume`が同じ要求から読む | 再開の共通応答と配送結果の消費側 | backendが受理・開始不能・開始不確定を`record_delivery`で確定する。成功した再開は`reply_started`を保持し、後続turnの終端では変更しない |
-| Codex会話の選択済みprovider IDと通常サブスクのprovider ID | `SessionState`、解放時の`SessionResumeState`と既存session登録簿の内部再開情報 | Codex backendとmanagerの復元処理。公開の状態・応答・通知・結果の射影は読まない | Codex backendが接続先を確定し、所有MCPサーバーが既存登録簿へ保存する。認証情報は保存しない |
-| Claude会話の役割（`orchestrator`・`delegate`）、選択済みの接続（`api`・`subscription`・`inherit`）とAPI接続のenvファイルの絶対パス | `SessionState`の`claude_role`・`claude_connection`・`claude_api_env_file`、`SessionResumeState`とsession登録簿の内部再開情報 | Claude backend、managerの復元処理とprocess-loopの再開時の可用性判定 | 接続はClaude backendが起動時と接続の切替時に確定し、所有MCPサーバーが保存する。process-loopが直接起動するオーケストレーターは`process_loop_session.py`が自身の会話の役割と接続を登録する。再開は保存した接続を使い、新規sessionは`claude_api_mode`の候補順の先頭から選ぶ。利用上限でサブスクリプションからAPIへ移した委譲先は、解除予定時刻を`SessionState`の`claude_subscription_retry_at`へメモリーだけで保持し、その時刻の後にClaude backendの`send_message`が始める最初のturn（追送と、孫sessionの終端・利用上限・過負荷の後の自動再開）で接続をサブスクリプションへ戻す。`claude_api_env_file`が未設定の環境で始めた会話は`inherit`として親の環境とClaude Codeの通常の認証解決を使い、後から設定しても切り替えない。envファイルの値は各起動で読み、登録簿と公開状態へ複製しない |
+| Codex会話の選択済みprovider ID、通常サブスクのprovider IDと検証済みの会話状態生成元`codex_state_provider` | `SessionState`、解放時の`SessionResumeState`と既存session登録簿の内部再開情報 | Codex backendとmanagerの復元処理。公開の状態・応答・通知・結果の射影は読まない | Codex backendが接続先を確定し、新規開始と互換性を確認した再開だけが生成元を確定する。所有MCPサーバーが解放済み記録にも保存し、既存の7日掃引へ委ねる。認証情報は保存しない |
+| Claude会話の役割（`orchestrator`・`delegate`）、選択済みの接続（`api`・`subscription`・`inherit`）とAPI接続のenvファイルの絶対パス | `SessionState`の`claude_role`・`claude_connection`・`claude_api_env_file`、`SessionResumeState`とsession登録簿の内部再開情報 | Claude backend、managerの復元処理とprocess-loopの再開時の可用性判定 | 接続はClaude backendが起動時と切替時に確定し、所有MCPサーバーが保存する。process-loopのオーケストレーターも役割と接続を登録する。新規sessionは`claude_orchestrator_api_only`と`claude_worker_api_first`で選び、再開は保存した接続を使う。サブスクリプション優先で上限によりAPIへ移した委譲先は、`claude_subscription_retry_at`をメモリーだけに保持し、その時刻後の最初の追送・自動再開でサブスクリプションへ戻す。env未設定で始めた`inherit`会話は親環境と通常認証を維持する。envの値は各起動で読み、登録簿と公開状態へ複製しない |
 | 引き継ぐ用途・配送済み追送・各turnの最終応答全文と終端エラー | `SessionState`、`SessionResumeState`とsession登録簿の`LaunchInfo`。解放済み記録では内部の`handoff_info` | managerの引き継ぎ起動と再開処理 | 所有MCPサーバーが起動・追送・終端時に更新し、解放時も既存登録簿へ保持する |
 | 全体の現行要求と通常委譲の作業記録 | 各会話のmanaged-temp直下の`work-contract.md`と、通常の`task`・`delegate`へ割り当てる専用の引き継ぎ記録先 | 起動処理が全体記録の所在を、`start`の`whole_contract_path`、直接の委譲元が起動時に受領した参照（session登録簿の起動本文）、所有会話（起動時に保持した会話か、それがプロセス専用ルートか不在ならManagerが解決した委譲元会話）の`work-contract.md`の順に解決し、委譲先へ参照を配送する。解決できない起動は拒否する。委譲元は終端後に専用記録を検収する | メインが全体記録、委譲先が自身の専用記録を作成・更新する。MCPは記録先を確定して同じパスを起動本文と応答へ渡し、本文の書込は担当へ残す。後任は同じ引き継ぎ記録を継続し、軽量起動は委譲元の記録へ対応付ける |
 | statusline・CLI向けの状態ファイル | `<状態ディレクトリ>/<ルートsession識別子>/<書込主体>.json` | statusline、`atk agents wait`、`atk agents list`、`atk agents show`、同じルートに属する他のMCPサーバー（稼働中の子孫を持つ終端sessionの表示判定）、全ルートを読む資源記録 | そのルートに属する各MCPサーバー。各MCPサーバーは自身のファイルだけを書く |
@@ -159,12 +159,26 @@ API失敗状態はいずれもMCPサーバーの`SessionState`を正とし、同
 statuslineと`atk agents list`は`subagent.rs`の`format_tokens`と`context_usage.format_tokens`で同じ書式（小数1桁の`k`と整数の`%`）に描く。Rustのテストとリポジトリrootの`claude_statusline_invariant_test.py`が`rust/claude-statusline/testdata/agents_server_state.json`の同じ数値例を読む。
 
 Claude CodeのWeekly limitと5時間の利用上限の解除待ちもMCPサーバーの`SessionState`を正とする。Claudeが報告した最後の利用枠（`usage_limit`）はClaude backendが`RateLimitEvent`から記録し、初期化より前に届いた報告もsessionの作成時に引き継ぐ。turnが待機対象の拒否で終わると、Claude backendが結果を保留し、`api_error`へ種別`usage_limit`、利用枠の種類（`limit_type`）と解除予定時刻（`resets_at`）を記録する。turn内の429の`api_retry`も、最後の`RateLimitEvent`が待機対象の拒否を示す場合は同じ種別・種類・解除予定時刻を記録し、解除時刻が無ければ`retry_at`を使う。その後の429以外の再試行は通常のAPI再試行へ置き換える。次の継続の時刻と待機の回数はメモリーだけに置く。MCPサーバーの常駐監視が予定時刻に同じsessionへ継続を送り、正常なモデル出力で利用枠の記録と`api_error`を削除する。保留中の結果は`auto_resume_deadline`と保持期限の対象にしない。状態ファイルと`show`・`list`・CLIへは`limit_type`と`resets_at`を`api_error`の公開項目として射影する。
-委譲先の候補順は、`claude_api_mode`が`pay-as-you-go`ならサブスクリプション、APIの順、`api-credits`ならAPI、サブスクリプションの順とする。
+利用上限の解除待ちは`_atk/usage_limit_policy.py`の`should_wait`で判定し、engine別の`claude_usage_limit_wait`と`codex_usage_limit_wait`を読む。
+既定の`five-hour`は5時間枠だけ、`always`は週次枠なども待ち、`never`は待たない。
+Claudeの途中通知も待機と代替接続を評価し、利用枠が通知に無い場合だけ同じ会話・起動後の元記録を照合する。
+一般の429・529の記録は正常なassistant応答で解除する。
+委譲先の候補順は`claude_worker_api_first`が既定の`false`ならサブスクリプション、APIの順、`true`ならAPI、サブスクリプションの順とする。
+env設定時のオーケストレーターは`claude_orchestrator_api_only`が既定の`true`ならAPIだけ、`false`ならサブスクリプションだけを使う。
+旧`claude_api_mode`の通常2値はbool設定へ移行し、旧キーの`api-only`は互換設定として保持する。
+新しいbool設定の明示保存で`api-only`を解除する。
 候補順に後続の接続が残る場合は、同じ利用上限かAPIクレジットの不足の契機で結果を保留し、`claude_api_resume_pending`を常駐監視が消費して同じsessionを後続の接続で再開する。
 この予定はメモリーだけに置き、選択した接続とAPI接続のパスを既存の内部再開情報へ保存する。移行後の会話は設定変更・解除や資源解放の後も保持した接続を使い、新規sessionは候補順の先頭から始める。利用上限でサブスクリプションから移した委譲先だけは、サブスクリプションが先頭候補のままなら解除予定時刻の後の最初のturn（追送と自動再開）で同じ会話をサブスクリプションで再開する。CLIが自ら次のturnを始め得る待機（バックグラウンドタスクなど）の間は所有タスクを止めない。資源解放の後は戻す時刻を持たないため保持した接続を使う。
 切替のログはsession IDと利用枠の種類だけを記録し、envの値や切替の情報を公開応答と継続指示へ加えない。
 
 Codexの接続先選択順は`codex_model_providers`が持つ。先頭APIの不受理やサブスク利用上限で後続APIへ移す間も、既存の結果保留と監視を使う。空設定の会話は通常のCodex設定に従う。選択済みproviderは同じ会話の再開へ渡し、主接続先の設定変更と利用枠の回復は新規起動だけへ適用し、後続候補は次の代替試行で現行列から選ぶ。現在アカウントの利用可否は永続台帳へ記録せず、新規起動ごとにApp Serverへ照会する。人向けログへは候補の診断だけを記録する。接続先の設定とcold resumeの契約は`docs/guide/codex-guide.md`と`docs/development/design-agents-server.md`にある。
+冷再開の前には`config/read`で実効providerを解決する。
+Codex backendは接続切替と旧記録の互換性を、`thread/read.path`か既存の記録解決で得たrolloutから確認する。
+確認する項目は`session_meta.id`とprovider、`response_item`のcompaction・`encrypted_content`、`compacted`の`replacement_history`・`compaction_response_id`である。
+不透明な値の内容は解釈しない。
+生成元が異なるか不明な不透明状態と、記録欠落・不正では`threadStateIncompatible`で終端し、元の記録と進捗を保持して引き継ぎを案内する。
+検査済み同providerへの通常再開は`codex_state_provider`を使う。
+生成元の印が無い旧移行記録では、選択先と初期`session_meta`のproviderが異なり不透明状態がある場合、現在の選択先へも再開せず引き継ぎを案内する。
 
 モデル候補の設定は`atk config get config_dir`が返すディレクトリ配下の`config.json`が持ち、MCPサーバーは起動ごとに読む。旧段位9キーまたは用途別engine順5キーが保存されている場合は、候補解決か`atk config show`・`get`を最初に行った主体（MCPサーバーまたは`atk`のCLI）が6工程の候補列へ合成し、廃止キーを除いて同じファイルを一括で書き換える。移行結果は保存値だけから決まるため、複数の主体が同時に移行しても同じ内容になる。移行の詳細は`agent-toolkit:delegation`の`references/runtime-routing.md`「工程別モデル設定」に従う。
 
@@ -185,6 +199,9 @@ MCPサーバーは`start`、`send_message`、`list`の応答へ、自身の状�
 集計は非原子的な観測であり、読取失敗は完全性の欠損として記録する。loadと利用可能メモリーはホスト全体の値であり、session固有の消費量との区別を保つ。
 
 子session・背景taskの完了待ちの保留中へ追送しても、待機対象の識別子と保存出力の対応は保持する。
+子session、Codexの子thread、Claudeの`local_agent`など終了上限の無い対象がある保留は、`auto_resume_deadline=None`とする。
+名目7800秒で最終化せず、対象の終端と再開turnを観測するまで保持する。
+有界の背景コマンドの通知欠落には既存の期限を適用する。
 旧turnの保留結果は公開せず、新しいturnと未完了作業の寿命を分ける。配送失敗時も観測対象を残して再試行できる。
 回収した対象だけを追跡から外し、同じ完了による自動再開は一度に限定する。kill・期限・ストリーム終端による明示確定と、利用上限・過負荷の継続は別の境界として扱う。期限を持たない利用上限・過負荷の保留への追送は従来どおり保留結果を確定し、待機対象が残れば`heldResultFinalized`を付ける。
 
@@ -221,7 +238,9 @@ APIへ移行した会話はCodexではprovider、Claudeでは`claude_resume_info
 
 lane回収の解放要求は`session_release.py`が登録簿の終端・cwdと所有プロセスを確認して作成する。
 所有MCPサーバーの常駐監視が要求を読み、現在の登録と所有を再検収して`stop(retain_result=True)`を実行する。
-CLIはmainの待機期限から導出した共通deadline内で応答と資源終了を待ち、使用中判定をやり直す。
+明示的な`atk lane delete`はmainの待機期限から導出した共通deadline内で応答と資源終了を待ち、使用中判定をやり直す。
+自動回収は解放の待機をせず、その時点の登録簿と使用中判定から適格な資源を回収する。
+未解放・使用中・確認不能の資源は、未回収理由と再開操作を示して保持する。
 自身の要求・応答はCLIの完了時に回収し、異常終了で残ったファイルは既存のsessionファイルの7日掃引へ委ねる。
 
 MCPサーバーの起動時とSessionEndでは、配下の全ファイルの最終更新から7日を超えたrootディレクトリ、`sessions`の登録簿、および`compaction`の計測記録を掃引する。現在の会話のrootは除外し、`compaction`のJSONLとlockは対として削除する。個別の削除失敗を記録し、後続対象の掃引と起動・終了処理を継続する。
@@ -238,6 +257,8 @@ backendを開始した後の保存は、開始の成否と別の成否として�
 非同期の保存は、パス・本文・登録情報をloop上で確定し、ファイル操作だけを`file_operations.run_file_operation`からworkerへ渡す。成功したsnapshotの反映と保持タイマーの操作もloopが所有し、共有session辞書やwriterをworkerへ渡さない。同期CLIの`atomic_write`と有限再試行の契約は保つ。
 loop上の`SessionState.touch`は登録公開をsessionごとのtaskへ集約し、保存中に値が変わった場合も最新の登録まで進める。起動・追送・結果配送の応答は必要な保存を待つ。writerは保存と削除を直列化し、公開済みまたは回収済みの結果を再保存せず、旧turnの保存成功を新turnへ反映しない。
 MCPサーバーの停止（`AgentsServerManager.close`）では終端の公開で生じた`ProjectionWriteError`だけをログへ残して後始末を続ける。終端結果の保存の`OSError`は呼び出し元へ伝えたうえで、listenerの解除と`StatusFileWriter.deactivate`を`finally`で行う。
+停止は再開と同じ`turn_control_lock`で直列化し、所有SDK task・CLIの根プロセスと子孫のcleanup完了後に未終端turnを`interrupted`として公開する。
+cleanup失敗では所有handleと未解放の記録を保持し、同じ対象の停止を再試行できるようにする。
 停止が取り消されても、保存taskとworkerの終了を回収し、終端公開と予約解除を終えてから自身の状態ファイルを削除する。保存失敗を成功として扱わず、停止後にworkerが状態ファイルを再作成することを防ぐ。
 drainは並行した保存の一部が失敗しても対象workerの全終了を先に回収し、登録公開も終えてから保持した失敗を呼び出し元へ伝える。
 共通の`atomic_write`は置換に失敗した例外へ置換元と置換先のパスを注記（`add_note`）するため、呼び出し側が記録するスタックにも両パスが残る。

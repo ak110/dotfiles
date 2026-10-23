@@ -13,7 +13,7 @@
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:writing-standards/references/testing.md#「検証単位の選定」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/testing.md#「検証単位の選定」` |
 | 独立した実行レビュー担当を起動する前 | `exec-review.parent.md` | 判断 | `read:agent-toolkit:*/share/exec-review.parent.md` |
 | 画面差分があり、ユーザビリティレビュー担当を起動する前 | `usability-review.parent.md` | 判断 | `read:agent-toolkit:*/share/usability-review.parent.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `review-loop-coordination.md` | 判断 | `read:agent-toolkit:*/share/review-loop-coordination.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `review-loop-coordination.md`の冒頭と「ラウンドの遷移」から「応答済みの判定」まで | 判断 | `section:agent-toolkit:*/share/review-loop-coordination.md#冒頭`、`section:agent-toolkit:*/share/review-loop-coordination.md#「ラウンドの遷移」から「応答済みの判定」まで` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `exec.parent.md#「統合の指示と受領」` | 判断 | `section:agent-toolkit:*/share/exec.parent.md#「統合の指示と受領」` |
 | レーン専用資源を使い、統合入力を確定する前 | `lane-integration.subagent.md` | 判断 | `read:agent-toolkit:*/share/lane-integration.subagent.md` |
 
@@ -29,7 +29,7 @@
 2. 計画またはWIの要求から、実装前に受入シナリオの公開された呼び出し手段・入力と初期状態・有効な期待結果・検出する失敗を具体化する。`agent-basics:writing-standards/references/testing.md`「検証単位の選定」で試験を選び、実装、自己検収、commitと未判定検証記録を完成させる。計画なしとレビュー修正でも同じ対応を使い、不良は該当入力で再現して是正する。呼び出し手段・入力・期待結果と実結果の対応、未実施と条件変更の判断、残工程の担当と再開先を既存の引き継ぎ記録と未判定検証記録へ残す。計画準備、実装開始と実装完了を保存し、同じ担当が続ける。
 3. 読込表の起動契約に従い、実装していない独立した実行レビュー担当を起動する。レビュー指摘管理表、完成条件証拠の保存と受領確認は同書に従う。画面差分がある場合は読込表のユーザビリティレビュー契約に従って担当を起動する。各計画のレビュー基準と開始HEADを保持する。
 4. `${CLAUDE_PLUGIN_ROOT}/share/review-loop-coordination.md`に従って指摘を収束させ、修正と履歴統合は自ら行う。要件・認可の変更と事後承認の確認は手順1の主体分担で扱う。事後承認はレビュー収束後・統合前の内容で発行し、レーン担当はメインから保存結果を受領する。作業中の通常の問いや状況照会には次の応答で答え、元の工程へ戻る。WIへ直接記入された質問の回答UWIの保存は、呼出側のレビュー収束後の保存手順に従う。
-5. レーン専用資源を使う場合は`${CLAUDE_PLUGIN_ROOT}/share/exec.parent.md`「統合の指示と受領」の検収を自ら行う。読込表の統合するレーン担当契約に従い、検収済みHEAD、全計画、WI、採否と証拠から統合入力を確定する。`atk lane integrate`で統合・計画保存・WI終端を最終化し、`phase: finalized`を検収して通常の`統合完了`形式だけをメインへ返す。対象worktreeへ直接実装する場合は、呼出側の計画保存・WI終端・公開へ戻る。実装を伴う対象は独立した実行レビューの受理後に、実装なし・マージなしの対象は採否の確定後に本手順を行う。
+5. レーン専用資源を使う場合は`${CLAUDE_PLUGIN_ROOT}/share/exec.parent.md`「統合の指示と受領」の検収を自ら行う。読込表の統合するレーン担当契約に従い、検収済みHEAD、全計画、WI、採否、証拠と生成済み受領確認入力・実レビューHEADの組から統合入力を確定する。`atk lane integrate`で受領入力の機械検査、統合・計画保存・WI終端を最終化し、`phase: finalized`を検収して通常の`統合完了`形式だけをメインへ返す。対象worktreeへ直接実装する場合は、既存の受領確認を終えて呼出側の計画保存・WI終端・公開へ戻る。実装を伴う対象は独立した実行レビューの受理後に、実装なし・マージなしの対象は採否の確定後に本手順を行う。
 
 本契約の対象では、exec.parent.md、exec.subagent.mdとlane-planning.mdの定型の準備通知・実装開始・実装完了・レビュー修正・統合開始の往復、およびその通知への応答を待つ指示に、本節の同じ担当による継続を優先する。計画の自己監査・計画構造の自動チェック、採否・認可の検収、計画凍結、独立した実行レビューと統合時の検収条件は保つ。エージェント向け文書を含む書込の認可の境界はWIの要求とし、境界の内側で計画に無いファイルを書く場合と、WIの要求を超える変更の扱いは、exec.subagent.md「実装」に従う。ユーザー判断の即時通知、必要な回答の待機と最終結果の検収は保つ。実装なし・マージなしでも採否と計画保存・WI終端を完了する。
 

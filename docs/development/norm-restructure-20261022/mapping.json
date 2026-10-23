@@ -21940,7 +21940,7 @@
           "file_sha256": "729f4a0b72779c74dcce619e9fdb51c3ef53fcec58726bb021ce0b524099062c"
         }
       ],
-      "specific_protected_value": "編集前、編集者自身、二つの記録の全文読了、代替不可という読込条件。",
+      "specific_protected_value": "過去の確定方針・障害対策を変更へ反映すること。編集者本人が毎回全記録を先行取得する必要性は、対象判断と関連記録の範囲へ照らした再検収を要する。",
       "protection_sources": [],
       "record_associations": [
         "docs/development/concepts-runtime.md#確定済みの方針・意向: 実行基盤と委譲 > 委譲全般と利用上限#22"
@@ -21950,10 +21950,21 @@
       "requirement_origin": "未確定（価値を失う縮小から保護）",
       "requirement_wi": [],
       "static_position_verified": true,
-      "semantic_content_verified": true,
+      "semantic_content_verified": false,
       "final_mapping_verified": false,
       "final_position": null,
-      "fixed_snapshot_position_verified": true
+      "fixed_snapshot_position_verified": true,
+      "content_quality_followup": {
+        "status": "47行限定の内容/接続は独立確認済み・自動試験/静的/最終HEADと全体採否は未確認",
+        "reason": "concepts.mdとincidents.mdは索引であり、初回の索引取得と変更に関連する分割資料の節取得を保持する。毎回全記録を先行全文取得する必要性を主張した旧評価を撤回する。同版の索引・関連本文は02-agent-operationsの既読再利用に従う。",
+        "qcd": "Q: 確定方針と障害対策の関連本文へ到達して変更と照合する条件を保持する。 C: 関連のない全記録と同版本文の反復取得を省ける。 D: 対象変更に必要な方針・対策の判断へ直接進める。",
+        "target_section": "原対応先の読込条件/指定範囲（固定snapshot位置は保存。変更後位置は全担当終端後に照合）",
+        "final_source_verified": false,
+        "independent_content_reviewer": "/root/norm_content_review",
+        "limited_semantic_review_verified": true,
+        "limited_source_connection_verified": true,
+        "limited_review_record": "/home/aki/.cache/agent-toolkit/managed-temp/session-4vf_92eo/norm-content-independent-review.md"
+      }
     },
     {
       "i": 676,
@@ -22004,7 +22015,7 @@
           "file_sha256": "729f4a0b72779c74dcce619e9fdb51c3ef53fcec58726bb021ce0b524099062c"
         }
       ],
-      "specific_protected_value": "圧縮後かつ次の判断前という時機、変更済みスキル・参照文書を読む範囲。",
+      "specific_protected_value": "圧縮後に必要な変更済み規範と残工程を復元すること。変更対象・適用範囲を用いて必要資料を選ぶ。",
       "protection_sources": [],
       "record_associations": [],
       "protection_record_unidentified": true,
@@ -22012,10 +22023,21 @@
       "requirement_origin": "未確定（価値を失う縮小から保護）",
       "requirement_wi": [],
       "static_position_verified": true,
-      "semantic_content_verified": true,
+      "semantic_content_verified": false,
       "final_mapping_verified": false,
       "final_position": null,
-      "fixed_snapshot_position_verified": true
+      "fixed_snapshot_position_verified": true,
+      "content_quality_followup": {
+        "status": "47行限定の内容/接続は独立確認済み・自動試験/静的/最終HEADと全体採否は未確認",
+        "reason": "圧縮後、変更済み規範と残工程を現在の原本から復元する条件を保持する。対象は以降の工程で使う変更済みの規範と参照文書であり、無関係な全資料の再取得へ広げない。",
+        "qcd": "Q: 圧縮で失われた変更後の条件を次の判断へ復元できる。 C: 復元対象を変更済み規範と残工程へ限定できる。 D: 原本から正しい工程を再開できる。",
+        "target_section": "原対応先の読込条件/指定範囲（固定snapshot位置は保存。変更後位置は全担当終端後に照合）",
+        "final_source_verified": false,
+        "independent_content_reviewer": "/root/norm_content_review",
+        "limited_semantic_review_verified": true,
+        "limited_source_connection_verified": true,
+        "limited_review_record": "/home/aki/.cache/agent-toolkit/managed-temp/session-4vf_92eo/norm-content-independent-review.md"
+      }
     },
     {
       "i": 678,
@@ -31840,7 +31862,7 @@
           "file_sha256": "4a0d97394318c799a9f0b9603ca6718fdb2a729bc28d63546667372ecfe5c6ed"
         }
       ],
-      "specific_protected_value": "操作前・条件別の全文読取。",
+      "specific_protected_value": "各表の条件・時点・指定範囲に従う取得。共通契約と表で保持し、重複導入句を削除する。",
       "protection_sources": [
         {
           "source": "読込表は成立条件の資料を全文読む具体的契約",
@@ -31854,10 +31876,22 @@
       "requirement_origin": "未確定（価値を失う縮小から保護）",
       "requirement_wi": [],
       "static_position_verified": true,
-      "semantic_content_verified": true,
+      "semantic_content_verified": false,
       "final_mapping_verified": false,
       "final_position": null,
-      "fixed_snapshot_position_verified": true
+      "fixed_snapshot_position_verified": true,
+      "content_quality_followup": {
+        "status": "47行限定の内容/接続は独立確認済み・自動試験/静的/最終HEADと全体採否は未確認",
+        "reason": "独立内容レビューが重複導入句の削除を採用した。行ごとの時点・条件・資料・指定範囲と配送宣言を保持し、読込表の適用をagent-documents-basics.md「読込表」と各文書の「名指し参照の読込方法」へ接続する。同じ規則を繰り返す導入句だけを削除した。",
+        "qcd": "Q: 条件成立時に必要資料を取得する共通契約と各読込表を保持するため変化なし。 C: 重複する導入句の読込・改訂負担が減る。 D: 同じ規則の反復を読む工程が減る。",
+        "target_section": "agent-toolkit/share/add-wi.subagent.md「読込表」およびagent-documents-basics.md「読込表」",
+        "final_source_verified": false,
+        "implementation_decision": "重複導入句を削除。共通定義・名指し参照の読込方法・各表・配送宣言を保持。",
+        "independent_content_reviewer": "/root/norm_content_review",
+        "limited_semantic_review_verified": true,
+        "limited_source_connection_verified": true,
+        "limited_review_record": "/home/aki/.cache/agent-toolkit/managed-temp/session-4vf_92eo/norm-content-independent-review.md"
+      }
     },
     {
       "i": 950,
@@ -33712,7 +33746,7 @@
           "file_sha256": "f2219289d2863e8a889d05f43c2dcd4a02fdfc1271dec94d47ae4062a2839cc3"
         }
       ],
-      "specific_protected_value": "条件別全文読取の時機。",
+      "specific_protected_value": "各表の条件・時点・指定範囲に従う取得。共通契約と表で保持し、重複導入句を削除する。",
       "protection_sources": [
         {
           "source": "操作前読取という具体的条件",
@@ -33726,10 +33760,22 @@
       "requirement_origin": "未確定（価値を失う縮小から保護）",
       "requirement_wi": [],
       "static_position_verified": true,
-      "semantic_content_verified": true,
+      "semantic_content_verified": false,
       "final_mapping_verified": false,
       "final_position": null,
-      "fixed_snapshot_position_verified": true
+      "fixed_snapshot_position_verified": true,
+      "content_quality_followup": {
+        "status": "47行限定の内容/接続は独立確認済み・自動試験/静的/最終HEADと全体採否は未確認",
+        "reason": "独立内容レビューが重複導入句の削除を採用した。行ごとの時点・条件・資料・指定範囲と配送宣言を保持し、読込表の適用をagent-documents-basics.md「読込表」と各文書の「名指し参照の読込方法」へ接続する。同じ規則を繰り返す導入句だけを削除した。",
+        "qcd": "Q: 条件成立時に必要資料を取得する共通契約と各読込表を保持するため変化なし。 C: 重複する導入句の読込・改訂負担が減る。 D: 同じ規則の反復を読む工程が減る。",
+        "target_section": "agent-toolkit/share/copilot-review-audit.subagent.md「読込表」およびagent-documents-basics.md「読込表」",
+        "final_source_verified": false,
+        "implementation_decision": "重複導入句を削除。共通定義・名指し参照の読込方法・各表・配送宣言を保持。",
+        "independent_content_reviewer": "/root/norm_content_review",
+        "limited_semantic_review_verified": true,
+        "limited_source_connection_verified": true,
+        "limited_review_record": "/home/aki/.cache/agent-toolkit/managed-temp/session-4vf_92eo/norm-content-independent-review.md"
+      }
     },
     {
       "i": 997,
@@ -34556,7 +34602,7 @@
           "file_sha256": "e380324da2808bbf7b5d5ebb847e4622952c2eaee52cc9c1f8345f69f983359f"
         }
       ],
-      "specific_protected_value": "操作前・条件別読取時機。",
+      "specific_protected_value": "各表の条件・時点・指定範囲に従う取得。共通契約と表で保持し、重複導入句を削除する。",
       "protection_sources": [
         {
           "source": "読込表適用の共通条件",
@@ -34570,10 +34616,22 @@
       "requirement_origin": "未確定（価値を失う縮小から保護）",
       "requirement_wi": [],
       "static_position_verified": true,
-      "semantic_content_verified": true,
+      "semantic_content_verified": false,
       "final_mapping_verified": false,
       "final_position": null,
-      "fixed_snapshot_position_verified": true
+      "fixed_snapshot_position_verified": true,
+      "content_quality_followup": {
+        "status": "47行限定の内容/接続は独立確認済み・自動試験/静的/最終HEADと全体採否は未確認",
+        "reason": "独立内容レビューが重複導入句の削除を採用した。行ごとの時点・条件・資料・指定範囲と配送宣言を保持し、読込表の適用をagent-documents-basics.md「読込表」と各文書の「名指し参照の読込方法」へ接続する。同じ規則を繰り返す導入句だけを削除した。",
+        "qcd": "Q: 条件成立時に必要資料を取得する共通契約と各読込表を保持するため変化なし。 C: 重複する導入句の読込・改訂負担が減る。 D: 同じ規則の反復を読む工程が減る。",
+        "target_section": "agent-toolkit/share/exec-review.parent.md「読込表」およびagent-documents-basics.md「読込表」",
+        "final_source_verified": false,
+        "implementation_decision": "重複導入句を削除。共通定義・名指し参照の読込方法・各表・配送宣言を保持。",
+        "independent_content_reviewer": "/root/norm_content_review",
+        "limited_semantic_review_verified": true,
+        "limited_source_connection_verified": true,
+        "limited_review_record": "/home/aki/.cache/agent-toolkit/managed-temp/session-4vf_92eo/norm-content-independent-review.md"
+      }
     },
     {
       "i": 1020,
@@ -37164,7 +37222,7 @@
           "file_sha256": "223434ac29595817902e683078e02b6aac1f2bffcd5b584df526ac31f73fdf3e"
         }
       ],
-      "specific_protected_value": "時点・条件に応じた操作前全文読取。",
+      "specific_protected_value": "各表の条件・時点・指定範囲に従う取得。共通契約と表で保持し、重複導入句を削除する。",
       "protection_sources": [],
       "record_associations": [],
       "protection_record_unidentified": true,
@@ -37172,10 +37230,22 @@
       "requirement_origin": "未確定（価値を失う縮小から保護）",
       "requirement_wi": [],
       "static_position_verified": true,
-      "semantic_content_verified": true,
+      "semantic_content_verified": false,
       "final_mapping_verified": false,
       "final_position": null,
-      "fixed_snapshot_position_verified": true
+      "fixed_snapshot_position_verified": true,
+      "content_quality_followup": {
+        "status": "47行限定の内容/接続は独立確認済み・自動試験/静的/最終HEADと全体採否は未確認",
+        "reason": "独立内容レビューが重複導入句の削除を採用した。行ごとの時点・条件・資料・指定範囲と配送宣言を保持し、読込表の適用をagent-documents-basics.md「読込表」と各文書の「名指し参照の読込方法」へ接続する。同じ規則を繰り返す導入句だけを削除した。",
+        "qcd": "Q: 条件成立時に必要資料を取得する共通契約と各読込表を保持するため変化なし。 C: 重複する導入句の読込・改訂負担が減る。 D: 同じ規則の反復を読む工程が減る。",
+        "target_section": "agent-toolkit/share/exec-review.subagent.md「読込表」およびagent-documents-basics.md「読込表」",
+        "final_source_verified": false,
+        "implementation_decision": "重複導入句を削除。共通定義・名指し参照の読込方法・各表・配送宣言を保持。",
+        "independent_content_reviewer": "/root/norm_content_review",
+        "limited_semantic_review_verified": true,
+        "limited_source_connection_verified": true,
+        "limited_review_record": "/home/aki/.cache/agent-toolkit/managed-temp/session-4vf_92eo/norm-content-independent-review.md"
+      }
     },
     {
       "i": 1096,
@@ -40047,10 +40117,21 @@
       "requirement_origin": "未確定（価値を失う縮小から保護）",
       "requirement_wi": [],
       "static_position_verified": true,
-      "semantic_content_verified": true,
+      "semantic_content_verified": false,
       "final_mapping_verified": false,
       "final_position": null,
-      "fixed_snapshot_position_verified": true
+      "fixed_snapshot_position_verified": true,
+      "content_quality_followup": {
+        "status": "47行限定の内容/接続は独立確認済み・自動試験/静的/最終HEADと全体採否は未確認",
+        "reason": "配布物と全追跡Markdownの観点候補収集・原本対応・追跡原本優先の重複除去・同名別観点と分割観点の保持・JSON配列生成を公開recurrence-itemsの1操作へ統合した。省略に必要なのは確定0の判定であり、正確な全項目数の集計義務を存在判定へ置き換える。未認識本文は要確認として観点ありに保ち、三要素の内容と差分/未解決の意味判断は担当へ残す。独立担当が修正版の方式と本文接続を適合とした。",
+        "qcd": "Q: 両収集集合・原本対応・別観点と未知本文を保持し、確定空集合だけを省略できる。 C: 毎回の二重検索・重複除去・全数集計・JSON作成を省ける。 D: 1回の公開操作の結果から意味判断へ進める。自動試験・静的・最終HEADの確認は未受領。",
+        "target_section": "agent-toolkit/share/exec-review.subagent.md「観点の収集と入力の確定」、agent-toolkit/skills/review-standards/scripts/recurrence_items.pyの公開recurrence-items",
+        "final_source_verified": false,
+        "independent_content_reviewer": "/root/norm_content_review",
+        "limited_semantic_review_verified": true,
+        "limited_source_connection_verified": true,
+        "limited_review_record": "/home/aki/.cache/agent-toolkit/managed-temp/session-4vf_92eo/norm-content-independent-review.md"
+      }
     },
     {
       "i": 1179,
@@ -40546,7 +40627,7 @@
           "file_sha256": "5265f71b0e2b821bc713a205458646563473944c33ff6ff1dc6ce7ac6ab7ef9e"
         }
       ],
-      "specific_protected_value": "操作時点に対応した全文読取。",
+      "specific_protected_value": "各表の条件・時点・指定範囲に従う取得。共通契約と表で保持し、重複導入句を削除する。",
       "protection_sources": [],
       "record_associations": [],
       "protection_record_unidentified": true,
@@ -40554,10 +40635,22 @@
       "requirement_origin": "未確定（価値を失う縮小から保護）",
       "requirement_wi": [],
       "static_position_verified": true,
-      "semantic_content_verified": true,
+      "semantic_content_verified": false,
       "final_mapping_verified": false,
       "final_position": null,
-      "fixed_snapshot_position_verified": true
+      "fixed_snapshot_position_verified": true,
+      "content_quality_followup": {
+        "status": "47行限定の内容/接続は独立確認済み・自動試験/静的/最終HEADと全体採否は未確認",
+        "reason": "独立内容レビューが重複導入句の削除を採用した。行ごとの時点・条件・資料・指定範囲と配送宣言を保持し、読込表の適用をagent-documents-basics.md「読込表」と各文書の「名指し参照の読込方法」へ接続する。同じ規則を繰り返す導入句だけを削除した。",
+        "qcd": "Q: 条件成立時に必要資料を取得する共通契約と各読込表を保持するため変化なし。 C: 重複する導入句の読込・改訂負担が減る。 D: 同じ規則の反復を読む工程が減る。",
+        "target_section": "agent-toolkit/share/exec.parent.md「読込表」およびagent-documents-basics.md「読込表」",
+        "final_source_verified": false,
+        "implementation_decision": "重複導入句を削除。共通定義・名指し参照の読込方法・各表・配送宣言を保持。",
+        "independent_content_reviewer": "/root/norm_content_review",
+        "limited_semantic_review_verified": true,
+        "limited_source_connection_verified": true,
+        "limited_review_record": "/home/aki/.cache/agent-toolkit/managed-temp/session-4vf_92eo/norm-content-independent-review.md"
+      }
     },
     {
       "i": 1195,
@@ -42538,10 +42631,21 @@
       "requirement_origin": "未確定（価値を失う縮小から保護）",
       "requirement_wi": [],
       "static_position_verified": true,
-      "semantic_content_verified": true,
+      "semantic_content_verified": false,
       "final_mapping_verified": false,
       "final_position": null,
-      "fixed_snapshot_position_verified": true
+      "fixed_snapshot_position_verified": true,
+      "content_quality_followup": {
+        "status": "47行限定の内容/接続は独立確認済み・自動試験/静的/最終HEADと全体採否は未確認",
+        "reason": "既存の統合recordと逐語返却を公開lane-receipt-checkへ渡し、原本input.manifestの期待集合、finalized/selection-markと全command完了、現在の統合先branch HEAD、既存commit_mapping、agent-doc-changesを使って配列・キー・集合・順序・OID・文書集合を機械照合する。leave-open/previous-reply/planは既存原本で不足する区別/累積/所在だけを補う。空commitの根拠と規範適用等の意味判断を担当へ残す。独立担当が方式と本文接続を適合とした。",
+        "qcd": "Q: 返却の自己申告から期待値を導出せず、原本と実在HEADから既存の受領条件を検収する。 C: 毎回のJSON構築・集合照合の手作業を省ける。 D: 原本と返却の1回の公開検収から残る意味判断へ進める。自動試験・静的・最終HEADの確認は未受領。",
+        "target_section": "agent-toolkit/share/exec.parent.md「統合の指示と受領」、公開lane-receipt-checkとcheck_lane_receipt.py",
+        "final_source_verified": false,
+        "independent_content_reviewer": "/root/norm_content_review",
+        "limited_semantic_review_verified": true,
+        "limited_source_connection_verified": true,
+        "limited_review_record": "/home/aki/.cache/agent-toolkit/managed-temp/session-4vf_92eo/norm-content-independent-review.md"
+      }
     },
     {
       "i": 1257,
@@ -42847,7 +42951,7 @@
           "file_sha256": "6cce26c917dad9f6b19f19a833fe030b4d61527143ecd38cb9555bb74373d49e"
         }
       ],
-      "specific_protected_value": "読込表の操作前適用。",
+      "specific_protected_value": "各表の条件・時点・指定範囲に従う取得。共通契約と表で保持し、重複導入句を削除する。",
       "protection_sources": [],
       "record_associations": [],
       "protection_record_unidentified": true,
@@ -42855,10 +42959,22 @@
       "requirement_origin": "未確定（価値を失う縮小から保護）",
       "requirement_wi": [],
       "static_position_verified": true,
-      "semantic_content_verified": true,
+      "semantic_content_verified": false,
       "final_mapping_verified": false,
       "final_position": null,
-      "fixed_snapshot_position_verified": true
+      "fixed_snapshot_position_verified": true,
+      "content_quality_followup": {
+        "status": "47行限定の内容/接続は独立確認済み・自動試験/静的/最終HEADと全体採否は未確認",
+        "reason": "独立内容レビューが重複導入句の削除を採用した。行ごとの時点・条件・資料・指定範囲と配送宣言を保持し、読込表の適用をagent-documents-basics.md「読込表」と各文書の「名指し参照の読込方法」へ接続する。同じ規則を繰り返す導入句だけを削除した。",
+        "qcd": "Q: 条件成立時に必要資料を取得する共通契約と各読込表を保持するため変化なし。 C: 重複する導入句の読込・改訂負担が減る。 D: 同じ規則の反復を読む工程が減る。",
+        "target_section": "agent-toolkit/share/exec.subagent.md「読込表」およびagent-documents-basics.md「読込表」",
+        "final_source_verified": false,
+        "implementation_decision": "重複導入句を削除。共通定義・名指し参照の読込方法・各表・配送宣言を保持。",
+        "independent_content_reviewer": "/root/norm_content_review",
+        "limited_semantic_review_verified": true,
+        "limited_source_connection_verified": true,
+        "limited_review_record": "/home/aki/.cache/agent-toolkit/managed-temp/session-4vf_92eo/norm-content-independent-review.md"
+      }
     },
     {
       "i": 1266,
@@ -46518,7 +46634,7 @@
           "file_sha256": "a2ae61be3582cc41da4ac9b0be2ebc578c1612131774032057e7e56d3f95cb65"
         }
       ],
-      "specific_protected_value": "対象操作前に必要資料を全文読む原則。",
+      "specific_protected_value": "各表の条件・時点・指定範囲に従う取得。共通契約と表で保持し、重複導入句を削除する。",
       "protection_sources": [
         {
           "source": "硬い制約: 判断前に必要な参照規範を読む",
@@ -46532,10 +46648,22 @@
       "requirement_origin": "未確定（価値を失う縮小から保護）",
       "requirement_wi": [],
       "static_position_verified": true,
-      "semantic_content_verified": true,
+      "semantic_content_verified": false,
       "final_mapping_verified": false,
       "final_position": null,
-      "fixed_snapshot_position_verified": true
+      "fixed_snapshot_position_verified": true,
+      "content_quality_followup": {
+        "status": "47行限定の内容/接続は独立確認済み・自動試験/静的/最終HEADと全体採否は未確認",
+        "reason": "独立内容レビューが重複導入句の削除を採用した。行ごとの時点・条件・資料・指定範囲と配送宣言を保持し、読込表の適用をagent-documents-basics.md「読込表」と各文書の「名指し参照の読込方法」へ接続する。同じ規則を繰り返す導入句だけを削除した。",
+        "qcd": "Q: 条件成立時に必要資料を取得する共通契約と各読込表を保持するため変化なし。 C: 重複する導入句の読込・改訂負担が減る。 D: 同じ規則の反復を読む工程が減る。",
+        "target_section": "agent-toolkit/share/lane-integration.subagent.md「読込表」およびagent-documents-basics.md「読込表」",
+        "final_source_verified": false,
+        "implementation_decision": "重複導入句を削除。共通定義・名指し参照の読込方法・各表・配送宣言を保持。",
+        "independent_content_reviewer": "/root/norm_content_review",
+        "limited_semantic_review_verified": true,
+        "limited_source_connection_verified": true,
+        "limited_review_record": "/home/aki/.cache/agent-toolkit/managed-temp/session-4vf_92eo/norm-content-independent-review.md"
+      }
     },
     {
       "i": 1366,
@@ -48878,7 +49006,7 @@
           "file_sha256": "3131f39e4c96f1f66d1f94f80839e78624d95393f02a98083afbed175e703d69"
         }
       ],
-      "specific_protected_value": "説明前に規定資料を全文読むこと。",
+      "specific_protected_value": "各表の条件・時点・指定範囲に従う取得。共通契約と表で保持し、重複導入句を削除する。",
       "protection_sources": [
         {
           "source": "硬い制約: 規定適用前の必要資料読取",
@@ -48892,10 +49020,22 @@
       "requirement_origin": "未確定（価値を失う縮小から保護）",
       "requirement_wi": [],
       "static_position_verified": true,
-      "semantic_content_verified": true,
+      "semantic_content_verified": false,
       "final_mapping_verified": false,
       "final_position": null,
-      "fixed_snapshot_position_verified": true
+      "fixed_snapshot_position_verified": true,
+      "content_quality_followup": {
+        "status": "47行限定の内容/接続は独立確認済み・自動試験/静的/最終HEADと全体採否は未確認",
+        "reason": "独立内容レビューが重複導入句の削除を採用した。行ごとの時点・条件・資料・指定範囲と配送宣言を保持し、読込表の適用をagent-documents-basics.md「読込表」と各文書の「名指し参照の読込方法」へ接続する。同じ規則を繰り返す導入句だけを削除した。",
+        "qcd": "Q: 条件成立時に必要資料を取得する共通契約と各読込表を保持するため変化なし。 C: 重複する導入句の読込・改訂負担が減る。 D: 同じ規則の反復を読む工程が減る。",
+        "target_section": "agent-toolkit/share/pick-wi-explain.subagent.md「読込表」およびagent-documents-basics.md「読込表」",
+        "final_source_verified": false,
+        "implementation_decision": "重複導入句を削除。共通定義・名指し参照の読込方法・各表・配送宣言を保持。",
+        "independent_content_reviewer": "/root/norm_content_review",
+        "limited_semantic_review_verified": true,
+        "limited_source_connection_verified": true,
+        "limited_review_record": "/home/aki/.cache/agent-toolkit/managed-temp/session-4vf_92eo/norm-content-independent-review.md"
+      }
     },
     {
       "i": 1428,
@@ -58516,7 +58656,7 @@
           "file_sha256": "ff77c049aa6f60de62b4116da821e3d8a13d49e3454d96ca34c6d3ca506d08e3"
         }
       ],
-      "specific_protected_value": "対象操作前に同じ行の資料を全文読む条件。",
+      "specific_protected_value": "各表の条件・時点・指定範囲に従う取得。共通契約と表で保持し、重複導入句を削除する。",
       "protection_sources": [],
       "record_associations": [],
       "protection_record_unidentified": true,
@@ -58524,10 +58664,22 @@
       "requirement_origin": "未確定（価値を失う縮小から保護）",
       "requirement_wi": [],
       "static_position_verified": true,
-      "semantic_content_verified": true,
+      "semantic_content_verified": false,
       "final_mapping_verified": false,
       "final_position": null,
-      "fixed_snapshot_position_verified": true
+      "fixed_snapshot_position_verified": true,
+      "content_quality_followup": {
+        "status": "47行限定の内容/接続は独立確認済み・自動試験/静的/最終HEADと全体採否は未確認",
+        "reason": "独立内容レビューが重複導入句の削除を採用した。行ごとの時点・条件・資料・指定範囲と配送宣言を保持し、読込表の適用をagent-documents-basics.md「読込表」と各文書の「名指し参照の読込方法」へ接続する。同じ規則を繰り返す導入句だけを削除した。",
+        "qcd": "Q: 条件成立時に必要資料を取得する共通契約と各読込表を保持するため変化なし。 C: 重複する導入句の読込・改訂負担が減る。 D: 同じ規則の反復を読む工程が減る。",
+        "target_section": "agent-toolkit/share/session-termination.subagent.md「読込表」およびagent-documents-basics.md「読込表」",
+        "final_source_verified": false,
+        "implementation_decision": "重複導入句を削除。共通定義・名指し参照の読込方法・各表・配送宣言を保持。",
+        "independent_content_reviewer": "/root/norm_content_review",
+        "limited_semantic_review_verified": true,
+        "limited_source_connection_verified": true,
+        "limited_review_record": "/home/aki/.cache/agent-toolkit/managed-temp/session-4vf_92eo/norm-content-independent-review.md"
+      }
     },
     {
       "i": 1690,
@@ -60291,7 +60443,7 @@
           "file_sha256": "2acac815dd40fd38a8b97b89ccb07ccedb6fb6426f453e4e1a4d59278dc34b0e"
         }
       ],
-      "specific_protected_value": "操作前に同じ行の資料を全文読む条件。",
+      "specific_protected_value": "各表の条件・時点・指定範囲に従う取得。共通契約と表で保持し、重複導入句を削除する。",
       "protection_sources": [],
       "record_associations": [],
       "protection_record_unidentified": true,
@@ -60299,10 +60451,22 @@
       "requirement_origin": "未確定（価値を失う縮小から保護）",
       "requirement_wi": [],
       "static_position_verified": true,
-      "semantic_content_verified": true,
+      "semantic_content_verified": false,
       "final_mapping_verified": false,
       "final_position": null,
-      "fixed_snapshot_position_verified": true
+      "fixed_snapshot_position_verified": true,
+      "content_quality_followup": {
+        "status": "47行限定の内容/接続は独立確認済み・自動試験/静的/最終HEADと全体採否は未確認",
+        "reason": "独立内容レビューが重複導入句の削除を採用した。行ごとの時点・条件・資料・指定範囲と配送宣言を保持し、読込表の適用をagent-documents-basics.md「読込表」と各文書の「名指し参照の読込方法」へ接続する。同じ規則を繰り返す導入句だけを削除した。",
+        "qcd": "Q: 条件成立時に必要資料を取得する共通契約と各読込表を保持するため変化なし。 C: 重複する導入句の読込・改訂負担が減る。 D: 同じ規則の反復を読む工程が減る。",
+        "target_section": "agent-toolkit/share/usability-review.subagent.md「読込表」およびagent-documents-basics.md「読込表」",
+        "final_source_verified": false,
+        "implementation_decision": "重複導入句を削除。共通定義・名指し参照の読込方法・各表・配送宣言を保持。",
+        "independent_content_reviewer": "/root/norm_content_review",
+        "limited_semantic_review_verified": true,
+        "limited_source_connection_verified": true,
+        "limited_review_record": "/home/aki/.cache/agent-toolkit/managed-temp/session-4vf_92eo/norm-content-independent-review.md"
+      }
     },
     {
       "i": 1739,
@@ -63835,7 +63999,7 @@
           "file_sha256": "a90b374ae37f2cf99b8f5b17b3ac44fd204aa31ed13ea63d4112b8419f416bf6"
         }
       ],
-      "specific_protected_value": "条件成立時に、対象操作前に対応資料を全文読む時機。",
+      "specific_protected_value": "各表の条件・時点・指定範囲に従う取得。共通契約と表で保持し、重複導入句を削除する。",
       "protection_sources": [],
       "record_associations": [],
       "protection_record_unidentified": true,
@@ -63843,10 +64007,22 @@
       "requirement_origin": "未確定（価値を失う縮小から保護）",
       "requirement_wi": [],
       "static_position_verified": true,
-      "semantic_content_verified": true,
+      "semantic_content_verified": false,
       "final_mapping_verified": false,
       "final_position": null,
-      "fixed_snapshot_position_verified": true
+      "fixed_snapshot_position_verified": true,
+      "content_quality_followup": {
+        "status": "47行限定の内容/接続は独立確認済み・自動試験/静的/最終HEADと全体採否は未確認",
+        "reason": "独立内容レビューが重複導入句の削除を採用した。行ごとの時点・条件・資料・指定範囲と配送宣言を保持し、読込表の適用をagent-documents-basics.md「読込表」と各文書の「名指し参照の読込方法」へ接続する。同じ規則を繰り返す導入句だけを削除した。",
+        "qcd": "Q: 条件成立時に必要資料を取得する共通契約と各読込表を保持するため変化なし。 C: 重複する導入句の読込・改訂負担が減る。 D: 同じ規則の反復を読む工程が減る。",
+        "target_section": "agent-basics/skills/bugfix/SKILL.md「読込表」およびagent-documents-basics.md「読込表」",
+        "final_source_verified": false,
+        "implementation_decision": "重複導入句を削除。共通定義・名指し参照の読込方法・各表・配送宣言を保持。",
+        "independent_content_reviewer": "/root/norm_content_review",
+        "limited_semantic_review_verified": true,
+        "limited_source_connection_verified": true,
+        "limited_review_record": "/home/aki/.cache/agent-toolkit/managed-temp/session-4vf_92eo/norm-content-independent-review.md"
+      }
     },
     {
       "i": 1837,
@@ -75797,7 +75973,7 @@
           "file_sha256": "7728768eeecd97bd46363887447e6ae33157aeb19cf64a927610d232ab688c46"
         }
       ],
-      "specific_protected_value": "条件と資料を対応付け、操作前の全文読取を求める枠組み。",
+      "specific_protected_value": "各表の条件・時点・指定範囲に従う取得。共通契約と表で保持し、重複導入句を削除する。",
       "protection_sources": [],
       "record_associations": [],
       "protection_record_unidentified": true,
@@ -75805,10 +75981,22 @@
       "requirement_origin": "未確定（価値を失う縮小から保護）",
       "requirement_wi": [],
       "static_position_verified": true,
-      "semantic_content_verified": true,
+      "semantic_content_verified": false,
       "final_mapping_verified": false,
       "final_position": null,
-      "fixed_snapshot_position_verified": true
+      "fixed_snapshot_position_verified": true,
+      "content_quality_followup": {
+        "status": "47行限定の内容/接続は独立確認済み・自動試験/静的/最終HEADと全体採否は未確認",
+        "reason": "独立内容レビューが重複導入句の削除を採用した。行ごとの時点・条件・資料・指定範囲と配送宣言を保持し、読込表の適用をagent-documents-basics.md「読込表」と各文書の「名指し参照の読込方法」へ接続する。同じ規則を繰り返す導入句だけを削除した。",
+        "qcd": "Q: 条件成立時に必要資料を取得する共通契約と各読込表を保持するため変化なし。 C: 重複する導入句の読込・改訂負担が減る。 D: 同じ規則の反復を読む工程が減る。",
+        "target_section": "agent-basics/skills/check-execution/SKILL.md「読込表」およびagent-documents-basics.md「読込表」",
+        "final_source_verified": false,
+        "implementation_decision": "重複導入句を削除。共通定義・名指し参照の読込方法・各表・配送宣言を保持。",
+        "independent_content_reviewer": "/root/norm_content_review",
+        "limited_semantic_review_verified": true,
+        "limited_source_connection_verified": true,
+        "limited_review_record": "/home/aki/.cache/agent-toolkit/managed-temp/session-4vf_92eo/norm-content-independent-review.md"
+      }
     },
     {
       "i": 2147,
@@ -78092,7 +78280,7 @@
           "file_sha256": "05f6c996eabac97a87a52773b733e0c489f6bb80513d7f6f7307daf24afd8a1e"
         }
       ],
-      "specific_protected_value": "条件と資料を対応付ける読込表の枠組み。",
+      "specific_protected_value": "各表の条件・時点・指定範囲に従う取得。共通契約と表で保持し、重複導入句を削除する。",
       "protection_sources": [],
       "record_associations": [],
       "protection_record_unidentified": true,
@@ -78100,10 +78288,22 @@
       "requirement_origin": "未確定（価値を失う縮小から保護）",
       "requirement_wi": [],
       "static_position_verified": true,
-      "semantic_content_verified": true,
+      "semantic_content_verified": false,
       "final_mapping_verified": false,
       "final_position": null,
-      "fixed_snapshot_position_verified": true
+      "fixed_snapshot_position_verified": true,
+      "content_quality_followup": {
+        "status": "47行限定の内容/接続は独立確認済み・自動試験/静的/最終HEADと全体採否は未確認",
+        "reason": "独立内容レビューが重複導入句の削除を採用した。行ごとの時点・条件・資料・指定範囲と配送宣言を保持し、読込表の適用をagent-documents-basics.md「読込表」と各文書の「名指し参照の読込方法」へ接続する。同じ規則を繰り返す導入句だけを削除した。",
+        "qcd": "Q: 条件成立時に必要資料を取得する共通契約と各読込表を保持するため変化なし。 C: 重複する導入句の読込・改訂負担が減る。 D: 同じ規則の反復を読む工程が減る。",
+        "target_section": "agent-toolkit/skills/commit/SKILL.md「読込表」およびagent-documents-basics.md「読込表」",
+        "final_source_verified": false,
+        "implementation_decision": "重複導入句を削除。共通定義・名指し参照の読込方法・各表・配送宣言を保持。",
+        "independent_content_reviewer": "/root/norm_content_review",
+        "limited_semantic_review_verified": true,
+        "limited_source_connection_verified": true,
+        "limited_review_record": "/home/aki/.cache/agent-toolkit/managed-temp/session-4vf_92eo/norm-content-independent-review.md"
+      }
     },
     {
       "i": 2214,
@@ -83416,7 +83616,7 @@
           "file_sha256": "8d5a5c7449d3aeaab9875fe7bbfd318ce386b30dfdc32c7ea49b1268137eeccd"
         }
       ],
-      "specific_protected_value": "要求単位の完了追跡と追加入力統合。",
+      "specific_protected_value": "要求・明示変更・証拠・未完了を同じ契約へ対応付けること。取得済み契約の同一性と必要範囲を確認し、全体完了の判定に必要な情報を充足する。",
       "protection_sources": [],
       "record_associations": [],
       "protection_record_unidentified": true,
@@ -83424,10 +83624,21 @@
       "requirement_origin": "未確定（価値を失う縮小から保護）",
       "requirement_wi": [],
       "static_position_verified": true,
-      "semantic_content_verified": true,
+      "semantic_content_verified": false,
       "final_mapping_verified": false,
       "final_position": null,
-      "fixed_snapshot_position_verified": true
+      "fixed_snapshot_position_verified": true,
+      "content_quality_followup": {
+        "status": "47行限定の内容/接続は独立確認済み・自動試験/静的/最終HEADと全体採否は未確認",
+        "reason": "completion-reportの完了の到達水準は、読込表で受領した現行契約を使う工程境界の判断へ統合され、本文での追加全文再取得は撤去されている。全要求を確かめる契約全体の初回取得は保持し、未知の要求を都合よく節選択しない。",
+        "qcd": "Q: 初回に契約全体を取得して全要求・残条件を判定する価値を保持する。 C: 受領済み同版契約の追加全文再取得を省ける。 D: 同じ契約を用いて工程境界を判断できる。",
+        "target_section": "原対応先の読込条件/指定範囲（固定snapshot位置は保存。変更後位置は全担当終端後に照合）",
+        "final_source_verified": false,
+        "independent_content_reviewer": "/root/norm_content_review",
+        "limited_semantic_review_verified": true,
+        "limited_source_connection_verified": true,
+        "limited_review_record": "/home/aki/.cache/agent-toolkit/managed-temp/session-4vf_92eo/norm-content-independent-review.md"
+      }
     },
     {
       "i": 2372,
@@ -86397,7 +86608,7 @@
           "file_sha256": "7c5b3a9a32fc37f20b2dd552e5171b0a14f79a52cc7e3681459aee9659e04fb5"
         }
       ],
-      "specific_protected_value": "変更・圧縮時の再読。",
+      "specific_protected_value": "委譲操作へ適用する資料と変更・圧縮後の不足を充足すること。同一本文の既読状態を再利用する。",
       "protection_sources": [],
       "record_associations": [],
       "protection_record_unidentified": true,
@@ -86405,10 +86616,21 @@
       "requirement_origin": "未確定（価値を失う縮小から保護）",
       "requirement_wi": [],
       "static_position_verified": true,
-      "semantic_content_verified": true,
+      "semantic_content_verified": false,
       "final_mapping_verified": false,
       "final_position": null,
-      "fixed_snapshot_position_verified": true
+      "fixed_snapshot_position_verified": true,
+      "content_quality_followup": {
+        "status": "47行限定の内容/接続は独立確認済み・自動試験/静的/最終HEADと全体採否は未確認",
+        "reason": "delegationの読込表は同版既読の再利用と圧縮後の再読を明示する。各操作の条件が成立した時点の必要取得を保持し、起動のたびの同一本文再取得へ解釈を広げない。",
+        "qcd": "Q: 操作前に必要条件を充足し、圧縮後も原本から復元できる。 C: 変更を観測していない同版本文を再利用できる。 D: 未取得・変更・圧縮に対応する取得だけで次工程へ進める。",
+        "target_section": "原対応先の読込条件/指定範囲（固定snapshot位置は保存。変更後位置は全担当終端後に照合）",
+        "final_source_verified": false,
+        "independent_content_reviewer": "/root/norm_content_review",
+        "limited_semantic_review_verified": true,
+        "limited_source_connection_verified": true,
+        "limited_review_record": "/home/aki/.cache/agent-toolkit/managed-temp/session-4vf_92eo/norm-content-independent-review.md"
+      }
     },
     {
       "i": 2464,
@@ -93208,7 +93430,7 @@
           "file_sha256": "12fc370ee866e58ab93937e6f6bab0f8235586ec1464dbf9bec47343c5934c01"
         }
       ],
-      "specific_protected_value": "継続時全文読取と直接確認済み資源だけを除く更新規則。",
+      "specific_protected_value": "継続時に要求・判断・所有資源・残工程を復元すること。全文再取得の要否は未取得/更新/圧縮の状況と必要情報で判断する。",
       "protection_sources": [
         {
           "source": "硬い制約:直接終端確認していない資源を記録から除かない",
@@ -93224,10 +93446,21 @@
       "requirement_origin": "未確定（価値を失う縮小から保護）",
       "requirement_wi": [],
       "static_position_verified": true,
-      "semantic_content_verified": true,
+      "semantic_content_verified": false,
       "final_mapping_verified": false,
       "final_position": null,
-      "fixed_snapshot_position_verified": true
+      "fixed_snapshot_position_verified": true,
+      "content_quality_followup": {
+        "status": "47行限定の内容/接続は独立確認済み・自動試験/静的/最終HEADと全体採否は未確認",
+        "reason": "handoff-recordの継続時の最初の全文取得は、新規継続担当が要求・所有資源・未完了を全体として復元する契約であり保持する。同じ担当が同版を反復再取得する義務は02-agent-operationsの既読再利用へ従う。",
+        "qcd": "Q: 新規継続担当が未完了や所有資源を読み落とさず再開できる。 C: 同担当の同版反復取得を省ける。 D: 初回復元後は未記録の差分へ対応できる。",
+        "target_section": "原対応先の読込条件/指定範囲（固定snapshot位置は保存。変更後位置は全担当終端後に照合）",
+        "final_source_verified": false,
+        "independent_content_reviewer": "/root/norm_content_review",
+        "limited_semantic_review_verified": true,
+        "limited_source_connection_verified": true,
+        "limited_review_record": "/home/aki/.cache/agent-toolkit/managed-temp/session-4vf_92eo/norm-content-independent-review.md"
+      }
     },
     {
       "i": 2666,
@@ -99796,10 +100029,21 @@
       "requirement_origin": "未確定（価値を失う縮小から保護）",
       "requirement_wi": [],
       "static_position_verified": true,
-      "semantic_content_verified": true,
+      "semantic_content_verified": false,
       "final_mapping_verified": false,
       "final_position": null,
-      "fixed_snapshot_position_verified": true
+      "fixed_snapshot_position_verified": true,
+      "content_quality_followup": {
+        "status": "47行限定の内容/接続は独立確認済み・自動試験/静的/最終HEADと全体採否は未確認",
+        "reason": "集計値を実際のコマンド・出力へ結び付ける成果を保持する。集計内容は対象ごとに異なり、専用の汎用集計機構を新設する必要性はない。現行sendingの実測出所保証として維持する。",
+        "qcd": "Q: 実測値と出所を保持して、推測値が後続入力へ混じることを防ぐ。 C: 対象別の適切な集計を再利用でき、不要な汎用機構の保守を加えない。 D: 必要な集計だけを実行して出所とともに引き継げる。",
+        "target_section": "agent-toolkit/skills/delegation/references/sending.md「権限と成果物の取り決め」",
+        "final_source_verified": false,
+        "independent_content_reviewer": "/root/norm_content_review",
+        "limited_semantic_review_verified": true,
+        "limited_source_connection_verified": true,
+        "limited_review_record": "/home/aki/.cache/agent-toolkit/managed-temp/session-4vf_92eo/norm-content-independent-review.md"
+      }
     },
     {
       "i": 2839,
@@ -104658,7 +104902,7 @@
           "file_sha256": "50e655803ac6ea8cc171bdcdc37ebbea8f5290f845ac37feaacc3cde721deeba"
         }
       ],
-      "specific_protected_value": "操作前の条件付き全文読取。",
+      "specific_protected_value": "各表の条件・時点・指定範囲に従う取得。共通契約と表で保持し、重複導入句を削除する。",
       "protection_sources": [
         {
           "source": "硬い制約:判断に必要な参照資料を読む",
@@ -104672,10 +104916,22 @@
       "requirement_origin": "未確定（価値を失う縮小から保護）",
       "requirement_wi": [],
       "static_position_verified": true,
-      "semantic_content_verified": true,
+      "semantic_content_verified": false,
       "final_mapping_verified": false,
       "final_position": null,
-      "fixed_snapshot_position_verified": true
+      "fixed_snapshot_position_verified": true,
+      "content_quality_followup": {
+        "status": "47行限定の内容/接続は独立確認済み・自動試験/静的/最終HEADと全体採否は未確認",
+        "reason": "独立内容レビューが重複導入句の削除を採用した。行ごとの時点・条件・資料・指定範囲と配送宣言を保持し、読込表の適用をagent-documents-basics.md「読込表」と各文書の「名指し参照の読込方法」へ接続する。同じ規則を繰り返す導入句だけを削除した。",
+        "qcd": "Q: 条件成立時に必要資料を取得する共通契約と各読込表を保持するため変化なし。 C: 重複する導入句の読込・改訂負担が減る。 D: 同じ規則の反復を読む工程が減る。",
+        "target_section": "agent-toolkit/skills/gitlab-ci-usage/SKILL.md「読込表」およびagent-documents-basics.md「読込表」",
+        "final_source_verified": false,
+        "implementation_decision": "重複導入句を削除。共通定義・名指し参照の読込方法・各表・配送宣言を保持。",
+        "independent_content_reviewer": "/root/norm_content_review",
+        "limited_semantic_review_verified": true,
+        "limited_source_connection_verified": true,
+        "limited_review_record": "/home/aki/.cache/agent-toolkit/managed-temp/session-4vf_92eo/norm-content-independent-review.md"
+      }
     },
     {
       "i": 2973,
@@ -106056,7 +106312,7 @@
           "file_sha256": "db977cbc4fb36c9724a15b3ba0c41de7b221b03fb04755f73cdaffabf49ad0de"
         }
       ],
-      "specific_protected_value": "時点・条件ごとの読込表。",
+      "specific_protected_value": "各表の条件・時点・指定範囲に従う取得。共通契約と表で保持し、重複導入句を削除する。",
       "protection_sources": [
         {
           "source": "硬い制約:判断に必要な資料を全文読む",
@@ -106070,10 +106326,22 @@
       "requirement_origin": "未確定（価値を失う縮小から保護）",
       "requirement_wi": [],
       "static_position_verified": true,
-      "semantic_content_verified": true,
+      "semantic_content_verified": false,
       "final_mapping_verified": false,
       "final_position": null,
-      "fixed_snapshot_position_verified": true
+      "fixed_snapshot_position_verified": true,
+      "content_quality_followup": {
+        "status": "47行限定の内容/接続は独立確認済み・自動試験/静的/最終HEADと全体採否は未確認",
+        "reason": "独立内容レビューが重複導入句の削除を採用した。行ごとの時点・条件・資料・指定範囲と配送宣言を保持し、読込表の適用をagent-documents-basics.md「読込表」と各文書の「名指し参照の読込方法」へ接続する。同じ規則を繰り返す導入句だけを削除した。",
+        "qcd": "Q: 条件成立時に必要資料を取得する共通契約と各読込表を保持するため変化なし。 C: 重複する導入句の読込・改訂負担が減る。 D: 同じ規則の反復を読む工程が減る。",
+        "target_section": "agent-toolkit/skills/plan-mode/SKILL.md「読込表」およびagent-documents-basics.md「読込表」",
+        "final_source_verified": false,
+        "implementation_decision": "重複導入句を削除。共通定義・名指し参照の読込方法・各表・配送宣言を保持。",
+        "independent_content_reviewer": "/root/norm_content_review",
+        "limited_semantic_review_verified": true,
+        "limited_source_connection_verified": true,
+        "limited_review_record": "/home/aki/.cache/agent-toolkit/managed-temp/session-4vf_92eo/norm-content-independent-review.md"
+      }
     },
     {
       "i": 3011,
@@ -106130,7 +106398,7 @@
           "file_sha256": "db977cbc4fb36c9724a15b3ba0c41de7b221b03fb04755f73cdaffabf49ad0de"
         }
       ],
-      "specific_protected_value": "初版前の三資料全文読取。",
+      "specific_protected_value": "初版計画の起草で必要な構成・検査・保存の条件へ到達すること。操作時点の違う資料を全て起草前に読む必要性は再検収を要する。",
       "protection_sources": [
         {
           "source": "硬い制約:計画構造・保存契約を満たす",
@@ -106144,10 +106412,21 @@
       "requirement_origin": "未確定（価値を失う縮小から保護）",
       "requirement_wi": [],
       "static_position_verified": true,
-      "semantic_content_verified": true,
+      "semantic_content_verified": false,
       "final_mapping_verified": false,
       "final_position": null,
-      "fixed_snapshot_position_verified": true
+      "fixed_snapshot_position_verified": true,
+      "content_quality_followup": {
+        "status": "47行限定の内容/接続は独立確認済み・自動試験/静的/最終HEADと全体採否は未確認",
+        "reason": "plan-modeの現行読込表は初版起草に必須の節を示し、進捗・保存・構造検証・証拠はそれぞれの工程へ取得時機を分けている。初版で必要な条件を取得し、後工程の全資料を先行取得する解釈を撤回する。",
+        "qcd": "Q: 初版・進捗・保存・検査・証拠それぞれの必要条件を取得する契約を保持する。 C: 初版で使わない後工程の取得を先送りできる。 D: 必要な工程の前に該当資料へ到達できる。",
+        "target_section": "原対応先の読込条件/指定範囲（固定snapshot位置は保存。変更後位置は全担当終端後に照合）",
+        "final_source_verified": false,
+        "independent_content_reviewer": "/root/norm_content_review",
+        "limited_semantic_review_verified": true,
+        "limited_source_connection_verified": true,
+        "limited_review_record": "/home/aki/.cache/agent-toolkit/managed-temp/session-4vf_92eo/norm-content-independent-review.md"
+      }
     },
     {
       "i": 3013,
@@ -106787,10 +107066,21 @@
       "requirement_origin": "未確定（価値を失う縮小から保護）",
       "requirement_wi": [],
       "static_position_verified": true,
-      "semantic_content_verified": true,
+      "semantic_content_verified": false,
       "final_mapping_verified": false,
       "final_position": null,
-      "fixed_snapshot_position_verified": true
+      "fixed_snapshot_position_verified": true,
+      "content_quality_followup": {
+        "status": "47行限定の内容/接続は独立確認済み・自動試験/静的/最終HEADと全体採否は未確認",
+        "reason": "plan-modeの現行本文はverification-recordの--plan/--wiによる公開雛形生成を案内している。原文・出所・行番号を保持する成果を公開操作で実現し、JSON本文の個別手作成を必須にしていない。ツール化済みの経路を保持する。",
+        "qcd": "Q: 要求原文・出所・識別子を公開操作で対応付けられる。 C: JSON本文の手作成を省ける。 D: 雛形の生成と一覧取得を同じ操作で行える。",
+        "target_section": "agent-toolkit/skills/plan-mode/SKILL.md「メインによる起動の実装と終端」、agent-toolkit/share/verification-evidence.md「完成条件証拠の検証記録」",
+        "final_source_verified": false,
+        "independent_content_reviewer": "/root/norm_content_review",
+        "limited_semantic_review_verified": true,
+        "limited_source_connection_verified": true,
+        "limited_review_record": "/home/aki/.cache/agent-toolkit/managed-temp/session-4vf_92eo/norm-content-independent-review.md"
+      }
     },
     {
       "i": 3030,
@@ -114184,7 +114474,7 @@
           "file_sha256": "4ebfec41a5fbfe0d1b50cf78f2fac79817431bdc6862e72efea5c885c50da355"
         }
       ],
-      "specific_protected_value": "工程前の必読資料という適用条件。",
+      "specific_protected_value": "各表の条件・時点・指定範囲に従う取得。共通契約と表で保持し、重複導入句を削除する。",
       "protection_sources": [
         {
           "source": "docs/development/incidents-workflows.md#障害・欠陥の記録: 作業の流れ > レビューの発散と目的の変質#5",
@@ -114207,10 +114497,22 @@
       "requirement_origin": "未確定（価値を失う縮小から保護）",
       "requirement_wi": [],
       "static_position_verified": true,
-      "semantic_content_verified": true,
+      "semantic_content_verified": false,
       "final_mapping_verified": false,
       "final_position": null,
-      "fixed_snapshot_position_verified": true
+      "fixed_snapshot_position_verified": true,
+      "content_quality_followup": {
+        "status": "47行限定の内容/接続は独立確認済み・自動試験/静的/最終HEADと全体採否は未確認",
+        "reason": "独立内容レビューが重複導入句の削除を採用した。行ごとの時点・条件・資料・指定範囲と配送宣言を保持し、読込表の適用をagent-documents-basics.md「読込表」と各文書の「名指し参照の読込方法」へ接続する。同じ規則を繰り返す導入句だけを削除した。",
+        "qcd": "Q: 条件成立時に必要資料を取得する共通契約と各読込表を保持するため変化なし。 C: 重複する導入句の読込・改訂負担が減る。 D: 同じ規則の反復を読む工程が減る。",
+        "target_section": "agent-toolkit/skills/process-wi/SKILL.md「読込表」およびagent-documents-basics.md「読込表」",
+        "final_source_verified": false,
+        "implementation_decision": "重複導入句を削除。共通定義・名指し参照の読込方法・各表・配送宣言を保持。",
+        "independent_content_reviewer": "/root/norm_content_review",
+        "limited_semantic_review_verified": true,
+        "limited_source_connection_verified": true,
+        "limited_review_record": "/home/aki/.cache/agent-toolkit/managed-temp/session-4vf_92eo/norm-content-independent-review.md"
+      }
     },
     {
       "i": 3234,
@@ -125583,7 +125885,7 @@
           "file_sha256": "71cf6bb77d4acc5e7dacee501f4195518f0aa5f78f85b0a1e8e7865bb6332eac"
         }
       ],
-      "specific_protected_value": "操作前の全文読取条件。",
+      "specific_protected_value": "各表の条件・時点・指定範囲に従う取得。共通契約と表で保持し、重複導入句を削除する。",
       "protection_sources": [],
       "record_associations": [],
       "protection_record_unidentified": true,
@@ -125591,10 +125893,22 @@
       "requirement_origin": "未確定（価値を失う縮小から保護）",
       "requirement_wi": [],
       "static_position_verified": true,
-      "semantic_content_verified": true,
+      "semantic_content_verified": false,
       "final_mapping_verified": false,
       "final_position": null,
-      "fixed_snapshot_position_verified": true
+      "fixed_snapshot_position_verified": true,
+      "content_quality_followup": {
+        "status": "47行限定の内容/接続は独立確認済み・自動試験/静的/最終HEADと全体採否は未確認",
+        "reason": "独立内容レビューが重複導入句の削除を採用した。行ごとの時点・条件・資料・指定範囲と配送宣言を保持し、読込表の適用をagent-documents-basics.md「読込表」と各文書の「名指し参照の読込方法」へ接続する。同じ規則を繰り返す導入句だけを削除した。",
+        "qcd": "Q: 条件成立時に必要資料を取得する共通契約と各読込表を保持するため変化なし。 C: 重複する導入句の読込・改訂負担が減る。 D: 同じ規則の反復を読む工程が減る。",
+        "target_section": "agent-toolkit/skills/process-wi/references/selection-procedure.md「読込表」およびagent-documents-basics.md「読込表」",
+        "final_source_verified": false,
+        "implementation_decision": "重複導入句を削除。共通定義・名指し参照の読込方法・各表・配送宣言を保持。",
+        "independent_content_reviewer": "/root/norm_content_review",
+        "limited_semantic_review_verified": true,
+        "limited_source_connection_verified": true,
+        "limited_review_record": "/home/aki/.cache/agent-toolkit/managed-temp/session-4vf_92eo/norm-content-independent-review.md"
+      }
     },
     {
       "i": 3569,
@@ -128516,7 +128830,7 @@
           "file_sha256": "3f72b1d33eb9cb07ac4769875454f73ac6b0174797c3944a0cb9d4d5a46cc823"
         }
       ],
-      "specific_protected_value": "操作前全文読取。",
+      "specific_protected_value": "各表の条件・時点・指定範囲に従う取得。共通契約と表で保持し、重複導入句を削除する。",
       "protection_sources": [],
       "record_associations": [],
       "protection_record_unidentified": true,
@@ -128524,10 +128838,22 @@
       "requirement_origin": "未確定（価値を失う縮小から保護）",
       "requirement_wi": [],
       "static_position_verified": true,
-      "semantic_content_verified": true,
+      "semantic_content_verified": false,
       "final_mapping_verified": false,
       "final_position": null,
-      "fixed_snapshot_position_verified": true
+      "fixed_snapshot_position_verified": true,
+      "content_quality_followup": {
+        "status": "47行限定の内容/接続は独立確認済み・自動試験/静的/最終HEADと全体採否は未確認",
+        "reason": "独立内容レビューが重複導入句の削除を採用した。行ごとの時点・条件・資料・指定範囲と配送宣言を保持し、読込表の適用をagent-documents-basics.md「読込表」と各文書の「名指し参照の読込方法」へ接続する。同じ規則を繰り返す導入句だけを削除した。",
+        "qcd": "Q: 条件成立時に必要資料を取得する共通契約と各読込表を保持するため変化なし。 C: 重複する導入句の読込・改訂負担が減る。 D: 同じ規則の反復を読む工程が減る。",
+        "target_section": "agent-toolkit/skills/pytilpack-usage/SKILL.md「読込表」およびagent-documents-basics.md「読込表」",
+        "final_source_verified": false,
+        "implementation_decision": "重複導入句を削除。共通定義・名指し参照の読込方法・各表・配送宣言を保持。",
+        "independent_content_reviewer": "/root/norm_content_review",
+        "limited_semantic_review_verified": true,
+        "limited_source_connection_verified": true,
+        "limited_review_record": "/home/aki/.cache/agent-toolkit/managed-temp/session-4vf_92eo/norm-content-independent-review.md"
+      }
     },
     {
       "i": 3656,
@@ -128881,7 +129207,7 @@
           "file_sha256": "28186cb36338b3a22508886c100f2c1ab42ee690047d7d9b13ce8563ff23f04a"
         }
       ],
-      "specific_protected_value": "操作前の全文読取条件。",
+      "specific_protected_value": "各表の条件・時点・指定範囲に従う取得。共通契約と表で保持し、重複導入句を削除する。",
       "protection_sources": [],
       "record_associations": [],
       "protection_record_unidentified": true,
@@ -128889,10 +129215,22 @@
       "requirement_origin": "未確定（価値を失う縮小から保護）",
       "requirement_wi": [],
       "static_position_verified": true,
-      "semantic_content_verified": true,
+      "semantic_content_verified": false,
       "final_mapping_verified": false,
       "final_position": null,
-      "fixed_snapshot_position_verified": true
+      "fixed_snapshot_position_verified": true,
+      "content_quality_followup": {
+        "status": "47行限定の内容/接続は独立確認済み・自動試験/静的/最終HEADと全体採否は未確認",
+        "reason": "独立内容レビューが重複導入句の削除を採用した。行ごとの時点・条件・資料・指定範囲と配送宣言を保持し、読込表の適用をagent-documents-basics.md「読込表」と各文書の「名指し参照の読込方法」へ接続する。同じ規則を繰り返す導入句だけを削除した。",
+        "qcd": "Q: 条件成立時に必要資料を取得する共通契約と各読込表を保持するため変化なし。 C: 重複する導入句の読込・改訂負担が減る。 D: 同じ規則の反復を読む工程が減る。",
+        "target_section": "agent-toolkit/skills/refine-prompt/SKILL.md「読込表」およびagent-documents-basics.md「読込表」",
+        "final_source_verified": false,
+        "implementation_decision": "重複導入句を削除。共通定義・名指し参照の読込方法・各表・配送宣言を保持。",
+        "independent_content_reviewer": "/root/norm_content_review",
+        "limited_semantic_review_verified": true,
+        "limited_source_connection_verified": true,
+        "limited_review_record": "/home/aki/.cache/agent-toolkit/managed-temp/session-4vf_92eo/norm-content-independent-review.md"
+      }
     },
     {
       "i": 3668,
@@ -132077,7 +132415,7 @@
           "file_sha256": "9e7f739280df6d4213d1f89d45d8ec1e7e1c6ec016aee88cb390f8a71870ab6a"
         }
       ],
-      "specific_protected_value": "資料読取の時機。",
+      "specific_protected_value": "各表の条件・時点・指定範囲に従う取得。共通契約と表で保持し、重複導入句を削除する。",
       "protection_sources": [
         {
           "source": "硬い制約:判断前提の充足",
@@ -132091,10 +132429,22 @@
       "requirement_origin": "未確定（価値を失う縮小から保護）",
       "requirement_wi": [],
       "static_position_verified": true,
-      "semantic_content_verified": true,
+      "semantic_content_verified": false,
       "final_mapping_verified": false,
       "final_position": null,
-      "fixed_snapshot_position_verified": true
+      "fixed_snapshot_position_verified": true,
+      "content_quality_followup": {
+        "status": "47行限定の内容/接続は独立確認済み・自動試験/静的/最終HEADと全体採否は未確認",
+        "reason": "独立内容レビューが重複導入句の削除を採用した。行ごとの時点・条件・資料・指定範囲と配送宣言を保持し、読込表の適用をagent-documents-basics.md「読込表」と各文書の「名指し参照の読込方法」へ接続する。同じ規則を繰り返す導入句だけを削除した。",
+        "qcd": "Q: 条件成立時に必要資料を取得する共通契約と各読込表を保持するため変化なし。 C: 重複する導入句の読込・改訂負担が減る。 D: 同じ規則の反復を読む工程が減る。",
+        "target_section": "agent-basics/skills/review-standards/SKILL.md「読込表」およびagent-documents-basics.md「読込表」",
+        "final_source_verified": false,
+        "implementation_decision": "重複導入句を削除。共通定義・名指し参照の読込方法・各表・配送宣言を保持。",
+        "independent_content_reviewer": "/root/norm_content_review",
+        "limited_semantic_review_verified": true,
+        "limited_source_connection_verified": true,
+        "limited_review_record": "/home/aki/.cache/agent-toolkit/managed-temp/session-4vf_92eo/norm-content-independent-review.md"
+      }
     },
     {
       "i": 3755,
@@ -133652,10 +134002,21 @@
       "requirement_origin": "未確定（価値を失う縮小から保護）",
       "requirement_wi": [],
       "static_position_verified": true,
-      "semantic_content_verified": true,
+      "semantic_content_verified": false,
       "final_mapping_verified": false,
       "final_position": null,
-      "fixed_snapshot_position_verified": true
+      "fixed_snapshot_position_verified": true,
+      "content_quality_followup": {
+        "status": "47行限定の内容/接続は独立確認済み・自動試験/静的/最終HEADと全体採否は未確認",
+        "reason": "exec-review-recordingの現行本文は--select-row・行別指定・保存済み試験/診断入力を直接指定する公開経路を持つ。直接JSONは任意の詳細入力として受理するschemaであり、全更新で手作成を課す規則ではない。入力契約を保持し、通常の行更新は直接指定を用いる。",
+        "qcd": "Q: 行の識別・取得版・根拠・判定と未選択行の保持を公開操作で保証できる。 C: 通常更新の手製JSONを省き、詳細入力の既存受理は維持できる。 D: 行指定と根拠指定から更新できる。",
+        "target_section": "agent-toolkit/skills/review-standards/references/exec-review-recording.md「JSONの形式と返却前の確認」",
+        "final_source_verified": false,
+        "independent_content_reviewer": "/root/norm_content_review",
+        "limited_semantic_review_verified": true,
+        "limited_source_connection_verified": true,
+        "limited_review_record": "/home/aki/.cache/agent-toolkit/managed-temp/session-4vf_92eo/norm-content-independent-review.md"
+      }
     },
     {
       "i": 3793,
@@ -133726,10 +134087,22 @@
       "requirement_origin": "未確定（価値を失う縮小から保護）",
       "requirement_wi": [],
       "static_position_verified": true,
-      "semantic_content_verified": true,
+      "semantic_content_verified": false,
       "final_mapping_verified": false,
       "final_position": null,
-      "fixed_snapshot_position_verified": true
+      "fixed_snapshot_position_verified": true,
+      "content_quality_followup": {
+        "status": "47行限定の内容/接続は独立確認済み・自動試験/静的/最終HEADと全体採否は未確認",
+        "reason": "公開updateの保存後読戻しと期待JSON全文の一致確認へ、更新直後の別list取得を統合した。出力先・更新対象・件数とreadback_matchesを同じ返却で確認する。原文・出所・判定・取得版・未選択行の保持と不一致時の非0終了を保持する。内容の判定に追加本文が要る場合の選択読取は引き続き使える。独立担当が方式・保存失敗時の扱い・直接消費側の本文接続を適合とした。",
+        "qcd": "Q: 保存後の期待JSON全文一致を同じ更新操作で確認する。 C: 更新直後の反復取得を省ける。 D: 更新と保存確認を一度の返却で終えられる。自動試験・静的・最終HEADの確認は未受領。",
+        "target_section": "agent-toolkit/skills/review-standards/references/exec-review-recording.md「JSONの形式と返却前の確認」、agent-toolkit/share/exec-review.subagent.md「出力」",
+        "final_source_verified": false,
+        "implementation_reporter": "/root/lane_operations",
+        "independent_content_reviewer": "/root/norm_content_review",
+        "limited_semantic_review_verified": true,
+        "limited_source_connection_verified": true,
+        "limited_review_record": "/home/aki/.cache/agent-toolkit/managed-temp/session-4vf_92eo/norm-content-independent-review.md"
+      }
     },
     {
       "i": 3795,
@@ -148927,7 +149300,7 @@
           "file_sha256": "3622414295a9603767b8c711415a8d84682b15a31a4d23b2042a7fe5d2c82b8d"
         }
       ],
-      "specific_protected_value": "時点・条件が成立した時だけ同じ行の資料を読む方式。",
+      "specific_protected_value": "各表の条件・時点・指定範囲に従う取得。共通契約と表で保持し、重複導入句を削除する。",
       "protection_sources": [],
       "record_associations": [],
       "protection_record_unidentified": true,
@@ -148935,10 +149308,22 @@
       "requirement_origin": "未確定（価値を失う縮小から保護）",
       "requirement_wi": [],
       "static_position_verified": true,
-      "semantic_content_verified": true,
+      "semantic_content_verified": false,
       "final_mapping_verified": false,
       "final_position": null,
-      "fixed_snapshot_position_verified": true
+      "fixed_snapshot_position_verified": true,
+      "content_quality_followup": {
+        "status": "47行限定の内容/接続は独立確認済み・自動試験/静的/最終HEADと全体採否は未確認",
+        "reason": "独立内容レビューが重複導入句の削除を採用した。行ごとの時点・条件・資料・指定範囲と配送宣言を保持し、読込表の適用をagent-documents-basics.md「読込表」と各文書の「名指し参照の読込方法」へ接続する。同じ規則を繰り返す導入句だけを削除した。",
+        "qcd": "Q: 条件成立時に必要資料を取得する共通契約と各読込表を保持するため変化なし。 C: 重複する導入句の読込・改訂負担が減る。 D: 同じ規則の反復を読む工程が減る。",
+        "target_section": "agent-toolkit/skills/single-lane-process/SKILL.md「読込表」およびagent-documents-basics.md「読込表」",
+        "final_source_verified": false,
+        "implementation_decision": "重複導入句を削除。共通定義・名指し参照の読込方法・各表・配送宣言を保持。",
+        "independent_content_reviewer": "/root/norm_content_review",
+        "limited_semantic_review_verified": true,
+        "limited_source_connection_verified": true,
+        "limited_review_record": "/home/aki/.cache/agent-toolkit/managed-temp/session-4vf_92eo/norm-content-independent-review.md"
+      }
     },
     {
       "i": 4222,
@@ -150343,7 +150728,7 @@
           "file_sha256": "4cf387abb84191454dec80517a7b329c59d78736f08c121a5bedede6a4076425"
         }
       ],
-      "specific_protected_value": "条件付き読込の時機、既読本文再利用、圧縮後の読み直し。",
+      "specific_protected_value": "質問・報告の判断時に必要資料が充足されること。同一版の取得済み本文を再利用し、圧縮後は必要範囲を復元する。",
       "protection_sources": [],
       "record_associations": [],
       "protection_record_unidentified": true,
@@ -150351,10 +150736,21 @@
       "requirement_origin": "未確定（価値を失う縮小から保護）",
       "requirement_wi": [],
       "static_position_verified": true,
-      "semantic_content_verified": true,
+      "semantic_content_verified": false,
       "final_mapping_verified": false,
       "final_position": null,
-      "fixed_snapshot_position_verified": true
+      "fixed_snapshot_position_verified": true,
+      "content_quality_followup": {
+        "status": "47行限定の内容/接続は独立確認済み・自動試験/静的/最終HEADと全体採否は未確認",
+        "reason": "user-confirmation-and-reportの読込表は同版再利用を02-agent-operationsへ一元化している。確認要否や質問起草等の条件成立時に対応資料を取得する契約を保持する。",
+        "qcd": "Q: 対象判断の前に必要資料が充足される。 C: 再利用規則の独立再掲と同版本文の再取得を省ける。 D: 条件に対応する判断時機で資料を使える。",
+        "target_section": "原対応先の読込条件/指定範囲（固定snapshot位置は保存。変更後位置は全担当終端後に照合）",
+        "final_source_verified": false,
+        "independent_content_reviewer": "/root/norm_content_review",
+        "limited_semantic_review_verified": true,
+        "limited_source_connection_verified": true,
+        "limited_review_record": "/home/aki/.cache/agent-toolkit/managed-temp/session-4vf_92eo/norm-content-independent-review.md"
+      }
     },
     {
       "i": 4262,
@@ -170852,7 +171248,7 @@
           "file_sha256": "3d94192487582bfb5beeeebf1c5dfb32df8b8a0f85b5f4e0f99604664183d99b"
         }
       ],
-      "specific_protected_value": "条件成立時の事前全文読取という適用条件。",
+      "specific_protected_value": "各表の条件・時点・指定範囲に従う取得。共通契約と表で保持し、重複導入句を削除する。",
       "protection_sources": [],
       "record_associations": [],
       "protection_record_unidentified": true,
@@ -170860,10 +171256,22 @@
       "requirement_origin": "未確定（価値を失う縮小から保護）",
       "requirement_wi": [],
       "static_position_verified": true,
-      "semantic_content_verified": true,
+      "semantic_content_verified": false,
       "final_mapping_verified": false,
       "final_position": null,
-      "fixed_snapshot_position_verified": true
+      "fixed_snapshot_position_verified": true,
+      "content_quality_followup": {
+        "status": "47行限定の内容/接続は独立確認済み・自動試験/静的/最終HEADと全体採否は未確認",
+        "reason": "独立内容レビューが重複導入句の削除を採用した。行ごとの時点・条件・資料・指定範囲と配送宣言を保持し、読込表の適用をagent-documents-basics.md「読込表」と各文書の「名指し参照の読込方法」へ接続する。同じ規則を繰り返す導入句だけを削除した。",
+        "qcd": "Q: 条件成立時に必要資料を取得する共通契約と各読込表を保持するため変化なし。 C: 重複する導入句の読込・改訂負担が減る。 D: 同じ規則の反復を読む工程が減る。",
+        "target_section": "agent-toolkit/skills/workflow-overview/SKILL.md「読込表」およびagent-documents-basics.md「読込表」",
+        "final_source_verified": false,
+        "implementation_decision": "重複導入句を削除。共通定義・名指し参照の読込方法・各表・配送宣言を保持。",
+        "independent_content_reviewer": "/root/norm_content_review",
+        "limited_semantic_review_verified": true,
+        "limited_source_connection_verified": true,
+        "limited_review_record": "/home/aki/.cache/agent-toolkit/managed-temp/session-4vf_92eo/norm-content-independent-review.md"
+      }
     },
     {
       "i": 4792,
@@ -171585,7 +171993,7 @@
           "file_sha256": "5418928668f2ac71ddb9647855e79bdd8fbc4d414a015a4e7727b9a706a7fe02"
         }
       ],
-      "specific_protected_value": "途中成立を含む読込表の発動条件と全文読取。",
+      "specific_protected_value": "途中で成立した条件も含め、対象判断に必要な規範の条件・例外を充足すること。必要範囲の指定と取得済み本文の再利用を保つ。",
       "protection_sources": [],
       "record_associations": [],
       "protection_record_unidentified": true,
@@ -171593,10 +172001,21 @@
       "requirement_origin": "未確定（価値を失う縮小から保護）",
       "requirement_wi": [],
       "static_position_verified": true,
-      "semantic_content_verified": true,
+      "semantic_content_verified": false,
       "final_mapping_verified": false,
       "final_position": null,
-      "fixed_snapshot_position_verified": true
+      "fixed_snapshot_position_verified": true,
+      "content_quality_followup": {
+        "status": "47行限定の内容/接続は独立確認済み・自動試験/静的/最終HEADと全体採否は未確認",
+        "reason": "toolkit writing-standardsの現行入口は、取得済み同版の品質本文を再利用し、toolkitの配送・起動・状態・記録の条件を補完する。品質本体の所有者はbasicsであり、互換入口から全品質資料を再取得する義務を加えない。",
+        "qcd": "Q: 品質基準の所有者とtoolkit固有条件を保持する。 C: 同版品質本文の二重取得を省ける。 D: 起動元の必要条件を補完して判断へ進める。",
+        "target_section": "原対応先の読込条件/指定範囲（固定snapshot位置は保存。変更後位置は全担当終端後に照合）",
+        "final_source_verified": false,
+        "independent_content_reviewer": "/root/norm_content_review",
+        "limited_semantic_review_verified": true,
+        "limited_source_connection_verified": true,
+        "limited_review_record": "/home/aki/.cache/agent-toolkit/managed-temp/session-4vf_92eo/norm-content-independent-review.md"
+      }
     },
     {
       "i": 4814,
@@ -176111,7 +176530,7 @@
           "file_sha256": "34fb003fc976700da0c2da5af76cfd1ff25cce13986806db244a5964bce35407"
         }
       ],
-      "specific_protected_value": "全文読取原則と手順による部分読取例外。",
+      "specific_protected_value": "適用する規範の条件・例外を読み落とさないこと。節指定の読取でこの情報が充足する場合の扱いと、全文先行取得の必要性を再検収する。",
       "protection_sources": [],
       "record_associations": [
         "docs/development/incidents-runtime.md#障害・欠陥の記録: 実行基盤 > フックとセッション状態の不全#21",
@@ -176122,10 +176541,21 @@
       "requirement_origin": "未確定（価値を失う縮小から保護）",
       "requirement_wi": [],
       "static_position_verified": true,
-      "semantic_content_verified": true,
+      "semantic_content_verified": false,
       "final_mapping_verified": false,
       "final_position": null,
-      "fixed_snapshot_position_verified": true
+      "fixed_snapshot_position_verified": true,
+      "content_quality_followup": {
+        "status": "47行限定の内容/接続は独立確認済み・自動試験/静的/最終HEADと全体採否は未確認",
+        "reason": "agent-documents-basicsの読込表の規定は、手順や表が一部の節を読むと定める場合にその定めへ従うことを明示する。全文指定の資料には全文契約を保持し、明示された節指定を無条件の全資料全文取得へ拡張しない。",
+        "qcd": "Q: 指定範囲の条件・例外を読み落とさず適用できる。 C: 明示された一部節の取得に不要な全文負担を加えない。 D: 判断が必要とする指定範囲へ直接到達できる。",
+        "target_section": "原対応先の読込条件/指定範囲（固定snapshot位置は保存。変更後位置は全担当終端後に照合）",
+        "final_source_verified": false,
+        "independent_content_reviewer": "/root/norm_content_review",
+        "limited_semantic_review_verified": true,
+        "limited_source_connection_verified": true,
+        "limited_review_record": "/home/aki/.cache/agent-toolkit/managed-temp/session-4vf_92eo/norm-content-independent-review.md"
+      }
     },
     {
       "i": 4936,
@@ -200474,7 +200904,7 @@
           "file_sha256": "94a9e2aa61e8673a1ca94bd710e1dd2506caea11a1eed32efcea6bd07069499e"
         }
       ],
-      "specific_protected_value": "事前全文読取、専用手順適用、変更箇所検収。",
+      "specific_protected_value": "一括置換の対象・例外・変更箇所を正しく検収すること。既読資料を再利用し、置換判断に必要な範囲を選ぶ。",
       "protection_sources": [],
       "record_associations": [
         "docs/development/concepts-workflows.md#確定済みの方針・意向: 作業の流れとリリース > 多数の単純作業の分担#2"
@@ -200484,10 +200914,21 @@
       "requirement_origin": "未確定（価値を失う縮小から保護）",
       "requirement_wi": [],
       "static_position_verified": true,
-      "semantic_content_verified": true,
+      "semantic_content_verified": false,
       "final_mapping_verified": false,
       "final_position": null,
-      "fixed_snapshot_position_verified": true
+      "fixed_snapshot_position_verified": true,
+      "content_quality_followup": {
+        "status": "47行限定の内容/接続は独立確認済み・自動試験/静的/最終HEADと全体採否は未確認",
+        "reason": "notation-rulesの表記の一括置換と配送宣言は、候補置換の前にbulk-replacementの基準を取得し変更箇所を検収する契約へ接続する。同版既読の再利用は02-agent-operationsに従い、通常の文章執筆へ無条件に取得を広げない。",
+        "qcd": "Q: 一括置換の対象・例外と変更箇所の検収を保持する。 C: 一括置換を行わない場面の先行取得と同版再取得を省ける。 D: 置換判断の前に必要基準へ到達できる。",
+        "target_section": "原対応先の読込条件/指定範囲（固定snapshot位置は保存。変更後位置は全担当終端後に照合）",
+        "final_source_verified": false,
+        "independent_content_reviewer": "/root/norm_content_review",
+        "limited_semantic_review_verified": true,
+        "limited_source_connection_verified": true,
+        "limited_review_record": "/home/aki/.cache/agent-toolkit/managed-temp/session-4vf_92eo/norm-content-independent-review.md"
+      }
     },
     {
       "i": 5658,
@@ -200789,7 +201230,7 @@
           "file_sha256": "8168c0d1573737b371e1b4bdd2aff9c331d5cbd99bd68066159cbe2259634f0a"
         }
       ],
-      "specific_protected_value": "pyfltr runによる恒久成果物検査。",
+      "specific_protected_value": "公開runを使い、全対象へ必要な検査を到達させること。",
       "protection_sources": [
         {
           "source": "docs/development/incidents-runtime.md#障害・欠陥の記録: 実行基盤 > フックとセッション状態の不全#23",
@@ -200805,10 +201246,21 @@
       "requirement_origin": "未確定（価値を失う縮小から保護）",
       "requirement_wi": [],
       "static_position_verified": true,
-      "semantic_content_verified": true,
+      "semantic_content_verified": false,
       "final_mapping_verified": false,
       "final_position": null,
-      "fixed_snapshot_position_verified": true
+      "fixed_snapshot_position_verified": true,
+      "content_quality_followup": {
+        "status": "47行限定の内容/接続は独立確認済み・自動試験/静的/最終HEADと全体採否は未確認",
+        "reason": "恒久成果物へ必要な文章検査が到達する公開入口を保持し、同じ設定の全対象とコマンドを一括実行へまとめる。口語だけの独立した起動手順を維持する必要性はない。",
+        "qcd": "Q: 一括入口に必要な検査と完了判定を保持すれば品質を保てる。 C: 個別入口の読込と起動を減らせる。 D: 同一条件の対象をまとめて検収できる。",
+        "target_section": "agent-basics/skills/writing-standards/references/notation-rules.md「文章チェックの一括実行」",
+        "final_source_verified": false,
+        "limited_semantic_review_verified": true,
+        "limited_source_connection_verified": true,
+        "independent_content_reviewer": "/root/norm_content_review",
+        "limited_review_record": "/home/aki/.cache/agent-toolkit/managed-temp/session-4vf_92eo/norm-content-independent-review.md"
+      }
     },
     {
       "i": 5667,
@@ -200828,12 +201280,12 @@
           "file_sha256": "8168c0d1573737b371e1b4bdd2aff9c331d5cbd99bd68066159cbe2259634f0a"
         }
       ],
-      "specific_protected_value": "対象ファイルを絶対パスで1件指定する条件。",
+      "specific_protected_value": "検査対象の一意な特定と全件到達。絶対パス1件への制限は保護価値から外す。",
       "protection_sources": [
         {
-          "source": "未承認の出力形式変更を避けるためrun入力契約を保持。",
-          "kind": "本文上の保護条件または公開契約",
-          "status": "具体的な根拠はprotected_valueと基準本文へ対応"
+          "source": "notation-rules.md「文章チェックの一括実行」の対象全件指定と到達確認。単一path限定を公開runの必須条件とした旧説明は撤回。",
+          "kind": "必要成果と現在の文書契約",
+          "status": "変更後の公開受理形式・実行結果は最終検収待ち"
         }
       ],
       "record_associations": [],
@@ -200842,10 +201294,21 @@
       "requirement_origin": "未確定（価値を失う縮小から保護）",
       "requirement_wi": [],
       "static_position_verified": true,
-      "semantic_content_verified": true,
+      "semantic_content_verified": false,
       "final_mapping_verified": false,
       "final_position": null,
-      "fixed_snapshot_position_verified": true
+      "fixed_snapshot_position_verified": true,
+      "content_quality_followup": {
+        "status": "47行限定の内容/接続は独立確認済み・自動試験/静的/最終HEADと全体採否は未確認",
+        "reason": "対象を絶対パスで特定する価値を保持する。公開runが受理する複数対象を1件へ制限する根拠は確認できず、単一path指定を必要条件とした旧QCDを撤回する。同じ設定の対象全件を重複除去して渡す。",
+        "qcd": "Q: 対象全件と到達数を照合すれば検査の完全性を保てる。 C: 1件ずつの引数作成と反復起動を減らせる。 D: 複数対象の一括検査で完了までの呼出しを減らせる。",
+        "target_section": "agent-basics/skills/writing-standards/references/notation-rules.md「文章チェックの一括実行」",
+        "final_source_verified": false,
+        "limited_semantic_review_verified": true,
+        "limited_source_connection_verified": true,
+        "independent_content_reviewer": "/root/norm_content_review",
+        "limited_review_record": "/home/aki/.cache/agent-toolkit/managed-temp/session-4vf_92eo/norm-content-independent-review.md"
+      }
     },
     {
       "i": 5668,
@@ -200896,7 +201359,7 @@
           "file_sha256": "8168c0d1573737b371e1b4bdd2aff9c331d5cbd99bd68066159cbe2259634f0a"
         }
       ],
-      "specific_protected_value": "Markdownではtextlint併用、それ以外ではcolloquial-checkのみという条件。",
+      "specific_protected_value": "拡張子ごとの必要検査と各対象への到達。",
       "protection_sources": [],
       "record_associations": [],
       "protection_record_unidentified": true,
@@ -200904,10 +201367,21 @@
       "requirement_origin": "未確定（価値を失う縮小から保護）",
       "requirement_wi": [],
       "static_position_verified": true,
-      "semantic_content_verified": true,
+      "semantic_content_verified": false,
       "final_mapping_verified": false,
       "final_position": null,
-      "fixed_snapshot_position_verified": true
+      "fixed_snapshot_position_verified": true,
+      "content_quality_followup": {
+        "status": "47行限定の内容/接続は独立確認済み・自動試験/静的/最終HEADと全体採否は未確認",
+        "reason": "拡張子ごとに必要な検査を選ぶ価値を保持し、混在する対象ではコマンドの和集合と各対象への到達を確認する。対象ごとに別起動する必要性はない。",
+        "qcd": "Q: 和集合と各対象の到達を確認すれば検査漏れを防げる。 C: 対象別に同じ設定を組み直す作業を減らせる。 D: 同じ設定の検査を一括起動できる。",
+        "target_section": "agent-basics/skills/writing-standards/references/notation-rules.md「文章チェックの一括実行」",
+        "final_source_verified": false,
+        "limited_semantic_review_verified": true,
+        "limited_source_connection_verified": true,
+        "independent_content_reviewer": "/root/norm_content_review",
+        "limited_review_record": "/home/aki/.cache/agent-toolkit/managed-temp/session-4vf_92eo/norm-content-independent-review.md"
+      }
     },
     {
       "i": 5670,
@@ -201028,7 +201502,7 @@
           "file_sha256": "8168c0d1573737b371e1b4bdd2aff9c331d5cbd99bd68066159cbe2259634f0a"
         }
       ],
-      "specific_protected_value": "検査完了の複合条件、未完了原因の確認、run_id継続取得。",
+      "specific_protected_value": "全対象への検査到達と終了状態の確認。",
       "protection_sources": [],
       "record_associations": [
         "docs/development/incidents-workflows.md#障害・欠陥の記録: 作業の流れ > 要求と判断の脱落#5"
@@ -201038,10 +201512,21 @@
       "requirement_origin": "未確定（価値を失う縮小から保護）",
       "requirement_wi": [],
       "static_position_verified": true,
-      "semantic_content_verified": true,
+      "semantic_content_verified": false,
       "final_mapping_verified": false,
       "final_position": null,
-      "fixed_snapshot_position_verified": true
+      "fixed_snapshot_position_verified": true,
+      "content_quality_followup": {
+        "status": "47行限定の内容/接続は独立確認済み・自動試験/静的/最終HEADと全体採否は未確認",
+        "reason": "完了状態、対象数、実行済みコマンドと未到達理由の照合を保持する。複数対象にも同じ完了条件を適用し、診断は保存されたrun_idから取得する。",
+        "qcd": "Q: 完了条件全体を失うと未到達を成功と誤認する。 C: 同一runの要約を使って重複照会を減らせる。 D: 一括結果から不足対象だけへ対処できる。",
+        "target_section": "agent-basics/skills/writing-standards/references/notation-rules.md「文章チェックの一括実行」",
+        "final_source_verified": false,
+        "limited_semantic_review_verified": true,
+        "limited_source_connection_verified": true,
+        "independent_content_reviewer": "/root/norm_content_review",
+        "limited_review_record": "/home/aki/.cache/agent-toolkit/managed-temp/session-4vf_92eo/norm-content-independent-review.md"
+      }
     },
     {
       "i": 5674,
@@ -201094,7 +201579,7 @@
           "file_sha256": "8168c0d1573737b371e1b4bdd2aff9c331d5cbd99bd68066159cbe2259634f0a"
         }
       ],
-      "specific_protected_value": "MCP代替CLIの完全な入力契約。",
+      "specific_protected_value": "MCP不能時にも対象・制約・完了基準を保つ公開CLI代替。",
       "protection_sources": [],
       "record_associations": [],
       "protection_record_unidentified": true,
@@ -201102,10 +201587,21 @@
       "requirement_origin": "未確定（価値を失う縮小から保護）",
       "requirement_wi": [],
       "static_position_verified": true,
-      "semantic_content_verified": true,
+      "semantic_content_verified": false,
       "final_mapping_verified": false,
       "final_position": null,
-      "fixed_snapshot_position_verified": true
+      "fixed_snapshot_position_verified": true,
+      "content_quality_followup": {
+        "status": "47行限定の内容/接続は独立確認済み・自動試験/静的/最終HEADと全体採否は未確認",
+        "reason": "MCPを利用できない場合の公開CLI代替を保持し、同じ設定の全対象を1回に渡す。公開受理形式と完了条件が共通であることを確認し、対象別のコマンド複製を省く。",
+        "qcd": "Q: 同じ対象と制約を持つ代替入口で検査品質を保てる。 C: 複数対象の引数をまとめて設定の反復を減らせる。 D: 代替起動と結果確認を一括化できる。",
+        "target_section": "agent-basics/skills/writing-standards/references/notation-rules.md「文章チェックの一括実行」",
+        "final_source_verified": false,
+        "limited_semantic_review_verified": true,
+        "limited_source_connection_verified": true,
+        "independent_content_reviewer": "/root/norm_content_review",
+        "limited_review_record": "/home/aki/.cache/agent-toolkit/managed-temp/session-4vf_92eo/norm-content-independent-review.md"
+      }
     },
     {
       "i": 5676,
@@ -201125,7 +201621,7 @@
           "file_sha256": "8168c0d1573737b371e1b4bdd2aff9c331d5cbd99bd68066159cbe2259634f0a"
         }
       ],
-      "specific_protected_value": "検出範囲、引用・コード除外、コメント対象、辞書パスの動的解決。",
+      "specific_protected_value": "検出範囲と原文保護。辞書実体の取得は調査上必要な場合に行う。",
       "protection_sources": [],
       "record_associations": [],
       "protection_record_unidentified": true,
@@ -201133,10 +201629,21 @@
       "requirement_origin": "未確定（価値を失う縮小から保護）",
       "requirement_wi": [],
       "static_position_verified": true,
-      "semantic_content_verified": true,
+      "semantic_content_verified": false,
       "final_mapping_verified": false,
       "final_position": null,
-      "fixed_snapshot_position_verified": true
+      "fixed_snapshot_position_verified": true,
+      "content_quality_followup": {
+        "status": "47行限定の内容/接続は独立確認済み・自動試験/静的/最終HEADと全体採否は未確認",
+        "reason": "拡張子、引用・コードの除外、コメントの対象範囲を保持する。通常の検査は診断から検出語と理由を確認し、辞書実体の取得は辞書改訂や誤検出調査が必要な時機へ限定する。",
+        "qcd": "Q: 対象範囲と診断理由を保持すれば通常の検査結果を解釈できる。 C: 毎回の辞書所在調査を省ける。 D: 必要な調査だけを結果判定へ接続できる。",
+        "target_section": "agent-basics/skills/writing-standards/references/notation-rules.md「文章チェックの一括実行」",
+        "final_source_verified": false,
+        "limited_semantic_review_verified": true,
+        "limited_source_connection_verified": true,
+        "independent_content_reviewer": "/root/norm_content_review",
+        "limited_review_record": "/home/aki/.cache/agent-toolkit/managed-temp/session-4vf_92eo/norm-content-independent-review.md"
+      }
     },
     {
       "i": 5677,
@@ -201156,7 +201663,7 @@
           "file_sha256": "8168c0d1573737b371e1b4bdd2aff9c331d5cbd99bd68066159cbe2259634f0a"
         }
       ],
-      "specific_protected_value": "uv run --frozenによる実行環境の辞書解決。",
+      "specific_protected_value": "必要な調査で使用版の検出根拠へ到達できること。内部定数名とpython -cの操作は代替可能な手段。",
       "protection_sources": [],
       "record_associations": [],
       "protection_record_unidentified": true,
@@ -201164,10 +201671,21 @@
       "requirement_origin": "未確定（価値を失う縮小から保護）",
       "requirement_wi": [],
       "static_position_verified": true,
-      "semantic_content_verified": true,
+      "semantic_content_verified": false,
       "final_mapping_verified": false,
       "final_position": null,
-      "fixed_snapshot_position_verified": true
+      "fixed_snapshot_position_verified": true,
+      "content_quality_followup": {
+        "status": "47行限定の内容/接続は独立確認済み・自動試験/静的/最終HEADと全体採否は未確認",
+        "reason": "内部定数DENY_PATH/ALLOW_PATHをpython -cで取得する例を毎回使う必要性は確認できない。通常は診断を使い、辞書の改訂・誤検出調査で実体が必要になった場合に使用版の公開機能と提供元資料へ到達する。旧コード例の存在を保護価値の根拠にしたQCDを撤回する。",
+        "qcd": "Q: 診断と使用版の提供元資料で根拠を確認できる条件を保持する。 C: 通常検査に不要な内部定数の照会を省ける。 D: 辞書確認が必要な調査だけに操作を限定できる。",
+        "target_section": "agent-basics/skills/writing-standards/references/notation-rules.md「文章チェックの一括実行」",
+        "final_source_verified": false,
+        "limited_semantic_review_verified": true,
+        "limited_source_connection_verified": true,
+        "independent_content_reviewer": "/root/norm_content_review",
+        "limited_review_record": "/home/aki/.cache/agent-toolkit/managed-temp/session-4vf_92eo/norm-content-independent-review.md"
+      }
     },
     {
       "i": 5678,
@@ -201224,7 +201742,7 @@
           "file_sha256": "3dd5e793d4107b3bfe1a104d2d7844fd99738d434f23d00f1642c09d859bd75f"
         }
       ],
-      "specific_protected_value": "ダッシュ検査の起動形と対象・除外範囲。",
+      "specific_protected_value": "地の文・見出しのダッシュ検出と非対象範囲。検査の個別起動は代替可能な手段。",
       "protection_sources": [],
       "record_associations": [],
       "protection_record_unidentified": true,
@@ -201232,10 +201750,21 @@
       "requirement_origin": "未確定（価値を失う縮小から保護）",
       "requirement_wi": [],
       "static_position_verified": true,
-      "semantic_content_verified": true,
+      "semantic_content_verified": false,
       "final_mapping_verified": false,
       "final_position": null,
-      "fixed_snapshot_position_verified": true
+      "fixed_snapshot_position_verified": true,
+      "content_quality_followup": {
+        "status": "47行限定の内容/接続は独立確認済み・自動試験/静的/最終HEADと全体採否は未確認",
+        "reason": "ダッシュの検出対象とコード・インラインコード・URLの除外を保持し、プロジェクトの検査を文章チェックの同じ一括実行へ含める。専用章とwriting-check-dashの個別起動は品質達成の必須条件ではない。",
+        "qcd": "Q: 同じ対象・除外を一括検査で保持すれば品質を保てる。 C: 専用操作の読込と反復起動を減らせる。 D: 他の文章検査と同じ結果回収へまとめられる。",
+        "target_section": "agent-basics/skills/writing-standards/references/notation-rules.md「文章チェックの一括実行」",
+        "final_source_verified": false,
+        "limited_semantic_review_verified": true,
+        "limited_source_connection_verified": true,
+        "independent_content_reviewer": "/root/norm_content_review",
+        "limited_review_record": "/home/aki/.cache/agent-toolkit/managed-temp/session-4vf_92eo/norm-content-independent-review.md"
+      }
     },
     {
       "i": 5680,
@@ -220034,7 +220563,7 @@
           "file_sha256": "3765764861a224a8d25190348a0fabfc6fbd94d02becf72cdea7b4905a013150"
         }
       ],
-      "specific_protected_value": "各表記自動チェックの役割分担。",
+      "specific_protected_value": "各表記違反の検出責務と全対象への到達。",
       "protection_sources": [],
       "record_associations": [
         "docs/development/incidents-validation.md#障害・欠陥の記録: 判定と検証 > 誤判定と検証不足#35",
@@ -220045,11 +220574,22 @@
       "requirement_origin": "未確定（価値を失う縮小から保護）",
       "requirement_wi": [],
       "static_position_verified": true,
-      "semantic_content_verified": true,
+      "semantic_content_verified": false,
       "final_mapping_verified": false,
       "final_position": null,
       "code_followup_reference": "formal-source-manifest.jsonのapplied_followup4。記録554/592の現在実装を対応付けた。条文の位置とQ/C/D評価は保持する。",
-      "fixed_snapshot_position_verified": true
+      "fixed_snapshot_position_verified": true,
+      "content_quality_followup": {
+        "status": "47行限定の内容/接続は独立確認済み・自動試験/静的/最終HEADと全体採否は未確認",
+        "reason": "口語・textlint・ダッシュ・agent-doc-toneの検出責務を保持する。同じ対象と時機で動く検査は共通入口へまとめ、各検出器の役割分担とエージェントの個別操作数を分けて判断する。",
+        "qcd": "Q: 役割ごとの検出を保持して統合できる。 C: 検査ごとの入口探索と手作業を減らせる。 D: 同じ設定の検査を一括で完了判定できる。",
+        "target_section": "agent-basics/skills/writing-standards/references/writing.md「文章の共通規定」",
+        "final_source_verified": false,
+        "limited_semantic_review_verified": true,
+        "limited_source_connection_verified": true,
+        "independent_content_reviewer": "/root/norm_content_review",
+        "limited_review_record": "/home/aki/.cache/agent-toolkit/managed-temp/session-4vf_92eo/norm-content-independent-review.md"
+      }
     },
     {
       "i": 6242,
@@ -272703,5 +273243,114 @@
         ]
       }
     ]
+  },
+  "content_quality_followup": {
+    "wi": "20261019-143406-001.md",
+    "baseline": "4246b3cfe1126c86a6b77e4d93bc53993ce3b6f3",
+    "scope": "既存6297行の先頭抜粋・原評価の理由/保持価値から同因候補を選別。条文再切出しと全hash再採取は実施していない。",
+    "screening": "単一path、検査の個別起動、python/構造化データの反復手作業、全文/再読/先行読込。理由・保持価値を検索した216候補の保持価値、機械操作の30候補の理由・保持価値を通覧し、対象外の一件識別・所有境界・秘密情報最小取得などを分けた。変更対象と周辺の旧QCDを読んで再評価した。候補集合には重複がある。",
+    "changed_clause_numbers": [
+      675,
+      677,
+      949,
+      996,
+      1019,
+      1095,
+      1178,
+      1194,
+      1256,
+      1265,
+      1365,
+      1427,
+      1689,
+      1738,
+      1836,
+      2146,
+      2213,
+      2371,
+      2463,
+      2665,
+      2838,
+      2972,
+      3010,
+      3012,
+      3029,
+      3233,
+      3568,
+      3655,
+      3667,
+      3754,
+      3792,
+      3794,
+      4221,
+      4261,
+      4791,
+      4813,
+      4935,
+      5657,
+      5666,
+      5667,
+      5669,
+      5673,
+      5675,
+      5676,
+      5677,
+      5679,
+      6241
+    ],
+    "unchanged_rows": "今回の候補外、具体的な保護条件を維持できる行、または必要性未確定の行。未変更を内容品質の再検収完了と扱わない。",
+    "fixed_snapshot_fields": "positions・file_sha256・固定snapshotの位置照合結果は当時の証拠として保持。今回の変更後本文の一致を示す値へ転用しない。従来のprotection_sourcesは当時の対応資料であり、現在の手段の必要性は更新したspecific_protected_valueとcontent_quality_followupへ照らして再検収する。",
+    "verification": "formatter/test/生成/公開CLI最終判定は未実施。最終消費側と行/hash照合は全担当終端後main、完成条件2/3は独立レビュー待ち。",
+    "independent_followup": {
+      "reviewer": "/root/norm_content_review",
+      "author": "/root/existing_wi_review",
+      "deleted_repeated_introduction_clauses": [
+        949,
+        996,
+        1019,
+        1095,
+        1194,
+        1265,
+        1365,
+        1427,
+        1689,
+        1738,
+        1836,
+        2146,
+        2213,
+        2972,
+        3010,
+        3233,
+        3568,
+        3655,
+        3667,
+        3754,
+        4221,
+        4791
+      ],
+      "specific_reading_conclusions_applied": [
+        675,
+        677,
+        2371,
+        2463,
+        2665,
+        3012,
+        4261,
+        4813,
+        4935,
+        5657
+      ],
+      "pending": "自動試験・静的検証の実行結果、全担当終端後の最終HEAD照合、47行以外を含む完成条件2/3の正式採否。著者による独立合格判定はしていない。",
+      "manual_public_routes_conclusions_applied": [
+        1178,
+        1256,
+        2838,
+        3029,
+        3792
+      ],
+      "manual_rows_pending_implementation": [],
+      "limited_review_result": "47行の内容判断・source接続の是正要求0。22削除・10具体読込・9文章検査・3既存公開経路・3新公開操作。全6297行の正式採否と分離する。",
+      "review_record": "/home/aki/.cache/agent-toolkit/managed-temp/session-4vf_92eo/norm-content-independent-review.md"
+    }
   }
 }

@@ -13,6 +13,7 @@ import pytest
 from agent_toolkit._common import session_state
 from agent_toolkit._testing.pretooluse_support import (
     _EXECUTE_REVIEW_TASK_NAMES,
+    _additional_context,
     _agent_messages,
     _make_plan_file,
     _path_section_build_content,
@@ -23,6 +24,7 @@ from agent_toolkit._testing.pretooluse_support import (
     _run_posttooluse,
     _stage_model_env,
     _write_session_state,
+    run_after_read_delivery,
 )
 
 
@@ -30,13 +32,7 @@ def _run_after_skill_acquisition(
     payload: dict, env_overrides: dict[str, str] | None = None
 ) -> subprocess.CompletedProcess[str]:
     """操作前の基準を共通配送で取得し、agent_checksが判定した再発行の結果を返す。"""
-    last_output = ""
-    for _attempt in range(12):
-        result = _run(payload, env_overrides=env_overrides)
-        last_output = result.stderr
-        if result.returncode != 2 or "操作前の必須資料を配送する。" not in result.stderr:
-            return result
-    raise AssertionError("共通配送の再発行が完了しなかった: " + last_output)
+    return run_after_read_delivery(payload, env_overrides)
 
 
 @pytest.mark.parametrize(
@@ -678,10 +674,10 @@ class TestWorkflowSkillInvocation:
             env_overrides=_plan_file_state_env(tmp_path),
         )
         assert result.returncode == 0
-        assert result.stdout == ""
+        assert "/skills/delegation/SKILL.md" not in _additional_context(result)
 
     def test_no_notice_for_other_skill(self, tmp_path: pathlib.Path) -> None:
-        """委譲工程を定めないスキルも追加出力を返さない。"""
+        """品質基準の配送を保ち、委譲に関する追加出力を返さない。"""
         result = _run_after_skill_acquisition(
             {
                 "tool_name": "Skill",
@@ -692,6 +688,7 @@ class TestWorkflowSkillInvocation:
         )
         assert result.returncode == 0
         assert result.stdout == ""
+        assert "/skills/delegation/SKILL.md" not in _additional_context(result)
 
     def test_no_notice_in_sidechain(self, tmp_path: pathlib.Path) -> None:
         """サイドチェーンでは案内を返さない。"""

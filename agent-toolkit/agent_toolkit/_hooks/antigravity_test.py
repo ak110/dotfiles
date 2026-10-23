@@ -177,10 +177,11 @@ def test_native_subagent_receives_rules(tmp_path: pathlib.Path, capsys: pytest.C
     prompt = json.dumps("調査せよ") if encoded else "調査せよ"
     raw = _payload(tmp_path, toolCall={"name": "invoke_subagent", "args": {"Prompt": prompt}})
     skill = pathlib.Path(antigravity.__file__).resolve().parents[2] / "skills/delegation/SKILL.md"
-    blocked = _run(raw, "PreToolUse", capsys)
-    assert blocked["decision"] == "deny"
-    assert 'source="read-delivery"' in blocked["reason"]
-    assert str(skill) in blocked["reason"]
+    initial = _run(raw, "PreToolUse", capsys)
+    assert initial["decision"] == "allow"
+    delivered = json.dumps(_run(raw, "PostInvocation", capsys), ensure_ascii=False)
+    assert "read-delivery" in delivered
+    assert str(skill) in delivered
     read = _payload(
         tmp_path,
         toolCall={
@@ -191,12 +192,21 @@ def test_native_subagent_receives_rules(tmp_path: pathlib.Path, capsys: pytest.C
     )
     assert _run(read, "PostToolUse", capsys) == {}
     result = _run(raw, "PreToolUse", capsys)
+    assert result["decision"] == "allow"
     assert "overwrite" in result, result
     rewritten = result["overwrite"]["Prompt"]
     rewritten = json.loads(rewritten) if encoded else rewritten
     assert rewritten.startswith("調査せよ")
     assert "rules-subagent" in rewritten
     assert 'kind="rules-subagent"' in rewritten
+    for _ in range(12):
+        if not _run(raw, "PostInvocation", capsys):
+            break
+        assert _run(raw, "PreToolUse", capsys)["decision"] == "allow"
+    else:
+        pytest.fail("関連資料の配送が完了しなかった")
+    assert _run(raw, "PreToolUse", capsys)["decision"] == "allow"
+    assert _run(raw, "PostInvocation", capsys) == {}
 
 
 def test_hook_entry_accepts_host_and_event(

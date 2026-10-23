@@ -74,12 +74,22 @@ def test_repository_delegate_prompt_is_minimal(tmp_path: pathlib.Path, monkeypat
     assert "agent-toolkit:process-wi" in lines[1]
     assert "previous" not in payload and "worktree_name" not in payload
     assert ": null" not in payload_line
-    assert [candidate["filename"] for candidate in payload["candidates"]] == ["ready.md"]
-    assert "blocked.md" not in str(payload["candidates"])
+    candidate_path = pathlib.Path(payload["candidate_file"])
+    candidates = json.loads(candidate_path.read_text(encoding="utf-8"))
+    assert [candidate["filename"] for candidate in candidates] == ["ready.md"]
+    assert "blocked.md" not in str(candidates)
+    assert "candidates" not in payload
     assert "追加指示:" not in prompt
     instructed = _pl_session.build_repository_delegate_prompt(snapshot, acquired, instruction="追加の要求")
     assert "追加指示:\n追加の要求" in instructed
+    second = json.loads(next(line for line in instructed.splitlines() if line.startswith("{")))
+    assert second["candidate_file"] != str(candidate_path)
+    assert json.loads(candidate_path.read_text(encoding="utf-8")) == candidates
+    second_path = pathlib.Path(second["candidate_file"])
+    assert json.loads(second_path.read_text(encoding="utf-8")) == candidates
     ownership.release(acquired)
+    assert not candidate_path.exists()
+    assert not second_path.exists()
 
 
 def _run_claude_session(
@@ -89,7 +99,7 @@ def _run_claude_session(
 ) -> None:
     """Claudeのオーケストレーターを1回起動し、本起動の`subprocess.run`を`launch`で受ける。"""
     monkeypatch.setattr(subprocess, "run", launch)
-    monkeypatch.setattr(lane, "cleanup_session", lambda _session: {"retained": False})
+    monkeypatch.setattr(lane, "cleanup_session", lambda _session, **_kwargs: {"retained": False})
     args = argparse.Namespace(resume=None, no_update=True, worktree="custom")
     assert not _pl_session.run_process_session(
         args,
@@ -158,7 +168,7 @@ def test_unconfigured_process_session_preserves_parent_auth(
         return subprocess.CompletedProcess(argv, 0)
 
     monkeypatch.setattr(subprocess, "run", launch)
-    monkeypatch.setattr(lane, "cleanup_session", lambda _session: {"retained": False})
+    monkeypatch.setattr(lane, "cleanup_session", lambda _session, **_kwargs: {"retained": False})
     _pl_session.run_process_session(
         argparse.Namespace(resume=resume, no_update=True),
         tmp_path,
@@ -185,7 +195,7 @@ def test_invalid_env_file_warning_reaches_process_loop_stderr(
     if content is not None:
         path.write_text(content, encoding="utf-8")
     monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CLAUDE_API_ENV_FILE", str(path))
-    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CLAUDE_API_MODE", "pay-as-you-go")
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CLAUDE_ORCHESTRATOR_API_ONLY", "false")
     observed: dict[str, Any] = {}
 
     def launch(argv: list[str], **kwargs: Any) -> subprocess.CompletedProcess[bytes]:
@@ -894,6 +904,7 @@ class TestProcessLoopPromptAndEnv:
     ) -> None:
         """Weekly limitか5時間の利用上限の拒否では次候補へ進まず、解除まで待って同じClaude候補で本作業を始める。"""
         _setup_notes(tmp_path)
+        monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CLAUDE_USAGE_LIMIT_WAIT", "always")
         set_orchestrate_model(tmp_path, "claude:opus/high,codex:gpt-5.6-sol/low")
         capsys.readouterr()
         myrepo = tmp_path / "myrepo"

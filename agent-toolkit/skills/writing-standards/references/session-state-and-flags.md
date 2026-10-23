@@ -108,7 +108,6 @@ Stop hookの無進捗停止（`busy_loop_guard.py`）の終了要求は、Stop�
 
 ## plan系
 
-- `working_plan_save_notified`: `~/.claude/plans`に残る計画バンドルの保存確認を促した事実。`agent-toolkit/agent_toolkit/_hooks/plan_save_advisor.py`が記録し、再通知の抑止に読む。セッション終了まで保持し、リセットは処理対象外とする
 - `plan_mode_skill_invoked`: plan-mode起動を記録し、計画構造の自動チェックの適用判定に使う
 - `current_plan_file_path`: PostToolUseが計画ファイルの編集時と公開された計画ファイル作成コマンドの出力からパスを記録し、PreToolUse(Skill)がplan-mode起動時に消去する。UserPromptSubmitのコマンドhookが名前の選択に読む
 - `last_hook_session_title`: UserPromptSubmitのコマンドhookが設定した名前。現在名が空かこの値と同じ場合だけ、新しい種別・計画名への更新を許す。同じhookが通常状態へ排他下で保存する。通常状態と同じ期限と`clear`で消去する
@@ -123,13 +122,6 @@ Stop hookの無進捗停止（`busy_loop_guard.py`）の終了要求は、Stop�
   保持はセッション状態の有効期間中に限り、通常のスキル完了処理では再利用の対象外とする
 - `stop_no_tool_turn_count`: `agent-toolkit/agent_toolkit/_hooks/busy_loop_guard.py`が、自セッションのツール呼び出しを含まないターンの連続回数を記録し、常駐ループの停止判定に読む。ツール呼び出しを観測したターン、委譲先またはバックグラウンドタスクの完了待ちのターン、停止工程の実行時に0へ戻す。セッション終了まで保持する
 - `stop_observed_entry_count`: 同フックが、Stop判定の時点で観測済みのセッション記録のエントリ数を記録し、次のターンで増分だけを走査する起点に読む。セッション終了まで保持する
-- `last_user_prompt_at`: `agent-toolkit/agent_toolkit/_hooks/user_prompt_submit.py`が通常のユーザー発話（ユーザー自身が入力したスラッシュコマンドを含む）の受領時刻をPOSIX秒で記録する。
-  同フックが、発話の内容を現物で確かめる手順の注記を注入するかの判定に読む。セッション終了まで保持し、リセット処理は設けない。次のいずれかに当たる発話は機械注入ターンとして記録と注入の対象から外す
-  1. payloadの`source`が`user`以外である
-  2. `prompt`の1行目が`<atk-auto source="periodic-recheck" kind="periodic-recheck">`か旧標識だけの行である
-  3. 委譲先として起動されている
-  4. `prompt`が`<task-notification`か旧形式の`<cross-session-message`で始まる
-  5. `prompt`の1行目が新旧の自動挿入要素の開始タグを含む
 
 ## 現行の作業契約の入力位置
 
@@ -137,12 +129,13 @@ Stop hookの無進捗停止（`busy_loop_guard.py`）の終了要求は、Stop�
 
 ## 確認・操作スキル系
 
-- `user_confirmation_skill_pending`: `agent-toolkit:user-confirmation-and-report`の内容が文脈に無い状態（真偽値）。
+- `user_confirmation_skill_pending`: 文脈ごとの`agent-toolkit:user-confirmation-and-report`の起動案内の配送待ち（真偽値）。
   `agent-toolkit/agent_toolkit/_hooks/rules_context.py`がSessionStartの`source`が`startup`・`clear`・`compact`で委譲先でない場合に真にし、`resume`と`fork`では変えない。
   `agent-toolkit/agent_toolkit/_hooks/user_prompt_submit.py`が実ユーザー発話の受領時に読み、真なら同スキルの起動を促す注記を返す（機械注入ターンでは読まず、変えない）。
-  PostToolUse(Skill)が同スキルの起動で、UserPromptSubmitがユーザーによる同スキルのスラッシュコマンド起動で偽へ戻す。Skillの起動を観測できないCodexでは、注記を返した時点で偽へ戻す。
+  注記を返した時点で偽へ戻す。PostToolUse(Skill)が同スキルの起動を、UserPromptSubmitがユーザーによる同スキルのスラッシュコマンド起動を観測した場合も偽へ戻す。
   寿命はセッション状態ファイルと同じとする
 - `operation_skill_delivered_agents`: 資料識別子から、その資料を取得した主体の一覧への対応。既存キーを継承し、宣言型配送の識別子は`read-trigger:<絶対パス>#sha256:<本文hash>`、節は`#heading:<節指定>`、分割取得の範囲は`#range:<開始>:<終了>`を付ける。本文とhashは同じ読取時点の内容を使う。主体はhook payloadの`agent_id`、持たない会話は`main`とする。`selected-read-target:<JSON>`は選択済みのpathとheading、`modified-agent-document:<絶対パス>`は変更した規範を保持する。`review-reference:<絶対パス>`はprepare結果の資料、`read-trigger-role:<絶対パス>`は受領した役割を保持する。これらの選択情報は圧縮時も保持し、本文取得状態だけをリセットする。`startup-input-target:<JSON>`は起動時に受け取った入力資料のpath・heading・selectors（入力名の配列）・本文hashを保持し、圧縮後の再配送へ使う。`review-output:<絶対パス>`はprepareの未取得の保存JSON、`review-output-parsed:<資料識別子>`は末尾まで取得して解析した版を示す。JSONから実在する参照資料を登録した後は未取得の保存JSONを解除する。
+  本文編集は編集ツールとBashの静的なheredoc・here-string、インプレース置換、Python書込を対象にし、生成出力の保存と複製を除く。managed-tempの原稿にも同じ基準を適用する。
   委譲先自身の引き継ぎ記録は、`AGENT_TOOLKIT_HANDOFF_PATH`が示す絶対パス1件だけを本文編集時のwriting-standards取得要求から除く。この除外で取得済みの状態は付けない。同じディレクトリの別ファイル、環境値が無い入力と記録先以外を含む複数ファイルの編集は、通常の取得状態で判定する。
   `resolved-project-skill:<絶対パス>`は実際の取得入力から確定したproject skillの宣言元を保持する。起動時の取得記録は入力metadataと実際に配送された同版本文が一致する場合に付け、metadataだけの抜粋を取得済みとは数えない。入力識別と宣言元は圧縮時にも保持する。
   `startup-context-observed`は正式な起動入力の取得先と役割を登録した主体を保持し、圧縮後に履歴の本文を再計上することを防ぐ。`startup-context-reset`は最初の操作より前のclear・compactも記録する。同じ記録へ本文取得の前提が戻ることを防ぎ、実体指定からの再取得へつなぐ。
@@ -158,12 +151,11 @@ Stop hookの無進捗停止（`busy_loop_guard.py`）の終了要求は、Stop�
   - 公開範囲: メインが原入力または適用済み認可から判断した範囲を`publish_scope`へ記録する。記録手順は`agent-toolkit:user-confirmation-and-report`の`references/publish-scope.md`が定める
   - プロジェクト規範による省略: メインが`omit-completion`で指定した規範の絶対パス、記録処理がそのパスから読んだ全文、対象リポジトリと人間入力の識別子を、作業ごとの`omit_completion`へ保持する。`input_id`の省略時は現在の会話の直近の人間入力へ対応付ける。記録時は観測した成果作業の単一リポジトリ、規範の所在、現在のメイン・会話・入力の対応を確かめ、明示した`quote`が規範全文と一致するかも確かめる。Stopでも規範の実体と入力の対応を確かめる。有効な省略を持つ作業だけ起動不足を免除する。次の判断で除き、新しい人間入力後の成果作業は新しい作業として省略を引き継がない。規範の変更・消失は免除を無効にする。手順は`agent-toolkit:completion-report`の`references/termination-evidence.md`が定める
   - 原入力と再入: `last_human_input`は最後の人間入力を保持し、自動通知で再開しても元の依頼への帰属を保つ。`--context`は現在の会話の`session_id`と作業の`work_id`を人間入力の有無によらず返し、その入力を観測した場合だけ`input_id`と`quote`を添え、観測していなければ両者を`null`とする。証拠が無いか別会話・旧版の値である場合、現在のメインとして解決できない場合と、作業も人間入力も無い場合は取得を拒否する。取得は判断の証拠条件を緩めず、人間の原入力・実際の失敗・所有する委譲先の待機の検証はactionごとの記録処理が行う。寿命と継承は本キーと同じで、公開範囲・起動証拠と現在のGit状態から不要な判定を除く
-  - 終了時の点検通知: `stop_review_notice`は作業ごとに通知した人間入力の識別子を保持する。人間入力が無い場合は作業開始の参照を使う。Stopの`termination_order_advisor`が`claim_stop_review`で排他下に記録し、同じ作業・入力への再通知を抑える。通知した事実だけを示す記録であり、用途は同じ作業・入力への再通知の抑止に限る。新しい入力では再び一度通知し、作業の除去とともに消える
 
 ## 通知反復系
 
 - `persistent_warning_fingerprints`: `_atk/outcome.py`が共通起動の持続状態とhookの引数不整合の警告本文の指紋を記録する。同じ会話で初めて報告する内容だけを出力する。CLIの識別子はowner・Claude Code・Codexの順、hookは入力の`session_id`を使う。委譲先の掃引警告は記録と出力を省く。寿命はセッション状態ファイルと同じとする
-- `warn_notice_counts`: `warn`区分の通知の、`<hook_id>|<原因識別子>`ごとの累積件数。通知の整形処理が記録し、2件目以降の通知へ反復していることと件数を載せるために読む。診断処理が要旨を渡した通知では2件目以降の本文を要旨と件数へ短縮する。セッション終了まで保持し、リセットは処理対象外とする
+- `notice_fingerprints`: 通知の整形処理が、hook・呼出主体・操作範囲と原因ごとに、本文と次の操作の指紋を保持する。同一条件の通知は初回だけ届け、対象・原因・対処の変化を新しい通知として扱う。同じ処理範囲の終了時に成立しなくなった原因を除き、解消後の再発を通知できるようにする。遮断の必要性は実際の操作条件で判断し、本キーや旧`warn_notice_counts`の回数から昇格させない。寿命はセッション状態と同じとする
 
 ## agents_server連携系
 

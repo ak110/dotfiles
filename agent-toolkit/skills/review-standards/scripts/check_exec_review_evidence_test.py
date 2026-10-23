@@ -4943,12 +4943,79 @@ def test_list_then_explanation_update_both_sections(tmp_path: pathlib.Path, caps
         )
         args.script_args = [str(path), "--updates-file", str(updates), "--output", str(path)]
         assert run_script.dispatch(args) == 0, capsys.readouterr().err
+        output = capsys.readouterr().out
+        summary = json.loads(
+            next(line.removeprefix("保存結果: ") for line in output.splitlines() if line.startswith("保存結果: "))
+        )
+        assert summary == {
+            "output": str(path),
+            "updated_rows": ["wi_conditions:1", "user_requirements:1"],
+            "updated_count": 2,
+            "total_rows": 6,
+            "readback_matches": True,
+        }
         payload = json.loads(path.read_text(encoding="utf-8"))
         for section in ("wi_conditions", "user_requirements"):
             assert payload[section][0]["evidence"] == expected
             assert payload[section][0]["outcome"] == "達成"
             assert payload[section][0]["reviewed_head"] == REVIEWED_HEAD
             assert payload[section][1:] == (conditions if section == "wi_conditions" else requirements)[1:]
+
+
+@pytest.mark.parametrize("saved_state", ["changed-selected", "changed-unselected", "unreadable", "invalid-utf8"])
+def test_public_update_rejects_unconfirmed_saved_content(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    saved_state: str,
+) -> None:
+    """公開更新は保存後の改変・読取不能を非0で返し、成功や未変更を申告しない。"""
+    path = tmp_path / "review.json"
+    rows = [_condition(FIRST_WI, f"条件{index}") for index in range(2)]
+    _write_evidence(path, rows)
+    explanation = tmp_path / "explanation.txt"
+    explanation.write_text("保存を確認した", encoding="utf-8")
+    updates = tmp_path / "updates.json"
+    updates.write_text(
+        json.dumps(
+            [
+                {
+                    "section": "wi_conditions",
+                    "row": 1,
+                    "source": rows[0]["source"],
+                    "outcome": "達成",
+                    "reviewed_head": REVIEWED_HEAD,
+                    "evidence_file": str(explanation),
+                    "mode": "replace",
+                }
+            ]
+        ),
+        encoding="utf-8",
+    )
+    original_write = check_exec_review_evidence.verification_results.atomic_write
+
+    def changed_write(destination: pathlib.Path, content: str) -> None:
+        original_write(destination, content)
+        if saved_state == "unreadable":
+            destination.unlink()
+        elif saved_state == "invalid-utf8":
+            destination.write_bytes(b"\xff")
+        else:
+            payload = json.loads(content)
+            number = 0 if saved_state == "changed-selected" else 1
+            payload["wi_conditions"][number]["source"] = "別の出所"
+            destination.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+
+    monkeypatch.setattr(check_exec_review_evidence.verification_results, "atomic_write", changed_write)
+    args = argparse.Namespace(
+        script_name="exec-review-evidence-check",
+        script_args=[str(path), "--updates-file", str(updates), "--output", str(path)],
+    )
+    assert run_script.dispatch(args) == 1
+    result = capsys.readouterr()
+    assert not result.out
+    assert "保存後の出力" in result.err and str(path) in result.err and "次の操作:" in result.err
+    assert "記録は変更していない" not in result.err
 
 
 @pytest.mark.parametrize(

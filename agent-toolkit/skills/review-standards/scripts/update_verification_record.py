@@ -15,6 +15,7 @@ import subprocess
 import typing
 
 import check_exec_review_evidence as review
+import verification_diagnostics
 import verification_results
 
 from agent_toolkit._common import next_action, requirement_units
@@ -134,7 +135,7 @@ def run(args: argparse.Namespace) -> None:
         )
         requirement_units.append_missing_rows(payload, expected)
     if updating:
-        row_check = _row_check(args.plan)
+        row_check = _row_check(args.plan, results)
         if direct:
             updates = verification_results.updates_for_arguments(payload, args)
             payload = verification_results.updated_payload(payload, None, results, updates=updates, row_check=row_check)
@@ -192,15 +193,18 @@ def _rewrite_references(args: argparse.Namespace) -> None:
     print("次の操作: 結果に作用する内容・条件の差がある行だけ検証を取り直し、未判定検証記録の根拠を更新する")
 
 
-def _row_check(plan_paths: list[pathlib.Path]) -> typing.Callable[[str, int, dict[str, str]], list[str]]:
+def _row_check(
+    plan_paths: list[pathlib.Path], results: dict[str, typing.Any] | None = None
+) -> typing.Callable[[str, int, dict[str, str]], list[str]]:
     """保存する行の根拠へ返却前の確認と同じ参照の解決を適用し、解決できない参照の診断を返す関数を返す。
 
     リポジトリの起点は生成と同じく計画の対象リポジトリ、無ければcwdのworktreeとする。
-    対象worktreeのHEADの追跡ファイルに加えて作業ツリーのファイルも受理する。
+    対象worktreeのHEADに加え、同じGitリポジトリの起動cwdと実行記録cwdの作業ツリーも保存時に受理する。
     """
     references = review.saving_reference_check(
         lambda: _generation_repository([(str(plan), plan.read_text(encoding="utf-8")) for plan in dict.fromkeys(plan_paths)]),
         worktree=True,
+        additional_worktrees=_result_worktrees(results or {}),
     )
     head = _head(references.repository)
 
@@ -208,6 +212,31 @@ def _row_check(plan_paths: list[pathlib.Path]) -> typing.Callable[[str, int, dic
         return references.row_errors(row, section, review.saved_row_label(row, section, number), head)
 
     return row_check
+
+
+def _result_worktrees(results: dict[str, typing.Any]) -> list[pathlib.Path]:
+    """取り込みと同じ起点解決で、現在・基準の実行記録と起動cwdの作業ツリーを得る。"""
+    records: set[str] = set()
+
+    def collect(value: object) -> None:
+        if isinstance(value, dict):
+            if isinstance(value.get("run_record"), str):
+                records.add(value["run_record"])
+            for nested in value.values():
+                collect(nested)
+        elif isinstance(value, list):
+            for nested in value:
+                collect(nested)
+
+    collect(results)
+    roots = []
+    for record in [{"cwd": str(pathlib.Path.cwd())}, *(verification_results.run_record(path)[1] for path in records)]:
+        try:
+            roots.append(verification_diagnostics.worktree_root(record))
+        except ValueError:
+            # Git外の起動は相対参照の候補を増やさず、通常の保存時確認で不足を報告する。
+            continue
+    return roots
 
 
 def _head(repository: pathlib.Path | None) -> str:

@@ -11,6 +11,10 @@ import re
 import subprocess
 import tokenize
 
+import pytest
+
+from agent_toolkit._testing.git_repository import commit_all, init_repository
+
 _PLUGIN_ROOT = pathlib.Path(__file__).resolve().parent
 _FILE_NAME_PATTERN = re.compile(r"[A-Za-z0-9_.*/\\-]*?([A-Za-z0-9_*-]+\.py)(?![A-Za-z0-9_])")
 
@@ -25,7 +29,7 @@ def _tracked_names() -> set[str]:
         encoding="utf-8",
         errors="replace",
     )
-    return {pathlib.PurePosixPath(path).name for path in result.stdout.split("\0") if path}
+    return {pathlib.PurePosixPath(path).name for path in result.stdout.split("\0") if path and (_PLUGIN_ROOT / path).is_file()}
 
 
 def _plugin_python_files() -> list[pathlib.Path]:
@@ -38,7 +42,7 @@ def _plugin_python_files() -> list[pathlib.Path]:
         encoding="utf-8",
         errors="replace",
     )
-    return [_PLUGIN_ROOT / path for path in result.stdout.split("\0") if path]
+    return [_PLUGIN_ROOT / path for path in result.stdout.split("\0") if path and (_PLUGIN_ROOT / path).is_file()]
 
 
 def _docstring_and_comment_lines(source: str) -> list[tuple[int, str]]:
@@ -81,3 +85,29 @@ def test_comment_and_docstring_file_names_exist() -> None:
         + "\n".join(problems)
         + "\n次の操作: 現在のファイル名へ改める。移設の経緯だけを書いている場合はファイル名を含まない表現へ改める"
     )
+
+
+def test_deleted_sources_are_omitted_but_references_to_deleted_or_untracked_files_fail(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """削除済みの走査元を読まず、削除済み・未追跡の参照先は存在として数えない。"""
+    repository = init_repository(
+        tmp_path / "repo",
+        files={
+            "agent-toolkit/current.py": '"""retired.pyとuntracked.py、existing.pyとoutside.pyを参照する。"""\n',
+            "agent-toolkit/existing.py": '"""plugin内の追跡中の参照先。"""\n',
+            "scripts/outside.py": '"""plugin外の追跡中の参照先。"""\n',
+            "agent-toolkit/retired.py": '"""撤去予定の走査元。"""\n',
+        },
+    )
+    commit_all(repository, "追跡中の検査対象")
+    plugin = repository / "agent-toolkit"
+    (plugin / "retired.py").unlink()
+    (plugin / "untracked.py").write_text("# 未追跡の参照先\n", encoding="utf-8")
+    monkeypatch.setattr(f"{__name__}._PLUGIN_ROOT", plugin)
+
+    problems = _missing_references()
+
+    assert len(problems) == 2
+    assert any(": retired.py:" in problem for problem in problems)
+    assert any(": untracked.py:" in problem for problem in problems)

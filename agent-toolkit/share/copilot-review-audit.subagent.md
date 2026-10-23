@@ -19,8 +19,6 @@ writes_worktree: false
 
 ## 読込表
 
-次の時点または条件が成立したら、対象の操作の前に同じ行の資料を全文読む。
-
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 | 資料選択子 |
 | --- | --- | --- | --- | --- |
 | 着手時 | `${CLAUDE_PLUGIN_ROOT}/skills/process-wi/references/github-copilot-review-audit.md`の冒頭、「対象」「取得」「判定」「判定済みの記録」 | 起動時 | `role:copilot-review-audit` | |

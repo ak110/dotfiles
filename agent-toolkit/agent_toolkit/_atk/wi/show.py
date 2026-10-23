@@ -20,6 +20,7 @@ from agent_toolkit._atk.wi.formatters import (
 )
 from agent_toolkit._atk.wi.repo import resolve_repo_id
 from agent_toolkit._common.markdown_headings import top_level_atx_headings
+from agent_toolkit._git import remote as _git_remote
 
 
 @dataclasses.dataclass
@@ -78,6 +79,34 @@ def _display_body(text: str, kind: str | None, args: argparse.Namespace) -> str:
     return "\n\n".join(f"#### {name}\n{body}" for name, body in _wi_sections.h2_section_items(text) if name in names)
 
 
+def _report_missing(
+    private_notes: pathlib.Path,
+    filenames: list[tuple[str, str]],
+    missing: list[str],
+    repos: tuple[str, ...],
+    args: argparse.Namespace,
+) -> None:
+    """明示したリポジトリの不一致と、名前・種別・sourceの未一致を区別する。"""
+    requested = [(name, normalized) for name, normalized in filenames if name in missing]
+    entries, _ = _wi_entries.read_named_entries(
+        private_notes, requested, target_repo=None, entry_type=args.type, source=args.source
+    )
+    stored_repos = {path.name: repo for path, repo, *_ in entries}
+    for filename, normalized in requested:
+        stored = stored_repos.get(normalized)
+        if repos and stored is not None:
+            canonical = _git_remote.canonical_repo(stored, {}) or stored
+            _outcome.report_failure(
+                f"対象リポジトリが一致しない: {filename}（指定値: {', '.join(repos)}、保存値: {canonical}）",
+                next_action="保存値で--target-repoを指定し直すか、別リポジトリの項目か確かめる",
+            )
+        else:
+            _outcome.report_failure(
+                f"年月配置に存在しない: {filename}",
+                next_action="実在するファイル名を指定し直す（`atk wi list`で候補を確認できる）",
+            )
+
+
 def cmd_show(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
     """showサブコマンド: `FILENAME...`指定時は指定された項目群、`--all`指定時は全件の本文を表示する。
 
@@ -116,11 +145,7 @@ def cmd_show(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
             private_notes, validated_filenames, target_repo=explicit_repos, entry_type=args.type, source=args.source
         )
         if missing:
-            for filename in missing:
-                _outcome.report_failure(
-                    f"年月配置に存在しない: {filename}",
-                    next_action="実在するファイル名を指定し直す（`atk wi list`で候補を確認できる）",
-                )
+            _report_missing(private_notes, validated_filenames, missing, explicit_repos, args)
             sys.exit(2)
         for path, target_repo, text, state, kind in selected_by_name:
             answered = _wi_uwi_scan.is_uwi_answered(text)

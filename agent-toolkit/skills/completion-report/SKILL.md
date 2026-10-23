@@ -52,7 +52,10 @@ description: >
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 | 資料選択子 |
 | --- | --- | --- | --- | --- |
 | 通常起動時と、作業完了報告の到達水準を判定する前 | 起動のwhole_contract_pathまたはその正式な解決結果が示す現行の作業契約 | 起動時 | `skill:completion-report` | `input:作業契約` |
-| 作業完了報告、振り返り結果報告、AWI投入結果報告または報告用UWIの本文を書く前 | `references/report-formats.md` | 判断 | `read:agent-toolkit:*/skills/completion-report/references/report-formats.md` | |
+| 作業完了報告の本文を書く前 | `references/report-formats.md`の「検証結果と実行記録」「作業完了報告のフォーマット」 | 判断 | `section:agent-toolkit:*/skills/completion-report/references/report-formats.md#「検証結果と実行記録」「作業完了報告のフォーマット」` | |
+| 振り返り結果報告かその予告を書く前 | `references/report-formats.md`の「振り返り結果報告のフォーマット」 | 判断 | `section:agent-toolkit:*/skills/completion-report/references/report-formats.md#「振り返り結果報告のフォーマット」` | |
+| AWI投入結果報告を書く前 | `references/report-formats.md`の「AWI投入結果報告のフォーマット」 | 判断 | `section:agent-toolkit:*/skills/completion-report/references/report-formats.md#「AWI投入結果報告のフォーマット」` | |
+| 報告用UWIを書く前 | `references/report-formats.md`の「報告用UWIのフォーマット」 | 判断 | `section:agent-toolkit:*/skills/completion-report/references/report-formats.md#「報告用UWIのフォーマット」` | |
 | 手順4で、協調モードの確認済みの公開範囲がcommitより先へ及ぶ場合 | `agent-toolkit:commit`の`references/publish.md` | 判断 | `read:agent-toolkit:*/skills/commit/references/publish.md` | |
 | Stop hookが本スキルの起動不足を示して遮断した時と、ユーザーの中止・置換、回答や委譲先の待機、技術的不成立の判断を記録する時 | `references/termination-evidence.md` | 判断 | `read:agent-toolkit:*/skills/completion-report/references/termination-evidence.md` | |
 
@@ -95,18 +98,12 @@ description: >
    続けて最終報告を1回届ける（自律モードでは報告用UWIの保存を検収してから）。`send_to_user`が成功したら本文の送達は完了とし、要約や受領文を足さず同じ応答で手順9へ進む。ツールがない場合は最終報告自体をターン終端の本文とする。
 9. 起動元の工程が報告の完了後に実行する工程（`agent-toolkit:process-wi`の`atk agents-exit-session`など）を定める場合は、最終報告と同じ応答でその工程を実行する。別の応答へ持ち越すと工程が起動されないまま`atk wi process-loop`が停止する。新しい改善点が無ければ報告後に実行するのはこの工程だけとし、通常の作業ターンへは次の指示を受けてから戻る。
    送達後に実際の新しい改善点が生じた場合は、`agent-toolkit:session-review`の工程6へ戻って取り込み・分析し、手順8を再実行して報告用UWIと結果を更新し、更新後の最終報告を届けてから本手順へ進む。
-   全工程を終えて通常ターンだけを閉じる場合、`send_to_user`で最終報告を送達済みなら`…`だけを出力する。`atk agents-exit-session`で停止した分岐は出力も終える。送達失敗、Stop hookの遮断、新しいユーザー指示では、それぞれの回復・続行手順に従う。起動後のStopの点検通知では、送達と残工程を元要求から判断し、不足する工程を続ける。
+   全工程を終えて通常ターンだけを閉じる場合、`send_to_user`で最終報告を送達済みなら`…`だけを出力する。`atk agents-exit-session`で停止した分岐は出力も終える。送達失敗、実害を防ぐStop hookの遮断、新しいユーザー指示では、それぞれの回復・続行手順に従う。終了前に、元要求と実際の送達・処置結果から未達・残工程を確かめ、不足する工程を続ける。
 
 最終送達後の終端指示の対照と再検証方法は、`docs/development/audit-records.md`の「completion-report：最終報告送達後のターン終端：2026年10月9日」にある。
 
-### Stop hookの判定
-
-Stop hookは、成果作業（`agent-toolkit:process-wi`・`agent-toolkit:add-awi-by-user`の開始、リポジトリの編集、計画やWIの保存、commit・push）を対象とする。
-有効な省略と本スキルの起動の双方を確認できない終了を遮断し、起動と残る工程への続行を案内する。起動はClaude CodeではSkillの成功、Codexでは本書の読取の結果で確かめる。
-起動済みの成果作業では、Stop hookは同じ作業と人間入力の組に一度だけ終了判断の点検を通知する。メインは元要求と実際の送達・処置結果から、必要な結果・未達・残工程がユーザーへ届いたか、新たな指摘に必要な処置が残るかを判断する。内部記録の保存、報告用UWIの起草、AWI登録は、それぞれの工程の結果として扱う。通知後は不足する手順へ戻り、新しい是正事項は`agent-toolkit:session-review`の工程6と`agent-toolkit:bugfix`へ接続する。充足済みなら本文を再出力せず終了する。
-Stop hookは通知した事実だけを保持し、報告本文の見出し、区切り、区分、候補ID、意味上の完遂と送達の十分性を判定しない。各手順の完了と報告の内容は、メインが本節の手順と`references/report-formats.md`に従って確かめる。
-遮断を受けたら、適用するプロジェクト規範による省略は`references/termination-evidence.md`へ進む。
-起動が必要な場合は、本スキルを起動していなければ起動して手順1から、起動済みなら残る手順から進める。
-ユーザーの中止・置換、確認の回答や委譲先の結果の待機、技術的に続行できない場合の判断の記録は`references/termination-evidence.md`に従う。
+Claude Codeの終了時に本スキルの起動漏れを警告された場合は、適用する省略条件を`references/termination-evidence.md`で確認する。
+起動が必要なら手順1から、起動済みなら残る手順から続ける。
+ユーザーの中止・置換、回答や委譲結果の待機、技術的な続行不能の記録も同資料が扱う。
 
 完了判定は本節の各手順の充足で行い、完了を自己申告する状態フラグは作成しない（セッション途中で失われると誤警告を反復させ、正当な工程を遮断するため）。

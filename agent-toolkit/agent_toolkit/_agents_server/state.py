@@ -236,6 +236,8 @@ class SessionState:
     # Codex接続先は内部の再開条件だけへ写し、公開状態へ射影しない。
     codex_model_provider: str | None = None
     codex_subscription_provider: str | None = None
+    # 新規開始または状態互換性を確認して確定した生成先。旧版の選択先とは区別する。
+    codex_state_provider: str | None = None
     codex_attempted_provider_ids: set[str] = dataclasses.field(default_factory=set, repr=False)
     codex_provider_resume_pending: bool = False
     claude_api_env_file: str | None = None
@@ -624,6 +626,7 @@ class SessionState:
             "fast_mode": self.fast_mode,
             "codex_model_provider": self.codex_model_provider,
             "codex_subscription_provider": self.codex_subscription_provider,
+            "codex_state_provider": self.codex_state_provider,
             "claude_api_env_file": self.claude_api_env_file,
             "claude_connection": self.claude_connection,
             "claude_role": self.claude_role,
@@ -687,6 +690,7 @@ class SessionResumeState:
     fast_mode: bool | None = None
     codex_model_provider: str | None = None
     codex_subscription_provider: str | None = None
+    codex_state_provider: str | None = None
     claude_api_env_file: str | None = None
     claude_connection: str | None = None
     claude_role: str | None = None
@@ -736,6 +740,7 @@ class SessionResumeState:
             fast_mode=session.fast_mode,
             codex_model_provider=session.codex_model_provider,
             codex_subscription_provider=session.codex_subscription_provider,
+            codex_state_provider=session.codex_state_provider,
             claude_api_env_file=session.claude_api_env_file,
             claude_connection=session.claude_connection,
             claude_role=session.claude_role,

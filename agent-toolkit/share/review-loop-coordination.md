@@ -2,6 +2,7 @@
 
 実行レビューの委譲元が、指摘の受領、修正、再レビューおよびエスカレーションを収束まで調整する。
 レビューイーは、`agent-toolkit:process-wi`ではそのレーンのレーン担当、`agent-toolkit:plan-mode`のメインによる起動ではメイン、公開工程のCI失敗修正では終端担当が起動する`CI修正担当`とする。
+通常の受領・修正・再レビューでは「ラウンドの遷移」から「応答済みの判定」までを使う。再レビューの指摘を受領した時は「反復原因の判定」、判断要請を受領した時は「エスカレーションの事由別の扱い」と「技術判断で外せる完成条件」を、その判断の前に読む。
 
 ## 名指し参照の読込方法
 
@@ -9,6 +10,8 @@
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
+| 再レビューの指摘を受領し修正指示を確定する前 | `review-loop-coordination.md#「反復原因の判定」` | 判断 | `section:agent-toolkit:*/share/review-loop-coordination.md#「反復原因の判定」` |
+| 判断要請を受領し対処を確定する前 | `review-loop-coordination.md#「エスカレーションの事由別の扱い」「技術判断で外せる完成条件」` | 判断 | `section:agent-toolkit:*/share/review-loop-coordination.md#「エスカレーションの事由別の扱い」「技術判断で外せる完成条件」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/process-wi/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/SKILL.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/plan-mode/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/plan-mode/SKILL.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `exec-review.parent.md` | 判断 | `read:agent-toolkit:*/share/exec-review.parent.md` |
@@ -43,6 +46,7 @@ round 3以上の未解決指摘では`agent-toolkit:review-standards`の`referen
 他計画が書いた記述への候補は、委譲元がその計画のレビュー担当へ1回だけ回し、その担当が同じHEADで読者別探索を終えて判定した結論を採用する。
 自計画の変更が参照先・手順・識別子などの前提を変えた場合は、自計画の直接影響範囲として判定する。
 受領確認では各返却の`受領確認入力のパス`を`exec-review-evidence-check --batch`へそのまま渡し、複数入力は`--batch`を反復する。process-wiのレーン、メイン自身による計画あり・計画なしの実装で同じ生成済み入力を使う。
+レーン統合では各生成済み入力と受理した実レビューHEADを`受領確認入力`として保持し、`atk lane integrate`のmanifestへ渡す。CLIのGit変更前の再検査と、委譲元の本文・直接根拠の意味検収をそれぞれ完了させる。直接実装は本節の受領確認を続ける。
 各組の必須`external_artifacts`をメイン自身の回答下書きとGit管理外の変更の記録から求めた対象集合と比べ、任意`review_contract`を起動時に渡した契約と比べる。
 各組の`reader_fit_review`では、Git管理外の絶対パスごとにsessionsか、前回複製のpreviousを伴う`再点検対象なし`を対応付ける。
 `exec-review-evidence-check`が対象集合との対応と省略の成立を構造から確かめる。

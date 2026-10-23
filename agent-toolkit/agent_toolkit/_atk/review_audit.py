@@ -381,6 +381,18 @@ def _pending(repository: str) -> int:
     return 0
 
 
+def summarize_saved_pending(path: Path) -> None:
+    """生成元の保存先を維持し、監査の起動判断に必要な値を表示する。"""
+    result = json.loads(path.read_text(encoding="utf-8"))
+    counts = result["counts"]
+    if any(
+        not isinstance(counts[key], int) or isinstance(counts[key], bool) or counts[key] < 0
+        for key in ("reviews", "threads", "dependabot")
+    ):
+        raise ValueError(f"保存した監査結果の件数が不正: {path}")
+    print(json.dumps({"counts": counts, "dependabot_status": result["dependabot"]["status"]}, ensure_ascii=False))
+
+
 def _mark(repository: str, identifiers: list[str]) -> int:
     _validate_repository(repository)
     _validate_identifiers(identifiers)

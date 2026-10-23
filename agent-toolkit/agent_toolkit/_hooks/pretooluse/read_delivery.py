@@ -1,7 +1,7 @@
 """宣言された操作の前に、主体の文脈に未取得の資料を届ける。
 
-確認は全資料のパスを1回の警告にまとめる。本文配送は再発行で回復できる操作を遮断し、
-配送できた資料だけを取得へ記録する。Codexの本文到達上限は実測未了のため全文読取を案内する。
+確認は関係する資料のパスを警告にまとめ、通常の操作を継続する。
+配送できた資料だけを取得へ記録する。Codexの配送本文の到達上限は未確認のため全文読取を案内する。
 軽量委譲は起動契約がスキルを使わないため対象外とする。
 """
 
@@ -30,12 +30,12 @@ from agent_toolkit._hooks.notice import _WARN_TAG
 from agent_toolkit._hooks.pretooluse import operation_skills
 from agent_toolkit._hooks.pretooluse.decision import Decision
 from agent_toolkit._hooks.pretooluse.large_reads import bash_read_paths
-from agent_toolkit._hooks.pretooluse.notices import _block_notice, _llm_notice
+from agent_toolkit._hooks.pretooluse.notices import _llm_notice
 lazy from agent_toolkit._common import process_tree, task_documents
 lazy from agent_toolkit._hooks.pretooluse import shell_checks
 
 # WI原本のClaude Code 2.1.303の観測44,346文字より小さくし、標識とパス一覧の余地を取る。
-# 統合時に現在ホストで到達を実測する。Codexは実測前の値を流用せずパスを案内する。
+# 統合時に現在ホストで本文の到達を確認する。Codexには取得先のパスを案内する。
 CLAUDE_BODY_BUDGET = 40_000
 _PATH_PREFIX = "read-trigger:"
 
@@ -147,9 +147,7 @@ def matches(operation: str, tool_name: str, tool_input: dict, cwd: str) -> bool:
         ]
         return any(_matches_document_path(path, value) for path in paths)
     if prefix == "path":
-        paths = operation_skills.written_paths(tool_name, tool_input, cwd) + [
-            str(path) for path in _read_paths(tool_name, tool_input, cwd)
-        ]
+        paths = operation_skills.written_paths(tool_name, tool_input, cwd)
         return any(fnmatch.fnmatch(path.replace("\\", "/"), value) for path in paths)
     if prefix == "section":
         pattern, separator, heading = value.partition("#")
@@ -512,9 +510,7 @@ def dynamic_targets(
         return [read_triggers.ReadTarget(pathlib.Path(path)) for path in paths if pathlib.Path(path).is_file()]
     if row.selector == "artifact-standards":
         cwd = payload.get("cwd", "")
-        paths = operation_skills.written_paths(tool_name, tool_input, cwd) + [
-            str(path) for path in _read_paths(tool_name, tool_input, cwd)
-        ]
+        paths = operation_skills.written_paths(tool_name, tool_input, cwd)
         mapping = {
             ".py": "python.md",
             ".ts": "typescript.md",
@@ -799,7 +795,7 @@ def _declaration_recovery_operation(tool_name: str, tool_input: dict, error: Exc
 
 
 def deliver(payload: dict, tool_name: str, tool_input: dict, session_id: str) -> Decision:
-    """未取得の宣言資料を順序通り配送し、同じ操作の再発行を案内する。"""
+    """現在の操作に関係する宣言資料を配送または案内し、通常操作の進行を保つ。"""
     if not session_id or delegated_session.is_lightweight_delegated(os.environ):
         return Decision()
     cwd = payload.get("cwd", "")
@@ -852,7 +848,15 @@ def deliver(payload: dict, tool_name: str, tool_input: dict, session_id: str) ->
                 )
             )
         return Decision(
-            block=_block_notice(f"読込宣言を取得できない: {error}", fix="宣言と資料を復旧して同じ操作を再発行する。")
+            notices=(
+                _llm_notice(
+                    f"読込宣言を取得できない: {error}",
+                    tag=_WARN_TAG,
+                    fix="宣言と資料の所在を診断し、復旧後に必要な資料を読む。",
+                    removable_cause=True,
+                    escalate_on_repeat=False,
+                ),
+            )
         )
     agent = agent_id.resolve_hook_agent_id(payload)
     records = read_state(session_id).get(rules_context.OPERATION_SKILL_READY_KEY, {})
@@ -883,9 +887,7 @@ def deliver(payload: dict, tool_name: str, tool_input: dict, session_id: str) ->
                     row_matches(row, tool_name, tool_input, cwd)
                     or row.selector == "artifact-standards"
                     and target_ready(records, read_triggers.ReadTarget(row.source), agent)
-                    and bool(
-                        _read_paths(tool_name, tool_input, cwd) or operation_skills.written_paths(tool_name, tool_input, cwd)
-                    )
+                    and bool(operation_skills.written_paths(tool_name, tool_input, cwd))
                     or row.source in roles
                     and (row.kind == "起動時" or any(operation.startswith("role:") for operation in row.operations))
                 )
@@ -893,17 +895,6 @@ def deliver(payload: dict, tool_name: str, tool_input: dict, session_id: str) ->
                 if not target_ready(records, target, agent)
             )
         )
-        declared = {target for row in rows for target in row.targets}
-        for target in selected_targets(records, agent):
-            if target not in declared and _redundant_selection(target, declared, records, agent):
-                continue
-            if target.heading and target not in declared:
-                try:
-                    target.body()
-                except ValueError:
-                    continue
-            if target not in pending and not target_ready(records, target, agent):
-                pending.append(target)
         # スキル本文とともに届く共有の初動資料を、同じ受領単位へ含める。
         cursor = 0
         while cursor < len(pending):
@@ -949,8 +940,14 @@ def deliver(payload: dict, tool_name: str, tool_input: dict, session_id: str) ->
                 )
             )
         return Decision(
-            block=_block_notice(
-                f"動的資料を解決できない: {error}", fix="実在する入力と取得対象を確定して資料を読み、同じ操作を再発行する。"
+            notices=(
+                _llm_notice(
+                    f"動的資料を解決できない: {error}",
+                    tag=_WARN_TAG,
+                    fix="実在する入力と取得対象を確定し、該当する資料を読む。",
+                    removable_cause=True,
+                    escalate_on_repeat=False,
+                ),
             )
         )
     if pending:
@@ -970,7 +967,7 @@ def deliver(payload: dict, tool_name: str, tool_input: dict, session_id: str) ->
     if any(target.path in acquisition_paths for target in pending):
         _select_targets(session_id, pending, agent)
         # 取得操作を許可し、PostToolUseで返却本文と資料の指定範囲が一致するか確かめる。
-        # 次の依存操作は取得完了まで遮断する。
+        # 次の依存操作では取得完了を確かめ、未取得なら関連資料を案内する。
         return Decision()
     shown = "、".join(f"`{path}`" for path in pending)
     if warning_only:
@@ -996,15 +993,23 @@ def deliver(payload: dict, tool_name: str, tool_input: dict, session_id: str) ->
     if is_codex_payload(payload):
         steps = []
         for target in pending:
-            section = " --section " + shlex.quote(target.heading) if target.heading else ""
-            steps.append(f"`atk read-file{section} -- {shlex.quote(str(target.path))}`")
+            if target.heading:
+                steps.append(f"`atk read-file --section {shlex.quote(target.heading)} -- {shlex.quote(str(target.path))}`")
+            else:
+                steps.append(f"`{target.path}`を`cat`などで全文取得する")
         return Decision(
-            block=_block_notice(
-                f"操作前に全文読む資料: {shown}。",
-                fix="まず操作の必要性と資料の読込条件を見直す。不要な操作は中止する。"
-                "続行する場合は、条件に該当する資料の指定範囲を"
-                + "。".join(steps)
-                + "で取得し、eofまで継続する。全文必須の資料は検索だけで読了としない。基準を適用して同じ操作を再発行する。",
+            notices=(
+                _llm_notice(
+                    f"操作前に全文読む資料: {shown}。",
+                    tag=_WARN_TAG,
+                    removable_cause=True,
+                    escalate_on_repeat=False,
+                    fix="まず操作の必要性と資料の読込条件を見直す。不要な操作は中止する。"
+                    "続行する場合は、条件に該当する資料の指定範囲を"
+                    + "。".join(steps)
+                    + "。標準読取で全文と終了状態を予算内で取得する。予算を超える本文や省略された残りは"
+                    "`atk read-file`でeofまで継続する。全文必須の資料は検索だけで読了としない。",
+                ),
             )
         )
     bodies: list[str] = []
@@ -1054,9 +1059,12 @@ def deliver(payload: dict, tool_name: str, tool_input: dict, session_id: str) ->
     remaining = pending[len(bodies) :]
     suffix = ("\n未取得: " + "、".join(f"`{path}`" for path in remaining) if remaining else "") + read_failure
     return Decision(
-        block=_block_notice(
-            "操作前の必須資料を配送する。" + "".join(bodies) + suffix,
-            fix="配送本文の基準を適用して同じ操作を再発行する。本文が収まらない資料は示した絶対パスから全文読む。全資料の取得後に操作が通る。",
+        notices=(
+            _llm_notice(
+                "操作に関係する資料を配送する。" + "".join(bodies) + suffix,
+                tag="notice",
+                fix="配送本文の基準を適用する。本文が収まらない資料は示した絶対パスから必要な範囲を読む。",
+            ),
         )
     )
 
@@ -1069,7 +1077,7 @@ def _read_body_proofs(
     targets: set[pathlib.Path],
     section_targets: set[read_triggers.ReadTarget],
 ) -> Iterator[tuple[read_triggers.ReadTarget, int, int, int, str]]:
-    """本文と位置が実ファイルに一致する取得範囲を返す。履歴とPostToolUseで同じ検査を使う。"""
+    """本文と位置が実ファイルに一致する取得範囲を返す。履歴とPostToolUseで同じ本文一致の判定を使う。"""
     if isinstance(response, str):
         with contextlib.suppress(ValueError):
             decoded = json.loads(response)

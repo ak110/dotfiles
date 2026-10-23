@@ -117,10 +117,13 @@ def test_unread_reference_warns_without_blocking(
     遮断は`AskUserQuestion`の入力の再発行を要し損失が大きいため、警告で返す。
     """
     payload = _payload(tmp_path, entries)
-    for _ in range(2):
+    for attempt in range(2):
         result = _run(payload)
         assert result.returncode == 0
         context = _additional_context(result)
+        if attempt:
+            assert context == ""
+            continue
         assert context.count(_WARNING) == 1
         for path in (_APPROVAL, _CHOICE):
             assert (str(path) in context) == (path in unread)

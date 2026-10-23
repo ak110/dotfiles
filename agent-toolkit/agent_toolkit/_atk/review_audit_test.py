@@ -137,6 +137,34 @@ def test_pending_reports_zero_without_confusing_it_with_fetch_failure(
     }
 
 
+def test_agent_pending_keeps_small_json_for_direct_handoff(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """0件の短い結果も生成元が保存し、受領側へ同じファイルを渡せる。"""
+
+    def run(command: list[str], _timeout: float, **_kwargs: object) -> Any:
+        if "graphql" not in command:
+            return [[]]
+        return {"data": {"repository": {"pullRequests": {"nodes": [], "pageInfo": {"hasNextPage": False}}}}}
+
+    saved = tmp_path / "saved"
+    saved.mkdir()
+    monkeypatch.setattr(atk, "is_agent_environment", lambda: True)
+    # 公開dispatchの生成元保存を、実一時領域と外部照会の境界だけ差し替えて検証する。
+    # pylint: disable-next=protected-access
+    monkeypatch.setattr(atk._managed_temp, "create_output_temp", lambda _prefix: saved)
+    # pylint: disable-next=protected-access
+    monkeypatch.setattr(review_audit._json_command, "run", run)
+    assert _dispatch("pending", "owner/repo") == 0
+    result = capsys.readouterr()
+    assert f"保存先: {saved / 'output.txt'}" in result.out
+    payload = json.loads((saved / "output.txt").read_text(encoding="utf-8"))
+    assert payload["reviews"] == [] and payload["threads"] == []
+    summary = json.loads(result.out.splitlines()[-1])
+    assert summary == {"counts": payload["counts"], "dependabot_status": "available"}
+    assert not result.err
+
+
 @pytest.mark.parametrize("invalid_field", ("number", "databaseId"))
 def test_pending_rejects_boolean_identifiers(
     invalid_field: str, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]

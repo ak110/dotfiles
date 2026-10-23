@@ -24,8 +24,6 @@ all-reposのリポジトリ担当は受領した取得済み候補を使い、�
 
 ## 読込表
 
-次の時点または条件が成立したら、対象の操作の前に同じ行の資料を全文読む。
-
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 | 資料選択子 |
 | --- | --- | --- | --- | --- |
 | 処理対象WIについて、包含、除外または構成の理由をユーザーが尋ねたとき | `${CLAUDE_PLUGIN_ROOT}/skills/process-wi/references/selection-explanation.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/selection-explanation.md` | |
@@ -124,7 +122,7 @@ all-reposの担当は受領済みの候補本文を使い、次の`atk wi show`�
 候補と選定の集合が確定した直後に、選定YAMLの保存・チェック・レーン起動を待たずに本節を実行する。
 
 開始時候補と選定完了前の明示追加を合わせた処理可能集合が`選定`のファイル名集合と一致し、各ファイル名が1回だけ現れ、複数レーンへ重複しないことを確かめる。
-初期・追加のどちらも、保存済み`target_repo`と対象worktreeの絶対パスを、それぞれ`${CLAUDE_PLUGIN_ROOT}/agent_toolkit/_git/remote.py`の`resolve_repo_identifier`で解決する。同関数はURLを`host/owner/repository`形式へ正規化し、ローカルパスからはoriginを解決する。両方が有効な識別子を返し、一致してから開始する。識別子を解決できない場合は不足するoriginまたは入力を補い、不一致は「処理対象の決定」の移転判定と編集へ戻す。
+初期・追加のどちらも、番号付き手順の前に`atk wi show <選定の全ファイル名> --target-repo=<対象worktreeの絶対パス> --skip-pull`を1回実行し、終了コード0で保存済み`target_repo`と対象worktreeのoriginの一致を確かめる。originを解決できない診断では不足するoriginまたは入力を補い、不一致の診断では「処理対象の決定」の移転判定と編集へ戻す。後続の`adopt`・`unhold`・`start-processing`も状態変更の前に両識別子の一致を確かめる。
 
 1. 処理対象へ含めた作業を求めない回答済みUWIを`atk wi adopt <filename>... --target-repo=<対象リポジトリの絶対パス>`で終端する。
 2. 回答済みUWIが指す元項目のうち`hold`のものを`atk wi unhold <filename>... --target-repo=<対象リポジトリの絶対パス>`で`inbox`へ戻す。
@@ -177,7 +175,7 @@ atk run-script pick-wi-check -- <意味判断YAMLの絶対パス> --candidate-fi
 
 ## 処理対象WIの追加
 
-ユーザーが処理中のセッションへキュー操作（UWIへの回答、AWIの投入）を告げた発話は、その項目を同じ実行へ加える明示指示として扱い、追加の可否を問い返さない。ユーザーが加えるよう明示した項目と告げた項目（UWIは投入元のセッションによらない）、および即時対応で投入または再利用を確定したAWIを候補差分とする。UWIが名指しされない場合は、次の一覧から処理対象に含まれない回答済み未終端UWIの全件を得る。
+ユーザーが処理中のセッションへキュー操作（UWIへの回答、AWIの投入）を告げた発話は、その項目を同じ実行へ加える明示指示として扱い、追加の可否を問い返さない。ユーザーが加えるよう明示した項目と告げた項目（UWIは投入元のセッションによらない）を候補差分とする。即時対応の正式対応AWIは次のセッションへ渡す。UWIが名指しされない場合は、次の一覧から処理対象に含まれない回答済み未終端UWIの全件を得る。
 
 ```text
 atk wi list --type=uwi --answered=yes --status=processable --source=!run-skill --target-repo=<対象リポジトリの絶対パス> --pull

@@ -21,6 +21,7 @@ from collections.abc import Callable, Iterable
 
 from agent_toolkit._atk import claude_connection as _connection
 from agent_toolkit._atk import config as _config
+from agent_toolkit._atk import usage_limit_policy
 from agent_toolkit._common import claude_connection as _claude_settings
 from agent_toolkit._common import claude_usage_limit as _claude_usage_limit
 from agent_toolkit._common import codex_usage_limit as _codex_usage_limit
@@ -157,8 +158,8 @@ def select_available(
 ) -> tuple[str, str, str]:
     """候補を先頭から事前に試し、最初に可用な3つ組を返す。
 
-    ClaudeがWeekly limitか5時間の利用上限で拒否した場合は、次の候補へ切り替えず解除まで待って同じ候補を試し直す
-    （ユーザー指示）。Codexの上限は次候補を先に試し、全候補失敗時に最も早い解除まで待って先頭から判定する。
+    engine別の設定が待機対象とする上限では解除後に候補を試し直す。
+    Codexの上限は次候補を先に試し、全候補失敗時に最も早い解除まで待って先頭から判定する。
     待機の回数と総時間に上限を置かない。上限を含まない全候補の失敗は`NoAvailableCandidateError`を送出する。
     """
     probe_models: dict[str, str] = {}
@@ -384,10 +385,14 @@ def _probe_candidate_owned(
         _notify(context, f"本作業へ採用するモデル候補: {candidate}")
         return None
     usage_limit = _probe_usage_limit(orchestrator, result, env)
-    if usage_limit is not None:
+    if usage_limit is not None and usage_limit_policy.should_wait(orchestrator, usage_limit.limit_type):
         return usage_limit, None
     failure_code = result.returncode or 1
     diagnostic = (result.stderr or "").strip()
+    if usage_limit is not None:
+        diagnostic = (
+            f"{orchestrator}の利用上限（{usage_limit.limit_type or '種類不明'}）。設定に従い解除を待たず次の候補を評価する"
+        )
     reason = f"exit code {result.returncode}"
     reason = f"{reason}; engine診断: {diagnostic}" if diagnostic else f"{reason}; engineの診断出力はありません"
     _notify(

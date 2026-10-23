@@ -366,9 +366,16 @@ def prepare_read_delivery(payload: object, env_overrides: dict[str, str] | None 
         session_id = payload["session_id"]
         for _attempt in range(12):
             decision = read_delivery.deliver(payload, payload.get("tool_name", ""), payload.get("tool_input", {}), session_id)
-            if decision.block is None:
-                if not any("操作前に全文読む資料が未取得" in notice for notice in decision.notices):
-                    return
+            if decision.block is not None:
+                return
+            records = read_state(session_id).get(rules_context.OPERATION_SKILL_READY_KEY, {})
+            agent = agent_id.resolve_hook_agent_id(payload)
+            targets = [
+                target
+                for target in read_delivery.selected_targets(records, agent)
+                if not read_delivery.target_ready(records, target, agent)
+            ]
+            if not targets and any("操作前に全文読む資料が未取得" in notice for notice in decision.notices):
                 targets = [
                     target
                     for row in read_delivery.declarations(str(payload.get("cwd", "")))
@@ -377,13 +384,6 @@ def prepare_read_delivery(payload: object, env_overrides: dict[str, str] | None 
                     )
                     for target in row.targets
                 ]
-            elif "操作前の必須資料を配送する。" in decision.block:
-                continue
-            elif "操作前に全文読む資料:" in decision.block:
-                records = read_state(session_id).get(rules_context.OPERATION_SKILL_READY_KEY, {})
-                targets = read_delivery.selected_targets(records, agent_id.resolve_hook_agent_id(payload))
-            else:
-                return
             if not targets:
                 return
             for target in targets:

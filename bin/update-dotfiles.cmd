@@ -1,16 +1,17 @@
 @echo off
 setlocal
-for %%A in ("%~dp0..") do set "SCRIPT_DIR=%%~fA"
+set "SCRIPT_DIR=%~dp0.."
 set "UV=%USERPROFILE%\.local\bin\uv.exe"
 if not exist "%UV%" goto missing_uv
 set "UV_SELF_UPDATE_FAILED=0"
 if not "%~1"=="logs" if not "%AGENT_TOOLKIT_PROCESS_LOOP_SESSION%"=="1" (
-    "%UV%" self update
+    powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File "%SCRIPT_DIR%\libexec\update_uv.ps1" "%UV%"
     if errorlevel 1 set "UV_SELF_UPDATE_FAILED=1"
 )
 ( "%UV%" run --no-project --script "%SCRIPT_DIR%\libexec\update_dotfiles.py" %*
-rem -------------------------------------------------------------------------
-rem uv run 更新終了
+rem --------
+rem ---------------
+rem uv run update finished
 call set "UPDATE_DOTFILES_EXIT=%%ERRORLEVEL%%"
 rem 上のコメント末尾は旧legacy・logs版の再開位置。byte位置はランチャーテストで検証する。
 set "UV_SELF_UPDATE_WARNING=uvの自己更新に失敗しました。既存のuvでdotfiles更新を実行し、次回のupdate-dotfiles起動時に自己更新を再試行します。対応不要（dotfilesの更新処理は継続しました）。"

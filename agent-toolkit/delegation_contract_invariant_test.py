@@ -13,6 +13,7 @@ from agent_toolkit._atk.wi import constants as wi_constants
 from agent_toolkit._common import read_triggers, task_documents
 from agent_toolkit._common.markdown_headings import top_level_atx_headings
 from agent_toolkit._plan import selection
+from agent_toolkit._testing.agents_server_support import _start_tool
 
 _LAUNCH_TARGET_PREFIX = "起動対象:"
 _REQUIRED_INPUT_PREFIX = "必須入力名:"
@@ -22,6 +23,26 @@ _LABEL_DELIMITER_PATTERN = re.compile("[:\uff1a\u3002\uff08\uff09\u3001,\\s]")
 _INPUT_BULLET_PATTERN = re.compile(r"^- `(?P<name>[^`]+)`: ", flags=re.MULTILINE)
 # 固定の返却形式を持つ`<役割名>.subagent.md`が、返却をその形式の行に限ることを示す語。
 _FIXED_REPLY_LIMIT = "だけを返す"
+
+
+def test_public_start_guidance_preserves_delegation_responsibilities() -> None:
+    """公開schemaと独立した委譲規範が、入力の確定と起動検査を同じ主体へ割り当てる。"""
+    root = pathlib.Path(__file__).resolve().parent
+    delegation = (root / "skills/delegation/SKILL.md").read_text(encoding="utf-8")
+    sending = _h2_section(delegation, "送信")
+    assert "呼び元の契約から対象と実行時の値だけを渡す" in sending
+    assert "起動設定と必須入力の機械チェックはサーバーへ委ねる" in sending
+    assert "編集のための読取、委譲先自身の読取、返却後の書式確認" in sending
+
+    properties = _start_tool().parameters["properties"]
+    for name in ("mode", "extra_params"):
+        guidance = properties[name]["description"]
+        assert "呼び元の起動・受領契約" in guidance, name
+        assert "サーバー" in guidance, name
+        assert "定義本文の読取" in guidance, name
+        assert "同ファイルが宣言した入力名と`extra_params`が一致するか確かめてから起動" not in guidance, name
+        assert "`## 入力`で宣言した入力名" not in guidance, name
+    assert "起動設定・必須入力・宣言外入力の機械検査はサーバーが行う" in properties["mode"]["description"]
 
 
 @dataclasses.dataclass(frozen=True)

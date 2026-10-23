@@ -41,7 +41,8 @@ WIの投入は、次回以降の`agent-toolkit:process-wi`が処理する要求�
 | --- | --- |
 | 対象リポジトリとprivate-notesを扱う前 | `references/repository-scope.md` |
 | 委譲先が`atk wi`でキュー項目の状態を変更する場合 | `references/subagent-queue-ops.md` |
-| 通常AWIを起草・読解・採否判定する前 | `references/awi-body.md`の冒頭の本文形式、「要求固有性と記載量」「節の構成と分担」「実現性の記述」「完成条件」「配置規約と導入目的の調査」 |
+| 通常AWIを起草する前 | `references/awi-body.md`の冒頭の本文形式、「要求固有性と記載量」「節の構成と分担」「実現性の記述」「完成条件」「配置規約と導入目的の調査」 |
+| 通常AWIの要求を読解・採否判定する前 | `references/awi-body.md`の「節の構成と分担」「完成条件」 |
 | 欠陥を起点とするAWIを扱う前 | `references/awi-body.md`の「原因分析と適用範囲」 |
 | AWIの逐語引用を取り込む前 | `references/awi-body.md`の「逐語引用の対応付け」 |
 | 外部の既存挙動の再現を完成条件へ採る前 | `references/awi-body.md`の「外部の既存挙動の再現」 |

@@ -118,8 +118,8 @@ process.stdout.write(JSON.stringify({
     }
 
 
-def test_assets_keep_terminal_entry_editing_read_only_and_show_identifiers() -> None:
-    """終端状態では編集を隠し、削除とkind/state識別子を表示する。"""
+def test_assets_allow_terminal_entry_editing_and_keep_decision_closed() -> None:
+    """終端済みの本文編集と削除を許可し、採否を閉じたままkind/state識別子を表示する。"""
     result = _run_node_ui(
         """
 displayEntry({
@@ -127,13 +127,15 @@ displayEntry({
   summary: '完了', target_repo: 'example/repo', content: 'raw', body_html: '<p>本文</p>',
   question_type: 'free-form', choices: [], frontmatter_entries: []
 });
+enterDecision('adopt');
 process.stdout.write(JSON.stringify({
   heading: elements['detail-state'].textContent,
   metadata: elements['detail-metadata'].children.map(child => child.children.map(item => item.textContent).join(':')),
   readonly: !elements['readonly-notice'].hidden,
   editHidden: elements['edit-button'].hidden,
   answerHidden: elements['answer-button'].hidden,
-  deleteHidden: elements['delete-button'].hidden
+  deleteHidden: elements['delete-button'].hidden,
+  decisionHidden: elements['decision-panel'].hidden
 }));
 """
     )
@@ -144,10 +146,11 @@ process.stdout.write(JSON.stringify({
             "target_repo:example/repo",
             "updated_at:—",
         ],
-        "readonly": True,
-        "editHidden": True,
+        "readonly": False,
+        "editHidden": False,
         "answerHidden": True,
         "deleteHidden": False,
+        "decisionHidden": True,
     }
 
 

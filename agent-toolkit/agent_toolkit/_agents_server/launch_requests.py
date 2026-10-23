@@ -1015,7 +1015,8 @@ def task_document_request(
         raise ActionableError(
             "extra_params contains an invalid input name",
             next_action=(
-                "`extra_params`のキーは`<役割名>.subagent.md`の`## 入力`が宣言した入力名にし、"
+                "呼び元の起動・受領契約から入力名を確定して`extra_params`のキーへ渡す。"
+                "キーには"
                 "空白・バッククォート・読点を含めず、"
                 "先頭と末尾をコロンにしない"
             ),

@@ -32,7 +32,7 @@ from agent_toolkit._agents_server import (
 from agent_toolkit._agents_server import manager as server_manager
 from agent_toolkit._atk import config as _atk_config
 from agent_toolkit._common import claude_connection as claude_settings
-from agent_toolkit._common import plugin_environment, session_registry, state_paths
+from agent_toolkit._common import plugin_environment, process_tree, session_registry, state_paths
 from agent_toolkit._testing.agents_server_support import (
     AssistantMessage,
     BlockingContinuationClaudeClient,
@@ -569,6 +569,7 @@ async def test_auto_resume_deadline_is_independent_from_result_retention(monkeyp
         {"status": "completed", "agent_message": "完了", "error": None},
     )
 
+    assert deadline is not None
     assert before + 5.0 <= deadline <= asyncio.get_running_loop().time() + 5.0
     assert session.auto_resume_deadline == deadline
     assert session.awaiting_auto_resume is True
@@ -673,20 +674,17 @@ async def test_claude_timed_out_queued_prompt_is_not_delivered(tmp_path: pathlib
 @pytest.mark.usefixtures("agents_server_isolation")
 @pytest.mark.asyncio
 @pytest.mark.usefixtures("_owner_session_environment")
-async def test_claude_options_use_claude_code_preset(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """Claude Agent SDKへClaude Code presetと設定読込元、解決した所有セッションを渡す。"""
+async def test_claude_options_use_owned_base_instructions(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Claude Agent SDKへ自前の基本指示と設定読込元、解決した所有セッションを渡す。"""
     monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "owner-session")
     monkeypatch.setenv("PATH", os.defpath)
 
     options = claude._build_options(str(tmp_path), "model", "high", root_session_id="owner-session")
-    assert options.system_prompt == {
-        "type": "preset",
-        "preset": "claude_code",
-        "append": (
-            f"{launch_prompts.CLAUDE_DELEGATE_SYSTEM_PROMPT}\n{launch_prompts.AUTO_RESUME_NOTICE}\n"
-            f"{launch_prompts.cli_runtime_instructions(claude.plugin_roots.SERVER_PLUGIN_ROOT)}"
-        ),
-    }
+    assert options.system_prompt == (
+        f"{launch_prompts.SUBAGENT_BASE_INSTRUCTIONS}\n{launch_prompts.CLAUDE_DELEGATE_SYSTEM_PROMPT}\n"
+        f"{launch_prompts.AUTO_RESUME_NOTICE}\n"
+        f"{launch_prompts.cli_runtime_instructions(claude.plugin_roots.SERVER_PLUGIN_ROOT)}"
+    )
     assert options.setting_sources == ["user", "project"]
     assert options.permission_mode == "auto"
     assert options.env == {
@@ -928,19 +926,27 @@ class _TransportClient(FakeClaudeClient):
 
 @pytest.mark.usefixtures("agents_server_isolation")
 @pytest.mark.asyncio
-async def test_claude_start_records_owner_and_cli_processes(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
+async def test_claude_start_records_owner_and_cli_processes(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, host_environ: Callable[[], dict[str, str]]
+) -> None:
     """登録簿の記録は、所有プロセスとSDKの転送が起動したClaude CLIの識別を持つ。"""
     monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
     owner = session_registry.owner_process()
     assert owner is not None
-    client = _TransportClient([[SystemMessage("claude-recorded"), ResultMessage("完了")]], pid=owner.pid)
     options = SimpleNamespace(system_prompt={"type": "preset", "preset": "claude_code"})
-    async with claude.ClaudeServerManager(client_factory=lambda _options: client, publish_registry=True) as manager:
-        monkeypatch.setattr(claude, "_build_options", lambda *_args, **_kwargs: options)
-        session = await manager.start("調査", str(tmp_path))
-        record = session_registry.registry_directory() / f"{session.session_id}.json"
-        processes = json.loads(record.read_text(encoding="utf-8"))["processes"]
-    assert processes == [{"pid": owner.pid, "create_time": owner.create_time}] * 2
+    with process_tree.process_scope([sys.executable, "-c", "import time; time.sleep(60)"], env=host_environ()) as process:
+        child = session_registry.ProcessIdentity.of(process.pid)
+        assert child is not None
+        client = _TransportClient([[SystemMessage("claude-recorded"), ResultMessage("完了")]], pid=process.pid)
+        async with claude.ClaudeServerManager(client_factory=lambda _options: client, publish_registry=True) as manager:
+            monkeypatch.setattr(claude, "_build_options", lambda *_args, **_kwargs: options)
+            session = await manager.start("調査", str(tmp_path))
+            record = session_registry.registry_directory() / f"{session.session_id}.json"
+            processes = json.loads(record.read_text(encoding="utf-8"))["processes"]
+        assert processes == [
+            {"pid": owner.pid, "create_time": owner.create_time},
+            {"pid": child.pid, "create_time": child.create_time},
+        ]
 
 
 @pytest.mark.usefixtures("agents_server_isolation")
@@ -1034,7 +1040,7 @@ async def test_claude_kill_uses_owner_task_interrupt_and_maps_terminal_reason(
             response = await manager.kill(start_response["session_id"], timeout=1)
             assert response["status"] == "interrupted"
             assert response["kill_requested"] is True
-            assert response["agent_message"] == "中断結果"
+            assert client.disconnected
             assert client.interrupts == 1
         finally:
             await manager.close()

@@ -11,6 +11,7 @@ from typing import Any
 from uuid import UUID
 
 from agent_toolkit._agents_server import (
+    handoff_next_action,
     manager_base,
     record_paths,
     result_projection,
@@ -200,6 +201,11 @@ class ManagerResponses(manager_base.ManagerBase):
         }
         if resume_state.error is not None and resume_state.error != "" and resume_state.error != {}:
             response["error"] = resume_state.error
+        next_action = handoff_next_action.result_next_action(
+            {"session_id": resume_state.session_id, "engine": resume_state.engine, **response}
+        )
+        if next_action is not None:
+            response = result_projection.append_result_next_action(response, next_action)
         return result_projection.with_result_next_action(response, resume_state.label)
 
     @staticmethod
@@ -341,6 +347,11 @@ class ManagerResponses(manager_base.ManagerBase):
         if not include_progress:
             response.pop("progress", None)
             response.pop("elapsed_seconds", None)
+        next_action = handoff_next_action.result_next_action(
+            {"session_id": session.session_id, "engine": session.engine, **response}
+        )
+        if next_action is not None:
+            response = result_projection.append_result_next_action(response, next_action)
         if "agent_message" in response:
             session.result_delivered = True
             session.touch()

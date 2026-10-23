@@ -1414,6 +1414,7 @@ class TestDefaultSteps:
         "Codex の Claude MCP 登録削除": {"Codex CLI の導入と更新"},
         "Claude Code CLI の導入と更新": {"mise セットアップ"},
         "OpenCode CLI の導入": {"mise セットアップ", "Codex CLI の導入と更新", "Claude Code CLI の導入と更新"},
+        "OpenCode toolkit の同期": {"OpenCode CLI の導入"},
         "Codex plugin snapshot の生成": {"Claude Code plugin のインストール"},
         "Antigravity plugin の生成と登録": {"Antigravity CLI の導入", "Codex plugin snapshot の生成", "Gemini 設定"},
         "Codex plugin のインストール": {

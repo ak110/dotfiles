@@ -407,11 +407,25 @@ class TestReadTargetInfo:
     def test_reads_actual_marketplace_json(
         self,
         monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
     ):
-        """本リポジトリ配下の marketplace.json が読み取られ agent-toolkit が install 対象に含まれる。
+        """隔離したmarketplace実ファイルから導入対象を選び、CLIのinstallへ渡す。
 
-        fake_target_info フィクスチャを使わず実ファイルを読ませる。
+        配布中の版・プラグイン構成と、開発機の無効化設定・cacheの状態から独立して検証する。
         """
+        marketplace = tmp_path / ".claude-plugin/marketplace.json"
+        marketplace.parent.mkdir()
+        marketplace.write_text(json.dumps({"plugins": [{"name": "agent-toolkit", "version": "0.2.0"}]}), encoding="utf-8")
+        installed = tmp_path / "claude/plugins/installed_plugins.json"
+        installed.parent.mkdir(parents=True)
+        installed.write_text('{"plugins": {}}', encoding="utf-8")
+        settings = tmp_path / "claude/settings.json"
+        settings.write_text("{}", encoding="utf-8")
+        monkeypatch.setattr(_common, "find_dotfiles_root", lambda: tmp_path)
+        monkeypatch.setattr(_claude_common, "INSTALLED_PLUGINS_PATH", installed)
+        monkeypatch.setattr(_claude_common, "SETTINGS_JSON_PATH", settings)
+        monkeypatch.setattr(_claude_marketplace, "_SETTINGS_JSON_PATH", settings)
+        monkeypatch.setattr(_claude_marketplace, "_KNOWN_MARKETPLACES_PATH", installed.with_name("known_marketplaces.json"))
         # ファイル直接読み取りは無効化して CLI フォールバックを通す
         monkeypatch.setattr(_install_claude_plugins, "_read_installed_plugins_from_file", lambda: None)
         monkeypatch.setattr(_claude_marketplace, "_check_marketplace_from_file", lambda: None)  # noqa: SLF001  # pylint: disable=protected-access  # 引数注入では到達不能（グローバル状態の差し替え）
@@ -427,8 +441,9 @@ class TestReadTargetInfo:
         changed = _install_claude_plugins.run().changed
         assert changed is True
         install_calls = [c for c in calls if command_matches(c, ["claude", "plugin", "install"])]
-        # 実際の marketplace.json の agent-toolkit が install 対象として現れる
+        # 読み込んだmarketplaceのプラグインだけが導入対象になる。
         assert any("agent-toolkit@ak110-dotfiles" in c for c in install_calls)
+        assert len(install_calls) == 1
 
     def test_missing_file_skips_without_cli_calls(
         self,

@@ -206,16 +206,28 @@ def stop_payload(directory: pathlib.Path, visible: str, *, codex: bool = False) 
     return json.dumps(payload)
 
 
+def _missing_completion(directory: pathlib.Path) -> list[str]:
+    """Stopの配送可否と分けて、現在の作業の起動証拠の不足を返す。"""
+    return [
+        kind
+        for _, work in termination_evidence.pending_work(json.loads(stop_payload(directory, "")))
+        for kind in termination_evidence.missing_completion(work)
+    ]
+
+
 @pytest.mark.parametrize("codex", [False, True])
-def test_missing_completion_blocks_from_first_stop_and_evidence_allows(tmp_path: pathlib.Path, *, codex: bool) -> None:
-    """両ホストとも起動証拠の無い成果作業を初回Stopで遮断し、実際の起動証拠を得た後は一度点検して許可する。"""
+def test_missing_completion_notifies_only_on_supported_host(tmp_path: pathlib.Path, *, codex: bool) -> None:
+    """起動不足はClaudeに通知し、Codexでは文書へ委ね、実際の起動後は両ホストで許可する。"""
     supply_commit(tmp_path, codex=codex)
     decision, reason = termination_order_advisor.evaluate(stop_payload(tmp_path, WORK_COMPLETE, codex=codex))
-    assert decision == "block"
-    assert "completion-report" in reason and "commit" in reason
-    assert ("SKILL.md" in reason) is codex
+    assert decision == ("approve" if codex else "notify")
+    if codex:
+        assert not reason
+    else:
+        assert "completion-report" in reason and "commit" in reason
+    assert _missing_completion(tmp_path) == ["commit"]
     supply_completion(tmp_path, codex=codex)
-    assert termination_order_advisor.evaluate(stop_payload(tmp_path, WORK_COMPLETE, codex=codex))[0] == "block"
+    assert not _missing_completion(tmp_path)
     assert termination_order_advisor.evaluate(stop_payload(tmp_path, WORK_COMPLETE, codex=codex)) == ("approve", "")
 
 
@@ -234,10 +246,9 @@ def test_missing_completion_blocks_from_first_stop_and_evidence_allows(tmp_path:
     ],
 )
 def test_report_body_differences_do_not_block_evidenced_work(tmp_path: pathlib.Path, visible: str, *, codex: bool) -> None:
-    """起動証拠を持つ作業は本文の形式によらず一度点検し、再入では終了を許可する。"""
+    """起動証拠を持つ作業は本文の形式によらず終了を許可する。"""
     supply_commit(tmp_path, codex=codex)
     supply_completion(tmp_path, codex=codex)
-    assert termination_order_advisor.evaluate(stop_payload(tmp_path, visible, codex=codex))[0] == "block"
     assert termination_order_advisor.evaluate(stop_payload(tmp_path, visible, codex=codex)) == ("approve", "")
 
 
@@ -255,7 +266,7 @@ def test_codex_path_string_or_failed_read_is_not_evidence(tmp_path: pathlib.Path
     """読取パスの文字列、失敗・空の読取、検索の一致行、他のスキルの読取を起動証拠にしない。"""
     supply_commit(tmp_path, codex=True)
     _tool(tmp_path, "read", "Bash", {"command": command}, response, codex=True)
-    assert termination_order_advisor.evaluate(stop_payload(tmp_path, WORK_COMPLETE, codex=True))[0] == "block"
+    assert _missing_completion(tmp_path) == ["commit"]
 
 
 def test_codex_saved_output_of_read_is_evidence(tmp_path: pathlib.Path) -> None:
@@ -265,7 +276,7 @@ def test_codex_saved_output_of_read_is_evidence(tmp_path: pathlib.Path) -> None:
     saved.write_text(json.dumps({"text": COMPLETION_SKILL_TEXT, "eof": True}, ensure_ascii=False), encoding="utf-8")
     command = "atk read-file -- /plugin/skills/completion-report/SKILL.md"
     _tool(tmp_path, "read", "Bash", {"command": command}, f"保存先: {saved}\n行数: 1", codex=True)
-    assert termination_order_advisor.evaluate(stop_payload(tmp_path, "", codex=True))[0] == "block"
+    assert not _missing_completion(tmp_path)
     assert termination_order_advisor.evaluate(stop_payload(tmp_path, "", codex=True)) == ("approve", "")
 
 
@@ -282,7 +293,7 @@ def test_claude_failed_or_unrelated_skill_is_not_evidence(tmp_path: pathlib.Path
     }
     termination_evidence.observe_tool(json.dumps(payload), after=True)
     _tool(tmp_path, "other", "Skill", {"skill": "agent-toolkit:session-review"}, "起動", codex=False)
-    assert termination_order_advisor.evaluate(stop_payload(tmp_path, WORK_COMPLETE))[0] == "block"
+    assert termination_order_advisor.evaluate(stop_payload(tmp_path, WORK_COMPLETE))[0] == "notify"
 
 
 @pytest.mark.parametrize(
@@ -301,16 +312,18 @@ def test_deliverable_kinds_require_completion(
     """対象スキルの開始、WI・計画の保存、pushを成果作業として示す。"""
     response: object = "起動" if tool_name == "Skill" else ("出力" if codex else {"stdout": "出力", "exit_code": 0})
     _tool(tmp_path, "deliverable", tool_name, tool_input, response, codex=codex)
+    assert label in _missing_completion(tmp_path)
     decision, reason = termination_order_advisor.evaluate(stop_payload(tmp_path, "", codex=codex))
-    assert decision == "block" and label in reason
+    assert decision == ("approve" if codex else "notify")
+    assert (label in reason) is not codex
 
 
 def test_codex_target_skill_read_is_deliverable(tmp_path: pathlib.Path) -> None:
     """Codexが対象スキルの`SKILL.md`を実際に読んだ記録を、対象スキルの開始として扱う。"""
     text = "---\nname: process-wi\n---\n\n# WI処理\n"
     _tool(tmp_path, "start", "Bash", {"command": "sed -n '1,200p' plugin/skills/process-wi/SKILL.md"}, text, codex=True)
-    decision, reason = termination_order_advisor.evaluate(stop_payload(tmp_path, "", codex=True))
-    assert decision == "block" and "agent-toolkit:process-wiの開始" in reason
+    assert "agent-toolkit:process-wiの開始" in _missing_completion(tmp_path)
+    assert termination_order_advisor.evaluate(stop_payload(tmp_path, "", codex=True)) == ("approve", "")
 
 
 @pytest.mark.parametrize(
@@ -340,7 +353,7 @@ def test_finished_work_is_not_reused_after_new_input(tmp_path: pathlib.Path) -> 
     works = termination_evidence.session_works(json.loads(stop_payload(tmp_path, "")))
     assert len(works) == 2
     decision, reason = termination_order_advisor.evaluate(stop_payload(tmp_path, WORK_COMPLETE))
-    assert decision == "block" and f"作業 {works[1][0]}:" in reason and "work-1:" not in reason
+    assert decision == "notify" and f"作業 {works[1][0]}:" in reason and "work-1:" not in reason
 
 
 def test_completion_before_deliverable_in_same_work_is_evidence(tmp_path: pathlib.Path) -> None:
@@ -348,8 +361,7 @@ def test_completion_before_deliverable_in_same_work_is_evidence(tmp_path: pathli
     human_input(tmp_path, "request", "作業を頼む")
     supply_completion(tmp_path)
     supply_commit(tmp_path)
-    decision, reason = termination_order_advisor.evaluate(stop_payload(tmp_path, ""))
-    assert decision == "block" and "起動済みの完了処理" in reason
+    assert termination_order_advisor.evaluate(stop_payload(tmp_path, "")) == ("approve", "")
     works = termination_evidence.session_works(json.loads(stop_payload(tmp_path, "")))
     assert all(not termination_evidence.missing_completion(work) for _, work in works)
     assert termination_order_advisor.evaluate(stop_payload(tmp_path, "")) == ("approve", "")
@@ -406,7 +418,7 @@ def test_cancel_and_new_start_do_not_share_same_path_results(tmp_path: pathlib.P
     works = termination_evidence.pending_work(json.loads(stop_payload(tmp_path, "")))
     assert [work_id for work_id, _ in works] == [new_id]
     decision, reason = termination_order_advisor.evaluate(stop_payload(tmp_path, "登録した。"))
-    assert decision == "block" and new_id in reason and "work-1:" not in reason
+    assert decision == "notify" and new_id in reason and "work-1:" not in reason
 
 
 def test_cancelling_current_work_keeps_missing_completion_of_other_work(tmp_path: pathlib.Path) -> None:
@@ -418,7 +430,7 @@ def test_cancelling_current_work_keeps_missing_completion_of_other_work(tmp_path
     later_id = termination_evidence.record_decision({**document, "action": "start"})
     termination_evidence.record_decision({**document, "action": "cancel", "work_id": later_id})
     decision, reason = termination_order_advisor.evaluate(stop_payload(tmp_path, "中止した。"))
-    assert decision == "block"
+    assert decision == "notify"
     assert "作業 work-1: commit" in reason
     assert later_id not in reason
 
@@ -446,7 +458,7 @@ def test_waiting_for_answer_is_scoped_and_returns_to_remaining_work(
     )
     assert termination_order_advisor.evaluate(stop_payload(tmp_path, "回答を待つ。"))[0] == "approve"
     question.write_text(original + "今日だけの残量を示す。\n", encoding="utf-8")
-    assert termination_order_advisor.evaluate(stop_payload(tmp_path, "回答を受け取った。"))[0] == "block"
+    assert termination_order_advisor.evaluate(stop_payload(tmp_path, "回答を受け取った。"))[0] == "notify"
 
 
 def test_unrelated_or_invented_wait_target_does_not_clear_remaining_work(tmp_path: pathlib.Path) -> None:
@@ -461,7 +473,7 @@ def test_unrelated_or_invented_wait_target_does_not_clear_remaining_work(tmp_pat
                 "reason": "待機したという申告",
             }
         )
-    assert termination_order_advisor.evaluate(stop_payload(tmp_path, "待機中"))[0] == "block"
+    assert termination_order_advisor.evaluate(stop_payload(tmp_path, "待機中"))[0] == "notify"
 
 
 def test_corrupt_or_foreign_state_does_not_block(tmp_path: pathlib.Path) -> None:
@@ -518,7 +530,7 @@ def test_async_wait_is_scoped_to_real_child_and_returns_after_end(tmp_path: path
         return state
 
     session_state.update_state("evidence-test", finish)
-    assert termination_order_advisor.evaluate(stop_payload(tmp_path, "結果を受け取った"))[0] == "block"
+    assert termination_order_advisor.evaluate(stop_payload(tmp_path, "結果を受け取った"))[0] == "notify"
 
 
 def test_blocked_requires_actual_failure_of_same_work(tmp_path: pathlib.Path) -> None:
@@ -914,7 +926,7 @@ def test_public_wait_decision_uses_cli_lock_after_observation_attempt(
         finally:
             release_lock(stream)
     decision, reason = termination_order_advisor.evaluate(stop_payload(tmp_path, "結果を受け取った。"))
-    assert decision == "block" and "completion-report" in reason
+    assert decision == "notify" and "completion-report" in reason
 
 
 @pytest.mark.parametrize("kind", ["unrelated", "other-owner", "finished"])
@@ -1051,7 +1063,7 @@ def test_omission_cli_rejects_unrelated_evidence(tmp_path: pathlib.Path, monkeyp
             == 2
         )
     monkeypatch.delenv("AGENT_TOOLKIT_DELEGATED_SESSION", raising=False)
-    assert termination_order_advisor.evaluate(stop_payload(tmp_path, "成果を届けた。"))[0] == "block"
+    assert termination_order_advisor.evaluate(stop_payload(tmp_path, "成果を届けた。"))[0] == "notify"
     assert trace.is_file()
 
 
@@ -1143,13 +1155,13 @@ async def test_started_session_without_projection_is_waited_by_same_work(
             )
             assert not agents_server_observations.pending_session_ids(session_state.read_state("evidence-test"), "main")
             decision, reason = termination_order_advisor.evaluate(stop_payload(tmp_path, "結果を受け取った。"))
-            assert decision == "block" and "completion-report" in reason
+            assert decision == "notify" and "completion-report" in reason
         finally:
             monkeypatch.setattr(atomic_file.os, "replace", original_replace)
 
 
-def test_stop_review_notice_is_a_fact_not_completion_evidence():
-    """通知の記録を持つだけでは成果作業の起動不足を免除しない。"""
+def test_legacy_stop_review_notice_is_not_completion_evidence():
+    """旧版の未参照キーが残っていても成果作業の起動証拠へ使わない。"""
     work = {"deliverables": ["commit"], "stop_review_notice": {"input_id": "request"}}
     assert termination_evidence.missing_completion(work) == ["commit"]
 
@@ -1172,9 +1184,7 @@ def test_termination_evidence_and_operation_skills_share_read_judgment(
     supply_commit(tmp_path, codex=True)
     skill = "completion-report"
     _tool(tmp_path, "read", "Bash", {"command": command.format(skill=skill)}, response.format(skill=skill), codex=True)
-    assert termination_order_advisor.evaluate(stop_payload(tmp_path, WORK_COMPLETE, codex=True))[0] == "block"
-    second = termination_order_advisor.evaluate(stop_payload(tmp_path, WORK_COMPLETE, codex=True))
-    assert (second == ("approve", "")) is accepted
+    assert (not _missing_completion(tmp_path)) is accepted
 
     skill = "search"
     _tool(tmp_path, "search", "Bash", {"command": command.format(skill=skill)}, response.format(skill=skill), codex=True)

@@ -545,13 +545,16 @@ def test_verification_queries_do_not_require_check_execution(payload: dict) -> N
 
 @pytest.mark.parametrize("tool", _DELEGATION_TOOLS)
 def test_delegation_ready_and_codex_acquisition(tmp_path: pathlib.Path, tool: str) -> None:
-    """Skill起動の後は通り、Codexは`SKILL.md`の読取を観測するまで記録せずに遮断を続ける。"""
+    """資料不足を警告し、取得を観測するまで準備済みとして記録しない。"""
     env = _plan_file_state_env(tmp_path)
     _record_skill(env, "ready", "delegation")
     payload = {"tool_name": tool, "tool_input": {"prompt": "調査する"}, "session_id": "ready"}
     assert "agent-toolkit:delegation" not in _additional_context(_run(payload, env))
     codex = {**payload, "session_id": "codex-delegation", "turn_id": "turn-1"}
-    assert _run(codex, env).returncode == 2
+    result = _run(codex, env)
+    assert result.returncode == 0
+    assert "/skills/delegation/SKILL.md" in _additional_context(result)
+    assert result.stderr == ""
     state_file = session_state.state_path("codex-delegation")
     state = _read_session_state(tmp_path, "codex-delegation") if state_file.exists() else {}
     ready = state.get(rules_context.OPERATION_SKILL_READY_KEY, {})
@@ -574,8 +577,9 @@ def test_blocked_delegation_does_not_consume_warning(tmp_path: pathlib.Path) -> 
     assert rules_context.OPERATION_SKILL_READY_KEY not in state
     valid = {**blocked, "tool_name": _DELEGATION_TOOLS[5], "tool_input": {}}
     delivered = _run(valid, env)
-    assert delivered.returncode == 2
-    assert "/skills/delegation/SKILL.md" in delivered.stderr
+    assert delivered.returncode == 0
+    assert "/skills/delegation/SKILL.md" in _additional_context(delivered)
+    assert delivered.stderr == ""
 
 
 def _record_skill(env: dict[str, str], session_id: str, skill: str, **extra: object) -> None:
@@ -669,5 +673,6 @@ def test_only_own_handoff_is_exempt(tmp_path: pathlib.Path, tool: str, target: s
         )
     payload = {"tool_name": tool, "tool_input": inputs[tool], "session_id": "handoff-exempt"}
     result = _run(payload, env)
-    assert ("/skills/writing-standards/SKILL.md" in result.stderr) is (target != "own")
-    assert result.returncode == (0 if target == "own" else 2)
+    assert ("/skills/writing-standards/SKILL.md" in _additional_context(result)) is (target != "own")
+    assert result.returncode == 0
+    assert result.stderr == ""

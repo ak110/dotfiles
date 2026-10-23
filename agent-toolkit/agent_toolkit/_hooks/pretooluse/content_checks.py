@@ -66,7 +66,7 @@ def _collect_edit_operation_warnings(
                 removable_cause=True,
             )
     candidates = [
-        _warn_mojibake(tool_name, fields),
+        _warn_mojibake(tool_name, fields, subject=display_path),
         # PowerShellの改行要件はpatch断片のLF表現から判定できないため、Claudeの`Write`だけへ適用する。
         _check_ps1_eol(tool_name, fields, display_path) if tool_name == "Write" and _is_ps1(display_path) else None,
         *(_check_lockfiles(tool_name, path) for path in operation.display_paths),
@@ -93,7 +93,7 @@ def _detect_mojibake(tool_name: str, fields: list[tuple[str, str]]) -> tuple[str
     return None
 
 
-def _warn_mojibake(tool_name: str, fields: list[tuple[str, str]]) -> str | None:
+def _warn_mojibake(tool_name: str, fields: list[tuple[str, str]], *, subject: str = "") -> str | None:
     """文字化けを警告する。
 
     第1段の判定では、編集対象もユーザーへ提示する本文も再編集で是正できるため復元可能として扱う。
@@ -103,7 +103,7 @@ def _warn_mojibake(tool_name: str, fields: list[tuple[str, str]]) -> str | None:
     if detected is None:
         return None
     body, fix = detected
-    return _llm_notice(body, tag=_WARN_TAG, fix=fix, removable_cause=True)
+    return _llm_notice(body, tag=_WARN_TAG, fix=fix, removable_cause=True, subject=subject)
 
 
 def _is_ps1(file_path: str) -> bool:
@@ -234,5 +234,6 @@ def _check_manifest(tool_name: str, fields: list[tuple[str, str]], file_path: st
             tag=_WARN_TAG,
             fix=hint,
             removable_cause=True,
+            subject=file_path,
         )
     return None

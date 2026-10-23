@@ -7,14 +7,15 @@ import pathlib
 import shlex
 import subprocess
 import sys
-from collections.abc import Mapping
 from typing import Any
 
-from agent_toolkit._agents_server import backends, plugin_root, record_paths
+from agent_toolkit._agents_server import backends, handoff_next_action, plugin_root, record_paths
 from agent_toolkit._agents_server.state import SessionResumeState, SessionState
 from agent_toolkit._atk import managed_temp
 from agent_toolkit._common import delegated_session, process_tree
 from agent_toolkit._common.next_action import ActionableError
+
+result_next_action = handoff_next_action.result_next_action
 
 
 def availability_reason(engine: str, status: str, error: Any) -> str | None:
@@ -23,14 +24,6 @@ def availability_reason(engine: str, status: str, error: Any) -> str | None:
     if backend is None:
         return None
     return backend.unavailable_reason(SessionState(session_id="handoff", cwd="", engine=engine, status=status, error=error))
-
-
-def result_next_action(result: Mapping[str, Any]) -> str | None:
-    """可用性失敗の結果だけに、前任IDを使った明示的な引き継ぎ起動を案内する。"""
-    if availability_reason(str(result.get("engine", "")), str(result.get("status", "")), result.get("error")) is None:
-        return None
-    identifier = json.dumps(result.get("session_id"), ensure_ascii=False)
-    return f'`start`へ`{{"handoff_from": {identifier}}}`だけを渡し、前任の進捗を後任へ引き継ぐ'
 
 
 def predecessor_error(session: SessionState | SessionResumeState) -> Any:
