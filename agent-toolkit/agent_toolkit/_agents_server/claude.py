@@ -340,7 +340,7 @@ def _build_options(
     isolation_env_file: str | None = None,
     handoff_prompt: str = "",
 ) -> Any:
-    """Claude Codeが用意するシステム指示と委譲先の印を有効にしたSDKオプションを組む。
+    """起動区分ごとの自前システム指示と委譲先の印を持つSDKオプションを組む。
 
     `ClaudeAgentOptions.env`は継承環境へ後から重なるため、process-loopの印を継承したまま
     委譲先の印を追加する。
@@ -723,6 +723,8 @@ class ClaudeServerManager:
                 api_env_file or (existing_session.claude_api_env_file if existing_session else None),
                 isolation_env_file,
             ),
+            role=(existing_session.claude_role if existing_session else None)
+            or ("orchestrator" if model_type == "orchestrate" else "delegate"),
             env=child_environment.inherited(),
         )
         connection_kind = selected_connection.kind
@@ -814,7 +816,9 @@ class ClaudeServerManager:
         diagnostic = _InitializationDiagnostic()
         if connection_kind == "subscription" and isolation_env_file is None:
             isolation_env_file = claude_connection.with_current_isolation(
-                connection_settings.Connection(connection_kind)
+                connection_settings.Connection(connection_kind),
+                role="orchestrator" if model_type == "orchestrate" else "delegate",
+                env=child_environment.inherited(),
             ).isolation_env_file
         debug_file = await run_file_operation(_prepare_debug_file, launch_kind)
         diagnostic.debug_file = str(debug_file)
@@ -931,7 +935,9 @@ class ClaudeServerManager:
         # 通常の追送と、孫sessionの終端・利用上限・過負荷の後の自動再開は、いずれもここで次のturnを始める。
         # 進行中のturnと、CLIが自ら次のturnを始め得る待機（バックグラウンドタスクなど）では所有タスクを止めない。
         held_without_pending = session.awaiting_auto_resume and not resume_waits.has_pending_auto_resume_targets(session)
-        if (session.terminal or held_without_pending) and claude_connection.api_only() and session.claude_connection != "api":
+        role = session.claude_role or ("orchestrator" if session.model_type == "orchestrate" else "delegate")
+        fixed_kind = claude_connection.fixed_kind(role)
+        if (session.terminal or held_without_pending) and fixed_kind and session.claude_connection != fixed_kind:
             previous = session.previous_result() if session.terminal and not session.awaiting_auto_resume else None
             await self._resume_next_turn(session, prompt)
             return {"delivery": "reply_started", "previous_result": previous}
@@ -1104,7 +1110,7 @@ class ClaudeServerManager:
             )
             session.claude_connection = "api" if api_env_file else connection_kind
             session.claude_api_env_file = api_env_file
-            if connection_kind == "api" and claude_connection.api_only():
+            if connection_kind == "api" and claude_connection.api_only(session.claude_role or "delegate"):
                 session.claude_subscription_retry_at = None
             self.sessions[session_id] = session
             session.claude_mcp_diagnostics = ()

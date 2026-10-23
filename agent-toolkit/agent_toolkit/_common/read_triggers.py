@@ -39,6 +39,7 @@ DYNAMIC_SELECTORS = frozenset(
 )
 _CODE = re.compile(r"`([^`]+)`")
 _REFERENCE = re.compile(r"`([^`]+)`|\[[^\]]+\]\(([^)]+)\)")
+_REFERENCE_METHOD_HEADING = "名指し参照の読込方法"
 
 
 def _scope_selector(text: str) -> str:
@@ -487,10 +488,66 @@ def parse_tables(
     return list(dict.fromkeys(result))
 
 
+def reference_method_targets(
+    source: pathlib.Path,
+    plugin_root: pathlib.Path,
+    host: str = "claude",
+    _parents: frozenset[pathlib.Path] = frozenset(),
+) -> tuple[ReadTarget, ...]:
+    """共通読込方法の明示参照を、同梱定義元の指定節へ解決する。"""
+    source = source.resolve()
+    entry = next(
+        (
+            parent / "SKILL.md"
+            for parent in source.parents
+            if parent.parent.name == "skills" and (parent / "SKILL.md").is_file()
+        ),
+        None,
+    )
+    owner = entry or (source.parent / "read-trigger-contract.md" if source.parent == plugin_root.resolve() / "share" else None)
+    if owner is None:
+        return ()
+    canonical = resolve_read_source(source, plugin_root, host)
+    if canonical != source:
+        return reference_method_targets(canonical, plugin_root, host, _parents)
+    if source in _parents:
+        raise ValueError(f"{source}: 名指し参照の読込方法の循環を検出した")
+    owner = resolve_read_source(owner, plugin_root, host)
+    text = source.read_text(encoding="utf-8")
+    _lines, headings = _headings(text)
+    method = (
+        ReadTarget(source, _REFERENCE_METHOD_HEADING).body(text)
+        if any(name == _REFERENCE_METHOD_HEADING for _number, _level, name in headings)
+        else ""
+    )
+    result: list[ReadTarget] = []
+    for _number, line, visible in document_lines(method):
+        if not visible or not line.startswith("名指し参照は"):
+            continue
+        targets = material_targets(line, source, plugin_root, host)
+        if len(targets) != 1 or urllib.parse.unquote(targets[0].heading).strip("「」") != _REFERENCE_METHOD_HEADING:
+            raise ValueError(f"{source}: 名指し参照の読込方法の短節を明示する")
+        target = targets[0]
+        if target.path != owner:
+            raise ValueError(f"{source}: 名指し参照の読込方法は同梱の定義元を指定する: {target}")
+        target = ReadTarget(target.path, _REFERENCE_METHOD_HEADING)
+        target.body()
+        result.append(target)
+        result.extend(reference_method_targets(target.path, plugin_root, host, _parents | {source}))
+    for _number, line, visible in document_lines(text):
+        included = re.fullmatch(r"<!-- read-table-source: (.+) -->", line) if visible else None
+        if included is not None:
+            path = _direct_document(included[1], source, plugin_root, host)
+            if path is None:
+                raise ValueError(f"{source}: read-table-sourceの実体が無い: {included[1]}")
+            result.extend(reference_method_targets(path, plugin_root, host, _parents | {source}))
+    return tuple(dict.fromkeys(result))
+
+
 def startup_context(source: pathlib.Path, plugin_root: pathlib.Path, inputs: dict[str, str]) -> str:
     """役割文書の受領と同時に必要な本文を、判断が始まる前に配送する。"""
     rows = parse_tables(source, plugin_root)
-    targets: list[ReadTarget] = []
+    targets = list(reference_method_targets(source, plugin_root))
     input_selectors: dict[ReadTarget, set[str]] = {}
     role = source.name.removesuffix(".subagent.md")
     for row in rows:
@@ -513,6 +570,8 @@ def startup_context(source: pathlib.Path, plugin_root: pathlib.Path, inputs: dic
                 target = ReadTarget(candidate)
                 targets.append(target)
                 input_selectors.setdefault(target, set()).add(row.selector)
+    for target in tuple(targets):
+        targets.extend(reference_method_targets(target.path, plugin_root))
     return startup_documents(targets, plugin_root, input_selectors)
 
 
@@ -552,6 +611,7 @@ def validate_reference_routes(source: pathlib.Path, plugin_root: pathlib.Path, r
     if resolve_read_source(source, plugin_root) != source.resolve():
         return
     routed = {path for row in rows for path in row.documents} | {source.resolve()}
+    methods = reference_method_targets(source, plugin_root)
     bootstrap = plugin_root / "share/read-trigger-bootstrap.md"
     if source.name.startswith("rules-") and bootstrap.is_file():
         routed.update(path for row in parse_tables(bootstrap, plugin_root, strict=True) for path in row.documents)
@@ -562,7 +622,11 @@ def validate_reference_routes(source: pathlib.Path, plugin_root: pathlib.Path, r
             path = target.path
             if path.name.startswith("rules-") or path.parent.name == "rules":
                 continue
-            if path not in routed:
+            method_route = (
+                urllib.parse.unquote(target.heading).strip("「」") == _REFERENCE_METHOD_HEADING
+                and ReadTarget(path, _REFERENCE_METHOD_HEADING) in methods
+            )
+            if path not in routed and not method_route:
                 raise ValueError(f"{source}:{number}: 参照先へ届く経路が無い: {path}")
 
 

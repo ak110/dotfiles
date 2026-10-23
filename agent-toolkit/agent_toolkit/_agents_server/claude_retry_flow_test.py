@@ -19,7 +19,7 @@ from claude_agent_sdk._internal.message_parser import parse_message
 from agent_toolkit._agents_server import claude, manager, state
 from agent_toolkit._atk import claude_connection
 from agent_toolkit._common import host_homes, process_tree
-from agent_toolkit._testing.agents_server_support import ResultMessage, install_backend
+from agent_toolkit._testing.agents_server_support import AssistantMessage, ResultMessage, install_backend
 
 pytestmark = pytest.mark.usefixtures("agents_server_isolation")
 
@@ -154,6 +154,85 @@ async def test_weekly_retry_continues_same_session_on_api(
         owner._wait_timeouts["main"] = 5  # pylint: disable=protected-access
         result = await owner.wait()
         assert (result["session_id"], result["agent_message"]) == (session_id, "APIで残る作業を完了した")
+
+
+@pytest.mark.asyncio
+async def test_weekly_api_resume_retains_request_followup_and_completed_work(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """拒否前の要求・追送・完了済み進捗を持つCLI履歴を同じ会話のAPI再開先へ渡し、残作業を回収する。"""
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CLAUDE_USAGE_LIMIT_WAIT", "five-hour")
+    api = tmp_path / "api.env"
+    api.write_text("ANTHROPIC_API_KEY=fixture\n", encoding="utf-8")
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CLAUDE_API_ENV_FILE", str(api))
+    monkeypatch.setattr(claude_connection, "subscription_available", lambda *_args, **_kwargs: True)
+    monkeypatch.setattr(manager, "START_AVAILABILITY_TIMEOUT", 0.001)
+    request = "一覧の素材を完成させてから、配布用の索引を作る"
+    followup = "索引には素材の作成者名も含める"
+    completed_work = "完了済み: 素材一覧と作成者名を確定した。残作業: 配布用索引の作成"
+    histories: dict[str, list[str]] = {}
+    clients: list[Any] = []
+
+    class HistoryCLI(_RetryCLI):
+        """CLIが所有する会話履歴を、実SDK optionsのresume識別子からだけ復元する。"""
+
+        def __init__(self, options: Any) -> None:
+            super().__init__("retry-flow")
+            self.api_connection = bool(options.env.get("ANTHROPIC_API_KEY"))
+            # SDKの履歴保持そのものを模す。別会話の起動やresume指定の欠落では過去の履歴が渡らない。
+            self.history = histories.setdefault(options.resume, []) if options.resume else []
+            if not options.resume:
+                histories["retry-flow"] = self.history
+            self.restored_history = tuple(self.history)
+            self.resume_id = options.resume
+
+        async def query(self, prompt: str) -> None:
+            await super().query(prompt)
+            self.history.append(prompt)
+            if self.api_connection:
+                body = "\n".join(self.restored_history) + "\n残作業の索引を作成した"
+                self.messages.put_nowait(AssistantMessage(body))
+                self.messages.put_nowait(ResultMessage(body))
+
+        def complete_material(self) -> None:
+            self.history.append(completed_work)
+            self.messages.put_nowait(AssistantMessage(completed_work))
+
+    def factory(options: Any) -> HistoryCLI:
+        # _build_optionsも実装を通し、SDKへ渡すresume・接続環境の欠落を検出する。
+        client = HistoryCLI(options)
+        clients.append(client)
+        return client
+
+    async with (
+        manager.AgentsServerManager(None) as owner,
+        claude.ClaudeServerManager(owner.sessions, owner._condition, client_factory=factory) as backend,
+    ):
+        install_backend(owner, "claude", backend)
+        started = await owner.start("claude:opus/medium", request, str(tmp_path))
+        session = owner.sessions[started["session_id"]]
+        clients[0].complete_material()
+        async with asyncio.timeout(5):
+            while session.agent_message != completed_work:
+                await asyncio.sleep(0)
+        assert (await owner.send_message(session.session_id, followup))["delivery"] == "steered"
+        assert len(clients[0].queries) == 2
+        await owner.activate_async()
+        clients[0].messages.put_nowait(_limit("seven_day"))
+        clients[0].messages.put_nowait(_retry())
+        owner._wait_timeouts["main"] = 5
+        result = await owner.wait()
+        assert len(clients) == 2
+        assert clients[0].disconnected
+        resumed = clients[1]
+        assert resumed.api_connection and resumed.resume_id == session.session_id
+        assert any(request in entry for entry in resumed.restored_history)
+        assert any(followup in entry for entry in resumed.restored_history)
+        assert completed_work in resumed.restored_history
+        assert owner.sessions[session.session_id] is session
+        assert session.prompt == request and session.followup_prompts == (followup,)
+        assert result["status"] == "completed" and result["session_id"] == started["session_id"]
+        assert all(text in result["agent_message"] for text in (request, followup, completed_work, "残作業の索引を作成した"))
 
 
 @pytest.mark.parametrize("late_failure", [False, True])

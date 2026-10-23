@@ -98,8 +98,10 @@ GitHub Copilotのレビューはマージ後に到着することがあるため
 
 ## 完了条件
 
-- `origin/develop`と`origin/master`の短縮OIDが一致し、必須CIと必要なRelease検収が成功している
+- マージ後のbranch同期時に`origin/develop`と`origin/master`の短縮OIDの一致を確認し、マージ対象の必須CIと必要なRelease検収が成功している
 - 「マージ後に到着したレビューの確認」を1回実施し、指摘の分類と処置を確定している
-- ローカル`develop`を同期した場合は、`develop`も`origin/master`と一致している
+- ローカル`develop`を同期した場合は、その同期時に`origin/master`との一致を確認している
+
+マージ後に同じセッションで`develop`へ加えた変更は、「マージ後に`develop`へ加えた変更のCI確認」の条件で判定し、検収済みのマージ結果と分けて報告する。
 
 ローカルの作業ツリーとbranchの状態は合否判定に使わない。`git status --short`の出力は現状の情報として完了報告へ添え、リモートの完了とローカル`develop`を同期したかどうかを区別して示す。

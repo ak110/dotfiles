@@ -104,7 +104,7 @@ export function register(on: On, session: { delegated: boolean }): void {
   });
   on("tool.call", { tool: "Bash" }, async ($, e, next) => {
     const result = await next(e);
-    if (session.delegated || e.agentId !== undefined || !e.command.includes("agents wait")) return result;
+    if (session.delegated || e.agentId !== undefined || typeof e.command !== "string" || !e.command.includes("agents wait")) return result;
     const raw: unknown = result.result;
     const id = typeof raw === "object" && raw !== null ? (raw as { backgroundTaskId?: unknown }).backgroundTaskId : undefined;
     if (typeof id !== "string" || !id || state.waits.has(id)) return result;
@@ -119,7 +119,7 @@ export function register(on: On, session: { delegated: boolean }): void {
   on("session.append", { door: /^(delivery|queue|attachment)$/ }, ($, e, next) => {
     if (e.agentId === undefined) {
       for (const block of e.message.content) {
-        if (block.type !== "text") continue;
+        if (block.type !== "text" || typeof block.text !== "string") continue;
         for (const notice of block.text.matchAll(/<task-notification>[\s\S]*?<\/task-notification>/g)) {
           const id = notice[0].match(/<task-id>([^<]+)<\/task-id>/)?.[1];
           const status = notice[0].match(/<status>([^<]+)<\/status>/)?.[1];

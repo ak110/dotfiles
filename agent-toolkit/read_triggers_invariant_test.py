@@ -15,9 +15,14 @@ def test_all_read_tables_have_valid_declarations_and_routes():
         roots.append(basics)
     sources = sorted({path for root in roots for path in root.rglob("*.md")})
     assert sources
+    errors: list[str] = []
     for source in sources:
-        rows = read_triggers.parse_tables(source, _PLUGIN_ROOT, strict=True)
-        read_triggers.validate_reference_routes(source, _PLUGIN_ROOT, rows)
+        try:
+            rows = read_triggers.parse_tables(source, _PLUGIN_ROOT, strict=True)
+            read_triggers.validate_reference_routes(source, _PLUGIN_ROOT, rows)
+        except ValueError as error:
+            errors.append(f"{source}: {error}")
+    assert not errors, "\n".join(errors)
 
 
 def test_every_role_has_explicit_parent_read_source():

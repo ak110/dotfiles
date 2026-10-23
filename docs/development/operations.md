@@ -467,6 +467,7 @@ atk run-script session-review-evidence -- --stats <選んだ記録の絶対パ�
 - serviceは`libexec/update_dotfiles_if_upstream_changed.py`を実行する。
   このスクリプトは現在branchが`develop`で、upstreamが`origin/develop`であることを検証する。
   そのうえで`git ls-remote`から得た`origin/develop`のcommit IDをローカル`HEAD`と比較し、自動更新専用の未完了状態も確認する
+  - 未コミット変更（stage済み・未stage・未追跡）がある周期は、上流照会前と更新起動直前の読取確認で自動更新を次周期へ延期する。未完了・反映済み・延期の状態記録は維持し、cleanになった周期で既存の再試行を続ける。確認後に編集が始まる競合まで原子的に排除する仕組みではない
   - commit IDが一致し未完了状態も延期記録も無ければ、Codexの完成済み旧パッケージを整理し、`update-dotfiles`を起動せず終了する
   - post-applyは稼働中のCodexやHerdrセッションを理由に延期した工程を、同じ状態ディレクトリの延期記録（`<キー>.deferred`）へ残す。記録がある間は上流に変更が無くても`update-dotfiles`を起動して延期した更新を再試行する。post-applyだけが記録を更新し、延期が解消した実行で記録を削除する。serviceはHerdrセッションの外で動くため、Herdrの自己更新もこの再試行で反映される
   - 上流に変更がある場合と前回の自動更新が未完了の場合は、未完了状態を保存してから`bin/update-dotfiles`を絶対パスかつ引数なしで起動する。終了コード0を観測した場合だけ未完了状態を解除し、それ以外では次回のタイマー起動まで保持する

@@ -345,7 +345,7 @@ def _probe_candidate_owned(
                 for diagnostic in choices.warnings:
                     _notify(context, diagnostic, "Claude接続設定を確認する")
                 connection = choices.require_first()
-            connection = _connection.with_current_isolation(connection, env=env)
+            connection = _connection.with_current_isolation(connection, role="orchestrator", env=env)
             probe_env = _connection.connection_environment(probe_env, connection)
             settings = _claude_settings.merge_settings(
                 None,

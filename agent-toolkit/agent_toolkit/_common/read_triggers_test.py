@@ -125,6 +125,83 @@ def test_named_reference_without_route_fails_ci(tmp_path):
         read_triggers.validate_reference_routes(source, tmp_path, [])
 
 
+@pytest.mark.parametrize("package", ["skill", "share"])
+def test_common_reference_method_has_a_scoped_same_package_route(tmp_path, package):
+    if package == "skill":
+        owner = tmp_path / "skills/example/SKILL.md"
+        source = owner.parent / "references/rule.md"
+        reference = "../SKILL.md"
+    else:
+        owner = tmp_path / "share/read-trigger-contract.md"
+        source = owner.parent / "example.parent.md"
+        reference = owner.name
+    owner.parent.mkdir(parents=True)
+    source.parent.mkdir(parents=True, exist_ok=True)
+    owner.write_text("# 定義\n## 名指し参照の読込方法\n指定範囲を判断前に取得する。\n## 別用途\n別用途本文\n", encoding="utf-8")
+    source.write_text(
+        f"# 消費側\n## 名指し参照の読込方法\n名指し参照は`{reference}`「名指し参照の読込方法」に従う。\n", encoding="utf-8"
+    )
+    targets = read_triggers.reference_method_targets(source, tmp_path)
+    assert targets == (read_triggers.ReadTarget(owner, "名指し参照の読込方法"),)
+    assert "指定範囲を判断前に取得する。" in targets[0].body()
+    assert "別用途本文" not in targets[0].body()
+    read_triggers.validate_reference_routes(source, tmp_path, [])
+    with source.open("a", encoding="utf-8") as stream:
+        stream.write(f"\n別の判断は`{'SKILL.md' if package == 'skill' else reference}`「別用途」に従う。\n")
+    with pytest.raises(ValueError, match="参照先へ届く経路が無い"):
+        read_triggers.validate_reference_routes(source, tmp_path, [])
+
+
+def test_role_startup_receives_the_method_referenced_by_its_included_table(tmp_path):
+    share = tmp_path / "share"
+    share.mkdir()
+    owner = share / "read-trigger-contract.md"
+    owner.write_text("# 定義\n## 名指し参照の読込方法\n共通取得順\n## 別用途\n別用途本文\n", encoding="utf-8")
+    table = share / "reading.md"
+    table.write_text(
+        "# 宣言\n## 名指し参照の読込方法\n名指し参照は`read-trigger-contract.md`「名指し参照の読込方法」に従う。\n",
+        encoding="utf-8",
+    )
+    role = share / "example.subagent.md"
+    role.write_text("# 役割\n<!-- read-table-source: reading.md -->\n", encoding="utf-8")
+    context = read_triggers.startup_context(role, tmp_path, {})
+    assert context.count("共通取得順") == 1
+    assert "別用途本文" not in context
+
+
+@pytest.mark.parametrize("defect", ["missing-heading", "outside-package", "cycle"])
+def test_invalid_common_reference_method_is_not_an_implicit_route(tmp_path, defect):
+    directory = tmp_path / "skills/example"
+    source = directory / "references/rule.md"
+    source.parent.mkdir(parents=True)
+    owner = directory / "SKILL.md"
+    body = "# 定義\n## 名指し参照の読込方法\n共通取得順\n"
+    reference = "../SKILL.md"
+    if defect == "missing-heading":
+        body = "# 定義\n別の節だけを持つ。\n"
+    elif defect == "outside-package":
+        sibling = tmp_path / "skills/other/SKILL.md"
+        sibling.parent.mkdir()
+        sibling.write_text(body, encoding="utf-8")
+        reference = "../../other/SKILL.md"
+    else:
+        body += "名指し参照は`SKILL.md`「名指し参照の読込方法」に従う。\n"
+    owner.write_text(body, encoding="utf-8")
+    source.write_text(
+        f"# 消費側\n## 名指し参照の読込方法\n名指し参照は`{reference}`「名指し参照の読込方法」に従う。\n", encoding="utf-8"
+    )
+    with pytest.raises(ValueError, match="見出し|同梱|循環"):
+        read_triggers.reference_method_targets(source, tmp_path)
+
+
+@pytest.mark.parametrize("location", ["note.md", "other/share/note.md"])
+def test_common_reference_method_does_not_read_documents_outside_its_package(tmp_path, location):
+    source = tmp_path / location
+    source.parent.mkdir(parents=True, exist_ok=True)
+    source.write_bytes(b"<!-- read-table-source: missing.md -->\n\xff")
+    assert read_triggers.reference_method_targets(source, tmp_path / "plugin") == ()
+
+
 def test_make_target_scope_includes_children_and_shared_variables(tmp_path):
     path = tmp_path / "Makefile"
     path.write_text(

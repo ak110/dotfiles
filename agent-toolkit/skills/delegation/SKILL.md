@@ -133,7 +133,7 @@ explore・shellの受領と検収は「explore・shellの起動」の最終項�
 
 観測の優先順は`references/waiting-and-monitoring.md`「待機区間の構成」、Codexで元担当が稼働中の間の保留は`references/codex-runtime.md`「後続操作の共通先行条件」に従う。
 
-- Codex以外では、同一種別・同一用途の起動を反復しても収束しない場合に収束を促す
+- Codex以外で同一種別・同一用途の起動を反復しても収束しない場合は、`references/runtime-routing.md`「継続と新規起動」に従って担当・作業単位・モデル・実行手段を見直す
 - 委譲先の役割を巻き取る場合は、その役割の`<役割名>.subagent.md`が定める義務（判断の所有者、加工せず配送する対象、収束条件）をそのまま自身へ適用する
 
 ## 再委譲する場合に守る事項

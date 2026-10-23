@@ -14,4 +14,4 @@
 
 ## 運用条件
 
-    - agent-toolkitプラグインはPS1へのLF-only書き込みへ警告を返すが、書き込み自体は成立する
+- agent-toolkitプラグインはPS1へのLF-only書き込みへ警告を返すが、書き込み自体は成立する

@@ -33,8 +33,9 @@ description: >
 
 ## `rules:changes`とスケジュール実行
 
-`rules:changes`はGit pushイベントを伴わないパイプライン（`$CI_PIPELINE_SOURCE`が`schedule`・`tag`・`pipeline`・`web`・`api`・`trigger`）では常にtrueと評価される。
-`schedule`等を導入する際は、対象外としたいジョブの`rules`先頭で除外する。
+`compare_to`を指定しない`rules:changes`は、新規ブランチと、タグ・スケジュール・手動実行など比較元のGit pushイベントを伴わないパイプラインでは常にtrueと評価される（[公式仕様](https://docs.gitlab.com/ci/yaml/#ruleschanges)）。
+差分比較が必要なら`rules:changes:compare_to`で比較元を指定し、対象外としたいジョブは`rules`先頭で除外する。
+タグpushの`CI_PIPELINE_SOURCE`は`push`であり、タグの判定には`CI_COMMIT_TAG`を使う（[パイプライン種別の判定](https://docs.gitlab.com/ci/jobs/job_rules/#ci_pipeline_source-predefined-variable)）。
 
 ```yaml
 job:

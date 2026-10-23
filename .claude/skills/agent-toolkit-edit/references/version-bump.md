@@ -5,7 +5,7 @@
 
 ## 名指し参照の読込方法
 
-本文の各参照の適用条件を保ち、選んだ資料の指定範囲を取得してから、その基準を使う具体的な判断へ進む。起動時の行の資料は起動本文とともに届く。
+名指し参照は`../SKILL.md`「名指し参照の読込方法」に従う。
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
@@ -42,8 +42,6 @@ plugin cache directory配下の新versionのrootを解決し、そのrootの`ski
 起動通知が示した変更前のplugin rootは、導入版を変更する前の処理に使う。
 
 ## plan modeでの取り扱い
-
-単一のworktreeで実装する計画には本節の一般則を、`agent-toolkit:process-wi`のレーンには末尾の特則を適用する。
 
 - 計画の`## 要件・外部仕様`へ種別（PATCH／MINOR／MAJORまたは`bump不要`）と「判定基準」に基づく根拠を書く。具体的な版数と既存bumpとの統合は`scripts/agent_toolkit_bump.py`へ委ねる。bumpする実装では検証前に`scripts/agent_toolkit_bump.py {種別}`を実行する
 - bumpを伴う計画では、差分の有無を問わず定義元2ファイルを変更説明へ含める。生成器が保証する派生物（派生manifest、`agent-toolkit/rules/`から生成する`.chezmoi-source/dot_codex/AGENTS.md`など）は変更説明へ列挙せず、正式な生成コマンドと生成器出力との一致確認を`## 検証`へ書く。派生manifestは定義元の更新後に`scripts/sync_codex_plugin_manifests.py`で反映し、`--check`で確かめる

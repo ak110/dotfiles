@@ -7,6 +7,7 @@ from typing import cast
 import pytest
 
 from agent_toolkit import atk
+from agent_toolkit._atk import claude_connection
 from agent_toolkit._atk import config as config_module
 from agent_toolkit._common import codex_models, state_paths
 from agent_toolkit._common import next_action as _next_action
@@ -553,28 +554,35 @@ def test_claude_api_env_file_accepts_missing_path(tmp_path: pathlib.Path) -> Non
 
 
 @pytest.mark.parametrize("mode,expected", [("pay-as-you-go", ("true", "false")), ("api-credits", ("false", "true"))])
-def test_legacy_claude_mode_migrates_without_duplicate_state(tmp_path, capsys, mode, expected):
-    """旧接続設定を公開getで移行し、新設定の独立更新を保存する。"""
+def test_legacy_claude_mode_retains_source_after_get_and_partial_set(tmp_path, capsys, mode, expected):
+    """公開getは旧入力の出所を保ち、新設定の片方だけを明示保存できる。"""
     _write_config(tmp_path, {"claude_api_mode": mode, "write_model": "claude:sonnet"})
     keys = ("claude_orchestrator_api_only", "claude_worker_api_first")
     assert _main(tmp_path, "config", "get", *keys) == 0
     assert capsys.readouterr().out.splitlines() == list(expected)
-    assert _saved(tmp_path) == {**dict(zip(keys, expected, strict=True)), "write_model": "claude:sonnet"}
+    assert _saved(tmp_path) == {"claude_api_mode": mode, "write_model": "claude:sonnet"}
+    assert all(not config_module.claude_role_setting_is_explicit(key) for key in keys)
+    assert claude_connection.candidates("orchestrator").require_first().kind == "inherit"
+    assert claude_connection.candidates("delegate").require_first().kind == "inherit"
     assert _main(tmp_path, "config", "set", keys[0], "false") == 0
     capsys.readouterr()
     assert config_module.resolve_mutable_setting(keys[1]) == expected[1]
+    assert _saved(tmp_path) == {"claude_api_mode": mode, "write_model": "claude:sonnet", keys[0]: "false"}
+    assert config_module.claude_role_setting_is_explicit(keys[0])
+    assert not config_module.claude_role_setting_is_explicit(keys[1])
 
 
 def test_legacy_api_only_is_exclusive_until_new_setting_is_written(tmp_path, capsys):
-    """旧API固定は元の入力で保ち、新bool更新で通常の2設定へ切り替える。"""
+    """新bool更新は指定した役割を変更し、他方の旧API固定を維持する。"""
     assert _main(tmp_path, "config", "set", "claude_api_mode", "api-only") == 0
     capsys.readouterr()
     assert _saved(tmp_path) == {"claude_api_mode": "api-only"}
     assert config_module.claude_legacy_api_only()
     assert _main(tmp_path, "config", "set", "claude_worker_api_first", "false") == 0
     capsys.readouterr()
-    assert _saved(tmp_path) == {"claude_orchestrator_api_only": "true", "claude_worker_api_first": "false"}
+    assert _saved(tmp_path) == {"claude_api_mode": "api-only", "claude_worker_api_first": "false"}
     assert not config_module.claude_legacy_api_only()
+    assert config_module.claude_legacy_api_only("claude_orchestrator_api_only")
 
 
 def test_new_claude_environment_overrides_legacy_mode(tmp_path, capsys, monkeypatch):
@@ -584,7 +592,121 @@ def test_new_claude_environment_overrides_legacy_mode(tmp_path, capsys, monkeypa
     assert _main(tmp_path, "config", "get", "claude_worker_api_first", "claude_orchestrator_api_only") == 0
     assert capsys.readouterr().out == "false\ntrue\n"
     assert not config_module.claude_legacy_api_only()
+    assert config_module.claude_legacy_api_only("claude_orchestrator_api_only")
     assert not _config_file(tmp_path).exists()
+
+
+@pytest.mark.parametrize("source", ["saved", "environment"])
+@pytest.mark.parametrize("role", ["orchestrator", "delegate"])
+@pytest.mark.parametrize("value", ["true", "false"])
+@pytest.mark.parametrize("api_file", ["unset", "invalid", "valid"])
+def test_explicit_claude_role_policy_with_optional_api_file(tmp_path, capsys, monkeypatch, source, role, value, api_file):
+    """公開設定入力から候補と子環境まで、明示した役割の固定・順序と認証隔離を確認する。"""
+    key = "claude_orchestrator_api_only" if role == "orchestrator" else "claude_worker_api_first"
+    if source == "saved":
+        assert _main(tmp_path, "config", "set", key, value) == 0
+        capsys.readouterr()
+    else:
+        monkeypatch.setenv(f"AGENT_TOOLKIT_CONFIG_{key.upper()}", value)
+    if api_file != "unset":
+        path = tmp_path / "api.env"
+        path.write_text("ANTHROPIC_API_KEY=selected-api\n" if api_file == "valid" else "invalid", encoding="utf-8")
+        monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CLAUDE_API_ENV_FILE", str(path))
+    parent = {"ANTHROPIC_API_KEY": "parent-api", "CLAUDE_CODE_OAUTH_TOKEN": "parent-oauth"}
+    choices = claude_connection.candidates(role, env=parent)
+    if role == "orchestrator" and value == "true" and api_file != "valid":
+        assert not choices.connections
+        with pytest.raises(ValueError, match="atk config set claude_api_env_file"):
+            choices.require_first()
+        return
+    expected = ["subscription"]
+    if api_file == "valid":
+        expected = (
+            (["api"] if value == "true" else ["subscription"])
+            if role == "orchestrator"
+            else (["api", "subscription"] if value == "true" else ["subscription", "api"])
+        )
+    assert [item.kind for item in choices.connections] == expected
+    for selected in choices.connections:
+        child = claude_connection.connection_environment(parent, selected)
+        if selected.kind == "subscription":
+            assert "ANTHROPIC_API_KEY" not in child
+            assert child["CLAUDE_CODE_OAUTH_TOKEN"] == "parent-oauth"
+        else:
+            assert child["ANTHROPIC_API_KEY"] == "selected-api"
+            assert "CLAUDE_CODE_OAUTH_TOKEN" not in child
+
+
+@pytest.mark.parametrize("mode", [None, "pay-as-you-go", "api-credits"])
+def test_unconfigured_claude_roles_preserve_inherit_after_public_get(tmp_path, capsys, mode):
+    """未指定と旧2モードは、公開get後もAPI環境未設定の認証継承を保持する。"""
+    if mode is not None:
+        _write_config(tmp_path, {"claude_api_mode": mode})
+    assert _main(tmp_path, "config", "get", "claude_orchestrator_api_only", "claude_worker_api_first") == 0
+    capsys.readouterr()
+    parent = {"ANTHROPIC_API_KEY": "parent-api", "CLAUDE_CODE_OAUTH_TOKEN": "parent-oauth"}
+    for role in ("orchestrator", "delegate"):
+        selected = claude_connection.candidates(role, env=parent).require_first()
+        assert selected.kind == "inherit"
+        assert claude_connection.connection_environment(parent, selected) == parent
+    if mode is not None:
+        assert _saved(tmp_path) == {"claude_api_mode": mode}
+    else:
+        assert not _config_file(tmp_path).exists()
+
+
+@pytest.mark.parametrize("new_role", ["orchestrator", "delegate"])
+@pytest.mark.parametrize("source", ["saved", "environment"])
+def test_partial_new_role_keeps_other_legacy_api_only(tmp_path, capsys, monkeypatch, new_role, source):
+    """片役割の明示変更後も、他役割の保存会話は旧API固定で再開する。"""
+    assert _main(tmp_path, "config", "set", "claude_api_mode", "api-only") == 0
+    capsys.readouterr()
+    key = "claude_orchestrator_api_only" if new_role == "orchestrator" else "claude_worker_api_first"
+    if source == "saved":
+        assert _main(tmp_path, "config", "set", key, "false") == 0
+        capsys.readouterr()
+    else:
+        monkeypatch.setenv(f"AGENT_TOOLKIT_CONFIG_{key.upper()}", "false")
+    path = tmp_path / "api.env"
+    path.write_text("ANTHROPIC_API_KEY=selected-api\n", encoding="utf-8")
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CLAUDE_API_ENV_FILE", str(path))
+    other_role = "delegate" if new_role == "orchestrator" else "orchestrator"
+    assert not claude_connection.api_only(new_role)
+    assert claude_connection.api_only(other_role)
+    selected = claude_connection.with_current_isolation(
+        claude_connection.Connection("subscription"), role=other_role, env={"CLAUDE_CODE_OAUTH_TOKEN": "parent-oauth"}
+    )
+    assert selected.kind == "api"
+    assert selected.api_env_file == str(path)
+
+
+def test_legacy_environment_preserves_inherit_over_saved_new_role(tmp_path, capsys, monkeypatch):
+    """保存済み新キーより優先する旧環境入力を、ユーザーの新キー指定として扱わない。"""
+    assert _main(tmp_path, "config", "set", "claude_orchestrator_api_only", "true") == 0
+    capsys.readouterr()
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CLAUDE_API_MODE", "pay-as-you-go")
+    assert claude_connection.candidates("orchestrator").require_first().kind == "inherit"
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CLAUDE_ORCHESTRATOR_API_ONLY", "false")
+    selected = claude_connection.candidates("orchestrator", env={"CLAUDE_CODE_OAUTH_TOKEN": "oauth"}).require_first()
+    assert selected.kind == "subscription"
+    assert _saved(tmp_path) == {"claude_orchestrator_api_only": "true"}
+
+
+def test_explicit_subscription_requires_oauth_without_api_file(tmp_path, capsys, monkeypatch):
+    """親にAPI認証だけがある場合、公開保存したサブスク固定はログインの復旧操作を返す。"""
+    assert _main(tmp_path, "config", "set", "claude_orchestrator_api_only", "false") == 0
+    capsys.readouterr()
+    available = claude_connection.subscription_available
+    # 空の資格情報ディレクトリを使うファイル認証の分岐で、OSのKeychainと実CLIを呼ばずに確認する。
+    monkeypatch.setattr(
+        claude_connection,
+        "subscription_available",
+        lambda env, **kwargs: available(env, platform="linux", **kwargs),
+    )
+    with pytest.raises(ValueError, match="claude auth login"):
+        claude_connection.candidates(
+            "orchestrator", env={"ANTHROPIC_API_KEY": "parent-api", "CLAUDE_CONFIG_DIR": str(tmp_path / "empty-auth")}
+        ).require_first()
 
 
 @pytest.fixture(autouse=True)

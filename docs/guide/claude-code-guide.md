@@ -334,14 +334,15 @@ CodexのAPI移行先は工程別モデル候補とは別の設定である。サ
 
 ### Claudeの役割別API接続
 
-`claude_api_env_file`が未設定（空文字列）の場合、process-loopとagents_serverは親の環境変数とClaude Codeの通常の認証解決を使う。
-旧`claude_api_mode=api-only`の互換設定ではAPI用envファイルを必要とする。
+役割別の新キーが未指定で、`claude_api_env_file`も未設定（空文字列）の場合、process-loopとagents_serverは親の環境変数とClaude Codeの通常の認証解決を使う。
+旧`claude_api_mode`の`pay-as-you-go`と`api-credits`にも、この認証継承の互換動作を保つ。
 APIキー、Claude Codeの設定、Bedrock・Vertexなどをそのまま利用できる。
 この場合は認証検出による起動拒否、認証環境の隔離、役割別の接続割当や切替を行わない。
-その会話の再開も通常の認証解決を維持し、後からenvファイルを設定しても既存会話には適用しない。
+その会話の再開も通常の認証解決を維持し、後からenvファイルだけを設定しても既存会話には適用しない。
 接続情報もAPIパスも持たない旧形式の登録も同じ扱いとなる。
 
-envファイルを設定した場合は、以下の役割別接続管理を適用する。
+新キーを`atk config set`または対応する環境変数で明示した役割には、envファイルの有無にかかわらず以下の方針を適用する。
+新キーが未指定でも、envファイルを設定した会話には役割別接続管理を適用する。
 通常の`atk wi process-loop`のオーケストレーター、`all-repos`のリポジトリ担当、および`agents_server`のClaude委譲へ適用する。
 ユーザーが直接起動するClaude Code、組み込みAgentとfork、`atk run-skill`、`atk commit`、Codexの接続先は対象外である。
 `all-repos`のリポジトリ担当はオーケストレーターとして扱う。
@@ -352,9 +353,12 @@ envファイルを設定した場合は、以下の役割別接続管理を適�
 | `claude_worker_api_first` | 通常のClaude委譲先はAPI、サブスクリプションの順 | 通常のClaude委譲先はサブスクリプション、APIの順（既定） |
 
 委譲先は利用できる認証の候補から選ぶ。
+API候補には`claude_api_env_file`を必要とする。サブスクリプション候補は親のAPI認証を除去してOAuth認証を使う。
 オーケストレーターの指定接続が使えない場合は、復旧案内を表示して起動を止める。
-旧`claude_api_mode`の`pay-as-you-go`と`api-credits`は、この2設定へ移行する。
-旧キーの`api-only`は両役割をAPIだけにする互換設定として保持し、新しいbool設定の明示保存で解除する。
+明示したオーケストレーターの固定は、既存会話の次turnと保存後再開にも適用し、同じ会話IDで続ける。
+旧`claude_api_mode`は保存入力を保持して2設定の実効値へ読み替える。`pay-as-you-go`は順に`true`・`false`、`api-credits`は`false`・`true`となる。
+旧キーの`api-only`は両役割をAPIだけにする互換設定であり、API用envファイルを必要とする。
+新boolの明示指定はその役割の旧方針を上書きし、他方の役割の旧方針を保つ。公開getは旧入力を新キーの明示保存へ書き換えない。
 [APIクレジットの公式対象範囲](https://platform.claude.com/docs/en/about-claude/api-credits-for-subscribers)はClaude APIとClaude Agent SDKを含み、Claude Codeは対象外である。
 APIクレジットを委譲先で使う場合は`claude_worker_api_first`を`true`、`claude_orchestrator_api_only`を`false`にする。
 API接続に使う環境変数をenvファイルへ保存し、パスを設定する。
@@ -383,7 +387,7 @@ atk config set claude_orchestrator_api_only false
 # 従量課金APIをオーケストレーターへ割り当てる場合
 atk config set claude_orchestrator_api_only true
 atk config set claude_worker_api_first false
-# 解除する場合
+# API候補の環境ファイル設定を解除する場合（明示した役割別方針は維持）
 atk config set claude_api_env_file ''
 ```
 
@@ -398,13 +402,13 @@ setは先頭の`~`を展開してパスだけを保存する。
 APIの料金はサブスクリプションと別に発生する。
 API環境ファイルの未設定・空・不正では、`atk config set claude_api_env_file <パス>`でファイルを設定・修正してから再送する。
 API認証や残高で失敗した場合は認証・接続先・課金設定を確認して同じ会話へ再送する。
-以下の接続切替・解除待ち・選択済み接続の保持はpay-as-you-goとapi-creditsに適用する。
+以下の接続切替・解除待ち・選択済み接続の保持は、役割別設定と旧pay-as-you-go・api-creditsの互換入力に適用する。
 通常の委譲先は利用枠またはAPI残高の不足時に同じsession ID・model・effortで次の接続へ移る。
 認証手段が1つだけの場合はその接続の解除を待つ。両認証を持ち全候補が尽きた場合と、認証手段が無い場合は、理由と復旧操作を返して終了する。
 オーケストレーターは選択済み接続を固定し、解除待ち・次のengine候補・不成立理由の返却へ進む。
-接続済みの会話はstop・保持期限・サーバー再起動後も選択済みの接続を保持する。
-`pay-as-you-go`で利用上限によりAPIへ移った委譲先は、上限の解除予定時刻の後の最初の追送か自動再開からサブスクリプションへ戻る。
-新規sessionは毎回モードの先頭候補から評価する。
+接続済みの会話はstop・保持期限・サーバー再起動後も選択済みの接続を保持する。現行の役割別固定を明示した場合は、次turn・再開時に同じ会話をその固定先へ移す。
+サブスクリプション優先で利用上限によりAPIへ移った委譲先は、上限の解除予定時刻の後の最初の追送か自動再開からサブスクリプションへ戻る。
+新規sessionは毎回候補順の先頭から評価する。
 親環境と親settingsの認証・接続・モデル指定を隔離し、API会話には選択したenvファイルの値を渡す。
 ユーザー設定などのsettingsの`env`へ接続関連の変数を書いた場合、委譲先のコマンドへその変数が空の値で渡ることがある。
 サブスクリプション起動では同じ指定を除き、選択した接続を新規起動と再開の両方へ適用する。

@@ -91,7 +91,7 @@ def test_notifies_target_skill_without_completion_report_once(tmp_path: pathlib.
     decision, body = termination_order_advisor.evaluate(_payload("sess-missing", str(trace)))
     assert decision == "notify"
     assert f"{skill}の開始" in body
-    assert "Skillで`agent-toolkit:completion-report`を起動し" in body
+    assert "`Skill`で`agent-toolkit:completion-report`を起動し" in body
     assert "終端工程" in body
     assert termination_order_advisor.evaluate(_payload("sess-missing", str(trace))) == ("approve", "")
     _start_skill("sess-missing", trace, "agent-toolkit:completion-report", "toolu_report")

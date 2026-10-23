@@ -29,6 +29,7 @@ def _fake_run(
     remote_stderr: str = "",
     branch_failure_stderr: str | None = None,
     update_returncode: int = 0,
+    worktree_status: str = "",
     working_directories: list[pathlib.Path] | None = None,
 ) -> typing.Callable[..., subprocess.CompletedProcess[str]]:
     """gitとupdate-dotfilesの応答を返し、全呼び出しを記録する。"""
@@ -51,6 +52,9 @@ def _fake_run(
             if branch_failure_stderr is not None:
                 return subprocess.CompletedProcess(command, 128, "", branch_failure_stderr)
             return subprocess.CompletedProcess(command, 0, f"refs/heads/{branch}\n", "")
+        if "status" in command:
+            assert "--no-optional-locks" in command
+            return subprocess.CompletedProcess(command, 0, worktree_status, "")
         return subprocess.CompletedProcess(command, 0, f"{local_commit}\n", "")
 
     return run
@@ -115,6 +119,81 @@ def test_matching_commit_skips_update(
     assert upstream_update.main([]) == 0
     assert [str(update_dotfiles)] not in calls
     assert [str(update_dotfiles.with_name("prune-codex-packages"))] in calls
+
+
+@pytest.mark.parametrize("status", ["M  tracked.txt\n", " M tracked.txt\n", "?? untracked.txt\n"])
+def test_dirty_cycle_preserves_records_and_clean_cycle_resumes(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, status: str
+) -> None:
+    """stage済み・未stage・未追跡の変更中は照会と更新を延期し、clean後に再試行する。"""
+    launcher = _prepare_root(monkeypatch, tmp_path)
+    pending, _lock = upstream_update._state_paths()  # pylint: disable=protected-access
+    pending.parent.mkdir(parents=True)
+    deferred = pending.with_suffix(".deferred")
+    applied = pending.with_suffix(".applied")
+    before = {pending: b"pending\n", deferred: b'{"steps":["Codex plugin"]}\n', applied: b"previous\n"}
+    for path, content in before.items():
+        path.write_bytes(content)
+    calls: list[list[str]] = []
+    monkeypatch.setattr(subprocess, "run", _fake_run(calls, worktree_status=status))
+
+    assert upstream_update.main([]) == 0
+    assert [str(launcher)] not in calls
+    assert not any("ls-remote" in call for call in calls)
+    assert {path: path.read_bytes() for path in before} == before
+
+    calls.clear()
+    monkeypatch.setattr(subprocess, "run", _fake_run(calls))
+    assert upstream_update.main([]) == 0
+    assert calls.count([str(launcher)]) == 1
+    assert not pending.exists()
+    assert deferred.read_bytes() == before[deferred]
+    assert applied.read_text(encoding="utf-8") == "b" * 40 + "\n"
+
+
+def test_worktree_becoming_dirty_before_launch_preserves_records(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+) -> None:
+    """remote照会後に編集が始まった場合も、起動直前に保留して記録を新設しない。"""
+    launcher = _prepare_root(monkeypatch, tmp_path)
+    calls: list[list[str]] = []
+    original = _fake_run(calls)
+    status_calls = 0
+
+    def run(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+        nonlocal status_calls
+        result = original(command, **kwargs)
+        if "status" in command:
+            status_calls += 1
+            return subprocess.CompletedProcess(command, 0, " M editing.txt\n" if status_calls == 2 else "", "")
+        return result
+
+    monkeypatch.setattr(subprocess, "run", run)
+    assert upstream_update.main([]) == 0
+    assert status_calls == 2
+    assert any("ls-remote" in call for call in calls)
+    assert [str(launcher)] not in calls
+    pending, _lock = upstream_update._state_paths()  # pylint: disable=protected-access
+    assert not any(pending.with_suffix(suffix).exists() for suffix in (".pending", ".applied", ".deferred"))
+
+
+def test_worktree_status_failure_stops_before_remote_lookup(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """変更の確認不能をcleanへ読み替えず、原因を示して停止する。"""
+    launcher = _prepare_root(monkeypatch, tmp_path)
+    calls: list[list[str]] = []
+    original = _fake_run(calls)
+
+    def run(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+        result = original(command, **kwargs)
+        return subprocess.CompletedProcess(command, 128, "", "status failed") if "status" in command else result
+
+    monkeypatch.setattr(subprocess, "run", run)
+    assert upstream_update.main([]) == 1
+    assert "status failed" in capsys.readouterr().err
+    assert [str(launcher)] not in calls
+    assert not any("ls-remote" in call for call in calls)
 
 
 def test_external_head_advance_requires_apply(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:

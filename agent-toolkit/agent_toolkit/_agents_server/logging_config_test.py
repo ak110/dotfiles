@@ -45,6 +45,8 @@ def test_instance_diagnostics_independent_of_log_rotation(
     """共通ログの回転と別の起動単位の開始・終了は、記録済みの起動単位の終了診断を変えない。"""
     logger = logging.getLogger("agent-toolkit.agents-server")
     original_handlers = tuple(logger.handlers)
+    original_level = logger.level
+    original_propagate = logger.propagate
     logger.handlers.clear()
     monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
     monkeypatch.setattr(logging_config, "_CURRENT_INSTANCE", None)
@@ -64,6 +66,8 @@ def test_instance_diagnostics_independent_of_log_rotation(
         for handler in logger.handlers:
             handler.close()
         logger.handlers[:] = original_handlers
+        logger.setLevel(original_level)
+        logger.propagate = original_propagate
 
     assert (tmp_path / "agents-server.log.3").exists()
     assert first.path.read_text(encoding="utf-8") == recorded

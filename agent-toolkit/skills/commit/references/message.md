@@ -5,7 +5,7 @@
 コミットメッセージ第1行は「件名」と呼ぶ。
 
 プロジェクト方針が無ければConventional Commits形式で書き、固定文言体系（カテゴリ名・固定件名等）が指定されていればそれに従う。
-プロジェクト方針は`CLAUDE.md`・`AGENTS.md`・`.claude/rules/`、コミットテンプレート、lint設定など実在する明文化された情報から確認する。明文化されていない事項は、同種の複数コミットで一貫して観測され明文の方針と矛盾しない形式だけを慣例として採り、単発の履歴は根拠から除く。方針と履歴が矛盾する場合は`agent-toolkit:review-standards`の`review-standards/references/judgment-details.md`「矛盾の原因調査」に従う。
+プロジェクト方針は`CLAUDE.md`・`AGENTS.md`・`.claude/rules/`、コミットテンプレート、lint設定など実在する明文化された情報から確認する。明文化されていない事項は、同種の複数コミットで一貫して観測され明文の方針と矛盾しない形式だけを慣例として採り、単発の履歴は根拠から除く。方針と履歴が矛盾する場合は`agent-basics:review-standards`の`references/judgment-details.md`「矛盾の原因調査」に従う。
 
 - 形式: `<type>[(<scope>)]: <description>`。破壊的変更は`!`を付ける。本文かtrailerを持つ場合は件名の後に空行を1行置く
 - typeと`!`は成果物の消費主体（配布先のエンドユーザー・開発者・エージェント）の振る舞いへの影響で選ぶ。機能追加・修正・性能は`feat`/`fix`/`perf`、振る舞いに直接影響しない内部変更は`chore`/`ci`/`refactor`/`docs`/`test`とする。lint/format設定・CI手順・依存グループ入れ替えなど開発者向け設定の変更は`!`の対象外とする
@@ -16,11 +16,11 @@
 
 ## 名指し参照の読込方法
 
-本文の各参照の適用条件を保ち、選んだ資料の指定範囲を取得してから、その基準を使う具体的な判断へ進む。起動時の行の資料は起動本文とともに届く。
+名指し参照は`../SKILL.md`「名指し参照の読込方法」に従う。
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../review-standards/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/review-standards/SKILL.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:review-standards/references/judgment-details.md#「矛盾の原因調査」` | 判断 | `section:agent-basics:*/skills/review-standards/references/judgment-details.md#「矛盾の原因調査」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../writing-standards/references/writing.md#「文章の共通規定」` | 判断 | `section:agent-toolkit:*/skills/writing-standards/references/writing.md#「文章の共通規定」` |
 
 ## `Co-Authored-By:`

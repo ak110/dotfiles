@@ -304,7 +304,7 @@ def begin_usage_limit_wait(session: SessionState, result: dict[str, Any]) -> boo
     original_error = result.get("error")
     role = session.claude_role or ("orchestrator" if session.model_type == "orchestrate" else "delegate")
     current = session.claude_connection or ("api" if session.claude_api_env_file else "inherit")
-    if claude_connection.api_only() and current == "api":
+    if claude_connection.api_only(role) and current == "api":
         clear_usage_limit_wait(session)
         result["error"] = {
             "message": "API接続が失敗した。claude_api_env_fileの認証・接続先とAPI残高を確認し、同じ会話へ再送する。",
@@ -318,7 +318,7 @@ def begin_usage_limit_wait(session: SessionState, result: dict[str, Any]) -> boo
         current,
         reason,
     )
-    api_only = claude_connection.api_only()
+    api_only = claude_connection.api_only(role)
     if current == "inherit" and startup_auth_error and not api_only:
         return False
     choices = (

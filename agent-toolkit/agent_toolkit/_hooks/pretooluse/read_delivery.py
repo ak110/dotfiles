@@ -115,6 +115,25 @@ def _requested_section(tool_name: str, tool_input: dict) -> str:
     return ""
 
 
+def _full_read_paths(tool_name: str, tool_input: dict, cwd: str) -> list[pathlib.Path]:
+    """指定節の取得と、同じ呼出し内の独立した全文取得を分ける。"""
+    requests = [tool_input]
+    if _requested_section(tool_name, tool_input):
+        requests = [
+            request
+            for segment in extract_execution_segments(tool_input["command"])
+            if segment.resolved
+            for request in [{"command": shlex.join(segment.tokens)}]
+            if not _requested_section(tool_name, request)
+        ]
+    return [
+        path
+        for request in requests
+        for resolve in (True, False)
+        for path in _read_paths(tool_name, request, cwd, resolve=resolve)
+    ]
+
+
 def matches(operation: str, tool_name: str, tool_input: dict, cwd: str) -> bool:
     """共通語彙を既存の静的な操作判定へ結びつける。"""
     matched = operation_skills.operation_matches(operation, tool_name, tool_input)
@@ -130,22 +149,7 @@ def matches(operation: str, tool_name: str, tool_input: dict, cwd: str) -> bool:
         )
     if prefix == "read":
         # 節取得はsection宣言が扱う。同じ呼出し内の全文取得は独立に保つ。
-        requests = [tool_input]
-        if _requested_section(tool_name, tool_input):
-            requests = [
-                request
-                for segment in extract_execution_segments(tool_input["command"])
-                if segment.resolved
-                for request in [{"command": shlex.join(segment.tokens)}]
-                if not _requested_section(tool_name, request)
-            ]
-        paths = [
-            path
-            for request in requests
-            for resolve in (True, False)
-            for path in _read_paths(tool_name, request, cwd, resolve=resolve)
-        ]
-        return any(_matches_document_path(path, value) for path in paths)
+        return any(_matches_document_path(path, value) for path in _full_read_paths(tool_name, tool_input, cwd))
     if prefix == "path":
         paths = operation_skills.written_paths(tool_name, tool_input, cwd)
         return any(fnmatch.fnmatch(path.replace("\\", "/"), value) for path in paths)
@@ -179,7 +183,7 @@ def matches(operation: str, tool_name: str, tool_input: dict, cwd: str) -> bool:
         return (tool_name == "Skill" and requested == plugin + ":" + short) or any(
             document_reads.skill_document(str(path)) == (short, "SKILL.md")
             and document_reads.document_plugin(str(path)) == plugin
-            for path in _read_paths(tool_name, tool_input, cwd)
+            for path in _full_read_paths(tool_name, tool_input, cwd)
         )
     if prefix == "bash" and tool_name == "Bash" and isinstance(tool_input.get("command"), str):
         expected = shlex.split(value)
@@ -330,15 +334,32 @@ def active_roles(payload: dict, session_id: str, records: dict, agent: str) -> s
             continue
         for text in _user_texts(entry):
             context_seen = False
+            startup_methods = ()
+            for line in text.splitlines()[:1]:
+                # 正式な役割見出しの候補だけでfrontmatterの処理を読み込む。
+                if ".subagent.md" not in line:
+                    continue
+                role = task_documents.launched_task_document(line)
+                role = role.resolve() if role is not None else None
+                if role is not None and role.is_file() and role.parent == plugin_resources.plugin_root().resolve() / "share":
+                    roles.add(role)
+                    update_state(session_id, operation_skills.mark_ready(prefix + str(role), agent))
+                    with contextlib.suppress(OSError, UnicodeError, ValueError):
+                        startup_methods = read_triggers.reference_method_targets(role, plugin_resources.plugin_root())
+                    context_seen = True
             for match in re.finditer(r'<atk-auto source="read-delivery" kind="startup-document">\n資料JSON: ([^\n]+)', text):
                 metadata = json.loads(match[1])
                 selectors = metadata.get("selectors", [metadata.get("selector", "")])
-                if any(isinstance(selector, str) and selector.startswith("input:") for selector in selectors):
+                input_target = any(isinstance(selector, str) and selector.startswith("input:") for selector in selectors)
+                if not input_target and not startup_methods:
+                    continue
+                target = read_triggers.ReadTarget(pathlib.Path(metadata["path"]), metadata["heading"])
+                if input_target or target in startup_methods:
                     context_seen = True
-                    key = "startup-input-target:" + json.dumps(metadata, ensure_ascii=False, separators=(",", ":"))
-                    update_state(session_id, operation_skills.mark_ready(key, agent))
+                    if input_target:
+                        key = "startup-input-target:" + json.dumps(metadata, ensure_ascii=False, separators=(",", ":"))
+                        update_state(session_id, operation_skills.mark_ready(key, agent))
                     with contextlib.suppress(OSError, UnicodeError, ValueError):
-                        target = read_triggers.ReadTarget(pathlib.Path(metadata["path"]), metadata["heading"])
                         rendered = read_triggers.startup_documents(
                             [target], plugin_resources.plugin_root(), {target: set(selectors)}
                         )
@@ -355,16 +376,6 @@ def active_roles(payload: dict, session_id: str, records: dict, agent: str) -> s
                     metadata = {"path": str(contract.resolve()), "heading": "", "selectors": ["input:作業契約"]}
                     key = "startup-input-target:" + json.dumps(metadata, ensure_ascii=False, separators=(",", ":"))
                     update_state(session_id, operation_skills.mark_ready(key, agent))
-            for line in text.splitlines()[:1]:
-                # 正式な役割見出しの候補だけでfrontmatterの処理を読み込む。
-                if ".subagent.md" not in line:
-                    continue
-                role = task_documents.launched_task_document(line)
-                role = role.resolve() if role is not None else None
-                if role is not None and role.is_file() and role.parent == plugin_resources.plugin_root().resolve() / "share":
-                    roles.add(role)
-                    update_state(session_id, operation_skills.mark_ready(prefix + str(role), agent))
-                    context_seen = True
             if context_seen:
                 update_state(session_id, operation_skills.mark_ready("startup-context-observed", agent))
                 return roles
@@ -895,11 +906,25 @@ def deliver(payload: dict, tool_name: str, tool_input: dict, session_id: str) ->
                 if not target_ready(records, target, agent)
             )
         )
+        host = "codex" if is_codex_payload(payload) else "claude"
+        method_sources = dict.fromkeys([*_read_paths(tool_name, tool_input, cwd), *sorted(roles)])
+        for path in method_sources:
+            if path.suffix == ".md" and path.is_file():
+                pending.extend(
+                    target
+                    for target in read_triggers.reference_method_targets(path, plugin_resources.plugin_root(), host)
+                    if target not in pending and not target_ready(records, target, agent)
+                )
         # スキル本文とともに届く共有の初動資料を、同じ受領単位へ含める。
         cursor = 0
         while cursor < len(pending):
             target = pending[cursor]
             cursor += 1
+            pending.extend(
+                method
+                for method in read_triggers.reference_method_targets(target.path, plugin_resources.plugin_root(), host)
+                if method not in pending and not target_ready(records, method, agent)
+            )
             if not target.heading:
                 rows = list(
                     dict.fromkeys(
@@ -922,6 +947,7 @@ def deliver(payload: dict, tool_name: str, tool_input: dict, session_id: str) ->
                     and row.source == target.path
                     and target_identity is not None
                     and target_identity[1] == "SKILL.md"
+                    and not target.heading
                 ):
                     pending.extend(
                         item for item in row.targets if item not in pending and not target_ready(records, item, agent)

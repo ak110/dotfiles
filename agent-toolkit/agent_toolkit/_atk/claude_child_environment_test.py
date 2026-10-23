@@ -12,6 +12,28 @@ from agent_toolkit._atk import claude_connection, orchestrator
 from agent_toolkit._atk.wi import process_loop_env, process_loop_session
 
 
+def _run_cli_route(route: str, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, environment: dict[str, str]) -> None:
+    """同じ入力環境をプローブまたはprocess-loopの本起動へ渡す。"""
+    if route == "probe":
+        orchestrator.select_available(
+            [("claude", "model", "low")], environment, tmp_path, orchestrator.ProbeContext("test", "確認")
+        )
+    else:
+        monkeypatch.setattr(process_loop_session, "cleanup_lane_session", lambda *_args, **_kwargs: {})
+        monkeypatch.setattr(process_loop_env, "create_hook_debug_log", lambda *_args, **_kwargs: tmp_path / "hooks.log")
+        process_loop_session.run_process_session(
+            argparse.Namespace(resume=None, no_update=True),
+            tmp_path,
+            "確認",
+            environment,
+            orchestrator="claude",
+            model="model",
+            effort="low",
+            resume_pending=False,
+            dotfiles_root=None,
+        )
+
+
 @pytest.mark.parametrize("route", ["probe", "session"])
 @pytest.mark.parametrize("kind", ["subscription", "api"])
 @pytest.mark.parametrize("source", ["none", "user", "project", "local"])
@@ -54,24 +76,7 @@ def test_cli_descendants_receive_only_configured_empty_keys(
         "ANTHROPIC_API_KEY": "parent",
         orchestrator.PROCESS_LOOP_SESSION_ENV: "1",
     }
-    if route == "probe":
-        orchestrator.select_available(
-            [("claude", "model", "low")], environment, tmp_path, orchestrator.ProbeContext("test", "確認")
-        )
-    else:
-        monkeypatch.setattr(process_loop_session, "cleanup_lane_session", lambda *_args, **_kwargs: {})
-        monkeypatch.setattr(process_loop_env, "create_hook_debug_log", lambda *_args, **_kwargs: tmp_path / "hooks.log")
-        process_loop_session.run_process_session(
-            argparse.Namespace(resume=None, no_update=True),
-            tmp_path,
-            "確認",
-            environment,
-            orchestrator="claude",
-            model="model",
-            effort="low",
-            resume_pending=False,
-            dotfiles_root=None,
-        )
+    _run_cli_route(route, tmp_path, monkeypatch, environment)
     assert len(effective) == 1
     values = effective[0]
     assert values.get("AWS_PROFILE") == ("profile" if kind == "api" else "" if source != "none" else None)
@@ -79,16 +84,19 @@ def test_cli_descendants_receive_only_configured_empty_keys(
     assert not any(value == "" for key, value in values.items() if key in {"CUSTOM_CONNECTION", "ANTHROPIC_API_KEY"})
 
 
-@pytest.mark.parametrize("role", ["delegate", "orchestrator"])
+@pytest.mark.parametrize("role,policy", [("delegate", "legacy"), ("orchestrator", "legacy"), ("orchestrator", "explicit")])
 @pytest.mark.parametrize("content", [None, "", "# empty\n", "invalid", "ANTHROPIC_API_KEY=\n", "ANTHROPIC_API_KEY=key\n"])
 def test_api_only_has_no_implicit_authentication(
-    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, role: str, content: str | None
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, role: str, policy: str, content: str | None
 ) -> None:
     """親認証があっても、api-onlyはAPI設定だけを候補にする。"""
     api = tmp_path / "api.env"
     if content is not None:
         api.write_text(content)
-    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CLAUDE_API_MODE", "api-only")
+    if policy == "legacy":
+        monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CLAUDE_API_MODE", "api-only")
+    else:
+        monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CLAUDE_ORCHESTRATOR_API_ONLY", "true")
     monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CLAUDE_API_ENV_FILE", str(api) if content is not None else "")
     monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", "parent-oauth")
     monkeypatch.setenv("ANTHROPIC_API_KEY", "parent-api")
@@ -98,3 +106,37 @@ def test_api_only_has_no_implicit_authentication(
     else:
         with pytest.raises(ValueError, match="API"):
             choices.require_first()
+
+
+@pytest.mark.parametrize("route", ["probe", "session"])
+def test_explicit_subscription_without_api_file_reaches_cli_isolated(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, route: str
+) -> None:
+    """明示したサブスク固定はAPI環境未設定でも、プローブと本起動の実候補選択へ届く。"""
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CLAUDE_API_ENV_FILE", "")
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CLAUDE_ORCHESTRATOR_API_ONLY", "false")
+    monkeypatch.setattr(orchestrator, "_probe_model", lambda *_args, **_kwargs: "model")
+    observed: list[dict[str, str]] = []
+
+    def launched(argv: list[str], **kwargs: Any) -> subprocess.CompletedProcess[str]:
+        if argv[0] == "git":
+            return subprocess.CompletedProcess(argv, 0, str(tmp_path) + "\n", "")
+        if argv[1:] == ["auth", "status"]:
+            return subprocess.CompletedProcess(argv, 0, '{"authMethod": "claude.ai", "loggedIn": true}', "")
+        value = argv[argv.index("--settings") + 1]
+        selected = json.loads(value if value.startswith("{") else pathlib.Path(value).read_text(encoding="utf-8"))
+        effective = {**kwargs["env"], **selected["env"]}
+        observed.append(effective)
+        assert effective["CLAUDE_CODE_OAUTH_TOKEN"] == "subscription"
+        assert not effective.get("ANTHROPIC_API_KEY")
+        assert not selected["apiKeyHelper"]
+        return subprocess.CompletedProcess(argv, 0, "OK", "")
+
+    monkeypatch.setattr(subprocess, "run", launched)
+    environment = {
+        "ANTHROPIC_API_KEY": "parent-api",
+        "CLAUDE_CODE_OAUTH_TOKEN": "subscription",
+        orchestrator.PROCESS_LOOP_SESSION_ENV: "1",
+    }
+    _run_cli_route(route, tmp_path, monkeypatch, environment)
+    assert len(observed) == 1

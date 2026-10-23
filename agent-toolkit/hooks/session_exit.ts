@@ -1,6 +1,6 @@
 import type { EngineInterface, On } from "claude-code";
 import { automatedMessage, changedWarning } from "./automated_message.ts";
-import { isMarked, parseSchedule } from "./periodic_recheck.ts";
+import { isMarked, parseCronJobs, parseSchedule } from "./periodic_recheck.ts";
 
 const SESSION_ID = /^[A-Za-z0-9_-]+$/;
 
@@ -51,7 +51,7 @@ async function collectPeriodicRecheck($: EngineInterface, sessionId: string, abo
     const listed = await $.tool.call({ tool: "CronList" });
     if (listed.deny !== undefined) return cleanupWarning(`CronList: ${listed.deny}`);
     if (listed.isError === true) return cleanupWarning(`CronList: ${listed.text ?? "一覧取得エラー"}`);
-    const marked = listed.result.jobs.filter((job) => job.durable !== true && isMarked(job.prompt));
+    const marked = parseCronJobs(listed.result).filter((job) => job.durable !== true && isMarked(job.prompt));
     if (marked.length === 0) return null;
     const root = $.plugin.root;
     const schedule = await $.process.run(
@@ -97,7 +97,7 @@ async function deleteSessionCrons($: EngineInterface): Promise<void> {
     if ((await $.tool.check({ tool: "CronList", input: {} })).decision !== "allow") return;
     const listed = await $.tool.call({ tool: "CronList" });
     if (listed.deny !== undefined || listed.isError === true) return;
-    for (const job of listed.result.jobs) {
+    for (const job of parseCronJobs(listed.result)) {
       if (job.durable === true) continue;
       if ((await $.tool.check({ tool: "CronDelete", input: { id: job.id } })).decision !== "allow") continue;
       await $.tool.call({ tool: "CronDelete", id: job.id });

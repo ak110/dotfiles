@@ -351,14 +351,27 @@ def raw_mutable_setting(key: str) -> str:
     return stored.get(key, default)
 
 
-def claude_legacy_api_only() -> bool:
-    """旧API専用設定による両役割の固定だけを互換境界で判定する。"""
-    if any(os.environ.get(_config_env_name(key), "") for key in _CLAUDE_CONNECTION_KEYS):
+def claude_role_setting_is_explicit(key: str) -> bool:
+    """役割別設定の実効値が、新キーへの保存または環境指定から来るかを返す。"""
+    if key not in _CLAUDE_CONNECTION_KEYS:
+        raise KeyError(key)
+    if os.environ.get(_config_env_name(key), ""):
+        return True
+    if os.environ.get(_config_env_name("claude_api_mode"), ""):
+        return False
+    return key in _load_config()
+
+
+def claude_legacy_api_only(key: str = "claude_worker_api_first") -> bool:
+    """指定した役割に新キーの明示がなければ、旧API専用設定の固定を維持する。"""
+    if key not in _CLAUDE_CONNECTION_KEYS:
+        raise KeyError(key)
+    if os.environ.get(_config_env_name(key), ""):
         return False
     mode = os.environ.get(_config_env_name("claude_api_mode"), "")
     if not mode:
         stored = _load_config()
-        if any(key in stored for key in _CLAUDE_CONNECTION_KEYS):
+        if key in stored:
             return False
         mode = stored.get("claude_api_mode", "")
     if mode:
@@ -407,26 +420,13 @@ def _plan_legacy_migration(config: dict[str, str], *, updates: dict[str, str] | 
     if "claude_api_mode" in changes:
         mode = changes.pop("claude_api_mode")
         _validate_mutable_setting("claude_api_mode", mode)
-        migrated.pop("claude_api_mode", None)
-        if mode == "api-only":
-            for target in _CLAUDE_CONNECTION_KEYS:
-                migrated.pop(target, None)
-            migrated["claude_api_mode"] = mode
-        else:
-            changes.update(zip(_CLAUDE_CONNECTION_KEYS, _LEGACY_CLAUDE_MODES[mode], strict=True))
-    elif any(key in changes for key in _CLAUDE_CONNECTION_KEYS):
-        mode = migrated.get("claude_api_mode")
-        if mode in _LEGACY_CLAUDE_MODES:
-            for target, value in zip(_CLAUDE_CONNECTION_KEYS, _LEGACY_CLAUDE_MODES[mode], strict=True):
-                migrated.setdefault(target, value)
-        migrated.pop("claude_api_mode", None)
+        for target in _CLAUDE_CONNECTION_KEYS:
+            migrated.pop(target, None)
+        migrated["claude_api_mode"] = mode
     elif "claude_api_mode" in migrated:
-        mode = migrated["claude_api_mode"]
-        _validate_mutable_setting("claude_api_mode", mode)
-        if mode != "api-only" or any(target in migrated for target in _CLAUDE_CONNECTION_KEYS):
-            for target, value in zip(_CLAUDE_CONNECTION_KEYS, _LEGACY_CLAUDE_MODES[mode], strict=True):
-                migrated.setdefault(target, value)
-            migrated.pop("claude_api_mode")
+        _validate_mutable_setting("claude_api_mode", migrated["claude_api_mode"])
+    # 旧モードは新bool未指定時の実効値を得るために保存する。getによる値の射影をユーザーの新キー指定へ変えない。
+    # 新キーをsetした場合は指定したキーだけを上書きし、他方の役割の旧方針を保持する。
     migrated.update(changes)
     if not any(key in config for key in (*_RETIRED_MODEL_KEYS, "claude_api_mode")):
         return migrated

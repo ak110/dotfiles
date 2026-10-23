@@ -185,7 +185,7 @@ def _build_session_argv(
             for diagnostic in choices.warnings:
                 print(diagnostic, file=sys.stderr)
             connection = choices.require_first()
-        connection = _connection.with_current_isolation(connection, env=env)
+        connection = _connection.with_current_isolation(connection, role="orchestrator", env=env)
         prepared = _connection.connection_environment(env, connection)
         # 対話起動は未承認の環境APIキーで確認画面を表示するため、helperから取得する。
         if connection.kind != "inherit":

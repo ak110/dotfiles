@@ -26,6 +26,7 @@ from agent_toolkit._agents_server import status_file as subject
 from agent_toolkit._atk import config as _atk_config
 from agent_toolkit._common import atomic_file, state_paths
 from agent_toolkit._testing.agents_server_support import FakeBackend, install_backend
+from agent_toolkit._testing.logging_support import isolated_agents_server_logging
 
 
 async def _wait_now(manager: server_manager.AgentsServerManager) -> dict[str, typing.Any]:
@@ -1007,16 +1008,8 @@ class _ReplaceRefusal:
 def _diagnostic_log(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> typing.Iterator[pathlib.Path]:
     """既存の診断ログ設定を隔離した状態ディレクトリへ向け、試験後に元のhandlerへ戻す。"""
     monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
-    logger = logging.getLogger("agent-toolkit.agents-server")
-    saved = (list(logger.handlers), logger.propagate, logger.level)
-    log_path = logging_config.configure_logging()
-    yield log_path
-    for handler in tuple(logger.handlers):
-        if handler not in saved[0]:
-            logger.removeHandler(handler)
-            handler.close()
-    logger.handlers[:] = saved[0]
-    logger.propagate, logger.level = saved[1], saved[2]
+    with isolated_agents_server_logging():
+        yield logging_config.configure_logging()
 
 
 async def _until(condition: typing.Callable[[], bool], *, limit: float = 5.0) -> None:

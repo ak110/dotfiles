@@ -64,6 +64,23 @@ def _git_output(args: list[str], *, label: str) -> str | None:
     return result.stdout.strip()
 
 
+def _worktree_is_dirty() -> bool | None:
+    """作業中の変更を、indexを更新せずに確認する。取得不能はNoneを返す。"""
+    status = _git_output(["--no-optional-locks", "status", "--porcelain=v1", "--untracked-files=all"], label="作業ツリーの変更")
+    return None if status is None else bool(status)
+
+
+def _defer_dirty_worktree() -> int | None:
+    """作業中なら状態記録を維持して次周期へ延期し、cleanなら判定を続ける。"""
+    dirty = _worktree_is_dirty()
+    if dirty is None:
+        return 1
+    if dirty:
+        print("作業ツリーに未コミット変更があるため、自動更新を次の周期へ延期します。状態記録は維持します。")
+        return 0
+    return None
+
+
 def _update_if_needed(pending_path: pathlib.Path) -> int:
     """取得元を検証したうえで、上流変更または未完了の更新を1回実行する。"""
     branch = _git_output(["symbolic-ref", "HEAD"], label="現在branch")
@@ -91,6 +108,10 @@ def _update_if_needed(pending_path: pathlib.Path) -> int:
             file=sys.stderr,
         )
         return 1
+
+    deferred_result = _defer_dirty_worktree()
+    if deferred_result is not None:
+        return deferred_result
 
     remote_result = _run(["git", "-C", str(_DOTFILES_ROOT), "ls-remote", "--exit-code", "--refs", "origin", _UPSTREAM_REF])
     if remote_result.returncode != 0:
@@ -147,6 +168,9 @@ def _update_if_needed(pending_path: pathlib.Path) -> int:
         print(f"稼働中の利用を守るために延期した更新を再試行します: commit {local_commit}")
     else:
         print(f"反映済みの記録がないcommitを更新します: {local_commit}")
+    deferred_result = _defer_dirty_worktree()
+    if deferred_result is not None:
+        return deferred_result
     try:
         pending_path.touch()
     except OSError as error:
