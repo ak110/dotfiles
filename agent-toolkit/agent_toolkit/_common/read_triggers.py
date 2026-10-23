@@ -265,7 +265,7 @@ def _direct_document(
 def resolve_read_source(
     path: pathlib.Path, plugin_root: pathlib.Path, host: str = "claude", seen: tuple[pathlib.Path, ...] = ()
 ) -> pathlib.Path:
-    """純粋な互換入口の明示写像を辿り、条件と節の指定を実体へ引き継ぐ。"""
+    """純粋な互換文書の明示写像を辿り、条件と節の指定を実体へ引き継ぐ。"""
     path = path.resolve()
     if path in seen:
         raise ValueError(f"{path}: read-sourceの循環を検出した")
@@ -283,7 +283,7 @@ def resolve_read_source(
     matched = re.fullmatch(r"<!-- read-source: (.+) -->", first)
     if matched is None:
         return path
-    # 標識は著者による純粋な転送入口の宣言である。互換用の見出しは残せる。
+    # 標識は著者による純粋な転送文書の宣言である。互換用の見出しは残せる。
     # 運用本文を所有する混在資料には標識を付けず、正式資料を表から名指す。
     value = matched[1]
     if not value.startswith(("agent-toolkit:", "agent-basics:")) or not value.endswith(".md"):

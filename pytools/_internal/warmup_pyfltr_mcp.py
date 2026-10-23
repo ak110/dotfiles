@@ -72,10 +72,10 @@ def run() -> post_apply_outcome.PostApplyOutcome:
             ):
                 entry = definition.parent / "agent_toolkit/_common/pyfltr_entry.py"
                 if not entry.is_file():
-                    raise ValueError(f"共有pyfltr入口が存在しない: {entry}")
+                    raise ValueError(f"共有pyfltr起動スクリプトが存在しない: {entry}")
                 uv = common.resolve_executable("uv", preferred_directories=(Path.home() / ".local/bin",))
                 if uv is None:
-                    raise ValueError("共有pyfltr入口に必要なuvが見つからない")
+                    raise ValueError("共有pyfltr起動スクリプトに必要なuvが見つからない")
                 plugin_warmup.warmup(entry, uv, tag=_TAG, arguments=("--version",))
                 continue
             arguments = _warmup_arguments(definition)
@@ -83,7 +83,8 @@ def run() -> post_apply_outcome.PostApplyOutcome:
             logger.warning(
                 log_format.format_status(
                     _TAG,
-                    f"環境構築を開始できない: {exc}。{definition}と対応する入口ファイルを確認し、`update-dotfiles`を再実行する",
+                    f"環境構築を開始できない: {exc}。{definition}と対応する起動スクリプトを確認し、"
+                    "`update-dotfiles`を再実行する",
                 ),
             )
             continue

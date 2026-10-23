@@ -1,6 +1,6 @@
 """atk configと初回bootstrapの永続モードの互換を確認する。"""
 
-# pylint: disable=protected-access  # 設定保存の内部入口とbootstrapの相互運用を検証する。
+# pylint: disable=protected-access  # 設定保存の内部関数とbootstrapの相互運用を検証する。
 import argparse
 
 import pytest

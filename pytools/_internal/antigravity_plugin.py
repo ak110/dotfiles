@@ -82,8 +82,8 @@ def plugin_directory(plugin_name: str) -> str:
 
 
 def _split_skills(result: dict[Path, tuple[bytes, int]], target: Path, logical_name: str = "agent-toolkit") -> None:
-    """名前空間ごとのrootで、長文スキルの入口と全文資料を共通生成する。"""
-    # SKILL.md本体にも同じ読込上限がある。frontmatterを維持した入口から本文全文を
+    """名前空間ごとのrootで、長文スキルの初期取得文書と全文資料を共通生成する。"""
+    # SKILL.md本体にも同じ読込上限がある。frontmatterを維持した初期取得文書から本文全文を
     # 明示的に読むことで、既存スキルの契約を途中で切り捨てずに届ける。
     for relative, (data, mode) in list(result.items()):
         if relative.name != "SKILL.md" or len(data) <= RULE_FILE_BYTES:

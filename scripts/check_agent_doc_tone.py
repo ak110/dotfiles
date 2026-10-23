@@ -360,10 +360,15 @@ def _json_fragments(text: str) -> Iterator[tuple[int, str]]:
         elif isinstance(value, str):
             yield _path_field(key)
 
-    matches = (match for match in re.finditer(r'"(?:[^"\\]|\\.)*"', text) if not text[match.end() :].lstrip().startswith(":"))
+    colon = re.compile(r"\s*:")
+    matches = (match for match in re.finditer(r'"(?:[^"\\]|\\.)*"', text) if colon.match(text, match.end()) is None)
+    line = 1
+    offset = 0
     for match, path_value in zip(matches, values(json.loads(text)), strict=True):
         if not path_value:
-            yield text.count("\n", 0, match.start()) + 1, json.loads(match.group())
+            line += text.count("\n", offset, match.start())
+            offset = match.start()
+            yield line, json.loads(match.group())
 
 
 def _path_field(key: str) -> bool:

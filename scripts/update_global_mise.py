@@ -58,7 +58,7 @@ def update(root: Path) -> None:
 
 
 def main() -> int:
-    """リポジトリ用の更新入口。"""
+    """リポジトリ用の更新処理を起動する。"""
     update(Path(__file__).resolve().parent.parent)
     return 0
 

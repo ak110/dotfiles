@@ -576,6 +576,40 @@ def test_cli_preserves_data_and_structural_names(tmp_path: pathlib.Path, name: s
     assert path.read_text(encoding="utf-8") == body
 
 
+@pytest.mark.parametrize("ending", ["", "\n"])
+def test_json_diagnostics_keep_value_start_lines_and_ignore_keys_and_paths(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], ending: str
+) -> None:
+    """改行したキーとcolon、配列、エスケープを含むJSONでも説明値の開始行を返す。"""
+    body = "\n".join(
+        [
+            "{",
+            '  "正本"',
+            '  : "空白 : colon",',
+            '  "input_paths": ["既定.md", "nested/照合.md"],',
+            '  "items": [',
+            '    {"description": "正本を参照する。"},',
+            r'    {"description": "引用符\"と\n照合する。"},',
+            '    {"description": "入口を示す。"}',
+            "  ],",
+            '  "description"',
+            "  :",
+            '  "既定の動作。"',
+            "}",
+        ]
+    )
+    path = _write(tmp_path, body + ending, name="config.json")
+
+    assert check_agent_doc_tone.main([str(path)]) == 1
+
+    diagnostics = capsys.readouterr().err.splitlines()
+    expected = [(6, "error", "正本"), (7, "error", "照合"), (12, "error", "既定"), (8, "warning", "入口")]
+    assert len(diagnostics) == len(expected)
+    for diagnostic, (line, severity, term) in zip(diagnostics, expected, strict=True):
+        assert diagnostic.startswith(f"{path}:{line}: {severity}:")
+        assert f"「{term}」" in diagnostic
+
+
 @pytest.mark.parametrize("body", ["「前提を疑う観点」で実装を疑う。\n", "「前提を疑う観点」を使う。\n前提を疑う。\n"])
 def test_cli_warns_other_uses_of_doubt_beside_defined_viewpoint_name(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], body: str

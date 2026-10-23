@@ -96,7 +96,7 @@ def _codex_script(codex_home: pathlib.Path, version: str) -> pathlib.Path:
 
 
 def _warmed(calls: list[list[str]]) -> list[str]:
-    """記録済みコマンドからprepare対象の入口パスを取り出す。"""
+    """記録済みコマンドからprepare対象の起動スクリプトのパスを取り出す。"""
     return [
         cmd[-1] for cmd in calls if command_matches(cmd, ["uv", "run", "--no-config", "--no-project"]) and "--prepare" in cmd
     ]
@@ -344,7 +344,7 @@ class TestCoverage:
         assert all(cmd[-1] == "--check-dependencies" for cmd in calls if command_matches(cmd, ["uv", "run", "--project"]))
 
     def test_worktree_script_is_target(self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
-        """作業ツリーの基盤CLIとserveが使う入口もfull warmupで準備する。"""
+        """作業ツリーの基盤CLIとserveが使う起動スクリプトもfull warmupで準備する。"""
         calls = _setup(monkeypatch, tmp_path)
         repository = tmp_path / "dotfiles"
         _write_script(repository / "agent-toolkit" / "agent_toolkit" / "agents_server_mcp.py")

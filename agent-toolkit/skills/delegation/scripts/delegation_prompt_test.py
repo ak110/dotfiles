@@ -86,7 +86,7 @@ def test_continuation_uses_existing_launch_record(tmp_path: pathlib.Path, capsys
 def test_continuation_accepts_all_plan_tables(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], multiple: bool
 ) -> None:
-    """公開生成入口で単一表と全計画の配列を受理し、不正要素と旧roundを拒否する。"""
+    """公開生成コマンドで単一表と全計画の配列を受理し、不正要素と旧roundを拒否する。"""
     document = pathlib.Path(__file__).resolve().parents[3] / "share" / "exec.subagent.md"
     tables = [tmp_path / "計画1.tsv", tmp_path / "計画2 の表.tsv"]
     for table in tables:

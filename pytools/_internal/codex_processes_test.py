@@ -14,7 +14,7 @@ def _posix_owner(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_daemon_detection_excludes_other_users_and_prompt_arguments(monkeypatch: pytest.MonkeyPatch) -> None:
-    """同じ所有者のdaemonを拾い、他ユーザーと引数中の検索語を稼働判定へ混ぜない。"""
+    """同じ所有者のdaemonを検出し、他ユーザーと引数中の検索語を稼働判定へ混ぜない。"""
     uid = 1000
     monkeypatch.setattr(codex_processes.os, "getuid", lambda: uid, raising=False)
     processes = [
