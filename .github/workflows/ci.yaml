@@ -476,7 +476,8 @@ jobs:
         env:
           AGENT_TOOLKIT_TEST_GIT: ${{ steps.minimum-git.outputs.git }}
         # agent-toolkitの全テストを含む通常のpytestを、Git呼び出しを新設した経路も個別の指定なしに最低版で検収する。
-        run: pyfltr ci --commands=pytest
+        # 外側の上限に達した場合も失敗した試験名を保持し、失敗件数による途中終了を避ける。
+        run: pyfltr ci --commands=pytest --pytest-args='-v --maxfail=0'
 
       - name: Prune uv cache for CI
         if: needs.common-ci-owner.outputs.owns == 'true'

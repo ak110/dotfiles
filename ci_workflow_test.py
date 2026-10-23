@@ -244,7 +244,7 @@ def test_python_315_pytest_is_an_independent_matrix_job(workflow_data: dict[str,
     lint = next(step for step in steps if step.get("name") == "Python 3.15 pytest以外の検査")
     pytest_step = next(step for step in steps if step.get("name") == "Python 3.15 pytest")
     assert lint["run"] == "pyfltr ci --disable=pytest,claude-plugin-validate,statusline-version"
-    assert pytest_step["run"] == "pyfltr ci --commands=pytest"
+    assert pytest_step["run"] == "pyfltr ci --commands=pytest --pytest-args='-v --maxfail=0'"
     cache = next(step for step in steps if str(step.get("uses", "")).startswith("actions/cache@"))
     cache_with = workflow_mapping(cache["with"])
     assert "${{ matrix.python-version }}" in str(cache_with["key"])
@@ -608,4 +608,4 @@ def test_minimum_git_is_passed_to_normal_pytest(workflow_data: dict[str, object]
 
     environment = workflow_mapping(pytest_step["env"])
     assert environment["AGENT_TOOLKIT_TEST_GIT"] == f"${{{{ steps.{install['id']}.outputs.git }}}}"
-    assert pytest_step["run"] == "pyfltr ci --commands=pytest"
+    assert pytest_step["run"] == "pyfltr ci --commands=pytest --pytest-args='-v --maxfail=0'"
